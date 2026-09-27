@@ -39,16 +39,7 @@ const ACT = {
   airbase: [
     S => { const r = S.roster.filter(x => x.kind === 'ftr' && x.st === 'ready'); const b = S.threats.find(t => t.type === 'bmr' && t.det); if (b && r[0]) IC.launchAir(S, r[0], { type: 'intercept', track: b }); },
     S => { S.sel = { kind: 'infra', ref: S.byId.ab_fwd }; },
-    S => { const b = S.byId.ab_fwd; const f = b.parts.find(x => (x.kind === 'hangar' || x.kind === 'has') && x.hp < x.max); if (f) IC.baseWork(S, b, 'repair', f.id); else if (!b.works.some(w => w.kind === 'build')) IC.baseWork(S, b, 'build', 'hangar'); },
-    S => { const r = S.roster.find(x => x.kind === 'atk' && x.st === 'ready'); if (r && !S.air.some(a => a.kind === 'atk')) IC.launchAir(S, r, { type: 'hstrike', g: S.camp.enemy }); },
-    S => { IC.orderGround(S, S.camp.ours, 'dig', { manual: true }); },
-    S => { if (!S.camp.ours.lift) IC.heliLift(S, S.camp.ours, 'ATG'); }
-  ],
-  ground: [
-    S => IC.emit(S, 'warroom', 'army'),
-    S => { S.fronts.find(f => f.key === 'A').stance = 'active'; },
-    S => { const g = S.gunits.find(x => x.side === 'us' && x.type === 'inf'); IC.orderGround(S, g, 'defend', { town: S.camp.town }); },
-    S => { const g = S.gunits.find(x => x.side === 'us' && x.type === 'arm'); IC.orderGround(S, g, 'reserve', { manual: true }); }
+    S => { const b = S.byId.ab_fwd; const f = b.parts.find(x => (x.kind === 'hangar' || x.kind === 'has') && x.hp < x.max); if (f) IC.baseWork(S, b, 'repair', f.id); else if (!b.works.some(w => w.kind === 'build')) IC.baseWork(S, b, 'build', 'hangar'); }
   ],
   strike: [
     S => { const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready'); const s = S.camp.site; if (r && s) IC.launchAir(S, r, { type: 'isr', x: s.x, y: s.y }); },
@@ -79,7 +70,7 @@ function playLesson(id, quiet, seed) {
     IC.step(S, 0.25);
     if (S.camp.step !== lastStep) { lastStep = S.camp.step; if (!quiet) process.stdout.write(`[${id}] step ${S.camp.step} at +${U.dur(S.time - t0)}\n`); }
     if (i % 40 === 0 && acts[S.camp.step]) { try { acts[S.camp.step](S); } catch (e) { if (!quiet) console.log('act error', e.message); } }
-    if (process.env.DBG && i % (3600 * 4) === 0) console.log('   dbg', U.dur(S.time - t0), 'step', S.camp.step, 'roster', S.roster.map(r => r.name + ':' + r.st).join(' '), 'air', S.air.map(a => a.name + ':' + a.state + ':' + (a.mission && a.mission.type)).join(' '), 'wx', S.weather.kind, 'enemy', S.camp.enemy ? Math.round(S.camp.enemy.str) + (S.camp.enemy.dead ? 'dead' : '') : '');
+    if (process.env.DBG && i % (3600 * 4) === 0) console.log('   dbg', U.dur(S.time - t0), 'step', S.camp.step, 'roster', S.roster.map(r => r.name + ':' + r.st).join(' '), 'air', S.air.map(a => a.name + ':' + a.state + ':' + (a.mission && a.mission.type)).join(' '), 'wx', S.weather.kind);
   }
   return { id, won: S.won, stars: S.stars, over: S.over, step: S.camp.step, hours: (S.time - t0) / 3600, S };
 }

@@ -85,7 +85,7 @@ function moveWp(S, t, dt) {
   else if (t.type === 'owa') t.alt = t.d.alt * (0.7 + 0.5 * Math.sin(t.age * 0.004 + t.seed));
 }
 
-/* loitering munition: fly to an area, then hunt vehicles, ground units and air defense */
+/* loitering munition: fly to an area, then hunt vehicles and air defense */
 function moveLm(S, t, dt) {
   if (t.spoofed) return spoofedDrift(S, t, dt);
   t.endT = (t.endT == null ? 3600 : t.endT) - dt;
@@ -96,7 +96,6 @@ function moveLm(S, t, dt) {
     let bd = 300;
     const look = (o, w) => { if (o.dead) return; const d = U.dist(o, t) / w; if (d < bd) { bd = d; t.prey = o; } };
     for (const v of S.vehicles) if (v.state !== 'idle') look(v, 1.3);
-    for (const g of S.gunits) if (g.side === 'us') look(g, 1);
     for (const u of S.units) if (u.state === 'ready') look(u, u.radarOn ? 1.4 : 0.9);
   }
   let tx, ty;
@@ -178,7 +177,6 @@ function moveIsr(S, t, dt) {
     t.scan = 20;
     for (const u of S.units) if (U.dist(u, t) < 500) IC.enemyLearn(S, u, 'recon');
     for (const v of S.vehicles) if (U.dist(v, t) < 500) IC.enemyLearnConvoy(S, v);
-    for (const g of S.gunits) if (g.side === 'us' && U.dist(g, t) < 500) g.spottedT = S.time;
     for (const b of IC.bases(S)) if (U.dist(b, t) < 500) IC.enemyAssess && IC.enemyAssess(S, b);
   }
 }

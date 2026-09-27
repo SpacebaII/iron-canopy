@@ -301,8 +301,8 @@ function chaff(S, t) {
 IC.flares = flares; IC.chaffFx = chaff;
 
 /* ---------- our strike weapons ----------
-   targets: enemy site, launcher (tel), enemy ground formation (gunit), enemy convoy (evehicle) */
-IC.aimOf = tg => tg.tel || tg.gunit || tg.evehicle ? { x: tg.kx, y: tg.ky } : { x: tg.x, y: tg.y };
+   targets: enemy site, launcher (tel) */
+IC.aimOf = tg => tg.tel ? { x: tg.kx, y: tg.ky } : { x: tg.x, y: tg.y };
 IC.fireMission = function (S, u, target, n) {
   const m = u.mags[0]; if (!m || !target) return 0;
   const M = IC.MUN[m.mun];
@@ -313,7 +313,7 @@ IC.fireMission = function (S, u, target, n) {
   const rep = { id: IC.nid('bda'), target, what: M.name, by: u.name, n: 0, hits: 0, dmg: 0, t: S.time, open: true };
   for (let i = 0; i < n && m.mag > 0; i++) {
     m.mag--; fired++;
-    const spread = target.gunit ? 30 : 8;
+    const spread = 8;
     const jit = { x: aim.x + U.rand(-spread, spread), y: aim.y + U.rand(-spread, spread) };
     const s = { id: IC.nid('s'), mun: m.mun, M, x: u.x + U.rand(-4, 4), y: u.y + U.rand(-4, 4), aim: jit, target, src: u.name, age: -i * (M.bal ? 4 : 20), side: 'us', rep, tr: null };
     if (M.bal) { const R = U.dist(s, jit); s.x0 = s.x; s.y0 = s.y; s.T = R / M.spd + 30; s.apex = Math.max(20, R * 0.025); }
@@ -359,14 +359,6 @@ function strikeImpact(S, s) {
     else if (!s.reported) { s.reported = true; if (rep) rep.empty = true; }
     return done();
   }
-  if (tg.gunit) {
-    for (const g of S.gunits) if (g.side === 'them' && !g.dead && U.dxy(g.x, g.y, s.x, s.y) < 90) { const k = s.M.dmg * 0.09; g.str -= k; g.mor -= 1.5; if (rep) { rep.hits++; rep.dmg += k; } }
-    return done();
-  }
-  if (tg.evehicle) {
-    for (const v of S.evehicles) if (!v.dead && U.dxy(v.x, v.y, s.x, s.y) < 30) { IC.enemyConvoyHit(S, v, s.src); if (rep) rep.hits++; }
-    return done();
-  }
   const pk = tg.pk >= 2 ? 0.9 : 0.45;
   if (Math.random() < pk) { IC.siteDamaged(S, tg, s.M.dmg, s.src, true); if (rep) { rep.hits++; rep.dmg += s.M.dmg; } }
   done();
@@ -378,8 +370,6 @@ IC.bdaReport = function (S, rep) {
   const tg = rep.target;
   let text;
   if (tg.tel) text = rep.kill ? `${tg.name} destroyed.` : rep.empty ? `Nothing at the aim point: the launcher had moved.` : 'No confirmed hits.';
-  else if (tg.gunit) text = rep.hits ? `${tg.name} hit ${rep.hits} times, est. −${Math.round(rep.dmg)}% strength.` : 'The formation had moved; no confirmed hits.';
-  else if (tg.evehicle) text = rep.hits ? `${rep.hits} trucks destroyed.` : 'Convoy missed.';
   else text = tg.destroyed ? `${tg.name} destroyed.` : rep.hits ? `${rep.hits} of ${rep.n} hit. ${tg.name} about ${Math.round(100 - tg.hp / tg.max * 100)}% damaged.` : `All ${rep.n} missed.`;
   rep.text = text;
   S.reports.unshift(rep); if (S.reports.length > 20) S.reports.length = 20;

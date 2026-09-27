@@ -18,12 +18,10 @@ IC.MUN = {
   AAM: { name: 'Radar air-to-air missile', short: 'AAM', seeker: 'ARH', cost: 0, w: 0, prod: 0, range: 450, spd: 13, pk: 0.72, alt: [0, 20], vs: { air: 1, drone: 1, cm: 0.8, heli: 1, ga: 1 }, air: true },
   CRS: { name: 'Land-attack cruise missile', short: 'CRS', cost: 3, w: 3, prod: 3000, range: 5000, spd: 2.6, dmg: 55, strike: true },
   SRB: { name: 'Tactical ballistic missile', short: 'TBM', cost: 5, w: 6, prod: 4800, range: 3000, spd: 12, dmg: 80, strike: true, bal: true },
-  RKT: { name: 'Guided rocket', short: 'RKT', cost: 0.3, w: 0.15, prod: 180, range: 800, spd: 9, dmg: 14, strike: true, bal: true },
-  ATG: { name: 'Anti-tank missile kit', short: 'ATGM', cost: 0.4, w: 0.5, prod: 300, ground: true },
-  SUP: { name: 'Supply pallet', short: 'SUP', cost: 0.25, w: 1, prod: 0, ground: true }
+  RKT: { name: 'Guided rocket', short: 'RKT', cost: 0.3, w: 0.15, prod: 180, range: 800, spd: 9, dmg: 14, strike: true, bal: true }
 };
-IC.MUN_ORDER = ['IR', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT', 'ATG'];
-IC.STOCK_KEYS = IC.MUN_ORDER.concat(['SUP']);
+IC.MUN_ORDER = ['IR', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT'];
+IC.STOCK_KEYS = IC.MUN_ORDER.slice();
 IC.MUN_TECH = { TBD: 'a_pac3', HAT: 'a_hatd', EXO: 'a_exo', CRS: 'x_glcm', SRB: 'x_tbm', LR: 'a_lrsam' };
 IC.SEEKER = {
   IR: 'Heat-seeking. Flares decoy it; rain and cloud cut its range.',
@@ -147,34 +145,6 @@ IC.compsOf = d => {
   return c;
 };
 
-/* ---------- Ground formations (NATO APP-6 style) ---------- */
-IC.GTYPES = {
-  inf:  { name: 'Infantry Brigade', short: 'Inf', sym: 'inf', ech: 'X', att: 0.85, def: 1.35, use: 1.0, spd: 0.12, cost: 160, soft: true,
-          desc: 'Holds ground, strongest in towns and forest. Anti-tank kits make it deadly to armor.' },
-  mech: { name: 'Mechanized Brigade', short: 'Mech', sym: 'mech', ech: 'X', att: 1.35, def: 1.2, use: 1.5, spd: 0.2, cost: 260,
-          desc: 'Infantry in armored carriers. Good at everything, great at nothing.' },
-  arm:  { name: 'Armored Brigade', short: 'Armd', sym: 'armor', ech: 'X', att: 1.9, def: 1.1, use: 2.0, spd: 0.2, cost: 340, armor: true,
-          desc: 'Tanks. The hammer for attacks and counterattacks. Vulnerable to anti-tank missiles and attack helicopters.' },
-  art:  { name: 'Artillery Brigade', short: 'Arty', sym: 'arty', ech: 'X', att: 0, def: 0.3, fire: 1.5, use: 1.6, spd: 0.15, cost: 220,
-          desc: 'Fire support for its own and neighbouring sectors. Stays behind the line.' }
-};
-IC.GORDERS = {
-  hold:    { name: 'Hold', key: 'Y', desc: 'Defend the sector where it stands.' },
-  dig:     { name: 'Dig in', key: 'D', desc: 'Build fighting positions: much stronger in defense, cannot attack. Moving loses the work.' },
-  attack:  { name: 'Attack', key: 'R', desc: 'Push the line forward in its sector. Needs a clear edge in force.' },
-  defend:  { name: 'Defend town', key: 'T', desc: 'Garrison a town. The town holds while the brigade does, even if the line passes it.' },
-  reserve: { name: 'Reserve', key: 'U', desc: 'Wait behind the line and counterattack wherever the line bends.' },
-  refit:   { name: 'Refit', key: 'O', desc: 'Pull back to rebuild strength with replacements.' }
-};
-IC.TERRAIN_DEF = { urban: 1.5, forest: 1.25, hills: 1.2, river: 1.3, open: 1 };
-IC.TRAITS = {
-  aggressive:  { name: 'Aggressive', desc: 'Counterattacks early. +20% attack, +15% losses.' },
-  cautious:    { name: 'Cautious', desc: 'Trades ground for lives. −20% losses, yields ground faster.' },
-  logistician: { name: 'Logistician', desc: 'Supply lasts 25% longer.' },
-  gunner:      { name: 'Artillerist', desc: '+30% artillery effect.' },
-  engineer:    { name: 'Engineer', desc: 'Digs in twice as fast.' }
-};
-IC.CMD_NAMES = ['Gen. Anna Rudek', 'Gen. Pavel Ostrin', 'Gen. Lina Sorvan', 'Gen. Tomas Brell', 'Gen. Iva Kastell', 'Gen. Emil Draganov', 'Gen. Sofia Marr', 'Gen. Viktor Hale', 'Gen. Oren Laskar', 'Gen. Mira Tenne'];
 IC.ADVISORS = {
   CDS: { name: 'Gen. Mara Voss', role: 'Chief of Defence', tag: 'CDS' },
   ADA: { name: 'Col. Teodor Ashe', role: 'Air Defence Command', tag: 'AD' },
@@ -251,37 +221,29 @@ IC.TECH = [
   { id: 'x_glcm', cat: 'strike', name: 'Ground-launched cruise missiles', cost: 200, time: 3600, req: [], desc: 'Deep strike on enemy bases.' },
   { id: 'x_tbm',  cat: 'strike', name: 'Tactical ballistic missiles', cost: 350, time: 5400, req: ['x_glcm'], desc: 'Fast strike on mobile launchers.' },
   { id: 'x_isr',  cat: 'strike', name: 'Long-endurance ISR', cost: 100, time: 1800, req: [], desc: '+1 ISR drone; ISR drones see 60 km instead of 45.' },
-  { id: 'g_atgm', cat: 'ground', name: 'Improved anti-tank missiles', cost: 150, time: 2700, req: [], desc: 'Anti-tank teams hit armor 20% harder.' },
-  { id: 'g_fpv',  cat: 'ground', name: 'FPV drone companies', cost: 180, time: 3600, req: [], desc: 'Front-line brigades inflict 25% more losses.' },
-  { id: 'g_fort', cat: 'ground', name: 'Field engineering', cost: 120, time: 2400, req: [], desc: 'Brigades dig in twice as fast and deeper.' },
-  { id: 'g_arty', cat: 'ground', name: 'Counter-battery fire control', cost: 200, time: 3600, req: ['g_fort'], desc: 'Artillery 30% more effective.' },
   { id: 'l_lines',cat: 'log', name: 'Extra production lines', cost: 250, time: 4500, req: [], desc: '+1 production line at every factory.' },
   { id: 'l_trucks',cat:'log', name: 'Heavy trucks', cost: 120, time: 2400, req: [], desc: 'Convoys carry 50% more and drive faster.' },
-  { id: 'l_ind',  cat: 'log', name: 'War industry', cost: 300, time: 5400, req: ['l_lines'], desc: 'Factories produce supply 50% faster.' },
   { id: 'l_rrr',  cat: 'log', name: 'Rapid runway repair', cost: 120, time: 2400, req: [], desc: 'Base engineers repair runways and taxiways twice as fast.' },
   { id: 'f_aam',  cat: 'air', name: 'Improved AAMs', cost: 150, time: 2700, req: [], desc: 'Fighters carry 6 missiles each with better kill probability.' },
   { id: 'f_aew',  cat: 'air', name: 'Second AEW aircraft', cost: 250, time: 3600, req: ['s_esm'], desc: 'Another airborne radar.' },
-  { id: 'f_atk',  cat: 'air', name: 'Attack helicopter wing', cost: 200, time: 3600, req: [], desc: 'Another attack helicopter flight.' },
   { id: 'f_ucav', cat: 'air', name: 'Strike drones', cost: 180, time: 2700, req: [], desc: 'Two armed long-endurance drones for ISR and close support.' },
   { id: 'f_cm',   cat: 'air', name: 'Improved countermeasures', cost: 160, time: 2700, req: [], desc: 'Our aircraft carry more chaff and flares, and use them better.' }
 ];
 IC.TECH_CATS = [
   { id: 'sensor', name: 'Sensors' }, { id: 'ad', name: 'Air defense' }, { id: 'ew', name: 'Electronic warfare' },
-  { id: 'strike', name: 'Strike & ISR' }, { id: 'ground', name: 'Ground forces' }, { id: 'log', name: 'Logistics & industry' }, { id: 'air', name: 'Air force' }
+  { id: 'strike', name: 'Strike & ISR' }, { id: 'log', name: 'Logistics & industry' }, { id: 'air', name: 'Air force' }
 ];
 
 /* ---------- Air force ----------
    A flight is n aircraft that fly together. turn = turnaround on the ground. */
 IC.AIR_KIND = {
   ftr:   { name: 'Fighter flight', short: 'FTR', n: 2, spd: 2.6, dash: 3.3, endur: 7200, turn: 1200, buy: 350, cm: 8, runway: true,
-           roles: ['cap', 'intercept', 'vid', 'strike', 'cas', 'interdict'], loads: ['aa', 'strike'] },
-  atk:   { name: 'Attack helicopters', short: 'ATK', n: 2, spd: 0.8, dash: 0.9, endur: 9000, turn: 1200, buy: 180, cm: 10, reach: 2400,
-           roles: ['hstrike', 'cas'] },
+           roles: ['cap', 'intercept', 'vid', 'strike'], loads: ['aa', 'strike'] },
   ucav:  { name: 'Strike drone', short: 'UCAV', n: 1, spd: 0.6, dash: 0.7, endur: 64800, turn: 1800, buy: 90, cm: 0, runway: true,
-           roles: ['isr', 'cas', 'interdict', 'hstrike'] },
+           roles: ['isr', 'strike'] },
   aew:   { name: 'AEW aircraft', short: 'AEW', n: 1, spd: 1.6, endur: 21600, turn: 2400, buy: 500, cm: 4, runway: true, roles: ['aew'] },
   isr:   { name: 'ISR drone', short: 'ISR', n: 1, spd: 0.8, endur: 43200, turn: 1800, buy: 60, cm: 0, runway: true, roles: ['isr'] },
-  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 4, cm: 6, roles: ['hlift'] },
+  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 4, cm: 6, roles: [] },
   cargo: { name: 'Cargo aircraft', short: 'CGO', n: 1, spd: 1.7, endur: 36000, turn: 1800, buy: 60, cap: 40, cm: 4, runway: true, roles: [] }
 };
 IC.LOADOUTS = {
@@ -291,17 +253,9 @@ IC.LOADOUTS = {
 IC.GBU = { name: 'Guided bomb', short: 'GBU', spd: 2.5, dmg: 40, strike: true };
 IC.TASK_KIND = {
   cap:       { name: 'Combat air patrol', roles: ['ftr'], point: true, radius: 550 },
-  cas:       { name: 'Close air support', roles: ['atk', 'ftr', 'ucav'], front: true },
-  interdict: { name: 'Interdiction', roles: ['ftr', 'ucav'], front: true },
   isr:       { name: 'Reconnaissance', roles: ['isr', 'ucav'], point: true, radius: 450 },
   aew:       { name: 'Airborne early warning', roles: ['aew'], point: true, radius: 3200 }
 };
-IC.HLIFT = {
-  SUP:  { name: 'Supply', desc: '+30% supply', mun: 'SUP', qty: 8 },
-  ATG:  { name: 'Anti-tank kits', desc: '+10 anti-tank teams: heavy damage to armor', mun: 'ATG', qty: 8 },
-  REPL: { name: 'Replacements', desc: '+12% strength from the manpower pool', repl: 12 }
-};
-
 /* ---------- Air bases ----------
    Facilities on each base. Damage matters: a cratered runway grounds jets, a lost hangar takes its aircraft with it. */
 IC.FAC = {
@@ -316,11 +270,10 @@ IC.FAC = {
 
 /* ---------- Policy ---------- */
 IC.MOBIL = [
-  { name: 'Peacetime', tax: 1, prod: 1, up: 1, morale: 0, sup: 1, slots: 3, man: 0.5, desc: 'Normal economy. Factories on single shifts. Three procurement orders at a time.' },
-  { name: 'Partial mobilization', tax: 0.9, prod: 1.6, up: 1.15, morale: -0.06, sup: 1.8, slots: 4, man: 2, desc: 'Reservists called up, factories on double shifts, four orders at a time. Raise new brigades.' },
-  { name: 'Full mobilization', tax: 0.78, prod: 2.4, up: 1.3, morale: -0.2, sup: 2.8, slots: 5, man: 4, desc: 'The whole nation at war. Maximum output, steady strain on morale.' }
+  { name: 'Peacetime', tax: 1, prod: 1, up: 1, morale: 0, slots: 3, desc: 'Normal economy. Factories on single shifts. Three procurement orders at a time.' },
+  { name: 'Partial mobilization', tax: 0.9, prod: 1.6, up: 1.15, morale: -0.06, slots: 4, desc: 'Reservists called up, factories on double shifts, four orders at a time.' },
+  { name: 'Full mobilization', tax: 0.78, prod: 2.4, up: 1.3, morale: -0.2, slots: 5, desc: 'The whole nation at war. Maximum output, steady strain on morale.' }
 ];
-IC.MAX_BRIGADES = 12;
 
 /* ---------- Weather ---------- */
 IC.WEATHER = {

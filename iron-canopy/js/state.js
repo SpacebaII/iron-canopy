@@ -12,20 +12,20 @@ IC.newGame = function (opts) {
   const S = {
     mode, seed, world: W, lesson: opts.lesson || null,
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
-    budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9, manpower: sandbox ? 60 : 30,
+    budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
-    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, capture: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
+    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
-    vehicles: [], jobs: [], trains: [], imports: [], evehicles: [],
-    esites: [], tels: [], gunits: [], fronts: [], wrecks: [], marks: [],
+    vehicles: [], jobs: [], trains: [], imports: [],
+    esites: [], tels: [], wrecks: [], marks: [],
     tech: { done: new Set(['a_lrsam']), slots: [null, null] },
     fx: { parts: [], booms: [], texts: [], tracers: [], rings: [], fires: [], flashes: [], plumes: [], trails: [], chaff: [], shocks: [] },
     logs: [], news: [], counters: {}, sensors: [], flags: {}, reports: [],
-    stats: { kills: 0, leakers: 0, fired: 0, civLost: 0, strikes: 0, siteKills: 0, telKills: 0, gKills: 0, convoysLost: 0, acLost: 0, unitsLost: 0 },
+    stats: { kills: 0, leakers: 0, fired: 0, civLost: 0, strikes: 0, siteKills: 0, telKills: 0, convoysLost: 0, acLost: 0, unitsLost: 0 },
     nextTN: 1001, shake: 0, wind: { x: U.rand(-1, 1) * 0.6, y: U.rand(0.1, 0.6) },
     sel: null, group: [], mode2: null, hover: null,
-    layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, ground: true, airways: false },
+    layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false },
     alertCities: 0
   };
   S.terrain = IC.buildTerrain(W);
@@ -60,7 +60,6 @@ IC.newGame = function (opts) {
   const story = mode === 'story';
   if (story) IC.storyForces(S); else if (mode !== 'academy') startingForces(S, sandbox);
   IC.enemyInit(S);
-  IC.groundInit(S, mode === 'academy');
   if (mode !== 'academy') IC.avInit(S);
   IC.aspInit(S);
   IC.civilInit(S);
@@ -96,7 +95,7 @@ function startingForces(S, sandbox) {
   };
   const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
   dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
-  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24, ATG: 20, SUP: 200 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12, ATG: 10, SUP: 120 };
+  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12 };
   for (const k in stock) dep.inv[k] = stock[k];
   for (let i = 0; i < 2; i++) IC.addTruck(S, dep);
   const fab = S.byId.ab_fwd || cap;
@@ -232,7 +231,6 @@ IC.detonate = function (S, x, y, dmg, src) {
     if (d < 30) { IC.hurtUnit(S, u, dmg * (1 - d / 30 * 0.6), src2); hit = hit || u; }
   }
   for (const v of S.vehicles) if (!v.dead && U.dxy(x, y, v.x, v.y) < 3 + dmg * 0.05) { IC.hitConvoy(S, v, src2.d ? src2.d.code : 'strike'); hit = hit || v; }
-  for (const gu of S.gunits) if (gu.side === 'us' && !gu.dead && U.dxy(x, y, gu.x, gu.y) < 45) { gu.str = Math.max(0, gu.str - dmg * 0.05); gu.mor -= dmg * 0.03; hit = hit || gu; }
   if (hit && dmg > 25 && !aptHit) IC.addFire(S, x + U.rand(-4, 4), y + U.rand(-4, 4), 0.6 + dmg / 120, 900 + dmg * 20);
   const lbl = src2.tn ? `TN ${src2.tn} ${src2.d.code}` : `Undetected ${src2.d ? src2.d.code : 'weapon'}`;
   if (hit) { S.stats.leakers++; IC.log(S, 'leak', 'IMPACT', `${hit.name} hit by ${lbl}.`, { x, y }); IC.emit(S, 'impact', { x, y, hit, src: src2 }); }

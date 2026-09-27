@@ -15,12 +15,12 @@ function depot(S, stock) {
   const W = S.world;
   const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
   dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
-  Object.assign(dep.inv, stock || { IR: 12, SR: 24, MR: 12, LR: 8, TBD: 8, RKT: 24, ATG: 16, SUP: 150 });
+  Object.assign(dep.inv, stock || { IR: 12, SR: 24, MR: 12, LR: 8, TBD: 8, RKT: 24 });
   return dep;
 }
 const fwd = S => S.byId.ab_fwd || IC.bases(S)[0];
 const rear = S => S.byId.ab_rear || IC.bases(S)[0];
-const frontA = S => S.fronts.find(f => f.key === 'A');
+const frontA = S => S.world.fronts.find(f => f.key === 'A');
 function borderTown(S) { return IC.cities(S).filter(c => !c.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0]; }
 function flight(S, kind, name, base) { const r = IC.newFlight(S, kind, name, base.id); S.roster.push(r); IC.assignSlots(S, base); return r; }
 function focus(S, p, z) { S.camp.focus = { x: p.x, y: p.y, z: z || 0.35 }; }
@@ -35,9 +35,8 @@ function reaper(S) {
 function launcherBack(S) {
   if (S.units.some(u => u.type === 'mlrs' && !u.dead) || (S.reserve.mlrs || 0) > 0) return;
   S.reserve.mlrs = 1;
-  IC.say(S, 'ARMY', 'We lost the MLRS. Another launcher is in the arsenal: deploy it well clear of the town the rockets are falling on.');
+  IC.say(S, 'CDS', 'We lost the MLRS. Another launcher is in the arsenal: deploy it well clear of the town the rockets are falling on.');
 }
-function sectorNear(S, f, p) { let best = 0, bd = 1e9; f.sectors.forEach((s, i) => { const d = U.dist(IC.secGeom(f, i), p); if (d < bd) { bd = d; best = i; } }); return best; }
 const affCount = (S, set) => S.threats.filter(t => !t.dead && t.det && set.includes(t.aff)).length;
 /* a forced enemy operation is over when nothing it launched is still flying or waiting to launch */
 function resolved(S, op) {
@@ -150,30 +149,13 @@ IC.LESSONS = [
     ]
   },
   {
-    id: 'airbase', title: 'The Air Base', sub: 'A raid, the damage, repairs, and the fight on the ground',
-    learn: ['What a raid does to a base', 'Repairing runways and hangars', 'Helicopter attack and helicopter lift', 'Push or dig in'],
+    id: 'airbase', title: 'The Air Base', sub: 'A raid, the damage and the repairs',
+    learn: ['What a raid does to a base', 'Repairing runways and hangars'],
     setup(S) {
-      const b = fwd(S), f = frontA(S), W = S.world;
+      const b = fwd(S);
       depot(S);
       put(S, 'mrsam', b, 120, 250, { emcon: 'on' }); put(S, 'shorad', b, 50, 120, { emcon: 'on' }); put(S, 'lr3d', b, 350, 600); put(S, 'gf', b, 150, 300);
-      flight(S, 'ftr', 'VIPER 1', b); flight(S, 'ftr', 'VIPER 2', b); flight(S, 'atk', 'TALON 1', b); flight(S, 'heli', 'HOOK 1', b); flight(S, 'ftr', 'LANCE 1', b);
-      // the fight on the ground near the base
-      const town = IC.cities(S).filter(c => !c.capital).sort((a, c) => U.dist(a, b) + IC.hostileBorderDist(a.x, a.y) - U.dist(c, b) - IC.hostileBorderDist(c.x, c.y))[0] || borderTown(S);
-      S.camp.town = town;
-      f.active = true; f.t0 = S.time;
-      const si = sectorNear(S, f, town);
-      const ours = IC.makeBrigade(S, 'us', 'inf', f, town.x, town.y);
-      IC.orderGround(S, ours, 'hold', { sector: si, manual: true }); ours.manual = true;
-      const p = IC.gTargetPos(S, ours); ours.x = p.x; ours.y = p.y; ours.kit.atgm = 2; ours.str = 70;
-      S.camp.ours = ours;
-      const st = S.esites.find(s => s.nat === 'A' && s.kind === 'staging');
-      const G = IC.secGeom(f, si);
-      const en = IC.makeBrigade(S, 'them', 'arm', f, G.x - G.nx * 400, G.y - G.ny * 400, 'A');
-      en.sector = si; en.order = 'reserve'; en.str = 95;
-      const en2 = IC.makeBrigade(S, 'them', 'mech', f, G.x - G.nx * 500, G.y - G.ny * 500, 'A');
-      en2.sector = si; en2.order = 'reserve';
-      S.camp.enemy = en;
-      f.ecmd.nextPlan = 1e12;
+      flight(S, 'ftr', 'VIPER 1', b); flight(S, 'ftr', 'VIPER 2', b); flight(S, 'ftr', 'LANCE 1', b);
       for (const s of S.esites) s.dormant = !['airbase', 'mrbm', 'bm', 'staging', 'supply'].includes(s.kind);
       IC.enemyStageTels(S, b);
       focus(S, b, 0.3);
@@ -186,41 +168,9 @@ IC.LESSONS = [
         done: S => S.time - S.camp.stepT > 1200 && S.camp.raid.every(op => resolved(S, op)) },
       { text: S => `Damage report. Select ${fwd(S).name} to see what was hit.`, hint: { at: S => fwd(S) }, done: S => S.sel && S.sel.ref === fwd(S) },
       { text: () => 'The panel shows the runway, hangars and aircraft. Engineers already started on the runway. Rebuild or repair a hangar too: engineers work a couple of jobs at once, so queue what matters first.', hint: { el: 'insp' }, done: S => IC.baseStatus(S, fwd(S)).runway && !!S.flags.hangarWork },
-      { text: S => `Meanwhile the enemy ${S.camp.enemy.name} is attacking towards ${S.camp.town.name}. Send TALON 1 against it: select the red diamond and choose Helicopter strike.`,
-        start(S) { if (!S.roster.some(r => r.kind === 'atk' && r.st !== 'lost')) { flight(S, 'atk', 'TALON 2', fwd(S)); IC.say(S, 'AIR', 'TALON 1 was lost on the ground. TALON 2 has been flown in to the forward base.'); } const f = frontA(S), en = S.camp.enemy; const si = en.sector; for (const g of S.gunits) if (g.side === 'them') { g.order = 'attack'; g.sector = si; } const s = f.sectors[si]; s.eAttack = true; s.main = true; s.eUntil = S.time + 5 * 3600; s.gain0 = 0; en.known = true; en.kx = en.x; en.ky = en.y; en.kt = S.time; },
-        ensure(S) { if (!S.roster.some(r => r.kind === 'atk' && r.st !== 'lost')) { flight(S, 'atk', 'TALON ' + (S.roster.filter(r => r.kind === 'atk').length + 1), fwd(S)); IC.say(S, 'AIR', 'We lost that attack flight. Another has been flown in to the forward base.'); } const e = S.camp.enemy; if (e.dead) S.flags.hstrike = true; else { e.known = true; e.kx = e.x; e.ky = e.y; e.kt = S.time; } },
-        hint: { at: S => ({ x: S.camp.enemy.kx, y: S.camp.enemy.ky }) }, done: S => !!S.flags.hstrike },
-      { text: S => `The attack hurt their armor. Now decide: order ${S.camp.ours.name} to Attack while they are weak, or to Dig in and let them break on prepared positions.`, hint: { at: S => S.camp.ours }, done: S => S.camp.ours.manual && (S.camp.ours.order === 'attack' || S.camp.ours.order === 'dig') && S.flags.gorderSet },
-      { text: S => `${S.camp.ours.name} is short of anti-tank missiles. Send a transport helicopter with anti-tank kits or replacements: select the brigade and choose Air lift.`, start(S) { if (!S.roster.some(r => r.kind === 'heli' && r.st !== 'lost')) flight(S, 'heli', 'HOOK 2', fwd(S)); }, done: S => !!S.flags.lift },
-      { text: S => `Hold ${S.camp.town.name} for one more hour.`, start(S) { S.camp.holdT = S.time + 3600; }, done: S => S.time > S.camp.holdT },
-      { text: () => 'The base is flying again and the line held. Lesson complete.', done: () => true, wait: 40 }
+      { text: () => 'The base is flying again. Lesson complete.', done: () => true, wait: 40 }
     ],
-    fail: S => S.camp.town && S.camp.town.owner === 'enemy' ? `${S.camp.town.name} fell.` : null,
     score: S => { const lost = S.stats.acLost; return lost <= 1 ? 3 : lost <= 3 ? 2 : 1; }
-  },
-  {
-    id: 'ground', title: 'Holding the Line', sub: 'Sectors, stances, reserves and towns',
-    learn: ['Reading the front', 'Stances and commanders', 'Defend a town', 'Armor in reserve'],
-    setup(S) {
-      const f = frontA(S); depot(S);
-      f.active = true; f.t0 = S.time; f.ecmd.nextPlan = S.time + 1800;
-      const town = borderTown(S); S.camp.town = town;
-      const types = ['inf', 'inf', 'mech', 'arm', 'art'];
-      types.forEach((t, i) => { const g = IC.makeBrigade(S, 'us', t, f, town.x, town.y); g.sector = t === 'art' ? Math.floor(f.sectors.length / 2) : i % f.sectors.length; g.order = t === 'arm' ? 'attack' : 'hold'; const p = IC.gTargetPos(S, g); g.x = p.x; g.y = p.y; });
-      const st = S.esites.find(s => s.nat === 'A' && s.kind === 'staging');
-      for (const t of ['arm', 'arm', 'mech', 'mech', 'inf', 'inf', 'art']) { const g = IC.makeBrigade(S, 'them', t, f, st.x + U.rand(-200, 200), st.y + U.rand(-200, 200), 'A'); g.order = 'reserve'; }
-      for (const s of S.esites) s.dormant = s.kind !== 'staging' && s.kind !== 'supply';
-      focus(S, town, 0.12);
-    },
-    steps: [
-      { text: () => 'Open the Army war room (G). Each sector shows the force ratio, how much ground is lost, and how dug in we are.', hint: { el: 'rail-army' }, done: S => S.flags.room_army },
-      { text: () => 'Set the front stance to Active defense: the front commander will counterattack lost ground with armor but otherwise dig in.', done: S => S.fronts.find(f => f.key === 'A').stance === 'active' },
-      { text: S => `Order an infantry brigade to Defend ${S.camp.town.name}. A garrisoned town holds while its garrison does, even if the line flows around it.`, done: S => S.gunits.some(g => g.side === 'us' && g.order === 'defend') },
-      { text: () => 'Pull the armored brigade back into Reserve: it counterattacks wherever the line bends instead of wasting itself on a quiet sector.', done: S => S.gunits.some(g => g.side === 'us' && g.type === 'arm' && g.order === 'reserve' && g.manual) },
-      { text: S => `They are coming. Hold ${S.camp.town.name} for four hours.`, start(S) { S.camp.holdT = S.time + 14400; }, done: S => S.time > S.camp.holdT },
-      { text: () => 'The line held. Terrain, positions and reserves beat raw numbers. Lesson complete.', done: () => true, wait: 40 }
-    ],
-    fail: S => S.camp.town && S.camp.town.owner === 'enemy' ? `${S.camp.town.name} fell.` : null
   },
   {
     id: 'strike', title: 'Fire Back', sub: 'Find the launcher, hit it before it moves',
@@ -301,9 +251,6 @@ IC.on((S, type, d) => {
   if (type === 'select' && d && d.kind === 'track') (S.flags.viewed = S.flags.viewed || new Set()).add(d.ref.id);
   if (type === 'warroom') S.flags['room_' + d] = true;
   if (type === 'doctrine') S.flags.doctrine = true;
-  if (type === 'hstrike' && d.rep && d.rep.hits) S.flags.hstrike = true;
-  if (type === 'lift') S.flags.lift = true;
-  if (type === 'gorder' && d.u.side === 'us') S.flags.gorderSet = true;
   if (type === 'baseWorkDone' && d.w && /hangar|shelter/.test(d.w.label.toLowerCase())) S.flags.hangarWork = true;
   if (type === 'aptBuilt' && d.part && (d.part.kind === 'hangar' || d.part.kind === 'has')) S.flags.hangarWork = true;
 });

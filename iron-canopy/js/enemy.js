@@ -26,9 +26,9 @@ IC.enemyInit = function (S) {
   }
   S.enemy = {
     known: new Map(), convoys: new Map(), escal: 0, escalBase: 0, nextThink: S.time + 1800, retaliate: 0, ops: [], pending: [],
-    cd: {}, patrolT: 0, intelT: 0, regenT: 0, convoyT: 600, mood: 'massing on the border', will: 100, allow: null, war: false,
+    cd: {}, patrolT: 0, intelT: 0, regenT: 0, mood: 'massing on the border', will: 100, allow: null, war: false,
     plan: null, harassT: S.time + 3600, danger: {}, method: { cm: 1, bal: 1, drones: 1, sead: 1, bomber: 1, disguise: 1, low: 1 },
-    objW: { airbase: 1.3, ad: 1, industry: 0.9, terror: 0.6, logistics: 0.7, front: 0.8 }, history: []
+    objW: { airbase: 1.3, ad: 1, industry: 0.9, terror: 0.6, logistics: 0.7 }, history: []
   };
   for (const u of S.units) IC.enemyLearn(S, u, 'prewar');
 };
@@ -111,10 +111,9 @@ function targets(S, purpose) {
     if (purpose === 'logistics' && k.kind === 'depot') w = 14;
     if (purpose === 'bal' && (k.type === 'lrsam' || k.type === 'hatd' || k.type === 'exo' || k.type === 'bmd' || k.kind === 'launcher' || k.ref.central)) w = 14;
     if (purpose === 'emit' && (k.kind === 'radar' || k.kind === 'sam' || k.kind === 'jammer') && k.ref.radarOn && !k.ref.dead) w = 10;
-    if (purpose === 'front' && IC.hostileBorderDist(k.x, k.y) < 1400) w = { sam: 10, radar: 12, launcher: 12, depot: 10, pointdef: 5, jammer: 8 }[k.kind] || 0;
     if (w) L.push({ x: k.x, y: k.y, ref: k.ref, name: k.ref.name, w });
   }
-  if (purpose === 'front' || purpose === 'convoy' || purpose === 'logistics') for (const c of S.enemy.convoys.values()) L.push({ x: c.x, y: c.y, ref: c.ref, name: c.ref.name, w: purpose === 'convoy' ? 10 : 6 });
+  if (purpose === 'convoy' || purpose === 'logistics') for (const c of S.enemy.convoys.values()) L.push({ x: c.x, y: c.y, ref: c.ref, name: c.ref.name, w: purpose === 'convoy' ? 10 : 6 });
   return L;
 }
 function pickTarget(S, purpose) { const L = targets(S, purpose); return L.length ? U.wpick(L.map(t => [t, t.w])) : null; }
@@ -345,12 +344,11 @@ IC.enemyStageTels = function (S, obj) {
 };
 
 /* ---------- the campaign: objective → probe → harass → strike → assess ---------- */
-const OBJ_NAMES = { airbase: 'neutralize an air base', ad: 'break the air defenses', industry: 'cripple war industry', terror: 'terrorize the cities', logistics: 'cut supply lines', front: 'support the ground offensive' };
+const OBJ_NAMES = { airbase: 'neutralize an air base', ad: 'break the air defenses', industry: 'cripple war industry', terror: 'terrorize the cities', logistics: 'cut supply lines' };
 function chooseObjective(S, E) {
   const opts = [];
   for (const k in E.objW) {
-    if (k === 'front' && !S.fronts.some(f => f.active)) continue;
-    const tg = pickTarget(S, k === 'ad' ? 'ad' : k === 'front' ? 'front' : k);
+    const tg = pickTarget(S, k);
     if (!tg) continue;
     let w = E.objW[k];
     if (k === 'airbase') w *= 1 + S.air.filter(a => a.kind === 'ftr').length * 0.2;
@@ -463,7 +461,7 @@ const OPS = {
     return IC.spawnThreat(S, 'isr', s.x, s.y, { area, phase: 'out', loiterT: U.rand(2400, 4800), home: { x: s.x, y: s.y }, site: s, origin: s });
   },
   lm(S, E) {
-    const tgt = pickTarget(S, Math.random() < 0.5 ? 'convoy' : 'front');
+    const tgt = pickTarget(S, Math.random() < 0.5 ? 'convoy' : 'ad');
     if (!tgt) return false;
     const s = S.esites.filter(x => x.kind === 'drone' && alive(x) && (x.inv.lm || 0) >= 2).sort((a, b) => U.dist(a, tgt) - U.dist(b, tgt))[0];
     if (!s) return false;
@@ -485,7 +483,6 @@ const OPS = {
     else {
       for (const i of S.infra) if (!i.offline && i.owner === 'us' && i.kind !== 'bridge' && U.dist(i, fp) < 780) cands.push({ x: i.x, y: i.y, ref: i, name: i.name, w: i.kind === 'city' ? 6 : 4 });
       for (const k of S.enemy.known.values()) if (!k.ref.dead && U.dist(k, fp) < 780) cands.push({ x: k.x, y: k.y, ref: k.ref, name: k.ref.name, w: 8 });
-      for (const g of S.gunits) if (g.side === 'us' && !g.dead && U.dist(g, fp) < 780 && S.time - (g.spottedT || -1e9) < 7200) cands.push({ x: g.x, y: g.y, ref: g, name: g.name, w: 7 });
     }
     if (!cands.length) return false;
     const tgt = U.wpick(cands.map(c => [c, c.w]));
@@ -494,21 +491,6 @@ const OPS = {
     const op = newOp(S, 'rkt', `rocket salvo at ${tgt.name}`);
     const aims = []; for (let i = 0; i < n; i++) aims.push({ type: 'rkt', x: tgt.x + U.rand(-25, 25), y: tgt.y + U.rand(-25, 25), ref: tgt.ref });
     tel.mission = { aims, op, fireAt: 0 }; tel.state = 'moving'; tel.route = [fp];
-    return op;
-  },
-  ecas(S, E, g0) {
-    const ours = S.gunits.filter(g => g.side === 'us' && !g.dead && g.front && g.front.active && g.order !== 'refit');
-    if (!ours.length) return false;
-    const g = g0 || U.pick(ours);
-    const b = S.esites.filter(s => s.kind === 'airbase' && alive(s) && s.acAvail.str >= 2 && s.nat === g.front.key).sort((a, c) => U.dist(a, g) - U.dist(c, g))[0];
-    if (!b) return false;
-    const op = newOp(S, 'ecas', `air strike on ${g.name}`);
-    const dir = Math.atan2(g.y - b.y, g.x - b.x);
-    for (let i = 0; i < 2; i++) {
-      b.acAvail.str--;
-      const rp = { x: g.x - Math.cos(dir) * 560, y: g.y - Math.sin(dir) * 560 };
-      later(S, i * 40, () => IC.spawnThreat(S, 'str', b.x, b.y, { home: b, mission: 'strike', route: [rp], tgt: { x: g.x, y: g.y, ref: g, name: g.name }, op }));
-    }
     return op;
   },
   hgv(S, E, obj) {
@@ -673,12 +655,6 @@ function arriveAir(S, t) {
       home(); break;
     }
     case 'strike': {
-      // brigades carry their own shoulder-fired missiles
-      const bg = t.tgt.ref && t.tgt.ref.gunit ? t.tgt.ref : S.gunits.find(g => g.side === 'us' && !g.dead && U.dist(g, t) < 500);
-      if (bg && bg.kit.mpd > 0 && Math.random() < 0.12 + bg.kit.mpd * 0.03 * IC.wx(S).ir) {
-        if (t.cm > 0 && Math.random() < 0.5) { t.cm--; IC.flares(S, t); }
-        else { IC.killThreat(S, t, `${bg.name} air defense`); bg.kit.mpd = Math.max(0, bg.kit.mpd - 1); return; }
-      }
       for (let i = 0; i < 2; i++) {
         const tg = t.tgt.ref && t.tgt.ref.side === 'us' && !t.tgt.ref.dead ? t.tgt.ref : t.tgt;
         const aim = tg.fac ? aimAtBase(tg) : { x: tg.x + U.rand(-10, 10), y: tg.y + U.rand(-10, 10) };
@@ -709,37 +685,10 @@ function arriveAir(S, t) {
   }
 }
 
-/* ---------- enemy convoys (interdiction targets) ---------- */
-function runConvoys(S) {
-  for (const f of S.fronts) {
-    if (!f.active) continue;
-    const st = S.esites.find(s => s.nat === f.key && s.kind === 'staging' && !s.destroyed);
-    if (!st) continue;
-    for (const d of S.esites.filter(s => s.nat === f.key && s.kind === 'supply' && !s.destroyed)) {
-      if (d.stock > 240 || S.evehicles.filter(v => v.to === d && !v.dead).length) continue;
-      S.evehicles.push({ id: IC.nid('ev'), evehicle: true, name: `${S.world.names[f.key]} supply convoy`, x: st.x, y: st.y, h: 0, route: [{ x: d.x, y: d.y }], to: d, trucks: 4, load: 60, kx: 0, ky: 0, kt: -1e9, known: false });
-    }
-  }
-}
-IC.enemyConvoyHit = function (S, v, by) {
-  if (v.dead) return;
-  v.trucks--; v.load = Math.max(0, v.load - 15);
-  IC.explode(S, v.x, v.y, 0.6, 'us');
-  S.wrecks.push({ x: v.x + U.rand(-4, 4), y: v.y + U.rand(-4, 4), type: 'etruck', t: S.time, h: v.h || 0 });
-  if (v.trucks <= 0) { v.dead = true; IC.log(S, 'kill', 'INTERDICT', `Enemy supply convoy destroyed by ${by}.`, v); S.enemy.will = Math.max(0, S.enemy.will - 0.8); IC.emit(S, 'convoyKill', v); }
-};
-function moveConvoys(S, dt) {
-  for (const v of S.evehicles) {
-    if (v.dead) continue;
-    if (IC.followRoute(v, dt, 0.2, 0.2)) { v.dead = true; v.arrived = true; v.to.stock = Math.min(300, (v.to.stock || 0) + v.load); }
-  }
-  S.evehicles = S.evehicles.filter(v => !v.dead);
-}
-
 /* ---------- commander ---------- */
 function ensurePatrols(S) {
   for (const b of S.esites.filter(s => s.kind === 'airbase' && !s.destroyed && !s.dormant)) {
-    const f = S.fronts.find(x => x.key === b.nat); if (!f) continue;
+    const f = S.world.fronts.find(x => x.key === b.nat); if (!f) continue;
     const up = S.threats.filter(t => t.mission === 'patrol' && t.home === b && !t.dead).length;
     if (up >= 1 || b.acAvail.ftr < 1) continue;
     const p = f.pts[U.randi(0, f.pts.length - 1)];
@@ -772,7 +721,6 @@ IC.enemyForceOp = function (S, name, target, n) {
   if (name === 'recon') return OPS.recon(S, E, target);
   if (name === 'rkt') return OPS.rkt(S, E, target);
   if (name === 'lm') return OPS.lm(S, E);
-  if (name === 'ecas') return OPS.ecas(S, E, target);
   if (name === 'hgv') return OPS.hgv(S, E, obj);
   const op = newOp(S, name, `${name} at ${obj ? obj.name : 'target'}`);
   let T = S.time + (n && n.T || 1200);
@@ -800,7 +748,6 @@ IC.on((S, type, d) => {
   }
   if (type === 'impact' && d.src && d.src.op) { const op = d.src.op; const bt = op.byType || (op.byType = {}); (bt[d.src.type] = bt[d.src.type] || { n: 0, hit: 0 }); bt[d.src.type].n++; bt[d.src.type].hit++; }
   if (type === 'launch' && d.t.op) d.t.op.shots++;
-  if (type === 'assault' && S.enemy.war) { OPS.ecas(S, S.enemy); if (Math.random() < 0.6) OPS.rkt(S, S.enemy, IC.secGeom(d.f, d.si)); }
 });
 
 IC.enemyTick = function (S, dt) {
@@ -811,13 +758,10 @@ IC.enemyTick = function (S, dt) {
     if (due.length) { E.pending = E.pending.filter(p => p.t > S.time); for (const p of due) p.fn(); }
   }
   IC.updateTels(S, dt);
-  moveConvoys(S, dt);
   E.intelT -= dt;
   if (E.intelT <= 0) { E.intelT = 30; updateIntel(S); for (const k in E.danger) E.danger[k] *= 0.995; }
   E.patrolT -= dt;
   if (E.patrolT <= 0) { E.patrolT = 300; ensurePatrols(S); }
-  E.convoyT -= dt;
-  if (E.convoyT <= 0) { E.convoyT = 1200; runConvoys(S); }
   E.regenT -= dt;
   if (E.regenT <= 0) {
     E.regenT = 60;
@@ -859,7 +803,7 @@ IC.enemyTick = function (S, dt) {
   if (S.time > (E.nextThink || 0)) {
     E.nextThink = S.time + U.rand(2400, 5400) / (0.6 + E.escal * 0.3);
     const r = Math.random();
-    if (r < 0.25 && can(S, 'lm') && S.fronts.some(f => f.active)) OPS.lm(S, E);
+    if (r < 0.25 && can(S, 'lm')) OPS.lm(S, E);
     else if (r < 0.4 && can(S, 'rkt')) OPS.rkt(S, E);
     else if (r < 0.5 && can(S, 'recon')) OPS.recon(S, E);
     else if (r < 0.56 && can(S, 'hgv')) OPS.hgv(S, E);

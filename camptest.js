@@ -3,7 +3,7 @@ const IC = require('./headless.js'); const U = IC.U;
 const seed = +(process.argv[2] || 42), hours = +(process.argv[3] || 72), passive = process.argv[4] === 'passive';
 const S = IC.newGame({ seed, mode: 'campaign' });
 const t0 = S.time;
-const fA = S.fronts.find(f => f.key === 'A'), fB = S.fronts.find(f => f.key === 'B');
+const fA = S.world.fronts.find(f => f.key === 'A'), fB = S.world.fronts.find(f => f.key === 'B');
 const cap = IC.cap(S), ab = S.byId.ab_fwd || cap, abr = S.byId.ab_rear || cap;
 const fac = S.infra.filter(i => i.kind === 'factory');
 const mid = f => f.pts[Math.floor(f.pts.length / 2)];
@@ -34,16 +34,12 @@ for (let i = 0; i < hours * 3600 / 0.25 && !S.over; i++) {
     for (const u of S.units) { if (u.d.weapon === 'sam' && u.emcon === 'off') u.emcon = 'ambush'; if ((u.type === 'shorad' || u.type === 'spaag' || u.type === 'gf') && u.emcon !== 'on') u.emcon = 'on'; if (Object.values(u.comp).some(v => v < 0.5) && !u.repairing) IC.repairUnit(S, u); }
     if (S.budget > 350 && S.orders.length < IC.slots(S)) { const pick = U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'manpads', 'mr3d']); IC.order(S, pick); }
     if (S.budget > 250) for (const f of fac) { if (f.queue.length < 2 && !f.offline) IC.orderProduction(S, f, U.pick(['SR', 'MR', 'SR', 'LR', 'IR']), 4); }
-    for (const id of ['a_pac3', 's_esm', 'a_remote', 'g_fort', 'l_rrr', 's_nctr', 'e_eccm', 'x_glcm', 'a_cram']) IC.startResearch(S, id);
+    for (const id of ['a_pac3', 's_esm', 'a_remote', 'l_rrr', 's_nctr', 'e_eccm', 'x_glcm', 'a_cram']) IC.startResearch(S, id);
     if (!did.cap) { did.cap = 1; IC.addTask(S, 'cap', { x: cap.x, y: cap.y }); IC.addTask(S, 'aew', { x: inward(mid(fA), 1400).x, y: inward(mid(fA), 1400).y }); }
     if (S.enemy.war && !did.war) { did.war = 1; S.airspace = 'restricted'; IC.setMobil(S, 1); IC.addTask(S, 'cap', { x: ab.x, y: ab.y }); }
-    if (fA.active && !did.a) { did.a = 1; fA.stance = 'active'; IC.addTask(S, 'cas', { front: fA }); }
-    if (fB.active && !did.b) { did.b = 1; IC.addTask(S, 'cas', { front: fB }); }
-    for (const g of S.gunits) if (g.side === 'us' && (g.kit.atgm < 3 || g.sup < 30) && !g.lift && g.front.active) IC.heliLift(S, g, g.sup < 30 ? 'SUP' : 'ATG');
     for (const t of S.tels) if (t.known && !t.dead && S.time - t.kt < 300) for (const u of S.units) if (u.d.weapon === 'strike' && u.state === 'ready' && u.mags[0].mag > 0) IC.fireMission(S, u, t, 4);
-    if (S.budget > 900 && S.mobil >= 1 && S.gunits.filter(g => g.side === 'us').length < 11) IC.raiseBrigade(S, fA, U.pick(['inf', 'mech']));
   }
-  if (i % (6 * 3600 * 4) === 0) log.push(`${U.clock(S.time)} will ${S.enemy.will.toFixed(0)} morale ${IC.nationalMorale(S).toFixed(0)} budget ${S.budget.toFixed(0)} units ${S.units.length} kills ${S.stats.kills} leak ${S.stats.leakers} lost ${S.stats.unitsLost}/${S.stats.acLost} lineA ${Math.round(fA.pts.reduce((s, p) => s + p.d, 0) / fA.pts.length)} lineB ${Math.round(fB.pts.reduce((s, p) => s + p.d, 0) / fB.pts.length)} cities ${IC.cities(S).filter(c => c.owner === 'enemy').length} plan ${S.enemy.plan ? S.enemy.plan.kind + '/' + S.enemy.plan.phase : '-'}`);
+  if (i % (6 * 3600 * 4) === 0) log.push(`${U.clock(S.time)} will ${S.enemy.will.toFixed(0)} morale ${IC.nationalMorale(S).toFixed(0)} budget ${S.budget.toFixed(0)} units ${S.units.length} kills ${S.stats.kills} leak ${S.stats.leakers} lost ${S.stats.unitsLost}/${S.stats.acLost} plan ${S.enemy.plan ? S.enemy.plan.kind + '/' + S.enemy.plan.phase : '-'}`);
 }
 console.log(log.join('\n'));
 console.log('END', U.clock(S.time), S.over || '', 'stats', JSON.stringify(S.stats));

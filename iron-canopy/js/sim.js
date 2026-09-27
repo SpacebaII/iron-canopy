@@ -16,7 +16,6 @@ IC.step = function (S, dt) {
   IC.defense(S, dt);
   IC.updateMissiles(S, dt);
   IC.updateStrikes(S, dt);
-  IC.ground(S, dt);
   IC.logistics(S, dt);
   IC.economy(S, dt);
   IC.growth(S, dt);

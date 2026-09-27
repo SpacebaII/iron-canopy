@@ -61,7 +61,7 @@ function buildSensors(S) {
     if (a.dead || a.gnd) continue;
     if (a.kind === 'aew') { if (!a.phase) a.phase = Math.random() * TAU; L.push({ x: a.x, y: a.y, R: 3200, mast: 9000, q: 'fc', eccm: 0.3 + eccmT, per: 12, rot: true, phase: a.phase, err: 3, air: a, emits: true, idc: 'nctr', nctrR: 1000 * nctrK, alt3d: true }); }
     else if (a.kind === 'ftr') L.push({ x: a.x, y: a.y, R: 700, mast: 9000, q: 'surv', air: a, emits: true, eyes: 22 * wx.eo, per: 1, rot: false, err: 4, idc: 'nctr', nctrR: 300 * nctrK, alt3d: true });
-    else if (a.kind === 'atk' || a.kind === 'ucav' || a.kind === 'isr') L.push({ x: a.x, y: a.y, R: 150 * wx.eo, mast: 2000, q: 'surv', air: a, eyes: 150 * wx.eo, per: 1, rot: false, err: 3, eo: true, idc: 'eo', alt3d: true });
+    else if (a.kind === 'ucav' || a.kind === 'isr') L.push({ x: a.x, y: a.y, R: 150 * wx.eo, mast: 2000, q: 'surv', air: a, eyes: 150 * wx.eo, per: 1, rot: false, err: 3, eo: true, idc: 'eo', alt3d: true });
   }
   return L;
 }
