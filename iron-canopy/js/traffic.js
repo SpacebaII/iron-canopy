@@ -54,6 +54,16 @@ IC.trafficInit = function (S) {
   for (const r of W.rails) { r.cum = cumOf(r.pts); r.len = r.cum[r.cum.length - 1]; if (Math.random() < 0.8) S.trains.push({ r, s: Math.random() * r.len, dir: Math.random() < 0.5 ? 1 : -1, spd: U.rand(0.3, 0.42), cars: U.randi(6, 14), wait: 0 }); }
   IC.traffic(S, 0);
 };
+/* a road was built or split (growth.js): give it a flow, or re-measure the one it has */
+IC.trafficRoadChanged = function (S, e) {
+  const T = S.traffic; if (!T) return;
+  const L = T.links.find(x => x.l === e);
+  e.cum = cumOf(e.pts); e.len = e.cum[e.cum.length - 1];
+  if (L) { L.len = e.len; return; }
+  const W = S.world, m = e.pts[e.pts.length >> 1];
+  let busy = 0; for (const c of W.cities) busy += c.pop / 700 * Math.exp(-U.dist(c, m) / (c.r * 2.5));
+  T.links.push({ l: e, cls: e.cls, C: CLS[e.cls], near: nearCity(W, m), busy: 0.3 + Math.min(1.7, busy), load: 0, v: 0, ph: [Math.random() * 1000, Math.random() * 1000], key: T.links.length * 7919 });
+};
 function nearCity(W, p) { let best = null, bd = 1e9; for (const c of W.cities) { const d = U.dist(c, p) / c.r; if (d < bd) { bd = d; best = c; } } return bd < 3 ? best : null; }
 
 IC.traffic = function (S, dt) {

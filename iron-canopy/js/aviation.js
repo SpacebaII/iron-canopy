@@ -283,8 +283,10 @@ IC.on((S, type, d) => {
 /* ---------- money ---------- */
 function pay(S, tl, ap, what) {
   const al = airlineOf(S, tl.al), fee = ap.feeLevel || 1;
-  const pax = tl.T.seats ? Math.round(tl.T.seats * U.rand(0.6, 0.95)) : 0;
-  const land = tl.T.fee * 0.5 * fee, pf = pax * 0.0035 * fee, cg = tl.T.cargo ? tl.T.cargo * 0.008 * fee : 0;
+  // seats fill with the demand from the cities the airport serves (growth.js); holds with the goods going out
+  const pax = tl.T.seats ? Math.round(tl.T.seats * U.clamp(IC.loadFactor(S, ap) * U.rand(0.9, 1.08), 0.2, 1)) : 0;
+  const hold = tl.T.cargo || (tl.type === 'wide' ? 15 : 0);
+  const land = tl.T.fee * 0.5 * fee, pf = pax * 0.0035 * fee, cg = hold * 0.008 * fee * IC.cargoLoad(S, ap);
   S.budget += land + pf + cg;
   const L = S.av.led; L.land += land; L.pax += pf; L.cargo += cg;
   feeLog(S, 'land', land); feeLog(S, 'pax', pf); if (cg) feeLog(S, 'cargo', cg);
@@ -295,7 +297,7 @@ function pay(S, tl, ap, what) {
 }
 IC.avOverflight = function (S, t) { if (!S.av) return; const v = 0.35; S.budget += v; S.av.led.over += v; feeLog(S, 'over', v); };
 /* revenue over the last hour, by kind (scaled up during the first hour of a game) */
-function feeLog(S, k, v) { (S.av.fees = S.av.fees || []).push({ t: S.time, k, v }); }
+function feeLog(S, k, v) { (S.av.fees = S.av.fees || []).push({ t: S.time, k, v }); IC.econBook(S, 'fee_' + k, v); }
 function feeRates(S) {
   const A = S.av, F = A.fees || [];
   while (F.length && S.time - F[0].t > 3600) F.shift();
@@ -327,6 +329,8 @@ function judge(S, al, tl, ap, o) {
   al.sat = U.clamp(al.sat * 0.9 + score * 0.1, 0, 100);
   al.lastWhy = why.length ? why.join(', ') : 'smooth operations';
   if (ap) { ap.sat = (ap.sat == null ? 70 : ap.sat) * 0.92 + score * 0.08; if (why.length) ap.lastWhy = why[0]; }
+  // delays and diversions put passengers off flying from here (growth.js reads the last day)
+  if (ap && (o.divert || o.kind)) (ap.delays = ap.delays || []).push({ t: S.time, w: o.divert ? 3600 : o.wait || 0 });
   if (o.wait > 900) S.av.day.delays++;
 }
 
@@ -339,9 +343,11 @@ function makeRequest(S) {
   const W = S.world;
   const ports = W.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).filter((p, i, L) => L.findIndex(q => q.name === p.name) === i);
   const type = U.pick(al.K.fleet);
+  // airlines go where passengers are waiting for seats
+  const busy = L => U.wpick(L.map(x => [x, 0.3 + Math.min(3, IC.demandPull(S, x))])) || U.pick(L);
   let a = S.byId[al.hub], b;
-  if (al.kind === 'regional') { const others = apts.filter(x => x !== a); a = U.pick(apts); b = { apt: U.pick(apts.filter(x => x !== a)).id }; }
-  else if (al.kind === 'budget') { a = U.pick(apts); b = Math.random() < 0.6 ? U.pick(ports) : { apt: U.pick(apts.filter(x => x !== a)).id }; }
+  if (al.kind === 'regional') { a = busy(apts); const o = apts.filter(x => x !== a); if (!o.length) return; b = { apt: busy(o).id }; }
+  else if (al.kind === 'budget') { a = busy(apts); const o = apts.filter(x => x !== a); b = Math.random() < 0.6 || !o.length ? U.pick(ports) : { apt: busy(o).id }; }
   else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.pick(apts.filter(x => x.template === 'intl')) || a; }
   else b = U.pick(ports);
   if (!a || !b) return;
@@ -464,7 +470,10 @@ IC.aviation = function (S, dt) {
     for (const q of A.requests.filter(q => S.time > q.exp)) { const al = airlineOf(S, q.al); if (al) al.sat = Math.max(0, al.sat - 3); }
     A.requests = A.requests.filter(q => S.time <= q.exp);
   }
-  A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0));
+  // unmet demand brings requests sooner: the busiest airport's passengers over its seats
+  A.pullT = (A.pullT || 0) - dt;
+  if (A.pullT <= 0) { A.pullT = 600; A.pull = Math.max(0, ...IC.bases(S).filter(x => x.owner === 'us').map(x => IC.demandPull(S, x))); }
+  A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, 1.5));
   if (A.reqT <= 0 && !war) { A.reqT = U.rand(2.5, 5) * 3600 * (S.mode === 'story' && S.story && S.story.act === 1 ? 0.5 : 1); if (A.requests.length < 4) makeRequest(S); }
 };
 function cutRoute(S, al, r, why) {

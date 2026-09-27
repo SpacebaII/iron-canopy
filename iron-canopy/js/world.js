@@ -11,9 +11,10 @@ IC.hostileBorderDist = (x, y) => IC.W.hostileBorderDist(x, y);
 IC.borderDist = (x, y) => -IC.W.depthOut(x, y);
 IC.gridRef = (x, y) => `${String.fromCharCode(65 + U.clamp(Math.floor(x / 500), 0, 25))}${U.clamp(Math.floor(y / 500), 0, 99) + 1}`;
 
-let edgeMap = null, edgeW = null;
+let edgeMap = null, edgeW = null, edgeN = 0;
 function edgeBetween(a, b) {
-  if (edgeW !== IC.W) { edgeW = IC.W; edgeMap = {}; for (const e of IC.W.edges) { edgeMap[e.a + '|' + e.b] = e; edgeMap[e.b + '|' + e.a] = e; } }
+  // rebuilt when the world changes or roads are added or split
+  if (edgeW !== IC.W || edgeN !== IC.W.edges.length) { edgeW = IC.W; edgeN = IC.W.edges.length; edgeMap = {}; for (const e of IC.W.edges) { edgeMap[e.a + '|' + e.b] = e; edgeMap[e.b + '|' + e.a] = e; } }
   return edgeMap[a + '|' + b];
 }
 IC.edgeBetween = edgeBetween;
@@ -66,11 +67,57 @@ IC.routeTime = (from, r, vr, vo) => { let t = 0, p = from; for (const q of r) { 
    the box {x0, y0, x1, y1}; until then the boxes wait in S.worldDirty */
 IC.worldChanged = function (S, box) { (S.worldDirty = S.worldDirty || []).push(box); };
 
-/* a bridge was destroyed or repaired: re-plan the road network */
-IC.bridgeChanged = function (S) {
+/* a bridge fell or was repaired, a road was cut or reopened, or a new road opened: re-plan the road network.
+   Convoys and brigades re-route; trade, growth and airport catchments re-read the travel times. */
+IC.roadsChanged = function (S) {
+  const W = S.world;
   const blocked = new Set(S.infra.filter(i => i.kind === 'bridge' && i.offline).map(i => i.edge));
-  IC.buildRouting(S.world, blocked);
+  for (const e of W.edges) if (e.cut) blocked.add(e.id);
+  IC.buildRouting(W, blocked);
+  edgeW = null;
   for (const v of S.vehicles) if (v.route && v.dest) v.route = IC.route(v.x, v.y, v.dest.x, v.dest.y);
+  if (S.econ) S.econ.roadsDirty = true;
 };
+IC.bridgeChanged = IC.roadsChanged;
+
+/* ---------- travel times by road, at the level of places (not cars) ---------- */
+IC.ROAD_KMH = { hw: 100, rd: 75, lc: 55, sp: 40 };
+IC.CUT_SLOW = 6;     // a cut road or a fallen bridge: a detour on farm tracks and fords, six times slower
+IC.OFFROAD_KMH = 25; // from the nearest road to a place off the network
+// seconds to drive an edge (1 unit = 100 m)
+IC.edgeTime = (e, cut) => e.len * 360 / IC.ROAD_KMH[e.cls] * (cut ? IC.CUT_SLOW : 1);
+let adjW = null, adjN = -1, adj = null;
+function adjacency(W) {
+  if (adjW === W && adjN === W.edges.length) return adj;
+  adjW = W; adjN = W.edges.length; adj = {};
+  for (const e of W.edges) { (adj[e.a] = adj[e.a] || []).push([e.b, e]); (adj[e.b] = adj[e.b] || []).push([e.a, e]); }
+  return adj;
+}
+/* Dijkstra from one node. cut(e) says whether an edge is cut; with intact=true every road counts as open.
+   Returns { t: {node: seconds}, via: {node: edge used to arrive} } */
+IC.travelFrom = function (W, from, intact) {
+  const A = adjacency(W), t = {}, via = {}, done = new Set();
+  const heap = [[0, from]]; t[from] = 0;
+  const push = (d, k) => { heap.push([d, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  while (heap.length) {
+    const [d, k] = pop();
+    if (done.has(k)) continue;
+    done.add(k);
+    for (const [n, e] of A[k] || []) {
+      const v = d + IC.edgeTime(e, !intact && (e.cut || (W.blocked && W.blocked.has(e.id))));
+      if (v < (t[n] == null ? Infinity : t[n])) { t[n] = v; via[n] = e; push(v, n); }
+    }
+  }
+  return { t, via };
+};
+/* the nearest road node to a point, and the off-road time to reach it */
+IC.nodeNear = function (W, x, y) {
+  let best = null, bd = 1e12;
+  for (const k in W.nodes) { const n = W.nodes[k], d = U.dxy(x, y, n.x, n.y); if (d < bd) { bd = d; best = k; } }
+  return { id: best, t: bd * 360 / IC.OFFROAD_KMH };
+};
+/* the edges crossed on the way from a Dijkstra source to a node (last first) */
+IC.travelPath = function (T, to) { const L = []; let k = to; for (let g = 0; g < 400 && T.via[k]; g++) { const e = T.via[k]; L.push(e); k = e.a === k ? e.b : e.a; } return L; };
 
 })(window.IC);
