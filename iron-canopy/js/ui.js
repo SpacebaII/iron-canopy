@@ -261,9 +261,9 @@ function arsenal() {
     const on = S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === type;
     const tech = locked ? IC.TECH.find(t => t.id === d.tech) : null;
     const first = coming.filter(o => o.started).sort((a, b) => b.prog - a.prog)[0];
-    return `<div class="tile ${locked ? 'locked' : ''}" id="tile-${type}" role="button" tabindex="0" data-act="deploy" data-v="${type}" aria-pressed="${on}" title="${esc(d.desc)}">
+    return `<div class="tile ${locked ? 'locked' : ''}" id="tile-${type}" role="button" tabindex="0" data-act="deploy" data-v="${type}" aria-pressed="${on}" title="${esc(IC.fullName(d))}. ${esc(d.desc)}">
       ${ui.sym(type)}${r ? `<span class="res-n">×${r}</span>` : ''}
-      <span class="tn">${esc(d.name)}</span>
+      <span class="tn">${esc(d.name)}</span><span class="tr">${esc(d.role || '')}</span>
       ${locked ? `<span class="tc">Needs ${esc(tech.name)}</span>` : r ? `<span class="tc ok">Deploy · free</span>` : `<span class="tc">${U.money(IC.unitCost(S, type))} · ${U.dur(IC.leadTime(S, type))}</span>`}
       ${coming.length ? `<span class="eta">+${coming.length} on order</span>` : ''}
       ${!locked && allowed(type) ? `<button class="buy" data-act="order" data-v="${type}" ${S.budget < IC.unitCost(S, type) ? 'disabled' : ''}>Order</button>` : ''}
@@ -331,7 +331,7 @@ ui.tip = function (ent, sx, sy) {
   const r = ent.ref;
   let t = '', s = '';
   if (ent.kind === 'track') { t = `TN ${r.tn} · ${IC.AFF[r.aff || 'U'].name}${r.klass ? ' · ' + (IC.KLASS[r.klass] || r.klass) : ''}`; s = `${r.sq ? 'Squawk ' + r.sq + ' · ' : ''}${r.altKnown ? U.alt(r.alt) : 'altitude unknown'} · ${U.kmh(Math.hypot(r.vx, r.vy))}`; }
-  else if (ent.kind === 'unit') { t = `${r.name} · ${r.d.name}`; s = r.why || IC.unitState(r)[0]; }
+  else if (ent.kind === 'unit') { t = `${r.name} · ${IC.fullName(r.d)}`; s = r.why || IC.unitState(r)[0]; }
   else if (ent.kind === 'gunit') { t = `${r.name}${r.side === 'them' ? ' (enemy)' : ''}`; s = r.side === 'us' ? `${IC.GORDERS[r.order] ? IC.GORDERS[r.order].name : r.order} · strength ${Math.round(r.str)}% · supply ${Math.round(r.sup)}% · ${IC.terrainOf(S, r)}` : `${r.g.name} · ~${Math.round(r.str / 10) * 10}% · seen ${U.dur(S.time - r.kt)} ago`; }
   else if (ent.kind === 'veh') { t = r.name; s = r.job ? r.job.label : 'Parked'; }
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
