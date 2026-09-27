@@ -160,72 +160,77 @@ function army() {
   return `<div class="card wide"><h3>Manpower<em>${Math.floor(S.manpower)} available · +${IC.MOBIL[S.mobil].man}/h</em></h3><p class="hint">Manpower rebuilds brigades at the rear and rides helicopters forward as replacements. Mobilization raises the rate.</p></div>${cards}`;
 }
 
-/* ---------- logistics ---------- */
+/* ---------- supply: stock, depots, convoys, buying ---------- */
 function logi() {
-  const depots = IC.depots(S);
-  const rows = IC.STOCK_KEYS.filter(k => k === 'SUP' || k === 'ATG' || IC.hasTech(S, IC.MUN_TECH[k])).map(k => {
-    let dep = 0, other = 0, units = 0, tr = 0;
+  const depots = IC.depots(S), P = S.supply, { need, have } = IC.stockNeed(S);
+  const keys = IC.STOCK_KEYS.filter(k => need[k] || have[k] >= 1);
+  const rows = keys.map(k => {
+    let dep = 0, units = 0, moving = 0;
     for (const d of depots) dep += d.inv[k] || 0;
-    for (const i of S.infra) if (i.inv) other += i.inv[k] || 0;
-    for (const u of S.units) for (const m of u.mags) if (m.mun === k) { units += m.mag + m.store; tr += m.inc; }
-    for (const j of S.jobs) if (j.mun === k && j.state === 'active' && !j.mag) tr += j.qty;
-    return `<tr><td>${esc(IC.MUN[k].name)}</td><td class="r">${Math.floor(dep)}</td><td class="r">${Math.floor(other)}</td><td class="r">${k === 'SUP' || k === 'ATG' ? '–' : units}</td><td class="r">${tr || '–'}</td></tr>`;
+    for (const u of S.units) for (const m of u.mags) if (m.mun === k) units += m.mag + m.store;
+    for (const j of S.jobs) if (j.mun === k && j.state === 'active') moving += j.qty;
+    const want = Math.max(4, Math.ceil(need[k] || 0)), low = (have[k] || 0) < want * IC.SUPPLY.reorder;
+    const q = Math.max(4, Math.ceil(want / 2 / 4) * 4), cost = IC.canBuyMun(S, k) && depots.length ? IC.stockSource(S, k, q, depots[0]).cost : 0;
+    return `<tr><td>${esc(IC.munWords(k))}</td><td class="r ${low ? 'amber' : ''}">${Math.floor(dep)}</td><td class="r">${need[k] ? want : '–'}</td><td class="r">${units || '–'}</td><td class="r">${moving || '–'}</td><td class="r">${cost ? `<button class="btn sm" data-act="buyStock" data-v="${k}:${q}" ${S.budget < cost ? 'disabled' : ''} title="Bought now, sent by rail to the depot that needs it most">+${q} · ${U.money(cost)}</button>` : ''}</td></tr>`;
   }).join('');
+  const plantsUp = S.infra.filter(f => f.kind === 'factory' && f.owner === 'us' && !f.offline).length;
+  const stock = `<div class="card wide"><h3>Stock<em>${plantsUp ? `${plantsUp} arms plant${plantsUp > 1 ? 's' : ''} working` : '<span class="hostile">every arms plant is down: imports only, by air</span>'}</em></h3>
+    <table class="t"><tr><th>Item</th><th class="r">In depots</th><th class="r">Full reload</th><th class="r">At units</th><th class="r">Moving</th><th class="r">Buy</th></tr>${rows || '<tr><td colspan="6">No units that need supply.</td></tr>'}</table>
+    <div class="rl"><span class="muted" style="font-size:.8rem;width:9rem">Keep stocked</span>${seg('autoStock', P.auto ? 'on' : 'off', [['on', 'On', '', 'The Ministry buys what falls below half a reload'], ['off', 'Off', 'amb', 'You buy stock yourself']])}</div>
+    ${P.auto ? `<div class="rl"><span class="muted" style="font-size:.8rem;width:9rem">Keep back at least</span>${seg('floor', String(P.floor), IC.FLOORS.map(v => [String(v), U.money(v), '', `The Ministry never spends the treasury below ${U.money(v)}`]))}</div>` : ''}
+    <p class="hint">Full reload: what every unit on the map would need to refill once. ${P.auto ? 'When the depots hold less than half of it, the Ministry buys the rest and it goes by rail to the depot that needs it most.' : 'Buy before the depots run dry: a battery with no missiles in reach waits, and says so.'}</p></div>`;
+  const dem = IC.depotDemand(S);
   const dcards = depots.map(d => {
-    const vs = S.vehicles.filter(v => v.home === d);
-    const dem = IC.depotDemand(S)[d.id] || {};
-    const low = Object.keys(dem).filter(k => (d.inv[k] || 0) + (d.inc[k] || 0) < dem[k] * 0.5);
-    return `<div class="card"><h3>${esc(d.name)}<em>${d.central ? 'national stock' : 'serves ' + U.km(d.reach || 1400)}</em></h3>
-      ${kv([['Trucks', `${vs.filter(v => v.state !== 'idle').length}/${vs.length} busy`], ['Low on', low.length ? low.join(', ') : 'nothing']])}
-      ${d.central ? '' : seg('profileD', d.profile || 'balanced', Object.entries(IC.PROFILES).map(([k, p]) => [k, p.name, '', p.desc]), d.id)}
+    const vs = S.vehicles.filter(v => v.home === d && !v.dead), out = vs.filter(v => v.state !== 'idle').length;
+    const low = Object.keys(dem[d.id] || {}).filter(k => (d.inv[k] || 0) + (d.inc[k] || 0) < dem[d.id][k] * 0.5).map(k => IC.munWords(k));
+    const served = S.units.filter(u => u.mags.length && IC.servingDepot(S, u) === d).length;
+    return `<div class="card"><h3>${esc(d.name)}<em>${d.central ? 'national stock' : `${served} unit${served === 1 ? '' : 's'} within ${U.km(d.reach || 1400)}`}</em></h3>
+      ${kv([['Truck companies', `${out} of ${vs.length} out`], ['Short of', low.length ? `<span class="amber">${esc(low.join(', '))}</span>` : 'nothing']])}
+      ${d.central ? '' : `<div class="rl"><span class="muted" style="font-size:.8rem;width:7rem">Priority</span>${seg('dpri', d.pri || 'normal', Object.entries(IC.DEPOT_PRI).map(([k, p]) => [k, p.name, '', p.desc]), d.id)}</div>`}
       <div class="acts"><button class="btn sm" data-act="buyTruckAt" data-id="${d.id}" ${S.budget < 12 ? 'disabled' : ''}>+ Truck company ₭12M</button><button class="btn sm" data-act="selu" data-id="${d.id}">Show</button></div></div>`;
   }).join('');
-  const convoys = S.vehicles.filter(v => v.job).slice(0, 14).map(v => `<button class="li" data-act="selv" data-id="${v.id}"><b>${esc(v.name)}</b><small>${esc(v.job.label)} · ${v.state === 'toDest' ? 'en route' : v.state}</small></button>`).join('');
-  const helis = S.air.filter(a => a.job).map(a => `<button class="li" data-act="selAirE" data-id="${a.id}"><b>${esc(a.name)}</b><small>${esc(a.job.label)}</small></button>`).join('');
-  return `<div class="card wide"><h3>National stockpile</h3><table class="t"><tr><th>Item</th><th class="r">Depots</th><th class="r">Plants / airports</th><th class="r">At units</th><th class="r">Moving</th></tr>${rows}</table>
-    <p class="hint">Depots serve units inside their ring and restock from the central depot; factories push output to whichever depot is short. Put a forward depot where the fighting is, give it trucks, and pick its stock profile.</p></div>
-    ${dcards}
-    <div class="card"><h3>Convoys on the road<em>${S.vehicles.filter(v => v.job).length} active</em></h3>${convoys ? `<div class="list">${convoys}</div>` : '<p class="hint">No deliveries under way.</p>'}</div>
-    <div class="card"><h3>Helicopters and airlift</h3>${helis ? `<div class="list">${helis}</div>` : '<p class="hint">Nothing flying. Select a brigade for a helicopter lift, or a battery for air resupply.</p>'}</div>`;
+  const jobs = S.jobs.filter(j => j.state === 'active').sort((a, b) => IC.jobEta(S, a) - IC.jobEta(S, b));
+  const road = jobs.filter(j => j.v).slice(0, 14).map(j => `<button class="li" data-act="selv" data-id="${j.v.id}"><b>${esc(IC.jobLabel(j))}</b><small>${esc(j.v.name)} from ${esc(j.from.name)} · ${{ toSource: 'going to load', load: 'loading', toDest: 'on the road', unload: 'unloading' }[j.v.state] || ''} · here in ${U.dur(IC.jobEta(S, j))}${j.v.cut ? ` · <span class="amber">${esc(j.v.cut)}</span>` : ''}</small></button>`).join('');
+  const other = jobs.filter(j => !j.v).map(j => `<div class="li"><b>${esc(IC.jobLabel(j))}</b><small>${j.mode === 'rail' ? `by rail from ${esc(j.from.name)}` : j.mode === 'heli' ? 'by helicopter' : 'allied airlift'} · in ${U.dur(IC.jobEta(S, j))}</small></div>`).join('');
+  const waiting = S.units.filter(u => u.mags.some(m => m.why)).slice(0, 8).map(u => `<button class="li" data-act="selu" data-id="${u.id}"><b class="amber">${esc(u.name)} waits</b><small>${esc(u.mags.find(m => m.why).why)}</small></button>`).join('');
+  return stock + (waiting ? `<div class="card wide"><h3>Waiting for supply</h3><div class="list">${waiting}</div></div>` : '') + dcards +
+    `<div class="card"><h3>Convoys on the road<em>${jobs.filter(j => j.v).length}</em></h3>${road ? `<div class="list">${road}</div>` : '<p class="hint">No deliveries under way.</p>'}</div>
+    <div class="card"><h3>By rail and air<em>${jobs.filter(j => !j.v).length}</em></h3>${other ? `<div class="list">${other}</div>` : '<p class="hint">Nothing coming. Bought stock goes by rail; helicopters fly to empty batteries when no truck can.</p>'}</div>
+    <div class="card wide"><h3>How supply works</h3><p class="hint">${esc(IC.SUPPLY_GUIDE)}</p></div>`;
 }
 
-/* ---------- industry and economy ---------- */
+/* ---------- industry: plants, mobilization, war bonds, cities ---------- */
 function industry() {
-  const L = S.ledger || {};
-  const facs = S.infra.filter(i => i.kind === 'factory').map(f => {
-    const act = f.active.map(a => `<span class="chip">${a.mun} ${U.pct(a.prog)}</span>`).join('') + f.queue.map(x => `<span class="chip">${x.qty - x.started}× ${x.mun}</span>`).join('');
-    const orders = IC.MUN_ORDER.filter(k => IC.hasTech(S, IC.MUN_TECH[k])).map(k => { const M = IC.MUN[k]; return `<div class="li"><b>${esc(M.name)}</b><small>${U.money(M.cost)} each · ${U.dur(M.prod)} per line</small><span class="la"><button class="btn sm" data-act="prod" data-id="${f.id}" data-v="${k}:1" ${S.budget < M.cost || f.offline ? 'disabled' : ''}>+1</button><button class="btn sm" data-act="prod" data-id="${f.id}" data-v="${k}:4" ${S.budget < M.cost * 4 || f.offline ? 'disabled' : ''}>+4</button></span></div>`; }).join('');
-    return `<div class="card"><h3>${esc(f.name)}<em>${f.offline ? '<span class="hostile">knocked out</span>' : `${f.active.length}/${IC.factoryLines(S, f)} lines · ${Math.floor(f.inv.SUP || 0)} supply waiting`}</em></h3>${act ? `<div class="chips">${act}</div>` : ''}<div class="list">${orders}</div></div>`;
-  }).join('');
-  const imp = IC.MUN_ORDER.filter(k => IC.hasTech(S, IC.MUN_TECH[k])).map(k => { const c = IC.importPrice(S, k, 4); return `<div class="li"><b>${esc(IC.MUN[k].name)}</b><small>4 for ${U.money(c)}</small><span class="la"><button class="btn sm" data-act="import" data-v="${k}:4" ${S.budget < c ? 'disabled' : ''}>Import</button></span></div>`; }).join('');
-  const pend = S.imports.map(i => `<span class="chip">${i.qty}× ${i.mun} ~${U.hhmm(i.eta)}</span>`).join('');
-  const orders = S.orders.map(o => `<div class="li"><b>${esc(IC.UNITS[o.type].name)}</b><small>${o.started ? `${U.pct(o.prog)} · ${U.dur((1 - o.prog) * o.dur)} left` : 'queued'}</small><span class="la"><button class="btn sm" data-act="cancelOrder" data-id="${o.id}">✕</button></span></div>`).join('');
-  const mob = IC.MOBIL.map((m, i) => `<button class="li" data-act="mobil" data-v="${i}" ${S.mobil === i ? 'style="background:rgba(111,210,255,.16)"' : ''}><b>${esc(m.name)}${S.mobil === i ? ' · current' : ''}</b><small>${esc(m.desc)}</small></button>`).join('');
+  const facs = S.infra.filter(i => i.kind === 'factory').map(f => `<tr class="click" data-act="selInfra" data-id="${f.id}"><td>${esc(f.name)}</td><td class="r">${U.pct(f.hp / f.max)}</td><td>${f.offline ? '<span class="hostile">knocked out</span>' : 'working'}</td><td class="r">${S.jobs.filter(j => j.mode === 'rail' && j.from === f).length || '–'}</td></tr>`).join('');
+  const mob = IC.MOBIL.map((m, i) => `<button class="li" data-act="mobil" data-v="${i}" ${S.mobil === i ? 'style="background:rgba(111,210,255,.16)"' : ''}><b>${esc(m.name)}${S.mobil === i ? ' · current' : ''}</b><small>${esc(m.desc.replace(/ [^.]*orders at a time\./, ''))} Taxes ×${m.tax}, running costs ×${m.up}.</small></button>`).join('');
   const bonds = S.time - S.bondsT >= 86400;
   const cities = IC.cities(S).slice().sort((a, b) => b.ind - a.ind).map(c => `<tr class="click" data-act="selInfra" data-id="${c.id}"><td>${esc(c.name)}</td><td class="r">${c.pop}k</td><td class="r">${c.ind}</td><td class="r">${U.pct(c.hp / c.max)}</td><td class="${c.owner === 'enemy' ? 'hostile' : c.besieged ? 'suspect' : ''}">${c.owner === 'enemy' ? 'occupied' : c.besieged ? 'surrounded' : 'ours'}</td></tr>`).join('');
-  return `<div class="card"><h3>Budget per hour<em>${U.money(S.budget)} in the treasury</em></h3><table class="t">
-      <tr><td>Taxes</td><td class="r ok">+${(L.tax || 0).toFixed(1)}</td></tr><tr><td>Airports</td><td class="r ok">+${(L.apt || 0).toFixed(1)}</td></tr><tr><td>Allied support</td><td class="r ok">+${(L.aid || 0).toFixed(1)}</td></tr><tr><td>State revenue</td><td class="r ok">+${(L.base || 0).toFixed(1)}</td></tr>
-      <tr><td>Air defense upkeep</td><td class="r hostile">−${(L.upAD || 0).toFixed(1)}</td></tr><tr><td>Air force upkeep</td><td class="r hostile">−${(L.upAir || 0).toFixed(1)}</td></tr><tr><td>Army upkeep</td><td class="r hostile">−${(L.upG || 0).toFixed(1)}</td></tr></table>
-      <div class="acts"><button class="act" data-act="bonds" ${bonds ? '' : 'disabled'}>War bonds · +${U.money(200 + S.mobil * 80)}</button></div><p class="hint">${bonds ? 'Cash now, a small cost to morale. Once a day.' : `Bonds available again in ${U.dur(86400 - (S.time - S.bondsT))}.`}</p></div>
+  return `<div class="card"><h3>Arms plants<em>they sell missiles to the depots, by rail</em></h3><table class="t"><tr><th>Plant</th><th class="r">Intact</th><th>Status</th><th class="r">Loads on the way</th></tr>${facs}</table>
+      <p class="hint">Buy stock in Supply (L). A damaged plant loads slower; with every plant down, stock is imported by air at ${U.pct(0.9 - S.support / 100)} more.</p></div>
+    <div class="card"><h3>War bonds</h3><div class="acts"><button class="act" data-act="bonds" ${bonds ? '' : 'disabled'}>War bonds · +${U.money(200 + S.mobil * 80)}</button></div><p class="hint">${bonds ? 'Cash now, a small cost to morale in every city. Once a day.' : `Bonds available again in ${U.dur(86400 - (S.time - S.bondsT))}.`}</p></div>
     <div class="card"><h3>Mobilization</h3><div class="list">${mob}</div></div>
-    <div class="card"><h3>Equipment on order<em>${S.orders.filter(o => o.started).length}/${IC.slots(S)} slots</em></h3>${orders ? `<div class="list">${orders}</div>` : '<p class="hint">Nothing on order. Order from the arsenal: several items build at once.</p>'}</div>
-    ${facs}
-    <div class="card"><h3>Foreign purchases<em>price falls as allied support rises</em></h3>${pend ? `<div class="chips">${pend}</div>` : ''}<div class="list">${imp}</div></div>
     <div class="card"><h3>Cities and industry<em>national industry ${U.pct(IC.industry(S))}</em></h3><table class="t"><tr><th>City</th><th class="r">Pop</th><th class="r">Ind</th><th class="r">Intact</th><th>Status</th></tr>${cities}</table></div>`;
 }
 
 /* ---------- the economy: the weekly statement, loans, passengers, growth, trade and roads ---------- */
 function economy() {
   const E = S.econ; if (!E) return '<div class="card wide"><p class="hint">No economy in this mode.</p></div>';
-  const wk = IC.weekStatement(S, 0), last = IC.weekStatement(S, 1);
+  const wk = IC.weekStatement(S, 0), last = IC.weekStatement(S, 1), M = IC.money(S);
   const val = v => `<td class="r ${v >= 0 ? 'ok' : 'hostile'}">${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}</td>`;
+  const mline = (l, sign) => `<button class="mline" data-act="why" data-v="${l.k}" aria-expanded="${ui.why === l.k}"><span>${esc(l.name)}</span><b class="${sign > 0 ? 'ok' : 'hostile'}">${sign > 0 ? '+' : '−'}${U.money(l.v)}</b></button>${ui.why === l.k ? `<p class="hint mwhy">${esc(l.why)}</p>` : ''}`;
+  const warn = M.net < 0 && M.left < 24;
+  const head = `<div class="card wide money"><h3>Money<em>click a line for the reason</em></h3>
+    <div class="mtop"><div><small>Treasury</small><strong>${U.money(S.budget)}</strong></div><div><small>An hour, now</small><strong class="${M.net >= 0 ? 'ok' : 'hostile'}">${M.net >= 0 ? '+' : '−'}${U.money(Math.abs(M.net))}</strong></div><p class="${warn ? 'hostile' : M.net < 0 ? 'amber' : 'ok'}">${esc(M.forecast)}${warn ? ' Put units back in the reserve, raise airport charges, or borrow below.' : ''}</p></div>
+    <div class="mcols"><div><h4>Coming in <em>+${U.money(M.inH)}/h</em></h4>${M.inc.map(l => mline(l, 1)).join('') || '<p class="hint">Nothing.</p>'}</div>
+    <div><h4>Going out <em>−${U.money(M.outH)}/h</em></h4>${M.out.map(l => mline(l, -1)).join('') || '<p class="hint">Nothing.</p>'}</div></div>
+    <p class="hint">Hourly lines are what runs all the time. Buying, building and research are paid when you do them and show in the week below.</p></div>`;
   const keys = [...new Set((wk ? wk.lines : []).concat(last ? last.lines : []).map(l => l.k))];
   const get = (st, k) => { const l = st && st.lines.find(x => x.k === k); return l ? l.v : 0; };
   const rows = keys.sort((a, b) => get(wk, b) - get(wk, a)).map(k => `<tr><td>${esc(IC.STATEMENT[k] || k)}</td>${val(get(wk, k))}${last ? val(get(last, k)) : ''}</tr>`).join('');
-  const stmt = `<div class="card wide"><h3>Weekly statement<em>${U.money(S.budget)} in the treasury</em></h3>
+  const stmt = head + `<div class="card wide"><h3>This week<em>everything paid in and out, by kind</em></h3>
     ${wk ? `<table class="t"><tr><th>${wk.days >= 7 ? `Week ${wk.week}` : wk.days === 1 ? `Day ${wk.from} (week ${wk.week})` : `Days ${wk.from}–${wk.from + wk.days - 1} (week ${wk.week})`}</th><th class="r">This week</th>${last ? '<th class="r">Last week</th>' : ''}</tr>${rows}
-      <tr><td><b>Income</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Spending</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}
-    <p class="hint">Airline fees rise with passengers, and passengers with the cities your airports serve. Taxes follow each city's size and prosperity${S.story && S.story.act < 3 ? '; in this job they go to the Treasury, not to your budget' : ''}.</p></div>`;
+      <tr><td><b>Came in</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Went out</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}
+    <p class="hint">The lines add up to the change in the treasury. Loans taken count in the change, not as income.</p></div>`;
   // loans
   const owed = IC.loanOwed(S), lim = IC.loanLimit(S);
   const offers = IC.LOANS.map((o, i) => { const pay = (o.amt / o.days + o.amt * IC.LOAN_RATE) * 1; return `<div class="li"><b>Borrow ${U.money(o.amt)}</b><small>over ${o.days} days · about ${U.money(pay)} a day at first</small><span class="la"><button class="btn sm" data-act="loan" data-v="${i}" ${owed + o.amt > lim ? 'disabled' : ''}>Borrow</button></span></div>`; }).join('');
@@ -296,7 +301,7 @@ function journal() {
 function reference() {
   const tabs = seg('refcat', ui.refCat, [['units', 'Our equipment'], ['threats', 'Threats'], ['air', 'Aircraft'], ['ground', 'Ground'], ['how', 'How it works']]);
   let body = '';
-  if (ui.refCat === 'units') body = Object.entries(IC.UNITS).map(([k, d]) => `<div class="ref">${ui.sym(k, 68, 52)}<div><b>${esc(d.name)}</b><p>${esc(d.desc)}</p>${kv([['Cost', `${U.money(d.cost)} · ${U.dur(d.lead)} to build`], ['Reach', IC.typeRange(k) ? U.km(IC.typeRange(k)) : '–'], ['Mobility', IC.MOB_LABEL[d.mob]]].concat(d.mags ? [['Missiles', d.mags.map(m => `${IC.MUN[m.mun].name} (${IC.MUN[m.mun].seeker || ''})`).join(', ')]] : []))}</div></div>`).join('');
+  if (ui.refCat === 'units') body = Object.entries(IC.UNITS).map(([k, d]) => `<div class="ref">${ui.sym(k, 68, 52)}<div><b>${esc(d.name)}</b><p>${esc(d.desc)}</p>${kv([['Cost', `${U.money(d.cost)} · sets up in ${U.dur(d.build)}`], ['Reach', IC.typeRange(k) ? U.km(IC.typeRange(k)) : '–'], ['Mobility', IC.MOB_LABEL[d.mob]]].concat(d.mags ? [['Missiles', d.mags.map(m => `${IC.MUN[m.mun].name} (${IC.MUN[m.mun].seeker || ''})`).join(', ')]] : []))}</div></div>`).join('');
   else if (ui.refCat === 'threats') body = Object.entries(IC.THR).filter(([k]) => k !== 'pen').map(([k, d]) => `<div class="ref"><canvas data-thr="${k}" width="68" height="52"></canvas><div><b>${esc(d.name)}</b>${kv([['Class', esc(IC.KLASS[d.klass] || d.klass)], ['Speed', d.spd ? U.kmh(d.spd) : 'ballistic'], ['Altitude', d.alt ? U.alt(d.alt) : 'varies'], ['Warhead', d.dmg ? d.dmg : '–']].concat(d.cm ? [['Countermeasures', 'chaff, flares' + (d.notch ? ', notching' : '')]] : []))}</div></div>`).join('');
   else if (ui.refCat === 'air') body = Object.entries(IC.AIR_KIND).map(([k, d]) => `<div class="ref"><span class="badge friend" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${d.short}</span><div><b>${esc(d.name)}</b>${kv([['Aircraft per flight', d.n], ['Speed', U.kmh(d.spd)], ['Endurance', U.dur(d.endur)], ['Turnaround', U.dur(d.turn)], ['Needs a runway', d.runway ? 'yes' : 'no']])}</div></div>`).join('');
   else if (ui.refCat === 'ground') body = Object.entries(IC.GTYPES).map(([k, g]) => `<div class="ref"><span class="badge friend" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${g.short}</span><div><b>${esc(g.name)}</b><p>${esc(g.desc)}</p>${kv([['Attack', g.att], ['Defense', g.def], ['Cost', U.money(g.cost)]])}</div></div>`).join('') + `<div class="ref"><span></span><div><b>Terrain</b><p>Defenders gain: towns +50%, rivers +30%, forest +25%, hills +20%. Infantry does best in towns and forest; armor worst.</p></div></div>` + Object.entries(IC.GORDERS).map(([k, o]) => `<div class="ref"><span class="badge" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${o.key}</span><div><b>${o.name}</b><p>${esc(o.desc)}</p></div></div>`).join('');
@@ -313,7 +318,8 @@ function reference() {
     ['Airlines', 'Each airline wants different things: low fees, short taxi times, night slots, big terminals. Happy airlines ask for new routes; unhappy ones cut them. Prohibited zones keep airliners away from what matters, at the cost of longer flights.'],
     ['Radio and routes', 'Every airliner flies a filed route. One that leaves it flashes on the map: call it on the radio. A real airliner answers and turns back; something pretending to be one does not.'],
     ['Radar spectrum', 'Radars on the same band close together blind each other, and every extra radar on a crowded band costs more to keep. Spread them out, mix bands, or buy a spectrum plan.'],
-    ['Logistics', 'Depots serve units in their ring. Factories push output to depots; forward depots pull from the central depot. Helicopters fly emergency deliveries and lifts to brigades.'],
+    ['Money', IC.MONEY_GUIDE],
+    ['Supply', IC.SUPPLY_GUIDE + ' Helicopters fly emergency loads to empty batteries.'],
     ['Towns', 'Towns pay taxes and power industry. A garrisoned town holds while its brigade does, even behind the line; it can then only be supplied by air.']
   ].map(([t, d]) => `<div class="ref"><span></span><div><b>${t}</b><p>${d}</p></div></div>`).join('');
   return `<div class="card wide"><h3>Guide<em>${tabs}</em></h3></div>${body.split('<div class="ref">').filter(Boolean).map(x => `<div class="card"><div class="ref">${x}</div>`).join('')}`;
