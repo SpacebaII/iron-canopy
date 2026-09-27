@@ -886,7 +886,7 @@ IC.cityLights = function (c) {
   // the glow follows the city's own shape: a soft pool over every block, brighter in the centre and the yards
   lg.globalCompositeOperation = 'lighter';
   const gl = lg.createRadialGradient(0, 0, 0, 0, 0, 1);
-  gl.addColorStop(0, 'rgba(255,160,80,0.09)'); gl.addColorStop(1, 'rgba(255,160,80,0)');
+  gl.addColorStop(0, 'rgba(255,160,80,0.06)'); gl.addColorStop(1, 'rgba(255,160,80,0)');
   lg.fillStyle = gl;
   for (const b of c.blocks) {
     if (b.hp <= 0 || b.empty) continue;

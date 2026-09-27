@@ -207,6 +207,7 @@ function parts(k, col) {
 }
 /* draw a list of vehicles {x, y, h, k, col}; m: at least this many world units long (so they stay visible) */
 function vehicles(list, px, night, now, m, detail) {
+  const calm = cam.z < 10;
   const groups = new Map();
   const quad = (col, x, y, c, s, f, b, w) => { let L = groups.get(col); if (!L) groups.set(col, L = []); L.push(x, y, c, s, f, b, w); };
   const lights = [], tails = [], blues = [], shade = [];
@@ -214,7 +215,8 @@ function vehicles(list, px, night, now, m, detail) {
     const K = IC.VEHICLE_KINDS[v.k] || IC.VEHICLE_KINDS.car, f = Math.max(1, m / 0.045), L = K.L * f / 2, W = Math.max(K.W / 2, px * K.W / 0.019);
     const c = Math.cos(v.h), s = Math.sin(v.h);
     if (!night) shade.push(v.x + L * 0.25, v.y + L * 0.3, c, s, L, W);
-    const P = detail ? parts(v.k, v.col) : [parts(v.k, v.col)[0]];
+    // further out a calm palette: pale cars, buff lorries, red buses; colours and details close in
+    const P = detail ? parts(v.k, v.col) : calm ? [[v.k === 'bus' ? 'rgb(206,58,46)' : K.L > 0.07 ? 'rgb(214,204,180)' : 'rgb(234,236,240)', 1, -1, 1]] : [parts(v.k, v.col)[0]];
     for (const [col, fr, bk, hw] of P) quad(col, v.x, v.y, c, s, fr * L, bk * L, hw * W);
     if (night) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
     if ((v.k === 'police' || v.k === 'amb') && Math.sin(now * 12 + v.col) > 0) blues.push(v.x, v.y, W);
