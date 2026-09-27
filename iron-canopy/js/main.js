@@ -94,38 +94,25 @@ function airwayClick(m, p) {
   S.sel = { kind: 'fix', ref: to };
   IC.sfx.ui('click');
 }
-/* the airport builder: taxiways and runways by points, areas corner to corner, buildings by a click */
-function buildClick(m, p) {
-  const ap = m.ap, D = IC.APART[m.part];
-  const tol = Math.max(0.12, 8 / IC.cam.z);
-  if (m.part === 'taxi' || m.part === 'runway') {
-    const s = IC.aptSnap(ap, p, tol);
-    m.pts = (m.pts || []).concat([{ x: s.x, y: s.y }]);
-    if (m.part === 'runway' && m.pts.length === 2) finishLine(m);
-    IC.sfx.ui('click');
-    return;
-  }
-  const rot = m.rot != null ? m.rot : ap.rwyA || 0;
-  if (D.area) {
-    if (!m.drag) { m.drag = { x: p.x, y: p.y }; IC.sfx.ui('click'); return; }
-    const l = IC.rectLocal({ x: m.drag.x, y: m.drag.y, a: rot }, p);
-    const w = Math.abs(l.x), h = Math.abs(l.y);
-    const c = IC.rectWorld({ x: m.drag.x, y: m.drag.y, a: rot }, l.x / 2, l.y / 2);
-    m.drag = null;
-    if (w < 0.3 || h < 0.3) { IC.text(S, p.x, p.y, 'TOO SMALL', IC.C.amber); return; }
-    if (IC.aptPlanPart(S, ap, m.part, c.x, c.y, rot, w, h)) IC.sfx.ui('ok'); else IC.sfx.ui('err');
-    return;
-  }
-  if (IC.aptPlanPart(S, ap, m.part, p.x, p.y, rot)) IC.sfx.ui('ok'); else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'DOES NOT FIT', IC.C.hostile); }
-}
-function finishLine(m) {
-  const ap = m.ap, pts = m.pts || [];
-  if (pts.length >= 2) {
-    const ok = m.part === 'runway' ? IC.aptPlanRunway(S, ap, pts[0], pts[pts.length - 1]) : IC.aptPlanTaxi(S, ap, pts, Math.max(0.12, 8 / IC.cam.z));
-    IC.sfx.ui(ok ? 'ok' : 'err');
-  }
-  m.pts = [];
+/* the airport builder (builder.js): left-click places a point, clicking the last point again builds, right-click
+   takes the last point back and with none left leaves the mode */
+function buildIn(m, p, btn, shift) {
+  const r = IC.buildInput(S, m, p, btn, IC.cam.z, shift);
+  if (r === 'exit') { IC.setMode(null); return r; }
+  if (r === 'built') { IC.sfx.ui('ok'); ping(p); }
+  else if (r === 'err') { IC.sfx.ui('err'); if (m.err) IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); }
+  else IC.sfx.ui('click');
   IC.ui.refresh(true);
+  return r;
+}
+function foundIn(m, p, btn) {
+  const r = IC.foundInput(S, m, p, btn);
+  if (r === 'exit') { IC.setMode(null); return r; }
+  if (r === 'built') { IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, 1.2)); IC.sfx.ui('ok'); return r; }
+  if (r === 'err') { IC.sfx.ui('err'); IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); }
+  else IC.sfx.ui('click');
+  IC.ui.refresh(true);
+  return r;
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 const selUnits = () => S.group.length ? S.group.filter(x => !x.gunit) : S.sel && S.sel.kind === 'unit' ? [S.sel.ref] : [];
@@ -136,7 +123,12 @@ function leftClick(p, shift) {
   if (!p || S.over && !IC.ui.overDismissed) return;
   const m = S.mode2;
   if (m) {
-    if (m.kind === 'build') { buildClick(m, p); IC.ui.refresh(true); return; }
+    if (m.kind === 'build') return buildIn(m, p, 0, shift);
+    if (m.kind === 'bmove') {
+      if (IC.bldMove(S, m.ap, m.part, p.x, p.y, m.rot)) { IC.sfx.ui('ok'); ping(p); IC.setMode(null); IC.select({ kind: 'apart', ref: m.part, ap: m.ap }); }
+      else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'DOES NOT FIT', IC.C.hostile); }
+      return;
+    }
     if (m.kind === 'airway') { airwayClick(m, p); IC.ui.refresh(true); return; }
     if (m.kind === 'road') { IC.roadClick(S, m, p, 14 / IC.cam.z); IC.ui.refresh(true); return; }
     if (m.kind === 'field') {
@@ -156,12 +148,7 @@ function leftClick(p, shift) {
       IC.avAddZone(S, m.c.x, m.c.y, r);
       IC.setMode(null); ping(p); return;
     }
-    if (m.kind === 'found') {
-      const ap = IC.foundAirport(S, p.x, p.y);
-      if (ap) { IC.setMode(null); IC.select({ kind: 'infra', ref: ap }); IC.flyTo(ap.x, ap.y, Math.max(IC.cam.z, 1.2)); }
-      else IC.sfx.ui('err');
-      return;
-    }
+    if (m.kind === 'found') return foundIn(m, p, 0);
     if (m.kind === 'deploy') {
       if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? (IC.enemyHeld(S, p.x, p.y) ? 'ENEMY-HELD' : 'TOO CLOSE') : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
       const u = IC.deploy(S, m.type, p.x, p.y);
@@ -204,7 +191,8 @@ function roadDone() { if (IC.roadFinish(S, S.mode2)) { IC.sfx.ui('ok'); IC.setMo
 /* right-click: the obvious order for what is selected */
 function rightClick(p, shift) {
   if (!p) return;
-  if (S.mode2 && S.mode2.kind === 'build' && S.mode2.pts && S.mode2.pts.length >= 2) { finishLine(S.mode2); return; }
+  if (S.mode2 && S.mode2.kind === 'build') return buildIn(S.mode2, p, 2, shift);
+  if (S.mode2 && S.mode2.kind === 'found') return foundIn(S.mode2, p, 2);
   if (S.mode2 && S.mode2.kind === 'airway' && S.mode2.from) { S.mode2.from = null; IC.ui.refresh(true); return; }
   if (S.mode2 && S.mode2.kind === 'road' && S.mode2.pts.length >= 2) { roadDone(); return; }
   if (S.mode2) { IC.setMode(null); return; }
@@ -255,7 +243,7 @@ function rightClick(p, shift) {
 }
 const LINEISH = o => o === 'hold' || o === 'dig' || o === 'attack' || o === 'reserve';
 /* for automated testing: a click at a world position */
-IC.clickWorld = (p, btn, shift) => { S.hover = p; if (btn === 2) rightClick(p, shift); else leftClick(p, shift); };
+IC.clickWorld = (p, btn, shift) => { S.hover = p; return btn === 2 ? rightClick(p, shift) : leftClick(p, shift); };
 function ping(p) { S.fx.rings.push({ x: p.x, y: p.y, r: 26, t: 0, color: '111,210,255', px: true }); }
 
 /* ---------- orders from buttons and keys ---------- */
@@ -405,7 +393,16 @@ function onAct(e) {
     case 'bwork': { const ap = selAp(); if (ap) IC.baseWork(S, ap, v, id); break; }
     case 'bcancel': { const ap = selAp(); if (ap) IC.cancelWork(S, ap, id); break; }
     case 'bauto': { const ap = selAp(); if (ap) ap.autoRepair = !ap.autoRepair; break; }
-    case 'build': { const ap = selAp(); if (!ap || ap.locked) break; const cur = S.mode2; IC.setMode(cur && cur.kind === 'build' && cur.part === v && cur.ap === ap ? null : { kind: 'build', ap, part: v, pts: [], rot: ap.rwyA || 0 }); if (S.mode2 && IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2); return; }
+    case 'build': { const ap = selAp(); if (!ap || ap.locked) break; const cur = S.mode2; IC.setMode(cur && cur.kind === 'build' && cur.part === v && cur.ap === ap ? null : IC.bldMode(S, ap, v)); if (S.mode2 && IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2); return; }
+    case 'bpref': { const [k, x] = v.split(':'); const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
+    case 'bundo': { const ap = selAp(); if (ap && IC.bldUndo(S, ap)) IC.sfx.ui('ok'); else IC.sfx.ui('err'); break; }
+    case 'bwhen': { const ap = selAp(); const w = ap && ap.works.find(x => x.id === id); if (w) { w.rwMode = w.rwMode === 'night' ? 'close' : 'night'; } break; }
+    case 'aptMove': if (S.sel && S.sel.kind === 'apart') { IC.setMode({ kind: 'bmove', ap: S.sel.ap, part: S.sel.ref, rot: S.sel.ref.a || 0 }); return; } break;
+    case 'aptRot': if (S.sel && S.sel.kind === 'apart') { const p = S.sel.ref; if (!IC.bldMove(S, S.sel.ap, p, p.x, p.y, (p.a || 0) + (+v || Math.PI / 12))) IC.sfx.ui('err'); } break;
+    case 'aptMat': if (S.sel && S.sel.kind === 'apart') { if (IC.bldUpgrade(S, S.sel.ap, S.sel.ref, v)) IC.sfx.ui('ok'); else IC.sfx.ui('err'); } break;
+    case 'aptZone': if (S.sel && S.sel.kind === 'apart') IC.aptSetZone(S, S.sel.ap, S.sel.ref, v); break;
+    case 'aptDir': if (S.sel && S.sel.kind === 'apart') { const p = S.sel.ref, nx = { '0': 1, '1': -1, '-1': 0 }[String(p.oneway || 0)]; IC.aptSetTaxiDir(S, S.sel.ap, p, nx, 0); } break;
+    case 'flPark': { const r = S.roster.find(x => x.id === b.dataset.rid); const ap = selAp(); if (r && ap) { r.park = r.park === 'open' ? null : 'open'; IC.assignSlots(S, ap); } break; }
     case 'bulldoze': { const ap = selAp(); if (!ap) break; IC.setMode(S.mode2 && S.mode2.kind === 'bulldoze' ? null : { kind: 'bulldoze', ap }); return; }
     case 'aptZoom': { const ap = selAp(); if (ap) IC.flyTo(ap.x, ap.y, U.clamp(IC.cam.vw / (ap.radius * 2.4), 1.2, 12)); return; }
     case 'aptRepair': { const ap = selAp(); if (ap) IC.aptQueue(S, ap, v); break; }
@@ -576,14 +573,17 @@ const keys = new Set();
 window.addEventListener('keydown', e => {
   if (!S || !$('start').hidden) return;
   if (e.target.closest && e.target.closest('input,textarea')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { const ap = (S.mode2 && S.mode2.ap) || selAp(); if (ap) { e.preventDefault(); IC.sfx.ui(IC.bldUndo(S, ap) ? 'ok' : 'err'); IC.ui.refresh(true); return; } }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
   const rooms = { a: 'air', g: 'army', l: 'logi', i: 'industry', n: 'intel', k: 'research', j: 'journal', v: 'aviation', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
-  if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + Math.PI / 2; IC.ui.refresh(true); return; }
-  if (bm && k === 'Enter') { finishLine(bm); return; }
-  if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { bm.pts.pop(); return; }
+  if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
+  if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
+  if (bm && k === 'Enter') { const r = IC.buildFinish(S, bm, IC.cam.z); IC.sfx.ui(r === 'built' ? 'ok' : 'err'); if (r === 'err' && bm.err && S.hover) IC.text(S, S.hover.x, S.hover.y, bm.err.toUpperCase(), IC.C.hostile); IC.ui.refresh(true); return; }
+  if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { bm.pts.pop(); IC.ui.refresh(true); return; }
+  if (S.mode2 && S.mode2.kind === 'bmove' && lk === 'r') { S.mode2.rot += e.shiftKey ? Math.PI / 2 : Math.PI / 12; return; }
   const rm = S.mode2 && S.mode2.kind === 'road' ? S.mode2 : null;
   if (rm && k === 'Enter' && rm.pts.length >= 2) { roadDone(); return; }
   if (rm && k === 'Backspace' && rm.pts.length) { IC.roadUndo(S, rm, 14 / IC.cam.z); IC.ui.refresh(true); return; }
