@@ -195,7 +195,7 @@ IC.render = function (S, now) {
   drawRanges(S, px, now);
   if (S.layers.ground) for (const g of S.gunits) if (g.side === 'us' && inView(g.x, g.y, 300)) drawG(S, g, px, now);
   for (const u of S.units) if (inView(u.x, u.y, 200)) drawUnit(S, u, px, now);
-  if (S.layers.logistics) drawConvoys(S, px);
+  if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   drawWrecks(S, px, now);
   drawTrails(S, px);
   drawPlumes(S, px, now, light);
@@ -996,27 +996,6 @@ function column(x, y, h, n, px, col, ink) {
     ctx.fillRect(-4 * px, -2.5 * px, 8 * px, 5 * px); ctx.strokeRect(-4 * px, -2.5 * px, 8 * px, 5 * px);
     ctx.fillStyle = ink; ctx.fillRect(2.2 * px, -2.5 * px, 1.8 * px, 5 * px);
     ctx.restore();
-  }
-}
-function drawConvoys(S, px) {
-  for (const v of S.vehicles) {
-    if (v.state === 'idle' && cam.z < 0.4) continue;
-    // trucks parked at an airport or factory sit out of the way when zoomed in
-    if (v.state === 'idle' && v.home && v.home.parts && cam.z > 1.2) continue;
-    if (!inView(v.x, v.y, 40)) continue;
-    column(v.x, v.y, v.h, v.trucks, px, v.job ? C.supply : '#a08a5c', '#1b1307');
-    const sel = S.sel && S.sel.ref === v;
-    if (v.job && (cam.z > 0.18 || sel)) {
-      const txt = `${v.job.short} ${v.job.qty}${v.job.kind === 'ground' ? '' : '×' + v.job.mun}`;
-      ctx.font = `700 ${8.5 * px}px "IBM Plex Mono", monospace`;
-      const w = ctx.measureText(txt).width + 7 * px;
-      ctx.fillStyle = 'rgba(30,22,8,0.88)'; ctx.fillRect(v.x - w / 2, v.y - 19 * px, w, 12 * px);
-      ctx.fillStyle = C.supply; ctx.textAlign = 'center'; ctx.fillText(txt, v.x, v.y - 10 * px); ctx.textAlign = 'left';
-    }
-    if (sel) {
-      brackets(v.x, v.y, 15 * px, px);
-      if (v.route) { ctx.strokeStyle = 'rgba(224,180,88,0.6)'; ctx.setLineDash([4 * px, 4 * px]); ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.moveTo(v.x, v.y); for (const p of v.route) ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]); }
-    }
   }
 }
 function drawWrecks(S, px, now) {
