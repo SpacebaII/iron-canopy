@@ -1049,6 +1049,7 @@ IC.foundAirport = function (S, x, y, a) {
   if (why) { IC.log(S, 'warn', 'BUILD', why); IC.text(S, x, y, why.toUpperCase().replace(/\.$/, ''), IC.C.hostile); return null; }
   const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL);
   if (S.budget < sv.cost) { IC.log(S, 'warn', 'BUILD', `The site costs ${U.money(sv.cost)} with land and levelling.`); return null; }
+  if (sv.river) { IC.log(S, 'warn', 'BUILD', 'A river crosses the runway line: turn the runway or pick another site.'); IC.text(S, x, y, 'A RIVER CROSSES THE RUNWAY LINE', IC.C.hostile); return null; }
   S.budget -= sv.cost;
   const city = IC.cities(S).slice().sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
   const n = S.infra.filter(i => i.kind === 'airport').length;

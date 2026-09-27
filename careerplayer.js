@@ -12,6 +12,7 @@ function site(S, c, rmin, rmax) {
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
     if (IC.foundCheck(S, x, y)) continue;
     const sv = IC.foundSurvey(S, x, y, IC.PREVAIL);
+    if (sv.river) continue;
     const s = sv.cost + sv.homes * 8 + sv.obst * 0.5 + r * 0.05;
     if (s < bs) { bs = s; best = { x, y }; }
   }

@@ -341,8 +341,10 @@ IC.noiseOver = function (S, x, y, a, len) {
 IC.foundSurvey = function (S, x, y, a) {
   const W = S.world, d = { x: Math.cos(a), y: Math.sin(a) };
   const h0 = W.hAt(x, y);
-  let hmin = h0, hmax = h0, obst = 0, obstAt = 0;
+  let hmin = h0, hmax = h0, obst = 0, obstAt = 0, river = false;
   for (let s = -RW0 / 2; s <= RW0 / 2; s += 3) { const h = W.hAt(x + d.x * s, y + d.y * s); hmin = Math.min(hmin, h); hmax = Math.max(hmax, h); }
+  // a runway cannot cross a river: sample the line every 50 m
+  for (let s = -RW0 / 2; s <= RW0 / 2 && !river; s += 0.5) river = !!(IC.onRiver && IC.onRiver(x + d.x * s, y + d.y * s));
   // hills under the approach: ground rising faster than a 3° slope from the runway end
   for (const e of [-1, 1]) for (let s = RW0 / 2 + 5; s < RW0 / 2 + 100; s += 5) {
     const h = W.hAt(x + d.x * s * e, y + d.y * s * e), rise = (h - hmax) * 2000 - (s - RW0 / 2) * 100 * 0.052;
@@ -356,7 +358,7 @@ IC.foundSurvey = function (S, x, y, a) {
   const off = Math.abs(U.angWrap(((a - IC.PREVAIL) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2)) * 180 / Math.PI;
   const wind = Math.round(Math.min(off, 180 - off));
   const hdg = IC.bearing(a), end = n => String(Math.round(n / 10) % 36 || 36).padStart(2, '0');
-  return { x, y, a, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, cost: IC.FOUND_COST + earth + land, obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
+  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, cost: IC.FOUND_COST + earth + land, obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
     windOff: wind, name: `${end(hdg)}/${end(hdg + 180)}`, cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
 };
 /* the survey in plain words, one line each */
@@ -364,6 +366,7 @@ IC.foundLines = function (S, sv) {
   const L = [];
   L.push(`Runway ${sv.name} · ${sv.windOff <= 15 ? 'into the prevailing wind' : `${sv.windOff}° off the prevailing wind (${sv.cross} kt across in a typical 15 kt breeze)`}`);
   L.push(`Ground: ${sv.hdiff < 3 ? 'flat' : `${Math.round(sv.hdiff)} m to level (${U.money(sv.earth)})`} · land ${U.money(sv.land)}`);
+  if (sv.river) L.push('A river crosses the runway line: a runway cannot be built across it. Turn the runway or move the site');
   if (sv.obst > 20) L.push(`Hills ${sv.obstAt.toFixed(0)} km off one end rise ${sv.obst} m above the approach slope`);
   L.push(sv.homes ? `Noise over ${Object.entries(sv.noise).map(([k, v]) => `${v} city blocks of ${k}`).join(', ')}` : 'No homes under the flight paths');
   L.push(`Total ${U.money(sv.cost)}`);
