@@ -11,13 +11,20 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
 // shared page helpers: a sandbox war around the capital with our batteries and a raid we choose
 const LIB = `
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// the map alone: goals, message feed and alert banners out of the way
+const clean = () => { IC.ui.arMin = true; const st = document.createElement('style'); st.textContent = '#brief,#feed,#incidents,#alerts{display:none!important}'; document.head.appendChild(st); };
 const quiet = () => { IC.ui.cineShown = 1e9; const c = document.getElementById('cine'); if (c) c.hidden = true; const m = document.getElementById('comms'); if (m) m.style.display = 'none'; };
+// the same world and the same dice every run, so frames and timings compare
+const seeded = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 async function war(hour) {
+  IC.S.seed = 4242; Math.random = seeded(7);
   IC.begin('sandbox'); await wait(2600);
   const S = IC.S; S.paused = true; quiet();
   for (const k of ['a_lrsam', 'a_pac3', 'a_hatd', 's_bmd', 'a_cram', 'a_laser', 'a_hpm', 's_esm', 's_cbr', 's_aero', 'e_decoy', 'x_glcm', 'x_tbm', 'a_exo']) S.tech.done.add(k);
   if (hour != null) S.time = Math.floor(S.time / 86400) * 86400 + hour * 3600;
   S.enemy.war = true; S.cfg.slowmo = false; S.cfg.bars = false;
+  // only the threats a scene sends: the enemy commander and the rest of the war sit this one out
+  IC.enemyTick = () => {}; IC.ground = () => {}; S.threats = S.threats.filter(t => t.d.civil); S.units = S.units.filter(u => !u.d.weapon);
   for (const u of S.units) { u.roe = 'free'; if (u.emitter) { u.emcon = 'on'; u.radarOn = true; } }
   return S;
 }
@@ -63,35 +70,44 @@ const SCENES = {
   'sam-night-far': { frames: [0, 500, 1500, 3000, 4500], setup: samScene(23, 0.3) },
   // a ballistic missile on the capital, a long-range battery with BMD rounds and an upper tier
   bmd: { frames: [0, 500, 1200, 2000, 3000, 4200, 5500, 7000], setup: `
-    const S = await war(21); const c = IC.cap(S);
+    const S = await war(21); const c = IC.cap(S); clean();
     unit(S, 'lrsam', c.x - 60, c.y + 40); unit(S, 'hatd', c.x + 50, c.y + 70); unit(S, 'bmd', c.x + 20, c.y - 90);
     const t = IC.launchBallistic(S, 'srbm', c.x + 2600, c.y - 1900, { x: c.x + 20, y: c.y });
     steps(S, 400, S => S.missiles.some(m => m.target === t));
-    look(c.x + 250, c.y - 200, 0.45); S.speed = 1; S.paused = false;` },
+    look(c.x + 600, c.y - 500, 0.3); S.speed = 1; S.paused = false;` },
   // a dozen missiles in the air: drones and cruise missiles on the capital, three batteries firing salvos
   raid: { frames: [0, 1500, 3000], setup: raidScene(15) },
   perf: { perf: true, setup: raidScene(15) }
 };
 function samScene(hour, z) {
+  // close in: a short-range vehicle and a medium-range battery against jet drones a few km out, the whole flight on screen;
+  // far out: a long-range battery against fighters 100 km away
+  const near = z > 1;
   return `
-    const S = await war(${hour}); const c = IC.cap(S);
-    const b = unit(S, 'lrsam', c.x - 150, c.y + 60); unit(S, 'mrsam', c.x + 120, c.y + 90); unit(S, 'lr3d', c.x, c.y - 40);
+    const S = await war(${hour}); const c = IC.cap(S); clean();
+    const at = { x: c.x + 500, y: c.y - 300 };
+    ${near ? `unit(S, 'shorad', at.x, at.y); unit(S, 'mrsam', at.x - 60, at.y + 40); unit(S, 'mr3d', at.x - 20, at.y - 60);
+    for (let i = 0; i < 3; i++) hostile(S, 'jdr', at.x + 260 + i * 25, at.y - 160 + i * 35, c);
+    steps(S, 600, S => S.missiles.length > 0);
+    look(at.x + 120, at.y - 40, ${z});`
+    : `unit(S, 'lrsam', c.x - 150, c.y + 60); unit(S, 'mrsam', c.x + 120, c.y + 90); unit(S, 'lr3d', c.x, c.y - 40);
     for (let i = 0; i < 2; i++) hostile(S, 'ftr', c.x + 1300 + i * 40, c.y - 700 + i * 30, c, { mission: 'sweep' });
     for (let i = 0; i < 3; i++) hostile(S, 'jdr', c.x + 900 + i * 30, c.y - 500 + i * 50, c);
     steps(S, 600, S => S.missiles.length > 0);
-    const m = S.missiles[0]; const u = m.unit || b;
-    look(${z > 1 ? 'u.x + 25, u.y - 15' : 'c.x + 400, c.y - 200'}, ${z}); S.speed = 1; S.paused = false;`;
+    look(c.x + 400, c.y - 250, ${z});`}
+    S.speed = 1; S.paused = false;`;
 }
 function raidScene(hour) {
   return `
-    const S = await war(${hour}); const c = IC.cap(S);
+    const S = await war(${hour}); const c = IC.cap(S); clean();
     S.ad = S.ad || {}; S.ad.doctrine = 'salvo';
-    unit(S, 'lrsam', c.x - 120, c.y + 60); unit(S, 'mrsam', c.x + 110, c.y + 80); unit(S, 'mrsam', c.x + 40, c.y - 120); unit(S, 'shorad', c.x + 160, c.y - 40); unit(S, 'spaag', c.x + 60, c.y - 60); unit(S, 'lr3d', c.x, c.y - 40); unit(S, 'gf', c.x + 200, c.y - 150);
-    for (let i = 0; i < 14; i++) hostile(S, 'jdr', c.x + 1000 + (i % 5) * 45, c.y - 800 + Math.floor(i / 5) * 60 + (i % 5) * 20, c);
-    for (let i = 0; i < 8; i++) hostile(S, 'lacm', c.x + 700 + i * 30, c.y - 450 + (i % 3) * 40, c);
-    for (let i = 0; i < 4; i++) hostile(S, 'ftr', c.x + 1500, c.y - 900 + i * 50, c, { mission: 'sweep' });
+    unit(S, 'lrsam', c.x - 120, c.y + 60); unit(S, 'lrsam', c.x + 60, c.y + 160); unit(S, 'mrsam', c.x + 110, c.y + 80); unit(S, 'mrsam', c.x + 40, c.y - 120); unit(S, 'mrsam', c.x - 100, c.y - 100);
+    unit(S, 'shorad', c.x + 160, c.y - 40); unit(S, 'shorad', c.x + 220, c.y - 160); unit(S, 'spaag', c.x + 60, c.y - 60); unit(S, 'lr3d', c.x, c.y - 40); unit(S, 'gf', c.x + 200, c.y - 150);
+    for (let i = 0; i < 14; i++) hostile(S, 'jdr', c.x + 520 + (i % 5) * 45, c.y - 420 + Math.floor(i / 5) * 60 + (i % 5) * 20, c);
+    for (let i = 0; i < 8; i++) hostile(S, 'lacm', c.x + 450 + i * 30, c.y - 250 + (i % 3) * 40, c);
+    for (let i = 0; i < 4; i++) hostile(S, 'ftr', c.x + 1100, c.y - 700 + i * 50, c, { mission: 'sweep' });
     IC.launchBallistic(S, 'srbm', c.x + 2600, c.y - 1900, { x: c.x + 20, y: c.y });
-    steps(S, 900, S => S.missiles.length >= 6);
+    steps(S, 900, S => S.missiles.length >= 14);
     look(c.x + 250, c.y - 180, 0.55); S.speed = 1; S.paused = false;`;
 }
 
@@ -110,22 +126,35 @@ function raidScene(hour) {
     page.on('pageerror', e => errors.push(e.message));
     await page.goto('file://' + game);
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
+    if (args.includes('--fx-off')) await page.evaluate(() => { if (IC.cfx) IC.cfx.on = false; });
+    const noArg = args.find(a => a.startsWith('--no='));
+    if (noArg) await page.evaluate(v => { IC.cfx.no = {}; for (const k of v.split(',')) IC.cfx.no[k] = true; }, noArg.slice(5));
     await page.evaluate(`(async () => { ${LIB} ${sc.setup} })()`);
     if (sc.perf) {
       const r = await page.evaluate(`(async () => {
         const S = IC.S, wait = ms => new Promise(r => setTimeout(r, ms));
-        // render alone, the view held still
-        S.paused = true; await wait(200);
-        const t0 = performance.now(); let n = 0;
-        while (performance.now() - t0 < 3000) { IC.render(S, performance.now() / 1000); n++; }
-        const render = (performance.now() - t0) / n;
-        // the whole loop: simulation, effects and drawing, as requestAnimationFrame delivers it
-        S.paused = false; const iv = []; let last = performance.now();
-        await new Promise(res => { const f = t => { iv.push(t - last); last = t; if (iv.length < 240) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+        const cv = document.getElementById('map'), g2 = cv.getContext('2d');
+        const wrap = () => { const dc = IC.drawCombat, df = IC.drawForces, o = { t: 0, n: 0, dc, df }; if (!dc) return o;
+          IC.drawCombat = function () { const a = performance.now(); dc.apply(this, arguments); o.t += performance.now() - a; o.n++; };
+          IC.drawForces = function () { const a = performance.now(); df.apply(this, arguments); o.t += performance.now() - a; }; return o; };
+        const unwrap = o => { if (o.dc) { IC.drawCombat = o.dc; IC.drawForces = o.df; } };
+        // the raid running: frame intervals as requestAnimationFrame delivers them (simulation, effects and drawing)
+        let w = wrap(), peak = 0; const iv = []; let last = performance.now();
+        await new Promise(res => { const f = t => { iv.push(t - last); last = t; peak = Math.max(peak, IC.cfx && IC.cfx.count ? IC.cfx.count() : 0); if (iv.length < 240) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+        unwrap(w); const live = w.n ? w.t / w.n : null;
         iv.sort((a, b) => a - b);
-        return { render, frameMed: iv[iv.length >> 1], frame95: iv[Math.floor(iv.length * 0.95)], missiles: S.missiles.length, threats: S.threats.filter(t => !t.dead && !t.d.civil).length };
+        // then held still: the whole picture drawn again and again; reading a pixel back makes the canvas rasterise
+        // now, so the time includes the drawing itself
+        S.paused = true;
+        const hold = ms => { const t0 = performance.now(); let n = 0; while (performance.now() - t0 < ms) { IC.render(S, performance.now() / 1000); g2.getImageData(0, 0, 1, 1); n++; } return (performance.now() - t0) / n; };
+        // the same frozen frame without the new effects (trails, particles, missile heads), for a direct difference
+        hold(800);   // map tiles paint on the first frames; let that finish
+        let bare = null;
+        if (IC.cfx && IC.cfx.count) { const keep = IC.cfx.count(); IC.cfx.no = { trails: 1, low: 1, high: 1, miss: 1 }; bare = hold(1500); IC.cfx.no = null; bare = { ms: bare, parts: keep }; }
+        w = wrap(); const render = hold(2500); unwrap(w);
+        return { render, bare, combat: w.n ? w.t / w.n : null, live, peak, parts: IC.cfx && IC.cfx.count ? IC.cfx.count() : 0, frameMed: iv[iv.length >> 1], frame95: iv[Math.floor(iv.length * 0.95)], missiles: S.missiles.length, threats: S.threats.filter(t => !t.dead && !t.d.civil).length };
       })()`);
-      console.log(`perf: render ${r.render.toFixed(2)} ms, frame median ${r.frameMed.toFixed(1)} ms, 95th ${r.frame95.toFixed(1)} ms, ${r.missiles} interceptors and ${r.threats} threats in the air`);
+      console.log(`perf: render ${r.render.toFixed(2)} ms${r.combat != null ? ` (combat drawing ${r.combat.toFixed(2)} ms)` : ''}${r.bare ? `, ${r.bare.ms.toFixed(2)} ms without the new effects (${r.bare.parts} particles)` : ''}, frame median ${r.frameMed.toFixed(1)} ms${r.live != null ? ` (combat ${r.live.toFixed(2)} ms, up to ${r.peak} particles, ${r.parts} when timed)` : ''}, 95th ${r.frame95.toFixed(1)} ms, ${r.missiles} interceptors and ${r.threats} threats in the air`);
     } else {
       const t0 = Date.now();
       for (let i = 0; i < sc.frames.length; i++) {
