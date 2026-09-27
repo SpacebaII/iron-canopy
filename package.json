@@ -1,0 +1,11 @@
+{
+  "name": "iron-canopy",
+  "private": true,
+  "description": "Browser game: build airports, run airlines, defend the sky.",
+  "scripts": {
+    "test": "node tests/run.js",
+    "test:quick": "node tests/run.js --quick",
+    "start": "python devserver.py",
+    "shot": "node tools/shot.js"
+  }
+}

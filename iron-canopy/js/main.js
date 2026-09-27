@@ -403,6 +403,7 @@ function onAct(e) {
     case 'refcat': ui.refCat = v; break;
     case 'uiscale': ui.applyScale(+v); ui.saveCfg(); setTimeout(resize, 50); break;
     case 'cfg': S.cfg[v] = !S.cfg[v]; ui.saveCfg(); break;
+    case 'radarFx': S.cfg.radarFx = v; ui.saveCfg(); break;
     case 'pauseRoom': ui.pauseRoom = !ui.pauseRoom; ui.saveCfg(); break;
     case 'pauseOn': S.cfg.pauseOn[v] = !S.cfg.pauseOn[v]; ui.saveCfg(); break;
     case 'selg': case 'selu': case 'sels': case 'selt': case 'selv': {

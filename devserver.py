@@ -8,6 +8,7 @@ import socketserver
 from urllib.parse import urlparse, parse_qs
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+os.chdir(ROOT)  # serve this folder wherever the server is started from
 
 
 class NoCache(http.server.SimpleHTTPRequestHandler):

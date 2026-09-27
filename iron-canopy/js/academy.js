@@ -174,11 +174,11 @@ IC.LESSONS = [
       { text: S => `Damage report. Select ${fwd(S).name} to see what was hit.`, hint: { at: S => fwd(S) }, done: S => S.sel && S.sel.ref === fwd(S) },
       { text: () => 'The panel shows the runway, hangars and aircraft. Engineers already started on the runway. Rebuild or repair a hangar too: engineers work a couple of jobs at once, so queue what matters first.', hint: { el: 'insp' }, done: S => IC.baseStatus(S, fwd(S)).runway && !!S.flags.hangarWork },
       { text: S => `Meanwhile the enemy ${S.camp.enemy.name} is attacking towards ${S.camp.town.name}. Send TALON 1 against it: select the red diamond and choose Helicopter strike.`,
-        start(S) { if (!S.roster.some(r => r.kind === 'atk' && r.st !== 'lost')) { flight(S, 'atk', 'TALON 2', rear(S)); IC.say(S, 'AIR', 'TALON 1 was lost on the ground. TALON 2 is on its way up from the rear base.'); } const f = frontA(S), en = S.camp.enemy; const si = en.sector; for (const g of S.gunits) if (g.side === 'them') { g.order = 'attack'; g.sector = si; } const s = f.sectors[si]; s.eAttack = true; s.main = true; s.eUntil = S.time + 5 * 3600; s.gain0 = 0; en.known = true; en.kx = en.x; en.ky = en.y; en.kt = S.time; },
-        ensure(S) { if (!S.roster.some(r => r.kind === 'atk' && r.st !== 'lost')) { flight(S, 'atk', 'TALON ' + (S.roster.filter(r => r.kind === 'atk').length + 1), rear(S)); IC.say(S, 'AIR', 'We lost that attack flight. Another is ready at the rear base.'); } const e = S.camp.enemy; if (e.dead) S.flags.hstrike = true; else { e.known = true; e.kx = e.x; e.ky = e.y; e.kt = S.time; } },
+        start(S) { if (!S.roster.some(r => r.kind === 'atk' && r.st !== 'lost')) { flight(S, 'atk', 'TALON 2', fwd(S)); IC.say(S, 'AIR', 'TALON 1 was lost on the ground. TALON 2 has been flown in to the forward base.'); } const f = frontA(S), en = S.camp.enemy; const si = en.sector; for (const g of S.gunits) if (g.side === 'them') { g.order = 'attack'; g.sector = si; } const s = f.sectors[si]; s.eAttack = true; s.main = true; s.eUntil = S.time + 5 * 3600; s.gain0 = 0; en.known = true; en.kx = en.x; en.ky = en.y; en.kt = S.time; },
+        ensure(S) { if (!S.roster.some(r => r.kind === 'atk' && r.st !== 'lost')) { flight(S, 'atk', 'TALON ' + (S.roster.filter(r => r.kind === 'atk').length + 1), fwd(S)); IC.say(S, 'AIR', 'We lost that attack flight. Another has been flown in to the forward base.'); } const e = S.camp.enemy; if (e.dead) S.flags.hstrike = true; else { e.known = true; e.kx = e.x; e.ky = e.y; e.kt = S.time; } },
         hint: { at: S => ({ x: S.camp.enemy.kx, y: S.camp.enemy.ky }) }, done: S => !!S.flags.hstrike },
       { text: S => `The attack hurt their armor. Now decide: order ${S.camp.ours.name} to Attack while they are weak, or to Dig in and let them break on prepared positions.`, hint: { at: S => S.camp.ours }, done: S => S.camp.ours.manual && (S.camp.ours.order === 'attack' || S.camp.ours.order === 'dig') && S.flags.gorderSet },
-      { text: S => `${S.camp.ours.name} is short of anti-tank missiles. Send a transport helicopter with anti-tank kits or replacements: select the brigade and choose Air lift.`, start(S) { if (!S.roster.some(r => r.kind === 'heli' && r.st !== 'lost')) flight(S, 'heli', 'HOOK 2', rear(S)); }, done: S => !!S.flags.lift },
+      { text: S => `${S.camp.ours.name} is short of anti-tank missiles. Send a transport helicopter with anti-tank kits or replacements: select the brigade and choose Air lift.`, start(S) { if (!S.roster.some(r => r.kind === 'heli' && r.st !== 'lost')) flight(S, 'heli', 'HOOK 2', fwd(S)); }, done: S => !!S.flags.lift },
       { text: S => `Hold ${S.camp.town.name} for one more hour.`, start(S) { S.camp.holdT = S.time + 3600; }, done: S => S.time > S.camp.holdT },
       { text: () => 'The base is flying again and the line held. Lesson complete.', done: () => true, wait: 40 }
     ],
@@ -240,6 +240,8 @@ IC.academyInit = function (S, id) {
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: L.title, objs: [], sched: [], cool: {}, lesson: L, step: -1, stepT: S.time, focus: null };
   S.enemy.allow = new Set();
   S.ad.roe = 'tight';
+  // fair weather for the whole lesson: storms would ground the helicopters a lesson needs
+  S.weather.kind = S.weather.prev = U.pick(['clear', 'scattered']); S.weather.fade = 1; S.weather.hold = true;
   L.setup(S);
   for (const b of IC.bases(S)) IC.assignSlots(S, b);
   IC.card(S, L.title, 'Academy', L.sub + '. You will learn: ' + L.learn.join(' · ') + '.', 'chapter');

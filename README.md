@@ -44,11 +44,16 @@ All game code is in `iron-canopy/js/`, loaded in order by `iron-canopy/index.htm
 
 ## Tests
 
-The simulation runs headless in Node (`headless.js` loads the game files and stubs out the canvas):
+The simulation runs headless in Node (`headless.js` loads the game files and stubs out the canvas). GitHub runs the suite on every push.
 
 ```
-node storytest.js 12345 30     # a scripted player through the Career, 30 game hours
-node camptest.js 12345 24      # a scripted commander in Quick war
-node academytest.js            # every Academy lesson (or name one: node academytest.js airbase)
-node simtest.js
+npm test                       # the whole suite, about 40 s
+npm run test:quick             # skip the slow runs
+node tests/run.js airport      # only tests whose name contains "airport"
 ```
+
+Longer diagnostic runs print what happens as they go: `node storytest.js 12345 30` (a scripted player through the Career), `node camptest.js 12345 24` (Quick war), `node academytest.js [lesson]`.
+
+## Working on it
+
+`CLAUDE.md` explains the code, conventions and budgets. Planned work is in `docs/tasks/`, one brief per piece.

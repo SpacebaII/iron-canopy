@@ -592,13 +592,23 @@ function drawRanges(S, px, now) {
         ctx.beginPath(); ctx.arc(u.x, u.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
         if (sel && d.sensor.nctrR) { ctx.strokeStyle = 'rgba(127,232,176,0.35)'; ctx.setLineDash([2 * px, 5 * px]); ctx.beginPath(); ctx.arc(u.x, u.y, d.sensor.nctrR * (IC.hasTech(S, 's_nctr') ? 1.5 : 1), 0, 7); ctx.stroke(); ctx.setLineDash([]); label('type recognition', u.x, u.y - d.sensor.nctrR - 4 * px, px, 'rgba(127,232,176,0.7)', 9); }
       }
-      if (u.radarOn && d.sensor.rot && inView(u.x, u.y, d.sensor.R)) {
+      const fxMode = S.cfg.radarFx || 'subtle';
+      if (u.radarOn && d.sensor.rot && fxMode !== 'off' && inView(u.x, u.y, d.sensor.R)) {
         const a = (u.phase || 0) + Math.PI * 2 * S.time / d.sensor.per;
-        const R = Math.min(d.sensor.R, 2400) * (u.jamF || 1);
-        const grd = ctx.createRadialGradient(u.x, u.y, 0, u.x, u.y, R);
-        grd.addColorStop(0, 'rgba(92,200,255,0.02)'); grd.addColorStop(1, 'rgba(92,200,255,0.11)');
-        ctx.fillStyle = grd; ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.arc(u.x, u.y, R, a - 0.4, a); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = 'rgba(140,220,255,0.35)'; ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x + Math.cos(a) * R, u.y + Math.sin(a) * R); ctx.stroke();
+        if (fxMode === 'full') {
+          const R = Math.min(d.sensor.R, 2400) * (u.jamF || 1);
+          const grd = ctx.createRadialGradient(u.x, u.y, 0, u.x, u.y, R);
+          grd.addColorStop(0, 'rgba(92,200,255,0.02)'); grd.addColorStop(1, 'rgba(92,200,255,0.11)');
+          ctx.fillStyle = grd; ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.arc(u.x, u.y, R, a - 0.4, a); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(140,220,255,0.35)'; ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x + Math.cos(a) * R, u.y + Math.sin(a) * R); ctx.stroke();
+        } else {
+          // subtle: a small rotating hand at the radar itself, nothing sweeping across the screen
+          const r = 20 * px;
+          ctx.strokeStyle = 'rgba(140,220,255,0.28)'; ctx.lineWidth = 1 * px;
+          ctx.beginPath(); ctx.arc(u.x, u.y, r, 0, 7); ctx.stroke();
+          ctx.strokeStyle = 'rgba(160,230,255,0.6)'; ctx.lineWidth = 1.4 * px;
+          ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x + Math.cos(a) * r, u.y + Math.sin(a) * r); ctx.stroke();
+        }
       }
       if (u.jammers) for (const j of u.jammers) {
         ctx.strokeStyle = `rgba(242,180,65,${0.12 + Math.random() * 0.2})`; ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.moveTo(u.x, u.y);
@@ -819,7 +829,7 @@ function drawTrack(S, t, px, now) {
     const r = Math.min(400, (t.perr || 0) + sp * age);
     if (r * cam.z > 6) { ctx.strokeStyle = aff === 'H' ? 'rgba(255,91,79,0.3)' : 'rgba(242,209,74,0.3)'; ctx.setLineDash([2 * px, 4 * px]); ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
   }
-  if (t.blip > 0) { ctx.fillStyle = `rgba(160,230,255,${t.blip * 0.35})`; ctx.beginPath(); ctx.arc(x, y, (6 + 10 * (1 - t.blip)) * px, 0, 7); ctx.fill(); }
+  if (t.blip > 0 && S.cfg.radarFx !== 'off') { const full = S.cfg.radarFx === 'full'; ctx.fillStyle = `rgba(160,230,255,${t.blip * (full ? 0.35 : 0.12)})`; ctx.beginPath(); ctx.arc(x, y, (full ? 6 + 10 * (1 - t.blip) : 5 + 3 * (1 - t.blip)) * px, 0, 7); ctx.fill(); }
   const alt = t.altKnown ? t.alt : null;
   if (alt != null && t.d.cls !== 'bal') shadow(x, y, t.alt, px, t.d.cls === 'air' ? 5 : 3);
   // an airliner off its route, or in an emergency, flashes until someone deals with it

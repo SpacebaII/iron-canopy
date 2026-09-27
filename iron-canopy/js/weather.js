@@ -29,6 +29,8 @@ IC.wx = S => {
 IC.weather = function (S, dt) {
   const w = S.weather;
   if (w.fade < 1) w.fade = Math.min(1, w.fade + dt / 1800);
+  // lessons hold the weather fair so they teach the system, not the forecast
+  if (w.hold) w.next = Math.max(w.next, S.time + 3600);
   if (S.time > w.next) {
     let k = w.forecast;
     const h = (S.time % 86400) / 3600;

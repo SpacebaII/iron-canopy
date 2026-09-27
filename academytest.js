@@ -47,17 +47,26 @@ const ACT = {
     S => { const u = S.units.find(x => x.type === 'mlrs' && x.state === 'ready'); const t = S.tels.find(x => x.known && !x.dead); if (u && t && u.mags[0].mag > 0 && S.time - (u.lastFired || 0) > 300) IC.fireMission(S, u, t, 6); }
   ]
 };
-for (const L of IC.LESSONS) {
-  if (only && L.id !== only) continue;
-  const S = IC.newGame({ seed: 777, mode: 'academy', lesson: L.id, hour: 10 });
-  const acts = ACT[L.id] || [];
+/* plays one lesson; returns { id, won, stars, over, step, hours } */
+function playLesson(id, quiet) {
+  const S = IC.newGame({ seed: 777, mode: 'academy', lesson: id, hour: 10 });
+  const acts = ACT[id] || [];
   const t0 = S.time;
   let lastStep = -1;
   for (let i = 0; i < 12 * 3600 / 0.25 && !S.over; i++) {
     IC.step(S, 0.25);
-    if (S.camp.step !== lastStep) { lastStep = S.camp.step; process.stdout.write(`[${L.id}] step ${S.camp.step} at +${U.dur(S.time - t0)}\n`); }
-    if (i % 40 === 0 && acts[S.camp.step]) { try { acts[S.camp.step](S); } catch (e) { console.log('act error', e.message); } }
+    if (S.camp.step !== lastStep) { lastStep = S.camp.step; if (!quiet) process.stdout.write(`[${id}] step ${S.camp.step} at +${U.dur(S.time - t0)}\n`); }
+    if (i % 40 === 0 && acts[S.camp.step]) { try { acts[S.camp.step](S); } catch (e) { if (!quiet) console.log('act error', e.message); } }
     if (process.env.DBG && i % (3600 * 4) === 0) console.log('   dbg', U.dur(S.time - t0), 'step', S.camp.step, 'roster', S.roster.map(r => r.name + ':' + r.st).join(' '), 'air', S.air.map(a => a.name + ':' + a.state + ':' + (a.mission && a.mission.type)).join(' '), 'wx', S.weather.kind, 'enemy', S.camp.enemy ? Math.round(S.camp.enemy.str) + (S.camp.enemy.dead ? 'dead' : '') : '');
   }
-  console.log(`[${L.id}] ${S.over || 'NOT FINISHED at step ' + S.camp.step} won:${S.won} stars:${S.stars || '-'} after ${U.dur(S.time - t0)}`);
+  return { id, won: S.won, stars: S.stars, over: S.over, step: S.camp.step, hours: (S.time - t0) / 3600, S };
+}
+module.exports = { playLesson };
+
+if (require.main === module) {
+  for (const L of IC.LESSONS) {
+    if (only && L.id !== only) continue;
+    const r = playLesson(L.id);
+    console.log(`[${L.id}] ${r.over || 'NOT FINISHED at step ' + r.step} won:${r.won} stars:${r.stars || '-'} after ${U.dur(r.hours * 3600)}`);
+  }
 }

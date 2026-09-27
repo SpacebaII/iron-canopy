@@ -14,7 +14,7 @@ IC.newGame = function (opts) {
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
     budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9, manpower: sandbox ? 60 : 30,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
-    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, capture: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true }, IC.savedCfg ? IC.savedCfg() : {}),
+    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, capture: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
     vehicles: [], jobs: [], cars: [], trains: [], imports: [], evehicles: [],
