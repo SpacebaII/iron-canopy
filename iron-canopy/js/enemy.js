@@ -433,7 +433,9 @@ function planRaid(S, E) {
   const bal = kind === 'ballistic' || kind === 'big' || kind === 'retaliation' ? Math.max(balLead(S, P.obj, false), balLead(S, P.obj, true)) + 300 : 0;
   const ds = kind !== 'ballistic' && kind !== 'retaliation' ? S.esites.filter(x => x.kind === 'drone' && alive(x)).reduce((m, x) => Math.min(m, U.dist(x, P.obj)), 1e9) : 1e9;
   const drn = ds < 1e8 ? ds * 1.35 / IC.THR.owa.spd + 600 : 0;
-  const T = S.time + Math.max(U.rand(4800, 6600), Math.min(7200, bal), Math.min(14400, drn));
+  let T = S.time + Math.max(U.rand(4800, 6600), Math.min(7200, bal), Math.min(14400, drn));
+  // drone raids come at night when the night is not too far off
+  if (kind === 'drones') { const h = ((T % 86400) / 3600), wait = h >= 20 || h < 4 ? 0 : (20 - h) * 3600 + U.rand(0, 5400); if (wait > 0 && wait < 8 * 3600) T += wait; }
   const R = { id: ++E.raidN, kind, name: RAID_NAMES[kind], obj: P.obj, P, T, t0: S.time, ops: [], leaks: [], launched: 0, esc: E.escal };
   E.raid = R;
   E.cycle = { phase: 'buildup', next: T, R };
@@ -488,11 +490,11 @@ function launchRaid(S, E, R) {
   const wave1 = T - 360, straggle = T + 480;
   let n = 0;
   const heavy = k === 'mixed' || k === 'big';
-  if (k === 'drones' || heavy || k === 'cm') n += W.drones(S, E, obj, Math.round((k === 'drones' ? 5 + esc * 2.5 : 3 + esc * 1.5) * Math.min(1.3, M.drones) * big), op, wave1);
-  if (k === 'drones' || heavy) n += W.decoys(S, E, obj, Math.round((2 + esc) * ramp), op, wave1);
+  if ((k === 'drones' || heavy || k === 'cm') && can(S, 'drones')) n += W.drones(S, E, obj, Math.round((k === 'drones' ? 5 + esc * 2.5 : 3 + esc * 1.5) * Math.min(1.3, M.drones) * big), op, wave1);
+  if ((k === 'drones' || heavy) && can(S, 'dcy')) n += W.decoys(S, E, obj, Math.round((2 + esc) * ramp), op, wave1);
   if (heavy && can(S, 'sead') && M.sead > 0.4) n += W.sead(S, E, obj, op, T);
-  if (k === 'cm' || heavy || k === 'ballistic') n += W.cm(S, E, obj, Math.round((k === 'ballistic' ? 2 : 3 + esc * 1.5) * big * M.cm), op, T);
-  if (k === 'cm' || heavy) n += escorts(S, E, obj, k === 'big' ? 2 : 1, op, T);
+  if ((k === 'cm' || heavy || k === 'ballistic') && can(S, 'cm')) n += W.cm(S, E, obj, Math.round((k === 'ballistic' ? 2 : 3 + esc * 1.5) * big * M.cm), op, T);
+  if ((k === 'cm' || heavy) && can(S, 'jam')) n += escorts(S, E, obj, k === 'big' ? 2 : 1, op, T);
   if ((k === 'ballistic' || k === 'big' || k === 'retaliation' || k === 'opening') && can(S, 'bal')) n += W.bal(S, E, obj, Math.round((k === 'opening' ? 3 : 2 + esc) * Math.max(0.5, M.bal) * (k === 'big' ? 1.5 : 1)), op, T, false);
   if ((k === 'ballistic' || k === 'big') && esc >= 1.2 && can(S, 'mrbm')) n += W.bal(S, E, obj, esc >= 2.5 ? 2 : 1, op, T, true);
   if (heavy && can(S, 'bomber') && esc >= 0.8 && M.bomber > 0.4 && Math.random() < 0.6) n += W.bomber(S, E, obj, op, T);
@@ -501,7 +503,7 @@ function launchRaid(S, E, R) {
   if ((heavy || k === 'drones') && can(S, 'helis') && Math.random() < 0.5) n += W.helis(S, E, obj, op, T - 200);
   if (k === 'big' && esc >= 2.5 && can(S, 'hgv')) OPS.hgv(S, E, obj);
   if (heavy && can(S, 'lm') && Math.random() < 0.4) OPS.lm(S, E);
-  if (k === 'opening' || k === 'big') { const pw = S.infra.filter(i => i.kind === 'power' && !i.offline).sort((a, b) => U.dist(a, obj) - U.dist(b, obj))[0]; if (pw) n += W.drones(S, E, { x: pw.x, y: pw.y, ref: pw, name: pw.name }, 4, op, wave1); }
+  if ((k === 'opening' || k === 'big') && can(S, 'drones')) { const pw = S.infra.filter(i => i.kind === 'power' && !i.offline).sort((a, b) => U.dist(a, obj) - U.dist(b, obj))[0]; if (pw) n += W.drones(S, E, { x: pw.x, y: pw.y, ref: pw, name: pw.name }, 4, op, wave1); }
   // stragglers: a few that were late off the rails
   if (k !== 'ballistic' && k !== 'retaliation' && can(S, 'drones')) n += W.drones(S, E, obj, Math.max(1, Math.round(big)), op, straggle);
   R.ops.push(op); R.planned = n;
