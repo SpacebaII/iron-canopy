@@ -76,6 +76,94 @@ test('airport: a runway crater shortens the usable strip', () => {
   assert(IC.rwUsable(rw) < before * 0.6, 'usable length did not drop');
 });
 
+/* ---------- airspace ---------- */
+/* switch off every radar controllers could use: the civil radars and the approach radars at the airports */
+const blind = S => {
+  S.units = S.units.filter(u => u.type !== 'ssr');
+  for (const b of IC.bases(S)) for (const p of b.parts || []) if (p.kind === 'atc') p.hp = 0;
+  IC.step(S, 0.5); S.asp.scanT = 0; IC.step(S, 0.5);
+};
+/* a point d units from p, on the side away from the map edge */
+const off = (p, a, d) => ({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d });
+const pair = (S, c, alt) => {
+  // two airliners 40 km apart, flying head on at the same height, 60 km from the capital
+  const m = off(c, 0.4, 600), a = off(m, 0, 200), b = off(m, Math.PI, 200);
+  const mk = (p, q, cs) => IC.spawnThreat(S, 'civ', p.x, p.y, { dest: off(q, Math.atan2(q.y - p.y, q.x - p.x), 3000), wps: [off(q, Math.atan2(q.y - p.y, q.x - p.x), 3000)], orig: { x: p.x, y: p.y, edge: true }, cs, sq: IC.squawk(), alt, cruise: alt, pax: 100, plan: null, route: [q], aim: q });
+  return [mk(a, b, 'TST 101'), mk(b, a, 'TST 202')];
+};
+test('airspace: airliners fly direct without airways and follow them once drawn', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const cap = S.byId[S.story.cap], reg = S.byId[S.story.reg];
+  const A = { x: cap.x, y: cap.y, apt: cap.id }, B = { x: reg.x, y: reg.y, apt: reg.id };
+  assert(IC.avPath(S, A, B).pts.length === 2, 'expected a direct route with no airways');
+  // a dog-leg airway: out to one side of the direct line and back
+  const dx = reg.x - cap.x, dy = reg.y - cap.y, L = Math.hypot(dx, dy), nx = -dy / L * 300, ny = dx / L * 300;
+  const f1 = IC.aspAddFix(S, cap.x + dx * 0.25 + nx, cap.y + dy * 0.25 + ny), f2 = IC.aspAddFix(S, cap.x + dx * 0.75 + nx, cap.y + dy * 0.75 + ny);
+  assert(f1 && f2 && IC.aspAddWay(S, f1.id, f2.id), 'could not draw the airway');
+  const p = IC.avPath(S, A, B);
+  assert(p.net && p.pts.some(q => q.fix === f1.id) && p.pts.some(q => q.fix === f2.id), 'route does not use the airway');
+  // and a real flight flies it
+  let near1 = 1e9, near2 = 1e9, seen = null;
+  for (let i = 0; i < 12 * 7200 && near2 > 20; i++) {
+    IC.step(S, 0.5);
+    // the first one to take off after the airway is published
+    for (const t of S.threats) if (t.tail && !t.dead && t.toApt === reg.id && U.dist(t.orig, cap) < 5 && (seen || t.flown < 30)) { seen = seen || t; if (t === seen) { near1 = Math.min(near1, U.dist(t, f1)); near2 = Math.min(near2, U.dist(t, f2)); } }
+  }
+  assert(seen, 'no flight from the capital to the regional airport');
+  assert(near1 < 20 && near2 < 20, `the flight missed the fixes (${near1.toFixed(0)}, ${near2.toFixed(0)} units)`);
+}, true);
+test('airspace: flights outside radar coverage are spaced wider', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  IC.step(S, 0.5); IC.step(S, 0.5);
+  const cap = S.byId[S.story.cap], from = { x: cap.x, y: cap.y, apt: cap.id }, to = off(cap, 1, 3000);
+  const gapOf = () => { S.asp.dep = {}; IC.aspRelease(S, from, to); return IC.aspRelease(S, from, to); };
+  const withRadar = gapOf();
+  blind(S);
+  const without = gapOf();
+  assert(withRadar > 0, 'a second departure the same way was released at once');
+  assert(without >= withRadar * 3, `outside radar the spacing should be much wider (${withRadar} s → ${without} s)`);
+});
+test('airspace: a loss of separation produces an incident', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  blind(S);
+  const [a, b] = pair(S, IC.cap(S), 9.5);
+  for (let i = 0; i < 400 && !S.asp.stats.los; i++) IC.step(S, 0.5);
+  assert(S.asp.stats.los >= 1, 'no loss of separation recorded');
+  assert(S.inc.list.some(it => (it.kind === 'separation' || it.kind === 'nearmiss') && (it.ref === a || it.ref === b)), 'no incident raised');
+});
+test('airspace: controllers keep apart flights they can see', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  run(S, 0.02);
+  const cap = IC.cap(S), [a, b] = pair(S, cap, 9.5);
+  let minD = 1e9, minZ = 1e9;
+  for (let i = 0; i < 400; i++) { IC.step(S, 0.5); if (U.dist(a, b) < 90) minZ = Math.min(minZ, Math.abs(a.alt - b.alt)); minD = Math.min(minD, U.dist(a, b)); }
+  assert(minD < 40, 'the test flights never met');
+  assert(!S.asp.stats.los, `separation was lost under radar (${minZ.toFixed(2)} km apart vertically)`);
+});
+test('airspace: light aircraft avoid controlled airspace unless cleared', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 9 });
+  const cap = IC.cap(S), ap = S.byId[S.story.cap];
+  // across the capital from one side to the other, 60 km out, where the terminal area is 45 km
+  const A = off(ap, 0.3, 600), B = off(ap, 0.3 + Math.PI, 600);
+  const fly = (a, b, o) => {
+    const t = IC.gaLaunch(S, a, b, Object.assign({ xpdr: true, alt: 1.8 }, o)), zones = new Set();
+    let inc = false;
+    for (let i = 0; i < 12000 && !t.dead; i++) {
+      IC.step(S, 0.5);
+      const z = IC.aspZoneAt(S, t.x, t.y, t.alt); if (z && t.alt > 0.2) zones.add(z.z.ap.id + ':' + z.kind);
+      inc = inc || S.inc.list.some(it => it.kind === 'infringe' && it.ref === t);
+    }
+    return { t, zones, inc };
+  };
+  const ok = fly(A, B, {});
+  assert(ok.t.dead, 'the light aircraft never arrived');
+  assert(!ok.zones.size, `a careful pilot entered controlled airspace: ${[...ok.zones]}`);
+  const home = fly(A, { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, {});
+  assert(home.zones.has(ap.id + ':ctr'), 'a light aircraft cleared to land at the capital never entered its control zone');
+  const bad = fly(A, B, { careless: true });
+  assert(bad.zones.size && bad.inc, 'a careless pilot crossed the capital without an infringement incident');
+}, true);
+
 /* ---------- modes ---------- */
 test('career: Act I runs with airline traffic', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });

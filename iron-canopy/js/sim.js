@@ -22,6 +22,7 @@ IC.step = function (S, dt) {
   IC.civil(S, dt);
   IC.aviation(S, dt);
   IC.fatigue(S, dt);
+  IC.airspace(S, dt);
   IC.incidents(S, dt);
   if (S.mode === 'academy') IC.academyTick(S, dt); else if (S.mode === 'story') IC.storyTick(S, dt); else IC.campaignTick(S, dt);
   const F = S.fx;
