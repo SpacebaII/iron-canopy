@@ -374,6 +374,70 @@ test('airspace: light aircraft avoid controlled airspace unless cleared', () => 
 }, true);
 
 /* ---------- modes ---------- */
+test('damage: a weapon landing on a city block damages that block, not the one across the street', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const cap = IC.cap(S), b = cap.blocks.filter(q => q.core)[2];
+  const other = cap.blocks.filter(q => q !== b && U.dist(q, b) > 12)[0];
+  IC.detonate(S, b.x, b.y, 120, null);
+  assert(b.hp <= 0, `the block that was hit is still standing (hp ${b.hp})`);
+  assert(other.hp === 1, 'a block 1.2 km away was damaged');
+  assert(!S.marks.some(m => m.kind === 'field' || m.kind === 'road'), 'a hit on a building left a crater in a field or road');
+  // a small rocket damages the block it lands on without flattening it
+  const c = cap.blocks.filter(q => q.hp === 1 && !q.core)[5];
+  IC.detonate(S, c.x, c.y, 14, null);
+  assert(c.hp < 1 && c.hp > 0, `a rocket on a house should damage it (hp ${c.hp})`);
+});
+test('damage: a crater in a field fades after a day or two; one in a road stays until it is filled', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const W = S.world, cap = IC.cap(S);
+  let fp = null;
+  for (let a = 0; a < 6.28 && !fp; a += 0.1) { const x = cap.x + Math.cos(a) * cap.r * 1.7, y = cap.y + Math.sin(a) * cap.r * 1.7; if (IC.groundAt(S, x, y).kind === 'field') fp = { x, y }; }
+  const e = W.edges.find(e => e.cls === 'rd'), rp = e.pts[Math.floor(e.pts.length / 2)];
+  IC.detonate(S, fp.x, fp.y, 120, null);
+  IC.detonate(S, rp.x, rp.y, 120, null);
+  const field = S.marks.find(m => m.kind === 'field'), road = S.marks.find(m => m.kind === 'road');
+  assert(field && U.dxy(field.x, field.y, fp.x, fp.y) < 0.01, 'no mark where the weapon hit the field');
+  assert(road && road.cls === 'rd', 'no crater in the main road');
+  const age = h => { for (let t = 0; t < h * 3600; t += 5) { S.time += 5; IC.marksAge(S); } };
+  age(12);
+  assert(S.marks.includes(field), 'the scorch in the field faded within 12 hours');
+  assert(!road.fixed || road.fixAt - road.t > 6 * 3600, 'the road crater was filled at once');
+  age(12);
+  assert(road.fixed, 'the road crater was not filled within a day');
+  age(24);
+  assert(!S.marks.includes(field), 'the field still shows the crater after two days');
+  assert(S.marks.includes(road), 'the patch in the road disappeared too soon');
+});
+
+test('radar: a military radar does not see a low aircraft behind a hill that it sees over flat ground', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const W = S.world, D = 300;
+  // a radar site next to high ground: at 30 km some bearings are behind the hill, others over flat ground
+  let at = null;
+  for (let j = 200; j < IC.WH - 200 && !at; j += 97) for (let i = 200; i < IC.WW - 200 && !at; i += 97) {
+    if (!W.inHome(i, j) || W.inLake(i, j)) continue;
+    let hid = null, open = null;
+    for (let a = 0; a < 6.28; a += 0.05) {
+      const x = i + Math.cos(a) * D, y = j + Math.sin(a) * D;
+      if (!W.inHome(x, y) || Math.abs(IC.elevKm(x, y) - IC.elevKm(i, j)) > 0.1) continue;
+      const clear = IC.losClear(i, j, 25, x, y, 0.1);
+      if (!clear && !hid && !IC.losClear(i, j, 25, x, y, 0.6)) hid = { x, y };
+      if (clear && !open && [0.25, 0.5, 0.75].every(f => IC.elevKm(i + (x - i) * f, j + (y - j) * f) <= IC.elevKm(i, j) + 0.02)) open = { x, y };
+    }
+    if (hid && open) at = { x: i, y: j, hid, open };
+  }
+  assert(at, 'no valley next to a hill found');
+  S.units = []; for (const b of IC.bases(S)) b.parts = b.parts.filter(p => p.kind !== 'atc');
+  const u = IC.makeUnit(S, 'gf', at.x, at.y, { instant: true, full: true }); u.radarOn = true;
+  const t = IC.spawnThreat(S, 'lacm', at.open.x, at.open.y, { route: [{ x: at.x, y: at.y }], aim: { x: at.x, y: at.y } });
+  const sees = (p, alt) => { t.x = p.x; t.y = p.y; t.alt = alt; IC.sense(S, 0.25); return S.sensors.some(s => s.unit === u && IC.detects(s, t)); };
+  assert(sees(at.open, 0.1), 'the gap filler does not see a cruise missile at 100 m over flat ground 30 km away');
+  assert(!sees(at.hid, 0.1), 'the gap filler sees a cruise missile at 100 m behind a hill');
+  assert(sees(at.hid, 3), 'the gap filler does not see an aircraft at 3 km above the same hill');
+  const floor = IC.radarFloor(S.sensors.find(s => s.unit === u), at.hid.x, at.hid.y);
+  assert(floor > 0.1 && IC.milCov(S).g.some(v => v > 0.5 && v < Infinity), `the coverage map does not show the hole behind the hill (floor ${floor})`);
+});
+
 test('career: Act I runs with airline traffic', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
   run(S, 8, player);

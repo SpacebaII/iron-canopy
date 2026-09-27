@@ -18,7 +18,7 @@ IC.newGame = function (opts) {
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
     vehicles: [], jobs: [], trains: [], imports: [], evehicles: [],
-    esites: [], tels: [], gunits: [], fronts: [], wrecks: [],
+    esites: [], tels: [], gunits: [], fronts: [], wrecks: [], marks: [],
     tech: { done: new Set(['a_lrsam']), slots: [null, null] },
     fx: { parts: [], booms: [], texts: [], tracers: [], rings: [], fires: [], flashes: [], plumes: [], trails: [], chaff: [], shocks: [] },
     logs: [], news: [], counters: {}, sensors: [], flags: {}, reports: [],
@@ -207,9 +207,10 @@ IC.shake = function (S, amount, x, y) {
 IC.detonate = function (S, x, y, dmg, src) {
   const big = dmg >= 100;
   IC.explode(S, x, y, 0.7 + Math.min(1.8, dmg / 70), 'ground', { big: big && src && src.d ? 1 : 0 });
-  // on an airfield the crater is drawn at its real size by the airport itself
+  // on an airfield the crater is drawn at its real size by the airport itself; elsewhere the ground keeps a mark
   const onField = IC.bases(S).some(b => b.parts && U.dxy(x, y, b.x, b.y) < b.radius);
-  IC.crater(S, x, y, onField ? 0.25 + dmg * 0.003 : 1.5 + dmg * 0.025);
+  const gnd = onField ? { kind: 'airfield' } : IC.groundAt(S, x, y);
+  IC.impactMark(S, x, y, dmg, gnd);
   if (dmg <= 0) return null;
   let hit = null, aptHit = false;
   const src2 = src || {};
@@ -217,11 +218,13 @@ IC.detonate = function (S, x, y, dmg, src) {
     const d = U.dxy(x, y, inf.x, inf.y);
     const reach = inf.kind === 'city' ? inf.r : inf.parts ? inf.radius : inf.r;
     if (d > reach) continue;
-    if (inf.kind === 'city') IC.cityHit(S, inf, x, y, dmg, src2);
+    if (inf.kind === 'city') { IC.cityHit(S, inf, x, y, dmg, src2); if (gnd.town === inf) gnd.done = true; }
     else if (inf.parts) { IC.baseHit(S, inf, x, y, dmg, src2); aptHit = true; }
     else IC.hurtInfra(S, inf, dmg * (1 - d / inf.r * 0.5), src2, x, y);
     hit = hit || inf;
   }
+  // a house in a village, or a block on a city's edge beyond its centre's reach
+  if (gnd.kind === 'block' && !gnd.done && IC.blockHit(S, gnd.b, dmg) && gnd.town.kind === 'village') hit = hit || { name: `A house in ${gnd.town.name}` };
   for (const u of S.units.slice()) {
     const d = U.dxy(x, y, u.x, u.y);
     if (d < 30) { IC.hurtUnit(S, u, dmg * (1 - d / 30 * 0.6), src2); hit = hit || u; }
@@ -235,13 +238,15 @@ IC.detonate = function (S, x, y, dmg, src) {
   return hit;
 };
 IC.cityHit = function (S, c, x, y, dmg, src) {
-  const rb = 3 + dmg * 0.09;
+  // the block the weapon lands on takes the full blast; blocks next to it lose windows, roofs, sometimes more
+  const rb = 0.4 + dmg * 0.012;
   let lost = 0;
+  const on = inBlock(c.blocks, x, y);
   for (const b of c.blocks) {
     if (b.hp <= 0) continue;
-    const d = U.dxy(x, y, b.x, b.y);
-    if (d > rb + Math.max(b.w, b.h) * 0.5) continue;
-    if (Math.random() < 0.85 - d / rb * 0.4) { b.hp = 0; lost++; IC.addScar(S, { kind: 'block', x: b.x, y: b.y, r: Math.max(b.w, b.h), b }); if (Math.random() < 0.5) IC.addFire(S, b.x, b.y, 0.5 + Math.random() * 0.5, U.rand(1800, 7200)); }
+    const d = b === on ? 0 : Math.max(0, U.dxy(x, y, b.x, b.y) - Math.max(b.w, b.h) * 0.5);
+    if (d > rb) continue;
+    if (IC.blockHit(S, b, b === on ? dmg : dmg * (1 - d / rb) * U.rand(0.2, 0.7))) lost++;
   }
   const alive = c.blocks.filter(b => b.hp > 0).length / Math.max(1, c.blocks.length);
   const was = c.hp;
@@ -254,6 +259,98 @@ IC.cityHit = function (S, c, x, y, dmg, src) {
   if (lost) { IC.cityLights(c); c.casualties = (c.casualties || 0) + lost * U.randi(3, 20); }
   if (lost >= 3 && Math.random() < 0.6) IC.news(S, U.pick([`Explosions in ${c.name}; emergency crews respond.`, `Residential blocks destroyed in ${c.name}.`, `${c.name} hospitals report casualties after strike.`]));
   IC.emit(S, 'cityHit', { city: c, lost });
+};
+/* ---------- where a weapon lands, and the marks it leaves ----------
+   Blocks are city blocks, village houses and farmyards (hp 1 whole, 0 gone). A block that is hit burns for a while and
+   stays a burnt shell. Marks on the ground (S.marks) are a cheap list the map bakes into its detail tiles: a scorch
+   on grass fades in a day or two, a crater in a road stays until the road crews fill it, then shows a patch. */
+const MARKS = {
+  field: { life: 40 * 3600 },          // crater and scorched earth; ploughed over and grown back in under two days
+  forest: { life: 5 * 86400 },         // burnt and broken trees
+  road: { fix: 10 * 3600, life: 20 * 86400 },   // open until filled, then a darker patch that weathers in
+  paving: { life: 12 * 3600 },         // scorch on an airfield: the airport draws its own craters
+  block: { life: 0 }                   // rubble stays until rebuilt
+};
+IC.MARKS = MARKS;
+function inBlock(blocks, x, y) {
+  for (const b of blocks) {
+    const dx = x - b.x, dy = y - b.y; if (Math.abs(dx) > b.w + b.h || Math.abs(dy) > b.w + b.h) continue;
+    const c = Math.cos(b.a || 0), s = Math.sin(b.a || 0), u = dx * c + dy * s, v = -dx * s + dy * c;
+    if (Math.abs(u) <= b.w / 2 + 0.05 && Math.abs(v) <= b.h / 2 + 0.05) return b;
+  }
+  return null;
+}
+/* what is on the ground at a point: a block, a road or street, water, forest, or open ground */
+IC.groundAt = function (S, x, y) {
+  const W = S.world;
+  for (const t of W.cities.concat(W.villages, W.foreign)) {
+    if (!t.blocks || U.dxy(x, y, t.x, t.y) > (t.r || 30) * 1.6 + 10) continue;
+    const b = inBlock(t.blocks, x, y); if (b) return { kind: 'block', b, town: t };
+  }
+  if (W.inLake(x, y)) return { kind: 'water' };
+  if (W.riverDist(x, y) < 12) for (const r of W.rivers) {
+    if (x < r.bb[0] - 20 || x > r.bb[2] + 20 || y < r.bb[1] - 20 || y > r.bb[3] + 20) continue;
+    for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i]; if (U.segDist(x, y, a[0], a[1], b[0], b[1]) < r.w / 2) return { kind: 'water' }; }
+  }
+  const near = (list, w) => {
+    for (const l of list) {
+      if (l.bb && (x < l.bb[0] - 1 || x > l.bb[2] + 1 || y < l.bb[1] - 1 || y > l.bb[3] + 1)) continue;
+      const hw = (IC.ROAD_W[l.cls] || 0.1) / 2 + w;
+      for (let i = 1; i < l.pts.length; i++) { const a = l.pts[i - 1], b = l.pts[i]; if (U.segDist(x, y, a.x, a.y, b.x, b.y) < hw) return l; }
+    }
+    return null;
+  };
+  let road = near(W.edges, 0.05) || near(W.lanes, 0.02);
+  for (const c of W.cities) if (!road && U.dxy(x, y, c.x, c.y) < c.r * 1.6) road = near(c.streets, 0.05);
+  if (road) return { kind: 'road', cls: road.cls, road };
+  return { kind: W.forestAt(x, y) ? 'forest' : 'field' };
+};
+/* the mark a weapon leaves where it lands (the block itself is hurt by blockHit) */
+IC.impactMark = function (S, x, y, dmg, gnd) {
+  gnd = gnd || IC.groundAt(S, x, y);
+  const k = Math.max(0, dmg);
+  if (gnd.kind === 'water') return null;
+  if (gnd.kind === 'airfield') return IC.addMark(S, { kind: 'paving', x, y, r: 0.2 + k * 0.002 });
+  if (gnd.kind === 'block') return IC.addMark(S, { kind: 'scorch', x, y, r: 0.15 + k * 0.003, life: MARKS.field.life });
+  // crater radius about 3 m for a rocket, 8 m for a 500 kg bomb; the scorch reaches five times as far
+  const cr = 0.03 + k * 0.0004, m = { kind: gnd.kind, x, y, r: cr * 5, cr, seed: Math.random() * 1000 };
+  if (gnd.kind === 'road') { m.cls = gnd.cls; m.cr = Math.min(cr, (IC.ROAD_W[gnd.cls] || 0.1) * 0.6); m.r = m.cr * 3; }
+  return IC.addMark(S, m);
+};
+IC.crater = (S, x, y, r) => IC.impactMark(S, x, y, Math.max(20, (r - 1.5) / 0.025));
+IC.addMark = function (S, m) {
+  const M = S.marks || (S.marks = []);
+  const D = MARKS[m.kind] || MARKS.field;
+  m.t = S.time; m.id = IC.nid('mk');
+  if (m.life == null) m.life = D.life;
+  if (D.fix) m.fixAt = S.time + D.fix * (S.enemy && S.enemy.war ? 1.6 : 1) * U.rand(0.7, 1.3);
+  // a long war leaves thousands: past the cap the oldest fading marks go first
+  if (M.length > 2500) { M.sort((a, b) => (a.life ? 0 : 1) - (b.life ? 0 : 1) || a.t - b.t); M.splice(0, 300); }
+  M.push(m);
+  IC.bakeMark && IC.bakeMark(S, m);
+  return m;
+};
+/* older callers: a destroyed block, a crater of radius r, a burnt patch on an airfield */
+IC.addScar = (S, s) => s.kind === 'block' ? IC.blockHit(S, s.b, 999) : s.kind === 'burn' ? IC.addMark(S, { kind: 'paving', x: s.x, y: s.y, r: s.r }) : IC.impactMark(S, s.x, s.y, Math.max(20, (s.r - 0.5) * 60));
+/* a block takes damage: 1 whole, 0 gone. Returns true if this destroyed it */
+IC.blockHit = function (S, b, dmg) {
+  if (!b || b.hp <= 0 || dmg <= 0) return false;
+  const was = b.hp;
+  b.hp = Math.max(0, b.hp - dmg / 60);
+  b.hitT = S.time;
+  if (b.hp < was && Math.random() < (b.hp <= 0 ? 0.7 : 0.25)) IC.addFire(S, b.x, b.y, b.hp <= 0 ? 0.5 + Math.random() * 0.5 : 0.3, U.rand(1800, 7200) * (b.hp <= 0 ? 1 : 0.4));
+  IC.bakeBlock && IC.bakeBlock(S, b);
+  return b.hp <= 0;
+};
+/* marks age: faded ones go, filled craters turn into patches */
+IC.marksAge = function (S) {
+  const M = S.marks; if (!M || !M.length) return;
+  let gone = false;
+  for (const m of M) {
+    if (m.fixAt && !m.fixed && S.time >= m.fixAt) { m.fixed = true; IC.bakeMark && IC.bakeMark(S, m, true); }
+    if (m.life && S.time - m.t > m.life) { m.gone = true; gone = true; IC.bakeMark && IC.bakeMark(S, m, true); }
+  }
+  if (gone) S.marks = M.filter(m => !m.gone);
 };
 IC.hurtInfra = function (S, inf, dmg, src, x, y) {
   if (dmg <= 0) return;

@@ -130,7 +130,8 @@ function exposure(S, pts, low) {
     const a = pts[i - 1], b = pts[i], L = U.dist(a, b), n = Math.ceil(L / 180);
     for (let s = 0; s <= n; s++) {
       const x = a.x + (b.x - a.x) * s / n, y = a.y + (b.y - a.y) * s / n;
-      for (const k of sams) { const r = k.kind === 'radar' ? 450 : k.rng || 120; if (U.dxy(x, y, k.x, k.y) < r) e += k.kind === 'radar' ? 0.3 : 1; }
+      // a low flier behind a hill is out of sight (airspace.js): valleys are safe ground
+      for (const k of sams) { const r = k.kind === 'radar' ? 450 : k.rng || 120; if (U.dxy(x, y, k.x, k.y) < r && (!low || IC.losClear(k.x, k.y, 15, x, y, 0.1))) e += k.kind === 'radar' ? 0.3 : 1; }
       e += (S.enemy.danger[cell(x, y)] || 0) * 0.6;
     }
   }
@@ -138,14 +139,17 @@ function exposure(S, pts, low) {
 }
 function planRoute(S, from, to, low, spread) {
   let best = [{ x: to.x, y: to.y }], bc = 1e12;
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < (low ? 14 : 9); k++) {
     const pts = [from];
     const nv = k === 0 ? 0 : U.randi(1, 2);
     for (let i = 0; i < nv; i++) {
       const f = (i + 1) / (nv + 1);
       const mx = from.x + (to.x - from.x) * f, my = from.y + (to.y - from.y) * f;
       const nx = -(to.y - from.y), ny = to.x - from.x, L = Math.hypot(nx, ny) || 1, off = U.rand(-1, 1) * (spread || 2100);
-      pts.push({ x: U.clamp(mx + nx / L * off, 90, IC.WW - 90), y: U.clamp(my + ny / L * off, 90, IC.WH - 90) });
+      let p = { x: U.clamp(mx + nx / L * off, 90, IC.WW - 90), y: U.clamp(my + ny / L * off, 90, IC.WH - 90) };
+      // low routes turn at the lowest ground nearby, so they run along valleys
+      if (low && k >= 9) for (let q = 0, h = IC.elevKm(p.x, p.y), p0 = p; q < 10; q++) { const a = U.rand(0, 6.28), d = U.rand(60, 300), c = { x: U.clamp(p0.x + Math.cos(a) * d, 90, IC.WW - 90), y: U.clamp(p0.y + Math.sin(a) * d, 90, IC.WH - 90) }, hc = IC.elevKm(c.x, c.y); if (hc < h) { h = hc; p = c; } }
+      pts.push(p);
     }
     pts.push({ x: to.x, y: to.y });
     let len = 0; for (let i = 1; i < pts.length; i++) len += U.dist(pts[i - 1], pts[i]);
@@ -582,7 +586,7 @@ IC.siteDamaged = function (S, site, dmg, by, quiet) {
   if (site.destroyed) return;
   site.hp -= dmg;
   IC.explode(S, site.x + U.rand(-15, 15), site.y + U.rand(-15, 15), 1.2, 'us');
-  IC.addScar(S, { kind: 'crater', x: site.x + U.rand(-15, 15), y: site.y + U.rand(-15, 15), r: 2 });
+  IC.impactMark(S, site.x + U.rand(-15, 15), site.y + U.rand(-15, 15), 160);
   if (site.kind === 'supply') site.stock = Math.max(0, site.stock - dmg * 1.5);
   if (site.acAvail && Math.random() < 0.4) { const k = U.pick(Object.keys(site.acAvail).filter(k => site.acAvail[k] > 0)); if (k) { site.acAvail[k]--; site.acMax[k] = Math.max(0, site.acMax[k] - 1); } }
   if (site.hp <= 0) {

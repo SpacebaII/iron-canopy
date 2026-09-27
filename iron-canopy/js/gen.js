@@ -4,6 +4,8 @@
 const U = IC.U;
 const TAU = Math.PI * 2;
 const K = 1.5;   // map scale relative to the original 800 km layout
+/* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
+IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
 
 IC.generate = function (seed) {
   let R = IC.makeRng(seed);
