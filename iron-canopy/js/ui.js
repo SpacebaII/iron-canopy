@@ -282,7 +282,7 @@ ui.ROOM_INFO = {
 function openNow() {
   const m = new Map(), st = S.story;
   for (const [k, n, key] of ui.ROOMS) if (ui.roomOk(k)) m.set('room:' + k, { title: `${n} room`, text: ui.ROOM_INFO[k], key, go: { room: k } });
-  if (!S.range) for (const t in IC.UNITS) if (unitOk(S, t)) { const d = IC.UNITS[t]; m.set('unit:' + t, { title: d.name, text: `${d.role ? d.role.charAt(0).toUpperCase() + d.role.slice(1) : IC.fullName(d)}, in the arsenal under ${(IC.CATS.find(c => c.id === d.cat) || { name: d.cat }).name}.`, sym: t, go: { cat: d.cat, type: t } }); }
+  if (!S.range) for (const t in IC.UNITS) if (unitOk(S, t)) { const d = IC.UNITS[t]; m.set('unit:' + t, { title: d.name, text: `${d.role ? d.role.charAt(0).toUpperCase() + d.role.slice(1) : IC.fullName(d)}, in the arsenal under ${ui.catName(d.cat)}.`, sym: t, go: { cat: d.cat, type: t } }); }
   if (IC.callInOpen(S)) m.set('unit:callin', { title: 'Call-in teams', text: 'Shoulder-fired missile teams dropped by helicopter where you click.', key: 'G', sym: 'manpads', go: { cat: 'ad' } });
   for (const id of S.tech.done) { const t = IC.TECH.find(x => x.id === id); if (t) m.set('tech:' + id, { title: t.name, text: ui.techWords(t), go: { room: 'research' } }); }
   if (st) {
@@ -294,6 +294,8 @@ function openNow() {
   return m;
 }
 ui.isNew = k => ui.fresh.has(k);
+// the arsenal's tabs in plain words (no "EW"), and Supply as on the rail
+ui.catName = id => ({ ad: 'Air defence', ew: 'Jamming', log: 'Supply' }[id] || (IC.CATS.find(c => c.id === id) || { name: id }).name);
 ui.seen = pre => { for (const k of [...ui.fresh]) if (k === pre || (pre.endsWith(':') && k.startsWith(pre))) ui.fresh.delete(k); };
 function progress() {
   const now = openNow();
@@ -319,7 +321,7 @@ function brief() {
     const st = S.story, A = IC.ACTS[st.act];
     const done = st.goals.filter(g => g.done).length;
     // the one place for goals: each with how far along it is
-    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(A.name)} · ${esc(A.title)}<em>${done} of ${st.goals.length} goals${st.cp ? ` · ${st.cp} CP` : ''}</em></h3>
+    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(A.name)} · ${esc(A.title)}<em>${done} of ${st.goals.length} goals${st.cp ? ` · ${st.cp} command point${st.cp > 1 ? 's' : ''}` : ''}</em></h3>
       <div class="gmeter" title="Goals done in this act">${st.goals.map(g => `<i class="${g.done ? 'on' : ''}"></i>`).join('')}</div>
       <div class="goals">${st.goals.map((g, i) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.done ? '✓' : ''}</i><span>${esc(g.text)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p)}</small>` : ''}</span></button>`; }).join('')}</div>
       <p class="hint">${done >= st.goals.length - 1 ? 'Something is coming. Keep the sector running.' : 'Goals earn command points (spend them in the Career room, C) and the Minister’s confidence.'}</p>`;
@@ -373,7 +375,7 @@ function arsenal() {
   if (!cats.length) { setHTML($('arsenal'), ''); $('arsenal').classList.remove('glass'); $('app').classList.add('no-arsenal'); return; }
   $('app').classList.remove('no-arsenal');
   if (!cats.some(c => c.id === ui.cat)) ui.cat = cats[0].id;
-  const tabs = cats.map(c => `<button data-act="cat" data-v="${c.id}" aria-pressed="${ui.cat === c.id && !ui.arMin}">${c.name}${Object.entries(IC.UNITS).some(([t, d]) => d.cat === c.id && ui.fresh.has('unit:' + t)) || (c.id === 'ad' && ui.fresh.has('unit:callin')) ? '<span class="dot new"></span>' : ''}</button>`).join('');
+  const tabs = cats.map(c => `<button data-act="cat" data-v="${c.id}" aria-pressed="${ui.cat === c.id && !ui.arMin}">${ui.catName(c.id)}${Object.entries(IC.UNITS).some(([t, d]) => d.cat === c.id && ui.fresh.has('unit:' + t)) || (c.id === 'ad' && ui.fresh.has('unit:callin')) ? '<span class="dot new"></span>' : ''}</button>`).join('');
   // call-in teams: an ability, not a unit you buy
   const CI = IC.callInState(S), CK = IC.callInStats(S), ciWhy = IC.callInWhy(S), ciOn = S.mode2 && S.mode2.kind === 'callin';
   const callTile = ui.cat === 'ad' && IC.callInOpen(S) ? `<div class="tile ${ciWhy ? 'locked' : ''}" id="tile-callin" role="button" tabindex="0" data-act="callin" aria-pressed="${!!ciOn}" title="A shoulder-fired missile team, dropped by helicopter anywhere in our territory in ${U.dur(IC.CALLIN.arrive)}. It fights drones, helicopters and low jets for ${U.dur(CK.stay)}, then is lifted out. ${U.money(IC.CALLIN.cost)} a call. Key: G">
@@ -396,7 +398,7 @@ function arsenal() {
   }).join('');
   $('arsenal').classList.add('glass');
   $('arsenal').classList.toggle('min', ui.arMin);
-  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick one, then click the map · paid when placed · right-click cancels</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
+  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick one, then click the map</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
 }
 
 function layers() {
@@ -579,11 +581,16 @@ ui.hintFrame = function () {
   }
 };
 
-/* the Academy: a ring on what the current step talks about (the step itself is in the lesson panel) */
+/* the Academy: a ring on what the current step talks about (the step itself is in the lesson panel).
+   A game mode can also point from the simulation without touching the page: S.hint = { id, el or at, title,
+   text } shows one hint (a note when it has text), and setting it to null or another id takes it away. */
 function coach() {
   const h = IC.stepHint && IC.stepHint(S), cur = hints.get('lesson');
-  if (!h || !h.el) { if (cur) IC.hint.hide('lesson'); return; }
-  if (!cur || cur.el !== h.el) { hints.delete('lesson'); IC.hint.show('lesson', { el: h.el, persist: false }); }
+  if (!h || !h.el) { if (cur) IC.hint.hide('lesson'); }
+  else if (!cur || cur.el !== h.el) { hints.delete('lesson'); IC.hint.show('lesson', { el: h.el, persist: false }); }
+  const sh = S.hint || null, id = sh ? 'game:' + (sh.id || sh.el || 'at') : null;
+  if (ui.gameHint && ui.gameHint !== id) { hints.delete(ui.gameHint); ui.gameHint = null; }
+  if (id && !hints.has(id) && ui.gameHint !== id) { IC.hint.show(id, Object.assign({ btn: 'OK' }, sh, { persist: false })); ui.gameHint = id; }
 }
 /* the first minutes of a game: a few notes on where things are, once per browser */
 function firstRun() {
@@ -633,10 +640,11 @@ ui.refresh = function (force) {
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
   $('app').classList.toggle('at-start', !$('start').hidden);
+  $('app').classList.toggle('has-room', !!ui.room);
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
 };
 function showOver() {
-  $('over').hidden = false;
+  $('over').hidden = false; ui.closeCine(); ui.closeMoment(); IC.hint.clear(); ui.toggleMenu(false);
   const aca = S.mode === 'academy', story = !!S.story;
   $('overKicker').textContent = aca ? 'Academy' : story ? `${IC.ACTS[S.story.act].name} · ${S.story.role}` : S.won ? 'Victory' : 'Defeat';
   $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defense has failed';
@@ -645,8 +653,10 @@ function showOver() {
   $('overStars').textContent = aca && S.won ? '★'.repeat(S.stars || 1) + '☆'.repeat(3 - (S.stars || 1)) : '';
   const L = aca && S.camp.lesson ? IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id) : -1;
   $('overNext').hidden = !(aca && S.won && L >= 0 && L < IC.LESSONS.length - 1);
+  $('overRetry').hidden = !(aca && !S.won);
   if (aca && S.won) { const p = store.get('ic-academy', {}); p[S.camp.lesson.id] = Math.max(p[S.camp.lesson.id] || 0, S.stars || 1); store.set('ic-academy', p); }
-  $('overStats').innerHTML = `<span>Time: ${U.clock(S.time)}</span><span>Threats destroyed: ${S.stats.kills}</span><span>Leakers: ${S.stats.leakers}</span><span>Interceptors fired: ${S.stats.fired}</span><span>Units lost: ${S.stats.unitsLost}</span><span>Aircraft lost: ${S.stats.acLost}</span><span>Enemy sites destroyed: ${S.stats.siteKills}</span><span>Civil aircraft lost: ${S.stats.civLost}</span>`;
+  const st = [['Time', U.clock(S.time)], ['Threats destroyed', S.stats.kills, 'ok'], ['Got through', S.stats.leakers, S.stats.leakers ? 'hostile' : ''], ['Interceptors fired', S.stats.fired], ['Units lost', S.stats.unitsLost, S.stats.unitsLost ? 'hostile' : ''], ['Aircraft lost', S.stats.acLost, S.stats.acLost ? 'hostile' : ''], ['Enemy sites destroyed', S.stats.siteKills], ['Civil aircraft lost', S.stats.civLost, S.stats.civLost ? 'hostile' : '']];
+  $('overStats').innerHTML = st.map(([k, v, c]) => `<div><small>${k}</small><b class="${c || ''}">${v}</b></div>`).join('');
   IC.sfx && IC.sfx.ui(S.won ? 'ok' : 'err');
 }
 
@@ -665,14 +675,15 @@ IC.setMode = function (m) { S.mode2 = m; document.getElementById('map').classLis
 ui.openRoom = function (k) {
   const was = ui.room;
   if (was && ui.seenOnClose === was) { ui.seen({ research: 'tech:', staff: 'del:' }[was] || '-'); if (was === 'staff') ui.seen('req:'); }
-  if (ui.menu) ui.toggleMenu(false);
+  // a room opened from the menu keeps the game paused until the room closes
+  if (ui.menu) { const p = ui.pausedByMenu; ui.pausedByMenu = false; ui.toggleMenu(false); if (p && k) ui.pausedByRoom = true; else if (p) S.paused = false; }
   // each room opens where the player left it
   if (was) ui.roomScroll[ui.keys.wrBody || was] = $('wrBody').scrollTop;
   ui.room = was === k ? null : k;
   $('warroom').hidden = !ui.room;
   ui.cache.wrBody = null; ui.cache.wrTabs = null; ui.keys.wrBody = null;
   if (ui.room) {
-    IC.emit(S, 'warroom', k); if (!was && ui.pauseRoom) { ui.pausedByRoom = !S.paused; S.paused = true; }
+    IC.emit(S, 'warroom', k); if (!was && ui.pauseRoom) { ui.pausedByRoom = ui.pausedByRoom || !S.paused; S.paused = true; }
     // looking is enough: what the room shows is no longer new once the player leaves it
     ui.seenOnClose = k;
     ui.seen('room:' + k);

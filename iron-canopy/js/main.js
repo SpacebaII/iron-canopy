@@ -307,12 +307,13 @@ function onAct(e) {
     case 'sub': ui.roomScroll[ui.keys.wrBody] = $('wrBody').scrollTop; ui.sub[id] = v; break;
     case 'momentGo': ui.momentGo(); return;
     case 'momentX': ui.closeMoment(); break;
-    case 'hintOk': IC.hint.hide(v, true); break;
+    case 'hintOk': IC.hint.hide(v, true); if (v.startsWith('game:') && S.hint) S.hint.done = true; break;
     case 'hintSkip': IC.hint.skipTour(v); break;
     case 'hintsOn': ui.hintsOn = !ui.hintsOn; ui.store.set('ic-hints-on', ui.hintsOn); if (!ui.hintsOn) for (const k of ['career1', 'war1']) IC.hint.skipTour(k); break;
     case 'hintsReset': IC.hint.reset(); ui.firstRunDone = null; IC.toast(S, 'info', 'HINTS', 'Every hint will show again.'); break;
     case 'lesson': IC.begin('academy', v); return;
     case 'nextLesson': { const i = IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id); if (IC.LESSONS[i + 1]) IC.begin('academy', IC.LESSONS[i + 1].id); return; }
+    case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
     case 'restart': IC.showStart(); return;

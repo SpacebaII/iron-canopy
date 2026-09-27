@@ -152,12 +152,12 @@ function air() {
         else if (k === 'ucav') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="isr" ${why ? 'disabled' : ''}>Recon</button>`;
         else if (k === 'heli') btn = '<span class="muted" style="font-size:.78rem">resupply: select a battery</span>';
       }
-      const load = r.kind === 'ftr' && r.st !== 'air' && (!S.story || S.story.act >= 3) ? seg('loadout', r.load, [['aa', 'A2A'], ['strike', 'Strike']], r.id) : '';
+      const load = r.kind === 'ftr' && r.st !== 'air' && (!S.story || S.story.act >= 3) ? seg('loadout', r.load, [['aa', 'Missiles', '', 'Loaded with air-to-air missiles, to fight aircraft'], ['strike', 'Bombs', '', 'Loaded with bombs, to strike targets on the ground']], r.id) : '';
       const qra = r.kind === 'ftr' ? `<button class="btn sm ${r.qra ? 'primary' : ''}" data-act="qra" data-rid="${r.id}" title="Crews on alert start engines in half the time">${r.qra ? 'On alert' : 'Alert'}</button>` : '';
       const block = r.st === 'ready' && b.parts ? IC.milLaunchBlock(S, b, r) : '';
       return `<div class="li"><b>${esc(r.name)} <span class="muted">· ${esc(IC.AIR_KIND[r.kind].name)} ×${r.n}</span></b><small>${state}${r.ent && r.ent.gnd ? ' · taxiing' : ''}${r.slot || r.st === 'air' ? '' : ' · <span class="amber">parked in the open</span>'}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small><span class="la">${qra}${load}${btn}</span></div>`;
     }).join('');
-    const buy = b.infra && (!S.story || S.story.act >= 3) ? ['ftr', 'ucav', 'isr', 'heli'].map(k => `<button class="btn sm" data-act="buyAir" data-v="${k}" data-id="${b.id}" ${S.budget < IC.AIR_KIND[k].buy ? 'disabled' : ''}>+ ${IC.AIR_KIND[k].short} ${U.money(IC.AIR_KIND[k].buy)}</button>`).join('') : '';
+    const buy = b.infra && (!S.story || S.story.act >= 3) ? ['ftr', 'ucav', 'isr', 'heli'].map(k => `<button class="btn sm" data-act="buyAir" data-v="${k}" data-id="${b.id}" ${S.budget < IC.AIR_KIND[k].buy ? 'disabled' : ''} title="Buy a ${esc(IC.AIR_KIND[k].name.toLowerCase())} for this base">+ ${esc(IC.AIR_KIND[k].name)} · ${U.money(IC.AIR_KIND[k].buy)}</button>`).join('') : '';
     return `<div class="card"><h3>${esc(b.name)}<em>${st.runway ? rs.length + ' flights' : '<span class="hostile">runway closed</span>'}</em></h3><div class="list">${rows || '<p class="hint">No aircraft.</p>'}</div>${buy ? `<div class="acts">${buy}</div>` : ''}<div class="acts"><button class="btn sm" data-act="selInfra" data-id="${b.id}">Open base</button></div></div>`;
   }).join('');
   const storyNote = S.story && S.story.act < 3 ? `<p class="hint">In peacetime nobody fires without your order: Weapons are on Hold. A fighter sent to intercept flies up, identifies and escorts. To shoot, select the track and order the escort to fire.</p>` : '';
@@ -348,7 +348,8 @@ function journal() {
 
 /* ---------- reference ---------- */
 function reference() {
-  const tabs = seg('refcat', ui.refCat, [['units', 'Our equipment'], ['threats', 'Threats'], ['air', 'Aircraft'], ['how', 'How it works']]);
+  const tabs = pages('reference', [['how', 'How it works', '', 'Every system in plain words'], ['units', 'Our equipment', '', 'Everything in the arsenal'], ['threats', 'Threats', '', 'What the enemy sends'], ['air', 'Aircraft', '', 'Our flights']]);
+  ui.refCat = ui.sub.reference;
   let body = '';
   if (ui.refCat === 'units') body = Object.entries(IC.UNITS).map(([k, d]) => `<div class="ref">${ui.sym(k, 68, 52)}<div><b>${esc(IC.fullName(d))}</b><p>${esc(d.desc)}</p>${kv([['Cost', `${U.money(d.cost)} · sets up in ${U.dur(d.build)}`], ['Reach', IC.typeRange(k) ? U.km(IC.typeRange(k)) : '–'], ['Mobility', IC.MOB_LABEL[d.mob]]].concat(d.mags ? [['Missiles', d.mags.map(m => `${IC.fullName(IC.MUN[m.mun])} (${IC.MUN[m.mun].seeker || ''})`).join(', ')]] : []))}</div></div>`).join('');
   else if (ui.refCat === 'threats') body = Object.entries(IC.THR).filter(([k]) => k !== 'pen').map(([k, d]) => `<div class="ref"><canvas data-thr="${k}" width="68" height="52"></canvas><div><b>${esc(IC.fullName(d))}</b><p>${esc(d.desc || '')}</p>${kv([['Class', esc(IC.KLASS[d.klass] || d.klass)], ['Speed', d.spd ? U.kmh(d.spd) : 'ballistic'], ['Altitude', d.alt ? U.alt(d.alt) : 'varies'], ['Warhead', d.dmg ? d.dmg : '–']].concat(d.cm ? [['Countermeasures', 'chaff, flares' + (d.notch ? ', notching' : '')]] : []))}</div></div>`).join('');
@@ -375,7 +376,7 @@ function reference() {
     ['Supply', IC.SUPPLY_GUIDE + ' Helicopters fly emergency loads to empty batteries.'],
     ['Towns', 'Towns pay taxes and power industry.']
   ].map(([t, d]) => `<div class="ref"><span></span><div><b>${t}</b><p>${d}</p></div></div>`).join('');
-  return `<div class="card wide"><h3>Guide<em>${tabs}</em></h3></div>${body.split('<div class="ref">').filter(Boolean).map(x => `<div class="card"><div class="ref">${x}</div>`).join('')}`;
+  return `${tabs}${body.split('<div class="ref">').filter(Boolean).map(x => `<div class="card"><div class="ref">${x}</div>`).join('')}`;
 }
 
 /* ---------- settings (also on the start screen) and the controls ---------- */
