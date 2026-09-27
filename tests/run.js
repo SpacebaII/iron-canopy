@@ -310,6 +310,38 @@ test('builder: right-click takes a point back; clicking the last point again bui
   assert(t.nodes.length > 4, 'the corner was not rounded');
   IC.clickWorld(P(0, 6), 2);
   assert(!S.mode2, 'right-click with no points left did not leave build mode');
+  // undo takes the last placement back and refunds what it had cost so far
+  const b0 = S.budget; tick(S, 20);
+  const spent = b0 - S.budget;
+  assert(IC.bldUndo(S, bad) && taxis() === n0 && Math.abs(S.budget - b0) < 1e-6, `undo left ${taxis() - n0} taxiways and refunded ${U.money(spent - (b0 - S.budget))} of ${U.money(spent)}`);
+});
+test('builder: the big-airport tools lay out a parallel taxiway, exits and a holding bay in a few clicks', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 }); IC.S = S;
+  const bad = S.byId[S.story.bad], rw = bad.parts.find(p => p.kind === 'runway'); S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(bad, x, y), n0 = bad.parts.length;
+  S.mode2 = IC.bldMode(S, bad, 'parallel');
+  IC.clickWorld(P(0, 0), 0); IC.clickWorld(P(0, 1.8), 0); IC.clickWorld(P(0, 1.8), 0);
+  S.mode2 = IC.bldMode(S, bad, 'exits');
+  IC.clickWorld(P(0, 0), 0); IC.clickWorld(P(0, 0), 0);
+  S.mode2 = IC.bldMode(S, bad, 'hold');
+  IC.clickWorld(P(-11.8, 0), 0); IC.clickWorld(P(-11.8, 0), 0);
+  finishWorks(S, bad);
+  const st = IC.aptStats(S, bad), G = IC.aptGraph(bad), on = G.rwn.get(rw.id);
+  assert(bad.parts.length - n0 >= 3, `${bad.parts.length - n0} parts from 8 clicks`);
+  assert(st.rwy[0].threshold && !st.warn.some(w => /backtrack/.test(w)), `still backtracking: ${st.warn.join(' ')}`);
+  assert(on.filter(n => n.exit).length >= 5, `only ${on.filter(n => n.exit).length} ways off the runway`);
+  assert(on.filter(n => n.entry && n.s < 2).length >= 2, 'no holding bay beside the first entry');
+});
+test('builder: a planned part can be moved and turned before its earthworks start', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const ap = S.byId[S.story.cap]; S.budget = 3000; ap.crews = 0;
+  const c = IC.aptLocal(ap, 4, -5.5), p = IC.aptPlanPart(S, ap, 'hangar', c.x, c.y, ap.rwyA);
+  const to = IC.aptLocal(ap, 6, -5.5);
+  assert(IC.bldMove(S, ap, p, to.x, to.y, p.a + Math.PI / 2) && U.dist(p, to) < 1e-6, 'could not move and turn the planned hangar');
+  const tank = ap.parts.find(q => q.kind === 'fuel');
+  assert(!IC.bldMove(S, ap, p, tank.x, tank.y), 'moved the hangar onto a fuel tank');
+  ap.crews = 1; for (let i = 0; i < 3600 && ap.works[0].stage !== 'earth'; i++) tick(S, 1);
+  assert(!IC.bldCanMove(ap, p), 'still movable once the earthworks started');
 });
 test('builder: construction goes in stages and is paid for as it runs', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
@@ -358,14 +390,17 @@ test('builder: an airport can be founded at another city after a site survey', (
   assert(IC.aptPlanRunway(S, ap, IC.aptLocal(ap, -12, 0), IC.aptLocal(ap, 12, 0)), 'could not plan its runway');
   for (let i = 0; i < 4 * 3600 && !(ap.mat.conc > 0); i++) tick(S, 1);
   assert(ap.mat.conc > 0, 'no concrete arrived by road');
+  const cards = S.camp.cards.length;
+  finishWorks(S, ap);
+  assert(S.camp.cards.slice(cards).some(c => /opens/.test(c.title)), 'the new runway opened without a card');
 });
 test('builder: heavy aircraft wear out asphalt; reinforced concrete craters less', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
   const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway');
   sky(S, 'clear'); calm(S, ap.rwyA, 5);
   rw.mat = 'asph';
-  drive(S, ap, { arr: 20, dep: 20, hours: 0.75, fill: 0.5, mix: [['wide', 1]] });
-  assert(rw.wear > 0.02, `wide-bodies on asphalt wore it ${U.pct(rw.wear || 0)}`);
+  const d = drive(S, ap, { arr: 20, dep: 20, hours: 0.75, fill: 0.5, mix: [['wide', 1]] });
+  assert(rw.wear > 0.02, `wide-bodies on asphalt wore it ${U.pct(rw.wear || 0)} (${d.arr} arrivals, ${d.dep} departures, ${d.div} diversions ${JSON.stringify(d.divWhy)})`);
   rw.wear = 0.6; IC.aptStats(S, ap);
   assert(ap.st.warn.some(w => /worn/.test(w)) && IC.aptRepairList(ap).some(it => /Resurface/.test(it.label)), 'worn pavement is not reported or repairable');
   rw.mat = 'conc'; rw.wear = 0;

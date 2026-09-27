@@ -150,7 +150,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   }
   // construction: crews and machines on site, lorries on the road in
   if (z > 0.25) drawConvoys(g, S, ap, px, z);
-  for (const w of ap.works) if (w.stages && z > 1.5) drawCrew(g, S, ap, w, px, now);
+  // only jobs a crew is on: the rest of the queue is just its outline
+  for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
   // repairs
   for (const w of ap.works) {
     if (w.stages) continue;
@@ -470,6 +471,8 @@ const MACHINE = { demo: ['#c8a040', '#6a6a6a'], survey: ['#f0f0f0'], earth: ['#e
 function drawCrew(g, S, ap, w, px, now) {
   const p = w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
   const busy = !w.wait, cols = MACHINE[st.k] || MACHINE.fit;
+  // a stalled site: the machines stand idle at the front, marked amber
+  if (!busy && !(w.si > 0 || w.t > 0)) return;
   const front = st.k === 'pave' || st.k === 'demo' ? f : 0.5 + 0.4 * Math.sin(now * 0.3 + p.x);
   const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
   const mw = Math.max(0.1, 5 * px), mh = mw * 0.55;
@@ -479,7 +482,8 @@ function drawCrew(g, S, ap, w, px, now) {
     g.save(); g.translate(x, y); g.rotate(h); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw / 2 + 0.01, -mh / 2 + 0.01, mw, mh); g.fillStyle = c; g.fillRect(-mw / 2, -mh / 2, mw, mh); g.restore();
   });
   if (busy && st.k === 'earth' && Math.random() < 0.15) IC.part(S, { x: at.x + U.rand(-0.1, 0.1), y: at.y + U.rand(-0.1, 0.1), vy: -2, life: 1.4, size: 2.5, grow: 4, col: '170,140,100', a: 0.35 });
-  if (IC.cam.z > 3) lbl(g, w.wait ? w.wait.split(':')[0].toUpperCase() : st.name.toUpperCase(), at.x, at.y - 10 * px, px, w.wait ? IC.C.amber : 'rgba(236,236,226,0.8)', 7.5, 'center', 700);
+  if (w.wait) { g.fillStyle = IC.C.amber; g.beginPath(); g.arc(at.x, at.y - 9 * px, 3 * px, 0, 7); g.fill(); if (IC.cam.z > 30) lbl(g, w.wait.split(':')[0].toUpperCase(), at.x, at.y - 15 * px, px, IC.C.amber, 7.5, 'center', 700); }
+  else if (IC.cam.z > 14) lbl(g, st.name.toUpperCase(), at.x, at.y - 10 * px, px, 'rgba(236,236,226,0.8)', 7.5, 'center', 700);
 }
 /* material lorries on their way in from the supplier, on the last stretch of road */
 function drawConvoys(g, S, ap, px, z) {
@@ -557,8 +561,9 @@ IC.drawBuildGhost = function (g, S, px) {
   // cost and what it does, beside the cursor
   const lines = ok ? plan.text.slice(0, 3) : [plan.why].concat(plan.text.slice(0, 1));
   const at = hv;
-  lines.forEach((t, i) => lbl(g, t, at.x + 14 * px, at.y - 22 * px + i * 13 * px, px, i === 0 ? (ok ? IC.C.text : IC.C.hostile) : 'rgba(210,225,235,0.85)', i === 0 ? 10 : 9, 'left', i === 0 ? 700 : 500));
-  if (pts.length && m.part !== 'stand' && m.part !== 'exits' || (m.part === 'exits' && pts.length)) lbl(g, 'click again to build', pts[pts.length - 1].x, pts[pts.length - 1].y - 12 * px, px, IC.C.ok, 8, 'center', 600);
+  lines.forEach((t, i) => lbl(g, t, at.x + 18 * px, at.y - 40 * px + i * 13 * px, px, i === 0 ? (ok ? IC.C.text : IC.C.hostile) : 'rgba(210,225,235,0.85)', i === 0 ? 10 : 9, 'left', i === 0 ? 700 : 500));
+  const need = IC.bldIsLine(m.part) || IC.bldIsArea(m.part) ? 2 : 1;
+  if (ok && pts.length >= need && m.part !== 'stand') { const q = m.part === 'parallel' ? hv : pts[pts.length - 1]; lbl(g, 'click again to build', q.x, q.y + 28 * px, px, IC.C.ok, 8.5, 'center', 700); }
 };
 /* founding: the site, the runway turned by the cursor, the noise footprint and what the survey found */
 function drawFoundGhost(g, S, m, hv, px) {
@@ -580,7 +585,11 @@ function drawFoundGhost(g, S, m, hv, px) {
   const wa = IC.PREVAIL, wx = m.site.x + Math.cos(wa) * 40, wy = m.site.y + Math.sin(wa) * 40;
   g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(m.site.x + Math.cos(wa) * 20, m.site.y + Math.sin(wa) * 20); g.stroke();
   lbl(g, 'prevailing wind', wx, wy - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
-  IC.foundLines(S, sv).forEach((t, i) => lbl(g, t, m.site.x + d.y * 30, m.site.y - d.x * 30 + i * 13 * px, px, i === 0 ? IC.C.text : 'rgba(210,225,235,0.9)', i === 0 ? 10 : 9, 'center', i === 0 ? 700 : 500));
+  // the runway's name at each end; the full survey is in the hint below
+  const ends = sv.name.split('/');
+  lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
+  lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
+  if (sv.homes) lbl(g, `noise over ${sv.homes} blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);
 }
 
 })(window.IC);

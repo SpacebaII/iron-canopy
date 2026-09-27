@@ -264,7 +264,7 @@ function modeHint() {
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
     field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
     zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
-    found: () => m.site ? `Move the cursor to turn the runway, then click to found the airport. The survey shows the wind, the ground and who will hear it. Right-click to pick another site.`
+    found: () => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
       : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
   }[m.kind]();
 }
@@ -277,6 +277,7 @@ function buildHint(m) {
     : t === 'concourse' ? (n < 2 ? 'Concourse: click one end of the pier, then the other.' : 'Concourse: click the far end again (or Enter) to build.')
     : t === 'parallel' ? (n ? 'Move out from the runway to set the distance; click again to build.' : T.desc)
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
+    : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
     : t === 'stand' ? T.desc
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
     : `${D.name}: click to place, click the same spot again to build. R turns it.`;

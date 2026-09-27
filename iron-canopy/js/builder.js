@@ -106,7 +106,16 @@ const STAGE = [
   { k: 'open', name: 'Opening', bname: 'Opening', t: 0.05, c: 0 }
 ];
 IC.STAGE = STAGE;
-const COMP = b => b.core ? 8 : b.ind ? 5 : b.sub ? 1.5 : b.village ? 0.6 : 3;
+/* compensation for a city block (a street block of homes, shops or works) or a village house, in ₭M */
+const COMP = b => b.core ? 40 : b.ind ? 20 : b.sub ? 6 : b.village ? 0.8 : 15;
+/* a cleared city block weighs on the town like one block; a village house like a twentieth of one */
+const WEIGHT = x => x.v ? 0.05 : x.b.sub ? 0.4 : 1;
+/* what is to be cleared, in words: "2 city blocks (about 5,000 residents) and 3 village houses" */
+IC.bldClearText = function (clr) {
+  const cb = clr.blocks.filter(x => !x.v), vh = clr.blocks.filter(x => x.v), res = Math.round(clr.res / 100) * 100;
+  const a = cb.length ? `${cb.length} city block${cb.length > 1 ? 's' : ''}` : '', b = vh.length ? `${vh.length} village house${vh.length > 1 ? 's' : ''}` : '';
+  return `${[a, b].filter(Boolean).join(' and ')} (about ${Math.max(res, 10).toLocaleString('en-US')} residents)`;
+};
 /* the ground a part takes up, for clearing homes: a runway takes its 150 m strip */
 function footprint(ap, p) {
   if (p.kind === 'runway') return { line: [[p.a, p.b]], r: 1.5 };
@@ -127,15 +136,16 @@ function fpBox(f) {
 }
 /* the homes and roads a planned part would take: blocks to clear, roads to carry under it in a tunnel */
 IC.bldClearance = function (S, ap, p) {
-  const f = footprint(ap, p), box = fpBox(f), out = { blocks: [], comp: 0, towns: {}, roads: 0, tunnel: 0, box };
+  const f = footprint(ap, p), box = fpBox(f), out = { blocks: [], comp: 0, towns: {}, roads: 0, tunnel: 0, box, res: 0, weight: 0 };
   const W = S.world; if (!W) return out;
   const towns = IC.cities(S).concat((W.villages || []).filter(v => v.home));
   for (const c of towns) {
     if (!c.blocks || c.x + (c.r || 20) * 1.6 < box.x0 || c.x - (c.r || 20) * 1.6 > box.x1 || c.y + (c.r || 20) * 1.6 < box.y0 || c.y - (c.r || 20) * 1.6 > box.y1) continue;
     for (const b of c.blocks) {
       if (b.hp <= 0 || !fpHit(f, b.x, b.y, Math.max(b.w, b.h) * 0.35)) continue;
-      const v = c.kind !== 'city';
-      out.blocks.push({ b, c }); out.comp += COMP(v ? { village: true } : b);
+      const v = c.kind !== 'city', x = { b, c, v };
+      out.blocks.push(x); out.comp += COMP(v ? { village: true } : b); out.weight += WEIGHT(x);
+      out.res += v ? 4 : (c.pop || 100) * 1000 / Math.max(1, c.blocks.length) * (b.sub ? 0.4 : 1);
       out.towns[c.name] = (out.towns[c.name] || 0) + 1;
     }
   }
@@ -153,7 +163,10 @@ function nearRunway(ap, p) {
     if (rw.kind !== 'runway' || !rw.built || rw === p) continue;
     if (p.kind === 'runway') { if (IC.rwDependent(rw, p) === 'cross') return rw; continue; }
     if (p.kind === 'taxi') { const pts = p.pts || p.nodes.map(id => ap.nodes[id]); for (const q of pts) if (q && IC.partDist(ap, rw, q) < 0.9) return rw; continue; }
-    if (p.x != null && IC.partDist(ap, rw, p) < 0.9 + Math.max(p.w || 0, p.h || 0) / 2) return rw;
+    // within 90 m of the runway's edge
+    const c = IC.rwAt(rw, 0.5), zone = { x: c.x, y: c.y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x), w: IC.rwLen(rw) + 1.8, h: rw.w + 1.8 };
+    const D = IC.APART[p.kind], me = { x: p.x, y: p.y, a: p.a || 0, w: p.w || (p.r ? p.r * 2 : D.w || 0.3), h: p.h || (p.r ? p.r * 2 : D.h || 0.3) };
+    if (p.x != null && IC.rectsOverlap(zone, me, 0)) return rw;
   }
   return null;
 }
@@ -164,7 +177,7 @@ IC.bldPreview = function (S, ap, p) {
   const cost = IC.partCost(ap, p), dur = IC.partBuildTime(ap, p), need = IC.partNeed(ap, p);
   const clr = IC.bldClearance(S, ap, p), bld = !IC.PAVED[p.kind];
   const stages = [];
-  if (clr.blocks.length) stages.push({ k: 'demo', name: `Clearing ${clr.blocks.length} home${clr.blocks.length > 1 ? 's' : ''}`, dur: Math.max(300, 90 * clr.blocks.length), cost: clr.comp });
+  if (clr.blocks.length) stages.push({ k: 'demo', name: 'Clearing buildings', dur: Math.max(300, 900 * clr.weight), cost: clr.comp });
   for (const s of STAGE) stages.push({ k: s.k, name: bld ? s.bname : s.name, dur: Math.max(20, dur * s.t), cost: cost * s.c + (s.k === 'earth' ? clr.tunnel : 0), mats: s.mats ? need : null, rw: s.rw });
   const rw = nearRunway(ap, p);
   return { cost: stages.reduce((a, s) => a + s.cost, 0), dur: stages.reduce((a, s) => a + s.dur, 0), need, clr, stages, near: rw, D };
@@ -195,7 +208,10 @@ IC.bldAdvance = function (S, ap, w, dt) {
   if (f <= 1e-9) {
     const k = Object.keys(st.mats).find(x => st.mats[x] > 0 && M[x] <= 1e-6), sp = IC.bldSupply(S, ap), next = (ap.convoys || []).filter(c => c.loads[k] > 0).sort((a, b) => a.arr - b.arr)[0];
     w.wait = `waiting for ${IC.MATS[k]}: ${next ? `lorries from ${next.from || sp.name} in ${U.dur(next.arr - S.time)}` : sp.rate ? `ordered from ${sp.name}, ${U.km(sp.km * 10)} by road` : 'no industrial town can reach this site by road'}`;
-    if (!w.short) { w.short = true; IC.log(S, 'warn', 'BUILD', `${ap.name}: ${w.label.toLowerCase()} stopped, out of ${IC.MATS[k]}. ${sp.rate ? `Lorries from ${sp.name} bring about ${sp.rate} loads an hour.` : 'No town with industry can reach it by road.'}`, w.part && w.part.x != null ? w.part : ap); }
+    // one message per airport and material while the shortage lasts, not one per job
+    ap.shortT = ap.shortT || {};
+    if (!w.short && !(S.time - (ap.shortT[k] || -1e9) < 3 * 3600)) { ap.shortT[k] = S.time; const n = ap.works.filter(x => x.stages && x.stages[x.si] && x.stages[x.si].mats && x.stages[x.si].mats[k] > 0).length; IC.log(S, 'warn', 'BUILD', `${ap.name}: out of ${IC.MATS[k]}; ${n > 1 ? `${n} jobs wait` : `${w.label.toLowerCase()} waits`}. ${sp.rate ? `Lorries from ${sp.name} bring about ${sp.rate} loads an hour.` : 'No town with industry can reach it by road.'}`, w.part && w.part.x != null ? w.part : ap); }
+    w.short = true;
     return false;
   }
   const pay = st.cost * f;
@@ -218,19 +234,20 @@ function stageDone(S, ap, w, st) {
   for (const { b, c } of w.demo) { if (!by.has(c)) by.set(c, []); by.get(c).push(b); }
   for (const [c, L] of by) { const gone = new Set(L); c.blocks = c.blocks.filter(b => !gone.has(b)); if (c.light) c.light = null; }
   IC.worldChanged(S, w.clrBox);
-  IC.log(S, 'info', 'BUILD', `${ap.name}: ${w.demo.length} home${w.demo.length > 1 ? 's' : ''} cleared for the ${IC.APART[w.part.kind].name.toLowerCase()}.`, w.part.x != null ? w.part : ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${IC.bldClearText({ blocks: w.demo, res: w.demoRes || 0 })} cleared for the ${IC.APART[w.part.kind].name.toLowerCase()}.`, w.part.x != null ? w.part : ap);
   w.demo = null;
 }
 /* the neighbours hear about it the day the plan is signed */
 function protest(S, ap, p, clr) {
   const n = clr.blocks.length; if (!n) return;
-  S.support = Math.max(0, S.support - Math.min(6, 0.25 * n + 0.5));
+  const k = clr.weight;
+  S.support = Math.max(0, S.support - Math.min(8, 0.4 + 0.8 * k));
   const towns = new Set(clr.blocks.map(x => x.c));
-  for (const c of towns) if (c.morale != null) c.morale = Math.max(0, c.morale - Math.min(10, 0.5 * clr.blocks.filter(x => x.c === c).length + 1));
-  if (S.story) S.story.standing = Math.max(0, S.story.standing - Math.min(4, 0.1 * n));
-  const where = Object.entries(clr.towns).map(([k, v]) => `${v} in ${k}`).join(', ');
-  IC.log(S, 'warn', 'BUILD', `${ap.name}: ${n} home${n > 1 ? 's' : ''} (${where}) will be cleared for the ${IC.APART[p.kind].name.toLowerCase()}; ${U.money(clr.comp)} in compensation. Residents are angry.`, p.x != null ? p : ap);
-  if (n >= 10 && S.camp) IC.card(S, `Protest in ${Object.keys(clr.towns)[0]}`, ap.name, `Residents marched on the town hall against the airport: ${n} homes are to be bulldozed for a ${IC.APART[p.kind].name.toLowerCase()}. Compensation of ${U.money(clr.comp)} is paid as the homes come down. Public support has dropped. Smaller layouts, or building away from town, avoid this.`, 'alarm');
+  for (const c of towns) if (c.morale != null) c.morale = Math.max(0, c.morale - Math.min(12, 1 + 2 * clr.blocks.filter(x => x.c === c).reduce((a, x) => a + WEIGHT(x), 0)));
+  if (S.story) S.story.standing = Math.max(0, S.story.standing - Math.min(5, 0.3 * k));
+  const where = Object.keys(clr.towns).join(' and ');
+  IC.log(S, 'warn', 'BUILD', `${ap.name}: ${IC.bldClearText(clr)} in ${where} to be cleared for the ${IC.APART[p.kind].name.toLowerCase()}; ${U.money(clr.comp)} in compensation. Residents are angry.`, p.x != null ? p : ap);
+  if (k >= 3 && S.camp) IC.card(S, `Protest in ${Object.keys(clr.towns)[0]}`, ap.name, `Residents marched on the town hall: ${IC.bldClearText(clr)} are to be bulldozed for a ${IC.APART[p.kind].name.toLowerCase()}. Compensation of ${U.money(clr.comp)} is paid as the buildings come down. Public support has dropped. A smaller layout, or building away from town, avoids this.`, 'alarm');
   IC.emit(S, 'aptClear', { ap, part: p, n });
 }
 /* a major opening: a card with the before and after numbers */
@@ -243,15 +260,21 @@ IC.bldOpened = function (S, ap, w, before) {
   IC.sfx && IC.sfx.ui && IC.sfx.ui('ok');
   if (!['runway', 'terminal', 'cargo'].includes(p.kind) || !S.camp) return;
   const name = p.kind === 'runway' ? p.name : IC.APART[p.kind].name;
-  IC.card(S, `${name} opens`, `${ap.name} · ${U.hhmm(S.time)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'} It cost ${U.money(w.spent || 0)} and ${U.dur(S.time - w.t0)} of work.`, 'chapter');
+  IC.card(S, `${name} opens`, `${ap.name} · ${U.hhmm(S.time)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
 };
 IC.bldSnapStats = ap => { const st = ap.st || {}; return { movesPerHour: st.movesPerHour, maxType: st.maxType, pax: st.pax, nst: IC.aptStands(ap).filter(s => s.linked !== false).length }; };
 /* start a planned part's work: called by IC.aptPlan once the part is added */
 IC.bldStart = function (S, ap, part, pv) {
   const w = { id: IC.nid('w'), key: 'bd:' + part.id, kind: 'build', label: `Build ${IC.APART[part.kind].name.toLowerCase()}`, prog: 0, dur: pv.dur, part, cost: pv.cost,
-    stages: pv.stages, si: 0, t: 0, spent: 0, t0: S.time, near: pv.near ? pv.near.id : null, rwMode: 'close', demo: pv.clr.blocks.length ? pv.clr.blocks : null, clrBox: pv.clr.box };
+    stages: pv.stages, si: 0, t: 0, spent: 0, t0: S.time, near: pv.near ? pv.near.id : null, rwMode: 'close', demo: pv.clr.blocks.length ? pv.clr.blocks : null, demoRes: pv.clr.res, clrBox: pv.clr.box };
   if (part.kind === 'runway') w.label = `Build ${part.name || 'runway'}`;
   protest(S, ap, part, pv.clr);
+  if (part.kind === 'runway') for (const [name, n] of Object.entries(runwayNoise(S, part))) {
+    const c = IC.cities(S).find(q => q.name === name);
+    S.support = Math.max(0, S.support - Math.min(4, 0.3 + n * 0.02));
+    if (c) c.morale = Math.max(0, c.morale - Math.min(6, 1 + n * 0.04));
+    IC.log(S, 'warn', 'AVIATION', `Residents of ${name} object to ${part.name || 'the new runway'}: ${n} city blocks lie under its flight paths.`, c || ap);
+  }
   (ap.undo = ap.undo || []).push(part.id);
   return w;
 };
@@ -260,6 +283,7 @@ IC.bldUpgrade = function (S, ap, part, mat) {
   if (!IC.PAVED[part.kind] || !IC.PAVE[mat] || !part.built || IC.paveOf(part) === mat || ap.works.some(w => w.part === part)) return false;
   const probe = Object.assign({}, part, { mat });
   const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
+  if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
   const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'fit', name: 'Markings and lights', dur: dur * 0.15, cost: cost * 0.15 }];
   const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || IC.APART[part.kind].name.toLowerCase()}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
   ap.works.push(w);
@@ -293,7 +317,17 @@ IC.on((S, type, d) => {
 IC.PREVAIL = Math.PI - 0.2;   // the prevailing wind blows from the west-north-west (weather.js)
 const RW0 = 30;               // survey a 3 km runway
 /* noise under the approach and departure paths: 8 km beyond each end, 1.5 km either side */
-function noiseHit(x, y, a, b) { const d = { x: Math.cos(a), y: Math.sin(a) }, dx = b.x - x, dy = b.y - y, lx = dx * d.x + dy * d.y, ly = -dx * d.y + dy * d.x; return Math.abs(lx) < RW0 / 2 + 80 && Math.abs(ly) < 15 * (0.4 + 0.6 * Math.min(1, Math.abs(lx) / 60)); }
+function noiseHit(x, y, a, b, len) { const d = { x: Math.cos(a), y: Math.sin(a) }, dx = b.x - x, dy = b.y - y, lx = dx * d.x + dy * d.y, ly = -dx * d.y + dy * d.x; return Math.abs(lx) < (len || RW0) / 2 + 80 && Math.abs(ly) < 15 * (0.4 + 0.6 * Math.min(1, Math.abs(lx) / 60)); }
+/* city blocks (village houses count a fifth) under a runway's flight paths, by town */
+IC.noiseOver = function (S, x, y, a, len) {
+  const W = S.world, out = {};
+  for (const c of IC.cities(S).concat((W.villages || []).filter(v => v.home))) {
+    if (U.dist(c, { x, y }) > (len || RW0) / 2 + 100 + (c.r || 10)) continue;
+    let n = 0; for (const b of c.blocks || []) if (b.hp > 0 && noiseHit(x, y, a, b, len)) n += c.kind === 'city' ? 1 : 0.2;
+    if (n >= 1) out[c.name] = Math.round(n);
+  }
+  return out;
+};
 IC.foundSurvey = function (S, x, y, a) {
   const W = S.world, d = { x: Math.cos(a), y: Math.sin(a) };
   const h0 = W.hAt(x, y);
@@ -304,12 +338,7 @@ IC.foundSurvey = function (S, x, y, a) {
     const h = W.hAt(x + d.x * s * e, y + d.y * s * e), rise = (h - hmax) * 2000 - (s - RW0 / 2) * 100 * 0.052;
     if (rise > obst) { obst = rise; obstAt = (s - RW0 / 2) / 10; }
   }
-  const noise = {}; let homes = 0;
-  for (const c of IC.cities(S).concat((W.villages || []).filter(v => v.home))) {
-    if (U.dist(c, { x, y }) > RW0 / 2 + 100 + (c.r || 10)) continue;
-    let n = 0; for (const b of c.blocks || []) if (b.hp > 0 && noiseHit(x, y, a, b)) n += c.kind === 'city' ? 1 : 0.2;
-    if (n >= 1) { noise[c.name] = Math.round(n); homes += Math.round(n); }
-  }
+  const noise = IC.noiseOver(S, x, y, a), homes = Object.values(noise).reduce((s, n) => s + n, 0);
   const city = IC.cities(S).slice().sort((p, q) => U.dist(p, { x, y }) - U.dist(q, { x, y }))[0];
   const cd = city ? U.dist(city, { x, y }) : 1e9;
   const earth = Math.round((hmax - hmin) * 2000 * 0.4);   // levelling: ₭0.4M a metre of height difference
@@ -339,6 +368,7 @@ const wld = (ap, lx, ly) => IC.rectWorld({ x: ap.x, y: ap.y, a: axis(ap) }, lx, 
 IC.BTOOLS = {
   parallel: { name: 'Parallel taxiway', desc: 'Click a runway, then move out to the distance you want and click again. A full-length taxiway with links to both runway ends.' },
   exits: { name: 'Rapid exits', desc: 'Click a runway with a parallel taxiway: exits angled at 30° where the aircraft using it slow down, in both directions.' },
+  hold: { name: 'Holding bay', desc: 'Click near a runway end with a parallel taxiway: a second entry beside the first, so an aircraft that is ready can pass one that is waiting.' },
   concourse: { name: 'Concourse', desc: 'Click the two ends of a pier: a terminal with gates (jet bridges) on both sides and a taxilane along each apron.' },
   remote: { name: 'Remote apron', desc: 'Two corners: an apron with a taxilane along its front. Stands served by bus.' },
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
@@ -405,6 +435,15 @@ function exitSpec(S, ap, rw) {
   if (!specs.length) text.push(`${rw.name} already has exits where aircraft slow down.`);
   return { specs, text, bad: !specs.length };
 }
+/* a holding bay: a bypass entry from the parallel taxiway onto the runway a little way in from its end */
+function holdSpec(ap, rw, p) {
+  const par = findParallel(ap, rw);
+  if (!par) return { specs: [], text: [`${rw.name} needs a parallel taxiway first.`], bad: true };
+  const L = IC.rwLen(rw), d = IC.rwDir(rw), atA = U.dist(p, rw.a) < U.dist(p, rw.b), s = atA ? 1.2 : L - 1.2, s2 = atA ? 3 : L - 3;
+  const q = IC.rwAt(rw, s / L), r = IC.rwAt(rw, s2 / L);
+  return { specs: [{ kind: 'taxi', pts: [{ x: r.x - d.y * par.off, y: r.y + d.x * par.off }, { x: q.x - d.y * par.off * 0.45, y: q.y + d.x * par.off * 0.45 }, { x: q.x, y: q.y }] }],
+    text: [`Holding bay at the ${IC.rwEnd(rw, atA ? 1 : -1)} end: a second way onto the runway ${Math.round(s < L / 2 ? s * 100 : (L - s) * 100)} m from its end`] };
+}
 /* a pier: terminal along the spine, aprons each side deep enough for the stand size, a taxilane beyond each */
 function concourseSpec(ap, a, b, size) {
   const L = U.dist(a, b), ang = Math.atan2(b.y - a.y, b.x - a.x), c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -458,7 +497,7 @@ function snapLine(ap, m, p, tol, free) {
   const sa = Math.round(a / step) * step, use = Math.abs(U.angWrap(a - sa)) < 0.09 ? sa : a, Lr = Math.max(0.1, Math.round(L * 10) / 10);
   const q = { x: prev.x + Math.cos(use + axis(ap)) * Lr, y: prev.y + Math.sin(use + axis(ap)) * Lr };
   // lined up with a runway end or another node across: snap to it too
-  return Object.assign({ kind: 'free', x: q.x, y: q.y }, use === sa ? { ang: Math.round(U.angWrap(sa) * 180 / Math.PI) } : null);
+  return Object.assign({ kind: 'free', x: q.x, y: q.y }, use === sa && L > 0.3 ? { ang: Math.round(U.angWrap(sa) * 180 / Math.PI) } : null);
 }
 /* a corner for an area: corners of other areas, then a 5 m grid along the rotation */
 function snapCorner(ap, m, p, tol, free) {
@@ -519,6 +558,13 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     out.specs = m.exitPlan.specs.map(q => Object.assign({}, q, { mat: m.mat })); out.text.push(...m.exitPlan.text);
     if (m.exitPlan.bad) { out.ok = false; out.why = m.exitPlan.text[0]; }
     out.pts = pts.length ? [pts[0]] : [];
+  } else if (t === 'hold') {
+    const rw = runwayAt(ap, hv, tol);
+    if (!rw) { out.ok = false; out.why = 'Click near a runway end.'; return out; }
+    out.rw = rw;
+    const H = holdSpec(ap, rw, hv); out.specs = H.specs.map(q => Object.assign(q, { mat: m.mat })); out.text.push(...H.text);
+    if (H.bad) { out.ok = false; out.why = H.text[0]; }
+    out.pts = m.pts.length ? [m.pts[0]] : [];
   } else if (t === 'stand') {
     const ramp = ap.parts.find(q => q.ramp && IC.partDist(ap, q, hv) < 0.01);
     const sz = IC.STAND[m.size || 'm'];
@@ -539,7 +585,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     out.specs.push({ kind: t, x: at.x, y: at.y, a: m.rot });
   }
   // cost, time, clearance and effect of everything in the plan
-  let homes = 0, comp = 0, roads = 0;
+  let homes = 0, comp = 0, roads = 0, res = 0; const clrAll = [];
   for (const sp of out.specs) {
     const probe = Object.assign({}, sp);
     if (probe.kind === 'ils') continue;
@@ -547,7 +593,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     if (!D.area && D.h && probe.kind !== 'runway' && probe.kind !== 'taxi') { probe.w = probe.w || D.w; probe.h = probe.h || D.h; }
     if (D.r) probe.r = D.r;
     const pv = IC.bldPreview(S, ap, probe);
-    out.cost += pv.cost; out.dur = Math.max(out.dur, pv.dur); homes += pv.clr.blocks.length; comp += pv.clr.comp; roads += pv.clr.roads;
+    out.cost += pv.cost; out.dur = Math.max(out.dur, pv.dur); homes += pv.clr.blocks.length; comp += pv.clr.comp; roads += pv.clr.roads; res += pv.clr.res; clrAll.push(...pv.clr.blocks);
     (out.blocks = out.blocks || []).push(...pv.clr.blocks.map(x => x.b));
     if (!out.near && pv.near) out.near = pv.near;
     if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.why = probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site or crosses a lake.' : `The ${D.name.toLowerCase()} overlaps another part or leaves the site.`; }
@@ -559,18 +605,21 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     if (probe.kind === 'fire') { const far = ap.parts.filter(q => q.kind === 'runway').map(rw => Math.max(...[0, 0.5, 1].map(f => 60 + U.dist(probe, IC.rwAt(rw, f)) / 0.25))); if (far.length) out.text.push(`trucks reach every runway in ${U.dur(Math.max(...far))}${Math.max(...far) > 180 ? ' (over the three-minute standard)' : ''}`); }
   }
   if (IC.PAVED[out.specs[0] && out.specs[0].kind] || t === 'concourse') out.text.push(IC.paveFits(m.mat || 'conc'));
-  if (homes) out.text.push(`Clears ${homes} home${homes > 1 ? 's' : ''}: ${U.money(comp)} compensation, and the town will protest`);
+  if (homes) out.text.push(`Clears ${IC.bldClearText({ blocks: clrAll, res })}: ${U.money(comp)} compensation, and the town will protest`);
   if (roads) out.text.push(`${roads} road${roads > 1 ? 's' : ''} run under it in a tunnel`);
   if (out.near) out.text.push(`Closes ${out.near.name} while paving next to it (or set night work in the panel)`);
-  if (out.specs.length) out.text.unshift(`${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);
+  const len = LINE_TOOLS[t] && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
+  if (out.specs.length) out.text.unshift(`${len ? U.km(len) + ' · ' : ''}${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);
   if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
   return out;
 };
+const runwayNoise = (S, p) => { const c = { x: (p.a.x + p.b.x) / 2, y: (p.a.y + p.b.y) / 2 }; return IC.noiseOver(S, c.x, c.y, Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x), U.dist(p.a, p.b)); };
 function runwayText(S, ap, p) {
   const len = U.dist(p.a, p.b), t = Object.entries(IC.ACTYPES).filter(([, T]) => !T.mil && T.rwy <= len).map(([, T]) => T.short);
   const a = Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x), off = Math.abs(U.angWrap(((a - IC.PREVAIL) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2)) * 180 / Math.PI, w = Math.round(Math.min(off, 180 - off));
   const rel = ap.parts.filter(q => q.kind === 'runway').map(q => IC.rwDependent(q, p)).filter(Boolean);
-  return `Runway ${U.km(len)}: ${t.length ? 'fits ' + t.join(', ') : 'too short for airliners'} · ${w <= 15 ? 'into the prevailing wind' : w + '° off the prevailing wind'}${rel.length ? ` · ${rel.includes('cross') ? 'crosses' : 'closer than 760 m to'} another runway: they share one clearance` : ''}`;
+  const noise = Object.entries(runwayNoise(S, p));
+  return `Runway ${U.km(len)}: ${t.length ? 'fits ' + t.join(', ') : 'too short for airliners'} · ${w <= 15 ? 'into the prevailing wind' : w + '° off the prevailing wind'}${rel.length ? ` · ${rel.includes('cross') ? 'crosses' : 'closer than 760 m to'} another runway: they share one clearance` : ''}${noise.length ? ` · noise over ${noise.map(([k, n]) => `${n} city blocks of ${k}`).join(', ')}` : ''}`;
 }
 function apronText(ap, p) {
   const dep = p.h * 0.64, sz = dep >= IC.STAND.l.d ? 'l' : dep >= IC.STAND.m.d ? 'm' : dep >= IC.STAND.s.d ? 's' : null;
@@ -620,7 +669,7 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     if (!plan.ok) { m.err = plan.why; return 'err'; }
     return IC.bldAddStand(S, ap, plan.stand) ? 'built' : (m.err = 'Not enough money.', 'err');
   }
-  if (m.part === 'exits') {
+  if (m.part === 'exits' || m.part === 'hold') {
     if (!plan.rw) { m.err = plan.why; return 'err'; }
     if (m.pts.length && m.rw === plan.rw.id) return finish(S, m, plan);
     m.pts = [{ x: p.x, y: p.y }]; m.rw = plan.rw.id; return 'point';

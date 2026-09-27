@@ -37,7 +37,7 @@ All game code is in `iron-canopy/js/`, loaded in order by `iron-canopy/index.htm
 | --- | --- |
 | World and state | `core`, `data`, `aviation-data`, `gen`, `world`, `terrain`, `weather`, `state` |
 | Air defence | `sensors`, `threats`, `defense`, `units`, `enemy` |
-| Airports and aviation | `airport` (layout, taxi graph, damage, building), `groundops` (taxiing and runway use), `aviation` (airlines, routes, fees), `civil`, `incidents` |
+| Airports and aviation | `airport` (layout, taxi graph, damage), `builder` (construction, materials, tools, founding), `groundops` (taxiing and runway use), `aviation` (airlines, routes, fees), `civil`, `incidents` |
 | Air force, army, logistics | `air`, `ground`, `logistics` |
 | Modes | `story` (Career), `campaign` (Quick war), `academy` |
 | Loop and interface | `sim`, `audio`, `render`, `render-airport`, `ui`, `inspector`, `warroom`, `main` |

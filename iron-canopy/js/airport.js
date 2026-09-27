@@ -706,7 +706,10 @@ IC.aptQueue = function (S, ap, key) {
   if (!it || workFor(ap, key) || S.budget < it.cost) return false;
   S.budget -= it.cost;
   const rrr = IC.hasTech(S, 'l_rrr') && (key.startsWith('cr:') || key.startsWith('tx:')) ? 0.5 : 1;
-  ap.works.push({ id: IC.nid('w'), key, kind: 'repair', label: it.label, prog: 0, dur: it.dur * rrr, it });
+  const w = { id: IC.nid('w'), key, kind: 'repair', label: it.label, prog: 0, dur: it.dur * rrr, it };
+  ap.works.push(w);
+  // resurfacing closes the part while it runs
+  if (it.wear) { it.part.shut = w.id; ap.dirty = true; ap.cfg = null; }
   IC.emit(S, 'baseWork', { b: ap, key });
   return true;
 };
@@ -727,7 +730,8 @@ IC.cancelWork = function (S, b, id) {
 function autoQueue(S, ap) {
   // runway craters and cut taxiways always; with a Chief Engineer on duty, everything else too
   const all = S.story && S.story.del && S.story.del.eng;
-  for (const it of IC.aptRepairList(ap)) if ((all || it.key.startsWith('cr:') || it.key.startsWith('tx:')) && !workFor(ap, it.key)) IC.aptQueue(S, ap, it.key);
+  // resurfacing closes the part, so it is the player's call, unless the pavement is already worn out and closed
+  for (const it of IC.aptRepairList(ap)) if ((all || it.key.startsWith('cr:') || it.key.startsWith('tx:')) && !(it.wear && it.part.wear < 1) && !workFor(ap, it.key)) IC.aptQueue(S, ap, it.key);
 }
 IC.aptAutoQueue = autoQueue;
 /* plan a new part: the engineers build it in stages, and each stage is paid for as it runs (builder.js) */
