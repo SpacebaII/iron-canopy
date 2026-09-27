@@ -157,7 +157,9 @@ IC.ADVISORS = {
   MIN: { name: 'Min. Petra Halloran', role: 'Minister of Transport', tag: 'MIN' },
   ATC: { name: 'Ivo Marsh', role: 'Chief Air Traffic Controller', tag: 'ATC' },
   APT: { name: 'Lena Okafor', role: 'Head of Airports', tag: 'APT' },
-  PM:  { name: 'Prime Minister Oren Valk', role: 'Prime Minister', tag: 'PM' }
+  PM:  { name: 'Prime Minister Oren Valk', role: 'Prime Minister', tag: 'PM' },
+  GOV: { name: 'Gov. Anja Tessel', role: 'Regional Governor', tag: 'GOV' },
+  FIN: { name: 'Min. Karl Ostrow', role: 'Minister of Finance', tag: 'FIN' }
 };
 
 /* ---------- Hostile and civil air objects ----------

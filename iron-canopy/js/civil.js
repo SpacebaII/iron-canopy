@@ -45,7 +45,7 @@ function scheduleFlight(S, progress) {
   const P = path.pts, at = IC.pathAt(P, f);
   const onGround = !a.edge && f < 0.02, cruise = IC.aspLevel(11, a, b);
   IC.spawnThreat(S, 'civ', at.x, at.y, { dest: at.ahead[0], wps: at.ahead, orig: a, cs, sq: octal(), plan: { a, b, cs, pts: P }, pax: U.randi(80, 290), alt: onGround ? 0.3 : cruise, cruise, net: !!path.net, route: [b], aim: b, dist0: U.dist(a, b), airway: w, hostileCiv: w.kind === 'hostile' });
-  if (S.av && crossesHome(w) && w.kind !== 'hostile') IC.avOverflight(S);
+  if (S.av && crossesHome(w) && w.kind !== 'hostile') IC.avOverflight(S, path.net);
 }
 /* ---------- light aircraft: slow, low, by sight, from grass fields and big airports alike ---------- */
 function scheduleGA(S, progress) {

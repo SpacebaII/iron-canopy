@@ -9,6 +9,9 @@ IC.newGame = function (opts) {
   IC.buildRouting(W);
   const mode = opts.mode || 'campaign';
   const sandbox = mode === 'sandbox';
+  // the Career starts with no airports: the player builds the capital's. preset 'network' starts it with the
+  // three ready-made airports instead (tests and quick checks of the airport systems use it)
+  const career = mode === 'story' && opts.preset !== 'network';
   const S = {
     mode, seed, world: W, lesson: opts.lesson || null,
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
@@ -34,6 +37,7 @@ IC.newGame = function (opts) {
 
   for (const c of W.cities) S.infra.push(Object.assign(c, { infra: true, max: 130 + c.pop * 0.2, morale: 78, alert: 0, prosp: 1, owner: 'us', ind: Math.round(8 + c.pop * 0.05) }));
   for (const i of W.infra) {
+    if (career && i.kind === 'airport') continue;
     const inf = Object.assign(i, { infra: true, owner: 'us' });
     inf.r = { airport: 50, airbase: 60, factory: 40, power: 35 }[i.kind];
     inf.max = { airport: 150, airbase: 420, factory: 160, power: 120 }[i.kind];
