@@ -71,6 +71,7 @@ IC.enemyLearn = function (S, u, how) {
 IC.enemyLearnConvoy = function (S, v) { if (!v.dead) S.enemy.convoys.set(v.id, { ref: v, x: v.x, y: v.y, t: S.time }); };
 IC.enemyAssess = function (S, b) { const E = S.enemy; if (E.plan && E.plan.obj && E.plan.obj.ref === b) E.plan.seen = S.time; };
 
+IC.enemyIntel = S => updateIntel(S);
 function updateIntel(S) {
   const E = S.enemy;
   for (const u of S.units) {
@@ -787,6 +788,7 @@ IC.moveEnemyAir = function (S, t, dt) {
   t.vx = Math.cos(h) * t.spd; t.vy = Math.sin(h) * t.spd;
   t.x += t.vx * dt; t.y += t.vy * dt;
   if (t.low) t.alt = 0.1 + 0.05 * Math.sin(t.age * 0.05);
+  else if (t.altHold != null) t.alt = t.altHold;
 };
 function arriveAir(S, t) {
   const home = () => { t.mission = 'rtb'; t.route = [{ x: t.home.x, y: t.home.y }]; };

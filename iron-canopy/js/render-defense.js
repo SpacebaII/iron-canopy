@@ -80,8 +80,37 @@ function teams(S, px, now) {
   }
 }
 
+/* the test range: a flat plane with a 10 km grid, our half and theirs, and the target the threats aim at */
+IC.drawFlat = function (c, S, view, px) {
+  ctx = c;
+  const mid = IC.WW / 2;
+  ctx.fillStyle = '#1b2420'; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+  if (view.x1 > mid) { ctx.fillStyle = '#261d1b'; ctx.fillRect(Math.max(mid, view.x0), view.y0, view.x1 - Math.max(mid, view.x0), view.y1 - view.y0); }
+  const step = IC.cam.z > 0.4 ? 10 : IC.cam.z > 0.08 ? 100 : 500;
+  ctx.lineWidth = px;
+  for (const [st, a] of [[step, 0.07], [step * 5, 0.14]]) {
+    ctx.strokeStyle = `rgba(200,220,210,${a})`; ctx.beginPath();
+    for (let x = Math.floor(view.x0 / st) * st; x <= view.x1; x += st) { ctx.moveTo(x, view.y0); ctx.lineTo(x, view.y1); }
+    for (let y = Math.floor(view.y0 / st) * st; y <= view.y1; y += st) { ctx.moveTo(view.x0, y); ctx.lineTo(view.x1, y); }
+    ctx.stroke();
+  }
+};
+function rangeTarget(S, px) {
+  const T = S.range.target, r = 14 * px;
+  ctx.strokeStyle = '#ff9a3c'; ctx.lineWidth = 2 * px;
+  ctx.beginPath(); ctx.arc(T.x, T.y, r, 0, 7); ctx.moveTo(T.x - r * 1.6, T.y); ctx.lineTo(T.x + r * 1.6, T.y); ctx.moveTo(T.x, T.y - r * 1.6); ctx.lineTo(T.x, T.y + r * 1.6); ctx.stroke();
+  label('TARGET', T.x, T.y - r * 1.9, px, '#ff9a3c', 9, 'center', 700);
+  // where the next launch comes from
+  const F = S.range.form, a = (+F.brg - 90) * Math.PI / 180, d = Math.max(20, (+F.km || 150) * 10);
+  const P = { x: T.x + Math.cos(a) * d, y: T.y + Math.sin(a) * d };
+  ctx.setLineDash([6 * px, 6 * px]); ctx.strokeStyle = 'rgba(255,91,79,0.45)'; ctx.lineWidth = 1.2 * px;
+  ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(T.x, T.y); ctx.stroke(); ctx.setLineDash([]);
+  label(`launch point · ${F.brg}° · ${F.km} km`, P.x, P.y - 8 * px, px, '#ffb0a6', 9, 'center', 600);
+}
+
 IC.drawDefense = function (c, S, px, now) {
   ctx = c;
+  if (S.range) rangeTarget(S, px);
   strobes(S, px, now);
   pips(S, px, now);
   holding(S, px);

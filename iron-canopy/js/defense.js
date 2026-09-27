@@ -169,7 +169,7 @@ function fire(S, u, t, m, r, P, hoj) {
   S.fx.flashes.push({ x: u.x, y: u.y, t: 0, r: 40, wr: 3 });
   IC.sfx && IC.sfx.launch(u.x, u.y, M.range > 1500 ? 1.4 : M.range > 300 ? 1 : 0.7);
   if (M.range > 1500) IC.log(S, 'info', 'LAUNCH', `${u.name} fires ${M.name.toLowerCase()} at TN ${t.tn}.`);
-  IC.emit(S, 'launch', { u, t });
+  IC.emit(S, 'launch', { u, t, mun: m.mun });
 }
 
 IC.defense = function (S, dt) {

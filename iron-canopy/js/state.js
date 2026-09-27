@@ -28,6 +28,7 @@ IC.newGame = function (opts) {
     layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false },
     alertCities: 0
   };
+  if (mode === 'range') return IC.rangeInit(S);
   S.terrain = IC.buildTerrain(W);
   S.clouds = IC.buildClouds();
 
@@ -401,7 +402,7 @@ IC.hurtUnit = function (S, u, dmg, src) {
 };
 IC.killThreat = function (S, t, by, how) {
   if (t.dead) return;
-  t.dead = true;
+  t.dead = true; t.killer = by;
   S.stats.kills++;
   if (t.op) t.op.done++;
   const big = t.d.cls === 'bal' || t.d.cls === 'hgv';

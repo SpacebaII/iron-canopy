@@ -4,6 +4,7 @@
 
 IC.step = function (S, dt) {
   S.time += dt;
+  if (S.range) { IC.rangeStep(S, dt); return tail(S, dt); }
   IC.weather(S, dt);
   IC.updateUnits(S, dt);
   IC.reinforce(S, dt);
@@ -27,6 +28,10 @@ IC.step = function (S, dt) {
   IC.airspace(S, dt);
   IC.incidents(S, dt);
   if (S.mode === 'academy') IC.academyTick(S, dt); else if (S.mode === 'story') IC.storyTick(S, dt); else IC.campaignTick(S, dt);
+  tail(S, dt);
+};
+/* effects, trails and clean-up after every step */
+function tail(S, dt) {
   const F = S.fx;
   for (const f of F.fires) f.t += dt;
   F.fires = F.fires.filter(f => f.t < f.life);

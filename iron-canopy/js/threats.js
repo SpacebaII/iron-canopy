@@ -85,6 +85,7 @@ function moveWp(S, t, dt) {
   else if (t.d.dive) t.alt = toAim < 600 ? Math.max(0.05, 12 * toAim / 600) : 12;
   else if (t.d.cls === 'cm') t.alt = toAim < 60 ? 0.4 : t.d.alt * (0.8 + 0.4 * Math.sin(t.age * 0.05 + t.seed));
   else if (t.type === 'owa') t.alt = t.d.alt * (0.7 + 0.5 * Math.sin(t.age * 0.004 + t.seed));
+  if (t.altHold != null && toAim > 60) t.alt = t.altHold;
 }
 
 /* loitering munition: fly to an area, then hunt vehicles and air defense */
@@ -109,6 +110,7 @@ function moveLm(S, t, dt) {
   if (t.prey && U.dxy(t.x, t.y, tx, ty) <= spd * dt + 2) {
     t.dead = true;
     const hit = IC.detonate(S, tx, ty, t.d.dmg, t);
+    IC.emit(S, 'arrive', { t, hit });
     if (t.op) { t.op.done++; t.op.hits += hit ? 1 : 0; }
     return;
   }
@@ -154,7 +156,7 @@ function moveArm(S, t, dt) {
   if (r <= t.spd * dt + 1) {
     t.dead = true;
     const hitOk = !t.blind || Math.random() < 0.3;
-    if (hitOk && g && !g.dead && U.dxy(g.x, g.y, t.aim.x, t.aim.y) < 25) { IC.detonate(S, t.aim.x, t.aim.y, t.d.dmg, t); if (t.op) t.op.hits++; }
+    if (hitOk && g && !g.dead && U.dxy(g.x, g.y, t.aim.x, t.aim.y) < 25) { const hit = IC.detonate(S, t.aim.x, t.aim.y, t.d.dmg, t); IC.emit(S, 'arrive', { t, hit }); if (t.op) t.op.hits++; }
     else { IC.explode(S, t.aim.x, t.aim.y, 0.6, 'ground'); IC.log(S, 'kill', 'MISS', `ARM TN ${t.tn || '----'} missed ${g ? g.name : 'its target'}.`); }
     if (t.op) t.op.done++;
     return;
