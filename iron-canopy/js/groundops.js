@@ -188,7 +188,7 @@ function enterWhy(S, ap, m, st, e) {
   if (c && c.m !== m && !c.m.dead && c.d !== d && S.time - c.t < 5 && m.preKey !== e.key) return 'claim';
   // traffic booked the other way earlier has the right of way if it will reach this taxiway before we are off it,
   // unless it has kept us waiting for two minutes already
-  if (e.kind === 'taxi' && ap.res && (m.resT || 0) < 120) {
+  if (e.kind === 'taxi' && ap.res && (m.resT || 0) < 120 && m.preKey !== e.key) {
     const L = ap.res.get(e.key);
     if (L) {
       const mine = L.find(r => r.m === m), my0 = mine ? mine.t0 : Infinity, need = e.len / e.spd + MARGIN;
@@ -255,8 +255,8 @@ function planDeparture(S, ap, m, dry) {
     // departures belong on departure runways; an arrival runway is used only when nothing else fits;
     // and they spread over the departure runways by the queue each already has
     const role = (c.role === 'dep' || c.role === 'mixed' ? 0 : c.role === 'arr' ? 3000 : 5000) + depQueue(ap, keyOf(ap, rw.id)) * 120;
+    // any point on the runway will do as a start, even one reached by backtracking along it from a taxiway
     for (const n of g.rwn.get(rw.id) || []) {
-      if (!n.entry && n.id !== m.node) continue;
       const room = dir > 0 ? L - n.s : n.s;
       if (room < need || !clearRun(rw, n.s, n.s + dir * need)) continue;
       const cost = n.id === m.node ? 0 : tree.dist.get(n.id);
@@ -314,15 +314,14 @@ IC.rwOcc = function (S, ap, rw, dir, T) {
     }
   }
   let dep = 1e9;
-  const need = T.rwy * 1.05 + 1;
+  const need = T.rwy * 1.05 + 1, entries = nodes.filter(n => n.entry), roll = HOLD / TAXI + (T.mil ? 10 : 25) + 2 * T.rwy * 0.6 / LIFT;
   for (const n of nodes) {
-    if (!n.entry) continue;
     const room = dir > 0 ? L - n.s : n.s;
-    if (room < need || !clearRun(rw, n.s, n.s + dir * need)) continue;
-    dep = Math.min(dep, HOLD / TAXI + (T.mil ? 10 : 25) + 2 * T.rwy * 0.6 / LIFT);
+    if (!entries.length || room < need || !clearRun(rw, n.s, n.s + dir * need)) continue;
+    // with no taxiway to where the take-off starts, it backtracks along the runway from the nearest entry
+    const back = n.entry ? 0 : Math.min(...entries.map(x => Math.abs(x.s - n.s))) / RWTAXI + 30;
+    dep = Math.min(dep, roll + back);
   }
-  // with no entry at all, a departure backtracks down the runway from wherever it can get on
-  if (dep >= 1e9 && nodes.some(n => n.entry)) dep = HOLD / TAXI + (T.mil ? 10 : 25) + 2 * T.rwy * 0.6 / LIFT + 60 + L * 0.5 / RWTAXI;
   return { land, dep };
 };
 function planArrival(S, ap, T, target, pref, mil) {
@@ -350,7 +349,7 @@ function planArrival(S, ap, T, target, pref, mil) {
         // an exit where aircraft are queued the other way for the runway would block us on it
         const out = back.prev.get(n.id), jam = out && resWait(ap, out, S.time + FAF / 0.95 + rollTime(T) + rwTime, null) > 0 ? 300 : 0;
         const cost = rwTime * 2 + pc + role + jam;
-        if (!best || cost < best.cost) best = { cost, rw, dir, touch: P.touch, stop: P.stop, exit: n, back: bk, rwTime, strip };
+        if (!best || cost < best.cost) best = { cost, rw, dir, touch: P.touch, stop: P.stop, exit: n, back: bk, rwTime, strip, out };
       }
     }
   }
@@ -382,6 +381,8 @@ IC.gopsLand = function (S, ap, o) {
   if (!plan) return 'divert';
   const k = keyOf(ap, plan.rw.id);
   const probe = { id: 'probe', kind: 'arr', mil: o.mil, waitT: 0 };
+  // not while an aircraft sits in the exit it will need, waiting to come the other way onto the runway
+  if (plan.out && plan.out.kind !== 'apron' && occList(ap, plan.out.key).some(x => x.d !== plan.out.d && !x.m.dead)) return 'hold';
   if (!canTake(S, ap, k, probe)) { wantIt(S, ap, k, probe); return 'hold'; }
   const m = newMove(S, ap, Object.assign({ kind: 'arr' }, o));
   take(ap, k, m, null, S.time);
@@ -394,6 +395,9 @@ IC.gopsLand = function (S, ap, o) {
   const tIn = S.time + FAF / 0.95 + rollTime(T) + plan.rwTime;
   const p = IC.aptSearch(ap, plan.exit.id, { to: o.target, avoidRwy: true, res: { m, t0: tIn } });
   if (p.dist.has(o.target)) { m.inPath = IC.aptSteps(p, plan.exit.id, o.target); reserve(S, ap, m, m.inPath, tIn); }
+  // and it keeps its exit clear of oncoming traffic until it is through
+  const ex = m.inPath && m.inPath[0] ? edgeNow(ap, m.inPath[0]) : plan.out;
+  if (ex && ex.kind !== 'apron') preOccupy(ap, m, ex);
   return m;
 };
 
@@ -719,9 +723,9 @@ IC.gopsRisk = function (S, ap, m, what) {
   const T = m.T, P = m.plan, out = [];
   if (!P || !P.rw || T.vtol) return { p: 0, why: out };
   const w = IC.windOn(S, hdgOf(P.rw, P.dir)), k = what === 'arr' ? 1 : 0.5;
-  // gusts beyond what the crew are allowed to land in
-  if (w.gCross > T.xw) out.push({ cause: 'gust', p: Math.min(0.03, 0.0015 * (w.gCross - T.xw)) * k, text: `a gust of ${Math.round(w.gCross)} kt across the runway, beyond the ${T.xw} kt the crew may land in` });
-  if (-w.gHead > T.tw) out.push({ cause: 'tailwind', p: Math.min(0.02, 0.001 * (-w.gHead - T.tw)) * k, text: `a tailwind gust of ${Math.round(-w.gHead)} kt` });
+  // gusts beyond what the crew are allowed to land in (well beyond, and they go round and try elsewhere)
+  if (w.gCross > T.xw) out.push({ cause: 'gust', p: 0.0008 * Math.min(6, w.gCross - T.xw) * k, text: `a gust of ${Math.round(w.gCross)} kt across the runway, beyond the ${T.xw} kt the crew may land in` });
+  if (-w.gHead > T.tw) out.push({ cause: 'tailwind', p: 0.0006 * Math.min(6, -w.gHead - T.tw) * k, text: `a tailwind gust of ${Math.round(-w.gHead)} kt` });
   // a wet runway and a tailwind lengthen the landing roll; a runway only just long enough runs out
   if (what === 'arr') {
     const sky = IC.sky(S), need = T.rwy * (sky.wet ? 1.15 : 1) * (1 + Math.max(0, -w.head) * 0.02);

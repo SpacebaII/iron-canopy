@@ -468,6 +468,10 @@ IC.aptStats = function (S, ap) {
     }
     const out = st.windOut.filter(w => w.type !== 'light');
     if (out.length && ap.kind !== 'airbase') st.warn.push(`Wind ${IC.windText(S)}: ${out.map(w => IC.ACTYPES[w.type].name.toLowerCase() + 's').join(' and ')} cannot use any runway (${out[0].why}). A runway pointing into this wind would keep them flying.`);
+    // gusts across the runways in use, beyond what some crews may land in: those landings are risky
+    const gusty = ['turbo', 'narrow', 'wide'].filter(k => !out.some(w => w.type === k) && rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES[k].rwy) && rws.every(rw => !cfg.rw[rw.id] || IC.rwWindBlock(S, rw, cfg.rw[rw.id].dir, IC.ACTYPES[k]) || IC.windOn(S, IC.rwHdg(rw, cfg.rw[rw.id].dir)).gCross > IC.ACTYPES[k].xw));
+    st.gusty = gusty;
+    if (gusty.length && ap.kind !== 'airbase') st.warn.push(`Gusts up to ${Math.round(S.wind.gust)} kt across the runways: ${gusty.map(k => IC.ACTYPES[k].name.toLowerCase() + 's').join(' and ')} are landing beyond their limits. A crash is possible.`);
   }
   // fog and low cloud
   st.ilsEnds = rws.reduce((n, rw) => n + (IC.rwHasILS(ap, rw, 1) ? 1 : 0) + (IC.rwHasILS(ap, rw, -1) ? 1 : 0), 0);
