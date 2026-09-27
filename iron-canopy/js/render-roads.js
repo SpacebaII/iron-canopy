@@ -277,7 +277,9 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
     if (z < AGZ) {
       IC.trafficVisible(S, view, Math.max(0.3, 7 * px), (x, y, h, k, cls, off) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); list.push({ x: x - n * o, y: y + c * o, h, k, col: (x * 7 + y * 13) & 1023 }); }, z < 2.5 ? { st: 1, ln: 1 } : null);
     } else {
-      for (const a of IC.trafficAgents(S, view, dtg)) { const p = IC.agentPos(a); if (inView(p.x, p.y, 1)) list.push({ x: p.x, y: p.y, h: p.h, k: a.k, col: a.col }); }
+      // drawn bigger than life they would crowd the road: show only as many as fit at the size drawn
+      const thin = Math.max(1, Math.ceil(m / 0.045 / 2.5));
+      for (const a of IC.trafficAgents(S, view, dtg)) { if (a.id % thin) continue; const p = IC.agentPos(a); if (inView(p.x, p.y, 1)) list.push({ x: p.x, y: p.y, h: p.h, k: a.k, col: a.col }); }
     }
     // buses and coaches on their lines
     for (const b of S.buses) {

@@ -539,8 +539,9 @@ IC.generate = function (seed) {
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
-  // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town)
-  for (const t of W.cities.concat(W.foreign)) for (const b of t.blocks) {
+  // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);
+  // abroad the fields run up to the towns' blocks
+  for (const t of W.cities) for (const b of t.blocks) {
     const e = Math.max(b.w, b.h) / 2 + 0.8;
     for (let i = Math.floor((b.x - e) / BC); i <= Math.floor((b.x + e) / BC); i++) for (let j = Math.floor((b.y - e) / BC); j <= Math.floor((b.y + e) / BC); j++) built.add(bkey(i, j));
   }
