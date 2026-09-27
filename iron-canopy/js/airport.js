@@ -348,6 +348,60 @@ IC.rwUsable = rw => rw.built && rw.hp > 0 && !rw.shut && !(rw.wear >= 1) ? Math.
 /* spacing between runway movements: a tower and an approach radar let controllers pack them tighter */
 IC.aptSep = st => !st.tower ? 480 : st.radar ? 60 : 110;
 
+/* ---------- runway capacity under the tower's rules ---------- */
+/* arrivals and departures an hour that the runways can take under a set of rules (ops: the airport's by default),
+   for the aircraft mix in st. The same timings as ground operations (groundops.js): an arrival holds its runways
+   from the approach fix until it has turned off, and the next may start its final a separation later; departures
+   follow one another a wake-turbulence gap apart; between two arrivals, a departure needs the next arrival to be at
+   least the arrival gap out when it starts its take-off run. */
+IC.opsCapacity = function (S, ap, st, ops) {
+  ops = ops || IC.opsOf(ap);
+  const O = IC.OPS_T, FAF = IC.GOPS.FAF, sep = IC.aptSep(st), sepA = sep * 0.5, sepD = sep;
+  const mix = st.mix || {}, keys = Object.keys(mix), mixN = keys.reduce((a, k) => a + mix[k], 0) || 1;
+  const byId = new Map(ap.parts.map(p => [p.id, p]));
+  const groups = {};
+  for (const r of st.rwy) (groups[r.grp] = groups[r.grp] || []).push(r);
+  const out = { arr: 0, dep: 0, per: {} };
+  for (const g in groups) {
+    const L = groups[g], role = L[0].role;
+    if (role === 'spare') continue;
+    // per type in the mix: the best runway of the group for landing, and for taking off, and the cycle times
+    let land = 0, depC = 0, pair = 0, okL = 0, okD = 0;
+    for (const k of keys.length ? keys : [st.refType]) {
+      const T = IC.ACTYPES[k], w = keys.length ? mix[k] : 1;
+      let bl = 1e9, bd = null, R = null;
+      for (const r of L) {
+        const rw = byId.get(r.id); if (!rw) continue;
+        const RR = IC.opsRules(ap, r.id, ops), o = IC.rwOcc(S, ap, rw, r.dir, T, RR);
+        bl = Math.min(bl, o.land);
+        if (o.dep < 1e8 && (!bd || o.dep < bd.dep)) { bd = o; R = RR; }
+      }
+      if (bl < 1e8) { land += bl * w; okL += w; }
+      if (!bd) continue;
+      const luaw = IC.opsEnter(S, R, k, T) === 'luaw', lineW = T.mil ? 10 : O.LINE;
+      // a queue of departures, one after another
+      depC += (luaw ? Math.max(bd.E + lineW, O.CREW + bd.roll + sepD) : sepD + bd.E + bd.line + O.CREW + bd.roll) * w;
+      // an arrival, then a departure, then the next arrival once the departure has the gap it needs
+      const dv = luaw ? (sepA <= bd.E + bd.line ? bd.E + bd.line : Math.max(bd.E + lineW, sepA)) : sepA + bd.E + bd.line;
+      const after = Math.max(0, (R.gap * 10 - FAF) / O.ARR_V, bd.roll - (FAF - O.GO) / O.ARR_V, st.tower ? 0 : bd.roll + sepD);
+      pair += ((bl < 1e8 ? bl : 300) + dv + O.CREW + after) * w;
+      okD += w;
+    }
+    land = okL ? land / okL : 1e9; depC = okD ? depC / okD : 1e9; pair = okD ? pair / okD : 1e9;
+    let a = 0, d = 0;
+    if (role === 'arr' && land < 1e8) a = 3600 / (land + sepA);
+    else if (role === 'dep' && depC < 1e8) d = 3600 / depC;
+    else if (role === 'mixed') {
+      if (land < 1e8 && pair < 1e8) { a = 3600 / pair; d = a; }
+      else if (land < 1e8) a = 3600 / (land + sepA); else if (depC < 1e8) d = 3600 / depC;
+    }
+    out.per[g] = Math.round(a + d);
+    out.arr += a; out.dep += d;
+  }
+  out.arr = Math.round(out.arr); out.dep = Math.round(out.dep);
+  return out;
+};
+
 /* ---------- what the airport can do, and what is wrong with it ---------- */
 /* the aircraft the numbers are worked out for: the largest civil jet the runways take, or a fighter at an air base */
 function refType(ap, best) { if (ap.kind === 'airbase') return 'fighter'; return best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : 'light'; }
@@ -418,6 +472,7 @@ IC.aptStats = function (S, ap) {
   for (const x of ap.mvLog || []) if (x.type && IC.ACTYPES[x.type] && !IC.ACTYPES[x.type].vtol) mix[x.type] = (mix[x.type] || 0) + 1;
   if (!Object.keys(mix).length) mix[st.refType] = 1;
   const mixN = Object.values(mix).reduce((a, b) => a + b, 0);
+  st.mix = mix; st.refT = T;
   const occMix = (rw, dir) => { let land = 0, dep = 0; for (const k in mix) { const o = IC.rwOcc(S, ap, rw, dir, IC.ACTYPES[k]); if (o.land >= 1e8 || o.dep >= 1e8) { const r = IC.rwOcc(S, ap, rw, dir, T); land += r.land * mix[k]; dep += r.dep * mix[k]; } else { land += o.land * mix[k]; dep += o.dep * mix[k]; } } return { land: land / mixN, dep: dep / mixN }; };
   // each runway: how long a landing and a departure hold it, the way the wind has it used now
   let crossings = 0;
@@ -452,25 +507,10 @@ IC.aptStats = function (S, ap) {
   st.complex = rws.length >= 2 && crossings > 0;
   st.gradar = alive('gradar').length > 0;
   if (st.complex && !st.gradar && ap.kind !== 'airbase') st.warn.push(`Taxiing aircraft cross runways here and there is no ground radar: at night or in fog one could stray onto a runway in use.`);
-  // capacity: one clearance per group of dependent runways, used the way the configuration says
-  const sepA = sep * 0.5, sepD = sep;
-  const groups = {};
-  for (const r of st.rwy) (groups[r.grp] = groups[r.grp] || []).push(r);
-  for (const k in groups) {
-    const L = groups[k].filter(r => r.land < 1e8 || r.dep < 1e8);
-    if (!L.length) continue;
-    const role = L[0].role, land = Math.min(...L.map(r => r.land)), dep = Math.min(...L.map(r => r.dep));
-    let a = 0, d = 0;
-    if (role === 'arr' && land < 1e8) a = 3600 / (land + sepA);
-    else if (role === 'dep' && dep < 1e8) d = 3600 / (dep + sepD);
-    else if (role === 'mixed') {
-      if (land < 1e8 && dep < 1e8) { const n = 3600 / ((land + sepA + dep + sepD) / 2); a = n / 2; d = n / 2; }
-      else if (land < 1e8) a = 3600 / (land + sepA); else if (dep < 1e8) d = 3600 / (dep + sepD);
-    }
-    for (const r of L) { r.perHour = Math.round(a + d); }
-    st.arrPerHour += a; st.depPerHour += d;
-  }
-  st.arrPerHour = Math.round(st.arrPerHour); st.depPerHour = Math.round(st.depPerHour);
+  // capacity: one clearance per group of dependent runways, used the way the configuration says, under the tower's rules
+  const cap = IC.opsCapacity(S, ap, st);
+  st.arrPerHour = cap.arr; st.depPerHour = cap.dep;
+  for (const r of st.rwy) r.perHour = cap.per[r.grp] || 0;
   st.movesPerHour = st.arrPerHour + st.depPerHour;
   // the wind: which aircraft no runway can take right now
   if (cfg && S) {
