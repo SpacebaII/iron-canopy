@@ -31,6 +31,16 @@ const infraLost = () => S.infra.filter(i => i.offline && i.kind !== 'city').leng
 const snap = () => ({ kills: S.stats.kills, leak: S.stats.leakers, fired: S.stats.fired, blocks: blocksLost(), infra: infraLost(), raids: (S.raids || []).length, threats: (S.raids || []).reduce((s, r) => s + r.threats, 0) });
 let prev = snap(), lastDay = U.day(S.time), did = {};
 const out = [];
+// a reasonable commander reads the warnings: batteries move towards the target, teams are called in when it starts
+IC.on((S2, type, d) => {
+  if (S2 !== S || passive) return;
+  const obj = d && d.R ? d.R.obj : d && d.obj;
+  if (type === 'raidWarning' && obj) {
+    const mob = S.units.filter(u => u.state === 'ready' && (u.type === 'shorad' || u.type === 'mrsam' || u.type === 'spaag') && U.dist(u, obj) > 300).sort((a, b) => U.dist(a, obj) - U.dist(b, obj)).slice(0, 2);
+    for (const u of mob) { const q = IC.findSpot(S, u.type, obj.x, obj.y, 40, 160); if (q) IC.relocate(S, u, q.x, q.y); }
+  }
+  if (type === 'raidStart' && obj) for (let k = 0; k < 2; k++) if (!IC.callInWhy(S, obj.x, obj.y)) IC.callIn(S, obj.x + U.rand(-40, 40), obj.y + U.rand(-40, 40));
+});
 const t0 = Date.now();
 for (let i = 0; i < days * 86400 / 0.5 && !S.over; i++) {
   IC.step(S, 0.5);
@@ -46,7 +56,6 @@ for (let i = 0; i < days * 86400 / 0.5 && !S.over; i++) {
     if (!did.cap) { did.cap = 1; IC.addTask(S, 'cap', { x: cap.x, y: cap.y }); const p = inward(mid(fA), 1400); IC.addTask(S, 'aew', { x: p.x, y: p.y }); }
     if (S.enemy.war && !did.war) { did.war = 1; S.airspace = 'restricted'; IC.setMobil(S, 1); IC.addTask(S, 'cap', { x: ab.x, y: ab.y }); }
     for (const t of S.tels) if (t.known && !t.dead && S.time - t.kt < 300) for (const u of S.units) if (u.d.weapon === 'strike' && u.state === 'ready' && u.mags[0].mag > 0) IC.fireMission(S, u, t, 4);
-    if (IC.callIn && S.enemy.war) IC.autoCallIn && IC.autoCallIn(S);
   }
   const d = U.day(S.time);
   if (d !== lastDay) {
