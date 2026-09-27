@@ -40,7 +40,7 @@ IC.route = function (ax, ay, bx, by) {
     const seq = e.a === W.roadIds[k] ? e.pts : e.pts.slice().reverse();
     // a blown bridge means a slow detour to the nearest ford
     const slow = W.blocked && W.blocked.has(e.id);
-    for (let s = 1; s < seq.length; s++) pts.push({ x: seq[s].x, y: seq[s].y, road: !slow });
+    for (let s = 1; s < seq.length; s++) pts.push({ x: seq[s].x, y: seq[s].y, road: !slow, cls: e.cls, cut: slow ? e.id : 0 });
     k = nk;
   }
   pts.push({ x: bx, y: by, road: false });
