@@ -79,6 +79,7 @@ IC.econInit = function (S) {
     const K = IC.INDUSTRY[kind];
     E.inds.push({ id: v.id, kind, name: `${v.name} ${K.name}`, place: v.name, x: v.x, y: v.y, cap: K.cap * R.range(0.8, 1.25), out: 0, f: {} });
   }
+  IC.supplyInit(S);
   refreshRoads(S);
   airService(S);
   for (const c of IC.cities(S)) c.rc0 = c.rcI;
@@ -224,7 +225,7 @@ function grow(S, dt) {
     const g = {
       air: G.airGrowth * c.air.score,
       road: G.roadGrowth * U.clamp(c.rc / Math.max(1, c.rc0) - 1, -0.6, 0.6),
-      war: -(1 - alive) * 3 - (c.besieged ? 1 : 0) - (war ? 0.1 : 0),
+      war: -(1 - alive) * 3 - (war ? 0.1 : 0),
       base: G.drift
     };
     g.tot = U.clamp(g.air + g.road + g.war + g.base, -2, 2);
@@ -640,11 +641,48 @@ function loans(S, dt) {
 /* money booked by kind: + comes in, − goes out */
 function book(S, k, v) { const E = S.econ; if (!E || !v) return; E.book[k] = (E.book[k] || 0) + v; E.booked = (E.booked || 0) + v; }
 IC.econBook = book;
+/* pay for something now and book it by kind (the kinds are in IC.STATEMENT) */
+IC.pay = function (S, k, v) { S.budget -= v; book(S, k, -v); };
 IC.STATEMENT = {
-  base: 'Government grant', tax: 'Taxes', trade: 'Trade taxes', apt: 'Airport revenue', aid: 'Allied support',
-  fee_land: 'Landing fees', fee_pax: 'Passenger charges', fee_cargo: 'Cargo charges', fee_over: 'Overflight fees', oneoff: 'Aid, bonds and grants',
-  loanIn: 'Loans taken', upApt: 'Airport upkeep', upStaff: 'Staff', upAD: 'Air defence upkeep', upAir: 'Air force upkeep', upG: 'Army upkeep',
-  loan: 'Loan repayments and interest', loanOut: 'Loans paid off early', other: 'Construction, orders and research'
+  base: 'Grant from the Ministry', tax: 'Taxes from the cities', trade: 'Trade taxes', apt: 'Airport revenue', aid: 'Allied support',
+  fee_land: 'Airline fees: landing', fee_pax: 'Airline fees: passengers', fee_cargo: 'Airline fees: cargo', fee_over: 'Overflight fees',
+  oneoff: 'Grants, aid and war bonds', refund: 'Equipment dismantled', loanIn: 'Loans taken',
+  upAD: 'Running costs: air defence', upAir: 'Running costs: air force', upApt: 'Running costs: airports', upStaff: 'Staff',
+  loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
+  buyUnits: 'Equipment bought', buyMun: 'Missiles and supplies bought', buyLogi: 'Truck companies', research: 'Research', repair: 'Repairs',
+  other: 'Building works and other spending'
+};
+/* the money view: what comes in and goes out an hour right now, line by line, each with its reason */
+IC.money = function (S) {
+  const L = S.ledger || {}, A = S.av, r = A && A.rate || {};
+  const inc = [['base', L.base], ['av', L.av || 0], ['tax', L.tax], ['trade', L.trade], ['apt', L.apt], ['aid', L.aid]].filter(([, v]) => v > 0.005);
+  const out = [['upAD', L.upAD], ['upAir', L.upAir], ['upApt', L.upApt], ['upStaff', L.upStaff], ['loan', L.loan]].filter(([, v]) => v > 0.005);
+  const name = k => k === 'av' ? 'Airline fees' : IC.STATEMENT[k];
+  const line = ([k, v]) => ({ k, name: name(k), v, why: IC.moneyWhy(S, k, r) });
+  const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
+  const inH = I.reduce((s, l) => s + l.v, 0), outH = O.reduce((s, l) => s + l.v, 0), net = inH - outH;
+  const left = net < 0 ? S.budget / -net : Infinity;
+  const forecast = net >= 0 ? `Growing by about ${U.money(net * 24)} a day at this rate.` : S.budget <= 0 ? 'The treasury is empty.' : `Money runs out in about ${left > 48 ? `${Math.round(left / 24)} days` : U.dur(left * 3600)} at this rate.`;
+  return { inc: I, out: O, inH, outH, net, left, forecast };
+};
+const n = (a, one, many) => `${a} ${a === 1 ? one : many || one + 's'}`;
+IC.moneyWhy = function (S, k, r) {
+  const L = S.ledger || {}, mob = IC.MOBIL[S.mobil], st = S.story;
+  const mobTxt = S.mobil ? ` ${mob.name} ${k.startsWith('up') ? `adds ${U.pct(mob.up - 1)}` : `takes ${U.pct(1 - mob.tax)}`}.` : '';
+  switch (k) {
+    case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
+    case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid per flight at our airports, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
+    case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${st.act === 3 ? 'a quarter of them' : 'none: they go to the Treasury'}.` : ''}${mobTxt}`; }
+    case 'trade': return `15% of what ${n(S.econ ? S.econ.inds.length : 0, 'remote industry', 'remote industries')} sell. Fast roads to a city and air cargo within ${IC.GROWTH.indCatch} h sell more.${st && st.act < 4 ? ' In the Career this grows with the acts, like taxes.' : ''}`;
+    case 'apt': return 'Airports earn a fixed amount when no airlines are modelled.';
+    case 'aid': return `Our allies pay more the more they support us (support ${Math.round(S.support)}).`;
+    case 'upAD': { const us = S.units.filter(u => !u.dead), by = {}; for (const u of us) by[u.d.name] = (by[u.d.name] || 0) + u.d.up; const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([nm, v]) => `${nm} ${U.money(v)}`); return `${n(us.length, 'unit')} on the map, crews and fuel: ${top.join(', ')}.${L.crowd > 0.05 ? ` Radars sharing a frequency band cost ${U.money(L.crowd)} more to keep apart.` : ''} Units in the reserve cost nothing.${mobTxt}`; }
+    case 'upAir': { const f = S.roster.filter(x => x.st !== 'lost').length; return `${n(f, 'flight')} of aircraft at ₭0.6M an hour each; every sortie costs extra.${mobTxt}`; }
+    case 'upApt': { let v = 0; for (const b of IC.bases(S)) if (b.parts && b.owner === 'us' && !b.locked) for (const p of b.parts) if (p.built) v += IC.partCost(b, p); return `0.12% an hour of what the airports' runways, taxiways and buildings cost (${U.money(v)}). Bigger airports cost more to keep.`; }
+    case 'upStaff': return 'The delegates you hired (Staff room). Let one go to save the cost.';
+    case 'loan': return `${n(S.econ ? S.econ.loans.length : 0, 'loan')}: each is repaid evenly over its term, with ${(IC.LOAN_RATE * 100).toFixed(1)}% a day interest on what is still owed.`;
+  }
+  return '';
 };
 function closeBooks(S) {
   // what the treasury did that nobody booked: building, buying, research

@@ -12,22 +12,23 @@ IC.newGame = function (opts) {
   const S = {
     mode, seed, world: W, lesson: opts.lesson || null,
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
-    budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9, manpower: sandbox ? 60 : 30,
+    budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
-    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, capture: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
+    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
-    vehicles: [], jobs: [], trains: [], imports: [], evehicles: [],
-    esites: [], tels: [], gunits: [], fronts: [], wrecks: [], marks: [],
+    vehicles: [], jobs: [], trains: [], imports: [],
+    esites: [], tels: [], wrecks: [], marks: [],
     tech: { done: new Set(['a_lrsam']), slots: [null, null] },
     fx: { parts: [], booms: [], texts: [], tracers: [], rings: [], fires: [], flashes: [], plumes: [], trails: [], chaff: [], shocks: [] },
     logs: [], news: [], counters: {}, sensors: [], flags: {}, reports: [],
-    stats: { kills: 0, leakers: 0, fired: 0, civLost: 0, strikes: 0, siteKills: 0, telKills: 0, gKills: 0, convoysLost: 0, acLost: 0, unitsLost: 0 },
+    stats: { kills: 0, leakers: 0, fired: 0, civLost: 0, strikes: 0, siteKills: 0, telKills: 0, convoysLost: 0, acLost: 0, unitsLost: 0 },
     nextTN: 1001, shake: 0, wind: { x: U.rand(-1, 1) * 0.6, y: U.rand(0.1, 0.6) },
     sel: null, group: [], mode2: null, hover: null,
-    layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, ground: true, airways: false },
+    layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false },
     alertCities: 0
   };
+  if (mode === 'range') return IC.rangeInit(S);
   S.terrain = IC.buildTerrain(W);
   S.clouds = IC.buildClouds();
 
@@ -54,13 +55,11 @@ IC.newGame = function (opts) {
   // which plant powers which city
   const plants = S.infra.filter(i => i.kind === 'power');
   for (const c of IC.cities(S)) { const p = plants.slice().sort((a, b) => U.dist(a, c) - U.dist(b, c))[0]; c.plant = p ? p.id : null; }
-  for (const i of S.infra) if (i.kind === 'factory' || i.kind === 'airport') for (let k = 0; k < (i.kind === 'factory' ? 2 : 1); k++) IC.addTruck(S, i);
 
   IC.weatherInit(S);
   const story = mode === 'story';
   if (story) IC.storyForces(S); else if (mode !== 'academy') startingForces(S, sandbox);
   IC.enemyInit(S);
-  IC.groundInit(S, mode === 'academy');
   if (mode !== 'academy') IC.avInit(S);
   IC.aspInit(S);
   IC.civilInit(S);
@@ -96,9 +95,9 @@ function startingForces(S, sandbox) {
   };
   const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
   dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
-  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24, ATG: 20, SUP: 200 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12, ATG: 10, SUP: 120 };
+  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12 };
   for (const k in stock) dep.inv[k] = stock[k];
-  for (let i = 0; i < 2; i++) IC.addTruck(S, dep);
+  for (let i = 0; i < 4; i++) IC.addTruck(S, dep);
   const fab = S.byId.ab_fwd || cap;
   put('lr3d', cap, 180, 420);
   put('vhf', { x: (cap.x + mid(fA).x) / 2, y: (cap.y + mid(fA).y) / 2 }, 0, 400);
@@ -109,15 +108,11 @@ function startingForces(S, sandbox) {
   put('shorad', cap, 220, 420);
   put('spaag', S.infra.find(i => i.kind === 'factory') || cap, 50, 140);
   put('spaag', dep, 40, 110);
-  put('manpads', cap, 80, 200);
-  put('manpads', fab, 50, 140);
-  const bt = IC.cities(S).filter(c => !c.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0];
-  if (bt) put('manpads', bt, bt.r * 0.5, bt.r + 60);
   if (sandbox) {
     put('lrsam', fab, 200, 450); put('mr3d', inward(mid(fA), 1100), 0, 350); put('gnss', inward(mid(fA), 1000), 0, 350);
     put('mlrs', inward(mid(fA), 700), 0, 300);
   }
-  S.reserve = sandbox ? { gf: 1, shorad: 2, manpads: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 1, gf: 1, shorad: 2, spaag: 1, manpads: 3, gnss: 1, mlrs: 1, lrsam: 1, depot: 1 };
+  S.reserve = sandbox ? { gf: 1, shorad: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 1, gf: 1, shorad: 2, spaag: 1, gnss: 1, mlrs: 1, lrsam: 1, depot: 1 };
 }
 
 IC.hasTech = (S, id) => !id || S.tech.done.has(id);
@@ -232,7 +227,6 @@ IC.detonate = function (S, x, y, dmg, src) {
     if (d < 30) { IC.hurtUnit(S, u, dmg * (1 - d / 30 * 0.6), src2); hit = hit || u; }
   }
   for (const v of S.vehicles) if (!v.dead && U.dxy(x, y, v.x, v.y) < 3 + dmg * 0.05) { IC.hitConvoy(S, v, src2.d ? src2.d.code : 'strike'); hit = hit || v; }
-  for (const gu of S.gunits) if (gu.side === 'us' && !gu.dead && U.dxy(x, y, gu.x, gu.y) < 45) { gu.str = Math.max(0, gu.str - dmg * 0.05); gu.mor -= dmg * 0.03; hit = hit || gu; }
   if (hit && dmg > 25 && !aptHit) IC.addFire(S, x + U.rand(-4, 4), y + U.rand(-4, 4), 0.6 + dmg / 120, 900 + dmg * 20);
   const lbl = src2.tn ? `TN ${src2.tn} ${src2.d.code}` : `Undetected ${src2.d ? src2.d.code : 'weapon'}`;
   if (hit) { S.stats.leakers++; IC.log(S, 'leak', 'IMPACT', `${hit.name} hit by ${lbl}.`, { x, y }); IC.emit(S, 'impact', { x, y, hit, src: src2 }); }
@@ -407,7 +401,7 @@ IC.hurtUnit = function (S, u, dmg, src) {
 };
 IC.killThreat = function (S, t, by, how) {
   if (t.dead) return;
-  t.dead = true;
+  t.dead = true; t.killer = by;
   S.stats.kills++;
   if (t.op) t.op.done++;
   const big = t.d.cls === 'bal' || t.d.cls === 'hgv';

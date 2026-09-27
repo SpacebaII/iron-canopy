@@ -53,7 +53,7 @@ for (let step = 0; S.time - t0 < hours * 3600 && !S.over; step++) {
     IC.avAddZone(S, fb.x, fb.y, 250, 'P-1 base');
   }
   if (st.act >= 2 && (S.reserve.gf || 0) > 0) {
-    const fA = S.fronts.find(f => f.key === 'A'), p = fA.pts[Math.floor(fA.pts.length / 2)];
+    const fA = S.world.fronts.find(f => f.key === 'A'), p = fA.pts[Math.floor(fA.pts.length / 2)];
     const spot = IC.findSpot(S, 'gf', p.x + p.nx * 500, p.y + p.ny * 500, 0, 300);
     if (spot) { IC.deploy(S, 'gf', spot.x, spot.y); console.log('deployed gap filler'); }
   }

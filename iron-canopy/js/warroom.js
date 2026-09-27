@@ -13,7 +13,7 @@ IC.renderRoom = function (st, tab) {
   S = st;
   ui.setHTML($('wrTabs'), ui.ROOMS.filter(([k]) => ui.roomOk(k)).map(([k, n, key]) => `<button data-act="room" data-v="${k}" aria-pressed="${tab === k}">${n}${key ? `<kbd>${key}</kbd>` : ''}</button>`).join(''));
   $('wrRun').textContent = S.paused ? 'Paused' : `Running at ${S.skip ? 'skip' : S.speed + '×'} · Space pauses`;
-  const f = { aviation, staff, economy, air, army, logi, industry, intel, research, journal, reference, settings }[tab];
+  const f = { aviation, staff, economy, air, logi, industry, intel, research, journal, reference, settings }[tab];
   const fresh = ui.keys.wrBody !== tab;
   ui.setHTML($('wrBody'), f ? f() : '', tab);
   if (fresh) $('wrBody').scrollTop = ui.roomScroll[tab] || 0;
@@ -101,10 +101,9 @@ function staff() {
 function air() {
   const tasks = S.ato.map(t => {
     const cov = S.air.filter(a => a.task === t && !a.dead && a.state !== 'rtb').length;
-    return `<div class="li"><b>${esc(t.name)}</b><small>${cov} on task · wants ${t.want}${IC.TASK_KIND[t.type].front && !t.front.active ? ' · front quiet' : ''}</small><span class="la"><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="-1">−</button><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="1">+</button><button class="btn sm" data-act="tdel" data-id="${t.id}">✕</button></span></div>`;
+    return `<div class="li"><b>${esc(t.name)}</b><small>${cov} on task · wants ${t.want}</small><span class="la"><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="-1">−</button><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="1">+</button><button class="btn sm" data-act="tdel" data-id="${t.id}">✕</button></span></div>`;
   }).join('');
-  const add = [`<button class="btn" data-act="taskPoint" data-v="cap">+ Combat air patrol</button>`, `<button class="btn" data-act="taskPoint" data-v="aew">+ Early warning orbit</button>`, `<button class="btn" data-act="taskPoint" data-v="isr">+ Recon area</button>`]
-    .concat(S.story && S.story.act < 4 ? [] : S.fronts.map(f => `<button class="btn" data-act="taskFront" data-v="cas" data-id="${f.key}">+ Close air support · ${esc(f.name)}</button><button class="btn" data-act="taskFront" data-v="interdict" data-id="${f.key}">+ Interdiction · ${esc(f.name)}</button>`)).join('');
+  const add = [`<button class="btn" data-act="taskPoint" data-v="cap">+ Combat air patrol</button>`, `<button class="btn" data-act="taskPoint" data-v="aew">+ Early warning orbit</button>`, `<button class="btn" data-act="taskPoint" data-v="isr">+ Recon area</button>`].join('');
   const bases = IC.bases(S).filter(b => (b.kind === 'airbase' && !b.locked) || S.roster.some(r => r.base === b.id && r.st !== 'lost')).concat(S.units.filter(u => u.type === 'heliport'));
   const cards = bases.map(b => {
     const rs = S.roster.filter(r => r.base === b.id && r.st !== 'lost');
@@ -119,113 +118,92 @@ function air() {
         const k = r.kind;
         if (k === 'ftr') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="cap" ${why ? 'disabled' : ''}>Patrol</button><button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="strike" ${IC.missionOk(S, r, 'strike') ? 'disabled' : ''}>Strike</button>`;
         else if (k === 'aew' || k === 'isr') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="${k === 'aew' ? 'aew' : 'isr'}" ${why ? 'disabled' : ''}>${k === 'aew' ? 'Orbit' : 'Recon'}</button>`;
-        else if (k === 'ucav') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="isr" ${why ? 'disabled' : ''}>Recon</button><button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="hstrike" ${why ? 'disabled' : ''}>Attack</button>`;
-        else if (k === 'atk') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="hstrike" ${IC.missionOk(S, r, 'hstrike') ? 'disabled' : ''}>Attack</button>`;
-        else if (k === 'heli') btn = '<span class="muted" style="font-size:.78rem">lifts: select a brigade</span>';
+        else if (k === 'ucav') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="isr" ${why ? 'disabled' : ''}>Recon</button>`;
+        else if (k === 'heli') btn = '<span class="muted" style="font-size:.78rem">resupply: select a battery</span>';
       }
       const load = r.kind === 'ftr' && r.st !== 'air' && (!S.story || S.story.act >= 3) ? seg('loadout', r.load, [['aa', 'A2A'], ['strike', 'Strike']], r.id) : '';
       const qra = r.kind === 'ftr' ? `<button class="btn sm ${r.qra ? 'primary' : ''}" data-act="qra" data-rid="${r.id}" title="Crews on alert start engines in half the time">${r.qra ? 'On alert' : 'Alert'}</button>` : '';
       const block = r.st === 'ready' && b.parts ? IC.milLaunchBlock(S, b, r) : '';
       return `<div class="li"><b>${esc(r.name)} <span class="muted">· ${esc(IC.AIR_KIND[r.kind].name)} ×${r.n}</span></b><small>${state}${r.ent && r.ent.gnd ? ' · taxiing' : ''}${r.slot || r.st === 'air' ? '' : ' · <span class="amber">parked in the open</span>'}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small><span class="la">${qra}${load}${btn}</span></div>`;
     }).join('');
-    const buy = b.infra && (!S.story || S.story.act >= 3) ? ['ftr', 'atk', 'ucav', 'isr', 'heli'].map(k => `<button class="btn sm" data-act="buyAir" data-v="${k}" data-id="${b.id}" ${S.budget < IC.AIR_KIND[k].buy ? 'disabled' : ''}>+ ${IC.AIR_KIND[k].short} ${U.money(IC.AIR_KIND[k].buy)}</button>`).join('') : '';
+    const buy = b.infra && (!S.story || S.story.act >= 3) ? ['ftr', 'ucav', 'isr', 'heli'].map(k => `<button class="btn sm" data-act="buyAir" data-v="${k}" data-id="${b.id}" ${S.budget < IC.AIR_KIND[k].buy ? 'disabled' : ''}>+ ${IC.AIR_KIND[k].short} ${U.money(IC.AIR_KIND[k].buy)}</button>`).join('') : '';
     return `<div class="card"><h3>${esc(b.name)}<em>${st.runway ? rs.length + ' flights' : '<span class="hostile">runway closed</span>'}</em></h3><div class="list">${rows || '<p class="hint">No aircraft.</p>'}</div>${buy ? `<div class="acts">${buy}</div>` : ''}<div class="acts"><button class="btn sm" data-act="selInfra" data-id="${b.id}">Open base</button></div></div>`;
   }).join('');
   const storyNote = S.story && S.story.act < 3 ? `<p class="hint">In peacetime nobody fires without your order: Weapons are on Hold. A fighter sent to intercept flies up, identifies and escorts. To shoot, select the track and order the escort to fire.</p>` : '';
   return `<div class="card wide"><h3>Standing tasks<em>squadrons rotate aircraft to keep these covered</em></h3>${tasks ? `<div class="list">${tasks}</div>` : '<p class="hint">No standing tasks. Add one and the air wing keeps it covered around the clock.</p>'}<div class="acts">${add}</div>${storyNote}</div>${cards}`;
 }
 
-/* ---------- army ---------- */
-function army() {
-  const cards = S.fronts.map(f => {
-    const us = S.gunits.filter(g => g.side === 'us' && g.front === f);
-    const them = S.gunits.filter(g => g.side === 'them' && g.front === f && g.known).length;
-    const secs = f.sectors.map((s, i) => {
-      const d = (f.pts[s.i0].d + f.pts[s.i1].d) / 2, r = s.F / Math.max(0.01, s.E);
-      const ours = us.filter(g => g.sector === i && g.order !== 'refit' && g.order !== 'defend');
-      const fort = ours.length ? Math.max(...ours.map(g => g.fort)) : 0;
-      return `<tr class="click" data-act="flySec" data-id="${f.key}" data-v="${i}"><td>${s.name}${s.eAttack ? (s.probe ? ' <span class="amber">probe</span>' : ' <span class="hostile">ASSAULT</span>') : ''}${s.usAttack ? ' <span class="friend">attacking</span>' : ''}</td><td class="r ${r >= 1.2 ? 'friend' : r >= 0.8 ? 'amber' : 'hostile'}">${f.active ? (r >= 10 ? '10+' : r.toFixed(1)) : '–'}</td><td class="r ${d > 5 ? 'hostile' : d < -5 ? 'friend' : ''}">${d > 5 ? '−' + U.km(d) : d < -5 ? '+' + U.km(-d) : '0'}</td><td class="r">${U.pct(fort)}</td><td>${ours.map(g => g.g.short).join(', ') || '<span class="hostile">empty</span>'}</td></tr>`;
-    }).join('');
-    const forms = us.map(g => `<button class="li" data-act="selg" data-id="${g.id}"><b>${esc(g.name)}${g.manual ? ' ◆' : ''}</b><small>${g.g.short} · ${IC.GORDERS[g.order] ? IC.GORDERS[g.order].name : g.order}${g.sector >= 0 ? ' ' + f.sectors[g.sector].name : ''}${g.obj ? ' · ' + esc(g.obj.name) : ''} · str ${Math.round(g.str)}% · sup ${Math.round(g.sup)}% · AT ${Math.round(g.kit.atgm)}</small></button>`).join('');
-    const initials = f.cmd.name.replace('Gen. ', '').split(' ').map(x => x[0]).join('');
-    const raise = S.mobil >= 1 ? `<div class="acts">${['inf', 'mech', 'arm', 'art'].map(t => `<button class="btn sm" data-act="raise" data-id="${f.key}" data-v="${t}" ${IC.canRaise(S, t) ? '' : 'disabled'} title="${esc(IC.GTYPES[t].desc)}">+ ${IC.GTYPES[t].short} ${U.money(IC.GTYPES[t].cost)}</button>`).join('')}</div><p class="hint">New brigades cost 40 manpower and train up before deploying. ${S.gunits.filter(g => g.side === 'us').length}/${IC.MAX_BRIGADES} brigades.</p>` : '<p class="hint">Declare mobilization (Industry) to raise new brigades.</p>';
-    return `<div class="card"><h3>${esc(f.name)}<em class="${f.active ? 'hostile' : ''}">${f.active ? 'ACTIVE' : 'quiet'} · vs ${esc(f.enemy)}</em></h3>
-      <div class="cmdrow"><span class="av CMD">${initials}</span><div><b>${esc(f.cmd.name)}</b><div class="hint">${esc(IC.TRAITS[f.cmd.trait].name)}: ${esc(IC.TRAITS[f.cmd.trait].desc)}</div></div></div>
-      <div class="rl"><span class="muted" style="font-size:.8rem;width:7rem">Stance</span>${seg('stance', f.stance, [['defend', 'Hold', '', 'Dig in everywhere'], ['active', 'Active defense', '', 'Counterattack lost ground with armor'], ['offensive', 'Offensive', 'amb', 'Attack where we have the edge']], f.key)}</div>
-      <div class="rl"><span class="muted" style="font-size:.8rem;width:7rem">Supply priority</span>${seg('spri', f.supplyPri, [[0, 'Low'], [1, 'Normal'], [2, 'High']], f.key)}</div>
-      <div class="slider"><span class="muted">Air support share</span><input type="range" min="0" max="100" step="5" value="${Math.round(f.airShare * 100)}" data-act="ashare" data-id="${f.key}" aria-label="Air support share for ${esc(f.name)}"><span class="num">${U.pct(f.airShare)}</span></div>
-      <table class="t"><tr><th>Sector</th><th class="r">Ratio</th><th class="r">Ground</th><th class="r">Dug in</th><th>Holding</th></tr>${secs}</table>
-      <h3 class="sh">Brigades <em>${us.length} ours · ${them} enemy seen</em></h3><div class="list">${forms}</div>${raise}</div>`;
-  }).join('');
-  return `<div class="card wide"><h3>Manpower<em>${Math.floor(S.manpower)} available · +${IC.MOBIL[S.mobil].man}/h</em></h3><p class="hint">Manpower rebuilds brigades at the rear and rides helicopters forward as replacements. Mobilization raises the rate.</p></div>${cards}`;
-}
-
-/* ---------- logistics ---------- */
+/* ---------- supply: stock, depots, convoys, buying ---------- */
 function logi() {
-  const depots = IC.depots(S);
-  const rows = IC.STOCK_KEYS.filter(k => k === 'SUP' || k === 'ATG' || IC.hasTech(S, IC.MUN_TECH[k])).map(k => {
-    let dep = 0, other = 0, units = 0, tr = 0;
+  const depots = IC.depots(S), P = S.supply, { need, have } = IC.stockNeed(S);
+  const keys = IC.STOCK_KEYS.filter(k => need[k] || have[k] >= 1);
+  const rows = keys.map(k => {
+    let dep = 0, units = 0, moving = 0;
     for (const d of depots) dep += d.inv[k] || 0;
-    for (const i of S.infra) if (i.inv) other += i.inv[k] || 0;
-    for (const u of S.units) for (const m of u.mags) if (m.mun === k) { units += m.mag + m.store; tr += m.inc; }
-    for (const j of S.jobs) if (j.mun === k && j.state === 'active' && !j.mag) tr += j.qty;
-    return `<tr><td>${esc(IC.MUN[k].name)}</td><td class="r">${Math.floor(dep)}</td><td class="r">${Math.floor(other)}</td><td class="r">${k === 'SUP' || k === 'ATG' ? '–' : units}</td><td class="r">${tr || '–'}</td></tr>`;
+    for (const u of S.units) for (const m of u.mags) if (m.mun === k) units += m.mag + m.store;
+    for (const j of S.jobs) if (j.mun === k && j.state === 'active') moving += j.qty;
+    const want = Math.max(4, Math.ceil(need[k] || 0)), low = (have[k] || 0) < want * IC.SUPPLY.reorder;
+    const q = Math.max(4, Math.ceil(want / 2 / 4) * 4), cost = IC.canBuyMun(S, k) && depots.length ? IC.stockSource(S, k, q, depots[0]).cost : 0;
+    return `<tr><td>${esc(IC.munWords(k))}</td><td class="r ${low ? 'amber' : ''}">${Math.floor(dep)}</td><td class="r">${need[k] ? want : '–'}</td><td class="r">${units || '–'}</td><td class="r">${moving || '–'}</td><td class="r">${cost ? `<button class="btn sm" data-act="buyStock" data-v="${k}:${q}" ${S.budget < cost ? 'disabled' : ''} title="Bought now, sent by rail to the depot that needs it most">+${q} · ${U.money(cost)}</button>` : ''}</td></tr>`;
   }).join('');
+  const plantsUp = S.infra.filter(f => f.kind === 'factory' && f.owner === 'us' && !f.offline).length;
+  const stock = `<div class="card wide"><h3>Stock<em>${plantsUp ? `${plantsUp} arms plant${plantsUp > 1 ? 's' : ''} working` : '<span class="hostile">every arms plant is down: imports only, by air</span>'}</em></h3>
+    <table class="t"><tr><th>Item</th><th class="r">In depots</th><th class="r">Full reload</th><th class="r">At units</th><th class="r">Moving</th><th class="r">Buy</th></tr>${rows || '<tr><td colspan="6">No units that need supply.</td></tr>'}</table>
+    <div class="rl"><span class="muted" style="font-size:.8rem;width:9rem">Keep stocked</span>${seg('autoStock', P.auto ? 'on' : 'off', [['on', 'On', '', 'The Ministry buys what falls below half a reload'], ['off', 'Off', 'amb', 'You buy stock yourself']])}</div>
+    ${P.auto ? `<div class="rl"><span class="muted" style="font-size:.8rem;width:9rem">Keep back at least</span>${seg('floor', String(P.floor), IC.FLOORS.map(v => [String(v), U.money(v), '', `The Ministry never spends the treasury below ${U.money(v)}`]))}</div>` : ''}
+    <p class="hint">Full reload: what every unit on the map would need to refill once. ${P.auto ? 'When the depots hold less than half of it, the Ministry buys the rest and it goes by rail to the depot that needs it most.' : 'Buy before the depots run dry: a battery with no missiles in reach waits, and says so.'}</p></div>`;
+  const dem = IC.depotDemand(S);
   const dcards = depots.map(d => {
-    const vs = S.vehicles.filter(v => v.home === d);
-    const dem = IC.depotDemand(S)[d.id] || {};
-    const low = Object.keys(dem).filter(k => (d.inv[k] || 0) + (d.inc[k] || 0) < dem[k] * 0.5);
-    return `<div class="card"><h3>${esc(d.name)}<em>${d.central ? 'national stock' : 'serves ' + U.km(d.reach || 1400)}</em></h3>
-      ${kv([['Trucks', `${vs.filter(v => v.state !== 'idle').length}/${vs.length} busy`], ['Low on', low.length ? low.join(', ') : 'nothing']])}
-      ${d.central ? '' : seg('profileD', d.profile || 'balanced', Object.entries(IC.PROFILES).map(([k, p]) => [k, p.name, '', p.desc]), d.id)}
+    const vs = S.vehicles.filter(v => v.home === d && !v.dead), out = vs.filter(v => v.state !== 'idle').length;
+    const low = Object.keys(dem[d.id] || {}).filter(k => (d.inv[k] || 0) + (d.inc[k] || 0) < dem[d.id][k] * 0.5).map(k => IC.munWords(k));
+    const served = S.units.filter(u => u.mags.length && IC.servingDepot(S, u) === d).length;
+    return `<div class="card"><h3>${esc(d.name)}<em>${d.central ? 'national stock' : `${served} unit${served === 1 ? '' : 's'} within ${U.km(d.reach || 1400)}`}</em></h3>
+      ${kv([['Truck companies', `${out} of ${vs.length} out`], ['Short of', low.length ? `<span class="amber">${esc(low.join(', '))}</span>` : 'nothing']])}
+      ${d.central ? '' : `<div class="rl"><span class="muted" style="font-size:.8rem;width:7rem">Priority</span>${seg('dpri', d.pri || 'normal', Object.entries(IC.DEPOT_PRI).map(([k, p]) => [k, p.name, '', p.desc]), d.id)}</div>`}
       <div class="acts"><button class="btn sm" data-act="buyTruckAt" data-id="${d.id}" ${S.budget < 12 ? 'disabled' : ''}>+ Truck company ₭12M</button><button class="btn sm" data-act="selu" data-id="${d.id}">Show</button></div></div>`;
   }).join('');
-  const convoys = S.vehicles.filter(v => v.job).slice(0, 14).map(v => `<button class="li" data-act="selv" data-id="${v.id}"><b>${esc(v.name)}</b><small>${esc(v.job.label)} · ${v.state === 'toDest' ? 'en route' : v.state}</small></button>`).join('');
-  const helis = S.air.filter(a => a.job).map(a => `<button class="li" data-act="selAirE" data-id="${a.id}"><b>${esc(a.name)}</b><small>${esc(a.job.label)}</small></button>`).join('');
-  return `<div class="card wide"><h3>National stockpile</h3><table class="t"><tr><th>Item</th><th class="r">Depots</th><th class="r">Plants / airports</th><th class="r">At units</th><th class="r">Moving</th></tr>${rows}</table>
-    <p class="hint">Depots serve units inside their ring and restock from the central depot; factories push output to whichever depot is short. Put a forward depot where the fighting is, give it trucks, and pick its stock profile.</p></div>
-    ${dcards}
-    <div class="card"><h3>Convoys on the road<em>${S.vehicles.filter(v => v.job).length} active</em></h3>${convoys ? `<div class="list">${convoys}</div>` : '<p class="hint">No deliveries under way.</p>'}</div>
-    <div class="card"><h3>Helicopters and airlift</h3>${helis ? `<div class="list">${helis}</div>` : '<p class="hint">Nothing flying. Select a brigade for a helicopter lift, or a battery for air resupply.</p>'}</div>`;
+  const jobs = S.jobs.filter(j => j.state === 'active').sort((a, b) => IC.jobEta(S, a) - IC.jobEta(S, b));
+  const road = jobs.filter(j => j.v).slice(0, 14).map(j => `<button class="li" data-act="selv" data-id="${j.v.id}"><b>${esc(IC.jobLabel(j))}</b><small>${esc(j.v.name)} from ${esc(j.from.name)} · ${{ toSource: 'going to load', load: 'loading', toDest: 'on the road', unload: 'unloading' }[j.v.state] || ''} · here in ${U.dur(IC.jobEta(S, j))}${j.v.cut ? ` · <span class="amber">${esc(j.v.cut)}</span>` : ''}</small></button>`).join('');
+  const other = jobs.filter(j => !j.v).map(j => `<div class="li"><b>${esc(IC.jobLabel(j))}</b><small>${j.mode === 'rail' ? `by rail from ${esc(j.from.name)}` : j.mode === 'heli' ? 'by helicopter' : 'allied airlift'} · in ${U.dur(IC.jobEta(S, j))}</small></div>`).join('');
+  const waiting = S.units.filter(u => u.mags.some(m => m.why)).slice(0, 8).map(u => `<button class="li" data-act="selu" data-id="${u.id}"><b class="amber">${esc(u.name)} waits</b><small>${esc(u.mags.find(m => m.why).why)}</small></button>`).join('');
+  return stock + (waiting ? `<div class="card wide"><h3>Waiting for supply</h3><div class="list">${waiting}</div></div>` : '') + dcards +
+    `<div class="card"><h3>Convoys on the road<em>${jobs.filter(j => j.v).length}</em></h3>${road ? `<div class="list">${road}</div>` : '<p class="hint">No deliveries under way.</p>'}</div>
+    <div class="card"><h3>By rail and air<em>${jobs.filter(j => !j.v).length}</em></h3>${other ? `<div class="list">${other}</div>` : '<p class="hint">Nothing coming. Bought stock goes by rail; helicopters fly to empty batteries when no truck can.</p>'}</div>
+    <div class="card wide"><h3>How supply works</h3><p class="hint">${esc(IC.SUPPLY_GUIDE)}</p></div>`;
 }
 
-/* ---------- industry and economy ---------- */
+/* ---------- industry: plants, mobilization, war bonds, cities ---------- */
 function industry() {
-  const L = S.ledger || {};
-  const facs = S.infra.filter(i => i.kind === 'factory').map(f => {
-    const act = f.active.map(a => `<span class="chip">${a.mun} ${U.pct(a.prog)}</span>`).join('') + f.queue.map(x => `<span class="chip">${x.qty - x.started}× ${x.mun}</span>`).join('');
-    const orders = IC.MUN_ORDER.filter(k => IC.hasTech(S, IC.MUN_TECH[k])).map(k => { const M = IC.MUN[k]; return `<div class="li"><b>${esc(M.name)}</b><small>${U.money(M.cost)} each · ${U.dur(M.prod)} per line</small><span class="la"><button class="btn sm" data-act="prod" data-id="${f.id}" data-v="${k}:1" ${S.budget < M.cost || f.offline ? 'disabled' : ''}>+1</button><button class="btn sm" data-act="prod" data-id="${f.id}" data-v="${k}:4" ${S.budget < M.cost * 4 || f.offline ? 'disabled' : ''}>+4</button></span></div>`; }).join('');
-    return `<div class="card"><h3>${esc(f.name)}<em>${f.offline ? '<span class="hostile">knocked out</span>' : `${f.active.length}/${IC.factoryLines(S, f)} lines · ${Math.floor(f.inv.SUP || 0)} supply waiting`}</em></h3>${act ? `<div class="chips">${act}</div>` : ''}<div class="list">${orders}</div></div>`;
-  }).join('');
-  const imp = IC.MUN_ORDER.filter(k => IC.hasTech(S, IC.MUN_TECH[k])).map(k => { const c = IC.importPrice(S, k, 4); return `<div class="li"><b>${esc(IC.MUN[k].name)}</b><small>4 for ${U.money(c)}</small><span class="la"><button class="btn sm" data-act="import" data-v="${k}:4" ${S.budget < c ? 'disabled' : ''}>Import</button></span></div>`; }).join('');
-  const pend = S.imports.map(i => `<span class="chip">${i.qty}× ${i.mun} ~${U.hhmm(i.eta)}</span>`).join('');
-  const orders = S.orders.map(o => `<div class="li"><b>${esc(IC.UNITS[o.type].name)}</b><small>${o.started ? `${U.pct(o.prog)} · ${U.dur((1 - o.prog) * o.dur)} left` : 'queued'}</small><span class="la"><button class="btn sm" data-act="cancelOrder" data-id="${o.id}">✕</button></span></div>`).join('');
-  const mob = IC.MOBIL.map((m, i) => `<button class="li" data-act="mobil" data-v="${i}" ${S.mobil === i ? 'style="background:rgba(111,210,255,.16)"' : ''}><b>${esc(m.name)}${S.mobil === i ? ' · current' : ''}</b><small>${esc(m.desc)}</small></button>`).join('');
+  const facs = S.infra.filter(i => i.kind === 'factory').map(f => `<tr class="click" data-act="selInfra" data-id="${f.id}"><td>${esc(f.name)}</td><td class="r">${U.pct(f.hp / f.max)}</td><td>${f.offline ? '<span class="hostile">knocked out</span>' : 'working'}</td><td class="r">${S.jobs.filter(j => j.mode === 'rail' && j.from === f).length || '–'}</td></tr>`).join('');
+  const mob = IC.MOBIL.map((m, i) => `<button class="li" data-act="mobil" data-v="${i}" ${S.mobil === i ? 'style="background:rgba(111,210,255,.16)"' : ''}><b>${esc(m.name)}${S.mobil === i ? ' · current' : ''}</b><small>${esc(m.desc.replace(/ [^.]*orders at a time\./, ''))} Taxes ×${m.tax}, running costs ×${m.up}.</small></button>`).join('');
   const bonds = S.time - S.bondsT >= 86400;
-  const cities = IC.cities(S).slice().sort((a, b) => b.ind - a.ind).map(c => `<tr class="click" data-act="selInfra" data-id="${c.id}"><td>${esc(c.name)}</td><td class="r">${c.pop}k</td><td class="r">${c.ind}</td><td class="r">${U.pct(c.hp / c.max)}</td><td class="${c.owner === 'enemy' ? 'hostile' : c.besieged ? 'suspect' : ''}">${c.owner === 'enemy' ? 'occupied' : c.besieged ? 'surrounded' : 'ours'}</td></tr>`).join('');
-  return `<div class="card"><h3>Budget per hour<em>${U.money(S.budget)} in the treasury</em></h3><table class="t">
-      <tr><td>Taxes</td><td class="r ok">+${(L.tax || 0).toFixed(1)}</td></tr><tr><td>Airports</td><td class="r ok">+${(L.apt || 0).toFixed(1)}</td></tr><tr><td>Allied support</td><td class="r ok">+${(L.aid || 0).toFixed(1)}</td></tr><tr><td>State revenue</td><td class="r ok">+${(L.base || 0).toFixed(1)}</td></tr>
-      <tr><td>Air defense upkeep</td><td class="r hostile">−${(L.upAD || 0).toFixed(1)}</td></tr><tr><td>Air force upkeep</td><td class="r hostile">−${(L.upAir || 0).toFixed(1)}</td></tr><tr><td>Army upkeep</td><td class="r hostile">−${(L.upG || 0).toFixed(1)}</td></tr></table>
-      <div class="acts"><button class="act" data-act="bonds" ${bonds ? '' : 'disabled'}>War bonds · +${U.money(200 + S.mobil * 80)}</button></div><p class="hint">${bonds ? 'Cash now, a small cost to morale. Once a day.' : `Bonds available again in ${U.dur(86400 - (S.time - S.bondsT))}.`}</p></div>
+  const cities = IC.cities(S).slice().sort((a, b) => b.ind - a.ind).map(c => `<tr class="click" data-act="selInfra" data-id="${c.id}"><td>${esc(c.name)}</td><td class="r">${c.pop}k</td><td class="r">${c.ind}</td><td class="r">${U.pct(c.hp / c.max)}</td><td class="${c.alert > 0 ? 'hostile' : c.plant && S.byId[c.plant] && S.byId[c.plant].offline ? 'suspect' : ''}">${c.alert > 0 ? 'sirens' : c.plant && S.byId[c.plant] && S.byId[c.plant].offline ? 'blackout' : 'working'}</td></tr>`).join('');
+  return `<div class="card"><h3>Arms plants<em>they sell missiles to the depots, by rail</em></h3><table class="t"><tr><th>Plant</th><th class="r">Intact</th><th>Status</th><th class="r">Loads on the way</th></tr>${facs}</table>
+      <p class="hint">Buy stock in Supply (L). A damaged plant loads slower; with every plant down, stock is imported by air at ${U.pct(0.9 - S.support / 100)} more.</p></div>
+    <div class="card"><h3>War bonds</h3><div class="acts"><button class="act" data-act="bonds" ${bonds ? '' : 'disabled'}>War bonds · +${U.money(200 + S.mobil * 80)}</button></div><p class="hint">${bonds ? 'Cash now, a small cost to morale in every city. Once a day.' : `Bonds available again in ${U.dur(86400 - (S.time - S.bondsT))}.`}</p></div>
     <div class="card"><h3>Mobilization</h3><div class="list">${mob}</div></div>
-    <div class="card"><h3>Equipment on order<em>${S.orders.filter(o => o.started).length}/${IC.slots(S)} slots</em></h3>${orders ? `<div class="list">${orders}</div>` : '<p class="hint">Nothing on order. Order from the arsenal: several items build at once.</p>'}</div>
-    ${facs}
-    <div class="card"><h3>Foreign purchases<em>price falls as allied support rises</em></h3>${pend ? `<div class="chips">${pend}</div>` : ''}<div class="list">${imp}</div></div>
     <div class="card"><h3>Cities and industry<em>national industry ${U.pct(IC.industry(S))}</em></h3><table class="t"><tr><th>City</th><th class="r">Pop</th><th class="r">Ind</th><th class="r">Intact</th><th>Status</th></tr>${cities}</table></div>`;
 }
 
 /* ---------- the economy: the weekly statement, loans, passengers, growth, trade and roads ---------- */
 function economy() {
   const E = S.econ; if (!E) return '<div class="card wide"><p class="hint">No economy in this mode.</p></div>';
-  const wk = IC.weekStatement(S, 0), last = IC.weekStatement(S, 1);
+  const wk = IC.weekStatement(S, 0), last = IC.weekStatement(S, 1), M = IC.money(S);
   const val = v => `<td class="r ${v >= 0 ? 'ok' : 'hostile'}">${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}</td>`;
+  const mline = (l, sign) => `<button class="mline" data-act="why" data-v="${l.k}" aria-expanded="${ui.why === l.k}"><span>${esc(l.name)}</span><b class="${sign > 0 ? 'ok' : 'hostile'}">${sign > 0 ? '+' : '−'}${U.money(l.v)}</b></button>${ui.why === l.k ? `<p class="hint mwhy">${esc(l.why)}</p>` : ''}`;
+  const warn = M.net < 0 && M.left < 24;
+  const head = `<div class="card wide money"><h3>Money<em>click a line for the reason</em></h3>
+    <div class="mtop"><div><small>Treasury</small><strong>${U.money(S.budget)}</strong></div><div><small>An hour, now</small><strong class="${M.net >= 0 ? 'ok' : 'hostile'}">${M.net >= 0 ? '+' : '−'}${U.money(Math.abs(M.net))}</strong></div><p class="${warn ? 'hostile' : M.net < 0 ? 'amber' : 'ok'}">${esc(M.forecast)}${warn ? ' Put units back in the reserve, raise airport charges, or borrow below.' : ''}</p></div>
+    <div class="mcols"><div><h4>Coming in <em>+${U.money(M.inH)}/h</em></h4>${M.inc.map(l => mline(l, 1)).join('') || '<p class="hint">Nothing.</p>'}</div>
+    <div><h4>Going out <em>−${U.money(M.outH)}/h</em></h4>${M.out.map(l => mline(l, -1)).join('') || '<p class="hint">Nothing.</p>'}</div></div>
+    <p class="hint">Hourly lines are what runs all the time. Buying, building and research are paid when you do them and show in the week below.</p></div>`;
   const keys = [...new Set((wk ? wk.lines : []).concat(last ? last.lines : []).map(l => l.k))];
   const get = (st, k) => { const l = st && st.lines.find(x => x.k === k); return l ? l.v : 0; };
   const rows = keys.sort((a, b) => get(wk, b) - get(wk, a)).map(k => `<tr><td>${esc(IC.STATEMENT[k] || k)}</td>${val(get(wk, k))}${last ? val(get(last, k)) : ''}</tr>`).join('');
-  const stmt = `<div class="card wide"><h3>Weekly statement<em>${U.money(S.budget)} in the treasury</em></h3>
+  const stmt = head + `<div class="card wide"><h3>This week<em>everything paid in and out, by kind</em></h3>
     ${wk ? `<table class="t"><tr><th>${wk.days >= 7 ? `Week ${wk.week}` : wk.days === 1 ? `Day ${wk.from} (week ${wk.week})` : `Days ${wk.from}–${wk.from + wk.days - 1} (week ${wk.week})`}</th><th class="r">This week</th>${last ? '<th class="r">Last week</th>' : ''}</tr>${rows}
-      <tr><td><b>Income</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Spending</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}
-    <p class="hint">Airline fees rise with passengers, and passengers with the cities your airports serve. Taxes follow each city's size and prosperity${S.story && S.story.act < 3 ? '; in this job they go to the Treasury, not to your budget' : ''}.</p></div>`;
+      <tr><td><b>Came in</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Went out</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}
+    <p class="hint">The lines add up to the change in the treasury. Loans taken count in the change, not as income.</p></div>`;
   // loans
   const owed = IC.loanOwed(S), lim = IC.loanLimit(S);
   const offers = IC.LOANS.map((o, i) => { const pay = (o.amt / o.days + o.amt * IC.LOAN_RATE) * 1; return `<div class="li"><b>Borrow ${U.money(o.amt)}</b><small>over ${o.days} days · about ${U.money(pay)} a day at first</small><span class="la"><button class="btn sm" data-act="loan" data-v="${i}" ${owed + o.amt > lim ? 'disabled' : ''}>Borrow</button></span></div>`; }).join('');
@@ -294,18 +272,22 @@ function journal() {
 
 /* ---------- reference ---------- */
 function reference() {
-  const tabs = seg('refcat', ui.refCat, [['units', 'Our equipment'], ['threats', 'Threats'], ['air', 'Aircraft'], ['ground', 'Ground'], ['how', 'How it works']]);
+  const tabs = seg('refcat', ui.refCat, [['units', 'Our equipment'], ['threats', 'Threats'], ['air', 'Aircraft'], ['how', 'How it works']]);
   let body = '';
-  if (ui.refCat === 'units') body = Object.entries(IC.UNITS).map(([k, d]) => `<div class="ref">${ui.sym(k, 68, 52)}<div><b>${esc(d.name)}</b><p>${esc(d.desc)}</p>${kv([['Cost', `${U.money(d.cost)} · ${U.dur(d.lead)} to build`], ['Reach', IC.typeRange(k) ? U.km(IC.typeRange(k)) : '–'], ['Mobility', IC.MOB_LABEL[d.mob]]].concat(d.mags ? [['Missiles', d.mags.map(m => `${IC.MUN[m.mun].name} (${IC.MUN[m.mun].seeker || ''})`).join(', ')]] : []))}</div></div>`).join('');
-  else if (ui.refCat === 'threats') body = Object.entries(IC.THR).filter(([k]) => k !== 'pen').map(([k, d]) => `<div class="ref"><canvas data-thr="${k}" width="68" height="52"></canvas><div><b>${esc(d.name)}</b>${kv([['Class', esc(IC.KLASS[d.klass] || d.klass)], ['Speed', d.spd ? U.kmh(d.spd) : 'ballistic'], ['Altitude', d.alt ? U.alt(d.alt) : 'varies'], ['Warhead', d.dmg ? d.dmg : '–']].concat(d.cm ? [['Countermeasures', 'chaff, flares' + (d.notch ? ', notching' : '')]] : []))}</div></div>`).join('');
+  if (ui.refCat === 'units') body = Object.entries(IC.UNITS).map(([k, d]) => `<div class="ref">${ui.sym(k, 68, 52)}<div><b>${esc(IC.fullName(d))}</b><p>${esc(d.desc)}</p>${kv([['Cost', `${U.money(d.cost)} · sets up in ${U.dur(d.build)}`], ['Reach', IC.typeRange(k) ? U.km(IC.typeRange(k)) : '–'], ['Mobility', IC.MOB_LABEL[d.mob]]].concat(d.mags ? [['Missiles', d.mags.map(m => `${IC.fullName(IC.MUN[m.mun])} (${IC.MUN[m.mun].seeker || ''})`).join(', ')]] : []))}</div></div>`).join('');
+  else if (ui.refCat === 'threats') body = Object.entries(IC.THR).filter(([k]) => k !== 'pen').map(([k, d]) => `<div class="ref"><canvas data-thr="${k}" width="68" height="52"></canvas><div><b>${esc(IC.fullName(d))}</b><p>${esc(d.desc || '')}</p>${kv([['Class', esc(IC.KLASS[d.klass] || d.klass)], ['Speed', d.spd ? U.kmh(d.spd) : 'ballistic'], ['Altitude', d.alt ? U.alt(d.alt) : 'varies'], ['Warhead', d.dmg ? d.dmg : '–']].concat(d.cm ? [['Countermeasures', 'chaff, flares' + (d.notch ? ', notching' : '')]] : []))}</div></div>`).join('');
   else if (ui.refCat === 'air') body = Object.entries(IC.AIR_KIND).map(([k, d]) => `<div class="ref"><span class="badge friend" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${d.short}</span><div><b>${esc(d.name)}</b>${kv([['Aircraft per flight', d.n], ['Speed', U.kmh(d.spd)], ['Endurance', U.dur(d.endur)], ['Turnaround', U.dur(d.turn)], ['Needs a runway', d.runway ? 'yes' : 'no']])}</div></div>`).join('');
-  else if (ui.refCat === 'ground') body = Object.entries(IC.GTYPES).map(([k, g]) => `<div class="ref"><span class="badge friend" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${g.short}</span><div><b>${esc(g.name)}</b><p>${esc(g.desc)}</p>${kv([['Attack', g.att], ['Defense', g.def], ['Cost', U.money(g.cost)]])}</div></div>`).join('') + `<div class="ref"><span></span><div><b>Terrain</b><p>Defenders gain: towns +50%, rivers +30%, forest +25%, hills +20%. Infantry does best in towns and forest; armor worst.</p></div></div>` + Object.entries(IC.GORDERS).map(([k, o]) => `<div class="ref"><span class="badge" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${o.key}</span><div><b>${o.name}</b><p>${esc(o.desc)}</p></div></div>`).join('');
   else body = [
     ['Detect, classify, identify', 'VHF radars see far but only give positions. Radars with IFF read transponders and check them against filed flight plans. Type recognition (NCTR) tells a bomber from an airliner, but only inside a shorter range. A fighter flying up to look settles it. Weapons Tight fires only on identified hostiles.'],
     ['Sweeps and blinking', 'A rotating radar updates a track only when its beam passes. Between paints, the track coasts and blinks, and its uncertainty ring grows.'],
     ['Missile envelopes', 'Reach is longest head-on and shrinks against crossing or receding targets and down low. Semi-active and command-guided missiles need the battery radar on until impact. Aircraft fight back with chaff, flares and notching.'],
     ['Crew fatigue', 'Radars that radiate for hours while raids come in wear their crews out: slower reactions, slower reloads, more misses. Stand some down while others cover.'],
-    ['The enemy commander', 'It probes with small raids to find gaps, harasses to keep us awake and burning interceptors, then throws a heavy strike with everything timed to arrive together. It remembers which routes cost it.'],
+    ['Raids', 'The enemy raids in cycles. A build-up first: an intelligence warning about an hour out, a reconnaissance drone, drones probing the flanks, then a jammer taking station. Then the raid: drones and decoys a few minutes early to soak up missiles, cruise and ballistic missiles at the peak, stragglers after. Then a calm of a few hours: repair, reload, move batteries. Each raid ends with a report of what got through and why. Raids grow over the days, up to the big one.'],
+    ['Routes and gaps', 'Cruise missiles and drones fly low, where a radar only sees as far as its horizon and not behind hills. The enemy plans them through the holes in the cover it knows about. Gap fillers, overlapping radars and moving batteries after they have been seen close the holes.'],
+    ['Jamming', 'A jammer floods a radar along its own bearing: there the radar only sees what is close enough to burn through, about a third of the way to the jammer. The amber wedge on the map is its strobe: a direction, not a range. Two radars far apart put their strobes across each other and locate it. MR and LR missiles can home on a jammer without a track. Radars with better ECCM suffer less.'],
+    ['Ballistic missiles', 'Only hit-to-kill rounds stop warheads. The upper tier (High-Altitude BMD) meets them 40 to 150 km up; BMD rounds in the LRSAM meet them below 35 km. A battery waits, then fires two interceptors at the point where they will meet the warhead; whatever the upper tier misses, the lower tier still gets a shot at.'],
+    ['Call-in teams', 'Press G and click anywhere in our territory: a helicopter drops a shoulder-fired missile team there in seconds. It fights drones, helicopters and low jets for a few minutes, then is lifted out. Charges come back on a timer.'],
+    ['Why a battery holds fire', 'A battery with hostiles near that is not firing says why under its symbol and in its panel: weapons status, identity, radar silent, below its horizon, masked by a hill, jammed on that bearing, out of its missiles\' height band or reach, or everything in reach already has interceptors on the way.'],
     ['Airports are built part by part', 'Runways, taxiways, aprons, terminals, hangars, shelters, fuel tanks, tower, fire station and radar are separate parts at real size. Aircraft taxi along the network you build: a runway with no exit near where aircraft stop blocks it for minutes, a runway with no taxiway to its ends makes every departure backtrack, and a single taxiway carries traffic one way at a time. The airport panel lists what is wrong.'],
     ['Building takes time, money and materials', 'Engineers build in stages: survey, earthworks, paving, markings and lights, then the opening. Each stage is paid as it runs, and paving uses concrete, asphalt and steel that lorries bring from the nearest town with industry: when the site runs out, work stops and the panel says why. Paving next to a runway closes it, unless you set the job to night work. Homes in the way are bought and cleared; their town will not thank you.'],
     ['Pavement', 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.'],
@@ -313,8 +295,9 @@ function reference() {
     ['Airlines', 'Each airline wants different things: low fees, short taxi times, night slots, big terminals. Happy airlines ask for new routes; unhappy ones cut them. Prohibited zones keep airliners away from what matters, at the cost of longer flights.'],
     ['Radio and routes', 'Every airliner flies a filed route. One that leaves it flashes on the map: call it on the radio. A real airliner answers and turns back; something pretending to be one does not.'],
     ['Radar spectrum', 'Radars on the same band close together blind each other, and every extra radar on a crowded band costs more to keep. Spread them out, mix bands, or buy a spectrum plan.'],
-    ['Logistics', 'Depots serve units in their ring. Factories push output to depots; forward depots pull from the central depot. Helicopters fly emergency deliveries and lifts to brigades.'],
-    ['Towns', 'Towns pay taxes and power industry. A garrisoned town holds while its brigade does, even behind the line; it can then only be supplied by air.']
+    ['Money', IC.MONEY_GUIDE],
+    ['Supply', IC.SUPPLY_GUIDE + ' Helicopters fly emergency loads to empty batteries.'],
+    ['Towns', 'Towns pay taxes and power industry.']
   ].map(([t, d]) => `<div class="ref"><span></span><div><b>${t}</b><p>${d}</p></div></div>`).join('');
   return `<div class="card wide"><h3>Guide<em>${tabs}</em></h3></div>${body.split('<div class="ref">').filter(Boolean).map(x => `<div class="card"><div class="ref">${x}</div>`).join('')}`;
 }
@@ -326,9 +309,9 @@ function settings() {
   return `<div class="card"><h3>Display</h3><div class="rl"><span class="muted" style="width:6rem">UI scale</span>${seg('uiscale', ui.scale, [[0.9, '90%'], [1, '100%'], [1.1, '110%'], [1.25, '125%'], [1.4, '140%']])}</div>
       <div class="rl"><span class="muted" style="width:6rem">Radar effects</span>${seg('radarFx', S.cfg.radarFx || 'subtle', [['off', 'Off', '', 'No sweep or blip animation'], ['subtle', 'Subtle', '', 'A small sweep hand at each radar'], ['full', 'Full', '', 'Sweeps across the whole range']])}</div>
       <div class="acts"><button class="act ${S.cfg.slowmo ? 'on' : ''}" data-act="cfg" data-v="slowmo">Slow motion on big moments: ${S.cfg.slowmo ? 'on' : 'off'}</button><button class="act ${S.cfg.shake ? 'on' : ''}" data-act="cfg" data-v="shake">Screen shake: ${S.cfg.shake ? 'on' : 'off'}</button><button class="act ${S.cfg.bars ? 'on' : ''}" data-act="cfg" data-v="bars">Cinematic bars: ${S.cfg.bars ? 'on' : 'off'}</button><button class="act ${ui.pauseRoom ? 'on' : ''}" data-act="pauseRoom">Pause while a war room is open: ${ui.pauseRoom ? 'on' : 'off'}</button></div></div>
-    <div class="card"><h3>Auto-pause<em>the game pauses itself when…</em></h3><div class="acts">${t('ballistic', 'Ballistic launch')}${t('lost', 'Unit or aircraft lost')}${t('base', 'Air base hit')}${t('capture', 'Town captured')}${t('raid', 'Major raid detected')}${t('city', 'City hit')}${t('launch', 'Weapons released (peacetime)')}${t('event', 'A decision is needed')}</div><p class="hint">Skip ahead (S) always stops on these, and when new hostile or suspect tracks appear.</p></div>
+    <div class="card"><h3>Auto-pause<em>the game pauses itself when…</em></h3><div class="acts">${t('ballistic', 'Ballistic launch')}${t('lost', 'Unit or aircraft lost')}${t('base', 'Air base hit')}${t('raid', 'Major raid detected')}${t('city', 'City hit')}${t('launch', 'Weapons released (peacetime)')}${t('event', 'A decision is needed')}</div><p class="hint">Skip ahead (S) always stops on these, and when new hostile or suspect tracks appear.</p></div>
     <div class="card"><h3>Sound</h3><div class="slider"><span class="muted">Volume</span><input type="range" min="0" max="100" step="5" value="${Math.round(IC.sfx.vol * 100)}" data-act="vol" aria-label="Volume"><span class="num">${Math.round(IC.sfx.vol * 100)}%</span></div><div class="acts"><button class="act" data-act="mute">${IC.sfx.muted || !IC.sfx.on ? 'Unmute' : 'Mute'}</button></div></div>
-    <div class="card"><h3>Controls</h3>${kv([['Pan / zoom', 'drag · wheel · arrows · +/−'], ['Select / order', 'click · right-click'], ['Box select', 'shift + drag'], ['Pause · speed · skip', 'Space · 1–6 · S'], ['War rooms', 'V aviation · T staff · A G L I N K J · Esc'], ['Airport builder', 'click points · click the last one again or Enter to build · right-click takes a point back · R turn · F round corners · Ctrl+Z undo'], ['Units', 'E emissions · W rules · Q doctrine · M move · H resupply · P repair · X reserve · F fire'], ['Tracks', 'V intercept · B best battery'], ['Brigades', 'Y hold · D dig · R attack · T defend · U reserve · O refit · C commander']])}</div>
+    <div class="card"><h3>Controls</h3>${kv([['Pan / zoom', 'drag · wheel · arrows · +/−'], ['Select / order', 'click · right-click'], ['Box select', 'shift + drag'], ['Pause · speed · skip', 'Space · 1–6 · S'], ['War rooms', 'V aviation · T staff · A G L I N K J · Esc'], ['Airport builder', 'click points · click the last one again or Enter to build · right-click takes a point back · R turn · F round corners · Ctrl+Z undo'], ['Units', 'E emissions · W rules · Q doctrine · M move · H resupply · P repair · X reserve · F fire'], ['Tracks', 'V intercept · B best battery']])}</div>
     <div class="card"><h3>Game</h3><div class="acts"><button class="act warn" data-act="restart">Quit to menu</button></div></div>`;
 }
 

@@ -9,27 +9,26 @@
    ARH (own radar at the end, chaff), HTK (hit-to-kill ballistic defense). */
 IC.MUN = {
   IR:  { name: 'IR missile', short: 'IR', seeker: 'IR', cost: 0.3, w: 0.25, prod: 300, range: 55, spd: 7, pk: 0.62, alt: [0, 4], vs: { drone: 1, heli: 1, cm: 0.6, air: 0.75, ga: 1 } },
+  IR2: { name: 'Imaging IR missile', short: 'IR+', seeker: 'IR', cost: 0.5, w: 0.25, prod: 400, range: 65, spd: 7.5, pk: 0.74, alt: [0, 4.5], vs: { drone: 1, heli: 1, cm: 0.75, air: 0.85, ga: 1 }, ircm: 0.8 },
   SR:  { name: 'Short-range missile', short: 'SR', seeker: 'CMD', cost: 0.8, w: 0.5, prod: 600, range: 120, spd: 9, pk: 0.78, alt: [0, 6], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 0.8, ga: 1 } },
-  MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 450, spd: 12, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 } },
-  LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 1000, spd: 15, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 } },
+  MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 450, spd: 12, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 }, hoj: true },
+  LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 1000, spd: 15, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 }, hoj: true },
   TBD: { name: 'Hit-to-kill BMD missile', short: 'BMD', seeker: 'HTK', cost: 6, w: 1.5, prod: 3000, range: 350, spd: 17, pk: 0.85, alt: [0, 35], vs: { bal: 1, cm: 1, air: 1, hgv: 0.45 } },
-  HAT: { name: 'High-altitude interceptor', short: 'HAT', seeker: 'HTK', cost: 14, w: 4, prod: 6000, range: 2000, spd: 26, pk: 0.85, alt: [35, 150], vs: { bal: 1, hgv: 0.55 } },
+  HAT: { name: 'High-altitude interceptor', short: 'HAT', seeker: 'HTK', cost: 14, w: 4, prod: 6000, range: 2000, spd: 26, pk: 0.85, alt: [40, 150], vs: { bal: 1, mid: 1, hgv: 0.55 } },
   EXO: { name: 'Exo-atmospheric interceptor', short: 'EXO', seeker: 'HTK', cost: 28, w: 6, prod: 10800, range: 5000, spd: 33, pk: 0.8, alt: [90, 700], vs: { mid: 1 } },
   AAM: { name: 'Radar air-to-air missile', short: 'AAM', seeker: 'ARH', cost: 0, w: 0, prod: 0, range: 450, spd: 13, pk: 0.72, alt: [0, 20], vs: { air: 1, drone: 1, cm: 0.8, heli: 1, ga: 1 }, air: true },
   CRS: { name: 'Land-attack cruise missile', short: 'CRS', cost: 3, w: 3, prod: 3000, range: 5000, spd: 2.6, dmg: 55, strike: true },
   SRB: { name: 'Tactical ballistic missile', short: 'TBM', cost: 5, w: 6, prod: 4800, range: 3000, spd: 12, dmg: 80, strike: true, bal: true },
-  RKT: { name: 'Guided rocket', short: 'RKT', cost: 0.3, w: 0.15, prod: 180, range: 800, spd: 9, dmg: 14, strike: true, bal: true },
-  ATG: { name: 'Anti-tank missile kit', short: 'ATGM', cost: 0.4, w: 0.5, prod: 300, ground: true },
-  SUP: { name: 'Supply pallet', short: 'SUP', cost: 0.25, w: 1, prod: 0, ground: true }
+  RKT: { name: 'Guided rocket', short: 'RKT', cost: 0.3, w: 0.15, prod: 180, range: 800, spd: 9, dmg: 14, strike: true, bal: true }
 };
-IC.MUN_ORDER = ['IR', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT', 'ATG'];
-IC.STOCK_KEYS = IC.MUN_ORDER.concat(['SUP']);
+IC.MUN_ORDER = ['IR', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT'];
+IC.STOCK_KEYS = IC.MUN_ORDER.slice();
 IC.MUN_TECH = { TBD: 'a_pac3', HAT: 'a_hatd', EXO: 'a_exo', CRS: 'x_glcm', SRB: 'x_tbm', LR: 'a_lrsam' };
 IC.SEEKER = {
   IR: 'Heat-seeking. Flares decoy it; rain and cloud cut its range.',
   CMD: 'Command-guided by the launcher\'s radar until impact.',
-  SARH: 'Semi-active: the battery\'s radar must illuminate the target until impact. Chaff and notching hurt it.',
-  ARH: 'Active radar seeker for the last seconds. Chaff and notching hurt it a little.',
+  SARH: 'Semi-active: the battery\'s radar must illuminate the target until impact. Chaff and notching hurt it. Can home on a jammer.',
+  ARH: 'Active radar seeker for the last seconds. Chaff and notching hurt it a little. Can home on a jammer.',
   HTK: 'Hit-to-kill interceptor for ballistic missiles.'
 };
 
@@ -78,7 +77,7 @@ IC.UNITS = {
             sensor: { R: 7000, mast: 20, q: 'fc', bmdOnly: true, disc: true, eccm: 0.6, per: 3, rot: false, err: 1, idc: 'class' },
             desc: 'Tracks ballistic missiles across the region and tells warheads from decoys.' },
 
-  manpads:{ cat: 'ad', name: 'MANPADS Team', short: 'MPD', mob: 'mobile', fast: true, cost: 8, up: 0.3, build: 60, lead: 300, hp: 10, nato: 'MP',
+  manpads:{ cat: 'ad', name: 'MANPADS Team', short: 'MPD', mob: 'mobile', fast: true, callin: true, cost: 8, up: 0.3, build: 60, lead: 300, hp: 10, nato: 'MP',
             fc: { R: 70, mast: 2, passive: true }, weapon: 'sam', mags: [{ mun: 'IR', mag: 2, store: 4, reload: 40 }],
             desc: 'Shoulder-fired IR missiles. Cheap, silent, 5 km reach. Flares and bad weather hurt them.' },
   spaag:  { cat: 'ad', name: 'SPAAG Gun Vehicle', short: 'SPG', mob: 'mobile', cost: 35, up: 1, build: 120, lead: 600, hp: 25, nato: 'G',
@@ -147,34 +146,6 @@ IC.compsOf = d => {
   return c;
 };
 
-/* ---------- Ground formations (NATO APP-6 style) ---------- */
-IC.GTYPES = {
-  inf:  { name: 'Infantry Brigade', short: 'Inf', sym: 'inf', ech: 'X', att: 0.85, def: 1.35, use: 1.0, spd: 0.12, cost: 160, soft: true,
-          desc: 'Holds ground, strongest in towns and forest. Anti-tank kits make it deadly to armor.' },
-  mech: { name: 'Mechanized Brigade', short: 'Mech', sym: 'mech', ech: 'X', att: 1.35, def: 1.2, use: 1.5, spd: 0.2, cost: 260,
-          desc: 'Infantry in armored carriers. Good at everything, great at nothing.' },
-  arm:  { name: 'Armored Brigade', short: 'Armd', sym: 'armor', ech: 'X', att: 1.9, def: 1.1, use: 2.0, spd: 0.2, cost: 340, armor: true,
-          desc: 'Tanks. The hammer for attacks and counterattacks. Vulnerable to anti-tank missiles and attack helicopters.' },
-  art:  { name: 'Artillery Brigade', short: 'Arty', sym: 'arty', ech: 'X', att: 0, def: 0.3, fire: 1.5, use: 1.6, spd: 0.15, cost: 220,
-          desc: 'Fire support for its own and neighbouring sectors. Stays behind the line.' }
-};
-IC.GORDERS = {
-  hold:    { name: 'Hold', key: 'Y', desc: 'Defend the sector where it stands.' },
-  dig:     { name: 'Dig in', key: 'D', desc: 'Build fighting positions: much stronger in defense, cannot attack. Moving loses the work.' },
-  attack:  { name: 'Attack', key: 'R', desc: 'Push the line forward in its sector. Needs a clear edge in force.' },
-  defend:  { name: 'Defend town', key: 'T', desc: 'Garrison a town. The town holds while the brigade does, even if the line passes it.' },
-  reserve: { name: 'Reserve', key: 'U', desc: 'Wait behind the line and counterattack wherever the line bends.' },
-  refit:   { name: 'Refit', key: 'O', desc: 'Pull back to rebuild strength with replacements.' }
-};
-IC.TERRAIN_DEF = { urban: 1.5, forest: 1.25, hills: 1.2, river: 1.3, open: 1 };
-IC.TRAITS = {
-  aggressive:  { name: 'Aggressive', desc: 'Counterattacks early. +20% attack, +15% losses.' },
-  cautious:    { name: 'Cautious', desc: 'Trades ground for lives. −20% losses, yields ground faster.' },
-  logistician: { name: 'Logistician', desc: 'Supply lasts 25% longer.' },
-  gunner:      { name: 'Artillerist', desc: '+30% artillery effect.' },
-  engineer:    { name: 'Engineer', desc: 'Digs in twice as fast.' }
-};
-IC.CMD_NAMES = ['Gen. Anna Rudek', 'Gen. Pavel Ostrin', 'Gen. Lina Sorvan', 'Gen. Tomas Brell', 'Gen. Iva Kastell', 'Gen. Emil Draganov', 'Gen. Sofia Marr', 'Gen. Viktor Hale', 'Gen. Oren Laskar', 'Gen. Mira Tenne'];
 IC.ADVISORS = {
   CDS: { name: 'Gen. Mara Voss', role: 'Chief of Defence', tag: 'CDS' },
   ADA: { name: 'Col. Teodor Ashe', role: 'Air Defence Command', tag: 'AD' },
@@ -208,11 +179,13 @@ IC.THR = {
   hgv:  { code: 'HGV',  name: 'Hypersonic glide vehicle', cls: 'hgv', klass: 'ballistic', spd: 20, alt: 40, rcs: 0.1, hp: 2.5, dmg: 180, move: 'hgv', evasive: 0.5 },
   rkt:  { code: 'RKT',  name: 'Guided artillery rocket', cls: 'rkt', klass: 'rocket', rcs: 0.01, hp: 0.5, dmg: 14, move: 'bal', apexK: 0.04, vAvg: 9 },
   arm:  { code: 'ARM',  name: 'Anti-radiation missile', cls: 'arm', klass: 'cm', spd: 6, alt: 8, rcs: 0.05, hp: 0.8, dmg: 45, move: 'arm' },
+  ahe:  { code: 'AHE',  name: 'Attack helicopter', cls: 'heli', klass: 'heli', spd: 0.75, alt: 0.1, rcs: 3, hp: 2, move: 'air', cm: 6, mil: true },
   dcy:  { code: 'DCY',  name: 'Air-launched decoy', cls: 'air', klass: 'fighter', spd: 2.4, alt: 6, rcs: 4, hp: 0.6, dmg: 0, move: 'wp', decoy: true },
   ftr:  { code: 'FTR',  name: 'Fighter', cls: 'air', klass: 'fighter', spd: 2.6, alt: 9, rcs: 4, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
   str:  { code: 'STK',  name: 'Strike aircraft', cls: 'air', klass: 'fighter', spd: 2.4, alt: 7, rcs: 5, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
   sead: { code: 'SEAD', name: 'SEAD aircraft', cls: 'air', klass: 'fighter', spd: 2.6, alt: 8, rcs: 4, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
-  ewj:  { code: 'EWJ',  name: 'Stand-off jammer', cls: 'air', klass: 'jammer', spd: 2, alt: 10, rcs: 12, hp: 3, move: 'air', emits: true, jam: true, cm: 4, mil: true },
+  ewj:  { code: 'EWJ',  name: 'Stand-off jammer', cls: 'air', klass: 'jammer', spd: 2, alt: 10, rcs: 12, hp: 3, move: 'air', emits: true, jam: 1, jamR: 3600, cm: 4, mil: true },
+  esj:  { code: 'ESJ',  name: 'Escort jammer drone', cls: 'drone', klass: 'jammer', spd: 2.4, alt: 1.5, rcs: 0.3, hp: 1, dmg: 0, move: 'wp', jam: 0.7, jamR: 1600, mil: true },
   bmr:  { code: 'BMR',  name: 'Missile-carrier bomber', cls: 'air', klass: 'bomber', spd: 2.2, alt: 11, rcs: 15, hp: 4, move: 'air', emits: true, cm: 4, mil: true },
   civ:  { code: 'CIV',  name: 'Airliner', cls: 'air', klass: 'airliner', spd: 2.3, alt: 11, rcs: 40, hp: 3, move: 'civ', civil: true },
   ga:   { code: 'GA',   name: 'Light civil aircraft', cls: 'ga', klass: 'light', spd: 0.55, alt: 1.5, rcs: 1.5, hp: 1, move: 'civ', civil: true }
@@ -238,6 +211,10 @@ IC.TECH = [
   { id: 's_aero', cat: 'sensor', name: 'Aerostat radar', cost: 150, time: 3600, req: ['s_esm'], desc: 'Balloon radar that looks over the horizon at cruise missiles.' },
   { id: 's_sat',  cat: 'sensor', name: 'Satellite launch warning', cost: 300, time: 4500, req: ['s_esm'], desc: 'Allied satellites report every ballistic launch and its launch point.' },
   { id: 's_bmd',  cat: 'sensor', name: 'BMD X-band radar', cost: 400, time: 5400, req: ['s_sat'], desc: 'Discriminates warheads from decoys. Needed for exo intercepts.' },
+  { id: 'c_teams', cat: 'ad', name: 'More call-in teams', cost: 60, time: 1800, req: [], desc: 'A third MANPADS team can be called in at once.' },
+  { id: 'c_stay', cat: 'ad', name: 'Longer team stays', cost: 50, time: 1500, req: [], desc: 'Call-in teams stay 14 minutes instead of 8.' },
+  { id: 'c_msl', cat: 'ad', name: 'Imaging IR missiles', cost: 90, time: 2400, req: ['c_teams'], desc: 'Call-in teams carry missiles with longer reach that flares fool less.' },
+  { id: 'c_teams2', cat: 'ad', name: 'Rapid team rotation', cost: 110, time: 2700, req: ['c_teams', 'c_stay'], desc: 'A fourth team, and teams come back 30% sooner.' },
   { id: 'a_cram', cat: 'ad', name: 'C-RAM', cost: 100, time: 2400, req: [], desc: 'Point-defense guns against rockets and drones.' },
   { id: 'a_laser',cat: 'ad', name: 'High-energy laser', cost: 250, time: 4500, req: ['a_cram'], desc: 'Kill drones for the cost of electricity.' },
   { id: 'a_hpm',  cat: 'ad', name: 'High-power microwave', cost: 250, time: 4500, req: ['a_laser'], desc: 'Area kill against drone swarms.' },
@@ -251,37 +228,29 @@ IC.TECH = [
   { id: 'x_glcm', cat: 'strike', name: 'Ground-launched cruise missiles', cost: 200, time: 3600, req: [], desc: 'Deep strike on enemy bases.' },
   { id: 'x_tbm',  cat: 'strike', name: 'Tactical ballistic missiles', cost: 350, time: 5400, req: ['x_glcm'], desc: 'Fast strike on mobile launchers.' },
   { id: 'x_isr',  cat: 'strike', name: 'Long-endurance ISR', cost: 100, time: 1800, req: [], desc: '+1 ISR drone; ISR drones see 60 km instead of 45.' },
-  { id: 'g_atgm', cat: 'ground', name: 'Improved anti-tank missiles', cost: 150, time: 2700, req: [], desc: 'Anti-tank teams hit armor 20% harder.' },
-  { id: 'g_fpv',  cat: 'ground', name: 'FPV drone companies', cost: 180, time: 3600, req: [], desc: 'Front-line brigades inflict 25% more losses.' },
-  { id: 'g_fort', cat: 'ground', name: 'Field engineering', cost: 120, time: 2400, req: [], desc: 'Brigades dig in twice as fast and deeper.' },
-  { id: 'g_arty', cat: 'ground', name: 'Counter-battery fire control', cost: 200, time: 3600, req: ['g_fort'], desc: 'Artillery 30% more effective.' },
   { id: 'l_lines',cat: 'log', name: 'Extra production lines', cost: 250, time: 4500, req: [], desc: '+1 production line at every factory.' },
   { id: 'l_trucks',cat:'log', name: 'Heavy trucks', cost: 120, time: 2400, req: [], desc: 'Convoys carry 50% more and drive faster.' },
-  { id: 'l_ind',  cat: 'log', name: 'War industry', cost: 300, time: 5400, req: ['l_lines'], desc: 'Factories produce supply 50% faster.' },
   { id: 'l_rrr',  cat: 'log', name: 'Rapid runway repair', cost: 120, time: 2400, req: [], desc: 'Base engineers repair runways and taxiways twice as fast.' },
   { id: 'f_aam',  cat: 'air', name: 'Improved AAMs', cost: 150, time: 2700, req: [], desc: 'Fighters carry 6 missiles each with better kill probability.' },
   { id: 'f_aew',  cat: 'air', name: 'Second AEW aircraft', cost: 250, time: 3600, req: ['s_esm'], desc: 'Another airborne radar.' },
-  { id: 'f_atk',  cat: 'air', name: 'Attack helicopter wing', cost: 200, time: 3600, req: [], desc: 'Another attack helicopter flight.' },
   { id: 'f_ucav', cat: 'air', name: 'Strike drones', cost: 180, time: 2700, req: [], desc: 'Two armed long-endurance drones for ISR and close support.' },
   { id: 'f_cm',   cat: 'air', name: 'Improved countermeasures', cost: 160, time: 2700, req: [], desc: 'Our aircraft carry more chaff and flares, and use them better.' }
 ];
 IC.TECH_CATS = [
   { id: 'sensor', name: 'Sensors' }, { id: 'ad', name: 'Air defense' }, { id: 'ew', name: 'Electronic warfare' },
-  { id: 'strike', name: 'Strike & ISR' }, { id: 'ground', name: 'Ground forces' }, { id: 'log', name: 'Logistics & industry' }, { id: 'air', name: 'Air force' }
+  { id: 'strike', name: 'Strike & ISR' }, { id: 'log', name: 'Logistics & industry' }, { id: 'air', name: 'Air force' }
 ];
 
 /* ---------- Air force ----------
    A flight is n aircraft that fly together. turn = turnaround on the ground. */
 IC.AIR_KIND = {
   ftr:   { name: 'Fighter flight', short: 'FTR', n: 2, spd: 2.6, dash: 3.3, endur: 7200, turn: 1200, buy: 350, cm: 8, runway: true,
-           roles: ['cap', 'intercept', 'vid', 'strike', 'cas', 'interdict'], loads: ['aa', 'strike'] },
-  atk:   { name: 'Attack helicopters', short: 'ATK', n: 2, spd: 0.8, dash: 0.9, endur: 9000, turn: 1200, buy: 180, cm: 10, reach: 2400,
-           roles: ['hstrike', 'cas'] },
+           roles: ['cap', 'intercept', 'vid', 'strike'], loads: ['aa', 'strike'] },
   ucav:  { name: 'Strike drone', short: 'UCAV', n: 1, spd: 0.6, dash: 0.7, endur: 64800, turn: 1800, buy: 90, cm: 0, runway: true,
-           roles: ['isr', 'cas', 'interdict', 'hstrike'] },
+           roles: ['isr', 'strike'] },
   aew:   { name: 'AEW aircraft', short: 'AEW', n: 1, spd: 1.6, endur: 21600, turn: 2400, buy: 500, cm: 4, runway: true, roles: ['aew'] },
   isr:   { name: 'ISR drone', short: 'ISR', n: 1, spd: 0.8, endur: 43200, turn: 1800, buy: 60, cm: 0, runway: true, roles: ['isr'] },
-  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 4, cm: 6, roles: ['hlift'] },
+  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 4, cm: 6, roles: [] },
   cargo: { name: 'Cargo aircraft', short: 'CGO', n: 1, spd: 1.7, endur: 36000, turn: 1800, buy: 60, cap: 40, cm: 4, runway: true, roles: [] }
 };
 IC.LOADOUTS = {
@@ -291,17 +260,9 @@ IC.LOADOUTS = {
 IC.GBU = { name: 'Guided bomb', short: 'GBU', spd: 2.5, dmg: 40, strike: true };
 IC.TASK_KIND = {
   cap:       { name: 'Combat air patrol', roles: ['ftr'], point: true, radius: 550 },
-  cas:       { name: 'Close air support', roles: ['atk', 'ftr', 'ucav'], front: true },
-  interdict: { name: 'Interdiction', roles: ['ftr', 'ucav'], front: true },
   isr:       { name: 'Reconnaissance', roles: ['isr', 'ucav'], point: true, radius: 450 },
   aew:       { name: 'Airborne early warning', roles: ['aew'], point: true, radius: 3200 }
 };
-IC.HLIFT = {
-  SUP:  { name: 'Supply', desc: '+30% supply', mun: 'SUP', qty: 8 },
-  ATG:  { name: 'Anti-tank kits', desc: '+10 anti-tank teams: heavy damage to armor', mun: 'ATG', qty: 8 },
-  REPL: { name: 'Replacements', desc: '+12% strength from the manpower pool', repl: 12 }
-};
-
 /* ---------- Air bases ----------
    Facilities on each base. Damage matters: a cratered runway grounds jets, a lost hangar takes its aircraft with it. */
 IC.FAC = {
@@ -316,11 +277,10 @@ IC.FAC = {
 
 /* ---------- Policy ---------- */
 IC.MOBIL = [
-  { name: 'Peacetime', tax: 1, prod: 1, up: 1, morale: 0, sup: 1, slots: 3, man: 0.5, desc: 'Normal economy. Factories on single shifts. Three procurement orders at a time.' },
-  { name: 'Partial mobilization', tax: 0.9, prod: 1.6, up: 1.15, morale: -0.06, sup: 1.8, slots: 4, man: 2, desc: 'Reservists called up, factories on double shifts, four orders at a time. Raise new brigades.' },
-  { name: 'Full mobilization', tax: 0.78, prod: 2.4, up: 1.3, morale: -0.2, sup: 2.8, slots: 5, man: 4, desc: 'The whole nation at war. Maximum output, steady strain on morale.' }
+  { name: 'Peacetime', tax: 1, prod: 1, up: 1, morale: 0, slots: 3, desc: 'Normal economy. Factories on single shifts. Three procurement orders at a time.' },
+  { name: 'Partial mobilization', tax: 0.9, prod: 1.6, up: 1.15, morale: -0.06, slots: 4, desc: 'Reservists called up, factories on double shifts, four orders at a time.' },
+  { name: 'Full mobilization', tax: 0.78, prod: 2.4, up: 1.3, morale: -0.2, slots: 5, desc: 'The whole nation at war. Maximum output, steady strain on morale.' }
 ];
-IC.MAX_BRIGADES = 12;
 
 /* ---------- Weather ---------- */
 IC.WEATHER = {

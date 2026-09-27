@@ -6,7 +6,7 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-const HIT = { IR: 1.2, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
+const HIT = { IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
 
 IC.maxRange = function (S, u) {
   const d = u.d;
@@ -43,9 +43,59 @@ function need(S, u, t) {
   return bal ? 2 : doc === 'salvo' ? 2 : 1;
 }
 
+/* ---------- ballistic intercepts ----------
+   A warehead is not chased: the battery works out where it will be (the predicted intercept point) at a height
+   its interceptor can reach, and launches so that both arrive there together. Upper-tier rounds meet it high,
+   terminal rounds low; whatever the upper tier misses is still there for the lower one. */
+IC.predictable = t => t.d.move === 'bal' || t.d.move === 'hgv';
+IC.futurePos = function (t, tau) {
+  if (t.d.move === 'bal' || (t.d.move === 'hgv' && !t.glide && (t.age + tau) / t.T < 0.5)) { const p = IC.balPos(t, t.age + tau); return { x: p.x, y: p.y, alt: t.d.move === 'hgv' ? Math.max(40, p.alt) : p.alt }; }
+  return { x: t.x + t.vx * tau, y: t.y + t.vy * tau, alt: IC.altAt(t, tau) };
+};
+const km = v => Math.round(v);
+/* the earliest point on the target's path this missile can meet; with the reason when there is none */
+function planIntercept(u, t, M) {
+  const tti = IC.timeToImpact(t);
+  let altOk = false, inReach = false, hiAlt = 0;
+  for (let tau = 2; tau < Math.min(tti - 1, 900); tau += tau < 60 ? 1 : 3) {
+    const p = IC.futurePos(t, tau);
+    const vs = M.vs[p.alt >= 90 ? 'mid' : IC.classOf(t) === 'mid' ? 'bal' : IC.classOf(t)];
+    if (!vs || p.alt < M.alt[0] || p.alt > M.alt[1]) { hiAlt = Math.max(hiAlt, p.alt); continue; }
+    altOk = true;
+    const sl = Math.hypot(U.dxy(u.x, u.y, p.x, p.y), p.alt * 10);
+    if (sl > M.range) continue;
+    inReach = true;
+    const fly = sl / M.spd * 1.1 + 2;
+    if (fly > tau) continue;
+    return { tau, x: p.x, y: p.y, alt: p.alt, sl, fly, wait: tau - fly, vs };
+  }
+  const why = !altOk ? (M.alt[0] > 1 && hiAlt < M.alt[0] ? `it flies too low for ${M.short} rounds (they work above ${M.alt[0]} km)` : `it stays outside the ${M.alt[0]}–${M.alt[1]} km band ${M.short} rounds reach`)
+    : !inReach ? `it never comes within ${km(M.range / 10)} km of this battery at a height ${M.short} rounds reach` : 'too late: an interceptor cannot get there before impact';
+  return { none: true, why };
+}
+IC.planIntercept = planIntercept;
+
 function chooseMun(S, u, t, r, why) {
   const cls = IC.classOf(t);
   let best = null, bs = 1e9, reason = '';
+  if (why) why.pip = null;
+  if (IC.predictable(t)) {
+    // ballistic: the best round that can meet it; wait for it rather than waste a weaker one early
+    let bp = null;
+    for (const m of u.mags) {
+      if (!IC.hasTech(S, m.tech)) continue;
+      const M = IC.MUN[m.mun];
+      if (m.mag <= 0) { reason = reason || 'magazine empty'; continue; }
+      if (!M.vs.bal && !M.vs.mid && !M.vs.hgv) { reason = reason || `${M.short} missiles cannot hit a ballistic warhead`; continue; }
+      const P = planIntercept(u, t, M);
+      if (P.none) { reason = reason || P.why; continue; }
+      const sc = -M.pk * P.vs;
+      if (sc < bs) { bs = sc; best = m; bp = P; }
+    }
+    if (best && bp.wait > 3) { reason = `waiting: TN ${t.tn} comes into ${IC.MUN[best.mun].short} reach in ${U.dur(bp.wait)}`; best = null; }
+    if (why) { why.r = reason; why.pip = best ? bp : null; why.wait = !best && bp ? bp.wait : 0; }
+    return best;
+  }
   for (const m of u.mags) {
     if (!IC.hasTech(S, m.tech)) continue;
     const M = IC.MUN[m.mun];
@@ -100,24 +150,26 @@ function priority(u, t, r) {
   return s + r * 0.2;
 }
 
-function fire(S, u, t, m, r) {
+function fire(S, u, t, m, r, P, hoj) {
   const M = IC.MUN[m.mun];
-  m.mag--; t.inbound++; S.stats.fired++;
+  m.mag--; t.inbound++; t.shots = (t.shots || 0) + 1; S.stats.fired++;
   u.lastFired = S.time; u.fat = Math.min(100, u.fat + 1.5);
-  const a = Math.atan2(t.y - u.y, t.x - u.x);
+  const a = Math.atan2((P ? P.y : t.y) - u.y, (P ? P.x : t.x) - u.x);
   const R = effRange(M, u, t), cls = IC.classOf(t);
   const wx = IC.wx(S);
-  let pk = M.pk * (M.vs[cls] || 0) * (1 - 0.45 * Math.pow(r / Math.max(1, R), 2)) * IC.fatigueFactor(u) * (0.6 + 0.4 * IC.ok(u, 'launch'));
+  const reach = P ? 1 - 0.25 * Math.pow(P.sl / M.range, 2) : 1 - 0.45 * Math.pow(r / Math.max(1, R), 2);
+  let pk = M.pk * (P ? P.vs : M.vs[cls] || 0) * reach * IC.fatigueFactor(u) * (0.6 + 0.4 * IC.ok(u, 'launch'));
   if (M.seeker === 'IR') pk *= wx.ir;
   if (t.d.evasive) pk *= t.d.evasive;
   const tr = IC.newTrail(S, M.range > 1500 ? 'big' : 'sam');
-  S.missiles.push({ id: IC.nid('m'), mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: M.range / M.spd * 1.6 + 5, src: u.name, unit: u, pk, trailT: 0, side: 'us', tr });
+  const pip = P ? { x: P.x, y: P.y, alt: P.alt, T: S.time + P.tau, tof: P.tau } : null;
+  S.missiles.push({ id: IC.nid('m'), mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : M.range / M.spd * 1.6 + 5, src: u.name, unit: u, pk, trailT: 0, side: 'us', tr, pip, alt: 0, hoj: !!hoj });
   for (let i = 0; i < 6; i++) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-3, 3), oy: U.rand(-3, 3), vx: U.rand(-14, 14), vy: U.rand(-14, 14), life: U.rand(0.8, 1.6), size: U.rand(3, 5), grow: 8, col: '170,178,186', a: 0.45 });
   IC.part(S, { x: u.x, y: u.y, life: 0.2, size: 8, grow: 30, col: '255,225,160', add: true, a: 0.9 });
   S.fx.flashes.push({ x: u.x, y: u.y, t: 0, r: 40, wr: 3 });
   IC.sfx && IC.sfx.launch(u.x, u.y, M.range > 1500 ? 1.4 : M.range > 300 ? 1 : 0.7);
   if (M.range > 1500) IC.log(S, 'info', 'LAUNCH', `${u.name} fires ${M.name.toLowerCase()} at TN ${t.tn}.`);
-  IC.emit(S, 'launch', { u, t });
+  IC.emit(S, 'launch', { u, t, mun: m.mun });
 }
 
 IC.defense = function (S, dt) {
@@ -140,10 +192,11 @@ IC.defense = function (S, dt) {
       let best = null, bm = null, bs = 1e12, br = 0;
       const p = u.prio;
       const why = { r: '' };
-      let sawAny = false, blockedRoe = false, blockedSee = false;
+      let sawAny = false, blockedRoe = false, blockedSee = false, engaged = false;
+      let bpip = null;
       if (p && !p.dead && p.det && canSee(S, u, p) && eligible(S, u, p, true)) {
         const r = U.dist(u, p), m = chooseMun(S, u, p, r, why);
-        if (m && p.inbound < need(S, u, p) + 1) { best = p; bm = m; br = r; }
+        if (m && p.inbound < need(S, u, p) + 1) { best = p; bm = m; br = r; bpip = why.pip; }
       } else if (p && p.dead) u.prio = null;
       if (!best) for (const t of S.threats) {
         if (t.dead || !t.det) continue;
@@ -151,24 +204,42 @@ IC.defense = function (S, dt) {
         if (t.d.civil && (t.aff === 'N' || t.aff === 'A')) continue;
         sawAny = true;
         if (!eligible(S, u, t)) { blockedRoe = true; continue; }
-        if (t.inbound >= need(S, u, t)) continue;
-        if (!canSee(S, u, t)) { blockedSee = true; continue; }
+        if (t.inbound >= need(S, u, t)) { engaged = true; continue; }
+        if (!canSee(S, u, t)) { if (!blockedSee) blockedSee = t; continue; }
         const m = chooseMun(S, u, t, r, why); if (!m) continue;
         const sc = priority(u, t, r);
-        if (sc < bs) { bs = sc; best = t; bm = m; br = r; }
+        if (sc < bs) { bs = sc; best = t; bm = m; br = r; bpip = why.pip; }
       }
+      // nothing to shoot, but a jammer on our radar: missiles that can home on its noise need no track
+      let hojWhy = '';
+      if (!best && u.jammers && IC.effRoe(S, u) !== 'hold') {
+        for (const j of u.jammers) {
+          if (j.dead || j.inbound >= 1 || j.aff !== 'H') continue;
+          const r = U.dist(u, j);
+          const m = IC.activeMags(S, u).find(m => m.mag > 0 && IC.MUN[m.mun].hoj && r <= IC.MUN[m.mun].range * 0.95 && j.alt <= IC.MUN[m.mun].alt[1]);
+          if (!m) { hojWhy = hojWhy || `Jammed from ${U.compass(Math.atan2(j.y - u.y, j.x - u.x))}: the jammer is beyond missile reach`; continue; }
+          fire(S, u, j, m, r, null, true);
+          u.cool = 3 / IC.fatigueFactor(u); u.aim = Math.atan2(j.y - u.y, j.x - u.x);
+          u.why = `Home-on-jam shot at the jammer to the ${U.compass(u.aim)}`;
+          IC.log(S, 'warn', 'HOME-ON-JAM', `${u.name} fires a home-on-jam missile at the jammer to the ${U.compass(u.aim)}.`, u);
+          hojWhy = 'fired';
+          break;
+        }
+      }
+      if (hojWhy === 'fired') continue;
       if (best) {
-        const salvo = IC.effDoctrine(S, u) === 'salvo' || IC.classOf(best) === 'bal' || IC.classOf(best) === 'hgv';
-        fire(S, u, best, bm, br);
-        if (salvo && bm.mag > 0 && best.inbound < need(S, u, best)) fire(S, u, best, bm, br);
+        const salvo = IC.effDoctrine(S, u) === 'salvo' || IC.predictable(best);
+        fire(S, u, best, bm, br, bpip);
+        if (salvo && bm.mag > 0 && best.inbound < need(S, u, best)) fire(S, u, best, bm, br, bpip);
         u.cool = 3 / IC.fatigueFactor(u); u.aim = Math.atan2(best.y - u.y, best.x - u.x);
         u.why = `Engaging TN ${best.tn}`;
       } else {
         const empty = IC.activeMags(S, u).every(m => m.mag + m.store === 0);
         const reloading = IC.activeMags(S, u).every(m => m.mag === 0) && !empty;
         u.why = empty ? 'Out of missiles: waiting for resupply' : reloading ? 'Reloading'
-          : blockedSee ? (u.radarOn ? 'Target not yet tracked by fire control' : 'Radar silent: no fire-control track') : why.r ? cap1(why.r)
-          : blockedRoe ? (IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Holding: targets not identified hostile') : sawAny ? 'Tracking' : 'No targets';
+          : blockedSee ? IC.fcWhy(S, u, blockedSee) : why.r ? cap1(why.r)
+          : blockedRoe ? (IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Holding: targets not identified hostile')
+          : engaged ? 'Holding: interceptors already on their way to every target in reach' : hojWhy ? hojWhy : sawAny ? 'Tracking' : 'No targets';
         u.cool = 0.5;
       }
     } else if (d.weapon === 'gun') {
@@ -236,12 +307,40 @@ IC.defense = function (S, dt) {
 };
 const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
 
+/* why this battery can or cannot fire at this track, in plain words */
+IC.fcWhy = function (S, u, t) {
+  if (!u.radarOn && !(u.d.fc && u.d.fc.passive)) return u.emcon === 'ambush' ? 'Radar in ambush: it comes on when a hostile gets close' : 'Radar silent: no fire-control track';
+  const s = (S.sensors || []).find(x => x.unit === u && x.org);
+  if (!s) return 'Not tracked by fire control';
+  const r = U.dist(s, t);
+  if (s.bmdOnly && !IC.predictable(t)) return 'Its radar only tracks ballistic missiles';
+  if (r > U.horizon(s.mast, t.alt)) return `Below its radar horizon: it sees ${U.km(U.horizon(s.mast, Math.max(0.05, t.alt)))} out at that height`;
+  if (r > 1 && IC.aspHidden(s, t)) return 'Masked by a hill: its radar cannot see down behind it';
+  if (s.jams) for (const J of s.jams) if (J.j !== t && Math.abs(U.angWrap(Math.atan2(t.y - s.y, t.x - s.x) - J.a)) < J.w) return `Jammed along that bearing: it sees only inside ${U.km(J.d * 0.3 * (1 + (s.eccm || 0)))}`;
+  if (s.jams && s.jams.some(J => J.j === t)) return 'It is the jammer: no range, only a strobe';
+  return `Beyond its radar's reach against a target this size (${U.km(s.R * Math.pow(t.rcs, 0.25))})`;
+};
+IC.engageWhy = function (S, u, t) {
+  if (u.state !== 'ready') return u.why || 'Not ready';
+  if (IC.ok(u, 'launch') < 0.25) return 'Launchers knocked out: needs repair';
+  if (!eligible(S, u, t, u.prio === t)) {
+    if (t.aff === 'N' || t.aff === 'A') return 'Civil track: it fires only if you assign it';
+    return IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Not identified hostile: weapons are Tight';
+  }
+  if (!canSee(S, u, t)) return IC.fcWhy(S, u, t);
+  const why = { r: '' };
+  if (!chooseMun(S, u, t, U.dist(u, t), why)) return cap1(why.r || 'no missile can reach it');
+  if (t.inbound >= need(S, u, t)) return `Already engaged: ${t.inbound} interceptor${t.inbound > 1 ? 's' : ''} on the way`;
+  return u.cool > 0 ? 'Can engage: firing next' : 'Can engage now';
+};
+
 /* ---------- interceptors in flight ---------- */
 IC.updateMissiles = function (S, dt) {
   for (const m of S.missiles) {
     const t = m.target;
     m.life -= dt;
     if (t.dead || m.life <= 0) { m.dead = true; IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 14, col: '180,220,255', add: true, a: 0.6 }); continue; }
+    if (m.pip) { flyToPip(S, m, t, dt); continue; }
     const r = U.dist(m, t), tt = r / m.spd;
     // guidance: lead the target unless the seeker has been fooled
     const ax = t.x + t.vx * tt + (m.fooled ? m.fx : 0), ay = t.y + t.vy * tt + (m.fooled ? m.fy : 0);
@@ -255,8 +354,10 @@ IC.updateMissiles = function (S, dt) {
     if ((m.M.seeker === 'SARH' || m.M.seeker === 'CMD') && tt < 5 && !m.checked) {
       m.checked = true;
       const u = m.unit;
-      if (!u || u.dead || !u.radarOn || !t.fcBy.includes(u.id)) { m.lostLock = true; m.pk *= 0.08; }
+      if (m.hoj) { if (!t.jamming) { m.lostLock = true; m.pk *= 0.1; } }
+      else if (!u || u.dead || !u.radarOn || !t.fcBy.includes(u.id)) { m.lostLock = true; m.pk *= 0.08; }
     }
+    if (m.hoj && m.M.seeker === 'ARH' && tt < 5 && !m.checked) { m.checked = true; if (!t.jamming && !t.det) { m.lostLock = true; m.pk *= 0.3; } }
     // the target fights back in the last seconds
     if (tt < 5 && !m.cmDone && (t.d.cls === 'air' || t.d.cls === 'heli')) {
       m.cmDone = true;
@@ -266,7 +367,7 @@ IC.updateMissiles = function (S, dt) {
       }
       if (t.cm > 0) {
         t.cm--;
-        if (m.M.seeker === 'IR') { m.pk *= 0.5; flares(S, t); }
+        if (m.M.seeker === 'IR') { m.pk *= m.M.ircm || 0.5; flares(S, t); }
         else { m.pk *= m.M.seeker === 'SARH' ? 0.7 : 0.82; chaff(S, t); }
         if (Math.random() < 0.5) { m.fooled = true; m.fx = U.rand(-8, 8); m.fy = U.rand(-8, 8); }
       }
@@ -290,6 +391,31 @@ IC.updateMissiles = function (S, dt) {
   for (const m of S.missiles) if (m.dead && !m.counted) { m.counted = true; m.target.inbound--; }
   S.missiles = S.missiles.filter(m => !m.dead);
 };
+/* an interceptor on its way to a predicted intercept point: it arrives when the warhead should, and its seeker
+   does the last few hundred metres */
+function flyToPip(S, m, t, dt) {
+  const P = m.pip, left = P.T - S.time, d = U.dxy(m.x, m.y, P.x, P.y);
+  m.a = Math.atan2(P.y - m.y, P.x - m.x);
+  const step = left > dt ? d / left * dt : d;
+  m.x += Math.cos(m.a) * step; m.y += Math.sin(m.a) * step;
+  m.alt = P.alt * U.clamp(1 - left / P.tof, 0, 1);
+  m.trailT -= dt;
+  if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
+  if (left > 0) return;
+  m.dead = true;
+  const off = Math.hypot(U.dxy(t.x, t.y, P.x, P.y), (t.alt - P.alt) * 10);
+  let pk = m.pk;
+  if (t.d.evasive) pk *= t.d.evasive;
+  if (off < 40 && Math.random() < pk) {
+    IC.explode(S, t.x, t.y, 0.8, 'us');
+    t.hp -= HIT[m.mun] || 2;
+    if (t.hp <= 0 || t.d.cls !== 'air') IC.killThreat(S, t, m.src);
+    IC.emit(S, 'intercept', { t, m, alt: P.alt });
+  } else {
+    IC.text(S, m.x, m.y, off >= 40 ? 'MANOEUVRED' : 'MISS', '#8fa3b0');
+    IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
+  }
+}
 function flares(S, t) {
   for (let i = 0; i < 10; i++) S.fx.chaff.push({ x: t.x, y: t.y, vx: -t.vx * 0.3 + U.rand(-1.5, 1.5), vy: -t.vy * 0.3 + U.rand(-1.5, 1.5), t: 0, life: U.rand(2.5, 4.5), kind: 'flare' });
   IC.sfx && IC.sfx.pop(t.x, t.y);
@@ -301,8 +427,8 @@ function chaff(S, t) {
 IC.flares = flares; IC.chaffFx = chaff;
 
 /* ---------- our strike weapons ----------
-   targets: enemy site, launcher (tel), enemy ground formation (gunit), enemy convoy (evehicle) */
-IC.aimOf = tg => tg.tel || tg.gunit || tg.evehicle ? { x: tg.kx, y: tg.ky } : { x: tg.x, y: tg.y };
+   targets: enemy site, launcher (tel) */
+IC.aimOf = tg => tg.tel ? { x: tg.kx, y: tg.ky } : { x: tg.x, y: tg.y };
 IC.fireMission = function (S, u, target, n) {
   const m = u.mags[0]; if (!m || !target) return 0;
   const M = IC.MUN[m.mun];
@@ -313,7 +439,7 @@ IC.fireMission = function (S, u, target, n) {
   const rep = { id: IC.nid('bda'), target, what: M.name, by: u.name, n: 0, hits: 0, dmg: 0, t: S.time, open: true };
   for (let i = 0; i < n && m.mag > 0; i++) {
     m.mag--; fired++;
-    const spread = target.gunit ? 30 : 8;
+    const spread = 8;
     const jit = { x: aim.x + U.rand(-spread, spread), y: aim.y + U.rand(-spread, spread) };
     const s = { id: IC.nid('s'), mun: m.mun, M, x: u.x + U.rand(-4, 4), y: u.y + U.rand(-4, 4), aim: jit, target, src: u.name, age: -i * (M.bal ? 4 : 20), side: 'us', rep, tr: null };
     if (M.bal) { const R = U.dist(s, jit); s.x0 = s.x; s.y0 = s.y; s.T = R / M.spd + 30; s.apex = Math.max(20, R * 0.025); }
@@ -359,14 +485,6 @@ function strikeImpact(S, s) {
     else if (!s.reported) { s.reported = true; if (rep) rep.empty = true; }
     return done();
   }
-  if (tg.gunit) {
-    for (const g of S.gunits) if (g.side === 'them' && !g.dead && U.dxy(g.x, g.y, s.x, s.y) < 90) { const k = s.M.dmg * 0.09; g.str -= k; g.mor -= 1.5; if (rep) { rep.hits++; rep.dmg += k; } }
-    return done();
-  }
-  if (tg.evehicle) {
-    for (const v of S.evehicles) if (!v.dead && U.dxy(v.x, v.y, s.x, s.y) < 30) { IC.enemyConvoyHit(S, v, s.src); if (rep) rep.hits++; }
-    return done();
-  }
   const pk = tg.pk >= 2 ? 0.9 : 0.45;
   if (Math.random() < pk) { IC.siteDamaged(S, tg, s.M.dmg, s.src, true); if (rep) { rep.hits++; rep.dmg += s.M.dmg; } }
   done();
@@ -378,8 +496,6 @@ IC.bdaReport = function (S, rep) {
   const tg = rep.target;
   let text;
   if (tg.tel) text = rep.kill ? `${tg.name} destroyed.` : rep.empty ? `Nothing at the aim point: the launcher had moved.` : 'No confirmed hits.';
-  else if (tg.gunit) text = rep.hits ? `${tg.name} hit ${rep.hits} times, est. −${Math.round(rep.dmg)}% strength.` : 'The formation had moved; no confirmed hits.';
-  else if (tg.evehicle) text = rep.hits ? `${rep.hits} trucks destroyed.` : 'Convoy missed.';
   else text = tg.destroyed ? `${tg.name} destroyed.` : rep.hits ? `${rep.hits} of ${rep.n} hit. ${tg.name} about ${Math.round(100 - tg.hp / tg.max * 100)}% damaged.` : `All ${rep.n} missed.`;
   rep.text = text;
   S.reports.unshift(rep); if (S.reports.length > 20) S.reports.length = 20;
