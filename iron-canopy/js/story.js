@@ -236,7 +236,7 @@ function chapterGoals(S, ch) {
     g({ id: 'open2', text: `Open ${c2.name}’s airport: runway, apron, terminal and fuel`, get ref() { return a2() || c2; }, check: () => openTo(S, a2(), 'turbo'),
       prog: () => a2() ? (IC.aptCanTake(S, a2(), IC.ACTYPES.turbo) || (!built(a2(), 'terminal') ? 'no terminal yet' : !built(a2(), 'fuel') ? 'no fuel tank yet' : '')) : '',
       how: 'A regional airport can start small: 1.5 km of runway takes turboprops, which need no fire station. Jets need 2.1 km and fire cover.' });
-    g({ id: 'route2', text: `A regional airline flies ${short(capApt(S).name)} – ${c2.name}`, check: () => S.av.routes.some(r => r.st === 'active' && r.flown > 0 && ((r.a === st.cap && r.b.apt === st.apt2) || (r.a === st.apt2 && r.b.apt === st.cap))) });
+    g({ id: 'route2', text: `A regional airline flies ${short(capApt(S).name)} – ${c2.name}`, check: () => !!st.apt2 && S.av.routes.some(r => r.st === 'active' && r.flown > 0 && ((r.a === st.cap && r.b.apt === st.apt2) || (r.a === st.apt2 && r.b.apt === st.cap))) });
   } else if (ch === 5) {
     g({ id: 'cargo', text: 'Fly freight: a freighter route flown', check: () => S.av.routes.some(r => r.type === 'cargo' && r.st === 'active' && r.flown > 0),
       prog: () => { const ap = A(), T = IC.ACTYPES.cargo; return ap ? IC.aptCanTake(S, ap, T) || (built(ap, 'cargo') ? '' : 'no cargo terminal yet') : ''; },
@@ -789,10 +789,11 @@ IC.storyTick = function (S, dt) {
     st.standT = 600;
     const sat = avgSat(S);
     // in peacetime the airlines are the measure of you; in war, the country is
-    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (sat - 62) * 0.006;
+    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (sat - 58) * 0.006;
     // before the first airliner there are no airlines to judge you by: the Minister waits
     const judge = st.act > 1 || st.opened;
-    st.standing += (judge ? drift : 0) + (S.budget < 0 ? -0.6 : 0) + (st.events.length > 2 ? -0.3 : 0) + (st.standing > 80 ? -0.15 : 0);
+    // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices
+    st.standing += (judge ? drift : 0) + (S.budget < -1 ? -0.3 : 0) + (st.events.length > 2 ? -0.3 : 0) + (st.standing > 80 ? -0.15 : 0);
     confidence(S);
   }
   // unanswered event cards resolve themselves after a while
@@ -894,7 +895,7 @@ IC.on((S, type, d) => {
     case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; break;
     case 'zone': st.cnt.zone++; break;
     case 'divert': st.standing -= 0.4; break;
-    case 'routeCut': st.standing -= 3; if (IC.tipOnce(S, 'cut', 3 * 3600)) say(S, 'MIN', `${d.al.name} is cutting flights and telling the papers why. Fix what they complain about.`); break;
+    case 'routeCut': st.standing -= 1.5; if (IC.tipOnce(S, 'cut', 3 * 3600)) say(S, 'MIN', `${d.al.name} is cutting flights and telling the papers why. Fix what they complain about.`); break;
     case 'tailDestroyed': st.standing -= st.act >= 4 ? 2 : 10; break;
     case 'civilKill': st.standing -= 35; if (d.tail || d.d.civil) IC.news(S, `The Director of ${IC.ACTS[st.act].role.includes('Civil') ? 'Civil Aviation' : 'Airspace Security'} faces calls to resign.`); break;
     case 'gridlock': if (IC.tipOnce(S, 'grid', 3 * 3600)) say(S, 'APT', `${d.ap.name}: two aircraft met nose to nose on a single taxiway. Parallel taxiways let traffic flow both ways.`); break;
