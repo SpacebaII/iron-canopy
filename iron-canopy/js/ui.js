@@ -103,6 +103,7 @@ function topbar() {
   const flow = S.income - S.upkeep, m = IC.nationalMorale(S);
   const meter = (f, col) => `<div class="meter"><i style="width:${U.clamp(f, 0, 1) * 100}%;background:${col}"></i></div>`;
   const st = S.story, act = st ? st.act : 4;
+  if (S.range) { const R = IC.rangeStats(S); setHTML($('stats'), `<div class="stat"><span>Shots</span><strong>${R.shots}</strong></div><div class="stat"><span>Kills</span><strong class="ok">${R.kills}</strong></div><div class="stat"><span>Leakers</span><strong class="${R.leaks ? 'hostile' : ''}">${R.leaks}</strong></div>`); }
   const money = `<div class="stat" title="Treasury and hourly balance"><span>Treasury</span><strong class="amber">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h</em></div>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
@@ -114,7 +115,7 @@ function topbar() {
       <div class="stat" title="Passengers through our airports in the last hour"><span>Pax/h</span><strong>${Math.round(S.av.paxHour || 0).toLocaleString('en-US')}</strong></div>
       ${act >= 2 ? `<div class="stat" title="Tension with ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
       ${act >= 4 ? `<div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>` : ''}`);
-  } else setHTML($('stats'), `${money}
+  } else if (!S.range) setHTML($('stats'), `${money}
     <div class="stat" title="National morale: below 12% the government asks for terms"><span>Morale</span><strong class="${m > 55 ? '' : m > 30 ? 'amber' : 'hostile'}">${Math.round(m)}%</strong>${meter(m / 100, m > 55 ? 'var(--ok)' : m > 30 ? 'var(--amber)' : 'var(--hostile)')}</div>
     <div class="stat" title="Allied support: aid and import prices"><span>Allies</span><strong>${Math.round(S.support)}</strong>${meter(S.support / 100, 'var(--friend)')}</div>
     ${S.pm != null ? `<div class="stat" title="The Prime Minister's confidence: it falls when cities, power, factories and airports are hit, and when raids get through. At zero the government asks for terms."><span>PM</span><strong class="${S.pm > 50 ? '' : S.pm > 25 ? 'amber' : 'hostile'}">${Math.round(S.pm)}</strong>${meter(S.pm / 100, S.pm > 50 ? 'var(--ok)' : S.pm > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>` : ''}
@@ -184,7 +185,7 @@ ICON.economy = '<path d="M4 20V11M10 20V6M16 20v-9M22 20H2M3 8l6-4 6 5 6-4"/>';
 ICON.aviation = '<path d="M3 20h18M6 20V9l6-4 6 4v11M10 20v-5h4v5M9 11h6"/>';
 ICON.staff = '<circle cx="12" cy="7" r="3.2"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M12 14l-1.5 4L12 21l1.5-3z"/>';
 ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['economy', 'Economy', 'E'], ['air', 'Air', 'A'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
-ui.roomOk = k => (k !== 'aviation' || !!S.av) && (k !== 'economy' || S.mode !== 'academy') && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
+ui.roomOk = k => (!S.range || k === 'reference' || k === 'settings') && (k !== 'aviation' || !!S.av) && (k !== 'economy' || S.mode !== 'academy') && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
 function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
   const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research');
@@ -197,7 +198,8 @@ function rail() {
 function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
-  if (S.mode === 'academy' && C.lesson) {
+  if (S.range) h = IC.rangePanel(S);
+  else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 2));
@@ -242,7 +244,7 @@ function comms() {
 
 /* ---------- arsenal: what is in reserve, what is on order ---------- */
 function arsenal() {
-  const allowed = type => !IC.UNITS[type].callin && (!S.story || IC.storyAllows(S, type));
+  const allowed = type => !IC.UNITS[type].callin && !S.range && (!S.story || IC.storyAllows(S, type));
   const cats = IC.CATS.filter(c => Object.entries(IC.UNITS).some(([t, d]) => d.cat === c.id && (allowed(t) || (S.reserve[t] || 0) > 0)));
   if (!cats.length) { setHTML($('arsenal'), ''); $('arsenal').classList.remove('glass'); $('app').classList.add('no-arsenal'); return; }
   $('app').classList.remove('no-arsenal');
@@ -291,6 +293,7 @@ function modeHint() {
   if (!m) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = {
+    rangeTarget: () => 'Click the map where the threats should aim.',
     callin: () => `Click inside ${S.world.names.H} to drop a MANPADS team there. Shift-click to call another. Right-click or Esc to cancel.`,
     deploy: () => `Click inside ${S.world.names.H} to deploy the ${IC.UNITS[m.type].name}. The dashed rings show its reach. Right-click or Esc to cancel.`,
     move: () => `Click where ${m.unit.name} should go.`,

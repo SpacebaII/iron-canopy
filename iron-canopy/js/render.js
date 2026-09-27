@@ -134,7 +134,7 @@ IC.render = function (S, now) {
   ctx.fillStyle = '#04080c'; ctx.fillRect(0, 0, cam.vw, cam.vh);
   ctx.setTransform(dpr * z, 0, 0, dpr * z, (-cam.x * z + sx) * dpr, (-cam.y * z + sy) * dpr);
   ctx.imageSmoothingEnabled = true;
-  IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7, S);
+  if (S.flat) IC.drawFlat(ctx, S, view, px); else IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7, S);
   if (z * dpr >= 1.3) drawRoads(S, px);
   const wx = IC.wx(S), light = IC.daylight(S.time);
 
@@ -739,7 +739,7 @@ function drawInfra(S, px, now) {
     }
     if (sel) brackets(i.x, i.y, (i.kind === 'city' ? Math.max(i.r * 0.7, 12 * px) : i.parts && cam.z > 0.3 ? Math.max(i.radius * 0.75, 12 * px) : 12 * px) + 4 * px, px);
   }
-  if (cam.z < 0.16 && S.layers.labels) {
+  if (cam.z < 0.16 && S.layers.labels && !S.flat) {
     for (const f of S.world.foreign) if (inView(f.x, f.y, 100)) label(f.taken ? f.name + ' (ours)' : f.name, f.x, f.y + f.r + 14 * px, px, f.taken ? C.friend : 'rgba(210,205,190,0.55)', 9, 'center', 500);
     const W = S.world;
     for (const k of ['A', 'B', 'C', 'D']) {
@@ -1181,7 +1181,7 @@ let miniThumb = null;
 IC.renderMini = function (S, mc, mw, mh) {
   const g = mc.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (!miniThumb) { miniThumb = document.createElement('canvas'); miniThumb.width = 400; miniThumb.height = 300; miniThumb.getContext('2d').drawImage(S.terrain.base, 0, 0, 400, 300); }
+  if (!miniThumb) { miniThumb = document.createElement('canvas'); miniThumb.width = 400; miniThumb.height = 300; const mg = miniThumb.getContext('2d'); if (S.terrain && S.terrain.base) mg.drawImage(S.terrain.base, 0, 0, 400, 300); else { mg.fillStyle = '#1d2622'; mg.fillRect(0, 0, 200, 300); mg.fillStyle = '#2a1e1c'; mg.fillRect(200, 0, 200, 300); } }
   g.drawImage(miniThumb, 0, 0, mw, mh);
   const k = mw / IC.WW;
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, mw, mh);
