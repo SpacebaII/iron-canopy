@@ -177,7 +177,7 @@ IC.moveTail = function (S, t, dt) {
 };
 function beginApproach(S, t) {
   const ap = S.byId[t.toApt];
-  const faf = ap && IC.gopsFaf(S, ap, t.tail.type);
+  const faf = ap && IC.gopsFaf(S, ap, t.tail.type, t);
   if (!faf) { divert(S, t, IC.aptLandWhy(S, ap, t.tail.T) || 'the runway is closed'); return; }
   t.appr = true; t.faf = faf; t.holdT = 0;
 }
@@ -220,7 +220,7 @@ function tryLand(S, t, ap) {
   let s = tl.resStand ? standById(ap, tl.resStand) : null;
   if (!s || (s.occ && s.occ !== tl.id)) { s = freeStand(S, ap, tl.T, airlineOf(S, tl.al).kind); if (!s) { ap.kpi.standWait = (ap.kpi.standWait || 0) + 1; t.standShort = true; return 'hold'; } }
   const m = IC.gopsLand(S, ap, { type: tl.type, target: s.id, stand: s, who: tl.cs, tail: tl, livery: t.livery, faf: t.faf,
-    onPark: mm => parked(S, tl, ap, s, mm), onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground') });
+    onPark: mm => parked(S, tl, ap, s, mm), onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground'), onGoAround: mm => goneAround(S, t, tl, ap, s, mm) });
   if (m === 'divert') return 'divert';
   if (m === 'hold') { tl.resStand = s.id; return 'hold'; }
   s.occ = tl.id; tl.stand = s.id; tl.resStand = null;
@@ -229,6 +229,22 @@ function tryLand(S, t, ap) {
   pay(S, tl, ap, 'land');
   return true;
 }
+/* a go-around: back into the air, round the circuit (about four minutes, and the fuel for it) and into the queue
+   at the approach fix again, the stand still kept for it */
+const CIRCUIT = 240;
+function goneAround(S, t, tl, ap, s, m) {
+  if (s.occ === tl.id) s.occ = null;
+  tl.resStand = s.id; tl.where = 'air'; tl.mv = null; tl.stand = null;
+  t.dead = false; t.landed = false; t.x = m.x; t.y = m.y; t.alt = 0.6; t.holding = true;
+  t.holdT = (t.holdT || 0) + CIRCUIT; t.nextTry = S.time + CIRCUIT; t.ga = (t.ga || 0) + 1;
+  if (t.faf && t.faf.q) { t.faf.q.done = false; t.faf.q.t = S.time; t.faf.q.askT = S.time; t.faf.q.backT = S.time + CIRCUIT; }
+  if (!S.threats.includes(t)) S.threats.push(t);
+}
+/* what the crews and the tower say on the radio about runway events */
+IC.radioGoAround = function (S, ap, m, o, why) {
+  IC.sfx && IC.sfx.radio && IC.sfx.radio();
+  IC.log(S, 'info', 'RADIO', `${ap.name} tower: ${m.who || 'an arrival'}, going around at 1 km on ${IC.rwEnd(m.plan.rw, m.plan.dir)}: ${why}. It flies a circuit and lands in about ${Math.round(CIRCUIT / 60)} minutes.`, m);
+};
 function parked(S, tl, ap, s, m) {
   tl.where = 'stand'; tl.mv = null; tl.at = ap.id;
   s.occ = tl.id;
