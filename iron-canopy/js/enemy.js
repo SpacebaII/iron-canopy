@@ -225,8 +225,8 @@ const W = {
     }
     return n + nj;
   },
-  cm(S, E, obj, n, op, arriveAt) {
-    const sites = S.esites.filter(s => s.kind === 'cm' && alive(s) && ((s.inv.lacm || 0) + (s.inv.scm || 0) + (s.inv.mcm || 0)) >= 1);
+  cm(S, E, obj, n, op, arriveAt, nat) {
+    const sites = S.esites.filter(s => s.kind === 'cm' && alive(s) && (!nat || s.nat === nat) && ((s.inv.lacm || 0) + (s.inv.scm || 0) + (s.inv.mcm || 0)) >= 1);
     if (!sites.length) return 0;
     const s = sites.sort((a, b) => U.dist(a, obj) - U.dist(b, obj))[0];
     n = Math.min(Math.floor((s.inv.lacm || 0) + (s.inv.scm || 0) + (s.inv.mcm || 0)), n);
@@ -884,7 +884,7 @@ IC.enemyForceOp = function (S, name, target, n) {
   let T = S.time + (n && n.T || 1200);
   if (n && n.T && (name === 'bal' || name === 'mrbm')) T = Math.max(T, S.time + balLead(S, obj, name === 'mrbm') + 120);
   if (name === 'drones') W.drones(S, E, obj, n && n.n || n || 6, op, 0);
-  else if (name === 'cm') W.cm(S, E, obj, n && n.n || n || 3, op, n && n.T ? T : 0);
+  else if (name === 'cm') W.cm(S, E, obj, n && n.n || n || 3, op, n && n.T ? T : 0, n && n.nat);
   else if (name === 'bal') W.bal(S, E, obj, n && n.n || n || 2, op, n && n.T ? T : 0, false);
   else if (name === 'mrbm') W.bal(S, E, obj, n && n.n || n || 1, op, n && n.T ? T : 0, true);
   else if (name === 'bomber') W.bomber(S, E, obj, op, n && n.T ? T : 0);
