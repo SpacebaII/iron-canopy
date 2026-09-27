@@ -17,7 +17,7 @@ IC.newGame = function (opts) {
     cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, capture: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
-    vehicles: [], jobs: [], cars: [], trains: [], imports: [], evehicles: [],
+    vehicles: [], jobs: [], trains: [], imports: [], evehicles: [],
     esites: [], tels: [], gunits: [], fronts: [], wrecks: [],
     tech: { done: new Set(['a_lrsam']), slots: [null, null] },
     fx: { parts: [], booms: [], texts: [], tracers: [], rings: [], fires: [], flashes: [], plumes: [], trails: [], chaff: [], shocks: [] },

@@ -27,6 +27,71 @@ test('world generation is deterministic for a seed', () => {
   assert(a.edges.length === b.edges.length, 'road count differs');
 });
 
+/* roads reachable from a node, optionally only along some classes */
+const reach = (W, from, ok) => {
+  const adj = {}; for (const e of W.edges) if (!ok || ok(e)) { (adj[e.a] = adj[e.a] || []).push(e.b); (adj[e.b] = adj[e.b] || []).push(e.a); }
+  const seen = new Set([from]), q = [from];
+  while (q.length) for (const n of adj[q.pop()] || []) if (!seen.has(n)) { seen.add(n); q.push(n); }
+  return seen;
+};
+test('world: every city, village and airfield is reachable by road', () => {
+  for (const seed of [4242, 7, 99, 12345, 2024]) {
+    const W = IC.generate(seed), seen = reach(W, W.cities[0].id);
+    const lost = W.cities.concat(W.villages.filter(v => v.home), W.infra).filter(p => !seen.has(p.id));
+    assert(!lost.length, `seed ${seed}: cut off from the capital: ${lost.map(p => p.name).join(', ')}`);
+  }
+});
+test('world: motorways join the capital to the four largest cities', () => {
+  for (const seed of [4242, 7, 99, 12345, 2024]) {
+    const W = IC.generate(seed), seen = reach(W, W.cities[0].id, e => e.cls === 'hw');
+    const big = W.cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 4);
+    for (const c of big) assert(seen.has(c.id), `seed ${seed}: no motorway from the capital to ${c.name}`);
+  }
+});
+test('world: roads meet at junctions and do not run side by side', () => {
+  const W = IC.generate(4242);
+  const pair = new Set();
+  for (const e of W.edges) { const k = e.a < e.b ? e.a + '|' + e.b : e.b + '|' + e.a; assert(!pair.has(k), `two roads between ${k}`); assert(e.a !== e.b, 'a road loops onto itself'); pair.add(k); }
+  assert(Object.values(W.nodes).some(n => n.ix), 'no motorway interchanges');
+  assert(W.bridges.length > 0, 'no bridges');
+});
+test('world: generation stays under the time budget', () => {
+  IC.generate(1); // warm up the JIT
+  let worst = 0;
+  for (const seed of [4242, 7, 99]) { const t0 = Date.now(); const W = IC.generate(seed); IC.buildRouting(W); worst = Math.max(worst, Date.now() - t0); }
+  assert(worst < 1500, `generation took ${worst} ms`);
+});
+
+test('traffic: rush hour is busier than night, and an air raid empties the roads', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S), view = { x0: cap.x - 150, y0: cap.y - 150, x1: cap.x + 150, y1: cap.y + 150 };
+  const count = () => { S.traffic.stepT = 0; IC.traffic(S, 0.25); return IC.trafficVisible(S, view, 0.3, () => {}); };
+  const rush = count();
+  S.time = 3 * 3600; const night = count();
+  S.time = 8 * 3600; cap.alert = 600; const raid = count(); cap.alert = 0; count();
+  assert(rush > 400, `too little traffic round the capital at 08:00: ${rush}`);
+  assert(night < rush * 0.3, `night (${night}) not much quieter than rush hour (${rush})`);
+  assert(raid < rush * 0.5, `an air raid alert did not clear the roads (${raid} vs ${rush})`);
+  const hw = S.traffic.links.filter(L => L.cls === 'hw').sort((a, b) => b.busy - a.busy)[0];
+  assert(hw.load > 0.8, `the busiest motorway is not busy at rush hour (${hw.load.toFixed(2)})`);
+});
+test('traffic: a busy hour stays inside the time budget', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S);
+  for (let i = 0; i < 200; i++) IC.traffic(S, 0.25);
+  let t0 = process.hrtime.bigint();
+  for (let i = 0; i < 2000; i++) IC.traffic(S, 0.25);
+  const step = Number(process.hrtime.bigint() - t0) / 1e6 / 2000;
+  // what the renderer asks for each frame at city zoom (about 1,400 × 900 px at 3 px per unit)
+  const view = { x0: cap.x - 240, y0: cap.y - 150, x1: cap.x + 240, y1: cap.y + 150 };
+  let n = 0; t0 = process.hrtime.bigint();
+  for (let i = 0; i < 50; i++) n = IC.trafficVisible(S, view, 7 / 3, () => {});
+  const frame = Number(process.hrtime.bigint() - t0) / 1e6 / 50;
+  console.log(`        step ${step.toFixed(4)} ms, ${n} vehicles placed in ${frame.toFixed(2)} ms`);
+  assert(step < 0.05, `traffic step takes ${step.toFixed(3)} ms (budget 0.05 ms of the 1 ms step)`);
+  assert(frame < 4, `placing ${n} vehicles takes ${frame.toFixed(2)} ms a frame`);
+});
+
 /* ---------- airports ---------- */
 test('airport: starting layouts are connected', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
