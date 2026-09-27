@@ -179,6 +179,7 @@ IC.render = function (S, now) {
   drawPlumes(S, px, now, light);
   drawImpacts(S, px, now);
   for (const t of S.threats) drawTrack(S, t, px, now);
+  if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
   for (const a of S.air) drawAir(S, a, px, now);
   for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
   drawChaff(S, px);
@@ -788,7 +789,7 @@ function drawRanges(S, px, now) {
     const d = u.d;
     if (d.sensor && !d.sensor.passive) {
       if (sel || (S.layers.rings && d.sensor.R > 1200 && u.radarOn && cam.z > 0.08)) {
-        const R = d.sensor.R * (u.jamF || 1);
+        const R = d.sensor.R;
         ctx.strokeStyle = u.radarOn ? (u.jamF < 0.97 ? 'rgba(242,180,65,0.4)' : 'rgba(92,200,255,0.2)') : 'rgba(125,149,165,0.25)';
         ctx.lineWidth = 1 * px; ctx.setLineDash([6 * px, 7 * px]);
         ctx.beginPath(); ctx.arc(u.x, u.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
@@ -798,7 +799,7 @@ function drawRanges(S, px, now) {
       if (u.radarOn && d.sensor.rot && fxMode !== 'off' && inView(u.x, u.y, d.sensor.R)) {
         const a = (u.phase || 0) + Math.PI * 2 * S.time / d.sensor.per;
         if (fxMode === 'full') {
-          const R = Math.min(d.sensor.R, 2400) * (u.jamF || 1);
+          const R = Math.min(d.sensor.R, 2400);
           const grd = ctx.createRadialGradient(u.x, u.y, 0, u.x, u.y, R);
           grd.addColorStop(0, 'rgba(92,200,255,0.02)'); grd.addColorStop(1, 'rgba(92,200,255,0.11)');
           ctx.fillStyle = grd; ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.arc(u.x, u.y, R, a - 0.4, a); ctx.closePath(); ctx.fill();
@@ -811,11 +812,6 @@ function drawRanges(S, px, now) {
           ctx.strokeStyle = 'rgba(160,230,255,0.6)'; ctx.lineWidth = 1.4 * px;
           ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x + Math.cos(a) * r, u.y + Math.sin(a) * r); ctx.stroke();
         }
-      }
-      if (u.jammers) for (const j of u.jammers) {
-        ctx.strokeStyle = `rgba(242,180,65,${0.12 + Math.random() * 0.2})`; ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.moveTo(u.x, u.y);
-        for (let i = 1; i <= 12; i++) { const f = i / 12; ctx.lineTo(u.x + (j.x - u.x) * f + U.rand(-10, 10), u.y + (j.y - u.y) * f + U.rand(-10, 10)); }
-        ctx.stroke();
       }
     }
     const rng = IC.maxRange(S, u);
