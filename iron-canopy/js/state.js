@@ -54,7 +54,6 @@ IC.newGame = function (opts) {
   // which plant powers which city
   const plants = S.infra.filter(i => i.kind === 'power');
   for (const c of IC.cities(S)) { const p = plants.slice().sort((a, b) => U.dist(a, c) - U.dist(b, c))[0]; c.plant = p ? p.id : null; }
-  for (const i of S.infra) if (i.kind === 'factory' || i.kind === 'airport') for (let k = 0; k < (i.kind === 'factory' ? 2 : 1); k++) IC.addTruck(S, i);
 
   IC.weatherInit(S);
   const story = mode === 'story';

@@ -32,7 +32,7 @@ const ACT = {
   bmd: [S => { S.sel = { kind: 'unit', ref: S.units.find(u => u.type === 'lrsam') }; }],
   logi: [
     S => { if (!S.units.some(u => u.type === 'depot' && !u.central)) { const q = near(S, 'depot', S.camp.bat, 150, 450); IC.deploy(S, 'depot', q.x, q.y); } },
-    S => { const d = S.units.find(u => u.type === 'depot' && !u.central); d.profile = 'ad'; },
+    S => { const d = S.units.find(u => u.type === 'depot' && !u.central); d.pri = 'first'; },
     S => { const d = S.units.find(u => u.type === 'depot' && !u.central); IC.buyCompany(S, d); },
     S => { IC.heliResupply(S, S.camp.bat, true); }
   ],

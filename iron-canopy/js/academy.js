@@ -128,7 +128,7 @@ IC.LESSONS = [
   },
   {
     id: 'logi', title: 'Keep Them Fed', sub: 'Depots, truck companies, helicopters',
-    learn: ['Depot service areas', 'Stock profiles and truck companies', 'Helicopter resupply'],
+    learn: ['Depot service areas', 'Resupply priority and truck companies', 'Helicopter resupply'],
     setup(S) {
       depot(S);
       const t = borderTown(S);
@@ -142,11 +142,11 @@ IC.LESSONS = [
     },
     steps: [
       { text: S => `${S.camp.bat.name} near ${borderTown(S).name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
-      { text: () => 'A depot serves units inside its ring. Select it and set its stock profile to Air defense first.', done: S => S.units.some(u => u.type === 'depot' && !u.central && u.profile === 'ad') },
+      { text: () => 'A depot serves units inside its ring, and refills from the Central Depot. Select it and set its resupply priority to First: units in its area go to the front of the queue.', done: S => S.units.some(u => u.type === 'depot' && !u.central && u.pri === 'first') },
       { text: () => 'It came with two truck companies. Add a third from its panel: more trucks, more deliveries at once.', done: S => S.units.some(u => u.type === 'depot' && !u.central && S.vehicles.filter(v => v.home === u).length >= 3) },
       { text: S => `Trucks take time. For an emergency, select ${S.camp.bat.name} and press Air resupply (H): a helicopter flies missiles straight in.`, done: S => S.air.some(a => a.job && a.job.to === S.camp.bat) || S.camp.bat.mags.some(m => m.mag + m.store > 0) },
-      { text: S => `Now wait until ${S.camp.bat.name} is re-armed. Hover a convoy to see its job. (3 speeds things up.)`, done: S => IC.fill(S, S.camp.bat) > 0.4 },
-      { text: () => 'Re-armed. Set the network up once and it runs itself: depots, profiles and trucks. Lesson complete.', done: () => true, wait: 40 }
+      { text: S => `Now wait until ${S.camp.bat.name} is re-armed. Its panel says when the next load arrives; click a convoy to see its route. (3 speeds things up.)`, done: S => IC.fill(S, S.camp.bat) > 0.4 },
+      { text: () => 'Re-armed. Set the network up once and it runs itself: depots, priorities and trucks. Lesson complete.', done: () => true, wait: 40 }
     ]
   },
   {
