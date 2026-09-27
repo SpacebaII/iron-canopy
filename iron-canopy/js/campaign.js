@@ -116,12 +116,26 @@ function suggestions(S) {
 }
 IC.suggestions = suggestions;
 
+/* the first ballistic launch of a Quick war: the allies fly in ballistic missile defence at once, so the
+   player never has to face salvoes with nothing that can stop them */
+function bmdAid(S) {
+  if (S.story || S.flags.bmdAid) return;
+  S.flags.bmdAid = true;
+  S.tech.done.add('a_pac3'); S.tech.done.add('a_hatd');
+  S.reserve.hatd = (S.reserve.hatd || 0) + 1;
+  for (const u of S.units) for (const m of u.mags) if (m.mun === 'TBD') { m.mag = m.max; m.store = Math.max(m.store, Math.ceil(m.storeMax / 2)); }
+  const dep = IC.depots(S).find(d => d.central);
+  if (dep) { dep.inv.TBD = (dep.inv.TBD || 0) + 16; dep.inv.HAT = (dep.inv.HAT || 0) + 8; }
+  say(S, 'CDS', 'The allies are flying in ballistic missile defence tonight: BMD rounds for every LRSAM battery, and a High-Altitude BMD battery waiting in the reserve. Deploy it near what they aim at: air bases and the capital.');
+}
+IC.bmdAid = bmdAid;
+
 /* the staff react to what happens */
 IC.on((S, type, d) => {
   if (!S.camp || S.mode === 'academy') return;
   const once = (k, cool) => tip(S, k, cool == null ? 1e12 : cool);
   switch (type) {
-    case 'ballistic': if (once('bal')) say(S, 'ADA', 'Ballistic missile inbound. Only batteries with hit-to-kill rounds and the high-altitude tier can stop these. The impact point is marked; get what you can out of the way.'); break;
+    case 'ballistic': if (once('bal')) { say(S, 'ADA', 'Ballistic missile inbound. Only hit-to-kill rounds can stop these: the upper tier meets warheads 40–150 km up, BMD rounds in the LRSAM meet them below 35 km. The red ellipse is where it will land.'); bmdAid(S); } break;
     case 'arm': if (once('arm')) say(S, 'ADA', `Anti-radiation missile inbound on ${d.target ? d.target.name : 'one of our radars'}. Switch it to Silent and the missile loses its lock. Anything its radar was guiding will miss too.`); break;
     case 'baseHit': if (!d.runway && once('rwy')) say(S, 'ENG', `The runway at ${d.base.name} is cratered. Jets there cannot fly and returning flights will divert. My crews start on the runway automatically; select the base to add crews or rebuild hangars.`); if (d.acLost && once('acg', 3600)) say(S, 'AIR', `We lost ${d.acLost} aircraft on the ground at ${d.base.name}. Hardened shelters would have saved most of them.`); break;
     case 'unmasked': say(S, 'INT', `TN ${d.tn} was squawking as airliner ${d.cs}. It is a bomber. They will try that again: watch for airliners that leave their routes.`); break;

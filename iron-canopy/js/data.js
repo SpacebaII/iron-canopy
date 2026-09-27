@@ -10,10 +10,10 @@
 IC.MUN = {
   IR:  { name: 'IR missile', short: 'IR', seeker: 'IR', cost: 0.3, w: 0.25, prod: 300, range: 55, spd: 7, pk: 0.62, alt: [0, 4], vs: { drone: 1, heli: 1, cm: 0.6, air: 0.75, ga: 1 } },
   SR:  { name: 'Short-range missile', short: 'SR', seeker: 'CMD', cost: 0.8, w: 0.5, prod: 600, range: 120, spd: 9, pk: 0.78, alt: [0, 6], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 0.8, ga: 1 } },
-  MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 450, spd: 12, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 } },
-  LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 1000, spd: 15, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 } },
+  MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 450, spd: 12, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 }, hoj: true },
+  LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 1000, spd: 15, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 }, hoj: true },
   TBD: { name: 'Hit-to-kill BMD missile', short: 'BMD', seeker: 'HTK', cost: 6, w: 1.5, prod: 3000, range: 350, spd: 17, pk: 0.85, alt: [0, 35], vs: { bal: 1, cm: 1, air: 1, hgv: 0.45 } },
-  HAT: { name: 'High-altitude interceptor', short: 'HAT', seeker: 'HTK', cost: 14, w: 4, prod: 6000, range: 2000, spd: 26, pk: 0.85, alt: [35, 150], vs: { bal: 1, hgv: 0.55 } },
+  HAT: { name: 'High-altitude interceptor', short: 'HAT', seeker: 'HTK', cost: 14, w: 4, prod: 6000, range: 2000, spd: 26, pk: 0.85, alt: [40, 150], vs: { bal: 1, mid: 1, hgv: 0.55 } },
   EXO: { name: 'Exo-atmospheric interceptor', short: 'EXO', seeker: 'HTK', cost: 28, w: 6, prod: 10800, range: 5000, spd: 33, pk: 0.8, alt: [90, 700], vs: { mid: 1 } },
   AAM: { name: 'Radar air-to-air missile', short: 'AAM', seeker: 'ARH', cost: 0, w: 0, prod: 0, range: 450, spd: 13, pk: 0.72, alt: [0, 20], vs: { air: 1, drone: 1, cm: 0.8, heli: 1, ga: 1 }, air: true },
   CRS: { name: 'Land-attack cruise missile', short: 'CRS', cost: 3, w: 3, prod: 3000, range: 5000, spd: 2.6, dmg: 55, strike: true },
@@ -26,8 +26,8 @@ IC.MUN_TECH = { TBD: 'a_pac3', HAT: 'a_hatd', EXO: 'a_exo', CRS: 'x_glcm', SRB: 
 IC.SEEKER = {
   IR: 'Heat-seeking. Flares decoy it; rain and cloud cut its range.',
   CMD: 'Command-guided by the launcher\'s radar until impact.',
-  SARH: 'Semi-active: the battery\'s radar must illuminate the target until impact. Chaff and notching hurt it.',
-  ARH: 'Active radar seeker for the last seconds. Chaff and notching hurt it a little.',
+  SARH: 'Semi-active: the battery\'s radar must illuminate the target until impact. Chaff and notching hurt it. Can home on a jammer.',
+  ARH: 'Active radar seeker for the last seconds. Chaff and notching hurt it a little. Can home on a jammer.',
   HTK: 'Hit-to-kill interceptor for ballistic missiles.'
 };
 
@@ -182,7 +182,8 @@ IC.THR = {
   ftr:  { code: 'FTR',  name: 'Fighter', cls: 'air', klass: 'fighter', spd: 2.6, alt: 9, rcs: 4, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
   str:  { code: 'STK',  name: 'Strike aircraft', cls: 'air', klass: 'fighter', spd: 2.4, alt: 7, rcs: 5, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
   sead: { code: 'SEAD', name: 'SEAD aircraft', cls: 'air', klass: 'fighter', spd: 2.6, alt: 8, rcs: 4, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
-  ewj:  { code: 'EWJ',  name: 'Stand-off jammer', cls: 'air', klass: 'jammer', spd: 2, alt: 10, rcs: 12, hp: 3, move: 'air', emits: true, jam: true, cm: 4, mil: true },
+  ewj:  { code: 'EWJ',  name: 'Stand-off jammer', cls: 'air', klass: 'jammer', spd: 2, alt: 10, rcs: 12, hp: 3, move: 'air', emits: true, jam: 1, jamR: 3600, cm: 4, mil: true },
+  esj:  { code: 'ESJ',  name: 'Escort jammer drone', cls: 'drone', klass: 'jammer', spd: 2.4, alt: 1.5, rcs: 0.3, hp: 1, dmg: 0, move: 'wp', jam: 0.7, jamR: 1600, mil: true },
   bmr:  { code: 'BMR',  name: 'Missile-carrier bomber', cls: 'air', klass: 'bomber', spd: 2.2, alt: 11, rcs: 15, hp: 4, move: 'air', emits: true, cm: 4, mil: true },
   civ:  { code: 'CIV',  name: 'Airliner', cls: 'air', klass: 'airliner', spd: 2.3, alt: 11, rcs: 40, hp: 3, move: 'civ', civil: true },
   ga:   { code: 'GA',   name: 'Light civil aircraft', cls: 'ga', klass: 'light', spd: 0.55, alt: 1.5, rcs: 1.5, hp: 1, move: 'civ', civil: true }
