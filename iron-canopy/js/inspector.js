@@ -303,14 +303,69 @@ function base(b) {
   const tab = ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
   const tabs = `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
     ['build', 'Build', '', 'Parts, tools and materials'], ['works', `Works${nw + nd ? ` <em>${nw + nd}</em>` : ''}`, '', 'Engineering crews, work queued and repairs'],
-    ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here']])}</div>`;
+    ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here'], ['rules', 'Operations', '', 'The tower\'s rules: when aircraft may go onto a runway']])}</div>`;
   const body = tab === 'build' ? `<div class="sec"><h3 class="sh">Build <em>pick a part, then click the map</em></h3>${palette}</div>${st.warn.length ? warn : ''}`
     : tab === 'works' ? `<div class="sec"><h3 class="sh">Engineering <em>${b.works.filter(w => !w.wait).length}/${b.crews} crews working</em></h3>${yard(b)}${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
       ${reps ? `<h3 class="sh">Damage</h3><div class="list">${reps}</div>` : ''}
       <div class="acts"><button class="act" data-act="bwork" data-v="crew" ${S.budget < 20 ? 'disabled' : ''}>+ Crew · ₭20M</button><button class="act ${b.autoRepair ? 'on' : ''}" data-act="bauto">Auto-repair: ${b.autoRepair ? 'on' : 'off'}</button></div></div>`
+    : tab === 'rules' ? opsTab(b, st)
     : tab === 'ops' ? `${fee}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
     : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
   return H + tabs + `<div class="ibody">${body}</div>`;
+}
+/* ---------- the Operations tab: the tower's rules for this airport ---------- */
+/* the player edits a copy (ui.opsDraft) and sees what it would do to capacity before applying it */
+const ENTER_SHORT = { hold: 'Hold short', luaw: 'Line up and wait', luawDay: 'By day' };
+const draftOf = b => { const D = ui.opsDraft = ui.opsDraft || {}; if (!D[b.id] || D[b.id].base !== b.ops) D[b.id] = { base: b.ops, ops: IC.opsClone(IC.opsOf(b)) }; return D[b.id].ops; };
+const sameOps = (a, c) => JSON.stringify([a.r, a.rw]) === JSON.stringify([c.r, c.rw]);
+IC.opsAct = function (S2, b, ds) {
+  const d = draftOf(b), op = ds.op, v = ds.v;
+  if (op === 'preset') IC.opsPreset(d, v);
+  else if (op === 'enter') { d.r.enter[ds.k] = v; d.preset = 'custom'; }
+  else if (op === 'gap') { d.r.gap = +v; d.preset = 'custom'; }
+  else if (op === 'cross') { d.r.cross = v; d.preset = 'custom'; }
+  else if (op === 'inter') { d.r.inter = v; d.preset = 'custom'; }
+  else if (op === 'rw') { if (v) d.rw[ds.k] = v; else delete d.rw[ds.k]; }
+  else if (op === 'reset') ui.opsDraft[b.id] = null;
+  else if (op === 'apply') {
+    b.ops = IC.opsClone(d); ui.opsDraft[b.id] = null; IC.aptStats(S2, b);
+    const P = IC.OPS_PRESETS[b.ops.preset];
+    IC.log(S2, 'info', 'AIRPORT', `${b.name}: the tower now works to ${P ? `the ${P.name} rules` : 'your own rules'}: an arrival gap of ${b.ops.r.gap} km. ${b.st.depPerHour} departures and ${b.st.arrPerHour} arrivals an hour.`, b);
+  }
+};
+function opsTab(b, st) {
+  const cur = IC.opsOf(b), d = draftOf(b), changed = !sameOps(cur, d), R = d.r;
+  const now = IC.opsCapacity(S, b, st, cur), next = changed ? IC.opsCapacity(S, b, st, d) : now;
+  const num = (a, c) => a === c ? `<b>${a}</b>` : `<b>${a}</b> now, <b class="${c < a ? 'amber' : 'ok'}">${c}</b> with these rules`;
+  const kp = b.kpi || {}, gaH = (b.gaLog || []).filter(t => S.time - t < 3600).length;
+  const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id).length;
+  const rwNames = st.rwy.filter(r => r.role !== 'spare');
+  const queue = rwNames.map(r => { const k = r.grp; let n = 0, why = ''; for (const m of b.moves) if (m.kind === 'dep' && m.plan && !m.dead && (IC.aptGraph(b).grp[m.plan.rw.id] || m.plan.rw.id) === k && (m.holding || m.phase === 'hold' || m.phase === 'wait')) { n++; if (!why && m.holdWhy && m.holding !== 'queue') why = m.holdWhy; } return { r, n, why }; });
+  const fig = `<div class="kpis">
+    <div><small>Go-arounds, last hour</small><b class="${gaH ? 'amber' : ''}">${gaH}</b></div>
+    <div><small>Go-arounds in all</small><b>${kp.ga || 0}</b></div>
+    <div><small>Losses of separation</small><b class="${kp.lossSep ? 'hostile' : ''}">${kp.lossSep || 0}</b></div>
+    <div><small>Avg delay</small><b class="${kp.wait > 600 ? 'amber' : ''}">${U.dur(kp.wait || 0)}</b></div>
+    <div><small>Arrivals holding</small><b class="${hold ? 'amber' : ''}">${hold}</b></div>
+    <div><small>Incursions</small><b class="${kp.inc ? 'amber' : ''}">${kp.inc || 0}</b></div></div>`;
+  const qSec = queue.length ? `<div class="sec"><h3 class="sh">Waiting to depart</h3>${queue.map(q => `<div class="rwrow ${q.r.role}"><b>${esc(q.r.end)}</b><span>${q.n ? `${q.n} waiting${q.why ? ` · first: ${esc(q.why)}` : ''}` : 'no queue'}</span><em>${esc(IC.OPS_PRESETS[cur.rw[q.r.id]] ? IC.OPS_PRESETS[cur.rw[q.r.id]].name : '')}</em></div>`).join('')}</div>` : '';
+  const effect = `<div class="now ${changed ? 'busy' : 'ok'}"><div>Departures an hour: ${num(now.dep, next.dep)}.<br>Arrivals an hour: ${num(now.arr, next.arr)}.${IC.opsNotes(S, b, st, d).map(t => `<br><span class="amber">${esc(t)}</span>`).join('')}</div></div>`;
+  const presets = seg('ops', d.preset, Object.entries(IC.OPS_PRESETS).map(([k, P]) => [k, P.name, '', P.text]), true).replace(/data-act="ops"/g, 'data-act="ops" data-op="preset"');
+  const pick = (op, cur2, opts, k) => seg('ops', cur2, opts).replace(/data-act="ops"/g, `data-act="ops" data-op="${op}"${k ? ` data-k="${k}"` : ''}`);
+  const kinds = IC.OPS_KINDS.map(([k, name]) => `<div class="oprow"><b>${esc(name)}</b>${pick('enter', R.enter[k], Object.entries(IC.OPS_ENTER).map(([v, E]) => [v, ENTER_SHORT[v], '', `${name}, ${E.name.toLowerCase()}: ${E.text}`]), k)}</div>`).join('');
+  const enterHelp = `<p class="hint"><b>Hold short</b>: ${esc(IC.OPS_ENTER.hold.text)} <b>Line up and wait</b>: ${esc(IC.OPS_ENTER.luaw.text)}Military scrambles always go first.</p>`;
+  const gapSec = `${pick('gap', String(R.gap), IC.OPS_GAPS.map(g => [String(g), `${g} km`, g <= 4 ? 'amb' : '', `The next arrival must be at least ${g} km out when a departure starts its take-off run.`]))}
+    <p class="hint">How far out the next arrival must be when a departure starts to roll, or an aircraft crosses. A shorter gap fits more departures between arrivals, and sends more arrivals around when a departure is slow to go.</p>`;
+  const crossSec = `${pick('cross', R.cross, Object.entries(IC.OPS_CROSS).map(([v, C]) => [v, v === 'gap' ? 'Within the gap' : 'Twice the gap in the dark', '', C.text]))}<p class="hint">${esc(IC.OPS_CROSS[R.cross].text)}</p>`;
+  const interSec = `${pick('inter', R.inter, Object.entries(IC.OPS_INTER).map(([v, I]) => [v, I.name, '', I.text]))}<p class="hint">${esc(IC.OPS_INTER[R.inter].text)}</p>`;
+  const rwSec = rwNames.length > 1 ? `<div class="sec"><h3 class="sh">By runway <em>a runway can keep its own preset</em></h3>${rwNames.map(r => `<div class="oprow"><b>Runway ${esc(r.end)}</b>${pick('rw', d.rw[r.id] || '', [['', 'Airport rules', '', 'The rules above']].concat(Object.entries(IC.OPS_PRESETS).map(([k, P]) => [k, P.name, '', P.text])), r.id)}</div>`).join('')}</div>` : '';
+  const acts = changed ? `<div class="acts"><button class="act pri" data-act="ops" data-op="apply">Apply these rules</button><button class="act" data-act="ops" data-op="reset">Keep the current rules</button></div>` : '';
+  return `<div class="sec"><h3 class="sh">Tower rules <em>when aircraft may go onto a runway</em></h3>${presets}<p class="hint">${esc(IC.OPS_PRESETS[d.preset] ? IC.OPS_PRESETS[d.preset].text : 'Rules you have set yourself.')}</p>${effect}${acts}</div>
+    <div class="sec"><h3 class="sh">Going onto the runway to depart</h3>${kinds}${enterHelp}</div>
+    <div class="sec"><h3 class="sh">Arrival gap</h3>${gapSec}</div>
+    <div class="sec"><h3 class="sh">Runway crossings</h3>${crossSec}</div>
+    <div class="sec"><h3 class="sh">Intersection departures</h3>${interSec}</div>
+    ${rwSec}${qSec}<div class="sec"><h3 class="sh">What the rules have cost</h3>${fig}</div>`;
 }
 /* the build palette: parts, big-airport tools, and the choices they are built with */
 function buildPalette(b, civil) {

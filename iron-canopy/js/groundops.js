@@ -85,22 +85,77 @@ IC.aptConfig = function (S, ap) {
 };
 const cfgOf = (S, ap) => IC.aptConfig(S, ap);
 
+/* ---------- the tower's rules: when an aircraft may go onto a runway ---------- */
+/* the player sets them per airport (ap.ops), with an optional preset per runway. By kind of aircraft, how a
+   departure goes onto the runway; how far out the next arrival must be; crossings; intersection departures. */
+IC.OPS_KINDS = [['light', 'Light and club aircraft'], ['turbo', 'Turboprops and regional jets'], ['jet', 'Airliners'], ['heavy', 'Heavies'], ['mil', 'Military']];
+const KIND_OF = { light: 'light', turbo: 'turbo', narrow: 'jet', wide: 'heavy', cargo: 'heavy' };
+IC.opsKind = (type, T) => (T || IC.ACTYPES[type]).mil ? 'mil' : KIND_OF[type] || 'jet';
+IC.OPS_ENTER = {
+  hold: { name: 'Only when cleared for take-off', text: 'The aircraft waits at the hold-short line until the runway is empty and the next arrival is beyond the gap, then goes straight into its take-off. Safest; a queue of departures moves about 25 s slower each.' },
+  luaw: { name: 'Line up and wait', text: 'The aircraft goes onto the runway behind a departure that is still rolling, lines up and waits there to be cleared for take-off. It saves the line-up time; in the dark, an aircraft waiting on the runway is easy for the tower to lose.' },
+  luawDay: { name: 'Line up and wait by day', text: 'Line up and wait by day in good visibility; at night and in fog, wait at the hold-short line.' }
+};
+IC.OPS_GAPS = [4, 6, 8, 10];
+IC.OPS_CROSS = { gap: { name: 'When no arrival is within the gap', text: 'Aircraft cross a runway only when the next arrival is at least the gap away.' },
+  radar: { name: 'Only a ground radar may shorten it', text: 'As above; at night and in fog, where no ground radar watches the runways, crossings wait for twice the gap.' } };
+IC.OPS_INTER = { none: { name: 'Never', text: 'Every departure starts from the runway end: the longest take-off run, and more taxiing.' },
+  small: { name: 'Small aircraft', text: 'Light aircraft, turboprops and fighters may start from a taxiway part way down the runway when enough runway is left for them. This saves taxi time.' },
+  all: { name: 'Every aircraft', text: 'Any aircraft may start part way down the runway when enough runway is left for its type. Less taxiing, less margin.' } };
+IC.OPS_PRESETS = {
+  cautious: { name: 'Cautious', text: 'Everyone but light aircraft holds short until cleared; a 10 km gap; no intersection departures.',
+    r: { enter: { light: 'luawDay', turbo: 'hold', jet: 'hold', heavy: 'hold', mil: 'hold' }, gap: 10, cross: 'radar', inter: 'none' } },
+  standard: { name: 'Standard', text: 'Light aircraft and military line up and wait, turboprops by day; airliners and heavies hold short until cleared; an 8 km gap.',
+    r: { enter: { light: 'luaw', turbo: 'luawDay', jet: 'hold', heavy: 'hold', mil: 'luaw' }, gap: 8, cross: 'gap', inter: 'small' } },
+  busy: { name: 'Busy hub', text: 'Everyone lines up and waits by day; a 6 km gap; intersection departures for every aircraft.',
+    r: { enter: { light: 'luaw', turbo: 'luawDay', jet: 'luawDay', heavy: 'luawDay', mil: 'luaw' }, gap: 6, cross: 'gap', inter: 'all' } }
+};
+const cloneR = r => ({ enter: Object.assign({}, r.enter), gap: r.gap, cross: r.cross, inter: r.inter });
+/* the airport's rules (a copy may be edited in the panel before it is applied) */
+IC.opsOf = ap => ap.ops || (ap.ops = { preset: 'standard', r: cloneR(IC.OPS_PRESETS.standard.r), rw: {} });
+IC.opsPreset = (ops, name) => { const P = IC.OPS_PRESETS[name]; if (P) { ops.preset = name; ops.r = cloneR(P.r); } return ops; };
+IC.opsClone = ops => ({ preset: ops.preset, r: cloneR(ops.r), rw: Object.assign({}, ops.rw) });
+/* the rules on one runway: its own preset if it has one, else the airport's */
+const rulesOf = (ops, rwId) => { const p = ops && ops.rw && rwId && ops.rw[rwId]; return p && IC.OPS_PRESETS[p] ? IC.OPS_PRESETS[p].r : ops ? ops.r : IC.OPS_PRESETS.standard.r; };
+IC.opsRules = (ap, rwId, ops) => rulesOf(ops || IC.opsOf(ap), rwId);
+const dark = S => { const h = ((S.time % 86400) + 86400) % 86400 / 3600; return h < 5.5 || h > 20.5; };
+IC.opsDark = S => dark(S) || IC.needILS(S);
+/* how this aircraft goes onto its runway right now: 'hold' (only when cleared for take-off) or 'luaw' */
+IC.opsEnter = (S, R, type, T) => { const e = R.enter[IC.opsKind(type, T)] || 'hold'; return e === 'luawDay' ? (S && IC.opsDark(S) ? 'hold' : 'luaw') : e; };
+const smallT = T => T.rwy <= 13;
+IC.opsInterOk = (R, T) => R.inter === 'all' || (R.inter === 'small' && smallT(T));
+/* timings: 1 km out an arrival needs the runway empty or it goes around; it flies the final at ARR_V; a departure
+   cleared for take-off from the hold-short line turns onto the runway and rolls (ROLLING s), one that lines up and
+   waits stops there (LINE s); crews take CREW s on average to start the roll once cleared */
+const GO = 10, ARR_V = 0.95, ROLLING = 12, LINE = 25, CREW = 5, PATIENCE = 120;
+IC.OPS_T = { GO, ARR_V, ROLLING, LINE, CREW, PATIENCE };
+
 /* ---------- runway locks: one per group of runways that depend on each other ---------- */
 const keyOf = (ap, rwId) => G(ap).grp[rwId] || rwId;
-const lockOf = (ap, k) => (ap.rl = ap.rl || {})[k] || (ap.rl[k] = { by: null, next: 0 });
+/* by: the aircraft on (or cleared onto) the runways, with: others sharing them (a crossing, a departure lining up
+   behind one rolling); next: the earliest a departure may roll (wake turbulence); fin: the arrival on final;
+   nextA: the earliest the next arrival may start its final; gapFor: a departure the tower holds arrivals for */
+const lockOf = (ap, k) => (ap.rl = ap.rl || {})[k] || (ap.rl[k] = { by: null, next: 0, nextA: 0, fin: null });
 /* who goes first when several want the same runways: scrambles, then arrivals (military first), then departures */
 const prioOf = m => m.scramble ? 4 : m.kind === 'arr' ? (m.mil ? 3 : 2) : m.mil ? 1 : 0;
+const moveOf = (ap, id) => { for (const x of ap.moves) if (x.id === id) return x; return null; };
 /* cross: the hold line an aircraft crossing the runway waits at. Aircraft at the same line cross together, and a
-   crossing needs no wake-turbulence gap (the next take-off or landing still waits for it). */
-function canTake(S, ap, k, m, cross) {
+   crossing needs no wake-turbulence gap (the next take-off still waits for it). luaw: a departure may go on behind
+   one that is rolling, and before the wake gap has passed. */
+function canTake(S, ap, k, m, cross, luaw) {
   const L = lockOf(ap, k);
   if (L.by === m.id || (L.with && L.with.has(m.id))) return true;
-  if (L.by) return !!(cross && L.cross === cross && S.time < L.xT);
-  if (!cross && S.time < L.next) return false;
+  if (L.by) {
+    if (cross) return L.cross === cross && S.time < L.xT;
+    if (!luaw || (L.with && L.with.size)) return false;
+    const o = moveOf(ap, L.by);
+    if (!o || o.kind !== 'dep' || o.phase !== 'roll') return false;
+  }
+  if (!cross && !luaw && S.time < L.next) return false;
   if (ap.closedT && S.time < ap.closedT && !m.mil) return false;
   // someone more urgent is waiting for these runways, unless we have waited a long time
   const w = ap.want && ap.want[k];
-  if (w && S.time - w.t < 8 && w.p > prioOf(m) && (m.waitT || 0) < 300) return false;
+  if (w && S.time - w.t < 8 && w.p > prioOf(m) && (m.waitT || 0) < PATIENCE) return false;
   return true;
 }
 function wantIt(S, ap, k, m) { const W = ap.want = ap.want || {}, w = W[k], p = prioOf(m); if (!w || S.time - w.t >= 8 || p >= w.p) W[k] = { p, t: S.time }; }
@@ -112,17 +167,77 @@ function take(ap, k, m, cross, now) {
 }
 /* after an arrival the next may follow once it has cleared; after a departure, wake turbulence needs a full gap */
 const sepOf = (ap, m) => IC.aptSep(ap.st || {}) * (m.kind === 'arr' ? 0.5 : 1);
-function release(S, ap, k, m, sep) {
+/* sepA: the gap before the next arrival may start its final (none after a take-off where a tower watches) */
+function release(S, ap, k, m, sep, sepA) {
   const L = lockOf(ap, k);
   if (L.with && L.with.has(m.id)) L.with.delete(m.id);
   else if (L.by === m.id) {
     if (L.with && L.with.size) { const n = L.with.values().next().value; L.with.delete(n); L.by = n; }
     else { L.by = null; L.cross = null; }
     L.next = Math.max(L.next, S.time + (sep || 0));
+    L.nextA = Math.max(L.nextA || 0, S.time + (sepA || 0));
   }
+  if (L.gapFor === m.id) L.gapFor = null;
   if (m.locks) delete m.locks[k];
 }
-IC.rwBusy = (S, ap, rwId) => { const L = lockOf(ap, keyOf(ap, rwId)); return !!L.by || S.time < L.next; };
+IC.rwBusy = (S, ap, rwId) => { const L = lockOf(ap, keyOf(ap, rwId)); return !!L.by || !!L.fin || S.time < L.next; };
+
+/* ---------- the next arrivals, as the tower sees them ---------- */
+/* every arrival coming to these runways: its distance from touchdown now (world units), and whether it is waiting
+   at the approach fix (it then starts its final when the tower clears it) */
+function arrivals(S, ap, k) {
+  const out = [];
+  for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) out.push({ d: Math.max(0, FAF * (1 - m.t / (FAF / ARR_V))), m });
+  const q = ap.fafQ; if (!q) return out;
+  for (const x of q) {
+    if (x.done || S.time - x.t > 1800 || keyOf(ap, x.rw) !== k) continue;
+    if (x.backT > S.time) out.push({ d: FAF + (x.backT - S.time) * ARR_V, x });
+    else if (x.askT && S.time - x.askT < 12) { if (!(x.jamT && S.time - x.jamT < 12)) out.push({ d: FAF, wait: true, x }); }
+    else if (x.o && !x.o.dead && x.fx != null) {
+      // one circling at the fix without asking (no stand for it yet) is not coming in
+      const d = U.dxy(x.o.x, x.o.y, x.fx, x.fy);
+      if (d > 20 || !x.askT) out.push({ d: FAF + d, x });
+    }
+  }
+  return out;
+}
+/* the closest any arrival will be in t seconds (holders counted as starting their final now, unless held) */
+function arrNear(S, ap, k, t, heldToo) {
+  let best = 1e9;
+  for (const a of arrivals(S, ap, k)) { if (a.wait && !heldToo) continue; best = Math.min(best, a.d - ARR_V * t); }
+  return best;
+}
+/* the closest an arrival already on its final will be in t seconds */
+function finNear(ap, k, t) { let best = 1e9; for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) best = Math.min(best, FAF * (1 - m.t / (FAF / ARR_V)) - ARR_V * t); return best; }
+/* how long until an aircraft on the runways is off them, as the tower expects it */
+function clearIn(S, ap, o, k) {
+  if (o.kind === 'arr') return 1e9;
+  if (o.cross) return 25;
+  const R = rollT(o.T), L = lockOf(ap, k);
+  if (o.phase === 'roll') return Math.max(0, (o.delay || 0)) + Math.max(0, R * (1 - (o.rolled || 0) / (o.T.rwy * 0.6)));
+  const line = o.phase === 'lineup' ? Math.max(0, o.t) : o.phase === 'wait' ? 0 : ROLLING + 8;
+  return Math.max(line, L.next - S.time) + CREW + R;
+}
+const rollT = T => 2 * T.rwy * 0.6 / LIFT;
+/* what a set of rules will cost at this airport, in plain sentences (the Operations tab shows them before applying) */
+IC.opsNotes = function (S, ap, st, ops) {
+  const out = [];
+  const types = Object.keys(st.mix || {}).filter(k => IC.ACTYPES[k] && !IC.ACTYPES[k].vtol);
+  // where arrivals and departures share a runway: who is too slow off the runway for the gap
+  const shared = (st.rwy || []).filter(r => r.role === 'mixed');
+  if (shared.length) {
+    const R = IC.opsRules(ap, shared[0].id, ops), room = (R.gap * 10 - GO) / ARR_V;
+    const slow = [...new Set(types.filter(k => rollT(IC.ACTYPES[k]) + CREW > room).map(k => IC.opsKind(k)))];
+    if (slow.length) out.push(`With a ${R.gap} km gap, ${slow.map(k => IC.OPS_KINDS.find(x => x[0] === k)[1].toLowerCase()).join(' and ')} are often still on the runway when the next arrival is 1 km out: expect go-arounds.`);
+  }
+  // only the kinds of civil aircraft that fly here count
+  const kinds = [...new Set(types.filter(k => !IC.ACTYPES[k].mil).map(k => IC.opsKind(k)))];
+  const luawIn = r => kinds.some(k => r.enter[k] === 'luaw');
+  const R0 = ops.r, anyLuaw = luawIn(R0) || Object.values(ops.rw || {}).some(p => IC.OPS_PRESETS[p] && luawIn(IC.OPS_PRESETS[p].r));
+  if (anyLuaw && !st.gradar && ap.kind !== 'airbase') out.push('Aircraft line up and wait at night too, and there is no ground radar: one waiting on the runway in the dark can be forgotten. "By day" or a ground radar removes this risk.');
+  if (st.complex && !st.gradar && R0.gap <= 6 && R0.cross === 'gap') out.push(`Crossings with arrivals only ${R0.gap} km out, and no ground radar: more runway incursions at night.`);
+  return out;
+};
 
 /* ---------- time reservations on taxiways ---------- */
 function resList(ap, key) { ap.res = ap.res || new Map(); let L = ap.res.get(key); if (!L) { L = []; ap.res.set(key, L); } return L; }
@@ -255,10 +370,12 @@ function planDeparture(S, ap, m, dry) {
     // departures belong on departure runways; an arrival runway is used only when nothing else fits;
     // and they spread over the departure runways by the queue each already has
     const role = (c.role === 'dep' || c.role === 'mixed' ? 0 : c.role === 'arr' ? 3000 : 5000) + depQueue(ap, keyOf(ap, rw.id)) * 120;
-    // any point on the runway will do as a start, even one reached by backtracking along it from a taxiway
+    // any point on the runway will do as a start, even one reached by backtracking along it from a taxiway; part way
+    // down the runway (an intersection departure) only where the rules allow it for this type
+    const full = IC.opsInterOk(IC.opsRules(ap, rw.id), T) ? 0 : fullRoom(rw, g, dir, need) - 3;
     for (const n of g.rwn.get(rw.id) || []) {
       const room = dir > 0 ? L - n.s : n.s;
-      if (room < need || !clearRun(rw, n.s, n.s + dir * need)) continue;
+      if (room < need || room < full || !clearRun(rw, n.s, n.s + dir * need)) continue;
       const cost = n.id === m.node ? 0 : tree.dist.get(n.id);
       if (cost == null) continue;
       // the tower balances the departure runways: a longer taxi is worth it to skip a queue
@@ -267,6 +384,12 @@ function planDeparture(S, ap, m, dry) {
     }
   }
   if (best) best.p = { cost: best.cost, steps: best.start.id === m.node ? [] : IC.aptSteps(tree, m.node, best.start.id) };
+  return best;
+}
+/* the longest take-off run any point on this runway offers in this direction */
+function fullRoom(rw, g, dir, need) {
+  const L = IC.rwLen(rw); let best = 0;
+  for (const n of g.rwn.get(rw.id) || []) { const room = dir > 0 ? L - n.s : n.s; if (room > best && clearRun(rw, n.s, n.s + dir * need)) best = room; }
   return best;
 }
 function depQueue(ap, k) { let n = 0; for (const x of ap.moves) if (x.kind === 'dep' && x.plan && x.phase !== 'start' && x.phase !== 'push' && keyOf(ap, x.plan.rw.id) === k) n++; return n; }
@@ -300,8 +423,10 @@ function landPlan(ap, rw, dir, T, strip, exits) {
   return { touch, stop, cands: ahead.slice(0, 3).concat(behind.slice(0, 2)) };
 }
 const rollTime = (T) => 2 * T.rwy * 0.5 / (TOUCH + RWTAXI);
-/* how long an arrival or a departure holds its runways, for this type, in seconds (the panel shows the same) */
-IC.rwOcc = function (S, ap, rw, dir, T) {
+/* how long an arrival or a departure holds its runways, for this type, in seconds (the panel shows the same).
+   R: the rules to judge by (the runway's own by default). dep: from the hold-short line to lift-off, cleared for
+   take-off; E: the part of it spent getting to the start of the take-off (with any backtracking); roll: the run. */
+IC.rwOcc = function (S, ap, rw, dir, T, R) {
   const g = G(ap), L = IC.rwLen(rw), nodes = g.rwn.get(rw.id) || [];
   let land = 1e9;
   for (const strip of IC.rwStrips(rw)) {
@@ -309,20 +434,22 @@ IC.rwOcc = function (S, ap, rw, dir, T) {
     const P = landPlan(ap, rw, dir, T, strip, nodes.filter(n => n.exit));
     for (const n of P.cands) {
       const back = (n.s - P.stop) * dir < 0;
-      const t = FAF / 0.95 + rollTime(T) + Math.abs(n.s - P.stop) / RWTAXI + (back ? 60 : 0) + CLEAR / TAXI;
+      const t = FAF / ARR_V + rollTime(T) + Math.abs(n.s - P.stop) / RWTAXI + (back ? 60 : 0) + CLEAR / TAXI;
       land = Math.min(land, t);
     }
   }
-  let dep = 1e9;
-  const need = T.rwy * 1.05 + 1, entries = nodes.filter(n => n.entry), roll = HOLD / TAXI + (T.mil ? 10 : 25) + 2 * T.rwy * 0.6 / LIFT;
+  R = R || IC.opsRules(ap, rw.id);
+  let E = 1e9;
+  const need = T.rwy * 1.05 + 1, entries = nodes.filter(n => n.entry), full = IC.opsInterOk(R, T) ? 0 : fullRoom(rw, g, dir, need) - 3;
   for (const n of nodes) {
     const room = dir > 0 ? L - n.s : n.s;
-    if (!entries.length || room < need || !clearRun(rw, n.s, n.s + dir * need)) continue;
+    if (!entries.length || room < need || room < full || !clearRun(rw, n.s, n.s + dir * need)) continue;
     // with no taxiway to where the take-off starts, it backtracks along the runway from the nearest entry
     const back = n.entry ? 0 : Math.min(...entries.map(x => Math.abs(x.s - n.s))) / RWTAXI + 30;
-    dep = Math.min(dep, roll + back);
+    E = Math.min(E, HOLD / TAXI + back);
   }
-  return { land, dep };
+  const roll = rollT(T), line = T.mil ? ROLLING / 2 : ROLLING;
+  return { land, dep: E < 1e8 ? E + line + CREW + roll : 1e9, E, roll, line };
 };
 function planArrival(S, ap, T, target, pref, mil) {
   const g = G(ap), cfg = cfgOf(S, ap), imc = IC.needILS(S) && !mil;
@@ -357,7 +484,7 @@ function planArrival(S, ap, T, target, pref, mil) {
 }
 /* where an arriving aircraft should start its final approach. Like an arrival manager: each aircraft goes to the
    arrival runway that will have it on the ground soonest, given the aircraft already sent there. */
-IC.gopsFaf = function (S, ap, type) {
+IC.gopsFaf = function (S, ap, type, who) {
   const T = IC.ACTYPES[type], cfg = cfgOf(S, ap), imc = IC.needILS(S) && !T.mil, g = G(ap);
   const fit = runways(ap).filter(r => cfg.rw[r.id] && IC.rwUsable(r) >= T.rwy && !IC.rwWindBlock(S, r, cfg.rw[r.id].dir, T) && (!imc || IC.rwHasILS(ap, r, cfg.rw[r.id].dir)));
   if (!fit.length) return null;
@@ -367,32 +494,39 @@ IC.gopsFaf = function (S, ap, type) {
   const role = r => cfg.rw[r.id].role === 'arr' || cfg.rw[r.id].role === 'mixed' ? 0 : 1e5;
   fit.sort((a, b) => (role(a) + when(a)) - (role(b) + when(b)));
   const rw = fit[0];
-  const entry = { t: S.time, rw: rw.id, type };
-  q.push(entry);
   const dir = cfg.rw[rw.id].dir, d = IC.rwDir(rw), th = dir > 0 ? rw.a : rw.b;
-  return { x: th.x - d.x * dir * FAF, y: th.y - d.y * dir * FAF, rw, rwId: rw.id, q: entry };
+  // the tower follows the aircraft (who) in to the fix, to know how far out the next arrival is
+  const entry = { t: S.time, rw: rw.id, type, o: who || null, fx: th.x - d.x * dir * FAF, fy: th.y - d.y * dir * FAF };
+  q.push(entry);
+  return { x: entry.fx, y: entry.fy, rw, rwId: rw.id, q: entry };
 };
-/* an aircraft at the approach fix asks to land. o: { type, target (node id), stand, faf, onPark(m), onDead(m), who, mil }.
-   Returns the move when cleared, 'hold' when it must wait, or 'divert' when it can never land here. */
+/* an aircraft at the approach fix asks to land. o: { type, target (node id), stand, faf, onPark(m), onDead(m),
+   onGoAround(m), who, mil }. Returns the move when cleared, 'hold' when it must wait, or 'divert' when it can never
+   land here. The runway itself is taken 1 km out; if it is still occupied then, the arrival goes around. */
 IC.gopsLand = function (S, ap, o) {
   const T = IC.ACTYPES[o.type];
   if (!ap.st || (ap.st.longest || 0) < T.rwy) return 'divert';
   const plan = planArrival(S, ap, T, o.target, o.faf && o.faf.rwId, o.mil);
   if (!plan) return 'divert';
-  const k = keyOf(ap, plan.rw.id);
+  const k = keyOf(ap, plan.rw.id), q = o.faf && o.faf.q;
+  // an aircraft arriving straight in is on a continuous approach; one that has been told to hold is cleared again
+  // only when the runway will be free for it
+  const straight = !(q && q.askT);
+  if (q) q.askT = S.time;
   const probe = { id: 'probe', kind: 'arr', mil: o.mil, waitT: 0 };
   // not while an aircraft sits in the exit it will need, waiting to come the other way onto the runway
-  if (plan.out && plan.out.kind !== 'apron' && occList(ap, plan.out.key).some(x => x.d !== plan.out.d && !x.m.dead)) return 'hold';
-  if (!canTake(S, ap, k, probe)) { wantIt(S, ap, k, probe); return 'hold'; }
+  // (departures do not wait for it meanwhile: they are what it waits for)
+  if (plan.out && plan.out.kind !== 'apron' && occList(ap, plan.out.key).some(x => x.d !== plan.out.d && !x.m.dead)) { if (q) q.jamT = S.time; return 'hold'; }
+  if (!arrClear(S, ap, k, probe, straight)) { wantIt(S, ap, k, probe); return 'hold'; }
   const m = newMove(S, ap, Object.assign({ kind: 'arr' }, o));
-  take(ap, k, m, null, S.time);
-  if (o.faf && o.faf.q) o.faf.q.done = true;
+  lockOf(ap, k).fin = m.id; m.finK = k;
+  if (q) q.done = true;
   m.plan = plan; m.phase = 'final';
   const d = IC.rwDir(plan.rw), dir = plan.dir, th = IC.rwAt(plan.rw, plan.touch / IC.rwLen(plan.rw));
   m.fx = th.x - d.x * dir * FAF; m.fy = th.y - d.y * dir * FAF; m.tx = th.x; m.ty = th.y;
   m.x = m.fx; m.y = m.fy; m.h = Math.atan2(d.y * dir, d.x * dir); m.t = 0; m.alt = 0.6;
   // plan the taxi in now, so taxiways are booked for when it turns off
-  const tIn = S.time + FAF / 0.95 + rollTime(T) + plan.rwTime;
+  const tIn = S.time + FAF / ARR_V + rollTime(T) + plan.rwTime;
   const p = IC.aptSearch(ap, plan.exit.id, { to: o.target, avoidRwy: true, res: { m, t0: tIn } });
   if (p.dist.has(o.target)) { m.inPath = IC.aptSteps(p, plan.exit.id, o.target); reserve(S, ap, m, m.inPath, tIn); }
   // and it keeps its exit clear of oncoming traffic until it is through
@@ -400,6 +534,29 @@ IC.gopsLand = function (S, ap, o) {
   if (ex && ex.kind !== 'apron') preOccupy(ap, m, ex);
   return m;
 };
+/* may an arrival start its final approach now? One arrival on final at a time, spaced after the last; one that has
+   been holding also waits until whoever is on the runway will be off it before it is 1 km out */
+function arrClear(S, ap, k, m, straight) {
+  const L = lockOf(ap, k);
+  if (ap.closedT && S.time < ap.closedT && !m.mil) return false;
+  if (L.fin && moveOf(ap, L.fin)) return false;
+  if (S.time < (L.nextA || 0)) return false;
+  const w = ap.want && ap.want[k];
+  if (w && S.time - w.t < 8 && w.p > prioOf(m)) return false;
+  const on = L.by ? [L.by].concat(L.with ? [...L.with] : []) : [];
+  const tGo = (FAF - GO) / ARR_V;
+  for (const id of on) {
+    const x = moveOf(ap, id); if (!x) continue;
+    if (x.kind === 'arr') return false;
+    // behind a departure already on its take-off run the gap rule below decides (a tight gap can send it round)
+    if (!straight && x.phase !== 'roll' && clearIn(S, ap, x, k) > tGo) return false;
+  }
+  // a departure the tower has promised a gap to goes first: arrivals reaching the fix are held for it
+  if (L.gapFor && moveOf(ap, L.gapFor)) return false;
+  // none starts its final sooner than if it had been the gap away when the last departure started its run
+  if (L.runT && S.time < L.runT + Math.max(0, (L.runGap || 0) - FAF) / ARR_V) return false;
+  return true;
+}
 
 /* ---------- per-tick movement ---------- */
 function stepTaxi(S, ap, m, dt) {
@@ -413,7 +570,7 @@ function stepTaxi(S, ap, m, dt) {
     if (!m.onEdge) {
       // a runway edge needs the runway before we move at all; the approach to a runway stops at the hold-short line
       if (needLock && (e.kind === 'rwy' || e.len <= HOLD + 0.05)) {
-        if (!holdShort(S, ap, m, k, budget, crossKey(m, st, e))) return;
+        if (!holdShort(S, ap, m, k, budget, crossKey(m, st, e), rwId)) return;
       }
       const why = enterWhy(S, ap, m, st, e);
       if (why) {
@@ -441,7 +598,7 @@ function stepTaxi(S, ap, m, dt) {
     if (adv <= 1e-6) {
       if (m.s >= lim - 1e-6 && lim < e.len) {
         // at the hold-short line: wait for the runway, then go
-        if (!holdShort(S, ap, m, k, budget, crossKey(m, st, e))) return;
+        if (!holdShort(S, ap, m, k, budget, crossKey(m, st, e), rwId)) return;
         continue;
       }
       // queueing behind the aircraft ahead
@@ -468,29 +625,87 @@ function crossKey(m, st, e) { const nx = m.path[m.pi + 1]; return e.kind !== 'rw
 /* the step by which an aircraft about to go onto a runway will leave it again (none for a departure) */
 function exitStep(m) { let j = m.pi + 1; while (m.path[j] && m.path[j].e.kind === 'rwy') j++; return m.path[j] || null; }
 /* waiting at the hold-short line for a runway; true once cleared onto it */
-function holdShort(S, ap, m, k, dt, cross) {
+function holdShort(S, ap, m, k, dt, cross, rwId) {
   // never go onto a runway unless the way off it is clear of oncoming traffic
   const ex = exitStep(m), e2 = ex && edgeNow(ap, ex);
-  let clear = true;
+  let why = '';
   if (e2 && e2.kind !== 'apron') {
     const w2 = enterWhy(S, ap, m, ex, e2);
     if (w2 === 'opp' || w2 === 'claim') {
-      clear = false; m.crossBlk = (m.crossBlk || 0) + dt;
+      why = 'traffic on the far side'; m.crossBlk = (m.crossBlk || 0) + dt;
       // kept waiting: find another way round
       if (m.crossBlk > 90) { m.crossBlk = 0; replan(S, ap, m, ex.from); return false; }
     }
   }
-  if (clear && canTake(S, ap, k, m, cross)) {
-    take(ap, k, m, cross, S.time); m.holding = null; m.holdLog = false; m.crossBlk = 0;
+  if (!why) why = mayEnter(S, ap, m, k, cross, rwId);
+  if (!why) {
+    take(ap, k, m, cross, S.time); m.holding = null; m.holdWhy = null; m.holdLog = false; m.crossBlk = 0;
+    if (cross) m.xing = k;
     if (e2 && e2.kind !== 'apron') preOccupy(ap, m, e2);
     return true;
   }
   wantIt(S, ap, k, m);
-  m.waitT += dt; m.holding = 'runway';
+  m.waitT += dt; m.holding = 'runway'; m.holdWhy = why;
   if (m.kind === 'dep') ap.depWait = (ap.depWait || 0) + 1;
   if (!m.holdLog) { m.holdLog = true; incursion(S, ap, m, k); }
   place(ap, m);
   return false;
+}
+/* the runway whose rules apply to this aircraft going onto the runways k */
+const ruleRw = (ap, m, k, rwId) => rwId || (m.plan && m.plan.rw && keyOf(ap, m.plan.rw.id) === k ? m.plan.rw.id : null);
+const kmTxt = d => `${Math.max(0, Math.round(d / 10))} km`;
+/* '' when the rules let this aircraft go onto the runways k now; otherwise why not, in a few words */
+function mayEnter(S, ap, m, k, cross, rwId) {
+  const R = IC.opsRules(ap, ruleRw(ap, m, k, rwId)), L = lockOf(ap, k);
+  const own = !cross && m.kind === 'dep' && m.plan && keyOf(ap, m.plan.rw.id) === k;
+  const luaw = own && (m.scramble || IC.opsEnter(S, R, m.type, m.T) === 'luaw');
+  if (own) m.luawOk = luaw;
+  if (!canTake(S, ap, k, m, cross, luaw)) return busyWhy(S, ap, k, m);
+  // the next arrival must be beyond the gap when the take-off starts (for a crossing: now). A scramble only waits
+  // for arrivals close in; one kept waiting a long time gets a gap: the tower holds arrivals at the fix for it.
+  let gap = R.gap * 10;
+  if (cross && R.cross === 'radar' && IC.opsDark(S) && !(ap.st && ap.st.gradar)) gap *= 2;
+  if (m.scramble) gap = Math.min(gap, FAF);
+  const t = own ? rollStart(S, ap, m, k, luaw) : 0, held = m.scramble || L.gapFor === m.id;
+  if ((held ? finNear(ap, k, t) : arrNear(S, ap, k, t, true)) >= gap) return '';
+  // kept waiting two minutes: the approach controller makes a gap, holding the next arrivals at the fix (one
+  // departure for each arrival that lands, so neither queue starves)
+  if (!held && (m.waitT || 0) >= PATIENCE && (L.gapOk !== false || S.time - L.gapT > 300) && !(L.gapFor && moveOf(ap, L.gapFor))) { L.gapFor = m.id; L.gapT = S.time; L.gapOk = false; }
+  return `arrival ${kmTxt(held ? finNear(ap, k, 0) : arrNear(S, ap, k, 0, true))} out`;
+}
+function busyWhy(S, ap, k, m) {
+  const L = lockOf(ap, k);
+  if (ap.closedT && S.time < ap.closedT && !m.mil) return 'runway closed';
+  const o = L.by && moveOf(ap, L.by);
+  if (o) return o.kind === 'arr' ? 'arrival on the runway' : o.xing ? 'aircraft crossing' : o.phase === 'roll' ? 'departure rolling' : 'departure on the runway';
+  if (S.time < L.next) return `wake gap ${Math.ceil(L.next - S.time)} s`;
+  const w = ap.want && ap.want[k];
+  return w && w.p === 4 ? 'a scramble goes first' : 'arrivals go first';
+}
+/* seconds until this departure would start its take-off run if it went onto the runway now */
+function rollStart(S, ap, m, k, luaw) {
+  const L = lockOf(ap, k), E = entryT(m), mil = m.T.mil;
+  const line = mil ? ROLLING / 2 : ROLLING, lineW = mil ? 10 : LINE, wake = Math.max(0, L.next - S.time);
+  const o = L.by && L.by !== m.id ? moveOf(ap, L.by) : null;
+  if (o) return Math.max(E + lineW, clearIn(S, ap, o, k) + sepOf(ap, o)) + CREW;
+  return (luaw && wake > E + line ? Math.max(E + lineW, wake) : Math.max(E + line, wake)) + CREW;
+}
+/* seconds of taxiing left to where the take-off starts */
+function entryT(m) {
+  if (!m.path || m.phase !== 'taxi') return 0;
+  let t = -m.s / TAXI;
+  for (let j = m.pi; j < m.path.length; j++) t += m.path[j].e.len / (m.path[j].e.kind === 'rwy' ? RWTAXI : TAXI);
+  return Math.max(0, t);
+}
+/* a departure lined up: '' when it may start its take-off run now */
+function takeoffWhy(S, ap, m, k) {
+  const L = lockOf(ap, k);
+  if (L.by !== m.id) return 'departure ahead';
+  if (S.time < L.next) return `wake gap ${Math.ceil(L.next - S.time)} s`;
+  // the tower clears it if it will be airborne before the next arrival is 1 km out
+  const d = arrNear(S, ap, k, CREW + rollT(m.T), false);
+  if (d < GO && !m.scramble) return `arrival ${kmTxt(arrNear(S, ap, k, 0, false))} out`;
+  return '';
 }
 /* release runways we are no longer on or about to use; cur is the taxiway we are leaving them by */
 function freeBehind(S, ap, m, cur) {
@@ -501,7 +716,7 @@ function freeBehind(S, ap, m, cur) {
     if (cur) keep = m.s <= CLEAR || inK(cur.to, k);
     else { const nx = m.path && m.path[m.pi]; keep = inK(m.node, k) || !!(nx && ((nx.e.kind === 'rwy' && keyOf(ap, nx.e.part) === k) || (inK(nx.to, k) && nx.e.len <= HOLD + 0.05))); }
     if (m.kind === 'dep' && m.plan && keyOf(ap, m.plan.rw.id) === k && (!m.path || m.pi >= m.path.length)) keep = true;
-    if (!keep) { release(S, ap, k, m, m.kind === 'arr' && !m.crossed ? sepOf(ap, m) : 5); if (m.kind === 'arr') m.crossed = true; }
+    if (!keep) { const sp = m.kind === 'arr' && !m.crossed ? sepOf(ap, m) : 5; release(S, ap, k, m, sp, sp === 5 ? 0 : sp); if (m.xing === k) m.xing = null; if (m.kind === 'arr') m.crossed = true; }
   }
 }
 function gridlock(S, ap, m) {
@@ -523,7 +738,12 @@ function replan(S, ap, m, avoid) {
   if (!m.stuck) { m.stuck = true; ap.kpi.stuck = (ap.kpi.stuck || 0) + 1; IC.log(S, 'warn', 'GROUND', `${ap.name}: ${m.who || 'an aircraft'} is stranded: the taxiway ahead is cut.`, m); }
 }
 
-function kill(S, ap, m) { vacate(ap, m); unclaim(ap, m); unreserve(ap, m); if (m.locks) for (const k in m.locks) release(S, ap, k, m, 0); }
+function kill(S, ap, m) {
+  vacate(ap, m); unclaim(ap, m); unreserve(ap, m);
+  if (m.locks) for (const k in m.locks) release(S, ap, k, m, 0);
+  if (m.finK) { const L = lockOf(ap, m.finK); if (L.fin === m.id) L.fin = null; }
+  for (const k in ap.rl || {}) if (ap.rl[k].gapFor === m.id) ap.rl[k].gapFor = null;
+}
 function done(ap, m) { ap.kpi.n++; ap.kpi.taxi = ap.kpi.taxi * 0.9 + m.taxiT * 0.1; ap.kpi.wait = ap.kpi.wait * 0.9 + m.waitT * 0.1; }
 
 IC.gops = function (S, dt) {
@@ -543,6 +763,8 @@ IC.gops = function (S, dt) {
       const L = ap.rl[k];
       if (L.with) for (const id of L.with) if (!ap.moves.some(m => m.id === id)) L.with.delete(id);
       if (L.by && !ap.moves.some(m => m.id === L.by)) { if (L.with && L.with.size) { const n = L.with.values().next().value; L.with.delete(n); L.by = n; } else L.by = null; }
+      if (L.fin && !ap.moves.some(m => m.id === L.fin)) L.fin = null;
+      if (L.gapFor && (S.time - L.gapT > 240 || !ap.moves.some(m => m.id === L.gapFor))) L.gapFor = null;
     }
   }
 };
@@ -568,35 +790,40 @@ function step(S, ap, m, dt) {
         if (m.kind === 'dep') {
           // at the runway: line up once we hold it
           const k = keyOf(ap, m.plan.rw.id);
-          if (!(m.locks && m.locks[k])) { if (!canTake(S, ap, k, m)) { wantIt(S, ap, k, m); m.waitT += dt; m.path = []; m.pi = 0; m.phase = 'hold'; return; } take(ap, k, m, null, S.time); }
+          if (!(m.locks && m.locks[k])) { const why = mayEnter(S, ap, m, k, null); if (why) { wantIt(S, ap, k, m); m.waitT += dt; m.path = []; m.pi = 0; m.phase = 'hold'; m.holding = 'runway'; m.holdWhy = why; return; } take(ap, k, m, null, S.time); }
           lineUp(S, ap, m);
         } else arriveAt(S, ap, m);
       }
       return;
     }
     case 'hold': {
-      const k = keyOf(ap, m.plan.rw.id);
-      if (!canTake(S, ap, k, m)) { wantIt(S, ap, k, m); m.waitT += dt; ap.depWait = (ap.depWait || 0) + 1; m.holding = 'runway'; return; }
-      take(ap, k, m, null, S.time); m.holding = null; lineUp(S, ap, m); return;
+      const k = keyOf(ap, m.plan.rw.id), why = mayEnter(S, ap, m, k, null);
+      if (why) { wantIt(S, ap, k, m); m.waitT += dt; ap.depWait = (ap.depWait || 0) + 1; m.holding = 'runway'; m.holdWhy = why; return; }
+      take(ap, k, m, null, S.time); m.holding = null; m.holdWhy = null; lineUp(S, ap, m); return;
     }
     case 'lineup': {
       m.t -= dt;
       const want = hdgOf(m.plan.rw, m.plan.dir);
       m.h += U.clamp(U.angWrap(want - m.h), -dt * 0.2, dt * 0.2);
-      if (m.t <= 0) {
-        m.phase = 'roll'; m.h = want; m.spd = 0; m.rolled = 0;
-        if (risky(S, ap, m, 'dep')) return;
-      }
+      if (m.t <= 0) { m.h = want; if (m.luaw) { m.phase = 'wait'; return; } startRoll(S, ap, m); }
+      return;
+    }
+    case 'wait': {
+      // lined up on the runway, waiting for take-off clearance
+      const why = takeoffWhy(S, ap, m, keyOf(ap, m.plan.rw.id));
+      if (why) { m.waitT += dt; m.holding = 'lined'; m.holdWhy = why; return; }
+      m.holding = null; m.holdWhy = null; startRoll(S, ap, m);
       return;
     }
     case 'roll': {
+      if (m.delay > 0) { m.delay -= dt; return; }
       const need = m.T.rwy * 0.6, acc = LIFT * LIFT / (2 * need);
       m.spd = Math.min(LIFT * 1.1, m.spd + acc * dt);
       m.rolled += m.spd * dt; m.rwT += dt;
       m.x += Math.cos(m.h) * m.spd * dt; m.y += Math.sin(m.h) * m.spd * dt;
       if (m.rolled >= need) {
         // wake turbulence: the next may go only after the gap
-        release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m));
+        release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m), ap.st && ap.st.tower ? 0 : sepOf(ap, m));
         m.dead = true; kill(S, ap, m);
         done(ap, m); countMove(S, ap, 'dep', m.type, m.plan.rw);
         m.onAir && m.onAir(m);
@@ -604,12 +831,15 @@ function step(S, ap, m, dt) {
       return;
     }
     case 'final': {
-      const tot = FAF / 0.95;
+      const tot = FAF / ARR_V;
       m.t += dt;
       const f = U.clamp(m.t / tot, 0, 1);
       m.x = U.lerp(m.fx, m.tx, f); m.y = U.lerp(m.fy, m.ty, f); m.alt = 0.6 * (1 - f);
+      // 1 km out: the runway must be empty, or the arrival goes around
+      if (!m.onRw && m.t >= (FAF - GO) / ARR_V && !landCheck(S, ap, m)) return;
       if (f >= 1) {
         m.phase = 'land'; m.spd = TOUCH; m.s0 = m.plan.touch; m.pos = m.plan.touch; m.alt = 0;
+        if (m.hitOn) { collide(S, ap, m); return; }
         risky(S, ap, m, 'arr');
       }
       return;
@@ -645,7 +875,7 @@ function step(S, ap, m, dt) {
             steps = IC.aptSteps(p, m.node, m.target); reserve(S, ap, m, steps, S.time);
           }
           m.path = steps; m.pi = 0; m.s = 0; m.phase = 'taxi'; m.onEdge = false;
-          if (!m.path.length) { release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m)); arriveAt(S, ap, m); }
+          if (!m.path.length) { release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m), sepOf(ap, m)); arriveAt(S, ap, m); }
           return;
         }
       } else m.pos += Math.sign(d) * stp;
@@ -705,10 +935,55 @@ IC.depBlockWhy = function (S, ap, T) {
   const cfg = cfgOf(S, ap), why = runways(ap).map(rw => cfg.rw[rw.id] && IC.rwWindBlock(S, rw, cfg.rw[rw.id].dir, T)).filter(Boolean);
   return why.length && why.length === runways(ap).length ? ` (${why[0]})` : '';
 };
+/* on the runway: cleared for take-off it turns and goes; otherwise it lines up and waits */
 function lineUp(S, ap, m) {
-  m.phase = 'lineup'; m.t = m.T.mil ? 10 : 25;
+  const k = keyOf(ap, m.plan.rw.id);
+  // one cleared for take-off goes; one told to line up and wait stops on the runway until the tower clears it
+  const why = takeoffWhy(S, ap, m, k);
+  m.luaw = m.luawOk ? !!why : why === 'departure ahead' || /^wake/.test(why);
+  m.phase = 'lineup'; m.t = m.luaw ? (m.T.mil ? 10 : LINE) : (m.T.mil ? ROLLING / 2 : ROLLING);
   const n = G(ap).N.get(m.plan.start.id);
   if (n) { m.x = n.x; m.y = n.y; }
+  if (m.luaw) risky(S, ap, m, 'wait');
+}
+/* cleared for take-off: the crew take a few seconds (now and then many more) to start the run */
+function startRoll(S, ap, m) {
+  m.phase = 'roll'; m.h = hdgOf(m.plan.rw, m.plan.dir); m.spd = 0; m.rolled = 0;
+  m.delay = m.T.mil ? 1 : U.rand(0, 6) + (Math.random() < 0.15 ? U.rand(6, 18) : 0);
+  const L = lockOf(ap, keyOf(ap, m.plan.rw.id)); if (L.gapFor === m.id) L.gapFor = null;
+  L.runT = S.time + m.delay; L.runGap = IC.opsRules(ap, m.plan.rw.id).gap * 10;
+  risky(S, ap, m, 'dep');
+}
+/* 1 km out: take the runway if it is empty; if not, go around (or, where the tower lost track of an aircraft
+   waiting on the runway in the dark, land on top of it) */
+function landCheck(S, ap, m) {
+  const k = m.finK, L = lockOf(ap, k);
+  const ids = L.by ? [L.by].concat(L.with ? [...L.with] : []).filter(id => id !== m.id) : [];
+  const on = ids.map(id => moveOf(ap, id)).filter(Boolean);
+  if (on.length) {
+    const lost = on.find(o => o.forgot && o.phase === 'wait');
+    if (!lost) { goAround(S, ap, m, on[0]); return false; }
+    m.hitOn = lost;
+  }
+  take(ap, k, m, null, S.time); m.onRw = true; L.gapOk = true;
+  if (L.fin === m.id) L.fin = null;
+  return true;
+}
+/* the arrival climbs away, flies a circuit and joins the approach again */
+function goAround(S, ap, m, o) {
+  const L = lockOf(ap, m.finK);
+  if (L.fin === m.id) L.fin = null;
+  L.nextA = Math.max(L.nextA || 0, S.time + 30);
+  ap.kpi.ga = (ap.kpi.ga || 0) + 1;
+  const G2 = ap.gaLog = ap.gaLog || []; G2.push(S.time); while (G2.length && S.time - G2[0] > 3600) G2.shift();
+  const why = !o ? 'the runway was not clear' : o.kind === 'arr' ? `${o.who || 'the aircraft ahead'} was still on the runway` : o.xing ? `${o.who || 'an aircraft'} was crossing it` : o.phase === 'roll' ? `${o.who || 'a departure'} was still on its take-off run` : `${o.who || 'a departure'} was still lined up on it`;
+  if (IC.radioGoAround) IC.radioGoAround(S, ap, m, o, why);
+  IC.emit(S, 'goAround', { ap, m, other: o, why });
+  // climbing away close behind a departure: the tighter the gap, the likelier the two come too close
+  const r = IC.gopsRisk(S, ap, m, 'ga');
+  if (r.p && Math.random() < r.p) lostSep(S, ap, m, o, r.why[0]);
+  m.dead = true; kill(S, ap, m);
+  if (m.onGoAround) m.onGoAround(m, why);
 }
 function arriveAt(S, ap, m) {
   if (m.stand) { m.phase = 'parkin'; m.t = 20; return; }
@@ -722,6 +997,19 @@ function arriveAt(S, ap, m) {
 IC.gopsRisk = function (S, ap, m, what) {
   const T = m.T, P = m.plan, out = [];
   if (!P || !P.rw || T.vtol) return { p: 0, why: out };
+  const sum = () => ({ p: out.reduce((s, x) => s + x.p, 0), why: out });
+  const R = IC.opsRules(ap, P.rw.id);
+  if (what === 'wait') {
+    // lined up and waiting on the runway in the dark or in fog, with no ground radar: the tower can lose track of it
+    // and clear an arrival to land on top of it
+    if (IC.opsDark(S) && !(ap.st && ap.st.gradar) && !m.mil) out.push({ cause: 'collision', p: IC.LUAW_RISK, text: `${m.who || 'a departure'} was lined up and waiting on the runway in ${IC.needILS(S) ? 'fog' : 'the dark'}; with no ground radar the tower lost track of it and cleared an arrival to land`, rule: `line up and wait for ${kindName(m)} at night and in fog, with no ground radar` });
+    return sum();
+  }
+  if (what === 'ga') {
+    // a go-around climbs out behind the departure that was on the runway: the tighter the gap, the closer they are
+    out.push({ cause: 'sep', p: ({ 4: 0.03, 6: 0.012, 8: 0.004, 10: 0.002 })[R.gap] || 0.004, text: `it went around behind a departure with only a ${R.gap} km arrival gap`, rule: `a ${R.gap} km arrival gap` });
+    return sum();
+  }
   const w = IC.windOn(S, hdgOf(P.rw, P.dir)), k = what === 'arr' ? 1 : 0.5;
   // gusts beyond what the crew are allowed to land in (well beyond, and they go round and try elsewhere)
   if (w.gCross > T.xw) out.push({ cause: 'gust', p: 0.0008 * Math.min(6, w.gCross - T.xw) * k, text: `a gust of ${Math.round(w.gCross)} kt across the runway, beyond the ${T.xw} kt the crew may land in` });
@@ -734,13 +1022,16 @@ IC.gopsRisk = function (S, ap, m, what) {
   }
   // birds gather over water near the runway
   if (ap.water && ap.water.near) out.push({ cause: 'bird', p: 0.0003, text: `birds from the ${ap.water.what} ${U.km(ap.water.d)} from the runway` });
-  return { p: out.reduce((s, x) => s + x.p, 0), why: out };
+  return sum();
 };
+IC.LUAW_RISK = 0.004;
+const kindName = m => (IC.OPS_KINDS.find(k => k[0] === IC.opsKind(m.type, m.T)) || ['', 'aircraft'])[1].toLowerCase();
 function risky(S, ap, m, what) {
   const r = IC.gopsRisk(S, ap, m, what);
   ap.kpi.risk = (ap.kpi.risk || 0) + r.p;
   if (!r.p || Math.random() >= r.p) return false;
   const c = U.wpick(r.why.map(x => [x, x.p]));
+  if (what === 'wait') { m.forgot = c; return false; }
   // a bird strike is usually survived: the crew stop or come back round
   if (c.cause === 'bird' && Math.random() < 0.75) { IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${m.who || 'an aircraft'} hit birds ${what === 'arr' ? 'on landing' : 'on take-off'}. It came back safely with a damaged engine. The cause: ${c.text}.`, m); ap.kpi.inc = (ap.kpi.inc || 0) + 1; return false; }
   m.crash = c;
@@ -753,30 +1044,43 @@ function incursion(S, ap, m, k) {
   const st = ap.st || {};
   if (st.gradar || m.mil || !st.complex) return;
   if (!(IC.needILS(S) || dark(S))) return;
-  if (Math.random() >= IC.INCURSION) return;
+  // crossings allowed close ahead of arrivals make it likelier (a crew in a hurry, a tower stretched)
+  const R = IC.opsRules(ap, ruleRw(ap, m, k)), f = U.clamp(8 / R.gap, 0.8, 2) * (R.cross === 'radar' ? 0.5 : 1);
+  if (Math.random() >= IC.INCURSION * f) return;
   const L = lockOf(ap, k), other = ap.moves.find(x => x.id === L.by);
   ap.kpi.inc = (ap.kpi.inc || 0) + 1;
   if (!other || (other.phase !== 'land' && other.phase !== 'roll')) {
     IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${m.who || 'an aircraft'} crossed the hold-short line without clearance. Nobody was hurt. A ground radar would have warned the tower.`, m);
     return;
   }
-  const c = { cause: 'incursion', text: `${m.who || 'a taxiing aircraft'} strayed onto the runway in ${IC.needILS(S) ? 'fog' : 'the dark'}, and the tower had no ground radar to see it` };
+  const c = { cause: 'incursion', text: `${m.who || 'a taxiing aircraft'} strayed onto the runway in ${IC.needILS(S) ? 'fog' : 'the dark'}, and the tower had no ground radar to see it`, rule: `crossings with the next arrival ${R.gap} km out${R.cross === 'radar' ? '' : ', even at night with no ground radar'}` };
   other.crash = c;
   if (other.phase === 'roll') crashNow(S, ap, other);
   m.destroyed = true; m.why = 'destroyed in a runway collision';
 }
-const dark = S => { const h = ((S.time % 86400) + 86400) % 86400 / 3600; return h < 5.5 || h > 20.5; };
 /* fire and rescue: seconds until the first truck reaches a point */
 IC.aptRescue = function (ap, p) {
   let best = 1e9;
   for (const f of ap.parts) if (f.kind === 'fire' && f.built && f.hp > f.max * 0.25) best = Math.min(best, 60 + U.dist(f, p) / 0.25);
   return best;
 };
+/* the arrival lands on a departure the tower forgot on the runway */
+function collide(S, ap, m) {
+  const o = m.hitOn, c = Object.assign({}, o.forgot, { cause: 'collision', text: `${o.forgot.text}. ${m.who || 'The arrival'} landed into ${o.who || 'it'}` });
+  if (!o.dead) { o.destroyed = true; o.why = 'destroyed in a runway collision'; }
+  m.crash = c; crashNow(S, ap, m);
+}
+/* a go-around that came too close to the departure climbing out ahead: an incident, reported with its cause */
+function lostSep(S, ap, m, o, c) {
+  ap.kpi.inc = (ap.kpi.inc || 0) + 1; ap.kpi.lossSep = (ap.kpi.lossSep || 0) + 1;
+  IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${m.who || 'an arrival'} went around and came within 300 m of ${o && o.who ? o.who : 'the departure'} climbing out ahead. The cause: ${c.text}. A longer gap in the Operations tab leaves more room.`, m);
+  IC.emit(S, 'lossSep', { ap, m, other: o });
+}
 function crashNow(S, ap, m) {
   const c = m.crash, T = m.T, rw = m.plan.rw;
   const on = T.mil ? (T.crew || 1) * (m.n || 1) : Math.round((T.seats || 2) * 0.82) + (T.seats ? 6 : 3);
   const rescue = IC.aptRescue(ap, m);
-  const base = { overrun: 0.08, gust: 0.25, tailwind: 0.2, incursion: 0.45, bird: 0.35 }[c.cause] || 0.3;
+  const base = { overrun: 0.08, gust: 0.25, tailwind: 0.2, incursion: 0.45, bird: 0.35, collision: 0.6 }[c.cause] || 0.3;
   // survival depends on how fast the fire trucks arrive: three minutes is the standard
   const late = rescue >= 1e8 ? 3 : U.clamp(rescue / 180, 0.6, 3);
   const dead = Math.min(on, Math.round(on * U.clamp(base * late * U.rand(0.6, 1.4), 0, 1)));
@@ -794,8 +1098,8 @@ function crashNow(S, ap, m) {
   IC.log(S, 'leak', 'CRASH', `${ap.name}: ${what}, crashed ${phase} on ${IC.rwEnd(rw, m.plan.dir)}. ${dead} of ${on} on board killed. The runway is closed.`, m);
   IC.news(S, `${dead ? `${dead} killed as` : 'No deaths as'} ${m.who || 'an aircraft'} crashes ${phase} at ${ap.name}.`);
   IC.sfx && IC.sfx.klaxon && IC.sfx.klaxon();
-  const text = `${what}, crashed ${phase} on runway ${IC.rwEnd(rw, m.plan.dir)} at ${ap.name}. ${dead} of the ${on} people on board died. The cause: ${c.text}. ${resc}`;
-  const fix = { gust: 'A runway pointing into the wind (a crosswind runway) would have kept it inside its limits.', tailwind: 'A runway pointing into the wind would have avoided the tailwind.', overrun: 'A longer runway, or one without craters, leaves a margin when it is wet.', incursion: 'A ground radar shows the tower every aircraft on the ground, day and night.', bird: 'Airports away from lakes and rivers see far fewer birds.' }[c.cause] || '';
+  const text = `${what}, crashed ${phase} on runway ${IC.rwEnd(rw, m.plan.dir)} at ${ap.name}. ${dead} of the ${on} people on board died. The cause: ${c.text}.${c.rule ? ` The tower's rule that allowed it: ${c.rule}.` : ''} ${resc}`;
+  const fix = { gust: 'A runway pointing into the wind (a crosswind runway) would have kept it inside its limits.', tailwind: 'A runway pointing into the wind would have avoided the tailwind.', overrun: 'A longer runway, or one without craters, leaves a margin when it is wet.', incursion: 'A ground radar shows the tower every aircraft on the ground, day and night.', bird: 'Airports away from lakes and rivers see far fewer birds.', collision: 'A ground radar shows the tower every aircraft on the runway; without one, keep departures at the hold-short line after dark (Operations tab).' }[c.cause] || '';
   if (S.camp) {
     (S.later = S.later || []).push({ t: S.time + 1800, fn: () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.hhmm(S.time)}`, `${text} ${fix}`, 'alarm'); } });
   }
@@ -848,7 +1152,7 @@ IC.milApproach = function (S, b, a, dt) {
   const type = IC.AIRKIND_TYPE[a.kind], T = IC.ACTYPES[type];
   if (T.vtol) return false;
   // keep the same approach fix while it still serves, so the aircraft does not chase a moving point
-  if (!a.faf || a.fafBase !== b.id || S.time - a.fafT > 600) { a.faf = IC.gopsFaf(S, b, type); a.fafBase = b.id; a.fafT = S.time; }
+  if (!a.faf || a.fafBase !== b.id || S.time - a.fafT > 600) { a.faf = IC.gopsFaf(S, b, type, a); a.fafBase = b.id; a.fafT = S.time; }
   const faf = a.faf;
   if (!faf) return 'divert';
   const d = U.dxy(a.x, a.y, faf.x, faf.y);
@@ -862,6 +1166,7 @@ IC.milApproach = function (S, b, a, dt) {
   if (!sn.node) return 'divert';
   const m = IC.gopsLand(S, b, { type, target: sn.node, stand: null, mil: true, who: a.name, flight: a, n: a.hp, faf,
     onPark: () => { a.gnd = false; a.faf = null; IC.airLand(S, a, b); },
+    onGoAround: mm => { a.gnd = false; a.ground = null; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.faf = null; a.nextTry = S.time + 90; },
     onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
   if (m === 'divert') { a.faf = null; return 'divert'; }
   if (m === 'hold') { a.holdT = (a.holdT || 0) + dt; return holdPt; }
