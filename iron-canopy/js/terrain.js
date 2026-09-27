@@ -44,11 +44,11 @@ IC.buildTerrain = function (W) {
     return FD[k] * (1 - u) * (1 - v) + FD[k + 1] * u * (1 - v) + FD[k + FGW] * (1 - u) * v + FD[k + FGW + 1] * u * v;
   };
   const fd = (x, y) => fdAt(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
-  const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), queue: [], gen: 0, frame: 0, fadeT: 0 };
+  const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), frame: 0 };
 
   // three images: the ground's colour (tiles start from it), its hillshade, and the two combined for the far view
   const alb = mk(BW, BH), ag = alb.getContext('2d'), ai = ag.createImageData(BW, BH), ad = ai.data;
-  const shd = mk(BW, BH), sg = shd.getContext('2d'), si = sg.createImageData(BW, BH), sd = si.data;
+  const sd = new Uint8ClampedArray(BW * BH * 4);
   const tmp = mk(BW, BH), tg = tmp.getContext('2d'), img = tg.createImageData(BW, BH), d = img.data;
   const hs = (x, y, e, k) => {
     const hx = (W.hAt(x + e, y) - W.hAt(x - e, y)) * k / (2 * e), hy = (W.hAt(x, y + e) - W.hAt(x, y - e)) * k / (2 * e);
@@ -60,7 +60,10 @@ IC.buildTerrain = function (W) {
       const wx = (x + 0.5) * cellX;
       const h = W.hAt(wx, wy);
       // soft light from the fine slope, and a broader one so ridges still read on the whole-country map
-      const shade = U.clamp(1 + hs(wx, wy, 12, 80) * 0.8 + hs(wx, wy, 60, 130) * 0.9 + hs(wx, wy, 200, 220) * 0.6, 0.45, 1.5);
+      // hill country gets folds and gullies of its own, too small for the height grid (shading only)
+      const hill = U.clamp((h - 0.3) / 0.35, 0, 1);
+      const fx = hill ? (U.fbm((wx + 8) / 150 + 3, wy / 150, 3) - U.fbm((wx - 8) / 150 + 3, wy / 150, 3)) / 16 : 0, fy = hill ? (U.fbm(wx / 150 + 3, (wy + 8) / 150, 3) - U.fbm(wx / 150 + 3, (wy - 8) / 150, 3)) / 16 : 0;
+      const shade = U.clamp(1 + hs(wx, wy, 12, 80) * 0.8 + hs(wx, wy, 60, 130) * 0.9 + hs(wx, wy, 200, 220) * 0.6 - (LIGHT[0] * fx + LIGHT[1] * fy) * 90 * hill, 0.45, 1.5);
       const k = W.countryAt(wx, wy);
       let c = ramp(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.08);
       const hsh = U.hash(x, y);
@@ -81,13 +84,16 @@ IC.buildTerrain = function (W) {
       }
       const n = (hsh - 0.5) * 5, i4 = (y * BW + x) * 4;
       ad[i4] = r + n; ad[i4 + 1] = g + n; ad[i4 + 2] = b + n; ad[i4 + 3] = 255;
-      // the hillshade as an overlay: mid grey leaves the colour alone
-      const sv = U.clamp(128 + (shade - 1) * 150, 0, 255);
-      sd[i4] = sd[i4 + 1] = sd[i4 + 2] = sv; sd[i4 + 3] = 255;
+      // the hillshade for the tiles: shadow (multiplied: white leaves the colour alone) and light (screened: black
+      // leaves it alone), so dark forest shows the hills as well as pale fields do
+      sd[i4] = U.clamp(shade, 0, 1) * 255; sd[i4 + 1] = U.clamp((shade - 1) * 0.7, 0, 1) * 255; sd[i4 + 2] = 0; sd[i4 + 3] = 255;
       d[i4] = (r + n) * shade; d[i4 + 1] = (g + n) * shade; d[i4 + 2] = (b + n) * shade; d[i4 + 3] = 255;
     }
   }
-  ag.putImageData(ai, 0, 0); sg.putImageData(si, 0, 0); tg.putImageData(img, 0, 0);
+  ag.putImageData(ai, 0, 0); tg.putImageData(img, 0, 0);
+  // split the two channels of the hillshade into grey images
+  const split = ch => { const c = mk(BW, BH), cg = c.getContext('2d'), im = cg.createImageData(BW, BH), o = im.data; for (let q = 0; q < o.length; q += 4) { o[q] = o[q + 1] = o[q + 2] = sd[q + ch]; o[q + 3] = 255; } cg.putImageData(im, 0, 0); return c; };
+  const shadeD = split(0), shadeL = split(1);
   // our border and the map grid go on the far view only
   tg.save(); tg.scale(BW / IC.WW, BH / IC.WH); tg.lineCap = 'round'; tg.lineJoin = 'round';
   const outline = () => { tg.beginPath(); W.poly.forEach(([x, y], i) => i ? tg.lineTo(x, y) : tg.moveTo(x, y)); tg.closePath(); };
@@ -108,7 +114,7 @@ IC.buildTerrain = function (W) {
   for (let x = 500; x < IC.WW; x += 500) { tg.beginPath(); tg.moveTo(x, 0); tg.lineTo(x, IC.WH); tg.stroke(); }
   for (let y = 500; y < IC.WH; y += 500) { tg.beginPath(); tg.moveTo(0, y); tg.lineTo(IC.WW, y); tg.stroke(); }
   tg.restore();
-  T.ground = alb; T.shade = shd; T.far = tmp;
+  T.ground = alb; T.shadeD = shadeD; T.shadeL = shadeL; T.far = tmp;
   const cv = mk(CW, CH), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
   g.drawImage(tmp, 0, 0, CW, CH);
@@ -580,8 +586,10 @@ function paintTile(T, lod, tx, ty, S) {
   forest(g, T, lod, x0 - m, y0 - m, x1 + m, y1 + m);
   // hills: the hillshade laid over everything on the ground
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.85;
-  g.drawImage(T.shade, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
+  g.globalCompositeOperation = 'multiply';
+  g.drawImage(T.shadeD, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
+  g.globalCompositeOperation = 'screen'; g.globalAlpha = 0.7;
+  g.drawImage(T.shadeL, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
   g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
   vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, lod);
@@ -639,14 +647,16 @@ IC.bakeMark = function (S, m, redraw) {
 /* a block was hit: draw it again, damaged, on the base and on every tile that shows it */
 IC.bakeBlock = function (S, b) {
   const T = S.terrain; if (!T || !T.base) return;
-  const r = Math.max(b.w, b.h);
+  const r = Math.max(b.w, b.h), W = S.world;
+  // city blocks, village houses and foreign towns are drawn differently
+  const town = W.cities.some(c => c.blocks.includes(b)), foreign = !town && W.foreign.some(f => f.blocks.includes(b));
   const g = T.base.getContext('2d');
-  g.save(); g.scale(IC.TS, IC.TS); block(g, b, 0, false, false); g.restore();
+  g.save(); g.scale(IC.TS, IC.TS); block(g, b, 0, foreign, town); g.restore();
   for (const t of T.tiles.values()) {
     const L = LODS[t.lod - 1], x0 = t.tx * L.size, y0 = t.ty * L.size;
     if (b.x + r < x0 || b.x - r > x0 + L.size || b.y + r < y0 || b.y - r > y0 + L.size) continue;
     const tg = t.cv.getContext('2d');
-    tg.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu); block(tg, b, t.lod, false, true); tg.setTransform(1, 0, 0, 1, 0, 0);
+    tg.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu); block(tg, b, t.lod, foreign, town); tg.setTransform(1, 0, 0, 1, 0, 0);
   }
 };
 
@@ -715,7 +725,6 @@ function keepUp(T, S) {
     if (S.marks) for (const m of S.marks) if (m.life) { const st = fadeOf(m, S.time); if (st !== m._st) { m._st = st; dirtyBox(T, m.x - m.r * 2, m.y - m.r * 2, m.x + m.r * 2, m.y + m.r * 2); } }
   }
 }
-IC.repaintAirfields = S => { if (S.terrain) S.terrain.aptSig = null; };
 
 /* night lights for a city, redrawn when blocks are destroyed */
 IC.cityLights = function (c) {

@@ -877,7 +877,16 @@ function buildTowns(W, R, fbm) {
     return out;
   };
   const clear = (segs, x, y, d) => { for (const s of segs) if (U.segDist(x, y, s[0], s[1], s[2], s[3]) < d + (s[4] === 'hw' ? 1.2 : 0)) return false; return true; };
-  const roadD = (segs, x, y) => { let m = 1e9; for (const s of segs) m = Math.min(m, U.segDist(x, y, s[0], s[1], s[2], s[3]) - (s[4] === 'hw' ? 1.2 : 0)); return m; };
+  // the nearest road or avenue: its distance (a motorway counts as 120 m closer, for its verges) and nearest point
+  const nearSeg = (segs, x, y) => {
+    let best = { d: 1e9 };
+    for (const s of segs) {
+      const vx = s[2] - s[0], vy = s[3] - s[1], L = vx * vx + vy * vy, t = L ? U.clamp(((x - s[0]) * vx + (y - s[1]) * vy) / L, 0, 1) : 0;
+      const px = s[0] + vx * t, py = s[1] + vy * t, raw = Math.hypot(x - px, y - py), d = raw - (s[4] === 'hw' ? 1.2 : 0);
+      if (d < best.d) best = { d, raw, x: px, y: py };
+    }
+    return best;
+  };
   const fields = W.infra.filter(i => i.kind === 'airport' || i.kind === 'airbase' || i.kind === 'factory' || i.kind === 'power');
   const freeGround = (x, y, pad) => !W.inLake(x, y) && W.riverDist(x, y) > 4 + pad && !fields.some(f => U.dxy(f.x, f.y, x, y) < (f.kind === 'factory' || f.kind === 'power' ? 20 : 48));
   for (const c of W.cities) {
@@ -930,10 +939,18 @@ function buildTowns(W, R, fbm) {
       if (!inside(u, v, 1.05)) continue;
       const dist = districtOf(u, v), p = toW(u, v);
       const fill = dist === 'centre' ? 1 : dist === 'ind' ? 0.85 : dist === 'res' ? 0.95 - d * 0.3 : 0.5 * (1.1 - d);
-      // a block next to a road is built smaller rather than left out, so roads run through town, not through gaps
-      const rd = roadD(segs, p.x, p.y);
-      if (R() > fill || !freeGround(p.x, p.y, 1) || rd < 1.25) continue;
-      cand.push({ p, dist, d: d + R() * 0.12, i, j, fit: rd < 2.6 ? (rd - 0.45) * 1.25 : 0 });
+      // a block next to a road is moved back from it and built smaller rather than left out, so roads run through
+      // town, not through empty strips
+      const near = nearSeg(segs, p.x, p.y);
+      if (R() > fill || !freeGround(p.x, p.y, 1) || near.d < 0.15) continue;
+      let q = p, fit = 0;
+      if (near.d < 2.6) {
+        const sh = Math.max(0, 1.7 - near.d), ux = (p.x - near.x) / (near.raw || 1), uy = (p.y - near.y) / (near.raw || 1);
+        q = { x: p.x + ux * sh, y: p.y + uy * sh };
+        fit = Math.min(SP - 2 * sh - 0.6, (near.d + sh - 0.45) * 1.25);
+        if (fit < 0.9) continue;
+      }
+      cand.push({ p: q, dist, d: d + R() * 0.12, i, j, fit });
     }
     cand.sort((a, b) => a.d - b.d);
     const used = new Set();
@@ -1148,20 +1165,20 @@ function junctions(W) {
         if (gap > 2.9 || gap < 0.5) continue;   // no quarter here (the far side of a T)
         const na = toward(a, b), nb = toward(b, a), bis = { x: (a.x + b.x), y: (a.y + b.y) }, bl = Math.hypot(bis.x, bis.y) || 1;
         bis.x /= bl; bis.y /= bl;
-        // the loop: a circle touching both carriageways, entered heading in along one and left heading out along
-        // the other, three quarters of a turn round its far side
+        // the loop, for turning left: traffic that has come through the junction leaves heading out along one arm,
+        // goes three quarters of the way round a circle touching both carriageways and joins the other heading in
         const R = 1.05, dc = R / Math.sin(gap / 2), C = at(n, bis, dc), fa = dc * Math.cos(gap / 2);
         const Fa = at(n, a, fa, na, 0.15), Fb = at(n, b, fa, nb, 0.15), r = R - 0.15;
         const ta = Math.atan2(Fa.y - C.y, Fa.x - C.x), tb = Math.atan2(Fb.y - C.y, Fb.x - C.x);
-        const dir = (-Math.sin(ta) * -a.x + Math.cos(ta) * -a.y) > 0 ? 1 : -1;   // turning so that it starts heading in
+        const dir = (-Math.sin(ta) * a.x + Math.cos(ta) * a.y) > 0 ? 1 : -1;   // turning so that it starts heading out
         const sweep = dir * U.mod(dir * (tb - ta), Math.PI * 2);
-        const loop = [at(n, a, fa + 2.2, na, 0.15), at(n, a, fa + 1.1, na, 0.15)];
+        const loop = [at(n, a, fa * 0.2, na, 0.15), at(n, a, fa * 0.6, na, 0.15)];
         for (let q = 0; q <= 40; q++) { const t = ta + sweep * q / 40; loop.push({ x: C.x + Math.cos(t) * r, y: C.y + Math.sin(t) * r }); }
-        loop.push(at(n, b, fa + 1.1, nb, 0.15), at(n, b, fa + 2.2, nb, 0.15));
+        loop.push(at(n, b, fa * 0.6, nb, 0.15), at(n, b, fa * 0.2, nb, 0.15));
         if (gap < 2.4) ramp(loop, 'loop');   // a wide quarter needs only the outer slip road
         // the outer slip road: leaves the carriageway at a shallow angle and swings round outside the loop
-        const La = 4.2, far = dc + R + 0.9;
-        ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.6), at(n, bis, far + 0.1), at(n, b, La, nb, 0.6), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
+        const La = 3.2, far = dc + R + 0.55;
+        ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.55), at(n, bis, far), at(n, b, La, nb, 0.55), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
       }
     } else if (hw.length === 2 && minor.length) {
       // diamond: the lesser road crosses on a bridge; a slip road in each quarter meets it 130 m from the motorway

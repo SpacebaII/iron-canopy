@@ -68,11 +68,14 @@ test('world: every motorway-to-motorway junction has an interchange shape, with 
       if (!J || !J.ramps.length) continue;
       if (J.kind === 'mm') assert(J.ramps.some(r => r.kind === 'loop') && J.ramps.some(r => r.kind === 'outer') && J.over.length, `seed ${seed}: interchange ${k} has no loops, slip roads or bridge`);
       for (const r of J.ramps) {
-        // no kinks: consecutive pieces of a slip road turn by less than 30°
+        // no kinks: consecutive pieces of a slip road turn by less than 30°; a loop turns three quarters round
+        let turn = 0;
         for (let i = 2; i < r.pts.length; i++) {
           const a = Math.atan2(r.pts[i - 1].y - r.pts[i - 2].y, r.pts[i - 1].x - r.pts[i - 2].x), b = Math.atan2(r.pts[i].y - r.pts[i - 1].y, r.pts[i].x - r.pts[i - 1].x);
           assert(Math.abs(U.angWrap(b - a)) < 0.53, `seed ${seed}: a ${r.kind} slip road at ${k} has a kink`);
+          turn += U.angWrap(b - a);
         }
+        if (r.kind === 'loop') assert(Math.abs(turn) > 3.5, `seed ${seed}: a loop at ${k} turns only ${Math.round(Math.abs(turn) * 57)}°`);
       }
     }
   }
