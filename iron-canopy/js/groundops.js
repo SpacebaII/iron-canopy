@@ -598,7 +598,7 @@ function step(S, ap, m, dt) {
         // wake turbulence: the next may go only after the gap
         release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m));
         m.dead = true; kill(S, ap, m);
-        done(ap, m); countMove(S, ap, 'dep', m.type);
+        done(ap, m); countMove(S, ap, 'dep', m.type, m.plan.rw);
         m.onAir && m.onAir(m);
       }
       return;
@@ -637,7 +637,7 @@ function step(S, ap, m, dt) {
         if (!m.goals.length) {
           setRwPos(ap, m);
           m.node = m.plan.exit.id;
-          countMove(S, ap, 'arr', m.type);
+          countMove(S, ap, 'arr', m.type, m.plan.rw);
           let steps = m.inPath && m.inPath.length && m.inPath[0].from === m.node && m.inPath.every(s => edgeNow(ap, s)) ? m.inPath : null;
           if (!steps) {
             const p = IC.aptSearch(ap, m.node, { to: m.target, avoidRwy: true, res: { m, t0: S.time } });
@@ -675,7 +675,7 @@ function step(S, ap, m, dt) {
   }
 }
 /* movements per hour, counted as they happen (the panel compares them with the rated capacity) */
-function countMove(S, ap, k, type) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; }
+function countMove(S, ap, k, type, rw) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; IC.emit(S, 'rwMove', { ap, k, type, rw }); }
 /* pushbacks block only the stands either side, and only one pushes back from a row at a time */
 function standNb(ap, s) { const a = ap.parts.find(p => p.id === s.apron), i = a && a.stands ? a.stands.indexOf(s) : -1; return i < 0 ? [] : [a.stands[i - 1], a.stands[i + 1]].filter(Boolean); }
 function pushOk(S, ap, m) { return !standNb(ap, m.stand).some(n => n.pushT > S.time); }
