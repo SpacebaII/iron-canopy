@@ -15,22 +15,8 @@ const cov = document.createElement('canvas'); cov.width = 600; cov.height = 450;
 const cx2 = cov.getContext('2d');
 let view = { x0: 0, y0: 0, x1: 0, y1: 0 };
 const inView = (x, y, m) => x > view.x0 - m && x < view.x1 + m && y > view.y0 - m && y < view.y1 + m;
-let closeTex = null;
 /* 0 on the strategic map, 1 close in: effects drawn big for readability far out shrink to their real size near */
 let WF = 0;
-/* grass, soil and stones at a few metres per pixel, tileable */
-function makeCloseTex() {
-  const N = 256, c = document.createElement('canvas'); c.width = c.height = N;
-  const g = c.getContext('2d'), img = g.createImageData(N, N), d = img.data;
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const n = U.pfbm(x / 16, y / 16, 16), f = U.hash(x, y);
-    const v = 110 + (n - 0.5) * 120 + (f - 0.5) * 50, i = (y * N + x) * 4;
-    d[i] = v * 0.95; d[i + 1] = v; d[i + 2] = v * 0.85; d[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return c;
-}
-
 IC.initRender = function (canvas) {
   cv = canvas; ctx = cv.getContext('2d'); dpr = Math.min(2, window.devicePixelRatio || 1);
   const mk = (col) => { const h = document.createElement('canvas'); h.width = 14; h.height = 14; const g = h.getContext('2d'); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(0, 14); g.lineTo(14, 0); g.moveTo(-4, 4); g.lineTo(4, -4); g.moveTo(10, 18); g.lineTo(18, 10); g.stroke(); return ctx.createPattern(h, 'repeat'); };
@@ -169,17 +155,8 @@ IC.render = function (S, now) {
   ctx.fillStyle = '#04080c'; ctx.fillRect(0, 0, cam.vw, cam.vh);
   ctx.setTransform(dpr * z, 0, 0, dpr * z, (-cam.x * z + sx) * dpr, (-cam.y * z + sy) * dpr);
   ctx.imageSmoothingEnabled = true;
-  IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7);
+  IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7, S);
   if (z * dpr >= 1.3) drawRoads(S, px);
-  // very close in, the ground gets texture of its own so the terrain does not look smeared
-  if (z > 3) {
-    if (!closeTex) closeTex = makeCloseTex();
-    const pat = ctx.createPattern(closeTex, 'repeat');
-    pat.setTransform(new DOMMatrix().scale(2 / 256));
-    ctx.globalAlpha = U.clamp((z - 3) / 6, 0, 0.55); ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  }
   const wx = IC.wx(S), light = IC.daylight(S.time);
 
   // cloud shadows drift with the wind
@@ -593,9 +570,8 @@ function drawRoads(S, px) {
     }
     if (groups.rd.length) { path(groups.rd); ctx.strokeStyle = 'rgba(235,235,225,0.6)'; ctx.lineWidth = 0.012; ctx.setLineDash([0.08, 0.1]); ctx.stroke(); ctx.setLineDash([]); }
   }
-  // craters and scorch on the roads
-  const T = S.terrain;
-  if (T && T.scars) for (const s of T.scars) if (s.kind !== 'block' && inView(s.x, s.y, s.r * 2)) IC.drawScar(ctx, s);
+  // craters and patches in the roads, over the live road drawing
+  for (const m of S.marks) if (m.kind === 'road' && inView(m.x, m.y, m.r * 2)) IC.drawMark(ctx, m, S.time, 3);
 }
 
 function drawBridges(S, px) {

@@ -6,6 +6,7 @@ const TAU = Math.PI * 2;
 const K = 1.5;   // map scale relative to the original 800 km layout
 /* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
 IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
+IC.FOREST_T = 0.56;
 
 IC.generate = function (seed) {
   let R = IC.makeRng(seed);
@@ -225,11 +226,17 @@ IC.generate = function (seed) {
     if (!W.inHome(x, y) || W.hAt(x, y) > 0.35 || W.depthOut(x, y) > -375) continue;
     W.lakes.push({ x, y, rx: R.range(110, 240), ry: R.range(60, 120), rot: R.range(0, 3) });
   }
-  W.inLake = (x, y) => W.lakes.some(l => {
-    const c = Math.cos(-l.rot), s = Math.sin(-l.rot), dx = x - l.x, dy = y - l.y;
-    const X = dx * c - dy * s, Y = dx * s + dy * c;
-    return (X / l.rx) ** 2 + (Y / l.ry) ** 2 < 1;
-  });
+  // the terrain asks this for every field it draws: a box test first, the rotation worked out once per lake
+  const lk = W.lakes.map(l => ({ l, c: Math.cos(-l.rot), s: Math.sin(-l.rot), R: Math.max(l.rx, l.ry) }));
+  W.inLake = (x, y) => {
+    for (const { l, c, s, R } of lk) {
+      const dx = x - l.x, dy = y - l.y;
+      if (dx > R || dx < -R || dy > R || dy < -R) continue;
+      const X = dx * c - dy * s, Y = dx * s + dy * c;
+      if ((X / l.rx) ** 2 + (Y / l.ry) ** 2 < 1) return true;
+    }
+    return false;
+  };
   // coarse river-distance grid (50 units) for terrain queries
   const RG = 50, RGW = Math.ceil(WW / RG), RGH = Math.ceil(WH / RG);
   const rdist = new Float32Array(RGW * RGH).fill(1e4);
@@ -242,7 +249,18 @@ IC.generate = function (seed) {
     }
   }
   W.riverDist = (x, y) => { const i = U.clamp(Math.floor(x / RG), 0, RGW - 1), j = U.clamp(Math.floor(y / RG), 0, RGH - 1); return rdist[j * RGW + i]; };
-  W.forestAt = (x, y) => { const h = W.hAt(x, y); return h > 0.18 && h < 0.92 && U.fbm(x / 630 + 33 + NOX, y / 630 + 77, 4) > 0.56; };
+  /* forest: thick on slopes and hill country, in strips along rivers, thin on the flat farmland, none above the
+     tree line; a finer noise breaks the edges and opens clearings. forestD is a density, forest where it passes
+     IC.FOREST_T (about a fifth of the country) */
+  W.forestD = (x, y) => {
+    const h = W.hAt(x, y);
+    if (h < 0.1 || h > 1.02) return 0;
+    const sl = U.clamp(W.slopeAt(x, y) / 0.05, 0, 1), rd = W.riverDist(x, y);
+    return U.fbm(x / 630 + 33 + NOX, y / 630 + 77, 3) + 0.2 * sl + (rd < 30 ? 0.18 * (1 - rd / 30) : 0)
+      + 0.1 * U.clamp((h - 0.4) / 0.3, 0, 1) - 0.1 * U.clamp((0.32 - h) / 0.15, 0, 1) - 0.4 * U.clamp((h - 0.88) / 0.14, 0, 1)
+      + 0.16 * (U.fbm(x / 110 + NOY, y / 110 + 9, 2) - 0.5);
+  };
+  W.forestAt = (x, y) => W.forestD(x, y) > IC.FOREST_T;
 
   /* ---------- cities ---------- */
   const cand = [];
@@ -529,7 +547,7 @@ IC.generate = function (seed) {
     return Math.min(1, Math.max(fw, h < 0.4 ? 0.3 : 0.12)) * U.clamp((0.68 - h) / 0.14, 0, 1);
   };
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
-  W.fieldAng = (x, y) => (U.hash(Math.floor(x / 1500) + 900, Math.floor(y / 1500) + 300) - 0.5) * 1.2;
+  fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
   // bounding boxes, so drawing and traffic can skip lines out of view
   const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
@@ -538,6 +556,49 @@ IC.generate = function (seed) {
 
   return W;
 };
+
+/* ---------- which way the fields lie ----------
+   Fields line up with the road beside them; away from roads they follow the contour of a slope, and on open flat
+   land they drift slowly from district to district. Directions are kept modulo 90° (a field grid looks the same
+   turned a quarter), blended as vectors at four times the angle and smoothed, so nothing changes abruptly. */
+function fieldGrid(W, fbm) {
+  const FC = 50, gw = Math.ceil(IC.WW / FC) + 1, gh = Math.ceil(IC.WH / FC) + 1;
+  let vx = new Float32Array(gw * gh), vy = new Float32Array(gw * gh);
+  // road segments in 100-unit buckets
+  const BK = 100, bw = Math.ceil(IC.WW / BK), buckets = new Map();
+  for (const e of W.edges) if (e.cls !== 'hw') for (let i = 1; i < e.pts.length; i++) {
+    const a = e.pts[i - 1], b = e.pts[i], k = Math.floor((a.y + b.y) / 2 / BK) * bw + Math.floor((a.x + b.x) / 2 / BK);
+    if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push([a.x, a.y, b.x, b.y]);
+  }
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const x = i * FC, y = j * FC, bi = Math.floor(x / BK), bj = Math.floor(y / BK);
+    let sx = 0, sy = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) for (const q of buckets.get((bj + dj) * bw + bi + di) || []) {
+      const d = U.segDist(x, y, q[0], q[1], q[2], q[3]); if (d > 120) continue;
+      const a = Math.atan2(q[3] - q[1], q[2] - q[0]) * 4, w = (1 - d / 120) * 2;
+      sx += Math.cos(a) * w; sy += Math.sin(a) * w;
+    }
+    const hx = W.hAt(x + 20, y) - W.hAt(x - 20, y), hy = W.hAt(x, y + 20) - W.hAt(x, y - 20), g = Math.hypot(hx, hy);
+    if (g > 1e-4) { const a = (Math.atan2(hy, hx) + Math.PI / 2) * 4, w = U.clamp(g / 0.03, 0, 1) * 0.8; sx += Math.cos(a) * w; sy += Math.sin(a) * w; }
+    const a = fbm(x / 2600 + 51, y / 2600 + 13, 2) * Math.PI * 8; sx += Math.cos(a) * 0.25; sy += Math.sin(a) * 0.25;
+    vx[j * gw + i] = sx; vy[j * gw + i] = sy;
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    const nx = new Float32Array(gw * gh), ny = new Float32Array(gw * gh);
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+      let sx = 0, sy = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ii = U.clamp(i + di, 0, gw - 1), jj = U.clamp(j + dj, 0, gh - 1), k = jj * gw + ii, w = di || dj ? 1 : 2; sx += vx[k] * w; sy += vy[k] * w; }
+      nx[j * gw + i] = sx; ny[j * gw + i] = sy;
+    }
+    vx = nx; vy = ny;
+  }
+  W.fieldAng = (x, y) => {
+    const fx = U.clamp(x / FC, 0, gw - 1.001), fy = U.clamp(y / FC, 0, gh - 1.001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * gw + i;
+    const X = vx[k] * (1 - u) * (1 - v) + vx[k + 1] * u * (1 - v) + vx[k + gw] * (1 - u) * v + vx[k + gw + 1] * u * v;
+    const Y = vy[k] * (1 - u) * (1 - v) + vy[k + 1] * u * (1 - v) + vy[k + gw] * (1 - u) * v + vy[k + gw + 1] * u * v;
+    return Math.atan2(Y, X) / 4;
+  };
+}
 
 /* ---------- road and rail network ----------
    Roads are laid on a coarse cost grid (RC units a cell) by A*. Slopes, forest and river crossings cost more;

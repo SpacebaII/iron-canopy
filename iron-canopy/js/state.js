@@ -290,7 +290,7 @@ IC.groundAt = function (S, x, y) {
   if (W.inLake(x, y)) return { kind: 'water' };
   if (W.riverDist(x, y) < 12) for (const r of W.rivers) {
     if (x < r.bb[0] - 20 || x > r.bb[2] + 20 || y < r.bb[1] - 20 || y > r.bb[3] + 20) continue;
-    for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i]; if (U.segDist(x, y, a[0], a[1], b[0], b[1]) < r.w / 2) return { kind: 'water' }; }
+    for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i]; if (U.segDist(x, y, a[0], a[1], b[0], b[1]) < r.w * 0.15) return { kind: 'water' }; }
   }
   const near = (list, w) => {
     for (const l of list) {
