@@ -14,21 +14,21 @@ function ramp(h) {
 const FIELDS = [[104, 112, 70], [122, 114, 74], [88, 104, 62], [114, 122, 86], [96, 92, 60], [132, 126, 90], [140, 128, 84], [92, 110, 72], [118, 104, 70]];
 const LODS = [
   { k: 1, ppu: 0.8, size: 480, max: 72 },
-  { k: 2, ppu: 2.4, size: 200, max: 40 }
+  { k: 2, ppu: 2.4, size: 200, max: 40 },
+  { k: 3, ppu: 8, size: 64, max: 60 }
 ];
 IC.LODS = LODS;
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
 IC.buildTerrain = function (W) {
   const TS = IC.TS, CW = Math.round(IC.WW * TS), CH = Math.round(IC.WH * TS);
-  const BW = 1600, BH = 1200, cellX = IC.WW / BW, cellY = IC.WH / BH;
+  const BW = 1200, BH = 900, cellX = IC.WW / BW, cellY = IC.WH / BH;
   // forest mask on a 20-unit grid, shared by the base and the detail tiles
   const FGW = Math.ceil(IC.WW / 20), FGH = Math.ceil(IC.WH / 20);
   const FG = new Uint8Array(FGW * FGH);
   for (let j = 0; j < FGH; j++) for (let i = 0; i < FGW; i++) FG[j * FGW + i] = W.forestAt(i * 20 + 10, j * 20 + 10) ? 1 : 0;
   const forest = (x, y) => { const i = Math.floor(x / 20), j = Math.floor(y / 20); return i >= 0 && j >= 0 && i < FGW && j < FGH && FG[j * FGW + i] === 1; };
   const T = { W, FG, forest, tiles: new Map(), scars: [], queue: [], gen: 0, frame: 0 };
-  towns(W);
 
   const tmp = mk(BW, BH);
   const tg = tmp.getContext('2d'), img = tg.createImageData(BW, BH), d = img.data;
@@ -59,65 +59,39 @@ IC.buildTerrain = function (W) {
     }
   }
   tg.putImageData(img, 0, 0);
+  // the ground: relief, fields and forest, our border and the map grid. Detail tiles start from it, so they
+  // do not inherit the wide roads baked into the base below
+  tg.save(); tg.scale(BW / IC.WW, BH / IC.WH); tg.lineCap = 'round'; tg.lineJoin = 'round';
+  const outline = () => { tg.beginPath(); W.poly.forEach(([x, y], i) => i ? tg.lineTo(x, y) : tg.moveTo(x, y)); tg.closePath(); };
+  for (const [w, a] of [[70, 0.04], [34, 0.07], [12, 0.16]]) { tg.strokeStyle = `rgba(140,215,255,${a})`; tg.lineWidth = w; outline(); tg.stroke(); }
+  tg.strokeStyle = 'rgba(210,215,220,0.2)'; tg.lineWidth = 7; tg.setLineDash([27, 36]);
+  W.secs.forEach((s, i) => {
+    tg.beginPath(); let first = true;
+    for (let dd = 0; dd < 13500; dd += 60) {
+      const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;
+      const x = W.cx + Math.cos(a0) * D, y = W.cy + Math.sin(a0) * D;
+      if (x < -80 || y < -80 || x > IC.WW + 80 || y > IC.WH + 80) break;
+      if (first) { tg.moveTo(x, y); first = false; } else tg.lineTo(x, y);
+    }
+    tg.stroke();
+  });
+  tg.setLineDash([]);
+  tg.strokeStyle = 'rgba(200,225,235,0.035)'; tg.lineWidth = 4;
+  for (let x = 500; x < IC.WW; x += 500) { tg.beginPath(); tg.moveTo(x, 0); tg.lineTo(x, IC.WH); tg.stroke(); }
+  for (let y = 500; y < IC.WH; y += 500) { tg.beginPath(); tg.moveTo(0, y); tg.lineTo(IC.WW, y); tg.stroke(); }
+  tg.restore();
+  T.ground = tmp;
   const cv = mk(CW, CH), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
   g.drawImage(tmp, 0, 0, CW, CH);
   g.save(); g.scale(TS, TS); g.lineCap = 'round'; g.lineJoin = 'round';
   vectors(g, W, 0, 0, IC.WW, IC.WH, 0);
-  // soft glow along our border
-  const outline = () => { g.beginPath(); W.poly.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); };
-  for (const [w, a] of [[70, 0.04], [34, 0.07], [12, 0.16]]) { g.strokeStyle = `rgba(140,215,255,${a})`; g.lineWidth = w; outline(); g.stroke(); }
-  g.strokeStyle = 'rgba(210,215,220,0.2)'; g.lineWidth = 7; g.setLineDash([27, 36]);
-  W.secs.forEach((s, i) => {
-    g.beginPath(); let first = true;
-    for (let dd = 0; dd < 13500; dd += 60) {
-      const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;
-      const x = W.cx + Math.cos(a0) * D, y = W.cy + Math.sin(a0) * D;
-      if (x < -80 || y < -80 || x > IC.WW + 80 || y > IC.WH + 80) break;
-      if (first) { g.moveTo(x, y); first = false; } else g.lineTo(x, y);
-    }
-    g.stroke();
-  });
-  g.setLineDash([]);
-  g.strokeStyle = 'rgba(200,225,235,0.035)'; g.lineWidth = 4;
-  for (let x = 500; x < IC.WW; x += 500) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, IC.WH); g.stroke(); }
-  for (let y = 500; y < IC.WH; y += 500) { g.beginPath(); g.moveTo(0, y); g.lineTo(IC.WW, y); g.stroke(); }
   g.restore();
   T.base = cv;
   T.grain = grain();
   for (const c of W.cities) IC.cityLights(c);
   return T;
 };
-
-/* building blocks for every settlement, generated once per map */
-function towns(W) {
-  const R = IC.makeRng((W.seed * 131 + 7) >>> 0);
-  const rptsFor = (c, rad) => { const out = []; for (const e of W.edges) for (const p of e.pts) if (U.dist(p, c) < rad) out.push(p); return out; };
-  for (const c of W.cities) {
-    const r = c.r, rp = rptsFor(c, r * 1.9);
-    const n = Math.round(U.clamp(c.pop / 3.5, 40, 600));
-    c.blocks = [];
-    for (let k = 0; k < n; k++) {
-      let x, y, ang;
-      if (R() < 0.7 || !rp.length) { x = c.x + R.gauss() * r * 0.45; y = c.y + R.gauss() * r * 0.45; ang = c.grid; }
-      else { const p = R.pick(rp); x = p.x + R.range(-20, 20); y = p.y + R.range(-20, 20); ang = c.grid + R.range(-0.3, 0.3); }
-      if (W.inLake(x, y)) continue;
-      const core = U.dxy(x, y, c.x, c.y) / r < 0.35;
-      const ind = !core && R() < 0.12;
-      c.blocks.push({ x, y, w: R.range(5, core ? 15 : 10) * (ind ? 1.5 : 1), h: R.range(4, core ? 12 : 8), a: ang, core, ind, seed: R() * 1000, hp: 1 });
-    }
-    c.parks = []; for (let k = 0; k < 4; k++) c.parks.push({ x: c.x + R.gauss() * r * 0.4, y: c.y + R.gauss() * r * 0.4, rx: R.range(8, 20), ry: R.range(6, 13), a: R.range(0, 3) });
-  }
-  for (const v of W.villages.concat(W.foreign)) {
-    const n = v.kind === 'ftown' ? Math.round(v.pop / 4) : Math.round(6 + v.pop * 0.5);
-    v.blocks = [];
-    for (let k = 0; k < n; k++) {
-      const x = v.x + R.gauss() * v.r * 0.45, y = v.y + R.gauss() * v.r * 0.45;
-      if (W.inLake(x, y)) continue;
-      v.blocks.push({ x, y, w: R.range(2.5, 6), h: R.range(2, 4.5), a: v.grid + R.range(-0.2, 0.2), seed: R() * 1000, hp: 1 });
-    }
-  }
-}
 
 /* vector layers shared by the base (lod 0) and the detail tiles */
 function vectors(g, W, x0, y0, x1, y1, lod) {
@@ -149,57 +123,110 @@ function vectors(g, W, x0, y0, x1, y1, lod) {
   }
   // rail
   for (const r of W.rails) {
+    if (!inb(r.bb[0] - 10, r.bb[1] - 10, r.bb[2] + 10, r.bb[3] + 10)) continue;
     const line = () => { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); };
-    g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = lod ? 2.2 : 4; line(); g.stroke();
-    if (lod === 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 1.4; g.setLineDash([0.3, 1.2]); line(); g.stroke(); g.setLineDash([]); }
+    g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4, 1.6, 0.7, 0.4][lod]; line(); g.stroke();
+    if (lod >= 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 0.4; g.setLineDash([0.3, 0.9]); line(); g.stroke(); g.setLineDash([]); }
   }
-  // roads
-  const road = (e, casing, fill, w) => {
-    const line = () => { g.beginPath(); e.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); };
-    g.strokeStyle = casing; g.lineWidth = w + (lod ? 1.6 : 4); line(); g.stroke();
-    g.strokeStyle = fill; g.lineWidth = w; line(); g.stroke();
-    if (lod === 2 && e.cls === 'hw') { g.strokeStyle = 'rgba(240,230,200,0.5)'; g.lineWidth = 0.25; g.setLineDash([1.6, 1.6]); line(); g.stroke(); g.setLineDash([]); }
-  };
-  const W1 = lod ? 1 : 1.6;
-  for (const e of W.edges) if (e.cls === 'lc' || e.cls === 'sp') road(e, 'rgba(20,18,14,0.3)', 'rgba(196,184,150,0.4)', 1.6 * W1);
-  for (const e of W.edges) if (e.cls === 'rd') road(e, 'rgba(20,18,14,0.4)', 'rgba(206,190,150,0.5)', 2.4 * W1);
-  for (const e of W.edges) if (e.cls === 'hw') road(e, 'rgba(20,18,14,0.5)', 'rgba(226,206,158,0.75)', 3.6 * W1);
+  // settlements: a grey wash under each city, parks, blocks
+  for (const c of W.cities) {
+    if (!inb(c.x - c.r * 2, c.y - c.r * 2, c.x + c.r * 2, c.y + c.r * 2)) continue;
+    const wash = g.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r * 1.3);
+    wash.addColorStop(0, 'rgba(120,118,110,0.4)'); wash.addColorStop(0.6, 'rgba(120,118,110,0.22)'); wash.addColorStop(1, 'rgba(120,118,110,0)');
+    g.fillStyle = wash; g.beginPath(); g.arc(c.x, c.y, c.r * 1.3, 0, 7); g.fill();
+    for (const p of c.parks) { g.fillStyle = 'rgba(62,94,60,0.75)'; g.beginPath(); g.ellipse(p.x, p.y, p.rx, p.ry, p.a, 0, 7); g.fill(); }
+  }
+  // roads: lod 0 and 1 bake them all in at a readable width; closer in, city streets and lanes are baked (at
+  // about real width) and render.js draws the road network live
+  {
+    const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, ring: 2.4 },
+      { ln: 0.3, art: 0.7, st: 0.5, ring: 0.9 }, { ln: 0.12, art: 0.4, st: 0.34, ring: 0.36 }][lod];
+    const FILL = { hw: 'rgba(238,176,104,0.92)', rd: 'rgba(222,204,156,0.75)', lc: 'rgba(196,184,150,0.5)', sp: 'rgba(196,184,150,0.5)', ln: 'rgba(160,140,100,0.55)', art: 'rgba(178,174,164,0.75)', st: 'rgba(148,146,140,0.6)', ring: 'rgba(232,190,130,0.85)' };
+    if (lod >= 2) { FILL.art = 'rgb(150,148,142)'; FILL.st = 'rgb(128,127,122)'; FILL.ring = 'rgb(128,127,122)'; FILL.ln = 'rgba(140,122,90,0.8)'; }
+    const layers = [];
+    if (lod) { layers.push(['ln', W.lanes]); for (const c of W.cities) if (inb(c.x - c.r * 1.5, c.y - c.r * 1.5, c.x + c.r * 1.5, c.y + c.r * 1.5)) for (const cls of ['st', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls)]); }
+    if (lod < 2) for (const cls of ['sp', 'lc', 'rd', 'hw']) layers.push([cls, W.edges.filter(e => e.cls === cls)]);
+    for (const pass of [0, 1]) for (const [cls, list] of layers) {
+      const w = RW[cls]; if (!w) continue;
+      g.beginPath();
+      for (const l of list) { if (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3])) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
+      if (pass === 0) { g.strokeStyle = cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + [3, 1.2, 0.3, 0.1][lod]; }
+      else { g.strokeStyle = FILL[cls]; g.lineWidth = w; }
+      g.stroke();
+    }
+    if (lod === 1) for (const k in W.nodes) { const n = W.nodes[k]; if (n.ix && inb(n.x - 9, n.y - 9, n.x + 9, n.y + 9)) interchange(g, n, RW.lc, FILL.rd); }
+  }
   g.strokeStyle = 'rgba(200,186,150,0.22)'; g.lineWidth = lod ? 2 : 6;
   for (const x of W.crossings) { g.beginPath(); g.moveTo(x.x, x.y); g.lineTo(x.far.x, x.far.y); g.stroke(); }
   g.strokeStyle = 'rgba(170,140,120,0.35)'; g.lineWidth = lod ? 2 : 6;
   for (const r of W.eroads) { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); }
-  // settlements
-  for (const c of W.cities) {
-    if (!inb(c.x - c.r * 2, c.y - c.r * 2, c.x + c.r * 2, c.y + c.r * 2)) continue;
-    const wash = g.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r * 1.5);
-    wash.addColorStop(0, 'rgba(120,118,110,0.35)'); wash.addColorStop(1, 'rgba(120,118,110,0)');
-    g.fillStyle = wash; g.beginPath(); g.arc(c.x, c.y, c.r * 1.5, 0, 7); g.fill();
-    for (const p of c.parks) { g.fillStyle = 'rgba(62,94,60,0.6)'; g.beginPath(); g.ellipse(p.x, p.y, p.rx, p.ry, p.a, 0, 7); g.fill(); }
-    for (const b of c.blocks) block(g, b, lod, false);
-  }
+  for (const c of W.cities) if (inb(c.x - c.r * 2, c.y - c.r * 2, c.x + c.r * 2, c.y + c.r * 2)) for (const b of c.blocks) block(g, b, lod, false, true);
   for (const v of W.villages.concat(W.foreign)) {
     if (!inb(v.x - 90, v.y - 90, v.x + 90, v.y + 90)) continue;
     const foreign = v.kind === 'ftown' || !v.home;
     for (const b of v.blocks) block(g, b, lod, foreign);
   }
 }
-function block(g, b, lod, foreign) {
+/* cloverleaf ramps where a motorway meets another road */
+function interchange(g, n, w, fill) {
+  g.lineWidth = w; g.strokeStyle = fill;
+  for (let k = 0; k < 4; k++) { const a = n.ixA + Math.PI / 4 + k * Math.PI / 2; g.beginPath(); g.arc(n.x + Math.cos(a) * 3.2, n.y + Math.sin(a) * 3.2, 2.2, 0, 7); g.stroke(); }
+}
+IC.interchange = interchange;
+const ROOFS = [[178, 110, 86], [164, 98, 78], [196, 190, 176], [140, 136, 128], [120, 118, 116]];
+function block(g, b, lod, foreign, town) {
   g.save(); g.translate(b.x, b.y); g.rotate(b.a);
   if (b.hp <= 0) { rubble(g, b); g.restore(); return; }
+  const sd = Math.floor(b.seed);
+  // the paved lot: pavements, yards and car parks between the buildings
+  if (town && lod) { g.fillStyle = b.sub ? 'rgba(112,114,98,0.45)' : 'rgba(104,102,96,0.7)'; g.fillRect(-b.w / 2 - 0.2, -b.h / 2 - 0.2, b.w + 0.4, b.h + 0.4); }
   if (lod < 2) {
-    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-b.w / 2 + 1.5, -b.h / 2 + 1.5, b.w, b.h);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-b.w / 2 + (lod ? 0.5 : 1.5), -b.h / 2 + (lod ? 0.5 : 1.5), b.w, b.h);
     g.fillStyle = foreign ? 'rgba(150,146,136,0.7)' : b.core ? 'rgba(204,200,188,0.92)' : b.ind ? 'rgba(170,170,176,0.85)' : `rgba(${168 + (b.seed % 20)},${160 + (b.seed % 16)},${146 + (b.seed % 12)},0.82)`;
     g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+  } else if (lod === 3 && town && b.core) {
+    // city centre: perimeter blocks of different buildings round a courtyard, with the odd tower
+    const t = Math.min(b.w, b.h) * 0.3;
+    g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(-b.w / 2 + 0.15, -b.h / 2 + 0.15, b.w, b.h);
+    g.fillStyle = 'rgb(120,124,108)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+    const seg = (x, y, w, h, k) => { const c = ROOFS[(sd + k) % ROOFS.length], v = U.hash(sd, k) * 24 - 12; g.fillStyle = `rgb(${c[0] + v | 0},${c[1] + v | 0},${c[2] + v | 0})`; g.fillRect(x, y, w, h); g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x, y, w, h * 0.4); };
+    const nS = 4, sw = b.w / nS, sh2 = (b.h - 2 * t) / 2;
+    for (let k = 0; k < nS; k++) { seg(-b.w / 2 + k * sw + 0.02, -b.h / 2, sw - 0.04, t, k); seg(-b.w / 2 + k * sw + 0.02, b.h / 2 - t, sw - 0.04, t, k + 5); }
+    for (let k = 0; k < 2; k++) { seg(-b.w / 2, -b.h / 2 + t + k * sh2 + 0.02, t, sh2 - 0.04, k + 9); seg(b.w / 2 - t, -b.h / 2 + t + k * sh2 + 0.02, t, sh2 - 0.04, k + 11); }
+    if (sd % 3 === 0) { const tw = t * 1.5; g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(-b.w / 2 + 0.5, -b.h / 2 + 0.5, tw, tw); g.fillStyle = 'rgb(150,168,184)'; g.fillRect(-b.w / 2, -b.h / 2, tw, tw); g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(-b.w / 2, -b.h / 2, tw, tw * 0.3); }
+  } else if (lod === 3 && town && b.ind) {
+    // sheds with ribbed roofs
+    for (let k = 0; k < 2; k++) {
+      const x = -b.w / 2 + 0.2 + k * b.w / 2, w = b.w / 2 - 0.4, h = b.h * (0.55 + U.hash(sd, k) * 0.35);
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + 0.2, -b.h / 2 + 0.3, w, h);
+      g.fillStyle = k ? 'rgb(150,158,166)' : 'rgb(176,178,180)'; g.fillRect(x, -b.h / 2 + 0.1, w, h);
+      g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 0.03;
+      for (let q = 0.2; q < w; q += 0.25) { g.beginPath(); g.moveTo(x + q, -b.h / 2 + 0.1); g.lineTo(x + q, -b.h / 2 + 0.1 + h); g.stroke(); }
+    }
+  } else if (lod === 3 && town) {
+    // houses in two rows facing the streets, gardens behind
+    g.fillStyle = 'rgba(78,98,62,0.8)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+    const lot = 0.75, n = Math.max(1, Math.floor(b.w / lot));
+    for (let row = 0; row < 2; row++) for (let i = 0; i < n; i++) {
+      const s = U.hash(sd + i * 13, row * 7 + 3); if (s < 0.1) continue;
+      const hw = lot * (0.55 + s * 0.25), hh = 0.4 + U.hash(i, sd + row) * 0.15;
+      const x = -b.w / 2 + i * lot + (lot - hw) / 2, y = row ? b.h / 2 - hh - 0.1 : -b.h / 2 + 0.1;
+      const c = ROOFS[Math.floor(s * 10) % ROOFS.length];
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + 0.08, y + 0.08, hw, hh);
+      g.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`; g.fillRect(x, y, hw, hh);
+      g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(x, y, hw, hh * 0.45);
+      if (s > 0.8) { g.fillStyle = 'rgba(40,70,40,0.9)'; g.beginPath(); g.arc(x + lot / 2, row ? y - 0.45 : y + hh + 0.45, 0.25, 0, 7); g.fill(); }
+    }
   } else {
     // subdivide the block into individual buildings with roofs and shadows
     const n = b.ind ? 2 : 2 + Math.floor((b.seed * 7) % 4), m = b.ind ? 1 : 2;
-    const cw = b.w / n, ch = b.h / m;
+    const cw = b.w / n, ch = b.h / m, sh = lod === 3 ? 0.12 : 0.45;
     for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) {
-      const s = U.hash(Math.floor(b.seed) + i * 13, j * 7 + 3);
+      const s = U.hash(sd + i * 13, j * 7 + 3);
       if (s < 0.12 && !b.core) continue;
-      const bw = cw * (0.62 + s * 0.3), bh = ch * (0.6 + U.hash(i, Math.floor(b.seed)) * 0.3);
+      const bw = cw * (0.62 + s * 0.3), bh = ch * (0.6 + U.hash(i, sd) * 0.3);
       const x = -b.w / 2 + i * cw + (cw - bw) / 2, y = -b.h / 2 + j * ch + (ch - bh) / 2;
-      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + 0.45, y + 0.45, bw, bh);
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + sh, y + sh, bw, bh);
       const roof = foreign ? [150, 146, 136] : b.ind ? [158, 162, 168] : s < 0.4 ? [178, 110, 86] : s < 0.7 ? [196, 190, 176] : [140, 136, 128];
       g.fillStyle = `rgb(${roof[0]},${roof[1]},${roof[2]})`; g.fillRect(x, y, bw, bh);
       g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x, y, bw, bh * 0.45);
@@ -222,15 +249,16 @@ function paintTile(T, lod, tx, ty) {
   const px = Math.round(L.size * L.ppu), x0 = tx * L.size, y0 = ty * L.size, x1 = x0 + L.size, y1 = y0 + L.size;
   const cv = mk(px, px), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
-  g.drawImage(T.base, x0 * IC.TS, y0 * IC.TS, L.size * IC.TS, L.size * IC.TS, 0, 0, px, px);
+  const gs = T.ground.width / IC.WW;
+  g.drawImage(T.ground, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
   // fine grain so the upscaled base does not look smeared
-  g.globalAlpha = lod === 2 ? 0.5 : 0.35; g.globalCompositeOperation = 'overlay';
+  g.globalAlpha = lod >= 2 ? 0.5 : 0.35; g.globalCompositeOperation = 'overlay';
   const pat = g.createPattern(T.grain, 'repeat'); g.fillStyle = pat; g.fillRect(0, 0, px, px);
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
   g.lineCap = 'round'; g.lineJoin = 'round';
   // fields in a slightly rotated patchwork that changes direction from district to district
-  const FS = lod === 2 ? [9, 6] : [10, 7];
+  const FS = lod >= 2 ? [9, 6] : [10, 7];
   for (let dy = Math.floor(y0 / 1500); dy <= Math.floor(y1 / 1500); dy++) for (let dx = Math.floor(x0 / 1500); dx <= Math.floor(x1 / 1500); dx++) {
     const ang = (U.hash(dx + 900, dy + 300) - 0.5) * 1.2, ca = Math.cos(ang), sa = Math.sin(ang);
     const bx0 = Math.max(x0, dx * 1500), by0 = Math.max(y0, dy * 1500), bx1 = Math.min(x1, dx * 1500 + 1500), by1 = Math.min(y1, dy * 1500 + 1500);
@@ -254,7 +282,7 @@ function paintTile(T, lod, tx, ty) {
       g.fillStyle = `rgba(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0},${0.35 + fw * 0.35})`;
       const sw = U.hash(u, v + 1) < 0.25 ? 0.5 : 1;
       g.fillRect(u * FS[0] + 0.3, v * FS[1] + 0.3, FS[0] * (sw < 1 && u % 2 ? 1 : 1) - 0.6, FS[1] * sw - 0.6);
-      if (lod === 2) {
+      if (lod >= 2) {
         g.strokeStyle = 'rgba(42,54,32,0.45)'; g.lineWidth = 0.35; g.strokeRect(u * FS[0] + 0.3, v * FS[1] + 0.3, FS[0] - 0.6, FS[1] - 0.6);
         if (h < 0.3) { g.strokeStyle = 'rgba(80,70,40,0.25)'; g.lineWidth = 0.2; for (let q = 1; q < 5; q++) { g.beginPath(); g.moveTo(u * FS[0] + 0.5, v * FS[1] + q * FS[1] / 5); g.lineTo(u * FS[0] + FS[0] - 0.5, v * FS[1] + q * FS[1] / 5); g.stroke(); } }
       }
@@ -262,7 +290,7 @@ function paintTile(T, lod, tx, ty) {
     g.restore();
   }
   // forest canopy
-  const step = lod === 2 ? 2.2 : 5, rad = lod === 2 ? [0.9, 1.5] : [2.4, 3.4];
+  const step = [5, 5, 2.2, 1.1][lod], rad = lod === 3 ? [0.45, 0.8] : lod === 2 ? [0.9, 1.5] : [2.4, 3.4];
   for (let y = Math.floor(y0 / step) * step; y < y1; y += step) for (let x = Math.floor(x0 / step) * step; x < x1; x += step) {
     const hx = U.hash(Math.round(x * 3.1), Math.round(y * 2.7));
     const jx = x + (hx - 0.5) * step, jy = y + (U.hash(Math.round(y * 5.3), Math.round(x * 1.9)) - 0.5) * step;
@@ -271,7 +299,7 @@ function paintTile(T, lod, tx, ty) {
     const home = W.inHome(jx, jy);
     g.fillStyle = home ? 'rgba(18,30,20,0.45)' : 'rgba(18,24,20,0.4)'; g.beginPath(); g.arc(jx + r * 0.35, jy + r * 0.35, r, 0, 7); g.fill();
     g.fillStyle = home ? (hx < 0.5 ? 'rgba(44,72,44,0.95)' : 'rgba(56,84,50,0.95)') : 'rgba(58,66,54,0.9)'; g.beginPath(); g.arc(jx, jy, r, 0, 7); g.fill();
-    if (lod === 2) { g.fillStyle = 'rgba(120,150,90,0.25)'; g.beginPath(); g.arc(jx - r * 0.3, jy - r * 0.3, r * 0.45, 0, 7); g.fill(); }
+    if (lod >= 2) { g.fillStyle = 'rgba(120,150,90,0.25)'; g.beginPath(); g.arc(jx - r * 0.3, jy - r * 0.3, r * 0.45, 0, 7); g.fill(); }
   }
   vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, lod);
   for (const s of T.scars) if (s.x + s.r > x0 && s.x - s.r < x1 && s.y + s.r > y0 && s.y - s.r < y1) scar(g, s);
@@ -289,6 +317,7 @@ function scar(g, s) {
     g.fillStyle = gr; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 7); g.fill();
   } else if (s.kind === 'block') rubbleAt(g, s.b);
 }
+IC.drawScar = scar;
 function rubbleAt(g, b) { g.save(); g.translate(b.x, b.y); g.rotate(b.a); rubble(g, b); g.restore(); }
 
 /* stamp new damage everywhere it is visible: base, and any cached tiles */
@@ -312,7 +341,7 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs) {
   const zx = cam.z * dpr;
   ctx.drawImage(T.base, 0, 0, IC.WW, IC.WH);
   if (!T.base || zx < 0.42) return 0;
-  const lodWanted = zx >= 1.3 ? 2 : 1;
+  const lodWanted = zx >= 4 ? 3 : zx >= 1.3 ? 2 : 1;
   const vx0 = cam.x, vy0 = cam.y, vx1 = cam.x + cam.vw / cam.z, vy1 = cam.y + cam.vh / cam.z;
   T.frame++;
   const t0 = performance.now();
@@ -340,7 +369,8 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs) {
     if (mine.length > L.max) { mine.sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < mine.length - L.max; i++) T.tiles.delete(mine[i][0]); }
     return missing;
   };
-  if (lodWanted === 2) { draw(1, true); draw(2, false); }
+  if (lodWanted === 3) { draw(2, true); draw(3, false); }
+  else if (lodWanted === 2) { draw(1, true); draw(2, false); }
   else draw(1, false);
   return made;
 };

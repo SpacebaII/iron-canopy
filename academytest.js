@@ -2,6 +2,15 @@
 const IC = require('./headless.js'); const U = IC.U;
 const only = process.argv[2];
 const near = (S, type, p, a, b) => IC.findSpot(S, type, p.x, p.y, a, b);
+/* the strike lesson's MLRS: within reach of the launcher if it is still in sight, otherwise of its site */
+function deployMlrs(S) {
+  if (S.units.some(u => u.type === 'mlrs' && !u.dead) || !(S.reserve.mlrs > 0)) return;
+  const t = S.tels.find(x => x.known && !x.dead), px = t ? t.kx : S.camp.site.x, py = t ? t.ky : S.camp.site.y;
+  let spot = null; for (let r = 300; r < 800 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', px, py, r - 100, r);
+  // not in the town itself: that is where the enemy rockets fall
+  if (!spot) spot = IC.findSpot(S, 'mlrs', S.camp.town.x, S.camp.town.y, 120, 300);
+  if (spot) IC.deploy(S, 'mlrs', spot.x, spot.y);
+}
 const ACT = {
   radar: [
     S => { const c = IC.cap(S); const q = near(S, 'vhf', c, 150, 400); IC.deploy(S, 'vhf', q.x, q.y); },
@@ -43,17 +52,17 @@ const ACT = {
   ],
   strike: [
     S => { const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready'); const s = S.camp.site; if (r && s) IC.launchAir(S, r, { type: 'isr', x: s.x, y: s.y }); },
+    S => deployMlrs(S),
     S => {
-      if (S.units.some(u => u.type === 'mlrs')) return;
-      // place it within reach of the launcher if it is still in sight, otherwise of its site
-      const t = S.tels.find(x => x.known && !x.dead), px = t ? t.kx : S.camp.site.x, py = t ? t.ky : S.camp.site.y;
-      let spot = null; for (let r = 300; r < 800 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', px, py, r - 100, r);
-      if (!spot) spot = IC.findSpot(S, 'mlrs', S.camp.town.x, S.camp.town.y, 20, 250);
-      if (spot) IC.deploy(S, 'mlrs', spot.x, spot.y);
-    },
-    S => {
-      const u = S.units.find(x => x.type === 'mlrs' && x.state === 'ready'), t = S.tels.find(x => x.known && !x.dead);
+      deployMlrs(S);
+      // only a fresh sighting is worth a salvo: launchers move soon after they are seen
+      const u = S.units.find(x => x.type === 'mlrs' && x.state === 'ready'), t = S.tels.find(x => x.known && !x.dead && S.time - x.kt < 900);
       if (u && t && u.mags[0].mag > 0 && S.time - (u.lastFired || 0) > 300) IC.fireMission(S, u, t, 6);
+      // the launcher is out of reach: move the MLRS up behind it
+      if (u && t && U.dxy(u.x, u.y, t.kx, t.ky) > IC.MUN[u.mags[0].mun].range * 0.95) {
+        let spot = null; for (let r = 300; r < 700 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', t.kx, t.ky, r - 100, r);
+        if (spot) IC.relocate(S, u, spot.x, spot.y);
+      }
       // lost sight of it: look again
       const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready');
       if (!t && r && S.camp.site) IC.launchAir(S, r, { type: 'isr', x: S.camp.site.x, y: S.camp.site.y });
