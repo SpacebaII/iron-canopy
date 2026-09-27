@@ -415,29 +415,44 @@ const ROAD = {
 };
 IC.roadWidth = (k, z) => Math.max(ROAD[k][0], ROAD[k][1] / z * (1 - U.clamp((z - 3) / 6, 0, 1) * 0.6));
 function drawRoads(S, px) {
-  const W = S.world, z = cam.z, t = U.clamp((z - 3) / 6, 0, 1);
-  const vis = l => l.bb[2] > view.x0 - 5 && l.bb[0] < view.x1 + 5 && l.bb[3] > view.y0 - 5 && l.bb[1] < view.y1 + 5;
-  const groups = { ln: [], st: [], art: [], sp: [], lc: [], rd: [], ring: [], hw: [] };
-  for (const l of W.lanes) if (vis(l)) groups.ln.push(l);
-  for (const c of W.cities) if (c.x + c.r * 1.5 > view.x0 && c.x - c.r * 1.5 < view.x1 && c.y + c.r * 1.5 > view.y0 && c.y - c.r * 1.5 < view.y1) for (const l of c.streets) if (vis(l)) groups[l.cls].push(l);
+  const W = S.world, z = cam.z, t = U.clamp((z - 3) / 6, 0, 1), m = 5;
+  const vis = l => l.bb[2] > view.x0 - m && l.bb[0] < view.x1 + m && l.bb[3] > view.y0 - m && l.bb[1] < view.y1 + m;
+  const groups = { sp: [], lc: [], rd: [], hw: [] };
   for (const e of W.edges) if (vis(e)) groups[e.cls].push(e);
-  const path = list => { ctx.beginPath(); for (const l of list) { const P = l.pts; ctx.moveTo(P[0].x, P[0].y); for (let i = 1; i < P.length; i++) ctx.lineTo(P[i].x, P[i].y); } };
+  // only the stretches in view go into the path
+  const path = list => {
+    ctx.beginPath();
+    for (const l of list) {
+      const P = l.pts; let on = false;
+      for (let i = 1; i < P.length; i++) {
+        const a = P[i - 1], b = P[i];
+        if (Math.max(a.x, b.x) < view.x0 - m || Math.min(a.x, b.x) > view.x1 + m || Math.max(a.y, b.y) < view.y0 - m || Math.min(a.y, b.y) > view.y1 + m) { on = false; continue; }
+        if (!on) { ctx.moveTo(a.x, a.y); on = true; }
+        ctx.lineTo(b.x, b.y);
+      }
+    }
+  };
   const width = k => IC.roadWidth(k, z);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const order = ['ln', 'st', 'art', 'sp', 'lc', 'rd', 'ring', 'hw'];
-  for (const k of order) { if (!groups[k].length) continue; path(groups[k]); ctx.strokeStyle = k === 'ln' ? 'rgba(40,34,24,0.25)' : 'rgba(22,20,16,0.55)'; ctx.lineWidth = width(k) * 1.45 + px * 0.8; ctx.stroke(); }
+  const order = ['sp', 'lc', 'rd', 'hw'];
+  for (const k of order) { if (!groups[k].length) continue; path(groups[k]); ctx.strokeStyle = 'rgba(22,20,16,0.55)'; ctx.lineWidth = width(k) * 1.45 + px * 0.8; ctx.stroke(); }
   for (const k of order) {
     if (!groups[k].length) continue;
     // far out roads are drawn in map colours; close in they turn to asphalt
-    const c = ROAD[k][2], a = k === 'ln' ? [120, 108, 84] : [92, 92, 90];
+    const c = ROAD[k][2], a = [92, 92, 90];
     ctx.strokeStyle = `rgb(${c[0] + (a[0] - c[0]) * t | 0},${c[1] + (a[1] - c[1]) * t | 0},${c[2] + (a[2] - c[2]) * t | 0})`;
     path(groups[k]); ctx.lineWidth = width(k); ctx.stroke();
   }
   for (const k in W.nodes) { const n = W.nodes[k]; if (n.ix && inView(n.x, n.y, 10)) IC.interchange(ctx, n, width('lc'), `rgb(${ROAD.rd[2].join(',')})`); }
   if (z > 5) {
-    // motorways: a central reservation and lane lines; main roads: a dashed centre line
+    // motorways: two carriageways either side of a grass reservation, with lane lines; main roads: a dashed centre line
     const w = width('hw');
-    if (groups.hw.length || groups.ring.length) { path(groups.hw.concat(groups.ring)); ctx.strokeStyle = 'rgba(60,90,50,0.9)'; ctx.lineWidth = w * 0.12; ctx.stroke(); ctx.strokeStyle = 'rgba(235,235,225,0.55)'; ctx.lineWidth = 0.012; ctx.setLineDash([0.06, 0.12]); for (const o of [-0.25, 0.25]) { ctx.save(); ctx.lineWidth = w; ctx.restore(); } ctx.stroke(); ctx.setLineDash([]); }
+    if (groups.hw.length) {
+      path(groups.hw);
+      ctx.strokeStyle = 'rgba(235,235,225,0.55)'; ctx.lineWidth = w * 0.62; ctx.setLineDash([0.06, 0.12]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgb(92,92,90)'; ctx.lineWidth = w * 0.58; ctx.stroke();
+      ctx.strokeStyle = 'rgba(80,104,62,1)'; ctx.lineWidth = w * 0.1; ctx.stroke();
+    }
     if (groups.rd.length) { path(groups.rd); ctx.strokeStyle = 'rgba(235,235,225,0.6)'; ctx.lineWidth = 0.012; ctx.setLineDash([0.08, 0.1]); ctx.stroke(); ctx.setLineDash([]); }
   }
   // craters and scorch on the roads
@@ -450,13 +465,13 @@ function drawBridges(S, px) {
   for (const b of S.infra) {
     if (b.kind !== 'bridge' || !inView(b.x, b.y, 30)) continue;
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a);
-    const w = b.cls === 'hw' ? 5 : 3.6;
+    const w = Math.max(IC.roadWidth(b.cls, cam.z) * 1.3, b.cls === 'hw' ? 0.6 : 0.3);
     if (b.offline) {
-      ctx.fillStyle = 'rgba(40,36,30,0.95)'; ctx.fillRect(-7, -w / 2, 4.5, w); ctx.fillRect(2.5, -w / 2, 4.5, w);
+      ctx.fillStyle = 'rgba(40,36,30,0.95)'; ctx.fillRect(-6, -w / 2, 4, w); ctx.fillRect(2, -w / 2, 4, w);
       ctx.strokeStyle = C.hostile; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.moveTo(-2, -w); ctx.lineTo(2, w); ctx.moveTo(2, -w); ctx.lineTo(-2, w); ctx.stroke();
     } else {
-      ctx.fillStyle = 'rgba(220,210,190,0.95)'; ctx.fillRect(-7, -w / 2, 14, w);
-      ctx.strokeStyle = 'rgba(40,36,30,0.9)'; ctx.lineWidth = 0.5; ctx.strokeRect(-7, -w / 2, 14, w);
+      ctx.fillStyle = 'rgba(220,210,190,0.95)'; ctx.fillRect(-6, -w / 2, 12, w);
+      ctx.strokeStyle = 'rgba(40,36,30,0.9)'; ctx.lineWidth = Math.min(0.5, w * 0.15); ctx.strokeRect(-6, -w / 2, 12, w);
     }
     ctx.restore();
     if (b.offline && cam.z > 0.4) label('BRIDGE DOWN', b.x, b.y - 10 * px, px, C.hostile, 8.5, 'center', 700);
@@ -483,7 +498,7 @@ function drawTraffic(S, px, light, now) {
     // real size is 4.5 m for a car, 16 m for a lorry; never smaller than a couple of pixels
     const s = Math.max(0.045, 2.2 * px), gap = Math.max(0.3, 7 * px), side = k => Math.max(IC.roadWidth(k, z) * 0.24, 0);
     const cars = [], lorries = [];
-    IC.trafficVisible(S, view, gap, (x, y, h, lorry, k) => { const o = side(k), c = Math.cos(h), n = Math.sin(h); (lorry ? lorries : cars).push(x - n * o, y + c * o, c, n); });
+    IC.trafficVisible(S, view, gap, (x, y, h, lorry, k) => { const o = side(k), c = Math.cos(h), n = Math.sin(h); (lorry ? lorries : cars).push(x - n * o, y + c * o, c, n); }, z < 2.5 ? { st: 1, ln: 1 } : null);
     const quad = (list, L, Wd, col) => {
       ctx.fillStyle = col; ctx.beginPath();
       for (let i = 0; i < list.length; i += 4) {
@@ -500,16 +515,15 @@ function drawTraffic(S, px, light, now) {
       ctx.fillStyle = 'rgba(255,60,40,0.7)'; tl(cars, s); tl(lorries, s * 2.4);
       ctx.globalCompositeOperation = 'source-over';
     } else {
-      quad(cars, s, s * 0.45, 'rgba(0,0,0,0.3)');
-      const ofs = []; for (let i = 0; i < cars.length; i += 4) ofs.push(cars[i] - s * 0.3, cars[i + 1] - s * 0.3, cars[i + 2], cars[i + 3]);
-      quad(ofs, s, s * 0.45, 'rgba(232,234,238,0.95)');
+      if (z > 8) { quad(cars, s, s * 0.45, 'rgba(0,0,0,0.3)'); for (let i = 0; i < cars.length; i += 4) { cars[i] -= s * 0.3; cars[i + 1] -= s * 0.3; } }
+      quad(cars, s, s * 0.45, 'rgba(232,234,238,0.95)');
       quad(lorries, s * 2.4, s * 0.55, 'rgba(210,200,176,0.95)');
     }
     // buses and coaches: longer, in the national red
     const bs = [];
     for (const b of S.buses) { const p = IC.busPos(b); if (!inView(p.x, p.y, 2)) continue; const h = p.h + (b.dir < 0 ? Math.PI : 0), c = Math.cos(h), n = Math.sin(h), o = side(b.coach ? 'rd' : 'art'); bs.push(p.x - n * o, p.y + c * o, c, n); }
     if (night) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,236,190,0.8)'; ctx.beginPath(); for (let i = 0; i < bs.length; i += 4) { const x = bs[i] + bs[i + 2] * s * 3, y = bs[i + 1] + bs[i + 3] * s * 3; ctx.moveTo(x + s, y); ctx.arc(x, y, s, 0, 7); } ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
-    quad(bs, s * 3, s * 0.6, night ? 'rgba(120,50,40,0.9)' : 'rgba(214,72,52,0.95)');
+    quad(bs, s * 2.2, s * 0.5, night ? 'rgba(120,50,40,0.9)' : 'rgba(214,72,52,0.95)');
   }
   // trains: real length is about 25 m a carriage
   const tl = Math.max(0.25, 5 * px);

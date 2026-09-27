@@ -22,7 +22,7 @@ const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; 
 
 IC.buildTerrain = function (W) {
   const TS = IC.TS, CW = Math.round(IC.WW * TS), CH = Math.round(IC.WH * TS);
-  const BW = 1600, BH = 1200, cellX = IC.WW / BW, cellY = IC.WH / BH;
+  const BW = 1200, BH = 900, cellX = IC.WW / BW, cellY = IC.WH / BH;
   // forest mask on a 20-unit grid, shared by the base and the detail tiles
   const FGW = Math.ceil(IC.WW / 20), FGH = Math.ceil(IC.WH / 20);
   const FG = new Uint8Array(FGW * FGH);
@@ -59,29 +59,33 @@ IC.buildTerrain = function (W) {
     }
   }
   tg.putImageData(img, 0, 0);
+  // the ground: relief, fields and forest, our border and the map grid. Detail tiles start from it, so they
+  // do not inherit the wide roads baked into the base below
+  tg.save(); tg.scale(BW / IC.WW, BH / IC.WH); tg.lineCap = 'round'; tg.lineJoin = 'round';
+  const outline = () => { tg.beginPath(); W.poly.forEach(([x, y], i) => i ? tg.lineTo(x, y) : tg.moveTo(x, y)); tg.closePath(); };
+  for (const [w, a] of [[70, 0.04], [34, 0.07], [12, 0.16]]) { tg.strokeStyle = `rgba(140,215,255,${a})`; tg.lineWidth = w; outline(); tg.stroke(); }
+  tg.strokeStyle = 'rgba(210,215,220,0.2)'; tg.lineWidth = 7; tg.setLineDash([27, 36]);
+  W.secs.forEach((s, i) => {
+    tg.beginPath(); let first = true;
+    for (let dd = 0; dd < 13500; dd += 60) {
+      const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;
+      const x = W.cx + Math.cos(a0) * D, y = W.cy + Math.sin(a0) * D;
+      if (x < -80 || y < -80 || x > IC.WW + 80 || y > IC.WH + 80) break;
+      if (first) { tg.moveTo(x, y); first = false; } else tg.lineTo(x, y);
+    }
+    tg.stroke();
+  });
+  tg.setLineDash([]);
+  tg.strokeStyle = 'rgba(200,225,235,0.035)'; tg.lineWidth = 4;
+  for (let x = 500; x < IC.WW; x += 500) { tg.beginPath(); tg.moveTo(x, 0); tg.lineTo(x, IC.WH); tg.stroke(); }
+  for (let y = 500; y < IC.WH; y += 500) { tg.beginPath(); tg.moveTo(0, y); tg.lineTo(IC.WW, y); tg.stroke(); }
+  tg.restore();
+  T.ground = tmp;
   const cv = mk(CW, CH), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
   g.drawImage(tmp, 0, 0, CW, CH);
   g.save(); g.scale(TS, TS); g.lineCap = 'round'; g.lineJoin = 'round';
   vectors(g, W, 0, 0, IC.WW, IC.WH, 0);
-  // soft glow along our border
-  const outline = () => { g.beginPath(); W.poly.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); };
-  for (const [w, a] of [[70, 0.04], [34, 0.07], [12, 0.16]]) { g.strokeStyle = `rgba(140,215,255,${a})`; g.lineWidth = w; outline(); g.stroke(); }
-  g.strokeStyle = 'rgba(210,215,220,0.2)'; g.lineWidth = 7; g.setLineDash([27, 36]);
-  W.secs.forEach((s, i) => {
-    g.beginPath(); let first = true;
-    for (let dd = 0; dd < 13500; dd += 60) {
-      const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;
-      const x = W.cx + Math.cos(a0) * D, y = W.cy + Math.sin(a0) * D;
-      if (x < -80 || y < -80 || x > IC.WW + 80 || y > IC.WH + 80) break;
-      if (first) { g.moveTo(x, y); first = false; } else g.lineTo(x, y);
-    }
-    g.stroke();
-  });
-  g.setLineDash([]);
-  g.strokeStyle = 'rgba(200,225,235,0.035)'; g.lineWidth = 4;
-  for (let x = 500; x < IC.WW; x += 500) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, IC.WH); g.stroke(); }
-  for (let y = 500; y < IC.WH; y += 500) { g.beginPath(); g.moveTo(0, y); g.lineTo(IC.WW, y); g.stroke(); }
   g.restore();
   T.base = cv;
   T.grain = grain();
@@ -132,22 +136,25 @@ function vectors(g, W, x0, y0, x1, y1, lod) {
     g.fillStyle = wash; g.beginPath(); g.arc(c.x, c.y, c.r * 1.3, 0, 7); g.fill();
     for (const p of c.parks) { g.fillStyle = 'rgba(62,94,60,0.75)'; g.beginPath(); g.ellipse(p.x, p.y, p.rx, p.ry, p.a, 0, 7); g.fill(); }
   }
-  // roads: lod 0 and 1 bake them in at a readable width; closer in render.js draws them live at real width
-  if (lod < 2) {
-    const RW = lod ? { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, ring: 2.4 } : { hw: 7, rd: 4, lc: 2.4, sp: 2 };
+  // roads: lod 0 and 1 bake them all in at a readable width; closer in, city streets and lanes are baked (at
+  // about real width) and render.js draws the road network live
+  {
+    const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, ring: 2.4 },
+      { ln: 0.3, art: 0.7, st: 0.5, ring: 0.9 }, { ln: 0.12, art: 0.4, st: 0.34, ring: 0.36 }][lod];
     const FILL = { hw: 'rgba(238,176,104,0.92)', rd: 'rgba(222,204,156,0.75)', lc: 'rgba(196,184,150,0.5)', sp: 'rgba(196,184,150,0.5)', ln: 'rgba(160,140,100,0.55)', art: 'rgba(178,174,164,0.75)', st: 'rgba(148,146,140,0.6)', ring: 'rgba(232,190,130,0.85)' };
+    if (lod >= 2) { FILL.art = 'rgb(150,148,142)'; FILL.st = 'rgb(128,127,122)'; FILL.ring = 'rgb(128,127,122)'; FILL.ln = 'rgba(140,122,90,0.8)'; }
     const layers = [];
     if (lod) { layers.push(['ln', W.lanes]); for (const c of W.cities) if (inb(c.x - c.r * 1.5, c.y - c.r * 1.5, c.x + c.r * 1.5, c.y + c.r * 1.5)) for (const cls of ['st', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls)]); }
-    for (const cls of ['sp', 'lc', 'rd', 'hw']) layers.push([cls, W.edges.filter(e => e.cls === cls)]);
+    if (lod < 2) for (const cls of ['sp', 'lc', 'rd', 'hw']) layers.push([cls, W.edges.filter(e => e.cls === cls)]);
     for (const pass of [0, 1]) for (const [cls, list] of layers) {
       const w = RW[cls]; if (!w) continue;
       g.beginPath();
       for (const l of list) { if (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3])) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
-      if (pass === 0) { g.strokeStyle = cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + (lod ? 1.2 : 3); }
+      if (pass === 0) { g.strokeStyle = cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + [3, 1.2, 0.3, 0.1][lod]; }
       else { g.strokeStyle = FILL[cls]; g.lineWidth = w; }
       g.stroke();
     }
-    for (const k in W.nodes) { const n = W.nodes[k]; if (n.ix && lod && inb(n.x - 9, n.y - 9, n.x + 9, n.y + 9)) interchange(g, n, RW.lc, FILL.rd); }
+    if (lod === 1) for (const k in W.nodes) { const n = W.nodes[k]; if (n.ix && inb(n.x - 9, n.y - 9, n.x + 9, n.y + 9)) interchange(g, n, RW.lc, FILL.rd); }
   }
   g.strokeStyle = 'rgba(200,186,150,0.22)'; g.lineWidth = lod ? 2 : 6;
   for (const x of W.crossings) { g.beginPath(); g.moveTo(x.x, x.y); g.lineTo(x.far.x, x.far.y); g.stroke(); }
@@ -242,7 +249,8 @@ function paintTile(T, lod, tx, ty) {
   const px = Math.round(L.size * L.ppu), x0 = tx * L.size, y0 = ty * L.size, x1 = x0 + L.size, y1 = y0 + L.size;
   const cv = mk(px, px), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
-  g.drawImage(T.base, x0 * IC.TS, y0 * IC.TS, L.size * IC.TS, L.size * IC.TS, 0, 0, px, px);
+  const gs = T.ground.width / IC.WW;
+  g.drawImage(T.ground, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
   // fine grain so the upscaled base does not look smeared
   g.globalAlpha = lod >= 2 ? 0.5 : 0.35; g.globalCompositeOperation = 'overlay';
   const pat = g.createPattern(T.grain, 'repeat'); g.fillStyle = pat; g.fillRect(0, 0, px, px);

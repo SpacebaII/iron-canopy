@@ -43,7 +43,7 @@ IC.trafficInit = function (S) {
   for (const c of W.cities) {
     if (c.pop < 150) continue;
     for (const s of c.streets) if (s.cls === 'art' || s.cls === 'ring') {
-      const n = Math.max(1, Math.round(s.cum[s.cum.length - 1] / 40));
+      const n = Math.max(1, Math.round(s.cum[s.cum.length - 1] / 90));
       for (let i = 0; i < n; i++) S.buses.push({ l: s, s: Math.random() * s.cum[s.cum.length - 1], dir: i % 2 ? -1 : 1, stop: 5, wait: 0, city: c, coach: false });
     }
   }
@@ -106,14 +106,15 @@ IC.trainPos = t => along(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
 IC.busPos = b => along(b.l.pts, b.l.cum, U.clamp(b.s, 0, b.l.cum[b.l.cum.length - 1]));
 
 /* the cars and lorries in a view rectangle, for drawing: fn(x, y, heading, lorry, laneSide).
-   gap: the smallest spacing to show, in world units (the renderer asks for about 10 screen pixels) */
-IC.trafficVisible = function (S, view, gap, fn) {
+   gap: the smallest spacing to show, in world units (the renderer asks for a few screen pixels);
+   skip: classes to leave out (side streets and lanes when zoomed out) */
+IC.trafficVisible = function (S, view, gap, fn, skip) {
   const T = S.traffic; if (!T) return 0;
   const k = Math.max(0, Math.ceil(Math.log2(Math.max(BASE, gap) / BASE))), sp = BASE * (1 << k), step = 1 << k;
   let n = 0;
   for (const L of T.links) {
     const l = L.l, bb = l.bb;
-    if (L.load <= 0.01 || bb[2] < view.x0 || bb[0] > view.x1 || bb[3] < view.y0 || bb[1] > view.y1) continue;
+    if (L.load <= 0.01 || (skip && skip[L.cls]) || bb[2] < view.x0 || bb[0] > view.x1 || bb[3] < view.y0 || bb[1] > view.y1) continue;
     // which stretch of the road is in view
     const P = l.pts, cum = l.cum;
     let s0 = 1e9, s1 = -1;

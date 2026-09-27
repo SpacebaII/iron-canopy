@@ -503,16 +503,25 @@ IC.generate = function (seed) {
     return 'open';
   };
   // farmland weight for detail rendering
+  // farmland rings every town: a coarse grid of how farmed the land is (0 inside built-up areas)
+  const FGC = 25, FGW = Math.ceil(IC.WW / FGC) + 1, FGH = Math.ceil(IC.WH / FGC) + 1, farm = new Float32Array(FGW * FGH);
+  const hv = W.villages.filter(v => v.home);
+  const ring = (o, R0, f) => {
+    const i0 = Math.max(0, Math.floor((o.x - R0) / FGC)), i1 = Math.min(FGW - 1, Math.ceil((o.x + R0) / FGC));
+    const j0 = Math.max(0, Math.floor((o.y - R0) / FGC)), j1 = Math.min(FGH - 1, Math.ceil((o.y + R0) / FGC));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = j * FGW + i, e = Math.hypot(i * FGC - o.x, j * FGC - o.y); if (e < R0 && farm[k] >= 0) farm[k] = f(e, farm[k]); }
+  };
+  for (const v of hv) ring(v, 260, (e, w) => Math.max(w, 0.75 * (1 - e / 260) + 0.15));
+  for (const c of W.cities) ring(c, c.r * 3.6, (e, w) => e < c.r * 0.85 ? -1 : Math.max(w, (0.9 * (1 - e / (c.r * 3.6)) + 0.2) * U.clamp((e - c.r * 0.85) / (c.r * 0.3), 0, 1)));
   W.farmAt = (x, y) => {
     const h = W.hAt(x, y);
-    if (h > 0.62 || W.inLake(x, y)) return 0;
-    let fw = h < 0.4 ? 0.3 : 0.1;
-    for (const c of W.cities) {
-      const rf = c.r * 3.6, e = U.dxy(c.x, c.y, x, y);
-      if (e < c.r * 0.85) return 0;   // built up, no fields
-      if (e < rf) fw = Math.max(fw, (0.9 * (1 - e / rf) + 0.2) * U.clamp((e - c.r * 0.85) / (c.r * 0.3), 0, 1));
-    }
-    return Math.min(1, fw);
+    if (h > 0.68 || W.inLake(x, y)) return 0;
+    const fx = U.clamp(x / FGC, 0, FGW - 1.001), fy = U.clamp(y / FGC, 0, FGH - 1.001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j;
+    const a = farm[j * FGW + i], b = farm[j * FGW + i + 1], c = farm[(j + 1) * FGW + i], d = farm[(j + 1) * FGW + i + 1];
+    if (a < 0 || b < 0 || c < 0 || d < 0) return 0;   // built up, no fields
+    const fw = a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    // fields thin out up the hillsides
+    return Math.min(1, Math.max(fw, h < 0.4 ? 0.3 : 0.12)) * U.clamp((0.68 - h) / 0.14, 0, 1);
   };
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   W.fieldAng = (x, y) => (U.hash(Math.floor(x / 1500) + 900, Math.floor(y / 1500) + 300) - 0.5) * 1.2;
@@ -906,19 +915,20 @@ function buildTowns(W, R, fbm) {
   // villages: houses along the roads through them
   for (const v of W.villages) {
     const segs = v.home ? segsNear(v.x, v.y, v.r * 1.3).filter(s => s[4] !== 'hw') : [];
-    const n = Math.round(6 + v.pop * 0.5);
+    const n = Math.round(24 + v.pop * 2.2);
     v.blocks = [];
     for (let k = 0, g = 0; k < n && g < n * 6; g++) {
       let x, y, a;
       if (segs.length && R() < 0.85) {
         const s = R.pick(segs), t = R(), L = U.dxy(s[0], s[1], s[2], s[3]);
         a = Math.atan2(s[3] - s[1], s[2] - s[0]);
-        const side = R() < 0.5 ? 1 : -1, off = R.range(1.6, 3.2);
+        const side = R() < 0.5 ? 1 : -1, off = R.range(0.7, 1.4) + (R() < 0.25 ? 1.2 : 0);
         x = s[0] + (s[2] - s[0]) * t - Math.sin(a) * off * side; y = s[1] + (s[3] - s[1]) * t + Math.cos(a) * off * side;
-        if (U.dxy(x, y, v.x, v.y) > v.r * (0.6 + 0.6 * R()) || L < 1 || !clear(segs, x, y, 1.2)) continue;
-      } else { x = v.x + R.gauss() * v.r * 0.35; y = v.y + R.gauss() * v.r * 0.35; a = v.grid + R.range(-0.2, 0.2); }
+        if (U.dxy(x, y, v.x, v.y) > v.r * (0.5 + 0.7 * R()) || L < 1 || !clear(segs, x, y, 0.5)) continue;
+      } else { x = v.x + R.gauss() * v.r * 0.3; y = v.y + R.gauss() * v.r * 0.3; a = v.grid + R.range(-0.2, 0.2); }
       if (W.inLake(x, y)) continue;
-      v.blocks.push({ x, y, w: R.range(1.4, 3.2), h: R.range(1.2, 2.4), a, seed: R() * 1000, hp: 1 });
+      const farmYard = R() < 0.1;
+      v.blocks.push({ x, y, w: farmYard ? R.range(1.2, 2) : R.range(0.45, 0.9), h: farmYard ? R.range(0.8, 1.4) : R.range(0.4, 0.7), a, seed: R() * 1000, hp: 1 });
       k++;
     }
   }
