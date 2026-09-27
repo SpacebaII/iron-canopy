@@ -17,8 +17,16 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   const setup = args[1] && !args[1].startsWith('--') ? args[1] : '';
   const waitArg = args.find(a => a.startsWith('--wait='));
   const settle = waitArg ? +waitArg.slice(7) : 800;
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  // a Playwright whose own browser is missing can still drive a preinstalled Chromium
+  // behind a proxy (web fonts come from Google), let Chromium use it
+  const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
+  let browser;
+  try { browser = await chromium.launch(opt); } catch (e) {
+    const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
+    if (!fs.existsSync(alt)) throw e;
+    browser = await chromium.launch(Object.assign({ executablePath: alt }, opt));
+  }
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: true });
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
