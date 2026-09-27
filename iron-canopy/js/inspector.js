@@ -104,7 +104,7 @@ function unit(u) {
     const mags = IC.activeMags(S, u).map(m => {
       const M = IC.MUN[m.mun];
       const rounds = Array.from({ length: m.max }, (_, i) => `<i class="${i < m.mag ? '' : 'e'}"></i>`).join('') + Array.from({ length: Math.min(12, m.store) }, () => '<i class="s"></i>').join('');
-      return `<div class="mag" title="${esc(M.name)}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${M.short || m.mun}</b><span class="rounds">${rounds}</span><small>${m.mag}/${m.max} +${m.store}${m.inc ? ` · ${m.inc}↘` : ''}</small></div>`;
+      return `<div class="mag" title="${esc(IC.fullName(M))}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${M.short || m.mun}</b><span class="rounds">${rounds}</span><small>${m.mag}/${m.max} +${m.store}${m.inc ? ` · ${m.inc}↘` : ''}</small></div>`;
     }).join('');
     parts.push(`<div class="sec"><h3 class="sh">Magazine <em>ready / reserve / inbound</em></h3><div class="mags">${mags}</div></div>`);
   }
@@ -127,7 +127,7 @@ function unit(u) {
   rows.push(['Enemy knowledge', intel]);
   parts.push(kv(rows));
   if (u.inv) parts.push(depot(u));
-  return head(ui.sym(u.type, 104, 80), u.name, `${esc(d.name)} · ${IC.MOB_LABEL[d.mob]}`, st, cls) + `<div class="ibody"><div class="now ${whyCls}">${esc(why)}</div>${parts.join('')}<p class="hint">${d.weapon === 'strike' ? 'Right-click an enemy target to fire; shift+right-click fires a salvo.' : d.mob !== 'fixed' ? 'Right-click the map to move. With a battery selected, right-click a track to make it the priority target.' : esc(d.desc)}</p></div>`;
+  return head(ui.sym(u.type, 104, 80), u.name, `${esc(IC.fullName(d))} · ${IC.MOB_LABEL[d.mob]}`, st, cls) + `<div class="ibody"><div class="now ${whyCls}">${esc(why)}</div>${parts.join('')}<p class="hint">${d.weapon === 'strike' ? 'Right-click an enemy target to fire; shift+right-click fires a salvo.' : d.mob !== 'fixed' ? 'Right-click the map to move. With a battery selected, right-click a track to make it the priority target.' : esc(d.desc)}</p></div>`;
 }
 function depot(u) {
   const dem = IC.depotDemand(S)[u.id] || {};
@@ -145,7 +145,7 @@ function depot(u) {
 function track(t) {
   const aff = t.decoyKnown ? 'D' : t.aff || 'U';
   const colCls = { H: 'hostile', S: 'suspect', U: 'unknown', A: 'civil', N: 'civil', D: 'muted' }[aff];
-  const name = aff === 'N' || aff === 'A' ? `${t.type === 'ga' ? 'Light aircraft' : 'Airliner'} ${t.cs}` : aff === 'H' ? (t.d.name) : t.decoyKnown ? 'Decoy' : IC.AFF[aff].name + ' track';
+  const name = aff === 'N' || aff === 'A' ? `${t.type === 'ga' ? 'Light aircraft' : 'Airliner'} ${t.cs}` : aff === 'H' ? IC.fullName(t.d) : t.decoyKnown ? 'Decoy' : IC.AFF[aff].name + ' track';
   const age = S.time - t.pt;
   const q = t.fc ? 'fire-control quality' : t.satOnly ? 'satellite cue' : t.det ? `surveillance, ${age < 3 ? 'fresh' : U.dur(age) + ' old'}` : 'lost';
   const ladder = `<div class="ladder">

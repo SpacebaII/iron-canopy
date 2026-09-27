@@ -55,7 +55,7 @@ ui.setHTML = function (el, html, key) {
   else { tpl.innerHTML = html; morphKids(el, tpl.content); tpl.innerHTML = ''; }
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
-  for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.airFrame(g, 'H', c.width / 2, c.height / 2 + 4, c.width / 30); }
+  for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawThreatSymbol(g, c.dataset.thr, c.width / 2, c.height / 2 + 4, c.width / 24); }
   return true;
 };
 const setHTML = ui.setHTML;
@@ -268,9 +268,9 @@ function arsenal() {
     const on = S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === type;
     const tech = locked ? IC.TECH.find(t => t.id === d.tech) : null;
     const first = coming.filter(o => o.started).sort((a, b) => b.prog - a.prog)[0];
-    return `<div class="tile ${locked ? 'locked' : ''}" id="tile-${type}" role="button" tabindex="0" data-act="deploy" data-v="${type}" aria-pressed="${on}" title="${esc(d.desc)}">
+    return `<div class="tile ${locked ? 'locked' : ''}" id="tile-${type}" role="button" tabindex="0" data-act="deploy" data-v="${type}" aria-pressed="${on}" title="${esc(IC.fullName(d))}. ${esc(d.desc)}">
       ${ui.sym(type)}${r ? `<span class="res-n">×${r}</span>` : ''}
-      <span class="tn">${esc(d.name)}</span>
+      <span class="tn">${esc(d.name)}</span><span class="tr">${esc(d.role || '')}</span>
       ${locked ? `<span class="tc">Needs ${esc(tech.name)}</span>` : r ? `<span class="tc ok">Deploy · free</span>` : `<span class="tc">${U.money(IC.unitCost(S, type))} · ${U.dur(IC.leadTime(S, type))}</span>`}
       ${coming.length ? `<span class="eta">+${coming.length} on order</span>` : ''}
       ${!locked && allowed(type) ? `<button class="buy" data-act="order" data-v="${type}" ${S.budget < IC.unitCost(S, type) ? 'disabled' : ''}>Order</button>` : ''}
@@ -337,7 +337,7 @@ ui.tip = function (ent, sx, sy) {
   const r = ent.ref;
   let t = '', s = '';
   if (ent.kind === 'track') { t = `TN ${r.tn} · ${IC.AFF[r.aff || 'U'].name}${r.klass ? ' · ' + (IC.KLASS[r.klass] || r.klass) : ''}`; s = `${r.sq ? 'Squawk ' + r.sq + ' · ' : ''}${r.altKnown ? U.alt(r.alt) : 'altitude unknown'} · ${U.kmh(Math.hypot(r.vx, r.vy))}`; }
-  else if (ent.kind === 'unit') { t = `${r.name} · ${r.d.name}`; s = r.why || IC.unitState(r)[0]; }
+  else if (ent.kind === 'unit') { t = `${r.name} · ${IC.fullName(r.d)}`; s = r.why || IC.unitState(r)[0]; }
   else if (ent.kind === 'veh') { t = r.name; s = r.job ? r.job.label : 'Parked'; }
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
   else if (ent.kind === 'site') { t = r.name; s = `${r.destroyed ? 'Destroyed' : r.pk >= 2 ? 'Located' : 'Suspected'}`; }

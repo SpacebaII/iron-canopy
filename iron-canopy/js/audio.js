@@ -149,18 +149,86 @@ A.thunder = function () {
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(400, t0); lp.frequency.exponentialRampToValueAtTime(60, t0 + 3.5);
   const o = out(1, Math.random() - 0.5); env(o, t0, 0.3, 0.15, 3.4); n.connect(lp); lp.connect(o);
 };
+/* launches: the simulation asks for a sound by size; the drawing, which knows the missile, claims it with its class
+   in the same frame. Anything unclaimed plays by size. Two from one launcher ripple. */
+const pending = [], claims = [];
+let flushT = null;
 A.launch = function (x, y, s) {
   if (!ctx || !A.on) return;
-  const { g, pan } = spatial(x, y, 1.1);
-  if (g < 0.03 || !throttle('launch', 90)) return;
-  const t0 = ctx.currentTime, dur = 0.9 + (s || 1) * 0.6;
-  const n = noise(dur + 0.2);
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
-  bp.frequency.setValueAtTime(2600, t0); bp.frequency.exponentialRampToValueAtTime(500, t0 + dur);
-  const o = out(1, pan); env(o, t0, 0.35 * g, 0.03, dur);
-  n.connect(bp); bp.connect(o);
-  const n2 = noise(dur); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220;
-  const o2 = out(1, pan); env(o2, t0, 0.3 * g, 0.02, dur * 0.8); n2.connect(lp); lp.connect(o2);
+  pending.push({ x, y, s });
+  if (!flushT) flushT = setTimeout(flush, 0);
+};
+A.claimLaunch = function (x, y, cls, delay) {
+  if (!ctx || !A.on) return;
+  claims.push({ x, y, cls, delay: delay || 0 });
+  if (!flushT) flushT = setTimeout(flush, 0);
+};
+const BY_SIZE = s => s >= 1.35 ? 'lr' : s >= 1.25 ? 'tbm' : s >= 0.95 ? 'mr' : s >= 0.75 ? 'cm' : s >= 0.65 ? 'sr' : s >= 0.55 ? 'aam' : 'rkt';
+function flush() {
+  flushT = null;
+  const used = new Set();
+  for (const c of claims) {
+    const i = pending.findIndex((p, k) => !used.has(k) && Math.abs(p.x - c.x) + Math.abs(p.y - c.y) < 8);
+    if (i >= 0) used.add(i);
+    missile(c.x, c.y, c.cls, c.delay);
+  }
+  pending.forEach((p, k) => { if (!used.has(k)) missile(p.x, p.y, BY_SIZE(p.s), 0); });
+  pending.length = 0; claims.length = 0;
+}
+/* each class has its own voice: a heat-seeker's pop and hiss, a short-range crack, a medium-range whoosh, a long-range
+   roar that crackles, the tearing climb of a ballistic missile interceptor */
+const VOICE = {
+  ir:  { pop: 0.5, crack: 0, band: [3200, 1400], dur: 0.7, roar: 0, gain: 0.22 },
+  sr:  { pop: 0.3, crack: 0.5, band: [2800, 900], dur: 0.9, roar: 0.15, gain: 0.3 },
+  mr:  { pop: 0, crack: 0.35, band: [1900, 500], dur: 1.6, roar: 0.35, gain: 0.34 },
+  lr:  { pop: 0, crack: 0.5, band: [1300, 260], dur: 3, roar: 0.7, gain: 0.42, crackle: true },
+  bmd: { pop: 0, crack: 0.8, band: [2600, 3600], dur: 2, roar: 0.5, gain: 0.4, crackle: true },
+  hat: { pop: 0, crack: 0.9, band: [1500, 2600], dur: 3.4, roar: 0.8, gain: 0.44, crackle: true },
+  exo: { pop: 0, crack: 1, band: [1200, 2400], dur: 4, roar: 0.9, gain: 0.46, crackle: true },
+  aam: { pop: 0.2, crack: 0, band: [3000, 1200], dur: 0.8, roar: 0, gain: 0.2 },
+  tbm: { pop: 0, crack: 0.2, band: [900, 300], dur: 3.5, roar: 0.8, gain: 0.3, crackle: true, far: true },
+  cm:  { pop: 0.4, crack: 0, band: [1500, 700], dur: 1.4, roar: 0.2, gain: 0.22 },
+  rkt: { pop: 0.3, crack: 0.3, band: [2400, 800], dur: 0.7, roar: 0.1, gain: 0.24 }
+};
+function missile(x, y, cls, delay) {
+  const V = VOICE[cls] || VOICE.mr;
+  const { g, pan, far } = spatial(x, y, V.far ? 1.8 : 1.2);
+  if (g < 0.03 || !throttle('launch' + cls + Math.round(delay * 10), 60)) return;
+  const t0 = ctx.currentTime + (delay || 0) + far * 0.3, dur = V.dur, G = V.gain * g;
+  if (V.pop) { const s = noise(0.06); const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 900; const o = out(1, pan); env(o, t0, G * V.pop * 1.4, 0.002, 0.06); s.connect(hp); hp.connect(o); }
+  if (V.crack) { const s = noise(0.25); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000 * (1 - far * 0.6); const o = out(1, pan); env(o, t0, G * V.crack * 1.6, 0.003, 0.22); s.connect(lp); lp.connect(o); }
+  const t1 = t0 + (V.pop ? 0.07 : 0);
+  const n = ctx.createBufferSource(); n.buffer = noiseBuf; n.loop = true; n.start(t1, Math.random() * 1.5); n.stop(t1 + dur + 0.1);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(V.band[0] * (1 - far * 0.5), t1); bp.frequency.exponentialRampToValueAtTime(V.band[1] * (1 - far * 0.5), t1 + dur);
+  const o = out(1, pan); o.gain.setValueAtTime(0.0001, t1); o.gain.exponentialRampToValueAtTime(Math.max(0.0002, G), t1 + 0.04); o.gain.exponentialRampToValueAtTime(0.0001, t1 + dur);
+  n.connect(bp);
+  if (V.crackle) {
+    // a motor's crackle: the roar chopped by fast random gain
+    const am = ctx.createGain(); am.gain.value = 0.6;
+    for (let t = 0; t < dur; t += 0.025) am.gain.setValueAtTime(0.35 + Math.random() * 0.9, t1 + t);
+    bp.connect(am); am.connect(o);
+  } else bp.connect(o);
+  if (V.roar) { const n2 = noise(dur); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180; const o2 = out(1, pan); env(o2, t0, G * V.roar, 0.05, dur * 0.9); n2.connect(lp); lp.connect(o2); }
+}
+A.missile = missile;
+/* an interceptor meets its target: a hard, bright crack; a ballistic kill adds a heavy thump */
+A.intercept = function (x, y, big) {
+  if (!ctx || !A.on) return;
+  const { g, pan, delay, far } = spatial(x, y, 1.6);
+  if (g < 0.03 || !throttle('icpt', 90)) return;
+  const t0 = ctx.currentTime + delay;
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.start(t0, Math.random()); s.stop(t0 + 0.2);
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1500 * (1 - far * 0.6);
+  const o = out(1, pan); env(o, t0, 0.3 * g, 0.001, 0.12); s.connect(hp); hp.connect(o);
+  tone('triangle', 1800, 600, 0.12, 0.05 * g, null, delay);
+  if (big) { const th = ctx.createOscillator(); th.frequency.setValueAtTime(90, t0); th.frequency.exponentialRampToValueAtTime(30, t0 + 0.8); const tg = out(1, pan); env(tg, t0, 0.45 * g, 0.004, 0.9); th.connect(tg); th.start(t0); th.stop(t0 + 1.1); }
+};
+/* the selected battery: a soft pulse while it tracks, quick high beeps while its missiles fly */
+A.lock = function (state) {
+  if (!ctx || !A.on || !state) return;
+  if (state === 'guiding') { if (throttle('lock', 420)) { tone('square', 1760, 1760, 0.05, 0.018); tone('square', 1760, 1760, 0.05, 0.018, null, 0.1); } }
+  else if (state === 'tracking') { if (throttle('lock', 1300)) tone('sine', 880, 880, 0.09, 0.016); }
 };
 A.gun = function (x, y) {
   if (!ctx || !A.on) return;
@@ -221,14 +289,20 @@ A.klaxon = function () {
 };
 A.siren = function (x, y) {
   if (!ctx || !A.on) return;
-  const { g, pan } = spatial(x, y, 1.4);
+  const { g, pan } = spatial(x, y, 1.6);
   if (g < 0.05 || !throttle('siren', 25000)) return;
-  const t0 = ctx.currentTime;
-  const o = ctx.createOscillator(); o.type = 'sawtooth';
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
-  for (let c = 0; c < 2; c++) { o.frequency.setValueAtTime(280, t0 + c * 7); o.frequency.linearRampToValueAtTime(720, t0 + c * 7 + 3.5); o.frequency.linearRampToValueAtTime(280, t0 + c * 7 + 7); }
-  const og = out(1, pan); og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.06 * g, t0 + 1); og.gain.setValueAtTime(0.06 * g, t0 + 12); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 14);
-  o.connect(lp); lp.connect(og); o.start(t0); o.stop(t0 + 14.2);
+  const t0 = ctx.currentTime, T = 16;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1600;
+  const og = out(1, pan); og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.07 * g, t0 + 2); og.gain.setValueAtTime(0.07 * g, t0 + T - 3); og.gain.exponentialRampToValueAtTime(0.0001, t0 + T);
+  lp.connect(og);
+  for (const det of [1, 1.012]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    // wind up, wail, wind down, wail again
+    o.frequency.setValueAtTime(140 * det, t0); o.frequency.linearRampToValueAtTime(560 * det, t0 + 3.5); o.frequency.setValueAtTime(560 * det, t0 + 6);
+    o.frequency.linearRampToValueAtTime(330 * det, t0 + 8.5); o.frequency.linearRampToValueAtTime(560 * det, t0 + 10.5); o.frequency.setValueAtTime(560 * det, t0 + 12.5); o.frequency.linearRampToValueAtTime(120 * det, t0 + T);
+    const vib = ctx.createOscillator(); vib.frequency.value = 5.5; const vg = ctx.createGain(); vg.gain.value = 6; vib.connect(vg); vg.connect(o.frequency); vib.start(t0); vib.stop(t0 + T + 0.2);
+    o.connect(lp); o.start(t0); o.stop(t0 + T + 0.2);
+  }
 };
 A.radio = function () {
   if (!ctx || !A.on || !throttle('radio', 500)) return;
