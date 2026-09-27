@@ -26,8 +26,8 @@ const ACT = {
   ],
   layers: [
     S => { if (!S.units.some(u => u.type === 'gf')) { const b = S.byId.ab_fwd; const q = near(S, 'gf', b, 60, 140); IC.deploy(S, 'gf', q.x, q.y); } },
-    S => { if (!S.units.some(u => u.type === 'shorad')) { const b = S.byId.ab_fwd; const q = near(S, 'shorad', b, 15, 50); IC.deploy(S, 'shorad', q.x, q.y); } },
-    S => { S.ad.doctrine = 'salvo'; IC.emit(S, 'doctrine', 'salvo'); }
+    S => { if (!S.units.some(u => u.type === 'shorad')) { const b = S.byId.ab_fwd; const q = near(S, 'shorad', b, 10, 40); IC.deploy(S, 'shorad', q.x, q.y); } },
+    S => { S.ad.doctrine = 'sls'; IC.emit(S, 'doctrine', 'sls'); }
   ],
   bmd: [S => { S.sel = { kind: 'unit', ref: S.units.find(u => u.type === 'lrsam') }; }],
   logi: [

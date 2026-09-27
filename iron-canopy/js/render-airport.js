@@ -12,6 +12,9 @@ function lbl(g, txt, x, y, px, col, size, align, weight) {
   g.fillStyle = col; g.fillText(txt, x, y);
   g.textAlign = 'left';
 }
+const ZONE_FILL = { civil: CONC, cargo: 'rgb(128,120,104)', light: 'rgb(112,122,128)', mil: 'rgb(104,112,96)' };
+const ROLE_COL = { arr: 'rgba(127,232,176,0.95)', dep: 'rgba(128,224,255,0.95)', mixed: 'rgba(236,236,226,0.95)' };
+const ROLE_TXT = { arr: 'ARR', dep: 'DEP', mixed: 'ARR/DEP' };
 const rect = (g, p, w, h, fill) => { g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h); g.restore(); };
 
 /* ---------- aircraft seen from above, at their real size ---------- */
@@ -106,13 +109,14 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     const L = IC.rwLen(rw), d = IC.rwDir(rw), c = IC.rwAt(rw, 0.5);
     rect(g, { x: c.x, y: c.y, a: Math.atan2(d.y, d.x) }, L + 3, 3.2, 'rgba(146,158,112,0.35)');
   }
-  // aprons and other paved areas
-  for (const p of by('apron')) drawArea(g, p, p.built ? CONC : null, px, p);
+  // aprons and other paved areas, tinted by zone
+  for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p);
   for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p);
   // taxiways
   for (const p of by('taxi')) drawTaxi(g, ap, p, px, z, full, marks, night);
   // runways
   for (const rw of by('runway')) drawRunway(g, S, ap, rw, px, z, marks, fine, night, now);
+  if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = IC.partZone(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
   if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) drawStand(g, s, px, z, marks, fine);
   // buildings
@@ -131,6 +135,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   // the airport sits under the same night as everything else; its lights do not
   if (light < 1 && box) { g.save(); g.translate(box.x, box.y); g.rotate(box.a); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fillRect(-box.w / 2 - 0.05, -box.h / 2 - 0.05, box.w + 0.1, box.h + 0.1); g.restore(); }
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
+  // which way each runway is in use, and for what (above the night, it is information)
+  if (z > 0.35) drawConfig(g, S, ap, px, z);
   if (z >= 0.5) for (const m of ap.moves) {
     if (m.dead) continue;
     if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
@@ -147,6 +153,21 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (z < 3 && S.layers.labels) lbl(g, ap.name, ap.x, ap.y + Math.min(ap.radius, 60 * px) + 12 * px, px, IC.C.muted, 9.5);
 };
 
+/* the runway configuration: an arrow at the threshold of each runway in use, green for arrivals, blue for departures */
+function drawConfig(g, S, ap, px, z) {
+  const cfg = ap.cfg; if (!cfg) return;
+  for (const rw of ap.parts) {
+    const c = cfg.rw[rw.id]; if (!c || c.role === 'spare' || !rw.built) continue;
+    const d = IC.rwDir(rw), dir = c.dir, th = dir > 0 ? rw.a : rw.b, col = ROLE_COL[c.role];
+    const ux = d.x * dir, uy = d.y * dir, L = Math.max(1.2, 22 * px), W = Math.max(0.35, 7 * px);
+    // an arrow on the approach, pointing down the runway the way it is used
+    const bx = th.x - ux * (L + 0.6), by = th.y - uy * (L + 0.6), tx = th.x - ux * 0.4, ty = th.y - uy * 0.4;
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = Math.max(0.03, 2 * px);
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(tx, ty); g.stroke();
+    g.beginPath(); g.moveTo(tx + ux * W * 0.2, ty + uy * W * 0.2); g.lineTo(tx - ux * W - uy * W * 0.6, ty - uy * W + ux * W * 0.6); g.lineTo(tx - ux * W + uy * W * 0.6, ty - uy * W - ux * W * 0.6); g.closePath(); g.fill();
+    if (z > 1) lbl(g, `${c.name} ${ROLE_TXT[c.role]}${c.ils && IC.needILS(S) ? ' ILS' : ''}`, bx - ux * 12 * px, by - uy * 12 * px + 3 * px, px, col, 8.5, 'center', 700);
+  }
+}
 /* the rectangle, aligned with the main runway, that holds everything the airport has */
 function fieldBox(ap) {
   const key = ap.parts.length + ':' + ap.nodeN;
@@ -197,6 +218,27 @@ function drawTaxi(g, ap, p, px, z, full, marks, night) {
   g.strokeStyle = ASPH; g.lineWidth = Math.max(p.w, 1 * px); g.stroke();
   if (marks) { g.strokeStyle = YEL; g.lineWidth = Math.max(0.015, 0.9 * px); g.stroke(); }
   g.lineCap = 'butt'; g.lineJoin = 'miter';
+  if (marks) for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], L = U.dist(a, b); if (L < 0.05) continue;
+    const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
+    // hold-short lines 75 m before a runway
+    for (const [n, sg] of [[a, 1], [b, -1]]) {
+      if (!(n.on && n.on.kind === 'rwy') || L < IC.GOPS.HOLD + 0.1) continue;
+      const hx = n.x + ux * sg * IC.GOPS.HOLD, hy = n.y + uy * sg * IC.GOPS.HOLD;
+      g.strokeStyle = YEL; g.lineWidth = Math.max(0.008, 0.7 * px);
+      for (const o of [0, 0.03]) { g.beginPath(); g.moveTo(hx + ux * sg * o - uy * p.w / 2, hy + uy * sg * o + ux * p.w / 2); g.lineTo(hx + ux * sg * o + uy * p.w / 2, hy + uy * sg * o - ux * p.w / 2); g.stroke(); }
+    }
+    // one-way taxiways and a preferred flow: chevrons pointing the way to go
+    const dir = p.oneway || p.flow;
+    if (dir) {
+      g.strokeStyle = p.oneway ? 'rgba(236,196,60,0.9)' : 'rgba(236,196,60,0.45)'; g.lineWidth = Math.max(0.01, 1 * px);
+      const k = 0.07, dx = ux * dir, dy = uy * dir;
+      for (let t = 0.6; t < L - 0.3; t += 1.2) {
+        const cx = a.x + ux * t, cy = a.y + uy * t;
+        g.beginPath(); g.moveTo(cx - dx * k - dy * k, cy - dy * k + dx * k); g.lineTo(cx, cy); g.lineTo(cx - dx * k + dy * k, cy - dy * k - dx * k); g.stroke();
+      }
+    }
+  }
   // cut segments
   for (const i in p.cut) {
     const a = ap.nodes[p.nodes[i - 1]], b = ap.nodes[p.nodes[i]]; if (!a || !b) continue;
@@ -236,7 +278,7 @@ function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
     g.fillStyle = 'rgba(236,236,226,0.8)';
     for (let x = -L / 2 + 1.2; x < L / 2 - 1.2; x += 0.5) g.fillRect(x, -0.0045, 0.3, 0.009);
     if (fine && rw.name) {
-      const m = rw.name.match(/(\d\d)\/(\d\d)/);
+      const m = rw.name.match(/(\d\d[LCR]?)\/(\d\d[LCR]?)/);
       if (m) for (const [e, num] of [[-1, m[1]], [1, m[2]]]) { g.save(); g.translate(e * (L / 2 - 0.62), 0); g.rotate(e > 0 ? -Math.PI / 2 : Math.PI / 2); g.font = '700 0.16px "IBM Plex Mono", monospace'; g.textAlign = 'center'; g.fillStyle = PAINT; g.fillText(num, 0, 0.06); g.restore(); }
     }
   } else if (z > 0.8) { g.fillStyle = 'rgba(236,236,226,0.35)'; g.fillRect(-L / 2 + 0.5, -Math.max(0.01, 0.4 * px), L - 1, Math.max(0.02, 0.8 * px)); }
@@ -271,7 +313,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.restore();
     return;
   }
-  const col = { terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212] }[p.kind] || [150, 150, 150];
+  const col = { terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
@@ -291,6 +333,13 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   } else if (p.kind === 'tower') {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
     if (full && !dead) { g.fillStyle = 'rgba(40,70,90,0.95)'; g.beginPath(); g.arc(0, 0, w * 0.34, 0, 7); g.fill(); g.fillStyle = night ? 'rgba(170,230,255,0.9)' : 'rgba(150,200,220,0.6)'; g.beginPath(); g.arc(0, 0, w * 0.22, 0, 7); g.fill(); }
+  } else if (p.kind === 'ils') {
+    // the localizer: a row of antennas across the centreline
+    g.fillStyle = 'rgba(40,40,40,0.5)'; g.fillRect(-w / 2, -h / 2, w, h);
+    g.fillStyle = fill; for (let i = 0; i < 8; i++) g.fillRect(-w / 2 + i * w / 7.5, -h * 0.3, Math.max(0.012, 0.8 * px), h * 0.6);
+  } else if (p.kind === 'gradar') {
+    g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
+    if (!dead && full) { const a = now * 3; g.strokeStyle = 'rgba(30,34,40,0.9)'; g.lineWidth = 0.015; g.beginPath(); g.moveTo(-Math.cos(a) * w * 0.9, -Math.sin(a) * w * 0.9); g.lineTo(Math.cos(a) * w * 0.9, Math.sin(a) * w * 0.9); g.stroke(); }
   } else if (p.kind === 'atc') {
     g.fillStyle = fill; g.beginPath(); g.arc(0, 0, Math.max(w / 2, 1.5 * px), 0, 7); g.fill();
     if (!dead && full) { const a = now * 1.3; g.strokeStyle = 'rgba(30,34,40,0.9)'; g.lineWidth = 0.02; g.beginPath(); g.moveTo(-Math.cos(a) * w * 0.8, -Math.sin(a) * w * 0.8); g.lineTo(Math.cos(a) * w * 0.8, Math.sin(a) * w * 0.8); g.stroke(); }
@@ -336,13 +385,19 @@ function drawLights(g, ap, px, z, light, now) {
     for (let i = 1; i < p.nodes.length; i++) {
       const a = ap.nodes[p.nodes[i - 1]], b = ap.nodes[p.nodes[i]]; if (!a || !b) continue;
       const L = U.dist(a, b), nx = -(b.y - a.y) / (L || 1), ny = (b.x - a.x) / (L || 1);
-      for (let s = 0; s <= L; s += z > 4 ? 0.3 : 0.9) { const x = a.x + (b.x - a.x) * s / L, y = a.y + (b.y - a.y) * s / L; dot(x + nx * 0.13, y + ny * 0.13, `rgba(90,150,255,${0.8 * k})`, 0.012); dot(x - nx * 0.13, y - ny * 0.13, `rgba(90,150,255,${0.8 * k})`, 0.012); }
+      // edge lights 30 m apart close in; further out, fewer, so they read as dots and not a solid line
+      for (let s = 0; s <= L; s += Math.max(0.3, 12 * px)) { const x = a.x + (b.x - a.x) * s / L, y = a.y + (b.y - a.y) * s / L; dot(x + nx * 0.13, y + ny * 0.13, `rgba(90,150,255,${0.8 * k})`, 0.012); dot(x - nx * 0.13, y - ny * 0.13, `rgba(90,150,255,${0.8 * k})`, 0.012); }
     }
   }
+  // floodlights along aprons and terminals: pools of light spaced along the building, not one glow for a whole concourse
   for (const p of ap.parts.filter(q => (q.kind === 'apron' || q.kind === 'terminal') && q.built && q.hp > q.max * 0.25)) {
-    const r = Math.max(p.w, p.h) * 0.7, gr = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-    gr.addColorStop(0, `rgba(255,214,150,${0.16 * k})`); gr.addColorStop(1, 'rgba(255,214,150,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill();
+    const long = Math.max(p.w, p.h), r = U.clamp(Math.min(p.w, p.h) * 0.9, 0.5, 1.6), n = Math.max(1, Math.round(long / (r * 1.6)));
+    for (let i = 0; i < n; i++) {
+      const f = (i + 0.5) / n - 0.5, c = IC.rectWorld(p, p.w >= p.h ? f * p.w : 0, p.w >= p.h ? 0 : f * p.h);
+      const gr = g.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+      gr.addColorStop(0, `rgba(255,214,150,${0.14 * k})`); gr.addColorStop(1, 'rgba(255,214,150,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(c.x, c.y, r, 0, 7); g.fill();
+    }
   }
   g.globalCompositeOperation = 'source-over';
 }

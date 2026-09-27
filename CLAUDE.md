@@ -41,11 +41,12 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `gen.js`, `world.js`, `terrain.js` | World generation (countries, rivers, cities with streets and blocks, villages, the road network by class, railways, airways), routing, the terrain canvas and detail tiles |
 | `state.js` | `IC.newGame`, the state object `S`, damage (`IC.detonate`), effects |
 | `sensors.js`, `threats.js`, `defense.js`, `units.js`, `enemy.js` | Radars and identification, enemy weapons, our air defence, procurement, the enemy commander |
-| `airport.js` | Airports as parts: runways, taxiway nodes and graph (`IC.aptGraph`, Dijkstra `IC.aptPath`), stands, stats and warnings (`IC.aptStats`), damage by location (`IC.aptHit`), engineering works, the editor (`IC.aptSnap`, `aptPlanTaxi`, `aptPlanPart`), starting layouts (`IC.layoutAirport`), founding airports |
-| `groundops.js` | Aircraft moving on the ground: runway locks, taxi, hold, line-up, take-off roll, final approach, landing roll, exits, parking; military launches and landings go through it too |
+| `airport.js` | Airports as parts: runways (names, dependent groups), taxiway nodes and graph (`IC.aptGraph`; heap Dijkstra `IC.aptSearch`, cached trees `IC.aptTree`, `IC.aptPath`), zones (`IC.partZone`, `IC.standZoneOk`), stands, stats and warnings (`IC.aptStats`), damage by location (`IC.aptHit`), engineering works, the editor (`IC.aptSnap`, `aptPlanTaxi`, `aptPlanPart`), starting layouts (`IC.layoutAirport`, including the six-runway `'kden'`), founding airports |
+| `groundops.js` | Aircraft moving on the ground: the wind's runway configuration (`IC.aptConfig`), runway clearances, taxi route reservations, hold-short, crossings, line-up, take-off roll, final approach, landing roll, exits, parking; crash risk and accidents (`IC.gopsRisk`); military launches and landings go through it too |
 | `aviation.js` | Airlines, routes and aircraft ("tails"), fees, satisfaction, route requests, prohibited zones, radio calls |
 | `civil.js` | Other air traffic: overflights, light aircraft; sirens and morale |
 | `traffic.js` | Road and rail traffic: flows per road by class, city size and hour; cars and lorries placed only where drawn; buses, coaches, trains |
+| `airspace.js` | Fixes and airways the player draws, routing over them, radar cover by altitude (terrain and earth curve), controllers' spacing and separation (losses, near misses), control zones, light-aircraft fields and clubs |
 | `incidents.js` | Things that must not be missed: off-route airliners, intruders, weapons released |
 | `air.js`, `ground.js`, `logistics.js` | Our air wing, the ground war, depots, trucks, economy, research |
 | `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |
@@ -57,10 +58,12 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 
 ## How the airport model works
 
-- An airport (`ap`, also in `S.infra`) has `parts` and `nodes`. Taxiways are polylines of node ids; a node that sits on a runway centreline or apron edge is linked to it (`node.on`). `IC.aptGraph` builds the graph from built parts only; aprons get stands laid out along their back edge (depth decides size S/M/L).
-- `IC.aptStats` measures what the airport can do (longest usable runway, runway occupancy, movements per hour, stands, terminal capacity, fuel) and lists what is wrong in plain words (`st.warn`).
-- Ground movement (`groundops.js`): one aircraft holds a runway at a time (`ap.rl` locks); taxiway edges carry traffic one way at a time with spacing; two aircraft nose to nose wait, then one is towed clear (a "gridlock", counted against the airport).
-- Airlines fly real aircraft between our airports and foreign ones. Arrivals ask for the runway at a final approach fix and hold if it is busy or no stand is free; long holds divert. Turnaround depends on contact stands, terminal load and fuel.
+- An airport (`ap`, also in `S.infra`) has `parts` and `nodes`. Taxiways are polylines of node ids; a node that sits on a runway centreline or apron edge is linked to it (`node.on`). Taxiways can be one-way (`part.oneway` ±1) or carry a preferred flow (`part.flow`). `IC.aptGraph` builds the graph from built parts only (`G.adj`, reverse `G.radj`, runway node lists `G.rwn`, dependent-runway groups `G.grp`); aprons get stands laid out along their back edge (depth decides size S/M/L). Every part and stand has a zone (passenger, cargo, light aircraft, military): civil aircraft never park in the military zone and the reverse.
+- Wind (`S.wind`: `dir` it blows from, `kt`, `gust`) and visibility (`IC.sky`, `IC.needILS`) come from `weather.js`. Aircraft types have crosswind and tailwind limits (`xw`, `tw`); `IC.rwWindBlock` says when a runway is closed to a type. `IC.aptConfig` picks a direction for each runway and a role (arrivals, departures, mixed, spare); in fog, arrivals need a landing system (`ils` part) on the end they land on.
+- `IC.aptStats` measures what the airport can do (runway occupancy per configuration and traffic mix, arrivals and departures an hour, stands per zone, gates against remote stands, terminal capacity, fuel by trucks or hydrant, fire-truck response) and lists what is wrong in plain words (`st.warn`). The numbers use the same timings as the simulation (`IC.rwOcc`).
+- Ground movement (`groundops.js`): runways that cross or are closer than 760 m share one clearance (`ap.rl`, keyed by group). Aircraft stop at hold-short lines 75 m before a runway; aircraft at the same line cross together; a crossing starts only when the way off is clear. Routes are planned with time reservations (`ap.res`) so opposite traffic on a single taxiway is avoided in advance; an aircraft kept waiting by oncoming traffic claims the taxiway next. Only stopped, nose-to-nose traffic is a "gridlock" (one is towed clear, counted against the airport). Scrambles, then arrivals, have priority for runways.
+- Airlines fly real aircraft between our airports and foreign ones. Arrivals get a runway from the arrival manager (`IC.gopsFaf`), ask for it at the final approach fix and hold if it is busy, its exit is blocked or no stand is free; long holds divert. Turnaround depends on contact stands, terminal load and fuel.
+- Accidents are rare and always have a cause: gusts just beyond a crew's limit, a wet or short runway, an incursion at night or in fog where there are runway crossings and no ground radar, birds near water. Fire-truck response decides how many die; the wreck closes the runway until engineers clear it; an accident report card follows.
 - Damage: craters split runways into strips (`IC.rwStrips`), taxiway segments get cut, buildings lose hit points, burning fuel spreads to tanks within 160 m, aircraft in the open die more easily than in shelters.
 
 ## How roads, towns and traffic work
@@ -71,7 +74,8 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 
 ## Balance as it stands (change it deliberately)
 
-- Airport parts cost per 100 m (runway ₭15M, taxiway ₭4M), per hectare (apron ₭12M, terminal ₭40M) or each (hangar ₭60M, hardened shelter ₭120M, fuel tank ₭35M). Upkeep is 0.12% of cost per game hour.
+- Airport parts cost per 100 m (runway ₭15M, taxiway ₭4M), per hectare (apron ₭12M, terminal ₭40M) or each (hangar ₭60M, hardened shelter ₭120M, fuel tank ₭35M, landing system ₭25M, ground radar ₭60M, hydrant system ₭90M). Upkeep is 0.12% of cost per game hour.
+- Runway separation: 480 s without a tower, 110 s with one, 60 s with an approach radar (half that after an arrival). Each tank's fuel trucks refuel 8 aircraft an hour; a hydrant system removes the limit and pipes in 900 fuel units an hour.
 - Landing fee is half the type's `fee`, passenger charge ₭0.0035M per passenger; both scale with the airport's charge level.
 - The Career starts with ₭220M and a ₭5M/h grant. Act I has lasted about half a game day when a player completes goals quickly; the owner wants it much longer and slower (see `docs/tasks/07-career-pacing.md`).
 

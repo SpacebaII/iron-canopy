@@ -42,44 +42,70 @@ function scheduleFlight(S, progress) {
   const cs = `${air} ${U.randi(100, 989)}`;
   const f = progress || 0;
   const path = S.av && crossesHome(w) ? IC.avPath(S, a, b) : { pts: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }] };
-  const P = path.pts;
-  const x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f;
-  const onGround = !a.edge && f < 0.02;
-  const wps = P.slice(1).filter(p => f < 0.02 || ((p.x - x) * (b.x - a.x) + (p.y - y) * (b.y - a.y)) > 0);
-  IC.spawnThreat(S, 'civ', x, y, { dest: wps[0] || b, wps: wps.length ? wps : [b], orig: a, cs, sq: octal(), plan: { a, b, cs, pts: P }, pax: U.randi(80, 290), alt: onGround ? 0.3 : 11, route: [b], aim: b, dist0: U.dist(a, b), airway: w, hostileCiv: w.kind === 'hostile' });
+  const P = path.pts, at = IC.pathAt(P, f);
+  const onGround = !a.edge && f < 0.02, cruise = IC.aspLevel(11, a, b);
+  IC.spawnThreat(S, 'civ', at.x, at.y, { dest: at.ahead[0], wps: at.ahead, orig: a, cs, sq: octal(), plan: { a, b, cs, pts: P }, pax: U.randi(80, 290), alt: onGround ? 0.3 : cruise, cruise, net: !!path.net, route: [b], aim: b, dist0: U.dist(a, b), airway: w, hostileCiv: w.kind === 'hostile' });
   if (S.av && crossesHome(w) && w.kind !== 'hostile') IC.avOverflight(S);
 }
+/* ---------- light aircraft: slow, low, by sight, from grass fields and big airports alike ---------- */
 function scheduleGA(S, progress) {
   const W = S.world;
-  if (S.airspace === 'closed') return;
-  const towns = W.cities.filter(c => c.owner !== 'enemy').concat(W.villages.filter(v => v.home));
+  if (S.airspace === 'closed' || !IC.gaWeatherOk(S)) return;
   if (S.airspace === 'restricted' || (S.enemy && S.enemy.war)) { if (Math.random() < 0.6) return; }
-  const a = U.pick(towns); const near = towns.filter(t => t !== a && U.dist(t, a) < 1600);
-  const b = near.length ? U.pick(near) : U.pick(towns);
-  if (!b || a === b) return;
-  const f = progress || 0;
-  const vfr = Math.random() < 0.8;
-  IC.spawnThreat(S, 'ga', a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, { dest: { x: b.x, y: b.y, name: b.name }, orig: { x: a.x, y: a.y, name: a.name }, cs: `${W.names.H.slice(0, 1)}-${String.fromCharCode(65 + U.randi(0, 25))}${String.fromCharCode(65 + U.randi(0, 25))}${U.randi(10, 99)}`, sq: vfr ? '7000' : null, pax: U.randi(1, 4), alt: U.rand(0.8, 2.2), route: [b], aim: b, dist0: U.dist(a, b) });
+  // pilots live in towns and fly from the nearest field; with no field near, from the airport
+  const towns = W.cities.filter(c => c.owner !== 'enemy' && IC.inHome(c.x, c.y)).concat(W.villages.filter(v => v.home));
+  const a = U.wpick(towns.map(t => [IC.gaBase(S, t), Math.sqrt(t.pop || 20)]).filter(p => p[0]));
+  if (!a) return;
+  let b;
+  if (Math.random() < 0.35) b = a; // a local flight: out and back
+  else {
+    const ends = S.asp.fields.map(f => ({ x: f.x, y: f.y, name: f.name, field: f.id })).concat(IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us' && !x.offline).map(x => ({ x: x.x, y: x.y, name: x.name, apt: x.id })));
+    const near = ends.filter(e => e.name !== a.name && U.dist(e, a) > 250 && U.dist(e, a) < 1800);
+    b = near.length ? U.pick(near) : a;
+  }
+  return IC.gaLaunch(S, a, b, { progress, careless: Math.random() < 0.12 });
 }
+/* one light aircraft from a to b (the same place: a local flight out and back). Careless pilots fly straight */
+IC.gaLaunch = function (S, a, b, o) {
+  const W = S.world, careless = !!o.careless, cleared = [a.apt, b.apt].filter(Boolean);
+  let pts;
+  if (b === a) {
+    const ang = Math.random() * 6.283, d = U.rand(150, 350), tp = { x: a.x + Math.cos(ang) * d, y: a.y + Math.sin(ang) * d };
+    pts = IC.gaPath(S, a, tp, cleared, careless).concat(IC.gaPath(S, tp, a, cleared, careless).slice(1));
+  } else pts = IC.gaPath(S, a, b, cleared, careless);
+  const f = o.progress || 0, at = IC.pathAt(pts, f);
+  const xpdr = o.xpdr != null ? o.xpdr : Math.random() < 0.8;
+  const t = IC.spawnThreat(S, 'ga', at.x, at.y, { dest: at.ahead[0], wps: at.ahead, orig: { x: a.x, y: a.y, name: a.name }, gaFrom: a, gaTo: b, cleared, careless, fpl: Math.random() < 0.5,
+    cs: `${W.names.H.slice(0, 1)}-${String.fromCharCode(65 + U.randi(0, 25))}${String.fromCharCode(65 + U.randi(0, 25))}${U.randi(10, 99)}`, sq: xpdr ? '7000' : null, pax: U.randi(1, 4),
+    alt: f ? U.rand(0.6, 1.8) : 0.15, gaAlt: o.alt || U.rand(0.6, 1.8), route: [b], aim: b, dist0: U.dist(a, b) });
+  if (f) t.alt = Math.min(t.alt, IC.gaCeiling(S, t));
+  if (!f && a.apt) IC.gaRunway(S, S.byId[a.apt]);
+  return t;
+};
 IC.moveCivil = function (S, t, dt) {
   if (t.tail) return IC.moveTail(S, t, dt);
   // intermediate route points (around prohibited zones)
   if (t.wps && t.wps.length > 1 && U.dxy(t.x, t.y, t.dest.x, t.dest.y) < t.spd * dt + 3) { t.wps.shift(); t.dest = t.wps[0]; }
   const d = t.dest, dx = d.x - t.x, dy = d.y - t.y, L = Math.hypot(dx, dy);
+  if (t.aspDzT > 0) { t.aspDzT -= dt; if (t.aspDzT <= 0) t.aspDz = 0; }
+  t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);
   if (t.type === 'ga') {
-    t.alt = Math.min(t.alt, 0.3 + L / 60);
+    // climb gently to its height, stay under terminal areas it is not cleared into, come down near the end
+    const fin = t.wps ? t.wps[t.wps.length - 1] : d, left = U.dxy(t.x, t.y, fin.x, fin.y) + (t.wps && t.wps.length > 1 ? 50 : 0);
+    const want = Math.min(t.gaAlt || 1.2, IC.gaCeiling(S, t), 0.15 + left / 60);
+    t.alt += U.clamp(want - t.alt, -0.004 * dt, 0.003 * dt);
     const a = Math.atan2(dy, dx) + 0.2 * Math.sin(t.age * 0.01 + t.seed);
     t.vx = Math.cos(a) * t.spd; t.vy = Math.sin(a) * t.spd;
   } else {
-    const fin = t.wps ? t.wps[t.wps.length - 1] : d;
+    const fin = t.wps ? t.wps[t.wps.length - 1] : d, cr = (t.cruise || 11) + (t.dzNow || 0);
     const flown = U.dxy(t.x, t.y, t.orig.x, t.orig.y);
-    const climb = t.orig.edge ? 11 : Math.min(11, 0.3 + flown / 100);
-    const desc = fin.edge ? 11 : Math.min(11, 0.3 + U.dxy(t.x, t.y, fin.x, fin.y) / 100);
+    const climb = t.orig.edge ? cr : Math.min(cr, 0.3 + flown / 100);
+    const desc = fin.edge ? cr : Math.min(cr, 0.3 + U.dxy(t.x, t.y, fin.x, fin.y) / 100);
     t.alt = Math.min(climb, desc);
     const hd = Math.atan2(dy, dx) + (t.drift || 0);
     t.vx = Math.cos(hd) * t.spd; t.vy = Math.sin(hd) * t.spd;
   }
-  if (L <= t.spd * dt + 2 || t.x < -900 || t.y < -900 || t.x > IC.WW + 900 || t.y > IC.WH + 900) { t.dead = true; return; }
+  if (L <= t.spd * dt + 2 || t.x < -900 || t.y < -900 || t.x > IC.WW + 900 || t.y > IC.WH + 900) { if (t.type === 'ga' && L <= t.spd * dt + 2) IC.gaArrive(S, t); t.dead = true; return; }
   t.x += t.vx * dt; t.y += t.vy * dt;
 };
 
