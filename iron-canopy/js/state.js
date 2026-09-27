@@ -108,15 +108,11 @@ function startingForces(S, sandbox) {
   put('shorad', cap, 220, 420);
   put('spaag', S.infra.find(i => i.kind === 'factory') || cap, 50, 140);
   put('spaag', dep, 40, 110);
-  put('manpads', cap, 80, 200);
-  put('manpads', fab, 50, 140);
-  const bt = IC.cities(S).filter(c => !c.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0];
-  if (bt) put('manpads', bt, bt.r * 0.5, bt.r + 60);
   if (sandbox) {
     put('lrsam', fab, 200, 450); put('mr3d', inward(mid(fA), 1100), 0, 350); put('gnss', inward(mid(fA), 1000), 0, 350);
     put('mlrs', inward(mid(fA), 700), 0, 300);
   }
-  S.reserve = sandbox ? { gf: 1, shorad: 2, manpads: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 1, gf: 1, shorad: 2, spaag: 1, manpads: 3, gnss: 1, mlrs: 1, lrsam: 1, depot: 1 };
+  S.reserve = sandbox ? { gf: 1, shorad: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 1, gf: 1, shorad: 2, spaag: 1, gnss: 1, mlrs: 1, lrsam: 1, depot: 1 };
 }
 
 IC.hasTech = (S, id) => !id || S.tech.done.has(id);

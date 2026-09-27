@@ -6,7 +6,7 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-const HIT = { IR: 1.2, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
+const HIT = { IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
 
 IC.maxRange = function (S, u) {
   const d = u.d;
@@ -152,7 +152,7 @@ function priority(u, t, r) {
 
 function fire(S, u, t, m, r, P, hoj) {
   const M = IC.MUN[m.mun];
-  m.mag--; t.inbound++; S.stats.fired++;
+  m.mag--; t.inbound++; t.shots = (t.shots || 0) + 1; S.stats.fired++;
   u.lastFired = S.time; u.fat = Math.min(100, u.fat + 1.5);
   const a = Math.atan2((P ? P.y : t.y) - u.y, (P ? P.x : t.x) - u.x);
   const R = effRange(M, u, t), cls = IC.classOf(t);
@@ -367,7 +367,7 @@ IC.updateMissiles = function (S, dt) {
       }
       if (t.cm > 0) {
         t.cm--;
-        if (m.M.seeker === 'IR') { m.pk *= 0.5; flares(S, t); }
+        if (m.M.seeker === 'IR') { m.pk *= m.M.ircm || 0.5; flares(S, t); }
         else { m.pk *= m.M.seeker === 'SARH' ? 0.7 : 0.82; chaff(S, t); }
         if (Math.random() < 0.5) { m.fooled = true; m.fx = U.rand(-8, 8); m.fy = U.rand(-8, 8); }
       }

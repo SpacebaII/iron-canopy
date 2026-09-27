@@ -9,6 +9,7 @@
    ARH (own radar at the end, chaff), HTK (hit-to-kill ballistic defense). */
 IC.MUN = {
   IR:  { name: 'IR missile', short: 'IR', seeker: 'IR', cost: 0.3, w: 0.25, prod: 300, range: 55, spd: 7, pk: 0.62, alt: [0, 4], vs: { drone: 1, heli: 1, cm: 0.6, air: 0.75, ga: 1 } },
+  IR2: { name: 'Imaging IR missile', short: 'IR+', seeker: 'IR', cost: 0.5, w: 0.25, prod: 400, range: 65, spd: 7.5, pk: 0.74, alt: [0, 4.5], vs: { drone: 1, heli: 1, cm: 0.75, air: 0.85, ga: 1 }, ircm: 0.8 },
   SR:  { name: 'Short-range missile', short: 'SR', seeker: 'CMD', cost: 0.8, w: 0.5, prod: 600, range: 120, spd: 9, pk: 0.78, alt: [0, 6], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 0.8, ga: 1 } },
   MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 450, spd: 12, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 }, hoj: true },
   LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 1000, spd: 15, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 }, hoj: true },
@@ -76,7 +77,7 @@ IC.UNITS = {
             sensor: { R: 7000, mast: 20, q: 'fc', bmdOnly: true, disc: true, eccm: 0.6, per: 3, rot: false, err: 1, idc: 'class' },
             desc: 'Tracks ballistic missiles across the region and tells warheads from decoys.' },
 
-  manpads:{ cat: 'ad', name: 'MANPADS Team', short: 'MPD', mob: 'mobile', fast: true, cost: 8, up: 0.3, build: 60, lead: 300, hp: 10, nato: 'MP',
+  manpads:{ cat: 'ad', name: 'MANPADS Team', short: 'MPD', mob: 'mobile', fast: true, callin: true, cost: 8, up: 0.3, build: 60, lead: 300, hp: 10, nato: 'MP',
             fc: { R: 70, mast: 2, passive: true }, weapon: 'sam', mags: [{ mun: 'IR', mag: 2, store: 4, reload: 40 }],
             desc: 'Shoulder-fired IR missiles. Cheap, silent, 5 km reach. Flares and bad weather hurt them.' },
   spaag:  { cat: 'ad', name: 'SPAAG Gun Vehicle', short: 'SPG', mob: 'mobile', cost: 35, up: 1, build: 120, lead: 600, hp: 25, nato: 'G',
@@ -178,6 +179,7 @@ IC.THR = {
   hgv:  { code: 'HGV',  name: 'Hypersonic glide vehicle', cls: 'hgv', klass: 'ballistic', spd: 20, alt: 40, rcs: 0.1, hp: 2.5, dmg: 180, move: 'hgv', evasive: 0.5 },
   rkt:  { code: 'RKT',  name: 'Guided artillery rocket', cls: 'rkt', klass: 'rocket', rcs: 0.01, hp: 0.5, dmg: 14, move: 'bal', apexK: 0.04, vAvg: 9 },
   arm:  { code: 'ARM',  name: 'Anti-radiation missile', cls: 'arm', klass: 'cm', spd: 6, alt: 8, rcs: 0.05, hp: 0.8, dmg: 45, move: 'arm' },
+  ahe:  { code: 'AHE',  name: 'Attack helicopter', cls: 'heli', klass: 'heli', spd: 0.75, alt: 0.1, rcs: 3, hp: 2, move: 'air', cm: 6, mil: true },
   dcy:  { code: 'DCY',  name: 'Air-launched decoy', cls: 'air', klass: 'fighter', spd: 2.4, alt: 6, rcs: 4, hp: 0.6, dmg: 0, move: 'wp', decoy: true },
   ftr:  { code: 'FTR',  name: 'Fighter', cls: 'air', klass: 'fighter', spd: 2.6, alt: 9, rcs: 4, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
   str:  { code: 'STK',  name: 'Strike aircraft', cls: 'air', klass: 'fighter', spd: 2.4, alt: 7, rcs: 5, hp: 2, move: 'air', emits: true, cm: 6, notch: true, mil: true },
@@ -209,6 +211,10 @@ IC.TECH = [
   { id: 's_aero', cat: 'sensor', name: 'Aerostat radar', cost: 150, time: 3600, req: ['s_esm'], desc: 'Balloon radar that looks over the horizon at cruise missiles.' },
   { id: 's_sat',  cat: 'sensor', name: 'Satellite launch warning', cost: 300, time: 4500, req: ['s_esm'], desc: 'Allied satellites report every ballistic launch and its launch point.' },
   { id: 's_bmd',  cat: 'sensor', name: 'BMD X-band radar', cost: 400, time: 5400, req: ['s_sat'], desc: 'Discriminates warheads from decoys. Needed for exo intercepts.' },
+  { id: 'c_teams', cat: 'ad', name: 'More call-in teams', cost: 60, time: 1800, req: [], desc: 'A third MANPADS team can be called in at once.' },
+  { id: 'c_stay', cat: 'ad', name: 'Longer team stays', cost: 50, time: 1500, req: [], desc: 'Call-in teams stay 14 minutes instead of 8.' },
+  { id: 'c_msl', cat: 'ad', name: 'Imaging IR missiles', cost: 90, time: 2400, req: ['c_teams'], desc: 'Call-in teams carry missiles with longer reach that flares fool less.' },
+  { id: 'c_teams2', cat: 'ad', name: 'Rapid team rotation', cost: 110, time: 2700, req: ['c_teams', 'c_stay'], desc: 'A fourth team, and teams come back 30% sooner.' },
   { id: 'a_cram', cat: 'ad', name: 'C-RAM', cost: 100, time: 2400, req: [], desc: 'Point-defense guns against rockets and drones.' },
   { id: 'a_laser',cat: 'ad', name: 'High-energy laser', cost: 250, time: 4500, req: ['a_cram'], desc: 'Kill drones for the cost of electricity.' },
   { id: 'a_hpm',  cat: 'ad', name: 'High-power microwave', cost: 250, time: 4500, req: ['a_laser'], desc: 'Area kill against drone swarms.' },

@@ -6,6 +6,7 @@ IC.step = function (S, dt) {
   S.time += dt;
   IC.weather(S, dt);
   IC.updateUnits(S, dt);
+  IC.reinforce(S, dt);
   IC.updateEmcon(S, dt);
   IC.updateBases(S, dt);
   IC.gops(S, dt);

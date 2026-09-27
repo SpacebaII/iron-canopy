@@ -162,7 +162,7 @@ function startAct(S, n) {
     dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
     Object.assign(dep.inv, { IR: 10, SR: 12, MR: 6, LR: 2, RKT: 0 });
     IC.addTruck(S, dep); IC.addTruck(S, dep);
-    S.reserve = { mrsam: 1, shorad: 2, spaag: 1, manpads: 3, lr3d: 1, mr3d: 1, depot: 1 };
+    S.reserve = { mrsam: 1, shorad: 2, spaag: 1, lr3d: 1, mr3d: 1, depot: 1 };
     addFlight(S, 'ftr', 'LANCE 2', 'ab_rear').st = 'ready';
     addFlight(S, 'isr', 'REAPER 2', 'ab_rear').st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);

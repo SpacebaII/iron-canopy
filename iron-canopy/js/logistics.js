@@ -159,7 +159,7 @@ IC.logistics = function (S, dt) {
     return best;
   };
   // air defense and strike units, priority units and emptiest first
-  const aus = S.units.filter(u => !u.dead && u.mags.length && u.state !== 'transit' && u.state !== 'packing')
+  const aus = S.units.filter(u => !u.dead && !u.callin && u.mags.length && u.state !== 'transit' && u.state !== 'packing')
     .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || fill(S, a) - fill(S, b));
   for (const u of aus) {
     for (const m of IC.activeMags(S, u)) {

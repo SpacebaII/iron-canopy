@@ -145,6 +145,13 @@ function leftClick(p, shift) {
       IC.setMode(null); ping(p); return;
     }
     if (m.kind === 'found') return foundIn(m, p, 0);
+    if (m.kind === 'callin') {
+      const why = IC.callInWhy(S, p.x, p.y);
+      if (why) { IC.text(S, p.x, p.y, why.toUpperCase(), IC.C.hostile); IC.sfx.ui('err'); return; }
+      IC.callIn(S, p.x, p.y); IC.sfx.ui('ok'); ping(p);
+      if (!shift || IC.callInState(S).charges < 1) IC.setMode(null); else IC.ui.refresh(true);
+      return;
+    }
     if (m.kind === 'deploy') {
       if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
       const u = IC.deploy(S, m.type, p.x, p.y);
@@ -313,6 +320,7 @@ function onAct(e) {
       if (!(S.reserve[v] > 0)) { IC.toast(S, 'info', 'RESERVE', `No ${d.name} in reserve. Order one: about ${U.dur(IC.leadTime(S, v))}.`); break; }
       IC.setMode(S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === v ? null : { kind: 'deploy', type: v }); return;
     }
+    case 'callin': { const why = IC.callInWhy(S); if (why) { IC.toast(S, 'info', 'CALL-IN', why + '.'); break; } IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); return; }
     case 'order': e.stopPropagation(); IC.order(S, v); break;
     case 'cancelOrder': IC.cancelOrder(S, id); break;
     case 'research': IC.startResearch(S, v); break;
@@ -555,6 +563,7 @@ window.addEventListener('keydown', e => {
   else if (unitSel && ukeys[lk]) command(ukeys[lk]);
   else if (trackSel && lk === 'v') command('scramble');
   else if (trackSel && lk === 'b') command('assignBest');
+  else if (lk === 'g' && S.enemy.war) { const why = IC.callInWhy(S); if (why) IC.toast(S, 'info', 'CALL-IN', why + '.'); else IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); }
   else if (rooms[lk]) { if (ui.roomOk(rooms[lk])) ui.openRoom(rooms[lk]); return; }
   else if (k === '+' || k === '=') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.25);
   else if (k === '-' || k === '_') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 0.8);

@@ -54,12 +54,38 @@ function holding(S, px) {
   }
 }
 
+/* call-in teams: the drop point while the helicopter is on its way, then the team's reach and the time it has left */
+function teams(S, px, now) {
+  const C = S.callin; if (!C) return;
+  for (const j of C.inbound) {
+    const k = U.clamp((S.time - j.t0) / (j.t - j.t0), 0, 1), r = 10 * px + 30 * (1 - k);
+    ctx.strokeStyle = `rgba(111,210,255,${0.5 + 0.4 * Math.sin(now * 8)})`; ctx.lineWidth = 1.6 * px; ctx.setLineDash([4 * px, 3 * px]);
+    ctx.beginPath(); ctx.arc(j.x, j.y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    label(`TEAM IN ${Math.ceil(j.t - S.time)} s`, j.x, j.y - r - 5 * px, px, '#6fd2ff', 9, 'center', 700);
+  }
+  for (const u of S.units) {
+    if (!u.callin) continue;
+    const R = IC.maxRange(S, u), left = Math.max(0, u.expire - S.time), f = left / (u.stay || 480);
+    ctx.strokeStyle = 'rgba(111,210,255,0.35)'; ctx.lineWidth = 1 * px; ctx.setLineDash([3 * px, 4 * px]);
+    ctx.beginPath(); ctx.arc(u.x, u.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = f < 0.2 ? '#f2b441' : '#6fd2ff'; ctx.lineWidth = 2.2 * px;
+    ctx.beginPath(); ctx.arc(u.x, u.y, 16 * px, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * f); ctx.stroke();
+    if (IC.cam.z > 0.1) label(`${U.dur(left)} left · ${u.mags.reduce((s, m) => s + m.mag + m.store, 0)} missiles`, u.x, u.y - 22 * px, px, '#9fdcff', 8.5, 'center', 600);
+  }
+  // the drop cursor
+  if (S.mode2 && S.mode2.kind === 'callin' && S.hover) {
+    const h = S.hover, ok = !IC.callInWhy(S, h.x, h.y), R = IC.MUN[IC.callInStats(S).mun].range;
+    ctx.strokeStyle = ok ? 'rgba(111,210,255,0.7)' : 'rgba(255,91,79,0.7)'; ctx.lineWidth = 1.4 * px; ctx.setLineDash([5 * px, 4 * px]);
+    ctx.beginPath(); ctx.arc(h.x, h.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
 IC.drawDefense = function (c, S, px, now) {
   ctx = c;
   strobes(S, px, now);
   pips(S, px, now);
   holding(S, px);
-  if (IC.drawTeams) IC.drawTeams(c, S, px, now, label);
+  teams(S, px, now);
 };
 
 })(window.IC);
