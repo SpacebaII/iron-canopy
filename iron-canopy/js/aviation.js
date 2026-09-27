@@ -94,10 +94,10 @@ IC.aptStands = standsOf;
 function freeStand(S, ap, T, pref) {
   IC.aptGraph(ap);
   const milSlots = new Set(S.roster.filter(r => r.base === ap.id).map(r => r.slot));
-  const ok = standsOf(ap).filter(s => s.hp > 0 && s.linked !== false && !s.occ && !milSlots.has(s.id) && IC.STAND_FITS[s.size].includes(T.stand));
+  const ok = standsOf(ap).filter(s => s.hp > 0 && s.linked !== false && !s.occ && !milSlots.has(s.id) && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T));
   if (!ok.length) return null;
   const order = { s: 0, m: 1, l: 2 };
-  ok.sort((a, b) => (order[a.size] - order[b.size]) || ((b.contact === (pref !== 'cargo')) - (a.contact === (pref !== 'cargo'))) || (T.cargo ? (b.cargo - a.cargo) : 0));
+  ok.sort((a, b) => ((b.zone === T.zone) - (a.zone === T.zone)) || (order[a.size] - order[b.size]) || ((b.contact === (pref !== 'cargo')) - (a.contact === (pref !== 'cargo'))) || (T.cargo ? (b.cargo - a.cargo) : 0));
   return ok[0];
 }
 IC.avFreeStand = freeStand;
@@ -186,7 +186,7 @@ IC.moveTail = function (S, t, dt) {
 function beginApproach(S, t) {
   const ap = S.byId[t.toApt];
   const faf = ap && IC.gopsFaf(S, ap, t.tail.type);
-  if (!faf) { divert(S, t, 'the runway is closed'); return; }
+  if (!faf) { divert(S, t, IC.aptLandWhy(S, ap, t.tail.T) || 'the runway is closed'); return; }
   t.appr = true; t.faf = faf; t.holdT = 0;
 }
 function approach(S, t, dt) {
@@ -201,7 +201,7 @@ function approach(S, t, dt) {
     const r = S.time >= (t.nextTry || 0) ? tryLand(S, t, ap) : 'hold';
     if (r === 'hold' && S.time >= (t.nextTry || 0)) t.nextTry = S.time + 6;
     if (r === true) return;
-    if (r === 'divert') { divert(S, t, IC.aptCanTake(S, ap, tl.T) || 'no stand or runway for it'); return; }
+    if (r === 'divert') { divert(S, t, IC.aptCanTake(S, ap, tl.T) || IC.aptLandWhy(S, ap, tl.T) || 'no stand or runway for it'); return; }
     t.holding = true; t.holdT += dt;
     t.hoa = (t.hoa || 0) + dt * spd / 14;
     const hx = f.x + Math.cos(t.hoa) * 14, hy = f.y + Math.sin(t.hoa) * 14;
@@ -218,7 +218,7 @@ IC.aptCanTake = function (S, ap, T) {
   if (ap.owner !== 'us' || ap.offline) return 'the airport is closed';
   if ((st.longest || 0) < T.rwy) return `the runway is too short (needs ${U.km(T.rwy)})`;
   if (!T.mil && T !== IC.ACTYPES.turbo && !st.fire) return 'no fire station covers the runway';
-  if (!standsOf(ap).some(s => s.linked !== false && s.hp > 0 && IC.STAND_FITS[s.size].includes(T.stand))) return `no ${IC.STAND[T.stand].name} stand connected to the runway`;
+  if (!standsOf(ap).some(s => s.linked !== false && s.hp > 0 && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T))) return `no ${IC.STAND[T.stand].name} ${T.cargo ? 'cargo or passenger' : 'passenger'} stand connected to the runway`;
   return '';
 };
 function tryLand(S, t, ap) {
@@ -226,7 +226,7 @@ function tryLand(S, t, ap) {
   if (IC.aptCanTake(S, ap, tl.T)) return 'divert';
   let s = tl.resStand ? standById(ap, tl.resStand) : null;
   if (!s || (s.occ && s.occ !== tl.id)) { s = freeStand(S, ap, tl.T, airlineOf(S, tl.al).kind); if (!s) { ap.kpi.standWait = (ap.kpi.standWait || 0) + 1; t.standShort = true; return 'hold'; } }
-  const m = IC.gopsLand(S, ap, { type: tl.type, target: s.id, stand: s, who: tl.cs, tail: tl, livery: t.livery,
+  const m = IC.gopsLand(S, ap, { type: tl.type, target: s.id, stand: s, who: tl.cs, tail: tl, livery: t.livery, faf: t.faf,
     onPark: mm => parked(S, tl, ap, s, mm), onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground') });
   if (m === 'divert') return 'divert';
   if (m === 'hold') { tl.resStand = s.id; return 'hold'; }
@@ -407,7 +407,7 @@ IC.aviation = function (S, dt) {
       const al = airlineOf(S, tl.al);
       const night = !dayOps(S);
       if (night && (ap.curfew || al.kind !== 'cargo')) { tl.t = 300; continue; }
-      if (!IC.aptTakeFuel(ap, tl.T.fuel)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      if (!IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, who: tl.cs, tail: tl, livery: al.livery,
