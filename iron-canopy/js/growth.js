@@ -28,11 +28,12 @@ IC.INDUSTRY = {
   farm:   { name: 'fruit farms', goods: 'fresh fruit', cap: 0.6, xs: 0.5, fresh: true },
   timber: { name: 'sawmill', goods: 'timber', cap: 0.5, xs: 0.3 }
 };
-// ₭M per km, ₭M per bridge, km built per game hour
+// the roads the player may build, all to serve an airport: ₭M per km, ₭M per bridge, km built per game hour.
+// Cities build their own streets and the government the national network; the airport authority builds links.
 IC.ROADS = {
-  lc: { name: 'Local road', short: 'local road', perKm: 2, bridge: 15, kmh: 4 },
-  rd: { name: 'Main road', short: 'main road', perKm: 5, bridge: 40, kmh: 2 },
-  hw: { name: 'Motorway', short: 'motorway', perKm: 15, bridge: 100, kmh: 1 }
+  lc: { name: 'Access road', short: 'access road', perKm: 2, bridge: 15, kmh: 4, what: 'a two-lane road from the airport to the nearest road' },
+  rd: { name: 'Link road', short: 'link road', perKm: 5, bridge: 40, kmh: 2, what: 'a main road from the airport to a town or a main road' },
+  hw: { name: 'Motorway link', short: 'motorway link', perKm: 15, bridge: 100, kmh: 1, what: 'a motorway spur from the airport that joins a motorway at a new interchange' }
 };
 const CLS_NAME = { hw: 'Motorway', rd: 'Main road', lc: 'Local road', sp: 'Access road' };
 const HALF = { hw: 0.2, rd: 0.12, lc: 0.08, sp: 0.06 };   // half the road's width, in units
@@ -363,7 +364,16 @@ function cutRoad(S, e, x, y) {
   IC.worldChanged(S, { x0: x - 10, y0: y - 10, x1: x + 10, y1: y + 10 });
   IC.emit(S, 'roadCut', e);
 }
-const repairRate = e => e.cls === 'hw' ? 0.1 : 0.14;   // condition regained per game hour
+const repairRate = e => (e.cls === 'hw' ? 0.1 : 0.14) * (e.rush ? 3 : 1);   // condition regained per game hour
+/* pay the road engineers to work round the clock: three times as fast */
+IC.rushCost = e => Math.round((e.len || 10) / 10 * (e.cls === 'hw' ? 3 : 1.5) + 5);
+IC.rushRepair = function (S, id) {
+  const e = S.world.edges.find(x => x.id === id); if (!e || !e.cut || e.rush) return false;
+  const c = IC.rushCost(e); if (S.budget < c) { IC.log(S, 'warn', 'ROADS', `Rushing the repair needs ${U.money(c)}.`); return false; }
+  S.budget -= c; e.rush = true;
+  IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e) * 3600)}.`, e.cutAt);
+  return true;
+};
 function repairRoads(S, dt) {
   const E = S.econ;
   if (!E.damaged.length) return;
@@ -379,7 +389,7 @@ function repairRoads(S, dt) {
       IC.worldChanged(S, { x0: e.cutAt.x - 10, y0: e.cutAt.y - 10, x1: e.cutAt.x + 10, y1: e.cutAt.y + 10 });
       IC.emit(S, 'roadOpen', e);
     }
-    if (e.cond >= 1) { E.damaged.splice(E.damaged.indexOf(id), 1); e.cutName = null; e.cutAt = null; }
+    if (e.cond >= 1) { E.damaged.splice(E.damaged.indexOf(id), 1); e.cutName = null; e.cutAt = null; e.rush = false; }
   }
 }
 
@@ -402,11 +412,18 @@ IC.roadSnap = function (S, x, y, r) {
   }
   return best || { x, y };
 };
+/* the airport a road end serves: one of ours, the end inside its grounds or on its own road node */
+const aptAt = (S, p, sn) => S.infra.find(f => f.parts && f.owner === 'us' && (f.kind === 'airport' || f.kind === 'airbase') && ((sn && sn.node === f.id) || U.dxy(f.x, f.y, p.x, p.y) < (f.radius || 50) * 0.9));
+IC.roadAirport = aptAt;
 /* cost, length, bridges and time for a road along pts; why is '' when it can be built */
 IC.roadPlan = function (S, cls, pts, snaps) {
   const W = S.world, K = IC.ROADS[cls];
   const P = { cls, km: 0, cost: 0, hours: 0, bridges: [], why: '' };
   if (pts.length < 2) { P.why = 'Click at least two points.'; return P; }
+  // one end at one of our airports; the road may run inside that airport's grounds and nowhere else's
+  const sa = (snaps || [])[0], sb = (snaps || [])[1];
+  const apA = aptAt(S, pts[0], sa), apB = aptAt(S, pts[pts.length - 1], sb), serve = apA || apB;
+  P.apt = serve || null;
   let len = 0, slope = 0, forest = 0, n = 0;
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i], L = U.dist(a, b);
@@ -415,7 +432,7 @@ IC.roadPlan = function (S, cls, pts, snaps) {
       const t = L ? s / L : 0, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
       if (W.inLake(x, y)) { P.why = 'The road would cross a lake.'; }
       else if (!IC.inHome(x, y)) { P.why = `The road would leave ${W.names.H}.`; }
-      else { const ap = S.infra.find(f => f.parts && U.dxy(f.x, f.y, x, y) < (f.radius || 50) * 0.8); if (ap) P.why = `The road would run through ${ap.name}.`; }
+      else { const ap = S.infra.find(f => f.parts && f !== serve && U.dxy(f.x, f.y, x, y) < (f.radius || 50) * 0.8); if (ap) P.why = `The road would run through ${ap.name}.`; }
       if (P.why) return P;
       slope += W.slopeAt(x, y); forest += W.forestAt(x, y) ? 1 : 0; n++;
     }
@@ -433,10 +450,19 @@ IC.roadPlan = function (S, cls, pts, snaps) {
   P.terrain = 1 + Math.min(1.5, slope / Math.max(1, n) * 25) + forest / Math.max(1, n) * 0.2;
   P.cost = Math.round(P.km * K.perKm * P.terrain + P.bridges.length * K.bridge);
   P.hours = 2 + P.km / K.kmh * P.terrain + P.bridges.length * 4;
-  const joins = (snaps || []).filter(s => s && (s.node || s.edge)).length;
+  // the other end joins the network: any road for an access road, a main road or motorway for a link road, a
+  // motorway for a motorway link (where it joins, an interchange is built)
+  const far = apA ? sb : sa, farE = far && far.edge ? W.edges.find(e => e.id === far.edge) : null;
+  const farCls = farE ? [farE.cls] : far && far.node ? W.edges.filter(e => e.a === far.node || e.b === far.node).map(e => e.cls) : [];
+  const town = far && far.node && W.cities.some(c => c.id === far.node);
   if (P.km < 1) P.why = 'Too short: a road needs at least 1 km.';
-  else if (!joins) P.why = 'A new road must join the road network at one end at least.';
+  else if (!serve) P.why = 'Roads you build must serve one of your airports: start or end the road at an airport. Towns build their own streets.';
+  else if (apA && apB) P.why = 'The road must run from the airport to the road network, not to another airport.';
+  else if (!far || !(far.node || far.edge)) P.why = `The far end must join a road: click on a road or junction.`;
+  else if (cls === 'hw' && !farCls.includes('hw')) P.why = 'A motorway link must end on a motorway, where the interchange is built.';
+  else if (cls === 'rd' && !town && !farCls.some(c => c === 'rd' || c === 'hw')) P.why = 'A link road must end in a town or on a main road or motorway.';
   else if (S.budget < P.cost) P.why = `Needs ${U.money(P.cost)}; the treasury has ${U.money(S.budget)}.`;
+  if (cls === 'hw' && !P.why) P.cost += 40, P.ix = true;   // the interchange: slip roads and a bridge
   return P;
 };
 /* the road tool: each click adds a point; the first and last snap to the network */
@@ -446,8 +472,9 @@ IC.roadClick = function (S, m, p, r) {
   if (m.pts.length > 2) m.snaps[m.pts.length - 2] = null;   // only the ends join the network
   const P = IC.roadPlan(S, m.cls, m.pts, [m.snaps[0], m.snaps[m.snaps.length - 1]]);
   m.plan = P;
-  const msg = m.pts.length < 2 ? (sn.node || sn.edge ? 'JOINS THE ROADS' : 'OPEN GROUND') : `${P.km.toFixed(1)} KM · ${U.money(P.cost)} · ${U.dur(P.hours * 3600)}${P.bridges.length ? ` · ${P.bridges.length} BRIDGE${P.bridges.length > 1 ? 'S' : ''}` : ''}`;
-  const bad = P.why && m.pts.length >= 2 && !/treasury|join/.test(P.why);
+  const ap = aptAt(S, p, sn);
+  const msg = m.pts.length < 2 ? (ap ? ap.name.toUpperCase() : sn.node || sn.edge ? 'JOINS THE ROADS' : 'OPEN GROUND') : `${P.km.toFixed(1)} KM · ${U.money(P.cost)} · ${U.dur(P.hours * 3600)}${P.bridges.length ? ` · ${P.bridges.length} BRIDGE${P.bridges.length > 1 ? 'S' : ''}` : ''}${P.ix ? ' · INTERCHANGE' : ''}`;
+  const bad = P.why && m.pts.length >= 2 && !/treasury/.test(P.why);
   IC.text(S, sn.x, sn.y, msg, IC.C ? (bad ? IC.C.hostile : IC.C.amber) : '');
   return P;
 };
@@ -464,8 +491,9 @@ IC.roadFinish = function (S, m) {
   if (P.why) { IC.log(S, 'warn', 'ROADS', P.why); return false; }
   S.budget -= P.cost;
   const E = S.econ, K = IC.ROADS[m.cls];
-  const w = { id: 'rw' + (E.nid++), cls: m.cls, pts: m.pts.map(p => ({ x: p.x, y: p.y })), ends, cost: P.cost, km: P.km, bridges: P.bridges, hours: P.hours, prog: 0, stage: 'Surveying', t0: S.time };
-  w.name = `${K.name} ${IC.nearestPlace(S, w.pts[0].x, w.pts[0].y)} – ${IC.nearestPlace(S, w.pts[w.pts.length - 1].x, w.pts[w.pts.length - 1].y)}`;
+  const w = { id: 'rw' + (E.nid++), cls: m.cls, pts: m.pts.map(p => ({ x: p.x, y: p.y })), ends, cost: P.cost, km: P.km, bridges: P.bridges, hours: P.hours, prog: 0, stage: 'Surveying', t0: S.time, apt: P.apt.id };
+  if (P.apt.catch0 == null) P.apt.catch0 = IC.aptCatchment(S, P.apt);
+  w.name = `${P.apt.name.replace(/ (International|Airport)$/, '')} ${K.short}`;
   E.works.push(w);
   IC.log(S, 'info', 'ROADS', `${w.name}: ${P.km.toFixed(1)} km for ${U.money(P.cost)}${P.bridges.length ? `, ${P.bridges.length} bridge${P.bridges.length > 1 ? 's' : ''}` : ''}. Open in about ${U.dur(P.hours * 3600)}.`, w.pts[0]);
   IC.worldChanged(S, boxOf(w.pts));
@@ -523,6 +551,7 @@ IC.splitRoad = function (S, e, x, y) {
 };
 function openRoad(S, w) {
   const W = S.world, E = S.econ;
+  if (w.apt && S.byId[w.apt]) w.catchB = IC.aptCatchment(S, S.byId[w.apt]);
   // the trip it was built for, timed before and after: between the places nearest its two ends
   const pa = nearestTown(S, w.pts[0]), pb = nearestTown(S, w.pts[w.pts.length - 1]);
   const before = pa && pb && pa !== pb ? tripTime(S, pa, pb) : 0;
@@ -541,16 +570,38 @@ function openRoad(S, w) {
     Object.assign(br, { infra: true, owner: 'us', r: 8, max: 40, hp: 40, home: true });
     S.infra.push(br); S.byId[br.id] = br;
   }
+  // the junctions it makes get their shape (a motorway link its interchange), and traffic finds the new road
+  IC.buildJunctions(W);
   if (IC.trafficRoadChanged) IC.trafficRoadChanged(S, e);
   IC.roadsChanged(S);
   refreshRoads(S);
   IC.worldChanged(S, boxOf(pts));
   const after = before ? tripTime(S, pa, pb) : 0;
-  const gain = before && after < before - 60 ? ` ${pa.name} to ${pb.name} now takes ${hm(after)} instead of ${hm(before)}.` : '';
+  let gain = before && after < before - 60 ? ` ${pa.name} to ${pb.name} now takes ${hm(after)} instead of ${hm(before)}.` : '';
+  const ap = w.apt && S.byId[w.apt];
+  if (ap) { const c1 = IC.aptCatchment(S, ap), c0 = w.catchB != null ? w.catchB : c1; if (c1 > c0 + 4) gain += ` ${ap.name} now reaches ${Math.round(c1 - c0)}k more people within ${IC.GROWTH.catch[1]} h by road.`; }
   IC.log(S, 'kill', 'ROADS', `${w.name} is open.${gain}`, pts[0]);
   IC.news(S, `New ${IC.ROADS[w.cls].short} opens near ${pa ? pa.name : 'the capital'}.`);
   IC.emit(S, 'roadOpen', e);
 }
+/* people within reach of an airport by road: every city counts in full within half an hour, less out to 2½ h */
+IC.aptCatchment = function (S, ap) {
+  const E = S.econ; if (!E) return 0;
+  let n = 0; for (const c of IC.cities(S)) if (c.owner === 'us') n += c.pop * catchF(timeTo(S, E.tt[c.id], ap) / 3600);
+  return Math.round(n);
+};
+/* what the airport panel says about its roads */
+IC.aptRoadReport = function (S, ap) {
+  const E = S.econ; if (!E || !ap.parts) return null;
+  if (ap.catch0 == null) ap.catch0 = IC.aptCatchment(S, ap);
+  const now = IC.aptCatchment(S, ap), d = now - ap.catch0, k = v => v >= 1000 ? `${(v / 1000).toFixed(1)}M` : `${v}k`;
+  const links = E.works.filter(w => w.apt === ap.id);
+  return {
+    catch: now,
+    text: `${k(now)} people within ${IC.GROWTH.catch[1]} h by road${Math.abs(d) >= 5 ? ` (${d > 0 ? '+' : '−'}${k(Math.abs(d))} since the start${d > 0 ? ', thanks to new roads' : ', roads cut'})` : ''}.`,
+    works: links.map(w => `${w.name}: ${w.stage.toLowerCase()}, open in ${U.dur((1 - w.prog) * w.hours * 3600)}.`)
+  };
+};
 function nearestTown(S, p) {
   let best = null, bd = 1e9;
   for (const c of IC.cities(S)) { const d = U.dist(c, p); if (d < bd) { bd = d; best = c; } }

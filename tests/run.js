@@ -755,32 +755,44 @@ test('growth: a remote industry with an air cargo link out-produces one without'
   assert(out[1].v > out[0].v * 1.15, `the air cargo link made little difference: ${out[1].v.toFixed(3)} vs ${out[0].v.toFixed(3)} ₭M/h`);
   assert(IC.indWhy(out[1].S, out[1].ind).some(l => /air cargo/.test(l)), 'the explanation does not mention air cargo');
 });
-test('growth: a road the player builds joins the routing graph and shortens a trip', () => {
+test('growth: the road tool builds links for airports, and refuses roads that serve none', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
   S.budget = 5000;
   IC.econRefresh(S);
   const W = S.world, cs = IC.cities(S);
-  // two cities whose trip is long for the distance, with a clear straight line between them
+  // a road between two towns is not the airport authority's to build
+  const [a, b] = cs.slice().sort((p, q) => p.pop - q.pop).slice(0, 2);
+  const P0 = IC.roadPlan(S, 'rd', [a, b], [{ node: a.id }, { node: b.id }]);
+  assert(/airport/.test(P0.why), `a road between ${a.name} and ${b.name} was allowed: ${P0.why || 'no reason given'}`);
+  assert(!IC.roadFinish(S, { cls: 'rd', pts: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }], snaps: [{ x: a.x, y: a.y, node: a.id }, { x: b.x, y: b.y, node: b.id }] }), 'the works started anyway');
+  // a motorway link from an airport to the nearest motorway: where the road round is long for the distance
   let pick = null;
-  for (const a of cs) for (const b of cs) {
-    if (a.id >= b.id) continue;
-    const d = U.dist(a, b); if (d < 250 || d > 900) continue;
-    const t = IC.tripTime(S, a, b), direct = d * 360 / IC.ROAD_KMH.hw;
-    const P = IC.roadPlan(S, 'hw', [a, b], [{ node: a.id }, { node: b.id }]);
-    if (!P.why && t > direct * 1.3 && (!pick || t / direct > pick.r)) pick = { a, b, t, r: t / direct };
+  for (const ap of S.infra.filter(i => i.kind === 'airport' && i.parts)) for (const e of W.edges) {
+    if (e.cls !== 'hw') continue;
+    for (let i = 2; i < e.pts.length - 2; i += 2) {
+      const q = e.pts[i], d = U.dist(ap, q); if (d < 30 || d > 160) continue;
+      const P = IC.roadPlan(S, 'hw', [{ x: ap.x, y: ap.y }, q], [{ x: ap.x, y: ap.y, node: ap.id }, { x: q.x, y: q.y, edge: e.id }]);
+      if (P.why) continue;
+      const far = cs.slice().sort((c1, c2) => U.dist(c1, q) - U.dist(c2, q))[0], t = IC.tripTime(S, far, ap), direct = (U.dist(far, q) + d) * 360 / IC.ROAD_KMH.hw;
+      if (!pick || t / direct > pick.r) pick = { ap, q, e, far, t, r: t / direct };
+    }
   }
-  assert(pick, 'no city pair where a new road would help');
-  const edges0 = W.edges.length;
-  const w = IC.roadFinish(S, { cls: 'hw', pts: [{ x: pick.a.x, y: pick.a.y }, { x: pick.b.x, y: pick.b.y }], snaps: [{ x: pick.a.x, y: pick.a.y, node: pick.a.id }, { x: pick.b.x, y: pick.b.y, node: pick.b.id }] });
-  assert(w && S.econ.works.length === 1, 'the works did not start');
-  for (let h = 0; h < w.hours + 2 && S.econ.works.length; h++) { S.time += 3600; IC.growth(S, 3600); }
-  assert(!S.econ.works.length && W.edges.length === edges0 + 1, 'the road never opened');
-  const e = W.edges[W.edges.length - 1];
-  assert(W.roadIdx[e.a] != null && W.roadIdx[e.b] != null, 'the new road is not in the routing graph');
-  const t1 = IC.tripTime(S, pick.a, pick.b);
-  assert(t1 < pick.t * 0.85, `the trip did not get shorter: ${U.dur(t1)} vs ${U.dur(pick.t)}`);
-  const r = IC.route(pick.a.x, pick.a.y, pick.b.x, pick.b.y);
-  assert(IC.routeLength(r) < U.dist(pick.a, pick.b) * 1.2, 'convoys do not use the new road');
+  assert(pick, 'no airport where a motorway link could be built');
+  const { ap, q, e, far } = pick, catch0 = IC.aptCatchment(S, ap), edges0 = W.edges.length;
+  const w = IC.roadFinish(S, { cls: 'hw', pts: [{ x: ap.x, y: ap.y }, { x: q.x, y: q.y }], snaps: [{ x: ap.x, y: ap.y, node: ap.id }, { x: q.x, y: q.y, edge: e.id }] });
+  assert(w && S.econ.works.length === 1 && w.apt === ap.id, 'the works did not start');
+  for (let h = 0; h < w.hours + 2 && S.econ.works.length; h++) { S.time += 3600; IC.growth(S, 3600); IC.traffic(S, 3600); }
+  assert(!S.econ.works.length && W.edges.length === edges0 + 2, 'the link never opened (the motorway is split where it joins)');
+  const link = W.edges[W.edges.length - 1], ix = W.junctionAt[link.a] || W.junctionAt[link.b];
+  assert(ix && ix.kind === 'mm' && ix.ramps.length, 'the motorway link has no interchange');
+  assert(W.roadIdx[link.a] != null && W.roadIdx[link.b] != null, 'the new road is not in the routing graph');
+  const t1 = IC.tripTime(S, far, ap);
+  assert(t1 <= pick.t + 1, `the trip from ${far.name} to the airport got longer: ${U.dur(t1)} vs ${U.dur(pick.t)}`);
+  assert(IC.aptCatchment(S, ap) >= catch0, 'the airport reaches fewer people');
+  assert(/people within/.test(IC.aptRoadReport(S, ap).text), 'the airport panel does not say how many people it reaches by road');
+  // traffic finds the new road, and reaches it by the new slip roads
+  const G = S.traffic.G;
+  assert(G.links.some(l => l.ref.edge === link) && G.links.some(l => l.cls === 'ramp' && ix.ramps.includes(l.ref.ramp)), 'traffic does not use the new link and its slip roads');
   assert(S.worldDirty && S.worldDirty.length, 'the world was not told the road changed');
 });
 test('growth: a crater on a motorway cuts the link between two cities until it is repaired', () => {
