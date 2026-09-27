@@ -120,42 +120,69 @@ function pickTarget(S, purpose) { const L = targets(S, purpose); return L.length
 /* an aim point on the objective: bases are hit on their runway and hangars, not their centre */
 function aimOn(obj) { const r = obj.ref; if (r && r.fac) return aimAtBase(r); return { x: obj.x + U.rand(-4, 4), y: obj.y + U.rand(-4, 4) }; }
 
-/* ---------- route planning with a memory of where it hurts ---------- */
+/* ---------- route planning with a memory of where it hurts ----------
+   Low fliers plan around the radars and batteries the enemy knows about: a radar only sees a cruise missile out to
+   its horizon, and not behind a hill, so the cheapest route is the one through the hole in our cover. Routes are
+   planned once a wave and shared, so a wave flies one lane. */
 const cell = (x, y) => Math.floor(x / 900) + ':' + Math.floor(y / 900);
-function exposure(S, pts, low) {
+function threatSites(S, low) {
+  const L = [];
+  for (const k of S.enemy.known.values()) {
+    if (k.ref.dead) continue;
+    const d = IC.UNITS[k.type], sn = d && (d.sensor || d.fc);
+    if (k.kind === 'radar' && sn && !sn.passive && !sn.bmdOnly && !sn.rktOnly && !sn.ssr) {
+      const R = low ? Math.min(sn.R, U.horizon(sn.mast || 10, 0.06)) : sn.R * 0.6;
+      L.push({ x: k.x, y: k.y, R, mast: sn.mast || 10, w: low ? 1 : 0.3 });
+    } else if (k.kind === 'sam' || k.kind === 'pointdef') {
+      const R = k.rng || 120;
+      L.push({ x: k.x, y: k.y, R: low && sn ? Math.min(R, U.horizon(sn.mast || 5, 0.06)) : R, mast: sn ? sn.mast || 5 : 5, w: low ? 0.8 : 1 });
+    }
+  }
+  return L;
+}
+function exposure(S, pts, low, sites) {
   let e = 0;
-  const sams = [...S.enemy.known.values()].filter(k => k.kind === 'sam' || k.kind === 'pointdef' || (low && k.kind === 'radar'));
+  const L = sites || threatSites(S, low);
   for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i], L = U.dist(a, b), n = Math.ceil(L / 180);
+    const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 150);
     for (let s = 0; s <= n; s++) {
       const x = a.x + (b.x - a.x) * s / n, y = a.y + (b.y - a.y) * s / n;
-      // a low flier behind a hill is out of sight (airspace.js): valleys are safe ground
-      for (const k of sams) { const r = k.kind === 'radar' ? 450 : k.rng || 120; if (U.dxy(x, y, k.x, k.y) < r && (!low || IC.losClear(k.x, k.y, 15, x, y, 0.1))) e += k.kind === 'radar' ? 0.3 : 1; }
+      for (const k of L) if (U.dxy(x, y, k.x, k.y) < k.R && (!low || IC.losClear(k.x, k.y, k.mast, x, y, 0.06))) e += k.w;
       e += (S.enemy.danger[cell(x, y)] || 0) * 0.6;
     }
   }
   return e;
 }
+IC.routeExposure = (S, from, route, low) => exposure(S, [from].concat(route), low);
+IC.enemyPlanRoute = (S, from, to, low) => planRoute(S, from, to, low);
 function planRoute(S, from, to, low, spread) {
-  let best = [{ x: to.x, y: to.y }], bc = 1e12;
-  for (let k = 0; k < (low ? 14 : 9); k++) {
-    const pts = [from];
-    const nv = k === 0 ? 0 : U.randi(1, 2);
-    for (let i = 0; i < nv; i++) {
-      const f = (i + 1) / (nv + 1);
-      const mx = from.x + (to.x - from.x) * f, my = from.y + (to.y - from.y) * f;
-      const nx = -(to.y - from.y), ny = to.x - from.x, L = Math.hypot(nx, ny) || 1, off = U.rand(-1, 1) * (spread || 2100);
-      let p = { x: U.clamp(mx + nx / L * off, 90, IC.WW - 90), y: U.clamp(my + ny / L * off, 90, IC.WH - 90) };
-      // low routes turn at the lowest ground nearby, so they run along valleys
-      if (low && k >= 9) for (let q = 0, h = IC.elevKm(p.x, p.y), p0 = p; q < 10; q++) { const a = U.rand(0, 6.28), d = U.rand(60, 300), c = { x: U.clamp(p0.x + Math.cos(a) * d, 90, IC.WW - 90), y: U.clamp(p0.y + Math.sin(a) * d, 90, IC.WH - 90) }, hc = IC.elevKm(c.x, c.y); if (hc < h) { h = hc; p = c; } }
-      pts.push(p);
-    }
-    pts.push({ x: to.x, y: to.y });
+  const E = S.enemy, key = `${Math.round(from.x / 60)},${Math.round(from.y / 60)}>${Math.round(to.x / 60)},${Math.round(to.y / 60)}${low ? 'L' : 'H'}`;
+  const C = E.routes || (E.routes = new Map());
+  const hit = C.get(key);
+  if (hit && S.time - hit.t < 900) return hit.r.map(p => ({ x: p.x, y: p.y }));
+  const sites = threatSites(S, low);
+  const nx = -(to.y - from.y), ny = to.x - from.x, NL = Math.hypot(nx, ny) || 1, sp = spread || 2100;
+  const via = (f, off) => ({ x: U.clamp(from.x + (to.x - from.x) * f + nx / NL * off, 90, IC.WW - 90), y: U.clamp(from.y + (to.y - from.y) * f + ny / NL * off, 90, IC.WH - 90) });
+  const cands = [[]];
+  // one turn: a fan of lanes through the defended belt
+  for (const f of [0.35, 0.5, 0.65]) for (let o = -sp; o <= sp; o += sp / 6) if (o) cands.push([via(f, o)]);
+  // two turns, and for low fliers turns at the lowest ground nearby, so they run along valleys
+  for (let k = 0; k < (low ? 10 : 6); k++) {
+    const pts = [via(0.33, U.rand(-1, 1) * sp), via(0.67, U.rand(-1, 1) * sp)];
+    if (low && k >= 5) for (const p0 of pts) for (let q = 0, h = IC.elevKm(p0.x, p0.y); q < 10; q++) { const a = U.rand(0, 6.28), d = U.rand(60, 300), c = { x: U.clamp(p0.x + Math.cos(a) * d, 90, IC.WW - 90), y: U.clamp(p0.y + Math.sin(a) * d, 90, IC.WH - 90) }, hc = IC.elevKm(c.x, c.y); if (hc < h) { h = hc; p0.x = c.x; p0.y = c.y; } }
+    cands.push(pts);
+  }
+  let best = null, bc = 1e12;
+  for (const v of cands) {
+    const pts = [from].concat(v, [{ x: to.x, y: to.y }]);
     let len = 0; for (let i = 1; i < pts.length; i++) len += U.dist(pts[i - 1], pts[i]);
-    const c = len + exposure(S, pts, low) * 200;
+    if (len > bc) continue;
+    const c = len + exposure(S, pts, low, sites) * 200;
     if (c < bc) { bc = c; best = pts.slice(1); }
   }
-  return best;
+  C.set(key, { t: S.time, r: best });
+  if (C.size > 200) C.clear();
+  return best.map(p => ({ x: p.x, y: p.y }));
 }
 function routeLen(from, route) { let L = 0, p = from; for (const q of route) { L += U.dist(p, q); p = q; } return L; }
 

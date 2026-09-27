@@ -78,11 +78,20 @@ function detects(s, t) {
   if (!s.air && r > 1 && IC.aspHidden(s, t)) return false;
   // a secondary radar only hears transponders
   if (s.ssr) return !!t.sq && !t.sqOff && r <= s.R;
-  let rcs = t.rcs;
+  let rcs = t.rcs, jf = 1, burn = 1e9;
+  // noise jamming: along a jammer's bearing the radar only sees what is close enough to burn through, about a
+  // third of the way to the jammer; off the bearing it loses a little
+  if (s.jams) for (const J of s.jams) {
+    if (J.j === t) { if (r > J.d * 0.3 * (1 + (s.eccm || 0))) return false; continue; }
+    const dA = Math.abs(U.angWrap(Math.atan2(t.y - s.y, t.x - s.x) - J.a));
+    if (dA < J.w) burn = Math.min(burn, J.d * 0.3 * (1 + (s.eccm || 0)) / (J.j.d.jam || 1));
+    else jf *= 1 - 0.12 * J.k;
+  }
   if (s.vhf && rcs < 0.05 && d.cls === 'air') rcs *= 40;
   // notching: a target flying side-on to a pulse-doppler radar sinks into the ground clutter
   if (t.notchT > 0 && !s.vhf && U.clamp(Math.abs(Math.cos(Math.atan2(t.y - s.y, t.x - s.x) - Math.atan2(t.vy, t.vx))), 0, 1) < 0.35 && Math.random() < (s.eccm > 0.35 ? 0.35 : 0.6)) return false;
-  return r <= s.R * Math.pow(rcs, 0.25) * (s.jamF || 1);
+  const f = Math.pow(rcs, 0.25);
+  return r <= Math.min(s.R * f * jf, burn * f);
 }
 IC.detects = detects;
 
@@ -108,6 +117,40 @@ function plot(S, t, s) {
   if (firstPlot) t.flash = 1;
 }
 
+/* ---------- electronic warfare ----------
+   A noise jammer floods a radar along its own bearing. The radar still sees what is close enough to burn through,
+   sees normally off that bearing, and gets a strobe: the jammer's direction, but not its range. Two radars far
+   enough apart put their strobes across each other and the jammer is located. Radars with better ECCM suffer less. */
+IC.JAM_R = t => t.d.jamR || 3600;
+function jamSensor(S, s, jammers) {
+  for (const j of jammers) {
+    const d = U.dist(s, j), JR = IC.JAM_R(j);
+    if (d > JR) continue;
+    const k = Math.min(0.95, Math.sqrt(1 - d / JR) * (j.d.jam || 1) * (1 - Math.min(0.9, s.eccm || 0)));
+    if (k < 0.05) continue;
+    const a = Math.atan2(j.y - s.y, j.x - s.x), w = 0.06 + 0.12 * k;
+    (s.jams = s.jams || []).push({ j, a, k, w, d });
+    S.strobes.push({ x: s.x, y: s.y, a, k, w, j, unit: s.unit, part: s.part, R: s.R });
+    if (s.unit) { s.unit.jamF = Math.min(s.unit.jamF, 1 - 0.85 * k); (s.unit.jammers = s.unit.jammers || []).push(j); }
+    // jamming our radars is a hostile act: the strobe says what it is, if not where
+    if (j.aff !== 'H') { j.klass = 'jammer'; setAff(S, j, 'H', 'jamming our radars'); }
+  }
+}
+/* strobes from two radars at a good angle cross on the jammer */
+function locateJammers(S) {
+  const by = new Map();
+  for (const st of S.strobes) { const L = by.get(st.j) || []; L.push(st); by.set(st.j, L); }
+  for (const [j, L] of by) {
+    j.strobed = S.time;
+    let fix = false;
+    for (let i = 0; i < L.length && !fix; i++) for (let k = i + 1; k < L.length; k++) {
+      const cut = Math.abs(U.angWrap(L[i].a - L[k].a));
+      if (cut > 0.26 && cut < Math.PI - 0.26 && U.dist(L[i], L[k]) > 150) { fix = true; break; }
+    }
+    if (fix && (!j.pt || S.time - j.pt > 6)) { plot(S, j, { per: 6, err: 12 }); j.triT = S.time; }
+  }
+}
+
 /* is this flight where its filed plan says it should be? */
 function onPlan(S, t) {
   if (!t.plan) return false;
@@ -130,16 +173,14 @@ IC.sense = function (S, dt) {
   const L = S.sensors = buildSensors(S);
   const jammers = S.threats.filter(t => t.d.jam && !t.dead && t.jamming);
   for (const u of S.units) { u.jamF = 1; u.jammers = null; }
+  S.strobes = [];
   for (const s of L) {
-    s.jamF = 1;
+    s.jams = null;
     if (s.rot) { s.a1 = s.phase + TAU * S.time / s.per; s.a0 = s.a1 - TAU * dt / s.per; }
     else s.tick = s.per <= dt + 1e-6 || Math.floor(S.time / s.per) !== Math.floor((S.time - dt) / s.per);
-    if (!s.emits || !jammers.length) continue;
-    let f = 1; const js = [];
-    for (const j of jammers) { const d = U.dist(s, j); if (d < 3600) { f = Math.min(f, U.clamp(Math.sqrt(d / 3600), 0.3, 1)); js.push(j); } }
-    s.jamF = 1 - (1 - f) * (1 - Math.min(0.9, s.eccm || 0));
-    if (s.unit && js.length) { s.unit.jamF = Math.min(s.unit.jamF, s.jamF); s.unit.jammers = js; }
+    if (s.emits && jammers.length && !s.air) jamSensor(S, s, jammers);
   }
+  locateJammers(S);
   const sat = IC.hasTech(S, 's_sat');
   for (const t of S.threats) {
     if (t.dead) continue;
