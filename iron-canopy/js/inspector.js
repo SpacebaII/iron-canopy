@@ -44,7 +44,9 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'field') h = field(r);
   }
   el.classList.toggle('glass', !!h);
-  ui.setHTML(el, h ? h.replace('<div class="ihead">', '<div class="ihead">') : '');
+  // another selection, or another airport tab, starts at the top; the same one holds its scroll
+  const key = S.group.length > 1 ? 'group' : s ? `${s.kind}:${ui.oid(s.ref)}:${s.kind === 'infra' && s.ref.parts ? ui.aptTab : ''}` : '';
+  ui.setHTML(el, h, key);
 };
 
 /* ---------- the airspace: fixes, airways, light-aircraft fields ---------- */
@@ -317,13 +319,18 @@ function base(b) {
   }).join('');
   const fee = civil ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
     <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="No departures 23:00–06:00. Cargo airlines hate it; the neighbours love it.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
-  return H + `<div class="ibody">${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}
-    <div class="sec"><h3 class="sh">Build <em>pick a part, then click the map</em></h3>${palette}</div>
-    <div class="sec"><h3 class="sh">Engineering <em>${b.works.filter(w => !w.wait).length}/${b.crews} crews working</em></h3>${yard(b)}${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
+  // four tabs instead of one long page, so the build tools are one click away
+  const tab = ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
+  const tabs = `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
+    ['build', 'Build', '', 'Parts, tools and materials'], ['works', `Works${nw + nd ? ` <em>${nw + nd}</em>` : ''}`, '', 'Engineering crews, work queued and repairs'],
+    ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here']])}</div>`;
+  const body = tab === 'build' ? `<div class="sec"><h3 class="sh">Build <em>pick a part, then click the map</em></h3>${palette}</div>${st.warn.length ? warn : ''}`
+    : tab === 'works' ? `<div class="sec"><h3 class="sh">Engineering <em>${b.works.filter(w => !w.wait).length}/${b.crews} crews working</em></h3>${yard(b)}${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
       ${reps ? `<h3 class="sh">Damage</h3><div class="list">${reps}</div>` : ''}
-      <div class="acts"><button class="act" data-act="bwork" data-v="crew" ${S.budget < 20 ? 'disabled' : ''}>+ Crew · ₭20M</button><button class="act ${b.autoRepair ? 'on' : ''}" data-act="bauto">Auto-repair: ${b.autoRepair ? 'on' : 'off'}</button></div></div>
-    ${fee}
-    ${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : ''}</div>`;
+      <div class="acts"><button class="act" data-act="bwork" data-v="crew" ${S.budget < 20 ? 'disabled' : ''}>+ Crew · ₭20M</button><button class="act ${b.autoRepair ? 'on' : ''}" data-act="bauto">Auto-repair: ${b.autoRepair ? 'on' : 'off'}</button></div></div>`
+    : tab === 'ops' ? `${fee}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
+    : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
+  return H + tabs + `<div class="ibody">${body}</div>`;
 }
 /* the build palette: parts, big-airport tools, and the choices they are built with */
 function buildPalette(b, civil) {
