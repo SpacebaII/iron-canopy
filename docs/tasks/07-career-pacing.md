@@ -1,6 +1,6 @@
 # 07 Career: start small, learn by building
 
-Wave 4. Needs 10, 11, 12 and 13 merged: this ties them into the Career. Runs in parallel with 14 (menus and progression).
+Wave 4. Needs 10, 11, 12 and 13 merged: this ties them into the Career. Runs in parallel with 14 (menus and progression) and 15 (runway rules).
 
 ## What the owner asked for
 
@@ -22,9 +22,24 @@ Act I becomes a long, satisfying civil aviation game in its own right. It starts
 
 ## Scope
 
-In: `story.js` (acts, goals, beats, events), the Career start-up in `state.js` and `aviation.js` (which airports and airlines exist at the start), and the goal and room unlocks in the interface.
+In (you own these):
+- `story.js`: acts, goals, beats and events.
+- The Career start-up in `state.js` and `aviation.js`: which airports and airlines exist at the start.
+- The world's size (`core.js`, `gen.js`).
+- Entry and exit points, overflights and controllers' workload in `airspace.js`.
+- The tutorial's prompts, and the goal and room unlocks in the interface.
 
-Out: the systems themselves; use what tasks 01 to 06 built.
+Out:
+- The systems themselves: use what the earlier tasks built.
+- Runway rules and ground movement (`groundops.js`): task 15.
+- The look of menus and panels: task 14. It builds a hint layer your tutorial can use; agree on it through small, separate commits.
+- Two follow-ups the coordinator does on `main` while you work:
+  - city districts feeding passenger and cargo demand (`c.mix`, `IC.cityDemand` in `growth.js`);
+  - Quick war money, which today earns far more than it spends.
+
+  Merge `main` before you open the pull request.
+
+Keep edits outside your files small and in separate commits.
 
 ## Design notes
 

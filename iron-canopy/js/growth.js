@@ -13,6 +13,7 @@ const OPS_DAY = 17 * 3600; // airliners fly 06:00–23:00; freighters round the 
 /* ---------- tuning, in plain units ---------- */
 IC.GROWTH = {
   flyRate: 28,        // passengers a day per thousand people, at full prosperity and perfect air service
+  cargoRate: 0.1,     // tonnes of air cargo a day per thousand people in an average city
   catch: [0.5, 2.5],  // hours by road to the airport: everyone flies within half an hour, nobody beyond 2½ h
   freqDeps: 60,       // departures a day at which frequency is about two-thirds of the way to "fly any time"
   dests: 6,           // places served at which choice is about two-thirds of the way to "fly anywhere"
@@ -126,7 +127,7 @@ const catchF = h => U.clamp((IC.GROWTH.catch[1] - h) / (IC.GROWTH.catch[1] - IC.
 /* what each airport offers: departures a day from the routes flown, seats, cargo room, places served, delays */
 function airService(S) {
   const A = S.av, G = IC.GROWTH;
-  for (const ap of ourAirports(S)) ap.svc = { deps: 0, seats: 0, cargoT: 0, fr: 0, dests: new Set(), delay: 0, q: 0, demand: 0, lf: 0.8 };
+  for (const ap of ourAirports(S)) ap.svc = { deps: 0, seats: 0, cargoT: 0, fr: 0, dests: new Set(), delay: 0, q: 0, demand: 0, lf: 0.8, cargoDem: 0 };
   if (A) for (const r of A.routes) {
     if (r.st !== 'active' || r.n <= 0) continue;
     const a = S.byId[r.a], b = IC.avEnd(S, r.b), T = IC.ACTYPES[r.type];
@@ -152,31 +153,48 @@ function airService(S) {
     // room for cargo: freighters, then belly holds; a cargo terminal makes the most of it
     v.cargoF = U.clamp(v.cargoT / 250, 0, 1) * (ap.st && ap.st.cargo ? 1 : 0.6) * (ap.offline ? 0 : 1);
   }
-  // each city sends its flyers to the airports within reach, in proportion to how good they are
+  // what each city's districts want (cities.js): offices fly on business and want frequent flights, big housing
+  // estates go on holiday and look at places served and fares, industry and warehouses ship air cargo. The shares
+  // are measured against the country's average city, so they move demand between cities, not the national total.
+  const ours = IC.cities(S).filter(c => c.owner === 'us');
+  const dem = new Map(ours.map(c => [c, IC.cityDemand && c.mix ? IC.cityDemand(c) : { pax: 1, cargo: 1, bizShare: 0.5 }]));
+  const popT = ours.reduce((s, c) => s + c.pop, 0) || 1;
+  const paxN = ours.reduce((s, c) => s + c.pop * dem.get(c).pax, 0) / popT || 1, cargoN = ours.reduce((s, c) => s + c.pop * dem.get(c).cargo, 0) / popT || 1;
+  // each city sends its flyers to the airports within reach, in proportion to how good they are for it
   for (const c of IC.cities(S)) {
     const T = S.econ.tt[c.id];
-    c.air = { score: 0, demand: 0, best: null, bestT: Infinity, pot: 0 };
+    c.air = { score: 0, demand: 0, best: null, bestT: Infinity, pot: 0, cargo: 0 };
     if (c.owner !== 'us') continue;
-    const opts = [];
+    const D = dem.get(c), b = D.bizShare, opts = [], cargoTo = [];
     for (const ap of ourAirports(S)) {
-      const t = timeTo(S, T, ap), w = catchF(t / 3600) * ap.svc.q;
+      const v = ap.svc, t = timeTo(S, T, ap);
+      const q = ap.offline ? 0 : ((0.3 + 0.4 * b) * v.freqF + (0.7 - 0.4 * b) * v.destF) * v.relF * Math.pow(v.fareF, 1.5 - b);
+      const w = catchF(t / 3600) * q;
       if (t < c.air.bestT) { c.air.bestT = t; c.air.near = ap.id; }
       if (w > 0) opts.push([ap, w, t]);
+      const wc = catchCargo(t); if (wc > 0 && !ap.offline) cargoTo.push([ap, wc]);
     }
     // a second airport within reach helps, less than the first
     const tot = opts.reduce((s, o) => s + o[1], 0);
     c.air.score = 1 - opts.reduce((p, o) => p * (1 - o[1]), 1);
-    c.air.pot = c.pop * G.flyRate * c.prosp;
+    c.air.pot = c.pop * G.flyRate * c.prosp * D.pax / paxN;
     c.air.demand = c.air.pot * c.air.score;
-    const best = opts.sort((a, b) => b[1] - a[1])[0];
+    c.air.bizShare = b;
+    const best = opts.sort((a, b2) => b2[1] - a[1])[0];
     if (best) { c.air.best = best[0].id; c.air.bestT = best[2]; }
     for (const [ap, w] of opts) ap.svc.demand += c.air.demand * w / tot;
+    // air cargo goes to the airports within a lorry's reach, the nearest taking most
+    c.air.cargo = c.pop * G.cargoRate * c.prosp * D.cargo / cargoN;
+    const ct = cargoTo.reduce((s, o) => s + o[1], 0);
+    for (const [ap, w] of cargoTo) ap.svc.cargoDem += c.air.cargo * w / ct;
   }
   for (const ap of ourAirports(S)) { const v = ap.svc; v.lf = v.seats > 0 ? U.clamp(v.demand / v.seats, 0.35, 0.97) : 0.8; }
 }
 /* share of seats airlines fill at this airport */
 IC.loadFactor = (S, ap) => ap && ap.svc ? ap.svc.lf : 0.78;
-IC.cargoLoad = (S, ap) => ap && ap.svc ? U.clamp(0.45 + (ap.svc.exportT || 0) / Math.max(1, ap.svc.cargoT), 0.45, 1) : 0.7;
+IC.cargoLoad = (S, ap) => ap && ap.svc ? U.clamp(0.45 + ((ap.svc.exportT || 0) + (ap.svc.cargoDem || 0)) / Math.max(1, ap.svc.cargoT), 0.45, 1) : 0.7;
+/* how much cargo airlines want more flights here: cargo waiting for room over the room offered */
+IC.cargoPull = (S, ap) => ap && ap.svc ? ((ap.svc.exportT || 0) + (ap.svc.cargoDem || 0)) / Math.max(20, ap.svc.cargoT) : 0;
 /* how much airlines want more flights here: passengers wanting seats over seats offered */
 IC.demandPull = (S, ap) => ap && ap.svc && ap.svc.seats > 0 ? ap.svc.demand / ap.svc.seats : 0;
 
@@ -672,7 +690,7 @@ IC.moneyWhy = function (S, k, r) {
   switch (k) {
     case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
     case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid per flight at our airports, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
-    case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${st.act === 3 ? 'a quarter of them' : 'none: they go to the Treasury'}.` : ''}${mobTxt}`; }
+    case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${st.act === 3 ? 'a quarter of them' : 'none: they go to the Treasury'}.` : S.mode === 'campaign' ? ` The air defence gets ${U.pct(IC.QW_TAX_SHARE)} of them; the rest runs the country.` : ''}${mobTxt}`; }
     case 'trade': return `15% of what ${n(S.econ ? S.econ.inds.length : 0, 'remote industry', 'remote industries')} sell. Fast roads to a city and air cargo within ${IC.GROWTH.indCatch} h sell more.${st && st.act < 4 ? ' In the Career this grows with the acts, like taxes.' : ''}`;
     case 'apt': return 'Airports earn a fixed amount when no airlines are modelled.';
     case 'aid': return `Our allies pay more the more they support us (support ${Math.round(S.support)}).`;
@@ -730,7 +748,8 @@ IC.cityReport = function (S, c) {
   if (best) R.air = `${shortName(best.name)}, ${hm(c.air.bestT)} by road: ${Math.round(best.svc.deps)} departures a day to ${best.svc.dests.size} places.`;
   else if (c.air.near) R.air = `No airline service within ${IC.GROWTH.catch[1]} h. The nearest airport, ${shortName(S.byId[c.air.near].name)}, is ${hm(c.air.bestT)} away${S.byId[c.air.near].svc && !S.byId[c.air.near].svc.deps ? ' and has no flights' : ''}.`;
   else R.air = 'No airport.';
-  R.demand = `${Math.round(c.air.demand).toLocaleString('en-US')} passengers a day of ${Math.round(c.air.pot).toLocaleString('en-US')} who would fly with perfect service.`;
+  const b = c.air.bizShare || 0.5, want = b > 0.58 ? ' Mostly business travel: frequent flights matter most.' : b < 0.42 ? ' Mostly holidays: places served and fares matter most.' : '';
+  R.demand = `${Math.round(c.air.demand).toLocaleString('en-US')} passengers a day of ${Math.round(c.air.pot).toLocaleString('en-US')} who would fly with perfect service.${want} ${Math.round(c.air.cargo || 0)} t of air cargo a day.`;
   const trade = c.rc / Math.max(1, c.rcI);
   R.cuts = c.cuts.slice(0, 3).map(x => `${x.why}: trips to ${x.name} take ${hm(x.tN)} instead of ${hm(x.tI)}.`);
   R.roads = trade < 0.98 ? `Roads cut: trade with other cities down ${U.pct(1 - trade)} until they are repaired.` : c.rc > c.rc0 * 1.01 ? `New roads: trade reach ${U.pct(c.rc / c.rc0 - 1)} better than at the start.` : 'Road links as at the start.';

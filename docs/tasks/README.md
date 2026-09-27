@@ -16,11 +16,14 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 3 | [11 Air defence that fights back](11-air-defense.md) | — | `defense.js`, `threats.js`, `enemy.js`, `sensors.js`, `data.js` stats, `air.js`, `campaign.js`, Academy, remove `ground.js`, new `reinforce.js`, `testrange.js` |
 | 3 | [12 Combat look and feel](12-combat-feel.md) | — | new `render-combat.js`, `audio.js`, symbols, new `names.js` |
 | 3 | [13 Economy and logistics](13-economy-logistics.md) | 05 | `logistics.js`, economy in `growth.js`, ordering in `units.js`, Economy/Supply rooms, new `render-logistics.js` |
-| 4 | [07 Career: start small, learn by building](07-career-pacing.md) | wave 3 | `story.js`, start-up, map size, tutorial |
-| 4 | [14 Menus and progression](14-menus-progression.md) | wave 3 | `ui.js`, `inspector.js`, `warroom.js`, `app.css` |
+| 4 | [07 Career: start small, learn by building](07-career-pacing.md) | wave 3 | `story.js`, start-up, map size (`core.js`, `gen.js`), entry and exit points and controllers (`airspace.js`), tutorial |
+| 4 | [14 Menus and progression](14-menus-progression.md) | wave 3 | `ui.js`, `inspector.js`, `warroom.js`, `main.js` keys, `app.css`, start screen |
+| 4 | [15 Runway rules](15-runway-rules.md) | wave 3 | `groundops.js`, capacity in `airport.js`, stop bars in `render-airport.js`, the airport panel's Operations tab |
 | 5 | [06 Save and load](06-save-load.md) | all | new `save.js`, small hooks |
 | 5 | [09 3D replay and tilt](09-tacview.md) | wave 3 | new files |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.
+
+In wave 4 the coordinator also does two follow-ups on `main`: city districts feeding demand (`growth.js`) and Quick war money.
 
 After wave 4: a full `/code-review ultra`, then fixes and long balance runs.

@@ -1,6 +1,6 @@
 # 14 Menus and progression that feel polished
 
-Wave 4. Runs in parallel with 07 (Career). Needs 11, 12 and 13 merged.
+Wave 4. Runs in parallel with 07 (Career) and 15 (runway rules). Needs 11, 12 and 13 merged.
 
 ## What the owner asked for
 
@@ -15,7 +15,13 @@ A new player finds their way without a manual. Every screen looks like part of o
 
 In: `ui.js`, `inspector.js`, `warroom.js`, `main.js` (input and keys only), `app.css`, the start screen in `index.html`, and the research and unlock presentation.
 
-Out: game rules, drawing on the map (task 12 did combat, task 10 towns), the Career's content (task 07, which adds prompts and unlocks through your UI).
+Out:
+- Game rules.
+- Drawing on the map (task 12 did combat, task 10 towns).
+- The Career's content: task 07 adds prompts and unlocks through your UI.
+- The airport panel's new Operations tab: task 15 adds it in its own function. Restyle around it, but don't rewrite its contents.
+
+Keep edits outside your files small and in separate commits.
 
 ## Design notes
 
