@@ -379,11 +379,11 @@ function combat(S, f, dt) {
       const x = a.x + (b.x - a.x) * t + G.nx * side * U.rand(10, 140), y = a.y + (b.y - a.y) * t + G.ny * side * U.rand(10, 140);
       S.fx.flashes.push({ x, y, t: 0, r: U.rand(18, 34), wr: 3 });
       IC.part(S, { x, y, vy: -5, life: U.rand(1.5, 3), size: U.rand(3, 6), grow: 6, col: '110,110,110', a: 0.35 });
-      if (Math.random() < 0.35) IC.addScar(S, { kind: 'crater', x, y, r: U.rand(0.8, 1.8) });
+      if (Math.random() < 0.35) IC.impactMark(S, x, y, U.rand(20, 45));
       if (Math.random() < 0.05) IC.addFire(S, x, y, 0.5, 1800);
       IC.sfx && IC.sfx.arty(x, y);
       // villages on the line burn
-      for (const v of S.world.villages) if (v.home && U.dxy(v.x, v.y, x, y) < v.r + 20 && Math.random() < 0.3) { const b2 = v.blocks.find(bb => bb.hp > 0); if (b2) { b2.hp = 0; IC.addScar(S, { kind: 'block', x: b2.x, y: b2.y, r: 4, b: b2 }); } }
+      for (const v of S.world.villages) if (v.home && U.dxy(v.x, v.y, x, y) < v.r + 20 && Math.random() < 0.3) { const b2 = v.blocks.find(bb => bb.hp > 0); if (b2) IC.blockHit(S, b2, 999); }
     }
   }
   // towns with a garrison pin the line in front of them

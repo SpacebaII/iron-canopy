@@ -101,12 +101,10 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   const night = light < 0.55;
   const parts = ap.parts;
   const by = k => parts.filter(p => p.kind === k);
-  // the airfield: cleared, mown ground around everything built, and a perimeter fence
+  // the airfield's grass is part of the terrain (terrain.js); here only the perimeter fence
   const box = fieldBox(ap);
   if (box) {
     g.save(); g.translate(box.x, box.y); g.rotate(box.a);
-    g.fillStyle = 'rgba(98,108,78,0.9)'; g.fillRect(-box.w / 2, -box.h / 2, box.w, box.h);
-    if (z > 1.5) { g.fillStyle = 'rgba(118,128,92,0.3)'; for (let x = -box.w / 2; x < box.w / 2; x += 0.6) g.fillRect(x, -box.h / 2, 0.3, box.h); }
     if (z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); g.strokeRect(-box.w / 2, -box.h / 2, box.w, box.h); }
     g.restore();
   }

@@ -38,6 +38,7 @@ IC.step = function (S, dt) {
     S.trailT = 5;
     F.trails = F.trails.filter(tr => tr.pts.length === 0 ? S.time - (tr.born || (tr.born = S.time)) < 120 : S.time - tr.pts[tr.pts.length - 1].t < 240);
     S.wrecks = S.wrecks.filter(w => S.time - w.t < 6 * 3600);
+    IC.marksAge(S);
   }
   S.threats = S.threats.filter(t => !t.dead);
   if (S.sel) {

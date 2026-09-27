@@ -70,8 +70,8 @@ const ACT = {
   ]
 };
 /* plays one lesson; returns { id, won, stars, over, step, hours } */
-function playLesson(id, quiet) {
-  const S = IC.newGame({ seed: 777, mode: 'academy', lesson: id, hour: 10 });
+function playLesson(id, quiet, seed) {
+  const S = IC.newGame({ seed: seed || 777, mode: 'academy', lesson: id, hour: 10 });
   const acts = ACT[id] || [];
   const t0 = S.time;
   let lastStep = -1;

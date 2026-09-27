@@ -30,36 +30,53 @@ IC.aspInit = function (S) {
 
 /* ---------- radar cover: terrain and the earth's curve ---------- */
 IC.elevKm = (x, y) => Math.max(0, IC.W.hAt(x, y) - 0.25) * 2;
-/* for each 3° sector and 4 km step out from the radar, the lowest height (above sea level) it can see */
-function profile(x, y, mastM, R, flat) {
-  const NB = A.NB, ST = A.STEP, NS = Math.ceil(R / ST) + 1, g0 = IC.elevKm(x, y), h0 = g0 + mastM / 1000, m = new Float32Array(NB * NS);
+/* for each 3° sector and each step out from the radar (4 km, finer for short-range radars), the lowest height
+   (above sea level) it can see */
+function profile(x, y, mastM, R) {
+  const NB = A.NB, ST = U.clamp(R / 30, 8, A.STEP), NS = Math.ceil(R / ST) + 1, g0 = IC.elevKm(x, y), h0 = g0 + mastM / 1000, m = new Float32Array(NB * NS);
   for (let b = 0; b < NB; b++) {
     const a = b / NB * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
     let sig = -1e9;
     for (let k = 0; k < NS; k++) {
       const d = (k + 1) * ST, dk = d / 10, px = x + c * d, py = y + s * d;
-      const hg = flat ? g0 : IC.elevKm(U.clamp(px, 0, IC.WW), U.clamp(py, 0, IC.WH)), cu = dk * dk / (2 * RE);
+      const hg = IC.elevKm(U.clamp(px, 0, IC.WW), U.clamp(py, 0, IC.WH)), cu = dk * dk / (2 * RE);
       m[b * NS + k] = Math.max(hg + 0.03, h0 + sig * dk + cu);
       sig = Math.max(sig, (hg - h0 - cu) / dk);
     }
   }
-  return { m, NS, x, y };
+  return { m, NS, ST, x, y, mast: mastM, R };
 }
 function profAlt(P, x, y) {
-  const dx = x - P.x, dy = y - P.y, k = Math.ceil(Math.hypot(dx, dy) / A.STEP) - 1;
+  const dx = x - P.x, dy = y - P.y, k = Math.ceil(Math.hypot(dx, dy) / P.ST) - 1;
   if (k < 0) return 0;
   if (k >= P.NS) return Infinity;
   const b = U.mod(Math.round(Math.atan2(dy, dx) / (Math.PI * 2) * A.NB), A.NB);
   return P.m[b * P.NS + k];
 }
-const civilRadar = s => !!(s.ssr || s.part);
+/* one profile per radar position, mast and reach, kept on the unit or airport part that carries the radar */
 function profOf(s) {
-  const o = s.unit || s.part || s;
-  if (!o._hp || o._hp.x !== s.x || o._hp.y !== s.y) o._hp = profile(s.x, s.y, s.mast, s.unit ? (s.unit.d.sensor || s.unit.d.fc).R : 450, !civilRadar(s));
-  return o._hp;
+  const o = s.unit || s.part || s, R = s.unit ? Math.max(s.R, (s.unit.d.sensor || s.unit.d.fc).R) : Math.max(s.R, 450);
+  const c = o._hp || (o._hp = []);
+  for (const P of c) if (P.x === s.x && P.y === s.y && P.mast === s.mast && P.R >= s.R) return P;
+  if (c.length && (c[0].x !== s.x || c[0].y !== s.y)) c.length = 0;
+  const P = profile(s.x, s.y, s.mast, R); c.push(P);
+  return P;
 }
-/* civil radars cannot see an aircraft hidden by high ground (sensors.js asks) */
+/* ground radars cannot see an aircraft hidden by high ground or below the curve of the earth (sensors.js asks) */
 IC.aspHidden = (s, t) => IC.elevKm(t.x, t.y) + t.alt < profAlt(profOf(s), t.x, t.y);
+/* the lowest height above the ground a radar sees at a point (Infinity outside its reach) */
+IC.radarFloor = (s, x, y) => U.dxy(x, y, s.x, s.y) > s.R ? Infinity : Math.max(0, profAlt(profOf(s), x, y) - IC.elevKm(x, y));
+/* is the straight line from a mast (height in m above the ground at a) to a point b at altKm above the ground
+   clear of hills and the earth's curve? For planning, where no radar profile exists yet */
+IC.losClear = function (ax, ay, mastM, bx, by, altKm) {
+  const D = U.dxy(ax, ay, bx, by), n = Math.ceil(D / 20);
+  const h0 = IC.elevKm(ax, ay) + mastM / 1000, h1 = IC.elevKm(bx, by) + altKm, Dk = D / 10;
+  for (let i = 1; i < n; i++) {
+    const f = i / n, dk = Dk * f, line = h0 + (h1 - h0) * f - dk * (Dk - dk) / (2 * RE);
+    if (IC.elevKm(ax + (bx - ax) * f, ay + (by - ay) * f) > line) return false;
+  }
+  return true;
+};
 
 /* radars that give controllers a picture: ours, on the ground, reading transponders */
 const atcRadar = s => !s.passive && !s.air && !s.org && !s.bmdOnly && !s.rktOnly && !s.eo && (s.ssr || s.idc === 'iff' || s.idc === 'nctr');
@@ -83,6 +100,23 @@ IC.aspCov = function (S) {
     }
   }
   return (N.cov = { key, g, gw, gh, v: (N.cov ? N.cov.v : 0) + 1 });
+};
+/* the same for our military radars (search and fire control): a low flier is safe in the holes the hills leave */
+const milRadar = s => !!s.unit && s.emits && !s.ssr && !s.eo && !s.acou && !s.esm && !s.bmdOnly && !s.rktOnly;
+IC.milCov = function (S) {
+  const L = S.sensors.filter(milRadar), N = S.asp;
+  const key = L.map(s => `${Math.round(s.x)},${Math.round(s.y)},${s.mast},${Math.round(s.R / 20)}`).join(';');
+  if (N.mcov && N.mcov.key === key) return N.mcov;
+  const CS = A.CS, gw = Math.ceil(IC.WW / CS), gh = Math.ceil(IC.WH / CS), g = new Float32Array(gw * gh).fill(Infinity);
+  for (const s of L) {
+    const i0 = Math.max(0, Math.floor((s.x - s.R) / CS)), i1 = Math.min(gw - 1, Math.floor((s.x + s.R) / CS));
+    const j0 = Math.max(0, Math.floor((s.y - s.R) / CS)), j1 = Math.min(gh - 1, Math.floor((s.y + s.R) / CS));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * gw + i, a = IC.radarFloor(s, (i + 0.5) * CS, (j + 0.5) * CS);
+      if (a < g[k]) g[k] = a;
+    }
+  }
+  return (N.mcov = { key, g, gw, gh, v: (N.mcov ? N.mcov.v : 0) + 1 });
 };
 IC.aspCovAlt = function (S, x, y) {
   const C = IC.aspCov(S), i = Math.floor(x / A.CS), j = Math.floor(y / A.CS);

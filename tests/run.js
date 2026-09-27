@@ -55,6 +55,38 @@ test('world: roads meet at junctions and do not run side by side', () => {
   assert(Object.values(W.nodes).some(n => n.ix), 'no motorway interchanges');
   assert(W.bridges.length > 0, 'no bridges');
 });
+test('world: every motorway-to-motorway junction has an interchange shape, with smooth slip roads', () => {
+  let mm = 0, mx = 0;
+  for (const seed of [4242, 7, 99, 12345, 2024]) {
+    const W = IC.generate(seed);
+    const hwAt = k => W.edges.filter(e => e.cls === 'hw' && (e.a === k || e.b === k)).length;
+    for (const k in W.nodes) {
+      const n = W.nodes[k], J = W.junctionAt[k], h = hwAt(k);
+      if (!n.jct || !h) continue;
+      if (h >= 3) { assert(J && J.kind === 'mm', `seed ${seed}: motorways meet at ${k} without an interchange`); mm++; }
+      else if (h === 2 && n.deg > 2) { assert(J && J.kind === 'mx', `seed ${seed}: a road meets the motorway at ${k} without an interchange`); mx++; }
+      if (!J || !J.ramps.length) continue;
+      if (J.kind === 'mm') assert(J.ramps.some(r => r.kind === 'loop') && J.ramps.some(r => r.kind === 'outer') && J.over.length, `seed ${seed}: interchange ${k} has no loops, slip roads or bridge`);
+      for (const r of J.ramps) {
+        // no kinks: consecutive pieces of a slip road turn by less than 30°; a loop turns three quarters round
+        let turn = 0;
+        for (let i = 2; i < r.pts.length; i++) {
+          const a = Math.atan2(r.pts[i - 1].y - r.pts[i - 2].y, r.pts[i - 1].x - r.pts[i - 2].x), b = Math.atan2(r.pts[i].y - r.pts[i - 1].y, r.pts[i].x - r.pts[i - 1].x);
+          assert(Math.abs(U.angWrap(b - a)) < 0.53, `seed ${seed}: a ${r.kind} slip road at ${k} has a kink`);
+          turn += U.angWrap(b - a);
+        }
+        if (r.kind === 'loop') assert(Math.abs(turn) > 3.5, `seed ${seed}: a loop at ${k} turns only ${Math.round(Math.abs(turn) * 57)}°`);
+      }
+    }
+  }
+  assert(mm >= 2 && mx >= 20, `too few interchanges to be a real test (${mm} motorway, ${mx} other)`);
+});
+test('world: city streets end on another street or road', () => {
+  for (const seed of [4242, 7]) {
+    const W = IC.generate(seed);
+    for (const c of W.cities) for (const l of c.streets) assert(!l.deadEnd, `seed ${seed}: a street in ${c.name} ends in the middle of nowhere`);
+  }
+});
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test
@@ -630,7 +662,9 @@ test('growth: a road the player builds joins the routing graph and shortens a tr
   assert(S.worldDirty && S.worldDirty.length, 'the world was not told the road changed');
 });
 test('growth: a crater on a motorway cuts the link between two cities until it is repaired', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  // a map where the detour round the crater is long enough to show in the city panel (the world look changed
+  // the roads on seed 777: there a parallel road now keeps the detour short)
+  const S = IC.newGame({ seed: 99, mode: 'story', hour: 7 });
   IC.econRefresh(S);
   const W = S.world, cap = IC.cap(S);
   // the nearest city reached from the capital by motorway, and the longest motorway piece on that trip
@@ -677,6 +711,78 @@ test('growth: the weekly statement adds up to the change in the treasury', () =>
 });
 
 /* ---------- modes ---------- */
+test('damage: a weapon landing on a city block damages that block, not the one across the street', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const cap = IC.cap(S), b = cap.blocks.filter(q => q.core)[2];
+  const other = cap.blocks.filter(q => q !== b && U.dist(q, b) > 12)[0];
+  IC.detonate(S, b.x, b.y, 120, null);
+  assert(b.hp <= 0, `the block that was hit is still standing (hp ${b.hp})`);
+  assert(other.hp === 1, 'a block 1.2 km away was damaged');
+  assert(!S.marks.some(m => m.kind === 'field' || m.kind === 'road'), 'a hit on a building left a crater in a field or road');
+  // a small rocket damages the block it lands on without flattening it
+  const c = cap.blocks.filter(q => q.hp === 1 && !q.core)[5];
+  IC.detonate(S, c.x, c.y, 14, null);
+  assert(c.hp < 1 && c.hp > 0, `a rocket on a house should damage it (hp ${c.hp})`);
+});
+test('damage: a crater in a field fades after a day or two; one in a road stays until it is filled', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const W = S.world, cap = IC.cap(S);
+  let fp = null;
+  for (let a = 0; a < 6.28 && !fp; a += 0.1) { const x = cap.x + Math.cos(a) * cap.r * 1.7, y = cap.y + Math.sin(a) * cap.r * 1.7; if (IC.groundAt(S, x, y).kind === 'field') fp = { x, y }; }
+  const e = W.edges.find(e => e.cls === 'rd'), rp = e.pts[Math.floor(e.pts.length / 2)];
+  IC.detonate(S, fp.x, fp.y, 120, null);
+  IC.detonate(S, rp.x, rp.y, 120, null);
+  const field = S.marks.find(m => m.kind === 'field'), road = S.marks.find(m => m.kind === 'road');
+  assert(field && U.dxy(field.x, field.y, fp.x, fp.y) < 0.01, 'no mark where the weapon hit the field');
+  assert(road && road.cls === 'rd', 'no crater in the main road');
+  const age = h => { for (let t = 0; t < h * 3600; t += 60) { S.time += 60; IC.growth(S, 60); IC.marksAge(S); } };
+  age(1);
+  assert(!road.fixed, 'the road crater was filled at once');
+  age(11);
+  assert(S.marks.includes(field), 'the scorch in the field faded within 12 hours');
+  age(12);
+  assert(road.fixed && !S.econ.damaged.includes(e.id), 'the road crater was not filled within a day');
+  age(24);
+  assert(!S.marks.includes(field), 'the field still shows the crater after two days');
+  assert(S.marks.includes(road), 'the patch in the road disappeared too soon');
+});
+
+test('world: a change to the world is recorded for the map to redraw', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const c = IC.cap(S), b = { x0: c.x - 5, y0: c.y - 5, x1: c.x + 5, y1: c.y + 5 };
+  IC.worldChanged(S, b);
+  assert(S.worldDirty && S.worldDirty.includes(b), 'IC.worldChanged did not record the box');
+});
+
+test('radar: a military radar does not see a low aircraft behind a hill that it sees over flat ground', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const W = S.world, D = 300;
+  // a radar site next to high ground: at 30 km some bearings are behind the hill, others over flat ground
+  let at = null;
+  for (let j = 200; j < IC.WH - 200 && !at; j += 97) for (let i = 200; i < IC.WW - 200 && !at; i += 97) {
+    if (!W.inHome(i, j) || W.inLake(i, j)) continue;
+    let hid = null, open = null;
+    for (let a = 0; a < 6.28; a += 0.05) {
+      const x = i + Math.cos(a) * D, y = j + Math.sin(a) * D;
+      if (!W.inHome(x, y) || Math.abs(IC.elevKm(x, y) - IC.elevKm(i, j)) > 0.1) continue;
+      const clear = IC.losClear(i, j, 25, x, y, 0.1);
+      if (!clear && !hid && !IC.losClear(i, j, 25, x, y, 0.6)) hid = { x, y };
+      if (clear && !open && [0.25, 0.5, 0.75].every(f => IC.elevKm(i + (x - i) * f, j + (y - j) * f) <= IC.elevKm(i, j) + 0.02)) open = { x, y };
+    }
+    if (hid && open) at = { x: i, y: j, hid, open };
+  }
+  assert(at, 'no valley next to a hill found');
+  S.units = []; for (const b of IC.bases(S)) b.parts = b.parts.filter(p => p.kind !== 'atc');
+  const u = IC.makeUnit(S, 'gf', at.x, at.y, { instant: true, full: true }); u.radarOn = true;
+  const t = IC.spawnThreat(S, 'lacm', at.open.x, at.open.y, { route: [{ x: at.x, y: at.y }], aim: { x: at.x, y: at.y } });
+  const sees = (p, alt) => { t.x = p.x; t.y = p.y; t.alt = alt; IC.sense(S, 0.25); return S.sensors.some(s => s.unit === u && IC.detects(s, t)); };
+  assert(sees(at.open, 0.1), 'the gap filler does not see a cruise missile at 100 m over flat ground 30 km away');
+  assert(!sees(at.hid, 0.1), 'the gap filler sees a cruise missile at 100 m behind a hill');
+  assert(sees(at.hid, 3), 'the gap filler does not see an aircraft at 3 km above the same hill');
+  const floor = IC.radarFloor(S.sensors.find(s => s.unit === u), at.hid.x, at.hid.y);
+  assert(floor > 0.1 && IC.milCov(S).g.some(v => v > 0.5 && v < Infinity), `the coverage map does not show the hole behind the hill (floor ${floor})`);
+});
+
 test('career: Act I runs with airline traffic', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
   run(S, 8, player);

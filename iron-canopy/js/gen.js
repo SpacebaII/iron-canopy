@@ -4,6 +4,9 @@
 const U = IC.U;
 const TAU = Math.PI * 2;
 const K = 1.5;   // map scale relative to the original 800 km layout
+/* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
+IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
+IC.FOREST_T = 0.56;
 
 IC.generate = function (seed) {
   let R = IC.makeRng(seed);
@@ -223,11 +226,17 @@ IC.generate = function (seed) {
     if (!W.inHome(x, y) || W.hAt(x, y) > 0.35 || W.depthOut(x, y) > -375) continue;
     W.lakes.push({ x, y, rx: R.range(110, 240), ry: R.range(60, 120), rot: R.range(0, 3) });
   }
-  W.inLake = (x, y) => W.lakes.some(l => {
-    const c = Math.cos(-l.rot), s = Math.sin(-l.rot), dx = x - l.x, dy = y - l.y;
-    const X = dx * c - dy * s, Y = dx * s + dy * c;
-    return (X / l.rx) ** 2 + (Y / l.ry) ** 2 < 1;
-  });
+  // the terrain asks this for every field it draws: a box test first, the rotation worked out once per lake
+  const lk = W.lakes.map(l => ({ l, c: Math.cos(-l.rot), s: Math.sin(-l.rot), R: Math.max(l.rx, l.ry) }));
+  W.inLake = (x, y) => {
+    for (const { l, c, s, R } of lk) {
+      const dx = x - l.x, dy = y - l.y;
+      if (dx > R || dx < -R || dy > R || dy < -R) continue;
+      const X = dx * c - dy * s, Y = dx * s + dy * c;
+      if ((X / l.rx) ** 2 + (Y / l.ry) ** 2 < 1) return true;
+    }
+    return false;
+  };
   // coarse river-distance grid (50 units) for terrain queries
   const RG = 50, RGW = Math.ceil(WW / RG), RGH = Math.ceil(WH / RG);
   const rdist = new Float32Array(RGW * RGH).fill(1e4);
@@ -240,7 +249,18 @@ IC.generate = function (seed) {
     }
   }
   W.riverDist = (x, y) => { const i = U.clamp(Math.floor(x / RG), 0, RGW - 1), j = U.clamp(Math.floor(y / RG), 0, RGH - 1); return rdist[j * RGW + i]; };
-  W.forestAt = (x, y) => { const h = W.hAt(x, y); return h > 0.18 && h < 0.92 && U.fbm(x / 630 + 33 + NOX, y / 630 + 77, 4) > 0.56; };
+  /* forest: thick on slopes and hill country, in strips along rivers, thin on the flat farmland, none above the
+     tree line; a finer noise breaks the edges and opens clearings. forestD is a density, forest where it passes
+     IC.FOREST_T (about a fifth of the country) */
+  W.forestD = (x, y) => {
+    const h = W.hAt(x, y);
+    if (h < 0.1 || h > 1.02) return 0;
+    const sl = U.clamp(W.slopeAt(x, y) / 0.05, 0, 1), rd = W.riverDist(x, y);
+    return U.fbm(x / 630 + 33 + NOX, y / 630 + 77, 3) + 0.2 * sl + (rd < 30 ? 0.18 * (1 - rd / 30) : 0)
+      + 0.1 * U.clamp((h - 0.4) / 0.3, 0, 1) - 0.1 * U.clamp((0.32 - h) / 0.15, 0, 1) - 0.4 * U.clamp((h - 0.88) / 0.14, 0, 1)
+      + 0.16 * (U.fbm(x / 110 + NOY, y / 110 + 9, 2) - 0.5);
+  };
+  W.forestAt = (x, y) => W.forestD(x, y) > IC.FOREST_T;
 
   /* ---------- cities ---------- */
   const cand = [];
@@ -527,15 +547,71 @@ IC.generate = function (seed) {
     return Math.min(1, Math.max(fw, h < 0.4 ? 0.3 : 0.12)) * U.clamp((0.68 - h) / 0.14, 0, 1);
   };
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
-  W.fieldAng = (x, y) => (U.hash(Math.floor(x / 1500) + 900, Math.floor(y / 1500) + 300) - 0.5) * 1.2;
+  fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
+  junctions(W);
+  // where a road crosses a railway it goes over it on a bridge
+  W.railX = [];
+  for (const r of W.rails) for (const e of W.edges) {
+    for (let i = 1; i < e.pts.length; i++) for (let q = 1; q < r.pts.length; q++) {
+      const a = e.pts[i - 1], b = e.pts[i], c = r.pts[q - 1], d = r.pts[q];
+      if (Math.max(a.x, b.x) < Math.min(c.x, d.x) || Math.min(a.x, b.x) > Math.max(c.x, d.x) || Math.max(a.y, b.y) < Math.min(c.y, d.y) || Math.min(a.y, b.y) > Math.max(c.y, d.y)) continue;
+      const t = U.segX(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y);
+      if (t < 0) continue;
+      const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      if (!W.railX.some(o => U.dxy(o.x, o.y, x, y) < 2)) W.railX.push({ x, y, a: Math.atan2(b.y - a.y, b.x - a.x), cls: e.cls });
+    }
+  }
   // bounding boxes, so drawing and traffic can skip lines out of view
   const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
-  for (const l of W.edges.concat(W.lanes, W.rails)) bbox(l);
+  for (const l of W.edges.concat(W.lanes, W.rails, W.ramps)) bbox(l);
   for (const c of W.cities) for (const l of c.streets) bbox(l);
 
   return W;
 };
+
+/* ---------- which way the fields lie ----------
+   Fields line up with the road beside them; away from roads they follow the contour of a slope, and on open flat
+   land they drift slowly from district to district. Directions are kept modulo 90° (a field grid looks the same
+   turned a quarter), blended as vectors at four times the angle and smoothed, so nothing changes abruptly. */
+function fieldGrid(W, fbm) {
+  const FC = 50, gw = Math.ceil(IC.WW / FC) + 1, gh = Math.ceil(IC.WH / FC) + 1;
+  let vx = new Float32Array(gw * gh), vy = new Float32Array(gw * gh);
+  // road segments in 100-unit buckets
+  const BK = 100, bw = Math.ceil(IC.WW / BK), buckets = new Map();
+  for (const e of W.edges) if (e.cls !== 'hw') for (let i = 1; i < e.pts.length; i++) {
+    const a = e.pts[i - 1], b = e.pts[i], k = Math.floor((a.y + b.y) / 2 / BK) * bw + Math.floor((a.x + b.x) / 2 / BK);
+    if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push([a.x, a.y, b.x, b.y]);
+  }
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const x = i * FC, y = j * FC, bi = Math.floor(x / BK), bj = Math.floor(y / BK);
+    let sx = 0, sy = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) for (const q of buckets.get((bj + dj) * bw + bi + di) || []) {
+      const d = U.segDist(x, y, q[0], q[1], q[2], q[3]); if (d > 120) continue;
+      const a = Math.atan2(q[3] - q[1], q[2] - q[0]) * 4, w = (1 - d / 120) * 2;
+      sx += Math.cos(a) * w; sy += Math.sin(a) * w;
+    }
+    const hx = W.hAt(x + 20, y) - W.hAt(x - 20, y), hy = W.hAt(x, y + 20) - W.hAt(x, y - 20), g = Math.hypot(hx, hy);
+    if (g > 1e-4) { const a = (Math.atan2(hy, hx) + Math.PI / 2) * 4, w = U.clamp(g / 0.03, 0, 1) * 0.8; sx += Math.cos(a) * w; sy += Math.sin(a) * w; }
+    const a = fbm(x / 2600 + 51, y / 2600 + 13, 2) * Math.PI * 8; sx += Math.cos(a) * 0.25; sy += Math.sin(a) * 0.25;
+    vx[j * gw + i] = sx; vy[j * gw + i] = sy;
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    const nx = new Float32Array(gw * gh), ny = new Float32Array(gw * gh);
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+      let sx = 0, sy = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ii = U.clamp(i + di, 0, gw - 1), jj = U.clamp(j + dj, 0, gh - 1), k = jj * gw + ii, w = di || dj ? 1 : 2; sx += vx[k] * w; sy += vy[k] * w; }
+      nx[j * gw + i] = sx; ny[j * gw + i] = sy;
+    }
+    vx = nx; vy = ny;
+  }
+  W.fieldAng = (x, y) => {
+    const fx = U.clamp(x / FC, 0, gw - 1.001), fy = U.clamp(y / FC, 0, gh - 1.001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * gw + i;
+    const X = vx[k] * (1 - u) * (1 - v) + vx[k + 1] * u * (1 - v) + vx[k + gw] * (1 - u) * v + vx[k + gw + 1] * u * v;
+    const Y = vy[k] * (1 - u) * (1 - v) + vy[k + 1] * u * (1 - v) + vy[k + gw] * (1 - u) * v + vy[k + gw + 1] * u * v;
+    return Math.atan2(Y, X) / 4;
+  };
+}
 
 /* ---------- road and rail network ----------
    Roads are laid on a coarse cost grid (RC units a cell) by A*. Slopes, forest and river crossings cost more;
@@ -763,10 +839,9 @@ function buildNetwork(W, R, fbm) {
     e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
   }
   edges.forEach((e, i) => e.id = 'e' + i);
-  // interchanges: junctions where a motorway meets another road
+  // how many roads meet at each node (junction shapes are worked out once the towns are built: junctions())
   for (const e of edges) for (const k of [e.a, e.b]) { const n = nodes[k]; n.cls = n.cls || {}; n.cls[e.cls] = (n.cls[e.cls] || 0) + 1; }
-  for (const k in nodes) { const n = nodes[k], c = n.cls || {}; n.deg = (c.hw || 0) + (c.rd || 0) + (c.lc || 0) + (c.sp || 0); n.ix = !!c.hw && n.deg > 2 && !!n.jct; delete n.cls; }
-  for (const e of edges) if (e.cls === 'hw') { const n = nodes[e.a], q = e.pts[Math.min(2, e.pts.length - 1)]; if (n.ix && n.ixA == null) n.ixA = Math.atan2(q.y - n.y, q.x - n.x); const m = nodes[e.b], r = e.pts[Math.max(0, e.pts.length - 3)]; if (m.ix && m.ixA == null) m.ixA = Math.atan2(r.y - m.y, r.x - m.x); }
+  for (const k in nodes) { const n = nodes[k], c = n.cls || {}; n.deg = (c.hw || 0) + (c.rd || 0) + (c.lc || 0) + (c.sp || 0); delete n.cls; }
   W.nodes = nodes; W.edges = edges;
 
   /* ---------- railways: the big cities and the factories, on gentle grades ---------- */
@@ -802,6 +877,16 @@ function buildTowns(W, R, fbm) {
     return out;
   };
   const clear = (segs, x, y, d) => { for (const s of segs) if (U.segDist(x, y, s[0], s[1], s[2], s[3]) < d + (s[4] === 'hw' ? 1.2 : 0)) return false; return true; };
+  // the nearest road or avenue: its distance (a motorway counts as 120 m closer, for its verges) and nearest point
+  const nearSeg = (segs, x, y) => {
+    let best = { d: 1e9 };
+    for (const s of segs) {
+      const vx = s[2] - s[0], vy = s[3] - s[1], L = vx * vx + vy * vy, t = L ? U.clamp(((x - s[0]) * vx + (y - s[1]) * vy) / L, 0, 1) : 0;
+      const px = s[0] + vx * t, py = s[1] + vy * t, raw = Math.hypot(x - px, y - py), d = raw - (s[4] === 'hw' ? 1.2 : 0);
+      if (d < best.d) best = { d, raw, x: px, y: py };
+    }
+    return best;
+  };
   const fields = W.infra.filter(i => i.kind === 'airport' || i.kind === 'airbase' || i.kind === 'factory' || i.kind === 'power');
   const freeGround = (x, y, pad) => !W.inLake(x, y) && W.riverDist(x, y) > 4 + pad && !fields.some(f => U.dxy(f.x, f.y, x, y) < (f.kind === 'factory' || f.kind === 'power' ? 20 : 48));
   for (const c of W.cities) {
@@ -854,8 +939,18 @@ function buildTowns(W, R, fbm) {
       if (!inside(u, v, 1.05)) continue;
       const dist = districtOf(u, v), p = toW(u, v);
       const fill = dist === 'centre' ? 1 : dist === 'ind' ? 0.85 : dist === 'res' ? 0.95 - d * 0.3 : 0.5 * (1.1 - d);
-      if (R() > fill || !freeGround(p.x, p.y, 1) || !clear(segs, p.x, p.y, 2.6)) continue;
-      cand.push({ p, dist, d: d + R() * 0.12, i, j });
+      // a block next to a road is moved back from it and built smaller rather than left out, so roads run through
+      // town, not through empty strips
+      const near = nearSeg(segs, p.x, p.y);
+      if (R() > fill || !freeGround(p.x, p.y, 1) || near.d < 0.15) continue;
+      let q = p, fit = 0;
+      if (near.d < 2.6) {
+        const sh = Math.max(0, 1.7 - near.d), ux = (p.x - near.x) / (near.raw || 1), uy = (p.y - near.y) / (near.raw || 1);
+        q = { x: p.x + ux * sh, y: p.y + uy * sh };
+        fit = Math.min(SP - 2 * sh - 0.6, (near.d + sh - 0.45) * 1.25);
+        if (fit < 0.9) continue;
+      }
+      cand.push({ p: q, dist, d: d + R() * 0.12, i, j, fit });
     }
     cand.sort((a, b) => a.d - b.d);
     const used = new Set();
@@ -866,7 +961,8 @@ function buildTowns(W, R, fbm) {
       const core = dist === 'centre', ind = dist === 'ind', sub = dist === 'sub';
       const bw = core ? SP - 1.1 : ind ? SP - 1 : sub ? R.range(1.8, 3.2) : R.range(SP - 2.2, SP - 1.3);
       const bh = core ? SP - 1.1 : ind ? SP - 1.4 : sub ? R.range(1.6, 2.8) : R.range(SP - 2.4, SP - 1.4);
-      c.blocks.push({ x: p.x, y: p.y, w: bw, h: bh, a: c.grid, core, ind, sub, seed: R() * 1000, hp: 1 });
+      const f = k.fit ? Math.min(1, k.fit / Math.max(bw, bh)) : 1;
+      c.blocks.push({ x: p.x, y: p.y, w: bw * f, h: bh * f, a: c.grid, core, ind, sub, seed: R() * 1000, hp: 1 });
     }
     // streets run between built cells: a grid line is kept where a block lies on either side of it
     const has = (i, j) => used.has(i + ',' + j);
@@ -901,6 +997,7 @@ function buildTowns(W, R, fbm) {
       ring(0.45, 'art');
       if (c.capital) ring(0.98, 'ring');
     }
+    tieStreets(c, segs, SP);
     // suburbs strung along the main roads just outside town
     for (const s of segs) {
       if (s[4] === 'sp') continue;
@@ -975,6 +1072,133 @@ function buildTowns(W, R, fbm) {
     }
   }
 }
+
+/* city streets end on another street or road: a loose end runs on to the next street it meets ahead, or turns to
+   the nearest one close by; only a street with nothing near stays a cul-de-sac */
+function tieStreets(c, roadSegs, SP) {
+  const segs = [];
+  c.streets.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) segs.push([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]); });
+  for (const r of roadSegs) segs.push([r[0], r[1], r[2], r[3], -1]);
+  c.streets.forEach((l, li) => {
+    if (l.ring || l.pts.length < 2) return;
+    for (const end of [0, 1]) {
+      const P = l.pts, e = end ? P[P.length - 1] : P[0], q = end ? P[P.length - 2] : P[1];
+      // already on another street or road?
+      let near = false;
+      for (const sg of segs) if (sg[4] !== li && U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) < 0.4) { near = true; break; }
+      if (near) continue;
+      const L = Math.hypot(e.x - q.x, e.y - q.y) || 1, dx = (e.x - q.x) / L, dy = (e.y - q.y) / L, reach = SP * 1.6;
+      let hit = null, bt = 1;
+      for (const sg of segs) {
+        if (sg[4] === li) continue;
+        const t = U.segX(e.x, e.y, e.x + dx * reach, e.y + dy * reach, sg[0], sg[1], sg[2], sg[3]);
+        if (t > 0 && t < bt) { bt = t; hit = { x: e.x + dx * reach * t, y: e.y + dy * reach * t }; }
+      }
+      if (!hit) {
+        let bd = SP * 1.1;
+        for (const sg of segs) {
+          if (sg[4] === li) continue;
+          const vx = sg[2] - sg[0], vy = sg[3] - sg[1], LL = vx * vx + vy * vy, t = LL ? U.clamp(((e.x - sg[0]) * vx + (e.y - sg[1]) * vy) / LL, 0, 1) : 0;
+          const x = sg[0] + vx * t, y = sg[1] + vy * t, d = Math.hypot(x - e.x, y - e.y);
+          if (d < bd) { bd = d; hit = { x, y }; }
+        }
+      }
+      if (hit) { if (end) P.push(hit); else P.unshift(hit); }
+      else l.deadEnd = (l.deadEnd || 0) + 1;
+    }
+  });
+}
+
+/* ---------- junctions ----------
+   Where roads meet, the node gets a real shape, drawn from W.junctions and W.ramps (routing still runs through
+   the node itself):
+   - two motorways: a cloverleaf, a loop and an outer slip road in every quarter between them, one motorway on a
+     bridge over the other (with three arms the same in the two quarters there are: a partial cloverleaf);
+   - a motorway and a lesser road: a diamond, the lesser road on a bridge and a slip road in each quarter;
+   - a motorway ending at other roads, or a busy junction of main roads: a roundabout;
+   - anything else: a T or crossroads with curved kerbs.
+   Slip roads are cubic curves, so they leave and join the carriageway smoothly. */
+function junctions(W) {
+  const N = W.nodes, byNode = {};
+  for (const e of W.edges) for (const [k, end] of [[e.a, 0], [e.b, 1]]) (byNode[k] = byNode[k] || []).push({ e, end });
+  // direction of an edge leaving a node, measured some way along it so the smoothing near the node does not skew it
+  const dirOf = ({ e, end }, D) => {
+    const P = end ? e.pts.slice().reverse() : e.pts; let s = 0, q = P[P.length - 1];
+    for (let i = 1; i < P.length; i++) { s += U.dist(P[i - 1], P[i]); if (s >= D) { q = P[i]; break; } }
+    const a = Math.atan2(q.y - P[0].y, q.x - P[0].x); return { x: Math.cos(a), y: Math.sin(a), a, cls: e.cls, e };
+  };
+  const bez = (p0, p1, p2, p3, n) => { const out = []; for (let i = 0; i <= n; i++) { const t = i / n, u = 1 - t; out.push({ x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x, y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y }); } return out; };
+  // a smooth curve through points (Catmull-Rom), so slip roads have no kinks
+  const spline = (P, m) => {
+    const out = [P[0]];
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+      for (let q = 1; q <= m; q++) {
+        const t = q / m, t2 = t * t, t3 = t2 * t;
+        out.push({ x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+          y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3) });
+      }
+    }
+    return out;
+  };
+  const at = (n, d, k, p, o) => ({ x: n.x + d.x * k + (p ? p.x * o : 0), y: n.y + d.y * k + (p ? p.y * o : 0) });
+  // the unit vector across d that points into the quarter towards q
+  const toward = (d, q) => { const px = -d.y, py = d.x; return px * q.x + py * q.y >= 0 ? { x: px, y: py } : { x: -px, y: -py }; };
+  W.junctions = []; W.ramps = [];
+  for (const k in byNode) {
+    const n = N[k], L = byNode[k], deg = L.length;
+    if (deg < 3 && !(deg === 2 && L.some(x => x.e.cls === 'hw') && L.some(x => x.e.cls !== 'hw'))) continue;
+    if (!n.jct) continue;   // towns and airfields have their own streets
+    const dirs = L.map(x => dirOf(x, 3)).sort((p, q) => p.a - q.a);
+    const hw = dirs.filter(d => d.cls === 'hw'), minor = dirs.filter(d => d.cls !== 'hw');
+    const J = { id: k, x: n.x, y: n.y, dirs, ramps: [] };
+    const ramp = (pts, kind) => { const r = { cls: 'ramp', kind, pts, node: k }; W.ramps.push(r); J.ramps.push(r); };
+    if (hw.length >= 3) {
+      // cloverleaf: the through pair is the two arms closest to opposite
+      J.kind = 'mm';
+      let best = null, bs = -2;
+      for (let i = 0; i < hw.length; i++) for (let j = i + 1; j < hw.length; j++) { const c = -(hw[i].x * hw[j].x + hw[i].y * hw[j].y); if (c > bs) { bs = c; best = [hw[i], hw[j]]; } }
+      J.over = hw.filter(d => !best.includes(d)).map(d => d.a);   // the other motorway crosses on a bridge
+      const ring = hw.slice().sort((p, q) => p.a - q.a);
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], gap = U.mod(b.a - a.a, Math.PI * 2);
+        if (gap > 2.9 || gap < 0.5) continue;   // no quarter here (the far side of a T)
+        const na = toward(a, b), nb = toward(b, a), bis = { x: (a.x + b.x), y: (a.y + b.y) }, bl = Math.hypot(bis.x, bis.y) || 1;
+        bis.x /= bl; bis.y /= bl;
+        // the loop, for turning left: traffic that has come through the junction leaves heading out along one arm,
+        // goes three quarters of the way round a circle touching both carriageways and joins the other heading in
+        const R = 1.05, dc = R / Math.sin(gap / 2), C = at(n, bis, dc), fa = dc * Math.cos(gap / 2);
+        const Fa = at(n, a, fa, na, 0.15), Fb = at(n, b, fa, nb, 0.15), r = R - 0.15;
+        const ta = Math.atan2(Fa.y - C.y, Fa.x - C.x), tb = Math.atan2(Fb.y - C.y, Fb.x - C.x);
+        const dir = (-Math.sin(ta) * a.x + Math.cos(ta) * a.y) > 0 ? 1 : -1;   // turning so that it starts heading out
+        const sweep = dir * U.mod(dir * (tb - ta), Math.PI * 2);
+        const loop = [at(n, a, fa * 0.2, na, 0.15), at(n, a, fa * 0.6, na, 0.15)];
+        for (let q = 0; q <= 40; q++) { const t = ta + sweep * q / 40; loop.push({ x: C.x + Math.cos(t) * r, y: C.y + Math.sin(t) * r }); }
+        loop.push(at(n, b, fa * 0.6, nb, 0.15), at(n, b, fa * 0.2, nb, 0.15));
+        if (gap < 2.4) ramp(loop, 'loop');   // a wide quarter needs only the outer slip road
+        // the outer slip road: leaves the carriageway at a shallow angle and swings round outside the loop
+        const La = 3.2, far = dc + R + 0.55;
+        ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.55), at(n, bis, far), at(n, b, La, nb, 0.55), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
+      }
+    } else if (hw.length === 2 && minor.length) {
+      // diamond: the lesser road crosses on a bridge; a slip road in each quarter meets it 130 m from the motorway
+      J.kind = 'mx';
+      const m = hw[0], mo = hw[1];
+      J.over = minor.map(d => d.a);
+      for (const d of minor) for (const md of [m, mo]) {
+        const nm = toward(md, d);
+        ramp(bez(at(n, md, 5.5, nm, 0.22), at(n, md, 2.6, nm, 0.55), at(n, d, 1.3, md, 1.2), at(n, d, 1.3, md, 0.18), 20), 'slip');
+      }
+    } else if (hw.length === 1 || deg >= 4 || (minor.filter(d => d.cls === 'rd').length >= 3)) {
+      J.kind = 'rb'; J.r = hw.length || minor.some(d => d.cls === 'rd') ? 0.35 : 0.24;
+    } else J.kind = 'tj';
+    n.ix = J.kind === 'mm' || J.kind === 'mx';
+    W.junctions.push(J);
+  }
+  W.junctionAt = {}; for (const J of W.junctions) W.junctionAt[J.id] = J;
+}
+/* roads were built or cut (growth.js): work the junction shapes out again */
+IC.buildJunctions = W => junctions(W);
 
 /* recompute road routing (after bridges are destroyed or repaired) */
 IC.buildRouting = function (W, blocked) {
