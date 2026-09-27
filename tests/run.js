@@ -465,7 +465,7 @@ test('runway rules: under "only when cleared", an airliner never goes onto the r
     const d = arrDistance(S, ap, m.plan.rw.id), L = lockAt(ap, m.plan.rw.id); n++; if (d < 150) near++;
     if (L.gapFor !== m.id) worst = Math.min(worst, d);   // arrivals the tower holds at the fix for it do not count
   });
-  for (let i = 0; i < 5 * 3600 / 0.5; i++) {
+  for (let i = 0; i < 9 * 3600 / 0.5; i++) {
     IC.step(S, 0.5); watch();
     for (const m of ap.moves) {
       if (m.kind === 'dep' && m.phase === 'roll' && !(m.delay > 0) && !seenRun.has(m.id) && IC.opsKind(m.type) !== 'light') { seenRun.add(m.id); runs.push(S.time); }
@@ -505,7 +505,8 @@ test('runway rules: "line up and wait" lets a departure line up behind one that 
     IC.opsOf(ap).r.enter.jet = enter; IC.aptStats(S, ap);
     let behind = 0, t0 = 0, d0 = 0; const start = S.time;
     const watch = onEntry(S, ap, m => { const L = lockAt(ap, m.plan.rw.id), o = L.by && L.by !== m.id && ap.moves.find(x => x.id === L.by); if (o && o.phase === 'roll') behind++; });
-    const r = drive(S, ap, { dep: 400, hours: 1.25, fill: 0.95, mix: [['narrow', 1]], each: S2 => { watch(); if (!t0 && S2.time - start > 900) { t0 = S2.time; d0 = ap.kpi.dep || 0; } } });
+    // arrivals keep the arrival runways busy, so departures stay on their own
+    const r = drive(S, ap, { follow: true, depX: 1.5, hours: 1.75, fill: 0.9, mix: [['narrow', 1]], each: S2 => { watch(); if (!t0 && S2.time - start > 2700) { t0 = S2.time; d0 = ap.kpi.dep || 0; } } });
     return { behind, perHour: ((ap.kpi.dep || 0) - d0) / ((S.time - t0) / 3600), rated: IC.aptStats(S, ap).depPerHour };
   };
   const hold = rate('hold'), luaw = rate('luaw');
