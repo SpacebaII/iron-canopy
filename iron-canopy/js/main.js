@@ -430,6 +430,7 @@ function onAct(e) {
     case 'zoneDel': IC.avRemoveZone(S, id); break;
     case 'foundMode': ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
+    case 'rushRepair': IC.rushRepair(S, id); break;
     case 'loan': IC.takeLoan(S, +v); break;
     case 'repayLoan': IC.repayLoan(S, id); break;
     case 'delegate': IC.storyDelegate(S, v, !S.story.del[v]); break;

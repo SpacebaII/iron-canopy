@@ -298,6 +298,8 @@ function base(b) {
     ['Landing systems', `${st.ilsEnds || 0} of ${st.rwy.length * 2} runway ends`]
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);
+  const rr = civil && IC.aptRoadReport ? IC.aptRoadReport(S, b) : null;
+  if (rr) rows.push(['Roads', `${esc(rr.text)}${rr.works.length ? ' ' + rr.works.map(esc).join(' ') : ''}<div class="acts">${Object.entries(IC.ROADS).map(([k, R]) => `<button class="act" data-act="roadMode" data-v="${k}" title="${esc(R.what)}: ${U.money(R.perKm)} a km">${esc(R.name)}</button>`).join('')}</div>`]);
   if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }
   const kpis = `<div class="kpis">
     <div><small>Avg taxi</small><b class="${kp.taxi > 600 ? 'amber' : ''}">${U.dur(kp.taxi || 0)}</b></div>
@@ -403,6 +405,9 @@ function city(c) {
   const R = IC.cityReport(S, c);
   // growth: how it is doing, why, and what its air service and roads give it
   const P = (t, cls) => `<p class="hint ${cls || ''}" style="margin:.25rem 0">${t}</p>`;
+  // what the city is, from its districts, and so what it wants from an airport
+  const ch = IC.cityCharacter ? IC.cityCharacter(c) : null;
+  const what = ch ? `<div class="sec"><p class="hint" style="margin:.25rem 0"><b>${esc(c.name)}: ${esc(ch.kind)}.</b> ${esc(ch.why)}</p><p class="hint" style="margin:.25rem 0">${esc(ch.parts.charAt(0).toUpperCase() + ch.parts.slice(1))}.</p></div>` : '';
   const growth = R ? `<div class="sec"><h3 class="sh">Growth</h3>${P(`<b>${esc(R.growth)}</b> ${esc(R.rate)}`)}
     ${P(`<b>Air service:</b> ${esc(R.air)} ${esc(R.demand)}`)}${P(`<b>Roads:</b> ${esc(R.roads)}`, R.cuts.length ? 'hostile' : '')}${R.cuts.map(t => P(esc(t), 'hostile')).join('')}
     ${R.inds.length ? P(`<b>Industry selling here:</b> ${R.inds.map(esc).join(' ')}`) : ''}
@@ -410,7 +415,7 @@ function city(c) {
   return head(`<span class="badge friend">${c.capital ? 'CAP' : 'CITY'}</span>`, c.name, c.capital ? 'Capital' : 'City', c.owner === 'enemy' ? 'OCCUPIED' : c.besieged ? 'SURROUNDED' : c.alert > 0 ? 'Sirens' : 'Calm', c.owner === 'enemy' || c.besieged || c.alert > 0 ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Morale</span>${bar(c.morale / 100, 'var(--friend)')}<span>${Math.round(c.morale)}%</span><span>Buildings</span>${bar(alive)}<span>${U.pct(alive)}</span><span>Prosperity</span>${bar(Math.min(1, c.prosp), 'var(--supply)')}<span>${U.pct(c.prosp)}</span></div>
     ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${tax.toFixed(1)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
-    ${growth}
+    ${what}${growth}
     <p class="hint">A brigade ordered to Defend this town holds it even if the front line flows past. Select a brigade and right-click the town.</p></div>`;
 }
 function factory(i) {
