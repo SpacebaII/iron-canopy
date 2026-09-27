@@ -320,8 +320,28 @@ function drawLights(S, px, now, light) {
     const plant = c.plant && S.byId[c.plant];
     const black = plant && plant.offline ? 0.12 : 1;
     const a = (1 - light) * 0.95 * (c.hp / c.max) * pf * black * (c.owner === 'us' ? 1 : 0.35) * (c.alert > 0 && Math.sin(now * 0.7) > 0.6 ? 0.75 : 1);
-    ctx.globalAlpha = a;
+    // far out the city is one glow; close in, lit streets and windows take over
+    const near = U.clamp((cam.z - 1.5) / 2.5, 0, 1);
+    ctx.globalAlpha = a * (1 - near * 0.85);
     ctx.drawImage(c.light.cv, c.x - c.light.size / 2, c.y - c.light.size / 2, c.light.size, c.light.size);
+    if (near > 0 && c.streets) {
+      ctx.globalAlpha = a * near;
+      ctx.strokeStyle = 'rgba(255,190,110,0.16)'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (const l of c.streets) { if (l.bb[2] < view.x0 || l.bb[0] > view.x1 || l.bb[3] < view.y0 || l.bb[1] > view.y1) continue; const P = l.pts; ctx.moveTo(P[0].x, P[0].y); for (let i = 1; i < P.length; i++) ctx.lineTo(P[i].x, P[i].y); }
+      ctx.stroke();
+      const q = 0.14;
+      for (const b of c.blocks) {
+        if (b.hp <= 0 || !inView(b.x, b.y, 6)) continue;
+        const ca = Math.cos(b.a), sa = Math.sin(b.a), sd = Math.floor(b.seed), n = b.core ? 10 : b.ind ? 3 : 6;
+        for (let k = 0; k < n; k++) {
+          const h = U.hash(sd, k); if (h < 0.35) continue;
+          const u = (U.hash(k, sd) - 0.5) * b.w * 0.9, v = (U.hash(sd + 7, k) - 0.5) * b.h * 0.9;
+          ctx.fillStyle = h > 0.85 ? 'rgba(200,225,255,0.9)' : 'rgba(255,208,140,0.9)';
+          ctx.fillRect(b.x + u * ca - v * sa - q / 2, b.y + u * sa + v * ca - q / 2, q, q);
+        }
+      }
+    }
   }
   ctx.globalAlpha = (1 - light) * 0.8;
   for (const v of S.world.villages) {
