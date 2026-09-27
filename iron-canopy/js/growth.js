@@ -20,7 +20,7 @@ IC.GROWTH = {
   roadGrowth: 1.5,    // % a day for each 100% better road links than at the start
   drift: -0.08,       // % a day with nothing going for a city: people move to where the connections are
   tradeTax: 0.15,     // share of industry sales paid in trade taxes
-  indCatch: 3         // hours by road beyond which an industry cannot use an airport or market
+  indCatch: 4         // hours by road at which an industry's market or airport is out of reach
 };
 IC.INDUSTRY = {
   mine:   { name: 'copper mine', goods: 'copper ore', cap: 0.9, xs: 0.35 },
@@ -63,7 +63,9 @@ IC.econInit = function (S) {
   // remote industries: villages far from any city, chosen per seed; what they make follows the land
   const R = rngFor(S, 7);
   const cap = IC.cap(S), cities = W.cities;
-  const cand = W.villages.filter(v => v.home && W.nodes[v.id] && cities.every(c => U.dist(c, v) > c.r + 300) && IC.hostileBorderDist(v.x, v.y) > 500)
+  // out in the country (30–100 km from the nearest city), the ones furthest from the capital first
+  const nearC = v => Math.min(...cities.map(c => U.dist(c, v) - c.r));
+  const cand = W.villages.filter(v => v.home && W.nodes[v.id] && nearC(v) > 300 && nearC(v) < 1000 && IC.hostileBorderDist(v.x, v.y) > 500)
     .sort((a, b) => U.dist(b, cap) - U.dist(a, cap));
   const kinds = [];
   for (const v of cand) {
@@ -182,7 +184,7 @@ function indOutput(S, ind) {
   // home market: the nearest large city (or the capital) by road
   let mk = null, mt = Infinity;
   for (const c of IC.cities(S)) if (c.owner === 'us' && (c.pop >= 300 || c.capital)) { const t = timeTo(S, T, c); if (t < mt) { mt = t; mk = c; } }
-  const road = U.clamp(1.25 - mt / 3600 / G.indCatch, 0.1, 1);
+  const road = U.clamp((G.indCatch - mt / 3600) / (G.indCatch - 1), 0.1, 1);
   // exports and imports: air cargo from an airport within reach, or lorries over a neutral border
   let air = 0, ap = null;
   for (const a of ourAirports(S)) { const v = catchCargo(timeTo(S, T, a)) * a.svc.cargoF; if (v > air) { air = v; ap = a; } }
@@ -195,7 +197,7 @@ function indOutput(S, ind) {
   ind.f = { road, air, lorry, exp, market: mk ? mk.id : null, mt, ap: ap ? ap.id : null, apT: ap ? timeTo(S, T, ap) : Infinity, hurt };
   if (ap && air >= lorry) ap.svc.exportT = (ap.svc.exportT || 0) + ind.out * K.xs * exp * 40;
 }
-const catchCargo = t => U.clamp(1.25 - t / 3600 / IC.GROWTH.indCatch, 0, 1);
+const catchCargo = t => U.clamp((IC.GROWTH.indCatch - t / 3600) / (IC.GROWTH.indCatch - 1), 0, 1);
 IC.indOutput = function (S, ind) { airService(S); for (const i of S.econ.inds) indOutput(S, i); return ind.out; };
 /* trade taxes an hour, before the story's share of taxes */
 IC.tradeTax = S => S.econ ? S.econ.inds.reduce((s, i) => s + i.out, 0) * IC.GROWTH.tradeTax : 0;
@@ -449,6 +451,12 @@ IC.roadClick = function (S, m, p, r) {
   IC.text(S, sn.x, sn.y, msg, IC.C ? (bad ? IC.C.hostile : IC.C.amber) : '');
   return P;
 };
+IC.roadUndo = function (S, m, r) {
+  m.pts.pop(); m.snaps.pop();
+  const n = m.pts.length;
+  if (n) { const p = m.pts[n - 1]; m.snaps[n - 1] = IC.roadSnap(S, p.x, p.y, r); }
+  m.plan = n >= 2 ? IC.roadPlan(S, m.cls, m.pts, [m.snaps[0], m.snaps[n - 1]]) : null;
+};
 /* start the works: paid now, open when finished */
 IC.roadFinish = function (S, m) {
   const ends = [m.snaps[0], m.snaps[m.snaps.length - 1]];
@@ -630,9 +638,9 @@ IC.cityReport = function (S, c) {
       why = to.length ? `mostly from new routes to ${to.slice(0, 3).join(', ')}${to.length > 3 ? ' and more' : ''}` : 'mostly from its air service';
     } else if (top[0] === 'road') why = top[2] > 0 ? 'mostly from better road links' : 'mostly from cut roads';
     else if (top[0] === 'war') why = 'mostly from war damage';
-    else why = 'as people leave for better-connected cities';
-  } else why = 'nothing is drawing people here';
-  R.growth = `${g >= 0 ? 'Grew' : 'Shrank'} ${Math.abs(g * 100).toFixed(1)}% this week, ${why}.`;
+  }
+  const lack = [c.air.score < 0.05 ? 'no air service within reach' : '', c.rc <= c.rc0 * 1.01 ? 'no new road links' : ''].filter(Boolean).join(' and ');
+  R.growth = Math.abs(g) < 0.0005 ? `Unchanged this week${lack ? `: ${lack}` : ''}.` : `${g >= 0 ? 'Grew' : 'Shrank'} ${Math.abs(g * 100).toFixed(1)}% this week, ${why || (lack ? `with ${lack}` : 'as people move to better-connected cities')}.`;
   R.rate = `${pct1(c.gr.tot / 100)} a day now (air ${pct1(c.gr.air / 100)}, roads ${pct1(c.gr.road / 100)}${c.gr.war < -0.01 ? `, war ${pct1(c.gr.war / 100)}` : ''}, drift ${pct1(c.gr.base / 100)}).`;
   const best = c.air.best && S.byId[c.air.best];
   if (best) R.air = `${shortName(best.name)}, ${hm(c.air.bestT)} by road: ${Math.round(best.svc.deps)} departures a day to ${best.svc.dests.size} places.`;
@@ -640,8 +648,8 @@ IC.cityReport = function (S, c) {
   else R.air = 'No airport.';
   R.demand = `${Math.round(c.air.demand).toLocaleString('en-US')} passengers a day of ${Math.round(c.air.pot).toLocaleString('en-US')} who would fly with perfect service.`;
   const trade = c.rc / Math.max(1, c.rcI);
-  R.cuts = c.cuts.slice(0, 3).map(x => `${x.why}: trips to ${x.name} take ${hm(x.tN)} instead of ${hm(x.tI)}; trade down ${U.pct(1 - trade)}.`);
-  R.roads = c.rc0 ? `Road links ${U.pct(c.rc / c.rc0)} of what they were at the start.` : '';
+  R.cuts = c.cuts.slice(0, 3).map(x => `${x.why}: trips to ${x.name} take ${hm(x.tN)} instead of ${hm(x.tI)}.`);
+  R.roads = trade < 0.98 ? `Roads cut: trade with other cities down ${U.pct(1 - trade)} until they are repaired.` : c.rc > c.rc0 * 1.01 ? `New roads: trade reach ${U.pct(c.rc / c.rc0 - 1)} better than at the start.` : 'Road links as at the start.';
   R.inds = E.inds.filter(i => i.f.market === c.id).map(i => `${i.name}: ${U.money(i.out * 24)} a day.`);
   return R;
 };
