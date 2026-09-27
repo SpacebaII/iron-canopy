@@ -54,7 +54,7 @@ function fix(f) {
   const apts = IC.bases(S).filter(b => b.kind === 'airport' && b.owner === 'us' && IC.aspLink(S, b) === f);
   const rows = [['Near', esc(IC.nearestPlace(S, f.x, f.y))], ['Airways', ways.length ? ways.map(w => { const o = IC.aspFix(S, w.a === f.id ? w.b : w.a); return esc(o.name); }).join(', ') : '<span class="amber">none yet</span>'],
     ['Radar sees down to', covTxt(IC.aspCovAlt(S, f.x, f.y))], ['Airports joining here', apts.length ? esc(apts.map(b => b.name).join(', ')) : '—']];
-  return head('<span class="badge friend">FIX</span>', f.name, 'Fix · a named point airliners fly over') + `<div class="ibody">${kv(rows)}
+  return head(`<span class="badge friend">${ui.icon('fix')}</span>`, f.name, 'Fix · a named point airliners fly over') + `<div class="ibody">${kv(rows)}
     <div class="acts"><button class="act pri" data-act="aspDraw" data-id="${f.id}">Draw an airway from here</button><button class="act warn" data-act="fixDel" data-id="${f.id}">Delete fix</button></div>
     <p class="hint">In the airway editor you can drag a fix to move it; the airways move with it.</p></div>`;
 }
@@ -68,13 +68,13 @@ function airway(w) {
   if (hi < 0.9) tips.push('Part of it is outside radar cover (drawn dashed amber). Controllers there space flights by time alone: fewer flights and more delay. A radar near that stretch fixes it.');
   if (xs.length) tips.push('Where airways cross, flights at the same height can meet. Controllers watch crossings; outside radar they keep apart only most of the time.');
   if (over.length) tips.push('Airliners over bases and cities are a risk in a crisis. Move the fixes, or publish a prohibited zone.');
-  return head('<span class="badge friend">AWY</span>', `${a.name} – ${b.name}`, 'Airway') + `<div class="ibody">${kv(rows)}${tips.map(x => `<p class="hint">${x}</p>`).join('')}
+  return head(`<span class="badge friend">${ui.icon('airway')}</span>`, `${a.name} – ${b.name}`, 'Airway') + `<div class="ibody">${kv(rows)}${tips.map(x => `<p class="hint">${x}</p>`).join('')}
     <div class="acts"><button class="act warn" data-act="wayDel" data-id="${w.id}">Delete airway</button></div></div>`;
 }
 function field(f) {
   const n = S.threats.filter(t => !t.dead && t.type === 'ga' && t.gaTo && t.gaTo.field === f.id).length;
   const rows = [['Club', esc(f.club)], ['Club mood', `${bar(f.mood / 100, f.mood > 60 ? 'var(--ok)' : f.mood > 35 ? 'var(--amber)' : 'var(--hostile)')} ${Math.round(f.mood)}%`], ['Movements today', f.today], ['Inbound now', n], ['Radar sees down to', covTxt(IC.aspCovAlt(S, f.x, f.y))]];
-  return head('<span class="badge friend">GA</span>', f.name, 'Grass strip for light aircraft') + `<div class="ibody">${kv(rows)}
+  return head(`<span class="badge friend">${ui.icon('field')}</span>`, f.name, 'Grass strip for light aircraft') + `<div class="ibody">${kv(rows)}
     <p class="hint">Light aircraft fly slow and low, by sight, in daylight and fair weather. Many have no flight plan and some no transponder. Clubs pay little, but grounding them for long makes them loud.</p></div>`;
 }
 
@@ -189,7 +189,8 @@ function track(t) {
   if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
   const warn = (aff === 'A' || aff === 'N') ? `<div class="warnbox">This track squawks a civil code on a filed route. Batteries will not fire at it unless you assign one by hand.</div>` : aff === 'S' && S.ad.roe === 'tight' ? `<p class="hint">Weapons are Tight: batteries hold fire on suspects. Identify it (fighter or type recognition) or assign a battery by hand.</p>` : '';
   const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
-  const badge = `<span class="badge ${colCls}">${aff === 'N' || aff === 'A' ? 'CIV' : aff === 'H' ? esc(t.d.code) : aff === 'S' ? 'SUS' : 'UNK'}</span>`;
+  // a known hostile shows its symbol; anything else the aircraft sign in the colour of what we think it is
+  const badge = aff === 'H' && IC.THR[t.type] ? `<span class="badge hostile"><canvas data-thr="${t.type}" width="68" height="52"></canvas></span>` : `<span class="badge ${colCls}">${ui.icon('air')}</span>`;
   return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
 }
 
@@ -249,7 +250,7 @@ function base(b) {
   const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : 'RUNWAY CLOSED';
   const rw0 = b.parts.filter(p => p.kind === 'runway' && p.built);
   const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
-  const H = head(`<span class="badge friend">${civil ? 'APT' : 'AB'}</span>`, b.name, esc(sub), pill, locked ? '' : bs.runway ? 'ok' : 'bad');
+  const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), pill, locked ? '' : bs.runway ? 'ok' : 'bad');
   const schem = `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas><div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button></div>`;
   if (locked) return H + `<div class="ibody">${schem}<p class="hint">${esc(b.name)} belongs to the Air Force. It comes under your command later in your career.</p></div>`;
   const warn = st.warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${st.warn.length}</em></h3>${st.warn.slice(0, 6).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">No layout problems found.</div>';
@@ -356,7 +357,7 @@ function apart(sel) {
   if (p.linked === false) rows.push(['Taxiway', '<span class="amber">not connected</span>']);
   if (p.burning > 0) rows.push(['Fire', '<span class="hostile">burning</span>']);
   const hp = p.hp / p.max;
-  return head(`<span class="badge friend">${esc(D.name.slice(0, 3).toUpperCase())}</span>`, p.kind === 'runway' && p.name ? p.name : D.name, esc(ap.name), !p.built ? `Building ${U.pct(p.prog || 0)}` : hp <= 0.25 ? 'Destroyed' : hp < 1 ? 'Damaged' : 'Intact', !p.built ? 'busy' : hp <= 0.25 ? 'bad' : hp < 1 ? 'busy' : 'ok') +
+  return head(`<span class="badge friend">${ui.icon('part')}</span>`, p.kind === 'runway' && p.name ? p.name : D.name, esc(ap.name), !p.built ? `Building ${U.pct(p.prog || 0)}` : hp <= 0.25 ? 'Destroyed' : hp < 1 ? 'Damaged' : 'Intact', !p.built ? 'busy' : hp <= 0.25 ? 'bad' : hp < 1 ? 'busy' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Condition</span>${bar(hp)}<span>${U.pct(hp)}</span></div>${kv(rows)}<p class="hint">${esc(D.desc)}</p>
     ${partControls(ap, p, w)}
     <div class="acts">${w ? `<span class="pill busy">${esc(w.label)} ${U.pct(w.prog)}</span>` : ''}<button class="act" data-act="aptBack">◂ ${esc(ap.name)}</button><button class="act warn" data-act="aptRemove">${p.built ? 'Bulldoze' : 'Cancel'}</button></div></div>`;
@@ -377,6 +378,7 @@ function city(c) {
   const plant = c.plant && S.byId[c.plant];
   const tax = c.pop * 0.02 * (c.hp / c.max) * c.prosp * (0.5 + c.morale / 200);
   const R = IC.cityReport(S, c);
+  const gar = S.world.garrisons && S.world.garrisons.find(g => g.name === `${c.name} Garrison`);
   // growth: how it is doing, why, and what its air service and roads give it
   const P = (t, cls) => `<p class="hint ${cls || ''}" style="margin:.25rem 0">${t}</p>`;
   // what the city is, from its districts, and so what it wants from an airport
@@ -386,7 +388,7 @@ function city(c) {
     ${P(`<b>Air service:</b> ${esc(R.air)} ${esc(R.demand)}`)}${P(`<b>Roads:</b> ${esc(R.roads)}`, R.cuts.length ? 'hostile' : '')}${R.cuts.map(t => P(esc(t), 'hostile')).join('')}
     ${R.inds.length ? P(`<b>Industry selling here:</b> ${R.inds.map(esc).join(' ')}`) : ''}
     <p class="hint">Cities grow with good air service (frequent flights to many places, few delays, fair fees within ${IC.GROWTH.catch[1]} h by road) and good roads. Growth raises taxes and passengers.</p></div>` : '';
-  return head(`<span class="badge friend">${c.capital ? 'CAP' : 'CITY'}</span>`, c.name, c.capital ? 'Capital' : 'City', c.alert > 0 ? 'Sirens' : 'Calm', false || c.alert > 0 ? 'bad' : 'ok') +
+  return head(`<span class="badge friend">${ui.icon('city')}</span>`, c.name, c.capital ? 'Capital' : 'City', c.alert > 0 ? 'Sirens' : 'Calm', false || c.alert > 0 ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Morale</span>${bar(c.morale / 100, 'var(--friend)')}<span>${Math.round(c.morale)}%</span><span>Buildings</span>${bar(alive)}<span>${U.pct(alive)}</span><span>Prosperity</span>${bar(Math.min(1, c.prosp), 'var(--supply)')}<span>${U.pct(c.prosp)}</span></div>
     ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${tax.toFixed(1)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
     ${what}${growth}
@@ -395,7 +397,7 @@ function city(c) {
 function factory(i) {
   const buy = IC.MUN_ORDER.filter(k => IC.canBuyMun(S, k)).map(k => { const c = IC.plantPrice(S, k, 8); return `<button class="act" data-act="buyStock" data-v="${k}:8" ${S.budget < c || i.offline ? 'disabled' : ''}>8 ${esc(IC.MUN[k].short)} · ${U.money(c)}</button>`; }).join('');
   const sent = S.jobs.filter(j => j.mode === 'rail' && j.from === i).map(j => `<span class="chip">${esc(IC.munWords(j.mun, j.qty))} → ${esc(j.to.name)} ${U.dur(IC.jobEta(S, j))}</span>`).join('');
-  return head(`<span class="badge friend">IND</span>`, i.name, 'Arms plant', i.offline ? 'Knocked out' : 'Working', i.offline ? 'bad' : 'ok') +
+  return head(`<span class="badge friend">${ui.icon('industry')}</span>`, i.name, 'Arms plant', i.offline ? 'Knocked out' : 'Working', i.offline ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Integrity</span>${bar(i.hp / i.max)}<span>${U.pct(i.hp / i.max)}</span></div>
     ${sent ? `<div class="sec"><h3 class="sh">On the railway</h3><div class="chips">${sent}</div></div>` : ''}
     <div class="sec"><h3 class="sh">Buy for the depots</h3><div class="acts">${buy}</div></div>
@@ -404,7 +406,7 @@ function factory(i) {
 function infra(i) {
   const sub = { power: 'Power plant', bridge: `Bridge over the ${i.river || 'river'}` }[i.kind] || i.kind;
   const effect = i.kind === 'power' ? 'Every plant lost costs radars range, slows factories and blacks out the cities it serves.' : i.kind === 'bridge' ? 'When it falls, convoys detour to a ford: slower deliveries.' : '';
-  return head(`<span class="badge friend">${i.kind === 'power' ? 'PWR' : 'BR'}</span>`, i.name, sub, i.offline ? (i.kind === 'bridge' ? 'Destroyed' : 'Knocked out') : 'Working', i.offline ? 'bad' : 'ok') +
+  return head(`<span class="badge friend">${ui.icon(i.kind === 'power' ? 'power' : 'bridge')}</span>`, i.name, sub, i.offline ? (i.kind === 'bridge' ? 'Destroyed' : 'Knocked out') : 'Working', i.offline ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Integrity</span>${bar(i.hp / i.max)}<span>${U.pct(i.hp / i.max)}</span></div>${i.offline ? `<p class="hint">Repair crews are working: back in service at 60%.</p>` : ''}<p class="hint">${effect}</p></div>`;
 }
 
@@ -431,11 +433,11 @@ function site(s) {
   const kn = s.pk >= 2 ? 'Located' : s.pk === 1 ? 'Suspected' : 'Unknown';
   let inv = '';
   if (s.pk >= 2) inv = s.acAvail ? Object.entries(s.acAvail).filter(([, n]) => n > 0).map(([k, n]) => `~${Math.round(n)} ${IC.THR[k].code}`).join(', ') : s.kind === 'supply' ? `stock ~${Math.round(s.stock / 10) * 10}` : Object.entries(s.inv).filter(([, n]) => n >= 1).map(([k, n]) => `~${Math.round(n)} ${IC.THR[k] ? IC.THR[k].code : k}`).join(', ');
-  return head(`<span class="badge hostile">${{ airbase: 'AB', drone: 'UAV', cm: 'CM', bm: 'BM', mrbm: 'MRB', hgv: 'HGV', rkt: 'RKT', supply: 'SUP', staging: 'HQ' }[s.kind]}</span>`, s.name, `<span class="hostile">${esc(S.world.full[s.nat])}</span>`, s.destroyed ? 'Destroyed' : kn, s.destroyed ? 'ok' : 'bad') +
+  return head(`<span class="badge hostile">${ui.icon('target')}</span>`, s.name, `<span class="hostile">${esc(S.world.full[s.nat])}</span>`, s.destroyed ? 'Destroyed' : kn, s.destroyed ? 'ok' : 'bad') +
     `<div class="ibody"><div class="bars"><span>Intact</span>${bar(s.hp / s.max, 'var(--hostile)')}<span>${U.pct(s.hp / s.max)}</span></div>${inv ? kv([['Holdings', inv]]) : ''}${strikeList(s, 'site')}</div>`;
 }
 function tel(t) {
-  return head(`<span class="badge hostile">${t.kind === 'rkt' ? 'MLRS' : 'TEL'}</span>`, t.name, `Mobile launcher · seen ${U.dur(S.time - t.kt)} ago`, S.time - t.kt < 300 ? 'Fresh fix' : 'Stale fix', S.time - t.kt < 300 ? 'bad' : 'busy') +
+  return head(`<span class="badge hostile">${ui.icon('target')}</span>`, t.name, `Mobile launcher · seen ${U.dur(S.time - t.kt)} ago`, S.time - t.kt < 300 ? 'Fresh fix' : 'Stale fix', S.time - t.kt < 300 ? 'bad' : 'busy') +
     `<div class="ibody"><p class="hint">Launchers move soon after they fire. The older the sighting, the less likely a strike finds it.</p>${strikeList(t, 'tel')}</div>`;
 }
 function convoy(v) {
@@ -451,7 +453,7 @@ function convoy(v) {
   } else if (v.state === 'return') rows.push(['Back at', `${esc(v.home.name)} in about ${U.dur(Math.max(0, v.eta - S.time))}`]);
   if (v.cut) rows.push(['Road', `<span class="amber">${esc(v.cut)}: a slow detour, +${U.dur(v.lost)}</span>`]);
   const lorries = { missile: 'missile transporters', rocket: 'rocket carriers', flat: 'flatbed lorries', empty: 'lorries' }[IC.cargoKind(j && j.loaded && j.mun)];
-  return head(`<span class="badge amber">${v.trucks}×</span>`, v.name, `${v.trucks} ${lorries} · ${v.contract ? 'supplier' : `based at ${esc(v.home.name)}`}`, st, j ? 'busy' : '') +
+  return head(`<span class="badge supply">${ui.icon('logi')}</span>`, v.name, `${v.trucks} ${lorries} · ${v.contract ? 'supplier' : `based at ${esc(v.home.name)}`}`, st, j ? 'busy' : '') +
     `<div class="ibody">${rows.length ? kv(rows) : '<p class="hint">Parked at the depot, waiting for a job. Convoys are sent automatically, priority areas first.</p>'}<p class="hint">Its route is drawn on the map. The enemy watches roads near the border and strikes convoys it sees: a depot further back, or air defence along the road, keeps them alive.</p></div>`;
 }
 function air(a) {
@@ -465,14 +467,14 @@ function air(a) {
   if (a.job) rows.push(['Cargo', esc(IC.jobLabel(a.job))]);
   const acts = a.r && !a.job && a.state !== 'rtb' ? `<div class="acts"><button class="act" data-act="recallSel">Recall</button></div>` : '';
   const roe = a.kind === 'ftr' && a.r ? `<div class="sec"><h3 class="sh">Weapons</h3>${seg('froe', a.r.roe || 'auto', [['auto', `National (${S.ad.roe})`], ['free', 'Free'], ['tight', 'Tight'], ['hold', 'Hold', 'red']])}</div>` : '';
-  return head(`<span class="badge friend">${K.short}</span>`, a.name, esc(K.name), { out: 'En route', station: 'On station', engage: 'Engaging', rtb: 'Returning', vid: 'Identifying' }[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
+  return head(`<span class="badge friend">${ui.icon('air')}</span>`, a.name, esc(K.name), { out: 'En route', station: 'On station', engage: 'Engaging', rtb: 'Returning', vid: 'Identifying' }[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
     `<div class="ibody">${kv(rows)}${roe}${acts}<p class="hint">Right-click the map to move its station, a track to intercept, or an enemy target to strike.</p></div>`;
 }
 function group() {
   const g = S.group;
   const types = {}; for (const u of g) { const k = u.d.short; types[k] = (types[k] || 0) + 1; }
   const acts = [`<button class="act" data-act="emconAll" data-v="on">Radiate</button>`, `<button class="act" data-act="emconAll" data-v="ambush">Ambush</button>`, `<button class="act" data-act="emconAll" data-v="off">Silent</button>`, `<button class="act warn" data-act="reserve">${kbd('X')}To reserve</button>`];
-  return head(`<span class="badge friend">${g.length}</span>`, 'Group', Object.entries(types).map(([k, n]) => `${n}× ${k}`).join(' · ')) + `<div class="ibody"><div class="acts">${acts.join('')}</div><p class="hint">Right-click to move the group. Esc to clear.</p></div>`;
+  return head(`<span class="badge friend">${ui.icon('group')}</span>`, `Group of ${g.length}`, Object.entries(types).map(([k, n]) => `${n}× ${k}`).join(' · ')) + `<div class="ibody"><div class="acts">${acts.join('')}</div><p class="hint">Right-click to move the group. Esc to clear.</p></div>`;
 }
 
 })(window.IC);
