@@ -102,6 +102,8 @@ function buildIn(m, p, btn, shift) {
   IC.ui.refresh(true);
   return r;
 }
+/* what the Career has not reached yet: say why, and do nothing */
+function locked(key) { const why = IC.storyLock(S, key); if (why) { IC.toast(S, 'info', 'NOT YET', why); IC.sfx.ui('err'); } return !!why; }
 function foundIn(m, p, btn) {
   const r = IC.foundInput(S, m, p, btn);
   if (r === 'exit') { IC.setMode(null); return r; }
@@ -395,14 +397,15 @@ function onAct(e) {
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
-    case 'aspDraw': ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.12) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.14); } return;
+    case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.12) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.14); } return;
     case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
     case 'wayDel': IC.aspDelWay(S, id); S.sel = null; break;
-    case 'fieldMode': ui.openRoom(null); IC.setMode({ kind: 'field' }); return;
+    case 'fieldMode': if (locked('fields')) return; ui.openRoom(null); IC.setMode({ kind: 'field' }); return;
     case 'selFix': { const f = IC.aspFix(S, id); if (f) { S.layers.airways = true; ui.openRoom(null); ui.jump(f, 'fix'); } return; }
     case 'selField': { const f = S.asp.fields.find(x => x.id === id); if (f) { ui.openRoom(null); ui.jump(f, 'field'); } return; }
     case 'zoneDel': IC.avRemoveZone(S, id); break;
-    case 'foundMode': ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
+    case 'foundMode': if (locked('found')) return; ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
+    case 'tutOff': if (S.story) S.story.tut = false; break;
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
     case 'rushRepair': IC.rushRepair(S, id); break;
     case 'loan': IC.takeLoan(S, +v); break;
@@ -605,7 +608,7 @@ function generate(seed, mode, lesson) {
   IC.resetMini();
   IC.ui.bind(S);
   resize();
-  IC.cam.z = Math.min(IC.cam.vw / 7800, IC.cam.vh / 5900);
+  IC.cam.z = Math.min(IC.cam.vw / 11700, IC.cam.vh / 8850);
   IC.centerOn(S.world.cx, S.world.cy);
   $('seed').textContent = String(seed);
   $('startLead').textContent = S.range ? 'The test range: a flat, empty plane.' : describe(S.world);
@@ -621,7 +624,8 @@ IC.begin = function (mode, lesson) {
     $('start').hidden = true; $('over').hidden = true;
     S.paused = false;
     const f = S.camp && S.camp.focus;
-    if (mode === 'story') { const ap = S.byId[S.story.cap]; IC.cam.z = 0.9; IC.centerOn(ap.x, ap.y); IC.flyTo(ap.x, ap.y, 2.4); }
+    const ap = mode === 'story' && S.byId[S.story.cap];
+    if (ap) { IC.cam.z = 0.9; IC.centerOn(ap.x, ap.y); IC.flyTo(ap.x, ap.y, 2.4); }
     else if (f) { IC.cam.z = f.z; IC.centerOn(f.x, f.y); }
     else { IC.cam.z = Math.max(IC.cam.z, 0.14); const c = IC.cap(S); IC.centerOn(c.x, c.y - 400); }
     IC.ui.refresh(true);
