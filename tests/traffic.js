@@ -66,7 +66,7 @@ function relayout(S, ap, template) {
 }
 /* a game with the KDEN-scale layout in place of the capital airport */
 function kdenGame(seed, hour) {
-  const S = IC.newGame({ seed: seed || 12345, mode: 'story', hour: hour == null ? 10 : hour });
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story', preset: 'network', hour: hour == null ? 10 : hour });
   const ap = S.byId[S.story.cap];
   // the airlines are sent elsewhere so the test sees only its own traffic
   if (S.av) { S.av.tails = []; S.av.routes = []; }
