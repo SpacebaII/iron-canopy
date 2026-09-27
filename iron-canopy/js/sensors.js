@@ -74,8 +74,8 @@ function detects(s, t) {
   if (s.acou) return (d.cls === 'drone' || d.cls === 'cm' || d.cls === 'ga') && t.alt < 3 && (t.spd || 0) < 3 && r <= s.R;
   if (s.eo) return r <= s.R && t.alt < 6;
   if (r > U.horizon(s.mast, t.alt)) return false;
-  // civil radars: high ground hides low aircraft too (airspace.js)
-  if ((s.ssr || s.part) && IC.aspHidden(s, t)) return false;
+  // radars on the ground, civil and military: high ground hides low aircraft (airspace.js)
+  if (!s.air && r > 1 && IC.aspHidden(s, t)) return false;
   // a secondary radar only hears transponders
   if (s.ssr) return !!t.sq && !t.sqOff && r <= s.R;
   let rcs = t.rcs;

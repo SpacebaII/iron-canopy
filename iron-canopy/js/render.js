@@ -380,18 +380,35 @@ function covCanvas(S) {
   covImg = { v: C.v, seed: S.seed, C, cv: cv2, home };
   return cv2;
 }
+/* our military radars: blue, deeper where they see lower; hills leave holes behind them (airspace.js) */
+let milImg = null;
+function milCanvas(S) {
+  const C = S.asp && IC.milCov(S);
+  if (!C) return null;
+  if (milImg && milImg.C === C) return milImg.cv;
+  const cv2 = milImg && milImg.cv.width === C.gw ? milImg.cv : Object.assign(document.createElement('canvas'), { width: C.gw, height: C.gh });
+  const g2 = cv2.getContext('2d'), img = g2.createImageData(C.gw, C.gh), d = img.data;
+  for (let k = 0; k < C.g.length; k++) {
+    const a = C.g[k]; if (a === Infinity) continue;
+    const o = k * 4; d[o] = 92; d[o + 1] = 200; d[o + 2] = 255; d[o + 3] = a < 0.5 ? 70 : a < 1.5 ? 42 : a < 3.5 ? 22 : 10;
+  }
+  g2.putImageData(img, 0, 0);
+  milImg = { C, cv: cv2 };
+  return cv2;
+}
 function drawCoverage(S) {
   const cc = covCanvas(S);
   if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
-  // radars that do not help controllers (they do not read transponders) are shown as plain discs
+  const mc = milCanvas(S);
+  if (mc) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mc, 0, 0, mc.width * IC.ASP.CS, mc.height * IC.ASP.CS); }
+  // airborne early warning looks down from above the hills: a plain disc
   cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, 600, 450); cx2.setTransform(0.05, 0, 0, 0.05, 0, 0);
   let any = false;
   for (const s of S.sensors) {
-    if (s.eo || s.acou || s.bmdOnly || s.rktOnly || s.air && s.air.kind !== 'aew') continue;
-    if (cc && !s.air && !s.passive && !s.org && (s.ssr || s.idc === 'iff' || s.idc === 'nctr')) continue;
+    if (!s.air || s.air.kind !== 'aew') continue;
     any = true;
-    cx2.fillStyle = s.q === 'fc' ? 'rgba(92,200,255,1)' : 'rgba(150,160,255,0.55)';
-    cx2.beginPath(); cx2.arc(s.x, s.y, s.R * (s.jamF || 1) * (s.esm ? 0.5 : 1), 0, 7); cx2.fill();
+    cx2.fillStyle = 'rgba(150,160,255,0.55)';
+    cx2.beginPath(); cx2.arc(s.x, s.y, s.R * (s.jamF || 1), 0, 7); cx2.fill();
   }
   if (any) { ctx.globalAlpha = 0.055; ctx.drawImage(cov, 0, 0, IC.WW, IC.WH); ctx.globalAlpha = 1; }
 }

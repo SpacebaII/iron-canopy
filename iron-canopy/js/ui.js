@@ -241,7 +241,7 @@ function arsenal() {
 function layers() {
   const L = [['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['ground', 'Army'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
   // with coverage on, a key to its colours: the lowest height controllers see
-  const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em></div>` : '';
+  const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
   setHTML($('layers'), L.map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
 }
 function modeHint() {
