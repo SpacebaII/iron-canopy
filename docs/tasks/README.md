@@ -26,4 +26,8 @@ Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, 
 
 In wave 4 the coordinator also does two follow-ups on `main`: city districts feeding demand (`growth.js`) and Quick war money.
 
-After wave 4: a full `/code-review ultra`, then fixes and long balance runs.
+After wave 4: the owner tests balance first. Then, on Claude Fable 5.1 (briefs to be written):
+- an enemy commander that reads the player's defence and adapts: seams between rings, feints, saving ballistic missiles, and saying its intent in the after-action report;
+- real air traffic control: arrival routes, holding stacks, sequencing across airports, runway direction changes, departures threaded between arrivals.
+
+Then a full `/code-review ultra`, fixes and long balance runs.
