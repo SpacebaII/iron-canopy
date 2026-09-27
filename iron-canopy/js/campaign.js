@@ -85,7 +85,7 @@ IC.campaignTick = function (S, dt) {
   if (C.pmT <= 0 && S.pm != null) {
     C.pmT = 60;
     const w = C.work = IC.working(S), m = IC.nationalMorale(S);
-    pmHit(S, ((w - 0.7) * 1.2 + (m < 40 ? -0.6 : 0) + (IC.raidPhase(S) === 'calm' && w > 0.8 ? 0.3 : 0)) / 60);
+    pmHit(S, ((w - 0.85) * 1.5 + (m < 40 ? -0.6 : 0)) / 60);
     if (S.pm <= 0) IC.gameOver(S, `The Prime Minister has lost confidence in the air defence and asked ${S.world.names.A} for a ceasefire on its terms.`);
     else if (S.enemy.war && IC.warDays(S) >= IC.HOLD_DAYS) IC.victory(S, `You held for ${IC.HOLD_DAYS} days. ${S.world.full.A} has agreed to talks: its raids did not break the country (${U.pct(w)} still working).`);
   }

@@ -922,7 +922,7 @@ IC.on((S, type, d) => {
 
 IC.enemyTick = function (S, dt) {
   const E = S.enemy;
-  if (E.war) E.escal = Math.min(4, E.escalBase + (S.time - (E.warT || S.time)) / 86400 * 0.8 + (E.bump || 0));
+  if (E.war) E.escal = Math.min(4, E.escalBase + (S.time - (E.warT || S.time)) / 86400 * 0.6 + (E.bump || 0));
   if (E.pending.length) {
     const due = E.pending.filter(p => p.t <= S.time);
     if (due.length) { E.pending = E.pending.filter(p => p.t > S.time); for (const p of due) p.fn(); }
