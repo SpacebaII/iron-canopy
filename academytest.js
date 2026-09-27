@@ -2,15 +2,6 @@
 const IC = require('./headless.js'); const U = IC.U;
 const only = process.argv[2];
 const near = (S, type, p, a, b) => IC.findSpot(S, type, p.x, p.y, a, b);
-/* the strike lesson's MLRS: within reach of the launcher if it is still in sight, otherwise of its site */
-function deployMlrs(S) {
-  if (S.units.some(u => u.type === 'mlrs' && !u.dead) || !(S.reserve.mlrs > 0)) return;
-  const t = S.tels.find(x => x.known && !x.dead), px = t ? t.kx : S.camp.site.x, py = t ? t.ky : S.camp.site.y;
-  let spot = null; for (let r = 300; r < 800 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', px, py, r - 100, r);
-  // not in the town itself: that is where the enemy rockets fall
-  if (!spot) spot = IC.findSpot(S, 'mlrs', S.camp.town.x, S.camp.town.y, 120, 300);
-  if (spot) IC.deploy(S, 'mlrs', spot.x, spot.y);
-}
 const ACT = {
   radar: [
     S => { const c = IC.cap(S); const q = near(S, 'vhf', c, 150, 400); IC.deploy(S, 'vhf', q.x, q.y); },
@@ -29,7 +20,16 @@ const ACT = {
     S => { if (!S.units.some(u => u.type === 'shorad')) { const b = S.byId.ab_fwd; const q = near(S, 'shorad', b, 10, 40); IC.deploy(S, 'shorad', q.x, q.y); } },
     S => { S.ad.doctrine = 'sls'; IC.emit(S, 'doctrine', 'sls'); }
   ],
-  bmd: [S => { S.sel = { kind: 'unit', ref: S.units.find(u => u.type === 'lrsam') }; }],
+  bmd: [
+    S => { S.sel = { kind: 'unit', ref: S.units.find(u => u.type === 'lrsam') }; },
+    S => { if (!S.units.some(u => u.type === 'hatd')) { const q = near(S, 'hatd', S.byId.ab_fwd, 80, 250); if (q) IC.deploy(S, 'hatd', q.x, q.y); } }
+  ],
+  ew: [
+    S => { S.sel = { kind: 'unit', ref: S.camp.rad }; },
+    // a second radar well to the side of the jammer's bearing from the first
+    S => { if (S.units.some(u => u.type === 'mr3d')) return; const r = S.camp.rad, a = Math.atan2(S.camp.jst.y - r.y, S.camp.jst.x - r.x) + Math.PI / 2; for (const s of [1, -1]) for (const d of [600, 800, 1000]) { const q = near(S, 'mr3d', { x: r.x + Math.cos(a) * s * d, y: r.y + Math.sin(a) * s * d }, 0, 120); if (q) { IC.deploy(S, 'mr3d', q.x, q.y); return; } } },
+    S => { S.camp.bat.roe = 'free'; }
+  ],
   logi: [
     S => { if (!S.units.some(u => u.type === 'depot' && !u.central)) { const q = near(S, 'depot', S.camp.bat, 150, 450); IC.deploy(S, 'depot', q.x, q.y); } },
     S => { const d = S.units.find(u => u.type === 'depot' && !u.central); d.profile = 'ad'; },
@@ -37,22 +37,20 @@ const ACT = {
     S => { IC.heliResupply(S, S.camp.bat, true); }
   ],
   airbase: [
+    S => { if (!S.units.some(u => u.callin) && !IC.callInState(S).inbound.length) { const b = S.byId.ab_fwd; IC.callIn(S, b.x + 30, b.y + 20); } },
+    null,
     S => { const r = S.roster.filter(x => x.kind === 'ftr' && x.st === 'ready'); const b = S.threats.find(t => t.type === 'bmr' && t.det); if (b && r[0]) IC.launchAir(S, r[0], { type: 'intercept', track: b }); },
     S => { S.sel = { kind: 'infra', ref: S.byId.ab_fwd }; },
     S => { const b = S.byId.ab_fwd; const f = b.parts.find(x => (x.kind === 'hangar' || x.kind === 'has') && x.hp < x.max); if (f) IC.baseWork(S, b, 'repair', f.id); else if (!b.works.some(w => w.kind === 'build')) IC.baseWork(S, b, 'build', 'hangar'); }
   ],
   strike: [
     S => { const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready'); const s = S.camp.site; if (r && s) IC.launchAir(S, r, { type: 'isr', x: s.x, y: s.y }); },
-    S => deployMlrs(S),
     S => {
-      deployMlrs(S);
-      // only a fresh sighting is worth a salvo: launchers move soon after they are seen
-      const u = S.units.find(x => x.type === 'mlrs' && x.state === 'ready'), t = S.tels.find(x => x.known && !x.dead && S.time - x.kt < 900);
-      if (u && t && u.mags[0].mag > 0 && S.time - (u.lastFired || 0) > 300) IC.fireMission(S, u, t, 6);
-      // the launcher is out of reach: move the MLRS up behind it
-      if (u && t && U.dxy(u.x, u.y, t.kx, t.ky) > IC.MUN[u.mags[0].mun].range * 0.95) {
-        let spot = null; for (let r = 300; r < 700 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', t.kx, t.ky, r - 100, r);
-        if (spot) IC.relocate(S, u, spot.x, spot.y);
+      // only a fresh sighting is worth a strike: launchers move soon after they are seen
+      const t = S.tels.find(x => x.known && !x.dead && S.time - x.kt < 600);
+      if (t && !S.air.some(a => a.mission && a.mission.type === 'strike' && a.state !== 'rtb')) {
+        const r = S.roster.find(x => (x.kind === 'ucav' || (x.kind === 'ftr' && x.load === 'strike')) && x.st === 'ready' && !IC.missionOk(S, x, 'strike'));
+        if (r) IC.launchAir(S, r, { type: 'strike', site: t });
       }
       // lost sight of it: look again
       const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready');
@@ -76,7 +74,17 @@ function playLesson(id, quiet, seed) {
 }
 module.exports = { playLesson };
 
-if (require.main === module) {
+if (require.main === module && process.argv.includes('--many')) {
+  // every lesson many times on the two seeds that matter: the one the game uses and the test suite's
+  const n = +process.argv[process.argv.indexOf('--many') + 1] || 10, seeds = [20260926, 777];
+  for (const L of IC.LESSONS) {
+    if (only && only !== '--many' && L.id !== only) continue;
+    const res = [];
+    for (const seed of seeds) for (let k = 0; k < n; k++) { const r = playLesson(L.id, true, seed); res.push(r.won ? r.stars : 'X' + r.step); }
+    const won = res.filter(x => typeof x === 'number').length;
+    console.log(`[${L.id}] ${won}/${res.length} completed · ${res.join(' ')}`);
+  }
+} else if (require.main === module) {
   for (const L of IC.LESSONS) {
     if (only && L.id !== only) continue;
     const r = playLesson(L.id);

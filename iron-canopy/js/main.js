@@ -200,7 +200,7 @@ function rightClick(p, shift) {
   if (air && air.r && !air.job) {
     air.task = null; air.state = 'out'; air.tgt = null;
     if (hit && hit.kind === 'track' && air.kind === 'ftr') air.mission = { type: 'intercept', track: hit.ref };
-    else if (isEnemyTarget(hit) && air.kind === 'ftr' && air.gbu > 0) air.mission = { type: 'strike', site: hit.ref };
+    else if (isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0) air.mission = { type: 'strike', site: hit.ref };
     else air.mission = { type: air.kind === 'ftr' ? 'cap' : air.kind === 'aew' ? 'orbit' : 'isr', x: p.x, y: p.y };
     IC.log(S, 'info', 'AIR', `${air.name} retasked.`);
     ping(p); return;
@@ -572,7 +572,7 @@ window.addEventListener('keydown', e => {
   else if (unitSel && ukeys[lk]) command(ukeys[lk]);
   else if (trackSel && lk === 'v') command('scramble');
   else if (trackSel && lk === 'b') command('assignBest');
-  else if (lk === 'g' && S.enemy.war) { const why = IC.callInWhy(S); if (why) IC.toast(S, 'info', 'CALL-IN', why + '.'); else IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); }
+  else if (lk === 'g' && IC.callInOpen(S)) { const why = IC.callInWhy(S); if (why) IC.toast(S, 'info', 'CALL-IN', why + '.'); else IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); }
   else if (rooms[lk]) { if (ui.roomOk(rooms[lk])) ui.openRoom(rooms[lk]); return; }
   else if (k === '+' || k === '=') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.25);
   else if (k === '-' || k === '_') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 0.8);

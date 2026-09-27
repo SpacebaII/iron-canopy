@@ -7,6 +7,8 @@
 const U = IC.U;
 
 IC.CALLIN = { cost: 3, charges: 2, recharge: 900, stay: 480, arrive: 25 };
+/* teams can be called once there is a war to fight (and in the Academy and on the test range) */
+IC.callInOpen = S => !!(S.enemy && S.enemy.war) || S.mode === 'academy' || !!S.range;
 
 /* what the ability can do now, with the research done */
 IC.callInStats = S => ({

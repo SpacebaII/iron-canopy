@@ -255,7 +255,7 @@ function arsenal() {
   const queued = S.orders.length - act.length;
   // call-in teams: an ability, not a unit you buy
   const CI = IC.callInState(S), CK = IC.callInStats(S), ciWhy = IC.callInWhy(S), ciOn = S.mode2 && S.mode2.kind === 'callin';
-  const callTile = ui.cat === 'ad' && S.enemy.war ? `<div class="tile ${ciWhy ? 'locked' : ''}" id="tile-callin" role="button" tabindex="0" data-act="callin" aria-pressed="${!!ciOn}" title="A MANPADS team, dropped by helicopter anywhere in our territory in ${U.dur(IC.CALLIN.arrive)}. It fights drones, helicopters and low jets for ${U.dur(CK.stay)}, then is lifted out. ${U.money(IC.CALLIN.cost)} a call. Key: G">
+  const callTile = ui.cat === 'ad' && IC.callInOpen(S) ? `<div class="tile ${ciWhy ? 'locked' : ''}" id="tile-callin" role="button" tabindex="0" data-act="callin" aria-pressed="${!!ciOn}" title="A MANPADS team, dropped by helicopter anywhere in our territory in ${U.dur(IC.CALLIN.arrive)}. It fights drones, helicopters and low jets for ${U.dur(CK.stay)}, then is lifted out. ${U.money(IC.CALLIN.cost)} a call. Key: G">
       ${ui.sym('manpads')}<span class="res-n">${CI.charges}/${CK.max}</span>
       <span class="tn">Call in a team</span>
       <span class="tc ${ciWhy ? '' : 'ok'}">${ciWhy ? esc(ciWhy) : `Ready · ${U.money(IC.CALLIN.cost)}`}</span>

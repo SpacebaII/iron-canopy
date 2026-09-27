@@ -31,11 +31,11 @@ function reaper(S) {
   flight(S, 'isr', `REAPER ${n}`, fwd(S));
   IC.say(S, 'AIR', `We lost that drone. REAPER ${n} is ready at ${fwd(S).name}.`);
 }
-// a lost MLRS is replaced in the arsenal, so the lesson can still be finished
-function launcherBack(S) {
-  if (S.units.some(u => u.type === 'mlrs' && !u.dead) || (S.reserve.mlrs || 0) > 0) return;
-  S.reserve.mlrs = 1;
-  IC.say(S, 'CDS', 'We lost the MLRS. Another launcher is in the arsenal: deploy it well clear of the town the rockets are falling on.');
+// a lost strike aircraft is replaced, so the lesson can still be finished
+function strikers(S) {
+  if (S.roster.some(r => (r.kind === 'ucav' || r.kind === 'ftr') && r.st !== 'lost')) return;
+  flight(S, 'ucav', `HAWK ${S.roster.filter(r => r.kind === 'ucav').length + 1}`, fwd(S));
+  IC.say(S, 'AIR', 'We lost our strike aircraft. Another strike drone is ready at the forward base.');
 }
 const affCount = (S, set) => S.threats.filter(t => !t.dead && t.det && set.includes(t.aff)).length;
 /* a forced enemy operation is over when nothing it launched is still flying or waiting to launch */
@@ -109,21 +109,49 @@ IC.LESSONS = [
     score: S => { const h = S.camp.raid.reduce((s, op) => s + (op ? op.hits : 0), 0); return h === 0 ? 3 : h <= 2 ? 2 : 1; }
   },
   {
-    id: 'bmd', title: 'Ballistic Missiles', sub: 'Hit-to-kill interceptors and predicted impacts',
-    learn: ['Which systems can stop ballistic missiles', 'Two interceptors per warhead', 'Keep the battery radar on'],
+    id: 'bmd', title: 'Ballistic Missiles', sub: 'Two tiers, predicted intercept points, two interceptors per warhead',
+    learn: ['Which systems can stop ballistic missiles', 'The upper and the lower tier', 'Why a battery waits before it fires'],
     setup(S) {
-      S.tech.done.add('a_pac3');
+      S.tech.done.add('a_pac3'); S.tech.done.add('a_hatd');
       const b = fwd(S); depot(S);
       put(S, 'lrsam', b, 150, 300, { emcon: 'on' }); put(S, 'lr3d', b, 400, 700);
+      S.reserve = { hatd: 1 };
       IC.enemyStageTels(S, b);
       focus(S, b, 0.2);
     },
     steps: [
-      { text: () => 'Select the LRSAM battery. It carries two missiles: LR for aircraft, and BMD rounds that hit ballistic warheads directly. Both need its radar on until they hit.', done: S => S.sel && S.sel.ref && S.sel.ref.type === 'lrsam' },
-      { text: () => 'Launch detected! Ballistic tracks climb steeply; the red ellipse is where they will land. The battery fires two interceptors at each warhead.', start(S) { const b = fwd(S); S.camp.raid = [IC.enemyForceOp(S, 'bal', { x: b.x, y: b.y, ref: b, name: b.name }, { n: 4, T: 900 })]; }, done: S => S.time - S.camp.stepT > 600 && resolved(S, S.camp.raid[0]) },
-      { text: () => 'All warheads accounted for. Ballistic missiles are fast and few; every interceptor counts. Lesson complete.', done: () => true, wait: 40 }
+      { text: () => 'Select the LRSAM battery. It carries two missiles: LR for aircraft, and BMD rounds that hit ballistic warheads directly, below 35 km.', done: S => S.sel && S.sel.ref && S.sel.ref.type === 'lrsam' },
+      { text: S => `That is the lower tier: one chance, late. Deploy the High-Altitude BMD battery from the reserve within 30 km of ${fwd(S).name}. It meets warheads 40 to 150 km up, so the lower tier gets a second chance at what it misses.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'hatd' && u.state === 'ready') },
+      { text: () => 'Launch detected! The red ellipse is where the warheads will land. A battery does not chase a warhead: it waits, then fires two interceptors at the point where they will meet it (the blue cross, with its height and seconds to go).', start(S) { const b = fwd(S); S.camp.raid = [IC.enemyForceOp(S, 'bal', { x: b.x, y: b.y, ref: b, name: b.name }, { n: 5, T: 900 })]; }, done: S => S.time - S.camp.stepT > 600 && resolved(S, S.camp.raid[0]) },
+      { text: () => 'All warheads accounted for. Two tiers, two interceptors each: most salvoes stop there. Lesson complete.', done: () => true, wait: 40 }
     ],
     score: S => { const h = S.camp.raid[0].hits; return h === 0 ? 3 : h === 1 ? 2 : 1; }
+  },
+  {
+    id: 'ew', title: 'Jamming', sub: 'Strobes, crossing bearings and home-on-jam missiles',
+    learn: ['What a jammer does to a radar', 'Locating a jammer with two radars', 'Missiles that home on jamming'],
+    setup(S) {
+      const b = fwd(S); depot(S);
+      const rad = put(S, 'lr3d', b, 100, 250, { emcon: 'on' });
+      // a stand-off jammer on station across the border, and an LRSAM that can reach it
+      const eb = S.esites.filter(s => s.kind === 'airbase').sort((p, q) => U.dist(p, b) - U.dist(q, b))[0];
+      let st = { x: eb.x, y: eb.y };
+      for (let f = 0; f <= 1; f += 0.02) { const x = b.x + (eb.x - b.x) * f, y = b.y + (eb.y - b.y) * f; if (IC.inHostile(x, y) && IC.hostileBorderDist(x, y) > 250) { st = { x, y }; break; } }
+      S.camp.jst = st;
+      const d = U.dist(b, st), k = Math.max(0, (d - 750) / d);
+      const bat = put(S, 'lrsam', { x: b.x + (st.x - b.x) * k, y: b.y + (st.y - b.y) * k }, 0, 120, { emcon: 'on' });
+      bat.roe = 'hold';
+      S.camp.bat = bat; S.camp.rad = rad;
+      S.camp.jam = IC.spawnThreat(S, 'ewj', st.x, st.y, { home: eb, mission: 'jam', route: [], st, jamT: 1e6, jamming: true });
+      S.reserve = { mr3d: 1 };
+      focus(S, b, 0.12);
+    },
+    steps: [
+      { text: S => `A stand-off jammer is on station across the border. Select ${S.camp.rad.name}: the amber wedge is the jammer's strobe. Along it the radar only sees what is close enough to burn through; everywhere else it sees normally.`, hint: { at: S => S.camp.rad }, done: S => S.sel && S.sel.ref === S.camp.rad && !!S.camp.rad.jammers },
+      { text: () => 'A strobe gives a direction, not a range. Deploy the Medium-Range 3D Radar at least 40 km to one side. Where the two strobes cross, the jammer is.', hint: { el: 'arsenal' }, done: S => S.camp.jam.dead || S.camp.jam.triT > 0 },
+      { text: S => `Located. Jamming is a hostile act, so the jammer is marked hostile. ${S.camp.bat.name} is on Weapons Hold: select it and set its weapons to Free (W). Its missiles home on the jammer's own noise.`, hint: { at: S => S.camp.bat }, done: S => S.camp.jam.dead },
+      { text: () => 'The jammer is down and the strobes are gone. Jammers ride with every big raid: two radars far apart, and missiles that home on jamming, are the answer. Lesson complete.', done: () => true, wait: 40 }
+    ]
   },
   {
     id: 'logi', title: 'Keep Them Fed', sub: 'Depots, truck companies, helicopters',
@@ -149,8 +177,8 @@ IC.LESSONS = [
     ]
   },
   {
-    id: 'airbase', title: 'The Air Base', sub: 'A raid, the damage and the repairs',
-    learn: ['What a raid does to a base', 'Repairing runways and hangars'],
+    id: 'airbase', title: 'The Air Base', sub: 'Call-in teams, a raid, the damage and the repairs',
+    learn: ['Calling in a MANPADS team', 'What a raid does to a base', 'Repairing runways and hangars'],
     setup(S) {
       const b = fwd(S);
       depot(S);
@@ -163,6 +191,10 @@ IC.LESSONS = [
       S.camp.acBefore = S.roster.filter(r => r.base === b.id).length;
     },
     steps: [
+      { text: S => `Drones are heading for ${fwd(S).name}. Call in a MANPADS team: press G (or the team tile in the arsenal) and click near the base. A helicopter drops it in seconds; it fights for eight minutes, then is lifted out.`, hint: { el: 'arsenal' },
+        start(S) { const b = fwd(S); S.camp.drones = IC.enemyForceOp(S, 'drones', { x: b.x, y: b.y, ref: b, name: b.name }, 5); },
+        done: S => S.units.some(u => u.callin) },
+      { text: () => 'The team is in position: the ring is its reach, the arc the time it has left. Watch the drones come in.', done: S => S.time - S.camp.stepT > 300 && resolved(S, S.camp.drones) },
       { text: S => `Warning: an enemy bomber is heading for launch range of ${fwd(S).name}, and missile launchers are moving behind it. Fight the raid: fighters can hunt the bomber, the batteries take the cruise missiles. We have nothing here that stops ballistic missiles.`,
         start(S) { const b = fwd(S), o = { x: b.x, y: b.y, ref: b, name: b.name }; const T = Math.max(2400, IC.enemyLead(S, o) + 300); S.camp.raid = [IC.enemyForceOp(S, 'bomber', o, { T }), IC.enemyForceOp(S, 'mrbm', o, { n: 2, T }), IC.enemyForceOp(S, 'bal', o, { n: 2, T })]; },
         done: S => S.time - S.camp.stepT > 1200 && S.camp.raid.every(op => resolved(S, op)) },
@@ -173,12 +205,13 @@ IC.LESSONS = [
     score: S => { const lost = S.stats.acLost; return lost <= 1 ? 3 : lost <= 3 ? 2 : 1; }
   },
   {
-    id: 'strike', title: 'Fire Back', sub: 'Find the launcher, hit it before it moves',
-    learn: ['Reconnaissance', 'Long-range fires', 'Battle damage reports'],
+    id: 'strike', title: 'Fire Back', sub: 'Find the launcher from the air, hit it before it moves',
+    learn: ['Reconnaissance drones', 'Air strikes on launchers', 'Battle damage reports'],
     setup(S) {
       depot(S);
       flight(S, 'isr', 'REAPER 1', fwd(S));
-      S.reserve = { mlrs: 1 };
+      flight(S, 'ucav', 'HAWK 1', fwd(S));
+      const v = flight(S, 'ftr', 'VIPER 1', fwd(S)); v.load = 'strike';
       // the rocket battery shells the nearest place it can reach
       const town = borderTown(S);
       const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, town) - U.dist(c, town))[0];
@@ -191,8 +224,7 @@ IC.LESSONS = [
     },
     steps: [
       { text: S => `Rockets are about to fall on ${S.camp.town.name}. Send REAPER 1 to look for the launcher: open the Air war room (A), pick REAPER 1, Recon, and click the dashed enemy area across the border.`, hint: { el: 'rail-air' }, ensure: reaper, done: S => S.tels.some(t => t.kind === 'rkt' && t.known && !t.dead) },
-      { text: () => 'Launcher located! Deploy the MLRS from the arsenal within 80 km of it.', hint: { el: 'arsenal' }, ensure: launcherBack, done: S => S.units.some(u => u.type === 'mlrs' && u.state === 'ready') },
-      { text: () => 'Select the MLRS and right-click the launcher to fire (shift + right-click for a full salvo). Launchers move soon after they are seen: if it has gone, send the drone to find it again.', ensure: S => { reaper(S); launcherBack(S); }, done: S => S.stats.telKills >= 1 },
+      { text: () => 'Launcher located! Strike it from the air: select HAWK 1 (a strike drone with two bombs) or VIPER 1 (strike loadout) and right-click the launcher, or pick one in the launcher\'s panel. Launchers move soon after they are seen: if it has gone, send the drone to find it again.', ensure: S => { reaper(S); strikers(S); }, done: S => S.stats.telKills >= 1 },
       { text: () => 'Destroyed. Every strike ends with a damage report: read them, because a launcher that moved means an empty crater. Lesson complete.', done: () => true, wait: 40 }
     ]
   }
@@ -253,6 +285,7 @@ IC.on((S, type, d) => {
   if (type === 'doctrine') S.flags.doctrine = true;
   if (type === 'baseWorkDone' && d.w && /hangar|shelter/.test(d.w.label.toLowerCase())) S.flags.hangarWork = true;
   if (type === 'aptBuilt' && d.part && (d.part.kind === 'hangar' || d.part.kind === 'has')) S.flags.hangarWork = true;
+  if (type === 'teamIn') S.flags.team = true;
 });
 
 })(window.IC);
