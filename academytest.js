@@ -43,8 +43,21 @@ const ACT = {
   ],
   strike: [
     S => { const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready'); const s = S.camp.site; if (r && s) IC.launchAir(S, r, { type: 'isr', x: s.x, y: s.y }); },
-    S => { if (!S.units.some(u => u.type === 'mlrs')) { const t = S.tels.find(x => x.known && !x.dead); let spot = null; for (let r = 300; r < 800 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', t.kx, t.ky, r - 100, r); if (spot) IC.deploy(S, 'mlrs', spot.x, spot.y); } },
-    S => { const u = S.units.find(x => x.type === 'mlrs' && x.state === 'ready'); const t = S.tels.find(x => x.known && !x.dead); if (u && t && u.mags[0].mag > 0 && S.time - (u.lastFired || 0) > 300) IC.fireMission(S, u, t, 6); }
+    S => {
+      if (S.units.some(u => u.type === 'mlrs')) return;
+      // place it within reach of the launcher if it is still in sight, otherwise of its site
+      const t = S.tels.find(x => x.known && !x.dead), px = t ? t.kx : S.camp.site.x, py = t ? t.ky : S.camp.site.y;
+      let spot = null; for (let r = 300; r < 800 && !spot; r += 100) spot = IC.findSpot(S, 'mlrs', px, py, r - 100, r);
+      if (!spot) spot = IC.findSpot(S, 'mlrs', S.camp.town.x, S.camp.town.y, 20, 250);
+      if (spot) IC.deploy(S, 'mlrs', spot.x, spot.y);
+    },
+    S => {
+      const u = S.units.find(x => x.type === 'mlrs' && x.state === 'ready'), t = S.tels.find(x => x.known && !x.dead);
+      if (u && t && u.mags[0].mag > 0 && S.time - (u.lastFired || 0) > 300) IC.fireMission(S, u, t, 6);
+      // lost sight of it: look again
+      const r = S.roster.find(x => x.kind === 'isr' && x.st === 'ready');
+      if (!t && r && S.camp.site) IC.launchAir(S, r, { type: 'isr', x: S.camp.site.x, y: S.camp.site.y });
+    }
   ]
 };
 /* plays one lesson; returns { id, won, stars, over, step, hours } */

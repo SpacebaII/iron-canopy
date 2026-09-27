@@ -24,6 +24,13 @@ const frontA = S => S.fronts.find(f => f.key === 'A');
 function borderTown(S) { return IC.cities(S).filter(c => !c.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0]; }
 function flight(S, kind, name, base) { const r = IC.newFlight(S, kind, name, base.id); S.roster.push(r); IC.assignSlots(S, base); return r; }
 function focus(S, p, z) { S.camp.focus = { x: p.x, y: p.y, z: z || 0.35 }; }
+/* a lesson that needs a reconnaissance drone always has one */
+function reaper(S) {
+  if (S.roster.some(r => r.kind === 'isr' && r.st !== 'lost')) return;
+  const n = S.roster.filter(r => r.kind === 'isr').length + 1;
+  flight(S, 'isr', `REAPER ${n}`, fwd(S));
+  IC.say(S, 'AIR', `We lost that drone. REAPER ${n} is ready at ${fwd(S).name}.`);
+}
 function sectorNear(S, f, p) { let best = 0, bd = 1e9; f.sectors.forEach((s, i) => { const d = U.dist(IC.secGeom(f, i), p); if (d < bd) { bd = d; best = i; } }); return best; }
 const affCount = (S, set) => S.threats.filter(t => !t.dead && t.det && set.includes(t.aff)).length;
 /* a forced enemy operation is over when nothing it launched is still flying or waiting to launch */
@@ -227,9 +234,9 @@ IC.LESSONS = [
       focus(S, t, 0.2);
     },
     steps: [
-      { text: S => `Rockets are about to fall on ${S.camp.town.name}. Send REAPER 1 to look for the launcher: open the Air war room (A), pick REAPER 1, Recon, and click the dashed enemy area across the border.`, hint: { el: 'rail-air' }, done: S => S.tels.some(t => t.kind === 'rkt' && t.known && !t.dead) },
+      { text: S => `Rockets are about to fall on ${S.camp.town.name}. Send REAPER 1 to look for the launcher: open the Air war room (A), pick REAPER 1, Recon, and click the dashed enemy area across the border.`, hint: { el: 'rail-air' }, ensure: reaper, done: S => S.tels.some(t => t.kind === 'rkt' && t.known && !t.dead) },
       { text: () => 'Launcher located! Deploy the MLRS from the arsenal within 80 km of it.', hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'mlrs' && u.state === 'ready') },
-      { text: () => 'Select the MLRS and right-click the launcher to fire (shift + right-click for a full salvo). Launchers move soon after they are seen.', done: S => S.stats.telKills >= 1 },
+      { text: () => 'Select the MLRS and right-click the launcher to fire (shift + right-click for a full salvo). Launchers move soon after they are seen: if it has gone, send the drone to find it again.', ensure: reaper, done: S => S.stats.telKills >= 1 },
       { text: () => 'Destroyed. Every strike ends with a damage report: read them, because a launcher that moved means an empty crater. Lesson complete.', done: () => true, wait: 40 }
     ]
   }
