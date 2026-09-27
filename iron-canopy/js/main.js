@@ -229,6 +229,19 @@ function rightClick(p, shift) {
     return;
   }
 }
+/* what a right-click at this spot would do, in words, for the hover card: an order should never surprise */
+function rightWhat(hit) {
+  const m = S.mode2;
+  if (m) return m.kind === 'build' ? (m.pts && m.pts.length ? 'take the last point back' : 'stop building') : m.kind === 'found' ? (m.site ? 'pick another site' : 'cancel')
+    : m.kind === 'airway' && m.from ? 'end this airway' : m.kind === 'road' && m.pts.length >= 2 ? 'build the road' : 'cancel';
+  const air = S.sel && S.sel.kind === 'air' ? S.sel.ref : null;
+  if (air && air.r && !air.job) return hit && hit.kind === 'track' && air.kind === 'ftr' ? `${air.name} intercepts TN ${hit.ref.tn}` : isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0 ? `${air.name} strikes ${hit.ref.name}` : `${air.name} flies here`;
+  const units = selUnits(); if (!units.length) return '';
+  const who = units.length > 1 ? `${units.length} units` : units[0].name;
+  if (isEnemyTarget(hit) && units.some(u => u.d.weapon === 'strike' && u.state === 'ready')) return `fire on ${hit.ref.name} (shift: a salvo)`;
+  if (hit && hit.kind === 'track') return units.some(u => u.d.weapon === 'sam' || u.d.weapon === 'gun') ? `make TN ${hit.ref.tn} the priority target` : '';
+  return units.some(u => u.d.mob !== 'fixed' && u.state === 'ready') ? `move ${who} here` : '';
+}
 /* for automated testing: a click at a world position */
 IC.clickWorld = (p, btn, shift) => { S.hover = p; return btn === 2 ? rightClick(p, shift) : leftClick(p, shift); };
 function ping(p) { S.fx.rings.push({ x: p.x, y: p.y, r: 26, t: 0, color: '111,210,255', px: true }); }
@@ -288,9 +301,19 @@ function onAct(e) {
   const ui = IC.ui;
   switch (a) {
     case 'begin': IC.begin(v); return;
-    case 'modeTab': { const L = $('lessons'); L.hidden = !L.hidden; ui.lessonList(); b.setAttribute('aria-pressed', String(!L.hidden)); return; }
+    case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
+    case 'menu': ui.toggleMenu(); break;
+    case 'roomLocked': { const n = ui.roomAct(v); IC.toast(S, 'info', 'LATER', `The ${ui.roomName(v)} room opens in ${IC.ACTS[n].name}, ${IC.ACTS[n].title}. Finish this act's goals to get there.`); IC.sfx.ui('err'); break; }
+    case 'sub': ui.roomScroll[ui.keys.wrBody] = $('wrBody').scrollTop; ui.sub[id] = v; break;
+    case 'momentGo': ui.momentGo(); return;
+    case 'momentX': ui.closeMoment(); break;
+    case 'hintOk': IC.hint.hide(v, true); if (v.startsWith('game:') && S.hint) S.hint.done = true; break;
+    case 'hintSkip': IC.hint.skipTour(v); break;
+    case 'hintsOn': ui.hintsOn = !ui.hintsOn; ui.store.set('ic-hints-on', ui.hintsOn); if (!ui.hintsOn) for (const k of ['career1', 'war1']) IC.hint.skipTour(k); break;
+    case 'hintsReset': IC.hint.reset(); ui.firstRunDone = null; IC.toast(S, 'info', 'HINTS', 'Every hint will show again.'); break;
     case 'lesson': IC.begin('academy', v); return;
     case 'nextLesson': { const i = IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id); if (IC.LESSONS[i + 1]) IC.begin('academy', IC.LESSONS[i + 1].id); return; }
+    case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
     case 'restart': IC.showStart(); return;
@@ -324,7 +347,9 @@ function onAct(e) {
     case 'briefMin': ui.briefMin = !ui.briefMin; break;
     case 'deploy': {
       const d = IC.UNITS[v];
-      if (!IC.hasTech(S, d.tech)) return;
+      ui.seen('unit:' + v);
+      // a locked tile says what it needs; clicking it shows that research
+      if (!IC.hasTech(S, d.tech)) { if (ui.roomOk('research')) ui.openRoom('research'); return; }
       const why = S.reserve[v] > 0 ? '' : IC.buyBlock(S, v);
       if (why) { IC.toast(S, 'info', 'BUY', `${d.name}: ${why.toLowerCase()}.`); break; }
       IC.setMode(S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === v ? null : { kind: 'deploy', type: v }); return;
@@ -332,7 +357,7 @@ function onAct(e) {
     case 'buyStock': { const [m, q] = v.split(':'); IC.buyStock(S, m, +q, id ? S.units.find(u => u.id === id) : null); break; }
     case 'autoStock': S.supply.auto = v === 'on'; IC.log(S, 'info', 'SUPPLY', S.supply.auto ? 'Keep stocked: the Ministry buys missiles and supply as stock runs low.' : 'Keep stocked is off: buy stock yourself in Supply.'); break;
     case 'floor': S.supply.floor = +v; break;
-    case 'callin': { const why = IC.callInWhy(S); if (why) { IC.toast(S, 'info', 'CALL-IN', why + '.'); break; } IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); return; }
+    case 'callin': { ui.seen('unit:callin'); const why = IC.callInWhy(S); if (why) { IC.toast(S, 'info', 'CALL-IN', why + '.'); break; } IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); return; }
     case 'research': IC.startResearch(S, v); break;
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
@@ -420,7 +445,7 @@ function onAct(e) {
     case 'cfg': S.cfg[v] = !S.cfg[v]; ui.saveCfg(); break;
     case 'radarFx': S.cfg.radarFx = v; ui.saveCfg(); break;
     case 'pauseRoom': ui.pauseRoom = !ui.pauseRoom; ui.saveCfg(); break;
-    case 'pauseOn': S.cfg.pauseOn[v] = !S.cfg.pauseOn[v]; ui.saveCfg(); break;
+    case 'pauseOn': S.cfg.pauseOn[v] = !ui.pauseOnIs(S.cfg.pauseOn, v); ui.saveCfg(); break;
     case 'selu': case 'sels': case 'selt': case 'selv': {
       const kind = { selu: 'unit', sels: 'site', selt: 'tel', selv: 'veh' }[a];
       const ref = kind === 'veh' ? S.vehicles.find(x => x.id === id) : findRef(kind, id);
@@ -430,6 +455,7 @@ function onAct(e) {
   }
   IC.sfx && IC.sfx.ui('click');
   ui.refresh(true);
+  if (!$('start').hidden && ui.stPage === 'settings') ui.startPage('settings');
 }
 function onInput(e) {
   const el = e.target;
@@ -486,7 +512,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const l = local(e, cv);
   S.hover = IC.toWorld(l.x, l.y);
-  if (!ptrs.size) { const ent = pick(S.hover); IC.ui.tip(ent, l.x, l.y); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return; }
+  if (!ptrs.size) { const ent = pick(S.hover); IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return; }
   IC.ui.tip(null);
   if (!ptrs.has(e.pointerId)) return;
   ptrs.set(e.pointerId, l);
@@ -546,13 +572,21 @@ mini.addEventListener('pointermove', e => { if (e.buttons) miniMove(e); });
 
 const keys = new Set();
 window.addEventListener('keydown', e => {
-  if (!S || !$('start').hidden) return;
+  if (!S) return;
   if (e.target.closest && e.target.closest('input,textarea')) return;
+  // the start screen: Enter starts a Career, Esc goes back a page
+  if (!$('start').hidden) {
+    if (e.key === 'Escape' && IC.ui.stPage && IC.ui.stPage !== 'main') IC.ui.startPage('main');
+    else if (e.key === 'Enter' && (!IC.ui.stPage || IC.ui.stPage === 'main') && !(e.target.closest && e.target.closest('button'))) IC.begin('story');
+    return;
+  }
+  if (IC.ui.menu && e.key !== 'Escape') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { const ap = (S.mode2 && S.mode2.ap) || selAp(); if (ap) { e.preventDefault(); IC.sfx.ui(IC.bldUndo(S, ap) ? 'ok' : 'err'); IC.ui.refresh(true); return; } }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
-  const rooms = { a: 'air', l: 'logi', i: 'industry', n: 'intel', k: 'research', j: 'journal', v: 'aviation', t: 'staff', e: 'economy' };
+  // the keys shown on the rail (and the old ones, N K T, still work)
+  const rooms = { a: 'air', l: 'logi', i: 'intel', n: 'intel', r: 'research', k: 'research', j: 'journal', v: 'aviation', c: 'staff', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
@@ -572,7 +606,20 @@ window.addEventListener('keydown', e => {
   if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; }
   else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; }
   else if (lk === 's') startSkip();
-  else if (k === 'Escape') { if (!$('cine').hidden) ui.closeCine(); else if (S.mode2) IC.setMode(null); else if (ui.room) ui.openRoom(null); else { S.sel = null; S.group = []; } }
+  // Esc always backs out of the top thing, one at a time; with nothing open it brings up the menu
+  else if (k === 'Escape') {
+    const note = IC.ui.topHint();
+    if (ui.menu) ui.toggleMenu(false);
+    else if (note) IC.hint.hide(note, true);
+    else if (!$('unlock').hidden) ui.closeMoment();
+    else if (!$('cine').hidden) ui.closeCine();
+    else if (S.mode2) IC.setMode(null);
+    else if (ui.room) ui.openRoom(null);
+    else if (S.sel || S.group.length) { S.sel = null; S.group = []; }
+    else if (S.over && !ui.overDismissed) return;
+    else ui.toggleMenu(true);
+  }
+  else if (k === '?' || (k === '/' && e.shiftKey)) ui.openRoom('reference');
   else if (unitSel && ukeys[lk]) command(ukeys[lk]);
   else if (trackSel && lk === 'v') command('scramble');
   else if (trackSel && lk === 'b') command('assignBest');
@@ -615,7 +662,7 @@ IC.reroll = function () {
   $('startLead').textContent = 'Generating a new region…';
   setTimeout(() => generate((Math.random() * 1e9) >>> 0, 'campaign'), 30);
 };
-IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.openRoom && IC.ui.room && IC.ui.openRoom(null); IC.reroll(); };
+IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
   const go = () => {
@@ -634,6 +681,7 @@ IC.begin = function (mode, lesson) {
 IC.initRender(cv);
 new ResizeObserver(resize).observe(app);
 generate((Math.random() * 1e9) >>> 0, 'campaign');
+IC.ui.startPage('main');
 
 let last = performance.now(), uiT = 0;
 function frame(now) {
@@ -668,6 +716,7 @@ function frame(now) {
   IC.renderMini(S, mini, mw, mh);
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }
+  IC.ui.hintFrame();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
