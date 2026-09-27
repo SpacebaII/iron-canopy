@@ -104,7 +104,8 @@ function topbar() {
   const flow = S.income - S.upkeep, m = IC.nationalMorale(S);
   const meter = (f, col) => `<div class="meter"><i style="width:${U.clamp(f, 0, 1) * 100}%;background:${col}"></i></div>`;
   const st = S.story, act = st ? st.act : 4;
-  const money = `<div class="stat" title="Treasury and hourly balance"><span>Treasury</span><strong class="amber">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h</em></div>`;
+  const left = S.moneyLeft == null ? Infinity : S.moneyLeft, short = left < 24;
+  const money = `<button class="stat" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'amber'}">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
@@ -251,28 +252,21 @@ function arsenal() {
   $('app').classList.remove('no-arsenal');
   if (!cats.some(c => c.id === ui.cat)) ui.cat = cats[0].id;
   const tabs = cats.map(c => `<button data-act="cat" data-v="${c.id}" aria-pressed="${ui.cat === c.id && !ui.arMin}">${c.name}</button>`).join('');
-  const slots = IC.slots(S), act = S.orders.filter(o => o.started);
-  const slotHtml = Array.from({ length: slots }, (_, i) => { const o = act[i]; return `<i title="${o ? esc(IC.UNITS[o.type].name) + ' ' + U.pct(o.prog) : 'free production slot'}"><b style="width:${o ? o.prog * 100 : 0}%"></b></i>`; }).join('');
-  const queued = S.orders.length - act.length;
   const tiles = Object.entries(IC.UNITS).filter(([t, d]) => d.cat === ui.cat && (allowed(t) || (S.reserve[t] || 0) > 0)).map(([type, d]) => {
     const locked = !IC.hasTech(S, d.tech);
     const r = S.reserve[type] || 0;
-    const coming = S.orders.filter(p => p.type === type);
     const on = S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === type;
     const tech = locked ? IC.TECH.find(t => t.id === d.tech) : null;
-    const first = coming.filter(o => o.started).sort((a, b) => b.prog - a.prog)[0];
+    const why = r ? '' : IC.buyBlock(S, type);
     return `<div class="tile ${locked ? 'locked' : ''}" id="tile-${type}" role="button" tabindex="0" data-act="deploy" data-v="${type}" aria-pressed="${on}" title="${esc(d.desc)}">
       ${ui.sym(type)}${r ? `<span class="res-n">×${r}</span>` : ''}
       <span class="tn">${esc(d.name)}</span>
-      ${locked ? `<span class="tc">Needs ${esc(tech.name)}</span>` : r ? `<span class="tc ok">Deploy · free</span>` : `<span class="tc">${U.money(IC.unitCost(S, type))} · ${U.dur(IC.leadTime(S, type))}</span>`}
-      ${coming.length ? `<span class="eta">+${coming.length} on order</span>` : ''}
-      ${!locked && allowed(type) ? `<button class="buy" data-act="order" data-v="${type}" ${S.budget < IC.unitCost(S, type) ? 'disabled' : ''}>Order</button>` : ''}
-      ${first ? `<span class="prog"><i style="width:${first.prog * 100}%"></i></span>` : ''}
+      ${locked ? `<span class="tc">Needs ${esc(tech.name)}</span>` : r ? `<span class="tc ok">Deploy · free</span>` : `<span class="tc ${why ? '' : 'ok'}">${U.money(IC.unitCost(S, type))} · ${why ? 'not enough money' : 'buy &amp; place'}</span>`}
     </div>`;
   }).join('');
   $('arsenal').classList.add('glass');
   $('arsenal').classList.toggle('min', ui.arMin);
-  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Production slots: orders build in parallel">${slotHtml}<span>${act.length}/${slots}${queued ? ` +${queued} queued` : ''}</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
+  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick, then click the map · paid when placed</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
 }
 
 function layers() {

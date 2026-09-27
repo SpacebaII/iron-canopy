@@ -57,7 +57,7 @@ function pick(p) {
   if (aw) for (const f of S.asp.fixes) consider('fix', f, f.x, f.y);
   if (IC.cam.z > 0.05) for (const f of S.asp.fields) consider('field', f, f.x, f.y);
   if (best) return best;
-  if (S.layers.logistics) for (const v of S.vehicles) if (v.state !== 'idle' || IC.cam.z > 0.4) consider('veh', v, v.x, v.y);
+  if (S.layers.logistics) for (const v of S.vehicles) if (v.state !== 'idle') consider('veh', v, v.x, v.y);
   if (best) return best;
   if (S.layers.intel) {
     for (const g of S.gunits) if (g.side === 'them' && g.known) consider('gunit', g, g.kx, g.ky, 22 * px);
@@ -153,7 +153,7 @@ function leftClick(p, shift) {
       if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? (IC.enemyHeld(S, p.x, p.y) ? 'ENEMY-HELD' : 'TOO CLOSE') : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
       const u = IC.deploy(S, m.type, p.x, p.y);
       if (u) { IC.sfx.ui('ok'); ping(p); }
-      if (!(S.reserve[m.type] > 0) || !shift) IC.setMode(null); else IC.ui.refresh(true);
+      if (!shift || (!(S.reserve[m.type] > 0) && IC.buyBlock(S, m.type))) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
     if (m.kind === 'move') { if (IC.relocate(S, m.unit, p.x, p.y)) { IC.setMode(null); ping(p); } else IC.text(S, p.x, p.y, 'NOT HERE', IC.C.hostile); return; }
@@ -347,19 +347,20 @@ function onAct(e) {
     case 'deploy': {
       const d = IC.UNITS[v];
       if (!IC.hasTech(S, d.tech)) return;
-      if (!(S.reserve[v] > 0)) { IC.toast(S, 'info', 'RESERVE', `No ${d.name} in reserve. Order one: about ${U.dur(IC.leadTime(S, v))}.`); break; }
+      const why = S.reserve[v] > 0 ? '' : IC.buyBlock(S, v);
+      if (why) { IC.toast(S, 'info', 'BUY', `${d.name}: ${why.toLowerCase()}.`); break; }
       IC.setMode(S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === v ? null : { kind: 'deploy', type: v }); return;
     }
-    case 'order': e.stopPropagation(); IC.order(S, v); break;
-    case 'cancelOrder': IC.cancelOrder(S, id); break;
+    case 'buyStock': { const [m, q] = v.split(':'); IC.buyStock(S, m, +q, id ? S.units.find(u => u.id === id) : null); break; }
+    case 'autoStock': S.supply.auto = v === 'on'; IC.log(S, 'info', 'SUPPLY', S.supply.auto ? 'Keep stocked: the Ministry buys missiles and supply as stock runs low.' : 'Keep stocked is off: buy stock yourself in Supply.'); break;
+    case 'floor': S.supply.floor = +v; break;
     case 'research': IC.startResearch(S, v); break;
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
     case 'desel': S.sel = null; S.group = []; break;
     case 'emcon': case 'uroe': case 'udoc': case 'move': case 'heli': case 'pri': case 'repair': case 'clearPrio': case 'reserve': case 'fireMode': case 'gorder': case 'grelease': case 'assignBest': case 'scramble': command(a, v); return;
     case 'emconAll': command('emcon', v); return;
-    case 'profile': if (sel) { sel.profile = v; IC.log(S, 'info', 'LOGI', `${sel.name}: ${IC.PROFILES[v].name.toLowerCase()}.`); } break;
-    case 'profileD': { const d = S.units.find(u => u.id === id); if (d) d.profile = v; break; }
+    case 'dpri': { const d = id ? S.units.find(u => u.id === id) : sel; if (d) { d.pri = v; IC.log(S, 'info', 'LOGI', `${d.name}: resupply priority ${IC.DEPOT_PRI[v].name.toLowerCase()}.`); } break; }
     case 'buyTruck': if (sel) IC.buyCompany(S, sel); break;
     case 'buyTruckAt': { const d = S.units.find(u => u.id === id); if (d) IC.buyCompany(S, d); break; }
     case 'moveTruck': { const others = IC.depots(S).filter(d => d !== sel).sort((p, q) => U.dist(p, sel) - U.dist(q, sel)); if (others[0]) IC.moveCompany(S, sel, others[0]); break; }
@@ -440,6 +441,7 @@ function onAct(e) {
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
     case 'logf': ui.logFilter = v; break;
     case 'refcat': ui.refCat = v; break;
+    case 'why': ui.why = ui.why === v ? null : v; break;
     case 'uiscale': ui.applyScale(+v); ui.saveCfg(); setTimeout(resize, 50); break;
     case 'cfg': S.cfg[v] = !S.cfg[v]; ui.saveCfg(); break;
     case 'radarFx': S.cfg.radarFx = v; ui.saveCfg(); break;

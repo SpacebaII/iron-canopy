@@ -1209,7 +1209,7 @@ function drawGhost(S, px) {
   const m = S.mode2, h = S.hover;
   if (!m || !h) return;
   if (m.kind === 'deploy') {
-    const ok = IC.canPlace(S, m.type, h.x, h.y) && (S.reserve[m.type] || 0) > 0;
+    const ok = IC.canPlace(S, m.type, h.x, h.y) && ((S.reserve[m.type] || 0) > 0 || !IC.buyBlock(S, m.type));
     const d = IC.UNITS[m.type];
     const rng = IC.typeRange(m.type);
     ctx.strokeStyle = ok ? 'rgba(111,210,255,0.8)' : 'rgba(255,91,79,0.8)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([7 * px, 5 * px]);
@@ -1219,6 +1219,7 @@ function drawGhost(S, px) {
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.85; IC.drawUnitSymbol(ctx, m.type, h.x, h.y, px, ok ? C.friend : C.hostile, { tint: ok ? null : 'rgba(255,91,79,0.4)' }); ctx.globalAlpha = 1;
     if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
+    if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
   } else if (m.kind === 'airPoint') {
     const R = m.mission === 'aew' ? 3200 : m.mission === 'isr' ? 450 : 550;
     ctx.strokeStyle = 'rgba(111,210,255,0.7)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([6 * px, 5 * px]);
