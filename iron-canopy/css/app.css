@@ -466,3 +466,8 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .mline b{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
 .mwhy{margin:.1rem .45rem .45rem}
 table.t th.r{text-align:right}
+/* the airport's Operations tab: five tabs fit the panel; one row per kind of aircraft or runway */
+.itabs .seg{gap:0}.itabs .seg button{padding-inline:.25rem;font-size:.8rem}
+.oprow{display:grid;gap:.3rem;margin:.15rem 0 .55rem}
+.oprow>b{font-size:.86rem;font-weight:600}
+.oprow .seg{justify-self:start}
