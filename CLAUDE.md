@@ -50,10 +50,11 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `airspace.js` | Fixes and airways the player draws, routing over them, radar cover by altitude (terrain and earth curve), controllers' spacing and separation (losses, near misses), control zones, light-aircraft fields and clubs |
 | `growth.js` | Growth, trade and roads: passenger demand per city and load factors per airport, remote industries and trade taxes, city growth (population, prosperity, new and emptied blocks), roads cut by weapons and repaired, roads the player builds, loans and the weekly statement |
 | `incidents.js` | Things that must not be missed: off-route airliners, intruders, weapons released |
-| `air.js`, `ground.js`, `logistics.js` | Our air wing, the ground war, depots, trucks, economy, research |
+| `air.js`, `ground.js` | Our air wing, the ground war |
+| `logistics.js` | Supply (depots, truck companies, convoys at road speed, stock bought by rail or imported, Keep stocked, why a unit waits: `IC.nextLoad`), the economy tick (income and running costs, `S.ledger`, low-money warnings), research |
 | `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |
 | `sim.js` | One simulation step, in order |
-| `render.js`, `render-airport.js` | The map, and airports and aircraft at real scale |
+| `render.js`, `render-airport.js`, `render-logistics.js` | The map; airports and aircraft at real scale; convoys and supply lines |
 | `ui.js`, `inspector.js`, `warroom.js`, `main.js` | Top bar and panels, the selection inspector, the full-screen rooms, input and the main loop |
 
 Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` / `econtest.js` (long diagnostic runs that print what happens; `econtest.js` is the economy balance run), `tools/shot.js`, `devserver.py`.
@@ -85,7 +86,13 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 - Industries (`S.econ.inds`, at remote villages): sales = capacity × (a floor, a home market by road, exports by air cargo or lorry over a neutral border). Trade taxes are 15% of sales and follow the story's tax share.
 - Cities grow with their air score and road reach, shrink with war damage, drift down slowly with neither. Blocks follow population (`city.bpp` blocks per thousand): new ones fill the street grid next to built cells, pulled by roads, rail and airports, with streets on their open sides (`block.grown`); shrinking marks the outer ones `empty`. Every change calls `IC.worldChanged`.
 - Roads: a hit within reach of a road (`IC.roadHit`, from `IC.detonate`) lowers `edge.cond`; below 0.6 it is cut until engineers bring it back (about 10–15% an hour). Player roads are works in `W.roadWorks` (surveying, earthworks, paving) and open as new edges, splitting existing roads where they join; bridges they need become real bridges.
-- Money: every payment is booked (`IC.econBook`) into the day's book; `IC.weekStatement(S, 0 | 1)` sums this week or last week. Anything not booked (building, orders, research) shows as construction. Loans (`IC.LOANS`) repay over their term with 0.4% interest a day.
+- Money: pay with `IC.pay(S, kind, amount)` so the payment is booked (`IC.econBook`) by kind (names in `IC.STATEMENT`); `IC.weekStatement(S, 0 | 1)` sums this week or last week, and anything not booked shows as "Building works and other spending". `IC.money(S)` is the hourly view (income and running costs, each line with its reason from `IC.moneyWhy`). Loans (`IC.LOANS`) repay over their term with 0.4% interest a day.
+
+## How supply works
+
+- Buying a unit: `IC.deploy` places it from the reserve, or buys it if there is none (`IC.buyBlock` says why not). It loads for 2 min at the nearest depot, garrison or airfield (`IC.deliveryPlan`), drives there and sets up. No production queue.
+- Stock (missiles, rockets, supply pallets) lives in depots. Each depot's truck companies (3 lorries each) take it to units inside its ring, first-priority areas (`depot.pri`) and the emptiest units first; forward depots refill from the Central Depot. Stock is bought from the arms plants (`IC.buyStock`, by rail, `IC.SUPPLY.railKmh`) or imported by air when every plant is down. `S.supply.auto` (Keep stocked) buys whatever falls below half of one full reload, never below `S.supply.floor`.
+- Convoys drive `IC.route(…, true)` (roads only) at `IC.SUPPLY.kmh` by class, slower in towns at rush hour, crawling past cuts; `v.cut` names the cut. `IC.nextLoad(S, u, mag)` is what a unit's panel says about its next load.
 
 ## Balance as it stands (change it deliberately)
 
@@ -95,6 +102,7 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 - Landing fee is half the type's `fee`, passenger charge ₭0.0035M per passenger; both scale with the airport's charge level.
 - Roads cost per km on flat ground ₭2M (local), ₭5M (main), ₭15M (motorway), plus ₭15M/₭40M/₭100M a bridge; hills and forest add up to 170%. They build at 4/2/1 km a game hour.
 - A city grows up to 0.5% a day with perfect air service, 1.5% a day for each 100% better road reach than at the start, and drifts −0.08% a day with neither.
+- Supply: convoys 150/120/90/70 km/h on motorway/main/local/access roads (military, escorted), 35 km/h on tracks; load and unload 90 s; stock by rail at 200 km/h after 5 min loading; the Central Depot starts with six truck companies in Quick war.
 - The Career starts with ₭220M and a ₭5M/h grant. Act I has lasted about half a game day when a player completes goals quickly; the owner wants it much longer and slower (see `docs/tasks/07-career-pacing.md`).
 
 ## Owner's preferences
