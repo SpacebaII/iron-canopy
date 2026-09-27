@@ -38,13 +38,14 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | --- | --- |
 | `core.js` | Constants, seeded RNG, helpers (`IC.U`), the event bus `IC.on(fn)` / `IC.emit(S, type, data)` |
 | `data.js`, `aviation-data.js` | Units, munitions, threats, aircraft types (`IC.ACTYPES`), airport parts (`IC.APART`), airline archetypes, radar bands |
-| `gen.js`, `world.js`, `terrain.js` | World generation (countries, cities, villages, roads, rivers, airways), routing, the terrain canvas and detail tiles |
+| `gen.js`, `world.js`, `terrain.js` | World generation (countries, rivers, cities with streets and blocks, villages, the road network by class, railways, airways), routing, the terrain canvas and detail tiles |
 | `state.js` | `IC.newGame`, the state object `S`, damage (`IC.detonate`), effects |
 | `sensors.js`, `threats.js`, `defense.js`, `units.js`, `enemy.js` | Radars and identification, enemy weapons, our air defence, procurement, the enemy commander |
 | `airport.js` | Airports as parts: runways, taxiway nodes and graph (`IC.aptGraph`, Dijkstra `IC.aptPath`), stands, stats and warnings (`IC.aptStats`), damage by location (`IC.aptHit`), engineering works, the editor (`IC.aptSnap`, `aptPlanTaxi`, `aptPlanPart`), starting layouts (`IC.layoutAirport`), founding airports |
 | `groundops.js` | Aircraft moving on the ground: runway locks, taxi, hold, line-up, take-off roll, final approach, landing roll, exits, parking; military launches and landings go through it too |
 | `aviation.js` | Airlines, routes and aircraft ("tails"), fees, satisfaction, route requests, prohibited zones, radio calls |
-| `civil.js` | Other traffic: overflights, light aircraft, cars and trains, sirens |
+| `civil.js` | Other air traffic: overflights, light aircraft; sirens and morale |
+| `traffic.js` | Road and rail traffic: flows per road by class, city size and hour; cars and lorries placed only where drawn; buses, coaches, trains |
 | `incidents.js` | Things that must not be missed: off-route airliners, intruders, weapons released |
 | `air.js`, `ground.js`, `logistics.js` | Our air wing, the ground war, depots, trucks, economy, research |
 | `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |
@@ -61,6 +62,12 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 - Ground movement (`groundops.js`): one aircraft holds a runway at a time (`ap.rl` locks); taxiway edges carry traffic one way at a time with spacing; two aircraft nose to nose wait, then one is towed clear (a "gridlock", counted against the airport).
 - Airlines fly real aircraft between our airports and foreign ones. Arrivals ask for the runway at a final approach fix and hold if it is busy or no stand is free; long holds divert. Turnaround depends on contact stands, terminal load and fuel.
 - Damage: craters split runways into strips (`IC.rwStrips`), taxiway segments get cut, buildings lose hit points, burning fuel spreads to tanks within 160 m, aircraft in the open die more easily than in shelters.
+
+## How roads, towns and traffic work
+
+- Roads are routed by A* on a 4 km cost grid (`buildNetwork` in `gen.js`): slopes, forest and river crossings cost more, and running on an existing road is cheap, so roads merge. Classes in `edge.cls`: `hw` motorway, `rd` main road, `lc` local road, `sp` access road. `W.nodes` are places plus junctions (`jct`, interchanges `ix`); `W.lanes` are rural lanes and `city.streets` city streets, both drawn and driven but not routed.
+- A city has `blocks` on a street grid (flags `core`, `ind`, `sub`), `streets`, `parks` and an industrial direction `indA`. `W.farmAt` is zero inside built-up areas.
+- Traffic (`traffic.js`): each road has a load (class, nearby population, hour, war, alerts, blown bridges) and a phase advanced every step. Vehicles are not simulated: `IC.trafficVisible` places them in slots riding the phase, only for the view being drawn. Close in (z ≥ 1.3) `render.js` draws the network live at real width; tiles carry streets and lanes.
 
 ## Balance as it stands (change it deliberately)
 
