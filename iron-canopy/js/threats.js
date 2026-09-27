@@ -41,7 +41,9 @@ IC.timeToImpact = function (t) {
 function arrive(S, t) {
   t.dead = true;
   if (t.d.decoy || !t.d.dmg) return;
+  t.impacted = true;
   const hit = IC.detonate(S, t.x, t.y, t.d.dmg, t);
+  IC.emit(S, 'arrive', { t, hit });
   if (t.op) { t.op.hits += hit ? 1 : 0; t.op.done++; if (hit && hit.fac) t.op.baseHits = (t.op.baseHits || 0) + 1; }
 }
 
@@ -185,6 +187,8 @@ IC.moveThreats = function (S, dt) {
   for (const t of S.threats) {
     if (t.dead) continue;
     t.age += dt;
+    // where it crossed into our airspace, for the after-action report
+    if (!t.entered && !t.d.civil && (t.age % 5) < dt && IC.inHome(t.x, t.y)) t.entered = { x: t.x, y: t.y };
     if (t.flash > 0) t.flash -= dt * 0.1;
     if (t.notchT > 0) t.notchT -= dt;
     switch (t.d.move) {
