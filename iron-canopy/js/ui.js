@@ -147,10 +147,11 @@ const ICON = {
   reference: '<path d="M4 19V5a2 2 0 0 1 2-2h14v14H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h14"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'
 };
+ICON.economy = '<path d="M4 20V11M10 20V6M16 20v-9M22 20H2M3 8l6-4 6 5 6-4"/>';
 ICON.aviation = '<path d="M3 20h18M6 20V9l6-4 6 4v11M10 20v-5h4v5M9 11h6"/>';
 ICON.staff = '<circle cx="12" cy="7" r="3.2"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M12 14l-1.5 4L12 21l1.5-3z"/>';
-ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['air', 'Air', 'A'], ['army', 'Army', 'G'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
-ui.roomOk = k => (k !== 'aviation' || !!S.av) && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
+ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['economy', 'Economy', 'E'], ['air', 'Air', 'A'], ['army', 'Army', 'G'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
+ui.roomOk = k => (k !== 'aviation' || !!S.av) && (k !== 'economy' || S.mode !== 'academy') && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
 function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
   const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research');
@@ -264,6 +265,7 @@ function modeHint() {
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
     field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
     zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
+    road: () => `${IC.ROADS[m.cls].name}: click points on the map; the first and last join the nearest road. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
     found: () => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
       : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
   }[m.kind]();

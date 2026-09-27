@@ -562,6 +562,120 @@ test('airspace: light aircraft avoid controlled airspace unless cleared', () => 
   assert(bad.zones.size && bad.inc, 'a careless pilot crossed the capital without an infringement incident');
 }, true);
 
+/* ---------- growth, trade and roads ---------- */
+/* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
+const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };
+const secondApt = S => S.infra.filter(i => i.kind === 'airport')[1];
+test('growth: better service raises demand and city growth over a few game days', () => {
+  const games = [0, 1].map(k => {
+    const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+    const ap = secondApt(S), c = S.byId[ap.city];
+    if (k) {
+      const al = S.av.airlines.find(a => a.kind === 'budget'), ports = S.world.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b);
+      for (const p of ports.slice(0, 3)) IC.avAddRoute(S, al, ap, p, 'narrow', 2, true);
+    }
+    IC.econRefresh(S);
+    const d0 = c.air.demand, p0 = c.popF;
+    econDays(S, 3);
+    return { S, c, ap, d0, p0 };
+  });
+  const [poor, good] = games;
+  assert(good.d0 > poor.d0 * 1.1, `more flights did not raise demand: ${Math.round(good.d0)} vs ${Math.round(poor.d0)} passengers a day`);
+  assert(good.c.popF > poor.c.popF, `the better-served city did not grow faster: ${good.c.popF.toFixed(1)}k vs ${poor.c.popF.toFixed(1)}k`);
+  assert(good.c.popF > good.p0, 'the well-served city did not grow');
+  assert(good.c.air.demand > good.d0, 'demand did not rise as the city grew');
+  assert(/Grew/.test(IC.cityReport(good.S, good.c).growth), 'the city panel does not say it grew');
+});
+test('growth: a remote industry with an air cargo link out-produces one without', () => {
+  const out = [0, 1].map(k => {
+    const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+    IC.econRefresh(S);
+    // the industry closest to an airport, and that airport
+    const best = S.econ.inds.map(i => { const ap = S.infra.filter(a => a.kind === 'airport').sort((a, b) => IC.econTime(S, i, a) - IC.econTime(S, i, b))[0]; return { i, ap, t: IC.econTime(S, i, ap) }; }).sort((a, b) => a.t - b.t)[0];
+    for (const r of S.av.routes) if (r.a === best.ap.id || (r.b.apt === best.ap.id)) r.st = 'cut';
+    if (k) { const al = S.av.airlines.find(a => a.kind === 'cargo'), port = S.world.airways.find(w => w.kind === 'intl'); IC.avAddRoute(S, al, best.ap, port.b.k === 'H' ? port.a : port.b, 'cargo', 2, true); }
+    IC.econRefresh(S);
+    return { S, ind: best.i, v: best.i.out, t: best.t };
+  });
+  assert(out[0].t < 3 * 3600, `no industry within 3 h of an airport (${U.dur(out[0].t)})`);
+  assert(out[1].v > out[0].v * 1.15, `the air cargo link made little difference: ${out[1].v.toFixed(3)} vs ${out[0].v.toFixed(3)} ₭M/h`);
+  assert(IC.indWhy(out[1].S, out[1].ind).some(l => /air cargo/.test(l)), 'the explanation does not mention air cargo');
+});
+test('growth: a road the player builds joins the routing graph and shortens a trip', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  S.budget = 5000;
+  IC.econRefresh(S);
+  const W = S.world, cs = IC.cities(S);
+  // two cities whose trip is long for the distance, with a clear straight line between them
+  let pick = null;
+  for (const a of cs) for (const b of cs) {
+    if (a.id >= b.id) continue;
+    const d = U.dist(a, b); if (d < 250 || d > 900) continue;
+    const t = IC.tripTime(S, a, b), direct = d * 360 / IC.ROAD_KMH.hw;
+    const P = IC.roadPlan(S, 'hw', [a, b], [{ node: a.id }, { node: b.id }]);
+    if (!P.why && t > direct * 1.3 && (!pick || t / direct > pick.r)) pick = { a, b, t, r: t / direct };
+  }
+  assert(pick, 'no city pair where a new road would help');
+  const edges0 = W.edges.length;
+  const w = IC.roadFinish(S, { cls: 'hw', pts: [{ x: pick.a.x, y: pick.a.y }, { x: pick.b.x, y: pick.b.y }], snaps: [{ x: pick.a.x, y: pick.a.y, node: pick.a.id }, { x: pick.b.x, y: pick.b.y, node: pick.b.id }] });
+  assert(w && S.econ.works.length === 1, 'the works did not start');
+  for (let h = 0; h < w.hours + 2 && S.econ.works.length; h++) { S.time += 3600; IC.growth(S, 3600); }
+  assert(!S.econ.works.length && W.edges.length === edges0 + 1, 'the road never opened');
+  const e = W.edges[W.edges.length - 1];
+  assert(W.roadIdx[e.a] != null && W.roadIdx[e.b] != null, 'the new road is not in the routing graph');
+  const t1 = IC.tripTime(S, pick.a, pick.b);
+  assert(t1 < pick.t * 0.85, `the trip did not get shorter: ${U.dur(t1)} vs ${U.dur(pick.t)}`);
+  const r = IC.route(pick.a.x, pick.a.y, pick.b.x, pick.b.y);
+  assert(IC.routeLength(r) < U.dist(pick.a, pick.b) * 1.2, 'convoys do not use the new road');
+  assert(S.worldDirty && S.worldDirty.length, 'the world was not told the road changed');
+});
+test('growth: a crater on a motorway cuts the link between two cities until it is repaired', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  IC.econRefresh(S);
+  const W = S.world, cap = IC.cap(S);
+  // the nearest city reached from the capital by motorway, and the longest motorway piece on that trip
+  const T = IC.travelFrom(W, cap.id, false);
+  const far = IC.cities(S).filter(c => !c.capital && IC.travelPath(T, c.id).some(e => e.cls === 'hw' && e.len > 40)).sort((a, b) => T.t[a.id] - T.t[b.id])[0];
+  assert(far, 'no city reached by motorway');
+  const e = IC.travelPath(T, far.id).filter(x => x.cls === 'hw').sort((a, b) => b.len - a.len)[0];
+  const p = e.pts[e.pts.length >> 1], q = e.pts[(e.pts.length >> 1) - 1] || e.pts[0], mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+  const t0 = IC.tripTime(S, cap, far), trade0 = far.rc;
+  IC.detonate(S, mid.x, mid.y, 150, {});
+  assert(e.cut, 'the crater did not cut the motorway');
+  IC.econRefresh(S);
+  const t1 = IC.tripTime(S, cap, far);
+  assert(t1 > t0 * 1.15, `the trip did not get longer: ${U.dur(t1)} vs ${U.dur(t0)}`);
+  assert(far.rc < trade0 * 0.97, 'trade did not fall');
+  const rep = IC.cityReport(S, far);
+  assert(rep.cuts.some(l => /Motorway cut/.test(l) && /instead of/.test(l)), `the city panel does not explain the cut: ${rep.cuts.join(' / ')}`);
+  for (let h = 0; h < 48 && e.cut; h++) { S.time += 900; IC.growth(S, 900); }
+  assert(!e.cut, 'engineers never reopened the motorway');
+  IC.econRefresh(S);
+  assert(IC.tripTime(S, cap, far) < t0 * 1.01, 'the trip is still long after the repair');
+});
+test('growth: a well-connected city adds blocks over a few game days; a cut-off one does not', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  IC.econRefresh(S);
+  const cap = IC.cap(S), lone = IC.cities(S).filter(c => c.air.score === 0).sort((a, b) => b.pop - a.pop)[0];
+  const n0 = cap.blocks.length, s0 = cap.streets.length, l0 = lone ? lone.blocks.filter(b => !b.empty).length : 0;
+  econDays(S, 4);
+  const added = cap.blocks.filter(b => b.grown);
+  assert(added.length >= 5 && cap.blocks.length === n0 + added.length, `the capital added only ${added.length} blocks in four days`);
+  assert(cap.streets.length > s0, 'no new streets');
+  assert(added.every(b => IC.inHome(b.x, b.y) && !S.world.inLake(b.x, b.y)), 'a block was built in a lake or abroad');
+  if (lone) assert(lone.blocks.filter(b => !b.empty).length <= l0, `${lone.name}, with no air service, still grew`);
+  assert(S.worldDirty.length, 'the world was not told about the new blocks');
+});
+test('growth: the weekly statement adds up to the change in the treasury', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const b0 = S.budget;
+  IC.takeLoan(S, 0);
+  run(S, 2, player);
+  const st = IC.weekStatement(S, 0);
+  assert(Math.abs(st.net - (S.budget - b0)) < 0.5, `statement net ${st.net.toFixed(1)} vs treasury change ${(S.budget - b0).toFixed(1)}`);
+  assert(st.lines.some(l => l.k === 'fee_pax') && st.lines.some(l => l.k === 'loan'), 'fees or loan repayments missing from the statement');
+});
+
 /* ---------- modes ---------- */
 test('career: Act I runs with airline traffic', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });

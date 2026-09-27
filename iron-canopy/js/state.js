@@ -65,6 +65,7 @@ IC.newGame = function (opts) {
   IC.aspInit(S);
   IC.civilInit(S);
   IC.trafficInit(S);
+  IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
   return S;
@@ -211,6 +212,7 @@ IC.detonate = function (S, x, y, dmg, src) {
   const onField = IC.bases(S).some(b => b.parts && U.dxy(x, y, b.x, b.y) < b.radius);
   IC.crater(S, x, y, onField ? 0.25 + dmg * 0.003 : 1.5 + dmg * 0.025);
   if (dmg <= 0) return null;
+  IC.roadHit(S, x, y, dmg);
   let hit = null, aptHit = false;
   const src2 = src || {};
   for (const inf of S.infra) {

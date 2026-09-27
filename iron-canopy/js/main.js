@@ -130,6 +130,7 @@ function leftClick(p, shift) {
       return;
     }
     if (m.kind === 'airway') { airwayClick(m, p); IC.ui.refresh(true); return; }
+    if (m.kind === 'road') { IC.roadClick(S, m, p, 14 / IC.cam.z); IC.ui.refresh(true); return; }
     if (m.kind === 'field') {
       const why = IC.aspFieldWhy(S, p.x, p.y);
       if (why) { IC.text(S, p.x, p.y, why, IC.C.hostile); IC.sfx.ui('err'); return; }
@@ -185,12 +186,15 @@ function leftClick(p, shift) {
   IC.select(pick(p), shift);
 }
 
+function roadDone() { if (IC.roadFinish(S, S.mode2)) { IC.sfx.ui('ok'); IC.setMode(null); } else IC.sfx.ui('err'); IC.ui.refresh(true); }
+
 /* right-click: the obvious order for what is selected */
 function rightClick(p, shift) {
   if (!p) return;
   if (S.mode2 && S.mode2.kind === 'build') return buildIn(S.mode2, p, 2, shift);
   if (S.mode2 && S.mode2.kind === 'found') return foundIn(S.mode2, p, 2);
   if (S.mode2 && S.mode2.kind === 'airway' && S.mode2.from) { S.mode2.from = null; IC.ui.refresh(true); return; }
+  if (S.mode2 && S.mode2.kind === 'road' && S.mode2.pts.length >= 2) { roadDone(); return; }
   if (S.mode2) { IC.setMode(null); return; }
   const hit = pick(p);
   const air = S.sel && S.sel.kind === 'air' ? S.sel.ref : null;
@@ -423,6 +427,9 @@ function onAct(e) {
     case 'selField': { const f = S.asp.fields.find(x => x.id === id); if (f) { ui.openRoom(null); ui.jump(f, 'field'); } return; }
     case 'zoneDel': IC.avRemoveZone(S, id); break;
     case 'foundMode': ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
+    case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
+    case 'loan': IC.takeLoan(S, +v); break;
+    case 'repayLoan': IC.repayLoan(S, id); break;
     case 'delegate': IC.storyDelegate(S, v, !S.story.del[v]); break;
     case 'cpReq': IC.storyRequest(S, v); break;
     case 'routeFly': { const r = S.av.routes.find(x => x.id === id); if (r) { ui.openRoom(null); ui.jump(S.byId[r.a], 'infra'); } return; }
@@ -570,13 +577,16 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
-  const rooms = { a: 'air', g: 'army', l: 'logi', i: 'industry', n: 'intel', k: 'research', j: 'journal', v: 'aviation', t: 'staff' };
+  const rooms = { a: 'air', g: 'army', l: 'logi', i: 'industry', n: 'intel', k: 'research', j: 'journal', v: 'aviation', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { const r = IC.buildFinish(S, bm, IC.cam.z); IC.sfx.ui(r === 'built' ? 'ok' : 'err'); if (r === 'err' && bm.err && S.hover) IC.text(S, S.hover.x, S.hover.y, bm.err.toUpperCase(), IC.C.hostile); IC.ui.refresh(true); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { bm.pts.pop(); IC.ui.refresh(true); return; }
   if (S.mode2 && S.mode2.kind === 'bmove' && lk === 'r') { S.mode2.rot += e.shiftKey ? Math.PI / 2 : Math.PI / 12; return; }
+  const rm = S.mode2 && S.mode2.kind === 'road' ? S.mode2 : null;
+  if (rm && k === 'Enter' && rm.pts.length >= 2) { roadDone(); return; }
+  if (rm && k === 'Backspace' && rm.pts.length) { IC.roadUndo(S, rm, 14 / IC.cam.z); IC.ui.refresh(true); return; }
   if ((k === 'Delete' || k === 'Backspace') && S.sel && (S.sel.kind === 'fix' || S.sel.kind === 'airway')) {
     if (S.sel.kind === 'fix') { IC.aspDelFix(S, S.sel.ref.id); if (S.mode2 && S.mode2.from === S.sel.ref.id) S.mode2.from = null; } else IC.aspDelWay(S, S.sel.ref.id);
     S.sel = null; IC.ui.refresh(true); return;
