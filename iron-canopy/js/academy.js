@@ -31,6 +31,12 @@ function reaper(S) {
   flight(S, 'isr', `REAPER ${n}`, fwd(S));
   IC.say(S, 'AIR', `We lost that drone. REAPER ${n} is ready at ${fwd(S).name}.`);
 }
+// a lost MLRS is replaced in the arsenal, so the lesson can still be finished
+function launcherBack(S) {
+  if (S.units.some(u => u.type === 'mlrs' && !u.dead) || (S.reserve.mlrs || 0) > 0) return;
+  S.reserve.mlrs = 1;
+  IC.say(S, 'ARMY', 'We lost the MLRS. Another launcher is in the arsenal: deploy it well clear of the town the rockets are falling on.');
+}
 function sectorNear(S, f, p) { let best = 0, bd = 1e9; f.sectors.forEach((s, i) => { const d = U.dist(IC.secGeom(f, i), p); if (d < bd) { bd = d; best = i; } }); return best; }
 const affCount = (S, set) => S.threats.filter(t => !t.dead && t.det && set.includes(t.aff)).length;
 /* a forced enemy operation is over when nothing it launched is still flying or waiting to launch */
@@ -235,8 +241,8 @@ IC.LESSONS = [
     },
     steps: [
       { text: S => `Rockets are about to fall on ${S.camp.town.name}. Send REAPER 1 to look for the launcher: open the Air war room (A), pick REAPER 1, Recon, and click the dashed enemy area across the border.`, hint: { el: 'rail-air' }, ensure: reaper, done: S => S.tels.some(t => t.kind === 'rkt' && t.known && !t.dead) },
-      { text: () => 'Launcher located! Deploy the MLRS from the arsenal within 80 km of it.', hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'mlrs' && u.state === 'ready') },
-      { text: () => 'Select the MLRS and right-click the launcher to fire (shift + right-click for a full salvo). Launchers move soon after they are seen: if it has gone, send the drone to find it again.', ensure: reaper, done: S => S.stats.telKills >= 1 },
+      { text: () => 'Launcher located! Deploy the MLRS from the arsenal within 80 km of it.', hint: { el: 'arsenal' }, ensure: launcherBack, done: S => S.units.some(u => u.type === 'mlrs' && u.state === 'ready') },
+      { text: () => 'Select the MLRS and right-click the launcher to fire (shift + right-click for a full salvo). Launchers move soon after they are seen: if it has gone, send the drone to find it again.', ensure: S => { reaper(S); launcherBack(S); }, done: S => S.stats.telKills >= 1 },
       { text: () => 'Destroyed. Every strike ends with a damage report: read them, because a launcher that moved means an empty crater. Lesson complete.', done: () => true, wait: 40 }
     ]
   }
