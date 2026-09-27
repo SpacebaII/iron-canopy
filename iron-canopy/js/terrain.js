@@ -443,6 +443,14 @@ function block(g, b, lod, foreign, town) {
   if (b.hp < 1) scorchBlock(g, b);
   g.restore();
 }
+/* convex hull of a few points (monotone chain) */
+function hull(P) {
+  P.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+  for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
 /* a block as it really is, by its form. lod 2 draws the big masses, lod 3 buildings, lod 4 their details.
    Shadows fall to the south-east whatever way the block turns, longer for taller buildings */
 function formBlock(g, b, sd, lod) {
@@ -450,7 +458,12 @@ function formBlock(g, b, sd, lod) {
   const ca = Math.cos(-b.a), sa = Math.sin(-b.a), shx = ca - sa * 0.8, shy = sa + ca * 0.8;
   const rgb = (c, v) => `rgb(${c[0] + (v || 0) | 0},${c[1] + (v || 0) | 0},${c[2] + (v || 0) | 0})`;
   const box = (x, y, w, hh, col, ht, pitched) => {
-    if (ht > 0) { g.fillStyle = 'rgba(0,0,0,0.38)'; g.fillRect(x + shx * ht, y + shy * ht, w, hh); }
+    if (ht > 0.15) {
+      // a tall building casts its whole outline along the sun: the roof and its offset joined up
+      const dx = shx * ht, dy = shy * ht, P = [];
+      for (const [u, v] of [[x, y], [x + w, y], [x + w, y + hh], [x, y + hh]]) P.push([u, v], [u + dx, v + dy]);
+      g.fillStyle = 'rgba(0,0,0,0.34)'; g.beginPath(); hull(P).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.fill();
+    } else if (ht > 0) { g.fillStyle = 'rgba(0,0,0,0.38)'; g.fillRect(x + shx * ht, y + shy * ht, w, hh); }
     g.fillStyle = col; g.fillRect(x, y, w, hh);
     if (pitched && mid) { g.fillStyle = 'rgba(0,0,0,0.13)'; if (w > hh) g.fillRect(x, y + hh / 2, w, hh / 2); else g.fillRect(x + w / 2, y, w / 2, hh); }
     else if (fine && ht > 0.1) { g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(x + w * 0.1, y + hh * 0.1, w * 0.8, hh * 0.8); }
