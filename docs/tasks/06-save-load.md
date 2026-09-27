@@ -1,6 +1,6 @@
 # 06 Save and load
 
-Needs tasks 01 to 05 and 08 merged first, so the data it saves is settled.
+Wave 5: needs everything before it merged, so the data it saves is settled.
 
 ## What the owner asked for
 
