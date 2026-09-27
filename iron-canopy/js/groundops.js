@@ -799,7 +799,8 @@ function crashNow(S, ap, m) {
   if (S.camp) {
     (S.later = S.later || []).push({ t: S.time + 1800, fn: () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.hhmm(S.time)}`, `${text} ${fix}`, 'alarm'); } });
   }
-  if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(25, 4 + dead / 15), 0, 100);
+  // on top of the loss of the aircraft itself (the Minister already counts that): the deaths and the headlines
+  if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), 0, 100);
   IC.emit(S, 'crash', { ap, m, cause: c.cause, dead, on, rescue });
   m.destroyed = true; m.why = `crashed ${phase}`;
   // the aircraft is gone: tell its owner now, not as an ordinary loss
