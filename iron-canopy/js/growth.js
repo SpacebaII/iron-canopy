@@ -223,7 +223,7 @@ function grow(S, dt) {
     const g = {
       air: G.airGrowth * c.air.score,
       road: G.roadGrowth * U.clamp(c.rc / Math.max(1, c.rc0) - 1, -0.6, 0.6),
-      war: -(1 - alive) * 3 - (c.besieged ? 1 : 0) - (war ? 0.1 : 0),
+      war: -(1 - alive) * 3 - (war ? 0.1 : 0),
       base: G.drift
     };
     g.tot = U.clamp(g.air + g.road + g.war + g.base, -2, 2);
@@ -597,7 +597,7 @@ IC.econBook = book;
 IC.STATEMENT = {
   base: 'Government grant', tax: 'Taxes', trade: 'Trade taxes', apt: 'Airport revenue', aid: 'Allied support',
   fee_land: 'Landing fees', fee_pax: 'Passenger charges', fee_cargo: 'Cargo charges', fee_over: 'Overflight fees', oneoff: 'Aid, bonds and grants',
-  loanIn: 'Loans taken', upApt: 'Airport upkeep', upStaff: 'Staff', upAD: 'Air defence upkeep', upAir: 'Air force upkeep', upG: 'Army upkeep',
+  loanIn: 'Loans taken', upApt: 'Airport upkeep', upStaff: 'Staff', upAD: 'Air defence upkeep', upAir: 'Air force upkeep',
   loan: 'Loan repayments and interest', loanOut: 'Loans paid off early', other: 'Construction, orders and research'
 };
 function closeBooks(S) {
