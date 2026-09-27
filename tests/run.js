@@ -800,7 +800,7 @@ test('money: a warning comes before the money runs out', () => {
   }
   assert(warned >= 0, 'no warning');
   assert(empty < 0 || empty - warned > 1800, `warned only ${U.dur(empty - warned)} before the money ran out`);
-});
+}, true);
 
 /* ---------- modes ---------- */
 test('damage: a weapon landing on a city block damages that block, not the one across the street', () => {

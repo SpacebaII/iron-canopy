@@ -616,7 +616,7 @@ IC.money = function (S) {
   const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
   const inH = I.reduce((s, l) => s + l.v, 0), outH = O.reduce((s, l) => s + l.v, 0), net = inH - outH;
   const left = net < 0 ? S.budget / -net : Infinity;
-  const forecast = net >= 0 ? `Growing by about ${U.money(net * 24)} a day at this rate.` : S.budget <= 0 ? 'The treasury is empty.' : `Money runs out in about ${U.dur(left * 3600)} at this rate.`;
+  const forecast = net >= 0 ? `Growing by about ${U.money(net * 24)} a day at this rate.` : S.budget <= 0 ? 'The treasury is empty.' : `Money runs out in about ${left > 48 ? `${Math.round(left / 24)} days` : U.dur(left * 3600)} at this rate.`;
   return { inc: I, out: O, inH, outH, net, left, forecast };
 };
 const n = (a, one, many) => `${a} ${a === 1 ? one : many || one + 's'}`;

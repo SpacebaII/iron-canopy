@@ -494,7 +494,7 @@ function whyNot(S, u, m, home, busy) {
   const name = IC.munWords(m.mun);
   if (busy) {
     const back = Math.min(...S.vehicles.filter(v => v.home === busy && !v.dead).map(v => truckBack(S, v)));
-    return `All ${busy.name}'s truck companies are out. The first is back in about ${U.dur(back)}.`;
+    return `All ${busy.name}'s truck companies are out. The first is back in about ${U.dur(back)}. More companies, a depot nearer, or a helicopter (H) is quicker.`;
   }
   if (!home) return 'No depot. Place a depot, or the Central Depot is lost.';
   const coming = S.jobs.filter(j => j.state === 'active' && j.mun === m.mun && (j.kind === 'buy' || j.kind === 'restock' || j.kind === 'import') && IC.serves(j.depot || j.to, u.x, u.y));

@@ -32,8 +32,8 @@ for (let i = 0; i < hours * 3600 / 0.25 && !S.over; i++) {
   if (i % 400 === 0) {
     deployAll();
     for (const u of S.units) { if (u.d.weapon === 'sam' && u.emcon === 'off') u.emcon = 'ambush'; if ((u.type === 'shorad' || u.type === 'spaag' || u.type === 'gf') && u.emcon !== 'on') u.emcon = 'on'; if (Object.values(u.comp).some(v => v < 0.5) && !u.repairing) IC.repairUnit(S, u); }
-    if (S.budget > 350 && S.orders.length < IC.slots(S)) { const pick = U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'manpads', 'mr3d']); IC.order(S, pick); }
-    if (S.budget > 250) for (const f of fac) { if (f.queue.length < 2 && !f.offline) IC.orderProduction(S, f, U.pick(['SR', 'MR', 'SR', 'LR', 'IR']), 4); }
+    if (S.budget > 350) { const pick = U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'manpads', 'mr3d']); IC.order(S, pick); }
+    // stock: the Ministry keeps it (Keep stocked is on in Quick war)
     for (const id of ['a_pac3', 's_esm', 'a_remote', 'g_fort', 'l_rrr', 's_nctr', 'e_eccm', 'x_glcm', 'a_cram']) IC.startResearch(S, id);
     if (!did.cap) { did.cap = 1; IC.addTask(S, 'cap', { x: cap.x, y: cap.y }); IC.addTask(S, 'aew', { x: inward(mid(fA), 1400).x, y: inward(mid(fA), 1400).y }); }
     if (S.enemy.war && !did.war) { did.war = 1; S.airspace = 'restricted'; IC.setMobil(S, 1); IC.addTask(S, 'cap', { x: ab.x, y: ab.y }); }

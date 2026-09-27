@@ -55,6 +55,15 @@ IC.deliveryPlan = function (S, type, x, y) {
   for (const p of pts.length ? pts : [IC.cap(S)]) { const r = IC.route(p.x, p.y, x, y), t = IC.routeTime(p, r, vr, vo); if (!best || t < best.road) best = { from: p, road: t }; }
   return { fixed: false, from: best.from, load: IC.LOAD_T, road: best.road, setup: d.build, total: IC.LOAD_T + best.road + d.build };
 };
+/* buy one into the reserve without placing it (scripts and story use this) */
+IC.order = function (S, type) {
+  if (IC.buyBlock(S, type)) return false;
+  IC.pay(S, 'buyUnits', IC.unitCost(S, type));
+  S.reserve[type] = (S.reserve[type] || 0) + 1;
+  IC.log(S, 'info', 'ORDER', `${IC.UNITS[type].name} bought (${U.money(IC.unitCost(S, type))}): in the reserve, ready to place.`);
+  IC.emit(S, 'procure', type);
+  return true;
+};
 /* place a unit: from the reserve if there is one, bought otherwise */
 IC.deploy = function (S, type, x, y) {
   const d = IC.UNITS[type];
