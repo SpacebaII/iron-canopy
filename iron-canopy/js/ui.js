@@ -147,10 +147,11 @@ const ICON = {
   reference: '<path d="M4 19V5a2 2 0 0 1 2-2h14v14H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h14"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'
 };
+ICON.economy = '<path d="M4 20V11M10 20V6M16 20v-9M22 20H2M3 8l6-4 6 5 6-4"/>';
 ICON.aviation = '<path d="M3 20h18M6 20V9l6-4 6 4v11M10 20v-5h4v5M9 11h6"/>';
 ICON.staff = '<circle cx="12" cy="7" r="3.2"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M12 14l-1.5 4L12 21l1.5-3z"/>';
-ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['air', 'Air', 'A'], ['army', 'Army', 'G'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
-ui.roomOk = k => (k !== 'aviation' || !!S.av) && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
+ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['economy', 'Economy', 'E'], ['air', 'Air', 'A'], ['army', 'Army', 'G'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
+ui.roomOk = k => (k !== 'aviation' || !!S.av) && (k !== 'economy' || S.mode !== 'academy') && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
 function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
   const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research');
@@ -257,17 +258,34 @@ function modeHint() {
     hstrike: () => `Click an enemy brigade for ${m.r.name} to attack.`,
     defend: () => `Click a town for ${m.g.name} to defend.`,
     sector: () => `Click a sector of the front for ${m.g.name}.`,
-    build: () => m.part === 'taxi' ? `Taxiway: click points; each end snaps to runways, aprons and other taxiways. ${m.pts && m.pts.length >= 2 ? 'Right-click or Enter to build. ' : ''}Backspace undoes a point, Esc cancels.`
-      : m.part === 'runway' ? 'Runway: click one end, then the other. Longer runways take bigger aircraft.'
-      : IC.APART[m.part].area ? `${IC.APART[m.part].name}: click one corner, then the opposite corner. R rotates. Right-click or Esc to stop.`
-      : `${IC.APART[m.part].name}: click to place. R rotates. Keep clicking to place more; right-click or Esc to stop.`,
+    build: () => buildHint(m),
+    bmove: () => `Click where the ${IC.APART[m.part.kind].name.toLowerCase()} should go. R turns it. Esc to cancel.`,
     bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
     airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
     field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
     zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
-    found: () => `Click a flat site in ${S.world.names.H} for a new airport (${U.money(IC.FOUND_COST)}). Not inside a city, and at least 25 km from another airport.`
+    road: () => `${IC.ROADS[m.cls].name}: click points on the map; the first and last join the nearest road. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
+    found: () => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
+      : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
   }[m.kind]();
+}
+/* the builder: how to use the tool, and what the plan under the cursor will do */
+function buildHint(m) {
+  const t = m.part, n = m.pts.length, D = IC.APART[t], T = IC.BTOOLS[t];
+  const again = 'click the last point again (or Enter) to build';
+  const how = t === 'taxi' ? `Taxiway: click points; ends snap to runways, aprons and taxiways. ${n >= 2 ? again[0].toUpperCase() + again.slice(1) + '.' : ''} Corners are ${m.fillet ? 'rounded (F: sharp)' : 'sharp (F: rounded)'}.`
+    : t === 'runway' ? (n < 2 ? 'Runway: click one end, then the other.' : `Runway: click the far end again (or Enter) to build; click elsewhere to move it.`)
+    : t === 'concourse' ? (n < 2 ? 'Concourse: click one end of the pier, then the other.' : 'Concourse: click the far end again (or Enter) to build.')
+    : t === 'parallel' ? (n ? 'Move out from the runway to set the distance; click again to build.' : T.desc)
+    : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
+    : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
+    : t === 'stand' ? T.desc
+    : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
+    : `${D.name}: click to place, click the same spot again to build. R turns it.`;
+  const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z)) : null;
+  const info = plan ? (plan.ok ? plan.text : [plan.why].concat(plan.text)).filter(Boolean).join(' · ') : '';
+  return `${how} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
 }
 const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);
 ui.covTxt = covTxt;

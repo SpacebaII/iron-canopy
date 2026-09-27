@@ -411,9 +411,10 @@ IC.economy = function (S, dt) {
   }
   for (const t of S.world.foreign) if (t.taken) tax += 3;
   tax *= mob.tax;
+  let trade = IC.tradeTax(S) * mob.tax;
   let aidRate = S.support * 0.12, base = 25;
   // in the story the budget grows with the job: a civil aviation authority, then a defence command
-  if (S.story) { const k = [0, 0, 0, 0.25, 1][S.story.act] || 0; base = S.story.grant; tax *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
+  if (S.story) { const k = [0, 0, 0, 0.25, 1][S.story.act] || 0; base = S.story.grant; tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
   let upAD = 0;
   const bands = {};
   for (const u of S.units) { const b = IC.BAND[u.type]; if (b && u.radarOn) bands[b] = (bands[b] || 0) + 1; }
@@ -421,14 +422,18 @@ IC.economy = function (S, dt) {
   for (const u of S.units) { const b = IC.BAND[u.type]; upAD += u.d.up * (b && bands[b] > 1 ? 1 + 0.15 * (bands[b] - 1) : 1); }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;
   let upG = 0; for (const g of S.gunits) if (g.side === 'us' && (!S.story || S.story.act >= 4)) upG += g.g.cost * 0.004;
-  const upApt = S.av ? IC.avUpkeep(S) : 0, upStaff = S.story ? IC.staffCost(S) : 0;
-  const up = (upAD + upAir + upG) * mob.up + upApt + upStaff;
-  S.income = base + tax + apt + aidRate + IC.avRevenueRate(S); S.upkeep = up;
-  S.ledger = { base, tax, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upG: upG * mob.up, upApt, upStaff };
+  const upApt = S.av ? IC.avUpkeep(S) : 0, upStaff = S.story ? IC.staffCost(S) : 0, upLoan = IC.loanRate(S);
+  const up = (upAD + upAir + upG) * mob.up + upApt + upStaff + upLoan;
+  S.income = base + tax + trade + apt + aidRate + IC.avRevenueRate(S); S.upkeep = up;
+  const L = S.ledger = { base, tax, trade, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upG: upG * mob.up, upApt, upStaff, loan: upLoan };
   S.budget += (S.income - IC.avRevenueRate(S) - S.upkeep) * dt / 3600;
+  // the weekly statement books each line as it is paid (airline fees are booked where they are paid)
+  for (const k of ['base', 'tax', 'trade', 'apt', 'aid']) IC.econBook(S, k, L[k] * dt / 3600);
+  for (const k of ['upAD', 'upAir', 'upG', 'upApt', 'upStaff', 'loan']) IC.econBook(S, k, -L[k] * dt / 3600);
   for (const c of IC.cities(S)) {
     c.morale = U.clamp(c.morale + mob.morale * dt / 3600, 0, 100);
-    c.prosp = Math.min(1, c.prosp + 0.01 * dt / 3600);
+    // prosperity follows connections (growth.js); without that model it just recovers
+    if (!S.econ) c.prosp = Math.min(1, c.prosp + 0.01 * dt / 3600);
   }
   // plants, power stations and bridges are repaired round the clock
   for (const i of S.infra) {

@@ -12,6 +12,11 @@ function lbl(g, txt, x, y, px, col, size, align, weight) {
   g.fillStyle = col; g.fillText(txt, x, y);
   g.textAlign = 'left';
 }
+/* pavement by material: fresh asphalt is near black, concrete lighter, grass is grass */
+const PAVE_COL = { grass: 'rgb(86,110,62)', asph: 'rgb(38,40,42)', conc: 'rgb(70,72,70)', rconc: 'rgb(82,86,88)' };
+const PAVE_COL2 = { grass: 'rgb(96,120,70)', asph: 'rgb(50,52,54)', conc: 'rgb(84,86,84)', rconc: 'rgb(96,100,102)' };
+const DIRT = 'rgba(122,94,62,0.9)', DIRT2 = 'rgba(96,74,50,0.9)', STAKE = 'rgba(242,180,65,0.95)';
+const paveCol = p => PAVE_COL[IC.paveOf(p)], paveCol2 = p => PAVE_COL2[IC.paveOf(p)];
 const ZONE_FILL = { civil: CONC, cargo: 'rgb(128,120,104)', light: 'rgb(112,122,128)', mil: 'rgb(104,112,96)' };
 const ROLE_COL = { arr: 'rgba(127,232,176,0.95)', dep: 'rgba(128,224,255,0.95)', mixed: 'rgba(236,236,226,0.95)' };
 const ROLE_TXT = { arr: 'ARR', dep: 'DEP', mixed: 'ARR/DEP' };
@@ -141,8 +146,13 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     if (z > 5 && m.holding) lbl(g, m.holding === 'runway' ? 'HOLD' : 'WAIT', m.x, m.y - 12 * px, px, IC.C.amber, 8, 'center', 700);
     if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
   }
-  // construction and repairs
+  // construction: crews and machines on site, lorries on the road in
+  if (z > 0.25) drawConvoys(g, S, ap, px, z);
+  // only jobs a crew is on: the rest of the queue is just its outline
+  for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
+  // repairs
   for (const w of ap.works) {
+    if (w.stages) continue;
     const at = w.part && w.part.x != null ? w.part : w.it && w.it.crater ? IC.rwAt(w.it.part, w.it.crater.t) : w.part && w.part.kind === 'taxi' ? ap.nodes[w.part.nodes[Math.floor(w.part.nodes.length / 2)]] : w.it && w.it.part && w.it.part.x != null ? w.it.part : ap;
     if (!at) continue;
     g.strokeStyle = IC.C.amber; g.lineWidth = 2 * px; g.beginPath(); g.arc(at.x, at.y, 9 * px, -Math.PI / 2, -Math.PI / 2 + w.prog * 6.283); g.stroke();
@@ -187,11 +197,9 @@ function fieldBox(ap) {
 function drawArea(g, p, fill, px, part) {
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w, h = p.h;
-  if (!part.built) {
-    g.strokeStyle = 'rgba(242,180,65,0.9)'; g.setLineDash([4 * px, 3 * px]); g.lineWidth = 1.2 * px; g.strokeRect(-w / 2, -h / 2, w, h); g.setLineDash([]);
-    g.fillStyle = 'rgba(242,180,65,0.14)'; g.fillRect(-w / 2, -h / 2, w * (part.prog || 0), h);
-  } else {
-    g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
+  if (!part.built) stageRect(g, part, w, h, px, paveCol2(part));
+  else {
+    g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; g.fillRect(-w / 2, -h / 2, w, h);
     if (IC.cam.z > 9) { g.strokeStyle = 'rgba(0,0,0,0.08)'; g.lineWidth = 0.004; g.beginPath(); for (let x = -w / 2; x < w / 2; x += 0.075) { g.moveTo(x, -h / 2); g.lineTo(x, h / 2); } for (let y = -h / 2; y < h / 2; y += 0.075) { g.moveTo(-w / 2, y); g.lineTo(w / 2, y); } g.stroke(); }
   }
   g.restore();
@@ -206,14 +214,10 @@ function drawTaxi(g, ap, p, px, z, full, marks, night) {
   const pts = p.nodes.map(id => ap.nodes[id]).filter(Boolean);
   if (pts.length < 2) return;
   g.lineCap = 'round'; g.lineJoin = 'round';
-  if (!p.built) {
-    g.strokeStyle = 'rgba(242,180,65,0.85)'; g.setLineDash([5 * px, 4 * px]); g.lineWidth = Math.max(p.w, 1.5 * px);
-    g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const q of pts.slice(1)) g.lineTo(q.x, q.y); g.stroke(); g.setLineDash([]);
-    g.lineCap = 'butt'; return;
-  }
-  g.strokeStyle = ASPH2; g.lineWidth = Math.max(p.w + 0.08, 1.2 * px);
+  if (!p.built) { stageLine(g, pts, p.w, p, px); g.lineCap = 'butt'; g.lineJoin = 'miter'; return; }
+  g.strokeStyle = paveCol2(p); g.lineWidth = Math.max(p.w + 0.08, 1.2 * px);
   g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const q of pts.slice(1)) g.lineTo(q.x, q.y); g.stroke();
-  g.strokeStyle = ASPH; g.lineWidth = Math.max(p.w, 1 * px); g.stroke();
+  g.strokeStyle = p.shut ? 'rgb(90,80,60)' : paveCol(p); g.lineWidth = Math.max(p.w, 1 * px); g.stroke();
   if (marks) { g.strokeStyle = YEL; g.lineWidth = Math.max(0.015, 0.9 * px); g.stroke(); }
   g.lineCap = 'butt'; g.lineJoin = 'miter';
   if (marks) for (let i = 1; i < pts.length; i++) {
@@ -252,14 +256,12 @@ function crater(g, x, y, r, px) {
 function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
   const L = IC.rwLen(rw), d = IC.rwDir(rw), c = IC.rwAt(rw, 0.5), a = Math.atan2(d.y, d.x);
   g.save(); g.translate(c.x, c.y); g.rotate(a);
-  if (!rw.built) {
-    g.strokeStyle = 'rgba(242,180,65,0.9)'; g.setLineDash([5 * px, 4 * px]); g.lineWidth = 1.4 * px; g.strokeRect(-L / 2, -rw.w / 2, L, rw.w); g.setLineDash([]);
-    g.fillStyle = 'rgba(242,180,65,0.18)'; g.fillRect(-L / 2, -rw.w / 2, L * (rw.prog || 0), rw.w);
-    g.restore(); return;
-  }
+  if (!rw.built) { stageRect(g, rw, L, Math.max(rw.w, 2 * px), px, paveCol(rw), true); g.restore(); return; }
   const W = Math.max(rw.w, 2 * px);
   g.fillStyle = 'rgba(90,94,88,0.9)'; g.fillRect(-L / 2 - 0.3, -W / 2 - 0.08, L + 0.6, W + 0.16);
-  g.fillStyle = ASPH; g.fillRect(-L / 2, -W / 2, L, W);
+  g.fillStyle = paveCol(rw); g.fillRect(-L / 2, -W / 2, L, W);
+  // worn pavement: patches and cracks where heavy aircraft have broken it up
+  if (rw.wear > 0.2 && z > 1.5) { g.fillStyle = 'rgba(20,18,16,0.55)'; const n = Math.round(rw.wear * 40); for (let i = 0; i < n; i++) { const hx = (U.hash(i, 7) - 0.5) * L * 0.9, hy = (U.hash(7, i) - 0.5) * W * 0.8; g.fillRect(hx, hy, 0.25 + U.hash(i, i) * 0.4, 0.04 + U.hash(i, 3) * 0.08); } }
   if (marks) {
     g.fillStyle = PAINT;
     // edge stripes
@@ -280,7 +282,14 @@ function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
       if (m) for (const [e, num] of [[-1, m[1]], [1, m[2]]]) { g.save(); g.translate(e * (L / 2 - 0.62), 0); g.rotate(e > 0 ? -Math.PI / 2 : Math.PI / 2); g.font = '700 0.16px "IBM Plex Mono", monospace'; g.textAlign = 'center'; g.fillStyle = PAINT; g.fillText(num, 0, 0.06); g.restore(); }
     }
   } else if (z > 0.8) { g.fillStyle = 'rgba(236,236,226,0.35)'; g.fillRect(-L / 2 + 0.5, -Math.max(0.01, 0.4 * px), L - 1, Math.max(0.02, 0.8 * px)); }
+  // closed for works or worn out: yellow crosses on the runway, as pilots see them
+  if (rw.shut || rw.wear >= 1) {
+    g.strokeStyle = 'rgba(242,200,60,0.95)'; g.lineWidth = Math.max(W * 0.12, 1.5 * px);
+    const k = Math.max(W * 0.45, 5 * px);
+    for (const x of [-L / 2 + 2, 0, L / 2 - 2]) { g.beginPath(); g.moveTo(x - k, -k); g.lineTo(x + k, k); g.moveTo(x + k, -k); g.lineTo(x - k, k); g.stroke(); }
+  }
   g.restore();
+  if ((rw.shut || rw.wear >= 1) && z < 6) lbl(g, rw.wear >= 1 ? 'CLOSED: WORN OUT' : 'CLOSED: WORKS', c.x, c.y - 10 * px, px, IC.C.amber, 8.5, 'center', 700);
   for (const cr of rw.craters) { const p = IC.rwAt(rw, cr.t); crater(g, p.x, p.y, cr.r, px); }
   if (rw.craters.length && z < 3) { const p = IC.rwAt(rw, rw.craters[0].t); g.strokeStyle = IC.C.hostile; g.lineWidth = 2 * px; g.beginPath(); g.arc(p.x, p.y, 7 * px, 0, 7); g.stroke(); }
 }
@@ -293,6 +302,8 @@ function drawStand(g, s, px, z, marks, fine) {
   g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w);
   g.strokeStyle = YEL; g.lineWidth = Math.max(0.01, 0.8 * px);
   g.beginPath(); g.moveTo(-S0.d / 2 - 0.08, 0); g.lineTo(S0.d * 0.35, 0); g.stroke();
+  // a jet bridge from the terminal to the front door
+  if (s.contact) { g.fillStyle = 'rgba(176,180,186,0.95)'; g.fillRect(S0.d * 0.22, -S0.w * 0.2 - 0.012, S0.d * 0.3, 0.024); g.fillRect(S0.d * 0.22 - 0.02, -S0.w * 0.2 - 0.02, 0.04, 0.04); }
   g.fillStyle = YEL; g.fillRect(S0.d * 0.35, -0.04, 0.012, 0.08);
   if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
   g.restore();
@@ -303,11 +314,8 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   const hp = p.hp / p.max, dead = hp <= 0.25;
   if (!p.built) {
     g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
-    g.strokeStyle = 'rgba(242,180,65,0.9)'; g.setLineDash([4 * px, 3 * px]); g.lineWidth = 1.2 * px;
-    if (p.r) { g.beginPath(); g.arc(0, 0, p.r, 0, 7); g.stroke(); } else g.strokeRect(-p.w / 2, -p.h / 2, p.w, p.h);
-    g.setLineDash([]);
-    g.fillStyle = 'rgba(242,180,65,0.2)';
-    if (p.r) { g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, p.r, -Math.PI / 2, -Math.PI / 2 + 6.283 * (p.prog || 0)); g.fill(); } else g.fillRect(-p.w / 2, -p.h / 2, p.w * (p.prog || 0), p.h);
+    const w = p.w || p.r * 2, h = p.h || p.r * 2;
+    stageRect(g, p, w, h, px, 'rgb(150,150,146)', false, true);
     g.restore();
     return;
   }
@@ -426,51 +434,160 @@ function drawParked(g, S, ap, px, z, light) {
   }
 }
 
+/* ---------- construction you can watch ---------- */
+/* a part under construction in local coordinates (centred, rotated): survey stakes, bare earth, paving or the
+   structure rising from one end, then the finished surface waiting for its markings */
+const STAGE_I = { demo: 0, survey: 1, earth: 2, pave: 3, fit: 4, open: 5 };
+function stageRect(g, part, w, h, px, fill, runway, building) {
+  const k = STAGE_I[part.stage || 'survey'], f = part.stageF || 0;
+  if (k >= 2) { g.fillStyle = DIRT; g.fillRect(-w / 2, -h / 2, w, h); }
+  if (k === 2) { g.fillStyle = DIRT2; for (let x = -w / 2; x < w / 2 * (2 * f - 1) + 1e-6; x += Math.max(0.08, 3 * px)) g.fillRect(x, -h / 2, Math.max(0.03, 1.2 * px), h); }
+  if (k === 3) { g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w * f, h); if (building) { g.strokeStyle = 'rgba(60,60,60,0.8)'; g.lineWidth = Math.max(0.01, px); for (let x = -w / 2; x < -w / 2 + w * f; x += Math.max(0.1, 4 * px)) { g.beginPath(); g.moveTo(x, -h / 2); g.lineTo(x, h / 2); g.stroke(); } } }
+  if (k >= 4) { g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h); if (runway && k === 4) { g.fillStyle = PAINT; g.fillRect(-w / 2, -0.005, w * f, 0.01); } }
+  if (k <= 1) { g.fillStyle = k === 0 ? 'rgba(160,110,90,0.35)' : 'rgba(242,180,65,0.1)'; g.fillRect(-w / 2, -h / 2, w, h); }
+  // the outline stays dashed until it opens
+  g.strokeStyle = STAKE; g.setLineDash([4 * px, 3 * px]); g.lineWidth = 1.2 * px; g.strokeRect(-w / 2, -h / 2, w, h); g.setLineDash([]);
+  if (k <= 1) { g.fillStyle = STAKE; const st = Math.max(0.3, 14 * px); for (let x = -w / 2; x <= w / 2 + 1e-6; x += st) for (const y of [-h / 2, h / 2]) g.fillRect(x - 1 * px, y - 1 * px, 2 * px, 2 * px); }
+}
+function stageLine(g, pts, w, part, px) {
+  const k = STAGE_I[part.stage || 'survey'], f = part.stageF || 0;
+  const path = (upto) => { let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); let left = L * upto; g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length && left > 0; i++) { const d = U.dist(pts[i - 1], pts[i]), t = Math.min(1, left / (d || 1)); g.lineTo(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t); left -= d; } };
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  if (k >= 2) { g.strokeStyle = DIRT; g.lineWidth = Math.max(w + 0.1, 1.5 * px); path(1); g.stroke(); }
+  if (k === 3) { g.strokeStyle = paveCol(part); g.lineWidth = Math.max(w, 1.2 * px); path(f); g.stroke(); }
+  if (k >= 4) { g.strokeStyle = paveCol(part); g.lineWidth = Math.max(w, 1.2 * px); path(1); g.stroke(); }
+  if (k <= 1 || k >= 4) { g.strokeStyle = STAKE; g.setLineDash([5 * px, 4 * px]); g.lineWidth = Math.max(k <= 1 ? w : 0.01, 1.5 * px); g.globalAlpha = k <= 1 ? 0.6 : 0.8; path(1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1; }
+}
+/* where on a part the work is happening now: the front of the paving, or somewhere along it */
+function workAt(ap, p, f) {
+  if (p.kind === 'runway') return IC.rwAt(p, f);
+  if (p.kind === 'taxi') { const pts = p.nodes.map(id => ap.nodes[id]).filter(Boolean); let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); let left = L * f; for (let i = 1; i < pts.length; i++) { const d = U.dist(pts[i - 1], pts[i]); if (left <= d) return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * left / (d || 1), y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * left / (d || 1), h: Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x) }; left -= d; } return pts[pts.length - 1]; }
+  const w = p.w || 0.3; return IC.rectWorld(p, -w / 2 + w * f, 0);
+}
+const MACHINE = { demo: ['#c8a040', '#6a6a6a'], survey: ['#f0f0f0'], earth: ['#e8b820', '#e8b820', '#d0d0d0'], pave: ['#303030', '#e8b820', '#d0d0d0'], fit: ['#f0f0f0', '#e07b1a'], open: ['#f0f0f0'] };
+/* an engineer crew: machines at the working front, moving while they work, parked while they wait */
+function drawCrew(g, S, ap, w, px, now) {
+  const p = w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
+  const busy = !w.wait, cols = MACHINE[st.k] || MACHINE.fit;
+  // a stalled site: the machines stand idle at the front, marked amber
+  if (!busy && !(w.si > 0 || w.t > 0)) return;
+  const front = st.k === 'pave' || st.k === 'demo' ? f : 0.5 + 0.4 * Math.sin(now * 0.3 + p.x);
+  const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
+  const mw = Math.max(0.1, 5 * px), mh = mw * 0.55;
+  cols.forEach((c, i) => {
+    const jig = busy ? Math.sin(now * 1.7 + i * 2.1) * 0.08 : 0, off = (i - (cols.length - 1) / 2) * mw * 1.6;
+    const x = at.x + Math.cos(h) * (jig - i * mw * 0.6) - Math.sin(h) * off, y = at.y + Math.sin(h) * (jig - i * mw * 0.6) + Math.cos(h) * off;
+    g.save(); g.translate(x, y); g.rotate(h); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw / 2 + 0.01, -mh / 2 + 0.01, mw, mh); g.fillStyle = c; g.fillRect(-mw / 2, -mh / 2, mw, mh); g.restore();
+  });
+  if (busy && st.k === 'earth' && Math.random() < 0.15) IC.part(S, { x: at.x + U.rand(-0.1, 0.1), y: at.y + U.rand(-0.1, 0.1), vy: -2, life: 1.4, size: 2.5, grow: 4, col: '170,140,100', a: 0.35 });
+  if (w.wait) { g.fillStyle = IC.C.amber; g.beginPath(); g.arc(at.x, at.y - 9 * px, 3 * px, 0, 7); g.fill(); if (IC.cam.z > 30) lbl(g, w.wait.split(':')[0].toUpperCase(), at.x, at.y - 15 * px, px, IC.C.amber, 7.5, 'center', 700); }
+  else if (IC.cam.z > 14) lbl(g, st.name.toUpperCase(), at.x, at.y - 10 * px, px, 'rgba(236,236,226,0.8)', 7.5, 'center', 700);
+}
+/* material lorries on their way in from the supplier, on the last stretch of road */
+function drawConvoys(g, S, ap, px, z) {
+  const sp = ap.supply; if (!sp || !sp.route || !ap.convoys || !ap.convoys.length) return;
+  const pts = [{ x: sp.x, y: sp.y }].concat(sp.route);
+  if (!sp.cum) { sp.cum = [0]; for (let i = 1; i < pts.length; i++) sp.cum.push(sp.cum[i - 1] + U.dist(pts[i - 1], pts[i])); }
+  const L = sp.cum[sp.cum.length - 1];
+  const at = d => { let i = 1; while (i < pts.length - 1 && sp.cum[i] < d) i++; const a = pts[i - 1], b = pts[i], t = U.clamp((d - sp.cum[i - 1]) / ((sp.cum[i] - sp.cum[i - 1]) || 1), 0, 1); return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: Math.atan2(b.y - a.y, b.x - a.x) }; };
+  const s = Math.max(0.06, 2.4 * px), gap = Math.max(0.4, 7 * px);
+  for (const c of ap.convoys) {
+    const f = U.clamp((S.time - c.t0) / Math.max(1, c.arr - c.t0), 0, 1);
+    for (let i = 0; i < Math.min(c.n, 8); i++) {
+      const q = at(Math.max(0, f * L - i * gap));
+      g.save(); g.translate(q.x, q.y); g.rotate(q.h); g.fillStyle = 'rgba(230,180,60,0.95)'; g.fillRect(-s, -s * 0.4, s * 2, s * 0.8); g.fillStyle = 'rgba(60,60,60,0.9)'; g.fillRect(s * 0.6, -s * 0.4, s * 0.5, s * 0.8); g.restore();
+    }
+    if (z < 2) { const q = at(f * L); lbl(g, `${Math.round(Object.values(c.loads).reduce((a, b) => a + b, 0))} loads`, q.x, q.y - 9 * px, px, 'rgba(230,180,60,0.9)', 7.5, 'center', 600); }
+  }
+}
+
 /* ---------- the builder: what is about to be placed ---------- */
+let ghostKey = '', ghostPlan = null;
 IC.drawBuildGhost = function (g, S, px) {
   const m = S.mode2, hv = S.hover;
-  if (!m || m.kind !== 'build' || !hv) return;
-  const ap = m.ap, D = IC.APART[m.part];
-  const tol = Math.max(0.12, 8 * px);
-  const snap = IC.aptSnap(ap, hv, tol);
-  const col = 'rgba(111,210,255,0.9)';
-  g.lineWidth = 1.5 * px;
-  // snap marker
-  const mark = s => { g.strokeStyle = s.kind === 'free' ? 'rgba(200,210,220,0.7)' : s.kind === 'rwy' ? 'rgba(255,240,200,0.95)' : IC.C.ok; g.beginPath(); g.arc(s.x, s.y, 5 * px, 0, 7); g.stroke(); };
-  if (m.part === 'taxi' || m.part === 'runway') {
-    const pts = (m.pts || []).concat([snap]);
-    g.strokeStyle = col; g.lineCap = 'round'; g.lineWidth = Math.max(D.w, 2 * px); g.globalAlpha = 0.6;
-    g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
-    for (const p of pts) mark(p);
-    let len = 0; for (let i = 1; i < pts.length; i++) len += U.dist(pts[i - 1], pts[i]);
-    if (pts.length > 1) {
-      const txt = `${U.km(len)} · ${U.money(D.cost * len)}${m.part === 'runway' ? ' · ' + runwayFits(len) : ''}`;
-      lbl(g, txt, snap.x, snap.y - 12 * px, px, IC.C.text, 9.5, 'center', 600);
+  if (!m || !hv) return;
+  if (m.kind === 'found') { drawFoundGhost(g, S, m, hv, px); return; }
+  if (m.kind === 'bmove') { const p = m.part, ok = IC.aptCanPlace(S, m.ap, Object.assign({}, p, { x: hv.x, y: hv.y, a: m.rot })); g.save(); g.translate(hv.x, hv.y); g.rotate(m.rot); g.strokeStyle = ok ? 'rgba(111,210,255,0.9)' : IC.C.hostile; g.lineWidth = 1.5 * px; const w = p.w || p.r * 2, h = p.h || p.r * 2; g.strokeRect(-w / 2, -h / 2, w, h); g.restore(); return; }
+  if (m.kind !== 'build') return;
+  const ap = m.ap, tol = Math.max(0.12, 8 * px);
+  // the plan is worked out again only when the cursor or the plan changes
+  const key = `${m.part}|${hv.x.toFixed(2)},${hv.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}`;
+  if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol); }
+  const plan = ghostPlan, ok = plan.ok;
+  const col = ok ? 'rgba(111,210,255,0.9)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(111,210,255,0.2)' : 'rgba(255,91,79,0.2)';
+  // homes that would come down
+  for (const b of plan.blocks || []) { g.save(); g.translate(b.x, b.y); g.rotate(b.a || 0); g.strokeStyle = IC.C.hostile; g.lineWidth = 1.4 * px; g.fillStyle = 'rgba(255,91,79,0.3)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); g.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h); g.restore(); }
+  // a runway that paving next to would close
+  if (plan.near) { const rw = plan.near, c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw); g.save(); g.translate(c.x, c.y); g.rotate(Math.atan2(d.y, d.x)); g.fillStyle = 'rgba(242,180,65,0.25)'; g.fillRect(-IC.rwLen(rw) / 2, -rw.w, IC.rwLen(rw), rw.w * 2); g.restore(); }
+  for (const sp of plan.specs) {
+    const D = IC.APART[sp.kind];
+    g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = 1.5 * px;
+    if (sp.kind === 'taxi' || sp.kind === 'runway') {
+      const pts = sp.kind === 'runway' ? [sp.a, sp.b] : sp.pts;
+      g.lineCap = sp.kind === 'runway' ? 'butt' : 'round'; g.lineJoin = 'round'; g.globalAlpha = 0.55;
+      g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(200,220,235,0.9)' : 'rgba(111,210,255,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(D.w, 2 * px);
+      g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
+      g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1 * px); g.setLineDash([5 * px, 4 * px]); g.stroke(); g.setLineDash([]);
+    } else {
+      const w = sp.w || D.w || (D.r || 0.1) * 2, h = sp.h || D.h || (D.r || 0.1) * 2;
+      g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0);
+      if (D.r) { g.beginPath(); g.arc(0, 0, D.r, 0, 7); g.fill(); g.stroke(); } else { g.fillRect(-w / 2, -h / 2, w, h); g.strokeRect(-w / 2, -h / 2, w, h); }
+      // the stands the apron will get
+      if (sp.kind === 'apron' && !sp.ramp) { const dep = h * 0.64, sz = dep >= IC.STAND.l.d ? 'l' : dep >= IC.STAND.m.d ? 'm' : dep >= IC.STAND.s.d ? 's' : null; if (sz) { const S0 = IC.STAND[sz]; g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.005, 0.6 * px); for (let i = 0; i < Math.floor(w / S0.w); i++) { const x = -w / 2 + S0.w * i; g.strokeRect(x, -h / 2, S0.w, S0.d); g.strokeRect(x, h / 2 - S0.d, S0.w, S0.d); } } }
+      g.restore();
     }
-    if (snap.kind !== 'free') lbl(g, { node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron' }[snap.kind], snap.x, snap.y + 16 * px, px, IC.C.ok, 8.5, 'center', 600);
+  }
+  // a ramp stand
+  if (plan.stand) { const st = plan.stand, S0 = IC.STAND[st.size], c = IC.rectWorld(st.ramp, st.lx, st.ly); g.save(); g.translate(c.x, c.y); g.rotate(st.ramp.a); g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = 1.5 * px; g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore(); }
+  // the points placed so far; the last one pulses: click it again to build
+  const pts = m.pts, now = performance.now() / 1000;
+  pts.forEach((p, i) => {
+    const last = i === pts.length - 1;
+    g.strokeStyle = last ? IC.C.ok : 'rgba(236,236,226,0.9)'; g.lineWidth = 1.5 * px;
+    g.beginPath(); g.arc(p.x, p.y, (last ? 6 + 2 * Math.sin(now * 6) : 4) * px, 0, 7); g.stroke();
+  });
+  // the snap target
+  const sn = plan.snap;
+  if (sn) {
+    const c2 = sn.kind === 'free' ? 'rgba(200,210,220,0.8)' : sn.kind === 'rwy' ? 'rgba(255,240,200,0.95)' : IC.C.ok;
+    g.strokeStyle = c2; g.lineWidth = 1.5 * px; g.beginPath();
+    if (sn.kind === 'free') { g.moveTo(sn.x - 5 * px, sn.y); g.lineTo(sn.x + 5 * px, sn.y); g.moveTo(sn.x, sn.y - 5 * px); g.lineTo(sn.x, sn.y + 5 * px); } else g.arc(sn.x, sn.y, 5 * px, 0, 7);
+    g.stroke();
+    const tag = { node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: 'corner' }[sn.kind] || (sn.ang != null ? `${(sn.ang + 360) % 180}° to the runway` : '');
+    if (tag) lbl(g, tag, sn.x, sn.y + 16 * px, px, sn.kind === 'free' ? IC.C.muted : IC.C.ok, 8.5, 'center', 600);
+  }
+  // cost and what it does, beside the cursor
+  const lines = ok ? plan.text.slice(0, 3) : [plan.why].concat(plan.text.slice(0, 1));
+  const at = hv;
+  lines.forEach((t, i) => lbl(g, t, at.x + 18 * px, at.y - 40 * px + i * 13 * px, px, i === 0 ? (ok ? IC.C.text : IC.C.hostile) : 'rgba(210,225,235,0.85)', i === 0 ? 10 : 9, 'left', i === 0 ? 700 : 500));
+  const need = IC.bldIsLine(m.part) || IC.bldIsArea(m.part) ? 2 : 1;
+  if (ok && pts.length >= need && m.part !== 'stand') { const q = m.part === 'parallel' ? hv : pts[pts.length - 1]; lbl(g, 'click again to build', q.x, q.y + 28 * px, px, IC.C.ok, 8.5, 'center', 700); }
+};
+/* founding: the site, the runway turned by the cursor, the noise footprint and what the survey found */
+function drawFoundGhost(g, S, m, hv, px) {
+  if (!m.site) {
+    const why = IC.foundCheck(S, hv.x, hv.y);
+    g.strokeStyle = why ? IC.C.hostile : 'rgba(111,210,255,0.9)'; g.lineWidth = 1.5 * px; g.beginPath(); g.arc(hv.x, hv.y, 15, 0, 7); g.stroke();
+    lbl(g, why || 'click to survey this site', hv.x, hv.y - 18 - 8 * px, px, why ? IC.C.hostile : IC.C.text, 9.5, 'center', 600);
     return;
   }
-  // areas and buildings
-  const a = m.rot != null ? m.rot : ap.rwyA || 0;
-  let w = D.w || (D.r || 0.1) * 2, h = D.h || (D.r || 0.1) * 2;
-  if (D.area) { if (m.drag) { const l = IC.rectLocal({ x: m.drag.x, y: m.drag.y, a }, hv); w = Math.max(0.3, Math.abs(l.x)); h = Math.max(0.3, Math.abs(l.y)); } else { w = m.w || 1.5; h = m.h || 0.95; } }
-  const c = m.drag && D.area ? IC.rectWorld({ x: m.drag.x, y: m.drag.y, a }, (IC.rectLocal({ x: m.drag.x, y: m.drag.y, a }, hv).x) / 2, (IC.rectLocal({ x: m.drag.x, y: m.drag.y, a }, hv).y) / 2) : hv;
-  const part = { kind: m.part, x: c.x, y: c.y, a, w, h, r: D.r };
-  const ok = IC.aptCanPlace(S, ap, part);
-  g.save(); g.translate(c.x, c.y); g.rotate(a);
-  g.strokeStyle = ok ? col : IC.C.hostile; g.fillStyle = ok ? 'rgba(111,210,255,0.18)' : 'rgba(255,91,79,0.2)';
-  if (D.r) { g.beginPath(); g.arc(0, 0, D.r, 0, 7); g.fill(); g.stroke(); } else { g.fillRect(-w / 2, -h / 2, w, h); g.strokeRect(-w / 2, -h / 2, w, h); }
+  const a = IC.foundAngle(m.site, hv), sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
+  // the noise footprint under the approach and departure paths
+  g.save(); g.translate(m.site.x, m.site.y); g.rotate(a);
+  g.fillStyle = sv.homes ? 'rgba(255,150,80,0.12)' : 'rgba(111,210,255,0.08)'; g.strokeStyle = sv.homes ? 'rgba(255,150,80,0.6)' : 'rgba(111,210,255,0.5)'; g.lineWidth = 1.2 * px;
+  g.beginPath(); const E = 15 + 80;
+  g.moveTo(-E, -15); g.lineTo(-60, -6); g.lineTo(60, -6); g.lineTo(E, -15); g.lineTo(E, 15); g.lineTo(60, 6); g.lineTo(-60, 6); g.lineTo(-E, 15); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = 'rgba(210,215,220,0.95)'; g.fillRect(-15, -0.6, 30, 1.2);
   g.restore();
-  const meas = D.area ? w * h : 1;
-  let extra = '';
-  if (m.part === 'apron') { const dep = h * 0.64; const sz = dep >= 0.8 ? 'large' : dep >= 0.5 ? 'medium' : dep >= 0.36 ? 'small' : null; const S0 = sz ? IC.STAND[sz[0]] : null; extra = sz ? ` · ${Math.floor(w / S0.w)} ${sz} stands` : ' · too shallow for stands'; }
-  if (m.part === 'terminal') extra = ` · ${Math.round(D.pax * w * h).toLocaleString('en-US')} pax/h`;
-  if (m.part === 'fuel') { const near = ap.parts.filter(p => p.kind === 'fuel' && U.dist(p, c) < 1.4).length; if (near) extra = ` · ${near} tank${near > 1 ? 's' : ''} within 140 m`; }
-  lbl(g, `${D.name} · ${U.money(D.cost * meas)}${extra}`, c.x, c.y - Math.max(h, D.r || 0) / 2 - 10 * px, px, ok ? IC.C.text : IC.C.hostile, 9.5, 'center', 600);
-};
-function runwayFits(len) {
-  const t = Object.entries(IC.ACTYPES).filter(([k, T]) => !T.mil && T.rwy <= len).map(([k, T]) => T.short);
-  return t.length ? 'fits ' + t.join(', ') : 'too short for airliners';
+  // the prevailing wind
+  const wa = IC.PREVAIL, wx = m.site.x + Math.cos(wa) * 40, wy = m.site.y + Math.sin(wa) * 40;
+  g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(m.site.x + Math.cos(wa) * 20, m.site.y + Math.sin(wa) * 20); g.stroke();
+  lbl(g, 'prevailing wind', wx, wy - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
+  // the runway's name at each end; the full survey is in the hint below
+  const ends = sv.name.split('/');
+  lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
+  lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
+  if (sv.homes) lbl(g, `noise over ${sv.homes} city blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);
 }
 
 })(window.IC);

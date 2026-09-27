@@ -19,6 +19,7 @@ IC.step = function (S, dt) {
   IC.ground(S, dt);
   IC.logistics(S, dt);
   IC.economy(S, dt);
+  IC.growth(S, dt);
   IC.civil(S, dt);
   IC.traffic(S, dt);
   IC.aviation(S, dt);

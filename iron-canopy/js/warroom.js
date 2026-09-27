@@ -13,7 +13,7 @@ IC.renderRoom = function (st, tab) {
   S = st;
   ui.setHTML($('wrTabs'), ui.ROOMS.filter(([k]) => ui.roomOk(k)).map(([k, n, key]) => `<button data-act="room" data-v="${k}" aria-pressed="${tab === k}">${n}${key ? `<kbd>${key}</kbd>` : ''}</button>`).join(''));
   $('wrRun').textContent = S.paused ? 'Paused' : `Running at ${S.skip ? 'skip' : S.speed + '×'} · Space pauses`;
-  const f = { aviation, staff, air, army, logi, industry, intel, research, journal, reference, settings }[tab];
+  const f = { aviation, staff, economy, air, army, logi, industry, intel, research, journal, reference, settings }[tab];
   ui.setHTML($('wrBody'), f ? f() : '');
 };
 
@@ -212,6 +212,45 @@ function industry() {
     <div class="card"><h3>Cities and industry<em>national industry ${U.pct(IC.industry(S))}</em></h3><table class="t"><tr><th>City</th><th class="r">Pop</th><th class="r">Ind</th><th class="r">Intact</th><th>Status</th></tr>${cities}</table></div>`;
 }
 
+/* ---------- the economy: the weekly statement, loans, passengers, growth, trade and roads ---------- */
+function economy() {
+  const E = S.econ; if (!E) return '<div class="card wide"><p class="hint">No economy in this mode.</p></div>';
+  const wk = IC.weekStatement(S, 0), last = IC.weekStatement(S, 1);
+  const val = v => `<td class="r ${v >= 0 ? 'ok' : 'hostile'}">${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}</td>`;
+  const keys = [...new Set((wk ? wk.lines : []).concat(last ? last.lines : []).map(l => l.k))];
+  const get = (st, k) => { const l = st && st.lines.find(x => x.k === k); return l ? l.v : 0; };
+  const rows = keys.sort((a, b) => get(wk, b) - get(wk, a)).map(k => `<tr><td>${esc(IC.STATEMENT[k] || k)}</td>${val(get(wk, k))}${last ? val(get(last, k)) : ''}</tr>`).join('');
+  const stmt = `<div class="card wide"><h3>Weekly statement<em>${U.money(S.budget)} in the treasury</em></h3>
+    ${wk ? `<table class="t"><tr><th>${wk.days >= 7 ? `Week ${wk.week}` : wk.days === 1 ? `Day ${wk.from} (week ${wk.week})` : `Days ${wk.from}–${wk.from + wk.days - 1} (week ${wk.week})`}</th><th class="r">This week</th>${last ? '<th class="r">Last week</th>' : ''}</tr>${rows}
+      <tr><td><b>Income</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Spending</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}
+    <p class="hint">Airline fees rise with passengers, and passengers with the cities your airports serve. Taxes follow each city's size and prosperity${S.story && S.story.act < 3 ? '; in this job they go to the Treasury, not to your budget' : ''}.</p></div>`;
+  // loans
+  const owed = IC.loanOwed(S), lim = IC.loanLimit(S);
+  const offers = IC.LOANS.map((o, i) => { const pay = (o.amt / o.days + o.amt * IC.LOAN_RATE) * 1; return `<div class="li"><b>Borrow ${U.money(o.amt)}</b><small>over ${o.days} days · about ${U.money(pay)} a day at first</small><span class="la"><button class="btn sm" data-act="loan" data-v="${i}" ${owed + o.amt > lim ? 'disabled' : ''}>Borrow</button></span></div>`; }).join('');
+  const mine = E.loans.map(l => `<div class="li"><b>${U.money(l.amt)} loan</b><small>${U.money(l.left)} still owed · ${U.money(IC.loanPay(l) * 24)} a day</small><span class="la"><button class="btn sm" data-act="repayLoan" data-id="${l.id}" ${S.budget < l.left ? 'disabled' : ''}>Pay off</button></span></div>`).join('');
+  const loans = `<div class="card"><h3>Loans<em>${U.money(owed)} owed of ${U.money(lim)} the banks allow</em></h3>${mine ? `<div class="list">${mine}</div>` : ''}<div class="list">${offers}</div>
+    <p class="hint">For big projects: a new runway, a motorway. Repayments and ${(IC.LOAN_RATE * 100).toFixed(1)}% interest a day come out of the budget every hour. The limit grows with last week's income.</p></div>`;
+  // passengers at each airport
+  const apts = S.infra.filter(i => i.kind === 'airport' && i.svc).map(ap => { const v = ap.svc; return `<tr class="click" data-act="selInfra" data-id="${ap.id}"><td>${esc(ap.name.replace(/ (International|Airport)$/, ''))}</td><td class="r">${Math.round(v.demand).toLocaleString('en-US')}</td><td class="r">${Math.round(v.seats).toLocaleString('en-US')}</td><td class="r ${v.lf > 0.9 ? 'amber' : ''}">${U.pct(v.lf)}</td><td class="r">${Math.round(v.deps)}</td><td class="r">${v.dests.size}</td><td class="r" title="frequency · choice of places · punctuality · fares">${U.pct(v.freqF)} · ${U.pct(v.destF)} · ${U.pct(v.relF)} · ${U.pct(v.fareF)}</td></tr>`; }).join('');
+  const pax = `<div class="card wide"><h3>Passengers<em>a day, from the cities each airport serves</em></h3><table class="t"><tr><th>Airport</th><th class="r">Want to fly</th><th class="r">Seats</th><th class="r">Full</th><th class="r">Departures</th><th class="r">Places</th><th class="r">Frequency · choice · punctuality · fares</th></tr>${apts}</table>
+    <p class="hint">People fly when flights are frequent, go to many places, leave on time and cost little. When seats run full, airlines ask for more routes; when they fly half empty, they lose interest.</p></div>`;
+  // cities
+  const cities = IC.cities(S).filter(c => c.air).sort((a, b) => b.pop - a.pop).map(c => { const g = c.gr ? c.gr.tot : 0; const cut = c.cuts && c.cuts.length; return `<tr class="click" data-act="selInfra" data-id="${c.id}"><td>${esc(c.name)}</td><td class="r">${c.pop}k</td><td class="r ${g > 0.05 ? 'ok' : g < -0.05 ? 'hostile' : ''}">${Math.abs(g) < 0.005 ? '' : g > 0 ? '+' : '−'}${Math.abs(g).toFixed(2)}%</td><td class="r">${U.pct(c.air.score)}</td><td class="r">${Math.round(c.air.demand).toLocaleString('en-US')}</td><td class="r ${cut ? 'hostile' : ''}">${U.pct(c.rc / Math.max(1, c.rc0))}${cut ? ' · cut' : ''}</td></tr>`; }).join('');
+  const growth = `<div class="card wide"><h3>Cities<em>growth a day</em></h3><table class="t"><tr><th>City</th><th class="r">Pop</th><th class="r">Growth</th><th class="r">Air service</th><th class="r">Flyers a day</th><th class="r">Road links</th></tr>${cities}</table>
+    <p class="hint">Click a city for the reasons. A new airport or road within reach of a city that has none is the biggest lift you can give it.</p></div>`;
+  // industry
+  const inds = E.inds.map(i => `<div class="li"><b>${esc(i.name)} <span class="muted">· ${esc(IC.INDUSTRY[i.kind].goods)}</span></b><small>${U.money(i.out * 24)} a day of ${U.money(i.cap * 24)} it could sell · ${IC.indWhy(S, i).map(esc).join(' ')}</small></div>`).join('');
+  const trade = `<div class="card"><h3>Industry and trade<em>trade taxes ${U.money(IC.tradeTax(S))}/h</em></h3><div class="list">${inds}</div>
+    <p class="hint">Remote industries sell more with a fast road to a city and an airport with cargo flights (freighters, or the holds of wide-bodies) within ${IC.GROWTH.indCatch} h. A cargo terminal helps.</p></div>`;
+  // roads
+  const build = Object.entries(IC.ROADS).map(([k, R]) => `<button class="act" data-act="roadMode" data-v="${k}" aria-pressed="${!!(S.mode2 && S.mode2.kind === 'road' && S.mode2.cls === k)}" title="${U.money(R.perKm)} a km on flat ground, ${U.money(R.bridge)} a bridge, about ${R.kmh} km built an hour">${esc(R.name)} · ${U.money(R.perKm)}/km</button>`).join('');
+  const works = E.works.map(w => `<div class="li"><b>${esc(w.name)}</b><small>${esc(w.stage)} · ${U.pct(w.prog)} · open in ${U.dur((1 - w.prog) * w.hours * 3600)} · ${w.km.toFixed(1)} km, ${U.money(w.cost)}</small></div>`).join('');
+  const cuts = S.world.edges.filter(e => e.cut).map(e => `<div class="li"><b class="hostile">${esc(e.cutName)}</b><small>reopens in about ${U.dur(Math.max(0, (0.6 - e.cond) / (e.cls === 'hw' ? 0.1 : 0.14)) * 3600)}</small></div>`).join('');
+  const roads = `<div class="card"><h3>Roads<em>${E.works.length} under construction</em></h3><div class="acts">${build}</div>${works ? `<div class="list">${works}</div>` : ''}${cuts ? `<div class="list">${cuts}</div>` : ''}
+    <p class="hint">Click points on the map; the ends join the nearest road or junction. Hills mean cuttings, rivers bridges. A new road shortens trips between the places it joins: more trade and growth, faster convoys. A crater closes a road until engineers fill it.</p></div>`;
+  return stmt + pax + growth + loans + roads + trade;
+}
+
 /* ---------- intelligence ---------- */
 function intel() {
   const E = S.enemy;
@@ -266,6 +305,8 @@ function reference() {
     ['Crew fatigue', 'Radars that radiate for hours while raids come in wear their crews out: slower reactions, slower reloads, more misses. Stand some down while others cover.'],
     ['The enemy commander', 'It probes with small raids to find gaps, harasses to keep us awake and burning interceptors, then throws a heavy strike with everything timed to arrive together. It remembers which routes cost it.'],
     ['Airports are built part by part', 'Runways, taxiways, aprons, terminals, hangars, shelters, fuel tanks, tower, fire station and radar are separate parts at real size. Aircraft taxi along the network you build: a runway with no exit near where aircraft stop blocks it for minutes, a runway with no taxiway to its ends makes every departure backtrack, and a single taxiway carries traffic one way at a time. The airport panel lists what is wrong.'],
+    ['Building takes time, money and materials', 'Engineers build in stages: survey, earthworks, paving, markings and lights, then the opening. Each stage is paid as it runs, and paving uses concrete, asphalt and steel that lorries bring from the nearest town with industry: when the site runs out, work stops and the panel says why. Paving next to a runway closes it, unless you set the job to night work. Homes in the way are bought and cleared; their town will not thank you.'],
+    ['Pavement', 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.'],
     ['Damage lands where it lands', 'A crater splits a runway into shorter strips; landing needs a strip long enough. A cut taxiway strands whatever is behind it. Burning fuel tanks set fire to tanks close by: spread them out. Aircraft in a hardened shelter usually survive; aircraft on an open stand usually do not.'],
     ['Airlines', 'Each airline wants different things: low fees, short taxi times, night slots, big terminals. Happy airlines ask for new routes; unhappy ones cut them. Prohibited zones keep airliners away from what matters, at the cost of longer flights.'],
     ['Radio and routes', 'Every airliner flies a filed route. One that leaves it flashes on the map: call it on the radio. A real airliner answers and turns back; something pretending to be one does not.'],
@@ -285,7 +326,7 @@ function settings() {
       <div class="acts"><button class="act ${S.cfg.slowmo ? 'on' : ''}" data-act="cfg" data-v="slowmo">Slow motion on big moments: ${S.cfg.slowmo ? 'on' : 'off'}</button><button class="act ${S.cfg.shake ? 'on' : ''}" data-act="cfg" data-v="shake">Screen shake: ${S.cfg.shake ? 'on' : 'off'}</button><button class="act ${S.cfg.bars ? 'on' : ''}" data-act="cfg" data-v="bars">Cinematic bars: ${S.cfg.bars ? 'on' : 'off'}</button><button class="act ${ui.pauseRoom ? 'on' : ''}" data-act="pauseRoom">Pause while a war room is open: ${ui.pauseRoom ? 'on' : 'off'}</button></div></div>
     <div class="card"><h3>Auto-pause<em>the game pauses itself when…</em></h3><div class="acts">${t('ballistic', 'Ballistic launch')}${t('lost', 'Unit or aircraft lost')}${t('base', 'Air base hit')}${t('capture', 'Town captured')}${t('raid', 'Major raid detected')}${t('city', 'City hit')}${t('launch', 'Weapons released (peacetime)')}${t('event', 'A decision is needed')}</div><p class="hint">Skip ahead (S) always stops on these, and when new hostile or suspect tracks appear.</p></div>
     <div class="card"><h3>Sound</h3><div class="slider"><span class="muted">Volume</span><input type="range" min="0" max="100" step="5" value="${Math.round(IC.sfx.vol * 100)}" data-act="vol" aria-label="Volume"><span class="num">${Math.round(IC.sfx.vol * 100)}%</span></div><div class="acts"><button class="act" data-act="mute">${IC.sfx.muted || !IC.sfx.on ? 'Unmute' : 'Mute'}</button></div></div>
-    <div class="card"><h3>Controls</h3>${kv([['Pan / zoom', 'drag · wheel · arrows · +/−'], ['Select / order', 'click · right-click'], ['Box select', 'shift + drag'], ['Pause · speed · skip', 'Space · 1–6 · S'], ['War rooms', 'V aviation · T staff · A G L I N K J · Esc'], ['Airport builder', 'click points · right-click or Enter to finish · R rotate · Backspace undo'], ['Units', 'E emissions · W rules · Q doctrine · M move · H resupply · P repair · X reserve · F fire'], ['Tracks', 'V intercept · B best battery'], ['Brigades', 'Y hold · D dig · R attack · T defend · U reserve · O refit · C commander']])}</div>
+    <div class="card"><h3>Controls</h3>${kv([['Pan / zoom', 'drag · wheel · arrows · +/−'], ['Select / order', 'click · right-click'], ['Box select', 'shift + drag'], ['Pause · speed · skip', 'Space · 1–6 · S'], ['War rooms', 'V aviation · T staff · A G L I N K J · Esc'], ['Airport builder', 'click points · click the last one again or Enter to build · right-click takes a point back · R turn · F round corners · Ctrl+Z undo'], ['Units', 'E emissions · W rules · Q doctrine · M move · H resupply · P repair · X reserve · F fire'], ['Tracks', 'V intercept · B best battery'], ['Brigades', 'Y hold · D dig · R attack · T defend · U reserve · O refit · C commander']])}</div>
     <div class="card"><h3>Game</h3><div class="acts"><button class="act warn" data-act="restart">Quit to menu</button></div></div>`;
 }
 

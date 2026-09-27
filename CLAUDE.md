@@ -38,15 +38,17 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | --- | --- |
 | `core.js` | Constants, seeded RNG, helpers (`IC.U`), the event bus `IC.on(fn)` / `IC.emit(S, type, data)` |
 | `data.js`, `aviation-data.js` | Units, munitions, threats, aircraft types (`IC.ACTYPES`), airport parts (`IC.APART`), airline archetypes, radar bands |
-| `gen.js`, `world.js`, `terrain.js` | World generation (countries, rivers, cities with streets and blocks, villages, the road network by class, railways, airways), routing, the terrain canvas and detail tiles |
+| `gen.js`, `world.js`, `terrain.js` | World generation (countries, rivers, cities with streets and blocks, villages, the road network by class, railways, airways), routing (`IC.roadsChanged`, travel times `IC.travelFrom`), the `IC.worldChanged(S, box)` hook, the terrain canvas and detail tiles |
 | `state.js` | `IC.newGame`, the state object `S`, damage (`IC.detonate`), effects |
 | `sensors.js`, `threats.js`, `defense.js`, `units.js`, `enemy.js` | Radars and identification, enemy weapons, our air defence, procurement, the enemy commander |
 | `airport.js` | Airports as parts: runways (names, dependent groups), taxiway nodes and graph (`IC.aptGraph`; heap Dijkstra `IC.aptSearch`, cached trees `IC.aptTree`, `IC.aptPath`), zones (`IC.partZone`, `IC.standZoneOk`), stands, stats and warnings (`IC.aptStats`), damage by location (`IC.aptHit`), engineering works, the editor (`IC.aptSnap`, `aptPlanTaxi`, `aptPlanPart`), starting layouts (`IC.layoutAirport`, including the six-runway `'kden'`), founding airports |
+| `builder.js` | Building airports: pavement materials (`IC.PAVE`, strength against `IC.MTOW`, wear, crater size), construction in stages paid as they run (`IC.bldPreview`, `IC.bldAdvance`), materials trucked from industry (`IC.bldSupply`, site stock `ap.mat`), clearing homes (`IC.bldClearance`, `IC.worldChanged`), works that close a runway, the builder's tools and plan preview (`IC.bldPlanOf`: parallel taxiway, rapid exits, concourse, remote apron, open ramps and stands, fillets), the controls (`IC.buildInput`, `IC.bldUndo`, `IC.bldMove`) and founding with a site survey (`IC.foundSurvey`, `IC.foundInput`) |
 | `groundops.js` | Aircraft moving on the ground: the wind's runway configuration (`IC.aptConfig`), runway clearances, taxi route reservations, hold-short, crossings, line-up, take-off roll, final approach, landing roll, exits, parking; crash risk and accidents (`IC.gopsRisk`); military launches and landings go through it too |
 | `aviation.js` | Airlines, routes and aircraft ("tails"), fees, satisfaction, route requests, prohibited zones, radio calls |
 | `civil.js` | Other air traffic: overflights, light aircraft; sirens and morale |
 | `traffic.js` | Road and rail traffic: flows per road by class, city size and hour; cars and lorries placed only where drawn; buses, coaches, trains |
 | `airspace.js` | Fixes and airways the player draws, routing over them, radar cover by altitude (terrain and earth curve), controllers' spacing and separation (losses, near misses), control zones, light-aircraft fields and clubs |
+| `growth.js` | Growth, trade and roads: passenger demand per city and load factors per airport, remote industries and trade taxes, city growth (population, prosperity, new and emptied blocks), roads cut by weapons and repaired, roads the player builds, loans and the weekly statement |
 | `incidents.js` | Things that must not be missed: off-route airliners, intruders, weapons released |
 | `air.js`, `ground.js`, `logistics.js` | Our air wing, the ground war, depots, trucks, economy, research |
 | `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |
@@ -54,7 +56,7 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `render.js`, `render-airport.js` | The map, and airports and aircraft at real scale |
 | `ui.js`, `inspector.js`, `warroom.js`, `main.js` | Top bar and panels, the selection inspector, the full-screen rooms, input and the main loop |
 
-Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` (long diagnostic runs that print what happens), `tools/shot.js`, `devserver.py`.
+Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` / `econtest.js` (long diagnostic runs that print what happens; `econtest.js` is the economy balance run), `tools/shot.js`, `devserver.py`.
 
 ## How the airport model works
 
@@ -76,11 +78,23 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 - Radar and hills: every ground radar, civil or military, uses the terrain profile in `airspace.js` (`IC.aspHidden`, `IC.radarFloor`); the coverage layer shows military cover in blue with the holes behind hills.
 - Traffic (`traffic.js`): each road has a load (class, nearby population, hour, war, alerts, blown bridges) and a phase advanced every step. Vehicles are not simulated: `IC.trafficVisible` places them in slots riding the phase, only for the view being drawn. Close in (z ≥ 1.3) `render.js` draws the network live at real width; tiles carry streets and lanes.
 
+## How growth, trade and roads work
+
+- Travel times are per place, not per car: `IC.travelFrom` runs Dijkstra over `W.edges` at class speeds (motorway 100 km/h, main 75, local 55); a cut road (`edge.cut`, a crater) or a fallen bridge is six times slower. `S.econ.tt` holds trees from every city and industry with cuts, `S.econ.ti` without. `IC.roadsChanged(S)` re-plans convoy routing and marks these stale.
+- Demand: a city wants `pop × 28 × prosperity` flights a day (`IC.GROWTH`), times its air score: each airport within 2.5 h by road counts for its quality (frequency, places served, delays over the last day, fares). Airports' load factors (`ap.svc.lf`) fill the seats in `aviation.js`; airlines ask for routes where seats run full and not where they fly half empty.
+- Industries (`S.econ.inds`, at remote villages): sales = capacity × (a floor, a home market by road, exports by air cargo or lorry over a neutral border). Trade taxes are 15% of sales and follow the story's tax share.
+- Cities grow with their air score and road reach, shrink with war damage, drift down slowly with neither. Blocks follow population (`city.bpp` blocks per thousand): new ones fill the street grid next to built cells, pulled by roads, rail and airports, with streets on their open sides (`block.grown`); shrinking marks the outer ones `empty`. Every change calls `IC.worldChanged`.
+- Roads: a hit within reach of a road (`IC.roadHit`, from `IC.detonate`) lowers `edge.cond`; below 0.6 it is cut until engineers bring it back (about 10–15% an hour). Player roads are works in `W.roadWorks` (surveying, earthworks, paving) and open as new edges, splitting existing roads where they join; bridges they need become real bridges.
+- Money: every payment is booked (`IC.econBook`) into the day's book; `IC.weekStatement(S, 0 | 1)` sums this week or last week. Anything not booked (building, orders, research) shows as construction. Loans (`IC.LOANS`) repay over their term with 0.4% interest a day.
+
 ## Balance as it stands (change it deliberately)
 
-- Airport parts cost per 100 m (runway ₭15M, taxiway ₭4M), per hectare (apron ₭12M, terminal ₭40M) or each (hangar ₭60M, hardened shelter ₭120M, fuel tank ₭35M, landing system ₭25M, ground radar ₭60M, hydrant system ₭90M). Upkeep is 0.12% of cost per game hour.
+- Airport parts cost per 100 m (runway ₭15M, taxiway ₭4M), per hectare (apron ₭12M, terminal ₭40M) or each (hangar ₭60M, hardened shelter ₭120M, fuel tank ₭35M, landing system ₭25M, ground radar ₭60M, hydrant system ₭90M). Those are concrete prices: asphalt ×0.7 (carries 90 t), grass ×0.15 (6 t), reinforced concrete ×1.6 (600 t, craters about half the size). Upkeep is 0.12% of cost per game hour.
+- Construction: 10% of the cost must be in hand to start; the rest is paid stage by stage (survey 3%, earthworks 27%, paving 50%, markings and lights 20%). Paving needs about 10 lorry loads of concrete (8 of asphalt) a hectare; an industrial town delivers 20 + 1.5 × its industry loads an hour. Clearing a city block costs ₭6–40M in compensation and public support.
 - Runway separation: 480 s without a tower, 110 s with one, 60 s with an approach radar (half that after an arrival). Each tank's fuel trucks refuel 8 aircraft an hour; a hydrant system removes the limit and pipes in 900 fuel units an hour.
 - Landing fee is half the type's `fee`, passenger charge ₭0.0035M per passenger; both scale with the airport's charge level.
+- Roads cost per km on flat ground ₭2M (local), ₭5M (main), ₭15M (motorway), plus ₭15M/₭40M/₭100M a bridge; hills and forest add up to 170%. They build at 4/2/1 km a game hour.
+- A city grows up to 0.5% a day with perfect air service, 1.5% a day for each 100% better road reach than at the start, and drifts −0.08% a day with neither.
 - The Career starts with ₭220M and a ₭5M/h grant. Act I has lasted about half a game day when a player completes goals quickly; the owner wants it much longer and slower (see `docs/tasks/07-career-pacing.md`).
 
 ## Owner's preferences
