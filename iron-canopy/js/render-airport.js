@@ -138,12 +138,15 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   // the airport sits under the same night as everything else; its lights do not
   if (light < 1 && box) { g.save(); g.translate(box.x, box.y); g.rotate(box.a); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fillRect(-box.w / 2 - 0.05, -box.h / 2 - 0.05, box.w + 0.1, box.h + 0.1); g.restore(); }
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
+  // stop bars at the hold-short lines: red until the tower lets the aircraft on, then green lights lead it on
+  if (z > 2.5) drawStopBars(g, ap, px, z, light);
   // which way each runway is in use, and for what (above the night, it is information)
   if (z > 0.35) drawConfig(g, S, ap, px, z);
   if (z >= 0.5) for (const m of ap.moves) {
     if (m.dead) continue;
     if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
-    if (z > 5 && m.holding) lbl(g, m.holding === 'runway' ? 'HOLD' : 'WAIT', m.x, m.y - 12 * px, px, IC.C.amber, 8, 'center', 700);
+    // why it waits, in a few words: "holding: arrival 5 km out"
+    if (z > 5 && m.holding) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
     if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
   }
   // construction: crews and machines on site, lorries on the road in
@@ -161,6 +164,48 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (z < 3 && S.layers.labels) lbl(g, ap.name, ap.x, ap.y + Math.min(ap.radius, 60 * px) + 12 * px, px, IC.C.muted, 9.5);
 };
 
+/* stop bars: a row of red lights across the taxiway at every hold-short line; when an aircraft is cleared onto the
+   runway, the bar goes out and green lead-on lights show it the way to the centreline */
+function holdBars(ap) {
+  const G = IC.aptGraph(ap);
+  if (ap._bars && ap._barsV === G.ver) return ap._bars;
+  const out = [];
+  for (const [, L] of G.adj) for (const e of L) {
+    const B = G.N.get(e.to), A = G.N.get(e.from);
+    if (e.kind !== 'taxi' || !B || !B.rw || (A && A.rw) || e.len < IC.GOPS.HOLD + 0.1) continue;
+    const ux = (A.x - B.x) / e.len, uy = (A.y - B.y) / e.len, part = ap.parts.find(p => p.id === e.part);
+    out.push({ key: e.key, d: e.d, rw: B.rw, x: B.x + ux * IC.GOPS.HOLD, y: B.y + uy * IC.GOPS.HOLD, bx: B.x, by: B.y, ux, uy, w: part ? part.w : 0.23 });
+  }
+  ap._bars = out; ap._barsV = G.ver;
+  return out;
+}
+function drawStopBars(g, ap, px, z, light) {
+  const bars = holdBars(ap); if (!bars.length) return;
+  const on = new Map();
+  for (const m of ap.moves) if (!m.dead && m.edgeKey && m.phase === 'taxi') on.set(m.edgeKey, m);
+  const k = U.clamp((0.9 - light) / 0.5, 0.45, 1), G = IC.aptGraph(ap);
+  g.globalCompositeOperation = light < 0.55 ? 'lighter' : 'source-over';
+  const dot = (x, y, col, r) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, Math.max(r, 1 * px), 0, 7); g.fill(); };
+  for (const b of bars) {
+    const m = on.get(b.key), grp = G.grp[b.rw] || b.rw;
+    const cleared = m && m.locks && m.locks[grp], waiting = m && !cleared && m.holding === 'runway';
+    if (cleared) {
+      // lead-on lights, alternating green and yellow as they cross the runway's protected area
+      for (let s = 0; s <= IC.GOPS.HOLD; s += 0.15) dot(b.x - b.ux * s, b.y - b.uy * s, s < 0.3 ? `rgba(255,220,90,${0.9 * k})` : `rgba(80,255,140,${0.95 * k})`, 0.018);
+      continue;
+    }
+    if (z < 5 && !waiting) continue;
+    const n = 7, a = waiting ? 1 : 0.7;
+    for (let i = 0; i < n; i++) { const f = (i / (n - 1) - 0.5) * b.w * 1.1; dot(b.x - b.uy * f, b.y + b.ux * f, `rgba(255,50,40,${a * k})`, waiting ? 0.02 : 0.016); }
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+/* departures waiting for each runway: at the hold-short line, queued behind, or lined up on it */
+function depQueue(ap, rwId) {
+  const G = IC.aptGraph(ap), k = G.grp[rwId] || rwId; let n = 0;
+  for (const m of ap.moves) if (m.kind === 'dep' && m.plan && !m.dead && (G.grp[m.plan.rw.id] || m.plan.rw.id) === k && (m.holding || m.phase === 'hold' || m.phase === 'wait')) n++;
+  return n;
+}
 /* the runway configuration: an arrow at the threshold of each runway in use, green for arrivals, blue for departures */
 function drawConfig(g, S, ap, px, z) {
   const cfg = ap.cfg; if (!cfg) return;
@@ -173,7 +218,8 @@ function drawConfig(g, S, ap, px, z) {
     g.strokeStyle = col; g.fillStyle = col; g.lineWidth = Math.max(0.03, 2 * px);
     g.beginPath(); g.moveTo(bx, by); g.lineTo(tx, ty); g.stroke();
     g.beginPath(); g.moveTo(tx + ux * W * 0.2, ty + uy * W * 0.2); g.lineTo(tx - ux * W - uy * W * 0.6, ty - uy * W + ux * W * 0.6); g.lineTo(tx - ux * W + uy * W * 0.6, ty - uy * W - ux * W * 0.6); g.closePath(); g.fill();
-    if (z > 1) lbl(g, `${c.name} ${ROLE_TXT[c.role]}${c.ils && IC.needILS(S) ? ' ILS' : ''}`, bx - ux * 12 * px, by - uy * 12 * px + 3 * px, px, col, 8.5, 'center', 700);
+    const q = c.role !== 'arr' ? depQueue(ap, rw.id) : 0;
+    if (z > 1) lbl(g, `${c.name} ${ROLE_TXT[c.role]}${c.ils && IC.needILS(S) ? ' ILS' : ''}${q ? ` · ${q} waiting` : ''}`, bx - ux * 12 * px, by - uy * 12 * px + 3 * px, px, col, 8.5, 'center', 700);
   }
 }
 /* the rectangle, aligned with the main runway, that holds everything the airport has */
