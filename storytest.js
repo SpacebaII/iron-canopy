@@ -1,10 +1,10 @@
 /* The Career's balance run: a scripted player (careerplayer.js) through Act I. Prints when each chapter starts,
    what the player has every six hours, and the chapter lengths at the end.
-   node storytest.js [seed] [max game days]      QUIET=1 hides the log lines */
+   node storytest.js [seed] [max game days] [hours into Act II]      QUIET=1 hides the log lines */
 const IC = require('./headless.js');
 const { player } = require('./careerplayer.js');
 const U = IC.U;
-const seed = +process.argv[2] || 12345, days = +process.argv[3] || 6;
+const seed = +process.argv[2] || 12345, days = +process.argv[3] || 6, after = +process.argv[4] || 0;
 const quiet = process.env.QUIET;
 const S = IC.newGame({ seed, mode: 'story', hour: 7 }); IC.S = S;
 const st = S.story, t0 = S.time;
@@ -30,4 +30,10 @@ while (logs.length) console.log('      ' + logs.shift());
 console.log(`\nAct ${st.act} after ${el().toFixed(1)} game hours (${((Date.now() - wall) / 1000).toFixed(0)} s)${S.over ? ' · over: ' + S.over : ''}`);
 console.log('Chapter starts (game hours from the start):');
 const L = st.chLog.concat(st.act > 1 ? [{ ch: 6, t: st.actT }] : []);
+// a look at Act II's money with what Act I left behind
+if (st.act === 2 && after) {
+  const b0 = S.budget, t1 = S.time;
+  for (let step = 0; S.time - t1 < after * 3600 && !S.over; step++) { IC.step(S, 1); if (step % 60 === 0) player(S); }
+  console.log(`Act II after ${after} h: ${U.money(b0)} → ${U.money(S.budget)}, grant ${st.grant.toFixed(1)}/h, fees ${IC.avRevenueRate(S).toFixed(1)}/h, upkeep ${S.upkeep.toFixed(1)}/h, confidence ${st.standing.toFixed(0)}, goals ${st.goals.filter(g => g.done).length}/${st.goals.length}${S.over ? ', over: ' + S.over : ''}`);
+}
 L.forEach((c, i) => { const nx = L[i + 1]; console.log(`  ${c.ch < 6 ? `Chapter ${c.ch + 1} ${IC.CHAPTERS[c.ch].title}` : 'Act II'}`.padEnd(38) + `+${((c.t - t0) / 3600).toFixed(1)} h` + (nx ? `   lasted ${((nx.t - c.t) / 3600).toFixed(1)} h` : '')); });

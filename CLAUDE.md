@@ -27,10 +27,10 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 
 ## Units and time
 
-- 1 world unit = 100 m. The world is 12,000 × 9,000 units (1,200 × 900 km). Airports are drawn at real size: a 3.4 km runway is 34 units long and 0.45 wide.
+- 1 world unit = 100 m. The world is 18,000 × 13,500 units (1,800 × 1,350 km). Airports are drawn at real size: a 3.4 km runway is 34 units long and 0.45 wide.
 - Game seconds. `IC.GS = 10` game seconds per real second at 1×; speeds 1–32×, and skip (64×) stops when something needs the player.
 - Money is in ₭M (`U.money`). Distances `U.km`, durations `U.dur`.
-- The camera zoom `IC.cam.z` is screen pixels per world unit, from about 0.08 (whole map) to `IC.MAXZ` = 80 (aircraft at the gate). Anything drawn with a fixed world size must look right at both ends; effects scale with `WF` in `render.js`.
+- The camera zoom `IC.cam.z` is screen pixels per world unit, from about 0.05 (whole map) to `IC.MAXZ` = 80 (aircraft at the gate). Anything drawn with a fixed world size must look right at both ends; effects scale with `WF` in `render.js`.
 
 ## Map of the code (`iron-canopy/js/`)
 
@@ -48,18 +48,20 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `aviation.js` | Airlines, routes and aircraft ("tails"), fees, satisfaction, route requests, prohibited zones, radio calls |
 | `civil.js` | Other air traffic: overflights, light aircraft; sirens and morale |
 | `traffic.js` | Road and rail traffic: the drive graph (`IC.driveGraph`), trips by purpose assigned to routes, loads per link and direction by hour, vehicles in slots for the middle zoom, vehicles on their own trips close in (`IC.trafficAgents`); bus lines, coaches, trains |
-| `airspace.js` | Fixes and airways the player draws, routing over them, radar cover by altitude (terrain and earth curve), controllers' spacing and separation (losses, near misses), control zones, light-aircraft fields and clubs |
+| `airspace.js` | Fixes and airways the player draws, entry points (fixes within 25 km of the border: once there are any, traffic from abroad joins the airways only there), routing over them, radar cover by altitude (terrain and earth curve), controllers' workload (`IC.aspWork`), spacing and separation (losses, near misses), control zones, light-aircraft fields and clubs |
 | `growth.js` | Growth, trade and roads: passenger demand per city and load factors per airport, remote industries and trade taxes, city growth (population, prosperity, new and emptied blocks), roads cut by weapons and repaired, roads the player builds, loans and the weekly statement |
 | `incidents.js` | Things that must not be missed: off-route airliners, intruders, weapons released |
 | `air.js`, `ground.js` | Our air wing, the ground war |
 | `logistics.js` | Supply (depots, truck companies, convoys at road speed, stock bought by rail or imported, Keep stocked, why a unit waits: `IC.nextLoad`), the economy tick (income and running costs, `S.ledger`, low-money warnings), research |
-| `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |
+| `story.js`, `campaign.js`, `academy.js` | Career mode (acts; Act I's six chapters `IC.CHAPTERS` with their goals, openers and contracts; what is locked until the story reaches it, `IC.storyLock`; beats, event cards, delegates, confidence and dismissal), Quick war, the Academy lessons |
 | `sim.js` | One simulation step, in order |
 | `render.js`, `render-airport.js`, `render-roads.js`, `render-logistics.js` | The map; airports and aircraft at real scale; roads, bridges, streetlights, signals and traffic; convoys and supply lines |
 | `render-combat.js` | Unit and threat symbols (a shape by role, a glyph per type, `IC.drawUnitSymbol`, `IC.drawThreatSymbol`), our units and ranges, the known enemy, tracks, missiles and every combat effect: a pooled particle system that watches missiles and explosions frame to frame (`IC.cfx`) |
 | `ui.js`, `inspector.js`, `warroom.js`, `main.js` | Top bar and panels, the selection inspector, the full-screen rooms, input and the main loop |
 
-Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `tools/combat-shots.js` (combat scenes as frames, and frame timing with a raid in the air), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` / `econtest.js` (long diagnostic runs that print what happens; `econtest.js` is the economy balance run), `tools/shot.js`, `devserver.py`.
+Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `careerplayer.js` (a scripted Career player through Act I, used by the tests and balance runs), `tools/combat-shots.js` (combat scenes as frames, and frame timing with a raid in the air), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` / `econtest.js` (long diagnostic runs that print what happens; `storytest.js` is the Act I balance run and prints when each chapter starts, `econtest.js` the economy balance run), `tools/shot.js`, `devserver.py`.
+
+The Career starts with no airports (`IC.newGame({ mode: 'story' })`); tests that need the old three ready-made airports use `IC.newGame({ mode: 'story', preset: 'network' })`.
 
 ## How the airport model works
 
@@ -105,7 +107,9 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 - Roads cost per km on flat ground ₭2M (access road), ₭5M (link road), ₭15M (motorway link, plus ₭40M for its interchange), plus ₭15M/₭40M/₭100M a bridge; hills and forest add up to 170%. They build at 4/2/1 km a game hour.
 - A city grows up to 0.5% a day with perfect air service, 1.5% a day for each 100% better road reach than at the start, and drifts −0.08% a day with neither.
 - Supply: convoys 150/120/90/70 km/h on motorway/main/local/access roads (military, escorted), 35 km/h on tracks; load and unload 90 s; stock by rail at 200 km/h after 5 min loading; the Central Depot starts with six truck companies in Quick war.
-- The Career starts with ₭220M and a ₭5M/h grant. Act I has lasted about half a game day when a player completes goals quickly; the owner wants it much longer and slower (see `docs/tasks/07-career-pacing.md`).
+- The Career starts with ₭950M (`IC.CAREER_START`: the national airport, about ₭700M in concrete, and running money) and a ₭5M/h grant that follows the Minister's confidence (full at 60, half at 10) and is halved in Act I's last chapter. Confidence cannot fall below 5 before Act III; from Act III a full day at zero replaces you.
+- Act I chapters (game hours, minimum / fallback): the national airport (no timer), the capital's airport 12 / 36, the airspace 12 / 36, light aircraft 10 / 30, a second city 16 / 48, the economy 16 / 40. The scripted player reaches Act II after about 75–110 game hours.
+- Controllers handle 14 flights at once (+4 per approach radar); a flight on an airway counts 0.6, one outside radar 1.5 times. Overflights pay ₭0.5M on our airways, ₭0.25M off them.
 
 ## Owner's preferences
 

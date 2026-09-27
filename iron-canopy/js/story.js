@@ -96,7 +96,7 @@ IC.storyInit = function (S) {
     st.opened = true;
   }
   const cc = IC.cap(S);
-  S.camp.focus = { x: cc.x, y: cc.y, z: 0.35 };
+  S.camp.focus = { x: cc.x, y: cc.y, z: 0.5 };
   if (st.fresh) Object.assign(S.layers, { coverage: false, airways: false, rings: false });
   startAct(S, 1);
 };
@@ -197,7 +197,7 @@ function chapterGoals(S, ch) {
     g({ id: 'services', text: 'Build a fire station near the runway, and a fuel tank', check: () => !!(A() && A().st.fire) && built(A(), 'fuel'), prog: () => building(A(), 'fire') || building(A(), 'fuel'),
       how: 'Airliners may not use a runway without fire cover: put the Fire station close to the middle of the runway. Put a Fuel tank near the apron but away from the terminal: burning fuel spreads to anything close.' });
     g({ id: 'first', text: 'Welcome the first airliner', check: () => st.cnt.parked > 0, prog: () => st.opened ? 'the first flights are on their way' : 'airlines come when the airport can take them',
-      how: 'Building goes in stages and materials come by lorry: the Works tab shows each job and why it waits. Speed time up (keys 1–6) while you wait. When the airport can take a jet, the first airlines send their flights: zoom in to watch one land and taxi to its stand.' });
+      how: 'Building goes in stages and materials come by lorry: the Works tab shows each job and why it waits. One engineer crew works one job at a time; + Crew in the Works tab adds another. Speed time up (keys 1–6) while you wait. When the airport can take a jet, the first airlines send their flights: zoom in to watch one land and taxi to its stand.' });
   } else if (ch === 1) {
     g({ id: 'approve', text: 'Approve an airline’s route request (Aviation room)', check: () => st.cnt.approve >= 1,
       how: 'Airlines ask for routes in the Aviation room (V). Approve what the airport can take: each new route brings fees, and more aircraft on your stands and runway.' });
@@ -308,7 +308,7 @@ const OPEN = {
     const st = S.story, ap = capApt(S);
     const towns = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.pop >= 120 && !S.asp.fields.some(f => U.dist(f, c) < 300)).sort((a, b) => U.dist(a, ap) - U.dist(b, ap));
     const t = towns[0] || IC.cities(S).filter(c => !c.capital)[0];
-    const grant = U.pick([0, 0, 15, 25]);
+    const grant = U.pick([0, 0, 5, 8]);
     event(S, { title: `A field for ${t.name}`, who: `${t.name} town council`, text: `${t.name}’s flying club has lost its old strip to a housing estate. The council asks you to build a light-aircraft field within 15 km of the town in the next day${grant ? `, and offers ${U.money(grant)} towards it` : ', though it has no money to offer'}. A field costs ${U.money(IC.ASP.FIELD_COST)}.`,
       opts: [
         { t: 'Accept the contract', tip: `${grant ? `${U.money(grant)} now. ` : ''}Build it within 24 h: done well, Minister +3 and the clubs’ mood rises; late, Minister −6.`, fx: () => { st.contract = { town: t.id, grant, due: S.time + 24 * H }; if (grant) { S.budget += grant; IC.econBook(S, 'oneoff', grant); } startChapter(S, 3); } },
@@ -369,7 +369,7 @@ function chapterTick(S) {
 IC.storyChapterInfo = function (S) {
   const st = S.story; if (!st || st.act !== 1) return null;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / H;
-  return { n: st.ch, title: C.title, age, of: IC.CHAPTERS.length, next: st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? '' : doneCount(S) >= C.need ? (age >= C.min ? 'Something new is coming.' : `Something new comes in about ${U.dur((C.min - age) * H)}.`) : `${C.need - doneCount(S)} more goal${C.need - doneCount(S) > 1 ? 's' : ''} to move on (or ${U.dur(Math.max(0, C.max - age) * H)}).` };
+  return { n: st.ch, title: C.title, age, of: IC.CHAPTERS.length, next: st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? '' : doneCount(S) >= C.need ? (age >= C.min ? 'Something new is coming.' : `Something new comes in about ${U.dur((C.min - age) * H)}.`) : `${C.need - doneCount(S)} more goal${C.need - doneCount(S) > 1 ? 's' : ''} open${C.need - doneCount(S) > 1 ? '' : 's'} the next chapter. It comes anyway in ${U.dur(Math.max(0, C.max - age) * H)}.` };
 };
 /* the goals to show: at most two open ones, in order */
 IC.storyShown = function (S) {
@@ -384,13 +384,18 @@ const LOCKS = {
   airways: [2, 'The airway editor opens when the Minister asks you to design the airspace (Chapter 3).'],
   radar: [2, 'Civil radar comes with the airspace chapter (Chapter 3).'],
   coverage: [2, 'Radar cover comes with the airspace chapter (Chapter 3).'],
-  fields: [3, 'Light-aircraft fields come with Chapter 4.']
+  fields: [3, 'Light-aircraft fields come with Chapter 4.'],
+  zones: [9, 'Prohibited zones come with Act II, when there is something to keep airliners away from.']
 };
 IC.storyLock = function (S, key) {
   const st = S.story; if (!st || !st.fresh || st.act > 1) return '';
   if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) ? '' : st.ch < 4 ? 'A second airport comes later: the regions will ask for one (Chapter 5).' : '';
   const L = LOCKS[key]; return L && st.ch < L[0] ? L[1] : '';
 };
+/* military on the airport (hooks for a later task): from Act II an airport can be guarded by air defence placed
+   on or beside it; the airborne assault that tests it is not written yet */
+IC.aptGuardOk = S => !S.story || S.story.act >= 2;
+IC.aptGuard = (S, ap) => S.units.filter(u => !u.dead && u.state === 'ready' && (u.d.weapon === 'sam' || u.d.weapon === 'gun') && U.dist(u, ap) < (ap.radius || 50) + 60);
 /* map layers the story has reached: radar cover and airways with the airspace, supply and intelligence later */
 IC.layerAllowed = function (S, k) {
   const st = S.story; if (!st) return true;
@@ -882,7 +887,7 @@ IC.on((S, type, d) => {
       // before the airspace is the player's to design, a near miss is the controllers' old procedures failing: it
       // brings the question forward instead of costing confidence
       if (st.act === 1 && st.ch < 2) st.hurry = true;
-      else if (type === 'nearMiss') st.standing -= 3;
+      else if (type === 'nearMiss' && IC.tipOnce(S, 'nearMissConf', 3 * H)) st.standing -= 2;
       break;
     case 'overload': if (st.act === 1 && st.ch === 1) st.hurry = true; break;
     case 'infringement': st.cnt.infT.push(S.time); if (st.cnt.infT.length > 100) st.cnt.infT = st.cnt.infT.filter(t => S.time - t < 86400); break;
