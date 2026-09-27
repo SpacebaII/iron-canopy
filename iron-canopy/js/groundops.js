@@ -227,7 +227,7 @@ IC.opsNotes = function (S, ap, st, ops) {
   const shared = (st.rwy || []).filter(r => r.role === 'mixed');
   if (shared.length) {
     const R = IC.opsRules(ap, shared[0].id, ops), room = (R.gap * 10 - GO) / ARR_V;
-    const slow = [...new Set(types.filter(k => rollT(IC.ACTYPES[k]) + CREW + 8 > room).map(k => IC.opsKind(k)))];
+    const slow = [...new Set(types.filter(k => rollT(IC.ACTYPES[k]) + CREW > room).map(k => IC.opsKind(k)))];
     if (slow.length) out.push(`With a ${R.gap} km gap, ${slow.map(k => IC.OPS_KINDS.find(x => x[0] === k)[1].toLowerCase()).join(' and ')} are often still on the runway when the next arrival is 1 km out: expect go-arounds.`);
   }
   // only the kinds of civil aircraft that fly here count
