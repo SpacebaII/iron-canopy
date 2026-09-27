@@ -205,11 +205,11 @@ const can = (S, k) => !S.enemy.allow || S.enemy.allow.has(k);
 
 /* ---------- weapons: each returns the flight time so strikes can be timed to land together ---------- */
 const W = {
-  drones(S, E, obj, n, op, arriveAt, harass) {
-    const sites = S.esites.filter(s => s.kind === 'drone' && alive(s) && s.inv.owa >= 1);
+  drones(S, E, obj, n, op, arriveAt, harass, nat) {
+    const sites = S.esites.filter(s => s.kind === 'drone' && alive(s) && s.inv.owa >= 1 && (!nat || s.nat === nat));
     if (!sites.length) return 0;
     sites.sort((a, b) => U.dist(a, obj) - U.dist(b, obj));
-    const s = Math.random() < 0.7 ? sites[0] : U.pick(sites);
+    const s = nat || Math.random() < 0.7 ? sites[0] : U.pick(sites);
     n = Math.min(Math.floor(s.inv.owa), n);
     const nj = !harass && E.escal >= 1.5 ? Math.min(Math.floor(s.inv.jdr || 0), U.randi(0, 3)) : 0;
     s.inv.owa -= n; if (nj) s.inv.jdr -= nj;
@@ -883,7 +883,7 @@ IC.enemyForceOp = function (S, name, target, n) {
   const op = newOp(S, name, `${name} at ${obj ? obj.name : 'target'}`);
   let T = S.time + (n && n.T || 1200);
   if (n && n.T && (name === 'bal' || name === 'mrbm')) T = Math.max(T, S.time + balLead(S, obj, name === 'mrbm') + 120);
-  if (name === 'drones') W.drones(S, E, obj, n && n.n || n || 6, op, 0);
+  if (name === 'drones') W.drones(S, E, obj, n && n.n || n || 6, op, 0, false, n && n.nat);
   else if (name === 'cm') W.cm(S, E, obj, n && n.n || n || 3, op, n && n.T ? T : 0, n && n.nat);
   else if (name === 'bal') W.bal(S, E, obj, n && n.n || n || 2, op, n && n.T ? T : 0, false);
   else if (name === 'mrbm') W.bal(S, E, obj, n && n.n || n || 1, op, n && n.T ? T : 0, true);
