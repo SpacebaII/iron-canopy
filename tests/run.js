@@ -87,6 +87,80 @@ test('world: city streets end on another street or road', () => {
     for (const c of W.cities) for (const l of c.streets) assert(!l.deadEnd, `seed ${seed}: a street in ${c.name} ends in the middle of nowhere`);
   }
 });
+/* how round a city is: its main built-up area (blocks, with the streets between them closed up, the largest
+   connected piece) against the smallest circle round it. A disc of blocks scores about 0.8 */
+function enclosing(P) {
+  let c = { x: 0, y: 0, r: -1 };
+  const out = p => U.dxy(p.x, p.y, c.x, c.y) > c.r + 1e-7;
+  const two = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, r: U.dist(a, b) / 2 });
+  const three = (a, b, d) => {
+    const D = 2 * (a.x * (b.y - d.y) + b.x * (d.y - a.y) + d.x * (a.y - b.y)); if (Math.abs(D) < 1e-12) return two(a, b);
+    const A = a.x * a.x + a.y * a.y, B = b.x * b.x + b.y * b.y, C2 = d.x * d.x + d.y * d.y;
+    const x = (A * (b.y - d.y) + B * (d.y - a.y) + C2 * (a.y - b.y)) / D, y = (A * (d.x - b.x) + B * (a.x - d.x) + C2 * (b.x - a.x)) / D;
+    return { x, y, r: Math.hypot(a.x - x, a.y - y) };
+  };
+  for (let i = 0; i < P.length; i++) if (c.r < 0 || out(P[i])) {
+    c = { x: P[i].x, y: P[i].y, r: 0 };
+    for (let j = 0; j < i; j++) if (out(P[j])) { c = two(P[i], P[j]); for (let k = 0; k < j; k++) if (out(P[k])) c = three(P[i], P[j], P[k]); }
+  }
+  return c;
+}
+function roundness(blocks) {
+  const K = 100000, S = new Set();
+  for (const b of blocks) { const ca = Math.cos(b.a), sa = Math.sin(b.a); for (let u = -b.w / 2; u <= b.w / 2 + 1e-9; u += 0.5) for (let v = -b.h / 2; v <= b.h / 2 + 1e-9; v += 0.5) S.add(Math.floor(b.x + u * ca - v * sa) * K + Math.floor(b.y + u * sa + v * ca)); }
+  const F = new Set(S);
+  for (const k of S) for (const d of [K, 1, K + 1, K - 1]) if (!S.has(k + d) && S.has(k + 2 * d)) F.add(k + d);
+  const seen = new Set(); let best = [];
+  for (const k of F) {
+    if (seen.has(k)) continue;
+    const comp = [k]; seen.add(k);
+    for (let q = 0; q < comp.length; q++) for (const d of [K, -K, 1, -1, K + 1, K - 1, -K + 1, -K - 1]) { const m = comp[q] + d; if (F.has(m) && !seen.has(m)) { seen.add(m); comp.push(m); } }
+    if (comp.length > best.length) best = comp;
+  }
+  const pts = best.map(k => { const i = Math.round(k / K); return { x: i + 0.5, y: k - i * K + 0.5 }; });
+  for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(U.hash(i, 3) * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
+  return best.length / (Math.PI * (enclosing(pts).r + 0.7) ** 2);
+}
+test('world: cities are not round', () => {
+  // the measure itself: a disc of blocks on a grid scores high
+  const disc = [];
+  for (let i = -12; i <= 12; i++) for (let j = -12; j <= 12; j++) if (Math.hypot(i, j) < 12) disc.push({ x: i * 4.6, y: j * 4.6, w: 3.9, h: 3.9, a: 0 });
+  assert(roundness(disc) > 0.75, `the roundness measure gives a disc only ${roundness(disc).toFixed(2)}`);
+  let sum = 0, n = 0;
+  for (const seed of [4242, 7, 99]) {
+    const W = IC.generate(seed);
+    for (const c of W.cities) {
+      const r = roundness(c.blocks); sum += r; n++;
+      assert(r < 0.7, `seed ${seed}: ${c.name} is nearly round (${r.toFixed(2)})`);
+    }
+  }
+  assert(sum / n < 0.5, `cities are round on average (${(sum / n).toFixed(2)})`);
+});
+test('world: every map has cities of at least two styles, and districts in every city', () => {
+  for (const seed of [4242, 7, 99, 12345, 2024]) {
+    const W = IC.generate(seed), styles = new Set(W.cities.map(c => c.style));
+    assert(styles.size >= 2, `seed ${seed}: only ${[...styles].join(', ')} cities`);
+    assert(W.cities.some(c => c.style === 'eu') && W.cities.some(c => c.style === 'us'), `seed ${seed}: not both European and American cities`);
+    assert(W.foreign.filter(f => W.side[f.k] === 'hostile').every(f => f.style === 'east' && f.blocks.length), `seed ${seed}: the enemy's towns are not built to their own plan`);
+    for (const c of W.cities) {
+      assert(c.blocks.every(b => IC.DISTRICTS[b.d]), `seed ${seed}: a block in ${c.name} has no district`);
+      const m = c.mix; assert(m && Math.abs(Object.values(m).reduce((a, b) => a + b, 0) - 1) < 1e-6, `seed ${seed}: ${c.name} has no district mix`);
+      assert(m.sub + m.dense > 0.25 && m.ind + m.log + m.rail > 0.03, `seed ${seed}: ${c.name} lacks housing or industry`);
+    }
+  }
+});
+test('world: districts change what a city wants from its airport', () => {
+  const W = IC.generate(4242), cs = W.cities.filter(c => !c.capital);
+  const work = c => c.mix.ind + c.mix.log + c.mix.rail;
+  const ind = cs.slice().sort((a, b) => work(b) - work(a))[0], res = cs.slice().sort((a, b) => work(a) - work(b))[0];
+  const di = IC.cityDemand(ind), dr = IC.cityDemand(res);
+  assert(di.cargo > dr.cargo * 1.5, `${ind.name} (industry ${U.pct(work(ind))}) wants little more cargo than ${res.name} (${U.pct(work(res))}): ${di.cargo.toFixed(2)} vs ${dr.cargo.toFixed(2)}`);
+  // the same city with its offices turned into housing flies less on business
+  const c = W.cities[0], d0 = IC.cityDemand(c);
+  const flat = Object.assign({}, c, { mix: Object.assign({}, c.mix, { biz: 0, old: 0, dense: c.mix.dense + c.mix.biz + c.mix.old }) });
+  assert(IC.cityDemand(flat).biz < d0.biz * 0.8 && IC.cityDemand(flat).leisure > d0.leisure, 'offices do not change the business and leisure mix');
+  assert(/cargo/.test(IC.cityCharacter(ind).text), `the city panel does not say ${ind.name} is about cargo: ${IC.cityCharacter(ind).text}`);
+});
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test
