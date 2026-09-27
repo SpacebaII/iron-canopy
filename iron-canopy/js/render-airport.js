@@ -589,7 +589,7 @@ function drawFoundGhost(g, S, m, hv, px) {
   const ends = sv.name.split('/');
   lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
   lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
-  if (sv.homes) lbl(g, `noise over ${sv.homes} blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);
+  if (sv.homes) lbl(g, `noise over ${sv.homes} city blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);
 }
 
 })(window.IC);

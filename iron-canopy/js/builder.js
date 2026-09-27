@@ -32,6 +32,16 @@ IC.STAND.xl = { w: 1.0, d: 1.0, name: 'very heavy' };
 IC.STAND_FITS.xl = ['s', 'm', 'l', 'xl'];
 IC.RAMP_SIZE = { s: 'light', m: 'medium', l: 'heavy', xl: 'very heavy' };
 
+/* on a river (its drawn width), where nothing can be built */
+IC.onRiver = function (x, y) {
+  const W = IC.W; if (!W || !W.rivers) return false;
+  for (const r of W.rivers) {
+    if (x < r.bb[0] - r.w || x > r.bb[2] + r.w || y < r.bb[1] - r.w || y > r.bb[3] + r.w) continue;
+    for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i]; if (U.segDist(x, y, a[0], a[1], b[0], b[1]) < r.w / 2) return true; }
+  }
+  return false;
+};
+
 /* ---------- materials ---------- */
 IC.MATS = { asph: 'asphalt', conc: 'concrete', steel: 'steel' };
 const YARD = 400;       // loads of each material the site can stockpile
@@ -355,7 +365,7 @@ IC.foundLines = function (S, sv) {
   L.push(`Runway ${sv.name} · ${sv.windOff <= 15 ? 'into the prevailing wind' : `${sv.windOff}° off the prevailing wind (${sv.cross} kt across in a typical 15 kt breeze)`}`);
   L.push(`Ground: ${sv.hdiff < 3 ? 'flat' : `${Math.round(sv.hdiff)} m to level (${U.money(sv.earth)})`} · land ${U.money(sv.land)}`);
   if (sv.obst > 20) L.push(`Hills ${sv.obstAt.toFixed(0)} km off one end rise ${sv.obst} m above the approach slope`);
-  L.push(sv.homes ? `Noise over ${Object.entries(sv.noise).map(([k, v]) => `${v} blocks of ${k}`).join(', ')}` : 'No homes under the flight paths');
+  L.push(sv.homes ? `Noise over ${Object.entries(sv.noise).map(([k, v]) => `${v} city blocks of ${k}`).join(', ')}` : 'No homes under the flight paths');
   L.push(`Total ${U.money(sv.cost)}`);
   return L;
 };
@@ -596,7 +606,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     out.cost += pv.cost; out.dur = Math.max(out.dur, pv.dur); homes += pv.clr.blocks.length; comp += pv.clr.comp; roads += pv.clr.roads; res += pv.clr.res; clrAll.push(...pv.clr.blocks);
     (out.blocks = out.blocks || []).push(...pv.clr.blocks.map(x => x.b));
     if (!out.near && pv.near) out.near = pv.near;
-    if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.why = probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site or crosses a lake.' : `The ${D.name.toLowerCase()} overlaps another part or leaves the site.`; }
+    if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.why = probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${D.name.toLowerCase()} overlaps another part, stands in water or leaves the site.`; }
     if (probe.kind === 'runway' && !out.text.length) out.text.push(runwayText(S, ap, probe));
     if (probe.kind === 'apron' && t !== 'concourse') out.text.push(probe.ramp ? `Open ramp ${(probe.w * probe.h).toFixed(1)} ha: place stands of any size on it` : apronText(ap, probe));
     if (probe.kind === 'terminal' && t !== 'concourse') out.text.push(`${Math.round(D.pax * probe.w * probe.h).toLocaleString('en-US')} passengers an hour`);
@@ -606,7 +616,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
   }
   if (IC.PAVED[out.specs[0] && out.specs[0].kind] || t === 'concourse') out.text.push(IC.paveFits(m.mat || 'conc'));
   if (homes) out.text.push(`Clears ${IC.bldClearText({ blocks: clrAll, res })}: ${U.money(comp)} compensation, and the town will protest`);
-  if (roads) out.text.push(`${roads} road${roads > 1 ? 's' : ''} run under it in a tunnel`);
+  if (roads) out.text.push(`${roads > 1 ? roads + ' roads run' : 'a road runs'} under it in a tunnel`);
   if (out.near) out.text.push(`Closes ${out.near.name} while paving next to it (or set night work in the panel)`);
   const len = LINE_TOOLS[t] && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
   if (out.specs.length) out.text.unshift(`${len ? U.km(len) + ' · ' : ''}${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);

@@ -772,11 +772,15 @@ IC.autoPlace = function (S, ap, kind) {
 IC.aptCanPlace = function (S, ap, part) {
   const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' ? part.pts : [part];
   for (const p of pts) { if (!IC.inHome(p.x, p.y) || IC.inLake(p.x, p.y)) return false; if (U.dist(p, ap) > ap.buildR) return false; }
+  // no part in a river: sample along lines, and the corners of areas
+  const wet = p => IC.onRiver && IC.onRiver(p.x, p.y);
+  if (part.kind === 'runway' || part.kind === 'taxi') { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 0.5); for (let k = 0; k <= n; k++) if (wet({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return false; } }
   if (part.kind === 'taxi') return true;
   const D = IC.APART[part.kind];
   const probe = Object.assign({ w: D.w, h: D.h, r: D.r }, part);
   const shape = q => q.kind === 'runway' ? { x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q), h: q.w || IC.APART.runway.w } : q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q;
   const A = shape(probe);
+  if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return false;
   for (const q of ap.parts) {
     if (q.kind === 'taxi' || q === part || q.kind === 'ils') continue;
     // runways cross runways; everything else keeps off them
