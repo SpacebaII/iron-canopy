@@ -9,7 +9,7 @@ const kbd = ui.kbd, bar = ui.bar;
 let S = null;
 
 IC.unitState = function (u) {
-  if (u.state === 'transit') return [u.toReserve ? 'Returning to reserve' : `${u.deliver ? 'On the way' : 'Moving'} · ${u.eta ? U.dur(Math.max(0, u.eta - S.time)) : ''}`, 'busy'];
+  if (u.state === 'transit') return [u.toReserve ? 'Returning to reserve' : `${u.airlift ? 'Flown in' : u.deliver ? 'On the way' : 'Moving'} · ${u.eta ? U.dur(Math.max(0, u.eta - S.time)) : ''}`, 'busy'];
   if (u.state === 'building') return [`Building · ${U.dur(u.stT)}`, 'busy'];
   if (u.state === 'setup') return [`Setting up · ${U.dur(u.stT)}`, 'busy'];
   if (u.state === 'packing') return [`${u.deliver ? 'Loading' : 'Packing'} · ${U.dur(u.stT)}`, 'busy'];
