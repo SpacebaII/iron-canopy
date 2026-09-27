@@ -418,10 +418,12 @@ IC.traffic = function (S, dt) {
   const T = S.traffic; if (!T) return;
   if (T.dirty && (T.rebuildT == null || S.time - T.rebuildT > 600)) { T.rebuildT = S.time; IC.trafficRebuild(S); }
   const war = S.enemy && S.enemy.war, W = S.world;
-  // flows are re-read every half minute of game time; the phases advance every step
+  // flows are re-read every two minutes of game time, and at once when an air raid alert starts or ends
+  let sig = S.alertCities || 0; for (const c of W.cities) if (c.alert > 0) sig += 1 + c.x;
+  if (sig !== T.alertSig) { T.alertSig = sig; T.stepT = 0; }
   T.stepT -= dt;
   if (T.stepT <= 0) {
-    T.stepT = 30;
+    T.stepT = 120;
     const nA = S.infra.filter(a => a.kind === 'airport' && a.owner === 'us' && a.parts).length;
     if (nA !== T.nApt) { T.dirty = true; T.nApt = nA; }
     const h = (S.time % 86400) / 3600, F = T.F;
