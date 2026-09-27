@@ -783,6 +783,104 @@ test('radar: a military radar does not see a low aircraft behind a hill that it 
   assert(floor > 0.1 && IC.milCov(S).g.some(v => v > 0.5 && v < Infinity), `the coverage map does not show the hole behind the hill (floor ${floor})`);
 });
 
+/* ---------- air defence ---------- */
+const range = () => { const S = IC.newGame({ seed: 1, mode: 'range' }); return S; };
+const runRange = (S, maxS, stop) => { for (let i = 0; i < maxS * 4 && !(stop && stop(S)); i++) IC.step(S, 0.25); };
+test('air defence: no ground war code runs in the step', () => {
+  assert(!IC.ground && !IC.groundInit && !IC.makeBrigade && !IC.GTYPES, 'ground war functions are still loaded');
+  const src = IC.step.toString();
+  assert(!/ground\(|fronts/.test(src), 'the step still calls the ground war');
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' });
+  assert(S.gunits === undefined && S.fronts === undefined && S.evehicles === undefined, 'the state still has brigades, fronts or enemy convoys');
+  run(S, 1);
+  assert(!IC.LESSONS.some(l => l.id === 'ground'), 'the ground lesson is still in the Academy');
+});
+test('air defence: an upper and a lower tier stop most of a ballistic salvo', () => {
+  const S = range(), T = S.range.target;
+  IC.rangeAddUnit(S, 'hatd', T.x - 150, T.y + 50);
+  IC.rangeAddUnit(S, 'lrsam', T.x - 60, T.y - 40);
+  IC.rangeSpawn(S, { what: 'srbm', n: 6, brg: 80, km: 300, alt: '' });
+  runRange(S, 1800, S => S.range.pending.length === 0 && S.threats.length === 0 && S.time - S.range.t0 > 60);
+  const st = IC.rangeStats(S);
+  assert(st.kills >= 4, `only ${st.kills} of 6 warheads intercepted (${st.leaks} got through)`);
+  assert(st.mun.HAT > 0 && st.mun.TBD > 0, `both tiers should fire: ${JSON.stringify(st.mun)}`);
+});
+test('air defence: a stand-off jammer blinds a radar along its bearing, and a home-on-jam missile kills it', () => {
+  const S = range(), T = S.range.target;
+  const rad = IC.rangeAddUnit(S, 'lr3d', T.x, T.y);
+  const j = IC.spawnThreat(S, 'ewj', T.x, T.y - 700, { mission: 'jam', st: { x: T.x, y: T.y - 700 }, route: [], jamming: true, home: { x: T.x + 3000, y: T.y }, jamT: 1e5 });
+  const along = IC.spawnThreat(S, 'str', T.x + 10, T.y - 500, { mission: 'patrol', st: { x: T.x + 10, y: T.y - 500 }, route: [], home: T, noFire: true });
+  const off = IC.spawnThreat(S, 'str', T.x + 500, T.y, { mission: 'patrol', st: { x: T.x + 500, y: T.y }, route: [], home: T, noFire: true });
+  IC.updateEmcon(S, 0.25);
+  const sees = t => { IC.sense(S, 0.25); return S.sensors.some(s => s.unit === rad && IC.detects(s, t)); };
+  assert(!sees(along), 'the radar still sees an aircraft 50 km out on the jammer\'s bearing');
+  assert(sees(off), 'the radar lost an aircraft 50 km out off the jammer\'s bearing');
+  assert(S.strobes.some(st => st.j === j && st.unit === rad), 'no strobe on the jammer');
+  j.jamming = false; assert(sees(along), 'with the jammer off the radar does not see the aircraft'); j.jamming = true;
+  along.dead = off.dead = true;
+  IC.rangeAddUnit(S, 'lrsam', T.x - 30, T.y + 20);
+  runRange(S, 1800, () => j.dead);
+  assert(j.dead, 'the jammer survived 30 minutes of home-on-jam fire');
+  assert(S.logs.some(l => l.tag === 'HOME-ON-JAM'), 'no home-on-jam shot was fired');
+});
+test('air defence: a call-in team arrives in seconds, shoots down a drone and leaves after its time', () => {
+  const S = range(), T = S.range.target;
+  const job = IC.callIn(S, T.x, T.y);
+  assert(job, 'the call-in was refused: ' + IC.callInWhy(S, T.x, T.y));
+  assert(IC.callInState(S).charges === IC.callInStats(S).max - 1, 'the call-in did not use a charge');
+  runRange(S, 60, () => S.units.some(u => u.callin));
+  const team = S.units.find(u => u.callin);
+  assert(team && S.time - job.t0 <= 30, `no team after ${Math.round(S.time - job.t0)} s`);
+  const d = IC.spawnThreat(S, 'owa', T.x + 250, T.y + 20, { route: [{ x: T.x - 300, y: T.y }], aim: { x: T.x - 300, y: T.y }, fromHostile: true });
+  runRange(S, 700, () => d.dead);
+  assert(d.dead && d.killer === team.name, `the drone was not shot down by the team (dead ${d.dead}, by ${d.killer})`);
+  runRange(S, 900, () => !S.units.includes(team));
+  assert(!S.units.includes(team), 'the team is still there');
+  assert(S.time - job.t <= IC.callInStats(S).stay + 5, 'the team stayed longer than its time');
+});
+test('air defence: cruise missiles route through a gap in the radar cover', () => {
+  const S = range(), T = S.range.target;
+  const from = { x: T.x + 5000, y: T.y + 300 }, dx = T.x - from.x, dy = T.y - from.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+  const mid = { x: from.x + dx * 0.55, y: from.y + dy * 0.55 };
+  for (let i = -3; i <= 3; i++) if (i !== 2) IC.rangeAddUnit(S, 'gf', mid.x + nx * i * 700, mid.y + ny * i * 700);
+  const r = IC.enemyPlanRoute(S, from, T, true);
+  let cross = null, p = from;
+  for (const q of r) { const a = (p.x - mid.x) * ux + (p.y - mid.y) * uy, b = (q.x - mid.x) * ux + (q.y - mid.y) * uy; if (a <= 0 && b > 0) { const f = a / (a - b); cross = { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f }; } p = q; }
+  const slot = cross ? ((cross.x - mid.x) * nx + (cross.y - mid.y) * ny) / 700 : null;
+  assert(cross && Math.abs(slot - 2) < 0.35, `the route crosses the radar line at slot ${slot && slot.toFixed(2)}, not in the gap at slot 2`);
+  assert(IC.routeExposure(S, from, r, true) < IC.routeExposure(S, from, [T], true), 'the planned route is no less exposed than flying straight');
+});
+test('air defence: raids build up, strike, and are followed by a calm', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' });
+  const ev = []; IC.on((S2, type, d) => { if (S2 === S && (type === 'raidWarning' || type === 'raidOver' || type === 'war')) ev.push({ type, t: S.time, d }); });
+  const spawns = []; const sp = IC.spawnThreat;
+  IC.spawnThreat = function (S2, type, x, y, o) { const t = sp(S2, type, x, y, o); if (S2 === S && t.op && IC.THR[type].dmg) spawns.push(S.time); return t; };
+  try { run(S, 20, S => S.ad.roe = 'free'); } finally { IC.spawnThreat = sp; }
+  const over = ev.filter(e => e.type === 'raidOver'), warn = ev.filter(e => e.type === 'raidWarning');
+  assert(over.length >= 2, `only ${over.length} raids ended in 20 hours`);
+  assert(warn.length >= 1 && warn[0].t < over[1].t, 'no intelligence warning before the second raid');
+  const first = over.find(e => e.d.kind !== 'opening') || over[0];
+  const quiet = spawns.filter(t => t > first.t && t < first.t + 5400);
+  assert(!quiet.length, `${quiet.length} weapons launched in the 90 minutes after a raid ended`);
+  assert(over.every(e => typeof e.d.text === 'string' && /shot down/.test(e.d.text)), 'a raid ended without an after-action report');
+}, true);
+test('test range: a raid against a defence reports shots, kills, leakers and the cost exchange', () => {
+  const S = range(), T = S.range.target;
+  IC.rangeAddUnit(S, 'mr3d', T.x - 100, T.y);
+  IC.rangeAddUnit(S, 'mrsam', T.x - 60, T.y + 40);
+  IC.rangeAddUnit(S, 'shorad', T.x + 30, T.y);
+  IC.rangeSpawn(S, { what: 'mixed', n: 10, brg: 90, km: 150, alt: '' });
+  runRange(S, 3600, S => S.range.pending.length === 0 && S.threats.every(t => t.mission === 'rtb' || t.mission === 'jam') && S.time - S.range.t0 > 600);
+  const st = IC.rangeStats(S);
+  assert(st.launched >= 10 && st.shots > 0 && st.kills > 0, `nothing happened: ${JSON.stringify(st)}`);
+  assert(st.kills + st.leaks <= st.launched + 4, 'kills and leakers add up to more than was launched');
+  assert(st.sys.some(x => x.sys === 'mrsam' && x.pk > 0) && st.ours > 0 && st.exchange > 0, 'no kill probability or cost exchange per system');
+  const json = IC.rangeExport(S), before = st.launched;
+  assert(IC.rangeImport(S, json), 'the scenario did not load back');
+  runRange(S, 3600, S => S.range.pending.length === 0 && S.time - S.range.t0 > 600);
+  assert(IC.rangeStats(S).launched === before, 'the replay did not send the same threats');
+});
+
 test('career: Act I runs with airline traffic', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
   run(S, 8, player);

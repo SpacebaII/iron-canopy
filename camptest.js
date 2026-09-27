@@ -1,17 +1,18 @@
-﻿/* Plays the open campaign with a reasonable (not brilliant) scripted commander, to judge balance. */
+/* Quick war balance run: a reasonable (not brilliant) scripted commander plays three game days and the run prints
+   every raid and, per day, threats, kills, leakers and damage.
+   node camptest.js [seed] [days] [passive] */
 const IC = require('./headless.js'); const U = IC.U;
-const seed = +(process.argv[2] || 42), hours = +(process.argv[3] || 72), passive = process.argv[4] === 'passive';
+const seed = +(process.argv[2] || 42), days = +(process.argv[3] || 3.2), passive = process.argv[4] === 'passive';
 const S = IC.newGame({ seed, mode: 'campaign' });
-const t0 = S.time;
-const fA = S.fronts.find(f => f.key === 'A'), fB = S.fronts.find(f => f.key === 'B');
 const cap = IC.cap(S), ab = S.byId.ab_fwd || cap, abr = S.byId.ab_rear || cap;
 const fac = S.infra.filter(i => i.kind === 'factory');
+const fA = S.world.fronts.find(f => f.key === 'A');
 const mid = f => f.pts[Math.floor(f.pts.length / 2)];
 const inward = (p, d) => ({ x: p.x + p.nx * d, y: p.y + p.ny * d });
 const spots = {
   lrsam: [ab, cap], mrsam: [ab, cap, fac[0]], shorad: [ab, fac[0], cap, abr], spaag: [fac[1] || cap, ab], manpads: [ab, cap, fac[0]],
-  gf: [inward(mid(fA), 800), ab, inward(mid(fB), 800)], mr3d: [inward(mid(fA), 1200), inward(mid(fB), 1200)], gnss: [ab, cap], mlrs: [inward(mid(fA), 700)],
-  depot: [inward(mid(fA), 1300), inward(mid(fB), 1300)], vhf: [cap], lr3d: [inward(mid(fA), 1600)], cram: [ab], acou: [inward(mid(fA), 300)]
+  gf: [inward(mid(fA), 800), ab, cap], mr3d: [inward(mid(fA), 1200), ab], gnss: [ab, cap], mlrs: [inward(mid(fA), 700)],
+  depot: [inward(mid(fA), 1300)], vhf: [cap], lr3d: [inward(mid(fA), 1600)], cram: [ab], acou: [inward(mid(fA), 300)], hatd: [ab, cap]
 };
 const used = {};
 function deployAll() {
@@ -24,29 +25,46 @@ function deployAll() {
     }
   }
 }
-const log = [];
-let did = {};
-for (let i = 0; i < hours * 3600 / 0.25 && !S.over; i++) {
-  IC.step(S, 0.25);
-  if (passive) continue;
-  if (i % 400 === 0) {
-    deployAll();
-    for (const u of S.units) { if (u.d.weapon === 'sam' && u.emcon === 'off') u.emcon = 'ambush'; if ((u.type === 'shorad' || u.type === 'spaag' || u.type === 'gf') && u.emcon !== 'on') u.emcon = 'on'; if (Object.values(u.comp).some(v => v < 0.5) && !u.repairing) IC.repairUnit(S, u); }
-    if (S.budget > 350 && S.orders.length < IC.slots(S)) { const pick = U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'manpads', 'mr3d']); IC.order(S, pick); }
-    if (S.budget > 250) for (const f of fac) { if (f.queue.length < 2 && !f.offline) IC.orderProduction(S, f, U.pick(['SR', 'MR', 'SR', 'LR', 'IR']), 4); }
-    for (const id of ['a_pac3', 's_esm', 'a_remote', 'g_fort', 'l_rrr', 's_nctr', 'e_eccm', 'x_glcm', 'a_cram']) IC.startResearch(S, id);
-    if (!did.cap) { did.cap = 1; IC.addTask(S, 'cap', { x: cap.x, y: cap.y }); IC.addTask(S, 'aew', { x: inward(mid(fA), 1400).x, y: inward(mid(fA), 1400).y }); }
-    if (S.enemy.war && !did.war) { did.war = 1; S.airspace = 'restricted'; IC.setMobil(S, 1); IC.addTask(S, 'cap', { x: ab.x, y: ab.y }); }
-    if (fA.active && !did.a) { did.a = 1; fA.stance = 'active'; IC.addTask(S, 'cas', { front: fA }); }
-    if (fB.active && !did.b) { did.b = 1; IC.addTask(S, 'cas', { front: fB }); }
-    for (const g of S.gunits) if (g.side === 'us' && (g.kit.atgm < 3 || g.sup < 30) && !g.lift && g.front.active) IC.heliLift(S, g, g.sup < 30 ? 'SUP' : 'ATG');
-    for (const t of S.tels) if (t.known && !t.dead && S.time - t.kt < 300) for (const u of S.units) if (u.d.weapon === 'strike' && u.state === 'ready' && u.mags[0].mag > 0) IC.fireMission(S, u, t, 4);
-    if (S.budget > 900 && S.mobil >= 1 && S.gunits.filter(g => g.side === 'us').length < 11) IC.raiseBrigade(S, fA, U.pick(['inf', 'mech']));
+const day0 = { kills: 0, leak: 0, fired: 0, blocks: 0, infra: 0, raids: 0 };
+const blocksLost = () => IC.cities(S).reduce((s, c) => s + (c.blocks ? c.blocks.filter(b => b.hp <= 0).length : 0), 0);
+const infraLost = () => S.infra.filter(i => i.offline && i.kind !== 'city').length;
+const snap = () => ({ kills: S.stats.kills, leak: S.stats.leakers, fired: S.stats.fired, blocks: blocksLost(), infra: infraLost(), raids: (S.raids || []).length, threats: (S.raids || []).reduce((s, r) => s + r.threats, 0) });
+let prev = snap(), lastDay = U.day(S.time), did = {};
+const out = [];
+// a reasonable commander reads the warnings: batteries move towards the target, teams are called in when it starts
+IC.on((S2, type, d) => {
+  if (S2 !== S || passive) return;
+  const obj = d && d.R ? d.R.obj : d && d.obj;
+  if (type === 'raidWarning' && obj) {
+    const mob = S.units.filter(u => u.state === 'ready' && (u.type === 'shorad' || u.type === 'mrsam' || u.type === 'spaag') && U.dist(u, obj) > 300).sort((a, b) => U.dist(a, obj) - U.dist(b, obj)).slice(0, 2);
+    for (const u of mob) { const q = IC.findSpot(S, u.type, obj.x, obj.y, 40, 160); if (q) IC.relocate(S, u, q.x, q.y); }
   }
-  if (i % (6 * 3600 * 4) === 0) log.push(`${U.clock(S.time)} will ${S.enemy.will.toFixed(0)} morale ${IC.nationalMorale(S).toFixed(0)} budget ${S.budget.toFixed(0)} units ${S.units.length} kills ${S.stats.kills} leak ${S.stats.leakers} lost ${S.stats.unitsLost}/${S.stats.acLost} lineA ${Math.round(fA.pts.reduce((s, p) => s + p.d, 0) / fA.pts.length)} lineB ${Math.round(fB.pts.reduce((s, p) => s + p.d, 0) / fB.pts.length)} cities ${IC.cities(S).filter(c => c.owner === 'enemy').length} plan ${S.enemy.plan ? S.enemy.plan.kind + '/' + S.enemy.plan.phase : '-'}`);
+  if (type === 'raidStart' && obj) for (let k = 0; k < 2; k++) if (!IC.callInWhy(S, obj.x, obj.y)) IC.callIn(S, obj.x + U.rand(-40, 40), obj.y + U.rand(-40, 40));
+});
+const t0 = Date.now();
+for (let i = 0; i < days * 86400 / 0.5 && !S.over; i++) {
+  IC.step(S, 0.5);
+  if (!passive && i % 200 === 0) {
+    deployAll();
+    for (const u of S.units) { if (u.d.weapon === 'sam' && u.emcon === 'off') u.emcon = 'ambush'; if ((u.type === 'shorad' || u.type === 'spaag' || u.type === 'gf' || u.type === 'mr3d') && u.emcon !== 'on') u.emcon = 'on'; if (Object.values(u.comp).some(v => v < 0.5) && !u.repairing) IC.repairUnit(S, u); }
+    // weapons free while a raid is on, tight in the calm (airliners fly again)
+    const ph = IC.raidPhase(S);
+    S.ad.roe = ph === 'raid' ? 'free' : 'tight';
+    if (S.budget > 350 && S.orders.length < IC.slots(S)) IC.order(S, U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'mr3d']));
+    if (S.budget > 250) for (const f of fac) { if (f.queue.length < 2 && !f.offline) IC.orderProduction(S, f, U.pick(['SR', 'MR', 'SR', 'LR', 'IR']), 4); }
+    for (const id of ['a_pac3', 's_esm', 'a_remote', 'l_rrr', 's_nctr', 'e_eccm', 'x_glcm', 'a_cram']) IC.startResearch(S, id);
+    if (!did.cap) { did.cap = 1; IC.addTask(S, 'cap', { x: cap.x, y: cap.y }); const p = inward(mid(fA), 1400); IC.addTask(S, 'aew', { x: p.x, y: p.y }); }
+    if (S.enemy.war && !did.war) { did.war = 1; S.airspace = 'restricted'; IC.setMobil(S, 1); IC.addTask(S, 'cap', { x: ab.x, y: ab.y }); }
+    for (const t of S.tels) if (t.known && !t.dead && S.time - t.kt < 300) for (const u of S.units) if (u.d.weapon === 'strike' && u.state === 'ready' && u.mags[0].mag > 0) IC.fireMission(S, u, t, 4);
+  }
+  const d = U.day(S.time);
+  if (d !== lastDay) {
+    const n = snap();
+    out.push(`Day ${lastDay}: raids ${n.raids - prev.raids}, threats ${n.threats - prev.threats}, kills ${n.kills - prev.kills}, leakers ${n.leak - prev.leak}, interceptors ${n.fired - prev.fired}, homes lost ${n.blocks - prev.blocks}, sites knocked out ${n.infra - prev.infra} | PM ${Math.round(S.pm)} working ${U.pct(IC.working(S))} morale ${Math.round(IC.nationalMorale(S))}`);
+    prev = n; lastDay = d;
+  }
 }
-console.log(log.join('\n'));
-console.log('END', U.clock(S.time), S.over || '', 'stats', JSON.stringify(S.stats));
-console.log('method', JSON.stringify(S.enemy.method), 'objW', JSON.stringify(S.enemy.objW));
-console.log('history', S.enemy.history.map(h => `${h.kind}:${h.success ? 'OK' : 'fail'}:${h.eff.toFixed(2)}`).join(' '));
-console.log('ops', S.enemy.ops.slice(-15).map(o => `${o.type}:${o.launched}/${o.lost}/${o.hits}`).join(' '));
+console.log(`seed ${seed} · ${passive ? 'passive' : 'scripted'} · ${((Date.now() - t0) / 1000).toFixed(0)} s · ${S.over || 'still going'} ${S.won ? '(won)' : ''}`);
+for (const r of S.raids || []) console.log(`  raid ${r.id} day ${r.day} ${r.name.padEnd(20)} on ${r.obj.slice(0, 22).padEnd(22)} threats ${String(r.threats).padStart(3)} kills ${String(r.kills).padStart(3)} leaked ${String(r.leaks).padStart(3)} hits ${String(r.hits).padStart(3)} fired ${r.fired}`);
+console.log(out.join('\n'));
+console.log('stats', JSON.stringify(S.stats));

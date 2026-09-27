@@ -1,5 +1,5 @@
 /* Iron Canopy — logistics (named convoys with real jobs, depots with service areas and stock profiles,
-   helicopter lifts, cargo planes), industry, economy, policy and research. The player sets the network up —
+   helicopter resupply, cargo planes), industry, economy, policy and research. The player sets the network up —
    where depots sit, how many truck companies each runs, what they stock, who gets served first — and the
    convoys then run themselves. */
 (function (IC) {
@@ -10,9 +10,8 @@ const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;
 const truckSpd = S => IC.hasTech(S, 'l_trucks') ? [0.48, 0.18] : [0.4, 0.15];
 const convoyCap = (S, v) => truckCap(S) * v.trucks;
 IC.PROFILES = {
-  balanced: { name: 'Balanced', ad: 1, army: 1, desc: 'Missiles and supply in proportion to local demand.' },
-  ad: { name: 'Air defense first', ad: 1.6, army: 0.5, desc: 'Deep missile stocks for the batteries nearby.' },
-  army: { name: 'Army first', ad: 0.5, army: 1.8, desc: 'Supply and anti-tank kits for the brigades.' }
+  balanced: { name: 'Balanced', ad: 1, desc: 'Missiles in proportion to local demand.' },
+  ad: { name: 'Air defense first', ad: 1.6, desc: 'Deep missile stocks for the batteries nearby.' }
 };
 
 IC.addTruck = function (S, home) {
@@ -38,8 +37,8 @@ IC.serves = (d, x, y) => d.central || U.dxy(d.x, d.y, x, y) <= (d.reach || 1400)
 
 function newJob(S, o) {
   const j = Object.assign({ id: IC.nid('j'), state: 'active', t0: S.time }, o);
-  j.label = j.kind === 'ground' ? `${j.qty} supply → ${j.to.name}` : j.kind === 'lift' ? `${IC.HLIFT[j.cargo].name} → ${j.to.name}` : j.kind === 'restock' ? `Restock ${j.qty}× ${j.mun} from ${j.from.name}` : j.kind === 'import' ? `${j.qty}× ${j.mun} import` : `${j.qty}× ${j.mun} → ${j.to.name}`;
-  j.short = j.kind === 'ground' ? 'SUPPLY' : j.kind === 'lift' ? 'LIFT' : j.kind === 'restock' ? 'RESTOCK' : 'AMMO';
+  j.label = j.kind === 'restock' ? `Restock ${j.qty}× ${j.mun} from ${j.from.name}` : j.kind === 'import' ? `${j.qty}× ${j.mun} import` : `${j.qty}× ${j.mun} → ${j.to.name}`;
+  j.short = j.kind === 'restock' ? 'RESTOCK' : 'AMMO';
   S.jobs.push(j);
   return j;
 }
@@ -47,29 +46,11 @@ IC.failJob = function (S, j) {
   if (j.state !== 'active') return;
   j.state = 'failed';
   if (!j.loaded && j.from && j.from.inv && j.mun) j.from.inv[j.mun] += j.qty;
-  if (j.kind === 'lift' && j.cargo === 'REPL' && !j.loaded) S.manpower += IC.HLIFT.REPL.repl;
   if (j.mag) j.mag.inc = Math.max(0, j.mag.inc - j.qty0);
-  if (j.kind === 'ground' && j.to) j.to.supInc = Math.max(0, (j.to.supInc || 0) - j.qty0);
-  if (j.kind === 'lift' && j.to) j.to.lift = null;
-  if (j.to && j.to.inc && !j.mag && j.kind !== 'ground' && j.kind !== 'lift') j.to.inc[j.mun] = Math.max(0, (j.to.inc[j.mun] || 0) - j.qty0);
+  if (j.to && j.to.inc && !j.mag) j.to.inc[j.mun] = Math.max(0, (j.to.inc[j.mun] || 0) - j.qty0);
 };
 function deliver(S, j) {
   j.state = 'done';
-  if (j.kind === 'ground') {
-    j.to.supInc = Math.max(0, (j.to.supInc || 0) - j.qty0);
-    if (!j.to.dead) j.to.sup = Math.min(100, j.to.sup + j.qty * 4);
-    return;
-  }
-  if (j.kind === 'lift') {
-    const g = j.to; g.lift = null;
-    if (g.dead) return;
-    if (j.cargo === 'SUP') g.sup = Math.min(100, g.sup + 30);
-    else if (j.cargo === 'ATG') g.kit.atgm += j.qty + 2;
-    else if (j.cargo === 'REPL') g.str = Math.min(100, g.str + IC.HLIFT.REPL.repl);
-    IC.log(S, 'kill', 'LIFT', `${IC.HLIFT[j.cargo].name} delivered to ${g.name}.`, g);
-    IC.emit(S, 'lift', { g, cargo: j.cargo });
-    return;
-  }
   if (j.mag) {
     j.mag.inc = Math.max(0, j.mag.inc - j.qty0);
     let q = j.qty;
@@ -119,7 +100,6 @@ IC.airJobStep = function (S, a) {
   else if (a.leg === 'toDest') {
     if (j.to.dead) { IC.failJob(S, j); a.leg = 'home'; }
     else {
-      if (j.kind === 'lift' && IC.groundFire && IC.groundFire(S, a, 0.04)) { if (a.dead) return; }
       a.leg = 'unloading'; a.wait = a.kind === 'heli' ? 200 : 600; return;
     }
   }
@@ -159,34 +139,6 @@ IC.heliResupply = function (S, u, manual) {
   IC.log(S, 'info', 'HELI', `${r.name} flying ${qty}× ${mag.mun} from ${src.name} to ${u.name}.`);
   return true;
 };
-/* helicopter lift to a brigade: supply, anti-tank kits, or replacements */
-IC.liftCheck = function (S, g, cargo) {
-  const C = IC.HLIFT[cargo];
-  if (!IC.wx(S).heli) return 'Weather grounds the helicopters';
-  if (g.lift) return 'A lift is already on the way';
-  if (cargo === 'REPL' && S.manpower < C.repl) return 'Not enough manpower in the pool';
-  if (C.mun && !IC.depots(S).some(d => (d.inv[C.mun] || 0) >= C.qty)) return `No depot holds ${C.qty} ${IC.MUN[C.mun].name.toLowerCase()}s`;
-  if (!S.roster.some(r => r.kind === 'heli' && r.st === 'ready' && IC.canLaunch(S, r))) return 'No transport helicopter ready';
-  return '';
-};
-IC.heliLift = function (S, g, cargo, rid) {
-  const why = IC.liftCheck(S, g, cargo);
-  if (why) { IC.log(S, 'warn', 'LIFT', `${g.name}: ${why}.`); return false; }
-  const C = IC.HLIFT[cargo];
-  const src = C.mun ? IC.depots(S).filter(d => (d.inv[C.mun] || 0) >= C.qty).sort((a, b) => U.dist(a, g) - U.dist(b, g))[0] : IC.musterPoints(S).sort((a, b) => U.dist(a, g) - U.dist(b, g))[0];
-  const r = rid ? S.roster.find(x => x.id === rid) : heliFor(S, src, 1e9);
-  if (!r || r.st !== 'ready') return false;
-  if (C.mun) src.inv[C.mun] -= C.qty; else S.manpower -= C.repl;
-  const j = newJob(S, { kind: 'lift', mode: 'heli', cargo, mun: C.mun, qty: C.qty || 0, qty0: C.qty || 0, from: src, to: g });
-  const a = IC.launchAir(S, r, { type: 'hlift', cargo, to: g }, true);
-  if (!a) { IC.failJob(S, j); return false; }
-  a.job = j; a.leg = 'toSource'; a.route = [{ x: src.x, y: src.y }];
-  g.lift = j;
-  IC.log(S, 'info', 'LIFT', `${r.name} flying ${C.name.toLowerCase()} from ${src.name} to ${g.name}.`, g);
-  IC.emit(S, 'liftOrdered', { g, cargo });
-  return true;
-};
-
 /* ---------- dispatcher ---------- */
 IC.logistics = function (S, dt) {
   IC.updateVehicles(S, dt);
@@ -206,21 +158,8 @@ IC.logistics = function (S, dt) {
     }
     return best;
   };
-  // 1. front-line brigades, by the front's supply priority
-  const gs = S.gunits.filter(g => g.side === 'us' && !g.dead && (g.front.active || g.sup < 45) && !(g.obj && g.obj.besieged))
-    .sort((a, b) => (b.front.supplyPri - a.front.supplyPri) || (a.sup - b.sup));
-  for (const g of gs) {
-    const need = Math.ceil((100 - g.sup) / 4) - (g.supInc || 0);
-    if (g.sup > 70 || need < 5) continue;
-    const d = pick('SUP', g, 5); if (!d) continue;
-    const v = freeTruck(S, d);
-    const qty = Math.min(need, Math.floor(d.inv.SUP), Math.floor(convoyCap(S, v)));
-    d.inv.SUP -= qty; g.supInc = (g.supInc || 0) + qty;
-    v.job = newJob(S, { kind: 'ground', mode: 'truck', mun: 'SUP', qty, qty0: qty, from: d, to: g });
-    v.state = 'load'; v.t = 180;
-  }
-  // 2. air defense and strike units, priority units and emptiest first
-  const aus = S.units.filter(u => !u.dead && u.mags.length && u.state !== 'transit' && u.state !== 'packing')
+  // air defense and strike units, priority units and emptiest first
+  const aus = S.units.filter(u => !u.dead && !u.callin && u.mags.length && u.state !== 'transit' && u.state !== 'packing')
     .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || fill(S, a) - fill(S, b));
   for (const u of aus) {
     for (const m of IC.activeMags(S, u)) {
@@ -251,8 +190,8 @@ IC.logistics = function (S, dt) {
     const v = freeTruck(S, n); if (!v) continue;
     let best = null, bs = 0;
     for (const d of depots) for (const mun in n.inv) {
-      if (n.inv[mun] < (mun === 'SUP' ? 8 : 1)) continue;
-      const want = d.central ? (mun === 'SUP' ? 500 : 1e6) : Math.ceil((demand[d.id][mun] || 0));
+      if (n.inv[mun] < 1) continue;
+      const want = d.central ? 1e6 : Math.ceil((demand[d.id][mun] || 0));
       const deficit = want - (d.inv[mun] || 0) - (d.inc[mun] || 0);
       if (deficit <= 0) continue;
       const sc = Math.min(deficit, n.inv[mun]) * IC.MUN[mun].w / (1 + U.dist(n, d) / 3750) * (d.central ? 1 : 1.5);
@@ -293,14 +232,6 @@ IC.depotDemand = function (S) {
     if (!near) continue;
     const P = IC.PROFILES[near.profile || 'balanced'];
     for (const m of IC.activeMags(S, u)) demand[near.id][m.mun] = (demand[near.id][m.mun] || 0) + (m.storeMax + m.max) * P.ad;
-  }
-  for (const g of S.gunits) {
-    if (g.side !== 'us' || g.dead) continue;
-    const near = depots.filter(d => !d.central && IC.serves(d, g.x, g.y)).sort((a, b) => U.dist(a, g) - U.dist(b, g))[0] || depots.find(d => d.central);
-    if (!near) continue;
-    const P = IC.PROFILES[near.profile || 'balanced'];
-    demand[near.id].SUP = (demand[near.id].SUP || 0) + (g.front.active ? 25 : 8) * (0.5 + g.front.supplyPri * 0.5) * P.army;
-    demand[near.id].ATG = (demand[near.id].ATG || 0) + 4 * P.army;
   }
   return demand;
 };
@@ -355,7 +286,6 @@ function production(S, dt) {
     }
     f.active = f.active.filter(a => !a.done);
     f.queue = f.queue.filter(q => q.done < q.qty);
-    f.inv.SUP = (f.inv.SUP || 0) + 10 * mob.sup * eff * ind * (f.hp / f.max) * (IC.hasTech(S, 'l_ind') ? 1.5 : 1) * dt / 3600;
   }
   for (const im of S.imports) {
     if (im.state === 'ordered' && S.time >= im.eta - 1600) {
@@ -406,7 +336,7 @@ IC.economy = function (S, dt) {
   const air = { open: 1, restricted: 0.5, closed: 0 }[S.airspace];
   for (const i of S.infra) {
     if (i.offline || i.owner !== 'us') continue;
-    if (i.kind === 'city') tax += i.pop * 0.02 * (i.hp / i.max) * i.prosp * (0.5 + i.morale / 200) * (i.besieged ? 0.2 : 1);
+    if (i.kind === 'city') tax += i.pop * 0.02 * (i.hp / i.max) * i.prosp * (0.5 + i.morale / 200);
     if (i.kind === 'airport' && !S.av) apt += i.rev * air * (i.hp / i.max);
   }
   for (const t of S.world.foreign) if (t.taken) tax += 3;
@@ -421,15 +351,14 @@ IC.economy = function (S, dt) {
   // every extra radar on a crowded band costs more to keep deconflicted and maintained
   for (const u of S.units) { const b = IC.BAND[u.type]; upAD += u.d.up * (b && bands[b] > 1 ? 1 + 0.15 * (bands[b] - 1) : 1); }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;
-  let upG = 0; for (const g of S.gunits) if (g.side === 'us' && (!S.story || S.story.act >= 4)) upG += g.g.cost * 0.004;
   const upApt = S.av ? IC.avUpkeep(S) : 0, upStaff = S.story ? IC.staffCost(S) : 0, upLoan = IC.loanRate(S);
-  const up = (upAD + upAir + upG) * mob.up + upApt + upStaff + upLoan;
+  const up = (upAD + upAir) * mob.up + upApt + upStaff + upLoan;
   S.income = base + tax + trade + apt + aidRate + IC.avRevenueRate(S); S.upkeep = up;
-  const L = S.ledger = { base, tax, trade, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upG: upG * mob.up, upApt, upStaff, loan: upLoan };
+  const L = S.ledger = { base, tax, trade, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upApt, upStaff, loan: upLoan };
   S.budget += (S.income - IC.avRevenueRate(S) - S.upkeep) * dt / 3600;
   // the weekly statement books each line as it is paid (airline fees are booked where they are paid)
   for (const k of ['base', 'tax', 'trade', 'apt', 'aid']) IC.econBook(S, k, L[k] * dt / 3600);
-  for (const k of ['upAD', 'upAir', 'upG', 'upApt', 'upStaff', 'loan']) IC.econBook(S, k, -L[k] * dt / 3600);
+  for (const k of ['upAD', 'upAir', 'upApt', 'upStaff', 'loan']) IC.econBook(S, k, -L[k] * dt / 3600);
   for (const c of IC.cities(S)) {
     c.morale = U.clamp(c.morale + mob.morale * dt / 3600, 0, 100);
     // prosperity follows connections (growth.js); without that model it just recovers

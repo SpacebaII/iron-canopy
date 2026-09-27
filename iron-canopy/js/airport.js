@@ -1034,7 +1034,6 @@ IC.aptRemove = function (S, ap, id) {
 IC.FOUND_COST = 80;
 IC.foundCheck = function (S, x, y) {
   if (!IC.inHome(x, y) || IC.inLake(x, y)) return 'Outside the country.';
-  if (IC.enemyHeld && IC.enemyHeld(S, x, y)) return 'Enemy-held ground.';
   if (S.world.slopeAt && S.world.slopeAt(x, y) > 0.08) return 'Too hilly for a runway.';
   const near = IC.bases(S).find(b => U.dist(b, { x, y }) < 120);
   if (near) return `Too close to ${near.name}: their circuits would overlap (12 km at least).`;

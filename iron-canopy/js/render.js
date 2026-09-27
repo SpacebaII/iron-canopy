@@ -10,7 +10,7 @@ const C = IC.C = {
   light: '#c9b0ff', airway: '#8fd8ff'
 };
 const cam = IC.cam = { x: 3000, y: 2250, z: 0.2, vw: 800, vh: 600 };
-let ctx, cv, dpr = 1, hatchR = null, hatchB = null;
+let ctx, cv, dpr = 1, hatchR = null;
 const cov = document.createElement('canvas'); cov.width = 600; cov.height = 450;
 const cx2 = cov.getContext('2d');
 let view = { x0: 0, y0: 0, x1: 0, y1: 0 };
@@ -22,7 +22,7 @@ const RS = IC.rs = { inView: (x, y, m) => inView(x, y, m), label: (...a) => labe
 IC.initRender = function (canvas) {
   cv = canvas; ctx = cv.getContext('2d'); dpr = Math.min(2, window.devicePixelRatio || 1);
   const mk = (col) => { const h = document.createElement('canvas'); h.width = 14; h.height = 14; const g = h.getContext('2d'); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(0, 14); g.lineTo(14, 0); g.moveTo(-4, 4); g.lineTo(4, -4); g.moveTo(10, 18); g.lineTo(18, 10); g.stroke(); return ctx.createPattern(h, 'repeat'); };
-  hatchR = mk('rgba(255,90,70,0.35)'); hatchB = mk('rgba(110,200,255,0.25)');
+  hatchR = mk('rgba(255,90,70,0.35)');
 };
 IC.dpr = () => dpr;
 IC.resizeRender = function (w, h) { cam.vw = w; cam.vh = h; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); IC.clampCam(); };
@@ -72,7 +72,7 @@ IC.render = function (S, now) {
   ctx.fillStyle = '#04080c'; ctx.fillRect(0, 0, cam.vw, cam.vh);
   ctx.setTransform(dpr * z, 0, 0, dpr * z, (-cam.x * z + sx) * dpr, (-cam.y * z + sy) * dpr);
   ctx.imageSmoothingEnabled = true;
-  IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7, S);
+  if (S.flat) IC.drawFlat(ctx, S, view, px); else IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7, S);
   if (z * dpr >= 1.3) drawRoads(S, px);
   const wx = IC.wx(S), light = IC.daylight(S.time);
 
@@ -101,7 +101,7 @@ IC.render = function (S, now) {
 
   if (S.layers.coverage) drawCoverage(S);
   drawAirways(S, px, now);
-  drawFronts(S, px, now);
+  drawFronts(S, px);
   drawBridges(S, px);
   if (S.layers.civil && z > 0.12) drawTraffic(S, px, light, now);
   drawBases(S, px, now, light);
@@ -335,57 +335,13 @@ function drawFields(S, px) {
   }
 }
 
-function drawFronts(S, px, now) {
-  for (const f of S.fronts) {
-    const P = f.pts, L = P.map((p, i) => IC.linePt(f, i));
-    if (!f.active) {
-      ctx.strokeStyle = 'rgba(255,110,90,0.35)'; ctx.lineWidth = 2 * px; ctx.setLineDash([10 * px, 8 * px]);
-      ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
-      continue;
-    }
-    for (let i = 0; i + 1 < P.length; i++) {
-      const a = P[i], b = P[i + 1], la = L[i], lb = L[i + 1];
-      const lost = a.d > 2 || b.d > 2, won = a.d < -2 || b.d < -2;
-      if (!lost && !won) continue;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(lb.x, lb.y); ctx.lineTo(la.x, la.y); ctx.closePath();
-      ctx.fillStyle = lost ? 'rgba(255,70,50,0.10)' : 'rgba(90,190,255,0.10)'; ctx.fill();
-      const pat = lost ? hatchR : hatchB; pat.setTransform(new DOMMatrix().scale(px)); ctx.fillStyle = pat; ctx.fill();
-    }
-    const path = () => { ctx.beginPath(); L.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); };
-    path(); ctx.strokeStyle = 'rgba(10,6,4,0.7)'; ctx.lineWidth = 7 * px; ctx.stroke();
-    path(); ctx.strokeStyle = '#ff6a50'; ctx.lineWidth = 2.8 * px; ctx.stroke();
-    path(); ctx.strokeStyle = 'rgba(111,210,255,0.7)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 6 * px]); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#ff6a50';
-    for (let i = 0; i + 1 < L.length; i++) {
-      const a = L[i], b = L[i + 1], seg = U.dist(a, b), n = Math.max(1, Math.floor(seg * cam.z / 22));
-      const nx = -(P[i].nx + P[i + 1].nx) / 2, ny = -(P[i].ny + P[i + 1].ny) / 2;
-      for (let k = 0; k < n; k++) {
-        const t = (k + 0.5) / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-        const tx = (b.x - a.x) / seg, ty = (b.y - a.y) / seg;
-        ctx.beginPath(); ctx.moveTo(x - tx * 3 * px, y - ty * 3 * px); ctx.lineTo(x + nx * 5 * px, y + ny * 5 * px); ctx.lineTo(x + tx * 3 * px, y + ty * 3 * px); ctx.fill();
-      }
-    }
-    f.sectors.forEach((s, i) => {
-      const G = IC.secGeom(f, i);
-      if (s.eAttack) arrow(G.x - G.nx * 360, G.y - G.ny * 360, G.x + G.nx * (120 + 30 * Math.sin(now * 2)), G.y + G.ny * (120 + 30 * Math.sin(now * 2)), s.probe ? 'rgba(255,150,120,0.7)' : '#ff5b4f', px, s.probe ? 2.5 : s.main ? 6 : 4);
-      if (s.usAttack) arrow(G.x + G.nx * 360, G.y + G.ny * 360, G.x - G.nx * 120, G.y - G.ny * 120, '#6fd2ff', px, 4.5);
-      if (cam.z > 0.09) {
-        const r = s.F / Math.max(0.01, s.E);
-        label(`${s.name} ${r >= 10 ? '10+' : r.toFixed(1)}:1${s.main && s.eAttack ? ' ⚠' : ''}`, G.x + G.nx * 50, G.y + G.ny * 50, px, r >= 1.2 ? C.friend : r >= 0.8 ? C.amber : C.hostile, 10, 'center', 600);
-      }
-    });
-    if (cam.z < 0.14) { const m = L[Math.floor(L.length / 2)], p = P[Math.floor(P.length / 2)]; label(f.name.toUpperCase(), m.x + p.nx * 280, m.y + p.ny * 280, px, 'rgba(255,190,170,0.9)', 12, 'center', 700); }
+function drawFronts(S, px) {
+  for (const f of S.world.fronts) {
+    const P = f.pts;
+    ctx.strokeStyle = 'rgba(255,110,90,0.35)'; ctx.lineWidth = 2 * px; ctx.setLineDash([10 * px, 8 * px]);
+    ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
   }
 }
-function arrow(x0, y0, x1, y1, col, px, w) {
-  const a = Math.atan2(y1 - y0, x1 - x0);
-  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = (w || 4) * px; ctx.globalAlpha = 0.8;
-  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2 + Math.sin(a) * 60, (y0 + y1) / 2 - Math.cos(a) * 60, x1, y1); ctx.stroke();
-  const hs = 5 + (w || 4) * 2;
-  ctx.beginPath(); ctx.moveTo(x1 + Math.cos(a) * hs * px, y1 + Math.sin(a) * hs * px); ctx.lineTo(x1 + Math.cos(a + 2.5) * hs * 1.2 * px, y1 + Math.sin(a + 2.5) * hs * 1.2 * px); ctx.lineTo(x1 + Math.cos(a - 2.5) * hs * 1.2 * px, y1 + Math.sin(a - 2.5) * hs * 1.2 * px); ctx.fill();
-  ctx.globalAlpha = 1;
-}
-
 /* streetlights: along city streets, and on motorways through towns and at interchanges, a lamp every 40 m */
 function streetLights(S, light, pf) {
   const W = S.world, k = (1 - light) * pf, P = [], sp = cam.z > 24 ? 0.4 : 0.8;
@@ -637,20 +593,18 @@ function drawInfra(S, px, now) {
     if (i.kind === 'bridge' || !inView(i.x, i.y, 300)) continue;
     const sel = S.sel && S.sel.ref === i;
     if (i.kind === 'city') {
-      if (i.owner === 'enemy') { ctx.fillStyle = 'rgba(255,60,40,0.16)'; ctx.beginPath(); ctx.arc(i.x, i.y, i.r * 1.2, 0, 7); ctx.fill(); }
-      if (i.besieged) { ctx.strokeStyle = `rgba(255,154,60,${0.5 + 0.3 * Math.sin(now * 3)})`; ctx.lineWidth = 3 * px; ctx.setLineDash([6 * px, 4 * px]); ctx.beginPath(); ctx.arc(i.x, i.y, i.r * 1.1, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
       if (i.alert > 0) { const p = (now * 0.6) % 1; ctx.strokeStyle = `rgba(255,91,79,${0.7 * (1 - p)})`; ctx.lineWidth = 2 * px; ctx.beginPath(); ctx.arc(i.x, i.y, i.r * 0.7 + (6 + p * 34) * px, 0, 7); ctx.stroke(); }
       const nm = i.name.toUpperCase();
       const big = i.capital ? 14 : i.pop > 350 ? 12 : 10.5;
       if (S.layers.labels || i.pop > 350) {
-        label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, i.owner === 'enemy' ? '#ffb0a6' : '#f2f5f7', big, 'center', i.capital ? 700 : 600);
-        if (cam.z > 0.14) label(`${i.pop}k${i.owner === 'enemy' ? ' · OCCUPIED' : i.besieged ? ' · SURROUNDED' : i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.owner === 'enemy' || i.alert > 0 ? C.hostile : C.muted, 9);
+        label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
+        if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }
     } else {
       if (i.parts && cam.z > 0.3) { /* drawn part by part */ }
       else {
-        const s = px, col = i.owner === 'enemy' ? C.hostile : i.offline ? '#6a7880' : C.friend;
+        const s = px, col = i.offline ? '#6a7880' : C.friend;
         ctx.fillStyle = 'rgba(6,14,20,0.85)'; ctx.strokeStyle = col; ctx.lineWidth = 1.5 * s;
         ctx.beginPath(); ctx.arc(i.x, i.y, 9 * s, 0, 7); ctx.fill(); ctx.stroke();
         ctx.fillStyle = col; ctx.font = `700 ${7.5 * s}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
@@ -672,7 +626,7 @@ function drawInfra(S, px, now) {
     }
     if (sel) brackets(i.x, i.y, (i.kind === 'city' ? Math.max(i.r * 0.7, 12 * px) : i.parts && cam.z > 0.3 ? Math.max(i.radius * 0.75, 12 * px) : 12 * px) + 4 * px, px);
   }
-  if (cam.z < 0.16 && S.layers.labels) {
+  if (cam.z < 0.16 && S.layers.labels && !S.flat) {
     for (const f of S.world.foreign) if (inView(f.x, f.y, 100)) label(f.taken ? f.name + ' (ours)' : f.name, f.x, f.y + f.r + 14 * px, px, f.taken ? C.friend : 'rgba(210,205,190,0.55)', 9, 'center', 500);
     const W = S.world;
     for (const k of ['A', 'B', 'C', 'D']) {
@@ -776,12 +730,11 @@ let miniThumb = null;
 IC.renderMini = function (S, mc, mw, mh) {
   const g = mc.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (!miniThumb) { miniThumb = document.createElement('canvas'); miniThumb.width = 400; miniThumb.height = 300; miniThumb.getContext('2d').drawImage(S.terrain.base, 0, 0, 400, 300); }
+  if (!miniThumb) { miniThumb = document.createElement('canvas'); miniThumb.width = 400; miniThumb.height = 300; const mg = miniThumb.getContext('2d'); if (S.terrain && S.terrain.base) mg.drawImage(S.terrain.base, 0, 0, 400, 300); else { mg.fillStyle = '#1d2622'; mg.fillRect(0, 0, 200, 300); mg.fillStyle = '#2a1e1c'; mg.fillRect(200, 0, 200, 300); } }
   g.drawImage(miniThumb, 0, 0, mw, mh);
   const k = mw / IC.WW;
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, mw, mh);
-  for (const f of S.fronts) if (f.active) { g.strokeStyle = '#ff6a50'; g.lineWidth = 1.5; g.beginPath(); f.pts.forEach((p, i) => { const q = IC.linePt(f, i); i ? g.lineTo(q.x * k, q.y * k) : g.moveTo(q.x * k, q.y * k); }); g.stroke(); }
-  for (const i of IC.cities(S)) { g.fillStyle = i.owner === 'enemy' ? C.hostile : '#f0e6d4'; g.fillRect(i.x * k - 1.5, i.y * k - 1.5, 3, 3); }
+  for (const i of IC.cities(S)) { g.fillStyle = '#f0e6d4'; g.fillRect(i.x * k - 1.5, i.y * k - 1.5, 3, 3); }
   g.fillStyle = C.friend; for (const u of S.units) g.fillRect(u.x * k - 1, u.y * k - 1, 2, 2);
   for (const t of S.threats) if (t.det && !t.dead && !t.border) { g.fillStyle = IC.AIRCOL[t.aff] || C.unknown; g.fillRect(t.px * k - 1, t.py * k - 1, 2.5, 2.5); }
   for (const s of S.esites) if (s.pk === 2 && !s.destroyed) { g.fillStyle = C.hostile; g.fillRect(s.x * k - 1.5, s.y * k - 1.5, 3, 3); }

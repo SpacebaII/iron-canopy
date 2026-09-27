@@ -1,8 +1,7 @@
-/* Iron Canopy — the enemy: installations, launchers, convoys, what they know about us, and the air and missile
-   commander. The commander runs campaigns against objectives: it probes to learn where our coverage is thin,
-   harasses to keep our radars lit and crews awake and interceptors flying, then throws a strike meant to wreck the
-   objective, with every weapon timed to arrive together. It remembers which routes cost it and which methods
-   worked, and changes objective, approach and weapons accordingly. */
+/* Iron Canopy — the enemy: installations, launchers, what they know about us, and the air and missile commander.
+   The commander raids in cycles: a build-up the player can read, a raid whose waves are timed to arrive together,
+   then a calm. It remembers which routes cost it and which methods worked, and changes objective, approach and
+   weapons accordingly. */
 (function (IC) {
 'use strict';
 const U = IC.U;
@@ -15,7 +14,7 @@ IC.enemyInit = function (S) {
     const s = Object.assign({}, e, { esite: true, nat: e.k, max: e.kind === 'airbase' ? 300 : e.kind === 'staging' ? 250 : 160, pk: e.kind === 'airbase' ? 2 : 0 });
     s.hp = s.max;
     s.inv = Object.assign({}, e.inv || {});
-    if (e.ac) { s.acMax = Object.assign({}, e.ac); s.acAvail = Object.assign({}, e.ac); }
+    if (e.ac) { s.acMax = Object.assign({ ahe: 4 }, e.ac); s.acAvail = Object.assign({ ahe: 4 }, e.ac); }
     if (e.kind === 'supply') s.stock = 200;
     S.esites.push(s);
     for (let i = 0; i < (e.tels || 0); i++) {
@@ -25,10 +24,10 @@ IC.enemyInit = function (S) {
     }
   }
   S.enemy = {
-    known: new Map(), convoys: new Map(), escal: 0, escalBase: 0, nextThink: S.time + 1800, retaliate: 0, ops: [], pending: [],
-    cd: {}, patrolT: 0, intelT: 0, regenT: 0, convoyT: 600, mood: 'massing on the border', will: 100, allow: null, war: false,
-    plan: null, harassT: S.time + 3600, danger: {}, method: { cm: 1, bal: 1, drones: 1, sead: 1, bomber: 1, disguise: 1, low: 1 },
-    objW: { airbase: 1.3, ad: 1, industry: 0.9, terror: 0.6, logistics: 0.7, front: 0.8 }, history: []
+    known: new Map(), convoys: new Map(), raidN: 0, raid: null, cycle: null, escal: 0, escalBase: 0, nextThink: S.time + 1800, retaliate: 0, ops: [], pending: [],
+    cd: {}, patrolT: 0, intelT: 0, regenT: 0, mood: 'massing on the border', will: 100, allow: null, war: false,
+    plan: null, danger: {}, method: { cm: 1, bal: 1, drones: 1, sead: 1, bomber: 1, disguise: 1, low: 1 },
+    objW: { airbase: 1.3, ad: 1, industry: 0.9, terror: 0.6, logistics: 0.7 }, history: []
   };
   for (const u of S.units) IC.enemyLearn(S, u, 'prewar');
 };
@@ -72,10 +71,11 @@ IC.enemyLearn = function (S, u, how) {
 IC.enemyLearnConvoy = function (S, v) { if (!v.dead) S.enemy.convoys.set(v.id, { ref: v, x: v.x, y: v.y, t: S.time }); };
 IC.enemyAssess = function (S, b) { const E = S.enemy; if (E.plan && E.plan.obj && E.plan.obj.ref === b) E.plan.seen = S.time; };
 
+IC.enemyIntel = S => updateIntel(S);
 function updateIntel(S) {
   const E = S.enemy;
   for (const u of S.units) {
-    if (u.state !== 'ready' && u.state !== 'building' && u.state !== 'setup') continue;
+    if (u.callin || (u.state !== 'ready' && u.state !== 'building' && u.state !== 'setup')) continue;
     if (u.radarOn) IC.enemyLearn(S, u, 'ELINT');
     else if (IC.hostileBorderDist(u.x, u.y) < 380) IC.enemyLearn(S, u, 'observation');
     else if (S.time - u.lastFired < 150 && IC.hostileBorderDist(u.x, u.y) < 4500) IC.enemyLearn(S, u, 'launch detection');
@@ -111,52 +111,78 @@ function targets(S, purpose) {
     if (purpose === 'logistics' && k.kind === 'depot') w = 14;
     if (purpose === 'bal' && (k.type === 'lrsam' || k.type === 'hatd' || k.type === 'exo' || k.type === 'bmd' || k.kind === 'launcher' || k.ref.central)) w = 14;
     if (purpose === 'emit' && (k.kind === 'radar' || k.kind === 'sam' || k.kind === 'jammer') && k.ref.radarOn && !k.ref.dead) w = 10;
-    if (purpose === 'front' && IC.hostileBorderDist(k.x, k.y) < 1400) w = { sam: 10, radar: 12, launcher: 12, depot: 10, pointdef: 5, jammer: 8 }[k.kind] || 0;
     if (w) L.push({ x: k.x, y: k.y, ref: k.ref, name: k.ref.name, w });
   }
-  if (purpose === 'front' || purpose === 'convoy' || purpose === 'logistics') for (const c of S.enemy.convoys.values()) L.push({ x: c.x, y: c.y, ref: c.ref, name: c.ref.name, w: purpose === 'convoy' ? 10 : 6 });
+  if (purpose === 'convoy' || purpose === 'logistics') for (const c of S.enemy.convoys.values()) L.push({ x: c.x, y: c.y, ref: c.ref, name: c.ref.name, w: purpose === 'convoy' ? 10 : 6 });
   return L;
 }
 function pickTarget(S, purpose) { const L = targets(S, purpose); return L.length ? U.wpick(L.map(t => [t, t.w])) : null; }
 /* an aim point on the objective: bases are hit on their runway and hangars, not their centre */
 function aimOn(obj) { const r = obj.ref; if (r && r.fac) return aimAtBase(r); return { x: obj.x + U.rand(-4, 4), y: obj.y + U.rand(-4, 4) }; }
 
-/* ---------- route planning with a memory of where it hurts ---------- */
+/* ---------- route planning with a memory of where it hurts ----------
+   Low fliers plan around the radars and batteries the enemy knows about: a radar only sees a cruise missile out to
+   its horizon, and not behind a hill, so the cheapest route is the one through the hole in our cover. Routes are
+   planned once a wave and shared, so a wave flies one lane. */
 const cell = (x, y) => Math.floor(x / 900) + ':' + Math.floor(y / 900);
-function exposure(S, pts, low) {
+function threatSites(S, low) {
+  const L = [];
+  for (const k of S.enemy.known.values()) {
+    if (k.ref.dead) continue;
+    const d = IC.UNITS[k.type], sn = d && (d.sensor || d.fc);
+    if (k.kind === 'radar' && sn && !sn.passive && !sn.bmdOnly && !sn.rktOnly && !sn.ssr) {
+      const R = low ? Math.min(sn.R, U.horizon(sn.mast || 10, 0.06)) : sn.R * 0.6;
+      L.push({ x: k.x, y: k.y, R, mast: sn.mast || 10, w: low ? 1 : 0.3 });
+    } else if (k.kind === 'sam' || k.kind === 'pointdef') {
+      const R = k.rng || 120;
+      L.push({ x: k.x, y: k.y, R: low && sn ? Math.min(R, U.horizon(sn.mast || 5, 0.06)) : R, mast: sn ? sn.mast || 5 : 5, w: low ? 0.8 : 1 });
+    }
+  }
+  return L;
+}
+function exposure(S, pts, low, sites) {
   let e = 0;
-  const sams = [...S.enemy.known.values()].filter(k => k.kind === 'sam' || k.kind === 'pointdef' || (low && k.kind === 'radar'));
+  const L = sites || threatSites(S, low);
   for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i], L = U.dist(a, b), n = Math.ceil(L / 180);
+    const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 150);
     for (let s = 0; s <= n; s++) {
       const x = a.x + (b.x - a.x) * s / n, y = a.y + (b.y - a.y) * s / n;
-      // a low flier behind a hill is out of sight (airspace.js): valleys are safe ground
-      for (const k of sams) { const r = k.kind === 'radar' ? 450 : k.rng || 120; if (U.dxy(x, y, k.x, k.y) < r && (!low || IC.losClear(k.x, k.y, 15, x, y, 0.1))) e += k.kind === 'radar' ? 0.3 : 1; }
+      for (const k of L) if (U.dxy(x, y, k.x, k.y) < k.R && (!low || IC.losClear(k.x, k.y, k.mast, x, y, 0.06))) e += k.w;
       e += (S.enemy.danger[cell(x, y)] || 0) * 0.6;
     }
   }
   return e;
 }
+IC.routeExposure = (S, from, route, low) => exposure(S, [from].concat(route), low);
+IC.enemyPlanRoute = (S, from, to, low) => planRoute(S, from, to, low);
 function planRoute(S, from, to, low, spread) {
-  let best = [{ x: to.x, y: to.y }], bc = 1e12;
-  for (let k = 0; k < (low ? 14 : 9); k++) {
-    const pts = [from];
-    const nv = k === 0 ? 0 : U.randi(1, 2);
-    for (let i = 0; i < nv; i++) {
-      const f = (i + 1) / (nv + 1);
-      const mx = from.x + (to.x - from.x) * f, my = from.y + (to.y - from.y) * f;
-      const nx = -(to.y - from.y), ny = to.x - from.x, L = Math.hypot(nx, ny) || 1, off = U.rand(-1, 1) * (spread || 2100);
-      let p = { x: U.clamp(mx + nx / L * off, 90, IC.WW - 90), y: U.clamp(my + ny / L * off, 90, IC.WH - 90) };
-      // low routes turn at the lowest ground nearby, so they run along valleys
-      if (low && k >= 9) for (let q = 0, h = IC.elevKm(p.x, p.y), p0 = p; q < 10; q++) { const a = U.rand(0, 6.28), d = U.rand(60, 300), c = { x: U.clamp(p0.x + Math.cos(a) * d, 90, IC.WW - 90), y: U.clamp(p0.y + Math.sin(a) * d, 90, IC.WH - 90) }, hc = IC.elevKm(c.x, c.y); if (hc < h) { h = hc; p = c; } }
-      pts.push(p);
-    }
-    pts.push({ x: to.x, y: to.y });
+  const E = S.enemy, key = `${Math.round(from.x / 60)},${Math.round(from.y / 60)}>${Math.round(to.x / 60)},${Math.round(to.y / 60)}${low ? 'L' : 'H'}`;
+  const C = E.routes || (E.routes = new Map());
+  const hit = C.get(key);
+  if (hit && S.time - hit.t < 900) return hit.r.map(p => ({ x: p.x, y: p.y }));
+  const sites = threatSites(S, low);
+  const nx = -(to.y - from.y), ny = to.x - from.x, NL = Math.hypot(nx, ny) || 1, sp = spread || 2100;
+  const via = (f, off) => ({ x: U.clamp(from.x + (to.x - from.x) * f + nx / NL * off, 90, IC.WW - 90), y: U.clamp(from.y + (to.y - from.y) * f + ny / NL * off, 90, IC.WH - 90) });
+  const cands = [[]];
+  // one turn: a fan of lanes through the defended belt
+  for (const f of [0.35, 0.5, 0.65]) for (let o = -sp; o <= sp; o += sp / 6) if (o) cands.push([via(f, o)]);
+  // two turns, and for low fliers turns at the lowest ground nearby, so they run along valleys
+  for (let k = 0; k < (low ? 10 : 6); k++) {
+    const pts = [via(0.33, U.rand(-1, 1) * sp), via(0.67, U.rand(-1, 1) * sp)];
+    if (low && k >= 5) for (const p0 of pts) for (let q = 0, h = IC.elevKm(p0.x, p0.y); q < 10; q++) { const a = U.rand(0, 6.28), d = U.rand(60, 300), c = { x: U.clamp(p0.x + Math.cos(a) * d, 90, IC.WW - 90), y: U.clamp(p0.y + Math.sin(a) * d, 90, IC.WH - 90) }, hc = IC.elevKm(c.x, c.y); if (hc < h) { h = hc; p0.x = c.x; p0.y = c.y; } }
+    cands.push(pts);
+  }
+  let best = null, bc = 1e12;
+  for (const v of cands) {
+    const pts = [from].concat(v, [{ x: to.x, y: to.y }]);
     let len = 0; for (let i = 1; i < pts.length; i++) len += U.dist(pts[i - 1], pts[i]);
-    const c = len + exposure(S, pts, low) * 200;
+    if (len > bc) continue;
+    const c = len + exposure(S, pts, low, sites) * 200;
     if (c < bc) { bc = c; best = pts.slice(1); }
   }
-  return best;
+  C.set(key, { t: S.time, r: best });
+  if (C.size > 200) C.clear();
+  return best.map(p => ({ x: p.x, y: p.y }));
 }
 function routeLen(from, route) { let L = 0, p = from; for (const q of route) { L += U.dist(p, q); p = q; } return L; }
 
@@ -314,6 +340,20 @@ const W = {
     }
     return 2;
   },
+  /* attack helicopters come in low under the radars against targets near the border */
+  helis(S, E, obj, op, arriveAt) {
+    const b = S.esites.filter(s => s.kind === 'airbase' && alive(s) && (s.acAvail.ahe || 0) >= 2).sort((p, q) => U.dist(p, obj) - U.dist(q, obj))[0];
+    if (!b || IC.hostileBorderDist(obj.x, obj.y) > 1300) return 0;
+    const rp = planRoute(S, b, obj, true, 900);
+    const last = rp[rp.length - 1], dir = Math.atan2(last.y - b.y, last.x - b.x);
+    rp[rp.length - 1] = { x: obj.x - Math.cos(dir) * 60, y: obj.y - Math.sin(dir) * 60 };
+    const T = routeLen(b, rp) / IC.THR.ahe.spd;
+    for (let i = 0; i < 2; i++) {
+      b.acAvail.ahe--;
+      later(S, (arriveAt ? arriveAt - S.time - T : 0) + i * 30, () => { IC.spawnThreat(S, 'ahe', b.x, b.y, { home: b, mission: 'strike', route: rp.map(p => ({ x: p.x + i * 12, y: p.y })), tgt: { x: obj.x, y: obj.y, ref: obj.ref, name: obj.name }, op, low: true, radarOn: false }); op.launched++; });
+    }
+    return 2;
+  },
   decoys(S, E, obj, n, op, arriveAt) {
     const b = S.esites.find(s => s.kind === 'airbase' && alive(s));
     if (!b) return 0;
@@ -344,13 +384,20 @@ IC.enemyStageTels = function (S, obj) {
   for (const s of S.esites) if ((s.kind === 'bm' || s.kind === 'mrbm') && alive(s)) { const lp = launchPoint(S, s, obj); for (const t of readyTels(S, s)) { t.x = lp.x + U.rand(-40, 40); t.y = lp.y + U.rand(-40, 40); t.staged = true; } }
 };
 
-/* ---------- the campaign: objective → probe → harass → strike → assess ---------- */
-const OBJ_NAMES = { airbase: 'neutralize an air base', ad: 'break the air defenses', industry: 'cripple war industry', terror: 'terrorize the cities', logistics: 'cut supply lines', front: 'support the ground offensive' };
-function chooseObjective(S, E) {
+/* ---------- the campaign: raids with a rhythm ----------
+   The commander works in cycles the player can read. A build-up (intelligence warnings, a reconnaissance drone,
+   probing drones on the flanks, then a stand-off jammer taking station), the raid (waves timed to arrive
+   together: drones and decoys first to soak up missiles, then cruise and ballistic missiles with escort jammers,
+   then stragglers), and a calm while it counts the cost. Raids climb a ladder over the days: drones, cruise
+   missiles, mixed raids, ballistic salvoes, then the big one. After each raid the player gets an after-action
+   report saying what got through and why. */
+const OBJ_NAMES = { airbase: 'neutralize an air base', ad: 'break the air defenses', industry: 'cripple war industry', terror: 'terrorize the cities', logistics: 'cut supply lines' };
+const RAID_NAMES = { drones: 'drone raid', cm: 'cruise missile raid', mixed: 'mixed raid', ballistic: 'ballistic salvo', big: 'major combined raid', opening: 'opening strike', retaliation: 'retaliation strike' };
+const LADDER = ['drones', 'cm', 'mixed', 'ballistic', 'mixed', 'big'];
+function chooseObjective(S, E, kind) {
   const opts = [];
   for (const k in E.objW) {
-    if (k === 'front' && !S.fronts.some(f => f.active)) continue;
-    const tg = pickTarget(S, k === 'ad' ? 'ad' : k === 'front' ? 'front' : k);
+    const tg = pickTarget(S, kind === 'ballistic' && k !== 'terror' && k !== 'industry' ? 'bal' : k);
     if (!tg) continue;
     let w = E.objW[k];
     if (k === 'airbase') w *= 1 + S.air.filter(a => a.kind === 'ftr').length * 0.2;
@@ -359,20 +406,7 @@ function chooseObjective(S, E) {
     opts.push([{ k, tg }, w]);
   }
   const c = U.wpick(opts);
-  if (!c) return null;
-  return { kind: c.k, obj: c.tg, phase: 'probe', t0: S.time, next: S.time, probes: 0, strikes: 0, losses: 0, shots: 0, label: OBJ_NAMES[c.k] };
-}
-function probe(S, E, P) {
-  const obj = P.obj;
-  const op = newOp(S, 'probe', `probe towards ${obj.name}`, { plan: P });
-  const r = Math.random();
-  if (r < 0.45) W.drones(S, E, obj, U.randi(2, 4), op, 0, true);
-  else if (r < 0.7) W.decoys(S, E, obj, U.randi(2, 3), op);
-  else if (r < 0.85 && can(S, 'recon')) { OPS.recon(S, E, { x: obj.x + U.rand(-300, 300), y: obj.y + U.rand(-300, 300) }); }
-  else feint(S, E, obj);
-  P.probes++;
-  P.next = S.time + U.rand(1500, 3000);
-  if (P.probes >= U.randi(2, 4)) { P.phase = 'strike'; P.next = S.time + U.rand(2400, 6000); P.strikeT = P.next; }
+  return c ? { kind: c.k, obj: c.tg, label: OBJ_NAMES[c.k] } : null;
 }
 /* fighters dash at the border and turn away: our radars and batteries light up for nothing */
 function feint(S, E, obj) {
@@ -382,73 +416,197 @@ function feint(S, E, obj) {
   for (let i = 0; i < 2; i++) { b.acAvail.ftr--; IC.spawnThreat(S, 'ftr', b.x, b.y, { home: b, mission: 'feint', route: [{ x: st.x + i * 40, y: st.y }], feint: true }); }
   newOp(S, 'feint', 'fighters feint at the border');
 }
-function strike(S, E, P) {
-  const obj = P.obj, esc = E.escal, M = E.method;
-  // everything lands inside a few minutes of T, so T waits for the slowest launcher
-  const T = S.time + Math.max(U.rand(2400, 3600), Math.min(7200, Math.max(balLead(S, obj, false), balLead(S, obj, true)) + 300));
-  const op = newOp(S, 'strike', `major strike on ${obj.name}`, { plan: P, obj: obj.ref, arriveAt: T });
-  let n = 0;
-  // early in the war the enemy holds back: strikes grow as it mobilizes its arsenal
-  const ramp = 0.55 + 0.45 * Math.min(1, (S.time - (E.warT || S.time)) / 129600);
-  const big = (1 + esc * 0.5 + P.strikes * 0.25) * ramp;
-  if (can(S, 'sead') && M.sead > 0.4 && Math.random() < 0.5 + esc * 0.15) n += W.sead(S, E, obj, op, T);
-  if (can(S, 'drones')) n += W.drones(S, E, obj, Math.round((4 + esc * 3) * M.drones * ramp), op, T - 120);
-  if (can(S, 'dcy') || esc >= 1) n += W.decoys(S, E, obj, Math.round((2 + esc) * ramp), op, T);
-  if (can(S, 'cm')) n += W.cm(S, E, obj, Math.round((2 + esc * 1.5) * big * M.cm), op, T);
-  if (can(S, 'bal') && M.bal > 0.4) n += W.bal(S, E, obj, Math.round((1 + esc) * M.bal), op, T, false);
-  if (can(S, 'mrbm') && (esc >= 1.2 || P.kind === 'airbase') && Math.random() < 0.6) n += W.bal(S, E, obj, esc >= 2.5 ? 2 : 1, op, T, true);
-  if (can(S, 'bomber') && esc >= 0.8 && M.bomber > 0.4 && Math.random() < 0.5) n += W.bomber(S, E, obj, op, T);
-  if (can(S, 'disguise') && esc >= 0.6 && M.disguise > 0.4 && Math.random() < 0.35) n += W.disguise(S, E, obj, op);
-  if (can(S, 'low') && M.low > 0.4 && Math.random() < 0.4) n += W.low(S, E, obj, op, T);
-  P.strikes++;
-  P.phase = 'assess'; P.next = T + U.rand(1800, 3600);
-  if (n) {
-    E.mood = `striking to ${P.label}`;
-    IC.emit(S, 'enemyStrike', { op, obj });
-    if (Math.random() < 0.5) IC.news(S, `Analysts warn ${S.world.names.A} is massing missiles and aircraft for a major raid.`);
-  }
+function nextKind(S, E) {
+  if (E.retaliate > 0 && can(S, 'bal')) return 'retaliation';
+  if (E.raidN < LADDER.length) return LADDER[E.raidN];
+  const esc = E.escal;
+  return U.wpick([['drones', 1], ['cm', 1.2], ['mixed', 2], ['ballistic', 0.6 + esc * 0.3], ['big', esc >= 2 ? 0.8 : 0.2]]);
 }
-function assess(S, E, P) {
-  const ops = E.ops.filter(o => o.plan === P && o.type === 'strike');
-  const last = ops[ops.length - 1];
-  const r = P.obj.ref;
+/* the start of a cycle: pick a raid and an objective, and a time it should peak */
+function planRaid(S, E) {
+  const kind = nextKind(S, E);
+  const P = chooseObjective(S, E, kind);
+  if (!P) { E.cycle = { phase: 'calm', next: S.time + 3600 }; return; }
+  if (kind === 'retaliation') { E.retaliate = 0; const t = pickTarget(S, 'bal') || pickTarget(S, 'terror'); if (t) P.obj = t; IC.news(S, `${S.world.names.A} vows retaliation after strikes on its territory.`); }
+  E.plan = P;
+  // T waits for the slowest weapon: launchers driving out, drones that fly for hours
+  const bal = kind === 'ballistic' || kind === 'big' || kind === 'retaliation' ? Math.max(balLead(S, P.obj, false), balLead(S, P.obj, true)) + 300 : 0;
+  const ds = kind !== 'ballistic' && kind !== 'retaliation' ? S.esites.filter(x => x.kind === 'drone' && alive(x)).reduce((m, x) => Math.min(m, U.dist(x, P.obj)), 1e9) : 1e9;
+  const drn = ds < 1e8 ? ds * 1.35 / IC.THR.owa.spd + 600 : 0;
+  let T = S.time + Math.max(U.rand(4800, 6600), Math.min(7200, bal), Math.min(14400, drn));
+  // drone raids come at night when the night is not too far off
+  if (kind === 'drones') { const h = ((T % 86400) / 3600), wait = h >= 20 || h < 4 ? 0 : (20 - h) * 3600 + U.rand(0, 5400); if (wait > 0 && wait < 8 * 3600) T += wait; }
+  const R = { id: ++E.raidN, kind, name: RAID_NAMES[kind], obj: P.obj, P, T, t0: S.time, ops: [], leaks: [], launched: 0, esc: E.escal };
+  E.raid = R;
+  E.cycle = { phase: 'buildup', next: T, R };
+  E.mood = `preparing a ${R.name}`;
+  // the build-up: things the player can see coming
+  const sharp = IC.hasTech(S, 's_esm') || IC.hasTech(S, 's_sat');
+  later(S, Math.max(0, T - S.time - U.rand(3600, 4800)), () => {
+    const where = sharp ? `, most likely against ${P.obj.name}` : ` towards ${IC.nearestPlace(S, P.obj.x, P.obj.y).replace(/^\d+ km \w+ of /, '')}`;
+    const when = Math.round((T - S.time) / 900) * 15;
+    IC.log(S, 'warn', 'INTEL', `Signals intelligence: ${S.world.names.A} is preparing a ${R.name}${where}. Expect it in about ${when} minutes.`, sharp ? P.obj : null);
+    IC.emit(S, 'raidWarning', { R, sharp, when });
+  });
+  later(S, T - S.time - U.rand(2700, 3300), () => { if (can(S, 'recon')) OPS.recon(S, E, { x: P.obj.x + U.rand(-250, 250), y: P.obj.y + U.rand(-250, 250) }); });
+  later(S, T - S.time - U.rand(2000, 2600), () => {
+    const op = newOp(S, 'probe', `drones probing towards ${P.obj.name}`, { raid: R });
+    if (can(S, 'drones') && Math.random() < 0.8) W.drones(S, E, P.obj, U.randi(2, 3), op, 0, true); else feint(S, E, P.obj);
+    if (can(S, 'rkt') && E.escal >= 1 && Math.random() < 0.4) OPS.rkt(S, E);
+  });
+  if (kind !== 'drones') later(S, T - S.time - U.rand(2300, 2700), () => standoffJammer(S, E, P.obj, R));
+  R.fired0 = S.stats.fired;
+  launchRaid(S, E, R);
+  E.cycle = { phase: 'buildup', next: T, R };
+}
+/* a stand-off jammer flies to a station behind the border and jams along the raid's axis */
+function standoffJammer(S, E, obj, R) {
+  if (!can(S, 'sead') && !can(S, 'jam')) return 0;
+  const b = S.esites.filter(s => s.kind === 'airbase' && alive(s) && (s.acAvail.ewj || 0) >= 1).sort((p, q) => U.dist(p, obj) - U.dist(q, obj))[0];
+  if (!b) return 0;
+  b.acAvail.ewj--;
+  const st = standoff(obj, b);
+  IC.spawnThreat(S, 'ewj', b.x, b.y, { home: b, mission: 'jam', route: [st], st, jamT: Math.max(1800, R.T - S.time + 2400), jamming: true, op: newOp(S, 'jam', `stand-off jamming towards ${obj.name}`, { raid: R }) });
+  return 1;
+}
+/* escort jammer drones fly the cruise missiles' lane and jam the radars ahead of them */
+function escorts(S, E, obj, n, op, arriveAt) {
+  const s = S.esites.filter(x => (x.kind === 'cm' || x.kind === 'drone') && alive(x)).sort((a, b) => U.dist(a, obj) - U.dist(b, obj))[0];
+  if (!s) return 0;
+  for (let i = 0; i < n; i++) {
+    const from = { x: s.x + U.rand(-40, 40), y: s.y + U.rand(-40, 40) };
+    const route = planRoute(S, s, { x: obj.x, y: obj.y }, true);
+    const T = routeLen(from, route) / IC.THR.esj.spd;
+    later(S, arriveAt - S.time - T - 120 + i * 40, () => { IC.spawnThreat(S, 'esj', from.x, from.y, { route: route.map(p => ({ x: p.x + U.rand(-15, 15), y: p.y + U.rand(-15, 15) })), aim: route[route.length - 1], jamming: true, op, origin: s }); op.launched++; });
+  }
+  return n;
+}
+/* the raid itself: waves timed on T */
+function launchRaid(S, E, R) {
+  const obj = R.obj, esc = E.escal, M = E.method, T = R.T, k = R.kind;
+  const ramp = 0.55 + 0.45 * Math.min(1, (S.time - (E.warT || S.time)) / 129600);
+  const big = (1 + esc * 0.4) * ramp * (k === 'big' ? 1.4 : 1);
+  const op = newOp(S, 'strike', `${R.name} on ${obj.name}`, { raid: R, obj: obj.ref, arriveAt: T });
+  const wave1 = T - 360, straggle = T + 480;
+  let n = 0;
+  const heavy = k === 'mixed' || k === 'big';
+  if ((k === 'drones' || heavy || k === 'cm') && can(S, 'drones')) n += W.drones(S, E, obj, Math.round((k === 'drones' ? 5 + esc * 2.5 : 3 + esc * 1.5) * Math.min(1.3, M.drones) * big), op, wave1);
+  if ((k === 'drones' || heavy) && can(S, 'dcy')) n += W.decoys(S, E, obj, Math.round((2 + esc) * ramp), op, wave1);
+  if (heavy && can(S, 'sead') && M.sead > 0.4) n += W.sead(S, E, obj, op, T);
+  if ((k === 'cm' || heavy || k === 'ballistic') && can(S, 'cm')) n += W.cm(S, E, obj, Math.round((k === 'ballistic' ? 2 : 3 + esc * 1.5) * big * M.cm), op, T);
+  if ((k === 'cm' || heavy) && can(S, 'jam')) n += escorts(S, E, obj, k === 'big' ? 2 : 1, op, T);
+  if ((k === 'ballistic' || k === 'big' || k === 'retaliation' || k === 'opening') && can(S, 'bal')) n += W.bal(S, E, obj, Math.round((k === 'opening' ? 3 : 2 + esc) * Math.max(0.5, M.bal) * (k === 'big' ? 1.5 : 1)), op, T, false);
+  if ((k === 'ballistic' || k === 'big') && esc >= 1.2 && can(S, 'mrbm')) n += W.bal(S, E, obj, esc >= 2.5 ? 2 : 1, op, T, true);
+  if (heavy && can(S, 'bomber') && esc >= 0.8 && M.bomber > 0.4 && Math.random() < 0.6) n += W.bomber(S, E, obj, op, T);
+  if (heavy && can(S, 'disguise') && esc >= 0.6 && M.disguise > 0.4 && Math.random() < 0.3) n += W.disguise(S, E, obj, op);
+  if (heavy && can(S, 'low') && M.low > 0.4 && Math.random() < 0.4) n += W.low(S, E, obj, op, T);
+  if ((heavy || k === 'drones') && can(S, 'helis') && Math.random() < 0.5) n += W.helis(S, E, obj, op, T - 200);
+  if (k === 'big' && esc >= 2.5 && can(S, 'hgv')) OPS.hgv(S, E, obj);
+  if (heavy && can(S, 'lm') && Math.random() < 0.4) OPS.lm(S, E);
+  if ((k === 'opening' || k === 'big') && can(S, 'drones')) { const pw = S.infra.filter(i => i.kind === 'power' && !i.offline).sort((a, b) => U.dist(a, obj) - U.dist(b, obj))[0]; if (pw) n += W.drones(S, E, { x: pw.x, y: pw.y, ref: pw, name: pw.name }, 4, op, wave1); }
+  // stragglers: a few that were late off the rails
+  if (k !== 'ballistic' && k !== 'retaliation' && can(S, 'drones')) n += W.drones(S, E, obj, Math.max(1, Math.round(big)), op, straggle);
+  R.ops.push(op); R.planned = n;
+  if (n) { IC.emit(S, 'enemyStrike', { op, obj, R }); if (Math.random() < 0.5) IC.news(S, `Analysts warn ${S.world.names.A} is massing missiles and aircraft for a major raid.`); }
+  return n;
+}
+/* the raid is over when nothing it launched is still flying, driving to fire or waiting to launch */
+function raidOver(S, R) {
+  if (S.time < R.T + 300) return false;
+  if (S.enemy.pending.some(p => p.t < R.T + 1200)) return false;
+  const mine = o => o && o.raid === R;
+  if (S.threats.some(t => !t.dead && mine(t.op) && t.mission !== 'rtb' && t.mission !== 'jam' && t.type !== 'isr')) return false;
+  if (S.tels.some(t => t.mission && mine(t.mission.op))) return false;
+  return true;
+}
+/* ---------- after-action report ---------- */
+const WORD = { drone: ['drone', 'drones'], cm: ['cruise missile', 'cruise missiles'], bal: ['ballistic missile', 'ballistic missiles'], hgv: ['hypersonic glider', 'hypersonic gliders'], arm: ['anti-radiation missile', 'anti-radiation missiles'], rkt: ['rocket', 'rockets'], air: ['aircraft', 'aircraft'] };
+/* why did this one get through? */
+function leakWhy(S, t) {
+  if (!t.tn) {
+    // nobody saw it: which of our radars should have?
+    const p = t.entered || t;
+    let best = null, bd = 1e9;
+    for (const u of S.units) {
+      const sn = u.d.sensor || u.d.fc; if (!sn || sn.passive || sn.bmdOnly || sn.rktOnly || sn.ssr) continue;
+      const d = U.dist(u, p); if (d < bd && d < U.horizon(sn.mast || 10, 0.06) * 1.3) { bd = d; best = u; }
+    }
+    if (best && (best.state !== 'ready' || !best.radarOn)) return `nobody saw it: ${best.name} near ${IC.nearestPlace(S, best.x, best.y).replace(/^\d+ km \w+ of /, '')} was ${best.state !== 'ready' ? 'not set up' : best.emcon === 'off' ? 'silent' : 'waiting in ambush'}`;
+    if (best) return `nobody saw it: it came in low behind the hills past ${best.name}`;
+    return 'nobody saw it: no radar covers that approach low down';
+  }
+  if (!t.shots) {
+    let best = null, bd = 1e9;
+    for (const u of S.units) if (u.d.weapon === 'sam' || u.d.weapon === 'gun') { const d = U.dist(u, t); if (d < bd && d < IC.maxRange(S, u) * 1.5) { bd = d; best = u; } }
+    return best ? `seen, never engaged: ${best.name} ${IC.engageWhy(S, best, t).charAt(0).toLowerCase() + IC.engageWhy(S, best, t).slice(1)}` : 'seen, never engaged: no battery covers it';
+  }
+  return `survived ${t.shots} interceptor${t.shots > 1 ? 's' : ''}`;
+}
+function report(S, E, R) {
+  const ops = E.ops.filter(o => o.raid === R);
+  const launched = ops.reduce((s, o) => s + o.launched, 0), lost = ops.reduce((s, o) => s + o.lost, 0);
+  const leaks = R.leaks.length;
+  // group what got through by kind, reason and place
+  const g = new Map();
+  for (const L of R.leaks) { const key = L.cls + '|' + L.why + '|' + L.place; const e = g.get(key) || { n: 0, cls: L.cls, why: L.why, place: L.place }; e.n++; g.set(key, e); }
+  const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${e.why}.`);
+  const res = { id: R.id, kind: R.kind, name: R.name, obj: R.obj.name, t: S.time, day: U.day(R.T), threats: launched, kills: lost, leaks, hits: R.hits || 0, fired: S.stats.fired - (R.fired0 || 0) };
+  (S.raids = S.raids || []).push(res);
+  const head = `${launched} threats, ${lost} shot down, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}. ${res.fired} interceptors fired.`;
+  const text = `${head}${lines.length ? ' ' + lines.join(' ') : ''}`;
+  R.text = text; R.res = res;
+  IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
+  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time)}`, text, 'report');
+  IC.emit(S, 'raidOver', R);
+  // the commander learns what worked
+  learn(S, E, R, ops);
+}
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function learn(S, E, R, ops) {
+  const P = R.P, r = R.obj.ref;
   let success = false;
-  if (r && r.fac) success = !IC.baseStatus(S, r).runway || r.fac.filter(f => (f.kind === 'hangar' || f.kind === 'has') && f.hp < f.max * 0.25).length >= 2;
+  if (r && r.parts) success = !IC.baseStatus(S, r).runway;
   else if (r && r.infra) success = r.offline || r.hp < r.max * 0.5;
   else if (r) success = r.dead;
-  const eff = last && last.launched ? last.hits / last.launched : 0;
-  const cost = last && last.launched ? last.lost / last.launched : 0;
-  E.history.push({ kind: P.kind, success, eff, cost, t: S.time });
-  E.objW[P.kind] = U.clamp(E.objW[P.kind] * (success ? 1.1 : 0.8) * (cost > 0.7 ? 0.8 : 1), 0.3, 2.5);
+  const launched = ops.reduce((s, o) => s + o.launched, 0);
+  const eff = launched ? (R.hits || 0) / launched : 0, cost = launched ? ops.reduce((s, o) => s + o.lost, 0) / launched : 0;
+  if (P) {
+    E.history.push({ kind: P.kind, success, eff, cost, t: S.time });
+    E.objW[P.kind] = U.clamp(E.objW[P.kind] * (success ? 1.1 : 0.8) * (cost > 0.7 ? 0.8 : 1), 0.3, 2.5);
+  }
   // methods that got through keep their share; the ones that died on the way are used less
   for (const k in E.method) E.method[k] = U.clamp(E.method[k] * 0.98 + 0.02, 0.2, 1.8);
-  if (last) {
-    for (const [type, st] of Object.entries(last.byType || {})) {
-      const m = { owa: 'drones', jdr: 'drones', lacm: 'cm', mcm: 'cm', scm: 'cm', srbm: 'bal', marv: 'bal', mrbm: 'bal', sead: 'sead', bmr: 'bomber', str: 'low' }[type];
-      if (!m) continue;
-      const pass = st.n ? st.hit / st.n : 0;
-      E.method[m] = U.clamp(E.method[m] * (0.85 + pass * 0.5), 0.3, 1.5);
+  for (const o of ops) for (const [type, st] of Object.entries(o.byType || {})) {
+    const m = { owa: 'drones', jdr: 'drones', lacm: 'cm', mcm: 'cm', scm: 'cm', srbm: 'bal', marv: 'bal', mrbm: 'bal', sead: 'sead', bmr: 'bomber', str: 'low' }[type];
+    if (!m) continue;
+    E.method[m] = U.clamp(E.method[m] * (0.85 + (st.n ? st.hit / st.n : 0) * 0.5), 0.3, 1.5);
+  }
+  if (success) IC.news(S, `${S.world.names.A} claims its strike on ${R.obj.name} was a success.`);
+  else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defenses blunt a ${R.name} on ${R.obj.name}.`); }
+}
+/* the calm after a raid: longer after a big one, shorter as the war goes on */
+function calmFor(E, R) {
+  const h = R.kind === 'big' ? U.rand(4, 5.5) : R.kind === 'opening' ? U.rand(2, 3) : U.rand(2.2, 3.4);
+  return h * 3600 / (0.85 + E.escal * 0.12);
+}
+function runCycle(S, E) {
+  const C = E.cycle || (E.cycle = { phase: 'calm', next: S.time + 1800 });
+  if (C.phase === 'calm') {
+    // a retaliation cuts the calm short
+    if (E.retaliate > 0 && S.time > (E.retT || 0)) { E.retT = S.time + 5400; C.next = Math.min(C.next, S.time + 900); }
+    if (S.time >= C.next) planRaid(S, E);
+  } else if (C.phase === 'buildup') {
+    if (S.time >= C.next - 900) { E.cycle = { phase: 'raid', next: C.next + 5400, R: C.R }; E.mood = `${C.R.name} on ${C.R.obj.name}`; IC.emit(S, 'raidStart', C.R); }
+  } else if (C.phase === 'raid') {
+    if (raidOver(S, C.R) || S.time > C.next) {
+      report(S, E, C.R);
+      E.raid = null;
+      E.cycle = { phase: 'calm', next: S.time + calmFor(E, C.R), since: S.time, after: C.R };
+      E.mood = 'counting the cost';
     }
   }
-  if (!success && P.strikes < 2 && Math.random() < 0.6) { P.phase = 'strike'; P.next = S.time + U.rand(3600, 7200); IC.log(S, 'warn', 'INTEL', `${S.world.names.A} is likely to strike ${P.obj.name} again.`); }
-  else { E.plan = null; E.nextPlanT = S.time + U.rand(1800, 5400); }
-  if (success) IC.news(S, `${S.world.names.A} claims its strike on ${P.obj.name} was a success.`);
-  else if (last && last.launched >= 6 && eff < 0.2) { S.enemy.will = Math.max(0, S.enemy.will - 1.5); IC.news(S, `Air defenses blunt a major raid on ${P.obj.name}.`); }
 }
-
-/* harassment: cheap raids at odd hours so our radars stay lit, crews stay up and interceptors get spent */
-function harass(S, E) {
-  const night = IC.isNight(S);
-  E.harassT = S.time + U.rand(1500, 4200) / (0.7 + E.escal * 0.2) * (night ? 0.7 : 1);
-  const r = Math.random();
-  const tg = E.plan && Math.random() < 0.6 ? E.plan.obj : pickTarget(S, U.pick(['terror', 'industry', 'ad', 'airbase']));
-  if (!tg) return;
-  const op = newOp(S, 'harass', `harassment raid towards ${tg.name}`);
-  if (r < 0.55 && can(S, 'drones')) W.drones(S, E, tg, U.randi(1, 3), op, 0, true);
-  else if (r < 0.75 && can(S, 'rkt')) OPS.rkt(S, E);
-  else if (r < 0.9) feint(S, E, tg);
-  else if (can(S, 'lm')) OPS.lm(S, E);
-}
+IC.raidPhase = S => S.enemy && S.enemy.cycle ? S.enemy.cycle.phase : 'calm';
 
 /* standalone operations: recon, rockets, loitering munitions, close air support, retaliation */
 const OPS = {
@@ -463,7 +621,7 @@ const OPS = {
     return IC.spawnThreat(S, 'isr', s.x, s.y, { area, phase: 'out', loiterT: U.rand(2400, 4800), home: { x: s.x, y: s.y }, site: s, origin: s });
   },
   lm(S, E) {
-    const tgt = pickTarget(S, Math.random() < 0.5 ? 'convoy' : 'front');
+    const tgt = pickTarget(S, Math.random() < 0.5 ? 'convoy' : 'ad');
     if (!tgt) return false;
     const s = S.esites.filter(x => x.kind === 'drone' && alive(x) && (x.inv.lm || 0) >= 2).sort((a, b) => U.dist(a, tgt) - U.dist(b, tgt))[0];
     if (!s) return false;
@@ -485,7 +643,6 @@ const OPS = {
     else {
       for (const i of S.infra) if (!i.offline && i.owner === 'us' && i.kind !== 'bridge' && U.dist(i, fp) < 780) cands.push({ x: i.x, y: i.y, ref: i, name: i.name, w: i.kind === 'city' ? 6 : 4 });
       for (const k of S.enemy.known.values()) if (!k.ref.dead && U.dist(k, fp) < 780) cands.push({ x: k.x, y: k.y, ref: k.ref, name: k.ref.name, w: 8 });
-      for (const g of S.gunits) if (g.side === 'us' && !g.dead && U.dist(g, fp) < 780 && S.time - (g.spottedT || -1e9) < 7200) cands.push({ x: g.x, y: g.y, ref: g, name: g.name, w: 7 });
     }
     if (!cands.length) return false;
     const tgt = U.wpick(cands.map(c => [c, c.w]));
@@ -494,21 +651,6 @@ const OPS = {
     const op = newOp(S, 'rkt', `rocket salvo at ${tgt.name}`);
     const aims = []; for (let i = 0; i < n; i++) aims.push({ type: 'rkt', x: tgt.x + U.rand(-25, 25), y: tgt.y + U.rand(-25, 25), ref: tgt.ref });
     tel.mission = { aims, op, fireAt: 0 }; tel.state = 'moving'; tel.route = [fp];
-    return op;
-  },
-  ecas(S, E, g0) {
-    const ours = S.gunits.filter(g => g.side === 'us' && !g.dead && g.front && g.front.active && g.order !== 'refit');
-    if (!ours.length) return false;
-    const g = g0 || U.pick(ours);
-    const b = S.esites.filter(s => s.kind === 'airbase' && alive(s) && s.acAvail.str >= 2 && s.nat === g.front.key).sort((a, c) => U.dist(a, g) - U.dist(c, g))[0];
-    if (!b) return false;
-    const op = newOp(S, 'ecas', `air strike on ${g.name}`);
-    const dir = Math.atan2(g.y - b.y, g.x - b.x);
-    for (let i = 0; i < 2; i++) {
-      b.acAvail.str--;
-      const rp = { x: g.x - Math.cos(dir) * 560, y: g.y - Math.sin(dir) * 560 };
-      later(S, i * 40, () => IC.spawnThreat(S, 'str', b.x, b.y, { home: b, mission: 'strike', route: [rp], tgt: { x: g.x, y: g.y, ref: g, name: g.name }, op }));
-    }
     return op;
   },
   hgv(S, E, obj) {
@@ -648,6 +790,7 @@ IC.moveEnemyAir = function (S, t, dt) {
   t.vx = Math.cos(h) * t.spd; t.vy = Math.sin(h) * t.spd;
   t.x += t.vx * dt; t.y += t.vy * dt;
   if (t.low) t.alt = 0.1 + 0.05 * Math.sin(t.age * 0.05);
+  else if (t.altHold != null) t.alt = t.altHold;
 };
 function arriveAir(S, t) {
   const home = () => { t.mission = 'rtb'; t.route = [{ x: t.home.x, y: t.home.y }]; };
@@ -673,12 +816,6 @@ function arriveAir(S, t) {
       home(); break;
     }
     case 'strike': {
-      // brigades carry their own shoulder-fired missiles
-      const bg = t.tgt.ref && t.tgt.ref.gunit ? t.tgt.ref : S.gunits.find(g => g.side === 'us' && !g.dead && U.dist(g, t) < 500);
-      if (bg && bg.kit.mpd > 0 && Math.random() < 0.12 + bg.kit.mpd * 0.03 * IC.wx(S).ir) {
-        if (t.cm > 0 && Math.random() < 0.5) { t.cm--; IC.flares(S, t); }
-        else { IC.killThreat(S, t, `${bg.name} air defense`); bg.kit.mpd = Math.max(0, bg.kit.mpd - 1); return; }
-      }
       for (let i = 0; i < 2; i++) {
         const tg = t.tgt.ref && t.tgt.ref.side === 'us' && !t.tgt.ref.dead ? t.tgt.ref : t.tgt;
         const aim = tg.fac ? aimAtBase(tg) : { x: tg.x + U.rand(-10, 10), y: tg.y + U.rand(-10, 10) };
@@ -686,7 +823,7 @@ function arriveAir(S, t) {
         t.op.launched++;
       }
       IC.weaponRelease(S, t);
-      t.low = false; t.alt = 7;
+      if (t.type !== 'ahe') { t.low = false; t.alt = 7; }
       home(); break;
     }
     case 'bomber': {
@@ -709,37 +846,10 @@ function arriveAir(S, t) {
   }
 }
 
-/* ---------- enemy convoys (interdiction targets) ---------- */
-function runConvoys(S) {
-  for (const f of S.fronts) {
-    if (!f.active) continue;
-    const st = S.esites.find(s => s.nat === f.key && s.kind === 'staging' && !s.destroyed);
-    if (!st) continue;
-    for (const d of S.esites.filter(s => s.nat === f.key && s.kind === 'supply' && !s.destroyed)) {
-      if (d.stock > 240 || S.evehicles.filter(v => v.to === d && !v.dead).length) continue;
-      S.evehicles.push({ id: IC.nid('ev'), evehicle: true, name: `${S.world.names[f.key]} supply convoy`, x: st.x, y: st.y, h: 0, route: [{ x: d.x, y: d.y }], to: d, trucks: 4, load: 60, kx: 0, ky: 0, kt: -1e9, known: false });
-    }
-  }
-}
-IC.enemyConvoyHit = function (S, v, by) {
-  if (v.dead) return;
-  v.trucks--; v.load = Math.max(0, v.load - 15);
-  IC.explode(S, v.x, v.y, 0.6, 'us');
-  S.wrecks.push({ x: v.x + U.rand(-4, 4), y: v.y + U.rand(-4, 4), type: 'etruck', t: S.time, h: v.h || 0 });
-  if (v.trucks <= 0) { v.dead = true; IC.log(S, 'kill', 'INTERDICT', `Enemy supply convoy destroyed by ${by}.`, v); S.enemy.will = Math.max(0, S.enemy.will - 0.8); IC.emit(S, 'convoyKill', v); }
-};
-function moveConvoys(S, dt) {
-  for (const v of S.evehicles) {
-    if (v.dead) continue;
-    if (IC.followRoute(v, dt, 0.2, 0.2)) { v.dead = true; v.arrived = true; v.to.stock = Math.min(300, (v.to.stock || 0) + v.load); }
-  }
-  S.evehicles = S.evehicles.filter(v => !v.dead);
-}
-
 /* ---------- commander ---------- */
 function ensurePatrols(S) {
   for (const b of S.esites.filter(s => s.kind === 'airbase' && !s.destroyed && !s.dormant)) {
-    const f = S.fronts.find(x => x.key === b.nat); if (!f) continue;
+    const f = S.world.fronts.find(x => x.key === b.nat); if (!f) continue;
     const up = S.threats.filter(t => t.mission === 'patrol' && t.home === b && !t.dead).length;
     if (up >= 1 || b.acAvail.ftr < 1) continue;
     const p = f.pts[U.randi(0, f.pts.length - 1)];
@@ -757,14 +867,11 @@ IC.enemyOpening = function (S) {
   const ab = S.infra.find(i => i.kind === 'airbase' && i.id === 'ab_fwd') || S.infra.find(i => i.kind === 'airbase');
   const obj = { x: ab.x, y: ab.y, ref: ab, name: ab.name };
   const esc = E.escal; E.escal = 0.4;
-  const op = newOp(S, 'strike', `opening strike on ${ab.name}`, { obj: ab });
-  const T = S.time + 1500;
-  W.bal(S, E, obj, 3, op, T, false);
-  W.cm(S, E, obj, 3, op, T);
-  const pw = S.infra.find(i => i.kind === 'power');
-  if (pw) W.drones(S, E, { x: pw.x, y: pw.y, ref: pw, name: pw.name }, 5, newOp(S, 'drones', `drones at ${pw.name}`), 0);
+  const R = { id: 0, kind: 'opening', name: RAID_NAMES.opening, obj, P: { kind: 'airbase', obj, label: OBJ_NAMES.airbase }, T: S.time + 1500, t0: S.time, ops: [], leaks: [], fired0: S.stats.fired, esc: 0.4 };
+  E.plan = R.P; E.raid = R;
+  launchRaid(S, E, R);
   E.escal = esc;
-  E.plan = { kind: 'airbase', obj, phase: 'assess', t0: S.time, next: T + 2400, probes: 3, strikes: 1, label: OBJ_NAMES.airbase };
+  E.cycle = { phase: 'raid', next: R.T + 5400, R };
   IC.emit(S, 'war', {});
 };
 IC.enemyForceOp = function (S, name, target, n) {
@@ -772,7 +879,6 @@ IC.enemyForceOp = function (S, name, target, n) {
   if (name === 'recon') return OPS.recon(S, E, target);
   if (name === 'rkt') return OPS.rkt(S, E, target);
   if (name === 'lm') return OPS.lm(S, E);
-  if (name === 'ecas') return OPS.ecas(S, E, target);
   if (name === 'hgv') return OPS.hgv(S, E, obj);
   const op = newOp(S, name, `${name} at ${obj ? obj.name : 'target'}`);
   let T = S.time + (n && n.T || 1200);
@@ -786,7 +892,12 @@ IC.enemyForceOp = function (S, name, target, n) {
   else if (name === 'low') W.low(S, E, obj, op, 0);
   else if (name === 'sead') W.sead(S, E, obj, op, 0);
   else if (name === 'decoys') W.decoys(S, E, obj, n || 3, op, 0);
-  else if (name === 'strike') { const P = { kind: 'airbase', obj, phase: 'strike', probes: 3, strikes: 0, label: 'strike' }; strike(S, E, P); }
+  else if (name === 'helis') W.helis(S, E, obj, op, 0);
+  else if (name === 'strike' || name === 'raid') {
+    const kind = n && n.kind || 'mixed', R = { id: ++E.raidN, kind, name: RAID_NAMES[kind], obj, P: { kind: 'airbase', obj, label: 'strike' }, T, t0: S.time, ops: [], leaks: [], fired0: S.stats.fired, esc: E.escal };
+    E.raid = R; launchRaid(S, E, R); E.cycle = { phase: 'raid', next: T + 5400, R };
+    return R.ops[0];
+  }
   return op;
 };
 
@@ -800,24 +911,27 @@ IC.on((S, type, d) => {
   }
   if (type === 'impact' && d.src && d.src.op) { const op = d.src.op; const bt = op.byType || (op.byType = {}); (bt[d.src.type] = bt[d.src.type] || { n: 0, hit: 0 }); bt[d.src.type].n++; bt[d.src.type].hit++; }
   if (type === 'launch' && d.t.op) d.t.op.shots++;
-  if (type === 'assault' && S.enemy.war) { OPS.ecas(S, S.enemy); if (Math.random() < 0.6) OPS.rkt(S, S.enemy, IC.secGeom(d.f, d.si)); }
+  // a weapon of a raid came down on our side: what it hit and why it got through
+  if (type === 'arrive' && d.t.op && d.t.op.raid && IC.inHome(d.t.x, d.t.y)) {
+    const R = d.t.op.raid, t = d.t;
+    t.dead = false; const why = leakWhy(S, t); t.dead = true;
+    R.leaks.push({ cls: t.d.cls, type: t.type, why, place: d.hit && d.hit.name ? d.hit.name : IC.nearestPlace(S, t.x, t.y), hit: !!d.hit });
+    if (d.hit) R.hits = (R.hits || 0) + 1;
+  }
 });
 
 IC.enemyTick = function (S, dt) {
   const E = S.enemy;
-  if (E.war) E.escal = Math.min(4, E.escalBase + (S.time - (E.warT || S.time)) / 86400 * 0.8 + (E.bump || 0));
+  if (E.war) E.escal = Math.min(4, E.escalBase + (S.time - (E.warT || S.time)) / 86400 * 0.6 + (E.bump || 0));
   if (E.pending.length) {
     const due = E.pending.filter(p => p.t <= S.time);
     if (due.length) { E.pending = E.pending.filter(p => p.t > S.time); for (const p of due) p.fn(); }
   }
   IC.updateTels(S, dt);
-  moveConvoys(S, dt);
   E.intelT -= dt;
   if (E.intelT <= 0) { E.intelT = 30; updateIntel(S); for (const k in E.danger) E.danger[k] *= 0.995; }
   E.patrolT -= dt;
   if (E.patrolT <= 0) { E.patrolT = 300; ensurePatrols(S); }
-  E.convoyT -= dt;
-  if (E.convoyT <= 0) { E.convoyT = 1200; runConvoys(S); }
   E.regenT -= dt;
   if (E.regenT <= 0) {
     E.regenT = 60;
@@ -839,31 +953,7 @@ IC.enemyTick = function (S, dt) {
     if (E.allow && E.allow.has('recon') && S.time > E.nextThink) { E.nextThink = S.time + U.rand(3600, 5400); OPS.recon(S, E); }
     return;
   }
-  // retaliation after our strikes on their territory
-  if (E.retaliate > 0 && S.time > (E.retT || 0) && can(S, 'bal')) {
-    E.retaliate = 0; E.retT = S.time + 5400;
-    const tgt = pickTarget(S, 'bal') || pickTarget(S, 'terror');
-    if (tgt) { const op = newOp(S, 'retaliate', `retaliation on ${tgt.name}`); if (!W.bal(S, E, tgt, 2, op, 0, false)) W.cm(S, E, tgt, 3, op, 0); E.mood = 'retaliating'; IC.news(S, `${S.world.names.A} vows retaliation after strikes on its territory.`); }
-  }
-  if (S.time > E.harassT) harass(S, E);
-  if (!E.plan && S.time > (E.nextPlanT || 0)) {
-    E.plan = chooseObjective(S, E);
-    if (E.plan) { E.mood = `probing: ${E.plan.label}`; if (Math.random() < 0.5) IC.log(S, 'info', 'INTEL', `Enemy air activity suggests a new objective: ${E.plan.label}.`); }
-  }
-  const P = E.plan;
-  if (P && S.time >= P.next) {
-    if (P.phase === 'probe') probe(S, E, P);
-    else if (P.phase === 'strike') strike(S, E, P);
-    else if (P.phase === 'assess') assess(S, E, P);
-  }
-  if (S.time > (E.nextThink || 0)) {
-    E.nextThink = S.time + U.rand(2400, 5400) / (0.6 + E.escal * 0.3);
-    const r = Math.random();
-    if (r < 0.25 && can(S, 'lm') && S.fronts.some(f => f.active)) OPS.lm(S, E);
-    else if (r < 0.4 && can(S, 'rkt')) OPS.rkt(S, E);
-    else if (r < 0.5 && can(S, 'recon')) OPS.recon(S, E);
-    else if (r < 0.56 && can(S, 'hgv')) OPS.hgv(S, E);
-  }
+  runCycle(S, E);
 };
 
 })(window.IC);

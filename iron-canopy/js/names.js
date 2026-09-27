@@ -18,7 +18,7 @@ const UNITS = {
   cbr:     ['Backtrack', 'BKT', 'counter-battery radar', 'Tracks rockets and pinpoints the launcher that fired them.'],
   aero:    ['Skyhook', 'SKY', 'radar balloon', 'Radar on a balloon at 3,000 m. Sees cruise missiles 250 km out. Fragile.'],
   bmd:     ['Farsight', 'FAR', 'ballistic missile tracking radar', 'Tracks ballistic missiles across the region and tells warheads from decoys.'],
-  manpads: ['Nettle', 'NTL', 'shoulder-fired missile team', 'Heat-seeking missiles carried by a team. Cheap, silent, 5 km reach. Flares and bad weather hurt them.'],
+  manpads: ['Nettle', 'NTL', 'shoulder-fired missile team', 'A team called in by helicopter anywhere in the country. It fights for a few minutes, then is lifted out. Heat-seeking missiles, 5 km reach; flares and bad weather hurt them.'],
   spaag:   ['Buzzsaw', 'BZS', 'anti-aircraft gun vehicle', 'Radar-directed 35 mm twin cannon, 4.5 km reach. Never runs dry.'],
   cram:    ['Hailstorm', 'HLS', 'rocket and drone defence gun', 'A fast-firing gun that shoots down rockets, drones and anti-radiation missiles in the last 3 km.'],
   shorad:  ['Vixen', 'VIX', 'short-range missile vehicle', 'Short-range missiles steered by its own radar. 12 km reach.'],
@@ -39,6 +39,7 @@ const UNITS = {
 // [nick, short, plain name, what it does]
 const MUN = {
   IR:  ['Sting', 'IR', 'Heat-seeking missile', 'Short reach, fire and forget. Flares, rain and cloud hurt it.'],
+  IR2: ['Sting II', 'IR+', 'Imaging heat-seeking missile', 'Sees a picture of the target, not a hot spot: longer reach, and flares fool it less.'],
   SR:  ['Dart', 'SR', 'Short-range missile', 'Steered by the launcher’s radar all the way.'],
   MR:  ['Lance', 'MR', 'Medium-range missile', 'Finds its target with its own radar in the last seconds.'],
   LR:  ['Longspear', 'LR', 'Long-range missile', 'Two-stage missile that climbs high and dives. The battery radar must light the target until impact.'],
@@ -48,9 +49,7 @@ const MUN = {
   AAM: ['Kite', 'AAM', 'Air-to-air missile', 'Our fighters’ radar-guided missile.'],
   CRS: ['Harrow', 'CRS', 'Land-attack cruise missile', 'Flies low for 500 km to a fixed target.'],
   SRB: ['Spire', 'TBM', 'Tactical ballistic missile', 'Reaches 300 km in minutes.'],
-  RKT: ['Rain', 'RKT', 'Guided rocket', 'Cheap, fast, 80 km.'],
-  ATG: ['Anti-tank kit', 'ATGM', 'Anti-tank missile kit', 'Anti-tank missiles for the army.'],
-  SUP: ['Supply', 'SUP', 'Supply pallet', 'Food, fuel and spares.']
+  RKT: ['Rain', 'RKT', 'Guided rocket', 'Cheap, fast, 80 km.']
 };
 // enemy weapons get reporting names, the way air forces name what the other side flies
 const THR = {
@@ -74,6 +73,8 @@ const THR = {
   str:  ['Cudgel', 'Strike aircraft', 'Carries bombs and stand-off weapons.'],
   sead: ['Jackal', 'SEAD aircraft', 'Hunts radars with anti-radiation missiles.'],
   ewj:  ['Howler', 'Stand-off jammer', 'Blinds radars along its bearing from far away.'],
+  esj:  ['Gnat', 'Escort jammer drone', 'Flies with the cruise missiles and jams radars along its bearing, so they see the raid late.'],
+  ahe:  ['Hornet', 'Attack helicopter', 'Flies low along the valleys to hit targets near the border. Hills hide it from radar.'],
   bmr:  ['Colossus', 'Missile-carrier bomber', 'Launches cruise missiles from outside our reach.'],
   civ:  ['Airliner', 'Airliner', 'A passenger flight.'],
   ga:   ['Light aircraft', 'Light civil aircraft', 'A private or club aircraft.']

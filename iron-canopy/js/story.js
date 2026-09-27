@@ -50,7 +50,7 @@ IC.storyAllows = function (S, type) {
 };
 IC.roomAllowed = function (S, room) {
   const st = S.story; if (!st) return room !== 'aviation' || !!S.av;
-  const need = { air: 2, intel: 2, research: 3, logi: 3, industry: 3, army: 4 }[room];
+  const need = { air: 2, intel: 2, research: 3, logi: 3, industry: 3 }[room];
   return !need || st.act >= need;
 };
 IC.staffCost = S => { const st = S.story; if (!st) return 0; let v = 0; for (const k in st.del) if (st.del[k]) v += IC.DELEGATES[k].cost; return v; };
@@ -118,7 +118,6 @@ function goalsFor(S, act) {
     G.push({ id: 'civil', text: 'Keep civil aviation alive: 2,500 passengers in a day', check: () => S.av.day.pax >= 2500 || (S.av.yesterday && S.av.yesterday.pax >= 2500), prog: () => `${Math.round(S.av.day.pax).toLocaleString('en-US')} today` });
   } else {
     G.push({ id: 'will', text: `Break ${S.world.names.A}’s will to fight`, check: () => S.enemy.will < 25, prog: () => `${Math.round(S.enemy.will)}%` });
-    G.push({ id: 'hold', text: 'Keep every city in our hands', check: () => false, prog: () => `${IC.cities(S).filter(c => c.owner === 'enemy').length} lost` });
   }
   return G;
 }
@@ -161,9 +160,9 @@ function startAct(S, n) {
     // the defence ministry hands over what it has in the depots
     const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
     dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
-    Object.assign(dep.inv, { IR: 10, SR: 12, MR: 6, LR: 2, RKT: 0, ATG: 0, SUP: 80 });
+    Object.assign(dep.inv, { IR: 10, SR: 12, MR: 6, LR: 2, RKT: 0 });
     IC.addTruck(S, dep); IC.addTruck(S, dep);
-    S.reserve = { mrsam: 1, shorad: 2, spaag: 1, manpads: 3, lr3d: 1, mr3d: 1, depot: 1 };
+    S.reserve = { mrsam: 1, shorad: 2, spaag: 1, lr3d: 1, mr3d: 1, depot: 1 };
     addFlight(S, 'ftr', 'LANCE 2', 'ab_rear').st = 'ready';
     addFlight(S, 'isr', 'REAPER 2', 'ab_rear').st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
@@ -179,14 +178,10 @@ function startAct(S, n) {
     S.mobil = Math.max(S.mobil, 1);
     // the whole air force: the rear base's flights come under command
     const fwd = 'ab_fwd', rear = S.byId.ab_rear ? 'ab_rear' : 'ab_fwd';
-    for (const [k, nm, b] of [['atk', 'TALON 1', fwd], ['heli', 'HOOK 2', rear], ['cargo', 'ATLAS 1', rear], ['ucav', 'HAWK 1', rear], ['aew', 'SENTRY 2', rear]]) if (!S.roster.some(r => r.name === nm)) addFlight(S, k, nm, b).st = 'ready';
+    for (const [k, nm, b] of [['heli', 'HOOK 2', rear], ['cargo', 'ATLAS 1', rear], ['ucav', 'HAWK 1', rear], ['aew', 'SENTRY 2', rear]]) if (!S.roster.some(r => r.name === nm)) addFlight(S, k, nm, b).st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time), `${W.full.A} has attacked. The government has made you ${A.role}, with the army's fronts under your air command. Everything you built now has to hold.`, 'chapter');
-    say(S, 'CDS', `This is war. Their armour will cross within hours. The front commanders run the brigades; you decide where the air goes and what we defend.`);
-    S.camp.sched = [
-      { t: S.time + U.rand(1.5, 2.5) * 3600, fn: () => { IC.activateFront(S, 'A'); } },
-      { t: S.time + U.rand(20, 30) * 3600, fn: () => { IC.activateFront(S, 'B'); } }
-    ];
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time), `${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.`, 'chapter');
+    say(S, 'CDS', `This is war. Missiles, drones and aircraft will come in raids. You decide where the air goes and what we defend.`);
   }
 }
 IC.storyStartAct = startAct;
@@ -195,7 +190,7 @@ IC.storyStartAct = startAct;
 function border(S, near) {
   // a point on our side of the hostile border, near a place
   const W = S.world;
-  const fA = S.fronts.find(f => f.key === 'A');
+  const fA = S.world.fronts.find(f => f.key === 'A');
   if (!fA) return { x: W.cx, y: W.cy };
   let best = fA.pts[Math.floor(fA.pts.length / 2)];
   if (near) { let bd = 1e9; for (const p of fA.pts) { const d = U.dist(p, near); if (d < bd) { bd = d; best = p; } } }

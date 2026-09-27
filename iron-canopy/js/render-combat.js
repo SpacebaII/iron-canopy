@@ -20,27 +20,6 @@ function frame(g, aff, x, y, s) {
   g.fill(); g.stroke();
   return ink;
 }
-function groundIcon(g, sym, x, y, s, ink, aff) {
-  g.strokeStyle = ink; g.fillStyle = ink; g.lineWidth = 1.2 * s;
-  const w = aff === 'h' ? 6 * s : 10 * s, h = aff === 'h' ? 6 * s : 6.5 * s;
-  const X = () => { g.beginPath(); g.moveTo(x - w, y - h); g.lineTo(x + w, y + h); g.moveTo(x - w, y + h); g.lineTo(x + w, y - h); g.stroke(); };
-  const O = () => { g.beginPath(); g.ellipse(x, y, w * 0.62, h * 0.55, 0, 0, 7); g.stroke(); };
-  if (sym === 'inf') X();
-  else if (sym === 'armor') O();
-  else if (sym === 'mech') { X(); O(); }
-  else if (sym === 'arty') { g.beginPath(); g.arc(x, y, 2.4 * s, 0, 7); g.fill(); }
-}
-const ORDER_ICON = { hold: '▬', dig: '⛉', attack: '➤', defend: '⌂', reserve: 'R', refit: '✚', staging: '', reserveE: '' };
-IC.drawGround = function (g, u, x, y, s, alpha) {
-  const aff = u.side === 'us' ? 'f' : 'h';
-  g.globalAlpha = alpha == null ? 1 : alpha;
-  const ink = frame(g, aff, x, y, s);
-  groundIcon(g, u.g.sym, x, y, s, ink, aff);
-  g.fillStyle = aff === 'f' ? C.friend : C.hostile;
-  g.font = `700 ${8 * s}px "IBM Plex Mono", monospace`; g.textAlign = 'center';
-  g.fillText(u.g.ech, x, y - (aff === 'h' ? 13 : 10) * s);
-  g.textAlign = 'left'; g.globalAlpha = 1;
-};
 /* ---------- unit symbols: a shape language by role ----------
    The frame says what kind of system it is, the glyph inside says which one:
    search radar ○ · fire-control radar ○ with a reticle · passive sensor ○ dashed · launchers ⌂ growing from short to
@@ -188,6 +167,8 @@ const TGLYPH = {
   str(g) { TGLYPH.ftr(g); g.beginPath(); g.arc(-3, 3, 0.9, 0, 7); g.arc(3, 3, 0.9, 0, 7); g.fill(); },
   sead(g) { TGLYPH.ftr(g); arcs(g, 0, -4.5, 1, 2.5, 0, -2.4, -0.7); },
   ewj(g) { g.lineWidth = 1.5; zig(g, -5.5, 5.5, 0, 2.6, 5); },
+  heli(g) { g.beginPath(); g.ellipse(0, 1, 2.2, 3.2, 0, 0, 7); g.fill(); g.lineWidth = 1.3; L(g, [-5.5, -2.5, 5.5, -2.5]); L(g, [0, 4, 0, 6.5]); },
+  esj(g) { TGLYPH.drone(g); g.lineWidth = 1; zig(g, -5, 5, -5, 1.1, 4); },
   bmr(g) { g.beginPath(); g.moveTo(0, -4.5); g.lineTo(6.5, 1.5); g.lineTo(6.5, 2.8); g.lineTo(0, 0.5); g.lineTo(-6.5, 2.8); g.lineTo(-6.5, 1.5); g.closePath(); g.fill(); L(g, [0, -5, 0, 4]); },
   // enemy installations and launchers
   runway(g) { g.lineWidth = 2.2; L(g, [-5, 4, 5, -4]); g.lineWidth = 0.8; L(g, [-3.5, -1, -1, 2]); L(g, [1, -2, 3.5, 1]); },
@@ -198,8 +179,8 @@ const TGLYPH = {
   dcy(g) { g.setLineDash([1.3, 1.1]); g.beginPath(); g.moveTo(0, -5); g.lineTo(5, 1.5); g.lineTo(0, 0); g.lineTo(-5, 1.5); g.closePath(); g.stroke(); g.setLineDash([]); }
 };
 const SITE_GLYPH = { airbase: 'runway', drone: 'drone', cm: 'cm', bm: 'bal', mrbm: 'bal', hgv: 'hgv', rkt: 'tubes', supply: 'crate', staging: 'flag' };
-const TGLYPH_OF = { owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bal', marv: 'marv', mrbm: 'bal', pen: 'bal', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ftr: 'ftr', str: 'str', sead: 'sead', ewj: 'ewj', bmr: 'bmr' };
-const KLASS_GLYPH = { drone: 'drone', cm: 'cm', ballistic: 'bal', rocket: 'rkt', fighter: 'ftr', bomber: 'bmr', jammer: 'ewj' };
+const TGLYPH_OF = { owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bal', marv: 'marv', mrbm: 'bal', pen: 'bal', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ftr: 'ftr', str: 'str', sead: 'sead', ewj: 'ewj', esj: 'esj', ahe: 'heli', bmr: 'bmr' };
+const KLASS_GLYPH = { heli: 'heli', drone: 'drone', cm: 'cm', ballistic: 'bal', rocket: 'rkt', fighter: 'ftr', bomber: 'bmr', jammer: 'ewj' };
 IC.threatGlyph = (type, klass) => TGLYPH_OF[type] || KLASS_GLYPH[klass] || KLASS_GLYPH[IC.THR[type] && IC.THR[type].klass];
 function threatGlyph(g, key, x, y, s, col) {
   const f = TGLYPH[key]; if (!f) return;
@@ -248,7 +229,6 @@ IC.drawForces = function (S, px, now) {
   ctx = RS.ctx; WF = RS.WF;
   if (S.layers.intel) drawEnemy(S, px, now);
   drawRanges(S, px, now);
-  if (S.layers.ground) for (const g of S.gunits) if (g.side === 'us' && inView(g.x, g.y, 300)) drawG(S, g, px, now);
   for (const u of S.units) if (inView(u.x, u.y, 200)) drawUnit(S, u, px, now);
 };
 
@@ -279,22 +259,7 @@ function drawEnemy(S, px, now) {
     ctx.globalAlpha = 1;
     if (S.sel && S.sel.ref === t) brackets(t.kx, t.ky, 12 * px, px);
   }
-  if (S.layers.ground) for (const g of S.gunits) {
-    if (g.side !== 'them' || !g.known) continue;
-    const age = S.time - g.kt;
-    const s = px * 1.35;
-    IC.drawGround(ctx, g, g.kx, g.ky, s, U.clamp(1 - age / 5400, 0.3, 1));
-    if (cam.z > 0.14) label(`${g.name} ~${Math.round(g.str / 10) * 10}%`, g.kx, g.ky + 22 * px, px, 'rgba(255,170,160,0.95)', 9.5);
-    if (g.order === 'attack' && !g.moving && age < 900) { const p = IC.gTargetPos(S, g); arrowSmall(g.kx, g.ky, g.kx + (p.x - g.kx) * 0.001 + Math.cos(g.h || 0) * 40, g.ky + Math.sin(g.h || 0) * 40, '#ff5b4f', px); }
-    if (S.sel && S.sel.ref === g) brackets(g.kx, g.ky, 20 * px, px);
-  }
-  for (const v of S.evehicles) {
-    if (v.dead || !v.known) continue;
-    column(v.kx, v.ky, v.h, v.trucks, px, '#ff7a6a', '#2a0c08');
-    if (S.sel && S.sel.ref === v) brackets(v.kx, v.ky, 14 * px, px);
-  }
 }
-function arrowSmall() {}
 
 function drawRanges(S, px, now) {
   for (const u of S.units) {
@@ -303,7 +268,7 @@ function drawRanges(S, px, now) {
     const d = u.d;
     if (d.sensor && !d.sensor.passive) {
       if (sel || (S.layers.rings && d.sensor.R > 1200 && u.radarOn && cam.z > 0.08)) {
-        const R = d.sensor.R * (u.jamF || 1);
+        const R = d.sensor.R;
         ctx.strokeStyle = u.radarOn ? (u.jamF < 0.97 ? 'rgba(242,180,65,0.4)' : 'rgba(92,200,255,0.2)') : 'rgba(125,149,165,0.25)';
         ctx.lineWidth = 1 * px; ctx.setLineDash(IC.ringDash(d, px));
         ctx.beginPath(); ctx.arc(u.x, u.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
@@ -313,7 +278,7 @@ function drawRanges(S, px, now) {
       if (u.radarOn && d.sensor.rot && fxMode !== 'off' && inView(u.x, u.y, d.sensor.R)) {
         const a = (u.phase || 0) + Math.PI * 2 * S.time / d.sensor.per;
         if (fxMode === 'full') {
-          const R = Math.min(d.sensor.R, 2400) * (u.jamF || 1);
+          const R = Math.min(d.sensor.R, 2400);
           const grd = ctx.createRadialGradient(u.x, u.y, 0, u.x, u.y, R);
           grd.addColorStop(0, 'rgba(92,200,255,0.02)'); grd.addColorStop(1, 'rgba(92,200,255,0.11)');
           ctx.fillStyle = grd; ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.arc(u.x, u.y, R, a - 0.4, a); ctx.closePath(); ctx.fill();
@@ -326,11 +291,6 @@ function drawRanges(S, px, now) {
           ctx.strokeStyle = 'rgba(160,230,255,0.6)'; ctx.lineWidth = 1.4 * px;
           ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x + Math.cos(a) * r, u.y + Math.sin(a) * r); ctx.stroke();
         }
-      }
-      if (u.jammers) for (const j of u.jammers) {
-        ctx.strokeStyle = `rgba(242,180,65,${0.12 + Math.random() * 0.2})`; ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.moveTo(u.x, u.y);
-        for (let i = 1; i <= 12; i++) { const f = i / 12; ctx.lineTo(u.x + (j.x - u.x) * f + U.rand(-10, 10), u.y + (j.y - u.y) * f + U.rand(-10, 10)); }
-        ctx.stroke();
       }
     }
     const rng = IC.maxRange(S, u);
@@ -405,36 +365,6 @@ function drawUnit(S, u, px, now) {
   }
   if (sel) brackets(u.x, u.y, 17 * px, px);
   if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.prio.px, u.prio.py); ctx.stroke(); ctx.setLineDash([]); }
-}
-function drawG(S, g, px, now) {
-  const s = px * 1.5;
-  if (g.fort > 0.2 && !g.moving) { ctx.strokeStyle = `rgba(160,140,100,${0.3 + g.fort * 0.5})`; ctx.lineWidth = 2.5 * px; ctx.beginPath(); ctx.arc(g.x, g.y, 22 * px, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
-  IC.drawGround(ctx, g, g.x, g.y, s, g.order === 'refit' ? 0.7 : 1);
-  const w = 33 * px, y = g.y + 14 * px;
-  ctx.fillStyle = 'rgba(10,20,28,0.85)'; ctx.fillRect(g.x - w / 2, y, w, 7 * px);
-  ctx.fillStyle = g.str > 60 ? C.ok : g.str > 30 ? C.amber : C.hostile; ctx.fillRect(g.x - w / 2, y + 0.5 * px, w * g.str / 100, 2.8 * px);
-  ctx.fillStyle = g.sup > 40 ? C.supply : C.hostile; ctx.fillRect(g.x - w / 2, y + 3.8 * px, w * g.sup / 100, 2.6 * px);
-  // order badge
-  const ic = ORDER_ICON[g.order] || '';
-  if (ic) { ctx.fillStyle = 'rgba(6,14,20,0.9)'; ctx.beginPath(); ctx.arc(g.x + 18 * px, g.y - 10 * px, 6.5 * px, 0, 7); ctx.fill(); label(ic, g.x + 18 * px, g.y - 7 * px, px, g.order === 'attack' ? C.friend : g.order === 'dig' ? C.supply : C.text, 9, 'center', 700); }
-  if (g.kit.atgm >= 1 && cam.z > 0.2) label(`AT ${Math.round(g.kit.atgm)}`, g.x - 21 * px, g.y - 7 * px, px, g.kit.atgm < 4 ? C.amber : C.muted, 8, 'center', 600);
-  if (g.lift) label('✈', g.x + 18 * px, g.y + 8 * px, px, C.friend, 9, 'center', 700);
-  const sel = (S.sel && S.sel.ref === g) || S.group.includes(g);
-  if (cam.z > 0.13 || sel) label(g.name + (g.manual ? ' ◆' : ''), g.x, g.y + 32 * px, px, C.text, 10, 'center', 600);
-  if (sel) { brackets(g.x, g.y, 22 * px, px); const p = IC.gTargetPos(S, g); if (U.dist(p, g) > 60) { ctx.strokeStyle = 'rgba(111,210,255,0.5)'; ctx.setLineDash([4 * px, 4 * px]); ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.moveTo(g.x, g.y); ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]); } }
-}
-function column(x, y, h, n, px, col, ink) {
-  const c = Math.cos(h || 0), s = Math.sin(h || 0);
-  const k = Math.max(1, Math.min(2.2, cam.z * 2.5));
-  for (let i = 0; i < n; i++) {
-    const ox = x - c * i * 10 * px * k, oy = y - s * i * 10 * px * k;
-    ctx.save(); ctx.translate(ox, oy); ctx.rotate(h || 0); ctx.scale(k, k);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-4 * px + px, -2.5 * px + px, 8 * px, 5 * px);
-    ctx.fillStyle = col; ctx.strokeStyle = ink; ctx.lineWidth = 0.9 * px;
-    ctx.fillRect(-4 * px, -2.5 * px, 8 * px, 5 * px); ctx.strokeRect(-4 * px, -2.5 * px, 8 * px, 5 * px);
-    ctx.fillStyle = ink; ctx.fillRect(2.2 * px, -2.5 * px, 1.8 * px, 5 * px);
-    ctx.restore();
-  }
 }
 
 function drawWrecks(S, px, now) {
@@ -551,7 +481,7 @@ function drawTrack(S, t, px, now) {
     IC.drawPlane(ctx, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), t.acType, t.livery, { shadow: Math.min(3, t.alt * 0.25), minPx: 12 });
   } else if (close) {
     col = AIRCOL[aff];
-    const kind = t.klass === 'bomber' || t.klass === 'jammer' ? 'bomber' : t.klass === 'airliner' ? 'airliner' : t.klass === 'light' ? 'light' : t.klass === 'drone' ? 'drone' : t.klass === 'cm' ? 'cm' : 'fighter';
+    const kind = t.klass === 'heli' ? 'heli' : t.type === 'esj' ? 'drone' : t.klass === 'bomber' || t.klass === 'jammer' ? 'bomber' : t.klass === 'airliner' ? 'airliner' : t.klass === 'light' ? 'light' : t.klass === 'drone' ? 'drone' : t.klass === 'cm' ? 'cm' : 'fighter';
     silhouette(ctx, kind, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), Math.max(0.35 * (kind === 'airliner' || kind === 'bomber' ? 1.6 : 1), px * 1.3), col, 'rgba(0,0,0,0.7)');
   } else if (t.type === 'ga' && aff !== 'H' && aff !== 'S') {
     // light aircraft: a small lilac cross, never the airliner frame
@@ -1088,6 +1018,7 @@ IC.drawCombat = function (S, px, now, light) {
   if (!FX.no || !FX.no.sim) drawSimParts(S, px, false);
   drawImpacts(S, px, now);
   for (const t of S.threats) drawTrack(S, t, px, now);
+  if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
   for (const a of S.air) drawAir(S, a, px, now);
   for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
   drawChaff(S, px);
