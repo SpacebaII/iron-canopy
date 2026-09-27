@@ -706,14 +706,15 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
 };
 /* the world changed (IC.worldChanged), airports were built on, marks faded: repaint what shows it */
 function keepUp(T, S) {
-  if (S.worldDirty && S.worldDirty.length) {
-    for (const b of S.worldDirty) {
+  // the boxes stay in S.worldDirty (builder.js counts them); this remembers how many have been drawn
+  if (S.worldDirty && S.worldDirty.length > (T.dirtyN || 0)) {
+    for (const b of S.worldDirty.slice(T.dirtyN || 0)) {
       const x0 = b.x0 != null ? b.x0 : b.x - (b.r || 10), y0 = b.y0 != null ? b.y0 : b.y - (b.r || 10), x1 = b.x1 != null ? b.x1 : b.x + (b.r || 10), y1 = b.y1 != null ? b.y1 : b.y + (b.r || 10);
       repaintBase(T, S, x0, y0, x1, y1); dirtyBox(T, x0 - 1, y0 - 1, x1 + 1, y1 + 1);
       for (const c of S.world.cities) if (c.x + c.r * 2 > x0 && c.x - c.r * 2 < x1 && c.y + c.r * 2 > y0 && c.y - c.r * 2 < y1) IC.cityLights(c);
     }
-    S.worldDirty.length = 0;
-    T.roadsV = (T.roadsV || 0) + 1;
+    T.dirtyN = S.worldDirty.length;
+    IC.buildJunctions(S.world);
   }
   if (T.frame % 30 === 0) {
     const sig = IC.aptSig(S);

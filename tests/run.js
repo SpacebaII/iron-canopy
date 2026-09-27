@@ -662,7 +662,9 @@ test('growth: a road the player builds joins the routing graph and shortens a tr
   assert(S.worldDirty && S.worldDirty.length, 'the world was not told the road changed');
 });
 test('growth: a crater on a motorway cuts the link between two cities until it is repaired', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  // a map where the detour round the crater is long enough to show in the city panel (the world look changed
+  // the roads on seed 777: there a parallel road now keeps the detour short)
+  const S = IC.newGame({ seed: 99, mode: 'story', hour: 7 });
   IC.econRefresh(S);
   const W = S.world, cap = IC.cap(S);
   // the nearest city reached from the capital by motorway, and the longest motorway piece on that trip
@@ -733,12 +735,13 @@ test('damage: a crater in a field fades after a day or two; one in a road stays 
   const field = S.marks.find(m => m.kind === 'field'), road = S.marks.find(m => m.kind === 'road');
   assert(field && U.dxy(field.x, field.y, fp.x, fp.y) < 0.01, 'no mark where the weapon hit the field');
   assert(road && road.cls === 'rd', 'no crater in the main road');
-  const age = h => { for (let t = 0; t < h * 3600; t += 5) { S.time += 5; IC.marksAge(S); } };
-  age(12);
+  const age = h => { for (let t = 0; t < h * 3600; t += 60) { S.time += 60; IC.growth(S, 60); IC.marksAge(S); } };
+  age(1);
+  assert(!road.fixed, 'the road crater was filled at once');
+  age(11);
   assert(S.marks.includes(field), 'the scorch in the field faded within 12 hours');
-  assert(!road.fixed || road.fixAt - road.t > 6 * 3600, 'the road crater was filled at once');
   age(12);
-  assert(road.fixed, 'the road crater was not filled within a day');
+  assert(road.fixed && !S.econ.damaged.includes(e.id), 'the road crater was not filled within a day');
   age(24);
   assert(!S.marks.includes(field), 'the field still shows the crater after two days');
   assert(S.marks.includes(road), 'the patch in the road disappeared too soon');

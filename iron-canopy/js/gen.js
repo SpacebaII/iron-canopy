@@ -1197,6 +1197,8 @@ function junctions(W) {
   }
   W.junctionAt = {}; for (const J of W.junctions) W.junctionAt[J.id] = J;
 }
+/* roads were built or cut (growth.js): work the junction shapes out again */
+IC.buildJunctions = W => junctions(W);
 
 /* recompute road routing (after bridges are destroyed or repaired) */
 IC.buildRouting = function (W, blocked) {

@@ -319,7 +319,7 @@ IC.impactMark = function (S, x, y, dmg, gnd) {
   if (gnd.kind === 'block') return IC.addMark(S, { kind: 'scorch', x, y, r: 0.15 + k * 0.003, life: MARKS.field.life });
   // crater radius about 3 m for a rocket, 8 m for a 500 kg bomb; the scorch reaches five times as far
   const cr = 0.03 + k * 0.0005, m = { kind: gnd.kind, x, y, r: cr * 7, cr, seed: Math.random() * 1000 };
-  if (gnd.kind === 'road') { m.cls = gnd.cls; m.cr = Math.min(cr, (IC.ROAD_W[gnd.cls] || 0.1) * 0.6); m.r = m.cr * 3; }
+  if (gnd.kind === 'road') { m.cls = gnd.cls; m.cr = Math.min(cr, (IC.ROAD_W[gnd.cls] || 0.1) * 0.6); m.r = m.cr * 3; if (gnd.road.id) m.edge = gnd.road.id; }
   return IC.addMark(S, m);
 };
 IC.crater = (S, x, y, r) => IC.impactMark(S, x, y, Math.max(20, (r - 1.5) / 0.025));
@@ -351,8 +351,11 @@ IC.blockHit = function (S, b, dmg) {
 IC.marksAge = function (S) {
   const M = S.marks; if (!M || !M.length) return;
   let gone = false;
+  const D = S.econ && S.econ.damaged;
   for (const m of M) {
-    if (m.fixAt && !m.fixed && S.time >= m.fixAt) { m.fixed = true; IC.bakeMark && IC.bakeMark(S, m, true); }
+    // a crater in a road of the network is filled when the road engineers (growth.js) finish; elsewhere in time
+    if (m.edge && D && !m.fixed) { if (D.includes(m.edge)) m.seen = true; else if (m.seen) m.fixAt = S.time; }
+    if (m.fixAt && !m.fixed && S.time >= m.fixAt && !(m.edge && D && D.includes(m.edge))) { m.fixed = true; IC.bakeMark && IC.bakeMark(S, m, true); }
     if (m.life && S.time - m.t > m.life) { m.gone = true; gone = true; IC.bakeMark && IC.bakeMark(S, m, true); }
   }
   if (gone) S.marks = M.filter(m => !m.gone);

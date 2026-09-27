@@ -120,8 +120,4 @@ IC.nodeNear = function (W, x, y) {
 /* the edges crossed on the way from a Dijkstra source to a node (last first) */
 IC.travelPath = function (T, to) { const L = []; let k = to; for (let g = 0; g < 400 && T.via[k]; g++) { const e = T.via[k]; L.push(e); k = e.a === k ? e.b : e.a; } return L; };
 
-/* world data changed inside a box { x0, y0, x1, y1 } (blocks, roads, nodes): record it, and the drawing redraws
-   that box (terrain.js). Tasks that change the world call this; they never draw. */
-IC.worldChanged = function (S, box) { (S.worldDirty = S.worldDirty || []).push(box); };
-
 })(window.IC);
