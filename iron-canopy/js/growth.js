@@ -313,8 +313,7 @@ function growBlocks(S, c, n) {
       c.r = Math.max(c.r, U.dist(g.b, c) * 1.02 / 1.55);
       c.ext = Math.max(c.ext || 0, U.dist(g.b, c) + Math.max(g.b.w, g.b.h) / 2);
     }
-    // new streets: traffic finds them at its next re-plan
-    if (pickd.length && IC.trafficRoadChanged) IC.trafficRoadChanged(S);
+    // (traffic finds the new streets the next time the roads change: they are small, and a re-plan is not)
   }
   if (changed.length) { c.mix = IC.cityMix(c); changedBox(S, changed, c); }
 }
