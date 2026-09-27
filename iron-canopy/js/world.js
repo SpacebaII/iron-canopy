@@ -62,6 +62,10 @@ IC.followRoute = function (e, dt, vRoad, vOff) {
 IC.routeLength = r => { let s = 0; for (let i = 1; i < r.length; i++) s += U.dist(r[i - 1], r[i]); return s; };
 IC.routeTime = (from, r, vr, vo) => { let t = 0, p = from; for (const q of r) { t += U.dist(p, q) / (q.road ? vr : vo); p = q; } return t; };
 
+/* world data changed (roads built or cut, blocks added or emptied): whoever draws the world redraws what lies in
+   the box {x0, y0, x1, y1}; until then the boxes wait in S.worldDirty */
+IC.worldChanged = function (S, box) { (S.worldDirty = S.worldDirty || []).push(box); };
+
 /* a bridge was destroyed or repaired: re-plan the road network */
 IC.bridgeChanged = function (S) {
   const blocked = new Set(S.infra.filter(i => i.kind === 'bridge' && i.offline).map(i => i.edge));
