@@ -306,8 +306,10 @@ function forest(g, T, lod, x0, y0, x1, y1) {
   pass(all, -0.28, -0.3, 0.55, 'rgba(120,152,86,0.28)');
 }
 /* vector layers shared by the base (lod 0) and the detail tiles */
-function vectors(g, W, x0, y0, x1, y1, lod) {
+function vectors(g, W, x0, y0, x1, y1, lod, pad) {
   const inb = (bx0, by0, bx1, by1) => !(bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1);
+  // the tile itself, without the margin wide strokes need: blocks and buildings are drawn only where they show
+  const p = pad || 0, inT = (bx0, by0, bx1, by1) => !(bx1 < x0 + p || bx0 > x1 - p || by1 < y0 + p || by0 > y1 - p);
   const smooth = (pts) => {
     g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length - 1; i++) {
@@ -352,7 +354,7 @@ function vectors(g, W, x0, y0, x1, y1, lod) {
     const Q = { old: [], biz: [], dense: [], sub: [], ind: [], log: [], rail: [] };
     const e0 = lod ? 0.5 : 1.4;
     for (const b of c.blocks) {
-      if (!inb(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) continue;
+      if (!inT(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) continue;
       const e = distOf(b) === 'sub' ? e0 * 0.6 : e0, ca = Math.cos(b.a), sa = Math.sin(b.a), w = b.w / 2 + e, h = b.h / 2 + e;
       Q[distOf(b)].push(b.x - w * ca + h * sa, b.y - w * sa - h * ca, b.x + w * ca + h * sa, b.y + w * sa - h * ca, b.x + w * ca - h * sa, b.y + w * sa + h * ca, b.x - w * ca - h * sa, b.y - w * sa + h * ca);
     }
@@ -412,11 +414,11 @@ function vectors(g, W, x0, y0, x1, y1, lod) {
   for (const x of W.crossings) { g.beginPath(); g.moveTo(x.x, x.y); g.lineTo(x.far.x, x.far.y); g.stroke(); }
   g.strokeStyle = 'rgba(170,140,120,0.35)'; g.lineWidth = lod ? 2 : 6;
   for (const r of W.eroads) { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); }
-  for (const c of towns) if (tIn(c)) for (const b of c.blocks) if (inb(b.x - 4, b.y - 4, b.x + 4, b.y + 4)) block(g, b, lod, c.kind === 'ftown', true);
+  for (const c of towns) if (tIn(c)) for (const b of c.blocks) if (inT(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) block(g, b, lod, c.kind === 'ftown', true);
   for (const v of W.villages) {
     if (!inb(v.x - 90, v.y - 90, v.x + 90, v.y + 90)) continue;
     const foreign = v.kind === 'ftown' || !v.home;
-    for (const b of v.blocks) block(g, b, lod, foreign);
+    for (const b of v.blocks) if (inT(b.x - 2, b.y - 2, b.x + 2, b.y + 2)) block(g, b, lod, foreign);
   }
 }
 const ROOFS = [[178, 110, 86], [164, 98, 78], [196, 190, 176], [140, 136, 128], [120, 118, 116]];
@@ -466,6 +468,8 @@ function formBlock(g, b, sd, lod) {
   const ca = Math.cos(-b.a), sa = Math.sin(-b.a), shx = ca - sa * 0.8, shy = sa + ca * 0.8;
   const rgb = (c, v) => `rgb(${c[0] + (v || 0) | 0},${c[1] + (v || 0) | 0},${c[2] + (v || 0) | 0})`;
   const box = (x, y, w, hh, col, ht, pitched) => {
+    // at the middle detail small buildings are a roof and nothing else: they are a pixel or two across
+    if (!fine && ht < 0.06) { g.fillStyle = col; g.fillRect(x, y, w, hh); return; }
     if (ht > 0.15) {
       // a tall building casts its whole outline along the sun: the roof and its offset joined up
       const dx = shx * ht, dy = shy * ht, P = [];
@@ -477,7 +481,14 @@ function formBlock(g, b, sd, lod) {
     else if (fine && ht > 0.1) { g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(x + w * 0.1, y + hh * 0.1, w * 0.8, hh * 0.8); }
   };
   const grass = (x, y, w, hh, c) => { g.fillStyle = c || 'rgb(98,116,76)'; g.fillRect(x, y, w, hh); };
-  const park = (x, y, w, hh, col) => { g.fillStyle = col || 'rgb(88,90,90)'; g.fillRect(x, y, w, hh); if (fine) { g.strokeStyle = 'rgba(230,230,220,0.35)'; g.lineWidth = 0.008; g.beginPath(); for (let q = x + 0.03; q < x + w; q += 0.026) { for (let r = y + 0.02; r < y + hh - 0.05; r += 0.12) { g.moveTo(q, r); g.lineTo(q, r + 0.05); } } g.stroke(); } };
+  // a car park: rows of bays, each row one dashed line (the dashes are the white lines between the bays)
+  const park = (x, y, w, hh, col) => {
+    g.fillStyle = col || 'rgb(88,90,90)'; g.fillRect(x, y, w, hh);
+    if (!fine) return;
+    g.strokeStyle = 'rgba(230,230,220,0.35)'; g.lineWidth = 0.05; g.setLineDash([0.006, 0.02]); g.beginPath();
+    for (let r = y + 0.045; r < y + hh - 0.03; r += 0.12) { g.moveTo(x + 0.03, r); g.lineTo(x + w - 0.03, r); }
+    g.stroke(); g.setLineDash([]);
+  };
   const tp = [];   // trees
   const subdiv = (S, st) => { const n = Math.max(1, Math.round(b.w / S)), m = Math.max(1, Math.round(b.h / S)); return { n, m, cw: b.w / n, ch: b.h / m, st }; };
   const lanes = (G) => { g.fillStyle = 'rgb(96,96,94)'; for (let i = 1; i < G.n; i++) g.fillRect(-W2 + i * G.cw - G.st / 2, -H2, G.st, b.h); for (let j = 1; j < G.m; j++) g.fillRect(-W2, -H2 + j * G.ch - G.st / 2, b.w, G.st); };
@@ -582,7 +593,7 @@ function formBlock(g, b, sd, lod) {
       g.fillStyle = 'rgb(118,118,114)'; g.beginPath(); for (let q = 0; q < bulbs.length; q += 2) { g.moveTo(bulbs[q] + 0.1, bulbs[q + 1]); g.arc(bulbs[q], bulbs[q + 1], 0.1, 0, 7); } g.fill();
       for (let q = 0; q < houses.length; q += 3) {
         const x = houses[q], y = houses[q + 1], k = h(q, 11); if (k < 0.12 || Math.abs(x + ox) > W2 - 0.1 || Math.abs(y + oy) > H2 - 0.1) continue;
-        g.save(); g.translate(x, y); g.rotate(houses[q + 2]); box(-0.06, -0.05, 0.12, 0.1, rgb(ROOF_SUB[Math.floor(k * 5)]), 0.025, true); g.restore();
+        box(x - 0.055, y - 0.055, 0.11, 0.11, rgb(ROOF_SUB[Math.floor(k * 5)]), 0.025, true);
         if (k > 0.6) tp.push(x * 1.1 + ox, y * 1.1 + oy);
       }
       g.restore();
@@ -608,7 +619,7 @@ function formBlock(g, b, sd, lod) {
         }
         const sw = w * (0.6 + k * 0.35), sh = hh * (0.55 + h(j, i) * 0.4), col = k < 0.6 ? 'rgb(168,172,176)' : k < 0.85 ? 'rgb(140,150,160)' : 'rgb(150,120,100)';
         box(x, y, sw, sh, col, 0.08);
-        if (mid) { g.strokeStyle = 'rgba(0,0,0,0.16)'; g.lineWidth = fine ? 0.01 : 0.02; g.beginPath(); for (let q = 0.05; q < sw; q += fine ? 0.05 : 0.1) { g.moveTo(x + q, y); g.lineTo(x + q, y + sh); } g.stroke(); }
+        if (fine) { g.strokeStyle = 'rgba(0,0,0,0.16)'; g.lineWidth = 0.01; g.beginPath(); for (let q = 0.05; q < sw; q += 0.05) { g.moveTo(x + q, y); g.lineTo(x + q, y + sh); } g.stroke(); }
         if (k > 0.9 && mid) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + sw + 0.05 + shx * 0.5, y + 0.05 + shy * 0.5, 0.06, 0.06); g.fillStyle = 'rgb(160,90,70)'; g.fillRect(x + sw + 0.05, y + 0.05, 0.06, 0.06); }
       }
       break;
@@ -644,6 +655,15 @@ function formBlock(g, b, sd, lod) {
       const nl = Math.max(1, Math.round(b.h / 1.2)), lh = b.h / nl;
       g.fillStyle = 'rgb(118,118,114)';
       for (let r = 0; r < nl; r++) g.fillRect(-W2, -H2 + (r + 0.5) * lh - 0.035, b.w, 0.07);
+      if (!fine) {
+        // a pixel a house: each side of a lane is a broken row of roofs
+        for (let r = 0; r < nl; r++) for (const side of [-1, 1]) {
+          const yl = -H2 + (r + 0.5) * lh, y = side < 0 ? yl - 0.18 : yl + 0.07;
+          for (let x = -W2 + 0.05, k = 0; x < W2 - 0.2; k++) { const L = 0.25 + h(k, r + side) * 0.5; if (h(r * 7 + k, side + 5) > 0.25) { g.fillStyle = rgb(ROOF_SUB[(k + r) % 5], -10); g.fillRect(x, y, Math.min(L, W2 - 0.05 - x), 0.11); } x += L + 0.08; }
+          tp.push(-W2 + h(r, side + 9) * b.w, yl + side * 0.35);
+        }
+        break;
+      }
       for (let r = 0; r < nl; r++) for (const side of [-1, 1]) for (let x = -W2 + 0.04, k = 0; x < W2 - 0.12; x += 0.17 + h(k, r) * 0.08, k++) {
         const s2 = h(k + r * 50, side + 3); if (s2 < (b.sub ? 0.3 : 0.08)) continue;
         const w = 0.1 + s2 * 0.05, hh = 0.08 + h(k, side) * 0.04, yl = -H2 + (r + 0.5) * lh, y = side < 0 ? yl - 0.07 - hh : yl + 0.07;
@@ -652,7 +672,8 @@ function formBlock(g, b, sd, lod) {
       }
     }
   }
-  if (tp.length && mid) trees(g, tp, fine ? 0.035 : 0.06, 0.03);
+  // garden trees only when they are more than a pixel across
+  if (tp.length && fine) trees(g, tp, 0.035, 0.03);
 }
 
 /* a destroyed block: burnt-out shells round heaps of rubble on ash-dark ground */
@@ -718,7 +739,7 @@ function paintTile(T, lod, tx, ty, S) {
   g.drawImage(T.shadeL, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
   g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
-  vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, lod);
+  vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, lod, 60);
   if (S && S.marks) for (const k of S.marks) if (k.x + k.r > x0 && k.x - k.r < x1 && k.y + k.r > y0 && k.y - k.r < y1) mark(g, k, S.time, lod);
   return cv;
 }
