@@ -359,62 +359,19 @@ IC.generate = function (seed) {
   /* ---------- runway headings; the layouts themselves are built per game (airport.js) ---------- */
   for (const b of W.infra) if (b.kind === 'airbase' || b.kind === 'airport') b.rwyA = R.range(0, Math.PI);
 
-  /* ---------- roads ---------- */
-  const nodes = {};
-  const addNode = (id, x, y) => { nodes[id] = { id, x, y }; return nodes[id]; };
-  for (const c of W.cities) addNode(c.id, c.x, c.y);
-  const edges = [];
-  const edgeKey = new Set();
-  const has = (a, b) => edgeKey.has(a + '|' + b) || edgeKey.has(b + '|' + a);
-  const addEdge = (a, b, cls) => { if (a === b || has(a, b)) return; edges.push({ a, b, cls }); edgeKey.add(a + '|' + b); };
-  {
-    const inT = new Set([W.cities[0].id]);
-    while (inT.size < W.cities.length) {
-      let best = null, bd = 1e12;
-      for (const a of W.cities) if (inT.has(a.id)) for (const b of W.cities) if (!inT.has(b.id)) { const d = U.dist(a, b); if (d < bd) { bd = d; best = [a, b]; } }
-      inT.add(best[1].id);
-      addEdge(best[0].id, best[1].id, (best[0].pop > 350 && best[1].pop > 350) || best[0].capital || best[1].capital ? 'hw' : 'rd');
-    }
-  }
-  for (const a of W.cities) {
-    const near = W.cities.filter(b => b !== a).sort((p, q) => U.dist(a, p) - U.dist(a, q)).slice(0, 2);
-    for (const b of near) {
-      if (U.dist(a, b) > 2250 || has(a.id, b.id)) continue;
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      const clash = edges.some(e => {
-        const o = e.a === a.id ? nodes[e.b] : e.b === a.id ? nodes[e.a] : null;
-        return o && Math.abs(U.angWrap(Math.atan2(o.y - a.y, o.x - a.x) - ang)) < 0.45;
-      });
-      if (!clash) addEdge(a.id, b.id, 'rd');
-    }
-  }
-  for (const v of W.villages) {
-    if (!v.home) continue;
-    addNode(v.id, v.x, v.y);
-    const near = Object.values(nodes).filter(n => n.id !== v.id).sort((p, q) => U.dist(v, p) - U.dist(v, q)).slice(0, 2);
-    addEdge(v.id, near[0].id, 'lc');
-    if (near[1] && U.dist(v, near[1]) < 700 && R() < 0.5) addEdge(v.id, near[1].id, 'lc');
-  }
+  /* ---------- roads and railways (see buildNetwork below) ---------- */
   W.crossings = [];
   for (const k of ['C', 'D']) {
     const [a0, a1] = W.secSpan(k);
     const n = R.int(1, 2);
     for (let i = 0; i < n; i++) {
       const a = U.lerp(a0, a1, (i + 1) / (n + 1)) + R.range(-0.08, 0.08), p = W.borderPt(a);
-      const id = 'x' + k + i; addNode(id, p.x, p.y);
       const r = Math.hypot(p.x - cx, p.y - cy), far = { x: cx + (p.x - cx) * (r + 1350) / r, y: cy + (p.y - cy) * (r + 1350) / r };
-      W.crossings.push({ id, x: p.x, y: p.y, k, far });
-      const c = W.cities.slice().sort((q, s) => U.dist(q, p) - U.dist(s, p))[0];
-      addEdge(id, c.id, 'rd');
+      W.crossings.push({ id: 'x' + k + i, x: p.x, y: p.y, k, far });
     }
   }
-  for (const inf of W.infra) {
-    addNode(inf.id, inf.x, inf.y);
-    const c = W.cities.slice().sort((q, s) => U.dist(q, inf) - U.dist(s, inf))[0];
-    addEdge(inf.id, c.id, 'sp');
-  }
-  addNode('depot', W.depotPos.x, W.depotPos.y); addEdge('depot', W.cities[0].id, 'sp');
-  W.garrisons.forEach((g, i) => { addNode('g' + i, g.x, g.y); const c = W.cities.slice().sort((q, s) => U.dist(q, g) - U.dist(s, g))[0]; addEdge('g' + i, c.id, 'sp'); });
+  buildNetwork(W, IC.makeRng((seed * 7919 + 13) >>> 0), fbm);
+  const edges = W.edges;
   const wiggle = (A, B, amp) => {
     const L = U.dist(A, B);
     const n = Math.max(2, Math.ceil(L / 240)), am = Math.min(amp, L * 0.06), f1 = R.range(1, 3), p1 = R.range(0, TAU);
@@ -426,12 +383,6 @@ IC.generate = function (seed) {
     }
     return pts;
   };
-  for (const e of edges) {
-    e.pts = wiggle(nodes[e.a], nodes[e.b], e.cls === 'lc' ? 60 : 165);
-    e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
-    e.id = 'e' + edges.indexOf(e);
-  }
-  W.nodes = nodes; W.edges = edges;
 
   /* ---------- bridges where roads cross rivers ---------- */
   W.bridges = [];
@@ -451,20 +402,6 @@ IC.generate = function (seed) {
           W.bridges.push({ id: 'br' + W.bridges.length, kind: 'bridge', x, y, edge: e.id, cls: e.cls, a: Math.atan2(b.y - a.y, b.x - a.x), river: r.name, name: `${r.name.replace(' River', '')} Bridge` });
         }
       }
-    }
-  }
-
-  /* ---------- railways between the big cities and the factories ---------- */
-  W.rails = [];
-  {
-    const stops = byPop.slice(0, 6).concat(W.infra.filter(i => i.kind === 'factory'));
-    const inT = [stops[0]];
-    const rest = stops.slice(1);
-    while (rest.length) {
-      let best = null, bd = 1e12;
-      for (const a of inT) for (const b of rest) { const d = U.dist(a, b); if (d < bd) { bd = d; best = [a, b]; } }
-      W.rails.push({ a: best[0], b: best[1], pts: wiggle(best[0], best[1], 90) });
-      inT.push(best[1]); rest.splice(rest.indexOf(best[1]), 1);
     }
   }
 
@@ -570,11 +507,461 @@ IC.generate = function (seed) {
     const h = W.hAt(x, y);
     if (h > 0.62 || W.inLake(x, y)) return 0;
     let fw = h < 0.4 ? 0.3 : 0.1;
-    for (const c of W.cities) { const rf = c.r * 3.6, e = U.dxy(c.x, c.y, x, y); if (e < rf) fw = Math.max(fw, 0.9 * (1 - e / rf) + 0.2); }
+    for (const c of W.cities) {
+      const rf = c.r * 3.6, e = U.dxy(c.x, c.y, x, y);
+      if (e < c.r * 0.85) return 0;   // built up, no fields
+      if (e < rf) fw = Math.max(fw, (0.9 * (1 - e / rf) + 0.2) * U.clamp((e - c.r * 0.85) / (c.r * 0.3), 0, 1));
+    }
     return Math.min(1, fw);
   };
+  /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
+  W.fieldAng = (x, y) => (U.hash(Math.floor(x / 1500) + 900, Math.floor(y / 1500) + 300) - 0.5) * 1.2;
+  buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
+  // bounding boxes, so drawing and traffic can skip lines out of view
+  const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
+  for (const l of W.edges.concat(W.lanes, W.rails)) bbox(l);
+  for (const c of W.cities) for (const l of c.streets) bbox(l);
+
   return W;
 };
+
+/* ---------- road and rail network ----------
+   Roads are laid on a coarse cost grid (RC units a cell) by A*. Slopes, forest and river crossings cost more;
+   lakes, airfields and foreign soil are closed; running along a road already built is cheap, so a new road
+   joins the network instead of running beside it. The grid links the roads use then become the graph: places,
+   and cells where three or more links meet, are nodes, and the runs between them are edges. */
+const RC = 40;
+const RANK = { sp: 1, lc: 2, rd: 3, hw: 4 }, CLS = [null, 'sp', 'lc', 'rd', 'hw'];
+// 16 neighbours, so roads can run at gentle angles and not only along the grid and its diagonals
+const MOVES = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1], [2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
+const MLEN = MOVES.map(([x, y]) => Math.hypot(x, y) * RC);
+// how each class of line prices the ground: slope, river crossings, running next to (not on) a road, reuse by rank
+const HOW = {
+  hw: { slope: 2.4, bridge: 5, near: 0.5, reuse: [1, 1, 1, 0.75, 0.42], hk: 0.4 },
+  rd: { slope: 1.2, bridge: 4, near: 0.6, reuse: [1, 0.55, 0.45, 0.4, 0.42], hk: 0.38 },
+  lc: { slope: 0.8, bridge: 3, near: 0.4, reuse: [1, 0.45, 0.38, 0.36, 0.4], hk: 0 },
+  sp: { slope: 0.6, bridge: 3, near: 0.2, reuse: [1, 0.4, 0.36, 0.36, 0.4], hk: 0 },
+  rail: { slope: 5, bridge: 2, near: 0, reuse: [1, 0.3, 0.3, 0.3, 0.3], hk: 0.3 }
+};
+
+function costGrid(W, fbm) {
+  const GW = Math.ceil(IC.WW / RC), GH = Math.ceil(IC.WH / RC), N = GW * GH;
+  const h = new Float32Array(N), base = new Float32Array(N), wet = new Uint8Array(N);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const k = j * GW + i, x = (i + 0.5) * RC, y = (j + 0.5) * RC;
+    const out = W.depthOut(x, y);
+    if (out > RC * 1.5 || W.inLake(x, y)) { base[k] = -1; continue; }
+    h[k] = W.hAt(x, y);
+    base[k] = 1 + (W.forestAt(x, y) ? 0.4 : 0) + (out > -RC ? 1.5 : 0) + 0.3 * fbm(x / 260, y / 260, 2);
+    wet[k] = W.riverDist(x, y) < RC * 0.55 ? 1 : 0;
+  }
+  return { GW, GH, N, h, base, wet };
+}
+function layer(G) {
+  return { G, link: new Map(), adj: new Map(), use: new Uint8Array(G.N), near: new Uint8Array(G.N), shut: new Uint8Array(G.N),
+    g: new Float64Array(G.N), par: new Int32Array(G.N), seen: new Uint32Array(G.N), gen: 0, hf: [], hv: [] };
+}
+const lkey = (a, b, N) => a < b ? a * N + b : b * N + a;
+/* would the straight move a→b cut through a link already laid (roads must meet at junctions, not pass through each other)? */
+function cuts(T, ax, ay, bx, by) {
+  const GW = T.G.GW;
+  for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++) for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++) {
+    const c = y * GW + x; if (!T.use[c] || (x === ax && y === ay) || (x === bx && y === by)) continue;
+    for (const d of T.adj.get(c)) {
+      const dx = d % GW, dy = (d / GW) | 0;
+      if ((dx === ax && dy === ay) || (dx === bx && dy === by)) continue;
+      const t = U.segX(ax, ay, bx, by, x, y, dx, dy);
+      if (t > 1e-6 && t < 1 - 1e-6) return true;
+    }
+  }
+  return false;
+}
+/* cheapest path from cell s to cell t (or to the first cell where done(cell) holds); returns cells or null */
+function search(T, s, t, o, done, maxCost) {
+  const G = T.G, GW = G.GW, GH = G.GH, N = G.N, gen = ++T.gen, g = T.g, par = T.par, seen = T.seen, hf = T.hf, hv = T.hv;
+  const tx = t >= 0 ? t % GW : 0, ty = t >= 0 ? (t / GW) | 0 : 0;
+  const hk = t >= 0 ? o.hk : 0;
+  let n = 0;
+  const push = (f, v) => { let i = n++; while (i > 0) { const p = (i - 1) >> 1; if (hf[p] <= f) break; hf[i] = hf[p]; hv[i] = hv[p]; i = p; } hf[i] = f; hv[i] = v; };
+  const pop = () => {
+    const v = hv[0], lf = hf[--n], lv = hv[n]; let i = 0;
+    for (;;) { let c = 2 * i + 1; if (c >= n) break; if (c + 1 < n && hf[c + 1] < hf[c]) c++; if (hf[c] >= lf) break; hf[i] = hf[c]; hv[i] = hv[c]; i = c; }
+    hf[i] = lf; hv[i] = lv; return v;
+  };
+  g[s] = 0; par[s] = -1; seen[s] = gen; push(0, s);
+  const closed = new Set();
+  while (n) {
+    const a = pop();
+    if (closed.has(a)) continue;
+    closed.add(a);
+    if (a === t || (done && a !== s && done(a))) {
+      const out = []; for (let c = a; c >= 0; c = par[c]) out.push(c);
+      return out.reverse();
+    }
+    if (maxCost && g[a] > maxCost) return null;
+    const ax = a % GW, ay = (a / GW) | 0;
+    for (let m = 0; m < 16; m++) {
+      const bx = ax + MOVES[m][0], by = ay + MOVES[m][1];
+      if (bx < 0 || by < 0 || bx >= GW || by >= GH) continue;
+      const b = by * GW + bx;
+      if (G.base[b] < 0 || (T.shut[b] && b !== t) || closed.has(b)) continue;
+      const L = MLEN[m], r = T.link.get(lkey(a, b, N));
+      let c;
+      if (r) c = L * o.reuse[r];
+      else {
+        if (m >= 4 && cuts(T, ax, ay, bx, by)) continue;
+        const gr = Math.abs(G.h[b] - G.h[a]) / L / 0.0012;
+        c = L * (G.base[a] + G.base[b]) * 0.5 * (1 + o.slope * Math.min(gr * gr, 40));
+        if (G.wet[b] !== G.wet[a]) c += o.bridge * RC * 0.5;
+        if (!T.use[b] && T.near[b]) c += o.near * RC;
+      }
+      const ng = g[a] + c;
+      if (seen[b] === gen && ng >= g[b]) continue;
+      seen[b] = gen; g[b] = ng; par[b] = a;
+      push(ng + (hk ? Math.hypot(bx - tx, by - ty) * RC * hk : 0), b);
+    }
+  }
+  return null;
+}
+function lay(T, path, rank) {
+  const N = T.G.N, GW = T.G.GW;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i], k = lkey(a, b, N), was = T.link.get(k) || 0;
+    if (!was) { for (const [p, q] of [[a, b], [b, a]]) { if (!T.adj.has(p)) T.adj.set(p, []); T.adj.get(p).push(q); } }
+    T.link.set(k, Math.max(was, rank));
+  }
+  for (const c of path) {
+    T.use[c] = Math.max(T.use[c], rank);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = c + dy * GW + dx; if (q >= 0 && q < N) T.near[q] = 1; }
+  }
+}
+/* soften a grid path: a few rounds of neighbour averaging, then corner cutting; the ends stay put */
+function smoothLine(pts, rounds) {
+  let P = pts;
+  for (let r = 0; r < rounds; r++) {
+    const Q = [P[0]];
+    for (let i = 1; i < P.length - 1; i++) Q.push({ x: (P[i - 1].x + 2 * P[i].x + P[i + 1].x) / 4, y: (P[i - 1].y + 2 * P[i].y + P[i + 1].y) / 4 });
+    Q.push(P[P.length - 1]); P = Q;
+  }
+  if (P.length < 3) return P;
+  const Q = [P[0]];
+  for (let i = 0; i < P.length - 1; i++) {
+    const a = P[i], b = P[i + 1];
+    if (i > 0) Q.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+    if (i < P.length - 2) Q.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+  }
+  Q.push(P[P.length - 1]);
+  return Q;
+}
+
+function buildNetwork(W, R, fbm) {
+  const G = costGrid(W, fbm), GW = G.GW, N = G.N;
+  const T = layer(G);
+  const cellOf = p => U.clamp(Math.floor(p.y / RC), 0, G.GH - 1) * GW + U.clamp(Math.floor(p.x / RC), 0, GW - 1);
+  const ctr = c => ({ x: (c % GW + 0.5) * RC, y: (((c / GW) | 0) + 0.5) * RC });
+  // no through roads across airfields
+  for (const b of W.infra) if (b.kind === 'airport' || b.kind === 'airbase') {
+    const c0 = cellOf(b);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = c0 + dy * GW + dx; if (U.dxy(ctr(q).x, ctr(q).y, b.x, b.y) < 50 || q === c0) T.shut[q] = 1; }
+  }
+  const places = [], at = new Map(), twins = [];
+  const place = (id, p) => { const c = cellOf(p), pl = { id, x: p.x, y: p.y, cell: c }; if (at.has(c)) twins.push([id, at.get(c).id]); else at.set(c, pl); places.push(pl); return pl; };
+  for (const c of W.cities) place(c.id, c);
+  for (const x of W.crossings) place(x.id, x);
+  for (const v of W.villages) if (v.home) place(v.id, v);
+  for (const i of W.infra) place(i.id, i);
+  place('depot', W.depotPos);
+  W.garrisons.forEach((g, i) => place('g' + i, g));
+  const cellP = id => places.find(p => p.id === id).cell;
+  const road = (a, b, cls) => { const p = search(T, cellP(a), cellP(b), HOW[cls]); if (p) lay(T, p, RANK[cls]); return !!p; };
+  const spur = (id, cls, alt) => {
+    const s = cellP(id); if (T.use[s]) return;
+    const p = search(T, s, -1, HOW[cls], c => T.use[c] > 0, 4000);
+    if (p) lay(T, p, RANK[cls]); else if (alt) road(id, alt, cls);
+  };
+  const cities = W.cities, cap = cities[0];
+  // motorways: the capital to the four largest cities, then between big cities when the way round is long
+  const big = cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 4).sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
+  for (const c of big) road(cap.id, c.id, 'hw');
+  for (let i = 0; i < big.length; i++) for (let j = i + 1; j < big.length; j++) {
+    const a = big[i], b = big[j], d = U.dist(a, b);
+    if (d < 2600 && d * 1.6 < U.dist(a, cap) + U.dist(cap, b)) road(a.id, b.id, 'hw');
+  }
+  // main roads: every pair of neighbouring cities (a Gabriel graph, so no long road runs past a nearer town)
+  const pairs = [];
+  for (let i = 0; i < cities.length; i++) for (let j = i + 1; j < cities.length; j++) {
+    const a = cities[i], b = cities[j], d = U.dist(a, b), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (d > 2700 || cities.some(c => c !== a && c !== b && U.dxy(c.x, c.y, mx, my) < d / 2)) continue;
+    pairs.push([a, b, d]);
+  }
+  pairs.sort((p, q) => p[2] - q[2]);
+  for (const [a, b] of pairs) road(a.id, b.id, 'rd');
+  for (const x of W.crossings) road(x.id, cities.slice().sort((p, q) => U.dist(p, x) - U.dist(q, x))[0].id, 'rd');
+  // local roads: villages join the nearest road, and some join a neighbour so the road runs on through
+  const vs = W.villages.filter(v => v.home).sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
+  for (const v of vs) spur(v.id, 'lc', cities.slice().sort((p, q) => U.dist(p, v) - U.dist(q, v))[0].id);
+  for (const v of vs) {
+    const o = vs.filter(w => w !== v && U.dist(w, v) < 700).sort((p, q) => U.dist(p, v) - U.dist(q, v))[0];
+    if (o && R() < 0.5) road(v.id, o.id, 'lc');
+  }
+  // access roads to airports, bases, plants, the depot and the garrisons
+  for (const i of W.infra) spur(i.id, 'sp');
+  spur('depot', 'sp');
+  W.garrisons.forEach((g, i) => spur('g' + i, 'sp'));
+
+  /* ---------- the graph ---------- */
+  const nodes = {}, nodeAt = new Map();
+  for (const pl of places) if (at.get(pl.cell) === pl) { nodes[pl.id] = { id: pl.id, x: pl.x, y: pl.y }; nodeAt.set(pl.cell, pl.id); }
+  let nj = 0;
+  const junction = c => { const id = 'j' + nj++, p = ctr(c); nodes[id] = { id, x: p.x, y: p.y, jct: true }; nodeAt.set(c, id); return id; };
+  for (const [c, nb] of T.adj) if (!nodeAt.has(c) && nb.length !== 2) junction(c);
+  const done = new Set(), chains = [];
+  for (const [c, id] of nodeAt) for (const d of T.adj.get(c) || []) {
+    if (done.has(lkey(c, d, N))) continue;
+    const cells = [c]; let prev = c, cur = d, rank = 0;
+    for (;;) {
+      const k = lkey(prev, cur, N); done.add(k); rank = Math.max(rank, T.link.get(k)); cells.push(cur);
+      if (nodeAt.has(cur)) break;
+      const nb = T.adj.get(cur), nx = nb[0] === prev ? nb[1] : nb[0];
+      prev = cur; cur = nx;
+    }
+    chains.push({ cells, rank });
+  }
+  // two runs between the same pair of nodes (or a loop) get a junction in the middle so every edge is unique
+  chains.sort((p, q) => p.cells.length - q.cells.length);
+  const pairSeen = new Set(), runs = [];
+  const cut = (ch, at) => { const cells = ch.cells; junction(cells[at]); return [{ cells: cells.slice(0, at + 1), rank: ch.rank }, { cells: cells.slice(at), rank: ch.rank }]; };
+  for (const ch of chains) {
+    const a = nodeAt.get(ch.cells[0]), b = nodeAt.get(ch.cells[ch.cells.length - 1]), L = ch.cells.length;
+    if (a === b) { if (L < 4) continue; const [p, q] = cut(ch, Math.floor(L / 3)); runs.push(p, ...cut(q, Math.floor(q.cells.length / 2))); }
+    else if (pairSeen.has(a < b ? a + '|' + b : b + '|' + a)) { if (L >= 3) runs.push(...cut(ch, Math.floor(L / 2))); }
+    else { pairSeen.add(a < b ? a + '|' + b : b + '|' + a); runs.push(ch); }
+  }
+  const edges = [];
+  const ROUNDS = { hw: 6, rd: 4, lc: 3, sp: 2 };
+  for (const ch of runs) {
+    const a = nodeAt.get(ch.cells[0]), b = nodeAt.get(ch.cells[ch.cells.length - 1]), cls = CLS[ch.rank];
+    const pts = ch.cells.map(ctr); pts[0] = { x: nodes[a].x, y: nodes[a].y }; pts[pts.length - 1] = { x: nodes[b].x, y: nodes[b].y };
+    edges.push({ a, b, cls, pts: smoothLine(pts, ROUNDS[cls]) });
+  }
+  for (const [p, q] of twins) edges.push({ a: p, b: q, cls: 'sp', pts: [{ x: nodes[q].x, y: nodes[q].y }] });
+  for (const [p, q] of twins) { const pl = places.find(x => x.id === p); nodes[p] = { id: p, x: pl.x, y: pl.y }; }
+  for (const e of edges) {
+    if (e.pts.length === 1) e.pts.unshift({ x: nodes[e.a].x, y: nodes[e.a].y });
+    e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
+  }
+  edges.forEach((e, i) => e.id = 'e' + i);
+  // interchanges: junctions where a motorway meets another road
+  for (const e of edges) for (const k of [e.a, e.b]) { const n = nodes[k]; n.cls = n.cls || {}; n.cls[e.cls] = (n.cls[e.cls] || 0) + 1; }
+  for (const k in nodes) { const n = nodes[k], c = n.cls || {}; n.deg = (c.hw || 0) + (c.rd || 0) + (c.lc || 0) + (c.sp || 0); n.ix = !!c.hw && n.deg > 2 && !!n.jct; delete n.cls; }
+  for (const e of edges) if (e.cls === 'hw') { const n = nodes[e.a], q = e.pts[Math.min(2, e.pts.length - 1)]; if (n.ix && n.ixA == null) n.ixA = Math.atan2(q.y - n.y, q.x - n.x); const m = nodes[e.b], r = e.pts[Math.max(0, e.pts.length - 3)]; if (m.ix && m.ixA == null) m.ixA = Math.atan2(r.y - m.y, r.x - m.x); }
+  W.nodes = nodes; W.edges = edges;
+
+  /* ---------- railways: the big cities and the factories, on gentle grades ---------- */
+  const RT = layer(G); RT.shut = T.shut;
+  const stops = cities.slice().sort((a, b) => b.pop - a.pop).slice(0, 6).concat(W.infra.filter(i => i.kind === 'factory'));
+  const inT = [stops[0]], rest = stops.slice(1);
+  W.rails = [];
+  while (rest.length) {
+    let best = null, bd = 1e12;
+    for (const a of inT) for (const b of rest) { const d = U.dist(a, b); if (d < bd) { bd = d; best = [a, b]; } }
+    const [a, b] = best;
+    const p = search(RT, cellOf(a), cellOf(b), HOW.rail);
+    if (p) {
+      lay(RT, p, 1);
+      const pts = p.map(ctr); pts[0] = { x: a.x, y: a.y }; pts[pts.length - 1] = { x: b.x, y: b.y };
+      W.rails.push({ a, b, pts: smoothLine(pts, 6) });
+    }
+    inT.push(b); rest.splice(rest.indexOf(b), 1);
+  }
+}
+
+/* ---------- towns ----------
+   A city is a dense centre on a street grid, residential districts whose streets bend with the ground, an
+   industrial quarter towards the railway or motorway, and suburbs that thin out along the roads in. Big cities
+   get a ring road. Each block is one entry in city.blocks (damage and night lights work on blocks). */
+function buildTowns(W, R, fbm) {
+  const segsNear = (x, y, rad) => {
+    const out = [];
+    for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1], b = e.pts[i];
+      if (U.segDist(x, y, a.x, a.y, b.x, b.y) < rad) out.push([a.x, a.y, b.x, b.y, e.cls]);
+    }
+    return out;
+  };
+  const clear = (segs, x, y, d) => { for (const s of segs) if (U.segDist(x, y, s[0], s[1], s[2], s[3]) < d + (s[4] === 'hw' ? 1.2 : 0)) return false; return true; };
+  const fields = W.infra.filter(i => i.kind === 'airport' || i.kind === 'airbase' || i.kind === 'factory' || i.kind === 'power');
+  const freeGround = (x, y, pad) => !W.inLake(x, y) && W.riverDist(x, y) > 4 + pad && !fields.some(f => U.dxy(f.x, f.y, x, y) < (f.kind === 'factory' || f.kind === 'power' ? 20 : 48));
+  for (const c of W.cities) {
+    const r = c.r, ca = Math.cos(c.grid), sa = Math.sin(c.grid);
+    // the town edge wanders: some sectors reach out further than others
+    const ph1 = R.range(0, 7), ph2 = R.range(0, 7);
+    const reach = a => r * (1 + 0.16 * Math.sin(2 * a + ph1) + 0.1 * Math.sin(3 * a + ph2));
+    const segs = segsNear(c.x, c.y, r * 1.5);
+    // industry faces the railway if there is one, else the busiest road out
+    let ia = R.range(0, 7);
+    const rail = W.rails.find(l => l.a === c || l.b === c);
+    if (rail) { const p = rail.a === c ? rail.pts[Math.min(8, rail.pts.length - 1)] : rail.pts[Math.max(0, rail.pts.length - 9)]; ia = Math.atan2(p.y - c.y, p.x - c.x); }
+    else { const e = W.edges.filter(e => e.a === c.id || e.b === c.id).sort((p, q) => (q.cls === 'hw') - (p.cls === 'hw'))[0]; if (e) { const p = e.a === c.id ? e.pts[Math.min(6, e.pts.length - 1)] : e.pts[Math.max(0, e.pts.length - 7)]; ia = Math.atan2(p.y - c.y, p.x - c.x) + 0.5; } }
+    c.indA = ia;
+    const SP = c.pop > 1000 ? 5 : 5.5, n = Math.ceil(r * 1.25 / SP);
+    // gentle warp so outer streets follow the lie of the land instead of a ruler
+    const warp = (u, v) => { const d = Math.hypot(u, v) / r, k = U.clamp((d - 0.35) / 0.6, 0, 1) * SP * 0.9; return [u + k * (fbm(u / 40 + c.x, v / 40, 2) - 0.5) * 2, v + k * (fbm(u / 40, v / 40 + c.y, 2) - 0.5) * 2]; };
+    const toW = (u, v) => { const [p, q] = warp(u, v); return { x: c.x + p * ca - q * sa, y: c.y + p * sa + q * ca }; };
+    const inside = (u, v, k) => { const a = Math.atan2(u * sa + v * ca, u * ca - v * sa); return Math.hypot(u, v) < reach(a) * k; };
+    const districtOf = (u, v) => {
+      const d = Math.hypot(u, v) / r, a = Math.atan2(u * sa + v * ca, u * ca - v * sa);
+      if (d < 0.36) return 'centre';
+      if (d < 1.1 && Math.abs(U.angWrap(a - ia)) < 0.45 && d > 0.42) return 'ind';
+      return d < 0.8 ? 'res' : 'sub';
+    };
+    c.streets = []; c.blocks = []; c.parks = [];
+    // avenues radiate from the centre where no road already comes in
+    if (c.pop > 150) {
+      const ins = W.edges.filter(e => e.a === c.id || e.b === c.id).map(e => { const p = e.a === c.id ? e.pts[Math.min(3, e.pts.length - 1)] : e.pts[Math.max(0, e.pts.length - 4)]; return Math.atan2(p.y - c.y, p.x - c.x); });
+      const nA = c.pop > 1000 ? 8 : 5, a0 = R.range(0, 7);
+      for (let k = 0; k < nA; k++) {
+        const a = a0 + k * Math.PI * 2 / nA + R.range(-0.2, 0.2);
+        if (ins.some(b => Math.abs(U.angWrap(a - b)) < 0.4)) continue;
+        const pts = [];
+        for (let d = 0; d <= reach(a) * 0.85; d += SP / 2) {
+          const x = c.x + Math.cos(a) * d + Math.sin(a) * 2 * Math.sin(d / 30), y = c.y + Math.sin(a) * d - Math.cos(a) * 2 * Math.sin(d / 30);
+          if (!freeGround(x, y, 0)) break;
+          pts.push({ x, y });
+        }
+        if (pts.length < 4) continue;
+        c.streets.push({ cls: 'art', pts });
+        for (let i = 1; i < pts.length; i++) segs.push([pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, 'art']);
+      }
+    }
+    // blocks sit in the cells of the street grid; the nearest cells fill first
+    const target = Math.round(U.clamp(c.pop / 2.6, 50, 800));
+    const cand = [];
+    for (let i = -n; i < n; i++) for (let j = -n; j < n; j++) {
+      const u = (i + 0.5) * SP, v = (j + 0.5) * SP, d = Math.hypot(u, v) / r;
+      if (!inside(u, v, 1.05)) continue;
+      const dist = districtOf(u, v), p = toW(u, v);
+      const fill = dist === 'centre' ? 1 : dist === 'ind' ? 0.85 : dist === 'res' ? 0.95 - d * 0.3 : 0.5 * (1.1 - d);
+      if (R() > fill || !freeGround(p.x, p.y, 1) || !clear(segs, p.x, p.y, 2.6)) continue;
+      cand.push({ p, dist, d: d + R() * 0.12, i, j });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    const used = new Set();
+    for (const k of cand.slice(0, target)) {
+      const { p, dist } = k;
+      used.add(k.i + ',' + k.j);
+      if (dist === 'res' && R() < 0.05) { c.parks.push({ x: p.x, y: p.y, rx: SP * 0.45, ry: SP * 0.4, a: c.grid }); continue; }
+      const core = dist === 'centre', ind = dist === 'ind', sub = dist === 'sub';
+      const bw = core ? SP - 1.1 : ind ? SP - 1 : sub ? R.range(1.8, 3.2) : R.range(SP - 2.2, SP - 1.3);
+      const bh = core ? SP - 1.1 : ind ? SP - 1.4 : sub ? R.range(1.6, 2.8) : R.range(SP - 2.4, SP - 1.4);
+      c.blocks.push({ x: p.x, y: p.y, w: bw, h: bh, a: c.grid, core, ind, sub, seed: R() * 1000, hp: 1 });
+    }
+    // streets run between built cells: a grid line is kept where a block lies on either side of it
+    const has = (i, j) => used.has(i + ',' + j);
+    for (let axis = 0; axis < 2; axis++) for (let k = -n; k <= n; k++) {
+      let run = [];
+      const flush = () => { if (run.length > 1) c.streets.push({ cls: k === 0 ? 'art' : 'st', pts: run }); run = []; };
+      for (let m = -n; m <= n; m++) {
+        // the piece of line k between grid nodes m and m+1 borders cells (k-1, m) and (k, m)
+        const on = axis ? has(m, k - 1) || has(m, k) : has(k - 1, m) || has(k, m);
+        const u0 = axis ? m * SP : k * SP, v0 = axis ? k * SP : m * SP;
+        if (on) {
+          for (let q = run.length ? 1 : 0; q <= 2; q++) {
+            const p = toW(axis ? u0 + q * SP / 2 : u0, axis ? v0 : v0 + q * SP / 2);
+            if (W.inLake(p.x, p.y)) { flush(); break; }
+            run.push(p);
+          }
+        } else flush();
+      }
+      flush();
+    }
+    // ring roads for the big cities: one round the centre, and round the capital's built-up edge a motorway ring
+    if (c.pop > 400) {
+      const ext = c.blocks.reduce((m, b) => Math.max(m, U.dist(b, c)), 0);
+      const ring = (k, cls) => {
+        const pts = [];
+        for (let i = 0; i <= 90; i++) {
+          const a = i / 90 * Math.PI * 2, rr = Math.min(ext * k, reach(a) * k) * (1 + 0.04 * Math.sin(5 * a + ph2));
+          pts.push({ x: c.x + Math.cos(a) * rr, y: c.y + Math.sin(a) * rr });
+        }
+        c.streets.push({ cls, pts, ring: true });
+      };
+      ring(0.45, 'art');
+      if (c.capital) ring(0.98, 'ring');
+    }
+    // suburbs strung along the main roads just outside town
+    for (const s of segs) {
+      if (s[4] === 'sp') continue;
+      const L = U.dxy(s[0], s[1], s[2], s[3]), a = Math.atan2(s[3] - s[1], s[2] - s[0]);
+      for (let t = 0; t < L; t += 3.2) {
+        const x = s[0] + (s[2] - s[0]) * t / L, y = s[1] + (s[3] - s[1]) * t / L, d = U.dxy(x, y, c.x, c.y) / r;
+        if (d < 0.9 || d > 1.45 || R() > 0.55 * (1.5 - d)) continue;
+        const side = R() < 0.5 ? 1 : -1, off = (s[4] === 'hw' ? 4 : 2.2) + R.range(0, 1.2);
+        const bx = x - Math.sin(a) * off * side, by = y + Math.cos(a) * off * side;
+        if (!freeGround(bx, by, 1) || !clear(segs, bx, by, 1.4)) continue;
+        c.blocks.push({ x: bx, y: by, w: R.range(1.6, 2.8), h: R.range(1.4, 2.4), a, sub: true, seed: R() * 1000, hp: 1 });
+      }
+    }
+  }
+  // villages: houses along the roads through them
+  for (const v of W.villages) {
+    const segs = v.home ? segsNear(v.x, v.y, v.r * 1.3).filter(s => s[4] !== 'hw') : [];
+    const n = Math.round(6 + v.pop * 0.5);
+    v.blocks = [];
+    for (let k = 0, g = 0; k < n && g < n * 6; g++) {
+      let x, y, a;
+      if (segs.length && R() < 0.85) {
+        const s = R.pick(segs), t = R(), L = U.dxy(s[0], s[1], s[2], s[3]);
+        a = Math.atan2(s[3] - s[1], s[2] - s[0]);
+        const side = R() < 0.5 ? 1 : -1, off = R.range(1.6, 3.2);
+        x = s[0] + (s[2] - s[0]) * t - Math.sin(a) * off * side; y = s[1] + (s[3] - s[1]) * t + Math.cos(a) * off * side;
+        if (U.dxy(x, y, v.x, v.y) > v.r * (0.6 + 0.6 * R()) || L < 1 || !clear(segs, x, y, 1.2)) continue;
+      } else { x = v.x + R.gauss() * v.r * 0.35; y = v.y + R.gauss() * v.r * 0.35; a = v.grid + R.range(-0.2, 0.2); }
+      if (W.inLake(x, y)) continue;
+      v.blocks.push({ x, y, w: R.range(1.4, 3.2), h: R.range(1.2, 2.4), a, seed: R() * 1000, hp: 1 });
+      k++;
+    }
+  }
+  for (const f of W.foreign) {
+    const n = Math.round(f.pop / 4);
+    f.blocks = [];
+    for (let k = 0; k < n; k++) {
+      const x = f.x + R.gauss() * f.r * 0.45, y = f.y + R.gauss() * f.r * 0.45;
+      if (W.inLake(x, y)) continue;
+      f.blocks.push({ x, y, w: R.range(2.5, 6), h: R.range(2, 4.5), a: R.range(0, 0.4), seed: R() * 1000, hp: 1 });
+    }
+  }
+  /* rural lanes: from local and main roads out into the fields, along the lie of the field boundaries */
+  W.lanes = [];
+  const occ = new Set(), OC = 8, ok = (x, y) => occ.has(Math.floor(x / OC) + ',' + Math.floor(y / OC));
+  const mark = (x, y) => occ.add(Math.floor(x / OC) + ',' + Math.floor(y / OC));
+  for (const e of W.edges) for (const p of e.pts) mark(p.x, p.y);
+  for (const c of W.cities) for (const b of c.blocks) mark(b.x, b.y);
+  for (const e of W.edges) {
+    if (e.cls !== 'lc' && e.cls !== 'rd') continue;
+    for (let i = 2; i < e.pts.length - 2; i += 3) {
+      const p = e.pts[i], q = e.pts[i + 1];
+      if (W.farmAt(p.x, p.y) < 0.3 || R() > 0.4) continue;
+      if (W.cities.some(c => U.dist(c, p) < c.r * 1.2)) continue;
+      const fa = W.fieldAng(p.x, p.y), ra = Math.atan2(q.y - p.y, q.x - p.x);
+      // of the two field directions, take the one most across the road
+      let a = Math.abs(Math.sin(fa - ra)) > Math.abs(Math.cos(fa - ra)) ? fa : fa + Math.PI / 2;
+      if (R() < 0.5) a += Math.PI;
+      const pts = [{ x: p.x, y: p.y }], L = R.range(40, 160);
+      let x = p.x, y = p.y;
+      for (let s = 0; s < L; s += 4) {
+        x += Math.cos(a) * 4; y += Math.sin(a) * 4;
+        if (s > 8 && ok(x, y)) { pts.push({ x, y }); break; }
+        if (!W.inHome(x, y) || W.inLake(x, y) || W.riverDist(x, y) < 6 || W.forestAt(x, y) || W.hAt(x, y) > 0.62) break;
+        pts.push({ x, y });
+        if (R() < 0.05) a += (R() < 0.5 ? 1 : -1) * Math.PI / 2 * (R() < 0.5 ? 1 : 0.15);
+      }
+      if (pts.length < 5) continue;
+      for (const p2 of pts.slice(2)) mark(p2.x, p2.y);
+      W.lanes.push({ cls: 'ln', pts });
+    }
+  }
+}
 
 /* recompute road routing (after bridges are destroyed or repaired) */
 IC.buildRouting = function (W, blocked) {
