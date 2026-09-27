@@ -519,7 +519,7 @@ cv.addEventListener('pointermove', e => {
     const dx = l.x - drag.sx, dy = l.y - drag.sy;
     if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; if (!drag.box) cv.classList.add('dragging'); }
     if (drag.moved) {
-      if (drag.fix) IC.aspMoveFix(S, drag.fix, S.hover.x, S.hover.y, false);
+      if (drag.fix) IC.aspMoveFix(S, drag.fix, S.hover.x, S.hover.y);
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
       else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); }
     }
@@ -530,7 +530,7 @@ function up(e) {
   ptrs.delete(e.pointerId);
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
   if (had && drag && e.type === 'pointerup') {
-    if (drag.fix && drag.moved) { IC.aspMoveFix(S, drag.fix, drag.fix.x, drag.fix.y, true); IC.ui.refresh(true); }
+    if (drag.fix && drag.moved) IC.ui.refresh(true);
     else if (drag.box && S.box) {
       const b = S.box, a = IC.toWorld(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1)), c = IC.toWorld(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1));
       const inB = o => o.x >= a.x && o.x <= c.x && o.y >= a.y && o.y <= c.y;

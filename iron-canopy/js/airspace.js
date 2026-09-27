@@ -127,10 +127,9 @@ IC.aspAddFix = function (S, x, y) {
   IC.emit(S, 'fixAdded', f);
   return f;
 };
-IC.aspMoveFix = function (S, f, x, y, done) {
+IC.aspMoveFix = function (S, f, x, y) {
   if (IC.aspFixWhy(S, x, y)) return false;
-  f.x = x; f.y = y;
-  if (done) changed(S); else S.asp.rc = null;
+  f.x = x; f.y = y; changed(S);
   return true;
 };
 IC.aspDelFix = function (S, id) {
