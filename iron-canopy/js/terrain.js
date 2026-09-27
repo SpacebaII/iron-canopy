@@ -719,7 +719,9 @@ function keepUp(T, S) {
     const sig = IC.aptSig(S);
     if (sig !== T.aptSig) {
       const first = T.aptSig == null; T.aptSig = sig;
-      for (const b of IC.bases(S)) if (b.parts) { const r = b.radius + 20; if (first) repaintBase(T, S, b.x - r, b.y - r, b.x + r, b.y + r); else dirtyBox(T, b.x - r, b.y - r, b.x + r, b.y + r); }
+      // the far view just gets the airfield grass laid over it (cheap); tiles close in are painted again
+      const g = T.base.getContext('2d'); g.save(); g.scale(IC.TS, IC.TS); airfields(g, S, 0, 0, IC.WW, IC.WH, 0); g.restore();
+      if (!first) for (const b of IC.bases(S)) if (b.parts) { const r = b.radius + 20; dirtyBox(T, b.x - r, b.y - r, b.x + r, b.y + r); }
     }
     // marks fade in steps; each step repaints the tiles under the mark
     if (S.marks) for (const m of S.marks) if (m.life) { const st = fadeOf(m, S.time); if (st !== m._st) { m._st = st; dirtyBox(T, m.x - m.r * 2, m.y - m.r * 2, m.x + m.r * 2, m.y + m.r * 2); } }

@@ -167,7 +167,16 @@ IC.render = function (S, now) {
     ctx.globalAlpha = (0.12 + 0.5 * wx.cloud) * (0.4 + 0.6 * light); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
   }
   // night, dusk and dawn
-  if (light < 1) { ctx.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); }
+  if (light < 1) {
+    // airports darken their own field (render-airport.js), so the night here leaves those boxes out
+    ctx.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; ctx.beginPath(); ctx.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+    if (z >= 0.3) for (const b of IC.bases(S)) {
+      const k = b._box; if (!k || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
+      const c = Math.cos(k.a), sn = Math.sin(k.a), w = k.w / 2 + 0.05, h = k.h / 2 + 0.05;
+      [[-w, -h], [w, -h], [w, h], [-w, h]].forEach(([u, v], i) => ctx[i ? 'lineTo' : 'moveTo'](k.x + u * c - v * sn, k.y + u * sn + v * c)); ctx.closePath();
+    }
+    ctx.fill('evenodd');
+  }
   const h = (S.time % 86400) / 3600;
   const golden = h > 5 && h < 8.5 ? 1 - Math.abs(h - 6.8) / 1.7 : h > 17 && h < 20.5 ? 1 - Math.abs(h - 18.8) / 1.7 : 0;
   if (golden > 0) { ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = `rgba(255,140,60,${0.35 * golden})`; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalCompositeOperation = 'source-over'; }
@@ -342,7 +351,9 @@ let covImg = null;
 function covCanvas(S) {
   const C = S.asp && S.asp.cov;
   if (!C) return null;
-  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C) return covImg.cv;
+  // our military radars go into the same image: blue, deeper where they see lower, with holes behind hills
+  const M = IC.milCov(S);
+  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C && covImg.M === M) return covImg.cv;
   const cv2 = covImg && covImg.cv && covImg.cv.width === C.gw ? covImg.cv : Object.assign(document.createElement('canvas'), { width: C.gw, height: C.gh });
   const g2 = cv2.getContext('2d'), img = g2.createImageData(C.gw, C.gh), d = img.data;
   const home = covImg && covImg.seed === S.seed && covImg.home ? covImg.home : (() => { const h = new Uint8Array(C.gw * C.gh); for (let j = 0; j < C.gh; j++) for (let i = 0; i < C.gw; i++) h[j * C.gw + i] = IC.inHome((i + 0.5) * IC.ASP.CS, (j + 0.5) * IC.ASP.CS) ? 1 : 0; return h; })();
@@ -353,32 +364,18 @@ function covCanvas(S) {
     const o = k * 4;
     if (b >= 0) { const c = BAND_RGB[b].split(','); d[o] = +c[0]; d[o + 1] = +c[1]; d[o + 2] = +c[2]; d[o + 3] = A[b]; }
     else if (home[k]) { d[o] = 255; d[o + 1] = 90; d[o + 2] = 70; d[o + 3] = 70; }
+    const m = M.g[k]; if (m === Infinity) continue;
+    // laid over the controllers' colours (the image is drawn at half strength, hence the doubled alpha)
+    const ma = (m < 0.5 ? 140 : m < 1.5 ? 84 : m < 3.5 ? 44 : 20) / 255, da = d[o + 3] / 255, oa = ma + da * (1 - ma);
+    d[o] = (92 * ma + d[o] * da * (1 - ma)) / oa; d[o + 1] = (200 * ma + d[o + 1] * da * (1 - ma)) / oa; d[o + 2] = (255 * ma + d[o + 2] * da * (1 - ma)) / oa; d[o + 3] = oa * 255;
   }
   g2.putImageData(img, 0, 0);
-  covImg = { v: C.v, seed: S.seed, C, cv: cv2, home };
-  return cv2;
-}
-/* our military radars: blue, deeper where they see lower; hills leave holes behind them (airspace.js) */
-let milImg = null;
-function milCanvas(S) {
-  const C = S.asp && IC.milCov(S);
-  if (!C) return null;
-  if (milImg && milImg.C === C) return milImg.cv;
-  const cv2 = milImg && milImg.cv.width === C.gw ? milImg.cv : Object.assign(document.createElement('canvas'), { width: C.gw, height: C.gh });
-  const g2 = cv2.getContext('2d'), img = g2.createImageData(C.gw, C.gh), d = img.data;
-  for (let k = 0; k < C.g.length; k++) {
-    const a = C.g[k]; if (a === Infinity) continue;
-    const o = k * 4; d[o] = 92; d[o + 1] = 200; d[o + 2] = 255; d[o + 3] = a < 0.5 ? 70 : a < 1.5 ? 42 : a < 3.5 ? 22 : 10;
-  }
-  g2.putImageData(img, 0, 0);
-  milImg = { C, cv: cv2 };
+  covImg = { v: C.v, seed: S.seed, C, M, cv: cv2, home };
   return cv2;
 }
 function drawCoverage(S) {
   const cc = covCanvas(S);
   if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
-  const mc = milCanvas(S);
-  if (mc) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mc, 0, 0, mc.width * IC.ASP.CS, mc.height * IC.ASP.CS); }
   // airborne early warning looks down from above the hills: a plain disc
   cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, 600, 450); cx2.setTransform(0.05, 0, 0, 0.05, 0, 0);
   let any = false;
@@ -525,7 +522,7 @@ function arrow(x0, y0, x1, y1, col, px, w) {
 
 /* streetlights: along city streets, and on motorways through towns and at interchanges, a lamp every 40 m */
 function streetLights(S, light, pf) {
-  const W = S.world, k = (1 - light) * pf, P = [], sp = cam.z > 12 ? 0.4 : 0.8;
+  const W = S.world, k = (1 - light) * pf, P = [], sp = cam.z > 24 ? 0.4 : 0.8;
   const along = (l, off, step) => {
     if (l.bb && (l.bb[2] < view.x0 || l.bb[0] > view.x1 || l.bb[3] < view.y0 || l.bb[1] > view.y1)) return;
     let carry = 0, side = 1;
@@ -543,14 +540,14 @@ function streetLights(S, light, pf) {
   for (const c of W.cities) {
     if (c.x + c.r * 1.6 < view.x0 || c.x - c.r * 1.6 > view.x1 || c.y + c.r * 1.6 < view.y0 || c.y - c.r * 1.6 > view.y1) continue;
     const plant = c.plant && S.byId[c.plant]; if (plant && plant.offline) continue;
-    for (const l of c.streets) along(l, IC.ROAD_W[l.cls] * 0.55, sp);
+    for (const l of c.streets) if (l.cls !== 'st' || cam.z > 24) along(l, IC.ROAD_W[l.cls] * 0.55, sp);   // side streets only close in
     for (const e of W.edges) if ((e.a === c.id || e.b === c.id) && e.cls !== 'sp') along({ pts: e.pts.filter(p => U.dist(p, c) < c.r * 1.3), bb: e.bb }, IC.ROAD_W[e.cls] * 0.55, sp);
   }
   for (const r of W.ramps || []) along(r, 0.07, sp);
   if (!P.length) return;
   // a pool of light round each lamp close in; further out only the lamp itself (squares are far cheaper than circles)
   const dot = Math.max(0.02, 1.2 / cam.z);
-  if (cam.z > 12) {
+  if (cam.z > 24) {
     const glow = Math.max(0.1, 4 / cam.z);
     ctx.globalAlpha = 0.12 * k; ctx.fillStyle = 'rgb(255,190,110)';
     ctx.beginPath(); for (let i = 0; i < P.length; i += 2) { ctx.moveTo(P[i] + glow, P[i + 1]); ctx.arc(P[i], P[i + 1], glow, 0, 7); } ctx.fill();

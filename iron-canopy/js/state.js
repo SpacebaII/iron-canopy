@@ -238,21 +238,24 @@ IC.detonate = function (S, x, y, dmg, src) {
   return hit;
 };
 IC.cityHit = function (S, c, x, y, dmg, src) {
-  // the block the weapon lands on takes the full blast; blocks next to it lose windows, roofs, sometimes more
-  const rb = 0.4 + dmg * 0.012;
-  let lost = 0;
+  // the block the weapon lands on takes the full blast; the blast and fires reach the blocks round it, less the
+  // further they are
+  const rb = 1.5 + dmg * 0.06;
+  let lost = 0, harm = 0;
   const on = inBlock(c.blocks, x, y);
   for (const b of c.blocks) {
     if (b.hp <= 0) continue;
     const d = b === on ? 0 : Math.max(0, U.dxy(x, y, b.x, b.y) - Math.max(b.w, b.h) * 0.5);
     if (d > rb) continue;
-    if (IC.blockHit(S, b, b === on ? dmg : dmg * (1 - d / rb) * U.rand(0.2, 0.7))) lost++;
+    const was = b.hp;
+    if (IC.blockHit(S, b, b === on ? dmg : dmg * (1 - d / rb) * U.rand(0.3, 1))) lost++;
+    harm += was - b.hp;
   }
-  const alive = c.blocks.filter(b => b.hp > 0).length / Math.max(1, c.blocks.length);
+  const alive = c.blocks.reduce((s, b) => s + b.hp, 0) / Math.max(1, c.blocks.length);
   const was = c.hp;
   c.hp = Math.min(c.hp, c.max * (0.15 + 0.85 * alive));
   const hurt = Math.max(dmg * 0.3, was - c.hp);
-  c.morale = Math.max(0, c.morale - hurt * 0.08 - lost * 0.4);
+  c.morale = Math.max(0, c.morale - hurt * 0.08 - harm * 0.4);
   c.prosp = Math.max(0.3, c.prosp - hurt * 0.002);
   for (const o of IC.cities(S)) if (o !== c) o.morale = Math.max(0, o.morale - hurt * 0.004);
   S.support = Math.min(100, S.support + hurt * 0.02);
