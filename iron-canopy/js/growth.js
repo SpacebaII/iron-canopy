@@ -30,9 +30,9 @@ IC.INDUSTRY = {
 };
 // ₭M per km, ₭M per bridge, km built per game hour
 IC.ROADS = {
-  lc: { name: 'Local road', short: 'local road', perKm: 3, bridge: 20, kmh: 3 },
-  rd: { name: 'Main road', short: 'main road', perKm: 10, bridge: 50, kmh: 1.5 },
-  hw: { name: 'Motorway', short: 'motorway', perKm: 30, bridge: 120, kmh: 0.6 }
+  lc: { name: 'Local road', short: 'local road', perKm: 2, bridge: 15, kmh: 4 },
+  rd: { name: 'Main road', short: 'main road', perKm: 5, bridge: 40, kmh: 2 },
+  hw: { name: 'Motorway', short: 'motorway', perKm: 15, bridge: 100, kmh: 1 }
 };
 const CLS_NAME = { hw: 'Motorway', rd: 'Main road', lc: 'Local road', sp: 'Access road' };
 const HALF = { hw: 0.2, rd: 0.12, lc: 0.08, sp: 0.06 };   // half the road's width, in units

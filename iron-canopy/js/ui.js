@@ -267,7 +267,7 @@ function modeHint() {
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
     field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
     zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
-    road: () => `${IC.ROADS[m.cls].name}: click points on the map; the first and last join the nearest road. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
+    road: () => `${IC.ROADS[m.cls].name}: click points on the map; the first and last join the nearest road. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
     found: () => `Click a flat site in ${S.world.names.H} for a new airport (${U.money(IC.FOUND_COST)}). Not inside a city, and at least 25 km from another airport.`
   }[m.kind]();
 }

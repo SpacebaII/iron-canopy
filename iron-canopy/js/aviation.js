@@ -351,6 +351,8 @@ function makeRequest(S) {
   else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.pick(apts.filter(x => x.template === 'intl')) || a; }
   else b = U.pick(ports);
   if (!a || !b) return;
+  // no airline adds flights where the seats already fly more than half empty
+  if ([a].concat(b.apt ? [S.byId[b.apt]] : []).some(x => x.svc && x.svc.seats > 0 && IC.demandPull(S, x) < 0.55)) return;
   const existing = A.routes.find(r => r.al === al.id && r.a === a.id && JSON.stringify(r.b) === JSON.stringify(b.apt ? { apt: b.apt } : b));
   const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n: al.sat > 75 && Math.random() < 0.5 ? 2 : 1, t: S.time, exp: S.time + 6 * 3600, more: !!existing };
   req.why = existing ? `wants another ${IC.ACTYPES[type].name.toLowerCase()} on ${routeName(S, existing)}` : `wants to open ${S.byId[a.id].name.replace(/ (International|Airport)$/, '')} – ${endPt(S, req.b).name.replace(/ (International|Airport)$/, '')}`;
