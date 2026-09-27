@@ -1,0 +1,14 @@
+# old versions kept locally (git history replaces them)
+iron-canopy-v4-backup/
+iron-canopy-v5-backup/
+iron-canopy.html
+
+# screenshots saved by devserver.py, ad hoc debug scripts
+shots/
+dbg*.js
+
+# local editor and tool settings
+.claude/
+.vscode/
+node_modules/
+__pycache__/

@@ -1,0 +1,121 @@
+<meta charset="utf-8">
+<title>Iron Canopy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/app.css">
+
+<div class="app" id="app">
+  <canvas id="map" aria-label="Tactical map. Drag to pan, scroll to zoom, click to select, right-click to give orders."></canvas>
+
+  <header class="topbar" id="topbar">
+    <div class="tb-left">
+      <div class="brand"><b>Iron</b> Canopy</div>
+      <div class="clock"><strong id="hClock">Day 1 · 06:00</strong><span id="hSky">Dawn</span></div>
+      <div class="speed" id="speed" role="group" aria-label="Game speed"></div>
+    </div>
+    <div class="tb-center" id="alerts" aria-live="polite"></div>
+    <div class="tb-right">
+      <div class="stats" id="stats"></div>
+      <div class="rules" id="rules"></div>
+    </div>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="War rooms"></nav>
+
+  <div class="leftcol">
+    <section class="brief" id="brief" aria-label="Situation"></section>
+    <section class="comms" id="comms" aria-label="Staff messages"></section>
+  </div>
+  <div class="feed" id="feed" aria-live="polite"></div>
+
+  <aside class="insp" id="insp" aria-label="Selection"></aside>
+
+  <div class="arsenal" id="arsenal" aria-label="Arsenal"></div>
+
+  <div class="mapbox" id="mapbox">
+    <div class="layers" id="layers"></div>
+    <div class="mapctl">
+      <button data-act="zin" aria-label="Zoom in" title="Zoom in (+)">+</button><button data-act="zout" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button class="w" data-act="zhome" title="Capital (Home)">Capital</button><button class="w" data-act="zfull" title="Whole region">Region</button>
+    </div>
+    <canvas id="mini" aria-label="Minimap. Click to move the view."></canvas>
+  </div>
+
+  <div class="warroom" id="warroom" hidden>
+    <div class="wr-head">
+      <nav class="wr-tabs" id="wrTabs"></nav>
+      <span class="wr-run" id="wrRun"></span>
+      <button class="x" data-act="wrclose" aria-label="Close" title="Close (Esc)">✕</button>
+    </div>
+    <div class="wr-body" id="wrBody"></div>
+  </div>
+
+  <div class="tip" id="tip" hidden></div>
+  <div class="modehint" id="modehint" hidden></div>
+  <div class="cine" id="cine" hidden></div>
+  <div class="incidents" id="incidents" aria-live="assertive"></div>
+  <div class="evcard" id="evcard" hidden role="dialog" aria-label="Decision"></div>
+
+  <div class="modal" id="start">
+    <div class="mbox">
+      <p class="kicker">Air &amp; missile defense · logistics · command</p>
+      <h1 class="title">Iron <b>Canopy</b></h1>
+      <p class="lead" id="startLead">Generating the region…</p>
+      <div class="seedrow"><span>Map seed <b id="seed">—</b></span><button class="btn" data-act="reroll">New map</button></div>
+      <div class="modes">
+        <button class="mode hero" data-act="begin" data-v="story"><b>Career</b><span>Start as Director of Civil Aviation: grow the airlines, fix the airports. Something is testing the border. Four acts, from the control tower to Chief of the Air Force.</span></button>
+        <button class="mode" data-act="modeTab" data-v="academy"><b>Academy</b><span>Eight short lessons on the defence systems, one at a time.</span></button>
+        <button class="mode" data-act="begin" data-v="campaign"><b>Quick war</b><span>Hours of tension, then open war. An enemy that probes, harasses and strikes, two fronts, and the economy behind them.</span></button>
+        <button class="mode" data-act="begin" data-v="sandbox"><b>Sandbox</b><span>Partly mobilized, fully deployed, war at dawn. No staff guidance.</span></button>
+      </div>
+      <div class="lessons" id="lessons" hidden></div>
+      <p class="keys">Drag to pan · scroll to zoom (all the way in to watch aircraft taxi) · click to select · <b>right-click to order</b> · Space pause · 1–6 speed · S skip ahead · V T A G L I N K J rooms</p>
+    </div>
+  </div>
+
+  <div class="modal" id="over" hidden>
+    <div class="mbox">
+      <p class="kicker" id="overKicker">Result</p>
+      <h2 id="overTitle">The defense has failed</h2>
+      <p id="overText"></p>
+      <div class="stars" id="overStars"></div>
+      <div class="ostats" id="overStats"></div>
+      <div class="orow"><button class="btn primary" data-act="restart">Main menu</button><button class="btn" id="overNext" data-act="nextLesson" hidden>Next lesson</button><button class="btn" data-act="keepPlaying" id="overKeep">Keep watching</button></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/data.js"></script>
+<script src="js/aviation-data.js"></script>
+<script src="js/gen.js"></script>
+<script src="js/world.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/weather.js"></script>
+<script src="js/state.js"></script>
+<script src="js/sensors.js"></script>
+<script src="js/threats.js"></script>
+<script src="js/defense.js"></script>
+<script src="js/units.js"></script>
+<script src="js/airport.js"></script>
+<script src="js/groundops.js"></script>
+<script src="js/enemy.js"></script>
+<script src="js/ground.js"></script>
+<script src="js/air.js"></script>
+<script src="js/logistics.js"></script>
+<script src="js/civil.js"></script>
+<script src="js/aviation.js"></script>
+<script src="js/incidents.js"></script>
+<script src="js/campaign.js"></script>
+<script src="js/story.js"></script>
+<script src="js/academy.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/render.js"></script>
+<script src="js/render-airport.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/inspector.js"></script>
+<script src="js/warroom.js"></script>
+<script src="js/main.js"></script>
