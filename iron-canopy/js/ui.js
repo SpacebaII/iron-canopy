@@ -54,7 +54,6 @@ ui.setHTML = function (el, html, key) {
   if (fresh || !el.firstChild) { el.innerHTML = html; el.scrollTop = 0; }
   else { tpl.innerHTML = html; morphKids(el, tpl.content); tpl.innerHTML = ''; }
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
-  for (const c of el.querySelectorAll('canvas[data-gid]')) { const u = S.gunits.find(x => x.id === c.dataset.gid); if (u) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawGround(g, u, c.width / 2, c.height / 2 + 5, c.width / 34); } }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
   for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.airFrame(g, 'H', c.width / 2, c.height / 2 + 4, c.width / 30); }
   return true;
@@ -118,7 +117,6 @@ function topbar() {
   } else setHTML($('stats'), `${money}
     <div class="stat" title="National morale: below 12% the government asks for terms"><span>Morale</span><strong class="${m > 55 ? '' : m > 30 ? 'amber' : 'hostile'}">${Math.round(m)}%</strong>${meter(m / 100, m > 55 ? 'var(--ok)' : m > 30 ? 'var(--amber)' : 'var(--hostile)')}</div>
     <div class="stat" title="Allied support: aid and import prices"><span>Allies</span><strong>${Math.round(S.support)}</strong>${meter(S.support / 100, 'var(--friend)')}</div>
-    <div class="stat" title="Manpower pool for replacements and new brigades"><span>Manpower</span><strong>${Math.floor(S.manpower)}</strong></div>
     <div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>`);
   const seg = (act2, cur, opts) => `<div class="seg">${opts.map(([v, n, c, t]) => `<button class="${c || ''}" data-act="${act2}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
   setHTML($('rules'), `
@@ -161,7 +159,6 @@ function alerts() {
     const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id);
     if (hold.length >= 2 || hold.some(t => t.holdT > 600)) w.push(['amber', `${b.name}: ${hold.length} holding${hold.some(t => t.standShort) ? ' · stands full' : ''}`, b]);
   }
-  for (const f of S.fronts) for (let i = 0; i < f.sectors.length; i++) { const s = f.sectors[i]; if (s.eAttack && s.main && f.active) { w.push(['amber', `${f.name}: major assault on ${s.name}`, IC.secGeom(f, i)]); break; } }
   const jam = S.units.filter(u => u.jamF < 0.97 && u.radarOn);
   if (jam.length) w.push(['info', `Jamming · ${jam.slice(0, 2).map(u => `${u.name} −${U.pct(1 - u.jamF)}`).join(' · ')}`, jam[0]]);
   const dry = S.units.filter(u => u.state === 'ready' && u.d.weapon === 'sam' && IC.activeMags(S, u).every(m => m.mag + m.store === 0));
@@ -174,7 +171,6 @@ function alerts() {
 /* ---------- rail ---------- */
 const ICON = {
   air: '<path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/>',
-  army: '<rect x="3" y="6" width="18" height="12" rx="1"/><path d="M3 6l18 12M21 6L3 18"/>',
   logi: '<path d="M2 7h12v9H2zM14 10h4l3 3v3h-7z"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
   industry: '<path d="M3 20V10l6 3.5V10l6 3.5V5h4v15zM3 20h18"/>',
   intel: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -186,7 +182,7 @@ const ICON = {
 ICON.economy = '<path d="M4 20V11M10 20V6M16 20v-9M22 20H2M3 8l6-4 6 5 6-4"/>';
 ICON.aviation = '<path d="M3 20h18M6 20V9l6-4 6 4v11M10 20v-5h4v5M9 11h6"/>';
 ICON.staff = '<circle cx="12" cy="7" r="3.2"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M12 14l-1.5 4L12 21l1.5-3z"/>';
-ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['economy', 'Economy', 'E'], ['air', 'Air', 'A'], ['army', 'Army', 'G'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
+ui.ROOMS = [['aviation', 'Aviation', 'V'], ['staff', 'Staff', 'T'], ['economy', 'Economy', 'E'], ['air', 'Air', 'A'], ['logi', 'Supply', 'L'], ['industry', 'Industry', 'I'], ['intel', 'Intel', 'N'], ['research', 'Research', 'K'], ['journal', 'Journal', 'J'], ['reference', 'Guide', ''], ['settings', 'Settings', '']];
 ui.roomOk = k => (k !== 'aviation' || !!S.av) && (k !== 'economy' || S.mode !== 'academy') && (k !== 'staff' || !!S.story) && IC.roomAllowed(S, k);
 function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
@@ -276,7 +272,7 @@ function arsenal() {
 }
 
 function layers() {
-  const L = [['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['ground', 'Army'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
+  const L = [['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
   // with coverage on, a key to its colours: the lowest height controllers see
   const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
   setHTML($('layers'), L.map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
@@ -291,9 +287,6 @@ function modeHint() {
     airPoint: () => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
     airSite: () => `Click an enemy target for ${m.r.name}.`,
     fireAt: () => `Click an enemy target for ${m.unit.name}.`,
-    hstrike: () => `Click an enemy brigade for ${m.r.name} to attack.`,
-    defend: () => `Click a town for ${m.g.name} to defend.`,
-    sector: () => `Click a sector of the front for ${m.g.name}.`,
     build: () => buildHint(m),
     bmove: () => `Click where the ${IC.APART[m.part.kind].name.toLowerCase()} should go. R turns it. Esc to cancel.`,
     bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
@@ -332,13 +325,11 @@ ui.tip = function (ent, sx, sy) {
   let t = '', s = '';
   if (ent.kind === 'track') { t = `TN ${r.tn} · ${IC.AFF[r.aff || 'U'].name}${r.klass ? ' · ' + (IC.KLASS[r.klass] || r.klass) : ''}`; s = `${r.sq ? 'Squawk ' + r.sq + ' · ' : ''}${r.altKnown ? U.alt(r.alt) : 'altitude unknown'} · ${U.kmh(Math.hypot(r.vx, r.vy))}`; }
   else if (ent.kind === 'unit') { t = `${r.name} · ${r.d.name}`; s = r.why || IC.unitState(r)[0]; }
-  else if (ent.kind === 'gunit') { t = `${r.name}${r.side === 'them' ? ' (enemy)' : ''}`; s = r.side === 'us' ? `${IC.GORDERS[r.order] ? IC.GORDERS[r.order].name : r.order} · strength ${Math.round(r.str)}% · supply ${Math.round(r.sup)}% · ${IC.terrainOf(S, r)}` : `${r.g.name} · ~${Math.round(r.str / 10) * 10}% · seen ${U.dur(S.time - r.kt)} ago`; }
   else if (ent.kind === 'veh') { t = r.name; s = r.job ? r.job.label : 'Parked'; }
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
   else if (ent.kind === 'site') { t = r.name; s = `${r.destroyed ? 'Destroyed' : r.pk >= 2 ? 'Located' : 'Suspected'}`; }
   else if (ent.kind === 'tel') { t = r.name; s = `Seen ${U.dur(S.time - r.kt)} ago`; }
-  else if (ent.kind === 'evehicle') { t = r.name; s = `${r.trucks} trucks`; }
-  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%${r.owner === 'enemy' ? ' · occupied' : ''}` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.baseStatus(S, r).runway ? 'Runway open' : 'Runway closed'} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
+  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.baseStatus(S, r).runway ? 'Runway open' : 'Runway closed'} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
   else if (ent.kind === 'fix') { t = `Fix ${r.name}`; s = `${S.asp.ways.filter(w => w.a === r.id || w.b === r.id).length} airways · radar sees down to ${covTxt(IC.aspCovAlt(S, r.x, r.y))} here`; }
   else if (ent.kind === 'airway') { const [a, b] = IC.aspWayEnds(S, r); t = `Airway ${a.name} – ${b.name}`; s = `${U.km(U.dist(a, b))} · radar sees ${U.pct(IC.aspWayCover(S, r, 9))} of it at cruise height`; }
   else if (ent.kind === 'field') { t = r.name; s = `Light aircraft · ${r.club} · ${r.today} movements today`; }
@@ -371,7 +362,7 @@ function coach() {
   for (const e of document.querySelectorAll('.coach-hi')) e.classList.remove('coach-hi');
   const h = IC.stepHint && IC.stepHint(S);
   if (!h || !h.el) return;
-  const id = { arsenal: 'arsenal', insp: 'insp', speed: 'speed', doctrine: null, 'rail-army': 'rail-army', 'rail-air': 'rail-air' }[h.el];
+  const id = { arsenal: 'arsenal', insp: 'insp', speed: 'speed', doctrine: null, 'rail-air': 'rail-air' }[h.el];
   const el = id ? $(id) : h.el === 'doctrine' ? document.querySelector('.rl.doctrine') : null;
   if (el) el.classList.add('coach-hi');
 }
@@ -396,16 +387,16 @@ function showOver() {
   const L = aca && S.camp.lesson ? IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id) : -1;
   $('overNext').hidden = !(aca && S.won && L >= 0 && L < IC.LESSONS.length - 1);
   if (aca && S.won) { const p = store.get('ic-academy', {}); p[S.camp.lesson.id] = Math.max(p[S.camp.lesson.id] || 0, S.stars || 1); store.set('ic-academy', p); }
-  $('overStats').innerHTML = `<span>Time: ${U.clock(S.time)}</span><span>Threats destroyed: ${S.stats.kills}</span><span>Leakers: ${S.stats.leakers}</span><span>Interceptors fired: ${S.stats.fired}</span><span>Units lost: ${S.stats.unitsLost}</span><span>Aircraft lost: ${S.stats.acLost}</span><span>Enemy brigades destroyed: ${S.stats.gKills}</span><span>Enemy sites destroyed: ${S.stats.siteKills}</span><span>Civil aircraft lost: ${S.stats.civLost}</span>`;
+  $('overStats').innerHTML = `<span>Time: ${U.clock(S.time)}</span><span>Threats destroyed: ${S.stats.kills}</span><span>Leakers: ${S.stats.leakers}</span><span>Interceptors fired: ${S.stats.fired}</span><span>Units lost: ${S.stats.unitsLost}</span><span>Aircraft lost: ${S.stats.acLost}</span><span>Enemy sites destroyed: ${S.stats.siteKills}</span><span>Civil aircraft lost: ${S.stats.civLost}</span>`;
   IC.sfx && IC.sfx.ui(S.won ? 'ok' : 'err');
 }
 
 /* ---------- selection and modes ---------- */
 IC.select = function (sel, add) {
-  if (add && sel && (sel.kind === 'unit' || sel.kind === 'gunit') && (sel.ref.side === undefined || sel.ref.side === 'us')) {
-    if (!S.group.length && S.sel && (S.sel.kind === 'unit' || S.sel.kind === 'gunit')) S.group = [S.sel.ref];
+  if (add && sel && sel.kind === 'unit') {
+    if (!S.group.length && S.sel && S.sel.kind === 'unit') S.group = [S.sel.ref];
     if (S.group.includes(sel.ref)) S.group = S.group.filter(x => x !== sel.ref); else S.group.push(sel.ref);
-    S.sel = S.group.length === 1 ? { kind: S.group[0].gunit ? 'gunit' : 'unit', ref: S.group[0] } : S.group.length ? sel : null;
+    S.sel = S.group.length === 1 ? { kind: 'unit', ref: S.group[0] } : S.group.length ? sel : null;
   } else { S.sel = sel; S.group = []; }
   if (sel) IC.emit(S, 'select', sel);
   IC.sfx && IC.sfx.ui('click');
@@ -425,7 +416,7 @@ ui.openRoom = function (k) {
 };
 ui.jump = function (ref, kind) {
   if (!ref) return;
-  const p = ref.kx != null && (ref.tel || ref.gunit && ref.side === 'them' || ref.evehicle) ? { x: ref.kx, y: ref.ky } : ref.px != null && ref.tn ? { x: ref.px, y: ref.py } : ref;
+  const p = ref.kx != null && ref.tel ? { x: ref.kx, y: ref.ky } : ref.px != null && ref.tn ? { x: ref.px, y: ref.py } : ref;
   IC.flyTo(p.x, p.y, Math.max(IC.cam.z, 0.35));
   if (kind) IC.select({ kind, ref });
   S.fx.rings.push({ x: p.x, y: p.y, r: 40, t: 0, color: '242,180,65', px: true });
