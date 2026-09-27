@@ -1,6 +1,6 @@
 /* Iron Canopy — supply and money.
    Supply, in the words of the Guide:
-   - Missiles, rockets and supply pallets are held in depots: the Central Depot and the forward depots you place.
+   - Missiles and rockets are held in depots: the Central Depot and the forward depots you place.
    - Each depot's truck companies drive them to the units inside its service area, emptiest and highest priority
      first. A forward depot refills from the Central Depot.
    - Stock is bought from the arms plants and goes by rail to the depot that is short, in minutes; when the plants
@@ -15,7 +15,7 @@ const U = IC.U;
 
 /* the Guide's words for money and supply (also the Supply room's) */
 IC.MONEY_GUIDE = 'Money comes in every hour: the Ministry\'s grant, airline fees at our airports, and later taxes from the cities and trade taxes from remote industries. It goes out every hour on running costs: every unit on the map, every flight of aircraft, the airports\' upkeep, staff and loan repayments. Units in the reserve cost nothing. Buying, building and research are paid when you do them. The Economy room (E) shows every line with its reason and how long the money lasts at this rate, and you are warned a day, six hours and an hour before it runs out. Your levers: what you build and keep on the map, airport charges, loans, and how much the Ministry may spend on stock.';
-IC.SUPPLY_GUIDE = 'Buy a unit by placing it: you pay then, and it is loaded at the nearest depot, barracks or airfield and driven there, or flown by heavy-lift helicopter when the drive would be long. It is set up and ready well within the hour. Missiles, rockets and supply pallets are kept in depots: the Central Depot and the forward depots you place. Each depot\'s truck companies drive them to the units inside its ring, first-priority areas and the emptiest units first; forward depots refill from the Central Depot. Stock is bought from the arms plants and goes by rail to the depot that needs it; with Keep stocked on, the Ministry buys whenever it falls below half of one full reload. Convoys drive the roads at road speed, slower through towns at rush hour. A cut road means a slow detour, and the enemy strikes convoys it sees near the border. A unit\'s panel says when its next load arrives, or why none is coming.';
+IC.SUPPLY_GUIDE = 'Buy a unit by placing it: you pay then, and it is loaded at the nearest depot, barracks or airfield and driven there, or flown by heavy-lift helicopter when the drive would be long. It is set up and ready well within the hour. Missiles and rockets are kept in depots: the Central Depot and the forward depots you place. Each depot\'s truck companies drive them to the units inside its ring, first-priority areas and the emptiest units first; forward depots refill from the Central Depot. Stock is bought from the arms plants and goes by rail to the depot that needs it; with Keep stocked on, the Ministry buys whenever it falls below half of one full reload. Convoys drive the roads at road speed, slower through towns at rush hour. A cut road means a slow detour, and the enemy strikes convoys it sees near the border. A unit\'s panel says when its next load arrives, or why none is coming.';
 IC.SUPPLY = {
   load: 90, unload: 90,   // s to load and unload a convoy at a depot or a unit
   plantLoad: 120,         // s to load the lorries that take an import on from the airport
@@ -140,7 +140,7 @@ function newJob(S, o) {
   S.jobs.push(j);
   return j;
 }
-/* "12 SR missiles to MRS-2", "8 supply pallets to Central Depot" */
+/* "12 SR missiles to MRS-2", "16 MR missiles to Central Depot" */
 IC.jobLabel = j => `${IC.munWords(j.mun, j.qty)} to ${j.to.name}`;
 /* game seconds until a job's load is unloaded where it is going */
 IC.jobEta = function (S, j) {
