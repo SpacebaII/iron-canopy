@@ -325,7 +325,9 @@ function onAct(e) {
     case 'airspace':
       if (S.airspace !== v) { S.airspace = v; IC.log(S, 'info', 'AIRSPACE', `Civil airspace ${v}.`); IC.news(S, v === 'closed' ? 'Government closes the national airspace to all civil flights.' : v === 'restricted' ? 'Airspace restricted to southern corridors.' : 'Airspace reopens to civil traffic.'); }
       break;
-    case 'room': ui.openRoom(v); return;
+    // the rail and the keys open and close a room; its own tab strip only switches rooms
+    case 'aptTab': ui.aptTab = v; break;
+    case 'room': if (v !== ui.room || !b.closest('#wrTabs')) ui.openRoom(v); return;
     case 'wrclose': ui.openRoom(null); return;
     case 'toast': { const t = ui.toasts[+v]; if (t && t.at) ui.jump(t.at); break; }
     case 'alert': { const r = ui.alertRefs && ui.alertRefs[+v]; if (r) ui.jump(r, r.tn ? 'track' : r.gunit ? 'gunit' : r.d && r.type ? 'unit' : r.parts ? 'infra' : null); break; }
