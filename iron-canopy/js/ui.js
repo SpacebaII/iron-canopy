@@ -280,7 +280,7 @@ function modeHint() {
   if (!m) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = {
-    deploy: () => `Click inside ${S.world.names.H} to deploy the ${IC.UNITS[m.type].name}. The dashed rings show its reach. Right-click or Esc to cancel.`,
+    deploy: () => `Click inside ${S.world.names.H} to place the ${IC.UNITS[m.type].name}${S.reserve[m.type] > 0 ? ' from the reserve' : `: ${U.money(IC.unitCost(S, m.type))}, paid when placed`}. The dashed rings show its reach. Shift+click places more. Right-click or Esc to cancel.`,
     move: () => `Click where ${m.unit.name} should go.`,
     airPoint: () => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
     airSite: () => `Click an enemy target for ${m.r.name}.`,

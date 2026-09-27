@@ -97,7 +97,7 @@ function startingForces(S, sandbox) {
   dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
   const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24, ATG: 20, SUP: 200 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12, ATG: 10, SUP: 120 };
   for (const k in stock) dep.inv[k] = stock[k];
-  for (let i = 0; i < 2; i++) IC.addTruck(S, dep);
+  for (let i = 0; i < 4; i++) IC.addTruck(S, dep);
   const fab = S.byId.ab_fwd || cap;
   put('lr3d', cap, 180, 420);
   put('vhf', { x: (cap.x + mid(fA).x) / 2, y: (cap.y + mid(fA).y) / 2 }, 0, 400);
