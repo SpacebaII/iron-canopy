@@ -391,9 +391,12 @@ function assign(S) {
 }
 
 /* ---------- start, and the step ---------- */
+// each link's traffic: load, speed and purpose mix by direction, and where its slots ride
+const linkState = lk => ({ l: lk, cls: lk.cls, C: lk.C, len: lk.len, ld: [0, 0], load: 0, v: [0, 0], ph: [U.hash(lk.id, 1) * 1000, U.hash(lk.id, 2) * 1000], key: lk.id * 7919 + 1, mix: [[0, 0, 0], [0, 0, 0]], mixOk: [0, 0] });
+const mixOf = (L, d) => L.mixOk[d] ? L.mix[d] : null;
 IC.trafficInit = function (S) {
   const W = S.world, G = IC.driveGraph(W);
-  S.traffic = { links: G.links.map(lk => ({ l: lk, cls: lk.cls, C: lk.C, len: lk.len, ld: [0, 0], load: 0, v: [0, 0], ph: [U.hash(lk.id, 1) * 1000, U.hash(lk.id, 2) * 1000], key: lk.id * 7919 + 1, mix: [null, null] })), hour: 0, stepT: 0, G };
+  S.traffic = { links: G.links.map(linkState), hour: 0, stepT: 0, G };
   assign(S);
   // buses on routed lines with stops, coaches between cities, trains on the railways
   S.buses = []; busLines(S);
@@ -408,7 +411,7 @@ IC.trafficRebuild = function (S) {
   const W = S.world; W._dg = null;
   const T = S.traffic, G = IC.driveGraph(W);
   for (const e of W.edges) if (e.cut) for (const lk of G.links) if (lk.ref.edge === e) lk.cut = true;
-  T.G = G; T.links = G.links.map(lk => ({ l: lk, cls: lk.cls, C: lk.C, len: lk.len, ld: [0, 0], load: 0, v: [0, 0], ph: [U.hash(lk.id, 1) * 1000, U.hash(lk.id, 2) * 1000], key: lk.id * 7919 + 1, mix: [null, null] }));
+  T.G = G; T.links = G.links.map(linkState);
   assign(S); T.dirty = false; T.stepT = 0;
   const A = AG.get(S); if (A) A.reset = true;
   busLines(S);
@@ -443,7 +446,7 @@ IC.traffic = function (S, dt) {
         const com = F.com[i + d] * fi + F.com[i + 1 - d] * fo, frt = F.frt[i + d] * ff, apt = F.apt[i + d] * fa, gen = F.gen[i + d] * fg;
         const tot = com + frt + apt + gen;
         L.ld[d] = U.clamp(tot * g * raid * cut, 0, 1.3);
-        L.mix[d] = tot > 0 ? [com / tot, frt / tot, apt / tot] : null;
+        const M = L.mix[d]; L.mixOk[d] = tot > 0 ? 1 : 0; if (tot > 0) { M[0] = com / tot; M[1] = frt / tot; M[2] = apt / tot; }
         // a full road slows down: at peak the motorways round the capital crawl
         L.v[d] = lk.C.v * (L.ld[d] > 0.75 ? U.clamp(1 - (L.ld[d] - 0.75) * 1.3, 0.3, 1) : 1) * (raid < 1 ? 0.4 : 1);
       }
@@ -581,7 +584,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
         if (h > p) continue;
         const s = toS(u), q = along(P, cum, d ? len - s : s);
         if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
-        const kind = pickKind(L.mix[d], h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
+        const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
         fn(q.x, q.y, d ? q.h + Math.PI : q.h, kind, L.cls, L.C.off[lane]);
         n++;
       }
@@ -685,7 +688,7 @@ IC.trafficAgents = function (S, view, dt) {
         const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.5;
         for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
           if (R() > n - q) break;
-          const s = R() * lk.len, kind = pickKind(L.mix[d], R());
+          const s = R() * lk.len, kind = pickKind(mixOf(L, d), R());
           const a = newAgent(S, A, { path: [[lk, d]], dest: null }, s, kind, 'through', null);
           a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
         }
@@ -728,7 +731,7 @@ IC.trafficAgents = function (S, view, dt) {
       const n = L.ld[d] * lk.C.dens * lk.C.lanes * L.v[d] * et;
       for (let q = 0; q < n && room(); q++) {
         if (R() > n - q) break;
-        const a = newAgent(S, A, { path: [[lk, d]], dest: null }, 0, pickKind(L.mix[d], R()), 'through', null);
+        const a = newAgent(S, A, { path: [[lk, d]], dest: null }, 0, pickKind(mixOf(L, d), R()), 'through', null);
         a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
         A.stats.spawnEdge++;
       }
