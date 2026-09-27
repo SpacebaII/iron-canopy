@@ -34,6 +34,7 @@ IC.DEPOT_PRI = {
   last: { name: 'Last', w: 0, desc: 'Resupplied only when nobody else is waiting.' }
 };
 IC.FLOORS = [0, 50, 150, 400];
+IC.QW_TAX_SHARE = 0.15;   // Quick war: the share of city and trade taxes that goes to the air defence
 const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry carries
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
@@ -556,6 +557,8 @@ IC.economy = function (S, dt) {
   let aidRate = S.support * 0.12, base = 25;
   // in the story the budget grows with the job: a civil aviation authority, then a defence command
   if (S.story) { const k = [0, 0, 0, 0.25, 1][S.story.act] || 0; base = S.story.grant; tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
+  // Quick war: the air defence gets its share of the cities' taxes; the rest runs the country
+  else if (S.mode === 'campaign') { tax *= IC.QW_TAX_SHARE; trade *= IC.QW_TAX_SHARE; }
   let upAD = 0;
   const bands = {};
   for (const u of S.units) { const b = IC.BAND[u.type]; if (b && u.radarOn) bands[b] = (bands[b] || 0) + 1; }
