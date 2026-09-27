@@ -205,7 +205,7 @@ IC.defense = function (S, dt) {
         sawAny = true;
         if (!eligible(S, u, t)) { blockedRoe = true; continue; }
         if (t.inbound >= need(S, u, t)) { engaged = true; continue; }
-        if (!canSee(S, u, t)) { blockedSee = true; continue; }
+        if (!canSee(S, u, t)) { if (!blockedSee) blockedSee = t; continue; }
         const m = chooseMun(S, u, t, r, why); if (!m) continue;
         const sc = priority(u, t, r);
         if (sc < bs) { bs = sc; best = t; bm = m; br = r; bpip = why.pip; }
@@ -237,7 +237,7 @@ IC.defense = function (S, dt) {
         const empty = IC.activeMags(S, u).every(m => m.mag + m.store === 0);
         const reloading = IC.activeMags(S, u).every(m => m.mag === 0) && !empty;
         u.why = empty ? 'Out of missiles: waiting for resupply' : reloading ? 'Reloading'
-          : blockedSee ? (u.radarOn ? 'Target not yet tracked by fire control' : 'Radar silent: no fire-control track') : why.r ? cap1(why.r)
+          : blockedSee ? IC.fcWhy(S, u, blockedSee) : why.r ? cap1(why.r)
           : blockedRoe ? (IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Holding: targets not identified hostile')
           : engaged ? 'Holding: interceptors already on their way to every target in reach' : hojWhy ? hojWhy : sawAny ? 'Tracking' : 'No targets';
         u.cool = 0.5;
@@ -306,6 +306,33 @@ IC.defense = function (S, dt) {
   }
 };
 const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+/* why this battery can or cannot fire at this track, in plain words */
+IC.fcWhy = function (S, u, t) {
+  if (!u.radarOn && !(u.d.fc && u.d.fc.passive)) return u.emcon === 'ambush' ? 'Radar in ambush: it comes on when a hostile gets close' : 'Radar silent: no fire-control track';
+  const s = (S.sensors || []).find(x => x.unit === u && x.org);
+  if (!s) return 'Not tracked by fire control';
+  const r = U.dist(s, t);
+  if (s.bmdOnly && !IC.predictable(t)) return 'Its radar only tracks ballistic missiles';
+  if (r > U.horizon(s.mast, t.alt)) return `Below its radar horizon: it sees ${U.km(U.horizon(s.mast, Math.max(0.05, t.alt)))} out at that height`;
+  if (r > 1 && IC.aspHidden(s, t)) return 'Masked by a hill: its radar cannot see down behind it';
+  if (s.jams) for (const J of s.jams) if (J.j !== t && Math.abs(U.angWrap(Math.atan2(t.y - s.y, t.x - s.x) - J.a)) < J.w) return `Jammed along that bearing: it sees only inside ${U.km(J.d * 0.3 * (1 + (s.eccm || 0)))}`;
+  if (s.jams && s.jams.some(J => J.j === t)) return 'It is the jammer: no range, only a strobe';
+  return `Beyond its radar's reach against a target this size (${U.km(s.R * Math.pow(t.rcs, 0.25))})`;
+};
+IC.engageWhy = function (S, u, t) {
+  if (u.state !== 'ready') return u.why || 'Not ready';
+  if (IC.ok(u, 'launch') < 0.25) return 'Launchers knocked out: needs repair';
+  if (!eligible(S, u, t, u.prio === t)) {
+    if (t.aff === 'N' || t.aff === 'A') return 'Civil track: it fires only if you assign it';
+    return IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Not identified hostile: weapons are Tight';
+  }
+  if (!canSee(S, u, t)) return IC.fcWhy(S, u, t);
+  const why = { r: '' };
+  if (!chooseMun(S, u, t, U.dist(u, t), why)) return cap1(why.r || 'no missile can reach it');
+  if (t.inbound >= need(S, u, t)) return `Already engaged: ${t.inbound} interceptor${t.inbound > 1 ? 's' : ''} on the way`;
+  return u.cool > 0 ? 'Can engage: firing next' : 'Can engage now';
+};
 
 /* ---------- interceptors in flight ---------- */
 IC.updateMissiles = function (S, dt) {
