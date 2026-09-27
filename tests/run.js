@@ -282,6 +282,160 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   assert(t / N < 1.5, `a step takes ${(t / N).toFixed(2)} ms`);
 });
 
+/* ---------- the builder ---------- */
+/* a site for a new airport at the edge of a town, with homes close by */
+const siteNear = (S, c) => {
+  for (let r = c.r * 0.55; r < c.r + 40; r += 3) for (let a = 0; a < 6.28; a += 0.2) {
+    const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+    if (!IC.foundCheck(S, x, y) && c.blocks.some(b => U.dxy(b.x, b.y, x, y) < 15)) return { x, y };
+  }
+  return null;
+};
+const townWithSite = S => { for (const c of IC.cities(S).filter(c => !c.capital).sort((a, b) => b.pop - a.pop)) { const p = siteNear(S, c); if (p) return { c, p }; } return null; };
+test('builder: right-click takes a point back; clicking the last point again builds the taxiway', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  const bad = S.byId[S.story.bad]; S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(bad, x, y), taxis = () => bad.parts.filter(p => p.kind === 'taxi').length, n0 = taxis();
+  S.mode2 = IC.bldMode(S, bad, 'taxi');
+  IC.clickWorld(P(2, 1.75), 0); IC.clickWorld(P(-6, 1.75), 0); IC.clickWorld(P(-8, 4), 0);
+  assert(S.mode2.pts.length === 3, `3 points expected, ${S.mode2.pts.length} placed`);
+  IC.clickWorld(P(-8, 4), 2);
+  assert(S.mode2 && S.mode2.pts.length === 2 && taxis() === n0, 'right-click did not take the last point back');
+  IC.clickWorld(P(-11.8, 1.75), 0); IC.clickWorld(P(-11.8, 0), 0);
+  assert(taxis() === n0, 'built before the last point was clicked again');
+  IC.clickWorld(P(-11.8, 0), 0);
+  assert(taxis() === n0 + 1 && S.mode2.pts.length === 0, 'clicking the last point again did not build the taxiway');
+  const t = bad.parts[bad.parts.length - 1], end = bad.nodes[t.nodes[t.nodes.length - 1]];
+  assert(end.on && end.on.kind === 'rwy', 'the taxiway does not reach the runway');
+  assert(t.nodes.length > 4, 'the corner was not rounded');
+  IC.clickWorld(P(0, 6), 2);
+  assert(!S.mode2, 'right-click with no points left did not leave build mode');
+});
+test('builder: construction goes in stages and is paid for as it runs', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const ap = S.byId[S.story.cap]; S.budget = 3000;
+  const c = IC.aptLocal(ap, 4, -5.5), p = IC.aptPlanPart(S, ap, 'apron', c.x, c.y, ap.rwyA, 4, 1.3);
+  assert(p, 'could not plan the apron');
+  const w = ap.works.find(x => x.part === p);
+  assert(3000 - S.budget < w.cost * 0.1, `${U.money(3000 - S.budget)} of ${U.money(w.cost)} paid up front`);
+  const seen = [], spent = [];
+  for (let i = 0; i < 6 * 3600 && !p.built; i++) { tick(S, 1); if (w.stage && seen[seen.length - 1] !== w.stage) seen.push(w.stage); if (i % 30 === 0) spent.push(w.spent); }
+  assert(p.built, `not built after 6 hours (${w.wait})`);
+  assert(seen.join() === 'survey,earth,pave,fit,open', `stages ran ${seen.join()}`);
+  const half = spent[Math.floor(spent.length / 2)];
+  assert(half > w.cost * 0.2 && half < w.cost * 0.9, `halfway through, ${U.money(half)} of ${U.money(w.cost)} had been spent`);
+  assert(Math.abs(3000 - S.budget - w.cost) < 0.5, `spent ${U.money(3000 - S.budget)} for a ${U.money(w.cost)} apron`);
+});
+test('builder: construction stops when materials run out, and goes on when lorries bring more', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const ap = S.byId[S.story.cap]; S.budget = 3000;
+  ap.mat = { asph: 0, conc: 8, steel: 0 };
+  const c = IC.aptLocal(ap, 4, -5.5), p = IC.aptPlanPart(S, ap, 'apron', c.x, c.y, ap.rwyA, 4, 1.3), w = ap.works.find(x => x.part === p);
+  let stalled = null;
+  for (let i = 0; i < 8 * 3600 && !p.built; i++) {
+    tick(S, 1);
+    if (!stalled && w.wait && /concrete/.test(w.wait)) stalled = { prog: w.prog, i, why: w.wait };
+    if (stalled && i === stalled.i + 120) assert(w.prog === stalled.prog || !/concrete/.test(w.wait), 'work went on without concrete');
+  }
+  assert(stalled, 'the work never ran short of concrete');
+  assert(/lorries|ordered/.test(stalled.why), `the reason does not say where concrete comes from: ${stalled.why}`);
+  assert(p.built, `lorries never brought enough concrete: ${w.wait}`);
+});
+test('builder: an airport can be founded at another city after a site survey', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  S.budget = 5000;
+  const t = townWithSite(S); assert(t, 'no site near any town');
+  const sv = IC.foundSurvey(S, t.p.x, t.p.y, IC.PREVAIL);
+  assert(sv.cost >= IC.FOUND_COST && IC.foundLines(S, sv).length >= 3, 'no survey of the site');
+  S.mode2 = { kind: 'found' };
+  IC.clickWorld(t.p, 0);
+  assert(S.mode2.site, 'the first click did not pick the site');
+  const aim = { x: t.p.x + Math.cos(IC.PREVAIL) * 20, y: t.p.y + Math.sin(IC.PREVAIL) * 20 };
+  IC.clickWorld(aim, 0);
+  const ap = IC.bases(S).find(b => b.template === 'new');
+  assert(ap, 'the second click did not found the airport');
+  assert(Math.abs(U.angWrap(ap.rwyA - IC.foundAngle(t.p, aim))) < 1e-6, 'the runway heading is not the one chosen');
+  assert(IC.aptPlanRunway(S, ap, IC.aptLocal(ap, -12, 0), IC.aptLocal(ap, 12, 0)), 'could not plan its runway');
+  for (let i = 0; i < 4 * 3600 && !(ap.mat.conc > 0); i++) tick(S, 1);
+  assert(ap.mat.conc > 0, 'no concrete arrived by road');
+});
+test('builder: heavy aircraft wear out asphalt; reinforced concrete craters less', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway');
+  sky(S, 'clear'); calm(S, ap.rwyA, 5);
+  rw.mat = 'asph';
+  drive(S, ap, { arr: 20, dep: 20, hours: 0.75, fill: 0.5, mix: [['wide', 1]] });
+  assert(rw.wear > 0.02, `wide-bodies on asphalt wore it ${U.pct(rw.wear || 0)}`);
+  rw.wear = 0.6; IC.aptStats(S, ap);
+  assert(ap.st.warn.some(w => /worn/.test(w)) && IC.aptRepairList(ap).some(it => /Resurface/.test(it.label)), 'worn pavement is not reported or repairable');
+  rw.mat = 'conc'; rw.wear = 0;
+  drive(S, ap, { arr: 20, dep: 20, hours: 0.5, fill: 0.5, mix: [['wide', 1]] });
+  assert(!rw.wear, 'concrete wore under wide-bodies');
+  const hole = mat => { rw.mat = mat; rw.craters = []; const q = IC.rwAt(rw, 0.3); IC.aptHit(S, ap, q.x, q.y, 60, { d: { code: 'TEST' } }); return rw.craters[0].r; };
+  const a = hole('asph'), r = hole('rconc');
+  assert(r < a * 0.8, `reinforced concrete crater ${r.toFixed(2)} against asphalt ${a.toFixed(2)}`);
+});
+test('builder: a very heavy military aircraft parks on an open ramp, and dies more easily there than in a shelter', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 8 }); IC.S = S;
+  const ab = IC.bases(S).find(b => b.kind === 'airbase' && b.template === 'mil_full'); S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(ab, x, y);
+  S.mode2 = IC.bldMode(S, ab, 'ramp');
+  for (const q of [P(10.8, -1.75), P(13.6, -3.1), P(13.6, -3.1)]) IC.clickWorld(q, 0);
+  const ramp = ab.parts.find(p => p.ramp);
+  assert(ramp, 'no ramp planned');
+  finishWorks(S, ab);
+  S.mode2 = IC.bldMode(S, ab, 'stand'); S.mode2.size = 'xl';
+  IC.clickWorld(P(12.2, -2.45), 0);
+  assert(ramp.free.length === 1, 'no stand placed on the ramp');
+  IC.aptStats(S, ab);
+  const stand = IC.aptStands(ab).find(s => s.ramp);
+  assert(stand && stand.size === 'xl' && stand.linked, `the ramp stand is ${stand ? (stand.linked ? stand.size : 'not connected') : 'missing'}`);
+  const r = { id: 'rheavy', name: 'Test transport', kind: 'cargo', base: ab.id, st: 'ready', n: 1, park: 'open' };
+  // the other aprons are full
+  for (const s of IC.aptStands(ab)) if (!s.ramp) s.occ = 'full';
+  S.roster.push(r); IC.assignSlots(S, ab);
+  assert(r.slot === stand.id, `parked on ${r.slot}, not the ramp stand`);
+  const has = ab.parts.find(p => p.kind === 'has');
+  const losses = slot => { let n = 0; for (let i = 0; i < 200; i++) { r.st = 'ready'; r.slot = slot; stand.hp = 1; has.hp = has.max; const pp = IC.parkPos(S, ab, r); IC.aptHit(S, ab, pp.x, pp.y, 30, { d: { code: 'TEST' } }); if (r.st === 'lost') n++; } return n; };
+  const open = losses(stand.id), shel = losses(has.id);
+  assert(open > shel * 3 && open > 100, `lost ${open} of 200 in the open, ${shel} in a shelter`);
+});
+test('builder: a part planned over houses clears them, pays compensation and costs public support', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  S.budget = 5000;
+  const t = townWithSite(S); assert(t, 'no site near any town');
+  const ap = IC.foundAirport(S, t.p.x, t.p.y, IC.PREVAIL);
+  const home = t.c.blocks.filter(b => b.hp > 0 && U.dist(b, ap) < ap.buildR - 5).sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0];
+  assert(home, 'no homes near the new airport');
+  const n0 = t.c.blocks.length, sup = S.support, bud = S.budget;
+  const p = IC.aptPlanPart(S, ap, 'apron', home.x, home.y, ap.rwyA, 3, 2);
+  assert(p, 'could not plan the apron over the homes');
+  const w = ap.works.find(x => x.part === p);
+  assert(w.stages[0].k === 'demo' && w.stages[0].cost > 0, 'demolition is not the first stage');
+  assert(S.support < sup, 'public support did not drop');
+  for (let i = 0; i < 3 * 3600 && w.si < 1; i++) tick(S, 1);
+  assert(!t.c.blocks.includes(home) && t.c.blocks.length < n0, 'the homes are still standing');
+  assert(S.worldDirty && S.worldDirty.length, 'the map was not told');
+  assert(bud - S.budget >= w.stages[0].cost - 0.01, `paid ${U.money(bud - S.budget)}, compensation is ${U.money(w.stages[0].cost)}`);
+});
+
+test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
+  const { buildKden, finishAll } = require('../kdenbuild.js');
+  const { S, ap, actions } = buildKden(12345, true);
+  assert(actions < 200, `${actions} actions`);
+  finishAll(S, ap);
+  sky(S, 'clear'); calm(S, -Math.PI / 2, 12); ap.cfg = null;
+  const st = IC.aptStats(S, ap), stands = IC.aptStands(ap);
+  assert(st.rwy.length === 6 && stands.length >= 150 && stands.every(s => s.linked), `${st.rwy.length} runways, ${stands.length} stands, ${stands.filter(s => !s.linked).length} cut off`);
+  assert(st.movesPerHour >= 150 && !st.warn.length, `rated ${st.movesPerHour} movements an hour; ${st.warn.join(' ')}`);
+  const at = {}, t0 = S.time;
+  const r = drive(S, ap, { follow: true, hours: 2, fill: 0.7, each: S => { for (const h of [1, 2]) if (!at[h] && S.time >= t0 + h * 3600 - 1) at[h] = (ap.kpi.arr || 0) + (ap.kpi.dep || 0); } });
+  const rated = IC.aptStats(S, ap).movesPerHour;
+  assert(r.grid === 0 && r.stuck === 0, `${r.grid} gridlocks, ${r.stuck} stranded`);
+  assert(at[2] - at[1] >= rated * 0.8, `second hour: ${at[2] - at[1]} movements against ${rated} rated`);
+  console.log(`        ${actions} actions; ${stands.length} stands; rated ${rated} movements an hour, flew ${at[2] - at[1]} in the second hour`);
+}, true);
+
 /* ---------- airspace ---------- */
 /* switch off every radar controllers could use: the civil radars and the approach radars at the airports */
 const blind = S => {
