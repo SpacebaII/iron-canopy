@@ -17,8 +17,12 @@ function card(S, title, sub, text, kind) { S.camp.cards.push({ title, sub, text,
 IC.card = card;
 function chapter(S, name, text) { if (S.camp.chapter === name) return; S.camp.chapter = name; card(S, name, `Day ${U.day(S.time)} · ${U.hhmm(S.time)}`, text, 'chapter'); IC.emit(S, 'chapter', name); }
 
+/* Quick war is won by holding: this many days of war with the country still working and the Prime Minister still
+   behind you. It is lost when the Prime Minister's confidence runs out, or national morale collapses. */
+IC.HOLD_DAYS = 3;
 IC.campaignInit = function (S) {
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: snap(S) };
+  S.pm = 70;
   const E = S.enemy, W = S.world;
   if (S.mode === 'sandbox') {
     S.camp.sched = [
@@ -49,6 +53,21 @@ function nearTown(S) {
   const c = IC.cities(S).filter(x => !x.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0] || IC.cap(S);
   return { x: c.x, y: c.y, ref: c, name: c.name };
 }
+/* how much of the country still works: power and homes in the cities, factories, open runways, airlines flying */
+IC.working = function (S) {
+  let cp = 0, c = 0;
+  for (const x of IC.cities(S)) { const pl = x.plant && S.byId[x.plant]; const alive = x.blocks ? x.blocks.filter(b => b.hp > 0).length / Math.max(1, x.blocks.length) : x.hp / x.max; cp += x.pop; c += x.pop * alive * (pl && pl.offline ? 0.6 : 1); }
+  const fac = S.infra.filter(i => i.kind === 'factory'), apt = IC.bases(S).filter(b => b.owner === 'us' && b.parts);
+  const f = fac.length ? fac.filter(i => !i.offline).length / fac.length : 1;
+  const a = apt.length ? apt.filter(b => IC.baseStatus(S, b).runway).length / apt.length : 1;
+  const al = S.av ? S.av.airlines.filter(x => !x.gone) : [];
+  const sat = al.length ? Math.min(1, al.reduce((s2, x) => s2 + x.sat, 0) / al.length / 60) : 1;
+  return (cp ? c / cp : 1) * 0.45 + f * 0.2 + a * 0.2 + sat * 0.15;
+};
+IC.warDays = S => S.enemy && S.enemy.war ? (S.time - S.enemy.warT) / 86400 : 0;
+const pmHit = (S, v, why) => { if (S.pm == null || S.story) return; S.pm = U.clamp(S.pm + v, 0, 100); if (v <= -4 && why) IC.log(S, 'warn', 'PM', `The Prime Minister: ${why}`); };
+IC.pmHit = pmHit;
+
 function snap(S) { return { kills: S.stats.kills, leak: S.stats.leakers, fired: S.stats.fired, lost: S.stats.unitsLost + S.stats.acLost, budget: S.budget, will: S.enemy ? S.enemy.will : 100, civ: S.stats.civLost }; }
 
 IC.campaignTick = function (S, dt) {
@@ -59,8 +78,17 @@ IC.campaignTick = function (S, dt) {
   const h = (S.time % 86400) / 3600, day = U.day(S.time);
   if (day > 1 && h >= 6 && C.briefDay !== day) { C.briefDay = day; briefing(S); }
   if (h >= 21 && C.reportDay !== day && S.enemy.war) { C.reportDay = day; report(S); }
-  if (S.enemy.war && day >= 4 && C.chapter !== 'Attrition' && S.enemy.will > 50 && C.chapter !== 'The Turning Point') chapter(S, 'Attrition', 'Neither side can land a knockout. Stocks, crews and morale decide it now.');
-  if (S.enemy.will < 50 && !C.turn) { C.turn = true; chapter(S, 'The Turning Point', `${S.world.names.A}'s will is cracking. Keep the pressure on.`); }
+  if (S.pm != null && S.pm < 25 && tip(S, 'pmLow', 7200)) say(S, 'CDS', `The Prime Minister's confidence is down to ${Math.round(S.pm)}. Protect what keeps the country working: power, the cities, the airports.`);
+  if (S.enemy.war && IC.warDays(S) >= 1.5 && !C.half) { C.half = true; chapter(S, 'Attrition', 'Neither side can land a knockout. Stocks, crews and morale decide it now.'); }
+  // the Prime Minister's confidence: it drains while the country is failing, and recovers in the calm
+  C.pmT = (C.pmT || 0) - dt;
+  if (C.pmT <= 0 && S.pm != null) {
+    C.pmT = 60;
+    const w = C.work = IC.working(S), m = IC.nationalMorale(S);
+    pmHit(S, ((w - 0.7) * 1.2 + (m < 40 ? -0.6 : 0) + (IC.raidPhase(S) === 'calm' && w > 0.8 ? 0.3 : 0)) / 60);
+    if (S.pm <= 0) IC.gameOver(S, `The Prime Minister has lost confidence in the air defence and asked ${S.world.names.A} for a ceasefire on its terms.`);
+    else if (S.enemy.war && IC.warDays(S) >= IC.HOLD_DAYS) IC.victory(S, `You held for ${IC.HOLD_DAYS} days. ${S.world.full.A} has agreed to talks: its raids did not break the country (${U.pct(w)} still working).`);
+  }
   // tired crews
   C.fatT = (C.fatT || 0) - dt;
   if (C.fatT <= 0) {
@@ -78,7 +106,8 @@ function tip(S, key, cool) {
 function briefing(S) {
   const E = S.enemy, P = E.plan, day = U.day(S.time);
   const lines = [];
-  lines.push(`Enemy will to fight: ${Math.round(E.will)}%. Our national morale: ${Math.round(IC.nationalMorale(S))}%.`);
+  lines.push(`The Prime Minister's confidence: ${Math.round(S.pm)}. Country working: ${U.pct(IC.working(S))}. National morale: ${Math.round(IC.nationalMorale(S))}%.`);
+  if (E.war) lines.push(`Hold for ${U.dur(Math.max(0, IC.HOLD_DAYS - IC.warDays(S)) * 86400)} more.`);
   if (P) lines.push(`Their air force appears to be trying to ${P.label} (${P.obj.name}).`);
   const low = S.units.filter(u => u.mags.length && IC.fill(S, u) < 0.3).length;
   if (low) lines.push(`${low} batteries are below a third of their missiles.`);
@@ -88,7 +117,7 @@ function briefing(S) {
 }
 function report(S) {
   const d = S.camp.day, n = snap(S);
-  const text = `Threats destroyed: ${n.kills - d.kills}. Leakers: ${n.leak - d.leak}. Interceptors fired: ${n.fired - d.fired}. Our losses: ${n.lost - d.lost}. Treasury ${U.money(n.budget)} (${n.budget >= d.budget ? '+' : '−'}${U.money(Math.abs(n.budget - d.budget)).replace('₭', '₭')}). Enemy will ${Math.round(d.will)}% → ${Math.round(n.will)}%.${n.civ > d.civ ? ' Civil aircraft lost: ' + (n.civ - d.civ) + '.' : ''}`;
+  const text = `Threats destroyed: ${n.kills - d.kills}. Leakers: ${n.leak - d.leak}. Interceptors fired: ${n.fired - d.fired}. Our losses: ${n.lost - d.lost}. Treasury ${U.money(n.budget)} (${n.budget >= d.budget ? '+' : '−'}${U.money(Math.abs(n.budget - d.budget)).replace('₭', '₭')}). Raids today: ${(S.raids || []).filter(r => U.day(r.t) === U.day(S.time)).length}.${n.civ > d.civ ? ' Civil aircraft lost: ' + (n.civ - d.civ) + '.' : ''}`;
   card(S, `Day ${U.day(S.time)} Report`, U.clock(S.time), text, 'report');
 }
 
@@ -111,7 +140,7 @@ function suggestions(S) {
   const tired = S.units.filter(u => u.fat > 80 && u.radarOn);
   if (tired.length) add(4, `${tired[0].name}${tired.length > 1 ? ` and ${tired.length - 1} more` : ''}: crews exhausted`, tired[0], 'unit');
   L.sort((a, b) => b.pri - a.pri);
-  S.camp.goal = S.enemy.war ? `Break ${S.world.names.A}'s will to fight (${Math.round(S.enemy.will)}%)` : 'Prepare the defense';
+  S.camp.goal = S.enemy.war ? `Hold for ${IC.HOLD_DAYS} days: ${U.dur(Math.max(0, IC.HOLD_DAYS - IC.warDays(S)) * 86400)} to go, country ${U.pct(S.camp.work || IC.working(S))} working` : 'Prepare the defence';
   return L.slice(0, 5);
 }
 IC.suggestions = suggestions;
@@ -142,7 +171,12 @@ IC.on((S, type, d) => {
     case 'convoyLost': if (once('convoy')) say(S, 'LOG', `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defense along the route, or a depot further back, keeps them alive.`); break;
     case 'unitLost': if (once('unitLost')) say(S, 'ADA', `${d.name} is gone. The enemy found it: radiating, firing and sitting near the border all give positions away. Move batteries after they fire when you can.`); break;
     case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name} within the hour.`); break;
-    case 'civilKill': say(S, 'CDS', `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
+    case 'cityHit': pmHit(S, -0.5 - (d.lost || 0) * 1.2); break;
+    case 'infraLost': pmHit(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
+    case 'tailLost': pmHit(S, -3, 'An airliner destroyed on the ground. The airlines are talking about leaving.'); break;
+    // after each raid the Prime Minister weighs what got through and what it hit
+    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 6 * (0.3 - f) - r.hits * 0.35, f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
+    case 'civilKill': pmHit(S, -15); say(S, 'CDS', `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
     case 'weather': if (!IC.WEATHER[d].heli && once('wx', 21600)) say(S, 'AIR', 'Weather has grounded the helicopters. Jets can still fly.'); break;
     case 'delivered': if (once('delivered')) say(S, 'LOG', 'The first new equipment is in the reserve. Pick it in the arsenal and click the map to deploy it.'); break;
   }

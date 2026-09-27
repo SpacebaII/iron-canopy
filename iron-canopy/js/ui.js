@@ -117,7 +117,8 @@ function topbar() {
   } else setHTML($('stats'), `${money}
     <div class="stat" title="National morale: below 12% the government asks for terms"><span>Morale</span><strong class="${m > 55 ? '' : m > 30 ? 'amber' : 'hostile'}">${Math.round(m)}%</strong>${meter(m / 100, m > 55 ? 'var(--ok)' : m > 30 ? 'var(--amber)' : 'var(--hostile)')}</div>
     <div class="stat" title="Allied support: aid and import prices"><span>Allies</span><strong>${Math.round(S.support)}</strong>${meter(S.support / 100, 'var(--friend)')}</div>
-    <div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>`);
+    ${S.pm != null ? `<div class="stat" title="The Prime Minister's confidence: it falls when cities, power, factories and airports are hit, and when raids get through. At zero the government asks for terms."><span>PM</span><strong class="${S.pm > 50 ? '' : S.pm > 25 ? 'amber' : 'hostile'}">${Math.round(S.pm)}</strong>${meter(S.pm / 100, S.pm > 50 ? 'var(--ok)' : S.pm > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>` : ''}
+    ${S.enemy.war && S.mode !== 'range' ? `<div class="stat" title="Hold this long with the country working to win"><span>Hold</span><strong>${U.dur(Math.max(0, IC.HOLD_DAYS - IC.warDays(S)) * 86400)}</strong></div>` : ''}`);
   const seg = (act2, cur, opts) => `<div class="seg">${opts.map(([v, n, c, t]) => `<button class="${c || ''}" data-act="${act2}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
   setHTML($('rules'), `
     ${act >= 2 ? `<div class="rl" title="National weapons status: Tight fires only on identified hostiles; Free also on suspects; Hold never without your order"><span>Weapons</span>${seg('roeAll', S.ad.roe, [['free', 'Free', '', 'Engage hostile and suspect tracks'], ['tight', 'Tight', '', 'Engage only identified hostiles'], ['hold', 'Hold', 'red', 'Do not fire without an order']])}</div>` : ''}
@@ -241,7 +242,7 @@ function comms() {
 
 /* ---------- arsenal: what is in reserve, what is on order ---------- */
 function arsenal() {
-  const allowed = type => !S.story || IC.storyAllows(S, type);
+  const allowed = type => !IC.UNITS[type].callin && (!S.story || IC.storyAllows(S, type));
   const cats = IC.CATS.filter(c => Object.entries(IC.UNITS).some(([t, d]) => d.cat === c.id && (allowed(t) || (S.reserve[t] || 0) > 0)));
   if (!cats.length) { setHTML($('arsenal'), ''); $('arsenal').classList.remove('glass'); $('app').classList.add('no-arsenal'); return; }
   $('app').classList.remove('no-arsenal');
@@ -250,7 +251,15 @@ function arsenal() {
   const slots = IC.slots(S), act = S.orders.filter(o => o.started);
   const slotHtml = Array.from({ length: slots }, (_, i) => { const o = act[i]; return `<i title="${o ? esc(IC.UNITS[o.type].name) + ' ' + U.pct(o.prog) : 'free production slot'}"><b style="width:${o ? o.prog * 100 : 0}%"></b></i>`; }).join('');
   const queued = S.orders.length - act.length;
-  const tiles = Object.entries(IC.UNITS).filter(([t, d]) => d.cat === ui.cat && (allowed(t) || (S.reserve[t] || 0) > 0)).map(([type, d]) => {
+  // call-in teams: an ability, not a unit you buy
+  const CI = IC.callInState(S), CK = IC.callInStats(S), ciWhy = IC.callInWhy(S), ciOn = S.mode2 && S.mode2.kind === 'callin';
+  const callTile = ui.cat === 'ad' && S.enemy.war ? `<div class="tile ${ciWhy ? 'locked' : ''}" id="tile-callin" role="button" tabindex="0" data-act="callin" aria-pressed="${!!ciOn}" title="A MANPADS team, dropped by helicopter anywhere in our territory in ${U.dur(IC.CALLIN.arrive)}. It fights drones, helicopters and low jets for ${U.dur(CK.stay)}, then is lifted out. ${U.money(IC.CALLIN.cost)} a call. Key: G">
+      ${ui.sym('manpads')}<span class="res-n">${CI.charges}/${CK.max}</span>
+      <span class="tn">Call in a team</span>
+      <span class="tc ${ciWhy ? '' : 'ok'}">${ciWhy ? esc(ciWhy) : `Ready · ${U.money(IC.CALLIN.cost)}`}</span>
+      ${CI.charges < CK.max ? `<span class="prog"><i style="width:${CI.t / CK.recharge * 100}%"></i></span>` : ''}
+    </div>` : '';
+  const tiles = callTile + Object.entries(IC.UNITS).filter(([t, d]) => d.cat === ui.cat && (allowed(t) || (S.reserve[t] || 0) > 0)).map(([type, d]) => {
     const locked = !IC.hasTech(S, d.tech);
     const r = S.reserve[type] || 0;
     const coming = S.orders.filter(p => p.type === type);
@@ -282,6 +291,7 @@ function modeHint() {
   if (!m) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = {
+    callin: () => `Click inside ${S.world.names.H} to drop a MANPADS team there. Shift-click to call another. Right-click or Esc to cancel.`,
     deploy: () => `Click inside ${S.world.names.H} to deploy the ${IC.UNITS[m.type].name}. The dashed rings show its reach. Right-click or Esc to cancel.`,
     move: () => `Click where ${m.unit.name} should go.`,
     airPoint: () => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
