@@ -23,15 +23,17 @@ function nearestNode(x, y) {
   for (const k of W.roadIds) { const n = W.nodes[k], d = U.dxy(x, y, n.x, n.y); if (d < bd) { bd = d; best = k; } }
   return best;
 }
-/* Route along the road network. Returns [{x,y,road}] — road=true means the segment ending here is paved. */
-IC.route = function (ax, ay, bx, by) {
+/* Route along the road network. Returns [{x,y,road}] — road=true means the segment ending here is paved.
+   Lorries (roads=true) keep to the roads however far round they go; other vehicles cut across country when
+   that is shorter. */
+IC.route = function (ax, ay, bx, by, roads) {
   const W = IC.W, N = W.nodes;
   const na = nearestNode(ax, ay), nb = nearestNode(bx, by);
   const i = W.roadIdx[na], j = W.roadIdx[nb];
   const road = W.roadD[i][j];
   const direct = U.dxy(ax, ay, bx, by) * 2.2;
   const via = (U.dxy(ax, ay, N[na].x, N[na].y) + U.dxy(bx, by, N[nb].x, N[nb].y)) * 2.2 + road;
-  if (na === nb || road > 1e11 || direct <= via) return [{ x: bx, y: by, road: false }];
+  if (na === nb || road > 1e11 || (direct <= via && !roads)) return [{ x: bx, y: by, road: false }];
   const pts = [{ x: N[na].x, y: N[na].y, road: false }];
   let k = i;
   for (let guard = 0; k !== j && guard < 300; guard++) {
@@ -40,7 +42,7 @@ IC.route = function (ax, ay, bx, by) {
     const seq = e.a === W.roadIds[k] ? e.pts : e.pts.slice().reverse();
     // a blown bridge means a slow detour to the nearest ford
     const slow = W.blocked && W.blocked.has(e.id);
-    for (let s = 1; s < seq.length; s++) pts.push({ x: seq[s].x, y: seq[s].y, road: !slow });
+    for (let s = 1; s < seq.length; s++) pts.push({ x: seq[s].x, y: seq[s].y, road: !slow, cls: e.cls, cut: slow ? e.id : 0 });
     k = nk;
   }
   pts.push({ x: bx, y: by, road: false });
@@ -75,7 +77,7 @@ IC.roadsChanged = function (S) {
   for (const e of W.edges) if (e.cut) blocked.add(e.id);
   IC.buildRouting(W, blocked);
   edgeW = null;
-  for (const v of S.vehicles) if (v.route && v.dest) v.route = IC.route(v.x, v.y, v.dest.x, v.dest.y);
+  for (const v of S.vehicles) if (v.route && v.dest) v.route = IC.route(v.x, v.y, v.dest.x, v.dest.y, v.kind === 'truck');
   if (S.econ) S.econ.roadsDirty = true;
 };
 IC.bridgeChanged = IC.roadsChanged;

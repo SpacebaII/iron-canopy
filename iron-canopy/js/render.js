@@ -109,7 +109,7 @@ IC.render = function (S, now) {
   drawFields(S, px);
   drawInfra(S, px, now);
   IC.drawForces(S, px, now);
-  if (S.layers.logistics) drawConvoys(S, px);
+  if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
 
 
@@ -637,45 +637,11 @@ function drawInfra(S, px, now) {
   }
 }
 
-function column(x, y, h, n, px, col, ink) {
-  const c = Math.cos(h || 0), s = Math.sin(h || 0);
-  const k = Math.max(1, Math.min(2.2, cam.z * 2.5));
-  for (let i = 0; i < n; i++) {
-    const ox = x - c * i * 10 * px * k, oy = y - s * i * 10 * px * k;
-    ctx.save(); ctx.translate(ox, oy); ctx.rotate(h || 0); ctx.scale(k, k);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-4 * px + px, -2.5 * px + px, 8 * px, 5 * px);
-    ctx.fillStyle = col; ctx.strokeStyle = ink; ctx.lineWidth = 0.9 * px;
-    ctx.fillRect(-4 * px, -2.5 * px, 8 * px, 5 * px); ctx.strokeRect(-4 * px, -2.5 * px, 8 * px, 5 * px);
-    ctx.fillStyle = ink; ctx.fillRect(2.2 * px, -2.5 * px, 1.8 * px, 5 * px);
-    ctx.restore();
-  }
-}
-function drawConvoys(S, px) {
-  for (const v of S.vehicles) {
-    if (v.state === 'idle' && cam.z < 0.4) continue;
-    // trucks parked at an airport or factory sit out of the way when zoomed in
-    if (v.state === 'idle' && v.home && v.home.parts && cam.z > 1.2) continue;
-    if (!inView(v.x, v.y, 40)) continue;
-    column(v.x, v.y, v.h, v.trucks, px, v.job ? C.supply : '#a08a5c', '#1b1307');
-    const sel = S.sel && S.sel.ref === v;
-    if (v.job && (cam.z > 0.18 || sel)) {
-      const txt = `${v.job.short} ${v.job.qty}${v.job.kind === 'ground' ? '' : '×' + v.job.mun}`;
-      ctx.font = `700 ${8.5 * px}px "IBM Plex Mono", monospace`;
-      const w = ctx.measureText(txt).width + 7 * px;
-      ctx.fillStyle = 'rgba(30,22,8,0.88)'; ctx.fillRect(v.x - w / 2, v.y - 19 * px, w, 12 * px);
-      ctx.fillStyle = C.supply; ctx.textAlign = 'center'; ctx.fillText(txt, v.x, v.y - 10 * px); ctx.textAlign = 'left';
-    }
-    if (sel) {
-      brackets(v.x, v.y, 15 * px, px);
-      if (v.route) { ctx.strokeStyle = 'rgba(224,180,88,0.6)'; ctx.setLineDash([4 * px, 4 * px]); ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.moveTo(v.x, v.y); for (const p of v.route) ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]); }
-    }
-  }
-}
 function drawGhost(S, px) {
   const m = S.mode2, h = S.hover;
   if (!m || !h) return;
   if (m.kind === 'deploy') {
-    const ok = IC.canPlace(S, m.type, h.x, h.y) && (S.reserve[m.type] || 0) > 0;
+    const ok = IC.canPlace(S, m.type, h.x, h.y) && ((S.reserve[m.type] || 0) > 0 || !IC.buyBlock(S, m.type));
     const d = IC.UNITS[m.type];
     const rng = IC.typeRange(m.type);
     ctx.strokeStyle = ok ? 'rgba(111,210,255,0.8)' : 'rgba(255,91,79,0.8)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([7 * px, 5 * px]);
@@ -685,6 +651,7 @@ function drawGhost(S, px) {
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.85; IC.drawUnitSymbol(ctx, m.type, h.x, h.y, px, ok ? C.friend : C.hostile, { tint: ok ? null : 'rgba(255,91,79,0.4)' }); ctx.globalAlpha = 1;
     if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
+    if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
   } else if (m.kind === 'airPoint') {
     const R = m.mission === 'aew' ? 3200 : m.mission === 'isr' ? 450 : 550;
     ctx.strokeStyle = 'rgba(111,210,255,0.7)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([6 * px, 5 * px]);

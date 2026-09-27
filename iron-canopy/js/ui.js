@@ -104,7 +104,8 @@ function topbar() {
   const meter = (f, col) => `<div class="meter"><i style="width:${U.clamp(f, 0, 1) * 100}%;background:${col}"></i></div>`;
   const st = S.story, act = st ? st.act : 4;
   if (S.range) { const R = IC.rangeStats(S); setHTML($('stats'), `<div class="stat"><span>Shots</span><strong>${R.shots}</strong></div><div class="stat"><span>Kills</span><strong class="ok">${R.kills}</strong></div><div class="stat"><span>Leakers</span><strong class="${R.leaks ? 'hostile' : ''}">${R.leaks}</strong></div>`); }
-  const money = `<div class="stat" title="Treasury and hourly balance"><span>Treasury</span><strong class="amber">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h</em></div>`;
+  const left = S.moneyLeft == null ? Infinity : S.moneyLeft, short = left < 24;
+  const money = `<button class="stat" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'amber'}">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
@@ -250,12 +251,9 @@ function arsenal() {
   $('app').classList.remove('no-arsenal');
   if (!cats.some(c => c.id === ui.cat)) ui.cat = cats[0].id;
   const tabs = cats.map(c => `<button data-act="cat" data-v="${c.id}" aria-pressed="${ui.cat === c.id && !ui.arMin}">${c.name}</button>`).join('');
-  const slots = IC.slots(S), act = S.orders.filter(o => o.started);
-  const slotHtml = Array.from({ length: slots }, (_, i) => { const o = act[i]; return `<i title="${o ? esc(IC.UNITS[o.type].name) + ' ' + U.pct(o.prog) : 'free production slot'}"><b style="width:${o ? o.prog * 100 : 0}%"></b></i>`; }).join('');
-  const queued = S.orders.length - act.length;
   // call-in teams: an ability, not a unit you buy
   const CI = IC.callInState(S), CK = IC.callInStats(S), ciWhy = IC.callInWhy(S), ciOn = S.mode2 && S.mode2.kind === 'callin';
-  const callTile = ui.cat === 'ad' && IC.callInOpen(S) ? `<div class="tile ${ciWhy ? 'locked' : ''}" id="tile-callin" role="button" tabindex="0" data-act="callin" aria-pressed="${!!ciOn}" title="A MANPADS team, dropped by helicopter anywhere in our territory in ${U.dur(IC.CALLIN.arrive)}. It fights drones, helicopters and low jets for ${U.dur(CK.stay)}, then is lifted out. ${U.money(IC.CALLIN.cost)} a call. Key: G">
+  const callTile = ui.cat === 'ad' && IC.callInOpen(S) ? `<div class="tile ${ciWhy ? 'locked' : ''}" id="tile-callin" role="button" tabindex="0" data-act="callin" aria-pressed="${!!ciOn}" title="A shoulder-fired missile team, dropped by helicopter anywhere in our territory in ${U.dur(IC.CALLIN.arrive)}. It fights drones, helicopters and low jets for ${U.dur(CK.stay)}, then is lifted out. ${U.money(IC.CALLIN.cost)} a call. Key: G">
       ${ui.sym('manpads')}<span class="res-n">${CI.charges}/${CK.max}</span>
       <span class="tn">Call in a team</span>
       <span class="tc ${ciWhy ? '' : 'ok'}">${ciWhy ? esc(ciWhy) : `Ready · ${U.money(IC.CALLIN.cost)}`}</span>
@@ -264,22 +262,18 @@ function arsenal() {
   const tiles = callTile + Object.entries(IC.UNITS).filter(([t, d]) => d.cat === ui.cat && (allowed(t) || (S.reserve[t] || 0) > 0)).map(([type, d]) => {
     const locked = !IC.hasTech(S, d.tech);
     const r = S.reserve[type] || 0;
-    const coming = S.orders.filter(p => p.type === type);
     const on = S.mode2 && S.mode2.kind === 'deploy' && S.mode2.type === type;
     const tech = locked ? IC.TECH.find(t => t.id === d.tech) : null;
-    const first = coming.filter(o => o.started).sort((a, b) => b.prog - a.prog)[0];
+    const why = r ? '' : IC.buyBlock(S, type);
     return `<div class="tile ${locked ? 'locked' : ''}" id="tile-${type}" role="button" tabindex="0" data-act="deploy" data-v="${type}" aria-pressed="${on}" title="${esc(IC.fullName(d))}. ${esc(d.desc)}">
       ${ui.sym(type)}${r ? `<span class="res-n">×${r}</span>` : ''}
       <span class="tn">${esc(d.name)}</span><span class="tr">${esc(d.role || '')}</span>
-      ${locked ? `<span class="tc">Needs ${esc(tech.name)}</span>` : r ? `<span class="tc ok">Deploy · free</span>` : `<span class="tc">${U.money(IC.unitCost(S, type))} · ${U.dur(IC.leadTime(S, type))}</span>`}
-      ${coming.length ? `<span class="eta">+${coming.length} on order</span>` : ''}
-      ${!locked && allowed(type) ? `<button class="buy" data-act="order" data-v="${type}" ${S.budget < IC.unitCost(S, type) ? 'disabled' : ''}>Order</button>` : ''}
-      ${first ? `<span class="prog"><i style="width:${first.prog * 100}%"></i></span>` : ''}
+      ${locked ? `<span class="tc">Needs ${esc(tech.name)}</span>` : r ? `<span class="tc ok">Deploy · free</span>` : `<span class="tc ${why ? '' : 'ok'}">${U.money(IC.unitCost(S, type))} · ${why ? 'not enough money' : 'buy &amp; place'}</span>`}
     </div>`;
   }).join('');
   $('arsenal').classList.add('glass');
   $('arsenal').classList.toggle('min', ui.arMin);
-  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Production slots: orders build in parallel">${slotHtml}<span>${act.length}/${slots}${queued ? ` +${queued} queued` : ''}</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
+  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick, then click the map · paid when placed</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
 }
 
 function layers() {
@@ -294,8 +288,8 @@ function modeHint() {
   el.hidden = false;
   el.textContent = {
     rangeTarget: () => 'Click the map where the threats should aim.',
-    callin: () => `Click inside ${S.world.names.H} to drop a MANPADS team there. Shift-click to call another. Right-click or Esc to cancel.`,
-    deploy: () => `Click inside ${S.world.names.H} to deploy the ${IC.UNITS[m.type].name}. The dashed rings show its reach. Right-click or Esc to cancel.`,
+    callin: () => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
+    deploy: () => `Click inside ${S.world.names.H} to place the ${IC.UNITS[m.type].name}${S.reserve[m.type] > 0 ? ' from the reserve' : `: ${U.money(IC.unitCost(S, m.type))}, paid when placed`}. The dashed rings show its reach. Shift+click places more. Right-click or Esc to cancel.`,
     move: () => `Click where ${m.unit.name} should go.`,
     airPoint: () => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
     airSite: () => `Click an enemy target for ${m.r.name}.`,

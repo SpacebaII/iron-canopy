@@ -1,5 +1,5 @@
-/* Iron Canopy — unit lifecycle: procurement (several orders at once, minutes not hours), deployment from the
-   national reserve, setup, relocation, repair. */
+/* Iron Canopy — unit lifecycle: buying (pay when you place it; it is loaded, driven there and set up in minutes),
+   deployment from the national reserve, setup, relocation, repair. */
 (function (IC) {
 'use strict';
 const U = IC.U;
@@ -18,8 +18,7 @@ IC.canPlace = function (S, type, x, y, ignore) {
   return true;
 };
 
-/* ---------- procurement ---------- */
-IC.slots = S => IC.MOBIL[S.mobil].slots;
+/* ---------- buying: pay when you place it, and it comes at once ---------- */
 /* doctrine choices in the story make some equipment cheaper */
 IC.unitCost = function (S, type) {
   const d = IC.UNITS[type], D = S.story && S.story.doc || {};
@@ -29,64 +28,77 @@ IC.unitCost = function (S, type) {
   if (D.cheapGuns && (type === 'spaag' || type === 'cram')) k *= 0.7;
   return Math.round(d.cost * k);
 };
-IC.leadTime = (S, type) => IC.UNITS[type].lead / (1 + 0.25 * S.mobil);
-IC.order = function (S, type) {
+IC.LOAD_T = 120;   // s to load a new or reserve unit onto its transporters
+IC.AIRLIFT = { kmh: 250, load: 300, over: 1500 };   // heavy-lift helicopters: used when the drive would take over 25 min
+/* why a unit cannot be bought now ('' if it can) */
+IC.buyBlock = function (S, type) {
   const d = IC.UNITS[type];
-  if (!IC.hasTech(S, d.tech) || S.budget < IC.unitCost(S, type) || (S.story && !IC.storyAllows(S, type))) return false;
-  S.budget -= IC.unitCost(S, type);
-  S.orders.push({ id: IC.nid('o'), type, prog: 0, dur: IC.leadTime(S, type), started: false });
-  const active = S.orders.filter(o => o.started).length;
-  IC.log(S, 'info', 'ORDER', `${d.name} ordered (${U.money(d.cost)}). ${active < IC.slots(S) ? `Ready in about ${U.dur(IC.leadTime(S, type))}.` : 'Queued: all production slots are busy.'}`);
-  IC.emit(S, 'procure', type);
-  return true;
+  if (!IC.hasTech(S, d.tech)) return 'Needs research';
+  if (S.story && !IC.storyAllows(S, type)) return 'Not yet in your remit';
+  if (S.budget < IC.unitCost(S, type)) return `Needs ${U.money(IC.unitCost(S, type))}`;
+  return '';
 };
-IC.procure = IC.order;
-IC.cancelOrder = function (S, id) {
-  const o = S.orders.find(x => x.id === id); if (!o) return;
-  S.orders = S.orders.filter(x => x !== o);
-  S.budget += IC.UNITS[o.type].cost * (o.started ? 0.5 : 1);
-};
-function orders(S, dt) {
-  let active = 0;
-  for (const o of S.orders) {
-    if (!o.started) { if (active < IC.slots(S)) o.started = true; else continue; }
-    active++;
-    o.prog += dt / o.dur;
-    if (o.prog >= 1) {
-      o.done = true;
-      S.reserve[o.type] = (S.reserve[o.type] || 0) + 1;
-      IC.log(S, 'kill', 'DELIVERED', `${IC.UNITS[o.type].name} delivered to the reserve.`);
-      IC.sfx && IC.sfx.ui('ok');
-      IC.emit(S, 'delivered', o.type);
-    }
-  }
-  S.orders = S.orders.filter(o => !o.done);
-}
-
-/* where equipment from the national reserve can roll out from */
+/* where equipment rolls out from: depots, garrisons, the barracks in our cities, and our airfields (new equipment
+   is flown to the nearest) */
 IC.musterPoints = function (S) {
   const pts = IC.depots(S).map(d => ({ x: d.x, y: d.y, name: d.name }));
   for (const g of S.world.garrisons) pts.push({ x: g.x, y: g.y, name: g.name });
-  for (const b of IC.bases(S)) if (b.owner === 'us' && b.kind === 'airbase') pts.push({ x: b.x, y: b.y, name: b.name });
+  for (const c of IC.cities(S)) if (c.owner === 'us') pts.push({ x: c.x, y: c.y, name: `${c.name} barracks` });
+  for (const b of IC.bases(S)) if (b.owner === 'us' && (b.kind === 'airbase' || b.parts) && !b.locked) pts.push({ x: b.x, y: b.y, name: b.name.replace(/ (International|Airport)$/, '') });
   return pts;
 };
+/* how a unit placed here gets there: from where, and how long loading, the drive and setting up take */
+IC.deliveryPlan = function (S, type, x, y) {
+  const d = IC.UNITS[type];
+  if (d.mob === 'fixed') return { fixed: true, from: null, load: 0, road: 0, setup: d.build, total: d.build };
+  const pts = IC.musterPoints(S).sort((a, b) => U.dxy(a.x, a.y, x, y) - U.dxy(b.x, b.y, x, y)).slice(0, 3);
+  const [vr, vo] = IC.unitSpeed({ d });
+  let best = null;
+  for (const p of pts.length ? pts : [IC.cap(S)]) { const r = IC.route(p.x, p.y, x, y), t = IC.routeTime(p, r, vr, vo); if (!best || t < best.road) best = { from: p, road: t }; }
+  // a long drive: flown in from the nearest airfield instead
+  const A = IC.AIRLIFT, fields = IC.bases(S).filter(b => b.owner === 'us' && !b.locked && (b.kind === 'airbase' || b.parts));
+  const af = fields.sort((a, b) => U.dxy(a.x, a.y, x, y) - U.dxy(b.x, b.y, x, y))[0];
+  if (af && best.road > A.over) {
+    const fly = U.dxy(af.x, af.y, x, y) * 360 / A.kmh;
+    if (fly + A.load < best.road + IC.LOAD_T) return { fixed: false, air: true, from: { x: af.x, y: af.y, name: af.name.replace(/ (International|Airport)$/, '') }, load: A.load, road: fly, setup: d.build, total: A.load + fly + d.build };
+  }
+  return { fixed: false, from: best.from, load: IC.LOAD_T, road: best.road, setup: d.build, total: IC.LOAD_T + best.road + d.build };
+};
+/* buy one into the reserve without placing it (scripts and story use this) */
+IC.order = function (S, type) {
+  if (IC.buyBlock(S, type)) return false;
+  IC.pay(S, 'buyUnits', IC.unitCost(S, type));
+  S.reserve[type] = (S.reserve[type] || 0) + 1;
+  IC.log(S, 'info', 'ORDER', `${IC.UNITS[type].name} bought (${U.money(IC.unitCost(S, type))}): in the reserve, ready to place.`);
+  IC.emit(S, 'procure', type);
+  return true;
+};
+/* place a unit: from the reserve if there is one, bought otherwise */
 IC.deploy = function (S, type, x, y) {
   const d = IC.UNITS[type];
-  if (!(S.reserve[type] > 0) || !IC.canPlace(S, type, x, y)) return null;
+  if (!IC.canPlace(S, type, x, y)) return null;
+  let bought = 0;
+  if (!(S.reserve[type] > 0)) {
+    if (IC.buyBlock(S, type)) return null;
+    bought = IC.unitCost(S, type);
+    IC.pay(S, 'buyUnits', bought);
+    S.reserve[type] = (S.reserve[type] || 0) + 1;
+    IC.emit(S, 'procure', type);
+  }
   S.reserve[type]--;
   S.flags.deployed = (S.flags.deployed || 0) + 1;
   IC.emit(S, 'deploy', type);
-  if (d.mob === 'fixed') {
+  const P = IC.deliveryPlan(S, type, x, y), cost = bought ? ` (bought, ${U.money(bought)})` : '';
+  if (P.fixed) {
     const u = IC.makeUnit(S, type, x, y, {});
-    IC.log(S, 'info', 'BUILD', `${u.name} ${d.name} under construction near ${IC.nearestPlace(S, x, y)} (${U.dur(d.build)}).`);
+    IC.log(S, 'info', 'BUILD', `${u.name} ${d.name}${cost} under construction near ${IC.nearestPlace(S, x, y)}: ready in ${U.dur(d.build)}.`);
     return u;
   }
-  const from = IC.musterPoints(S).sort((a, b) => U.dxy(a.x, a.y, x, y) - U.dxy(b.x, b.y, x, y))[0] || IC.cap(S);
-  const u = IC.makeUnit(S, type, from.x + U.rand(-8, 8), from.y + U.rand(-8, 8), {});
-  u.state = 'transit'; u.dest = { x, y }; u.route = IC.route(u.x, u.y, x, y);
-  const [vr, vo] = IC.unitSpeed(u);
-  u.eta = S.time + IC.routeTime(u, u.route, vr, vo);
-  IC.log(S, 'info', 'DEPLOY', `${u.name} ${d.name} leaving ${from.name}, in position in about ${U.dur(u.eta - S.time)}.`);
+  const u = IC.makeUnit(S, type, P.from.x + U.rand(-3, 3), P.from.y + U.rand(-3, 3), {});
+  // loaded first, then it drives there and sets up
+  u.state = 'packing'; u.stT = u.stMax = P.load; u.dest = { x, y }; u.deliver = true; u.airlift = !!P.air;
+  u.eta = S.time + P.load + P.road;
+  IC.log(S, 'info', 'DEPLOY', `${u.name} ${d.name}${cost} ${P.air ? 'loading onto heavy-lift helicopters' : 'loading'} at ${P.from.name}: in position in about ${U.dur(P.load + P.road)}, ready ${U.dur(P.setup)} later.`);
   return u;
 };
 IC.relocate = function (S, u, x, y) {
@@ -99,7 +111,7 @@ IC.relocate = function (S, u, x, y) {
 };
 IC.toReserve = function (S, u) {
   if (u.d.mob === 'fixed') {
-    const refund = u.d.cost * 0.2; S.budget += refund;
+    const refund = u.d.cost * 0.2; S.budget += refund; IC.econBook(S, 'refund', refund);
     kill(S, u);
     IC.log(S, 'info', 'DISMANTLE', `${u.name} dismantled (+${U.money(refund)}).`);
     return;
@@ -111,7 +123,7 @@ IC.toReserve = function (S, u) {
 IC.repairUnit = function (S, u) {
   const cost = Math.max(3, u.d.cost * 0.08);
   if (u.repairing || S.budget < cost || (u.hp >= u.max && Object.values(u.comp).every(v => v >= 1))) return false;
-  S.budget -= cost; u.repairing = true;
+  IC.pay(S, 'repair', cost); u.repairing = true;
   IC.log(S, 'info', 'REPAIR', `Repair crew sent to ${u.name} (${U.money(cost)}).`);
   return true;
 };
@@ -124,19 +136,19 @@ function kill(S, u) {
   S.group = S.group.filter(x => x !== u);
 }
 
+const moveSpeed = u => u.airlift ? [IC.AIRLIFT.kmh / 360, IC.AIRLIFT.kmh / 360] : IC.unitSpeed(u);
 IC.updateUnits = function (S, dt) {
-  orders(S, dt);
   for (const u of S.units.slice()) {
     if (u.state === 'building' || u.state === 'setup' || u.state === 'packing') {
       u.stT -= dt * (0.5 + 0.5 * IC.ok(u, 'crew'));
       if (u.state !== 'packing' && Math.random() < dt * 0.02) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-6, 6), oy: U.rand(-6, 6), vy: -4, life: 1.2, size: 3, grow: 4, col: '150,140,120', a: 0.25 });
       if (u.stT <= 0) {
-        if (u.state === 'packing') { u.state = 'transit'; u.route = IC.route(u.x, u.y, u.dest.x, u.dest.y); const [vr, vo] = IC.unitSpeed(u); u.eta = S.time + IC.routeTime(u, u.route, vr, vo); }
+        if (u.state === 'packing') { u.state = 'transit'; u.route = u.airlift ? [{ x: u.dest.x, y: u.dest.y, road: true }] : IC.route(u.x, u.y, u.dest.x, u.dest.y); const [vr, vo] = moveSpeed(u); u.eta = S.time + IC.routeTime(u, u.route, vr, vo); u.stMax = 0; }
         else { u.state = 'ready'; IC.log(S, 'info', 'READY', `${u.name} ${u.d.name} operational.`); IC.emit(S, 'ready', u); }
       }
     } else if (u.state === 'transit') {
-      const [vr, vo] = IC.unitSpeed(u);
-      const k = 0.4 + 0.6 * IC.ok(u, 'mob');
+      const [vr, vo] = moveSpeed(u);
+      const k = u.airlift ? 1 : 0.4 + 0.6 * IC.ok(u, 'mob');
       if (IC.followRoute(u, dt, vr * k, vo * k)) {
         u.x = u.dest.x; u.y = u.dest.y; u.route = null;
         if (u.toReserve) {
@@ -148,7 +160,7 @@ IC.updateUnits = function (S, dt) {
           continue;
         }
         u.state = 'setup'; u.stT = u.stMax = u.d.build * (u.moved ? 0.6 : 1);
-        u.moved = true;
+        u.moved = true; u.deliver = false; u.airlift = false;
       }
     }
   }

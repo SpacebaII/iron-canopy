@@ -136,7 +136,7 @@ function suggestions(S) {
   if (S.enemy.war && S.airspace === 'open') add(5, 'Civil airliners are still flying through a war zone: restrict the airspace', null, 'airspace');
   const freeSlots = S.tech.slots.filter(x => !x).length;
   if (freeSlots && S.budget > 150) add(2, `${freeSlots} research slot${freeSlots > 1 ? 's' : ''} idle`, null, 'tech');
-  if (S.orders.length < IC.slots(S) && S.budget > 250) add(2, 'Production has spare capacity: order equipment', null, 'arsenal');
+  if (S.budget > 400) add(2, 'Money in hand: buy equipment from the arsenal; it arrives in minutes', null, 'arsenal');
   const tired = S.units.filter(u => u.fat > 80 && u.radarOn);
   if (tired.length) add(4, `${tired[0].name}${tired.length > 1 ? ` and ${tired.length - 1} more` : ''}: crews exhausted`, tired[0], 'unit');
   L.sort((a, b) => b.pri - a.pri);

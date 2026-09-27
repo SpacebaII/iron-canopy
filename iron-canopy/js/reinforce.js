@@ -43,7 +43,7 @@ IC.callIn = function (S, x, y) {
   S.budget -= A.cost;
   const job = { id: IC.nid('ci'), x, y, t: S.time + A.arrive, t0: S.time };
   C.inbound.push(job);
-  IC.log(S, 'info', 'CALL-IN', `MANPADS team on its way to ${IC.nearestPlace(S, x, y)}: in position in ${U.dur(A.arrive)}.`, { x, y });
+  IC.log(S, 'info', 'CALL-IN', `Missile team on its way to ${IC.nearestPlace(S, x, y)}: in position in ${U.dur(A.arrive)}.`, { x, y });
   IC.sfx && IC.sfx.rotor && IC.sfx.rotor(x, y);
   IC.emit(S, 'callIn', job);
   return job;

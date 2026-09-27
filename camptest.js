@@ -50,8 +50,8 @@ for (let i = 0; i < days * 86400 / 0.5 && !S.over; i++) {
     // weapons free while a raid is on, tight in the calm (airliners fly again)
     const ph = IC.raidPhase(S);
     S.ad.roe = ph === 'raid' ? 'free' : 'tight';
-    if (S.budget > 350 && S.orders.length < IC.slots(S)) IC.order(S, U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'mr3d']));
-    if (S.budget > 250) for (const f of fac) { if (f.queue.length < 2 && !f.offline) IC.orderProduction(S, f, U.pick(['SR', 'MR', 'SR', 'LR', 'IR']), 4); }
+    if (S.budget > 350) IC.order(S, U.pick(['shorad', 'mrsam', 'gf', 'spaag', 'mr3d']));
+    // stock: the Ministry keeps it (Keep stocked is on in Quick war)
     for (const id of ['a_pac3', 's_esm', 'a_remote', 'l_rrr', 's_nctr', 'e_eccm', 'x_glcm', 'a_cram']) IC.startResearch(S, id);
     if (!did.cap) { did.cap = 1; IC.addTask(S, 'cap', { x: cap.x, y: cap.y }); const p = inward(mid(fA), 1400); IC.addTask(S, 'aew', { x: p.x, y: p.y }); }
     if (S.enemy.war && !did.war) { did.war = 1; S.airspace = 'restricted'; IC.setMobil(S, 1); IC.addTask(S, 'cap', { x: ab.x, y: ab.y }); }

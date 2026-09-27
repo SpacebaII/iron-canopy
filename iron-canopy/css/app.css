@@ -453,3 +453,16 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
   .warroom{top:12px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* the money view: treasury, the hourly lines and their reasons */
+.money .mtop{display:flex;flex-wrap:wrap;gap:1.4rem;align-items:baseline}
+.money .mtop small{display:block;font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.money .mtop strong{font-family:var(--mono);font-size:1.6rem;font-variant-numeric:tabular-nums}
+.money .mtop p{margin:0;flex:1 1 16rem;font-size:.95rem}
+.money .mcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:.4rem 1.4rem}
+.money h4{margin:.2rem 0 .3rem;font-family:var(--display);font-size:.9rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.money h4 em{font-style:normal;font-family:var(--mono);letter-spacing:0;text-transform:none}
+.mline{display:flex;justify-content:space-between;width:100%;padding:.32rem .45rem;border-radius:8px;font-size:.92rem;text-align:left}
+.mline:hover,.mline[aria-expanded="true"]{background:var(--well)}
+.mline b{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+.mwhy{margin:.1rem .45rem .45rem}
+table.t th.r{text-align:right}
