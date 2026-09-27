@@ -564,23 +564,28 @@ function formBlock(g, b, sd, lod) {
       // cul-de-sacs: a loop road with short dead ends, houses round the turning circles
       grass(-W2, -H2, b.w, b.h, 'rgb(104,120,80)');
       if (!mid) { g.fillStyle = 'rgba(150,146,140,0.6)'; for (let q = 0; q < 12; q++) g.fillRect(-W2 + h(q, 1) * b.w * 0.9, -H2 + h(1, q) * b.h * 0.9, 0.3, 0.25); break; }
-      const rx = W2 * 0.62, ry = H2 * 0.62, rw = 0.08;
-      g.strokeStyle = 'rgb(118,118,114)'; g.lineWidth = rw; g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, 7); g.moveTo(0, ry); g.lineTo(0, H2 + 0.2); g.stroke();
+      // every estate is laid out a little differently: the loop's size and place, how many closes, which way in
+      const rx = W2 * (0.45 + h(1, 2) * 0.25), ry = H2 * (0.45 + h(2, 1) * 0.25), ox = (h(3, 3) - 0.5) * (W2 - rx) * 0.8, oy = (h(4, 4) - 0.5) * (H2 - ry) * 0.8, rw = 0.08, nC = 5 + Math.floor(h(5, 5) * 5);
+      const inA = Math.floor(h(6, 6) * 4) * Math.PI / 2;
+      g.save(); g.translate(ox, oy);
+      g.strokeStyle = 'rgb(118,118,114)'; g.lineWidth = rw; g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, 7);
+      g.moveTo(Math.cos(inA) * rx, Math.sin(inA) * ry); g.lineTo(Math.cos(inA) * (W2 + 0.3), Math.sin(inA) * (H2 + 0.3)); g.stroke();
       const houses = [], bulbs = [];
-      for (let q = 0; q < 7; q++) {
-        const a = q / 7 * Math.PI * 2 + h(q, 3) * 0.4, out = h(q, 5) < 0.5, L = out ? 0.55 + h(q, 6) * 0.35 : Math.min(rx, ry) * 0.55;
+      for (let q = 0; q < nC; q++) {
+        const a = q / nC * Math.PI * 2 + h(q, 3) * 0.5, out = h(q, 5) < 0.55, L = out ? 0.45 + h(q, 6) * 0.4 : Math.min(rx, ry) * 0.55;
         const x0 = Math.cos(a) * rx, y0 = Math.sin(a) * ry, x1 = x0 + Math.cos(a) * L * (out ? 1 : -1), y1 = y0 + Math.sin(a) * L * (out ? 1 : -1);
-        if (Math.abs(x1) > W2 - 0.2 || Math.abs(y1) > H2 - 0.2) continue;
+        if (Math.abs(x1 + ox) > W2 - 0.2 || Math.abs(y1 + oy) > H2 - 0.2 || Math.abs(U.angWrap(a - inA)) < 0.4) continue;
         g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); bulbs.push(x1, y1);
         for (let t = 0.35; t <= 1.01; t += 0.3) for (const s of [-1, 1]) houses.push(x0 + (x1 - x0) * t - Math.sin(a) * 0.14 * s, y0 + (y1 - y0) * t + Math.cos(a) * 0.14 * s, a);
       }
       for (let q = 0; q < 26; q++) { const a = q / 26 * Math.PI * 2; for (const k of [0.8, 1.22]) houses.push(Math.cos(a) * rx * k, Math.sin(a) * ry * k, a + Math.PI / 2); }
       g.fillStyle = 'rgb(118,118,114)'; g.beginPath(); for (let q = 0; q < bulbs.length; q += 2) { g.moveTo(bulbs[q] + 0.1, bulbs[q + 1]); g.arc(bulbs[q], bulbs[q + 1], 0.1, 0, 7); } g.fill();
       for (let q = 0; q < houses.length; q += 3) {
-        const x = houses[q], y = houses[q + 1], k = h(q, 11); if (k < 0.12 || Math.abs(x) > W2 - 0.1 || Math.abs(y) > H2 - 0.1) continue;
+        const x = houses[q], y = houses[q + 1], k = h(q, 11); if (k < 0.12 || Math.abs(x + ox) > W2 - 0.1 || Math.abs(y + oy) > H2 - 0.1) continue;
         g.save(); g.translate(x, y); g.rotate(houses[q + 2]); box(-0.06, -0.05, 0.12, 0.1, rgb(ROOF_SUB[Math.floor(k * 5)]), 0.025, true); g.restore();
-        if (k > 0.6) tp.push(x * 1.1, y * 1.1);
+        if (k > 0.6) tp.push(x * 1.1 + ox, y * 1.1 + oy);
       }
+      g.restore();
       break;
     }
     case 'mall': {

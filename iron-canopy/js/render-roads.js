@@ -148,19 +148,33 @@ function overpass(j, width, fill, px, span) {
   ctx.lineCap = 'round';
 }
 
+// how wide a river is drawn close in (terrain.js: 0.3 of its width in the far view)
+const RW = new Map();
+function riverW(W, name) { if (!RW.has(name)) { const r = W.rivers.find(q => q.name === name); RW.set(name, r ? r.w * 0.3 : 2); } return RW.get(name); }
 IC.drawRoadBridges = function (g, S, px, v) {
   ctx = g; view = v;
   if (cam.z < 0.2) return;
   for (const b of S.infra) {
     if (b.kind !== 'bridge' || !inView(b.x, b.y, 30)) continue;
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a);
-    const w = Math.max(IC.roadWidth(b.cls, cam.z) * 1.3, b.cls === 'hw' ? 0.6 : 0.3);
+    // far out a clear symbol; close in the bridge at its real size: the river's width and a bit, parapets, a shadow
+    const near = U.clamp((cam.z - 2) / 3, 0, 1), rw = riverW(S.world, b.river);
+    const w = Math.max(IC.roadWidth(b.cls, cam.z) * (1.3 - near * 0.15), b.cls === 'hw' ? 0.6 * (1 - near) : 0.3 * (1 - near)), H = U.lerp(6, rw / 2 + 0.35, near);
     if (b.offline) {
-      ctx.fillStyle = 'rgba(40,36,30,0.95)'; ctx.fillRect(-6, -w / 2, 4, w); ctx.fillRect(2, -w / 2, 4, w);
-      ctx.strokeStyle = C.hostile; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.moveTo(-2, -w); ctx.lineTo(2, w); ctx.moveTo(2, -w); ctx.lineTo(-2, w); ctx.stroke();
-    } else {
-      ctx.fillStyle = 'rgba(220,210,190,0.95)'; ctx.fillRect(-6, -w / 2, 12, w);
-      ctx.strokeStyle = 'rgba(40,36,30,0.9)'; ctx.lineWidth = Math.min(0.5, w * 0.15); ctx.strokeRect(-6, -w / 2, 12, w);
+      ctx.fillStyle = 'rgba(40,36,30,0.95)'; ctx.fillRect(-H, -w / 2, H * 0.66, w); ctx.fillRect(H * 0.34, -w / 2, H * 0.66, w);
+      ctx.strokeStyle = C.hostile; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.moveTo(-H / 3, -w); ctx.lineTo(H / 3, w); ctx.moveTo(H / 3, -w); ctx.lineTo(-H / 3, w); ctx.stroke();
+    } else if (near < 1) {
+      ctx.globalAlpha = 1 - near;
+      ctx.fillStyle = 'rgba(220,210,190,0.95)'; ctx.fillRect(-H, -w / 2, 2 * H, w);
+      ctx.strokeStyle = 'rgba(40,36,30,0.9)'; ctx.lineWidth = Math.min(0.5, w * 0.15); ctx.strokeRect(-H, -w / 2, 2 * H, w);
+      ctx.globalAlpha = 1;
+    }
+    if (!b.offline && near > 0) {
+      ctx.globalAlpha = near;
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-H + 0.06, -w / 2 + 0.08, 2 * H, w);
+      ctx.fillStyle = 'rgb(168,166,160)'; ctx.fillRect(-H, -w / 2 - 0.03, 2 * H, w + 0.06);
+      ctx.fillStyle = 'rgb(74,75,76)'; ctx.fillRect(-H, -w / 2 + 0.02, 2 * H, w - 0.04);
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
     if (b.offline && cam.z > 0.4) label('BRIDGE DOWN', b.x, b.y - 10 * px, px, C.hostile, 8.5, 'center', 700);
@@ -217,15 +231,15 @@ function vehicles(list, px, night, now, m, detail) {
   for (const [col, L] of groups) fillQ(L, night ? col.replace(/rgb\((\d+),(\d+),(\d+)\)/, (q, r, g2, b) => `rgb(${r * 0.35 | 0},${g2 * 0.35 | 0},${b * 0.4 | 0})`) : col);
   if (night) {
     ctx.globalCompositeOperation = 'lighter';
-    // headlights: a short beam of light on the road ahead
-    ctx.fillStyle = 'rgba(255,232,180,0.35)'; ctx.beginPath();
-    for (let i = 0; i < lights.length; i += 5) { const x = lights[i], y = lights[i + 1], c = lights[i + 2], s = lights[i + 3], w = lights[i + 4] * 1.4, l = Math.max(w * 5, 3 * px); ctx.moveTo(x - s * w, y + c * w); ctx.lineTo(x + c * l - s * w * 2.2, y + s * l + c * w * 2.2); ctx.lineTo(x + c * l + s * w * 2.2, y + s * l - c * w * 2.2); ctx.lineTo(x + s * w, y - c * w); ctx.closePath(); }
-    ctx.fill();
+    // headlights: close in, a short beam of light on the road ahead
+    const beams = detail && cam.z > 30;
+    if (beams) { ctx.fillStyle = 'rgba(255,232,180,0.2)'; ctx.beginPath(); } else ctx.beginPath();
+    if (beams) { for (let i = 0; i < lights.length; i += 5) { const x = lights[i], y = lights[i + 1], c = lights[i + 2], s = lights[i + 3], w = lights[i + 4] * 1.4, l = w * 6; ctx.moveTo(x - s * w, y + c * w); ctx.lineTo(x + c * l - s * w * 2.2, y + s * l + c * w * 2.2); ctx.lineTo(x + c * l + s * w * 2.2, y + s * l - c * w * 2.2); ctx.lineTo(x + s * w, y - c * w); ctx.closePath(); } ctx.fill(); }
     ctx.fillStyle = 'rgba(255,244,210,0.95)'; ctx.beginPath();
-    for (let i = 0; i < lights.length; i += 5) { const r = Math.max(lights[i + 4] * 0.7, 0.8 * px); ctx.moveTo(lights[i] + r, lights[i + 1]); ctx.arc(lights[i], lights[i + 1], r, 0, 7); }
+    for (let i = 0; i < lights.length; i += 5) { const r = detail ? Math.max(lights[i + 4] * 0.7, 0.8 * px) : 1.1 * px; ctx.moveTo(lights[i] + r, lights[i + 1]); ctx.arc(lights[i], lights[i + 1], r, 0, 7); }
     ctx.fill();
     ctx.fillStyle = 'rgba(255,40,30,0.85)'; ctx.beginPath();
-    for (let i = 0; i < tails.length; i += 3) { const r = Math.max(tails[i + 2] * 0.6, 0.6 * px); ctx.moveTo(tails[i] + r, tails[i + 1]); ctx.arc(tails[i], tails[i + 1], r, 0, 7); }
+    for (let i = 0; i < tails.length; i += 3) { const r = detail ? Math.max(tails[i + 2] * 0.6, 0.6 * px) : 0.8 * px; ctx.moveTo(tails[i] + r, tails[i + 1]); ctx.arc(tails[i], tails[i + 1], r, 0, 7); }
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -310,7 +324,7 @@ function signals(S, px, night, now) {
   for (const [k, col] of [['r', 'rgb(255,60,40)'], ['a', 'rgb(255,190,40)'], ['g', 'rgb(60,230,120)']]) {
     const L = on[k]; if (!L.length) continue;
     ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r, L[i + 1]); ctx.arc(L[i], L[i + 1], r, 0, 7); } ctx.fill();
-    if (night) { ctx.globalAlpha = 0.25; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r * 4, L[i + 1]); ctx.arc(L[i], L[i + 1], r * 4, 0, 7); } ctx.fill(); ctx.globalAlpha = 1; }
+    if (night) { ctx.globalAlpha = 0.25; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r * 2.5, L[i + 1]); ctx.arc(L[i], L[i + 1], r * 2.5, 0, 7); } ctx.fill(); ctx.globalAlpha = 1; }
   }
   ctx.globalCompositeOperation = 'source-over';
 }

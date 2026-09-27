@@ -680,7 +680,7 @@ IC.trafficAgents = function (S, view, dt) {
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
       for (let d = 0; d < 2; d++) {
         if (!canGo(lk, d) || L.ld[d] < 0.02) continue;
-        const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.8;
+        const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.5;
         for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
           if (R() > n - q) break;
           const s = R() * lk.len, kind = pickKind(L.mix[d], R());

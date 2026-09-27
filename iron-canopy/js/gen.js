@@ -932,6 +932,8 @@ function buildTowns(W, R, fbm) {
   }
   // villages: houses along the roads through them
   for (const v of W.villages) {
+    // a village the city has grown over is part of it now
+    if (!v.swallowed) for (const c of W.cities) if (U.dist(c, v) < c.r * 1.7 && c.blocks.some(b => U.dist(b, v) < v.r * 0.8)) v.swallowed = c.id;
     if (v.swallowed) { v.blocks = []; continue; }
     const segs = v.home ? segsNear(v.x, v.y, v.r * 1.3).filter(s => s[4] !== 'hw') : [];
     const n = Math.round(24 + v.pop * 2.2);
