@@ -380,6 +380,9 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .kpis div{display:grid;padding:.35rem .5rem;border-radius:9px;background:var(--well)}
 .kpis small{font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .kpis b{font-family:var(--mono);font-weight:500;font-size:1rem;font-variant-numeric:tabular-nums}
+.rwrow{display:grid;grid-template-columns:3.1rem 1fr auto;gap:.5rem;align-items:baseline;font-size:.86rem;line-height:1.35;padding:.3rem .55rem;border-radius:8px;background:rgba(255,255,255,.035);margin-bottom:3px;border-left:3px solid rgba(236,236,226,.35)}
+.rwrow b{font-family:var(--mono)}.rwrow em{font-style:normal;font-family:var(--mono);color:var(--muted);font-size:.8rem}
+.rwrow.arr{border-left-color:#7fe8b0}.rwrow.dep{border-left-color:#80e0ff}.rwrow.spare{opacity:.55}
 .warnrow{font-size:.86rem;line-height:1.35;padding:.35rem .55rem .35rem .75rem;border-radius:8px;background:rgba(242,180,65,.09);color:#ffe3ad;border-left:3px solid var(--amber);margin-bottom:3px}
 .palette{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .pal{display:grid;gap:1px;text-align:left;padding:.35rem .5rem;border-radius:9px;background:var(--well);transition:background .15s}
