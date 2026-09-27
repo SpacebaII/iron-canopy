@@ -178,27 +178,75 @@ test('traffic: rush hour is busier than night, and an air raid empties the roads
   const cap = IC.cap(S), view = { x0: cap.x - 150, y0: cap.y - 150, x1: cap.x + 150, y1: cap.y + 150 };
   const count = () => { S.traffic.stepT = 0; IC.traffic(S, 0.25); return IC.trafficVisible(S, view, 0.3, () => {}); };
   const rush = count();
+  const hw = S.traffic.links.filter(L => L.cls === 'hw' && U.dist(L.l.pts[0], cap) < 300).sort((a, b) => b.load - a.load)[0];
+  assert(hw && hw.load > 0.8, `the busiest motorway by the capital is not busy at rush hour (${hw ? hw.load.toFixed(2) : 'none'})`);
   S.time = 3 * 3600; const night = count();
   S.time = 8 * 3600; cap.alert = 600; const raid = count(); cap.alert = 0; count();
   assert(rush > 400, `too little traffic round the capital at 08:00: ${rush}`);
   assert(night < rush * 0.3, `night (${night}) not much quieter than rush hour (${rush})`);
   assert(raid < rush * 0.5, `an air raid alert did not clear the roads (${raid} vs ${rush})`);
-  const hw = S.traffic.links.filter(L => L.cls === 'hw').sort((a, b) => b.busy - a.busy)[0];
-  assert(hw.load > 0.8, `the busiest motorway is not busy at rush hour (${hw.load.toFixed(2)})`);
+  // commuters: into the offices in the morning, home in the evening
+  const T = S.traffic, biz = T.zones.filter(z => z.city === cap && z.jobs > z.homes * 2).sort((a, b) => b.jobs - a.jobs)[0];
+  assert(biz, 'no business district in the capital');
+  const G = T.G, nd = G.nodes[biz.node], inbound = (h) => { S.time = h * 3600; count(); let i = 0, o = 0; for (const li of nd.out) { const L = T.links[li], d = G.links[li].b === biz.node ? 0 : 1; i += L.ld[d]; o += L.ld[1 - d]; } return [i, o]; };
+  const [mi, mo] = inbound(8), [ei, eo] = inbound(17.5);
+  assert(mi > mo && eo > ei, `rush hours do not run into town in the morning and out in the evening (08:00 ${mi.toFixed(2)} in, ${mo.toFixed(2)} out; 17:30 ${ei.toFixed(2)} in, ${eo.toFixed(2)} out)`);
+});
+test('traffic: trips start and end at real places and follow the road graph', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S), T = S.traffic, G = T.G;
+  // every city's streets are on one network with the roads
+  const seen = new Set([0]), q = [0];
+  while (q.length) { const n = q.pop(); for (const li of G.nodes[n].out) { const lk = G.links[li], m = lk.a === n ? lk.b : lk.a; if (!seen.has(m)) { seen.add(m); q.push(m); } } }
+  assert(seen.size === G.nodes.length, `${G.nodes.length - seen.size} road and street nodes are cut off from the rest`);
+  // slip roads run one way, and motorways meet other roads only through them
+  const ramps = G.links.filter(l => l.cls === 'ramp');
+  assert(ramps.length && ramps.filter(l => l.one).length >= ramps.length * 0.9, 'slip roads are not one-way');
+  // (where a motorway runs through open country; in a town centre or at a roundabout it joins the roads there)
+  const town = n => S.world.cities.some(c => U.dist(c, n) < 0.01);
+  for (const n of G.nodes) { const c = n.out.map(i => G.links[i].cls); if (c.filter(k => k === 'hw').length >= 2 && !n.jk && !town(n)) assert(c.every(k => k === 'hw' || k === 'ramp'), `a motorway meets a ${c.find(k => k !== 'hw' && k !== 'ramp')} at grade`); }
+  // close in, vehicles start at zones and places and drive their route to the end
+  const view = { x0: cap.x - 40, y0: cap.y - 25, x1: cap.x + 40, y1: cap.y + 25 };
+  IC.trafficAgents(S, view, 0);
+  for (let i = 0; i < 1200; i++) { S.time += 0.5; IC.traffic(S, 0.5); IC.trafficAgents(S, view, 0.5); }
+  const A = IC.trafficAgentsOf(S);
+  assert(A.stats.spawnZone > 100, `few trips started in the city (${A.stats.spawnZone})`);
+  assert(A.trips.length >= 10, `only ${A.trips.length} trips arrived in ten minutes`);
+  const connected = r => r.every(([lk, d], i) => IC.driveCanGo(lk, d) && (i === 0 || (r[i - 1][1] ? r[i - 1][0].a : r[i - 1][0].b) === (d ? lk.b : lk.a)));
+  for (const tr of A.trips) {
+    assert(tr.org && tr.org.blocks && tr.org.blocks.length, 'a trip started away from any buildings');
+    assert(tr.dest && (tr.dest.blocks ? tr.dest.blocks.length : ['apt', 'border', 'industry', 'depot'].includes(tr.dest.kind)), 'a trip ended away from any place');
+    const [f] = tr.route[0], [l, ld] = tr.route[tr.route.length - 1];
+    assert((tr.route[0][1] ? f.b : f.a) === tr.org.node && (ld ? l.a : l.b) === tr.dest.node, 'a route does not run from its start to its end');
+    assert(connected(tr.route), 'a route jumps between roads that do not meet, or runs the wrong way along a slip road');
+  }
+  for (const a of A.list) assert(connected(a.route), 'a vehicle on the road follows a broken route');
+  const purposes = new Set(A.list.map(a => a.pur).concat(A.trips.map(t => t.dest.kind || 'x')));
+  assert(A.list.some(a => a.pur === 'com') && A.list.some(a => a.pur === 'frt' || ['artic', 'box', 'tanker'].includes(a.k)), `no commuters or lorries: ${[...purposes].join(', ')}`);
+  // buses run lines along the road graph, with stops
+  assert(T.lines.some(l => l.kind === 'bus') && T.lines.some(l => l.kind === 'coach'), 'no bus or coach lines');
+  for (const l of T.lines) { assert(connected(l.path), `${l.name} is not a connected route`); if (l.kind === 'bus') assert(l.stops.length >= 3, `${l.name} has no stops`); }
 });
 test('traffic: a busy hour stays inside the time budget', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S);
-  for (let i = 0; i < 200; i++) IC.traffic(S, 0.25);
+  for (let i = 0; i < 200; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
   let t0, step = 1e9;
-  for (let k = 0; k < 3; k++) { t0 = process.hrtime.bigint(); for (let i = 0; i < 1000; i++) IC.traffic(S, 0.25); step = Math.min(step, Number(process.hrtime.bigint() - t0) / 1e6 / 1000); }
+  for (let k = 0; k < 3; k++) { t0 = process.hrtime.bigint(); for (let i = 0; i < 1000; i++) { S.time += 0.25; IC.traffic(S, 0.25); } step = Math.min(step, Number(process.hrtime.bigint() - t0) / 1e6 / 1000); }
   // what the renderer asks for each frame at city zoom (about 1,400 × 900 px at 3 px per unit)
   const view = { x0: cap.x - 240, y0: cap.y - 150, x1: cap.x + 240, y1: cap.y + 150 };
   let n = 0, frame = 1e9;
   for (let k = 0; k < 3; k++) { t0 = process.hrtime.bigint(); for (let i = 0; i < 20; i++) n = IC.trafficVisible(S, view, 7 / 3, () => {}); frame = Math.min(frame, Number(process.hrtime.bigint() - t0) / 1e6 / 20); }
-  console.log(`        step ${step.toFixed(4)} ms, ${n} vehicles placed in ${frame.toFixed(2)} ms`);
+  // close in: vehicles on their own trips at street zoom, a frame at normal speed
+  const near = { x0: cap.x - 36, y0: cap.y - 22, x1: cap.x + 36, y1: cap.y + 22 };
+  IC.trafficAgents(S, near, 0); for (let i = 0; i < 200; i++) { S.time += 0.5; IC.trafficAgents(S, near, 0.5); }
+  let ag = 1e9;
+  for (let k = 0; k < 3; k++) { t0 = process.hrtime.bigint(); for (let i = 0; i < 20; i++) { S.time += 0.17; IC.trafficAgents(S, near, 0.17); } ag = Math.min(ag, Number(process.hrtime.bigint() - t0) / 1e6 / 20); }
+  const nA = IC.trafficAgentsOf(S).list.length;
+  console.log(`        step ${step.toFixed(4)} ms, ${n} vehicles placed in ${frame.toFixed(2)} ms, ${nA} vehicles on their own trips moved in ${ag.toFixed(2)} ms`);
   assert(step < 0.1, `traffic step takes ${step.toFixed(3)} ms (budget 0.1 ms of the 1 ms step)`);
   assert(frame < 4, `placing ${n} vehicles takes ${frame.toFixed(2)} ms a frame`);
+  assert(ag < 3, `moving ${nA} vehicles takes ${ag.toFixed(2)} ms a frame`);
 });
 
 /* ---------- airports ---------- */

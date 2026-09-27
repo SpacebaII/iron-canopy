@@ -166,10 +166,81 @@ IC.drawRoadBridges = function (g, S, px, v) {
     if (b.offline && cam.z > 0.4) label('BRIDGE DOWN', b.x, b.y - 10 * px, px, C.hostile, 8.5, 'center', 700);
   }
 };
-/* traffic: far out, the flow along each road; close in, the vehicles themselves (headlights at night) */
+/* traffic: far out, the flow along each road; in the middle, vehicles riding the flow; close in, vehicles making
+   their own trips (traffic.js). Every kind has its size and colours; at night headlights, tail lights and the blue
+   lights of police cars and ambulances. */
+const AGZ = 10;   // closer than this, individual vehicles
+const CAR_COLS = ['rgb(232,232,228)', 'rgb(236,236,232)', 'rgb(190,192,196)', 'rgb(176,178,182)', 'rgb(38,40,44)', 'rgb(60,62,66)', 'rgb(96,100,106)', 'rgb(168,38,34)', 'rgb(36,64,132)', 'rgb(60,96,150)', 'rgb(48,84,58)', 'rgb(198,184,150)', 'rgb(118,22,30)', 'rgb(222,184,52)', 'rgb(214,110,40)'];
+const TRAILER = ['rgb(232,232,228)', 'rgb(200,202,204)', 'rgb(52,92,150)', 'rgb(170,50,40)', 'rgb(64,110,70)', 'rgb(212,168,60)'];
+const CAB = ['rgb(236,236,232)', 'rgb(170,40,36)', 'rgb(40,70,140)', 'rgb(40,42,46)', 'rgb(220,190,60)'];
+/* the parts of a vehicle as [colour, front, back, half-width] along its length (1 = its front, -1 = its back) */
+function parts(k, col) {
+  const c = CAR_COLS[col % CAR_COLS.length];
+  switch (k) {
+    case 'taxi': return [['rgb(236,196,40)', 1, -1, 1], ['rgba(20,24,30,0.75)', 0.45, 0.15, 0.8], ['rgb(250,250,240)', 0.05, -0.1, 0.4]];
+    case 'police': return [['rgb(240,240,240)', 1, -1, 1], ['rgb(30,60,160)', 0.25, -0.35, 1], ['rgba(20,24,30,0.75)', 0.45, 0.2, 0.8], ['rgb(60,120,255)', 0.1, 0, 0.6]];
+    case 'amb': return [['rgb(244,244,236)', 1, -1, 1], ['rgb(230,196,40)', -0.2, -0.6, 1], ['rgb(210,40,40)', 0.1, -0.05, 0.9]];
+    case 'van': return [[c === CAR_COLS[4] ? 'rgb(236,236,232)' : c, 1, -1, 1], ['rgba(20,24,30,0.75)', 0.72, 0.55, 0.85]];
+    case 'box': return [[CAB[col % CAB.length], 1, 0.55, 0.95], ['rgb(236,236,232)', 0.5, -1, 1]];
+    case 'artic': return [[CAB[col % CAB.length], 1, 0.72, 0.9], [TRAILER[col % TRAILER.length], 0.66, -1, 1]];
+    case 'tanker': return [[CAB[(col + 2) % CAB.length], 1, 0.72, 0.9], ['rgb(206,210,214)', 0.66, -1, 0.85], ['rgba(255,255,255,0.5)', 0.6, -0.95, 0.25]];
+    case 'bus': return [['rgb(206,58,46)', 1, -1, 1], ['rgba(250,250,245,0.55)', 0.85, -0.85, 0.35]];
+    case 'coach': return [['rgb(240,240,236)', 1, -1, 1], ['rgb(40,90,150)', 0.2, -0.9, 0.95], ['rgba(20,24,30,0.7)', 0.95, 0.85, 0.9]];
+    case 'shuttle': return [['rgb(240,240,236)', 1, -1, 1], ['rgb(80,160,200)', 0.1, -0.6, 1], ['rgba(20,24,30,0.7)', 0.85, 0.6, 0.85]];
+    case 'cater': return [['rgb(240,240,236)', 1, 0.6, 0.9], ['rgb(236,190,40)', 0.55, -1, 1]];
+    default: return [[c, 1, -1, 1], ['rgba(20,24,30,0.72)', 0.5, 0.18, 0.82], ['rgba(20,24,30,0.55)', -0.55, -0.75, 0.8]];
+  }
+}
+/* draw a list of vehicles {x, y, h, k, col}; m: at least this many world units long (so they stay visible) */
+function vehicles(list, px, night, now, m, detail) {
+  const groups = new Map();
+  const quad = (col, x, y, c, s, f, b, w) => { let L = groups.get(col); if (!L) groups.set(col, L = []); L.push(x, y, c, s, f, b, w); };
+  const lights = [], tails = [], blues = [], shade = [];
+  for (const v of list) {
+    const K = IC.VEHICLE_KINDS[v.k] || IC.VEHICLE_KINDS.car, f = Math.max(1, m / 0.045), L = K.L * f / 2, W = Math.max(K.W / 2, px * K.W / 0.019);
+    const c = Math.cos(v.h), s = Math.sin(v.h);
+    if (!night) shade.push(v.x + L * 0.25, v.y + L * 0.3, c, s, L, W);
+    const P = detail ? parts(v.k, v.col) : [parts(v.k, v.col)[0]];
+    for (const [col, fr, bk, hw] of P) quad(col, v.x, v.y, c, s, fr * L, bk * L, hw * W);
+    if (night) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
+    if ((v.k === 'police' || v.k === 'amb') && Math.sin(now * 12 + v.col) > 0) blues.push(v.x, v.y, W);
+  }
+  const fillQ = (L, col) => {
+    ctx.fillStyle = col; ctx.beginPath();
+    for (let i = 0; i < L.length; i += 7) {
+      const x = L[i], y = L[i + 1], c = L[i + 2], s = L[i + 3], fr = L[i + 4], bk = L[i + 5], w = L[i + 6], wx = -s * w, wy = c * w;
+      ctx.moveTo(x + c * fr - wx, y + s * fr - wy); ctx.lineTo(x + c * fr + wx, y + s * fr + wy); ctx.lineTo(x + c * bk + wx, y + s * bk + wy); ctx.lineTo(x + c * bk - wx, y + s * bk - wy); ctx.closePath();
+    }
+    ctx.fill();
+  };
+  if (shade.length) { const S2 = []; for (let i = 0; i < shade.length; i += 6) S2.push(shade[i], shade[i + 1], shade[i + 2], shade[i + 3], shade[i + 4], -shade[i + 4], shade[i + 5]); fillQ(S2, 'rgba(0,0,0,0.28)'); }
+  for (const [col, L] of groups) fillQ(L, night ? col.replace(/rgb\((\d+),(\d+),(\d+)\)/, (q, r, g2, b) => `rgb(${r * 0.35 | 0},${g2 * 0.35 | 0},${b * 0.4 | 0})`) : col);
+  if (night) {
+    ctx.globalCompositeOperation = 'lighter';
+    // headlights: a short beam of light on the road ahead
+    ctx.fillStyle = 'rgba(255,232,180,0.35)'; ctx.beginPath();
+    for (let i = 0; i < lights.length; i += 5) { const x = lights[i], y = lights[i + 1], c = lights[i + 2], s = lights[i + 3], w = lights[i + 4] * 1.4, l = Math.max(w * 5, 3 * px); ctx.moveTo(x - s * w, y + c * w); ctx.lineTo(x + c * l - s * w * 2.2, y + s * l + c * w * 2.2); ctx.lineTo(x + c * l + s * w * 2.2, y + s * l - c * w * 2.2); ctx.lineTo(x + s * w, y - c * w); ctx.closePath(); }
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,244,210,0.95)'; ctx.beginPath();
+    for (let i = 0; i < lights.length; i += 5) { const r = Math.max(lights[i + 4] * 0.7, 0.8 * px); ctx.moveTo(lights[i] + r, lights[i + 1]); ctx.arc(lights[i], lights[i + 1], r, 0, 7); }
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,40,30,0.85)'; ctx.beginPath();
+    for (let i = 0; i < tails.length; i += 3) { const r = Math.max(tails[i + 2] * 0.6, 0.6 * px); ctx.moveTo(tails[i] + r, tails[i + 1]); ctx.arc(tails[i], tails[i + 1], r, 0, 7); }
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (blues.length) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = night ? 'rgba(80,140,255,0.8)' : 'rgba(80,140,255,0.55)'; ctx.beginPath();
+    for (let i = 0; i < blues.length; i += 3) { const r = Math.max(blues[i + 2] * (night ? 5 : 2), 2 * px); ctx.moveTo(blues[i] + r, blues[i + 1]); ctx.arc(blues[i], blues[i + 1], r, 0, 7); }
+    ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+  }
+}
+let lastT = null;
 IC.drawTraffic = function (g, S, px, v, light, now) {
   ctx = g; view = v;
   const z = cam.z, night = light < 0.35;
+  const dtg = lastT == null || S.time < lastT || S.time - lastT > 120 ? 0 : S.time - lastT; lastT = S.time;
   if (z < 1.3) {
     // moving dashes along the roads; brighter and longer where the road is full, warm streaks at night
     const classes = z < 0.3 ? { hw: 1 } : z < 0.6 ? { hw: 1, rd: 1, ring: 1 } : { hw: 1, rd: 1, ring: 1, art: 1, lc: 1 };
@@ -185,35 +256,24 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
     });
     ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.lineCap = 'round';
   } else {
-    // real size is 4.5 m for a car, 16 m for a lorry; never smaller than a couple of pixels
-    const s = Math.max(0.045, 2.2 * px), gap = Math.max(0.3, 7 * px), side = k => Math.max(IC.roadWidth(k, z) * 0.24, 0);
-    const cars = [], lorries = [];
-    IC.trafficVisible(S, view, gap, (x, y, h, lorry, k) => { const o = side(k), c = Math.cos(h), n = Math.sin(h); (lorry ? lorries : cars).push(x - n * o, y + c * o, c, n); }, z < 2.5 ? { st: 1, ln: 1 } : null);
-    const quad = (list, L, Wd, col) => {
-      ctx.fillStyle = col; ctx.beginPath();
-      for (let i = 0; i < list.length; i += 4) {
-        const x = list[i], y = list[i + 1], c = list[i + 2], n = list[i + 3], lx = c * L, ly = n * L, wx = -n * Wd, wy = c * Wd;
-        ctx.moveTo(x - lx - wx, y - ly - wy); ctx.lineTo(x + lx - wx, y + ly - wy); ctx.lineTo(x + lx + wx, y + ly + wy); ctx.lineTo(x - lx + wx, y - ly + wy); ctx.closePath();
-      }
-      ctx.fill();
-    };
-    if (night) {
-      ctx.globalCompositeOperation = 'lighter';
-      const hl = (list, L) => { ctx.beginPath(); for (let i = 0; i < list.length; i += 4) { const x = list[i] + list[i + 2] * L, y = list[i + 1] + list[i + 3] * L; ctx.moveTo(x + s * 0.9, y); ctx.arc(x, y, s * 0.9, 0, 7); } ctx.fill(); };
-      const tl = (list, L) => { ctx.beginPath(); for (let i = 0; i < list.length; i += 4) { const x = list[i] - list[i + 2] * L, y = list[i + 1] - list[i + 3] * L; ctx.moveTo(x + s * 0.5, y); ctx.arc(x, y, s * 0.5, 0, 7); } ctx.fill(); };
-      ctx.fillStyle = 'rgba(255,236,190,0.85)'; hl(cars, s); hl(lorries, s * 2.4);
-      ctx.fillStyle = 'rgba(255,60,40,0.7)'; tl(cars, s); tl(lorries, s * 2.4);
-      ctx.globalCompositeOperation = 'source-over';
+    // real size is 4.5 m for a car, 16 m for an articulated lorry; never smaller than a couple of pixels
+    const m = Math.max(0.045, 4.4 * px), list = [];
+    // the lane offset scaled to the road as drawn (wider than real far out)
+    const wk = k => IC.roadWidth(k === 'ramp' ? 'ramp' : k, z) / (IC.ROAD_W[k] || 0.1);
+    if (z < AGZ) {
+      IC.trafficVisible(S, view, Math.max(0.3, 7 * px), (x, y, h, k, cls, off) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); list.push({ x: x - n * o, y: y + c * o, h, k, col: (x * 7 + y * 13) & 1023 }); }, z < 2.5 ? { st: 1, ln: 1 } : null);
     } else {
-      if (z > 8) { quad(cars, s, s * 0.45, 'rgba(0,0,0,0.3)'); for (let i = 0; i < cars.length; i += 4) { cars[i] -= s * 0.3; cars[i + 1] -= s * 0.3; } }
-      quad(cars, s, s * 0.45, 'rgba(232,234,238,0.95)');
-      quad(lorries, s * 2.4, s * 0.55, 'rgba(210,200,176,0.95)');
+      for (const a of IC.trafficAgents(S, view, dtg)) { const p = IC.agentPos(a); if (inView(p.x, p.y, 1)) list.push({ x: p.x, y: p.y, h: p.h, k: a.k, col: a.col }); }
     }
-    // buses and coaches: longer, in the national red
-    const bs = [];
-    for (const b of S.buses) { const p = IC.busPos(b); if (!inView(p.x, p.y, 2)) continue; const h = p.h + (b.dir < 0 ? Math.PI : 0), c = Math.cos(h), n = Math.sin(h), o = side(b.coach ? 'rd' : 'art'); bs.push(p.x - n * o, p.y + c * o, c, n); }
-    if (night) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,236,190,0.8)'; ctx.beginPath(); for (let i = 0; i < bs.length; i += 4) { const x = bs[i] + bs[i + 2] * s * 3, y = bs[i + 1] + bs[i + 3] * s * 3; ctx.moveTo(x + s, y); ctx.arc(x, y, s, 0, 7); } ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
-    quad(bs, s * 2.2, s * 0.5, night ? 'rgba(120,50,40,0.9)' : 'rgba(214,72,52,0.95)');
+    // buses and coaches on their lines
+    for (const b of S.buses) {
+      const p = IC.busPos(b); if (!inView(p.x, p.y, 2)) continue;
+      const lk = b.line.path[0][0], o = (IC.TRAFFIC_CLS.st.off[0]) * (z < AGZ ? wk('art') : 1);
+      list.push({ x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h, k: b.kind, col: 0 });
+      void lk;
+    }
+    vehicles(list, px, night, now, m, z > 18);
+    if (z > 12) signals(S, px, night, now);
   }
   // trains: real length is about 25 m a carriage
   const tl = Math.max(0.25, 5 * px);
@@ -227,5 +287,32 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
     }
   }
 };
+/* traffic lights: a head on the right of each approach, lit by its state */
+function signals(S, px, night, now) {
+  const G = S.traffic && S.traffic.G; if (!G) return;
+  const on = { r: [], a: [], g: [] }, poles = [];
+  for (let n = 0; n < G.nodes.length; n++) {
+    const nd = G.nodes[n]; if (!nd.sig || !inView(nd.x, nd.y, 1)) continue;
+    for (const li of nd.out) {
+      const lk = G.links[li], d = lk.b === n ? 0 : 1;   // the direction arriving at this node
+      if (!IC.driveCanGo(lk, d)) continue;
+      const P = lk.pts, p1 = d ? P[0] : P[P.length - 1], p0 = d ? P[1] : P[P.length - 2], L = U.dist(p0, p1) || 1, ux = (p1.x - p0.x) / L, uy = (p1.y - p0.y) / L;
+      const w = (IC.ROAD_W[lk.cls] || 0.2) / 2 + 0.04, back = (IC.ROAD_W.art || 0.4) * 0.8;
+      const x = p1.x - ux * back - uy * w, y = p1.y - uy * back + ux * w;
+      const green = IC.signalState(S, n, lk, d), cyc = (S.time + nd.ph) % 30;
+      on[green ? 'g' : cyc >= 26 && cyc < 30 && !green ? 'a' : 'r'].push(x, y);
+      poles.push(x, y);
+    }
+  }
+  const r = Math.max(0.012, 1.6 * px);
+  ctx.fillStyle = 'rgb(30,32,34)'; ctx.beginPath(); for (let i = 0; i < poles.length; i += 2) ctx.rect(poles[i] - r * 1.4, poles[i + 1] - r * 1.4, r * 2.8, r * 2.8); ctx.fill();
+  if (night) ctx.globalCompositeOperation = 'lighter';
+  for (const [k, col] of [['r', 'rgb(255,60,40)'], ['a', 'rgb(255,190,40)'], ['g', 'rgb(60,230,120)']]) {
+    const L = on[k]; if (!L.length) continue;
+    ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r, L[i + 1]); ctx.arc(L[i], L[i + 1], r, 0, 7); } ctx.fill();
+    if (night) { ctx.globalAlpha = 0.25; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r * 4, L[i + 1]); ctx.arc(L[i], L[i + 1], r * 4, 0, 7); } ctx.fill(); ctx.globalAlpha = 1; }
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
 
 })(window.IC);
