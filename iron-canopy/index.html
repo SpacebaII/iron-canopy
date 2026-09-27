@@ -17,7 +17,7 @@
     </div>
     <div class="tb-center" id="alerts" aria-live="polite"></div>
     <div class="tb-right">
-      <div class="stats" id="stats"></div>
+      <div class="tbrow"><div class="stats" id="stats"></div><div class="sysbtns" id="sys"></div></div>
       <div class="rules" id="rules"></div>
     </div>
   </header>
@@ -58,23 +58,61 @@
   <div class="incidents" id="incidents" aria-live="assertive"></div>
   <div class="evcard" id="evcard" hidden role="dialog" aria-label="Decision"></div>
 
-  <div class="modal" id="start">
-    <div class="mbox">
-      <p class="kicker">Air &amp; missile defense · logistics · command</p>
-      <h1 class="title">Iron <b>Canopy</b></h1>
-      <p class="lead" id="startLead">Generating the region…</p>
-      <div class="seedrow"><span>Map seed <b id="seed">—</b></span><button class="btn" data-act="reroll">New map</button></div>
-      <div class="modes">
-        <button class="mode hero" data-act="begin" data-v="story"><b>Career</b><span>Start as Director of Civil Aviation: grow the airlines, fix the airports. Something is testing the border. Four acts, from the control tower to Chief of the Air Force.</span></button>
-        <button class="mode" data-act="modeTab" data-v="academy"><b>Academy</b><span>Eight short lessons on the defence systems, one at a time.</span></button>
-        <button class="mode" data-act="begin" data-v="campaign"><b>Quick war</b><span>Hours of tension, then open war: raids that build up, strike in waves and calm down, climbing to the big one. Hold for three days with the country working.</span></button>
-        <button class="mode" data-act="begin" data-v="sandbox"><b>Sandbox</b><span>Partly mobilized, fully deployed, war at dawn. No staff guidance.</span></button>
-        <button class="mode" data-act="begin" data-v="range"><b>Test range</b><span>A flat, empty plane. Place any system, send any threat or raid from any direction, and read the results. Save a scenario and replay it.</span></button>
+  <div class="modal start" id="start">
+    <div class="st-wrap">
+      <div class="st-main">
+        <p class="kicker">Airports · airspace · air defence</p>
+        <h1 class="title">Iron <b>Canopy</b></h1>
+        <p class="tagline">Build the airports. Run the skies. Then defend them.</p>
+
+        <div class="st-page" id="st-main">
+          <div class="modes">
+            <button class="mode hero" data-act="begin" data-v="story"><em>Start here</em><b>Career</b><span>Begin as Director of Civil Aviation: run the airports and the airlines while the neighbour tests the border. Four acts, from the control tower to Chief of the Air Force.</span><kbd>Enter</kbd></button>
+            <button class="mode" data-act="begin" data-v="campaign"><b>Quick war</b><span>Hours of tension, then open war. Raids build up and strike in waves. Hold for three days with the country working.</span></button>
+            <button class="mode" data-act="stPage" data-v="lessons"><b>Academy</b><span>Short lessons, one system at a time: radars, identification, layers, missiles in space, jamming, supply.</span><small id="acaProg"></small></button>
+            <button class="mode" data-act="begin" data-v="range"><b>Test range</b><span>An empty plane. Place any system, send any threat from any side, and read the results.</span></button>
+          </div>
+          <div class="st-foot">
+            <button class="btn" data-act="stPage" data-v="settings">Settings</button>
+            <button class="btn" data-act="stPage" data-v="keys">Controls</button>
+            <button class="btn ghost" data-act="begin" data-v="sandbox" title="Partly mobilized, fully deployed, war at dawn. No staff guidance.">Sandbox: war at dawn, no guidance</button>
+          </div>
+        </div>
+
+        <div class="st-page" id="st-lessons" hidden>
+          <div class="st-head"><button class="btn" data-act="stPage" data-v="main">◂ Back <kbd>Esc</kbd></button><h2>Academy</h2></div>
+          <div class="lessons" id="lessons"></div>
+        </div>
+        <div class="st-page" id="st-settings" hidden>
+          <div class="st-head"><button class="btn" data-act="stPage" data-v="main">◂ Back <kbd>Esc</kbd></button><h2>Settings</h2></div>
+          <div class="st-cards" id="stSettings"></div>
+        </div>
+        <div class="st-page" id="st-keys" hidden>
+          <div class="st-head"><button class="btn" data-act="stPage" data-v="main">◂ Back <kbd>Esc</kbd></button><h2>Controls</h2></div>
+          <div class="st-cards" id="stKeys"></div>
+        </div>
       </div>
-      <div class="lessons" id="lessons" hidden></div>
-      <p class="keys">Drag to pan · scroll to zoom (all the way in to watch aircraft taxi) · click to select · <b>right-click to order</b> · Space pause · 1–6 speed · S skip ahead · G call in a team · V T A L I N K J rooms</p>
+
+      <aside class="st-region">
+        <small>The region</small>
+        <p class="lead" id="startLead">Generating the region…</p>
+        <div class="seedrow"><span>Map <b id="seed">—</b></span><button class="btn sm" data-act="reroll" title="Generate another region">New map</button></div>
+      </aside>
     </div>
   </div>
+
+  <div class="menu" id="menu" hidden role="dialog" aria-label="Menu">
+    <div class="mbox2 glass">
+      <small id="menuTime"></small>
+      <h2>Paused</h2>
+      <button class="mi" data-act="menu"><b>Resume</b><kbd>Esc</kbd></button>
+      <button class="mi" data-act="room" data-v="reference"><b>Guide</b><span>How every system works</span><kbd>?</kbd></button>
+      <button class="mi" data-act="room" data-v="settings"><b>Settings</b><span>Display, sound, auto-pause, hints</span></button>
+      <button class="mi warn" data-act="restart"><b>Quit to the main menu</b><span>This game is not kept</span></button>
+    </div>
+  </div>
+  <div class="unlock" id="unlock" hidden aria-live="polite"></div>
+  <div class="hints" id="hints"></div>
 
   <div class="modal" id="over" hidden>
     <div class="mbox">
