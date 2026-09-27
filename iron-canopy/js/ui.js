@@ -56,7 +56,7 @@ ui.setHTML = function (el, html, key) {
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
   for (const c of el.querySelectorAll('canvas[data-gid]')) { const u = S.gunits.find(x => x.id === c.dataset.gid); if (u) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawGround(g, u, c.width / 2, c.height / 2 + 5, c.width / 34); } }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
-  for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.airFrame(g, 'H', c.width / 2, c.height / 2 + 4, c.width / 30); }
+  for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawThreatSymbol(g, c.dataset.thr, c.width / 2, c.height / 2 + 4, c.width / 24); }
   return true;
 };
 const setHTML = ui.setHTML;

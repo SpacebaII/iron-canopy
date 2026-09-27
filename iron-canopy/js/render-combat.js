@@ -41,32 +41,175 @@ IC.drawGround = function (g, u, x, y, s, alpha) {
   g.fillText(u.g.ech, x, y - (aff === 'h' ? 13 : 10) * s);
   g.textAlign = 'left'; g.globalAlpha = 1;
 };
-function unitIcon(g, d, x, y, s, ink) {
-  g.strokeStyle = ink; g.fillStyle = ink; g.lineWidth = 1.2 * s;
-  if (d.weapon === 'sam' || d.weapon === 'gun' || d.weapon === 'laser' || d.weapon === 'hpm') { g.beginPath(); g.arc(x, y + 7.5 * s, 8 * s, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
-  else if (d.sensor && !d.sensor.passive) { g.beginPath(); g.arc(x - 6 * s, y + 2 * s, 3.5 * s, -1.9, 0.3); g.stroke(); }
-  else if (d.logi) { g.beginPath(); g.moveTo(x - 11 * s, y + 3.5 * s); g.lineTo(x + 11 * s, y + 3.5 * s); g.stroke(); }
-  g.font = `700 ${(d.nato.length > 2 ? 5.6 : 6.6) * s}px "IBM Plex Mono", monospace`; g.textAlign = 'center';
-  g.fillText(d.nato, x + (d.sensor && !d.sensor.passive ? 2 * s : 0), y + (d.logi ? 1.5 : 1) * s);
-  g.textAlign = 'left';
+/* ---------- unit symbols: a shape language by role ----------
+   The frame says what kind of system it is, the glyph inside says which one:
+   search radar ○ · fire-control radar ○ with a reticle · passive sensor ○ dashed · launchers ⌂ growing from short to
+   long range with one, two or three missiles · ballistic missile defence ⬡ · guns and point defence ▢ · electronic
+   warfare ⯃ · strike ▷ · logistics ▭. The same drawing serves the map, the arsenal and the panels. */
+const ROLE_NAME = { search: 'search radar', fc: 'fire-control radar', passive: 'passive sensor', sr: 'short-range launcher', mr: 'medium-range launcher', lr: 'long-range launcher', bmd: 'ballistic missile defence', gun: 'gun or point defence', ew: 'electronic warfare', strike: 'strike', logi: 'logistics' };
+IC.ROLE_NAME = ROLE_NAME;
+IC.unitRole = function (d) {
+  if (!d) return 'logi';
+  if (d.symRole) return d.symRole;
+  if (d.logi) return 'logi';
+  if (d.weapon === 'strike') return 'strike';
+  if (d.weapon === 'ecm' || d.weapon === 'decoy' || d.ew) return 'ew';
+  if (d.weapon === 'gun' || d.weapon === 'laser' || d.weapon === 'hpm') return 'gun';
+  if (d.weapon === 'sam') {
+    const M = d.mags && d.mags[0] && IC.MUN[d.mags[0].mun];
+    if ((d.fc && d.fc.bmdOnly) || (M && M.seeker === 'HTK' && !(M.vs && M.vs.air))) return 'bmd';
+    const R = M ? M.range : 0;
+    return R >= 800 ? 'lr' : R >= 250 ? 'mr' : 'sr';
+  }
+  if (d.sensor) return d.sensor.passive ? 'passive' : d.sensor.rktOnly || d.sensor.bmdOnly || d.fcOnly ? 'fc' : 'search';
+  return 'logi';
+};
+// range rings: each role draws its reach in its own dash
+const RING = { search: [10, 6], fc: [4, 3], passive: [1.5, 6], sr: [1.5, 4], mr: [9, 5], lr: [], bmd: [14, 4, 2, 4], gun: [1.5, 3], ew: [2, 5, 6, 5], strike: [2, 5], logi: [8, 6] };
+IC.ringDash = (d, px) => (RING[IC.unitRole(d)] || [6, 6]).map(v => v * px);
+
+function framePath(g, role) {
+  g.beginPath();
+  switch (role) {
+    case 'search': case 'fc': case 'passive': g.arc(0, 0, 9.5, 0, 7); break;
+    case 'sr': case 'mr': case 'lr': {
+      const w = role === 'sr' ? 8.5 : role === 'mr' ? 10.5 : 12.5, h = role === 'sr' ? 8 : role === 'mr' ? 9 : 10;
+      g.moveTo(-w, h); g.lineTo(w, h); g.lineTo(w, -h * 0.25); g.lineTo(0, -h - 1.5); g.lineTo(-w, -h * 0.25); g.closePath(); break;
+    }
+    case 'bmd': g.moveTo(0, -12); g.lineTo(10, -6); g.lineTo(10, 6); g.lineTo(0, 12); g.lineTo(-10, 6); g.lineTo(-10, -6); g.closePath(); break;
+    case 'gun': g.roundRect ? g.roundRect(-8.5, -8.5, 17, 17, 3.5) : g.rect(-8.5, -8.5, 17, 17); break;
+    case 'ew': g.moveTo(-8, -7.5); g.lineTo(8, -7.5); g.lineTo(11.5, -3.5); g.lineTo(11.5, 3.5); g.lineTo(8, 7.5); g.lineTo(-8, 7.5); g.lineTo(-11.5, 3.5); g.lineTo(-11.5, -3.5); g.closePath(); break;
+    case 'strike': g.moveTo(-11, -7.5); g.lineTo(5, -7.5); g.lineTo(12, 0); g.lineTo(5, 7.5); g.lineTo(-11, 7.5); g.closePath(); break;
+    default: g.rect(-11, -6.5, 22, 13);
+  }
 }
+const FRAME_H = { search: 9.5, fc: 9.5, passive: 9.5, sr: 8, mr: 9, lr: 10, bmd: 12, gun: 8.5, ew: 7.5, strike: 7.5, logi: 6.5 };
+IC.symHalfH = type => FRAME_H[IC.unitRole(IC.UNITS[type])] || 8;
+
+/* small drawing words for glyphs, in symbol units (a frame is about 20 across) */
+function L(g, pts) { g.beginPath(); g.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]); g.stroke(); }
+function dish(g, x, y, r, a) { g.beginPath(); g.arc(x, y, r, a - 1.1, a + 1.1); g.stroke(); L(g, [x, y, x + Math.cos(a) * r * 1.05, y + Math.sin(a) * r * 1.05]); }
+function missile(g, x, y, len, a, w) {
+  const c = Math.cos(a), s = Math.sin(a), n = -s, m = c; w = w || 1.1;
+  g.beginPath(); g.moveTo(x + c * len, y + s * len); g.lineTo(x + c * (len - 2) + n * w, y + s * (len - 2) + m * w); g.lineTo(x + n * w, y + m * w);
+  g.lineTo(x - c * 0.8 + n * w * 2, y - s * 0.8 + m * w * 2); g.lineTo(x - c * 0.8 - n * w * 2, y - s * 0.8 - m * w * 2);
+  g.lineTo(x - n * w, y - m * w); g.lineTo(x + c * (len - 2) - n * w, y + s * (len - 2) - m * w); g.closePath(); g.fill();
+}
+function arcs(g, x, y, n, r0, dr, a0, a1) { for (let i = 0; i < n; i++) { g.beginPath(); g.arc(x, y, r0 + i * dr, a0, a1); g.stroke(); } }
+function zig(g, x0, x1, y, amp, n) { g.beginPath(); for (let i = 0; i <= n; i++) g[i ? 'lineTo' : 'moveTo'](x0 + (x1 - x0) * i / n, y + (i % 2 ? -amp : amp)); g.stroke(); }
+const UP = -Math.PI / 2;
+
+/* one glyph per type; unknown types fall back to their role */
+const GLYPH = {
+  acou(g) { g.beginPath(); g.arc(-5, 0, 1.6, 0, 7); g.fill(); arcs(g, -5, 0, 3, 3.6, 2.8, -0.8, 0.8); },
+  ssr(g) { g.lineWidth = 1.8; L(g, [-6, -3, 6, -3]); g.lineWidth = 1.2; L(g, [0, -3, 0, 5]); L(g, [-3, 5, 3, 5]); L(g, [-6, -5.5, -6, -0.5]); L(g, [6, -5.5, 6, -0.5]); },
+  vhf(g) { L(g, [-7, 0, 7, 0]); for (const x of [-5, -1.7, 1.7, 5]) L(g, [x, -5, x, 5]); },
+  lr3d(g) { dish(g, -2, 1, 6.5, UP + 0.35); for (const k of [-1, 0, 1]) L(g, [3, -2 + k * 2.6, 7.5, -3.5 + k * 3]); },
+  mr3d(g) { dish(g, -1, 0, 5, UP + 0.4); L(g, [-6, 5, 5, 5]); g.beginPath(); g.arc(-4, 6.8, 1.2, 0, 7); g.arc(3, 6.8, 1.2, 0, 7); g.fill(); },
+  gf(g) { dish(g, 0, -3.5, 4.2, UP + 0.4); L(g, [0, -3.5, 0, 7]); L(g, [-3, 7, 3, 7]); },
+  esm(g) { L(g, [0, -7, 0, 6]); L(g, [-2.5, 6, 2.5, 6]); g.setLineDash([1.4, 1.2]); arcs(g, 0, -2, 2, 3.5, 2.6, -2.5, -0.64); arcs(g, 0, -2, 2, 3.5, 2.6, 0.64 - Math.PI, 2.5 - Math.PI); g.setLineDash([]); },
+  cbr(g) { dish(g, -4, 3, 4.5, UP + 0.6); g.setLineDash([1.6, 1.3]); g.beginPath(); g.moveTo(-1, 3); g.quadraticCurveTo(3, -9, 7.5, 3); g.stroke(); g.setLineDash([]); },
+  aero(g) { g.beginPath(); g.ellipse(0, -2.5, 6.5, 3.4, 0, 0, 7); g.stroke(); L(g, [-6.5, -2.5, -8.5, -5.5]); L(g, [-6.5, -2.5, -8.5, 0.5]); g.setLineDash([1.3, 1.2]); L(g, [0, 1, 0, 7.5]); g.setLineDash([]); },
+  bmd(g) { g.save(); g.rotate(-0.35); g.fillRect(-2.2, -6.5, 4.4, 11); g.restore(); g.lineWidth = 0.9; L(g, [3.5, -6, 7.5, -8.5]); L(g, [4, -3, 8, -4.5]); },
+  manpads(g) { missile(g, -5, 5, 10, -0.9, 0.9); g.beginPath(); g.arc(-4, 6, 1.5, 0, 7); g.stroke(); },
+  spaag(g) { g.beginPath(); g.arc(0, 3, 4, Math.PI, 0); g.closePath(); g.fill(); g.lineWidth = 1.5; L(g, [-1.2, 0, 3.2, -6.5]); L(g, [1.4, 0.8, 5.8, -5.7]); },
+  cram(g) { g.beginPath(); g.arc(-1, 2.5, 3.6, 0, 7); g.fill(); g.lineWidth = 1; for (const k of [-1, 0, 1]) L(g, [0.5 + k * 1.2, 0, 5 + k * 1.2, -6.5]); },
+  shorad(g) { missile(g, 0, 4.5, 10, UP, 1.2); L(g, [-5, 6, 5, 6]); },
+  mrsam(g) { missile(g, -3.5, 5.5, 11, UP - 0.25, 1.15); missile(g, 3.5, 5.5, 11, UP + 0.25, 1.15); L(g, [-7, 7, 7, 7]); },
+  lrsam(g) { for (const x of [-6, -2, 2, 6]) g.fillRect(x - 1.4, -5.5, 2.8, 11); L(g, [-9, 7.5, 9, 7.5]); g.fillStyle = C.friendFill; for (const x of [-6, -2, 2, 6]) g.fillRect(x - 0.6, -4.7, 1.2, 1.4); },
+  hatd(g) { missile(g, 0, 7, 11, UP, 1.25); g.lineWidth = 1.5; L(g, [-6.5, -6, 0, -9.5, 6.5, -6]); },
+  exo(g) { missile(g, -1, 7.5, 10, UP, 1.15); g.beginPath(); g.ellipse(0, -6.5, 7, 2.4, -0.25, 0, 7); g.stroke(); g.beginPath(); g.arc(5.5, -8, 1.3, 0, 7); g.fill(); },
+  laser(g) { g.beginPath(); g.moveTo(-6, 3); g.lineTo(-3, 0); g.lineTo(-6, -3); g.lineTo(-9, 0); g.closePath(); g.fill(); g.lineWidth = 1.8; L(g, [-3, 0, 7, -6]); g.lineWidth = 0.8; L(g, [-3, 0, 7, -6.2]); },
+  hpm(g) { dish(g, -3, 1, 4.5, 0); for (const r of [4, 6.5]) { g.beginPath(); g.arc(-3, 1, r + 1.5, -0.6, 0.6); g.stroke(); } },
+  gnss(g) { g.fillRect(-2, -2, 4, 4); L(g, [-7, -3, -3, 0, -7, 3]); L(g, [7, -3, 3, 0, 7, 3]); zig(g, -6, 6, 5.5, 1.3, 6); },
+  decoy(g) { g.setLineDash([1.6, 1.3]); dish(g, 0, 1, 5.5, UP + 0.3); g.setLineDash([]); g.beginPath(); g.arc(0, 1, 1.2, 0, 7); g.fill(); },
+  mlrs(g) { g.save(); g.rotate(-0.4); for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { g.beginPath(); g.arc(-4 + i * 3.6, -2 + j * 3.6, 1.35, 0, 7); g.stroke(); } g.restore(); },
+  glcm(g) { missile(g, -8, 0, 14, 0, 1); g.lineWidth = 1.3; L(g, [-2, 0, -4, -4.5]); L(g, [-2, 0, -4, 4.5]); },
+  tbml(g) { missile(g, -6, 5, 14, -0.8, 1.3); L(g, [-9, 6.5, 6, 6.5]); },
+  depot(g) { g.strokeRect(-6, -3, 5.5, 5.5); g.strokeRect(0.5, -3, 5.5, 5.5); g.strokeRect(-2.75, -8.5, 5.5, 5.5); },
+  heliport(g) { g.lineWidth = 1.8; L(g, [-4, -5, -4, 5]); L(g, [4, -5, 4, 5]); L(g, [-4, 0, 4, 0]); }
+};
+const ROLE_GLYPH = { search: 'lr3d', fc: 'cbr', passive: 'esm', sr: 'shorad', mr: 'mrsam', lr: 'lrsam', bmd: 'hatd', gun: 'spaag', ew: 'gnss', strike: 'mlrs', logi: 'depot' };
+
+/* opts: aff, tint (wash over the frame), dash (silent: dashed frame), radar ('on' | 'silent'), reload (0..1 while every
+   magazine is empty), damaged, now (seconds, animates the radar waves) */
 IC.drawUnitSymbol = function (g, type, x, y, s, col, opts) {
-  const d = IC.UNITS[type];
+  const d = IC.UNITS[type]; if (!d) return;
   opts = opts || {};
-  const ink = frame(g, opts.aff || 'f', x, y, s);
-  if (opts.tint) { g.fillStyle = opts.tint; g.fillRect(x - 11 * s, y - 7.5 * s, 22 * s, 15 * s); }
-  if (opts.dash) { g.strokeStyle = C.ink; g.setLineDash([2 * s, 2 * s]); g.lineWidth = 1.6 * s; g.strokeRect(x - 11 * s, y - 7.5 * s, 22 * s, 15 * s); g.setLineDash([]); }
-  unitIcon(g, d, x, y, s, ink);
-  g.strokeStyle = col || C.friend; g.lineWidth = 1 * s;
-  if (d.mob === 'mobile') { g.beginPath(); g.ellipse(x, y + 10.5 * s, 8 * s, 1.8 * s, 0, 0, 7); g.stroke(); }
-  else if (d.mob === 'semi') { g.beginPath(); g.arc(x - 5 * s, y + 10.5 * s, 1.8 * s, 0, 7); g.arc(x + 5 * s, y + 10.5 * s, 1.8 * s, 0, 7); g.stroke(); }
+  const role = IC.unitRole(d), civil = d.civil;
+  g.save(); g.translate(x, y); g.scale(s, s); g.lineJoin = 'round';
+  framePath(g, role);
+  g.fillStyle = civil ? '#b8f5d2' : C.friendFill; g.fill();
+  if (opts.tint) { g.fillStyle = opts.tint; g.fill(); }
+  g.strokeStyle = C.ink; g.lineWidth = 1.4;
+  if (opts.dash || role === 'passive') g.setLineDash(opts.dash ? [2.2, 1.8] : [3, 1.6]);
+  g.stroke(); g.setLineDash([]);
+  if (role === 'fc') { g.lineWidth = 1.3; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4, c = Math.cos(a), sn = Math.sin(a); L(g, [c * 9.5, sn * 9.5, c * 12.5, sn * 12.5]); } }
+  if (role === 'lr') { g.lineWidth = 1; L(g, [-10, -1.2, 0, -8.6, 10, -1.2]); }
+  g.strokeStyle = C.ink; g.fillStyle = C.ink; g.lineWidth = 1.2; g.lineCap = 'round';
+  (GLYPH[type] || GLYPH[ROLE_GLYPH[role]] || GLYPH.depot)(g);
+  g.lineCap = 'butt';
+  const hh = FRAME_H[role] || 8;
+  // mobility under the frame: wheels for semi-mobile, a track for mobile
+  g.strokeStyle = col || C.friend; g.lineWidth = 1;
+  if (d.mob === 'mobile') { g.beginPath(); g.ellipse(0, hh + 3, 7, 1.6, 0, 0, 7); g.stroke(); }
+  else if (d.mob === 'semi') { g.beginPath(); g.arc(-4.5, hh + 3, 1.6, 0, 7); g.moveTo(6.1, hh + 3); g.arc(4.5, hh + 3, 1.6, 0, 7); g.stroke(); }
+  // state marks, top right: radar waves when transmitting, a slash when silent
+  if (opts.radar) {
+    const ox = role === 'gun' ? 7.5 : role === 'bmd' ? 7 : 8.5, oy = -hh + (role === 'bmd' ? 3 : 0.5);
+    if (opts.radar === 'on') {
+      const p = opts.now != null ? (opts.now * 1.4) % 1 : 0.6;
+      g.lineWidth = 1.2;
+      for (const k of [0, 1]) { const r = 2.5 + ((p + k * 0.5) % 1) * 5; g.strokeStyle = `rgba(160,230,255,${0.95 * (1 - ((p + k * 0.5) % 1))})`; g.beginPath(); g.arc(ox, oy, r, -1.45, -0.15); g.stroke(); }
+    } else { g.strokeStyle = 'rgba(154,176,191,0.9)'; g.lineWidth = 1.1; g.beginPath(); g.arc(ox, oy, 3.5, -1.45, -0.15); g.stroke(); L(g, [ox - 1, oy + 1, ox + 5, oy - 5]); }
+  }
+  if (opts.reload != null) { g.strokeStyle = C.amber; g.lineWidth = 1.8; g.beginPath(); g.arc(-10, -hh + 1, 3, -Math.PI / 2, -Math.PI / 2 + 6.283 * opts.reload); g.stroke(); }
+  if (opts.damaged) { g.strokeStyle = C.hostile; g.lineWidth = 1.5; L(g, [-3, -hh - 1, -1, -hh + 3, -3.5, -hh + 5.5, -1.5, -hh + 8]); }
+  g.restore();
+};
+
+/* ---------- threat symbols ----------
+   Hostile and suspect tracks keep the peaked frame; once the type is known a glyph inside says what it is. */
+const TGLYPH = {
+  drone(g) { g.beginPath(); g.moveTo(0, -3.5); g.lineTo(4.5, 2.5); g.lineTo(0, 1); g.lineTo(-4.5, 2.5); g.closePath(); g.fill(); },
+  owa(g) { TGLYPH.drone(g); g.lineWidth = 1.4; L(g, [-2.2, 3.6, 2.2, 3.6]); },
+  jdr(g) { g.beginPath(); g.moveTo(0, -4); g.lineTo(3, 2.5); g.lineTo(0, 1.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); L(g, [-1, 3, -1, 5]); L(g, [1, 3, 1, 5]); },
+  isr(g) { TGLYPH.drone(g); g.fillStyle = '#fff'; g.beginPath(); g.arc(0, -0.6, 0.9, 0, 7); g.fill(); },
+  lm(g) { TGLYPH.drone(g); g.beginPath(); g.arc(0, -0.5, 5.5, 3.6, 5.8); g.stroke(); },
+  cm(g) { g.fillRect(-5.5, -0.7, 10, 1.4); L(g, [5.5, 0, 4.2, -0.9]); L(g, [-1, 0, -3, -3]); L(g, [-1, 0, -3, 3]); L(g, [-5.5, 0, -6.5, -2]); },
+  scm(g) { TGLYPH.cm(g); L(g, [6.5, -2.5, 8, 0, 6.5, 2.5]); },
+  glb(g) { g.fillRect(-4, -0.9, 8, 1.8); L(g, [-2, -3.5, 2, 3.5]); },
+  bal(g) { L(g, [0, -5, 0, 3]); g.beginPath(); g.moveTo(0, 5); g.lineTo(2.3, 1.5); g.lineTo(-2.3, 1.5); g.closePath(); g.fill(); L(g, [-2, -5, 0, -3, 2, -5]); },
+  marv(g) { TGLYPH.bal(g); L(g, [3.5, -2, 5, 0, 3.5, 2]); },
+  hgv(g) { g.lineWidth = 1.6; L(g, [-5, -2, 0, 2.5, 5, -2]); g.lineWidth = 1; L(g, [-5, -4.5, 0, 0, 5, -4.5]); },
+  rkt(g) { L(g, [0, -4, 0, 3]); g.beginPath(); g.arc(0, 3.5, 1.2, 0, 7); g.fill(); },
+  arm(g) { missile(g, -5, 1.5, 9, -0.2, 0.8); arcs(g, 5.5, 0, 2, 1.8, 1.8, -0.9, 0.9); },
+  ftr(g) { g.beginPath(); g.moveTo(0, -5); g.lineTo(1, -1); g.lineTo(5, 1.5); g.lineTo(1, 1); g.lineTo(1.5, 4); g.lineTo(0, 3.2); g.lineTo(-1.5, 4); g.lineTo(-1, 1); g.lineTo(-5, 1.5); g.lineTo(-1, -1); g.closePath(); g.fill(); },
+  str(g) { TGLYPH.ftr(g); g.beginPath(); g.arc(-3, 3, 0.9, 0, 7); g.arc(3, 3, 0.9, 0, 7); g.fill(); },
+  sead(g) { TGLYPH.ftr(g); arcs(g, 0, -4.5, 1, 2.5, 0, -2.4, -0.7); },
+  ewj(g) { g.lineWidth = 1.5; zig(g, -5.5, 5.5, 0, 2.6, 5); },
+  bmr(g) { g.beginPath(); g.moveTo(0, -4.5); g.lineTo(6.5, 1.5); g.lineTo(6.5, 2.8); g.lineTo(0, 0.5); g.lineTo(-6.5, 2.8); g.lineTo(-6.5, 1.5); g.closePath(); g.fill(); L(g, [0, -5, 0, 4]); },
+  dcy(g) { g.setLineDash([1.3, 1.1]); g.beginPath(); g.moveTo(0, -5); g.lineTo(5, 1.5); g.lineTo(0, 0); g.lineTo(-5, 1.5); g.closePath(); g.stroke(); g.setLineDash([]); }
+};
+const TGLYPH_OF = { owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bal', marv: 'marv', mrbm: 'bal', pen: 'bal', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ftr: 'ftr', str: 'str', sead: 'sead', ewj: 'ewj', bmr: 'bmr' };
+const KLASS_GLYPH = { drone: 'drone', cm: 'cm', ballistic: 'bal', rocket: 'rkt', fighter: 'ftr', bomber: 'bmr', jammer: 'ewj' };
+IC.threatGlyph = (type, klass) => TGLYPH_OF[type] || KLASS_GLYPH[klass] || KLASS_GLYPH[IC.THR[type] && IC.THR[type].klass];
+function threatGlyph(g, key, x, y, s, col) {
+  const f = TGLYPH[key]; if (!f) return;
+  g.save(); g.translate(x, y); g.scale(s, s); g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 1.1; g.lineCap = 'round'; g.lineJoin = 'round';
+  f(g); g.restore();
+}
+/* the reference list and panels: a hostile frame with the type's glyph */
+IC.drawThreatSymbol = function (g, type, x, y, s) {
+  airFrame(g, 'H', x, y, s);
+  threatGlyph(g, IC.threatGlyph(type), x, y - 2.4 * s, s * 1.15, '#ffe1dc');
 };
 /* air track frames: friend dome, hostile/suspect peak, unknown clover, civil box */
 const AIRCOL = IC.AIRCOL = { F: C.friend, H: C.hostile, S: C.suspect, U: C.unknown, A: C.civil, N: C.civil, D: C.decoy };
 function airFrame(g, aff, x, y, s) {
   const col = AIRCOL[aff] || C.unknown;
   g.strokeStyle = col; g.lineWidth = 1.6 * s;
-  g.fillStyle = { H: 'rgba(255,91,79,0.25)', S: 'rgba(255,154,60,0.25)', U: 'rgba(242,209,74,0.22)', A: 'rgba(127,232,176,0.12)', N: 'rgba(127,232,176,0.18)', D: 'rgba(143,163,176,0.1)', F: 'rgba(111,210,255,0.25)' }[aff];
+  g.fillStyle = { H: 'rgba(120,24,16,0.72)', S: 'rgba(120,64,16,0.7)', U: 'rgba(242,209,74,0.22)', A: 'rgba(127,232,176,0.12)', N: 'rgba(127,232,176,0.18)', D: 'rgba(143,163,176,0.1)', F: 'rgba(111,210,255,0.25)' }[aff];
   g.beginPath();
   if (aff === 'H' || aff === 'S' || aff === 'D') { g.moveTo(x - 7 * s, y + 3 * s); g.lineTo(x - 7 * s, y - 1 * s); g.lineTo(x, y - 8 * s); g.lineTo(x + 7 * s, y - 1 * s); g.lineTo(x + 7 * s, y + 3 * s); }
   else if (aff === 'U') { g.arc(x - 4.5 * s, y, 3.5 * s, Math.PI, Math.PI * 1.6); g.arc(x, y - 3.5 * s, 3.8 * s, Math.PI * 1.15, Math.PI * 1.85); g.arc(x + 4.5 * s, y, 3.5 * s, Math.PI * 1.4, 0); g.lineTo(x + 8 * s, y + 3 * s); g.lineTo(x - 8 * s, y + 3 * s); g.closePath(); }
@@ -158,7 +301,7 @@ function drawRanges(S, px, now) {
       if (sel || (S.layers.rings && d.sensor.R > 1200 && u.radarOn && cam.z > 0.08)) {
         const R = d.sensor.R * (u.jamF || 1);
         ctx.strokeStyle = u.radarOn ? (u.jamF < 0.97 ? 'rgba(242,180,65,0.4)' : 'rgba(92,200,255,0.2)') : 'rgba(125,149,165,0.25)';
-        ctx.lineWidth = 1 * px; ctx.setLineDash([6 * px, 7 * px]);
+        ctx.lineWidth = 1 * px; ctx.setLineDash(IC.ringDash(d, px));
         ctx.beginPath(); ctx.arc(u.x, u.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
         if (sel && d.sensor.nctrR) { ctx.strokeStyle = 'rgba(127,232,176,0.35)'; ctx.setLineDash([2 * px, 5 * px]); ctx.beginPath(); ctx.arc(u.x, u.y, d.sensor.nctrR * (IC.hasTech(S, 's_nctr') ? 1.5 : 1), 0, 7); ctx.stroke(); ctx.setLineDash([]); label('type recognition', u.x, u.y - d.sensor.nctrR - 4 * px, px, 'rgba(127,232,176,0.7)', 9); }
       }
@@ -190,8 +333,9 @@ function drawRanges(S, px, now) {
     if (rng && (sel || (S.layers.rings && (d.weapon === 'sam' || d.weapon === 'ecm') && cam.z * rng > 8))) {
       ctx.strokeStyle = sel ? 'rgba(242,180,65,0.75)' : d.weapon === 'ecm' ? 'rgba(160,220,255,0.18)' : 'rgba(92,200,255,0.2)';
       ctx.lineWidth = (sel ? 1.5 : 1) * px;
-      if (d.weapon === 'ecm' || d.weapon === 'strike') ctx.setLineDash([2 * px, 5 * px]);
+      ctx.setLineDash(IC.ringDash(d, px));
       ctx.beginPath(); ctx.arc(u.x, u.y, rng, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      if (IC.unitRole(d) === 'lr') { ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(u.x, u.y, rng - 3 * px, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
     }
     if (u.type === 'depot' && (sel || S.layers.logistics && cam.z > 0.12) && !u.central) { ctx.strokeStyle = 'rgba(224,180,88,0.22)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([8 * px, 6 * px]); ctx.beginPath(); ctx.arc(u.x, u.y, u.reach || 1400, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
   }
@@ -218,6 +362,13 @@ function vehicles(S, u, px, now) {
   }
 }
 
+/* while every magazine is empty but reloads are in the store: how far the next round is */
+function reloadOf(S, u) {
+  if (!u.mags.length || u.state !== 'ready') return null;
+  let best = null;
+  for (const m of IC.activeMags(S, u)) { if (m.mag > 0) return null; if (m.store > 0) best = Math.max(best || 0, m.rl / m.reload); }
+  return best;
+}
 function drawUnit(S, u, px, now) {
   const busy = u.state !== 'ready';
   const silent = u.emitter && !u.radarOn && u.state === 'ready';
@@ -229,11 +380,9 @@ function drawUnit(S, u, px, now) {
   if (cam.z > 1.1) vehicles(S, u, px, now);
   const hurt = u.hp < u.max * 0.7;
   if (hurt && Math.random() < 0.08) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-3, 3), oy: U.rand(-3, 3), vx: S.wind.x * 8, vy: S.wind.y * 8 - 6, life: U.rand(1.5, 3), size: U.rand(2, 4), grow: 5, col: '60,60,62', a: 0.45 });
-  IC.drawUnitSymbol(ctx, u.type, u.x, u.y, px * 1.05, busy ? C.amber : C.friend, { dash: silent, tint: busy ? 'rgba(242,180,65,0.45)' : Object.values(u.comp).some(v => v < 0.35) ? 'rgba(255,91,79,0.35)' : null });
-  if (u.radarOn && u.emitter) {
-    ctx.strokeStyle = 'rgba(160,230,255,0.85)'; ctx.lineWidth = 1 * px;
-    for (const r of [3, 5.5]) { ctx.beginPath(); ctx.arc(u.x + 11.5 * px, u.y - 8 * px, r * px, -1.4, -0.2); ctx.stroke(); }
-  }
+  const broken = Object.values(u.comp).some(v => v < 0.35);
+  IC.drawUnitSymbol(ctx, u.type, u.x, u.y, px * 1.05, busy ? C.amber : C.friend, { dash: silent, tint: busy ? 'rgba(242,180,65,0.45)' : broken ? 'rgba(255,91,79,0.35)' : null,
+    radar: u.emitter && u.state === 'ready' ? (u.radarOn ? 'on' : 'silent') : null, reload: reloadOf(S, u), damaged: broken || u.hp < u.max * 0.5, now });
   if (u.state === 'building' || u.state === 'setup' || u.state === 'packing') {
     const f = 1 - u.stT / u.stMax;
     ctx.strokeStyle = C.amber; ctx.lineWidth = 2 * px;
@@ -407,9 +556,10 @@ function drawTrack(S, t, px, now) {
     ctx.beginPath(); ctx.moveTo(x - 6.5 * px, y); ctx.lineTo(x + 6.5 * px, y); ctx.moveTo(x, y + 2.6 * px); ctx.lineTo(x, y + 6 * px); ctx.moveTo(x - 2.5 * px, y + 6 * px); ctx.lineTo(x + 2.5 * px, y + 6 * px); ctx.stroke();
   } else {
     col = airFrame(ctx, aff, x, y, s);
-    if (t.d.cls === 'bal' && aff !== 'D') { ctx.beginPath(); ctx.moveTo(x, y - 12 * s); ctx.lineTo(x, y + 6 * s); ctx.stroke(); }
-    if (t.d.cls === 'hgv') { ctx.beginPath(); ctx.moveTo(x - 6 * s, y - 11 * s); ctx.lineTo(x, y - 14 * s); ctx.lineTo(x + 6 * s, y - 11 * s); ctx.stroke(); }
-    if (t.d.jam && t.jamming) { ctx.beginPath(); ctx.moveTo(x - 4 * s, y - 2 * s); ctx.lineTo(x - 1.5 * s, y - 4.5 * s); ctx.lineTo(x + 1.5 * s, y + 0.5 * s); ctx.lineTo(x + 4 * s, y - 2 * s); ctx.stroke(); }
+    // what it is, once we know: the type for a hostile, the class from type recognition, the arc for a ballistic missile
+    const gk = aff === 'D' ? null : aff === 'H' ? IC.threatGlyph(t.type) : t.klass ? IC.threatGlyph(null, t.klass) : t.d.cls === 'bal' || t.d.cls === 'hgv' ? IC.threatGlyph(t.type) : null;
+    if (gk) threatGlyph(ctx, gk, x, y - 2.4 * s, s * 1.1, aff === 'H' ? '#ffe1dc' : '#ffe8c4');
+    if (t.d.jam && t.jamming) { const p = (now * 2 + t.seed) % 1; ctx.strokeStyle = `rgba(200,150,255,${1 - p})`; ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.arc(x, y, (9 + p * 12) * px, 0, 7); ctx.stroke(); }
   }
   const sp = Math.hypot(t.pvx || t.vx, t.pvy || t.vy) || 1;
   const Ld = Math.min(55 * px, sp * 140);
