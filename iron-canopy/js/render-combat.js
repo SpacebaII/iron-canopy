@@ -189,8 +189,15 @@ const TGLYPH = {
   sead(g) { TGLYPH.ftr(g); arcs(g, 0, -4.5, 1, 2.5, 0, -2.4, -0.7); },
   ewj(g) { g.lineWidth = 1.5; zig(g, -5.5, 5.5, 0, 2.6, 5); },
   bmr(g) { g.beginPath(); g.moveTo(0, -4.5); g.lineTo(6.5, 1.5); g.lineTo(6.5, 2.8); g.lineTo(0, 0.5); g.lineTo(-6.5, 2.8); g.lineTo(-6.5, 1.5); g.closePath(); g.fill(); L(g, [0, -5, 0, 4]); },
+  // enemy installations and launchers
+  runway(g) { g.lineWidth = 2.2; L(g, [-5, 4, 5, -4]); g.lineWidth = 0.8; L(g, [-3.5, -1, -1, 2]); L(g, [1, -2, 3.5, 1]); },
+  crate(g) { g.strokeRect(-4.5, -3.5, 9, 7); L(g, [-4.5, -3.5, 4.5, 3.5]); },
+  flag(g) { L(g, [-3, 5, -3, -5]); g.beginPath(); g.moveTo(-3, -5); g.lineTo(4, -3); g.lineTo(-3, -0.5); g.closePath(); g.fill(); },
+  tubes(g) { for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { g.beginPath(); g.arc(-3 + i * 3, -1.5 + j * 3, 1.1, 0, 7); g.stroke(); } },
+  tel(g) { missile(g, -5, 4, 10, -0.9, 1); L(g, [-6, 5, 5, 5]); },
   dcy(g) { g.setLineDash([1.3, 1.1]); g.beginPath(); g.moveTo(0, -5); g.lineTo(5, 1.5); g.lineTo(0, 0); g.lineTo(-5, 1.5); g.closePath(); g.stroke(); g.setLineDash([]); }
 };
+const SITE_GLYPH = { airbase: 'runway', drone: 'drone', cm: 'cm', bm: 'bal', mrbm: 'bal', hgv: 'hgv', rkt: 'tubes', supply: 'crate', staging: 'flag' };
 const TGLYPH_OF = { owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bal', marv: 'marv', mrbm: 'bal', pen: 'bal', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ftr: 'ftr', str: 'str', sead: 'sead', ewj: 'ewj', bmr: 'bmr' };
 const KLASS_GLYPH = { drone: 'drone', cm: 'cm', ballistic: 'bal', rocket: 'rkt', fighter: 'ftr', bomber: 'bmr', jammer: 'ewj' };
 IC.threatGlyph = (type, klass) => TGLYPH_OF[type] || KLASS_GLYPH[klass] || KLASS_GLYPH[IC.THR[type] && IC.THR[type].klass];
@@ -256,9 +263,7 @@ function drawEnemy(S, px, now) {
     }
     ctx.globalAlpha = s.destroyed ? 0.45 : 1;
     const ink = frame(ctx, 'h', s.x, s.y, px * 1.1);
-    ctx.fillStyle = ink; ctx.font = `700 ${6.5 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
-    ctx.fillText({ airbase: 'AB', drone: 'UAV', cm: 'CM', bm: 'BM', mrbm: 'MRB', hgv: 'HGV', rkt: 'RKT', supply: 'SUP', staging: 'HQ' }[s.kind], s.x, s.y + 2.3 * px);
-    ctx.textAlign = 'left';
+    threatGlyph(ctx, SITE_GLYPH[s.kind] || 'crate', s.x, s.y, px * (s.kind === 'mrbm' ? 1.25 : 1.05), ink);
     if (s.destroyed) { ctx.strokeStyle = '#1a0806'; ctx.lineWidth = 2 * px; ctx.beginPath(); ctx.moveTo(s.x - 9 * px, s.y - 9 * px); ctx.lineTo(s.x + 9 * px, s.y + 9 * px); ctx.moveTo(s.x + 9 * px, s.y - 9 * px); ctx.lineTo(s.x - 9 * px, s.y + 9 * px); ctx.stroke(); }
     ctx.globalAlpha = 1;
     if (cam.z > 0.1) label(s.name, s.x, s.y + 20 * px, px, 'rgba(255,170,160,0.9)', 9.5);
@@ -269,8 +274,7 @@ function drawEnemy(S, px, now) {
     const age = S.time - t.kt, fade = U.clamp(1 - age / 7200, 0.25, 1);
     ctx.globalAlpha = fade;
     const ink = frame(ctx, 'h', t.kx, t.ky, px * 0.9);
-    ctx.fillStyle = ink; ctx.font = `700 ${5.5 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
-    ctx.fillText(t.kind === 'rkt' ? 'MLRS' : 'TEL', t.kx, t.ky + 2 * px); ctx.textAlign = 'left';
+    threatGlyph(ctx, t.kind === 'rkt' ? 'tubes' : 'tel', t.kx, t.ky, px * 0.95, ink);
     label(`${U.dur(age)} ago`, t.kx, t.ky - 13 * px, px, 'rgba(255,170,160,0.9)', 9);
     ctx.globalAlpha = 1;
     if (S.sel && S.sel.ref === t) brackets(t.kx, t.ky, 12 * px, px);
@@ -540,7 +544,7 @@ function drawTrack(S, t, px, now) {
   }
   ctx.globalAlpha = blink;
   const close = cam.z > 0.9 && t.klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
-  const s = px * (t.d.cls === 'air' ? 1.1 : 0.85);
+  const s = px * (t.d.cls === 'air' ? 1.3 : 1.05);
   let col;
   if (close && t.acType && cam.z > 2.5 && (aff === 'A' || aff === 'N')) {
     col = AIRCOL[aff];
@@ -676,7 +680,7 @@ function sprite(stops, n) {
 }
 function sprites() {
   SPR[SMOKE] = sprite([[0, 'rgba(236,238,240,0.9)'], [0.45, 'rgba(214,218,222,0.55)'], [1, 'rgba(200,205,210,0)']]);
-  SPR[SOOT] = sprite([[0, 'rgba(44,42,44,0.95)'], [0.5, 'rgba(56,54,56,0.6)'], [1, 'rgba(60,58,60,0)']]);
+  SPR[SOOT] = sprite([[0, 'rgba(58,55,54,0.85)'], [0.35, 'rgba(64,61,60,0.6)'], [0.7, 'rgba(70,68,68,0.22)'], [1, 'rgba(74,72,72,0)']]);
   SPR[DUST] = sprite([[0, 'rgba(150,128,98,0.9)'], [0.5, 'rgba(140,120,92,0.5)'], [1, 'rgba(130,112,88,0)']]);
   SPR[STEAM] = sprite([[0, 'rgba(250,250,252,0.95)'], [0.5, 'rgba(240,242,246,0.5)'], [1, 'rgba(235,238,242,0)']]);
   SPR[DEBRIS] = sprite([[0, 'rgba(26,22,20,1)'], [0.55, 'rgba(26,22,20,1)'], [0.7, 'rgba(26,22,20,0)']], 16);
@@ -753,9 +757,10 @@ FX.boom = function (S, x, y, s, kind) {
   if (!inViewR(x, y, 400)) return;
   const px = curPx, night = curLight < 0.5, nk = night ? 1.5 : 1, gnd = kind === 'ground' || kind === 'sec';
   const blue = kind === 'us';
-  emit(blue ? BLUE : HOT, x, y, 0, 0, 0.18 + s * 0.08, 2 * s, 22 * s * nk, 1.5, 1, 0);
-  emit(GLOW, x, y, 0, 0, 0.5 + s * 0.35, (gnd ? 4 : 2.5) * s, (gnd ? 30 : 24) * s * nk, 1.2, 0.95, 0);
-  if (!blue) emit(GLOW, x, y, 0, 0, 1.1 + s * 0.5, (gnd ? 3 : 2) * s, (gnd ? 18 : 14) * s * nk, 0.6, 0.7, 0);
+  emit(blue ? BLUE : HOT, x, y, 0, 0, 0.2 + s * 0.08, 2 * s, 20 * s * nk, 1.5, 0.9, 0);
+  // the fireball swells and fades; what burns on glows a little longer
+  emit(GLOW, x, y, 0, 0, 0.6 + s * 0.4, (gnd ? 4.5 : 3) * s, (gnd ? 34 : 28) * s * nk, 1.3, 0.9, 0);
+  if (!blue) { emit(GLOW, x, y, 0, 0, 1.4 + s * 0.6, (gnd ? 3.5 : 2) * s, (gnd ? 24 : 16) * s * nk, 0.5, 0.8, 0); emit(HOT, x, y, 0, 0, 0.45, 1.5 * s, 14 * s * nk, 1, 0.8, 0); }
   if (night) emit(GLOW, x, y, 0, 0, 0.6 + s * 0.4, 18 * s, 90 * s, 0.4, 0.4, 0);
   rings.push({ x, y, t: 0, life: 0.45 + s * 0.25, rw: (gnd ? 18 : 10) * s, rp: (gnd ? 60 : 36) * s, col: blue ? '190,230,255' : '255,238,210' });
   if (rings.length > 60) rings.shift();
@@ -765,8 +770,9 @@ FX.boom = function (S, x, y, s, kind) {
   const nd = kind === 'us' ? 3 : Math.round(5 + s * 5);
   for (let i = 0; i < nd; i++) { const a = Math.random() * 6.283, v = (20 + Math.random() * 55) * px * (0.6 + s * 0.4); emit(gnd ? DEBRIS : EMBER, x, y, Math.cos(a) * v, Math.sin(a) * v - (25 + Math.random() * 40) * px, 0.9 + Math.random() * 1.4, 0.12, gnd ? 1.4 : 1.8, 0, 1, FALL | SMOKY, 0.8); }
   // smoke: grey for things blown up in the air, black and rising for the ground; dust ring on the ground
-  const nm = Math.round((gnd ? 7 : 4) * Math.min(2.2, s + 0.4));
-  for (let i = 0; i < nm; i++) emit(gnd ? SOOT : SMOKE, x + (Math.random() - 0.5) * 6 * px * s, y + (Math.random() - 0.5) * 6 * px * s, (Math.random() - 0.5) * 8 * px, -(gnd ? 6 + Math.random() * 10 : Math.random() * 4) * px, (gnd ? 5 : 3) + Math.random() * 4 * s, (gnd ? 2 : 1) * s, (gnd ? 9 : 6) * s, 2.2, gnd ? 0.55 : 0.45, WIND, 0.6);
+  // smoke: grey puffs for things blown up in the air; on the ground a dark column that climbs and leans with the wind
+  const nm = Math.round((gnd ? 10 : 4) * Math.min(2.2, s + 0.4));
+  for (let i = 0; i < nm; i++) { const up = gnd ? 4 + Math.random() * 16 : Math.random() * 4; emit(gnd ? SOOT : SMOKE, x + (Math.random() - 0.5) * 7 * px * s, y + (Math.random() - 0.5) * 7 * px * s, (Math.random() - 0.5) * 8 * px, -up * px, (gnd ? 6 : 3) + Math.random() * 5 * s, (gnd ? 2.2 : 1) * s, (gnd ? 8 : 6) * s, 2.6, gnd ? 0.6 : 0.45, WIND, 0.35); }
   if (gnd) for (let i = 0; i < 10 * s; i++) { const a = Math.random() * 6.283, v = (30 + Math.random() * 30) * px * s; emit(DUST, x, y, Math.cos(a) * v, Math.sin(a) * v * 0.7, 1.2 + Math.random(), 0.8 * s, 5 * s, 1.8, 0.45, WIND, 2.6); }
 };
 function inViewR(x, y, m) { return inView(x, y, m * curPx + 50); }
@@ -972,7 +978,7 @@ function drawMissiles(S, px, light) {
     if (!V.shown) return;
     const c = CLS[V.cls], x = V.hx, y = V.hy;
     if (!inView(x, y, 120)) return;
-    const age = S.time - V.born, burning = V.burning;
+    const burning = V.burning;
     // heading on screen, including the climb
     const A = V.tr.pts, n = A.length;
     let hx = Math.cos(m.a || 0), hy = Math.sin(m.a || 0);
@@ -1045,7 +1051,7 @@ function drawRounds(px) {
   for (const r of rounds) {
     if (r.t < 0) continue;
     const f = r.t / r.life, f0 = Math.max(0, f - (r.msl ? 0.25 : 0.14));
-    ctx.strokeStyle = r.msl ? 'rgba(255,225,170,0.95)' : 'rgba(255,205,110,0.95)'; ctx.lineWidth = (r.msl ? 1.8 : 1.3) * px;
+    ctx.strokeStyle = r.msl ? 'rgba(255,225,170,0.95)' : 'rgba(255,170,70,0.95)'; ctx.lineWidth = (r.msl ? 1.8 : 1.4) * px;
     ctx.beginPath(); ctx.moveTo(r.x1 + (r.x2 - r.x1) * f0, r.y1 + (r.y2 - r.y1) * f0); ctx.lineTo(r.x1 + (r.x2 - r.x1) * f, r.y1 + (r.y2 - r.y1) * f); ctx.stroke();
   }
   ctx.lineCap = 'butt';
