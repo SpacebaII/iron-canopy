@@ -55,6 +55,35 @@ test('world: roads meet at junctions and do not run side by side', () => {
   assert(Object.values(W.nodes).some(n => n.ix), 'no motorway interchanges');
   assert(W.bridges.length > 0, 'no bridges');
 });
+test('world: every motorway-to-motorway junction has an interchange shape, with smooth slip roads', () => {
+  let mm = 0, mx = 0;
+  for (const seed of [4242, 7, 99, 12345, 2024]) {
+    const W = IC.generate(seed);
+    const hwAt = k => W.edges.filter(e => e.cls === 'hw' && (e.a === k || e.b === k)).length;
+    for (const k in W.nodes) {
+      const n = W.nodes[k], J = W.junctionAt[k], h = hwAt(k);
+      if (!n.jct || !h) continue;
+      if (h >= 3) { assert(J && J.kind === 'mm', `seed ${seed}: motorways meet at ${k} without an interchange`); mm++; }
+      else if (h === 2 && n.deg > 2) { assert(J && J.kind === 'mx', `seed ${seed}: a road meets the motorway at ${k} without an interchange`); mx++; }
+      if (!J || !J.ramps.length) continue;
+      if (J.kind === 'mm') assert(J.ramps.some(r => r.kind === 'loop') && J.ramps.some(r => r.kind === 'outer') && J.over.length, `seed ${seed}: interchange ${k} has no loops, slip roads or bridge`);
+      for (const r of J.ramps) {
+        // no kinks: consecutive pieces of a slip road turn by less than 30°
+        for (let i = 2; i < r.pts.length; i++) {
+          const a = Math.atan2(r.pts[i - 1].y - r.pts[i - 2].y, r.pts[i - 1].x - r.pts[i - 2].x), b = Math.atan2(r.pts[i].y - r.pts[i - 1].y, r.pts[i].x - r.pts[i - 1].x);
+          assert(Math.abs(U.angWrap(b - a)) < 0.53, `seed ${seed}: a ${r.kind} slip road at ${k} has a kink`);
+        }
+      }
+    }
+  }
+  assert(mm >= 2 && mx >= 20, `too few interchanges to be a real test (${mm} motorway, ${mx} other)`);
+});
+test('world: city streets end on another street or road', () => {
+  for (const seed of [4242, 7]) {
+    const W = IC.generate(seed);
+    for (const c of W.cities) for (const l of c.streets) assert(!l.deadEnd, `seed ${seed}: a street in ${c.name} ends in the middle of nowhere`);
+  }
+});
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test
@@ -407,6 +436,13 @@ test('damage: a crater in a field fades after a day or two; one in a road stays 
   age(24);
   assert(!S.marks.includes(field), 'the field still shows the crater after two days');
   assert(S.marks.includes(road), 'the patch in the road disappeared too soon');
+});
+
+test('world: a change to the world is recorded for the map to redraw', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });
+  const c = IC.cap(S), b = { x0: c.x - 5, y0: c.y - 5, x1: c.x + 5, y1: c.y + 5 };
+  IC.worldChanged(S, b);
+  assert(S.worldDirty && S.worldDirty.includes(b), 'IC.worldChanged did not record the box');
 });
 
 test('radar: a military radar does not see a low aircraft behind a hill that it sees over flat ground', () => {

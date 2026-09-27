@@ -313,7 +313,7 @@ IC.impactMark = function (S, x, y, dmg, gnd) {
   if (gnd.kind === 'airfield') return IC.addMark(S, { kind: 'paving', x, y, r: 0.2 + k * 0.002 });
   if (gnd.kind === 'block') return IC.addMark(S, { kind: 'scorch', x, y, r: 0.15 + k * 0.003, life: MARKS.field.life });
   // crater radius about 3 m for a rocket, 8 m for a 500 kg bomb; the scorch reaches five times as far
-  const cr = 0.03 + k * 0.0004, m = { kind: gnd.kind, x, y, r: cr * 5, cr, seed: Math.random() * 1000 };
+  const cr = 0.03 + k * 0.0005, m = { kind: gnd.kind, x, y, r: cr * 7, cr, seed: Math.random() * 1000 };
   if (gnd.kind === 'road') { m.cls = gnd.cls; m.cr = Math.min(cr, (IC.ROAD_W[gnd.cls] || 0.1) * 0.6); m.r = m.cr * 3; }
   return IC.addMark(S, m);
 };
