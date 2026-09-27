@@ -39,10 +39,44 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'apart') h = apart(s);
     else if (s.kind === 'veh') h = convoy(r);
     else if (s.kind === 'air') h = air(r);
+    else if (s.kind === 'fix') h = fix(r);
+    else if (s.kind === 'airway') h = airway(r);
+    else if (s.kind === 'field') h = field(r);
   }
   el.classList.toggle('glass', !!h);
   ui.setHTML(el, h ? h.replace('<div class="ihead">', '<div class="ihead">') : '');
 };
+
+/* ---------- the airspace: fixes, airways, light-aircraft fields ---------- */
+const covTxt = a => ui.covTxt(a);
+function fix(f) {
+  const ways = S.asp.ways.filter(w => w.a === f.id || w.b === f.id);
+  const apts = IC.bases(S).filter(b => b.kind === 'airport' && b.owner === 'us' && IC.aspLink(S, b) === f);
+  const rows = [['Near', esc(IC.nearestPlace(S, f.x, f.y))], ['Airways', ways.length ? ways.map(w => { const o = IC.aspFix(S, w.a === f.id ? w.b : w.a); return esc(o.name); }).join(', ') : '<span class="amber">none yet</span>'],
+    ['Radar sees down to', covTxt(IC.aspCovAlt(S, f.x, f.y))], ['Airports joining here', apts.length ? esc(apts.map(b => b.name).join(', ')) : '—']];
+  return head('<span class="badge friend">FIX</span>', f.name, 'Fix · a named point airliners fly over') + `<div class="ibody">${kv(rows)}
+    <div class="acts"><button class="act pri" data-act="aspDraw" data-id="${f.id}">Draw an airway from here</button><button class="act warn" data-act="fixDel" data-id="${f.id}">Delete fix</button></div>
+    <p class="hint">In the airway editor you can drag a fix to move it; the airways move with it.</p></div>`;
+}
+function airway(w) {
+  const [a, b] = IC.aspWayEnds(S, w), hi = IC.aspWayCover(S, w, 9), lo = IC.aspWayCover(S, w, 3);
+  const xs = IC.aspCrossings(S).filter(c => c.w === w.id || c.v === w.id), over = IC.aspOverflies(S, w);
+  const using = S.threats.filter(t => !t.dead && t.plan && t.plan.pts && t.plan.pts.some((p, i, P) => i && ((p.fix === w.a && P[i - 1].fix === w.b) || (p.fix === w.b && P[i - 1].fix === w.a)))).length;
+  const rows = [['Length', U.km(U.dist(a, b))], ['Radar cover', `${U.pct(hi)} at cruise height · ${U.pct(lo)} at 3 km`], ['Flights on it now', using],
+    ['Crosses', xs.length ? `<span class="amber">${xs.length} other airway${xs.length > 1 ? 's' : ''}</span>` : 'no other airway'], ['Passes over', over.length ? `<span class="amber">${esc(over.join(', '))}</span>` : 'nothing sensitive']];
+  const tips = [];
+  if (hi < 0.9) tips.push('Part of it is outside radar cover (drawn dashed amber). Controllers there space flights by time alone: fewer flights and more delay. A radar near that stretch fixes it.');
+  if (xs.length) tips.push('Where airways cross, flights at the same height can meet. Controllers watch crossings; outside radar they keep apart only most of the time.');
+  if (over.length) tips.push('Airliners over bases and cities are a risk in a crisis. Move the fixes, or publish a prohibited zone.');
+  return head('<span class="badge friend">AWY</span>', `${a.name} – ${b.name}`, 'Airway') + `<div class="ibody">${kv(rows)}${tips.map(x => `<p class="hint">${x}</p>`).join('')}
+    <div class="acts"><button class="act warn" data-act="wayDel" data-id="${w.id}">Delete airway</button></div></div>`;
+}
+function field(f) {
+  const n = S.threats.filter(t => !t.dead && t.type === 'ga' && t.gaTo && t.gaTo.field === f.id).length;
+  const rows = [['Club', esc(f.club)], ['Club mood', `${bar(f.mood / 100, f.mood > 60 ? 'var(--ok)' : f.mood > 35 ? 'var(--amber)' : 'var(--hostile)')} ${Math.round(f.mood)}%`], ['Movements today', f.today], ['Inbound now', n], ['Radar sees down to', covTxt(IC.aspCovAlt(S, f.x, f.y))]];
+  return head('<span class="badge friend">GA</span>', f.name, 'Grass strip for light aircraft') + `<div class="ibody">${kv(rows)}
+    <p class="hint">Light aircraft fly slow and low, by sight, in daylight and fair weather. Many have no flight plan and some no transponder. Clubs pay little, but grounding them for long makes them loud.</p></div>`;
+}
 
 /* ---------- our air defense, sensors, launchers, depots ---------- */
 function unit(u) {
@@ -122,8 +156,14 @@ function track(t) {
     ['Altitude', t.altKnown ? U.alt(t.alt) : '<span class="muted">unknown (2D radar only)</span>'],
     ['Speed', U.kmh(Math.hypot(t.vx, t.vy))], ['Heading', U.compass(Math.atan2(t.vy, t.vx))],
     ['Transponder', t.sqSeen || t.sq && t.aff !== 'U' ? `${t.sq || 'none'}${t.cs ? ' · ' + esc(t.cs) : ''}` : t.sq ? '<span class="muted">not interrogated</span>' : 'none'],
-    ['Flight plan', t.plan ? `${esc(t.plan.a.name || '?')} → ${esc(t.plan.b.name || '?')}${t.sqSeen ? (IC.offRoute(t) < 50 ? ' · <span class="civil">on route</span>' : ` · <span class="suspect">${U.km(IC.offRoute(t))} OFF ROUTE</span>`) : ''}` : t.d.civil && t.type === 'ga' ? 'VFR' : 'none filed']
+    ['Flight plan', t.plan ? `${esc(t.plan.a.name || '?')} → ${esc(t.plan.b.name || '?')}${t.sqSeen ? (IC.offRoute(t) < 50 ? ' · <span class="civil">on route</span>' : ` · <span class="suspect">${U.km(IC.offRoute(t))} OFF ROUTE</span>`) : ''}` : t.d.civil && t.type === 'ga' ? `${t.fpl ? 'filed' : 'none'} · flying by sight${t.gaTo ? ` to ${esc(t.gaTo === t.gaFrom ? 'and back from ' + t.gaFrom.name : t.gaTo.name)}` : ''}` : 'none filed']
   ];
+  // what air traffic control can do for it
+  if (t.d.civil && (aff === 'N' || aff === 'A')) {
+    if (t.plan && t.plan.pts) { const fx = t.plan.pts.filter(p => p.fix).map(p => p.name); rows.push(['Route', fx.length ? `airways via ${esc(fx.join(', '))}` : '<span class="amber">direct: no airway fits, so controllers space it wider</span>']); }
+    rows.push(['Controllers', IC.aspSeen(S, t) ? '<span class="civil">see it on radar</span>' : `<span class="amber">cannot see it${t.sq ? ' at this height' : ': no transponder'}</span>`]);
+    if (t.type === 'ga') rows.push(['Cleared into', t.cleared && t.cleared.length ? esc(t.cleared.map(id => S.byId[id] ? S.byId[id].name : id).join(', ')) : 'no controlled airspace']);
+  }
   if (t.tail) { const al = IC.avAirline(S, t.tail.al); rows.push(['Operator', `${esc(al.name)} · ${esc(IC.ACTYPES[t.tail.type].name)}`]); }
   if (t.emergency) rows.push(['Status', '<span class="hostile">MAYDAY · emergency landing</span>']);
   if (t.noReply) rows.push(['Radio', '<span class="suspect">no answer</span>']);
@@ -245,6 +285,7 @@ function base(b) {
     ['Tower · fire · radar', `${st.tower ? 'yes' : '<span class="hostile">no</span>'} · ${st.fire ? 'yes' : '<span class="amber">no</span>'} · ${st.radar ? 'yes' : 'no'}`]
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);
+  if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }
   const kpis = `<div class="kpis">
     <div><small>Avg taxi</small><b class="${kp.taxi > 600 ? 'amber' : ''}">${U.dur(kp.taxi || 0)}</b></div>
     <div><small>Avg delay</small><b class="${kp.wait > 600 ? 'amber' : ''}">${U.dur(kp.wait || 0)}</b></div>

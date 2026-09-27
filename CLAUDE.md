@@ -45,6 +45,7 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `groundops.js` | Aircraft moving on the ground: runway locks, taxi, hold, line-up, take-off roll, final approach, landing roll, exits, parking; military launches and landings go through it too |
 | `aviation.js` | Airlines, routes and aircraft ("tails"), fees, satisfaction, route requests, prohibited zones, radio calls |
 | `civil.js` | Other traffic: overflights, light aircraft, cars and trains, sirens |
+| `airspace.js` | Fixes and airways the player draws, routing over them, radar cover by altitude (terrain and earth curve), controllers' spacing and separation (losses, near misses), control zones, light-aircraft fields and clubs |
 | `incidents.js` | Things that must not be missed: off-route airliners, intruders, weapons released |
 | `air.js`, `ground.js`, `logistics.js` | Our air wing, the ground war, depots, trucks, economy, research |
 | `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |

@@ -98,7 +98,7 @@ function topbar() {
 function incidents() {
   const L = IC.activeIncidents(S).slice(0, 4);
   ui.incRefs = L;
-  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button></div>`).join(''));
+  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY', separation: 'SEPARATION LOST', nearmiss: 'NEAR MISS', infringe: 'INFRINGEMENT' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button></div>`).join(''));
 }
 /* decisions: one card at a time */
 function evcard() {
@@ -240,7 +240,9 @@ function arsenal() {
 
 function layers() {
   const L = [['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['ground', 'Army'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
-  setHTML($('layers'), L.map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join(''));
+  // with coverage on, a key to its colours: the lowest height controllers see
+  const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em></div>` : '';
+  setHTML($('layers'), L.map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
 }
 function modeHint() {
   const m = S.mode2, el = $('modehint');
@@ -260,10 +262,15 @@ function modeHint() {
       : IC.APART[m.part].area ? `${IC.APART[m.part].name}: click one corner, then the opposite corner. R rotates. Right-click or Esc to stop.`
       : `${IC.APART[m.part].name}: click to place. R rotates. Keep clicking to place more; right-click or Esc to stop.`,
     bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
+    airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
+      : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
+    field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
     zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
     found: () => `Click a flat site in ${S.world.names.H} for a new airport (${U.money(IC.FOUND_COST)}). Not inside a city, and at least 25 km from another airport.`
   }[m.kind]();
 }
+const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);
+ui.covTxt = covTxt;
 ui.tip = function (ent, sx, sy) {
   const el = $('tip');
   if (!ent) { el.hidden = true; return; }
@@ -278,6 +285,9 @@ ui.tip = function (ent, sx, sy) {
   else if (ent.kind === 'tel') { t = r.name; s = `Seen ${U.dur(S.time - r.kt)} ago`; }
   else if (ent.kind === 'evehicle') { t = r.name; s = `${r.trucks} trucks`; }
   else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%${r.owner === 'enemy' ? ' · occupied' : ''}` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.baseStatus(S, r).runway ? 'Runway open' : 'Runway closed'} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
+  else if (ent.kind === 'fix') { t = `Fix ${r.name}`; s = `${S.asp.ways.filter(w => w.a === r.id || w.b === r.id).length} airways · radar sees down to ${covTxt(IC.aspCovAlt(S, r.x, r.y))} here`; }
+  else if (ent.kind === 'airway') { const [a, b] = IC.aspWayEnds(S, r); t = `Airway ${a.name} – ${b.name}`; s = `${U.km(U.dist(a, b))} · radar sees ${U.pct(IC.aspWayCover(S, r, 9))} of it at cruise height`; }
+  else if (ent.kind === 'field') { t = r.name; s = `Light aircraft · ${r.club} · ${r.today} movements today`; }
   else if (ent.kind === 'apart') { const D = IC.APART[r.kind]; t = `${D.name} · ${ent.ap.name}`; s = !r.built ? `Planned · ${U.pct(r.prog || 0)}` : r.hp <= r.max * 0.25 ? 'Destroyed' : r.hp < r.max ? `Damaged · ${U.pct(r.hp / r.max)}` : r.kind === 'runway' ? `${U.km(IC.rwLen(r))}${r.craters.length ? ` · ${r.craters.length} craters` : ''}` : r.kind === 'fuel' ? `${Math.round(r.stock || 0)}/${D.cap} fuel` : r.kind === 'apron' ? `${(r.stands || []).length} stands` : D.desc; }
   el.innerHTML = `<b>${esc(t)}</b><span>${esc(s)}</span>`;
   el.hidden = false;

@@ -53,6 +53,10 @@ function pick(p) {
   for (const u of S.units) consider('unit', u, u.x, u.y);
   if (S.layers.ground) for (const g of S.gunits) if (g.side === 'us') consider('gunit', g, g.x, g.y, 22 * px);
   if (best) return best;
+  const aw = S.layers.airways || (S.mode2 && S.mode2.kind === 'airway');
+  if (aw) for (const f of S.asp.fixes) consider('fix', f, f.x, f.y);
+  if (IC.cam.z > 0.05) for (const f of S.asp.fields) consider('field', f, f.x, f.y);
+  if (best) return best;
   if (S.layers.logistics) for (const v of S.vehicles) if (v.state !== 'idle' || IC.cam.z > 0.4) consider('veh', v, v.x, v.y);
   if (best) return best;
   if (S.layers.intel) {
@@ -74,7 +78,21 @@ function pick(p) {
     const r = i.kind === 'city' ? Math.max(i.r * 0.7, 10 * px) : i.parts && IC.cam.z > 0.3 ? Math.max(i.radius * 0.7, 13 * px) : 13 * px;
     if (U.dxy(p.x, p.y, i.x, i.y) < r) return { kind: 'infra', ref: i };
   }
+  if (aw) { const w = IC.aspWayAt(S, p, 8 * px); if (w) return { kind: 'airway', ref: w }; }
   return null;
+}
+/* the airway editor: click empty map for a new fix, click fixes to join them, click an airway to add a fix on it.
+   Each click continues the chain from the last fix; right-click ends the chain */
+function airwayClick(m, p) {
+  const px = 1 / IC.cam.z, f = IC.aspFixAt(S, p, 12 * px), w = !f && IC.aspWayAt(S, p, 7 * px);
+  let to = f;
+  if (!to && w) to = IC.aspSplitWay(S, w.id, p.x, p.y);
+  if (!to && !w) { const why = IC.aspFixWhy(S, p.x, p.y); if (why) { IC.text(S, p.x, p.y, why, IC.C.hostile); IC.sfx.ui('err'); return; } to = IC.aspAddFix(S, p.x, p.y); }
+  if (!to) { IC.sfx.ui('err'); return; }
+  if (m.from && m.from !== to.id) IC.aspAddWay(S, m.from, to.id);
+  m.from = to.id;
+  S.sel = { kind: 'fix', ref: to };
+  IC.sfx.ui('click');
 }
 /* the airport builder: taxiways and runways by points, areas corner to corner, buildings by a click */
 function buildClick(m, p) {
@@ -119,6 +137,13 @@ function leftClick(p, shift) {
   const m = S.mode2;
   if (m) {
     if (m.kind === 'build') { buildClick(m, p); IC.ui.refresh(true); return; }
+    if (m.kind === 'airway') { airwayClick(m, p); IC.ui.refresh(true); return; }
+    if (m.kind === 'field') {
+      const why = IC.aspFieldWhy(S, p.x, p.y);
+      if (why) { IC.text(S, p.x, p.y, why, IC.C.hostile); IC.sfx.ui('err'); return; }
+      const f = IC.aspFoundField(S, p.x, p.y);
+      IC.setMode(null); IC.select({ kind: 'field', ref: f }); ping(p); return;
+    }
     if (m.kind === 'bulldoze') {
       const part = IC.partAt(m.ap, p, 6 / IC.cam.z);
       if (part) { IC.aptRemove(S, m.ap, part.id); IC.sfx.ui('ok'); ping(p); } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
@@ -177,6 +202,7 @@ function leftClick(p, shift) {
 function rightClick(p, shift) {
   if (!p) return;
   if (S.mode2 && S.mode2.kind === 'build' && S.mode2.pts && S.mode2.pts.length >= 2) { finishLine(S.mode2); return; }
+  if (S.mode2 && S.mode2.kind === 'airway' && S.mode2.from) { S.mode2.from = null; IC.ui.refresh(true); return; }
   if (S.mode2) { IC.setMode(null); return; }
   const hit = pick(p);
   const air = S.sel && S.sel.kind === 'air' ? S.sel.ref : null;
@@ -391,6 +417,12 @@ function onAct(e) {
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
+    case 'aspDraw': ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.12) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.14); } return;
+    case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
+    case 'wayDel': IC.aspDelWay(S, id); S.sel = null; break;
+    case 'fieldMode': ui.openRoom(null); IC.setMode({ kind: 'field' }); return;
+    case 'selFix': { const f = IC.aspFix(S, id); if (f) { S.layers.airways = true; ui.openRoom(null); ui.jump(f, 'fix'); } return; }
+    case 'selField': { const f = S.asp.fields.find(x => x.id === id); if (f) { ui.openRoom(null); ui.jump(f, 'field'); } return; }
     case 'zoneDel': IC.avRemoveZone(S, id); break;
     case 'foundMode': ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
     case 'delegate': IC.storyDelegate(S, v, !S.story.del[v]); break;
@@ -464,7 +496,11 @@ cv.addEventListener('pointerdown', e => {
   ptrs.set(e.pointerId, l);
   S.hover = IC.toWorld(l.x, l.y);
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; drag = null; S.box = null; }
-  else if (ptrs.size === 1) drag = { sx: l.x, sy: l.y, cx: IC.cam.x, cy: IC.cam.y, moved: false, btn: e.button, box: e.shiftKey && e.button === 0 };
+  else if (ptrs.size === 1) {
+    drag = { sx: l.x, sy: l.y, cx: IC.cam.x, cy: IC.cam.y, moved: false, btn: e.button, box: e.shiftKey && e.button === 0 };
+    // in the airway editor, fixes can be dragged
+    if (e.button === 0 && S.mode2 && S.mode2.kind === 'airway') drag.fix = IC.aspFixAt(S, S.hover, 12 / IC.cam.z);
+  }
   IC.cam.fly = null;
 });
 cv.addEventListener('pointermove', e => {
@@ -483,7 +519,8 @@ cv.addEventListener('pointermove', e => {
     const dx = l.x - drag.sx, dy = l.y - drag.sy;
     if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; if (!drag.box) cv.classList.add('dragging'); }
     if (drag.moved) {
-      if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
+      if (drag.fix) IC.aspMoveFix(S, drag.fix, S.hover.x, S.hover.y);
+      else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
       else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); }
     }
   }
@@ -493,7 +530,8 @@ function up(e) {
   ptrs.delete(e.pointerId);
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
   if (had && drag && e.type === 'pointerup') {
-    if (drag.box && S.box) {
+    if (drag.fix && drag.moved) IC.ui.refresh(true);
+    else if (drag.box && S.box) {
       const b = S.box, a = IC.toWorld(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1)), c = IC.toWorld(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1));
       const inB = o => o.x >= a.x && o.x <= c.x && o.y >= a.y && o.y <= c.y;
       S.group = S.units.filter(inB).concat(S.gunits.filter(g => g.side === 'us' && inB(g)));
@@ -538,6 +576,10 @@ window.addEventListener('keydown', e => {
   if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + Math.PI / 2; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { finishLine(bm); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { bm.pts.pop(); return; }
+  if ((k === 'Delete' || k === 'Backspace') && S.sel && (S.sel.kind === 'fix' || S.sel.kind === 'airway')) {
+    if (S.sel.kind === 'fix') { IC.aspDelFix(S, S.sel.ref.id); if (S.mode2 && S.mode2.from === S.sel.ref.id) S.mode2.from = null; } else IC.aspDelWay(S, S.sel.ref.id);
+    S.sel = null; IC.ui.refresh(true); return;
+  }
   const selKind = S.sel && S.sel.kind;
   const brig = selG().length > 0, unitSel = selUnits().length > 0, trackSel = selKind === 'track';
   const gkeys = { y: 'hold', d: 'dig', r: 'attack', t: 'defend', u: 'reserve', o: 'refit' };

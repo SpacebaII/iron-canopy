@@ -103,29 +103,14 @@ function freeStand(S, ap, T, pref) {
 IC.avFreeStand = freeStand;
 function standById(ap, id) { for (const s of standsOf(ap)) if (s.id === id) return s; return null; }
 
-/* ---------- route geometry around prohibited zones ---------- */
+/* ---------- route geometry: along the airways (airspace.js), then around prohibited zones ---------- */
+const polyLen = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); return L; };
 IC.avPath = function (S, a, b) {
-  const zones = S.av ? S.av.zones : [];
-  let pts = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
-  for (let pass = 0; pass < 6; pass++) {
-    let hit = null;
-    for (let i = 1; i < pts.length && !hit; i++) for (const z of zones) {
-      if (U.dist(pts[i - 1], z) < z.r * 1.02 || U.dist(pts[i], z) < z.r * 1.02) continue;
-      if (U.segDist(z.x, z.y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) < z.r) { hit = { i, z }; break; }
-    }
-    if (!hit) break;
-    const A = pts[hit.i - 1], B = pts[hit.i], z = hit.z;
-    const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
-    const side = ((z.x - A.x) * nx + (z.y - A.y) * ny) > 0 ? -1 : 1;
-    const t = U.clamp(((z.x - A.x) * dx + (z.y - A.y) * dy) / (L * L), 0.05, 0.95);
-    const R = z.r * 1.3;
-    const c = { x: z.x + nx * side * R, y: z.y + ny * side * R };
-    const w1 = { x: c.x - dx / L * R * 0.8, y: c.y - dy / L * R * 0.8 }, w2 = { x: c.x + dx / L * R * 0.8, y: c.y + dy / L * R * 0.8 };
-    pts.splice(hit.i, 0, w1, w2);
-    if (t < 0) break;
-  }
-  let len = 0; for (let i = 1; i < pts.length; i++) len += U.dist(pts[i - 1], pts[i]);
-  return { pts, len, direct: U.dist(a, b) };
+  const net = S.asp ? IC.aspRoute(S, a, b) : null;
+  const pts = net ? net.pts.map(p => Object.assign({}, p)) : [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+  const base = polyLen(pts);
+  IC.bendPath(pts, S.av ? S.av.zones : [], 6 + pts.length);
+  return { pts, len: polyLen(pts), direct: U.dist(a, b), base, net: !!net };
 };
 IC.avAddZone = function (S, x, y, r, name) {
   const z = { id: IC.nid('pz'), x, y, r, name: name || `P-${S.av.zones.length + 1} ${IC.nearestPlace(S, x, y)}` };
@@ -135,23 +120,26 @@ IC.avAddZone = function (S, x, y, r, name) {
   return z;
 };
 IC.avRemoveZone = function (S, id) { S.av.zones = S.av.zones.filter(z => z.id !== id); };
-/* how much longer our routes are because of the zones */
+/* how much longer our routes are because of the zones (airways aside) */
 IC.avDetour = function (S) {
   let a = 0, b = 0;
-  for (const r of S.av.routes) { if (r.st !== 'active') continue; const p = IC.avPath(S, S.byId[r.a], endPt(S, r.b)); a += p.len; b += p.direct; }
+  for (const r of S.av.routes) { if (r.st !== 'active') continue; const p = IC.avPath(S, S.byId[r.a], endPt(S, r.b)); a += p.len; b += p.base; }
   return b ? a / b : 1;
 };
 
 /* ---------- flying the legs ---------- */
-function launchLeg(S, t, from, to, x, y, alt) {
+function launchLeg(S, t, from, to, x, y, alt, progress) {
   const path = IC.avPath(S, from, to);
   const r = routeOf(S, t), al = airlineOf(S, t.al);
-  const tr = IC.spawnThreat(S, 'civ', x, y, { tail: t, cs: t.cs, sq: t.sq || (t.sq = octal()), pax: t.T.seats ? Math.round(t.T.seats * U.rand(0.6, 0.95)) : 2, alt,
-    orig: from, dest: path.pts[1], wps: path.pts.slice(1), plan: { a: from, b: to, cs: t.cs, pts: path.pts }, route: [to], aim: to, dist0: path.len, flown: 0,
-    toApt: to.apt || null, cruise: t.T.alt, spd: t.T.cruise, livery: al.livery, acType: t.type, detour: path.len / Math.max(1, path.direct) });
+  // an aircraft already under way starts part way along its route
+  const at = progress ? IC.pathAt(path.pts, progress) : { x, y, ahead: path.pts.slice(1) };
+  const tr = IC.spawnThreat(S, 'civ', at.x, at.y, { tail: t, cs: t.cs, sq: t.sq || (t.sq = octal()), pax: t.T.seats ? Math.round(t.T.seats * U.rand(0.6, 0.95)) : 2, alt,
+    orig: from, dest: at.ahead[0], wps: at.ahead, plan: { a: from, b: to, cs: t.cs, pts: path.pts }, route: [to], aim: to, dist0: path.len, flown: progress ? path.len * progress : 0,
+    toApt: to.apt || null, cruise: IC.aspLevel(t.T.alt, from, to), spd: t.T.cruise, livery: al.livery, acType: t.type, detour: path.len / Math.max(1, path.base), net: path.net });
   tr.rcs = t.type === 'turbo' ? 12 : t.type === 'narrow' ? 30 : 60;
   t.where = 'air'; t.track = tr; t.leg0 = S.time;
-  if (path.len / Math.max(1, path.direct) > 1.02) t.detour = path.len / path.direct;
+  // zones make a detour; airways a longer way round than direct
+  t.detour = path.len / Math.max(1, path.base); t.netDetour = path.base / Math.max(1, path.direct);
   return tr;
 }
 IC.moveTail = function (S, t, dt) {
@@ -165,11 +153,15 @@ IC.moveTail = function (S, t, dt) {
   const L = U.dxy(t.x, t.y, d.x, d.y);
   t.vx = Math.cos(hd) * t.spd; t.vy = Math.sin(hd) * t.spd;
   t.x += t.vx * dt; t.y += t.vy * dt; t.flown += t.spd * dt;
+  // a controller's level change, eased in and out
+  if (t.aspDzT > 0) { t.aspDzT -= dt; if (t.aspDzT <= 0) t.aspDz = 0; }
+  t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);
   // climb out, cruise, descend
   const remain = L + (t.wps.length > 1 ? t.wps.slice(1).reduce((s, p, i, arr) => s + U.dist(i ? arr[i - 1] : t.wps[0], p), 0) : 0);
   t.remain = remain;
-  const climb = t.orig && t.orig.edge ? t.cruise : Math.min(t.cruise, 0.3 + t.flown / 90);
-  const desc = t.toApt ? Math.min(t.cruise, 0.6 + Math.max(0, remain - APPROACH) / 110) : t.cruise;
+  const cr = t.cruise + (t.dzNow || 0);
+  const climb = t.orig && t.orig.edge ? cr : Math.min(cr, 0.3 + t.flown / 90);
+  const desc = t.toApt ? Math.min(cr, 0.6 + Math.max(0, remain - APPROACH) / 110) : cr;
   t.alt = Math.max(0.3, Math.min(climb, desc));
   if (L < t.spd * dt + 3 && !t.drift) {
     t.wps.shift();
@@ -224,6 +216,7 @@ IC.aptCanTake = function (S, ap, T) {
 function tryLand(S, t, ap) {
   const tl = t.tail;
   if (IC.aptCanTake(S, ap, tl.T)) return 'divert';
+  if (IC.gaBusy(S, ap)) { IC.gaDelayNote(S, ap); return 'hold'; }
   let s = tl.resStand ? standById(ap, tl.resStand) : null;
   if (!s || (s.occ && s.occ !== tl.id)) { s = freeStand(S, ap, tl.T, airlineOf(S, tl.al).kind); if (!s) { ap.kpi.standWait = (ap.kpi.standWait || 0) + 1; t.standShort = true; return 'hold'; } }
   const m = IC.gopsLand(S, ap, { type: tl.type, target: s.id, stand: s, who: tl.cs, tail: tl, livery: t.livery,
@@ -327,6 +320,7 @@ function judge(S, al, tl, ap, o) {
   const fee = ap ? ap.feeLevel || 1 : 1;
   if (fee > K.feeTol) { score -= (fee - K.feeTol) * 70; why.push('high fees'); }
   if (tl.detour > 1.03) { score -= (tl.detour - 1) * 180; why.push('detours round prohibited zones'); }
+  if (tl.netDetour > 1.12) { score -= (tl.netDetour - 1.12) * 120; why.push('long airway routes'); }
   if (K.foreign || al.kind === 'flag') score -= (S.tension || 0) * (K.foreign ? 0.5 : 0.15);
   if (al.kind === 'cargo' && ap && ap.curfew) { score -= 12; why.push('the night curfew'); }
   score = U.clamp(score, 0, 100);
@@ -410,6 +404,10 @@ IC.aviation = function (S, dt) {
       if (!IC.aptTakeFuel(ap, tl.T.fuel)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
+      // light aircraft on the runway, or controllers still spacing the last departure the same way
+      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); tl.t = w; tl.fuelWait = (tl.fuelWait || 0) + w; continue; }
+      const rel = IC.aspRelease(S, from, toEnd);
+      if (rel > 0) { tl.t = rel; tl.fuelWait = (tl.fuelWait || 0) + rel; continue; }
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, who: tl.cs, tail: tl, livery: al.livery,
         onAir: mm => { launchLeg(S, tl, from, toEnd, mm.x, mm.y, 0.3); tl.track.h = mm.h; judge(S, al, tl, ap, { taxi: mm.taxiT, wait: mm.waitT + (tl.fuelWait || 0), kind: 'dep' }); tl.fuelWait = 0; pay(S, tl, ap, 'dep'); },
         onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed while taxiing') });
@@ -429,10 +427,11 @@ IC.aviation = function (S, dt) {
         if (s2 && Math.random() < 0.5) { s2.occ = tl.id; tl.where = 'stand'; tl.at = ap2.id; tl.stand = s2.id; tl.t = U.rand(600, tl.T.turn); continue; }
       }
       const to = { x: dest.x, y: dest.y, name: dest.name, apt: dest.id, k: 'H' };
-      let x = fromE.x, y = fromE.y;
-      if (tl.progress) { const p = IC.avPath(S, fromE, to); const f = tl.progress; x = fromE.x + (to.x - fromE.x) * f; y = fromE.y + (to.y - fromE.y) * f; tl.progress = 0; }
-      const tr = launchLeg(S, tl, fromE, to, x, y, fromE.edge ? tl.T.alt : 0.5);
-      tr.flown = U.dist(fromE, tr);
+      const f = tl.progress || 0; tl.progress = 0;
+      // controllers space arrivals entering from the same place
+      if (!f) { const rel = IC.aspRelease(S, fromE, to); if (rel > 0) { tl.t = rel; continue; } }
+      const tr = launchLeg(S, tl, fromE, to, fromE.x, fromE.y, fromE.edge || f ? IC.aspLevel(tl.T.alt, fromE, to) : 0.5, f);
+      if (!f) tr.flown = 0;
     }
   }
   // arriving aircraft counted per airport for terminal load
@@ -498,7 +497,11 @@ IC.callAircraft = function (S, t) {
   IC.log(S, 'info', 'RADIO', `Calling ${t.cs || 'TN ' + t.tn} on the guard frequency…`, t);
   (S.later = S.later || []).push({ t: S.time + U.rand(25, 70), fn: () => {
     if (t.dead) return;
-    if (t.tail || (t.d.civil && !t.hijack)) {
+    if (t.type === 'ga' && !t.hijack) {
+      IC.gaReplan(S, t);
+      IC.log(S, 'info', 'RADIO', `${t.cs}: "Sorry, leaving controlled airspace now."`, t);
+      IC.emit(S, 'radioOk', t);
+    } else if (t.tail || (t.d.civil && !t.hijack)) {
       t.drift = 0; t.vector = null; t.jammed = false;
       t.wps = rejoin(t); t.dest = t.wps[0];
       IC.log(S, 'info', 'RADIO', `${t.cs}: "Roger, our GPS is unreliable. Turning back onto the route."`, t);
