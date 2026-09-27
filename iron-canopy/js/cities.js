@@ -264,24 +264,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   /* blocks: one to a lattice cell, kept clear of the roads through it; the old town is cut finer */
   const blocks = [], used = new Set(), fineUsed = new Set();
   const key = (i, j) => (i + 4096) * 8192 + j + 4096;
-  const rectOf = (A, B, C2, Dd, gap) => {
-    const cx = (A.x + B.x + C2.x + Dd.x) / 4, cy = (A.y + B.y + C2.y + Dd.y) / 4;
-    const ux = (B.x - A.x + Dd.x - C2.x) / 2, uy = (B.y - A.y + Dd.y - C2.y) / 2, vx = (C2.x - A.x + Dd.x - B.x) / 2, vy = (C2.y - A.y + Dd.y - B.y) / 2;
-    return { x: cx, y: cy, a: Math.atan2(uy, ux), w: Math.hypot(ux, uy) - gap, h: Math.hypot(vx, vy) - gap };
-  };
-  // a cell at the crossing of two avenues
-  const onArt = x => (U.mod(x.i, st.art) === 0 || U.mod(x.i + 1, st.art) === 0) && (U.mod(x.j, st.art) === 0 || U.mod(x.j + 1, st.art) === 0);
-  const formOf = x => {
-    const h = U.hash(x.i * 7 + 3, x.j * 13 + 5), d = x.d, s = c.style;
-    if (d === 'old') return 'old';
-    if (d === 'ind') return 'shed';
-    if (d === 'log') return 'ware';
-    if (d === 'rail') return 'yard';
-    if (d === 'biz') return x.park ? 'office' : s === 'us' || s === 'east' ? 'tower' : s === 'new' ? (x.q < 0.03 ? 'mall' : 'office') : h < 0.35 ? 'tower' : 'court';
-    if (d === 'dense') return s === 'east' || s === 'new' ? (h < 0.8 ? 'slab' : 'row') : s === 'ind' ? 'row' : s === 'us' ? (h < 0.5 ? 'row' : 'court') : x.q < 0.3 ? 'court' : h < 0.6 ? 'slab' : 'row';
-    if (onArt(x) && h < st.mall) return 'mall';
-    return h < st.cul ? 'cul' : s === 'eu' && h > 0.8 ? 'row' : 'house';
-  };
+  const formOf = x => formFor(c, st, x);
   const place = (x, rc, fine) => {
     // a road through the cell: the block steps back from it and is built smaller rather than left out
     const q = nearest(Bk, rc.x, rc.y, SP, s => s[4] === 'st');
@@ -370,6 +353,42 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
   c.mix = IC.cityMix(c);
   return c;
+};
+
+/* the building form of a lattice cell, by district and style */
+function formFor(c, st, x) {
+  const h = U.hash(x.i * 7 + 3, x.j * 13 + 5), d = x.d, s = c.style;
+  // a cell at the crossing of two avenues
+  const onArt = (U.mod(x.i, st.art) === 0 || U.mod(x.i + 1, st.art) === 0) && (U.mod(x.j, st.art) === 0 || U.mod(x.j + 1, st.art) === 0);
+  if (d === 'old') return 'old';
+  if (d === 'ind') return 'shed';
+  if (d === 'log') return 'ware';
+  if (d === 'rail') return 'yard';
+  if (d === 'biz') return x.park ? 'office' : s === 'us' || s === 'east' ? 'tower' : s === 'new' ? (x.q < 0.03 ? 'mall' : 'office') : h < 0.35 ? 'tower' : 'court';
+  if (d === 'dense') return s === 'east' || s === 'new' ? (h < 0.8 ? 'slab' : 'row') : s === 'ind' ? 'row' : s === 'us' ? (h < 0.5 ? 'row' : 'court') : x.q < 0.3 ? 'court' : h < 0.6 ? 'slab' : 'row';
+  if (onArt && h < st.mall) return 'mall';
+  return h < st.cul ? 'cul' : s === 'eu' && h > 0.8 ? 'row' : 'house';
+}
+/* a street plan's cell as a rectangle: its bent corners averaged */
+function rectOf(A, B, C2, Dd, gap) {
+  const cx = (A.x + B.x + C2.x + Dd.x) / 4, cy = (A.y + B.y + C2.y + Dd.y) / 4;
+  const ux = (B.x - A.x + Dd.x - C2.x) / 2, uy = (B.y - A.y + Dd.y - C2.y) / 2, vx = (C2.x - A.x + Dd.x - B.x) / 2, vy = (C2.y - A.y + Dd.y - B.y) / 2;
+  return { x: cx, y: cy, a: Math.atan2(uy, ux), w: Math.hypot(ux, uy) - gap, h: Math.hypot(vx, vy) - gap };
+}
+/* growth (growth.js): a new block in cell i, j of a city's plan, with its district and building, and the streets
+   along the sides that face open ground (open(di, dj) says whether the neighbour that way is unbuilt) */
+IC.cityGrowCell = function (c, i, j, d, q, R, open) {
+  const st = STYLE[c.style] || STYLE.eu, F = IC.cityFrame(c), SP = F.SP;
+  const P = [F.toW(i * SP, j * SP), F.toW((i + 1) * SP, j * SP), F.toW(i * SP, (j + 1) * SP), F.toW((i + 1) * SP, (j + 1) * SP)];
+  const rc = rectOf(P[0], P[1], P[2], P[3], 0.7), D2 = IC.DISTRICTS[d];
+  const b = { x: rc.x, y: rc.y, w: rc.w, h: rc.h, a: rc.a, d, f: formFor(c, st, { i, j, d, q }), core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i, j };
+  const streets = [];
+  for (const [di, dj, e0, e1] of [[1, 0, [1, 0], [1, 1]], [-1, 0, [0, 0], [0, 1]], [0, 1, [0, 1], [1, 1]], [0, -1, [0, 0], [1, 0]]]) {
+    if (!open(di, dj)) continue;
+    const u0 = (i + e0[0]) * SP, v0 = (j + e0[1]) * SP, u1 = (i + e1[0]) * SP, v1 = (j + e1[1]) * SP, line = di ? i + e0[0] : j + e0[1];
+    streets.push({ cls: U.mod(line, st.art) === 0 ? 'art' : 'st', pts: [F.toW(u0, v0), F.toW((u0 + u1) / 2, (v0 + v1) / 2), F.toW(u1, v1)], grown: true });
+  }
+  return { b, streets };
 };
 
 /* city streets end on another street or road: a loose end runs on to the next street it meets ahead, or turns to

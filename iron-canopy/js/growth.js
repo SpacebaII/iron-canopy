@@ -243,20 +243,19 @@ function grow(S, dt) {
     else if (want < live - 1.5) emptyBlocks(S, c, Math.min(6, Math.floor(live - want)));
   }
 }
-/* grid coordinates of the city's street plan */
-function gridOf(c) { const SP = c.pop0 > 1000 ? 5 : 5.5, ca = Math.cos(c.grid), sa = Math.sin(c.grid); return { SP, ca, sa, toG: (x, y) => [(x - c.x) * ca + (y - c.y) * sa, -(x - c.x) * sa + (y - c.y) * ca], toW: (u, v) => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca }) }; }
+/* new blocks go into the cells of the city's own street plan (cities.js), next to built ones: infill first, then out
+   along the roads, towards the railway for industry and towards the motorway for warehouses */
 const CELLS = new WeakMap();
 function growBlocks(S, c, n) {
   const W = S.world, changed = [];
   // the empty blocks fill up first
   for (const b of c.blocks) { if (n <= 0) break; if (b.empty && b.hp > 0) { b.empty = false; n--; changed.push(b); } }
-  if (n > 0) {
+  if (n > 0 && c.lat) {
     const R = rngFor(S, 1000 + (c.grownN++) * 31 + c.id.length * 7 + c.x | 0);
-    const gd = gridOf(c), SP = gd.SP;
-    // built cells of the street grid, kept on the city between calls
+    const F = IC.cityFrame(c), SP = F.SP;
     const key = (i, j) => (i + 2048) * 4096 + j + 2048;
     let used = CELLS.get(c);
-    if (!used) { used = new Set(); for (const b of c.blocks) { const [u, v] = gd.toG(b.x, b.y); used.add(key(Math.floor(u / SP), Math.floor(v / SP))); } CELLS.set(c, used); }
+    if (!used) { used = new Set(); for (const b of c.blocks) if (b.i != null) used.add(key(b.i, b.j)); CELLS.set(c, used); }
     // what pulls growth: the roads out of town (a motorway most), the railway for industry, an airport nearby.
     // Road and rail pieces go into 12-unit buckets so each candidate cell only looks at its neighbours.
     const B = 12, bk = new Map(), R2 = c.r * 2.2;
@@ -274,19 +273,18 @@ function growBlocks(S, c, n) {
     const around = (x, y) => { const i0 = Math.floor(x / B), j0 = Math.floor(y / B), L = []; for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) { const b = bk.get(i * 4096 + j); if (b) L.push(...b); } return L; };
     const fields = S.infra.filter(f => (f.parts || f.kind === 'factory' || f.kind === 'power') && U.dist(f, c) < c.r * 2.2 + 80);
     const apts = fields.filter(f => f.parts);
-    const cand = [];
-    const seen = new Set();
+    const cand = [], seen = new Set(), ext = Math.max(c.ext || c.r, c.r * 0.6);
     for (const k of used) {
       const i0 = Math.floor(k / 4096) - 2048, j0 = k % 4096 - 2048;
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const i = i0 + di, j = j0 + dj, kk = key(i, j);
         if (used.has(kk) || seen.has(kk)) continue;
         seen.add(kk);
-        const u = (i + 0.5) * SP, v = (j + 0.5) * SP, p = gd.toW(u, v), d = Math.hypot(u, v) / c.r;
-        if (d > 2 || W.riverDist(p.x, p.y) < 5) continue;
+        const p = F.toW((i + 0.5) * SP, (j + 0.5) * SP), d = U.dist(p, c) / ext;
+        if (d > 1.6 || W.riverDist(p.x, p.y) < 5) continue;
         let roadD = 1e9, pull = 0, rail = 1e9, hw = 1e9;
-        for (const [s, cls] of around(p.x, p.y)) {
-          const sd = U.segDist(p.x, p.y, s[0], s[1], s[2], s[3]);
+        for (const [sg, cls] of around(p.x, p.y)) {
+          const sd = U.segDist(p.x, p.y, sg[0], sg[1], sg[2], sg[3]);
           if (cls === 'rail') { rail = Math.min(rail, sd); continue; }
           if (sd < roadD) roadD = sd;
           if (cls === 'hw') hw = Math.min(hw, sd);
@@ -306,27 +304,25 @@ function growBlocks(S, c, n) {
     const pickd = [];
     for (const k of cand) { if (pickd.length >= n) break; if (ok(k)) pickd.push(k); }
     for (const k of pickd) {
-      const d = k.d, ind = d > 0.55 && (k.rail < 12 || k.hw < 10), core = d < 0.36, sub = !ind && d > 1;
-      const bw = core ? SP - 1.1 : ind ? SP - 1 : sub ? R.range(1.8, 3.2) : R.range(SP - 2.2, SP - 1.3);
-      const bh = core ? SP - 1.1 : ind ? SP - 1.4 : sub ? R.range(1.6, 2.8) : R.range(SP - 2.4, SP - 1.4);
-      const b = { x: k.p.x, y: k.p.y, w: bw, h: bh, a: c.grid, core, ind, sub, seed: R() * 1000, hp: 1, grown: S.time };
-      c.blocks.push(b); changed.push(b); used.add(key(k.i, k.j));
-      // a street along each side of the new block that no neighbour already has
-      // a street along each side that faces open ground (built neighbours already have one between them)
-      for (const [di, dj, e0, e1] of [[1, 0, [1, 0], [1, 1]], [-1, 0, [0, 0], [0, 1]], [0, 1, [0, 1], [1, 1]], [0, -1, [0, 0], [1, 0]]]) {
-        if (used.has(key(k.i + di, k.j + dj))) continue;
-        c.streets.push({ cls: 'st', pts: [gd.toW((k.i + e0[0]) * SP, (k.j + e0[1]) * SP), gd.toW((k.i + e1[0]) * SP, (k.j + e1[1]) * SP)], grown: true });
-      }
-      c.r = Math.max(c.r, U.dist(b, c) * 1.02);
+      // warehouses by the motorway, industry by the railway, housing everywhere else (denser nearer the centre)
+      const d = k.d > 0.5 && k.hw < 10 ? 'log' : k.d > 0.5 && k.rail < 12 ? 'ind' : k.d < 0.35 ? 'dense' : 'sub';
+      const g = IC.cityGrowCell(c, k.i, k.j, d, U.clamp(k.d, 0, 1), R, (di, dj) => !used.has(key(k.i + di, k.j + dj)));
+      g.b.grown = S.time;
+      c.blocks.push(g.b); changed.push(g.b); used.add(key(k.i, k.j));
+      for (const l of g.streets) { c.streets.push(l); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of l.pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); } l.bb = [x0, y0, x1, y1]; }
+      c.r = Math.max(c.r, U.dist(g.b, c) * 1.02 / 1.55);
+      c.ext = Math.max(c.ext || 0, U.dist(g.b, c) + Math.max(g.b.w, g.b.h) / 2);
     }
+    // new streets: traffic finds them at its next re-plan
+    if (pickd.length && IC.trafficRoadChanged) IC.trafficRoadChanged(S);
   }
-  if (changed.length) changedBox(S, changed, c);
+  if (changed.length) { c.mix = IC.cityMix(c); changedBox(S, changed, c); }
 }
 function emptyBlocks(S, c, n) {
   // the outer suburbs empty first; ruins stay ruins
   const L = c.blocks.filter(b => !b.empty && b.hp > 0).sort((a, b) => (b.sub - a.sub) || (U.dist(b, c) - U.dist(a, c))).slice(0, n);
   for (const b of L) b.empty = true;
-  if (L.length) changedBox(S, L, c);
+  if (L.length) { c.mix = IC.cityMix(c); changedBox(S, L, c); }
 }
 function changedBox(S, L, c) {
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;

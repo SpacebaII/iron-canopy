@@ -831,6 +831,7 @@ test('growth: a well-connected city adds blocks over a few game days; a cut-off 
   assert(added.length >= 5 && cap.blocks.length === n0 + added.length, `the capital added only ${added.length} blocks in four days`);
   assert(cap.streets.length > s0, 'no new streets');
   assert(added.every(b => IC.inHome(b.x, b.y) && !S.world.inLake(b.x, b.y)), 'a block was built in a lake or abroad');
+  assert(added.every(b => IC.DISTRICTS[b.d] && b.f && b.i != null), 'a new block has no district or building, or is off the city\'s street plan');
   if (lone) assert(lone.blocks.filter(b => !b.empty).length <= l0, `${lone.name}, with no air service, still grew`);
   assert(S.worldDirty.length, 'the world was not told about the new blocks');
 });
