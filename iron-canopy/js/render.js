@@ -6,7 +6,8 @@
 const U = IC.U;
 const C = IC.C = {
   friend: '#6fd2ff', friendFill: '#80e0ff', hostile: '#ff5b4f', hostileFill: '#ff8a80', suspect: '#ff9a3c', suspectFill: '#ffc080',
-  unknown: '#f2d14a', unknownFill: '#ffff80', civil: '#7fe8b0', decoy: '#8fa3b0', amber: '#f2b441', text: '#e4edf2', muted: '#9ab0bf', ink: '#0a1620', ok: '#58d39a', supply: '#e0b458'
+  unknown: '#f2d14a', unknownFill: '#ffff80', civil: '#7fe8b0', decoy: '#8fa3b0', amber: '#f2b441', text: '#e4edf2', muted: '#9ab0bf', ink: '#0a1620', ok: '#58d39a', supply: '#e0b458',
+  light: '#c9b0ff', airway: '#8fd8ff'
 };
 const cam = IC.cam = { x: 3000, y: 2250, z: 0.2, vw: 800, vh: 600 };
 let ctx, cv, dpr = 1, hatchR = null, hatchB = null;
@@ -195,12 +196,13 @@ IC.render = function (S, now) {
   if (light < 0.9) drawLights(S, px, now, light);
 
   if (S.layers.coverage) drawCoverage(S);
-  if (S.layers.airways || (S.sel && S.sel.kind === 'track' && S.sel.ref.plan)) drawAirways(S, px);
+  drawAirways(S, px, now);
   drawFronts(S, px, now);
   drawBridges(S, px);
   if (S.layers.civil && z > 0.25) drawTraffic(S, px, light);
   drawBases(S, px, now, light);
   drawZones(S, px, now);
+  drawFields(S, px);
   drawInfra(S, px, now);
   if (S.layers.intel) drawEnemy(S, px, now);
   drawRanges(S, px, now);
@@ -333,26 +335,125 @@ function drawLights(S, px, now, light) {
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
 
+/* radar cover for air traffic control, by the lowest height seen: bright where radar sees low, faint where it
+   sees only high traffic, red over our country where it sees nothing at all (airspace.js) */
+const BAND_RGB = ['70,225,190', '80,195,235', '105,150,245', '150,120,235', '170,110,205'];
+IC.BAND_RGB = BAND_RGB;
+let covImg = null;
+function covCanvas(S) {
+  const C = S.asp && S.asp.cov;
+  if (!C) return null;
+  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C) return covImg.cv;
+  const cv2 = covImg && covImg.cv && covImg.cv.width === C.gw ? covImg.cv : Object.assign(document.createElement('canvas'), { width: C.gw, height: C.gh });
+  const g2 = cv2.getContext('2d'), img = g2.createImageData(C.gw, C.gh), d = img.data;
+  const home = covImg && covImg.seed === S.seed && covImg.home ? covImg.home : (() => { const h = new Uint8Array(C.gw * C.gh); for (let j = 0; j < C.gh; j++) for (let i = 0; i < C.gw; i++) h[j * C.gw + i] = IC.inHome((i + 0.5) * IC.ASP.CS, (j + 0.5) * IC.ASP.CS) ? 1 : 0; return h; })();
+  const B = IC.ASP_BANDS, A = [150, 120, 95, 70, 45];
+  for (let k = 0; k < C.g.length; k++) {
+    const a = C.g[k]; let b = -1;
+    for (let i = 0; i < B.length; i++) if (a < B[i][0]) { b = i; break; }
+    const o = k * 4;
+    if (b >= 0) { const c = BAND_RGB[b].split(','); d[o] = +c[0]; d[o + 1] = +c[1]; d[o + 2] = +c[2]; d[o + 3] = A[b]; }
+    else if (home[k]) { d[o] = 255; d[o + 1] = 90; d[o + 2] = 70; d[o + 3] = 70; }
+  }
+  g2.putImageData(img, 0, 0);
+  covImg = { v: C.v, seed: S.seed, C, cv: cv2, home };
+  return cv2;
+}
 function drawCoverage(S) {
+  const cc = covCanvas(S);
+  if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
+  // radars that do not help controllers (they do not read transponders) are shown as plain discs
   cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, 600, 450); cx2.setTransform(0.05, 0, 0, 0.05, 0, 0);
+  let any = false;
   for (const s of S.sensors) {
     if (s.eo || s.acou || s.bmdOnly || s.rktOnly || s.air && s.air.kind !== 'aew') continue;
+    if (cc && !s.air && !s.passive && !s.org && (s.ssr || s.idc === 'iff' || s.idc === 'nctr')) continue;
+    any = true;
     cx2.fillStyle = s.q === 'fc' ? 'rgba(92,200,255,1)' : 'rgba(150,160,255,0.55)';
     cx2.beginPath(); cx2.arc(s.x, s.y, s.R * (s.jamF || 1) * (s.esm ? 0.5 : 1), 0, 7); cx2.fill();
   }
-  ctx.globalAlpha = 0.055; ctx.drawImage(cov, 0, 0, IC.WW, IC.WH); ctx.globalAlpha = 1;
+  if (any) { ctx.globalAlpha = 0.055; ctx.drawImage(cov, 0, 0, IC.WW, IC.WH); ctx.globalAlpha = 1; }
 }
-function drawAirways(S, px) {
-  ctx.lineWidth = 1 * px; ctx.setLineDash([10 * px, 8 * px]);
-  const sel = S.sel && S.sel.kind === 'track' ? S.sel.ref : null;
-  for (const w of S.world.airways) {
-    const hot = sel && sel.plan && ((w.a === sel.plan.a && w.b === sel.plan.b) || (w.a === sel.plan.b && w.b === sel.plan.a));
-    if (!S.layers.airways && !hot) continue;
-    ctx.strokeStyle = hot ? 'rgba(127,232,176,0.7)' : w.kind === 'hostile' ? 'rgba(255,150,130,0.15)' : 'rgba(170,220,200,0.14)';
-    ctx.beginPath(); ctx.moveTo(w.a.x, w.a.y); ctx.lineTo(w.b.x, w.b.y); ctx.stroke();
+/* the airspace: control zones, the player's fixes and airways (teal where radar sees cruising traffic, amber
+   where it does not), where airways cross, each airport's way onto the network, and the selected flight's route */
+function drawAirways(S, px, now) {
+  const N = S.asp, m = S.mode2, edit = m && m.kind === 'airway', show = S.layers.airways || edit;
+  const sel = S.sel, z = cam.z;
+  if (N && show) {
+    for (const c of IC.aspZones(S)) {
+      if (!inView(c.x, c.y, c.tma || c.ctr)) continue;
+      ctx.lineWidth = 1.2 * px; ctx.strokeStyle = 'rgba(140,180,255,0.4)'; ctx.fillStyle = 'rgba(140,180,255,0.05)';
+      ctx.beginPath(); ctx.arc(c.x, c.y, c.ctr, 0, 7); ctx.fill(); ctx.stroke();
+      if (c.tma) { ctx.setLineDash([6 * px, 6 * px]); ctx.strokeStyle = 'rgba(140,180,255,0.25)'; ctx.beginPath(); ctx.arc(c.x, c.y, c.tma, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+      if (S.layers.labels && z > 0.18) { label('CONTROL ZONE', c.x, c.y - c.ctr - 5 * px, px, 'rgba(160,190,255,0.7)', 8.5, 'center', 600); if (c.tma && z > 0.18) label('TERMINAL AREA ABOVE 1,200 M', c.x, c.y - c.tma - 5 * px, px, 'rgba(160,190,255,0.55)', 8.5, 'center', 600); }
+    }
+    // in the editor, the traffic that wants to fly, faintly, so airways can be drawn where it goes
+    if (edit) {
+      ctx.lineWidth = 1 * px; ctx.setLineDash([10 * px, 8 * px]);
+      for (const w of S.world.airways) { if (w.kind === 'hostile') continue; ctx.strokeStyle = 'rgba(200,220,210,0.12)'; ctx.beginPath(); ctx.moveTo(w.a.x, w.a.y); ctx.lineTo(w.b.x, w.b.y); ctx.stroke(); }
+      ctx.setLineDash([]);
+    }
+    // each airport's departure and arrival route onto the network
+    ctx.lineWidth = 1.2 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.strokeStyle = 'rgba(143,216,255,0.55)';
+    for (const b of IC.bases(S)) { if (b.kind !== 'airport' || b.owner !== 'us') continue; const f = IC.aspLink(S, b); if (f) { ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(f.x, f.y); ctx.stroke(); } }
+    ctx.setLineDash([]);
+    for (const w of N.ways) {
+      const [a, b] = IC.aspWayEnds(S, w), hot = sel && sel.kind === 'airway' && sel.ref === w;
+      if (!inView((a.x + b.x) / 2, (a.y + b.y) / 2, U.dist(a, b) / 2 + 50)) continue;
+      if (hot) { ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 7 * px; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+      ctx.lineWidth = 2 * px;
+      for (let i = 0; i < 10; i++) {
+        const x0 = a.x + (b.x - a.x) * i / 10, y0 = a.y + (b.y - a.y) * i / 10, x1 = a.x + (b.x - a.x) * (i + 1) / 10, y1 = a.y + (b.y - a.y) * (i + 1) / 10;
+        const seen = IC.aspCovAlt(S, (x0 + x1) / 2, (y0 + y1) / 2) <= 9;
+        ctx.strokeStyle = seen ? 'rgba(143,216,255,0.85)' : 'rgba(242,180,65,0.85)';
+        if (!seen) ctx.setLineDash([6 * px, 4 * px]);
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    for (const c of IC.aspCrossings(S)) {
+      if (!inView(c.x, c.y, 20)) continue;
+      ctx.strokeStyle = 'rgba(255,154,60,0.95)'; ctx.lineWidth = 1.6 * px;
+      ctx.beginPath(); ctx.arc(c.x, c.y, 6 * px, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(c.x - 4 * px, c.y - 4 * px); ctx.lineTo(c.x + 4 * px, c.y + 4 * px); ctx.moveTo(c.x + 4 * px, c.y - 4 * px); ctx.lineTo(c.x - 4 * px, c.y + 4 * px); ctx.stroke();
+    }
+    if (edit && m.from && S.hover) { const f = IC.aspFix(S, m.from); if (f) { ctx.strokeStyle = 'rgba(143,216,255,0.6)'; ctx.lineWidth = 1.5 * px; ctx.setLineDash([5 * px, 5 * px]); ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(S.hover.x, S.hover.y); ctx.stroke(); ctx.setLineDash([]); } }
+    for (const f of N.fixes) {
+      if (!inView(f.x, f.y, 30)) continue;
+      const on = (sel && sel.kind === 'fix' && sel.ref === f) || (edit && m.from === f.id), r = 6 * px;
+      ctx.fillStyle = on ? '#ffffff' : C.airway; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1.2 * px;
+      ctx.beginPath(); ctx.moveTo(f.x, f.y - r); ctx.lineTo(f.x + r * 0.9, f.y + r * 0.6); ctx.lineTo(f.x - r * 0.9, f.y + r * 0.6); ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (on) brackets(f.x, f.y, 11 * px, px);
+      if (S.layers.labels || edit) label(f.name, f.x, f.y + 16 * px, px, on ? '#ffffff' : C.airway, 9, 'center', 700);
+    }
   }
-  if (sel && sel.plan && !S.world.airways.some(w => w.a === sel.plan.a && w.b === sel.plan.b)) { ctx.strokeStyle = 'rgba(127,232,176,0.7)'; ctx.beginPath(); ctx.moveTo(sel.plan.a.x, sel.plan.a.y); ctx.lineTo(sel.plan.b.x, sel.plan.b.y); ctx.stroke(); }
-  ctx.setLineDash([]);
+  // the selected flight's filed route
+  const t = sel && sel.kind === 'track' ? sel.ref : null;
+  if (t && t.plan && t.plan.pts) {
+    ctx.strokeStyle = 'rgba(127,232,176,0.7)'; ctx.lineWidth = 1.4 * px; ctx.setLineDash([10 * px, 8 * px]);
+    const P = t.plan.pts; ctx.beginPath(); ctx.moveTo(P[0].x, P[0].y); for (const p of P) ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]);
+    for (const p of P) if (p.name && p.fix) label(p.name, p.x, p.y - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
+  } else if (t && t.wps && t.type === 'ga') {
+    ctx.strokeStyle = 'rgba(201,176,255,0.6)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([4 * px, 6 * px]);
+    ctx.beginPath(); ctx.moveTo(t.x, t.y); for (const p of t.wps) ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+/* light-aircraft fields: grass strips at real size, and a mark with a name further out */
+function drawFields(S, px) {
+  if (!S.asp || cam.z < 0.05) return;
+  const sel = S.sel && S.sel.kind === 'field' ? S.sel.ref : null;
+  for (const f of S.asp.fields) {
+    if (!inView(f.x, f.y, 40)) continue;
+    ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
+    ctx.fillStyle = 'rgba(128,170,96,0.95)'; ctx.fillRect(-4.5, -0.15, 9, 0.3);
+    ctx.restore();
+    if (cam.z < 3) {
+      ctx.strokeStyle = C.light; ctx.lineWidth = 1.4 * px;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 5 * px, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(f.x - Math.cos(f.a) * 8 * px, f.y - Math.sin(f.a) * 8 * px); ctx.lineTo(f.x + Math.cos(f.a) * 8 * px, f.y + Math.sin(f.a) * 8 * px); ctx.stroke();
+    }
+    if (f === sel) brackets(f.x, f.y, 12 * px, px);
+    if (S.layers.labels && cam.z > 0.12) label(f.name, f.x, f.y + 17 * px, px, C.light, 9, 'center', 600);
+  }
 }
 
 function drawFronts(S, px, now) {
@@ -821,7 +922,7 @@ function drawTrack(S, t, px, now) {
   const blink = coasting ? 0.45 + 0.55 * (Math.sin(now * 7 + t.seed) * 0.5 + 0.5) : 1;
   const x = t.px, y = t.py;
   if (t.trail && t.trail.length > 1) {
-    const rgb = { H: '255,120,100', S: '255,170,90', A: '127,232,176', N: '127,232,176' }[aff] || '242,209,74';
+    const rgb = t.type === 'ga' && aff !== 'H' && aff !== 'S' ? '201,176,255' : { H: '255,120,100', S: '255,170,90', A: '127,232,176', N: '127,232,176' }[aff] || '242,209,74';
     for (let i = 0; i < t.trail.length; i++) { const p = t.trail[i]; ctx.fillStyle = `rgba(${rgb},${0.08 + i * 0.05})`; ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 * px, 0, 7); ctx.fill(); }
   }
   if (coasting) {
@@ -850,6 +951,11 @@ function drawTrack(S, t, px, now) {
     col = AIRCOL[aff];
     const kind = t.klass === 'bomber' || t.klass === 'jammer' ? 'bomber' : t.klass === 'airliner' ? 'airliner' : t.klass === 'light' ? 'light' : t.klass === 'drone' ? 'drone' : t.klass === 'cm' ? 'cm' : 'fighter';
     silhouette(ctx, kind, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), Math.max(0.35 * (kind === 'airliner' || kind === 'bomber' ? 1.6 : 1), px * 1.3), col, 'rgba(0,0,0,0.7)');
+  } else if (t.type === 'ga' && aff !== 'H' && aff !== 'S') {
+    // light aircraft: a small lilac cross, never the airliner frame
+    col = C.light; ctx.strokeStyle = col; ctx.lineWidth = 1.5 * px;
+    ctx.beginPath(); ctx.arc(x, y, 2.6 * px, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 6.5 * px, y); ctx.lineTo(x + 6.5 * px, y); ctx.moveTo(x, y + 2.6 * px); ctx.lineTo(x, y + 6 * px); ctx.moveTo(x - 2.5 * px, y + 6 * px); ctx.lineTo(x + 2.5 * px, y + 6 * px); ctx.stroke();
   } else {
     col = airFrame(ctx, aff, x, y, s);
     if (t.d.cls === 'bal' && aff !== 'D') { ctx.beginPath(); ctx.moveTo(x, y - 12 * s); ctx.lineTo(x, y + 6 * s); ctx.stroke(); }
@@ -867,8 +973,8 @@ function drawTrack(S, t, px, now) {
   const selT = S.sel && S.sel.ref === t;
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
   if (show && S.layers.labels) {
-    const code = aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
-    const altS = alt == null ? '---' : alt >= 1 ? Math.round(alt) + 'k' : Math.round(alt * 1000) + 'm';
+    const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
+    const altS = alt == null ? '---' : alt >= 1 ? (t.type === 'ga' ? alt.toFixed(1) : Math.round(alt)) + 'k' : Math.round(alt * 1000) + 'm';
     label(`${t.tn} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
   }
   if (selT) {

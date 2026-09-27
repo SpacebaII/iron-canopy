@@ -127,18 +127,21 @@ test('airspace: a loss of separation produces an incident', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
   blind(S);
   const [a, b] = pair(S, IC.cap(S), 9.5);
-  for (let i = 0; i < 400 && !S.asp.stats.los; i++) IC.step(S, 0.5);
-  assert(S.asp.stats.los >= 1, 'no loss of separation recorded');
+  let lost = false;
+  IC.on((S2, type, d) => { if (S2 === S && (type === 'lossSep' || type === 'nearMiss') && (d.a === a || d.b === a)) lost = true; });
+  for (let i = 0; i < 400 && !lost; i++) IC.step(S, 0.5);
+  assert(lost, 'no loss of separation recorded');
   assert(S.inc.list.some(it => (it.kind === 'separation' || it.kind === 'nearmiss') && (it.ref === a || it.ref === b)), 'no incident raised');
 });
 test('airspace: controllers keep apart flights they can see', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
   run(S, 0.02);
   const cap = IC.cap(S), [a, b] = pair(S, cap, 9.5);
-  let minD = 1e9, minZ = 1e9;
+  let minD = 1e9, minZ = 1e9, lost = false;
+  IC.on((S2, type, d) => { if (S2 === S && (type === 'lossSep' || type === 'nearMiss') && (d.a === a || d.b === a)) lost = true; });
   for (let i = 0; i < 400; i++) { IC.step(S, 0.5); if (U.dist(a, b) < 90) minZ = Math.min(minZ, Math.abs(a.alt - b.alt)); minD = Math.min(minD, U.dist(a, b)); }
   assert(minD < 40, 'the test flights never met');
-  assert(!S.asp.stats.los, `separation was lost under radar (${minZ.toFixed(2)} km apart vertically)`);
+  assert(!lost, `separation was lost under radar (${minZ.toFixed(2)} km apart vertically)`);
 });
 test('airspace: light aircraft avoid controlled airspace unless cleared', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 9 });

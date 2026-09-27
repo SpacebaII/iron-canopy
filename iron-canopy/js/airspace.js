@@ -364,9 +364,12 @@ function pair(S, a, b) {
   const lost = ga ? d < A.gaNear && dz < A.gaVsep : d < A.sep && dz < A.vsep;
   if (!lost) return;
   P = N.pairs[key] || (N.pairs[key] = { t: S.time, sa: seen(S, a), sb: seen(S, b) });
-  if (P.lost) return;
-  P.lost = S.time; P.t = S.time;
-  lossOfSeparation(S, a, b, d, dz, ga || d < A.near, P);
+  // report the loss once, and again if it gets as close as a near miss
+  const near = ga || d < A.near;
+  if (P.lost && (P.near || !near)) return;
+  if (!P.lost) N.day.los++, N.stats.los++;
+  P.lost = S.time; P.near = near; P.t = S.time;
+  lossOfSeparation(S, a, b, d, dz, near, P);
 }
 /* the controller moves one of them up or down 600 m for a few minutes */
 function solve(a, b) {
@@ -383,11 +386,11 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
     : !P.sa || !P.sb ? `Controllers could not see ${(!P.sa ? a : b).cs}: no radar covers it at that height`
     : 'Both were outside radar cover on airways, and controllers kept them apart by timing alone at the crossing';
   const gap = `${U.km(d)} and ${Math.round(dz * 1000)} m apart`;
-  N.stats.los++; N.day.los++;
   if (near) { N.stats.near++; N.day.near++; }
-  const txt = near ? `NEAR MISS: ${a.cs} and ${b.cs} passed ${gap} near ${where}` : `${a.cs} and ${b.cs} lost separation near ${where}: ${gap}`;
+  const txt = near ? `${a.cs} and ${b.cs} passed ${gap} near ${where}` : `${a.cs} and ${b.cs} lost separation near ${where}: ${gap}`;
+  if (near && S.inc) for (const it of S.inc.list) if (it.kind === 'separation' && (it.ref === a || it.ref === b)) it.done = true;
   IC.incidentAdd(S, near ? 'nearmiss' : 'separation', ifr, txt, near ? 'alarm' : 'warn');
-  IC.log(S, 'warn', 'AIRSPACE', `${txt}. ${why}.`, { x, y });
+  IC.log(S, 'warn', 'AIRSPACE', `${near ? 'Near miss: ' : ''}${txt}. ${why}.`, { x, y });
   for (const t of [a, b]) if (t.tail && S.av) { const al = IC.avAirline(S, t.tail.al); if (al) al.sat = Math.max(0, al.sat - (near ? 8 : 2)); }
   if (near) {
     if (S.story) S.story.standing = Math.max(0, S.story.standing - 3);
@@ -397,8 +400,9 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why });
 }
-/* light aircraft inside a control zone they were not cleared into */
+/* light aircraft inside a control zone they were not cleared into (careful pilots route round them) */
 function infringe(S, t) {
+  if (!t.careless) return;
   const z = IC.aspZoneAt(S, t.x, t.y, t.alt);
   if (!z || (t.cleared || []).includes(z.z.ap.id)) { if (!z) t.infFlag = false; return; }
   if (t.infFlag) return;
@@ -407,8 +411,8 @@ function infringe(S, t) {
   t.infFlag = true;
   const N = S.asp; N.stats.inf++; N.day.inf++;
   const area = z.kind === 'ctr' ? 'control zone' : 'terminal area';
-  IC.incidentAdd(S, 'infringe', t, `${t.cs}, a light aircraft, is in the ${short(z.z.ap.name)} ${area} without clearance`, 'warn');
-  IC.log(S, 'warn', 'AIRSPACE', `${t.cs}, a light aircraft, flew into the ${short(z.z.ap.name)} ${area} without clearance. Airliners climb and descend there. Call it on the radio to send it out.`, t);
+  IC.incidentAdd(S, 'infringe', t, `${t.cs}, a light aircraft, is in the ${short(z.z.ap.name)} ${area} without clearance. Call it on the radio`, 'warn');
+  IC.log(S, 'info', 'AIRSPACE', `${t.cs}, a light aircraft, flew into the ${short(z.z.ap.name)} ${area} without clearance. Airliners climb and descend there. Call it on the radio to send it out.`);
   IC.emit(S, 'infringement', { t, ap: z.z.ap, kind: z.kind });
 }
 
@@ -482,9 +486,11 @@ IC.gaRunway = function (S, ap) {
   S.budget += 0.02;
 };
 IC.gaBusy = (S, ap) => (ap.gaUntil || 0) > S.time;
-IC.gaDelayNote = function (S, ap) {
-  if (ap.gaNoteT && S.time - ap.gaNoteT < 3 * 3600) return;
-  ap.gaNoteT = S.time;
+/* say so once the delays add up: 15 min of airliner waiting, at most every 6 hours */
+IC.gaDelayNote = function (S, ap, wait) {
+  ap.gaWait = (ap.gaWait || 0) + (wait || 6);
+  if (ap.gaWait < 900 || (ap.gaNoteT && S.time - ap.gaNoteT < 6 * 3600)) return;
+  ap.gaNoteT = S.time; ap.gaWait = 0;
   IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
 };
 IC.gaArrive = function (S, t) {

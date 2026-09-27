@@ -405,7 +405,7 @@ IC.aviation = function (S, dt) {
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       // light aircraft on the runway, or controllers still spacing the last departure the same way
-      if (IC.gaBusy(S, ap)) { IC.gaDelayNote(S, ap); const w = ap.gaUntil - S.time + 5; tl.t = w; tl.fuelWait = (tl.fuelWait || 0) + w; continue; }
+      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); tl.t = w; tl.fuelWait = (tl.fuelWait || 0) + w; continue; }
       const rel = IC.aspRelease(S, from, toEnd);
       if (rel > 0) { tl.t = rel; tl.fuelWait = (tl.fuelWait || 0) + rel; continue; }
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, who: tl.cs, tail: tl, livery: al.livery,

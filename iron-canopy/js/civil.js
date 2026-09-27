@@ -100,6 +100,7 @@ IC.gaLaunch = function (S, a, b, o) {
   const t = IC.spawnThreat(S, 'ga', at.x, at.y, { dest: at.ahead[0], wps: at.ahead, orig: { x: a.x, y: a.y, name: a.name }, gaFrom: a, gaTo: b, cleared, careless, fpl: Math.random() < 0.5,
     cs: `${W.names.H.slice(0, 1)}-${String.fromCharCode(65 + U.randi(0, 25))}${String.fromCharCode(65 + U.randi(0, 25))}${U.randi(10, 99)}`, sq: xpdr ? '7000' : null, pax: U.randi(1, 4),
     alt: f ? U.rand(0.6, 1.8) : 0.15, gaAlt: o.alt || U.rand(0.6, 1.8), route: [b], aim: b, dist0: U.dist(a, b) });
+  if (f) t.alt = Math.min(t.alt, IC.gaCeiling(S, t));
   if (!f && a.apt) IC.gaRunway(S, S.byId[a.apt]);
   return t;
 };

@@ -46,7 +46,29 @@ function aviation() {
       ${kv([['Passengers today', Math.round(A.day.pax).toLocaleString('en-US')], ['Flights today', A.day.flights], ['Diversions today', A.day.div]])}</div>
     <div class="card wide"><h3>Airports<em>click to open</em></h3><table class="t"><tr><th>Airport</th><th class="r">Pax/h</th><th class="r">Stands</th><th class="r">Taxi</th><th class="r">Delay</th><th class="r">Diversions</th><th class="r">Problems</th></tr>${apts}</table><div class="acts"><button class="btn" data-act="foundMode">+ Found a new airport · ${U.money(IC.FOUND_COST)}</button></div></div>
     <div class="card wide"><h3>Routes<em>${A.routes.filter(r => r.st === 'active').length} active</em></h3><table class="t"><tr><th>Airline</th><th>Route</th><th>Aircraft</th><th class="r">Flights</th><th class="r">Revenue</th></tr>${routes}</table></div>
-    <div class="card"><h3>Prohibited zones<em>routes are ${U.pct(det - 1)} longer</em></h3>${zones ? `<div class="list">${zones}</div>` : '<p class="hint">None. Airliners fly straight over everything, including our bases.</p>'}<div class="acts"><button class="btn" data-act="zoneMode">+ Draw a prohibited zone</button></div><p class="hint">Airliners route around zones: they cannot overfly what matters, and anything squawking as an airliner that enters one is off its route at once. Airlines dislike the detours.</p></div>`;
+    <div class="card"><h3>Prohibited zones<em>routes are ${U.pct(det - 1)} longer</em></h3>${zones ? `<div class="list">${zones}</div>` : '<p class="hint">None. Airliners fly straight over everything, including our bases.</p>'}<div class="acts"><button class="btn" data-act="zoneMode">+ Draw a prohibited zone</button></div><p class="hint">Airliners route around zones: they cannot overfly what matters, and anything squawking as an airliner that enters one is off its route at once. Airlines dislike the detours.</p></div>
+    ${airspace()}`;
+}
+/* the airspace: radar cover, airways, separation, light aircraft */
+function airspace() {
+  const N = S.asp; if (!N) return '';
+  const lo = IC.aspCovShare(S, 1), hi = IC.aspCovShare(S, 9);
+  const apts = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
+  const joined = apts.filter(ap => IC.aspLink(S, ap)).length, xs = IC.aspCrossings(S).length;
+  const airOn = S.threats.filter(t => !t.dead && t.d.civil && t.type === 'civ' && IC.inHome(t.x, t.y));
+  const onNet = airOn.filter(t => t.net).length, onRadar = airOn.filter(t => IC.aspSeen(S, t)).length;
+  const fields = N.fields.map(f => `<div class="li click" data-act="selField" data-id="${f.id}"><b>${esc(f.name)}</b><small>${esc(f.club)} · mood ${Math.round(f.mood)}% · ${f.today} movements today</small></div>`).join('');
+  const d = N.day;
+  return `<div class="card"><h3>Airspace<em>${N.fixes.length} fixes · ${N.ways.length} airways</em></h3>
+      ${kv([['Radar cover at cruise height', `<span class="${hi < 0.8 ? 'amber' : ''}">${U.pct(hi)}</span> of the country`], ['Radar cover at 1 km', `<span class="${lo < 0.5 ? 'amber' : ''}">${U.pct(lo)}</span>`],
+        ['Airports on the airways', `${joined} of ${apts.length}`], ['Airway crossings', xs], ['Airliners over us now', airOn.length], ['… on airways · on radar', `${onNet} · ${onRadar}`],
+        ['Separation lost today', `<span class="${d.los ? 'amber' : ''}">${d.los}</span>`], ['Near misses today', `<span class="${d.near ? 'hostile' : ''}">${d.near}</span>`], ['Infringements today', d.inf],
+        ['Conflicts solved by controllers', N.stats.solved], ['Departures held for spacing', N.stats.held]])}
+      <div class="acts"><button class="btn primary" data-act="aspDraw">Draw airways</button><button class="btn" data-act="layer" data-v="coverage">${S.layers.coverage ? 'Hide' : 'Show'} radar cover</button></div>
+      <p class="hint">Controllers keep apart the flights they see on radar. Off the airways, or where radar does not reach, they space flights by time alone: fewer flights an hour, longer delays, and crossings that can go wrong. Radar sees less the lower an aircraft flies: hills and the curve of the earth hide it.</p></div>
+    <div class="card"><h3>Light aircraft<em>${S.threats.filter(t => !t.dead && t.type === 'ga').length} flying</em></h3>${fields ? `<div class="list">${fields}</div>` : ''}
+      <div class="acts"><button class="btn" data-act="fieldMode">+ Light-aircraft field · ${U.money(IC.ASP.FIELD_COST)}</button></div>
+      <p class="hint">Flying clubs fly slow and low, by sight, from grass fields and from our airports. On a big airport's runway each one takes as long as two airliners, so a field near the capital frees the runway. They must stay out of control zones unless cleared.</p></div>`;
 }
 
 /* ---------- the staff: career, goals, delegates, requests ---------- */
