@@ -951,6 +951,25 @@ test('growth: a crater on a motorway cuts the link between two cities until it i
   IC.econRefresh(S);
   assert(IC.tripTime(S, cap, far) < t0 * 1.01, 'the trip is still long after the repair');
 });
+test('growth: districts decide how a city flies: industry ships cargo, offices want frequent flights', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'campaign', hour: 7 });
+  IC.econRefresh(S);
+  const cs = IC.cities(S).filter(c => c.owner === 'us' && c.mix);
+  const work = c => c.mix.ind + c.mix.log + c.mix.rail;
+  const ind = cs.slice().sort((a, b) => work(b) - work(a))[0], res = cs.slice().sort((a, b) => work(a) - work(b))[0];
+  const perHead = c => c.air.cargo / c.pop / c.prosp;
+  assert(perHead(ind) > perHead(res) * 1.3, `${ind.name} (industry ${U.pct(work(ind))}) ships little more air cargo a head than ${res.name}: ${perHead(ind).toFixed(3)} vs ${perHead(res).toFixed(3)}`);
+  // the districts move demand between cities; the country's total is what population and prosperity give
+  const pot = cs.reduce((s, c) => s + c.air.pot, 0), base = cs.reduce((s, c) => s + c.pop * IC.GROWTH.flyRate * c.prosp, 0);
+  assert(Math.abs(pot / base - 1) < 0.15, `districts changed the national demand by ${U.pct(pot / base - 1)}`);
+  // the same city turned into offices flies more on business, and its flyers weigh frequency more
+  const c = cs[0], pax0 = c.air.pot;
+  c.mix = Object.assign({}, c.mix, { biz: c.mix.biz + c.mix.sub, sub: 0 });
+  IC.econRefresh(S);
+  assert(c.air.bizShare > 0.5 && c.air.pot > pax0, `${c.name} with more offices does not fly more on business (${U.pct(c.air.bizShare)} business, ${Math.round(c.air.pot)} vs ${Math.round(pax0)} flyers)`);
+  const ap = IC.bases(S).find(a => a.svc && a.svc.cargoDem > 0);
+  assert(ap && IC.cargoLoad(S, ap) > 0.45, 'city cargo does not fill any airport\'s cargo room');
+});
 test('growth: a well-connected city adds blocks over a few game days; a cut-off one does not', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
   IC.econRefresh(S);
