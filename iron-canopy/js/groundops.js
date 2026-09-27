@@ -192,8 +192,12 @@ function arrivals(S, ap, k) {
   for (const x of q) {
     if (x.done || S.time - x.t > 1800 || keyOf(ap, x.rw) !== k) continue;
     if (x.backT > S.time) out.push({ d: FAF + (x.backT - S.time) * ARR_V, x });
-    else if (x.askT && S.time - x.askT < 12) out.push({ d: FAF, wait: true, x });
-    else if (x.o && !x.o.dead && x.fx != null) out.push({ d: FAF + U.dxy(x.o.x, x.o.y, x.fx, x.fy), x });
+    else if (x.askT && S.time - x.askT < 12) { if (!(x.jamT && S.time - x.jamT < 12)) out.push({ d: FAF, wait: true, x }); }
+    else if (x.o && !x.o.dead && x.fx != null) {
+      // one circling at the fix without asking (no stand for it yet) is not coming in
+      const d = U.dxy(x.o.x, x.o.y, x.fx, x.fy);
+      if (d > 20 || !x.askT) out.push({ d: FAF + d, x });
+    }
   }
   return out;
 }
@@ -203,6 +207,8 @@ function arrNear(S, ap, k, t, heldToo) {
   for (const a of arrivals(S, ap, k)) { if (a.wait && !heldToo) continue; best = Math.min(best, a.d - ARR_V * t); }
   return best;
 }
+/* the closest an arrival already on its final will be in t seconds */
+function finNear(ap, k, t) { let best = 1e9; for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) best = Math.min(best, FAF * (1 - m.t / (FAF / ARR_V)) - ARR_V * t); return best; }
 /* how long until an aircraft on the runways is off them, as the tower expects it */
 function clearIn(S, ap, o, k) {
   if (o.kind === 'arr') return 1e9;
@@ -215,7 +221,7 @@ function clearIn(S, ap, o, k) {
 const rollT = T => 2 * T.rwy * 0.6 / LIFT;
 /* what a set of rules will cost at this airport, in plain sentences (the Operations tab shows them before applying) */
 IC.opsNotes = function (S, ap, st, ops) {
-  const out = [], rws = (st.rwy || []).filter(r => r.role === 'mixed' || r.role === 'arr');
+  const out = [];
   const types = Object.keys(st.mix || {}).filter(k => IC.ACTYPES[k] && !IC.ACTYPES[k].vtol);
   // where arrivals and departures share a runway: who is too slow off the runway for the gap
   const shared = (st.rwy || []).filter(r => r.role === 'mixed');
@@ -224,10 +230,12 @@ IC.opsNotes = function (S, ap, st, ops) {
     const slow = [...new Set(types.filter(k => rollT(IC.ACTYPES[k]) + CREW + 8 > room).map(k => IC.opsKind(k)))];
     if (slow.length) out.push(`With a ${R.gap} km gap, ${slow.map(k => IC.OPS_KINDS.find(x => x[0] === k)[1].toLowerCase()).join(' and ')} are often still on the runway when the next arrival is 1 km out: expect go-arounds.`);
   }
-  const R0 = ops.r, anyLuaw = Object.values(R0.enter).some(e => e === 'luaw') || Object.values(ops.rw || {}).some(p => IC.OPS_PRESETS[p] && Object.values(IC.OPS_PRESETS[p].r.enter).some(e => e === 'luaw'));
+  // only the kinds of civil aircraft that fly here count
+  const kinds = [...new Set(types.filter(k => !IC.ACTYPES[k].mil).map(k => IC.opsKind(k)))];
+  const luawIn = r => kinds.some(k => r.enter[k] === 'luaw');
+  const R0 = ops.r, anyLuaw = luawIn(R0) || Object.values(ops.rw || {}).some(p => IC.OPS_PRESETS[p] && luawIn(IC.OPS_PRESETS[p].r));
   if (anyLuaw && !st.gradar && ap.kind !== 'airbase') out.push('Aircraft line up and wait at night too, and there is no ground radar: one waiting on the runway in the dark can be forgotten. "By day" or a ground radar removes this risk.');
   if (st.complex && !st.gradar && R0.gap <= 6 && R0.cross === 'gap') out.push(`Crossings with arrivals only ${R0.gap} km out, and no ground radar: more runway incursions at night.`);
-  if (!rws.length && !shared.length) return out;
   return out;
 };
 
@@ -507,7 +515,8 @@ IC.gopsLand = function (S, ap, o) {
   if (q) q.askT = S.time;
   const probe = { id: 'probe', kind: 'arr', mil: o.mil, waitT: 0 };
   // not while an aircraft sits in the exit it will need, waiting to come the other way onto the runway
-  if (plan.out && plan.out.kind !== 'apron' && occList(ap, plan.out.key).some(x => x.d !== plan.out.d && !x.m.dead)) return 'hold';
+  // (departures do not wait for it meanwhile: they are what it waits for)
+  if (plan.out && plan.out.kind !== 'apron' && occList(ap, plan.out.key).some(x => x.d !== plan.out.d && !x.m.dead)) { if (q) q.jamT = S.time; return 'hold'; }
   if (!arrClear(S, ap, k, probe, straight)) { wantIt(S, ap, k, probe); return 'hold'; }
   const m = newMove(S, ap, Object.assign({ kind: 'arr' }, o));
   lockOf(ap, k).fin = m.id; m.finK = k;
@@ -539,10 +548,13 @@ function arrClear(S, ap, k, m, straight) {
   for (const id of on) {
     const x = moveOf(ap, id); if (!x) continue;
     if (x.kind === 'arr') return false;
-    if (!straight && clearIn(S, ap, x, k) > tGo) return false;
+    // behind a departure already on its take-off run the gap rule below decides (a tight gap can send it round)
+    if (!straight && x.phase !== 'roll' && clearIn(S, ap, x, k) > tGo) return false;
   }
-  // a departure the tower has promised a gap to goes first
-  if (!straight && L.gapFor && moveOf(ap, L.gapFor)) return false;
+  // a departure the tower has promised a gap to goes first: arrivals reaching the fix are held for it
+  if (L.gapFor && moveOf(ap, L.gapFor)) return false;
+  // none starts its final sooner than if it had been the gap away when the last departure started its run
+  if (L.runT && S.time < L.runT + Math.max(0, (L.runGap || 0) - FAF) / ARR_V) return false;
   return true;
 }
 
@@ -647,6 +659,7 @@ function mayEnter(S, ap, m, k, cross, rwId) {
   const R = IC.opsRules(ap, ruleRw(ap, m, k, rwId)), L = lockOf(ap, k);
   const own = !cross && m.kind === 'dep' && m.plan && keyOf(ap, m.plan.rw.id) === k;
   const luaw = own && (m.scramble || IC.opsEnter(S, R, m.type, m.T) === 'luaw');
+  if (own) m.luawOk = luaw;
   if (!canTake(S, ap, k, m, cross, luaw)) return busyWhy(S, ap, k, m);
   // the next arrival must be beyond the gap when the take-off starts (for a crossing: now). A scramble only waits
   // for arrivals close in; one kept waiting a long time gets a gap: the tower holds arrivals at the fix for it.
@@ -654,9 +667,11 @@ function mayEnter(S, ap, m, k, cross, rwId) {
   if (cross && R.cross === 'radar' && IC.opsDark(S) && !(ap.st && ap.st.gradar)) gap *= 2;
   if (m.scramble) gap = Math.min(gap, FAF);
   const t = own ? rollStart(S, ap, m, k, luaw) : 0, held = m.scramble || L.gapFor === m.id;
-  if (arrNear(S, ap, k, t, !held) >= gap) return '';
-  if (!held && (m.waitT || 0) >= PATIENCE && arrNear(S, ap, k, t, false) >= gap && !(L.gapFor && moveOf(ap, L.gapFor))) { L.gapFor = m.id; L.gapT = S.time; }
-  return `arrival ${kmTxt(arrNear(S, ap, k, 0, !held))} out`;
+  if ((held ? finNear(ap, k, t) : arrNear(S, ap, k, t, true)) >= gap) return '';
+  // kept waiting two minutes: the approach controller makes a gap, holding the next arrivals at the fix (one
+  // departure for each arrival that lands, so neither queue starves)
+  if (!held && (m.waitT || 0) >= PATIENCE && (L.gapOk !== false || S.time - L.gapT > 300) && !(L.gapFor && moveOf(ap, L.gapFor))) { L.gapFor = m.id; L.gapT = S.time; L.gapOk = false; }
+  return `arrival ${kmTxt(held ? finNear(ap, k, 0) : arrNear(S, ap, k, 0, true))} out`;
 }
 function busyWhy(S, ap, k, m) {
   const L = lockOf(ap, k);
@@ -923,7 +938,9 @@ IC.depBlockWhy = function (S, ap, T) {
 /* on the runway: cleared for take-off it turns and goes; otherwise it lines up and waits */
 function lineUp(S, ap, m) {
   const k = keyOf(ap, m.plan.rw.id);
-  m.luaw = !!takeoffWhy(S, ap, m, k);
+  // one cleared for take-off goes; one told to line up and wait stops on the runway until the tower clears it
+  const why = takeoffWhy(S, ap, m, k);
+  m.luaw = m.luawOk ? !!why : why === 'departure ahead' || /^wake/.test(why);
   m.phase = 'lineup'; m.t = m.luaw ? (m.T.mil ? 10 : LINE) : (m.T.mil ? ROLLING / 2 : ROLLING);
   const n = G(ap).N.get(m.plan.start.id);
   if (n) { m.x = n.x; m.y = n.y; }
@@ -934,6 +951,7 @@ function startRoll(S, ap, m) {
   m.phase = 'roll'; m.h = hdgOf(m.plan.rw, m.plan.dir); m.spd = 0; m.rolled = 0;
   m.delay = m.T.mil ? 1 : U.rand(0, 6) + (Math.random() < 0.15 ? U.rand(6, 18) : 0);
   const L = lockOf(ap, keyOf(ap, m.plan.rw.id)); if (L.gapFor === m.id) L.gapFor = null;
+  L.runT = S.time + m.delay; L.runGap = IC.opsRules(ap, m.plan.rw.id).gap * 10;
   risky(S, ap, m, 'dep');
 }
 /* 1 km out: take the runway if it is empty; if not, go around (or, where the tower lost track of an aircraft
@@ -947,7 +965,7 @@ function landCheck(S, ap, m) {
     if (!lost) { goAround(S, ap, m, on[0]); return false; }
     m.hitOn = lost;
   }
-  take(ap, k, m, null, S.time); m.onRw = true;
+  take(ap, k, m, null, S.time); m.onRw = true; L.gapOk = true;
   if (L.fin === m.id) L.fin = null;
   return true;
 }

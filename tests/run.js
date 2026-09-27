@@ -436,6 +436,136 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   assert(t / N < 1.5, `a step takes ${(t / N).toFixed(2)} ms`);
 });
 
+/* ---------- the tower's rules: when aircraft may go onto a runway (docs/tasks/15-runway-rules.md) ---------- */
+const grpOf = (ap, rwId) => IC.aptGraph(ap).grp[rwId] || rwId;
+const lockAt = (ap, rwId) => (ap.rl || {})[grpOf(ap, rwId)] || {};
+/* how far (world units) the nearest arrival coming to these runways is from touchdown: on final, or still flying in */
+function arrDistance(S, ap, rwId) {
+  const k = grpOf(ap, rwId); let d = 1e9;
+  for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) d = Math.min(d, U.dxy(m.x, m.y, m.tx, m.ty));
+  for (const t of S.threats) if (!t.dead && t.appr && !t.holding && t.toApt === ap.id && t.faf && grpOf(ap, t.faf.rwId) === k) d = Math.min(d, U.dxy(t.x, t.y, t.faf.x, t.faf.y) + IC.GOPS.FAF);
+  return d;
+}
+/* watch every departure the moment it goes onto its runway */
+function onEntry(S, ap, fn) {
+  const seen = new Set();
+  return () => { for (const m of ap.moves) if (m.kind === 'dep' && m.plan && m.locks && m.locks[grpOf(ap, m.plan.rw.id)] && !seen.has(m.id)) { seen.add(m.id); fn(m); } };
+}
+test('runway rules: under "only when cleared", an airliner never goes onto the runway with an arrival inside the gap', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 6);
+  const ops = IC.opsOf(ap); ops.r.enter.jet = ops.r.enter.heavy = 'hold'; ops.r.gap = 8;
+  const O = IC.OPS_T, need = (ops.r.gap * 10 - O.GO) / O.ARR_V;
+  // when an airliner goes onto the runway, and when its take-off run starts; when each arrival reaches 1 km
+  let n = 0, near = 0, worst = 1e9, tight = 1e9;
+  const runs = [], seenRun = new Set(), seenGo = new Set();
+  const watch = onEntry(S, ap, m => {
+    if (IC.opsKind(m.type) !== 'jet' && IC.opsKind(m.type) !== 'heavy') return;
+    const d = arrDistance(S, ap, m.plan.rw.id), L = lockAt(ap, m.plan.rw.id); n++; if (d < 150) near++;
+    if (L.gapFor !== m.id) worst = Math.min(worst, d);   // arrivals the tower holds at the fix for it do not count
+  });
+  for (let i = 0; i < 5 * 3600 / 0.5; i++) {
+    IC.step(S, 0.5); watch();
+    for (const m of ap.moves) {
+      if (m.kind === 'dep' && m.phase === 'roll' && !(m.delay > 0) && !seenRun.has(m.id) && IC.opsKind(m.type) !== 'light') { seenRun.add(m.id); runs.push(S.time); }
+      if (m.kind === 'arr' && m.phase === 'final' && m.t >= (IC.GOPS.FAF - O.GO) / O.ARR_V && !seenGo.has(m.id)) { seenGo.add(m.id); const r = runs.filter(t => t <= S.time).pop(); if (r) tight = Math.min(tight, S.time - r); }
+    }
+  }
+  assert(n >= 15, `only ${n} airliner departures`);
+  assert(near >= 3, `only ${near} departures with an arrival within 15 km: the test saw no conflict to judge`);
+  assert(worst >= 80, `an airliner went onto the runway with an arrival ${U.km(worst)} out (gap 8 km)`);
+  assert(tight >= need - 3, `an arrival was 1 km out ${U.dur(tight)} after a take-off run started; an 8 km gap gives ${U.dur(need)}`);
+  console.log(`        ${n} airliner departures, ${near} with an arrival within 15 km; closest arrival ${U.km(worst)} out; next arrival 1 km out ${U.dur(tight)} after a run at the soonest`);
+}, true);
+test('runway rules: under the defaults a light aircraft lines up and waits while an airliner holds short', () => {
+  const { S, ap } = kdenGame(12345, 10);
+  sky(S, 'clear'); calm(S, -Math.PI / 2, 10); IC.aptStats(S, ap);
+  let lightBehind = 0, jetBehind = 0, both = 0;
+  const watch = onEntry(S, ap, m => {
+    const L = lockAt(ap, m.plan.rw.id), o = L.by && L.by !== m.id && ap.moves.find(x => x.id === L.by);
+    const behind = !!(o && o.kind === 'dep' && o.phase === 'roll');
+    if (behind && m.type === 'light') lightBehind++;
+    if (behind && IC.opsKind(m.type) === 'jet') jetBehind++;
+  });
+  // club aircraft and airliners land, then queue to leave (parked aircraft leave as turboprops and airliners)
+  drive(S, ap, { arr: 90, dep: 300, hours: 1.5, fill: 0.3, mix: [['light', 1], ['narrow', 1]], each: () => {
+    watch();
+    for (const m of ap.moves) if (m.type === 'light' && m.phase === 'wait' && ap.moves.some(x => x.type === 'narrow' && x.holding === 'runway' && x.plan && grpOf(ap, x.plan.rw.id) === grpOf(ap, m.plan.rw.id))) { both++; break; }
+  } });
+  assert(lightBehind > 3, `only ${lightBehind} light aircraft lined up behind a rolling departure`);
+  assert(jetBehind === 0, `${jetBehind} airliners went onto the runway behind a rolling departure`);
+  assert(both > 0, 'never saw a light aircraft waiting on the runway while an airliner held short for it');
+  console.log(`        ${lightBehind} light aircraft lined up behind a rolling departure; airliners 0`);
+}, true);
+test('runway rules: "line up and wait" lets a departure line up behind one that is rolling, and moves more of them', () => {
+  const rate = enter => {
+    const { S, ap } = kdenGame(12345, 10);
+    sky(S, 'clear'); calm(S, -Math.PI / 2, 10);
+    IC.opsOf(ap).r.enter.jet = enter; IC.aptStats(S, ap);
+    let behind = 0, t0 = 0, d0 = 0; const start = S.time;
+    const watch = onEntry(S, ap, m => { const L = lockAt(ap, m.plan.rw.id), o = L.by && L.by !== m.id && ap.moves.find(x => x.id === L.by); if (o && o.phase === 'roll') behind++; });
+    const r = drive(S, ap, { dep: 400, hours: 1.25, fill: 0.95, mix: [['narrow', 1]], each: S2 => { watch(); if (!t0 && S2.time - start > 900) { t0 = S2.time; d0 = ap.kpi.dep || 0; } } });
+    return { behind, perHour: ((ap.kpi.dep || 0) - d0) / ((S.time - t0) / 3600), rated: IC.aptStats(S, ap).depPerHour };
+  };
+  const hold = rate('hold'), luaw = rate('luaw');
+  assert(luaw.behind > 5, `only ${luaw.behind} departures lined up behind a rolling one`);
+  assert(hold.behind === 0, `${hold.behind} went on behind a rolling one under "only when cleared"`);
+  assert(luaw.perHour > hold.perHour * 1.08, `line up and wait moved ${luaw.perHour.toFixed(0)} an hour, only when cleared ${hold.perHour.toFixed(0)}`);
+  assert(luaw.rated > hold.rated, `the panel does not rate line up and wait higher (${luaw.rated} against ${hold.rated})`);
+  console.log(`        departures an hour: only when cleared ${hold.perHour.toFixed(0)} (rated ${hold.rated}), line up and wait ${luaw.perHour.toFixed(0)} (rated ${luaw.rated})`);
+}, true);
+test('runway rules: an arrival goes around when the runway is still occupied, and it is counted', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap);
+  const stands = IC.aptStands(ap).filter(x => !x.occ && x.linked && x.size !== 's');
+  const a = IC.gopsLand(S, ap, { type: 'narrow', target: stands[0].id, stand: stands[0], who: 'ARR 1', onGoAround: () => { went = true; } });
+  assert(a && a.phase === 'final', `the arrival was not cleared: ${a}`);
+  let went = false, events = 0, landed = false;
+  IC.on((S2, type) => { if (S2 === S && type === 'goAround') events++; });
+  a.onPark = () => { landed = true; };
+  // a departure lined up on the same runway that cannot go (its wake gap never ends)
+  const d = IC.gopsDepart(S, ap, { type: 'narrow', node: stands[1].id, stand: stands[1], who: 'DEP 1' });
+  const k = grpOf(ap, a.plan.rw.id), L = ap.rl[k];
+  d.plan.rw = a.plan.rw; d.phase = 'wait'; d.path = null; d.locks = { [k]: true }; L.by = d.id; L.next = S.time + 1e6;
+  for (let i = 0; i < 400 && !went; i++) tick(S, 0.5);
+  assert(went && !landed, 'the arrival did not go around');
+  assert(ap.kpi.ga === 1 && (ap.gaLog || []).length === 1 && events === 1, `go-around not counted: kpi ${ap.kpi.ga}, log ${(ap.gaLog || []).length}, events ${events}`);
+  assert(!ap.moves.includes(a) && L.fin !== a.id, 'the arrival still holds the approach');
+  assert(S.logs.some(l => l.tag === 'RADIO' && /going around/.test(l.msg)), 'no radio call for the go-around');
+});
+test('runway rules: the Operations tab rates departures an hour within 10% of a simulated hour', () => {
+  for (const preset of ['standard', 'busy', 'cautious']) {
+    const { S, ap } = kdenGame(12345, 10);
+    sky(S, 'clear'); calm(S, -Math.PI / 2, 12);
+    IC.opsPreset(IC.opsOf(ap), preset);
+    const at = {}, t0 = S.time;
+    drive(S, ap, { follow: true, depX: 1.25, hours: 2.5, fill: 0.8, each: S2 => { for (const h of [1.5, 2.5]) if (!at[h] && S2.time >= t0 + h * 3600 - 1) at[h] = ap.kpi.dep || 0; } });
+    const st = IC.aptStats(S, ap), tab = IC.opsCapacity(S, ap, st), flew = at[2.5] - at[1.5];
+    assert(Math.abs(flew - tab.dep) <= tab.dep * 0.1, `${preset}: the tab says ${tab.dep} departures an hour, the simulation flew ${flew}`);
+    console.log(`        ${IC.OPS_PRESETS[preset].name}: rated ${tab.dep} departures an hour, flew ${flew}; ${ap.kpi.ga || 0} go-arounds; average delay ${U.dur(ap.kpi.wait || 0)}`);
+  }
+}, true);
+test('runway rules: lining up and waiting at night without a ground radar carries more risk than by day', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 12 });
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap);
+  ap.parts = ap.parts.filter(p => p.kind !== 'gradar'); ap.dirty = true; IC.aptStats(S, ap);
+  const s = IC.aptStands(ap).find(x => !x.occ && x.linked);
+  const m = IC.gopsDepart(S, ap, { type: 'light', node: s.id, stand: s, who: 'CLUB 1' });
+  const day = IC.gopsRisk(S, ap, m, 'wait').p;
+  S.time += 12 * 3600; const night = IC.gopsRisk(S, ap, m, 'wait');
+  assert(day === 0 && night.p > 0, `risk by day ${day}, at night ${night.p}`);
+  assert(night.why.some(w => /line up and wait/.test(w.rule)), 'the risk does not name the rule that allows it');
+  ap.st.gradar = true;
+  assert(IC.gopsRisk(S, ap, m, 'wait').p === 0, 'a ground radar should remove the risk');
+  // and the panel says so before the player picks the rule
+  ap.st.gradar = false; ap.st.mix = { light: 1 };
+  const ops = IC.opsClone(IC.opsOf(ap)); ops.r.enter.light = 'luaw';
+  assert(IC.opsNotes(S, ap, ap.st, ops).some(t => /ground radar/.test(t)), 'the Operations tab does not warn about lining up in the dark');
+});
+
 /* ---------- the builder ---------- */
 /* a site for a new airport at the edge of a town, with homes close by */
 const siteNear = (S, c) => {

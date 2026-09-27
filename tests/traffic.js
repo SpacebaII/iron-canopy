@@ -6,7 +6,7 @@ const U = IC.U;
 /* run only what moves aircraft on the ground (weather, airport upkeep, ground ops) */
 function tick(S, dt) { S.time += dt; IC.weather(S, dt); IC.updateBases(S, dt); IC.gops(S, dt); if (S.later) { const due = S.later.filter(l => l.t <= S.time); S.later = S.later.filter(l => l.t > S.time); for (const l of due) l.fn(); } }
 
-/* o: { arr, dep (per hour), follow (keep them at the rated capacity), hours, fill (share of stands occupied at the start),
+/* o: { arr, dep (per hour), follow (keep them at the rated capacity; depX: departures that many times it), hours, fill (share of stands occupied at the start),
    mix: [[type, weight]], full (use IC.step) } */
 function drive(S, ap, o) {
   const mix = o.mix || [['narrow', 6], ['wide', 3], ['turbo', 1]];
@@ -23,7 +23,7 @@ function drive(S, ap, o) {
   let tRate = 0;
   while (S.time < end) {
     // follow: demand keeps pace with the capacity the panel shows for the traffic actually flying
-    if (o.follow && (tRate -= dt) <= 0) { tRate = 600; const st = IC.aptStats(S, ap); o.arr = st.arrPerHour; o.dep = st.depPerHour; }
+    if (o.follow && (tRate -= dt) <= 0) { tRate = 600; const st = IC.aptStats(S, ap); o.arr = st.arrPerHour; o.dep = st.depPerHour * (o.depX || 1); }
     tArr += dt * (o.arr || 0) / 3600; tDep += dt * (o.dep || 0) / 3600;
     while (tArr >= 1) { tArr -= 1; r.pending.push({ type: U.wpick(mix), t: S.time, cs: 'TST ' + (n++) }); }
     while (tDep >= 1) {
@@ -40,17 +40,21 @@ function drive(S, ap, o) {
       tTry = 5;
       for (const a of r.pending.slice()) {
         if (a.wait > S.time) continue;
+        // each arrival flies in from 15 km before the fix, where the tower sees it coming
+        if (!a.faf) { a.o = { x: 0, y: 0 }; a.faf = IC.gopsFaf(S, ap, a.type, a.o); if (!a.faf) { r.pending.splice(r.pending.indexOf(a), 1); r.div++; const why = IC.aptLandWhy(S, ap, IC.ACTYPES[a.type]) || 'other'; r.divWhy[why] = (r.divWhy[why] || 0) + 1; continue; } const d = IC.rwDir(a.faf.rw), dir = IC.aptConfig(S, ap).rw[a.faf.rwId].dir; a.o.x = a.faf.x - d.x * dir * 150; a.o.y = a.faf.y - d.y * dir * 150; }
+        if (U.dxy(a.o.x, a.o.y, a.faf.x, a.faf.y) > 1) continue;
+        a.fixT = a.fixT || S.time;
         const s = stands.find(x => !x.occ && fits(x, a.type));
         if (!s) continue;
-        if (!a.faf) a.faf = IC.gopsFaf(S, ap, a.type);
         const m = IC.gopsLand(S, ap, { type: a.type, target: s.id, stand: s, faf: a.faf, who: a.cs, onPark: () => { r.arr++; r.parkedTypes.set(a.cs, a.type); s.occ = a.cs; },
           onGoAround: () => { r.ga++; s.occ = null; a.faf.q.done = false; a.faf.q.t = S.time; a.faf.q.askT = S.time; a.faf.q.backT = a.wait = S.time + 240; r.pending.push(a); } });
         if (m === 'hold') continue;
         r.pending.splice(r.pending.indexOf(a), 1);
         if (m === 'divert') { r.div++; const why = IC.aptLandWhy(S, ap, IC.ACTYPES[a.type]) || 'other'; r.divWhy[why] = (r.divWhy[why] || 0) + 1; continue; }
-        s.occ = a.cs; r.maxHold = Math.max(r.maxHold, S.time - a.t);
+        s.occ = a.cs; r.maxHold = Math.max(r.maxHold, S.time - a.fixT);
       }
     }
+    for (const a of r.pending) if (a.o) { const dd = U.dxy(a.o.x, a.o.y, a.faf.x, a.faf.y), k = Math.min(1, 0.95 * dt / Math.max(1e-6, dd)); a.o.x += (a.faf.x - a.o.x) * k; a.o.y += (a.faf.y - a.o.y) * k; }
     if (o.full) IC.step(S, dt); else tick(S, dt);
     r.peak = Math.max(r.peak, ap.moves.length);
     if (o.each) o.each(S, r);
