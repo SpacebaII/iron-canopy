@@ -5,7 +5,7 @@
 'use strict';
 const U = IC.U;
 const $ = id => document.getElementById(id);
-const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, shownAt: 0, lastLen: 0, toasts: [], cineShown: 0, cineT: 0, arMin: false, logFilter: 'all', refCat: 'units' };
+const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, shownAt: 0, lastLen: 0, toasts: [], cineShown: 0, cineT: 0, roomScroll: {}, aptTab: 'info', arMin: false, logFilter: 'all', refCat: 'units' };
 let S = null;
 const esc = U.esc;
 ui.esc = esc;
@@ -14,9 +14,45 @@ ui.bar = (f, col) => `<div class="bar"><i style="width:${U.clamp(f, 0, 1) * 100}
 ui.sym = (type, w, h) => `<canvas data-sym="${type}" width="${w || 96}" height="${h || 74}"></canvas>`;
 ui.gsym = (id, w, h) => `<canvas data-gid="${id}" width="${w || 96}" height="${h || 74}"></canvas>`;
 
-ui.setHTML = function (el, html) {
-  if (!el || ui.cache[el.id] === html) return false;
-  ui.cache[el.id] = html; el.innerHTML = html;
+/* Panels refresh five times a second. Replacing their HTML would reset every scrolled list inside them and
+   drop hover and clicks in progress, so the new HTML is patched onto the old: nodes that stay keep their
+   scroll, hover and focus. A new key (another selection, tab or room) replaces the content outright and it
+   starts at the top. List items carrying data-k are matched by key rather than by position. */
+const tpl = document.createElement('template');
+function morph(a, b) {
+  if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  for (let i = a.attributes.length - 1; i >= 0; i--) { const n = a.attributes[i].name; if (!b.hasAttribute(n)) a.removeAttribute(n); }
+  for (const { name, value } of b.attributes) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  // the attribute is only the starting value; a control the player is using keeps what they set
+  if (a.tagName === 'INPUT' && a !== document.activeElement) { if (a.type === 'checkbox' || a.type === 'radio') a.checked = b.hasAttribute('checked'); else a.value = b.getAttribute('value') || ''; }
+  morphKids(a, b);
+}
+function morphKids(a, b) {
+  let x = a.firstChild;
+  for (let y = b.firstChild; y;) {
+    const next = y.nextSibling, k = y.nodeType === 1 ? y.getAttribute('data-k') : null;
+    if (k != null && !(x && x.nodeType === 1 && x.getAttribute('data-k') === k)) {
+      let m = x; while (m && !(m.nodeType === 1 && m.getAttribute('data-k') === k)) m = m.nextSibling;
+      if (m) { a.insertBefore(m, x); x = m; }
+    }
+    if (x && x.nodeName === y.nodeName && (x.nodeType !== 1 || x.getAttribute('data-k') === k)) { morph(x, y); x = x.nextSibling; }
+    else a.insertBefore(y, x);
+    y = next;
+  }
+  while (x) { const n = x.nextSibling; a.removeChild(x); x = n; }
+}
+ui.keys = {};
+// a number for any object, so a selection can be part of a key
+const oids = new WeakMap(); let oidN = 0;
+ui.oid = o => { if (!o || typeof o !== 'object') return String(o); if (!oids.has(o)) oids.set(o, ++oidN); return oids.get(o); };
+
+ui.setHTML = function (el, html, key) {
+  if (!el) return false;
+  const fresh = key !== undefined && ui.keys[el.id] !== key;
+  if (!fresh && ui.cache[el.id] === html) return false;
+  ui.cache[el.id] = html; ui.keys[el.id] = key;
+  if (fresh || !el.firstChild) { el.innerHTML = html; el.scrollTop = 0; }
+  else { tpl.innerHTML = html; morphKids(el, tpl.content); tpl.innerHTML = ''; }
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
   for (const c of el.querySelectorAll('canvas[data-gid]')) { const u = S.gunits.find(x => x.id === c.dataset.gid); if (u) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawGround(g, u, c.width / 2, c.height / 2 + 5, c.width / 34); } }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
@@ -42,7 +78,7 @@ ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty(
   if (c.vol != null) IC.sfx.vol = c.vol;
 }
 
-ui.bind = function (state) { S = state; ui.cache = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false; $('warroom').hidden = true; ui.refresh(true); };
+ui.bind = function (state) { S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false; $('warroom').hidden = true; ui.refresh(true); };
 
 /* ---------- toasts ---------- */
 IC.toast = function (st, kind, tag, msg, at) {
@@ -54,7 +90,7 @@ IC.toast = function (st, kind, tag, msg, at) {
 function feed() {
   const now = performance.now();
   ui.toasts = ui.toasts.filter(t => now - t.t < 9000);
-  setHTML($('feed'), ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
+  setHTML($('feed'), ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
 }
 
 /* ---------- top bar ---------- */
@@ -98,7 +134,7 @@ function topbar() {
 function incidents() {
   const L = IC.activeIncidents(S).slice(0, 4);
   ui.incRefs = L;
-  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY', separation: 'SEPARATION LOST', nearmiss: 'NEAR MISS', infringe: 'INFRINGEMENT' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button></div>`).join(''));
+  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}" data-k="${it.id}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY', separation: 'SEPARATION LOST', nearmiss: 'NEAR MISS', infringe: 'INFRINGEMENT' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button></div>`).join(''));
 }
 /* decisions: one card at a time */
 function evcard() {
@@ -236,7 +272,7 @@ function arsenal() {
   }).join('');
   $('arsenal').classList.add('glass');
   $('arsenal').classList.toggle('min', ui.arMin);
-  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Production slots: orders build in parallel">${slotHtml}<span>${act.length}/${slots}${queued ? ` +${queued} queued` : ''}</span></div></div><div class="tiles">${tiles}</div>`);
+  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Production slots: orders build in parallel">${slotHtml}<span>${act.length}/${slots}${queued ? ` +${queued} queued` : ''}</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
 }
 
 function layers() {
@@ -318,7 +354,8 @@ function cine() {
   const C = S.camp, el = $('cine');
   if (!C || !C.cards) return;
   const now = performance.now();
-  if (el.hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
+  // a chapter card waits until the player closes the room they are reading
+  if (el.hidden && !ui.room && ui.cineShown < C.cards.length && now > ui.cineT) {
     const c = C.cards[ui.cineShown];
     el.className = 'cine ' + c.kind; el.hidden = false;
     el.innerHTML = `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
@@ -376,10 +413,13 @@ IC.select = function (sel, add) {
 };
 IC.setMode = function (m) { S.mode2 = m; document.getElementById('map').classList.toggle('placing', !!m); ui.refresh(true); };
 ui.openRoom = function (k) {
-  ui.room = ui.room === k ? null : k;
+  const was = ui.room;
+  // each room opens where the player left it
+  if (was) ui.roomScroll[was] = $('wrBody').scrollTop;
+  ui.room = was === k ? null : k;
   $('warroom').hidden = !ui.room;
-  ui.cache.wrBody = null; ui.cache.wrTabs = null;
-  if (ui.room) { IC.emit(S, 'warroom', k); if (ui.pauseRoom) { ui.pausedByRoom = !S.paused; S.paused = true; } }
+  ui.cache.wrBody = null; ui.cache.wrTabs = null; ui.keys.wrBody = null;
+  if (ui.room) { IC.emit(S, 'warroom', k); if (!was && ui.pauseRoom) { ui.pausedByRoom = !S.paused; S.paused = true; } }
   else if (ui.pausedByRoom) { S.paused = false; ui.pausedByRoom = false; }
   ui.refresh(true);
 };

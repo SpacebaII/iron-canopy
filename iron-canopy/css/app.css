@@ -153,6 +153,10 @@ b{font-weight:600}
 .insp:empty{display:none}
 .ihead{display:grid;grid-template-columns:auto 1fr auto;gap:.7rem;align-items:center;padding:.85rem .95rem .6rem}
 .ihead canvas{width:4rem;height:3.1rem}
+.itabs{padding:0 .95rem .65rem}
+.itabs .seg button{flex:1;padding-inline:.4rem}
+.itabs em{font-style:normal;font-family:var(--mono);font-size:.75rem;margin-left:.3rem;color:var(--dim)}
+.itabs em.amber{color:var(--amber)}
 .ihead .badge{min-width:3.4rem;height:2.4rem;display:grid;place-items:center;border-radius:10px;font-family:var(--mono);font-weight:700;font-size:.85rem;background:var(--well)}
 .ihead h2{margin:0;font-family:var(--display);font-weight:700;font-size:1.45rem;letter-spacing:.05em;line-height:1.02;text-transform:uppercase}
 .ihead p{margin:.1rem 0 0;font-size:.85rem;color:var(--muted)}

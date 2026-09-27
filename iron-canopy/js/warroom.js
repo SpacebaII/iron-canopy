@@ -14,7 +14,9 @@ IC.renderRoom = function (st, tab) {
   ui.setHTML($('wrTabs'), ui.ROOMS.filter(([k]) => ui.roomOk(k)).map(([k, n, key]) => `<button data-act="room" data-v="${k}" aria-pressed="${tab === k}">${n}${key ? `<kbd>${key}</kbd>` : ''}</button>`).join(''));
   $('wrRun').textContent = S.paused ? 'Paused' : `Running at ${S.skip ? 'skip' : S.speed + '×'} · Space pauses`;
   const f = { aviation, staff, economy, air, army, logi, industry, intel, research, journal, reference, settings }[tab];
-  ui.setHTML($('wrBody'), f ? f() : '');
+  const fresh = ui.keys.wrBody !== tab;
+  ui.setHTML($('wrBody'), f ? f() : '', tab);
+  if (fresh) $('wrBody').scrollTop = ui.roomScroll[tab] || 0;
 };
 
 /* ---------- civil aviation ---------- */
