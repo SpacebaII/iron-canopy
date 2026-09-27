@@ -146,7 +146,7 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     if (m.dead) continue;
     if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
     // why it waits, in a few words: "holding: arrival 5 km out"
-    if (z > 5 && m.holding) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
+    if (z > 5 && m.holding && (m.holding !== 'queue' || z > 14)) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
     if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
   }
   // construction: crews and machines on site, lorries on the road in
@@ -183,20 +183,26 @@ function drawStopBars(g, ap, px, z, light) {
   const bars = holdBars(ap); if (!bars.length) return;
   const on = new Map();
   for (const m of ap.moves) if (!m.dead && m.edgeKey && m.phase === 'taxi') on.set(m.edgeKey, m);
-  const k = U.clamp((0.9 - light) / 0.5, 0.45, 1), G = IC.aptGraph(ap);
-  g.globalCompositeOperation = light < 0.55 ? 'lighter' : 'source-over';
-  const dot = (x, y, col, r) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, Math.max(r, 1 * px), 0, 7); g.fill(); };
+  const k = U.clamp((0.9 - light) / 0.5, 0.6, 1), G = IC.aptGraph(ap), night = light < 0.55;
+  // lights are a few pixels wide at any zoom, with a halo at night
+  const dot = (x, y, col, r, halo) => {
+    const R = Math.max(r, 1.6 * px);
+    if (night && halo) { g.globalCompositeOperation = 'lighter'; g.fillStyle = halo; g.beginPath(); g.arc(x, y, R * 2.6, 0, 7); g.fill(); }
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = col; g.beginPath(); g.arc(x, y, R, 0, 7); g.fill();
+  };
   for (const b of bars) {
     const m = on.get(b.key), grp = G.grp[b.rw] || b.rw;
     const cleared = m && m.locks && m.locks[grp], waiting = m && !cleared && m.holding === 'runway';
     if (cleared) {
       // lead-on lights, alternating green and yellow as they cross the runway's protected area
-      for (let s = 0; s <= IC.GOPS.HOLD; s += 0.15) dot(b.x - b.ux * s, b.y - b.uy * s, s < 0.3 ? `rgba(255,220,90,${0.9 * k})` : `rgba(80,255,140,${0.95 * k})`, 0.018);
+      for (let s = 0; s <= IC.GOPS.HOLD + 0.01; s += 0.15) dot(b.x - b.ux * s, b.y - b.uy * s, s < 0.3 ? `rgba(255,214,80,${k})` : `rgba(70,255,130,${k})`, 0.02, 'rgba(60,255,120,0.18)');
       continue;
     }
     if (z < 5 && !waiting) continue;
-    const n = 7, a = waiting ? 1 : 0.7;
-    for (let i = 0; i < n; i++) { const f = (i / (n - 1) - 0.5) * b.w * 1.1; dot(b.x - b.uy * f, b.y + b.ux * f, `rgba(255,50,40,${a * k})`, waiting ? 0.02 : 0.016); }
+    // a dark housing so the bar reads by day too
+    if (!night) { g.strokeStyle = 'rgba(20,20,20,0.8)'; g.lineWidth = Math.max(0.03, 3.4 * px); g.beginPath(); g.moveTo(b.x - b.uy * b.w * 0.6, b.y + b.ux * b.w * 0.6); g.lineTo(b.x + b.uy * b.w * 0.6, b.y - b.ux * b.w * 0.6); g.stroke(); }
+    const n = 7, a = waiting ? 1 : 0.75;
+    for (let i = 0; i < n; i++) { const f = (i / (n - 1) - 0.5) * b.w * 1.1; dot(b.x - b.uy * f, b.y + b.ux * f, `rgba(255,${waiting ? 40 : 70},30,${a * k})`, 0.018, waiting ? 'rgba(255,40,30,0.22)' : 'rgba(255,40,30,0.12)'); }
   }
   g.globalCompositeOperation = 'source-over';
 }
