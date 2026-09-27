@@ -86,7 +86,7 @@ IC.campaignTick = function (S, dt) {
     C.pmT = 60;
     const w = C.work = IC.working(S), m = IC.nationalMorale(S);
     pmHit(S, ((w - 0.85) * 1.5 + (m < 40 ? -0.6 : 0)) / 60);
-    if (S.pm <= 0) IC.gameOver(S, `The Prime Minister has lost confidence in the air defence and asked ${S.world.names.A} for a ceasefire on its terms.`);
+    if (S.pm < 1) IC.gameOver(S, `The Prime Minister has lost confidence in the air defence and asked ${S.world.names.A} for a ceasefire on its terms.`);
     else if (S.enemy.war && IC.warDays(S) >= IC.HOLD_DAYS) IC.victory(S, `You held for ${IC.HOLD_DAYS} days. ${S.world.full.A} has agreed to talks: its raids did not break the country (${U.pct(w)} still working).`);
   }
   // tired crews
@@ -175,7 +175,7 @@ IC.on((S, type, d) => {
     case 'infraLost': pmHit(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
     case 'tailLost': pmHit(S, -3, 'An airliner destroyed on the ground. The airlines are talking about leaving.'); break;
     // after each raid the Prime Minister weighs what got through and what it hit
-    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 6 * (0.3 - f) - r.hits * 0.5, f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
+    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.3 - f) - Math.min(12, r.hits * 0.3), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
     case 'civilKill': pmHit(S, -15); say(S, 'CDS', `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
     case 'weather': if (!IC.WEATHER[d].heli && once('wx', 21600)) say(S, 'AIR', 'Weather has grounded the helicopters. Jets can still fly.'); break;
     case 'delivered': if (once('delivered')) say(S, 'LOG', 'The first new equipment is in the reserve. Pick it in the arsenal and click the map to deploy it.'); break;
