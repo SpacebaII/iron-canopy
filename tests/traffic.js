@@ -6,7 +6,8 @@ const U = IC.U;
 /* run only what moves aircraft on the ground (weather, airport upkeep, ground ops) */
 function tick(S, dt) { S.time += dt; IC.weather(S, dt); IC.updateBases(S, dt); IC.gops(S, dt); if (S.later) { const due = S.later.filter(l => l.t <= S.time); S.later = S.later.filter(l => l.t > S.time); for (const l of due) l.fn(); } }
 
-/* o: { arr, dep (per hour), hours, fill (share of stands occupied at the start), mix: [[type, weight]], full (use IC.step) } */
+/* o: { arr, dep (per hour), follow (keep them at the rated capacity), hours, fill (share of stands occupied at the start),
+   mix: [[type, weight]], full (use IC.step) } */
 function drive(S, ap, o) {
   const mix = o.mix || [['narrow', 6], ['wide', 3], ['turbo', 1]];
   const stands = IC.aptStands(ap).filter(s => s.linked && s.hp > 0 && (s.zone === 'civil' || !s.zone));
@@ -19,7 +20,10 @@ function drive(S, ap, o) {
   let tArr = 0, tDep = 0, tTry = 0;
   const dt = 0.5, end = S.time + o.hours * 3600;
   IC.on((S2, type, d) => { if (S2 === S && type === 'crash') r.crash++; });
+  let tRate = 0;
   while (S.time < end) {
+    // follow: demand keeps pace with the capacity the panel shows for the traffic actually flying
+    if (o.follow && (tRate -= dt) <= 0) { tRate = 600; const st = IC.aptStats(S, ap); o.arr = st.arrPerHour; o.dep = st.depPerHour; }
     tArr += dt * (o.arr || 0) / 3600; tDep += dt * (o.dep || 0) / 3600;
     while (tArr >= 1) { tArr -= 1; r.pending.push({ type: U.wpick(mix), t: S.time, cs: 'TST ' + (n++) }); }
     while (tDep >= 1) {
@@ -54,6 +58,12 @@ function drive(S, ap, o) {
   r.grid = ap.kpi.grid || 0; r.stuck = ap.kpi.stuck || 0; r.risk = ap.kpi.risk || 0;
   return r;
 }
+/* lay an airport out again; airliners parked there are sent away first, since their stands go */
+function relayout(S, ap, template) {
+  if (S.av) for (const t of S.av.tails) if (t.at === ap.id && t.where === 'stand') { t.where = 'away'; t.at = null; t.stand = null; t.t = U.rand(300, 1800); }
+  IC.layoutAirport(ap, template, 0);
+  IC.aptStats(S, ap);
+}
 /* a game with the KDEN-scale layout in place of the capital airport */
 function kdenGame(seed, hour) {
   const S = IC.newGame({ seed: seed || 12345, mode: 'story', hour: hour == null ? 10 : hour });
@@ -66,4 +76,4 @@ function kdenGame(seed, hour) {
   S.weather.hold = true;
   return { S, ap };
 }
-module.exports = { drive, tick, kdenGame };
+module.exports = { drive, tick, kdenGame, relayout };

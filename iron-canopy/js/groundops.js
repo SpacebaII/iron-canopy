@@ -59,10 +59,13 @@ IC.aptConfig = function (S, ap) {
     const ilsG = k => rws.some(rw => g.grp[rw.id] === k && cfg.rw[rw.id].ils) ? 1 : 0;
     const len = k => Math.max(...rws.filter(rw => g.grp[rw.id] === k).map(rw => IC.rwUsable(rw)));
     const L = lg.slice().sort((a, b) => (imc ? ilsG(b) - ilsG(a) : 0) || len(b) - len(a) || (a < b ? -1 : 1));
-    const nArr = Math.max(1, lg.length === 1 ? 1 : Math.floor(lg.length / 2));
+    // runways with only a light crosswind can take arrivals too, so arrivals and departures are about even
+    const xw = k => Math.max(...rws.filter(rw => g.grp[rw.id] === k).map(rw => cfg.rw[rw.id].cross));
+    const O = og.filter(k => xw(k) <= 15 && (!imc || ilsG(k))).sort((a, b) => xw(a) - xw(b));
+    const n = lg.length + og.length, nArr = Math.max(1, Math.floor(n / 2));
+    const arr = L.concat(O).slice(0, nArr);
     const roleOf = {};
-    L.forEach((k, i) => { roleOf[k] = i < nArr ? 'arr' : 'dep'; });
-    for (const k of og) roleOf[k] = 'dep';
+    for (const k of lg.concat(og)) roleOf[k] = arr.includes(k) ? 'arr' : 'dep';
     // a single well-aligned runway with only crosswind runways beside it lands and departs both
     if (lg.length === 1 && !og.length) roleOf[lg[0]] = 'mixed';
     for (const rw of rws) cfg.rw[rw.id].role = roleOf[g.grp[rw.id]] || 'spare';
@@ -180,6 +183,9 @@ function enterWhy(S, ap, m, st, e) {
     if (o.d !== d) return 'opp';
     if (o.m.s < SPACING + 0.05 && o.m.edgeKey === e.key) return 'queue';
   }
+  // someone kept waiting at the other end by traffic this way gets the next turn
+  const c = ap.claim && ap.claim.get(e.key);
+  if (c && c.m !== m && !c.m.dead && c.d !== d && S.time - c.t < 5 && m.preKey !== e.key) return 'claim';
   // traffic booked the other way earlier has the right of way if it will reach this taxiway before we are off it,
   // unless it has kept us waiting for two minutes already
   if (e.kind === 'taxi' && ap.res && (m.resT || 0) < 120) {
@@ -195,7 +201,13 @@ function enterWhy(S, ap, m, st, e) {
   }
   return '';
 }
-function occupy(ap, m, st, e) { if (e.kind !== 'apron') occList(ap, e.key).push({ m, d: e.d }); m.edgeKey = e.kind !== 'apron' ? e.key : null; }
+function occupy(ap, m, st, e) { unclaim(ap, m); if (e.kind !== 'apron') occList(ap, e.key).push({ m, d: e.d }); m.edgeKey = e.kind !== 'apron' ? e.key : null; }
+/* a crossing aircraft holds the taxiway it will leave the runway by, so nobody drives into it head on */
+function preOccupy(ap, m, e) { unclaim(ap, m); occList(ap, e.key).push({ m, d: e.d, pre: true }); m.preKey = e.key; }
+function unclaim(ap, m) {
+  if (m.preKey) { const L = occList(ap, m.preKey), i = L.findIndex(o => o.m === m && o.pre); if (i >= 0) L.splice(i, 1); m.preKey = null; }
+  if (m.claimKey && ap.claim) { const c = ap.claim.get(m.claimKey); if (c && c.m === m) ap.claim.delete(m.claimKey); m.claimKey = null; }
+}
 function vacate(ap, m) {
   if (!m.edgeKey) return;
   const L = occList(ap, m.edgeKey), i = L.findIndex(o => o.m === m); if (i >= 0) L.splice(i, 1);
@@ -205,7 +217,7 @@ function vacate(ap, m) {
 function leader(ap, m, st, e) {
   if (e.kind === 'apron') return null;
   const d = e.d; let best = null;
-  for (const o of occList(ap, e.key)) if (o.m !== m && o.d === d && o.m.s > m.s && (best == null || o.m.s < best)) best = o.m.s;
+  for (const o of occList(ap, e.key)) if (o.m !== m && !o.pre && o.d === d && o.m.s > m.s && (best == null || o.m.s < best)) best = o.m.s;
   return best;
 }
 /* the live edge for a planned step (the network may have changed since) */
@@ -401,15 +413,19 @@ function stepTaxi(S, ap, m, dt) {
       }
       const why = enterWhy(S, ap, m, st, e);
       if (why) {
-        m.waitT += budget; m.holding = why === 'queue' ? 'queue' : 'traffic';
+        m.waitT += budget; m.holding = why === 'queue' || why === 'claim' ? 'queue' : 'traffic';
         if (why === 'res') m.resT = (m.resT || 0) + budget;
-        // only oncoming traffic that never clears is a jam: a tug tows one aircraft out of the way
+        // after a while, traffic from the other end stops coming until we are through
+        if (why === 'opp' || why === 'res') m.oppT = (m.oppT || 0) + budget;
+        if (m.oppT > 45) { const C = ap.claim = ap.claim || new Map(), c = C.get(e.key); if (!c || c.m === m || c.m.dead || S.time - c.t >= 5) { C.set(e.key, { m, d: e.d, t: S.time }); m.claimKey = e.key; } }
+        // only oncoming traffic that has stopped is a jam (nose to nose): a tug tows one aircraft out of the way
         if (why !== 'opp') return;
+        if (occList(ap, e.key).some(o => o.m !== m && o.d !== e.d && S.time - (o.m.advT || 0) < 10)) return;
         m.blockT += budget;
         if (m.blockT < FORCE) return;
         gridlock(S, ap, m);
       }
-      occupy(ap, m, st, e); m.onEdge = true; m.blockT = 0; m.resT = 0; m.holding = null;
+      occupy(ap, m, st, e); m.onEdge = true; m.blockT = 0; m.resT = 0; m.oppT = 0; m.holding = null;
     }
     const spd = e.spd;
     let lim = e.len;
@@ -428,7 +444,7 @@ function stepTaxi(S, ap, m, dt) {
       m.waitT += budget; m.holding = 'queue';
       return;
     }
-    m.blockT = 0; m.holding = null;
+    m.blockT = 0; m.holding = null; m.advT = S.time;
     const rem = e.len - m.s;
     if (adv >= rem - 1e-9) {
       budget -= rem / spd; m.taxiT += rem / spd;
@@ -445,9 +461,26 @@ function stepTaxi(S, ap, m, dt) {
 }
 /* a crossing: onto the runway and straight off the other side (not a departure lining up) */
 function crossKey(m, st, e) { const nx = m.path[m.pi + 1]; return e.kind !== 'rwy' && nx && nx.e.kind !== 'rwy' ? e.key : null; }
+/* the step by which an aircraft about to go onto a runway will leave it again (none for a departure) */
+function exitStep(m) { let j = m.pi + 1; while (m.path[j] && m.path[j].e.kind === 'rwy') j++; return m.path[j] || null; }
 /* waiting at the hold-short line for a runway; true once cleared onto it */
 function holdShort(S, ap, m, k, dt, cross) {
-  if (canTake(S, ap, k, m, cross)) { take(ap, k, m, cross, S.time); m.holding = null; m.holdLog = false; return true; }
+  // never go onto a runway unless the way off it is clear of oncoming traffic
+  const ex = exitStep(m), e2 = ex && edgeNow(ap, ex);
+  let clear = true;
+  if (e2 && e2.kind !== 'apron') {
+    const w2 = enterWhy(S, ap, m, ex, e2);
+    if (w2 === 'opp' || w2 === 'claim') {
+      clear = false; m.crossBlk = (m.crossBlk || 0) + dt;
+      // kept waiting: find another way round
+      if (m.crossBlk > 90) { m.crossBlk = 0; replan(S, ap, m, ex.from); return false; }
+    }
+  }
+  if (clear && canTake(S, ap, k, m, cross)) {
+    take(ap, k, m, cross, S.time); m.holding = null; m.holdLog = false; m.crossBlk = 0;
+    if (e2 && e2.kind !== 'apron') preOccupy(ap, m, e2);
+    return true;
+  }
   wantIt(S, ap, k, m);
   m.waitT += dt; m.holding = 'runway';
   if (m.kind === 'dep') ap.depWait = (ap.depWait || 0) + 1;
@@ -476,15 +509,17 @@ function gridlock(S, ap, m) {
   }
   ap.kpi.grid = (ap.kpi.grid || 0) + 1;
 }
-function replan(S, ap, m) {
+/* a new route from the last node passed; avoid: a node the old route went through that is now to be kept clear of */
+function replan(S, ap, m, avoid) {
   const goal = m.path[m.path.length - 1].to;
-  const p = IC.aptSearch(ap, m.node, { to: goal, avoidRwy: m.kind === 'arr', res: { m, t0: S.time } });
+  unreserve(ap, m); unclaim(ap, m);
+  const p = IC.aptSearch(ap, m.node, { to: goal, avoidRwy: m.kind === 'arr', res: { m, t0: S.time }, avoid });
   vacate(ap, m); m.onEdge = false;
   if (p.dist.has(goal)) { m.path = IC.aptSteps(p, m.node, goal); m.pi = 0; m.s = 0; m.stuck = false; reserve(S, ap, m, m.path, S.time); return; }
   if (!m.stuck) { m.stuck = true; ap.kpi.stuck = (ap.kpi.stuck || 0) + 1; IC.log(S, 'warn', 'GROUND', `${ap.name}: ${m.who || 'an aircraft'} is stranded: the taxiway ahead is cut.`, m); }
 }
 
-function kill(S, ap, m) { vacate(ap, m); unreserve(ap, m); if (m.locks) for (const k in m.locks) release(S, ap, k, m, 0); }
+function kill(S, ap, m) { vacate(ap, m); unclaim(ap, m); unreserve(ap, m); if (m.locks) for (const k in m.locks) release(S, ap, k, m, 0); }
 function done(ap, m) { ap.kpi.n++; ap.kpi.taxi = ap.kpi.taxi * 0.9 + m.taxiT * 0.1; ap.kpi.wait = ap.kpi.wait * 0.9 + m.waitT * 0.1; }
 
 IC.gops = function (S, dt) {
@@ -636,7 +671,7 @@ function step(S, ap, m, dt) {
   }
 }
 /* movements per hour, counted as they happen (the panel compares them with the rated capacity) */
-function countMove(S, ap, k, type) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); }
+function countMove(S, ap, k, type) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; }
 /* pushbacks block only the stands either side, and only one pushes back from a row at a time */
 function standNb(ap, s) { const a = ap.parts.find(p => p.id === s.apron), i = a && a.stands ? a.stands.indexOf(s) : -1; return i < 0 ? [] : [a.stands[i - 1], a.stands[i + 1]].filter(Boolean); }
 function pushOk(S, ap, m) { return !standNb(ap, m.stand).some(n => n.pushT > S.time); }

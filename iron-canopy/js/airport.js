@@ -286,7 +286,7 @@ IC.aptSearch = function (ap, src, o) {
     const du = dist.get(u);
     for (const e of A.get(u)) {
       const v = o.rev ? e.from : e.to;
-      if (done.has(v)) continue;
+      if (done.has(v) || v === o.avoid) continue;
       let w = e.w / e.spd * (e.kind === 'rwy' ? rwK : 1), tv;
       // a taxiway onto a runway means a hold at the line, a long one if the runway is in use
       const B = G.N.get(e.to);
