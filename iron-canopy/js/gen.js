@@ -6,7 +6,7 @@ const TAU = Math.PI * 2;
 const K = 1.5;   // map scale relative to the original 800 km layout
 
 IC.generate = function (seed) {
-  const R = IC.makeRng(seed);
+  let R = IC.makeRng(seed);
   const WW = IC.WW, WH = IC.WH;
   const NOX = R() * 900, NOY = R() * 900;
   const fbm = (x, y, o) => U.fbm(x + NOX, y + NOY, o);
@@ -371,6 +371,9 @@ IC.generate = function (seed) {
     }
   }
   buildNetwork(W, IC.makeRng((seed * 7919 + 13) >>> 0), fbm);
+  // what follows (foreign places, airways, enemy sites) draws from its own stream, so changes to the roads and
+  // towns above never move them
+  R = IC.makeRng((seed * 2654435761 + 97) >>> 0);
   const edges = W.edges;
   const wiggle = (A, B, amp) => {
     const L = U.dist(A, B);
