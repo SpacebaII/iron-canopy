@@ -710,6 +710,98 @@ test('growth: the weekly statement adds up to the change in the treasury', () =>
   assert(st.lines.some(l => l.k === 'fee_pax') && st.lines.some(l => l.k === 'loan'), 'fees or loan repayments missing from the statement');
 });
 
+/* ---------- supply and money ---------- */
+/* a quick-war game with the enemy kept quiet, the magazines as they start */
+const supplyGame = seed => { const S = IC.newGame({ seed: seed || 12345, mode: 'campaign' }); S.enemy.allow = new Set(); S.enemy.warT = 1e12; return S; };
+const onRoad = (S, x, y) => S.world.edges.some(e => { for (let i = 1; i < e.pts.length; i++) if (U.segDist(x, y, e.pts[i - 1].x, e.pts[i - 1].y, e.pts[i].x, e.pts[i].y) < 0.6) return true; return false; });
+test('supply: a unit bought and placed arrives and is ready within 45 game minutes', () => {
+  const S = supplyGame();
+  S.reserve.mrsam = 0; S.budget = 1000;
+  const c = IC.cap(S), spot = IC.findSpot(S, 'mrsam', c.x, c.y, 250, 400);
+  const b0 = S.budget, u = IC.deploy(S, 'mrsam', spot.x, spot.y);
+  assert(u, 'could not buy and place the battery');
+  assert(Math.abs(b0 - S.budget - IC.unitCost(S, 'mrsam')) < 0.01, 'the battery was not paid for when placed');
+  let t = 0;
+  while (u.state !== 'ready' && t < 3 * 3600) { IC.step(S, 0.5); t += 0.5; }
+  assert(u.state === 'ready', `still ${u.state} after 3 h`);
+  assert(t <= 45 * 60, `ready only after ${U.dur(t)}`);
+  assert(U.dxy(u.x, u.y, spot.x, spot.y) < 1, 'it is not where it was placed');
+  const st = IC.weekStatement(S, 0);
+  assert(st.lines.some(l => l.k === 'buyUnits'), 'the purchase is not on the statement');
+});
+/* a battery with an empty reserve, some distance from the depot */
+function lowBattery(S, dmin, dmax) {
+  const dep = IC.depots(S).find(d => d.central);
+  const spot = IC.findSpot(S, 'shorad', dep.x, dep.y, dmin, dmax);
+  const u = IC.makeUnit(S, 'shorad', spot.x, spot.y, { instant: true });
+  for (const m of u.mags) { m.mag = 2; m.store = 0; }
+  return { dep, u, m: u.mags[0] };
+}
+test('supply: a battery low on missiles is resupplied by a convoy seen on the road', () => {
+  const S = supplyGame();
+  const { u, m } = lowBattery(S, 900, 1400);
+  let v = null, seenOnRoad = false, t = 0;
+  while (t < 6 * 3600 && m.store < m.storeMax) {
+    IC.step(S, 0.5); t += 0.5;
+    const j = S.jobs.find(x => x.mag === m && x.v);
+    if (j) { v = j.v; if (v.state === 'toDest' && onRoad(S, v.x, v.y)) seenOnRoad = true; }
+  }
+  assert(v, 'no convoy was sent');
+  assert(m.store >= m.storeMax, `reserve only ${m.store}/${m.storeMax} after ${U.dur(t)}`);
+  assert(seenOnRoad, 'the convoy never drove on a road');
+  assert(IC.nextLoad(S, u, m).text === 'Full.', 'the panel does not say it is full');
+});
+test('supply: a cut road delays resupply, and the battery panel says why', () => {
+  const S = supplyGame();
+  const { dep, u, m } = lowBattery(S, 900, 1400);
+  const clear = IC.driveTime(S, dep, u).t;
+  // craters on every road into the junction where convoys leave the road for the battery
+  const r = IC.route(dep.x, dep.y, u.x, u.y, true), n = r[r.length - 2];
+  for (const e of S.world.edges) if (e.pts.some(p => U.dxy(p.x, p.y, n.x, n.y) < 3)) { e.cut = true; e.cond = 0.2; e.cutName = `${e.cls === 'hw' ? 'Motorway' : 'Road'} cut near ${u.name}`; }
+  IC.roadsChanged(S);
+  const cut = IC.driveTime(S, dep, u);
+  assert(cut.t > clear * 1.1, `the cut costs no time (${U.dur(clear)} → ${U.dur(cut.t)})`);
+  let said = '';
+  for (let t = 0; t < 2 * 3600 && !said; t += 0.5) {
+    IC.step(S, 0.5);
+    const n = IC.nextLoad(S, u, m);
+    if (/detour/.test(n.text) && /cut near/.test(n.text)) said = n.text;
+  }
+  assert(said, `the panel never said why the load is late: "${IC.nextLoad(S, u, m).text}"`);
+});
+test('money: the money panel adds up to the change in the treasury', () => {
+  const S = supplyGame();
+  const b0 = S.budget;
+  IC.takeLoan(S, 0);
+  const c = IC.cap(S), spot = IC.findSpot(S, 'shorad', c.x, c.y, 250, 400);
+  S.reserve.shorad = 0; IC.deploy(S, 'shorad', spot.x, spot.y);
+  IC.buyStock(S, 'SR', 16);
+  IC.startResearch(S, IC.TECH.find(t => !t.req.length && !S.tech.done.has(t.id)).id);
+  run(S, 3);
+  const st = IC.weekStatement(S, 0);
+  const sum = st.lines.reduce((s, l) => s + l.v, 0);
+  assert(Math.abs(sum - (S.budget - b0)) < 0.5, `lines add to ${sum.toFixed(1)}, the treasury changed ${(S.budget - b0).toFixed(1)}`);
+  for (const k of ['buyUnits', 'buyMun', 'research', 'loanIn', 'upAD', 'base']) assert(st.lines.some(l => l.k === k), `no "${IC.STATEMENT[k]}" line`);
+  const other = st.lines.find(l => l.k === 'other');
+  assert(!other || Math.abs(other.v) < 1, `unexplained spending: ${other && other.v.toFixed(1)}`);
+  const M = IC.money(S);
+  assert(Math.abs(M.net - (S.income - S.upkeep)) < 0.01, 'the hourly lines do not add up to the hourly balance');
+  assert(M.inc.concat(M.out).every(l => l.why && l.name), 'a money line has no name or no reason');
+});
+test('money: a warning comes before the money runs out', () => {
+  // Act I of the Career: a small grant, and two long-range batteries it cannot pay for
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  for (let i = 0; i < 2; i++) { const c = IC.cap(S), p = IC.findSpot(S, 'lrsam', c.x, c.y, 300, 700); IC.makeUnit(S, 'lrsam', p.x, p.y, { instant: true }); }
+  let warned = -1, empty = -1;
+  for (let t = 0; t < 12 * 3600 && empty < 0; t += 0.5) {
+    IC.step(S, 0.5);
+    if (warned < 0 && S.logs.some(l => l.tag === 'TREASURY' && /runs out/.test(l.msg))) warned = t;
+    if (S.budget <= 0) empty = t;
+  }
+  assert(warned >= 0, 'no warning');
+  assert(empty < 0 || empty - warned > 1800, `warned only ${U.dur(empty - warned)} before the money ran out`);
+});
+
 /* ---------- modes ---------- */
 test('damage: a weapon landing on a city block damages that block, not the one across the street', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 });

@@ -33,14 +33,15 @@ function behind(v, d) {
   const h = v.h || 0;
   return { x: px - Math.cos(h) * left, y: py - Math.sin(h) * left, h };
 }
-/* one lorry seen from above: cab in front, the load behind. Real size (16 m) close in, never under ~9 px */
+/* one lorry seen from above: cab in front, the load behind. Real size (16 m) when that is big enough to read,
+   never under 20 px so the load can be told apart */
 function lorry(x, y, h, kind, px, body, civil) {
-  const len = Math.max(0.16, 9 * px), wid = len * 0.28;
+  const len = Math.max(0.16, 20 * px), wid = len * 0.36;
   g.save(); g.translate(x, y); g.rotate(h);
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-len / 2 + wid * 0.25, -wid / 2 + wid * 0.25, len, wid);
   g.fillStyle = civil ? '#d8d4c8' : '#5d6a45'; g.fillRect(len * 0.28, -wid / 2, len * 0.22, wid);            // cab
   g.fillStyle = body; g.fillRect(-len / 2, -wid / 2, len * 0.76, wid);                                         // bed
-  g.strokeStyle = 'rgba(20,16,8,0.8)'; g.lineWidth = Math.min(0.012, 0.8 * px); g.strokeRect(-len / 2, -wid / 2, len, wid);
+  g.strokeStyle = 'rgba(20,16,8,0.9)'; g.lineWidth = 1.2 * px; g.strokeRect(-len / 2, -wid / 2, len, wid);
   if (kind === 'missile') { g.fillStyle = '#eef0e8'; g.fillRect(-len * 0.46, -wid * 0.3, len * 0.66, wid * 0.18); g.fillRect(-len * 0.46, wid * 0.12, len * 0.66, wid * 0.18); }
   else if (kind === 'rocket') { g.fillStyle = '#3a4030'; g.fillRect(-len * 0.44, -wid * 0.36, len * 0.5, wid * 0.72); }
   else if (kind === 'flat') { g.fillStyle = '#8a6a3a'; for (let i = 0; i < 3; i++) g.fillRect(-len * 0.46 + i * len * 0.22, -wid * 0.34, len * 0.18, wid * 0.68); }
@@ -59,11 +60,12 @@ function label(S, v, px) {
 }
 function column(S, v, px, sel) {
   const loaded = !!(v.job && v.job.loaded && v.state !== 'toSource');
-  const n = lorries(S, v), kind = loaded ? IC.cargoKind(v.job.mun) : 'empty';
-  const gap = Math.max(0.5, 13 * px);
+  const n = v.trucks, full = lorries(S, v), kind = loaded ? IC.cargoKind(v.job.mun) : 'empty';
+  const gap = Math.max(0.5, 25 * px);
   const body = v.contract ? '#b9b2a0' : loaded ? C.supply : '#8f8266';
-  for (let i = n - 1; i >= 0; i--) { const p = i ? behind(v, i * gap) : { x: v.x, y: v.y, h: v.h || 0 }; lorry(p.x, p.y, p.h, kind, px, body, v.contract); }
-  if (sel) brackets(v.x, v.y, Math.max(1.2, 14 * px), px);
+  // the whole company drives together; only the lorries the load needs carry it
+  for (let i = n - 1; i >= 0; i--) { const p = i ? behind(v, i * gap) : { x: v.x, y: v.y, h: v.h || 0 }; lorry(p.x, p.y, p.h, i < full ? kind : 'empty', px, i < full ? body : '#8f8266', v.contract); }
+  if (sel) { const m = behind(v, (n - 1) * gap / 2); brackets(m.x, m.y, Math.max(1.2, (n * 13 + 8) * px), px); }
 }
 function routeLine(S, v, px) {
   if (!v.route || !v.route.length) return;
@@ -98,14 +100,15 @@ IC.drawConvoys = function (ctx, S, px) {
   if (z < 0.6) flows(S, px, now);
   for (const v of S.vehicles) {
     if (v.state === 'idle' || v.dead) continue;
-    const sel = S.sel && S.sel.ref === v, hov = S.hover && S.hover.ref === v;
+    const sel = S.sel && S.sel.ref === v, hov = S.hover && U.dxy(S.hover.x, S.hover.y, v.x, v.y) < 16 * px;
     if (sel) routeLine(S, v, px);
     if (!inView(v.x, v.y, 60)) continue;
-    column(S, v, px, sel);
-    if (sel || hov || z > 0.22 || (v.job && z > 0.12)) {
-      if (!v.job && !sel && z < 0.5) continue;
+    // far out a convoy is a dot on its supply line; from region zoom it is a column of lorries
+    if (z < 0.35 && !sel) { g.fillStyle = v.cut ? RED : v.job ? C.supply : '#8f8266'; g.strokeStyle = 'rgba(20,16,8,0.9)'; g.lineWidth = 1 * px; g.beginPath(); g.arc(v.x, v.y, 3.2 * px, 0, 7); g.fill(); g.stroke(); }
+    else column(S, v, px, sel);
+    if (sel || hov || (v.job && z > 0.35)) {
       const [txt, col] = label(S, v, px);
-      tag(txt, v.x, v.y - Math.max(1.4, 16 * px), px, col, v.cut ? 'rgba(40,10,8,0.88)' : null);
+      tag(txt, v.x, v.y - Math.max(1.4, 22 * px), px, col, v.cut ? 'rgba(40,10,8,0.88)' : null);
     }
   }
 };

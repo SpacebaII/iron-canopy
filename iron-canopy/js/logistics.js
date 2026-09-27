@@ -94,13 +94,20 @@ const edgeName = (S, id) => {
 function routeInfo(S, from, r) {
   let t = 0, p = from, cut = 0, lost = 0;
   for (const q of r) { const s = U.dist(p, q) / segSpeed(S, q); t += s; if (q.cut) { cut = q.cut; lost += s * (1 - 1 / IC.CUT_SLOW); } p = q; }
+  // no road left that is worth taking: straight across country, past the cut that closed the way
+  const q = r[r.length - 1], d = U.dist(from, q), W = S.world;
+  if (r.length === 1 && d > 40 && W.blocked && W.blocked.size) {
+    let best = null, bd = 150;
+    for (const e of W.edges) { if (!W.blocked.has(e.id)) continue; const m = e.pts[e.pts.length >> 1], k = U.segDist(m.x, m.y, from.x, from.y, q.x, q.y); if (k < bd) { bd = k; best = e; } }
+    if (best) return { t, cut: `${edgeName(S, best.id)}, across country`, lost: Math.max(0, t - d * 1.3 / (IC.SUPPLY.kmh.rd / 360)) };
+  }
   return { t, cut: cut ? edgeName(S, cut) : '', lost };
 }
 function markTowns(S, r) { const cs = IC.cities(S); for (const p of r) p.town = p.road && cs.some(c => U.dxy(c.x, c.y, p.x, p.y) < c.r); }
 /* drive time between two places, as a convoy would go now */
-IC.driveTime = function (S, a, b) { const r = IC.route(a.x, a.y, b.x, b.y); markTowns(S, r); return routeInfo(S, a, r); };
+IC.driveTime = function (S, a, b) { const r = IC.route(a.x, a.y, b.x, b.y, true); markTowns(S, r); return routeInfo(S, a, r); };
 function plan(S, v, to) {
-  v.route = IC.route(v.x, v.y, to.x, to.y); v.dest = { x: to.x, y: to.y }; v.trail = [{ x: v.x, y: v.y }];
+  v.route = IC.route(v.x, v.y, to.x, to.y, true); v.dest = { x: to.x, y: to.y }; v.trail = [{ x: v.x, y: v.y }];
   retime(S, v);
 }
 function retime(S, v) {
