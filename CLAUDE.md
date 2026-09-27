@@ -90,7 +90,7 @@ Tests and tools at the repository root: `headless.js` (loads the game in Node), 
 
 ## How supply works
 
-- Buying a unit: `IC.deploy` places it from the reserve, or buys it if there is none (`IC.buyBlock` says why not). It loads for 2 min at the nearest depot, garrison or airfield (`IC.deliveryPlan`), drives there and sets up. No production queue.
+- Buying a unit: `IC.deploy` places it from the reserve, or buys it if there is none (`IC.buyBlock` says why not). It loads for 2 min at the nearest depot, garrison, city barracks or airfield (`IC.deliveryPlan`) and drives there, or is flown from the nearest airfield by heavy-lift helicopter when the drive would take over 25 min (`IC.AIRLIFT`), then sets up. No production queue.
 - Stock (missiles, rockets, supply pallets) lives in depots. Each depot's truck companies (3 lorries each) take it to units inside its ring, first-priority areas (`depot.pri`) and the emptiest units first; forward depots refill from the Central Depot. Stock is bought from the arms plants (`IC.buyStock`, by rail, `IC.SUPPLY.railKmh`) or imported by air when every plant is down. `S.supply.auto` (Keep stocked) buys whatever falls below half of one full reload, never below `S.supply.floor`.
 - Convoys drive `IC.route(…, true)` (roads only) at `IC.SUPPLY.kmh` by class, slower in towns at rush hour, crawling past cuts; `v.cut` names the cut. `IC.nextLoad(S, u, mag)` is what a unit's panel says about its next load.
 
