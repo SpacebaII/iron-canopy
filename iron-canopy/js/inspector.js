@@ -277,12 +277,22 @@ function base(b) {
   const warn = st.warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${st.warn.length}</em></h3>${st.warn.slice(0, 6).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">No layout problems found.</div>';
   const fuelF = st.fuelCap ? st.fuel / st.fuelCap : 0;
   const kp = b.kpi || {};
+  const ROLE = { arr: 'arrivals', dep: 'departures', mixed: 'arrivals and departures', spare: 'not in use' };
+  const flown = { arr: 0, dep: 0 }; for (const x of b.mvLog || []) flown[x.k]++;
+  // the runway configuration the wind has chosen, one line per runway
+  const rwSec = st.rwy.length ? `<div class="sec"><h3 class="sh">Runways <em>${st.cfg ? esc(st.cfg.name.toLowerCase()) + ' · ' : ''}wind ${IC.windText(S)}</em></h3>${st.rwy.map(r => {
+    const busy = r.role === 'arr' ? `${U.dur(r.land)} a landing` : r.role === 'dep' ? `${U.dur(r.dep)} a take-off` : r.role === 'mixed' ? `${U.dur(r.land)} a landing, ${U.dur(r.dep)} a take-off` : 'crosswind or not needed';
+    return `<div class="rwrow ${r.role}"><b>${esc(r.end)}</b><span>${ROLE[r.role] || ''} · ${busy}${r.threshold ? '' : ' · <span class="amber">backtrack</span>'}${r.ils[r.dir > 0 ? 'a' : 'b'] ? ' · ILS' : ''}</span><em>${r.perHour ? r.perHour + '/h' : ''}</em></div>`; }).join('')}
+    ${IC.needILS(S) ? '<p class="hint amber">Poor visibility: arrivals land only where there is a landing system (ILS).</p>' : ''}</div>` : '';
+  const zoneSec = Object.keys(st.zones || {}).length ? `<div class="sec"><h3 class="sh">Stands <em>${used}/${linked} in use${stands.length > linked ? ` · <span class="amber">${stands.length - linked} cut off</span>` : ''}</em></h3>${Object.entries(st.zones).map(([k, z]) => `<div class="rwrow"><b>${IC.ZONES[k].short}</b><span>${IC.ZONES[k].name} · ${k === 'civil' ? `${z.contact} at gates, ${z.remote} remote (bus)` : `${z.s + z.m + z.l} stands`}</span><em>S${z.s} M${z.m} L${z.l}</em></div>`).join('')}</div>` : '';
   const rows = [
-    ['Runway use', st.rwy.map(r => `${esc(r.name || 'Runway')}: land ${U.dur(r.land)} · depart ${U.dur(r.dep)}${r.threshold ? '' : ' <span class="amber">(backtrack)</span>'}`).join('<br>') || '—'],
-    ['Stands', `${used}/${linked} in use${stands.length > linked ? ` <span class="amber">· ${stands.length - linked} cut off</span>` : ''} · S${st.stands.s} M${st.stands.m} L${st.stands.l}`],
+    ['Capacity', `${st.arrPerHour} arrivals + ${st.depPerHour} departures an hour`],
+    ['Last hour', `${flown.arr} arrivals, ${flown.dep} departures`],
     ['Largest aircraft', st.maxType ? esc(IC.ACTYPES[st.maxType].name) : '<span class="hostile">none</span>'],
-    ['Fuel', `${Math.round(st.fuel)}/${st.fuelCap}${fuelF < 0.25 ? ' <span class="amber">low</span>' : ''}`],
-    ['Tower · fire · radar', `${st.tower ? 'yes' : '<span class="hostile">no</span>'} · ${st.fire ? 'yes' : '<span class="amber">no</span>'} · ${st.radar ? 'yes' : 'no'}`]
+    ['Fuel', `${Math.round(st.fuel)}/${st.fuelCap}${fuelF < 0.25 ? ' <span class="amber">low</span>' : ''} · enough for ${st.fuelDeps || 0} departures an hour (${st.hydrant ? 'hydrant system' : 'fuel trucks'})`],
+    ['Tower · approach radar · ground radar', `${st.tower ? 'yes' : '<span class="hostile">no</span>'} · ${st.radar ? 'yes' : 'no'} · ${st.gradar ? 'yes' : st.complex ? '<span class="amber">no</span>' : 'no'}`],
+    ['Fire and rescue', !st.fire ? '<span class="amber">no station near the runway</span>' : `trucks reach every runway in ${st.rescue > 180 ? `<span class="amber">${U.dur(st.rescue)}</span>` : U.dur(st.rescue)}`],
+    ['Landing systems', `${st.ilsEnds || 0} of ${st.rwy.length * 2} runway ends`]
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);
   if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }
@@ -305,8 +315,8 @@ function base(b) {
     return `<button class="li" data-act="selFlight" data-rid="${r.id}"><b>${esc(r.name)}</b><small>${esc(IC.AIR_KIND[r.kind].short)}×${r.n} · ${stt} ${where}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small></button>`;
   }).join('');
   const fee = civil ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
-    <div class="acts"><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="No departures 23:00–06:00. Cargo airlines hate it; the neighbours love it.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
-  return H + `<div class="ibody">${schem}${kpis}${warn}${kv(rows)}
+    <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="No departures 23:00–06:00. Cargo airlines hate it; the neighbours love it.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
+  return H + `<div class="ibody">${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}
     <div class="sec"><h3 class="sh">Build <em>pick a part, then click the map</em></h3>${palette}</div>
     <div class="sec"><h3 class="sh">Engineering <em>${Math.min(b.crews, b.works.length)}/${b.crews} crews working</em></h3>${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
       ${reps ? `<h3 class="sh">Damage</h3><div class="list">${reps}</div>` : ''}
@@ -319,9 +329,9 @@ function apart(sel) {
   const p = sel.ref, ap = sel.ap, D = IC.APART[p.kind];
   const w = ap.works.find(x => x.part === p || (x.it && x.it.part === p));
   const rows = [];
-  if (p.kind === 'runway') { rows.push(['Length', U.km(IC.rwLen(p))], ['Usable', U.km(IC.rwUsable(p))], ['Craters', `${p.craters.length}`]); }
-  else if (p.kind === 'taxi') { rows.push(['Length', U.km(IC.partMeasure(ap, p))], ['Cut', `${Object.keys(p.cut).length} places`]); }
-  else if (p.kind === 'apron') { rows.push(['Stands', `${(p.stands || []).length} ${p.stands && p.stands[0] ? IC.STAND[p.stands[0].size].name : ''}`], ['Area', `${(p.w * p.h).toFixed(1)} ha`]); }
+  if (p.kind === 'runway') { const c = ap.cfg && ap.cfg.rw[p.id]; rows.push(['Length', U.km(IC.rwLen(p))], ['Usable', U.km(IC.rwUsable(p))], ['Craters', `${p.craters.length}`], ['In use', c ? `${esc(c.name)} · ${{ arr: 'arrivals', dep: 'departures', mixed: 'arrivals and departures', spare: 'not in use' }[c.role]} · crosswind ${Math.round(c.cross)} kt` : 'no'], ['Landing systems', p.ends ? [['a', 1], ['b', -1]].filter(([e, d]) => IC.rwHasILS(ap, p, d)).map(([e]) => p.ends[e]).join(', ') || 'none' : 'none']); }
+  else if (p.kind === 'taxi') { rows.push(['Length', U.km(IC.partMeasure(ap, p))], ['Cut', `${Object.keys(p.cut).length} places`], ['Traffic', p.oneway ? 'one way' : p.flow ? 'both ways, one preferred' : 'both ways']); }
+  else if (p.kind === 'apron') { rows.push(['Stands', `${(p.stands || []).length} ${p.stands && p.stands[0] ? IC.STAND[p.stands[0].size].name : ''}${p.stands && p.stands[0] && p.stands[0].contact ? ' at gates' : ' remote'}`], ['Zone', IC.ZONES[IC.partZone(ap, p)].name], ['Area', `${(p.w * p.h).toFixed(1)} ha`]); }
   else if (p.kind === 'fuel') rows.push(['Stock', `${Math.round(p.stock || 0)}/${D.cap}`]);
   else if (p.kind === 'terminal') rows.push(['Capacity', `${Math.round(D.pax * p.w * p.h).toLocaleString('en-US')} passengers/h`]);
   if (p.linked === false) rows.push(['Taxiway', '<span class="amber">not connected</span>']);

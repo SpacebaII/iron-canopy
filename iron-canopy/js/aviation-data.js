@@ -4,16 +4,18 @@
 'use strict';
 
 /* rwy = runway length needed (units of 100 m); stand = smallest stand that fits; turn = turnaround seconds;
-   fuel = fuel units per departure; fee = landing fee in ₭M */
+   fuel = fuel units per departure; fee = landing fee in ₭M; xw, tw = the largest crosswind and tailwind (knots) the
+   crew may land or take off in; zone = where it parks */
 IC.ACTYPES = {
-  turbo:   { name: 'Regional turboprop', short: 'ATR', span: 0.27, len: 0.27, rwy: 13, seats: 70, turn: 1500, fuel: 2, stand: 's', cruise: 1.6, alt: 7, fee: 0.5 },
-  narrow:  { name: 'Narrow-body jet', short: 'A32', span: 0.36, len: 0.38, rwy: 21, seats: 180, turn: 2400, fuel: 6, stand: 'm', cruise: 2.3, alt: 11, fee: 1.1 },
-  wide:    { name: 'Wide-body jet', short: 'B77', span: 0.62, len: 0.64, rwy: 27, seats: 330, turn: 3900, fuel: 16, stand: 'l', cruise: 2.5, alt: 11.5, fee: 2.4 },
-  cargo:   { name: 'Freighter', short: 'F74', span: 0.64, len: 0.7, rwy: 29, seats: 0, cargo: 110, turn: 4800, fuel: 20, stand: 'l', cruise: 2.4, alt: 11, fee: 2.2 },
-  fighter: { name: 'Fighter', short: 'FTR', span: 0.11, len: 0.16, rwy: 10, stand: 's', fuel: 3, mil: true },
-  heavy:   { name: 'Large military aircraft', short: 'AEW', span: 0.42, len: 0.46, rwy: 22, stand: 'm', fuel: 8, mil: true },
-  drone:   { name: 'Drone', short: 'UAV', span: 0.2, len: 0.1, rwy: 8, stand: 's', fuel: 1, mil: true },
-  heli:    { name: 'Helicopter', short: 'HEL', span: 0.16, len: 0.18, rwy: 0, stand: 's', fuel: 1, mil: true, vtol: true }
+  light:   { name: 'Light aircraft', short: 'C172', span: 0.11, len: 0.08, rwy: 6, seats: 3, turn: 900, fuel: 0.2, stand: 's', cruise: 0.6, alt: 2, fee: 0.05, xw: 15, tw: 5, zone: 'light' },
+  turbo:   { name: 'Regional turboprop', short: 'ATR', span: 0.27, len: 0.27, rwy: 13, seats: 70, turn: 1500, fuel: 2, stand: 's', cruise: 1.6, alt: 7, fee: 0.5, xw: 25, tw: 10, zone: 'civil' },
+  narrow:  { name: 'Narrow-body jet', short: 'A32', span: 0.36, len: 0.38, rwy: 21, seats: 180, turn: 2400, fuel: 6, stand: 'm', cruise: 2.3, alt: 11, fee: 1.1, xw: 33, tw: 10, zone: 'civil' },
+  wide:    { name: 'Wide-body jet', short: 'B77', span: 0.62, len: 0.64, rwy: 27, seats: 330, turn: 3900, fuel: 16, stand: 'l', cruise: 2.5, alt: 11.5, fee: 2.4, xw: 38, tw: 15, zone: 'civil' },
+  cargo:   { name: 'Freighter', short: 'F74', span: 0.64, len: 0.7, rwy: 29, seats: 0, cargo: 110, turn: 4800, fuel: 20, stand: 'l', cruise: 2.4, alt: 11, fee: 2.2, xw: 38, tw: 15, zone: 'cargo' },
+  fighter: { name: 'Fighter', short: 'FTR', span: 0.11, len: 0.16, rwy: 10, stand: 's', fuel: 3, mil: true, xw: 30, tw: 10, crew: 1, zone: 'mil' },
+  heavy:   { name: 'Large military aircraft', short: 'AEW', span: 0.42, len: 0.46, rwy: 22, stand: 'm', fuel: 8, mil: true, xw: 30, tw: 10, crew: 12, zone: 'mil' },
+  drone:   { name: 'Drone', short: 'UAV', span: 0.2, len: 0.1, rwy: 8, stand: 's', fuel: 1, mil: true, xw: 15, tw: 5, crew: 0, zone: 'mil' },
+  heli:    { name: 'Helicopter', short: 'HEL', span: 0.16, len: 0.18, rwy: 0, stand: 's', fuel: 1, mil: true, vtol: true, xw: 40, tw: 40, crew: 3, zone: 'mil' }
 };
 IC.STAND = { s: { w: 0.32, d: 0.36, name: 'small' }, m: { w: 0.46, d: 0.5, name: 'medium' }, l: { w: 0.76, d: 0.8, name: 'large' } };
 IC.STAND_FITS = { s: ['s'], m: ['s', 'm'], l: ['s', 'm', 'l'] };
@@ -35,9 +37,16 @@ IC.APART = {
   tower:    { name: 'Control tower', w: 0.14, h: 0.14, cost: 50, build: 1200, hp: 40, desc: 'Without a tower an airport handles only a handful of movements an hour.' },
   fire:     { name: 'Fire station', w: 0.28, h: 0.2, cost: 35, build: 900, hp: 40, desc: 'Needed for large aircraft. It must be close to the runways.' },
   atc:      { name: 'Approach radar', w: 0.12, h: 0.12, cost: 110, build: 1200, hp: 30, emits: true, desc: 'Tighter arrival spacing and a radar picture out to about 45 km that sees aircraft without transponders. It shares the spectrum with other radars.' },
-  ammo:     { name: 'Munitions store', w: 0.3, h: 0.22, cost: 50, build: 1200, hp: 40, mil: true, desc: 'Weapons for the air wing. A hit here blows up.' }
+  ammo:     { name: 'Munitions store', w: 0.3, h: 0.22, cost: 50, build: 1200, hp: 40, mil: true, desc: 'Weapons for the air wing. A hit here blows up.' },
+  ils:      { name: 'Landing system (ILS)', w: 0.3, h: 0.08, cost: 25, build: 900, hp: 20, perEnd: true, desc: 'Radio beams that guide arrivals down to 60 m above one runway end. In fog and low cloud, arrivals divert unless the end they land on has one.' },
+  gradar:   { name: 'Ground radar', w: 0.1, h: 0.1, cost: 60, build: 900, hp: 20, desc: 'Shows the tower every aircraft on the ground, at night and in fog. Without it, an aircraft crossing a runway can stray onto one in use.' },
+  hydrant:  { name: 'Hydrant fuel system', w: 0.24, h: 0.18, cost: 90, build: 1500, hp: 30, pipe: 900, reach: 14, desc: 'A pipeline feeds the tanks and pipes fuel under the aprons within 1.4 km: no fuel trucks to wait for, quicker turnarounds.' }
 };
-IC.APART_ORDER = ['runway', 'taxi', 'apron', 'terminal', 'cargo', 'hangar', 'fuel', 'tower', 'fire', 'atc', 'has', 'alert', 'ammo'];
+IC.APART_ORDER = ['runway', 'taxi', 'apron', 'terminal', 'cargo', 'hangar', 'fuel', 'hydrant', 'tower', 'fire', 'atc', 'gradar', 'ils', 'has', 'alert', 'ammo'];
+/* who may park where: every part and stand belongs to one zone */
+IC.ZONES = { civil: { name: 'Passenger', short: 'PAX' }, cargo: { name: 'Cargo', short: 'CGO' }, light: { name: 'Light aircraft', short: 'GA' }, mil: { name: 'Military', short: 'MIL' } };
+/* fuel trucks: refuellings an hour each tank's trucks can make where there is no hydrant system */
+IC.FUEL_TRUCKS = 8;
 
 /* Airline archetypes: they fly differently and want different things from your airports. */
 IC.AIRLINE_KIND = {
