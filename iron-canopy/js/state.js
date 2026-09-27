@@ -63,6 +63,7 @@ IC.newGame = function (opts) {
   IC.groundInit(S, mode === 'academy');
   if (mode !== 'academy') IC.avInit(S);
   IC.civilInit(S);
+  IC.trafficInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
   return S;
