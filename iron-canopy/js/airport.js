@@ -521,6 +521,16 @@ IC.aptFits = function (ap, type) {
   return true;
 };
 
+/* who may park on a stand: civil aircraft never in the military zone, and the reverse */
+IC.standZoneOk = function (s, T) {
+  const z = s.zone || 'civil';
+  if (T.mil) return z === 'mil';
+  if (z === 'mil') return false;
+  if (T.cargo) return z === 'cargo' || z === 'civil';
+  if (T.zone === 'light') return z === 'light' || z === 'civil';
+  return z === 'civil';
+};
+
 /* ---------- compatibility with the rest of the game ---------- */
 IC.baseStatus = function (S, b) {
   if (!b || !b.parts) return { runway: true, turn: 1, cap: 99 };
@@ -563,7 +573,8 @@ IC.assignSlots = function (S, b) {
   const slots = [];
   for (const p of shel) for (let i = 0; i < IC.APART[p.kind].holds; i++) slots.push({ id: p.id, kind: p.kind, i });
   const stands = [];
-  for (const a of b.parts) if (a.kind === 'apron' && a.built) for (const s of a.stands || []) if (s.hp > 0) stands.push({ id: s.id, kind: 'stand', size: s.size });
+  IC.aptGraph(b);
+  for (const a of b.parts) if (a.kind === 'apron' && a.built) for (const s of a.stands || []) if (s.hp > 0 && (s.zone || 'mil') === 'mil' && !s.occ) stands.push({ id: s.id, kind: 'stand', size: s.size });
   const pref = r => r.kind === 'ftr' ? ['alert', 'has', 'hangar', 'stand'] : r.kind === 'aew' || r.kind === 'cargo' ? ['stand', 'hangar'] : ['hangar', 'has', 'stand'];
   const used = new Map();
   const take = (r, s) => { r.slot = s.id; used.set(s.id + ':' + (s.i || 0), r); };
