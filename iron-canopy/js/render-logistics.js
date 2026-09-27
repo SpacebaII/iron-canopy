@@ -121,7 +121,7 @@ IC.drawDeployEta = function (ctx, S, px, type, h) {
   const P = eta, free = (S.reserve[type] || 0) > 0;
   if (P.from) { g.strokeStyle = 'rgba(224,180,88,0.6)'; g.lineWidth = 1.4 * px; g.setLineDash([4 * px, 5 * px]); g.beginPath(); g.moveTo(P.from.x, P.from.y); g.lineTo(h.x, h.y); g.stroke(); g.setLineDash([]); }
   const cost = free ? 'from the reserve' : U.money(IC.unitCost(S, type));
-  tag(`${cost} · ready in about ${U.dur(P.total)}${P.from ? ` · from ${P.from.name}` : ' · built here'}`, h.x, h.y + 40 * px, px, C.supply);
+  tag(`${cost} · ready in about ${U.dur(P.total)}${P.from ? ` · ${P.air ? 'flown' : 'driven'} from ${P.from.name}` : ' · built here'}`, h.x, h.y + 40 * px, px, C.supply);
 };
 
 })(window.IC);

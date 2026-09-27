@@ -741,13 +741,13 @@ test('supply: a battery low on missiles is resupplied by a convoy seen on the ro
   const S = supplyGame();
   const { u, m } = lowBattery(S, 900, 1400);
   let v = null, seenOnRoad = false, t = 0;
-  while (t < 6 * 3600 && m.store < m.storeMax) {
+  while (t < 6 * 3600 && m.store + m.mag < m.storeMax + m.max) {
     IC.step(S, 0.5); t += 0.5;
     const j = S.jobs.find(x => x.mag === m && x.v);
     if (j) { v = j.v; if (v.state === 'toDest' && onRoad(S, v.x, v.y)) seenOnRoad = true; }
   }
   assert(v, 'no convoy was sent');
-  assert(m.store >= m.storeMax, `reserve only ${m.store}/${m.storeMax} after ${U.dur(t)}`);
+  assert(m.store + m.mag >= m.storeMax + m.max, `only ${m.mag} ready and ${m.store} in reserve after ${U.dur(t)}`);
   assert(seenOnRoad, 'the convoy never drove on a road');
   assert(IC.nextLoad(S, u, m).text === 'Full.', 'the panel does not say it is full');
 });
