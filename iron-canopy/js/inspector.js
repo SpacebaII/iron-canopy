@@ -479,7 +479,7 @@ function convoy(v) {
     else if (j.kind === 'buy') rows.push(['Why', 'Stock bought for the depot, taken on from the airport']);
   } else if (v.state === 'return') rows.push(['Back at', `${esc(v.home.name)} in about ${U.dur(Math.max(0, v.eta - S.time))}`]);
   if (v.cut) rows.push(['Road', `<span class="amber">${esc(v.cut)}: a slow detour, +${U.dur(v.lost)}</span>`]);
-  const lorries = { missile: 'missile transporters', rocket: 'rocket carriers', flat: 'flatbed lorries', empty: 'lorries, empty' }[IC.cargoKind(j && j.mun)];
+  const lorries = { missile: 'missile transporters', rocket: 'rocket carriers', flat: 'flatbed lorries', empty: 'lorries' }[IC.cargoKind(j && j.loaded && j.mun)];
   return head(`<span class="badge amber">${v.trucks}×</span>`, v.name, `${v.trucks} ${lorries} · ${v.contract ? 'supplier' : `based at ${esc(v.home.name)}`}`, st, j ? 'busy' : '') +
     `<div class="ibody">${rows.length ? kv(rows) : '<p class="hint">Parked at the depot, waiting for a job. Convoys are sent automatically, priority areas first.</p>'}<p class="hint">Its route is drawn on the map. The enemy watches roads near the border and strikes convoys it sees: a depot further back, or air defence along the road, keeps them alive.</p></div>`;
 }

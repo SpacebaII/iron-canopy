@@ -36,7 +36,7 @@ function behind(v, d) {
 /* one lorry seen from above: cab in front, the load behind. Real size (16 m) when that is big enough to read,
    never under 20 px so the load can be told apart */
 function lorry(x, y, h, kind, px, body, civil) {
-  const len = Math.max(0.16, 20 * px), wid = len * 0.36;
+  const len = Math.max(0.16, U.lerp(20, 9, U.clamp((cam.z - 2) / 10, 0, 1)) * px), wid = len * 0.36;
   g.save(); g.translate(x, y); g.rotate(h);
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-len / 2 + wid * 0.25, -wid / 2 + wid * 0.25, len, wid);
   g.fillStyle = civil ? '#d8d4c8' : '#5d6a45'; g.fillRect(len * 0.28, -wid / 2, len * 0.22, wid);            // cab
@@ -61,7 +61,7 @@ function label(S, v, px) {
 function column(S, v, px, sel) {
   const loaded = !!(v.job && v.job.loaded && v.state !== 'toSource');
   const n = v.trucks, full = lorries(S, v), kind = loaded ? IC.cargoKind(v.job.mun) : 'empty';
-  const gap = Math.max(0.5, 25 * px);
+  const gap = Math.max(0.5, U.lerp(25, 12, U.clamp((cam.z - 2) / 10, 0, 1)) * px);
   const body = v.contract ? '#b9b2a0' : loaded ? C.supply : '#8f8266';
   // the whole company drives together; only the lorries the load needs carry it
   for (let i = n - 1; i >= 0; i--) { const p = i ? behind(v, i * gap) : { x: v.x, y: v.y, h: v.h || 0 }; lorry(p.x, p.y, p.h, i < full ? kind : 'empty', px, i < full ? body : '#8f8266', v.contract); }
@@ -69,9 +69,9 @@ function column(S, v, px, sel) {
 }
 function routeLine(S, v, px) {
   if (!v.route || !v.route.length) return;
-  g.lineWidth = 2.2 * px; g.setLineDash([6 * px, 5 * px]);
+  g.lineWidth = 3 * px; g.setLineDash([8 * px, 6 * px]);
   let p = v;
-  for (const q of v.route) { g.strokeStyle = q.cut ? RED : 'rgba(224,180,88,0.75)'; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke(); p = q; }
+  for (const q of v.route) { g.strokeStyle = q.cut ? RED : 'rgba(255,200,90,0.9)'; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke(); p = q; }
   g.setLineDash([]);
   const e = v.route[v.route.length - 1];
   g.strokeStyle = AMBER; g.lineWidth = 1.6 * px; g.beginPath(); g.arc(e.x, e.y, 7 * px, 0, 7); g.stroke();
