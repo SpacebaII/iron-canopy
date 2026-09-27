@@ -12,7 +12,7 @@ function drive(S, ap, o) {
   const mix = o.mix || [['narrow', 6], ['wide', 3], ['turbo', 1]];
   const stands = IC.aptStands(ap).filter(s => s.linked && s.hp > 0 && (s.zone === 'civil' || !s.zone));
   const fits = (s, type) => IC.STAND_FITS[s.size].includes(IC.ACTYPES[type].stand);
-  const r = { arr: 0, dep: 0, div: 0, divWhy: {}, crash: 0, pending: [], maxHold: 0, left: 0, peak: 0, parkedTypes: new Map() };
+  const r = { arr: 0, dep: 0, ga: 0, div: 0, divWhy: {}, crash: 0, pending: [], maxHold: 0, left: 0, peak: 0, parkedTypes: new Map() };
   let n = 0;
   // aircraft already parked, ready to leave
   for (const s of stands) if (!s.occ && Math.random() < (o.fill == null ? 0.6 : o.fill)) { s.occ = 'pk' + (n++); r.parkedTypes.set(s.occ, s.size === 'l' ? U.wpick([['wide', 1], ['narrow', 1]]) : s.size === 'm' ? 'narrow' : 'turbo'); }
@@ -39,10 +39,12 @@ function drive(S, ap, o) {
     if ((tTry -= dt) <= 0) {
       tTry = 5;
       for (const a of r.pending.slice()) {
+        if (a.wait > S.time) continue;
         const s = stands.find(x => !x.occ && fits(x, a.type));
         if (!s) continue;
         if (!a.faf) a.faf = IC.gopsFaf(S, ap, a.type);
-        const m = IC.gopsLand(S, ap, { type: a.type, target: s.id, stand: s, faf: a.faf, who: a.cs, onPark: () => { r.arr++; r.parkedTypes.set(a.cs, a.type); s.occ = a.cs; } });
+        const m = IC.gopsLand(S, ap, { type: a.type, target: s.id, stand: s, faf: a.faf, who: a.cs, onPark: () => { r.arr++; r.parkedTypes.set(a.cs, a.type); s.occ = a.cs; },
+          onGoAround: () => { r.ga++; s.occ = null; a.faf.q.done = false; a.faf.q.t = S.time; a.faf.q.askT = S.time; a.faf.q.backT = a.wait = S.time + 240; r.pending.push(a); } });
         if (m === 'hold') continue;
         r.pending.splice(r.pending.indexOf(a), 1);
         if (m === 'divert') { r.div++; const why = IC.aptLandWhy(S, ap, IC.ACTYPES[a.type]) || 'other'; r.divWhy[why] = (r.divWhy[why] || 0) + 1; continue; }
