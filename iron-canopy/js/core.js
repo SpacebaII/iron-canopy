@@ -3,10 +3,10 @@ window.IC = window.IC || {};
 (function (IC) {
 'use strict';
 
-IC.WW = 12000;         // world width in units (1 unit = 100 m → 1,200 km)
-IC.WH = 9000;          // world height (900 km)
+IC.WW = 18000;         // world width in units (1 unit = 100 m → 1,800 km)
+IC.WH = 13500;         // world height (1,350 km)
 IC.GS = 10;            // game seconds per real second at 1× speed
-IC.TS = 0.25;          // base terrain canvas scale (px per world unit)
+IC.TS = 0.18;          // base terrain canvas scale (px per world unit)
 IC.MAX_STEP = 0.25;    // largest simulation step, in game seconds
 IC.MAXZ = 80;          // closest zoom (screen px per world unit): 80 px per 100 m shows aircraft at the gate
 IC.SPEEDS = [1, 2, 4, 8, 16, 32];

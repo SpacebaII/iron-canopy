@@ -3,7 +3,8 @@
 'use strict';
 const U = IC.U;
 const TAU = Math.PI * 2;
-const K = 1.5;   // map scale relative to the original 800 km layout
+const M = 1.5;   // Wave 4 made the map half as large again each way: distances between places grow by M
+const K = 1.5 * M;   // map scale relative to the original 800 km layout
 /* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
 IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
 IC.FOREST_T = 0.56;
@@ -34,7 +35,7 @@ IC.generate = function (seed) {
   };
 
   /* ---------- nation outline (star-shaped, so inside = radius test) ---------- */
-  const cx = 5925 + R.range(-330, 330), cy = 4870 + R.range(-220, 220);
+  const cx = (5925 + R.range(-330, 330)) * M, cy = (4870 + R.range(-220, 220)) * M;
   W.cx = cx; W.cy = cy;
   const ph = [R.range(0, TAU), R.range(0, TAU), R.range(0, TAU), R.range(0, TAU)];
   const amp = [R.range(0.07, 0.13), R.range(0.04, 0.09), R.range(0.03, 0.06), R.range(0.015, 0.03)];
@@ -81,7 +82,7 @@ IC.generate = function (seed) {
     }
   }
   W.fronts = [];
-  const STEP = 330;
+  const STEP = 330 * M;
   for (const k of ['A', 'B']) {
     let start = -1;
     for (let i = 0; i < samples.length; i++) if (samples[i].k === k && samples[(i - 1 + samples.length) % samples.length].k !== k) { start = i; break; }
@@ -113,7 +114,7 @@ IC.generate = function (seed) {
   const arc = (a0, a1, off, am, w, n) => {
     const pts = []; n = n || 11;
     for (let i = 0; i <= n; i++) {
-      const a = U.lerp(a0, a1, i / n), p = W.borderPt(a), r = Math.hypot(p.x - cx, p.y - cy), o = off + R.range(-135, 135);
+      const a = U.lerp(a0, a1, i / n), p = W.borderPt(a), r = Math.hypot(p.x - cx, p.y - cy), o = (off + R.range(-135, 135)) * M;
       pts.push([cx + (p.x - cx) * (r + o) / r, cy + (p.y - cy) * (r + o) / r]);
     }
     return { pts, a: am, w };
@@ -127,7 +128,7 @@ IC.generate = function (seed) {
   {
     let a = R.range(0, TAU), rr = R.range(0.25, 0.5), px = cx + Math.cos(a) * RX * rr, py = cy + Math.sin(a) * RY * rr, h = R.range(0, TAU);
     const pts = [];
-    for (let i = 0; i < 8; i++) { pts.push([px, py]); h += R.range(-0.5, 0.5); px += Math.cos(h) * 330; py += Math.sin(h) * 330; }
+    for (let i = 0; i < 8; i++) { pts.push([px, py]); h += R.range(-0.5, 0.5); px += Math.cos(h) * 330 * M; py += Math.sin(h) * 330 * M; }
     ridges.push({ pts, a: R.range(0.28, 0.42), w: 390 });
   }
   for (const r of ridges) {
@@ -172,7 +173,7 @@ IC.generate = function (seed) {
   for (let j = 4; j < GH - 4; j += 3) for (let i = 4; i < GW - 4; i += 3) if (W.depthOut(i * GC, j * GC) < 1050) inl.push(bl[j * GW + i]);
   inl.sort((a, b) => b - a);
   const hiT = inl[Math.floor(inl.length * 0.18)] || 0.5;
-  for (let k = 0; k < 8000 && srcs.length < 14; k++) {
+  for (let k = 0; k < 8000 && srcs.length < 20; k++) {
     const i = R.int(4, GW - 5), j = R.int(4, GH - 5), x = i * GC, y = j * GC;
     if (bl[j * GW + i] < hiT || W.depthOut(x, y) > 1050) continue;
     if (srcs.some(s => U.dxy(s.x, s.y, x, y) < 900)) continue;
@@ -214,7 +215,7 @@ IC.generate = function (seed) {
     if (end === 'sink' && W.lakes.length < 6) { const [x, y] = pts[pts.length - 1]; if (!W.lakes.some(l => U.dxy(l.x, l.y, x, y) < 700)) W.lakes.push({ x, y, rx: R.range(100, 220), ry: R.range(60, 130), rot: R.range(0, 3) }); }
   }
   for (let k = 0; k < 500 && W.lakes.length < 5; k++) {
-    const x = R.range(cx - 2700, cx + 2700), y = R.range(cy - 1950, cy + 1950);
+    const x = R.range(cx - 2700 * M, cx + 2700 * M), y = R.range(cy - 1950 * M, cy + 1950 * M);
     if (!W.inHome(x, y) || W.hAt(x, y) > 0.35 || W.depthOut(x, y) > -375) continue;
     W.lakes.push({ x, y, rx: R.range(110, 240), ry: R.range(60, 120), rot: R.range(0, 3) });
   }
@@ -257,7 +258,7 @@ IC.generate = function (seed) {
   /* ---------- cities ---------- */
   const cand = [];
   for (let k = 0; k < 9000; k++) {
-    const x = R.range(cx - 4050, cx + 4050), y = R.range(cy - 3000, cy + 3000);
+    const x = R.range(cx - 4050 * M, cx + 4050 * M), y = R.range(cy - 3000 * M, cy + 3000 * M);
     if (!W.inHome(x, y) || W.inLake(x, y)) continue;
     const h = W.hAt(x, y); if (h > 0.72) continue;
     if (W.depthOut(x, y) > -165) continue;
@@ -267,12 +268,12 @@ IC.generate = function (seed) {
   }
   cand.sort((a, b) => b.score - a.score);
   const cities = [];
-  const capC = cand.filter(c => U.dxy(c.x, c.y, cx, cy) < 1275).sort((a, b) => b.score - a.score)[0] || cand[0];
+  const capC = cand.filter(c => U.dxy(c.x, c.y, cx, cy) < 1275 * M).sort((a, b) => b.score - a.score)[0] || cand[0];
   cities.push(capC);
-  const NCITY = 16;
+  const NCITY = 18;
   for (const c of cand) {
     if (cities.length >= NCITY) break;
-    if (cities.every(o => U.dxy(o.x, o.y, c.x, c.y) > 780)) cities.push(c);
+    if (cities.every(o => U.dxy(o.x, o.y, c.x, c.y) > 780 * M)) cities.push(c);
   }
   // make sure there are front-line towns on both fronts
   for (const f of W.fronts) {
@@ -303,12 +304,12 @@ IC.generate = function (seed) {
     }
   }
   let nHome = W.villages.length, nAbroad = 0;
-  for (let k = 0; k < 9000 && (nHome < 60 || nAbroad < 45); k++) {
+  for (let k = 0; k < 12000 && (nHome < 80 || nAbroad < 60); k++) {
     const home = R() < 0.6;
-    const x = home ? R.range(cx - 3700, cx + 3700) : R.range(200, WW - 200), y = home ? R.range(cy - 2700, cy + 2700) : R.range(200, WH - 200);
+    const x = home ? R.range(cx - 3700 * M, cx + 3700 * M) : R.range(200, WW - 200), y = home ? R.range(cy - 2700 * M, cy + 2700 * M) : R.range(200, WH - 200);
     if (W.inLake(x, y) || W.hAt(x, y) > 0.8) continue;
     if (home !== W.inHome(x, y)) continue;
-    if (home ? nHome >= 60 : nAbroad >= 45) continue;
+    if (home ? nHome >= 80 : nAbroad >= 60) continue;
     if (home && W.depthOut(x, y) > -60) continue;
     if (!home && Math.abs(W.depthOut(x, y)) < 60) continue;
     if (allTowns().some(o => U.dxy(o.x, o.y, x, y) < (o.kind === 'city' ? o.r + 260 : 330))) continue;
@@ -350,7 +351,7 @@ IC.generate = function (seed) {
     let best = null, bs = -1e9;
     for (const c of cand) {
       const hb = W.hostileBorderDist(c.x, c.y), dc = U.dxy(c.x, c.y, cap.x, cap.y);
-      if (dc < 675 || dc > 2250 || taken().some(o => U.dxy(o.x, o.y, c.x, c.y) < 375)) continue;
+      if (dc < 675 || dc > 2250 * M || taken().some(o => U.dxy(o.x, o.y, c.x, c.y) < 375)) continue;
       if (hb > bs) { bs = hb; best = c; }
     }
     if (best) addInfra({ id: 'ab_rear', kind: 'airbase', name: `${W.placeName()} Air Base`, x: best.x, y: best.y });
@@ -434,7 +435,7 @@ IC.generate = function (seed) {
     const hostile = W.side[k] === 'hostile';
     for (let i = 0; i < (hostile ? 5 : 3); i++) {
       const front = hostile && i < 2;
-      const p = radialPt(k, front ? 300 : 1050, front ? 800 : 2700, 700, W.foreign);
+      const p = radialPt(k, front ? 300 : 1050 * M, front ? 800 : 2700 * M, 700, W.foreign);
       W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: W.placeName(), x: p.x, y: p.y, apt: i === 2 || (!hostile && i === 0), frontier: front, pop: front ? R.int(60, 180) : R.int(120, 600), r: front ? 55 : 70 });
     }
   }
@@ -444,7 +445,7 @@ IC.generate = function (seed) {
   const ports = W.foreign.filter(f => f.apt).map(f => ({ x: f.x, y: f.y, name: f.name, k: f.k }));
   const homeApts = W.infra.filter(i => i.kind === 'airport').map(i => ({ x: i.x, y: i.y, name: i.name, k: 'H', id: i.id }));
   // gateways far off the map edge for long-haul traffic
-  const gate = (a) => ({ x: U.clamp(cx + Math.cos(a) * 9000, -600, WW + 600), y: U.clamp(cy + Math.sin(a) * 9000, -600, WH + 600), name: 'long-haul', k: 'X', edge: true });
+  const gate = (a) => ({ x: U.clamp(cx + Math.cos(a) * 9000 * M, -600, WW + 600), y: U.clamp(cy + Math.sin(a) * 9000 * M, -600, WH + 600), name: 'long-haul', k: 'X', edge: true });
   const neutral = ports.filter(p => W.side[p.k] === 'neutral'), hostileP = ports.filter(p => W.side[p.k] === 'hostile');
   for (const a of neutral) for (const b of neutral) if (a !== b && a.k !== b.k) W.airways.push({ a, b, kind: 'over' });
   for (const h of homeApts) { for (const n of neutral) W.airways.push({ a: h, b: n, kind: 'intl' }); }
@@ -459,7 +460,7 @@ IC.generate = function (seed) {
   /* ---------- enemy installations ---------- */
   W.esites = [];
   const SITE = (k, kind, dmin, dmax, extra) => {
-    const p = radialPt(k, dmin * K, dmax * K, 330, W.esites.concat(W.foreign));
+    const p = radialPt(k, dmin * 1.5, dmax * 1.5, 330, W.esites.concat(W.foreign)); // weapon ranges are real: sites keep their distances
     const s = Object.assign({ id: 'es' + W.esites.length, k, kind, x: p.x, y: p.y }, extra || {});
     W.esites.push(s); return s;
   };
