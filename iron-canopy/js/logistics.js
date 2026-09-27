@@ -38,10 +38,10 @@ const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
 /* what a load is called, in words the player knows */
-const NOUN = { IR: 'IR missiles', SR: 'SR missiles', MR: 'MR missiles', LR: 'LR missiles', TBD: 'BMD missiles', HAT: 'HAT interceptors', EXO: 'EXO interceptors', CRS: 'cruise missiles', SRB: 'ballistic missiles', RKT: 'guided rockets', ATG: 'anti-tank kits', SUP: 'supply pallets' };
+const NOUN = { IR: 'IR missiles', IR2: 'imaging IR missiles', SR: 'SR missiles', MR: 'MR missiles', LR: 'LR missiles', TBD: 'BMD missiles', HAT: 'HAT interceptors', EXO: 'EXO interceptors', CRS: 'cruise missiles', SRB: 'ballistic missiles', RKT: 'guided rockets' };
 IC.munWords = (mun, n) => n == null ? NOUN[mun] || mun : `${n} ${n === 1 ? (NOUN[mun] || mun).replace(/s$/, '') : NOUN[mun] || mun}`;
 /* the lorries a load rides on: missile transporters, rocket carriers, flatbeds */
-IC.cargoKind = mun => !mun ? 'empty' : mun === 'SUP' || mun === 'ATG' ? 'flat' : IC.MUN[mun].strike ? 'rocket' : 'missile';
+IC.cargoKind = mun => !mun ? 'empty' : IC.MUN[mun].strike ? 'rocket' : 'missile';
 
 IC.addTruck = function (S, home) {
   home.convoyN = (home.convoyN || 0) + 1;
@@ -141,7 +141,7 @@ function newJob(S, o) {
   return j;
 }
 /* "12 SR missiles to MRS-2", "8 supply pallets to Central Depot" */
-IC.jobLabel = j => j.kind === 'lift' ? `${IC.HLIFT[j.cargo].name} to ${j.to.name}` : `${IC.munWords(j.mun, j.qty)} to ${j.to.name}`;
+IC.jobLabel = j => `${IC.munWords(j.mun, j.qty)} to ${j.to.name}`;
 /* game seconds until a job's load is unloaded where it is going */
 IC.jobEta = function (S, j) {
   const v = j.v, a = j.air, C = IC.SUPPLY;
@@ -161,30 +161,12 @@ IC.failJob = function (S, j) {
   j.state = 'failed';
   const back = !j.loaded && j.from && j.from.inv && j.mun && j.kind !== 'buy';
   if (back) j.from.inv[j.mun] = (j.from.inv[j.mun] || 0) + j.qty0;
-  if (j.kind === 'lift' && j.cargo === 'REPL' && !j.loaded) S.manpower += IC.HLIFT.REPL.repl;
   if (j.mag) j.mag.inc = Math.max(0, j.mag.inc - j.qty0);
-  if (j.kind === 'ground' && j.to) j.to.supInc = Math.max(0, (j.to.supInc || 0) - j.qty0);
-  if (j.kind === 'lift' && j.to) j.to.lift = null;
-  if (j.to && j.to.inc && !j.mag && j.kind !== 'ground' && j.kind !== 'lift') j.to.inc[j.mun] = Math.max(0, (j.to.inc[j.mun] || 0) - j.qty0);
+  if (j.to && j.to.inc && !j.mag) j.to.inc[j.mun] = Math.max(0, (j.to.inc[j.mun] || 0) - j.qty0);
   if (j.kind === 'buy' && j.loaded) IC.log(S, 'warn', 'SUPPLY', `${IC.munWords(j.mun, j.qty0)} for ${j.to.name} lost on the road.`, j.v || j.to);
 };
 function deliver(S, j) {
   j.state = 'done';
-  if (j.kind === 'ground') {
-    j.to.supInc = Math.max(0, (j.to.supInc || 0) - j.qty0);
-    if (!j.to.dead) j.to.sup = Math.min(100, j.to.sup + j.qty * 4);
-    return;
-  }
-  if (j.kind === 'lift') {
-    const g = j.to; g.lift = null;
-    if (g.dead) return;
-    if (j.cargo === 'SUP') g.sup = Math.min(100, g.sup + 30);
-    else if (j.cargo === 'ATG') g.kit.atgm += j.qty + 2;
-    else if (j.cargo === 'REPL') g.str = Math.min(100, g.str + IC.HLIFT.REPL.repl);
-    IC.log(S, 'kill', 'LIFT', `${IC.HLIFT[j.cargo].name} delivered to ${g.name}.`, g);
-    IC.emit(S, 'lift', { g, cargo: j.cargo });
-    return;
-  }
   if (j.mag) {
     j.mag.inc = Math.max(0, j.mag.inc - j.qty0);
     let q = j.qty;
@@ -267,7 +249,6 @@ IC.airJobStep = function (S, a) {
   else if (a.leg === 'toDest') {
     if (j.to.dead) { IC.failJob(S, j); a.leg = 'home'; }
     else {
-      if (j.kind === 'lift' && IC.groundFire && IC.groundFire(S, a, 0.04)) { if (a.dead) return; }
       a.leg = 'unloading'; a.wait = a.kind === 'heli' ? 200 : 600; return;
     }
   }
@@ -372,14 +353,12 @@ IC.depotDemand = function (S) {
       if (central && d !== central) demand[central.id][m.mun] = (demand[central.id][m.mun] || 0) + n * 0.5;
     }
   }
-  groundDemand(S, demand);
   return demand;
 };
 /* the whole force's need, the stock held or coming, per item */
 IC.stockNeed = function (S) {
   const need = {}, have = {};
   for (const u of S.units) if (!u.dead) for (const m of IC.activeMags(S, u)) need[m.mun] = (need[m.mun] || 0) + m.storeMax + m.max;
-  const g = {}; groundDemand(S, { _: g }, true); for (const k in g) need[k] = (need[k] || 0) + g[k];
   for (const d of IC.depots(S)) for (const k in d.inv) have[k] = (have[k] || 0) + (d.inv[k] || 0) + (d.inc[k] || 0);
   return { need, have };
 };
@@ -438,10 +417,8 @@ IC.logistics = function (S, dt) {
   imports(S);
   for (const j of S.jobs) if (j.mode === 'rail' && j.state === 'active' && S.time >= j.arrive) { if (j.to.dead) IC.failJob(S, j); else deliver(S, j); }
   const depots = IC.depots(S);
-  // 1. the land war's brigades (goes with ground.js)
-  supplyBrigades(S);
-  // 2. units short of missiles or rockets: priority areas first, then priority units, then the emptiest
-  const aus = S.units.filter(u => !u.dead && u.mags.length && u.state !== 'transit' && u.state !== 'packing')
+  // units short of missiles or rockets: priority areas first, then priority units, then the emptiest
+  const aus = S.units.filter(u => !u.dead && !u.callin && u.mags.length && u.state !== 'transit' && u.state !== 'packing')
     .map(u => ({ u, d: IC.servingDepot(S, u) }))
     .sort((a, b) => priW(b.d) - priW(a.d) || (b.u.pri ? 1 : 0) - (a.u.pri ? 1 : 0) || fill(S, a.u) - fill(S, b.u));
   for (const { u, d: home } of aus) {
@@ -528,60 +505,6 @@ IC.nextLoad = function (S, u, m) {
 function fill(S, u) { let a = 0, b = 0; for (const m of IC.activeMags(S, u)) { a += m.mag + m.store + m.inc; b += m.max + m.storeMax; } return b ? a / b : 1; }
 IC.fill = fill;
 
-/* ---------- the land war: brigades, supply pallets and helicopter lifts (goes with ground.js) ---------- */
-function groundDemand(S, demand, flat) {
-  if (!S.gunits) return;
-  for (const g of S.gunits) {
-    if (g.side !== 'us' || g.dead) continue;
-    const d = flat ? null : IC.servingDepot(S, g), o = flat ? demand._ : d && demand[d.id];
-    if (!o) continue;
-    o.SUP = (o.SUP || 0) + (g.front.active ? 25 : 8) * (0.5 + g.front.supplyPri * 0.5);
-    o.ATG = (o.ATG || 0) + 4;
-  }
-}
-function supplyBrigades(S) {
-  if (!S.gunits || !S.gunits.length) return;
-  const depots = IC.depots(S);
-  const gs = S.gunits.filter(g => g.side === 'us' && !g.dead && (g.front.active || g.sup < 45) && !(g.obj && g.obj.besieged))
-    .sort((a, b) => (b.front.supplyPri - a.front.supplyPri) || (a.sup - b.sup));
-  for (const g of gs) {
-    const need = Math.ceil((100 - g.sup) / 4) - (g.supInc || 0);
-    if (g.sup > 70 || need < 5) continue;
-    const d = depots.filter(x => (x.inv.SUP || 0) >= 5 && freeTruck(S, x) && IC.serves(x, g.x, g.y)).sort((a, b) => U.dist(a, g) * (a.central ? 1.4 : 1) - U.dist(b, g) * (b.central ? 1.4 : 1))[0];
-    if (!d) continue;
-    const v = freeTruck(S, d);
-    const qty = Math.min(need, Math.floor(d.inv.SUP), Math.floor(truckCap(S) * v.trucks));
-    d.inv.SUP -= qty; g.supInc = (g.supInc || 0) + qty;
-    sendTruck(S, v, newJob(S, { kind: 'ground', mode: 'truck', mun: 'SUP', qty, qty0: qty, from: d, to: g }));
-  }
-}
-IC.liftCheck = function (S, g, cargo) {
-  const C = IC.HLIFT[cargo];
-  if (!IC.wx(S).heli) return 'Weather grounds the helicopters';
-  if (g.lift) return 'A lift is already on the way';
-  if (cargo === 'REPL' && S.manpower < C.repl) return 'Not enough manpower in the pool';
-  if (C.mun && !IC.depots(S).some(d => (d.inv[C.mun] || 0) >= C.qty)) return `No depot holds ${IC.munWords(C.mun, C.qty)}`;
-  if (!S.roster.some(r => r.kind === 'heli' && r.st === 'ready' && IC.canLaunch(S, r))) return 'No transport helicopter ready';
-  return '';
-};
-IC.heliLift = function (S, g, cargo, rid) {
-  const why = IC.liftCheck(S, g, cargo);
-  if (why) { IC.log(S, 'warn', 'LIFT', `${g.name}: ${why}.`); return false; }
-  const C = IC.HLIFT[cargo];
-  const src = C.mun ? IC.depots(S).filter(d => (d.inv[C.mun] || 0) >= C.qty).sort((a, b) => U.dist(a, g) - U.dist(b, g))[0] : IC.musterPoints(S).sort((a, b) => U.dist(a, g) - U.dist(b, g))[0];
-  const r = rid ? S.roster.find(x => x.id === rid) : heliFor(S, src, 1e9);
-  if (!r || r.st !== 'ready') return false;
-  if (C.mun) src.inv[C.mun] -= C.qty; else S.manpower -= C.repl;
-  const j = newJob(S, { kind: 'lift', mode: 'heli', cargo, mun: C.mun, qty: C.qty || 0, qty0: C.qty || 0, from: src, to: g });
-  const a = IC.launchAir(S, r, { type: 'hlift', cargo, to: g }, true);
-  if (!a) { IC.failJob(S, j); return false; }
-  a.job = j; j.air = a; a.leg = 'toSource'; a.route = [{ x: src.x, y: src.y }];
-  g.lift = j;
-  IC.log(S, 'info', 'LIFT', `${r.name} flying ${C.name.toLowerCase()} from ${src.name} to ${g.name}.`, g);
-  IC.emit(S, 'liftOrdered', { g, cargo });
-  return true;
-};
-
 /* ---------- national industry ---------- */
 IC.industry = function (S) {
   let have = 0, tot = 0;
@@ -624,7 +547,7 @@ IC.economy = function (S, dt) {
   const air = { open: 1, restricted: 0.5, closed: 0 }[S.airspace];
   for (const i of S.infra) {
     if (i.offline || i.owner !== 'us') continue;
-    if (i.kind === 'city') tax += i.pop * 0.02 * (i.hp / i.max) * i.prosp * (0.5 + i.morale / 200) * (i.besieged ? 0.2 : 1);
+    if (i.kind === 'city') tax += i.pop * 0.02 * (i.hp / i.max) * i.prosp * (0.5 + i.morale / 200);
     if (i.kind === 'airport' && !S.av) apt += i.rev * air * (i.hp / i.max);
   }
   for (const t of S.world.foreign) if (t.taken) tax += 3;
@@ -640,16 +563,15 @@ IC.economy = function (S, dt) {
   let crowd = 0;
   for (const u of S.units) { const b = IC.BAND[u.type], k = b && bands[b] > 1 && u.radarOn ? 0.15 * (bands[b] - 1) : 0; upAD += u.d.up * (1 + k); crowd += u.d.up * k; }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;
-  let upG = 0; for (const g of S.gunits) if (g.side === 'us' && (!S.story || S.story.act >= 4)) upG += g.g.cost * 0.004;
   const upApt = S.av ? IC.avUpkeep(S) : 0, upStaff = S.story ? IC.staffCost(S) : 0, upLoan = IC.loanRate(S);
-  const up = (upAD + upAir + upG) * mob.up + upApt + upStaff + upLoan;
+  const up = (upAD + upAir) * mob.up + upApt + upStaff + upLoan;
   S.income = base + tax + trade + apt + aidRate + IC.avRevenueRate(S); S.upkeep = up;
-  const L = S.ledger = { base, tax, trade, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upG: upG * mob.up, upApt, upStaff, loan: upLoan, crowd: crowd * mob.up };
+  const L = S.ledger = { base, tax, trade, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upApt, upStaff, loan: upLoan, crowd: crowd * mob.up };
   moneyWatch(S);
   S.budget += (S.income - IC.avRevenueRate(S) - S.upkeep) * dt / 3600;
   // the weekly statement books each line as it is paid (airline fees are booked where they are paid)
   for (const k of ['base', 'tax', 'trade', 'apt', 'aid']) IC.econBook(S, k, L[k] * dt / 3600);
-  for (const k of ['upAD', 'upAir', 'upG', 'upApt', 'upStaff', 'loan']) IC.econBook(S, k, -L[k] * dt / 3600);
+  for (const k of ['upAD', 'upAir', 'upApt', 'upStaff', 'loan']) IC.econBook(S, k, -L[k] * dt / 3600);
   for (const c of IC.cities(S)) {
     c.morale = U.clamp(c.morale + mob.morale * dt / 3600, 0, 100);
     // prosperity follows connections (growth.js); without that model it just recovers

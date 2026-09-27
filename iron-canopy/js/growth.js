@@ -224,7 +224,7 @@ function grow(S, dt) {
     const g = {
       air: G.airGrowth * c.air.score,
       road: G.roadGrowth * U.clamp(c.rc / Math.max(1, c.rc0) - 1, -0.6, 0.6),
-      war: -(1 - alive) * 3 - (c.besieged ? 1 : 0) - (war ? 0.1 : 0),
+      war: -(1 - alive) * 3 - (war ? 0.1 : 0),
       base: G.drift
     };
     g.tot = U.clamp(g.air + g.road + g.war + g.base, -2, 2);
@@ -601,7 +601,7 @@ IC.STATEMENT = {
   base: 'Grant from the Ministry', tax: 'Taxes from the cities', trade: 'Trade taxes', apt: 'Airport revenue', aid: 'Allied support',
   fee_land: 'Airline fees: landing', fee_pax: 'Airline fees: passengers', fee_cargo: 'Airline fees: cargo', fee_over: 'Overflight fees',
   oneoff: 'Grants, aid and war bonds', refund: 'Equipment dismantled', loanIn: 'Loans taken',
-  upAD: 'Running costs: air defence', upAir: 'Running costs: air force', upG: 'Running costs: army', upApt: 'Running costs: airports', upStaff: 'Staff',
+  upAD: 'Running costs: air defence', upAir: 'Running costs: air force', upApt: 'Running costs: airports', upStaff: 'Staff',
   loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
   buyUnits: 'Equipment bought', buyMun: 'Missiles and supplies bought', buyLogi: 'Truck companies', research: 'Research', repair: 'Repairs',
   other: 'Building works and other spending'
@@ -610,7 +610,7 @@ IC.STATEMENT = {
 IC.money = function (S) {
   const L = S.ledger || {}, A = S.av, r = A && A.rate || {};
   const inc = [['base', L.base], ['av', L.av || 0], ['tax', L.tax], ['trade', L.trade], ['apt', L.apt], ['aid', L.aid]].filter(([, v]) => v > 0.005);
-  const out = [['upAD', L.upAD], ['upAir', L.upAir], ['upG', L.upG], ['upApt', L.upApt], ['upStaff', L.upStaff], ['loan', L.loan]].filter(([, v]) => v > 0.005);
+  const out = [['upAD', L.upAD], ['upAir', L.upAir], ['upApt', L.upApt], ['upStaff', L.upStaff], ['loan', L.loan]].filter(([, v]) => v > 0.005);
   const name = k => k === 'av' ? 'Airline fees' : IC.STATEMENT[k];
   const line = ([k, v]) => ({ k, name: name(k), v, why: IC.moneyWhy(S, k, r) });
   const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
@@ -632,7 +632,6 @@ IC.moneyWhy = function (S, k, r) {
     case 'aid': return `Our allies pay more the more they support us (support ${Math.round(S.support)}).`;
     case 'upAD': { const us = S.units.filter(u => !u.dead), by = {}; for (const u of us) by[u.d.name] = (by[u.d.name] || 0) + u.d.up; const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([nm, v]) => `${nm} ${U.money(v)}`); return `${n(us.length, 'unit')} on the map, crews and fuel: ${top.join(', ')}.${L.crowd > 0.05 ? ` Radars sharing a frequency band cost ${U.money(L.crowd)} more to keep apart.` : ''} Units in the reserve cost nothing.${mobTxt}`; }
     case 'upAir': { const f = S.roster.filter(x => x.st !== 'lost').length; return `${n(f, 'flight')} of aircraft at ₭0.6M an hour each; every sortie costs extra.${mobTxt}`; }
-    case 'upG': return `Army brigades in the field.${mobTxt}`;
     case 'upApt': { let v = 0; for (const b of IC.bases(S)) if (b.parts && b.owner === 'us' && !b.locked) for (const p of b.parts) if (p.built) v += IC.partCost(b, p); return `0.12% an hour of what the airports' runways, taxiways and buildings cost (${U.money(v)}). Bigger airports cost more to keep.`; }
     case 'upStaff': return 'The delegates you hired (Staff room). Let one go to save the cost.';
     case 'loan': return `${n(S.econ ? S.econ.loans.length : 0, 'loan')}: each is repaid evenly over its term, with ${(IC.LOAN_RATE * 100).toFixed(1)}% a day interest on what is still owed.`;

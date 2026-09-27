@@ -31,10 +31,8 @@ IC.renderInspector = function (st) {
     const r = s.ref;
     if (s.kind === 'unit') h = unit(r);
     else if (s.kind === 'track') h = track(r);
-    else if (s.kind === 'gunit') h = r.side === 'us' ? brigade(r) : ebrigade(r);
     else if (s.kind === 'site') h = site(r);
     else if (s.kind === 'tel') h = tel(r);
-    else if (s.kind === 'evehicle') h = econvoy(r);
     else if (s.kind === 'infra') h = r.parts ? base(r) : r.kind === 'city' ? city(r) : r.kind === 'factory' ? factory(r) : infra(r);
     else if (s.kind === 'apart') h = apart(s);
     else if (s.kind === 'veh') h = convoy(r);
@@ -106,7 +104,7 @@ function unit(u) {
     const mags = IC.activeMags(S, u).map(m => {
       const M = IC.MUN[m.mun];
       const rounds = Array.from({ length: m.max }, (_, i) => `<i class="${i < m.mag ? '' : 'e'}"></i>`).join('') + Array.from({ length: Math.min(12, m.store) }, () => '<i class="s"></i>').join('');
-      return `<div class="mag" title="${esc(M.name)}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${M.short || m.mun}</b><span class="rounds">${rounds}</span><small>${m.mag}/${m.max} +${m.store}${m.inc ? ` · ${m.inc}↘` : ''}</small></div>`;
+      return `<div class="mag" title="${esc(IC.fullName(M))}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${M.short || m.mun}</b><span class="rounds">${rounds}</span><small>${m.mag}/${m.max} +${m.store}${m.inc ? ` · ${m.inc}↘` : ''}</small></div>`;
     }).join('');
     const next = IC.activeMags(S, u).map(m => { const n = IC.nextLoad(S, u, m); return `<p class="hint ${n.cls === 'ok' ? '' : n.cls}" style="margin:.25rem 0"><b>${esc(IC.MUN[m.mun].short || m.mun)}:</b> ${esc(n.text)}</p>`; }).join('');
     parts.push(`<div class="sec"><h3 class="sh">Magazine <em>ready / reserve / coming</em></h3><div class="mags">${mags}</div>${next}</div>`);
@@ -130,7 +128,7 @@ function unit(u) {
   rows.push(['Enemy knowledge', intel]);
   parts.push(kv(rows));
   if (u.inv) parts.push(depot(u));
-  return head(ui.sym(u.type, 104, 80), u.name, `${esc(d.name)} · ${IC.MOB_LABEL[d.mob]}`, st, cls) + `<div class="ibody"><div class="now ${whyCls}">${esc(why)}</div>${parts.join('')}<p class="hint">${d.weapon === 'strike' ? 'Right-click an enemy target to fire; shift+right-click fires a salvo.' : d.mob !== 'fixed' ? 'Right-click the map to move. With a battery selected, right-click a track to make it the priority target.' : esc(d.desc)}</p></div>`;
+  return head(ui.sym(u.type, 104, 80), u.name, `${esc(IC.fullName(d))} · ${IC.MOB_LABEL[d.mob]}`, st, cls) + `<div class="ibody"><div class="now ${whyCls}">${esc(why)}</div>${parts.join('')}<p class="hint">${d.weapon === 'strike' ? 'Right-click an enemy target to fire; shift+right-click fires a salvo.' : d.mob !== 'fixed' ? 'Right-click the map to move. With a battery selected, right-click a track to make it the priority target.' : esc(d.desc)}</p></div>`;
 }
 function depot(u) {
   const dem = IC.depotDemand(S)[u.id] || {};
@@ -152,7 +150,7 @@ function depot(u) {
 function track(t) {
   const aff = t.decoyKnown ? 'D' : t.aff || 'U';
   const colCls = { H: 'hostile', S: 'suspect', U: 'unknown', A: 'civil', N: 'civil', D: 'muted' }[aff];
-  const name = aff === 'N' || aff === 'A' ? `${t.type === 'ga' ? 'Light aircraft' : 'Airliner'} ${t.cs}` : aff === 'H' ? (t.d.name) : t.decoyKnown ? 'Decoy' : IC.AFF[aff].name + ' track';
+  const name = aff === 'N' || aff === 'A' ? `${t.type === 'ga' ? 'Light aircraft' : 'Airliner'} ${t.cs}` : aff === 'H' ? IC.fullName(t.d) : t.decoyKnown ? 'Decoy' : IC.AFF[aff].name + ' track';
   const age = S.time - t.pt;
   const q = t.fc ? 'fire-control quality' : t.satOnly ? 'satellite cue' : t.det ? `surveillance, ${age < 3 ? 'fresh' : U.dur(age) + ' old'}` : 'lost';
   const ladder = `<div class="ladder">
@@ -182,7 +180,7 @@ function track(t) {
   }
   if (t.d.civil && aff === 'N') rows.push(['Aboard', `${t.pax}`]);
   const hostile = !(aff === 'N' || aff === 'A' || aff === 'D');
-  const bats = S.units.filter(u => u.d.weapon === 'sam' && u.state === 'ready' && U.dist(u, t) <= IC.maxRange(S, u) * 1.05).slice(0, 5);
+  const bats = S.units.filter(u => u.d.weapon === 'sam' && u.state === 'ready' && (U.dist(u, t) <= IC.maxRange(S, u) * 1.05 || IC.predictable(t) && U.dxy(u.x, u.y, t.x1 != null ? t.x1 : t.aim.x, t.y1 != null ? t.y1 : t.aim.y) <= IC.maxRange(S, u))).slice(0, 5);
   const acts = [];
   if ((t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm') && !t.border) acts.push(`<button class="act ${aff === 'S' || aff === 'U' ? 'pri' : ''}" data-act="scramble" ${S.roster.some(r => r.kind === 'ftr' && r.st === 'ready' && IC.canLaunch(S, r)) || S.air.some(a => a.kind === 'ftr' && a.state !== 'rtb') ? '' : 'disabled'}>${kbd('V')}${aff === 'H' ? 'Intercept' : 'Intercept & identify'}</button>`);
   if ((t.sq || t.d.civil || t.disguise) && t.d.cls !== 'bal' && !t.border) acts.push(`<button class="act ${t.offFlag ? 'pri' : ''}" data-act="radio" ${t.called && S.time - t.called < 300 ? 'disabled' : ''} title="Call the aircraft on the guard frequency">${t.called && S.time - t.called < 300 ? 'Calling…' : 'Call on radio'}</button>`);
@@ -190,37 +188,9 @@ function track(t) {
   if (escort && hostile && (escort.roe || S.ad.roe) === 'hold') acts.push(`<button class="act danger" data-act="escortFire" data-id="${escort.id}" title="${esc(escort.name)} is escorting it with weapons held. This order lets it fire.">Order ${esc(escort.name)} to fire</button>`);
   if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
   const warn = (aff === 'A' || aff === 'N') ? `<div class="warnbox">This track squawks a civil code on a filed route. Batteries will not fire at it unless you assign one by hand.</div>` : aff === 'S' && S.ad.roe === 'tight' ? `<p class="hint">Weapons are Tight: batteries hold fire on suspects. Identify it (fighter or type recognition) or assign a battery by hand.</p>` : '';
-  const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')}${IC.canSee(S, u, t) ? '' : ' · no fire-control track'}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
+  const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
   const badge = `<span class="badge ${colCls}">${aff === 'N' || aff === 'A' ? 'CIV' : aff === 'H' ? esc(t.d.code) : aff === 'S' ? 'SUS' : 'UNK'}</span>`;
   return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
-}
-
-/* ---------- brigades ---------- */
-function brigade(g) {
-  const f = g.front, sec = g.sector >= 0 ? f.sectors[g.sector] : null;
-  const ter = IC.terrainOf(S, g), terF = IC.TERRAIN_DEF[ter];
-  const O = IC.GORDERS;
-  const orders = `<div class="seg wide">${Object.entries(O).map(([k, o]) => `<button data-act="gorder" data-v="${k}" aria-pressed="${g.order === k}" title="${esc(o.desc)}">${o.name}<kbd>${o.key}</kbd></button>`).join('')}</div>`;
-  const now = g.order === 'refit' ? `Refitting at the rear: ${Math.round(g.str)}% and rising while manpower lasts.` : g.moving ? `Moving to ${g.order === 'defend' && g.obj ? g.obj.name : 'its position'}.` : g.order === 'defend' && g.obj ? `Garrisoning ${g.obj.name}${g.obj.besieged ? ': SURROUNDED, supply only by air' : ''}.` : sec ? `${O[g.order] ? O[g.order].name : g.order} in sector ${sec.name}. ${f.active ? `Force ratio ${(sec.F / Math.max(0.01, sec.E)).toFixed(1)}:1${sec.eAttack ? (sec.probe ? ', enemy probing' : ', UNDER ASSAULT') : ''}.` : 'The front is quiet for now.'}` : 'Awaiting orders.';
-  const lift = ['SUP', 'ATG', 'REPL'].map(c => { const why = IC.liftCheck(S, g, c); return `<button class="act" data-act="lift" data-v="${c}" ${why ? 'disabled' : ''} title="${esc(why || IC.HLIFT[c].desc)}">${IC.HLIFT[c].name}</button>`; }).join('');
-  const nearE = S.gunits.filter(e => e.side === 'them' && e.known && U.dxy(e.kx, e.ky, g.x, g.y) < 900);
-  return head(ui.gsym(g.id, 104, 80), g.name, `${esc(g.g.name)} · ${esc(f.name)}${sec ? ' · ' + sec.name : ''}`, `${O[g.order] ? O[g.order].name : g.order}${g.manual ? ' · your orders' : ' · commander'}`, g.order === 'attack' ? 'fr' : g.order === 'refit' ? 'busy' : 'ok') +
-    `<div class="ibody"><div class="now ${g.obj && g.obj.besieged ? 'bad' : g.sup < 30 ? 'busy' : 'ok'}">${esc(now)}</div>
-    <div class="sec"><h3 class="sh">Orders</h3>${orders}<div class="acts"><button class="act ${!g.manual ? 'on' : ''}" data-act="grelease">${kbd('C')}${g.manual ? 'Hand back to ' + esc(f.cmd.name) : 'Commander in control'}</button></div></div>
-    <div class="bars"><span>Strength</span>${bar(g.str / 100)}<span>${Math.round(g.str)}%</span><span>Supply</span>${bar(g.sup / 100, 'var(--supply)')}<span>${Math.round(g.sup)}%</span><span>Morale</span>${bar(g.mor / 100, 'var(--friend)')}<span>${Math.round(g.mor)}%</span><span>Dug in</span>${bar(g.fort, 'var(--supply)')}<span>${U.pct(g.fort)}</span><span>Experience</span>${bar(g.exp / 0.6, 'var(--civil)')}<span>${U.pct(g.exp / 0.6)}</span></div>
-    ${kv([['Position', `${ter}${terF !== 1 ? ` · ${terF > 1 ? '+' : ''}${Math.round((terF - 1) * 100)}% defense` : ''}`], ['Anti-tank teams', `${Math.round(g.kit.atgm)}${g.kit.atgm < 4 ? ' <span class="amber">low</span>' : ''}`], ['Air defense teams', `${g.kit.mpd}`], ['Enemy nearby', nearE.length ? nearE.map(e => `${e.g.short} ~${Math.round(e.str / 10) * 10}%`).join(', ') : 'none seen']])}
-    <div class="sec"><h3 class="sh">Helicopter lift <em>manpower ${Math.floor(S.manpower)}</em></h3><div class="acts">${lift}</div>${g.lift ? '<p class="hint">A helicopter is on its way.</p>' : ''}</div>
-    <p class="hint">Right-click a sector of the front to move it there; right-click a town to garrison it.</p></div>`;
-}
-function ebrigade(g) {
-  const age = S.time - g.kt;
-  const atk = S.roster.filter(r => (r.kind === 'atk' || r.kind === 'ucav') && r.st === 'ready');
-  const hs = atk.map(r => { const why = IC.missionOk(S, r, 'hstrike'); const b = IC.baseOf(S, r.base); const far = b && IC.AIR_KIND[r.kind].reach && U.dist(b, { x: g.kx, y: g.ky }) > IC.AIR_KIND[r.kind].reach; return `<div class="li"><b>${esc(r.name)}</b><small>${esc(IC.AIR_KIND[r.kind].name)} · ${far ? 'out of reach' : why || U.km(U.dist(b, { x: g.kx, y: g.ky })) + ' away'}</small><span class="la"><button class="btn sm" data-act="hstrike" data-rid="${r.id}" data-id="${g.id}" ${why || far ? 'disabled' : ''}>Attack</button></span></div>`; }).join('');
-  return head(ui.gsym(g.id, 104, 80), g.name, `<span class="hostile">${esc(g.front.enemy)} ${esc(g.g.name)}</span>`, `seen ${U.dur(age)} ago`, 'bad') +
-    `<div class="ibody"><div class="bars"><span>Est. strength</span>${bar(g.str / 100, 'var(--hostile)')}<span>~${Math.round(g.str / 10) * 10}%</span></div>
-    ${kv([['Doing', g.order === 'attack' ? '<span class="hostile">attacking</span>' : g.order === 'refit' ? 'refitting' : g.order === 'reserve' ? 'in reserve' : 'holding'], ['Air defense', g.ad >= 1 ? 'mobile SAMs and MANPADS: helicopters take fire' : 'light']])}
-    <div class="sec"><h3 class="sh">Helicopter and drone attack</h3>${hs ? `<div class="list">${hs}</div>` : '<p class="hint">No attack helicopters or strike drones ready.</p>'}</div>
-    ${strikeList(g, 'gunit')}</div>`;
 }
 
 /* ---------- airports and air bases: the layout, what it can do, what is wrong with it ---------- */
@@ -403,7 +373,6 @@ function partControls(ap, p, w) {
 function city(c) {
   const alive = c.blocks ? c.blocks.filter(b => b.hp > 0).length / Math.max(1, c.blocks.length) : 1;
   const plant = c.plant && S.byId[c.plant];
-  const gar = S.gunits.find(g => g.side === 'us' && g.order === 'defend' && g.obj === c);
   const tax = c.pop * 0.02 * (c.hp / c.max) * c.prosp * (0.5 + c.morale / 200);
   const R = IC.cityReport(S, c);
   // growth: how it is doing, why, and what its air service and roads give it
@@ -412,11 +381,11 @@ function city(c) {
     ${P(`<b>Air service:</b> ${esc(R.air)} ${esc(R.demand)}`)}${P(`<b>Roads:</b> ${esc(R.roads)}`, R.cuts.length ? 'hostile' : '')}${R.cuts.map(t => P(esc(t), 'hostile')).join('')}
     ${R.inds.length ? P(`<b>Industry selling here:</b> ${R.inds.map(esc).join(' ')}`) : ''}
     <p class="hint">Cities grow with good air service (frequent flights to many places, few delays, fair fees within ${IC.GROWTH.catch[1]} h by road) and good roads. Growth raises taxes and passengers.</p></div>` : '';
-  return head(`<span class="badge friend">${c.capital ? 'CAP' : 'CITY'}</span>`, c.name, c.capital ? 'Capital' : 'City', c.owner === 'enemy' ? 'OCCUPIED' : c.besieged ? 'SURROUNDED' : c.alert > 0 ? 'Sirens' : 'Calm', c.owner === 'enemy' || c.besieged || c.alert > 0 ? 'bad' : 'ok') +
+  return head(`<span class="badge friend">${c.capital ? 'CAP' : 'CITY'}</span>`, c.name, c.capital ? 'Capital' : 'City', c.alert > 0 ? 'Sirens' : 'Calm', false || c.alert > 0 ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Morale</span>${bar(c.morale / 100, 'var(--friend)')}<span>${Math.round(c.morale)}%</span><span>Buildings</span>${bar(alive)}<span>${U.pct(alive)}</span><span>Prosperity</span>${bar(Math.min(1, c.prosp), 'var(--supply)')}<span>${U.pct(c.prosp)}</span></div>
     ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${tax.toFixed(1)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
     ${growth}
-    <p class="hint">A brigade ordered to Defend this town holds it even if the front line flows past. Select a brigade and right-click the town.</p></div>`;
+    </div>`;
 }
 function factory(i) {
   const buy = IC.MUN_ORDER.filter(k => IC.canBuyMun(S, k)).map(k => { const c = IC.plantPrice(S, k, 8); return `<button class="act" data-act="buyStock" data-v="${k}:8" ${S.budget < c || i.offline ? 'disabled' : ''}>8 ${esc(IC.MUN[k].short)} · ${U.money(c)}</button>`; }).join('');
@@ -429,7 +398,7 @@ function factory(i) {
 }
 function infra(i) {
   const sub = { power: 'Power plant', bridge: `Bridge over the ${i.river || 'river'}` }[i.kind] || i.kind;
-  const effect = i.kind === 'power' ? 'Every plant lost costs radars range, slows factories and blacks out the cities it serves.' : i.kind === 'bridge' ? 'When it falls, convoys and brigades detour to a ford: slower deliveries.' : '';
+  const effect = i.kind === 'power' ? 'Every plant lost costs radars range, slows factories and blacks out the cities it serves.' : i.kind === 'bridge' ? 'When it falls, convoys detour to a ford: slower deliveries.' : '';
   return head(`<span class="badge friend">${i.kind === 'power' ? 'PWR' : 'BR'}</span>`, i.name, sub, i.offline ? (i.kind === 'bridge' ? 'Destroyed' : 'Knocked out') : 'Working', i.offline ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Integrity</span>${bar(i.hp / i.max)}<span>${U.pct(i.hp / i.max)}</span></div>${i.offline ? `<p class="hint">Repair crews are working: back in service at 60%.</p>` : ''}<p class="hint">${effect}</p></div>`;
 }
@@ -446,7 +415,7 @@ function strikeList(tg, k) {
     const M = IC.MUN[m.mun], eta = M.bal ? r / M.spd + 30 : r / M.spd;
     opts.push(`<div class="li"><b>${esc(u.name)}</b><small>${m.mag} ready · impact in ${U.dur(eta)}</small><span class="la"><button class="btn sm" data-act="fireFrom" data-uid="${u.id}" data-k="${k}" data-id="${tg.id}" data-v="1" ${m.mag < 1 ? 'disabled' : ''}>Fire 1</button><button class="btn sm" data-act="fireFrom" data-uid="${u.id}" data-k="${k}" data-id="${tg.id}" data-v="99" ${m.mag < 1 ? 'disabled' : ''}>Salvo</button></span></div>`);
   }
-  if (k !== 'gunit') for (const r of S.roster) if (r.kind === 'ftr' && r.st === 'ready') { const why = IC.missionOk(S, r, 'strike'); opts.push(`<div class="li"><b>${esc(r.name)}</b><small>${why || 'Air strike · enemy fighters may intercept'}</small><span class="la">${why === 'Needs the strike loadout' ? `<button class="btn sm" data-act="loadout" data-rid="${r.id}" data-v="strike">Re-arm</button>` : `<button class="btn sm" data-act="airStrike" data-rid="${r.id}" data-k="${k}" data-id="${tg.id}" ${why ? 'disabled' : ''}>Strike</button>`}</span></div>`); }
+  for (const r of S.roster) if ((r.kind === 'ftr' || r.kind === 'ucav') && r.st === 'ready') { const why = IC.missionOk(S, r, 'strike'); opts.push(`<div class="li"><b>${esc(r.name)}</b><small>${why || 'Air strike · enemy fighters may intercept'}</small><span class="la">${why === 'Needs the strike loadout' ? `<button class="btn sm" data-act="loadout" data-rid="${r.id}" data-v="strike">Re-arm</button>` : `<button class="btn sm" data-act="airStrike" data-rid="${r.id}" data-k="${k}" data-id="${tg.id}" ${why ? 'disabled' : ''}>Strike</button>`}</span></div>`); }
   for (const r of S.roster) if ((r.kind === 'isr' || r.kind === 'ucav') && r.st === 'ready' && IC.canLaunch(S, r)) {
     opts.push(`<div class="li"><b>${esc(r.name)}</b><small>Reconnaissance over the target</small><span class="la"><button class="btn sm" data-act="isrOn" data-rid="${r.id}" data-k="${k}" data-id="${tg.id}">Send</button></span></div>`);
     break;
@@ -463,9 +432,6 @@ function site(s) {
 function tel(t) {
   return head(`<span class="badge hostile">${t.kind === 'rkt' ? 'MLRS' : 'TEL'}</span>`, t.name, `Mobile launcher · seen ${U.dur(S.time - t.kt)} ago`, S.time - t.kt < 300 ? 'Fresh fix' : 'Stale fix', S.time - t.kt < 300 ? 'bad' : 'busy') +
     `<div class="ibody"><p class="hint">Launchers move soon after they fire. The older the sighting, the less likely a strike finds it.</p>${strikeList(t, 'tel')}</div>`;
-}
-function econvoy(v) {
-  return head(`<span class="badge hostile">CNV</span>`, v.name, `${v.trucks} trucks · seen ${U.dur(S.time - v.kt)} ago`) + `<div class="ibody">${strikeList(v, 'evehicle')}</div>`;
 }
 function convoy(v) {
   const j = v.job;
@@ -486,11 +452,10 @@ function convoy(v) {
 function air(a) {
   const K = IC.AIR_KIND[a.kind] || { name: 'Allied cargo aircraft', short: 'CGO' };
   const m = a.mission || {};
-  const mission = { cap: 'Combat air patrol', intercept: 'Intercept', strike: 'Strike', cas: 'Close air support', interdict: 'Interdiction', orbit: 'Early warning', isr: 'Reconnaissance', supply: 'Resupply', hstrike: 'Helicopter attack', hlift: 'Helicopter lift' }[m.type] || (a.allied ? 'Airlift' : '—');
+  const mission = { cap: 'Combat air patrol', intercept: 'Intercept', strike: 'Strike', orbit: 'Early warning', isr: 'Reconnaissance', supply: 'Resupply' }[m.type] || (a.allied ? 'Airlift' : '—');
   const rows = [['Mission', mission + (a.task ? ' (standing task)' : '')]];
   if (!a.allied) rows.push(['Fuel', U.dur(a.fuel)], ['Aircraft', `${a.hp}/${a.n}`]);
   if (a.kind === 'ftr') rows.push(['Missiles', `${a.aam} AAM${a.gbu ? ' · ' + a.gbu + ' bombs' : ''}`]);
-  if (a.runs && (a.kind === 'atk' || a.kind === 'ucav')) rows.push(['Attack runs left', a.runs]);
   rows.push(['Chaff / flares', a.cm]);
   if (a.job) rows.push(['Cargo', esc(IC.jobLabel(a.job))]);
   const acts = a.r && !a.job && a.state !== 'rtb' ? `<div class="acts"><button class="act" data-act="recallSel">Recall</button></div>` : '';
@@ -500,12 +465,9 @@ function air(a) {
 }
 function group() {
   const g = S.group;
-  const types = {}; for (const u of g) { const k = u.gunit ? u.g.short : u.d.short; types[k] = (types[k] || 0) + 1; }
-  const ground = g.every(u => u.gunit);
-  const acts = ground
-    ? Object.entries(IC.GORDERS).filter(([k]) => k !== 'defend').map(([k, o]) => `<button class="act" data-act="gorder" data-v="${k}">${kbd(o.key)}${o.name}</button>`).concat([`<button class="act" data-act="grelease">${kbd('C')}Commander control</button>`])
-    : [`<button class="act" data-act="emconAll" data-v="on">Radiate</button>`, `<button class="act" data-act="emconAll" data-v="ambush">Ambush</button>`, `<button class="act" data-act="emconAll" data-v="off">Silent</button>`, `<button class="act warn" data-act="reserve">${kbd('X')}To reserve</button>`];
-  return head(`<span class="badge friend">${g.length}</span>`, 'Group', Object.entries(types).map(([k, n]) => `${n}× ${k}`).join(' · ')) + `<div class="ibody"><div class="acts">${acts.join('')}</div><p class="hint">Right-click to move the group${ground ? ' or commit it to a front sector' : ''}. Esc to clear.</p></div>`;
+  const types = {}; for (const u of g) { const k = u.d.short; types[k] = (types[k] || 0) + 1; }
+  const acts = [`<button class="act" data-act="emconAll" data-v="on">Radiate</button>`, `<button class="act" data-act="emconAll" data-v="ambush">Ambush</button>`, `<button class="act" data-act="emconAll" data-v="off">Silent</button>`, `<button class="act warn" data-act="reserve">${kbd('X')}To reserve</button>`];
+  return head(`<span class="badge friend">${g.length}</span>`, 'Group', Object.entries(types).map(([k, n]) => `${n}× ${k}`).join(' · ')) + `<div class="ibody"><div class="acts">${acts.join('')}</div><p class="hint">Right-click to move the group. Esc to clear.</p></div>`;
 }
 
 })(window.IC);

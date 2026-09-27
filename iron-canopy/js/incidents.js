@@ -57,6 +57,7 @@ IC.incidents = function (S, dt) {
 IC.activeIncidents = S => S.inc ? S.inc.list.filter(x => !x.done) : [];
 
 IC.on((S, type, d) => {
+  if (S.range) return;
   switch (type) {
     case 'weaponRelease': add(S, 'launch', d, `${d.tn ? 'TN ' + d.tn : 'An aircraft'}${d.cs ? ' (' + d.cs + ')' : ''} has released weapons near ${IC.nearestPlace(S, d.x, d.y)}`, 'alarm'); break;
     case 'collision': add(S, 'collision', d.t, `MAYDAY: ${d.t.cs} mid-air collision ${d.place}`, 'alarm'); break;

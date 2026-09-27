@@ -8,7 +8,6 @@ IC.unitSpeed = u => u.d.fast ? [0.5, 0.3] : u.d.mob === 'mobile' ? [0.45, 0.18] 
 
 IC.canPlace = function (S, type, x, y, ignore) {
   if (!IC.inHome(x, y) || IC.inLake(x, y) || IC.borderDist(x, y) < 40) return false;
-  if (IC.enemyHeld && IC.enemyHeld(S, x, y)) return false;
   const d = IC.UNITS[type];
   for (const u of S.units) {
     if (u === ignore) continue;
@@ -43,8 +42,8 @@ IC.buyBlock = function (S, type) {
    is flown to the nearest) */
 IC.musterPoints = function (S) {
   const pts = IC.depots(S).map(d => ({ x: d.x, y: d.y, name: d.name }));
-  for (const g of S.world.garrisons) if (!IC.enemyHeld(S, g.x, g.y)) pts.push({ x: g.x, y: g.y, name: g.name });
-  for (const c of IC.cities(S)) if (c.owner === 'us' && !c.besieged) pts.push({ x: c.x, y: c.y, name: `${c.name} barracks` });
+  for (const g of S.world.garrisons) pts.push({ x: g.x, y: g.y, name: g.name });
+  for (const c of IC.cities(S)) if (c.owner === 'us') pts.push({ x: c.x, y: c.y, name: `${c.name} barracks` });
   for (const b of IC.bases(S)) if (b.owner === 'us' && (b.kind === 'airbase' || b.parts) && !b.locked) pts.push({ x: b.x, y: b.y, name: b.name.replace(/ (International|Airport)$/, '') });
   return pts;
 };

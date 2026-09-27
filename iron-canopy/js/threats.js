@@ -41,7 +41,9 @@ IC.timeToImpact = function (t) {
 function arrive(S, t) {
   t.dead = true;
   if (t.d.decoy || !t.d.dmg) return;
+  t.impacted = true;
   const hit = IC.detonate(S, t.x, t.y, t.d.dmg, t);
+  IC.emit(S, 'arrive', { t, hit });
   if (t.op) { t.op.hits += hit ? 1 : 0; t.op.done++; if (hit && hit.fac) t.op.baseHits = (t.op.baseHits || 0) + 1; }
 }
 
@@ -83,9 +85,10 @@ function moveWp(S, t, dt) {
   else if (t.d.dive) t.alt = toAim < 600 ? Math.max(0.05, 12 * toAim / 600) : 12;
   else if (t.d.cls === 'cm') t.alt = toAim < 60 ? 0.4 : t.d.alt * (0.8 + 0.4 * Math.sin(t.age * 0.05 + t.seed));
   else if (t.type === 'owa') t.alt = t.d.alt * (0.7 + 0.5 * Math.sin(t.age * 0.004 + t.seed));
+  if (t.altHold != null && toAim > 60) t.alt = t.altHold;
 }
 
-/* loitering munition: fly to an area, then hunt vehicles, ground units and air defense */
+/* loitering munition: fly to an area, then hunt vehicles and air defense */
 function moveLm(S, t, dt) {
   if (t.spoofed) return spoofedDrift(S, t, dt);
   t.endT = (t.endT == null ? 3600 : t.endT) - dt;
@@ -96,7 +99,6 @@ function moveLm(S, t, dt) {
     let bd = 300;
     const look = (o, w) => { if (o.dead) return; const d = U.dist(o, t) / w; if (d < bd) { bd = d; t.prey = o; } };
     for (const v of S.vehicles) if (v.state !== 'idle') look(v, 1.3);
-    for (const g of S.gunits) if (g.side === 'us') look(g, 1);
     for (const u of S.units) if (u.state === 'ready') look(u, u.radarOn ? 1.4 : 0.9);
   }
   let tx, ty;
@@ -108,6 +110,7 @@ function moveLm(S, t, dt) {
   if (t.prey && U.dxy(t.x, t.y, tx, ty) <= spd * dt + 2) {
     t.dead = true;
     const hit = IC.detonate(S, tx, ty, t.d.dmg, t);
+    IC.emit(S, 'arrive', { t, hit });
     if (t.op) { t.op.done++; t.op.hits += hit ? 1 : 0; }
     return;
   }
@@ -153,7 +156,7 @@ function moveArm(S, t, dt) {
   if (r <= t.spd * dt + 1) {
     t.dead = true;
     const hitOk = !t.blind || Math.random() < 0.3;
-    if (hitOk && g && !g.dead && U.dxy(g.x, g.y, t.aim.x, t.aim.y) < 25) { IC.detonate(S, t.aim.x, t.aim.y, t.d.dmg, t); if (t.op) t.op.hits++; }
+    if (hitOk && g && !g.dead && U.dxy(g.x, g.y, t.aim.x, t.aim.y) < 25) { const hit = IC.detonate(S, t.aim.x, t.aim.y, t.d.dmg, t); IC.emit(S, 'arrive', { t, hit }); if (t.op) t.op.hits++; }
     else { IC.explode(S, t.aim.x, t.aim.y, 0.6, 'ground'); IC.log(S, 'kill', 'MISS', `ARM TN ${t.tn || '----'} missed ${g ? g.name : 'its target'}.`); }
     if (t.op) t.op.done++;
     return;
@@ -178,7 +181,6 @@ function moveIsr(S, t, dt) {
     t.scan = 20;
     for (const u of S.units) if (U.dist(u, t) < 500) IC.enemyLearn(S, u, 'recon');
     for (const v of S.vehicles) if (U.dist(v, t) < 500) IC.enemyLearnConvoy(S, v);
-    for (const g of S.gunits) if (g.side === 'us' && U.dist(g, t) < 500) g.spottedT = S.time;
     for (const b of IC.bases(S)) if (U.dist(b, t) < 500) IC.enemyAssess && IC.enemyAssess(S, b);
   }
 }
@@ -187,6 +189,8 @@ IC.moveThreats = function (S, dt) {
   for (const t of S.threats) {
     if (t.dead) continue;
     t.age += dt;
+    // where it crossed into our airspace, for the after-action report
+    if (!t.entered && !t.d.civil && (t.age % 5) < dt && IC.inHome(t.x, t.y)) t.entered = { x: t.x, y: t.y };
     if (t.flash > 0) t.flash -= dt * 0.1;
     if (t.notchT > 0) t.notchT -= dt;
     switch (t.d.move) {

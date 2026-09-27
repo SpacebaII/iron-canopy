@@ -51,7 +51,6 @@ function pick(p) {
   for (const a of S.air) consider('air', a, a.x, a.y);
   if (best) return best;
   for (const u of S.units) consider('unit', u, u.x, u.y);
-  if (S.layers.ground) for (const g of S.gunits) if (g.side === 'us') consider('gunit', g, g.x, g.y, 22 * px);
   if (best) return best;
   const aw = S.layers.airways || (S.mode2 && S.mode2.kind === 'airway');
   if (aw) for (const f of S.asp.fixes) consider('fix', f, f.x, f.y);
@@ -60,8 +59,6 @@ function pick(p) {
   if (S.layers.logistics) for (const v of S.vehicles) if (v.state !== 'idle') consider('veh', v, v.x, v.y);
   if (best) return best;
   if (S.layers.intel) {
-    for (const g of S.gunits) if (g.side === 'them' && g.known) consider('gunit', g, g.kx, g.ky, 22 * px);
-    for (const v of S.evehicles) if (v.known && !v.dead) consider('evehicle', v, v.kx, v.ky);
     for (const t of S.tels) if (t.known && !t.dead) consider('tel', t, t.kx, t.ky);
     for (const s of S.esites) if (s.pk > 0) consider('site', s, s.x, s.y, s.pk === 1 ? 180 : 0);
     if (best) return best;
@@ -115,9 +112,8 @@ function foundIn(m, p, btn) {
   return r;
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
-const selUnits = () => S.group.length ? S.group.filter(x => !x.gunit) : S.sel && S.sel.kind === 'unit' ? [S.sel.ref] : [];
-const selG = () => S.group.length ? S.group.filter(x => x.gunit) : S.sel && S.sel.kind === 'gunit' && S.sel.ref.side === 'us' ? [S.sel.ref] : [];
-const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel' || h.kind === 'evehicle' || (h.kind === 'gunit' && h.ref.side === 'them'));
+const selUnits = () => S.group.length ? S.group : S.sel && S.sel.kind === 'unit' ? [S.sel.ref] : [];
+const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel');
 
 function leftClick(p, shift) {
   if (!p || S.over && !IC.ui.overDismissed) return;
@@ -149,8 +145,22 @@ function leftClick(p, shift) {
       IC.setMode(null); ping(p); return;
     }
     if (m.kind === 'found') return foundIn(m, p, 0);
+    if (m.kind === 'callin') {
+      const why = IC.callInWhy(S, p.x, p.y);
+      if (why) { IC.text(S, p.x, p.y, why.toUpperCase(), IC.C.hostile); IC.sfx.ui('err'); return; }
+      IC.callIn(S, p.x, p.y); IC.sfx.ui('ok'); ping(p);
+      if (!shift || IC.callInState(S).charges < 1) IC.setMode(null); else IC.ui.refresh(true);
+      return;
+    }
+    if (m.kind === 'rangeTarget') { S.range.target = { x: p.x, y: p.y }; S.range.scen.target = { x: Math.round(p.x), y: Math.round(p.y) }; IC.setMode(null); ping(p); return; }
+    if (m.kind === 'deploy' && S.range) {
+      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUR SIDE ONLY', IC.C.hostile); IC.sfx.ui('err'); return; }
+      IC.rangeAddUnit(S, m.type, p.x, p.y); IC.sfx.ui('ok'); ping(p);
+      if (!shift) IC.setMode(null); else IC.ui.refresh(true);
+      return;
+    }
     if (m.kind === 'deploy') {
-      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? (IC.enemyHeld(S, p.x, p.y) ? 'ENEMY-HELD' : 'TOO CLOSE') : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
+      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
       const u = IC.deploy(S, m.type, p.x, p.y);
       if (u) { IC.sfx.ui('ok'); ping(p); }
       if (!shift || (!(S.reserve[m.type] > 0) && IC.buyBlock(S, m.type))) IC.setMode(null); else IC.ui.refresh(true);
@@ -169,17 +179,6 @@ function leftClick(p, shift) {
         else IC.fireMission(S, m.unit, hit.ref, shift ? 99 : 1);
         IC.setMode(null);
       } else IC.text(S, p.x, p.y, 'PICK AN ENEMY TARGET', IC.C.amber);
-      return;
-    }
-    if (m.kind === 'hstrike') {
-      if (hit && hit.kind === 'gunit' && hit.ref.side === 'them') { IC.launchAir(S, m.r, { type: 'hstrike', g: hit.ref }); IC.setMode(null); }
-      else IC.text(S, p.x, p.y, 'PICK AN ENEMY BRIGADE', IC.C.amber);
-      return;
-    }
-    if (m.kind === 'defend') {
-      const town = S.world.townAt(p.x, p.y);
-      if (town && town.kind === 'city') { IC.orderGround(S, m.g, 'defend', { town }); IC.setMode(null); ping(p); }
-      else IC.text(S, p.x, p.y, 'PICK ONE OF OUR TOWNS', IC.C.amber);
       return;
     }
   }
@@ -201,13 +200,12 @@ function rightClick(p, shift) {
   if (air && air.r && !air.job) {
     air.task = null; air.state = 'out'; air.tgt = null;
     if (hit && hit.kind === 'track' && air.kind === 'ftr') air.mission = { type: 'intercept', track: hit.ref };
-    else if (isEnemyTarget(hit) && air.kind === 'ftr' && air.gbu > 0 && hit.kind !== 'gunit') air.mission = { type: 'strike', site: hit.ref };
-    else if (hit && hit.kind === 'gunit' && hit.ref.side === 'them' && (air.kind === 'atk' || air.kind === 'ucav')) { air.mission = { type: 'hstrike', g: hit.ref }; air.runs = Math.max(air.runs, 1); }
+    else if (isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0) air.mission = { type: 'strike', site: hit.ref };
     else air.mission = { type: air.kind === 'ftr' ? 'cap' : air.kind === 'aew' ? 'orbit' : 'isr', x: p.x, y: p.y };
     IC.log(S, 'info', 'AIR', `${air.name} retasked.`);
     ping(p); return;
   }
-  const units = selUnits(), gs = selG();
+  const units = selUnits();
   if (units.length) {
     const strike = units.filter(u => u.d.weapon === 'strike' && u.state === 'ready');
     if (strike.length && isEnemyTarget(hit)) { for (const u of strike) IC.fireMission(S, u, hit.ref, shift ? 99 : 1); return; }
@@ -230,18 +228,7 @@ function rightClick(p, shift) {
     }
     return;
   }
-  if (gs.length) {
-    const town = S.world.townAt(p.x, p.y);
-    if (town && town.kind === 'city' && town.owner === 'us' && gs.length === 1) { IC.orderGround(S, gs[0], 'defend', { town }); IC.log(S, 'info', 'ORDERS', `${gs[0].name}: defend ${town.name}.`); ping(p); return; }
-    const best = IC.sectorAt(S, p.x, p.y);
-    if (best && best.d < 1800) {
-      for (const g of gs) IC.orderGround(S, g, LINEISH(g.order) ? g.order : 'hold', { front: best.f, sector: best.i });
-      IC.log(S, 'info', 'ORDERS', `${gs.length > 1 ? gs.length + ' brigades' : gs[0].name} to sector ${best.f.sectors[best.i].name}.`);
-      ping(p);
-    }
-  }
 }
-const LINEISH = o => o === 'hold' || o === 'dig' || o === 'attack' || o === 'reserve';
 /* for automated testing: a click at a world position */
 IC.clickWorld = (p, btn, shift) => { S.hover = p; return btn === 2 ? rightClick(p, shift) : leftClick(p, shift); };
 function ping(p) { S.fx.rings.push({ x: p.x, y: p.y, r: 26, t: 0, color: '111,210,255', px: true }); }
@@ -253,8 +240,6 @@ function findRef(kind, id) {
   if (kind === 'site') return S.esites.find(s => s.id === id);
   if (kind === 'tel') return S.tels.find(t => t.id === id);
   if (kind === 'track') return S.threats.find(t => t.id === id);
-  if (kind === 'gunit') return S.gunits.find(g => g.id === id);
-  if (kind === 'evehicle') return S.evehicles.find(v => v.id === id);
   return null;
 }
 function command(a, v) {
@@ -270,14 +255,6 @@ function command(a, v) {
     case 'clearPrio': for (const u of selUnits()) u.prio = null; break;
     case 'reserve': for (const u of selUnits()) if (!u.central) IC.toReserve(S, u); S.sel = null; S.group = []; break;
     case 'fireMode': { const us = selUnits(); if (us[0] && us[0].d.weapon === 'strike') IC.setMode({ kind: 'fireAt', unit: us[0] }); return; }
-    case 'gorder': {
-      const gs = selG(); if (!gs.length) return;
-      if (v === 'defend') { if (gs.length === 1) IC.setMode({ kind: 'defend', g: gs[0] }); return; }
-      for (const g of gs) IC.orderGround(S, g, v);
-      IC.log(S, 'info', 'ORDERS', `${gs.length > 1 ? gs.length + ' brigades' : gs[0].name}: ${IC.GORDERS[v].name.toLowerCase()}.`);
-      break;
-    }
-    case 'grelease': { const gs = selG(); const to = !gs.every(g => !g.manual) ? false : true; for (const g of gs) g.manual = to; IC.log(S, 'info', 'ORDERS', `${gs.length > 1 ? gs.length + ' brigades' : gs[0] ? gs[0].name : ''}: ${to ? 'under your orders' : 'back under the front commander'}.`); break; }
     case 'assignBest': {
       if (!sel || S.sel.kind !== 'track') return;
       const bats = S.units.filter(u => u.d.weapon === 'sam' && u.state === 'ready' && U.dist(u, sel) <= IC.maxRange(S, u) && IC.canSee(S, u, sel) && IC.chooseMun(S, u, sel, U.dist(u, sel)));
@@ -302,8 +279,9 @@ IC.command = command;
 function onAct(e) {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
-  if (b.tagName === 'INPUT') return;
+  if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
+  if (a && a.startsWith('range') && a !== 'rangeForm' && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   IC.sfx && IC.sfx.init();
   if (!S) return;
   const sel = S.sel && S.sel.ref;
@@ -330,7 +308,7 @@ function onAct(e) {
     case 'room': if (v !== ui.room || !b.closest('#wrTabs')) ui.openRoom(v); return;
     case 'wrclose': ui.openRoom(null); return;
     case 'toast': { const t = ui.toasts[+v]; if (t && t.at) ui.jump(t.at); break; }
-    case 'alert': { const r = ui.alertRefs && ui.alertRefs[+v]; if (r) ui.jump(r, r.tn ? 'track' : r.gunit ? 'gunit' : r.d && r.type ? 'unit' : r.parts ? 'infra' : null); break; }
+    case 'alert': { const r = ui.alertRefs && ui.alertRefs[+v]; if (r) ui.jump(r, r.tn ? 'track' : r.d && r.type ? 'unit' : r.parts ? 'infra' : null); break; }
     case 'goal': { const g = S.story && S.story.goals[+v]; if (g && g.ref) { if (ui.room) ui.openRoom(null); ui.jump(g.ref, g.ref.parts || g.ref.kind === 'city' ? 'infra' : null); } break; }
     case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) { r.qra = !r.qra; IC.log(S, 'info', 'AIR', `${r.name} ${r.qra ? 'on quick-reaction alert' : 'stood down from alert'}.`); } break; }
     case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { S.airspace = 'restricted'; IC.log(S, 'info', 'AIRSPACE', 'Civil airspace restricted.'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
@@ -354,11 +332,12 @@ function onAct(e) {
     case 'buyStock': { const [m, q] = v.split(':'); IC.buyStock(S, m, +q, id ? S.units.find(u => u.id === id) : null); break; }
     case 'autoStock': S.supply.auto = v === 'on'; IC.log(S, 'info', 'SUPPLY', S.supply.auto ? 'Keep stocked: the Ministry buys missiles and supply as stock runs low.' : 'Keep stocked is off: buy stock yourself in Supply.'); break;
     case 'floor': S.supply.floor = +v; break;
+    case 'callin': { const why = IC.callInWhy(S); if (why) { IC.toast(S, 'info', 'CALL-IN', why + '.'); break; } IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); return; }
     case 'research': IC.startResearch(S, v); break;
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
     case 'desel': S.sel = null; S.group = []; break;
-    case 'emcon': case 'uroe': case 'udoc': case 'move': case 'heli': case 'pri': case 'repair': case 'clearPrio': case 'reserve': case 'fireMode': case 'gorder': case 'grelease': case 'assignBest': case 'scramble': command(a, v); return;
+    case 'emcon': case 'uroe': case 'udoc': case 'move': case 'heli': case 'pri': case 'repair': case 'clearPrio': case 'reserve': case 'fireMode': case 'assignBest': case 'scramble': command(a, v); return;
     case 'emconAll': command('emcon', v); return;
     case 'dpri': { const d = id ? S.units.find(u => u.id === id) : sel; if (d) { d.pri = v; IC.log(S, 'info', 'LOGI', `${d.name}: resupply priority ${IC.DEPOT_PRI[v].name.toLowerCase()}.`); } break; }
     case 'buyTruck': if (sel) IC.buyCompany(S, sel); break;
@@ -367,9 +346,7 @@ function onAct(e) {
     case 'assign': { const u = S.units.find(x => x.id === b.dataset.uid); if (u && sel) { u.prio = sel; IC.log(S, 'warn', 'ASSIGN', `${u.name} assigned TN ${sel.tn}.`); } break; }
     case 'fireFrom': { const u = S.units.find(x => x.id === b.dataset.uid); if (u) IC.fireMission(S, u, findRef(b.dataset.k, id), +v); break; }
     case 'airStrike': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.launchAir(S, r, { type: 'strike', site: findRef(b.dataset.k, id) }); break; }
-    case 'hstrike': { const r = S.roster.find(x => x.id === b.dataset.rid), g = findRef('gunit', id); if (r && g) IC.launchAir(S, r, { type: 'hstrike', g }); break; }
     case 'isrOn': { const r = S.roster.find(x => x.id === b.dataset.rid), tg = findRef(b.dataset.k, id); if (r && tg) { const p = IC.aimOf(tg); IC.launchAir(S, r, { type: 'isr', x: p.x, y: p.y }); } break; }
-    case 'lift': if (sel && sel.gunit) IC.heliLift(S, sel, v); break;
     case 'loadout': { const r = S.roster.find(x => x.id === (b.dataset.rid || id)); if (r) IC.setLoadout(S, r, v); break; }
     case 'recall': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r && r.ent) IC.recallAir(S, r.ent); break; }
     case 'recallSel': if (sel) IC.recallAir(S, sel); break;
@@ -380,17 +357,13 @@ function onAct(e) {
     case 'airMode': {
       const r = S.roster.find(x => x.id === b.dataset.rid); if (!r) break;
       ui.openRoom(null);
-      if (v === 'strike') IC.setMode({ kind: 'airSite', r }); else if (v === 'hstrike') IC.setMode({ kind: 'hstrike', r }); else IC.setMode({ kind: 'airPoint', r, mission: v });
+      if (v === 'strike') IC.setMode({ kind: 'airSite', r }); else IC.setMode({ kind: 'airPoint', r, mission: v });
       return;
     }
     case 'buyAir': IC.buyAircraft(S, v, id); break;
     case 'taskPoint': ui.openRoom(null); IC.setMode({ kind: 'airPoint', task: v, mission: v }); return;
-    case 'taskFront': { const f = S.fronts.find(x => x.key === id); if (f) IC.addTask(S, v, { front: f }); break; }
     case 'twant': { const t = S.ato.find(x => x.id === id); if (t) t.want = U.clamp(t.want + +v, 1, 4); break; }
     case 'tdel': { const t = S.ato.find(x => x.id === id); if (t) IC.removeTask(S, t); break; }
-    case 'stance': { const f = S.fronts.find(x => x.key === id); if (f) { f.stance = v; f.cmdT = 0; IC.log(S, 'info', 'ORDERS', `${f.name}: ${{ defend: 'hold the line', active: 'active defense', offensive: 'go on the offensive' }[v]}.`); } break; }
-    case 'spri': { const f = S.fronts.find(x => x.key === id); if (f) f.supplyPri = +v; break; }
-    case 'raise': { const f = S.fronts.find(x => x.key === id); if (f) IC.raiseBrigade(S, f, v); break; }
     case 'prod': { const [m, q] = v.split(':'); IC.orderProduction(S, S.byId[id], m, +q); break; }
     case 'import': { const [m, q] = v.split(':'); IC.orderImport(S, m, +q); break; }
     case 'bwork': { const ap = selAp(); if (ap) IC.baseWork(S, ap, v, id); break; }
@@ -436,7 +409,6 @@ function onAct(e) {
     case 'delegate': IC.storyDelegate(S, v, !S.story.del[v]); break;
     case 'cpReq': IC.storyRequest(S, v); break;
     case 'routeFly': { const r = S.av.routes.find(x => x.id === id); if (r) { ui.openRoom(null); ui.jump(S.byId[r.a], 'infra'); } return; }
-    case 'flySec': { const f = S.fronts.find(x => x.key === id); if (f) { ui.openRoom(null); const G = IC.secGeom(f, +v); IC.flyTo(G.x, G.y, 0.2); } return; }
     case 'selInfra': { const r = S.byId[id]; if (r) { ui.openRoom(null); ui.jump(r, 'infra'); } return; }
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
     case 'logf': ui.logFilter = v; break;
@@ -447,8 +419,8 @@ function onAct(e) {
     case 'radarFx': S.cfg.radarFx = v; ui.saveCfg(); break;
     case 'pauseRoom': ui.pauseRoom = !ui.pauseRoom; ui.saveCfg(); break;
     case 'pauseOn': S.cfg.pauseOn[v] = !S.cfg.pauseOn[v]; ui.saveCfg(); break;
-    case 'selg': case 'selu': case 'sels': case 'selt': case 'selv': {
-      const kind = { selg: 'gunit', selu: 'unit', sels: 'site', selt: 'tel', selv: 'veh' }[a];
+    case 'selu': case 'sels': case 'selt': case 'selv': {
+      const kind = { selu: 'unit', sels: 'site', selt: 'tel', selv: 'veh' }[a];
       const ref = kind === 'veh' ? S.vehicles.find(x => x.id === id) : findRef(kind, id);
       if (ref) { ui.openRoom(null); ui.jump(ref, kind); }
       return;
@@ -459,10 +431,8 @@ function onAct(e) {
 }
 function onInput(e) {
   const el = e.target;
-  if (el.dataset.act === 'ashare') {
-    const f = S.fronts.find(x => x.key === el.dataset.id);
-    if (f) { f.airShare = +el.value / 100; IC.ui.busyUntil = performance.now() + 600; }
-  } else if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'rangeForm' && S.range) { IC.rangeForm(S, el.name, el.value); IC.ui.busyUntil = performance.now() + 1500; return; }
+  if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
 }
 document.addEventListener('click', onAct);
 document.addEventListener('input', onInput);
@@ -482,9 +452,8 @@ IC.on((S2, type, d) => {
   const P = S.cfg.pauseOn;
   const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; IC.toast(S, 'warn', 'PAUSED', why); } };
   if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.'); else stopSkip('Ballistic launch.'); }
-  else if (type === 'unitLost' || type === 'acLost' || type === 'brigadeLost') { if (P.lost) pause(`${d.name} lost.`); else stopSkip(`${d.name} lost.`); }
+  else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`); else stopSkip(`${d.name} lost.`); }
   else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`); else stopSkip(`${d.base.name} hit.`); }
-  else if (type === 'capture') { if (P.capture) pause(`${d.name} captured.`); else stopSkip(); }
   else if (type === 'enemyStrike') { if (P.raid) pause('Major enemy strike forming.'); }
   else if (type === 'cityHit') { if (P.city) pause(`${d.city.name} hit.`); else stopSkip(); }
   else if (type === 'aff' && (d.aff === 'H' || d.aff === 'S') && IC.inHome(d.x, d.y)) stopSkip(`TN ${d.tn}: ${IC.AFF[d.aff].name.toLowerCase()} track.`);
@@ -543,8 +512,8 @@ function up(e) {
     else if (drag.box && S.box) {
       const b = S.box, a = IC.toWorld(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1)), c = IC.toWorld(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1));
       const inB = o => o.x >= a.x && o.x <= c.x && o.y >= a.y && o.y <= c.y;
-      S.group = S.units.filter(inB).concat(S.gunits.filter(g => g.side === 'us' && inB(g)));
-      S.sel = S.group.length ? { kind: S.group[0].gunit ? 'gunit' : 'unit', ref: S.group[0] } : null;
+      S.group = S.units.filter(inB);
+      S.sel = S.group.length ? { kind: 'unit', ref: S.group[0] } : null;
       if (S.group.length === 1) S.group = [];
       S.box = null; IC.ui.refresh(true);
     } else if (!drag.moved) {
@@ -581,7 +550,7 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
-  const rooms = { a: 'air', g: 'army', l: 'logi', i: 'industry', n: 'intel', k: 'research', j: 'journal', v: 'aviation', t: 'staff', e: 'economy' };
+  const rooms = { a: 'air', l: 'logi', i: 'industry', n: 'intel', k: 'research', j: 'journal', v: 'aviation', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
@@ -596,18 +565,16 @@ window.addEventListener('keydown', e => {
     S.sel = null; IC.ui.refresh(true); return;
   }
   const selKind = S.sel && S.sel.kind;
-  const brig = selG().length > 0, unitSel = selUnits().length > 0, trackSel = selKind === 'track';
-  const gkeys = { y: 'hold', d: 'dig', r: 'attack', t: 'defend', u: 'reserve', o: 'refit' };
+  const unitSel = selUnits().length > 0, trackSel = selKind === 'track';
   const ukeys = { e: 'emcon', w: 'uroe', q: 'udoc', m: 'move', h: 'heli', p: 'repair', x: 'reserve', f: 'fireMode' };
   if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; }
   else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; }
   else if (lk === 's') startSkip();
   else if (k === 'Escape') { if (!$('cine').hidden) ui.closeCine(); else if (S.mode2) IC.setMode(null); else if (ui.room) ui.openRoom(null); else { S.sel = null; S.group = []; } }
-  else if (brig && gkeys[lk]) command('gorder', gkeys[lk]);
-  else if (brig && lk === 'c') command('grelease');
   else if (unitSel && ukeys[lk]) command(ukeys[lk]);
   else if (trackSel && lk === 'v') command('scramble');
   else if (trackSel && lk === 'b') command('assignBest');
+  else if (lk === 'g' && IC.callInOpen(S)) { const why = IC.callInWhy(S); if (why) IC.toast(S, 'info', 'CALL-IN', why + '.'); else IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); }
   else if (rooms[lk]) { if (ui.roomOk(rooms[lk])) ui.openRoom(rooms[lk]); return; }
   else if (k === '+' || k === '=') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.25);
   else if (k === '-' || k === '_') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 0.8);
@@ -640,7 +607,7 @@ function generate(seed, mode, lesson) {
   IC.cam.z = Math.min(IC.cam.vw / 7800, IC.cam.vh / 5900);
   IC.centerOn(S.world.cx, S.world.cy);
   $('seed').textContent = String(seed);
-  $('startLead').textContent = describe(S.world);
+  $('startLead').textContent = S.range ? 'The test range: a flat, empty plane.' : describe(S.world);
 }
 IC.reroll = function () {
   $('startLead').textContent = 'Generating a new region…';

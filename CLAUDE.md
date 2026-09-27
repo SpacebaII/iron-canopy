@@ -37,6 +37,7 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | File | What it does |
 | --- | --- |
 | `core.js` | Constants, seeded RNG, helpers (`IC.U`), the event bus `IC.on(fn)` / `IC.emit(S, type, data)` |
+| `names.js` | Display names: a name, short code and plain role for every unit (`d.name`, `d.short`, `d.role`), a `nick` for munitions and threats (their plain `name` stays for logs); `IC.fullName(d)` for panels |
 | `data.js`, `aviation-data.js` | Units, munitions, threats, aircraft types (`IC.ACTYPES`), airport parts (`IC.APART`), airline archetypes, radar bands |
 | `gen.js`, `world.js`, `terrain.js` | World generation (countries, rivers, cities with streets and blocks, villages, the road network by class, railways, airways), routing (`IC.roadsChanged`, travel times `IC.travelFrom`), the `IC.worldChanged(S, box)` hook, the terrain canvas and detail tiles |
 | `state.js` | `IC.newGame`, the state object `S`, damage (`IC.detonate`), effects |
@@ -55,9 +56,10 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `story.js`, `campaign.js`, `academy.js` | Career mode (acts, goals, beats, event cards, delegates), Quick war, the Academy lessons |
 | `sim.js` | One simulation step, in order |
 | `render.js`, `render-airport.js`, `render-logistics.js` | The map; airports and aircraft at real scale; convoys and supply lines |
+| `render-combat.js` | Unit and threat symbols (a shape by role, a glyph per type, `IC.drawUnitSymbol`, `IC.drawThreatSymbol`), our units and ranges, the known enemy, tracks, missiles and every combat effect: a pooled particle system that watches missiles and explosions frame to frame (`IC.cfx`) |
 | `ui.js`, `inspector.js`, `warroom.js`, `main.js` | Top bar and panels, the selection inspector, the full-screen rooms, input and the main loop |
 
-Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` / `econtest.js` (long diagnostic runs that print what happens; `econtest.js` is the economy balance run), `tools/shot.js`, `devserver.py`.
+Tests and tools at the repository root: `headless.js` (loads the game in Node), `tests/run.js` (the suite), `tools/combat-shots.js` (combat scenes as frames, and frame timing with a raid in the air), `storytest.js` / `camptest.js` / `academytest.js` / `simtest.js` / `econtest.js` (long diagnostic runs that print what happens; `econtest.js` is the economy balance run), `tools/shot.js`, `devserver.py`.
 
 ## How the airport model works
 
