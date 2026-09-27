@@ -249,6 +249,10 @@ button.li:hover{background:var(--well-2)}
 .layers{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;max-width:17rem}
 .layers button{padding:.15rem .55rem;border-radius:999px;background:var(--glass-2);font-family:var(--mono);font-size:.72rem;color:var(--dim)}
 .layers button[aria-pressed="true"]{color:var(--friend);background:rgba(20,54,72,.9)}
+.covkey{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:2px 4px;width:100%;margin-top:2px;padding:.2rem .45rem;border-radius:8px;background:var(--glass-2);font-family:var(--mono);font-size:.66rem;color:var(--dim)}
+.covkey span{width:100%;text-align:right}
+.covkey em{font-style:normal;white-space:nowrap;margin-left:.35rem}
+.covkey i{display:inline-block;width:.6rem;height:.6rem;margin-right:.2rem;border-radius:2px;opacity:.85;vertical-align:-1px}
 .mapctl{display:flex;gap:3px}
 .mapctl button{min-width:2rem;height:1.9rem;border-radius:8px;background:var(--glass-2);font-family:var(--mono);font-size:1rem}
 .mapctl button:hover{background:rgba(22,40,54,.95)}

@@ -1,6 +1,6 @@
 /* Shared headless loader: loads the simulation files and stubs out anything that needs a canvas. */
 global.window = global;
-const FILES = ['core', 'data', 'aviation-data', 'gen', 'world', 'terrain', 'weather', 'state', 'sensors', 'threats', 'defense', 'units', 'airport', 'groundops', 'enemy', 'ground', 'air', 'logistics', 'civil', 'aviation', 'incidents', 'campaign', 'story', 'academy', 'sim'];
+const FILES = ['core', 'data', 'aviation-data', 'gen', 'world', 'terrain', 'weather', 'state', 'sensors', 'threats', 'defense', 'units', 'airport', 'groundops', 'enemy', 'ground', 'air', 'logistics', 'civil', 'aviation', 'airspace', 'incidents', 'campaign', 'story', 'academy', 'sim'];
 for (const f of FILES) require('./iron-canopy/js/' + f + '.js');
 IC.buildTerrain = W => {
   const R = IC.makeRng(W.seed);
