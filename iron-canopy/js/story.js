@@ -379,6 +379,13 @@ IC.storyShown = function (S) {
   st.goals.forEach((g, i) => { if (g.done) L.push({ g, i }); else if (open < 2) { open++; L.push({ g, i }); } });
   return L;
 };
+/* the tutorial's prompt: how to do the first open goal, and where (for the goals panel or a hint layer); null
+   when the player has hidden the tips or there is nothing to explain */
+IC.storyTip = function (S) {
+  const st = S.story; if (!st || st.act !== 1 || !st.tut) return null;
+  const g = st.goals.find(x => !x.done && x.how);
+  return g ? { id: g.id, text: g.how, ref: g.ref || null } : null;
+};
 /* what is hidden until the story reaches it: '' when open, else why not */
 const LOCKS = {
   airways: [2, 'The airway editor opens when the Minister asks you to design the airspace (Chapter 3).'],
@@ -894,7 +901,8 @@ IC.on((S, type, d) => {
     case 'infringement': st.cnt.infT.push(S.time); if (st.cnt.infT.length > 100) st.cnt.infT = st.cnt.infT.filter(t => S.time - t < 86400); break;
     case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; break;
     case 'zone': st.cnt.zone++; break;
-    case 'divert': st.standing -= 0.4; break;
+    // a bad evening of diversions costs at most 2.4 an hour
+    case 'divert': if (S.time - (st.divT || -1e9) >= 600) { st.divT = S.time; st.standing -= 0.4; } break;
     case 'routeCut': st.standing -= 1.5; if (IC.tipOnce(S, 'cut', 3 * 3600)) say(S, 'MIN', `${d.al.name} is cutting flights and telling the papers why. Fix what they complain about.`); break;
     case 'tailDestroyed': st.standing -= st.act >= 4 ? 2 : 10; break;
     case 'civilKill': st.standing -= 35; if (d.tail || d.d.civil) IC.news(S, `The Director of ${IC.ACTS[st.act].role.includes('Civil') ? 'Civil Aviation' : 'Airspace Security'} faces calls to resign.`); break;

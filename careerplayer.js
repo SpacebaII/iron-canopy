@@ -38,7 +38,11 @@ function grow(S, ap, st) {
   if (!ap.parts.some(p => p.kind === 'taxi' && p.nodes.length > 3)) return taxi(S, ap, [[-15, 0], [-15, 1.8], [0, 1.8], [15, 1.8], [15, 0]]);
   if (!has(ap, 'ils') && S.budget > 100) { const rw = ap.parts.find(p => p.kind === 'runway'); return rw && IC.aptPlanPart(S, ap, 'ils', rw.a.x, rw.a.y); }
   if (ap.parts.filter(p => p.kind === 'apron').length < 2 && S.budget > 150) { part(S, ap, 'apron', 4.3, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[4.3, 1.8], [4.3, 3.35]]); }
-  if (ap.parts.filter(p => p.kind === 'fuel').length < 2 && S.budget > 120) return part(S, ap, 'fuel', -5.6, 4.5);
+  if (ap.parts.filter(p => p.kind === 'fuel').length < 2 && S.budget > 120) return part(S, ap, 'fuel', -8, 4.5);
+  // more stands as the fleet grows: about one for every one and a half aircraft that use the airport
+  const fleet = S.av.tails.filter(t => t.where !== 'lost' && (S.av.routes.find(r => r.id === t.route) || {}).a === ap.id).length;
+  const aprons = ap.parts.filter(p => p.kind === 'apron' && p.zone !== 'cargo').length;
+  if (IC.aptStands(ap).length < fleet / 1.5 && aprons < 6 && S.budget > 150) { const x = [8.6, 12.9, -12.9, 17.2][aprons - 2] || 0; if (x) { part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[x, 1.8], [x, 3.35]]); } }
   if (st.ch >= 5 && !has(ap, 'cargo') && S.budget > 200) { part(S, ap, 'cargo', -4.5, 6.2, 2.5, 0.8); part(S, ap, 'apron', -4.5, 4.9, 3, 1, { mat: 'conc', zone: 'cargo' }); return taxi(S, ap, [[-3, 1.8], [-3, 4.2]]); }
   return null;
 }

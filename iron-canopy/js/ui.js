@@ -210,7 +210,7 @@ function brief() {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals
     const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
     const done = st.goals.filter(g => g.done).length, shown = IC.storyShown(S).filter(x => !x.g.done || st.act > 1 || S.time - (x.g.doneT || 0) < 2 * 3600);
-    const tip = ch && st.tut ? (st.goals.find(g => !g.done && g.how) || {}).how : '';
+    const tip = (IC.storyTip(S) || {}).text;
     h = `<h3 data-act="briefMin" title="Collapse or expand">${ch ? `Chapter ${ch.n + 1} · ${esc(ch.title)}` : `${esc(A.name)} · ${esc(A.title)}`}<em>${done}/${st.goals.length} goals${st.cp ? ` · ${st.cp} CP` : ''}</em></h3>
       <div class="goals">${shown.map(({ g, i }) => `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${!g.done && g.prog && g.prog() ? `<small>${esc(g.prog())}</small>` : ''}</span></button>`).join('')}</div>
       ${tip ? `<p class="hint">${esc(tip)} <button class="btn sm" data-act="tutOff" title="Hide these tips (the goals stay)">Hide tips</button></p>` : ''}
