@@ -192,7 +192,7 @@ test('traffic: rush hour is busier than night, and an air raid empties the roads
   const [mi, mo] = inbound(8), [ei, eo] = inbound(17.5);
   assert(mi > mo && eo > ei, `rush hours do not run into town in the morning and out in the evening (08:00 ${mi.toFixed(2)} in, ${mo.toFixed(2)} out; 17:30 ${ei.toFixed(2)} in, ${eo.toFixed(2)} out)`);
 });
-test('traffic: trips start and end at real places and follow the road graph', () => {
+test('traffic: vehicles start at real places and drive the road graph like traffic', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), T = S.traffic, G = T.G;
   // every city's streets are on one network with the roads
@@ -205,27 +205,56 @@ test('traffic: trips start and end at real places and follow the road graph', ()
   // (where a motorway runs through open country; in a town centre or at a roundabout it joins the roads there)
   const town = n => S.world.cities.some(c => U.dist(c, n) < 0.01);
   for (const n of G.nodes) { const c = n.out.map(i => G.links[i].cls); if (c.filter(k => k === 'hw').length >= 2 && !n.jk && !town(n)) assert(c.every(k => k === 'hw' || k === 'ramp'), `a motorway meets a ${c.find(k => k !== 'hw' && k !== 'ramp')} at grade`); }
-  // close in, vehicles start at zones and places and drive their route to the end
+  // close in, vehicles leave zones with buildings, take the roads the flows say are busy, and park after a while
   const view = { x0: cap.x - 40, y0: cap.y - 25, x1: cap.x + 40, y1: cap.y + 25 };
   IC.trafficAgents(S, view, 0);
-  for (let i = 0; i < 1200; i++) { S.time += 0.5; IC.traffic(S, 0.5); IC.trafficAgents(S, view, 0.5); }
+  const onLink = new Map();
+  for (let i = 0; i < 1200; i++) {
+    S.time += 0.5; IC.traffic(S, 0.5); IC.trafficAgents(S, view, 0.5);
+    if (i % 20 === 0) for (const a of IC.trafficAgentsOf(S).list) { const id = a.route[a.ri][0].id; onLink.set(id, (onLink.get(id) || 0) + 1); }
+  }
   const A = IC.trafficAgentsOf(S);
-  assert(A.stats.spawnZone > 100, `few trips started in the city (${A.stats.spawnZone})`);
-  assert(A.trips.length >= 10, `only ${A.trips.length} trips arrived in ten minutes`);
+  assert(A.stats.spawnZone > 100, `few vehicles left the city's zones (${A.stats.spawnZone})`);
+  assert(A.trips.length >= 10, `only ${A.trips.length} vehicles parked in ten minutes`);
   const connected = r => r.every(([lk, d], i) => IC.driveCanGo(lk, d) && (i === 0 || (r[i - 1][1] ? r[i - 1][0].a : r[i - 1][0].b) === (d ? lk.b : lk.a)));
   for (const tr of A.trips) {
-    assert(tr.org && tr.org.blocks && tr.org.blocks.length, 'a trip started away from any buildings');
-    assert(tr.dest && (tr.dest.blocks ? tr.dest.blocks.length : ['apt', 'border', 'industry', 'depot'].includes(tr.dest.kind)), 'a trip ended away from any place');
-    const [f] = tr.route[0], [l, ld] = tr.route[tr.route.length - 1];
-    assert((tr.route[0][1] ? f.b : f.a) === tr.org.node && (ld ? l.a : l.b) === tr.dest.node, 'a route does not run from its start to its end');
-    assert(connected(tr.route), 'a route jumps between roads that do not meet, or runs the wrong way along a slip road');
+    assert(tr.org && tr.org.blocks && tr.org.blocks.length, 'a vehicle started away from any buildings');
+    assert(connected(tr.route), 'a vehicle jumped between roads that do not meet, or ran the wrong way along a slip road');
   }
   for (const a of A.list) assert(connected(a.route), 'a vehicle on the road follows a broken route');
-  const purposes = new Set(A.list.map(a => a.pur).concat(A.trips.map(t => t.dest.kind || 'x')));
-  assert(A.list.some(a => a.pur === 'com') && A.list.some(a => a.pur === 'frt' || ['artic', 'box', 'tanker'].includes(a.k)), `no commuters or lorries: ${[...purposes].join(', ')}`);
+  assert(A.list.some(a => a.pur === 'com') && A.list.some(a => a.pur === 'frt' || ['artic', 'box', 'tanker'].includes(a.k)), 'no commuters or lorries');
+  // busy roads carry more of them than quiet ones
+  const inView = T.links.filter(L => { const b = L.l.bb; return !(b[2] < view.x0 || b[0] > view.x1 || b[3] < view.y0 || b[1] > view.y1) && L.l.len > 0.5; });
+  const per = L => (onLink.get(L.l.id) || 0) / L.l.len, busy = inView.filter(L => L.load > 0.5), quiet = inView.filter(L => L.load < 0.1);
+  const avg = a => a.reduce((t, L) => t + per(L), 0) / Math.max(1, a.length);
+  assert(busy.length && quiet.length && avg(busy) > avg(quiet) * 3, `busy roads (${avg(busy).toFixed(2)}) are not much busier close in than quiet ones (${avg(quiet).toFixed(2)})`);
   // buses run lines along the road graph, with stops
   assert(T.lines.some(l => l.kind === 'bus') && T.lines.some(l => l.kind === 'coach'), 'no bus or coach lines');
   for (const l of T.lines) { assert(connected(l.path), `${l.name} is not a connected route`); if (l.kind === 'bus') assert(l.stops.length >= 3, `${l.name} has no stops`); }
+});
+test('traffic: a cut road makes a visible queue, and close-in traffic turns back from it', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const T = S.traffic, G = T.G;
+  for (let i = 0; i < 4; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
+  // the busiest main road link, and the junction at its start
+  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && L.l.len > 6 && L.ld[0] > 0.3).sort((a, b) => b.ld[0] - a.ld[0])[0];
+  assert(L, 'no busy main road');
+  const n0 = L.l.a, p = G.nodes[n0];
+  // vehicles within 150 m of that junction on the roads that lead into it, as the middle zoom shows them
+  const near = () => { let n = 0; IC.trafficVisible(S, { x0: p.x - 2, y0: p.y - 2, x1: p.x + 2, y1: p.y + 2 }, 0.05, (x, y) => { if (U.dist({ x, y }, p) < 1.5) n++; }); return n; };
+  const before = near();
+  L.l.cut = true; T.stepT = 0; IC.traffic(S, 0.25);
+  const after = near();
+  assert(after > before * 1.5 && after >= 4, `no queue in front of the cut road: ${before} vehicles by the junction before, ${after} after`);
+  // close in: nobody drives onto the cut road; those who meet it queue, then turn back
+  const view = { x0: p.x - 30, y0: p.y - 20, x1: p.x + 30, y1: p.y + 20 };
+  IC.trafficAgents(S, view, 0);
+  const onCut = new Set(IC.trafficAgentsOf(S).list.filter(a => a.route[a.ri][0] === L.l).map(a => a.id));
+  for (let i = 0; i < 1200; i++) {
+    S.time += 0.5;
+    for (const a of IC.trafficAgents(S, view, 0.5)) assert(a.route[a.ri][0] !== L.l || onCut.has(a.id), 'a vehicle drove onto a cut road');
+  }
+  assert(IC.trafficAgentsOf(S).stats.turned > 0, 'no vehicle turned back in front of the cut road');
 });
 test('traffic: a busy hour stays inside the time budget', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
