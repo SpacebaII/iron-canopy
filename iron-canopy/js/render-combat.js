@@ -536,7 +536,7 @@ function drawTrack(S, t, px, now) {
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
   if (show && S.layers.labels) {
     const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
-    const altS = alt == null ? '---' : alt >= 1 ? (t.type === 'ga' ? alt.toFixed(1) : Math.round(alt)) + 'k' : Math.round(alt * 1000) + 'm';
+    const altS = alt == null ? '---' : IC.tagAlt(t);
     label(`${t.tn} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
   }
   if (selT) {
