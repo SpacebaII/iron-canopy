@@ -2302,7 +2302,7 @@ test('engine: a game built in stages is the game built at once, and it reports e
   const sig = S => [S.world.cities.map(c => c.x + ',' + c.y + ',' + c.blocks.length).join(';'), S.world.edges.length, S.infra.length, S.units.length,
     S.traffic.links.length, S.av.tails.length, S.budget.toFixed(3)].join('|');
   assert(sig(A) === sig(B), 'the game built in stages differs from the one built at once');
-});
+}, true);
 test('radar: sensors asked by grid cell detect exactly what asking every sensor detects', () => {
   const S = IC.newGame({ seed: 12345, mode: 'campaign', hour: 10 });
   const c = IC.cap(S);
@@ -2335,7 +2335,7 @@ test('airport: a parked airliner held on the ground is fuelled once, not again a
   const parked = parkedAt(ap);
   try { run(S, 2); } finally { IC.aptTakeFuel = take; }
   assert(draws <= parked, `${draws} fuel draws for ${parked} parked airliners that could not leave`);
-});
+}, true);
 test('airport: an apron with airliners parked on it cannot be bulldozed, and says why', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 0.5);
@@ -2347,7 +2347,7 @@ test('airport: an apron with airliners parked on it cannot be bulldozed, and say
   assert(!IC.aptRemove(S, ap, apron.id) && ap.parts.includes(apron), 'the apron was bulldozed with aircraft on it');
   run(S, 0.1);
   assert(lost() === l0, 'aircraft were lost');
-});
+}, true);
 test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 1 / 3);
