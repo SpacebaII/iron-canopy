@@ -6,7 +6,7 @@
 const U = IC.U;
 const $ = id => document.getElementById(id);
 const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, shownAt: 0, lastLen: 0, toasts: [], cineShown: 0, cineT: 0, roomScroll: {}, aptTab: 'info', arMin: false, logFilter: 'all', refCat: 'units',
-  sub: { aviation: 'airlines', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
+  sub: { aviation: 'ops', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
 let S = null;
 const esc = U.esc;
 ui.esc = esc;
@@ -271,7 +271,7 @@ ui.techOpens = t => Object.entries(IC.UNITS).filter(([, d]) => d.tech === t.id &
    looks at it, and arrives with a short card. Kept in the interface, not the game state. */
 const unitOk = (st, t) => { const d = IC.UNITS[t]; return !d.callin && !st.range && (!st.story || IC.storyAllows(st, t)) && IC.hasTech(st, d.tech); };
 ui.ROOM_INFO = {
-  aviation: 'Airlines, their route requests, our airports and the airspace.',
+  aviation: 'Operations at our airports, airline deals, the airlines, our airports and the airspace.',
   staff: 'Your career: what each act opens up, your delegates and what command points buy.',
   economy: 'The treasury, the weekly statement, city growth, roads and loans.',
   air: 'The air wing: flights at each base, standing patrols and new aircraft.',
@@ -448,8 +448,9 @@ function buildHint(m) {
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
     : t === 'stand' ? T.desc
+    : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
-    : `${D.name}: click to place, click the same spot again to build. R turns it.`;
+    : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
   const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z)) : null;
   const info = plan ? (plan.ok ? plan.text : [plan.why].concat(plan.text)).filter(Boolean).join(' · ') : '';
   return `${how} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
@@ -604,7 +605,7 @@ function firstRun() {
   ui.firstRunDone = S;
   if (S.story) IC.hint.tour('career1', [
     { el: 'goals', title: 'Your goals', text: 'This act\'s goals, with how far along each one is. Click a goal to see where it is on the map.' },
-    { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' route requests. Keys are on each button.' },
+    { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' deals. Keys are on each button.' },
     { el: 'speed', title: 'Time', text: 'The game runs at 1×: ten game seconds a second. Space pauses, 1–6 set the speed, S skips ahead until something needs you.' },
     { el: 'menu', title: 'The menu', text: 'Esc backs out of whatever is open; with nothing open it brings up the menu: settings, the Guide and quitting.' }
   ]);
