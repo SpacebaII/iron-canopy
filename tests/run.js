@@ -452,7 +452,7 @@ function onEntry(S, ap, fn) {
   return () => { for (const m of ap.moves) if (m.kind === 'dep' && m.plan && m.locks && m.locks[grpOf(ap, m.plan.rw.id)] && !seen.has(m.id)) { seen.add(m.id); fn(m); } };
 }
 test('runway rules: under "only when cleared", an airliner never goes onto the runway with an arrival inside the gap', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   const ap = S.byId[S.story.cap];
   sky(S, 'clear'); calm(S, ap.rwyA, 6);
   const ops = IC.opsOf(ap); ops.r.enter.jet = ops.r.enter.heavy = 'hold'; ops.r.gap = 8;
@@ -517,7 +517,7 @@ test('runway rules: "line up and wait" lets a departure line up behind one that 
   console.log(`        departures an hour: only when cleared ${hold.perHour.toFixed(0)} (rated ${hold.rated}), line up and wait ${luaw.perHour.toFixed(0)} (rated ${luaw.rated})`);
 }, true);
 test('runway rules: an arrival goes around when the runway is still occupied, and it is counted', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.cap];
   sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap);
   const stands = IC.aptStands(ap).filter(x => !x.occ && x.linked && x.size !== 's');
@@ -549,7 +549,7 @@ test('runway rules: the Operations tab rates departures an hour within 10% of a 
   }
 }, true);
 test('runway rules: lining up and waiting at night without a ground radar carries more risk than by day', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 12 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 12 });
   const ap = S.byId[S.story.cap];
   sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap);
   ap.parts = ap.parts.filter(p => p.kind !== 'gradar'); ap.dirty = true; IC.aptStats(S, ap);
