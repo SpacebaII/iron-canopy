@@ -1321,6 +1321,46 @@ test('air defence: raids build up, strike, and are followed by a calm', () => {
   assert(!quiet.length, `${quiet.length} weapons launched in the 90 minutes after a raid ended`);
   assert(over.every(e => typeof e.d.text === 'string' && /shot down/.test(e.d.text)), 'a raid ended without an after-action report');
 }, true);
+/* ---------- height ---------- */
+test('height: an interceptor passing 8 km above or below a target does not hit it; at its height it does', () => {
+  const S = range(), T = S.range.target;
+  let passed = 0;
+  IC.on((S2, type) => { if (S2 === S && type === 'missHeight') passed++; });
+  const shoot = dz => {
+    const t = IC.spawnThreat(S, 'jdr', T.x + 400, T.y, { route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, alt: 5, det: true });
+    t.vx = -t.spd; t.vy = 0;
+    // a certain-kill round already on top of it on the map, dz km above or below
+    S.missiles.push({ id: IC.nid('m'), mun: 'MR', M: IC.MUN.MR, x: t.x + 3, y: t.y, a: Math.PI, spd: 12, target: t, life: 30, src: 'test', pk: 1, trailT: 0, side: 'us', tr: IC.newTrail(S, 'sam'), alt: t.alt + dz, a0: t.alt + dz, loft: 0, flown: 400 });
+    t.inbound++;
+    for (let i = 0; i < 8; i++) IC.step(S, 0.25);
+    return t;
+  };
+  const above = shoot(8), below = shoot(-4.9);
+  assert(!above.dead && !below.dead, 'an interceptor far above or below the target killed it');
+  assert(passed >= 2, `the misses were not reported as passing above or below (${passed})`);
+  assert(shoot(0).dead, 'an interceptor at the target\'s height and position did not kill it');
+});
+test('height: a long-reach missile reaches less far against a low target, as its table says', () => {
+  const M = IC.MUN.LR, low = IC.reachAt(M, 0.04), high = IC.reachAt(M, 8), R = IC.REACH.LR;
+  assert(high === M.range, `at 8 km the long-range missile should reach its full ${M.range / 10} km (got ${high / 10})`);
+  assert(low < high * 0.6 && low > R[0][1] * 10 - 1, `against a target at 40 m it should reach ${R[0][1]}–${R[1][1]} km (got ${low / 10})`);
+  assert(IC.reachAt(M, 30) === 0 && IC.reachAt('HAT', 5) === 0, 'reach outside the band should be zero');
+  assert(/km up, out to 100 km/.test(IC.reachText('LR')), IC.reachText('LR'));
+  // and the battery holds fire on a sea-skimming cruise missile 60 km out that it would shoot at 3 km up
+  const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'lrsam', T.x, T.y);
+  const t = IC.spawnThreat(S, 'lacm', T.x + 600, T.y, { alt: 0.04, route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, det: true, fc: true });
+  t.vx = -t.spd; t.vy = 0;
+  const why = {};
+  assert(!IC.chooseMun(S, u, t, 600, why), 'the long-range battery would fire on a cruise missile at 40 m from 60 km');
+  t.alt = 3;
+  assert(IC.chooseMun(S, u, t, 600, {}), 'the long-range battery would not fire on a target 3 km up at 60 km');
+});
+test('height: tags give flight levels or feet for aircraft and km for everything else', () => {
+  assert(IC.altText({ d: IC.THR.civ, alt: 10.97 }) === 'FL360', IC.altText({ d: IC.THR.civ, alt: 10.97 }));
+  assert(IC.altText({ d: IC.THR.ga, alt: 1.2 }) === '3,900 ft', IC.altText({ d: IC.THR.ga, alt: 1.2 }));
+  assert(IC.altText({ d: IC.THR.srbm, alt: 62 }) === '62 km' && IC.altText({ d: IC.THR.lacm, alt: 0.04 }) === '40 m', 'missile heights should be in km or m');
+  for (const k in IC.THR) assert(IC.profileOf(k).name, `no height profile for ${k}`);
+});
 test('test range: a raid against a defence reports shots, kills, leakers and the cost exchange', () => {
   const S = range(), T = S.range.target;
   IC.rangeAddUnit(S, 'mr3d', T.x - 100, T.y);
