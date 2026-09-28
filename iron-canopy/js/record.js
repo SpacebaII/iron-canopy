@@ -1,21 +1,54 @@
-/* Iron Canopy — the recorder. Every step it notes where everything that moves is (position, height, heading,
-   speed, whether radar saw it) in ring buffers that hold the last 15 game minutes, and keeps the events of that
-   time from the event bus. The replay window (replay3d.js) reads them back; nothing here touches the DOM, and the
-   recorder only reads what the state holds, so it keeps working however the movers come to move. */
+/* Iron Canopy — the recorder. Every half second it notes where everything that moves is (position, height,
+   heading, speed, whether radar saw it, and for a missile how it is guided) in ring buffers that hold the last 15
+   game minutes; while missiles fly, they and their targets are noted every step, so turns and breaks read. It keeps
+   the events of that time from the event bus: launches, hits, chaff and flares, lost locks, decoys and misses.
+   The replay and the live view (replay3d.js) read them back, smoothed, with bank, pitch and g (IC.recAttitude).
+   Nothing here touches the DOM, and the recorder only reads what the state holds. */
 (function (IC) {
 'use strict';
 const U = IC.U;
 
-const REC = IC.REC = { span: 900, dt: 0.5, purgeEvery: 30 };
-const F = 8;                 // floats a sample: t x y alt h spd det aff
+const REC = IC.REC = { span: 900, dt: 0.5, fine: 0.25, purgeEvery: 30 };
+const F = 9;                 // floats a sample: t x y alt h spd det aff ph (a missile's guidance, a target's notch)
 const AFF = { U: 0, F: 1, A: 1, N: 2, S: 3, H: 4, D: 5 };
 IC.REC_AFF = ['U', 'F', 'N', 'S', 'H', 'D'];
-const CAP = Math.ceil(REC.span / REC.dt) + 2;
+const CAP = Math.ceil(REC.span / REC.fine) + 2;
+
+/* how a missile is guided at a moment, as the replay colours its lock line. The simulation today knows the seeker
+   and whether the lock was lost or a decoy took it; the phase a missile keeps itself (m.phase) wins when it has one */
+const GUIDE = IC.GUIDE = [
+  null,
+  { k: 'mid', name: 'Midcourse', brief: 'flying on the launcher\'s data towards where the target will be', col: '#8fb8ff' },
+  { k: 'sarh', name: 'Semi-active', brief: 'homing on the battery\'s radar reflected off the target: the radar must stay on it', col: '#ffd24a' },
+  { k: 'arh', name: 'Active', brief: 'its own radar has the target: it no longer needs the launcher', col: '#ff8a3c' },
+  { k: 'ir', name: 'Heat-seeking', brief: 'its seeker sees the target\'s heat: flares can pull it off', col: '#ff6fd0' },
+  { k: 'cmd', name: 'Command', brief: 'steered by the battery\'s radar, which watches both the missile and the target', col: '#6fd2ff' },
+  { k: 'term', name: 'Terminal', brief: 'its seeker closes on the target for a direct hit', col: '#ffffff' },
+  { k: 'lost', name: 'Lost lock', brief: 'nothing guides it any more: it flies on and misses', col: '#8fa3b0' },
+  { k: 'decoy', name: 'Decoyed', brief: 'its seeker took a flare or a chaff cloud for the target', col: '#b48cff' }
+];
+const PH = {}; GUIDE.forEach((g, i) => { if (g) PH[g.k] = i; });
+IC.GUIDE_ACTIVE_R = 150;   // an active seeker goes on its own in the last 15 km
+function phaseOf(S, m, enemy) {
+  if (m.phase && PH[m.phase]) return PH[m.phase];
+  if (m.lostLock) return PH.lost;
+  if (m.fooled) return PH.decoy;
+  const sk = enemy ? (m.ir ? 'IR' : 'ARH') : m.M && m.M.seeker, t = m.target, r = t ? U.dxy(m.x, m.y, t.x, t.y) : 1e9;
+  switch (sk) {
+    case 'SARH': return PH.sarh;
+    case 'CMD': return PH.cmd;
+    case 'IR': return PH.ir;
+    case 'ARH': return r < IC.GUIDE_ACTIVE_R ? PH.arh : PH.mid;
+    case 'HTK': return (m.pip ? m.pip.T - S.time < 6 : r < 80) ? PH.term : PH.mid;
+    default: return PH.mid;
+  }
+}
+IC.recPhaseOf = phaseOf;
 
 /* the recorder lives on the state but stays out of any save: it is derived data */
 function recOf(S) {
   if (S.rec) return S.rec;
-  const R = { t0: S.time, next: S.time, tracks: [], of: new WeakMap(), ev: [], evN: 0, purgeT: S.time, ms: 0, n: 0 };
+  const R = { t0: S.time, next: S.time, nextFine: S.time, tracks: [], of: new WeakMap(), ev: [], evN: 0, purgeT: S.time, ms: 0, n: 0 };
   Object.defineProperty(S, 'rec', { value: R, enumerable: false, configurable: true, writable: true });
   return R;
 }
@@ -27,7 +60,7 @@ function newTrack(R, ref, kind, model, name, side, meta) {
   R.tracks.push(tr); R.of.set(ref, tr);
   return tr;
 }
-function push(tr, t, x, y, alt, h, spd, det, aff) {
+function push(tr, t, x, y, alt, h, spd, det, aff, ph) {
   if (tr.n === tr.cap && tr.cap < CAP) {
     // grow, keeping the samples in order
     const cap = Math.min(CAP, tr.cap * 2), nb = new Float32Array(cap * F);
@@ -37,7 +70,7 @@ function push(tr, t, x, y, alt, h, spd, det, aff) {
   let at;
   if (tr.n < tr.cap) { at = ((tr.head + tr.n) % tr.cap) * F; tr.n++; } else { at = tr.head * F; tr.head = (tr.head + 1) % tr.cap; }
   const b = tr.buf;
-  b[at] = t; b[at + 1] = x; b[at + 2] = y; b[at + 3] = alt; b[at + 4] = h; b[at + 5] = spd; b[at + 6] = det; b[at + 7] = aff;
+  b[at] = t; b[at + 1] = x; b[at + 2] = y; b[at + 3] = alt; b[at + 4] = h; b[at + 5] = spd; b[at + 6] = det; b[at + 7] = aff; b[at + 8] = ph || 0;
   if (tr.n === 1) tr.t0 = t;
   tr.t1 = t;
 }
@@ -53,23 +86,53 @@ function indexAt(tr, t) {
   return lo;
 }
 const lerpA = (a, b, k) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * k; };
-/* the state of a track at time t, interpolated; null when it was not there then */
-IC.recAt = function (tr, t, out) {
+/* a cubic through the samples either side (Hermite, with slopes from the neighbours over their real time gaps), so a
+   path sampled every half second flies as a curve and not as a string of straight pieces */
+function herm(p0, p1, p2, p3, t0, t1, t2, t3, k) {
+  const h = t2 - t1, m1 = (p2 - p0) / Math.max(1e-6, t2 - t0), m2 = (p3 - p1) / Math.max(1e-6, t3 - t1), k2 = k * k, k3 = k2 * k;
+  return (2 * k3 - 3 * k2 + 1) * p1 + (k3 - 2 * k2 + k) * h * m1 + (3 * k2 - 2 * k3) * p2 + (k3 - k2) * h * m2;
+}
+IC.recHerm = herm;
+/* the state of a track at time t, smoothed (raw: straight between samples); null when it was not there then */
+IC.recAt = function (tr, t, out, raw) {
   const i = indexAt(tr, t);
   if (i < 0) return null;
   const o = out || {};
   if (i === tr.n - 1 || t <= at(tr, i, 0)) {
     // past the last sample: still there for one interval after it
     if (i === tr.n - 1 && t > at(tr, i, 0) + REC.dt * 2.5) return null;
-    o.x = at(tr, i, 1); o.y = at(tr, i, 2); o.alt = at(tr, i, 3); o.h = at(tr, i, 4); o.spd = at(tr, i, 5); o.det = at(tr, i, 6); o.aff = at(tr, i, 7); o.t = at(tr, i, 0);
+    o.x = at(tr, i, 1); o.y = at(tr, i, 2); o.alt = at(tr, i, 3); o.h = at(tr, i, 4); o.spd = at(tr, i, 5); o.det = at(tr, i, 6); o.aff = at(tr, i, 7); o.ph = at(tr, i, 8); o.t = at(tr, i, 0);
     return o;
   }
   const ta = at(tr, i, 0), tb = at(tr, i + 1, 0), k = tb > ta ? (t - ta) / (tb - ta) : 0;
-  o.t = t; o.x = U.lerp(at(tr, i, 1), at(tr, i + 1, 1), k); o.y = U.lerp(at(tr, i, 2), at(tr, i + 1, 2), k); o.alt = U.lerp(at(tr, i, 3), at(tr, i + 1, 3), k);
-  o.h = lerpA(at(tr, i, 4), at(tr, i + 1, 4), k); o.spd = U.lerp(at(tr, i, 5), at(tr, i + 1, 5), k); o.det = at(tr, i, 6); o.aff = at(tr, i, 7);
+  o.t = t; o.h = lerpA(at(tr, i, 4), at(tr, i + 1, 4), k); o.spd = U.lerp(at(tr, i, 5), at(tr, i + 1, 5), k); o.det = at(tr, i, 6); o.aff = at(tr, i, 7); o.ph = at(tr, i, 8);
+  if (raw || tb - ta > 3) { o.x = U.lerp(at(tr, i, 1), at(tr, i + 1, 1), k); o.y = U.lerp(at(tr, i, 2), at(tr, i + 1, 2), k); o.alt = U.lerp(at(tr, i, 3), at(tr, i + 1, 3), k); return o; }
+  const i0 = i > 0 ? i - 1 : i, i3 = i + 2 < tr.n ? i + 2 : i + 1, t0 = at(tr, i0, 0), t3 = at(tr, i3, 0);
+  for (const [f, key] of [[1, 'x'], [2, 'y'], [3, 'alt']]) o[key] = herm(at(tr, i0, f), at(tr, i, f), at(tr, i + 1, f), at(tr, i3, f), i0 === i ? ta - (tb - ta) : t0, ta, tb, i3 === i + 1 ? tb + (tb - ta) : t3, k);
+  if (o.alt < 0) o.alt = 0;
   return o;
 };
-/* the samples between t0 and t1 as [x, y, alt, t, ...] pushed into out (for trails) */
+/* bank, pitch and g at time t, from how fast the heading and the climb change over a second: a coordinated turn
+   banks by atan(v·ω / g). Missiles steer without banking (they skid), so their roll stays level but their g counts */
+const G0 = 9.81, aA = {}, aB = {}, aC = {};
+IC.recAttitude = function (tr, t, out) {
+  const o = out || {};
+  o.roll = 0; o.pitch = 0; o.g = 1; o.turn = 0;
+  const c = IC.recAt(tr, t, aC); if (!c) return o;
+  const a = IC.recAt(tr, t - 0.5, aA) || c, b = IC.recAt(tr, t + 0.5, aB) || c;
+  const ground = tr.kind === 'veh' || tr.kind === 'unit' || (tr.kind === 'gnd' && c.alt < 0.005);
+  if (ground || b.t - a.t < 0.2 || c.spd < 0.05) return o;
+  const v = c.spd * 100;   // m/s
+  let dh = b.h - a.h; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+  const w = dh / (b.t - a.t), lat = v * w;
+  const gam = (p, q) => Math.atan2((q.alt - p.alt) * 1000, Math.max(1, U.dxy(p.x, p.y, q.x, q.y) * 100));
+  const g1 = gam(a, c), g2 = gam(c, b), vert = v * (g2 - g1) / Math.max(0.1, (b.t - a.t) / 2);
+  o.pitch = (g1 + g2) / 2; o.turn = w;
+  o.g = Math.min(60, Math.hypot(lat, G0 * Math.cos(o.pitch) + vert) / G0);
+  if (tr.kind !== 'missile') o.roll = U.clamp(Math.atan2(lat, G0), -1.45, 1.45);
+  return o;
+};
+/* the samples between t0 and t1 as [x, y, alt, t, ...] pushed into out (for trails; the replay smooths them) */
 IC.recPath = function (tr, t0, t1, out) {
   out = out || [];
   let i = indexAt(tr, t0); if (i < 0) i = 0;
@@ -112,29 +175,55 @@ function sampleThreat(S, R, t, now) {
   if (t.tn && !tr.meta.tn) { tr.meta.tn = t.tn; tr.name = `TN ${t.tn}${t.cs ? ' · ' + t.cs : ''}`; }
   tr.meta.klass = t.klass || tr.meta.klass;
   const aff = t.decoyKnown ? 'D' : t.aff || 'U';
-  push(tr, now, t.x, t.y, t.alt || 0, hdgOf(t, tr, lastH(tr)), spdOf(t), t.det ? 1 : 0, AFF[aff] || 0);
+  push(tr, now, t.x, t.y, t.alt || 0, hdgOf(t, tr, lastH(tr)), spdOf(t), t.det ? 1 : 0, AFF[aff] || 0, t.notchT > 0 ? 1 : 0);
   tr.seen = now;
 }
 function sampleSimple(R, o, now, kind, model, name, side, alt, meta) {
   let tr = R.of.get(o);
   if (!tr) tr = newTrack(R, o, kind, model, name, side, meta);
   const spd = kind === 'veh' || kind === 'unit' ? (tr.n ? U.dxy(o.x, o.y, at(tr, tr.n - 1, 1), at(tr, tr.n - 1, 2)) / Math.max(1e-3, now - tr.t1) : 0) : spdOf(o);
-  push(tr, now, o.x, o.y, alt, hdgOf(o, tr, lastH(tr)), spd, o.radarOn ? 1 : 0, o.side === 'us' || side === 'us' ? 1 : 4);
+  push(tr, now, o.x, o.y, alt, hdgOf(o, tr, lastH(tr)), spd, o.radarOn ? 1 : 0, o.side === 'us' || side === 'us' ? 1 : 4, o.notchT > 0 ? 1 : 0);
   tr.seen = now;
+}
+/* a missile, ours or theirs: its guidance goes in the sample, and a change of phase becomes an event */
+function sampleMissile(S, R, m, now, enemy) {
+  let tr = R.of.get(m);
+  if (!tr) {
+    const by = m.unit || m.by || (m.src && typeof m.src === 'object' ? m.src : null);
+    tr = enemy ? newTrack(R, m, 'missile', m.ir ? 'aam' : 'aam', m.ir ? 'Heat-seeking missile' : 'Radar air-to-air missile', 'enemy', { mun: m.ir ? 'SRM' : 'MRM', tref: m.target, uref: by, seeker: m.ir ? 'IR' : 'ARH' })
+      : newTrack(R, m, 'missile', IC.modelOfMissile(m), `${m.mun} from ${m.src || 'a battery'}`, 'us', { mun: m.mun, tref: m.target, uref: by, seeker: m.M && m.M.seeker, name: m.M && m.M.name });
+  }
+  const ph = phaseOf(S, m, enemy), last = tr.n ? at(tr, tr.n - 1, 8) : 0;
+  push(tr, now, m.x, m.y, missileAlt(m, tr), hdgOf(m, tr, lastH(tr)), m.spd || 0, 1, enemy ? 4 : 1, ph);
+  tr.seen = now;
+  if (ph !== last && ph !== PH.lost && ph !== PH.decoy) addEv(R, { t: now, kind: 'lock', x: m.x, y: m.y, alt: missileAlt(m, tr), ph, mref: m, tref: m.target, quiet: true, text: last ? GUIDE[ph].name.toUpperCase() : `${GUIDE[ph].name} guidance` });
+}
+/* while missiles fly, they and what they chase are sampled every step */
+function sampleFine(S, R, now) {
+  for (const m of S.missiles) if (!m.dead) {
+    sampleMissile(S, R, m, now, false);
+    const t = m.target; if (t && !t.dead && t.x != null && (R.of.get(t) || {}).t1 !== now) { if (t.d && S.threats.includes(t)) sampleThreat(S, R, t, now); else if (t.kind) sampleSimple(R, t, now, 'air', IC.modelOfAir(t), t.name, 'us', t.alt || 0, { kind: t.kind, n: t.n }); }
+  }
+  for (const m of S.eaam) if (!m.dead) {
+    sampleMissile(S, R, m, now, true);
+    const a = m.target; if (a && !a.dead && (R.of.get(a) || {}).t1 !== now) sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n });
+  }
 }
 
 /* the step: a sample of everything that moves every REC.dt game seconds */
 IC.record = function (S, dt) {
   const R = recOf(S);
-  if (S.time < R.next) return;
-  R.next = S.time + REC.dt;
+  const fine = (S.missiles.length || S.eaam.length) && S.time >= R.nextFine;
+  if (S.time < R.next && !fine) return;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   const now = S.time;
-  for (const t of S.threats) if (!t.dead) sampleThreat(S, R, t, now);
-  for (const m of S.missiles) if (!m.dead) { let tr = R.of.get(m); if (!tr) tr = newTrack(R, m, 'missile', IC.modelOfMissile(m), `${m.mun} from ${m.src || 'a battery'}`, 'us', { mun: m.mun }); push(tr, now, m.x, m.y, missileAlt(m, tr), hdgOf(m, tr, lastH(tr)), m.spd || 0, 1, 1); tr.seen = now; }
-  for (const m of S.eaam) { let tr = R.of.get(m); if (!tr) tr = newTrack(R, m, 'missile', 'aam', 'Air-to-air missile', 'enemy', {}); push(tr, now, m.x, m.y, missileAlt(m, tr), hdgOf(m, tr, lastH(tr)), m.spd || 0, 1, 4); tr.seen = now; }
+  if (fine) { R.nextFine = now + REC.fine - 1e-6; sampleFine(S, R, now); }
+  if (now < R.next) { if (t0) { R.ms += performance.now() - t0; R.n++; } return; }
+  R.next = now + REC.dt;
+  for (const t of S.threats) if (!t.dead && (R.of.get(t) || {}).t1 !== now) sampleThreat(S, R, t, now);
+  if (!fine) { for (const m of S.missiles) if (!m.dead) sampleMissile(S, R, m, now, false); for (const m of S.eaam) if (!m.dead) sampleMissile(S, R, m, now, true); }
   for (const s of S.strikes) { let tr = R.of.get(s); if (!tr) tr = newTrack(R, s, 'missile', s.mun === 'GBU' ? 'gbu' : 'cm', `${s.mun} from ${s.src || 'a launcher'}`, s.side === 'us' ? 'us' : 'enemy', { mun: s.mun }); push(tr, now, s.x, s.y, s.alt || 0, hdgOf(s, tr, lastH(tr)), s.spd || 0, 1, s.side === 'us' ? 1 : 4); tr.seen = now; }
-  for (const a of S.air) if (!a.dead && !a.gnd) sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n });
+  for (const a of S.air) if (!a.dead && !a.gnd && (R.of.get(a) || {}).t1 !== now) sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n });
   for (const b of S.infra) if (b.parts && b.moves) for (const m of b.moves) if (!m.dead && m.phase !== 'start') sampleSimple(R, m, now, 'gnd', IC.modelOfType(m.type), m.who || m.T.name, m.mil ? 'us' : 'civil', m.alt || 0, { type: m.type, livery: m.livery || null, ap: b.id });
   for (const v of S.vehicles) if (!v.dead) sampleSimple(R, v, now, 'veh', v.kind === 'truck' ? 'truck' : 'truck', v.name, 'us', 0, { trucks: v.trucks });
   for (const u of S.units) if (!u.dead) sampleSimple(R, u, now, 'unit', IC.modelOfUnit(u.type), u.name, 'us', 0, { type: u.type, n: IC.unitVehicles(u.d) });
@@ -161,9 +250,17 @@ function damaged(S, x, y) {
   }
   return out;
 }
+function addEv(R, ev) {
+  ev.id = ++R.evN;
+  R.ev.push(ev);
+  if (R.ev.length > 1200) R.ev.shift();
+  return ev;
+}
+/* a missile's height as last recorded (the state keeps none for some of them) */
+const altOf = (R, m, t) => { const tr = R.of.get(m); return tr && tr.n ? at(tr, tr.n - 1, 3) : m.alt != null ? m.alt : t ? t.alt || 0 : 0; };
 IC.on(function (S, type, d) {
   if (!S || !S.rec) return;
-  const R = S.rec, ev = { id: ++R.evN, t: S.time, kind: type };
+  const R = S.rec, ev = { t: S.time, kind: type };
   switch (type) {
     case 'impact': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: d.src && d.src.d ? Math.min(2, 0.6 + d.src.d.dmg / 100) : 1, name: d.hit ? d.hit.name : 'open ground', text: `${d.hit ? d.hit.name : 'Open ground'} hit by ${d.src && d.src.d ? IC.fullName(d.src.d) : 'a weapon'}`, dmg: damaged(S, d.x, d.y) }); break;
     case 'kill': Object.assign(ev, { x: d.x, y: d.y, alt: d.alt || 0, sz: 0.6, name: d.tn ? `TN ${d.tn}` : IC.fullName(d.d), text: `${d.tn ? 'TN ' + d.tn + ' (' + IC.fullName(d.d) + ')' : IC.fullName(d.d)} shot down` }); break;
@@ -172,10 +269,14 @@ IC.on(function (S, type, d) {
     case 'fire': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: 0.3, name: d.name, text: `${d.name} fires`, quiet: true }); break;
     case 'crash': Object.assign(ev, { x: d.m.x, y: d.m.y, alt: 0, sz: 1, name: d.m.who || 'aircraft', text: `Crash at ${d.ap.name}: ${d.cause || ''}`, dmg: [] }); break;
     case 'collision': Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.t.alt || 0, sz: 1, name: d.t.cs || 'aircraft', text: 'Collision' }); break;
+    // chaff and flares: where the target was and how it moved, so the replay can let them fall away behind it
+    case 'cm': Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.t.alt || 0, vx: d.t.vx || 0, vy: d.t.vy || 0, what: d.kind, tref: d.t, name: d.t.tn ? `TN ${d.t.tn}` : d.t.name || 'aircraft', text: d.kind === 'flare' ? 'FLARES' : 'CHAFF', quiet: true }); break;
+    // what a missile's seeker did: lost its lock, took a decoy, saw its target notch, missed, hit
+    case 'mstat': Object.assign(ev, { x: d.m.x, y: d.m.y, alt: altOf(R, d.m, d.t), what: d.what, text: d.text, mref: d.m, tref: d.t, quiet: true }); if (d.what === 'notch') Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.t.alt || 0 }); break;
+    case 'missHeight': Object.assign(ev, { kind: 'mstat', x: d.m.x, y: d.m.y, alt: d.m.alt || 0, what: 'miss', text: d.dz > 0 ? 'PASSED ABOVE' : 'PASSED BELOW', mref: d.m, tref: d.t, quiet: true }); break;
     default: return;
   }
-  R.ev.push(ev);
-  if (R.ev.length > 600) R.ev.shift();
+  addEv(R, ev);
 });
 
 /* the mean time a recorder call took, in ms (tests and the performance tool) */
