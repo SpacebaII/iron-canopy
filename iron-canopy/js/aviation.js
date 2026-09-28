@@ -312,7 +312,7 @@ IC.radioGoAround = function (S, ap, m, o, why) {
   IC.log(S, 'info', 'RADIO', `${ap.name} tower: ${m.who || 'an arrival'}, going around at 1 km on ${IC.rwEnd(m.plan.rw, m.plan.dir)}: ${why}. It flies a circuit and lands in about ${Math.round(CIRCUIT / 60)} minutes.`, m);
 };
 function parked(S, tl, ap, s, m) {
-  tl.where = 'stand'; tl.mv = null; tl.at = ap.id;
+  tl.where = 'stand'; tl.mv = null; tl.at = ap.id; tl.lastStand = s.id;
   s.occ = tl.id;
   const al = airlineOf(S, tl.al);
   // turnaround: contact stands and a terminal with room are quicker
@@ -377,6 +377,9 @@ function pay(S, tl, ap, what) {
   ap.paxLog = ap.paxLog || []; ap.paxLog.push({ t: S.time, n: pax });
   const r = routeOf(S, tl); if (r) { r.flown++; r.rev += land + pf + cg; }
   al.flights++;
+  // the day's takings at this airport, and what each stand earned (the Economy room's lesson on idle stands)
+  const D = dayLog(S, ap), sid = tl.stand || tl.lastStand;
+  D.fee += land + pf + cg; if (sid) D.stand[sid] = (D.stand[sid] || 0) + land + pf + cg;
 }
 /* route charges from traffic crossing the country: more for a flight on our airways, where controllers give it a service */
 IC.avOverflight = function (S, net) { if (!S.av) return; const v = net ? 0.5 : 0.25; S.budget += v; S.av.led.over += v; feeLog(S, 'over', v); IC.emit(S, 'overflight', { net: !!net }); };
@@ -800,8 +803,8 @@ IC.avSignDeal = signDeal;
 /* rows of the day's movements at an airport, by hour, for the timeline */
 function dayLog(S, ap) {
   const day = Math.floor(S.time / 86400);
-  const L = ap.dayLog = ap.dayLog || { day, arr: new Array(24).fill(0), dep: new Array(24).fill(0), prev: null };
-  if (L.day !== day) { L.prev = { arr: L.arr, dep: L.dep }; L.day = day; L.arr = new Array(24).fill(0); L.dep = new Array(24).fill(0); }
+  const L = ap.dayLog = ap.dayLog || { day, arr: new Array(24).fill(0), dep: new Array(24).fill(0), fee: 0, stand: {}, prev: null };
+  if (L.day !== day) { L.prev = L.day === day - 1 ? { arr: L.arr, dep: L.dep, fee: L.fee, stand: L.stand } : null; L.day = day; L.arr = new Array(24).fill(0); L.dep = new Array(24).fill(0); L.fee = 0; L.stand = {}; }
   return L;
 }
 IC.aptDayLog = dayLog;
