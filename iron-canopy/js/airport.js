@@ -21,6 +21,10 @@ IC.aptLockWhy = function (S, kind, mat) {
 /* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
 IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
 IC.APART.fuelpad = { name: 'Fuel stand', w: 0.5, h: 0.4, cost: 12, build: 500, hp: 20, pad: true, desc: 'A paved stand by the fuel farm: small aircraft and those on remote stands taxi here to refuel instead of waiting for a truck.' };
+/* ground surfaces the player paints: for looks, and for cheap areas like car parks; aircraft never use them */
+IC.APART.surface = { name: 'Surface', area: true, cost: 1, build: 60, hp: 30, desc: 'Paint the ground: grass, gravel, concrete, asphalt or landscaping. Asphalt outside the airfield is a car park. Aircraft do not use it.' };
+IC.SURF = { grass: { name: 'Grass', k: 0.5 }, gravel: { name: 'Gravel', k: 1.5 }, green: { name: 'Landscaping', k: 3 }, asph: { name: 'Asphalt', k: 4, park: 350 }, conc: { name: 'Concrete', k: 6 } };
+if (!IC.APART_ORDER.includes('surface')) IC.APART_ORDER.push('surface');
 if (!IC.APART_ORDER.includes('deice')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('hydrant') + 1, 0, 'fuelpad', 'deice');
 /* parts aircraft taxi into through a door: shelters, hangars and service pads */
 const DOOR = k => k === 'hangar' || k === 'has' || k === 'alert' || !!(IC.APART[k] && IC.APART[k].pad);
@@ -116,7 +120,7 @@ IC.partMeasure = function (ap, p) {
 };
 /* paved parts cost and take as long as their material says (concrete is the price list) */
 const paveK = (p, k) => IC.PAVED && IC.PAVED[p.kind] ? IC.PAVE[IC.paveOf(p)][k] : 1;
-IC.partCost = (ap, p) => IC.APART[p.kind].cost * IC.partMeasure(ap, p) * paveK(p, 'cost');
+IC.partCost = (ap, p) => IC.APART[p.kind].cost * IC.partMeasure(ap, p) * paveK(p, 'cost') * (p.kind === 'surface' ? (IC.SURF[p.surf] || IC.SURF.grass).k : 1);
 IC.partBuildTime = (ap, p) => IC.APART[p.kind].build * Math.max(0.5, IC.partMeasure(ap, p)) * paveK(p, 'build');
 
 /* stands laid out along an apron's back edge; the back is the side facing a terminal, or away from the taxiways */
@@ -656,6 +660,7 @@ IC.aptProvides = function (ap) {
     if (p.kind === 'hangar' && ok(p) && p.linked !== false) { out.hangar += IC.APART.hangar.holds; out.hangarFree += Math.max(0, IC.APART.hangar.holds - (p.inside || []).length); }
     if (p.kind === 'deice' && ok(p)) out.deice++;
   }
+  for (const p of ap.parts) if (p.kind === 'surface' && p.built && IC.SURF[p.surf] && IC.SURF[p.surf].park) out.parking += Math.round(IC.SURF[p.surf].park * p.w * p.h);
   for (const f of (ap.land && ap.land.items) || []) { if (f.kind === 'park' || f.kind === 'garage') out.parking += f.cap || 0; if (f.kind === 'stop') out.transit = true; if (f.kind === 'hotel') out.hotel += f.cap || 0; }
   return out;
 };
@@ -758,6 +763,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
       }
       continue;
     }
+    if (part.kind === 'surface') continue;
     if (part.kind === 'apron') {
       for (const s of part.stands || []) if (U.dxy(s.x, s.y, x, y) < rb + 0.2 && s.hp > 0) { s.hp = 0; hitNames.push('stand destroyed'); }
       if (rectDist(part, p) < rb) { part.hp = Math.max(0, part.hp - dmg * 0.3); (part.scorch = part.scorch || []).push({ x, y, r: rb * 0.9 }); if (part.scorch.length > 16) part.scorch.shift(); }
@@ -866,6 +872,7 @@ IC.aptPlan = function (S, ap, part, o) {
   if (o.zone && part.kind !== 'taxi') part.zone = o.zone;
   if (o.ramp) { part.ramp = true; part.free = part.free || []; }
   if (part.kind === 'ils') part.cat = IC.aptTechOk(S, 'ils3') ? 3 : 1;
+  if (part.kind === 'surface') part.surf = part.surf || o.surf || 'grass';
   const pv = IC.bldPreview(S, ap, part);
   // enough to pay for the survey and a start on the ground: the rest is paid as the work runs
   const start = pv.cost * 0.1;
@@ -947,7 +954,7 @@ IC.aptCanPlace = function (S, ap, part) {
   const A = shape(probe);
   if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return false;
   for (const q of ap.parts) {
-    if (q.kind === 'taxi' || q === part || q.kind === 'ils') continue;
+    if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
     if (rectsOverlap(A, shape(q), 0.01)) return false;

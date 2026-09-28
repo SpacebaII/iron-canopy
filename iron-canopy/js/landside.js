@@ -131,16 +131,30 @@ function kerbs(S, ap, bl) {
     const sd = landSide(ap, t), l = IC.rectLocal(t, it), near = IC.rectWorld(t, l.x, l.y - sd * it.h / 2), ky = sd * (t.h / 2 + 0.2);
     L.roads.push({ pts: [near, IC.rectWorld(t, U.clamp(l.x, -t.w / 2 - 0.5, t.w / 2 + 0.5), ky)], w: 0.07 });
   }
-  // out to the nearest road (or the access road's start) from the nearest kerb end
-  const ends = L.roads.filter(r => r.kerb).flatMap(r => r.pts);
-  if (ends.length) {
+  // out to the nearest road (or the access road's start) from the nearest kerb end, on the landside and without
+  // crossing the airfield
+  const k0 = L.roads.find(r => r.kerb);
+  if (k0) {
+    const t = ap.parts.find(q => q.id === k0.by), sd = landSide(ap, t), out = IC.rectWorld(t, 0, sd * (t.h / 2 + 3));
     let tgt = L.access ? L.access.pts[0] : null;
-    if (!tgt) { const sn = IC.roadSnap ? IC.roadSnap(S, ends[0].x, ends[0].y, 40) : null; if (sn && (sn.node || sn.edge)) tgt = { x: sn.x, y: sn.y }; }
-    if (tgt) { const e = ends.slice().sort((a, b) => U.dist(a, tgt) - U.dist(b, tgt))[0]; L.roads.push({ pts: [e, tgt], w: 0.12, out: true }); }
+    if (!tgt && IC.roadSnap) { const sn = IC.roadSnap(S, out.x, out.y, 40); if (sn && (sn.node || sn.edge)) tgt = { x: sn.x, y: sn.y }; }
+    const ends = L.roads.filter(r => r.kerb).flatMap(r => r.pts);
+    const e = tgt && ends.slice().sort((a, b) => U.dist(a, tgt) - U.dist(b, tgt))[0];
+    if (e && sd * IC.rectLocal(t, tgt).y > 0 && !crossesField(ap, e, tgt)) L.roads.push({ pts: [e, tgt], w: 0.12, out: true });
   }
   L.ver++;
 }
 IC.landKerbs = kerbs;
+/* a straight road from a to b would cross a runway, taxiway or apron */
+function crossesField(ap, a, b) {
+  const X = (p, q) => U.segX(a.x, a.y, b.x, b.y, p.x, p.y, q.x, q.y) >= 0;
+  for (const q of ap.parts) {
+    if (q.kind === 'runway' && X(q.a, q.b)) return true;
+    if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) { const n0 = ap.nodes[q.nodes[i - 1]], n1 = ap.nodes[q.nodes[i]]; if (n0 && n1 && X(n0, n1)) return true; }
+    if (q.kind === 'apron') { const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2)); for (let i = 0; i < 4; i++) if (X(c[i], c[(i + 1) % 4])) return true; }
+  }
+  return false;
+}
 /* a road reaches the airport: any road node or road within 3 km of it */
 function hasRoad(S, ap) {
   const W = S.world, R = 30;

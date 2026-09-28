@@ -301,6 +301,7 @@ function base(b) {
     ['Landing systems', `${st.ilsEnds || 0} of ${st.rwy.length * 2} runway ends`]
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);
+  if (civil) rows.push(...lifeRows(b));
   const rr = civil && IC.aptRoadReport ? IC.aptRoadReport(S, b) : null;
   if (rr) rows.push(['Roads', `${esc(rr.text)}${rr.works.length ? ' ' + rr.works.map(esc).join(' ') : ''}<div class="acts">${Object.entries(IC.ROADS).map(([k, R]) => `<button class="act" data-act="roadMode" data-v="${k}" title="${esc(R.what)}: ${U.money(R.perKm)} a km">${esc(R.name)}</button>`).join('')}</div>`]);
   if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }
@@ -452,7 +453,7 @@ function buildPalette(b, civil) {
   const mat = m ? m.mat : P.mat, size = m ? m.size : P.size, zone = m ? m.zone : P.zone;
   const opts = `<h3 class="sh">Pavement <em>cost ×${IC.PAVE[mat || 'conc'].cost} · carries ${IC.PAVE[mat || 'conc'].t} t</em></h3>${seg('bpref', 'mat:' + (mat || 'conc'), IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return ['mat:' + k, (lock ? ui.icon('lock', 'sm') + ' ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), lock ? 'dim' : '', `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost and build time ×${IC.PAVE[k].cost} and ×${IC.PAVE[k].build}.`]; }))}
     <h3 class="sh">Zone <em>for aprons and ramps</em></h3>${seg('bpref', 'zone:' + (zone || 'auto'), [['zone:auto', 'Auto', '', 'From what is next to it: terminal, cargo terminal, shelters']].concat(Object.entries(IC.ZONES).map(([k, z]) => ['zone:' + k, zoneWord(k), '', `${z.name} zone: only ${z.name.toLowerCase()} aircraft park here`])))}
-    ${standOpts(m, P, size)}`;
+    ${standOpts(m, P, size)}${m && m.part === 'surface' ? surfOpts(m) : ''}`;
   return `<div class="palette">${parts}</div><h3 class="sh">Tools for big airports</h3><div class="palette">${tools}</div>${opts}
     <div class="acts"><button class="act" data-act="bundo" title="Ctrl+Z">Undo last</button><button class="act ${S.mode2 && S.mode2.kind === 'bulldoze' ? 'on' : ''}" data-act="bulldoze" title="Remove a part (click it on the map)">Bulldoze</button>${m && m.part === 'taxi' ? `<button class="act ${m.fillet ? 'on' : ''}" data-act="bpref" data-v="fillet">Round corners (F)</button>` : ''}</div>`;
 }
@@ -461,6 +462,25 @@ function standOpts(m, P, size) {
   const drive = m ? m.drive : P.drive;
   return `<h3 class="sh">Stands <em>size, and how aircraft leave them</em></h3>${seg('bpref', 'size:' + size, Object.entries(IC.RAMP_SIZE).map(([k, n]) => ['size:' + k, n, '', `${IC.STAND[k].name} stand, ${Math.round(IC.STAND[k].w * 100)} m wide, ${Math.round(IC.STAND[k].d * 100)} m deep`]))}
     ${seg('bpref', 'drive:' + (drive ? '1' : ''), [['drive:', 'Nose-in', '', 'Parks nose first; a tug pushes it back to leave. Compact, and the usual way at a terminal.'], ['drive:1', 'Drive-through', '', 'Taxis in and out forwards: no tug and no pushback, but it needs room ahead of the nose.']])}`;
+}
+/* the airport at work: services on the ground, hangars, and the landside that has grown round it */
+function lifeRows(b) {
+  const pv = IC.aptProvides(b), L = b.land, gm = (b.gmLog || []).filter(x => S.time - x.t < 3600), by = {};
+  for (const x of gm) by[x.what] = (by[x.what] || 0) + 1;
+  const inH = b.parts.filter(p => p.kind === 'hangar').reduce((a, p) => a + (p.inside || []).length, 0);
+  const rows = [['Gates · remote · cargo stands', `${pv.gates} · ${pv.remote} (by bus) · ${pv.cargoStands}${pv.gates && !IC.aptTechOk(S, 'bridge') ? ' <span class="amber">· no jet bridges yet (research)</span>' : ''}`],
+    ['On the ground, last hour', gm.length ? Object.entries(by).map(([k, n]) => `${n} ${k === 'push' ? 'pushbacks' : k === 'tow' ? 'tows' : k === 'fuel' ? 'stops to refuel' : k === 'de-icing' ? 'de-icings' : k}`).join(', ') : 'no pushbacks, tows or service stops'],
+    ['Hangars', pv.hangar ? `${inH} of ${pv.hangar} places in use for maintenance` : '<span class="amber">none: airliners due for maintenance fly elsewhere</span>']];
+  if (L) {
+    const n = {}; for (const it of L.items) n[it.kind] = (n[it.kind] || 0) + 1;
+    const what = Object.entries(n).map(([k, c]) => `${c} ${IC.LAND[k].name.toLowerCase()}${c > 1 && !/s$/.test(IC.LAND[k].name) ? 's' : ''}`).join(', ');
+    rows.push(['Landside', `${L.road ? '' : '<span class="amber">no road reaches it</span> · '}${what || 'nothing yet: it grows with passengers'}${pv.parking ? ` · ${pv.parking.toLocaleString('en-US')} parking spaces` : ''}${L.earn ? ` · earns ${U.money(L.earn)} an hour` : ''}`]);
+  }
+  return rows;
+}
+/* the surface tool's ground covers, with their price a hectare */
+function surfOpts(m) {
+  return `<h3 class="sh">Surface <em>what the ground is painted with</em></h3>${seg('bpref', 'surf:' + (m.surf || 'grass'), Object.entries(IC.SURF).map(([k, v]) => ['surf:' + k, v.name, '', `${v.name}: ${U.money(IC.APART.surface.cost * v.k)} a hectare${v.park ? '. Outside the airfield it parks about ' + v.park + ' cars a hectare' : ''}`]))}`;
 }
 /* an apron's stands: laid out along its back edge automatically, or placed by hand */
 function apronStands(ap, p) {

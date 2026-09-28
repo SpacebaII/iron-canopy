@@ -116,6 +116,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   }
   // paved surrounds: terminals and sheds stand on a forecourt that meets the apron, hangars open onto a ramp
   if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null) rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)');
+  // painted surfaces, under everything else
+  for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
   if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
   // aprons and other paved areas, tinted by zone
@@ -132,8 +134,18 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings
   for (const p of parts) {
-    if (['runway', 'taxi', 'apron'].includes(p.kind)) continue;
+    if (['runway', 'taxi', 'apron', 'surface'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
+  }
+  // what each building is, in small letters at the middle zoom (one label for a cluster of fuel tanks)
+  if (z > 9 && z < 90 && S.layers.labels) {
+    const done = [];
+    for (const p of parts) {
+      const t = BLD_TAG[p.kind]; if (!t || !p.built || p.x == null) continue;
+      if (done.some(q => q.t === t && U.dist(q, p) < 2)) continue;
+      done.push({ t, x: p.x, y: p.y });
+      lbl(g, t, p.x, p.y - Math.max(p.h || 0, (p.r || 0) * 2) / 2 - 5 * px, px, 'rgba(236,236,226,0.75)', 7.5, 'center', 700);
+    }
   }
   // aircraft parked
   if (z >= 0.8) drawParked(g, S, ap, px, z, light);
@@ -243,6 +255,7 @@ function drawConfig(g, S, ap, px, z) {
 }
 /* the rectangle, aligned with the main runway, that holds everything the airport has */
 const fieldBox = ap => IC.aptFence(ap);
+const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
 /* the airfield's grass: a flat mown colour over the terrain inside the fence, and mowing stripes close in */
 function drawField(g, box, px, z) {
   const k = U.clamp((z - 2) / 6, 0, 1);
@@ -541,6 +554,31 @@ function drawParked(g, S, ap, px, z, light) {
       IC.drawPlane(g, x, y, h, type, null, { alpha: pp.inside ? 0.35 : 1, shadow: pp.inside ? 0 : 0.02, minPx: 6, body: r.st === 'turn' ? 'rgb(200,170,110)' : null });
     }
   }
+}
+
+/* ---------- surfaces the player paints ---------- */
+const SURF_COL = { grass: 'rgb(104,132,84)', gravel: 'rgb(150,140,120)', green: 'rgb(92,128,78)', asph: 'rgb(60,62,64)', conc: 'rgb(128,130,126)' };
+function drawSurface(g, p, px, z) {
+  g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
+  const w = p.w, h = p.h, k = p.surf || 'grass';
+  if (!p.built) { stageRect(g, p, w, h, px, SURF_COL[k]); g.restore(); return; }
+  g.fillStyle = SURF_COL[k]; g.fillRect(-w / 2, -h / 2, w, h);
+  if (z > 10) {
+    const n = Math.min(400, Math.round(w * h * 60));
+    if (k === 'gravel') { for (let i = 0; i < n; i++) { g.fillStyle = U.hash(i, 7) > 0.5 ? 'rgba(90,84,70,0.35)' : 'rgba(210,200,180,0.35)'; g.fillRect((U.hash(i, 1) - 0.5) * w, (U.hash(1, i) - 0.5) * h, 0.012, 0.012); } }
+    else if (k === 'grass') { g.fillStyle = 'rgba(160,180,120,0.12)'; for (let y = -h / 2; y < h / 2; y += 0.12) g.fillRect(-w / 2, y, w, 0.06); }
+    else if (k === 'green') {
+      // lawns, shrubs, trees and a flower bed or two
+      for (let i = 0; i < n / 3; i++) { const x = (U.hash(i, 3) - 0.5) * w * 0.9, y = (U.hash(3, i) - 0.5) * h * 0.9, r = 0.02 + U.hash(i, i) * 0.035; g.fillStyle = 'rgba(40,70,36,0.85)'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.fillStyle = 'rgba(90,130,70,0.8)'; g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.5, 0, 7); g.fill(); }
+      g.fillStyle = 'rgba(200,90,110,0.7)'; g.fillRect(-w * 0.2, -h * 0.05, w * 0.12, h * 0.1);
+    } else if (k === 'asph') {
+      // a car park: bays in rows
+      g.strokeStyle = 'rgba(236,236,226,0.4)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath();
+      for (let y = -h / 2 + 0.03; y + 0.1 < h / 2; y += 0.17) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += 0.026) { g.moveTo(x, y); g.lineTo(x, y + 0.1); }
+      g.stroke();
+    } else if (k === 'conc') { g.strokeStyle = 'rgba(0,0,0,0.1)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath(); for (let x = -w / 2; x < w / 2; x += 0.06) { g.moveTo(x, -h / 2); g.lineTo(x, h / 2); } for (let y = -h / 2; y < h / 2; y += 0.06) { g.moveTo(-w / 2, y); g.lineTo(w / 2, y); } g.stroke(); }
+  }
+  g.restore();
 }
 
 /* ---------- the landside ---------- */
