@@ -11,7 +11,7 @@ const E = S.enemy, lines = [];
 const warH = t => E.warT ? ((t - E.warT) / 3600).toFixed(1).padStart(5) : '  pre';
 IC.on((S2, type, d) => {
   if (S2 !== S) return;
-  if (type === 'raidOver') lines.push({ t: S.time, s: `  AFTER-ACTION ${d.name} on ${d.obj.name}: ${d.text}` });
+  if (type === 'raidOver') lines.push({ t: S.time, s: `  AFTER-ACTION ${d.name} on ${d.obj.name}: ${d.text} [Prime Minister ${Math.round(S.pm)}, country ${U.pct(IC.working(S))} working]` });
   if (type === 'enemyAct') lines.push({ t: S.time, s: `  === ACT ${d.act}: ${d.name} ===` });
 });
 let seenLog = 0, seenIntel = 0;
