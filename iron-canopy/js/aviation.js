@@ -580,7 +580,8 @@ IC.aviation = function (S, dt) {
   // unmet demand brings requests sooner: the busiest airport's passengers over its seats
   A.pullT = (A.pullT || 0) - dt;
   if (A.pullT <= 0) { A.pullT = 600; A.pull = Math.max(0, ...IC.bases(S).filter(x => x.owner === 'us').map(x => IC.demandPull(S, x))); }
-  A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, 1.5));
+  // (in the Career's first act, offers come at the pace of the airport's name, not of every empty seat)
+  A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, S.story && S.story.act === 1 ? 0.4 : 1.5));
   if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
 };
 function cutRoute(S, al, r, why) {
@@ -663,7 +664,7 @@ IC.offRoute = function (t) {
    gained and an offer to renew; broken (by the airline when the airport lets it down, or by the player), it costs
    reputation and money. Reputation (ap.rep, 0–100) decides how often new offers come. */
 IC.DEAL = {
-  days: { flag: 5, budget: 3, regional: 4, cargo: 4, foreign: 4 },   // contract length, game days
+  days: { flag: 3, budget: 2, regional: 3, cargo: 3, foreign: 3 },   // contract length, game days
   hangar: { flag: 0.25, budget: 0.15, regional: 0.2, cargo: 0, foreign: 0 },   // hangar spaces per aircraft based here
   gates: { flag: 0.6, foreign: 0.5, budget: 0, regional: 0, cargo: 0 },   // share of the stands it wants at the terminal
   lateMin: 20,      // an arrival or departure later than this counts against the deal
@@ -682,10 +683,13 @@ const cycleOf = (S, a, b, T) => U.dist(a, endPt(S, b)) / T.cruise * 2 + T.turn *
    fuelH = fuel units an hour coming in, refuelH = refuellings an hour, paxH = passengers an hour the terminals take */
 IC.aptProvides = IC.aptProvides || function (ap) {
   const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0 }, gates: 0, cargoStands: 0, hangar: 0, cargoT: 0, fuelH: st.fuelIn || 0, refuelH: st.trucks || 0, paxH: st.pax || 0 };
+  // a gate: a stand passengers walk to from a terminal (within 60 m of one)
+  const terms = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25);
+  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.hypot(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
   for (const s of standsOf(ap)) {
     if (s.linked === false || s.hp <= 0) continue;
     const z = s.zone || 'civil';
-    if (z === 'civil') { P.stands[s.size] = (P.stands[s.size] || 0) + 1; if (s.contact) P.gates++; }
+    if (z === 'civil') { P.stands[s.size] = (P.stands[s.size] || 0) + 1; if (s.contact || nearT(s)) P.gates++; }
     else if (z === 'cargo' && s.size === 'l') P.cargoStands++;
   }
   for (const p of ap.parts) if (p.kind === 'hangar' && p.built && p.hp > p.max * 0.25 && p.linked !== false) P.hangar += IC.APART.hangar.holds;
@@ -730,7 +734,8 @@ IC.dealNeeds = function (S, q) {
     const P = IC.aptProvides(ap), N = aptNeeds(S, ap, q.renew ? null : { al, type: q.type, n: q.n, b: far });
     const row = (k, name, need, have, fix) => { if (need > 0) L.push({ ap: ap.id, k, name: `${nm}: ${name}`, need, have, ok: have >= need, text: have >= need ? '' : `${nm} needs ${fix} (${Math.floor(have)} of ${Math.ceil(need)})` }); };
     if (T.cargo) {
-      row('cargoStands', 'large cargo stands', N.cargoStands, P.cargoStands, 'more large stands in the cargo zone');
+      // (freighters park in the cargo zone, or on large passenger stands the wide-bodies leave free)
+      row('cargoStands', 'large stands for freighters', N.cargoStands, P.cargoStands + Math.max(0, P.stands.l - N.stands.l), 'more large stands, best in the cargo zone');
       row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round(P.cargoT), 'more cargo terminal space');
     } else {
       const big = T.stand === 'l' ? N.stands.l : T.stand === 'm' ? N.stands.m + N.stands.l : N.stands.s + N.stands.m + N.stands.l;
