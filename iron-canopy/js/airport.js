@@ -147,7 +147,8 @@ function standsFor(ap, p) {
   for (let i = 0; i < n; i++) {
     const lx = -p.w / 2 + S.w * (i + 0.5), ly = back * (p.h / 2 - S.d / 2);
     const c = toWorld(p, lx, ly), f = toWorld(p, lx, back * (p.h / 2 - S.d - 0.08));
-    const contact = !!(term && term.kind === 'terminal');
+    // a gate only where the terminal is right behind the stand (an apron may run on past the building's end)
+    const contact = !!(term && term.kind === 'terminal' && rectDist(term, toWorld(p, lx, back * (p.h / 2 + 0.02))) < 0.4);
     const old = p.stands && p.stands.find(x => x.id === p.id + 's' + i);
     out.push({ id: p.id + 's' + i, x: c.x, y: c.y, fx: f.x, fy: f.y, a: p.a + (back > 0 ? Math.PI / 2 : -Math.PI / 2), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: term && term.kind === 'cargo' });
   }
