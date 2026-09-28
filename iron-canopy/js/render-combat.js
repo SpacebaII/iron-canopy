@@ -519,7 +519,7 @@ function drawTrack(S, t, px, now) {
   // a raid carries one label, its leader's (render-air.js boxes the group)
   if (show && S.layers.labels && !(t.grp && t.grp.lead !== t && !selT)) {
     const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
-    const altS = alt == null ? '---' : alt >= 1 ? (t.type === 'ga' ? alt.toFixed(1) : Math.round(alt)) + 'k' : Math.round(alt * 1000) + 'm';
+    const altS = alt == null ? '---' : IC.tagAlt(t);
     label(`${t.tn} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
   }
   if (selT) {

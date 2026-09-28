@@ -114,6 +114,8 @@ function foundIn(m, p, btn) {
   return r;
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
+/* the airport's Airspace tab is open: its rings can be picked and their edges dragged on the map */
+const aspEditing = () => { const ap = selAp(); return !S.mode2 && IC.ui.aptTab === 'asp' && ap && S.sel.kind === 'infra' && ap.owner === 'us' && S.asp && S.asp.vols; };
 const selUnits = () => S.group.length ? S.group : S.sel && S.sel.kind === 'unit' ? [S.sel.ref] : [];
 const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel');
 
@@ -128,6 +130,7 @@ function leftClick(p, shift) {
       return;
     }
     if (m.kind === 'airway') { airwayClick(m, p); IC.ui.refresh(true); return; }
+    if (m.kind === 'asp') { IC.aspMapClick(S, m, p); IC.ui.refresh(true); return; }
     if (m.kind === 'road') { IC.roadClick(S, m, p, 14 / IC.cam.z); IC.ui.refresh(true); return; }
     if (m.kind === 'field') {
       const why = IC.aspFieldWhy(S, p.x, p.y);
@@ -187,6 +190,10 @@ function leftClick(p, shift) {
   const hit = pick(p);
   // fighters selected and a track clicked: show the intercept before committing it
   if (IC.airClick(S, hit)) { IC.sfx.ui('click'); IC.ui.refresh(true); return; }
+  if (aspEditing() && (!hit || hit.ref === selAp())) {
+    const v = IC.aspVolUnder(S, selAp(), p);
+    if (v) { IC.ui.aspVol = IC.ui.aspVol === v.id ? null : v.id; IC.ui.refresh(true); return; }
+  }
   IC.select(hit, shift);
 }
 
@@ -417,6 +424,8 @@ function onAct(e) {
     case 'aptRepair': { const ap = selAp(); if (ap) IC.aptQueue(S, ap, v); break; }
     case 'aptFee': { const ap = selAp(); if (ap) { IC.avSetFee(S, ap, +v); IC.log(S, 'info', 'AVIATION', `${ap.name}: charges set to ${Math.round(+v * 100)}%.`); } break; }
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
+    case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
+    case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
     case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;
@@ -515,13 +524,21 @@ cv.addEventListener('pointerdown', e => {
     drag = { sx: l.x, sy: l.y, cx: IC.cam.x, cy: IC.cam.y, moved: false, btn: e.button, box: e.shiftKey && e.button === 0 };
     // in the airway editor, fixes can be dragged
     if (e.button === 0 && S.mode2 && S.mode2.kind === 'airway') drag.fix = IC.aspFixAt(S, S.hover, 12 / IC.cam.z);
+    // in the airport's Airspace tab, a ring's edge can be dragged
+    if (e.button === 0 && aspEditing()) drag.edge = IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
   }
   IC.cam.fly = null;
 });
 cv.addEventListener('pointermove', e => {
   const l = local(e, cv);
   S.hover = IC.toWorld(l.x, l.y);
-  if (!ptrs.size) { const ent = pick(S.hover); IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return; }
+  if (!ptrs.size) {
+    const edge = aspEditing() && IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
+    IC.ui.aspEdge = edge ? edge.id : null;
+    if (edge) { IC.ui.tip(null); cv.title = `Drag to move the edge of the ${edge.name.toLowerCase()} (now ${U.km(edge.r1)} out)`; cv.style.cursor = 'grab'; return; }
+    cv.title = '';
+    const ent = pick(S.hover); IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return;
+  }
   IC.ui.tip(null);
   if (!ptrs.has(e.pointerId)) return;
   ptrs.set(e.pointerId, l);
@@ -535,6 +552,7 @@ cv.addEventListener('pointermove', e => {
     if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; if (!drag.box) cv.classList.add('dragging'); }
     if (drag.moved) {
       if (drag.fix) IC.aspMoveFix(S, drag.fix, S.hover.x, S.hover.y);
+      else if (drag.edge) { IC.aspResize(S, drag.edge, U.dist(drag.edge, S.hover)); IC.ui.aspVol = drag.edge.id; IC.ui.aspEdge = drag.edge.id; cv.style.cursor = 'grabbing'; }
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
       else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); }
     }
@@ -546,6 +564,7 @@ function up(e) {
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
   if (had && drag && e.type === 'pointerup') {
     if (drag.fix && drag.moved) IC.ui.refresh(true);
+    else if (drag.edge && drag.moved) { const v = drag.edge; IC.log(S, 'info', 'AIRSPACE', `${selAp().name}: ${IC.aspShort(v)}`, selAp()); IC.ui.refresh(true); }
     else if (drag.box && S.box) {
       const b = S.box, a = IC.toWorld(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1)), c = IC.toWorld(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1));
       const inB = o => o.x >= a.x && o.x <= c.x && o.y >= a.y && o.y <= c.y;

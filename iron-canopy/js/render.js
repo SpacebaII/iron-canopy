@@ -121,6 +121,7 @@ IC.render = function (S, now) {
   IC.drawForces(S, px, now);
   if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
+  IC.drawHeightLadders(ctx, S, px, view);
 
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
@@ -271,16 +272,10 @@ function drawCoverage(S) {
 /* the airspace: control zones, the player's fixes and airways (teal where radar sees cruising traffic, amber
    where it does not), where airways cross, each airport's way onto the network, and the selected flight's route */
 function drawAirways(S, px, now) {
-  const N = S.asp, m = S.mode2, edit = m && m.kind === 'airway', show = S.layers.airways || edit;
+  const N = S.asp, m = S.mode2, edit = m && m.kind === 'airway', show = S.layers.airways || edit || (m && m.kind === 'asp') || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra');
   const sel = S.sel, z = cam.z;
+  if (N) IC.drawAirspace(ctx, S, px, view, S.layers.labels, show);
   if (N && show) {
-    for (const c of IC.aspZones(S)) {
-      if (!inView(c.x, c.y, c.tma || c.ctr)) continue;
-      ctx.lineWidth = 1.2 * px; ctx.strokeStyle = 'rgba(140,180,255,0.4)'; ctx.fillStyle = 'rgba(140,180,255,0.05)';
-      ctx.beginPath(); ctx.arc(c.x, c.y, c.ctr, 0, 7); ctx.fill(); ctx.stroke();
-      if (c.tma) { ctx.setLineDash([6 * px, 6 * px]); ctx.strokeStyle = 'rgba(140,180,255,0.25)'; ctx.beginPath(); ctx.arc(c.x, c.y, c.tma, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-      if (S.layers.labels && z > 0.18) { label('CONTROL ZONE', c.x, c.y - c.ctr - 5 * px, px, 'rgba(160,190,255,0.7)', 8.5, 'center', 600); if (c.tma && z > 0.18) label('TERMINAL AREA ABOVE 1,200 M', c.x, c.y - c.tma - 5 * px, px, 'rgba(160,190,255,0.55)', 8.5, 'center', 600); }
-    }
     // in the editor, the traffic that wants to fly, faintly, so airways can be drawn where it goes
     if (edit) {
       ctx.lineWidth = 1 * px; ctx.setLineDash([10 * px, 8 * px]);

@@ -69,7 +69,7 @@ function scheduleGA(S, progress) {
 }
 /* one light aircraft from a to b (the same place: a local flight out and back). Careless pilots fly straight */
 IC.gaLaunch = function (S, a, b, o) {
-  const W = S.world, careless = !!o.careless, cleared = [a.apt, b.apt].filter(Boolean);
+  const W = S.world, careless = !!o.careless, cleared = [a.apt, b.apt].concat(o.cleared || []).filter(Boolean);
   let pts;
   if (b === a) {
     const ang = Math.random() * 6.283, d = U.rand(150, 350), tp = { x: a.x + Math.cos(ang) * d, y: a.y + Math.sin(ang) * d };
@@ -86,25 +86,30 @@ IC.gaLaunch = function (S, a, b, o) {
 };
 IC.moveCivil = function (S, t, dt) {
   if (t.tail) return IC.moveTail(S, t, dt);
+  if (t.phold) { IC.atcPlayerHold(S, t, dt); return; }
   // intermediate route points (around prohibited zones)
   if (t.wps && t.wps.length > 1 && U.dxy(t.x, t.y, t.dest.x, t.dest.y) < t.spd * dt + 3) { t.wps.shift(); t.dest = t.wps[0]; }
   const d = t.dest, dx = d.x - t.x, dy = d.y - t.y, L = Math.hypot(dx, dy);
   if (t.aspDzT > 0) { t.aspDzT -= dt; if (t.aspDzT <= 0) t.aspDz = 0; }
+  if (t.vector != null && (t.vectorT -= dt) <= 0) t.vector = null;
   t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);
   if (t.type === 'ga') {
     // climb gently to its height, stay under terminal areas it is not cleared into, come down near the end
     const fin = t.wps ? t.wps[t.wps.length - 1] : d, left = U.dxy(t.x, t.y, fin.x, fin.y) + (t.wps && t.wps.length > 1 ? 50 : 0);
     const want = Math.min(t.gaAlt || 1.2, IC.gaCeiling(S, t), 0.15 + left / 60);
     t.alt += U.clamp(want - t.alt, -0.004 * dt, 0.003 * dt);
-    const a = Math.atan2(dy, dx) + 0.2 * Math.sin(t.age * 0.01 + t.seed);
+    const a = t.vector != null ? t.vector : Math.atan2(dy, dx) + 0.2 * Math.sin(t.age * 0.01 + t.seed);
     t.vx = Math.cos(a) * t.spd; t.vy = Math.sin(a) * t.spd;
   } else {
-    const fin = t.wps ? t.wps[t.wps.length - 1] : d, cr = (t.cruise || 11) + (t.dzNow || 0);
+    // the level controllers cleared it to (or the player gave it), else its cruise
+    const fin = t.wps ? t.wps[t.wps.length - 1] : d, cr = (t.clr != null ? t.clr : t.cruise || 11) + (t.dzNow || 0);
     const flown = U.dxy(t.x, t.y, t.orig.x, t.orig.y);
-    const climb = t.orig.edge ? cr : Math.min(cr, 0.3 + flown / 100);
-    const desc = fin.edge ? cr : Math.min(cr, 0.3 + U.dxy(t.x, t.y, fin.x, fin.y) / 100);
-    t.alt = Math.min(climb, desc);
-    const hd = Math.atan2(dy, dx) + (t.drift || 0);
+    const climb = t.orig.edge ? cr : Math.min(cr, IC.aspClimbAt(flown));
+    const desc = fin.edge ? cr : Math.min(cr, IC.aspDescent(U.dxy(t.x, t.y, fin.x, fin.y)));
+    const want = Math.min(climb, desc);
+    t.alt = Math.abs(want - t.alt) > 1 && t.age < 1 ? want : t.alt + U.clamp(want - t.alt, -0.02 * dt, 0.03 * dt);
+    t.lvl = t.clr != null ? t.clr : t.cruise;
+    const hd = t.vector != null ? t.vector : Math.atan2(dy, dx) + (t.drift || 0);
     t.vx = Math.cos(hd) * t.spd; t.vy = Math.sin(hd) * t.spd;
   }
   if (L <= t.spd * dt + 2 || t.x < -900 || t.y < -900 || t.x > IC.WW + 900 || t.y > IC.WH + 900) { if (t.type === 'ga' && L <= t.spd * dt + 2) IC.gaArrive(S, t); t.dead = true; return; }
