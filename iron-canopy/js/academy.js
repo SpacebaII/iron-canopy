@@ -39,6 +39,7 @@ function strikers(S) {
   flight(S, 'ucav', `HAWK ${S.roster.filter(r => r.kind === 'ucav').length + 1}`, fwd(S));
   IC.say(S, 'AIR', 'We lost our strike aircraft. Another strike drone is ready at the forward base.');
 }
+const bomberTaken = S => S.air.some(a => a.mission && a.mission.type === 'intercept' && a.mission.track && a.mission.track.type === 'bmr');
 const affCount = (S, set) => S.threats.filter(t => !t.dead && t.det && set.includes(t.aff)).length;
 /* a forced enemy operation is over when nothing it launched is still flying or waiting to launch */
 function resolved(S, op) {
@@ -52,7 +53,7 @@ function resolved(S, op) {
 IC.LESSONS = [
   {
     id: 'radar', title: 'Eyes on the Sky', sub: 'Radars, sweeps and the identification ladder',
-    learn: ['Deploy from the reserve', 'How slow sweeps make tracks blink', 'Detect → classify → identify'],
+    learn: ['Deploy from the reserve', 'Tracks between slow sweeps', 'Detect → classify → identify'],
     setup(S) {
       const cap = IC.cap(S); depot(S);
       S.reserve = { vhf: 1, mr3d: 1 };
@@ -61,7 +62,7 @@ IC.LESSONS = [
     steps: [
       { text: S => `Open the Arsenal at the bottom left, pick ${nm('vhf')} and click near ${IC.cap(S).name} to deploy it. It drives out of the depot and sets up.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'vhf') },
       { text: () => 'While it drives and sets up, time runs at 1×: ten game seconds per real second. Press 3 to go 4× faster, Space to pause.', hint: { el: 'speed' }, done: S => S.units.some(u => u.type === 'vhf' && u.state === 'ready') },
-      { text: () => 'It is on. The antenna turns once every 48 seconds, so a track only moves when the sweep passes it, then blinks while it coasts. It sees 440 km, but it cannot tell what anything is: every track is a yellow UNKNOWN. Click one.', done: S => S.sel && S.sel.kind === 'track' },
+      { text: () => 'It is on. The antenna turns once every 48 seconds: between sweeps each track glides on its last speed and heading, and a dashed ellipse shows where the aircraft could really be. It sees 440 km, but it cannot tell what anything is: every track is a yellow UNKNOWN. Click one.', done: S => S.sel && S.sel.kind === 'track' },
       { text: S => `The panel on the right shows everything we know: no altitude, no identity. Now deploy ${nm('mr3d')} near ${IC.cap(S).name}. It reads transponders and recognises aircraft types inside 65 km.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'mr3d' && u.state === 'ready') },
       { text: () => 'Watch the tracks near it. Airliners squawking on their filed routes turn green: Assumed civil. Wait until four tracks have an identity.', start(S) { const c = IC.cap(S), p = { x: c.x, y: c.y, name: c.name }; for (let i = 0; i < 4; i++) IC.gaLaunch(S, p, p, { progress: 0.1 + i * 0.1, xpdr: true, alt: 1.8 }); }, done: S => affCount(S, ['A', 'N', 'H']) >= 4 },
       { text: () => `Two slow tracks are crossing the border with no transponder. They will show Suspect. Let them fly into the ${nk('mr3d')}'s recognition range.`, start(S) { const cap = IC.cap(S), f = frontA(S), p = f.pts[Math.floor(f.pts.length / 2)]; for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'owa', p.x - p.nx * 150 + i * 30, p.y - p.ny * 150, { route: [{ x: cap.x, y: cap.y }], aim: { x: cap.x, y: cap.y }, target: cap, fromHostile: true, spd: 0.9 }); }, done: S => S.threats.some(t => t.type === 'owa' && t.aff === 'H') },
@@ -183,7 +184,7 @@ IC.LESSONS = [
   },
   {
     id: 'airbase', title: 'The Air Base', sub: 'Call-in teams, a raid, the damage and the repairs',
-    learn: ['Calling in a missile team', 'What a raid does to a base', 'Repairing runways and hangars'],
+    learn: ['Calling in a missile team', 'An intercept from the air picture', 'What a raid does to a base', 'Repairing runways and hangars'],
     setup(S) {
       const b = fwd(S);
       depot(S);
@@ -200,9 +201,13 @@ IC.LESSONS = [
         start(S) { const b = fwd(S); S.camp.drones = IC.enemyForceOp(S, 'drones', { x: b.x, y: b.y, ref: b, name: b.name }, 5); },
         done: S => S.units.some(u => u.callin) },
       { text: () => 'The team is in position: the ring is its reach, the arc the time it has left. Watch the drones come in.', done: S => S.time - S.camp.stepT > 300 && resolved(S, S.camp.drones) },
-      { text: S => `Warning: an enemy bomber is heading for launch range of ${fwd(S).name}, and missile launchers are moving behind it. Fight the raid: fighters can hunt the bomber, the batteries take the cruise missiles. We have nothing here that stops ballistic missiles.`,
+      { text: S => `Warning: an enemy bomber is heading for launch range of ${fwd(S).name}, and missile launchers are moving behind it. When it shows up, the Air picture on the left lists it with the time it needs to get here. Click its row, or press Tab.`,
         start(S) { const b = fwd(S), o = { x: b.x, y: b.y, ref: b, name: b.name }; const T = Math.max(2400, IC.enemyLead(S, o) + 300); S.camp.raid = [IC.enemyForceOp(S, 'bomber', o, { T }), IC.enemyForceOp(S, 'mrbm', o, { n: 2, T }), IC.enemyForceOp(S, 'bal', o, { n: 2, T })]; },
-        done: S => S.time - S.camp.stepT > 1200 && S.camp.raid.every(op => resolved(S, op)) },
+        hint: { el: 'airpic' }, done: S => (S.sel && S.sel.kind === 'track' && S.sel.ref.type === 'bmr') || bomberTaken(S) || S.camp.raid.every(op => resolved(S, op)) },
+      { text: () => 'Now send a fighter. Press Intercept (V) in its panel for the quickest flight, or select VIPER 1 (Air room, A: Select) and click the bomber. The map shows where they meet, how long it takes, the fuel left after and the kill chance. Commit (Enter).', hint: { el: 'insp' },
+        done: S => bomberTaken(S) || S.camp.raid.every(op => resolved(S, op)) },
+      { text: () => 'The fighter flies to the predicted meeting point, not after the symbol, and fires when the bomber is in reach at its height. The batteries take the cruise missiles. We have nothing here that stops ballistic missiles.',
+        done: S => S.time - S.camp.stepT > 600 && S.camp.raid.every(op => resolved(S, op)) },
       { text: S => `Damage report. Select ${fwd(S).name} to see what was hit.`, hint: { at: S => fwd(S) }, done: S => S.sel && S.sel.ref === fwd(S) },
       { text: () => 'The panel shows the runway, hangars and aircraft. Engineers already started on the runway. Rebuild or repair a hangar too: engineers work a couple of jobs at once, so queue what matters first.', hint: { el: 'insp' }, done: S => IC.baseStatus(S, fwd(S)).runway && !!S.flags.hangarWork },
       { text: () => 'The base is flying again. Lesson complete.', done: () => true, wait: 40 }

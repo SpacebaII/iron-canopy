@@ -31,6 +31,8 @@ IC.drawPlane = function (g, x, y, h, type, livery, o) {
   // too small to see: scale up to a readable glyph
   const k = Math.max(1, (o.minPx || 7) / (L * z));
   L *= k; Sp *= k;
+  // the model catalogue draws the real shape; the old outline stays as the fallback
+  if (IC.modelTop && IC.modelTop(g, IC.modelOfType(type), x, y, h, { livery, body: o.body, minPx: o.minPx || 7, alpha: o.alpha, shadow: o.shadow })) return;
   const body = o.body || (T.mil ? 'rgb(150,160,168)' : 'rgb(238,240,242)');
   const c1 = livery ? livery[0] : T.mil ? 'rgb(110,120,128)' : 'rgb(80,110,150)', c2 = livery ? livery[1] : 'rgb(60,66,72)';
   g.save(); g.translate(x, y); g.rotate(h);

@@ -323,6 +323,16 @@ function drawRanges(S, px, now) {
 function vehicles(S, u, px, now) {
   const d = u.d, n = d.weapon === 'sam' ? (u.mags[0] ? Math.min(6, Math.max(2, Math.ceil(u.mags[0].max / 2))) : 2) : d.sensor ? 1 : d.gun || d.weapon === 'strike' ? 2 : d.logi ? 3 : 1;
   const s = 0.9;
+  // from the regional zoom in, the unit stands as its own vehicles: launchers round the site, the radar vehicle beside them
+  if (IC.modelTop && cam.z > 1.6) {
+    const model = IC.modelOfUnit(u.type), k = IC.unitVehicles(d), fixed = d.mob === 'fixed';
+    for (let i = 0; i < k; i++) {
+      const a = (i / k) * 6.283 + (u.id.charCodeAt(1) % 7), r = k > 1 ? 4.5 : 0;
+      IC.modelTop(ctx, model, u.x + Math.cos(a) * r + 6, u.y + Math.sin(a) * r + 5, fixed ? 0 : a + 1.2, { minPx: 14, shadow: 0.03, now: u.radarOn ? now : 0 });
+    }
+    if (d.weapon === 'sam' && !fixed && d.fc && !d.fc.passive) IC.modelTop(ctx, 'mr3d', u.x - 6, u.y + 5, 2.4, { minPx: 14, shadow: 0.03, now: u.radarOn ? now : 0 });
+    return;
+  }
   for (let i = 0; i < n; i++) {
     const a = (i / n) * 6.283 + (u.id.charCodeAt(1) % 7), r = n > 1 ? 4.5 : 0;
     const x = u.x + Math.cos(a) * r + 6, y = u.y + Math.sin(a) * r + 5;
@@ -451,9 +461,10 @@ function drawImpacts(S, px, now) {
 
 function drawTrack(S, t, px, now) {
   if (t.dead) return;
-  if (!t.det) {
-    if (t.tn && t.lost < 300 && !t.d.civil) {
-      ctx.globalAlpha = 0.45 * (1 - t.lost / 300); ctx.strokeStyle = C.muted; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 3 * px]);
+  if (!t.held) {
+    const gone = S.time - (t.pt || 0) - IC.coastT(t);
+    if (t.tn && gone < IC.TRACK.lostShow && !t.d.civil) {
+      ctx.globalAlpha = 0.45 * (1 - gone / IC.TRACK.lostShow); ctx.strokeStyle = C.muted; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 3 * px]);
       ctx.strokeRect(t.px - 5 * px, t.py - 5 * px, 10 * px, 10 * px); ctx.setLineDash([]);
       label(`${t.tn} LOST`, t.px + 8 * px, t.py - 6 * px, px, C.muted, 9, 'left');
       ctx.globalAlpha = 1;
@@ -463,19 +474,15 @@ function drawTrack(S, t, px, now) {
   if (!inView(t.px, t.py, 80)) return;
   if (t.border && !(S.sel && S.sel.ref === t) && cam.z < 0.1) return;
   const aff = t.decoyKnown ? 'D' : t.aff || 'U';
-  const age = S.time - t.pt;
-  const coasting = age > 2.6 && !t.fc;
-  const blink = coasting ? 0.45 + 0.55 * (Math.sin(now * 7 + t.seed) * 0.5 + 0.5) : 1;
+  // a track between plots, or coasting after contact is lost, stays steady: dimmer, with its uncertainty drawn
+  const coasting = !t.det;
+  const blink = coasting ? 0.6 : 1;
   const x = t.px, y = t.py;
   if (t.trail && t.trail.length > 1) {
     const rgb = t.type === 'ga' && aff !== 'H' && aff !== 'S' ? '201,176,255' : { H: '255,120,100', S: '255,170,90', A: '127,232,176', N: '127,232,176' }[aff] || '242,209,74';
     for (let i = 0; i < t.trail.length; i++) { const p = t.trail[i]; ctx.fillStyle = `rgba(${rgb},${0.08 + i * 0.05})`; ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 * px, 0, 7); ctx.fill(); }
   }
-  if (coasting) {
-    const sp = Math.hypot(t.pvx || 0, t.pvy || 0);
-    const r = Math.min(400, (t.perr || 0) + sp * age);
-    if (r * cam.z > 6) { ctx.strokeStyle = aff === 'H' ? 'rgba(255,91,79,0.3)' : 'rgba(242,209,74,0.3)'; ctx.setLineDash([2 * px, 4 * px]); ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-  }
+  if (coasting && IC.drawTrackUnc) IC.drawTrackUnc(ctx, S, t, aff, px);
   if (t.blip > 0 && S.cfg.radarFx !== 'off') { const full = S.cfg.radarFx === 'full'; ctx.fillStyle = `rgba(160,230,255,${t.blip * (full ? 0.35 : 0.12)})`; ctx.beginPath(); ctx.arc(x, y, (full ? 6 + 10 * (1 - t.blip) : 5 + 3 * (1 - t.blip)) * px, 0, 7); ctx.fill(); }
   const alt = t.altKnown ? t.alt : null;
   if (alt != null && t.d.cls !== 'bal') shadow(x, y, t.alt, px, t.d.cls === 'air' ? 5 : 3);
@@ -490,7 +497,12 @@ function drawTrack(S, t, px, now) {
   const close = cam.z > 0.9 && t.klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
   const s = px * (t.d.cls === 'air' ? 1.3 : 1.05);
   let col;
-  if (close && t.acType && cam.z > 2.5 && (aff === 'A' || aff === 'N')) {
+  const mk = close && cam.z > 2.5 && IC.modelTop ? IC.modelOfThreat(t) : null;
+  if (mk) {
+    // close in, a track we can class is drawn as what it is; an unknown or suspect one keeps its identity colour as an outline
+    col = AIRCOL[aff];
+    IC.modelTop(ctx, mk, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), { livery: t.livery, shadow: Math.min(3, t.alt * 0.25), minPx: 12, outline: aff === 'S' || aff === 'U' ? col : null, now });
+  } else if (close && t.acType && cam.z > 2.5 && (aff === 'A' || aff === 'N')) {
     col = AIRCOL[aff];
     IC.drawPlane(ctx, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), t.acType, t.livery, { shadow: Math.min(3, t.alt * 0.25), minPx: 12 });
   } else if (close) {
@@ -519,7 +531,8 @@ function drawTrack(S, t, px, now) {
   if (t.notchT > 0 && t.det && cam.z > 0.25) label('NOTCH', x, y + 16 * px, px, C.suspect, 8, 'center', 700);
   const selT = S.sel && S.sel.ref === t;
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
-  if (show && S.layers.labels) {
+  // a raid carries one label, its leader's (render-air.js boxes the group)
+  if (show && S.layers.labels && !(t.grp && t.grp.lead !== t && !selT)) {
     const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
     const altS = alt == null ? '---' : IC.tagAlt(t);
     label(`${t.tn} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
@@ -534,11 +547,13 @@ function drawAir(S, a, px, now) {
   if (a.gnd || !inView(a.x, a.y, 120)) return;
   const h = a.h || 0;
   const col = a.allied ? C.civil : C.friend;
-  shadow(a.x, a.y, a.alt, px, a.kind === 'aew' || a.kind === 'cargo' ? 6 : 4);
+  shadow(a.x, a.y, a.alt, px, a.kind === 'aew' || a.kind === 'cargo' || a.kind === 'tkr' ? 6 : 4);
   if (cam.z > 0.9) {
-    const kind = a.kind === 'ftr' ? 'fighter' : a.kind === 'aew' || a.kind === 'cargo' ? 'transport' : a.kind === 'heli' || a.kind === 'atk' ? 'heli' : 'drone';
+    const kind = a.kind === 'ftr' ? 'fighter' : a.kind === 'aew' || a.kind === 'cargo' || a.kind === 'tkr' ? 'transport' : a.kind === 'heli' || a.kind === 'atk' ? 'heli' : 'drone';
+    const model = cam.z > 2.5 && IC.modelTop ? IC.modelOfAir(a) : null;
     for (let i = 0; i < (a.hp || 1); i++) {
       const ox = i ? -Math.cos(h) * 10 * px - Math.sin(h) * 8 * px : 0, oy = i ? -Math.sin(h) * 10 * px + Math.cos(h) * 8 * px : 0;
+      if (model) { IC.modelTop(ctx, model, a.x + ox, a.y + oy, h, { minPx: 12, shadow: Math.min(3, a.alt * 0.25), now }); continue; }
       silhouette(ctx, kind, a.x + ox, a.y + oy, h, Math.max(0.3 * (kind === 'transport' ? 1.6 : 1), px * 1.3), 'rgba(170,225,255,0.95)', 'rgba(0,20,30,0.8)');
       if (kind === 'heli') { ctx.save(); ctx.translate(a.x + ox, a.y + oy); ctx.rotate(now * 20); ctx.strokeStyle = 'rgba(220,240,255,0.5)'; ctx.lineWidth = 0.6 * px; ctx.beginPath(); ctx.moveTo(-8 * px, 0); ctx.lineTo(8 * px, 0); ctx.moveTo(0, -8 * px); ctx.lineTo(0, 8 * px); ctx.stroke(); ctx.restore(); }
     }
@@ -563,8 +578,8 @@ function drawAir(S, a, px, now) {
     ctx.beginPath(); ctx.arc(a.x, a.y, 3200, 0, 7); ctx.stroke(); ctx.setLineDash([]);
   }
   if (cam.z > 0.12 || (S.sel && S.sel.ref === a)) {
-    const extra = a.kind === 'ftr' ? ` ${a.aam}×AAM${a.gbu ? ' ' + a.gbu + '×GBU' : ''}` : a.runs && a.kind !== 'heli' ? ` ${a.runs} runs` : a.job ? ` ${a.job.short}` : '';
-    label(a.name + extra + (a.state === 'rtb' ? ' RTB' : a.state === 'vid' ? ' VID' : ''), a.x + 12 * px, a.y + 14 * px, px, col, 9.5, 'left', 600);
+    const extra = a.kind === 'ftr' ? ` ${a.aam + (a.srm || 0)}×AAM${a.gbu ? ' ' + a.gbu + '×GBU' : ''}` : a.runs && a.kind !== 'heli' ? ` ${a.runs} runs` : a.job ? ` ${a.job.short}` : '';
+    label(a.name + extra + (a.state === 'rtb' ? ' RTB' : a.state === 'vid' ? ' VID' : a.state === 'refuel' ? ' AAR' : a.mission && a.mission.type === 'hold' ? ' HOLD' : ''), a.x + 12 * px, a.y + 14 * px, px, col, 9.5, 'left', 600);
   }
   if (S.sel && S.sel.ref === a) brackets(a.x, a.y, 14 * px, px);
 }
@@ -1033,6 +1048,7 @@ IC.drawCombat = function (S, px, now, light) {
   drawImpacts(S, px, now);
   for (const t of S.threats) drawTrack(S, t, px, now);
   if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
+  if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
   for (const a of S.air) drawAir(S, a, px, now);
   for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
   drawChaff(S, px);

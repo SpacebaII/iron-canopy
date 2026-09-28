@@ -125,7 +125,20 @@ b{font-weight:600}
 .leftcol>*{pointer-events:auto}
 .brief{flex:0 1 auto;min-height:5rem;padding:.8rem .95rem;display:grid;gap:.55rem;align-content:start;overflow:auto;scrollbar-width:thin}
 .comms{flex:none}
-.brief:empty,.comms:empty{display:none}
+.brief:empty,.comms:empty,.airpic:empty{display:none}
+/* the air picture: tracks by threat, click to select, Tab to cycle */
+.airpic{flex:0 1 auto;min-height:0;overflow:auto;scrollbar-width:thin;padding:.7rem .8rem;display:grid;gap:3px;align-content:start}
+.airpic h3{cursor:pointer;margin:0 0 .25rem;font-family:var(--display);font-weight:700;font-size:1rem;letter-spacing:.16em;text-transform:uppercase;color:var(--friend);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.airpic h3 em{font-style:normal;font-family:var(--mono);font-size:.72rem;letter-spacing:0;color:var(--dim);text-transform:none}
+.aprow{display:grid;grid-template-columns:.6rem auto 1fr;gap:0 .5rem;align-items:baseline;text-align:left;padding:.3rem .45rem;border-radius:8px;font-size:.88rem;transition:background .12s}
+.aprow:hover{background:var(--well)}.aprow.on{background:rgba(111,210,255,.14)}
+.aprow i{width:.55rem;height:.55rem;border-radius:2px;background:var(--unknown);align-self:center}
+.aprow.H i{background:var(--hostile)}.aprow.S i{background:var(--suspect)}
+.aprow b{font-family:var(--mono);font-size:.8rem}
+.aprow span{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aprow span em{font-style:normal;color:var(--amber)}
+.aprow small{grid-column:2/4;font-size:.78rem;color:var(--muted)}
+.sec.plan{border:1px solid rgba(111,210,255,.35);border-radius:12px;padding:.55rem .7rem;margin-bottom:.6rem;background:rgba(111,210,255,.06)}
 .brief.min>*:not(h3){display:none}
 .brief h3{cursor:pointer;margin:0;font-family:var(--display);font-weight:700;font-size:1rem;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .brief h3 em{font-style:normal;font-family:var(--mono);font-size:.72rem;letter-spacing:0;color:var(--dim);text-transform:none}
