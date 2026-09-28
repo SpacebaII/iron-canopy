@@ -164,6 +164,9 @@ function launchLeg(S, t, from, to, x, y, alt, progress) {
     orig: from, dest: at.ahead[0], wps: at.ahead, plan: { a: from, b: to, cs: t.cs, pts: path.pts }, route: [to], aim: to, dist0: path.len, flown: progress ? path.len * progress : 0,
     toApt: to.apt || null, cruise: IC.aspLevel(t.T.alt, from, to), spd: t.T.cruise, livery: al.livery, acType: t.type, detour: path.len / Math.max(1, path.base), net: path.net });
   tr.rcs = t.type === 'turbo' ? 12 : t.type === 'narrow' ? 30 : 60;
+  // a departure from our airport is cleared first to a level under the arrivals, then climbs in steps (airspace.js)
+  const sec = from.apt && IC.aspSectorAt(S, from.x, from.y, 0.5), o = from.apt && S.byId[from.apt];
+  if (o && !progress && sec && sec.rules.depBelow && IC.aspVols(S, o).some(v => v.kind === 'shelf')) tr.clr = Math.min(tr.cruise, Math.max(IC.flKm(60), IC.aspTop(S, o) - IC.flKm(20)));
   t.where = 'air'; t.track = tr; t.leg0 = S.time;
   // zones make a detour; airways a longer way round than direct
   t.detour = path.len / Math.max(1, path.base); t.netDetour = path.base / Math.max(1, path.direct);
@@ -172,24 +175,38 @@ function launchLeg(S, t, from, to, x, y, alt, progress) {
 IC.moveTail = function (S, t, dt) {
   const tl = t.tail;
   if (t.appr) return approach(S, t, dt);
+  if (t.phold) { IC.atcPlayerHold(S, t, dt); return; }
+  // in a holding stack until its slot comes
+  if (t.stk) {
+    const r = IC.atcHold(S, t, dt);
+    if (r === 'divert') { IC.atcLeave(S, t); divert(S, t, 'too long in the holding stack'); }
+    if (r === 'go') { t.wps = [t.wps[t.wps.length - 1]]; t.dest = t.wps[0]; }
+    return;
+  }
   // GPS jamming or a deliberate turn pulls the aircraft off its route
   let d = t.dest;
   let hd = Math.atan2(d.y - t.y, d.x - t.x);
   if (t.drift) hd += t.drift;
   if (t.vector != null) { hd = t.vector; t.vectorT -= dt; if (t.vectorT <= 0) t.vector = null; }
   const L = U.dxy(t.x, t.y, d.x, d.y);
-  t.vx = Math.cos(hd) * t.spd; t.vy = Math.sin(hd) * t.spd;
-  t.x += t.vx * dt; t.y += t.vy * dt; t.flown += t.spd * dt;
+  // controllers slow it down to meet its landing slot; 250 kt below FL100
+  const spd = Math.min(t.spd * (t.spdF || 1), t.alt < 3.1 ? IC.aspSpeedCap(S, t) : Infinity);
+  t.vx = Math.cos(hd) * spd; t.vy = Math.sin(hd) * spd;
+  t.x += t.vx * dt; t.y += t.vy * dt; t.flown += spd * dt;
   // a controller's level change, eased in and out
   if (t.aspDzT > 0) { t.aspDzT -= dt; if (t.aspDzT <= 0) t.aspDz = 0; }
   t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);
   // climb out, cruise, descend
   const remain = L + (t.wps.length > 1 ? t.wps.slice(1).reduce((s, p, i, arr) => s + U.dist(i ? arr[i - 1] : t.wps[0], p), 0) : 0);
   t.remain = remain;
-  const cr = t.cruise + (t.dzNow || 0);
-  const climb = t.orig && t.orig.edge ? cr : Math.min(cr, 0.3 + t.flown / 90);
-  const desc = t.toApt ? Math.min(cr, 0.6 + Math.max(0, remain - APPROACH) / 110) : cr;
-  t.alt = Math.max(0.3, Math.min(climb, desc));
+  // climb out, cruise at the level controllers clear it to, come down 3.5° to the runway
+  const cr = (t.pCmd && t.clr != null ? t.clr : t.cruise) + (t.dzNow || 0);
+  const climb = t.orig && t.orig.edge ? cr : Math.min(cr, IC.aspClimbAt(t.flown));
+  const desc = t.toApt ? Math.min(cr, IC.aspDescent(remain + IC.GOPS.FAF)) : cr;
+  const want = Math.max(0.3, Math.min(climb, desc, t.clr != null && !t.pCmd ? t.clr + (t.dzNow || 0) : Infinity));
+  t.alt += U.clamp(want - t.alt, -0.02 * dt, 0.03 * dt);
+  t.lvl = t.clr != null ? t.clr : t.toApt && desc < cr - 0.05 ? null : t.cruise;
+  if (t.toApt && !t.seq && remain < IC.ASP.seq && !t.drift) { const ap = S.byId[t.toApt]; if (ap) IC.atcSequence(S, t, ap, remain); }
   if (L < t.spd * dt + 3 && !t.drift) {
     t.wps.shift();
     if (t.wps.length) { t.dest = t.wps[0]; return; }
@@ -204,6 +221,7 @@ IC.moveTail = function (S, t, dt) {
 };
 function beginApproach(S, t) {
   const ap = S.byId[t.toApt];
+  t.spdF = 1; t.vector = null;
   const faf = ap && IC.gopsFaf(S, ap, t.tail.type, t);
   if (!faf) { divert(S, t, IC.aptLandWhy(S, ap, t.tail.T) || 'the runway is closed'); return; }
   t.appr = true; t.faf = faf; t.holdT = 0;
@@ -229,7 +247,10 @@ function approach(S, t, dt) {
   }
   t.vx = Math.cos(hd) * spd; t.vy = Math.sin(hd) * spd;
   t.x += t.vx * dt; t.y += t.vy * dt;
-  t.alt = Math.max(0.6, Math.min(t.alt, 0.6 + d / 120));
+  // down the glide path to the fix; holding there, each a thousand feet above the one before it
+  let a = IC.aspDescent(d + IC.GOPS.FAF);
+  if (t.holding) { const q = (ap.fafQ || []).filter(x => !x.done && x.rw === f.rwId && x.o && x.o.holding && !x.o.dead), i = Math.max(0, q.findIndex(x => x.o === t)); a = IC.aspDescent(IC.GOPS.FAF) + i * IC.flKm(10); t.lvl = a; }
+  t.alt += U.clamp((t.holding ? a : Math.min(t.alt, a)) - t.alt, -0.02 * dt, 0.012 * dt);
 }
 /* can this airport take this aircraft at all? '' or the reason */
 IC.aptCanTake = function (S, ap, T) {
@@ -298,6 +319,7 @@ function arriveAway(S, tl, t) {
 }
 function divert(S, t, why) {
   const tl = t.tail;
+  IC.atcLeave(S, t); t.spdF = 1;
   t.appr = false; t.holding = false; t.diverted = true;
   const ap = S.byId[t.toApt];
   const out = S.world.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).sort((a, b) => U.dist(a, t) - U.dist(b, t))[0] || { x: t.x + 3000, y: t.y };
@@ -557,7 +579,8 @@ IC.avRevenueRate = S => S.av ? Object.values(S.av.rate).reduce((s, v) => s + v, 
 IC.avUpkeep = function (S) {
   let v = 0;
   for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) for (const p of ap.parts) if (p.built) v += IC.partCost(ap, p) * 0.0012;
-  return v;
+  // and the air traffic controllers in every sector
+  return v + (S.asp && S.asp.secs ? IC.aspStaffCost(S) : 0);
 };
 
 /* ---------- radio: call an aircraft that is off its route ---------- */
@@ -586,6 +609,7 @@ IC.callAircraft = function (S, t) {
   return true;
 };
 /* back onto the filed route: to the next route point ahead */
+IC.avRejoin = t => rejoin(t);
 function rejoin(t) {
   const P = t.plan && t.plan.pts;
   if (!P) return t.wps;

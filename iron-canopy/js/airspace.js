@@ -764,6 +764,100 @@ function infringe(S, t) {
   IC.emit(S, 'infringement', { t, ap, kind: v.kind === 'ctr' ? 'ctr' : v.kind === 'mil' ? 'mil' : 'tma', vol: v });
 }
 
+/* ---------- arrivals: sequence, speed, vectors and holding stacks ----------
+   150 km out each arrival gets a landing slot, one runway gap after the last (the gap comes from the runways and the
+   tower's rules, airport.js). A small delay is flown off by slowing down, a bigger one by a dog-leg on a heading;
+   beyond that the arrival joins a holding stack 35 km out, at the lowest free level, 1,000 ft above the one below.
+   The bottom aircraft leaves when its slot comes, and everyone above steps down a level. */
+const STACKS = [['NE', -Math.PI / 4], ['SE', Math.PI / 4], ['SW', 3 * Math.PI / 4], ['NW', -3 * Math.PI / 4]];
+IC.atcArr = function (S, ap) { const N = S.asp, M = N.arr || (N.arr = {}); return M[ap.id] || (M[ap.id] = { last: 0, stacks: {}, logT: -1e9, n: 0 }); };
+IC.atcGap = function (S, ap) {
+  const st = ap.st || {}, s = IC.aspSectors(S).find(x => x.ap === ap.id && x.kind === 'app') || IC.aspSectors(S).find(x => x.ap === ap.id);
+  return (st.arrPerHour > 0 ? 3600 / st.arrPerHour : IC.aptSep(st)) * (s ? s.rules.space : 1);
+};
+IC.atcStackPos = function (S, ap, k) { const a = STACKS.find(s => s[0] === k)[1]; return { x: ap.x + Math.cos(a) * A.stackR, y: ap.y + Math.sin(a) * A.stackR, name: `${short(ap.name)} ${k}` }; };
+const stackBase = () => IC.flKm(Math.ceil(IC.flOf(IC.aspDescent(A.stackR)) / 10) * 10);
+IC.atcStackLevel = i => stackBase() + i * IC.flKm(10);
+/* the stacks at an airport: { k, x, y, name, lv: [flights, bottom first] } */
+IC.atcStacks = function (S, ap) {
+  const R = IC.atcArr(S, ap), out = [];
+  for (const [k] of STACKS) { const s = R.stacks[k]; if (!s || !s.lv.length) continue; const byId = new Map(S.threats.map(t => [t.id, t])); out.push(Object.assign(IC.atcStackPos(S, ap, k), { k, lv: s.lv.map(id => byId.get(id)).filter(Boolean) })); }
+  return out;
+};
+IC.atcSequence = function (S, t, ap, remain) {
+  const R = IC.atcArr(S, ap), gap = IC.atcGap(S, ap), fly = remain / t.spd, eta = S.time + fly;
+  const slot = Math.max(eta, R.last + gap), delay = slot - eta;
+  t.seq = true; t.slot = slot; R.last = slot; R.n++;
+  if (delay <= fly * A.maxSpd) { t.spdF = fly / (fly + delay); return 'speed'; }
+  // a dog-leg 40° off course and back: each extra minute costs about four minutes on the heading
+  if (delay <= fly * A.maxSpd + 240) {
+    t.spdF = 1 / (1 + A.maxSpd);
+    const extra = delay - fly * A.maxSpd, c = 1 - Math.cos(0.7), L = extra * t.spd * t.spdF / (2 * c);
+    t.vector = Math.atan2(t.dest.y - t.y, t.dest.x - t.x) + (Math.random() < 0.5 ? 0.7 : -0.7); t.vectorT = L / (t.spd * t.spdF); t.seqVec = true;
+    return 'vector';
+  }
+  IC.atcJoin(S, ap, t);
+  return 'hold';
+};
+IC.atcJoin = function (S, ap, t) {
+  const R = IC.atcArr(S, ap), a = Math.atan2(t.y - ap.y, t.x - ap.x);
+  let best = STACKS[0], bd = 9;
+  for (const s of STACKS) { const d = Math.abs(U.angWrap(s[1] - a)); if (d < bd) { bd = d; best = s; } }
+  const k = best[0], st = R.stacks[k] || (R.stacks[k] = { lv: [] });
+  const sec = IC.aspSectors(S).find(x => x.ap === ap.id && x.kind === 'app'), max = sec ? sec.rules.stack : 6;
+  st.lv.push(t.id); t.stk = { ap: ap.id, k }; t.holdT = t.holdT || 0; t.spdF = 1;
+  if (st.lv.length > max && S.time - (R.fullT || -1e9) > 3600) { R.fullT = S.time; IC.log(S, 'warn', 'AIRSPACE', `${short(ap.name)} ${k} stack is full: ${st.lv.length} aircraft for ${max} levels. The newest holds above the stack, outside the levels the approach controllers planned. The runways take one arrival every ${U.dur(IC.atcGap(S, ap))}.`, ap); }
+  else if (st.lv.length >= 3 && S.time - R.logT > 3600) { R.logT = S.time; IC.log(S, 'info', 'AIRSPACE', `${short(ap.name)} Approach: ${st.lv.length} arrivals holding in the ${k} stack, ${IC.flText(IC.atcStackLevel(0))} to ${IC.flText(IC.atcStackLevel(st.lv.length - 1))}. The runways take one every ${U.dur(IC.atcGap(S, ap))}.`, ap); }
+  IC.emit(S, 'stackJoin', { t, ap, k, n: st.lv.length });
+};
+IC.atcLeave = function (S, t) {
+  if (!t.stk) return;
+  const ap = S.byId[t.stk.ap], st = ap && IC.atcArr(S, ap).stacks[t.stk.k];
+  if (st) st.lv = st.lv.filter(id => id !== t.id);
+  t.stk = null;
+};
+IC.atcStackIndex = function (S, t) { const ap = S.byId[t.stk.ap], st = IC.atcArr(S, ap).stacks[t.stk.k]; return st ? st.lv.indexOf(t.id) : 0; };
+/* fly the hold: to the fix, round it at the level given; the bottom one leaves when its slot comes */
+IC.atcHold = function (S, t, dt) {
+  const ap = S.byId[t.stk.ap], fix = IC.atcStackPos(S, ap, t.stk.k), i = IC.atcStackIndex(S, t), lvl = IC.atcStackLevel(Math.max(0, i));
+  t.lvl = lvl; t.holdT = (t.holdT || 0) + dt;
+  const spd = Math.min(t.spd, 1.3), d = U.dist(t, fix);
+  let hd;
+  if (d > A.holdR * 1.4 && !t.inHold) hd = Math.atan2(fix.y - t.y, fix.x - t.x);
+  else { t.inHold = true; t.hoa = (t.hoa == null ? Math.atan2(t.y - fix.y, t.x - fix.x) : t.hoa) + dt * spd / A.holdR; hd = Math.atan2(fix.y + Math.sin(t.hoa) * A.holdR - t.y, fix.x + Math.cos(t.hoa) * A.holdR - t.x); }
+  t.vx = Math.cos(hd) * spd; t.vy = Math.sin(hd) * spd; t.x += t.vx * dt; t.y += t.vy * dt; t.flown += spd * dt;
+  t.alt += U.clamp(lvl - t.alt, -0.012 * dt, 0.012 * dt);
+  if (i <= 0 && S.time >= (t.slot || 0) - U.dist(fix, ap) / t.spd) { IC.atcLeave(S, t); t.inHold = false; t.hoa = null; return 'go'; }
+  return t.holdT > 2400 ? 'divert' : 'hold';
+};
+/* the player on the radio: a level (km), a heading (radians), a hold where it is, clearance into an airport's
+   airspace for a light aircraft, or back to the controllers */
+IC.atcCmd = function (S, t, c) {
+  if (!t || t.dead || !t.d.civil) return false;
+  const say = m => IC.log(S, 'info', 'RADIO', `${t.cs}: "${m}"`, t);
+  if (c.lvl != null) { t.clr = U.clamp(c.lvl, t.type === 'ga' ? 0.3 : 0.9, t.type === 'ga' ? 3.5 : 12.8); t.pCmd = true; if (t.type === 'ga') t.gaAlt = t.clr; say(`${t.clr > t.alt ? 'Climbing' : 'Descending'} to ${IC.flText(t.clr)}.`); }
+  if (c.hdg != null) { t.vector = c.hdg; t.vectorT = c.for || 600; t.pCmd = true; say(`Heading ${String(Math.round(U.mod(c.hdg * 180 / Math.PI + 90, 360))).padStart(3, '0')} for ${Math.round((c.for || 600) / 60)} minutes.`); }
+  if (c.hold) { t.phold = { x: t.x, y: t.y }; t.pCmd = true; say('Holding here.'); }
+  if (c.clear) { t.cleared = (t.cleared || []).concat(c.clear); if (t.type === 'ga' && !t.careless) IC.gaReplan(S, t); say(`Cleared into ${short(S.byId[c.clear].name)} airspace.`); }
+  if (c.resume) { t.pCmd = false; t.clr = null; t.vector = null; t.phold = null; t.hoa = null; if (t.tail || t.plan) { t.wps = IC.avRejoin(t); t.dest = t.wps[0]; } say('Resuming our route with the controllers.'); }
+  IC.emit(S, 'atcCmd', { t, c });
+  return true;
+};
+/* fly a hold the player asked for, round where it was */
+IC.atcPlayerHold = function (S, t, dt) {
+  const f = t.phold, spd = Math.min(t.spd, t.type === 'ga' ? t.spd : 1.3), R = t.type === 'ga' ? 15 : A.holdR;
+  t.hoa = (t.hoa == null ? 0 : t.hoa) + dt * spd / R;
+  const hd = Math.atan2(f.y + Math.sin(t.hoa) * R - t.y, f.x + Math.cos(t.hoa) * R - t.x);
+  t.vx = Math.cos(hd) * spd; t.vy = Math.sin(hd) * spd; t.x += t.vx * dt; t.y += t.vy * dt;
+  if (t.clr != null) t.alt += U.clamp(t.clr - t.alt, -0.012 * dt, 0.012 * dt);
+};
+/* 250 kt below FL100 in classes B, C and D (and E and G): 1.29 units a second */
+IC.aspSpeedCap = function (S, t) {
+  if (t.alt >= IC.flKm(100)) return Infinity;
+  const c = IC.ASP_CLS[IC.aspClassAt(S, t.x, t.y, t.alt).cls];
+  return c.kt ? c.kt * 1.852 / 360 : Infinity;
+};
+
 /* ---------- light aircraft: fields, clubs, routes ---------- */
 function makeFields(S) {
   const W = S.world, R = IC.makeRng((S.seed ^ 0x5eed) >>> 0), L = [];

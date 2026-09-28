@@ -926,6 +926,103 @@ test('airspace: light aircraft avoid controlled airspace unless cleared', () => 
   assert(bad.zones.size && bad.inc, 'a careless pilot crossed the capital without an infringement incident');
 }, true);
 
+/* a quiet sky: only the flights a test makes */
+const quiet = S => { S.threats = S.threats.filter(t => !t.d.civil); S.civT = S.gaT = 1e9; if (S.av) { S.av.tails = []; S.av.routes = []; } };
+test('airspace: two airliners crossing 2,000 ft apart keep their spacing; 500 ft apart they lose it', () => {
+  const cross = dzFt => {
+    const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+    quiet(S); blind(S);
+    const [a, b] = pair(S, IC.cap(S), 9.5);
+    b.alt = b.cruise = 9.5 + dzFt / IC.FT;
+    let lost = 0, minD = 1e9;
+    IC.on((S2, type, d) => { if (S2 === S && (type === 'lossSep' || type === 'nearMiss') && (d.a === a || d.b === a)) lost++; });
+    // controllers too busy to step in: what counts is the spacing itself
+    const ctl = IC.ASP.ctl; IC.ASP.ctl = 0.01;
+    try { for (let i = 0; i < 400; i++) { IC.step(S, 0.5); minD = Math.min(minD, U.dist(a, b)); } } finally { IC.ASP.ctl = ctl; }
+    assert(minD < 30, 'the two airliners never crossed');
+    const sp = IC.aspSpacing(S, a, Object.assign({}, b, { x: a.x, y: a.y }));
+    return { lost, sp };
+  };
+  const far = cross(2000), close = cross(500);
+  assert(!far.lost && !far.sp.lost, 'airliners 2,000 ft apart were counted as a loss of spacing');
+  assert(close.lost && close.sp.lost, 'airliners 500 ft apart crossed without a loss of spacing');
+});
+test('airspace: a light aircraft stays out of a class C shelf unless cleared', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 });
+  const ap = S.byId[S.story.reg];
+  IC.aspPreset(S, ap, 'regional');
+  const C = IC.aspVols(S, ap).filter(v => v.cls === 'C');
+  assert(C.length >= 2, 'the regional preset has no class C shelves');
+  // a line 20 km from the airport, under the shelves, well clear of the control zone
+  const A = off(off(ap, 0.2 + Math.PI / 2, 200), 0.2, 700), B = off(off(ap, 0.2 + Math.PI / 2, 200), 0.2 + Math.PI, 700);
+  const fly = o => {
+    const t = IC.gaLaunch(S, A, B, Object.assign({ xpdr: true, alt: 1.8 }, o));
+    let inC = 0, n = 0;
+    for (let i = 0; i < 12000 && !t.dead; i++) { IC.step(S, 0.5); if (t.alt > 0.2 && IC.aspVolsAt(S, t.x, t.y, t.alt).some(v => v.cls === 'C')) inC++; if (U.dist(t, ap) < 400) n++; }
+    return { t, inC, n };
+  };
+  const out = fly({});
+  assert(out.t.dead && out.n > 50, 'the light aircraft never flew under the shelves');
+  assert(!out.inC, `a light aircraft without clearance was inside a class C shelf for ${out.inC} steps`);
+  const inn = fly({ cleared: [ap.id] });
+  assert(inn.inC > 20, 'a light aircraft cleared into the class C airspace still kept under it');
+}, true);
+test('airspace: arrivals are sequenced, and held in a stack at different levels when the runway is busy', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+  const cap = S.byId[S.story.cap], gap0 = IC.atcGap;
+  // a slow runway: one arrival every 400 s
+  IC.atcGap = (S2, ap) => ap === cap ? 400 : gap0(S2, ap);
+  const seq = new Map();
+  let stack = null;
+  try {
+    for (let i = 0; i < 8 * 7200 && !stack; i++) {
+      IC.step(S, 0.5);
+      if (i % 20) continue;
+      for (const t of S.threats) if (t.seq && t.toApt === cap.id) seq.set(t.id, t.slot);
+      for (const st of IC.atcStacks(S, cap)) {
+        const settled = st.lv.filter(t => t.inHold && Math.abs(t.alt - t.lvl) < 0.05);
+        if (settled.length >= 2) stack = settled.map(t => t.alt);
+      }
+    }
+  } finally { IC.atcGap = gap0; }
+  const slots = [...seq.values()].sort((a, b) => a - b);
+  assert(slots.length >= 3, `only ${slots.length} arrivals were sequenced`);
+  for (let i = 1; i < slots.length; i++) assert(slots[i] - slots[i - 1] >= 399, `two landing slots only ${Math.round(slots[i] - slots[i - 1])} s apart`);
+  assert(stack, 'no arrivals were held in a stack');
+  stack.sort((a, b) => a - b);
+  for (let i = 1; i < stack.length; i++) assert(stack[i] - stack[i - 1] > 0.29, `two aircraft in the stack only ${Math.round((stack[i] - stack[i - 1]) * IC.FT)} ft apart`);
+}, true);
+test('airspace: an overloaded sector has more near misses than a well-staffed one', () => {
+  const misses = staff => {
+    const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+    quiet(S); IC.step(S, 0.5);
+    const cap = IC.cap(S), acc = IC.aspSectors(S).find(s => s.kind === 'acc');
+    IC.aspSetStaff(S, acc, staff);
+    let n = 0;
+    IC.on((S2, type) => { if (S2 === S && type === 'nearMiss') n++; });
+    // sixteen pairs meeting head on at the same level, spread round the capital, under radar
+    for (let k = 0; k < 16; k++) { const c = off(cap, k / 16 * 6.283, 900 + (k % 4) * 150); pair(S, c, 8 + (k % 5) * 0.61); }
+    for (let i = 0; i < 400; i++) IC.step(S, 0.5);
+    return n;
+  };
+  const busy = misses(1), calm = misses(12);
+  assert(busy > calm, `one controller: ${busy} near misses; twelve: ${calm}`);
+  assert(calm <= 2, `a well-staffed sector under radar let ${calm} near misses happen`);
+});
+test('airspace: the presets are valid for the six-runway KDEN layout', () => {
+  const { S, ap } = kdenGame(12345, 10);
+  IC.step(S, 0.5);
+  for (const k of ['field', 'regional', 'hub']) {
+    IC.aspPreset(S, ap, k);
+    const bad = IC.aspCheck(S, ap).filter(w => /leave controlled|final approach|ceiling/.test(w));
+    assert(!bad.length, `${k}: ${bad.join(' ')}`);
+    // every runway end's final approach fix is inside the control zone, and the zone reaches the ground
+    const ctr = IC.aspVols(S, ap).find(v => v.kind === 'ctr');
+    assert(ctr && ctr.lo === 0, `${k}: no control zone from the ground up`);
+    for (const f of IC.aspFafs(ap)) assert(U.dist(f, ap) < ctr.r1, `${k}: the final approach to ${f.end} starts outside the control zone`);
+    assert(IC.aspSectors(S).some(s => s.ap === ap.id && s.kind === 'twr' && s.staff > 0), `${k}: no tower controllers`);
+  }
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };
