@@ -1359,6 +1359,224 @@ test('radar: a military radar does not see a low aircraft behind a hill that it 
 /* ---------- air defence ---------- */
 const range = () => { const S = IC.newGame({ seed: 1, mode: 'range' }); return S; };
 const runRange = (S, maxS, stop) => { for (let i = 0; i < maxS * 4 && !(stop && stop(S)); i++) IC.step(S, 0.25); };
+/* ---------- the air war ---------- */
+// a sandbox with no enemy operations and no standing tasks: only what the test puts in the sky
+const quietWar = () => { const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 10 }); S.enemy.allow = new Set(); S.ato = []; for (const a of S.air) a.dead = true; S.air = []; for (const r of S.roster) if (r.st === 'air') { r.st = 'ready'; r.ent = null; } return S; };
+// an aircraft of ours already in the air at a point (the test skips the taxi and take-off)
+function airborne(S, r, x, y, mission) {
+  const K = IC.AIR_KIND[r.kind], L = IC.LOADOUTS[r.load || 'aa'];
+  const a = { id: IC.nid('a'), kind: r.kind, r, name: r.name, x, y, vx: 0, vy: 0, h: 0, state: 'out', mission, fuel: K.endur, aam: r.kind === 'ftr' ? L.aam * r.n : 0, srm: r.kind === 'ftr' ? L.srm * r.n : 0,
+    gbu: 0, hp: r.n, n: r.n, dmg: 0, cm: K.cm * r.n, cool: 0, oa: 0, scan: 0, notchT: 0, alt: K.alt, roe: r.roe, give: K.give || 0 };
+  r.st = 'air'; r.ent = a; S.air.push(a);
+  return a;
+}
+test('air war: a track stays steady and selectable across radar sweeps, and for a set time after contact is lost', () => {
+  const S = range(), T = S.range.target;
+  const rad = IC.makeUnit(S, 'vhf', T.x, T.y, { instant: true, full: true }); rad.emcon = 'on';
+  const t = IC.spawnThreat(S, 'str', T.x + 1500, T.y - 400, { route: [{ x: T.x - 3000, y: T.y - 400 }], mission: 'strike', home: { x: T.x + 6000, y: T.y }, fromHostile: true });
+  runRange(S, 200, () => t.held);
+  assert(t.held && t.tn, 'the radar never picked the aircraft up');
+  // between sweeps (48 s apart) the symbol glides: no step jumps further than the aircraft flies
+  let last = { x: t.px, y: t.py }, worst = 0, blink = 0;
+  for (let i = 0; i < 4 * 200; i++) { IC.step(S, 0.25); worst = Math.max(worst, U.dxy(t.px, t.py, last.x, last.y)); last = { x: t.px, y: t.py }; if (!t.held) blink++; }
+  assert(!blink, `the track dropped out ${blink} times between sweeps`);
+  assert(worst < t.spd * 0.25 * 2 + 25, `the track jumped ${worst.toFixed(1)} units in one step`);
+  // contact lost: it coasts on its heading, selectable, with a growing ellipse, then is lost after its coast time
+  t.rcs = 0;
+  const lostAt = t.pt, x0 = t.px, u0 = t.unc || 0;
+  runRange(S, IC.coastT(t) - 5 - (S.time - lostAt));
+  assert(t.held && !t.det, `the track is not held while coasting (held ${t.held}, det ${t.det})`);
+  assert(IC.airPicture(S).some(r => r.t === t) && IC.cycleTrack(S, 1) === t, 'the coasting track is not in the air picture or cannot be picked');
+  assert(Math.abs(t.px - x0) > t.spd * (IC.coastT(t) - 60 - (S.time - lostAt - IC.coastT(t) + 5)) * 0.8, 'the coasting track did not move on its heading');
+  assert(t.unc > u0 + 20, `the uncertainty did not grow (${u0} → ${t.unc})`);
+  runRange(S, 20);
+  assert(!t.held && S.time - lostAt >= IC.coastT(t), 'the track was not dropped after its coast time');
+});
+test('air war: tracks flying together are one raid, and split when they split', () => {
+  const S = range(), T = S.range.target;
+  IC.makeUnit(S, 'lr3d', T.x, T.y, { instant: true, full: true }).emcon = 'on';
+  const ts = [];
+  for (let i = 0; i < 4; i++) ts.push(IC.spawnThreat(S, 'str', T.x + 1200 + i * 30, T.y + (i % 2) * 30, { route: [{ x: T.x - 3000, y: T.y }], mission: 'strike', home: { x: T.x + 6000, y: T.y }, fromHostile: true }));
+  runRange(S, 60);
+  const g = ts[0].grp;
+  assert(g && g.n === 4 && ts.every(t => t.grp === g), `not one group of four: ${ts.map(t => t.grp ? t.grp.id + 'x' + t.grp.n : '-').join(' ')}`);
+  assert(IC.airPicture(S).filter(r => r.g === g).length === 1, 'the raid is not one row in the air picture');
+  for (const t of ts.slice(2)) t.route = [{ x: T.x, y: T.y + 4000 }];
+  runRange(S, 240);
+  assert(ts[0].grp && ts[2].grp && ts[0].grp !== ts[2].grp && ts[0].grp.n === 2 && ts[2].grp.n === 2, 'the raid did not split in two when its aircraft turned apart');
+});
+test('air war: a fighter launched from 5-minute alert is airborne within 5 minutes', () => {
+  const S = quietWar();
+  const r = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready' && !IC.missionOk(S, x, 'cap'));
+  assert(IC.setAlert(S, r, 5), 'could not set the alert state');
+  let up = null; IC.on((S2, type, d) => { if (S2 === S && type === 'airborne' && d.r === r && up == null) up = S2.time; });
+  const t0 = S.time, b = IC.baseOf(S, r.base);
+  const a = IC.launchAir(S, r, { type: 'cap', x: b.x + 300, y: b.y });
+  assert(a, 'the flight did not launch');
+  for (let i = 0; i < 4 * 600 && up == null; i++) IC.step(S, 0.25);
+  assert(up != null && up - t0 <= 300, `airborne after ${up == null ? 'never' : U.dur(up - t0)}`);
+  // crews on 5-minute alert tire; stood down, they rest
+  const f0 = S.roster.find(x => x !== r && x.kind === 'ftr' && x.st === 'ready');
+  IC.setAlert(S, f0, 5); f0.fat = 0; run(S, 2);
+  assert(f0.fat > 0.1, `crews on 5-minute alert did not tire (${f0.fat})`);
+});
+test('air war: an intercept commits, flies to the predicted point and engages', () => {
+  const S = quietWar();
+  const b = S.byId.ab_fwd, r = S.roster.find(x => x.base === b.id && x.kind === 'ftr' && x.st === 'ready');
+  const c = IC.cap(S), cl = U.dist(c, b), dir = { x: (c.x - b.x) / cl, y: (c.y - b.y) / cl };
+  // no batteries: their fire-control radars would lock on and turn the bomber for home, off the predicted course
+  S.units = [];
+  IC.makeUnit(S, 'lr3d', b.x + dir.x * 900, b.y + dir.y * 900, { instant: true, full: true }).emcon = 'on';
+  const t = IC.spawnThreat(S, 'str', b.x + dir.x * 1800, b.y + dir.y * 1800, { route: [{ x: b.x + dir.y * 3000, y: b.y - dir.x * 3000 }], mission: 'strike', home: { x: b.x + dir.x * 9000, y: b.y + dir.y * 9000 }, noFire: true });
+  for (let i = 0; i < 4 * 120 && !t.held; i++) IC.step(S, 0.25);
+  assert(t.held, 'the strike aircraft was never detected');
+  IC.setAff(S, t, 'H', 'test');
+  const P = IC.interceptPlan(S, r, t);
+  assert(P.ok && P.x != null && P.pk > 0.4 && P.fuelBack > 0, `a bad plan: ${JSON.stringify({ ok: P.ok, why: P.why, pk: P.pk, fuelBack: P.fuelBack })}`);
+  const a = IC.commitIntercept(S, r, t);
+  assert(a && a.mission.type === 'intercept' && a.mission.track === t, 'the intercept was not committed');
+  let shot = null;
+  for (let i = 0; i < 4 * 3600 && !shot && !t.dead; i++) { IC.step(S, 0.25); const m = S.missiles.find(x => x.by === a); if (m) shot = { x: a.x, y: a.y, T: S.time }; }
+  assert(shot, 'the fighter never fired');
+  const miss = U.dxy(shot.x, shot.y, P.x, P.y);
+  assert(miss < IC.aamReach('mrm', 9, t, null) + 150, `it fired ${U.km(miss)} from the predicted meeting point`);
+  run(S, 0.5, () => {});
+  assert(t.dead || S.missiles.some(m => m.by === a) || a.aam + a.srm < P.aam + P.srm, 'no engagement followed');
+});
+test('air war: fighters under an early-warning orbit see a low cruise missile that ground radar behind a hill does not', () => {
+  const S = quietWar(), W = S.world, D = 300;
+  let at = null;
+  for (let j = 200; j < IC.WH - 200 && !at; j += 97) for (let i = 200; i < IC.WW - 200 && !at; i += 97) {
+    if (!W.inHome(i, j) || W.inLake(i, j)) continue;
+    for (let q = 0; q < 6.28 && !at; q += 0.05) {
+      const x = i + Math.cos(q) * D, y = j + Math.sin(q) * D;
+      if (W.inHome(x, y) && Math.abs(IC.elevKm(x, y) - IC.elevKm(i, j)) < 0.1 && !IC.losClear(i, j, 25, x, y, 0.6)) at = { x: i, y: j, hid: { x, y } };
+    }
+  }
+  assert(at, 'no hill found');
+  S.units = []; for (const b of IC.bases(S)) if (b.parts) b.parts = b.parts.filter(p => p.kind !== 'atc');
+  const gf = IC.makeUnit(S, 'gf', at.x, at.y, { instant: true, full: true }); gf.emcon = 'on';
+  const cm = IC.spawnThreat(S, 'lacm', at.hid.x, at.hid.y, { route: [{ x: at.hid.x - 4000, y: at.hid.y }], aim: { x: at.hid.x - 4000, y: at.hid.y }, fromHostile: true });
+  const hold = () => { cm.x = at.hid.x; cm.y = at.hid.y; cm.alt = 0.05; };
+  for (let i = 0; i < 80; i++) { IC.updateEmcon(S, 0.25); hold(); IC.sense(S, 0.25); S.time += 0.25; }
+  assert(!cm.det && !cm.held, 'the ground radar sees the cruise missile behind the hill');
+  // an early-warning aircraft 100 km away and a fighter 40 km from the missile, both at height
+  const aewR = S.roster.find(x => x.kind === 'aew'), fr = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready');
+  const aew = airborne(S, aewR, at.hid.x - 1000, at.hid.y, { type: 'orbit', x: at.hid.x - 1000, y: at.hid.y });
+  const ftr = airborne(S, fr, at.hid.x - 400, at.hid.y + 50, { type: 'hold', x: at.hid.x - 400, y: at.hid.y + 50 });
+  fr.roe = ftr.roe = 'free';
+  const own = () => { IC.sense(S, 0.25); const s = S.sensors.find(x => x.air === ftr); return IC.detects(s, cm); };
+  hold();
+  assert(!own(), 'the fighter\'s own radar sees the low missile 40 km out: look-down should hide it');
+  for (let i = 0; i < 4 * 30 && !cm.det; i++) { hold(); IC.sense(S, 0.25); S.time += 0.25; }
+  assert(cm.det, 'the early-warning aircraft does not see the cruise missile behind the hill');
+  let fired = false;
+  for (let i = 0; i < 4 * 300 && !fired && !cm.dead; i++) { IC.step(S, 0.25); fired = S.missiles.some(m => m.by === ftr && m.target === cm); }
+  assert(fired || cm.dead, 'the fighter under the early-warning orbit did not engage the cruise missile');
+});
+test('air war: a fighter identifies by sight: an airliner off its route is spared, a bomber without a transponder is hostile', () => {
+  const S = quietWar();
+  S.units = []; for (const b of IC.bases(S)) if (b.parts) b.parts = b.parts.filter(p => p.kind !== 'atc');
+  S.ad.roe = 'free';
+  // an airliner in cruise, moved near a base with two fighter flights ready: it flies a line 40 km from its filed route
+  const b = IC.bases(S).find(x => S.roster.filter(r => r.kind === 'ftr' && r.base === x.id && r.st === 'ready').length >= 2);
+  const air = S.threats.find(t => !t.dead && t.type === 'civ' && t.plan && t.wps && t.alt > 5 && !t.appr);
+  assert(b && air, 'no airliner in cruise');
+  const from = { x: b.x + 1400, y: b.y - 600 }, to = { x: b.x - 4000, y: b.y - 600 };
+  air.x = from.x; air.y = from.y; air.wps = [to]; air.dest = to; air.drift = 0; air.pt = 0; air.tn = null;
+  air.plan = Object.assign({}, air.plan, { pts: [{ x: from.x, y: from.y + 400 }, { x: to.x, y: to.y + 400 }] });
+  const bmr = IC.spawnThreat(S, 'bmr', b.x + 900, b.y + 300, { route: [{ x: b.x - 3000, y: b.y + 300 }], mission: 'bomber', home: { x: b.x + 9000, y: b.y }, load: 0, noFire: true });
+  const vhf = IC.makeUnit(S, 'vhf', b.x, b.y + 50, { instant: true, full: true }); vhf.emcon = 'on';
+  for (let i = 0; i < 4 * 200 && !(air.held && bmr.held); i++) IC.step(S, 0.25);
+  assert(air.held && bmr.held && air.aff !== 'N' && bmr.aff !== 'H', `both should be unidentified tracks (airliner ${air.aff} ${air.held} ${U.km(U.dist(air, vhf))}, bomber ${bmr.aff} ${bmr.held} ${U.km(U.dist(bmr, vhf))})`);
+  const [r1, r2] = S.roster.filter(x => x.kind === 'ftr' && x.base === b.id && x.st === 'ready' && !IC.missionOk(S, x, 'cap'));
+  const a1 = IC.commitIntercept(S, r1, air), a2 = IC.commitIntercept(S, r2, bmr);
+  assert(a1 && a2, `the intercepts were not committed: ${IC.interceptPlan(S, r1, air).why} / ${IC.interceptPlan(S, r2, bmr).why}`);
+  let shotAtAirliner = false;
+  for (let i = 0; i < 4 * 3600 && !(air.aff === 'N' && bmr.aff === 'H'); i++) { IC.step(S, 0.25); if (S.missiles.some(m => m.target === air)) shotAtAirliner = true; }
+  for (let i = 0; i < 20; i++) IC.step(S, 0.25);
+  assert(air.aff === 'N' && !air.dead && !shotAtAirliner, `the airliner was not recognised by sight (${air.aff}, dead ${air.dead}, shot at ${shotAtAirliner}, fighter ${a1.state} ${a1.mission.type} ${U.km(U.dist(a1, air))} ${a1.dead}, held ${air.held} alt ${air.alt.toFixed(1)} ${a1.alt.toFixed(1)})`);
+  assert(bmr.aff === 'H', `the bomber was not identified hostile (${bmr.aff})`);
+  assert(S.logs.some(l => l.tag === 'VID' && /off its route/.test(l.msg)), 'the pilot did not report the airliner off its route');
+});
+test('air war: a combat air patrol is relieved before its fuel runs out when relief is available', () => {
+  const S = quietWar();
+  const b = S.byId.ab_fwd;
+  for (const r of S.roster) if (r.kind === 'ftr' && r.base !== b.id) r.st = 'lost';
+  const task = IC.addTask(S, 'cap', { x: b.x + 600, y: b.y + 200 });
+  let first = null, gap = 0, worst = 0;
+  const ev = []; IC.on((S2, type, d) => { if (S2 === S && type === 'landed' && d.kind === 'ftr') ev.push({ fuel: d.fuel, name: d.name }); });
+  for (let i = 0; i < 2 * 3600 * 5; i++) {
+    IC.step(S, 0.5);
+    const on = S.air.some(a => a.task === task && a.state === 'station');
+    if (on && first == null) first = S.time;
+    if (first != null) { gap = on ? 0 : gap + 0.5; worst = Math.max(worst, gap); }
+  }
+  assert(first != null, 'nobody reached the patrol station');
+  assert(S.logs.some(l => l.tag === 'ATO' && /relieved/.test(l.msg)), 'no fighter was relieved on the station');
+  assert(worst <= 300, `the station was empty for ${U.dur(worst)} at a stretch`);
+  assert(!S.stats.acLost && ev.length && ev.every(e => e.fuel > 0), `fighters came home dry or were lost: ${JSON.stringify(ev)}`);
+}, true);
+test('air war: a tanker on its track extends a patrol', () => {
+  const S = quietWar();
+  const b = S.byId.ab_fwd, fr = S.roster.find(x => x.kind === 'ftr' && x.base === b.id), kr = S.roster.find(x => x.kind === 'tkr');
+  const p = { x: b.x + 800, y: b.y };
+  const k = airborne(S, kr, p.x + 200, p.y, { type: 'tanker', x: p.x + 200, y: p.y });
+  const a = airborne(S, fr, p.x, p.y, { type: 'hold', x: p.x, y: p.y });
+  a.fuel = U.dist(a, b) / IC.AIR_KIND.ftr.spd * 1.25 + 300 + 800;
+  const f0 = a.fuel, give0 = k.give;
+  run(S, 0.3);
+  assert(!a.dead && a.state !== 'rtb' && a.fuel > f0, `the fighter did not take fuel from the tanker (fuel ${Math.round(a.fuel)}, state ${a.state})`);
+  assert(k.give < give0, 'the tanker gave nothing');
+});
+test('air war: a lost aircraft is replaced when a pilot is free, a damaged one comes back from repair', () => {
+  const S = quietWar();
+  const r = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready'), b = IC.baseOf(S, r.base);
+  const a = airborne(S, r, b.x + 300, b.y, { type: 'hold', x: b.x + 300, y: b.y });
+  const money = S.budget;
+  IC.airLostOne(S, a, 'a test');
+  assert(a.hp === 1 && r.back.length === 1 && S.budget < money, 'no replacement was ordered for the lost aircraft');
+  a.dmg = 1; IC.recallAir(S, a);
+  run(S, 1);
+  assert(!S.air.includes(a) && r.n === 0 && r.back.length === 2, `the damaged aircraft did not go into repair (n ${r.n}, ${r.back.length} coming back)`);
+  S.pilots.spare = 1;
+  run(S, IC.AIR_LOSS.replace / 3600 + 0.2);
+  assert(r.n === 2 && !r.back.length, `the flight is not back to strength (n ${r.n}, ${r.back.length} still to come)`);
+}, true);
+test('air war: a fighter escorts a helicopter and engages what comes for it', () => {
+  const S = quietWar();
+  const hr = S.roster.find(x => x.kind === 'heli'), fr = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready'), b = IC.baseOf(S, hr.base);
+  const h = airborne(S, hr, b.x, b.y, { type: 'hold', x: b.x, y: b.y }); h.route = [{ x: b.x + 2000, y: b.y }];
+  const f = airborne(S, fr, b.x - 200, b.y, { type: 'hold', x: b.x, y: b.y });
+  IC.escortAir(S, f, h);
+  run(S, 0.1);
+  assert(U.dist(f, h) < 80 && f.state === 'escort', `the fighter is not with the helicopter (${U.km(U.dist(f, h))}, ${f.state})`);
+  const e = IC.spawnThreat(S, 'ahe', h.x + 350, h.y + 50, { route: [{ x: h.x, y: h.y }], mission: 'strike', home: { x: h.x + 5000, y: h.y }, fromHostile: true });
+  IC.makeUnit(S, 'lr3d', h.x, h.y + 100, { instant: true, full: true }).emcon = 'on';
+  let fired = false;
+  for (let i = 0; i < 4 * 400 && !fired && !e.dead; i++) { IC.step(S, 0.25); if (e.held && e.aff !== 'H') IC.setAff(S, e, 'H', 'test'); fired = S.missiles.some(m => m.by === f && m.target === e); }
+  assert(fired || e.dead, 'the escort did not engage the attack helicopter');
+});
+test('air war: enemy aircraft fly in formation, break away when locked on, and go home short of fuel', () => {
+  const S = range(), T = S.range.target;
+  const op = { launched: 0 };
+  const home = { x: T.x + 8000, y: T.y };
+  const ts = [0, 1, 2].map(i => IC.spawnThreat(S, 'str', T.x + 3000 + i * 20, T.y + i * 20, { route: [{ x: T.x - 3000, y: T.y }], mission: 'strike', op, home, tgt: T }));
+  runRange(S, 30);
+  assert(ts[1].lead === ts[0] && ts[2].lead === ts[0], 'the wingmen are not flying on their leader');
+  assert(U.dist(ts[1], ts[0]) < 40 && U.dist(ts[2], ts[0]) < 40, 'the formation is not close');
+  // a missile locks on: the leader breaks away from it
+  const h0 = Math.atan2(ts[0].vy, ts[0].vx);
+  ts[0].inbound = 1; S.missiles.push({ id: 'mt', target: ts[0], x: ts[0].x - 400, y: ts[0].y, a: 0, spd: 0, life: 1e9, M: IC.MUN.AAM, pk: 0, tr: IC.newTrail(S, 'aam'), trailT: 1e9 });
+  runRange(S, 30);
+  const turned = Math.abs(U.angWrap(Math.atan2(ts[0].vy, ts[0].vx) - h0));
+  assert(ts[0].evadeT > 0 && turned > 0.5, `the leader did not break away (turned ${turned.toFixed(2)} rad)`);
+  S.missiles = []; ts[0].inbound = 0;
+  ts[2].fuel = U.dist(ts[2], home) / ts[2].spd * 1.2 + 100;
+  runRange(S, 5);
+  assert(ts[2].mission === 'rtb', 'the wingman short of fuel did not turn for home');
+});
+
 test('air defence: no ground war code runs in the step', () => {
   assert(!IC.ground && !IC.groundInit && !IC.makeBrigade && !IC.GTYPES, 'ground war functions are still loaded');
   const src = IC.step.toString();

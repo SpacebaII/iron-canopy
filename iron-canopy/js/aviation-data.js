@@ -20,7 +20,7 @@ IC.ACTYPES = {
 IC.STAND = { s: { w: 0.32, d: 0.36, name: 'small' }, m: { w: 0.46, d: 0.5, name: 'medium' }, l: { w: 0.76, d: 0.8, name: 'large' } };
 IC.STAND_FITS = { s: ['s'], m: ['s', 'm'], l: ['s', 'm', 'l'] };
 /* which aircraft type each air wing flight uses on the ground */
-IC.AIRKIND_TYPE = { ftr: 'fighter', atk: 'heli', ucav: 'drone', aew: 'heavy', isr: 'drone', heli: 'heli', cargo: 'heavy' };
+IC.AIRKIND_TYPE = { ftr: 'fighter', atk: 'heli', ucav: 'drone', aew: 'heavy', isr: 'drone', heli: 'heli', cargo: 'heavy', tkr: 'heavy' };
 
 /* Airport parts. Line parts (runway, taxiway) cost per 100 m; area parts per hectare (1 unit²); the rest per item.
    build = seconds of engineer work per unit of the same measure. */
