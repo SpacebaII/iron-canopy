@@ -1382,6 +1382,8 @@ test('supply: with Keep stocked, a battery low on stock behind a cut road is res
     IC.roadsChanged(S);
     drive = IC.driveTime(S, dep, u);
   }
+  // on the large map there can be many ways round: cut every road near the battery
+  if (!drive.cut && drive.t <= IC.SUPPLY.heliSlow) { for (const e of S.world.edges) if (e.pts.some(p => U.dxy(p.x, p.y, u.x, u.y) < 150)) { e.cut = true; e.cond = 0.2; e.cutName = `Road cut near ${u.name}`; } IC.roadsChanged(S); drive = IC.driveTime(S, dep, u); }
   assert(drive.cut || drive.t > IC.SUPPLY.heliSlow, `the lorries are not held up (${U.dur(drive.t)})`);
   let heli = null, truck = null, t = 0;
   const m0 = m.mag + m.store;
