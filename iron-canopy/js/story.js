@@ -140,6 +140,7 @@ IC.avgSat = avgSat;
    goals are done and the chapter has run its minimum time, or anyway after its fallback time, so a thoughtful
    player is never rushed and a stuck one is never stuck for ever. min and max are game hours. */
 const H = 3600;
+IC.ACT1_MIN_H = 80;   // game hours a good player needs for Act I: two real hours at 4×, one at 8× (the tests hold the scripted player to it)
 // (the minimums are long enough that a chapter takes more than five real minutes even at 16×: 14 game hours are
 // about 5 minutes at 16×, 21 at 4×; the goals, not the clock, are what a good player waits on)
 IC.CHAPTERS = [
@@ -181,7 +182,7 @@ function feesDay(S) {
 }
 const served = S => IC.cities(S).filter(c => c.owner === 'us' && c.air && c.air.score >= 0.1).length;
 const dealsOn = S => S.av.deals.filter(d => d.st === 'active').length;
-const dealsDone = S => S.av.deals.filter(d => d.st === 'done' && !d.strikes).length;
+const dealsDone = S => S.av.deals.filter(d => d.clean).length;
 const hangarNeed = S => { const ap = capApt(S); if (!ap) return { need: 0, have: 0 }; return { need: IC.aptNeeds(S, ap).hangar, have: IC.aptProvides(ap).hangar }; };
 const quietFor = (S, since) => S.time - Math.max(since || 0, S.story.chT);
 
@@ -423,7 +424,7 @@ const LOCKS = {
 };
 IC.storyLock = function (S, key) {
   const st = S.story; if (!st || !st.fresh || st.act > 1) return '';
-  if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) ? '' : st.ch < 4 ? 'A second airport comes later: the regions will ask for one (Chapter 5).' : '';
+  if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) || st.contract3 ? '' : st.ch < 4 ? 'A second airport comes later, when a city far from the capital wants to fly (Chapter 5).' : '';
   const L = LOCKS[key]; return L && st.ch < L[0] ? L[1] : '';
 };
 /* ---------- the Guide: lessons the player has reached ----------
@@ -589,12 +590,17 @@ function beatsFor(S, act) {
     B.push({ id: 'budget', need: () => st.ch >= 1, gap: [3 * H, 6 * H], run: () => newAirline(S, 'budget') });
     B.push({ id: 'foreign2', need: () => st.ch >= 2 || (st.ch === 1 && inCh() > 14 * H), gap: [4 * H, 10 * H], run: () => newAirline(S, 'foreign') });
     B.push({ id: 'regional', need: () => st.ch >= 4 && st.apt2 && openTo(S, S.byId[st.apt2], 'turbo'), gap: [900, 2400], run: () => newAirline(S, 'regional', 0, S.byId[st.apt2], { apt: st.cap }) });
+    B.push({ id: 'regional3', need: () => st.apt3 && openTo(S, S.byId[st.apt3], 'turbo'), gap: [900, 2400], run: () => { const al = S.av.airlines.find(a => a.kind === 'regional'); if (al) IC.avRequest(S, al, S.byId[st.apt3], { apt: st.cap }, 'turbo', 2, `wants to fly ${short(S.byId[st.apt3].name)} – ${short(capApt(S).name)}`, 12 * H); else newAirline(S, 'regional', 0, S.byId[st.apt3], { apt: st.cap }); } });
     // the Minister asks after the airport while it is not open
     B.push({ id: 'nudge', need: () => !st.opened && inAct(S) > 10 * H, gap: [0, 1800], repeat: [10 * H, 14 * H], run: () => {
       if (st.opened) return;
       st.standing -= 3;
       say(S, 'MIN', st.cap ? `The Treasury asks when ${short(apName(S, st.cap))} opens. Every day it stands empty is money spent and nothing earned. What is it waiting for? (The goals panel says what is missing.)` : `Director, the cabinet asks where the national airport is. There is not even a site yet. Aviation room, Found a new airport.`);
     } });
+    // the network grows by demand: a regional airport whose turboprops fly full asks for jets; another city beyond
+    // reach asks for a field of its own once enough of its people want to fly
+    B.push({ id: 'jets2', need: () => st.ch >= 4 && st.apt2 && openTo(S, S.byId[st.apt2], 'turbo') && !openTo(S, S.byId[st.apt2], 'narrow') && IC.demandPull(S, S.byId[st.apt2]) > 1.05, gap: [2 * H, 5 * H], run: () => growAsk(S) });
+    B.push({ id: 'city3', need: () => st.ch >= 5 && inCh() > 6 * H && !!IC.cityAsks(S, 150), gap: [2 * H, 6 * H], run: () => cityAsk(S) });
     B.push({ id: 'ghost', need: () => st.ch >= 5 && inCh() > 8 * H, gap: [1800, 3600], run: () => {
       const ap = S.infra.filter(i => i.kind === 'airport').sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0];
       const p = border(S, ap || IC.cap(S));
@@ -632,6 +638,27 @@ function nearTown(S) {
   return { x: c.x, y: c.y, ref: c, name: c.name };
 }
 
+/* the regional airport has outgrown its turboprops: the region asks for jets */
+function growAsk(S) {
+  const st = S.story, ap = S.byId[st.apt2], c = S.byId[st.city2];
+  if (!ap || !c) return;
+  event(S, { title: `Jets for ${c.name}`, who: IC.ADVISORS.GOV.name, text: `${short(ap.name)}’s turboprops fly ${U.pct(Math.min(1, IC.loadFactor(S, ap)))} full and people are turned away. The region asks you to take jets there: 2.1 km of runway, fire cover and medium stands. Airlines will bring bigger aircraft when it can take them.`,
+    opts: [
+      { t: 'Agree: jets within two days', tip: 'Done in time: Minister +3 and the city grows faster. Late: Minister −4.', fx: () => { st.grow2 = { due: S.time + 48 * H }; } },
+      { t: 'Not yet', tip: `Minister −2. ${c.name}’s morale −5.`, fx: () => { st.standing -= 2; c.morale = Math.max(0, c.morale - 5); } }
+    ] });
+}
+/* a third city asks for an airport of its own */
+function cityAsk(S) {
+  const st = S.story, ask = IC.cityAsks(S, 150); if (!ask || st.city3 || st.city3No || ask.city.id === st.city2) return;
+  const c = ask.city;
+  st.city3 = c.id;
+  event(S, { title: `${c.name} wants to fly`, who: `${c.name} city council`, text: `${c.name} is beyond the reach of every airport we have, and some ${(Math.round(ask.unserved / 100) * 100).toLocaleString('en-US')} of its people a day would fly if they could. The council asks for ${ask.size === 'jets' ? 'an airport that takes jets' : 'a regional field for turboprops'}, open within three days. It will not be the capital’s rival: a regional airport lives on flights to the hub.`,
+    opts: [
+      { t: 'Accept', tip: 'Founding opens again. Open in three days: Minister +3. Late: Minister −4.', fx: () => { st.contract3 = { due: S.time + 72 * H, size: ask.size }; } },
+      { t: 'Decline', tip: `Minister −2. ${c.name}’s morale −8.`, fx: () => { st.standing -= 2; c.morale = Math.max(0, c.morale - 8); st.city3 = null; st.city3No = true; } }
+    ] });
+}
 /* the collision that ends Act I: a drone nobody could see and a regional airliner */
 function collision(S) {
   const st = S.story;
@@ -936,6 +963,13 @@ function actOneTick(S) {
       say(S, 'MIN', `${t.name} never got its field. The council has gone to the papers, and every flying club in the country has read it.`);
     }
   }
+  // the network's contracts: jets at the regional airport, a third city's field
+  const g2 = st.grow2, a2 = st.apt2 && S.byId[st.apt2];
+  if (g2 && !g2.done && a2 && openTo(S, a2, 'narrow')) { g2.done = true; st.standing += 3; say(S, 'MIN', `${short(a2.name)} takes jets now. The region is pleased, and so am I.`); }
+  else if (g2 && !g2.done && !g2.late && S.time > g2.due) { g2.late = true; st.standing -= 4; say(S, 'MIN', `${short(a2 ? a2.name : 'The regional airport')} still cannot take jets. The Governor has stopped asking me politely.`); }
+  const c3 = st.contract3, a3 = st.apt3 && S.byId[st.apt3];
+  if (c3 && !c3.done && a3 && openTo(S, a3, c3.size === 'jets' ? 'narrow' : 'turbo')) { c3.done = true; st.standing += 3; say(S, 'MIN', `${short(a3.name)} is open. A country with more than one airport worth the name: well done.`); }
+  else if (c3 && !c3.done && !c3.late && S.time > c3.due) { c3.late = true; st.standing -= 4; }
   if (!st.feeHist.length || S.time - st.feeHist[st.feeHist.length - 1].t >= H) {
     st.feeHist.push({ t: S.time, v: S.av.feeTotal || 0 });
     if (st.feeHist.length > 30) st.feeHist.shift();
@@ -950,6 +984,7 @@ function foundedHere(S, ap) {
       say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected: open its Build tab.`);
     } else say(S, 'MIN', `${ap.name} is ${U.km(U.dist(ap, cc))} from ${cc.name}. The national airport has to be within 60 km of the capital, where the passengers are. Found it closer in; that one can wait.`);
   } else if (st.city2 && !st.apt2 && U.dist(ap, S.byId[st.city2]) <= 600) st.apt2 = ap.id;
+  else if (st.city3 && !st.apt3 && U.dist(ap, S.byId[st.city3]) <= 600) st.apt3 = ap.id;
 }
 
 /* reactions: the staff and the Minister notice what happens */
@@ -959,7 +994,7 @@ IC.on((S, type, d) => {
   switch (type) {
     case 'approve': st.cnt.approve++; break;
     case 'dealBroken': st.standing -= d.byUs ? 2 : 4; if (st.act === 1 && IC.tipOnce(S, 'dealBroken', 6 * H)) say(S, 'MIN', `${d.al.name} ${d.byUs ? 'lost its deal' : 'walked out'}, and the papers have it. Airlines talk to each other: fewer offers will come until our name recovers.`); break;
-    case 'dealDone': if (!d.d.strikes) st.standing += 1; break;
+    case 'dealDone': if (!d.d.strikes) st.standing += 0.5; break;
     case 'dealWarn': if (st.act === 1 && IC.tipOnce(S, 'dealWarn', 3 * H)) say(S, 'APT', `${d.al.name} has written about its deal: ${d.text}. They give us 12 hours.`); break;
     case 'tailParked': st.cnt.parked++; break;
     case 'founded': foundedHere(S, d); break;

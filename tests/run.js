@@ -1769,14 +1769,17 @@ test('career: a scripted player builds the national airport and plays through Ac
   const { player } = require('../careerplayer.js');
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
   const st = S.story, t0 = S.time;
-  for (let i = 0; i < 7 * 86400 && st.act === 1 && !S.over; i++) { IC.step(S, 1); if (i % 60 === 0) player(S); }
+  for (let i = 0; i < 9 * 86400 && st.act === 1 && !S.over; i++) { IC.step(S, 1); if (i % 60 === 0) player(S); }
   assert(!S.over, `the game ended: ${S.over}`);
   const L = st.chLog.map(c => `${c.ch + 1}@${((c.t - t0) / 3600).toFixed(1)}h`).join(' ');
   assert(st.chLog.map(c => c.ch).join() === '0,1,2,3,4,5', `chapters out of order or missing: ${L}`);
-  assert(st.act === 2, `still in Act I after a week: ${L}`);
+  assert(st.act === 2, `still in Act I after nine days: ${L}`);
   // no chapter is rushed: each ran its minimum
   for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / 3600; if (c.ch > 0) assert(dur >= IC.CHAPTERS[c.ch].min - 2.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} h: ${L}`); }
-  assert((st.actT - t0) / 3600 >= 48, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
+  // the owner asked for well over an hour of real play at normal speed: 80 game hours are two real hours at 4×
+  // (1.5 real minutes a game hour) and one at 8×, for a scripted player that never hesitates
+  assert((st.actT - t0) / 3600 >= IC.ACT1_MIN_H, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
+  assert(S.av.deals.some(d => d.honoured) && S.budget > 1000, `no deal honoured, or the treasury ran low (${U.money(S.budget)})`);
   assert(IC.bases(S).filter(b => b.kind === 'airport').length >= 2 && S.av.airlines.length >= 4, 'no second airport, or few airlines');
 }, true);
 test('career: from Act III a day at zero confidence replaces you; before, it cannot', () => {

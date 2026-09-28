@@ -66,6 +66,19 @@ function grow(S, ap, st) {
   if (need === 'cargoT' && count(ap, 'cargo') < 3 && S.budget > 150) return part(S, ap, 'cargo', -6 + 3.2 * count(ap, 'cargo'), -5.1, 3, 0.8);
   return null;
 }
+/* a regional airport: what its airlines' offers find missing (a hangar for the aircraft based there, stands, fuel) */
+function outpost(S, ap) {
+  if (ap.works.length || !ap.st || !ap.st.longest || S.budget < 150) return null;
+  const need = missing(S, ap);
+  if (need === 'hangar' && count(ap, 'hangar') < 2) {
+    // a short taxiway of its own first, so the hangar doors face it
+    if (!ap.parts.some(p => p.kind === 'taxi' && p.hangarWay)) { const w = taxi(S, ap, [[2, 0], [2, 1.6]]); if (w) w.hangarWay = true; return w; }
+    return part(S, ap, 'hangar', 2 + count(ap, 'hangar') * 0.9, 1.93);
+  }
+  if ((need === 'stands' || need === 'gates' || need === 'paxH') && count(ap, 'apron') < 3) { const x = APRON_X[count(ap, 'apron')]; part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 0], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  if ((need === 'refuelH' || need === 'fuelH') && count(ap, 'fuel') < 3) return part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5);
+  return null;
+}
 /* the airspace: an entry point where the way to each foreign airport crosses the border, a fix near the airport,
    airways between them, and a civil radar in the middle */
 function airspace(S, ap) {
@@ -103,6 +116,8 @@ function player(S, log) {
   if (!st.cap) { const p = site(S, cc, 180, 380); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); return; }
   const ap = S.byId[st.cap];
   starter(S, ap, 30);
+  // once airliners use an airport, paving beside its runway waits for the night instead of closing it by day
+  for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us' && S.av.tails.some(t => t.at === b.id || (IC.avRoute(S, t) || {}).a === b.id)) for (const w of b.works) if (w.near && w.rwMode === 'close') w.rwMode = 'night';
   // worn pavement and damage: resurface what needs it
   for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us') for (const it of IC.aptRepairList(b)) if (S.budget > it.cost + 40) IC.aptQueue(S, b, it.key);
   // (while the chapter asks for a second airport, the money is saved for it)
@@ -118,6 +133,12 @@ function player(S, log) {
   // the second city's airport
   // (works are paid as they run: founding needs the site's price and some money in hand, not the whole airport)
   if (st.ch >= 4 && st.city2 && !st.apt2 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city2], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
-  if (st.apt2) starter(S, S.byId[st.apt2], st.size2 === 'jets' ? 24 : 18);
+  if (st.apt2) { starter(S, S.byId[st.apt2], st.size2 === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt2]); }
+  // jets at the regional airport: a longer runway beside the first, joined by a taxiway
+  const a2 = st.apt2 && S.byId[st.apt2];
+  if (st.grow2 && !st.grow2.done && a2 && !a2.works.length && a2.parts.filter(p => p.kind === 'runway').length < 2 && S.budget > 500) { IC.aptPlanRunway(S, a2, L(a2, -12, -3.2), L(a2, 12, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, a2, [[0, -3.2], [0, 0]]); }
+  // a third city's field, when its contract is taken
+  if (st.contract3 && st.city3 && !st.apt3 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city3], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
+  if (st.apt3) { starter(S, S.byId[st.apt3], st.contract3 && st.contract3.size === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt3]); }
 }
 module.exports = { player, site, starter, grow };

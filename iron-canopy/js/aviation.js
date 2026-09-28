@@ -451,7 +451,9 @@ function makeRequest(S) {
   const bK = JSON.stringify(b.apt ? { apt: b.apt } : { name: b.name });
   if (A.deals.some(d => d.st === 'active' && d.excl && d.al !== al.id && d.a === a.id && JSON.stringify(d.b.apt ? { apt: d.b.apt } : { name: d.b.name }) === bK)) return;
   const act1 = S.story && S.story.act === 1;
-  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n: al.sat > 75 && Math.random() < 0.5 ? 2 : 1, t: S.time, exp: S.time + (act1 ? 12 : 6) * 3600, more: !!existing };
+  // an airline that trusts the airport brings more aircraft at once: fewer offers, each with weight
+  const n = (IC.DEAL.fleet[al.kind] || 1) + (repOf(a) >= 60 ? 1 : 0) + (al.sat > 75 && Math.random() < 0.5 ? 1 : 0);
+  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n, t: S.time, exp: S.time + (act1 ? 12 : 6) * 3600, more: !!existing };
   req.why = existing ? `wants another ${IC.ACTYPES[type].name.toLowerCase()} on ${routeName(S, existing)}` : `wants to open ${S.byId[a.id].name.replace(/ (International|Airport)$/, '')} – ${endPt(S, req.b).name.replace(/ (International|Airport)$/, '')}`;
   makeTerms(S, req);
   A.requests.push(req);
@@ -673,6 +675,7 @@ IC.DEAL = {
   lateMin: 20,      // an arrival or departure later than this counts against the deal
   strikes: 3,       // bad days before the airline walks out
   levels: [-0.1, 0, 0.1, 0.2],   // charges the player may ask for, against the airport's list charges
+  fleet: { flag: 2, budget: 2, regional: 2, cargo: 1, foreign: 1 },   // aircraft in an offer, before trust adds more
   rep0: 50
 };
 const OPS_H = 17;   // airliners fly 06:00–23:00
@@ -793,6 +796,9 @@ IC.avNegotiate = function (S, id, lvl, excl) {
 function signDeal(S, q, route, tails, grace) {
   const A = S.av, al = airlineOf(S, q.al), k = q.terms ? IC.dealTerms(S, q) : { charge: S.byId[q.a].feeLevel || 1, days: 4, perWk: 0, paxDay: 0, cargoDay: 0, value: q.value || 0, excl: false };
   const old = q.renew && A.deals.find(d => d.id === q.renew);
+  // renewed before its end: the term just served counts as honoured, and the new one starts clean
+  if (old && old.st === 'active') honour(S, old);
+  if (old) { old.strikes = 0; old.t0 = S.time; }
   const d = old || { id: IC.nid('dl'), al: al.id, route: route.id, a: q.a, b: q.b, type: q.type, n: q.n, t0: S.time, strikes: 0, late: 0, cancel: 0, flown: 0, day: { late: 0, cancel: 0, n: 0 }, paid: 0 };
   Object.assign(d, { charge: k.charge, days: k.days, end: S.time + k.days * 86400, excl: k.excl, perWk: k.perWk, paxDay: k.paxDay, cargoDay: k.cargoDay, value: k.value,
     pen: q.terms ? { late: q.terms.late, cancel: q.terms.cancel } : { late: 0.3, cancel: 1.5 }, rep: q.terms ? q.terms.rep : 3, st: 'active', grace: S.time + (grace || 0), renewAsked: false, badT: 0 });
@@ -876,11 +882,8 @@ function dealsTick(S) {
     }
     if (left <= 0) {
       d.st = 'done'; d.endT = S.time;
-      const clean = d.strikes === 0;
-      repAdd(S, S.byId[d.a], d.rep + (clean ? 3 : 0)); if (d.b.apt) repAdd(S, S.byId[d.b.apt], d.rep / 2);
-      IC.log(S, 'info', 'AVIATION', `${al.name}'s deal for ${routeName(S, A.routes.find(x => x.id === d.route))} has run its course${clean ? ', every day on time' : ''}. Our name +${d.rep + (clean ? 3 : 0)}.${A.requests.some(q => q.renew === d.id) ? '' : ' Its aircraft leave.'}`, S.byId[d.a]);
-      IC.emit(S, 'dealDone', { d, al });
-      if (!A.requests.some(q => q.renew === d.id)) retireDeal(S, d);
+      honour(S, d);
+      if (!A.requests.some(q => q.renew === d.id)) { retireDeal(S, d); IC.log(S, 'info', 'AVIATION', `${al.name}'s aircraft on ${routeName(S, A.routes.find(x => x.id === d.route))} leave: the deal was not renewed.`, S.byId[d.a]); }
     }
   }
   // tails of an ended deal that were flying when it ended leave when they are back at a stand
@@ -900,6 +903,14 @@ function dealsDay(S) {
     IC.emit(S, 'dealStrike', { d, al });
   }
 }
+/* a term served to its end: our name rises, more if every day went well */
+function honour(S, d) {
+  const al = airlineOf(S, d.al), clean = d.strikes === 0, v = d.rep + (clean ? 3 : 0);
+  repAdd(S, S.byId[d.a], v); if (d.b.apt) repAdd(S, S.byId[d.b.apt], v / 2);
+  d.honoured = (d.honoured || 0) + 1; if (clean) d.clean = (d.clean || 0) + 1;
+  IC.log(S, 'info', 'AVIATION', `${al.name}'s deal for ${routeName(S, S.av.routes.find(x => x.id === d.route))} has run its term${clean ? ', every day on time' : ''}. Our name +${v}.`, S.byId[d.a]);
+  IC.emit(S, 'dealDone', { d, al });
+}
 function renewOffer(S, d, al) {
   const q = { id: IC.nid('rq'), al: al.id, a: d.a, b: d.b, type: d.type, n: d.n, t: S.time, exp: d.end, renew: d.id, why: `wants to renew its deal for ${routeName(S, S.av.routes.find(x => x.id === d.route))}` };
   makeTerms(S, q);
@@ -913,7 +924,7 @@ function offerGap(S) {
   if (!act1) return U.rand(2.5, 5) * 3600;
   const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
   const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
-  return U.rand(4, 7) * 3600 * U.clamp(1.6 - rep / 90, 0.6, 1.3);
+  return U.rand(5, 8) * 3600 * U.clamp(1.6 - rep / 90, 0.6, 1.3);
 }
 
 
