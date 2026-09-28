@@ -69,7 +69,9 @@ function buildGraph(W) {
     const over = j.over && j.over.includes(d.a);
     return j.kind === 'mx' ? (e.cls === 'hw' ? 1 : 2) : e.cls === 'hw' ? (over ? 2 : 1) : 3;
   };
-  for (const e of W.edges) add(e.pts, e.cls, { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
+  // a national road inside a city is one of its avenues, and carries the city's traffic as they do
+  const cityOf = {}; for (const c of W.cities) cityOf[c.id] = c;
+  for (const e of W.edges) add(e.pts, e.city ? e.ccls || 'art' : e.cls, e.city ? { edge: e, city: cityOf[e.city] } : { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
   for (const c of W.cities) for (const s of c.streets) add(s.pts, s.cls, { city: c });
   for (const r of W.ramps || []) add(r.pts, 'ramp', { ramp: r });
   for (const l of W.lanes) add(l.pts, 'ln', {});
@@ -228,7 +230,9 @@ function dijkstra(G, srcs, ok, maxT) {
     for (const li of G.nodes[n].out) {
       const lk = G.links[li], d = lk.a === n ? 0 : 1; if (!canGo(lk, d)) continue;
       const m = d ? lk.a : lk.b; if (ok && !ok(m)) continue;
-      const v = f + lk.len / lk.C.v * (lk.cut ? 6 : 1);
+      // (side streets cost more than their speed says: stops, parked cars and give-ways send through traffic
+      // to the avenues)
+      const v = f + lk.len / lk.C.v * (lk.cut ? 6 : 1) * (lk.cls === 'st' ? 1.6 : 1);
       if (v < t[m]) { t[m] = v; via[m] = li * 2 + d; from[m] = from[n]; push(v, m); }
     }
   }
@@ -288,7 +292,12 @@ function zonesOf(S, G) {
       // the zone's car park: the nearest street node, else the nearest node of any kind
       z.node = G.nearNode(z.x, z.y, 6, n => n.rank <= 3 && n.rank >= 1);
       if (z.node < 0) z.node = G.nearNode(z.x, z.y, 12);
-      if (z.node >= 0) { z.kind = z.frt > z.jobs * 0.3 ? 'ind' : z.jobs > z.homes ? 'work' : 'home'; z.id = Z.length; Z.push(z); }
+      if (z.node >= 0) {
+        // its trips start and end on several streets round it, not all at one corner
+        z.nodes = [z.node];
+        for (let k = 0; k < z.blocks.length && z.nodes.length < 4; k += Math.max(1, Math.floor(z.blocks.length / 4))) { const b = z.blocks[k], q = G.nearNode(b.x, b.y, 4, n => n.rank <= 3 && n.rank >= 1); if (q >= 0 && !z.nodes.includes(q)) z.nodes.push(q); }
+        z.kind = z.frt > z.jobs * 0.3 ? 'ind' : z.jobs > z.homes ? 'work' : 'home'; z.id = Z.length; Z.push(z);
+      }
     }
   }
   return Z;
@@ -322,24 +331,32 @@ function assign(S) {
     // at most 50 origins a city: the rest join the nearest one
     const orig = L.filter(z => z.homes > 0.01).sort((a, b) => b.homes - a.homes).slice(0, 50);
     for (const o of orig) {
-      const Tr = dijkstra(G, [o.node], ok);
+      const Tr = dijkstra(G, o.nodes, ok);
       let tot = 0; const wts = work.map(w => { const t = Tr.t[w.node]; const v = isFinite(t) ? w.jobs * Math.exp(-U.dist(o, w) / sc) : 0; tot += v; return v; });
       if (!tot) continue;
       const homes = o.homes * (L.filter(z => z.homes > 0.01).reduce((s, z) => s + z.homes, 0) / orig.reduce((s, z) => s + z.homes, 0));
-      work.forEach((w, i) => { if (wts[i] > 0 && w !== o) { const v = homes * wts[i] / tot; lay(pathTo(G, Tr, w.node), v, F.com); lay(pathTo(G, Tr, w.node), v * 0.35, F.gen); } });
+      work.forEach((w, i) => {
+        if (!(wts[i] > 0) || w === o) return;
+        const v = homes * wts[i] / tot / w.nodes.length;
+        for (const nd of w.nodes) if (isFinite(Tr.t[nd])) { const p = pathTo(G, Tr, nd); lay(p, v, F.com); lay(p, v * 0.35, F.gen); }
+      });
     }
     // everything that leaves town goes to the nearest road out: the nodes on national roads at the city's edge
     const gates = [];
     for (let n = 0; n < G.nodes.length; n++) {
       const nd = G.nodes[n], d = U.dxy(nd.x, nd.y, c.x, c.y); if (d > R || d < (c.ext || c.r) * 0.35) continue;
-      if (nd.out.some(i => G.links[i].ref.edge && G.links[i].cls !== 'hw')) gates.push(n);
+      if (nd.out.some(i => G.links[i].ref.edge && !G.links[i].city && G.links[i].cls !== 'hw')) gates.push(n);
     }
     if (!gates.length) gates.push(G.nearNode(c.x, c.y, 10));
     const Tg = dijkstra(G, gates.filter(g => g >= 0), ok);
     for (const z of L) {
       const out = z.frt * 0.1 + z.homes * 0.08 + z.jobs * 0.05; if (!(out > 0) || !isFinite(Tg.t[z.node])) continue;
-      const p = pathTo(G, Tg, z.node);   // from the gate to the zone: inbound
-      for (const [lk, d] of p) { F.frt[lk.id * 2 + d] += z.frt * 0.06; F.frt[lk.id * 2 + (1 - d)] += z.frt * 0.06; F.apt[lk.id * 2 + d] += z.homes * 0.03; F.apt[lk.id * 2 + (1 - d)] += z.homes * 0.03; F.gen[lk.id * 2 + d] += z.homes * 0.04; F.gen[lk.id * 2 + (1 - d)] += z.homes * 0.04; }
+      const k = 1 / z.nodes.length;
+      for (const nd of z.nodes) {
+        if (!isFinite(Tg.t[nd])) continue;
+        const p = pathTo(G, Tg, nd);   // from the gate to the zone: inbound
+        for (const [lk, d] of p) { F.frt[lk.id * 2 + d] += z.frt * 0.06 * k; F.frt[lk.id * 2 + (1 - d)] += z.frt * 0.06 * k; F.apt[lk.id * 2 + d] += z.homes * 0.03 * k; F.apt[lk.id * 2 + (1 - d)] += z.homes * 0.03 * k; F.gen[lk.id * 2 + d] += z.homes * 0.04 * k; F.gen[lk.id * 2 + (1 - d)] += z.homes * 0.04 * k; }
+      }
     }
   }
   // between places: over the whole network, from each city centre, airport, industry and crossing
@@ -465,6 +482,8 @@ IC.traffic = function (S, dt) {
     }
     // the junctions in front of a cut road, where traffic queues before it turns back
     T.cutN = new Set(); for (const L of T.links) if (L.cut) { T.cutN.add(L.l.a); T.cutN.add(L.l.b); }
+    // in town, where links are short, the queue backs up through the junction behind
+    for (let r = 0; r < 2; r++) for (const n of [...T.cutN]) for (const li of T.G.nodes[n].out) { const L = T.links[li]; if (!L.cut && L.l.len < 3 && L.l.city) T.cutN.add(L.l.a === n ? L.l.b : L.l.a); }
   }
   for (const b of S.buses) moveBus(S, b, dt);
   for (const t of S.trains) {
@@ -586,7 +605,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
       // the queue at the end of the link: vehicles there move Kq times slower, so they stand closer together;
       // in front of a cut road the queue is long
       const qc = !L.cut && T.cutN && T.cutN.has(d ? l.a : l.b) && L.ld[d] > 0.05;
-      const Kq = qc ? 5 : end.sig || end.jk === 'rb' || end.rank > L.C.rank ? 1 + 3 * U.clamp(L.ld[d] - 0.3, 0, 1) : 1, Q = qc ? Math.min(len * 0.7, 1 + L.ld[d] * 6) : Kq > 1 ? Math.min(len * 0.4, 0.3 + L.ld[d] * 1.5) : 0;
+      const Kq = qc ? 9 : end.sig || end.jk === 'rb' || end.rank > L.C.rank ? 1 + 3 * U.clamp(L.ld[d] - 0.3, 0, 1) : 1, Q = qc ? Math.min(len * 0.7, 1 + L.ld[d] * 6) : Kq > 1 ? Math.min(len * 0.4, 0.3 + L.ld[d] * 1.5) : 0;
       const qs = len - Q, span = len + Q * (Kq - 1), toS = u => u < qs ? u : qs + (u - qs) / Kq;
       const ph = phase(L, d, S.time);
       // slot j rides at j·BASE + phase from its lane's start (the far end for the other direction);
