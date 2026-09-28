@@ -497,11 +497,15 @@ IC.aviation = function (S, dt) {
       if (tl.t > 0) continue;
       const ap = S.byId[tl.at], s = standById(ap, tl.stand);
       if (!s || s.hp <= 0) { tailLost(S, tl, ap, 'destroyed at the gate'); continue; }
+      // its route was dropped while it was in the air: it leaves the fleet here (cutRoute retires the ones parked then)
+      if (r.st === 'cut') { tl.where = 'lost'; tl.retired = true; if (s.occ === tl.id) s.occ = null; continue; }
       if (suspended) { tl.t = 600; continue; }
       const al = airlineOf(S, tl.al);
       const night = !dayOps(S);
       if (night && (ap.curfew || al.kind !== 'cargo')) { tl.t = 300; continue; }
-      if (!IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      // fuelled once: held back below (light aircraft, spacing, no taxi route) it keeps what it took
+      if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      tl.fuelled = true;
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       // light aircraft on the runway, or controllers still spacing the last departure the same way
@@ -512,7 +516,7 @@ IC.aviation = function (S, dt) {
         onAir: mm => { launchLeg(S, tl, from, toEnd, mm.x, mm.y, 0.3); tl.track.h = mm.h; judge(S, al, tl, ap, { taxi: mm.taxiT, wait: mm.waitT + (tl.fuelWait || 0), kind: 'dep' }); tl.fuelWait = 0; pay(S, tl, ap, 'dep'); },
         onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed while taxiing') });
       if (!m) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; continue; }
-      tl.where = 'dep'; tl.mv = m; tl.stand = null;
+      tl.where = 'dep'; tl.mv = m; tl.stand = null; tl.fuelled = false;
     } else if (tl.where === 'away') {
       tl.t -= dt;
       if (tl.t > 0) continue;
