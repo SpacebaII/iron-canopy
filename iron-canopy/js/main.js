@@ -503,6 +503,8 @@ IC.on((S2, type, d) => {
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
   else if (type === 'event') { if (P.event !== false) pause(d.title); else stopSkip(d.title); }
   else if (type === 'incidentAdded' || type === 'act' || type === 'goal') stopSkip();
+  else if (type === 'request') stopSkip(`${IC.avAirline(S, d.al).name} offers a deal.`);
+  else if (type === 'dealWarn' || type === 'dealStrike' || type === 'dealBroken') stopSkip(`${d.al.name}: its deal ${type === 'dealBroken' ? 'is over' : 'is at risk'}.`);
   else if (type === 'assault' || type === 'chapter' || type === 'war' || type === 'frontActive' || type === 'delivered' || type === 'lessonDone') stopSkip();
 });
 
