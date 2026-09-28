@@ -813,8 +813,9 @@ IC.moveEnemyAir = function (S, t, dt) {
   // locked on by a missile or a fire-control radar: break away; locked on too often, go home
   if (t.evadeT > 0) t.evadeT -= dt;
   const locked = lockedOn(S, t);
-  // radar hunters do not break away: a radar locking on is what they came for
-  if (locked && !t.wasLocked && !(t.evadeT > 0) && t.mission !== 'rtb' && t.mission !== 'sead' && !t.disguise) {
+  // radar hunters do not break away (a radar locking on is what they came for), nor do the big jammers and bombers,
+  // which cannot out-turn a missile and whose work is to hold their station
+  if (locked && !t.wasLocked && !(t.evadeT > 0) && t.mission !== 'rtb' && t.mission !== 'sead' && turnRate(t) > 0.03 && !t.disguise) {
     t.locks = (t.locks || 0) + 1; t.evadeT = 45;
     const m = S.missiles.find(x => x.target === t && !x.dead), u = !m && t.fcBy.length && S.units.find(x => x.id === t.fcBy[0]);
     const from = m || u || t.home;
