@@ -25,7 +25,7 @@ IC.unitCost = function (S, type) {
   let k = 1;
   if (D.forward && (type === 'gf' || type === 'mr3d' || type === 'acou')) k *= 0.75;
   if (D.depth && (type === 'mrsam' || type === 'shorad' || type === 'lr3d')) k *= 0.8;
-  if (D.cheapGuns && (type === 'spaag' || type === 'cram')) k *= 0.7;
+  if (D.cheapGuns && (type === 'spaag' || type === 'cram' || type === 'dgun')) k *= 0.7;
   return Math.round(d.cost * k);
 };
 IC.LOAD_T = 120;   // s to load a new or reserve unit onto its transporters
