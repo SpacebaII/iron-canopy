@@ -754,6 +754,7 @@ IC.enemyAircraftLost = function (S, t) {
    with what they escort and turn on our fighters, a break away when a missile or a fire-control radar locks on
    (and a turn for home after being locked on too often), and fuel: short of it, they go home. */
 const EFUEL = { ftr: 9000, str: 9000, sead: 9000, ewj: 21600, bmr: 28800, ahe: 7200 };
+const turnRate = t => t.type === 'ahe' ? 0.3 : t.type === 'bmr' || t.type === 'ewj' ? 0.03 : 0.05;   // rad/s
 function formLead(S, t) {
   if (!t.op || !t.route || !t.route.length || t.mission === 'rtb' || t.mission === 'patrol' || t.disguise) return null;
   let n = 0;
@@ -812,7 +813,8 @@ IC.moveEnemyAir = function (S, t, dt) {
   // locked on by a missile or a fire-control radar: break away; locked on too often, go home
   if (t.evadeT > 0) t.evadeT -= dt;
   const locked = lockedOn(S, t);
-  if (locked && !t.wasLocked && !(t.evadeT > 0) && t.mission !== 'rtb' && !t.disguise) {
+  // radar hunters do not break away: a radar locking on is what they came for
+  if (locked && !t.wasLocked && !(t.evadeT > 0) && t.mission !== 'rtb' && t.mission !== 'sead' && !t.disguise) {
     t.locks = (t.locks || 0) + 1; t.evadeT = 45;
     const m = S.missiles.find(x => x.target === t && !x.dead), u = !m && t.fcBy.length && S.units.find(x => x.id === t.fcBy[0]);
     const from = m || u || t.home;
@@ -846,7 +848,9 @@ IC.moveEnemyAir = function (S, t, dt) {
     if (t.route && t.route.length && U.dxy(t.x, t.y, t.route[0].x, t.route[0].y) < 60 && t.route.length > 1) t.route.shift();
   } else if (t.route && t.route.length) {
     const p = t.route[0]; tx = p.x; ty = p.y;
-    if (U.dxy(t.x, t.y, tx, ty) < t.spd * dt + 4) { t.route.shift(); if (!t.route.length) arriveAir(S, t); }
+    // there, or passed it within a turning circle (an aircraft that can only turn so fast would circle it for ever)
+    const d = U.dxy(t.x, t.y, tx, ty), past = (tx - t.x) * (t.vx || 0) + (ty - t.y) * (t.vy || 0) <= 0;
+    if (d < t.spd * dt + 4 || (past && d < 2 * t.spd / turnRate(t))) { t.route.shift(); if (!t.route.length) arriveAir(S, t); }
     // a disguised bomber leaving its airway is suddenly off-plan
     if (t.disguise && t.route.length === 1 && !t.offRoute) t.offRoute = true;
   } else if (t.mission === 'patrol' || t.mission === 'jam') {
@@ -863,7 +867,7 @@ IC.moveEnemyAir = function (S, t, dt) {
   if (t.evadeT > 0 && t.evadeA != null) { want = t.evadeA; spd = t.spd * 1.15; }
   if (t.notchT > 0 && t.notchA != null) want = t.notchA + Math.PI / 2;
   const cur = Math.atan2(t.vy || (ty - t.y), t.vx || (tx - t.x));
-  const rate = t.type === 'ahe' ? 0.3 : t.type === 'bmr' || t.type === 'ewj' ? 0.03 : 0.05;
+  const rate = turnRate(t);
   const h = cur + U.clamp(U.angWrap(want - cur), -rate * dt, rate * dt);
   t.vx = Math.cos(h) * spd; t.vy = Math.sin(h) * spd;
   t.x += t.vx * dt; t.y += t.vy * dt;
