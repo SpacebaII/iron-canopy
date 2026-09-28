@@ -13,6 +13,20 @@ IC.SPEEDS = [1, 2, 4, 8, 16, 32];
 
 let nid = 1;
 IC.nid = p => (p || 'e') + (nid++);
+// the id counter goes into a save, so ids made after a load never repeat saved ones
+IC.nidPeek = () => nid;
+IC.nidSet = v => { nid = v; };
+
+/* Functions kept in the state are named handlers, so a save can write them down (save.js): IC.hfn(name, ...args)
+   makes the function from the factory IC.H[name] and remembers the name and the arguments. Objects that carry
+   behaviour (goals, event cards) are tagged with IC.remake(obj, name, ...args); a load keeps their data and takes
+   their functions from a fresh IC.REMAKE[name](...args). */
+IC.H = {};
+IC.hfn = (name, ...args) => { const f = IC.H[name](...args); f.$h = name; f.$a = args; return f; };
+IC.REMAKE = {};
+IC.remake = (o, name, ...args) => { Object.defineProperty(o, '$rc', { value: [name, args], enumerable: false, configurable: true, writable: true }); return o; };
+/* a named handler run after dt game seconds (airport.js runs S.later) */
+IC.later = (S, dt, name, ...args) => { (S.later = S.later || []).push({ t: S.time + dt, fn: IC.hfn(name, ...args) }); };
 
 /* seeded generator for world generation (mulberry32) */
 IC.makeRng = function (seed) {

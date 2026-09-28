@@ -2203,6 +2203,103 @@ test('career: every act can be reached', () => {
   const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
   for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
+/* ---------- the enemy commander ---------- */
+/* one three-day Quick war with the scripted commander of qwplayer.js, shared by the tests below (a few minutes) */
+let qw3 = null;
+const threeDays = () => {
+  if (qw3) return qw3;
+  // the same war every time: the simulation's own dice are seeded for this run
+  const rnd = Math.random; Math.random = IC.makeRng(19);
+  const S = IC.newGame({ seed: 777, mode: 'campaign' }), E = S.enemy, acts = [], main = IC.mainBase(S);
+  const on = (S2, type, d) => { if (S2 === S && type === 'enemyAct') acts.push({ act: d.act, t: S.time, winH: E.winH, warH: (S.time - E.warT) / 3600 }); };
+  IC.on(on);
+  // every weapon fired, with where it was aimed
+  const aims = [], sp = IC.spawnThreat;
+  IC.spawnThreat = function (S2, type, x, y, o) { const t = sp(S2, type, x, y, o); if (S2 === S && t.op && IC.THR[type].dmg && IC.THR[type].cls !== 'air') aims.push({ t: S.time, type, act: E.act, kind: t.op.raid && t.op.raid.kind, aim: t.aim || (t.route && t.route[t.route.length - 1]), set: t.op.set || (t.op.raid && t.op.raid.set) }); return t; };
+  let shockT = null;
+  try {
+    for (let i = 0; !S.over && (!E.war || S.time - E.warT < 72 * 3600); i++) {
+      IC.step(S, 1);
+      if (i % 60 === 0) Q.commander(S);
+      if (E.raid && E.raid.kind === 'shock' && shockT === null) shockT = E.raid.T;
+    }
+  } finally { IC.spawnThreat = sp; Math.random = rnd; }
+  return (qw3 = { S, E, acts, aims, main, shockT });
+};
+test('enemy: over a three-day Quick war no target set takes more than 35% of the fire before act 4, the main air base no more than 25%', () => {
+  const { S, aims, main } = threeDays();
+  const pre = aims.filter(a => a.act < 4 && a.set), n = pre.length, by = {};
+  for (const a of pre) by[a.set] = (by[a.set] || 0) + 1;
+  assert(n >= 40, `only ${n} weapons fired before act 4`);
+  for (const k in by) assert(by[k] / n <= 0.35, `${IC.ESETS[k].name} took ${U.pct(by[k] / n)} of the ${n} weapons fired before act 4 (${JSON.stringify(by)})`);
+  const onMain = aims.filter(a => a.aim && U.dist(a.aim, main) < (main.radius || 50) + 20).length;
+  assert(onMain / aims.length <= 0.25, `${main.name} took ${onMain} of ${aims.length} weapons (${U.pct(onMain / aims.length)})`);
+  assert(Object.keys(by).length >= 4, `only ${Object.keys(by).length} target sets were attacked before act 4`);
+  assert(!S.over, `the game ended: ${S.over}`);
+}, true);
+test('enemy: the acts come in order, and act 4 only after the defence has had its time winning', () => {
+  const { acts, E } = threeDays();
+  assert(acts.map(a => a.act).join() === '1,2,3,4', `acts came as ${acts.map(a => a.act).join()}`);
+  const a4 = acts[3];
+  assert(a4.winH >= IC.EPACE.winH || a4.warH >= IC.EPACE.act4Max, `act 4 began ${a4.warH.toFixed(1)} h into the war with only ${a4.winH.toFixed(1)} h of the defence winning`);
+  assert(a4.warH >= 20, `act 4 began only ${a4.warH.toFixed(1)} h into the war`);
+  assert(E.rec.filter(r => r.t < a4.t).length >= 4, 'fewer than four raids before act 4');
+}, true);
+test('enemy: it stockpiles before the shock, and intelligence says so hours ahead', () => {
+  const { E, shockT, aims } = threeDays();
+  assert(shockT, 'no shock in three days');
+  const first = E.intel.filter(i => /saving for something big/.test(i.text)).pop();
+  assert(first && shockT - first.t >= 3 * 3600, `the first stockpile report came ${first ? ((shockT - first.t) / 3600).toFixed(1) + ' h' : 'never'} before the shock`);
+  // while saving, no ballistic missile was fired; the shock used them
+  const saveT = E.clog.find(c => /Starts saving/.test(c.text)).t, bal = a => IC.THR[a.type].cls === 'bal';
+  assert(!aims.some(a => bal(a) && a.t > saveT && a.t < shockT - 3600), 'ballistic missiles were fired while they were being saved');
+  assert(aims.filter(a => bal(a) && a.t >= shockT - 3600 && a.t <= shockT).length >= 4, 'the shock used fewer than four ballistic missiles');
+  const shock = aims.filter(a => a.kind === 'shock').length;
+  assert(shock >= 20, `the shock launched only ${shock} weapons`);
+  assert(E.clog.some(c => c.t > saveT && c.t < shockT && /Plans the shock/.test(c.text)), 'the shock was not planned after the saving');
+}, true);
+test('enemy: destroying the stockpile or the launchers delays the shock', () => {
+  // production only: the commander's cycle is held so nothing is fired
+  const ready = hit => {
+    const S = IC.newGame({ seed: 12345, mode: 'campaign' }), E = S.enemy;
+    E.allow = null; IC.enemyOpening(S, { act: 2 });
+    E.pending = []; E.cycle = { phase: 'calm', next: 1e12 };
+    if (hit) {
+      for (const t of S.tels.filter(t => t.site.kind === 'bm' && t.site.nat === 'A')) IC.telDestroyed(S, t, 'test');
+      const s = S.esites.find(s => s.kind === 'cm' && s.nat === 'A'); IC.siteDamaged(S, s, 60, 'test', true);
+    }
+    const t0 = S.time;
+    for (let k = 0; k < 60 * 60 && IC.enemyStock(S).f < 0.97; k++) { S.time += 60; IC.enemyTick(S, 60); }
+    return (S.time - t0) / 3600;
+  };
+  const calm = ready(false), hit = ready(true);
+  assert(calm < 30, `the stockpile took ${calm.toFixed(1)} h even without losses`);
+  assert(hit >= calm + 4, `losing three launchers and a strike on a cruise missile site delayed it only from ${calm.toFixed(1)} h to ${hit.toFixed(1)} h`);
+});
+test('enemy: in act 4 raids go for batteries low on missiles more often than chance', () => {
+  const rnd = Math.random; Math.random = IC.makeRng(7);
+  try { lowBatteries(); } finally { Math.random = rnd; }
+});
+function lowBatteries() {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' }), E = S.enemy, b = IC.mainBase(S);
+  E.allow = null; IC.enemyOpening(S, { act: 2 }); E.pending = [];
+  S.units = S.units.filter(u => u.d.weapon !== 'sam');
+  const bats = [];
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; const u = IC.makeUnit(S, 'mrsam', b.x + Math.cos(a) * 200, b.y + Math.sin(a) * 200, { instant: true }); IC.enemyLearn(S, u, 'test'); bats.push(u); }
+  // three of them have fired most of their missiles, and the enemy saw it
+  for (const u of bats.slice(0, 3)) { for (const m of u.mags) { m.mag = 1; m.store = 0; } for (let k = 0; k < 18; k++) IC.emit(S, 'launch', { u, t: { fromHostile: true }, mun: 'MR' }); }
+  IC.enemyStartAct(S, 4, 'test');
+  let low = 0, n = 0;
+  for (let k = 0; k < 60; k++) {
+    E.c4.i = 1; E.raid = null; E.pending = []; E.retaliate = 0;
+    IC.enemyPlanRaid(S);
+    const r = E.raid && E.raid.obj.ref;
+    if (!r || !bats.includes(r)) continue;
+    n++; if (IC.fill(S, r) < 0.5) low++;
+  }
+  assert(n >= 30, `only ${n} of 60 saturation raids went for a battery`);
+  assert(low / n >= 0.65, `${low} of ${n} went for one of the three batteries low on missiles (chance: half)`);
+}
 test('quick war: the enemy attacks and the defense fights', () => {
   // (with the scripted commander deploying the reserve and buying: on the large map the few units placed at the
   // start rarely stand where the first raids go)
@@ -2379,6 +2476,79 @@ test('air defence: a laser stops burning its target when weapons are set to Hold
   const hp = t.hp;
   for (let i = 0; i < 40; i++) IC.step(S, 0.25);
   assert(!t.dead && t.hp === hp && u.beam !== t, `the laser kept burning TN ${t.tn} under Hold (hp ${hp.toFixed(2)} → ${t.hp.toFixed(2)})`);
+});
+/* ---------- saving and loading ---------- */
+const CP = require('../careerplayer.js');
+const dice = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+const saveBody = d => JSON.stringify([d.root, d.jobs]);
+/* saves S, loads it, then plays both on for the same time with the same dice: they should keep step */
+function saveAndPlayOn(S, hours, each) {
+  const d = IC.saveGame(S), json = JSON.stringify(d);
+  assert(!Object.keys(d.lost).length, `the save dropped functions it cannot name: ${Object.keys(d.lost).join(', ')}`);
+  const S2 = IC.loadSave(json);
+  assert(saveBody(IC.saveGame(S2)) === saveBody(d), 'saving the loaded game again does not give the same save');
+  const rnd = Math.random;
+  try {
+    for (const G of [S, S2]) { Math.random = dice(7); IC.nidSet(d.nid); for (let i = 0; i < hours * 7200 && !G.over; i++) { IC.step(G, 0.5); if (each && i % 120 === 0) each(G); } }
+  } finally { Math.random = rnd; }
+  return { d, json, S2 };
+}
+/* what the player would notice: aircraft, airports, works in progress, weapons in the air, money */
+const picture = S => ({
+  aircraft: [].concat(S.av ? S.av.tails.map(t => `${t.cs} ${t.where}`) : [], S.air.filter(a => !a.dead).map(a => `${a.name} ${a.state || ''}`), S.threats.filter(t => !t.dead).map(t => `${t.type}#${t.tn || t.id}`)).sort(),
+  airports: IC.bases(S).filter(b => b.parts && b.parts.length).map(b => `${b.name}: ${b.parts.length} parts, ${b.parts.filter(p => p.built).length} built`),
+  works: IC.bases(S).flatMap(b => (b.works || []).map(w => `${b.name} ${w.part ? w.part.kind : w.kind} ${Math.round((w.prog || 0) * 100)}%`)),
+  missiles: S.missiles.length, units: S.units.map(u => `${u.name} ${u.state}`)
+});
+function samePicture(a, b) {
+  const A = picture(a), B = picture(b);
+  for (const k in A) {
+    const x = JSON.stringify(A[k]), y = JSON.stringify(B[k]);
+    assert(x === y, `${k} differ after playing on: ${x.slice(0, 300)} … against the loaded game's ${y.slice(0, 300)}`);
+  }
+  assert(Math.abs(a.budget - b.budget) <= Math.max(1, Math.abs(a.budget) * 0.01), `money differs: ${U.money(a.budget)} against ${U.money(b.budget)}`);
+}
+test('save: a Career game with works in progress and aircraft taxiing saves, loads and plays on like the unsaved one', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story' });
+  let busy = () => IC.bases(S).some(b => b.works && b.works.length) && S.av.tails.some(t => t.mv);
+  for (let i = 0; i < 16 * 7200 && !(S.time > 13 * 3600 && busy()); i++) { IC.step(S, 0.5); if (i % 120 === 0) CP.player(S); }
+  assert(busy(), 'no works in progress with aircraft on the ground to save');
+  const { json, S2 } = saveAndPlayOn(S, 1, CP.player);
+  assert(json.length < 3e6, `a Career save is ${(json.length / 1e6).toFixed(1)} MB`);
+  samePicture(S, S2);
+  const u = S2.infra.find(b => b.parts && b.parts.length), tl = S2.av.tails.find(t => t.track);
+  assert(S2.world === IC.W && S2.byId[u.id] === u && IC.ACTYPES[tl.type] === tl.T, 'the loaded game does not point at its own world, airports and aircraft types');
+  if (tl) assert(S2.threats.includes(tl.track) || tl.track.dead || !tl.track, 'a tail and its track are no longer the same object');
+});
+test('save: a Quick war saved with missiles in the air loads and plays on like the unsaved one', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'campaign' });
+  const fight = () => S.enemy.war && S.missiles.length > 0 && S.threats.some(t => !t.dead && t.aff === 'H');
+  for (let i = 0; i < 9 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
+  assert(fight(), 'no battle to save');
+  const { json, S2 } = saveAndPlayOn(S, 0.5, Q.commander);
+  assert(json.length < 3e6, `a Quick war save is ${(json.length / 1e6).toFixed(1)} MB`);
+  samePicture(S, S2);
+  assert(S2.units.every(u => u.d === IC.UNITS[u.type]), 'unit types are copies after a load, not the tables');
+});
+test('save: lessons, the Test range and the Sandbox save without dropping anything', () => {
+  for (const o of [{ mode: 'academy', lesson: 'id', seed: 20260926 }, { mode: 'academy', lesson: 'strike', seed: 20260926 }, { mode: 'range', seed: 1 }, { mode: 'sandbox', seed: 99 }]) {
+    const S = IC.newGame(o);
+    if (S.range) { IC.rangeSpawn(S, { what: 'drones', n: 6, brg: 90, km: 150, alt: '' }); }
+    for (let i = 0; i < 1200; i++) IC.step(S, 0.5);
+    const d = IC.saveGame(S);
+    assert(!Object.keys(d.lost).length, `${o.lesson || o.mode}: dropped ${Object.keys(d.lost).join(', ')}`);
+    const S2 = IC.loadSave(JSON.stringify(d));
+    for (let i = 0; i < 600; i++) IC.step(S2, 0.5);
+  }
+});
+test('save: a save from another version of the map generator, or of the game, is refused with a reason', () => {
+  const S = IC.newGame({ seed: 7, mode: 'campaign' });
+  const d = IC.saveGame(S);
+  const odd = Object.assign({}, d, { wsig: 'x' });
+  let why = ''; try { IC.loadSave(JSON.stringify(odd)); } catch (e) { why = e.message; }
+  assert(/map generator/.test(why) && IC.W === S.world, `a save for a different world was not refused cleanly (${why})`);
+  assert(/newer version/.test(IC.saveProblem(Object.assign({}, d, { v: IC.SAVE_VERSION + 1 }))), 'a save from a newer game is not refused');
+  assert(/not an Iron Canopy save/.test(IC.saveProblem({ hello: 1 })), 'any JSON passes for a save');
 });
 
 /* ---------- run ---------- */

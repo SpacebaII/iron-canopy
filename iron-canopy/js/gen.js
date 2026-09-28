@@ -451,6 +451,7 @@ function* worldSteps(seed) {
   /* ---------- bridges where roads cross rivers ---------- */
   riverBridges(W);
 
+  yield [0.55, 'Placing the neighbours'];
   /* ---------- foreign places ---------- */
   const radialPt = (k, dmin, dmax, spacing, others) => {
     const [a0, a1] = W.secSpan(k);
@@ -538,6 +539,7 @@ function* worldSteps(seed) {
     }
   }
 
+  yield [0.56, 'Mapping the ground'];
   /* ---------- terrain for ground combat ---------- */
   W.townAt = (x, y) => {
     if (W.builtAt(x, y)) for (const c of W.cities) if (U.dxy(x, y, c.x, c.y) < c.r * 1.6) return c;
@@ -582,6 +584,7 @@ function* worldSteps(seed) {
   yield 'towns';
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
+  yield [0.62, 'Building the streets'];
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
   yield 'junctions';
   // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);

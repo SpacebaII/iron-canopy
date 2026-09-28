@@ -26,6 +26,7 @@ function* gameSteps(opts) {
   const W = IC.W = yield* IC.generateSteps(seed);
   yield 'routing';
   IC.buildRouting(W);
+  if (IC.worldBase) IC.worldBase(W);   // fingerprints of the fresh world, so a save stores only what changed (save.js)
   yield 'airports';
   const mode = opts.mode || 'campaign';
   const sandbox = mode === 'sandbox';

@@ -67,6 +67,7 @@
         <p class="tagline">Build the airports. Run the skies. Then defend them.</p>
 
         <div class="st-page" id="st-main">
+          <button class="mode cont" id="stContinue" data-act="continue" hidden><em>Continue</em><b id="stContName"></b><span id="stContWhat"></span></button>
           <div class="modes">
             <button class="mode hero" data-act="begin" data-v="story"><em>Start here</em><b>Career</b><span>Begin as Director of Civil Aviation: run the airports and the airlines while the neighbour tests the border. Four acts, from the control tower to Chief of the Air Force.</span><kbd>Enter</kbd></button>
             <button class="mode" data-act="begin" data-v="campaign"><b>Quick war</b><span>Hours of tension, then open war. Raids build up and strike in waves. Hold for three days with the country working.</span></button>
@@ -74,6 +75,7 @@
             <button class="mode" data-act="begin" data-v="range"><b>Test range</b><span>An empty plane. Place any system, send any threat from any side, and read the results.</span></button>
           </div>
           <div class="st-foot">
+            <button class="btn" data-act="stPage" data-v="saves">Saved games</button>
             <button class="btn" data-act="stPage" data-v="settings">Settings</button>
             <button class="btn" data-act="stPage" data-v="keys">Controls</button>
             <button class="btn ghost" data-act="begin" data-v="sandbox" title="Partly mobilized, fully deployed, war at dawn. No staff guidance.">Sandbox: war at dawn, no guidance</button>
@@ -83,6 +85,10 @@
         <div class="st-page" id="st-lessons" hidden>
           <div class="st-head"><button class="btn" data-act="stPage" data-v="main">◂ Back <kbd>Esc</kbd></button><h2>Academy</h2></div>
           <div class="lessons" id="lessons"></div>
+        </div>
+        <div class="st-page" id="st-saves" hidden>
+          <div class="st-head"><button class="btn" data-act="stPage" data-v="main">◂ Back <kbd>Esc</kbd></button><h2>Saved games</h2></div>
+          <div class="st-cards" id="stSaves"></div>
         </div>
         <div class="st-page" id="st-settings" hidden>
           <div class="st-head"><button class="btn" data-act="stPage" data-v="main">◂ Back <kbd>Esc</kbd></button><h2>Settings</h2></div>
@@ -108,8 +114,19 @@
       <h2>Paused</h2>
       <button class="mi" data-act="menu"><b>Resume</b><kbd>Esc</kbd></button>
       <button class="mi" data-act="room" data-v="reference"><b>Guide</b><span>How every system works</span><kbd>?</kbd></button>
-      <button class="mi" data-act="room" data-v="settings"><b>Settings</b><span>Display, sound, auto-pause, hints</span></button>
-      <button class="mi warn" data-act="restart"><b>Quit to the main menu</b><span>This game is not kept</span></button>
+      <button class="mi" data-act="saveQuick"><b>Save the game</b><span>Kept in this browser</span></button>
+      <button class="mi" data-act="room" data-v="settings"><b>Settings</b><span>Saved games, display, sound, auto-pause, hints</span></button>
+      <button class="mi warn" data-act="restart"><b>Quit to the main menu</b><span>The game is autosaved first</span></button>
+    </div>
+  </div>
+  <div class="modal loading" id="loading" hidden role="dialog" aria-label="Loading a saved game">
+    <div class="ld-box glass">
+      <p class="kicker">Loading</p>
+      <h2 id="ldName"></h2>
+      <p class="ld-what" id="ldWhat"></p>
+      <div class="ld-bar" id="ldBarBox"><i id="ldBar"></i></div>
+      <p class="ld-step" id="ldStep" aria-live="polite"></p>
+      <div class="ld-err" id="ldErr" hidden><p id="ldErrText"></p><button class="btn" data-act="ldBack">Back</button></div>
     </div>
   </div>
   <div class="unlock" id="unlock" hidden aria-live="polite"></div>
@@ -163,6 +180,7 @@
 <script src="js/academy.js"></script>
 <script src="js/record.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/save.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/render.js"></script>
 <script src="js/render-models.js"></script>
@@ -178,4 +196,5 @@
 <script src="js/ui.js"></script>
 <script src="js/inspector.js"></script>
 <script src="js/warroom.js"></script>
+<script src="js/saves.js"></script>
 <script src="js/main.js"></script>

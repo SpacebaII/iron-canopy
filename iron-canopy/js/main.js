@@ -314,6 +314,7 @@ function onAct(e) {
   if (!S && a !== 'begin' && a !== 'lesson' && a !== 'stPage') return;
   const sel = S && S.sel && S.sel.ref;
   const ui = IC.ui;
+  if (IC.savesAct(S, a, v)) { IC.sfx.ui('click'); return; }
   switch (a) {
     case 'begin': IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
@@ -331,7 +332,6 @@ function onAct(e) {
     case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
-    case 'restart': IC.showStart(); return;
     case 'pause': S.paused = !S.paused; S.skip = false; break;
     case 'speed': S.speed = +v; S.paused = false; S.skip = false; break;
     case 'skip': startSkip(); break;
@@ -694,7 +694,7 @@ const STAGE_WORDS = { relief: 'Raising the hills', rivers: 'Running the rivers',
 IC.STAGE_WORDS = STAGE_WORDS;
 IC.onLoadProgress = IC.onLoadProgress || ((stage, f) => { $('startLead').textContent = `${STAGE_WORDS[stage] || 'Preparing'}… ${Math.round(f * 100)}%`; });
 let loading = 0, building = Promise.resolve(), nth = 0;
-IC.loading = () => loading > 0;
+IC.building = () => loading > 0;   // (IC.loading is a save being loaded, saves.js)
 function generate(seed, mode, lesson) { return (building = build(seed, mode, lesson)); }
 /* the latest build wins: one started later (a new map, another mode) makes an earlier one's game go unused, and it
    resolves to null */
@@ -720,6 +720,20 @@ IC.reroll = function () {
 };
 /* the start screen's game is a fresh Quick war on its region: starting one uses it as it is instead of building it again */
 const fresh = (mode, seed) => mode === 'campaign' && S && S.mode === 'campaign' && S.world.seed === seed && !S.started;
+/* a loaded game takes over from the one on screen (saves.js) */
+IC.adopt = function (st, view) {
+  S = IC.S = st;
+  IC.resetMini();
+  IC.ui.bind(S);
+  // what the player had already read stays read: chapter cards and staff messages from before the save
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
+  resize();
+  $('seed').textContent = String(S.seed);
+  $('start').hidden = true; $('over').hidden = true;
+  if (view) { IC.cam.z = view.z; IC.centerOn(view.x, view.y); } else IC.frame(...IC.homeBox(S.world));
+  S.paused = true;
+  IC.ui.refresh(true);
+};
 IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
@@ -754,8 +768,8 @@ IC.ui.startPage('main');
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
-  // nothing to draw until the first game is built, and the old one is left alone while the next is
-  if (!S || loading) { requestAnimationFrame(frame); return; }
+  // nothing to draw until the first game is built, while the next is built, or while a save replaces it
+  if (!S || loading || IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
@@ -780,6 +794,7 @@ function frame(now) {
     let g = gdt, guard = 0;
     const t0 = performance.now();
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(IC.MAX_STEP * (S.skip ? 2 : 1), g); IC.step(S, st); g -= st; if (performance.now() - t0 > 40) break; }
+    IC.autosaveTick(S);
   }
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);

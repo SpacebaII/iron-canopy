@@ -205,6 +205,12 @@ b{font-weight:600}
 .bars{display:grid;grid-template-columns:5.2rem 1fr 3rem;gap:.35rem .6rem;align-items:center;font-size:.85rem}
 .bars>span:nth-child(3n+1){color:var(--muted)}
 .bars>span:nth-child(3n){text-align:right;font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+.bars.long{grid-template-columns:minmax(8rem,12rem) 1fr 3rem}
+/* the enemy's four acts, in the Intel room */
+.acts-line{display:flex;flex-wrap:wrap;gap:.3rem}
+.acts-line span{font-size:.78rem;padding:.2rem .55rem;border-radius:999px;background:rgba(255,255,255,.05);color:var(--dim)}
+.acts-line span.past{color:var(--muted)}
+.acts-line span.on{background:rgba(255,90,90,.18);color:var(--text);font-weight:600}
 .bar{height:6px;border-radius:3px;background:var(--well);overflow:hidden}
 .bar i{display:block;height:100%;border-radius:3px;transition:width .3s var(--ease)}
 .acts{display:flex;flex-wrap:wrap;gap:6px}
@@ -762,3 +768,29 @@ table.t th.r{text-align:right}
 .guide{gap:.3rem}.guide b{font-size:1rem}.guide p{margin:0;font-size:.9rem;line-height:1.45;color:var(--muted)}
 .gnow{display:block;font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);margin-bottom:.15rem}
 .ghead{background:none;padding:.2rem .1rem 0}
+
+/* ---------- saved games: Continue, the lists, the loading screen ---------- */
+.mode.cont{width:100%;margin-bottom:10px;grid-template-columns:auto 1fr;gap:.1rem 1rem;align-items:baseline;background:linear-gradient(160deg,rgba(88,211,154,.2),rgba(111,210,255,.05));box-shadow:inset 0 0 0 1px rgba(88,211,154,.35)}
+.mode.cont:hover{background:linear-gradient(160deg,rgba(88,211,154,.3),rgba(111,210,255,.08))}
+.mode.cont em{grid-row:1/3;font-style:normal;font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ok)}
+.mode.cont b{font-size:1.15rem;letter-spacing:.06em}
+.saves{display:grid;gap:5px;margin:.5rem 0}
+.saverow{display:flex;flex-wrap:wrap;gap:.4rem .8rem;align-items:center;justify-content:space-between;padding:.55rem .7rem;border-radius:10px;background:var(--well)}
+.saverow.auto{background:rgba(255,255,255,.035)}
+.sv-txt{display:grid;gap:.1rem;min-width:12rem;flex:1}
+.sv-txt b{font-size:1rem}
+.sv-txt span{font-size:.86rem;color:var(--muted)}
+.sv-txt small{font-family:var(--mono);font-size:.72rem;color:var(--dim)}
+.sv-acts{display:flex;gap:4px;flex-wrap:wrap}
+.btn.warn{color:#ffb6ad;background:rgba(255,91,79,.16)}
+.svnote{margin:0 0 .5rem;padding:.45rem .7rem;border-radius:9px;background:rgba(88,211,154,.12);color:#c9f3dd;font-size:.9rem}
+.svnote.bad{background:rgba(255,91,79,.14);color:#ffc9c2}
+.loading{z-index:20}
+.ld-box{width:min(30rem,100%);display:grid;gap:.5rem;padding:1.4rem 1.5rem}
+.ld-box h2{margin:0;font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:.08em;text-transform:uppercase;line-height:1.05}
+.ld-what{margin:0;color:var(--muted)}
+.ld-bar{height:8px;border-radius:4px;background:var(--well-2);overflow:hidden;margin-top:.4rem}
+.ld-bar i{display:block;height:100%;width:0;background:var(--amber);transition:width .25s var(--ease)}
+.ld-step{margin:0;font-family:var(--mono);font-size:.8rem;color:var(--muted);min-height:1.2em}
+.ld-err{display:grid;gap:.6rem;justify-items:start}
+.ld-err p{margin:0;color:#ffc9c2}

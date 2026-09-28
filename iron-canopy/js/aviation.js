@@ -279,6 +279,10 @@ IC.aptCanTake = function (S, ap, T) {
   if (!standsOf(ap).some(s => s.linked !== false && s.hp > 0 && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T))) return `no ${IC.STAND[T.stand].name} ${T.cargo ? 'cargo or passenger' : 'passenger'} stand connected to the runway`;
   return '';
 };
+/* an arrival's ground move: parked, destroyed on the ground, or gone around */
+IC.H.avParked = (S, tl, ap, s) => mm => parked(S, tl, ap, s, mm);
+IC.H.avGroundLost = (S, tl, ap) => (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground');
+IC.H.avGoAround = (S, t, tl, ap, s) => mm => goneAround(S, t, tl, ap, s, mm);
 function tryLand(S, t, ap) {
   const tl = t.tail;
   if (IC.aptCanTake(S, ap, tl.T)) return 'divert';
@@ -286,7 +290,7 @@ function tryLand(S, t, ap) {
   let s = tl.resStand ? standById(ap, tl.resStand) : null;
   if (!s || (s.occ && s.occ !== tl.id)) { s = freeStand(S, ap, tl.T, airlineOf(S, tl.al).kind); if (!s) { ap.kpi.standWait = (ap.kpi.standWait || 0) + 1; t.standShort = true; return 'hold'; } }
   const m = IC.gopsLand(S, ap, { type: tl.type, target: s.id, stand: s, who: tl.cs, tail: tl, livery: t.livery, faf: t.faf,
-    onPark: mm => parked(S, tl, ap, s, mm), onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground'), onGoAround: mm => goneAround(S, t, tl, ap, s, mm) });
+    onPark: IC.hfn('avParked', S, tl, ap, s), onDead: IC.hfn('avGroundLost', S, tl, ap), onGoAround: IC.hfn('avGoAround', S, t, tl, ap, s) });
   if (m === 'divert') return 'divert';
   if (m === 'hold') { tl.resStand = s.id; return 'hold'; }
   s.occ = tl.id; tl.stand = s.id; tl.resStand = null;
@@ -530,8 +534,7 @@ IC.aviation = function (S, dt) {
       const rel = IC.aspRelease(S, from, toEnd);
       if (rel > 0) { tl.t = rel; tl.fuelWait = (tl.fuelWait || 0) + rel; continue; }
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, who: tl.cs, tail: tl, livery: al.livery,
-        onAir: mm => { launchLeg(S, tl, from, toEnd, mm.x, mm.y, 0.3); tl.track.h = mm.h; judge(S, al, tl, ap, { taxi: mm.taxiT, wait: mm.waitT + (tl.fuelWait || 0), kind: 'dep' }); tl.fuelWait = 0; pay(S, tl, ap, 'dep'); },
-        onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed while taxiing') });
+        onAir: IC.hfn('avAirborne', S, tl, from, toEnd, al, ap), onDead: IC.hfn('avTaxiLost', S, tl, ap) });
       if (!m) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; continue; }
       tl.where = 'dep'; tl.mv = m; tl.stand = null; tl.fuelled = false;
     } else if (tl.where === 'away') {
@@ -628,30 +631,34 @@ IC.avUpkeep = function (S) {
   return v + (S.asp && S.asp.secs ? IC.aspStaffCost(S) : 0);
 };
 
+/* a departing airliner's ground move: when it lifts off, and if it is destroyed on the ground */
+IC.H.avAirborne = (S, tl, from, toEnd, al, ap) => mm => { launchLeg(S, tl, from, toEnd, mm.x, mm.y, 0.3); tl.track.h = mm.h; judge(S, al, tl, ap, { taxi: mm.taxiT, wait: mm.waitT + (tl.fuelWait || 0), kind: 'dep' }); tl.fuelWait = 0; pay(S, tl, ap, 'dep'); };
+IC.H.avTaxiLost = (S, tl, ap) => (mm, why) => tailLost(S, tl, ap, why || 'destroyed while taxiing');
 /* ---------- radio: call an aircraft that is off its route ---------- */
 IC.callAircraft = function (S, t) {
   if (t.dead || t.called) return false;
   t.called = S.time;
   IC.log(S, 'info', 'RADIO', `Calling ${t.cs || 'TN ' + t.tn} on the guard frequency…`, t);
-  (S.later = S.later || []).push({ t: S.time + U.rand(25, 70), fn: () => {
-    if (t.dead) return;
-    if (t.type === 'ga' && !t.hijack) {
-      IC.gaReplan(S, t);
-      IC.log(S, 'info', 'RADIO', `${t.cs}: "Sorry, leaving controlled airspace now."`, t);
-      IC.emit(S, 'radioOk', t);
-    } else if (t.tail || (t.d.civil && !t.hijack)) {
-      t.drift = 0; t.vector = null; t.jammed = false;
-      t.wps = rejoin(t); t.dest = t.wps[0];
-      IC.log(S, 'info', 'RADIO', `${t.cs}: "Roger, our GPS is unreliable. Turning back onto the route."`, t);
-      IC.emit(S, 'radioOk', t);
-    } else {
-      t.noReply = true;
-      IC.log(S, 'warn', 'RADIO', `${t.cs || 'TN ' + t.tn} does not answer.`, t);
-      if (t.aff === 'A' || t.aff === 'N' || t.aff === 'U') IC.setAff(S, t, 'S', 'does not answer radio calls');
-      IC.emit(S, 'radioNone', t);
-    }
-  } });
+  IC.later(S, U.rand(25, 70), 'avRadioReply', S, t);
   return true;
+};
+IC.H.avRadioReply = (S, t) => () => {
+  if (t.dead) return;
+  if (t.type === 'ga' && !t.hijack) {
+    IC.gaReplan(S, t);
+    IC.log(S, 'info', 'RADIO', `${t.cs}: "Sorry, leaving controlled airspace now."`, t);
+    IC.emit(S, 'radioOk', t);
+  } else if (t.tail || (t.d.civil && !t.hijack)) {
+    t.drift = 0; t.vector = null; t.jammed = false;
+    t.wps = rejoin(t); t.dest = t.wps[0];
+    IC.log(S, 'info', 'RADIO', `${t.cs}: "Roger, our GPS is unreliable. Turning back onto the route."`, t);
+    IC.emit(S, 'radioOk', t);
+  } else {
+    t.noReply = true;
+    IC.log(S, 'warn', 'RADIO', `${t.cs || 'TN ' + t.tn} does not answer.`, t);
+    if (t.aff === 'A' || t.aff === 'N' || t.aff === 'U') IC.setAff(S, t, 'S', 'does not answer radio calls');
+    IC.emit(S, 'radioNone', t);
+  }
 };
 /* back onto the filed route: to the next route point ahead */
 IC.avRejoin = t => rejoin(t);
