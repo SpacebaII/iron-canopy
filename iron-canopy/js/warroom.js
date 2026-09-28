@@ -357,7 +357,7 @@ function journal() {
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
   return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
-    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time>${U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span></li>`).join('')}</ol></div>`;
+    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time>${U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
 }
 
 /* ---------- reference ---------- */

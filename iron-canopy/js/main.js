@@ -456,6 +456,8 @@ function onAct(e) {
     case 'routeFly': { const r = S.av.routes.find(x => x.id === id); if (r) { ui.openRoom(null); ui.jump(S.byId[r.a], 'infra'); } return; }
     case 'selInfra': { const r = S.byId[id]; if (r) { ui.openRoom(null); ui.jump(r, 'infra'); } return; }
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
+    case 'replay': ui.openRoom(null); IC.replayOpen(S, { x: +b.dataset.x, y: +b.dataset.y, t: +b.dataset.t }); return;
+    case 'replayTrack': if (sel) IC.replayOpen(S, { follow: sel, x: sel.x, y: sel.y, t: S.time - 90 }); return;
     case 'logf': ui.logFilter = v; break;
     case 'refcat': ui.refCat = v; break;
     case 'why': ui.why = ui.why === v ? null : v; break;

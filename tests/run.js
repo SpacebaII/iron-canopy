@@ -1967,6 +1967,54 @@ for (const L of IC.LESSONS) test(`academy: ${L.id} lesson can be completed`, () 
   assert(r.won, `not finished (step ${r.step}${r.over ? ', ' + r.over : ''})\n        roster: ${S.roster.map(x => x.name + ':' + x.st).join(' ')}\n        air: ${S.air.map(a => a.name + ':' + a.state + ':' + (a.mission && a.mission.type)).join(' ')}\n        weather: ${S.weather.kind}\n        last log:\n          ${S.logs.slice(0, 12).map(l => U.hhmm(l.t) + ' ' + l.tag + ' ' + l.msg).join('\n          ')}`);
 }, true);
 
+/* ---------- recorder and replay ---------- */
+test('recorder: keeps the last 15 minutes of an engagement, with height, within the step budget', () => {
+  const S = IC.newGame({ seed: 7, mode: 'range' });
+  IC.rangeAddUnit(S, 'lrsam', S.range.target.x - 30, S.range.target.y);
+  IC.rangeAddUnit(S, 'lr3d', S.range.target.x - 60, S.range.target.y + 20);
+  IC.rangeSpawn(S, { what: 'srbm', n: 2, brg: 80, km: 300, alt: '' });
+  IC.rangeSpawn(S, { what: 'lacm', n: 4, brg: 90, km: 120, alt: '' });
+  const mins = (n, dt) => { for (let i = 0; i < n * 60 / dt; i++) IC.step(S, dt); };
+  mins(5, 0.25);
+  const trs = IC.recTracks(S);
+  const bm = trs.find(t => t.kind === 'threat' && t.meta.type === 'srbm');
+  assert(bm, 'no ballistic missile track recorded');
+  const path = IC.recPath(bm, 0, 1e12); let top = 0; for (let i = 2; i < path.length; i += 4) top = Math.max(top, path[i]);
+  assert(top > 5, `ballistic missile recorded without its height (top ${top.toFixed(1)} km)`);
+  assert(trs.some(t => t.kind === 'missile'), 'no interceptor recorded');
+  assert(trs.some(t => t.kind === 'unit' && t.model === 'lrsam'), 'the battery is not in the record');
+  const ev0 = S.rec.ev[0];
+  assert(ev0 && S.rec.ev.some(e => e.kind === 'launch') && S.rec.ev.some(e => e.kind === 'kill' || e.kind === 'intercept' || e.kind === 'impact'), 'launches and hits were not recorded as events');
+  const st = IC.recAt(bm, IC.recFirstT(bm) + 10);
+  assert(st && st.alt > 0 && Number.isFinite(st.h) && st.spd > 0, 'no interpolated state inside the track');
+  mins(7, 0.25);
+  assert(S.rec.ev.includes(ev0) && IC.recTracks(S).includes(bm), 'the event or its track was dropped inside 15 minutes');
+  mins(9, 0.25);
+  const R = IC.recRange(S);
+  assert(R.t1 - R.t0 > 800 && R.t1 - R.t0 <= 900.5, `replayable window is ${(R.t1 - R.t0).toFixed(0)} s, not 15 min`);
+  assert(!S.rec.ev.includes(ev0) && !IC.recTracks(S).includes(bm), 'an event or track older than 15 minutes was kept');
+  assert(IC.recCost(S) < 0.1, `the recorder costs ${IC.recCost(S).toFixed(3)} ms a call`);
+  // on the real map with traffic, airliners and convoys it stays cheap too
+  const S2 = IC.newGame({ seed: 99, mode: 'sandbox' });
+  const t0 = performance.now();
+  for (let i = 0; i < 5 * 60 * 4; i++) IC.step(S2, 0.25);
+  const stepMs = (performance.now() - t0) / (5 * 60 * 4), recMs = IC.recCost(S2) / 2;   // the recorder samples every other step
+  assert(IC.recTracks(S2).length > 5 && recMs < Math.max(0.1, stepMs * 0.08), `sandbox: ${IC.recTracks(S2).length} tracks, the recorder costs ${recMs.toFixed(3)} ms a step against ${stepMs.toFixed(2)} ms for the step`);
+  assert(!Object.keys(S2).includes('rec'), 'the recording would go into a save');
+});
+test('replay: the game runs headless without three.js, and every aircraft, threat and unit has a model', () => {
+  assert(typeof THREE === 'undefined' && typeof window.THREE === 'undefined', 'three.js leaked into the headless game');
+  assert(!IC.replayOpen && !IC.modelTop, 'the replay window or its drawing is loaded headless');
+  for (const k in IC.ACTYPES) assert(IC.modelOfType(k) === k && IC.MODELS[k], `no model for aircraft type ${k}`);
+  for (const k in IC.THR) { const m = IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'H' }, true); assert(m && IC.MODELS[m], `no model for threat ${k}`); }
+  for (const k in IC.THR) if (IC.THR[k].civil) assert(IC.ACTYPES[IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'N' }, true)], `civil traffic (${k}) is drawn as a weapon`);
+  for (const k in IC.UNITS) assert(IC.modelOfUnit(k) === k && IC.MODELS[k], `no model for unit ${k}`);
+  for (const k in IC.MODELS) assert(IC.modelSize(k) > 1 && IC.modelSize(k) < 200, `model ${k} has an odd size (${IC.modelSize(k)} m)`);
+  assert(IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U' }) === null && IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U', klass: 'fighter' }) === 'ftr_e', 'an unknown track should show only what its class says');
+  const tower = IC.blockBoxes({ x: 0, y: 0, w: 3, h: 3, a: 0, seed: 12, f: 'tower', hp: 1 }, true), cul = IC.blockBoxes({ x: 0, y: 0, w: 3, h: 3, a: 0, seed: 12, f: 'cul', hp: 1 }, true);
+  assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
+});
+
 /* ---------- run ---------- */
 let pass = 0, fail = 0;
 const t00 = Date.now();
