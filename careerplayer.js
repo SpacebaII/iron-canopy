@@ -7,6 +7,7 @@
 const IC = require('./headless.js');
 const QW = require('./qwplayer.js');
 const U = IC.U;
+const OVER = !!process.env.OVERBUILD;
 
 /* a flat site near a town, with few homes under the approaches */
 function site(S, c, rmin, rmax) {
@@ -74,6 +75,12 @@ function grow(S, ap, st) {
   // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
   if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  // the overbuilder (OVERBUILD=1, for the balance run): builds every slot and a second runway before anyone asks
+  if (OVER && S.budget > 50) {
+    if (nextSlot(ap) != null) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+    if (count(ap, 'runway') < 2) { const r = IC.aptPlanRunway(S, ap, L(ap, -15, -3.2), L(ap, 15, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, ap, [[-15, -3.2], [-15, 0]]); taxi(S, ap, [[15, -3.2], [15, 0]]); return r; }
+    if (count(ap, 'hangar') < 8) return part(S, ap, 'hangar', -10 - count(ap, 'hangar') * 0.9, 2.32);
+  }
   return null;
 }
 /* a regional airport: what its airlines' offers find missing (a hangar for the aircraft based there, stands, fuel) */

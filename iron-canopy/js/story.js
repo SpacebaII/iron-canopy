@@ -15,7 +15,7 @@ IC.ACTS = {
   1: { name: 'Act I', title: 'The Director', role: 'Director of Civil Aviation', grant: 2 },
   // from Act II the military budget grows with the job, for a country of sixty cities: from Act III a share of the
   // city taxes comes on top (IC.STORY_TAX)
-  2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 8 },
+  2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 4 },
   3: { name: 'Act III', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 20 },
   4: { name: 'Act IV', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 }
 };
@@ -576,8 +576,10 @@ IC.storyDismissal = function (S) {
 };
 /* the grant follows the Minister's confidence: full at 60 and above, half at 10 */
 const grantK = st => U.clamp(0.4 + st.standing / 100, 0.5, 1);
-/* how fast confidence follows the airlines before the war: a fifth of the old pace, which was set for an Act I of
-   80 live hours; a month is 72 of them now */
+/* before the war confidence settles towards what the airlines say over about this many months (the old steady drift
+   was set for an Act I of 80 live hours; over years it ran to the floor or the ceiling), and the small pushes
+   (in debt, cards unanswered, above 80) come at this share of their old pace */
+IC.CONF_MO = 2;
 IC.CONF_PACE = 0.2;
 
 /* ---------- acts ---------- */
@@ -962,8 +964,10 @@ IC.storyTick = function (S, dt) {
     st.standT = 600;
     const sat = avgSat(S);
     // in peacetime the airlines are the measure of you; in war, the country is
-    // (the Career runs for years: before the war a bad month costs about ten points, not the lot)
-    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (sat - 58) * 0.006 * IC.CONF_PACE;
+    // (before the war the Career runs for years: confidence settles over a couple of months towards what the
+    // airlines' satisfaction says, 60 at the old neutral 58, so it reflects how the sector is doing lately; goals
+    // and decisions push it, and the push fades)
+    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
     // before the first airliner there are no airlines to judge you by: the Minister waits
     const judge = st.act > 1 || st.opened;
     // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices
