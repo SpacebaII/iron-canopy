@@ -704,7 +704,7 @@ IC.adopt = function (st, view) {
   IC.resetMini();
   IC.ui.bind(S);
   // what the player had already read stays read: chapter cards and staff messages from before the save
-  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); }
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
   resize();
   $('seed').textContent = String(S.seed);
   $('start').hidden = true; $('over').hidden = true;
