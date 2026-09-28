@@ -436,9 +436,6 @@ IC.generate = function (seed) {
     return pts;
   };
 
-  /* ---------- bridges where roads cross rivers ---------- */
-  riverBridges(W);
-
   /* ---------- foreign places ---------- */
   const radialPt = (k, dmin, dmax, spacing, others) => {
     const [a0, a1] = W.secSpan(k);
@@ -567,6 +564,12 @@ IC.generate = function (seed) {
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
+  // the roads into the cities have become their avenues (cities.js): number the roads again, measure them
+  W.edges.forEach((e, i) => { e.id = 'e' + i; e.len = 0; for (let k = 1; k < e.pts.length; k++) e.len += U.dist(e.pts[k - 1], e.pts[k]); });
+  for (const k in W.nodes) W.nodes[k].deg = 0;
+  for (const e of W.edges) for (const k of [e.a, e.b]) W.nodes[k].deg++;
+  /* ---------- bridges where roads cross rivers ---------- */
+  riverBridges(W);
   // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);
   // abroad the fields run up to the towns' blocks
   for (const t of W.cities) for (const b of t.blocks) {
@@ -613,7 +616,8 @@ function riverBridges(W) {
           const t = U.segX(a.x, a.y, b.x, b.y, c[0], c[1], d[0], d[1]);
           if (t < 0) continue;
           const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-          if (W.bridges.some(o => U.dxy(o.x, o.y, x, y) < 40)) continue;
+          // (in town every avenue over the river has its own bridge)
+          if (W.bridges.some(o => U.dxy(o.x, o.y, x, y) < (e.city ? 6 : 40))) continue;
           W.bridges.push({ id: 'br' + W.bridges.length, kind: 'bridge', x, y, edge: e.id, cls: e.cls, a: Math.atan2(b.y - a.y, b.x - a.x), river: r.name, name: `${r.name.replace(' River', '')} Bridge` });
         }
       }
@@ -1010,6 +1014,7 @@ function buildTowns(W, R, fbm) {
   // abroad: the enemy's towns are built to their own plan; the neutral neighbours' look like ours
   for (const f of W.foreign) {
     f.style = W.side[f.k] === 'hostile' ? 'east' : W.style === 'us' ? 'us' : 'eu';
+    f.tpl = f.style === 'east' ? 'east' : f.style === 'us' ? 'chi' : 'lon';
     f.home = false; f.grid = R.range(0, Math.PI / 2); f.indA = R.range(0, 7);
     IC.buildCity(W, f, R, fbm, [], [], []);
   }
