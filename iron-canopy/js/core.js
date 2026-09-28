@@ -8,7 +8,7 @@ IC.WH = 43000;         // world height (4,300 km)
 IC.GS = 10;            // game seconds per real second at 1× speed
 IC.TS = 0.06;          // base terrain canvas scale (px per world unit); closer in, tiles take over
 IC.MAX_STEP = 0.25;    // largest simulation step, in game seconds
-IC.MAXZ = 80;          // closest zoom (screen px per world unit): 80 px per 100 m shows aircraft at the gate
+IC.MAXZ = 320;         // closest zoom (screen px per world unit): 320 px per 100 m shows the vehicles round an aircraft at the gate
 IC.SPEEDS = [1, 2, 4, 8, 16, 32];
 
 let nid = 1;
