@@ -516,7 +516,8 @@ function drawTrack(S, t, px, now) {
   if (t.notchT > 0 && t.det && cam.z > 0.25) label('NOTCH', x, y + 16 * px, px, C.suspect, 8, 'center', 700);
   const selT = S.sel && S.sel.ref === t;
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
-  if (show && S.layers.labels) {
+  // a raid carries one label, its leader's (render-air.js boxes the group)
+  if (show && S.layers.labels && !(t.grp && t.grp.lead !== t && !selT)) {
     const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
     const altS = alt == null ? '---' : alt >= 1 ? (t.type === 'ga' ? alt.toFixed(1) : Math.round(alt)) + 'k' : Math.round(alt * 1000) + 'm';
     label(`${t.tn} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
@@ -531,9 +532,9 @@ function drawAir(S, a, px, now) {
   if (a.gnd || !inView(a.x, a.y, 120)) return;
   const h = a.h || 0;
   const col = a.allied ? C.civil : C.friend;
-  shadow(a.x, a.y, a.alt, px, a.kind === 'aew' || a.kind === 'cargo' ? 6 : 4);
+  shadow(a.x, a.y, a.alt, px, a.kind === 'aew' || a.kind === 'cargo' || a.kind === 'tkr' ? 6 : 4);
   if (cam.z > 0.9) {
-    const kind = a.kind === 'ftr' ? 'fighter' : a.kind === 'aew' || a.kind === 'cargo' ? 'transport' : a.kind === 'heli' || a.kind === 'atk' ? 'heli' : 'drone';
+    const kind = a.kind === 'ftr' ? 'fighter' : a.kind === 'aew' || a.kind === 'cargo' || a.kind === 'tkr' ? 'transport' : a.kind === 'heli' || a.kind === 'atk' ? 'heli' : 'drone';
     for (let i = 0; i < (a.hp || 1); i++) {
       const ox = i ? -Math.cos(h) * 10 * px - Math.sin(h) * 8 * px : 0, oy = i ? -Math.sin(h) * 10 * px + Math.cos(h) * 8 * px : 0;
       silhouette(ctx, kind, a.x + ox, a.y + oy, h, Math.max(0.3 * (kind === 'transport' ? 1.6 : 1), px * 1.3), 'rgba(170,225,255,0.95)', 'rgba(0,20,30,0.8)');
@@ -560,8 +561,8 @@ function drawAir(S, a, px, now) {
     ctx.beginPath(); ctx.arc(a.x, a.y, 3200, 0, 7); ctx.stroke(); ctx.setLineDash([]);
   }
   if (cam.z > 0.12 || (S.sel && S.sel.ref === a)) {
-    const extra = a.kind === 'ftr' ? ` ${a.aam}×AAM${a.gbu ? ' ' + a.gbu + '×GBU' : ''}` : a.runs && a.kind !== 'heli' ? ` ${a.runs} runs` : a.job ? ` ${a.job.short}` : '';
-    label(a.name + extra + (a.state === 'rtb' ? ' RTB' : a.state === 'vid' ? ' VID' : ''), a.x + 12 * px, a.y + 14 * px, px, col, 9.5, 'left', 600);
+    const extra = a.kind === 'ftr' ? ` ${a.aam + (a.srm || 0)}×AAM${a.gbu ? ' ' + a.gbu + '×GBU' : ''}` : a.runs && a.kind !== 'heli' ? ` ${a.runs} runs` : a.job ? ` ${a.job.short}` : '';
+    label(a.name + extra + (a.state === 'rtb' ? ' RTB' : a.state === 'vid' ? ' VID' : a.state === 'refuel' ? ' AAR' : a.mission && a.mission.type === 'hold' ? ' HOLD' : ''), a.x + 12 * px, a.y + 14 * px, px, col, 9.5, 'left', 600);
   }
   if (S.sel && S.sel.ref === a) brackets(a.x, a.y, 14 * px, px);
 }
@@ -1030,6 +1031,7 @@ IC.drawCombat = function (S, px, now, light) {
   drawImpacts(S, px, now);
   for (const t of S.threats) drawTrack(S, t, px, now);
   if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
+  if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
   for (const a of S.air) drawAir(S, a, px, now);
   for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
   drawChaff(S, px);
