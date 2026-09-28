@@ -589,8 +589,18 @@ function routeSafe(S, r) {
 }
 IC.avRevenueRate = S => S.av ? Object.values(S.av.rate).reduce((s, v) => s + v, 0) : 0;
 IC.avUpkeep = function (S) {
-  let v = 0;
-  for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) for (const p of ap.parts) if (p.built) v += IC.partCost(ap, p) * 0.0012;
+  // pricing every part is slow and the step asks each time: the sum is kept, and worked out again when the parts
+  // change (added, built, re-laid) or a game minute has passed
+  let key = 0;
+  for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) { key = key * 31 + ap.parts.length * 1009 + (ap.gver || 0) * 7; for (const p of ap.parts) if (p.built) key++; key %= 1e12; }
+  const C = S._upk;
+  let v;
+  if (C && C.key === key && S.time - C.t < 60 && S.time >= C.t) v = C.v;
+  else {
+    v = 0;
+    for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) for (const p of ap.parts) if (p.built) v += IC.partCost(ap, p) * 0.0012;
+    Object.defineProperty(S, '_upk', { value: { key, v, t: S.time }, enumerable: false, configurable: true, writable: true });
+  }
   // and the air traffic controllers in every sector
   return v + (S.asp && S.asp.secs ? IC.aspStaffCost(S) : 0);
 };
