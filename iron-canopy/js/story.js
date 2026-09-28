@@ -549,7 +549,12 @@ function beatsFor(S, act) {
     B.push({ id: 'rkt', gap: [7200, 10800], repeat: [10800, 18000], run: () => { const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name} from across the border. They deny it, of course.`); raise(S, 4); } });
     B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > 14 * 3600) || inAct(S) > 26 * 3600, gap: [3600, 7200], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
     B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
-    B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => { S.enemy.escalBase = 0.5; IC.enemyOpening(S); startAct(S, 4); } });
+    B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
+      // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
+      const done = doneCount(S);
+      IC.enemyOpening(S, done >= 4 ? { act: 2, winH: 4 } : { head: done * 1.5 });
+      startAct(S, 4);
+    } });
   }
   return B;
 }
@@ -686,14 +691,11 @@ function firstBlood(S) {
   raise(S, 20);
   (S.later = S.later || []).push({ t: S.time + 2400, fn: () => startAct(S, 3) });
 }
-/* Act III: the enemy tests the defences without declaring war */
+/* Act III: the enemy tests the defences without declaring war. The commander picks what to probe from its agenda
+   (a radar, a bridge, a power station, an airport), so the probes follow what it wants, not one favourite base */
 function grayStrike(S) {
-  const st = S.story;
-  const r = Math.random();
-  const radars = S.units.filter(u => u.d.sensor && !u.d.civil && u.state === 'ready' && IC.hostileBorderDist(u.x, u.y) < 1400);
-  if (r < 0.4 && radars.length) { const u = U.pick(radars); IC.enemyForceOp(S, 'drones', { x: u.x, y: u.y, ref: u, name: u.name }, { n: U.randi(3, 6) }); say(S, 'INT', `Drones crossing toward ${u.name}. They are hunting our radars.`); }
-  else if (r < 0.7) { const fb = S.byId.ab_fwd; IC.enemyForceOp(S, 'cm', { x: fb.x, y: fb.y, ref: fb, name: fb.name }, { n: U.randi(2, 3) }); say(S, 'INT', `Cruise missile launches: ${short(fb.name)} again.`); }
-  else { IC.enemyForceOp(S, 'disguise', IC.cap(S)); }
+  if (Math.random() < 0.15) IC.enemyForceOp(S, 'disguise', IC.cap(S));
+  else { const p = IC.enemyProbe(S); if (p) say(S, 'INT', `${p.words} ${S.world.names.A} denies everything.`); }
   raise(S, 3);
 }
 

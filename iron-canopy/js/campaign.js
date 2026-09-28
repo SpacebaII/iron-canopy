@@ -26,7 +26,7 @@ IC.campaignInit = function (S) {
   const E = S.enemy, W = S.world;
   if (S.mode === 'sandbox') {
     S.camp.sched = [
-      { t: 7 * 3600, fn: () => { E.escalBase = 0.8; IC.enemyOpening(S); chapter(S, 'Open War', `${W.full.A} has attacked.`); } },
+      { t: 7 * 3600, fn: () => { IC.enemyOpening(S, { act: 2 }); chapter(S, 'Open War', `${W.full.A} has attacked.`); } },
       { t: 30 * 3600, fn: () => { for (const s of S.esites) s.dormant = false; } }
     ];
     S.camp.chapter = 'Open War';
@@ -40,7 +40,12 @@ IC.campaignInit = function (S) {
     { t: S.time + U.rand(0.6, 1) * 3600, fn: () => { IC.enemyForceOp(S, 'recon', nearTown(S)); say(S, 'INT', `An unidentified slow track has crossed from ${W.names.A}. Probably a reconnaissance drone photographing our positions. Shooting it down now would be legal, but it would also tell them where our batteries are.`); } },
     { t: S.time + U.rand(1.6, 2.2) * 3600, fn: () => { E.allow.add('rkt'); const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name}! A ${W.names.A} battery is shelling across the border. Our counter-battery radar or a reconnaissance drone could find the launcher.`); E.allow.delete('rkt'); } },
     { t: war - 1500, fn: () => say(S, 'INT', `Signals intelligence: heavy radio traffic at ${W.names.A} missile brigades and air bases. Something is coming within the hour.`) },
-    { t: war, fn: () => { E.allow = null; E.escalBase = 0.6; IC.enemyOpening(S); chapter(S, 'The First Strike', `${W.full.A} has opened fire. Missiles and drones are in the air.`); say(S, 'CDS', `This is war. ${W.names.A} is striking our air bases and power grid.`); } },
+    { t: war, fn: () => {
+      // a defence that is ready when the war comes cuts their probing short: up to four hours
+      E.allow = null; IC.enemyOpening(S, { head: 4 * readiness(S) });
+      chapter(S, 'The First Strike', `${W.full.A} has opened fire. Drones and a few missiles are in the air.`);
+      say(S, 'CDS', `This is war. The first strikes are probes: drones and single missiles along the border. They want to see what fires and from where. They have far more than this: they are holding it back.`);
+    } },
     { t: second, fn: () => { for (const s of S.esites) s.dormant = false; chapter(S, 'Two Fronts', `${W.full.B} has joined the war.`); } }
   ];
   card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `${W.full.A} has closed the border and its forces are massing. We are not on a war footing: good equipment, much of it still in the depots, and thin magazines. Use the time.`, 'chapter');
@@ -49,6 +54,13 @@ IC.campaignInit = function (S) {
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
   say(S, 'LOG', 'Depots are low. Order munitions at the factories or buy abroad, and put a forward depot near the northern border so convoys have short runs.');
 };
+/* how ready the defence is when the war comes: the share of the capital, the main air base and the two largest
+   cities with a battery set up over them */
+function readiness(S) {
+  const big = IC.cities(S).filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 2), P = [IC.cap(S), IC.mainBase(S)].concat(big).filter(Boolean);
+  return P.filter(p => S.units.some(u => u.state === 'ready' && u.d.weapon === 'sam' && U.dist(u, p) < IC.maxRange(S, u) * 0.8)).length / Math.max(1, P.length);
+}
+IC.warReadiness = readiness;
 function nearTown(S) {
   const c = IC.cities(S).filter(x => !x.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0] || IC.cap(S);
   return { x: c.x, y: c.y, ref: c, name: c.name };
@@ -79,7 +91,6 @@ IC.campaignTick = function (S, dt) {
   if (day > 1 && h >= 6 && C.briefDay !== day) { C.briefDay = day; briefing(S); }
   if (h >= 21 && C.reportDay !== day && S.enemy.war) { C.reportDay = day; report(S); }
   if (S.pm != null && S.pm < 25 && tip(S, 'pmLow', 7200)) say(S, 'CDS', `The Prime Minister's confidence is down to ${Math.round(S.pm)}. Protect what keeps the country working: power, the cities, the airports.`);
-  if (S.enemy.war && IC.warDays(S) >= 1.5 && !C.half) { C.half = true; chapter(S, 'Attrition', 'Neither side can land a knockout. Stocks, crews and morale decide it now.'); }
   // the Prime Minister's confidence: it drains while the country is failing, and recovers in the calm
   C.pmT = (C.pmT || 0) - dt;
   if (C.pmT <= 0 && S.pm != null) {
@@ -170,6 +181,13 @@ IC.on((S, type, d) => {
     case 'unmasked': say(S, 'INT', `TN ${d.tn} was squawking as airliner ${d.cs}. It is a bomber. They will try that again: watch for airliners that leave their routes.`); break;
     case 'convoyLost': if (once('convoy')) say(S, 'LOG', `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defense along the route, or a depot further back, keeps them alive.`); break;
     case 'unitLost': if (once('unitLost')) say(S, 'ADA', `${d.name} is gone. The enemy found it: radiating, firing and sitting near the border all give positions away. Move batteries after they fire when you can.`); break;
+    // the enemy's acts: a chapter in Quick war, a card in the Career
+    case 'enemyAct': {
+      const T = { 2: ['Limited Strikes', 'The probing is over. Small raids on power, bridges and depots, to learn where our defence is. Their big missiles are being held back.'], 3: ['The Shock', 'The strike they saved for has come and gone. Now they are quiet, and thinking.'], 4: ['No More Playing Around', 'A planned campaign against our air power: radars, batteries, supply, then the air base. Every loss will have a cause we could have countered.'] }[d.act];
+      if (!T) break;
+      if (S.story) card(S, T[0], U.clock(S.time), T[1], 'chapter'); else chapter(S, T[0], T[1]);
+      break;
+    }
     case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name} within the hour.`); break;
     case 'cityHit': pmHit(S, -0.5 - (d.lost || 0) * 1.2); break;
     case 'infraLost': pmHit(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
