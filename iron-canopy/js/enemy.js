@@ -494,7 +494,7 @@ const ACT_SETS = {
 IC.EPACE = { winH: 16, shockWinH: 8, act2: [10, 6], act2Max: 16, save: [16, 10], saveMax: 28, limited: 3, lull: [8, 5], act4Min: 36, act4Max: 52, saveH: 12 };
 // how much of what is fired a set may take before act 4, and the main air base at any time (with room to spare
 // under the owner's 35% and 25%: one raid adds many weapons at once)
-const CAP = { set: 0.25, main: 0.2 };
+const CAP = { set: 0.23, main: 0.2 };
 const RAID_NAMES = { probe: 'probing raid', limited: 'limited strike', shock: 'major strike', sead: 'strike on our radars', saturate: 'saturation raid', supply: 'strike on our supply', airbase: 'strike on the air base', pressure: 'combined raid', opening: 'opening strike', retaliation: 'retaliation strike' };
 const lerp = (a, b, f) => a + (b - a) * U.clamp(f, 0, 1);
 const H = 3600;
@@ -526,7 +526,7 @@ function setWeights(S, E, act) {
   // the share a set would have after this raid (about 10 weapons), once enough has been fired to tell
   const share = k => N < 15 ? 0 : N < 30 ? (E.tally[k] || 0) / N : ((E.tally[k] || 0) + 10) / (N + 10);
   for (const k in IC.ESETS) {
-    let w = (A[k] || 0.15) * (M[k] || 0.3) * E.setW[k];
+    let w = (A[k] || 0.15) * M[k] * E.setW[k];
     const sh = share(k);
     if (act < 4 && sh > CAP.set) w = 0; else w *= Math.pow(1 - Math.min(1, sh), 3);
     out[k] = w;
@@ -545,6 +545,8 @@ function chooseTarget(S, E, set, o) {
   const main = IC.mainBase(S);
   let L = setTargets(S, set).filter(t => !(main && t.ref === main && mainFull(E, main, o.size || (E.act >= 4 ? 25 : 10))));
   if (o.near) L = L.filter(t => U.dist(t, o.near) < o.R);
+  // a small raid beyond a drone's reach needs cruise missiles; with few free, it stays within reach
+  if (o.probe && spareOf(S, 'cm', ['lacm', 'scm', 'mcm']) < 3) { const R = L.filter(t => droneHours(S, t) <= 4.5); if (R.length) L = R; }
   if (o.filter) L = L.filter(o.filter);
   for (const t of L) {
     const id = t.ref.id || t.name;
@@ -759,8 +761,9 @@ function planShock(S, E) {
   if (!obj) return null;
   // two or three more of other kinds, the most valuable near the first (within 300 km)
   const more = [], used = new Set([obj.set]);
-  for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => b.w / (1 + U.dist(b, obj) / 2000) - a.w / (1 + U.dist(a, obj) / 2000))) {
-    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > 0.3)) continue;
+  const near = t => t.w / (1 + U.dist(t, obj) / 2000);
+  for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => share(a.set) - share(b.set) || near(b) - near(a))) {
+    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > 0.35)) continue;
     used.add(t.set); more.push(t);
     if (more.length >= 3) break;
   }
@@ -986,6 +989,7 @@ function learn(S, E, R, ops) {
   const success = achieved(S, R);
   const launched = ops.reduce((s, o) => s + o.launched, 0), lost = ops.reduce((s, o) => s + o.lost, 0);
   const stop = launched ? lost / launched : 1, eff = launched ? (R.hits || 0) / launched : 0;
+  if (!launched && R.kind !== 'shock') { note(S, E, `Raid ${R.id} on ${R.obj.name} never got off the ground: nothing could reach it.`); return; }
   E.rec.push({ id: R.id, t: S.time, set: R.set, stop: success ? stop * 0.5 : stop, hits: R.hits || 0, success, launched });
   // the defence is winning while it stops most of what comes and keeps what the raids are after
   E.winning = !success && (stop >= 0.6 || (R.hits || 0) <= 1);
