@@ -2078,6 +2078,90 @@ test('career: the Career starts with one country, no airports and the money to b
   // what the story has not reached stays hidden
   assert(IC.storyLock(S, 'airways') && IC.storyLock(S, 'fields') && !IC.storyAllows(S, 'ssr') && !IC.storyLock(S, 'found'), 'locks at the start are wrong');
 });
+/* the national airport of a fresh Career, built at once by the scripted player's plan, with its first airlines */
+const careerAirport = seed => {
+  const CP = require('../careerplayer.js');
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story', hour: 9 }); IC.S = S;
+  const p = CP.site(S, IC.cap(S), 180, 380);
+  IC.foundAirport(S, p.x, p.y, IC.PREVAIL);
+  const ap = S.byId[S.story.cap];
+  CP.starter(S, ap, 30); finishWorks(S, ap);
+  IC.aptPlanTaxi(S, ap, [[-15, 0], [-15, 1.8], [0, 1.8], [15, 1.8], [15, 0]].map(([x, y]) => IC.aptLocal(ap, x, y * (ap._side || 1))), 0.3, { mat: 'conc' }); finishWorks(S, ap);
+  IC.aptStats(S, ap);
+  run(S, 0.05);
+  return { S, ap, CP };
+};
+test('career: the Career starts with ₭5,500M', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  assert(IC.CAREER_START === 5500 && Math.abs(S.budget - 5500) < 5, `the Career starts with ${U.money(S.budget)}`);
+});
+test('deals: an airline will not sign a deal until the airport has the facilities it requires', () => {
+  const { S, ap } = careerAirport();
+  assert(S.story.opened && S.av.airlines.length, 'the airport did not open');
+  const flag = S.av.airlines.find(a => a.kind === 'flag'), port = IC.avPorts(S).sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[2];
+  const q = IC.avRequest(S, flag, ap, port, 'narrow', 2, 'wants to open a third route', 6 * 3600);
+  const needs = IC.dealNeeds(S, q);
+  assert(needs.some(x => x.k === 'hangar' && !x.ok), `the flag carrier bases aircraft here and asked for no hangar: ${needs.map(x => x.name).join(', ')}`);
+  const routes = S.av.routes.length;
+  assert(/hangar/.test(IC.avReqBlock(S, q)), `the offer is not blocked by the missing hangar: ${IC.avReqBlock(S, q)}`);
+  assert(!IC.avDecide(S, q.id, true) && S.av.routes.length === routes, 'the airline signed without its hangar');
+  IC.aptPlanPart(S, ap, 'hangar', ...Object.values(IC.aptLocal(ap, -10, 2.32 * (ap._side || 1)))); finishWorks(S, ap); IC.aptStats(S, ap);
+  assert(!IC.avReqBlock(S, q), `still blocked with a hangar: ${IC.avReqBlock(S, q)}`);
+  // it will not pay more than it said it would
+  IC.avNegotiate(S, q.id, 3); if (!IC.dealTerms(S, q).ok) assert(!IC.avDecide(S, q.id, true), 'signed at charges it refused');
+  IC.avNegotiate(S, q.id, 0);
+  const t = IC.dealTerms(S, q);
+  assert(t.ok && t.days > q.terms.days, 'a discount does not buy a longer contract');
+  assert(IC.avDecide(S, q.id, true), 'did not sign once everything was there');
+  const d = S.av.deals.find(x => x.al === flag.id && x.st === 'active' && x.n === 2);
+  assert(d && Math.abs(d.charge - (ap.feeLevel || 1) * 0.9) < 1e-6, 'no deal at the agreed charges');
+});
+test('deals: a broken deal costs reputation and money', () => {
+  const { S, ap } = careerAirport();
+  const d = S.av.deals.find(x => x.st === 'active' && IC.avAirline(S, x.al).kind === 'flag');
+  assert(d, 'no founding deal with the flag carrier');
+  // the airport never builds the hangar its founding deal asked for: a day's grace, twelve hours' notice, then it walks out
+  const rep = IC.aptRep(ap), spent = () => -(S.econ.book.penalty || 0) - S.econ.days.reduce((s, x) => s + (x.book.penalty || 0), 0);
+  for (let i = 0; i < 40 * 1800 && d.st === 'active' && !S.over; i++) { IC.step(S, 2); if (i % 30 === 0) for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0); }
+  assert(d.st === 'broken', `the deal was not broken: ${d.st}`);
+  assert(/hangar/.test(d.why), `broken for the wrong reason: ${d.why}`);
+  assert(IC.aptRep(ap) < rep - 5, `reputation ${rep} → ${IC.aptRep(ap)}`);
+  assert(spent() > 1, `no compensation paid: ${spent()}`);
+  assert(S.logs.some(l => /walked out/.test(l.msg)), 'the log does not say the airline walked out');
+}, true);
+test('network: a second city asks for an airport only once its demand is there, and never on another airport’s approach', () => {
+  const { S, ap } = careerAirport();
+  const A = S.av;
+  A.day.pax = 0; A.yesterday = null;
+  assert(!IC.cityAsks(S, 150), 'a city asked before the national airport carried anyone');
+  A.yesterday = { pax: 6000, flights: 50, delays: 0, div: 0 };
+  const P = IC.cities(S).map(c => c.prosp);
+  for (const c of IC.cities(S)) c.prosp = 0.3;
+  IC.econRefresh(S);
+  assert(!IC.cityAsks(S, 150), `a city asked with little demand: ${(IC.cityAsks(S, 150) || {}).city && IC.cityAsks(S, 150).city.name}`);
+  IC.cities(S).forEach((c, i) => { c.prosp = P[i]; });
+  IC.econRefresh(S);
+  const ask = IC.cityAsks(S, 150);
+  assert(ask && ask.unserved >= IC.NETWORK.ask && U.dist(ask.city, ap) > 1500, 'no city with the demand asked, or a city near the national airport did');
+  // on the runway line, 12 km beyond its end: refused; 20 km to the side of it: not for that reason
+  const rw = ap.parts.find(p => p.kind === 'runway'), dir = IC.rwDir(rw);
+  const on = { x: rw.b.x + dir.x * 120, y: rw.b.y + dir.y * 120 }, side = { x: rw.b.x + dir.y * 250, y: rw.b.y - dir.x * 250 };
+  assert(/approach/.test(IC.foundCheck(S, on.x, on.y)), `a site under the approach was allowed: ${IC.foundCheck(S, on.x, on.y)}`);
+  assert(!/approach/.test(IC.foundCheck(S, side.x, side.y)), 'a site off the runway line was refused as under the approach');
+});
+test('guide: the Guide shows only lessons the player has reached, the current ones first', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const g0 = IC.guideFor(S), all0 = g0.now.concat(g0.past);
+  assert(all0.length && all0.every(l => l.act === 1 && l.ch === 0), `lessons beyond the first chapter at the start: ${all0.filter(l => l.act > 1 || l.ch > 0).map(l => l.t).join(', ')}`);
+  assert(!all0.some(l => /ballistic/i.test(l.t + l.d)), 'ballistic missiles in the first lesson');
+  IC.storyStartChapter(S, 2);
+  const g2 = IC.guideFor(S);
+  assert(g2.now.length && g2.now.every(l => l.ch === 2), 'the current chapter\'s lessons are not first');
+  assert(g2.past.some(l => l.ch === 0) && g2.past.some(l => l.ch === 1), 'lessons already reached are missing');
+  assert(!g2.now.concat(g2.past).some(l => l.act > 1 || l.ch > 2 || /ballistic/i.test(l.t + l.d)), 'a lesson not reached yet is shown');
+  const q = IC.newGame({ seed: 777, mode: 'campaign' });
+  assert(IC.guideFor(q).past.length === IC.GUIDE.length, 'Quick war does not show every lesson');
+});
 test('career: a player who does nothing stays in Act I for days, warned but not replaced', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
   for (let t = 0; t < 4 * 86400 && !S.over; t += 2) IC.step(S, 2);
@@ -2090,14 +2174,17 @@ test('career: a scripted player builds the national airport and plays through Ac
   const { player } = require('../careerplayer.js');
   const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
   const st = S.story, t0 = S.time;
-  for (let i = 0; i < 7 * 86400 && st.act === 1 && !S.over; i++) { IC.step(S, 1); if (i % 60 === 0) player(S); }
+  for (let i = 0; i < 9 * 86400 && st.act === 1 && !S.over; i++) { IC.step(S, 1); if (i % 60 === 0) player(S); }
   assert(!S.over, `the game ended: ${S.over}`);
   const L = st.chLog.map(c => `${c.ch + 1}@${((c.t - t0) / 3600).toFixed(1)}h`).join(' ');
   assert(st.chLog.map(c => c.ch).join() === '0,1,2,3,4,5', `chapters out of order or missing: ${L}`);
-  assert(st.act === 2, `still in Act I after a week: ${L}`);
+  assert(st.act === 2, `still in Act I after nine days: ${L}`);
   // no chapter is rushed: each ran its minimum
   for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / 3600; if (c.ch > 0) assert(dur >= IC.CHAPTERS[c.ch].min - 2.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} h: ${L}`); }
-  assert((st.actT - t0) / 3600 >= 48, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
+  // the owner asked for well over an hour of real play at normal speed: 80 game hours are two real hours at 4×
+  // (1.5 real minutes a game hour) and one at 8×, for a scripted player that never hesitates
+  assert((st.actT - t0) / 3600 >= IC.ACT1_MIN_H, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
+  assert(S.av.deals.some(d => d.honoured) && S.budget > 1000, `no deal honoured, or the treasury ran low (${U.money(S.budget)})`);
   assert(IC.bases(S).filter(b => b.kind === 'airport').length >= 2 && S.av.airlines.length >= 4, 'no second airport, or few airlines');
 }, 'long');
 test('career: from Act III a day at zero confidence replaces you; before, it cannot', () => {

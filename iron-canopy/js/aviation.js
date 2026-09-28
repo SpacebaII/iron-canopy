@@ -15,7 +15,7 @@ const dayOps = S => { const h = hourOf(S); return h >= DAY0 && h < DAY1; };
 IC.avInit = function (S) {
   const W = S.world;
   const A = S.av = { airlines: [], routes: [], tails: [], requests: [], zones: [], led: { land: 0, pax: 0, over: 0, cargo: 0 }, rate: { land: 0, pax: 0, over: 0, cargo: 0 },
-    day: { pax: 0, flights: 0, delays: 0, div: 0 }, hist: [], reqT: 3 * 3600, cutT: 0, paxTotal: 0, flightsTotal: 0 };
+    day: { pax: 0, flights: 0, delays: 0, div: 0 }, hist: [], deals: [], reqT: 3 * 3600, cutT: 0, paxTotal: 0, flightsTotal: 0 };
   const apts = S.infra.filter(i => i.kind === 'airport');
   if (!apts.length) return;
   const cap = apts.find(a => a.template === 'intl') || apts[0];
@@ -70,12 +70,18 @@ IC.avCareerStart = function (S, cap) {
   const flag = IC.avAddAirline(S, 'flag', cap);
   const near = ports.slice().sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
   // one aircraft each: the Career starts small, and traffic grows with the requests the player approves
-  const add = (al, b) => IC.avAddRoute(S, al, cap, b, 'narrow', 1, true);
+  // each under a founding deal: the terms of an ordinary one, and a day's grace to build what it asks for (the flag
+  // carrier bases its aircraft here and wants a hangar)
+  const add = (al, b) => {
+    const r = IC.avAddRoute(S, al, cap, b, 'narrow', 1, true), q = { al: al.id, a: cap.id, b: r.b, type: 'narrow', n: 1 };
+    makeTerms(S, q); q.terms.days += 1;
+    signDeal(S, q, r, A.tails.filter(t => t.route === r.id && !t.deal), 24 * 3600);
+  };
   add(flag, near[0]);
   if (near[1]) add(flag, near[1]);
   const k = near[near.length > 2 ? 2 : 0].k, fr = IC.avAddAirline(S, 'foreign', cap, { country: k });
   add(fr, ports.find(p => p.k === k));
-  A.reqT = 2 * 3600;
+  A.reqT = 4 * 3600;
   return flag;
 };
 
@@ -306,7 +312,7 @@ IC.radioGoAround = function (S, ap, m, o, why) {
   IC.log(S, 'info', 'RADIO', `${ap.name} tower: ${m.who || 'an arrival'}, going around at 1 km on ${IC.rwEnd(m.plan.rw, m.plan.dir)}: ${why}. It flies a circuit and lands in about ${Math.round(CIRCUIT / 60)} minutes.`, m);
 };
 function parked(S, tl, ap, s, m) {
-  tl.where = 'stand'; tl.mv = null; tl.at = ap.id;
+  tl.where = 'stand'; tl.mv = null; tl.at = ap.id; tl.lastStand = s.id;
   s.occ = tl.id;
   const al = airlineOf(S, tl.al);
   // turnaround: contact stands and a terminal with room are quicker
@@ -359,7 +365,7 @@ IC.on((S, type, d) => {
 
 /* ---------- money ---------- */
 function pay(S, tl, ap, what) {
-  const al = airlineOf(S, tl.al), fee = ap.feeLevel || 1;
+  const al = airlineOf(S, tl.al), dl = dealOf(S, tl), fee = dl ? dl.charge : ap.feeLevel || 1;
   // seats fill with the demand from the cities the airport serves (growth.js); holds with the goods going out
   const pax = tl.T.seats ? Math.round(tl.T.seats * U.clamp(IC.loadFactor(S, ap) * U.rand(0.9, 1.08), 0.2, 1)) : 0;
   const hold = tl.T.cargo || (tl.type === 'wide' ? 15 : 0);
@@ -371,6 +377,9 @@ function pay(S, tl, ap, what) {
   ap.paxLog = ap.paxLog || []; ap.paxLog.push({ t: S.time, n: pax });
   const r = routeOf(S, tl); if (r) { r.flown++; r.rev += land + pf + cg; }
   al.flights++;
+  // the day's takings at this airport, and what each stand earned (the Economy room's lesson on idle stands)
+  const D = dayLog(S, ap), sid = tl.stand || tl.lastStand;
+  D.fee += land + pf + cg; if (sid) D.stand[sid] = (D.stand[sid] || 0) + land + pf + cg;
 }
 /* route charges from traffic crossing the country: more for a flight on our airways, where controllers give it a service */
 IC.avOverflight = function (S, net) { if (!S.av) return; const v = net ? 0.5 : 0.25; S.budget += v; S.av.led.over += v; feeLog(S, 'over', v); IC.emit(S, 'overflight', { net: !!net }); };
@@ -388,7 +397,8 @@ function feeRates(S) {
 /* ---------- how airlines judge us ---------- */
 function judge(S, al, tl, ap, o) {
   if (!al) return;
-  const K = al.K;
+  dealMark(S, tl, o);
+  const K = al.K, dl = dealOf(S, tl);
   let score = 85;
   const why = [];
   if (o.divert) { score = 5; why.push('diversion'); }
@@ -397,7 +407,7 @@ function judge(S, al, tl, ap, o) {
     if (tx > K.taxiTol) { score -= (tx - K.taxiTol) * 4; why.push(`${Math.round(tx)} min taxiing`); }
     if (dl > K.delayTol) { score -= (dl - K.delayTol) * 3; why.push(`${Math.round(dl)} min delays`); }
   }
-  const fee = ap ? ap.feeLevel || 1 : 1;
+  const fee = dl ? dl.charge : ap ? ap.feeLevel || 1 : 1;
   if (fee > K.feeTol) { score -= (fee - K.feeTol) * 70; why.push('high fees'); }
   if (tl.detour > 1.03) { score -= (tl.detour - 1) * 180; why.push('detours round prohibited zones'); }
   if (tl.netDetour > 1.12) { score -= (tl.netDetour - 1.12) * 120; why.push('long airway routes'); }
@@ -437,9 +447,15 @@ function makeRequest(S) {
   const existing = A.routes.find(r => r.al === al.id && r.a === a.id && JSON.stringify(r.b) === JSON.stringify(b.apt ? { apt: b.apt } : b));
   // long routes go to bigger aircraft where the airline has them
   if (type === 'narrow' && U.dist(a, endPt(S, b)) > 25000 && al.K.fleet.includes('wide')) type = 'wide';
-  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n: al.sat > 75 && Math.random() < 0.5 ? 2 : 1, t: S.time, exp: S.time + 6 * 3600, more: !!existing };
+  // a route another airline holds exclusively is not on offer
+  const bK = JSON.stringify(b.apt ? { apt: b.apt } : { name: b.name });
+  if (A.deals.some(d => d.st === 'active' && d.excl && d.al !== al.id && d.a === a.id && JSON.stringify(d.b.apt ? { apt: d.b.apt } : { name: d.b.name }) === bK)) return;
+  const act1 = S.story && S.story.act === 1;
+  // an airline that trusts the airport brings more aircraft at once: fewer offers, each with weight
+  const n = (IC.DEAL.fleet[al.kind] || 1) + (repOf(a) >= 60 ? 1 : 0) + (al.sat > 75 && Math.random() < 0.5 ? 1 : 0);
+  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n, t: S.time, exp: S.time + (act1 ? 12 : 6) * 3600, more: !!existing };
   req.why = existing ? `wants another ${IC.ACTYPES[type].name.toLowerCase()} on ${routeName(S, existing)}` : `wants to open ${S.byId[a.id].name.replace(/ (International|Airport)$/, '')} – ${endPt(S, req.b).name.replace(/ (International|Airport)$/, '')}`;
-  req.value = estValue(S, req);
+  makeTerms(S, req);
   A.requests.push(req);
   IC.log(S, 'info', 'AVIATION', `${al.name} ${req.why}. Decide in the Aviation room.`);
   IC.emit(S, 'request', req);
@@ -447,36 +463,37 @@ function makeRequest(S) {
 /* a request from a given airline, for the story: from airport a to b ({ apt } or a foreign airport) */
 IC.avRequest = function (S, al, a, b, type, n, why, life) {
   const q = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : { x: b.x, y: b.y, name: b.name, k: b.k }, type, n, t: S.time, exp: S.time + (life || 6 * 3600), why };
-  q.value = estValue(S, q);
+  makeTerms(S, q);
   S.av.requests.push(q);
   IC.log(S, 'info', 'AVIATION', `${al.name} ${why}. Decide in the Aviation room.`);
   IC.emit(S, 'request', q);
   return q;
 };
-function estValue(S, q) {
-  const T = IC.ACTYPES[q.type], a = S.byId[q.a], b = endPt(S, q.b);
-  const leg = U.dist(a, b) / T.cruise * 2 + T.turn * 2.5 + 1200;
-  const perDay = 86400 / leg * 0.75;
-  return (T.fee * 0.5 + (T.seats || 0) * 0.006 + (T.cargo || 0) * 0.008) * perDay;
-}
 /* what stops a request being flown: '' when it can be */
 IC.avReqBlock = function (S, q) {
-  const T = IC.ACTYPES[q.type];
-  const ends = [S.byId[q.a]].concat(q.b.apt ? [S.byId[q.b.apt]] : []);
-  for (const ap of ends) { const why = IC.aptCanTake(S, ap, T); if (why) return `${ap.name}: ${why}`; }
-  return '';
+  const miss = IC.dealNeeds(S, q).find(x => !x.ok);
+  return miss ? miss.text : '';
 };
 IC.avDecide = function (S, id, yes) {
   const A = S.av, q = A.requests.find(x => x.id === id);
   if (!q) return false;
   const al = airlineOf(S, q.al);
   if (yes) {
-    const why = IC.avReqBlock(S, q);
-    if (why) { IC.log(S, 'warn', 'AVIATION', `Cannot approve: ${why}.`); return false; }
-    IC.avAddRoute(S, al, S.byId[q.a], q.b.apt ? { apt: q.b.apt } : q.b, q.type, q.n);
+    const why = IC.avReqBlock(S, q), k = q.terms && IC.dealTerms(S, q);
+    if (why) { IC.log(S, 'warn', 'AVIATION', `${al.name} will not sign yet: ${why}.`); return false; }
+    if (k && !k.ok) { IC.log(S, 'warn', 'AVIATION', `${al.name} will not sign at those charges: ${k.why}.`); return false; }
+    const old = q.renew && A.deals.find(d => d.id === q.renew && d.st !== 'broken');
+    if (old) { signDeal(S, q, null, [], 0); IC.log(S, 'info', 'AVIATION', `${al.name} renews for ${old.days} days at ${U.pct(old.charge)} of list charges.`, S.byId[q.a]); }
+    else {
+      const r = IC.avAddRoute(S, al, S.byId[q.a], q.b.apt ? { apt: q.b.apt } : q.b, q.type, q.n);
+      if (q.terms) signDeal(S, q, r, A.tails.filter(t => t.route === r.id && !t.deal).slice(-q.n), 0);
+    }
     al.sat = Math.min(100, al.sat + 4);
     IC.emit(S, 'approve', q);
-  } else { al.sat = Math.max(0, al.sat - 3); IC.emit(S, 'decline', q); }
+  } else {
+    al.sat = Math.max(0, al.sat - 3); IC.emit(S, 'decline', q);
+    const d = q.renew && A.deals.find(x => x.id === q.renew); if (d && d.st === 'done') retireDeal(S, d);
+  }
   A.requests = A.requests.filter(x => x !== q);
   return true;
 };
@@ -555,7 +572,8 @@ IC.aviation = function (S, dt) {
     for (const k in A.led) A.led[k] = 0;
     A.hist.push({ t: S.time, rev: Object.values(A.rate).reduce((s, v) => s + v, 0), pax: A.day.pax });
     if (A.hist.length > 72) A.hist.shift();
-    if (hourOf(S) < 3600) { A.yesterday = A.day; A.day = { pax: 0, flights: 0, delays: 0, div: 0 }; }
+    if (hourOf(S) < 3600) { A.yesterday = A.day; A.day = { pax: 0, flights: 0, delays: 0, div: 0 }; dealsDay(S); }
+    dealsTick(S);
     // unhappy airlines cut routes
     for (const al of A.airlines) {
       if (al.sat < 28) al.lowT += 1; else al.lowT = Math.max(0, al.lowT - 1);
@@ -565,14 +583,15 @@ IC.aviation = function (S, dt) {
         if (r) cutRoute(S, al, r, al.lastWhy);
       }
     }
-    for (const q of A.requests.filter(q => S.time > q.exp)) { const al = airlineOf(S, q.al); if (al) al.sat = Math.max(0, al.sat - 3); }
+    for (const q of A.requests.filter(q => S.time > q.exp)) { const al = airlineOf(S, q.al); if (al) al.sat = Math.max(0, al.sat - 3); const d = q.renew && A.deals.find(x => x.id === q.renew); if (d && d.st === 'done') retireDeal(S, d); }
     A.requests = A.requests.filter(q => S.time <= q.exp);
   }
   // unmet demand brings requests sooner: the busiest airport's passengers over its seats
   A.pullT = (A.pullT || 0) - dt;
   if (A.pullT <= 0) { A.pullT = 600; A.pull = Math.max(0, ...IC.bases(S).filter(x => x.owner === 'us').map(x => IC.demandPull(S, x))); }
-  A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, 1.5));
-  if (A.reqT <= 0 && !war) { A.reqT = U.rand(2.5, 5) * 3600 * (S.mode === 'story' && S.story && S.story.act === 1 ? 0.5 : 1); if (A.requests.length < 4) makeRequest(S); }
+  // (in the Career's first act, offers come at the pace of the airport's name, not of every empty seat)
+  A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, S.story && S.story.act === 1 ? 0.4 : 1.5));
+  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
 };
 function cutRoute(S, al, r, why) {
   const tl = S.av.tails.filter(t => t.route === r.id && t.where !== 'lost');
@@ -655,5 +674,274 @@ IC.offRoute = function (t) {
   for (let i = 1; i < P.length; i++) m = Math.min(m, U.segDist(t.x, t.y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y));
   return m;
 };
+
+/* ---------- deals: what an airline signs up to, and what it asks of our airports ----------
+   Every offer (S.av.requests) carries terms: the aircraft and flights a week, a length in days, the charges, what
+   the airline needs at our end (stands, gates, hangar space for aircraft staying days, cargo handling, fuel, room in
+   the terminal), penalties for late and cancelled flights, and what it brings. An airline will not sign until the
+   airport can carry the flights. Signed, the offer becomes a deal (S.av.deals): honoured, it ends with reputation
+   gained and an offer to renew; broken (by the airline when the airport lets it down, or by the player), it costs
+   reputation and money. Reputation (ap.rep, 0–100) decides how often new offers come. */
+IC.DEAL = {
+  days: { flag: 3, budget: 2, regional: 3, cargo: 3, foreign: 3 },   // contract length, game days
+  hangar: { flag: 0.25, budget: 0.15, regional: 0.2, cargo: 0, foreign: 0 },   // hangar spaces per aircraft based here
+  gates: { flag: 0.6, foreign: 0.5, budget: 0, regional: 0, cargo: 0 },   // share of the stands it wants at the terminal
+  lateMin: 20,      // an arrival or departure later than this counts against the deal
+  strikes: 3,       // bad days before the airline walks out
+  levels: [-0.1, 0, 0.1, 0.2],   // charges the player may ask for, against the airport's list charges
+  fleet: { flag: 2, budget: 2, regional: 2, cargo: 1, foreign: 1 },   // aircraft in an offer, before trust adds more
+  rep0: 50
+};
+const OPS_H = 17;   // airliners fly 06:00–23:00
+const dealOf = (S, tl) => tl && tl.deal ? S.av.deals.find(d => d.id === tl.deal) : null;
+IC.avDealOf = dealOf;
+/* a round trip from an airport: both legs and a turnaround at each end, in seconds */
+const cycleOf = (S, a, b, T) => U.dist(a, endPt(S, b)) / T.cruise * 2 + T.turn * 2.5 + 1200;
+/* what an airport provides to airlines: IC.aptProvides(ap) from the airport session (airport.js), in its field
+   names; this stand-in, used only until that lands, measures the same way: stands by size (civil, cargo and light
+   zones), gates (stands at a terminal), cargoStands, pax (terminal passengers an hour), cargo (cargo shed capacity),
+   hangar (aircraft the hangars hold), fuelDeps (refuellings an hour) */
+IC.aptProvides = IC.aptProvides || function (ap) {
+  const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, hangar: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0), fuelDeps: st.fuelDeps || 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none' };
+  // a gate: a stand passengers walk to from a terminal (within 60 m of one)
+  const terms = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25);
+  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.hypot(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
+  for (const s of standsOf(ap)) {
+    if (s.linked === false || s.hp <= 0 || s.zone === 'mil') continue;
+    P.stands[s.size] = (P.stands[s.size] || 0) + 1;
+    if (s.zone === 'cargo' || s.cargo) P.cargoStands++; else if (s.contact || nearT(s)) P.gates++; else P.remote++;
+  }
+  for (const p of ap.parts) if (p.kind === 'hangar' && p.built && p.hp > p.max * 0.25 && p.linked !== false) P.hangar += IC.APART.hangar.holds;
+  return P;
+};
+IC.CARGO_T = 8;   // tonnes a day a unit of cargo shed capacity handles: a 3 × 0.8 ha shed about 1,150 t, a freighter's four rotations a day
+const SIZES = ['s', 'm', 'l', 'xl'];
+/* stands of a size or larger */
+const fitting = (st, size) => SIZES.slice(SIZES.indexOf(size)).reduce((n, k) => n + (st[k] || 0), 0);
+/* what the flights at an airport need from it, with an offer added (extra: { al, type, n, b }), in the same names */
+function aptNeeds(S, ap, extra) {
+  const N = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, cargoStands: 0, hangar: 0, cargoT: 0, fuelDeps: 0, pax: 0 };
+  const lf = IC.loadFactor(S, ap);
+  const add = (al, type, n, far) => {
+    const T = IC.ACTYPES[type], cyc = cycleOf(S, ap, far, T), K = IC.DEAL;
+    const deps = n * (T.cargo ? 24 : OPS_H) * 3600 / cyc;
+    // the busiest hour sees about twice the average; on the ground each aircraft spends its turnaround
+    const onStand = Math.min(n, n * T.turn * 1.25 / cyc * 2.2) + 0.3;
+    if (T.cargo) { N.cargoStands += onStand; N.cargoT += deps * T.cargo * 2; }
+    else { N.stands[T.stand] += onStand; N.gates += onStand * (K.gates[al.kind] || 0); N.pax += deps / OPS_H * 2 * T.seats * lf * 1.6; }
+    if (al.hub === ap.id) N.hangar += n * (K.hangar[al.kind] || 0);
+    N.fuelDeps += deps / (T.cargo ? 24 : OPS_H) * 1.8;
+  };
+  for (const r of S.av.routes) {
+    if (r.st !== 'active' || r.n <= 0) continue;
+    const al = airlineOf(S, r.al);
+    if (r.a === ap.id) add(al, r.type, r.n, r.b); else if (r.b.apt === ap.id) add(al, r.type, r.n, { apt: r.a });
+  }
+  if (extra) add(extra.al, extra.type, extra.n, extra.b);
+  for (const k in N.stands) N.stands[k] = Math.ceil(N.stands[k] - 0.05);
+  for (const k of ['gates', 'cargoStands', 'hangar']) N[k] = Math.ceil(N[k] - 0.05);
+  return N;
+}
+IC.aptNeeds = aptNeeds;
+/* the facilities an offer (or a signed deal: q.renew) asks of each of our airports on its route, met or not */
+IC.dealNeeds = function (S, q) {
+  const al = airlineOf(S, q.al), T = IC.ACTYPES[q.type], L = [];
+  const ends = [[S.byId[q.a], q.b]].concat(q.b.apt ? [[S.byId[q.b.apt], { apt: q.a }]] : []);
+  for (const [ap, far] of ends) {
+    if (!ap) continue;
+    const nm = ap.name.replace(/ (International|Airport)$/, '');
+    const why = IC.aptCanTake(S, ap, T);
+    L.push({ ap: ap.id, k: 'take', name: `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
+    if (why) continue;
+    const P = IC.aptProvides(ap), N = aptNeeds(S, ap, q.renew ? null : { al, type: q.type, n: q.n, b: far });
+    const row = (k, name, need, have, fix) => { if (need > 0) L.push({ ap: ap.id, k, name: `${nm}: ${name}`, need, have, ok: have >= need, text: have >= need ? '' : `${nm} needs ${fix} (${Math.floor(have)} of ${Math.ceil(need)})` }); };
+    // (stands for airliners: the passenger stands of the size, not the cargo zone's)
+    const paxStands = Math.max(0, fitting(P.stands, T.stand) - (P.cargoStands || 0));
+    if (T.cargo) {
+      // freighters park in the cargo zone, or on large passenger stands the wide-bodies leave free
+      row('cargoStands', 'large stands for freighters', N.cargoStands, (P.cargoStands || 0) + Math.max(0, paxStands - fitting(N.stands, 'l')), 'more large stands, best in the cargo zone');
+      row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
+    } else {
+      row('stands', `${IC.STAND[T.stand].name}${T.stand === 'l' ? '' : ' or larger'} stands`, fitting(N.stands, T.stand), paxStands, `more ${IC.STAND[T.stand].name} stands`);
+      if ((IC.DEAL.gates[al.kind] || 0) > 0) row('gates', 'stands at the terminal (gates)', N.gates, P.gates || 0, 'more stands beside a terminal');
+      row('pax', 'terminal room, passengers an hour', Math.round(N.pax), Math.round(P.pax || 0), 'a bigger terminal');
+    }
+    if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar || 0, 'hangar space for the aircraft based here');
+    row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'more fuel tanks, or a hydrant system');
+  }
+  return L;
+};
+/* what a deal is worth to us a day at a charge level, and what it brings */
+function dealWorth(S, q, charge) {
+  const T = IC.ACTYPES[q.type], a = S.byId[q.a], lf = IC.loadFactor(S, a);
+  const cyc = cycleOf(S, a, q.b, T), deps = q.n * (T.cargo ? 24 : OPS_H) * 3600 / cyc;
+  const ends = q.b.apt ? 2 : 1, flights = deps * 2 * ends;   // landings and departures at our airports
+  const pax = T.seats ? deps * 2 * T.seats * lf : 0, cargo = (T.cargo || (q.type === 'wide' ? 15 : 0)) * deps * 2;
+  return { perWk: Math.round(deps * 7), paxDay: Math.round(pax), cargoDay: Math.round(cargo), value: (T.fee * 0.5 * flights / 2 + pax * 0.0035 * ends + cargo * 0.008 * IC.cargoLoad(S, a)) * charge };
+}
+/* the terms of an offer: what the airline proposes, and how far it will bend */
+function makeTerms(S, q) {
+  const al = airlineOf(S, q.al), a = S.byId[q.a], list = a.feeLevel || 1, rep = a.rep == null ? IC.DEAL.rep0 : a.rep;
+  // how much it wants in: seats running full, and our name
+  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25);
+  const T = IC.ACTYPES[q.type];
+  q.terms = { list, days: IC.DEAL.days[al.kind] || 4, flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
+    late: +(T.fee * 0.25).toFixed(2), cancel: +(T.fee * 1.2 + (T.seats || 0) * 0.004).toFixed(2), rep: al.kind === 'flag' || al.K.foreign ? 5 : 3 };
+  q.pick = { lvl: 1, excl: false };
+  q.value = dealWorth(S, q, list).value;
+}
+/* the terms at the level the player picked: charges, length, worth, and whether the airline accepts */
+IC.dealTerms = function (S, q, lvl, excl) {
+  const t = q.terms; if (!t) return null;
+  const i = lvl == null ? q.pick.lvl : lvl, x = excl == null ? q.pick.excl : excl, d = IC.DEAL.levels[i];
+  const charge = t.list * (1 + d) * (x ? 1.08 : 1);
+  const days = Math.max(1, Math.round(t.days * (1 - 2.5 * d) * (x ? 1.25 : 1)));
+  const w = dealWorth(S, q, charge);
+  const over = d + (x ? 0.08 : 0) - t.flex - (x ? 0.08 : 0) * (t.excl ? 1 : 0);
+  const why = x && !t.excl ? 'it has not asked for the route to itself' : over > 0.001 ? `it will not pay more than ${U.pct(1 + t.flex)} of your list charges` : '';
+  return Object.assign(w, { charge, days, ok: !why, why, lvl: i, excl: x });
+};
+IC.avNegotiate = function (S, id, lvl, excl) {
+  const q = S.av.requests.find(x => x.id === id); if (!q || !q.terms) return false;
+  if (lvl != null) q.pick.lvl = U.clamp(lvl | 0, 0, IC.DEAL.levels.length - 1);
+  if (excl != null) q.pick.excl = !!excl;
+  return true;
+};
+/* sign: the route opens (or grows) and the deal starts; grace = seconds before its facilities are checked */
+function signDeal(S, q, route, tails, grace) {
+  const A = S.av, al = airlineOf(S, q.al), k = q.terms ? IC.dealTerms(S, q) : { charge: S.byId[q.a].feeLevel || 1, days: 4, perWk: 0, paxDay: 0, cargoDay: 0, value: q.value || 0, excl: false };
+  const old = q.renew && A.deals.find(d => d.id === q.renew);
+  // renewed before its end: the term just served counts as honoured, and the new one starts clean
+  if (old && old.st === 'active') honour(S, old);
+  if (old) { old.strikes = 0; old.t0 = S.time; }
+  const d = old || { id: IC.nid('dl'), al: al.id, route: route.id, a: q.a, b: q.b, type: q.type, n: q.n, t0: S.time, strikes: 0, late: 0, cancel: 0, flown: 0, day: { late: 0, cancel: 0, n: 0 }, paid: 0 };
+  Object.assign(d, { charge: k.charge, days: k.days, end: S.time + k.days * 86400, excl: k.excl, perWk: k.perWk, paxDay: k.paxDay, cargoDay: k.cargoDay, value: k.value,
+    pen: q.terms ? { late: q.terms.late, cancel: q.terms.cancel } : { late: 0.3, cancel: 1.5 }, rep: q.terms ? q.terms.rep : 3, st: 'active', grace: S.time + (grace || 0), renewAsked: false, badT: 0 });
+  if (!old) { A.deals.push(d); for (const t of tails) t.deal = d.id; }
+  return d;
+}
+IC.avSignDeal = signDeal;
+/* rows of the day's movements at an airport, by hour, for the timeline */
+function dayLog(S, ap) {
+  const day = Math.floor(S.time / 86400);
+  const L = ap.dayLog = ap.dayLog || { day, arr: new Array(24).fill(0), dep: new Array(24).fill(0), fee: 0, stand: {}, prev: null };
+  if (L.day !== day) { L.prev = L.day === day - 1 ? { arr: L.arr, dep: L.dep, fee: L.fee, stand: L.stand } : null; L.day = day; L.arr = new Array(24).fill(0); L.dep = new Array(24).fill(0); L.fee = 0; L.stand = {}; }
+  return L;
+}
+IC.aptDayLog = dayLog;
+IC.on((S, type, d) => {
+  if (type !== 'rwMove' || !d.ap || d.ap.kind !== 'airport' || !d.type || IC.ACTYPES[d.type].mil) return;
+  const L = dayLog(S, d.ap), h = Math.floor(hourOf(S) / 3600);
+  if (d.k === 'arr' || d.k === 'dep') L[d.k][h]++;
+});
+/* a flight flown under a deal: late or cancelled counts against it, and costs us the penalty */
+function dealMark(S, tl, o) {
+  const d = dealOf(S, tl); if (!d || d.st !== 'active') return;
+  d.day.n++; d.flown++;
+  let pen = 0;
+  if (o.divert) { d.cancel++; d.day.cancel++; pen = d.pen.cancel; }
+  else if ((o.wait || 0) > IC.DEAL.lateMin * 60) { d.late++; d.day.late++; pen = d.pen.late; }
+  if (pen > 0) { IC.pay(S, 'penalty', pen); d.paid += pen; }
+}
+const repOf = ap => ap.rep == null ? IC.DEAL.rep0 : ap.rep;
+IC.aptRep = repOf;
+// a good name is slow to build and quick to lose: gains shrink as it rises, losses do not
+function repAdd(S, ap, v) { if (ap && ap.kind === 'airport') ap.rep = U.clamp(repOf(ap) + (v > 0 ? v * (1 - repOf(ap) / 100) * 2 : v), 0, 100); }
+/* the aircraft of a deal leave (it ended or broke): its tails retire, the route shrinks or closes */
+function retireDeal(S, d) {
+  const r = S.av.routes.find(x => x.id === d.route);
+  const tl = S.av.tails.filter(t => t.deal === d.id && t.where !== 'lost');
+  for (const t of tl) {
+    if (t.where === 'away' || t.where === 'stand') { t.where = 'lost'; t.retired = true; if (t.stand && t.at) { const s = standById(S.byId[t.at], t.stand); if (s && s.occ === t.id) s.occ = null; } if (r) r.n = Math.max(0, r.n - 1); }
+    else t.leaving = true;   // in the air or taxiing: it goes when it lands
+  }
+  if (r && r.n <= 0 && !tl.some(t => t.leaving)) r.st = 'cut';
+}
+/* a deal ends badly: who broke it, and why */
+IC.avBreakDeal = function (S, id, why, byUs) {
+  const A = S.av, d = A.deals.find(x => x.id === id); if (!d || d.st !== 'active') return false;
+  const al = airlineOf(S, d.al), ap = S.byId[d.a], r = A.routes.find(x => x.id === d.route);
+  d.st = 'broken'; d.endT = S.time; d.why = why;
+  // either way we pay: a walk-out claims compensation, a cancellation by us the rest of the contract
+  const left = Math.max(0, d.end - S.time) / 86400, comp = byUs ? d.value * left * 0.3 + 5 : d.value * 0.5 + 5;
+  IC.pay(S, 'penalty', comp); d.paid += comp;
+  repAdd(S, ap, byUs ? -8 : -12); if (d.b.apt) repAdd(S, S.byId[d.b.apt], byUs ? -4 : -6);
+  al.sat = Math.max(0, al.sat - (byUs ? 20 : 12));
+  retireDeal(S, d);
+  A.requests = A.requests.filter(q => q.renew !== d.id);
+  IC.log(S, 'leak', 'AVIATION', byUs ? `You ended ${al.name}'s deal for ${r ? routeName(S, r) : 'its route'}: ${U.money(comp)} in compensation, and the airlines have noticed.` : `${al.name} has walked out of its deal for ${r ? routeName(S, r) : 'its route'}: ${why}. We pay ${U.money(comp)} in compensation, and our name suffers.`, ap);
+  IC.news(S, `${al.name} ${byUs ? 'loses its contract at' : 'pulls out of'} ${ap.name}${byUs ? '' : `, citing ${why}`}.`);
+  IC.emit(S, 'dealBroken', { d, al, byUs, why });
+  return true;
+};
+/* the hourly look at every deal: facilities still there, bad days, the end of the term and renewal */
+function dealsTick(S) {
+  const A = S.av;
+  for (const d of A.deals) {
+    if (d.st !== 'active') continue;
+    const al = airlineOf(S, d.al);
+    if (!al) { d.st = 'done'; continue; }
+    // the facilities it signed for: a day's grace to put right what is lost (the airline says so), then it walks out
+    if (S.time > d.grace) {
+      const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps');
+      if (miss.length) {
+        if (!d.badT) { d.badT = S.time; IC.log(S, 'warn', 'AVIATION', `${al.name}: ${miss[0].text}. Put it right within 12 hours or it ends the deal.`, S.byId[miss[0].ap]); IC.emit(S, 'dealWarn', { d, al, text: miss[0].text }); }
+        else if (S.time - d.badT > 12 * 3600) { IC.avBreakDeal(S, d.id, miss[0].text.replace(/^[^:]*needs/, 'the airport lacks')); continue; }
+      } else d.badT = 0;
+    }
+    // the end of the term: an honoured deal lifts our name; the airline offers to renew before it runs out
+    const left = d.end - S.time;
+    if (!d.renewAsked && left < d.days * 86400 * 0.3) {
+      d.renewAsked = true;
+      if (al.sat >= 45 && S.story) renewOffer(S, d, al);
+      else if (al.sat >= 45) { d.end += d.days * 86400; d.renewAsked = false; }
+    }
+    if (left <= 0) {
+      d.st = 'done'; d.endT = S.time;
+      honour(S, d);
+      if (!A.requests.some(q => q.renew === d.id)) { retireDeal(S, d); IC.log(S, 'info', 'AVIATION', `${al.name}'s aircraft on ${routeName(S, A.routes.find(x => x.id === d.route))} leave: the deal was not renewed.`, S.byId[d.a]); }
+    }
+  }
+  // tails of an ended deal that were flying when it ended leave when they are back at a stand
+  for (const t of A.tails) if (t.leaving && (t.where === 'stand' || t.where === 'away')) { const r = routeOf(S, t); t.where = 'lost'; t.retired = true; t.leaving = false; if (t.stand && t.at) { const s = standById(S.byId[t.at], t.stand); if (s && s.occ === t.id) s.occ = null; } if (r) { r.n = Math.max(0, r.n - 1); if (r.n <= 0) r.st = 'cut'; } }
+}
+/* the day's report card: too many late or cancelled flights is a strike; three and the airline walks out */
+function dealsDay(S) {
+  for (const d of S.av.deals) {
+    if (d.st !== 'active') continue;
+    const D = d.day, bad = D.late + D.cancel * 2, al = airlineOf(S, d.al);
+    d.day = { late: 0, cancel: 0, n: 0 };
+    if (!D.n || bad < Math.max(3, D.n * 0.25)) continue;
+    d.strikes++;
+    repAdd(S, S.byId[d.a], -2);
+    if (d.strikes >= IC.DEAL.strikes) { IC.avBreakDeal(S, d.id, `${D.late} late and ${D.cancel} cancelled of ${D.n} flights yesterday, the ${d.strikes}th bad day`); continue; }
+    IC.log(S, 'warn', 'AVIATION', `${al.name} has written: ${D.late} of ${D.n} flights late and ${D.cancel} cancelled yesterday. ${IC.DEAL.strikes - d.strikes} more bad day${IC.DEAL.strikes - d.strikes > 1 ? 's' : ''} and it ends the deal.`, S.byId[d.a]);
+    IC.emit(S, 'dealStrike', { d, al });
+  }
+}
+/* a term served to its end: our name rises, more if every day went well */
+function honour(S, d) {
+  const al = airlineOf(S, d.al), clean = d.strikes === 0, v = d.rep / 2 + (clean ? 1 : 0);
+  repAdd(S, S.byId[d.a], v); if (d.b.apt) repAdd(S, S.byId[d.b.apt], v / 2);
+  d.honoured = (d.honoured || 0) + 1; if (clean) d.clean = (d.clean || 0) + 1;
+  IC.log(S, 'info', 'AVIATION', `${al.name}'s deal for ${routeName(S, S.av.routes.find(x => x.id === d.route))} has run its term${clean ? ', every day on time' : ''}. Our name rises.`, S.byId[d.a]);
+  IC.emit(S, 'dealDone', { d, al });
+}
+function renewOffer(S, d, al) {
+  const q = { id: IC.nid('rq'), al: al.id, a: d.a, b: d.b, type: d.type, n: d.n, t: S.time, exp: d.end, renew: d.id, why: `wants to renew its deal for ${routeName(S, S.av.routes.find(x => x.id === d.route))}` };
+  makeTerms(S, q);
+  S.av.requests.push(q);
+  IC.log(S, 'info', 'AVIATION', `${al.name} ${q.why}. Its offer is in the Aviation room.`, S.byId[d.a]);
+  IC.emit(S, 'request', q);
+}
+/* how long until the next offer: slower in the Career's first act, quicker the better our name */
+function offerGap(S) {
+  const A = S.av, act1 = S.mode === 'story' && S.story && S.story.act === 1;
+  if (!act1) return U.rand(2.5, 5) * 3600;
+  const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
+  const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
+  return U.rand(5, 8) * 3600 * U.clamp(1.6 - rep / 90, 0.6, 1.3);
+}
+
 
 })(window.IC);

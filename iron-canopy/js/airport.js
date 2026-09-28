@@ -1227,6 +1227,9 @@ IC.foundCheck = function (S, x, y) {
   // at the edge of a town is fine, with homes to clear; not in the middle of it
   const c = IC.cities(S).find(c => U.dist(c, { x, y }) < c.r * 0.5);
   if (c) return `In the middle of ${c.name}: pick a site at the edge of town or beyond.`;
+  // not under another airport's approach and departure paths, nor under its busy airways (growth.js)
+  const clash = IC.siteConflict && IC.siteConflict(S, x, y);
+  if (clash) return clash;
   if (S.budget < IC.FOUND_COST) return `Needs ${U.money(IC.FOUND_COST)}.`;
   return '';
 };
