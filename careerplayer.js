@@ -41,6 +41,8 @@ function missing(S, ap) {
   return null;
 }
 const APRON_X = [0, 4.3, 8.6, 12.9, -12.9, 17.2];
+// fuel tanks between the first apron and the fifth, 140 m and more apart
+const FUEL_AT = [[-5, 4.5], [-8, 4.5], [-6.5, 6.2], [-9.5, 6.2]];
 const nextSlot = ap => APRON_X.find(x => !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
 const noTerminal = ap => ap.parts.find(p => p.kind === 'apron' && p.zone !== 'cargo' && p.slotX != null && !ap.parts.some(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.slotX === p.slotX));
 const count = (ap, k, f) => ap.parts.filter(p => p.kind === k && (!f || f(p))).length;
@@ -59,10 +61,11 @@ function grow(S, ap, st) {
   if ((need === 'gates' || need === 'pax') && bare && S.budget > 200) return part(S, ap, 'terminal', bare.slotX, 5.1, 3, 0.8);
   if (aprons < 2 && S.budget > 150) { part(S, ap, 'apron', 4.3, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[4.3, 1.8], [4.3, 3.35]]); }
   if (count(ap, 'fuel') < 2 && S.budget > 120) return part(S, ap, 'fuel', -8, 4.5);
-  if (need === 'fuelDeps' && S.budget > 150) return count(ap, 'fuel') < 4 ? part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -6.5, 5.6);
+  if (need === 'fuelDeps' && S.budget > 150) { const n = count(ap, 'fuel'); return n < FUEL_AT.length ? part(S, ap, 'fuel', ...FUEL_AT[n]) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -3.5, 6.4); }
   if (need === 'hangar' && hangars < 6 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
   // freight: a cargo apron in the next slot along the terminal side, with a cargo terminal behind it
   if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc', zone: 'cargo' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'cargo', x, 5.1, 3, 0.8); }
+  if (need === 'cargoT' && count(ap, 'cargo') < 3 && S.budget > 150) { const c = ap.parts.find(p => p.kind === 'cargo'); return part(S, ap, 'cargo', (c ? c.slotX : 0) + (count(ap, 'cargo') % 2 ? 1 : -1) * 0.6, 5.1 + 0.9 * count(ap, 'cargo'), 3, 0.8); }
   // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
   if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }

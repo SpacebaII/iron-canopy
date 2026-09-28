@@ -700,7 +700,7 @@ IC.aptProvides = IC.aptProvides || function (ap) {
   for (const p of ap.parts) if (p.kind === 'hangar' && p.built && p.hp > p.max * 0.25 && p.linked !== false) P.hangar += IC.APART.hangar.holds;
   return P;
 };
-IC.CARGO_T = 4;   // tonnes a day a unit of cargo shed capacity handles
+IC.CARGO_T = 8;   // tonnes a day a unit of cargo shed capacity handles: a 3 × 0.8 ha shed about 1,150 t, a freighter's four rotations a day
 const SIZES = ['s', 'm', 'l', 'xl'];
 /* stands of a size or larger */
 const fitting = (st, size) => SIZES.slice(SIZES.indexOf(size)).reduce((n, k) => n + (st[k] || 0), 0);

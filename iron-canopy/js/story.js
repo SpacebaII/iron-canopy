@@ -19,7 +19,7 @@ IC.ACTS = {
 };
 /* delegates take routine work off your hands once your rank allows it */
 IC.DELEGATES = {
-  routes: { name: 'Route Planning Office', act: 1, cost: 0.4, cp: 1, desc: 'Approves airline requests that our airports can handle and that pay their way.' },
+  routes: { name: 'Route Planning Office', act: 1, cost: 0.4, cp: 1, desc: 'Signs airline deals our airports can carry and that pay their way, at list charges.' },
   eng: { name: 'Chief Engineer', act: 1, cost: 0.3, cp: 0, desc: 'Repairs craters, cut taxiways and damaged buildings at every airport without being asked.' },
   qra: { name: 'QRA Commander', act: 2, cost: 1, cp: 1, desc: 'Scrambles the alert fighters at unknown aircraft entering our airspace, and calls airliners that drift off their routes.' },
   emcon: { name: 'Sector Air Defence Commander', act: 3, cost: 1, cp: 1, desc: 'Rests exhausted radar crews when another radar covers for them, and wakes them when threats come.' },
@@ -833,7 +833,7 @@ IC.storyRequest = function (S, id) {
 };
 function delegates(S, dt) {
   const st = S.story;
-  if (st.del.routes) for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q) && q.value > 4) { IC.avDecide(S, q.id, true); IC.log(S, 'info', 'ROUTES', `Route Planning Office approved ${IC.avAirline(S, q.al).name}'s request.`); }
+  if (st.del.routes) for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q) && q.value > 4) { IC.avDecide(S, q.id, true); IC.log(S, 'info', 'ROUTES', `Route Planning Office signed ${IC.avAirline(S, q.al).name}'s deal.`); }
   if (st.del.qra) {
     for (const t of S.threats) {
       if (t.dead || !t.det || t.border || t.d.civil && !t.offFlag) continue;
