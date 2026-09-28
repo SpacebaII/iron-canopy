@@ -221,7 +221,8 @@ function airportParts(S, cx, cy, R, hk, evs, sc) {
   for (const e of evs) for (const d of e.dmg || []) if (d.kind === 'part') dmgT.set(d.p, Math.min(dmgT.get(d.p) || 1e18, e.t));
   const items = [];
   for (const b of IC.bases(S)) if (b.parts && U.dxy(b.x, b.y, cx, cy) < R + (b.radius || 60)) for (const p of b.parts) {
-    if (!p.built || p.hp <= 0 || p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron') continue;
+    // what was destroyed before the window is rubble on the map already; what died inside it stands until its hit
+    if (!p.built || (p.hp <= 0 && !dmgT.has(p)) || p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron') continue;
     if (U.dxy(p.x, p.y, cx, cy) > R + 2) continue;
     const acc = { pos: [], nor: [], col: [] }, y0 = hT(S, p.x, p.y) * hk, col = PART_COL[p.kind] || '#969696', ht = (PART_H[p.kind] || 0.06) * hk;
     if (p.kind === 'fuel') { const g = new THREE.CylinderGeometry(p.r, p.r, 0.12 * hk, 18); g.translate(p.x - cx, y0 + 0.06 * hk, p.y - cy); append(acc, g, col, ny => ny > 0.5 ? 1 : 0.75); }
@@ -275,12 +276,14 @@ function makeMover(tr, sc) {
 }
 /* flash and smoke at an event, kept deterministic in the replay clock so scrubbing looks the same both ways */
 function makeEvent(e, cx, cy, S, hk, sc) {
-  const y0 = hT(S, e.x, e.y) * hk + e.alt * KM * hk;
+  let top = 0;
+  for (const d of e.dmg || []) if (d.kind === 'block') for (const q of IC.blockBoxes(d.b, true)) top = Math.max(top, q.ht); else if (d.kind === 'part') top = Math.max(top, PART_H[d.p.kind] || 0.06);
+  const y0 = hT(S, e.x, e.y) * hk + e.alt * KM * hk + top * hk;
   const flash = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: e.kind === 'launch' || e.kind === 'fire' ? '#ffe0a0' : '#ffb060', transparent: true, opacity: 0.9 }));
   flash.position.set(e.x - cx, y0, e.y - cy); flash.visible = false; sc.add(flash);
   const puffs = [];
   if (!e.quiet) for (let i = 0; i < 7; i++) {
-    const p = new THREE.Mesh(new THREE.SphereGeometry(1, 7, 5), new THREE.MeshLambertMaterial({ color: e.kind === 'kill' || e.kind === 'intercept' ? '#8a8a88' : '#3a3634', transparent: true, opacity: 0.6 }));
+    const p = new THREE.Mesh(new THREE.SphereGeometry(1, 7, 5), new THREE.MeshLambertMaterial({ color: e.kind === 'kill' || e.kind === 'intercept' ? '#9a9a98' : '#4a4442', transparent: true, opacity: 0.5 }));
     p.visible = false; sc.add(p);
     puffs.push({ m: p, dx: U.rand(-1, 1), dz: U.rand(-1, 1), k: U.rand(0.7, 1.3), ph: Math.random() * 6 });
   }
@@ -294,9 +297,9 @@ function updateEvent(ev, t, wind) {
     const a = Math.max(0, age - p.ph * 0.15), life = 60 * p.k;
     if (a <= 0 || a > life) { p.m.visible = false; continue; }
     p.m.visible = true;
-    const k = a / life, r = s * (0.12 + 0.55 * Math.sqrt(k)) * p.k;
-    p.m.position.set(ev.flash.position.x + p.dx * s * 0.25 + wind.x * a * 0.12 + p.dx * a * 0.015, ev.y0 + a * 0.05 * s * p.k + r * 0.6, ev.flash.position.z + p.dz * s * 0.25 + wind.y * a * 0.12 + p.dz * a * 0.015);
-    p.m.scale.setScalar(r); p.m.material.opacity = 0.55 * (1 - k) * (1 - k);
+    const k = a / life, r = s * (0.1 + 0.5 * Math.sqrt(k)) * p.k;
+    p.m.position.set(ev.flash.position.x + p.dx * s * 0.3 + wind.x * a * 0.12 + p.dx * a * 0.03, ev.y0 + a * 0.05 * s * p.k + r * 0.6, ev.flash.position.z + p.dz * s * 0.3 + wind.y * a * 0.12 + p.dz * a * 0.03);
+    p.m.scale.setScalar(r); p.m.material.opacity = 0.45 * (1 - k) * (1 - k);
   }
 }
 
@@ -396,11 +399,14 @@ function buildScene() {
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   V.renderer = renderer;
   const scene = V.scene = new THREE.Scene();
-  scene.background = new THREE.Color('#0a1420');
-  scene.fog = new THREE.Fog(0x0a1420, R * 2, R * 7);
-  V.camera = new THREE.PerspectiveCamera(50, 1.6, 0.05, R * 40);
   const rev = +THREE.REVISION || 128, lk = rev >= 155 ? Math.PI : 1;
   const light = S.flat ? 1 : IC.daylight(S.time), dim = 0.35 + 0.65 * light;
+  // the sky and the far ground follow the time of day; the box's edge fades into them
+  const sky = new THREE.Color('#0a1420').lerp(new THREE.Color('#9cc4e4'), light), far = new THREE.Color('#0c1410').lerp(new THREE.Color('#6e7c58'), light);
+  scene.background = sky;
+  scene.fog = new THREE.Fog(sky, R * 2.5, R * 9);
+  const beyond = new THREE.Mesh(new THREE.PlaneGeometry(R * 60, R * 60), new THREE.MeshLambertMaterial({ color: far })); beyond.rotation.x = -Math.PI / 2; beyond.position.y = -0.2; scene.add(beyond);
+  V.camera = new THREE.PerspectiveCamera(50, 1.6, 0.05, R * 40);
   V.hemi = new THREE.HemisphereLight(0xbfd4ee, 0x3a3428, 0.85 * lk * dim); scene.add(V.hemi);
   V.sun = new THREE.DirectionalLight(0xfff0dc, 1.0 * lk * dim); V.sun.position.set(-R, R * 0.9, R * 0.6); scene.add(V.sun);
   V.static = new THREE.Group(); scene.add(V.static);

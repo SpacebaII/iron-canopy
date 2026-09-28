@@ -328,9 +328,9 @@ function vehicles(S, u, px, now) {
     const model = IC.modelOfUnit(u.type), k = IC.unitVehicles(d), fixed = d.mob === 'fixed';
     for (let i = 0; i < k; i++) {
       const a = (i / k) * 6.283 + (u.id.charCodeAt(1) % 7), r = k > 1 ? 4.5 : 0;
-      IC.modelTop(ctx, model, u.x + Math.cos(a) * r + 6, u.y + Math.sin(a) * r + 5, fixed ? 0 : a + 1.2, { minPx: 8, shadow: 0.03, now: u.radarOn ? now : 0 });
+      IC.modelTop(ctx, model, u.x + Math.cos(a) * r + 6, u.y + Math.sin(a) * r + 5, fixed ? 0 : a + 1.2, { minPx: 14, shadow: 0.03, now: u.radarOn ? now : 0 });
     }
-    if (d.weapon === 'sam' && !fixed && d.fc && !d.fc.passive) IC.modelTop(ctx, 'mr3d', u.x - 6, u.y + 5, 2.4, { minPx: 8, shadow: 0.03, now: u.radarOn ? now : 0 });
+    if (d.weapon === 'sam' && !fixed && d.fc && !d.fc.passive) IC.modelTop(ctx, 'mr3d', u.x - 6, u.y + 5, 2.4, { minPx: 14, shadow: 0.03, now: u.radarOn ? now : 0 });
     return;
   }
   for (let i = 0; i < n; i++) {
