@@ -276,7 +276,7 @@ IC.bldOpened = function (S, ap, w, before) {
   IC.sfx && IC.sfx.ui && IC.sfx.ui('ok');
   if (!['runway', 'terminal', 'cargo'].includes(p.kind) || !S.camp) return;
   const name = p.kind === 'runway' ? p.name : IC.APART[p.kind].name;
-  IC.card(S, `${name} opens`, `${ap.name} · ${U.clock(S.time)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
+  IC.card(S, `${name} opens`, `${ap.name} · ${U.clock(S.time, S)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
 };
 IC.bldSnapStats = ap => { const st = ap.st || {}; return { movesPerHour: st.movesPerHour, maxType: st.maxType, pax: st.pax, nst: IC.aptStands(ap).filter(s => s.linked !== false).length }; };
 /* start a planned part's work: called by IC.aptPlan once the part is added */

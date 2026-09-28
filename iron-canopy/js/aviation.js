@@ -669,7 +669,7 @@ IC.offRoute = function (t) {
 };
 
 /* ---------- deals: what an airline signs up to, and what it asks of our airports ----------
-   Every offer (S.av.requests) carries terms: the aircraft and flights a week, a length in days, the charges, what
+   Every offer (S.av.requests) carries terms: the aircraft and flights a week, a length (months in the Career, days on the live clock), the charges, what
    the airline needs at our end (stands, gates, hangar space for aircraft staying days, cargo handling, fuel, room in
    the terminal), penalties for late and cancelled flights, and what it brings. An airline will not sign until the
    airport can carry the flights. Signed, the offer becomes a deal (S.av.deals): honoured, it ends with reputation

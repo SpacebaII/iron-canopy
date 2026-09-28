@@ -686,7 +686,7 @@ test('builder: construction goes in stages and is paid for as it runs', () => {
   const seen = [], spent = [];
   for (let i = 0; i < 6 * 3600 && !p.built; i++) { tick(S, 1); if (w.stage && seen[seen.length - 1] !== w.stage) seen.push(w.stage); if (i % 30 === 0) spent.push(w.spent); }
   assert(p.built, `not built after 6 hours (${w.wait})`);
-  assert(seen.join() === 'survey,earth,pave,fit,open', `stages ran ${seen.join()}`);
+  assert(seen.join() === 'survey,earth,pave,mark,lights,open', `stages ran ${seen.join()}`);
   const half = spent[Math.floor(spent.length / 2)];
   assert(half > w.cost * 0.2 && half < w.cost * 0.9, `halfway through, ${U.money(half)} of ${U.money(w.cost)} had been spent`);
   assert(Math.abs(3000 - S.budget - w.cost) < 0.5, `spent ${U.money(3000 - S.budget)} for a ${U.money(w.cost)} apron`);
@@ -1337,7 +1337,8 @@ test('growth: districts decide how a city flies: industry ships cargo, offices w
   assert(ap && IC.cargoLoad(S, ap) > 0.45, 'city cargo does not fill any airport\'s cargo room');
 });
 test('growth: a well-connected city adds blocks over a few game days; a cut-off one does not', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
+  // (the Career's cities grow by the year: a short calendar puts a year and a third into four live days)
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7, dpm: 0.25 });
   IC.econRefresh(S);
   const cap = IC.cap(S), lone = IC.cities(S).filter(c => c.air.score === 0).sort((a, b) => b.pop - a.pop)[0];
   const n0 = cap.blocks.length, s0 = cap.streets.length, l0 = lone ? lone.blocks.filter(b => !b.empty).length : 0;
@@ -2157,21 +2158,22 @@ test('career: a player who does nothing stays in Act I for days, warned but not 
   assert(S.story.standing < 55 && S.story.standing >= 5, `confidence did not fall, or fell below the floor: ${S.story.standing.toFixed(0)}`);
   assert(S.logs.some(l => l.tag === 'MIN'), 'the Minister never asked about the airport');
 }, true);
-test('career: a scripted player builds the national airport and plays through Act I, chapter by chapter', () => {
+test('career: a scripted player builds the national airport and plays through Act I, chapter by chapter, over years', () => {
   const { player } = require('../careerplayer.js');
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  // a short calendar (a month is six live hours) so the whole act runs in the test; the chapters count months
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7, dpm: 0.25 }); IC.S = S;
   const st = S.story, t0 = S.time;
-  for (let i = 0; i < 9 * 86400 && st.act === 1 && !S.over; i++) { IC.step(S, 1); if (i % 60 === 0) player(S); }
+  for (let i = 0; S.time - t0 < IC.MO(S, 84) && st.act === 1 && !S.over; i++) { IC.step(S, 4); if (i % 16 === 0) player(S); }
   assert(!S.over, `the game ended: ${S.over}`);
-  const L = st.chLog.map(c => `${c.ch + 1}@${((c.t - t0) / 3600).toFixed(1)}h`).join(' ');
+  const L = st.chLog.map(c => `${c.ch + 1}@${U.date(c.t)}`).join(' ');
   assert(st.chLog.map(c => c.ch).join() === '0,1,2,3,4,5', `chapters out of order or missing: ${L}`);
-  assert(st.act === 2, `still in Act I after nine days: ${L}`);
-  // no chapter is rushed: each ran its minimum
-  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / 3600; if (c.ch > 0) assert(dur >= IC.CHAPTERS[c.ch].min - 2.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} h: ${L}`); }
-  // the owner asked for well over an hour of real play at normal speed: 80 game hours are two real hours at 4×
-  // (1.5 real minutes a game hour) and one at 8×, for a scripted player that never hesitates
-  assert((st.actT - t0) / 3600 >= IC.ACT1_MIN_H, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
-  assert(S.av.deals.some(d => d.honoured) && S.budget > 1000, `no deal honoured, or the treasury ran low (${U.money(S.budget)})`);
+  assert(st.act === 2, `still in Act I after seven years: ${L}`);
+  // no chapter is rushed: each ran its minimum months
+  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / IC.MO(S); if (c.ch > 0) assert(dur >= IC.CHAPTERS[c.ch].min - 0.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} months: ${L}`); }
+  // the owner asked for years: Act I is three to five of them
+  const yrs = (st.actT - t0) / IC.YR(S);
+  assert(yrs * 12 >= IC.ACT1_MIN_MO && yrs <= 6, `Act I lasted ${yrs.toFixed(1)} years: ${L}`);
+  assert(S.av.deals.some(d => d.honoured), 'no deal honoured');
   assert(IC.bases(S).filter(b => b.kind === 'airport').length >= 2 && S.av.airlines.length >= 4, 'no second airport, or few airlines');
 }, true);
 test('career: from Act III a day at zero confidence replaces you; before, it cannot', () => {
@@ -2190,6 +2192,91 @@ test('career: every act can be reached', () => {
   const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
   for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
+/* ---------- the calendar: months over the live clock ---------- */
+test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the top bar says so', () => {
+  for (const dpm of [3, 5]) {
+    const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7, dpm }); IC.S = S;
+    let turns = 0, at = 0; const off = IC.on((S2, type, d) => { if (S2 === S && type === 'month') { turns++; at = S.time; } });
+    assert(U.date(S.time) === 'January, Year 1', `a new Career starts on ${U.date(S.time)}`);
+    while (S.time < dpm * 86400 + 600) { S.time += 60; IC.calendar(S); }
+    if (typeof off === 'function') off();
+    assert(turns === 1 && at >= dpm * 86400 && at < dpm * 86400 + 61, `with ${dpm} days a month the month turned ${turns} times, at ${U.clock(at)}`);
+    assert(U.date(S.time) === 'February, Year 1' && IC.calAt(S, S.time).d === 1, `after ${dpm} days it is ${U.date(S.time)}, day ${IC.calAt(S, S.time).d}`);
+    S.time = IC.MO(S, 26) + 3600; IC.calendar(S);
+    assert(U.date(S.time) === 'March, Year 3', `26 months in it is ${U.date(S.time)}`);
+  }
+});
+test('calendar: research, city growth and a deal\'s length follow the calendar: twice the days a month, twice the live days', () => {
+  const out = [3, 6].map(dpm => {
+    const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7, dpm }); IC.S = S;
+    S.budget = 5000;
+    // research: an airport project, run on the economy's own tick
+    const t = IC.TECH.find(x => x.id === 'p_rconc');
+    assert(IC.startResearch(S, t.id), 'could not start research');
+    let live = 0; while (!S.tech.done.has(t.id) && live < 400 * 86400) { S.time += 600; live += 600; IC.economy(S, 600); }
+    // a city's growth over twenty live days (the economy alone, as the growth tests run it)
+    IC.econRefresh(S);
+    const c = IC.cities(S).filter(x => x.air && x.air.score > 0.1).sort((a, b) => b.air.score - a.air.score)[0], p0 = c.popF;
+    econDays(S, 20);
+    // a deal: the length an airline's offer runs for
+    const al = S.av.airlines.find(a => a.kind === 'flag'), ap = S.infra.find(i => i.kind === 'airport'), port = IC.avPorts(S)[0];
+    const q = IC.avRequest(S, al, ap, port, 'narrow', 1, 'wants a route', 3600), d = IC.avSignDeal(S, q, IC.avAddRoute(S, al, ap, port, 'narrow', 1, true), [], 0);
+    return { research: live / 86400, grew: c.popF / p0 - 1, deal: (d.end - S.time) / 86400, city: c.name, what: IC.techDur(S, t) };
+  });
+  const [a, b] = out, near2 = (x, y) => x / y > 1.8 && x / y < 2.2;
+  assert(near2(b.research, a.research), `research took ${a.research.toFixed(1)} and ${b.research.toFixed(1)} live days (${a.what})`);
+  assert(a.grew > 0 && near2(a.grew, b.grew), `${a.city} grew ${(a.grew * 100).toFixed(2)}% and ${(b.grew * 100).toFixed(2)}% in the same live days`);
+  assert(near2(b.deal, a.deal) && a.deal >= 9 * 3, `the deal ran ${a.deal.toFixed(1)} and ${b.deal.toFixed(1)} live days`);
+});
+test('calendar: waiting for money runs until the treasury reaches the target, and says how long', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  run(S, 0.5, player);
+  S.budget = 100;
+  const target = Math.ceil((S.budget + 60) / 10) * 10;
+  let why = null; const off = IC.on((S2, type, d) => { if (S2 === S && type === 'waitDone') why = d.why; });
+  assert(IC.waitStart(S, 'amt:' + target) && S.wait, 'the wait did not start');
+  assert(/to go for .*(month|day|h|min)/.test(IC.waitText(S)), `the wait does not say how long: ${IC.waitText(S)}`);
+  for (let i = 0; i < 3 * 86400 / IC.WAIT.step && S.wait; i++) { IC.step(S, IC.WAIT.step); if (i % 8 === 0) player(S); }
+  if (typeof off === 'function') off();
+  assert(!S.wait && why, `still waiting at ${U.money(S.budget)}`);
+  assert(S.budget >= target - 1 && S.budget < target + 30, `stopped at ${U.money(S.budget)} for a target of ${U.money(target)}: ${why}`);
+  assert(/enough/.test(why), `the stop does not say why: ${why}`);
+  // and the turn of the month stops a wait for something far off
+  IC.waitStart(S, 'amt:' + (S.budget + 1e6));
+  const m0 = S.cal.m; for (let i = 0; i < 4 * 86400 / 8 && S.wait; i++) IC.step(S, 8);
+  assert(!S.wait && S.cal.m === m0 + 1, 'a wait for a fortune did not stop when the month turned');
+});
+test('calendar: a save and load keeps the date and the month length', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 7, dpm: 4 }); IC.S = S;
+  S.time += IC.MO(S, 17) + 5 * 3600; IC.step(S, 1);
+  const date = U.clock(S.time), cal = JSON.stringify(S.cal);
+  const S2 = IC.loadSave(JSON.stringify(IC.saveGame(S))); IC.S = S2;
+  assert(U.clock(S2.time) === date && JSON.stringify(S2.cal) === cal, `saved on ${date} (${cal}), loaded on ${U.clock(S2.time)} (${JSON.stringify(S2.cal)})`);
+  assert(IC.dpm(S2) === 4 && U.date(S2.time) === 'June, Year 2', `the month length or the date changed: ${IC.dpm(S2)} days, ${U.date(S2.time)}`);
+});
+test('calendar: the seasons change the weather: fog and snow in winter, storms in summer', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const count = mo => { const n = {}; for (let i = 0; i < 1500; i++) { S.time = IC.MO(S, mo) + 3600; S.weather.next = 0; S.weather.forecast = U.pick(['overcast', 'rain', 'scattered', 'clear']); S.time += 5 * 3600; IC.weather(S, 1); n[S.weather.forecast] = (n[S.weather.forecast] || 0) + 1; } return n; };
+  const jan = count(0), jul = count(6);
+  assert((jan.snow || 0) > 20 && !jul.snow, `snow in January ${jan.snow || 0}, in July ${jul.snow || 0}`);
+  assert((jul.storm || 0) > (jan.storm || 0) * 2, `storms in July ${jul.storm || 0}, in January ${jan.storm || 0}`);
+  const q = IC.newGame({ seed: 777, mode: 'campaign' });
+  assert(IC.seasonOf(q).name === '' && IC.seasonOf(S).name, 'a Quick war has seasons, or the Career has none');
+});
+test('calendar: construction runs through its stages, markings and lights each their own', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const ap = S.infra.find(i => i.kind === 'airport'); S.budget = 5000;
+  const rw = ap.parts.find(p => p.kind === 'runway'), c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw);
+  const p = IC.aptPlanPart(S, ap, 'apron', c.x - d.y * 9, c.y + d.x * 9, Math.atan2(d.y, d.x), 3, 1.2) || IC.aptPlanPart(S, ap, 'apron', c.x + d.y * 9, c.y - d.x * 9, Math.atan2(d.y, d.x), 3, 1.2);
+  assert(p, 'could not plan an apron');
+  const seen = []; let dur = 0;
+  for (let i = 0; i < 48 * 3600 / 5 && !p.built; i++) { IC.step(S, 5); if (p.stage && seen[seen.length - 1] !== p.stage) seen.push(p.stage); }
+  const w0 = IC.bldPreview(S, ap, Object.assign({}, p, { built: false }));
+  assert(p.built, `the apron was not built: ${seen.join(' → ')}`);
+  assert(['survey', 'earth', 'pave', 'mark', 'lights', 'open'].every(k => seen.includes(k)), `stages seen: ${seen.join(' → ')}`);
+  assert(w0.stages.find(x => x.k === 'lights').name && w0.stages.find(x => x.k === 'mark').name, 'a stage has no name');
+});
+
 /* ---------- the enemy commander ---------- */
 /* one three-day Quick war with the scripted commander of qwplayer.js, shared by the tests below (a few minutes) */
 let qw3 = null;

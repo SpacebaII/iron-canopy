@@ -987,7 +987,7 @@ function report(S, E, R) {
   text += ` They were after ${R.obj.name}${R.set ? ` (${IC.ESETS[R.set].name})` : ''}.`;
   R.text = text; R.res = res;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
-  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time)}`, text, 'report');
+  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report');
   IC.emit(S, 'raidOver', R);
   // the commander learns what worked
   learn(S, E, R, ops);

@@ -1295,7 +1295,7 @@ IC.milLaunchBlock = function (S, b, r) {
   if (!IC.gopsCanDepart(S, b, type, sn.node)) return 'No taxi route to a usable runway' + IC.depBlockWhy(S, b, IC.ACTYPES[type]);
   return '';
 };
-IC.H.gopsReport = (S, ap, text) => () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.clock(S.time)}`, text, 'alarm'); };
+IC.H.gopsReport = (S, ap, text) => () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.clock(S.time, S)}`, text, 'alarm'); };
 IC.H.milAirborne = (S, a) => mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); };
 IC.H.milParked = (S, a, b) => () => { a.gnd = false; a.faf = null; IC.airLand(S, a, b); };
 IC.H.milGoAround = (S, a) => mm => { a.gnd = false; a.ground = null; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.faf = null; a.nextTry = S.time + 90; };

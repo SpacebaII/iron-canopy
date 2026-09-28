@@ -2,7 +2,7 @@
    service and good roads make them grow, and growth adds real blocks and streets. Industries, some far from any
    city, sell at home by road and abroad by air cargo or lorry, and pay trade taxes. Roads are links between
    places: the player builds them, weapons cut them, and every change re-times the trips between cities, which
-   trade, growth, airport catchments, fuel deliveries and convoys all follow. Money is booked into a weekly
+   trade, growth, airport catchments, fuel deliveries and convoys all follow. Money is booked into a monthly
    statement and a yearly review, with loans for the big projects. */
 (function (IC) {
 'use strict';
@@ -713,7 +713,9 @@ IC.money = function (S) {
   const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
   const inH = I.reduce((s, l) => s + l.v, 0), outH = O.reduce((s, l) => s + l.v, 0), net = inH - outH;
   const left = net < 0 ? S.budget / -net : Infinity;
-  const forecast = net >= 0 ? `Growing by about ${U.money(net * 24)} a day at this rate.` : S.budget <= 0 ? 'The treasury is empty.' : `Money runs out in about ${left > 48 ? `${Math.round(left / 24)} days` : U.dur(left * 3600)} at this rate.`;
+  // (in the Career the calendar is the measure: a month is a few days and nights)
+  const moH = IC.MO(S) / 3600, cal = S.mode === 'story';
+  const forecast = net >= 0 ? (cal ? `Growing by about ${U.money(net * moH)} a month at this rate.` : `Growing by about ${U.money(net * 24)} a day at this rate.`) : S.budget <= 0 ? 'The treasury is empty.' : `Money runs out in about ${cal && left > moH ? U.months(left * 3600) : left > 48 ? `${Math.round(left / 24)} days` : U.dur(left * 3600)} at this rate.`;
   return { inc: I, out: O, inH, outH, net, left, forecast };
 };
 const n = (a, one, many) => `${a} ${a === 1 ? one : many || one + 's'}`;
@@ -731,7 +733,7 @@ IC.moneyWhy = function (S, k, r) {
     case 'upAir': { const f = S.roster.filter(x => x.st !== 'lost').length; return `${n(f, 'flight')} of aircraft at ₭0.6M an hour each; every sortie costs extra.${mobTxt}`; }
     case 'upApt': { let v = 0; for (const b of IC.bases(S)) if (b.parts && b.owner === 'us' && !b.locked) for (const p of b.parts) if (p.built) v += IC.partCost(b, p); const ctl = S.asp && S.asp.secs ? S.asp.secs.reduce((n, x) => n + x.staff, 0) : 0; return `0.12% an hour of what the airports' runways, taxiways and buildings cost (${U.money(v)}), and ${ctl} air traffic controllers at ${U.money(IC.ASP.ctlCost)} an hour each. Bigger airports cost more to keep.`; }
     case 'upStaff': return 'The delegates you hired (Staff room). Let one go to save the cost.';
-    case 'loan': return `${n(S.econ ? S.econ.loans.length : 0, 'loan')}: each is repaid evenly over its term, with ${(IC.LOAN_RATE * 100).toFixed(1)}% a day interest on what is still owed.`;
+    case 'loan': return `${n(S.econ ? S.econ.loans.length : 0, 'loan')}: each is repaid evenly over its term, with ${IC.loanRateText(S)} interest on what is still owed.`;
   }
   return '';
 };
@@ -763,14 +765,14 @@ IC.onMonth(S => { if (S.mode === 'story' && S.econ) newWeek(S); });
 IC.onMonth((S, was) => {
   const E = S.econ; if (!E) return;
   closeBooks(S);
-  const days = Math.max(1, Math.min(IC.dpm(S), (S.time - (E.mT != null ? E.mT : E.t0)) / DAY));
+  const days = Math.max(0.01, Math.min(IC.dpm(S), (S.time - (E.mT != null ? E.mT : E.t0)) / DAY));
   E.months = E.months || [];
   E.months.push({ m: was, days, book: E.mb || {}, end: snapshot(S), start: E.mStart || null });
   if (E.months.length > 36) E.months.shift();
   E.mb = {}; E.mT = S.time; E.mStart = snapshot(S);
   const st = statement(E.months[E.months.length - 1].book);
   if (S.mode === 'story') IC.log(S, st.net >= 0 ? 'info' : 'warn', 'TREASURY', `${IC.MONTHS[was % 12]} closed: ${U.money(st.income)} came in, ${U.money(-st.spend)} went out, ${st.net >= 0 ? '+' : '−'}${U.money(Math.abs(st.net)).replace('−', '')} in all. The statement is in the Economy room.`);
-  if (S.mode === 'story' && (was + 1) % 12 === 0 && IC.card) { const R = IC.yearReview(S, Math.floor(was / 12) + 1); if (R) IC.card(S, `Year ${R.y} in review`, U.clock(S.time), R.text, 'report'); }
+  if (S.mode === 'story' && (was + 1) % 12 === 0 && IC.card) { const R = IC.yearReview(S, Math.floor(was / 12) + 1); if (R) IC.card(S, `Year ${R.y} in review`, U.clock(S.time, S), R.text, 'report'); }
 });
 /* the statement for this month so far (ago=0) or a finished month (ago=1: last month, 2: the one before) */
 IC.monthStatement = function (S, ago) {
@@ -906,7 +908,7 @@ IC.growth = function (S, dt) {
     fuelRoads(S);
     grow(S, TICK);
   }
-  // day book: close it at midnight; the week's figures are sums of days
+  // day book: close it at midnight (the month's book fills alongside it)
   const day = U.day(S.time);
   if (day !== E.day) {
     closeBooks(S);

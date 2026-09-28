@@ -213,7 +213,7 @@ function chapterGoals(S, ch) {
       how: 'Building goes in stages and materials come by lorry: the Works tab shows each job and why it waits. One engineer crew works one job at a time; + Crew in the Works tab adds another. Speed time up (keys 1–6) while you wait. When the airport can take a jet, the first airlines send their flights: zoom in to watch one land and taxi to its stand.' });
   } else if (ch === 1) {
     g({ id: 'approve', text: 'Sign a deal with an airline (Aviation room → Deals)', check: () => st.cnt.approve >= 1,
-      how: 'Airlines offer deals in the Aviation room (V): so many flights a week for so many days, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the contract is shorter; give a little and it is longer.' });
+      how: 'Airlines offer deals in the Aviation room (V): so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the contract is shorter; give a little and it is longer.' });
     g({ id: 'hangar', text: 'Hangar space for the aircraft based here', check: () => { const h = hangarNeed(S); return h.have > 0 && h.have >= h.need; }, prog: () => { const h = hangarNeed(S); return building(A(), 'hangar') || `${h.have} of ${Math.max(1, h.need)} spaces`; },
       how: `${S.av.airlines[0] ? S.av.airlines[0].name : 'The flag carrier'} bases its aircraft here and must service them: its deal gives you a day to build a hangar. A hangar holds two aircraft; put it beside a taxiway, away from the runway.` });
     g({ id: 'tower', text: 'Build a control tower', check: () => built(A(), 'tower'), prog: () => building(A(), 'tower'),
@@ -278,7 +278,7 @@ function startChapter(S, n, quiet) {
   st.chLog.push({ ch: n, t: S.time });
   st.goals = chapterGoals(S, n);
   S.camp.chapter = `Act I · ${C.title}`;
-  const sub = U.clock(S.time), ap = capApt(S);
+  const sub = U.clock(S.time, S), ap = capApt(S);
   if (n === 0) card(S, `Chapter 1 · ${C.title}`, sub, `Pick a site near ${IC.cap(S).name}, lay a runway, an apron, a terminal and the services an airliner needs, and bring in the first flight. The goals panel shows what to do next and why.`, 'chapter');
   else if (n === 1) {
     if (!quiet) card(S, `Chapter 2 · ${C.title}`, sub, `The first airliner is on its stand. Now make the airport work: airlines judge every visit by the taxi, the delays and the fees, and they bring more flights where they are happy.`, 'chapter');
@@ -445,7 +445,7 @@ function chapterTick(S) {
   if (st.waitT && S.time < st.waitT) return;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
   // a near miss or overloaded controllers force the airspace question early
-  const forced = st.ch === 1 && st.hurry && age >= 3;
+  const forced = st.ch === 1 && st.hurry && age >= C.min / 2;
   if (!forced && !((doneCount(S) >= C.need && age >= C.min) || age >= C.max)) return;
   st.asking = true;
   OPEN[st.ch + 1](S);
@@ -591,11 +591,11 @@ function startAct(S, n) {
   if (n === 1) {
     const cc = IC.cap(S);
     if (st.fresh) {
-      card(S, `${A.name} · ${A.title}`, U.clock(S.time), `You have just been appointed ${A.role} of ${W.full.H}. The country has no airport worth the name: airliners cross its sky and nobody lands. The Treasury has set aside the money for a national airport near ${cc.name}. Next door, ${W.full.A} has been quiet for years.`, 'chapter');
+      card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of ${W.full.H}. The country has no airport worth the name: airliners cross its sky and nobody lands. The Treasury has set aside the money for a national airport near ${cc.name}. Next door, ${W.full.A} has been quiet for years.`, 'chapter');
       say(S, 'MIN', `Welcome, Director. Aviation is how a country earns its living and talks to the world, and we have none. Build the national airport near ${cc.name}, get the airlines in, and grow it. The Treasury has given you ${U.money(IC.CAREER_START)}: build big enough that the airlines want to come, because that airport will pay for everything else. I judge you on the airlines and the passengers.`);
       say(S, 'APT', `Lena Okafor, airports. I will walk you through the first one: the steps are in the goals panel, top left. Nothing waits for you to follow them, and you can hide the tips.`);
     } else {
-      card(S, `${A.name} · ${A.title}`, U.clock(S.time), `You have just been appointed ${A.role} of ${W.full.H}. Three airports, a handful of airlines, and a Minister who wants the sector to grow. Next door, ${W.full.A} has been quiet for years.`, 'chapter');
+      card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of ${W.full.H}. Three airports, a handful of airlines, and a Minister who wants the sector to grow. Next door, ${W.full.A} has been quiet for years.`, 'chapter');
       say(S, 'MIN', `Welcome, Director. Aviation is how this country earns its living and how it talks to the world. Grow it: more routes, more passengers, airlines that want to be here. I judge you on that.`);
     }
     startChapter(S, st.fresh ? 0 : 1, true);
@@ -606,7 +606,7 @@ function startAct(S, n) {
     S.budget += 300;
     S.enemy.allow = new Set(['recon']);
     st.cp += 1;
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time), `After the collision the Prime Minister has made you ${A.role}: civil and military air traffic under one roof. You inherit ${fb.name}, mothballed for years, and VIPER flight: two fighters. Someone is testing our skies.`, 'chapter');
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `After the collision the Prime Minister has made you ${A.role}: civil and military air traffic under one roof. You inherit ${fb.name}, mothballed for years, and VIPER flight: two fighters. Someone is testing our skies.`, 'chapter');
     say(S, 'PM', `Director, I want to know what flies over this country and who flies it. The Air Force has given you ${short(fb.name)} and two jets. Make them count, and keep the airliners flying. Panic costs more than drones.`);
     say(S, 'AIR', `Col. Reyes, air operations. ${short(fb.name)} is a mess: the taxiway only reaches one runway end, fuel tanks stand side by side, no shelters, no alert pad. An alert pad at a runway end gets jets airborne in minutes. From a hangar it takes much longer.`);
     say(S, 'INT', `Our civil radars only hear transponders. A drone with its transponder off is invisible to them. A military radar near the border would change that.`);
@@ -627,7 +627,7 @@ function startAct(S, n) {
     addFlight(S, 'ftr', 'LANCE 2', 'ab_rear').st = 'ready';
     addFlight(S, 'isr', 'REAPER 2', 'ab_rear').st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time), `Blood has been spilled over ${W.full.H}. The cabinet has made you ${A.role}. Missiles, radars and depots are yours, and the equipment is in the reserve. ${W.names.A} has not declared war. It does not need to.`, 'chapter');
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `Blood has been spilled over ${W.full.H}. The cabinet has made you ${A.role}. Missiles, radars and depots are yours, and the equipment is in the reserve. ${W.names.A} has not declared war. It does not need to.`, 'chapter');
     say(S, 'CDS', `Gen. Voss. You have the air defences now. The equipment in the reserve is what the depots had: deploy it. Protect the capital and ${short(S.byId.ab_fwd.name)} first, and do not let the airliners stop.`);
     say(S, 'ADA', `Every radar you switch on is seen from across the border, and radars on the same band crowded together blind each other. More is not always better. Put them where they add something.`);
   } else if (n === 4) {
@@ -641,7 +641,7 @@ function startAct(S, n) {
     const fwd = 'ab_fwd', rear = S.byId.ab_rear ? 'ab_rear' : 'ab_fwd';
     for (const [k, nm, b] of [['heli', 'HOOK 2', rear], ['cargo', 'ATLAS 1', rear], ['ucav', 'HAWK 1', rear], ['aew', 'SENTRY 2', rear]]) if (!S.roster.some(r => r.name === nm)) addFlight(S, k, nm, b).st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time), `${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.`, 'chapter');
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.`, 'chapter');
     say(S, 'CDS', `This is war. Missiles, drones and aircraft will come in raids. You decide where the air goes and what we defend.`);
   }
 }
@@ -709,7 +709,7 @@ function beatsFor(S, act) {
     B.push({ id: 'probe', gap: [3600, 5400], repeat: [MO(S, 1), MO(S, 1.8)], rise, run: () => grayStrike(S) });
     B.push({ id: 'rkt', gap: [MO(S, 1), MO(S, 2)], repeat: [MO(S, 1.5), MO(S, 3)], rise, run: () => { const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name} from across the border. They deny it, of course.`); raise(S, 4); } });
     B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, 16)) || inAct(S) > MO(S, 22), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
-    B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
+    B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time, S), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
     B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
       // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
       const done = doneCount(S);
@@ -762,7 +762,7 @@ function collision(S) {
   IC.log(S, 'leak', 'MAYDAY', `${t.cs} reports a mid-air collision ${place} and is squawking 7700. Diverting to ${ap ? ap.name : 'the nearest airport'}.`, t);
   IC.news(S, `Airliner ${t.cs} collides with an unidentified drone ${place}; emergency landing under way.`);
   IC.sfx && IC.sfx.klaxon();
-  card(S, 'Mayday', U.clock(S.time), `${t.cs}, ${t.pax} people on board, has hit something ${place} at ${Math.round(t.alt * 1000).toLocaleString('en-US')} m. The crew report a drone. None of our radars saw it.`, 'alarm');
+  card(S, 'Mayday', U.clock(S.time, S), `${t.cs}, ${t.pax} people on board, has hit something ${place} at ${Math.round(t.alt * 1000).toLocaleString('en-US')} m. The crew report a drone. None of our radars saw it.`, 'alarm');
   IC.later(S, 900, 'storyEvent', S, 'drone', t);
 }
 
@@ -1012,7 +1012,7 @@ function actOneTick(S) {
   if (ap && !st.opened && openTo(S, ap, 'narrow')) {
     st.opened = true;
     IC.avCareerStart(S, ap);
-    card(S, 'Open for business', U.clock(S.time), `${ap.name} can take its first jets. ${S.av.airlines.map(a => a.name).join(' and ')} are sending their first flights: watch the Aviation room, and the runway.`, 'chapter');
+    card(S, 'Open for business', U.clock(S.time, S), `${ap.name} can take its first jets. ${S.av.airlines.map(a => a.name).join(' and ')} are sending their first flights: watch the Aviation room, and the runway.`, 'chapter');
     say(S, 'ATC', `First arrivals inbound to ${short(ap.name)}. They fly direct and my controllers space them by time: no airways, no radar. Fine while there are few of them.`);
   }
   const c = st.contract;

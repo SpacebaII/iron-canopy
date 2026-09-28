@@ -25,9 +25,10 @@ IC.dpm = S => (S && S.cal && S.cal.dpm) || (IC.S && IC.S.cal && IC.S.cal.dpm) ||
 IC.MO = (S, n) => IC.dpm(S) * 86400 * (n == null ? 1 : n);
 IC.YR = S => IC.MO(S, 12);
 /* the date at game time t: month index since the start (m), month of the year (mo, 0–11), year (from 1), day of the month */
+// (a month may be a fraction of a day: the tests run a whole Career on a short calendar)
 IC.calAt = (S, t) => {
-  const d = IC.dpm(S), day = Math.floor(t / 86400), m = Math.floor(day / d);
-  return { m, mo: m % 12, y: Math.floor(m / 12) + 1, d: day - m * d + 1, dpm: d };
+  const d = IC.dpm(S), M = d * 86400, m = Math.floor(t / M);
+  return { m, mo: m % 12, y: Math.floor(m / 12) + 1, d: Math.floor((t - m * M) / 86400) + 1, dpm: d };
 };
 
 let nid = 1;
@@ -129,10 +130,10 @@ const U = IC.U = {
   },
   day: t => Math.floor(t / 86400) + 1,
   /* "March, Year 3", and the short form "Mar Y3" for log lines */
-  date: t => { const c = IC.calAt(null, t); return `${IC.MONTHS[c.mo]}, Year ${c.y}`; },
-  dateS: t => { const c = IC.calAt(null, t); return `${IC.MONTHS[c.mo].slice(0, 3)} Y${c.y}`; },
-  // (a Quick war and the Academy run on the live clock: they count days)
-  clock: t => IC.S && IC.S.mode !== 'story' ? `Day ${U.day(t)} · ${U.hhmm(t)}` : `${U.dateS(t)} · ${U.hhmm(t)}`,
+  date: (t, S) => { const c = IC.calAt(S, t); return `${IC.MONTHS[c.mo]}, Year ${c.y}`; },
+  dateS: (t, S) => { const c = IC.calAt(S, t); return `${IC.MONTHS[c.mo].slice(0, 3)} Y${c.y}`; },
+  // (a Quick war and the Academy run on the live clock: they count days; S defaults to the game on screen)
+  clock: (t, S) => { S = S || IC.S; return S && S.mode !== 'story' ? `Day ${U.day(t)} · ${U.hhmm(t)}` : `${U.dateS(t, S)} · ${U.hhmm(t)}`; },
   /* game seconds → months ("5 months", "about 2 years") */
   months(gs) {
     const m = gs / IC.MO();
