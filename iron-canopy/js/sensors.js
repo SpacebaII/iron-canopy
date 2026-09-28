@@ -69,6 +69,8 @@ function buildSensors(S) {
 
 function detects(s, t) {
   const d = t.d, r = Math.hypot(s.x - t.x, s.y - t.y);
+  // nothing is seen beyond three times a sensor's reach (the largest airliner's echo stretches it 2.8 times): most pairs end here
+  if (r > s.R * 3) return false;
   if (s.bmdOnly && !(d.cls === 'bal' || d.cls === 'hgv')) return false;
   if (s.rktOnly && d.cls !== 'rkt') return false;
   if (s.esm) return ((d.emits && t.radarOn !== false) || (d.jam && t.jamming)) && r <= s.R * (d.jam ? 1.25 : 1);
