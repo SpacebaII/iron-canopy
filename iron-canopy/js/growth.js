@@ -95,11 +95,16 @@ IC.econTime = (S, from, to, intact) => timeTo(S, (intact ? S.econ.ti : S.econ.tt
 /* a place's trade reach: the people it can trade with, the nearer (in time) the more */
 const reachOf = (S, T, self) => { let s = 0; for (const d of IC.cities(S)) if (d !== self && d.owner === 'us') s += d.pop * Math.exp(-timeTo(S, T, d) / 7200); return s; };
 
+/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them) */
+IC.econTrees = function (S) {
+  const E = S.econ, W = S.world;
+  E.tt = {}; E.ti = {};
+  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+};
 function refreshRoads(S) {
   const E = S.econ, W = S.world;
   E.roadsDirty = false;
-  E.tt = {}; E.ti = {};
-  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+  IC.econTrees(S);
   for (const c of IC.cities(S)) {
     c.rc = reachOf(S, E.tt[c.id], c); c.rcI = reachOf(S, E.ti[c.id], c);
     // trips that now take much longer, and the cut that causes it
@@ -384,7 +389,7 @@ IC.rushCost = e => Math.round((e.len || 10) / 10 * (e.cls === 'hw' ? 3 : 1.5) + 
 IC.rushRepair = function (S, id) {
   const e = S.world.edges.find(x => x.id === id); if (!e || !e.cut || e.rush) return false;
   const c = IC.rushCost(e); if (S.budget < c) { IC.log(S, 'warn', 'ROADS', `Rushing the repair needs ${U.money(c)}.`); return false; }
-  S.budget -= c; e.rush = true;
+  IC.pay(S, 'repair', c); e.rush = true;
   IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e) * 3600)}.`, e.cutAt);
   return true;
 };
@@ -666,7 +671,7 @@ IC.STATEMENT = {
   fee_land: 'Airline fees: landing', fee_pax: 'Airline fees: passengers', fee_cargo: 'Airline fees: cargo', fee_over: 'Overflight fees',
   oneoff: 'Grants, aid and war bonds', refund: 'Equipment dismantled', loanIn: 'Loans taken',
   upAD: 'Running costs: air defence', upAir: 'Running costs: air force', upApt: 'Running costs: airports', upStaff: 'Staff',
-  loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
+  penalty: 'Deal penalties and compensation', loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
   buyUnits: 'Equipment bought', buyMun: 'Missiles and supplies bought', buyLogi: 'Truck companies', research: 'Research', repair: 'Repairs',
   other: 'Building works and other spending'
 };
@@ -675,7 +680,9 @@ IC.money = function (S) {
   const L = S.ledger || {}, A = S.av, r = A && A.rate || {};
   const inc = [['base', L.base], ['av', L.av || 0], ['tax', L.tax], ['trade', L.trade], ['apt', L.apt], ['aid', L.aid]].filter(([, v]) => v > 0.005);
   const out = [['upAD', L.upAD], ['upAir', L.upAir], ['upApt', L.upApt], ['upStaff', L.upStaff], ['loan', L.loan]].filter(([, v]) => v > 0.005);
-  const name = k => k === 'av' ? 'Airline fees' : IC.STATEMENT[k];
+  // (before the war the only "air defence" the player runs is civil radar: call it that)
+  const civilOnly = S.units.every(u => u.d.civil || u.type === 'ssr');
+  const name = k => k === 'av' ? 'Airline fees' : k === 'upAD' && civilOnly ? 'Running costs: radars' : IC.STATEMENT[k];
   const line = ([k, v]) => ({ k, name: name(k), v, why: IC.moneyWhy(S, k, r) });
   const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
   const inH = I.reduce((s, l) => s + l.v, 0), outH = O.reduce((s, l) => s + l.v, 0), net = inH - outH;
@@ -722,6 +729,45 @@ IC.weekStatement = function (S, ago) {
   const income = lines.filter(l => l.v > 0 && l.k !== 'loanIn').reduce((s, l) => s + l.v, 0);
   const spend = lines.filter(l => l.v < 0).reduce((s, l) => s + l.v, 0);
   return { week: wk + 1, from: wk * 7 + 1, to: wk * 7 + 7, days: days.length, lines, income, spend, net: income + spend + (b.loanIn || 0) };
+};
+
+/* ---------- a national network that grows by demand ----------
+   A city asks for an airport of its own when enough of its people want to fly and none of our airports is within
+   reach: its unserved demand (flyers a day it would send, times the share no airport serves). The size it asks for
+   follows that demand: a regional field for turboprops first, jets once the demand is large. */
+IC.NETWORK = { ask: 9000, jets: 15000, hubPax: 2500 };
+IC.cityUnserved = c => c.air ? c.air.pot * (1 - c.air.score) : 0;
+/* the city with the strongest case for an airport, or null; the hub must be carrying people first, since a
+   regional airport lives on connections to it */
+IC.cityAsks = function (S, minKm) {
+  const A = S.av, N = IC.NETWORK;
+  const hubPax = A ? Math.max(A.day.pax, A.yesterday ? A.yesterday.pax : 0) : 0;
+  if (hubPax < N.hubPax) return null;
+  const aps = ourAirports(S);
+  const L = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.air && IC.cityUnserved(c) >= N.ask && !aps.some(ap => U.dist(ap, c) < (minKm || 150) * 10));
+  L.sort((a, b) => IC.cityUnserved(b) - IC.cityUnserved(a));
+  const c = L[0];
+  return c ? { city: c, unserved: IC.cityUnserved(c), size: IC.cityUnserved(c) >= N.jets ? 'jets' : 'turbo' } : null;
+};
+/* why a site is no place for a new airport because of the airports already there: under the approach or departure
+   paths (the runway line, 30 km out from each end), or under an airway where it runs low near an airport; '' if fine */
+IC.siteConflict = function (S, x, y) {
+  for (const ap of ourAirports(S)) {
+    const rws = ap.parts.filter(p => p.kind === 'runway');
+    const lines = rws.length ? rws.map(rw => ({ c: { x: (rw.a.x + rw.b.x) / 2, y: (rw.a.y + rw.b.y) / 2 }, d: IC.rwDir(rw), h: IC.rwLen(rw) / 2 })) : ap.rwyA != null ? [{ c: ap, d: { x: Math.cos(ap.rwyA), y: Math.sin(ap.rwyA) }, h: 15 }] : [];
+    for (const L of lines) {
+      const dx = x - L.c.x, dy = y - L.c.y, along = Math.abs(dx * L.d.x + dy * L.d.y) - L.h, side = Math.abs(dx * L.d.y - dy * L.d.x);
+      // a corridor that widens from 3 km at the runway end to 8 km at 30 km out
+      if (along > 0 && along < 300 && side < 30 + along / 6) return `Under the approach and departure paths of ${ap.name}: aircraft fly low over this ground. Pick a site off the runway line.`;
+    }
+  }
+  if (S.asp) for (const w of S.asp.ways) {
+    const [a, b] = IC.aspWayEnds(S, w); if (!a || !b) continue;
+    if (U.segDist(x, y, a.x, a.y, b.x, b.y) > 30) continue;
+    const low = ourAirports(S).find(ap => U.dist(ap, { x, y }) < 800);
+    if (low) return `Under a busy airway close to ${low.name}, where airliners are still climbing and descending. Pick a site away from it.`;
+  }
+  return '';
 };
 
 /* ---------- what a city panel says ---------- */

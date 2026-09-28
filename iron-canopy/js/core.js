@@ -8,11 +8,25 @@ IC.WH = 43000;         // world height (4,300 km)
 IC.GS = 10;            // game seconds per real second at 1× speed
 IC.TS = 0.06;          // base terrain canvas scale (px per world unit); closer in, tiles take over
 IC.MAX_STEP = 0.25;    // largest simulation step, in game seconds
-IC.MAXZ = 80;          // closest zoom (screen px per world unit): 80 px per 100 m shows aircraft at the gate
+IC.MAXZ = 320;         // closest zoom (screen px per world unit): 320 px per 100 m shows the vehicles round an aircraft at the gate
 IC.SPEEDS = [1, 2, 4, 8, 16, 32];
 
 let nid = 1;
 IC.nid = p => (p || 'e') + (nid++);
+// the id counter goes into a save, so ids made after a load never repeat saved ones
+IC.nidPeek = () => nid;
+IC.nidSet = v => { nid = v; };
+
+/* Functions kept in the state are named handlers, so a save can write them down (save.js): IC.hfn(name, ...args)
+   makes the function from the factory IC.H[name] and remembers the name and the arguments. Objects that carry
+   behaviour (goals, event cards) are tagged with IC.remake(obj, name, ...args); a load keeps their data and takes
+   their functions from a fresh IC.REMAKE[name](...args). */
+IC.H = {};
+IC.hfn = (name, ...args) => { const f = IC.H[name](...args); f.$h = name; f.$a = args; return f; };
+IC.REMAKE = {};
+IC.remake = (o, name, ...args) => { Object.defineProperty(o, '$rc', { value: [name, args], enumerable: false, configurable: true, writable: true }); return o; };
+/* a named handler run after dt game seconds (airport.js runs S.later) */
+IC.later = (S, dt, name, ...args) => { (S.later = S.later || []).push({ t: S.time + dt, fn: IC.hfn(name, ...args) }); };
 
 /* seeded generator for world generation (mulberry32) */
 IC.makeRng = function (seed) {
@@ -29,6 +43,11 @@ IC.makeRng = function (seed) {
   f.gauss = () => { let s = 0; for (let i = 0; i < 4; i++) s += f(); return (s - 2) / 0.58; };
   return f;
 };
+
+/* the simulation draws its chances from Math.random. A seed puts a seeded source behind it, so a run repeats
+   exactly (the tests seed every test); IC.seedRandom() with no seed brings back the browser's own */
+const nativeRandom = Math.random;
+IC.seedRandom = seed => { Math.random = seed == null ? nativeRandom : IC.makeRng(seed); };
 
 const U = IC.U = {
   rand: (a, b) => a + Math.random() * (b - a),
@@ -131,7 +150,8 @@ U.pfbm = (x, y, p) => { let s = 0, a = 0.5, f = 1; for (let i = 0; i < 5; i++) {
 
 /* ---------- event bus: campaign, academy, UI and audio listen here ---------- */
 const subs = [];
-IC.on = fn => subs.push(fn);
+/* returns a function that takes the listener off again (a listener that holds a game keeps all of it alive) */
+IC.on = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; };
 IC.emit = function (S, type, data) { for (const fn of subs) fn(S, type, data); };
 IC.campaignEvent = IC.emit;
 

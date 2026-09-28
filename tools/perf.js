@@ -28,7 +28,7 @@ async function frameTimes() {
   await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
   const out = await page.evaluate(async () => {
     const wait = ms => new Promise(r => setTimeout(r, ms));
-    IC.S.seed = 4242; IC.begin('sandbox'); await wait(3000);
+    IC.S.seed = 4242; await IC.begin('sandbox');
     const S = IC.S;
     const t0 = performance.now(); IC.buildTerrain(S.world); const build = performance.now() - t0;
     for (let i = 0; i < 3600 / 0.25; i++) IC.step(S, 0.25);
