@@ -291,7 +291,6 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
       void lk;
     }
     vehicles(list, px, night, now, m, z > 18);
-    if (z > 12) signals(S, px, night, now);
   }
   // trains: real length is about 25 m a carriage
   const tl = Math.max(0.25, 5 * px);
@@ -305,32 +304,5 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
     }
   }
 };
-/* traffic lights: a head on the right of each approach, lit by its state */
-function signals(S, px, night, now) {
-  const G = S.traffic && S.traffic.G; if (!G) return;
-  const on = { r: [], a: [], g: [] }, poles = [];
-  for (let n = 0; n < G.nodes.length; n++) {
-    const nd = G.nodes[n]; if (!nd.sig || !inView(nd.x, nd.y, 1)) continue;
-    for (const li of nd.out) {
-      const lk = G.links[li], d = lk.b === n ? 0 : 1;   // the direction arriving at this node
-      if (!IC.driveCanGo(lk, d)) continue;
-      const P = lk.pts, p1 = d ? P[0] : P[P.length - 1], p0 = d ? P[1] : P[P.length - 2], L = U.dist(p0, p1) || 1, ux = (p1.x - p0.x) / L, uy = (p1.y - p0.y) / L;
-      const w = (IC.ROAD_W[lk.cls] || 0.2) / 2 + 0.04, back = (IC.ROAD_W.art || 0.4) * 0.8;
-      const x = p1.x - ux * back - uy * w, y = p1.y - uy * back + ux * w;
-      const green = IC.signalState(S, n, lk, d), cyc = (S.time + nd.ph) % 30;
-      on[green ? 'g' : cyc >= 26 && cyc < 30 && !green ? 'a' : 'r'].push(x, y);
-      poles.push(x, y);
-    }
-  }
-  const r = Math.max(0.012, 1.6 * px);
-  ctx.fillStyle = 'rgb(30,32,34)'; ctx.beginPath(); for (let i = 0; i < poles.length; i += 2) ctx.rect(poles[i] - r * 1.4, poles[i + 1] - r * 1.4, r * 2.8, r * 2.8); ctx.fill();
-  if (night) ctx.globalCompositeOperation = 'lighter';
-  for (const [k, col] of [['r', 'rgb(255,60,40)'], ['a', 'rgb(255,190,40)'], ['g', 'rgb(60,230,120)']]) {
-    const L = on[k]; if (!L.length) continue;
-    ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r, L[i + 1]); ctx.arc(L[i], L[i + 1], r, 0, 7); } ctx.fill();
-    if (night) { ctx.globalAlpha = 0.25; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r * 2.5, L[i + 1]); ctx.arc(L[i], L[i + 1], r * 2.5, 0, 7); } ctx.fill(); ctx.globalAlpha = 1; }
-  }
-  ctx.globalCompositeOperation = 'source-over';
-}
 
 })(window.IC);

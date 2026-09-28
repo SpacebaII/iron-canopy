@@ -446,13 +446,15 @@ IC.traffic = function (S, dt) {
         // commuters run home→work in the morning and back in the evening: the reverse direction's flow comes home
         const com = F.com[i + d] * fi + F.com[i + 1 - d] * fo, frt = F.frt[i + d] * ff, apt = F.apt[i + d] * fa, gen = F.gen[i + d] * fg;
         const tot = com + frt + apt + gen;
-        L.ld[d] = U.clamp(tot * g * raid * cut, 0, 1.3);
+        L.ld[d] = U.clamp(tot * g * raid * cut, 0, 1.3); (L.raw || (L.raw = [0, 0]))[d] = U.clamp(tot * g * raid, 0, 1.3);
         const M = L.mix[d]; L.mixOk[d] = tot > 0 ? 1 : 0; if (tot > 0) { M[0] = com / tot; M[1] = frt / tot; M[2] = apt / tot; }
         // a full road slows down: at peak the motorways round the capital crawl
         L.v[d] = lk.C.v * (L.ld[d] > 0.75 ? U.clamp(1 - (L.ld[d] - 0.75) * 1.3, 0.3, 1) : 1) * (raid < 1 ? 0.4 : 1);
       }
-      L.load = Math.max(L.ld[0], L.ld[1]);
+      L.load = Math.max(L.ld[0], L.ld[1]); L.cut = cut < 1;
     }
+    // the junctions in front of a cut road, where traffic queues before it turns back
+    T.cutN = new Set(); for (const L of T.links) if (L.cut) { T.cutN.add(L.l.a); T.cutN.add(L.l.b); }
   }
   for (const b of S.buses) moveBus(S, b, dt);
   for (const t of S.trains) {
@@ -571,8 +573,10 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
     for (let d = 0; d < 2; d++) {
       if (!canGo(l, d) || L.ld[d] <= 0.01) continue;
       const p = L.ld[d] * L.C.dens * BASE, end = G.nodes[d ? l.a : l.b];
-      // the queue at the end of the link: vehicles there move Kq times slower, so they stand closer together
-      const Kq = end.sig || end.jk === 'rb' || end.rank > L.C.rank ? 1 + 3 * U.clamp(L.ld[d] - 0.3, 0, 1) : 1, Q = Kq > 1 ? Math.min(len * 0.4, 0.3 + L.ld[d] * 1.5) : 0;
+      // the queue at the end of the link: vehicles there move Kq times slower, so they stand closer together;
+      // in front of a cut road the queue is long
+      const qc = !L.cut && T.cutN && T.cutN.has(d ? l.a : l.b) && L.ld[d] > 0.05;
+      const Kq = qc ? 5 : end.sig || end.jk === 'rb' || end.rank > L.C.rank ? 1 + 3 * U.clamp(L.ld[d] - 0.3, 0, 1) : 1, Q = qc ? Math.min(len * 0.7, 1 + L.ld[d] * 6) : Kq > 1 ? Math.min(len * 0.4, 0.3 + L.ld[d] * 1.5) : 0;
       const qs = len - Q, span = len + Q * (Kq - 1), toS = u => u < qs ? u : qs + (u - qs) / Kq;
       const ph = phase(L, d, S.time);
       // slot j rides at j·BASE + phase from its lane's start (the far end for the other direction);
@@ -604,75 +608,54 @@ IC.trafficFlows = function (S, view, classes, fn) {
   }
 };
 
-/* ---------- close in: vehicles making their own trips ----------
-   Around the view, vehicles start at zones (car parks, estates, depots, the airport) at a rate set by the
-   zone's homes, jobs and freight for the hour, or come in from beyond the view on the links that carry traffic.
-   Each has a route over the drive graph and follows it lane by lane: it keeps its distance to the vehicle ahead,
-   stops at red lights and gives way to the bigger road, and leaves the map at its destination. Nothing here
-   touches the simulation state: the renderer calls it with the game time that has passed. */
+/* ---------- close in: vehicles that look like traffic ----------
+   Around the view, vehicles leave zones (car parks, estates, depots, the airport) at a rate set by the zone's
+   homes, jobs and freight for the hour, or come in from beyond the view on the links that carry traffic. They
+   do not plan trips: at each junction a vehicle takes the next road at random, weighted by how much traffic that
+   road carries and how straight on it is, so busy roads stay busy and quiet ones quiet. After a few km it turns
+   off and parks. In lane, it keeps its distance, slows through junctions and gives way to whoever is already in
+   one; it queues in front of a cut road and turns back after a while. Nothing here touches the simulation state:
+   the renderer calls it with the game time that has passed. */
 const AG = new WeakMap();
 const AG_MAX = 1400;
-function signalGreen(G, n, lk, d, t) {
-  const node = G.nodes[n], P = lk.pts, p0 = d ? P[1] : P[P.length - 2], p1 = d ? P[0] : P[P.length - 1];
-  const hd = Math.atan2(p1.y - p0.y, p1.x - p0.x), grp = Math.cos(2 * (hd - node.ph)) > 0 ? 0 : 1;
-  const c = (t + node.ph) % 60, g0 = c < 26, g1 = c >= 30 && c < 56;
-  return grp ? g1 : g0;
-}
-IC.signalState = (S, n, lk, d) => { const G = S.traffic.G; return signalGreen(G, n, lk, d, S.time); };
-function spawnRoute(S, A, G, from, purpose, R) {
-  const T = S.traffic, Z = T.zones, z0 = from.zone, h = (S.time % 86400) / 3600;
-  let dest = null;
-  if (purpose === 'com') {
-    const morning = h < 12, same = Z.filter(z => z.city === z0.city && z !== z0);
-    const pool = same.filter(z => morning ? z.jobs > z.homes * 0.5 : z.homes > 0.05);
-    dest = pool.length ? pool[Math.floor(R() * pool.length)] : null;
-  } else if (purpose === 'frt') {
-    const pl = T.places.filter(p => p.kind !== 'apt' || p.ref.parts);
-    const zs = Z.filter(z => z.kind === 'ind' && z !== z0);
-    dest = R() < 0.4 && pl.length ? pl[Math.floor(R() * pl.length)] : zs.length ? zs[Math.floor(R() * zs.length)] : null;
-  } else if (purpose === 'apt') {
-    const aps = T.places.filter(p => p.kind === 'apt' && p.ref.parts).sort((a, b) => U.dist(a, from) - U.dist(b, from));
-    dest = aps[0] || null;
-  } else {
-    const same = Z.filter(z => z.city === (z0 && z0.city) && z !== z0);
-    dest = same.length ? same[Math.floor(R() * same.length)] : null;
+// how far a vehicle drives before it parks (world units), by purpose
+const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
+function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
+function headIn(lk, d) { const P = lk.pts, p0 = d ? P[1] : P[P.length - 2], p1 = d ? P[0] : P[P.length - 1]; return Math.atan2(p1.y - p0.y, p1.x - p0.x); }
+/* the next road from node n: weighted by its traffic in that direction and by how straight on it is */
+function pickNext(G, T, n, lk, R, back) {
+  const hd = lk ? headIn(lk[0], lk[1]) : null, c = [];
+  let tot = 0;
+  for (const li of G.nodes[n].out) {
+    const q = G.links[li];
+    if (q === (lk && lk[0]) && !back) continue;
+    // drivers find a cut road when they get there, so they head for it as they would have; turning back, they avoid it
+    const dd = q.a === n ? 0 : 1, Lq = T.links[q.id]; if (!canGo(q, dd) || (back && (q.cut || (Lq && Lq.cut)))) continue;
+    let w = (Lq ? (Lq.cut ? Lq.raw[dd] : Lq.ld[dd]) : 0) + 0.03;
+    if (hd != null && q !== lk[0]) w *= 0.3 + Math.max(0, Math.cos(headOut(q, dd) - hd));
+    tot += w; c.push(q, dd, w);
   }
-  if (!dest) return null;
-  // far destinations: the route runs to the edge of what is simulated here and the vehicle leaves there
-  const far = U.dist(dest, from) > A.r * 2.5;
-  const path = far ? null : astar(G, from.node, dest.node, 6000);
-  return path && path.length ? { path, dest } : null;
+  if (!c.length) return null;
+  let r = R() * tot;
+  for (let i = 0; i < c.length; i += 3) if ((r -= c[i + 2]) <= 0) return [c[i], c[i + 1]];
+  return [c[c.length - 3], c[c.length - 2]];
 }
 function newAgent(S, A, route, s0, kind, purpose, org) {
-  const K = KINDS[kind], lk = route.path[0][0];
-  const a = { k: kind, K, route: route.path, ri: 0, s: s0, v: lk.C.v * 0.5, lane: 0, dest: route.dest, org, pur: purpose, col: Math.floor(A.R() * 1000), t0: S.time, id: A.nid++ };
+  const K = KINDS[kind], lk = route[0][0], L = LIFE[purpose] || LIFE.gen, R = A.R;
+  const a = { k: kind, K, route, ri: 0, s: s0, v: lk.C.v * 0.5, lane: 0, org, pur: purpose, life: L[0] + R() * (L[1] - L[0]), wait: 0, col: Math.floor(R() * 1000), t0: S.time, id: A.nid++ };
   laneFor(a);
   A.list.push(a);
   return a;
 }
 function laneFor(a) { const lk = a.route[a.ri][0], n = lk.C.lanes; a.lane = n > 1 ? (a.K.L > 0.1 || (a.col % 10) < 6 ? 0 : 1) : 0; }
-/* the next link after a route's end, for traffic passing through: the straightest way on along the same class */
-function extend(G, a) {
-  const [lk, d] = a.route[a.route.length - 1], n = d ? lk.a : lk.b, P = lk.pts;
-  const p0 = d ? P[1] : P[P.length - 2], p1 = d ? P[0] : P[P.length - 1], hd = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-  let best = null, bs = -1e9;
-  for (const li of G.nodes[n].out) {
-    const q = G.links[li]; if (q === lk) continue;
-    const dd = q.a === n ? 0 : 1; if (!canGo(q, dd)) continue;
-    const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1];
-    const s = Math.cos(Math.atan2(q1.y - q0.y, q1.x - q0.x) - hd) + (q.cls === lk.cls ? 0.6 : 0) + (q.C.rank - 2) * 0.1;
-    if (s > bs) { bs = s; best = [q, dd]; }
-  }
-  if (best) a.route.push(best);
-  return !!best;
-}
+const endOf = (lk, d) => d ? lk.a : lk.b;
 IC.trafficAgents = function (S, view, dt) {
   const T = S.traffic; if (!T) return [];
   let A = AG.get(S);
   const G = T.G, cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2, r = Math.max(view.x1 - view.x0, view.y1 - view.y0) * 0.65 + 4;
   if (!A || A.reset || A.G !== G) { A = { list: [], nid: 1, R: IC.makeRng(((S.seed * 7 + 3) >>> 0) + (A ? A.nid : 0)), G, box: null, trips: [], zt: new Map() }; AG.set(S, A); }
   const box = { x0: cx - r, y0: cy - r, x1: cx + r, y1: cy + r }, R = A.R;
-  A.r = r; A.stats = A.stats || { spawnZone: 0, spawnEdge: 0, arrived: 0 };
+  A.r = r; A.stats = A.stats || { spawnZone: 0, spawnEdge: 0, arrived: 0, turned: 0 };
   const inBox = (x, y, b) => x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1;
   const posOf = a => { const [lk, d] = a.route[a.ri], s = d ? lk.len - a.s : a.s; return along(lk.pts, lk.cum, U.clamp(s, 0, lk.len)); };
   // the view moved on: vehicles far outside go, links newly in view are filled at their flow
@@ -685,12 +668,11 @@ IC.trafficAgents = function (S, view, dt) {
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
       for (let d = 0; d < 2; d++) {
-        if (!canGo(lk, d) || L.ld[d] < 0.02) continue;
+        if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
         const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.5;
         for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
           if (R() > n - q) break;
-          const s = R() * lk.len, kind = pickKind(mixOf(L, d), R());
-          const a = newAgent(S, A, { path: [[lk, d]], dest: null }, s, kind, 'through', null);
+          const a = newAgent(S, A, [[lk, d]], R() * lk.len, pickKind(mixOf(L, d), R()), 'through', null);
           a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
         }
       }
@@ -698,22 +680,20 @@ IC.trafficAgents = function (S, view, dt) {
     A.box = box;
   }
   if (!dt || dt <= 0) return A.list;
-  // new trips: from the zones in view, and in from the edge of the box on busy links
+  // new vehicles: from the zones in view, and in from the edge of the box on busy links
   const h = (S.time % 86400) / 3600, fi = hr(H_IN, h), fo = hr(H_OUT, h), ff = hr(H_FRT, h), fa = hr(H_APT, h), fg = hr(H_GEN, h);
   const room = () => A.list.length < AG_MAX;
   for (const z of T.zones) {
     if (!inBox(z.x, z.y, box) || !room()) continue;
     // departures a game second: people and lorries leaving this zone
-    const rate = (z.homes * fi + z.jobs * fo) * 0.004 + z.frt * ff * 0.002 + z.homes * (fa * 0.0006 + fg * 0.0015);
+    const pc = (z.homes * fi + z.jobs * fo) * 0.004, pf = z.frt * ff * 0.002, pa = z.homes * fa * 0.0006, rate = pc + pf + pa + z.homes * fg * 0.0015;
     let acc = (A.zt.get(z) || 0) + rate * dt;
     while (acc >= 1 && room()) {
       acc -= 1;
-      const u = R() * rate, pc = (z.homes * fi + z.jobs * fo) * 0.004, pf = z.frt * ff * 0.002, pa = z.homes * fa * 0.0006;
-      const pur = u < pc ? 'com' : u < pc + pf ? 'frt' : u < pc + pf + pa ? 'apt' : 'gen';
-      const rt = spawnRoute(S, A, G, { zone: z, node: z.node, x: z.x, y: z.y }, pur, R);
-      if (!rt) continue;
+      const u = R() * rate, pur = u < pc ? 'com' : u < pc + pf ? 'frt' : u < pc + pf + pa ? 'apt' : 'gen';
+      const first = pickNext(G, T, z.node, null, R); if (!first) continue;
       const M = MIX[pur]; let kr = R(), kind = M[0][0]; for (const [k, q] of M) { if (kr < q) { kind = k; break; } kr -= q; }
-      newAgent(S, A, rt, 0, kind, pur, z);
+      newAgent(S, A, [first], 0, kind, pur, z);
       A.stats.spawnZone++;
     }
     A.zt.set(z, Math.min(acc, 3));
@@ -728,11 +708,11 @@ IC.trafficAgents = function (S, view, dt) {
       const pa = lk.pts[0], pb = lk.pts[lk.pts.length - 1], ia = inBox(pa.x, pa.y, box), ib = inBox(pb.x, pb.y, box);
       if (ia === ib) continue;
       const d = ia ? 1 : 0;   // the direction that runs into the box
-      if (!canGo(lk, d) || L.ld[d] < 0.02) continue;
+      if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
       const n = L.ld[d] * lk.C.dens * lk.C.lanes * L.v[d] * et;
       for (let q = 0; q < n && room(); q++) {
         if (R() > n - q) break;
-        const a = newAgent(S, A, { path: [[lk, d]], dest: null }, 0, pickKind(mixOf(L, d), R()), 'through', null);
+        const a = newAgent(S, A, [[lk, d]], 0, pickKind(mixOf(L, d), R()), 'through', null);
         a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
         A.stats.spawnEdge++;
       }
@@ -742,48 +722,60 @@ IC.trafficAgents = function (S, view, dt) {
   return A.list;
 };
 function stepAgents(S, A, G, dt, box) {
-  // steps of half a second, but never more than four a frame: at high game speed they take longer steps
-  const n = Math.min(4, Math.ceil(dt / 0.5)), h = dt / n;
+  // steps of half a second, but never more than three a frame: at high game speed they take longer steps
+  const n = Math.min(3, Math.ceil(dt / 0.5)), h = dt / n;
   for (let q = 0; q < n; q++) stepOnce(S, A, G, h, S.time - dt + (q + 1) * h, box, (A.sn = (A.sn || 0) + 1) % 4 === 0);
 }
 function stepOnce(S, A, G, dt, now, box, check) {
   // who is ahead of whom: vehicles by lane of each link and direction, sorted along it
-  const lanes = new Map();
+  const lanes = new Map(), T = S.traffic, L2 = T.links, R = A.R;
   for (const a of A.list) { const [lk, d] = a.route[a.ri], k = (lk.id * 2 + d) * 2 + a.lane; let L = lanes.get(k); if (!L) lanes.set(k, L = []); L.push(a); }
-  for (const L of lanes.values()) L.sort((p, q) => p.s - q.s);
+  for (const L of lanes.values()) if (L.length > 1) L.sort((p, q) => p.s - q.s);
   const firstOn = (lk, d) => { let m = null; for (let ln = 0; ln < 2; ln++) { const L = lanes.get((lk.id * 2 + d) * 2 + ln); if (L && L.length && (!m || L[0].s < m.s)) m = L[0]; } return m; };
-  const gone = new Set(), traffic = S.traffic, L2 = traffic.links;
+  const gone = new Set();
   for (const L of lanes.values()) for (let i = 0; i < L.length; i++) {
-    const a = L[i], [lk, d] = a.route[a.ri];
-    if (a.ri >= a.route.length - 1 && !a.dest) extend(G, a);
+    const a = L[i], [lk, d] = a.route[a.ri], end = endOf(lk, d), nd = G.nodes[end];
+    // the road on: chosen when the vehicle comes near the junction, unless it is about to park
+    if (a.ri >= a.route.length - 1 && a.life > 0 && lk.len - a.s < 1.5) { const nx = pickNext(G, T, end, [lk, d], R); if (nx) a.route.push(nx); }
     let gap = 1e9;
     if (i + 1 < L.length) { const b = L[i + 1]; gap = b.s - a.s - (a.K.L + b.K.L) / 2; }
     else if (a.ri + 1 < a.route.length) {
-      const [nl, nd] = a.route[a.ri + 1], b = firstOn(nl, nd);
+      const [nl, nd2] = a.route[a.ri + 1], b = firstOn(nl, nd2);
       if (b) gap = lk.len - a.s + b.s - (a.K.L + b.K.L) / 2;
     }
-    // the junction ahead: red light, or give way to the bigger road while someone crosses
-    const toEnd = lk.len - a.s, end = d ? lk.a : lk.b, nd = G.nodes[end];
+    const toEnd = lk.len - a.s;
+    let speed = Math.min(a.K.v, (L2[lk.id] ? L2[lk.id].v[d] : lk.C.v) * (0.9 + (a.col % 7) * 0.03), lk.C.v * 1.1);
     if (a.ri + 1 < a.route.length && toEnd < 0.6) {
-      let stop = false;
-      if (nd.sig) stop = !signalGreen(G, end, lk, d, now);
-      else if (nd.rank > lk.C.rank || nd.jk === 'rb') stop = nd.busy > now && nd.from !== lk.id;
-      if (stop) gap = Math.min(gap, toEnd - 0.03);
+      const nx = a.route[a.ri + 1][0];
+      if (nx.cut || (L2[nx.id] && L2[nx.id].cut)) {
+        // a cut road ahead: queue at the line, then turn back after a while
+        gap = Math.min(gap, toEnd - 0.03);
+        if (a.v < 0.02 && (a.wait += dt) > 60 + (a.col % 60)) { a.route.length = a.ri + 1; const back = pickNext(G, T, end, [lk, d], R, true); if (back) a.route.push(back); a.wait = 0; A.stats.turned++; }
+      } else if (nd.out.length >= 3) {
+        // a junction: slow through it, and give way to whoever is already in it
+        speed = Math.min(speed, Math.max(0.03, lk.C.v * 0.55));
+        if (nd.busy > now && nd.from !== lk.id) gap = Math.min(gap, toEnd - 0.03);
+      }
     }
-    const speed = Math.min(a.K.v, (L2[lk.id] ? L2[lk.id].v[d] : lk.C.v) * (0.9 + (a.col % 7) * 0.03), lk.C.v * 1.1);
     const want = Math.max(0, Math.min(speed, (gap - 0.012) / 1.4));
     a.v = want < a.v ? want : Math.min(want, a.v + 0.02 * dt);
-    a.s += a.v * dt;
+    a.s += a.v * dt; a.life -= a.v * dt;
     while (a.s >= a.route[a.ri][0].len) {
       const [cl, cd] = a.route[a.ri];
       a.s -= cl.len;
-      const nd2 = G.nodes[cd ? cl.a : cl.b];
-      if (a.ri + 1 >= a.route.length) { gone.add(a); if (a.dest) { A.stats.arrived++; A.trips.push({ org: a.org, dest: a.dest, route: a.route, id: a.id }); if (A.trips.length > 200) A.trips.shift(); } break; }
+      if (a.ri + 1 >= a.route.length) {
+        // it parks here (or there was no way on)
+        gone.add(a); A.stats.arrived++;
+        if (a.org) { A.trips.push({ org: a.org, end: endOf(cl, cd), route: a.route.slice(), id: a.id }); if (A.trips.length > 200) A.trips.shift(); }
+        break;
+      }
       // entering the junction: it is busy for a moment for whoever gives way
-      nd2.busy = now + 1.2; nd2.from = cl.id;
+      const nd2 = G.nodes[endOf(cl, cd)]; nd2.busy = now + 1.2; nd2.from = cl.id;
       a.ri++; laneFor(a);
+      // keep only the last few roads of the route
+      if (a.ri > 12) { a.route.splice(0, 8); a.ri -= 8; }
     }
-    if (check && !gone.has(a) && !a.dest) {
+    if (check && !gone.has(a)) {
       const [cl, cd] = a.route[a.ri], p = along(cl.pts, cl.cum, U.clamp(cd ? cl.len - a.s : a.s, 0, cl.len));
       if (p.x < box.x0 || p.x > box.x1 || p.y < box.y0 || p.y > box.y1) gone.add(a);
     }
