@@ -32,10 +32,11 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 8 | [29 Engine health: fast tests, fast start, the step budget](29-engine-health.md) | — | tests, start-up, `sensors.js` detection, a full code review |
 | 8 | [30 Cities that make sense](30-city-roads.md) | — | where roads meet cities in `cities.js`/`gen.js`, traffic assignment |
 | 8 | [31 Engagements that last, and a replay that looks like a real debrief](31-engagements-replay.md) | 20, 21, 22 | missile energy and guidance in `flight.js`/`defense.js`/`air.js`, `record.js`, `replay3d.js`, cameras and video export |
-| 8 | [25 One game: what you build in peace matters in war](25-civil-war-bridge.md) | 19, 23, 24 | hooks across airports, airlines, airspace, the war acts |
-| 8 | [26 Fewer things on screen, every choice a trade-off](26-decisions-focus.md) | 24 | `ui.js`, `warroom.js`, `inspector.js`, alerts, delegates |
-| 8 | [27 Moments and after-action reports](27-moments.md) | 19, 22 | new `moments.js`, the report, replay links, audio |
-| 8 | [28 A 20-minute Showcase for the portfolio](28-vertical-slice.md) | 25–27 | new `showcase.js` |
+| 9 | [32 Years, not days: a calendar by months, and time to breathe](32-years-calendar.md) | 24, 06, 29 | the calendar (`core.js`, `ui.js`, `main.js`), months in `logistics.js`/`growth.js`/`aviation.js`/`story.js`, seasons in `weather.js`, construction stages |
+| 9 | [25 One game: what you build in peace matters in war](25-civil-war-bridge.md) | 19, 23, 24 | hooks across airports, airlines, airspace, the war acts |
+| 9 | [26 Fewer things on screen, every choice a trade-off](26-decisions-focus.md) | 24 | `ui.js`, `warroom.js`, `inspector.js`, alerts, delegates |
+| 9 | [27 Moments and after-action reports](27-moments.md) | 19, 22 | new `moments.js`, the report, replay links, audio |
+| 9 | [28 A 20-minute Showcase for the portfolio](28-vertical-slice.md) | 25–27 | new `showcase.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.
@@ -49,5 +50,7 @@ Wave 7 (23, 24) came from the owner's first long play of the Career and runs alo
 Fable 5.1's safeguards flagged sessions on this codebase (a false positive on its military theme); wave 6 runs on Opus 5.5 except the replay.
 
 Wave 8 comes from the coordinator's ideas that the owner approved (a session-timeline export for playtesting was left out). Order: 06 save/load, 29 engine health and 30 cities first, 31 engagements and replay next (the owner asked for it) (they make everything after them easier to test), then 25, 26, 27, then 28 last. Run at most three sessions at a time: six at once exhausted the account's 5-hour usage limit in an hour.
+
+Wave 9 comes from the owner's view of pace: the Career should span ten years or more on a calendar by months, construction stays quick, and the player has time to let revenue come in. 32 goes first; 25–28 wait for it and are adjusted to the calendar before they start.
 
 After wave 6: a full `/code-review ultra`, then fixes and long balance runs.
