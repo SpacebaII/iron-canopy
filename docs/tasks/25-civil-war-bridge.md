@@ -33,6 +33,14 @@ Right now the Career plays as an airport tycoon, then a separate air defence gam
 - When an Act I choice matters in the war, say so at that moment ("Reinforced concrete: the crater is half the size").
 - In Act I, hints say what a choice will mean later, sparingly and in plain words.
 
+## With the calendar (32)
+
+The Career now spans ten years or more, with a calendar by months (brief 32). Use the time: consequences should arrive years after the choice.
+- **Ageing:** a runway paved in Year 2 is older, and weaker against craters, by Year 9 unless it was renewed. An airport's hardened shelters, fuel farm and radar cover grow or age with it.
+- **Airlines on long deals:** closing the airspace breaks deals that were meant to run for years. The airlines remember it, in offers and charges, for months after.
+- **The gray zone over months:** incidents in Acts II–III rise month by month. What the player built in the quiet years is what they have when it turns.
+- The play-through note gives the calendar date of each choice and of the moment it paid off.
+
 ## Scope
 
 - Hooks across `airport.js`, `aviation.js`, `airspace.js`, `story.js` (Acts II–IV), `enemy.js` targeting (with task 19's merged work) and `growth.js`.
