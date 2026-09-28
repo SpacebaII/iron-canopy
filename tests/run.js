@@ -17,8 +17,8 @@ const quick = args.includes('--quick'), slowOnly = args.includes('--slow');
 const filter = args.find(a => !a.startsWith('--'));
 const tests = [];
 /* slow: true = left out of --quick; 'long' = a balance run, only in --slow. group: tests that share what they
-   build (a generated world) run one after another in the same worker; group 'alone': tests that time the code run
-   after all the others, with no other worker busy */
+   build (a generated world) run one after another in the same worker; group 'alone': tests that time the code. They
+   run with the others, and one that fails is run again at the end with no other worker busy: only that counts */
 const test = (name, fn, slow, group) => tests.push({ name, fn, slow, group });
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 const run = (S, hours, each) => { for (let i = 0; i < hours * 3600 / 0.5 && !S.over; i++) { IC.step(S, 0.5); if (each && i % 120 === 0) each(S); } };
@@ -185,7 +185,7 @@ test('world: generation stays under the time budget', () => {
   // the map is ten times larger than wave 4's, with three to four times the towns and roads; it was 1,500 ms for the
   // smaller map, about 1.3 s on the machine that measured both (3.5 s now, up to 4.8 s with other runs beside it)
   assert(worst < 5000, `generation took ${worst} ms`);
-}, false, 'alone');
+}, true, 'alone');
 test('world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map', () => {
   assert(Math.abs(IC.WW / 10 - 5700) < 200 && Math.abs(IC.WH / 10 - 4300) < 200, `the map is ${IC.WW / 10} × ${IC.WH / 10} km`);
   for (const seed of [4242, 7, 99]) {
@@ -982,7 +982,7 @@ test('airport life: the landside grows with passengers and pays a small income',
   assert(L.pax > 100 && kinds.has('park') && kinds.has('stop'), `after 5 hours with ${Math.round(L.pax)} passengers an hour: ${[...kinds].join(', ') || 'nothing'}`);
   assert(L.items.every(it => !IC.aptOnPart(cap, it, 0.05) && !cap.parts.some(p => p.kind === 'runway' && IC.partDist(cap, p, it) < 1.5)), 'a landside item stands on the airfield');
   assert(S.econ.book.landside > 0, 'the landside earned nothing');
-});
+}, true);
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);
@@ -1412,7 +1412,7 @@ test('supply: a battery low on missiles is resupplied by a convoy seen on the ro
   assert(m.store + m.mag >= m.storeMax + m.max, `only ${m.mag} ready and ${m.store} in reserve after ${U.dur(t)}`);
   assert(seenOnRoad, 'the convoy never drove on a road');
   assert(IC.nextLoad(S, u, m).text === 'Full.', 'the panel does not say it is full');
-});
+}, true);
 test('supply: a cut road delays resupply, and the battery panel says why', () => {
   const S = supplyGame();
   const { dep, u, m } = lowBattery(S, 900, 1400);
@@ -1449,7 +1449,7 @@ test('money: the money panel adds up to the change in the treasury', () => {
   const M = IC.money(S);
   assert(Math.abs(M.net - (S.income - S.upkeep)) < 0.01, 'the hourly lines do not add up to the hourly balance');
   assert(M.inc.concat(M.out).every(l => l.why && l.name), 'a money line has no name or no reason');
-});
+}, true);
 test('money: a warning comes before the money runs out', () => {
   // Act I of the Career: a small grant, and two long-range batteries it cannot pay for
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
@@ -1600,7 +1600,7 @@ test('air war: a fighter launched from 5-minute alert is airborne within 5 minut
   const f0 = S.roster.find(x => x !== r && x.kind === 'ftr' && x.st === 'ready');
   IC.setAlert(S, f0, 5); f0.fat = 0; run(S, 2);
   assert(f0.fat > 0.1, `crews on 5-minute alert did not tire (${f0.fat})`);
-});
+}, true);
 test('air war: an intercept commits, flies to the predicted point and engages', () => {
   const S = quietWar();
   const b = S.byId.ab_fwd, r = S.roster.find(x => x.base === b.id && x.kind === 'ftr' && x.st === 'ready');
@@ -2016,7 +2016,7 @@ test('units: the new short-range systems shoot down a drone swarm on the Test ra
     if (type === 'idl') assert(r.st.ours / r.sys.kills < 0.1, `interceptor drones cost ${U.money(r.st.ours / r.sys.kills)} a kill`);
     if (type === 'dgun' || type === 'mlaser') assert(r.st.ours === 0, `${type} spent missiles`);
   }
-});
+}, true);
 test('units: the mobile medium-range launcher shoots down strike aircraft, then moves', () => {
   const S = range(), T = S.range.target;
   const u = IC.rangeAddUnit(S, 'mrmob', T.x + 20, T.y), x0 = u.x, y0 = u.y;
@@ -2234,14 +2234,13 @@ if (process.env.IC_TEST_WORKER) {
   // units: a group runs as one; longest first so the long ones do not start last
   const units = [], byGroup = new Map();
   for (const t of chosen) {
-    if (t.group && byGroup.has(t.group)) { byGroup.get(t.group).push(t); continue; }
+    if (t.group && t.group !== 'alone' && byGroup.has(t.group)) { byGroup.get(t.group).push(t); continue; }
     const u = [t]; units.push(u); if (t.group) byGroup.set(t.group, u);
   }
   const est = u => u.reduce((s, t) => s + (times[t.name] || 5), 0);
   units.sort((a, b) => est(b) - est(a));
-  const alone = byGroup.get('alone');
-  if (alone) units.splice(units.indexOf(alone), 1);
-  if (!units.length && !alone) { console.log('No tests match.'); process.exit(1); }
+  if (!units.length) { console.log('No tests match.'); process.exit(1); }
+  const again = [];   // timing tests that failed beside the others, to time alone at the end
   const jobs = Math.max(1, Math.min(units.length, +process.env.IC_JOBS || Math.min(4, os.cpus().length)));
   const res = [], t00 = Date.now();
   const finish = () => {
@@ -2255,19 +2254,26 @@ if (process.env.IC_TEST_WORKER) {
     process.exit(fail ? 1 : 0);
   };
   if (jobs === 1) {
-    for (const u of units.concat(alone ? [alone] : [])) for (const t of u) { const r = runOne(tests[t.i]); res.push(r); show(r); }
+    for (const u of units) for (const t of u) { const r = runOne(tests[t.i]); res.push(r); show(r); }
     finish();
   } else {
     let live = 0;
-    let later = alone;
-    const done = () => { if (later) { units.push(later); later = null; spawn(); } else finish(); };
+    const done = () => {
+      if (!again.length) return finish();
+      console.log(`\n  timing again, alone: ${again.map(t => t.name).join('; ')}`);
+      units.push(again.splice(0)); spawn();
+    };
+    const result = (m, t) => {
+      if (m.err && t && t.group === 'alone' && !t.retried) { t.retried = true; again.push(t); console.log(`  (slow beside the other workers: ${m.name})`); return; }
+      res.push(m); show(m);
+    };
     const spawn = () => {
       const w = cp.fork(__filename, args, { env: Object.assign({}, process.env, { IC_TEST_WORKER: '1' }) });
       let cur = null;
       live++;
       const next = () => { cur = units.shift(); if (cur) w.send({ is: cur.map(t => t.i) }); else w.disconnect(); };
       w.on('message', m => {
-        if (!m.done) { res.push(m); show(m); cur = cur.filter(t => t.i !== m.i); return; }
+        if (!m.done) { result(m, cur.find(t => t.i === m.i)); cur = cur.filter(t => t.i !== m.i); return; }
         if (m.big && units.length) { cur = null; w.disconnect(); spawn(); } else next();
       });
       w.on('exit', code => {
