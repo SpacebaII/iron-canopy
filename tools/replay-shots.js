@@ -66,6 +66,24 @@ const SCENES = {
     const mx = (x + e.x) / 2, my = (y + e.y) / 2, a = Math.atan2(e.y - y, e.x - x);
     const V = await replay({ x: mx, y: my, t: e.t - 90, r: 220 }, e.t - 3, { yaw: a + Math.PI / 2, pitch: 0.1, dist: 480, ty: e.alt * 10 * 0.55 });
     if (window.DBG) window.__dbg = { e, cam: V.camera.position.toArray().map(Math.round), movers: V.movers.map(m => [m.tr.name, m.tr.kind, m.grp.visible, m.grp.position.toArray().map(Math.round), m.grp.scale.x.toFixed(1), m.line.visible]) };`,
+  // the Journal's Replay button on the city strike, and the replay it opens
+  journal: `
+    const S = await war(10); const c = IC.cap(S);
+    const b = c.blocks.filter(b => b.f === 'tower' && b.hp > 0).sort((p, q) => U.dxy(p.x, p.y, c.x, c.y) - U.dxy(q.x, q.y, c.x, c.y))[0];
+    hostile(S, 'lacm', b.x + 300, b.y - 120, { x: b.x, y: b.y });
+    steps(S, 240, S => firstEv(S, ['impact'])); steps(S, 20);
+    IC.ui.openRoom('journal'); IC.ui.refresh(true); await wait(600);
+    const btn = document.querySelector('[data-act=replay]'); if (!btn) throw new Error('no Replay button in the Journal');
+    btn.click(); for (let i = 0; i < 100 && !(IC.replayState() && IC.replayState().renderer); i++) await wait(100);
+    if (!IC.replayState()) throw new Error('the Replay button did not open the replay');
+    await wait(1500);`,
+  // the 2D map close in: airliners at their stands and a battery's launchers drawn from above as their models
+  'map-top': `
+    const S = await war(11); const ap = S.byId.i0;
+    const st = ap.parts.find(p => p.kind === 'apron' && p.built) || ap;
+    unit(S, 'lrsam', st.x + 6, st.y - 8);
+    steps(S, 30); S.paused = true;
+    IC.cam.fly = null; IC.cam.z = 45; IC.centerOn(st.x + 2, st.y - 3); await wait(2500);`,
   gallery: `IC.begin('range'); await wait(1500); IC.replayGallery(IC.S); await wait(4000);`,
   'gallery-above': `IC.begin('range'); await wait(1500); IC.replayGallery(IC.S); await wait(3000); document.querySelector('[data-rp=above]').click(); await wait(1500);`,
   // frame times with the replay open on a raid: 30+ movers with trails and labels, playing at 2×
@@ -107,7 +125,7 @@ const SCENES = {
     await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`);
     if (process.env.DBG) console.log(JSON.stringify(await page.evaluate(() => window.__dbg)));
     if (name === 'perf') console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
-    else { const out = path.resolve(__dirname, `../shots/replay-${name}.png`); await page.screenshot({ path: out }); console.log('saved', out); }
+    else { const out = path.resolve(__dirname, `../shots/replay-${name}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); }
     if (errors.length) { bad++; console.log(name, 'page errors:\n  ' + errors.join('\n  ')); }
     await page.close();
   }
