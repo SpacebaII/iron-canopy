@@ -24,14 +24,18 @@ console.log(`seed ${seed}: ${S.world.cities.length} cities, capital ${IC.cap(S).
 marks.push({ what: 'Act I', t: S.time });
 const calm = () => !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
 let nextP = 0;
+// step times: at the wait speed's 8 s steps and at 1 s, over the run and over each month (the busiest month shows)
+const tm = { w: { n: 0, us: 0 }, f: { n: 0, us: 0 }, mw: { n: 0, us: 0 }, worst: { ms: 0, when: '' } };
 while (mo(S.time) < years * 12 && !S.over && st.act < stopAct) {
-  const dt = calm() ? 8 : 1;
+  const dt = calm() ? 8 : 1, c0 = process.hrtime.bigint();
   IC.step(S, dt);
+  const us = Number(process.hrtime.bigint() - c0) / 1000, T = dt === 8 ? tm.w : tm.f; T.n++; T.us += us; tm.mw.n += dt === 8 ? 1 : 0; tm.mw.us += dt === 8 ? us : 0;
   if (S.time >= nextP) { player(S); nextP = S.time + 64; }
   if (st.act === 1 && st.ch !== chSeen) { chSeen = st.ch; marks.push({ what: `Chapter ${st.ch + 1} ${IC.CHAPTERS[st.ch].title}`, t: S.time, ch: st.ch }); console.log(`\n=== ${stamp(S.time)} Chapter ${st.ch + 1}: ${IC.CHAPTERS[st.ch].title}`); }
   if (st.act !== actSeen) { actSeen = st.act; marks.push({ what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title}`, t: S.time, act: st.act }); console.log(`\n=== ${stamp(S.time)} ${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`); }
   if (S.cal.m !== lastM) {
     lastM = S.cal.m;
+    if (tm.mw.n) { const ms = tm.mw.us / tm.mw.n / 1000; if (ms > tm.worst.ms) tm.worst = { ms, when: U.date(S.time - 1), flights: S.threats.filter(t => t.tail && !t.dead).length }; } tm.mw = { n: 0, us: 0 };
     const A = S.av, aps = IC.bases(S).filter(b => b.kind === 'airport' && b.owner === 'us'), m1 = IC.monthStatement(S, 1);
     console.log(`${U.date(S.time).padEnd(20)} ${U.money(S.budget).padStart(9)}  month ${m1 ? (m1.net >= 0 ? '+' : '') + Math.round(m1.net) : '?'} (in ${m1 ? Math.round(m1.income) : '?'})  grant ${st.grant.toFixed(1)}/h fees ${IC.avRevenueRate(S).toFixed(1)}/h up ${S.upkeep.toFixed(1)}/h (apt ${(S.ledger.upApt || 0).toFixed(1)}, radars ${(S.ledger.upAD || 0).toFixed(1)}, ${S.units.filter(u => !u.dead && u.type === 'ssr').length} SSR) · conf ${st.standing.toFixed(0)} · ${A.airlines.length} airlines, ${A.routes.filter(r => r.st === 'active').length} routes, ${A.deals.filter(d => d.st === 'active').length} deals, pax/day ${Math.round(Math.max(A.day.pax, A.yesterday ? A.yesterday.pax : 0))} · ${aps.length} airports ${aps.map(a => IC.aptStands(a).length).join('/')} stands · goals ${st.goals.filter(g => g.done).length}/${st.goals.length}${st.act >= 4 ? ` · will ${Math.round(S.enemy.will)}` : ''} · ${((Date.now() - wall) / 60000).toFixed(1)} min`);
   }
@@ -40,6 +44,8 @@ while (mo(S.time) < years * 12 && !S.over && st.act < stopAct) {
 while (logs.length) console.log('      ' + logs.shift());
 marks.push({ what: S.over ? `End: ${S.over}` : 'Stopped', t: S.time });
 console.log(`\n${S.over ? 'Over: ' + S.over : `Act ${st.act} after ${mo(S.time).toFixed(1)} months`} (${((Date.now() - wall) / 60000).toFixed(0)} min to run)`);
+const perS = T => T.n ? (T.us / T.n / 1000).toFixed(3) : '–';
+console.log(`Step times: ${perS(tm.w)} ms a step of 8 s (${tm.w.n} steps), ${perS(tm.f)} ms a step of 1 s (${tm.f.n}); the busiest month for 8 s steps: ${tm.worst.ms.toFixed(3)} ms in ${tm.worst.when}. Waiting needs ${Math.round(IC.GS * IC.WAIT.speed / 8)} steps of 8 s a real second: ${(IC.GS * IC.WAIT.speed / 8 * tm.worst.ms).toFixed(0)} ms of simulation a real second in that month`);
 // real minutes: IC.GS game seconds a real second at 1×; Wait runs a month in about a minute
 const real = (gs, sp) => gs / (IC.GS * sp) / 60;
 const fmt = m => m >= 120 ? `${(m / 60).toFixed(1)} h` : `${Math.round(m)} min`;
