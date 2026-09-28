@@ -2169,8 +2169,9 @@ test('career: a scripted player builds the national airport and plays through Ac
   const L = st.chLog.map(c => `${c.ch + 1}@${U.date(c.t)}`).join(' ');
   assert(st.chLog.map(c => c.ch).join() === '0,1,2,3,4,5', `chapters out of order or missing: ${L}`);
   assert(st.act === 2, `still in Act I after seven years: ${L}`);
-  // no chapter is rushed: each ran its minimum months
-  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / IC.MO(S); if (c.ch > 0) assert(dur >= IC.CHAPTERS[c.ch].min - 0.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} months: ${L}`); }
+  // no chapter is rushed: each ran its minimum months (the second may open at three quarters of it when a near miss
+  // or overloaded controllers force the airspace question)
+  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / IC.MO(S), min = IC.CHAPTERS[c.ch].min * (c.ch === 1 ? 0.75 : 1); if (c.ch > 0) assert(dur >= min - 0.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} months: ${L}`); }
   // the owner asked for years: Act I is three to five of them
   const yrs = (st.actT - t0) / IC.YR(S);
   assert(yrs * 12 >= IC.ACT1_MIN_MO && yrs <= 6, `Act I lasted ${yrs.toFixed(1)} years: ${L}`);

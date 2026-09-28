@@ -10,9 +10,10 @@
 const U = IC.U;
 
 /* grants are ₭M a live hour; the Career runs for years, so a month (72 live hours at three days a month) of the
-   Act I grant is about ₭140M: running money, not building money. Building money comes from the airlines. */
+   Act I grant is about ₭70M: running money, not building money. Building money comes from the airlines, and the
+   ₭5.5 billion at the start dwindles for a player who builds more than they use. */
 IC.ACTS = {
-  1: { name: 'Act I', title: 'The Director', role: 'Director of Civil Aviation', grant: 2 },
+  1: { name: 'Act I', title: 'The Director', role: 'Director of Civil Aviation', grant: 1 },
   // from Act II the military budget grows with the job, for a country of sixty cities: from Act III a share of the
   // city taxes comes on top (IC.STORY_TAX)
   2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 4 },
