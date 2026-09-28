@@ -118,14 +118,13 @@ IC.drawSide = function (cv, S, w) {
 
 /* ---------- the floating panel ---------- */
 let el = null, cv = null, raf = 0;
-function build() {
-  if (el) return;
-  const st = document.createElement('style');
-  st.textContent = `.sideview{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);width:min(760px,calc(100% - 32px));z-index:30;padding:.55rem .7rem .7rem;display:none}
+const CSS = `.sideview{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);width:min(760px,calc(100% - 32px));z-index:30;padding:.55rem .7rem .7rem;display:none}
 .sideview.on{display:block}.sideview header{display:flex;gap:.5rem;align-items:center;margin-bottom:.35rem}.sideview header b{flex:1;font-size:.95rem}
 .sideview canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:default}.sideview canvas.drag{cursor:ns-resize}
-.sideview .x{min-width:2rem}.reach{width:100%;height:auto;display:block;border-radius:8px;margin:.2rem 0}`;
-  document.head.appendChild(st);
+.sideview .x{min-width:2rem}.reach{width:100%;max-width:100%;height:auto;display:block;border-radius:8px;margin:.2rem 0}`;
+if (typeof document !== 'undefined' && document.head) { const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st); }
+function build() {
+  if (el) return;
   el = document.createElement('div'); el.className = 'sideview glass'; el.setAttribute('aria-label', 'Side view');
   el.innerHTML = `<header><b id="svT"></b><button class="act" data-sv="turn" title="Turn the slice 45°">Turn</button><button class="act x" data-sv="close" aria-label="Close" title="Close">✕</button></header><canvas width="740" height="260"></canvas><p class="hint" id="svH"></p>`;
   (document.querySelector('.app') || document.body).appendChild(el);
@@ -187,12 +186,12 @@ IC.drawReachChart = function (cv2, muns) {
     g.beginPath(); g.moveTo(X(0), Y(R[0][0])); for (const [a, r] of R) g.lineTo(X(r), Y(a)); g.lineTo(X(0), Y(R[R.length - 1][0])); g.closePath();
     g.fillStyle = `rgba(${cols[i % 4]},0.18)`; g.fill(); g.strokeStyle = `rgba(${cols[i % 4]},0.9)`; g.lineWidth = 1.4; g.stroke();
     const m = R.reduce((p, q) => q[1] > p[1] ? q : p);
-    g.fillStyle = `rgb(${cols[i % 4]})`; g.textAlign = 'right'; g.fillText(IC.MUN[muns[i]].short || muns[i], X(m[1]) - 3, Y(m[0]) - 4);
+    g.fillStyle = `rgb(${cols[i % 4]})`; g.textAlign = 'right'; g.fillText(IC.MUN[muns[i]].short || muns[i], X(m[1]) - 6, Y(m[0]) + 14);
   });
   g.fillStyle = 'rgba(160,190,210,0.7)'; g.textAlign = 'right';
   for (const a of [0, maxA / 2, maxA]) g.fillText(`${+a.toFixed(1)} km`, ml - 4, Y(a) + 3);
   g.textAlign = 'center'; for (const r of [0, maxR / 2, maxR]) g.fillText(`${Math.round(r)} km`, X(r), H - 5);
-  g.textAlign = 'left'; g.fillStyle = 'rgba(200,215,225,0.8)'; g.fillText('height ↑   distance →', ml + 4, mt + 10);
+  g.textAlign = 'right'; g.fillStyle = 'rgba(200,215,225,0.8)'; g.fillText('height ↑   distance →', W - mr - 4, mt + 10);
 };
 
 /* ---------- orders from the airport's Airspace tab ---------- */

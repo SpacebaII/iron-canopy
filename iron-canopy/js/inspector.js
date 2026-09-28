@@ -125,7 +125,7 @@ function unit(u) {
   const rows = [];
   const rng = IC.maxRange(S, u); if (rng) rows.push(['Weapon reach', U.km(rng)]);
   const sams = u.mags.map(m => m.mun).filter((m, i, a) => IC.MUN[m].alt && a.indexOf(m) === i);
-  if (sams.length) parts.push(`<div class="sec"><h3 class="sh">Reach by height <em>side view</em></h3><canvas class="reach" data-reach="${sams.join(',')}" width="560" height="170"></canvas>${sams.map(m => `<p class="hint"><b>${esc(IC.MUN[m].short || m)}</b> ${esc(IC.reachText(m))}.</p>`).join('')}</div>`);
+  if (sams.length) parts.push(`<div class="sec"><h3 class="sh">Reach by height <em>side view</em></h3><canvas class="reach" data-reach="${sams.join(',')}" width="400" height="160"></canvas>${sams.map(m => `<p class="hint"><b>${esc(IC.MUN[m].short || m)}</b> ${esc(IC.reachText(m))}.</p>`).join('')}</div>`);
   if (d.sensor) {
     const sn = d.sensor;
     rows.push(['Radar', `${U.km(sn.R)}${sn.per && sn.rot ? ` · turns every ${sn.per} s` : ''}`]);
@@ -364,7 +364,7 @@ function airspaceTab(b, st) {
   const stacks = IC.atcStacks(S, b).map(k => `<div class="li"><b>${esc(k.k)} stack</b><small>${k.lv.map((t, i) => `${esc(t.cs)} ${IC.flText(IC.atcStackLevel(i))}`).join(' · ')}</small></div>`).join('');
   const used = [...new Set(V.map(v => v.cls))].map(c => IC.ASP_CLS[c]);
   const mil = S.asp.vols.filter(v => v.kind === 'mil' && U.dist(v, b) < 2500);
-  return `<canvas class="schem" data-side="${b.id}" width="560" height="200"></canvas>
+  return `<canvas class="schem" data-side="${b.id}" width="460" height="190"></canvas>
     <div class="acts">${btn('side', null, 'Open the side view', { t: 'A slice through the airspace: drag floors and ceilings' })}</div>
     <div class="sec"><h3 class="sh">Layout <em>${P.auto === false ? 'your own' : esc((IC.ASP_PRESETS[P.preset] || {}).name || '')}</em></h3>${presets}</div>
     ${warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${warn.length}</em></h3>${warn.map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">Arrivals stay inside controlled airspace all the way down.</div>'}
