@@ -124,6 +124,8 @@ function unit(u) {
   // what it can do
   const rows = [];
   const rng = IC.maxRange(S, u); if (rng) rows.push(['Weapon reach', U.km(rng)]);
+  const sams = u.mags.map(m => m.mun).filter((m, i, a) => IC.MUN[m].alt && a.indexOf(m) === i);
+  if (sams.length) parts.push(`<div class="sec"><h3 class="sh">Reach by height <em>side view</em></h3><canvas class="reach" data-reach="${sams.join(',')}" width="400" height="160"></canvas>${sams.map(m => `<p class="hint"><b>${esc(IC.MUN[m].short || m)}</b> ${esc(IC.reachText(m))}.</p>`).join('')}</div>`);
   if (d.sensor) {
     const sn = d.sensor;
     rows.push(['Radar', `${U.km(sn.R)}${sn.per && sn.rot ? ` · turns every ${sn.per} s` : ''}`]);
@@ -167,7 +169,7 @@ function track(t) {
     <div class="${t.klass ? 'y' : ''}"><small>Type</small><b>${t.klass ? esc(IC.KLASS[t.klass] || t.klass) : t.idp > 0 ? 'recognising ' + U.pct(Math.min(1, t.idp)) : 'unknown'}</b></div>
     <div class="${aff === 'H' || aff === 'N' ? 'y' : ''}"><small>Identity</small><b class="${colCls}">${IC.AFF[aff === 'D' ? 'H' : aff].name}${aff === 'D' ? ' decoy' : ''}</b></div></div>`;
   const rows = [
-    ['Altitude', t.altKnown ? U.alt(t.alt) : '<span class="muted">unknown (2D radar only)</span>'],
+    ['Height', t.altKnown ? `${esc(IC.altText(t))}${IC.isAircraft(t) ? ` · ${U.alt(t.alt)}` : ''}${t.lvl != null && Math.abs(t.lvl - t.alt) > 0.1 ? ` · ${t.lvl > t.alt ? 'climbing' : 'descending'} to ${esc(IC.flText(t.lvl))}` : ''}` : '<span class="muted">unknown (2D radar only)</span>'],
     ['Speed', U.kmh(Math.hypot(t.vx, t.vy))], ['Heading', U.compass(Math.atan2(t.vy, t.vx))],
     ['Transponder', t.sqSeen || t.sq && t.aff !== 'U' ? `${t.sq || 'none'}${t.cs ? ' · ' + esc(t.cs) : ''}` : t.sq ? '<span class="muted">not interrogated</span>' : 'none'],
     ['Flight plan', t.plan ? `${esc(t.plan.a.name || '?')} → ${esc(t.plan.b.name || '?')}${t.sqSeen ? (IC.offRoute(t) < 50 ? ' · <span class="civil">on route</span>' : ` · <span class="suspect">${U.km(IC.offRoute(t))} OFF ROUTE</span>`) : ''}` : t.d.civil && t.type === 'ga' ? `${t.fpl ? 'filed' : 'none'} · flying by sight${t.gaTo ? ` to ${esc(t.gaTo === t.gaFrom ? 'and back from ' + t.gaFrom.name : t.gaTo.name)}` : ''}` : 'none filed']
@@ -177,7 +179,15 @@ function track(t) {
     if (t.plan && t.plan.pts) { const fx = t.plan.pts.filter(p => p.fix).map(p => p.name); rows.push(['Route', fx.length ? `airways via ${esc(fx.join(', '))}` : '<span class="amber">direct: no airway fits, so controllers space it wider</span>']); }
     rows.push(['Controllers', IC.aspSeen(S, t) ? '<span class="civil">see it on radar</span>' : `<span class="amber">cannot see it${t.sq ? ' at this height' : ': no transponder'}</span>`]);
     if (t.type === 'ga') rows.push(['Cleared into', t.cleared && t.cleared.length ? esc(t.cleared.map(id => S.byId[id] ? S.byId[id].name : id).join(', ')) : 'no controlled airspace']);
+    if (S.asp && S.asp.vols) {
+      const c = IC.aspClassAt(S, t.x, t.y, t.alt), sec = t.sec && IC.aspSector(S, t.sec);
+      rows.push(['Airspace', `${esc(IC.ASP_CLS[c.cls].name)}${c.vol && c.vol.ap ? ` (${esc(S.byId[c.vol.ap].name)})` : c.way ? ' (airway)' : ''}${sec ? ` · ${esc(sec.name)}` : ''}`]);
+      if (t.stk) rows.push(['Holding', `${esc(t.stk.k)} stack at ${esc(S.byId[t.stk.ap].name)}, level ${IC.atcStackIndex(S, t) + 1}: ${esc(IC.flText(t.lvl))}`]);
+      else if (t.slot && t.toApt && !t.appr) rows.push(['Landing slot', `${U.clock(t.slot)}${t.spdF < 0.99 ? ` · slowed to ${Math.round(t.spdF * 100)}% to meet it` : ''}${t.seqVec && t.vector != null ? ' · on a heading to lose time' : ''}`]);
+      if (t.pCmd) rows.push(['Radio', '<span class="amber">flying your instructions; controllers leave it to you</span>']);
+    }
   }
+  if (aff === 'H' && IC.PROFILES) { const pf = IC.profileOf(t); rows.push(['Height profile', `<b>${esc(pf.name)}</b> (${esc(pf.band)}). ${esc(pf.words)}`]); }
   if (t.tail) { const al = IC.avAirline(S, t.tail.al); rows.push(['Operator', `${esc(al.name)} · ${esc(IC.ACTYPES[t.tail.type].name)}`]); }
   if (t.emergency) rows.push(['Status', '<span class="hostile">MAYDAY · emergency landing</span>']);
   if (t.noReply) rows.push(['Radio', '<span class="suspect">no answer</span>']);
@@ -192,6 +202,12 @@ function track(t) {
   const bats = S.units.filter(u => u.d.weapon === 'sam' && u.state === 'ready' && (U.dist(u, t) <= IC.maxRange(S, u) * 1.05 || IC.predictable(t) && U.dxy(u.x, u.y, t.x1 != null ? t.x1 : t.aim.x, t.y1 != null ? t.y1 : t.aim.y) <= IC.maxRange(S, u))).slice(0, 5);
   const acts = [];
   if ((t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm') && !t.border) acts.push(`<button class="act ${aff === 'S' || aff === 'U' ? 'pri' : ''}" data-act="scramble" ${S.roster.some(r => r.kind === 'ftr' && r.st === 'ready' && IC.canLaunch(S, r)) || S.air.some(a => a.kind === 'ftr' && a.state !== 'rtb') ? '' : 'disabled'}>${kbd('V')}${aff === 'H' ? 'Intercept' : 'Intercept & identify'}</button>`);
+  if (t.d.civil && (aff === 'N' || aff === 'A') && !t.appr && S.asp) {
+    const o = (op, v, l, x) => `<button class="act ${x || ''}" data-act="atc" data-op="${op}" ${v != null ? `data-v="${v}"` : ''} title="On the radio to ${esc(t.cs)}">${l}</button>`;
+    acts.push(o('lvl', 20, 'Climb 2,000 ft'), o('lvl', -20, 'Descend 2,000 ft'), o('turn', -30, 'Left 30°'), o('turn', 30, 'Right 30°'), t.phold ? '' : o('hold', null, 'Hold here'), t.pCmd ? o('resume', null, 'Back to controllers', 'on') : '');
+    if (t.type === 'ga') { const ap = IC.bases(S).filter(x => x.owner === 'us' && IC.aspVols(S, x).length).sort((p, q) => U.dist(p, t) - U.dist(q, t))[0]; if (ap && !(t.cleared || []).includes(ap.id)) acts.push(`<button class="act" data-act="atc" data-op="clear" data-id="${ap.id}">Clear into ${esc(ap.name)} airspace</button>`); }
+  }
+  acts.push(`<button class="act" data-act="atc" data-op="side" title="A slice along its path: what flies above and below it">Side view</button>`);
   if ((t.sq || t.d.civil || t.disguise) && t.d.cls !== 'bal' && !t.border) acts.push(`<button class="act ${t.offFlag ? 'pri' : ''}" data-act="radio" ${t.called && S.time - t.called < 300 ? 'disabled' : ''} title="Call the aircraft on the guard frequency">${t.called && S.time - t.called < 300 ? 'Calling…' : 'Call on radio'}</button>`);
   const escort = S.air.find(a => !a.dead && !a.gnd && a.kind === 'ftr' && a.mission && a.mission.track === t);
   if (escort && hostile && (escort.roe || S.ad.roe) === 'hold') acts.push(`<button class="act danger" data-act="escortFire" data-id="${escort.id}" title="${esc(escort.name)} is escorting it with weapons held. This order lets it fire.">Order ${esc(escort.name)} to fire</button>`);
@@ -312,15 +328,65 @@ function base(b) {
   const tab = ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
   const tabs = `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
     ['build', 'Build', '', 'Parts, tools and materials'], ['works', `Works${nw + nd ? ` <em>${nw + nd}</em>` : ''}`, '', 'Engineering crews, work queued and repairs'],
-    ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here'], ['rules', 'Operations', '', 'The tower\'s rules: when aircraft may go onto a runway']])}</div>`;
+    ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here'], ['rules', 'Operations', '', 'The tower\'s rules: when aircraft may go onto a runway'],
+    ['asp', `Airspace${S.asp && S.asp.vols && IC.aspCheck(S, b).length ? ' <em class="amber">!</em>' : ''}`, '', 'Controlled airspace round the airport: classes, shelves, controllers and holding stacks']])}</div>`;
   const body = tab === 'build' ? `<div class="sec"><h3 class="sh">Build <em>pick a part, then click the map</em></h3>${palette}</div>${st.warn.length ? warn : ''}`
     : tab === 'works' ? `<div class="sec"><h3 class="sh">Engineering <em>${b.works.filter(w => !w.wait).length}/${b.crews} crews working</em></h3>${yard(b)}${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
       ${reps ? `<h3 class="sh">Damage</h3><div class="list">${reps}</div>` : ''}
       <div class="acts"><button class="act" data-act="bwork" data-v="crew" ${S.budget < 20 ? 'disabled' : ''}>+ Crew · ₭20M</button><button class="act ${b.autoRepair ? 'on' : ''}" data-act="bauto">Auto-repair: ${b.autoRepair ? 'on' : 'off'}</button></div></div>`
     : tab === 'rules' ? opsTab(b, st)
+    : tab === 'asp' ? airspaceTab(b, st)
     : tab === 'ops' ? `${fee}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
     : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
   return H + tabs + `<div class="ibody">${body}</div>`;
+}
+/* ---------- the Airspace tab: the airport's controlled airspace, its controllers and stacks ---------- */
+const lvlT = a => a <= 0.01 ? 'the ground' : IC.flText(a);
+function airspaceTab(b, st) {
+  if (!S.asp || !S.asp.vols) return '<p class="hint">The airspace is being set up.</p>';
+  const V = IC.aspVols(S, b).sort((p, q) => p.r0 - q.r0 || p.lo - q.lo), P = b.asp || {}, cur = ui.aspVol;
+  const btn = (op, v, label, o) => `<button class="act ${o && o.on ? 'on' : ''}" data-act="asp" data-op="${op}" ${v != null ? `data-v="${v}"` : ''} ${o && o.id ? `data-id="${o.id}"` : ''} ${o && o.sec ? `data-sec="${o.sec}"` : ''} ${o && o.off ? 'disabled' : ''} title="${esc(o && o.t || '')}">${label}</button>`;
+  const sug = IC.aspPresetFor(b), PR = IC.ASP_PRESETS[P.preset];
+  const presets = `<div class="acts">${Object.entries(IC.ASP_PRESETS).filter(([k]) => (k === 'base') === (b.kind === 'airbase')).map(([k, p]) => btn('preset', k, `${esc(p.name)}${k === sug ? ' ✓' : ''}`, { on: P.preset === k && P.auto !== false, t: p.words })).join('')}</div>
+    <p class="hint">${P.auto === false ? `Your own design, started from the ${esc((PR || {}).name || '').toLowerCase()} layout. Pick a size to start again from it.` : `${esc((PR || {}).words || '')}`}${sug !== P.preset ? ` ✓ marks the layout for an airport this size.` : ''}</p>`;
+  // a number between − and + buttons: the value is what the player reads first
+  const step = (op, id, label, val, o) => `<div class="oprow" style="grid-template-columns:1fr auto;align-items:center;margin:.1rem 0"><b>${label}</b><span class="acts" style="margin:0">${btn(op, -1, '−', { id, off: o && o.lo, t: o && o.tl })}<b style="min-width:6.5em;text-align:center;align-self:center">${val}</b>${btn(op, 1, '+', { id, t: o && o.th })}</span></div>`;
+  const row = v => {
+    const C = IC.ASP_CLS[v.cls], on = cur === v.id;
+    const ed = on ? `<div class="sec" style="margin:.2rem 0 .6rem .4rem">
+      <p class="hint">${esc(IC.aspWords(v))}</p>
+      ${v.kind !== 'mil' ? `<div class="list" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem">${['B', 'C', 'D', 'E'].map(c => `<div class="li"><button class="lib" data-act="asp" data-op="cls" data-v="${c}" data-id="${v.id}"><b style="color:rgb(${IC.ASP_CLS[c].col})">${v.cls === c ? '● ' : '○ '}Class ${c}${v.cls === c ? ' (now)' : ''}</b><small>${esc(IC.ASP_CLS[c].brief)}</small></button></div>`).join('')}</div>` : ''}
+      ${step('hi', v.id, 'Ceiling', esc(IC.flText(v.hi)), { tl: '500 ft lower', th: '500 ft higher' })}
+      ${step('lo', v.id, 'Floor', esc(lvlT(v.lo)), { lo: v.lo <= 0, tl: '500 ft lower', th: '500 ft higher' })}
+      ${step('r', v.id, v.kind === 'mil' ? 'Radius' : 'Reaches out to', `${Math.round(v.r1 / 10)} km`, { tl: '5 km smaller', th: '5 km larger' })}
+      <p class="hint">Or drag: its edge on the map, its floor and ceiling in the slice above.</p>
+      <div class="acts">${btn('draw', null, 'Click its edge on the map', { id: v.id })}${v.kind !== 'ctr' ? `<button class="act warn" data-act="asp" data-op="del" data-id="${v.id}">Delete</button>` : ''}</div></div>` : '';
+    return `<div class="li"><button class="lib ${on ? 'on' : ''}" data-act="asp" data-op="sel" data-id="${v.id}"><b style="color:rgb(${C.col})">${v.kind === 'mil' ? esc(C.name) : `Class ${v.cls} · ${esc(v.name)}`}</b><small>${v.r0 ? `${Math.round(v.r0 / 10)}–` : 'out to '}${Math.round(v.r1 / 10)} km · from ${esc(lvlT(v.lo))} up to ${esc(IC.flText(v.hi))}</small></button></div>${ed}`;
+  };
+  const warn = IC.aspCheck(S, b);
+  const secs = IC.aspSectors(S).filter(s => s.ap === b.id), acc = IC.aspSectorAt(S, b.x + IC.aspOuter(S, b) + 50, b.y, 5);
+  const secRow = s => `<div class="li"><b>${esc(s.name)}</b><small>${s.staff} controller${s.staff === 1 ? '' : 's'} · ${Math.round(s.load * 10) / 10} of ${Math.round(s.cap)} flights' work now${s.peak > s.cap ? ` · <span class="amber">peak ${Math.round(s.peak)}</span>` : ''}</small><span class="la">${btn('staff', -1, '−', { sec: s.id, off: s.staff <= (s.kind === 'acc' ? 1 : 0) })}${btn('staff', 1, '+', { sec: s.id })}</span></div>
+    ${s.kind === 'app' ? `<div class="acts">${btn('space', null, `Spacing: ${s.rules.space > 1 ? 'wide' : 'standard'}`, { sec: s.id, on: s.rules.space > 1, t: 'Wide spacing: arrivals and departures half as far apart again. Fewer conflicts, more holding.' })}${btn('depBelow', null, `Departures under arrivals: ${s.rules.depBelow ? 'yes' : 'no'}`, { sec: s.id, on: s.rules.depBelow, t: 'Departures are kept below the arrivals until they leave the terminal area, then climb in steps.' })}${btn('lanes', null, `Lanes: ${s.rules.lanes === false ? 'off' : 'standard'}`, { sec: s.id, on: s.rules.lanes !== false, t: 'Standard lanes: arrivals come in from their stack by a gate 15 km out on the runway line; departures fly the runway heading 15 km first. Off: everyone flies direct, shorter but across each other.' })}</div>
+    <div class="acts"><span class="hint" style="align-self:center">Stack levels</span>${[4, 6, 8].map(n => btn('stack', n, n, { sec: s.id, on: s.rules.stack === n })).join('')}</div>` : ''}`;
+  const staff = secs.reduce((a, s) => a + s.staff, 0);
+  const stacks = IC.atcStacks(S, b).map(k => `<div class="li"><b>${esc(k.k)} stack</b><small>${k.lv.map((t, i) => `${esc(t.cs)} ${IC.flText(IC.atcStackLevel(i))}`).join(' · ')}</small></div>`).join('');
+  const used = [...new Set(V.map(v => v.cls))].map(c => IC.ASP_CLS[c]);
+  const mil = S.asp.vols.filter(v => v.kind === 'mil' && U.dist(v, b) < 2500);
+  return `<p class="hint">Controlled airspace is where controllers keep flights apart. You draw it as rings round the airport, each with a floor and a ceiling: a small zone from the ground up in the middle, wider shelves higher up, like an upside-down wedding cake. Arrivals and departures should stay inside it; light aircraft fly under the shelves.</p>
+    <canvas class="schem" data-side="${b.id}" width="460" height="190" title="Drag a block's top or bottom edge to set its ceiling or floor"></canvas>
+    <div class="acts">${btn('side', null, 'Larger side view', { t: 'A bigger slice through the airspace with the traffic in it; it can be turned' })}</div>
+    <div class="sec"><h3 class="sh">Layout <em>${P.auto === false ? 'your own' : esc((PR || {}).name || '')}</em></h3>${presets}</div>
+    ${warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${warn.length}</em></h3>${warn.map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">Arrivals stay inside controlled airspace all the way down.</div>'}
+    <div class="sec"><h3 class="sh">Rings <em>click one, or click it on the map</em></h3><div class="list">${V.map(row).join('')}</div>
+      <div class="acts">${btn('shelf', null, '+ Draw a shelf on the map', { t: 'A new ring outside the last one, a step higher: click where it should end' })}</div></div>
+    <div class="sec"><h3 class="sh">Military areas <em>by height band</em></h3>
+      <div class="acts">${btn('mil', 'X', 'Air defence zone…', { t: IC.ASP_CLS.X.who })}${btn('mil', 'R', 'Restricted area…', { t: IC.ASP_CLS.R.who })}${btn('mil', 'Q', 'Danger area…', { t: IC.ASP_CLS.Q.who })}</div>
+      ${mil.length ? `<div class="list">${mil.map(row).join('')}</div>` : '<p class="hint">None near here. Each closes only its height band, so an airway can pass over an air defence zone.</p>'}</div>
+    <div class="sec"><h3 class="sh">Controllers <em>${staff} here · ${U.money(staff * IC.ASP.ctlCost)} an hour</em></h3><div class="list">${secs.map(secRow).join('')}${acc ? secRow(acc) : ''}</div>
+      <div class="acts">${btn('sector', null, 'Split the area: new sector…', { t: 'Area sectors share the country by whichever centre is nearest' })}</div>
+      <p class="hint">Radar: ${st.radar ? 'an approach radar sees aircraft here, with or without transponders' : used.some(c => c.radar) ? '<span class="amber">no approach radar: class B and C need one, or another radar that covers the area</span>' : 'none needed for these classes'}. Under radar, controllers keep flights 1,000 ft or 5 NM apart; without it, 10 NM.</p></div>
+    ${stacks ? `<div class="sec"><h3 class="sh">Holding now</h3><div class="list">${stacks}</div></div>` : ''}
+    <div class="sec"><h3 class="sh">The classes <em>strictest first</em></h3>${'ABCDEG'.split('').map(k => { const C = IC.ASP_CLS[k]; return `<p class="hint"${used.includes(C) ? '' : ' style="opacity:.6"'}><b style="color:rgb(${C.col})">${k}</b> ${esc(C.brief)}. ${esc(C.need)}</p>`; }).join('')}</div>`;
 }
 /* ---------- the Operations tab: the tower's rules for this airport ---------- */
 /* the player edits a copy (ui.opsDraft) and sees what it would do to capacity before applying it */
