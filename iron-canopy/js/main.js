@@ -410,7 +410,7 @@ function onAct(e) {
     case 'bcancel': { const ap = selAp(); if (ap) IC.cancelWork(S, ap, id); break; }
     case 'bauto': { const ap = selAp(); if (ap) ap.autoRepair = !ap.autoRepair; break; }
     case 'build': { const ap = selAp(); if (!ap || ap.locked) break; const cur = S.mode2; IC.setMode(cur && cur.kind === 'build' && cur.part === v && cur.ap === ap ? null : IC.bldMode(S, ap, v)); if (S.mode2 && IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2); return; }
-    case 'bpref': { const [k, x] = v.split(':'); const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
+    case 'bpref': { const [k, x] = v.split(':'); if (k === 'mat' && IC.bldPick && !IC.bldPick(S, x)) break; const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
     case 'bundo': { const ap = selAp(); if (ap && IC.bldUndo(S, ap)) IC.sfx.ui('ok'); else IC.sfx.ui('err'); break; }
     case 'bwhen': { const ap = selAp(); const w = ap && ap.works.find(x => x.id === id); if (w) { w.rwMode = w.rwMode === 'night' ? 'close' : 'night'; } break; }
     case 'aptMove': if (S.sel && S.sel.kind === 'apart') { IC.setMode({ kind: 'bmove', ap: S.sel.ap, part: S.sel.ref, rot: S.sel.ref.a || 0 }); return; } break;
@@ -425,6 +425,7 @@ function onAct(e) {
     case 'aptFee': { const ap = selAp(); if (ap) { IC.avSetFee(S, ap, +v); IC.log(S, 'info', 'AVIATION', `${ap.name}: charges set to ${Math.round(+v * 100)}%.`); } break; }
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
     case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
+    case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
