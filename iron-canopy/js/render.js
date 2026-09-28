@@ -9,7 +9,7 @@ const C = IC.C = {
   unknown: '#f2d14a', unknownFill: '#ffff80', civil: '#7fe8b0', decoy: '#8fa3b0', amber: '#f2b441', text: '#e4edf2', muted: '#9ab0bf', ink: '#0a1620', ok: '#58d39a', supply: '#e0b458',
   light: '#c9b0ff', airway: '#8fd8ff'
 };
-const cam = IC.cam = { x: 3000, y: 2250, z: 0.2, vw: 800, vh: 600 };
+const cam = IC.cam = { x: IC.WW / 3, y: IC.WH / 3, z: 0.05, vw: 800, vh: 600 };
 let ctx, cv, dpr = 1, hatchR = null;
 const cov = document.createElement('canvas'); cov.width = 600; cov.height = 450;
 const cx2 = cov.getContext('2d');
@@ -38,6 +38,14 @@ IC.zoomAt = function (sx, sy, f) {
   cam.z = U.clamp(cam.z * f, IC.minZoom(), IC.MAXZ);
   cam.x = wx - sx / cam.z; cam.y = wy - sy / cam.z; IC.clampCam(); cam.fly = null;
 };
+/* show the box x0..x1, y0..y1 (world units) with a margin, at once or by flying there */
+IC.frameZoom = (x0, y0, x1, y1, m) => Math.min(cam.vw / ((x1 - x0) * (m || 1.15) + 1), cam.vh / ((y1 - y0) * (m || 1.15) + 1));
+IC.frame = function (x0, y0, x1, y1, fly, m) {
+  const z = U.clamp(IC.frameZoom(x0, y0, x1, y1, m), IC.minZoom(), IC.MAXZ);
+  if (fly) IC.flyTo((x0 + x1) / 2, (y0 + y1) / 2, z); else { cam.z = z; IC.centerOn((x0 + x1) / 2, (y0 + y1) / 2); }
+};
+/* the home country's box, for framing the whole country */
+IC.homeBox = W => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x, y] of W.poly) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; };
 IC.centerOn = function (x, y) { cam.x = x - cam.vw / cam.z / 2; cam.y = y - cam.vh / cam.z / 2; IC.clampCam(); };
 /* smooth camera moves for jumps and cinematic moments */
 IC.flyTo = function (x, y, z) { cam.fly = { x, y, z: z || cam.z, t: 0 }; };

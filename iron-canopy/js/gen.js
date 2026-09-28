@@ -3,8 +3,10 @@
 'use strict';
 const U = IC.U;
 const TAU = Math.PI * 2;
-const M = 1.5;   // Wave 4 made the map half as large again each way: distances between places grow by M
+const X = 3.17;  // Wave 5 made the map ten times larger by area (3.17 each way)
+const M = 1.5 * X;   // distances across the country, relative to wave 3's map (wave 4 made it 1.5 each way)
 const K = 1.5 * M;   // map scale relative to the original 800 km layout
+const SP = 1.45;     // spacing between towns: with ten times the land and three to four times the towns
 /* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
 IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
 IC.FOREST_T = 0.56;
@@ -112,7 +114,7 @@ IC.generate = function (seed) {
   /* ---------- relief ---------- */
   const ridges = [];
   const arc = (a0, a1, off, am, w, n) => {
-    const pts = []; n = n || 11;
+    const pts = []; n = n || 24; w *= 1.6;   // bigger ranges on a bigger map
     for (let i = 0; i <= n; i++) {
       const a = U.lerp(a0, a1, i / n), p = W.borderPt(a), r = Math.hypot(p.x - cx, p.y - cy), o = (off + R.range(-135, 135)) * M;
       pts.push([cx + (p.x - cx) * (r + o) / r, cy + (p.y - cy) * (r + o) / r]);
@@ -125,30 +127,35 @@ IC.generate = function (seed) {
   ridges.push(arc(C0 + 0.2, C1 - 0.2, R.range(600, 1350), R.range(0.3, 0.5), 450));
   ridges.push(arc(D0 + 0.2, D1 - 0.2, R.range(450, 1200), R.range(0.25, 0.45), 420));
   ridges.push(arc(A0 + 0.3, A1 - 0.3, R.range(1500, 1950), R.range(0.35, 0.55), 500));
-  {
-    let a = R.range(0, TAU), rr = R.range(0.25, 0.5), px = cx + Math.cos(a) * RX * rr, py = cy + Math.sin(a) * RY * rr, h = R.range(0, TAU);
+  // hill country inside: a few ranges wandering across the interior
+  for (let q = 0; q < 3; q++) {
+    let a = R.range(0, TAU), rr = R.range(0.2, 0.6), px = cx + Math.cos(a) * RX * rr, py = cy + Math.sin(a) * RY * rr, h = R.range(0, TAU);
     const pts = [];
-    for (let i = 0; i < 8; i++) { pts.push([px, py]); h += R.range(-0.5, 0.5); px += Math.cos(h) * 330 * M; py += Math.sin(h) * 330 * M; }
-    ridges.push({ pts, a: R.range(0.28, 0.42), w: 390 });
+    for (let i = 0; i < 10; i++) { pts.push([px, py]); h += R.range(-0.5, 0.5); px += Math.cos(h) * 170 * M; py += Math.sin(h) * 170 * M; }
+    ridges.push({ pts, a: R.range(0.28, 0.42), w: R.range(420, 640) });
   }
   for (const r of ridges) {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const [x, y] of r.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     r.bb = [x0 - r.w, y0 - r.w, x1 + r.w, y1 + r.w];
+    // each piece of the crest with its own box, so the height grid skips the pieces far away
+    r.segs = [];
+    for (let i = 0; i + 1 < r.pts.length; i++) { const [ax, ay] = r.pts[i], [bx, by] = r.pts[i + 1]; r.segs.push([ax, ay, bx, by, Math.min(ax, bx) - r.w, Math.min(ay, by) - r.w, Math.max(ax, bx) + r.w, Math.max(ay, by) + r.w]); }
     r.name = IC.NAMES.ridge[R.int(0, IC.NAMES.ridge.length - 1)];
   }
   W.ridges = ridges;
-  const tx = R.range(-1, 1) * 0.00002, ty = R.range(-1, 1) * 0.00002;
+  const tx = R.range(-1, 1) * 0.00002 / X, ty = R.range(-1, 1) * 0.00002 / X;
   W.height = (x, y) => {
-    let h = fbm(x / 1350, y / 1350) * 0.55 + (x - cx) * tx + (y - cy) * ty;
+    let h = fbm(x / 2400, y / 2400) * 0.55 + (x - cx) * tx + (y - cy) * ty;
     for (const r of ridges) {
       if (x < r.bb[0] || y < r.bb[1] || x > r.bb[2] || y > r.bb[3]) continue;
-      const d = U.polyDist(x, y, r.pts);
+      let d = r.w;
+      for (const q of r.segs) if (x >= q[4] && y >= q[5] && x <= q[6] && y <= q[7]) d = Math.min(d, U.segDist(x, y, q[0], q[1], q[2], q[3]));
       if (d < r.w) h += r.a * Math.pow(1 - d / r.w, 2) * (0.55 + 0.9 * fbm(x / 390 + 11, y / 390 + 5, 3));
     }
     return h;
   };
-  const GC = 25, GW = Math.floor(WW / GC) + 1, GH = Math.floor(WH / GC) + 1;
+  const GC = 40, GW = Math.floor(WW / GC) + 1, GH = Math.floor(WH / GC) + 1;
   const hg = new Float32Array(GW * GH);
   for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) hg[j * GW + i] = W.height(i * GC, j * GC);
   W.hg = hg; W.GW = GW; W.GH = GH; W.GC = GC;
@@ -164,7 +171,7 @@ IC.generate = function (seed) {
   let bl = Float32Array.from(hg);
   for (let pass = 0; pass < 3; pass++) bl = blur5(bl, GW, GH);
   // water drains outward towards the neighbours: a gentle bowl-to-rim tilt
-  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) bl[j * GW + i] -= U.dxy(i * GC, j * GC, cx, cy) * 0.000022;
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) bl[j * GW + i] -= U.dxy(i * GC, j * GC, cx, cy) * 0.000022 / X;
   const owner = new Int16Array(GW * GH).fill(-1);
   W.rivers = []; W.lakes = [];
   const srcs = [];
@@ -173,16 +180,16 @@ IC.generate = function (seed) {
   for (let j = 4; j < GH - 4; j += 3) for (let i = 4; i < GW - 4; i += 3) if (W.depthOut(i * GC, j * GC) < 1050) inl.push(bl[j * GW + i]);
   inl.sort((a, b) => b - a);
   const hiT = inl[Math.floor(inl.length * 0.18)] || 0.5;
-  for (let k = 0; k < 8000 && srcs.length < 20; k++) {
+  for (let k = 0; k < 30000 && srcs.length < 60; k++) {
     const i = R.int(4, GW - 5), j = R.int(4, GH - 5), x = i * GC, y = j * GC;
     if (bl[j * GW + i] < hiT || W.depthOut(x, y) > 1050) continue;
-    if (srcs.some(s => U.dxy(s.x, s.y, x, y) < 900)) continue;
+    if (srcs.some(s => U.dxy(s.x, s.y, x, y) < 1400)) continue;
     srcs.push({ i, j, x, y });
   }
   for (const s of srcs) {
     const id = W.rivers.length, pts = [];
     let i = s.i, j = s.j, end = 'none', climb = 0;
-    for (let step = 0; step < 1500; step++) {
+    for (let step = 0; step < 5000; step++) {
       pts.push([i * GC, j * GC]);
       owner[j * GW + i] = id;
       let best = null, bh = bl[j * GW + i], lo = null, lh = 1e9;
@@ -206,15 +213,15 @@ IC.generate = function (seed) {
       const o = owner[j * GW + i];
       if (o >= 0 && o !== id) { pts.push([i * GC, j * GC]); end = 'join'; break; }
     }
-    if (pts.length < 30) continue;
-    const r = { pts, w: U.clamp(3 + pts.length * 0.022, 3, 13), name: W.placeName() + ' River' };
+    if (pts.length < 20) continue;
+    const r = { pts, w: U.clamp(3 + pts.length * GC * 0.0009, 3, 13), name: W.placeName() + ' River' };
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     r.bb = [x0, y0, x1, y1];
     W.rivers.push(r);
-    if (end === 'sink' && W.lakes.length < 6) { const [x, y] = pts[pts.length - 1]; if (!W.lakes.some(l => U.dxy(l.x, l.y, x, y) < 700)) W.lakes.push({ x, y, rx: R.range(100, 220), ry: R.range(60, 130), rot: R.range(0, 3) }); }
+    if (end === 'sink' && W.lakes.length < 16) { const [x, y] = pts[pts.length - 1]; if (!W.lakes.some(l => U.dxy(l.x, l.y, x, y) < 1200)) W.lakes.push({ x, y, rx: R.range(100, 220), ry: R.range(60, 130), rot: R.range(0, 3) }); }
   }
-  for (let k = 0; k < 500 && W.lakes.length < 5; k++) {
+  for (let k = 0; k < 2000 && W.lakes.length < 14; k++) {
     const x = R.range(cx - 2700 * M, cx + 2700 * M), y = R.range(cy - 1950 * M, cy + 1950 * M);
     if (!W.inHome(x, y) || W.hAt(x, y) > 0.35 || W.depthOut(x, y) > -375) continue;
     W.lakes.push({ x, y, rx: R.range(110, 240), ry: R.range(60, 120), rot: R.range(0, 3) });
@@ -257,7 +264,7 @@ IC.generate = function (seed) {
 
   /* ---------- cities ---------- */
   const cand = [];
-  for (let k = 0; k < 9000; k++) {
+  for (let k = 0; k < 40000; k++) {
     const x = R.range(cx - 4050 * M, cx + 4050 * M), y = R.range(cy - 3000 * M, cy + 3000 * M);
     if (!W.inHome(x, y) || W.inLake(x, y)) continue;
     const h = W.hAt(x, y); if (h > 0.72) continue;
@@ -270,14 +277,21 @@ IC.generate = function (seed) {
   const cities = [];
   const capC = cand.filter(c => U.dxy(c.x, c.y, cx, cy) < 1275 * M).sort((a, b) => b.score - a.score)[0] || cand[0];
   cities.push(capC);
-  const NCITY = 18;
-  for (const c of cand) {
-    if (cities.length >= NCITY) break;
-    if (cities.every(o => U.dxy(o.x, o.y, c.x, c.y) > 780 * M)) cities.push(c);
+  // the rest by the lie of the land, but spread out: a candidate far from every city picked so far scores higher, so
+  // the lowlands do not take them all and leave the uplands empty
+  const NCITY = 60, SPREAD = 3400;
+  for (const c of cand) c.dn = U.dist(c, capC);
+  while (cities.length < NCITY) {
+    let best = null, bs = -1e9;
+    for (const c of cand) { if (c.dn < 1170 * SP) continue; const v = c.score + 0.9 * Math.min(1, c.dn / SPREAD); if (v > bs) { bs = v; best = c; } }
+    if (!best) break;
+    cities.push(best);
+    for (const c of cand) { const d = U.dist(c, best); if (d < c.dn) c.dn = d; }
   }
   // make sure there are front-line towns on both fronts
   for (const f of W.fronts) {
-    const near = c => { let m = 1e9; for (let i = 0; i + 1 < f.pts.length; i++) m = Math.min(m, U.segDist(c.x, c.y, f.pts[i].x, f.pts[i].y, f.pts[i + 1].x, f.pts[i + 1].y)); return m; };
+    const nk = 'nf' + f.key, near = c => c[nk] != null ? c[nk] : c[nk] = nearF(c);
+    const nearF = c => { let m = 1e9; for (let i = 0; i + 1 < f.pts.length; i++) m = Math.min(m, U.segDist(c.x, c.y, f.pts[i].x, f.pts[i].y, f.pts[i + 1].x, f.pts[i + 1].y)); return m; };
     for (let need = 0; need < 2; need++) {
       if (cities.filter(c => near(c) < 1000).length >= 2) break;
       const b = cand.filter(c => near(c) > 380 && near(c) < 950 && cities.every(o => U.dxy(o.x, o.y, c.x, c.y) > 600))[0];
@@ -285,7 +299,7 @@ IC.generate = function (seed) {
     }
   }
   W.cities = cities.map((c, i) => {
-    const pop = i === 0 ? R.int(1600, 2200) : i <= 3 ? R.int(400, 760) : R.int(90, 340);
+    const pop = i === 0 ? R.int(1600, 2200) : i <= 3 ? R.int(400, 760) : i <= 10 ? R.int(260, 560) : R.int(90, 340);
     return { id: 'c' + i, kind: 'city', name: W.placeName(), x: c.x, y: c.y, pop, capital: i === 0, grid: R.range(0, Math.PI / 2), r: 45 + Math.sqrt(pop) * 1.7 };
   });
 
@@ -304,15 +318,16 @@ IC.generate = function (seed) {
     }
   }
   let nHome = W.villages.length, nAbroad = 0;
-  for (let k = 0; k < 12000 && (nHome < 80 || nAbroad < 60); k++) {
+  const NV = 300, NA = 160;
+  for (let k = 0; k < 60000 && (nHome < NV || nAbroad < NA); k++) {
     const home = R() < 0.6;
     const x = home ? R.range(cx - 3700 * M, cx + 3700 * M) : R.range(200, WW - 200), y = home ? R.range(cy - 2700 * M, cy + 2700 * M) : R.range(200, WH - 200);
     if (W.inLake(x, y) || W.hAt(x, y) > 0.8) continue;
     if (home !== W.inHome(x, y)) continue;
-    if (home ? nHome >= 80 : nAbroad >= 60) continue;
+    if (home ? nHome >= NV : nAbroad >= NA) continue;
     if (home && W.depthOut(x, y) > -60) continue;
     if (!home && Math.abs(W.depthOut(x, y)) < 60) continue;
-    if (allTowns().some(o => U.dxy(o.x, o.y, x, y) < (o.kind === 'city' ? o.r + 260 : 330))) continue;
+    if (allTowns().some(o => U.dxy(o.x, o.y, x, y) < (o.kind === 'city' ? o.r + 260 * SP : 330 * SP))) continue;
     W.villages.push({ id: 'v' + W.villages.length, kind: 'village', name: W.placeName(), x, y, pop: R.int(4, 40), home, k: W.countryAt(x, y), r: R.range(14, 26), grid: R.range(0, Math.PI / 2) });
     if (home) nHome++; else nAbroad++;
   }
@@ -340,7 +355,7 @@ IC.generate = function (seed) {
   {
     let best = null, bs = 1e9;
     for (const c of cand) {
-      const hb = W.hostileBorderDist(c.x, c.y);
+      const hb = c.hb;
       if (hb < 1200 || hb > 2100 || taken().some(o => U.dxy(o.x, o.y, c.x, c.y) < 375)) continue;
       const s = U.dxy(c.x, c.y, cap.x, cap.y) * 0.6 + Math.abs(hb - 1575);
       if (s < bs) { bs = s; best = c; }
@@ -350,7 +365,7 @@ IC.generate = function (seed) {
   {
     let best = null, bs = -1e9;
     for (const c of cand) {
-      const hb = W.hostileBorderDist(c.x, c.y), dc = U.dxy(c.x, c.y, cap.x, cap.y);
+      const hb = c.hb, dc = U.dxy(c.x, c.y, cap.x, cap.y);
       if (dc < 675 || dc > 2250 * M || taken().some(o => U.dxy(o.x, o.y, c.x, c.y) < 375)) continue;
       if (hb > bs) { bs = hb; best = c; }
     }
@@ -371,14 +386,17 @@ IC.generate = function (seed) {
     }
     const nc = c => W.cities.slice().sort((a, b) => U.dxy(a.x, a.y, c.x, c.y) - U.dxy(b.x, b.y, c.x, c.y))[0];
     if (dam) addInfra({ kind: 'power', name: `${nc(dam).name} Hydro Dam`, x: dam.x, y: dam.y });
-    for (const pc of [W.cities[R.int(1, Math.min(4, W.cities.length - 1))], W.cities[R.int(5, W.cities.length - 1)]]) {
-      if (!pc) continue;
+    // a power station for every dozen or so cities, spread over the country
+    const pcs = [W.cities[R.int(1, Math.min(4, W.cities.length - 1))]];
+    for (let i = 5; i < W.cities.length; i += 12) pcs.push(W.cities[R.int(i, Math.min(i + 11, W.cities.length - 1))]);
+    for (const pc of pcs) {
+      if (!pc || W.infra.some(o => o.kind === 'power' && U.dist(o, pc) < 1500)) continue;
       const p = spot(pc, pc.r + 80, pc.r + 240); if (p) addInfra({ kind: 'power', name: `${pc.name} Power Station`, x: p.x, y: p.y });
     }
   }
   const dp = spot(cap, cap.r + 120, cap.r + 320); W.depotPos = dp || { x: cap.x + 300, y: cap.y + 225 };
   W.garrisons = [];
-  for (const c of [cap].concat(W.cities.slice(1, 5))) { const p = spot(c, c.r + 60, c.r + 240); if (p) W.garrisons.push({ x: p.x, y: p.y, name: `${c.name} Garrison` }); }
+  for (const c of [cap].concat(W.cities.slice(1, 11))) { const p = spot(c, c.r + 60, c.r + 240); if (p) W.garrisons.push({ x: p.x, y: p.y, name: `${c.name} Garrison` }); }
 
   IC.cityStyles(W, IC.makeRng((seed * 613 + 29) >>> 0));
 
@@ -389,10 +407,10 @@ IC.generate = function (seed) {
   W.crossings = [];
   for (const k of ['C', 'D']) {
     const [a0, a1] = W.secSpan(k);
-    const n = R.int(1, 2);
+    const n = R.int(2, 3);
     for (let i = 0; i < n; i++) {
       const a = U.lerp(a0, a1, (i + 1) / (n + 1)) + R.range(-0.08, 0.08), p = W.borderPt(a);
-      const r = Math.hypot(p.x - cx, p.y - cy), far = { x: cx + (p.x - cx) * (r + 1350) / r, y: cy + (p.y - cy) * (r + 1350) / r };
+      const r = Math.hypot(p.x - cx, p.y - cy), far = { x: U.clamp(cx + (p.x - cx) * (r + 1350 * SP) / r, 100, WW - 100), y: U.clamp(cy + (p.y - cy) * (r + 1350 * SP) / r, 100, WH - 100) };
       W.crossings.push({ id: 'x' + k + i, x: p.x, y: p.y, k, far });
     }
   }
@@ -433,10 +451,10 @@ IC.generate = function (seed) {
   W.foreign = [];
   for (const k of ['A', 'B', 'C', 'D']) {
     const hostile = W.side[k] === 'hostile';
-    for (let i = 0; i < (hostile ? 5 : 3); i++) {
-      const front = hostile && i < 2;
-      const p = radialPt(k, front ? 300 : 1050 * M, front ? 800 : 2700 * M, 700, W.foreign);
-      W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: W.placeName(), x: p.x, y: p.y, apt: i === 2 || (!hostile && i === 0), frontier: front, pop: front ? R.int(60, 180) : R.int(120, 600), r: front ? 55 : 70 });
+    for (let i = 0; i < (hostile ? 9 : 6); i++) {
+      const front = hostile && i < 4;
+      const p = radialPt(k, front ? 300 : 1050 * M, front ? 800 : 2700 * M, 700 * SP, W.foreign);
+      W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: W.placeName(), x: p.x, y: p.y, apt: i === 4 || i === 7 || (!hostile && (i === 0 || i === 3)), frontier: front, pop: front ? R.int(60, 180) : R.int(120, 600), r: front ? 55 : 70 });
     }
   }
 
@@ -459,8 +477,11 @@ IC.generate = function (seed) {
 
   /* ---------- enemy installations ---------- */
   W.esites = [];
+  // weapon ranges are real: short-range sites keep their distances from the border; bases and missile brigades sit
+  // further back in the larger country behind it
+  const BACK = { airbase: 2, cm: 2, bm: 1.6, mrbm: 2.5, hgv: 2.5, drone: 1.4, staging: 1.3 };
   const SITE = (k, kind, dmin, dmax, extra) => {
-    const p = radialPt(k, dmin * 1.5, dmax * 1.5, 330, W.esites.concat(W.foreign)); // weapon ranges are real: sites keep their distances
+    const b = 1.5 * (BACK[kind] || 1), p = radialPt(k, dmin * b, dmax * b, 330, W.esites.concat(W.foreign));
     const s = Object.assign({ id: 'es' + W.esites.length, k, kind, x: p.x, y: p.y }, extra || {});
     W.esites.push(s); return s;
   };
@@ -515,7 +536,7 @@ IC.generate = function (seed) {
   };
   // farmland weight for detail rendering
   // farmland rings every town: a coarse grid of how farmed the land is (0 inside built-up areas)
-  const FGC = 25, FGW = Math.ceil(IC.WW / FGC) + 1, FGH = Math.ceil(IC.WH / FGC) + 1, farm = new Float32Array(FGW * FGH);
+  const FGC = 40, FGW = Math.ceil(IC.WW / FGC) + 1, FGH = Math.ceil(IC.WH / FGC) + 1, farm = new Float32Array(FGW * FGH);
   const hv = W.villages.filter(v => v.home);
   const ring = (o, R0, f) => {
     const i0 = Math.max(0, Math.floor((o.x - R0) / FGC)), i1 = Math.min(FGW - 1, Math.ceil((o.x + R0) / FGC));
@@ -525,7 +546,7 @@ IC.generate = function (seed) {
   for (const v of hv) ring(v, 260, (e, w) => Math.max(w, 0.75 * (1 - e / 260) + 0.15));
   // farmland rings every city too, right up to its edge: the built-up ground itself is W.builtAt (after the towns)
   for (const c of W.cities) ring(c, c.r * 3.6, (e, w) => Math.max(w, 0.9 * (1 - e / (c.r * 3.6)) + 0.2));
-  const built = new Set(), BC = 2, bkey = (i, j) => i * 8192 + j;
+  const built = new Set(), BC = 2, bkey = (i, j) => i * 32768 + j;
   W.builtAt = (x, y) => built.has(bkey(Math.floor(x / BC), Math.floor(y / BC)));
   W.farmAt = (x, y) => {
     const h = W.hAt(x, y);
@@ -547,9 +568,13 @@ IC.generate = function (seed) {
     for (let i = Math.floor((b.x - e) / BC); i <= Math.floor((b.x + e) / BC); i++) for (let j = Math.floor((b.y - e) / BC); j <= Math.floor((b.y + e) / BC); j++) built.add(bkey(i, j));
   }
   junctions(W);
+  // bounding boxes, so drawing and traffic can skip lines out of view
+  const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
+  for (const l of W.edges.concat(W.lanes, W.rails, W.ramps)) bbox(l);
   // where a road crosses a railway it goes over it on a bridge
   W.railX = [];
   for (const r of W.rails) for (const e of W.edges) {
+    if (e.bb[0] > r.bb[2] || e.bb[2] < r.bb[0] || e.bb[1] > r.bb[3] || e.bb[3] < r.bb[1]) continue;
     for (let i = 1; i < e.pts.length; i++) for (let q = 1; q < r.pts.length; q++) {
       const a = e.pts[i - 1], b = e.pts[i], c = r.pts[q - 1], d = r.pts[q];
       if (Math.max(a.x, b.x) < Math.min(c.x, d.x) || Math.min(a.x, b.x) > Math.max(c.x, d.x) || Math.max(a.y, b.y) < Math.min(c.y, d.y) || Math.min(a.y, b.y) > Math.max(c.y, d.y)) continue;
@@ -559,9 +584,6 @@ IC.generate = function (seed) {
       if (!W.railX.some(o => U.dxy(o.x, o.y, x, y) < 2)) W.railX.push({ x, y, a: Math.atan2(b.y - a.y, b.x - a.x), cls: e.cls });
     }
   }
-  // bounding boxes, so drawing and traffic can skip lines out of view
-  const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
-  for (const l of W.edges.concat(W.lanes, W.rails, W.ramps)) bbox(l);
   for (const c of W.cities.concat(W.foreign)) for (const l of c.streets) bbox(l);
 
   return W;
@@ -611,7 +633,7 @@ function blur5(bl, GW, GH) {
    land they drift slowly from district to district. Directions are kept modulo 90° (a field grid looks the same
    turned a quarter), blended as vectors at four times the angle and smoothed, so nothing changes abruptly. */
 function fieldGrid(W, fbm) {
-  const FC = 50, gw = Math.ceil(IC.WW / FC) + 1, gh = Math.ceil(IC.WH / FC) + 1;
+  const FC = 100, gw = Math.ceil(IC.WW / FC) + 1, gh = Math.ceil(IC.WH / FC) + 1;
   let vx = new Float32Array(gw * gh), vy = new Float32Array(gw * gh);
   // road segments in 100-unit buckets
   const BK = 100, bw = Math.ceil(IC.WW / BK), buckets = new Map();
@@ -654,18 +676,18 @@ function fieldGrid(W, fbm) {
    lakes, airfields and foreign soil are closed; running along a road already built is cheap, so a new road
    joins the network instead of running beside it. The grid links the roads use then become the graph: places,
    and cells where three or more links meet, are nodes, and the runs between them are edges. */
-const RC = 40;
+const RC = 60;
 const RANK = { sp: 1, lc: 2, rd: 3, hw: 4 }, CLS = [null, 'sp', 'lc', 'rd', 'hw'];
 // 16 neighbours, so roads can run at gentle angles and not only along the grid and its diagonals
 const MOVES = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1], [2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
 const MLEN = MOVES.map(([x, y]) => Math.hypot(x, y) * RC);
 // how each class of line prices the ground: slope, river crossings, running next to (not on) a road, reuse by rank
 const HOW = {
-  hw: { slope: 2.4, bridge: 5, near: 0.5, reuse: [1, 1, 1, 0.75, 0.42], hk: 0.4 },
-  rd: { slope: 1.2, bridge: 4, near: 0.6, reuse: [1, 0.55, 0.45, 0.4, 0.42], hk: 0.38 },
+  hw: { slope: 2.4, bridge: 5, near: 0.5, reuse: [1, 1, 1, 0.75, 0.42], hk: 0.5 },
+  rd: { slope: 1.2, bridge: 4, near: 0.6, reuse: [1, 0.55, 0.45, 0.4, 0.42], hk: 0.5 },
   lc: { slope: 0.8, bridge: 3, near: 0.4, reuse: [1, 0.45, 0.38, 0.36, 0.4], hk: 0 },
   sp: { slope: 0.6, bridge: 3, near: 0.2, reuse: [1, 0.4, 0.36, 0.36, 0.4], hk: 0 },
-  rail: { slope: 5, bridge: 2, near: 0, reuse: [1, 0.3, 0.3, 0.3, 0.3], hk: 0.3 }
+  rail: { slope: 5, bridge: 2, near: 0, reuse: [1, 0.3, 0.3, 0.3, 0.3], hk: 0.5 }
 };
 
 function costGrid(W, fbm) {
@@ -683,7 +705,7 @@ function costGrid(W, fbm) {
 }
 function layer(G) {
   return { G, link: new Map(), adj: new Map(), use: new Uint8Array(G.N), near: new Uint8Array(G.N), shut: new Uint8Array(G.N),
-    g: new Float64Array(G.N), par: new Int32Array(G.N), seen: new Uint32Array(G.N), gen: 0, hf: [], hv: [] };
+    g: new Float64Array(G.N), par: new Int32Array(G.N), seen: new Uint32Array(G.N), shut2: new Uint32Array(G.N), gen: 0, hf: [], hv: [] };
 }
 const lkey = (a, b, N) => a < b ? a * N + b : b * N + a;
 /* would the straight move a→b cut through a link already laid (roads must meet at junctions, not pass through each other)? */
@@ -713,11 +735,11 @@ function search(T, s, t, o, done, maxCost) {
     hf[i] = lf; hv[i] = lv; return v;
   };
   g[s] = 0; par[s] = -1; seen[s] = gen; push(0, s);
-  const closed = new Set();
+  const closed = T.shut2;   // closed cells carry this search's number
   while (n) {
     const a = pop();
-    if (closed.has(a)) continue;
-    closed.add(a);
+    if (closed[a] === gen) continue;
+    closed[a] = gen;
     if (a === t || (done && a !== s && done(a))) {
       const out = []; for (let c = a; c >= 0; c = par[c]) out.push(c);
       return out.reverse();
@@ -728,12 +750,13 @@ function search(T, s, t, o, done, maxCost) {
       const bx = ax + MOVES[m][0], by = ay + MOVES[m][1];
       if (bx < 0 || by < 0 || bx >= GW || by >= GH) continue;
       const b = by * GW + bx;
-      if (G.base[b] < 0 || (T.shut[b] && b !== t) || closed.has(b)) continue;
-      const L = MLEN[m], r = T.link.get(lkey(a, b, N));
+      if (G.base[b] < 0 || (T.shut[b] && b !== t) || closed[b] === gen) continue;
+      const L = MLEN[m], r = T.use[a] && T.use[b] ? T.link.get(lkey(a, b, N)) : 0;
       let c;
       if (r) c = L * o.reuse[r];
       else {
-        if (m >= 4 && cuts(T, ax, ay, bx, by)) continue;
+        // (a road cell between them would be next to one end, so both ends clear of roads means nothing to cut)
+        if (m >= 4 && (T.near[a] || T.near[b]) && cuts(T, ax, ay, bx, by)) continue;
         const gr = Math.abs(G.h[b] - G.h[a]) / L / 0.0012;
         c = L * (G.base[a] + G.base[b]) * 0.5 * (1 + o.slope * Math.min(gr * gr, 40));
         if (G.wet[b] !== G.wet[a]) c += o.bridge * RC * 0.5;
@@ -800,22 +823,29 @@ function buildNetwork(W, R, fbm) {
   const road = (a, b, cls) => { const p = search(T, cellP(a), cellP(b), HOW[cls]); if (p) lay(T, p, RANK[cls]); return !!p; };
   const spur = (id, cls, alt) => {
     const s = cellP(id); if (T.use[s]) return;
-    const p = search(T, s, -1, HOW[cls], c => T.use[c] > 0, 4000);
+    const p = search(T, s, -1, HOW[cls], c => T.use[c] > 0, 4000 * SP);
     if (p) lay(T, p, RANK[cls]); else if (alt) road(id, alt, cls);
   };
   const cities = W.cities, cap = cities[0];
-  // motorways: the capital to the four largest cities, then between big cities when the way round is long
-  const big = cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 4).sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
-  for (const c of big) road(cap.id, c.id, 'hw');
-  for (let i = 0; i < big.length; i++) for (let j = i + 1; j < big.length; j++) {
-    const a = big[i], b = big[j], d = U.dist(a, b);
-    if (d < 2600 && d * 1.6 < U.dist(a, cap) + U.dist(cap, b)) road(a.id, b.id, 'hw');
+  // motorways: the capital and the ten largest cities, each joined to the nearest one already on the network (the
+  // four largest straight to the capital), then between big cities when the way round is long
+  const big = cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 10);
+  const onHw = [cap];
+  for (const c of big.slice(0, 4).sort((a, b) => U.dist(a, cap) - U.dist(b, cap))) { road(cap.id, c.id, 'hw'); onHw.push(c); }
+  for (let rest = big.slice(4); rest.length;) {
+    let best = null, bd = 1e12;
+    for (const a of onHw) for (const b of rest) { const d = U.dist(a, b); if (d < bd) { bd = d; best = [a, b]; } }
+    road(best[0].id, best[1].id, 'hw'); onHw.push(best[1]); rest.splice(rest.indexOf(best[1]), 1);
+  }
+  for (let i = 1; i < onHw.length; i++) for (let j = i + 1; j < onHw.length; j++) {
+    const a = onHw[i], b = onHw[j], d = U.dist(a, b);
+    if (d < 5000 && d * 1.6 < U.dist(a, cap) + U.dist(cap, b)) road(a.id, b.id, 'hw');
   }
   // main roads: every pair of neighbouring cities (a Gabriel graph, so no long road runs past a nearer town)
   const pairs = [];
   for (let i = 0; i < cities.length; i++) for (let j = i + 1; j < cities.length; j++) {
     const a = cities[i], b = cities[j], d = U.dist(a, b), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    if (d > 2700 || cities.some(c => c !== a && c !== b && U.dxy(c.x, c.y, mx, my) < d / 2)) continue;
+    if (d > 9000 || cities.some(c => c !== a && c !== b && U.dxy(c.x, c.y, mx, my) < d / 2)) continue;
     pairs.push([a, b, d]);
   }
   pairs.sort((p, q) => p[2] - q[2]);
@@ -825,7 +855,7 @@ function buildNetwork(W, R, fbm) {
   const vs = W.villages.filter(v => v.home).sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
   for (const v of vs) spur(v.id, 'lc', cities.slice().sort((p, q) => U.dist(p, v) - U.dist(q, v))[0].id);
   for (const v of vs) {
-    const o = vs.filter(w => w !== v && U.dist(w, v) < 700).sort((p, q) => U.dist(p, v) - U.dist(q, v))[0];
+    const o = vs.filter(w => w !== v && U.dist(w, v) < 700 * SP).sort((p, q) => U.dist(p, v) - U.dist(q, v))[0];
     if (o && R() < 0.5) road(v.id, o.id, 'lc');
   }
   // access roads to airports, bases, plants, the depot and the garrisons
@@ -882,7 +912,7 @@ function buildNetwork(W, R, fbm) {
 
   /* ---------- railways: the big cities and the factories, on gentle grades ---------- */
   const RT = layer(G); RT.shut = T.shut;
-  const stops = cities.slice().sort((a, b) => b.pop - a.pop).slice(0, 6).concat(W.infra.filter(i => i.kind === 'factory'));
+  const stops = cities.slice().sort((a, b) => b.pop - a.pop).slice(0, 12).concat(W.infra.filter(i => i.kind === 'factory'));
   const inT = [stops[0]], rest = stops.slice(1);
   W.rails = [];
   while (rest.length) {
@@ -929,7 +959,7 @@ function buildTowns(W, R, fbm) {
     if (rail) { const p = rail.a === c ? rail.pts[Math.min(8, rail.pts.length - 1)] : rail.pts[Math.max(0, rail.pts.length - 9)]; ia = Math.atan2(p.y - c.y, p.x - c.x); }
     else { const e = W.edges.filter(e => e.a === c.id || e.b === c.id).sort((p, q) => (q.cls === 'hw') - (p.cls === 'hw'))[0]; if (e) { const p = e.a === c.id ? e.pts[Math.min(6, e.pts.length - 1)] : e.pts[Math.max(0, e.pts.length - 7)]; ia = Math.atan2(p.y - c.y, p.x - c.x) + 0.5; } }
     c.indA = ia;
-    const rad = c.r * 1.7, segs = segsNear(c.x, c.y, rad).concat(railSegs.filter(s => U.segDist(c.x, c.y, s[0], s[1], s[2], s[3]) < rad));
+    const rad = c.r * 1.7, segs = segsNear(c.x, c.y, rad).concat(railSegs.filter(s => Math.min(s[0], s[2]) < c.x + rad && Math.max(s[0], s[2]) > c.x - rad && Math.min(s[1], s[3]) < c.y + rad && Math.max(s[1], s[3]) > c.y - rad && U.segDist(c.x, c.y, s[0], s[1], s[2], s[3]) < rad));
     IC.buildCity(W, c, R, fbm, segs, fieldR, W.villages.filter(v => v.home));
   }
   // villages: houses along the roads through them
@@ -1060,9 +1090,10 @@ function junctions(W) {
         for (let q = 0; q <= 40; q++) { const t = ta + sweep * q / 40; loop.push({ x: C.x + Math.cos(t) * r, y: C.y + Math.sin(t) * r }); }
         loop.push(at(n, b, fa * 0.6, nb, 0.15), at(n, b, fa * 0.2, nb, 0.15));
         if (gap < 2.4) ramp(loop, 'loop');   // a wide quarter needs only the outer slip road
-        // the outer slip road: leaves the carriageway at a shallow angle and swings round outside the loop
+        // the outer slip road: leaves the carriageway at a shallow angle and swings round outside the loop (a narrow
+        // quarter has room only for the loop)
         const La = 3.2, far = dc + R + 0.55;
-        ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.55), at(n, bis, far), at(n, b, La, nb, 0.55), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
+        if (gap > 1) ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.55), at(n, bis, far), at(n, b, La, nb, 0.55), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
       }
     } else if (hw.length === 2 && minor.length) {
       // diamond: the lesser road crosses on a bridge; a slip road in each quarter meets it 130 m from the motorway
@@ -1084,21 +1115,19 @@ function junctions(W) {
 /* roads were built or cut (growth.js): work the junction shapes out again */
 IC.buildJunctions = W => junctions(W);
 
-/* recompute road routing (after bridges are destroyed or repaired) */
+/* the road graph for routing (after bridges are destroyed or repaired, roads cut or built): node indices and, per
+   node, its neighbours with the cost of the road between (motorways preferred, local roads less so, blocked roads
+   eight times dearer). Routes are searched when asked for (IC.route in world.js): the graph is too big for a table
+   of every pair, and cutting a road must not stall the game */
 IC.buildRouting = function (W, blocked) {
-  const nodes = W.nodes, edges = W.edges;
-  const ids = Object.keys(nodes), idx = {}; ids.forEach((k, i) => idx[k] = i);
-  const n = ids.length;
-  const D = Array.from({ length: n }, () => new Float64Array(n).fill(1e12));
-  const NX = Array.from({ length: n }, () => new Int32Array(n).fill(-1));
-  for (let i = 0; i < n; i++) { D[i][i] = 0; NX[i][i] = i; }
-  for (const e of edges) {
-    const i = idx[e.a], j = idx[e.b];
+  const ids = Object.keys(W.nodes), idx = {}; ids.forEach((k, i) => idx[k] = i);
+  const adj = ids.map(() => []);
+  for (const e of W.edges) {
+    const i = idx[e.a], j = idx[e.b]; if (i == null || j == null) continue;
     const cost = e.len * (e.cls === 'hw' ? 0.85 : e.cls === 'lc' ? 1.15 : 1) * (blocked && blocked.has(e.id) ? 8 : 1);
-    if (cost < D[i][j]) { D[i][j] = D[j][i] = cost; NX[i][j] = j; NX[j][i] = i; }
+    adj[i].push(j, cost, e); adj[j].push(i, cost, e);
   }
-  for (let k = 0; k < n; k++) { const Dk = D[k]; for (let i = 0; i < n; i++) { const Di = D[i], dik = Di[k]; if (dik >= 1e12) continue; const NXi = NX[i]; for (let j = 0; j < n; j++) { const v = dik + Dk[j]; if (v < Di[j]) { Di[j] = v; NXi[j] = NXi[k]; } } } }
-  W.roadIds = ids; W.roadIdx = idx; W.roadD = D; W.roadNX = NX; W.blocked = blocked || new Set();
+  W.roadIds = ids; W.roadIdx = idx; W.roadAdj = adj; W.blocked = blocked || new Set();
 };
 
 })(window.IC);

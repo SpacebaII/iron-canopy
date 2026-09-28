@@ -17,7 +17,9 @@ const FIELDS = [[106, 124, 72], [120, 134, 80], [158, 148, 98], [122, 108, 80], 
 const FIELD_W = [3, 2, 2.5, 2, 3, 1.5, 0.35, 1.2, 1.4];
 const FIELD_CUM = FIELD_W.map((w, i) => FIELD_W.slice(0, i + 1).reduce((s, v) => s + v, 0) / FIELD_W.reduce((s, v) => s + v, 0));
 const crop = h => { for (let i = 0; i < FIELD_CUM.length; i++) if (h < FIELD_CUM[i]) return i; return 0; };
-// small tiles, so painting one never stalls a frame for long
+// small tiles, so painting one never stalls a frame for long. Level 0 covers the regional zoom between the base
+// image (too coarse there on a map this size) and level 1: the base's picture with roads and towns drawn sharp
+const LOD0 = { k: 0, ppu: 0.2, size: 1600, max: 130 };
 const LODS = [
   { k: 1, ppu: 0.8, size: 240, max: 200 },
   { k: 2, ppu: 2.4, size: 100, max: 130 },
@@ -25,6 +27,9 @@ const LODS = [
   { k: 4, ppu: 32, size: 8, max: 160 }
 ];
 IC.LODS = LODS;
+const LOD = lod => lod ? LODS[lod - 1] : LOD0;
+// lines on the base image are drawn this much wider than on level 0 tiles, as it has fewer pixels to a km
+const BASE_WK = 0.2 / IC.TS;
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const LIGHT = [-0.55, -0.62, 0.56];   // sun from the north-west, fairly high
 
@@ -35,13 +40,19 @@ const fbCorner = (i, j) => [i * FB + (U.hash(i * 3 + 1, j * 5 + 7) - 0.5) * FB *
 
 IC.buildTerrain = function (W) {
   const TS = IC.TS, CW = Math.round(IC.WW * TS), CH = Math.round(IC.WH * TS);
-  const BW = 1200, BH = 900, cellX = IC.WW / BW, cellY = IC.WH / BH;
-  // forest density on a 20-unit grid, shared by the base and the detail tiles; the tiles add a finer noise
-  const FGW = Math.ceil(IC.WW / 20) + 1, FGH = Math.ceil(IC.WH / 20) + 1, FD = new Float32Array(FGW * FGH);
-  for (let j = 0; j < FGH; j++) for (let i = 0; i < FGW; i++) FD[j * FGW + i] = W.forestD(i * 20, j * 20);
+  const BW = 1800, BH = Math.round(BW * IC.WH / IC.WW), cellX = IC.WW / BW, cellY = IC.WH / BH;
+  // forest density on a 20-unit grid, shared by the detail tiles (which add a finer noise); worked out a chunk at a
+  // time where the tiles first need it, as the whole map would take seconds and hundreds of megabytes
+  const FC = 64, FU = FC * 20, FGW = Math.ceil(IC.WW / FU), FGH = Math.ceil(IC.WH / FU), FDc = new Map();
+  const chunk = (ci, cj) => {
+    const key = cj * FGW + ci; let c = FDc.get(key);
+    if (!c) { c = new Float32Array((FC + 1) * (FC + 1)); for (let j = 0; j <= FC; j++) for (let i = 0; i <= FC; i++) c[j * (FC + 1) + i] = W.forestD(ci * FU + i * 20, cj * FU + j * 20); FDc.set(key, c); }
+    return c;
+  };
   const fdAt = (x, y) => {
-    const fx = U.clamp(x / 20, 0, FGW - 1.001), fy = U.clamp(y / 20, 0, FGH - 1.001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * FGW + i;
-    return FD[k] * (1 - u) * (1 - v) + FD[k + 1] * u * (1 - v) + FD[k + FGW] * (1 - u) * v + FD[k + FGW + 1] * u * v;
+    const fx = U.clamp(x / 20, 0, IC.WW / 20 - 0.001), fy = U.clamp(y / 20, 0, IC.WH / 20 - 0.001), ci = Math.floor(fx / FC), cj = Math.floor(fy / FC);
+    const c = chunk(ci, cj), lx = fx - ci * FC, ly = fy - cj * FC, i = lx | 0, j = ly | 0, u = lx - i, v = ly - j, k = j * (FC + 1) + i;
+    return c[k] * (1 - u) * (1 - v) + c[k + 1] * u * (1 - v) + c[k + FC + 1] * (1 - u) * v + c[k + FC + 2] * u * v;
   };
   const fd = (x, y) => fdAt(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
   const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), frame: 0 };
@@ -63,7 +74,7 @@ IC.buildTerrain = function (W) {
       // hill country gets folds and gullies of its own, too small for the height grid (shading only)
       const hill = U.clamp((h - 0.3) / 0.35, 0, 1);
       const fx = hill ? (U.fbm((wx + 8) / 150 + 3, wy / 150, 3) - U.fbm((wx - 8) / 150 + 3, wy / 150, 3)) / 16 : 0, fy = hill ? (U.fbm(wx / 150 + 3, (wy + 8) / 150, 3) - U.fbm(wx / 150 + 3, (wy - 8) / 150, 3)) / 16 : 0;
-      const shade = U.clamp(1 + hs(wx, wy, 12, 80) * 0.8 + hs(wx, wy, 60, 130) * 0.9 + hs(wx, wy, 200, 220) * 0.6 - (LIGHT[0] * fx + LIGHT[1] * fy) * 90 * hill, 0.45, 1.5);
+      const shade = U.clamp(1 + hs(wx, wy, 40, 110) * 1.3 + hs(wx, wy, 200, 220) * 0.6 - (LIGHT[0] * fx + LIGHT[1] * fy) * 90 * hill, 0.45, 1.5);
       const k = W.countryAt(wx, wy);
       let c = ramp(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.08);
       const hsh = U.hash(x, y);
@@ -74,7 +85,7 @@ IC.buildTerrain = function (W) {
         const i = Math.floor(wx / FB), j = Math.floor(wy / FB);
         c = mix(c, FIELDS[crop(U.hash(i * 31 + 7, j * 17 + 3))], fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
       }
-      const fo = fdAt(wx, wy) - IC.FOREST_T;
+      const fo = W.forestD(wx, wy) - IC.FOREST_T;
       if (fo > -0.03) c = mix(c, U.vnoise(wx / 7, wy / 7) > 0.5 ? [40, 62, 40] : [50, 74, 46], U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
       let r = c[0], g = c[1], b = c[2];
       if (k !== 'H') {
@@ -101,7 +112,7 @@ IC.buildTerrain = function (W) {
   tg.strokeStyle = 'rgba(210,215,220,0.2)'; tg.lineWidth = 7; tg.setLineDash([27, 36]);
   W.secs.forEach((s, i) => {
     tg.beginPath(); let first = true;
-    for (let dd = 0; dd < 13500; dd += 60) {
+    for (let dd = 0; dd < IC.WW; dd += 60) {
       const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;
       const x = W.cx + Math.cos(a0) * D, y = W.cy + Math.sin(a0) * D;
       if (x < -80 || y < -80 || x > IC.WW + 80 || y > IC.WH + 80) break;
@@ -110,16 +121,18 @@ IC.buildTerrain = function (W) {
     tg.stroke();
   });
   tg.setLineDash([]);
-  tg.strokeStyle = 'rgba(200,225,235,0.035)'; tg.lineWidth = 4;
-  for (let x = 500; x < IC.WW; x += 500) { tg.beginPath(); tg.moveTo(x, 0); tg.lineTo(x, IC.WH); tg.stroke(); }
-  for (let y = 500; y < IC.WH; y += 500) { tg.beginPath(); tg.moveTo(0, y); tg.lineTo(IC.WW, y); tg.stroke(); }
+  // the map squares of IC.gridRef
+  tg.strokeStyle = 'rgba(200,225,235,0.035)'; tg.lineWidth = 12;
+  const GR = IC.WW / 26;
+  for (let x = GR; x < IC.WW; x += GR) { tg.beginPath(); tg.moveTo(x, 0); tg.lineTo(x, IC.WH); tg.stroke(); }
+  for (let y = GR; y < IC.WH; y += GR) { tg.beginPath(); tg.moveTo(0, y); tg.lineTo(IC.WW, y); tg.stroke(); }
   tg.restore();
   T.ground = alb; T.shadeD = shadeD; T.shadeL = shadeL; T.far = tmp;
   const cv = mk(CW, CH), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
   g.drawImage(tmp, 0, 0, CW, CH);
   g.save(); g.scale(TS, TS); g.lineCap = 'round'; g.lineJoin = 'round';
-  vectors(g, W, 0, 0, IC.WW, IC.WH, 0);
+  vectors(g, W, 0, 0, IC.WW, IC.WH, 0, 0, BASE_WK);
   g.restore();
   T.base = cv;
   T.grain = grain();
@@ -136,13 +149,13 @@ function repaintBase(T, S, x0, y0, x1, y1) {
   g.drawImage(T.far, x0 * fs, y0 * fs, (x1 - x0) * fs, (y1 - y0) * fs, x0 * TS, y0 * TS, (x1 - x0) * TS, (y1 - y0) * TS);
   g.scale(TS, TS); g.lineCap = 'round'; g.lineJoin = 'round';
   if (S) airfields(g, S, x0, y0, x1, y1, 0);
-  vectors(g, T.W, x0 - 20, y0 - 20, x1 + 20, y1 + 20, 0);
+  vectors(g, T.W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, 0, 0, BASE_WK);
   g.restore();
 }
 /* tiles over a box are painted again when the frame budget allows; until then the old one shows */
 function dirtyBox(T, x0, y0, x1, y1) {
   for (const t of T.tiles.values()) {
-    const L = LODS[t.lod - 1], tx0 = t.tx * L.size, ty0 = t.ty * L.size;
+    const L = LOD(t.lod), tx0 = t.tx * L.size, ty0 = t.ty * L.size;
     if (x1 < tx0 || x0 > tx0 + L.size || y1 < ty0 || y0 > ty0 + L.size) continue;
     t.dirty = true;
   }
@@ -306,7 +319,9 @@ function forest(g, T, lod, x0, y0, x1, y1) {
   pass(all, -0.28, -0.3, 0.55, 'rgba(120,152,86,0.28)');
 }
 /* vector layers shared by the base (lod 0) and the detail tiles */
-function vectors(g, W, x0, y0, x1, y1, lod, pad) {
+/* wk widens lines drawn far out (lod 0) for a coarser image, so they keep their width on screen */
+function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
+  const K0 = lod ? 1 : wk || 1;
   const inb = (bx0, by0, bx1, by1) => !(bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1);
   // the tile itself, without the margin wide strokes need: blocks and buildings are drawn only where they show
   const p = pad || 0, inT = (bx0, by0, bx1, by1) => !(bx1 < x0 + p || bx0 > x1 - p || by1 < y0 + p || by0 > y1 - p);
@@ -322,9 +337,9 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad) {
   const rk = [1, 0.7, 0.45, 0.3, 0.3][lod];
   for (const r of W.rivers) {
     if (!inb(r.bb[0] - 40, r.bb[1] - 40, r.bb[2] + 40, r.bb[3] + 40)) continue;
-    const pts = r.pts.filter((_, i) => i % 2 === 0 || i === r.pts.length - 1), w = r.w * rk;
+    const pts = r.pts.filter((_, i) => i % 2 === 0 || i === r.pts.length - 1), w = r.w * rk * K0;
     if (lod) { g.strokeStyle = 'rgba(52,72,44,0.45)'; g.lineWidth = w + 3; smooth(pts); g.stroke(); }
-    g.strokeStyle = 'rgba(92,100,78,0.9)'; g.lineWidth = w + (lod ? 0.6 : 3); smooth(pts); g.stroke();
+    g.strokeStyle = 'rgba(92,100,78,0.9)'; g.lineWidth = w + (lod ? 0.6 : 3 * K0); smooth(pts); g.stroke();
     g.strokeStyle = 'rgb(46,78,90)'; g.lineWidth = w; smooth(pts); g.stroke();
     g.strokeStyle = 'rgba(96,136,150,0.4)'; g.lineWidth = w * 0.4; smooth(pts); g.stroke();
   }
@@ -342,7 +357,7 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad) {
   for (const r of W.rails) {
     if (!inb(r.bb[0] - 10, r.bb[1] - 10, r.bb[2] + 10, r.bb[3] + 10)) continue;
     const line = () => { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); };
-    g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4, 1.6, 0.7, 0.4, 0.3][lod]; line(); g.stroke();
+    g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4 * K0, 1.6, 0.7, 0.4, 0.3][lod]; line(); g.stroke();
     if (lod >= 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 0.4; g.setLineDash([0.3, 0.9]); line(); g.stroke(); g.setLineDash([]); }
   }
   // settlements: the built-up ground (paving in the centre, gardens in the suburbs, yards by the factories), so a
@@ -352,7 +367,7 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad) {
   for (const c of towns) {
     if (!tIn(c)) continue;
     const Q = { old: [], biz: [], dense: [], sub: [], ind: [], log: [], rail: [] };
-    const e0 = lod ? 0.5 : 1.4;
+    const e0 = lod ? 0.5 : 1.4 * K0;
     for (const b of c.blocks) {
       if (!inT(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) continue;
       const e = distOf(b) === 'sub' ? e0 * 0.6 : e0, ca = Math.cos(b.a), sa = Math.sin(b.a), w = b.w / 2 + e, h = b.h / 2 + e;
@@ -381,12 +396,12 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad) {
     if (lod) { layers.push(['ln', W.lanes]); for (const c of towns) if (c.streets && tIn(c)) for (const cls of ['st', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls)]); }
     if (lod < 2) { for (const cls of ['sp', 'lc', 'rd']) layers.push([cls, W.edges.filter(e => e.cls === cls)]); if (lod) layers.push(['ramp', W.ramps]); layers.push(['hw', W.edges.filter(e => e.cls === 'hw')]); }
     for (const pass of [0, 1]) for (const [cls, list] of layers) {
-      const w = RW[cls]; if (!w) continue;
+      const w = RW[cls] * K0; if (!w) continue;
       g.beginPath();
       for (const l of list) { if (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3])) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
       // close in, streets have pavements either side; far out, roads a dark edge
       const pave = lod >= 3 && (cls === 'st' || cls === 'art' || cls === 'ring');
-      if (pass === 0) { g.strokeStyle = pave ? 'rgb(152,150,142)' : cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + (pave ? 0.1 : [3, 1.2, 0.3, 0.1, 0.06][lod]); }
+      if (pass === 0) { g.strokeStyle = pave ? 'rgb(152,150,142)' : cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + (pave ? 0.1 : [3 * K0, 1.2, 0.3, 0.1, 0.06][lod]); }
       else { g.strokeStyle = FILL[cls]; g.lineWidth = w; }
       g.stroke();
     }
@@ -410,9 +425,9 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad) {
       if (P.length) trees(g, P, 0.05, 0.03);
     }
   }
-  g.strokeStyle = 'rgba(200,186,150,0.22)'; g.lineWidth = lod ? 2 : 6;
+  g.strokeStyle = 'rgba(200,186,150,0.22)'; g.lineWidth = lod ? 2 : 6 * K0;
   for (const x of W.crossings) { g.beginPath(); g.moveTo(x.x, x.y); g.lineTo(x.far.x, x.far.y); g.stroke(); }
-  g.strokeStyle = 'rgba(170,140,120,0.35)'; g.lineWidth = lod ? 2 : 6;
+  g.strokeStyle = 'rgba(170,140,120,0.35)'; g.lineWidth = lod ? 2 : 6 * K0;
   for (const r of W.eroads) { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); }
   for (const c of towns) if (tIn(c)) for (const b of c.blocks) if (inT(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) block(g, b, lod, c.kind === 'ftown', true);
   for (const v of W.villages) {
@@ -714,11 +729,20 @@ function scorchBlock(g, b) {
 
 /* ---------- detail tiles ---------- */
 function paintTile(T, lod, tx, ty, S) {
-  const L = LODS[lod - 1], W = T.W;
+  const L = LOD(lod), W = T.W;
   const px = Math.round(L.size * L.ppu), x0 = tx * L.size, y0 = ty * L.size, x1 = x0 + L.size, y1 = y0 + L.size;
   const cv = mk(px, px), g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
   const gs = T.ground.width / IC.WW;
+  if (!lod) {
+    // the far view's picture, with airfields, water, roads and towns drawn at this scale
+    g.drawImage(T.far, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
+    g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu); g.lineCap = 'round'; g.lineJoin = 'round';
+    if (S) airfields(g, S, x0 - 20, y0 - 20, x1 + 20, y1 + 20, 0);
+    vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, 0, 60);
+    if (S && S.marks) for (const k of S.marks) if (k.r > 3 && k.x + k.r > x0 && k.x - k.r < x1 && k.y + k.r > y0 && k.y - k.r < y1) mark(g, k, S.time, 0);
+    return cv;
+  }
   g.drawImage(T.ground, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
   // fine grain so the upscaled ground does not look smeared, offset per tile so it never lines up
   g.globalAlpha = 0.28; g.globalCompositeOperation = 'overlay';
@@ -785,7 +809,7 @@ IC.bakeMark = function (S, m, redraw) {
   if (redraw) { dirtyBox(T, m.x - m.r * 2, m.y - m.r * 2, m.x + m.r * 2, m.y + m.r * 2); if (m.r > 3) repaintBase(T, S, m.x - m.r * 2, m.y - m.r * 2, m.x + m.r * 2, m.y + m.r * 2); return; }
   m._st = fadeOf(m, S.time);
   for (const t of T.tiles.values()) {
-    const L = LODS[t.lod - 1], x0 = t.tx * L.size, y0 = t.ty * L.size;
+    const L = LOD(t.lod), x0 = t.tx * L.size, y0 = t.ty * L.size;
     if (m.x + m.r * 2 < x0 || m.x - m.r * 2 > x0 + L.size || m.y + m.r * 2 < y0 || m.y - m.r * 2 > y0 + L.size) continue;
     const tg = t.cv.getContext('2d');
     tg.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu); mark(tg, m, S.time, t.lod); tg.setTransform(1, 0, 0, 1, 0, 0);
@@ -800,7 +824,7 @@ IC.bakeBlock = function (S, b) {
   const g = T.base.getContext('2d');
   g.save(); g.scale(IC.TS, IC.TS); block(g, b, 0, foreign, town); g.restore();
   for (const t of T.tiles.values()) {
-    const L = LODS[t.lod - 1], x0 = t.tx * L.size, y0 = t.ty * L.size;
+    const L = LOD(t.lod), x0 = t.tx * L.size, y0 = t.ty * L.size;
     if (b.x + r < x0 || b.x - r > x0 + L.size || b.y + r < y0 || b.y - r > y0 + L.size) continue;
     const tg = t.cv.getContext('2d');
     tg.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu); block(tg, b, t.lod, foreign, town); tg.setTransform(1, 0, 0, 1, 0, 0);
@@ -812,14 +836,14 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
   const zx = cam.z * dpr;
   if (S) keepUp(T, S);
   ctx.drawImage(T.base, 0, 0, IC.WW, IC.WH);
-  if (!T.base || zx < 0.42) return 0;
-  const lodWanted = zx >= 16 ? 4 : zx >= 4 ? 3 : zx >= 1.3 ? 2 : 1;
+  if (!T.base || zx < 0.16) return 0;
+  const lodWanted = zx >= 16 ? 4 : zx >= 4 ? 3 : zx >= 1.3 ? 2 : zx >= 0.42 ? 1 : 0;
   const vx0 = cam.x, vy0 = cam.y, vx1 = cam.x + cam.vw / cam.z, vy1 = cam.y + cam.vh / cam.z;
   T.frame++;
   const t0 = performance.now();
   let made = 0;
   const draw = (lod, only) => {
-    const L = LODS[lod - 1];
+    const L = LOD(lod);
     const cx = (vx0 + vx1) / 2, cy = (vy0 + vy1) / 2;
     const list = [];
     for (let ty = Math.floor(vy0 / L.size); ty <= Math.floor(vy1 / L.size); ty++) for (let tx = Math.floor(vx0 / L.size); tx <= Math.floor(vx1 / L.size); tx++) {
@@ -848,7 +872,8 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
   if (lodWanted === 4) { draw(3, true); draw(4, false); }
   else if (lodWanted === 3) { draw(2, true); draw(3, false); }
   else if (lodWanted === 2) { draw(1, true); draw(2, false); }
-  else draw(1, false);
+  else if (lodWanted === 1) { draw(0, true); draw(1, false); }
+  else draw(0, false);
   return made;
 };
 /* the world changed (IC.worldChanged), airports were built on, marks faded: repaint what shows it */

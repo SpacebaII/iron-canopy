@@ -9,7 +9,8 @@ IC.inHostile = (x, y) => IC.W.inHostile(x, y);
 IC.inLake = (x, y) => IC.W.inLake(x, y);
 IC.hostileBorderDist = (x, y) => IC.W.hostileBorderDist(x, y);
 IC.borderDist = (x, y) => -IC.W.depthOut(x, y);
-IC.gridRef = (x, y) => `${String.fromCharCode(65 + U.clamp(Math.floor(x / 500), 0, 25))}${U.clamp(Math.floor(y / 500), 0, 99) + 1}`;
+// a map square: 26 columns (A–Z) across the map, rows of the same size down it
+IC.gridRef = (x, y) => { const G = IC.WW / 26; return `${String.fromCharCode(65 + U.clamp(Math.floor(x / G), 0, 25))}${U.clamp(Math.floor(y / G), 0, 98) + 1}`; };
 
 let edgeMap = null, edgeW = null, edgeN = 0;
 function edgeBetween(a, b) {
@@ -23,27 +24,52 @@ function nearestNode(x, y) {
   for (const k of W.roadIds) { const n = W.nodes[k], d = U.dxy(x, y, n.x, n.y); if (d < bd) { bd = d; best = k; } }
   return best;
 }
+/* cheapest road path between two node indices (Dijkstra with a binary heap, stopping at the goal): the edges in
+   order from i, or null if there is no way */
+let rq = null;
+function roadPath(W, i, j) {
+  const n = W.roadIds.length, adj = W.roadAdj;
+  if (!rq || rq.d.length < n) rq = { d: new Float64Array(n), via: new Array(n), from: new Int32Array(n), seen: new Uint32Array(n), gen: 0, hk: [], hv: [] };
+  const Q = rq, d = Q.d, seen = Q.seen, gen = ++Q.gen, hk = Q.hk, hv = Q.hv;
+  let m = 0;
+  const push = (k, v) => { let c = m++; while (c > 0) { const p = (c - 1) >> 1; if (hk[p] <= k) break; hk[c] = hk[p]; hv[c] = hv[p]; c = p; } hk[c] = k; hv[c] = v; };
+  d[i] = 0; seen[i] = gen; Q.from[i] = -1; push(0, i);
+  while (m) {
+    const k = hk[0], a = hv[0], lk = hk[--m], lv = hv[m];
+    let c = 0; for (;;) { let q = 2 * c + 1; if (q >= m) break; if (q + 1 < m && hk[q + 1] < hk[q]) q++; if (hk[q] >= lk) break; hk[c] = hk[q]; hv[c] = hv[q]; c = q; }
+    hk[c] = lk; hv[c] = lv;
+    if (k > d[a]) continue;
+    if (a === j) break;
+    const L = adj[a];
+    for (let q = 0; q < L.length; q += 3) {
+      const b = L[q], v = k + L[q + 1];
+      if (seen[b] === gen && v >= d[b]) continue;
+      seen[b] = gen; d[b] = v; Q.from[b] = a; Q.via[b] = L[q + 2]; push(v, b);
+    }
+  }
+  if (seen[j] !== gen) return null;
+  const out = []; for (let c = j; c !== i; c = Q.from[c]) out.push(Q.via[c]);
+  return { cost: d[j], edges: out.reverse() };
+}
+IC.roadPath = (W, a, b) => roadPath(W, W.roadIdx[a], W.roadIdx[b]);
 /* Route along the road network. Returns [{x,y,road}] — road=true means the segment ending here is paved.
    Lorries (roads=true) keep to the roads however far round they go; other vehicles cut across country when
    that is shorter. */
 IC.route = function (ax, ay, bx, by, roads) {
   const W = IC.W, N = W.nodes;
   const na = nearestNode(ax, ay), nb = nearestNode(bx, by);
-  const i = W.roadIdx[na], j = W.roadIdx[nb];
-  const road = W.roadD[i][j];
+  const P = na === nb ? null : roadPath(W, W.roadIdx[na], W.roadIdx[nb]);
   const direct = U.dxy(ax, ay, bx, by) * 2.2;
-  const via = (U.dxy(ax, ay, N[na].x, N[na].y) + U.dxy(bx, by, N[nb].x, N[nb].y)) * 2.2 + road;
-  if (na === nb || road > 1e11 || (direct <= via && !roads)) return [{ x: bx, y: by, road: false }];
+  const via = P && (U.dxy(ax, ay, N[na].x, N[na].y) + U.dxy(bx, by, N[nb].x, N[nb].y)) * 2.2 + P.cost;
+  if (!P || (direct <= via && !roads)) return [{ x: bx, y: by, road: false }];
   const pts = [{ x: N[na].x, y: N[na].y, road: false }];
-  let k = i;
-  for (let guard = 0; k !== j && guard < 300; guard++) {
-    const nk = W.roadNX[k][j]; if (nk < 0) break;
-    const e = edgeBetween(W.roadIds[k], W.roadIds[nk]);
-    const seq = e.a === W.roadIds[k] ? e.pts : e.pts.slice().reverse();
+  let at = na;
+  for (const e of P.edges) {
+    const seq = e.a === at ? e.pts : e.pts.slice().reverse();
     // a blown bridge means a slow detour to the nearest ford
     const slow = W.blocked && W.blocked.has(e.id);
     for (let s = 1; s < seq.length; s++) pts.push({ x: seq[s].x, y: seq[s].y, road: !slow, cls: e.cls, cut: slow ? e.id : 0 });
-    k = nk;
+    at = e.a === at ? e.b : e.a;
   }
   pts.push({ x: bx, y: by, road: false });
   return pts;
@@ -120,6 +146,6 @@ IC.nodeNear = function (W, x, y) {
   return { id: best, t: bd * 360 / IC.OFFROAD_KMH };
 };
 /* the edges crossed on the way from a Dijkstra source to a node (last first) */
-IC.travelPath = function (T, to) { const L = []; let k = to; for (let g = 0; g < 400 && T.via[k]; g++) { const e = T.via[k]; L.push(e); k = e.a === k ? e.b : e.a; } return L; };
+IC.travelPath = function (T, to) { const L = []; let k = to; for (let g = 0; g < 5000 && T.via[k]; g++) { const e = T.via[k]; L.push(e); k = e.a === k ? e.b : e.a; } return L; };
 
 })(window.IC);

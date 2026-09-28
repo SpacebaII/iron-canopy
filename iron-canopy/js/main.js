@@ -423,7 +423,7 @@ function onAct(e) {
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
-    case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.12) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.14); } return;
+    case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.04) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.05); } return;
     case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
     case 'wayDel': IC.aspDelWay(S, id); S.sel = null; break;
     case 'fieldMode': if (locked('fields')) return; ui.openRoom(null); IC.setMode({ kind: 'field' }); return;
@@ -656,8 +656,7 @@ function generate(seed, mode, lesson) {
   IC.resetMini();
   IC.ui.bind(S);
   resize();
-  IC.cam.z = Math.min(IC.cam.vw / 11700, IC.cam.vh / 8850);
-  IC.centerOn(S.world.cx, S.world.cy);
+  if (S.range) { IC.cam.z = IC.frameZoom(0, 0, 18000, 13500); IC.centerOn(S.world.cx, S.world.cy); } else IC.frame(...IC.homeBox(S.world));
   $('seed').textContent = String(seed);
   $('startLead').textContent = S.range ? 'The test range: a flat, empty plane.' : describe(S.world);
 }
@@ -675,7 +674,11 @@ IC.begin = function (mode, lesson) {
     const ap = mode === 'story' && S.byId[S.story.cap];
     if (ap) { IC.cam.z = 0.9; IC.centerOn(ap.x, ap.y); IC.flyTo(ap.x, ap.y, 2.4); }
     else if (f) { IC.cam.z = f.z; IC.centerOn(f.x, f.y); }
-    else { IC.cam.z = Math.max(IC.cam.z, 0.14); const c = IC.cap(S); IC.centerOn(c.x, c.y - 400); }
+    else {
+      // Quick war: the capital and the forward air base, where the war starts
+      const c = IC.cap(S), b = S.byId.ab_fwd || c;
+      IC.frame(Math.min(c.x, b.x) - 1500, Math.min(c.y, b.y) - 1500, Math.max(c.x, b.x) + 1500, Math.max(c.y, b.y) + 1500, false, 1.1);
+    }
     IC.ui.refresh(true);
   };
   $('startLead').textContent = 'Preparing…';
