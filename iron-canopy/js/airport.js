@@ -26,6 +26,16 @@ function partDist(ap, part, p) {
   return rectDist(part, p);
 }
 IC.partDist = partDist;
+/* the gap between two rotated rectangles (0 when they touch or overlap): the nearest corner of one to the other */
+function rectGap(A, B) {
+  if (rectsOverlap(A, B, 0)) return 0;
+  const cs = R => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(R, sx * R.w / 2, sy * R.h / 2));
+  let m = 1e9;
+  for (const c of cs(A)) m = Math.min(m, rectDist(B, c));
+  for (const c of cs(B)) m = Math.min(m, rectDist(A, c));
+  return m;
+}
+IC.rectGap = rectGap;
 IC.partAt = function (ap, p, pad) { let best = null, bd = pad || 0.05; for (const q of ap.parts) { const d = partDist(ap, q, p); if (d < bd) { bd = d; best = q; } } return best; };
 
 /* ---------- the model ---------- */
@@ -103,7 +113,7 @@ function standsFor(ap, p) {
   if (!size) return [];
   const S = IC.STAND[size], n = Math.floor(p.w / S.w);
   let back = 1;
-  const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectDist(q, p) < 0.5);
+  const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectGap(q, p) < 0.3);
   if (term) back = toLocal(p, term).y >= 0 ? 1 : -1;
   else { const at = Object.values(ap.nodes).filter(nd => nd.on && nd.on.part === p.id); if (at.length) back = at.reduce((s, nd) => s + toLocal(p, nd).y, 0) > 0 ? -1 : 1; }
   const out = [];
@@ -173,7 +183,7 @@ IC.partZone = function (ap, p) {
   if (IC.APART[p.kind] && IC.APART[p.kind].mil) return 'mil';
   if (p.kind === 'cargo') return 'cargo';
   if (p.kind === 'apron') {
-    const near = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo' || q.kind === 'has') && rectDist(q, p) < 0.5);
+    const near = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo' || q.kind === 'has') && q.w && rectGap(q, p) < 0.3);
     if (near.some(q => q.kind === 'cargo')) return 'cargo';
     if (near.some(q => q.kind === 'has')) return 'mil';
   }
@@ -578,6 +588,34 @@ IC.aptFits = function (ap, type) {
   if (!T.vtol && (st.longest || 0) < T.rwy) return false;
   if (!T.mil && !st.fire && type !== 'turbo') return false;
   return true;
+};
+
+/* what the airport offers airlines, in numbers (task 24 decides what each airline asks for; this only measures).
+   Built, working parts only. Stable field names:
+   rwy (longest usable runway, units of 100 m), maxType (largest civil type it takes, or null), tower, fire, gradar,
+   ils (runway ends with a landing system), stands { s, m, l, xl } (civil, cargo and light zones), gates (contact
+   stands with a jet bridge), remote (stands served by bus), cargoStands, pax (terminal passengers an hour), cargo
+   (cargo shed capacity), hangar (aircraft the hangars hold), hangarFree, fuel ('hydrant' | 'trucks' | 'none'),
+   fuelDeps (refuellings an hour), deice (de-icing pads), road (a road reaches it), parking (car park spaces),
+   transit (a bus or rail stop), hotel (hotel rooms), moves (runway movements an hour) */
+IC.aptProvides = function (ap) {
+  const st = ap.st || {}, ok = p => p.built && p.hp > p.max * 0.25;
+  const out = { rwy: st.longest || 0, maxType: st.maxType || null, tower: !!st.tower, fire: !!st.fire, gradar: !!st.gradar, ils: st.ilsEnds || 0,
+    stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0),
+    hangar: 0, hangarFree: 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none', fuelDeps: st.fuelDeps || 0, deice: 0,
+    road: !!(ap.land && ap.land.road), parking: 0, transit: false, hotel: 0, moves: st.movesPerHour || 0 };
+  for (const p of ap.parts) {
+    if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
+      if (s.hp <= 0 || s.linked === false || s.zone === 'mil') continue;
+      out.stands[s.size]++;
+      if (s.zone === 'cargo' || s.cargo) out.cargoStands++;
+      else if (s.contact) out.gates++; else out.remote++;
+    }
+    if (p.kind === 'hangar' && ok(p) && p.linked !== false) { out.hangar += IC.APART.hangar.holds; out.hangarFree += Math.max(0, IC.APART.hangar.holds - (p.inside || []).length); }
+    if (p.kind === 'deice' && ok(p)) out.deice++;
+  }
+  for (const f of (ap.land && ap.land.items) || []) { if (f.kind === 'park' || f.kind === 'garage') out.parking += f.cap || 0; if (f.kind === 'stop') out.transit = true; if (f.kind === 'hotel') out.hotel += f.cap || 0; }
+  return out;
 };
 
 /* who may park on a stand: civil aircraft never in the military zone, and the reverse */
