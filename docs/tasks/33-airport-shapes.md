@@ -52,6 +52,25 @@ A player should be able to rebuild a real airport's layout closely, at its real 
 - Control tower styles.
 - They cost little (a few ₭M) and add a small, capped bonus to the airport's name with passengers and airlines. They never change capacity.
 
+**A paint tool for the look (hand drawn):**
+- The owner: "a texture tool to make it look pretty: you can hand draw some things."
+- The tool paints surfaces with a brush or fills a drawn shape: grass kinds, concrete and asphalt tones, painted apron markings and walkways, gravel, planting beds, water, sand. It also draws lines: kerbs, fences, hedges, paths.
+- Paint is looks only, and cheap. It never makes something work: a painted "taxiway" is not a taxiway, and the tool says so if the player tries.
+- It is saved with the game, drawn at every zoom (baked into the airport's tiles, like marks), and costs nothing per frame.
+
+**What is drawn is what works (the owner: "ensure the functionality lines up with what is drawn: do people load where they need to, is cargo loaded appropriately"):**
+- **Passengers** move through the shape as built: kerb, check-in, security, then along the concourse (or by people mover) to the gate that serves their stand, then the jet bridge or a bus.
+  - Walking distance and connection times come from the real layout.
+  - A gate far down a long pier takes longer, and a stand with no gate gets a bus.
+  - Close in, the player can see the flows: people at the kerb, queues at security, boarding at the door.
+- **Cargo** loads only at stands in the cargo zone or with cargo handling, from a warehouse or cargo building the loaders can reach by the airside service roads. A freighter at a passenger gate is refused, with the reason.
+- **Service vehicles** use the service roads and taxilanes as drawn: fuel, catering, baggage, buses, tugs. A stand the tugs or fuel trucks cannot reach is flagged. Baggage goes from the terminal's baggage hall to the stand.
+- **Checks in `IC.aptStats`**, in plain words:
+  - "Gate 14 has no stand in reach of its jet bridge";
+  - "Cargo stands C1–C4 have no warehouse by road";
+  - "The people mover does not reach Concourse B";
+  - "Paint only: this is not a working taxiway".
+
 **Blueprints:**
 - The player can save any layout, or part of one, as a blueprint and place it again: rotated, mirrored, and paid for normally.
 - A small library of blueprints inspired by real airports, under their own fictional names. Each is a starting point the player pays for, and it must fit the site's terrain and runways.
@@ -73,10 +92,15 @@ A player should be able to rebuild a real airport's layout closely, at its real 
   - a taxiway under an airside bridge refuses aircraft that are too tall;
   - cosmetics change the look and the name bonus, never capacity;
   - a blueprint placed rotated and mirrored works like the original;
+  - boarding happens at the gate that serves the stand, and passenger times grow with walking distance;
+  - cargo loads only where there is cargo handling reachable by road, and is refused elsewhere with a reason;
+  - a stand the fuel trucks cannot reach is flagged, and aircraft there are not fuelled by truck;
+  - paint changes the look only: a painted taxiway carries no traffic;
   - a Denver-like layout built with the player's tools (not `layoutKden`) runs a day of traffic without gridlock.
 - Performance: 60 fps with a large, complex airport on screen; the step within budget with 150 aircraft moving.
 - The pull request has:
   - screenshots of four real airports rebuilt with the tools next to their real plans;
   - the tools in use;
-  - cosmetics before and after;
+  - cosmetics and the paint tool, before and after;
+  - close-ups of passengers boarding at a curved pier and cargo loading at a cargo stand;
   - frame and step times.
