@@ -220,6 +220,14 @@ IC.LESSONS = [
       // the rocket battery nearest the base (a drone flight away on the big map) shells the nearest place it can reach
       const b = fwd(S);
       const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, b) - U.dist(c, b))[0];
+      // on the large map the nearest battery may be far along the border: for the lesson it stands across the
+      // border from the base, 40 km into their side
+      const fp = S.world.fronts.flatMap(f => f.pts).sort((p, q) => U.dist(p, b) - U.dist(q, b))[0];
+      if (site && fp) for (let d = 400; d < 1200; d += 100) { const x = fp.x - fp.nx * d, y = fp.y - fp.ny * d; if (IC.inHostile(x, y)) {
+        site.x = x; site.y = y;
+        for (const tl of S.tels) if (tl.site === site) for (let k = 0; k < 20; k++) { const hx = x + U.rand(-150, 150), hy = y + U.rand(-150, 150); if (IC.inHostile(hx, hy)) { tl.x = hx; tl.y = hy; break; } }
+        break;
+      } }
       const t = S.world.villages.filter(v => v.home).concat(IC.cities(S)).sort((a, c) => U.dist(a, site) - U.dist(c, site))[0];
       S.camp.town = t;
       for (let k = 0; k < 12; k++) S.camp.sched.push({ t: S.time + 300 + k * 2400, fn: () => { if (!S.stats.telKills) IC.enemyForceOp(S, 'rkt', { x: t.x, y: t.y, ref: t.kind === 'city' ? t : null, name: t.name }); } });
