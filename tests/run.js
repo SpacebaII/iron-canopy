@@ -1491,7 +1491,11 @@ test('career: every act can be reached', () => {
 }, true);
 test('quick war: the enemy attacks and the defense fights', () => {
   const S = IC.newGame({ seed: 12345, mode: 'campaign' });
-  // no player deploys the reserve, so the few units placed at the start may wait hours for a raid in reach
+  // as a player would: the reserve goes out round the capital and the air base (the few units placed at the start
+  // cover little, and raids aimed elsewhere never come in their reach)
+  const cap = IC.cap(S), ab = S.infra.find(i => i.kind === 'airbase' && i.owner === 'us') || cap;
+  let k = 0;
+  for (const [t, n] of Object.entries(S.reserve)) for (let i = 0; i < n; i++) { const c = k++ % 2 ? ab : cap, p = IC.findSpot(S, t, c.x, c.y, 60, 250); if (p) IC.deploy(S, t, p.x, p.y); }
   for (let h = 0; h < 24 && !(S.enemy.war && S.stats.kills > 0 && S.stats.fired > 0); h++) run(S, 1);
   assert(S.enemy.war, 'war never started');
   assert(S.stats.kills > 0 && S.stats.fired > 0, `no fighting: ${JSON.stringify(S.stats)}`);
