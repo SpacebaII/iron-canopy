@@ -34,7 +34,9 @@ IC.DEPOT_PRI = {
   last: { name: 'Last', w: 0, desc: 'Resupplied only when nobody else is waiting.' }
 };
 IC.FLOORS = [0, 50, 150, 400];
-IC.QW_TAX_SHARE = 0.15;   // Quick war: the share of city and trade taxes that goes to the air defence
+IC.QW_TAX_SHARE = 0.25;   // Quick war: the share of city and trade taxes that goes to the air defence
+IC.QW_GRANT = 60;         // Quick war: the defence ministry's grant an hour, for a country of sixty cities
+IC.STORY_TAX = [0, 0, 0.1, 0.25, 1];   // Career: the share of city and trade taxes by act
 const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry carries
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
@@ -556,15 +558,18 @@ IC.economy = function (S, dt) {
   let trade = IC.tradeTax(S) * mob.tax;
   let aidRate = S.support * 0.12, base = 25;
   // in the story the budget grows with the job: a civil aviation authority, then a defence command
-  if (S.story) { const k = [0, 0, 0, 0.25, 1][S.story.act] || 0; base = S.story.grant; tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
+  if (S.story) { const k = IC.STORY_TAX[S.story.act] || 0; base = S.story.grant; tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
   // Quick war: the air defence gets its share of the cities' taxes; the rest runs the country
-  else if (S.mode === 'campaign') { tax *= IC.QW_TAX_SHARE; trade *= IC.QW_TAX_SHARE; }
+  else if (S.mode === 'campaign') { base = IC.QW_GRANT; tax *= IC.QW_TAX_SHARE; trade *= IC.QW_TAX_SHARE; }
   let upAD = 0;
-  const bands = {};
-  for (const u of S.units) { const b = IC.BAND[u.type]; if (b && u.radarOn) bands[b] = (bands[b] || 0) + 1; }
-  // every extra radar on a crowded band costs more to keep deconflicted and maintained
+  // every other radar on the same band close by (where they would blind each other, sensors.js) makes a radar
+  // cost more to keep deconflicted and maintained
+  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]);
   let crowd = 0;
-  for (const u of S.units) { const b = IC.BAND[u.type], k = b && bands[b] > 1 && u.radarOn ? 0.15 * (bands[b] - 1) : 0; upAD += u.d.up * (1 + k); crowd += u.d.up * k; }
+  for (const u of S.units) {
+    const b = u.radarOn && IC.BAND[u.type], n = b ? on.filter(o => o !== u && IC.BAND[o.type] === b && U.dist(o, u) < 700).length : 0, k = 0.15 * n;
+    upAD += u.d.up * (1 + k); crowd += u.d.up * k;
+  }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;
   const upApt = S.av ? IC.avUpkeep(S) : 0, upStaff = S.story ? IC.staffCost(S) : 0, upLoan = IC.loanRate(S);
   const up = (upAD + upAir) * mob.up + upApt + upStaff + upLoan;
