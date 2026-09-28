@@ -460,7 +460,8 @@ IC.GUIDE = [
   { id: 'jamming', act: 3, ch: 0, t: 'Jamming', d: 'A jammer floods a radar along its own bearing: there the radar only sees what is close enough to burn through, about a third of the way to the jammer. The amber wedge on the map is its strobe: a direction, not a range. Two radars far apart put their strobes across each other and locate it. MR and LR missiles can home on a jammer without a track. Radars with better ECCM suffer less.' },
   { id: 'supply', act: 3, ch: 0, t: 'Supply', d: IC.SUPPLY_GUIDE + ' Helicopters fly emergency loads to empty batteries.' },
   { id: 'callin', act: 3, ch: 0, t: 'Call-in teams', d: 'Press G and click anywhere in our territory: a helicopter drops a shoulder-fired missile team there in seconds. It fights drones, helicopters and low jets for a few minutes, then is lifted out. Charges come back on a timer.' },
-  { id: 'raids', act: 4, ch: 0, t: 'Raids', d: 'The enemy raids in cycles. A build-up first: an intelligence warning about an hour out, a reconnaissance drone, drones probing the flanks, then a jammer taking station. Then the raid: drones and decoys a few minutes early to soak up missiles, cruise and ballistic missiles at the peak, stragglers after. Then a calm of a few hours: repair, reload, move batteries. Each raid ends with a report of what got through and why. Raids grow over the days, up to the big one.' },
+  { id: 'raids', act: 4, ch: 0, t: 'Raids', d: 'The enemy raids in cycles. A build-up first: an intelligence warning about an hour out, a reconnaissance drone, drones probing the flanks, then a jammer taking station. Then the raid: drones and decoys a few minutes early to soak up missiles, cruise and ballistic missiles at the peak, stragglers after. Then a calm of a few hours: repair, reload, move batteries. Each raid ends with a report of what got through and why.' },
+  { id: 'campaign', act: 4, ch: 0, t: 'The enemy\'s campaign', d: 'The enemy commander has an aim (to coerce the government, break morale, strangle trade, or ground our air power) and picks targets that serve it: power stations and cities, bridges and roads, airports and factories, fuel, our radars and batteries, the air bases, the government. It keeps an aim for days and changes it when its raids keep failing. The war comes in four acts. First probes: drones and single missiles to see what fires. Then limited strikes on soft targets, while it saves its big missiles. Then the shock: one large strike on several targets at once, paid for with what it saved, followed by a lull. Then a campaign against our air power: radars first, then batteries it has seen fire a lot, then supply, then the air base. It moves on when our defence has been winning for a while; a strong defence brings the campaign sooner. Intelligence sees the saving (in the Intel room): strikes on those sites and their launchers set it back.' },
   { id: 'ballistic', act: 4, ch: 0, t: 'Ballistic missiles', d: 'Only hit-to-kill rounds stop warheads. The upper tier (High-Altitude BMD) meets them 40 to 150 km up; BMD rounds in the LRSAM meet them below 35 km. A battery waits, then fires two interceptors at the point where they will meet the warhead; whatever the upper tier misses, the lower tier still gets a shot at.' },
   { id: 'towns', act: 4, ch: 0, t: 'Towns', d: 'Towns pay taxes and power industry. Sirens and damage lower their morale.' }
 ];
@@ -626,7 +627,12 @@ function beatsFor(S, act) {
     B.push({ id: 'rkt', gap: [7200, 10800], repeat: [10800, 18000], run: () => { const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name} from across the border. They deny it, of course.`); raise(S, 4); } });
     B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > 14 * 3600) || inAct(S) > 26 * 3600, gap: [3600, 7200], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
     B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
-    B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => { S.enemy.escalBase = 0.5; IC.enemyOpening(S); startAct(S, 4); } });
+    B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
+      // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
+      const done = doneCount(S);
+      IC.enemyOpening(S, done >= 4 ? { act: 2, winH: 4 } : { head: done * 1.5 });
+      startAct(S, 4);
+    } });
   }
   return B;
 }
@@ -784,14 +790,11 @@ function firstBlood(S) {
   raise(S, 20);
   (S.later = S.later || []).push({ t: S.time + 2400, fn: () => startAct(S, 3) });
 }
-/* Act III: the enemy tests the defences without declaring war */
+/* Act III: the enemy tests the defences without declaring war. The commander picks what to probe from its agenda
+   (a radar, a bridge, a power station, an airport), so the probes follow what it wants, not one favourite base */
 function grayStrike(S) {
-  const st = S.story;
-  const r = Math.random();
-  const radars = S.units.filter(u => u.d.sensor && !u.d.civil && u.state === 'ready' && IC.hostileBorderDist(u.x, u.y) < 1400);
-  if (r < 0.4 && radars.length) { const u = U.pick(radars); IC.enemyForceOp(S, 'drones', { x: u.x, y: u.y, ref: u, name: u.name }, { n: U.randi(3, 6) }); say(S, 'INT', `Drones crossing toward ${u.name}. They are hunting our radars.`); }
-  else if (r < 0.7) { const fb = S.byId.ab_fwd; IC.enemyForceOp(S, 'cm', { x: fb.x, y: fb.y, ref: fb, name: fb.name }, { n: U.randi(2, 3) }); say(S, 'INT', `Cruise missile launches: ${short(fb.name)} again.`); }
-  else { IC.enemyForceOp(S, 'disguise', IC.cap(S)); }
+  if (Math.random() < 0.15) IC.enemyForceOp(S, 'disguise', IC.cap(S));
+  else { const p = IC.enemyProbe(S); if (p) say(S, 'INT', `${p.words} ${S.world.names.A} denies everything.`); }
   raise(S, 3);
 }
 
