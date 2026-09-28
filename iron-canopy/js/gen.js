@@ -11,7 +11,8 @@ const SP = 1.45;     // spacing between towns: with ten times the land and three
 IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
 IC.FOREST_T = 0.56;
 
-IC.generate = function (seed) {
+/* generation in steps, so a loading screen can show progress: each yield is [fraction done, what comes next] */
+IC.generateSteps = function* (seed) {
   let R = IC.makeRng(seed);
   const WW = IC.WW, WH = IC.WH;
   const NOX = R() * 900, NOY = R() * 900;
@@ -114,6 +115,7 @@ IC.generate = function (seed) {
   for (const f of W.fronts) for (let i = 0; i + 1 < f.pts.length; i++) hsegs.push([f.pts[i].x, f.pts[i].y, f.pts[i + 1].x, f.pts[i + 1].y]);
   W.hostileBorderDist = (x, y) => { let m = 1e9; for (const s of hsegs) m = Math.min(m, U.segDist(x, y, s[0], s[1], s[2], s[3])); return m; };
 
+  yield [0.01, 'Raising the hills'];
   /* ---------- relief ---------- */
   const ridges = [];
   const arc = (a0, a1, off, am, w, n) => {
@@ -170,6 +172,7 @@ IC.generate = function (seed) {
   };
   W.slopeAt = (x, y) => Math.hypot(W.hAt(x + 20, y) - W.hAt(x - 20, y), W.hAt(x, y + 20) - W.hAt(x, y - 20));
 
+  yield [0.11, 'Running the rivers'];
   /* ---------- rivers and lakes ---------- */
   let bl = Float32Array.from(hg);
   for (let pass = 0; pass < 3; pass++) bl = blur5(bl, GW, GH);
@@ -265,6 +268,7 @@ IC.generate = function (seed) {
   };
   W.forestAt = (x, y) => W.forestD(x, y) > IC.FOREST_T;
 
+  yield [0.2, 'Founding the cities'];
   /* ---------- cities ---------- */
   const cand = [];
   for (let k = 0; k < 24000; k++) {
@@ -407,6 +411,7 @@ IC.generate = function (seed) {
   /* ---------- runway headings; the layouts themselves are built per game (airport.js) ---------- */
   for (const b of W.infra) if (b.kind === 'airbase' || b.kind === 'airport') b.rwyA = R.range(0, Math.PI);
 
+  yield [0.29, 'Laying the roads and railways'];
   /* ---------- roads and railways (see buildNetwork below) ---------- */
   W.crossings = [];
   for (const k of ['C', 'D']) {
@@ -439,6 +444,7 @@ IC.generate = function (seed) {
   /* ---------- bridges where roads cross rivers ---------- */
   riverBridges(W);
 
+  yield [0.55, 'Placing the neighbours'];
   /* ---------- foreign places ---------- */
   const radialPt = (k, dmin, dmax, spacing, others) => {
     const [a0, a1] = W.secSpan(k);
@@ -526,6 +532,7 @@ IC.generate = function (seed) {
     }
   }
 
+  yield [0.56, 'Mapping the ground'];
   /* ---------- terrain for ground combat ---------- */
   W.townAt = (x, y) => {
     if (W.builtAt(x, y)) for (const c of W.cities) if (U.dxy(x, y, c.x, c.y) < c.r * 1.6) return c;
@@ -564,8 +571,10 @@ IC.generate = function (seed) {
     // fields thin out up the hillsides
     return Math.min(1, Math.max(fw, h < 0.4 ? 0.3 : 0.12)) * U.clamp((0.68 - h) / 0.14, 0, 1);
   };
+  yield [0.57, 'Laying out the fields'];
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
+  yield [0.62, 'Building the streets'];
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
   // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);
   // abroad the fields run up to the towns' blocks
@@ -593,6 +602,10 @@ IC.generate = function (seed) {
   for (const c of W.cities.concat(W.foreign)) for (const l of c.streets) bbox(l);
 
   return W;
+};
+IC.generate = function (seed) {
+  const g = IC.generateSteps(seed);
+  for (;;) { const r = g.next(); if (r.done) return r.value; }
 };
 
 /* bridges where roads cross rivers */
