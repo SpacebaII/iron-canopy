@@ -44,7 +44,8 @@ test('world: every city, village and airfield is reachable by road', () => {
 });
 test('world: motorways join the capital to the four largest cities', () => {
   for (const seed of [4242, 7, 99, 12345, 2024]) {
-    const W = IC.generate(seed), seen = reach(W, W.cities[0].id, e => e.cls === 'hw');
+    // (a motorway ends at the edge of town, where it meets one of the city's avenues)
+    const W = IC.generate(seed), seen = reach(W, W.cities[0].id, e => e.cls === 'hw' || e.city);
     const big = W.cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 4);
     for (const c of big) assert(seen.has(c.id), `seed ${seed}: no motorway from the capital to ${c.name}`);
   }
@@ -86,6 +87,60 @@ test('world: city streets end on another street or road', () => {
   for (const seed of [4242, 7]) {
     const W = IC.generate(seed);
     for (const c of W.cities) for (const l of c.streets) assert(!l.deadEnd, `seed ${seed}: a street in ${c.name} ends in the middle of nowhere`);
+  }
+});
+test('world: no road inside a city runs over a block', () => {
+  for (const seed of [4242, 7]) {
+    const W = IC.generate(seed);
+    for (const c of W.cities) {
+      const segs = [];
+      for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) {
+        const a = e.pts[i - 1], b = e.pts[i];
+        if (U.segDist(c.x, c.y, a.x, a.y, b.x, b.y) < c.ext + 5) segs.push([a.x, a.y, b.x, b.y, e.city ? 'art' : e.cls]);
+      }
+      const on = c.blocks.filter(b => IC.blockOnRoad(b, segs, -0.05));
+      assert(!on.length, `seed ${seed}: ${on.length} blocks in ${c.name} stand on a road`);
+    }
+  }
+});
+test('world: a national road entering a city goes on as one of its streets, or round it', () => {
+  for (const seed of [4242, 7]) {
+    const W = IC.generate(seed);
+    let grid = 0, along = 0;
+    for (const c of W.cities) {
+      // the city's node is reached only by its own avenues, and no other road crosses the middle of town
+      for (const e of W.edges) if (e.a === c.id || e.b === c.id) assert(e.city === c.id, `seed ${seed}: road ${e.id} (${e.cls}) runs into the middle of ${c.name} without becoming a street`);
+      // (among the blocks of the inner half of the town; its gates are where the roads meet its edge)
+      const gate = k => k.startsWith(c.id + ':');
+      for (const e of W.edges) if (e.city !== c.id) e.pts.forEach((p, i) => {
+        if ((i === 0 && gate(e.a)) || (i === e.pts.length - 1 && gate(e.b)) || U.dist(p, c) > c.ext * 0.5) return;
+        assert(!c.blocks.some(b => U.dist(b, p) < 3.5), `seed ${seed}: road ${e.id} (${e.cls}) runs through the middle of ${c.name}`);
+      });
+      // in a grid city the avenues run along the grid (a few diagonal avenues aside)
+      if (!['ny', 'chi', 'dxb'].includes(c.tpl)) continue;
+      const F = IC.cityFrame(c);
+      for (const e of W.edges) if (e.city === c.id && !e.diag) for (let i = 2; i < e.pts.length; i++) {
+        const [u0, v0] = F.toG(e.pts[i - 1].x, e.pts[i - 1].y), [u1, v1] = F.toG(e.pts[i].x, e.pts[i].y), L = Math.hypot(u1 - u0, v1 - v0);
+        const a = Math.abs(Math.atan2(v1 - v0, u1 - u0)) % (Math.PI / 2);
+        grid += L; if (a < 0.05 || a > Math.PI / 2 - 0.05) along += L;
+      }
+    }
+    assert(along > grid * 0.8, `seed ${seed}: only ${U.pct(along / grid)} of the avenues in grid cities run along the grid`);
+    // motorways stop at the edge of town: a bypass round it, or the avenue in
+    assert(W.edges.some(e => e.bypass), `seed ${seed}: no city has a motorway bypass`);
+  }
+});
+test('world: every map has cities laid out like each of the five plans, and no two alike', () => {
+  for (const seed of [4242, 7, 99]) {
+    const W = IC.generate(seed), by = {};
+    for (const c of W.cities) (by[c.tpl] = by[c.tpl] || []).push(c);
+    for (const t of ['ny', 'chi', 'lon', 'par', 'dxb']) assert(by[t] && by[t].length, `seed ${seed}: no city laid out like ${IC.CITY_TEMPLATES[t].sketch}`);
+    for (const t in by) {
+      const [a, b] = by[t].sort((p, q) => q.pop - p.pop);
+      if (!b) continue;
+      const turn = Math.abs(U.angWrap(4 * (a.grid - b.grid))) / 4, size = Math.abs(a.blocks.length - b.blocks.length) / Math.max(a.blocks.length, b.blocks.length);
+      assert(turn > 0.03 || size > 0.1, `seed ${seed}: ${a.name} and ${b.name} are copies of each other`);
+    }
   }
 });
 /* how round a city is: its main built-up area (blocks, with the streets between them closed up, the largest
@@ -204,9 +259,30 @@ test('traffic: rush hour is busier than night, and an air raid empties the roads
   // commuters: into the offices in the morning, home in the evening
   const T = S.traffic, biz = T.zones.filter(z => z.city === cap && z.jobs > z.homes * 2).sort((a, b) => b.jobs - a.jobs)[0];
   assert(biz, 'no business district in the capital');
-  const G = T.G, nd = G.nodes[biz.node], inbound = (h) => { S.time = h * 3600; count(); let i = 0, o = 0; for (const li of nd.out) { const L = T.links[li], d = G.links[li].b === biz.node ? 0 : 1; i += L.dem[d]; o += L.dem[1 - d]; } return [i, o]; };   // (the demand: a jammed street carries as much both ways)
+  // (at every street where the zone's trips start and end; the demand: a jammed street carries as much both ways)
+  const G = T.G, inbound = (h) => { S.time = h * 3600; count(); let i = 0, o = 0; for (const n of biz.nodes) for (const li of G.nodes[n].out) { const L = T.links[li], d = G.links[li].b === n ? 0 : 1; i += L.dem[d]; o += L.dem[1 - d]; } return [i, o]; };
   const [mi, mo] = inbound(8), [ei, eo] = inbound(17.5);
   assert(mi > mo && eo > ei, `rush hours do not run into town in the morning and out in the evening (08:00 ${mi.toFixed(2)} in, ${mo.toFixed(2)} out; 17:30 ${ei.toFixed(2)} in, ${eo.toFixed(2)} out)`);
+});
+test('traffic: at rush hour the side streets carry some traffic and the avenues the most', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S), T = S.traffic;
+  S.traffic.stepT = 0; IC.traffic(S, 0.25);
+  // by vehicles, not by how full: an avenue has two lanes each way and carries more at the same load
+  const mine = T.links.filter(L => L.l.city === cap && L.l.len > 0.3), vol = L => L.load * L.C.dens * L.C.lanes;
+  const top = mine.slice().sort((a, b) => vol(b) - vol(a)).slice(0, Math.ceil(mine.length * 0.05));
+  const side = top.filter(L => L.cls === 'st');
+  assert(!side.length, `${side.length} of the ${top.length} busiest links in ${cap.name} are side streets`);
+  // homes are on quiet streets, but not empty ones
+  const homes = T.zones.filter(z => z.city === cap && z.kind === 'home'), G = T.G;
+  const res = []; for (const z of homes) for (const n of z.nodes) for (const li of G.nodes[n].out) if (T.links[li].cls === 'st') res.push(T.links[li]);
+  const used = res.filter(L => L.load > 0.03).length;
+  assert(res.length > 20 && used > res.length * 0.7, `only ${used} of ${res.length} residential streets carry traffic at 08:00`);
+  // close in, vehicles drive the side streets too
+  const z = homes.sort((a, b) => b.homes - a.homes)[0], view = { x0: z.x - 20, y0: z.y - 14, x1: z.x + 20, y1: z.y + 14 };
+  let onSide = 0;
+  for (let i = 0; i < 400; i++) { S.time += 0.5; IC.traffic(S, 0.5); const A = IC.trafficAgents(S, view, 0.5); if (i % 40 === 39) onSide += A.filter(a => a.route[a.ri][0].cls === 'st').length; }
+  assert(onSide > 10, `close in, hardly any vehicles on the side streets (${onSide})`);
 });
 test('traffic: vehicles start at real places and drive the road graph like traffic', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
@@ -253,7 +329,8 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   const T = S.traffic, G = T.G;
   for (let i = 0; i < 4; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
   // the busiest main road link, and the junction at its start
-  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && L.l.len > 6 && L.ld[0] > 0.3).sort((a, b) => b.ld[0] - a.ld[0])[0];
+  // (busy, but not already jammed: a jam cannot grow any longer)
+  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && L.l.len > 6 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
   assert(L, 'no busy main road');
   const n0 = L.l.a, p = G.nodes[n0];
   // vehicles within 150 m of that junction on the roads that lead into it, as the middle zoom shows them
