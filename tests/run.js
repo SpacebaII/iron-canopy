@@ -868,6 +868,8 @@ test('airport life: an apron stretched by hand takes stands placed by hand, and 
 });
 test('airport life: an arrival at a remote stand gets buses; one at a gate a jet bridge once researched, else passengers walk', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  // (fair weather: a Career starts in January, and winter fog would divert the arrivals this test watches)
+  sky(S, 'clear');
   const cap = S.byId[S.story.cap], seen = {};
   const look = () => { for (const s of IC.aptStands(cap)) if (s.svc && s.occ === s.svc.tail) seen[(s.contact ? 'gate:' : 'remote:') + s.svc.kind] = (seen[(s.contact ? 'gate:' : 'remote:') + s.svc.kind] || 0) + 1; };
   // keep one kind of stand taken at a time, so the arrivals must use the other
