@@ -121,7 +121,8 @@ function setTargets(S, set) {
   const add = (ref, x, y, name, w, only) => { if (w > 0) L.push({ ref, x, y, name, w, set, only }); };
   const ours = S.infra.filter(i => i.owner === 'us' && !i.offline);
   if (set === 'city') {
-    for (const c of ours) if (c.kind === 'city') add(c, c.x, c.y, c.name, Math.sqrt(c.pop) * 0.25);
+    // homes are for later: before the campaign the commander goes for the power, not the people
+    for (const c of ours) if (c.kind === 'city') add(c, c.x, c.y, c.name, Math.sqrt(c.pop) * 0.25 * (E.act <= 3 ? 0.25 : 1));
     // a power station is worth the people it keeps in light
     for (const p of ours) if (p.kind === 'power') add(p, p.x, p.y, p.name, 5 + IC.cities(S).filter(c => c.plant === p.id).reduce((s, c) => s + c.pop, 0) / 150);
   } else if (set === 'transport') {
@@ -485,14 +486,14 @@ const ACT_SETS = {
 /* The pace (game hours). The owner wants the player winning for a good while before the heat is turned up, so the
    measure is time spent winning: after each raid the defence is "winning" if it stopped at least 60% of what came
    and nothing the raid was after was knocked out; hours of war in that state add up in E.winH. The shock needs 8 of
-   them and act 4 needs WIN_H = 14, which at a raid every three to four hours is four or five raids in a row the
-   player won. A strong defence stops more and wins sooner, so it also shortens the minimum times ([weak, strong]);
-   a weak one never earns the hours and gets the ceilings: act 4 comes at the latest 50 h into the war, so a
-   three-day Quick war always sees it. */
-IC.EPACE = { winH: 14, shockWinH: 8, act2: [10, 6], act2Max: 16, save: [14, 8], saveMax: 26, lull: [8, 5], act4Max: 50, saveH: 12 };
+   them and three limited strikes, act 4 needs 16, which at a raid every four hours or so is four raids in a row the
+   player won, and never comes before 36 h of war: half of a three-day Quick war. A strong defence stops more and wins sooner, so it also shortens the minimum times
+   ([weak, strong]); a weak one never earns the hours and gets the ceilings: act 4 comes at the latest 52 h into the
+   war, so a three-day Quick war always sees it. */
+IC.EPACE = { winH: 16, shockWinH: 8, act2: [10, 6], act2Max: 16, save: [16, 10], saveMax: 28, limited: 3, lull: [8, 5], act4Min: 36, act4Max: 52, saveH: 12 };
 // how much of what is fired a set may take before act 4, and the main air base at any time (with room to spare
 // under the owner's 35% and 25%: one raid adds many weapons at once)
-const CAP = { set: 0.27, main: 0.18 };
+const CAP = { set: 0.27, main: 0.2 };
 const RAID_NAMES = { probe: 'probing raid', limited: 'limited strike', shock: 'major strike', sead: 'strike on our radars', saturate: 'saturation raid', supply: 'strike on our supply', airbase: 'strike on the air base', pressure: 'combined raid', opening: 'opening strike', retaliation: 'retaliation strike' };
 const lerp = (a, b, f) => a + (b - a) * U.clamp(f, 0, 1);
 const H = 3600;
@@ -520,13 +521,17 @@ function switchAim(S, E, why) {
 }
 /* the weight of each target set for the next raid: the aim, the act, what worked, and a spread over what was fired */
 function setWeights(S, E, act) {
-  const A = IC.EAIMS[E.aim].sets, M = ACT_SETS[act], out = {};
+  const A = IC.EAIMS[E.aim].sets, M = ACT_SETS[act], out = {}, N = E.tallyN;
+  // the share a set would have after this raid (about 10 weapons), once enough has been fired to tell
+  const share = k => N < 15 ? 0 : N < 30 ? (E.tally[k] || 0) / N : ((E.tally[k] || 0) + 10) / (N + 10);
   for (const k in IC.ESETS) {
     let w = (A[k] || 0.15) * (M[k] || 0.3) * E.setW[k];
-    const sh = E.tallyN >= 15 ? (E.tally[k] || 0) / E.tallyN : 0;
-    if (act < 4 && sh > CAP.set) w = 0; else w *= Math.pow(1 - sh, 3);
+    const sh = share(k);
+    if (act < 4 && sh > CAP.set) w = 0; else w *= Math.pow(1 - Math.min(1, sh), 3);
     out[k] = w;
   }
+  // everything over its share: the one that has taken least
+  if (!Object.values(out).some(w => w > 0)) { const k = Object.keys(IC.ESETS).sort((a, b) => share(a) - share(b))[0]; out[k] = 1; }
   return out;
 }
 /* how many of our batteries the enemy knows cover a point */
@@ -537,7 +542,7 @@ function nearKnown(S, p) { for (const k of S.enemy.known.values()) if (!k.ref.de
 function chooseTarget(S, E, set, o) {
   o = o || {};
   const main = IC.mainBase(S);
-  let L = setTargets(S, set).filter(t => !(main && t.ref === main && E.tallyAllN >= 15 && (E.tallyRef[main.id] || 0) / E.tallyAllN > CAP.main));
+  let L = setTargets(S, set).filter(t => !(main && t.ref === main && mainFull(E, main, o.size || (E.act >= 4 ? 25 : 10))));
   if (o.near) L = L.filter(t => U.dist(t, o.near) < o.R);
   if (o.filter) L = L.filter(o.filter);
   for (const t of L) {
@@ -545,7 +550,7 @@ function chooseTarget(S, E, set, o) {
     t.w *= 1 / (1 + (E.hitN[id] || 0) * 0.8) * Math.pow(0.45, E.hard[id] || 0);
     // probes and limited strikes stay within easy reach, and test the defence rather than avoid it: a target with a
     // battery or two near it tells them most; a fortress, little
-    if (o.probe) { const c = coverAt(S, t); if (droneHours(S, t) > 4.5) t.w *= 0.1; t.w *= Math.exp(-IC.hostileBorderDist(t.x, t.y) / 9000) * (c === 0 ? (nearKnown(S, t) ? 1 : 0.3) : c <= 2 ? 1.5 : 0.6); }
+    if (o.probe) { const c = coverAt(S, t); if (droneHours(S, t) > 4.5) t.w *= 0.3; t.w *= Math.exp(-IC.hostileBorderDist(t.x, t.y) / 9000) * (c === 0 ? (nearKnown(S, t) ? 0.5 : 0.12) : c <= 2 ? 2 : 0.8); }
   }
   L.sort((a, b) => b.w - a.w);
   return L.length ? U.wpick(L.slice(0, 12).map(t => [t, t.w])) : null;
@@ -628,9 +633,11 @@ function startAct(S, E, n, why) {
   IC.emit(S, 'enemyAct', { act: n, name: IC.EACTS[n].name, text: IC.EACTS[n].text });
 }
 IC.enemyStartAct = (S, n, why) => startAct(S, S.enemy, n, why || 'forced');
+/* would a raid of n more weapons on the main air base take it past its share? (the first raids are let through) */
+function mainFull(E, main, n) { return E.tallyAllN >= 15 && ((E.tallyRef[main.id] || 0) + n) / (E.tallyAllN + n) > CAP.main; }
 /* the air base the campaign goes after: the one with most of our fighters, unless it has taken its share */
 function baseFor(S, E) {
-  const main = IC.mainBase(S), tooMuch = main && E.tallyAllN >= 15 && (E.tallyRef[main.id] || 0) / E.tallyAllN > CAP.main;
+  const main = IC.mainBase(S), tooMuch = main && mainFull(E, main, 35);
   const L = S.infra.filter(b => b.kind === 'airbase' && b.owner === 'us' && b.parts && !(tooMuch && b === main));
   return L.sort((a, b) => fighters(S, b) * (b === main ? 1.5 : 1) - fighters(S, a) * (a === main ? 1.5 : 1))[0] || null;
 }
@@ -639,7 +646,7 @@ function pace(S, E) {
   const warH = (S.time - E.warT) / H, inAct = (S.time - E.actT) / H, f = strong(E);
   if (E.act === 1 && ((E.rec.length >= 2 && inAct >= lerp(IC.EPACE.act2[0], IC.EPACE.act2[1], f) - E.head) || inAct >= IC.EPACE.act2Max - E.head))
     startAct(S, E, 2, `${E.rec.length} probes, ${U.pct(strength(E))} of them stopped: now limited strikes, and saving for a big one`);
-  if (E.act === 3 && S.time >= (E.lullEnd || 0) && (E.winH >= IC.EPACE.winH || warH >= IC.EPACE.act4Max))
+  if (E.act === 3 && S.time >= (E.lullEnd || 0) && warH >= IC.EPACE.act4Min && (E.winH >= IC.EPACE.winH || warH >= IC.EPACE.act4Max))
     startAct(S, E, 4, E.winH >= IC.EPACE.winH ? `their defence has been winning for ${Math.round(E.winH)} h: time for a real campaign` : `${Math.round(warH)} h into the war: the campaign cannot wait any longer`);
 }
 /* is the shock ready to go? enough stock, enough time in act 2, and a defence that has had its time winning */
@@ -648,7 +655,8 @@ function shockReady(S, E) {
   const inAct = (S.time - E.actT) / H, st = stockState(S);
   if (inAct >= 40) return st.f >= 0.4;
   if (inAct >= IC.EPACE.saveMax) return st.f >= 0.7;
-  return st.f >= 0.97 && inAct >= lerp(IC.EPACE.save[0], IC.EPACE.save[1], strong(E)) && E.winH >= IC.EPACE.shockWinH;
+  const limited = E.rec.filter(r => r.t > E.actT).length;
+  return st.f >= 0.97 && limited >= IC.EPACE.limited && inAct >= lerp(IC.EPACE.save[0], IC.EPACE.save[1], strong(E)) && E.winH >= IC.EPACE.shockWinH;
 }
 
 /* ---------- planning a raid ---------- */
@@ -682,11 +690,11 @@ function mixFor(S, E, kind, obj) {
   } else if (kind === 'shock') {
     // the saved missiles, shared over the main target and two or three others of different kinds, all at once
     const bal = Math.min(12, Math.floor(spareOf(S, 'bm', ['srbm', 'marv']) * 0.85)), cms = Math.min(20, Math.floor(spareOf(S, 'cm', ['lacm', 'scm', 'mcm']) * 0.85));
-    const more = E.shock.more, k = more.length + 1.5, share = (n, main) => Math.max(1, Math.round(n * (main ? 1.5 : 1) / k));
+    const more = E.shock.more, k = more.length + 1, share = n => Math.max(1, Math.round(n / k));
     const how = E.shock.how, via = how === 'axis' ? { via: 1 } : {};
-    if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 10, -600); }
+    if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 6, -600); }
     else add('dcy', 4, -300);
-    add('drones', 8, -300, via); add('cm', share(cms, true), 0, via); add('bal', share(bal, true), 0); add('mrbm', 2, 0); add('jam', 2, 0, via);
+    add('drones', 5, -300, via); add('cm', share(cms), 0, via); add('bal', share(bal), 0); add('mrbm', 1, 0); add('jam', 2, 0, via);
     if (how === 'granted') add('low', 1, 0);
     for (const t of more) {
       const x = { obj: t, set: t.set }, dm = droneHours(S, t) <= 5;
@@ -712,11 +720,11 @@ function mixFor(S, E, kind, obj) {
   } else if (kind === 'airbase') {
     add('dcy', 6, -420, { spread: 60 }); add('drones', r(8, 10), -360, { nat: 'A' });
     if (two) add('drones', r(4, 5), -300, { nat: 'B' });
-    add('jam', 2, 0); add('cm', r(7, 9), 0); add('bal', r(5, 7), 0); add('mrbm', 2, 0); add('low', 1, 0); add('bomber', 1, 0); add('helis', 1, -200); add('hgv', 1, 0);
+    add('jam', 2, 0); add('cm', r(5, 7), 0); add('bal', r(4, 5), 0); add('mrbm', 1, 0); add('low', 1, 0); add('bomber', 1, 0); add('helis', 1, -200); add('hgv', 1, 0);
     add('drones', 3, 480);
   } else if (kind === 'pressure') {
-    add('drones', r(6, 9), -360, { nat: 'A' }); if (two) add('drones', r(2, 4), -300, { nat: 'B' });
-    add('dcy', r(2, 4), -360); add('cm', r(4, 6), 0); add('bal', r(1, 3), 0); add('jam', 1, 0);
+    add('drones', r(5, 7), -360, { nat: 'A' }); if (two) add('drones', r(2, 3), -300, { nat: 'B' });
+    add('dcy', r(2, 4), -360); add('cm', r(3, 5), 0); add('bal', r(1, 2), 0); add('jam', 1, 0);
     if (Math.random() < 0.4) add('disguise', 1); if (Math.random() < 0.4) add('bomber', 1);
     add('drones', 2, 480);
   }
@@ -726,20 +734,24 @@ function mixFor(S, E, kind, obj) {
    not watch; failing that, the best-defended big target, soaked with decoys first */
 function planShock(S, E) {
   const L = [];
-  for (const set of ['city', 'trade', 'fuel', 'command', 'transport']) for (const t of setTargets(S, set)) if (t.w >= 5) L.push(t);
+  // the main target from a set that has taken little so far, so the shock does not make one set the whole war
+  const share = k => E.tallyN ? (E.tally[k] || 0) / E.tallyN : 0;
+  for (const set of ['city', 'trade', 'fuel', 'command', 'transport']) for (const t of setTargets(S, set)) if (t.w >= 5) { t.w *= Math.pow(1 - share(set), 4); L.push(t); }
   L.sort((a, b) => b.w - a.w);
-  const bare = L.filter(t => coverAt(S, t) === 0).slice(0, 5);
+  const first = L.filter(t => E.tallyN < 20 || share(t.set) < 0.2);
+  const bare = L.filter(t => coverAt(S, t) === 0).slice(0, 8);
   const axis = axisPoint(S, E);
   let how, obj;
-  if (bare.length && Math.random() < 0.6) { how = 'granted'; obj = U.pick(bare); }
-  else if (axis && Math.random() < 0.6) { how = 'axis'; obj = U.pick(L.slice(0, 6)); }
-  else { how = 'soak'; obj = L.slice(0, 6).sort((a, b) => coverAt(S, b) - coverAt(S, a))[0]; }
+  const F = first.length ? first : L, bareF = bare.filter(t => first.includes(t));
+  if (bareF.length && Math.random() < 0.6) { how = 'granted'; obj = U.pick(bareF.slice(0, 5)); }
+  else if (axis && Math.random() < 0.6) { how = 'axis'; obj = U.pick(F.slice(0, 6)); }
+  else { how = 'soak'; obj = F.slice(0, 6).sort((a, b) => coverAt(S, b) - coverAt(S, a))[0]; }
   if (!obj) { how = 'soak'; obj = chooseTarget(S, E, 'city'); }
   if (!obj) return null;
   // two or three more of other kinds, the most valuable near the first (within 300 km)
   const more = [], used = new Set([obj.set]);
   for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => b.w / (1 + U.dist(b, obj) / 2000) - a.w / (1 + U.dist(a, obj) / 2000))) {
-    if (used.has(t.set)) continue;
+    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > 0.22)) continue;
     used.add(t.set); more.push(t);
     if (more.length >= 3) break;
   }
@@ -784,22 +796,22 @@ function planRaid(S, E) {
     if (step === 'sead' && !chooseTarget(S, E, 'ad', { near, R: 2500, filter: t => t.ref.radarOn })) step = 'saturate';
     if (step === 'airbase') c.base = baseFor(S, E);
     if (step === 'sead') obj = chooseTarget(S, E, 'ad', { near, R: 2500, filter: t => t.ref.radarOn });
-    else if (step === 'saturate') obj = chooseTarget(S, E, 'ad', { near, R: 2500, filter: t => t.ref.d && t.ref.d.weapon === 'sam' }) || chooseTarget(S, E, 'ad');
+    else if (step === 'saturate') { const sam = t => t.ref.d && t.ref.d.weapon === 'sam'; obj = chooseTarget(S, E, 'ad', { near, R: 2500, filter: sam }) || chooseTarget(S, E, 'ad', { filter: sam }); }
     else if (step === 'supply') obj = chooseTarget(S, E, 'transport', { near, R: 3500 }) || chooseTarget(S, E, 'transport');
     else if (step === 'airbase' && c.base) obj = { x: c.base.x, y: c.base.y, ref: c.base, name: c.base.name, set: 'airbase', w: 1, only: ['runway', 'has', 'hangar', 'alert', 'fuel', 'ammo'] };
     if (!obj) { step = 'pressure'; }
     if (step === 'pressure') { const sw = setWeights(S, E, 4); delete sw.airbase; delete sw.ad; const set = U.wpick(Object.entries(sw)); obj = set && chooseTarget(S, E, set); }
     kind = step; c.i++;
     const k = obj && obj.ref && E.known.get(obj.ref.id), gf = k ? guessFill(S, k) : 1;
-    why = { sead: 'hunt the radars first', saturate: k && k.kind === 'sam' ? `${obj.name} has fired a lot${gf < 1 ? ` (they guess ${U.pct(gf)} of its missiles left)` : ''}: two waves, the second as it reloads` : 'no battery near the base known, so the next best air defence target', supply: 'cut what feeds the batteries', airbase: 'the air base, now its cover is thin', pressure: `keep up the pressure: ${IC.EAIMS[E.aim].name}` }[step];
+    why = { sead: 'hunt the radars first', saturate: k && k.kind === 'sam' ? `${obj.name} has fired a lot${gf < 1 ? ` (they guess ${U.pct(gf)} of its missiles left)` : ''}: two waves, the second as it reloads` : '', supply: 'cut what feeds the batteries', airbase: 'the air base, now its cover is thin', pressure: `keep up the pressure: ${IC.EAIMS[E.aim].name}` }[step];
   } else {
     const sw = setWeights(S, E, E.act);
     const set = U.wpick(Object.entries(sw));
     kind = E.act === 1 ? 'probe' : 'limited';
-    obj = set && chooseTarget(S, E, set, { probe: E.act <= 2 });
+    obj = set && chooseTarget(S, E, set, { probe: E.act <= 3 });
     why = `${IC.EAIMS[E.aim].name}${E.act === 1 ? ': see what fires' : ': a soft target'}`;
   }
-  if (!obj) { E.cycle = { phase: 'calm', next: S.time + H }; return; }
+  if (!obj) { note(S, E, `Finds nothing worth a ${RAID_NAMES[kind] || 'raid'}; looks again in an hour.`); E.cycle = { phase: 'calm', next: S.time + H }; return; }
   const mix = mixFor(S, E, kind, obj);
   E.plan = { aim: E.aim, label: IC.EAIMS[E.aim].name, set: obj.set, obj, kind, why };
   // T waits for the slowest weapon: launchers driving out, drones that fly for hours
@@ -1001,7 +1013,7 @@ function learn(S, E, R, ops) {
 /* the calm after a raid: shorter as the war goes on; the lull after the shock is longer */
 function calmFor(S, E, R) {
   if (R.kind === 'shock') return E.lullEnd - S.time;
-  const h = E.act >= 4 ? U.rand(2.2, 3.2) : E.act >= 2 ? U.rand(2.6, 3.8) : U.rand(2.5, 4);
+  const h = E.act >= 4 ? U.rand(3, 4) : E.act >= 2 ? U.rand(2.6, 3.8) : U.rand(2.5, 4);
   return h * H;
 }
 function runCycle(S, E) {
@@ -1432,7 +1444,7 @@ IC.enemyTick = function (S, dt) {
         note(S, E, `A replacement launcher reaches ${s.name}.`);
       }
     }
-    E.ops = E.ops.filter(o => S.time - o.t0 < 43200);
+    E.ops = E.ops.filter(o => S.time - o.t0 < 43200 || (o.raid && o.raid === E.raid));
   }
 
   if (!E.war) {

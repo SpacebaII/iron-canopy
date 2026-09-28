@@ -79,6 +79,14 @@ IC.working = function (S) {
 IC.warDays = S => S.enemy && S.enemy.war ? (S.time - S.enemy.warT) / 86400 : 0;
 const pmHit = (S, v, why) => { if (S.pm == null || S.story) return; S.pm = U.clamp(S.pm + v, 0, 100); if (v <= -4 && why) IC.log(S, 'warn', 'PM', `The Prime Minister: ${why}`); };
 IC.pmHit = pmHit;
+/* what a raid breaks costs the Prime Minister's confidence hit by hit, but at most IC.PM_RAID_CAP over one raid: the
+   raid is judged as a whole in its after-action, so one bad night alone does not end the war */
+IC.PM_RAID_CAP = 10;
+const hitPm = (S, v, why) => {
+  const E = S.enemy, R = E && E.raid && E.cycle && E.cycle.phase === 'raid' ? E.raid : null;
+  if (R && v < 0) { const took = R.pmTook || 0; v = Math.max(v, took - IC.PM_RAID_CAP); R.pmTook = took - v; }
+  pmHit(S, v, why);
+};
 
 function snap(S) { return { kills: S.stats.kills, leak: S.stats.leakers, fired: S.stats.fired, lost: S.stats.unitsLost + S.stats.acLost, budget: S.budget, will: S.enemy ? S.enemy.will : 100, civ: S.stats.civLost }; }
 
@@ -189,9 +197,9 @@ IC.on((S, type, d) => {
       break;
     }
     case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name} within the hour.`); break;
-    case 'cityHit': pmHit(S, -0.5 - (d.lost || 0) * 1.2); break;
-    case 'infraLost': pmHit(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
-    case 'tailLost': pmHit(S, -3, 'An airliner destroyed on the ground. The airlines are talking about leaving.'); break;
+    case 'cityHit': hitPm(S, -0.5 - (d.lost || 0) * 1.2); break;
+    case 'infraLost': hitPm(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
+    case 'tailLost': hitPm(S, -3, 'An airliner destroyed on the ground. The airlines are talking about leaving.'); break;
     // after each raid the Prime Minister weighs what got through and what it hit
     // (a small raid counts for less: a drone that gets through is not a failed defence)
     case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.35 - f) * Math.min(1, r.threats / 12) - Math.min(6, r.hits * 0.15), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
