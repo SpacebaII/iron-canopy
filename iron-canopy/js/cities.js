@@ -542,17 +542,25 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   }
   /* streets run between built cells: a lattice line is kept where a block lies on either side of it */
   const blockedAt = (p, old) => W.inLake(p.x, p.y) || W.riverDist(p.x, p.y) < 1.4 || hwNear(p.x, p.y, 0.9) || (old ? false : c.lat.rho && F.inOld(...F.toG(p.x, p.y), -0.1));
+  // (in a river city the avenues cross the river on bridges of their own)
+  const bridges = !!(st.radial || st.bway);
   const lines = (has, lo, hi, step, toW, cls, old) => {
     for (let axis = 0; axis < 2; axis++) for (let k = lo; k <= hi; k++) {
       let run = [];
       const flush = () => { if (run.length > 1) streets.push({ cls: cls(k, axis), pts: run, old }); run = []; };
+      const onAt = m => axis ? has(m, k - 1) || has(m, k) : has(k - 1, m) || has(k, m), br = new Set();
+      if (bridges && !old && cls(k, axis) === 'art') for (let m = lo + 1; m < hi - 1; m++) {
+        if (onAt(m) || !onAt(m - 1)) continue;
+        const g = onAt(m + 1) ? 1 : onAt(m + 2) ? 2 : 0, mid = toW(axis ? (m + g / 2) * step : k * step, axis ? k * step : (m + g / 2) * step);
+        if (g && W.riverDist(mid.x, mid.y) < 3.5 && !W.inLake(mid.x, mid.y)) for (let q = m - 1; q <= m + g; q++) br.add(q);
+      }
       for (let m = lo; m <= hi; m++) {
-        const on = axis ? has(m, k - 1) || has(m, k) : has(k - 1, m) || has(k, m);
+        const on = onAt(m) || br.has(m);
         const u0 = axis ? m * step : k * step, v0 = axis ? k * step : m * step;
         if (!on) { flush(); continue; }
         for (let q = run.length ? 1 : 0; q <= 2; q++) {
           const p = toW(axis ? u0 + q * step / 2 : u0, axis ? v0 : v0 + q * step / 2);
-          if (old ? !F.inOld(...F.toG(p.x, p.y), -0.05) || blockedAt(p, true) : blockedAt(p)) { flush(); if (q === 0) break; continue; }
+          if (old ? !F.inOld(...F.toG(p.x, p.y), -0.05) || blockedAt(p, true) : br.has(m) ? W.inLake(p.x, p.y) || hwNear(p.x, p.y, 0.9) : blockedAt(p)) { flush(); if (q === 0) break; continue; }
           run.push(p);
         }
       }
