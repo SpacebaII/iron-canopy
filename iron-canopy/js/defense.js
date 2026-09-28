@@ -427,20 +427,22 @@ IC.updateMissiles = function (S, dt) {
       const u = m.unit;
       if (m.hoj) { if (!t.jamming) { m.lostLock = true; m.pk *= 0.1; } }
       else if (!u || u.dead || ((!u.radarOn || !t.fcBy.includes(u.id)) && !(m.M.seeker === 'CMD' && t.fc && netted(S, u)))) { m.lostLock = true; m.pk *= 0.08; }
+      if (m.lostLock) IC.emit(S, 'mstat', { m, t, what: 'lost', text: 'LOST LOCK' });
     }
-    if (m.hoj && m.M.seeker === 'ARH' && tt < 5 && !m.checked) { m.checked = true; if (!t.jamming && !t.det) { m.lostLock = true; m.pk *= 0.3; } }
+    if (m.hoj && m.M.seeker === 'ARH' && tt < 5 && !m.checked) { m.checked = true; if (!t.jamming && !t.det) { m.lostLock = true; m.pk *= 0.3; IC.emit(S, 'mstat', { m, t, what: 'lost', text: 'LOST LOCK' }); } }
     // the target fights back in the last seconds
     if (tt < 5 && !m.cmDone && (t.d.cls === 'air' || t.d.cls === 'heli')) {
       m.cmDone = true;
       if (t.d.notch && (m.M.seeker === 'SARH' || m.M.seeker === 'ARH' || m.M.seeker === 'CMD') && Math.random() < 0.8) {
         t.notchT = 14; t.notchA = Math.atan2(m.y - t.y, m.x - t.x); m.pk *= m.M.seeker === 'SARH' ? 0.65 : 0.8;
         if (t.det) IC.text(S, t.px, t.py, 'NOTCHING', '#ffb0a6');
+        IC.emit(S, 'mstat', { m, t, what: 'notch', text: 'NOTCHING' });
       }
       if (t.cm > 0) {
         t.cm--;
         if (m.M.seeker === 'IR') { m.pk *= m.M.ircm || 0.5; flares(S, t); }
         else { m.pk *= m.M.seeker === 'SARH' ? 0.7 : 0.82; chaff(S, t); }
-        if (Math.random() < 0.5) { m.fooled = true; m.fx = U.rand(-8, 8); m.fy = U.rand(-8, 8); }
+        if (Math.random() < 0.5) { m.fooled = true; m.fx = U.rand(-8, 8); m.fy = U.rand(-8, 8); IC.emit(S, 'mstat', { m, t, what: 'decoyed', text: 'DECOYED' }); }
       }
     }
     const r2 = U.dist(m, t), hitR = Math.max(IC.HIT_R, step * 0.8);
@@ -460,9 +462,11 @@ IC.updateMissiles = function (S, dt) {
         IC.explode(S, t.x, t.y, 0.6, 'us');
         t.hp -= HIT[m.mun] || 2;
         if (t.hp <= 0 || t.d.cls !== 'air') IC.killThreat(S, t, m.src);
-        else { IC.text(S, t.x, t.y, 'DAMAGED', '#ffd08a'); t.spd *= 0.85; }
+        else { IC.text(S, t.x, t.y, 'DAMAGED', '#ffd08a'); t.spd *= 0.85; IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'DAMAGED' }); }
       } else {
-        IC.text(S, m.x, m.y, !inEnv ? 'OUT OF ENVELOPE' : m.lostLock ? 'LOST LOCK' : m.fooled ? 'DECOYED' : 'MISS', '#8fa3b0');
+        const why = !inEnv ? 'OUT OF ENVELOPE' : m.lostLock ? 'LOST LOCK' : m.fooled ? 'DECOYED' : 'MISS';
+        IC.text(S, m.x, m.y, why, '#8fa3b0');
+        IC.emit(S, 'mstat', { m, t, what: 'miss', text: why });
         IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
       }
     }
@@ -492,15 +496,18 @@ function flyToPip(S, m, t, dt) {
     IC.emit(S, 'intercept', { t, m, alt: P.alt });
   } else {
     IC.text(S, m.x, m.y, off >= 40 ? 'MANOEUVRED' : 'MISS', '#8fa3b0');
+    IC.emit(S, 'mstat', { m, t, what: 'miss', text: off >= 40 ? 'MANOEUVRED' : 'MISS' });
     IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
   }
 }
 function flares(S, t) {
   for (let i = 0; i < 10; i++) S.fx.chaff.push({ x: t.x, y: t.y, vx: -t.vx * 0.3 + U.rand(-1.5, 1.5), vy: -t.vy * 0.3 + U.rand(-1.5, 1.5), t: 0, life: U.rand(2.5, 4.5), kind: 'flare' });
+  IC.emit(S, 'cm', { t, kind: 'flare' });
   IC.sfx && IC.sfx.pop(t.x, t.y);
 }
 function chaff(S, t) {
   for (let i = 0; i < 8; i++) S.fx.chaff.push({ x: t.x, y: t.y, vx: -t.vx * 0.2 + U.rand(-0.6, 0.6), vy: -t.vy * 0.2 + U.rand(-0.6, 0.6), t: 0, life: U.rand(6, 10), kind: 'chaff' });
+  IC.emit(S, 'cm', { t, kind: 'chaff' });
   IC.sfx && IC.sfx.pop(t.x, t.y);
 }
 IC.flares = flares; IC.chaffFx = chaff;
