@@ -104,7 +104,7 @@ IC.LESSONS = [
       { text: S => `Cruise missiles fly at 30–50 m, below the horizon of most radars. Deploy ${nm('gf')} within 15 km of ${fwd(S).name}.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'gf' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
       { text: S => `Now ${nm('shorad')}, close to ${fwd(S).name}. It is the last layer when something leaks through.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'shorad' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
       { text: () => 'Pick a firing doctrine in the top bar: Shoot-look-shoot saves missiles, Salvo fires two and kills more surely, Conserve only takes high-odds shots.', hint: { el: 'doctrine' }, done: S => !!S.flags.doctrine },
-      { text: () => `Raid inbound: cruise missiles and drones, low. Watch the layers work: the ${nk('mrsam')} reaches far, the ${nk('gf')} gives it low tracks, the ${nk('shorad')} cleans up.`, start(S) { const b = fwd(S); const o = { x: b.x, y: b.y, ref: b, name: b.name }; S.camp.raid = [IC.enemyForceOp(S, 'cm', o, { n: 6, T: 2400 }), IC.enemyForceOp(S, 'drones', o, 4)]; }, done: S => S.time - S.camp.stepT > 600 && S.camp.raid.every(op => resolved(S, op)) },
+      { text: () => `Raid inbound: cruise missiles and drones, low. Watch the layers work: the ${nk('mrsam')} reaches far, the ${nk('gf')} gives it low tracks, the ${nk('shorad')} cleans up.`, start(S) { const b = fwd(S); const o = { x: b.x, y: b.y, ref: b, name: b.name }; S.camp.raid = [IC.enemyForceOp(S, 'cm', o, { n: 6, T: 2400, nat: 'A' }), IC.enemyForceOp(S, 'drones', o, { n: 4, nat: 'A' })]; }, done: S => S.time - S.camp.stepT > 600 && S.camp.raid.every(op => resolved(S, op)) },
       { text: () => 'Raid over. Layers cover each other\'s blind spots; no single system does it alone. Lesson complete.', done: () => true, wait: 40 }
     ],
     fail: S => S.camp.raid && S.camp.raid.reduce((s, op) => s + (op ? op.hits : 0), 0) >= 5 ? 'Too many hits on the base.' : null,
@@ -214,9 +214,9 @@ IC.LESSONS = [
       flight(S, 'isr', 'REAPER 1', fwd(S));
       flight(S, 'ucav', 'HAWK 1', fwd(S));
       const v = flight(S, 'ftr', 'VIPER 1', fwd(S)); v.load = 'strike';
-      // the rocket battery shells the nearest place it can reach
-      const town = borderTown(S);
-      const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, town) - U.dist(c, town))[0];
+      // the rocket battery nearest the base (a drone flight away on the big map) shells the nearest place it can reach
+      const b = fwd(S);
+      const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, b) - U.dist(c, b))[0];
       const t = S.world.villages.filter(v => v.home).concat(IC.cities(S)).sort((a, c) => U.dist(a, site) - U.dist(c, site))[0];
       S.camp.town = t;
       for (let k = 0; k < 12; k++) S.camp.sched.push({ t: S.time + 300 + k * 2400, fn: () => { if (!S.stats.telKills) IC.enemyForceOp(S, 'rkt', { x: t.x, y: t.y, ref: t.kind === 'city' ? t : null, name: t.name }); } });

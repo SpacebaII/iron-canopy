@@ -251,7 +251,7 @@ test('traffic: a busy hour stays inside the time budget', () => {
 
 /* ---------- airports ---------- */
 test('airport: starting layouts are connected', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const cap = S.byId[S.story.cap], bad = S.byId[S.story.bad];
   const st = IC.aptStats(S, cap);
   assert(st.longest >= 30, `capital runway too short: ${st.longest}`);
@@ -260,7 +260,7 @@ test('airport: starting layouts are connected', () => {
   assert(IC.aptStats(S, bad).warn.some(w => /backtrack/.test(w)), 'the bad regional should warn about backtracking');
 });
 test('airport: a departure taxis out and takes off', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const cap = S.byId[S.story.cap];
   const s = IC.aptStands(cap).find(x => !x.occ && x.size !== 's' && x.linked !== false);
   let air = false;
@@ -270,7 +270,7 @@ test('airport: a departure taxis out and takes off', () => {
   assert(air, `never took off; last phase ${m.phase}`);
 });
 test('airport: building a parallel taxiway stops the backtracking', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const bad = S.byId[S.story.bad];
   S.budget = 5000;
   const P = (x, y) => IC.aptLocal(bad, x, y);
@@ -282,7 +282,7 @@ test('airport: building a parallel taxiway stops the backtracking', () => {
   assert(!st.warn.some(w => /backtrack/.test(w)), 'still warns about backtracking');
 });
 test('airport: a hit on a clustered fuel farm spreads fire', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const cap = S.byId[S.story.cap];
   const tanks = cap.parts.filter(p => p.kind === 'fuel');
   IC.detonate(S, tanks[0].x, tanks[0].y, 90, { d: { code: 'TEST' } });
@@ -290,7 +290,7 @@ test('airport: a hit on a clustered fuel farm spreads fire', () => {
   assert(tanks.filter(t => t.hp <= t.max * 0.25).length >= 3, 'fire did not spread across the tank farm');
 });
 test('airport: a runway crater shortens the usable strip', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const cap = S.byId[S.story.cap], rw = cap.parts.find(p => p.kind === 'runway');
   const before = IC.rwUsable(rw), q = IC.rwAt(rw, 0.5);
   IC.detonate(S, q.x, q.y, 60, { d: { code: 'TEST' } });
@@ -325,7 +325,7 @@ test('airport: the KDEN-scale layout handles its rated movements for two hours',
   console.log(`        rated ${now.arrPerHour} arrivals + ${now.depPerHour} departures an hour for this mix; flew ${moved} movements in two hours (last hour ${n1.arr} + ${n1.dep}); longest hold ${IC.U.dur(r.maxHold)}`);
 }, true);
 test('airport: a crosswind closes a runway to a type; a crosswind runway keeps the airport open', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.reg];
   sky(S, 'clear'); calm(S, ap.rwyA + Math.PI / 2, 30);
   ap.cfg = null; IC.aptStats(S, ap);
@@ -348,7 +348,7 @@ test('airport: a crosswind closes a runway to a type; a crosswind runway keeps t
   assert(m.plan.rw.id !== rw.id, 'landed on the main runway in a crosswind');
 });
 test('airport: fog without a landing system diverts arrivals; with one they land', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 5 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 5 });
   const ap = S.byId[S.story.cap];
   sky(S, 'fog'); calm(S, 0, 3);
   assert(IC.needILS(S), 'fog should need a landing system');
@@ -365,7 +365,7 @@ test('airport: fog without a landing system diverts arrivals; with one they land
   assert(b.div === 0 && b.arr >= 5, `fog with ILS: ${b.div} diversions, ${b.arr} landed`);
 });
 test('airport: zones keep airliners and military aircraft apart', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 8 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 8 });
   const ap = S.byId[S.story.cap];
   relayout(S, ap, 'kden');
   S.roster.push({ id: 'rzone', name: 'Test flight', kind: 'aew', base: ap.id, st: 'ready', n: 1 });
@@ -389,7 +389,7 @@ test('airport: crash risk is zero in normal operations and rises beyond limits',
   const r = drive(S, ap, { arr: 40, dep: 60, hours: 1.5, fill: 0.6 });
   assert(r.risk === 0 && r.crash === 0, `normal operations carried risk ${r.risk} and ${r.crash} crashes`);
   // a single-runway airport in gusts beyond a narrow-body's limit, then a wet runway only just long enough
-  const S2 = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const S2 = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const cap = S2.byId[S2.story.cap], bad = S2.byId[S2.story.bad];
   sky(S2, 'clear'); calm(S2, cap.rwyA + Math.PI / 3, 26, 26);
   const land = ap2 => { ap2.cfg = null; IC.aptStats(S2, ap2); const s = IC.aptStands(ap2).find(x => !x.occ && x.linked && x.size !== 's'); const m = IC.gopsLand(S2, ap2, { type: 'narrow', target: s.id, stand: s }); assert(m && m.plan, `no landing at ${ap2.name}: ${m}`); ap2.moves = ap2.moves.filter(x => x !== m); ap2.rl = {}; return IC.gopsRisk(S2, ap2, m, 'arr'); };
@@ -405,7 +405,7 @@ test('airport: crash risk is zero in normal operations and rises beyond limits',
   assert(!dry.length && wet.length && wet[0].p > 0, `a wet ${IC.U.km(IC.rwLen(bad.parts.find(p => p.kind === 'runway')))} runway should risk an overrun (dry ${dry.length}, wet ${wet.length})`);
 }, true);
 test('airport: a crash closes the runway, is investigated and costs confidence', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.cap];
   sky(S, 'clear'); calm(S, ap.rwyA, 5);
   IC.aptStats(S, ap);
@@ -436,6 +436,138 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   assert(t / N < 1.5, `a step takes ${(t / N).toFixed(2)} ms`);
 });
 
+/* ---------- the tower's rules: when aircraft may go onto a runway (docs/tasks/15-runway-rules.md) ---------- */
+const grpOf = (ap, rwId) => IC.aptGraph(ap).grp[rwId] || rwId;
+const lockAt = (ap, rwId) => (ap.rl || {})[grpOf(ap, rwId)] || {};
+/* how far (world units) the nearest arrival coming to these runways is from touchdown: on final, or still flying in */
+function arrDistance(S, ap, rwId) {
+  const k = grpOf(ap, rwId); let d = 1e9;
+  for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) d = Math.min(d, U.dxy(m.x, m.y, m.tx, m.ty));
+  for (const t of S.threats) if (!t.dead && t.appr && !t.holding && t.toApt === ap.id && t.faf && grpOf(ap, t.faf.rwId) === k) d = Math.min(d, U.dxy(t.x, t.y, t.faf.x, t.faf.y) + IC.GOPS.FAF);
+  return d;
+}
+/* watch every departure the moment it goes onto its runway */
+function onEntry(S, ap, fn) {
+  const seen = new Set();
+  return () => { for (const m of ap.moves) if (m.kind === 'dep' && m.plan && m.locks && m.locks[grpOf(ap, m.plan.rw.id)] && !seen.has(m.id)) { seen.add(m.id); fn(m); } };
+}
+test('runway rules: under "only when cleared", an airliner never goes onto the runway with an arrival inside the gap', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 6);
+  const ops = IC.opsOf(ap); ops.r.enter.jet = ops.r.enter.heavy = 'hold'; ops.r.gap = 8;
+  const O = IC.OPS_T, need = (ops.r.gap * 10 - O.GO) / O.ARR_V;
+  // when an airliner goes onto the runway, and when its take-off run starts; when each arrival reaches 1 km
+  let n = 0, near = 0, worst = 1e9, tight = 1e9;
+  const runs = [], seenRun = new Set(), seenGo = new Set();
+  const watch = onEntry(S, ap, m => {
+    if (IC.opsKind(m.type) !== 'jet' && IC.opsKind(m.type) !== 'heavy') return;
+    const d = arrDistance(S, ap, m.plan.rw.id), L = lockAt(ap, m.plan.rw.id); n++; if (d < 150) near++;
+    if (L.gapFor !== m.id) worst = Math.min(worst, d);   // arrivals the tower holds at the fix for it do not count
+  });
+  // at least 9 hours, then on until the tower has had enough close calls to judge (traffic is random)
+  for (let i = 0; i < 24 * 3600 / 0.5 && (i < 9 * 3600 / 0.5 || near < 6); i++) {
+    IC.step(S, 0.5); watch();
+    for (const m of ap.moves) {
+      if (m.kind === 'dep' && m.phase === 'roll' && !(m.delay > 0) && !seenRun.has(m.id) && IC.opsKind(m.type) !== 'light') { seenRun.add(m.id); runs.push(S.time); }
+      if (m.kind === 'arr' && m.phase === 'final' && m.t >= (IC.GOPS.FAF - O.GO) / O.ARR_V && !seenGo.has(m.id)) { seenGo.add(m.id); const r = runs.filter(t => t <= S.time).pop(); if (r) tight = Math.min(tight, S.time - r); }
+    }
+  }
+  assert(n >= 15, `only ${n} airliner departures`);
+  assert(near >= 3, `only ${near} departures with an arrival within 15 km: the test saw no conflict to judge`);
+  assert(worst >= 80, `an airliner went onto the runway with an arrival ${U.km(worst)} out (gap 8 km)`);
+  assert(tight >= need - 3, `an arrival was 1 km out ${U.dur(tight)} after a take-off run started; an 8 km gap gives ${U.dur(need)}`);
+  console.log(`        ${n} airliner departures, ${near} with an arrival within 15 km; closest arrival ${U.km(worst)} out; next arrival 1 km out ${U.dur(tight)} after a run at the soonest`);
+}, true);
+test('runway rules: under the defaults a light aircraft lines up and waits while an airliner holds short', () => {
+  const { S, ap } = kdenGame(12345, 10);
+  sky(S, 'clear'); calm(S, -Math.PI / 2, 10); IC.aptStats(S, ap);
+  let lightBehind = 0, jetBehind = 0, both = 0;
+  const watch = onEntry(S, ap, m => {
+    const L = lockAt(ap, m.plan.rw.id), o = L.by && L.by !== m.id && ap.moves.find(x => x.id === L.by);
+    const behind = !!(o && o.kind === 'dep' && o.phase === 'roll');
+    if (behind && m.type === 'light') lightBehind++;
+    if (behind && IC.opsKind(m.type) === 'jet') jetBehind++;
+  });
+  // club aircraft and airliners land, then queue to leave (parked aircraft leave as turboprops and airliners)
+  drive(S, ap, { arr: 90, dep: 300, hours: 1.5, fill: 0.3, mix: [['light', 1], ['narrow', 1]], each: () => {
+    watch();
+    for (const m of ap.moves) if (m.type === 'light' && m.phase === 'wait' && ap.moves.some(x => x.type === 'narrow' && x.holding === 'runway' && x.plan && grpOf(ap, x.plan.rw.id) === grpOf(ap, m.plan.rw.id))) { both++; break; }
+  } });
+  assert(lightBehind > 3, `only ${lightBehind} light aircraft lined up behind a rolling departure`);
+  assert(jetBehind === 0, `${jetBehind} airliners went onto the runway behind a rolling departure`);
+  assert(both > 0, 'never saw a light aircraft waiting on the runway while an airliner held short for it');
+  console.log(`        ${lightBehind} light aircraft lined up behind a rolling departure; airliners 0`);
+}, true);
+test('runway rules: "line up and wait" lets a departure line up behind one that is rolling, and moves more of them', () => {
+  const rate = enter => {
+    const { S, ap } = kdenGame(12345, 10);
+    sky(S, 'clear'); calm(S, -Math.PI / 2, 10);
+    IC.opsOf(ap).r.enter.jet = enter; IC.aptStats(S, ap);
+    let behind = 0, t0 = 0, d0 = 0; const start = S.time;
+    const watch = onEntry(S, ap, m => { const L = lockAt(ap, m.plan.rw.id), o = L.by && L.by !== m.id && ap.moves.find(x => x.id === L.by); if (o && o.phase === 'roll') behind++; });
+    // arrivals keep the arrival runways busy, so departures stay on their own
+    const r = drive(S, ap, { follow: true, depX: 1.5, hours: 1.75, fill: 0.9, mix: [['narrow', 1]], each: S2 => { watch(); if (!t0 && S2.time - start > 2700) { t0 = S2.time; d0 = ap.kpi.dep || 0; } } });
+    return { behind, perHour: ((ap.kpi.dep || 0) - d0) / ((S.time - t0) / 3600), rated: IC.aptStats(S, ap).depPerHour };
+  };
+  const hold = rate('hold'), luaw = rate('luaw');
+  assert(luaw.behind > 5, `only ${luaw.behind} departures lined up behind a rolling one`);
+  assert(hold.behind === 0, `${hold.behind} went on behind a rolling one under "only when cleared"`);
+  assert(luaw.perHour > hold.perHour * 1.08, `line up and wait moved ${luaw.perHour.toFixed(0)} an hour, only when cleared ${hold.perHour.toFixed(0)}`);
+  assert(luaw.rated > hold.rated, `the panel does not rate line up and wait higher (${luaw.rated} against ${hold.rated})`);
+  console.log(`        departures an hour: only when cleared ${hold.perHour.toFixed(0)} (rated ${hold.rated}), line up and wait ${luaw.perHour.toFixed(0)} (rated ${luaw.rated})`);
+}, true);
+test('runway rules: an arrival goes around when the runway is still occupied, and it is counted', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap);
+  const stands = IC.aptStands(ap).filter(x => !x.occ && x.linked && x.size !== 's');
+  const a = IC.gopsLand(S, ap, { type: 'narrow', target: stands[0].id, stand: stands[0], who: 'ARR 1', onGoAround: () => { went = true; } });
+  assert(a && a.phase === 'final', `the arrival was not cleared: ${a}`);
+  let went = false, events = 0, landed = false;
+  IC.on((S2, type) => { if (S2 === S && type === 'goAround') events++; });
+  a.onPark = () => { landed = true; };
+  // a departure lined up on the same runway that cannot go (its wake gap never ends)
+  const d = IC.gopsDepart(S, ap, { type: 'narrow', node: stands[1].id, stand: stands[1], who: 'DEP 1' });
+  const k = grpOf(ap, a.plan.rw.id), L = ap.rl[k];
+  d.plan.rw = a.plan.rw; d.phase = 'wait'; d.path = null; d.locks = { [k]: true }; L.by = d.id; L.next = S.time + 1e6;
+  for (let i = 0; i < 400 && !went; i++) tick(S, 0.5);
+  assert(went && !landed, 'the arrival did not go around');
+  assert(ap.kpi.ga === 1 && (ap.gaLog || []).length === 1 && events === 1, `go-around not counted: kpi ${ap.kpi.ga}, log ${(ap.gaLog || []).length}, events ${events}`);
+  assert(!ap.moves.includes(a) && L.fin !== a.id, 'the arrival still holds the approach');
+  assert(S.logs.some(l => l.tag === 'RADIO' && /going around/.test(l.msg)), 'no radio call for the go-around');
+});
+test('runway rules: the Operations tab rates departures an hour within 10% of a simulated hour', () => {
+  for (const preset of ['standard', 'busy', 'cautious']) {
+    const { S, ap } = kdenGame(12345, 10);
+    sky(S, 'clear'); calm(S, -Math.PI / 2, 12);
+    IC.opsPreset(IC.opsOf(ap), preset);
+    const at = {}, t0 = S.time;
+    drive(S, ap, { follow: true, depX: 1.25, hours: 2.5, fill: 0.8, each: S2 => { for (const h of [1.5, 2.5]) if (!at[h] && S2.time >= t0 + h * 3600 - 1) at[h] = ap.kpi.dep || 0; } });
+    const st = IC.aptStats(S, ap), tab = IC.opsCapacity(S, ap, st), flew = at[2.5] - at[1.5];
+    assert(Math.abs(flew - tab.dep) <= tab.dep * 0.1, `${preset}: the tab says ${tab.dep} departures an hour, the simulation flew ${flew}`);
+    console.log(`        ${IC.OPS_PRESETS[preset].name}: rated ${tab.dep} departures an hour, flew ${flew}; ${ap.kpi.ga || 0} go-arounds; average delay ${U.dur(ap.kpi.wait || 0)}`);
+  }
+}, true);
+test('runway rules: lining up and waiting at night without a ground radar carries more risk than by day', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 12 });
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap);
+  ap.parts = ap.parts.filter(p => p.kind !== 'gradar'); ap.dirty = true; IC.aptStats(S, ap);
+  const s = IC.aptStands(ap).find(x => !x.occ && x.linked);
+  const m = IC.gopsDepart(S, ap, { type: 'light', node: s.id, stand: s, who: 'CLUB 1' });
+  const day = IC.gopsRisk(S, ap, m, 'wait').p;
+  S.time += 12 * 3600; const night = IC.gopsRisk(S, ap, m, 'wait');
+  assert(day === 0 && night.p > 0, `risk by day ${day}, at night ${night.p}`);
+  assert(night.why.some(w => /line up and wait/.test(w.rule)), 'the risk does not name the rule that allows it');
+  ap.st.gradar = true;
+  assert(IC.gopsRisk(S, ap, m, 'wait').p === 0, 'a ground radar should remove the risk');
+  // and the panel says so before the player picks the rule
+  ap.st.gradar = false; ap.st.mix = { light: 1 };
+  const ops = IC.opsClone(IC.opsOf(ap)); ops.r.enter.light = 'luaw';
+  assert(IC.opsNotes(S, ap, ap.st, ops).some(t => /ground radar/.test(t)), 'the Operations tab does not warn about lining up in the dark');
+});
+
 /* ---------- the builder ---------- */
 /* a site for a new airport at the edge of a town, with homes close by */
 const siteNear = (S, c) => {
@@ -447,7 +579,7 @@ const siteNear = (S, c) => {
 };
 const townWithSite = S => { for (const c of IC.cities(S).filter(c => !c.capital).sort((a, b) => b.pop - a.pop)) { const p = siteNear(S, c); if (p) return { c, p }; } return null; };
 test('builder: right-click takes a point back; clicking the last point again builds the taxiway', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
   const bad = S.byId[S.story.bad]; S.budget = 5000;
   const P = (x, y) => IC.aptLocal(bad, x, y), taxis = () => bad.parts.filter(p => p.kind === 'taxi').length, n0 = taxis();
   S.mode2 = IC.bldMode(S, bad, 'taxi');
@@ -470,7 +602,7 @@ test('builder: right-click takes a point back; clicking the last point again bui
   assert(IC.bldUndo(S, bad) && taxis() === n0 && Math.abs(S.budget - b0) < 1e-6, `undo left ${taxis() - n0} taxiways and refunded ${U.money(spent - (b0 - S.budget))} of ${U.money(spent)}`);
 });
 test('builder: the big-airport tools lay out a parallel taxiway, exits and a holding bay in a few clicks', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 }); IC.S = S;
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
   const bad = S.byId[S.story.bad], rw = bad.parts.find(p => p.kind === 'runway'); S.budget = 5000;
   const P = (x, y) => IC.aptLocal(bad, x, y), n0 = bad.parts.length;
   S.mode2 = IC.bldMode(S, bad, 'parallel');
@@ -487,7 +619,7 @@ test('builder: the big-airport tools lay out a parallel taxiway, exits and a hol
   assert(on.filter(n => n.entry && n.s < 2).length >= 2, 'no holding bay beside the first entry');
 });
 test('builder: a planned part can be moved and turned before its earthworks start', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const ap = S.byId[S.story.cap]; S.budget = 3000; ap.crews = 0;
   const c = IC.aptLocal(ap, 4, -5.5), p = IC.aptPlanPart(S, ap, 'hangar', c.x, c.y, ap.rwyA);
   const to = IC.aptLocal(ap, 6, -5.5);
@@ -498,7 +630,7 @@ test('builder: a planned part can be moved and turned before its earthworks star
   assert(!IC.bldCanMove(ap, p), 'still movable once the earthworks started');
 });
 test('builder: construction goes in stages and is paid for as it runs', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const ap = S.byId[S.story.cap]; S.budget = 3000;
   const c = IC.aptLocal(ap, 4, -5.5), p = IC.aptPlanPart(S, ap, 'apron', c.x, c.y, ap.rwyA, 4, 1.3);
   assert(p, 'could not plan the apron');
@@ -513,7 +645,7 @@ test('builder: construction goes in stages and is paid for as it runs', () => {
   assert(Math.abs(3000 - S.budget - w.cost) < 0.5, `spent ${U.money(3000 - S.budget)} for a ${U.money(w.cost)} apron`);
 });
 test('builder: construction stops when materials run out, and goes on when lorries bring more', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const ap = S.byId[S.story.cap]; S.budget = 3000;
   ap.mat = { asph: 0, conc: 8, steel: 0 };
   const c = IC.aptLocal(ap, 4, -5.5), p = IC.aptPlanPart(S, ap, 'apron', c.x, c.y, ap.rwyA, 4, 1.3), w = ap.works.find(x => x.part === p);
@@ -528,7 +660,7 @@ test('builder: construction stops when materials run out, and goes on when lorri
   assert(p.built, `lorries never brought enough concrete: ${w.wait}`);
 });
 test('builder: an airport can be founded at another city after a site survey', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
   S.budget = 5000;
   const t = townWithSite(S); assert(t, 'no site near any town');
   const sv = IC.foundSurvey(S, t.p.x, t.p.y, IC.PREVAIL);
@@ -549,7 +681,7 @@ test('builder: an airport can be founded at another city after a site survey', (
   assert(S.camp.cards.slice(cards).some(c => /opens/.test(c.title)), 'the new runway opened without a card');
 });
 test('builder: heavy aircraft wear out asphalt; reinforced concrete craters less', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 10 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway');
   sky(S, 'clear'); calm(S, ap.rwyA, 5);
   rw.mat = 'asph';
@@ -565,7 +697,7 @@ test('builder: heavy aircraft wear out asphalt; reinforced concrete craters less
   assert(r < a * 0.8, `reinforced concrete crater ${r.toFixed(2)} against asphalt ${a.toFixed(2)}`);
 });
 test('builder: a very heavy military aircraft parks on an open ramp, and dies more easily there than in a shelter', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 8 }); IC.S = S;
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
   const ab = IC.bases(S).find(b => b.kind === 'airbase' && b.template === 'mil_full'); S.budget = 5000;
   const P = (x, y) => IC.aptLocal(ab, x, y);
   S.mode2 = IC.bldMode(S, ab, 'ramp');
@@ -590,7 +722,7 @@ test('builder: a very heavy military aircraft parks on an open ramp, and dies mo
   assert(open > shel * 3 && open > 100, `lost ${open} of 200 in the open, ${shel} in a shelter`);
 });
 test('builder: a part planned over houses clears them, pays compensation and costs public support', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   S.budget = 5000;
   const t = townWithSite(S); assert(t, 'no site near any town');
   const ap = IC.foundAirport(S, t.p.x, t.p.y, IC.PREVAIL);
@@ -641,7 +773,7 @@ const pair = (S, c, alt) => {
   return [mk(a, b, 'TST 101'), mk(b, a, 'TST 202')];
 };
 test('airspace: airliners fly direct without airways and follow them once drawn', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const cap = S.byId[S.story.cap], reg = S.byId[S.story.reg];
   const A = { x: cap.x, y: cap.y, apt: cap.id }, B = { x: reg.x, y: reg.y, apt: reg.id };
   assert(IC.avPath(S, A, B).pts.length === 2, 'expected a direct route with no airways');
@@ -662,7 +794,7 @@ test('airspace: airliners fly direct without airways and follow them once drawn'
   assert(near1 < 20 && near2 < 20, `the flight missed the fixes (${near1.toFixed(0)}, ${near2.toFixed(0)} units)`);
 }, true);
 test('airspace: flights outside radar coverage are spaced wider', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   IC.step(S, 0.5); IC.step(S, 0.5);
   const cap = S.byId[S.story.cap], from = { x: cap.x, y: cap.y, apt: cap.id }, to = off(cap, 1, 3000);
   const gapOf = () => { S.asp.dep = {}; IC.aspRelease(S, from, to); return IC.aspRelease(S, from, to); };
@@ -672,18 +804,48 @@ test('airspace: flights outside radar coverage are spaced wider', () => {
   assert(withRadar > 0, 'a second departure the same way was released at once');
   assert(without >= withRadar * 3, `outside radar the spacing should be much wider (${withRadar} s → ${without} s)`);
 });
+test('airspace: once there are entry points, traffic from abroad joins the airways only there', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+  const cap = S.byId[S.story.cap], port = IC.avPorts(S)[0], A = { x: cap.x, y: cap.y, apt: cap.id };
+  // a fix near the airport and one out toward the foreign airport, inside the country
+  const dx = port.x - cap.x, dy = port.y - cap.y, L = Math.hypot(dx, dy);
+  let edge = 0; for (let i = 1; i < 200; i++) if (IC.inHome(cap.x + dx * i / 200, cap.y + dy * i / 200)) edge = i / 200;
+  const hub = IC.aspAddFix(S, cap.x + dx / L * 200, cap.y + dy / L * 200), mid = IC.aspAddFix(S, cap.x + dx * edge * 0.6, cap.y + dy * edge * 0.6);
+  IC.aspAddWay(S, hub.id, mid.id);
+  assert(!mid.gate && !hub.gate, 'a fix deep inside the country counted as an entry point');
+  const r1 = IC.aspRoute(S, A, port);
+  assert(r1 && r1.fixes[r1.fixes.length - 1] === mid.id, 'without entry points, traffic should join at any fix');
+  // an entry point on the border, off to one side
+  const q = { x: cap.x + dx * edge + dy / L * 150, y: cap.y + dy * edge - dx / L * 150 };
+  const gate = IC.aspAddFix(S, q.x, q.y);
+  assert(gate && gate.gate, 'a fix on the border is not an entry point');
+  IC.aspAddWay(S, mid.id, gate.id);
+  const r2 = IC.aspRoute(S, A, port);
+  assert(r2 && r2.fixes[r2.fixes.length - 1] === gate.id, `traffic should leave by the entry point: ${r2 && r2.fixes.join()}`);
+});
+test('airspace: overloaded controllers hold departures longer', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+  run(S, 0.05);
+  const cap = S.byId[S.story.cap], from = { x: cap.x, y: cap.y, apt: cap.id }, to = off(cap, 1, 3000);
+  const calm = IC.aspGap(S, from, to).gap;
+  S.asp.work = 2;
+  assert(IC.aspGap(S, from, to).gap >= calm * 1.9, 'an overloaded team released departures as fast as a quiet one');
+  assert(IC.aspWork(S).cap >= IC.ASP.ctl, 'no controller capacity reported');
+});
 test('airspace: a loss of separation produces an incident', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   blind(S);
   const [a, b] = pair(S, IC.cap(S), 9.5);
   let lost = false;
   IC.on((S2, type, d) => { if (S2 === S && (type === 'lossSep' || type === 'nearMiss') && (d.a === a || d.b === a)) lost = true; });
-  for (let i = 0; i < 400 && !lost; i++) IC.step(S, 0.5);
+  // busy controllers: procedural control works only while the sky is quiet
+  const ctl = IC.ASP.ctl; IC.ASP.ctl = 1;
+  try { for (let i = 0; i < 400 && !lost; i++) IC.step(S, 0.5); } finally { IC.ASP.ctl = ctl; }
   assert(lost, 'no loss of separation recorded');
   assert(S.inc.list.some(it => (it.kind === 'separation' || it.kind === 'nearmiss') && (it.ref === a || it.ref === b)), 'no incident raised');
 });
 test('airspace: controllers keep apart flights they can see', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   run(S, 0.02);
   const cap = IC.cap(S), [a, b] = pair(S, cap, 9.5);
   let minD = 1e9, minZ = 1e9, lost = false;
@@ -693,7 +855,7 @@ test('airspace: controllers keep apart flights they can see', () => {
   assert(!lost, `separation was lost under radar (${minZ.toFixed(2)} km apart vertically)`);
 });
 test('airspace: light aircraft avoid controlled airspace unless cleared', () => {
-  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 9 });
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 });
   const cap = IC.cap(S), ap = S.byId[S.story.cap];
   // across the capital from one side to the other, 60 km out, where the terminal area is 45 km
   const A = off(ap, 0.3, 600), B = off(ap, 0.3 + Math.PI, 600);
@@ -722,7 +884,7 @@ const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time +=
 const secondApt = S => S.infra.filter(i => i.kind === 'airport')[1];
 test('growth: better service raises demand and city growth over a few game days', () => {
   const games = [0, 1].map(k => {
-    const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+    const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
     const ap = secondApt(S), c = S.byId[ap.city];
     if (k) {
       const al = S.av.airlines.find(a => a.kind === 'budget'), ports = S.world.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b);
@@ -742,7 +904,7 @@ test('growth: better service raises demand and city growth over a few game days'
 });
 test('growth: a remote industry with an air cargo link out-produces one without', () => {
   const out = [0, 1].map(k => {
-    const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+    const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
     IC.econRefresh(S);
     // the industry closest to an airport, and that airport
     const best = S.econ.inds.map(i => { const ap = S.infra.filter(a => a.kind === 'airport').sort((a, b) => IC.econTime(S, i, a) - IC.econTime(S, i, b))[0]; return { i, ap, t: IC.econTime(S, i, ap) }; }).sort((a, b) => a.t - b.t)[0];
@@ -756,7 +918,7 @@ test('growth: a remote industry with an air cargo link out-produces one without'
   assert(IC.indWhy(out[1].S, out[1].ind).some(l => /air cargo/.test(l)), 'the explanation does not mention air cargo');
 });
 test('growth: the road tool builds links for airports, and refuses roads that serve none', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   S.budget = 5000;
   IC.econRefresh(S);
   const W = S.world, cs = IC.cities(S);
@@ -770,7 +932,7 @@ test('growth: the road tool builds links for airports, and refuses roads that se
   for (const ap of S.infra.filter(i => i.kind === 'airport' && i.parts)) for (const e of W.edges) {
     if (e.cls !== 'hw') continue;
     for (let i = 2; i < e.pts.length - 2; i += 2) {
-      const q = e.pts[i], d = U.dist(ap, q); if (d < 30 || d > 160) continue;
+      const q = e.pts[i], d = U.dist(ap, q); if (d < 30 || d > 300) continue;
       const P = IC.roadPlan(S, 'hw', [{ x: ap.x, y: ap.y }, q], [{ x: ap.x, y: ap.y, node: ap.id }, { x: q.x, y: q.y, edge: e.id }]);
       if (P.why) continue;
       const far = cs.slice().sort((c1, c2) => U.dist(c1, q) - U.dist(c2, q))[0], t = IC.tripTime(S, far, ap), direct = (U.dist(far, q) + d) * 360 / IC.ROAD_KMH.hw;
@@ -798,7 +960,7 @@ test('growth: the road tool builds links for airports, and refuses roads that se
 test('growth: a crater on a motorway cuts the link between two cities until it is repaired', () => {
   // a map where the detour round the crater is long enough to show in the city panel (the world look changed
   // the roads on seed 777: there a parallel road now keeps the detour short)
-  const S = IC.newGame({ seed: 99, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 99, mode: 'story', preset: 'network', hour: 7 });
   IC.econRefresh(S);
   const W = S.world, cap = IC.cap(S);
   // the nearest city reached from the capital by motorway, and the longest motorway piece on that trip
@@ -841,7 +1003,7 @@ test('growth: districts decide how a city flies: industry ships cargo, offices w
   assert(ap && IC.cargoLoad(S, ap) > 0.45, 'city cargo does not fill any airport\'s cargo room');
 });
 test('growth: a well-connected city adds blocks over a few game days; a cut-off one does not', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   IC.econRefresh(S);
   const cap = IC.cap(S), lone = IC.cities(S).filter(c => c.air.score === 0).sort((a, b) => b.pop - a.pop)[0];
   const n0 = cap.blocks.length, s0 = cap.streets.length, l0 = lone ? lone.blocks.filter(b => !b.empty).length : 0;
@@ -855,7 +1017,7 @@ test('growth: a well-connected city adds blocks over a few game days; a cut-off 
   assert(S.worldDirty.length, 'the world was not told about the new blocks');
 });
 test('growth: the weekly statement adds up to the change in the treasury', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   const b0 = S.budget;
   IC.takeLoan(S, 0);
   run(S, 2, player);
@@ -944,7 +1106,7 @@ test('money: the money panel adds up to the change in the treasury', () => {
 });
 test('money: a warning comes before the money runs out', () => {
   // Act I of the Career: a small grant, and two long-range batteries it cannot pay for
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   for (let i = 0; i < 2; i++) { const c = IC.cap(S), p = IC.findSpot(S, 'lrsam', c.x, c.y, 300, 700); IC.makeUnit(S, 'lrsam', p.x, p.y, { instant: true }); }
   let warned = -1, empty = -1;
   for (let t = 0; t < 12 * 3600 && empty < 0; t += 0.5) {
@@ -1128,15 +1290,59 @@ test('test range: a raid against a defence reports shots, kills, leakers and the
 });
 
 test('career: Act I runs with airline traffic', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   run(S, 8, player);
   assert(!S.over, `game ended: ${S.over}`);
   assert(S.av.flightsTotal > 40, `too few flights: ${S.av.flightsTotal}`);
   assert(S.av.paxTotal > 5000, `too few passengers: ${S.av.paxTotal}`);
   assert(S.story.goals.some(g => g.done), 'no goal completed');
 }, true);
+test('career: the Career starts with one country, no airports and the money to build the first', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  assert(!S.infra.some(i => i.kind === 'airport'), 'the Career starts with ready-made airports');
+  assert(!S.units.length, `the Career starts with units: ${S.units.map(u => u.type).join(', ')}`);
+  assert(S.budget >= 800, `not enough money to build an airport: ${U.money(S.budget)}`);
+  assert(S.story.ch === 0 && IC.storyShown(S).filter(x => !x.g.done).length <= 2, 'more than two goals shown at the start');
+  assert(!S.av.airlines.length, 'airlines before there is an airport');
+  // what the story has not reached stays hidden
+  assert(IC.storyLock(S, 'airways') && IC.storyLock(S, 'fields') && !IC.storyAllows(S, 'ssr') && !IC.storyLock(S, 'found'), 'locks at the start are wrong');
+});
+test('career: a player who does nothing stays in Act I for days, warned but not replaced', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
+  for (let t = 0; t < 4 * 86400 && !S.over; t += 2) IC.step(S, 2);
+  assert(!S.over, `the game ended: ${S.over}`);
+  assert(S.story.act === 1 && S.story.ch === 0, `left the first chapter without an airport (act ${S.story.act}, chapter ${S.story.ch + 1})`);
+  assert(S.story.standing < 55 && S.story.standing >= 5, `confidence did not fall, or fell below the floor: ${S.story.standing.toFixed(0)}`);
+  assert(S.logs.some(l => l.tag === 'MIN'), 'the Minister never asked about the airport');
+}, true);
+test('career: a scripted player builds the national airport and plays through Act I, chapter by chapter', () => {
+  const { player } = require('../careerplayer.js');
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  const st = S.story, t0 = S.time;
+  for (let i = 0; i < 7 * 86400 && st.act === 1 && !S.over; i++) { IC.step(S, 1); if (i % 60 === 0) player(S); }
+  assert(!S.over, `the game ended: ${S.over}`);
+  const L = st.chLog.map(c => `${c.ch + 1}@${((c.t - t0) / 3600).toFixed(1)}h`).join(' ');
+  assert(st.chLog.map(c => c.ch).join() === '0,1,2,3,4,5', `chapters out of order or missing: ${L}`);
+  assert(st.act === 2, `still in Act I after a week: ${L}`);
+  // no chapter is rushed: each ran its minimum
+  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / 3600; if (c.ch > 0) assert(dur >= IC.CHAPTERS[c.ch].min - 2.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} h: ${L}`); }
+  assert((st.actT - t0) / 3600 >= 48, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
+  assert(IC.bases(S).filter(b => b.kind === 'airport').length >= 2 && S.av.airlines.length >= 4, 'no second airport, or few airlines');
+}, true);
+test('career: from Act III a day at zero confidence replaces you; before, it cannot', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
+  S.story.standing = 0; run(S, 0.5);
+  assert(!S.over && S.story.standing >= 5, 'confidence fell below the Act I floor, or the player was replaced');
+  IC.storyStartAct(S, 3);
+  const atZero = h => { for (let i = 0; i < h * 3600 / 2 && !S.over; i++) { S.story.standing = 0; IC.step(S, 2); if (i % 60 === 0) for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0); } };
+  atZero(12);
+  assert(!S.over, `replaced after half a day: ${S.over}`);
+  assert(/replaced in/.test(IC.storyDismissal(S).text), `the panel does not say how close dismissal is: ${IC.storyDismissal(S).text}`);
+  atZero(13);
+  assert(S.over && /replaced/.test(S.over), 'not replaced after a full day at zero');
+}, true);
 test('career: every act can be reached', () => {
-  const S = IC.newGame({ seed: 2024, mode: 'story', hour: 7 });
+  const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
   for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
 test('quick war: the enemy attacks and the defense fights', () => {

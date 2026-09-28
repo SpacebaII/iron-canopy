@@ -5,7 +5,7 @@ const IC = typeof module !== 'undefined' && require.main !== undefined ? require
 const U = IC.U;
 
 function buildKden(seed) {
-  const S = IC.newGame({ seed: seed || 12345, mode: 'story', hour: 10 });
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.cap];
   if (S.av) { S.av.tails = []; S.av.routes = []; }
   S.threats = S.threats.filter(t => !t.tail);

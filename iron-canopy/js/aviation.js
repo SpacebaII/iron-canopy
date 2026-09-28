@@ -21,21 +21,15 @@ IC.avInit = function (S) {
   const cap = apts.find(a => a.template === 'intl') || apts[0];
   const second = apts.find(a => a !== cap && a.template === 'regional_ok') || apts[1] || cap;
   const third = apts.find(a => a !== cap && a !== second) || second;
-  const ports = W.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).filter((p, i, L) => L.findIndex(q => q.name === p.name) === i);
+  const ports = IC.avPorts(S);
   const gates = W.airways.filter(w => w.kind === 'long' && (w.a.k === 'H' || w.b.k === 'H')).map(w => w.a.k === 'H' ? w.b : w.a);
-  const liv = IC.LIVERY.slice();
-  const mk = (kind, name, hub, extra) => {
-    const K = IC.AIRLINE_KIND[kind];
-    const al = Object.assign({ id: IC.nid('al'), kind, K, name, code: name.replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'X'), hub: hub.id, livery: liv.splice(Math.floor(Math.random() * liv.length), 1)[0] || ['#ccc', '#333'], sat: 62, lowT: 0, flights: 0 }, extra || {});
-    A.airlines.push(al);
-    return al;
-  };
-  const flag = mk('flag', `${W.names.H} Airways`, cap, { code: W.names.H.slice(0, 2).toUpperCase() + 'A' });
-  const budget = mk('budget', U.pick(IC.AIRLINE_NAMES.budget), cap);
-  const regional = mk('regional', U.pick(IC.AIRLINE_NAMES.regional), second);
-  const cargo = mk('cargo', U.pick(IC.AIRLINE_NAMES.cargo), cap);
+  const mk = (kind, hub, extra) => IC.avAddAirline(S, kind, hub, extra);
+  const flag = mk('flag', cap);
+  const budget = mk('budget', cap);
+  const regional = mk('regional', second);
+  const cargo = mk('cargo', cap);
   const neutralKs = [...new Set(ports.map(p => p.k))];
-  const foreign = neutralKs.map(k => mk('foreign', `${W.names[k]} Air`, cap, { country: k, code: W.names[k].slice(0, 3).toUpperCase() }));
+  const foreign = neutralKs.map(k => mk('foreign', cap, { country: k }));
   const port = k => ports.filter(p => !k || p.k === k);
   const add = (al, a, b, type, n) => { if (!a || !b) return; IC.avAddRoute(S, al, a, b, type, n, true); };
   const portsAll = port();
@@ -53,6 +47,34 @@ IC.avInit = function (S) {
   for (const f of foreign) { const p = port(f.country)[0]; if (p) add(f, cap, p, U.pick(['narrow', 'narrow', 'wide']), 2); }
   // aircraft are spread over their routes when the game starts
   for (const t of A.tails) seedTail(S, t);
+};
+
+/* the foreign airports our airlines fly to */
+IC.avPorts = S => S.world.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).filter((p, i, L) => L.findIndex(q => q.name === p.name) === i);
+/* a new airline based at hub: flag carrier, budget, regional, cargo or a neighbour's ('foreign', with country) */
+IC.avAddAirline = function (S, kind, hub, extra) {
+  const A = S.av, W = S.world, K = IC.AIRLINE_KIND[kind];
+  const taken = new Set(A.airlines.map(a => a.livery.join())), liv = IC.LIVERY.filter(l => !taken.has(l.join()));
+  const k = extra && extra.country;
+  const name = kind === 'flag' ? `${W.names.H} Airways` : kind === 'foreign' ? `${W.names[k]} Air` : U.pick(IC.AIRLINE_NAMES[kind].filter(n => !A.airlines.some(a => a.name === n))) || U.pick(IC.AIRLINE_NAMES[kind]);
+  const code = kind === 'flag' ? W.names.H.slice(0, 2).toUpperCase() + 'A' : kind === 'foreign' ? W.names[k].slice(0, 3).toUpperCase() : name.replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'X');
+  const al = Object.assign({ id: IC.nid('al'), kind, K, name, code, hub: hub.id, livery: U.pick(liv.length ? liv : IC.LIVERY) || ['#ccc', '#333'], sat: 62, lowT: 0, flights: 0 }, extra || {});
+  A.airlines.push(al);
+  return al;
+};
+/* the Career: the national airport has just opened and the first airlines come. The flag carrier flies to two
+   neighbours' capitals and one neighbour's airline flies in; the others arrive as the story goes on */
+IC.avCareerStart = function (S, cap) {
+  const A = S.av, ports = IC.avPorts(S);
+  if (A.airlines.length) return;
+  const flag = IC.avAddAirline(S, 'flag', cap);
+  const near = ports.slice().sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
+  IC.avAddRoute(S, flag, cap, near[0], 'narrow', 1, true);
+  if (near[1]) IC.avAddRoute(S, flag, cap, near[1], 'narrow', 1, true);
+  const k = near[near.length > 2 ? 2 : 0].k, fr = IC.avAddAirline(S, 'foreign', cap, { country: k });
+  IC.avAddRoute(S, fr, cap, ports.find(p => p.k === k), 'narrow', 1, true);
+  A.reqT = 2 * 3600;
+  return flag;
 };
 
 /* where a route endpoint is */
@@ -177,7 +199,7 @@ IC.moveTail = function (S, t, dt) {
 };
 function beginApproach(S, t) {
   const ap = S.byId[t.toApt];
-  const faf = ap && IC.gopsFaf(S, ap, t.tail.type);
+  const faf = ap && IC.gopsFaf(S, ap, t.tail.type, t);
   if (!faf) { divert(S, t, IC.aptLandWhy(S, ap, t.tail.T) || 'the runway is closed'); return; }
   t.appr = true; t.faf = faf; t.holdT = 0;
 }
@@ -220,7 +242,7 @@ function tryLand(S, t, ap) {
   let s = tl.resStand ? standById(ap, tl.resStand) : null;
   if (!s || (s.occ && s.occ !== tl.id)) { s = freeStand(S, ap, tl.T, airlineOf(S, tl.al).kind); if (!s) { ap.kpi.standWait = (ap.kpi.standWait || 0) + 1; t.standShort = true; return 'hold'; } }
   const m = IC.gopsLand(S, ap, { type: tl.type, target: s.id, stand: s, who: tl.cs, tail: tl, livery: t.livery, faf: t.faf,
-    onPark: mm => parked(S, tl, ap, s, mm), onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground') });
+    onPark: mm => parked(S, tl, ap, s, mm), onDead: (mm, why) => tailLost(S, tl, ap, why || 'destroyed on the ground'), onGoAround: mm => goneAround(S, t, tl, ap, s, mm) });
   if (m === 'divert') return 'divert';
   if (m === 'hold') { tl.resStand = s.id; return 'hold'; }
   s.occ = tl.id; tl.stand = s.id; tl.resStand = null;
@@ -229,6 +251,22 @@ function tryLand(S, t, ap) {
   pay(S, tl, ap, 'land');
   return true;
 }
+/* a go-around: back into the air, round the circuit (about four minutes, and the fuel for it) and into the queue
+   at the approach fix again, the stand still kept for it */
+const CIRCUIT = 240;
+function goneAround(S, t, tl, ap, s, m) {
+  if (s.occ === tl.id) s.occ = null;
+  tl.resStand = s.id; tl.where = 'air'; tl.mv = null; tl.stand = null;
+  t.dead = false; t.landed = false; t.x = m.x; t.y = m.y; t.alt = 0.6; t.holding = true;
+  t.holdT = (t.holdT || 0) + CIRCUIT; t.nextTry = S.time + CIRCUIT; t.ga = (t.ga || 0) + 1;
+  if (t.faf && t.faf.q) { t.faf.q.done = false; t.faf.q.t = S.time; t.faf.q.askT = S.time; t.faf.q.backT = S.time + CIRCUIT; }
+  if (!S.threats.includes(t)) S.threats.push(t);
+}
+/* what the crews and the tower say on the radio about runway events */
+IC.radioGoAround = function (S, ap, m, o, why) {
+  IC.sfx && IC.sfx.radio && IC.sfx.radio();
+  IC.log(S, 'info', 'RADIO', `${ap.name} tower: ${m.who || 'an arrival'}, going around at 1 km on ${IC.rwEnd(m.plan.rw, m.plan.dir)}: ${why}. It flies a circuit and lands in about ${Math.round(CIRCUIT / 60)} minutes.`, m);
+};
 function parked(S, tl, ap, s, m) {
   tl.where = 'stand'; tl.mv = null; tl.at = ap.id;
   s.occ = tl.id;
@@ -295,9 +333,10 @@ function pay(S, tl, ap, what) {
   const r = routeOf(S, tl); if (r) { r.flown++; r.rev += land + pf + cg; }
   al.flights++;
 }
-IC.avOverflight = function (S, t) { if (!S.av) return; const v = 0.35; S.budget += v; S.av.led.over += v; feeLog(S, 'over', v); };
+/* route charges from traffic crossing the country: more for a flight on our airways, where controllers give it a service */
+IC.avOverflight = function (S, net) { if (!S.av) return; const v = net ? 0.5 : 0.25; S.budget += v; S.av.led.over += v; feeLog(S, 'over', v); IC.emit(S, 'overflight', { net: !!net }); };
 /* revenue over the last hour, by kind (scaled up during the first hour of a game) */
-function feeLog(S, k, v) { (S.av.fees = S.av.fees || []).push({ t: S.time, k, v }); IC.econBook(S, 'fee_' + k, v); }
+function feeLog(S, k, v) { (S.av.fees = S.av.fees || []).push({ t: S.time, k, v }); S.av.feeTotal = (S.av.feeTotal || 0) + v; IC.econBook(S, 'fee_' + k, v); }
 function feeRates(S) {
   const A = S.av, F = A.fees || [];
   while (F.length && S.time - F[0].t > 3600) F.shift();
@@ -364,6 +403,15 @@ function makeRequest(S) {
   IC.log(S, 'info', 'AVIATION', `${al.name} ${req.why}. Decide in the Aviation room.`);
   IC.emit(S, 'request', req);
 }
+/* a request from a given airline, for the story: from airport a to b ({ apt } or a foreign airport) */
+IC.avRequest = function (S, al, a, b, type, n, why, life) {
+  const q = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : { x: b.x, y: b.y, name: b.name, k: b.k }, type, n, t: S.time, exp: S.time + (life || 6 * 3600), why };
+  q.value = estValue(S, q);
+  S.av.requests.push(q);
+  IC.log(S, 'info', 'AVIATION', `${al.name} ${why}. Decide in the Aviation room.`);
+  IC.emit(S, 'request', q);
+  return q;
+};
 function estValue(S, q) {
   const T = IC.ACTYPES[q.type], a = S.byId[q.a], b = endPt(S, q.b);
   const leg = U.dist(a, b) / T.cruise * 2 + T.turn * 2.5 + 1200;
