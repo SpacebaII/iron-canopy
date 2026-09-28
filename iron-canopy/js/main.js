@@ -140,7 +140,7 @@ function leftClick(p, shift) {
     }
     if (m.kind === 'bulldoze') {
       const part = IC.partAt(m.ap, p, 6 / IC.cam.z);
-      if (part) { IC.aptRemove(S, m.ap, part.id); IC.sfx.ui('ok'); ping(p); } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
+      if (part) { if (IC.aptRemove(S, m.ap, part.id)) { IC.sfx.ui('ok'); ping(p); } else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'AIRCRAFT ON IT', IC.C.amber); } } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
       IC.ui.refresh(true); return;
     }
     if (m.kind === 'zone') {
@@ -430,7 +430,7 @@ function onAct(e) {
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
-    case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;
+    case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { const why = IC.aptRemoveBlock(S, S.sel.ap, S.sel.ref); if (why) { IC.toast(S, 'warn', 'BULLDOZE', why); break; } IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;
     case 'aptBack': if (S.sel && S.sel.kind === 'apart') S.sel = { kind: 'infra', ref: S.sel.ap }; break;
     case 'incGo': { const it = ui.incRefs && ui.incRefs[+v]; if (it) { const r = it.ref; ui.jump(r && r.tn ? r : { x: it.x, y: it.y }, r && r.tn ? 'track' : r && r.parts ? 'infra' : null); } break; }
     case 'incX': IC.incidentDismiss(S, v); break;

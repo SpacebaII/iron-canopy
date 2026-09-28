@@ -10,6 +10,7 @@ IC.newGame = opts => { const g = gameSteps(opts); for (;;) { const r = g.next();
 const STAGES = { relief: 0.02, rivers: 0.08, cities: 0.15, roads: 0.2, bridges: 0.36, towns: 0.37, junctions: 0.66, routing: 0.68,
   airports: 0.7, forces: 0.72, traffic: 0.74, economy: 0.94, done: 1 };
 IC.LOAD_STAGES = STAGES;
+IC.newGameSteps = opts => gameSteps(opts);
 IC.newGameAsync = (opts, progress) => new Promise((ok, fail) => {
   const g = gameSteps(opts);
   const on = () => {
