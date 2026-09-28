@@ -1,0 +1,93 @@
+seed 777 · Quick war · aim at the start: strangle trade (coerce 0.96, morale 1.09, trade 1.01, air 0.93)
+Day 1 · 09:24 (war h   0.0)  === ACT 1: Probing ===
+Day 1 · 09:24 (war h   0.0)  [act 1] Act 1, probing: the war begins. Aim: strangle trade; their defence was ready, so probing is cut 4 h short.
+Day 1 · 09:24 (war h   0.0)  [act 1] Opening strike: small probes at VIX-2, Lunec Power Station, Draov International, and a feint at Draby Air Base. See what fires, and from where.
+Day 1 · 11:19 (war h   1.9)  AFTER-ACTION opening strike on VIX-2: 8 threats, 0 shot down, 0 got through. 0 interceptors fired. They were after VIX-2 (air defence and radars). [Prime Minister 73, country 100% working]
+Day 1 · 11:19 (war h   1.9)  [act 1] Raid 0 on VIX-2: 8 launched, 0 shot down (0%), 0 hits: not enough. Their defence is winning.
+Day 1 · 11:19 (war h   1.9)  [act 1] Plans raid 1, a probing raid on Milby Airport (airports and trade) for 15:12: strangle trade: see what fires. 4 drones, 2 cm.
+Day 1 · 15:17 (war h   5.9)  AFTER-ACTION probing raid on Milby Airport: 4 threats, 0 shot down, 4 got through (4 hit something). 11 interceptors fired. 4 cruise missiles at Milby Airport: nobody saw it: no radar covers that approach low down. They were after Milby Airport (airports and trade). [Prime Minister 67, country 96% working]
+Day 1 · 15:17 (war h   5.9)  [act 1] Raid 1 on Milby Airport: 4 launched, 0 shot down (0%), 4 hits: not enough.
+Day 1 · 15:17 (war h   5.9)  [act 1] Changes aim: 2 raids in a row did not get what they came for. From "strangle trade" to "coerce the government".
+Day 1 · 15:17 (war h   5.9)  INTEL: Intercepts suggest Varsk is changing its aim: less airports, factories, bridges and motorways, more the capital and what the government is judged on.
+Day 1 · 15:17 (war h   5.9)  [act 1] Plans raid 2, a probing raid on Adin Power Station (cities and their power) for 19:14: coerce the government: see what fires. 4 drones.
+Day 1 · 19:19 (war h   9.9)  AFTER-ACTION probing raid on Adin Power Station: 2 threats, 0 shot down, 2 got through (2 hit something). 0 interceptors fired. 2 cruise missiles at Adin Power Station: nobody saw it: it came in low behind the hills past KST-1. They were after Adin Power Station (cities and their power). [Prime Minister 67, country 96% working]
+Day 1 · 19:19 (war h   9.9)  [act 1] Raid 2 on Adin Power Station: 2 launched, 0 shot down (0%), 2 hits: got what it came for.
+Day 1 · 19:19 (war h   9.9)  === ACT 2: Limited strikes ===
+Day 1 · 19:19 (war h   9.9)  [act 2] Act 2, limited strikes: 3 probes, 0% of them stopped: now limited strikes, and saving for a big one.
+Day 1 · 19:19 (war h   9.9)  [act 2] Starts saving for a big operation: holds back 29 LACM, 4 MCM, 9 SCM, 49 SRBM, 4 MaRV, 10 MRBM, and will not fire them before then. At today's production, ready in about 12 h.
+Day 1 · 19:19 (war h   9.9)  [act 2] Plans raid 3, a limited strike on Draov International (airports and trade) for 22:11: coerce the government: a soft target. 4 drones, 2 dcy, 3 cm, jam, drones.
+Day 1 · 19:19 (war h   9.9)  INTEL: Varsk has moved from probing to limited strikes: expect small raids on the capital and what the government is judged on. They are watching where we fire from.
+Day 1 · 20:43 (war h  11.3)  [act 2] Stockpile at 12%; ready in about 11 h.
+Day 1 · 20:43 (war h  11.3)  INTEL: Satellite pictures: Varsk's ballistic and cruise missiles have stopped flying, though they have them. Cruise Missile Bde 35, Missile Regiment 70, Missile Brigade 6 are filling up: they are saving for something big. They have put aside a little of what they seem to want; ready in half a day or so. Strikes on those sites, or on their launchers, would set it back.
+Day 1 · 22:16 (war h  12.9)  AFTER-ACTION limited strike on Draov International: 4 threats, 6 shot down, 0 got through. 11 interceptors fired. They were after Draov International (airports and trade). [Prime Minister 68, country 96% working]
+Day 1 · 22:16 (war h  12.9)  [act 2] Raid 3 on Draov International: 4 launched, 6 shot down (150%), 0 hits: the defence there keeps winning, avoid it. Their defence is winning.
+Day 1 · 22:16 (war h  12.9)  [act 2] Plans raid 4, a limited strike on SNT-2 (air defence and radars) for 03:01: coerce the government: a soft target. 4 drones, 2 cm, jam, drones.
+Day 2 · 00:13 (war h  14.8)  [act 2] Stockpile at 41%; ready in about 7 h.
+Day 2 · 00:13 (war h  14.8)  INTEL: The stockpile: they have put aside about half of what they seem to want, ready in half a day or so. (Passive ESM or satellite warning would tell us more precisely.)
+Day 2 · 04:12 (war h  18.8)  [act 2] Stockpile at 74%; ready in about 3 h.
+Day 2 · 04:12 (war h  18.8)  INTEL: The stockpile: they have put aside about two thirds of what they seem to want, ready within hours. (Passive ESM or satellite warning would tell us more precisely.)
+Day 2 · 04:31 (war h  19.1)  AFTER-ACTION limited strike on SNT-2: 7 threats, 0 shot down, 5 got through (3 hit something). 1 interceptors fired. 3 drones at SNT-2: seen, never engaged: no battery covers it. 2 drones at 38 km S of Zelel: seen, never engaged: no battery covers it. They were after SNT-2 (air defence and radars). [Prime Minister 67, country 100% working]
+Day 2 · 04:31 (war h  19.1)  [act 2] Raid 4 on SNT-2: 7 launched, 0 shot down (0%), 3 hits: got what it came for.
+Day 2 · 04:31 (war h  19.1)  [act 2] Plans raid 5, a limited strike on Marburg Bridge (roads, bridges and supply) for 08:20: coerce the government: a soft target. 6 drones, 2 dcy, 3 cm, jam, helis, drones.
+Day 2 · 08:09 (war h  22.7)  [act 2] Stockpile complete; waits for the right moment.
+Day 2 · 08:09 (war h  22.7)  INTEL: The stockpile looks complete. They are waiting for a moment of their choosing: expect something very large at any time, probably at night.
+Day 2 · 08:29 (war h  23.1)  AFTER-ACTION limited strike on Marburg Bridge: 9 threats, 0 shot down, 7 got through (7 hit something). 0 interceptors fired. 7 drones at Marburg Bridge: seen, never engaged: no battery covers it. They were after Marburg Bridge (roads, bridges and supply). [Prime Minister 64, country 100% working]
+Day 2 · 08:29 (war h  23.1)  [act 2] Raid 5 on Marburg Bridge: 9 launched, 0 shot down (0%), 7 hits: got what it came for.
+Day 2 · 08:29 (war h  23.1)  [act 2] Plans raid 6, a limited strike on the fuel farm at Gravia Air Base (fuel) for 11:27: coerce the government: a soft target. 3 drones, 3 cm, jam, drones.
+Day 2 · 11:32 (war h  26.1)  AFTER-ACTION limited strike on the fuel farm at Gravia Air Base: 0 threats, 0 shot down, 0 got through. 0 interceptors fired. They were after the fuel farm at Gravia Air Base (fuel). [Prime Minister 64, country 98% working]
+Day 2 · 11:32 (war h  26.1)  [act 2] Raid 6 on the fuel farm at Gravia Air Base never got off the ground: nothing could reach it.
+Day 2 · 11:32 (war h  26.1)  [act 2] Plans the shock on the fuel farm at Ardova Airport, which nothing guards; at the same moment Halyn Bridge. Stockpile at 100%.
+Day 2 · 11:32 (war h  26.1)  [act 2] Plans raid 7, a major strike on the fuel farm at Ardova Airport (fuel) for 22:13: the stockpile is ready (100%). 4 dcy, 9 cm, 6 bal, 9 cm, 6 bal, mrbm, 2 jam, low, 4 drones, 4 drones.
+Day 2 · 23:43 (war h  38.3)  AFTER-ACTION major strike on the fuel farm at Ardova Airport: 30 threats, 4 shot down, 26 got through (26 hit something). 5 interceptors fired. 10 cruise missiles at Ardova Airport: nobody saw it: no radar covers that approach low down. 9 cruise missiles at Halyn Bridge: nobody saw it: no radar covers that approach low down. 6 ballistic missiles at Halyn Bridge: seen, never engaged: no battery covers it. They were after the fuel farm at Ardova Airport (fuel). [Prime Minister 58, country 100% working]
+Day 2 · 23:43 (war h  38.3)  === ACT 3: The shock ===
+Day 2 · 23:43 (war h  38.3)  [act 2] Raid 7 on the fuel farm at Ardova Airport: 30 launched, 4 shot down (13%), 26 hits: got what it came for.
+Day 2 · 23:43 (war h  38.3)  [act 3] Act 3: the shock is spent (30 launched, 26 hits). Reassesses until 07:43: no raids, reconnaissance only.
+Day 2 · 23:43 (war h  38.3)  INTEL: After the strike on the fuel farm at Ardova Airport, Varsk's channels have gone quiet. They are counting what worked and what did not. When they come back it will be planned: use the time to repair, reload and move.
+Day 3 · 07:43 (war h  46.3)  [act 3] Plans raid 8, a limited strike on Milby Power Station (cities and their power) for 10:03: coerce the government: a soft target. 5 drones, dcy, 2 cm, bal, jam, drones.
+Day 3 · 10:10 (war h  48.8)  AFTER-ACTION limited strike on Milby Power Station: 6 threats, 0 shot down, 6 got through (6 hit something). 0 interceptors fired. 5 cruise missiles at Milby Power Station: nobody saw it: no radar covers that approach low down. 1 ballistic missile at Milby Power Station: seen, never engaged: AEG-3 not identified hostile: weapons are Tight. They were after Milby Power Station (cities and their power). [Prime Minister 53, country 98% working]
+Day 3 · 10:10 (war h  48.8)  [act 3] Raid 8 on Milby Power Station: 6 launched, 0 shot down (0%), 6 hits: got what it came for.
+Day 3 · 10:10 (war h  48.8)  [act 3] Plans raid 9, a limited strike on the government quarter of Draov (command) for 13:43: coerce the government: a soft target. 3 drones, 3 cm, bal, jam, drones.
+Day 3 · 13:50 (war h  52.4)  AFTER-ACTION limited strike on the government quarter of Draov: 6 threats, 2 shot down, 5 got through (5 hit something). 4 interceptors fired. 3 cruise missiles at Draov: seen, never engaged: VIX-3 too late to intercept. 1 cruise missile at Draov: seen, never engaged: VIX-3 target crossing or receding: out of reach. 1 ballistic missile at Draov: seen, never engaged: VIX-3 sR missiles cannot hit a ballistic warhead. They were after the government quarter of Draov (command). [Prime Minister 41, country 96% working]
+Day 3 · 13:50 (war h  52.4)  [act 3] Raid 9 on the government quarter of Draov: 6 launched, 2 shot down (33%), 5 hits: got what it came for.
+Day 3 · 13:50 (war h  52.4)  [act 3] Changes aim: a new plan after days on the old one. From "coerce the government" to "strangle trade".
+Day 3 · 13:50 (war h  52.4)  INTEL: Intercepts suggest Varsk is changing its aim: less the capital and what the government is judged on, more airports, factories, bridges and motorways.
+Day 3 · 13:50 (war h  52.4)  === ACT 4: The campaign ===
+Day 3 · 13:50 (war h  52.4)  [act 4] Act 4, the campaign: 52 h into the war: the campaign cannot wait any longer.
+Day 3 · 13:50 (war h  52.4)  [act 4] The campaign: first the radars round Gravia Air Base, then the batteries when they run low, then their supply, then the base itself.
+Day 3 · 13:50 (war h  52.4)  [act 4] Plans raid 10, a saturation raid on AEG-1 (air defence and radars) for 16:27: AEG-1 has fired a lot (they guess 88% of its missiles left): two waves, the second as it reloads. 7 drones, 6 dcy, 5 drones, 6 cm, 2 bal, 2 jam.
+Day 3 · 13:50 (war h  52.4)  INTEL: Jammers and radar-hunting aircraft are moving to forward fields. Varsk is done probing: expect them to go after our radars first, then the batteries round Gravia Air Base, then its supply and the base itself. Radars that go silent between raids, spare missiles close by, and shelters will count.
+Day 3 · 13:50 (war h  52.4)  INTEL: We have taken their best punch and held. They will now try to take our air force apart, methodically.
+Day 3 · 17:57 (war h  56.5)  AFTER-ACTION saturation raid on AEG-1: 14 threats, 14 shot down, 2 got through (1 hit something). 20 interceptors fired. 1 ballistic missile at AEG-1: seen, never engaged: no battery covers it. 1 ballistic missile at 28 km W of Draov: seen, never engaged: no battery covers it. They were after AEG-1 (air defence and radars). [Prime Minister 43, country 98% working]
+Day 3 · 17:57 (war h  56.5)  [act 4] Raid 10 on AEG-1: 14 launched, 14 shot down (100%), 1 hits: got what it came for.
+Day 3 · 17:57 (war h  56.5)  [act 4] Plans raid 11, a saturation raid on VIX-4 (air defence and radars) for 21:26: VIX-4 has fired a lot: two waves, the second as it reloads. 7 drones, 6 dcy, 4 drones, 7 cm, 2 bal, 2 jam.
+Day 3 · 21:31 (war h  60.1)  AFTER-ACTION saturation raid on VIX-4: 14 threats, 0 shot down, 14 got through (14 hit something). 2 interceptors fired. 12 cruise missiles at Ardova: nobody saw it: no radar covers that approach low down. 2 ballistic missiles at Ardova: seen, never engaged: AEG-2 not identified hostile: weapons are Tight. They were after VIX-4 (air defence and radars). [Prime Minister 29, country 98% working]
+Day 3 · 21:31 (war h  60.1)  [act 4] Raid 11 on VIX-4: 14 launched, 0 shot down (0%), 14 hits: got what it came for.
+Day 3 · 21:31 (war h  60.1)  [act 4] Plans raid 12, a combined raid on Venel Bridge (roads, bridges and supply) for 00:44: keep up the pressure: strangle trade. 5 drones, 3 drones, 4 dcy, 5 cm, bal, jam, 2 drones.
+Day 4 · 00:51 (war h  63.5)  AFTER-ACTION combined raid on Venel Bridge: 10 threats, 0 shot down, 10 got through (10 hit something). 1 interceptors fired. 6 cruise missiles at Venel Bridge: seen, never engaged: no battery covers it. 3 cruise missiles at Venel Bridge: nobody saw it: no radar covers that approach low down. 1 ballistic missile at Venel Bridge: seen, never engaged: no battery covers it. They were after Venel Bridge (roads, bridges and supply). [Prime Minister 23, country 100% working]
+Day 4 · 00:51 (war h  63.5)  [act 4] Raid 12 on Venel Bridge: 10 launched, 0 shot down (0%), 10 hits: got what it came for.
+Day 4 · 00:51 (war h  63.5)  [act 4] Plans raid 13, a strike on our supply on Morenn Bridge (roads, bridges and supply) for 04:11: cut what feeds the batteries. 7 drones, 4 cm, lm, jam.
+Day 4 · 04:16 (war h  66.9)  AFTER-ACTION strike on our supply on Morenn Bridge: 7 threats, 0 shot down, 7 got through (7 hit something). 0 interceptors fired. 5 cruise missiles at Morenn Bridge: nobody saw it: no radar covers that approach low down. 2 cruise missiles at Morenn Bridge: seen, never engaged: no battery covers it. They were after Morenn Bridge (roads, bridges and supply). [Prime Minister 19, country 100% working]
+Day 4 · 04:16 (war h  66.9)  [act 4] Raid 13 on Morenn Bridge: 7 launched, 0 shot down (0%), 7 hits: got what it came for.
+Day 4 · 04:16 (war h  66.9)  [act 4] Plans raid 14, a strike on the air base on Gravia Air Base (air bases and shelters) for 08:14: the air base, now its cover is thin. 6 dcy, 9 drones, 4 drones, 2 jam, 7 cm, 4 bal, mrbm, low, bomber, helis, hgv, 3 drones.
+Day 4 · 09:08 (war h  71.7)  AFTER-ACTION strike on the air base on Gravia Air Base: 25 threats, 3 shot down, 25 got through (25 hit something). 6 interceptors fired. 15 cruise missiles at Gravia Air Base: nobody saw it: no radar covers that approach low down. 5 ballistic missiles at Gravia Air Base: seen, never engaged: no battery covers it. 1 hypersonic glider at Gravia Air Base: nobody saw it: no radar covers that approach low down. They were after Gravia Air Base (air bases and shelters). [Prime Minister 11, country 100% working]
+Day 4 · 09:08 (war h  71.7)  [act 4] Raid 14 on Gravia Air Base: 25 launched, 3 shot down (12%), 25 hits: not enough.
+Day 4 · 09:08 (war h  71.7)  [act 4] Plans raid 15, a combined raid on Corenn Bridge (roads, bridges and supply) for 12:44: keep up the pressure: strangle trade. 7 drones, 2 drones, 2 dcy, 3 cm, bal, jam, bomber, 2 drones.
+
+still going · act 4 · defence won 10.2 h · enemy will 84%
+before act 4 (74 weapons): transport 30%, fuel 18%, trade 16%, city 15%, ad 11%, command 8%, airbase 3%
+whole war (146 weapons): transport 28%, ad 25%, airbase 18%, fuel 9%, trade 8%, city 8%, command 4% · main air base Draby Air Base 1%
+  Day 1 · 11:19 opening     VIX-2                                8 launched   0 down   0 through   0 hits
+  Day 1 · 15:17 probe       Milby Airport                        4 launched   0 down   4 through   4 hits
+  Day 1 · 19:19 probe       Adin Power Station                   2 launched   0 down   2 through   2 hits
+  Day 1 · 22:16 limited     Draov International                  4 launched   6 down   0 through   0 hits
+  Day 2 · 04:31 limited     SNT-2                                7 launched   0 down   5 through   3 hits
+  Day 2 · 08:29 limited     Marburg Bridge                       9 launched   0 down   7 through   7 hits
+  Day 2 · 11:32 limited     the fuel farm at Gravia Air Base     0 launched   0 down   0 through   0 hits
+  Day 2 · 23:43 shock       the fuel farm at Ardova Airport     30 launched   4 down  26 through  26 hits
+  Day 3 · 10:10 limited     Milby Power Station                  6 launched   0 down   6 through   6 hits
+  Day 3 · 13:50 limited     the government quarter of Draov      6 launched   2 down   5 through   5 hits
+  Day 3 · 17:57 saturate    AEG-1                               14 launched  14 down   2 through   1 hits
+  Day 3 · 21:31 saturate    VIX-4                               14 launched   0 down  14 through  14 hits
+  Day 4 · 00:51 pressure    Venel Bridge                        10 launched   0 down  10 through  10 hits
+  Day 4 · 04:16 supply      Morenn Bridge                        7 launched   0 down   7 through   7 hits
+  Day 4 · 09:08 airbase     Gravia Air Base                     25 launched   3 down  25 through  25 hits

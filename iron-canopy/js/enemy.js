@@ -988,7 +988,8 @@ function learn(S, E, R, ops) {
   const r = R.obj.ref, id = r && (r.id || R.obj.name);
   const success = achieved(S, R);
   const launched = ops.reduce((s, o) => s + o.launched, 0), lost = ops.reduce((s, o) => s + o.lost, 0);
-  const stop = launched ? lost / launched : 1, eff = launched ? (R.hits || 0) / launched : 0;
+  // (decoys shot down count as losses but not as launched)
+  const stop = launched ? Math.min(1, lost / launched) : 1, eff = launched ? (R.hits || 0) / launched : 0;
   if (!launched && R.kind !== 'shock') { note(S, E, `Raid ${R.id} on ${R.obj.name} never got off the ground: nothing could reach it.`); return; }
   E.rec.push({ id: R.id, t: S.time, set: R.set, stop: success ? stop * 0.5 : stop, hits: R.hits || 0, success, launched });
   // the defence is winning while it stops most of what comes and keeps what the raids are after
