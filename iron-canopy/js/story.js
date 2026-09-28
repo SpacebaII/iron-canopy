@@ -576,6 +576,9 @@ IC.storyDismissal = function (S) {
 };
 /* the grant follows the Minister's confidence: full at 60 and above, half at 10 */
 const grantK = st => U.clamp(0.4 + st.standing / 100, 0.5, 1);
+/* how fast confidence follows the airlines before the war: a fifth of the old pace, which was set for an Act I of
+   80 live hours; a month is 72 of them now */
+IC.CONF_PACE = 0.2;
 
 /* ---------- acts ---------- */
 function startAct(S, n) {
@@ -959,11 +962,13 @@ IC.storyTick = function (S, dt) {
     st.standT = 600;
     const sat = avgSat(S);
     // in peacetime the airlines are the measure of you; in war, the country is
-    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (sat - 58) * 0.006;
+    // (the Career runs for years: before the war a bad month costs about ten points, not the lot)
+    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (sat - 58) * 0.006 * IC.CONF_PACE;
     // before the first airliner there are no airlines to judge you by: the Minister waits
     const judge = st.act > 1 || st.opened;
     // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices
-    st.standing += (judge ? drift : 0) + (S.budget < -1 ? -0.3 : 0) + (st.events.length > 2 ? -0.3 : 0) + (st.standing > 80 ? -0.15 : 0);
+    const k = st.act >= 4 ? 1 : IC.CONF_PACE;
+    st.standing += (judge ? drift : 0) + ((S.budget < -1 ? -0.3 : 0) + (st.events.length > 2 ? -0.3 : 0) + (st.standing > 80 ? -0.15 : 0)) * k;
     confidence(S);
   }
   // unanswered event cards resolve themselves after a while

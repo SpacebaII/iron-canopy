@@ -827,7 +827,7 @@ IC.aptRepairList = function (ap) {
       for (const s of p.stands || []) if (s.hp <= 0) L.push({ key: 'st:' + s.id, label: 'Repair stand', cost: 5, dur: 500, part: p, stand: s });
       if (p.hp < p.max * 0.8) L.push({ key: 'pt:' + p.id, label: 'Resurface apron', cost: Math.max(3, IC.partCost(ap, p) * 0.3), dur: 900, part: p });
     }
-    else if (p.hp < p.max) { const f = 1 - p.hp / p.max; L.push({ key: 'pt:' + p.id, label: `${p.hp <= p.max * 0.25 ? 'Rebuild' : 'Repair'} ${IC.APART[p.kind].name.toLowerCase()}`, cost: Math.max(2, IC.partCost(ap, p) * f * 0.6), dur: Math.max(300, IC.partBuildTime(ap, p) * f * 0.7), part: p }); }
+    else if (p.hp < p.max && (!p.aged || p.hp < p.max * 0.8)) { const f = 1 - p.hp / p.max; L.push({ key: 'pt:' + p.id, label: `${p.hp <= p.max * 0.25 ? 'Rebuild' : p.aged ? 'Renew' : 'Repair'} ${IC.APART[p.kind].name.toLowerCase()}${p.aged ? ` (${U.pct(p.hp / p.max)} condition)` : ''}`, cost: Math.max(2, IC.partCost(ap, p) * f * 0.6), dur: Math.max(300, IC.partBuildTime(ap, p) * f * 0.7), part: p }); }
   }
   return L;
 };

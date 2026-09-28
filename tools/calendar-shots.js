@@ -46,6 +46,15 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   await run(`const t = IC.waitTargets(S).find(x => x.sum); IC.waitStart(S, t.key); S.paused = false; ui.waitPick = false`);
   await page.waitForTimeout(4000);
   await shot('cal-wait', { x: 0, y: 0, width: 1440, height: 260 });
+  // how fast the wait really runs here, with this map: game seconds a real second, and frames a second
+  const perf = await page.evaluate(async () => {
+    const S = IC.S; if (!S.wait) { const t = IC.waitTargets(S).find(x => x.sum && x.amt > S.budget + 900); IC.waitStart(S, t.key); }
+    let n = 0; const t0 = performance.now(), g0 = S.time, go = () => { n++; if (performance.now() - t0 < 10000) requestAnimationFrame(go); };
+    requestAnimationFrame(go); await new Promise(r => setTimeout(r, 10200));
+    const gs = (S.time - g0) / ((performance.now() - t0) / 1000);
+    return { gs: Math.round(gs), monthS: Math.round(IC.MO(S) / gs), fps: Math.round(n / 10), flights: S.threats.filter(t => t.tail && !t.dead).length, tails: S.av.tails.length, waiting: !!S.wait };
+  });
+  console.log(`wait: ${perf.gs} game s a real second, a month in about ${perf.monthS} s, ${perf.fps} frames a second, ${perf.flights} flights in the air of ${perf.tails} aircraft${perf.waiting ? '' : ' (the wait stopped during the measure)'}`);
   // a new apron at the capital, through its stages, close in
   await run(`IC.waitStop(S); S.paused = true; S.budget = Math.max(S.budget, 3000);
     const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway'), c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw), a = Math.atan2(d.y, d.x);

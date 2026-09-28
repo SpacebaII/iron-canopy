@@ -18,8 +18,8 @@ const NEXT = {
    holidays; business dips in August and at Christmas). A Quick war and the lessons keep a neutral season. */
 const SEAS = (name, o) => Object.assign({ name, w: {}, wind: 1, fogH: [3, 9], snow: 0, leisure: 1, biz: 1 }, o);
 IC.SEASON = [
-  SEAS('Winter', { w: { fog: 2.2, overcast: 1.3, storm: 0.3, clear: 0.8 }, snow: 1.6, wind: 1.3, fogH: [0, 11], leisure: 0.85 }),
-  SEAS('Winter', { w: { fog: 1.8, overcast: 1.3, storm: 0.3 }, snow: 1.4, wind: 1.3, fogH: [0, 10], leisure: 0.85 }),
+  SEAS('Winter', { w: { fog: 1.8, overcast: 1.3, storm: 0.3, clear: 0.8 }, snow: 1.4, wind: 1.3, fogH: [1, 11], leisure: 0.85 }),
+  SEAS('Winter', { w: { fog: 1.6, overcast: 1.3, storm: 0.3 }, snow: 1.2, wind: 1.3, fogH: [1, 10], leisure: 0.85 }),
   SEAS('Spring', { w: { rain: 1.3 }, snow: 0.3, wind: 1.15, fogH: [2, 9] }),
   SEAS('Spring', { w: { rain: 1.3, scattered: 1.2 }, leisure: 1.08 }),
   SEAS('Spring', { w: { clear: 1.2, storm: 1.2 } }),
@@ -29,7 +29,7 @@ IC.SEASON = [
   SEAS('Autumn', { w: { fog: 1.3, rain: 1.2 }, leisure: 1.05 }),
   SEAS('Autumn', { w: { fog: 1.7, rain: 1.4, overcast: 1.2 }, wind: 1.15, fogH: [1, 10] }),
   SEAS('Autumn', { w: { fog: 2, rain: 1.3, overcast: 1.3 }, snow: 0.4, wind: 1.2, fogH: [0, 11], leisure: 0.9 }),
-  SEAS('Winter', { w: { fog: 2, overcast: 1.3, storm: 0.3 }, snow: 1.2, wind: 1.25, fogH: [0, 11], leisure: 1.15, biz: 0.9 })
+  SEAS('Winter', { w: { fog: 1.7, overcast: 1.3, storm: 0.3 }, snow: 1.1, wind: 1.25, fogH: [1, 11], leisure: 1.15, biz: 0.9 })
 ];
 const NEUTRAL = SEAS('', {});
 IC.seasonOf = S => S && S.mode === 'story' && S.cal ? IC.SEASON[IC.calAt(S, S.time).mo] : NEUTRAL;

@@ -782,8 +782,6 @@ IC.monthStatement = function (S, ago) {
   else { const M = E.months && E.months[E.months.length - ago]; if (!M) return null; b = M.book; m = M.m; days = M.days; }
   return Object.assign({ m, name: `${IC.MONTHS[m % 12]}, Year ${Math.floor(m / 12) + 1}`, days, whole: !!ago }, statement(b));
 };
-/* the old name, for anything that still asks for a week: the month is the statement now */
-IC.weekStatement = IC.monthStatement;
 /* the year in review: money by line over the year's months, and what changed from its first month to its last */
 IC.yearReview = function (S, y) {
   const E = S.econ; if (!E || !E.months) return null;

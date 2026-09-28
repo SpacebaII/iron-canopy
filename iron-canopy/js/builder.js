@@ -8,12 +8,13 @@ const U = IC.U;
 
 /* ---------- pavement ---------- */
 /* t = the heaviest aircraft (tonnes) it carries without wearing; cost and build scale the part's price and time;
-   crater scales the hole a bomb leaves; patch scales the time to fill one */
+   crater scales the hole a bomb leaves; patch scales the time to fill one; life is the calendar months weather and
+   age take to wear it out (a runway resurfaced every few years stays open) */
 IC.PAVE = {
-  grass: { name: 'Grass', t: 6, cost: 0.15, build: 0.3, crater: 1.3, patch: 0.5, need: {}, desc: 'light aircraft only' },
-  asph: { name: 'Asphalt', t: 90, cost: 0.7, build: 0.7, crater: 1, patch: 1, need: { asph: 8 }, desc: 'cheap and quick; heavy jets break it up' },
-  conc: { name: 'Concrete', t: 400, cost: 1, build: 1, crater: 0.8, patch: 1.2, need: { conc: 10 }, desc: 'carries every airliner' },
-  rconc: { name: 'Reinforced concrete', t: 600, cost: 1.6, build: 1.4, crater: 0.55, patch: 0.6, need: { conc: 12, steel: 3 }, desc: 'craters less, patched quickly' }
+  grass: { name: 'Grass', t: 6, cost: 0.15, build: 0.3, crater: 1.3, patch: 0.5, need: {}, life: 48, desc: 'light aircraft only' },
+  asph: { name: 'Asphalt', t: 90, cost: 0.7, build: 0.7, crater: 1, patch: 1, need: { asph: 8 }, life: 96, desc: 'cheap and quick; heavy jets break it up' },
+  conc: { name: 'Concrete', t: 400, cost: 1, build: 1, crater: 0.8, patch: 1.2, need: { conc: 10 }, life: 180, desc: 'carries every airliner' },
+  rconc: { name: 'Reinforced concrete', t: 600, cost: 1.6, build: 1.4, crater: 0.55, patch: 0.6, need: { conc: 12, steel: 3 }, life: 240, desc: 'craters less, patched quickly' }
 };
 IC.PAVE_ORDER = ['grass', 'asph', 'conc', 'rconc'];
 IC.PAVED = { runway: true, taxi: true, apron: true, alert: true };
@@ -327,6 +328,41 @@ IC.on((S, type, d) => {
     // parked in the open, aircraft turn round quicker than inside a hangar or shelter
     const b = IC.baseOf(S, d.r.base), pp = b && b.parts ? IC.parkPos(S, b, d.r) : null;
     if (pp && pp.stand && d.r.t > 0) d.r.t *= 0.8;
+  }
+});
+
+/* ageing, by the calendar (the Career): pavement wears out over its life in months, buildings lose condition and
+   need renewing after some fifteen years, and the airlines retire their oldest aircraft */
+IC.BUILDING_LIFE = 180;   // months before an untended building is down to nothing
+IC.AIRCRAFT_LIFE = 240;   // months an airliner flies before its airline replaces it
+IC.onMonth((S) => {
+  if (S.mode !== 'story') return;
+  for (const ap of IC.bases(S)) {
+    if (ap.owner !== 'us' || !ap.parts) continue;
+    for (const p of ap.parts) {
+      if (!p.built || p.shut) continue;
+      if (IC.PAVED[p.kind]) {
+        const P = IC.PAVE[IC.paveOf(p)], was = p.wear || 0;
+        // (only a runway closes when worn out; taxiways and aprons stay in use, worn)
+        p.wear = Math.min(p.kind === 'runway' ? 1 : 0.95, was + 1 / P.life);
+        if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || IC.APART[p.kind].name.toLowerCase()} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
+        if (was < 1 && p.wear >= 1) { ap.dirty = true; ap.cfg = null; IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${p.name || IC.APART[p.kind].name.toLowerCase()} is worn out and closed until it is resurfaced.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : ap); }
+      } else if (p.max && p.hp > 0) {
+        const was = p.hp / p.max;
+        p.hp = Math.max(p.max * 0.05, p.hp - p.max / IC.BUILDING_LIFE); p.aged = true;
+        if (was >= 0.5 && p.hp / p.max < 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: the ${IC.APART[p.kind].name.toLowerCase()} is showing its age (${U.pct(p.hp / p.max)} condition). Renew it in the airport's Works tab.`, p.x != null ? p : ap);
+      }
+    }
+  }
+  // airliners: each tail's age in months; the airline replaces one that reaches the end of its life
+  if (S.av) for (const t of S.av.tails) {
+    if (t.where === 'lost') continue;
+    if (t.bornM == null) t.bornM = S.cal.m - Math.floor(Math.random() * 120);
+    if (S.cal.m - t.bornM >= IC.AIRCRAFT_LIFE && (t.where === 'stand' || t.where === 'away')) {
+      t.bornM = S.cal.m;
+      const al = S.av.airlines.find(a => a.id === t.al);
+      if (al) { al.sat = Math.min(100, al.sat + 1); IC.log(S, 'info', 'AVIATION', `${al.name} retires ${t.cs}'s twenty-year-old ${t.T.name.toLowerCase()} and puts a new one on the route.`); }
+    }
   }
 });
 

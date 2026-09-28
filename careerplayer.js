@@ -58,6 +58,8 @@ function grow(S, ap, st) {
   const hangars = count(ap, 'hangar'), hn = IC.aptNeeds(S, ap).hangar;
   if (hangars < Math.max(1, Math.ceil(hn / 2)) && hangars < 4 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
   if (!has(ap, 'ils') && S.budget > 100) { const rw = ap.parts.find(p => p.kind === 'runway'); return rw && IC.aptPlanPart(S, ap, 'ils', rw.a.x, rw.a.y); }
+  // winter fog and snow close the end without one: a landing system at the other end too
+  if (count(ap, 'ils') < 2 && S.budget > 250) { const rw = ap.parts.find(p => p.kind === 'runway'); const q = rw && IC.aptPlanPart(S, ap, 'ils', rw.b.x, rw.b.y); if (q) return q; }
   const need = missing(S, ap), aprons = count(ap, 'apron', p => p.zone !== 'cargo');
   // (a stand the terminal is beside is a gate: each apron gets its own stretch of terminal)
   const bare = noTerminal(ap);

@@ -10,6 +10,7 @@ const { player } = require('./careerplayer.js');
 const U = IC.U;
 const seed = +process.argv[2] || 12345, years = +process.argv[3] || 14, stopAct = +process.argv[4] || 5;
 const quiet = process.env.QUIET;
+if (process.env.START) IC.CAREER_START = +process.env.START;   // (to try another starting treasury)
 const S = IC.newGame({ seed, mode: 'story', hour: 7 }); IC.S = S;
 const st = S.story, t0 = S.time, MO = IC.MO(S);
 const logs = [];

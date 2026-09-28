@@ -1356,7 +1356,7 @@ test('growth: the monthly statement adds up to the change in the treasury', () =
   const b0 = S.budget;
   IC.takeLoan(S, 0);
   run(S, 2, player);
-  const st = IC.weekStatement(S, 0);
+  const st = IC.monthStatement(S, 0);
   assert(Math.abs(st.net - (S.budget - b0)) < 0.5, `statement net ${st.net.toFixed(1)} vs treasury change ${(S.budget - b0).toFixed(1)}`);
   assert(st.lines.some(l => l.k === 'fee_pax') && st.lines.some(l => l.k === 'loan'), 'fees or loan repayments missing from the statement');
 });
@@ -1377,7 +1377,7 @@ test('supply: a unit bought and placed arrives and is ready within 45 game minut
   assert(u.state === 'ready', `still ${u.state} after 3 h`);
   assert(t <= 45 * 60, `ready only after ${U.dur(t)}`);
   assert(U.dxy(u.x, u.y, spot.x, spot.y) < 1, 'it is not where it was placed');
-  const st = IC.weekStatement(S, 0);
+  const st = IC.monthStatement(S, 0);
   assert(st.lines.some(l => l.k === 'buyUnits'), 'the purchase is not on the statement');
 });
 /* a battery with an empty reserve, some distance from the depot */
@@ -1430,7 +1430,7 @@ test('money: the money panel adds up to the change in the treasury', () => {
   IC.buyStock(S, 'SR', 16);
   IC.startResearch(S, IC.TECH.find(t => !t.req.length && !S.tech.done.has(t.id)).id);
   run(S, 3);
-  const st = IC.weekStatement(S, 0);
+  const st = IC.monthStatement(S, 0);
   const sum = st.lines.reduce((s, l) => s + l.v, 0);
   assert(Math.abs(sum - (S.budget - b0)) < 0.5, `lines add to ${sum.toFixed(1)}, the treasury changed ${(S.budget - b0).toFixed(1)}`);
   for (const k of ['buyUnits', 'buyMun', 'research', 'loanIn', 'upAD', 'base']) assert(st.lines.some(l => l.k === k), `no "${IC.STATEMENT[k]}" line`);
@@ -2150,9 +2150,10 @@ test('guide: the Guide shows only lessons the player has reached, the current on
   const q = IC.newGame({ seed: 777, mode: 'campaign' });
   assert(IC.guideFor(q).past.length === IC.GUIDE.length, 'Quick war does not show every lesson');
 });
-test('career: a player who does nothing stays in Act I for days, warned but not replaced', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7 });
-  for (let t = 0; t < 4 * 86400 && !S.over; t += 2) IC.step(S, 2);
+test('career: a player who does nothing stays in Act I for months, warned but not replaced', () => {
+  // (a short calendar: four months in a live day)
+  const S = IC.newGame({ seed: 777, mode: 'story', hour: 7, dpm: 0.25 });
+  for (let t = 0; t < IC.MO(S, 4) && !S.over; t += 2) IC.step(S, 2);
   assert(!S.over, `the game ended: ${S.over}`);
   assert(S.story.act === 1 && S.story.ch === 0, `left the first chapter without an airport (act ${S.story.act}, chapter ${S.story.ch + 1})`);
   assert(S.story.standing < 55 && S.story.standing >= 5, `confidence did not fall, or fell below the floor: ${S.story.standing.toFixed(0)}`);
@@ -2262,6 +2263,20 @@ test('calendar: the seasons change the weather: fog and snow in winter, storms i
   assert((jul.storm || 0) > (jan.storm || 0) * 2, `storms in July ${jul.storm || 0}, in January ${jan.storm || 0}`);
   const q = IC.newGame({ seed: 777, mode: 'campaign' });
   assert(IC.seasonOf(q).name === '' && IC.seasonOf(S).name, 'a Quick war has seasons, or the Career has none');
+});
+test('calendar: runways and buildings age over the years and ask to be resurfaced and renewed', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const ap = S.infra.find(i => i.kind === 'airport' && i.parts.some(p => p.kind === 'terminal' && p.built));
+  const rw = ap.parts.find(p => p.kind === 'runway' && p.built), term = ap.parts.find(p => p.kind === 'terminal' && p.built);
+  rw.wear = 0; for (let m = 0; m < 60; m++) { S.time += IC.MO(S); IC.calendar(S); }
+  const L = IC.aptRepairList(ap);
+  assert(rw.wear > 0.2 && rw.wear < 0.6, `${IC.PAVE[IC.paveOf(rw)].name} runway ${U.pct(rw.wear)} worn after five years`);
+  assert(L.some(it => it.key === 'rs:' + rw.id), 'no resurfacing offered for the aged runway');
+  assert(term.hp < term.max * 0.8 && L.some(it => it.part === term && /Renew/.test(it.label)), `terminal at ${U.pct(term.hp / term.max)}, renewal offered: ${L.filter(it => it.part === term).map(it => it.label)}`);
+  const q = IC.newGame({ seed: 777, mode: 'campaign' }), b = IC.bases(q).find(x => x.parts && x.parts.some(p => p.kind === 'runway'));
+  const r2 = b.parts.find(p => p.kind === 'runway'), w0 = r2.wear || 0;
+  for (let m = 0; m < 6; m++) { q.time += IC.MO(q); IC.calendar(q); }
+  assert((r2.wear || 0) === w0, 'a Quick war\'s runways age by the calendar');
 });
 test('calendar: construction runs through its stages, markings and lights each their own', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
