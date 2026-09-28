@@ -379,15 +379,18 @@ function assign(S) {
     for (let d = 0; d < 2; d++) { F.gen[lk.id * 2 + d] += v; F.com[lk.id * 2 + d] += v * 0.5; }
   }
   // flows into loads, class by class: the busiest links of each class at a full rush hour run at what that class
-  // carries at its busiest in real cities (motorways at capacity, side streets far from it)
+  // carries at its busiest in real cities (motorways at capacity, side streets far from it). City streets are
+  // measured city by city: the many small towns of a big map would otherwise make every capital street a jam
+  const ck = lk => lk.city && (lk.cls === 'st' || lk.cls === 'art' || lk.cls === 'ring') ? lk.cls + '|' + (lk.city.id || lk.city) : lk.cls;
   const TOP = { hw: 1.05, ring: 0.85, rd: 0.8, art: 0.75, lc: 0.45, sp: 0.5, st: 0.4, ln: 0.12, ramp: 0.8 }, byCls = {};
   for (let i = 0; i < nL; i++) {
     const lk = G.links[i];
-    for (let d = 0; d < 2; d++) { const v = F.com[i * 2 + d] + F.frt[i * 2 + d] + F.apt[i * 2 + d] + F.gen[i * 2 + d]; if (v > 0) (byCls[lk.cls] = byCls[lk.cls] || []).push(v); }
+    for (let d = 0; d < 2; d++) { const v = F.com[i * 2 + d] + F.frt[i * 2 + d] + F.apt[i * 2 + d] + F.gen[i * 2 + d]; if (v > 0) (byCls[ck(lk)] = byCls[ck(lk)] || []).push(v); }
   }
   const kc = {};
-  for (const c in byCls) { const a = byCls[c].sort((x, y) => x - y); kc[c] = TOP[c] / Math.max(1e-9, a[Math.floor(a.length * 0.95)]); }
-  for (const p of PURP) for (let i = 0; i < F[p].length; i++) F[p][i] *= kc[G.links[i >> 1].cls] || 0;
+  for (const c in byCls) { const a = byCls[c].sort((x, y) => x - y); kc[c] = TOP[c.split('|')[0]] / Math.max(1e-9, a[Math.floor(a.length * 0.95)]); }
+  const kl = G.links.map(lk => kc[ck(lk)] || 0);
+  for (const p of PURP) for (let i = 0; i < F[p].length; i++) F[p][i] *= kl[i >> 1];
   T.F = F; T.zones = Z; T.places = P; T.G = G;
   T.nApt = S.infra.filter(a => a.kind === 'airport' && a.owner === 'us' && a.parts).length;
 }
@@ -439,7 +442,10 @@ IC.traffic = function (S, dt) {
       // the slots have ridden at the old speed since the last reading
       for (let d = 0; d < 2; d++) { L.ph[d] = (L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time))) % (BASE * 65536); }
       L.t0 = S.time;
-      const lk = L.l, i = lk.id * 2, c = lk.city;
+      const lk = L.l, i = lk.id * 2;
+      // the town a link runs through: its own streets, or national roads inside its built-up area
+      if (L.town === undefined) { const m = lk.pts[lk.pts.length >> 1]; L.town = lk.city || W.cities.find(t => U.dist(t, m) < (t.ext || t.r) * 1.1) || null; }
+      const c = L.town;
       // under an air raid alert people leave the roads for the shelters
       const raid = c && c.alert > 0 ? 0.25 : 1;
       const cut = lk.cut || (lk.ref.edge && W.blocked && W.blocked.has(lk.ref.edge.id)) ? 0.05 : 1;
@@ -447,7 +453,9 @@ IC.traffic = function (S, dt) {
         // commuters run home→work in the morning and back in the evening: the reverse direction's flow comes home
         const com = F.com[i + d] * fi + F.com[i + 1 - d] * fo, frt = F.frt[i + d] * ff, apt = F.apt[i + d] * fa, gen = F.gen[i + d] * fg;
         const tot = com + frt + apt + gen;
-        L.ld[d] = U.clamp(tot * g * raid * cut, 0, 1.3);
+        // the demand, and the load the road can carry (a jammed street shows no direction; the demand still does)
+        (L.dem || (L.dem = [0, 0]))[d] = tot * g * raid * cut;
+        L.ld[d] = U.clamp(L.dem[d], 0, 1.3);
         const M = L.mix[d]; L.mixOk[d] = tot > 0 ? 1 : 0; if (tot > 0) { M[0] = com / tot; M[1] = frt / tot; M[2] = apt / tot; }
         // a full road slows down: at peak the motorways round the capital crawl
         L.v[d] = lk.C.v * (L.ld[d] > 0.75 ? U.clamp(1 - (L.ld[d] - 0.75) * 1.3, 0.3, 1) : 1) * (raid < 1 ? 0.4 : 1);
@@ -496,10 +504,10 @@ function busLines(S) {
   const cn = W.cities.map(c => G.nearNode(c.x, c.y, 8)), pairs = new Set(), road = lk => !!lk.ref.edge || lk.cls === 'ramp';
   W.cities.forEach((c, i) => {
     if (c.pop < 150 || cn[i] < 0) return;
-    const near = W.cities.map((o, j) => [o, j]).filter(([o, j]) => j !== i && cn[j] >= 0 && U.dist(o, c) < 1600).sort((p, q) => U.dist(p[0], c) - U.dist(q[0], c)).slice(0, 2);
+    const near = W.cities.map((o, j) => [o, j]).filter(([o, j]) => j !== i && cn[j] >= 0 && U.dist(o, c) < 4000).sort((p, q) => U.dist(p[0], c) - U.dist(q[0], c)).slice(0, 2);
     for (const [o, j] of near) {
       const k = Math.min(i, j) + ',' + Math.max(i, j); if (pairs.has(k)) continue; pairs.add(k);
-      const p = astar(G, cn[i], cn[j], 60000, road); if (p) mk(p, 'coach', `${c.name} – ${o.name}`, 1e9);
+      const p = astar(G, cn[i], cn[j], 200000, road); if (p) mk(p, 'coach', `${c.name} – ${o.name}`, 1e9);
     }
   });
   for (const p of T.places) {
