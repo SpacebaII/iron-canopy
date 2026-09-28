@@ -1,6 +1,6 @@
 # 06 Save and load
 
-Wave 5: needs everything before it merged, so the data it saves is settled.
+Wave 8. The owner's top priority after wave 7: a Career lasts many hours, and nobody can play it (or test its later acts) in one sitting.
 
 ## What the owner asked for
 
@@ -26,6 +26,10 @@ Out: gameplay changes.
   - The game is published as a web page where each viewer has their own storage, so saves stay in the player's browser.
   - Wrap all storage access in try/catch.
 - **Versioning.** Store a save version. Refuse or migrate old saves with a clear message rather than loading them broken.
+
+- **Autosave** every 10 game minutes and on quitting to the menu, into its own slot, with the last three kept. **Continue** on the start screen loads the newest save.
+- **The larger world** (5,700 × 4,300 km) regenerates from its seed in a few seconds: show a loading screen with progress while it does. Keep saves small: a busy Career save should be under a few MB.
+- **Debug use:** a save can be loaded in the tests (`IC.loadSave(json)`), so later acts can be tested from a saved position instead of replayed.
 
 ## Done when
 

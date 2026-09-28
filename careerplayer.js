@@ -19,7 +19,7 @@ function site(S, c, rmin, rmax) {
   return best;
 }
 // the terminal side of the runway (+1 or -1): the other side when a river or the site's edge is in the way
-const L = (ap, x, y) => IC.aptLocal(ap, x, y * (ap._side || 1));
+const L = (ap, x, y) => IC.aptLocal(ap, x, y * (ap.cpSide || 1));
 const has = (ap, k) => ap.parts.some(p => p.kind === k);
 // (each part remembers the slot along the runway it was put in: aprons and their terminals line up by it)
 const part = (S, ap, k, x, y, w, h, o) => { const c = L(ap, x, y), p = IC.aptPlanPart(S, ap, k, c.x, c.y, ap.rwyA, w, h, o); if (p) p.slotX = x; return p; };
@@ -28,7 +28,7 @@ const taxi = (S, ap, pts) => IC.aptPlanTaxi(S, ap, pts.map(([x, y]) => L(ap, x, 
 function starter(S, ap, len) {
   const h = len / 2, o = { mat: 'conc' };
   if (!has(ap, 'runway')) IC.aptPlanRunway(S, ap, L(ap, -h, 0), L(ap, h, 0), 'Runway 1', o);
-  if (!has(ap, 'apron') && !part(S, ap, 'apron', 0, 4, 4, 1.3, o) && !ap._side) { ap._side = -1; part(S, ap, 'apron', 0, 4, 4, 1.3, o); }
+  if (!has(ap, 'apron') && !part(S, ap, 'apron', 0, 4, 4, 1.3, o) && !ap.cpSide) { ap.cpSide = -1; part(S, ap, 'apron', 0, 4, 4, 1.3, o); }
   if (!has(ap, 'taxi')) taxi(S, ap, [[0, 0], [0, 3.35]]);
   if (!has(ap, 'terminal')) part(S, ap, 'terminal', 0, 5.1, 3, 0.8);
   if (!has(ap, 'fire')) part(S, ap, 'fire', 3.5, 1.5);

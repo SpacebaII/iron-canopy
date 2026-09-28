@@ -2373,6 +2373,80 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
 });
 
+/* ---------- saving and loading ---------- */
+const CP = require('../careerplayer.js');
+const dice = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+const saveBody = d => JSON.stringify([d.root, d.jobs]);
+/* saves S, loads it, then plays both on for the same time with the same dice: they should keep step */
+function saveAndPlayOn(S, hours, each) {
+  const d = IC.saveGame(S), json = JSON.stringify(d);
+  assert(!Object.keys(d.lost).length, `the save dropped functions it cannot name: ${Object.keys(d.lost).join(', ')}`);
+  const S2 = IC.loadSave(json);
+  assert(saveBody(IC.saveGame(S2)) === saveBody(d), 'saving the loaded game again does not give the same save');
+  const rnd = Math.random;
+  try {
+    for (const G of [S, S2]) { Math.random = dice(7); IC.nidSet(d.nid); for (let i = 0; i < hours * 7200 && !G.over; i++) { IC.step(G, 0.5); if (each && i % 120 === 0) each(G); } }
+  } finally { Math.random = rnd; }
+  return { d, json, S2 };
+}
+/* what the player would notice: aircraft, airports, works in progress, weapons in the air, money */
+const picture = S => ({
+  aircraft: [].concat(S.av ? S.av.tails.map(t => `${t.cs} ${t.where}`) : [], S.air.filter(a => !a.dead).map(a => `${a.name} ${a.state || ''}`), S.threats.filter(t => !t.dead).map(t => `${t.type}#${t.tn || t.id}`)).sort(),
+  airports: IC.bases(S).filter(b => b.parts && b.parts.length).map(b => `${b.name}: ${b.parts.length} parts, ${b.parts.filter(p => p.built).length} built`),
+  works: IC.bases(S).flatMap(b => (b.works || []).map(w => `${b.name} ${w.part ? w.part.kind : w.kind} ${Math.round((w.prog || 0) * 100)}%`)),
+  missiles: S.missiles.length, units: S.units.map(u => `${u.name} ${u.state}`)
+});
+function samePicture(a, b) {
+  const A = picture(a), B = picture(b);
+  for (const k in A) {
+    const x = JSON.stringify(A[k]), y = JSON.stringify(B[k]);
+    assert(x === y, `${k} differ after playing on: ${x.slice(0, 300)} … against the loaded game's ${y.slice(0, 300)}`);
+  }
+  assert(Math.abs(a.budget - b.budget) <= Math.max(1, Math.abs(a.budget) * 0.01), `money differs: ${U.money(a.budget)} against ${U.money(b.budget)}`);
+}
+test('save: a Career game with works in progress and aircraft taxiing saves, loads and plays on like the unsaved one', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story' });
+  let busy = () => IC.bases(S).some(b => b.works && b.works.length) && S.av.tails.some(t => t.mv);
+  for (let i = 0; i < 16 * 7200 && !(S.time > 13 * 3600 && busy()); i++) { IC.step(S, 0.5); if (i % 120 === 0) CP.player(S); }
+  assert(busy(), 'no works in progress with aircraft on the ground to save');
+  const { json, S2 } = saveAndPlayOn(S, 1, CP.player);
+  assert(json.length < 3e6, `a Career save is ${(json.length / 1e6).toFixed(1)} MB`);
+  samePicture(S, S2);
+  const u = S2.infra.find(b => b.parts && b.parts.length), tl = S2.av.tails.find(t => t.track);
+  assert(S2.world === IC.W && S2.byId[u.id] === u && IC.ACTYPES[tl.type] === tl.T, 'the loaded game does not point at its own world, airports and aircraft types');
+  if (tl) assert(S2.threats.includes(tl.track) || tl.track.dead || !tl.track, 'a tail and its track are no longer the same object');
+});
+test('save: a Quick war saved with missiles in the air loads and plays on like the unsaved one', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'campaign' });
+  const fight = () => S.enemy.war && S.missiles.length > 0 && S.threats.some(t => !t.dead && t.aff === 'H');
+  for (let i = 0; i < 9 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
+  assert(fight(), 'no battle to save');
+  const { json, S2 } = saveAndPlayOn(S, 0.5, Q.commander);
+  assert(json.length < 3e6, `a Quick war save is ${(json.length / 1e6).toFixed(1)} MB`);
+  samePicture(S, S2);
+  assert(S2.units.every(u => u.d === IC.UNITS[u.type]), 'unit types are copies after a load, not the tables');
+});
+test('save: lessons, the Test range and the Sandbox save without dropping anything', () => {
+  for (const o of [{ mode: 'academy', lesson: 'id', seed: 20260926 }, { mode: 'academy', lesson: 'strike', seed: 20260926 }, { mode: 'range', seed: 1 }, { mode: 'sandbox', seed: 99 }]) {
+    const S = IC.newGame(o);
+    if (S.range) { IC.rangeSpawn(S, { what: 'drones', n: 6, brg: 90, km: 150, alt: '' }); }
+    for (let i = 0; i < 1200; i++) IC.step(S, 0.5);
+    const d = IC.saveGame(S);
+    assert(!Object.keys(d.lost).length, `${o.lesson || o.mode}: dropped ${Object.keys(d.lost).join(', ')}`);
+    const S2 = IC.loadSave(JSON.stringify(d));
+    for (let i = 0; i < 600; i++) IC.step(S2, 0.5);
+  }
+});
+test('save: a save from another version of the map generator, or of the game, is refused with a reason', () => {
+  const S = IC.newGame({ seed: 7, mode: 'campaign' });
+  const d = IC.saveGame(S);
+  const odd = Object.assign({}, d, { wsig: 'x' });
+  let why = ''; try { IC.loadSave(JSON.stringify(odd)); } catch (e) { why = e.message; }
+  assert(/map generator/.test(why) && IC.W === S.world, `a save for a different world was not refused cleanly (${why})`);
+  assert(/newer version/.test(IC.saveProblem(Object.assign({}, d, { v: IC.SAVE_VERSION + 1 }))), 'a save from a newer game is not refused');
+  assert(/not an Iron Canopy save/.test(IC.saveProblem({ hello: 1 })), 'any JSON passes for a save');
+});
+
 /* ---------- run ---------- */
 let pass = 0, fail = 0;
 const t00 = Date.now();

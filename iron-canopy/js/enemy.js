@@ -253,7 +253,12 @@ function newOp(S, type, label, extra) {
   S.enemy.ops.push(op);
   return op;
 }
-function later(S, dt, fn) { S.enemy.pending.push({ t: S.time + Math.max(0, dt), fn }); }
+function later(S, dt, name, ...args) { S.enemy.pending.push({ t: S.time + Math.max(0, dt), fn: IC.hfn(name, ...args) }); }
+/* a launch or take-off at its time: jit scatters the start; launch 1 counts it for the operation, 2 also sounds it */
+IC.H.eSpawn = (S, type, x, y, o, jit, launch) => () => {
+  IC.spawnThreat(S, type, x + U.rand(-jit, jit), y + U.rand(-jit, jit), o);
+  if (launch) { o.op.launched++; if (launch === 2) IC.sfx && IC.sfx.launch(x, y, 0.8); }
+};
 function alive(s) { return !s.destroyed && !s.dormant; }
 /* stock the commander may spend: while it saves for a big operation, what it has put aside is not for small raids */
 const spare = (s, k) => Math.max(0, (s.inv[k] || 0) - (s.hold && s.hold[k] || 0));
@@ -282,10 +287,7 @@ const W = {
       const aim = aimOn(obj);
       const route = routeBy(S, s, aim, true, harass ? 3000 : 2100, op.via);
       const T = routeLen(s, route) / IC.THR[type].spd;
-      later(S, arriveAt ? arriveAt - S.time - T + U.rand(-120, 120) : i * U.rand(40, 140), () => {
-        IC.spawnThreat(S, type, s.x + U.rand(-30, 30), s.y + U.rand(-30, 30), { route, aim: route[route.length - 1], target: obj.ref, op, origin: s });
-        op.launched++;
-      });
+      later(S, arriveAt ? arriveAt - S.time - T + U.rand(-120, 120) : i * U.rand(40, 140), 'eSpawn', S, type, s.x, s.y, { route, aim: route[route.length - 1], target: obj.ref, op, origin: s }, 30, 1);
     }
     return n + nj;
   },
@@ -305,11 +307,7 @@ const W = {
       const aim = aimOn(obj);
       const route = type === 'scm' && !op.via ? [aim] : routeBy(S, from, aim, true, 2100, op.via);
       const T = routeLen(from, route) / IC.THR[type].spd;
-      later(S, arriveAt ? arriveAt - S.time - T + U.rand(-40, 40) : i * 30, () => {
-        IC.spawnThreat(S, type, from.x, from.y, { route, aim, target: obj.ref, op, origin: s });
-        op.launched++;
-        IC.sfx && IC.sfx.launch(from.x, from.y, 0.8);
-      });
+      later(S, arriveAt ? arriveAt - S.time - T + U.rand(-40, 40) : i * 30, 'eSpawn', S, type, from.x, from.y, { route, aim, target: obj.ref, op, origin: s }, 0, 2);
     }
     return n;
   },
@@ -361,7 +359,7 @@ const W = {
     const T = U.dist(b, lp) / IC.THR.sead.spd + 500;
     for (let i = 0; i < 2; i++) {
       b.acAvail.sead--;
-      later(S, arriveAt ? arriveAt - S.time - T - 300 : i * 30, () => IC.spawnThreat(S, 'sead', b.x, b.y, { home: b, mission: 'sead', route: [{ x: lp.x + i * 60, y: lp.y }], arms: 2, op, dcy: E.escal >= 1 ? 2 : 0, tgt }));
+      later(S, arriveAt ? arriveAt - S.time - T - 300 : i * 30, 'eSpawn', S, 'sead', b.x, b.y, { home: b, mission: 'sead', route: [{ x: lp.x + i * 60, y: lp.y }], arms: 2, op, dcy: E.escal >= 1 ? 2 : 0, tgt }, 0, 0);
     }
     return 2;
   },
@@ -371,7 +369,7 @@ const W = {
     b.acAvail.bmr--;
     const st = standoff(obj, b, 500);
     const T = U.dist(b, st) / IC.THR.bmr.spd + U.dist(st, obj) / 2.4;
-    later(S, arriveAt ? arriveAt - S.time - T : 0, () => IC.spawnThreat(S, 'bmr', b.x, b.y, { home: b, mission: 'bomber', route: [st], load: E.escal >= 2 ? 6 : 4, tgt: obj, op }));
+    later(S, arriveAt ? arriveAt - S.time - T : 0, 'eSpawn', S, 'bmr', b.x, b.y, { home: b, mission: 'bomber', route: [st], load: E.escal >= 2 ? 6 : 4, tgt: obj, op }, 0, 0);
     return 1;
   },
   /* a bomber posing as an airliner: it flies a real airway with a civil squawk, then turns off to launch */
@@ -403,7 +401,7 @@ const W = {
     const T = routeLen(b, rp) / IC.THR.str.spd;
     for (let i = 0; i < 2; i++) {
       b.acAvail.str--;
-      later(S, (arriveAt ? arriveAt - S.time - T : 0) + i * 25, () => IC.spawnThreat(S, 'str', b.x, b.y, { home: b, mission: 'strike', route: rp.map(p => ({ x: p.x + i * 20, y: p.y })), tgt: Object.assign(aimOn(obj), { ref: obj.ref, name: obj.name }), op, alt: 0.1, low: true, radarOn: false }));
+      later(S, (arriveAt ? arriveAt - S.time - T : 0) + i * 25, 'eSpawn', S, 'str', b.x, b.y, { home: b, mission: 'strike', route: rp.map(p => ({ x: p.x + i * 20, y: p.y })), tgt: Object.assign(aimOn(obj), { ref: obj.ref, name: obj.name }), op, alt: 0.1, low: true, radarOn: false }, 0, 0);
     }
     return 2;
   },
@@ -417,7 +415,7 @@ const W = {
     const T = routeLen(b, rp) / IC.THR.ahe.spd;
     for (let i = 0; i < 2; i++) {
       b.acAvail.ahe--;
-      later(S, (arriveAt ? arriveAt - S.time - T : 0) + i * 30, () => { IC.spawnThreat(S, 'ahe', b.x, b.y, { home: b, mission: 'strike', route: rp.map(p => ({ x: p.x + i * 12, y: p.y })), tgt: { x: obj.x, y: obj.y, ref: obj.ref, name: obj.name }, op, low: true, radarOn: false }); op.launched++; });
+      later(S, (arriveAt ? arriveAt - S.time - T : 0) + i * 30, 'eSpawn', S, 'ahe', b.x, b.y, { home: b, mission: 'strike', route: rp.map(p => ({ x: p.x + i * 12, y: p.y })), tgt: { x: obj.x, y: obj.y, ref: obj.ref, name: obj.name }, op, low: true, radarOn: false }, 0, 1);
     }
     return 2;
   },
@@ -431,7 +429,7 @@ const W = {
     for (let i = 0; i < n; i++) {
       const aim = { x: obj.x + U.rand(-sp, sp), y: obj.y + U.rand(-sp, sp) };
       const T = U.dist(st, aim) / IC.THR.dcy.spd;
-      later(S, arriveAt ? arriveAt - S.time - T - 200 : i * 20, () => IC.spawnThreat(S, 'dcy', st.x + U.rand(-50, 50), st.y + U.rand(-50, 50), { route: [aim], aim, op }));
+      later(S, arriveAt ? arriveAt - S.time - T - 200 : i * 20, 'eSpawn', S, 'dcy', st.x, st.y, { route: [aim], aim, op }, 50, 0);
     }
     return n;
   }
@@ -851,26 +849,32 @@ function planRaid(S, E) {
   note(S, E, `Plans raid ${R.id}, a ${R.name} on ${obj.name} (${IC.ESETS[obj.set].name}) for ${U.hhmm(T)}: ${why}. ${mix.map(p => `${p.n > 1 ? p.n + ' ' : ''}${p.w}`).join(', ')}.`);
   // the build-up: things the player can see coming
   const sharp = IC.hasTech(S, 's_esm') || IC.hasTech(S, 's_sat');
-  later(S, Math.max(0, T - S.time - U.rand(3600, 4800)), () => {
-    const where = sharp ? `, most likely against ${obj.name}` : ` towards ${place(S, obj)}`;
-    const when = Math.round((T - S.time) / 900) * 15;
-    R.warned = true;
-    const what = kind === 'shock' ? 'something very large, bigger than anything so far' : `a ${R.name}`;
-    IC.log(S, 'warn', 'INTEL', `Signals intelligence: ${S.world.names.A} is preparing ${what}${where}. Expect it in about ${when} minutes.`, sharp ? obj : null);
-    IC.emit(S, 'raidWarning', { R, sharp, when });
-  });
-  later(S, T - S.time - U.rand(2700, 3300), () => { if (can(S, 'recon') && kind !== 'probe') OPS.recon(S, E, { x: obj.x + U.rand(-250, 250), y: obj.y + U.rand(-250, 250) }); });
-  if (kind !== 'probe') later(S, T - S.time - U.rand(2000, 2600), () => {
-    const op = newOp(S, 'probe', `drones probing towards ${obj.name}`, { raid: R, set: obj.set });
-    if (can(S, 'drones') && Math.random() < 0.7) W.drones(S, E, obj, U.randi(1, 2), op, 0, true); else feint(S, E, obj);
-    if (can(S, 'rkt') && E.act >= 2 && Math.random() < 0.3) { const o = OPS.rkt(S, E); if (o) o.set = 'city'; }
-  });
-  if (kind !== 'probe' && kind !== 'opening') later(S, T - S.time - U.rand(2300, 2700), () => standoffJammer(S, E, obj, R));
+  later(S, Math.max(0, T - S.time - U.rand(3600, 4800)), 'eRaidWarn', S, R, sharp);
+  later(S, T - S.time - U.rand(2700, 3300), 'eRecon', S, R);
+  if (kind !== 'probe') later(S, T - S.time - U.rand(2000, 2600), 'eProbe', S, R);
+  if (kind !== 'probe' && kind !== 'opening') later(S, T - S.time - U.rand(2300, 2700), 'eJammer', S, R.obj, R);
   R.fired0 = S.stats.fired;
   launchRaid(S, E, R);
   E.cycle = { phase: 'buildup', next: T, R };
 }
 IC.enemyPlanRaid = S => planRaid(S, S.enemy);
+/* the build-up before a raid: a warning, reconnaissance, a probe, a jammer */
+IC.H.eRaidWarn = (S, R, sharp) => () => {
+  const obj = R.obj, where = sharp ? `, most likely against ${obj.name}` : ` towards ${place(S, obj)}`;
+  const when = Math.round((R.T - S.time) / 900) * 15;
+  R.warned = true;
+  const what = R.kind === 'shock' ? 'something very large, bigger than anything so far' : `a ${R.name}`;
+  IC.log(S, 'warn', 'INTEL', `Signals intelligence: ${S.world.names.A} is preparing ${what}${where}. Expect it in about ${when} minutes.`, sharp ? obj : null);
+  IC.emit(S, 'raidWarning', { R, sharp, when });
+};
+IC.H.eRecon = (S, R) => () => { const obj = R.obj; if (can(S, 'recon') && R.kind !== 'probe') OPS.recon(S, S.enemy, { x: obj.x + U.rand(-250, 250), y: obj.y + U.rand(-250, 250) }); };
+IC.H.eProbe = (S, R) => () => {
+  const E = S.enemy, obj = R.obj;
+  const op = newOp(S, 'probe', `drones probing towards ${obj.name}`, { raid: R, set: obj.set });
+  if (can(S, 'drones') && Math.random() < 0.7) W.drones(S, E, obj, U.randi(1, 2), op, 0, true); else feint(S, E, obj);
+  if (can(S, 'rkt') && E.act >= 2 && Math.random() < 0.3) { const o = OPS.rkt(S, E); if (o) o.set = 'city'; }
+};
+IC.H.eJammer = (S, obj, R) => () => standoffJammer(S, S.enemy, obj, R);
 /* a stand-off jammer flies to a station behind the border and jams along the raid's axis */
 function standoffJammer(S, E, obj, R) {
   if (!can(S, 'sead') && !can(S, 'jam')) return 0;
@@ -889,12 +893,17 @@ function escorts(S, E, obj, n, op, arriveAt) {
     const from = { x: s.x + U.rand(-40, 40), y: s.y + U.rand(-40, 40) };
     const route = routeBy(S, s, { x: obj.x, y: obj.y }, true, 2100, op.via);
     const T = routeLen(from, route) / IC.THR.esj.spd;
-    later(S, arriveAt - S.time - T - 120 + i * 40, () => { IC.spawnThreat(S, 'esj', from.x, from.y, { route: route.map(p => ({ x: p.x + U.rand(-15, 15), y: p.y + U.rand(-15, 15) })), aim: route[route.length - 1], jamming: true, op, origin: s }); });
+    later(S, arriveAt - S.time - T - 120 + i * 40, 'eSpawn', S, 'esj', from.x, from.y, { route: route.map(p => ({ x: p.x + U.rand(-15, 15), y: p.y + U.rand(-15, 15) })), aim: route[route.length - 1], jamming: true, op, origin: s }, 0, 0);
   }
   return 0;
 }
 function droneHours(S, obj, nat) { const d = S.esites.filter(x => x.kind === 'drone' && alive(x) && (!nat || x.nat === nat)).reduce((m, x) => Math.min(m, U.dist(x, obj)), 1e9); return d * 1.3 / IC.THR.owa.spd / H; }
 const CAN = { drones: 'drones', harass: 'drones', cm: 'cm', bal: 'bal', mrbm: 'mrbm', dcy: 'dcy', sead: 'sead', jam: 'jam', bomber: 'bomber', low: 'low', helis: 'helis', lm: 'lm', feint: 'drones', rkt: 'rkt', hgv: 'hgv', disguise: 'disguise' };
+/* packets that go when the raid goes, not when it is planned */
+IC.H.eDisguise = (S, obj, o) => () => W.disguise(S, S.enemy, obj, o);
+IC.H.eFeint = (S, obj) => () => feint(S, S.enemy, obj);
+IC.H.eLm = (S, obj, R) => () => { const x = OPS.lm(S, S.enemy, obj); if (x) x.set = R.set; };
+IC.H.eHgv = (S, obj, R) => () => { const x = OPS.hgv(S, S.enemy, obj); if (x) { x.set = R.set; x.raid = R; } };
 /* the raid itself: each packet timed on T */
 function launchRaid(S, E, R) {
   const op = newOp(S, 'strike', `${R.name} on ${R.obj.name}`, { raid: R, obj: R.obj.ref, arriveAt: R.T, set: R.set });
@@ -920,10 +929,10 @@ function launchRaid(S, E, R) {
       case 'low': n += W.low(S, E, obj, o, T); break;
       case 'helis': n += W.helis(S, E, obj, o, T); break;
       // these go when the raid goes, not when it is planned (never in the first 90 minutes of the calm)
-      case 'disguise': later(S, Math.max(5700, T - S.time - 5400), () => W.disguise(S, E, obj, o)); n++; break;
-      case 'feint': later(S, Math.max(0, T - S.time - 1800), () => feint(S, E, obj)); break;
-      case 'lm': later(S, Math.max(5700, T - S.time - 3600), () => { const x = OPS.lm(S, E, obj); if (x) x.set = R.set; }); n++; break;
-      case 'hgv': later(S, Math.max(5700, T - S.time - 300), () => { const x = OPS.hgv(S, E, obj); if (x) { x.set = R.set; x.raid = R; } }); n++; break;
+      case 'disguise': later(S, Math.max(5700, T - S.time - 5400), 'eDisguise', S, obj, o); n++; break;
+      case 'feint': later(S, Math.max(0, T - S.time - 1800), 'eFeint', S, obj); break;
+      case 'lm': later(S, Math.max(5700, T - S.time - 3600), 'eLm', S, obj, R); n++; break;
+      case 'hgv': later(S, Math.max(5700, T - S.time - 300), 'eHgv', S, obj, R); n++; break;
     }
   }
   R.ops.push(op); if (opVia !== op) R.ops.push(opVia);
@@ -1081,7 +1090,7 @@ const OPS = {
     const n = Math.min(Math.floor(s.inv.lm), U.randi(2, 4));
     s.inv.lm -= n;
     const op = newOp(S, 'lm', `loitering munitions hunting near ${tgt.name}`, { set: tgt.set });
-    for (let i = 0; i < n; i++) later(S, i * 60, () => { IC.spawnThreat(S, 'lm', s.x, s.y, { route: [{ x: tgt.x + U.rand(-120, 120), y: tgt.y + U.rand(-120, 120) }], aim: { x: tgt.x, y: tgt.y }, op, origin: s }); op.launched++; });
+    for (let i = 0; i < n; i++) later(S, i * 60, 'eSpawn', S, 'lm', s.x, s.y, { route: [{ x: tgt.x + U.rand(-120, 120), y: tgt.y + U.rand(-120, 120) }], aim: { x: tgt.x, y: tgt.y }, op, origin: s }, 0, 1);
     return op;
   },
   rkt(S, E, forced) {

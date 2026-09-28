@@ -25,10 +25,7 @@ IC.campaignInit = function (S) {
   S.pm = 70;
   const E = S.enemy, W = S.world;
   if (S.mode === 'sandbox') {
-    S.camp.sched = [
-      { t: 7 * 3600, fn: () => { IC.enemyOpening(S, { act: 2 }); chapter(S, 'Open War', `${W.full.A} has attacked.`); } },
-      { t: 30 * 3600, fn: () => { for (const s of S.esites) s.dormant = false; } }
-    ];
+    S.camp.sched = [{ t: 7 * 3600, fn: IC.hfn('qwSandboxWar', S) }, { t: 30 * 3600, fn: IC.hfn('qwWake', S) }];
     S.camp.chapter = 'Open War';
     say(S, 'CDS', `${W.full.A} will strike at dawn. Most of our equipment is deployed and the nation is partly mobilized. Good luck.`);
     return;
@@ -36,24 +33,27 @@ IC.campaignInit = function (S) {
   E.allow = new Set(['recon']);
   for (const s of S.esites) if (s.nat === 'B') s.dormant = true;
   const war = S.time + U.rand(3, 4.5) * 3600, second = war + U.rand(20, 30) * 3600;
-  S.camp.sched = [
-    { t: S.time + U.rand(0.6, 1) * 3600, fn: () => { IC.enemyForceOp(S, 'recon', nearTown(S)); say(S, 'INT', `An unidentified slow track has crossed from ${W.names.A}. Probably a reconnaissance drone photographing our positions. Shooting it down now would be legal, but it would also tell them where our batteries are.`); } },
-    { t: S.time + U.rand(1.6, 2.2) * 3600, fn: () => { E.allow.add('rkt'); const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name}! A ${W.names.A} battery is shelling across the border. Our counter-battery radar or a reconnaissance drone could find the launcher.`); E.allow.delete('rkt'); } },
-    { t: war - 1500, fn: () => say(S, 'INT', `Signals intelligence: heavy radio traffic at ${W.names.A} missile brigades and air bases. Something is coming within the hour.`) },
-    { t: war, fn: () => {
-      // a defence that is ready when the war comes cuts their probing short: up to four hours
-      E.allow = null; IC.enemyOpening(S, { head: 4 * readiness(S) });
-      chapter(S, 'The First Strike', `${W.full.A} has opened fire. Drones and a few missiles are in the air.`);
-      say(S, 'CDS', `This is war. The first strikes are probes: drones and single missiles along the border. They want to see what fires and from where. They have far more than this: they are holding it back.`);
-    } },
-    { t: second, fn: () => { for (const s of S.esites) s.dormant = false; chapter(S, 'Two Fronts', `${W.full.B} has joined the war.`); } }
-  ];
+  S.camp.sched = ['qwRecon', 'qwRockets', 'qwSigint', 'qwWar', 'qwSecond'].map((h, i) => ({ t: [S.time + U.rand(0.6, 1) * 3600, S.time + U.rand(1.6, 2.2) * 3600, war - 1500, war, second][i], fn: IC.hfn(h, S) }));
   card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `${W.full.A} has closed the border and its forces are massing. We are not on a war footing: good equipment, much of it still in the depots, and thin magazines. Use the time.`, 'chapter');
   S.camp.chapter = 'Tension';
   say(S, 'CDS', `${W.full.A} is massing on the border. We have hours, not days. Get equipment out of the reserve, fill the magazines, and decide what we protect first.`);
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
   say(S, 'LOG', 'Depots are low. Order munitions at the factories or buy abroad, and put a forward depot near the northern border so convoys have short runs.');
 };
+/* the Quick war's timetable (S.camp.sched) */
+const H = IC.H;
+H.qwSandboxWar = S => () => { IC.enemyOpening(S, { act: 2 }); chapter(S, 'Open War', `${S.world.full.A} has attacked.`); };
+H.qwWake = S => () => { for (const s of S.esites) s.dormant = false; };
+H.qwRecon = S => () => { IC.enemyForceOp(S, 'recon', nearTown(S)); say(S, 'INT', `An unidentified slow track has crossed from ${S.world.names.A}. Probably a reconnaissance drone photographing our positions. Shooting it down now would be legal, but it would also tell them where our batteries are.`); };
+H.qwRockets = S => () => { const E = S.enemy; E.allow.add('rkt'); const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name}! A ${S.world.names.A} battery is shelling across the border. Our counter-battery radar or a reconnaissance drone could find the launcher.`); E.allow.delete('rkt'); };
+H.qwSigint = S => () => say(S, 'INT', `Signals intelligence: heavy radio traffic at ${S.world.names.A} missile brigades and air bases. Something is coming within the hour.`);
+H.qwWar = S => () => {
+  // a defence that is ready when the war comes cuts their probing short: up to four hours
+  const W = S.world; S.enemy.allow = null; IC.enemyOpening(S, { head: 4 * readiness(S) });
+  chapter(S, 'The First Strike', `${W.full.A} has opened fire. Drones and a few missiles are in the air.`);
+  say(S, 'CDS', `This is war. The first strikes are probes: drones and single missiles along the border. They want to see what fires and from where. They have far more than this: they are holding it back.`);
+};
+H.qwSecond = S => () => { for (const s of S.esites) s.dormant = false; chapter(S, 'Two Fronts', `${S.world.full.B} has joined the war.`); };
 /* how ready the defence is when the war comes: the share of the capital, the main air base and the two largest
    cities with a battery set up over them */
 function readiness(S) {

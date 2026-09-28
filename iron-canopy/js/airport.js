@@ -779,7 +779,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
       hitNames.push(`${IC.APART[part.kind].name.toLowerCase()} destroyed`);
       IC.addScar(S, { kind: 'burn', x: part.x, y: part.y, r: Math.max(part.w || part.r * 2, part.h || 0) * 1.4 });
       if (part.kind === 'fuel') { part.burning = 5400; part.stock = 0; IC.explode(S, part.x, part.y, 1.8, 'ground', { big: 0.6 }); IC.addFire(S, part.x, part.y, 1.8, 9000); }
-      else if (part.kind === 'ammo') { IC.explode(S, part.x, part.y, 2, 'ground', { big: 0.8 }); IC.addFire(S, part.x, part.y, 1.2, 6000); setTimeout0(S, () => IC.aptHit(S, ap, part.x + 0.05, part.y + 0.05, 90, { d: { code: 'secondary explosion' } })); }
+      else if (part.kind === 'ammo') { IC.explode(S, part.x, part.y, 2, 'ground', { big: 0.8 }); IC.addFire(S, part.x, part.y, 1.2, 6000); IC.later(S, 2, 'aptSecondary', S, ap, part.x + 0.05, part.y + 0.05); }
       else IC.addFire(S, part.x, part.y, 0.8, 4000);
       // airliners in a hangar that falls are lost with it
       if (part.kind === 'hangar') for (const x of part.inside || []) { IC.emit(S, 'tailLost', { ap, tail: x.tl, why: 'destroyed in the hangar' }); acLost++; }
@@ -812,7 +812,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   IC.emit(S, 'baseHit', { base: ap, acLost, runway: st.runway });
   if (ap.autoRepair) autoQueue(S, ap);
 };
-function setTimeout0(S, fn) { (S.later = S.later || []).push({ t: S.time + 2, fn }); }
+IC.H.aptSecondary = (S, ap, x, y) => () => IC.aptHit(S, ap, x, y, 90, { d: { code: 'secondary explosion' } });
 
 /* ---------- engineering: repairs and construction ---------- */
 function workFor(ap, key) { return ap.works.find(w => w.key === key); }

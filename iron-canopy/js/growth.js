@@ -95,11 +95,16 @@ IC.econTime = (S, from, to, intact) => timeTo(S, (intact ? S.econ.ti : S.econ.tt
 /* a place's trade reach: the people it can trade with, the nearer (in time) the more */
 const reachOf = (S, T, self) => { let s = 0; for (const d of IC.cities(S)) if (d !== self && d.owner === 'us') s += d.pop * Math.exp(-timeTo(S, T, d) / 7200); return s; };
 
+/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them) */
+IC.econTrees = function (S) {
+  const E = S.econ, W = S.world;
+  E.tt = {}; E.ti = {};
+  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+};
 function refreshRoads(S) {
   const E = S.econ, W = S.world;
   E.roadsDirty = false;
-  E.tt = {}; E.ti = {};
-  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+  IC.econTrees(S);
   for (const c of IC.cities(S)) {
     c.rc = reachOf(S, E.tt[c.id], c); c.rcI = reachOf(S, E.ti[c.id], c);
     // trips that now take much longer, and the cut that causes it

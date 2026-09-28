@@ -50,6 +50,9 @@ function resolved(S, op) {
   return true;
 }
 
+/* the lessons' timetables (S.camp.sched) */
+IC.H.acaBomber = (S, cap) => () => { IC.enemyForceOp(S, 'disguise', { x: cap.x, y: cap.y, ref: cap, name: cap.name }); S.camp.bomber = S.threats.find(t => t.disguise); };
+IC.H.acaRockets = (S, t) => () => { if (!S.stats.telKills) IC.enemyForceOp(S, 'rkt', { x: t.x, y: t.y, ref: t.kind === 'city' ? t : null, name: t.name }); };
 IC.LESSONS = [
   {
     id: 'radar', title: 'Eyes on the Sky', sub: 'Radars, sweeps and the identification ladder',
@@ -77,7 +80,7 @@ IC.LESSONS = [
       put(S, 'lr3d', cap, 150, 350); put(S, 'mr3d', cap, 300, 500); put(S, 'mrsam', cap, 120, 300);
       flight(S, 'ftr', 'VIPER 1', rear(S)); flight(S, 'ftr', 'VIPER 2', fwd(S));
       S.camp.bomber = null;
-      S.camp.sched.push({ t: S.time + 600, fn: () => { IC.enemyForceOp(S, 'disguise', { x: cap.x, y: cap.y, ref: cap, name: cap.name }); S.camp.bomber = S.threats.find(t => t.disguise); } });
+      S.camp.sched.push({ t: S.time + 600, fn: IC.hfn('acaBomber', S, cap) });
       focus(S, cap, 0.13);
     },
     steps: [
@@ -235,7 +238,7 @@ IC.LESSONS = [
       } }
       const t = S.world.villages.filter(v => v.home).concat(IC.cities(S)).sort((a, c) => U.dist(a, site) - U.dist(c, site))[0];
       S.camp.town = t;
-      for (let k = 0; k < 12; k++) S.camp.sched.push({ t: S.time + 300 + k * 2400, fn: () => { if (!S.stats.telKills) IC.enemyForceOp(S, 'rkt', { x: t.x, y: t.y, ref: t.kind === 'city' ? t : null, name: t.name }); } });
+      for (let k = 0; k < 12; k++) S.camp.sched.push({ t: S.time + 300 + k * 2400, fn: IC.hfn('acaRockets', S, t) });
       if (site) site.pk = 1;
       S.camp.site = site;
       focus(S, t, 0.2);
