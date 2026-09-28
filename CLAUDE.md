@@ -112,7 +112,7 @@ The Career starts with no airports (`IC.newGame({ mode: 'story' })`); tests that
 - Quick war income: a ₭60M/h defence grant (`IC.QW_GRANT`) and 25% of city and trade taxes (`IC.QW_TAX_SHARE`); with sixty cities that is about ₭150M/h at the start against some ₭80M/h of running costs. `econtest.js quick` prints the scripted commander of `qwplayer.js`: layers over the capital, the forward air base and the two largest cities within the first hour, radars seeing about 75% of the hostile border by the end of day 2, running costs close to income by then.
 - Career grants by act: ₭5M/h, 30, 80, 40, and the share of city taxes (`IC.STORY_TAX`): none, none, 10%, 25%, all; each act from II on starts with ₭300M, ₭900M, ₭1,000M.
 - A radiating radar costs 15% more to keep for every other radar on its band within 70 km (where they would blind each other).
-- Controllers handle 14 flights at once (+4 per approach radar); a flight on an airway counts 0.6, one outside radar 1.5 times. Overflights pay ₭0.5M on our airways, ₭0.25M off them.
+- Controllers handle 40 flights at once (+4 per approach radar); a flight on an airway counts 0.6, one outside radar 1.5 times. Overflights pay ₭0.5M on our airways, ₭0.25M off them.
 
 ## Owner's preferences
 

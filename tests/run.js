@@ -796,7 +796,8 @@ test('airspace: airliners fly direct without airways and follow them once drawn'
   assert(IC.avPath(S, A, B).pts.length === 2, 'expected a direct route with no airways');
   // a dog-leg airway: out to one side of the direct line and back
   const dx = reg.x - cap.x, dy = reg.y - cap.y, L = Math.hypot(dx, dy), nx = -dy / L * 300, ny = dx / L * 300;
-  const f1 = IC.aspAddFix(S, cap.x + dx * 0.25 + nx, cap.y + dy * 0.25 + ny), f2 = IC.aspAddFix(S, cap.x + dx * 0.75 + nx, cap.y + dy * 0.75 + ny);
+  // (each fix 80 km along from its airport, within the 120 km an airport reaches to join the network)
+  const k = Math.min(0.25, 800 / L), f1 = IC.aspAddFix(S, cap.x + dx * k + nx, cap.y + dy * k + ny), f2 = IC.aspAddFix(S, cap.x + dx * (1 - k) + nx, cap.y + dy * (1 - k) + ny);
   assert(f1 && f2 && IC.aspAddWay(S, f1.id, f2.id), 'could not draw the airway');
   const p = IC.avPath(S, A, B);
   assert(p.net && p.pts.some(q => q.fix === f1.id) && p.pts.some(q => q.fix === f2.id), 'route does not use the airway');

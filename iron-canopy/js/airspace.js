@@ -14,7 +14,8 @@ const A = IC.ASP = {
   link: 1200,              // an airport joins the network at a fix within 120 km
   gap: 60,                 // departures the same way: 1 min apart with radar and airways
   gate: 250,               // a fix within 25 km of the border is an entry and exit point
-  ctl: 14,                 // flights the area controllers can watch at once (a flight on an airway, on radar, counts 0.6)
+  ctl: 40,                 // flights the area controllers can watch at once (a flight on an airway, on radar, counts 0.6):
+                           // the centres of a country 3,000 km across
   gaRwy: 150,              // a light aircraft holds a big airport's runway as long as two airliners (s)
   tmaFloor: 1.2, tmaTop: 7,
   CS: 50,                  // coverage map cell: 5 km
