@@ -554,7 +554,10 @@ function autoHeli(S, u, m, src) {
 function whyNot(S, u, m, home, busy) {
   const name = IC.munWords(m.mun);
   if (busy) {
-    const back = Math.min(...S.vehicles.filter(v => v.home === busy && !v.dead).map(v => truckBack(S, v)));
+    const out = S.vehicles.filter(v => v.home === busy && !v.dead);
+    // a depot whose lorries were all destroyed or moved away has none out to wait for
+    if (!out.length) return `${busy.name} has no truck companies left. Buy one there (₭12M, in Supply, L), or Resupply by helicopter (H).`;
+    const back = Math.min(...out.map(v => truckBack(S, v)));
     return `All ${busy.name}'s truck companies are out. The first is back in about ${U.dur(back)}. More companies, a depot nearer, or Resupply by helicopter (H) is quicker.`;
   }
   if (!home) return 'No depot. Place a depot, or the Central Depot is lost.';

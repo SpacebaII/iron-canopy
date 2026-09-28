@@ -389,7 +389,7 @@ IC.rushCost = e => Math.round((e.len || 10) / 10 * (e.cls === 'hw' ? 3 : 1.5) + 
 IC.rushRepair = function (S, id) {
   const e = S.world.edges.find(x => x.id === id); if (!e || !e.cut || e.rush) return false;
   const c = IC.rushCost(e); if (S.budget < c) { IC.log(S, 'warn', 'ROADS', `Rushing the repair needs ${U.money(c)}.`); return false; }
-  S.budget -= c; e.rush = true;
+  IC.pay(S, 'repair', c); e.rush = true;
   IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e) * 3600)}.`, e.cutAt);
   return true;
 };

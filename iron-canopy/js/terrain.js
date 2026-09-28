@@ -56,6 +56,15 @@ IC.buildTerrain = function (W) {
   };
   const fd = (x, y) => fdAt(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
   const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), frame: 0 };
+  // the same region again (the start screen's, now played): its images are the same, only the base is copied, as
+  // the game draws airfields and marks on it
+  const K = lastBuilt;
+  if (K && K.seed === W.seed && K.CW === CW) {
+    Object.assign(T, { ground: K.ground, shadeD: K.shadeD, shadeL: K.shadeL, far: K.far, grain: K.grain });
+    const cv = mk(CW, CH); cv.getContext('2d').drawImage(K.base0, 0, 0); T.base = cv;
+    for (const c of W.cities) IC.cityLights(c);
+    return T;
+  }
 
   // three images: the ground's colour (tiles start from it), its hillshade, and the two combined for the far view
   const alb = mk(BW, BH), ag = alb.getContext('2d'), ai = ag.createImageData(BW, BH), ad = ai.data;
@@ -142,9 +151,12 @@ IC.buildTerrain = function (W) {
   g.restore();
   T.base = cv;
   T.grain = grain();
+  const base0 = mk(CW, CH); base0.getContext('2d').drawImage(cv, 0, 0);
+  lastBuilt = { seed: W.seed, CW, ground: alb, shadeD, shadeL, far: tmp, grain: T.grain, base0 };
   for (const c of W.cities) IC.cityLights(c);
   return T;
 };
+let lastBuilt = null;
 
 /* redraw a box of the far view (world changed, a mark went) */
 function repaintBase(T, S, x0, y0, x1, y1) {

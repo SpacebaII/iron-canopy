@@ -359,7 +359,7 @@ IC.loadSteps = function* (data) {
   const prevW = IC.W;
   try {
     let W;
-    if (IC.generateSteps) { const g = IC.generateSteps(data.seed); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * r.value[0], r.value[1]]; } }
+    if (IC.generateSteps) { const g = IC.generateSteps(data.seed); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
     else W = IC.generate(data.seed);
     IC.W = W;
     IC.buildRouting(W);

@@ -313,7 +313,8 @@ IC.defense = function (S, dt) {
     } else if (d.weapon === 'laser') {
       const Lz = d.laser, R = Lz.range * (wx.fog > 0.3 ? 0.5 : 1) * (wx.precip > 0.5 ? 0.7 : 1);
       if (u.over) { u.heat -= dt; u.beam = null; u.why = 'Cooling down'; if (u.heat <= 0) { u.heat = 0; u.over = false; } continue; }
-      let best = u.beam && !u.beam.dead && U.dist(u, u.beam) <= R ? u.beam : null;
+      // the target it is burning is kept only while the rules still allow it (Hold, a lost track or a friend stop it)
+      let best = u.beam && !u.beam.dead && U.dist(u, u.beam) <= R && eligible(S, u, u.beam) ? u.beam : null;
       if (!best) { let bd = 1e9; for (const t of S.threats) { if (!eligible(S, u, t) || !Lz.vs[IC.classOf(t)]) continue; const r = U.dist(u, t); if (r <= R && r < bd && t.alt < 6) { bd = r; best = t; } } }
       u.beam = best; u.why = best ? `Burning TN ${best.tn}` : 'Watching';
       if (best) {

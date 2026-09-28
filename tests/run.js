@@ -1,17 +1,27 @@
 /* Iron Canopy test suite. Runs the simulation headless and checks that it behaves.
-   node tests/run.js            everything
+   node tests/run.js            everything but the long balance runs, in parallel (one worker per core, up to 4)
    node tests/run.js airport    only tests whose name contains "airport"
-   node tests/run.js --quick    skip the slow Academy lessons */
+   node tests/run.js --quick    skip the slow ones too (the Academy lessons and other long plays)
+   node tests/run.js --slow     only the long balance runs (GitHub runs them every night)
+   node tests/run.js --times    also rewrite tests/times.json, which orders the next runs longest first
+   node tests/run.js --shard=1/2  one of two halves of equal length (by tests/times.json), for two machines at once
+   IC_JOBS=n sets the number of workers (one per core by default, up to 8 and 1.6 GB of memory each); IC_JOBS=1
+   runs everything in this process, one test after another.
+   Every test starts from the same seeded random numbers (IC.seedRandom, from its name), so it plays out the same
+   alone, in a full run or in any worker, and a failure can be repeated. */
 const IC = require('../headless.js');
 const { playLesson } = require('../academytest.js');
 const Q = require('../qwplayer.js');
 const U = IC.U;
 
 const args = process.argv.slice(2);
-const quick = args.includes('--quick');
+const quick = args.includes('--quick'), slowOnly = args.includes('--slow');
 const filter = args.find(a => !a.startsWith('--'));
 const tests = [];
-const test = (name, fn, slow) => tests.push({ name, fn, slow });
+/* slow: true = left out of --quick; 'long' = a balance run, only in --slow. group: tests that share what they
+   build (a generated world) run one after another in the same worker; group 'alone': tests that time the code. They
+   run with the others, and one that fails is run again at the end with no other worker busy: only that counts */
+const test = (name, fn, slow, group) => tests.push({ name, fn, slow, group });
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 const run = (S, hours, each) => { for (let i = 0; i < hours * 3600 / 0.5 && !S.over; i++) { IC.step(S, 0.5); if (each && i % 120 === 0) each(S); } };
 /* a player who approves feasible airline requests and answers decisions with the first option */
@@ -21,6 +31,9 @@ const player = S => {
 };
 
 /* ---------- world ---------- */
+/* a generated world per seed, shared by the tests that only read it (they run in one worker, group 'world') */
+const worlds = {};
+const world = seed => worlds[seed] || (worlds[seed] = IC.generate(seed));
 test('world generation is deterministic for a seed', () => {
   const a = IC.generate(4242), b = IC.generate(4242);
   assert(a.cities.length === b.cities.length && a.cities.length > 5, 'city count differs or too few cities');
@@ -37,29 +50,29 @@ const reach = (W, from, ok) => {
 };
 test('world: every city, village and airfield is reachable by road', () => {
   for (const seed of [4242, 7, 99, 12345, 2024]) {
-    const W = IC.generate(seed), seen = reach(W, W.cities[0].id);
+    const W = world(seed), seen = reach(W, W.cities[0].id);
     const lost = W.cities.concat(W.villages.filter(v => v.home), W.infra).filter(p => !seen.has(p.id));
     assert(!lost.length, `seed ${seed}: cut off from the capital: ${lost.map(p => p.name).join(', ')}`);
   }
-});
+}, false, 'world');
 test('world: motorways join the capital to the four largest cities', () => {
   for (const seed of [4242, 7, 99, 12345, 2024]) {
-    const W = IC.generate(seed), seen = reach(W, W.cities[0].id, e => e.cls === 'hw');
+    const W = world(seed), seen = reach(W, W.cities[0].id, e => e.cls === 'hw');
     const big = W.cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 4);
     for (const c of big) assert(seen.has(c.id), `seed ${seed}: no motorway from the capital to ${c.name}`);
   }
-});
+}, false, 'world');
 test('world: roads meet at junctions and do not run side by side', () => {
-  const W = IC.generate(4242);
+  const W = world(4242);
   const pair = new Set();
   for (const e of W.edges) { const k = e.a < e.b ? e.a + '|' + e.b : e.b + '|' + e.a; assert(!pair.has(k), `two roads between ${k}`); assert(e.a !== e.b, 'a road loops onto itself'); pair.add(k); }
   assert(Object.values(W.nodes).some(n => n.ix), 'no motorway interchanges');
   assert(W.bridges.length > 0, 'no bridges');
-});
+}, false, 'world');
 test('world: every motorway-to-motorway junction has an interchange shape, with smooth slip roads', () => {
   let mm = 0, mx = 0;
   for (const seed of [4242, 7, 99, 12345, 2024]) {
-    const W = IC.generate(seed);
+    const W = world(seed);
     const hwAt = k => W.edges.filter(e => e.cls === 'hw' && (e.a === k || e.b === k)).length;
     for (const k in W.nodes) {
       const n = W.nodes[k], J = W.junctionAt[k], h = hwAt(k);
@@ -81,13 +94,13 @@ test('world: every motorway-to-motorway junction has an interchange shape, with 
     }
   }
   assert(mm >= 2 && mx >= 20, `too few interchanges to be a real test (${mm} motorway, ${mx} other)`);
-});
+}, false, 'world');
 test('world: city streets end on another street or road', () => {
   for (const seed of [4242, 7]) {
-    const W = IC.generate(seed);
+    const W = world(seed);
     for (const c of W.cities) for (const l of c.streets) assert(!l.deadEnd, `seed ${seed}: a street in ${c.name} ends in the middle of nowhere`);
   }
-});
+}, false, 'world');
 /* how round a city is: its main built-up area (blocks, with the streets between them closed up, the largest
    connected piece) against the smallest circle round it. A disc of blocks scores about 0.8 */
 function enclosing(P) {
@@ -129,17 +142,17 @@ test('world: cities are not round', () => {
   assert(roundness(disc) > 0.75, `the roundness measure gives a disc only ${roundness(disc).toFixed(2)}`);
   let sum = 0, n = 0;
   for (const seed of [4242, 7, 99]) {
-    const W = IC.generate(seed);
+    const W = world(seed);
     for (const c of W.cities) {
       const r = roundness(c.blocks); sum += r; n++;
       assert(r < 0.7, `seed ${seed}: ${c.name} is nearly round (${r.toFixed(2)})`);
     }
   }
   assert(sum / n < 0.5, `cities are round on average (${(sum / n).toFixed(2)})`);
-});
+}, false, 'world');
 test('world: every map has cities of at least two styles, and districts in every city', () => {
   for (const seed of [4242, 7, 99, 12345, 2024]) {
-    const W = IC.generate(seed), styles = new Set(W.cities.map(c => c.style));
+    const W = world(seed), styles = new Set(W.cities.map(c => c.style));
     assert(styles.size >= 2, `seed ${seed}: only ${[...styles].join(', ')} cities`);
     assert(W.cities.some(c => c.style === 'eu') && W.cities.some(c => c.style === 'us'), `seed ${seed}: not both European and American cities`);
     assert(W.foreign.filter(f => W.side[f.k] === 'hostile').every(f => f.style === 'east' && f.blocks.length), `seed ${seed}: the enemy's towns are not built to their own plan`);
@@ -149,9 +162,9 @@ test('world: every map has cities of at least two styles, and districts in every
       assert(m.sub + m.dense > 0.25 && m.ind + m.log + m.rail > 0.03, `seed ${seed}: ${c.name} lacks housing or industry`);
     }
   }
-});
+}, false, 'world');
 test('world: districts change what a city wants from its airport', () => {
-  const W = IC.generate(4242), cs = W.cities.filter(c => !c.capital);
+  const W = world(4242), cs = W.cities.filter(c => !c.capital);
   const work = c => c.mix.ind + c.mix.log + c.mix.rail;
   const ind = cs.slice().sort((a, b) => work(b) - work(a))[0], res = cs.slice().sort((a, b) => work(a) - work(b))[0];
   const di = IC.cityDemand(ind), dr = IC.cityDemand(res);
@@ -161,7 +174,7 @@ test('world: districts change what a city wants from its airport', () => {
   const flat = Object.assign({}, c, { mix: Object.assign({}, c.mix, { biz: 0, old: 0, dense: c.mix.dense + c.mix.biz + c.mix.old }) });
   assert(IC.cityDemand(flat).biz < d0.biz * 0.8 && IC.cityDemand(flat).leisure > d0.leisure, 'offices do not change the business and leisure mix');
   assert(/cargo/.test(IC.cityCharacter(ind).text), `the city panel does not say ${ind.name} is about cargo: ${IC.cityCharacter(ind).text}`);
-});
+}, false, 'world');
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test
@@ -174,11 +187,11 @@ test('world: generation stays under the time budget', () => {
   // the map is ten times larger than wave 4's, with three to four times the towns and roads; it was 1,500 ms for the
   // smaller map, about 1.3 s on the machine that measured both (3.5 s now, up to 4.8 s with other runs beside it)
   assert(worst < 5000, `generation took ${worst} ms`);
-});
+}, true, 'alone');
 test('world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map', () => {
   assert(Math.abs(IC.WW / 10 - 5700) < 200 && Math.abs(IC.WH / 10 - 4300) < 200, `the map is ${IC.WW / 10} × ${IC.WH / 10} km`);
   for (const seed of [4242, 7, 99]) {
-    const W = IC.generate(seed), home = W.villages.filter(v => v.home).length;
+    const W = world(seed), home = W.villages.filter(v => v.home).length;
     // the smaller map had 18 cities and 80 villages
     assert(W.cities.length >= 54 && home >= 240, `seed ${seed}: ${W.cities.length} cities and ${home} villages`);
     // spread over the country, not bunched in the lowlands: no city more than 500 km from the next
@@ -187,7 +200,7 @@ test('world: the map is about 5,700 × 4,300 km, with three times the towns of t
     const xs = W.poly.map(p => p[0]), ys = W.poly.map(p => p[1]);
     assert(Math.max(...xs) - Math.min(...xs) > IC.WW * 0.5 && Math.max(...ys) - Math.min(...ys) > IC.WH * 0.45, `seed ${seed}: the country is small on the map`);
   }
-});
+}, false, 'world');
 
 test('traffic: rush hour is busier than night, and an air raid empties the roads', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
@@ -292,7 +305,7 @@ test('traffic: a busy hour stays inside the time budget', () => {
   assert(step < 0.1, `traffic step takes ${step.toFixed(3)} ms (budget 0.1 ms of the 1 ms step)`);
   assert(frame < 4, `placing ${n} vehicles takes ${frame.toFixed(2)} ms a frame`);
   assert(ag < 3, `moving ${nA} vehicles takes ${ag.toFixed(2)} ms a frame`);
-});
+}, false, 'alone');
 
 /* ---------- airports ---------- */
 test('airport: starting layouts are connected', () => {
@@ -480,7 +493,7 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   console.log(`        ${ap.moves.length} aircraft moving: ${(t / N).toFixed(3)} ms a step, ground operations ${(g / N).toFixed(3)} ms`);
   assert(g / N < 0.6, `ground operations take ${(g / N).toFixed(2)} ms a step`);
   assert(t / N < 1.5, `a step takes ${(t / N).toFixed(2)} ms`);
-});
+}, false, 'alone');
 
 /* ---------- the tower's rules: when aircraft may go onto a runway (docs/tasks/15-runway-rules.md) ---------- */
 const grpOf = (ap, rwId) => IC.aptGraph(ap).grp[rwId] || rwId;
@@ -971,7 +984,7 @@ test('airport life: the landside grows with passengers and pays a small income',
   assert(L.pax > 100 && kinds.has('park') && kinds.has('stop'), `after 5 hours with ${Math.round(L.pax)} passengers an hour: ${[...kinds].join(', ') || 'nothing'}`);
   assert(L.items.every(it => !IC.aptOnPart(cap, it, 0.05) && !cap.parts.some(p => p.kind === 'runway' && IC.partDist(cap, p, it) < 1.5)), 'a landside item stands on the airfield');
   assert(S.econ.book.landside > 0, 'the landside earned nothing');
-});
+}, true);
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);
@@ -1401,7 +1414,7 @@ test('supply: a battery low on missiles is resupplied by a convoy seen on the ro
   assert(m.store + m.mag >= m.storeMax + m.max, `only ${m.mag} ready and ${m.store} in reserve after ${U.dur(t)}`);
   assert(seenOnRoad, 'the convoy never drove on a road');
   assert(IC.nextLoad(S, u, m).text === 'Full.', 'the panel does not say it is full');
-});
+}, true);
 test('supply: a cut road delays resupply, and the battery panel says why', () => {
   const S = supplyGame();
   const { dep, u, m } = lowBattery(S, 900, 1400);
@@ -1438,7 +1451,7 @@ test('money: the money panel adds up to the change in the treasury', () => {
   const M = IC.money(S);
   assert(Math.abs(M.net - (S.income - S.upkeep)) < 0.01, 'the hourly lines do not add up to the hourly balance');
   assert(M.inc.concat(M.out).every(l => l.why && l.name), 'a money line has no name or no reason');
-});
+}, true);
 test('money: a warning comes before the money runs out', () => {
   // Act I of the Career: a small grant, and two long-range batteries it cannot pay for
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
@@ -1589,7 +1602,7 @@ test('air war: a fighter launched from 5-minute alert is airborne within 5 minut
   const f0 = S.roster.find(x => x !== r && x.kind === 'ftr' && x.st === 'ready');
   IC.setAlert(S, f0, 5); f0.fat = 0; run(S, 2);
   assert(f0.fat > 0.1, `crews on 5-minute alert did not tire (${f0.fat})`);
-});
+}, true);
 test('air war: an intercept commits, flies to the predicted point and engages', () => {
   const S = quietWar();
   const b = S.byId.ab_fwd, r = S.roster.find(x => x.base === b.id && x.kind === 'ftr' && x.st === 'ready');
@@ -2005,7 +2018,7 @@ test('units: the new short-range systems shoot down a drone swarm on the Test ra
     if (type === 'idl') assert(r.st.ours / r.sys.kills < 0.1, `interceptor drones cost ${U.money(r.st.ours / r.sys.kills)} a kill`);
     if (type === 'dgun' || type === 'mlaser') assert(r.st.ours === 0, `${type} spent missiles`);
   }
-});
+}, true);
 test('units: the mobile medium-range launcher shoots down strike aircraft, then moves', () => {
   const S = range(), T = S.range.target;
   const u = IC.rangeAddUnit(S, 'mrmob', T.x + 20, T.y), x0 = u.x, y0 = u.y;
@@ -2173,7 +2186,7 @@ test('career: a scripted player builds the national airport and plays through Ac
   assert((st.actT - t0) / 3600 >= IC.ACT1_MIN_H, `Act I lasted only ${((st.actT - t0) / 3600).toFixed(1)} game hours: ${L}`);
   assert(S.av.deals.some(d => d.honoured) && S.budget > 1000, `no deal honoured, or the treasury ran low (${U.money(S.budget)})`);
   assert(IC.bases(S).filter(b => b.kind === 'airport').length >= 2 && S.av.airlines.length >= 4, 'no second airport, or few airlines');
-}, true);
+}, 'long');
 test('career: from Act III a day at zero confidence replaces you; before, it cannot', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   S.story.standing = 0; run(S, 0.5);
@@ -2311,7 +2324,7 @@ test('quick war: a sensible commander has two layers over what matters by the fi
   assert(cov >= 0.75, `radars see only ${U.pct(cov)} of the hostile border at the end of day 2`);
   // money stays meaningful: running costs take most of the income by then
   assert(S.budget >= 0 && S.upkeep > S.income * 0.5, `treasury ${U.money(S.budget)}, income ${U.money(S.income)}/h against running costs ${U.money(S.upkeep)}/h`);
-}, true);
+}, 'long');
 test('sandbox: runs four hours', () => {
   const S = IC.newGame({ seed: 99, mode: 'sandbox' });
   run(S, 4);
@@ -2359,7 +2372,7 @@ test('recorder: keeps the last 15 minutes of an engagement, with height, within 
   const stepMs = (performance.now() - t0) / (5 * 60 * 4), recMs = IC.recCost(S2) / 2;   // the recorder samples every other step
   assert(IC.recTracks(S2).length > 5 && recMs < Math.max(0.1, stepMs * 0.08), `sandbox: ${IC.recTracks(S2).length} tracks, the recorder costs ${recMs.toFixed(3)} ms a step against ${stepMs.toFixed(2)} ms for the step`);
   assert(!Object.keys(S2).includes('rec'), 'the recording would go into a save');
-});
+}, false, 'alone');
 test('replay: the game runs headless without three.js, and every aircraft, threat and unit has a model', () => {
   assert(typeof THREE === 'undefined' && typeof window.THREE === 'undefined', 'three.js leaked into the headless game');
   assert(!IC.replayOpen && !IC.modelTop, 'the replay window or its drawing is loaded headless');
@@ -2373,6 +2386,97 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
 });
 
+/* ---------- engine health ---------- */
+test('engine: a game built in stages is the game built at once, and it reports every stage in order', () => {
+  const opts = { seed: 777, mode: 'story', preset: 'network', hour: 7 };
+  IC.seedRandom(9); const A = IC.newGame(opts);
+  IC.seedRandom(9); const g = IC.newGameSteps(opts), seen = [];
+  let r; while (!(r = g.next()).done) seen.push(r.value);
+  const B = r.value;
+  const order = Object.keys(IC.LOAD_STAGES).filter(k => k !== 'done');
+  assert(seen.join() === order.join(), `stages ${seen.join(', ')}, expected ${order.join(', ')}`);
+  assert(order.every((k, i) => !i || IC.LOAD_STAGES[k] > IC.LOAD_STAGES[order[i - 1]]), 'the stages do not add up in order');
+  const sig = S => [S.world.cities.map(c => c.x + ',' + c.y + ',' + c.blocks.length).join(';'), S.world.edges.length, S.infra.length, S.units.length,
+    S.traffic.links.length, S.av.tails.length, S.budget.toFixed(3)].join('|');
+  assert(sig(A) === sig(B), 'the game built in stages differs from the one built at once');
+}, true);
+test('radar: sensors asked by grid cell detect exactly what asking every sensor detects', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign', hour: 10 });
+  const c = IC.cap(S);
+  for (let i = 0; i < 12; i++) IC.spawnThreat(S, 'jdr', c.x + 900 + i * 40, c.y - 600 + i * 30, { route: [{ x: c.x, y: c.y }], aim: { x: c.x, y: c.y } });
+  for (let i = 0; i < 6; i++) IC.spawnThreat(S, 'lacm', c.x + 2500, c.y - 300 + i * 200, { route: [{ x: c.x, y: c.y }], aim: { x: c.x, y: c.y } });
+  let n = 0, seen = 0;
+  for (let k = 0; k < 40; k++) {
+    IC.step(S, 0.25);
+    IC.sense(S, 0.25);
+    for (const t of S.threats) {
+      if (t.dead || t.notchT > 0) continue;
+      const all = S.sensors.some(s => IC.detects(s, t));
+      assert(all === t.inView, `TN ${t.tn || t.id} (${t.type}): every sensor says ${all}, the grid says ${t.inView}`);
+      n++; if (all) seen++;
+    }
+  }
+  assert(n > 1000 && seen > 50, `too few tracks to be a real test (${n}, ${seen} seen)`);
+});
+test('airport: a parked airliner held on the ground is fuelled once, not again at every try', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const parkedAt = a => S.av.tails.filter(t => t.at === a.id && t.where === 'stand').length;
+  let ap = null;
+  for (let k = 0; k < 6 && !ap; k++) { run(S, 0.25); ap = IC.bases(S).find(b => b.kind === 'airport' && b.parts && b.parts.filter(p => p.kind === 'runway').length === 1 && parkedAt(b) > 0); }
+  assert(ap, 'no airliner parked at an airport with one runway');
+  S.story.del.eng = false; ap.autoRepair = false;
+  const rw = ap.parts.find(p => p.kind === 'runway'), q = IC.rwAt(rw, 0.5);
+  IC.detonate(S, q.x, q.y, 120, { d: { code: 'TEST' } });
+  let draws = 0; const take = IC.aptTakeFuel;
+  IC.aptTakeFuel = function (a, n, S2) { const ok = take.apply(this, arguments); if (S2 === S && a === ap && ok) draws++; return ok; };
+  const parked = parkedAt(ap);
+  try { run(S, 2); } finally { IC.aptTakeFuel = take; }
+  assert(draws <= parked, `${draws} fuel draws for ${parked} parked airliners that could not leave`);
+}, true);
+test('airport: an apron with airliners parked on it cannot be bulldozed, and says why', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  run(S, 0.5);
+  const ap = IC.bases(S).find(b => b.parts && IC.aptStands(b).some(s => s.occ && S.av.tails.some(t => t.id === s.occ)));
+  assert(ap, 'no airport with a parked airliner');
+  const s = IC.aptStands(ap).find(x => x.occ && S.av.tails.some(t => t.id === x.occ)), apron = ap.parts.find(p => p.id === s.apron);
+  const lost = () => S.av.tails.filter(t => t.where === 'lost').length, l0 = lost();
+  assert(/parked on it/.test(IC.aptRemoveBlock(S, ap, apron)), 'no reason given for keeping the apron');
+  assert(!IC.aptRemove(S, ap, apron.id) && ap.parts.includes(apron), 'the apron was bulldozed with aircraft on it');
+  run(S, 0.1);
+  assert(lost() === l0, 'aircraft were lost');
+}, true);
+test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  run(S, 1 / 3);
+  let r = null, tl = null;
+  for (const rt of S.av.routes) {
+    const ts = S.av.tails.filter(t => t.route === rt.id && t.where !== 'lost');
+    const air = ts.find(t => t.where === 'air' && t.track && t.track.toApt);
+    if (air) { r = rt; tl = air; for (const t of ts) if (t !== air) { t.where = 'lost'; t.retired = true; } rt.n = 1; break; }
+  }
+  assert(tl, 'no airliner in the air towards one of our airports');
+  const al = S.av.airlines.find(a => a.id === r.al);
+  for (const x of S.av.routes) if (x.al === al.id && x !== r) x.st = 'cut';
+  al.sat = 5; al.lowT = 5; S.av.hourT = 3599.5;
+  IC.step(S, 0.5);
+  assert(r.st === 'cut', 'the airline kept the route');
+  for (let i = 0; i < 6 * 7200 && tl.where !== 'lost'; i++) IC.step(S, 0.5);
+  assert(tl.where === 'lost', `${tl.cs} is still '${tl.where}' six hours after its route was dropped`);
+  assert(!IC.aptStands(S.byId[tl.at]).some(s => s.occ === tl.id), `${tl.cs} still holds a stand`);
+}, true);
+test('air defence: a laser stops burning its target when weapons are set to Hold', () => {
+  const S = IC.newGame({ seed: 7, mode: 'range' }), T = S.range.target;
+  const u = IC.rangeAddUnit(S, 'laser', T.x, T.y);
+  S.ad.roe = 'free';
+  IC.rangeSpawn(S, { what: 'owa', n: 1, brg: 90, km: 12, alt: '' });
+  let t = null;
+  for (let i = 0; i < 4 * 240 && !t; i++) { IC.step(S, 0.25); if (u.beam && !u.beam.dead) t = u.beam; }
+  assert(t, `the laser never engaged (${u.why})`);
+  S.ad.roe = 'hold';
+  const hp = t.hp;
+  for (let i = 0; i < 40; i++) IC.step(S, 0.25);
+  assert(!t.dead && t.hp === hp && u.beam !== t, `the laser kept burning TN ${t.tn} under Hold (hp ${hp.toFixed(2)} → ${t.hp.toFixed(2)})`);
+});
 /* ---------- saving and loading ---------- */
 const CP = require('../careerplayer.js');
 const dice = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
@@ -2448,14 +2552,96 @@ test('save: a save from another version of the map generator, or of the game, is
 });
 
 /* ---------- run ---------- */
-let pass = 0, fail = 0;
-const t00 = Date.now();
-for (const t of tests) {
-  if (filter && !t.name.includes(filter)) continue;
-  if (quick && t.slow) continue;
+const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
+/* run one test; what it prints is kept and shown under its result line */
+function runOne(t) {
+  const out = [], log = console.log, on = IC.on, offs = [];
+  console.log = (...a) => out.push(a.join(' '));
+  // listeners a test adds go when it ends: they hold its game, which would otherwise stay in memory
+  IC.on = fn => { const off = on(fn); offs.push(off); return off; };
+  IC.seedRandom(seedOf(t.name));
   const t0 = Date.now();
-  try { t.fn(); pass++; console.log(`  ok    ${t.name}  (${((Date.now() - t0) / 1000).toFixed(1)} s)`); }
-  catch (e) { fail++; console.log(`  FAIL  ${t.name}\n        ${e.stack.split('\n').slice(0, 3).join('\n        ')}`); }
+  let err = null;
+  try { t.fn(); } catch (e) { err = e.stack.split('\n').slice(0, 3).join('\n        '); }
+  console.log = log; IC.seedRandom(); IC.on = on;
+  for (const off of offs) off();
+  return { name: t.name, s: (Date.now() - t0) / 1000, err, out };
 }
-console.log(`\n${pass} passed, ${fail} failed in ${((Date.now() - t00) / 1000).toFixed(0)} s`);
-process.exit(fail ? 1 : 0);
+const show = r => {
+  console.log(r.err ? `  FAIL  ${r.name}\n        ${r.err}` : `  ok    ${r.name}  (${r.s.toFixed(1)} s)`);
+  for (const l of r.out) console.log(l);
+};
+
+if (process.env.IC_TEST_WORKER) {
+  // a worker: run the tests it is sent, one unit (a test or a group) at a time
+  // (a worker that has grown large is replaced by a fresh one: a test that keeps its game alive cannot starve the rest)
+  process.on('message', m => { for (const i of m.is) process.send(Object.assign(runOne(tests[i]), { i })); process.send({ done: true, big: process.memoryUsage().heapUsed > 1.5e9 }); });
+} else {
+  const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
+  const timesFile = path.join(__dirname, 'times.json');
+  let times = {}; try { times = JSON.parse(fs.readFileSync(timesFile, 'utf8')); } catch (e) { /* first run: list order */ }
+  const chosen = tests.map((t, i) => Object.assign({ i }, t)).filter(t => (!filter || t.name.includes(filter)) &&
+    (slowOnly ? t.slow === 'long' : t.slow !== 'long' && !(quick && t.slow)));
+  // units: a group runs as one; longest first so the long ones do not start last
+  const units = [], byGroup = new Map();
+  for (const t of chosen) {
+    if (t.group && t.group !== 'alone' && byGroup.has(t.group)) { byGroup.get(t.group).push(t); continue; }
+    const u = [t]; units.push(u); if (t.group) byGroup.set(t.group, u);
+  }
+  const est = u => u.reduce((s, t) => s + (times[t.name] || 5), 0);
+  units.sort((a, b) => est(b) - est(a));
+  // a shard: the units dealt out longest first to whichever share is shortest so far
+  const sh = (args.find(a => a.startsWith('--shard=')) || '').slice(8).split('/').map(Number);
+  if (sh.length === 2 && sh[1] > 1) {
+    const load = new Array(sh[1]).fill(0), mine = [];
+    for (const u of units) { const k = load.indexOf(Math.min(...load)); load[k] += est(u); if (k === sh[0] - 1) mine.push(u); }
+    units.length = 0; units.push(...mine);
+  }
+  if (!units.length) { console.log('No tests match.'); process.exit(1); }
+  const again = [];   // timing tests that failed beside the others, to time alone at the end
+  const jobs = Math.max(1, Math.min(units.length, +process.env.IC_JOBS || Math.min(8, os.cpus().length, Math.floor(os.totalmem() / 1.6e9))));
+  const res = [], t00 = Date.now();
+  const finish = () => {
+    const fail = res.filter(r => r.err).length;
+    if (args.includes('--times')) {
+      for (const r of res) if (!r.err) times[r.name] = Math.round(r.s * 10) / 10;
+      const sorted = {}; for (const t of tests) if (times[t.name] != null) sorted[t.name] = times[t.name];
+      fs.writeFileSync(timesFile, JSON.stringify(sorted, null, 1) + '\n');
+    }
+    console.log(`\n${res.length - fail} passed, ${fail} failed in ${((Date.now() - t00) / 1000).toFixed(0)} s` + (jobs > 1 ? ` (${jobs} workers)` : ''));
+    process.exit(fail ? 1 : 0);
+  };
+  if (jobs === 1) {
+    for (const u of units) for (const t of u) { const r = runOne(tests[t.i]); res.push(r); show(r); }
+    finish();
+  } else {
+    let live = 0;
+    const done = () => {
+      if (!again.length) return finish();
+      console.log(`\n  timing again, alone: ${again.map(t => t.name).join('; ')}`);
+      units.push(again.splice(0)); spawn();
+    };
+    const result = (m, t) => {
+      if (m.err && t && t.group === 'alone' && !t.retried) { t.retried = true; again.push(t); console.log(`  (slow beside the other workers: ${m.name})`); return; }
+      res.push(m); show(m);
+    };
+    const spawn = () => {
+      const w = cp.fork(__filename, args, { env: Object.assign({}, process.env, { IC_TEST_WORKER: '1' }) });
+      let cur = null;
+      live++;
+      const next = () => { cur = units.shift(); if (cur) w.send({ is: cur.map(t => t.i) }); else w.disconnect(); };
+      w.on('message', m => {
+        if (!m.done) { result(m, cur.find(t => t.i === m.i)); cur = cur.filter(t => t.i !== m.i); return; }
+        if (m.big && units.length) { cur = null; w.disconnect(); spawn(); } else next();
+      });
+      w.on('exit', code => {
+        // a worker that dies takes its current tests with it: they fail
+        for (const t of cur || []) { const r = { name: t.name, s: 0, err: `the test worker stopped (exit code ${code})`, out: [] }; res.push(r); show(r); }
+        cur = null;
+        if (--live === 0) done();
+      });
+      next();
+    };
+    for (let k = 0; k < jobs; k++) spawn();
+  }
+}
