@@ -271,7 +271,7 @@ ui.techOpens = t => Object.entries(IC.UNITS).filter(([, d]) => d.tech === t.id &
    looks at it, and arrives with a short card. Kept in the interface, not the game state. */
 const unitOk = (st, t) => { const d = IC.UNITS[t]; return !d.callin && !st.range && (!st.story || IC.storyAllows(st, t)) && IC.hasTech(st, d.tech); };
 ui.ROOM_INFO = {
-  aviation: 'Airlines, their route requests, our airports and the airspace.',
+  aviation: 'Operations at our airports, airline deals, the airlines, our airports and the airspace.',
   staff: 'Your career: what each act opens up, your delegates and what command points buy.',
   economy: 'The treasury, the weekly statement, city growth, roads and loans.',
   air: 'The air wing: flights at each base, standing patrols and new aircraft.',
@@ -604,7 +604,7 @@ function firstRun() {
   ui.firstRunDone = S;
   if (S.story) IC.hint.tour('career1', [
     { el: 'goals', title: 'Your goals', text: 'This act\'s goals, with how far along each one is. Click a goal to see where it is on the map.' },
-    { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' route requests. Keys are on each button.' },
+    { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' deals. Keys are on each button.' },
     { el: 'speed', title: 'Time', text: 'The game runs at 1×: ten game seconds a second. Space pauses, 1–6 set the speed, S skips ahead until something needs you.' },
     { el: 'menu', title: 'The menu', text: 'Esc backs out of whatever is open; with nothing open it brings up the menu: settings, the Guide and quitting.' }
   ]);
