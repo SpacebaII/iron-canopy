@@ -323,6 +323,16 @@ function drawRanges(S, px, now) {
 function vehicles(S, u, px, now) {
   const d = u.d, n = d.weapon === 'sam' ? (u.mags[0] ? Math.min(6, Math.max(2, Math.ceil(u.mags[0].max / 2))) : 2) : d.sensor ? 1 : d.gun || d.weapon === 'strike' ? 2 : d.logi ? 3 : 1;
   const s = 0.9;
+  // from the regional zoom in, the unit stands as its own vehicles: launchers round the site, the radar vehicle beside them
+  if (IC.modelTop && cam.z > 1.6) {
+    const model = IC.modelOfUnit(u.type), k = IC.unitVehicles(d), fixed = d.mob === 'fixed';
+    for (let i = 0; i < k; i++) {
+      const a = (i / k) * 6.283 + (u.id.charCodeAt(1) % 7), r = k > 1 ? 4.5 : 0;
+      IC.modelTop(ctx, model, u.x + Math.cos(a) * r + 6, u.y + Math.sin(a) * r + 5, fixed ? 0 : a + 1.2, { minPx: 14, shadow: 0.03, now: u.radarOn ? now : 0 });
+    }
+    if (d.weapon === 'sam' && !fixed && d.fc && !d.fc.passive) IC.modelTop(ctx, 'mr3d', u.x - 6, u.y + 5, 2.4, { minPx: 14, shadow: 0.03, now: u.radarOn ? now : 0 });
+    return;
+  }
   for (let i = 0; i < n; i++) {
     const a = (i / n) * 6.283 + (u.id.charCodeAt(1) % 7), r = n > 1 ? 4.5 : 0;
     const x = u.x + Math.cos(a) * r + 6, y = u.y + Math.sin(a) * r + 5;
@@ -490,7 +500,12 @@ function drawTrack(S, t, px, now) {
   const close = cam.z > 0.9 && t.klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
   const s = px * (t.d.cls === 'air' ? 1.3 : 1.05);
   let col;
-  if (close && t.acType && cam.z > 2.5 && (aff === 'A' || aff === 'N')) {
+  const mk = close && cam.z > 2.5 && IC.modelTop ? IC.modelOfThreat(t) : null;
+  if (mk) {
+    // close in, a track we can class is drawn as what it is; an unknown or suspect one keeps its identity colour as an outline
+    col = AIRCOL[aff];
+    IC.modelTop(ctx, mk, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), { livery: t.livery, shadow: Math.min(3, t.alt * 0.25), minPx: 12, outline: aff === 'S' || aff === 'U' ? col : null, now });
+  } else if (close && t.acType && cam.z > 2.5 && (aff === 'A' || aff === 'N')) {
     col = AIRCOL[aff];
     IC.drawPlane(ctx, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), t.acType, t.livery, { shadow: Math.min(3, t.alt * 0.25), minPx: 12 });
   } else if (close) {
@@ -537,8 +552,10 @@ function drawAir(S, a, px, now) {
   shadow(a.x, a.y, a.alt, px, a.kind === 'aew' || a.kind === 'cargo' ? 6 : 4);
   if (cam.z > 0.9) {
     const kind = a.kind === 'ftr' ? 'fighter' : a.kind === 'aew' || a.kind === 'cargo' ? 'transport' : a.kind === 'heli' || a.kind === 'atk' ? 'heli' : 'drone';
+    const model = cam.z > 2.5 && IC.modelTop ? IC.modelOfAir(a) : null;
     for (let i = 0; i < (a.hp || 1); i++) {
       const ox = i ? -Math.cos(h) * 10 * px - Math.sin(h) * 8 * px : 0, oy = i ? -Math.sin(h) * 10 * px + Math.cos(h) * 8 * px : 0;
+      if (model) { IC.modelTop(ctx, model, a.x + ox, a.y + oy, h, { minPx: 12, shadow: Math.min(3, a.alt * 0.25), now }); continue; }
       silhouette(ctx, kind, a.x + ox, a.y + oy, h, Math.max(0.3 * (kind === 'transport' ? 1.6 : 1), px * 1.3), 'rgba(170,225,255,0.95)', 'rgba(0,20,30,0.8)');
       if (kind === 'heli') { ctx.save(); ctx.translate(a.x + ox, a.y + oy); ctx.rotate(now * 20); ctx.strokeStyle = 'rgba(220,240,255,0.5)'; ctx.lineWidth = 0.6 * px; ctx.beginPath(); ctx.moveTo(-8 * px, 0); ctx.lineTo(8 * px, 0); ctx.moveTo(0, -8 * px); ctx.lineTo(0, 8 * px); ctx.stroke(); ctx.restore(); }
     }

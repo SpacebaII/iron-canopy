@@ -221,7 +221,7 @@ IC.rangePanel = function (S) {
     <p class="hint" style="margin:.2rem 0">Place our systems from the arsenal (they arrive set up and full). Send threats from a bearing and distance at the target ⊕; click Target, then the map, to move it.</p>
     <div class="rl" style="flex-wrap:wrap;gap:.3rem"><select data-act="rangeForm" name="what" style="max-width:13rem">${what}</select>
       ${inp('n', F.n, 3, 'How many')}<span class="muted">×</span> from ${inp('brg', F.brg, 3, 'Bearing they come from, degrees from north')}° at ${inp('km', F.km, 3.2, 'Distance, km')} km · height ${inp('alt', F.alt, 2.6, 'Height in km; blank for the usual height')} km</div>
-    <div class="acts"><button class="act pri" data-act="rangeLaunch">Launch</button><button class="act" data-act="rangeTarget">Target</button><button class="act" data-act="rangeReset" title="Play the scenario again from the start">Reset</button><button class="act" data-act="rangeNew" title="Clear everything and start a new scenario">New</button></div>
+    <div class="acts"><button class="act pri" data-act="rangeLaunch">Launch</button><button class="act" data-act="rangeTarget">Target</button><button class="act" data-act="rangeReset" title="Play the scenario again from the start">Reset</button><button class="act" data-act="rangeNew" title="Clear everything and start a new scenario">New</button>${IC.replayGallery ? `<button class="act" data-act="rangeGallery" title="Every model in 3D and from above">Models</button>` : ''}</div>
     <div class="sec"><h3 class="sh">Results <em>${st.launched} threats</em></h3>
       <div class="kv"><span>Shots</span><b>${st.shots}</b><span>Kills</span><b>${st.kills}</b><span>Leakers</span><b class="${st.leaks ? 'hostile' : ''}">${st.leaks}</b><span>Missiles spent</span><b>${mun || '–'}</b><span>Cost exchange</span><b>${U.money(st.ours)} spent · ${U.money(st.theirs)} shot down${st.exchange != null ? ` · ${st.exchange.toFixed(1)}:1` : ''}</b></div>
       ${sys ? `<table class="t"><tr><th>System</th><th class="r">Shots</th><th class="r">Kills</th><th class="r">Pk</th></tr>${sys}</table>` : ''}</div>
@@ -236,6 +236,7 @@ IC.rangeAct = function (S, a, v) {
   else if (a === 'rangeReset') IC.rangeReset(S);
   else if (a === 'rangeNew') IC.rangeNew(S);
   else if (a === 'rangeTarget') IC.setMode({ kind: 'rangeTarget' });
+  else if (a === 'rangeGallery') IC.replayGallery(S);
   else if (a === 'rangeSave') { const name = (typeof prompt === 'function' && prompt('Name this scenario', `Scenario ${Object.keys(store.get()).length + 1}`)) || ''; if (name) { const all = store.get(); all[name] = IC.rangeExport(S); store.set(all); } }
   else if (a === 'rangeLoad') { const all = store.get(); if (all[v]) IC.rangeImport(S, all[v]); }
   else if (a === 'rangeExport') { const j = IC.rangeExport(S); try { navigator.clipboard.writeText(j); IC.toast(S, 'info', 'RANGE', 'Scenario copied.'); } catch (e) { if (typeof prompt === 'function') prompt('Copy the scenario', j); } }
