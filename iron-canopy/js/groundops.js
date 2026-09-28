@@ -1138,7 +1138,7 @@ IC.milDepart = function (S, b, a) {
   const r = a.r, sn = IC.milStartNode(S, b, r);
   if (!sn) return false;
   const type = IC.AIRKIND_TYPE[r.kind];
-  const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false }) : null, startT: sn.startT * (r.qra ? 0.5 : 1), mil: true, scramble: !!r.qra, who: r.name, flight: a, n: a.n,
+  const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false }) : null, startT: IC.alertStartT ? IC.alertStartT(r, sn.startT) : sn.startT, mil: true, scramble: IC.alertOf ? IC.alertOf(r) < 30 : !!r.qra, who: r.name, flight: a, n: a.n,
     onAir: mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); },
     onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
   if (!m) return false;

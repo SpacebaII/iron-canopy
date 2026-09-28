@@ -269,26 +269,48 @@ IC.TECH_CATS = [
 ];
 
 /* ---------- Air force ----------
-   A flight is n aircraft that fly together. turn = turnaround on the ground. */
+   A flight is n aircraft that fly together. turn = turnaround on the ground. spd, dash in world units a game second;
+   endur in seconds at cruise (a dash burns fuel IC.DASH_BURN times as fast). alt: cruise height in km. */
 IC.AIR_KIND = {
-  ftr:   { name: 'Fighter flight', short: 'FTR', n: 2, spd: 2.6, dash: 3.3, endur: 7200, turn: 1200, buy: 350, cm: 8, runway: true,
-           roles: ['cap', 'intercept', 'vid', 'strike'], loads: ['aa', 'strike'] },
-  ucav:  { name: 'Strike drone', short: 'UCAV', n: 1, spd: 0.6, dash: 0.7, endur: 64800, turn: 1800, buy: 90, cm: 0, runway: true,
+  ftr:   { name: 'Fighter flight', short: 'FTR', n: 2, spd: 2.6, dash: 3.3, endur: 7200, turn: 1200, buy: 350, cm: 8, runway: true, alt: 9,
+           roles: ['cap', 'intercept', 'vid', 'strike', 'escort'], loads: ['aa', 'strike'] },
+  ucav:  { name: 'Strike drone', short: 'UCAV', n: 1, spd: 0.6, dash: 0.7, endur: 64800, turn: 1800, buy: 90, cm: 0, runway: true, alt: 5,
            roles: ['isr', 'strike'] },
-  aew:   { name: 'AEW aircraft', short: 'AEW', n: 1, spd: 1.6, endur: 21600, turn: 2400, buy: 500, cm: 4, runway: true, roles: ['aew'] },
-  isr:   { name: 'ISR drone', short: 'ISR', n: 1, spd: 0.8, endur: 43200, turn: 1800, buy: 60, cm: 0, runway: true, roles: ['isr'] },
-  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 6, cm: 6, roles: [] },
-  cargo: { name: 'Cargo aircraft', short: 'CGO', n: 1, spd: 1.7, endur: 36000, turn: 1800, buy: 60, cap: 40, cm: 4, runway: true, roles: [] }
+  aew:   { name: 'AEW aircraft', short: 'AEW', n: 1, spd: 1.6, endur: 21600, turn: 2400, buy: 500, cm: 4, runway: true, alt: 9, roles: ['aew'] },
+  tkr:   { name: 'Tanker', short: 'TKR', n: 1, spd: 1.6, endur: 36000, turn: 2400, buy: 420, cm: 2, runway: true, alt: 8, roles: ['tanker'], give: 14400 },
+  isr:   { name: 'ISR drone', short: 'ISR', n: 1, spd: 0.8, endur: 43200, turn: 1800, buy: 60, cm: 0, runway: true, alt: 5, roles: ['isr'] },
+  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 6, cm: 6, alt: 0.15, roles: [] },
+  cargo: { name: 'Cargo aircraft', short: 'CGO', n: 1, spd: 1.7, endur: 36000, turn: 1800, buy: 60, cap: 40, cm: 4, runway: true, alt: 6, roles: [] }
+};
+IC.DASH_BURN = 1.6;
+/* our fighters' missiles. rows: [target height km, reach km head-on from a fighter at 10 km]; a lower shooter and a
+   target flying away both shorten it (IC.aamReach in air.js). pk: kill chance close in */
+IC.AAMS = {
+  mrm: { name: 'Radar missile', short: 'MRM', seeker: 'ARH', spd: 13, pk: 0.72, rows: [[0.03, 20], [0.5, 35], [4, 45], [15, 45], [20, 30]] },
+  srm: { name: 'Heat-seeking missile', short: 'SRM', seeker: 'IR', spd: 10, pk: 0.8, ircm: 0.5, rows: [[0.03, 5], [0.5, 9], [6, 12], [15, 12], [18, 8]] }
 };
 IC.LOADOUTS = {
-  aa:     { name: 'Air superiority', aam: 4, gbu: 0, desc: '4 air-to-air missiles per aircraft.' },
-  strike: { name: 'Strike', aam: 2, gbu: 2, desc: '2 guided bombs and 2 air-to-air missiles per aircraft.' }
+  aa:     { name: 'Air superiority', aam: 4, srm: 2, gbu: 0, desc: '4 radar and 2 heat-seeking missiles per aircraft.' },
+  strike: { name: 'Strike', aam: 2, srm: 0, gbu: 2, desc: '2 guided bombs and 2 radar missiles per aircraft.' }
 };
+/* how quickly a flight gets airborne, and what waiting costs its crews. start: engine start in seconds (null keeps
+   the base's own time for where the aircraft is parked). fat: crew fatigue gained an hour on the ground (negative
+   rests them); 1 is exhausted */
+IC.ALERT = {
+  5:  { name: '5 min', start: 60, k: null, fat: 0.07, desc: 'Crews sit in the cockpits: airborne within 5 minutes. Tiring: about 12 hours before they must rest.' },
+  15: { name: '15 min', start: null, k: 0.6, fat: 0.025, desc: 'Crews wait in the alert room next to the aircraft. Mildly tiring.' },
+  30: { name: '30 min', start: null, k: 1, fat: -0.06, desc: 'Normal duty on the base. Crews rest.' }
+};
+IC.FATIGUE = { fly: 0.1, tired: 0.7, spent: 1 };
+/* losses: a damaged aircraft is repaired, a lost one replaced (if a pilot is free); pilots who eject over our
+   territory are picked up, and the schools train more */
+IC.AIR_LOSS = { repair: 4 * 3600, replace: 8 * 3600, replaceK: 0.5, eject: 0.7, rescue: 2 * 3600, train: 24 * 3600, damaged: 0.25, pilots: 4 };
 IC.GBU = { name: 'Guided bomb', short: 'GBU', spd: 2.5, dmg: 40, strike: true };
 IC.TASK_KIND = {
   cap:       { name: 'Combat air patrol', roles: ['ftr'], point: true, radius: 550 },
   isr:       { name: 'Reconnaissance', roles: ['isr', 'ucav'], point: true, radius: 450 },
-  aew:       { name: 'Airborne early warning', roles: ['aew'], point: true, radius: 3200 }
+  aew:       { name: 'Airborne early warning', roles: ['aew'], point: true, radius: 3200 },
+  tanker:    { name: 'Tanker track', roles: ['tkr'], point: true, radius: 250 }
 };
 /* ---------- Air bases ----------
    Facilities on each base. Damage matters: a cratered runway grounds jets, a lost hangar takes its aircraft with it. */
