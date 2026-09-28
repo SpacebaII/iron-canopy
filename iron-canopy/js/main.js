@@ -420,6 +420,7 @@ function onAct(e) {
     case 'aptFee': { const ap = selAp(); if (ap) { IC.avSetFee(S, ap, +v); IC.log(S, 'info', 'AVIATION', `${ap.name}: charges set to ${Math.round(+v * 100)}%.`); } break; }
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
     case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
+    case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
