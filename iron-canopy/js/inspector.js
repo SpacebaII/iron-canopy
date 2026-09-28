@@ -446,11 +446,11 @@ function opsTab(b, st) {
 function buildPalette(b, civil) {
   const m = S.mode2 && S.mode2.kind === 'build' && S.mode2.ap === b ? S.mode2 : null, P = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
   const kinds = IC.APART_ORDER.filter(k => civil ? !IC.APART[k].mil : true);
-  const btn = (k, name, sub, desc) => `<button class="pal ${m && m.part === k ? 'on' : ''}" data-act="build" data-v="${k}" title="${esc(desc)}"><b>${esc(name)}</b><small>${sub}</small></button>`;
+  const btn = (k, name, sub, desc) => { const lock = IC.aptLockWhy(S, k); return `<button class="pal ${m && m.part === k ? 'on' : ''}" data-act="build" data-v="${k}" title="${esc(lock || desc)}" ${lock ? 'disabled' : ''}><b>${esc(name)}</b><small>${lock ? ui.icon('lock', 'sm') + ' research' : sub}</small></button>`; };
   const parts = kinds.map(k => { const D = IC.APART[k]; return btn(k, D.name, U.money(D.cost) + (D.line ? '/100 m' : D.area ? '/ha' : ''), D.desc); }).join('');
   const tools = Object.entries(IC.BTOOLS).map(([k, T]) => btn(k, T.name, k === 'stand' ? '₭0.5M each' : 'several parts', T.desc)).join('');
   const mat = m ? m.mat : P.mat, size = m ? m.size : P.size, zone = m ? m.zone : P.zone;
-  const opts = `<h3 class="sh">Pavement <em>cost ×${IC.PAVE[mat || 'conc'].cost} · carries ${IC.PAVE[mat || 'conc'].t} t</em></h3>${seg('bpref', 'mat:' + (mat || 'conc'), IC.PAVE_ORDER.map(k => ['mat:' + k, IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), '', `${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost and build time ×${IC.PAVE[k].cost} and ×${IC.PAVE[k].build}.`]))}
+  const opts = `<h3 class="sh">Pavement <em>cost ×${IC.PAVE[mat || 'conc'].cost} · carries ${IC.PAVE[mat || 'conc'].t} t</em></h3>${seg('bpref', 'mat:' + (mat || 'conc'), IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return ['mat:' + k, (lock ? ui.icon('lock', 'sm') + ' ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), lock ? 'dim' : '', `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost and build time ×${IC.PAVE[k].cost} and ×${IC.PAVE[k].build}.`]; }))}
     <h3 class="sh">Zone <em>for aprons and ramps</em></h3>${seg('bpref', 'zone:' + (zone || 'auto'), [['zone:auto', 'Auto', '', 'From what is next to it: terminal, cargo terminal, shelters']].concat(Object.entries(IC.ZONES).map(([k, z]) => ['zone:' + k, zoneWord(k), '', `${z.name} zone: only ${z.name.toLowerCase()} aircraft park here`])))}
     ${standOpts(m, P, size)}`;
   return `<div class="palette">${parts}</div><h3 class="sh">Tools for big airports</h3><div class="palette">${tools}</div>${opts}
@@ -500,6 +500,8 @@ function apart(sel) {
   if (w && w.stages) rows.push(['Work', `${esc(w.stages[Math.min(w.si, w.stages.length - 1)].name)} · ${U.money(w.spent || 0)} of ${U.money(w.cost)} spent${w.wait ? ` · <span class="amber">${esc(w.wait)}</span>` : ''}`]);
   if (p.linked === false) rows.push(['Taxiway', '<span class="amber">not connected</span>']);
   if (p.burning > 0) rows.push(['Fire', '<span class="hostile">burning</span>']);
+  const now = IC.partNow ? IC.partNow(S, ap, p) : '';
+  if (now) rows.unshift(['Now', esc(now)]);
   const hp = p.hp / p.max;
   return head(`<span class="badge friend">${ui.icon('part')}</span>`, p.kind === 'runway' && p.name ? p.name : D.name, esc(ap.name), !p.built ? `Building ${U.pct(p.prog || 0)}` : hp <= 0.25 ? 'Destroyed' : hp < 1 ? 'Damaged' : 'Intact', !p.built ? 'busy' : hp <= 0.25 ? 'bad' : hp < 1 ? 'busy' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Condition</span>${bar(hp)}<span>${U.pct(hp)}</span></div>${kv(rows)}<p class="hint">${esc(D.desc)}</p>

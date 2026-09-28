@@ -292,6 +292,7 @@ IC.bldStart = function (S, ap, part, pv) {
 /* upgrading a part's pavement: the part is closed while the work runs */
 IC.bldUpgrade = function (S, ap, part, mat) {
   if (!IC.PAVED[part.kind] || !IC.PAVE[mat] || !part.built || IC.paveOf(part) === mat || ap.works.some(w => w.part === part)) return false;
+  if (IC.aptLockWhy(S, part.kind, mat)) { IC.log(S, 'warn', 'BUILD', IC.aptLockWhy(S, part.kind, mat)); return false; }
   const probe = Object.assign({}, part, { mat });
   const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
   if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
@@ -582,6 +583,24 @@ IC.bldSnapBuilding = function (ap, kind, p) {
   return { specs, snap: { kind: 'edge', x: best.x, y: best.y, what: best.what }, text: `faces the ${best.what}${STUB(kind) ? `, with a ${Math.round(U.dist(best.door, best.foot) * 100)} m taxiway to its door` : ', with a service road'}` };
 };
 
+/* service roads for buildings that have none (starting layouts, old games): from the face nearest the pavement */
+IC.aptAutoLinks = function (ap) {
+  for (const p of ap.parts) {
+    if (p.link || IC.SNAP_GAP[p.kind] == null || STUB(p.kind) || p.x == null) continue;
+    let best = null, bd = 3;
+    for (const e of edgesNear(ap, p, 3)) {
+      const L = U.dist(e.a, e.b); if (L < 0.1) continue;
+      const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = U.clamp((p.x - e.a.x) * ux + (p.y - e.a.y) * uy, 0, L);
+      const fx = e.a.x + ux * t, fy = e.a.y + uy * t, off = (p.x - fx) * -uy + (p.y - fy) * ux, side = Math.sign(off) || 1, q = { x: fx - uy * side * e.half, y: fy + ux * side * e.half }, d = U.dist(q, p);
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (!best) continue;
+    const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2, l = IC.rectLocal({ x: p.x, y: p.y, a: p.a || 0 }, best);
+    const face = Math.abs(l.x) / w > Math.abs(l.y) / h ? IC.rectWorld({ x: p.x, y: p.y, a: p.a || 0 }, Math.sign(l.x) * w / 2, 0) : IC.rectWorld({ x: p.x, y: p.y, a: p.a || 0 }, 0, Math.sign(l.y) * h / 2);
+    if (U.dist(face, best) > 0.05) p.link = [face, best];
+  }
+};
+
 const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1 };
 const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1 };
 IC.bldIsArea = t => !!AREA_TOOLS[t];
@@ -745,6 +764,8 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
   const len = LINE_TOOLS[t] && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
   if (out.specs.length) out.text.unshift(`${len ? U.km(len) + ' · ' : ''}${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);
   if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
+  const lock = out.specs.map(sp => IC.aptLockWhy(S, sp.kind, sp.mat || m.mat)).find(Boolean);
+  if (lock) { out.ok = false; out.why = lock; }
   return out;
 };
 const runwayNoise = (S, p) => { const c = { x: (p.a.x + p.b.x) / 2, y: (p.a.y + p.b.y) / 2 }; return IC.noiseOver(S, c.x, c.y, Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x), U.dist(p.a, p.b)); };
@@ -923,6 +944,14 @@ IC.bldMove = function (S, ap, p, x, y, a) {
   return !!was;
 };
 
+/* choosing a pavement: a locked one cannot be chosen until its research is done */
+IC.bldPick = function (S, mat) {
+  const lock = IC.aptLockWhy(S, 'runway', mat);
+  if (lock) { IC.log(S, 'warn', 'BUILD', `${IC.PAVE[mat].name}: ${lock}`); return false; }
+  const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
+  P.mat = mat; if (S.mode2 && S.mode2.kind === 'build') S.mode2.mat = mat;
+  return true;
+};
 /* the airport panel's airport-life buttons (data-act="apl", data-op=...) */
 IC.aplAct = function (S, ap, d) {
   const sel = S.sel && S.sel.kind === 'apart' ? S.sel.ref : null;

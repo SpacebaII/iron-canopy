@@ -866,6 +866,85 @@ test('airport life: an apron stretched by hand takes stands placed by hand, and 
   for (let i = 0; i < 7200 && !air; i++) IC.step(S, 0.5);
   assert(air && !(dep.gmLog || []).includes('push'), `drive-through departure: ${air ? 'pushed back' : 'never took off, phase ' + dep.phase}`);
 });
+test('airport life: an arrival at a remote stand gets buses; one at a gate a jet bridge once researched, else passengers walk', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap], seen = {};
+  const look = () => { for (const s of IC.aptStands(cap)) if (s.svc && s.occ === s.svc.tail) seen[(s.contact ? 'gate:' : 'remote:') + s.svc.kind] = (seen[(s.contact ? 'gate:' : 'remote:') + s.svc.kind] || 0) + 1; };
+  // keep one kind of stand taken at a time, so the arrivals must use the other
+  const only = gate => { for (const s of IC.aptStands(cap)) { if (s.occ === 'x') s.occ = null; if (!s.occ && !!s.contact !== gate) s.occ = 'x'; } };
+  only(false);
+  for (let i = 0; i < 3600 * 3 && !seen['remote:bus']; i++) { IC.step(S, 0.5); if (i % 60 === 0) look(); }
+  only(true);
+  for (let i = 0; i < 3600 * 3 && !seen['gate:walk']; i++) { IC.step(S, 0.5); if (i % 60 === 0) look(); }
+  assert(seen['remote:bus'], `no remote stand was served by bus: ${JSON.stringify(seen)}`);
+  assert(seen['gate:walk'] && !seen['gate:bridge'], `before the research, gates should have passengers walking: ${JSON.stringify(seen)}`);
+  const bus = IC.aptStands(cap).find(s => s.svc && s.svc.kind === 'bus');
+  assert(bus.svc.n >= 1, 'a remote stand got no buses');
+  S.tech.done.add('p_bridge');
+  for (const k in seen) delete seen[k];
+  only(true);
+  for (let i = 0; i < 3600 * 4 && !seen['gate:bridge']; i++) { IC.step(S, 0.5); if (i % 60 === 0) look(); }
+  assert(seen['gate:bridge'], `after the research no gate used a jet bridge: ${JSON.stringify(seen)}`);
+  assert(/gate/.test(IC.partNow(S, cap, cap.parts.find(p => p.kind === 'terminal'))), 'the terminal panel does not say what it is doing');
+});
+test('airport life: a departure stops at the fuel stand, then takes off, and its ground movements are counted', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 11 }); IC.S = S;
+  const cap = S.byId[S.story.cap]; S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(cap, x, y);
+  S.mode2 = IC.bldMode(S, cap, 'fuelpad');
+  IC.clickWorld(P(10, 1.2), 0); IC.clickWorld(P(10, 1.2), 0);
+  const pad = cap.parts.find(p => p.kind === 'fuelpad');
+  assert(pad, 'no fuel stand planned');
+  finishWorks(S, cap); IC.aptStats(S, cap);
+  assert(pad.linked, 'the fuel stand is not connected');
+  // a turboprop fills up at the fuel stand on its way out
+  const s = IC.aptStands(cap).find(x => !x.occ && x.linked !== false);
+  let air = false;
+  const m = IC.gopsDepart(S, cap, { type: 'turbo', node: s.id, stand: s, startT: 0, who: 'TEST 3', tail: { id: 'x' }, onAir: () => { air = true; } });
+  assert(m && m.via && m.via.length === 1, 'the departure plans no stop at the fuel stand');
+  for (let i = 0; i < 7200 && !air; i++) IC.step(S, 0.5);
+  assert(air, `never took off; phase ${m.phase}`);
+  assert((m.gmLog || []).includes('fuel') && m.gm >= 2, `ground movements: ${JSON.stringify(m.gmLog)}`);
+  assert(pad.served && pad.served.length >= 1 && /refuelled/.test(IC.partNow(S, cap, pad)), 'the fuel stand does not count what it served');
+});
+test('airport life: an aircraft due for maintenance is towed to a hangar, stays there a day or more, and comes back', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap];
+  let tl = null;
+  for (let i = 0; i < 7200 && !tl; i++) { IC.step(S, 0.5); tl = S.av.tails.find(t => t.at === cap.id && t.where === 'stand' && t.t > 1500); }
+  assert(tl, 'no aircraft on a stand');
+  tl.legs = 99; tl.mxDue = 1;
+  IC.emit(S, 'tailParked', { tl, ap: cap });
+  assert(tl.mx, 'not scheduled for maintenance although a hangar is free');
+  run(S, 1.5);
+  const h = cap.parts.find(p => p.kind === 'hangar' && (p.inside || []).some(x => x.tl === tl.id));
+  assert(tl.where === 'hangar' && h, `after 90 min the aircraft is ${tl.where}, not in a hangar`);
+  run(S, 22);
+  assert(tl.where === 'hangar', `it left the hangar within a day (${tl.where})`);
+  assert(/maintenance/.test(IC.partNow(S, cap, h)), 'the hangar panel does not say what is inside');
+  // (its stay is up to two and a half days: bring the end forward)
+  const x = h.inside.find(y => y.tl === tl.id);
+  assert(x.until - S.time > 0, 'the stay was shorter than a day');
+  x.until = S.time + 60;
+  run(S, 1.5);
+  assert(tl.where !== 'hangar' && tl.where !== 'lost', `after nearly three days it is still ${tl.where}`);
+});
+test('airport life: a locked material cannot be chosen until its research is done', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap]; S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(cap, x, y);
+  assert(!IC.bldPick(S, 'rconc') && (S.bldPref || {}).mat !== 'rconc', 'reinforced concrete could be chosen before its research');
+  assert(!IC.aptPlanTaxi(S, cap, [P(10, 1.8), P(10, 5)], 0.1, { mat: 'rconc' }), 'a reinforced concrete taxiway was planned before its research');
+  assert(IC.aptLockWhy(S, 'hydrant') && IC.aptLockWhy(S, 'gradar'), 'the hydrant system and ground radar are not locked at the start of the Career');
+  const t = IC.TECH.find(x => x.id === 'p_rconc');
+  assert(t && /Opens: reinforced concrete/.test(t.desc), 'the research does not say which airport item it opens');
+  S.tech.done.add('p_rconc');
+  assert(IC.bldPick(S, 'rconc') && S.bldPref.mat === 'rconc', 'reinforced concrete cannot be chosen after its research');
+  assert(IC.aptPlanTaxi(S, cap, [P(10, 1.8), P(10, 5)], 0.1, { mat: 'rconc' }), 'no reinforced concrete taxiway after the research');
+  // outside the Career every item is open
+  const Q = IC.newGame({ seed: 12345, mode: 'campaign' });
+  assert(!IC.aptLockWhy(Q, 'hydrant'), 'Quick war locks airport items');
+});
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);

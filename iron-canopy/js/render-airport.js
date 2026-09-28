@@ -108,10 +108,14 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     if (z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); g.strokeRect(-box.w / 2, -box.h / 2, box.w, box.h); }
     g.restore();
   }
+  // inside the fence the ground is mown grass: no trees or crops on an airfield, stripes where the mowers went
+  if (box && z > 2) drawField(g, box, px, z);
   for (const rw of by('runway')) {
     const L = IC.rwLen(rw), d = IC.rwDir(rw), c = IC.rwAt(rw, 0.5);
     rect(g, { x: c.x, y: c.y, a: Math.atan2(d.y, d.x) }, L + 3, 3.2, 'rgba(146,158,112,0.35)');
   }
+  // paved surrounds: terminals and sheds stand on a forecourt that meets the apron, hangars open onto a ramp
+  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null) rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)');
   // aprons and other paved areas, tinted by zone
   for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p);
   for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p);
@@ -136,6 +140,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     if (m.dead) continue;
     const air = m.phase === 'final';
     IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8 });
+    // a tug at the nose: pushing back, or towing to and from the hangar
+    if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) { const L = m.T.len * 0.5 + 0.03; veh(g, m.x + Math.cos(m.h) * L, m.y + Math.sin(m.h) * L, m.h, 0.06, 0.03, 'rgb(236,196,60)', px); }
   }
   // the airport sits under the same night as everything else; its lights do not
   if (light < 1 && box) { g.save(); g.translate(box.x, box.y); g.rotate(box.a); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fillRect(-box.w / 2 - 0.05, -box.h / 2 - 0.05, box.w + 0.1, box.h + 0.1); g.restore(); }
@@ -235,12 +241,29 @@ function drawConfig(g, S, ap, px, z) {
 }
 /* the rectangle, aligned with the main runway, that holds everything the airport has */
 const fieldBox = ap => IC.aptFence(ap);
+/* the airfield's grass: a flat mown colour over the terrain inside the fence, and mowing stripes close in */
+function drawField(g, box, px, z) {
+  const k = U.clamp((z - 2) / 6, 0, 1);
+  g.save(); g.translate(box.x, box.y); g.rotate(box.a);
+  g.fillStyle = `rgba(98,124,86,${0.9 * k})`; g.fillRect(-box.w / 2, -box.h / 2, box.w, box.h);
+  if (z > 12) {
+    // only the stripes in view
+    const V = IC.rs && IC.rs.view, st = 0.3;
+    let y0 = -box.h / 2, y1 = box.h / 2;
+    if (V) { const c = Math.cos(-box.a), sn = Math.sin(-box.a), ys = [[V.x0, V.y0], [V.x1, V.y0], [V.x1, V.y1], [V.x0, V.y1]].map(([x, y]) => (x - box.x) * sn + (y - box.y) * c); y0 = Math.max(y0, Math.min(...ys)); y1 = Math.min(y1, Math.max(...ys)); }
+    g.fillStyle = `rgba(150,170,110,${0.12 * U.clamp((z - 12) / 12, 0, 1)})`;
+    for (let y = Math.floor(y0 / (2 * st)) * 2 * st; y < y1; y += 2 * st) g.fillRect(-box.w / 2, y, box.w, st);
+  }
+  g.restore();
+}
 function drawArea(g, p, fill, px, part) {
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w, h = p.h;
   if (!part.built) stageRect(g, part, w, h, px, paveCol2(part));
   else {
     g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; g.fillRect(-w / 2, -h / 2, w, h);
+    // the painted edge of the apron
+    if (IC.cam.z > 4) { g.strokeStyle = 'rgba(236,196,60,0.5)'; g.lineWidth = Math.max(0.006, 0.6 * px); g.strokeRect(-w / 2 + 0.02, -h / 2 + 0.02, w - 0.04, h - 0.04); }
     if (IC.cam.z > 9) { g.strokeStyle = 'rgba(0,0,0,0.08)'; g.lineWidth = 0.004; g.beginPath(); for (let x = -w / 2; x < w / 2; x += 0.075) { g.moveTo(x, -h / 2); g.lineTo(x, h / 2); } for (let y = -h / 2; y < h / 2; y += 0.075) { g.moveTo(-w / 2, y); g.lineTo(w / 2, y); } g.stroke(); }
   }
   g.restore();
@@ -404,15 +427,13 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     if (!dead && full) { const a = now * 1.3; g.strokeStyle = 'rgba(30,34,40,0.9)'; g.lineWidth = 0.02; g.beginPath(); g.moveTo(-Math.cos(a) * w * 0.8, -Math.sin(a) * w * 0.8); g.lineTo(Math.cos(a) * w * 0.8, Math.sin(a) * w * 0.8); g.stroke(); }
   } else {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
-    if (full && !dead && (p.kind === 'terminal' || p.kind === 'cargo')) {
-      g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(-w / 2, -h / 2, w, h * 0.3);
-      g.fillStyle = night ? 'rgba(255,220,150,0.55)' : 'rgba(60,90,110,0.5)';
-      for (let x = -w / 2 + 0.05; x < w / 2 - 0.05; x += 0.12) g.fillRect(x, -h / 2 - 0.004, 0.08, 0.012), g.fillRect(x, h / 2 - 0.008, 0.08, 0.012);
-    }
+    if (full && !dead && (p.kind === 'terminal' || p.kind === 'cargo')) roof(g, p, w, h, px, z, night);
     if (full && !dead && p.kind === 'fire') { g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(-w * 0.08, -h * 0.3, w * 0.16, h * 0.6); g.fillRect(-w * 0.25, -h * 0.08, w * 0.5, h * 0.16); }
     if (full && !dead && p.kind === 'ammo') { g.fillStyle = 'rgba(60,80,52,0.9)'; for (let i = -1; i <= 1; i++) g.fillRect(i * w * 0.3 - w * 0.12, -h * 0.35, w * 0.24, h * 0.7); }
     if (full && !dead && p.kind === 'alert') { g.fillStyle = 'rgba(96,98,94,0.95)'; g.fillRect(-w * 0.3, -h * 0.35, w * 0.6, h * 0.7); }
   }
+  // an outline, so buildings read against pavement and grass
+  if (full && !dead && !p.r && p.kind !== 'ils') { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
   // damage
   if (dead) {
     g.fillStyle = 'rgba(24,18,14,0.85)'; if (p.r) { g.beginPath(); g.arc(0, 0, p.r * 1.1, 0, 7); g.fill(); } else g.fillRect(-w / 2, -h / 2, w, h);
@@ -421,6 +442,33 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   if (hp < 0.5 && z > 0.8 && z < 6) { g.strokeStyle = dead ? IC.C.hostile : IC.C.amber; g.lineWidth = 1.2 * px; if (p.r) { g.beginPath(); g.arc(0, 0, p.r + 3 * px, 0, 7); g.stroke(); } else g.strokeRect(-w / 2 - 2 * px, -h / 2 - 2 * px, w + 4 * px, h + 4 * px); }
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
+}
+/* a terminal or shed roof: parapet, roof panels, skylights along the spine, plant on the roof, glass on the long
+   sides; a cargo shed gets loading doors instead */
+function roof(g, p, w, h, px, z, night) {
+  const long = w >= h, L = long ? w : h, D = long ? h : w;
+  g.save(); if (!long) g.rotate(Math.PI / 2);
+  g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(-L / 2, -D / 2, L, D * 0.5);
+  if (z > 6) {
+    // roof panels
+    g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath();
+    for (let x = -L / 2 + 0.25; x < L / 2; x += 0.25) { g.moveTo(x, -D / 2); g.lineTo(x, D / 2); }
+    g.stroke();
+    if (p.kind === 'terminal') {
+      // skylights along the spine, and air-conditioning plant
+      g.fillStyle = night ? 'rgba(255,226,160,0.8)' : 'rgba(150,190,215,0.8)';
+      for (let x = -L / 2 + 0.15; x < L / 2 - 0.15; x += 0.5) g.fillRect(x, -D * 0.06, 0.32, D * 0.12);
+      g.fillStyle = 'rgba(96,100,106,0.9)';
+      for (let i = 0; i < Math.floor(L / 1.2); i++) { const x = -L / 2 + 0.6 + i * 1.2 + (U.hash(i, 3) - 0.5) * 0.3, y = (U.hash(i, 9) > 0.5 ? 1 : -1) * D * 0.28; g.fillRect(x - 0.05, y - 0.03, 0.1, 0.06); }
+    } else {
+      g.fillStyle = 'rgba(60,64,70,0.9)';
+      for (let x = -L / 2 + 0.1; x < L / 2 - 0.1; x += 0.16) g.fillRect(x, D / 2 - 0.012, 0.1, 0.012);
+    }
+  }
+  // glass on both long sides (lit at night)
+  g.fillStyle = night ? 'rgba(255,220,150,0.7)' : 'rgba(70,110,140,0.75)';
+  if (p.kind === 'terminal') { g.fillRect(-L / 2, -D / 2, L, Math.max(0.01, 0.9 * px)); g.fillRect(-L / 2, D / 2 - Math.max(0.01, 0.9 * px), L, Math.max(0.01, 0.9 * px)); }
+  g.restore();
 }
 function drawLights(g, ap, px, z, light, now) {
   const k = U.clamp((0.55 - light) / 0.4, 0, 1);
@@ -469,9 +517,15 @@ function drawParked(g, S, ap, px, z, light) {
     if (!t || t.where !== 'stand') continue;
     const al = IC.avAirline(S, t.al);
     IC.drawPlane(g, s.x, s.y, s.a, t.type, al ? al.livery : null, { shadow: 0.03, minPx: 7 });
-    // turnaround: service vehicles
-    if (z > 8 && t.t > 0) { g.fillStyle = 'rgba(242,200,60,0.95)'; const c = Math.cos(s.a), sn = Math.sin(s.a); g.fillRect(s.x - sn * 0.12 - 0.02, s.y + c * 0.12 - 0.012, 0.04, 0.024); g.fillStyle = 'rgba(230,230,230,0.95)'; g.fillRect(s.x + sn * 0.1 - 0.025, s.y - c * 0.1 - 0.012, 0.05, 0.024); }
+    // turnaround: jet bridge or buses, fuel, baggage and cargo
+    if (z > 5 && t.t > 0 && s.svc && s.svc.tail === t.id) drawTurn(g, S, ap, s, t, px, z);
   }
+  // aircraft in the hangars, seen through the open doors
+  for (const h of ap.parts) if (h.kind === 'hangar' && (h.inside || []).length) h.inside.forEach((x, i) => {
+    const t = tails && tails.get(x.tl); if (!t) return;
+    const q = IC.rectWorld(h, (i - 0.5) * h.w * 0.48, 0), al = IC.avAirline(S, t.al);
+    IC.drawPlane(g, q.x, q.y, h.a + Math.PI / 2 * (h.doorSide || -1) * -1, t.type, al ? al.livery : null, { alpha: 0.55, minPx: 5 });
+  });
   // the air wing
   for (const r of S.roster) {
     if (r.base !== ap.id || r.st === 'lost' || r.st === 'air') continue;
@@ -484,6 +538,68 @@ function drawParked(g, S, ap, px, z, light) {
       const x = pp.x - Math.sin(h) * off, y = pp.y + Math.cos(h) * off;
       IC.drawPlane(g, x, y, h, type, null, { alpha: pp.inside ? 0.35 : 1, shadow: pp.inside ? 0 : 0.02, minPx: 6, body: r.st === 'turn' ? 'rgb(200,170,110)' : null });
     }
+  }
+}
+
+/* ---------- ground services, drawn from the state of each turnaround ---------- */
+/* a vehicle from above, at its real size (a few pixels at least) */
+function veh(g, x, y, h, L, W, col, px, roof) {
+  const k = Math.max(1, 3 * px / L);
+  g.save(); g.translate(x, y); g.rotate(h);
+  g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-L * k / 2 + 0.006, -W * k / 2 + 0.006, L * k, W * k);
+  g.fillStyle = col; g.fillRect(-L * k / 2, -W * k / 2, L * k, W * k);
+  if (roof) { g.fillStyle = roof; g.fillRect(L * k * 0.18, -W * k / 2, L * k * 0.3, W * k); }
+  g.restore();
+}
+const lerpP = (a, b, f) => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, h: Math.atan2(b.y - a.y, b.x - a.x) });
+/* the nearest point on the nearest building of a kind: where buses, lorries and trucks come from */
+function kerb(ap, kinds, p) {
+  let best = null, bd = 1e9;
+  for (const q of ap.parts) if (kinds.includes(q.kind) && q.built && q.hp > q.max * 0.25) {
+    const w = q.w || (q.r || 0.1) * 2, h = q.h || (q.r || 0.1) * 2, l = IC.rectLocal(q, p), c = IC.rectWorld(q, U.clamp(l.x, -w / 2, w / 2), U.clamp(l.y, -h / 2, h / 2)), d = U.dist(c, p);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+IC.aptKerb = kerb;
+/* one turnaround: f runs 0 → 1 from arrival on the stand to departure */
+function drawTurn(g, S, ap, s, t, px, z) {
+  const sv = s.svc, f = U.clamp((S.time - sv.t0) / Math.max(60, sv.dur), 0, 1), T = t.T;
+  const hx = Math.cos(s.a), hy = Math.sin(s.a), nx = -hy, ny = hx;
+  const door = { x: s.x + hx * T.len * 0.3 + nx * T.span * 0.06, y: s.y + hy * T.len * 0.3 + ny * T.span * 0.06 };
+  const aft = { x: s.x - hx * T.len * 0.3 - nx * T.span * 0.06, y: s.y - hy * T.len * 0.3 - ny * T.span * 0.06 };
+  if (sv.kind === 'bridge') {
+    // the bridge swings out from the terminal to the front door while passengers are on the move
+    const k = kerb(ap, ['terminal'], door); if (k) { g.strokeStyle = 'rgba(176,180,186,0.97)'; g.lineWidth = Math.max(0.035, 2.4 * px); g.lineCap = 'butt'; g.beginPath(); g.moveTo(k.x, k.y); g.lineTo(door.x, door.y); g.stroke(); g.fillStyle = 'rgb(120,124,130)'; g.beginPath(); g.arc(door.x, door.y, Math.max(0.025, 1.6 * px), 0, 7); g.fill(); }
+  } else if (sv.kind === 'walk') {
+    // stairs, and passengers walking across the apron to the gate
+    veh(g, door.x + nx * 0.03, door.y + ny * 0.03, s.a + Math.PI / 2, 0.07, 0.025, 'rgb(220,220,210)', px);
+    const k = kerb(ap, ['terminal'], door);
+    if (k && (f < 0.2 || (f > 0.6 && f < 0.85)) && z > 20) { g.fillStyle = 'rgba(250,240,200,0.9)'; for (let i = 0; i < 8; i++) { const q = lerpP(door, k, ((S.time * 0.02 + i / 8) % 1)); g.fillRect(q.x - 0.005, q.y - 0.005, 0.01, 0.01); } }
+  } else if (sv.kind === 'bus') {
+    // buses shuttle between the terminal and the stand: off the aircraft first, then out again to board
+    const k = kerb(ap, ['terminal'], door);
+    if (k) for (let i = 0; i < sv.n; i++) {
+      const lag = i * 0.03, deb = (f - lag) / 0.18, brd = (f - 0.62 - lag) / 0.2;
+      let q = null;
+      if (deb > 0 && deb < 1) q = deb < 0.25 ? lerpP(door, door, 0) : lerpP(door, k, (deb - 0.25) / 0.75);
+      else if (brd > 0 && brd < 1) q = brd < 0.7 ? lerpP(k, door, brd / 0.7) : lerpP(door, door, 0);
+      if (!q) continue;
+      const side = (i % 2 ? 1 : -1) * 0.05 * (1 + (i >> 1));
+      veh(g, q.x + nx * side, q.y + ny * side, q.h || s.a, 0.14, 0.03, 'rgb(236,236,230)', px, 'rgba(60,110,150,0.9)');
+    }
+  } else if (sv.kind === 'cargo') {
+    // lorries between the cargo shed and the freighter's nose door
+    const k = kerb(ap, ['cargo'], door) || kerb(ap, ['terminal'], door);
+    if (k) for (let i = 0; i < sv.n; i++) { const ph = (f * 6 + i / sv.n) % 1, q = ph < 0.5 ? lerpP(k, door, ph * 2) : lerpP(door, k, (ph - 0.5) * 2); veh(g, q.x + nx * 0.04, q.y + ny * 0.04, q.h, 0.12, 0.028, 'rgb(210,120,50)', px, 'rgb(90,90,90)'); }
+  }
+  // baggage carts at the hold while passengers are on and off
+  if (sv.kind !== 'cargo' && (f < 0.25 || f > 0.6) && f < 0.9) for (let i = 0; i < 3; i++) veh(g, aft.x - hx * i * 0.045 + nx * 0.06, aft.y - hy * i * 0.045 + ny * 0.06, s.a, 0.035, 0.018, 'rgb(90,96,104)', px);
+  // fuel: a truck from the fuel farm, or a small dispenser on the hydrant
+  if (f > 0.5 && f < 0.85) {
+    const wing = { x: s.x + nx * T.span * 0.28, y: s.y + ny * T.span * 0.28 };
+    if (sv.fuel === 'hydrant') veh(g, wing.x, wing.y, s.a, 0.05, 0.025, 'rgb(200,200,196)', px);
+    else { const k = kerb(ap, ['fuel'], wing), ph = (f - 0.5) / 0.35, q = k && ph < 0.2 ? lerpP(k, wing, ph / 0.2) : k && ph > 0.85 ? lerpP(wing, k, (ph - 0.85) / 0.15) : { x: wing.x, y: wing.y, h: s.a }; veh(g, q.x, q.y, q.h, 0.1, 0.03, 'rgb(236,236,236)', px, 'rgb(200,60,50)'); }
   }
 }
 

@@ -8,6 +8,16 @@
 const U = IC.U;
 const SNAP_RWY = 0.2, SNAP_APRON = 0.16;
 
+/* airport items the Career opens by research (logistics.js holds the research itself); elsewhere all are open */
+IC.APT_TECH = { rconc: 'p_rconc', hydrant: 'p_hydrant', gradar: 'p_gradar', bridge: 'p_bridge', ils3: 'p_ils3' };
+IC.aptTechOk = (S, item) => !S || !S.story || !IC.APT_TECH[item] || !IC.hasTech || IC.hasTech(S, IC.APT_TECH[item]);
+/* why a part (in a pavement) cannot be built yet: '' or "Needs research: …" */
+IC.aptLockWhy = function (S, kind, mat) {
+  const k = mat === 'rconc' && IC.PAVED && IC.PAVED[kind] ? 'rconc' : kind;
+  if (IC.aptTechOk(S, k)) return '';
+  const t = IC.TECH && IC.TECH.find(x => x.id === IC.APT_TECH[k]);
+  return `Needs research: ${t ? t.name.toLowerCase() : k} (Research room).`;
+};
 /* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
 IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
 IC.APART.fuelpad = { name: 'Fuel stand', w: 0.5, h: 0.4, cost: 12, build: 500, hp: 20, pad: true, desc: 'A paved stand by the fuel farm: small aircraft and those on remote stands taxi here to refuel instead of waiting for a truck.' };
@@ -383,7 +393,7 @@ IC.rwStrips = function (rw) {
 IC.rwUsable = rw => rw.built && rw.hp > 0 && !rw.shut && !(rw.wear >= 1) ? Math.max(0, ...IC.rwStrips(rw).map(x => x[1] - x[0])) : 0;
 
 /* spacing between runway movements: a tower and an approach radar let controllers pack them tighter */
-IC.aptSep = st => !st.tower ? 480 : st.radar ? 60 : 110;
+IC.aptSep = st => (!st.tower ? 480 : st.radar ? 60 : 110) * (st.lvp ? 1.6 : 1);
 
 /* ---------- runway capacity under the tower's rules ---------- */
 /* arrivals and departures an hour that the runways can take under a set of rules (ops: the airport's by default),
@@ -496,6 +506,11 @@ IC.aptStats = function (S, ap) {
   const tower = alive('tower').length > 0;
   const radar = alive('atc').length > 0 || !!(S && S.units.some(u => u.radarOn && u.d.sensor && !u.d.sensor.passive && U.dist(u, ap) < 900));
   st.tower = tower; st.radar = radar;
+  // in fog, low-visibility procedures space every movement wider, unless a runway end has a CAT III landing system
+  // (landing systems built before that research are CAT I; those in the starting layouts are CAT III)
+  st.cat3 = ap.parts.some(p => p.kind === 'ils' && p.built && p.hp > p.max * 0.25 && (p.cat || 3) >= 3);
+  st.lvp = !!(S && S.weather && IC.needILS(S) && !st.cat3 && ap.kind !== 'airbase');
+  if (st.lvp) st.warn.push('Fog: low-visibility procedures space every movement 60% wider. A CAT III landing system (research) keeps them tight.');
   const sep = IC.aptSep(st);
   ap.st = st;
   const cfg = S && S.wind ? IC.aptConfig(S, ap) : null;
@@ -759,6 +774,9 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
       if (part.kind === 'fuel') { part.burning = 5400; part.stock = 0; IC.explode(S, part.x, part.y, 1.8, 'ground', { big: 0.6 }); IC.addFire(S, part.x, part.y, 1.8, 9000); }
       else if (part.kind === 'ammo') { IC.explode(S, part.x, part.y, 2, 'ground', { big: 0.8 }); IC.addFire(S, part.x, part.y, 1.2, 6000); setTimeout0(S, () => IC.aptHit(S, ap, part.x + 0.05, part.y + 0.05, 90, { d: { code: 'secondary explosion' } })); }
       else IC.addFire(S, part.x, part.y, 0.8, 4000);
+      // airliners in a hangar that falls are lost with it
+      if (part.kind === 'hangar') for (const x of part.inside || []) { IC.emit(S, 'tailLost', { ap, tail: x.tl, why: 'destroyed in the hangar' }); acLost++; }
+      if (part.kind === 'hangar') part.inside = [];
       ap.dirty = true;
     }
   }
@@ -843,8 +861,11 @@ IC.aptAutoQueue = autoQueue;
 IC.aptPlan = function (S, ap, part, o) {
   o = o || {};
   if (IC.PAVED[part.kind]) part.mat = part.mat || o.mat || 'conc';
+  const lock = IC.aptLockWhy(S, part.kind, part.mat);
+  if (lock) { IC.log(S, 'warn', 'BUILD', lock); return null; }
   if (o.zone && part.kind !== 'taxi') part.zone = o.zone;
   if (o.ramp) { part.ramp = true; part.free = part.free || []; }
+  if (part.kind === 'ils') part.cat = IC.aptTechOk(S, 'ils3') ? 3 : 1;
   const pv = IC.bldPreview(S, ap, part);
   // enough to pay for the survey and a start on the ground: the rest is paid as the work runs
   const start = pv.cost * 0.1;
@@ -1024,8 +1045,11 @@ IC.aptTakeFuel = function (ap, n, S) {
   if (S && !(ap.st && ap.st.hydrant)) {
     const L = ap.trucks = (ap.trucks || []).filter(t => now - t < 3600);
     const cap = ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).length * IC.FUEL_TRUCKS;
-    if (L.length >= cap) { ap.truckWait = now; return false; }
-    L.push(now);
+    // every truck busy: with a fuel stand the aircraft taxis there on its way out (groundops.js); without, it waits
+    if (L.length >= cap) {
+      if (!ap.parts.some(p => p.kind === 'fuelpad' && p.built && p.hp > p.max * 0.25 && p.linked !== false)) { ap.truckWait = now; return false; }
+      ap.padNext = now;
+    } else L.push(now);
   }
   let need = n;
   for (const t of tanks) { const q = Math.min(need, t.stock); t.stock -= q; need -= q; if (need <= 0) break; }
@@ -1282,6 +1306,7 @@ IC.layoutAirport = function (ap, template, a) {
   ap.template = template;
   const r0 = ap.parts.find(p => p.kind === 'runway');
   ap.rwyA = a; ap.rwyL = r0 ? IC.rwLen(r0) : 20;
+  if (IC.aptAutoLinks) IC.aptAutoLinks(ap);
   IC.aptExtent(ap);
 };
 /* A Denver-sized airport: six runways in a pinwheel round three concourses (well over a hundred gates), end-around
