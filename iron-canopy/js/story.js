@@ -150,11 +150,11 @@ const MO = (S, n) => IC.MO(S, n);
 IC.ACT1_MIN_MO = 36;  // calendar months a good player needs for Act I: three years (the tests hold the scripted player to it)
 IC.CHAPTERS = [
   { title: 'The national airport', min: 0, max: 0, need: 6 },
-  { title: 'The capital’s airport', min: 8, max: 16, need: 7, wait: 'more airlines have seen the airport work' },
-  { title: 'The airspace', min: 6, max: 12, need: 4, wait: 'the airways have carried a season of traffic' },
-  { title: 'Light aircraft', min: 5, max: 10, need: 2, wait: 'the flying clubs have settled in' },
-  { title: 'A second city', min: 9, max: 18, need: 3, wait: 'the new airport has found its passengers' },
-  { title: 'The economy', min: 9, max: 16, need: 3, wait: 'the Treasury has seen the figures' }
+  { title: 'The capital’s airport', min: 8, max: 14, need: 7, wait: 'more airlines have seen the airport work' },
+  { title: 'The airspace', min: 7, max: 11, need: 4, wait: 'the airways have carried a season of traffic' },
+  { title: 'Light aircraft', min: 6, max: 9, need: 2, wait: 'the flying clubs have settled in' },
+  { title: 'A second city', min: 10, max: 15, need: 3, wait: 'the new airport has found its passengers' },
+  { title: 'The economy', min: 10, max: 14, need: 3, wait: 'the Treasury has seen the figures' }
 ];
 const capApt = S => S.story.cap ? S.byId[S.story.cap] : null;
 const built = (ap, k) => !!ap && ap.parts.some(p => p.kind === k && p.built && p.hp > 0);
@@ -445,7 +445,7 @@ function chapterTick(S) {
   if (st.waitT && S.time < st.waitT) return;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
   // a near miss or overloaded controllers force the airspace question early
-  const forced = st.ch === 1 && st.hurry && age >= C.min / 2;
+  const forced = st.ch === 1 && st.hurry && age >= C.min * 0.75;
   if (!forced && !((doneCount(S) >= C.need && age >= C.min) || age >= C.max)) return;
   st.asking = true;
   OPEN[st.ch + 1](S);

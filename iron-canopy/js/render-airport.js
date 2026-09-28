@@ -759,6 +759,12 @@ function stageRect(g, part, w, h, px, fill, runway, building) {
   }
   // lights: edge lights come on one by one; at the inspection they all burn
   if (runway && k >= 5) edgeLights(g, w, h, px, k === 5 ? f : 1, k === 6);
+  // aprons and pads: the yellow edge line painted round, then floodlights along the long sides switched on in turn
+  if (!runway && !building && k >= 4) {
+    g.strokeStyle = YEL; g.lineWidth = Math.max(0.006, 0.8 * px);
+    const m = k === 4 ? f : 1; g.beginPath(); g.moveTo(-w / 2, -h / 2); g.lineTo(-w / 2 + w * m, -h / 2); g.moveTo(-w / 2, h / 2); g.lineTo(-w / 2 + w * m, h / 2); g.stroke();
+    if (k >= 5) { const st = Math.max(0.6, 18 * px), r = Math.max(0.02, 1.4 * px), on = k === 5 ? f : 1; for (let x = -w / 2 + st / 2; x < w / 2; x += st) { const lit = (x + w / 2) / w <= on; g.fillStyle = lit ? LAMP : LAMP_OFF; for (const y of [-h / 2 - 0.03, h / 2 + 0.03]) { g.beginPath(); g.arc(x, y, lit ? r * 1.5 : r, 0, 7); g.fill(); if (lit) { g.fillStyle = 'rgba(255,236,170,0.12)'; g.beginPath(); g.arc(x, y, r * 6, 0, 7); g.fill(); g.fillStyle = LAMP; } } } }
+  }
   if (building && k === 5) { g.fillStyle = `rgba(255,236,170,${0.25 + 0.5 * f})`; const n = Math.max(1, Math.round(w / Math.max(0.1, 6 * px))); for (let i = 0; i < n * f; i++) g.fillRect(-w / 2 + (i + 0.3) * w / n, -h / 2 + h * 0.3, w / n * 0.4, h * 0.4); }
   if (k <= 1) { g.fillStyle = k === 0 ? 'rgba(160,110,90,0.35)' : 'rgba(242,180,65,0.1)'; g.fillRect(-w / 2, -h / 2, w, h); }
   // the outline stays dashed until it opens

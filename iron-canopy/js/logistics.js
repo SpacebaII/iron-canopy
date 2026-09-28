@@ -731,8 +731,14 @@ IC.waitTargets = function (S) {
   for (const v of [250, 500, 1000, 2000]) { const amt = Math.ceil((Math.max(0, S.budget) + v) / 50) * 50; out.push({ key: 'amt:' + amt, what: `${U.money(amt)} in the treasury`, amt, sum: true }); }
   return out;
 };
-/* money coming in an hour, averaged over the last day or so (fees come and go with the flights) */
-IC.waitRate = S => S.netAvg != null ? S.netAvg : S.income - S.upkeep;
+/* money coming in an hour: last month's income less its running costs (building and buying left out), or while
+   there is no finished month yet, the flow averaged over the last day or so (fees come and go with the flights) */
+const RECUR = ['base', 'tax', 'trade', 'apt', 'aid', 'fee_land', 'fee_pax', 'fee_cargo', 'fee_over', 'landside', 'upAD', 'upAir', 'upApt', 'upStaff', 'loan', 'penalty'];
+IC.waitRate = S => {
+  const E = S.econ, M = E && E.months && E.months[E.months.length - 1];
+  if (M && M.days > 0.5) { let v = 0; for (const k in M.book) if (RECUR.includes(k)) v += M.book[k]; return v / (M.days * 24); }
+  return S.netAvg != null ? S.netAvg : S.income - S.upkeep;
+};
 /* what is still to come, and roughly when: "₭400M to go for the second runway, about 5 months at this rate" */
 IC.waitText = function (S, w) {
   w = w || S.wait; if (!w) return '';

@@ -80,6 +80,8 @@ b{font-weight:600}
 .waitbar small{color:var(--muted);font-size:.8rem}
 .waitbar .btn{justify-self:start}
 .waitbar .li{display:grid;text-align:left;padding:.35rem .5rem;border-radius:9px;background:var(--well)}
+.speed .waitbar button{height:auto;min-width:0;border-radius:9px;font-family:var(--body);font-size:.9rem;color:var(--text)}
+.speed .waitbar .li span{grid-column:1/-1}.speed .waitbar .li small{grid-column:1/-1}
 .waitbar .li:hover{background:var(--well-2)}
 .ymonths td.bar{width:30%}.ymonths td.bar i{display:block;height:.55rem;border-radius:4px;background:currentColor;opacity:.7}
 .tb-center{position:absolute;z-index:5;left:50%;top:6.3rem;transform:translateX(-50%);width:min(34rem,56%);display:flex;flex-direction:column;gap:5px;align-items:center;pointer-events:none}
