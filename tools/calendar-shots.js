@@ -1,5 +1,6 @@
-/* Pictures of the calendar for review, from a saved Career (made by the balance run: SAVE=career.json node storytest.js):
-     node tools/calendar-shots.js career.json
+/* Pictures of the calendar for review. The scripted Career player (careerplayer.js) plays in the page for so many
+   months first (a save made in Node does not load in the browser: the two build the map a hair differently):
+     node tools/calendar-shots.js [months, default 14] [seed, default 777]
    Saves in shots/: cal-topbar (the date in the top bar), cal-statement (the month's statement and the year month by
    month), cal-review (the yearly review), cal-wait-pick and cal-wait (waiting for money), cal-build-<stage> (a new
    apron through its construction stages). Needs Playwright, like tools/shot.js. */
@@ -9,9 +10,8 @@ let chromium;
 try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playwright is not installed: npm i --no-save playwright'); process.exit(2); }
 
 (async () => {
-  const file = process.argv[2];
-  if (!file || !fs.existsSync(file)) { console.error('usage: node tools/calendar-shots.js <save.json>'); process.exit(2); }
-  const json = fs.readFileSync(file, 'utf8');
+  const months = +process.argv[2] || 14, seed = +process.argv[3] || 777;
+  const src = f => fs.readFileSync(path.resolve(__dirname, '..', f), 'utf8');
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   let browser;
   try { browser = await chromium.launch(opt); } catch (e) { browser = await chromium.launch(Object.assign({ executablePath: process.env.CHROMIUM || '/opt/pw-browsers/chromium' }, opt)); }
@@ -20,7 +20,22 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
   await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
-  await page.evaluate(j => { IC.adopt(IC.loadSave(j)); IC.S.paused = true; IC.ui.hintsOn = false; }, json);
+  // the scripted player, loaded into the page (its require() gets the page's IC), plays the Career for a while
+  const t0 = Date.now();
+  await page.evaluate(async ([qw, cp, seed, months]) => {
+    const mods = {}, req = n => n.includes('qwplayer') ? mods.qw : window.IC;
+    let m = { exports: {} }; new Function('module', 'require', qw)(m, req); mods.qw = m.exports;
+    m = { exports: {} }; new Function('module', 'require', cp)(m, req); const player = m.exports.player;
+    const S = IC.newGame({ seed, mode: 'story', hour: 7 }); IC.adopt(S); document.getElementById('start').hidden = true;
+    const calm = () => !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
+    let next = 0;
+    while (S.cal.m < months && !S.over) {
+      for (let i = 0; i < 2000 && S.cal.m < months; i++) { IC.step(S, calm() ? 8 : 1); if (S.time >= next) { player(S); next = S.time + 64; } }
+      await new Promise(r => setTimeout(r, 0));
+    }
+    S.paused = true; IC.ui.hintsOn = false;
+  }, [src('qwplayer.js'), src('careerplayer.js'), seed, months]);
+  console.log(`played ${months} months in ${((Date.now() - t0) / 60000).toFixed(1)} min`);
   await page.waitForTimeout(1500);
   const out = n => path.resolve(__dirname, `../shots/${n}.png`);
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });

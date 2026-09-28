@@ -502,7 +502,10 @@ function workRow(b, w, i) {
   const what = st ? `${esc(st.name)} (${w.si + 1}/${w.stages.length}) · ${U.pct(w.prog)} · ${U.money(w.spent || 0)} of ${U.money(w.cost)}` : `${U.pct(w.prog)}`;
   const rw = w.near && b.parts.find(p => p.id === w.near);
   const when = rw ? `<button class="btn sm ${w.rwMode === 'night' ? 'on' : ''}" data-act="bwhen" data-id="${w.id}" title="Paving next to ${esc(rw.name)} closes it. Night work keeps it open by day but only runs 23:00–06:00.">${w.rwMode === 'night' ? 'Nights only' : 'Shuts rwy'}</button>` : '';
-  return `<div class="li"><b>${esc(w.label)}</b><small>${what} · ${w.wait ? `<span class="amber">${esc(w.wait)}</span>` : `${U.dur(left)} left`}</small><span class="la">${when}<button class="btn sm" data-act="bcancel" data-id="${w.id}" title="Cancel: money already spent is lost">✕</button></span></div>`;
+  // a job waiting for money says how long the treasury needs, and offers to wait for it
+  const broke = w.stages && /money/.test(w.wait || ''), t = broke && IC.waitTargets(S).find(x => x.work === w.id);
+  const wait = t && (S.mode === 'story' || S.mode === 'sandbox') ? `<button class="btn sm" data-act="wait" data-v="${esc(t.key)}" title="Time runs fast until there is enough to finish it, the month turns, or something needs you">Wait</button>` : '';
+  return `<div class="li"><b>${esc(w.label)}</b><small>${what} · ${w.wait ? `<span class="amber">${esc(w.wait)}</span>` : `${U.dur(left)} left`}${t ? ` · ${esc(IC.waitText(S, t))}` : ''}</small><span class="la">${wait}${when}<button class="btn sm" data-act="bcancel" data-id="${w.id}" title="Cancel: money already spent is lost">✕</button></span></div>`;
 }
 /* the materials stockpile and where it comes from */
 function yard(b) {

@@ -402,7 +402,7 @@ IC.afterLoad = function (S, data) {
   for (const ap of S.infra) if (ap.G) ap.G.trees = new Map();
   // (a save from before the calendar gets one: three days a month, as it was played)
   if (!S.cal) S.cal = { dpm: 3, m: IC.calAt({ cal: { dpm: 3 } }, S.time).m };
-  S.hover = null; S.mode2 = null; S.paused = true; S.skip = false; S.wait = null;
+  S.hover = null; S.mode2 = null; S.paused = true; S.skip = false;
   if (IC.savedCfg) Object.assign(S.cfg, IC.savedCfg());
 };
 
