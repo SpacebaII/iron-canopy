@@ -666,7 +666,7 @@ IC.STATEMENT = {
   fee_land: 'Airline fees: landing', fee_pax: 'Airline fees: passengers', fee_cargo: 'Airline fees: cargo', fee_over: 'Overflight fees',
   oneoff: 'Grants, aid and war bonds', refund: 'Equipment dismantled', loanIn: 'Loans taken',
   upAD: 'Running costs: air defence', upAir: 'Running costs: air force', upApt: 'Running costs: airports', upStaff: 'Staff',
-  loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
+  penalty: 'Deal penalties and compensation', loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
   buyUnits: 'Equipment bought', buyMun: 'Missiles and supplies bought', buyLogi: 'Truck companies', research: 'Research', repair: 'Repairs',
   other: 'Building works and other spending'
 };

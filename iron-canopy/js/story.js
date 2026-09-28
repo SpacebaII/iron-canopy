@@ -73,7 +73,7 @@ IC.storyForces = function (S) {
   S.budget = apts.length ? 220 : IC.CAREER_START;
   S.airspace = 'open';
 };
-IC.CAREER_START = 1100;   // the national airport (about ₭700M in concrete) and running money: the airways of a large country need several radars
+IC.CAREER_START = 5500;   // the owner's ₭5.5 billion: a big national airport that becomes the income engine, the radars the airways need, and room for mistakes
 IC.storyInit = function (S) {
   const W = S.world;
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: null };
