@@ -1105,7 +1105,8 @@ test('supply: a battery low on missiles is resupplied by a convoy seen on the ro
   const S = supplyGame();
   const { u, m } = lowBattery(S, 900, 1400);
   let v = null, seenOnRoad = false, t = 0;
-  while (t < 6 * 3600 && m.store + m.mag < m.storeMax + m.max) {
+  // (the depot's first load is not enough to fill it; the rest comes by rail from a plant up to 1,000 km away)
+  while (t < 12 * 3600 && m.store + m.mag < m.storeMax + m.max) {
     IC.step(S, 0.5); t += 0.5;
     const j = S.jobs.find(x => x.mag === m && x.v);
     if (j) { v = j.v; if (v.state === 'toDest' && onRoad(S, v.x, v.y)) seenOnRoad = true; }
