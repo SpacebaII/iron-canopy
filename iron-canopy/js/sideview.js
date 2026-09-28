@@ -24,6 +24,8 @@ function slice(S, w) {
   }
   const a = Math.atan2(r.vy || 0, r.vx || 1), L = 900;
   let H = 6; for (const t of S.threats) if (t.det && U.dist(t, r) < L) H = Math.max(H, t.alt * 1.2 + 1);
+  // interceptors aimed at it climb above it: keep their whole arc in view
+  for (const m of S.missiles) if (m.target === r && !m.dead) for (const q of [m].concat((m.tr && m.tr.pts) || [])) if (q.alt != null) H = Math.max(H, q.alt * 1.1 + 0.5);
   return { x: r.x, y: r.y, a, L, W: 250, H: Math.min(Math.max(H, r.alt * 1.4 + 1), 60), title: `${r.cs || 'TN ' + (r.tn || '')} · what flies above and below it` };
 }
 /* where a map point falls on the slice: s along it (units), off to the side */
@@ -120,7 +122,7 @@ IC.drawSide = function (cv, S, w) {
 
 /* ---------- the floating panel ---------- */
 let el = null, cv = null, raf = 0;
-const CSS = `.sideview{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);width:min(760px,calc(100% - 32px));z-index:30;padding:.55rem .7rem .7rem;display:none}
+const CSS = `.sideview{position:absolute;left:calc(50% - 195px);bottom:92px;transform:translateX(-50%);width:min(760px,calc(100% - 440px));min-width:420px;z-index:30;padding:.55rem .7rem .7rem;display:none}
 .sideview.on{display:block}.sideview header{display:flex;gap:.5rem;align-items:center;margin-bottom:.35rem}.sideview header b{flex:1;font-size:.95rem}
 .sideview canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:default}.sideview canvas.drag,canvas[data-side].drag{cursor:ns-resize}
 .sideview .x{min-width:2rem}.reach{width:100%;max-width:100%;height:auto;display:block;border-radius:8px;margin:.2rem 0}`;
