@@ -73,7 +73,7 @@ IC.storyForces = function (S) {
   S.budget = apts.length ? 220 : IC.CAREER_START;
   S.airspace = 'open';
 };
-IC.CAREER_START = 950;
+IC.CAREER_START = 1100;   // the national airport (about ₭700M in concrete) and running money: the airways of a large country need several radars
 IC.storyInit = function (S) {
   const W = S.world;
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: null };
@@ -218,7 +218,7 @@ function chapterGoals(S, ch) {
     g({ id: 'link', text: `Join ${nm()} to the airways, with routes to two foreign airports`, check: () => portsOnNet(S) >= 2, prog: () => `${portsOnNet(S)} foreign airports reachable on airways`,
       how: 'An airport joins the airways at the nearest fix within 120 km. Lay airways from it to the entry points: airliners then fly them in and out, and controllers know where to look.' });
     g({ id: 'radar', text: 'Put up a civil radar that sees 80% of the airways', check: () => wayCover(S) >= 0.8, prog: () => `${U.pct(wayCover(S))} of the airways seen at cruise height`,
-      how: 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 220 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.' });
+      how: 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 400 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.' });
     g({ id: 'over', text: 'Bring 15 overflights a day onto our airways', check: () => recent(st.cnt.overT, 86400, S.time) >= 15, prog: () => `${recent(st.cnt.overT, 86400, S.time)} in the last day`,
       how: 'Traffic crossing the country pays route charges: twice as much when it flies our airways, because controllers give it a service. Airways between entry points on opposite borders catch it.' });
     g({ id: 'calm', text: 'Twelve hours without a loss of separation', check: () => quietFor(S, st.cnt.losT) >= 12 * H, prog: () => `${U.dur(quietFor(S, st.cnt.losT))} so far` });
