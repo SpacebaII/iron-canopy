@@ -810,8 +810,8 @@ function drawCrew(g, S, ap, w, px, now) {
   const busy = !w.wait, cols = MACHINE[st.k] || MACHINE.fit;
   // a stalled site: the machines stand idle at the front, marked amber
   if (!busy && !(w.si > 0 || w.t > 0)) return;
-  // the front: where the paving, painting or wiring has got to; the earthworks and inspection move up and down
-  const front = st.k === 'pave' || st.k === 'demo' || st.k === 'mark' || st.k === 'lights' || st.k === 'survey' ? f : 0.5 + 0.4 * Math.sin(now * 0.3 + p.x);
+  // the front: where the grading, paving, painting or wiring has got to; the inspection drives up and down
+  const front = st.k === 'open' ? 0.5 + 0.4 * Math.sin(now * 0.3 + p.x) : f;
   const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
   const mw = Math.max(0.1, 7 * px), mh = mw * 0.55;
   const box = (x, y, hd, c, L) => { g.save(); g.translate(x, y); g.rotate(hd); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw * L / 2 + 0.01, -mh / 2 + 0.01, mw * L, mh); g.fillStyle = c; g.fillRect(-mw * L / 2, -mh / 2, mw * L, mh); g.restore(); };

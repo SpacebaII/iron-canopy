@@ -237,7 +237,7 @@ IC.bldAdvance = function (S, ap, w, dt) {
   for (const k in st.mats || {}) M[k] = Math.max(0, M[k] - st.mats[k] * f);
   w.t += f * st.dur; w.wait = null; w.short = false; w.busyT = S.time;
   if (w.part) w.part.stageF = w.t / st.dur;
-  if (w.t >= st.dur - 1e-6) { stageDone(S, ap, w, st); w.si++; w.t = 0; if (w.si >= w.stages.length) shut(ap, rw, w, false); }
+  if (w.t >= st.dur - 1e-6) { stageDone(S, ap, w, st); w.si++; w.t = 0; if (w.part) w.part.stageF = 0; if (w.si >= w.stages.length) shut(ap, rw, w, false); }
   let done = 0; for (let i = 0; i < w.si; i++) done += w.stages[i].dur;
   w.prog = w.si >= w.stages.length ? 1 : Math.min(0.999, (done + w.t) / w.dur);
   w.stage = w.stages[Math.min(w.si, w.stages.length - 1)].k;
