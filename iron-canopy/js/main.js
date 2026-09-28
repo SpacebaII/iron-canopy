@@ -128,6 +128,7 @@ function leftClick(p, shift) {
       return;
     }
     if (m.kind === 'airway') { airwayClick(m, p); IC.ui.refresh(true); return; }
+    if (m.kind === 'asp') { IC.aspMapClick(S, m, p); IC.ui.refresh(true); return; }
     if (m.kind === 'road') { IC.roadClick(S, m, p, 14 / IC.cam.z); IC.ui.refresh(true); return; }
     if (m.kind === 'field') {
       const why = IC.aspFieldWhy(S, p.x, p.y);
@@ -411,6 +412,8 @@ function onAct(e) {
     case 'aptRepair': { const ap = selAp(); if (ap) IC.aptQueue(S, ap, v); break; }
     case 'aptFee': { const ap = selAp(); if (ap) { IC.avSetFee(S, ap, +v); IC.log(S, 'info', 'AVIATION', `${ap.name}: charges set to ${Math.round(+v * 100)}%.`); } break; }
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
+    case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
+    case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
     case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;

@@ -59,6 +59,8 @@ ui.setHTML = function (el, html, key) {
   else { tpl.innerHTML = html; morphKids(el, tpl.content); tpl.innerHTML = ''; }
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
+  for (const c of el.querySelectorAll('canvas[data-reach]')) IC.drawReachChart && IC.drawReachChart(c, c.dataset.reach.split(','));
+  for (const c of el.querySelectorAll('canvas[data-side]')) IC.drawSide && IC.drawSide(c, S, { kind: 'base', ref: S.byId[c.dataset.side] });
   for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawThreatSymbol(g, c.dataset.thr, c.width / 2, c.height / 2 + 4, c.width / 24); }
   return true;
 };
@@ -428,6 +430,7 @@ function modeHint() {
     airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
     field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
+    asp: () => IC.aspModeHint(m),
     zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
     road: () => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
     found: () => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
