@@ -46,7 +46,7 @@ function pick(p) {
   const px = 1 / IC.cam.z;
   let best = null, bd = 1e9;
   const consider = (kind, ref, x, y, r) => { const d = U.dxy(p.x, p.y, x, y); if (d < Math.max(16 * px, r || 0) && d < bd) { bd = d; best = { kind, ref }; } };
-  for (const t of S.threats) if (t.det && !t.dead) consider('track', t, t.px, t.py);
+  for (const t of S.threats) if (t.held && !t.dead) consider('track', t, t.px, t.py);
   if (best) return best;
   for (const a of S.air) consider('air', a, a.x, a.y);
   if (best) return best;
@@ -188,6 +188,8 @@ function leftClick(p, shift) {
     }
   }
   const hit = pick(p);
+  // fighters selected and a track clicked: show the intercept before committing it
+  if (IC.airClick(S, hit)) { IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   if (aspEditing() && (!hit || hit.ref === selAp())) {
     const v = IC.aspVolUnder(S, selAp(), p);
     if (v) { IC.ui.aspVol = IC.ui.aspVol === v.id ? null : v.id; IC.ui.refresh(true); return; }
@@ -207,10 +209,13 @@ function rightClick(p, shift) {
   if (S.mode2) { IC.setMode(null); return; }
   const hit = pick(p);
   const air = S.sel && S.sel.kind === 'air' ? S.sel.ref : null;
+  if (S.sel && S.sel.kind === 'flight' && hit && hit.kind === 'track' && S.sel.ref.kind === 'ftr') { S.icpt = null; if (IC.commitIntercept(S, S.sel.ref, hit.ref)) ping(p); return; }
   if (air && air.r && !air.job) {
-    air.task = null; air.state = 'out'; air.tgt = null;
-    if (hit && hit.kind === 'track' && air.kind === 'ftr') air.mission = { type: 'intercept', track: hit.ref };
-    else if (isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0) air.mission = { type: 'strike', site: hit.ref };
+    S.icpt = null;
+    if (hit && hit.kind === 'track' && air.kind === 'ftr') { if (IC.commitIntercept(S, air, hit.ref)) ping(p); return; }
+    if (hit && hit.kind === 'air' && hit.ref !== air && air.kind === 'ftr' && !hit.ref.allied) { IC.escortAir(S, air, hit.ref); ping(p); return; }
+    air.task = null; air.state = 'out'; air.tgt = null; air.refuel = null;
+    if (isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0) air.mission = { type: 'strike', site: hit.ref };
     else air.mission = { type: air.kind === 'ftr' ? 'cap' : air.kind === 'aew' ? 'orbit' : 'isr', x: p.x, y: p.y };
     IC.log(S, 'info', 'AIR', `${air.name} retasked.`);
     ping(p); return;
@@ -245,7 +250,8 @@ function rightWhat(hit) {
   if (m) return m.kind === 'build' ? (m.pts && m.pts.length ? 'take the last point back' : 'stop building') : m.kind === 'found' ? (m.site ? 'pick another site' : 'cancel')
     : m.kind === 'airway' && m.from ? 'end this airway' : m.kind === 'road' && m.pts.length >= 2 ? 'build the road' : 'cancel';
   const air = S.sel && S.sel.kind === 'air' ? S.sel.ref : null;
-  if (air && air.r && !air.job) return hit && hit.kind === 'track' && air.kind === 'ftr' ? `${air.name} intercepts TN ${hit.ref.tn}` : isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0 ? `${air.name} strikes ${hit.ref.name}` : `${air.name} flies here`;
+  if (S.sel && S.sel.kind === 'flight' && hit && hit.kind === 'track' && S.sel.ref.kind === 'ftr') return `${S.sel.ref.name} launches to intercept TN ${hit.ref.tn}`;
+  if (air && air.r && !air.job) return hit && hit.kind === 'track' && air.kind === 'ftr' ? `${air.name} intercepts TN ${hit.ref.tn}` : hit && hit.kind === 'air' && hit.ref !== air && air.kind === 'ftr' ? `${air.name} escorts ${hit.ref.name}` : isEnemyTarget(hit) && (air.kind === 'ftr' || air.kind === 'ucav') && air.gbu > 0 ? `${air.name} strikes ${hit.ref.name}` : `${air.name} flies here`;
   const units = selUnits(); if (!units.length) return '';
   const who = units.length > 1 ? `${units.length} units` : units[0].name;
   if (isEnemyTarget(hit) && units.some(u => u.d.weapon === 'strike' && u.state === 'ready')) return `fire on ${hit.ref.name} (shift: a salvo)`;
@@ -287,11 +293,9 @@ function command(a, v) {
     }
     case 'scramble': {
       if (!sel || S.sel.kind !== 'track') return;
-      const inAir = S.air.filter(x => x.kind === 'ftr' && x.state !== 'rtb' && x.aam > 0).sort((p, q) => U.dist(p, sel) - U.dist(q, sel))[0];
-      const r = S.roster.filter(x => x.kind === 'ftr' && x.st === 'ready' && IC.canLaunch(S, x)).sort((p, q) => U.dist(IC.baseOf(S, p.base), sel) - U.dist(IC.baseOf(S, q.base), sel))[0];
-      const ground = r && U.dist(IC.baseOf(S, r.base), sel);
-      if (inAir && (!r || U.dist(inAir, sel) < ground)) { inAir.task = null; inAir.mission = { type: 'intercept', track: sel }; inAir.state = 'out'; IC.log(S, 'info', 'AIR', `${inAir.name} diverted to TN ${sel.tn}.`); }
-      else if (r) IC.launchAir(S, r, { type: 'intercept', track: sel });
+      // the flight that gets there first, in the air or on the ground
+      const w = IC.bestInterceptor(S, sel);
+      if (w) IC.commitIntercept(S, w, sel); else IC.log(S, 'info', 'AIR', `No fighter can reach TN ${sel.tn} right now.`);
       break;
     }
   }
@@ -343,7 +347,8 @@ function onAct(e) {
     case 'toast': { const t = ui.toasts[+v]; if (t && t.at) ui.jump(t.at); break; }
     case 'alert': { const r = ui.alertRefs && ui.alertRefs[+v]; if (r) ui.jump(r, r.tn ? 'track' : r.d && r.type ? 'unit' : r.parts ? 'infra' : null); break; }
     case 'goal': { const g = S.story && S.story.goals[+v]; if (g && g.ref) { if (ui.room) ui.openRoom(null); ui.jump(g.ref, g.ref.parts || g.ref.kind === 'city' ? 'infra' : null); } break; }
-    case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) { r.qra = !r.qra; IC.log(S, 'info', 'AIR', `${r.name} ${r.qra ? 'on quick-reaction alert' : 'stood down from alert'}.`); } break; }
+    case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.setAlert(S, r, IC.alertOf(r) === 5 ? 30 : 5); break; }
+    case 'air': IC.airAct(S, b.dataset); break;
     case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { S.airspace = 'restricted'; IC.log(S, 'info', 'AIRSPACE', 'Civil airspace restricted.'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
     case 'cnext': ui.ci++; ui.shownAt = performance.now() - 1e5; break;
     case 'cprev': ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
@@ -387,7 +392,7 @@ function onAct(e) {
     case 'recallSel': if (sel) IC.recallAir(S, sel); break;
     case 'selAir': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r && r.ent) { ui.openRoom(null); ui.jump(r.ent, 'air'); } return; }
     case 'selAirE': { const a2 = S.air.find(x => x.id === id); if (a2) { ui.openRoom(null); ui.jump(a2, 'air'); } return; }
-    case 'selFlight': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r && r.ent) ui.jump(r.ent, 'air'); else ui.openRoom('air'); return; }
+    case 'selFlight': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r && r.ent && !r.ent.gnd) ui.jump(r.ent, 'air'); else if (r) { if (ui.room) ui.openRoom(null); IC.select({ kind: 'flight', ref: r }); } return; }
     case 'froe': if (sel && sel.r) { sel.r.roe = v; sel.roe = v; } break;
     case 'airMode': {
       const r = S.roster.find(x => x.id === b.dataset.rid); if (!r) break;
@@ -452,6 +457,8 @@ function onAct(e) {
     case 'routeFly': { const r = S.av.routes.find(x => x.id === id); if (r) { ui.openRoom(null); ui.jump(S.byId[r.a], 'infra'); } return; }
     case 'selInfra': { const r = S.byId[id]; if (r) { ui.openRoom(null); ui.jump(r, 'infra'); } return; }
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
+    case 'replay': ui.openRoom(null); IC.replayOpen(S, { x: +b.dataset.x, y: +b.dataset.y, t: +b.dataset.t }); return;
+    case 'replayTrack': if (sel) IC.replayOpen(S, { follow: sel, x: sel.x, y: sel.y, t: S.time - 90 }); return;
     case 'logf': ui.logFilter = v; break;
     case 'refcat': ui.refCat = v; break;
     case 'why': ui.why = ui.why === v ? null : v; break;
@@ -639,12 +646,15 @@ window.addEventListener('keydown', e => {
     else if (!$('cine').hidden) ui.closeCine();
     else if (S.mode2) IC.setMode(null);
     else if (ui.room) ui.openRoom(null);
+    else if (S.icpt) S.icpt = null;
     else if (S.sel || S.group.length) { S.sel = null; S.group = []; }
     else if (S.over && !ui.overDismissed) return;
     else ui.toggleMenu(true);
   }
   else if (k === '?' || (k === '/' && e.shiftKey)) ui.openRoom('reference');
   else if (unitSel && ukeys[lk]) command(ukeys[lk]);
+  else if (k === 'Tab') { e.preventDefault(); const t = IC.cycleTrack(S, e.shiftKey ? -1 : 1); if (t) { if (S.sel && (S.sel.kind === 'air' || S.sel.kind === 'flight') && IC.airClick(S, { kind: 'track', ref: t })) IC.flyTo(t.px, t.py, Math.max(IC.cam.z, 0.05)); else IC.ui.jump(t, 'track'); } }
+  else if (k === 'Enter' && S.icpt) IC.airAct(S, { op: 'go' });
   else if (trackSel && lk === 'v') command('scramble');
   else if (trackSel && lk === 'b') command('assignBest');
   else if (lk === 'g' && IC.callInOpen(S)) { const why = IC.callInWhy(S); if (why) IC.toast(S, 'info', 'CALL-IN', why + '.'); else IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); }

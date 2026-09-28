@@ -140,17 +140,19 @@ function staff() {
 /* ---------- air ---------- */
 function air() {
   const tasks = S.ato.map(t => {
-    const cov = S.air.filter(a => a.task === t && !a.dead && a.state !== 'rtb').length;
-    return `<div class="li"><b>${esc(t.name)}</b><small>${cov} on task · wants ${t.want}</small><span class="la"><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="-1">−</button><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="1">+</button><button class="btn sm" data-act="tdel" data-id="${t.id}">✕</button></span></div>`;
+    const st = IC.taskStatus(S, t), cov = st.on.length;
+    const relief = st.relief ? (cov ? `relief ${esc(st.relief.name)} ${st.launchIn > 0 ? 'launches in ' + U.dur(st.launchIn) : 'launching'}` : `${esc(st.relief.name)} on the way`) : `<span class="amber">no relief ready${cov ? ': uncovered in ' + U.dur(Math.max(0, st.emptyIn)) : ''}</span>`;
+    return `<div class="li"><b>${esc(t.name)}</b><small>${cov} on task${st.on.map(o => ` · ${esc(o.a.name)} ${U.dur(Math.max(0, o.left))} left`).join('')} · wants ${t.want} · ${relief}</small><span class="la"><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="-1">−</button><button class="btn sm" data-act="twant" data-id="${t.id}" data-v="1">+</button><button class="btn sm" data-act="tdel" data-id="${t.id}">✕</button></span></div>`;
   }).join('');
-  const add = [`<button class="btn" data-act="taskPoint" data-v="cap">+ Combat air patrol</button>`, `<button class="btn" data-act="taskPoint" data-v="aew">+ Early warning orbit</button>`, `<button class="btn" data-act="taskPoint" data-v="isr">+ Recon area</button>`].join('');
+  const add = [`<button class="btn" data-act="taskPoint" data-v="cap">+ Combat air patrol</button>`, `<button class="btn" data-act="taskPoint" data-v="aew">+ Early warning orbit</button>`, `<button class="btn" data-act="taskPoint" data-v="tanker">+ Tanker track</button>`, `<button class="btn" data-act="taskPoint" data-v="isr">+ Recon area</button>`].join('');
   const bases = IC.bases(S).filter(b => (b.kind === 'airbase' && !b.locked) || S.roster.some(r => r.base === b.id && r.st !== 'lost')).concat(S.units.filter(u => u.type === 'heliport'));
   const cards = bases.map(b => {
     const rs = S.roster.filter(r => r.base === b.id && r.st !== 'lost');
     const st = b.parts ? IC.baseStatus(S, b) : { runway: true };
     const rows = rs.map(r => {
       const a = r.ent;
-      const state = r.st === 'ready' ? '<span class="ok">Ready</span>' : r.st === 'turn' ? `Rearming ${U.dur(r.t)}` : a ? `${{ out: 'En route', station: 'On station', engage: 'Engaging', rtb: 'Returning', vid: 'Identifying' }[a.state] || 'Airborne'}${a.task ? ' · task' : ''} · ${U.dur(a.fuel)} fuel` : 'Airborne';
+      const state = (r.st === 'ready' ? '<span class="ok">Ready</span>' : r.st === 'turn' ? `Rearming ${U.dur(r.t)}` : a ? `${{ out: 'En route', station: 'On station', engage: 'Engaging', rtb: 'Returning', vid: 'Identifying', escort: 'Escorting', refuel: 'Refuelling' }[a.state] || 'Airborne'}${a.task ? ' · task' : ''} · ${U.dur(a.fuel)} fuel` : 'Airborne')
+        + (r.n < (r.nMax || r.n) ? ` · ${r.n} of ${r.nMax}${r.back && r.back.length ? ` (${esc(IC.flightBackText(S, r))})` : ''}` : '') + ((r.fat || 0) > IC.FATIGUE.tired ? ' · <span class="amber">crews tired</span>' : '');
       const why = IC.missionOk(S, r, 'cap');
       let btn = '';
       if (r.st === 'air' && a && !a.job) btn = `<button class="btn sm" data-act="recall" data-rid="${r.id}">Recall</button><button class="btn sm" data-act="selAir" data-rid="${r.id}">Show</button>`;
@@ -158,19 +160,22 @@ function air() {
         const k = r.kind;
         if (k === 'ftr') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="cap" ${why ? 'disabled' : ''}>Patrol</button><button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="strike" ${IC.missionOk(S, r, 'strike') ? 'disabled' : ''}>Strike</button>`;
         else if (k === 'aew' || k === 'isr') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="${k === 'aew' ? 'aew' : 'isr'}" ${why ? 'disabled' : ''}>${k === 'aew' ? 'Orbit' : 'Recon'}</button>`;
+        else if (k === 'tkr') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="tanker" ${why ? 'disabled' : ''}>Tanker track</button>`;
         else if (k === 'ucav') btn = `<button class="btn sm" data-act="airMode" data-rid="${r.id}" data-v="isr" ${why ? 'disabled' : ''}>Recon</button>`;
         else if (k === 'heli') btn = '<span class="muted" style="font-size:.78rem">resupply: select a battery</span>';
       }
       const load = r.kind === 'ftr' && r.st !== 'air' && (!S.story || S.story.act >= 3) ? seg('loadout', r.load, [['aa', 'Missiles', '', 'Loaded with air-to-air missiles, to fight aircraft'], ['strike', 'Bombs', '', 'Loaded with bombs, to strike targets on the ground']], r.id) : '';
-      const qra = r.kind === 'ftr' ? `<button class="btn sm ${r.qra ? 'primary' : ''}" data-act="qra" data-rid="${r.id}" title="Crews on alert start engines in half the time">${r.qra ? 'On alert' : 'Alert'}</button>` : '';
+      const qra = r.kind === 'ftr' && r.st !== 'lost' ? `<span class="seg">${[5, 15, 30].map(v => `<button data-act="air" data-op="alert" data-rid="${r.id}" data-v="${v}" aria-pressed="${IC.alertOf(r) === v}" title="${esc(IC.ALERT[v].desc)}">${v}′</button>`).join('')}</span>` : '';
+      if (r.st !== 'air' && r.st !== 'lost') btn += `<button class="btn sm" data-act="selFlight" data-rid="${r.id}">Select</button>`;
       const block = r.st === 'ready' && b.parts ? IC.milLaunchBlock(S, b, r) : '';
       return `<div class="li stack"><b>${esc(r.name)} <span class="muted">· ${esc(IC.AIR_KIND[r.kind].name)} ×${r.n}</span></b><small>${state}${r.ent && r.ent.gnd ? ' · taxiing' : ''}${r.slot || r.st === 'air' ? '' : ' · <span class="amber">parked in the open</span>'}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small><span class="la">${qra}${load}${btn}</span></div>`;
     }).join('');
-    const buy = b.infra && (!S.story || S.story.act >= 3) ? ['ftr', 'ucav', 'isr', 'heli'].map(k => `<button class="btn sm" data-act="buyAir" data-v="${k}" data-id="${b.id}" ${S.budget < IC.AIR_KIND[k].buy ? 'disabled' : ''} title="Buy a ${esc(IC.AIR_KIND[k].name.toLowerCase())} for this base">+ ${esc(IC.AIR_KIND[k].name)} · ${U.money(IC.AIR_KIND[k].buy)}</button>`).join('') : '';
+    const buy = b.infra && (!S.story || S.story.act >= 3) ? ['ftr', 'tkr', 'ucav', 'isr', 'heli'].map(k => `<button class="btn sm" data-act="buyAir" data-v="${k}" data-id="${b.id}" ${S.budget < IC.AIR_KIND[k].buy ? 'disabled' : ''} title="Buy a ${esc(IC.AIR_KIND[k].name.toLowerCase())} for this base">+ ${esc(IC.AIR_KIND[k].name)} · ${U.money(IC.AIR_KIND[k].buy)}</button>`).join('') : '';
     return `<div class="card"><h3>${esc(b.name)}<em>${st.runway ? rs.length + ' flights' : '<span class="hostile">runway closed</span>'}</em></h3><div class="list">${rows || '<p class="hint">No aircraft.</p>'}</div>${buy ? `<div class="acts">${buy}</div>` : ''}<div class="acts"><button class="btn sm" data-act="selInfra" data-id="${b.id}">Open base</button></div></div>`;
   }).join('');
   const storyNote = S.story && S.story.act < 3 ? `<p class="hint">In peacetime nobody fires without your order: Weapons are on Hold. A fighter sent to intercept flies up, identifies and escorts. To shoot, select the track and order the escort to fire.</p>` : '';
-  return `<div class="card wide"><h3>Standing tasks<em>squadrons rotate aircraft to keep these covered</em></h3>${tasks ? `<div class="list">${tasks}</div>` : '<p class="hint">No standing tasks. Add one and the air wing keeps it covered around the clock.</p>'}<div class="acts">${add}</div>${storyNote}</div>${cards}`;
+  const pil = S.pilots ? `<p class="hint">Spare pilots: ${S.pilots.spare}${S.pilots.rescue.length ? ` · ${S.pilots.rescue.length} being picked up` : ''}. A lost aircraft is replaced in about ${U.dur(IC.AIR_LOSS.replace)} if a pilot is free; a damaged one is back in ${U.dur(IC.AIR_LOSS.repair)}. Alert states: 5′ gets a flight airborne within 5 minutes but tires its crews; 30′ lets them rest.</p>` : '';
+  return `<div class="card wide"><h3>Standing tasks<em>squadrons rotate aircraft to keep these covered</em></h3>${tasks ? `<div class="list">${tasks}</div>` : '<p class="hint">No standing tasks. Add one and the air wing keeps it covered around the clock.</p>'}<div class="acts">${add}</div>${storyNote}${pil}</div>${cards}`;
 }
 
 /* ---------- supply: stock, depots, convoys, buying ---------- */
@@ -352,7 +357,7 @@ function journal() {
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
   return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
-    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time>${U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span></li>`).join('')}</ol></div>`;
+    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time>${U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
 }
 
 /* ---------- reference ---------- */
@@ -365,7 +370,9 @@ function reference() {
   else if (ui.refCat === 'air') body = Object.entries(IC.AIR_KIND).map(([k, d]) => `<div class="ref"><span class="badge friend" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${d.short}</span><div><b>${esc(d.name)}</b>${kv([['Aircraft per flight', d.n], ['Speed', U.kmh(d.spd)], ['Endurance', U.dur(d.endur)], ['Turnaround', U.dur(d.turn)], ['Needs a runway', d.runway ? 'yes' : 'no']])}</div></div>`).join('');
   else body = [
     ['Detect, classify, identify', 'VHF radars see far but only give positions. Radars with IFF read transponders and check them against filed flight plans. Type recognition (NCTR) tells a bomber from an airliner, but only inside a shorter range. A fighter flying up to look settles it. Weapons Tight fires only on identified hostiles.'],
-    ['Sweeps and blinking', 'A rotating radar updates a track only when its beam passes. Between paints, the track coasts and blinks, and its uncertainty ring grows.'],
+    ['Sweeps and coasting tracks', 'A rotating radar updates a track only when its beam passes. Between paints the track glides on its last speed and heading. With no paint for a while it keeps coasting, still selectable, inside a dashed ellipse of where the aircraft could be; after two and a half minutes (less for missiles) it is lost. Aircraft flying together show as one raid, in a box with their number.'],
+    ['Intercepts', 'Select a fighter flight (on the map, or Select in the Air room) and click a track: the map shows where they would meet, how long it takes, the fuel left after, the missiles and the kill chance. Enter commits. The fighters fly to the meeting point, not after the symbol. The air picture on the left lists every track that is not a known friend, the most dangerous first; Tab steps through the hostiles.'],
+    ['Alert, patrols, tankers, early warning', 'A flight on 5-minute alert is airborne within five minutes, but its crews tire; on 30-minute alert they rest. A standing combat air patrol sends the relief before the aircraft on station must go home. A tanker on its track tops fighters up. An early-warning aircraft sees cruise missiles over hills and across the border, and fighters under it can fire on them; a fighter\'s own radar sees low fliers only close in. A fighter sent to look at an unknown settles what it is: an airliner off its route, or a hostile.'],
     ['Missile envelopes', 'Reach is longest head-on and shrinks against crossing or receding targets and down low. Semi-active and command-guided missiles need the battery radar on until impact. Aircraft fight back with chaff, flares and notching.'],
     ['Crew fatigue', 'Radars that radiate for hours while raids come in wear their crews out: slower reactions, slower reloads, more misses. Stand some down while others cover.'],
     ['Raids', 'The enemy raids in cycles. A build-up first: an intelligence warning about an hour out, a reconnaissance drone, drones probing the flanks, then a jammer taking station. Then the raid: drones and decoys a few minutes early to soak up missiles, cruise and ballistic missiles at the peak, stragglers after. Then a calm of a few hours: repair, reload, move batteries. Each raid ends with a report of what got through and why. Raids grow over the days, up to the big one.'],
@@ -405,7 +412,8 @@ IC.keysHTML = () => `<div class="card"><h3>Map</h3>${kv([['Move the map', '<kbd>
   <div class="card"><h3>Time</h3>${kv([['Pause', '<kbd>Space</kbd>'], ['Speed 1× to 32×', '<kbd>1</kbd> to <kbd>6</kbd>'], ['Skip until something needs you', '<kbd>S</kbd>'], ['Back out of anything, or the menu', '<kbd>Esc</kbd>']])}</div>
   <div class="card"><h3>Rooms</h3>${kv(ui.ROOMS.map(([, n, k]) => [n, `<kbd>${k}</kbd>`]).concat([['Guide', '<kbd>?</kbd>']]))}</div>
   <div class="card"><h3>Selected unit</h3>${kv([['Radar on, ambush, silent', '<kbd>E</kbd>'], ['Weapons rules', '<kbd>W</kbd>'], ['Firing doctrine', '<kbd>Q</kbd>'], ['Move', '<kbd>M</kbd>'], ['Resupply by air', '<kbd>H</kbd>'], ['Repair', '<kbd>P</kbd>'], ['Back to the reserve', '<kbd>X</kbd>'], ['Fire mission', '<kbd>F</kbd>'], ['Call in a missile team', '<kbd>G</kbd>']])}</div>
-  <div class="card"><h3>Selected track</h3>${kv([['Send a fighter to look', '<kbd>V</kbd>'], ['Assign the best battery', '<kbd>B</kbd>']])}</div>
+  <div class="card"><h3>Selected track</h3>${kv([['Next or previous hostile', '<kbd>Tab</kbd> · <kbd>shift</kbd>+<kbd>Tab</kbd>'], ['Send the quickest fighter', '<kbd>V</kbd>'], ['Assign the best battery', '<kbd>B</kbd>']])}</div>
+  <div class="card"><h3>Selected fighters</h3>${kv([['Plan an intercept', '<kbd>click</kbd> a track, or <kbd>Tab</kbd>'], ['Commit it', '<kbd>Enter</kbd>, or <kbd>right-click</kbd> the track'], ['Escort one of our aircraft', '<kbd>right-click</kbd> it'], ['Forget the plan', '<kbd>Esc</kbd>']])}</div>
   <div class="card"><h3>Airport builder</h3>${kv([['Place points', '<kbd>click</kbd>'], ['Build', 'click the last point again, or <kbd>Enter</kbd>'], ['Take a point back', '<kbd>right-click</kbd> or <kbd>Backspace</kbd>'], ['Turn', '<kbd>R</kbd> · <kbd>shift</kbd>+<kbd>R</kbd> 90°'], ['Round corners', '<kbd>F</kbd>'], ['Undo', '<kbd>Ctrl</kbd>+<kbd>Z</kbd>']])}</div>`;
 function settings() { return IC.settingsHTML(S) + IC.keysHTML(); }
 

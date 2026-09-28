@@ -12,7 +12,7 @@ Task briefs for larger pieces of work are in `docs/tasks/`. Read the brief you w
 
 ## Rules
 
-- Plain HTML, CSS and JavaScript. No build step, no frameworks, no runtime dependencies. Scripts are classic scripts sharing one namespace, `window.IC`, loaded in the order listed in `iron-canopy/index.html`.
+- Plain HTML, CSS and JavaScript. No build step, no frameworks, no runtime dependencies. Scripts are classic scripts sharing one namespace, `window.IC`, loaded in the order listed in `iron-canopy/index.html`. The one exception is three.js, for the 3D replay window only (`replay3d.js`): it is loaded from cdnjs when the replay opens, and nothing else in the game or the tests depends on it.
 - New game file? Add it to `index.html` in the right place and to the `FILES` list in `headless.js` (same order), or the tests will not load it.
 - Keep the simulation free of DOM code. Everything in the step (`IC.step` in `sim.js`) must run headless in Node.
 - Match the surrounding style: compact functions, short comments that say why, `const U = IC.U` helpers.
@@ -58,6 +58,7 @@ The player reads a lot of text: messages, event cards, tooltips, panel labels. K
 | `sim.js` | One simulation step, in order |
 | `render.js`, `render-airport.js`, `render-roads.js`, `render-logistics.js` | The map; airports and aircraft at real scale; roads, bridges, streetlights and traffic; convoys and supply lines |
 | `render-airspace.js`, `sideview.js` | Airspace volumes, lanes and holding stacks on the map, height tags (`IC.tagAlt`) and height ladders where things stack over one point; the side view (a vertical slice for a track or an airport, floors and ceilings dragged there), the reach chart, and the Airspace tab's and radio's orders (`IC.aspAct`, `IC.atcAct`) |
+| `models.js`, `render-models.js`, `record.js`, `replay3d.js` | Low-poly models built in code from boxes, cylinders and flat polygons in metres (`IC.MODELS`, `IC.modelOfThreat`, `IC.modelOfUnit`, `IC.blockBoxes` for a city block's buildings); the same models drawn from above on the 2D map close in (`IC.modelTop`); the recorder that keeps the last 15 game minutes of everything that moves and of the events, in ring buffers, headless (`IC.record` in the step, `IC.recAt`, `IC.recPath`, `IC.recEvents`); the 3D replay window (`IC.replayOpen`, from the Journal and a track's panel) and the models gallery (`IC.replayGallery`, from the Test range), the only place that uses three.js |
 | `render-combat.js` | Unit and threat symbols (a shape by role, a glyph per type, `IC.drawUnitSymbol`, `IC.drawThreatSymbol`), our units and ranges, the known enemy, tracks, missiles and every combat effect: a pooled particle system that watches missiles and explosions frame to frame (`IC.cfx`) |
 | `ui.js`, `inspector.js`, `warroom.js`, `main.js` | Top bar and panels, the selection inspector, the full-screen rooms, input and the main loop |
 

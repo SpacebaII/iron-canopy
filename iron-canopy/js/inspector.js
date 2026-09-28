@@ -37,6 +37,7 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'apart') h = apart(s);
     else if (s.kind === 'veh') h = convoy(r);
     else if (s.kind === 'air') h = air(r);
+    else if (s.kind === 'flight') { if (r.ent && !r.ent.gnd && S.air.includes(r.ent)) { S.sel = { kind: 'air', ref: r.ent }; h = air(r.ent); } else h = flight(r); }
     else if (s.kind === 'fix') h = fix(r);
     else if (s.kind === 'airway') h = airway(r);
     else if (s.kind === 'field') h = field(r);
@@ -45,6 +46,7 @@ IC.renderInspector = function (st) {
   // another selection, or another airport tab, starts at the top; the same one holds its scroll
   const key = S.group.length > 1 ? 'group' : s ? `${s.kind}:${ui.oid(s.ref)}:${s.kind === 'infra' && s.ref.parts ? ui.aptTab : ''}` : '';
   ui.setHTML(el, h, key);
+  IC.renderAirPicture(S);
 };
 
 /* ---------- the airspace: fixes, airways, light-aircraft fields ---------- */
@@ -193,6 +195,8 @@ function track(t) {
   if (t.noReply) rows.push(['Radio', '<span class="suspect">no answer</span>']);
   if (t.affWhy) rows.push(['Why', esc(t.affWhy)]);
   if (t.inbound) rows.push(['Interceptors', `${t.inbound} in flight`]);
+  if (!t.det && t.held) rows.push(['Contact', `<span class="amber">no plot for ${U.dur(S.time - t.pt)}: shown where it should be by now, within ${U.km(IC.trackUnc(t).along)}. Lost in ${U.dur(Math.max(0, IC.coastT(t) - (S.time - t.pt)))}.</span>`]);
+  if (t.grp) rows.push(['Raid', `${t.grp.n} aircraft flying together: TN ${t.grp.members.slice(0, 6).map(x => x.tn).join(', ')}${t.grp.n > 6 ? '…' : ''}. Fighters sent at one take them all on.`]);
   if (aff === 'H' && !t.d.civil && (t.aim || t.x1 != null)) {
     const ax = t.x1 != null ? t.x1 : t.aim.x, ay = t.y1 != null ? t.y1 : t.aim.y;
     rows.push(['Impact', `<span class="hostile">${esc(IC.nearestPlace(S, ax, ay))} · ${U.dur(IC.timeToImpact(t))}</span>`]);
@@ -210,13 +214,15 @@ function track(t) {
   acts.push(`<button class="act" data-act="atc" data-op="side" title="A slice along its path: what flies above and below it">Side view</button>`);
   if ((t.sq || t.d.civil || t.disguise) && t.d.cls !== 'bal' && !t.border) acts.push(`<button class="act ${t.offFlag ? 'pri' : ''}" data-act="radio" ${t.called && S.time - t.called < 300 ? 'disabled' : ''} title="Call the aircraft on the guard frequency">${t.called && S.time - t.called < 300 ? 'Calling…' : 'Call on radio'}</button>`);
   const escort = S.air.find(a => !a.dead && !a.gnd && a.kind === 'ftr' && a.mission && a.mission.track === t);
+  const ftrs = (t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm' || t.d.cls === 'heli') && !t.border ? fighterOptions(t) : '';
   if (escort && hostile && (escort.roe || S.ad.roe) === 'hold') acts.push(`<button class="act danger" data-act="escortFire" data-id="${escort.id}" title="${esc(escort.name)} is escorting it with weapons held. This order lets it fire.">Order ${esc(escort.name)} to fire</button>`);
   if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
+  if (IC.replayOpen && S.rec && S.rec.of.has(t)) acts.push(`<button class="act" data-act="replayTrack" title="The last minutes of this track in 3D, following it">Replay</button>`);
   const warn = (aff === 'A' || aff === 'N') ? `<div class="warnbox">This track squawks a civil code on a filed route. Batteries will not fire at it unless you assign one by hand.</div>` : aff === 'S' && S.ad.roe === 'tight' ? `<p class="hint">Weapons are Tight: batteries hold fire on suspects. Identify it (fighter or type recognition) or assign a battery by hand.</p>` : '';
   const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
   // a known hostile shows its symbol; anything else the aircraft sign in the colour of what we think it is
   const badge = aff === 'H' && IC.THR[t.type] ? `<span class="badge hostile"><canvas data-thr="${t.type}" width="68" height="52"></canvas></span>` : `<span class="badge ${colCls}">${ui.icon('air')}</span>`;
-  return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
+  return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${ftrs}${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
 }
 
 /* ---------- airports and air bases: the layout, what it can do, what is wrong with it ---------- */
@@ -622,20 +628,134 @@ function convoy(v) {
   return head(`<span class="badge supply">${ui.icon('logi')}</span>`, v.name, `${v.trucks} ${lorries} · ${v.contract ? 'supplier' : `based at ${esc(v.home.name)}`}`, st, j ? 'busy' : '') +
     `<div class="ibody">${rows.length ? kv(rows) : '<p class="hint">Parked at the depot, waiting for a job. Convoys are sent automatically, priority areas first.</p>'}<p class="hint">Its route is drawn on the map. The enemy watches roads near the border and strikes convoys it sees: a depot further back, or air defence along the road, keeps them alive.</p></div>`;
 }
+/* ---------- the air war: our aircraft, flights on the ground, intercepts, the air picture ---------- */
+const STATE_WORDS = { out: 'En route', station: 'On station', engage: 'Engaging', rtb: 'Returning', vid: 'Identifying', escort: 'Escorting', refuel: 'Refuelling' };
+const fatWords = f => f >= 0.95 ? '<span class="hostile">exhausted: must rest</span>' : f > IC.FATIGUE.tired ? `<span class="amber">tired (${U.pct(f)}): slower to start, shoot less well</span>` : f > 0.35 ? `fair (${U.pct(f)})` : `rested (${U.pct(f)})`;
+function whoAttr(who) { return who.r && who.kind ? `data-aid="${who.id}"` : `data-rid="${who.id}"`; }
+/* what an intercept would look like, and the button that commits it */
+function planBox(who, t) {
+  const P = IC.interceptPlan(S, who, t);
+  const tn = t.grp ? `the raid of ${t.grp.n} led by TN ${t.tn}` : `TN ${t.tn}`;
+  if (P.x == null) return `<div class="sec plan"><h3 class="sh">Intercept ${esc(tn)}</h3><div class="warnbox">${esc(P.why || 'No intercept possible.')}</div><div class="acts"><button class="act" data-act="air" data-op="cancel">Cancel</button></div></div>`;
+  const rows = [
+    ['Meets it', `in ${U.dur(P.T)}${P.delay > 30 ? ` <span class="muted">(${U.dur(P.delay)} of it on the ground)</span>` : ''} near ${esc(IC.nearestPlace(S, P.x, P.y))}`],
+    ['Fuel after', P.fuelBack > 0 ? `${U.dur(P.fuelBack)} once home` : `<span class="hostile">not enough to come back</span>${S.air.some(k => k.kind === 'tkr' && k.state === 'station') ? ' · a tanker is up' : ''}`],
+    ['Weapons', `${P.aam} radar missiles, ${P.srm} heat-seeking · reach ${esc(P.reachWords)}`],
+    ['Kill chance', P.idFirst ? '<span class="unknown">identify first: nobody fires at it until a pilot has seen it</span>' : `${U.pct(P.pk)} a target with two missiles${P.n > 1 ? ` · ${P.enough ? `enough for all ${P.n}` : `<span class="amber">missiles for ${Math.floor((P.aam + P.srm) / 2)} of ${P.n}</span>`}` : ''}${P.weapons === 'hold' ? ' · <span class="amber">weapons on Hold: it will only escort</span>' : ''}`]
+  ];
+  if (P.late) rows.push(['Too late', `<span class="amber">it reaches ${esc(P.late)} first</span>`]);
+  return `<div class="sec plan"><h3 class="sh">Intercept ${esc(tn)} <em>drawn on the map</em></h3>${kv(rows)}<div class="acts"><button class="act pri" data-act="air" data-op="go" ${P.ok ? '' : 'disabled'}>${kbd('Enter')}Commit</button><button class="act" data-act="air" data-op="cancel">Cancel</button></div><p class="hint">${P.ok ? 'Right-clicking the track commits at once. Click the track again to select it instead.' : esc(P.why)}</p></div>`;
+}
 function air(a) {
   const K = IC.AIR_KIND[a.kind] || { name: 'Allied cargo aircraft', short: 'CGO' };
   const m = a.mission || {};
-  const mission = { cap: 'Combat air patrol', intercept: 'Intercept', strike: 'Strike', orbit: 'Early warning', isr: 'Reconnaissance', supply: 'Resupply' }[m.type] || (a.allied ? 'Airlift' : '—');
+  const mission = { cap: 'Combat air patrol', intercept: `Intercept TN ${m.track ? m.track.tn : '?'}`, strike: 'Strike', orbit: 'Early warning', isr: 'Reconnaissance', supply: 'Resupply', hold: 'Holding', escort: `Escort for ${m.who ? esc(m.who.name) : '?'}`, tanker: 'Tanker track' }[m.type] || (a.allied ? 'Airlift' : '—');
   const rows = [['Mission', mission + (a.task ? ' (standing task)' : '')]];
-  if (!a.allied) rows.push(['Fuel', U.dur(a.fuel)], ['Aircraft', `${a.hp}/${a.n}`]);
-  if (a.kind === 'ftr') rows.push(['Missiles', `${a.aam} AAM${a.gbu ? ' · ' + a.gbu + ' bombs' : ''}`]);
+  if (!a.allied) {
+    const base = a.r && IC.baseOf(S, a.r.base), K2 = IC.AIR_KIND[a.kind];
+    const home = base ? U.dist(a, base) / K2.spd * 1.25 + 300 : 0;
+    rows.push(['Fuel', `${U.dur(Math.max(0, a.fuel))}${base && a.state !== 'rtb' ? ` · must turn home in ${U.dur(Math.max(0, a.fuel - home))}` : ''}`], ['Aircraft', `${a.hp}/${a.n}${a.dmg ? ` · <span class="amber">${a.dmg} damaged</span>` : ''}`]);
+    if (a.r && a.kind !== 'isr' && a.kind !== 'ucav') rows.push(['Crews', fatWords(a.r.fat || 0)]);
+  }
+  if (a.kind === 'ftr') rows.push(['Missiles', `${a.aam} radar · ${a.srm || 0} heat-seeking${a.gbu ? ' · ' + a.gbu + ' bombs' : ''} · radar missiles reach ${U.km(IC.aamReach('mrm', a.alt, { alt: a.alt }, null))} at its height`]);
+  if (a.kind === 'tkr') rows.push(['Fuel to give', `${U.dur(a.give || 0)} of fighter flying`]);
+  if (a.kind === 'aew') rows.push(['Low cover', `${U.km(IC.aewLowR(a))} against cruise missiles, over hills and across the border`]);
   rows.push(['Chaff / flares', a.cm]);
   if (a.job) rows.push(['Cargo', esc(IC.jobLabel(a.job))]);
-  const acts = a.r && !a.job && a.state !== 'rtb' ? `<div class="acts"><button class="act" data-act="recallSel">Recall</button></div>` : '';
+  const plan = S.icpt && S.icpt.who === a && S.icpt.t && !S.icpt.t.dead ? planBox(a, S.icpt.t) : '';
+  const acts = a.r && !a.job ? `<div class="acts">${a.state !== 'rtb' ? `<button class="act" data-act="recallSel">Return to base</button>` : ''}${a.state !== 'rtb' && m.type !== 'hold' ? `<button class="act" data-act="air" data-op="hold">Hold here</button>` : ''}</div>` : '';
+  const esc2 = (a.kind === 'heli' || a.kind === 'cargo' || a.kind === 'aew' || a.kind === 'tkr') && !a.allied && !S.air.some(f => f.mission && f.mission.who === a) ? `<div class="acts"><button class="act" data-act="air" data-op="escort" data-aid="${a.id}" ${IC.escortFor(S, a) ? '' : 'disabled'}>Send a fighter escort</button></div>` : '';
   const roe = a.kind === 'ftr' && a.r ? `<div class="sec"><h3 class="sh">Weapons</h3>${seg('froe', a.r.roe || 'auto', [['auto', `National (${S.ad.roe})`], ['free', 'Free'], ['tight', 'Tight'], ['hold', 'Hold', 'red']])}</div>` : '';
-  return head(`<span class="badge friend">${ui.icon('air')}</span>`, a.name, esc(K.name), { out: 'En route', station: 'On station', engage: 'Engaging', rtb: 'Returning', vid: 'Identifying' }[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
-    `<div class="ibody">${kv(rows)}${roe}${acts}<p class="hint">Right-click the map to move its station, a track to intercept, or an enemy target to strike.</p></div>`;
+  const hint = a.kind === 'ftr' ? 'Click a track to see an intercept (Tab picks the next hostile). Right-click the map to patrol there, one of our aircraft to escort it, an enemy target to strike.' : 'Right-click the map to move its station.';
+  return head(`<span class="badge friend">${ui.icon('air')}</span>`, a.name, esc(K.name), a.gnd ? 'Taxiing' : STATE_WORDS[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
+    `<div class="ibody">${plan}${kv(rows)}${roe}${acts}${esc2}<p class="hint">${hint}</p></div>`;
 }
+/* a flight on the ground: its alert state, its crews, what it is missing */
+function flight(r) {
+  const K = IC.AIR_KIND[r.kind], b = IC.baseOf(S, r.base);
+  const st = r.st === 'ready' ? 'Ready' : r.st === 'turn' ? `Rearming ${U.dur(r.t)}` : r.st === 'lost' ? 'Lost' : r.ent && r.ent.gnd ? 'Taxiing' : 'Airborne';
+  const rows = [['Aircraft', `${r.n} of ${r.nMax || K.n}${r.back && r.back.length ? ` · ${esc(IC.flightBackText(S, r))}` : ''}`]];
+  if (r.kind !== 'isr' && r.kind !== 'ucav') rows.push(['Crews', fatWords(r.fat || 0)]);
+  if (r.kind === 'ftr') { const L = IC.LOADOUTS[r.load || 'aa']; rows.push(['Loadout', `${esc(L.name)}: ${esc(L.desc)}`]); }
+  if (r.st === 'ready' || r.st === 'turn') rows.push(['Airborne in', `about ${U.dur(IC.launchDelay(S, r))} from an order`]);
+  const why = r.st === 'ready' ? IC.missionOk(S, r, 'cap') : '';
+  if (why) rows.push(['Cannot launch', `<span class="hostile">${esc(why)}</span>`]);
+  const alert = r.kind === 'ftr' ? `<div class="sec"><h3 class="sh">Alert <em>how fast it gets airborne</em></h3><div class="seg">${[5, 15, 30].map(v => `<button data-act="air" data-op="alert" data-rid="${r.id}" data-v="${v}" aria-pressed="${IC.alertOf(r) === v}" title="${esc(IC.ALERT[v].desc)}">${IC.ALERT[v].name}</button>`).join('')}</div><p class="hint">${esc(IC.ALERT[IC.alertOf(r)].desc)}</p></div>` : '';
+  const plan = S.icpt && S.icpt.who === r && S.icpt.t && !S.icpt.t.dead ? planBox(r, S.icpt.t) : '';
+  const acts = r.st === 'ready' && r.kind === 'ftr' ? `<div class="acts"><button class="act" data-act="airMode" data-rid="${r.id}" data-v="cap" ${why ? 'disabled' : ''}>Patrol a point</button><button class="act" data-act="airMode" data-rid="${r.id}" data-v="strike" ${IC.missionOk(S, r, 'strike') ? 'disabled' : ''}>Strike</button></div>` : '';
+  return head(`<span class="badge friend">${ui.icon('air')}</span>`, r.name, `${esc(K.name)} · ${esc(b ? b.name : '?')}`, st, r.st === 'ready' ? 'ok' : r.st === 'lost' ? 'bad' : 'busy') +
+    `<div class="ibody">${plan}${kv(rows)}${alert}${acts}${r.kind === 'ftr' ? '<p class="hint">Click a track on the map, or a row of the air picture, to see an intercept by this flight.</p>' : ''}</div>`;
+}
+/* the fighters that could take a track, quickest first */
+function fighterOptions(t) {
+  const who = S.air.filter(a => a.kind === 'ftr' && a.r && !a.dead && a.state !== 'rtb' && (a.aam > 0 || a.srm > 0))
+    .concat(S.roster.filter(r => r.kind === 'ftr' && (r.st === 'ready' || r.st === 'turn') && !r.ent));
+  const L = who.map(w => ({ w, P: IC.interceptPlan(S, w, t) })).filter(o => o.P.x != null).sort((a, b) => a.P.T - b.P.T).slice(0, 4);
+  if (!L.length) return '';
+  return `<div class="sec"><h3 class="sh">Fighters <em>quickest first</em></h3><div class="list">${L.map(({ w, P }) => {
+    const on = w.mission && w.mission.track === t;
+    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (w.gnd ? 'taxiing' : (STATE_WORDS[w.state] || 'Airborne').toLowerCase()) : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · fuel after ${P.fuelBack > 0 ? U.dur(P.fuelBack) : '<span class="hostile">none</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
+  }).join('')}</div></div>`;
+}
+/* ---------- the air picture: everything not known friendly, most dangerous first ---------- */
+IC.renderAirPicture = function (S2) {
+  S = S2;
+  const el = $('airpic');
+  if (!el) return;
+  const rows = S.mode === 'range' ? [] : IC.airPicture(S);
+  if (!rows.length) { ui.setHTML(el, ''); el.classList.remove('glass'); return; }
+  el.classList.add('glass');
+  const sel = S.sel && S.sel.kind === 'track' ? S.sel.ref : null;
+  const hot = rows.filter(r => r.aff === 'H').length;
+  const item = r => {
+    const t = r.t, on = sel && (sel === t || (r.g && sel.grp === r.g));
+    const what = r.aff === 'H' ? (IC.KLASS[t.klass] || t.d.name) : r.aff === 'S' ? 'Suspect' : 'Unknown';
+    const when = isFinite(r.tti) && r.tti < 36000 ? `${U.dur(r.tti)} to ${esc(r.to)}` : t.border ? 'patrolling the border' : r.inside ? 'over our territory' : 'outside the border';
+    const ours = S.air.filter(a => a.mission && a.mission.track && (a.mission.track === t || (r.g && a.mission.track.grp === r.g))).map(a => a.name);
+    return `<button class="aprow ${r.aff}${on ? ' on' : ''}" data-act="air" data-op="pick" data-id="${t.id}" title="Select it${r.g ? ' (the whole raid)' : ''}"><i></i><b>TN ${t.tn}${r.n > 1 ? ` ×${r.n}` : ''}</b><span>${esc(what)}${t.det ? '' : ' · <em>no contact</em>'}</span><small>${when}${ours.length ? ` · <span class="friend">${esc(ours.join(', '))}</span>` : ''}</small></button>`;
+  };
+  const n = ui.apMin ? 0 : 7;
+  ui.setHTML(el, `<h3 data-act="air" data-op="apMin" title="Collapse or expand">Air picture<em>${hot ? `${hot} hostile · ` : ''}${rows.length} track${rows.length > 1 ? 's' : ''} · Tab</em></h3>${rows.slice(0, n).map(item).join('')}${!ui.apMin && rows.length > n ? `<p class="hint">and ${rows.length - n} more</p>` : ''}`);
+};
+/* clicking a track with fighters selected sets up an intercept instead of selecting it */
+IC.airClick = function (S2, hit) {
+  const s = S2.sel;
+  if (!s || !hit || hit.kind !== 'track') { S2.icpt = null; return false; }
+  const who = s.kind === 'air' && s.ref.kind === 'ftr' && s.ref.r && !s.ref.job ? s.ref : s.kind === 'flight' && s.ref.kind === 'ftr' ? s.ref : null;
+  if (!who) return false;
+  if (S2.icpt && S2.icpt.who === who && S2.icpt.t === hit.ref) { S2.icpt = null; return false; }
+  S2.icpt = { who, t: hit.ref };
+  return true;
+};
+/* the fighter best placed to escort one of our aircraft */
+IC.escortFor = function (S2, a) {
+  const air = S2.air.filter(f => f.kind === 'ftr' && f.r && !f.dead && !f.gnd && f.state !== 'rtb' && f.state !== 'engage' && (!f.mission || f.mission.type !== 'intercept') && (f.aam > 0 || f.srm > 0)).sort((p, q) => U.dist(p, a) - U.dist(q, a))[0];
+  if (air) return air;
+  return S2.roster.filter(r => r.kind === 'ftr' && r.st === 'ready' && !IC.missionOk(S2, r, 'cap')).sort((p, q) => U.dist(IC.baseOf(S2, p.base), a) - U.dist(IC.baseOf(S2, q.base), a))[0] || null;
+};
+const whoOf = (S2, ds) => ds.aid ? S2.air.find(x => x.id === ds.aid) : ds.rid ? S2.roster.find(x => x.id === ds.rid) : null;
+IC.airAct = function (S2, ds) {
+  const op = ds.op, t = ds.id ? S2.threats.find(x => x.id === ds.id) : null, sel = S2.sel && S2.sel.ref;
+  if (op === 'pick' && t) { ui.jump(t, 'track'); return; }
+  if (op === 'apMin') { ui.apMin = !ui.apMin; return; }
+  if (op === 'plan' && t) { const w = whoOf(S2, ds); if (w) { S2.icpt = { who: w, t }; IC.select(w.r && w.kind ? { kind: 'air', ref: w } : { kind: 'flight', ref: w }); } return; }
+  if (op === 'commit' && t) { const w = whoOf(S2, ds); if (w) IC.commitIntercept(S2, w, t); return; }
+  if (op === 'go' && S2.icpt) {
+    const x = IC.commitIntercept(S2, S2.icpt.who, S2.icpt.t);
+    S2.icpt = null;
+    if (x && !x.gnd) IC.select({ kind: 'air', ref: x });
+    return;
+  }
+  if (op === 'cancel') { S2.icpt = null; return; }
+  if (op === 'hold' && S2.sel && S2.sel.kind === 'air') { IC.holdAir(S2, sel); return; }
+  if (op === 'alert') { const r = whoOf(S2, ds); if (r) IC.setAlert(S2, r, +ds.v); return; }
+  if (op === 'escort') {
+    const a = S2.air.find(x => x.id === ds.aid), f = a && IC.escortFor(S2, a);
+    if (!f) return;
+    if (f.r && f.kind) IC.escortAir(S2, f, a); else IC.launchAir(S2, f, { type: 'escort', who: a });
+  }
+};
+
 function group() {
   const g = S.group;
   const types = {}; for (const u of g) { const k = u.d.short; types[k] = (types[k] || 0) + 1; }

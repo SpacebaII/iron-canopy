@@ -33,6 +33,7 @@ IC.step = function (S, dt) {
 /* effects, trails and clean-up after every step */
 function tail(S, dt) {
   const F = S.fx;
+  if (IC.record) IC.record(S, dt);
   for (const f of F.fires) f.t += dt;
   F.fires = F.fires.filter(f => f.t < f.life);
   for (const p of F.plumes) p.t += dt;

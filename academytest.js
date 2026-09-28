@@ -39,7 +39,10 @@ const ACT = {
   airbase: [
     S => { if (!S.units.some(u => u.callin) && !IC.callInState(S).inbound.length) { const b = S.byId.ab_fwd; IC.callIn(S, b.x + 30, b.y + 20); } },
     null,
-    S => { const r = S.roster.filter(x => x.kind === 'ftr' && x.st === 'ready'); const b = S.threats.find(t => t.type === 'bmr' && t.det); if (b && r[0]) IC.launchAir(S, r[0], { type: 'intercept', track: b }); },
+    // the bomber's row in the air picture, then the quickest fighter on it
+    S => { const row = IC.airPicture(S).find(r => r.t.type === 'bmr'); if (row) S.sel = { kind: 'track', ref: row.t }; },
+    S => { const t = S.sel && S.sel.ref; if (t && t.type === 'bmr' && !t.dead) { const w = IC.bestInterceptor(S, t); if (w) IC.commitIntercept(S, w, t); } },
+    null,
     S => { S.sel = { kind: 'infra', ref: S.byId.ab_fwd }; },
     S => { const b = S.byId.ab_fwd; const f = b.parts.find(x => (x.kind === 'hangar' || x.kind === 'has') && x.hp < x.max); if (f) IC.baseWork(S, b, 'repair', f.id); else if (!b.works.some(w => w.kind === 'build')) IC.baseWork(S, b, 'build', 'hangar'); }
   ],
