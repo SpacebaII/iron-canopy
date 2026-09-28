@@ -703,11 +703,16 @@ function mixFor(S, E, kind, obj) {
     const how = E.shock.how, via = how === 'axis' ? { via: 1 } : {};
     if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 3, -600); }
     else add('dcy', 4, -300);
-    // the other targets first: launchers and a site's missiles run out, and the main target should not take them all
+    // the other targets first: launchers and a site's missiles run out, and the main target should not take them all.
+    // Each target's set gets what keeps it near a quarter of all that will have been fired by the end of the shock.
+    const N = E.tallyN + bal + cms + 4 * k, left = {};
+    for (const t of more.concat([obj])) left[t.set] = Math.max(3, Math.floor(0.28 * N - (E.tally[t.set] || 0)));
     for (const t of more.concat([null])) {
-      const x = t ? { obj: t, set: t.set } : {}, dm = droneHours(S, t || obj) <= 5;
-      add('cm', share(cms), how === 'soak' || !t ? 0 : U.rand(-120, 120), Object.assign({}, x, via)); add('bal', share(bal), 0, x);
-      if (dm) add('drones', 4, -300, Object.assign({}, x, via));
+      const tt = t || obj, x = t ? { obj: t, set: t.set } : {}, dm = droneHours(S, tt) <= 5;
+      const nb = Math.min(share(bal), left[tt.set]), nc = Math.min(share(cms), left[tt.set] - nb), nd = dm ? Math.min(4, left[tt.set] - nb - nc) : 0;
+      left[tt.set] -= nb + nc + nd;
+      add('cm', nc, how === 'soak' || !t ? 0 : U.rand(-120, 120), Object.assign({}, x, via)); add('bal', nb, 0, x);
+      add('drones', nd, -300, Object.assign({}, x, via));
     }
     add('mrbm', 1, 0); add('jam', 2, 0, via);
     if (how === 'granted') add('low', 1, 0);
@@ -762,10 +767,10 @@ function planShock(S, E) {
   // two or three more of other kinds, the most valuable near the first (within 300 km)
   const more = [], used = new Set([obj.set]);
   const near = t => t.w / (1 + U.dist(t, obj) / 2000);
-  for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => share(a.set) - share(b.set) || near(b) - near(a))) {
-    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > 0.35)) continue;
-    used.add(t.set); more.push(t);
+  for (const lim of [0.25, 0.4]) for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => share(a.set) - share(b.set) || near(b) - near(a))) {
     if (more.length >= 3) break;
+    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > lim)) continue;
+    used.add(t.set); more.push(t);
   }
   E.shock = { how, obj, more, via: how === 'axis' ? axis : null, t: S.time };
   const words = { granted: `${obj.name}, which nothing guards`, axis: `${obj.name}, coming in round the ${axis ? place(S, axis) : 'flank'} where they have seen no radar`, soak: `${obj.name}, the best-guarded big target: decoys and drones first to empty the batteries, then the missiles as they reload` };
