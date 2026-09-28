@@ -192,6 +192,12 @@ b{font-weight:600}
 .bars{display:grid;grid-template-columns:5.2rem 1fr 3rem;gap:.35rem .6rem;align-items:center;font-size:.85rem}
 .bars>span:nth-child(3n+1){color:var(--muted)}
 .bars>span:nth-child(3n){text-align:right;font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+.bars.long{grid-template-columns:minmax(8rem,12rem) 1fr 3rem}
+/* the enemy's four acts, in the Intel room */
+.acts-line{display:flex;flex-wrap:wrap;gap:.3rem}
+.acts-line span{font-size:.78rem;padding:.2rem .55rem;border-radius:999px;background:rgba(255,255,255,.05);color:var(--dim)}
+.acts-line span.past{color:var(--muted)}
+.acts-line span.on{background:rgba(255,90,90,.18);color:var(--text);font-weight:600}
 .bar{height:6px;border-radius:3px;background:var(--well);overflow:hidden}
 .bar i{display:block;height:100%;border-radius:3px;transition:width .3s var(--ease)}
 .acts{display:flex;flex-wrap:wrap;gap:6px}

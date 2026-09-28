@@ -282,17 +282,35 @@ function economy() {
 }
 
 /* ---------- intelligence ---------- */
+/* the enemy's side: where its campaign stands, what it seems to want, what it has hit, what it is saving, and the
+   latest intelligence. Only what our side could know: the aim as intercepts read it, the stockpile as satellites
+   see it (in round numbers without ESM or satellite warning), and the share of what they fired at each kind of target. */
+function enemyAgenda() {
+  const E = S.enemy, act = E.act || 0, A = IC.EACTS[act];
+  const steps = [1, 2, 3, 4].map(n => `<span class="${n === act ? 'on' : n < act ? 'past' : ''}" title="${esc(IC.EACTS[n].text)}">${n} · ${esc(IC.EACTS[n].name)}</span>`).join('');
+  const head = !E.war ? 'Massing on the border. No shot fired yet.' : `${esc(A.text)}${act === 3 && S.time < (E.lullEnd || 0) ? ` <b>A lull: they are reassessing${E.lullEnd ? `, for a few hours more` : ''}.</b>` : ''}`;
+  const aim = E.war && E.aim ? `<p style="margin:0">Their aim, as intercepts read it: <b>${esc(IC.EAIMS[E.aim].name)}</b> (${esc(IC.EAIMS[E.aim].hint)}).${E.plan && E.plan.obj && E.raid ? ` Next raid being prepared${E.raid.warned ? `, most likely towards ${esc(IC.nearestPlace(S, E.plan.obj.x, E.plan.obj.y).replace(/^\d+ km \w+ of /, ''))}` : ''}.` : ''}</p>` : '';
+  const T = IC.enemyTally(S), sets = Object.entries(T.all).sort((a, b) => b[1] - a[1]);
+  const hit = sets.length ? `<div class="bars long">${sets.map(([k, n]) => `<span>${esc(IC.ESETS[k].name)}</span>${bar(n / T.allN, 'var(--hostile)')}<span>${U.pct(n / T.allN)}</span>`).join('')}</div><p class="hint">Share of the ${T.allN} weapons fired at each kind of target. What they fire at says what they want.</p>` : '';
+  let save = '';
+  if (E.save && !E.shock) {
+    const st = IC.enemyStock(S), sharp = IC.hasTech(S, 's_sat') || IC.hasTech(S, 's_esm'), f = sharp ? st.f : Math.round(st.f * 4) / 4;
+    const sites = S.esites.filter(s => s.hold && s.pk > 0 && (s.kind === 'bm' || s.kind === 'cm' || s.kind === 'mrbm')).map(s => `<button class="li" data-act="sels" data-id="${s.id}"><b>${esc(s.name)}</b><small>${s.destroyed ? 'destroyed' : `${U.pct(s.hp / s.max)} intact`} · stock burns if it is hit</small></button>`).join('');
+    save = `<div class="card"><h3>Their stockpile<em>${E.save.reps ? (sharp ? `ready in about ${U.dur(st.eta)}` : st.eta < 6 * 3600 ? 'ready within hours' : 'ready in half a day or more') : 'not yet seen'}</em></h3>${E.save.reps ? `<div class="bars"><span>Put aside</span>${bar(f, 'var(--amber)')}<span>${U.pct(f)}</span></div><p class="hint">They have stopped firing their big missiles and are saving them for one large strike. Destroying the stock or the launchers sets it back; a lost launcher takes them about ${U.dur(IC.TEL_REPLACE)} to replace.</p>${sites ? `<div class="list">${sites}</div>` : ''}` : '<p class="hint">Satellite pictures are being read.</p>'}</div>`;
+  }
+  const news = E.intel.slice(0, 6).map(i => `<div class="li"><small>${U.hhmm(i.t)} · ${esc(i.text)}</small></div>`).join('');
+  return `<div class="card wide"><h3>Their campaign<em>${esc(act ? `act ${act}: ${A.name}` : E.mood)}</em></h3><div class="acts-line">${steps}</div><p style="margin:0">${head}</p>${aim}${hit}<div class="bars"><span>Enemy will</span>${bar(E.will / 100, 'var(--hostile)')}<span>${Math.round(E.will)}%</span></div><p class="hint">Their will falls when their launchers, bases and aircraft are destroyed and their raids fail.</p></div>
+    ${save}<div class="card"><h3>Latest intelligence</h3>${news ? `<div class="list">${news}</div>` : '<p class="hint">Nothing yet.</p>'}</div>`;
+}
 function intel() {
   const E = S.enemy;
-  const P = E.plan;
-  const assess = !E.war ? 'Massing on the border.' : P ? `Their air force appears to be trying to <b>${esc(P.label)}</b>, focused on ${esc(P.obj.name)}. ${P.phase === 'probe' ? 'Small raids so far: they are probing our coverage.' : P.phase === 'strike' ? 'Probing is over. <b class="hostile">Expect a heavy, coordinated strike.</b>' : 'They are assessing the damage from their last strike.'}` : 'No clear objective: harassment and opportunistic raids.';
   const ops = E.ops.slice(-8).reverse().map(o => `<div class="li"><b>${esc(o.label)}</b><small>${U.hhmm(o.t0)} · ${o.launched} launched · ${o.lost} shot down · ${o.hits} hits</small></div>`).join('');
   const known = [...E.known.values()].filter(k => !k.ref.dead).sort((a, b) => b.t - a.t);
   const mine = known.slice(0, 10).map(k => `<button class="li" data-act="selu" data-id="${k.ref.id}"><b>${esc(k.ref.name)}</b><small>${esc(k.ref.d.name)} · via ${esc(k.how)} · ${U.dur(S.time - k.t)} ago${U.dxy(k.x, k.y, k.ref.x, k.ref.y) > 30 ? ' · moved since' : ''}</small></button>`).join('');
   const sites = S.esites.filter(s => s.pk > 0).map(s => `<button class="li" data-act="sels" data-id="${s.id}"><b>${esc(s.name)}</b><small>${s.destroyed ? 'destroyed' : s.pk >= 2 ? `located · ${U.pct(s.hp / s.max)} intact` : 'suspected'}</small></button>`).join('');
   const tels = S.tels.filter(t => t.known && !t.dead).map(t => `<button class="li" data-act="selt" data-id="${t.id}"><b>${esc(t.name)}</b><small>last seen ${U.dur(S.time - t.kt)} ago</small></button>`).join('');
   const bda = S.reports.slice(0, 8).map(r => `<div class="li"><b>${esc(r.by)} → ${esc(r.target.name)}</b><small>${U.hhmm(r.t)} · ${esc(r.text)}</small></div>`).join('');
-  return `<div class="card wide"><h3>Assessment<em>${esc(E.mood)}</em></h3><p style="margin:0">${assess}</p><div class="bars"><span>Enemy will</span>${bar(E.will / 100, 'var(--hostile)')}<span>${Math.round(E.will)}%</span></div><p class="hint">Their will falls when formations, launchers and bases are destroyed and their offensives stall. It rises when they take towns.</p></div>
+  return `${enemyAgenda()}
     <div class="card"><h3>Recent enemy operations</h3>${ops ? `<div class="list">${ops}</div>` : '<p class="hint">Nothing yet.</p>'}</div>
     <div class="card"><h3>Strike reports</h3>${bda ? `<div class="list">${bda}</div>` : '<p class="hint">No strikes yet.</p>'}</div>
     <div class="card"><h3>What they know about us<em>${known.length} of ${S.units.length} units</em></h3>${mine ? `<div class="list">${mine}</div>` : '<p class="hint">No fix on any of our units.</p>'}<p class="hint">Radiating, firing and sitting near the border give units away. Moving makes their fix stale.</p></div>
