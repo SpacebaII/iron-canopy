@@ -332,7 +332,6 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
 
   /* the old town's ring boulevard, the avenues out and (in a big city) the ring road */
   const streets = [], parksL = [], squares = [];
-  const extra = [];   // road-like lines the blocks keep clear of
   if (c.lat.rho && st.ring) {
     const pts = [];
     for (let q = 0; q <= 64; q++) { const a = q / 64 * Math.PI * 2, rr = F.rho(a); pts.push(F.toW(F.ou + Math.cos(a) * rr, F.ov + Math.sin(a) * rr)); }
@@ -351,7 +350,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
         if (W.inLake(x, y) || W.riverDist(x, y) < 3 || hwNear(x, y, 1) || fields.some(f => U.dxy(f.x, f.y, x, y) < f.r)) break;
         pts.push({ x, y });
       }
-      if (pts.length >= 4) { streets.push({ cls: 'art', pts, radial: true }); extra.push(pts); }
+      if (pts.length >= 4) streets.push({ cls: 'art', pts, radial: true });
     }
   }
   const bypass = W.edges && W.edges.some(e => e.bypass === c.id);
@@ -359,7 +358,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     let pts = [];
     // (the ring motorway of a boulevard city runs at its edge, over the old fortifications)
     const kr = st.peri ? 0.9 : c.style === 'us' ? 0.62 : 0.72;
-    const flush = () => { if (pts.length > 4) { streets.push({ cls: 'ring', pts, ring: pts.length > 90 }); extra.push(pts); } pts = []; };
+    const flush = () => { if (pts.length > 4) streets.push({ cls: 'ring', pts, ring: pts.length > 90 }); pts = []; };
     for (let q = 0; q <= 96; q++) {
       const a = q / 96 * Math.PI * 2, rr = ext(a) * kr * (1 + 0.04 * Math.sin(5 * a + c.lat.p2));
       const x = c.x + Math.cos(a) * rr, y = c.y + Math.sin(a) * rr;
@@ -368,7 +367,10 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     }
     flush();
   }
-  /* the template's own streets */
+  /* the template's own streets (each is road the blocks keep clear of, and the next ones stop at) */
+  const bkAdd = l => { for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, l.cls]); };
+  streets.forEach(bkAdd);
+  const addSt = l => { streets.push(l); bkAdd(l); };
   const over = (ave || []).slice();   // lines that replace the lattice streets under them
   const cellAt = (u, v) => { const i = Math.floor(u / SP), j = Math.floor(v / SP); return i >= -n && j >= -n && i < n && j < n ? isCell.get(idx(i, j)) : null; };
   const inTown = (x, y) => { const [u, v] = F.toG(x, y); return !!cellAt(u, v); };
@@ -383,7 +385,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     }
     if (run.length > best.length) best = run;
     if (best.length >= 8) {
-      streets.push({ cls: 'art', pts: best, radial: true, diag: true }); extra.push(best);
+      addSt({ cls: 'art', pts: best, radial: true, diag: true });
       const X = [];
       for (let i = -n; i <= n; i++) { const v = bw.v0 + (i * SP - bw.u0) / bw.sl, p = F.toW(i * SP, v); if (cellAt(i * SP, v) && U.dist(p, c) < R2 * 0.55) X.push(p); }
       X.sort((a, b) => U.dist(a, c) - U.dist(b, c));
@@ -395,7 +397,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     const L = T > 400 ? 2 : 1, pts = [];
     for (const [a0, b0, da, db] of [[-L, -L, 1, 0], [L, -L, 0, 1], [L, L, -1, 0], [-L, L, 0, -1]]) for (let q = 0; q < 4 * L; q++) pts.push(F.toW((a0 + da * q / 2) * SP, (b0 + db * q / 2) * SP));
     pts.push(pts[0]);
-    if (pts.every(p => inTown(p.x, p.y) || U.dist(p, c) < SP * 3)) { streets.push({ cls: 'art', pts, ring: true, loop: true }); over.push({ pts }); }
+    if (pts.every(p => inTown(p.x, p.y) || U.dist(p, c) < SP * 3)) { addSt({ cls: 'art', pts, ring: true, loop: true }); over.push({ pts }); }
   }
   if (st.diag) {
     // diagonal avenues out from the centre, where no road already runs on one
@@ -406,16 +408,29 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
       if (used2.some(b => Math.abs(U.angWrap(a - b)) < 0.6)) continue;
       const pts = [];
       for (let d = SP * 2.6; d < R2; d += SP / 2) { const x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!inTown(x, y) || !clearAt(x, y)) break; pts.push({ x, y }); }
-      if (pts.length >= 6) { streets.push({ cls: 'art', pts, radial: true, diag: true }); extra.push(pts); used2.push(a); }
+      if (pts.length >= 6) { addSt({ cls: 'art', pts, radial: true, diag: true }); used2.push(a); }
     }
+  }
+  if (st.blvd && T > 120) {
+    // a ring boulevard half way out, on the line of the later walls
+    let pts = [];
+    const flush = () => { if (pts.length > 6) addSt({ cls: 'art', pts, ring: pts.length > 60, blvd: true }); pts = []; };
+    // (round, not following every notch of the city's edge)
+    const extS = a => { let t = 0; for (let k = -3; k <= 3; k++) t += ext(a + k * 0.22); return t / 7; };
+    for (let q = 0; q <= 72; q++) {
+      const a = q / 72 * Math.PI * 2, rr = Math.max(extS(a) * 0.5, c.lat.rho ? F.rho(a) + SP * 1.5 : 0), x = c.x + Math.cos(a) * rr, y = c.y + Math.sin(a) * rr;
+      if (!clearAt(x, y) || !inTown(x, y)) { flush(); continue; }
+      pts.push({ x, y });
+    }
+    flush();
   }
   if (st.stars && T > 200) {
     // stars: squares out in the city where six boulevards meet
     const got = [];
-    for (let t = 0; t < 40 && got.length < (T > 450 ? st.stars : 1); t++) {
-      const a = R.range(0, 7), d = ext(a) * R.range(0.4, 0.62), x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d;
+    for (let t = 0; t < 80 && got.length < (T > 450 ? st.stars : 1); t++) {
+      const a = R.range(0, 7), d = ext(a) * R.range(0.55, 0.75), x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d;
       if (!inTown(x, y) || !clearAt(x, y) || F.inOld(...F.toG(x, y), SP) || got.some(g => U.dxy(g.x, g.y, x, y) < ext(a) * 0.5)) continue;
-      if (nearest(Bk, x, y, SP * 1.2).d < SP * 1.2) continue;
+      if (nearest(Bk, x, y, SP).d < SP * 0.8) continue;
       got.push({ x, y });
       const a0 = R.range(0, 7);
       for (let k = 0; k < 5; k++) {
@@ -426,23 +441,11 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
           pts.push({ x: px, y: py });
           if (nearest(Bk, px, py, 0.6, s => s[4] !== 'art' && s[4] !== 'ring').d < 0.6) break;
         }
-        if (pts.length >= 3) { streets.push({ cls: 'art', pts, radial: true, star: true }); extra.push(pts); }
+        if (pts.length >= 3) addSt({ cls: 'art', pts, radial: true, star: true });
       }
       square(x, y, 2.2, 2.2, 0, true);
     }
   }
-  if (st.blvd && T > 120) {
-    // a ring boulevard half way out, on the line of the later walls
-    let pts = [];
-    const flush = () => { if (pts.length > 6) streets.push({ cls: 'art', pts, ring: pts.length > 60, blvd: true }); pts = []; };
-    for (let q = 0; q <= 72; q++) {
-      const a = q / 72 * Math.PI * 2, rr = Math.max(ext(a) * 0.5, c.lat.rho ? F.rho(a) + SP * 1.5 : 0), x = c.x + Math.cos(a) * rr, y = c.y + Math.sin(a) * rr;
-      if (!clearAt(x, y) || !inTown(x, y)) { flush(); continue; }
-      pts.push({ x, y });
-    }
-    flush();
-  }
-  for (const l of streets) for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, l.cls]);
   /* a long park of whole blocks (New York), a great square in the middle (the enemy's towns) */
   const skip = new Set();
   const openCells = (i0, j0, w, h, keep) => {
