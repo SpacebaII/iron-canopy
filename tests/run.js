@@ -465,7 +465,8 @@ test('runway rules: under "only when cleared", an airliner never goes onto the r
     const d = arrDistance(S, ap, m.plan.rw.id), L = lockAt(ap, m.plan.rw.id); n++; if (d < 150) near++;
     if (L.gapFor !== m.id) worst = Math.min(worst, d);   // arrivals the tower holds at the fix for it do not count
   });
-  for (let i = 0; i < 9 * 3600 / 0.5; i++) {
+  // at least 9 hours, then on until the tower has had enough close calls to judge (traffic is random)
+  for (let i = 0; i < 24 * 3600 / 0.5 && (i < 9 * 3600 / 0.5 || near < 6); i++) {
     IC.step(S, 0.5); watch();
     for (const m of ap.moves) {
       if (m.kind === 'dep' && m.phase === 'roll' && !(m.delay > 0) && !seenRun.has(m.id) && IC.opsKind(m.type) !== 'light') { seenRun.add(m.id); runs.push(S.time); }
