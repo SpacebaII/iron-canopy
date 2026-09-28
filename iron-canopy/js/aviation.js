@@ -621,6 +621,8 @@ function rejoin(t) {
 }
 /* distance from the filed route */
 IC.offRoute = function (t) {
+  // off the plan on a controller's instruction (sequenced, holding, vectored) or the player's is not off route
+  if ((t.seq || t.stk || t.pCmd || t.phold) && !t.drift) return 0;
   const P = t.plan && (t.plan.pts || [t.plan.a, t.plan.b]);
   if (!P) return 0;
   let m = 1e9;
