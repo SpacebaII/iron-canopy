@@ -749,7 +749,28 @@ IC.enemyAircraftLost = function (S, t) {
   S.enemy.will = Math.max(0, S.enemy.will - 0.6);
 };
 
-/* ---------- enemy aircraft ---------- */
+/* ---------- enemy aircraft ----------
+   They fly like aircraft: in formation behind a leader, patrols on a racetrack along the border, escorts that stay
+   with what they escort and turn on our fighters, a break away when a missile or a fire-control radar locks on
+   (and a turn for home after being locked on too often), and fuel: short of it, they go home. */
+const EFUEL = { ftr: 9000, str: 9000, sead: 9000, ewj: 21600, bmr: 28800, ahe: 7200 };
+function formLead(S, t) {
+  if (!t.op || !t.route || !t.route.length || t.mission === 'rtb' || t.mission === 'patrol' || t.disguise) return null;
+  let n = 0;
+  for (const o of S.threats) {
+    if (o === t) break;
+    if (o.dead || o.op !== t.op || o.type !== t.type || o.mission !== t.mission || o.lead || U.dist(o, t) > 250) continue;
+    n = S.threats.filter(x => x.lead === o && !x.dead).length;
+    t.slot = n + 1;
+    return o;
+  }
+  return null;
+}
+function lockedOn(S, t) {
+  if (t.inbound > 0) return true;
+  if (t.fc && t.fcBy.length) return true;
+  return false;
+}
 IC.moveEnemyAir = function (S, t, dt) {
   // gray-zone: fighters that fly alongside one of our airliners to make a point
   if (t.mission === 'shadow') {
@@ -759,35 +780,92 @@ IC.moveEnemyAir = function (S, t, dt) {
     else if (U.dist(t, v) > 30) t.route = [{ x: v.x + (t.side || 12), y: v.y + 8 }];
     else { t.side = t.side || (Math.random() < 0.5 ? -14 : 14); t.x = v.x - v.vy / (v.spd || 1) * t.side; t.y = v.y + v.vx / (v.spd || 1) * t.side; t.vx = v.vx; t.vy = v.vy; if (IC.inHome(t.x, t.y) && !t.violated) { t.violated = true; IC.emit(S, 'violation', t); } return; }
   }
+  // fuel: short of it, home
+  if (t.fuel == null) t.fuel = EFUEL[t.type] || 14400;
+  t.fuel -= dt;
+  if (t.home && t.mission !== 'rtb' && t.mission !== 'shadow' && t.fuel < U.dist(t, t.home) / t.spd * 1.2 + 300) {
+    t.mission = 'rtb'; t.jamming = false; t.lead = null; t.route = [{ x: t.home.x, y: t.home.y }];
+  }
+  // our fighters close by: fighters on patrol or escort turn on them
+  let chase = null;
+  if (t.type === 'ftr' && !t.feint && !t.noFire && (t.mission === 'patrol' || t.mission === 'escort') && t.aam !== 0) {
+    const c = t.mission === 'escort' && t.escortOf && !t.escortOf.dead ? t.escortOf : t.st || t;
+    let bd = 500;
+    for (const a of S.air) {
+      if (a.dead || a.gnd || a.allied || a.alt < 0.5) continue;
+      if (t.border && !IC.inHostile(a.x, a.y) && IC.borderDist(a.x, a.y) > 300) continue;
+      const d = U.dist(a, c); if (d < bd) { bd = d; chase = a; }
+    }
+  }
   if (t.type === 'ftr' && !t.feint && !t.noFire) {
     t.cool = (t.cool || 0) - dt;
     if (t.aam == null) t.aam = 4;
     if (t.aam > 0 && t.cool <= 0) for (const a of S.air) {
-      if (a.dead || a.gnd || U.dist(a, t) > 700 || a.allied) continue;
+      const R = Math.min(700, (IC.reachAt ? IC.reachAt('AAM', Math.max(0.03, a.alt || 0)) : 450) * 1.1);
+      if (a.dead || a.gnd || U.dist(a, t) > R || a.allied) continue;
       if (t.border && IC.borderDist(a.x, a.y) > 600) continue;
       const close = U.dist(a, t) < 90;
       S.eaam.push({ x: t.x, y: t.y, a: Math.atan2(a.y - t.y, a.x - t.x), spd: close ? 9 : 11, target: a, pk: close ? 0.55 : 0.5, life: 70, src: t, ir: close });
       t.aam--; t.cool = 90; break;
     }
   }
-  let tx, ty;
-  if (t.route && t.route.length) {
+  // locked on by a missile or a fire-control radar: break away; locked on too often, go home
+  if (t.evadeT > 0) t.evadeT -= dt;
+  const locked = lockedOn(S, t);
+  if (locked && !t.wasLocked && !(t.evadeT > 0) && t.mission !== 'rtb' && !t.disguise) {
+    t.locks = (t.locks || 0) + 1; t.evadeT = 45;
+    const m = S.missiles.find(x => x.target === t && !x.dead), u = !m && t.fcBy.length && S.units.find(x => x.id === t.fcBy[0]);
+    const from = m || u || t.home;
+    t.evadeA = from ? Math.atan2(t.y - from.y, t.x - from.x) : Math.atan2(-(t.vy || 0), -(t.vx || 1));
+    if (t.locks >= 3 && !t.released && t.home && t.mission !== 'escort') {
+      t.mission = 'rtb'; t.jamming = false; t.lead = null; t.route = [{ x: t.home.x, y: t.home.y }];
+      if (t.det && t.tn) IC.log(S, 'info', 'AIR', `TN ${t.tn} turned for home after being locked on ${t.locks} times.`, t);
+    }
+  }
+  t.wasLocked = locked;
+  if (t.lead === undefined) t.lead = formLead(S, t);
+  if (t.lead && (t.lead.dead || t.lead.mission !== t.mission || !t.lead.route || !t.lead.route.length)) t.lead = null;
+  let tx, ty, spd = t.spd;
+  if (t.mission === 'escort' && t.escortOf) {
+    const L = t.escortOf;
+    if (L.dead || L.mission === 'rtb') { t.mission = 'rtb'; t.route = [{ x: t.home.x, y: t.home.y }]; }
+    else if (!chase) {
+      const h = Math.atan2(L.vy || 0, L.vx || 1), side = (t.slot || 1) % 2 ? 1 : -1;
+      tx = L.x - Math.cos(h) * 10 - Math.sin(h) * 25 * side; ty = L.y - Math.sin(h) * 10 + Math.cos(h) * 25 * side;
+      spd = U.dxy(t.x, t.y, tx, ty) > 10 ? t.spd * 1.2 : Math.max(0.5, Math.hypot(L.vx || 0, L.vy || 0));
+    }
+  }
+  if (chase) { tx = chase.x; ty = chase.y; spd = t.spd * 1.25; }
+  else if (tx != null) { /* escorting */ }
+  else if (t.lead) {
+    // in formation: an echelon behind the leader
+    const L = t.lead, h = Math.atan2(L.vy || 0, L.vx || 1), k = t.slot || 1, side = k % 2 ? 1 : -1, row = Math.ceil(k / 2);
+    tx = L.x - Math.cos(h) * 12 * row - Math.sin(h) * 10 * row * side; ty = L.y - Math.sin(h) * 12 * row + Math.cos(h) * 10 * row * side;
+    const d = U.dxy(t.x, t.y, tx, ty);
+    spd = d > 8 ? L.spd * 1.15 : L.spd;
+    if (t.route && t.route.length && U.dxy(t.x, t.y, t.route[0].x, t.route[0].y) < 60 && t.route.length > 1) t.route.shift();
+  } else if (t.route && t.route.length) {
     const p = t.route[0]; tx = p.x; ty = p.y;
     if (U.dxy(t.x, t.y, tx, ty) < t.spd * dt + 4) { t.route.shift(); if (!t.route.length) arriveAir(S, t); }
     // a disguised bomber leaving its airway is suddenly off-plan
     if (t.disguise && t.route.length === 1 && !t.offRoute) t.offRoute = true;
   } else if (t.mission === 'patrol' || t.mission === 'jam') {
-    t.oa = (t.oa || 0) + dt * t.spd / 300;
-    tx = t.st.x + Math.cos(t.oa) * 300; ty = t.st.y + Math.sin(t.oa) * 300;
+    // a racetrack along the border: two turn points 30 km either side of the station
+    const hx = t.home ? t.st.x - t.home.x : 1, hy = t.home ? t.st.y - t.home.y : 0, hl = Math.hypot(hx, hy) || 1, ux = -hy / hl, uy = hx / hl;
+    t.leg = t.leg || 1;
+    tx = t.st.x + ux * 300 * t.leg; ty = t.st.y + uy * 300 * t.leg;
+    if (U.dxy(t.x, t.y, tx, ty) < 40) t.leg = -t.leg;
     t.endur = (t.endur == null ? (t.mission === 'jam' ? t.jamT : 10800) : t.endur) - dt;
     if (t.endur <= 0) { t.mission = 'rtb'; t.jamming = false; t.route = [{ x: t.home.x, y: t.home.y }]; }
   }
   if (tx == null) { tx = t.x + (t.vx || 1); ty = t.y + (t.vy || 0); }
   let want = Math.atan2(ty - t.y, tx - t.x);
+  if (t.evadeT > 0 && t.evadeA != null) { want = t.evadeA; spd = t.spd * 1.15; }
   if (t.notchT > 0 && t.notchA != null) want = t.notchA + Math.PI / 2;
   const cur = Math.atan2(t.vy || (ty - t.y), t.vx || (tx - t.x));
-  const h = cur + U.clamp(U.angWrap(want - cur), -0.04 * dt, 0.04 * dt);
-  t.vx = Math.cos(h) * t.spd; t.vy = Math.sin(h) * t.spd;
+  const rate = t.type === 'ahe' ? 0.3 : t.type === 'bmr' || t.type === 'ewj' ? 0.03 : 0.05;
+  const h = cur + U.clamp(U.angWrap(want - cur), -rate * dt, rate * dt);
+  t.vx = Math.cos(h) * spd; t.vy = Math.sin(h) * spd;
   t.x += t.vx * dt; t.y += t.vy * dt;
   if (t.low) t.alt = 0.1 + 0.05 * Math.sin(t.age * 0.05);
   else if (t.altHold != null) t.alt = t.altHold;
