@@ -274,8 +274,8 @@ function drawCoverage(S) {
 function drawAirways(S, px, now) {
   const N = S.asp, m = S.mode2, edit = m && m.kind === 'airway', show = S.layers.airways || edit || (m && m.kind === 'asp') || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra');
   const sel = S.sel, z = cam.z;
+  if (N) IC.drawAirspace(ctx, S, px, view, S.layers.labels, show);
   if (N && show) {
-    IC.drawAirspace(ctx, S, px, view, S.layers.labels);
     // in the editor, the traffic that wants to fly, faintly, so airways can be drawn where it goes
     if (edit) {
       ctx.lineWidth = 1 * px; ctx.setLineDash([10 * px, 8 * px]);
