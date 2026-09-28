@@ -64,7 +64,7 @@ IC.drawAirspace = function (ctx, S, px, view, labels, vols) {
       ctx.beginPath(); ctx.arc(st.x, st.y, IC.ASP.holdR, 0, 7); ctx.stroke(); ctx.setLineDash([]);
       if (labels) {
         const lo = IC.atcStackLevel(0), hi = IC.atcStackLevel(st.lv.length - 1);
-        text(ctx, `${st.k} STACK ${lvl(lo)}${st.lv.length > 1 ? '–' + lvl(hi) : ''} · ${st.lv.length}`, st.x, st.y - IC.ASP.holdR - 6 * px, px, 'rgba(242,209,74,0.95)', 9, 'center', 700);
+        text(ctx, `${st.k} STACK ${lvl(lo)}${st.lv.length > 1 ? '–' + lvl(hi) : ''} · ${st.lv.length}`, st.x, st.y + IC.ASP.holdR + 14 * px, px, 'rgba(242,209,74,0.95)', 9, 'center', 700);
       }
     }
   }
