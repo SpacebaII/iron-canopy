@@ -115,7 +115,7 @@ function foundIn(m, p, btn) {
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 /* the airport's Airspace tab is open: its rings can be picked and their edges dragged on the map */
-const aspEditing = () => { const ap = selAp(); return !S.mode2 && IC.ui.aptTab === 'asp' && ap && ap.owner === 'us' && S.asp && S.asp.vols; };
+const aspEditing = () => { const ap = selAp(); return !S.mode2 && IC.ui.aptTab === 'asp' && ap && S.sel.kind === 'infra' && ap.owner === 'us' && S.asp && S.asp.vols; };
 const selUnits = () => S.group.length ? S.group : S.sel && S.sel.kind === 'unit' ? [S.sel.ref] : [];
 const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel');
 
