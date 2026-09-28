@@ -8,11 +8,25 @@ IC.WH = 43000;         // world height (4,300 km)
 IC.GS = 10;            // game seconds per real second at 1× speed
 IC.TS = 0.06;          // base terrain canvas scale (px per world unit); closer in, tiles take over
 IC.MAX_STEP = 0.25;    // largest simulation step, in game seconds
-IC.MAXZ = 80;          // closest zoom (screen px per world unit): 80 px per 100 m shows aircraft at the gate
+IC.MAXZ = 320;         // closest zoom (screen px per world unit): 320 px per 100 m shows the vehicles round an aircraft at the gate
 IC.SPEEDS = [1, 2, 4, 8, 16, 32];
 
 let nid = 1;
 IC.nid = p => (p || 'e') + (nid++);
+// the id counter goes into a save, so ids made after a load never repeat saved ones
+IC.nidPeek = () => nid;
+IC.nidSet = v => { nid = v; };
+
+/* Functions kept in the state are named handlers, so a save can write them down (save.js): IC.hfn(name, ...args)
+   makes the function from the factory IC.H[name] and remembers the name and the arguments. Objects that carry
+   behaviour (goals, event cards) are tagged with IC.remake(obj, name, ...args); a load keeps their data and takes
+   their functions from a fresh IC.REMAKE[name](...args). */
+IC.H = {};
+IC.hfn = (name, ...args) => { const f = IC.H[name](...args); f.$h = name; f.$a = args; return f; };
+IC.REMAKE = {};
+IC.remake = (o, name, ...args) => { Object.defineProperty(o, '$rc', { value: [name, args], enumerable: false, configurable: true, writable: true }); return o; };
+/* a named handler run after dt game seconds (airport.js runs S.later) */
+IC.later = (S, dt, name, ...args) => { (S.later = S.later || []).push({ t: S.time + dt, fn: IC.hfn(name, ...args) }); };
 
 /* seeded generator for world generation (mulberry32) */
 IC.makeRng = function (seed) {

@@ -313,6 +313,7 @@ function onAct(e) {
   if (!S) return;
   const sel = S.sel && S.sel.ref;
   const ui = IC.ui;
+  if (IC.savesAct(S, a, v)) { IC.sfx.ui('click'); return; }
   switch (a) {
     case 'begin': IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
@@ -330,7 +331,6 @@ function onAct(e) {
     case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
-    case 'restart': IC.showStart(); return;
     case 'pause': S.paused = !S.paused; S.skip = false; break;
     case 'speed': S.speed = +v; S.paused = false; S.skip = false; break;
     case 'skip': startSkip(); break;
@@ -410,7 +410,7 @@ function onAct(e) {
     case 'bcancel': { const ap = selAp(); if (ap) IC.cancelWork(S, ap, id); break; }
     case 'bauto': { const ap = selAp(); if (ap) ap.autoRepair = !ap.autoRepair; break; }
     case 'build': { const ap = selAp(); if (!ap || ap.locked) break; const cur = S.mode2; IC.setMode(cur && cur.kind === 'build' && cur.part === v && cur.ap === ap ? null : IC.bldMode(S, ap, v)); if (S.mode2 && IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2); return; }
-    case 'bpref': { const [k, x] = v.split(':'); const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
+    case 'bpref': { const [k, x] = v.split(':'); if (k === 'mat' && IC.bldPick && !IC.bldPick(S, x)) break; const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
     case 'bundo': { const ap = selAp(); if (ap && IC.bldUndo(S, ap)) IC.sfx.ui('ok'); else IC.sfx.ui('err'); break; }
     case 'bwhen': { const ap = selAp(); const w = ap && ap.works.find(x => x.id === id); if (w) { w.rwMode = w.rwMode === 'night' ? 'close' : 'night'; } break; }
     case 'aptMove': if (S.sel && S.sel.kind === 'apart') { IC.setMode({ kind: 'bmove', ap: S.sel.ap, part: S.sel.ref, rot: S.sel.ref.a || 0 }); return; } break;
@@ -425,6 +425,7 @@ function onAct(e) {
     case 'aptFee': { const ap = selAp(); if (ap) { IC.avSetFee(S, ap, +v); IC.log(S, 'info', 'AVIATION', `${ap.name}: charges set to ${Math.round(+v * 100)}%.`); } break; }
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
     case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
+    case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
@@ -437,6 +438,7 @@ function onAct(e) {
     case 'escortFire': { const a2 = S.air.find(x => x.id === id); if (a2 && sel) { a2.roe = 'free'; if (a2.r) a2.r.roe = 'free'; a2.tgt = sel; IC.log(S, 'warn', 'ORDERS', `${a2.name}: cleared to fire on TN ${sel.tn}.`, sel); IC.emit(S, 'fireOrder', { a: a2, t: sel }); } break; }
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
+    case 'av': IC.avRoomAct(S, v, id); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
     case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.04) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.05); } return;
     case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
@@ -509,6 +511,8 @@ IC.on((S2, type, d) => {
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
   else if (type === 'event') { if (P.event !== false) pause(d.title); else stopSkip(d.title); }
   else if (type === 'incidentAdded' || type === 'act' || type === 'goal') stopSkip();
+  else if (type === 'request') stopSkip(`${IC.avAirline(S, d.al).name} offers a deal.`);
+  else if (type === 'dealWarn' || type === 'dealStrike' || type === 'dealBroken') stopSkip(`${d.al.name}: its deal ${type === 'dealBroken' ? 'is over' : 'is at risk'}.`);
   else if (type === 'assault' || type === 'chapter' || type === 'war' || type === 'frontActive' || type === 'delivered' || type === 'lessonDone') stopSkip();
 });
 
@@ -694,6 +698,20 @@ IC.reroll = function () {
   $('startLead').textContent = 'Generating a new region…';
   setTimeout(() => generate((Math.random() * 1e9) >>> 0, 'campaign'), 30);
 };
+/* a loaded game takes over from the one on screen (saves.js) */
+IC.adopt = function (st, view) {
+  S = IC.S = st;
+  IC.resetMini();
+  IC.ui.bind(S);
+  // what the player had already read stays read: chapter cards and staff messages from before the save
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
+  resize();
+  $('seed').textContent = String(S.seed);
+  $('start').hidden = true; $('over').hidden = true;
+  if (view) { IC.cam.z = view.z; IC.centerOn(view.x, view.y); } else IC.frame(...IC.homeBox(S.world));
+  S.paused = true;
+  IC.ui.refresh(true);
+};
 IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
@@ -723,6 +741,8 @@ IC.ui.startPage('main');
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
+  // while a save loads, the world on screen is being replaced: nothing runs or draws
+  if (IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
@@ -747,6 +767,7 @@ function frame(now) {
     let g = gdt, guard = 0;
     const t0 = performance.now();
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(IC.MAX_STEP * (S.skip ? 2 : 1), g); IC.step(S, st); g -= st; if (performance.now() - t0 > 40) break; }
+    IC.autosaveTick(S);
   }
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);
