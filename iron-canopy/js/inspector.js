@@ -94,20 +94,29 @@ function unit(u) {
   }
   if (d.weapon === 'strike') acts.push(`<button class="act pri" data-act="fireMode" ${u.state !== 'ready' || !u.mags[0].mag ? 'disabled' : ''}>${kbd('F')}Fire mission</button>`);
   if (d.mob !== 'fixed') acts.push(`<button class="act" data-act="move" ${u.state !== 'ready' ? 'disabled' : ''}>${kbd('M')}Move</button>`);
-  if (u.mags.length) { acts.push(`<button class="act" data-act="heli">${kbd('H')}Air resupply</button>`); acts.push(`<button class="act ${u.pri ? 'on' : ''}" data-act="pri">Priority resupply</button>`); }
+  if (u.mags.length) acts.push(`<button class="act ${u.pri ? 'on' : ''}" data-act="pri">Priority resupply</button>`);
   if (Object.values(u.comp).some(v => v < 1) || u.hp < u.max) acts.push(`<button class="act ${u.repairing ? 'on' : ''}" data-act="repair" ${u.repairing ? 'disabled' : ''}>${kbd('P')}${u.repairing ? 'Repair crew on site' : `Repair · ${U.money(Math.max(3, d.cost * 0.08))}`}</button>`);
   if (u.prio && !u.prio.dead) acts.push(`<button class="act" data-act="clearPrio">Clear target TN ${u.prio.tn}</button>`);
   if (!u.central) acts.push(`<button class="act warn" data-act="reserve">${kbd('X')}${d.mob === 'fixed' ? 'Dismantle' : 'To reserve'}</button>`);
   if (acts.length) parts.push(`<div class="acts">${acts.join('')}</div>`);
-  // magazines drawn as rounds
+  // launchers drawn as rounds, the stock on site, the next reload and the next load
   if (u.mags.length) {
     const mags = IC.activeMags(S, u).map(m => {
-      const M = IC.MUN[m.mun];
-      const rounds = Array.from({ length: m.max }, (_, i) => `<i class="${i < m.mag ? '' : 'e'}"></i>`).join('') + Array.from({ length: Math.min(12, m.store) }, () => '<i class="s"></i>').join('');
-      return `<div class="mag" title="${esc(IC.fullName(M))}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${M.short || m.mun}</b><span class="rounds">${rounds}</span><small>${m.mag}/${m.max} +${m.store}${m.inc ? ` · ${m.inc}↘` : ''}</small></div>`;
+      const M = IC.MUN[m.mun], sh = esc(M.short || m.mun);
+      IC.magSync(u, m);
+      const lns = m.l.map((n, i) => `<span class="ln ${i === m.li ? 'rl' : ''}" title="Launcher ${i + 1}: ${n} of ${m.per} ready${i === m.li ? ', reloading' : ''}">${Array.from({ length: m.per }, (_, k) => `<i class="${k < n ? '' : 'e'}"></i>`).join('')}</span>`).join('');
+      const left = IC.reloadLeft(S, u, m);
+      const rl = left != null ? `<span class="amber">launcher ${m.li + 1} reloading, ready in ${U.dur(left)}</span>`
+        : m.mag >= m.max ? 'every launcher full' : m.store > 0 ? 'the part-empty launcher reloads once it has been quiet for a minute' : '<span class="hostile">nothing on site to reload from</span>';
+      return `<div class="mag" title="${esc(IC.fullName(M))}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${sh}</b><span class="rounds">${lns}</span><small>${m.mag}/${m.max}</small></div>
+        <p class="hint" style="margin:0 0 .15rem">${m.ln > 1 ? `${m.ln} launchers of ${m.per}. ` : ''}Stock on site: <b>${m.store}</b> of ${m.storeMax}${m.inc ? ` · ${m.inc} coming` : ''} · ${rl}.</p>`;
     }).join('');
     const next = IC.activeMags(S, u).map(m => { const n = IC.nextLoad(S, u, m); return `<p class="hint ${n.cls === 'ok' ? '' : n.cls}" style="margin:.25rem 0"><b>${esc(IC.MUN[m.mun].short || m.mun)}:</b> ${esc(n.text)}</p>`; }).join('');
-    parts.push(`<div class="sec"><h3 class="sh">Magazine <em>ready / reserve / coming</em></h3><div class="mags">${mags}</div>${next}</div>`);
+    const P = IC.heliPlan(S, u);
+    const heli = P.why ? `<p class="hint amber" style="margin:.25rem 0">${esc(P.why)}</p>`
+      : `<p class="hint" style="margin:.25rem 0">${esc(P.r.name)} from ${esc(P.src.name)}: ${esc(P.loads.filter(l => l.u === u).map(l => IC.munWords(l.m.mun, l.qty)).join(' and '))}, here in about ${U.dur(P.eta)}. The sortie costs ${U.money(P.cost)}.${P.stops.length > 1 ? ` On the way it also brings loads to ${esc(P.stops.filter(x => x !== u).map(x => x.name).join(', '))}.` : ''}</p>`;
+    parts.push(`<div class="sec"><h3 class="sh">Launchers <em>ready · stock on site · coming</em></h3><div class="mags">${mags}</div>${next}
+      <div class="acts"><button class="act" data-act="heli" ${P.why ? 'disabled' : ''}>${kbd('H')}Resupply by helicopter</button></div>${heli}</div>`);
   }
   // parts and crew
   const comps = Object.entries(u.comp).map(([c, v]) => `<span>${IC.COMPS[c].name}</span>${bar(v)}<span>${v < 0.35 ? '<b class="hostile">OUT</b>' : U.pct(v)}</span>`).join('');

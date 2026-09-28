@@ -15,13 +15,15 @@ const U = IC.U;
 
 /* the Guide's words for money and supply (also the Supply room's) */
 IC.MONEY_GUIDE = 'Money comes in every hour: the Ministry\'s grant, airline fees at our airports, and later taxes from the cities and trade taxes from remote industries. It goes out every hour on running costs: every unit on the map, every flight of aircraft, the airports\' upkeep, staff and loan repayments. Units in the reserve cost nothing. Buying, building and research are paid when you do them. The Economy room (E) shows every line with its reason and how long the money lasts at this rate, and you are warned a day, six hours and an hour before it runs out. Your levers: what you build and keep on the map, airport charges, loans, and how much the Ministry may spend on stock.';
-IC.SUPPLY_GUIDE = 'Buy a unit by placing it: you pay then, and it is loaded at the nearest depot, barracks or airfield and driven there, or flown by heavy-lift helicopter when the drive would be long. It is set up and ready well within the hour. Missiles and rockets are kept in depots: the Central Depot and the forward depots you place. Each depot\'s truck companies drive them to the units inside its ring, first-priority areas and the emptiest units first; forward depots refill from the Central Depot. Stock is bought from the arms plants and goes by rail to the depot that needs it; with Keep stocked on, the Ministry buys whenever it falls below half of one full reload. Convoys drive the roads at road speed, slower through towns at rush hour. A cut road means a slow detour, and the enemy strikes convoys it sees near the border. A unit\'s panel says when its next load arrives, or why none is coming.';
+IC.SUPPLY_GUIDE = 'Buy a unit by placing it: you pay then, and it is loaded at the nearest depot, barracks or airfield and driven there, or flown by heavy-lift helicopter when the drive would be long. It is set up and ready well within the hour. Missiles and rockets are kept in depots: the Central Depot and the forward depots you place. Each depot\'s truck companies drive them to the units inside its ring, first-priority areas and the emptiest units first; forward depots refill from the Central Depot. Stock is bought from the arms plants and goes by rail to the depot that needs it; with Keep stocked on, the Ministry buys whenever it falls below half of one full reload. Convoys drive the roads at road speed, slower through towns at rush hour. A cut road means a slow detour, and the enemy strikes convoys it sees near the border. Resupply by helicopter, on a unit\'s panel, flies missiles in from the nearest depot that has them, to that unit and any close by; with Keep stocked on, a unit low on missiles calls one itself when lorries would be slow or a road is cut. Fog and thunderstorms ground helicopters. A unit\'s panel says when its next load arrives, or why none is coming.';
 IC.SUPPLY = {
   load: 90, unload: 90,   // s to load and unload a convoy at a depot or a unit
   plantLoad: 120,         // s to load the lorries that take an import on from the airport
   offKmh: 35,             // lorries between a road and a depot, on tracks
   townK: 0.75, rush: 0.4, // through a town: slower, and slower still at rush hour
   topUp: 0.5,             // a unit is resupplied when its reserve falls to half (or at once if it is a priority)
+  heliBelow: 0.3,         // with Keep stocked, a unit down to this share of its rounds (ready and on site) calls a helicopter
+  heliSlow: 3600,         // ... when lorries would take longer than this, or must cross a cut road
   reorder: 0.5,           // "Keep stocked" buys when stock falls to half of one full reload
   maxCol: 6,              // lorries in one column; bigger loads go in several
   railKmh: 200, railLoad: 300,   // bought stock goes by rail from the plant: loading, then the trip
@@ -41,7 +43,7 @@ const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
 /* what a load is called, in words the player knows */
-const NOUN = { IR: 'IR missiles', IR2: 'imaging IR missiles', SR: 'SR missiles', MR: 'MR missiles', LR: 'LR missiles', TBD: 'BMD missiles', HAT: 'HAT interceptors', EXO: 'EXO interceptors', CRS: 'cruise missiles', SRB: 'ballistic missiles', RKT: 'guided rockets' };
+const NOUN = { INT: 'interceptor drones', IR: 'IR missiles', IR2: 'imaging IR missiles', SR: 'SR missiles', MR: 'MR missiles', LR: 'LR missiles', TBD: 'BMD missiles', HAT: 'HAT interceptors', EXO: 'EXO interceptors', CRS: 'cruise missiles', SRB: 'ballistic missiles', RKT: 'guided rockets' };
 IC.munWords = (mun, n) => n == null ? NOUN[mun] || mun : `${n} ${n === 1 ? (NOUN[mun] || mun).replace(/s$/, '') : NOUN[mun] || mun}`;
 /* the lorries a load rides on: missile transporters, rocket carriers, flatbeds */
 IC.cargoKind = mun => !mun ? 'empty' : IC.MUN[mun].strike ? 'rocket' : 'missile';
@@ -155,6 +157,7 @@ IC.jobEta = function (S, j) {
     if (v.state === 'toDest') return left + C.unload;
     if (v.state === 'unload') return v.t;
   }
+  if (a && !a.dead && j.prev && a.job !== j) return IC.jobEta(S, j.prev) + IC.HELI.unload + U.dist(j.prev.to, j.to) / IC.AIR_KIND.heli.spd;
   if (a && !a.dead) return (a.route && a.route.length ? U.dist(a, a.route[0]) / (a.allied ? 1.7 : IC.AIR_KIND[a.kind].spd) : 0) + (a.wait || 0) + (a.leg === 'toSource' ? 240 + U.dist(j.from, j.to) / (a.allied ? 1.7 : IC.AIR_KIND[a.kind].spd) : 0) + (j.after || 0);
   if (j.mode === 'rail') return Math.max(0, j.arrive - S.time);
   return 0;
@@ -162,6 +165,7 @@ IC.jobEta = function (S, j) {
 IC.failJob = function (S, j) {
   if (j.state !== 'active') return;
   j.state = 'failed';
+  if (j.next) IC.failJob(S, j.next);   // a helicopter lost with loads for several units
   const back = !j.loaded && j.from && j.from.inv && j.mun && j.kind !== 'buy';
   if (back) j.from.inv[j.mun] = (j.from.inv[j.mun] || 0) + j.qty0;
   if (j.mag) j.mag.inc = Math.max(0, j.mag.inc - j.qty0);
@@ -172,10 +176,7 @@ function deliver(S, j) {
   j.state = 'done';
   if (j.mag) {
     j.mag.inc = Math.max(0, j.mag.inc - j.qty0);
-    let q = j.qty;
-    const toStore = Math.min(j.mag.storeMax - j.mag.store, q); j.mag.store += toStore; q -= toStore;
-    const toMag = Math.min(j.mag.max - j.mag.mag, q); j.mag.mag += toMag; q -= toMag;
-    j.mag.store += q;
+    j.mag.store += j.qty;   // onto the stock on site: the crew reloads the launchers from it
     IC.emit(S, 'rearmed', j.to);
     return;
   }
@@ -244,18 +245,27 @@ function goHome(S, v) {
 }
 
 /* ---------- helicopters and allied airlift ---------- */
+IC.HELI = { load: 240, unload: 200, reach: 6500, near: 250 };
+/* a helicopter with loads for several units flies on to the next one that still stands */
+function nextStop(S, a, j) {
+  let n = j.next; j.next = null;
+  while (n && n.to.dead) { const k = n.next; n.next = null; IC.failJob(S, n); n = k; }
+  if (!n) return false;
+  a.job = n; a.leg = 'toDest'; a.route = [{ x: n.to.x, y: n.to.y }];
+  return true;
+}
 IC.airJobStep = function (S, a) {
   const j = a.job;
   if (!j) { a.dead = true; return; }
-  if (a.leg === 'toSource') { a.leg = 'loading'; a.wait = 240; }
-  else if (a.leg === 'loading') { j.loaded = true; a.leg = 'toDest'; a.route = [{ x: j.to.x, y: j.to.y }]; }
+  if (a.leg === 'toSource') { a.leg = 'loading'; a.wait = a.kind === 'heli' ? IC.HELI.load : 240; }
+  else if (a.leg === 'loading') { for (let k = j; k; k = k.next) k.loaded = true; a.leg = 'toDest'; a.route = [{ x: j.to.x, y: j.to.y }]; }
   else if (a.leg === 'toDest') {
-    if (j.to.dead) { IC.failJob(S, j); a.leg = 'home'; }
+    if (j.to.dead) { if (nextStop(S, a, j)) { IC.failJob(S, j); return; } IC.failJob(S, j); a.leg = 'home'; }
     else {
-      a.leg = 'unloading'; a.wait = a.kind === 'heli' ? 200 : 600; return;
+      a.leg = 'unloading'; a.wait = a.kind === 'heli' ? IC.HELI.unload : 600; return;
     }
   }
-  else if (a.leg === 'unloading') { deliver(S, j); a.job = null; a.leg = 'home'; if (a.allied) IC.log(S, 'kill', 'IMPORT', `Allied airlift landed ${IC.munWords(j.mun, j.qty)} at ${j.to.name}${j.depot && U.dist(j.to, j.depot) > 30 ? `; lorries take them on to ${j.depot.name}` : ''}.`, j.to); }
+  else if (a.leg === 'unloading') { deliver(S, j); if (nextStop(S, a, j)) return; a.job = null; a.leg = 'home'; if (a.allied) IC.log(S, 'kill', 'IMPORT', `Allied airlift landed ${IC.munWords(j.mun, j.qty)} at ${j.to.name}${j.depot && U.dist(j.to, j.depot) > 30 ? `; lorries take them on to ${j.depot.name}` : ''}.`, j.to); }
   if (a.leg === 'home') {
     if (a.allied) { a.route = [{ x: a.ox, y: a.oy }]; a.leg = 'gone'; return; }
     a.state = 'rtb';
@@ -271,23 +281,78 @@ function heliFor(S, near, maxD) {
   }
   return best;
 }
+/* seconds until a busy helicopter flight could fly again */
+function heliBack(S, r) {
+  if (r.st === 'turn') return r.t;
+  const a = r.ent; if (!a || a.dead) return null;
+  let j = a.job; while (j && j.next) j = j.next;
+  const spd = IC.AIR_KIND.heli.spd, b = IC.baseOf(S, r.base);
+  const home = j ? IC.jobEta(S, j) + IC.HELI.unload + (b ? U.dist(j.to, b) / spd : 0) : (b ? U.dist(a, b) / spd : 0);
+  return home + IC.AIR_KIND.heli.turn;
+}
+const heliRoom = (m) => m.storeMax + m.max - m.store - m.mag - m.inc;
+/* what a helicopter sortie to this unit would be: from which depot, which helicopter, what it carries, to whom,
+   when it lands and what it costs. { why } in one sentence when it cannot fly. */
+IC.heliPlan = function (S, u) {
+  const wx = IC.wx(S), K = IC.AIR_KIND.heli, H = IC.HELI;
+  if (!wx.heli) {
+    const w = S.weather, fc = w && w.forecast && IC.WEATHER[w.forecast];
+    const clears = fc && fc.heli ? ` It should clear in about ${U.dur(Math.max(600, w.next - S.time))}.` : '';
+    return { why: `${wx.name} grounds the helicopters.${clears} Lorries still drive.` };
+  }
+  const mags = IC.activeMags(S, u).filter(m => heliRoom(m) > 0).sort((a, b) => (a.mag + a.store) / (a.max + a.storeMax) - (b.mag + b.store) / (b.max + b.storeMax));
+  if (!mags.length) return { why: IC.activeMags(S, u).some(m => m.inc > 0) ? 'Everything it has room for is already on its way.' : 'Full: nothing to fly in.' };
+  const ds = IC.depots(S);
+  const src = ds.filter(d => mags.some(m => (d.inv[m.mun] || 0) >= 1)).sort((a, b) => U.dist(a, u) - U.dist(b, u))[0];
+  if (!src) return { why: `No depot holds ${IC.munWords(mags[0].mun)}. ${S.supply && S.supply.auto ? 'The Ministry buys more within two minutes (Keep stocked).' : 'Buy more in Supply (L), or turn on Keep stocked.'}` };
+  const r = heliFor(S, src, H.reach);
+  if (!r) {
+    const all = S.roster.filter(x => x.kind === 'heli' && x.st !== 'lost');
+    if (!all.length) return { why: 'No transport helicopter. A Forward Heliport (Supply tab) comes with one.' };
+    const back = all.map(x => ({ x, t: heliBack(S, x) })).filter(o => o.t != null).sort((a, b) => a.t - b.t)[0];
+    if (back) return { why: `Every transport helicopter is busy: ${back.x.name} can fly again in about ${U.dur(back.t)}.` };
+    return { why: 'No transport helicopter can take off: its base is closed or too far from the depots.' };
+  }
+  // what it carries: this unit's emptiest rounds first, then units close by that need what the depot holds
+  let room = K.cap * (r.n || K.n);
+  const inv = Object.assign({}, src.inv), loads = [];
+  const take = (unit, m) => {
+    const w = IC.MUN[m.mun].w, q = Math.min(Math.floor(inv[m.mun] || 0), Math.floor(room / w), heliRoom(m));
+    if (q < 1) return;
+    inv[m.mun] -= q; room -= q * w;
+    loads.push({ u: unit, m, qty: q });
+  };
+  for (const m of mags) take(u, m);
+  if (!loads.length) return { why: `${r.name} cannot lift even one ${IC.munWords(mags[0].mun, 1).replace(/^1 /, '')}.` };
+  const near = S.units.filter(x => x !== u && !x.dead && !x.callin && x.mags.length && x.state !== 'transit' && x.state !== 'packing' && U.dist(x, u) <= H.near)
+    .sort((a, b) => U.dist(a, u) - U.dist(b, u));
+  for (const x of near) for (const m of IC.activeMags(S, x)) if (room > 0 && m.inc === 0 && m.store < m.storeMax * 0.75) take(x, m);
+  // the route: base, depot, then the units in order
+  const b = IC.baseOf(S, r.base), stops = [];
+  for (const l of loads) if (!stops.includes(l.u)) stops.push(l.u);
+  let t = U.dist(b, src) / K.spd + H.load, p = src;
+  const eta = new Map();
+  for (const x of stops) { t += U.dist(p, x) / K.spd; eta.set(x, t); t += H.unload; p = x; }
+  return { src, r, loads, stops, eta: eta.get(u), etas: eta, cost: IC.SORTIE_COST.heli };
+};
 IC.heliResupply = function (S, u, manual) {
-  if (!IC.wx(S).heli) { if (manual) IC.log(S, 'warn', 'LOGI', 'Weather grounds the helicopters.'); return false; }
-  const mag = IC.activeMags(S, u).find(m => m.storeMax + m.max - m.store - m.mag - m.inc > 0);
-  if (!mag) { if (manual) IC.log(S, 'info', 'LOGI', `${u.name} is already fully stocked.`); return false; }
-  const M = IC.MUN[mag.mun];
-  const src = IC.depots(S).filter(d => d.inv[mag.mun] >= 1).sort((a, b) => U.dist(a, u) - U.dist(b, u))[0];
-  if (!src) { if (manual) IC.log(S, 'warn', 'LOGI', `No depot holds ${IC.munWords(mag.mun)} for ${u.name}.`); return false; }
-  const r = heliFor(S, src, 6500);
-  if (!r) { if (manual) IC.log(S, 'warn', 'LOGI', 'No transport helicopter is available.'); return false; }
-  const qty = Math.min(Math.floor(src.inv[mag.mun]), Math.max(1, Math.floor(IC.AIR_KIND.heli.cap * r.n / M.w)), mag.storeMax + mag.max - mag.store - mag.mag - mag.inc);
-  if (qty < 1) return false;
-  src.inv[mag.mun] -= qty; mag.inc += qty;
-  const j = newJob(S, { kind: 'unit', mode: 'heli', mun: mag.mun, qty, qty0: qty, from: src, to: u, mag });
-  const a = IC.launchAir(S, r, { type: 'supply' }, true);
-  if (!a) { IC.failJob(S, j); return false; }
-  a.job = j; j.air = a; a.leg = 'toSource'; a.route = [{ x: src.x, y: src.y }];
-  IC.log(S, 'info', 'HELI', `${r.name} flying ${IC.munWords(mag.mun, qty)} from ${src.name} to ${u.name}.`);
+  const P = IC.heliPlan(S, u);
+  if (P.why) { if (manual) IC.log(S, 'warn', 'HELI', `${u.name}: ${P.why}`, u); return false; }
+  const jobs = [];
+  for (const x of P.stops) for (const l of P.loads.filter(l => l.u === x)) {
+    P.src.inv[l.m.mun] -= l.qty; l.m.inc += l.qty;
+    const j = newJob(S, { kind: 'unit', mode: 'heli', mun: l.m.mun, qty: l.qty, qty0: l.qty, from: P.src, to: x, mag: l.m, short: `${l.qty} ${IC.MUN[l.m.mun].short} → ${x.name}` });
+    if (jobs.length) { j.prev = jobs[jobs.length - 1]; j.prev.next = j; }
+    jobs.push(j);
+  }
+  const a = IC.launchAir(S, P.r, { type: 'supply' }, true);
+  if (!a) { IC.failJob(S, jobs[0]); return false; }
+  for (const j of jobs) j.air = a;
+  a.job = jobs[0]; a.leg = 'toSource'; a.route = [{ x: P.src.x, y: P.src.y }];
+  const what = P.loads.filter(l => l.u === u).map(l => IC.munWords(l.m.mun, l.qty)).join(' and ');
+  const others = P.stops.filter(x => x !== u).map(x => x.name);
+  IC.log(S, 'info', 'HELI', `${P.r.name} flying ${what} from ${P.src.name} to ${u.name}${others.length ? `, then to ${others.join(', ')}` : ''}: there in about ${U.dur(P.eta)}.${manual ? '' : ' Called by Keep stocked.'}`, u);
+  IC.emit(S, 'heliResupply', { u, a, auto: !manual });
   return true;
 };
 
@@ -440,9 +505,11 @@ IC.logistics = function (S, dt) {
       }
       if (!src) {
         m.why = whyNot(S, u, m, home, busy);
-        if (m.mag + m.store === 0 && m.inc === 0 && S.time - (u.heliT || -1e9) > 1800) { u.heliT = S.time; IC.heliResupply(S, u, false); }
+        if (autoHeli(S, u, m, null)) m.why = '';
+        else if (m.mag + m.store === 0 && m.inc === 0 && S.time - (u.heliT || -1e9) > 1800) { u.heliT = S.time; if (IC.heliResupply(S, u, false)) m.why = ''; }
         continue;
       }
+      if (autoHeli(S, u, m, src)) continue;
       const v = freeTruck(S, src);
       const qty = Math.min(deficit, Math.floor(src.inv[m.mun]), Math.max(1, Math.floor(truckCap(S) * v.trucks / IC.MUN[m.mun].w)));
       if (qty < 1) continue;
@@ -469,12 +536,26 @@ IC.logistics = function (S, dt) {
   if (S.buyT <= 0) { S.buyT = 120; keepStocked(S); warnLow(S); }
   S.jobs = S.jobs.filter(j => j.state === 'active');
 };
+/* Keep stocked: a unit low on stock on site calls a helicopter when lorries would be slow or must cross a cut
+   road (src: the depot whose lorries would go, or none) */
+function autoHeli(S, u, m, src) {
+  const C = IC.SUPPLY;
+  if (!S.supply.auto || m.inc > 0 || m.mag + m.store >= (m.max + m.storeMax) * C.heliBelow || S.time - (u.heliT || -1e9) < 600) return false;
+  if (u.state !== 'ready' && u.state !== 'setup') return false;
+  let slow = !src, by = null;
+  if (src) { by = IC.driveTime(S, src, u); slow = !!by.cut || by.t + C.load + C.unload > C.heliSlow; }
+  if (!slow) return false;
+  const P = IC.heliPlan(S, u);
+  if (P.why || (by && P.eta > by.t + C.load + C.unload)) return false;
+  u.heliT = S.time;
+  return IC.heliResupply(S, u, false);
+}
 /* why nothing is on its way, in words */
 function whyNot(S, u, m, home, busy) {
   const name = IC.munWords(m.mun);
   if (busy) {
     const back = Math.min(...S.vehicles.filter(v => v.home === busy && !v.dead).map(v => truckBack(S, v)));
-    return `All ${busy.name}'s truck companies are out. The first is back in about ${U.dur(back)}. More companies, a depot nearer, or a helicopter (H) is quicker.`;
+    return `All ${busy.name}'s truck companies are out. The first is back in about ${U.dur(back)}. More companies, a depot nearer, or Resupply by helicopter (H) is quicker.`;
   }
   if (!home) return 'No depot. Place a depot, or the Central Depot is lost.';
   const coming = S.jobs.filter(j => j.state === 'active' && j.mun === m.mun && (j.kind === 'buy' || j.kind === 'restock' || j.kind === 'import') && IC.serves(j.depot || j.to, u.x, u.y));
@@ -494,16 +575,17 @@ function truckBack(S, v) {
 }
 /* what a unit's panel says about one magazine's next load */
 IC.nextLoad = function (S, u, m) {
-  const j = S.jobs.find(x => x.state === 'active' && x.mag === m);
-  if (j) {
-    const t = IC.jobEta(S, j), v = j.v;
-    const how = j.mode === 'heli' ? `by helicopter from ${j.from.name}` : v && v.state === 'toSource' ? `from ${j.from.name} (${v.name} is on its way to load)` : v && v.state === 'load' ? `from ${j.from.name} (loading)` : `from ${j.from.name}`;
-    return { cls: v && v.cut ? 'amber' : 'ok', text: `${IC.munWords(m.mun, j.qty)} coming ${how}: here in about ${U.dur(t)}.${v && v.cut ? ` Slowed by a detour: ${v.cut} (+${U.dur(v.lost)}).` : ''}`, eta: t };
+  const js = S.jobs.filter(x => x.state === 'active' && x.mag === m).map(x => ({ x, t: IC.jobEta(S, x) })).sort((a, b) => a.t - b.t);
+  if (js.length) {
+    const j = js[0].x, t = js[0].t, v = j.v;
+    const how = j.mode === 'heli' ? `by helicopter${j.air && j.air.name ? ` (${j.air.name})` : ''} from ${j.from.name}` : v && v.state === 'toSource' ? `from ${j.from.name} (${v.name} is on its way to load)` : v && v.state === 'load' ? `from ${j.from.name} (loading)` : `from ${j.from.name}`;
+    const more = js.length > 1 ? ` ${js.length - 1} more load${js.length > 2 ? 's' : ''} after it.` : '';
+    return { cls: v && v.cut ? 'amber' : 'ok', text: `${IC.munWords(m.mun, j.qty)} coming ${how}: here in about ${U.dur(t)}.${v && v.cut ? ` Slowed by a detour: ${v.cut} (+${U.dur(v.lost)}).` : ''}${more}`, eta: t };
   }
   const deficit = m.storeMax + m.max - m.store - m.mag;
   if (deficit <= 0) return { cls: 'ok', text: 'Full.' };
   if (m.why) return { cls: m.mag + m.store === 0 ? 'hostile' : 'amber', text: m.why };
-  return { cls: 'ok', text: `Topped up when the reserve falls to half${u.pri ? '' : ' (at once if it is a priority)'}.` };
+  return { cls: 'ok', text: `Lorries top it up when the stock on site falls to half${u.pri ? '' : ' (at once if it is a priority)'}.` };
 };
 function fill(S, u) { let a = 0, b = 0; for (const m of IC.activeMags(S, u)) { a += m.mag + m.store + m.inc; b += m.max + m.storeMax; } return b ? a / b : 1; }
 IC.fill = fill;

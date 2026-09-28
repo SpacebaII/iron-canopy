@@ -25,7 +25,7 @@ IC.unitCost = function (S, type) {
   let k = 1;
   if (D.forward && (type === 'gf' || type === 'mr3d' || type === 'acou')) k *= 0.75;
   if (D.depth && (type === 'mrsam' || type === 'shorad' || type === 'lr3d')) k *= 0.8;
-  if (D.cheapGuns && (type === 'spaag' || type === 'cram')) k *= 0.7;
+  if (D.cheapGuns && (type === 'spaag' || type === 'cram' || type === 'dgun')) k *= 0.7;
   return Math.round(d.cost * k);
 };
 IC.LOAD_T = 120;   // s to load a new or reserve unit onto its transporters
@@ -136,14 +136,30 @@ function kill(S, u) {
   S.group = S.group.filter(x => x !== u);
 }
 
+/* shoot and scoot: a launcher that has fired and been found moves a few km once the shooting stops */
+IC.SCOOT = { quiet: 20, within: 600, min: 25, max: 45 };
+function scoot(S, u) {
+  const C = IC.SCOOT, since = S.time - u.lastFired;
+  if (since < C.quiet || since > C.within || (u.scootT || -1e9) > u.lastFired || S.missiles.some(m => m.unit === u)) return;
+  const k = S.enemy && S.enemy.known && S.enemy.known.get(u.id);
+  if (!k || U.dxy(k.x, k.y, u.x, u.y) > 30) return;
+  u.scootT = S.time;
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * Math.PI * 2, r = U.rand(C.min, C.max), x = u.x + Math.cos(a) * r, y = u.y + Math.sin(a) * r;
+    if (!IC.canPlace(S, u.type, x, y, u)) continue;
+    if (IC.relocate(S, u, x, y)) { IC.log(S, 'info', 'SCOOT', `${u.name} has fired and the enemy knows where it is: moving ${U.km(r)} to a new position.`, u); return; }
+  }
+}
+
 const moveSpeed = u => u.airlift ? [IC.AIRLIFT.kmh / 360, IC.AIRLIFT.kmh / 360] : IC.unitSpeed(u);
 IC.updateUnits = function (S, dt) {
   for (const u of S.units.slice()) {
+    if (u.d.scoot && u.state === 'ready') scoot(S, u);
     if (u.state === 'building' || u.state === 'setup' || u.state === 'packing') {
       u.stT -= dt * (0.5 + 0.5 * IC.ok(u, 'crew'));
       if (u.state !== 'packing' && Math.random() < dt * 0.02) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-6, 6), oy: U.rand(-6, 6), vy: -4, life: 1.2, size: 3, grow: 4, col: '150,140,120', a: 0.25 });
       if (u.stT <= 0) {
-        if (u.state === 'packing') { u.state = 'transit'; u.route = u.airlift ? [{ x: u.dest.x, y: u.dest.y, road: true }] : IC.route(u.x, u.y, u.dest.x, u.dest.y); const [vr, vo] = moveSpeed(u); u.eta = S.time + IC.routeTime(u, u.route, vr, vo); u.stMax = 0; }
+        if (u.state === 'packing') { u.state = 'transit'; u.route = u.airlift || S.flat ? [{ x: u.dest.x, y: u.dest.y, road: true }] : IC.route(u.x, u.y, u.dest.x, u.dest.y); const [vr, vo] = moveSpeed(u); u.eta = S.time + IC.routeTime(u, u.route, vr, vo); u.stMax = 0; }
         else { u.state = 'ready'; IC.log(S, 'info', 'READY', `${u.name} ${u.d.name} operational.`); IC.emit(S, 'ready', u); }
       }
     } else if (u.state === 'transit') {

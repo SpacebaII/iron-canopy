@@ -19,9 +19,10 @@ IC.MUN = {
   AAM: { name: 'Radar air-to-air missile', short: 'AAM', seeker: 'ARH', cost: 0, w: 0, prod: 0, range: 450, spd: 13, pk: 0.72, alt: [0, 20], vs: { air: 1, drone: 1, cm: 0.8, heli: 1, ga: 1 }, air: true },
   CRS: { name: 'Land-attack cruise missile', short: 'CRS', cost: 3, w: 3, prod: 3000, range: 5000, spd: 2.6, dmg: 55, strike: true },
   SRB: { name: 'Tactical ballistic missile', short: 'TBM', cost: 5, w: 6, prod: 4800, range: 3000, spd: 12, dmg: 80, strike: true, bal: true },
+  INT: { name: 'Interceptor drone', short: 'INT', seeker: 'IR', cost: 0.04, w: 0.1, prod: 120, range: 150, spd: 1.6, pk: 0.72, alt: [0, 4], vs: { drone: 1, heli: 0.5, ga: 0.8 } },
   RKT: { name: 'Guided rocket', short: 'RKT', cost: 0.3, w: 0.15, prod: 180, range: 800, spd: 9, dmg: 14, strike: true, bal: true }
 };
-IC.MUN_ORDER = ['IR', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT'];
+IC.MUN_ORDER = ['IR', 'INT', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT'];
 IC.STOCK_KEYS = IC.MUN_ORDER.slice();
 IC.MUN_TECH = { TBD: 'a_pac3', HAT: 'a_hatd', EXO: 'a_exo', CRS: 'x_glcm', SRB: 'x_tbm', LR: 'a_lrsam' };
 IC.SEEKER = {
@@ -44,7 +45,9 @@ IC.MOB_LABEL = { mobile: 'Mobile', semi: 'Semi-mobile', fixed: 'Fixed site' };
 /* ---------- Player units ----------
    build = setup / construction seconds, lead = procurement seconds, up = upkeep ₭M/h, nato = text in the frame.
    sensor.per = antenna rotation period (s); idc = what it can tell about a track:
-   none (position only), iff (reads transponders), nctr (iff + recognises the aircraft type inside nctrR). */
+   none (position only), iff (reads transponders), nctr (iff + recognises the aircraft type inside nctrR).
+   mags: ln launchers of per rounds each, ready to fire, and store rounds on site; the crew reloads one launcher at a
+   time from the store, reload seconds a launcher. */
 IC.UNITS = {
   acou:   { cat: 'sensor', name: 'Acoustic Sensor Net', short: 'ACS', mob: 'fixed', cost: 10, up: 0.2, build: 300, lead: 300, hp: 10, nato: 'ACO',
             sensor: { R: 220, mast: 3, q: 'surv', acou: true, passive: true, per: 2, err: 40, idc: 'class' },
@@ -67,6 +70,9 @@ IC.UNITS = {
   esm:    { cat: 'sensor', name: 'Passive ESM Array', short: 'ESM', mob: 'semi', cost: 80, up: 1, build: 600, lead: 1200, hp: 30, nato: 'ESM', tech: 's_esm',
             sensor: { R: 3600, mast: 10, q: 'surv', esm: true, passive: true, per: 4, err: 25, idc: 'emit' },
             desc: 'Hears jammers and aircraft radars 360 km out, which marks them hostile. Never transmits.' },
+  pcl:    { cat: 'sensor', name: 'Passive Coherent Locator', short: 'PCL', mob: 'semi', cost: 90, up: 1.5, build: 300, lead: 1200, hp: 25, nato: 'PCL',
+            sensor: { R: 2200, mast: 15, q: 'surv', passive: true, per: 2, err: 12, idc: 'none', alt3d: false },
+            desc: 'Listens to broadcast radio and television bouncing off aircraft. It never transmits, so it cannot be found or hit by anti-radiation missiles; position only, no height, and it misses low fliers.' },
   cbr:    { cat: 'sensor', name: 'Counter-Battery Radar', short: 'CBR', mob: 'mobile', cost: 60, up: 2, build: 180, lead: 900, hp: 30, nato: 'CB', tech: 's_cbr',
             sensor: { R: 900, mast: 6, q: 'fc', rktOnly: true, cbr: true, per: 1, err: 1, idc: 'class' },
             desc: 'Tracks rockets and pinpoints the launcher that fired them.' },
@@ -78,7 +84,7 @@ IC.UNITS = {
             desc: 'Tracks ballistic missiles across the region and tells warheads from decoys.' },
 
   manpads:{ cat: 'ad', name: 'MANPADS Team', short: 'MPD', mob: 'mobile', fast: true, callin: true, cost: 8, up: 0.3, build: 60, lead: 300, hp: 10, nato: 'MP',
-            fc: { R: 70, mast: 2, passive: true }, weapon: 'sam', mags: [{ mun: 'IR', mag: 2, store: 4, reload: 40 }],
+            fc: { R: 70, mast: 2, passive: true }, weapon: 'sam', mags: [{ mun: 'IR', ln: 1, per: 2, store: 4, reload: 40 }],
             desc: 'Shoulder-fired IR missiles. Cheap, silent, 5 km reach. Flares and bad weather hurt them.' },
   spaag:  { cat: 'ad', name: 'SPAAG Gun Vehicle', short: 'SPG', mob: 'mobile', cost: 35, up: 1, build: 120, lead: 600, hp: 25, nato: 'G',
             fc: { R: 180, mast: 4, nctr: 120 }, weapon: 'gun', gun: { range: 45, rof: 1.2, acc: 0.22, vs: { drone: 1, heli: 1, cm: 0.5, arm: 0.35, air: 0.3, ga: 0.6 } },
@@ -87,24 +93,41 @@ IC.UNITS = {
             fc: { R: 250, mast: 6, nctr: 150 }, weapon: 'gun', gun: { range: 30, rof: 0.6, acc: 0.3, vs: { rkt: 1, drone: 1, cm: 0.7, arm: 0.6 } },
             desc: 'Point-defense gun that shoots down rockets, drones and ARMs.' },
   shorad: { cat: 'ad', name: 'SHORAD Vehicle', short: 'SHO', mob: 'mobile', cost: 60, up: 2, build: 180, lead: 900, hp: 30, nato: 'SR',
-            fc: { R: 320, mast: 5, nctr: 160 }, weapon: 'sam', mags: [{ mun: 'SR', mag: 8, store: 8, reload: 45 }],
+            fc: { R: 320, mast: 5, nctr: 160 }, weapon: 'sam', mags: [{ mun: 'SR', ln: 2, per: 6, store: 24, reload: 60 }],
             desc: 'Short-range command-guided missiles with its own radar. 12 km reach.' },
   mrsam:  { cat: 'ad', name: 'MRSAM Battery', short: 'MRS', mob: 'semi', cost: 250, up: 6, build: 600, lead: 1800, hp: 50, nato: 'MR', remote: true,
-            fc: { R: 900, mast: 8, nctr: 400 }, weapon: 'sam', mags: [{ mun: 'MR', mag: 6, store: 12, reload: 90 }],
+            fc: { R: 900, mast: 8, nctr: 400 }, weapon: 'sam', mags: [{ mun: 'MR', ln: 3, per: 4, store: 12, reload: 120 }],
             desc: 'Networked medium-range battery with active-seeker missiles. Fires on any friendly fire-control track.' },
   lrsam:  { cat: 'ad', name: 'LRSAM Battery', short: 'LRS', mob: 'semi', cost: 700, up: 14, build: 900, lead: 3000, hp: 70, nato: 'LR', tech: 'a_lrsam',
             fc: { R: 1700, mast: 10, nctr: 700 }, weapon: 'sam',
-            mags: [{ mun: 'LR', mag: 8, store: 8, reload: 150 }, { mun: 'TBD', mag: 8, store: 8, reload: 150, tech: 'a_pac3' }],
+            mags: [{ mun: 'LR', ln: 4, per: 4, store: 16, reload: 150 }, { mun: 'TBD', ln: 2, per: 6, store: 12, reload: 180, tech: 'a_pac3' }],
             desc: '100 km area defense. Its long-range missiles need the battery radar on until impact. With BMD rounds it kills ballistic missiles.' },
   hatd:   { cat: 'ad', name: 'High-Altitude BMD', short: 'HAT', mob: 'semi', cost: 1200, up: 20, build: 1200, lead: 4200, hp: 70, nato: 'HA', tech: 'a_hatd',
-            fc: { R: 3500, mast: 10, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'HAT', mag: 8, store: 8, reload: 300 }],
+            fc: { R: 3500, mast: 10, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'HAT', ln: 2, per: 4, store: 8, reload: 300 }],
             desc: 'Kills ballistic missiles at 35–150 km altitude.' },
   exo:    { cat: 'ad', name: 'Exo Interceptor Site', short: 'EXO', mob: 'fixed', cost: 2000, up: 30, build: 3600, lead: 6000, hp: 80, nato: 'EX', tech: 'a_exo',
-            fc: { R: 3500, mast: 20, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'EXO', mag: 6, store: 4, reload: 600 }],
+            fc: { R: 3500, mast: 20, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'EXO', ln: 6, per: 1, store: 2, reload: 1200 }],
             desc: 'Midcourse defense that hits ballistic missiles in space.' },
+  vshorad:{ cat: 'ad', name: 'IR Missile Vehicle', short: 'IRV', mob: 'mobile', fast: true, cost: 25, up: 0.6, build: 60, lead: 300, hp: 20, nato: 'IR',
+            fc: { R: 90, mast: 3, passive: true }, weapon: 'sam', mags: [{ mun: 'IR', ln: 2, per: 4, store: 16, reload: 30 }],
+            desc: 'Heat-seeking missiles on a light vehicle, aimed by a thermal sight. Silent, cheap, 5 km reach.' },
+  dgun:   { cat: 'ad', name: 'Counter-Drone Gun', short: 'CDG', mob: 'mobile', fast: true, cost: 18, up: 0.4, build: 60, lead: 300, hp: 20, nato: 'G',
+            fc: { R: 60, mast: 3, passive: true }, weapon: 'gun', gun: { range: 25, rof: 0.6, acc: 0.3, vs: { drone: 1, heli: 0.5, ga: 0.6, cm: 0.25 } },
+            desc: 'A 30 mm gun with airburst shells on a truck, aimed by a thermal sight. Silent, 2.5 km reach, never runs dry.' },
+  idl:    { cat: 'ad', name: 'Interceptor Drone Launcher', short: 'IDL', mob: 'mobile', cost: 30, up: 0.6, build: 120, lead: 600, hp: 20, nato: 'ID',
+            fc: { R: 220, mast: 5, nctr: 120 }, weapon: 'sam', mags: [{ mun: 'INT', ln: 4, per: 6, store: 48, reload: 60 }],
+            desc: 'Small radar and racks of interceptor drones that ram slow attack drones 15 km out. Too slow to catch jets or missiles.' },
+  mrmob:  { cat: 'ad', name: 'Mobile MR Launcher', short: 'MRM', mob: 'mobile', fast: true, scoot: true, cost: 170, up: 4, build: 90, lead: 1200, hp: 35, nato: 'MR',
+            fc: { R: 700, mast: 6, nctr: 300 }, weapon: 'sam', mags: [{ mun: 'MR', ln: 2, per: 4, store: 8, reload: 120 }],
+            desc: 'Medium-range missiles and radar on two trucks. After it fires and the enemy has found it, it drives a few km and sets up again.' },
+  cp:     { cat: 'ad', name: 'Mobile Command Post', short: 'CMD', mob: 'mobile', cost: 60, up: 1.5, build: 120, lead: 600, hp: 25, nato: 'CP', emits: true, link: { R: 600 },
+            desc: 'Links every missile battery within 60 km by datalink, so they fire on any fire-control track, even with their own radar silent. Its radio can be found.' },
   laser:  { cat: 'ad', name: 'High-Energy Laser', short: 'HEL', mob: 'fixed', cost: 150, up: 3, build: 900, lead: 1800, hp: 30, nato: 'HEL', tech: 'a_laser',
             fc: { R: 120, mast: 5, passive: true }, weapon: 'laser', laser: { range: 60, dps: 0.35, heat: 40, vs: { drone: 1, rkt: 1, heli: 0.6, cm: 0.4 } },
             desc: 'Burns drones and rockets for the price of electricity. Overheats, and fog cuts it.' },
+  mlaser: { cat: 'ad', name: 'Mobile Laser', short: 'MLZ', mob: 'mobile', cost: 70, up: 1.5, build: 120, lead: 900, hp: 20, nato: 'HEL', tech: 'a_laser',
+            fc: { R: 70, mast: 3, passive: true }, weapon: 'laser', laser: { range: 30, dps: 0.3, heat: 35, vs: { drone: 1, rkt: 0.4 } },
+            desc: 'A smaller laser on a truck for small drones. 3 km reach; overheats sooner than the big one, and fog cuts it.' },
   hpm:    { cat: 'ad', name: 'High-Power Microwave', short: 'HPM', mob: 'fixed', cost: 120, up: 3, build: 900, lead: 1800, hp: 30, nato: 'HPM', tech: 'a_hpm',
             fc: { R: 100, mast: 5, passive: true }, weapon: 'hpm', hpm: { range: 35, cd: 90, pk: 0.7 },
             desc: 'Fries every drone in a 3.5 km bubble, then recharges.' },
@@ -116,13 +139,13 @@ IC.UNITS = {
             weapon: 'decoy', desc: 'Mimics a radar so the enemy wastes ARMs and missiles on it.' },
 
   mlrs:   { cat: 'strike', name: 'MLRS Launcher', short: 'MLR', mob: 'mobile', cost: 70, up: 2, build: 120, lead: 900, hp: 25, nato: 'RKT',
-            weapon: 'strike', mags: [{ mun: 'RKT', mag: 12, store: 12, reload: 30 }],
+            weapon: 'strike', mags: [{ mun: 'RKT', ln: 2, per: 6, store: 12, reload: 90 }],
             desc: 'Guided rockets to 80 km. Counter-battery and front-line strikes.' },
   glcm:   { cat: 'strike', name: 'GLCM Launcher', short: 'GLC', mob: 'mobile', cost: 90, up: 2, build: 240, lead: 1500, hp: 25, nato: 'CM', tech: 'x_glcm',
-            weapon: 'strike', mags: [{ mun: 'CRS', mag: 4, store: 4, reload: 300 }],
+            weapon: 'strike', mags: [{ mun: 'CRS', ln: 1, per: 4, store: 4, reload: 600 }],
             desc: 'Cruise missiles for deep strikes on bases, 500 km range.' },
   tbml:   { cat: 'strike', name: 'Tactical BM Launcher', short: 'TBL', mob: 'mobile', cost: 150, up: 3, build: 300, lead: 2400, hp: 25, nato: 'BM', tech: 'x_tbm',
-            weapon: 'strike', mags: [{ mun: 'SRB', mag: 2, store: 2, reload: 600 }],
+            weapon: 'strike', mags: [{ mun: 'SRB', ln: 1, per: 2, store: 2, reload: 600 }],
             desc: 'Ballistic missiles that reach 300 km in minutes. Catch launchers before they move.' },
 
   depot:  { cat: 'log', name: 'Forward Depot', short: 'DEP', mob: 'fixed', cost: 80, up: 2, build: 900, lead: 600, hp: 60, nato: 'DEP',
@@ -130,6 +153,8 @@ IC.UNITS = {
   heliport:{ cat: 'log', name: 'Forward Heliport', short: 'HLP', mob: 'fixed', cost: 60, up: 1, build: 900, lead: 900, hp: 40, nato: 'H',
             logi: { helis: 1 }, desc: 'A forward pad with a transport helicopter flight for urgent deliveries.' }
 };
+/* launchers and rounds: mag is what the launchers hold together */
+for (const d of Object.values(IC.UNITS)) if (d.mags) for (const m of d.mags) { m.ln = m.ln || 1; m.per = m.per || m.mag; m.mag = m.ln * m.per; }
 /* which component each hit can knock out, per unit role */
 IC.COMPS = {
   radar: { name: 'Radar', desc: 'Detection and fire control' },
@@ -252,7 +277,7 @@ IC.AIR_KIND = {
            roles: ['isr', 'strike'] },
   aew:   { name: 'AEW aircraft', short: 'AEW', n: 1, spd: 1.6, endur: 21600, turn: 2400, buy: 500, cm: 4, runway: true, roles: ['aew'] },
   isr:   { name: 'ISR drone', short: 'ISR', n: 1, spd: 0.8, endur: 43200, turn: 1800, buy: 60, cm: 0, runway: true, roles: ['isr'] },
-  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 4, cm: 6, roles: [] },
+  heli:  { name: 'Transport helicopters', short: 'HEL', n: 2, spd: 0.75, endur: 14400, turn: 600, buy: 60, cap: 6, cm: 6, roles: [] },
   cargo: { name: 'Cargo aircraft', short: 'CGO', n: 1, spd: 1.7, endur: 36000, turn: 1800, buy: 60, cap: 40, cm: 4, runway: true, roles: [] }
 };
 IC.LOADOUTS = {
