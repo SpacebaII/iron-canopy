@@ -4,6 +4,7 @@
    node tests/run.js --quick    skip the slow Academy lessons */
 const IC = require('../headless.js');
 const { playLesson } = require('../academytest.js');
+const Q = require('../qwplayer.js');
 const U = IC.U;
 
 const args = process.argv.slice(2);
@@ -170,7 +171,22 @@ test('world: generation stays under the time budget', () => {
     for (let k = 0; k < 2; k++) { const t0 = Date.now(); const W = IC.generate(seed); IC.buildRouting(W); best = Math.min(best, Date.now() - t0); }
     worst = Math.max(worst, best);
   }
-  assert(worst < 1500, `generation took ${worst} ms`);
+  // the map is ten times larger than wave 4's, with three to four times the towns and roads; it was 1,500 ms for the
+  // smaller map, about 1.3 s on the machine that measured both (3.5 s now)
+  assert(worst < 4500, `generation took ${worst} ms`);
+});
+test('world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map', () => {
+  assert(Math.abs(IC.WW / 10 - 5700) < 200 && Math.abs(IC.WH / 10 - 4300) < 200, `the map is ${IC.WW / 10} × ${IC.WH / 10} km`);
+  for (const seed of [4242, 7, 99]) {
+    const W = IC.generate(seed), home = W.villages.filter(v => v.home).length;
+    // the smaller map had 18 cities and 80 villages
+    assert(W.cities.length >= 54 && home >= 240, `seed ${seed}: ${W.cities.length} cities and ${home} villages`);
+    // spread over the country, not bunched in the lowlands: no city more than 500 km from the next
+    for (const c of W.cities) { const d = Math.min(...W.cities.filter(o => o !== c).map(o => U.dist(o, c))); assert(d < 5000, `seed ${seed}: ${c.name} is ${U.km(d)} from the nearest city`); }
+    // the country spans most of the map
+    const xs = W.poly.map(p => p[0]), ys = W.poly.map(p => p[1]);
+    assert(Math.max(...xs) - Math.min(...xs) > IC.WW * 0.5 && Math.max(...ys) - Math.min(...ys) > IC.WH * 0.45, `seed ${seed}: the country is small on the map`);
+  }
 });
 
 test('traffic: rush hour is busier than night, and an air raid empties the roads', () => {
@@ -188,7 +204,7 @@ test('traffic: rush hour is busier than night, and an air raid empties the roads
   // commuters: into the offices in the morning, home in the evening
   const T = S.traffic, biz = T.zones.filter(z => z.city === cap && z.jobs > z.homes * 2).sort((a, b) => b.jobs - a.jobs)[0];
   assert(biz, 'no business district in the capital');
-  const G = T.G, nd = G.nodes[biz.node], inbound = (h) => { S.time = h * 3600; count(); let i = 0, o = 0; for (const li of nd.out) { const L = T.links[li], d = G.links[li].b === biz.node ? 0 : 1; i += L.ld[d]; o += L.ld[1 - d]; } return [i, o]; };
+  const G = T.G, nd = G.nodes[biz.node], inbound = (h) => { S.time = h * 3600; count(); let i = 0, o = 0; for (const li of nd.out) { const L = T.links[li], d = G.links[li].b === biz.node ? 0 : 1; i += L.dem[d]; o += L.dem[1 - d]; } return [i, o]; };   // (the demand: a jammed street carries as much both ways)
   const [mi, mo] = inbound(8), [ei, eo] = inbound(17.5);
   assert(mi > mo && eo > ei, `rush hours do not run into town in the morning and out in the evening (08:00 ${mi.toFixed(2)} in, ${mo.toFixed(2)} out; 17:30 ${ei.toFixed(2)} in, ${eo.toFixed(2)} out)`);
 });
@@ -573,7 +589,8 @@ test('runway rules: lining up and waiting at night without a ground radar carrie
 const siteNear = (S, c) => {
   for (let r = c.r * 0.55; r < c.r + 40; r += 3) for (let a = 0; a < 6.28; a += 0.2) {
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    if (!IC.foundCheck(S, x, y) && c.blocks.some(b => U.dxy(b.x, b.y, x, y) < 15)) return { x, y };
+    // (on the larger map more towns have a river by them: the runway line must be clear of it)
+    if (!IC.foundCheck(S, x, y) && c.blocks.some(b => U.dxy(b.x, b.y, x, y) < 15) && !IC.foundSurvey(S, x, y, IC.PREVAIL).river) return { x, y };
   }
   return null;
 };
@@ -1346,10 +1363,29 @@ test('career: every act can be reached', () => {
   for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
 test('quick war: the enemy attacks and the defense fights', () => {
+  // (with the scripted commander deploying the reserve and buying: on the large map the few units placed at the
+  // start rarely stand where the first raids go)
   const S = IC.newGame({ seed: 12345, mode: 'campaign' });
-  run(S, 10);
+  run(S, 10, Q.commander);
   assert(S.enemy.war, 'war never started');
   assert(S.stats.kills > 0 && S.stats.fired > 0, `no fighting: ${JSON.stringify(S.stats)}`);
+}, true);
+test('quick war: a sensible commander has two layers over what matters by the first strike, and radar along the border by the end of day 2', () => {
+  const S = IC.newGame({ seed: 777, mode: 'campaign' });
+  let first = null;
+  for (let i = 0; S.time < 2 * 86400 && !S.over; i++) {
+    IC.step(S, 0.5);
+    if (i % 120 === 0) Q.commander(S);
+    if (!first && S.enemy.war) first = Q.keyPlaces(S).map(p => ({ p, L: Q.layers(S, p, true) }));
+  }
+  assert(!S.over, `game ended: ${S.over}`);
+  assert(first, 'the war never started');
+  // an area battery and a point-defence system, set up and ready, over each
+  for (const { p, L } of first) assert(L.has('area') && L.has('point'), `${p.name} had ${[...L].join(' and ') || 'nothing'} over it at the first strike`);
+  const cov = Q.borderCover(S, true);
+  assert(cov >= 0.75, `radars see only ${U.pct(cov)} of the hostile border at the end of day 2`);
+  // money stays meaningful: running costs take most of the income by then
+  assert(S.budget >= 0 && S.upkeep > S.income * 0.5, `treasury ${U.money(S.budget)}, income ${U.money(S.income)}/h against running costs ${U.money(S.upkeep)}/h`);
 }, true);
 test('sandbox: runs four hours', () => {
   const S = IC.newGame({ seed: 99, mode: 'sandbox' });
