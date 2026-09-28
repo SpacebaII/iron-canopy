@@ -945,6 +945,32 @@ test('airport life: a locked material cannot be chosen until its research is don
   const Q = IC.newGame({ seed: 12345, mode: 'campaign' });
   assert(!IC.aptLockWhy(Q, 'hydrant'), 'Quick war locks airport items');
 });
+test('airport life: a new airport gets an access road to its city, and its cost is shown', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  S.budget = 5000;
+  const t = townWithSite(S); assert(t, 'no site near any town');
+  const b0 = S.budget, w0 = S.econ.works.length;
+  const ap = IC.foundAirport(S, t.p.x, t.p.y, IC.PREVAIL);
+  assert(ap, 'could not found the airport');
+  const w = S.econ.works.find(x => x.apt === ap.id);
+  assert(w && S.econ.works.length === w0 + 1, 'no access road works started');
+  assert(ap.land && ap.land.access && ap.land.access.cost > 0 && S.logs.some(l => /access road/.test(l.text || l.msg || '') && /₭/.test(l.text || l.msg || '')), 'the access road and its cost are not reported');
+  const near = IC.cities(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0];
+  // it opens as a road and brings the airport within reach of its city
+  for (let i = 0; i < 48 * 360 && S.econ.works.some(x => x.id === w.id); i++) IC.step(S, 10);
+  assert(!S.econ.works.some(x => x.id === w.id), 'the access road never opened');
+  assert(S.world.edges.some(e => e.player && U.dist(e.pts[0], ap) < 8 || e.player && U.dist(e.pts[e.pts.length - 1], ap) < 8), 'no road reaches the airport');
+  assert(b0 - S.budget >= ap.land.access.cost, 'the road was not paid for');
+});
+test('airport life: the landside grows with passengers and pays a small income', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const cap = S.byId[S.story.cap];
+  run(S, 5);
+  const L = cap.land, kinds = new Set(L.items.map(x => x.kind));
+  assert(L.pax > 100 && kinds.has('park') && kinds.has('stop'), `after 5 hours with ${Math.round(L.pax)} passengers an hour: ${[...kinds].join(', ') || 'nothing'}`);
+  assert(L.items.every(it => !IC.aptOnPart(cap, it, 0.05) && !cap.parts.some(p => p.kind === 'runway' && IC.partDist(cap, p, it) < 1.5)), 'a landside item stands on the airfield');
+  assert(S.econ.book.landside > 0, 'the landside earned nothing');
+});
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);

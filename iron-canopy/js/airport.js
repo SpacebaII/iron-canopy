@@ -1026,6 +1026,7 @@ IC.updateBases = function (S, dt) {
     const pipe = b.parts.some(p => p.kind === 'hydrant' && p.built && p.hp > p.max * 0.25) ? IC.APART.hydrant.pipe : 0;
     const inflow = (IC.FUEL_IN + (tanks.length ? pipe / tanks.length : 0)) * dt / 3600;
     for (const t of tanks) t.stock = Math.min(IC.APART.fuel.cap, (t.stock || 0) + inflow);
+    if (IC.landsideTick) IC.landsideTick(S, b, dt);
     b.statT = (b.statT || 0) - dt;
     if (b.statT <= 0 || b.dirty) { b.statT = 60; IC.aptStats(S, b); }
     // engineers come back to jobs that could not be paid for at the time

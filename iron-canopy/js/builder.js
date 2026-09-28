@@ -587,8 +587,8 @@ IC.bldSnapBuilding = function (ap, kind, p) {
 IC.aptAutoLinks = function (ap) {
   for (const p of ap.parts) {
     if (p.link || IC.SNAP_GAP[p.kind] == null || STUB(p.kind) || p.x == null) continue;
-    let best = null, bd = 3;
-    for (const e of edgesNear(ap, p, 3)) {
+    let best = null, bd = 1.2;
+    for (const e of edgesNear(ap, p, 1.5)) {
       const L = U.dist(e.a, e.b); if (L < 0.1) continue;
       const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = U.clamp((p.x - e.a.x) * ux + (p.y - e.a.y) * uy, 0, L);
       const fx = e.a.x + ux * t, fy = e.a.y + uy * t, off = (p.x - fx) * -uy + (p.y - fy) * ux, side = Math.sign(off) || 1, q = { x: fx - uy * side * e.half, y: fy + ux * side * e.half }, d = U.dist(q, p);
@@ -597,6 +597,9 @@ IC.aptAutoLinks = function (ap) {
     if (!best) continue;
     const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2, l = IC.rectLocal({ x: p.x, y: p.y, a: p.a || 0 }, best);
     const face = Math.abs(l.x) / w > Math.abs(l.y) / h ? IC.rectWorld({ x: p.x, y: p.y, a: p.a || 0 }, Math.sign(l.x) * w / 2, 0) : IC.rectWorld({ x: p.x, y: p.y, a: p.a || 0 }, 0, Math.sign(l.y) * h / 2);
+    // never across a runway
+    const mid = { x: (face.x + best.x) / 2, y: (face.y + best.y) / 2 };
+    if (ap.parts.some(q => q.kind === 'runway' && (IC.partDist(ap, q, mid) < 0.3 || U.segX && U.segX(face.x, face.y, best.x, best.y, q.a.x, q.a.y, q.b.x, q.b.y) >= 0))) continue;
     if (U.dist(face, best) > 0.05) p.link = [face, best];
   }
 };

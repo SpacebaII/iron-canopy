@@ -116,6 +116,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   }
   // paved surrounds: terminals and sheds stand on a forecourt that meets the apron, hangars open onto a ramp
   if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null) rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)');
+  // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
+  if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
   // aprons and other paved areas, tinted by zone
   for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p);
   for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p);
@@ -538,6 +540,76 @@ function drawParked(g, S, ap, px, z, light) {
       const x = pp.x - Math.sin(h) * off, y = pp.y + Math.cos(h) * off;
       IC.drawPlane(g, x, y, h, type, null, { alpha: pp.inside ? 0.35 : 1, shadow: pp.inside ? 0 : 0.02, minPx: 6, body: r.st === 'turn' ? 'rgb(200,170,110)' : null });
     }
+  }
+}
+
+/* ---------- the landside ---------- */
+const CARS = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230,230,226)', 'rgb(60,80,120)', 'rgb(120,124,128)', 'rgb(180,160,120)'];
+function drawLandside(g, S, ap, px, z, night) {
+  const L = ap.land, V = IC.rs && IC.rs.view;
+  const vis = it => !V || (it.x > V.x0 - 2 && it.x < V.x1 + 2 && it.y > V.y0 - 2 && it.y < V.y1 + 2);
+  // roads first: dark asphalt with a pale edge, a centre line close in
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const r of L.roads || []) {
+    g.strokeStyle = 'rgb(150,150,142)'; g.lineWidth = Math.max(r.w + 0.03, 2 * px); g.beginPath(); r.pts.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.stroke();
+    g.strokeStyle = 'rgb(58,60,62)'; g.lineWidth = Math.max(r.w, 1.4 * px); g.stroke();
+    if (z > 25 && r.w > 0.1) { g.strokeStyle = 'rgba(236,236,226,0.8)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.setLineDash([0.03, 0.03]); g.stroke(); g.setLineDash([]); }
+  }
+  g.lineCap = 'butt'; g.lineJoin = 'miter';
+  for (const it of L.items) {
+    if (!vis(it)) continue;
+    g.save(); g.translate(it.x, it.y); g.rotate(it.a || 0);
+    const w = it.w, h = it.h, k = it.kind, use = it.use == null ? 0.5 : it.use;
+    if (k === 'park' || k === 'taxi') {
+      g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(150,150,142,0.9)'; g.lineWidth = Math.max(0.006, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h);
+      if (z > 12) {
+        // rows of bays either side of the aisles, and cars in them as full as the car park is
+        const bay = 0.026, depth = 0.05, rows = [];
+        for (let y = -h / 2 + 0.03; y + 2 * depth < h / 2 - 0.02; y += 2 * depth + 0.07) rows.push(y);
+        g.strokeStyle = 'rgba(236,236,226,0.45)'; g.lineWidth = Math.max(0.002, 0.4 * px);
+        let i = 0;
+        for (const y of rows) {
+          if (z > 40) { g.beginPath(); for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += bay) { g.moveTo(x, y); g.lineTo(x, y + 2 * depth); } g.stroke(); }
+          for (let x = -w / 2 + 0.03; x < w / 2 - 0.03 - bay; x += bay) for (const yy of [y, y + depth]) {
+            i++;
+            if (U.hash(i, it.x * 10 | 0) > (k === 'taxi' ? 0.7 : use)) continue;
+            g.fillStyle = k === 'taxi' && U.hash(i, 5) < 0.6 ? 'rgb(236,196,50)' : CARS[(U.hash(i, 11) * CARS.length) | 0];
+            g.fillRect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
+          }
+        }
+      }
+      if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
+    } else if (k === 'garage') {
+      g.fillStyle = 'rgb(150,150,146)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgb(120,120,116)'; g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h - 0.06);
+      // the top deck: bays and cars, the ramp tower in a corner
+      if (z > 12) for (let i = 0, x = -w / 2 + 0.06; x < w / 2 - 0.08; x += 0.026) for (const y of [-h * 0.3, h * 0.15]) { i++; if (U.hash(i, 3) < use) { g.fillStyle = CARS[(U.hash(i, 17) * CARS.length) | 0]; g.fillRect(x, y, 0.018, 0.04); } }
+      g.fillStyle = 'rgb(96,96,92)'; g.beginPath(); g.arc(w / 2 - 0.08, h / 2 - 0.08, 0.06, 0, 7); g.fill();
+    } else if (k === 'stop') {
+      g.fillStyle = 'rgb(70,72,74)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgb(226,228,230)'; g.fillRect(-w / 2 + 0.04, -h / 2 + 0.02, w - 0.08, 0.05);
+      if (it.rail) { g.fillStyle = 'rgb(110,100,90)'; g.fillRect(-w / 2, h / 2 - 0.08, w, 0.05); g.fillStyle = 'rgb(180,60,50)'; g.fillRect(-0.2, h / 2 - 0.075, 0.4, 0.04); }
+      else for (let i = 0; i < 3; i++) if (U.hash(i, (S.time / 300) | 0) < 0.6) { g.fillStyle = i % 2 ? 'rgb(236,236,230)' : 'rgb(70,120,170)'; g.fillRect(-w / 2 + 0.08 + i * 0.16, -0.02, 0.12, 0.03); }
+    } else if (k === 'hotel') {
+      g.fillStyle = 'rgb(118,150,98)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgb(198,186,168)'; g.fillRect(-w / 2 + 0.04, -h / 2 + 0.04, w * 0.7, h * 0.35); g.fillRect(-w / 2 + 0.04, -h / 2 + 0.04, w * 0.22, h - 0.08);
+      g.fillStyle = 'rgb(70,170,200)'; g.fillRect(w * 0.08, h * 0.08, w * 0.24, h * 0.18);
+      if (night) { g.fillStyle = 'rgba(255,220,150,0.7)'; for (let x = -w / 2 + 0.06; x < w * 0.2 - 0.02; x += 0.04) g.fillRect(x, -h / 2 + 0.05, 0.02, 0.01); }
+    } else if (k === 'office') {
+      g.fillStyle = 'rgb(128,150,98)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgb(96,120,140)'; g.fillRect(-w / 2 + 0.05, -h / 2 + 0.05, w - 0.1, h * 0.55);
+      g.strokeStyle = 'rgba(200,220,236,0.35)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath(); for (let x = -w / 2 + 0.05; x < w / 2 - 0.05; x += 0.05) { g.moveTo(x, -h / 2 + 0.05); g.lineTo(x, -h / 2 + 0.05 + h * 0.55); } g.stroke();
+      g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2 + 0.05, h * 0.15, w - 0.1, h * 0.25);
+    } else if (k === 'warehouse') {
+      g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgb(168,164,150)'; g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h * 0.62);
+      g.fillStyle = 'rgba(0,0,0,0.12)'; for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += 0.06) g.fillRect(x, -h / 2 + 0.03, 0.01, h * 0.62);
+      for (let i = 0, x = -w / 2 + 0.08; x < w / 2 - 0.08; x += 0.1, i++) if (U.hash(i, it.x | 0) < use) { g.fillStyle = 'rgb(210,120,50)'; g.fillRect(x, -h / 2 + 0.03 + h * 0.62, 0.035, 0.14); }
+    }
+    if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
+    g.restore();
+    if (z > 30 && IC.cam.z < 200) lbl(g, (it.name || IC.LAND[k].name).toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700);
   }
 }
 
