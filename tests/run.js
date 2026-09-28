@@ -1308,6 +1308,8 @@ test('air war: an intercept commits, flies to the predicted point and engages', 
   const S = quietWar();
   const b = S.byId.ab_fwd, r = S.roster.find(x => x.base === b.id && x.kind === 'ftr' && x.st === 'ready');
   const c = IC.cap(S), cl = U.dist(c, b), dir = { x: (c.x - b.x) / cl, y: (c.y - b.y) / cl };
+  // no batteries: their fire-control radars would lock on and turn the bomber for home, off the predicted course
+  S.units = [];
   IC.makeUnit(S, 'lr3d', b.x + dir.x * 900, b.y + dir.y * 900, { instant: true, full: true }).emcon = 'on';
   const t = IC.spawnThreat(S, 'str', b.x + dir.x * 1800, b.y + dir.y * 1800, { route: [{ x: b.x + dir.y * 3000, y: b.y - dir.x * 3000 }], mission: 'strike', home: { x: b.x + dir.x * 9000, y: b.y + dir.y * 9000 }, noFire: true });
   for (let i = 0; i < 4 * 120 && !t.held; i++) IC.step(S, 0.25);

@@ -94,8 +94,8 @@ function plan(S, px, now) {
     P.fuelBack > 0 ? `FUEL AFTER ${U.dur(P.fuelBack)}` : 'NOT ENOUGH FUEL TO COME BACK',
     P.idFirst ? 'IDENTIFY FIRST · WEAPONS COLD' : `KILL ${Math.round(P.pk * 100)}%${P.n > 1 ? ` · ${P.enough ? 'ALL ' + P.n : 'MISSILES FOR ' + Math.floor((P.aam + P.srm) / 2) + ' OF ' + P.n}` : ''}`];
   if (P.late) lines.push(`REACHES ${P.late.toUpperCase()} FIRST`);
-  // on a dark card beside the point, on the side away from the fighter
-  const right = P.x >= from.x, bx = right ? P.x + 14 * px : P.x - 14 * px - 250 * px, by = P.y + 6 * px;
+  // on a dark card beside the point, on the side towards the middle of the screen (clear of the panels at the edges)
+  const c = IC.cam, right = P.x < c.x + c.vw / c.z / 2, bx = right ? P.x + 14 * px : P.x - 14 * px - 250 * px, by = P.y + 6 * px;
   ctx.fillStyle = 'rgba(6,16,24,0.82)'; ctx.strokeStyle = CYA(0.5); ctx.lineWidth = 1 * px;
   ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, 250 * px, (lines.length * 13 + 8) * px, 6 * px) : ctx.rect(bx, by, 250 * px, (lines.length * 13 + 8) * px); ctx.fill(); ctx.stroke();
   lines.forEach((s, i) => label(s, bx + 8 * px, by + (15 + i * 13) * px, px, i === 1 && P.fuelBack <= 0 || i === 3 ? IC.C.amber : CY, 9.5, 'left', 700));

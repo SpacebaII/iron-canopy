@@ -152,6 +152,8 @@ IC.trackUnc = t => ({ along: (t.unc || 0) * 1.5, across: t.unc || 0, a: Math.ata
 
 /* raids fly together: tracks close to each other on the same heading and speed are one group. Groups are rebuilt
    every few seconds, so they split when the aircraft split. A group is named after its lowest track number. */
+// a raid is as hostile as its most hostile member
+const grpAff = m => m.some(t => t.aff === 'H') ? 'H' : m.some(t => t.aff === 'S') ? 'S' : 'U';
 function groupTracks(S) {
   const L = S.threats.filter(t => t.held && !t.dead && t.aff !== 'N' && t.aff !== 'A' && !t.decoyKnown &&
     (t.d.cls === 'air' || t.d.cls === 'drone' || t.d.cls === 'cm' || t.d.cls === 'heli'));
@@ -175,7 +177,7 @@ function groupTracks(S) {
   for (const m of by.values()) {
     if (m.length < 2) continue;
     m.sort((a, b) => a.tn - b.tn);
-    const g = { id: 'G' + m[0].tn, lead: m[0], members: m, n: m.length, aff: m.some(t => t.aff === 'H') ? 'H' : m.some(t => t.aff === 'S') ? 'S' : 'U' };
+    const g = { id: 'G' + m[0].tn, lead: m[0], members: m, n: m.length, aff: grpAff(m) };
     for (const t of m) t.grp = g;
     S.tgroups.push(g);
   }
@@ -277,6 +279,7 @@ function setAff(S, t, aff, why) {
   const was = t.aff;
   t.aff = aff; t.affWhy = why; t.affT = S.time;
   t.ided = aff === 'H' || aff === 'N';
+  if (t.grp) t.grp.aff = grpAff(t.grp.members);
   if (!t.tn || t.d.civil && aff !== 'S' && aff !== 'H') return;
   if (aff === 'H' && t.d.cls === 'air' && !t.border) IC.log(S, 'id', 'ID', `TN ${t.tn} identified HOSTILE: ${IC.KLASS[t.klass] || t.d.name}${why ? ' (' + why + ')' : ''}.`, t);
   else if (aff === 'S' && (was === 'A' || was === 'N')) IC.log(S, 'warn', 'SUSPECT', `TN ${t.tn} ${t.sq ? 'squawking ' + t.sq : ''} is now SUSPECT: ${why}.`, t);

@@ -566,7 +566,7 @@ function air(a) {
   const esc2 = (a.kind === 'heli' || a.kind === 'cargo' || a.kind === 'aew' || a.kind === 'tkr') && !a.allied && !S.air.some(f => f.mission && f.mission.who === a) ? `<div class="acts"><button class="act" data-act="air" data-op="escort" data-aid="${a.id}" ${IC.escortFor(S, a) ? '' : 'disabled'}>Send a fighter escort</button></div>` : '';
   const roe = a.kind === 'ftr' && a.r ? `<div class="sec"><h3 class="sh">Weapons</h3>${seg('froe', a.r.roe || 'auto', [['auto', `National (${S.ad.roe})`], ['free', 'Free'], ['tight', 'Tight'], ['hold', 'Hold', 'red']])}</div>` : '';
   const hint = a.kind === 'ftr' ? 'Click a track to see an intercept (Tab picks the next hostile). Right-click the map to patrol there, one of our aircraft to escort it, an enemy target to strike.' : 'Right-click the map to move its station.';
-  return head(`<span class="badge friend">${ui.icon('air')}</span>`, a.name, esc(K.name), STATE_WORDS[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
+  return head(`<span class="badge friend">${ui.icon('air')}</span>`, a.name, esc(K.name), a.gnd ? 'Taxiing' : STATE_WORDS[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
     `<div class="ibody">${plan}${kv(rows)}${roe}${acts}${esc2}<p class="hint">${hint}</p></div>`;
 }
 /* a flight on the ground: its alert state, its crews, what it is missing */
@@ -593,7 +593,7 @@ function fighterOptions(t) {
   if (!L.length) return '';
   return `<div class="sec"><h3 class="sh">Fighters <em>quickest first</em></h3><div class="list">${L.map(({ w, P }) => {
     const on = w.mission && w.mission.track === t;
-    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (STATE_WORDS[w.state] || 'Airborne').toLowerCase() : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · fuel after ${P.fuelBack > 0 ? U.dur(P.fuelBack) : '<span class="hostile">none</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
+    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (w.gnd ? 'taxiing' : (STATE_WORDS[w.state] || 'Airborne').toLowerCase()) : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · fuel after ${P.fuelBack > 0 ? U.dur(P.fuelBack) : '<span class="hostile">none</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
   }).join('')}</div></div>`;
 }
 /* ---------- the air picture: everything not known friendly, most dangerous first ---------- */
