@@ -95,7 +95,7 @@ function orderBack(S, r, lost, damaged) {
   const cost = K.buy / K.n * IC.AIR_LOSS.replaceK;
   for (let i = 0; i < lost; i++) {
     if (S.budget < cost + 50) { IC.log(S, 'warn', 'AIR', `${r.name}: no money for a replacement aircraft (${U.money(cost)}).`); break; }
-    S.budget -= cost;
+    IC.pay(S, 'buyUnits', cost);
     r.back.push({ t: S.time + IC.AIR_LOSS.replace, why: 'new' });
   }
   r.back.sort((a, b) => a.t - b.t);
@@ -344,7 +344,7 @@ IC.launchAir = function (S, r, mission, auto) {
   }
   r.st = 'air'; r.ent = a;
   S.air.push(a);
-  S.budget -= SORTIE_COST[r.kind] || 0;
+  IC.pay(S, 'upAir', SORTIE_COST[r.kind] || 0);
   const what = { cap: `patrol over ${IC.nearestPlace(S, mission.x, mission.y)}`, intercept: `intercept TN ${mission.track && mission.track.tn}`,
     strike: `strike on ${mission.site && mission.site.name}`, orbit: `early-warning orbit`, tanker: `tanker track near ${IC.nearestPlace(S, mission.x, mission.y)}`,
     isr: `reconnaissance near ${IC.nearestPlace(S, mission.x, mission.y)}`, escort: `escort for ${mission.who && mission.who.name}` }[mission.type];
@@ -358,7 +358,7 @@ IC.recallAir = function (S, a) { if (a && !a.dead && a.state !== 'rtb' && !a.job
 IC.buyAircraft = function (S, kind, baseId) {
   const K = IC.AIR_KIND[kind];
   if (S.budget < K.buy) return false;
-  S.budget -= K.buy;
+  IC.pay(S, 'buyUnits', K.buy);
   const n = S.roster.filter(r => r.kind === kind).length + 1;
   const r = IC.newFlight(S, kind, `${NAMES[kind]} ${n}`, baseId);
   r.st = 'turn'; r.t = 1800;

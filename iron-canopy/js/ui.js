@@ -719,8 +719,10 @@ ui.toggleMenu = function (on) {
 /* ---------- start screen: the title, the modes, and pages for the Academy, settings and controls ---------- */
 ui.startPage = function (pg) {
   ui.stPage = pg || 'main';
-  for (const k of ['main', 'lessons', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
+  for (const k of ['main', 'lessons', 'saves', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
   if (ui.stPage === 'lessons') ui.lessonList();
+  if (ui.stPage === 'saves' && IC.savesPage) IC.savesPage();
+  if (ui.stPage === 'main' && IC.saves) IC.saves.refresh();
   if (ui.stPage === 'settings') setHTML($('stSettings'), IC.settingsHTML(S, true));
   const p = store.get('ic-academy', {}), n = IC.LESSONS.filter(l => p[l.id]).length;
   $('acaProg').textContent = n ? `${n} of ${IC.LESSONS.length} done · ${Object.values(p).reduce((a, b) => a + b, 0)} stars` : `${IC.LESSONS.length} lessons, 5 minutes each`;

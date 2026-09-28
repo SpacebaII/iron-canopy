@@ -3,10 +3,31 @@
 'use strict';
 const U = IC.U;
 
-IC.newGame = function (opts) {
+/* a new game is built in stages, like the world (gen.js): IC.newGame builds it at once; IC.newGameAsync lets the page
+   draw between stages and reports each (its name and about how far along it is) for a loading screen */
+IC.newGame = opts => { const g = gameSteps(opts); for (;;) { const r = g.next(); if (r.done) return r.value; } };
+// rough share of the time each stage takes, for the progress bar
+const STAGES = { relief: 0.02, rivers: 0.08, cities: 0.15, roads: 0.2, bridges: 0.36, towns: 0.37, junctions: 0.66, routing: 0.68,
+  airports: 0.7, forces: 0.72, traffic: 0.74, economy: 0.94, done: 1 };
+IC.LOAD_STAGES = STAGES;
+IC.newGameSteps = opts => gameSteps(opts);
+IC.newGameAsync = (opts, progress) => new Promise((ok, fail) => {
+  const g = gameSteps(opts);
+  const on = () => {
+    let r;
+    try { r = g.next(); } catch (e) { fail(e); return; }
+    if (progress) progress(r.done ? 'done' : r.value, r.done ? 1 : STAGES[r.value] || 0);
+    if (r.done) ok(r.value); else setTimeout(on, 0);
+  };
+  on();
+});
+function* gameSteps(opts) {
   const seed = opts.seed >>> 0;
-  const W = IC.W = IC.generate(seed);
+  const W = IC.W = yield* IC.generateSteps(seed);
+  yield 'routing';
   IC.buildRouting(W);
+  if (IC.worldBase) IC.worldBase(W);   // fingerprints of the fresh world, so a save stores only what changed (save.js)
+  yield 'airports';
   const mode = opts.mode || 'campaign';
   const sandbox = mode === 'sandbox';
   // the Career starts with no airports: the player builds the capital's. preset 'network' starts it with the
@@ -60,6 +81,7 @@ IC.newGame = function (opts) {
   const plants = S.infra.filter(i => i.kind === 'power');
   for (const c of IC.cities(S)) { const p = plants.slice().sort((a, b) => U.dist(a, c) - U.dist(b, c))[0]; c.plant = p ? p.id : null; }
 
+  yield 'forces';
   IC.weatherInit(S);
   const story = mode === 'story';
   if (story) IC.storyForces(S); else if (mode !== 'academy') startingForces(S, sandbox);
@@ -67,12 +89,14 @@ IC.newGame = function (opts) {
   if (mode !== 'academy') IC.avInit(S);
   IC.aspInit(S);
   IC.civilInit(S);
+  yield 'traffic';
   IC.trafficInit(S);
+  yield 'economy';
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
   return S;
-};
+}
 
 IC.cap = S => S.infra.find(i => i.capital);
 IC.cities = S => S.infra.filter(i => i.kind === 'city');

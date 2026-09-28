@@ -10,7 +10,7 @@ const LIB = `
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const seeded = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 IC.S.seed = 4242; Math.random = seeded(7);
-IC.begin('sandbox'); await wait(2600);
+await IC.begin('sandbox');
 const S = IC.S; S.paused = true;
 IC.ui.cineShown = 1e9; { const c = document.getElementById('cine'); if (c) c.hidden = true; }
 S.time = Math.floor(S.time / 86400) * 86400 + 11 * 3600;

@@ -9,7 +9,30 @@ IC.spawnThreat = function (S, type, x, y, o) {
     id: IC.nid('t'), type, d, x, y, alt: d.alt || 0, vx: 0, vy: 0, hp: d.hp, spd: d.spd || 0, rcs: d.rcs, age: 0, seed: Math.random() * 10,
     route: null, aim: null, target: null, tn: null, det: false, fc: false, disc: false, fcBy: [], vis: false, idp: 0, ided: false,
     aff: 'U', klass: null, cm: d.cm || 0, notchT: 0, fromHostile: IC.inHostile(x, y),
-    inbound: 0, lost: 0, px: x, py: y, pt: 0, holdUntil: 0, spoofed: false, dead: false, flash: 0, blip: 0, trailPts: []
+    inbound: 0, lost: 0, px: x, py: y, pt: 0, holdUntil: 0, spoofed: false, dead: false, flash: 0, blip: 0, trailPts: [],
+    // what the flight models, sensors, controllers and the enemy fill in later, declared here so that every threat has
+    // the same shape and the step's loops over them stay fast (undefined reads the same as a missing field)
+    rx: undefined, ry: undefined, pvx: undefined, pvy: undefined, perr: undefined, pper: undefined, plots: undefined,
+    trail: undefined, trailT: undefined, svx: undefined, svy: undefined, cx: undefined, cy: undefined,
+    coast: undefined, unc: undefined, inView: undefined, satOnly: undefined, altKnown: undefined, held: undefined,
+    held0: undefined, grp: undefined, altT: undefined, fcUntil: undefined, discT: undefined, firstDet: undefined,
+    firstIn: undefined, sqSeen: undefined, seenAs: undefined, airSeen: undefined, dzNow: undefined, lvl: undefined,
+    sec: undefined, _seenT: undefined, _seen: undefined, clr: undefined, vector: undefined, vectorT: undefined,
+    aspDz: undefined, aspDzT: undefined, entered: undefined, tt: undefined, ttT: undefined, dest: undefined,
+    wps: undefined, orig: undefined, cs: undefined, sq: undefined, plan: undefined, pax: undefined, cruise: undefined,
+    net: undefined, dist0: undefined, airway: undefined, hostileCiv: undefined, home: undefined, mission: undefined,
+    st: undefined, border: undefined, fuel: undefined, cool: undefined, aam: undefined, wasLocked: undefined,
+    lead: undefined, tail: undefined, flown: undefined, toApt: undefined, livery: undefined, acType: undefined,
+    detour: undefined, remain: undefined, affWhy: undefined, affT: undefined, h: undefined, seq: undefined,
+    slot: undefined, spdF: undefined, clrT: undefined, onLane: undefined, leg: undefined, endur: undefined,
+    appr: undefined, faf: undefined, holdT: undefined, area: undefined, phase: undefined, loiterT: undefined,
+    site: undefined, origin: undefined, scan: undefined, seqVec: undefined, gaFrom: undefined, gaTo: undefined,
+    cleared: undefined, careless: undefined, fpl: undefined, gaAlt: undefined, jamming: undefined, nextTry: undefined,
+    holding: undefined, hoa: undefined, infFlag: undefined, oa: undefined, op: undefined, hd: undefined,
+    intrudeFlag: undefined, x0: undefined, y0: undefined, x1: undefined, y1: undefined, T: undefined, apex: undefined,
+    src: undefined, tr: undefined, trT: undefined, stk: undefined, inHold: undefined, shots: undefined,
+    feint: undefined, loiter: undefined, jamT: undefined, strobed: undefined, triT: undefined, standShort: undefined,
+    diverted: undefined, decoyKnown: undefined
   }, o || {});
   S.threats.push(t);
   return t;

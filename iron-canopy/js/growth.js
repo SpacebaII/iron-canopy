@@ -95,11 +95,16 @@ IC.econTime = (S, from, to, intact) => timeTo(S, (intact ? S.econ.ti : S.econ.tt
 /* a place's trade reach: the people it can trade with, the nearer (in time) the more */
 const reachOf = (S, T, self) => { let s = 0; for (const d of IC.cities(S)) if (d !== self && d.owner === 'us') s += d.pop * Math.exp(-timeTo(S, T, d) / 7200); return s; };
 
+/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them) */
+IC.econTrees = function (S) {
+  const E = S.econ, W = S.world;
+  E.tt = {}; E.ti = {};
+  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+};
 function refreshRoads(S) {
   const E = S.econ, W = S.world;
   E.roadsDirty = false;
-  E.tt = {}; E.ti = {};
-  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+  IC.econTrees(S);
   for (const c of IC.cities(S)) {
     c.rc = reachOf(S, E.tt[c.id], c); c.rcI = reachOf(S, E.ti[c.id], c);
     // trips that now take much longer, and the cut that causes it
@@ -384,7 +389,7 @@ IC.rushCost = e => Math.round((e.len || 10) / 10 * (e.cls === 'hw' ? 3 : 1.5) + 
 IC.rushRepair = function (S, id) {
   const e = S.world.edges.find(x => x.id === id); if (!e || !e.cut || e.rush) return false;
   const c = IC.rushCost(e); if (S.budget < c) { IC.log(S, 'warn', 'ROADS', `Rushing the repair needs ${U.money(c)}.`); return false; }
-  S.budget -= c; e.rush = true;
+  IC.pay(S, 'repair', c); e.rush = true;
   IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e) * 3600)}.`, e.cutAt);
   return true;
 };

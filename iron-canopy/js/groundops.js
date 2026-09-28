@@ -1263,7 +1263,7 @@ function crashNow(S, ap, m) {
   const text = `${what}, crashed ${phase} on runway ${IC.rwEnd(rw, m.plan.dir)} at ${ap.name}. ${dead} of the ${on} people on board died. The cause: ${c.text}.${c.rule ? ` The tower's rule that allowed it: ${c.rule}.` : ''} ${resc}`;
   const fix = { gust: 'A runway pointing into the wind (a crosswind runway) would have kept it inside its limits.', tailwind: 'A runway pointing into the wind would have avoided the tailwind.', overrun: 'A longer runway, or one without craters, leaves a margin when it is wet.', incursion: 'A ground radar shows the tower every aircraft on the ground, day and night.', bird: 'Airports away from lakes and rivers see far fewer birds.', collision: 'A ground radar shows the tower every aircraft on the runway; without one, keep departures at the hold-short line after dark (Operations tab).' }[c.cause] || '';
   if (S.camp) {
-    (S.later = S.later || []).push({ t: S.time + 1800, fn: () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.hhmm(S.time)}`, `${text} ${fix}`, 'alarm'); } });
+    IC.later(S, 1800, 'gopsReport', S, ap, `${text} ${fix}`);
   }
   // on top of the loss of the aircraft itself (the Minister already counts that): the deaths and the headlines
   if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), 0, 100);
@@ -1295,14 +1295,18 @@ IC.milLaunchBlock = function (S, b, r) {
   if (!IC.gopsCanDepart(S, b, type, sn.node)) return 'No taxi route to a usable runway' + IC.depBlockWhy(S, b, IC.ACTYPES[type]);
   return '';
 };
+IC.H.gopsReport = (S, ap, text) => () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.hhmm(S.time)}`, text, 'alarm'); };
+IC.H.milAirborne = (S, a) => mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); };
+IC.H.milParked = (S, a, b) => () => { a.gnd = false; a.faf = null; IC.airLand(S, a, b); };
+IC.H.milGoAround = (S, a) => mm => { a.gnd = false; a.ground = null; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.faf = null; a.nextTry = S.time + 90; };
+IC.H.milTaxiLost = a => () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } };
 /* returns true when the aircraft has been handed to ground ops (it appears in the air when it lifts off) */
 IC.milDepart = function (S, b, a) {
   const r = a.r, sn = IC.milStartNode(S, b, r);
   if (!sn) return false;
   const type = IC.AIRKIND_TYPE[r.kind];
   const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false, drive: true }) : null, startT: IC.alertStartT ? IC.alertStartT(r, sn.startT) : sn.startT, mil: true, scramble: IC.alertOf ? IC.alertOf(r) < 30 : !!r.qra, who: r.name, flight: a, n: a.n,
-    onAir: mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); },
-    onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
+    onAir: IC.hfn('milAirborne', S, a), onDead: IC.hfn('milTaxiLost', a) });
   if (!m) return false;
   a.gnd = true; a.ground = m;
   a.x = m.x; a.y = m.y;
@@ -1327,9 +1331,7 @@ IC.milApproach = function (S, b, a, dt) {
   const sn = IC.milStartNode(S, b, r) || {};
   if (!sn.node) return 'divert';
   const m = IC.gopsLand(S, b, { type, target: sn.node, stand: null, mil: true, who: a.name, flight: a, n: a.hp, faf,
-    onPark: () => { a.gnd = false; a.faf = null; IC.airLand(S, a, b); },
-    onGoAround: mm => { a.gnd = false; a.ground = null; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.faf = null; a.nextTry = S.time + 90; },
-    onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
+    onPark: IC.hfn('milParked', S, a, b), onGoAround: IC.hfn('milGoAround', S, a), onDead: IC.hfn('milTaxiLost', a) });
   if (m === 'divert') { a.faf = null; return 'divert'; }
   if (m === 'hold') { a.holdT = (a.holdT || 0) + dt; return holdPt; }
   a.gnd = true; a.ground = m;

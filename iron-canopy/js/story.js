@@ -130,8 +130,11 @@ function goalsFor(S, act) {
   } else {
     G.push({ id: 'will', text: `Break ${S.world.names.A}’s will to fight`, check: () => S.enemy.will < 25, prog: () => `${Math.round(S.enemy.will)}%` });
   }
+  for (const x of G) IC.remake(x, 'storyGoal', S, 'act', act, x.id);
   return G;
 }
+/* a saved goal takes its check() and texts from a fresh one (save.js) */
+IC.REMAKE.storyGoal = (S, kind, n, id) => (kind === 'ch' ? chapterGoals(S, n) : goalsFor(S, n)).find(g => g.id === id);
 const avgSat = S => { const L = S.av.airlines.filter(a => !a.gone); return L.length ? L.reduce((s, a) => s + a.sat, 0) / L.length : 50; };
 IC.avgSat = avgSat;
 
@@ -261,6 +264,7 @@ function chapterGoals(S, ch) {
     g({ id: 'served', text: 'Air service for 4 cities within 2½ hours’ drive', check: () => served(S) >= 4, prog: () => `${served(S)} cities now`,
       how: 'People fly from the airports they can reach by road. The Economy room shows each city’s demand; a road link to an airport (select the airport, Roads) widens its reach.' });
   }
+  for (const x of G) IC.remake(x, 'storyGoal', S, 'ch', ch, x.id);
   return G;
 }
 
@@ -310,26 +314,13 @@ function newAirline(S, kind, delay, hub, to) {
   return al;
 }
 const later = (S, h) => { const st = S.story; st.asking = false; st.waitT = S.time + h * H; };
+/* the chapter openers: each picks what it needs and asks with an event card (EV below) */
 const OPEN = {
-  2: S => {
-    const st = S.story, ap = capApt(S), hurry = st.hurry;
-    event(S, { title: 'A sky with a plan', who: IC.ADVISORS.MIN.name, text: `${hurry ? 'After what happened over the capital, the airlines have written to the Prime Minister. ' : 'The airlines have written to the Prime Minister. '}Flights wander into ${S.world.names.H} anywhere, departures sit waiting for a gap, and the controllers are at the end of their tether. I want proper airspace: entry points on the border, airways, radar. It is your job, Director.`,
-      opts: [
-        { t: 'Design it yourself', tip: 'The airway editor and civil radar open. Nothing is drawn for you.', fx: () => startChapter(S, 2) },
-        { t: 'Hire consultants: ₭60M', tip: 'They draw three entry points and airways to the capital. You still need radar, and can change what they drew.', fx: () => { IC.pay(S, 'other', 60); consultants(S); startChapter(S, 2); } },
-        { t: 'Not yet: the airport comes first', tip: 'Minister −4. She asks again in 8 hours.', fx: () => { st.standing -= 4; later(S, 8); } }
-      ] });
-  },
+  2: S => event(S, 'airspace', S.story.hurry),
   3: S => {
-    const st = S.story, ap = capApt(S);
+    const ap = capApt(S);
     const towns = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.pop >= 120 && !S.asp.fields.some(f => U.dist(f, c) < 300)).sort((a, b) => U.dist(a, ap) - U.dist(b, ap));
-    const t = towns[0] || IC.cities(S).filter(c => !c.capital)[0];
-    const grant = U.pick([0, 0, 5, 8]);
-    event(S, { title: `A field for ${t.name}`, who: `${t.name} town council`, text: `${t.name}’s flying club has lost its old strip to a housing estate. The council asks you to build a light-aircraft field within 15 km of the town in the next day${grant ? `, and offers ${U.money(grant)} towards it` : ', though it has no money to offer'}. A field costs ${U.money(IC.ASP.FIELD_COST)}.`,
-      opts: [
-        { t: 'Accept the contract', tip: `${grant ? `${U.money(grant)} now. ` : ''}Build it within 24 h: done well, Minister +3 and the clubs’ mood rises; late, Minister −6.`, fx: () => { st.contract = { town: t.id, grant, due: S.time + 24 * H }; if (grant) { S.budget += grant; IC.econBook(S, 'oneoff', grant); } startChapter(S, 3); } },
-        { t: 'Decline', tip: 'Minister −3. Every flying club’s mood −10.', fx: () => { st.contract = { town: t.id, grant: 0, refused: true }; st.standing -= 3; for (const f of S.asp.fields) f.mood = Math.max(0, f.mood - 10); startChapter(S, 3); } }
-      ] });
+    event(S, 'field', towns[0] || IC.cities(S).filter(c => !c.capital)[0], U.pick([0, 0, 5, 8]));
   },
   4: S => {
     const st = S.story, ap = capApt(S);
@@ -339,25 +330,95 @@ const OPEN = {
     if (!ask && age < IC.CHAPTERS[3].max + 24) { later(S, 2); return; }
     const c2 = ask ? ask.city : IC.cities(S).filter(c => c.owner === 'us' && !c.capital && U.dist(c, ap) > 1500).sort((a, b) => IC.cityUnserved(b) - IC.cityUnserved(a))[0];
     st.city2 = c2.id; st.size2 = ask ? ask.size : 'turbo';
-    const want = Math.round(IC.cityUnserved(c2) / 100) * 100;
-    const grant = U.pick([0, 150, 250]);
-    event(S, { title: `An airport for ${c2.name}`, who: IC.ADVISORS.GOV.name, text: `${c2.name} is ${U.km(U.dist(c2, ap))} from ${short(ap.name)}: over ${Math.round(IC.U.dist(c2, ap) / 10 / 90 + 0.5)} hours by road, too far to fly from it. Some ${want.toLocaleString('en-US')} of its people would fly every day if they could. ${st.size2 === 'jets' ? 'That is enough for jets from the start.' : 'A regional field for turboprops would do to begin with; it can grow when they fill it.'} The region wants an airport of its own${grant ? `, and will put ${U.money(grant)} towards it` : ', and has no money to put towards it'}.`,
+    event(S, 'city2', c2, U.pick([0, 150, 250]), Math.round(IC.cityUnserved(c2) / 100) * 100, st.size2);
+  },
+  5: S => event(S, 'grant')
+};
+/* Event cards, by name: each makes the card from what it is given, so a saved card gets its choices back (save.js).
+   Anything random is picked before, by the caller. */
+const EV = {
+  airspace: (S, hurry) => {
+    const st = S.story;
+    return { title: 'A sky with a plan', who: IC.ADVISORS.MIN.name, text: `${hurry ? 'After what happened over the capital, the airlines have written to the Prime Minister. ' : 'The airlines have written to the Prime Minister. '}Flights wander into ${S.world.names.H} anywhere, departures sit waiting for a gap, and the controllers are at the end of their tether. I want proper airspace: entry points on the border, airways, radar. It is your job, Director.`,
+      opts: [
+        { t: 'Design it yourself', tip: 'The airway editor and civil radar open. Nothing is drawn for you.', fx: () => startChapter(S, 2) },
+        { t: 'Hire consultants: ₭60M', tip: 'They draw three entry points and airways to the capital. You still need radar, and can change what they drew.', fx: () => { IC.pay(S, 'other', 60); consultants(S); startChapter(S, 2); } },
+        { t: 'Not yet: the airport comes first', tip: 'Minister −4. She asks again in 8 hours.', fx: () => { st.standing -= 4; later(S, 8); } }
+      ] };
+  },
+  field: (S, t, grant) => {
+    const st = S.story;
+    return { title: `A field for ${t.name}`, who: `${t.name} town council`, text: `${t.name}’s flying club has lost its old strip to a housing estate. The council asks you to build a light-aircraft field within 15 km of the town in the next day${grant ? `, and offers ${U.money(grant)} towards it` : ', though it has no money to offer'}. A field costs ${U.money(IC.ASP.FIELD_COST)}.`,
+      opts: [
+        { t: 'Accept the contract', tip: `${grant ? `${U.money(grant)} now. ` : ''}Build it within 24 h: done well, Minister +3 and the clubs’ mood rises; late, Minister −6.`, fx: () => { st.contract = { town: t.id, grant, due: S.time + 24 * H }; if (grant) { S.budget += grant; IC.econBook(S, 'oneoff', grant); } startChapter(S, 3); } },
+        { t: 'Decline', tip: 'Minister −3. Every flying club’s mood −10.', fx: () => { st.contract = { town: t.id, grant: 0, refused: true }; st.standing -= 3; for (const f of S.asp.fields) f.mood = Math.max(0, f.mood - 10); startChapter(S, 3); } }
+      ] };
+  },
+  city2: (S, c2, grant, want, size2) => {
+    const st = S.story, ap = capApt(S);
+    return { title: `An airport for ${c2.name}`, who: IC.ADVISORS.GOV.name, text: `${c2.name} is ${U.km(U.dist(c2, ap))} from ${short(ap.name)}: over ${Math.round(IC.U.dist(c2, ap) / 10 / 90 + 0.5)} hours by road, too far to fly from it. Some ${want.toLocaleString('en-US')} of its people would fly every day if they could. ${size2 === 'jets' ? 'That is enough for jets from the start.' : 'A regional field for turboprops would do to begin with; it can grow when they fill it.'} The region wants an airport of its own${grant ? `, and will put ${U.money(grant)} towards it` : ', and has no money to put towards it'}.`,
       opts: [
         { t: 'Agree', tip: `${grant ? `${U.money(grant)} now. ` : ''}Founding opens again in the Aviation room.`, fx: () => { if (grant) { S.budget += grant; IC.econBook(S, 'oneoff', grant); } startChapter(S, 4); } },
         { t: 'Ask the region for more money', tip: `${U.money(grant + 100)} instead. The Governor gives it, and tells the Minister you haggled: Minister −4.`, fx: () => { S.budget += grant + 100; IC.econBook(S, 'oneoff', grant + 100); st.standing -= 4; startChapter(S, 4); } },
         { t: 'Not yet', tip: `Minister −2 and ${c2.name}’s morale −5. The Governor asks again in 12 hours.`, fx: () => { st.standing -= 2; c2.morale = Math.max(0, c2.morale - 5); st.city2 = null; later(S, 12); } }
-      ] });
+      ] };
   },
-  5: S => {
+  grant: S => {
     const st = S.story;
-    event(S, { title: 'Pay your own way', who: IC.ADVISORS.FIN.name, text: `The Treasury built you an airport; it will not run it for ever. From today your grant is halved, to ${U.money(IC.ACTS[1].grant / 2)} an hour, unless you give me a reason.`,
+    return { title: 'Pay your own way', who: IC.ADVISORS.FIN.name, text: `The Treasury built you an airport; it will not run it for ever. From today your grant is halved, to ${U.money(IC.ACTS[1].grant / 2)} an hour, unless you give me a reason.`,
       opts: [
         { t: 'Accept the cut', tip: 'Grant halved. Minister +3: she likes a director who does not complain.', fx: () => { st.grantCut = 0.5; st.standing += 3; startChapter(S, 5); } },
         { t: 'Raise airport charges by 15% instead', tip: 'The grant stays. Every airport’s charges ×1.15; every airline −6 satisfaction.', fx: () => { for (const b of IC.bases(S)) if (b.kind === 'airport') IC.avSetFee(S, b, (b.feeLevel || 1) * 1.15); for (const al of S.av.airlines) al.sat -= 6; startChapter(S, 5); } },
         { t: 'Argue for a year’s grace', tip: 'Minister −5. The grant stays for a day, then is halved anyway.', fx: () => { st.standing -= 5; st.grantCutT = S.time + 24 * H; startChapter(S, 5); } }
-      ] });
+      ] };
+  },
+  drone: (S, t) => ({ title: 'The drone', who: 'Accident investigators', text: `The wreckage is military: a ${S.world.names.A} survey drone, flying without a transponder along our border. ${t.cs} landed safely with one engine. The press wants to know why nobody saw it coming.`,
+    opts: [
+      { t: `Name ${S.world.names.A} publicly`, tip: 'Minister +6. Tension +10.', fx: () => { S.story.standing += 6; raise(S, 10); S.story.doc.transparency = true; } },
+      { t: 'Say only that an investigation is under way', tip: 'Minister −4. Tension unchanged.', fx: () => { S.story.standing -= 4; S.story.doc.quiet = true; } },
+      { t: 'Ask the Air Force to watch the border', tip: '+1 command point. Tension +4.', fx: () => { S.story.cp += 1; raise(S, 4); } }
+    ], after: () => startAct(S, 2) }),
+  jam: S => ({ title: 'Jamming', who: 'Air traffic control', text: `Someone across the border is jamming satellite navigation. Airliners near it drift; one came within 20 km of the border before its crew noticed. Airlines are asking what we intend to do.`,
+    opts: [
+      { t: 'Move the airways back from the border', tip: 'A prohibited zone is drawn along the border. Airlines fly further. Foreign carriers −5.', fx: () => { const q = border(S, IC.cap(S)); IC.avAddZone(S, q.x - q.nx * 250, q.y - q.ny * 250, 600, 'Border buffer'); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 5; } },
+      { t: 'Warn crews and keep the routes', tip: 'Nothing changes. Incidents continue while the jamming lasts.', fx: () => {} },
+      { t: `Protest to ${S.world.names.A}`, tip: 'Tension +6. The jamming stops sooner.', fx: () => { raise(S, 6); if (S.jam) S.jam.until = S.time + 1800; } }
+    ] }),
+  aptDrones: (S, ap) => {
+    const st = S.story;
+    return { title: `Drones over ${short(ap.name)}`, who: 'Airport police', text: `Two small drones are circling ${short(ap.name)}. Pilots can see them. Nobody knows who is flying them. Every minute the runway stays shut costs money and patience.`,
+      opts: [
+        { t: 'Close the runway until they are gone', tip: 'Safe. Arrivals hold and some divert.', fx: () => { ap.closedT = S.time + 1500; } },
+        { t: 'Keep operating and watch them', tip: 'Airlines stay happy. If one hits an airliner, it is on you.', fx: () => { st.riskDrones = true; } },
+        { t: 'Buy anti-aircraft guns for the airports', tip: 'Gun vehicles become available at 30% off. Minister −3 for the cost.', fx: () => { st.doc.cheapGuns = true; S.story.standing -= 3; } }
+      ] };
+  },
+  fired: S => {
+    const st = S.story;
+    return { title: 'We fired first', who: 'Prime Minister', text: `The aircraft that left its route was a ${S.world.names.A} intelligence jet with a borrowed airline callsign. It is at the bottom of a lake. They are calling it murder; our people are calling you decisive.`,
+      opts: [
+        { t: 'Publish the evidence', tip: 'Minister +5. Tension +20.', fx: () => { st.standing += 5; raise(S, 20); } },
+        { t: 'Stay silent and let them talk', tip: 'Minister −6. Tension +15.', fx: () => { st.standing -= 6; raise(S, 15); } }
+      ], after: () => { st.beats.forEach(b => { if (b.id === 'firstblood') b.fast = true; }); } };
   }
 };
+EV.jets = (S, ap, c, lf) => {
+  const st = S.story;
+  return { title: `Jets for ${c.name}`, who: IC.ADVISORS.GOV.name, text: `${short(ap.name)}’s turboprops fly ${U.pct(lf)} full and people are turned away. The region asks you to take jets there: 2.1 km of runway, fire cover and medium stands. Airlines will bring bigger aircraft when it can take them.`,
+    opts: [
+      { t: 'Agree: jets within two days', tip: 'Done in time: Minister +3 and the city grows faster. Late: Minister −4.', fx: () => { st.grow2 = { due: S.time + 48 * H }; } },
+      { t: 'Not yet', tip: `Minister −2. ${c.name}’s morale −5.`, fx: () => { st.standing -= 2; c.morale = Math.max(0, c.morale - 5); } }
+    ] };
+};
+EV.city3 = (S, c, unserved, size) => {
+  const st = S.story;
+  return { title: `${c.name} wants to fly`, who: `${c.name} city council`, text: `${c.name} is beyond the reach of every airport we have, and some ${unserved.toLocaleString('en-US')} of its people a day would fly if they could. The council asks for ${size === 'jets' ? 'an airport that takes jets' : 'a regional field for turboprops'}, open within three days. It will not be the capital’s rival: a regional airport lives on flights to the hub.`,
+    opts: [
+      { t: 'Accept', tip: 'Founding opens again. Open in three days: Minister +3. Late: Minister −4.', fx: () => { st.contract3 = { due: S.time + 72 * H, size }; } },
+      { t: 'Decline', tip: `Minister −2. ${c.name}’s morale −8.`, fx: () => { st.standing -= 2; c.morale = Math.max(0, c.morale - 8); st.city3 = null; st.city3No = true; } }
+    ] };
+};
+IC.REMAKE.storyEvent = (name, S, ...args) => EV[name](S, ...args);
 /* what the consultants draw: an entry point where the way to each of the three nearest foreign airports crosses
    the border, a fix near the airport, and airways between them */
 function consultants(S) {
@@ -460,7 +521,8 @@ IC.GUIDE = [
   { id: 'jamming', act: 3, ch: 0, t: 'Jamming', d: 'A jammer floods a radar along its own bearing: there the radar only sees what is close enough to burn through, about a third of the way to the jammer. The amber wedge on the map is its strobe: a direction, not a range. Two radars far apart put their strobes across each other and locate it. MR and LR missiles can home on a jammer without a track. Radars with better ECCM suffer less.' },
   { id: 'supply', act: 3, ch: 0, t: 'Supply', d: IC.SUPPLY_GUIDE + ' Helicopters fly emergency loads to empty batteries.' },
   { id: 'callin', act: 3, ch: 0, t: 'Call-in teams', d: 'Press G and click anywhere in our territory: a helicopter drops a shoulder-fired missile team there in seconds. It fights drones, helicopters and low jets for a few minutes, then is lifted out. Charges come back on a timer.' },
-  { id: 'raids', act: 4, ch: 0, t: 'Raids', d: 'The enemy raids in cycles. A build-up first: an intelligence warning about an hour out, a reconnaissance drone, drones probing the flanks, then a jammer taking station. Then the raid: drones and decoys a few minutes early to soak up missiles, cruise and ballistic missiles at the peak, stragglers after. Then a calm of a few hours: repair, reload, move batteries. Each raid ends with a report of what got through and why. Raids grow over the days, up to the big one.' },
+  { id: 'raids', act: 4, ch: 0, t: 'Raids', d: 'The enemy raids in cycles. A build-up first: an intelligence warning about an hour out, a reconnaissance drone, drones probing the flanks, then a jammer taking station. Then the raid: drones and decoys a few minutes early to soak up missiles, cruise and ballistic missiles at the peak, stragglers after. Then a calm of a few hours: repair, reload, move batteries. Each raid ends with a report of what got through and why.' },
+  { id: 'campaign', act: 4, ch: 0, t: 'The enemy\'s campaign', d: 'The enemy commander has an aim (to coerce the government, break morale, strangle trade, or ground our air power) and picks targets that serve it: power stations and cities, bridges and roads, airports and factories, fuel, our radars and batteries, the air bases, the government. It keeps an aim for days and changes it when its raids keep failing. The war comes in four acts. First probes: drones and single missiles to see what fires. Then limited strikes on soft targets, while it saves its big missiles. Then the shock: one large strike on several targets at once, paid for with what it saved, followed by a lull. Then a campaign against our air power: radars first, then batteries it has seen fire a lot, then supply, then the air base. It moves on when our defence has been winning for a while; a strong defence brings the campaign sooner. Intelligence sees the saving (in the Intel room): strikes on those sites and their launchers set it back.' },
   { id: 'ballistic', act: 4, ch: 0, t: 'Ballistic missiles', d: 'Only hit-to-kill rounds stop warheads. The upper tier (High-Altitude BMD) meets them 40 to 150 km up; BMD rounds in the LRSAM meet them below 35 km. A battery waits, then fires two interceptors at the point where they will meet the warhead; whatever the upper tier misses, the lower tier still gets a shot at.' },
   { id: 'towns', act: 4, ch: 0, t: 'Towns', d: 'Towns pay taxes and power industry. Sirens and damage lower their morale.' }
 ];
@@ -626,10 +688,17 @@ function beatsFor(S, act) {
     B.push({ id: 'rkt', gap: [7200, 10800], repeat: [10800, 18000], run: () => { const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name} from across the border. They deny it, of course.`); raise(S, 4); } });
     B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > 14 * 3600) || inAct(S) > 26 * 3600, gap: [3600, 7200], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
     B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
-    B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => { S.enemy.escalBase = 0.5; IC.enemyOpening(S); startAct(S, 4); } });
+    B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
+      // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
+      const done = doneCount(S);
+      IC.enemyOpening(S, done >= 4 ? { act: 2, winH: 4 } : { head: done * 1.5 });
+      startAct(S, 4);
+    } });
   }
+  for (const b of B) IC.remake(b, 'storyBeat', S, act, b.id);
   return B;
 }
+IC.REMAKE.storyBeat = (S, act, id) => beatsFor(S, act).find(b => b.id === id);
 const doneCount = S => S.story.goals.filter(g => g.done).length;
 const goalDone = (S, id) => { const g = S.story.goals.find(x => x.id === id); return !!(g && g.done); };
 const inAct = S => S.time - S.story.actT;
@@ -644,22 +713,14 @@ function nearTown(S) {
 function growAsk(S) {
   const st = S.story, ap = S.byId[st.apt2], c = S.byId[st.city2];
   if (!ap || !c) return;
-  event(S, { title: `Jets for ${c.name}`, who: IC.ADVISORS.GOV.name, text: `${short(ap.name)}’s turboprops fly ${U.pct(Math.min(1, IC.loadFactor(S, ap)))} full and people are turned away. The region asks you to take jets there: 2.1 km of runway, fire cover and medium stands. Airlines will bring bigger aircraft when it can take them.`,
-    opts: [
-      { t: 'Agree: jets within two days', tip: 'Done in time: Minister +3 and the city grows faster. Late: Minister −4.', fx: () => { st.grow2 = { due: S.time + 48 * H }; } },
-      { t: 'Not yet', tip: `Minister −2. ${c.name}’s morale −5.`, fx: () => { st.standing -= 2; c.morale = Math.max(0, c.morale - 5); } }
-    ] });
+  event(S, 'jets', ap, c, Math.min(1, IC.loadFactor(S, ap)));
 }
 /* a third city asks for an airport of its own */
 function cityAsk(S) {
   const st = S.story, ask = IC.cityAsks(S, 150); if (!ask || st.city3 || st.city3No || ask.city.id === st.city2) return;
   const c = ask.city;
   st.city3 = c.id;
-  event(S, { title: `${c.name} wants to fly`, who: `${c.name} city council`, text: `${c.name} is beyond the reach of every airport we have, and some ${(Math.round(ask.unserved / 100) * 100).toLocaleString('en-US')} of its people a day would fly if they could. The council asks for ${ask.size === 'jets' ? 'an airport that takes jets' : 'a regional field for turboprops'}, open within three days. It will not be the capital’s rival: a regional airport lives on flights to the hub.`,
-    opts: [
-      { t: 'Accept', tip: 'Founding opens again. Open in three days: Minister +3. Late: Minister −4.', fx: () => { st.contract3 = { due: S.time + 72 * H, size: ask.size }; } },
-      { t: 'Decline', tip: `Minister −2. ${c.name}’s morale −8.`, fx: () => { st.standing -= 2; c.morale = Math.max(0, c.morale - 8); st.city3 = null; st.city3No = true; } }
-    ] });
+  event(S, 'city3', c, Math.round(ask.unserved / 100) * 100, ask.size);
 }
 /* the collision that ends Act I: a drone nobody could see and a regional airliner */
 function collision(S) {
@@ -680,14 +741,7 @@ function collision(S) {
   IC.news(S, `Airliner ${t.cs} collides with an unidentified drone ${place}; emergency landing under way.`);
   IC.sfx && IC.sfx.klaxon();
   card(S, 'Mayday', U.clock(S.time), `${t.cs}, ${t.pax} people on board, has hit something ${place} at ${Math.round(t.alt * 1000).toLocaleString('en-US')} m. The crew report a drone. None of our radars saw it.`, 'alarm');
-  (S.later = S.later || []).push({ t: S.time + 900, fn: () => {
-    event(S, { title: 'The drone', who: 'Accident investigators', text: `The wreckage is military: a ${S.world.names.A} survey drone, flying without a transponder along our border. ${t.cs} landed safely with one engine. The press wants to know why nobody saw it coming.`,
-      opts: [
-        { t: `Name ${S.world.names.A} publicly`, tip: 'Minister +6. Tension +10.', fx: () => { S.story.standing += 6; raise(S, 10); S.story.doc.transparency = true; } },
-        { t: 'Say only that an investigation is under way', tip: 'Minister −4. Tension unchanged.', fx: () => { S.story.standing -= 4; S.story.doc.quiet = true; } },
-        { t: 'Ask the Air Force to watch the border', tip: '+1 command point. Tension +4.', fx: () => { S.story.cp += 1; raise(S, 4); } }
-      ], after: () => startAct(S, 2) });
-  } });
+  IC.later(S, 900, 'storyEvent', S, 'drone', t);
 }
 
 /* GPS jamming along the border pushes airliners off their routes */
@@ -696,12 +750,7 @@ function jamming(S) {
   const p = border(S, IC.cap(S));
   S.jam = { x: p.x - p.nx * 120, y: p.y - p.ny * 120, r: 1500, until: S.time + 3 * 3600 };
   say(S, 'ATC', `Airliners near the border are reporting GPS errors. Some are drifting off their routes. Watch for flashing tracks: call them back, or they will wander.`);
-  (S.later = S.later || []).push({ t: S.time + 1800, fn: () => event(S, { title: 'Jamming', who: 'Air traffic control', text: `Someone across the border is jamming satellite navigation. Airliners near it drift; one came within 20 km of the border before its crew noticed. Airlines are asking what we intend to do.`,
-    opts: [
-      { t: 'Move the airways back from the border', tip: 'A prohibited zone is drawn along the border. Airlines fly further. Foreign carriers −5.', fx: () => { const q = border(S, IC.cap(S)); IC.avAddZone(S, q.x - q.nx * 250, q.y - q.ny * 250, 600, 'Border buffer'); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 5; } },
-      { t: 'Warn crews and keep the routes', tip: 'Nothing changes. Incidents continue while the jamming lasts.', fx: () => {} },
-      { t: `Protest to ${W.names.A}`, tip: 'Tension +6. The jamming stops sooner.', fx: () => { raise(S, 6); if (S.jam) S.jam.until = S.time + 1800; } }
-    ] }) });
+  IC.later(S, 1800, 'storyEvent', S, 'jam');
 }
 /* enemy fighters shadow one of our airliners and cross into our airspace */
 function shadow(S) {
@@ -719,12 +768,7 @@ function airportDrones(S) {
   for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'isr', ap.x + U.rand(-60, 60), ap.y + U.rand(-60, 60), { phase: 'loiter', area: { x: ap.x, y: ap.y }, loiterT: 1500, oa: U.rand(0, 6), home: { x: ap.x + 3000, y: ap.y }, gray: true, small: true, spd: 0.25, alt: 0.3, rcs: 0.02 });
   ap.droneClose = S.time + 1500;
   IC.log(S, 'leak', 'AIRPORT', `Drones reported over ${ap.name}. Arrivals are holding.`, ap);
-  event(S, { title: `Drones over ${short(ap.name)}`, who: 'Airport police', text: `Two small drones are circling ${short(ap.name)}. Pilots can see them. Nobody knows who is flying them. Every minute the runway stays shut costs money and patience.`,
-    opts: [
-      { t: 'Close the runway until they are gone', tip: 'Safe. Arrivals hold and some divert.', fx: () => { ap.closedT = S.time + 1500; } },
-      { t: 'Keep operating and watch them', tip: 'Airlines stay happy. If one hits an airliner, it is on you.', fx: () => { st.riskDrones = true; } },
-      { t: 'Buy anti-aircraft guns for the airports', tip: 'Gun vehicles become available at 30% off. Minister −3 for the cost.', fx: () => { st.doc.cheapGuns = true; S.story.standing -= 3; } }
-    ] });
+  event(S, 'aptDrones', ap);
 }
 /* the "shoot first?" moment: an aircraft squawking as an airliner leaves its route toward our base */
 function dilemma(S) {
@@ -739,24 +783,22 @@ function dilemma(S) {
   const t = IC.spawnThreat(S, 'bmr', start.x, start.y, { disguise: true, cs, sq: IC.squawk(), plan: { a: start, b: far, cs, pts: [start, far] }, route: [mid, { x: fb.x, y: fb.y }, start], mission: 'spy', gray: true, noFire: true, klass0: 'airliner', home: { x: start.x, y: start.y }, alt: 10 });
   t.spy = true; t.d = Object.assign({}, t.d, { name: 'Electronic intelligence aircraft', code: 'ELINT' });
   st.spy = t;
-  (S.later = S.later || []).push({ t: S.time + 900, fn: () => {
-    if (t.dead) return;
-    say(S, 'INT', `${cs} filed a plan across our north and has just turned off it, heading for ${short(fb.name)}. It does not answer. It could be an airliner in trouble. It could be something else. Look before you shoot.`);
-    IC.emit(S, 'incident', { kind: 'offroute', t, text: `${cs} left its route toward ${short(fb.name)}` });
-  } });
+  IC.later(S, 900, 'storySpyTurns', S, t, fb);
   st.dilemmaT = S.time;
-  S.later.push({ t: S.time + 5400, fn: () => { if (!st.dilemmaDone) { st.dilemmaDone = true; if (!st.fired) say(S, 'INT', `${cs} has gone home. They have photographed ${short(fb.name)} from end to end, and we let them. Some will call that restraint.`); } } });
+  IC.later(S, 5400, 'storySpyHome', S, cs, fb);
 }
+IC.H.storySpyTurns = (S, t, fb) => () => {
+  if (t.dead) return;
+  say(S, 'INT', `${t.cs} filed a plan across our north and has just turned off it, heading for ${short(fb.name)}. It does not answer. It could be an airliner in trouble. It could be something else. Look before you shoot.`);
+  IC.emit(S, 'incident', { kind: 'offroute', t, text: `${t.cs} left its route toward ${short(fb.name)}` });
+};
+IC.H.storySpyHome = (S, cs, fb) => () => { const st = S.story; if (!st.dilemmaDone) { st.dilemmaDone = true; if (!st.fired) say(S, 'INT', `${cs} has gone home. They have photographed ${short(fb.name)} from end to end, and we let them. Some will call that restraint.`); } };
 IC.on((S, type, d) => {
   if (!S.story) return;
   const st = S.story;
   if (type === 'kill' && d.spy) {
     st.fired = true; st.dilemmaDone = true;
-    event(S, { title: 'We fired first', who: 'Prime Minister', text: `The aircraft that left its route was a ${S.world.names.A} intelligence jet with a borrowed airline callsign. It is at the bottom of a lake. They are calling it murder; our people are calling you decisive.`,
-      opts: [
-        { t: 'Publish the evidence', tip: 'Minister +5. Tension +20.', fx: () => { st.standing += 5; raise(S, 20); } },
-        { t: 'Stay silent and let them talk', tip: 'Minister −6. Tension +15.', fx: () => { st.standing -= 6; raise(S, 15); } }
-      ], after: () => { st.beats.forEach(b => { if (b.id === 'firstblood') b.fast = true; }); } });
+    event(S, 'fired');
   }
   if (type === 'aff' && d.spy && d.aff === 'H' && d.affWhy === 'visual identification' && !st.spyVid) {
     st.spyVid = true;
@@ -782,28 +824,27 @@ function firstBlood(S) {
     say(S, 'INT', `Launches across the border! Cruise missiles and drones inbound on ${short(fb.name)}. ${st.fired ? 'This is their answer.' : 'They have decided to stop pretending.'}`);
   }
   raise(S, 20);
-  (S.later = S.later || []).push({ t: S.time + 2400, fn: () => startAct(S, 3) });
+  IC.later(S, 2400, 'storyAct', S, 3);
 }
-/* Act III: the enemy tests the defences without declaring war */
+/* Act III: the enemy tests the defences without declaring war. The commander picks what to probe from its agenda
+   (a radar, a bridge, a power station, an airport), so the probes follow what it wants, not one favourite base */
 function grayStrike(S) {
-  const st = S.story;
-  const r = Math.random();
-  const radars = S.units.filter(u => u.d.sensor && !u.d.civil && u.state === 'ready' && IC.hostileBorderDist(u.x, u.y) < 1400);
-  if (r < 0.4 && radars.length) { const u = U.pick(radars); IC.enemyForceOp(S, 'drones', { x: u.x, y: u.y, ref: u, name: u.name }, { n: U.randi(3, 6) }); say(S, 'INT', `Drones crossing toward ${u.name}. They are hunting our radars.`); }
-  else if (r < 0.7) { const fb = S.byId.ab_fwd; IC.enemyForceOp(S, 'cm', { x: fb.x, y: fb.y, ref: fb, name: fb.name }, { n: U.randi(2, 3) }); say(S, 'INT', `Cruise missile launches: ${short(fb.name)} again.`); }
-  else { IC.enemyForceOp(S, 'disguise', IC.cap(S)); }
+  if (Math.random() < 0.15) IC.enemyForceOp(S, 'disguise', IC.cap(S));
+  else { const p = IC.enemyProbe(S); if (p) say(S, 'INT', `${p.words} ${S.world.names.A} denies everything.`); }
   raise(S, 3);
 }
 
 /* ---------- event cards ---------- */
-function event(S, e) {
-  const st = S.story;
+function event(S, name, ...args) {
+  const st = S.story, e = IC.remake(EV[name](S, ...args), 'storyEvent', name, S, ...args);
   e.id = IC.nid('ev'); e.t = S.time;
   st.events.push(e);
   IC.sfx && IC.sfx.ui('chapter');
   IC.emit(S, 'event', e);
 }
 IC.storyEvent = event;
+IC.H.storyEvent = (S, name, ...args) => () => event(S, name, ...args);
+IC.H.storyAct = (S, n) => () => startAct(S, n);
 IC.storyChoose = function (S, id, i) {
   const st = S.story, e = st.events.find(x => x.id === id);
   if (!e) return;

@@ -7,10 +7,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
+    # two halves of equal length (by tests/times.json) on two machines at once, each with one worker per core
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/2, 2/2]
+    name: test (${{ matrix.shard }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node tests/run.js
+      - run: node tests/run.js --shard=${{ matrix.shard }}
