@@ -96,7 +96,17 @@ IC.econInit = function (S) {
 };
 
 /* ---------- where things are on the road network ---------- */
-const nodeOf = (S, p) => S.world.nodes[p.id] ? { id: p.id, t: 0 } : IC.nodeNear(S.world, p.x, p.y);
+// (an airport or industry is not a road node: its nearest one is found once and kept until the roads change;
+// the scan over every node was a fifth of the step when time runs fast)
+const NEAR = new WeakMap();
+const nodeOf = (S, p) => {
+  if (S.world.nodes[p.id]) return { id: p.id, t: 0 };
+  const v = S.econ ? S.econ.roadVer || 0 : -1, c = NEAR.get(p);
+  if (c && c.v === v && c.x === p.x && c.y === p.y) return c.n;
+  const n = IC.nodeNear(S.world, p.x, p.y);
+  NEAR.set(p, { v, x: p.x, y: p.y, n });
+  return n;
+};
 /* seconds by road from a source (a city or an industry, with its Dijkstra tree) to any place */
 function timeTo(S, T, p) { if (!T) return Infinity; const n = nodeOf(S, p), v = T.t[n.id]; return v == null ? Infinity : v + n.t; }
 IC.econTime = (S, from, to, intact) => timeTo(S, (intact ? S.econ.ti : S.econ.tt)[from.id], to);
@@ -111,7 +121,7 @@ IC.econTrees = function (S) {
 };
 function refreshRoads(S) {
   const E = S.econ, W = S.world;
-  E.roadsDirty = false;
+  E.roadsDirty = false; E.roadVer = (E.roadVer || 0) + 1;
   IC.econTrees(S);
   for (const c of IC.cities(S)) {
     c.rc = reachOf(S, E.tt[c.id], c); c.rcI = reachOf(S, E.ti[c.id], c);
