@@ -3,7 +3,7 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-const SORTIE_COST = { ftr: 3, ucav: 0.6, aew: 5, isr: 0.5, heli: 0.6, cargo: 2 };
+const SORTIE_COST = IC.SORTIE_COST = { ftr: 3, ucav: 0.6, aew: 5, isr: 0.5, heli: 0.6, cargo: 2 };
 const NAMES = { ftr: 'VIPER', ucav: 'HAWK', aew: 'SENTRY', isr: 'REAPER', heli: 'HOOK', cargo: 'ATLAS' };
 
 IC.newFlight = (S, kind, name, base) => ({ id: IC.nid('r'), kind, name, base, st: 'ready', t: 0, ent: null, n: IC.AIR_KIND[kind].n, load: kind === 'ftr' ? 'aa' : null, slot: null, roe: 'auto' });

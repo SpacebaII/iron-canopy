@@ -235,6 +235,8 @@ button.li:hover{background:var(--well-2)}
 .mag .rounds i.e{background:var(--well-2);box-shadow:none}
 .mag .rounds i.s{background:rgba(111,210,255,.35);box-shadow:none;height:.7rem;align-self:end}
 .mag small{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+.mag .rounds .ln{display:flex;gap:2px;padding:1px;border-radius:3px}
+.mag .rounds .ln.rl{outline:1px dashed var(--amber)}
 .ladder{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .ladder div{padding:.4rem .5rem;border-radius:10px;background:var(--well);display:grid;gap:1px}
 .ladder small{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
