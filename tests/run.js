@@ -2375,7 +2375,7 @@ test('recorder: keeps the last 15 minutes of an engagement, with height, within 
 }, false, 'alone');
 test('replay: the game runs headless without three.js, and every aircraft, threat and unit has a model', () => {
   assert(typeof THREE === 'undefined' && typeof window.THREE === 'undefined', 'three.js leaked into the headless game');
-  assert(!IC.replayOpen && !IC.modelTop, 'the replay window or its drawing is loaded headless');
+  assert(!IC.replayOpen && !IC.liveOpen && !IC.modelTop, 'the replay window, the live view or their drawing is loaded headless');
   for (const k in IC.ACTYPES) assert(IC.modelOfType(k) === k && IC.MODELS[k], `no model for aircraft type ${k}`);
   for (const k in IC.THR) { const m = IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'H' }, true); assert(m && IC.MODELS[m], `no model for threat ${k}`); }
   for (const k in IC.THR) if (IC.THR[k].civil) assert(IC.ACTYPES[IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'N' }, true)], `civil traffic (${k}) is drawn as a weapon`);
@@ -2384,6 +2384,51 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   assert(IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U' }) === null && IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U', klass: 'fighter' }) === 'ftr_e', 'an unknown track should show only what its class says');
   const tower = IC.blockBoxes({ x: 0, y: 0, w: 3, h: 3, a: 0, seed: 12, f: 'tower', hp: 1 }, true), cul = IC.blockBoxes({ x: 0, y: 0, w: 3, h: 3, a: 0, seed: 12, f: 'cul', hp: 1 }, true);
   assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
+});
+
+/* an engagement on the Test range with chaff (a battery of active-radar missiles against strike aircraft) and then
+   flares (heat-seekers against fighters close in, a wave at a time until one drops them) */
+function cmFight() {
+  const S = IC.newGame({ seed: 7, mode: 'range' }), T = S.range.target;
+  IC.rangeAddUnit(S, 'mrsam', T.x - 30, T.y); IC.rangeAddUnit(S, 'lr3d', T.x - 60, T.y + 20);
+  IC.rangeAddUnit(S, 'vshorad', T.x - 5, T.y); IC.rangeAddUnit(S, 'vshorad', T.x + 5, T.y + 5);
+  const has = (k, w) => IC.recOf(S).ev.some(e => e.kind === k && (!w || e.what === w));
+  IC.rangeSpawn(S, { what: 'str', n: 3, brg: 90, km: 120, alt: '' });
+  for (let i = 0; i < 6 * 60 * 4 && !(has('cm', 'chaff') && has('lock')); i++) IC.step(S, 0.25);
+  for (let w = 0; w < 12 && !has('cm', 'flare'); w++) { IC.rangeSpawn(S, { what: 'ftr', n: 3, brg: 60 + w * 25, km: 8, alt: 1 }); for (let i = 0; i < 150 * 4 && !has('cm', 'flare'); i++) IC.step(S, 0.25); }
+  return { S, has };
+}
+test('recorder: keeps chaff, flares, lock phases and what each seeker did, where it happened', () => {
+  const { S, has } = cmFight();
+  assert(has('cm', 'chaff') && has('cm', 'flare'), `chaff ${has('cm', 'chaff')}, flares ${has('cm', 'flare')}: countermeasures were not recorded`);
+  const ev = S.rec.ev, chaff = ev.find(e => e.kind === 'cm' && e.what === 'chaff');
+  assert(chaff.alt > 0.5 && Number.isFinite(chaff.vx) && S.rec.of.has(chaff.tref), 'a chaff burst was recorded without its height, drift or aircraft');
+  const lock = ev.find(e => e.kind === 'lock');
+  assert(lock && IC.GUIDE[lock.ph] && S.rec.of.has(lock.mref), 'no lock event with a guidance phase and its missile');
+  assert(ev.some(e => e.kind === 'mstat' && e.text === 'NOTCHING') && ev.some(e => e.kind === 'mstat' && e.what === 'miss'), 'notching and misses were not recorded with their words');
+  // every missile sample carries its guidance, and the track knows its target and launcher
+  const m = S.rec.tracks.find(tr => tr.kind === 'missile' && tr.meta.mun === 'MR');
+  assert(m && S.rec.of.get(m.meta.tref) && S.rec.of.get(m.meta.uref), 'a missile track does not know its target and launcher');
+  for (let i = 0; i < m.n; i++) assert(IC.GUIDE[IC.recGet(m, i, 8)], `missile sample ${i} has no guidance phase`);
+  // while missiles fly, they are sampled every step
+  const gaps = []; for (let i = 1; i < m.n; i++) gaps.push(IC.recGet(m, i, 0) - IC.recGet(m, i - 1, 0));
+  assert(Math.max(...gaps) <= 0.26, `a missile was sampled only every ${Math.max(...gaps).toFixed(2)} s`);
+});
+test('replay: a hard turn shows bank and g, straight flight none (the model rolls by IC.recAttitude)', () => {
+  const { S } = cmFight();
+  let bank = 0, g = 0, notched = null;
+  for (const tr of S.rec.tracks) if (tr.kind === 'threat') for (let i = 1; i < tr.n - 1; i++) if (IC.recGet(tr, i, 8) & 1) { const a = IC.recAttitude(tr, IC.recGet(tr, i, 0)); if (Math.abs(a.roll) > bank) { bank = Math.abs(a.roll); g = a.g; notched = tr; } }
+  assert(notched, 'no aircraft notched in the record');
+  assert(bank > 0.5 && g > 1.3, `a notching aircraft banks only ${(bank * 57.3).toFixed(0)}° at ${g.toFixed(1)} g`);
+  const a0 = IC.recAttitude(notched, IC.recFirstT(notched) + 20);
+  assert(Math.abs(a0.roll) < 0.05 && Math.abs(a0.g - 1) < 0.1, `straight and level it banks ${(a0.roll * 57.3).toFixed(1)}° at ${a0.g.toFixed(2)} g`);
+  // a right turn banks right: the sign follows the heading's change
+  let tr = null, t = 0; for (const x of S.rec.tracks) if (x.kind === 'threat') for (let i = 2; i < x.n - 2 && !tr; i++) { const at = IC.recGet(x, i, 0), a = IC.recAttitude(x, at); if (Math.abs(a.roll) > 0.4) { tr = x; t = at; } }
+  const a = IC.recAttitude(tr, t);
+  assert(Math.sign(a.roll) === Math.sign(a.turn), 'the bank is to the wrong side of the turn');
+  // the smoothed path passes through the samples and between them stays near the straight line
+  const i = 5, s0 = IC.recAt(tr, IC.recGet(tr, i, 0)), mid = IC.recAt(tr, (IC.recGet(tr, i, 0) + IC.recGet(tr, i + 1, 0)) / 2), raw = IC.recAt(tr, (IC.recGet(tr, i, 0) + IC.recGet(tr, i + 1, 0)) / 2, {}, true);
+  assert(Math.abs(s0.x - IC.recGet(tr, i, 1)) < 1e-3 && U.dxy(mid.x, mid.y, raw.x, raw.y) < 2, 'the smoothed path strays from the samples');
 });
 
 /* ---------- engine health ---------- */
