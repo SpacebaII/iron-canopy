@@ -350,6 +350,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   // what could not be tied is a stub: take it away
   c.streets = c.streets.filter(l => !l.deadEnd || l.ring);
   for (const l of c.streets) if (l.deadEnd) delete l.deadEnd;
+  dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
   c.mix = IC.cityMix(c);
   return c;
@@ -424,6 +425,31 @@ function tieStreets(c, roadSegs, SP) {
       else l.deadEnd = (l.deadEnd || 0) + 1;
     }
   });
+}
+
+/* streets that ended up tied only to each other, off the rest of the city (a stub or two between a river and a
+   motorway): keep the pieces that reach a road or belong to the city's main network */
+function dropIslands(c, roadSegs) {
+  const L = c.streets, n = L.length; if (n < 2) return;
+  const up = L.map((_, i) => i), find = i => { while (up[i] !== i) i = up[i] = up[up[i]]; return i; }, join = (a, b) => { a = find(a); b = find(b); if (a !== b) up[a] = b; };
+  const Bk = buckets(3), at = new Map();
+  L.forEach((l, li) => {
+    for (let i = 1; i < l.pts.length; i++) Bk.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]);
+    for (const p of l.pts) { const k = Math.round(p.x * 50) + ',' + Math.round(p.y * 50), o = at.get(k); if (o != null) join(o, li); else at.set(k, li); }
+  });
+  for (const r of roadSegs) Bk.add([r[0], r[1], r[2], r[3], -1]);
+  const rooted = new Set();
+  L.forEach((l, li) => {
+    for (const e of [l.pts[0], l.pts[l.pts.length - 1]]) Bk.near(e.x, e.y, 0.5, sg => { if (sg[4] !== li && U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) < 0.4) { if (sg[4] < 0) rooted.add(li); else join(li, sg[4]); } });
+    for (let i = 1; i < l.pts.length; i++) {
+      const a = l.pts[i - 1], b = l.pts[i];
+      Bk.near((a.x + b.x) / 2, (a.y + b.y) / 2, U.dist(a, b) / 2 + 0.5, sg => { if (sg[4] < 0 && U.segX(a.x, a.y, b.x, b.y, sg[0], sg[1], sg[2], sg[3]) >= 0) rooted.add(li); });
+    }
+  });
+  const size = new Map(); for (let i = 0; i < n; i++) size.set(find(i), (size.get(find(i)) || 0) + 1);
+  let main = -1, mx = 0; for (const [r, k] of size) if (k > mx) { mx = k; main = r; }
+  const keep = new Set([main]); for (const i of rooted) keep.add(find(i));
+  c.streets = L.filter((l, i) => keep.has(find(i)));
 }
 
 /* ---------- what a city is: its districts, and the flights they want ---------- */
