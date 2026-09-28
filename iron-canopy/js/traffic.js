@@ -582,7 +582,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
     const lanes = L.C.lanes;
     for (let d = 0; d < 2; d++) {
       if (!canGo(l, d) || L.ld[d] <= 0.01) continue;
-      const p = L.ld[d] * L.C.dens * BASE, end = G.nodes[d ? l.a : l.b];
+      const p = L.ld[d] * L.C.dens * IC.TRAFFIC_SHOW * BASE, end = G.nodes[d ? l.a : l.b];
       // the queue at the end of the link: vehicles there move Kq times slower, so they stand closer together;
       // in front of a cut road the queue is long
       const qc = !L.cut && T.cutN && T.cutN.has(d ? l.a : l.b) && L.ld[d] > 0.05;
@@ -627,7 +627,9 @@ IC.trafficFlows = function (S, view, classes, fn) {
    one; it queues in front of a cut road and turns back after a while. Nothing here touches the simulation state:
    the renderer calls it with the game time that has passed. */
 const AG = new WeakMap();
-const AG_MAX = 1400;
+// how many of the vehicles the flows imply are drawn: half, which reads as busy and costs half the frame
+IC.TRAFFIC_SHOW = 0.5;
+const AG_MAX = 700;
 // how far a vehicle drives before it parks (world units), by purpose
 const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
@@ -679,7 +681,7 @@ IC.trafficAgents = function (S, view, dt) {
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
       for (let d = 0; d < 2; d++) {
         if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
-        const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.5;
+        const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.5 * IC.TRAFFIC_SHOW;
         for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
           if (R() > n - q) break;
           const a = newAgent(S, A, [[lk, d]], R() * lk.len, pickKind(mixOf(L, d), R()), 'through', null);
@@ -697,7 +699,7 @@ IC.trafficAgents = function (S, view, dt) {
     if (!inBox(z.x, z.y, box) || !room()) continue;
     // departures a game second: people and lorries leaving this zone
     const pc = (z.homes * fi + z.jobs * fo) * 0.004, pf = z.frt * ff * 0.002, pa = z.homes * fa * 0.0006, rate = pc + pf + pa + z.homes * fg * 0.0015;
-    let acc = (A.zt.get(z) || 0) + rate * dt;
+    let acc = (A.zt.get(z) || 0) + rate * dt * IC.TRAFFIC_SHOW;
     while (acc >= 1 && room()) {
       acc -= 1;
       const u = R() * rate, pur = u < pc ? 'com' : u < pc + pf ? 'frt' : u < pc + pf + pa ? 'apt' : 'gen';
@@ -719,7 +721,7 @@ IC.trafficAgents = function (S, view, dt) {
       if (ia === ib) continue;
       const d = ia ? 1 : 0;   // the direction that runs into the box
       if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
-      const n = L.ld[d] * lk.C.dens * lk.C.lanes * L.v[d] * et;
+      const n = L.ld[d] * lk.C.dens * lk.C.lanes * L.v[d] * et * IC.TRAFFIC_SHOW;
       for (let q = 0; q < n && room(); q++) {
         if (R() > n - q) break;
         const a = newAgent(S, A, [[lk, d]], 0, pickKind(mixOf(L, d), R()), 'through', null);
