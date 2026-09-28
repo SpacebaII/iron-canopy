@@ -58,6 +58,15 @@ The replay shows turns as flat heading changes. There is no bank, no chaff or fl
   - an optional seeker cone.
 - **Tacview-style panel:** for the selected object, speed, height, g, range and closing speed to its target, time to impact, and guidance phase.
 
+**2b. A live view** (the owner: "Tacview ideally should be an accessible live view, like a small launcher window after selecting a unit, an openable view happening live, with the ability to fill the screen, but you likely would not be able to command from that view"):
+
+- Selecting a unit, track or aircraft offers "Live view": a small 3D window in a corner of the map, following it as it happens. It uses the same models, trails, locks and labels as the replay, fed from the live state.
+- The player can drag it, resize it, fill the screen with it, and close it.
+- It uses the same cameras as the replay (chase, target, side-on, orbit). The auto-director can switch to the missile when one is fired.
+- It is view-only: no orders from inside it. The game keeps running behind it, and the map stays usable while the window is small.
+- Performance: the map keeps 60 fps with the window open over a raid (budget the 3D scene; drop detail before frame rate). The window closes itself if three.js cannot load, and says why.
+- One button jumps from the live view to the replay of the last 15 minutes.
+
 **3. Recording and storytelling tools:**
 
 - **Cameras:**
@@ -87,6 +96,7 @@ The replay shows turns as flat heading changes. There is no bank, no chaff or fl
 - Balance runs: engagements still resolve, and the defence's kill rate against a standard raid stays within 10% of today's, or the change is justified in the pull request.
 - The pull request has:
   - frames from the replay: a notch with chaff, a heat-seeker decoyed by flares, a long-range shot's whole flight with its phases, and the chase and target cameras;
+  - the live view, small over the map and full screen, during a raid, with frame times while it is open;
   - a short exported video;
   - flight times before and after;
   - frame times.

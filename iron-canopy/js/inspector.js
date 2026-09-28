@@ -3,6 +3,8 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
+/* the live 3D view of something the recorder follows (replay3d.js); nothing when the replay is not loaded */
+const liveBtn = o => IC.liveOpen && S && S.rec && S.rec.of.has(o) ? `<button class="act" data-act="liveView" title="A small 3D window that follows it as it happens; it can fill the screen">Live view</button>` : '';
 const $ = id => document.getElementById(id);
 const ui = IC.ui, esc = U.esc;
 const kbd = ui.kbd, bar = ui.bar;
@@ -99,6 +101,7 @@ function unit(u) {
   if (u.mags.length) acts.push(`<button class="act ${u.pri ? 'on' : ''}" data-act="pri">Priority resupply</button>`);
   if (Object.values(u.comp).some(v => v < 1) || u.hp < u.max) acts.push(`<button class="act ${u.repairing ? 'on' : ''}" data-act="repair" ${u.repairing ? 'disabled' : ''}>${kbd('P')}${u.repairing ? 'Repair crew on site' : `Repair · ${U.money(Math.max(3, d.cost * 0.08))}`}</button>`);
   if (u.prio && !u.prio.dead) acts.push(`<button class="act" data-act="clearPrio">Clear target TN ${u.prio.tn}</button>`);
+  if (liveBtn(u)) acts.push(liveBtn(u));
   if (!u.central) acts.push(`<button class="act warn" data-act="reserve">${kbd('X')}${d.mob === 'fixed' ? 'Dismantle' : 'To reserve'}</button>`);
   if (acts.length) parts.push(`<div class="acts">${acts.join('')}</div>`);
   // launchers drawn as rounds, the stock on site, the next reload and the next load
@@ -218,6 +221,7 @@ function track(t) {
   if (escort && hostile && (escort.roe || S.ad.roe) === 'hold') acts.push(`<button class="act danger" data-act="escortFire" data-id="${escort.id}" title="${esc(escort.name)} is escorting it with weapons held. This order lets it fire.">Order ${esc(escort.name)} to fire</button>`);
   if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
   if (IC.replayOpen && S.rec && S.rec.of.has(t)) acts.push(`<button class="act" data-act="replayTrack" title="The last minutes of this track in 3D, following it">Replay</button>`);
+  acts.push(liveBtn(t));
   const warn = (aff === 'A' || aff === 'N') ? `<div class="warnbox">This track squawks a civil code on a filed route. Batteries will not fire at it unless you assign one by hand.</div>` : aff === 'S' && S.ad.roe === 'tight' ? `<p class="hint">Weapons are Tight: batteries hold fire on suspects. Identify it (fighter or type recognition) or assign a battery by hand.</p>` : '';
   const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
   // a known hostile shows its symbol; anything else the aircraft sign in the colour of what we think it is
@@ -668,7 +672,7 @@ function air(a) {
   const roe = a.kind === 'ftr' && a.r ? `<div class="sec"><h3 class="sh">Weapons</h3>${seg('froe', a.r.roe || 'auto', [['auto', `National (${S.ad.roe})`], ['free', 'Free'], ['tight', 'Tight'], ['hold', 'Hold', 'red']])}</div>` : '';
   const hint = a.kind === 'ftr' ? 'Click a track to see an intercept (Tab picks the next hostile). Right-click the map to patrol there, one of our aircraft to escort it, an enemy target to strike.' : 'Right-click the map to move its station.';
   return head(`<span class="badge friend">${ui.icon('air')}</span>`, a.name, esc(K.name), a.gnd ? 'Taxiing' : STATE_WORDS[a.state] || a.state, a.state === 'rtb' ? '' : 'ok') +
-    `<div class="ibody">${plan}${kv(rows)}${roe}${acts}${esc2}<p class="hint">${hint}</p></div>`;
+    `<div class="ibody">${plan}${kv(rows)}${roe}${acts}${esc2}${liveBtn(a) ? `<div class="acts">${liveBtn(a)}</div>` : ''}<p class="hint">${hint}</p></div>`;
 }
 /* a flight on the ground: its alert state, its crews, what it is missing */
 function flight(r) {
