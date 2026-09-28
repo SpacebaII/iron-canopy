@@ -699,14 +699,14 @@ function mixFor(S, E, kind, obj) {
     const bal = Math.min(12, Math.floor(spareOf(S, 'bm', ['srbm', 'marv']) * 0.85)), cms = Math.min(20, Math.floor(spareOf(S, 'cm', ['lacm', 'scm', 'mcm']) * 0.85));
     const more = E.shock.more, k = more.length + 1, share = n => Math.max(1, Math.round(n / k));
     const how = E.shock.how, via = how === 'axis' ? { via: 1 } : {};
-    if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 6, -600); }
+    if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 3, -600); }
     else add('dcy', 4, -300);
-    add('drones', 5, -300, via); add('cm', share(cms), 0, via); add('bal', share(bal), 0); add('mrbm', 1, 0); add('jam', 2, 0, via);
+    add('drones', 4, -300, via); add('cm', share(cms), 0, via); add('bal', share(bal), 0); add('mrbm', 1, 0); add('jam', 2, 0, via);
     if (how === 'granted') add('low', 1, 0);
     for (const t of more) {
       const x = { obj: t, set: t.set }, dm = droneHours(S, t) <= 5;
       add('cm', share(cms), how === 'soak' ? 0 : U.rand(-120, 120), Object.assign({}, x, via)); add('bal', share(bal), 0, x);
-      if (dm) add('drones', 5, -300, Object.assign({}, x, via));
+      if (dm) add('drones', 4, -300, Object.assign({}, x, via));
     }
     // something taken for granted comes with a small raid on the main base first, to pull our eyes there
     const mb = IC.mainBase(S);
@@ -759,7 +759,7 @@ function planShock(S, E) {
   // two or three more of other kinds, the most valuable near the first (within 300 km)
   const more = [], used = new Set([obj.set]);
   for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => b.w / (1 + U.dist(b, obj) / 2000) - a.w / (1 + U.dist(a, obj) / 2000))) {
-    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > 0.2)) continue;
+    if (used.has(t.set) || (E.tallyN >= 20 && share(t.set) > 0.3)) continue;
     used.add(t.set); more.push(t);
     if (more.length >= 3) break;
   }
@@ -790,7 +790,7 @@ function planRaid(S, E) {
   let kind, obj, why;
   if (E.retaliate > 0 && can(S, 'cm')) {
     E.retaliate = 0; kind = E.act >= 2 ? 'retaliation' : 'probe';
-    obj = chooseTarget(S, E, U.pick(['city', 'trade', 'command']), { probe: true });
+    obj = chooseTarget(S, E, U.pick(E.act <= 2 ? ['city', 'trade', 'transport'] : ['city', 'trade', 'command']), { probe: E.act <= 3 });
     why = 'we struck their territory';
     IC.news(S, `${S.world.names.A} vows retaliation after strikes on its territory.`);
   } else if (shockReady(S, E)) {
