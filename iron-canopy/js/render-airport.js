@@ -621,16 +621,15 @@ function drawLandside(g, S, ap, px, z, night) {
         const bay = 0.026, depth = 0.05, rows = [];
         for (let y = -h / 2 + 0.03; y + 2 * depth < h / 2 - 0.02; y += 2 * depth + 0.07) rows.push(y);
         g.strokeStyle = 'rgba(236,236,226,0.45)'; g.lineWidth = Math.max(0.002, 0.4 * px);
-        let i = 0;
-        for (const y of rows) {
-          if (z > 40) { g.beginPath(); for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += bay) { g.moveTo(x, y); g.lineTo(x, y + 2 * depth); } g.stroke(); }
-          for (let x = -w / 2 + 0.03; x < w / 2 - 0.03 - bay; x += bay) for (const yy of [y, y + depth]) {
-            i++;
-            if (U.hash(i, it.x * 10 | 0) > (k === 'taxi' ? 0.7 : use)) continue;
-            g.fillStyle = k === 'taxi' && U.hash(i, 5) < 0.6 ? 'rgb(236,196,50)' : CARS[(U.hash(i, 11) * CARS.length) | 0];
-            g.fillRect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
-          }
+        // cars batched by colour: one fill per colour, not one per car
+        let i = 0; const paths = CARS.map(() => new Path2D()), taxiP = new Path2D();
+        if (z > 40) { g.beginPath(); for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += bay) { g.moveTo(x, y); g.lineTo(x, y + 2 * depth); } g.stroke(); }
+        for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03 - bay; x += bay) for (const yy of [y, y + depth]) {
+          i++;
+          if (U.hash(i, it.x * 10 | 0) > (k === 'taxi' ? 0.7 : use)) continue;
+          (k === 'taxi' && U.hash(i, 5) < 0.6 ? taxiP : paths[(U.hash(i, 11) * CARS.length) | 0]).rect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
         }
+        paths.forEach((P, c) => { g.fillStyle = CARS[c]; g.fill(P); }); g.fillStyle = 'rgb(236,196,50)'; g.fill(taxiP);
       }
       if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
     } else if (k === 'garage') {
