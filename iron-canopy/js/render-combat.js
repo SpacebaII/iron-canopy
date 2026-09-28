@@ -322,10 +322,11 @@ function drawRanges(S, px, now) {
 /* vehicles laid out around a unit's symbol when zoomed in */
 function vehicles(S, u, px, now) {
   const d = u.d, n = d.weapon === 'sam' ? (u.mags[0] ? Math.min(6, Math.max(2, Math.ceil(u.mags[0].max / 2))) : 2) : d.sensor ? 1 : d.gun || d.weapon === 'strike' ? 2 : d.logi ? 3 : 1;
-  const s = 0.9;
+  // drawn large enough to see from afar; close in (an airfield's zoom) they shrink to their real size, about 10 m
+  const k = U.clamp(1.1 / cam.z, 0.035, 1), s = 0.9 * k;
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * 6.283 + (u.id.charCodeAt(1) % 7), r = n > 1 ? 4.5 : 0;
-    const x = u.x + Math.cos(a) * r + 6, y = u.y + Math.sin(a) * r + 5;
+    const a = (i / n) * 6.283 + (u.id.charCodeAt(1) % 7), r = n > 1 ? 4.5 * k : 0;
+    const x = u.x + Math.cos(a) * r + 6 * k, y = u.y + Math.sin(a) * r + 5 * k;
     ctx.save(); ctx.translate(x, y); ctx.rotate(a + 1.2);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(-1.4 * s + 0.3, -0.7 * s + 0.3, 2.8 * s, 1.4 * s);
     ctx.fillStyle = u.state === 'ready' ? 'rgb(78,92,70)' : 'rgb(110,100,70)'; ctx.fillRect(-1.4 * s, -0.7 * s, 2.8 * s, 1.4 * s);
@@ -334,8 +335,8 @@ function vehicles(S, u, px, now) {
   }
   if (d.sensor && !d.sensor.passive || d.fc && !d.fc.passive) {
     const a = u.radarOn ? now * (d.sensor && d.sensor.rot ? 6.283 / Math.max(0.6, d.sensor.per / 10) : 3) : 0;
-    ctx.save(); ctx.translate(u.x - 6, u.y + 5); ctx.rotate(a);
-    ctx.fillStyle = 'rgb(200,205,210)'; ctx.fillRect(-1.8, -0.25, 3.6, 0.5);
+    ctx.save(); ctx.translate(u.x - 6 * k, u.y + 5 * k); ctx.rotate(a);
+    ctx.fillStyle = 'rgb(200,205,210)'; ctx.fillRect(-1.8 * k, -0.25 * k, 3.6 * k, 0.5 * k);
     ctx.restore();
   }
 }
@@ -359,8 +360,12 @@ function drawUnit(S, u, px, now) {
   const hurt = u.hp < u.max * 0.7;
   if (hurt && Math.random() < 0.08) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-3, 3), oy: U.rand(-3, 3), vx: S.wind.x * 8, vy: S.wind.y * 8 - 6, life: U.rand(1.5, 3), size: U.rand(2, 4), grow: 5, col: '60,60,62', a: 0.45 });
   const broken = Object.values(u.comp).some(v => v < 0.35);
-  IC.drawUnitSymbol(ctx, u.type, u.x, u.y, px * 1.05, busy ? C.amber : C.friend, { dash: silent, tint: busy ? 'rgba(242,180,65,0.45)' : broken ? 'rgba(255,91,79,0.35)' : null,
+  // close in the unit itself is on show: its symbol shrinks and fades to a marker above it
+  const close = U.clamp((cam.z - 8) / 16, 0, 1);
+  ctx.globalAlpha = 1 - close * 0.55;
+  IC.drawUnitSymbol(ctx, u.type, u.x, u.y - close * 14 * px, px * 1.05 * (1 - close * 0.4), busy ? C.amber : C.friend, { dash: silent, tint: busy ? 'rgba(242,180,65,0.45)' : broken ? 'rgba(255,91,79,0.35)' : null,
     radar: u.emitter && u.state === 'ready' ? (u.radarOn ? 'on' : 'silent') : null, reload: reloadOf(S, u), damaged: broken || u.hp < u.max * 0.5, now });
+  ctx.globalAlpha = 1;
   if (u.state === 'building' || u.state === 'setup' || u.state === 'packing') {
     const f = 1 - u.stT / u.stMax;
     ctx.strokeStyle = C.amber; ctx.lineWidth = 2 * px;
