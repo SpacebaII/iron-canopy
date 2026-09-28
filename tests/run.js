@@ -1023,6 +1023,25 @@ test('airspace: the presets are valid for the six-runway KDEN layout', () => {
     assert(IC.aspSectors(S).some(s => s.ap === ap.id && s.kind === 'twr' && s.staff > 0), `${k}: no tower controllers`);
   }
 });
+test('airspace editor: rings dragged on the map stay touching, a drawn shelf starts at the last ring, and every change is said in words', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }), ap = S.infra.find(i => i.kind === 'airport');
+  IC.step(S, 0.5);
+  IC.aspPreset(S, ap, 'regional');
+  const [ctr, s1, s2] = IC.aspVols(S, ap).sort((a, b) => a.r1 - b.r1);
+  // the inner shelf's edge pushed out: the outer shelf now starts where it ends, and it cannot swallow the outer one
+  IC.aspResize(S, s1, s1.r1 + 60);
+  assert(Math.abs(s2.r0 - s1.r1) < 1, `outer shelf starts at ${s2.r0}, inner one ends at ${s1.r1}`);
+  IC.aspResize(S, s1, s2.r1 + 500);
+  assert(s1.r1 < s2.r1, 'the inner shelf grew past the outer one');
+  assert(!ap.asp.auto, 'a reshaped airspace still counts as the preset');
+  // a shelf drawn to a point 70 km out runs from the outermost ring to there, and has its own words
+  const out = IC.aspOuter(S, ap), v = IC.aspAddShelf(S, ap, 700);
+  assert(Math.abs(v.r0 - out) < 1 && Math.abs(v.r1 - 700) < 1, `drawn shelf ${v.r0}–${v.r1}, last ring ended at ${out}`);
+  assert(IC.aspVolUnder(S, ap, { x: ap.x + 650, y: ap.y }) === v, 'a click on the new ring does not pick it');
+  assert(IC.aspEdgeAt(S, ap, { x: ap.x, y: ap.y + 703 }, 10) === v, 'the new ring\'s edge cannot be grabbed');
+  assert(/light aircraft may pass under it/.test(IC.aspWords(v)) && /Class C/.test(IC.aspWords(s1)), IC.aspWords(v));
+  assert(IC.aspWords(ctr).includes('from the ground'), IC.aspWords(ctr));
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };

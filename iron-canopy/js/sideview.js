@@ -71,6 +71,8 @@ IC.drawSide = function (cv, S, w) {
       g.fillStyle = `rgba(${C.col},${hot ? 0.24 : 0.13})`; g.fillRect(x0, y0, x1 - x0, y1 - y0);
       g.strokeStyle = `rgba(${C.col},${hot ? 1 : 0.7})`; g.lineWidth = hot ? 2 : 1; g.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
       if (x1 - x0 > 34) { g.fillStyle = `rgb(${C.col})`; g.textAlign = 'center'; g.fillText(v.kind === 'mil' ? (v.cls === 'X' ? 'ADZ' : v.cls) : v.cls, (x0 + x1) / 2, Math.min(y1 - 4, y0 + 13)); }
+      // the selected block: grips on the edges that can be dragged
+      if (hot && w.kind === 'base' && v.ap === w.ref.id) for (const y of v.lo > 0 ? [y0, y1] : [y0]) { const xm = (x0 + x1) / 2; g.fillStyle = `rgb(${C.col})`; g.fillRect(xm - 12, y - 2.5, 24, 5); g.fillStyle = 'rgba(6,14,22,0.9)'; g.fillRect(xm - 7, y - 0.5, 14, 1); }
     }
   }
   // the ground (heights are above it) and the lowest height radar sees: hills leave holes behind them
@@ -120,7 +122,7 @@ IC.drawSide = function (cv, S, w) {
 let el = null, cv = null, raf = 0;
 const CSS = `.sideview{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);width:min(760px,calc(100% - 32px));z-index:30;padding:.55rem .7rem .7rem;display:none}
 .sideview.on{display:block}.sideview header{display:flex;gap:.5rem;align-items:center;margin-bottom:.35rem}.sideview header b{flex:1;font-size:.95rem}
-.sideview canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:default}.sideview canvas.drag{cursor:ns-resize}
+.sideview canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:default}.sideview canvas.drag,canvas[data-side].drag{cursor:ns-resize}
 .sideview .x{min-width:2rem}.reach{width:100%;max-width:100%;height:auto;display:block;border-radius:8px;margin:.2rem 0}`;
 if (typeof document !== 'undefined' && document.head) { const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st); }
 function build() {
@@ -130,30 +132,46 @@ function build() {
   (document.querySelector('.app') || document.body).appendChild(el);
   cv = el.querySelector('canvas');
   el.addEventListener('click', e => { const b = e.target.closest('[data-sv]'); if (!b) return; if (b.dataset.sv === 'close') IC.sideClose(); else { SV.ang += Math.PI / 4; } });
-  cv.addEventListener('mousedown', e => { const h = hit(e); if (h) { SV.drag = h; IC.ui.aspVol = h.v.id; e.preventDefault(); } });
-  window.addEventListener('mousemove', e => {
-    if (!SV.open || !SV.what || !SV.what.P) return;
-    const h = SV.drag || hit(e); cv.classList.toggle('drag', !!h);
-    if (!SV.drag) return;
-    const P = SV.what.P, r = cv.getBoundingClientRect(), y = (e.clientY - r.top) * cv.height / r.height;
-    const a = Math.max(0, (P.mt + P.ph - y) / P.ph * P.H), ft = Math.round(a * IC.FT / 500) * 500 / IC.FT;
-    IC.aspSetVol(SV.S, SV.drag.v, { [SV.drag.k]: ft });
-  });
-  window.addEventListener('mouseup', () => { if (SV.drag) { const v = SV.drag.v; SV.drag = null; IC.ui && IC.ui.refresh && IC.ui.refresh(true); IC.log(SV.S, 'info', 'AIRSPACE', `${v.name}: ${IC.flText(v.lo)} to ${IC.flText(v.hi)}.`); } });
 }
-/* a floor or ceiling under the mouse (airport side view only) */
-function hit(e) {
-  const w = SV.what; if (!w || w.kind !== 'base' || !w.P) return null;
-  const P = w.P, r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * cv.width / r.width, y = (e.clientY - r.top) * cv.height / r.height;
+/* dragging a floor or ceiling: in the floating side view or in the Airspace tab's own slice */
+function hitOn(c, P, ref, e) {
+  if (!P || !ref || !ref.parts) return null;
+  const r = c.getBoundingClientRect(), x = (e.clientX - r.left) * c.width / r.width, y = (e.clientY - r.top) * c.height / r.height;
   const s = (x - P.ml) / P.pw * 2 * P.L - P.L;
-  for (const v of IC.aspVols(SV.S, w.ref)) {
-    const c = proj(P, v.x, v.y), d = Math.abs(s - c.s); if (Math.abs(c.off) >= v.r1) continue;
-    const h1 = Math.sqrt(v.r1 * v.r1 - c.off * c.off), h0 = Math.abs(c.off) < v.r0 ? Math.sqrt(v.r0 * v.r0 - c.off * c.off) : 0;
-    if (d > h1 || d < h0) continue;
-    if (Math.abs(y - P.Y(v.hi)) < 5) return { v, k: 'hi' };
-    if (v.lo > 0 && Math.abs(y - P.Y(v.lo)) < 5) return { v, k: 'lo' };
+  let best = null, bd = 7;
+  for (const v of IC.aspVols(SV.S, ref)) {
+    const q = proj(P, v.x, v.y), d = Math.abs(s - q.s); if (Math.abs(q.off) >= v.r1) continue;
+    const h1 = Math.sqrt(v.r1 * v.r1 - q.off * q.off), h0 = Math.abs(q.off) < v.r0 ? Math.sqrt(v.r0 * v.r0 - q.off * q.off) : 0;
+    if (d > h1 + 2 || d < h0 - 2) continue;
+    for (const k of v.lo > 0 ? ['hi', 'lo'] : ['hi']) { const dy = Math.abs(y - P.Y(v[k])); if (dy < bd) { bd = dy; best = { v, k }; } }
   }
-  return null;
+  return best;
+}
+const sideOf = e => {
+  const c = e.target && e.target.closest && e.target.closest('canvas[data-side], .sideview canvas'); if (!c) return null;
+  SV.S = SV.S || IC.S;
+  return c === cv ? { c, P: SV.what && SV.what.P, ref: SV.what && SV.what.kind === 'base' && SV.what.ref } : { c, P: c._P, ref: SV.S && SV.S.byId[c.dataset.side] };
+};
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', e => {
+    const o = sideOf(e); if (!o) return;
+    const h = hitOn(o.c, o.P, o.ref, e); if (!h) return;
+    const r = o.c.getBoundingClientRect();
+    SV.drag = Object.assign(h, { c: o.c, P: o.P, ref: o.ref, top: r.top, sy: o.c.height / r.height });
+    IC.ui.aspVol = h.v.id; IC.ui.busyUntil = performance.now() + 60000; e.preventDefault();
+  });
+  document.addEventListener('pointermove', e => {
+    const D = SV.drag;
+    if (!D) { const o = sideOf(e); if (o) o.c.classList.toggle('drag', !!hitOn(o.c, o.P, o.ref, e)); return; }
+    const P = D.P, y = (e.clientY - D.top) * D.sy, a = Math.max(0, (P.mt + P.ph - y) / P.ph * P.H);
+    IC.aspSetVol(SV.S, D.v, { [D.k]: Math.round(a * IC.FT / 500) * 500 / IC.FT });
+    if (D.c !== cv && D.c.isConnected) D.c._P = IC.drawSide(D.c, SV.S, { kind: 'base', ref: D.ref });
+  });
+  document.addEventListener('pointerup', () => {
+    const D = SV.drag; if (!D) return; SV.drag = null;
+    IC.ui.busyUntil = performance.now() + 150; if (IC.ui.refresh) IC.ui.refresh(true);
+    IC.log(SV.S, 'info', 'AIRSPACE', `${D.ref.name}: ${IC.aspShort(D.v)}`, D.ref);
+  });
 }
 function loop() {
   raf = 0;
@@ -203,9 +221,9 @@ IC.aspAct = function (S, ap, ds) {
     case 'cls': if (v) IC.aspSetVol(S, v, { cls: ds.v }); break;
     case 'lo': if (v) IC.aspSetVol(S, v, { lo: v.lo + n * 500 / IC.FT }); break;
     case 'hi': if (v) IC.aspSetVol(S, v, { hi: v.hi + n * 500 / IC.FT }); break;
-    case 'r': if (v) IC.aspSetVol(S, v, { r1: v.r1 + n * 50 }); break;
+    case 'r': if (v) IC.aspResize(S, v, v.r1 + n * 50); break;
     case 'del': if (v) { IC.aspDelVol(S, v); ui.aspVol = null; } break;
-    case 'shelf': if (ap) ui.aspVol = IC.aspAddShelf(S, ap).id; break;
+    case 'shelf': if (ap) { IC.setMode({ kind: 'asp', op: 'shelf', ap: ap.id }); return; } break;
     case 'draw': if (v) { IC.setMode({ kind: 'asp', op: 'radius', vol: v.id }); return; } break;
     case 'mil': IC.setMode({ kind: 'asp', op: 'mil', cls: ds.v || 'X' }); return;
     case 'staff': if (sec) IC.aspSetStaff(S, sec, sec.staff + n); break;
@@ -220,7 +238,12 @@ IC.aspAct = function (S, ap, ds) {
 };
 /* a click on the map in an airspace mode: a shelf's outer edge, a military area (centre, then edge), a sector */
 IC.aspMapClick = function (S, m, p) {
-  if (m.op === 'radius') { const v = IC.aspVol(S, m.vol); if (v) IC.aspSetVol(S, v, { r1: U.dist(v, p) }); IC.setMode(null); return; }
+  if (m.op === 'radius') { const v = IC.aspVol(S, m.vol); if (v) IC.aspResize(S, v, U.dist(v, p)); IC.setMode(null); return; }
+  if (m.op === 'shelf') {
+    const ap = S.byId[m.ap], out = ap && IC.aspOuter(S, ap);
+    if (!ap || U.dist(ap, p) < out + 30) { IC.text(S, p.x, p.y, 'CLICK OUTSIDE THE LAST RING', IC.C.amber); return; }
+    IC.ui.aspVol = IC.aspAddShelf(S, ap, U.dist(ap, p)).id; IC.setMode(null); return;
+  }
   if (m.op === 'sector') { IC.aspAddSector(S, p.x, p.y); IC.setMode(null); return; }
   if (m.op === 'mil') {
     if (!m.c) { m.c = { x: p.x, y: p.y }; return; }
@@ -228,7 +251,7 @@ IC.aspMapClick = function (S, m, p) {
     IC.ui.aspVol = v.id; IC.setMode(null);
   }
 };
-IC.aspModeHint = m => m.op === 'radius' ? 'Click where the outer edge of the shelf should be.' : m.op === 'sector' ? 'Click where the new area sector should be centred. Flights go to the nearest sector centre.' : m.c ? 'Click the edge of the area. It starts from the ground to FL100; set its band in the Airspace tab.' : 'Click the centre of the military area.';
+IC.aspModeHint = m => m.op === 'radius' ? 'Click where the outer edge of the shelf should be.' : m.op === 'shelf' ? 'Click where the new shelf should end: it runs from the last ring out to there, a step higher. Then set its floor and ceiling in the side view.' : m.op === 'sector' ? 'Click where the new area sector should be centred. Flights go to the nearest sector centre.' : m.c ? 'Click the edge of the area. It starts from the ground to FL100; set its band in the Airspace tab.' : 'Click the centre of the military area.';
 
 /* ---------- orders on the radio to one flight ---------- */
 IC.atcAct = function (S, t, ds) {

@@ -60,7 +60,7 @@ ui.setHTML = function (el, html, key) {
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
   for (const c of el.querySelectorAll('canvas[data-reach]')) IC.drawReachChart && IC.drawReachChart(c, c.dataset.reach.split(','));
-  for (const c of el.querySelectorAll('canvas[data-side]')) IC.drawSide && IC.drawSide(c, S, { kind: 'base', ref: S.byId[c.dataset.side] });
+  for (const c of el.querySelectorAll('canvas[data-side]')) if (IC.drawSide) c._P = IC.drawSide(c, S, { kind: 'base', ref: S.byId[c.dataset.side] });
   for (const c of el.querySelectorAll('canvas[data-thr]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawThreatSymbol(g, c.dataset.thr, c.width / 2, c.height / 2 + 4, c.width / 24); }
   return true;
 };

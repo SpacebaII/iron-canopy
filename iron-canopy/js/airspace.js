@@ -352,22 +352,31 @@ IC.aspRelease = function (S, from, to) {
    Heights are above the ground, in km, like every t.alt. */
 IC.ASP_CLS = {
   A: { name: 'Class A', col: '120,140,255', ctl: 1, vfr: 'no', sepVfr: 1, radar: 1,
+    brief: 'airways high up: clearance for all, no light aircraft',
     who: 'Every flight needs a clearance. Light aircraft flying by sight may not enter.', sep: 'Controllers keep every flight apart.', need: 'Radar and radio.' },
   B: { name: 'Class B', col: '80,140,255', ctl: 1, vfr: 'clr', sepVfr: 1, radar: 1, kt: 250,
+    brief: 'busiest airports: clearance for all, everyone kept apart',
     who: 'Every flight needs a clearance, light aircraft too.', sep: 'Controllers keep every flight apart, light aircraft too.', need: 'Radar, radio and a transponder. 250 kt below FL100.' },
   C: { name: 'Class C', col: '205,110,235', ctl: 1, vfr: 'clr', sepVfr: 1, radar: 1, kt: 250,
+    brief: 'busy airports: clearance for all, airliners kept apart from everyone',
     who: 'Every flight needs a clearance, light aircraft too.', sep: 'Airliners are kept apart from everything; light aircraft are only told about each other.', need: 'Radar, radio and a transponder. 250 kt below FL100.' },
   D: { name: 'Class D', col: '110,175,255', ctl: 1, vfr: 'call', sepVfr: 0, radar: 0, kt: 250,
+    brief: 'small airports: light aircraft call the tower, airliners kept apart',
     who: 'Airliners need a clearance; light aircraft must call the tower before they come in.', sep: 'Airliners are kept apart from each other; light aircraft are only told where the airliners are.', need: 'Radio. 250 kt below FL100.' },
   E: { name: 'Class E', col: '120,200,185', ctl: 1, vfr: 'free', sepVfr: 0, radar: 0, kt: 250,
+    brief: 'airways lower down: airliners need a clearance, light aircraft fly free',
     who: 'Airliners need a clearance; light aircraft flying by sight do not.', sep: 'Airliners are kept apart from each other only.', need: 'Radio for airliners.' },
   G: { name: 'Class G', col: '160,170,170', ctl: 0, vfr: 'free', sepVfr: 0, radar: 0, kt: 250,
+    brief: 'uncontrolled: no clearance, nobody kept apart',
     who: 'Nobody needs a clearance.', sep: 'Nobody is kept apart: pilots look out, and controllers only pass on what they see.', need: 'Nothing.' },
   R: { name: 'Restricted area', col: '255,110,90', mil: 1, vfr: 'no',
+    brief: 'military only in its height band',
     who: 'Nobody may fly in its height band without the military\'s clearance.', sep: 'Controllers send civil flights above or below it.', need: '' },
   Q: { name: 'Danger area', col: '255,175,80', mil: 1, vfr: 'free',
+    brief: 'military firing: airliners kept out, light aircraft at own risk',
     who: 'Firing or military flying: airliners are kept out of its band; light aircraft enter at their own risk.', sep: 'Controllers send airliners above or below it.', need: '' },
   X: { name: 'Air defence zone', col: '255,70,70', mil: 1, vfr: 'no',
+    brief: 'anything in its height band without clearance is suspect',
     who: 'Anything in its height band without clearance is treated as suspect.', sep: 'Civil flights are kept above or below it, so an airway can pass over it.', need: '' }
 };
 const RANK = 'RXQABCDEG';
@@ -448,6 +457,32 @@ IC.aspSetVol = function (S, v, o) {
   if (o.hi != null) v.hi = U.clamp(o.hi, v.lo + 0.15, 20);
   const ap = v.ap && S.byId[v.ap]; if (ap && ap.asp) ap.asp.auto = false;
   volsChanged(S);
+};
+/* move a ring's outer edge; the rings of the same airport that started at it move with it, so they stay touching */
+IC.aspResize = function (S, v, r1) {
+  const old = v.r1, nb = v.ap ? IC.aspVols(S, S.byId[v.ap]).filter(w => w !== v && Math.abs(w.r0 - old) < 1) : [];
+  const max = Math.min(1500, ...nb.map(w => w.r1 - 20));
+  IC.aspSetVol(S, v, { r1: Math.min(r1, max) });
+  for (const w of nb) IC.aspSetVol(S, w, { r0: v.r1 });
+};
+/* the ring edge of an airport's airspace under a map point (within tol units), and the ring under it */
+IC.aspEdgeAt = function (S, ap, p, tol) {
+  let best = null, bd = tol;
+  for (const v of IC.aspVols(S, ap)) { const d = Math.abs(U.dist(v, p) - v.r1); if (d < bd) { bd = d; best = v; } }
+  return best;
+};
+IC.aspVolUnder = function (S, ap, p) {
+  const d = U.dist(ap, p);
+  return IC.aspVols(S, ap).filter(v => d >= v.r0 && d < v.r1).sort((a, b) => a.lo - b.lo)[0] || null;
+};
+/* one volume in one line, for the log: Shelf 2 is now class C, 5,000 ft to FL100, 25–48 km out */
+IC.aspShort = v => `${v.name} is now class ${v.cls}, ${v.lo <= 0.01 ? 'the ground' : IC.flText(v.lo)} to ${IC.flText(v.hi)}, ${v.r0 ? `${Math.round(v.r0 / 10)}–${Math.round(v.r1 / 10)} km out` : `out to ${Math.round(v.r1 / 10)} km`}.`;
+/* one volume in plain words: what it is, where, and what it asks of pilots */
+IC.aspWords = function (v) {
+  const C = IC.ASP_CLS[v.cls], lo = v.lo <= 0.01 ? 'the ground' : IC.flText(v.lo);
+  const where = v.r0 ? `a ring ${Math.round(v.r0 / 10)}–${Math.round(v.r1 / 10)} km from the airport` : `a circle ${Math.round(v.r1 / 10)} km round ${v.kind === 'mil' ? 'its centre' : 'the airport'}`;
+  const under = v.lo > 0.01 && v.kind !== 'mil' ? ` Below ${IC.flText(v.lo)} it is open air: light aircraft may pass under it.` : '';
+  return `${C.name} from ${lo} to ${IC.flText(v.hi)}, ${where}. ${C.who}${under}`;
 };
 /* a new shelf outside the airport's outermost ring, a step higher */
 IC.aspAddShelf = function (S, ap, r1) {

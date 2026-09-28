@@ -31,19 +31,32 @@ IC.drawAirspace = function (ctx, S, px, view, labels, vols) {
   const edit = IC.ui && IC.ui.aspVol, m = S.mode2;
   if (vols !== false) for (const v of N.vols) {
     if (!inView(view, v.x, v.y, v.r1) || v.r1 * z < 3) continue;
-    const C = IC.ASP_CLS[v.cls], hot = (selAp && v.ap === selAp.id) || edit === v.id || (m && m.kind === 'asp' && m.vol === v.id);
+    const C = IC.ASP_CLS[v.cls], hot = (selAp && v.ap === selAp.id) || edit === v.id || (m && m.kind === 'asp' && m.vol === v.id), grab = IC.ui && IC.ui.aspEdge === v.id;
     const col = C.col, mil = v.kind === 'mil';
     ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); if (v.r0 > 0) ctx.arc(v.x, v.y, v.r0, 7, 0, true);
     ctx.fillStyle = `rgba(${col},${mil ? 0.07 : hot ? 0.06 : 0.025})`; ctx.fill('evenodd');
     ctx.lineWidth = (hot ? 2 : mil ? 1.6 : 1.1) * px; ctx.strokeStyle = `rgba(${col},${hot ? 0.85 : mil ? 0.6 : 0.4})`;
     if (v.cls === 'D' || v.cls === 'E' || v.cls === 'Q') ctx.setLineDash([7 * px, 5 * px]); else if (mil) ctx.setLineDash([12 * px, 4 * px, 2 * px, 4 * px]);
     ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    // the edge under the pointer (or being dragged), and the selected ring's fill
+    if (grab) { ctx.lineWidth = 4 * px; ctx.strokeStyle = `rgba(${col},0.9)`; ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); ctx.stroke(); }
+    if (edit === v.id) { ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); if (v.r0 > 0) ctx.arc(v.x, v.y, v.r0, 7, 0, true); ctx.fillStyle = `rgba(${col},0.10)`; ctx.fill('evenodd'); }
     // floor and ceiling on the ring's rim, where the ring is wide enough on screen to read
     if (labels && (hot || z > 0.05) && v.r1 * z > 40) {
       const k = N.vols.filter(w => w.ap === v.ap && w.x === v.x && w.r1 < v.r1).length, a = -Math.PI / 2 + (v.ap ? 0.22 * k : 0);
       const x = v.x + Math.cos(a) * (v.r1 - 7 * px), y = v.y + Math.sin(a) * (v.r1 - 7 * px);
-      text(ctx, `${mil ? v.cls === 'X' ? 'ADZ' : v.cls : v.cls} ${lvl(v.hi)}/${lvl(v.lo)}`, x, y, px, `rgba(${col},${hot ? 1 : 0.8})`, hot ? 10 : 8.5, 'center', 700);
+      text(ctx, `${mil ? v.cls === 'X' ? 'ADZ' : v.cls : v.cls} ${lvl(v.lo)}–${lvl(v.hi)}`, x, y, px, `rgba(${col},${hot ? 1 : 0.8})`, hot ? 10 : 8.5, 'center', 700);
       if (mil && v.r1 * z > 80) text(ctx, v.name.toUpperCase(), v.x, v.y, px, `rgba(${col},0.7)`, 8.5, 'center', 600);
+    }
+  }
+  // drawing on the map: the ring the next click makes
+  if (m && m.kind === 'asp' && S.hover && (m.op === 'radius' || m.op === 'shelf' || (m.op === 'mil' && m.c))) {
+    const c = m.op === 'mil' ? m.c : m.op === 'shelf' ? S.byId[m.ap] : IC.aspVol(S, m.vol);
+    if (c) {
+      const r = U.dist(c, S.hover), col = m.op === 'mil' ? IC.ASP_CLS[m.cls || 'X'].col : '205,110,235';
+      ctx.setLineDash([6 * px, 4 * px]); ctx.lineWidth = 2 * px; ctx.strokeStyle = `rgba(${col},0.9)`;
+      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      text(ctx, `${Math.round(r / 10)} km`, S.hover.x, S.hover.y - 12 * px, px, `rgb(${col})`, 10, 'center', 700);
     }
   }
   // the selected airport's arrival and departure lanes, with arrows the way they are flown
