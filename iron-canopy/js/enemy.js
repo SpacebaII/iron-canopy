@@ -532,7 +532,7 @@ function setWeights(S, E, act) {
     out[k] = w;
   }
   // everything over its share: the one that has taken least
-  if (!Object.values(out).some(w => w > 0)) { const k = Object.keys(IC.ESETS).sort((a, b) => share(a) - share(b))[0]; out[k] = 1; }
+  if (!Object.values(out).some(w => w > 0)) { const k = Object.keys(IC.ESETS).filter(k => M[k] > 0).sort((a, b) => share(a) - share(b))[0]; out[k] = 1; }
   return out;
 }
 /* how many of our batteries the enemy knows cover a point */
@@ -701,13 +701,14 @@ function mixFor(S, E, kind, obj) {
     const how = E.shock.how, via = how === 'axis' ? { via: 1 } : {};
     if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 3, -600); }
     else add('dcy', 4, -300);
-    add('drones', 4, -300, via); add('cm', share(cms), 0, via); add('bal', share(bal), 0); add('mrbm', 1, 0); add('jam', 2, 0, via);
-    if (how === 'granted') add('low', 1, 0);
-    for (const t of more) {
-      const x = { obj: t, set: t.set }, dm = droneHours(S, t) <= 5;
-      add('cm', share(cms), how === 'soak' ? 0 : U.rand(-120, 120), Object.assign({}, x, via)); add('bal', share(bal), 0, x);
+    // the other targets first: launchers and a site's missiles run out, and the main target should not take them all
+    for (const t of more.concat([null])) {
+      const x = t ? { obj: t, set: t.set } : {}, dm = droneHours(S, t || obj) <= 5;
+      add('cm', share(cms), how === 'soak' || !t ? 0 : U.rand(-120, 120), Object.assign({}, x, via)); add('bal', share(bal), 0, x);
       if (dm) add('drones', 4, -300, Object.assign({}, x, via));
     }
+    add('mrbm', 1, 0); add('jam', 2, 0, via);
+    if (how === 'granted') add('low', 1, 0);
     // something taken for granted comes with a small raid on the main base first, to pull our eyes there
     const mb = IC.mainBase(S);
     if (how === 'granted' && mb) add('drones', 4, -1500, { obj: { x: mb.x, y: mb.y, ref: mb, name: mb.name, set: 'airbase' }, set: 'airbase' });
