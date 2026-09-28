@@ -1404,10 +1404,21 @@ test('units: the new short-range systems shoot down a drone swarm on the Test ra
   }
 });
 test('units: the mobile medium-range launcher shoots down strike aircraft, then moves', () => {
-  const r = rangeTrial('mrmob', 'str', 4, 150);
-  assert(r.sys.kills >= 1, `it shot down ${r.sys.kills} of 4 strike aircraft`);
-  assert(r.S.logs.some(l => l.tag === 'SCOOT'), 'it never moved after firing');
-  assert(r.moved > 10, `it is ${U.km(r.moved)} from where it started`);
+  const S = range(), T = S.range.target;
+  const u = IC.rangeAddUnit(S, 'mrmob', T.x + 20, T.y), x0 = u.x, y0 = u.y;
+  IC.rangeSpawn(S, { what: 'str', n: 4, brg: 90, km: 150, alt: '' });
+  // once it has fired, the enemy has found it (in a real raid its radar and launch smoke give it away)
+  let far = 0, told = false;
+  for (let i = 0; i < 3000 * 4; i++) {
+    IC.step(S, 0.25);
+    if (u.lastFired && !told) { IC.enemyLearn(S, u, 'radar'); told = true; }
+    far = Math.max(far, U.dxy(u.x, u.y, x0, y0));
+    if (far > 20 && u.state === 'ready' && S.threats.every(t => t.dead || t.mission === 'rtb')) break;
+  }
+  const sys = IC.rangeStats(S).sys.find(x => x.sys === 'mrmob') || { kills: 0 };
+  assert(sys.kills >= 1, `it shot down ${sys.kills} of 4 strike aircraft`);
+  assert(S.logs.some(l => l.tag === 'SCOOT'), 'it never moved after firing');
+  assert(far > 20, `it went at most ${U.km(far)} from where it started`);
 });
 test('units: a command post lets a battery with its radar silent fire on another radar\'s track', () => {
   // no IADS research: without a link a battery fires only on its own radar's track
