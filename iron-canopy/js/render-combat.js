@@ -114,13 +114,13 @@ const GLYPH = {
   // one short barrel and the airburst it throws
   dgun(g) { g.beginPath(); g.arc(-2, 3, 3, Math.PI, 0); g.closePath(); g.fill(); g.lineWidth = 1.5; L(g, [-1, 1, 3, -4]); g.lineWidth = 1; for (const [x, y] of [[5.5, -6.5], [3.5, -7.5], [6.5, -4]]) { g.beginPath(); g.arc(x, y, 0.8, 0, 7); g.fill(); } },
   // a rack of small interceptor drones
-  idl(g) { for (const [x, y] of [[-3.5, -2.5], [3.5, -2.5], [0, 3]]) { g.beginPath(); g.moveTo(x, y - 2.8); g.lineTo(x + 3, y + 2); g.lineTo(x, y + 0.9); g.lineTo(x - 3, y + 2); g.closePath(); g.fill(); } L(g, [-6, 6.5, 6, 6.5]); },
+  idl(g) { for (const [x, y] of [[-3.3, -0.5], [3.3, -0.5], [0, 4]]) { g.beginPath(); g.moveTo(x, y - 2.4); g.lineTo(x + 2.6, y + 1.7); g.lineTo(x, y + 0.8); g.lineTo(x - 2.6, y + 1.7); g.closePath(); g.fill(); } L(g, [-6.5, 7, 6.5, 7]); },
   // a missile on a truck, with the arrow of a unit that moves after it fires
-  mrmob(g) { missile(g, -6, 3.5, 11, -0.35, 1.1); L(g, [-7, 5.5, 5, 5.5]); g.lineWidth = 1.3; L(g, [5.5, -6, 8.5, -6]); L(g, [7, -7.5, 8.5, -6, 7, -4.5]); },
+  mrmob(g) { missile(g, -6.5, 2, 11, -0.55, 1.1); L(g, [-8, 4, 3, 4]); g.lineWidth = 1.3; L(g, [2.5, 6.5, 8, 6.5]); L(g, [6, 4.8, 8, 6.5, 6, 8.2]); },
   // the command post: a flag, with datalink lines to the batteries it links
   cp(g) { L(g, [-5, 5, -5, -5]); g.beginPath(); g.moveTo(-5, -5); g.lineTo(1, -3); g.lineTo(-5, -1); g.closePath(); g.fill(); g.setLineDash([1.4, 1.1]); L(g, [-1, 3, 7, -1]); L(g, [-1, 3, 7, 5]); g.setLineDash([]); for (const y of [-1, 5]) { g.beginPath(); g.arc(7.5, y, 1.1, 0, 7); g.fill(); } },
   // a small laser turret: the big one's diamond, shorter beam
-  mlaser(g) { g.beginPath(); g.moveTo(-4, 2.5); g.lineTo(-1.5, 0); g.lineTo(-4, -2.5); g.lineTo(-6.5, 0); g.closePath(); g.fill(); g.lineWidth = 1.5; L(g, [-1.5, 0, 5, -4.5]); L(g, [-6, 5, 2, 5]); }
+  mlaser(g) { g.beginPath(); g.moveTo(-4.5, 4); g.lineTo(-2, 1.5); g.lineTo(-4.5, -1); g.lineTo(-7, 1.5); g.closePath(); g.fill(); g.lineWidth = 0.9; L(g, [-2, 1.5, 4, -3.5]); L(g, [-2, 1.9, 4.2, -3.1]); g.lineWidth = 1; for (const a of [0, 1.6, 3.2, 4.8]) L(g, [4 + Math.cos(a) * 1.3, -3.5 + Math.sin(a) * 1.3, 4 + Math.cos(a) * 3, -3.5 + Math.sin(a) * 3]); L(g, [-7, 6.5, 0, 6.5]); }
 };
 const ROLE_GLYPH = { search: 'lr3d', fc: 'cbr', passive: 'esm', sr: 'shorad', mr: 'mrsam', lr: 'lrsam', bmd: 'hatd', gun: 'spaag', ew: 'gnss', strike: 'mlrs', logi: 'depot' };
 

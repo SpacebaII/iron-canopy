@@ -1289,6 +1289,150 @@ test('test range: a raid against a defence reports shots, kills, leakers and the
   assert(IC.rangeStats(S).launched === before, 'the replay did not send the same threats');
 });
 
+/* ---------- magazines, reloads, helicopter resupply, new units ---------- */
+test('magazines: a long-range battery fires about 16, pauses, then reloads launcher by launcher from site stock and keeps firing', () => {
+  const S = range(), T = S.range.target;
+  S.tech.done.delete('a_pac3');   // long-range rounds only
+  const u = IC.rangeAddUnit(S, 'lrsam', T.x - 50, T.y), m = IC.magSync(u, u.mags[0]);
+  assert(m.max === 16 && m.ln === 4 && m.store === 16, `the battery has ${m.max} ready on ${m.ln} launchers and ${m.store} on site`);
+  const shots = [];
+  IC.on((S2, type, d) => { if (S2 === S && type === 'launch' && d.u === u) shots.push(S.time); });
+  IC.rangeSpawn(S, { what: 'jdr', n: 40, brg: 90, km: 150, alt: '' });
+  let reloading = '', partial = false;
+  runRange(S, 1500, () => {
+    if (/^Reloading launcher \d of 4: ready in/.test(u.why)) reloading = reloading || u.why;
+    IC.magSync(u, m); if (m.l.some(n => n === 0) && m.l.some(n => n === 4)) partial = true;
+    return false;
+  });
+  const gap = shots.findIndex((t, i) => i && t - shots[i - 1] > 60);
+  assert(gap >= 14 && gap <= 16, `${gap < 0 ? shots.length : gap} shots before the first pause, not about 16`);
+  assert(partial, 'the launchers never held different loads: they emptied together');
+  assert(reloading, 'while every launcher was empty the battery never said which launcher it was reloading');
+  assert(shots.length >= gap + 8, `only ${shots.length - gap} more shots after the pause`);
+  assert(m.store <= 16 - (shots.length - 16), `site stock did not go down as launchers reloaded (${m.store} left after ${shots.length} shots)`);
+  for (let i = gap + 1; i < shots.length; i++) if (shots[i] - shots[i - 1] > 60) assert(shots[i] - shots[i - 1] >= 100, 'a launcher reloaded faster than a launcher reload takes');
+});
+/* a battery with 2 missiles left and nothing on site, 30-50 km from the Central Depot, a helicopter pad by the depot */
+function heliGame() {
+  const S = supplyGame(); sky(S, 'clear');
+  const dep = IC.depots(S).find(d => d.central);
+  const pad = IC.findSpot(S, 'heliport', dep.x, dep.y, 40, 120); IC.makeUnit(S, 'heliport', pad.x, pad.y, { instant: true });
+  const spot = IC.findSpot(S, 'shorad', dep.x, dep.y, 300, 500);
+  const u = IC.makeUnit(S, 'shorad', spot.x, spot.y, { instant: true }), m = u.mags[0];
+  m.mag = 2; m.store = 0;
+  return { S, dep, u, m };
+}
+test('supply: with Keep stocked, a battery low on stock behind a cut road is resupplied by helicopter without the player doing anything', () => {
+  const { S, dep, u, m } = heliGame();
+  assert(S.supply.auto, 'Keep stocked is off');
+  // crater the roads the lorries would take, and then the detours, until the way in is cut or long
+  let drive = IC.driveTime(S, dep, u);
+  for (let k = 0; k < 6 && !drive.cut && drive.t <= IC.SUPPLY.heliSlow; k++) {
+    const r = IC.route(dep.x, dep.y, u.x, u.y, true).slice(-8);
+    for (const e of S.world.edges) if (e.pts.some(p => r.some(q => U.dxy(p.x, p.y, q.x, q.y) < 3))) { e.cut = true; e.cond = 0.2; e.cutName = `Road cut near ${u.name}`; }
+    IC.roadsChanged(S);
+    drive = IC.driveTime(S, dep, u);
+  }
+  assert(drive.cut || drive.t > IC.SUPPLY.heliSlow, `the lorries are not held up (${U.dur(drive.t)})`);
+  let heli = null, truck = null, t = 0;
+  const m0 = m.mag + m.store;
+  while (t < 2 * 3600 && m.mag + m.store <= m0) {
+    IC.step(S, 0.5); t += 0.5;
+    for (const j of S.jobs) if (j.mag === m) { if (j.mode === 'heli') heli = heli || j; else truck = truck || j; }
+  }
+  assert(heli && !truck, `no helicopter was called (${truck ? 'a convoy was sent instead' : 'nothing was sent'})`);
+  assert(m.mag + m.store > m0, `nothing arrived in ${U.dur(t)}`);
+  assert(t < 3600, `the helicopter took ${U.dur(t)}`);
+  assert(S.logs.some(l => l.tag === 'HELI' && /Called by Keep stocked/.test(l.msg)), 'the log does not say Keep stocked called it');
+});
+test('supply: "Resupply by helicopter" says why not when weather grounds the helicopters', () => {
+  const { S, u } = heliGame();
+  const P = IC.heliPlan(S, u);
+  assert(!P.why && P.r && P.src && P.eta > 0 && P.cost > 0 && P.loads[0].qty > 0, `in clear weather there is no plan: ${P.why}`);
+  sky(S, 'fog');
+  const F = IC.heliPlan(S, u);
+  assert(/Fog grounds the helicopters/.test(F.why) && /Lorries still drive/.test(F.why), `the reason is "${F.why}"`);
+  assert(!IC.heliResupply(S, u, true), 'a helicopter took off in fog');
+  assert(S.logs[0].tag === 'HELI' && S.logs[0].msg.includes(F.why), 'pressing the button did not say why');
+  sky(S, 'clear');
+  for (const r of S.roster) if (r.kind === 'heli') r.st = 'lost';
+  assert(/No transport helicopter/.test(IC.heliPlan(S, u).why), `without helicopters: "${IC.heliPlan(S, u).why}"`);
+});
+test('supply: one helicopter sortie brings loads to two batteries near each other', () => {
+  const { S, u, m } = heliGame();
+  const p = IC.findSpot(S, 'shorad', u.x, u.y, 40, 150), v = IC.makeUnit(S, 'shorad', p.x, p.y, { instant: true });
+  v.mags[0].mag = 4; v.mags[0].store = 0; m.mag = 12; m.store = 10;
+  assert(IC.heliResupply(S, u, true), IC.heliPlan(S, u).why);
+  const hj = S.jobs.filter(j => j.mode === 'heli');
+  assert(hj.length >= 2 && hj.every(j => j.air === hj[0].air) && hj.some(j => j.to === u) && hj.some(j => j.to === v), `the sortie carries loads for ${hj.map(j => j.to.name).join(', ')}`);
+  let t = 0;
+  while (t < 2 * 3600 && !(m.store > 10 && v.mags[0].store > 0)) { IC.step(S, 0.5); t += 0.5; }
+  assert(m.store > 10 && v.mags[0].store > 0, `after ${U.dur(t)}: ${m.store} and ${v.mags[0].store} on site`);
+});
+const NEW_UNITS = ['vshorad', 'dgun', 'idl', 'mrmob', 'cp', 'mlaser', 'pcl'];
+test('units: every new unit type can be bought, placed, and sets up', () => {
+  const S = supplyGame(); S.budget = 5000; S.tech.done.add('a_laser');
+  const c = IC.cap(S), placed = [];
+  for (const type of NEW_UNITS) {
+    const d = IC.UNITS[type];
+    assert(d.name && d.short && d.role && d.desc && IC.fullName(d).includes('·'), `${type} has no name, code or role`);
+    assert(!IC.buyBlock(S, type), `${type}: ${IC.buyBlock(S, type)}`);
+    const p = IC.findSpot(S, type, c.x, c.y, 250, 700), u = IC.deploy(S, type, p.x, p.y);
+    assert(u, `${type} could not be placed`);
+    placed.push(u);
+  }
+  run(S, 1);
+  const late = placed.filter(u => u.state !== 'ready');
+  assert(!late.length, `not ready after an hour: ${late.map(u => `${u.name} ${u.state}`).join(', ')}`);
+});
+/* one new unit against a raid on the Test range, 2 km in front of the target */
+function rangeTrial(type, what, n, km, pre, o) {
+  const S = range(), T = S.range.target;
+  if (pre) pre(S, T);
+  const u = IC.rangeAddUnit(S, type, T.x + 20, T.y, o), x0 = u.x, y0 = u.y;
+  IC.rangeSpawn(S, { what, n, brg: 90, km, alt: '' });
+  runRange(S, 2400, S => S.range.pending.length === 0 && S.threats.every(t => t.dead || t.mission === 'rtb') && S.time - S.range.t0 > 120);
+  const st = IC.rangeStats(S);
+  return { S, u, st, sys: st.sys.find(x => x.sys === type) || { shots: 0, kills: 0 }, moved: U.dxy(u.x, u.y, x0, y0) };
+}
+test('units: the new short-range systems shoot down a drone swarm on the Test range', () => {
+  for (const [type, n] of [['vshorad', 10], ['dgun', 10], ['mlaser', 10], ['idl', 20]]) {
+    const r = rangeTrial(type, 'owa', n, type === 'idl' ? 40 : 20);
+    assert(r.sys.kills >= n / 2, `${type} shot down ${r.sys.kills} of ${n} drones`);
+    if (type === 'idl') assert(r.st.ours / r.sys.kills < 0.1, `interceptor drones cost ${U.money(r.st.ours / r.sys.kills)} a kill`);
+    if (type === 'dgun' || type === 'mlaser') assert(r.st.ours === 0, `${type} spent missiles`);
+  }
+});
+test('units: the mobile medium-range launcher shoots down strike aircraft, then moves', () => {
+  const r = rangeTrial('mrmob', 'str', 4, 150);
+  assert(r.sys.kills >= 1, `it shot down ${r.sys.kills} of 4 strike aircraft`);
+  assert(r.S.logs.some(l => l.tag === 'SCOOT'), 'it never moved after firing');
+  assert(r.moved > 10, `it is ${U.km(r.moved)} from where it started`);
+});
+test('units: a command post lets a battery with its radar silent fire on another radar\'s track', () => {
+  // no IADS research: without a link a battery fires only on its own radar's track
+  const trial = withCp => rangeTrial('shorad', 'owa', 8, 40, (S, T) => {
+    S.tech.done.delete('a_remote');
+    IC.rangeAddUnit(S, 'mr3d', T.x - 40, T.y + 30);
+    if (withCp) IC.rangeAddUnit(S, 'cp', T.x - 200, T.y - 100);
+  }, { emcon: 'off' });
+  const off = trial(false);
+  assert(off.sys.shots === 0, 'the silent battery fired without a link');
+  const on = trial(true);
+  assert(on.sys.kills >= 3, `with the command post it shot down ${on.sys.kills} of 8`);
+  assert(/Linking 1 battery/.test(on.S.units.find(u => u.type === 'cp').why), 'the command post does not say what it links');
+});
+test('units: the passive radar sees an aircraft 150 km out without transmitting, and not a cruise missile low at 70 km', () => {
+  const S = range(), T = S.range.target;
+  const p = IC.rangeAddUnit(S, 'pcl', T.x, T.y);
+  assert(!p.emitter, 'the passive radar transmits');
+  const jet = IC.spawnThreat(S, 'str', T.x + 1500, T.y, { mission: 'patrol', st: { x: T.x + 1500, y: T.y }, route: [], home: T, noFire: true });
+  const cm = IC.spawnThreat(S, 'lacm', T.x + 700, T.y, { route: [{ x: T.x + 700, y: T.y + 3000 }], aim: T });
+  runRange(S, 30);
+  assert(jet.det, 'the aircraft was not detected');
+  assert(!cm.det, 'a cruise missile at 40 m, 70 km out, was detected');
+});
+
 test('career: Act I runs with airline traffic', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   run(S, 8, player);

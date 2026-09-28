@@ -339,7 +339,7 @@ IC.heliResupply = function (S, u, manual) {
   const jobs = [];
   for (const x of P.stops) for (const l of P.loads.filter(l => l.u === x)) {
     P.src.inv[l.m.mun] -= l.qty; l.m.inc += l.qty;
-    const j = newJob(S, { kind: 'unit', mode: 'heli', mun: l.m.mun, qty: l.qty, qty0: l.qty, from: P.src, to: x, mag: l.m });
+    const j = newJob(S, { kind: 'unit', mode: 'heli', mun: l.m.mun, qty: l.qty, qty0: l.qty, from: P.src, to: x, mag: l.m, short: `${l.qty} ${IC.MUN[l.m.mun].short} → ${x.name}` });
     if (jobs.length) { j.prev = jobs[jobs.length - 1]; j.prev.next = j; }
     jobs.push(j);
   }
@@ -573,16 +573,17 @@ function truckBack(S, v) {
 }
 /* what a unit's panel says about one magazine's next load */
 IC.nextLoad = function (S, u, m) {
-  const j = S.jobs.find(x => x.state === 'active' && x.mag === m);
-  if (j) {
-    const t = IC.jobEta(S, j), v = j.v;
+  const js = S.jobs.filter(x => x.state === 'active' && x.mag === m).map(x => ({ x, t: IC.jobEta(S, x) })).sort((a, b) => a.t - b.t);
+  if (js.length) {
+    const j = js[0].x, t = js[0].t, v = j.v;
     const how = j.mode === 'heli' ? `by helicopter${j.air && j.air.name ? ` (${j.air.name})` : ''} from ${j.from.name}` : v && v.state === 'toSource' ? `from ${j.from.name} (${v.name} is on its way to load)` : v && v.state === 'load' ? `from ${j.from.name} (loading)` : `from ${j.from.name}`;
-    return { cls: v && v.cut ? 'amber' : 'ok', text: `${IC.munWords(m.mun, j.qty)} coming ${how}: here in about ${U.dur(t)}.${v && v.cut ? ` Slowed by a detour: ${v.cut} (+${U.dur(v.lost)}).` : ''}`, eta: t };
+    const more = js.length > 1 ? ` ${js.length - 1} more load${js.length > 2 ? 's' : ''} after it.` : '';
+    return { cls: v && v.cut ? 'amber' : 'ok', text: `${IC.munWords(m.mun, j.qty)} coming ${how}: here in about ${U.dur(t)}.${v && v.cut ? ` Slowed by a detour: ${v.cut} (+${U.dur(v.lost)}).` : ''}${more}`, eta: t };
   }
   const deficit = m.storeMax + m.max - m.store - m.mag;
   if (deficit <= 0) return { cls: 'ok', text: 'Full.' };
   if (m.why) return { cls: m.mag + m.store === 0 ? 'hostile' : 'amber', text: m.why };
-  return { cls: 'ok', text: `Topped up when the reserve falls to half${u.pri ? '' : ' (at once if it is a priority)'}.` };
+  return { cls: 'ok', text: `Lorries top it up when the stock on site falls to half${u.pri ? '' : ' (at once if it is a priority)'}.` };
 };
 function fill(S, u) { let a = 0, b = 0; for (const m of IC.activeMags(S, u)) { a += m.mag + m.store + m.inc; b += m.max + m.storeMax; } return b ? a / b : 1; }
 IC.fill = fill;
