@@ -4,8 +4,9 @@
    Usage:
      node tools/shot.js <name> [setup script] [--wait=ms]
    The setup script runs in the page after it loads, as the body of an async function, e.g.
-     node tools/shot.js capital "IC.begin('story'); await wait(2500); IC.S.paused = true; const ap = IC.S.byId[IC.S.story.cap]; IC.cam.fly = null; IC.cam.z = 12; IC.centerOn(ap.x, ap.y);"
-   Saves shots/<name>.png. `wait(ms)` is available inside the script. */
+     node tools/shot.js capital "await IC.begin('story'); IC.S.paused = true; const ap = IC.S.byId[IC.S.story.cap]; IC.cam.fly = null; IC.cam.z = 12; IC.centerOn(ap.x, ap.y);"
+   Saves shots/<name>.png. `wait(ms)` is available inside the script; it also waits while a game is being built, and
+   IC.begin(mode) returns a promise kept when the game is ready. */
 const path = require('path');
 const fs = require('fs');
 let chromium;
@@ -35,7 +36,7 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
   await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
   await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
-  await page.evaluate(`(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)); ${setup} })()`);
+  await page.evaluate(`(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const wait = async ms => { await sleep(ms); while (IC.loading && IC.loading()) await sleep(20); }; ${setup} })()`);
   await page.waitForTimeout(settle);
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });
   const out = path.resolve(__dirname, `../shots/${name}.png`);

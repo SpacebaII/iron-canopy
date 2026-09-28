@@ -308,10 +308,11 @@ function onAct(e) {
   if (!b || b.disabled) return;
   if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
-  if (a && a.startsWith('range') && a !== 'rangeForm' && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
+  if (a && a.startsWith('range') && a !== 'rangeForm' && S && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   IC.sfx && IC.sfx.init();
-  if (!S) return;
-  const sel = S.sel && S.sel.ref;
+  // before the first region is built only the start screen answers (IC.begin waits for the region)
+  if (!S && a !== 'begin' && a !== 'lesson' && a !== 'stPage') return;
+  const sel = S && S.sel && S.sel.ref;
   const ui = IC.ui;
   switch (a) {
     case 'begin': IC.begin(v); return;
@@ -603,14 +604,14 @@ mini.addEventListener('pointermove', e => { if (e.buttons) miniMove(e); });
 
 const keys = new Set();
 window.addEventListener('keydown', e => {
-  if (!S) return;
   if (e.target.closest && e.target.closest('input,textarea')) return;
-  // the start screen: Enter starts a Career, Esc goes back a page
+  // the start screen: Enter starts a Career, Esc goes back a page (also while the first region is still being built)
   if (!$('start').hidden) {
     if (e.key === 'Escape' && IC.ui.stPage && IC.ui.stPage !== 'main') IC.ui.startPage('main');
     else if (e.key === 'Enter' && (!IC.ui.stPage || IC.ui.stPage === 'main') && !(e.target.closest && e.target.closest('button'))) IC.begin('story');
     return;
   }
+  if (!S) return;
   if (IC.ui.menu && e.key !== 'Escape') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { const ap = (S.mode2 && S.mode2.ap) || selAp(); if (ap) { e.preventDefault(); IC.sfx.ui(IC.bldUndo(S, ap) ? 'ok' : 'err'); IC.ui.refresh(true); return; } }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -682,19 +683,40 @@ function describe(W) {
   return `The ${W.full.H} is landlocked between the hostile ${W.full.A} to the ${dirA} and the ${W.full.B} to the ${dirB}, with ${W.names.C} and ${W.names.D} neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
 }
 function compass(W, k) { const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2; return ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
-function generate(seed, mode, lesson) {
-  S = IC.S = IC.newGame({ seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 });
+/* while a game is built the page draws between stages (state.js); IC.onLoadProgress(stage, share done) says how far it
+   has got: here in the start screen's line, and a loading screen can put its own in place */
+const STAGE_WORDS = { relief: 'Raising the hills', rivers: 'Running the rivers', cities: 'Founding the cities', roads: 'Laying the roads and railways',
+  bridges: 'Bridging the rivers', towns: 'Building the towns', junctions: 'Joining the roads', routing: 'Mapping the routes', airports: 'Laying out the airports',
+  forces: 'Placing the forces', traffic: 'Setting the traffic going', economy: 'Setting up the budget', done: 'Ready' };
+IC.STAGE_WORDS = STAGE_WORDS;
+IC.onLoadProgress = IC.onLoadProgress || ((stage, f) => { $('startLead').textContent = `${STAGE_WORDS[stage] || 'Preparing'}… ${Math.round(f * 100)}%`; });
+let loading = 0, building = Promise.resolve(), nth = 0;
+IC.loading = () => loading > 0;
+function generate(seed, mode, lesson) { return (building = build(seed, mode, lesson)); }
+/* the latest build wins: one started later (a new map, another mode) makes an earlier one's game go unused, and it
+   resolves to null */
+async function build(seed, mode, lesson) {
+  const me = ++nth;
+  loading++;
+  let S2;
+  try { S2 = await IC.newGameAsync({ seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 }, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
+  finally { loading--; }
+  if (me !== nth) return null;
+  S = IC.S = S2;
   IC.resetMini();
   IC.ui.bind(S);
   resize();
   if (S.range) { IC.cam.z = IC.frameZoom(0, 0, 18000, 13500); IC.centerOn(S.world.cx, S.world.cy); } else IC.frame(...IC.homeBox(S.world));
   $('seed').textContent = String(seed);
   $('startLead').textContent = S.range ? 'The test range: a flat, empty plane.' : describe(S.world);
+  return S;
 }
 IC.reroll = function () {
   $('startLead').textContent = 'Generating a new region…';
   setTimeout(() => generate((Math.random() * 1e9) >>> 0, 'campaign'), 30);
 };
+/* the start screen's game is a fresh Quick war on its region: starting one uses it as it is instead of building it again */
+const fresh = (mode, seed) => mode === 'campaign' && S && S.mode === 'campaign' && S.world.seed === seed && !S.started;
 IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
@@ -712,8 +734,13 @@ IC.begin = function (mode, lesson) {
     }
     IC.ui.refresh(true);
   };
-  $('startLead').textContent = 'Preparing…';
-  setTimeout(() => { generate(mode === 'academy' ? 20260926 : S.seed, mode, lesson); go(); }, 30);
+  // (a promise, kept when the game is ready: scripts and tools await it; a region still being built is finished first)
+  return building.catch(() => null).then(() => {
+    const seed = mode === 'academy' ? 20260926 : S.seed;
+    if (fresh(mode, seed)) { S.started = true; go(); return S; }
+    $('startLead').textContent = 'Preparing…';
+    return new Promise(ok => setTimeout(() => generate(seed, mode, lesson).then(S2 => { if (S2) { S.started = true; go(); } ok(S2); }), 30));
+  });
 };
 
 IC.initRender(cv);
@@ -724,6 +751,8 @@ IC.ui.startPage('main');
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
+  // nothing to draw until the first game is built, and the old one is left alone while the next is
+  if (!S || loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;

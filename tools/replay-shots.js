@@ -15,7 +15,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const seeded = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 async function war(hour) {
   IC.S.seed = 4242; Math.random = seeded(7);
-  IC.begin('sandbox'); await wait(2600);
+  await IC.begin('sandbox');
   const S = IC.S; S.paused = true;
   IC.ui.cineShown = 1e9; for (const id of ['cine', 'comms']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
   S.time = Math.floor(S.time / 86400) * 86400 + hour * 3600;
@@ -84,8 +84,8 @@ const SCENES = {
     unit(S, 'lrsam', st.x + 6, st.y - 8);
     steps(S, 30); S.paused = true;
     IC.cam.fly = null; IC.cam.z = 45; IC.centerOn(st.x + 2, st.y - 3); await wait(2500);`,
-  gallery: `IC.begin('range'); await wait(1500); IC.replayGallery(IC.S); await wait(4000);`,
-  'gallery-above': `IC.begin('range'); await wait(1500); IC.replayGallery(IC.S); await wait(3000); document.querySelector('[data-rp=above]').click(); await wait(1500);`,
+  gallery: `await IC.begin('range'); IC.replayGallery(IC.S); await wait(4000);`,
+  'gallery-above': `await IC.begin('range'); IC.replayGallery(IC.S); await wait(3000); document.querySelector('[data-rp=above]').click(); await wait(1500);`,
   // frame times with the replay open on a raid: 30+ movers with trails and labels, playing at 2×
   perf: `
     const S = await war(12); const c = IC.cap(S);

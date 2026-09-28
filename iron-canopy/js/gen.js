@@ -11,7 +11,11 @@ const SP = 1.45;     // spacing between towns: with ten times the land and three
 IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
 IC.FOREST_T = 0.56;
 
-IC.generate = function (seed) {
+/* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between
+   them and show how far it has got (IC.generateSteps). IC.generate runs them all at once */
+IC.generate = seed => { const g = worldSteps(seed); for (;;) { const r = g.next(); if (r.done) return r.value; } };
+IC.generateSteps = seed => worldSteps(seed);
+function* worldSteps(seed) {
   let R = IC.makeRng(seed);
   const WW = IC.WW, WH = IC.WH;
   const NOX = R() * 900, NOY = R() * 900;
@@ -114,6 +118,7 @@ IC.generate = function (seed) {
   for (const f of W.fronts) for (let i = 0; i + 1 < f.pts.length; i++) hsegs.push([f.pts[i].x, f.pts[i].y, f.pts[i + 1].x, f.pts[i + 1].y]);
   W.hostileBorderDist = (x, y) => { let m = 1e9; for (const s of hsegs) m = Math.min(m, U.segDist(x, y, s[0], s[1], s[2], s[3])); return m; };
 
+  yield 'relief';
   /* ---------- relief ---------- */
   const ridges = [];
   const arc = (a0, a1, off, am, w, n) => {
@@ -170,6 +175,7 @@ IC.generate = function (seed) {
   };
   W.slopeAt = (x, y) => Math.hypot(W.hAt(x + 20, y) - W.hAt(x - 20, y), W.hAt(x, y + 20) - W.hAt(x, y - 20));
 
+  yield 'rivers';
   /* ---------- rivers and lakes ---------- */
   let bl = Float32Array.from(hg);
   for (let pass = 0; pass < 3; pass++) bl = blur5(bl, GW, GH);
@@ -229,14 +235,17 @@ IC.generate = function (seed) {
     if (!W.inHome(x, y) || W.hAt(x, y) > 0.35 || W.depthOut(x, y) > -375) continue;
     W.lakes.push({ x, y, rx: R.range(110, 240), ry: R.range(60, 120), rot: R.range(0, 3) });
   }
-  // the terrain asks this for every field it draws: a box test first, the rotation worked out once per lake
-  const lk = W.lakes.map(l => ({ l, c: Math.cos(-l.rot), s: Math.sin(-l.rot), R: Math.max(l.rx, l.ry) }));
+  // the terrain asks this for every field it draws: a box test first, the rotation worked out once per lake. The lakes
+  // are kept in plain number arrays: with objects, the browser's compiler threw its code for this away some twenty
+  // thousand times while drawing the map (it found no type feedback for the property reads), costing seconds
+  const NL = W.lakes.length, LK = new Float64Array(NL * 7);
+  W.lakes.forEach((l, i) => LK.set([l.x, l.y, Math.cos(-l.rot), Math.sin(-l.rot), Math.max(l.rx, l.ry), l.rx, l.ry], i * 7));
   W.inLake = (x, y) => {
-    for (const { l, c, s, R } of lk) {
-      const dx = x - l.x, dy = y - l.y;
+    for (let i = 0; i < NL * 7; i += 7) {
+      const dx = x - LK[i], dy = y - LK[i + 1], R = LK[i + 4];
       if (dx > R || dx < -R || dy > R || dy < -R) continue;
-      const X = dx * c - dy * s, Y = dx * s + dy * c;
-      if ((X / l.rx) ** 2 + (Y / l.ry) ** 2 < 1) return true;
+      const c = LK[i + 2], s = LK[i + 3], X = dx * c - dy * s, Y = dx * s + dy * c;
+      if ((X / LK[i + 5]) ** 2 + (Y / LK[i + 6]) ** 2 < 1) return true;
     }
     return false;
   };
@@ -265,6 +274,7 @@ IC.generate = function (seed) {
   };
   W.forestAt = (x, y) => W.forestD(x, y) > IC.FOREST_T;
 
+  yield 'cities';
   /* ---------- cities ---------- */
   const cand = [];
   for (let k = 0; k < 24000; k++) {
@@ -407,6 +417,7 @@ IC.generate = function (seed) {
   /* ---------- runway headings; the layouts themselves are built per game (airport.js) ---------- */
   for (const b of W.infra) if (b.kind === 'airbase' || b.kind === 'airport') b.rwyA = R.range(0, Math.PI);
 
+  yield 'roads';
   /* ---------- roads and railways (see buildNetwork below) ---------- */
   W.crossings = [];
   for (const k of ['C', 'D']) {
@@ -436,6 +447,7 @@ IC.generate = function (seed) {
     return pts;
   };
 
+  yield 'bridges';
   /* ---------- bridges where roads cross rivers ---------- */
   riverBridges(W);
 
@@ -553,10 +565,13 @@ IC.generate = function (seed) {
   // farmland rings every city too, right up to its edge: the built-up ground itself is W.builtAt (after the towns)
   for (const c of W.cities) ring(c, c.r * 3.6, (e, w) => Math.max(w, 0.9 * (1 - e / (c.r * 3.6)) + 0.2));
   const built = new Set(), BC = 2, bkey = (i, j) => i * 32768 + j;
+  // which cells of the farm grid have any built ground at all: most of the map has none, and the set is slow to ask
+  const builtC = new Uint8Array(FGW * FGH), BCK = FGC / BC;
+  const mayBuild = (x, y) => { const i = Math.floor(x / FGC), j = Math.floor(y / FGC); return i < 0 || j < 0 || i >= FGW || j >= FGH || builtC[j * FGW + i] === 1; };
   W.builtAt = (x, y) => built.has(bkey(Math.floor(x / BC), Math.floor(y / BC)));
   W.farmAt = (x, y) => {
     const h = W.hAt(x, y);
-    if (h > 0.68 || W.inLake(x, y) || built.has(bkey(Math.floor(x / BC), Math.floor(y / BC)))) return 0;
+    if (h > 0.68 || W.inLake(x, y) || (mayBuild(x, y) && built.has(bkey(Math.floor(x / BC), Math.floor(y / BC))))) return 0;
     const fx = U.clamp(x / FGC, 0, FGW - 1.001), fy = U.clamp(y / FGC, 0, FGH - 1.001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j;
     const a = farm[j * FGW + i], b = farm[j * FGW + i + 1], c = farm[(j + 1) * FGW + i], d = farm[(j + 1) * FGW + i + 1];
     if (a < 0 || b < 0 || c < 0 || d < 0) return 0;   // built up, no fields
@@ -564,14 +579,19 @@ IC.generate = function (seed) {
     // fields thin out up the hillsides
     return Math.min(1, Math.max(fw, h < 0.4 ? 0.3 : 0.12)) * U.clamp((0.68 - h) / 0.14, 0, 1);
   };
+  yield 'towns';
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
+  yield 'junctions';
   // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);
   // abroad the fields run up to the towns' blocks
   for (const t of W.cities) for (const b of t.blocks) {
     const e = Math.max(b.w, b.h) / 2 + 0.8;
-    for (let i = Math.floor((b.x - e) / BC); i <= Math.floor((b.x + e) / BC); i++) for (let j = Math.floor((b.y - e) / BC); j <= Math.floor((b.y + e) / BC); j++) built.add(bkey(i, j));
+    for (let i = Math.floor((b.x - e) / BC); i <= Math.floor((b.x + e) / BC); i++) for (let j = Math.floor((b.y - e) / BC); j <= Math.floor((b.y + e) / BC); j++) {
+      built.add(bkey(i, j));
+      const ci = Math.floor(i / BCK), cj = Math.floor(j / BCK); if (ci >= 0 && cj >= 0 && ci < FGW && cj < FGH) builtC[cj * FGW + ci] = 1;
+    }
   }
   junctions(W);
   // bounding boxes, so drawing and traffic can skip lines out of view
@@ -593,7 +613,7 @@ IC.generate = function (seed) {
   for (const c of W.cities.concat(W.foreign)) for (const l of c.streets) bbox(l);
 
   return W;
-};
+}
 
 /* bridges where roads cross rivers */
 function riverBridges(W) {
@@ -987,7 +1007,9 @@ function buildTowns(W, R, fbm) {
   // villages: houses along the roads through them
   for (const v of W.villages) {
     // a village the city has grown over is part of it now
-    if (!v.swallowed) for (const c of W.cities) if (U.dist(c, v) < c.r * 1.7 && c.blocks.some(b => U.dist(b, v) < v.r * 0.8)) v.swallowed = c.id;
+    // (the box test first: a block further than the reach along either axis is further than it in all)
+    const vr = v.r * 0.8;
+    if (!v.swallowed) for (const c of W.cities) if (U.dist(c, v) < c.r * 1.7 && c.blocks.some(b => Math.abs(b.x - v.x) < vr && Math.abs(b.y - v.y) < vr && U.dist(b, v) < vr)) v.swallowed = c.id;
     if (v.swallowed) { v.blocks = []; continue; }
     const segs = v.home ? segsNear(v.x, v.y, v.r * 1.3).filter(s => s[4] !== 'hw') : [];
     const n = Math.round(24 + v.pop * 2.2);
