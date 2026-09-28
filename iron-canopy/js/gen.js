@@ -460,7 +460,7 @@ IC.generate = function (seed) {
       const front = hostile && i < 4;
       // the towns and airports abroad lie a few hundred kilometres past the border, not out at the map's edge
       const p = radialPt(k, front ? 300 : 1050 * 1.5 * SP, front ? 800 : 2700 * 1.5 * SP, 700 * SP, W.foreign);
-      W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: W.placeName(), x: p.x, y: p.y, apt: i === 4 || i === 7 || (!hostile && (i === 0 || i === 3)), frontier: front, pop: front ? R.int(60, 180) : R.int(120, 600), r: front ? 55 : 70 });
+      W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: W.placeName(), x: p.x, y: p.y, apt: i === 4 || (!hostile && i === 0), frontier: front, pop: front ? R.int(60, 180) : R.int(120, 600), r: front ? 55 : 70 });
     }
   }
 

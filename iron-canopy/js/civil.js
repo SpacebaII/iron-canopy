@@ -10,8 +10,8 @@ IC.squawk = octal;
 IC.civilInit = function (S) {
   S.civT = 60; S.gaT = 120;
   // the sky is already busy when the game starts
-  for (let i = 0; i < 30; i++) scheduleFlight(S, Math.random());
-  for (let i = 0; i < 9; i++) scheduleGA(S, Math.random());
+  for (let i = 0; i < 20; i++) scheduleFlight(S, Math.random());
+  for (let i = 0; i < 7; i++) scheduleGA(S, Math.random());
 };
 /* ---------- airliners ---------- */
 function minBorderDist(a, b) {
@@ -125,14 +125,14 @@ function hostileNear(S, c) {
 
 IC.civil = function (S, dt) {
   const war = S.enemy && S.enemy.war;
-  // a region this size is busy: some fifty airliners crossing it in peacetime
-  const want = (S.airspace === 'closed' ? 10 : S.airspace === 'restricted' ? 20 : war ? 30 : 44) * (S.av ? 0.6 : 1);
+  // (flights stay longer over a larger country, so a few more at a time is about as many crossing an hour)
+  const want = (S.airspace === 'closed' ? 7 : S.airspace === 'restricted' ? 14 : war ? 21 : 30) * (S.av ? 0.6 : 1);
   const n = S.threats.filter(t => t.type === 'civ' && !t.dead && !t.tail).length;
   S.civT -= dt;
   if (S.civT <= 0) { S.civT = n < want ? U.rand(40, 120) : U.rand(200, 500); scheduleFlight(S); }
   S.gaT -= dt;
   const ga = S.threats.filter(t => t.type === 'ga' && !t.dead).length;
-  if (S.gaT <= 0) { S.gaT = ga < (war ? 3 : 11) ? U.rand(150, 400) : U.rand(600, 1200); scheduleGA(S); }
+  if (S.gaT <= 0) { S.gaT = ga < (war ? 2 : 8) ? U.rand(150, 400) : U.rand(600, 1200); scheduleGA(S); }
   // airspace closure: flights in our airspace divert out of it, by the nearest border crossing
   if (S.airspace === 'closed') for (const t of S.threats) if (t.d.civil && !t.dead && !t.hostileCiv && !t.diverted && IC.inHome(t.x, t.y)) { t.diverted = true; const xo = S.world.crossings.slice().sort((p, q) => U.dist(p, t) - U.dist(q, t))[0], out = xo ? xo.far : { x: 0, y: 0 }; t.dest = { x: out.x, y: out.y, name: 'diversion', edge: true }; t.route = [t.dest]; t.wps = [t.dest]; t.toApt = null; t.appr = false; t.plan = { a: { x: t.x, y: t.y }, b: t.dest, cs: t.cs, pts: [{ x: t.x, y: t.y }, t.dest] }; }
   S.alertT = (S.alertT || 0) - dt;

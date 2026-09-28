@@ -69,7 +69,8 @@ IC.avCareerStart = function (S, cap) {
   if (A.airlines.length) return;
   const flag = IC.avAddAirline(S, 'flag', cap);
   const near = ports.slice().sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
-  const add = (al, b) => IC.avAddRoute(S, al, cap, b, 'narrow', IC.avFleet(S, cap, b, 'narrow', 1), true);
+  // one aircraft each: the Career starts small, and traffic grows with the requests the player approves
+  const add = (al, b) => IC.avAddRoute(S, al, cap, b, 'narrow', 1, true);
   add(flag, near[0]);
   if (near[1]) add(flag, near[1]);
   const k = near[near.length > 2 ? 2 : 0].k, fr = IC.avAddAirline(S, 'foreign', cap, { country: k });
@@ -402,7 +403,7 @@ function makeRequest(S) {
   const existing = A.routes.find(r => r.al === al.id && r.a === a.id && JSON.stringify(r.b) === JSON.stringify(b.apt ? { apt: b.apt } : b));
   // long routes go to bigger aircraft where the airline has them
   if (type === 'narrow' && U.dist(a, endPt(S, b)) > 25000 && al.K.fleet.includes('wide')) type = 'wide';
-  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n: IC.avFleet(S, a, b, type, al.sat > 75 && Math.random() < 0.5 ? 2 : 1), t: S.time, exp: S.time + 6 * 3600, more: !!existing };
+  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n: al.sat > 75 && Math.random() < 0.5 ? 2 : 1, t: S.time, exp: S.time + 6 * 3600, more: !!existing };
   req.why = existing ? `wants another ${IC.ACTYPES[type].name.toLowerCase()} on ${routeName(S, existing)}` : `wants to open ${S.byId[a.id].name.replace(/ (International|Airport)$/, '')} – ${endPt(S, req.b).name.replace(/ (International|Airport)$/, '')}`;
   req.value = estValue(S, req);
   A.requests.push(req);
