@@ -1411,6 +1411,34 @@ test('air war: a tanker on its track extends a patrol', () => {
   assert(!a.dead && a.state !== 'rtb' && a.fuel > f0, `the fighter did not take fuel from the tanker (fuel ${Math.round(a.fuel)}, state ${a.state})`);
   assert(k.give < give0, 'the tanker gave nothing');
 });
+test('air war: a lost aircraft is replaced when a pilot is free, a damaged one comes back from repair', () => {
+  const S = quietWar();
+  const r = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready'), b = IC.baseOf(S, r.base);
+  const a = airborne(S, r, b.x + 300, b.y, { type: 'hold', x: b.x + 300, y: b.y });
+  const money = S.budget;
+  IC.airLostOne(S, a, 'a test');
+  assert(a.hp === 1 && r.back.length === 1 && S.budget < money, 'no replacement was ordered for the lost aircraft');
+  a.dmg = 1; IC.recallAir(S, a);
+  run(S, 1);
+  assert(!S.air.includes(a) && r.n === 0 && r.back.length === 2, `the damaged aircraft did not go into repair (n ${r.n}, ${r.back.length} coming back)`);
+  S.pilots.spare = 1;
+  run(S, IC.AIR_LOSS.replace / 3600 + 0.2);
+  assert(r.n === 2 && !r.back.length, `the flight is not back to strength (n ${r.n}, ${r.back.length} still to come)`);
+}, true);
+test('air war: a fighter escorts a helicopter and engages what comes for it', () => {
+  const S = quietWar();
+  const hr = S.roster.find(x => x.kind === 'heli'), fr = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready'), b = IC.baseOf(S, hr.base);
+  const h = airborne(S, hr, b.x, b.y, { type: 'hold', x: b.x, y: b.y }); h.route = [{ x: b.x + 2000, y: b.y }];
+  const f = airborne(S, fr, b.x - 200, b.y, { type: 'hold', x: b.x, y: b.y });
+  IC.escortAir(S, f, h);
+  run(S, 0.1);
+  assert(U.dist(f, h) < 80 && f.state === 'escort', `the fighter is not with the helicopter (${U.km(U.dist(f, h))}, ${f.state})`);
+  const e = IC.spawnThreat(S, 'ahe', h.x + 350, h.y + 50, { route: [{ x: h.x, y: h.y }], mission: 'strike', home: { x: h.x + 5000, y: h.y }, fromHostile: true });
+  IC.makeUnit(S, 'lr3d', h.x, h.y + 100, { instant: true, full: true }).emcon = 'on';
+  let fired = false;
+  for (let i = 0; i < 4 * 400 && !fired && !e.dead; i++) { IC.step(S, 0.25); if (e.held && e.aff !== 'H') IC.setAff(S, e, 'H', 'test'); fired = S.missiles.some(m => m.by === f && m.target === e); }
+  assert(fired || e.dead, 'the escort did not engage the attack helicopter');
+});
 test('air war: enemy aircraft fly in formation, break away when locked on, and go home short of fuel', () => {
   const S = range(), T = S.range.target;
   const op = { launched: 0 };

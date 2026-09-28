@@ -190,7 +190,8 @@ const TIER = { H: 0, S: 1, U: 2 };
 function timeToTarget(S, t) {
   if (t.aff === 'H' && !t.d.civil && (t.x1 != null || t.aim) && (t.d.cls !== 'air' || !t.home)) {
     const ax = t.x1 != null ? t.x1 : t.aim.x, ay = t.y1 != null ? t.y1 : t.aim.y;
-    return { t: IC.timeToImpact(t), to: IC.nearestPlace(S, ax, ay) };
+    const named = t.target && t.target.name && U.dxy(t.target.x, t.target.y, ax, ay) < 60 ? t.target.name : IC.bases(S).concat(IC.cities(S)).find(p => U.dxy(p.x, p.y, ax, ay) < 60);
+    return { t: IC.timeToImpact(t), to: typeof named === 'string' ? named : named ? named.name : IC.nearestPlace(S, ax, ay) };
   }
   const sp = Math.hypot(t.svx || 0, t.svy || 0);
   if (sp < 0.05) return { t: Infinity, to: '' };

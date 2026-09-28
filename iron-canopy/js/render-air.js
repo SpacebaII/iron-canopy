@@ -38,7 +38,7 @@ function groups(S, px) {
     const pad = 10 * px + 4, col = g.aff === 'H' ? '255,91,79' : g.aff === 'S' ? '255,154,60' : '242,209,74';
     ctx.strokeStyle = `rgba(${col},${on ? 0.85 : 0.35})`; ctx.lineWidth = (on ? 1.6 : 1) * px; ctx.setLineDash(on ? [] : [5 * px, 4 * px]);
     ctx.strokeRect(B.x0 - pad, B.y0 - pad, B.x1 - B.x0 + pad * 2, B.y1 - B.y0 + pad * 2); ctx.setLineDash([]);
-    if (IC.cam.z > 0.03 || on) label(`RAID ×${g.n}`, B.x0 - pad, B.y0 - pad - 4 * px, px, `rgb(${col})`, 9, 'left', 700);
+    if (IC.cam.z > 0.03 || on) label(`RAID ×${g.n}`, B.x0 - pad, B.y1 + pad + 11 * px, px, `rgb(${col})`, 9, 'left', 700);
   }
 }
 
@@ -108,6 +108,8 @@ function stations(S, px) {
     const R = task.type === 'cap' ? 200 : task.type === 'tanker' ? 250 : task.type === 'aew' ? 180 : 330;
     if (!task.stT || now - task.stT > 2) { task.st = IC.taskStatus(S, task); task.stT = now; }
     const st = task.st, onSt = st.on.some(o => o.a.state === 'station');
+    // an early-warning aircraft on station speaks for itself: its cover ring and label (below)
+    if (task.type === 'aew' && onSt) continue;
     const col = onSt ? CY : IC.C.amber;
     ctx.strokeStyle = onSt ? CYA(0.45) : 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([7 * px, 5 * px]);
     ctx.beginPath(); ctx.arc(task.x, task.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
@@ -128,10 +130,15 @@ function aew(S, px) {
     if (a.dead || a.gnd || a.kind !== 'aew') continue;
     const R = IC.aewLowR(a);
     if (!inView(a.x, a.y, R + 200)) continue;
-    ctx.fillStyle = 'rgba(111,210,255,0.035)'; ctx.beginPath(); ctx.arc(a.x, a.y, R, 0, 7); ctx.fill();
-    ctx.strokeStyle = CYA(0.5); ctx.lineWidth = 1.3 * px; ctx.setLineDash([10 * px, 6 * px]);
+    const gr = ctx.createRadialGradient(a.x, a.y, R * 0.2, a.x, a.y, R);
+    gr.addColorStop(0, 'rgba(111,210,255,0.02)'); gr.addColorStop(0.85, 'rgba(111,210,255,0.07)'); gr.addColorStop(1, 'rgba(111,210,255,0.14)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(a.x, a.y, R, 0, 7); ctx.fill();
+    ctx.strokeStyle = CYA(0.8); ctx.lineWidth = 2 * px; ctx.setLineDash([10 * px, 6 * px]);
     ctx.beginPath(); ctx.arc(a.x, a.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
-    if (IC.cam.z > 0.008) label(`${a.name} · LOW COVER ${U.km(R)}: CRUISE MISSILES AND LOW FLIERS, OVER HILLS`, a.x, a.y - R - 6 * px, px, CY, 9, 'center', 700);
+    if (IC.cam.z > 0.008) {
+      label(`${a.name} · LOW COVER ${U.km(R)}`, a.x, a.y + R + 14 * px, px, CY, 9.5, 'center', 700);
+      label(`sees cruise missiles and low fliers over hills and across the border · ${U.dur(Math.max(0, IC.leaveIn(S, a, a)))} on station`, a.x, a.y + R + 26 * px, px, CYA(0.85), 8.5, 'center', 500);
+    }
   }
 }
 

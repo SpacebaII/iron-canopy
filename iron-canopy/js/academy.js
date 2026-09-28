@@ -53,7 +53,7 @@ function resolved(S, op) {
 IC.LESSONS = [
   {
     id: 'radar', title: 'Eyes on the Sky', sub: 'Radars, sweeps and the identification ladder',
-    learn: ['Deploy from the reserve', 'How slow sweeps make tracks blink', 'Detect → classify → identify'],
+    learn: ['Deploy from the reserve', 'Tracks between slow sweeps', 'Detect → classify → identify'],
     setup(S) {
       const cap = IC.cap(S); depot(S);
       S.reserve = { vhf: 1, mr3d: 1 };
@@ -62,7 +62,7 @@ IC.LESSONS = [
     steps: [
       { text: S => `Open the Arsenal at the bottom left, pick ${nm('vhf')} and click near ${IC.cap(S).name} to deploy it. It drives out of the depot and sets up.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'vhf') },
       { text: () => 'While it drives and sets up, time runs at 1×: ten game seconds per real second. Press 3 to go 4× faster, Space to pause.', hint: { el: 'speed' }, done: S => S.units.some(u => u.type === 'vhf' && u.state === 'ready') },
-      { text: () => 'It is on. The antenna turns once every 48 seconds, so a track only moves when the sweep passes it, then blinks while it coasts. It sees 440 km, but it cannot tell what anything is: every track is a yellow UNKNOWN. Click one.', done: S => S.sel && S.sel.kind === 'track' },
+      { text: () => 'It is on. The antenna turns once every 48 seconds: between sweeps each track glides on its last speed and heading, and a dashed ellipse shows where the aircraft could really be. It sees 440 km, but it cannot tell what anything is: every track is a yellow UNKNOWN. Click one.', done: S => S.sel && S.sel.kind === 'track' },
       { text: S => `The panel on the right shows everything we know: no altitude, no identity. Now deploy ${nm('mr3d')} near ${IC.cap(S).name}. It reads transponders and recognises aircraft types inside 65 km.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'mr3d' && u.state === 'ready') },
       { text: () => 'Watch the tracks near it. Airliners squawking on their filed routes turn green: Assumed civil. Wait until four tracks have an identity.', done: S => affCount(S, ['A', 'N', 'H']) >= 4 },
       { text: () => `Two slow tracks are crossing the border with no transponder. They will show Suspect. Let them fly into the ${nk('mr3d')}'s recognition range.`, start(S) { const cap = IC.cap(S), f = frontA(S), p = f.pts[Math.floor(f.pts.length / 2)]; for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'owa', p.x - p.nx * 150 + i * 30, p.y - p.ny * 150, { route: [{ x: cap.x, y: cap.y }], aim: { x: cap.x, y: cap.y }, target: cap, fromHostile: true, spd: 0.9 }); }, done: S => S.threats.some(t => t.type === 'owa' && t.aff === 'H') },
