@@ -1711,6 +1711,97 @@ test('career: every act can be reached', () => {
   const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
   for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
+/* ---------- the enemy commander ---------- */
+/* one three-day Quick war with the scripted commander of qwplayer.js, shared by the tests below (a few minutes) */
+let qw3 = null;
+const threeDays = () => {
+  if (qw3) return qw3;
+  const S = IC.newGame({ seed: 777, mode: 'campaign' }), E = S.enemy, acts = [], main = IC.mainBase(S);
+  const on = (S2, type, d) => { if (S2 === S && type === 'enemyAct') acts.push({ act: d.act, t: S.time, winH: E.winH, warH: (S.time - E.warT) / 3600 }); };
+  IC.on(on);
+  // every weapon fired, with where it was aimed
+  const aims = [], sp = IC.spawnThreat;
+  IC.spawnThreat = function (S2, type, x, y, o) { const t = sp(S2, type, x, y, o); if (S2 === S && t.op && IC.THR[type].dmg && IC.THR[type].cls !== 'air') aims.push({ t: S.time, type, act: E.act, aim: t.aim || (t.route && t.route[t.route.length - 1]), set: t.op.set || (t.op.raid && t.op.raid.set) }); return t; };
+  let shockT = null;
+  try {
+    for (let i = 0; !S.over && (!E.war || S.time - E.warT < 72 * 3600); i++) {
+      IC.step(S, 1);
+      if (i % 60 === 0) Q.commander(S);
+      if (E.raid && E.raid.kind === 'shock' && shockT === null) shockT = E.raid.T;
+    }
+  } finally { IC.spawnThreat = sp; }
+  return (qw3 = { S, E, acts, aims, main, shockT });
+};
+test('enemy: over a three-day Quick war no target set takes more than 35% of the fire before act 4, the main air base no more than 25%', () => {
+  const { S, aims, main } = threeDays();
+  const pre = aims.filter(a => a.act < 4 && a.set), n = pre.length, by = {};
+  for (const a of pre) by[a.set] = (by[a.set] || 0) + 1;
+  assert(n >= 40, `only ${n} weapons fired before act 4`);
+  for (const k in by) assert(by[k] / n <= 0.35, `${IC.ESETS[k].name} took ${U.pct(by[k] / n)} of the ${n} weapons fired before act 4 (${JSON.stringify(by)})`);
+  const onMain = aims.filter(a => a.aim && U.dist(a.aim, main) < (main.radius || 50) + 20).length;
+  assert(onMain / aims.length <= 0.25, `${main.name} took ${onMain} of ${aims.length} weapons (${U.pct(onMain / aims.length)})`);
+  assert(Object.keys(by).length >= 4, `only ${Object.keys(by).length} target sets were attacked before act 4`);
+  assert(!S.over, `the game ended: ${S.over}`);
+}, true);
+test('enemy: the acts come in order, and act 4 only after the defence has had its time winning', () => {
+  const { acts, E } = threeDays();
+  assert(acts.map(a => a.act).join() === '1,2,3,4', `acts came as ${acts.map(a => a.act).join()}`);
+  const a4 = acts[3];
+  assert(a4.winH >= IC.EPACE.winH || a4.warH >= IC.EPACE.act4Max, `act 4 began ${a4.warH.toFixed(1)} h into the war with only ${a4.winH.toFixed(1)} h of the defence winning`);
+  assert(a4.warH >= 20, `act 4 began only ${a4.warH.toFixed(1)} h into the war`);
+  assert(E.rec.filter(r => r.t < a4.t).length >= 4, 'fewer than four raids before act 4');
+}, true);
+test('enemy: it stockpiles before the shock, and intelligence says so hours ahead', () => {
+  const { E, shockT, aims } = threeDays();
+  assert(shockT, 'no shock in three days');
+  const first = E.intel.filter(i => /saving for something big/.test(i.text)).pop();
+  assert(first && shockT - first.t >= 3 * 3600, `the first stockpile report came ${first ? ((shockT - first.t) / 3600).toFixed(1) + ' h' : 'never'} before the shock`);
+  // while saving, no ballistic missile was fired; the shock used them
+  const saveT = E.clog.find(c => /Starts saving/.test(c.text)).t, bal = a => IC.THR[a.type].cls === 'bal';
+  assert(!aims.some(a => bal(a) && a.t > saveT && a.t < shockT - 3600), 'ballistic missiles were fired while they were being saved');
+  assert(aims.filter(a => bal(a) && a.t >= shockT - 3600 && a.t <= shockT).length >= 4, 'the shock used fewer than four ballistic missiles');
+  const shock = E.ops.filter(o => o.raid && o.raid.kind === 'shock');
+  assert(shock.reduce((s, o) => s + o.launched, 0) >= 20, `the shock launched only ${shock.reduce((s, o) => s + o.launched, 0)} weapons`);
+  assert(E.clog.some(c => c.t > saveT && c.t < shockT && /Plans the shock/.test(c.text)), 'the shock was not planned after the saving');
+}, true);
+test('enemy: destroying the stockpile or the launchers delays the shock', () => {
+  // production only: the commander's cycle is held so nothing is fired
+  const ready = hit => {
+    const S = IC.newGame({ seed: 12345, mode: 'campaign' }), E = S.enemy;
+    E.allow = null; IC.enemyOpening(S, { act: 2 });
+    E.pending = []; E.cycle = { phase: 'calm', next: 1e12 };
+    if (hit) {
+      for (const t of S.tels.filter(t => t.site.kind === 'bm' && t.site.nat === 'A')) IC.telDestroyed(S, t, 'test');
+      const s = S.esites.find(s => s.kind === 'cm' && s.nat === 'A'); IC.siteDamaged(S, s, 60, 'test', true);
+    }
+    const t0 = S.time;
+    for (let k = 0; k < 60 * 60 && IC.enemyStock(S).f < 0.97; k++) { S.time += 60; IC.enemyTick(S, 60); }
+    return (S.time - t0) / 3600;
+  };
+  const calm = ready(false), hit = ready(true);
+  assert(calm < 30, `the stockpile took ${calm.toFixed(1)} h even without losses`);
+  assert(hit >= calm + 4, `losing three launchers and a strike on a cruise missile site delayed it only from ${calm.toFixed(1)} h to ${hit.toFixed(1)} h`);
+});
+test('enemy: in act 4 raids go for batteries low on missiles more often than chance', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' }), E = S.enemy, b = IC.mainBase(S);
+  E.allow = null; IC.enemyOpening(S, { act: 2 }); E.pending = [];
+  S.units = S.units.filter(u => u.d.weapon !== 'sam');
+  const bats = [];
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; const u = IC.makeUnit(S, 'mrsam', b.x + Math.cos(a) * 200, b.y + Math.sin(a) * 200, { instant: true }); IC.enemyLearn(S, u, 'test'); bats.push(u); }
+  // three of them have fired most of their missiles, and the enemy saw it
+  for (const u of bats.slice(0, 3)) { for (const m of u.mags) { m.mag = 1; m.store = 0; } for (let k = 0; k < 18; k++) IC.emit(S, 'launch', { u, t: { fromHostile: true }, mun: 'MR' }); }
+  IC.enemyStartAct(S, 4, 'test');
+  let low = 0, n = 0;
+  for (let k = 0; k < 40; k++) {
+    E.c4.i = 1; E.raid = null; E.pending = []; E.retaliate = 0;
+    IC.enemyPlanRaid(S);
+    const r = E.raid && E.raid.obj.ref;
+    if (!r || !bats.includes(r)) continue;
+    n++; if (IC.fill(S, r) < 0.5) low++;
+  }
+  assert(n >= 20, `only ${n} of 40 saturation raids went for a battery`);
+  assert(low / n >= 0.7, `${low} of ${n} went for one of the three batteries low on missiles (chance: half)`);
+});
 test('quick war: the enemy attacks and the defense fights', () => {
   // (with the scripted commander deploying the reserve and buying: on the large map the few units placed at the
   // start rarely stand where the first raids go)

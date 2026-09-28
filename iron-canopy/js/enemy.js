@@ -531,6 +531,8 @@ function setWeights(S, E, act) {
 }
 /* how many of our batteries the enemy knows cover a point */
 function coverAt(S, p) { let n = 0; for (const k of S.enemy.known.values()) if (!k.ref.dead && (k.kind === 'sam' || k.kind === 'pointdef') && U.dist(k, p) < (k.rng || 120)) n++; return n; }
+/* is any of our air defence the enemy knows about within 150 km? */
+function nearKnown(S, p) { for (const k of S.enemy.known.values()) if (!k.ref.dead && k.kind !== 'depot' && U.dist(k, p) < 1500) return true; return false; }
 /* a target from a set: valuable, not hit again and again, not where the defence keeps winning */
 function chooseTarget(S, E, set, o) {
   o = o || {};
@@ -543,7 +545,7 @@ function chooseTarget(S, E, set, o) {
     t.w *= 1 / (1 + (E.hitN[id] || 0) * 0.8) * Math.pow(0.45, E.hard[id] || 0);
     // probes and limited strikes stay within easy reach, and test the defence rather than avoid it: a target with a
     // battery or two near it tells them most; a fortress, little
-    if (o.probe) { const c = coverAt(S, t); if (droneHours(S, t) > 4.5) t.w *= 0.1; t.w *= Math.exp(-IC.hostileBorderDist(t.x, t.y) / 9000) * (c === 0 ? 0.5 : c <= 2 ? 1.3 : 0.6); }
+    if (o.probe) { const c = coverAt(S, t); if (droneHours(S, t) > 4.5) t.w *= 0.1; t.w *= Math.exp(-IC.hostileBorderDist(t.x, t.y) / 9000) * (c === 0 ? (nearKnown(S, t) ? 1 : 0.3) : c <= 2 ? 1.5 : 0.6); }
   }
   L.sort((a, b) => b.w - a.w);
   return L.length ? U.wpick(L.slice(0, 12).map(t => [t, t.w])) : null;
@@ -563,10 +565,11 @@ function startSaving(S, E) {
   const held = {};
   for (const s of S.esites) {
     if (!s.regen) continue;
-    s.hold = {}; s.inv0 = {};
+    // hold: what small raids may not touch; want: what the saving adds; saved: what it has added so far
+    s.hold = {}; s.want = {}; s.saved = {};
     for (const k in SAVE) if (s.regen[k]) {
-      s.inv0[k] = (s.inv[k] || 0) * (1 - (KEEP[k] || 0));
-      s.hold[k] = Math.round(s.inv0[k] + s.regen[k] * IC.EPACE.saveH); held[k] = (held[k] || 0) + s.hold[k];
+      s.want[k] = s.regen[k] * IC.EPACE.saveH; s.saved[k] = 0;
+      s.hold[k] = Math.round((s.inv[k] || 0) * (1 - (KEEP[k] || 0)) + s.want[k]); held[k] = (held[k] || 0) + s.hold[k];
     }
   }
   const st = stockState(S);
@@ -576,12 +579,11 @@ function startSaving(S, E) {
    strikes counts against it), and launchers lost against their replacements */
 function stockState(S) {
   let have = 0, need = 0, eta = 0;
-  for (const s of S.esites) if (s.hold) for (const k in s.hold) {
-    const h = s.hold[k], v = SAVE[k] || 0, i0 = s.inv0[k] || 0; if (!v || h <= i0) continue;
-    const inv = s.inv[k] || 0;
-    have += U.clamp(inv - i0, 0, h - i0) * v; need += (h - i0) * v;
+  for (const s of S.esites) if (s.want) for (const k in s.want) {
+    const w = s.want[k], v = SAVE[k] || 0, got = Math.min(s.saved[k], w); if (!v || !w) continue;
+    have += got * v; need += w * v;
     const rate = s.destroyed ? 0 : (s.regen[k] || 0) * s.hp / s.max;
-    if (h > inv) eta = Math.max(eta, rate > 0 ? (h - inv) / rate * H : 99 * H);
+    if (got < w) eta = Math.max(eta, rate > 0 ? (w - got) / rate * H : 99 * H);
   }
   for (const s of S.esites) if (s.telMax && s.kind !== 'rkt') {
     const n = S.tels.filter(t => t.site === s && !t.dead).length;
@@ -591,7 +593,7 @@ function stockState(S) {
   return { f: need ? U.clamp(have / need, 0, 1) : 1, eta: Math.min(eta, 99 * H) };
 }
 IC.enemyStock = S => stockState(S);
-function stopSaving(S) { for (const s of S.esites) s.hold = null; }
+function stopSaving(S) { for (const s of S.esites) { s.hold = null; s.want = null; } }
 /* what intelligence sees of the saving: less firing, stocks at named sites growing */
 function stockReport(S, E) {
   const st = stockState(S), sharp = IC.hasTech(S, 's_sat') || IC.hasTech(S, 's_esm');
@@ -599,7 +601,9 @@ function stockReport(S, E) {
   for (const s of sites) s.pk = Math.max(s.pk, 1);
   const names = sites.slice(0, 3).map(s => s.name).join(', ');
   const h = st.eta / H, when = sharp ? `in about ${Math.max(1, Math.round(h))} h` : h < 6 ? 'within hours' : h < 16 ? 'in half a day or so' : 'in a day or more';
-  const how = st.f > 0.9 ? 'They look ready' : `They have put aside ${sharp ? U.pct(st.f) : st.f > 0.6 ? 'about two thirds' : st.f > 0.35 ? 'about half' : st.f > 0.15 ? 'about a third' : 'a little'} of what they seem to want`;
+  if (st.f >= 0.97 && E.save.readyTold) return;
+  if (st.f >= 0.97) { E.save.readyTold = true; intel(S, E, `The stockpile looks complete. They are waiting for a moment of their choosing: expect something very large at any time, probably at night.`); note(S, E, 'Stockpile complete; waits for the right moment.'); return; }
+  const how = st.f > 0.9 ? 'They look nearly ready' : `They have put aside ${sharp ? U.pct(st.f) : st.f > 0.6 ? 'about two thirds' : st.f > 0.35 ? 'about half' : st.f > 0.15 ? 'about a third' : 'a little'} of what they seem to want`;
   E.save.reps++;
   if (E.save.reps === 1) intel(S, E, `Satellite pictures: ${S.world.names.A}'s ballistic and cruise missiles have stopped flying, though they have them. ${names} are filling up: they are saving for something big. ${how}; ready ${when}. Strikes on those sites, or on their launchers, would set it back.`);
   else intel(S, E, `The stockpile: ${how.toLowerCase()}, ready ${when}.${sharp ? '' : ' (Passive ESM or satellite warning would tell us more precisely.)'}`);
@@ -665,9 +669,8 @@ function mixFor(S, E, kind, obj) {
   const two = S.esites.some(s => s.nat === 'B' && alive(s) && s.kind === 'drone');
   if (kind === 'probe' || kind === 'opening') {
     const set = obj.set;
-    if (set === 'ad') { add('harass', r(2, 3), -300); if (Math.random() < 0.5) add('feint', 1); }
-    else if (set === 'transport' || set === 'trade') { if (Math.random() < 0.5) add('cm', r(1, 2)); else add('drones', r(2, 4), -300); }
-    else if (Math.random() < 0.35) add('cm', 1); else add('drones', r(2, 4), -300);
+    if (set === 'ad') { add('harass', r(3, 4), -300); if (Math.random() < 0.5) add('feint', 1); }
+    else { add('drones', r(3, 4), -300); if (Math.random() < 0.5) add('cm', r(1, 2)); }
   } else if (kind === 'limited' || kind === 'retaliation') {
     add('drones', r(3, 6), -360);
     add('dcy', r(0, 2), -360);
@@ -723,7 +726,7 @@ function mixFor(S, E, kind, obj) {
    not watch; failing that, the best-defended big target, soaked with decoys first */
 function planShock(S, E) {
   const L = [];
-  for (const set of ['city', 'trade', 'fuel', 'command', 'transport']) for (const t of setTargets(S, set)) if (t.w >= 7) L.push(t);
+  for (const set of ['city', 'trade', 'fuel', 'command', 'transport']) for (const t of setTargets(S, set)) if (t.w >= 5) L.push(t);
   L.sort((a, b) => b.w - a.w);
   const bare = L.filter(t => coverAt(S, t) === 0).slice(0, 5);
   const axis = axisPoint(S, E);
@@ -735,7 +738,7 @@ function planShock(S, E) {
   if (!obj) return null;
   // two or three more of other kinds, the most valuable near the first (within 300 km)
   const more = [], used = new Set([obj.set]);
-  for (const t of L.filter(t => t !== obj && U.dist(t, obj) < 3000).sort((a, b) => b.w / (1 + U.dist(b, obj) / 1000) - a.w / (1 + U.dist(a, obj) / 1000))) {
+  for (const t of L.filter(t => t !== obj && droneHours(S, t) < 6).sort((a, b) => b.w / (1 + U.dist(b, obj) / 2000) - a.w / (1 + U.dist(a, obj) / 2000))) {
     if (used.has(t.set)) continue;
     used.add(t.set); more.push(t);
     if (more.length >= 3) break;
@@ -835,6 +838,7 @@ function planRaid(S, E) {
   launchRaid(S, E, R);
   E.cycle = { phase: 'buildup', next: T, R };
 }
+IC.enemyPlanRaid = S => planRaid(S, S.enemy);
 /* a stand-off jammer flies to a station behind the border and jams along the raid's axis */
 function standoffJammer(S, E, obj, R) {
   if (!can(S, 'sead') && !can(S, 'jam')) return 0;
@@ -1148,7 +1152,11 @@ IC.siteDamaged = function (S, site, dmg, by, quiet) {
   IC.impactMark(S, site.x + U.rand(-15, 15), site.y + U.rand(-15, 15), 160);
   if (site.kind === 'supply') site.stock = Math.max(0, site.stock - dmg * 1.5);
   // stock on the site burns with it
-  if (site.inv) { const k = Math.min(0.6, dmg / site.max * 0.8); let lost = 0; for (const m in site.inv) { const n = Math.floor(site.inv[m] * k); site.inv[m] -= n; if (SAVE[m] >= 2) lost += n; } if (lost) note(S, S.enemy, `${site.name} hit: ${lost} missiles lost in the fire.`); }
+  if (site.inv) {
+    const k = Math.min(0.6, dmg / site.max * 0.8); let lost = 0;
+    for (const m in site.inv) { const n = Math.floor(site.inv[m] * k); site.inv[m] -= n; if (SAVE[m] >= 2) lost += n; if (site.saved && site.saved[m] != null) site.saved[m] = Math.max(0, site.saved[m] - n); }
+    if (lost) note(S, S.enemy, `${site.name} hit: ${lost} missiles lost in the fire.`);
+  }
   if (site.acAvail && Math.random() < 0.4) { const k = U.pick(Object.keys(site.acAvail).filter(k => site.acAvail[k] > 0)); if (k) { site.acAvail[k]--; site.acMax[k] = Math.max(0, site.acMax[k] - 1); } }
   if (site.hp <= 0) {
     site.hp = 0; site.destroyed = true;
@@ -1410,7 +1418,7 @@ IC.enemyTick = function (S, dt) {
     for (const s of S.esites) {
       if (s.destroyed) { s.hp = Math.min(s.max * 0.3, s.hp + s.max * 0.0005); if (s.hp >= s.max * 0.3) { s.destroyed = false; IC.log(S, 'warn', 'INTEL', `${s.name} appears to be operating again.`); } continue; }
       const k = s.hp / s.max;
-      if (s.regen) for (const r in s.regen) s.inv[r] = (s.inv[r] || 0) + s.regen[r] * k / 60;
+      if (s.regen) for (const r in s.regen) { s.inv[r] = (s.inv[r] || 0) + s.regen[r] * k / 60; if (s.saved && s.want && s.want[r] != null) s.saved[r] += s.regen[r] * k / 60; }
       if (s.acAvail) for (const a in s.acMax) {
         const out = S.threats.filter(t => t.home === s && t.type === a && !t.dead).length;
         if (s.acAvail[a] + out < s.acMax[a] && Math.random() < 0.02) s.acAvail[a]++;
