@@ -390,7 +390,8 @@ test('airport: zones keep airliners and military aircraft apart', () => {
   assert(stand && stand.zone === 'mil', `military flight parked in the ${stand ? stand.zone : 'open'}`);
   for (const k of ['turbo', 'narrow', 'wide', 'cargo']) for (let i = 0; i < 20; i++) { const s = IC.avFreeStand(S, ap, IC.ACTYPES[k]); if (s) { assert(s.zone !== 'mil', `${k} offered a military stand`); s.occ = 'z' + k + i; } }
   for (const s of IC.aptStands(ap)) if (/^z/.test(s.occ)) s.occ = null;
-  run(S, 3, player);
+  // (four hours: after the relayout every airliner starts abroad, two or three hours' flight away on this map)
+  run(S, 4, player);
   assert(!S.over, `game ended: ${S.over}`);
   assert(ap.kpi.n > 20, `only ${ap.kpi.n} airline movements`);
   const tails = new Map(S.av.tails.map(t => [t.id, t]));
@@ -1375,8 +1376,8 @@ test('quick war: a sensible commander has two layers over what matters by the fi
   const S = IC.newGame({ seed: 777, mode: 'campaign' });
   let first = null;
   for (let i = 0; S.time < 2 * 86400 && !S.over; i++) {
-    IC.step(S, 0.5);
-    if (i % 120 === 0) Q.commander(S);
+    IC.step(S, 1);
+    if (i % 60 === 0) Q.commander(S);
     if (!first && S.enemy.war) first = Q.keyPlaces(S).map(p => ({ p, L: Q.layers(S, p, true) }));
   }
   assert(!S.over, `game ended: ${S.over}`);

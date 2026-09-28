@@ -159,18 +159,21 @@ IC.LESSONS = [
     id: 'logi', title: 'Keep Them Fed', sub: 'Depots, truck companies, helicopters',
     learn: ['Depot service areas', 'Resupply priority and truck companies', 'Helicopter resupply'],
     setup(S) {
-      depot(S);
-      const t = borderTown(S);
+      const dep = depot(S);
+      // a town a long drive from the Central Depot (300–500 km, a few hours by lorry) but within a helicopter's
+      // reach, and the helicopter at the air base nearest the depot
+      const t = IC.cities(S).filter(c => !c.capital).sort((a, b) => Math.abs(U.dist(a, dep) - 4000) - Math.abs(U.dist(b, dep) - 4000))[0];
+      S.camp.town = t;
       const u = put(S, 'shorad', t, t.r + 40, t.r + 160, { emcon: 'on' });
       for (const m of u.mags) { m.mag = 0; m.store = 0; }
       S.camp.bat = u;
       S.reserve = { depot: 1 };
-      flight(S, 'heli', 'HOOK 1', fwd(S));
+      flight(S, 'heli', 'HOOK 1', IC.bases(S).filter(b => b.kind === 'airbase').sort((a, b) => U.dist(a, dep) - U.dist(b, dep))[0] || fwd(S));
       S.budget = 400;
       focus(S, t, 0.25);
     },
     steps: [
-      { text: S => `${S.camp.bat.name} near ${borderTown(S).name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
+      { text: S => `${S.camp.bat.name} near ${S.camp.town.name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
       { text: () => 'A depot serves units inside its ring, and refills from the Central Depot. Select it and set its resupply priority to First: units in its area go to the front of the queue.', done: S => S.units.some(u => u.type === 'depot' && !u.central && u.pri === 'first') },
       { text: () => 'It came with two truck companies. Add a third from its panel: more trucks, more deliveries at once.', done: S => S.units.some(u => u.type === 'depot' && !u.central && S.vehicles.filter(v => v.home === u).length >= 3) },
       { text: S => `Trucks take time. For an emergency, select ${S.camp.bat.name} and press Air resupply (H): a helicopter flies missiles straight in.`, done: S => S.air.some(a => a.job && a.job.to === S.camp.bat) || S.camp.bat.mags.some(m => m.mag + m.store > 0) },
