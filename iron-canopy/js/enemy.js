@@ -433,7 +433,7 @@ function planRaid(S, E) {
   const bal = kind === 'ballistic' || kind === 'big' || kind === 'retaliation' ? Math.max(balLead(S, P.obj, false), balLead(S, P.obj, true)) + 300 : 0;
   const ds = kind !== 'ballistic' && kind !== 'retaliation' ? S.esites.filter(x => x.kind === 'drone' && alive(x)).reduce((m, x) => Math.min(m, U.dist(x, P.obj)), 1e9) : 1e9;
   const drn = ds < 1e8 ? ds * 1.35 / IC.THR.owa.spd + 600 : 0;
-  let T = S.time + Math.max(U.rand(4800, 6600), Math.min(7200, bal), Math.min(14400, drn));
+  let T = S.time + Math.max(U.rand(4800, 6600), Math.min(7200, bal), Math.min(21600, drn));
   // drone raids come at night when the night is not too far off
   if (kind === 'drones') { const h = ((T % 86400) / 3600), wait = h >= 20 || h < 4 ? 0 : (20 - h) * 3600 + U.rand(0, 5400); if (wait > 0 && wait < 8 * 3600) T += wait; }
   const R = { id: ++E.raidN, kind, name: RAID_NAMES[kind], obj: P.obj, P, T, t0: S.time, ops: [], leaks: [], launched: 0, esc: E.escal };

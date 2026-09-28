@@ -484,7 +484,7 @@ function makeFields(S) {
   const bases = IC.bases(S), towns = W.cities.concat(W.villages).filter(c => IC.inHome(c.x, c.y) && !c.capital);
   const order = towns.map(c => [c, R()]).sort((p, q) => p[1] - q[1]).map(p => p[0]);
   for (const c of order) {
-    if (L.length >= 7) break;
+    if (L.length >= 20) break;   // some twenty clubs across the country
     const a = R.range(0, Math.PI * 2), x = c.x + Math.cos(a) * ((c.r || 20) + 40), y = c.y + Math.sin(a) * ((c.r || 20) + 40);
     if (!IC.inHome(x, y) || W.hAt(x, y) > 0.7 || (W.inLake && W.inLake(x, y)) || IC.hostileBorderDist(x, y) < 500) continue;
     if (bases.some(b => U.dxy(x, y, b.x, b.y) < 350) || L.some(f => U.dxy(x, y, f.x, f.y) < 500)) continue;

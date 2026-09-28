@@ -541,7 +541,8 @@ function routeSafe(S, r) {
   if (r._safeT && S.time - r._safeT < 3600) return r._safe;
   const a = S.byId[r.a], b = endPt(S, r.b);
   let m = 1e9;
-  for (let i = 0; i <= 12; i++) { const x = a.x + (b.x - a.x) * i / 12, y = a.y + (b.y - a.y) * i / 12; if (IC.inHome(x, y)) m = Math.min(m, IC.hostileBorderDist(x, y)); }
+  const n = Math.max(12, Math.ceil(U.dist(a, b) / 200));   // every 20 km along the way
+  for (let i = 0; i <= n; i++) { const x = a.x + (b.x - a.x) * i / n, y = a.y + (b.y - a.y) * i / n; if (IC.inHome(x, y)) m = Math.min(m, IC.hostileBorderDist(x, y)); }
   r._safe = m > 1800; r._safeT = S.time;
   return r._safe;
 }

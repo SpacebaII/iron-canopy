@@ -11,7 +11,9 @@ const C = IC.C = {
 };
 const cam = IC.cam = { x: IC.WW / 3, y: IC.WH / 3, z: 0.05, vw: 800, vh: 600 };
 let ctx, cv, dpr = 1, hatchR = null;
-const cov = document.createElement('canvas'); cov.width = 600; cov.height = 450;
+// airborne early warning discs, drawn over the whole map at COVK pixels a unit
+const cov = document.createElement('canvas'); cov.width = 600; cov.height = Math.round(600 * IC.WH / IC.WW);
+const COVK = 600 / IC.WW;
 const cx2 = cov.getContext('2d');
 let view = { x0: 0, y0: 0, x1: 0, y1: 0 };
 const inView = (x, y, m) => x > view.x0 - m && x < view.x1 + m && y > view.y0 - m && y < view.y1 + m;
@@ -251,7 +253,7 @@ function drawCoverage(S) {
   const cc = covCanvas(S);
   if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
   // airborne early warning looks down from above the hills: a plain disc
-  cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, 600, 450); cx2.setTransform(0.05, 0, 0, 0.05, 0, 0);
+  cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, cov.width, cov.height); cx2.setTransform(COVK, 0, 0, COVK, 0, 0);
   let any = false;
   for (const s of S.sensors) {
     if (!s.air || s.air.kind !== 'aew') continue;
@@ -396,7 +398,8 @@ function drawInfra(S, px, now) {
       if (i.alert > 0) { const p = (now * 0.6) % 1; ctx.strokeStyle = `rgba(255,91,79,${0.7 * (1 - p)})`; ctx.lineWidth = 2 * px; ctx.beginPath(); ctx.arc(i.x, i.y, i.r * 0.7 + (6 + p * 34) * px, 0, 7); ctx.stroke(); }
       const nm = i.name.toUpperCase();
       const big = i.capital ? 14 : i.pop > 350 ? 12 : 10.5;
-      if (S.layers.labels || i.pop > 350) {
+      // far out, only the big cities are named, so the names stay readable
+      if ((S.layers.labels && (cam.z > 0.035 || i.pop > 150)) || i.pop > 350) {
         label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
         if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
       }
@@ -431,7 +434,7 @@ function drawInfra(S, px, now) {
     const W = S.world;
     for (const k of ['A', 'B', 'C', 'D']) {
       const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2, p = W.borderPt(a), r = Math.hypot(p.x - W.cx, p.y - W.cy);
-      const x = U.clamp(W.cx + (p.x - W.cx) * (r + 1300) / r, 900, IC.WW - 900), y = U.clamp(W.cy + (p.y - W.cy) * (r + 1300) / r, 300, IC.WH - 250);
+      const x = U.clamp(W.cx + (p.x - W.cx) * (r + 4000) / r, 2800, IC.WW - 2800), y = U.clamp(W.cy + (p.y - W.cy) * (r + 4000) / r, 900, IC.WH - 800);
       label(W.full[k].toUpperCase(), x, y, px, W.side[k] === 'hostile' ? 'rgba(255,150,130,0.4)' : 'rgba(200,210,220,0.3)', 18, 'center', 600);
     }
   }
@@ -501,7 +504,7 @@ IC.renderMini = function (S, mc, mw, mh) {
   g.drawImage(miniThumb, 0, 0, mw, mh);
   const k = mw / IC.WW;
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, mw, mh);
-  for (const i of IC.cities(S)) { g.fillStyle = '#f0e6d4'; g.fillRect(i.x * k - 1.5, i.y * k - 1.5, 3, 3); }
+  for (const i of IC.cities(S)) { const d = i.capital ? 3.5 : i.pop > 350 ? 2.5 : 1.5; g.fillStyle = '#f0e6d4'; g.fillRect(i.x * k - d / 2, i.y * k - d / 2, d, d); }
   g.fillStyle = C.friend; for (const u of S.units) g.fillRect(u.x * k - 1, u.y * k - 1, 2, 2);
   for (const t of S.threats) if (t.det && !t.dead && !t.border) { g.fillStyle = IC.AIRCOL[t.aff] || C.unknown; g.fillRect(t.px * k - 1, t.py * k - 1, 2.5, 2.5); }
   for (const s of S.esites) if (s.pk === 2 && !s.destroyed) { g.fillStyle = C.hostile; g.fillRect(s.x * k - 1.5, s.y * k - 1.5, 3, 3); }

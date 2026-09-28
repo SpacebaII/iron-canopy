@@ -330,7 +330,7 @@ function imports(S) {
     if (!apt) continue;
     im.state = 'done';
     const ex = S.world.crossings.find(c => c.k === 'D') || S.world.crossings[0];
-    const ox = ex ? ex.far.x : -200, oy = ex ? ex.far.y : 4500;
+    const ox = ex ? ex.far.x : -200, oy = ex ? ex.far.y : IC.WH / 3;
     const a = { id: IC.nid('a'), kind: 'cargo', allied: true, name: `${S.world.names.D.toUpperCase()} AIRLIFT`, x: ox, y: oy, ox, oy, vx: 0, vy: 0, h: 0, state: 'out', fuel: 1e9, hp: 1, n: 1, cm: 0, alt: 8 };
     a.job = newJob(S, { kind: 'import', mode: 'cargo', mun: im.mun, qty: im.qty, qty0: im.qty, from: { name: S.world.names.D, x: ox, y: oy }, to: apt, depot: im.depot });
     a.job.loaded = true; a.job.air = a; a.leg = 'toDest'; a.route = [{ x: apt.x, y: apt.y }];

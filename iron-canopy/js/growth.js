@@ -71,8 +71,8 @@ IC.econInit = function (S) {
     .sort((a, b) => U.dist(b, cap) - U.dist(a, cap));
   const kinds = [];
   for (const v of cand) {
-    if (E.inds.length >= 5) break;
-    if (E.inds.some(i => U.dist(i, v) < 700)) continue;
+    if (E.inds.length >= 14) break;
+    if (E.inds.some(i => U.dist(i, v) < 1000)) continue;
     const h = W.hAt(v.x, v.y), forest = [0, 1, 2, 3].filter(k => W.forestAt(v.x + Math.cos(k * 1.57) * 40, v.y + Math.sin(k * 1.57) * 40)).length;
     let kind = h > 0.5 ? 'mine' : forest >= 2 ? 'timber' : W.farmAt(v.x, v.y) > 0.25 ? 'farm' : 'quarry';
     if (kinds.filter(k => k === kind).length >= 2) kind = ['farm', 'quarry', 'timber', 'mine'].find(k => !kinds.includes(k)) || kind;
