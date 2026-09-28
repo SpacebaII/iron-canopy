@@ -4,7 +4,9 @@
    node tests/run.js --quick    skip the slow ones too (the Academy lessons and other long plays)
    node tests/run.js --slow     only the long balance runs (GitHub runs them every night)
    node tests/run.js --times    also rewrite tests/times.json, which orders the next runs longest first
-   IC_JOBS=1 runs everything in this process, one test after another.
+   node tests/run.js --shard=1/2  one of two halves of equal length (by tests/times.json), for two machines at once
+   IC_JOBS=n sets the number of workers (one per core by default, up to 8 and 1.6 GB of memory each); IC_JOBS=1
+   runs everything in this process, one test after another.
    Every test starts from the same seeded random numbers (IC.seedRandom, from its name), so it plays out the same
    alone, in a full run or in any worker, and a failure can be repeated. */
 const IC = require('../headless.js');
@@ -2200,6 +2202,98 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
 });
 
+/* ---------- engine health ---------- */
+test('engine: a game built in stages is the game built at once, and it reports every stage in order', () => {
+  const opts = { seed: 777, mode: 'story', preset: 'network', hour: 7 };
+  IC.seedRandom(9); const A = IC.newGame(opts);
+  IC.seedRandom(9); const g = IC.newGameSteps(opts), seen = [];
+  let r; while (!(r = g.next()).done) seen.push(r.value);
+  const B = r.value;
+  const order = Object.keys(IC.LOAD_STAGES).filter(k => k !== 'done');
+  assert(seen.join() === order.join(), `stages ${seen.join(', ')}, expected ${order.join(', ')}`);
+  assert(order.every((k, i) => !i || IC.LOAD_STAGES[k] > IC.LOAD_STAGES[order[i - 1]]), 'the stages do not add up in order');
+  const sig = S => [S.world.cities.map(c => c.x + ',' + c.y + ',' + c.blocks.length).join(';'), S.world.edges.length, S.infra.length, S.units.length,
+    S.traffic.links.length, S.av.tails.length, S.budget.toFixed(3)].join('|');
+  assert(sig(A) === sig(B), 'the game built in stages differs from the one built at once');
+});
+test('radar: sensors asked by grid cell detect exactly what asking every sensor detects', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign', hour: 10 });
+  const c = IC.cap(S);
+  for (let i = 0; i < 12; i++) IC.spawnThreat(S, 'jdr', c.x + 900 + i * 40, c.y - 600 + i * 30, { route: [{ x: c.x, y: c.y }], aim: { x: c.x, y: c.y } });
+  for (let i = 0; i < 6; i++) IC.spawnThreat(S, 'lacm', c.x + 2500, c.y - 300 + i * 200, { route: [{ x: c.x, y: c.y }], aim: { x: c.x, y: c.y } });
+  let n = 0, seen = 0;
+  for (let k = 0; k < 40; k++) {
+    IC.step(S, 0.25);
+    IC.sense(S, 0.25);
+    for (const t of S.threats) {
+      if (t.dead || t.notchT > 0) continue;
+      const all = S.sensors.some(s => IC.detects(s, t));
+      assert(all === t.inView, `TN ${t.tn || t.id} (${t.type}): every sensor says ${all}, the grid says ${t.inView}`);
+      n++; if (all) seen++;
+    }
+  }
+  assert(n > 1000 && seen > 50, `too few tracks to be a real test (${n}, ${seen} seen)`);
+});
+test('airport: a parked airliner held on the ground is fuelled once, not again at every try', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const parkedAt = a => S.av.tails.filter(t => t.at === a.id && t.where === 'stand').length;
+  let ap = null;
+  for (let k = 0; k < 6 && !ap; k++) { run(S, 0.25); ap = IC.bases(S).find(b => b.kind === 'airport' && b.parts && b.parts.filter(p => p.kind === 'runway').length === 1 && parkedAt(b) > 0); }
+  assert(ap, 'no airliner parked at an airport with one runway');
+  S.story.del.eng = false; ap.autoRepair = false;
+  const rw = ap.parts.find(p => p.kind === 'runway'), q = IC.rwAt(rw, 0.5);
+  IC.detonate(S, q.x, q.y, 120, { d: { code: 'TEST' } });
+  let draws = 0; const take = IC.aptTakeFuel;
+  IC.aptTakeFuel = function (a, n, S2) { const ok = take.apply(this, arguments); if (S2 === S && a === ap && ok) draws++; return ok; };
+  const parked = parkedAt(ap);
+  try { run(S, 2); } finally { IC.aptTakeFuel = take; }
+  assert(draws <= parked, `${draws} fuel draws for ${parked} parked airliners that could not leave`);
+});
+test('airport: an apron with airliners parked on it cannot be bulldozed, and says why', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  run(S, 0.5);
+  const ap = IC.bases(S).find(b => b.parts && IC.aptStands(b).some(s => s.occ && S.av.tails.some(t => t.id === s.occ)));
+  assert(ap, 'no airport with a parked airliner');
+  const s = IC.aptStands(ap).find(x => x.occ && S.av.tails.some(t => t.id === x.occ)), apron = ap.parts.find(p => p.id === s.apron);
+  const lost = () => S.av.tails.filter(t => t.where === 'lost').length, l0 = lost();
+  assert(/parked on it/.test(IC.aptRemoveBlock(S, ap, apron)), 'no reason given for keeping the apron');
+  assert(!IC.aptRemove(S, ap, apron.id) && ap.parts.includes(apron), 'the apron was bulldozed with aircraft on it');
+  run(S, 0.1);
+  assert(lost() === l0, 'aircraft were lost');
+});
+test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  run(S, 1 / 3);
+  let r = null, tl = null;
+  for (const rt of S.av.routes) {
+    const ts = S.av.tails.filter(t => t.route === rt.id && t.where !== 'lost');
+    const air = ts.find(t => t.where === 'air' && t.track && t.track.toApt);
+    if (air) { r = rt; tl = air; for (const t of ts) if (t !== air) { t.where = 'lost'; t.retired = true; } rt.n = 1; break; }
+  }
+  assert(tl, 'no airliner in the air towards one of our airports');
+  const al = S.av.airlines.find(a => a.id === r.al);
+  for (const x of S.av.routes) if (x.al === al.id && x !== r) x.st = 'cut';
+  al.sat = 5; al.lowT = 5; S.av.hourT = 3599.5;
+  IC.step(S, 0.5);
+  assert(r.st === 'cut', 'the airline kept the route');
+  for (let i = 0; i < 6 * 7200 && tl.where !== 'lost'; i++) IC.step(S, 0.5);
+  assert(tl.where === 'lost', `${tl.cs} is still '${tl.where}' six hours after its route was dropped`);
+  assert(!IC.aptStands(S.byId[tl.at]).some(s => s.occ === tl.id), `${tl.cs} still holds a stand`);
+}, true);
+test('air defence: a laser stops burning its target when weapons are set to Hold', () => {
+  const S = IC.newGame({ seed: 7, mode: 'range' }), T = S.range.target;
+  const u = IC.rangeAddUnit(S, 'laser', T.x, T.y);
+  S.ad.roe = 'free';
+  IC.rangeSpawn(S, { what: 'owa', n: 1, brg: 90, km: 12, alt: '' });
+  let t = null;
+  for (let i = 0; i < 4 * 240 && !t; i++) { IC.step(S, 0.25); if (u.beam && !u.beam.dead) t = u.beam; }
+  assert(t, `the laser never engaged (${u.why})`);
+  S.ad.roe = 'hold';
+  const hp = t.hp;
+  for (let i = 0; i < 40; i++) IC.step(S, 0.25);
+  assert(!t.dead && t.hp === hp && u.beam !== t, `the laser kept burning TN ${t.tn} under Hold (hp ${hp.toFixed(2)} → ${t.hp.toFixed(2)})`);
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */
@@ -2239,9 +2333,16 @@ if (process.env.IC_TEST_WORKER) {
   }
   const est = u => u.reduce((s, t) => s + (times[t.name] || 5), 0);
   units.sort((a, b) => est(b) - est(a));
+  // a shard: the units dealt out longest first to whichever share is shortest so far
+  const sh = (args.find(a => a.startsWith('--shard=')) || '').slice(8).split('/').map(Number);
+  if (sh.length === 2 && sh[1] > 1) {
+    const load = new Array(sh[1]).fill(0), mine = [];
+    for (const u of units) { const k = load.indexOf(Math.min(...load)); load[k] += est(u); if (k === sh[0] - 1) mine.push(u); }
+    units.length = 0; units.push(...mine);
+  }
   if (!units.length) { console.log('No tests match.'); process.exit(1); }
   const again = [];   // timing tests that failed beside the others, to time alone at the end
-  const jobs = Math.max(1, Math.min(units.length, +process.env.IC_JOBS || Math.min(4, os.cpus().length)));
+  const jobs = Math.max(1, Math.min(units.length, +process.env.IC_JOBS || Math.min(8, os.cpus().length, Math.floor(os.totalmem() / 1.6e9))));
   const res = [], t00 = Date.now();
   const finish = () => {
     const fail = res.filter(r => r.err).length;
