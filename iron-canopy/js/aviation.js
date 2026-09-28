@@ -74,14 +74,14 @@ IC.avCareerStart = function (S, cap) {
   // carrier bases its aircraft here and wants a hangar)
   const add = (al, b) => {
     const r = IC.avAddRoute(S, al, cap, b, 'narrow', 1, true), q = { al: al.id, a: cap.id, b: r.b, type: 'narrow', n: 1 };
-    makeTerms(S, q); q.terms.days += 1;
+    makeTerms(S, q); q.terms.days += career(S) ? 6 : 1;
     signDeal(S, q, r, A.tails.filter(t => t.route === r.id && !t.deal), 24 * 3600);
   };
   add(flag, near[0]);
   if (near[1]) add(flag, near[1]);
   const k = near[near.length > 2 ? 2 : 0].k, fr = IC.avAddAirline(S, 'foreign', cap, { country: k });
   add(fr, ports.find(p => p.k === k));
-  A.reqT = 4 * 3600;
+  A.reqT = career(S) ? IC.MO(S, 0.5) : 4 * 3600;
   return flag;
 };
 
@@ -457,7 +457,7 @@ function makeRequest(S) {
   const act1 = S.story && S.story.act === 1;
   // an airline that trusts the airport brings more aircraft at once: fewer offers, each with weight
   const n = (IC.DEAL.fleet[al.kind] || 1) + (repOf(a) >= 60 ? 1 : 0) + (al.sat > 75 && Math.random() < 0.5 ? 1 : 0);
-  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n, t: S.time, exp: S.time + (act1 ? 12 : 6) * 3600, more: !!existing };
+  const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n, t: S.time, exp: S.time + (career(S) ? IC.MO(S) : (act1 ? 12 : 6) * 3600), more: !!existing };
   req.why = existing ? `wants another ${IC.ACTYPES[type].name.toLowerCase()} on ${routeName(S, existing)}` : `wants to open ${S.byId[a.id].name.replace(/ (International|Airport)$/, '')} – ${endPt(S, req.b).name.replace(/ (International|Airport)$/, '')}`;
   makeTerms(S, req);
   A.requests.push(req);
@@ -487,7 +487,7 @@ IC.avDecide = function (S, id, yes) {
     if (why) { IC.log(S, 'warn', 'AVIATION', `${al.name} will not sign yet: ${why}.`); return false; }
     if (k && !k.ok) { IC.log(S, 'warn', 'AVIATION', `${al.name} will not sign at those charges: ${k.why}.`); return false; }
     const old = q.renew && A.deals.find(d => d.id === q.renew && d.st !== 'broken');
-    if (old) { signDeal(S, q, null, [], 0); IC.log(S, 'info', 'AVIATION', `${al.name} renews for ${old.days} days at ${U.pct(old.charge)} of list charges.`, S.byId[q.a]); }
+    if (old) { signDeal(S, q, null, [], 0); IC.log(S, 'info', 'AVIATION', `${al.name} renews for ${IC.dealLen(S, old.days)} at ${U.pct(old.charge)} of list charges.`, S.byId[q.a]); }
     else {
       const r = IC.avAddRoute(S, al, S.byId[q.a], q.b.apt ? { apt: q.b.apt } : q.b, q.type, q.n);
       if (q.terms) signDeal(S, q, r, A.tails.filter(t => t.route === r.id && !t.deal).slice(-q.n), 0);
@@ -676,7 +676,9 @@ IC.offRoute = function (t) {
    gained and an offer to renew; broken (by the airline when the airport lets it down, or by the player), it costs
    reputation and money. Reputation (ap.rep, 0–100) decides how often new offers come. */
 IC.DEAL = {
-  days: { flag: 3, budget: 2, regional: 3, cargo: 3, foreign: 3 },   // contract length, game days
+  days: { flag: 3, budget: 2, regional: 3, cargo: 3, foreign: 3 },   // contract length on the live clock, game days
+  months: { flag: 18, budget: 9, regional: 12, cargo: 12, foreign: 12 },   // in the Career, calendar months
+  offerMo: [1, 2],  // Career: months between offers at a name of 50 (sooner with a better name)
   hangar: { flag: 0.25, budget: 0.15, regional: 0.2, cargo: 0, foreign: 0 },   // hangar spaces per aircraft based here
   gates: { flag: 0.6, foreign: 0.5, budget: 0, regional: 0, cargo: 0 },   // share of the stands it wants at the terminal
   lateMin: 20,      // an arrival or departure later than this counts against the deal
@@ -686,6 +688,10 @@ IC.DEAL = {
   rep0: 50
 };
 const OPS_H = 17;   // airliners fly 06:00–23:00
+/* a deal's length is counted in calendar months in the Career and in days on the live clock (a Quick war) */
+const career = S => S.mode === 'story';
+IC.dealUnit = S => career(S) ? IC.MO(S) : 86400;
+IC.dealLen = (S, n) => career(S) ? (n >= 24 && n % 12 === 0 ? `${n / 12} years` : `${n} month${n === 1 ? '' : 's'}`) : `${n} day${n === 1 ? '' : 's'}`;
 const dealOf = (S, tl) => tl && tl.deal ? S.av.deals.find(d => d.id === tl.deal) : null;
 IC.avDealOf = dealOf;
 /* a round trip from an airport: both legs and a turnaround at each end, in seconds */
@@ -778,7 +784,7 @@ function makeTerms(S, q) {
   // how much it wants in: seats running full, and our name
   const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25);
   const T = IC.ACTYPES[q.type];
-  q.terms = { list, days: IC.DEAL.days[al.kind] || 4, flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
+  q.terms = { list, days: (career(S) ? IC.DEAL.months : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
     late: +(T.fee * 0.25).toFixed(2), cancel: +(T.fee * 1.2 + (T.seats || 0) * 0.004).toFixed(2), rep: al.kind === 'flag' || al.K.foreign ? 5 : 3 };
   q.pick = { lvl: 1, excl: false };
   q.value = dealWorth(S, q, list).value;
@@ -807,8 +813,8 @@ function signDeal(S, q, route, tails, grace) {
   // renewed before its end: the term just served counts as honoured, and the new one starts clean
   if (old && old.st === 'active') honour(S, old);
   if (old) { old.strikes = 0; old.t0 = S.time; }
-  const d = old || { id: IC.nid('dl'), al: al.id, route: route.id, a: q.a, b: q.b, type: q.type, n: q.n, t0: S.time, strikes: 0, late: 0, cancel: 0, flown: 0, day: { late: 0, cancel: 0, n: 0 }, paid: 0 };
-  Object.assign(d, { charge: k.charge, days: k.days, end: S.time + k.days * 86400, excl: k.excl, perWk: k.perWk, paxDay: k.paxDay, cargoDay: k.cargoDay, value: k.value,
+  const d = old || { id: IC.nid('dl'), al: al.id, route: route.id, a: q.a, b: q.b, type: q.type, n: q.n, t0: S.time, strikes: 0, good: 0, late: 0, cancel: 0, flown: 0, day: { late: 0, cancel: 0, n: 0 }, paid: 0 };
+  Object.assign(d, { charge: k.charge, days: k.days, end: S.time + k.days * IC.dealUnit(S), excl: k.excl, perWk: k.perWk, paxDay: k.paxDay, cargoDay: k.cargoDay, value: k.value,
     pen: q.terms ? { late: q.terms.late, cancel: q.terms.cancel } : { late: 0.3, cancel: 1.5 }, rep: q.terms ? q.terms.rep : 3, st: 'active', grace: S.time + (grace || 0), renewAsked: false, badT: 0 });
   if (!old) { A.deals.push(d); for (const t of tails) t.deal = d.id; }
   return d;
@@ -884,10 +890,10 @@ function dealsTick(S) {
     }
     // the end of the term: an honoured deal lifts our name; the airline offers to renew before it runs out
     const left = d.end - S.time;
-    if (!d.renewAsked && left < d.days * 86400 * 0.3) {
+    if (!d.renewAsked && left < d.days * IC.dealUnit(S) * 0.3) {
       d.renewAsked = true;
       if (al.sat >= 45 && S.story) renewOffer(S, d, al);
-      else if (al.sat >= 45) { d.end += d.days * 86400; d.renewAsked = false; }
+      else if (al.sat >= 45) { d.end += d.days * IC.dealUnit(S); d.renewAsked = false; }
     }
     if (left <= 0) {
       d.st = 'done'; d.endT = S.time;
@@ -904,7 +910,9 @@ function dealsDay(S) {
     if (d.st !== 'active') continue;
     const D = d.day, bad = D.late + D.cancel * 2, al = airlineOf(S, d.al);
     d.day = { late: 0, cancel: 0, n: 0 };
-    if (!D.n || bad < Math.max(3, D.n * 0.25)) continue;
+    // (a deal that runs for years forgives a bad day after a month of good ones)
+    if (!D.n || bad < Math.max(3, D.n * 0.25)) { if (career(S) && d.strikes && ++d.good >= IC.dpm(S)) { d.strikes--; d.good = 0; } continue; }
+    d.good = 0;
     d.strikes++;
     repAdd(S, S.byId[d.a], -2);
     if (d.strikes >= IC.DEAL.strikes) { IC.avBreakDeal(S, d.id, `${D.late} late and ${D.cancel} cancelled of ${D.n} flights yesterday, the ${d.strikes}th bad day`); continue; }
@@ -929,11 +937,12 @@ function renewOffer(S, d, al) {
 }
 /* how long until the next offer: slower in the Career's first act, quicker the better our name */
 function offerGap(S) {
-  const A = S.av, act1 = S.mode === 'story' && S.story && S.story.act === 1;
-  if (!act1) return U.rand(2.5, 5) * 3600;
+  const A = S.av;
+  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600;
+  // the Career: an offer every month or two, by the calendar
   const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
   const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
-  return U.rand(5, 8) * 3600 * U.clamp(1.6 - rep / 90, 0.6, 1.3);
+  return IC.MO(S, U.rand(IC.DEAL.offerMo[0], IC.DEAL.offerMo[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8);
 }
 
 

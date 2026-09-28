@@ -30,8 +30,11 @@ IC.newGame = function (opts) {
     nextTN: 1001, shake: 0, wind: { x: U.rand(-1, 1) * 0.6, y: U.rand(0.1, 0.6) },
     sel: null, group: [], mode2: null, hover: null,
     layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false },
-    alertCities: 0
+    alertCities: 0,
+    // the calendar (core.js): the month length is kept with the game, and the month it last turned
+    cal: { dpm: opts.dpm || IC.DAYS_PER_MONTH, m: 0 }
   };
+  S.cal.m = IC.calAt(S, S.time).m;
   if (mode === 'range') return IC.rangeInit(S);
   S.terrain = IC.buildTerrain(W);
   S.clouds = IC.buildClouds();

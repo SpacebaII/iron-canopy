@@ -263,7 +263,7 @@ IC.saveMeta = function (S) {
   const act = S.story ? S.story.act : 0;
   const what = S.mode === 'story' ? `Career · Act ${['', 'I', 'II', 'III', 'IV'][act] || act}` + (act === 1 && IC.CHAPTERS[S.story.ch] ? ` · ${IC.CHAPTERS[S.story.ch].title}` : '')
     : S.mode === 'campaign' ? 'Quick war' : S.mode === 'sandbox' ? 'Sandbox' : S.mode === 'academy' ? 'Academy' : S.mode === 'range' ? 'Test range' : S.mode;
-  return { mode: S.mode, act, what, day: IC.U.day(S.time), clock: IC.U.hhmm(S.time), time: S.time, budget: Math.round(S.budget), date: Date.now() };
+  return { mode: S.mode, act, what, day: IC.U.day(S.time), cal: S.mode === 'story' ? IC.U.date(S.time) : null, clock: IC.U.hhmm(S.time), time: S.time, budget: Math.round(S.budget), date: Date.now() };
 };
 
 /* ---------- reading ---------- */
@@ -400,7 +400,9 @@ IC.afterLoad = function (S, data) {
   if (S.fx) S.fx.parts = [];
   if (S.econ && !S.econ.roadsDirty) IC.econTrees(S);
   for (const ap of S.infra) if (ap.G) ap.G.trees = new Map();
-  S.hover = null; S.mode2 = null; S.paused = true; S.skip = false;
+  // (a save from before the calendar gets one: three days a month, as it was played)
+  if (!S.cal) S.cal = { dpm: 3, m: IC.calAt({ cal: { dpm: 3 } }, S.time).m };
+  S.hover = null; S.mode2 = null; S.paused = true; S.skip = false; S.wait = null;
   if (IC.savedCfg) Object.assign(S.cfg, IC.savedCfg());
 };
 

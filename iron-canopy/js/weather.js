@@ -10,8 +10,29 @@ const NEXT = {
   overcast: [['scattered', 2], ['overcast', 1.5], ['rain', 2]],
   rain: [['overcast', 2], ['rain', 1], ['storm', 0.8]],
   storm: [['rain', 2], ['overcast', 1]],
-  fog: [['clear', 1], ['scattered', 2]]
+  fog: [['clear', 1], ['scattered', 2]],
+  snow: [['overcast', 2], ['snow', 1.2], ['scattered', 1]]
 };
+/* the seasons, by month of the Career's calendar: how often each kind of weather comes (× its usual chance), how
+   strong the wind blows, the hours fog can form, and what people fly for (leisure peaks in summer and at the
+   holidays; business dips in August and at Christmas). A Quick war and the lessons keep a neutral season. */
+const SEAS = (name, o) => Object.assign({ name, w: {}, wind: 1, fogH: [3, 9], snow: 0, leisure: 1, biz: 1 }, o);
+IC.SEASON = [
+  SEAS('Winter', { w: { fog: 2.2, overcast: 1.3, storm: 0.3, clear: 0.8 }, snow: 1.6, wind: 1.3, fogH: [0, 11], leisure: 0.85 }),
+  SEAS('Winter', { w: { fog: 1.8, overcast: 1.3, storm: 0.3 }, snow: 1.4, wind: 1.3, fogH: [0, 10], leisure: 0.85 }),
+  SEAS('Spring', { w: { rain: 1.3 }, snow: 0.3, wind: 1.15, fogH: [2, 9] }),
+  SEAS('Spring', { w: { rain: 1.3, scattered: 1.2 }, leisure: 1.08 }),
+  SEAS('Spring', { w: { clear: 1.2, storm: 1.2 } }),
+  SEAS('Summer', { w: { clear: 1.3, storm: 2.2, fog: 0.4 }, wind: 0.85, fogH: [4, 7], leisure: 1.15 }),
+  SEAS('Summer', { w: { clear: 1.3, storm: 2.6, fog: 0.3 }, wind: 0.8, fogH: [4, 7], leisure: 1.3, biz: 0.95 }),
+  SEAS('Summer', { w: { clear: 1.2, storm: 2.2, fog: 0.4 }, wind: 0.85, fogH: [4, 7], leisure: 1.3, biz: 0.85 }),
+  SEAS('Autumn', { w: { fog: 1.3, rain: 1.2 }, leisure: 1.05 }),
+  SEAS('Autumn', { w: { fog: 1.7, rain: 1.4, overcast: 1.2 }, wind: 1.15, fogH: [1, 10] }),
+  SEAS('Autumn', { w: { fog: 2, rain: 1.3, overcast: 1.3 }, snow: 0.4, wind: 1.2, fogH: [0, 11], leisure: 0.9 }),
+  SEAS('Winter', { w: { fog: 2, overcast: 1.3, storm: 0.3 }, snow: 1.2, wind: 1.25, fogH: [0, 11], leisure: 1.15, biz: 0.9 })
+];
+const NEUTRAL = SEAS('', {});
+IC.seasonOf = S => S && S.mode === 'story' && S.cal ? IC.SEASON[IC.calAt(S, S.time).mo] : NEUTRAL;
 /* wind in knots (a range the mean is drawn from), gusts as a share of the mean, visibility in km, cloud base in feet */
 IC.SKY = {
   clear:     { wind: [2, 12], gust: 0.2, vis: 10, ceil: 5000 },
@@ -19,7 +40,8 @@ IC.SKY = {
   overcast:  { wind: [6, 18], gust: 0.3, vis: 8, ceil: 1200 },
   rain:      { wind: [10, 24], gust: 0.4, vis: 4, ceil: 800, wet: true },
   storm:     { wind: [18, 36], gust: 0.55, vis: 2, ceil: 600, wet: true },
-  fog:       { wind: [0, 5], gust: 0, vis: 0.3, ceil: 100 }
+  fog:       { wind: [0, 5], gust: 0, vis: 0.3, ceil: 100 },
+  snow:      { wind: [8, 22], gust: 0.35, vis: 1.2, ceil: 700, wet: true }
 };
 /* below these an arrival needs an instrument landing system on the runway end it lands on */
 IC.ILS_VIS = 1.5; IC.ILS_CEIL = 500;
@@ -27,14 +49,19 @@ const KT = 1 / 33;                       // smoke and cloud drift (world units a
 
 IC.weatherInit = function (S) {
   S.weather = { kind: U.pick(['clear', 'scattered', 'scattered', 'overcast']), next: S.time + U.rand(3, 7) * 3600, fade: 1, prev: 'clear' };
-  S.weather.forecast = pickNext(S.weather.kind);
+  S.weather.forecast = pickNext(S.weather.kind, S);
   const K = IC.SKY[S.weather.kind];
   // the prevailing wind blows from the west-north-west, give or take
   const kt = U.rand(K.wind[0], K.wind[1]);
   S.wind = { dir: Math.PI + U.rand(-0.9, 0.5), kt, gust: kt, tgt: kt, x: 0, y: 0 };
   windVec(S.wind);
 };
-function pickNext(k) { return U.wpick(NEXT[k]); }
+/* the next weather: the usual chances, shifted by the season (snow only comes in the cold months) */
+function pickNext(k, S) {
+  const Z = IC.seasonOf(S), L = NEXT[k].map(([n, w]) => [n, w * (Z.w[n] || 1) * (n === 'snow' ? Z.snow : 1)]).filter(([, w]) => w > 0);
+  if (Z.snow && (k === 'overcast' || k === 'rain')) L.push(['snow', Z.snow * (k === 'rain' ? 0.8 : 1)]);
+  return U.wpick(L) || 'scattered';
+}
 IC.wx = S => {
   const w = S.weather; if (!w) return IC.WEATHER.clear;
   const a = IC.WEATHER[w.prev], b = IC.WEATHER[w.kind], f = w.fade;
@@ -73,12 +100,13 @@ IC.weather = function (S, dt) {
   if (S.time > w.next) {
     let k = w.forecast;
     const h = (S.time % 86400) / 3600;
-    if (k === 'fog' && !(h > 3 && h < 9)) k = 'scattered';
+    const Z = IC.seasonOf(S);
+    if (k === 'fog' && !(h > Z.fogH[0] && h < Z.fogH[1])) k = 'scattered';
     w.prev = w.kind; w.kind = k; w.fade = 0;
     w.next = S.time + U.rand(2.5, 7) * 3600;
-    w.forecast = pickNext(k);
-    // a new air mass: the wind picks a new strength and swings round
-    if (!S.wind.hold) { const K = IC.SKY[k]; S.wind.tgt = U.rand(K.wind[0], K.wind[1]); S.wind.veer = U.rand(-0.7, 0.7); }
+    w.forecast = pickNext(k, S);
+    // a new air mass: the wind picks a new strength (stronger in winter) and swings round
+    if (!S.wind.hold) { const K = IC.SKY[k]; S.wind.tgt = U.rand(K.wind[0], K.wind[1]) * Z.wind; S.wind.veer = U.rand(-0.7, 0.7); }
     IC.log(S, 'info', 'WEATHER', `${IC.WEATHER[k].name}${IC.WEATHER[k].heli ? '' : ': helicopters grounded'}. Wind ${IC.windText(S)}.`);
     IC.emit(S, 'weather', k);
   }

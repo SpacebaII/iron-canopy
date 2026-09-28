@@ -203,7 +203,7 @@ function ago(t) {
 }
 const kb = n => n > 1e6 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 let delAsk = null;
-const line = m => [m.name !== m.what && m.what, `Day ${m.day}, ${m.clock}`, m.budget != null && `${U.money(m.budget)} in hand`].filter(Boolean).join(' · ');
+const line = m => [m.name !== m.what && m.what, m.cal ? `${m.cal}, ${m.clock}` : `Day ${m.day}, ${m.clock}`, m.budget != null && `${U.money(m.budget)} in hand`].filter(Boolean).join(' · ');
 function rows(inGame) {
   if (!saves.loaded) return '<p class="hint">Reading the saved games…</p>';
   if (!saves.list.length) return `<p class="hint">No saved games yet. ${inGame ? 'Save this one with the button above, or wait for the autosave (every 10 game minutes).' : 'Games save themselves every 10 game minutes and when you quit to the menu.'}</p>`;

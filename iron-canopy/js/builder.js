@@ -109,12 +109,17 @@ function deliveries(S, ap, dt) {
 IC.bldTick = deliveries;
 
 /* ---------- construction in stages ---------- */
+/* the stages a crew works through, each one something to watch on site: surveyors pegging it out, graders and
+   dump lorries on bare earth, the paver and rollers laying the surface, the paint lorry, the lights coming on one by
+   one, and the inspection before it opens. t is its share of the part's build time (together a little over the
+   base time, so there is time to watch), c its share of the cost */
 const STAGE = [
-  { k: 'survey', name: 'Survey', bname: 'Survey', t: 0.06, c: 0.03 },
+  { k: 'survey', name: 'Survey', bname: 'Survey', t: 0.07, c: 0.03 },
   { k: 'earth', name: 'Earthworks', bname: 'Foundations', t: 0.28, c: 0.27 },
-  { k: 'pave', name: 'Paving', bname: 'Structure', t: 0.46, c: 0.5, mats: true, rw: true },
-  { k: 'fit', name: 'Markings and lights', bname: 'Fitting out', t: 0.15, c: 0.2 },
-  { k: 'open', name: 'Opening', bname: 'Opening', t: 0.05, c: 0 }
+  { k: 'pave', name: 'Paving', bname: 'Structure', t: 0.44, c: 0.5, mats: true, rw: true },
+  { k: 'mark', name: 'Markings', bname: 'Fitting out', t: 0.12, c: 0.08 },
+  { k: 'lights', name: 'Lights', bname: 'Power and systems', t: 0.14, c: 0.12 },
+  { k: 'open', name: 'Inspection', bname: 'Inspection', t: 0.1, c: 0 }
 ];
 IC.STAGE = STAGE;
 /* compensation for a city block (a street block of homes, shops or works) or a village house, in ₭M */
@@ -271,7 +276,7 @@ IC.bldOpened = function (S, ap, w, before) {
   IC.sfx && IC.sfx.ui && IC.sfx.ui('ok');
   if (!['runway', 'terminal', 'cargo'].includes(p.kind) || !S.camp) return;
   const name = p.kind === 'runway' ? p.name : IC.APART[p.kind].name;
-  IC.card(S, `${name} opens`, `${ap.name} · ${U.hhmm(S.time)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
+  IC.card(S, `${name} opens`, `${ap.name} · ${U.clock(S.time)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
 };
 IC.bldSnapStats = ap => { const st = ap.st || {}; return { movesPerHour: st.movesPerHour, maxType: st.maxType, pax: st.pax, nst: IC.aptStands(ap).filter(s => s.linked !== false).length }; };
 /* start a planned part's work: called by IC.aptPlan once the part is added */
@@ -296,7 +301,7 @@ IC.bldUpgrade = function (S, ap, part, mat) {
   const probe = Object.assign({}, part, { mat });
   const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
   if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
-  const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'fit', name: 'Markings and lights', dur: dur * 0.15, cost: cost * 0.15 }];
+  const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'mark', name: 'Markings', dur: dur * 0.08, cost: cost * 0.07 }, { k: 'lights', name: 'Lights', dur: dur * 0.07, cost: cost * 0.08 }];
   const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || IC.APART[part.kind].name.toLowerCase()}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
   ap.works.push(w);
   part.shut = w.id; ap.dirty = true; ap.cfg = null;

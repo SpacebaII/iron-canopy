@@ -331,8 +331,10 @@ function onAct(e) {
     case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
-    case 'pause': S.paused = !S.paused; S.skip = false; break;
-    case 'speed': S.speed = +v; S.paused = false; S.skip = false; break;
+    case 'pause': S.paused = !S.paused; S.skip = false; IC.waitStop(S); break;
+    case 'speed': S.speed = +v; S.paused = false; S.skip = false; IC.waitStop(S); break;
+    case 'waitPick': if (S.wait) { IC.waitStop(S); ui.waitPick = false; } else ui.waitPick = !ui.waitPick; break;
+    case 'wait': ui.waitPick = false; IC.waitStart(S, v); break;
     case 'skip': startSkip(); break;
     case 'mute': if (!IC.sfx.on) IC.sfx.init(); else IC.sfx.toggle(); break;
     case 'roeAll': S.ad.roe = v; IC.log(S, 'info', 'WEAPONS', `National weapons status: ${v.toUpperCase()}.`); break;
@@ -495,12 +497,15 @@ for (const id of ['arsenal', 'insp', 'wrBody', 'feed', 'comms', 'rail', 'brief']
 $('cine').addEventListener('click', () => IC.ui.closeCine());
 
 /* ---------- time: skip ahead and auto-pause ---------- */
-function startSkip() { S.skip = true; S.paused = false; S.skipT = S.time; }
-function stopSkip(why) { if (!S.skip) return; S.skip = false; if (why) IC.toast(S, 'info', 'SKIP', why); }
+function startSkip() { IC.waitStop(S); S.skip = true; S.paused = false; S.skipT = S.time; }
+// anything that stops skip stops a wait for money too
+function stopSkip(why) { if (S.wait) { IC.waitStop(S, why); return; } if (!S.skip) return; S.skip = false; if (why) IC.toast(S, 'info', 'SKIP', why); }
 IC.on((S2, type, d) => {
   if (S2 !== S) return;
   const P = S.cfg.pauseOn;
-  const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; IC.toast(S, 'warn', 'PAUSED', why); } };
+  const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; if (S.wait) IC.waitStop(S, why); IC.toast(S, 'warn', 'PAUSED', why); } };
+  // a wait ends on its own: back to the speed the player had, and say why
+  if (type === 'waitDone') { if (d.why) IC.toast(S, 'info', 'WAIT', d.why); IC.ui.waitPick = false; return; }
   if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.'); else stopSkip('Ballistic launch.'); }
   else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`); else stopSkip(`${d.name} lost.`); }
   else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`); else stopSkip(`${d.base.name} hit.`); }
@@ -637,8 +642,9 @@ window.addEventListener('keydown', e => {
   const selKind = S.sel && S.sel.kind;
   const unitSel = selUnits().length > 0, trackSel = selKind === 'track';
   const ukeys = { e: 'emcon', w: 'uroe', q: 'udoc', m: 'move', h: 'heli', p: 'repair', x: 'reserve', f: 'fireMode' };
-  if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; }
-  else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; }
+  if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; IC.waitStop(S); }
+  else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; IC.waitStop(S); }
+  else if (k === '7') { if (S.wait) IC.waitStop(S); else ui.waitPick = !ui.waitPick; IC.ui.refresh(true); }
   else if (lk === 's') startSkip();
   // Esc always backs out of the top thing, one at a time; with nothing open it brings up the menu
   else if (k === 'Escape') {
@@ -760,13 +766,18 @@ function frame(now) {
   let gdt = 0;
   const running = !S.paused && (!S.over || IC.ui.overDismissed) && $('start').hidden;
   if (running) {
-    let speed = S.skip ? 64 : S.speed;
+    let speed = S.wait ? IC.WAIT.speed : S.skip ? 64 : S.speed;
     if (C.slow > 0) speed = Math.min(speed, 0.3);
     gdt = dtR * IC.GS * speed;
     if (S.skip && S.time - (S.skipT || S.time) > 3 * 3600) stopSkip('Three hours passed quietly.');
+    // waiting for money takes long steps while the sky is calm, fine ones as soon as anything armed is about
+    const calm = S.wait && !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
+    const big = S.wait ? (calm ? IC.WAIT.step : IC.MAX_STEP * 2) : IC.MAX_STEP * (S.skip ? 2 : 1);
     let g = gdt, guard = 0;
     const t0 = performance.now();
-    while (g > 1e-6 && guard++ < 2000) { const st = Math.min(IC.MAX_STEP * (S.skip ? 2 : 1), g); IC.step(S, st); g -= st; if (performance.now() - t0 > 40) break; }
+    while (g > 1e-6 && guard++ < 2000) { const st = Math.min(big, g); IC.step(S, st); g -= st; if (performance.now() - t0 > (S.wait ? 30 : 40)) break; }
+    // (the rate the wait really runs at, for its line in the top bar)
+    if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; }
     IC.autosaveTick(S);
   }
   fx(S, dtR, gdt);

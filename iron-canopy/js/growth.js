@@ -3,7 +3,7 @@
    city, sell at home by road and abroad by air cargo or lorry, and pay trade taxes. Roads are links between
    places: the player builds them, weapons cut them, and every change re-times the trips between cities, which
    trade, growth, airport catchments, fuel deliveries and convoys all follow. Money is booked into a weekly
-   statement, with loans for the big projects. */
+   statement and a yearly review, with loans for the big projects. */
 (function (IC) {
 'use strict';
 const U = IC.U;
@@ -21,6 +21,10 @@ IC.GROWTH = {
   roadGrowth: 1.5,    // % a day for each 100% better road links than at the start
   drift: -0.08,       // % a day with nothing going for a city: people move to where the connections are
   tradeTax: 0.15,     // share of industry sales paid in trade taxes
+  // the Career runs on the calendar: cities grow by the year, so one with good service can double in a decade
+  airYear: 7,         // % a year with perfect air service
+  roadYear: 20,       // % a year for each 100% better road links than at the start
+  driftYear: -1,      // % a year with nothing going for a city
   indCatch: 4         // hours by road at which an industry's market or airport is out of reach
 };
 IC.INDUSTRY = {
@@ -38,8 +42,11 @@ IC.ROADS = {
 };
 const CLS_NAME = { hw: 'Motorway', rd: 'Main road', lc: 'Local road', sp: 'Access road' };
 const HALF = { hw: 0.2, rd: 0.12, lc: 0.08, sp: 0.06 };   // half the road's width, in units
-IC.LOANS = [{ amt: 100, days: 5 }, { amt: 300, days: 10 }, { amt: 800, days: 20 }];
-IC.LOAN_RATE = 0.004;   // interest per game day on what is still owed
+/* loans: in the Career they run for years with interest by the month; a Quick war runs on the live clock, in days */
+IC.LOANS = [{ amt: 300, mo: 12 }, { amt: 800, mo: 24 }, { amt: 2000, mo: 48 }];
+IC.LOANS_LIVE = [{ amt: 100, days: 5 }, { amt: 300, days: 10 }, { amt: 800, days: 20 }];
+IC.LOAN_RATE_MO = 0.01;  // Career: interest a month on what is still owed
+IC.LOAN_RATE = 0.004;    // on the live clock: interest a game day
 
 /* "2 h 40" or "55 min" */
 const hm = s => { if (!isFinite(s)) return 'no way through'; const m = Math.round(s / 60); return m < 90 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; };
@@ -52,7 +59,8 @@ const rngFor = (S, k) => IC.makeRng((S.seed * 2654435761 + k * 40503) >>> 0);
 IC.econInit = function (S) {
   const W = S.world;
   const E = S.econ = { t0: S.time, tickT: 0, roadsDirty: true, inds: [], works: [], loans: [], nid: 0, damaged: [],
-    tt: {}, ti: {}, book: {}, days: [], lastBudget: S.budget, day: U.day(S.time) };
+    tt: {}, ti: {}, book: {}, days: [], lastBudget: S.budget, day: U.day(S.time), mb: {}, months: [], mT: S.time };
+  E.mStart = null;
   W.roadWorks = E.works;
   for (const c of IC.cities(S)) {
     c.popF = c.pop; c.pop0 = c.pop;
@@ -162,6 +170,7 @@ function airService(S) {
   // estates go on holiday and look at places served and fares, industry and warehouses ship air cargo. The shares
   // are measured against the country's average city, so they move demand between cities, not the national total.
   const ours = IC.cities(S).filter(c => c.owner === 'us');
+  const Z = IC.seasonOf(S);
   const dem = new Map(ours.map(c => [c, IC.cityDemand && c.mix ? IC.cityDemand(c) : { pax: 1, cargo: 1, bizShare: 0.5 }]));
   const popT = ours.reduce((s, c) => s + c.pop, 0) || 1;
   const paxN = ours.reduce((s, c) => s + c.pop * dem.get(c).pax, 0) / popT || 1, cargoN = ours.reduce((s, c) => s + c.pop * dem.get(c).cargo, 0) / popT || 1;
@@ -182,7 +191,8 @@ function airService(S) {
     // a second airport within reach helps, less than the first
     const tot = opts.reduce((s, o) => s + o[1], 0);
     c.air.score = 1 - opts.reduce((p, o) => p * (1 - o[1]), 1);
-    c.air.pot = c.pop * G.flyRate * c.prosp * D.pax / paxN;
+    // (the season: holidays fly in summer and at Christmas, business thins out in August)
+    c.air.pot = c.pop * G.flyRate * c.prosp * D.pax / paxN * ((1 - b) * Z.leisure + b * Z.biz);
     c.air.demand = c.air.pot * c.air.score;
     c.air.bizShare = b;
     const best = opts.sort((a, b2) => b2[1] - a[1])[0];
@@ -245,15 +255,17 @@ function grow(S, dt) {
   for (const c of IC.cities(S)) {
     if (c.owner !== 'us') { c.gr = { air: 0, road: 0, war: 0, base: 0, tot: 0 }; continue; }
     const alive = c.blocks.length ? c.blocks.filter(b => b.hp > 0).length / c.blocks.length : 1;
+    // (on the live clock rates are % a day; in the Career % a year, and war damage, which is live, counts its days)
+    const yr = S.mode === 'story', dy = yr ? 12 * IC.dpm(S) : 1;
     const g = {
-      air: G.airGrowth * c.air.score,
-      road: G.roadGrowth * U.clamp(c.rc / Math.max(1, c.rc0) - 1, -0.6, 0.6),
-      war: -(1 - alive) * 3 - (war ? 0.1 : 0),
-      base: G.drift
+      air: (yr ? G.airYear : G.airGrowth) * c.air.score,
+      road: (yr ? G.roadYear : G.roadGrowth) * U.clamp(c.rc / Math.max(1, c.rc0) - 1, -0.6, 0.6),
+      war: (-(1 - alive) * 3 - (war ? 0.1 : 0)) * dy,
+      base: yr ? G.driftYear : G.drift
     };
-    g.tot = U.clamp(g.air + g.road + g.war + g.base, -2, 2);
+    g.tot = U.clamp(g.air + g.road + g.war + g.base, -2 * dy, 2 * dy);
     c.gr = g;
-    const k = dt / DAY / 100;
+    const k = dt / (yr ? IC.YR(S) : DAY) / 100;
     c.popF *= 1 + g.tot * k;
     c.pop = Math.max(1, Math.round(c.popF));
     for (const f of ['air', 'road', 'war']) c.wk[f] += g[f] * k;
@@ -630,23 +642,36 @@ function nearestTown(S, p) {
 function tripTime(S, a, b) { const T = IC.travelFrom(S.world, nodeOf(S, a).id, false); return timeTo(S, T, b); }
 IC.tripTime = tripTime;
 
-/* ---------- money: loans and the weekly statement ---------- */
-IC.loanLimit = S => { const wk = IC.weekStatement(S, 1); const inc = wk ? wk.income : 0; return Math.max(300, Math.round(inc * 1.5 / 50) * 50); };
+/* ---------- money: loans, the monthly statement and the yearly review ---------- */
+const career = S => S.mode === 'story';
+IC.loanOffers = S => career(S) ? IC.LOANS : IC.LOANS_LIVE;
+/* a loan's term in game seconds, and its interest a game second on what is left */
+IC.loanTerm = (S, o) => o.mo ? IC.MO(S, o.mo) : o.days * DAY;
+const rateS = (S, l) => l.mo ? IC.LOAN_RATE_MO / IC.MO(S) : IC.LOAN_RATE / DAY;
+IC.loanRateText = S => career(S) ? `${(IC.LOAN_RATE_MO * 100).toFixed(1)}% a month` : `${(IC.LOAN_RATE * 100).toFixed(1)}% a day`;
+IC.loanTermText = (S, o) => o.mo ? (o.mo % 12 ? `${o.mo} months` : `${o.mo / 12} year${o.mo > 12 ? 's' : ''}`) : `${o.days} days`;
+/* the banks lend about four months of income in the Career (ten days of it on the live clock) */
+IC.loanLimit = S => {
+  const E = S.econ, m = E && E.months && E.months[E.months.length - 1];
+  const perDay = m && m.days ? statement(m.book).income / m.days : 0;
+  return Math.max(300, Math.round(perDay * (career(S) ? 4 * IC.dpm(S) : 10.5) / 50) * 50);
+};
 IC.loanOwed = S => S.econ ? S.econ.loans.reduce((s, l) => s + l.left, 0) : 0;
 IC.takeLoan = function (S, i) {
-  const O = IC.LOANS[i], E = S.econ;
+  const O = IC.loanOffers(S)[i], E = S.econ;
   if (!O || !E) return false;
   if (IC.loanOwed(S) + O.amt > IC.loanLimit(S)) { IC.log(S, 'warn', 'TREASURY', `The banks will not lend more: ${U.money(IC.loanOwed(S))} is already owed, the limit is ${U.money(IC.loanLimit(S))}.`); return false; }
-  const l = { id: 'ln' + (E.nid++), amt: O.amt, left: O.amt, days: O.days, t0: S.time };
+  const l = { id: 'ln' + (E.nid++), amt: O.amt, left: O.amt, mo: O.mo || 0, days: O.days || 0, term: IC.loanTerm(S, O), t0: S.time };
   E.loans.push(l);
   S.budget += O.amt; book(S, 'loanIn', O.amt);
-  IC.log(S, 'info', 'TREASURY', `Borrowed ${U.money(O.amt)} over ${O.days} days at ${(IC.LOAN_RATE * 100).toFixed(1)}% a day: about ${U.money(IC.loanPay(l) * 24)} a day to repay.`);
+  const per = career(S) ? `${U.money(IC.loanPay(S, l) * IC.MO(S) / 3600)} a month` : `${U.money(IC.loanPay(S, l) * 24)} a day`;
+  IC.log(S, 'info', 'TREASURY', `Borrowed ${U.money(O.amt)} over ${IC.loanTermText(S, O)} at ${IC.loanRateText(S)}: about ${per} to repay at first.`);
   IC.emit(S, 'loan', l);
   return l;
 };
 /* ₭M an hour: principal spread over the term plus interest on what is left */
-IC.loanPay = l => l.amt / l.days / 24 + l.left * IC.LOAN_RATE / 24;
-IC.loanRate = S => S.econ ? S.econ.loans.reduce((s, l) => s + IC.loanPay(l), 0) : 0;
+IC.loanPay = (S, l) => (l.amt / (l.term || l.days * DAY) + l.left * rateS(S, l)) * 3600;
+IC.loanRate = S => S.econ ? S.econ.loans.reduce((s, l) => s + IC.loanPay(S, l), 0) : 0;
 IC.repayLoan = function (S, id) {
   const E = S.econ, l = E && E.loans.find(x => x.id === id);
   if (!l || S.budget < l.left) return false;
@@ -657,12 +682,13 @@ IC.repayLoan = function (S, id) {
 };
 function loans(S, dt) {
   const E = S.econ;
-  for (const l of E.loans) l.left = Math.max(0, l.left - l.amt / l.days / 24 * dt / 3600);
+  for (const l of E.loans) l.left = Math.max(0, l.left - l.amt / (l.term || l.days * DAY) * dt);
   for (const l of E.loans.filter(x => x.left <= 0.001)) IC.log(S, 'info', 'TREASURY', `Loan of ${U.money(l.amt)} repaid.`);
   E.loans = E.loans.filter(x => x.left > 0.001);
 }
 /* money booked by kind: + comes in, − goes out */
-function book(S, k, v) { const E = S.econ; if (!E || !v) return; E.book[k] = (E.book[k] || 0) + v; E.booked = (E.booked || 0) + v; }
+// (each line goes into the day's book and the month's: the statement is the month's, the review sums the months)
+function book(S, k, v) { const E = S.econ; if (!E || !v) return; E.book[k] = (E.book[k] || 0) + v; const M = E.mb || (E.mb = {}); M[k] = (M[k] || 0) + v; E.booked = (E.booked || 0) + v; }
 IC.econBook = book;
 /* pay for something now and book it by kind (the kinds are in IC.STATEMENT) */
 IC.pay = function (S, k, v) { S.budget -= v; book(S, k, -v); };
@@ -712,23 +738,71 @@ IC.moneyWhy = function (S, k, r) {
 function closeBooks(S) {
   // what the treasury did that nobody booked: building, buying, research
   const E = S.econ, d = S.budget - E.lastBudget - (E.booked || 0);
-  if (Math.abs(d) > 1e-6) E.book[d < 0 ? 'other' : 'oneoff'] = (E.book[d < 0 ? 'other' : 'oneoff'] || 0) + d;
+  if (Math.abs(d) > 1e-6) { const k = d < 0 ? 'other' : 'oneoff', M = E.mb || (E.mb = {}); E.book[k] = (E.book[k] || 0) + d; M[k] = (M[k] || 0) + d; }
   E.lastBudget = S.budget; E.booked = 0;
 }
 function sumBooks(list) { const o = {}; for (const b of list) for (const k in b) o[k] = (o[k] || 0) + b[k]; return o; }
-/* the statement for this week so far (ago=0) or a finished week (ago=1: last week) */
-IC.weekStatement = function (S, ago) {
-  const E = S.econ; if (!E) return null;
-  const wk = Math.floor((E.day - 1) / 7) - (ago || 0);
-  if (wk < 0) return null;
-  const days = E.days.filter(d => Math.floor((d.day - 1) / 7) === wk).map(d => d.book);
-  if (!ago) { closeBooks(S); days.push(E.book); }
-  if (!days.length) return null;
-  const b = sumBooks(days);
+/* statement lines from a book: income first, then spending */
+function statement(b) {
   const lines = Object.keys(b).filter(k => Math.abs(b[k]) >= 0.05).sort((p, q) => b[q] - b[p]).map(k => ({ k, name: IC.STATEMENT[k] || k, v: b[k] }));
   const income = lines.filter(l => l.v > 0 && l.k !== 'loanIn').reduce((s, l) => s + l.v, 0);
   const spend = lines.filter(l => l.v < 0).reduce((s, l) => s + l.v, 0);
-  return { week: wk + 1, from: wk * 7 + 1, to: wk * 7 + 7, days: days.length, lines, income, spend, net: income + spend + (b.loanIn || 0) };
+  return { lines, income, spend, net: income + spend + (b.loanIn || 0) };
+}
+/* what the country and the airports look like at a month's end, for the review */
+function snapshot(S) {
+  const A = S.av, aps = ourAirports(S);
+  return { budget: S.budget, pop: IC.cities(S).reduce((s, c) => s + c.pop, 0), airports: aps.length, stands: aps.reduce((s, ap) => s + IC.aptStands(ap).length, 0),
+    airlines: A ? A.airlines.filter(a => !a.gone).length : 0, routes: A ? A.routes.filter(r => r.st === 'active').length : 0, deals: A ? A.deals.filter(d => d.st === 'active').length : 0,
+    fees: A ? A.feeTotal || 0 : 0, pax: A ? A.paxTotal || 0 : 0 };
+}
+/* a city's tally of why it grew: by the week on the live clock, by the month in the Career */
+function newWeek(S) { for (const c of IC.cities(S)) { c.wkLast = c.wk; c.wk = { pop0: c.pop, air: 0, road: 0, war: 0 }; } }
+IC.onMonth(S => { if (S.mode === 'story' && S.econ) newWeek(S); });
+/* the month turns: close its book (the statement) and keep three years of them */
+IC.onMonth((S, was) => {
+  const E = S.econ; if (!E) return;
+  closeBooks(S);
+  const days = Math.max(1, Math.min(IC.dpm(S), (S.time - (E.mT != null ? E.mT : E.t0)) / DAY));
+  E.months = E.months || [];
+  E.months.push({ m: was, days, book: E.mb || {}, end: snapshot(S), start: E.mStart || null });
+  if (E.months.length > 36) E.months.shift();
+  E.mb = {}; E.mT = S.time; E.mStart = snapshot(S);
+  const st = statement(E.months[E.months.length - 1].book);
+  if (S.mode === 'story') IC.log(S, st.net >= 0 ? 'info' : 'warn', 'TREASURY', `${IC.MONTHS[was % 12]} closed: ${U.money(st.income)} came in, ${U.money(-st.spend)} went out, ${st.net >= 0 ? '+' : '−'}${U.money(Math.abs(st.net)).replace('−', '')} in all. The statement is in the Economy room.`);
+  if (S.mode === 'story' && (was + 1) % 12 === 0 && IC.card) { const R = IC.yearReview(S, Math.floor(was / 12) + 1); if (R) IC.card(S, `Year ${R.y} in review`, U.clock(S.time), R.text, 'report'); }
+});
+/* the statement for this month so far (ago=0) or a finished month (ago=1: last month, 2: the one before) */
+IC.monthStatement = function (S, ago) {
+  const E = S.econ; if (!E) return null;
+  let b, m, days;
+  if (!ago) { closeBooks(S); b = E.mb || {}; m = S.cal ? S.cal.m : 0; days = Math.min(IC.dpm(S), (S.time - (E.mT != null ? E.mT : E.t0)) / DAY); }
+  else { const M = E.months && E.months[E.months.length - ago]; if (!M) return null; b = M.book; m = M.m; days = M.days; }
+  return Object.assign({ m, name: `${IC.MONTHS[m % 12]}, Year ${Math.floor(m / 12) + 1}`, days, whole: !!ago }, statement(b));
+};
+/* the old name, for anything that still asks for a week: the month is the statement now */
+IC.weekStatement = IC.monthStatement;
+/* the year in review: money by line over the year's months, and what changed from its first month to its last */
+IC.yearReview = function (S, y) {
+  const E = S.econ; if (!E || !E.months) return null;
+  const Ms = E.months.filter(M => Math.floor(M.m / 12) + 1 === y);
+  if (!Ms.length) return null;
+  const b = {}; for (const M of Ms) for (const k in M.book) b[k] = (b[k] || 0) + M.book[k];
+  const st = statement(b), a = Ms[0].start || Ms[0].end, z = Ms[Ms.length - 1].end;
+  const ch = (x, y2, f) => x === y2 ? `${f(y2)}` : `${f(x)} → ${f(y2)}`;
+  const n = v => String(Math.round(v));
+  const rows = [
+    ['Came in', U.money(st.income)], ['Went out', U.money(-st.spend)], ['Treasury', ch(a.budget, z.budget, U.money)],
+    ['People', `${(z.pop / 1000).toFixed(1)} million (${pct1(z.pop / Math.max(1, a.pop) - 1)})`],
+    ['Airports', ch(a.airports, z.airports, n)], ['Stands', ch(a.stands, z.stands, n)], ['Airlines', ch(a.airlines, z.airlines, n)],
+    ['Routes flown', ch(a.routes, z.routes, n)], ['Deals running', ch(a.deals, z.deals, n)]
+  ];
+  if (z.pax > a.pax) rows.push(['Passengers', Math.round(z.pax - a.pax).toLocaleString('en-US')]);
+  if (z.fees > a.fees) rows.push(['Airline fees', U.money(z.fees - a.fees)]);
+  const top = st.lines.filter(l => l.v > 0 && l.k !== 'loanIn').slice(0, 2).map(l => `${l.name.toLowerCase()} (${U.money(l.v)})`);
+  const big = st.lines.filter(l => l.v < 0).slice(-2).reverse().map(l => `${l.name.toLowerCase()} (${U.money(-l.v)})`);
+  const text = `Year ${y}: ${U.money(st.income)} came in, most of it ${top.join(' and ') || 'nothing yet'}; ${U.money(-st.spend)} went out, most on ${big.join(' and ') || 'nothing'}. The treasury went from ${U.money(a.budget)} to ${U.money(z.budget)}. ${z.airlines} airline${z.airlines === 1 ? '' : 's'} fly ${z.routes} route${z.routes === 1 ? '' : 's'} from ${z.airports} airport${z.airports === 1 ? '' : 's'}; the country has ${(z.pop / 1000).toFixed(1)} million people (${pct1(z.pop / Math.max(1, a.pop) - 1)}).`;
+  return Object.assign({ y, rows, text, months: Ms.length }, st);
 };
 
 /* ---------- a national network that grows by demand ----------
@@ -781,15 +855,16 @@ IC.cityReport = function (S, c) {
   if (Math.abs(top[2]) > 0.0005) {
     if (top[0] === 'air' && top[2] > 0) {
       const aps = ourAirports(S).filter(a => catchF(timeTo(S, E.tt[c.id], a) / 3600) > 0.3).map(a => a.id);
-      const fresh = S.av ? S.av.routes.filter(r => r.st === 'active' && r.since > E.t0 + 1 && S.time - r.since < WEEK && (aps.includes(r.a) || (r.b.apt && aps.includes(r.b.apt)))) : [];
+      const fresh = S.av ? S.av.routes.filter(r => r.st === 'active' && r.since > E.t0 + 1 && S.time - r.since < (S.mode === 'story' ? IC.MO(S) : WEEK) && (aps.includes(r.a) || (r.b.apt && aps.includes(r.b.apt)))) : [];
       const to = [...new Set(fresh.map(r => shortName(aps.includes(r.a) ? IC.avEnd(S, r.b).name : S.byId[r.a].name)))];
       why = to.length ? `mostly from new routes to ${to.slice(0, 3).join(', ')}${to.length > 3 ? ' and more' : ''}` : 'mostly from its air service';
     } else if (top[0] === 'road') why = top[2] > 0 ? 'mostly from better road links' : 'mostly from cut roads';
     else if (top[0] === 'war') why = 'mostly from war damage';
   }
   const lack = [c.air.score < 0.05 ? 'no air service within reach' : '', c.rc <= c.rc0 * 1.01 ? 'no new road links' : ''].filter(Boolean).join(' and ');
-  R.growth = Math.abs(g) < 0.0005 ? `Unchanged this week${lack ? `: ${lack}` : ''}.` : `${g >= 0 ? 'Grew' : 'Shrank'} ${Math.abs(g * 100).toFixed(1)}% this week, ${why || (lack ? `with ${lack}` : 'as people move to better-connected cities')}.`;
-  R.rate = `${pct1(c.gr.tot / 100)} a day now (air ${pct1(c.gr.air / 100)}, roads ${pct1(c.gr.road / 100)}${c.gr.war < -0.01 ? `, war ${pct1(c.gr.war / 100)}` : ''}, drift ${pct1(c.gr.base / 100)}).`;
+  const per = S.mode === 'story' ? 'month' : 'week', unit = S.mode === 'story' ? 'a year' : 'a day';
+  R.growth = Math.abs(g) < 0.0005 ? `Unchanged this ${per}${lack ? `: ${lack}` : ''}.` : `${g >= 0 ? 'Grew' : 'Shrank'} ${Math.abs(g * 100).toFixed(1)}% this ${per}, ${why || (lack ? `with ${lack}` : 'as people move to better-connected cities')}.`;
+  R.rate = `${pct1(c.gr.tot / 100)} ${unit} now (air ${pct1(c.gr.air / 100)}, roads ${pct1(c.gr.road / 100)}${c.gr.war < -0.01 ? `, war ${pct1(c.gr.war / 100)}` : ''}, drift ${pct1(c.gr.base / 100)}).`;
   const best = c.air.best && S.byId[c.air.best];
   if (best) R.air = `${shortName(best.name)}, ${hm(c.air.bestT)} by road: ${Math.round(best.svc.deps)} departures a day to ${best.svc.dests.size} places.`;
   else if (c.air.near) R.air = `No airline service within ${IC.GROWTH.catch[1]} h. The nearest airport, ${shortName(S.byId[c.air.near].name)}, is ${hm(c.air.bestT)} away${S.byId[c.air.near].svc && !S.byId[c.air.near].svc.deps ? ' and has no flights' : ''}.`;
@@ -838,7 +913,7 @@ IC.growth = function (S, dt) {
     E.days.push({ day: E.day, book: E.book, pop: IC.cities(S).reduce((s, c) => s + c.pop, 0), demand: IC.cities(S).reduce((s, c) => s + (c.air ? c.air.demand : 0), 0) });
     if (E.days.length > 21) E.days.shift();
     E.book = {}; E.day = day;
-    if ((day - 1) % 7 === 0) for (const c of IC.cities(S)) { c.wkLast = c.wk; c.wk = { pop0: c.pop, air: 0, road: 0, war: 0 }; }
+    if (S.mode !== 'story' && (day - 1) % 7 === 0) newWeek(S);
   }
 };
 /* each airport's fuel comes from the nearest city of 300k by road; a detour means fewer tankers an hour */

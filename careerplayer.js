@@ -1,8 +1,11 @@
 /* A scripted Career player, for the balance run (storytest.js) and the tests. It plays Act I the way a steady
    player would: builds the national airport, grows it, draws the airspace, takes the contracts, founds a second
    airport and a freight operation, approves what the airports can take and answers every card with its first
-   choice. It uses the same functions as the interface. Call it every game minute or so: player(S). */
+   choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
+   forward base in Act II, and from Act III defends like the Quick war commander (qwplayer.js). It uses the same
+   functions as the interface. Call it every game minute or so: player(S). */
 const IC = require('./headless.js');
+const QW = require('./qwplayer.js');
 const U = IC.U;
 
 /* a flat site near a town, with few homes under the approaches */
@@ -116,7 +119,7 @@ function player(S, log) {
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
-  if (st.act !== 1) return;
+  if (st.act !== 1) { later(S, st); return; }
   // the national airport
   if (!st.cap) { const p = site(S, cc, 180, 380); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); return; }
   const ap = S.byId[st.cap];
@@ -145,5 +148,22 @@ function player(S, log) {
   // a third city's field, when its contract is taken
   if (st.contract3 && st.city3 && !st.apt3 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city3], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
   if (st.apt3) { starter(S, S.byId[st.apt3], st.contract3 && st.contract3.size === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt3]); }
+}
+/* after Act I: the airports keep growing with the airlines, and the defence is built as the acts allow */
+function later(S, st) {
+  const ap = S.byId[st.cap];
+  for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us') for (const it of IC.aptRepairList(b)) if (S.budget > it.cost + 40) IC.aptQueue(S, b, it.key);
+  if (ap && !ap.works.length && S.budget > 400) grow(S, ap, st);
+  for (const id of [st.apt2, st.apt3]) if (id && S.byId[id]) outpost(S, S.byId[id]);
+  const fb = S.byId.ab_fwd;
+  if (st.act === 2) {
+    // a military radar near the border, in front of the forward base; a prohibited zone round the base
+    if (!S.units.some(u => (u.type === 'gf' || u.type === 'mr3d') && !u.dead) && S.budget > 200) {
+      const p = IC.findSpot(S, 'mr3d', fb.x, fb.y, 100, 500);
+      if (p) IC.deploy(S, 'mr3d', p.x, p.y);
+    }
+    if (!S.av.zones.length) IC.avAddZone(S, fb.x, fb.y, 150, 'Forward base');
+  }
+  if (st.act >= 3) { if (S.supply) S.supply.auto = true; QW.commander(S); }
 }
 module.exports = { player, site, starter, grow };

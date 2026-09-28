@@ -1350,7 +1350,7 @@ test('growth: a well-connected city adds blocks over a few game days; a cut-off 
   if (lone) assert(lone.blocks.filter(b => !b.empty).length <= l0, `${lone.name}, with no air service, still grew`);
   assert(S.worldDirty.length, 'the world was not told about the new blocks');
 });
-test('growth: the weekly statement adds up to the change in the treasury', () => {
+test('growth: the monthly statement adds up to the change in the treasury', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 });
   const b0 = S.budget;
   IC.takeLoan(S, 0);

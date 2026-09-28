@@ -155,7 +155,7 @@ const routeLbl = q => `${shortAp(S.byId[q.a].name)} – ${shortAp(IC.avEnd(S, q.
 function dealCard(q) {
   const al = IC.avAirline(S, q.al), T = IC.ACTYPES[q.type], a = S.byId[q.a], b = IC.avEnd(S, q.b);
   const k = IC.dealTerms(S, q), needs = IC.dealNeeds(S, q), block = needs.find(x => !x.ok);
-  const lv = IC.DEAL.levels.map((d, i) => { const t = IC.dealTerms(S, q, i); return [String(i), `${d > 0 ? '+' : d < 0 ? '−' : ''}${d ? Math.round(Math.abs(d) * 100) + '%' : 'List'} · ${t.days} d`, t.ok ? '' : 'red', t.ok ? `${U.pct(t.charge)} of standard charges for ${t.days} days: ${U.money(t.value)} a day` : `The airline refuses: ${t.why}`]; });
+  const lv = IC.DEAL.levels.map((d, i) => { const t = IC.dealTerms(S, q, i); return [String(i), `${d > 0 ? '+' : d < 0 ? '−' : ''}${d ? Math.round(Math.abs(d) * 100) + '%' : 'List'} · ${S.mode === 'story' ? t.days + ' mo' : t.days + ' d'}`, t.ok ? '' : 'red', t.ok ? `${U.pct(t.charge)} of standard charges for ${IC.dealLen(S, t.days)}: ${U.money(t.value)} a day` : `The airline refuses: ${t.why}`]; });
   const neg = `<div class="dl-neg"><span class="muted">Charges</span>${seg('av', 'lvl:' + k.lvl, lv.map(o => ['lvl:' + o[0], o[1], o[2], o[3]]), q.id)}
     ${q.terms.excl ? `<button class="btn sm ${k.excl ? 'primary' : ''}" data-act="av" data-v="excl" data-id="${q.id}" title="The airline asks for the route to itself: it pays 8% more, and no rival gets this route while the deal runs">${k.excl ? '✓ ' : ''}Exclusive</button>` : ''}</div>`;
   const need = needs.map(x => `<li class="${x.ok ? 'ok' : 'no'}"><i>${x.ok ? '✓' : '✗'}</i>${esc(x.name)}${x.need != null ? `<span>${Math.floor(x.have)} / ${Math.ceil(x.need)}</span>` : ''}</li>`).join('');
@@ -163,7 +163,7 @@ function dealCard(q) {
   return `<div class="deal ${block ? 'blocked' : ''}" style="--liv:${al.livery[0]}">
     <div class="dl-head">${livery(al)}<b>${esc(al.name)}</b><span class="muted">${esc(al.K.style)}${q.renew ? ' · renewal' : ''}</span><em>decide within ${U.dur(Math.max(0, q.exp - S.time))}</em></div>
     <div class="dl-route"><span class="code">${code3(a.name)}</span><span class="arrow"></span><span class="code">${code3(b.name)}</span><small>${esc(routeLbl(q))} · ${U.km(U.dist(a, b))}</small></div>
-    <div class="dl-terms"><div><small>Aircraft</small><b>${q.n} × ${esc(T.name.toLowerCase())}</b></div><div><small>Flights</small><b>${k.perWk} a week</b></div><div><small>Length</small><b>${k.days} day${k.days > 1 ? 's' : ''}</b></div><div><small>Worth to us</small><b class="gold">${U.money(k.value)} a day</b></div></div>
+    <div class="dl-terms"><div><small>Aircraft</small><b>${q.n} × ${esc(T.name.toLowerCase())}</b></div><div><small>Flights</small><b>${S.mode === 'story' ? `${Math.round(k.perWk / 7)} a day` : `${k.perWk} a week`}</b></div><div><small>Length</small><b>${IC.dealLen(S, k.days)}</b></div><div><small>Worth to us</small><b class="gold">${U.money(k.value)} a day</b></div></div>
     ${neg}
     <ul class="dl-needs">${need}</ul>
     <p class="dl-small">Brings about ${brings || 'little'} a day, and raises our name when it runs its term. Each late flight costs us ${U.money(q.terms.late)}, each cancelled one ${U.money(q.terms.cancel)}.</p>
@@ -416,10 +416,10 @@ function warEconomy() {
     <div class="card"><h3>War bonds</h3><div class="acts"><button class="act" data-act="bonds" ${bonds ? '' : 'disabled'}>Sell war bonds · +${U.money(200 + S.mobil * 80)}</button></div><p class="hint">${bonds ? 'Cash now, a small cost to morale in every city. Once a day.' : `Bonds can be sold again in ${U.dur(86400 - (S.time - S.bondsT))}.`}</p></div>`;
 }
 
-/* ---------- the economy: the weekly statement, loans, passengers, growth, trade and roads ---------- */
+/* ---------- the economy: the monthly statement and the year's review, loans, passengers, growth, trade and roads ---------- */
 function economy() {
   const E = S.econ; if (!E) return '<div class="card wide"><p class="hint">No economy in this mode.</p></div>';
-  const wk = IC.weekStatement(S, 0), last = IC.weekStatement(S, 1), M = IC.money(S);
+  const wk = IC.monthStatement(S, 0), last = IC.monthStatement(S, 1), M = IC.money(S);
   const val = v => `<td class="r ${v >= 0 ? 'ok' : 'hostile'}">${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}</td>`;
   const mline = (l, sign) => `<button class="mline" data-act="why" data-v="${l.k}" aria-expanded="${ui.why === l.k}"><span>${esc(l.name)}</span><b class="${sign > 0 ? 'ok' : 'hostile'}">${sign > 0 ? '+' : '−'}${U.money(l.v)}</b></button>${ui.why === l.k ? `<p class="hint mwhy">${esc(l.why)}</p>` : ''}`;
   const warn = M.net < 0 && M.left < 24;
@@ -427,20 +427,21 @@ function economy() {
     <div class="mtop"><div><small>Treasury</small><strong>${U.money(S.budget)}</strong></div><div><small>An hour, now</small><strong class="${M.net >= 0 ? 'ok' : 'hostile'}">${M.net >= 0 ? '+' : '−'}${U.money(Math.abs(M.net))}</strong></div><p class="${warn ? 'hostile' : M.net < 0 ? 'amber' : 'ok'}">${esc(M.forecast)}${warn ? ' Put units back in the reserve, raise airport charges, or borrow below.' : ''}</p></div>
     <div class="mcols"><div><h4>Coming in <em>+${U.money(M.inH)}/h</em></h4>${M.inc.map(l => mline(l, 1)).join('') || '<p class="hint">Nothing.</p>'}</div>
     <div><h4>Going out <em>−${U.money(M.outH)}/h</em></h4>${M.out.map(l => mline(l, -1)).join('') || '<p class="hint">Nothing.</p>'}</div></div>
-    <p class="hint">Hourly lines are what runs all the time. Buying and building are paid when you do them${IC.storyLock(S, 'statement') ? '' : ' and show in the week below'}.</p></div>`;
+    <p class="hint">Hourly lines are what runs all the time. Buying and building are paid when you do them${IC.storyLock(S, 'statement') ? '' : ' and show in the month below'}.</p></div>`;
   const keys = [...new Set((wk ? wk.lines : []).concat(last ? last.lines : []).map(l => l.k))];
   const get = (st, k) => { const l = st && st.lines.find(x => x.k === k); return l ? l.v : 0; };
   const rows = keys.sort((a, b) => get(wk, b) - get(wk, a)).map(k => `<tr><td>${esc(IC.STATEMENT[k] || k)}</td>${val(get(wk, k))}${last ? val(get(last, k)) : ''}</tr>`).join('');
-  const stmt = head + econLesson() + aptMoney() + (IC.storyLock(S, 'charges') ? '' : chargesCard()) + (IC.storyLock(S, 'statement') ? '' : `<div class="card wide"><h3>This week<em>everything paid in and out, by kind</em></h3>
-    ${wk ? `<table class="t"><tr><th>${wk.days >= 7 ? `Week ${wk.week}` : wk.days === 1 ? `Day ${wk.from} (week ${wk.week})` : `Days ${wk.from}–${wk.from + wk.days - 1} (week ${wk.week})`}</th><th class="r">This week</th>${last ? '<th class="r">Last week</th>' : ''}</tr>${rows}
+  const stmt = head + econLesson() + aptMoney() + (IC.storyLock(S, 'charges') ? '' : chargesCard()) + (IC.storyLock(S, 'statement') ? '' : `<div class="card wide"><h3>This month<em>everything paid in and out, by kind</em></h3>
+    ${wk ? `<table class="t"><tr><th>${esc(wk.name)}${wk.days < IC.dpm(S) - 0.01 ? ` (${Math.max(1, Math.ceil(wk.days))} of ${IC.dpm(S)} days so far)` : ''}</th><th class="r">This month</th>${last ? `<th class="r">${esc(IC.MONTHS[last.m % 12])}</th>` : ''}</tr>${rows}
       <tr><td><b>Came in</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Went out</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}
-    <p class="hint">The lines add up to the change in the treasury. Loans taken count in the change, not as income.</p></div>`);
+    <p class="hint">The lines add up to the change in the treasury. Loans taken count in the change, not as income. A month is ${IC.dpm(S)} days and nights.</p></div>` + yearCard());
   // loans
   const owed = IC.loanOwed(S), lim = IC.loanLimit(S);
-  const offers = IC.LOANS.map((o, i) => { const pay = (o.amt / o.days + o.amt * IC.LOAN_RATE) * 1; return `<div class="li"><b>Borrow ${U.money(o.amt)}</b><small>over ${o.days} days · about ${U.money(pay)} a day at first</small><span class="la"><button class="btn sm" data-act="loan" data-v="${i}" ${owed + o.amt > lim ? 'disabled' : ''}>Borrow</button></span></div>`; }).join('');
-  const mine = E.loans.map(l => `<div class="li"><b>${U.money(l.amt)} loan</b><small>${U.money(l.left)} still owed · ${U.money(IC.loanPay(l) * 24)} a day</small><span class="la"><button class="btn sm" data-act="repayLoan" data-id="${l.id}" ${S.budget < l.left ? 'disabled' : ''}>Pay off</button></span></div>`).join('');
+  const mo = S.mode === 'story', per = mo ? IC.MO(S) / 3600 : 24, perW = mo ? 'a month' : 'a day';
+  const offers = IC.loanOffers(S).map((o, i) => { const pay = IC.loanPay(S, { amt: o.amt, left: o.amt, mo: o.mo, days: o.days, term: IC.loanTerm(S, o) }) * per; return `<div class="li"><b>Borrow ${U.money(o.amt)}</b><small>over ${IC.loanTermText(S, o)} · about ${U.money(pay)} ${perW} at first</small><span class="la"><button class="btn sm" data-act="loan" data-v="${i}" ${owed + o.amt > lim ? 'disabled' : ''}>Borrow</button></span></div>`; }).join('');
+  const mine = E.loans.map(l => `<div class="li"><b>${U.money(l.amt)} loan</b><small>${U.money(l.left)} still owed · ${U.money(IC.loanPay(S, l) * per)} ${perW}</small><span class="la"><button class="btn sm" data-act="repayLoan" data-id="${l.id}" ${S.budget < l.left ? 'disabled' : ''}>Pay off</button></span></div>`).join('');
   const loans = `<div class="card"><h3>Loans<em>${U.money(owed)} owed of ${U.money(lim)} the banks allow</em></h3>${mine ? `<div class="list">${mine}</div>` : ''}<div class="list">${offers}</div>
-    <p class="hint">For big projects: a new runway, a motorway. Repayments and ${(IC.LOAN_RATE * 100).toFixed(1)}% interest a day come out of the budget every hour. The limit grows with last week's income.</p></div>`;
+    <p class="hint">For big projects: a new runway, a motorway. Repayments and ${IC.loanRateText(S)} interest come out of the budget every hour. The limit grows with last month's income.</p></div>`;
   // passengers at each airport
   const apts = S.infra.filter(i => i.kind === 'airport' && i.svc).map(ap => { const v = ap.svc; return `<tr class="click" data-act="selInfra" data-id="${ap.id}"><td>${esc(ap.name.replace(/ (International|Airport)$/, ''))}</td><td class="r">${Math.round(v.demand).toLocaleString('en-US')}</td><td class="r">${Math.round(v.seats).toLocaleString('en-US')}</td><td class="r ${v.lf > 0.9 ? 'amber' : ''}">${U.pct(v.lf)}</td><td class="r">${Math.round(v.deps)}</td><td class="r">${v.dests.size}</td><td class="r" title="frequency · choice of places · punctuality · fares">${U.pct(v.freqF)} · ${U.pct(v.destF)} · ${U.pct(v.relF)} · ${U.pct(v.fareF)}</td></tr>`; }).join('');
   const pax = `<div class="card wide"><h3>Passengers<em>a day, from the cities each airport serves</em></h3><table class="t"><tr><th>Airport</th><th class="r">Want to fly</th><th class="r">Seats</th><th class="r">Full</th><th class="r">Departures</th><th class="r">Places</th><th class="r">Frequency · choice · punctuality · fares</th></tr>${apts}</table>
@@ -449,7 +450,7 @@ function economy() {
   // one table for the cities: growth and air service, and (once at war) their industry and damage
   const war = ui.roomOk('industry');
   const cities = IC.cities(S).slice().sort((a, b) => b.pop - a.pop).map(c => { const g = c.gr ? c.gr.tot : 0; const cut = c.cuts && c.cuts.length, dark = c.plant && S.byId[c.plant] && S.byId[c.plant].offline; return `<tr class="click" data-act="selInfra" data-id="${c.id}"><td>${esc(c.name)}</td><td class="r">${c.pop}k</td><td class="r ${g > 0.05 ? 'ok' : g < -0.05 ? 'hostile' : ''}">${Math.abs(g) < 0.005 ? '' : g > 0 ? '+' : '−'}${Math.abs(g).toFixed(2)}%</td><td class="r">${c.air ? U.pct(c.air.score) : '–'}</td><td class="r">${c.air ? Math.round(c.air.demand).toLocaleString('en-US') : '–'}</td><td class="r ${cut ? 'hostile' : ''}">${U.pct(c.rc / Math.max(1, c.rc0 || 1))}${cut ? ' · cut' : ''}</td>${war ? `<td class="r">${c.ind}</td><td class="r">${U.pct(c.hp / c.max)}</td><td class="${c.alert > 0 ? 'hostile' : dark ? 'suspect' : ''}">${c.alert > 0 ? 'sirens' : dark ? 'blackout' : 'working'}</td>` : ''}</tr>`; }).join('');
-  const growth = `<div class="card wide"><h3>Cities<em>growth a day · click one for the reasons</em></h3><table class="t"><tr><th>City</th><th class="r">Pop</th><th class="r">Growth</th><th class="r">Air service</th><th class="r">Flyers a day</th><th class="r">Road links</th>${war ? '<th class="r">Industry</th><th class="r">Intact</th><th>Status</th>' : ''}</tr>${cities}</table>
+  const growth = `<div class="card wide"><h3>Cities<em>growth ${S.mode === 'story' ? 'a year' : 'a day'} · click one for the reasons</em></h3><table class="t"><tr><th>City</th><th class="r">Pop</th><th class="r">Growth</th><th class="r">Air service</th><th class="r">Flyers a day</th><th class="r">Road links</th>${war ? '<th class="r">Industry</th><th class="r">Intact</th><th>Status</th>' : ''}</tr>${cities}</table>
     <p class="hint">Click a city for the reasons. A new airport or road within reach of a city that has none is the biggest lift you can give it.</p></div>`;
   // industry
   const inds = E.inds.map(i => `<div class="li"><b>${esc(i.name)} <span class="muted">· ${esc(IC.INDUSTRY[i.kind].goods)}</span></b><small>${U.money(i.out * 24)} a day of ${U.money(i.cap * 24)} it could sell · ${IC.indWhy(S, i).map(esc).join(' ')}</small></div>`).join('');
@@ -472,6 +473,20 @@ function economy() {
   return top + (pg === 'growth' ? pax + growth + trade : pg === 'build' ? (noRoads ? '' : roads) + (noLoans ? '' : loans) : pg === 'war' ? warEconomy() : stmt + later);
 }
 
+/* the year so far, month by month, and last year's review */
+function yearCard() {
+  const E = S.econ; if (!E || !E.months || S.mode !== 'story') return '';
+  const y = Math.floor(S.cal.m / 12) + 1, Ms = E.months.filter(M => Math.floor(M.m / 12) + 1 === y);
+  const cur = IC.monthStatement(S, 0);
+  const bar = (v, mx) => `<i style="width:${Math.round(Math.abs(v) / mx * 100)}%" class="${v >= 0 ? 'ok' : 'hostile'}"></i>`;
+  const all = Ms.map(M => { const b = M.book; let inc = 0, out = 0; for (const k in b) if (k !== 'loanIn') { if (b[k] > 0) inc += b[k]; else out += b[k]; } return { name: IC.MONTHS[M.m % 12], net: inc + out + (b.loanIn || 0), inc, end: M.end.budget }; });
+  all.push({ name: IC.MONTHS[S.cal.m % 12] + ' so far', net: cur.net, inc: cur.income, end: S.budget });
+  const mx = Math.max(1, ...all.map(r => Math.abs(r.net)));
+  const rows = all.map(r => `<tr><td>${esc(r.name)}</td><td class="r">${U.money(r.inc)}</td><td class="r ${r.net >= 0 ? 'ok' : 'hostile'}">${r.net >= 0 ? '+' : '−'}${U.money(Math.abs(r.net)).replace('−', '')}</td><td class="bar">${bar(r.net, mx)}</td><td class="r">${U.money(r.end)}</td></tr>`).join('');
+  const R = y > 1 && IC.yearReview(S, y - 1);
+  const rev = R ? `<div class="card wide"><h3>Year ${R.y} in review<em>${R.months} months</em></h3><table class="t">${R.rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="r">${esc(v)}</td></tr>`).join('')}</table><p class="hint">${esc(R.text)}</p></div>` : '';
+  return `<div class="card wide"><h3>Year ${y}<em>month by month</em></h3><table class="t ymonths"><tr><th>Month</th><th class="r">Came in</th><th class="r">Change</th><th></th><th class="r">Treasury at the end</th></tr>${rows}</table></div>` + rev;
+}
 /* the lesson for the lever this chapter opened: what it does, and what good and bad look like, in our numbers */
 function econLesson() {
   const st = S.story; if (!st || st.act > 1 || !st.fresh) return '';
@@ -480,9 +495,9 @@ function econLesson() {
   const L = {
     0: ['Money in, money out', `The Treasury gave you ${U.money(IC.CAREER_START)} to build the national airport, and pays a grant of ${U.money(M.inc.find(l => l.k === 'base') ? M.inc.find(l => l.k === 'base').v : 5)} an hour. Once airlines fly, they pay for every landing and every passenger. <b>Good</b>: airline fees above upkeep once the airport runs. <b>Bad</b>: building more than the airlines use: every ₭100M of concrete costs ₭0.12M an hour for as long as it stands.`],
     1: ['Charges and stands', `Airlines pay the airport’s list charges, or what their deal says. Most sign between 85% and 115%; low-cost airlines grumble above 65%, flag carriers above 130%, and every visit over their limit costs their goodwill. ${sd && sd.n ? `A stand here earned about ${U.money(sd.avg)} ${sd.when}; its apron costs about ${U.money(sd.keep)} a day to keep. <b>Good</b>: every stand earning several times its keep. <b>Bad</b>: stands that earn nothing: ${sd.idle ? `${sd.idle} of yours did` : 'none of yours did'}.` : 'The Money page shows what each stand earns once aircraft use them.'}`],
-    2: ['The week’s statement', `Every payment by kind, this week against last. <b>Good</b>: once the building stops, the treasury grows by more than it shrank while you built. <b>Bad</b>: “building works” larger than all income for a whole week, with nothing new flying. Now: fees ${U.money(fees)} an hour against upkeep ${U.money(up)}.`],
+    2: ['The month’s statement', `Every payment by kind, this month against last; each January a review of the year. <b>Good</b>: once the building stops, the treasury grows by more than it shrank while you built. <b>Bad</b>: “building works” larger than all income month after month, with nothing new flying. Now: fees ${U.money(fees)} an hour against upkeep ${U.money(up)}.`],
     3: ['Small money', `Light aircraft pay ${U.money(IC.ACTYPES.light.fee * 0.5)} a landing, and traffic crossing the country ${U.money(0.5)} a flight on our airways (half that off them). Both are small money: they help, but the airlines pay for the airport. <b>Good</b>: clubs flying from fields of their own, off the big runway. <b>Bad</b>: light aircraft holding airliners on the runway at the capital.`],
-    4: ['Loans', `The banks lend up to ${U.money(IC.loanLimit(S))} now. <b>Good</b>: ₭300M for a runway that brings a deal worth ₭20M a day pays for itself in about two weeks. <b>Bad</b>: borrowing to pay running costs: the interest (0.4% a day) makes the gap wider.`],
+    4: ['Loans', `The banks lend up to ${U.money(IC.loanLimit(S))} now. <b>Good</b>: ₭800M for a runway that brings deals worth ₭150M a month pays for itself within the loan’s two years. <b>Bad</b>: borrowing to pay running costs: the interest (${IC.loanRateText(S)}) makes the gap wider.`],
     5: ['Growth and trade', `Air service grows cities; growing cities fly more and trade more. <b>Good</b>: cities within 2½ hours of an airport growing each day, remote industries selling abroad by air. <b>Bad</b>: an airport nobody can reach by road: its catchment, not its runway, limits it.`]
   }[st.ch];
   return L ? `<div class="card wide elesson"><h3>${esc(L[0])}<em>what this chapter opens</em></h3><p>${L[1]}</p></div>` : '';
@@ -558,18 +573,18 @@ function research() {
   const slots = T.slots.map((s, i) => {
     if (!s) return `<div class="slot idle"><small>Slot ${i + 1}</small><b>Free</b><span>Pick a project below.</span></div>`;
     const t = IC.TECH.find(x => x.id === s.id);
-    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${U.dur((1 - s.prog) * t.time)} left</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
+    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
   }).join('');
   const memo = {}, maxD = Math.max(...IC.TECH.map(t => depthOf(t, memo)));
   const node = t => {
     const done = T.done.has(t.id), cur = IC.researching(S, t.id), reqOk = t.req.every(r => T.done.has(r));
     const cls = done ? 'done' : cur ? 'cur' : reqOk ? 'open' : 'locked';
     const opens = ui.techOpens(t);
-    const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Done</span>` : cur ? `<span class="amber">${U.pct(cur.prog)} · ${U.dur((1 - cur.prog) * t.time)} left</span>`
+    const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Done</span>` : cur ? `<span class="amber">${U.pct(cur.prog)} · ${IC.techDur(S, t, 1 - cur.prog)} left</span>`
       : !reqOk ? `<span class="need">${ui.icon('lock', 'sm')} After ${t.req.filter(r => !T.done.has(r)).map(r => esc(IC.TECH.find(x => x.id === r).name)).join(' and ')}</span>`
-      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Both slots are busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${U.dur(t.time)}`}">Research</button>`;
+      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Both slots are busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}`}">Research</button>`;
     return `<div class="tnode ${cls}" data-tech="${t.id}" data-req="${t.req.join(' ')}"><b>${esc(t.name)}${ui.newTag('tech:' + t.id)}</b><p>${esc(ui.techWords(t))}</p>${opens.length ? `<p class="opens">Opens: ${esc(opens.join(', '))}</p>` : ''}
-      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${U.dur(t.time)}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
+      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
   };
   const lanes = IC.TECH_CATS.map(c => {
     const ts = IC.TECH.filter(t => t.cat === c.id);
@@ -603,7 +618,7 @@ function journal() {
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
   return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
-    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time>${U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
+    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
 }
 
 /* ---------- reference ---------- */
