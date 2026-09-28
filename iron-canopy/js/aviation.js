@@ -683,28 +683,30 @@ const dealOf = (S, tl) => tl && tl.deal ? S.av.deals.find(d => d.id === tl.deal)
 IC.avDealOf = dealOf;
 /* a round trip from an airport: both legs and a turnaround at each end, in seconds */
 const cycleOf = (S, a, b, T) => U.dist(a, endPt(S, b)) / T.cruise * 2 + T.turn * 2.5 + 1200;
-/* what an airport provides to airlines: a stand-in until the airport session's IC.aptProvides(ap) lands with
-   its own numbers. stands by size (passenger zone, joined to a runway), gates = contact stands, cargoStands =
-   large cargo stands, hangar = aircraft spaces in hangars, cargoT = tonnes a day the cargo terminals handle,
-   fuelH = fuel units an hour coming in, refuelH = refuellings an hour, paxH = passengers an hour the terminals take */
+/* what an airport provides to airlines: IC.aptProvides(ap) from the airport session (airport.js), in its field
+   names; this stand-in, used only until that lands, measures the same way: stands by size (civil, cargo and light
+   zones), gates (stands at a terminal), cargoStands, pax (terminal passengers an hour), cargo (cargo shed capacity),
+   hangar (aircraft the hangars hold), fuelDeps (refuellings an hour) */
 IC.aptProvides = IC.aptProvides || function (ap) {
-  const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0 }, gates: 0, cargoStands: 0, hangar: 0, cargoT: 0, fuelH: st.fuelIn || 0, refuelH: st.trucks || 0, paxH: st.pax || 0 };
+  const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, hangar: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0), fuelDeps: st.fuelDeps || 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none' };
   // a gate: a stand passengers walk to from a terminal (within 60 m of one)
   const terms = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25);
   const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.hypot(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
   for (const s of standsOf(ap)) {
-    if (s.linked === false || s.hp <= 0) continue;
-    const z = s.zone || 'civil';
-    if (z === 'civil') { P.stands[s.size] = (P.stands[s.size] || 0) + 1; if (s.contact || nearT(s)) P.gates++; }
-    else if (z === 'cargo' && s.size === 'l') P.cargoStands++;
+    if (s.linked === false || s.hp <= 0 || s.zone === 'mil') continue;
+    P.stands[s.size] = (P.stands[s.size] || 0) + 1;
+    if (s.zone === 'cargo' || s.cargo) P.cargoStands++; else if (s.contact || nearT(s)) P.gates++; else P.remote++;
   }
   for (const p of ap.parts) if (p.kind === 'hangar' && p.built && p.hp > p.max * 0.25 && p.linked !== false) P.hangar += IC.APART.hangar.holds;
-  P.cargoT = (st.cargo || 0) * 4;
   return P;
 };
-/* what the flights at an airport need from it, with an offer added (extra: { al, type, n, b }) */
+IC.CARGO_T = 4;   // tonnes a day a unit of cargo shed capacity handles
+const SIZES = ['s', 'm', 'l', 'xl'];
+/* stands of a size or larger */
+const fitting = (st, size) => SIZES.slice(SIZES.indexOf(size)).reduce((n, k) => n + (st[k] || 0), 0);
+/* what the flights at an airport need from it, with an offer added (extra: { al, type, n, b }), in the same names */
 function aptNeeds(S, ap, extra) {
-  const N = { stands: { s: 0, m: 0, l: 0 }, gates: 0, cargoStands: 0, hangar: 0, cargoT: 0, fuelH: 0, refuelH: 0, paxH: 0 };
+  const N = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, cargoStands: 0, hangar: 0, cargoT: 0, fuelDeps: 0, pax: 0 };
   const lf = IC.loadFactor(S, ap);
   const add = (al, type, n, far) => {
     const T = IC.ACTYPES[type], cyc = cycleOf(S, ap, far, T), K = IC.DEAL;
@@ -712,9 +714,9 @@ function aptNeeds(S, ap, extra) {
     // the busiest hour sees about twice the average; on the ground each aircraft spends its turnaround
     const onStand = Math.min(n, n * T.turn * 1.25 / cyc * 2.2) + 0.3;
     if (T.cargo) { N.cargoStands += onStand; N.cargoT += deps * T.cargo * 2; }
-    else { N.stands[T.stand] += onStand; N.gates += onStand * (K.gates[al.kind] || 0); N.paxH += deps / OPS_H * 2 * T.seats * lf * 1.6; }
+    else { N.stands[T.stand] += onStand; N.gates += onStand * (K.gates[al.kind] || 0); N.pax += deps / OPS_H * 2 * T.seats * lf * 1.6; }
     if (al.hub === ap.id) N.hangar += n * (K.hangar[al.kind] || 0);
-    N.refuelH += deps / (T.cargo ? 24 : OPS_H) * 1.8; N.fuelH += deps / (T.cargo ? 24 : OPS_H) * 1.8 * T.fuel;
+    N.fuelDeps += deps / (T.cargo ? 24 : OPS_H) * 1.8;
   };
   for (const r of S.av.routes) {
     if (r.st !== 'active' || r.n <= 0) continue;
@@ -739,20 +741,19 @@ IC.dealNeeds = function (S, q) {
     if (why) continue;
     const P = IC.aptProvides(ap), N = aptNeeds(S, ap, q.renew ? null : { al, type: q.type, n: q.n, b: far });
     const row = (k, name, need, have, fix) => { if (need > 0) L.push({ ap: ap.id, k, name: `${nm}: ${name}`, need, have, ok: have >= need, text: have >= need ? '' : `${nm} needs ${fix} (${Math.floor(have)} of ${Math.ceil(need)})` }); };
+    // (stands for airliners: the passenger stands of the size, not the cargo zone's)
+    const paxStands = Math.max(0, fitting(P.stands, T.stand) - (P.cargoStands || 0));
     if (T.cargo) {
-      // (freighters park in the cargo zone, or on large passenger stands the wide-bodies leave free)
-      row('cargoStands', 'large stands for freighters', N.cargoStands, P.cargoStands + Math.max(0, P.stands.l - N.stands.l), 'more large stands, best in the cargo zone');
-      row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round(P.cargoT), 'more cargo terminal space');
+      // freighters park in the cargo zone, or on large passenger stands the wide-bodies leave free
+      row('cargoStands', 'large stands for freighters', N.cargoStands, (P.cargoStands || 0) + Math.max(0, paxStands - fitting(N.stands, 'l')), 'more large stands, best in the cargo zone');
+      row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
     } else {
-      const big = T.stand === 'l' ? N.stands.l : T.stand === 'm' ? N.stands.m + N.stands.l : N.stands.s + N.stands.m + N.stands.l;
-      const have = T.stand === 'l' ? P.stands.l : T.stand === 'm' ? P.stands.m + P.stands.l : P.stands.s + P.stands.m + P.stands.l;
-      row('stands', `${IC.STAND[T.stand].name} or larger stands`, big, have, `more ${IC.STAND[T.stand].name} stands`);
-      if ((IC.DEAL.gates[al.kind] || 0) > 0) row('gates', 'stands at the terminal (gates)', N.gates, P.gates, 'more stands beside a terminal');
-      row('paxH', 'terminal room, passengers an hour', Math.round(N.paxH), Math.round(P.paxH), 'a bigger terminal');
+      row('stands', `${IC.STAND[T.stand].name} or larger stands`, fitting(N.stands, T.stand), paxStands, `more ${IC.STAND[T.stand].name} stands`);
+      if ((IC.DEAL.gates[al.kind] || 0) > 0) row('gates', 'stands at the terminal (gates)', N.gates, P.gates || 0, 'more stands beside a terminal');
+      row('pax', 'terminal room, passengers an hour', Math.round(N.pax), Math.round(P.pax || 0), 'a bigger terminal');
     }
-    if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar, 'hangar space for the aircraft based here');
-    row('refuelH', 'refuellings an hour', Math.round(N.refuelH), P.refuelH === Infinity ? 999 : P.refuelH, 'more fuel tanks, or a hydrant system');
-    row('fuelH', 'fuel coming in, units an hour', Math.round(N.fuelH), Math.round(P.fuelH), 'more fuel tanks, or a hydrant system');
+    if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar || 0, 'hangar space for the aircraft based here');
+    row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'more fuel tanks, or a hydrant system');
   }
   return L;
 };
@@ -830,7 +831,8 @@ function dealMark(S, tl, o) {
 }
 const repOf = ap => ap.rep == null ? IC.DEAL.rep0 : ap.rep;
 IC.aptRep = repOf;
-function repAdd(S, ap, v) { if (ap && ap.kind === 'airport') ap.rep = U.clamp(repOf(ap) + v, 0, 100); }
+// a good name is slow to build and quick to lose: gains shrink as it rises, losses do not
+function repAdd(S, ap, v) { if (ap && ap.kind === 'airport') ap.rep = U.clamp(repOf(ap) + (v > 0 ? v * (1 - repOf(ap) / 100) * 2 : v), 0, 100); }
 /* the aircraft of a deal leave (it ended or broke): its tails retire, the route shrinks or closes */
 function retireDeal(S, d) {
   const r = S.av.routes.find(x => x.id === d.route);
@@ -867,7 +869,7 @@ function dealsTick(S) {
     if (!al) { d.st = 'done'; continue; }
     // the facilities it signed for: a day's grace to put right what is lost (the airline says so), then it walks out
     if (S.time > d.grace) {
-      const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'paxH' && x.k !== 'fuelH');
+      const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps');
       if (miss.length) {
         if (!d.badT) { d.badT = S.time; IC.log(S, 'warn', 'AVIATION', `${al.name}: ${miss[0].text}. Put it right within 12 hours or it ends the deal.`, S.byId[miss[0].ap]); IC.emit(S, 'dealWarn', { d, al, text: miss[0].text }); }
         else if (S.time - d.badT > 12 * 3600) { IC.avBreakDeal(S, d.id, miss[0].text.replace(/^[^:]*needs/, 'the airport lacks')); continue; }
@@ -905,10 +907,10 @@ function dealsDay(S) {
 }
 /* a term served to its end: our name rises, more if every day went well */
 function honour(S, d) {
-  const al = airlineOf(S, d.al), clean = d.strikes === 0, v = d.rep + (clean ? 3 : 0);
+  const al = airlineOf(S, d.al), clean = d.strikes === 0, v = d.rep / 2 + (clean ? 1 : 0);
   repAdd(S, S.byId[d.a], v); if (d.b.apt) repAdd(S, S.byId[d.b.apt], v / 2);
   d.honoured = (d.honoured || 0) + 1; if (clean) d.clean = (d.clean || 0) + 1;
-  IC.log(S, 'info', 'AVIATION', `${al.name}'s deal for ${routeName(S, S.av.routes.find(x => x.id === d.route))} has run its term${clean ? ', every day on time' : ''}. Our name +${v}.`, S.byId[d.a]);
+  IC.log(S, 'info', 'AVIATION', `${al.name}'s deal for ${routeName(S, S.av.routes.find(x => x.id === d.route))} has run its term${clean ? ', every day on time' : ''}. Our name rises.`, S.byId[d.a]);
   IC.emit(S, 'dealDone', { d, al });
 }
 function renewOffer(S, d, al) {

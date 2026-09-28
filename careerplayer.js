@@ -21,7 +21,8 @@ function site(S, c, rmin, rmax) {
 // the terminal side of the runway (+1 or -1): the other side when a river or the site's edge is in the way
 const L = (ap, x, y) => IC.aptLocal(ap, x, y * (ap._side || 1));
 const has = (ap, k) => ap.parts.some(p => p.kind === k);
-const part = (S, ap, k, x, y, w, h, o) => { const c = L(ap, x, y); return IC.aptPlanPart(S, ap, k, c.x, c.y, ap.rwyA, w, h, o); };
+// (each part remembers the slot along the runway it was put in: aprons and their terminals line up by it)
+const part = (S, ap, k, x, y, w, h, o) => { const c = L(ap, x, y), p = IC.aptPlanPart(S, ap, k, c.x, c.y, ap.rwyA, w, h, o); if (p) p.slotX = x; return p; };
 const taxi = (S, ap, pts) => IC.aptPlanTaxi(S, ap, pts.map(([x, y]) => L(ap, x, y)), 0.3, { mat: 'conc' });
 /* the first airport: a 3 km runway, one apron, a stub taxiway, terminal, fire station and fuel */
 function starter(S, ap, len) {
@@ -40,6 +41,8 @@ function missing(S, ap) {
   return null;
 }
 const APRON_X = [0, 4.3, 8.6, 12.9, -12.9, 17.2];
+const nextSlot = ap => APRON_X.find(x => !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
+const noTerminal = ap => ap.parts.find(p => p.kind === 'apron' && p.zone !== 'cargo' && p.slotX != null && !ap.parts.some(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.slotX === p.slotX));
 const count = (ap, k, f) => ap.parts.filter(p => p.kind === k && (!f || f(p))).length;
 /* what a steady player does next at the capital: tower, a hangar for the based fleet, taxiways to both ends, and
    then whatever the airlines' offers say is missing: stands, gates and terminal, hangars, fuel, cargo */
@@ -52,18 +55,17 @@ function grow(S, ap, st) {
   if (!has(ap, 'ils') && S.budget > 100) { const rw = ap.parts.find(p => p.kind === 'runway'); return rw && IC.aptPlanPart(S, ap, 'ils', rw.a.x, rw.a.y); }
   const need = missing(S, ap), aprons = count(ap, 'apron', p => p.zone !== 'cargo');
   // (a stand the terminal is beside is a gate: each apron gets its own stretch of terminal)
-  const terms = count(ap, 'terminal');
-  if ((need === 'gates' || need === 'paxH') && terms < aprons && S.budget > 200) return part(S, ap, 'terminal', APRON_X[terms], 5.1, 3, 0.8);
+  const bare = noTerminal(ap);
+  if ((need === 'gates' || need === 'pax') && bare && S.budget > 200) return part(S, ap, 'terminal', bare.slotX, 5.1, 3, 0.8);
   if (aprons < 2 && S.budget > 150) { part(S, ap, 'apron', 4.3, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[4.3, 1.8], [4.3, 3.35]]); }
   if (count(ap, 'fuel') < 2 && S.budget > 120) return part(S, ap, 'fuel', -8, 4.5);
-  if ((need === 'refuelH' || need === 'fuelH') && S.budget > 150) return count(ap, 'fuel') < 4 ? part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -6.5, 5.6);
+  if (need === 'fuelDeps' && S.budget > 150) return count(ap, 'fuel') < 4 ? part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -6.5, 5.6);
   if (need === 'hangar' && hangars < 6 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
+  // freight: a cargo apron in the next slot along the terminal side, with a cargo terminal behind it
+  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc', zone: 'cargo' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'cargo', x, 5.1, 3, 0.8); }
   // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
-  if ((full || need === 'stands' || need === 'gates') && aprons < 6 && S.budget > 150) { const x = APRON_X[aprons]; part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
-  // freight: a cargo apron and terminal across the runway, with a taxiway of its own
-  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && S.budget > 200) { part(S, ap, 'apron', -6, -4, 4, 1.3, { mat: 'conc', zone: 'cargo' }); part(S, ap, 'cargo', -6, -5.1, 3, 0.8); return taxi(S, ap, [[-6, 0], [-6, -3.35]]); }
-  if (need === 'cargoT' && count(ap, 'cargo') < 3 && S.budget > 150) return part(S, ap, 'cargo', -6 + 3.2 * count(ap, 'cargo'), -5.1, 3, 0.8);
+  if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
   return null;
 }
 /* a regional airport: what its airlines' offers find missing (a hangar for the aircraft based there, stands, fuel) */
@@ -75,8 +77,8 @@ function outpost(S, ap) {
     if (!ap.parts.some(p => p.kind === 'taxi' && p.hangarWay)) { const w = taxi(S, ap, [[2, 0], [2, 1.6]]); if (w) w.hangarWay = true; return w; }
     return part(S, ap, 'hangar', 2 + count(ap, 'hangar') * 0.9, 1.93);
   }
-  if ((need === 'stands' || need === 'gates' || need === 'paxH') && count(ap, 'apron') < 3) { const x = APRON_X[count(ap, 'apron')]; part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 0], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
-  if ((need === 'refuelH' || need === 'fuelH') && count(ap, 'fuel') < 3) return part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5);
+  if ((need === 'stands' || need === 'gates' || need === 'pax') && count(ap, 'apron') < 3) { const x = APRON_X[count(ap, 'apron')]; part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 0], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  if (need === 'fuelDeps' && count(ap, 'fuel') < 3) return part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5);
   return null;
 }
 /* the airspace: an entry point where the way to each foreign airport crosses the border, a fix near the airport,
