@@ -927,8 +927,8 @@ test('airport life: an aircraft due for maintenance is towed to a hangar, stays 
   assert(x.until - S.time > 0, 'the stay was shorter than a day');
   x.until = S.time + 60;
   run(S, 1.5);
-  assert(tl.where !== 'hangar' && tl.where !== 'lost', `after nearly three days it is still ${tl.where}`);
-});
+  assert(tl.where !== 'hangar' && tl.where !== 'lost', `when its stay was over it is still ${tl.where}`);
+}, true);
 test('airport life: a locked material cannot be chosen until its research is done', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
   const cap = S.byId[S.story.cap]; S.budget = 5000;
