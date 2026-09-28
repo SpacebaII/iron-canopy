@@ -232,23 +232,7 @@ function drawConfig(g, S, ap, px, z) {
   }
 }
 /* the rectangle, aligned with the main runway, that holds everything the airport has */
-function fieldBox(ap) {
-  const key = ap.parts.length + ':' + ap.nodeN;
-  if (ap._box && ap._boxKey === key) return ap._box;
-  const a = ap.rwyA || 0, c = Math.cos(-a), s = Math.sin(-a);
-  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-  const grow = (p, m) => { const dx = p.x - ap.x, dy = p.y - ap.y, lx = dx * c - dy * s, ly = dx * s + dy * c; x0 = Math.min(x0, lx - m); x1 = Math.max(x1, lx + m); y0 = Math.min(y0, ly - m); y1 = Math.max(y1, ly + m); };
-  for (const p of ap.parts) {
-    if (p.kind === 'runway') { grow(p.a, 1.2); grow(p.b, 1.2); }
-    else if (p.kind === 'taxi') for (const id of p.nodes) { if (ap.nodes[id]) grow(ap.nodes[id], 0.5); }
-    else grow(p, Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2) * 0.75 + 0.3);
-  }
-  if (x0 > x1) return null;
-  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  ap._box = { x: ap.x + cx * Math.cos(a) - cy * Math.sin(a), y: ap.y + cx * Math.sin(a) + cy * Math.cos(a), w: x1 - x0, h: y1 - y0, a };
-  ap._boxKey = key;
-  return ap._box;
-}
+const fieldBox = ap => IC.aptFence(ap);
 function drawArea(g, p, fill, px, part) {
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w, h = p.h;

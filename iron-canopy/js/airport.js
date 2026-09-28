@@ -846,10 +846,49 @@ IC.autoPlace = function (S, ap, kind) {
   }
   return null;
 };
+/* the site has no fixed size: it reaches 6.5 km from the airport's reference point, and 4 km beyond anything built or
+   planned, so an airport grows as far as the player builds it out; never nearer another airfield than this one */
+IC.SITE_GROW = 40;
+IC.aptInSite = function (S, ap, p) {
+  const d0 = U.dist(p, ap);
+  if (S) for (const b of IC.bases(S)) if (b !== ap && b.parts && U.dist(b, p) < d0) { let db = U.dist(b, p); for (const q of b.parts) db = Math.min(db, partDist(b, q, p)); if (db < 30) return false; }
+  if (d0 <= ap.buildR) return true;
+  for (const q of ap.parts) if (partDist(ap, q, p) <= IC.SITE_GROW) return true;
+  return false;
+};
+/* on the pavement or a building of an airport: runways keep a 120 m strip clear either side of their edges */
+IC.aptOnPart = function (ap, p, pad) {
+  for (const q of ap.parts) { const r = q.kind === 'runway' ? 1.2 : q.kind === 'taxi' ? 0.3 : pad == null ? 0.2 : pad; if (partDist(ap, q, p) < r) return q; }
+  return null;
+};
+/* inside the fence: within the rectangle that holds everything built */
+IC.aptInFence = function (ap, p) {
+  const b = IC.aptFence(ap); if (!b) return false;
+  const l = toLocal(b, p); return Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.h / 2;
+};
+/* the perimeter fence: a rectangle along the main runway round everything the airport has, with room to spare */
+IC.aptFence = function (ap) {
+  const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0);
+  if (ap._box && ap._boxKey === key) return ap._box;
+  const a = ap.rwyA || 0, c = Math.cos(-a), s = Math.sin(-a);
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  const grow = (p, m) => { const dx = p.x - ap.x, dy = p.y - ap.y, lx = dx * c - dy * s, ly = dx * s + dy * c; x0 = Math.min(x0, lx - m); x1 = Math.max(x1, lx + m); y0 = Math.min(y0, ly - m); y1 = Math.max(y1, ly + m); };
+  for (const p of ap.parts) {
+    if (p.kind === 'runway') { grow(p.a, 1.2); grow(p.b, 1.2); }
+    else if (p.kind === 'taxi') for (const id of p.nodes) { if (ap.nodes[id]) grow(ap.nodes[id], 0.5); }
+    else grow(p, Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2) * 0.75 + 0.3);
+  }
+  if (x0 > x1) return null;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  ap._box = { x: ap.x + cx * Math.cos(a) - cy * Math.sin(a), y: ap.y + cx * Math.sin(a) + cy * Math.cos(a), w: x1 - x0, h: y1 - y0, a };
+  ap._boxKey = key;
+  return ap._box;
+};
+
 /* inside the country and the site, and not on top of another part (touching is fine) */
 IC.aptCanPlace = function (S, ap, part) {
   const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' ? part.pts : [part];
-  for (const p of pts) { if (!IC.inHome(p.x, p.y) || IC.inLake(p.x, p.y)) return false; if (U.dist(p, ap) > ap.buildR) return false; }
+  for (const p of pts) { if (!IC.inHome(p.x, p.y) || IC.inLake(p.x, p.y)) return false; if (!IC.aptInSite(S, ap, p)) return false; }
   // no part in a river: sample along lines, and the corners of areas
   const wet = p => IC.onRiver && IC.onRiver(p.x, p.y);
   if (part.kind === 'runway' || part.kind === 'taxi') { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 0.5); for (let k = 0; k <= n; k++) if (wet({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return false; } }
@@ -1062,7 +1101,7 @@ IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   if (pts.length < 2) return null;
   const snaps = pts.map(p => IC.aptSnap(ap, p, o && o.exact ? 0.03 : tol)).filter((s, i, L) => i === 0 || U.dist(s, L[i - 1]) > 0.05);
   if (snaps.length < 2) return null;
-  for (const s of snaps) if (!IC.inHome(s.x, s.y) || IC.inLake(s.x, s.y) || U.dist(s, ap) > ap.buildR) { IC.log(S, 'warn', 'BUILD', 'That taxiway leaves the airport site.'); return null; }
+  for (const s of snaps) if (!IC.inHome(s.x, s.y) || IC.inLake(s.x, s.y) || !IC.aptInSite(S, ap, s)) { IC.log(S, 'warn', 'BUILD', 'That taxiway leaves the airport site.'); return null; }
   const probe = { kind: 'taxi', pts: snaps, mat: o && o.mat };
   if (S.budget < IC.partCost(ap, probe) * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(IC.partCost(ap, probe) * 0.1)} needed now.`); return null; }
   const ids = snaps.map(s => nodeFor(ap, s));
