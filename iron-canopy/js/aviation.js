@@ -518,11 +518,15 @@ IC.aviation = function (S, dt) {
       if (tl.t > 0) continue;
       const ap = S.byId[tl.at], s = standById(ap, tl.stand);
       if (!s || s.hp <= 0) { tailLost(S, tl, ap, 'destroyed at the gate'); continue; }
+      // its route was dropped while it was in the air: it leaves the fleet here (cutRoute retires the ones parked then)
+      if (r.st === 'cut') { tl.where = 'lost'; tl.retired = true; if (s.occ === tl.id) s.occ = null; continue; }
       if (suspended) { tl.t = 600; continue; }
       const al = airlineOf(S, tl.al);
       const night = !dayOps(S);
       if (night && (ap.curfew || al.kind !== 'cargo')) { tl.t = 300; continue; }
-      if (!IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      // fuelled once: held back below (light aircraft, spacing, no taxi route) it keeps what it took
+      if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      tl.fuelled = true;
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       // light aircraft on the runway, or controllers still spacing the last departure the same way
@@ -532,7 +536,7 @@ IC.aviation = function (S, dt) {
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, who: tl.cs, tail: tl, livery: al.livery,
         onAir: IC.hfn('avAirborne', S, tl, from, toEnd, al, ap), onDead: IC.hfn('avTaxiLost', S, tl, ap) });
       if (!m) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; continue; }
-      tl.where = 'dep'; tl.mv = m; tl.stand = null;
+      tl.where = 'dep'; tl.mv = m; tl.stand = null; tl.fuelled = false;
     } else if (tl.where === 'away') {
       tl.t -= dt;
       if (tl.t > 0) continue;
@@ -611,8 +615,18 @@ function routeSafe(S, r) {
 }
 IC.avRevenueRate = S => S.av ? Object.values(S.av.rate).reduce((s, v) => s + v, 0) : 0;
 IC.avUpkeep = function (S) {
-  let v = 0;
-  for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) for (const p of ap.parts) if (p.built) v += IC.partCost(ap, p) * 0.0012;
+  // pricing every part is slow and the step asks each time: the sum is kept, and worked out again when the parts
+  // change (added, built, re-laid) or a game minute has passed
+  let key = 0;
+  for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) { key = key * 31 + ap.parts.length * 1009 + (ap.gver || 0) * 7; for (const p of ap.parts) if (p.built) key++; key %= 1e12; }
+  const C = S._upk;
+  let v;
+  if (C && C.key === key && S.time - C.t < 60 && S.time >= C.t) v = C.v;
+  else {
+    v = 0;
+    for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us' && !ap.locked) for (const p of ap.parts) if (p.built) v += IC.partCost(ap, p) * 0.0012;
+    Object.defineProperty(S, '_upk', { value: { key, v, t: S.time }, enumerable: false, configurable: true, writable: true });
+  }
   // and the air traffic controllers in every sector
   return v + (S.asp && S.asp.secs ? IC.aspStaffCost(S) : 0);
 };

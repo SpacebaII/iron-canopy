@@ -76,6 +76,11 @@ IC.makeRng = function (seed) {
   return f;
 };
 
+/* the simulation draws its chances from Math.random. A seed puts a seeded source behind it, so a run repeats
+   exactly (the tests seed every test); IC.seedRandom() with no seed brings back the browser's own */
+const nativeRandom = Math.random;
+IC.seedRandom = seed => { Math.random = seed == null ? nativeRandom : IC.makeRng(seed); };
+
 const U = IC.U = {
   rand: (a, b) => a + Math.random() * (b - a),
   randi: (a, b) => Math.floor(a + Math.random() * (b - a + 1)),
@@ -188,7 +193,8 @@ U.pfbm = (x, y, p) => { let s = 0, a = 0.5, f = 1; for (let i = 0; i < 5; i++) {
 
 /* ---------- event bus: campaign, academy, UI and audio listen here ---------- */
 const subs = [];
-IC.on = fn => subs.push(fn);
+/* returns a function that takes the listener off again (a listener that holds a game keeps all of it alive) */
+IC.on = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; };
 IC.emit = function (S, type, data) { for (const fn of subs) fn(S, type, data); };
 IC.campaignEvent = IC.emit;
 

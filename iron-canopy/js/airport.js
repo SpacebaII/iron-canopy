@@ -834,7 +834,7 @@ IC.aptRepairList = function (ap) {
 IC.aptQueue = function (S, ap, key) {
   const it = IC.aptRepairList(ap).find(x => x.key === key);
   if (!it || workFor(ap, key) || S.budget < it.cost) return false;
-  S.budget -= it.cost;
+  IC.pay(S, 'repair', it.cost);
   const rrr = IC.hasTech(S, 'l_rrr') && (key.startsWith('cr:') || key.startsWith('tx:')) ? 0.5 : 1;
   const w = { id: IC.nid('w'), key, kind: 'repair', label: it.label, prog: 0, dur: it.dur * rrr, it };
   ap.works.push(w);
@@ -845,7 +845,7 @@ IC.aptQueue = function (S, ap, key) {
 };
 /* old interface kept for the Academy and the inspector buttons */
 IC.baseWork = function (S, b, action, arg) {
-  if (action === 'crew') { if (S.budget < 20) return false; S.budget -= 20; b.crews++; IC.log(S, 'info', 'ENG', `${b.name}: another engineer crew assigned.`); return true; }
+  if (action === 'crew') { if (S.budget < 20) return false; IC.pay(S, 'repair', 20); b.crews++; IC.log(S, 'info', 'ENG', `${b.name}: another engineer crew assigned.`); return true; }
   if (action === 'repair') { const it = IC.aptRepairList(b).find(x => x.key === arg || (x.part && x.part.id === arg && x.key.startsWith('pt:'))); return it ? IC.aptQueue(S, b, it.key) : false; }
   if (action === 'build') return !!IC.autoPlace(S, b, arg);
   return false;
@@ -1194,11 +1194,21 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   if (!IC.aptCanPlace(S, ap, part)) { IC.log(S, 'warn', 'BUILD', `The ${D.name.toLowerCase()} does not fit there: it overlaps another part or leaves the site.`); return null; }
   return IC.aptPlan(S, ap, part, o);
 };
-/* bulldoze: remove a part (refund part of an unbuilt one) */
+/* why a part cannot be bulldozed now: aircraft parked on an apron or inside a hangar would be left nowhere */
+IC.aptRemoveBlock = function (S, ap, p) {
+  const parked = IC.aptStands ? IC.aptStands(ap).filter(s => s.apron === p.id && s.occ).length : 0;
+  if (parked) return `${parked} aircraft ${parked > 1 ? 'are' : 'is'} parked on it. Close its stands or wait until they leave, then bulldoze it.`;
+  if (p.kind === 'hangar' && ((p.inside || []).length || p.coming)) return 'An aircraft is in it for maintenance, or being towed in. Bulldoze it once the hangar is empty.';
+  return '';
+};
+/* bulldoze: remove a part (refund part of an unbuilt one); a runway takes its landing systems with it */
 IC.aptRemove = function (S, ap, id) {
   const p = ap.parts.find(x => x.id === id); if (!p) return false;
-  for (const w of ap.works.filter(x => x.part === p || (x.it && x.it.part === p))) { ap.works = ap.works.filter(x => x !== w); IC.bldRelease(ap, w); }
-  ap.parts = ap.parts.filter(x => x !== p && !(p.kind === 'runway' && x.kind === 'ils' && x.rw === p.id));
+  const why = p.built ? IC.aptRemoveBlock(S, ap, p) : '';
+  if (why) { IC.log(S, 'warn', 'BUILD', `${ap.name}: the ${(IC.APART[p.kind] || {}).name ? IC.APART[p.kind].name.toLowerCase() : p.kind} cannot be bulldozed yet. ${why}`, ap); return false; }
+  const gone = ap.parts.filter(x => x === p || (p.kind === 'runway' && x.kind === 'ils' && x.rw === p.id));
+  for (const w of ap.works.filter(x => gone.includes(x.part) || (x.it && gone.includes(x.it.part)))) { ap.works = ap.works.filter(x => x !== w); IC.bldRelease(ap, w); }
+  ap.parts = ap.parts.filter(x => !gone.includes(x));
   if (p.kind === 'runway' || p.kind === 'apron' || p.kind === 'alert') IC.resolveNodes(ap);
   // drop nodes nothing uses any more
   const used = new Set(); for (const q of ap.parts) if (q.kind === 'taxi') for (const n of q.nodes) used.add(n);

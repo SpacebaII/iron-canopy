@@ -40,7 +40,7 @@ IC.callIn = function (S, x, y) {
   if (why) { IC.log(S, 'warn', 'CALL-IN', why + '.'); return null; }
   const C = state(S), A = IC.CALLIN;
   C.charges--; C.used++;
-  S.budget -= A.cost;
+  IC.pay(S, 'buyUnits', A.cost);
   const job = { id: IC.nid('ci'), x, y, t: S.time + A.arrive, t0: S.time };
   C.inbound.push(job);
   IC.log(S, 'info', 'CALL-IN', `Missile team on its way to ${IC.nearestPlace(S, x, y)}: in position in ${U.dur(A.arrive)}.`, { x, y });
