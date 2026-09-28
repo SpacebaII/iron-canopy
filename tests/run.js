@@ -1627,6 +1627,7 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   assert(!IC.replayOpen && !IC.modelTop, 'the replay window or its drawing is loaded headless');
   for (const k in IC.ACTYPES) assert(IC.modelOfType(k) === k && IC.MODELS[k], `no model for aircraft type ${k}`);
   for (const k in IC.THR) { const m = IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'H' }, true); assert(m && IC.MODELS[m], `no model for threat ${k}`); }
+  for (const k in IC.THR) if (IC.THR[k].civil) assert(IC.ACTYPES[IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'N' }, true)], `civil traffic (${k}) is drawn as a weapon`);
   for (const k in IC.UNITS) assert(IC.modelOfUnit(k) === k && IC.MODELS[k], `no model for unit ${k}`);
   for (const k in IC.MODELS) assert(IC.modelSize(k) > 1 && IC.modelSize(k) < 200, `model ${k} has an odd size (${IC.modelSize(k)} m)`);
   assert(IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U' }) === null && IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U', klass: 'fighter' }) === 'ftr_e', 'an unknown track should show only what its class says');

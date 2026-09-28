@@ -291,7 +291,7 @@ IC.MODELS = M;
 IC.MODEL_GROUPS = ['Civil aircraft', 'Our air wing', 'Missiles', 'Enemy weapons', 'Our units', 'Vehicles'];
 
 /* ---------- which model an object uses ---------- */
-const THR_MODEL = { owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bm', marv: 'bm', mrbm: 'bm', pen: 'bm', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ahe: 'ahe', ftr: 'ftr_e', str: 'str', sead: 'ftr_e', ewj: 'ewj', esj: 'esj', bmr: 'bmr', ga: 'light' };
+const THR_MODEL = { civ: 'narrow', owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bm', marv: 'bm', mrbm: 'bm', pen: 'bm', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ahe: 'ahe', ftr: 'ftr_e', str: 'str', sead: 'ftr_e', ewj: 'ewj', esj: 'esj', bmr: 'bmr', ga: 'light' };
 const KLASS_MODEL = { drone: 'drone', cm: 'cm', ballistic: 'bm', rocket: 'rkt', heli: 'ahe', fighter: 'ftr_e', bomber: 'bmr', jammer: 'ewj', airliner: 'narrow', light: 'light' };
 /* an aircraft type (IC.ACTYPES key) */
 IC.modelOfType = type => M[type] ? type : 'narrow';

@@ -287,11 +287,15 @@ function makeEvent(e, cx, cy, S, hk, sc) {
     p.visible = false; sc.add(p);
     puffs.push({ m: p, dx: U.rand(-1, 1), dz: U.rand(-1, 1), k: U.rand(0.7, 1.3), ph: Math.random() * 6 });
   }
-  return { e, flash, puffs, y0 };
+  // a hit on the ground keeps burning for a while, so the damage still reads after the flash
+  let fire = null;
+  if (e.kind === 'impact' || e.kind === 'crash') { fire = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2, 7), new THREE.MeshBasicMaterial({ color: '#ff8a30', transparent: true, opacity: 0.8, depthWrite: false })); fire.visible = false; sc.add(fire); }
+  return { e, flash, puffs, fire, y0 };
 }
 function updateEvent(ev, t, wind) {
   const age = t - ev.e.t, s = ev.e.sz || 1;
-  if (age < 0 || age > 90) { ev.flash.visible = false; for (const p of ev.puffs) p.m.visible = false; return; }
+  if (age < 0 || age > 90) { ev.flash.visible = false; if (ev.fire) ev.fire.visible = false; for (const p of ev.puffs) p.m.visible = false; return; }
+  if (ev.fire) { const f = ev.fire, on = age > 0.4 && age < 80; f.visible = on; if (on) { const k = age / 80; const r = s * 0.16 * (1 - 0.5 * k); f.scale.set(r, r * (1 + 0.2 * Math.sin(age * 9)), r); f.material.opacity = 0.85 * (1 - k); f.position.set(ev.flash.position.x, ev.y0 + r, ev.flash.position.z); } }
   if (age < 1.6) { ev.flash.visible = true; const k = age / 1.6; ev.flash.scale.setScalar(s * (0.06 + 0.4 * Math.sqrt(k))); ev.flash.material.opacity = 0.95 * (1 - k); } else ev.flash.visible = false;
   for (const p of ev.puffs) {
     const a = Math.max(0, age - p.ph * 0.15), life = 60 * p.k;
@@ -299,7 +303,7 @@ function updateEvent(ev, t, wind) {
     p.m.visible = true;
     const k = a / life, r = s * (0.1 + 0.5 * Math.sqrt(k)) * p.k;
     p.m.position.set(ev.flash.position.x + p.dx * s * 0.3 + wind.x * a * 0.12 + p.dx * a * 0.03, ev.y0 + a * 0.05 * s * p.k + r * 0.6, ev.flash.position.z + p.dz * s * 0.3 + wind.y * a * 0.12 + p.dz * a * 0.03);
-    p.m.scale.setScalar(r); p.m.material.opacity = 0.45 * (1 - k) * (1 - k);
+    p.m.scale.setScalar(r); p.m.material.opacity = 0.6 * (1 - k) * (1 - k);
   }
 }
 
@@ -489,7 +493,7 @@ function frame() {
   if (!V || !V.renderer) return;
   V.raf = requestAnimationFrame(frame);
   const now = performance.now(), dtR = Math.min(0.1, (now - V.last) / 1000); V.last = now;
-  V.frames++; if (now - V.fpsT > 1000) { V.fps = V.frames; V.frames = 0; V.fpsT = now; $('rpFps').textContent = `${V.fps} fps · ${V.movers.length} objects`; }
+  V.frames++; if (now - V.fpsT > 1000) { V.fps = V.frames; V.frames = 0; V.fpsT = now; $('rpFps').textContent = `${V.fps} fps · ${V.movers.length} objects · ${(V.upMs || 0).toFixed(1)} ms update`; }
   if (V.playing) { V.t += dtR * V.speed; if (V.t >= V.t1) { V.t = V.t1; V.playing = false; $('rpPlay').textContent = '▶'; } }
   const t = V.t, S = V.S, cx = V.cx, cy = V.cy, hk = V.hk;
   $('rpRange').value = t; $('rpTime').textContent = `${U.hhmm(t)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -509,7 +513,7 @@ function frame() {
     if (st2 && st.spd > 0.05) pitch = Math.atan2((st2.alt - st.alt) * KM, Math.max(0.01, U.dxy(st.x, st.y, st2.x, st2.y)));
     m.grp.rotation.set(0, -st.h, 0); m.grp.rotateZ(pitch);
     // on the ground a launcher stands still; a flying thing far from the camera gets a size floor
-    const d = m.grp.position.distanceTo(V.camera.position), floor = d * 0.004 / Math.max(m.grp.userData.size, 0.02);
+    const d = m.grp.position.distanceTo(V.camera.position), floor = d * (m.tr.kind === 'veh' || m.tr.kind === 'unit' ? 0.004 : 0.008) / Math.max(m.grp.userData.size, 0.02);
     m.grp.scale.setScalar(Math.max(1, floor));
     if (m === V.follow) followPos = m.grp.position;
     // the radar picture: identity colours, and only what was seen
@@ -549,7 +553,9 @@ function frame() {
   for (const p of V.parts) applyDamage(p, t);
   // labels: name, height and speed, the nearest first
   if (V.labels) labels(t);
-  V.renderer.render(V.scene, cam);
+  // what a frame costs: the scene update in script, then the draw call submission (the GPU works after)
+  const t1 = performance.now(); V.renderer.render(V.scene, cam); const t2 = performance.now();
+  V.upMs = V.upMs == null ? t1 - now : V.upMs * 0.95 + (t1 - now) * 0.05; V.drawMs = V.drawMs == null ? t2 - t1 : V.drawMs * 0.95 + (t2 - t1) * 0.05;
 }
 function labels(t) {
   const cam = V.camera, view = $('rpView'), w = view.clientWidth, h = view.clientHeight, v = tmpV();
