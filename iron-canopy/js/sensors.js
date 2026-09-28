@@ -129,15 +129,17 @@ IC.TRACK = { coast: { air: 150, ga: 150, heli: 120, drone: 120, cm: 60, arm: 30,
 IC.coastT = t => IC.TRACK.coast[t.d.cls] || 40;
 function steady(S, t, dt) {
   if (!t.pt) { t.held = false; return; }
-  if (t.svx == null) { t.px = t.rx; t.py = t.ry; t.svx = t.pvx || 0; t.svy = t.pvy || 0; }
+  if (t.svx == null) { t.px = t.rx; t.py = t.ry; t.svx = t.pvx || 0; t.svy = t.pvy || 0; t.cx = t.cy = 0; }
   else {
     t.px += t.svx * dt; t.py += t.svy * dt;
     if (t.pt === S.time) {
-      // a fresh plot: pull a third of the way toward it, or jump if it is far outside the track's error
-      const ex = t.rx - t.px, ey = t.ry - t.py, far = ex * ex + ey * ey > Math.pow(5 * (t.perr || 1) + 25, 2);
-      const k = far ? 1 : 0.35;
-      t.px += ex * k; t.py += ey * k; t.svx = t.pvx || 0; t.svy = t.pvy || 0;
+      // a fresh plot: half of the difference is worked in over the next seconds; far outside the track's error, jump
+      const ex = t.rx - t.px, ey = t.ry - t.py;
+      if (ex * ex + ey * ey > Math.pow(5 * (t.perr || 1) + 25, 2)) { t.px = t.rx; t.py = t.ry; t.cx = t.cy = 0; }
+      else { t.cx = ex * 0.5; t.cy = ey * 0.5; }
+      t.svx = t.pvx || 0; t.svy = t.pvy || 0;
     }
+    if (t.cx || t.cy) { const f = Math.min(1, dt / 2.5); t.px += t.cx * f; t.py += t.cy * f; t.cx *= 1 - f; t.cy *= 1 - f; if (Math.abs(t.cx) + Math.abs(t.cy) < 0.05) t.cx = t.cy = 0; }
   }
   const age = S.time - t.pt;
   t.coast = !t.det;
@@ -353,8 +355,11 @@ function identify(S, t, dt, nctr, iff) {
     return;
   }
   if (c === 'cm' && t.altKnown && (t.plots || 0) >= 3) { t.klass = 'cm'; setAff(S, t, 'H', 'low and fast'); return; }
+  // a pilot has seen it: that stands until something new happens (a weapon release sets hostile directly)
+  if (t.seenAs && !t.vis) return;
   // eyes on: definitive
   if (t.vis) {
+    t.seenAs = t.d.decoy ? 'D' : t.d.civil ? 'N' : 'H';
     t.klass = t.d.decoy ? 'decoy' : t.d.klass;
     if (t.d.decoy) { t.decoyKnown = true; setAff(S, t, 'H', 'decoy'); }
     else setAff(S, t, t.d.civil ? 'N' : 'H', 'visual identification');
