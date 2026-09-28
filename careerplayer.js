@@ -168,7 +168,10 @@ function later(S, st) {
   if (st.act === 2) {
     // a military radar near the border, in front of the forward base; a prohibited zone round the base
     if (!S.units.some(u => (u.type === 'gf' || u.type === 'mr3d') && !u.dead) && S.budget > 200) {
-      const p = IC.findSpot(S, 'mr3d', fb.x, fb.y, 100, 500);
+      // 50 km inside the hostile border, where it nears the forward base
+      let best = null, bd = 1e9;
+      for (const f of S.world.fronts) if (f.key === 'A') for (const q of f.pts) { const d = U.dist(q, fb); if (d < bd) { bd = d; best = q; } }
+      const c = best ? { x: best.x + best.nx * 500, y: best.y + best.ny * 500 } : fb, p = IC.findSpot(S, 'mr3d', c.x, c.y, 0, 250);
       if (p) IC.deploy(S, 'mr3d', p.x, p.y);
     }
     if (!S.av.zones.length) IC.avAddZone(S, fb.x, fb.y, 150, 'Forward base');
