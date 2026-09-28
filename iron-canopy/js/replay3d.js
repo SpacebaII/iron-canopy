@@ -1171,7 +1171,7 @@ function capture(v) {
   const rows = v.panelRows;
   if (rows) {
     const lh = Math.round(fs * 1.35), list = rows.filter(r => r[0] !== 'why');
-    g.fillStyle = 'rgba(6,11,16,0.7)'; g.fillRect(10 * sx, 8 * sy, 250 * sx, list.length * lh + 12);
+    g.fillStyle = 'rgba(6,11,16,0.7)'; g.fillRect(10 * sx, 8 * sy, Math.max(250 * sx, fs * 24), list.length * lh + 12);
     list.forEach(([k, x], i) => { if (k === 'hr') return; g.font = `${fs}px monospace`; g.fillStyle = '#9ab0bf'; g.fillText(k, 18 * sx, 8 * sy + 6 + i * lh); g.fillStyle = i ? '#e8eef2' : '#f2b441'; g.fillText(x.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&'), 18 * sx + fs * 3.2, 8 * sy + 6 + i * lh); });
   }
   g.font = `${fs}px monospace`; g.fillStyle = '#e8eef2'; g.textBaseline = 'bottom';
