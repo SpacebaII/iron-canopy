@@ -39,6 +39,7 @@ function strikers(S) {
   flight(S, 'ucav', `HAWK ${S.roster.filter(r => r.kind === 'ucav').length + 1}`, fwd(S));
   IC.say(S, 'AIR', 'We lost our strike aircraft. Another strike drone is ready at the forward base.');
 }
+const bomberTaken = S => S.air.some(a => a.mission && a.mission.type === 'intercept' && a.mission.track && a.mission.track.type === 'bmr');
 const affCount = (S, set) => S.threats.filter(t => !t.dead && t.det && set.includes(t.aff)).length;
 /* a forced enemy operation is over when nothing it launched is still flying or waiting to launch */
 function resolved(S, op) {
@@ -183,7 +184,7 @@ IC.LESSONS = [
   },
   {
     id: 'airbase', title: 'The Air Base', sub: 'Call-in teams, a raid, the damage and the repairs',
-    learn: ['Calling in a missile team', 'What a raid does to a base', 'Repairing runways and hangars'],
+    learn: ['Calling in a missile team', 'An intercept from the air picture', 'What a raid does to a base', 'Repairing runways and hangars'],
     setup(S) {
       const b = fwd(S);
       depot(S);
@@ -200,9 +201,13 @@ IC.LESSONS = [
         start(S) { const b = fwd(S); S.camp.drones = IC.enemyForceOp(S, 'drones', { x: b.x, y: b.y, ref: b, name: b.name }, 5); },
         done: S => S.units.some(u => u.callin) },
       { text: () => 'The team is in position: the ring is its reach, the arc the time it has left. Watch the drones come in.', done: S => S.time - S.camp.stepT > 300 && resolved(S, S.camp.drones) },
-      { text: S => `Warning: an enemy bomber is heading for launch range of ${fwd(S).name}, and missile launchers are moving behind it. Fight the raid: fighters can hunt the bomber, the batteries take the cruise missiles. We have nothing here that stops ballistic missiles.`,
+      { text: S => `Warning: an enemy bomber is heading for launch range of ${fwd(S).name}, and missile launchers are moving behind it. When it shows up, the Air picture on the left lists it with the time it needs to get here. Click its row, or press Tab.`,
         start(S) { const b = fwd(S), o = { x: b.x, y: b.y, ref: b, name: b.name }; const T = Math.max(2400, IC.enemyLead(S, o) + 300); S.camp.raid = [IC.enemyForceOp(S, 'bomber', o, { T }), IC.enemyForceOp(S, 'mrbm', o, { n: 2, T }), IC.enemyForceOp(S, 'bal', o, { n: 2, T })]; },
-        done: S => S.time - S.camp.stepT > 1200 && S.camp.raid.every(op => resolved(S, op)) },
+        hint: { el: 'airpic' }, done: S => (S.sel && S.sel.kind === 'track' && S.sel.ref.type === 'bmr') || bomberTaken(S) || S.camp.raid.every(op => resolved(S, op)) },
+      { text: () => 'Now send a fighter. Press Intercept (V) in its panel for the quickest flight, or select VIPER 1 (Air room, A: Select) and click the bomber. The map shows where they meet, how long it takes, the fuel left after and the kill chance. Commit (Enter).', hint: { el: 'insp' },
+        done: S => bomberTaken(S) || S.camp.raid.every(op => resolved(S, op)) },
+      { text: () => 'The fighter flies to the predicted meeting point, not after the symbol, and fires when the bomber is in reach at its height. The batteries take the cruise missiles. We have nothing here that stops ballistic missiles.',
+        done: S => S.time - S.camp.stepT > 600 && S.camp.raid.every(op => resolved(S, op)) },
       { text: S => `Damage report. Select ${fwd(S).name} to see what was hit.`, hint: { at: S => fwd(S) }, done: S => S.sel && S.sel.ref === fwd(S) },
       { text: () => 'The panel shows the runway, hangars and aircraft. Engineers already started on the runway. Rebuild or repair a hangar too: engineers work a couple of jobs at once, so queue what matters first.', hint: { el: 'insp' }, done: S => IC.baseStatus(S, fwd(S)).runway && !!S.flags.hangarWork },
       { text: () => 'The base is flying again. Lesson complete.', done: () => true, wait: 40 }

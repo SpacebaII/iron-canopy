@@ -506,7 +506,7 @@ ui.hintsOn = store.get('ic-hints-on', true);
 const ANCHORS = {
   speed: '#speed', pause: '#speed .pz', skip: '#speed .skip', goals: '#brief', brief: '#brief', comms: '#comms', arsenal: '#arsenal', insp: '#insp',
   rail: '#rail', treasury: '#stat-money', menu: '#menuBtn', layers: '#layers', minimap: '#mini', weapons: '.rl.weapons', doctrine: '.rl.doctrine',
-  airspace: '.rl.airspace', feed: '#feed', incidents: '#incidents', evcard: '#evcard'
+  airspace: '.rl.airspace', feed: '#feed', incidents: '#incidents', evcard: '#evcard', airpic: '#airpic'
 };
 const anchorEl = a => {
   if (!a) return null;
