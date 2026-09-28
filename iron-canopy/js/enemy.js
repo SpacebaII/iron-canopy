@@ -831,8 +831,11 @@ function planRaid(S, E) {
   const bal = usesBal ? Math.max(balLead(S, obj, false), balLead(S, obj, true)) + 300 : 0;
   const dh = mix.some(p => p.w === 'drones' || p.w === 'harass') ? droneHours(S, obj) : 99;
   const drn = dh <= 5 ? dh * H + 600 : 0;
+  // cruise missiles (and drones too far away, which become cruise missiles) fly an hour or two to deep targets
+  const cmd = S.esites.filter(x => x.kind === 'cm' && alive(x)).reduce((m, x) => Math.min(m, U.dist(x, obj)), 1e9);
+  const cmf = cmd < 1e8 && mix.some(p => p.w === 'cm' || ((p.w === 'drones' || p.w === 'harass') && dh > 5)) ? cmd * 1.3 / IC.THR.lacm.spd + 120 : 0;
   // the raid is planned as soon as the last one is over, but nothing flies for the first 90 minutes of the calm
-  let T = S.time + Math.max(E.calm || 0, U.rand(4800, 6600), Math.min(7200, bal), 5400 + drn + 300, 8400);
+  let T = S.time + Math.max(E.calm || 0, U.rand(4800, 6600), Math.min(7200, bal), 5400 + Math.max(drn, cmf) + 300, 8400);
   E.calm = 0;
   // drone probes and the shock come at night when the night is not too far off
   // the shock comes at night when the night is not too far off
@@ -911,10 +914,11 @@ function launchRaid(S, E, R) {
       case 'bomber': n += W.bomber(S, E, obj, o, T); break;
       case 'low': n += W.low(S, E, obj, o, T); break;
       case 'helis': n += W.helis(S, E, obj, o, T); break;
-      case 'disguise': n += W.disguise(S, E, obj, o); break;
-      case 'feint': feint(S, E, obj); break;
-      case 'lm': { const x = OPS.lm(S, E, obj); if (x) { x.set = R.set; n++; } break; }
-      case 'hgv': { const x = OPS.hgv(S, E, obj); if (x) { x.set = R.set; x.raid = R; n++; } break; }
+      // these go when the raid goes, not when it is planned (never in the first 90 minutes of the calm)
+      case 'disguise': later(S, Math.max(5700, T - S.time - 5400), () => W.disguise(S, E, obj, o)); n++; break;
+      case 'feint': later(S, Math.max(0, T - S.time - 1800), () => feint(S, E, obj)); break;
+      case 'lm': later(S, Math.max(5700, T - S.time - 3600), () => { const x = OPS.lm(S, E, obj); if (x) x.set = R.set; }); n++; break;
+      case 'hgv': later(S, Math.max(5700, T - S.time - 300), () => { const x = OPS.hgv(S, E, obj); if (x) { x.set = R.set; x.raid = R; } }); n++; break;
     }
   }
   R.ops.push(op); if (opVia !== op) R.ops.push(opVia);
