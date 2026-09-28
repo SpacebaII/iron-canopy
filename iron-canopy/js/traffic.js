@@ -230,9 +230,9 @@ function dijkstra(G, srcs, ok, maxT) {
     for (const li of G.nodes[n].out) {
       const lk = G.links[li], d = lk.a === n ? 0 : 1; if (!canGo(lk, d)) continue;
       const m = d ? lk.a : lk.b; if (ok && !ok(m)) continue;
-      // (side streets cost more than their speed says: stops, parked cars and give-ways send through traffic
-      // to the avenues)
-      const v = f + lk.len / lk.C.v * (lk.cut ? 6 : 1) * (lk.cls === 'st' ? 1.6 : 1);
+      // (side streets and farm tracks cost more than their speed says: stops, parked cars, give-ways and ruts send
+      // through traffic to the avenues and roads)
+      const v = f + lk.len / lk.C.v * (lk.cut ? 6 : 1) * (lk.cls === 'st' ? 1.6 : lk.cls === 'ln' ? 2.5 : 1);
       if (v < t[m]) { t[m] = v; via[m] = li * 2 + d; from[m] = from[n]; push(v, m); }
     }
   }
@@ -392,7 +392,7 @@ function assign(S) {
     const m = lk.pts[lk.pts.length >> 1], gx = Math.floor(m.x / ZB), gy = Math.floor(m.y / ZB);
     let best = null, bd = 12;
     for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) for (const z of zb.get(x * 8192 + y) || []) { const d = U.dist(z, m); if (d < bd) { bd = d; best = z; } }
-    const v = best ? (best.homes + best.jobs + best.frt * 0.5) / best.n * 0.3 : lk.cls === 'ln' ? 0.02 : 0;
+    const v = lk.cls === 'ln' ? 0.02 : best ? (best.homes + best.jobs + best.frt * 0.5) / best.n * 0.3 : 0;   // (farm tracks: the farms' own)
     for (let d = 0; d < 2; d++) { F.gen[lk.id * 2 + d] += v; F.com[lk.id * 2 + d] += v * 0.5; }
   }
   // flows into loads, class by class: the busiest links of each class at a full rush hour run at what that class
