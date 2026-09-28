@@ -1410,7 +1410,7 @@ function ensurePatrols(S) {
 IC.enemyOpening = function (S, o) {
   const E = S.enemy;
   o = o || {};
-  E.war = true; E.warT = S.time; E.actT = S.time; E.head = o.head || 0; E.winH = o.winH || 0;
+  E.war = true; E.warT = S.time; E.actT = S.time; E.aimT = S.time; E.head = o.head || 0; E.winH = o.winH || 0;
   IC.log(S, 'leak', 'WAR', `${S.world.full.A} has opened hostilities. Missiles inbound.`);
   IC.news(S, `BREAKING: ${S.world.names.A} launches strikes on ${S.world.names.H}. Air raid sirens across the north.`);
   startAct(S, E, 1, `the war begins. Aim: ${IC.EAIMS[E.aim].name}${E.head ? `; their defence was ready, so probing is cut ${Math.round(E.head)} h short` : ''}`);
