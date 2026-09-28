@@ -451,9 +451,10 @@ function drawImpacts(S, px, now) {
 
 function drawTrack(S, t, px, now) {
   if (t.dead) return;
-  if (!t.det) {
-    if (t.tn && t.lost < 300 && !t.d.civil) {
-      ctx.globalAlpha = 0.45 * (1 - t.lost / 300); ctx.strokeStyle = C.muted; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 3 * px]);
+  if (!t.held) {
+    const gone = S.time - (t.pt || 0) - IC.coastT(t);
+    if (t.tn && gone < IC.TRACK.lostShow && !t.d.civil) {
+      ctx.globalAlpha = 0.45 * (1 - gone / IC.TRACK.lostShow); ctx.strokeStyle = C.muted; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 3 * px]);
       ctx.strokeRect(t.px - 5 * px, t.py - 5 * px, 10 * px, 10 * px); ctx.setLineDash([]);
       label(`${t.tn} LOST`, t.px + 8 * px, t.py - 6 * px, px, C.muted, 9, 'left');
       ctx.globalAlpha = 1;
@@ -463,19 +464,15 @@ function drawTrack(S, t, px, now) {
   if (!inView(t.px, t.py, 80)) return;
   if (t.border && !(S.sel && S.sel.ref === t) && cam.z < 0.1) return;
   const aff = t.decoyKnown ? 'D' : t.aff || 'U';
-  const age = S.time - t.pt;
-  const coasting = age > 2.6 && !t.fc;
-  const blink = coasting ? 0.45 + 0.55 * (Math.sin(now * 7 + t.seed) * 0.5 + 0.5) : 1;
+  // a track between plots, or coasting after contact is lost, stays steady: dimmer, with its uncertainty drawn
+  const coasting = !t.det;
+  const blink = coasting ? 0.6 : 1;
   const x = t.px, y = t.py;
   if (t.trail && t.trail.length > 1) {
     const rgb = t.type === 'ga' && aff !== 'H' && aff !== 'S' ? '201,176,255' : { H: '255,120,100', S: '255,170,90', A: '127,232,176', N: '127,232,176' }[aff] || '242,209,74';
     for (let i = 0; i < t.trail.length; i++) { const p = t.trail[i]; ctx.fillStyle = `rgba(${rgb},${0.08 + i * 0.05})`; ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 * px, 0, 7); ctx.fill(); }
   }
-  if (coasting) {
-    const sp = Math.hypot(t.pvx || 0, t.pvy || 0);
-    const r = Math.min(400, (t.perr || 0) + sp * age);
-    if (r * cam.z > 6) { ctx.strokeStyle = aff === 'H' ? 'rgba(255,91,79,0.3)' : 'rgba(242,209,74,0.3)'; ctx.setLineDash([2 * px, 4 * px]); ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-  }
+  if (coasting && IC.drawTrackUnc) IC.drawTrackUnc(ctx, S, t, aff, px);
   if (t.blip > 0 && S.cfg.radarFx !== 'off') { const full = S.cfg.radarFx === 'full'; ctx.fillStyle = `rgba(160,230,255,${t.blip * (full ? 0.35 : 0.12)})`; ctx.beginPath(); ctx.arc(x, y, (full ? 6 + 10 * (1 - t.blip) : 5 + 3 * (1 - t.blip)) * px, 0, 7); ctx.fill(); }
   const alt = t.altKnown ? t.alt : null;
   if (alt != null && t.d.cls !== 'bal') shadow(x, y, t.alt, px, t.d.cls === 'air' ? 5 : 3);
