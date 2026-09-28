@@ -7,6 +7,7 @@ IC.newGame = function (opts) {
   const seed = opts.seed >>> 0;
   const W = IC.W = IC.generate(seed);
   IC.buildRouting(W);
+  if (IC.worldBase) IC.worldBase(W);   // fingerprints of the fresh world, so a save stores only what changed (save.js)
   const mode = opts.mode || 'campaign';
   const sandbox = mode === 'sandbox';
   // the Career starts with no airports: the player builds the capital's. preset 'network' starts it with the
