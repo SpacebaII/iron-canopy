@@ -432,6 +432,7 @@ function onAct(e) {
     case 'escortFire': { const a2 = S.air.find(x => x.id === id); if (a2 && sel) { a2.roe = 'free'; if (a2.r) a2.r.roe = 'free'; a2.tgt = sel; IC.log(S, 'warn', 'ORDERS', `${a2.name}: cleared to fire on TN ${sel.tn}.`, sel); IC.emit(S, 'fireOrder', { a: a2, t: sel }); } break; }
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
+    case 'av': IC.avRoomAct(S, v, id); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
     case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.04) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.05); } return;
     case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
