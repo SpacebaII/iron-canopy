@@ -59,8 +59,9 @@ function buildSensors(S) {
   }
   for (const a of S.air) {
     if (a.dead || a.gnd) continue;
-    if (a.kind === 'aew') { if (!a.phase) a.phase = Math.random() * TAU; L.push({ x: a.x, y: a.y, R: 3200, mast: 9000, q: 'fc', eccm: 0.3 + eccmT, per: 12, rot: true, phase: a.phase, err: 3, air: a, emits: true, idc: 'nctr', nctrR: 1000 * nctrK, alt3d: true }); }
-    else if (a.kind === 'ftr') L.push({ x: a.x, y: a.y, R: 700, mast: 9000, q: 'surv', air: a, emits: true, eyes: 22 * wx.eo, per: 1, rot: false, err: 4, idc: 'nctr', nctrR: 300 * nctrK, alt3d: true });
+    if (a.kind === 'aew') { if (!a.phase) a.phase = Math.random() * TAU; L.push({ x: a.x, y: a.y, R: 3200, mast: Math.max(1000, a.alt * 1000), q: 'fc', eccm: 0.3 + eccmT, per: 12, rot: true, phase: a.phase, err: 3, air: a, emits: true, idc: 'nctr', nctrR: 1000 * nctrK, alt3d: true }); }
+    // a fighter's own radar looks down poorly: low fliers hide in the ground clutter beyond a short range
+    else if (a.kind === 'ftr') L.push({ x: a.x, y: a.y, R: 700, mast: Math.max(100, a.alt * 1000), q: 'surv', air: a, emits: true, eyes: 22 * wx.eo, per: 1, rot: false, err: 4, idc: 'nctr', nctrR: 300 * nctrK, alt3d: true, lowR: 120 });
     else if (a.kind === 'ucav' || a.kind === 'isr') L.push({ x: a.x, y: a.y, R: 150 * wx.eo, mast: 2000, q: 'surv', air: a, eyes: 150 * wx.eo, per: 1, rot: false, err: 3, eo: true, idc: 'eo', alt3d: true });
   }
   return L;
@@ -68,12 +69,15 @@ function buildSensors(S) {
 
 function detects(s, t) {
   const d = t.d, r = Math.hypot(s.x - t.x, s.y - t.y);
+  // nothing is seen beyond three times a sensor's reach (the largest airliner's echo stretches it 2.8 times): most pairs end here
+  if (r > s.R * 3) return false;
   if (s.bmdOnly && !(d.cls === 'bal' || d.cls === 'hgv')) return false;
   if (s.rktOnly && d.cls !== 'rkt') return false;
   if (s.esm) return ((d.emits && t.radarOn !== false) || (d.jam && t.jamming)) && r <= s.R * (d.jam ? 1.25 : 1);
   if (s.acou) return (d.cls === 'drone' || d.cls === 'cm' || d.cls === 'ga') && t.alt < 3 && (t.spd || 0) < 3 && r <= s.R;
   if (s.eo) return r <= s.R && t.alt < 6;
   if (r > U.horizon(s.mast, t.alt)) return false;
+  if (s.lowR && t.alt < 1 && r > s.lowR) return false;
   // radars on the ground, civil and military: high ground hides low aircraft (airspace.js)
   if (!s.air && r > 1 && IC.aspHidden(s, t)) return false;
   // a secondary radar only hears transponders
@@ -106,16 +110,132 @@ IC.updateEmcon = function (S, dt) {
 function plot(S, t, s) {
   const e = s.err || 0;
   const firstPlot = !t.pt;
-  t.px = t.x + (e ? U.gauss() * e : 0); t.py = t.y + (e ? U.gauss() * e : 0);
+  t.rx = t.x + (e ? U.gauss() * e : 0); t.ry = t.y + (e ? U.gauss() * e : 0);
+  if (firstPlot) { t.px = t.rx; t.py = t.ry; }
   t.pvx = t.vx; t.pvy = t.vy;
-  t.pt = S.time; t.perr = e;
+  t.pt = S.time; t.perr = e; t.pper = s.per || 1;
   t.holdUntil = Math.max(t.holdUntil || 0, S.time + Math.max(2.5, s.per * 1.6));
   if (!t.trail) t.trail = [];
-  if (!t.trailT || S.time - t.trailT > 4) { t.trail.push({ x: t.px, y: t.py }); if (t.trail.length > 8) t.trail.shift(); t.trailT = S.time; }
+  if (!t.trailT || S.time - t.trailT > 4) { t.trail.push({ x: t.rx, y: t.ry }); if (t.trail.length > 8) t.trail.shift(); t.trailT = S.time; }
   t.blip = 1;
   t.plots = (t.plots || 0) + 1;
   if (firstPlot) t.flash = 1;
 }
+
+/* ---------- steady tracks ----------
+   The player sees tracks, not plots. Between plots a track coasts on its last speed and heading, and each new plot
+   pulls it part of the way back, so the symbol glides instead of jumping. With no plot for a while the track keeps
+   coasting (still selectable) with a growing ellipse of where the aircraft could be; after its coast time it is lost.
+   t.det: fresh enough to shoot at. t.held: shown and selectable. t.px, t.py: the track's position. */
+IC.TRACK = { coast: { air: 150, ga: 150, heli: 120, drone: 120, cm: 60, arm: 30, bal: 40, hgv: 40, rkt: 15 }, lostShow: 60, groupR: 150 };
+IC.coastT = t => IC.TRACK.coast[t.d.cls] || 40;
+function steady(S, t, dt) {
+  if (!t.pt) { t.held = false; return; }
+  if (t.svx == null) { t.px = t.rx; t.py = t.ry; t.svx = t.pvx || 0; t.svy = t.pvy || 0; t.cx = t.cy = 0; }
+  else {
+    t.px += t.svx * dt; t.py += t.svy * dt;
+    if (t.pt === S.time) {
+      // a fresh plot: half of the difference is worked in over the next seconds; far outside the track's error, jump
+      const ex = t.rx - t.px, ey = t.ry - t.py;
+      if (ex * ex + ey * ey > Math.pow(5 * (t.perr || 1) + 25, 2)) { t.px = t.rx; t.py = t.ry; t.cx = t.cy = 0; }
+      else { t.cx = ex * 0.5; t.cy = ey * 0.5; }
+      t.svx = t.pvx || 0; t.svy = t.pvy || 0;
+    }
+    if (t.cx || t.cy) { const f = Math.min(1, dt / 2.5); t.px += t.cx * f; t.py += t.cy * f; t.cx *= 1 - f; t.cy *= 1 - f; if (Math.abs(t.cx) + Math.abs(t.cy) < 0.05) t.cx = t.cy = 0; }
+  }
+  const age = S.time - t.pt;
+  t.coast = !t.det;
+  t.held = !!t.tn && (t.det || age < IC.coastT(t));
+  // how far it could be from the coasted position: radar error plus a turn it may have made since
+  const sp = Math.hypot(t.svx, t.svy);
+  t.unc = (t.perr || 0) + sp * Math.max(0, age - (t.pper || 1) * 1.2) * 0.35;
+}
+IC.trackUnc = t => ({ along: (t.unc || 0) * 1.5, across: t.unc || 0, a: Math.atan2(t.svy || t.vy || 0, t.svx || t.vx || 1) });
+
+/* raids fly together: tracks close to each other on the same heading and speed are one group. Groups are rebuilt
+   every few seconds, so they split when the aircraft split. A group is named after its lowest track number. */
+// a raid is as hostile as its most hostile member
+const grpAff = m => m.some(t => t.aff === 'H') ? 'H' : m.some(t => t.aff === 'S') ? 'S' : 'U';
+function groupTracks(S) {
+  const L = S.threats.filter(t => t.held && !t.dead && t.aff !== 'N' && t.aff !== 'A' && !t.decoyKnown &&
+    (t.d.cls === 'air' || t.d.cls === 'drone' || t.d.cls === 'cm' || t.d.cls === 'heli'));
+  const par = L.map((_, i) => i), find = i => { while (par[i] !== i) i = par[i] = par[par[i]]; return i; };
+  const R = IC.TRACK.groupR, cell = new Map(), key = (x, y) => Math.floor(x / R) * 65536 + Math.floor(y / R);
+  L.forEach((t, i) => { const k = key(t.px, t.py); (cell.get(k) || cell.set(k, []).get(k)).push(i); });
+  L.forEach((t, i) => {
+    const cx = Math.floor(t.px / R), cy = Math.floor(t.py / R), s1 = Math.hypot(t.svx, t.svy);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const j of cell.get((cx + dx) * 65536 + cy + dy) || []) {
+      if (j <= i) continue;
+      const o = L[j], s2 = Math.hypot(o.svx, o.svy);
+      if ((t.aff === 'H') !== (o.aff === 'H') || U.dxy(t.px, t.py, o.px, o.py) > R) continue;
+      if (Math.abs(s1 - s2) > 0.3 * Math.max(s1, s2) || Math.abs(U.angWrap(Math.atan2(t.svy, t.svx) - Math.atan2(o.svy, o.svx))) > 0.6) continue;
+      par[find(i)] = find(j);
+    }
+  });
+  const by = new Map();
+  L.forEach((t, i) => { const r = find(i); (by.get(r) || by.set(r, []).get(r)).push(t); });
+  for (const t of S.threats) t.grp = null;
+  S.tgroups = [];
+  for (const m of by.values()) {
+    if (m.length < 2) continue;
+    m.sort((a, b) => a.tn - b.tn);
+    const g = { id: 'G' + m[0].tn, lead: m[0], members: m, n: m.length, aff: grpAff(m) };
+    for (const t of m) t.grp = g;
+    S.tgroups.push(g);
+  }
+}
+IC.groupTracks = groupTracks;
+IC.groupBox = g => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const t of g.members) { x0 = Math.min(x0, t.px); y0 = Math.min(y0, t.py); x1 = Math.max(x1, t.px); y1 = Math.max(y1, t.py); } return { x0, y0, x1, y1, x: (x0 + x1) / 2, y: (y0 + y1) / 2 }; };
+
+/* ---------- the air picture ----------
+   Every track that is not a known friend or airliner, one row per group, most dangerous first: hostile before
+   suspect before unknown, then by the time until it reaches what it is heading for. */
+const TIER = { H: 0, S: 1, U: 2 };
+function timeToTarget(S, t) {
+  if (t.aff === 'H' && !t.d.civil && (t.x1 != null || t.aim) && (t.d.cls !== 'air' || !t.home)) {
+    const ax = t.x1 != null ? t.x1 : t.aim.x, ay = t.y1 != null ? t.y1 : t.aim.y;
+    const named = t.target && t.target.name && U.dxy(t.target.x, t.target.y, ax, ay) < 60 ? t.target.name : IC.bases(S).concat(IC.cities(S)).find(p => U.dxy(p.x, p.y, ax, ay) < 60);
+    return { t: IC.timeToImpact(t), to: typeof named === 'string' ? named : named ? named.name : IC.nearestPlace(S, ax, ay) };
+  }
+  const sp = Math.hypot(t.svx || 0, t.svy || 0);
+  if (sp < 0.05) return { t: Infinity, to: '' };
+  const ux = t.svx / sp, uy = t.svy / sp;
+  let best = null, bt = Infinity;
+  const look = p => {
+    const dx = p.x - t.px, dy = p.y - t.py, along = dx * ux + dy * uy;
+    if (along <= 0 || along > 6000) return;
+    if (Math.abs(dx * uy - dy * ux) > Math.max(120, along * 0.2)) return;
+    const tt = along / sp; if (tt < bt) { bt = tt; best = p; }
+  };
+  for (const c of IC.cities(S)) look(c);
+  for (const b of IC.bases(S)) if (b.owner === 'us' || b.kind === 'airbase') look(b);
+  return best ? { t: bt, to: best.name } : { t: Infinity, to: '' };
+}
+IC.timeToTarget = timeToTarget;
+IC.airPicture = function (S) {
+  const rows = [], seen = new Set();
+  for (const t of S.threats) {
+    if (!t.held || t.dead || t.aff === 'N' || t.aff === 'A' || t.decoyKnown) continue;
+    if (t.d.cls === 'rkt') continue;
+    const g = t.grp;
+    if (g) { if (seen.has(g)) continue; seen.add(g); }
+    const lead = g ? g.lead : t;
+    if (!lead.ttT || S.time - lead.ttT > 3) { lead.tt = timeToTarget(S, lead); lead.ttT = S.time; }
+    const aff = g ? g.aff : t.aff || 'U';
+    rows.push({ t: lead, g, n: g ? g.n : 1, aff, tti: lead.tt.t, to: lead.tt.to, inside: IC.inHome(lead.px, lead.py) });
+  }
+  rows.sort((a, b) => (TIER[a.aff] - TIER[b.aff]) || (a.tti - b.tti) || (b.inside - a.inside) || (a.t.tn - b.t.tn));
+  return rows;
+};
+/* the next or previous hostile (or, with none, anything not friendly) in the air picture */
+IC.cycleTrack = function (S, dir) {
+  const rows = IC.airPicture(S), hot = rows.filter(r => r.aff === 'H' && !r.t.border), L = hot.length ? hot : rows;
+  if (!L.length) return null;
+  const cur = S.sel && S.sel.kind === 'track' ? S.sel.ref : null;
+  let i = L.findIndex(r => r.t === cur || (r.g && cur && cur.grp === r.g));
+  i = i < 0 ? (dir > 0 ? 0 : L.length - 1) : (i + dir + L.length) % L.length;
+  return L[i].t;
+};
 
 /* ---------- electronic warfare ----------
    A noise jammer floods a radar along its own bearing. The radar still sees what is close enough to burn through,
@@ -161,6 +281,7 @@ function setAff(S, t, aff, why) {
   const was = t.aff;
   t.aff = aff; t.affWhy = why; t.affT = S.time;
   t.ided = aff === 'H' || aff === 'N';
+  if (t.grp) t.grp.aff = grpAff(t.grp.members);
   if (!t.tn || t.d.civil && aff !== 'S' && aff !== 'H') return;
   if (aff === 'H' && t.d.cls === 'air' && !t.border) IC.log(S, 'id', 'ID', `TN ${t.tn} identified HOSTILE: ${IC.KLASS[t.klass] || t.d.name}${why ? ' (' + why + ')' : ''}.`, t);
   else if (aff === 'S' && (was === 'A' || was === 'N')) IC.log(S, 'warn', 'SUSPECT', `TN ${t.tn} ${t.sq ? 'squawking ' + t.sq : ''} is now SUSPECT: ${why}.`, t);
@@ -223,9 +344,13 @@ IC.sense = function (S, dt) {
       t.lost = 0;
       if (!t.tn) { t.tn = S.nextTN++; t.firstDet = S.time; t.firstIn = IC.inHome(t.x, t.y); onNewTrack(S, t); }
     } else if (t.tn) t.lost += dt;
+    steady(S, t, dt);
     if (t.blip > 0) t.blip = Math.max(0, t.blip - dt * 0.6);
-    if (!wasDet && t.det && t.tn) t.flash = 1;
+    if (!wasDet && t.det && t.tn && !t.held0) t.flash = 1;
+    t.held0 = t.held;
   }
+  S.grpT = (S.grpT || 0) - dt;
+  if (S.grpT <= 0) { S.grpT = 3; groupTracks(S); }
 };
 
 function identify(S, t, dt, nctr, iff) {
@@ -236,8 +361,11 @@ function identify(S, t, dt, nctr, iff) {
     return;
   }
   if (c === 'cm' && t.altKnown && (t.plots || 0) >= 3) { t.klass = 'cm'; setAff(S, t, 'H', 'low and fast'); return; }
+  // a pilot has seen it: that stands until something new happens (a weapon release sets hostile directly)
+  if (t.seenAs && !t.vis) return;
   // eyes on: definitive
   if (t.vis) {
+    t.seenAs = t.d.decoy ? 'D' : t.d.civil ? 'N' : 'H';
     t.klass = t.d.decoy ? 'decoy' : t.d.klass;
     if (t.d.decoy) { t.decoyKnown = true; setAff(S, t, 'H', 'decoy'); }
     else setAff(S, t, t.d.civil ? 'N' : 'H', 'visual identification');

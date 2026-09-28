@@ -30,6 +30,9 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  // three.js (the replay window) comes from cdnjs; where that host is blocked, serve a local copy (npm i --no-save three@0.160.0)
+  const three = path.resolve(__dirname, '../node_modules/three/build/three.module.min.js');
+  if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
   await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
   await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
   await page.evaluate(`(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)); ${setup} })()`);
