@@ -94,7 +94,7 @@ IC.rangeSpawn = function (S, spec, replay) {
   list.forEach((type, i) => {
     const off = (i - list.length / 2) * 12;
     const from = { x: P.x + nx * off, y: P.y + ny * off };
-    R.pending.push({ t: S.time + i * (IC.THR[type].move === 'bal' ? 8 : 4), fn: () => spawnOne(S, type, from, spec) });
+    R.pending.push({ t: S.time + i * (IC.THR[type].move === 'bal' ? 8 : 4), fn: IC.hfn('rangeOne', S, type, from, spec) });
   });
   return list.length;
 };
@@ -183,6 +183,8 @@ IC.rangeClear = function (S) {
   S.range.t0 = S.time;
   resetStats(S);
 };
+IC.H.rangeOne = (S, type, from, spec) => () => spawnOne(S, type, from, spec);
+IC.H.rangeWave = (S, w) => () => IC.rangeSpawn(S, w, true);
 /* play the scenario again from the start: the same units, and each wave at the same moment */
 IC.rangeReset = function (S) {
   const sc = S.range.scen;
@@ -190,7 +192,7 @@ IC.rangeReset = function (S) {
   S.range.target = { x: sc.target.x, y: sc.target.y };
   S.ad.roe = sc.roe || 'free'; S.ad.doctrine = sc.doctrine || 'sls';
   for (const u of sc.units) IC.rangeAddUnit(S, u.type, u.x, u.y, u, true);
-  for (const w of sc.waves) S.range.pending.push({ t: S.time + w.t, fn: () => IC.rangeSpawn(S, w, true) });
+  for (const w of sc.waves) S.range.pending.push({ t: S.time + w.t, fn: IC.hfn('rangeWave', S, w) });
 };
 IC.rangeNew = function (S) { S.range.scen = { units: [], waves: [], target: { x: S.range.target.x, y: S.range.target.y }, roe: S.ad.roe, doctrine: S.ad.doctrine }; IC.rangeClear(S); };
 IC.rangeExport = S => JSON.stringify(Object.assign({}, S.range.scen, { roe: S.ad.roe, doctrine: S.ad.doctrine }));
