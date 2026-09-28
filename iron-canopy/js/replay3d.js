@@ -47,7 +47,7 @@ const CSS = `
 .rp-bar input[type=range]{flex:1;min-width:10rem;accent-color:var(--friend)}
 .rp-bar .time{font-family:var(--mono);font-variant-numeric:tabular-nums;min-width:5.2rem;color:var(--text)}
 .rp-bar .hint{font-size:.78rem;color:var(--muted);flex-basis:100%}
-.rp-side{position:absolute;right:0;top:0;bottom:0;width:15rem;overflow:auto;background:rgba(6,11,16,.7);padding:.5rem;display:grid;gap:.3rem;align-content:start;scrollbar-width:thin}
+.rp-side{position:absolute;z-index:2;right:0;top:0;bottom:0;width:15rem;overflow:auto;background:rgba(6,11,16,.7);padding:.5rem;display:grid;gap:.3rem;align-content:start;scrollbar-width:thin}
 .rp-side div{display:flex;gap:.5rem;align-items:center;font-size:.78rem;color:var(--muted)}
 .rp-side canvas{width:64px;height:48px;flex:none;background:rgba(255,255,255,.05);border-radius:6px}
 .rp-side b{color:var(--text);font-weight:600}
@@ -388,7 +388,10 @@ function nearestMover() {
 function resize() {
   const view = $('rpView'), w = view.clientWidth, h = view.clientHeight;
   V.renderer.setSize(w, h, false);
-  V.camera.aspect = w / h; V.camera.updateProjectionMatrix();
+  V.camera.aspect = w / h;
+  const side = V.gallery && $('rpSide');   // the gallery centres its models in the part the side list leaves free
+  if (side) V.camera.setViewOffset(w, h, side.offsetWidth / 2, 0, w, h);
+  V.camera.updateProjectionMatrix();
 }
 function buildScene() {
   const S = V.S, cx = V.cx, cy = V.cy, R = V.R;
@@ -571,10 +574,11 @@ IC.replayGallery = function (S) {
   if (V) IC.replayClose();
   const el = makeWindow(S, 'Models', 'Every model in 3D; the same models from above down the side');
   V = { S, el, cx: 0, cy: 0, R: 60, t: 0, t0: 0, t1: 1, playing: false, speed: 1, mode: 'orbit', hk: 1, radar: false, labels: true, gallery: true,
-    orbit: { yaw: -1.1, pitch: 0.6, dist: 110, tx: 0, ty: 0, tz: 0 }, free: null, keys: new Set(), wasPaused: S.paused, fps: 0, frames: 0, fpsT: 0, movers: [], events: [], parts: [] };
+    orbit: { yaw: 1.25, pitch: 0.7, dist: 110, tx: 0, ty: 0, tz: 0 }, free: null, keys: new Set(), wasPaused: S.paused, fps: 0, frames: 0, fpsT: 0, movers: [], events: [], parts: [] };
   S.paused = true;
   bindWindow(el);
   el.querySelector('.rp-bar').innerHTML = `<button class="btn" data-rp="above" title="Look straight down">From above</button><span class="hint">Drag to orbit · wheel to zoom · right-drag to pan · click a model to look at it. Models are at real size next to each other: a lorry is 10 m, a wide-body 64 m.</span>`;
+  for (const x of el.querySelectorAll('[data-rp=radar],[data-rp=hk]')) x.closest('label').hidden = true;   // nothing recorded to show here
   const side = document.createElement('div'); side.className = 'rp-side'; side.id = 'rpSide'; $('rpView').appendChild(side);
   loadThree().then(() => { if (V && V.el === el) buildGallery(side); }).catch(e => { msg('The 3D library could not be loaded from cdnjs.cloudflare.com. Check the connection and open the gallery again.'); console.warn(e); });
   return V;
@@ -607,6 +611,7 @@ function buildGallery(side) {
     let x = -240, rowMax = 0;
     for (const k of keys) {
       const size = IC.modelSize(k), liv = grp === 'Civil aircraft' && k !== 'light' ? IC.LIVERY[(keys.indexOf(k) * 2) % IC.LIVERY.length] : null;
+      if (x > 40) { x = -240; z += rowMax + 10; rowMax = 0; }   // wrap long groups so the grid stays compact
       x += size / 2 + 6;
       const tr = { id: k, kind: 'gallery', model: k, name: IC.MODELS[k].name, side: grp === 'Enemy weapons' ? 'enemy' : grp === 'Civil aircraft' ? 'civil' : 'us', meta: { livery: liv } };
       const m = makeMover(tr, scene); m.grp.position.set(x, 0, z); m.grp.rotation.y = Math.PI / 2; m.grp.scale.setScalar(100); m.grp.userData.size = size; m.line.visible = false; m.fixed = true;
@@ -619,7 +624,7 @@ function buildGallery(side) {
   }
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
   for (const m of V.movers) { x0 = Math.min(x0, m.grp.position.x); x1 = Math.max(x1, m.grp.position.x); z0 = Math.min(z0, m.grp.position.z); z1 = Math.max(z1, m.grp.position.z); }
-  Object.assign(V.orbit, { tx: (x0 + x1) / 2, tz: (z0 + z1) / 2, dist: Math.max(x1 - x0, z1 - z0) * 0.7 });
+  Object.assign(V.orbit, { tx: (x0 + x1) / 2, tz: (z0 + z1) / 2, dist: Math.max(x1 - x0, z1 - z0) * 0.85 });
   bindPointer(canvas);
   resize();
   msg('');
@@ -645,7 +650,7 @@ function galleryFrame() {
     for (const m of V.movers) {
       v.copy(m.grp.position); v.y += m.grp.userData.size * 0.35 + 3; v.project(cam);
       const d = m.grp.position.distanceTo(cam.position);
-      if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05 || d > 500) { m.label.hidden = true; continue; }
+      if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05 || d > 260) { m.label.hidden = true; continue; }
       const txt = `${esc(m.tr.name)}<small>${Math.round(IC.modelSize(m.tr.model))} m</small>`;
       if (m.label.innerHTML !== txt) m.label.innerHTML = txt;
       m.label.className = 'rp-lbl ' + (m === V.follow ? 'sel' : m.tr.side || '');
