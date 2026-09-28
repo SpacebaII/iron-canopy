@@ -402,7 +402,7 @@ function buildScene() {
   const rev = +THREE.REVISION || 128, lk = rev >= 155 ? Math.PI : 1;
   const light = S.flat ? 1 : IC.daylight(S.time), dim = 0.35 + 0.65 * light;
   // the sky and the far ground follow the time of day; the box's edge fades into them
-  const sky = new THREE.Color('#0a1420').lerp(new THREE.Color('#9cc4e4'), light), far = new THREE.Color('#0c1410').lerp(new THREE.Color('#6e7c58'), light);
+  const sky = new THREE.Color('#0a1420').lerp(new THREE.Color('#9cc4e4'), light), far = new THREE.Color('#0c1410').lerp(new THREE.Color('#8e9a70'), light);
   scene.background = sky;
   scene.fog = new THREE.Fog(sky, R * 2.5, R * 9);
   const beyond = new THREE.Mesh(new THREE.PlaneGeometry(R * 60, R * 60), new THREE.MeshLambertMaterial({ color: far })); beyond.rotation.x = -Math.PI / 2; beyond.position.y = -0.2; scene.add(beyond);
