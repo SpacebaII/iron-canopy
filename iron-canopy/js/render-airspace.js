@@ -25,11 +25,11 @@ function text(ctx, s, x, y, px, col, size, align, weight) {
 }
 const inView = (v, x, y, r) => x + r > v.x0 && x - r < v.x1 && y + r > v.y0 && y - r < v.y1;
 
-IC.drawAirspace = function (ctx, S, px, view, labels) {
+IC.drawAirspace = function (ctx, S, px, view, labels, vols) {
   const N = S.asp; if (!N || !N.vols) return;
   const z = IC.cam.z, sel = S.sel, selAp = sel && sel.kind === 'infra' && sel.ref.parts ? sel.ref : sel && sel.kind === 'apart' ? sel.ap : null;
   const edit = IC.ui && IC.ui.aspVol, m = S.mode2;
-  for (const v of N.vols) {
+  if (vols !== false) for (const v of N.vols) {
     if (!inView(view, v.x, v.y, v.r1) || v.r1 * z < 3) continue;
     const C = IC.ASP_CLS[v.cls], hot = (selAp && v.ap === selAp.id) || edit === v.id || (m && m.kind === 'asp' && m.vol === v.id);
     const col = C.col, mil = v.kind === 'mil';
@@ -45,6 +45,15 @@ IC.drawAirspace = function (ctx, S, px, view, labels) {
       text(ctx, `${mil ? v.cls === 'X' ? 'ADZ' : v.cls : v.cls} ${lvl(v.hi)}/${lvl(v.lo)}`, x, y, px, `rgba(${col},${hot ? 1 : 0.8})`, hot ? 10 : 8.5, 'center', 700);
       if (mil && v.r1 * z > 80) text(ctx, v.name.toUpperCase(), v.x, v.y, px, `rgba(${col},0.7)`, 8.5, 'center', 600);
     }
+  }
+  // the selected airport's arrival and departure lanes, with arrows the way they are flown
+  const Ln = selAp && selAp.owner === 'us' && IC.atcLanes(S, selAp);
+  if (Ln && z > 0.03) {
+    const arrow = (p, q, col) => { const a = Math.atan2(q.y - p.y, q.x - p.x), mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, k = 7 * px; ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(mx + Math.cos(a) * k, my + Math.sin(a) * k); ctx.lineTo(mx + Math.cos(a + 2.5) * k, my + Math.sin(a + 2.5) * k); ctx.lineTo(mx + Math.cos(a - 2.5) * k, my + Math.sin(a - 2.5) * k); ctx.fill(); };
+    const line = (P, col) => { ctx.strokeStyle = col; ctx.lineWidth = 1.5 * px; ctx.setLineDash([9 * px, 6 * px]); ctx.beginPath(); P.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo'](p.x, p.y)); ctx.stroke(); ctx.setLineDash([]); for (let i = 1; i < P.length; i++) arrow(P[i - 1], P[i], col); };
+    for (const l of Ln.arr) line(l.pts, 'rgba(242,209,74,0.55)');
+    for (const l of Ln.dep) line(l.pts, 'rgba(127,232,176,0.6)');
+    if (labels) { text(ctx, `${Ln.gate.name.toUpperCase()}`, Ln.gate.x, Ln.gate.y - 8 * px, px, 'rgba(242,209,74,0.9)', 9, 'center', 700); for (const l of Ln.dep) text(ctx, `DEP ${l.rw}`, l.pts[1].x, l.pts[1].y - 8 * px, px, 'rgba(127,232,176,0.9)', 9, 'center', 700); }
   }
   // holding stacks: a lap round each fix, and its levels
   if (z > 0.02 && N.arr) for (const id in N.arr) {

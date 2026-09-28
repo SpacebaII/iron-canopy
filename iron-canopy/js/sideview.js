@@ -50,8 +50,9 @@ IC.drawSide = function (cv, S, w) {
   g.fillStyle = 'rgba(6,14,22,0.92)'; g.fillRect(0, 0, W, H);
   g.font = '600 10px "IBM Plex Mono", monospace';
   // height grid: flight levels for airspace up to 15 km, km above that
-  const step = P.H > 30 ? 10 : P.H > 12 ? 2 : P.H > 5 ? 1 : 0.5;
-  for (let a = 0; a <= P.H; a += step) {
+  // flight levels for airspace heights, km for weapons that fly higher
+  const step = P.H > 30 ? 10 : P.H > 16 ? 2 : P.H > 6 ? IC.flKm(50) : IC.flKm(20);
+  for (let a = 0; a <= P.H + 1e-6; a += step) {
     g.strokeStyle = 'rgba(160,190,210,0.10)'; g.beginPath(); g.moveTo(ml, Y(a)); g.lineTo(W - mr, Y(a)); g.stroke();
     g.fillStyle = 'rgba(160,190,210,0.6)'; g.textAlign = 'right'; g.fillText(P.H > 16 ? `${a} km` : a ? IC.flText(a).replace(' ft', '') : 'SFC', ml - 4, Y(a) + 3);
   }
@@ -96,6 +97,9 @@ IC.drawSide = function (cv, S, w) {
   const dots = [];
   for (const t of S.threats) if (t.det && !t.dead) dots.push([t, t.aff === 'H' ? '#ff7b6b' : t.aff === 'S' ? '#ffb05a' : t.d.civil && (t.aff === 'N' || t.aff === 'A') ? (t.type === 'ga' ? '#c9b0ff' : '#7fe8b0') : '#f2d14a', t.d.civil && (t.aff === 'N' || t.aff === 'A') ? t.cs : t.aff === 'H' ? t.d.code : `${t.tn}`]);
   for (const a of S.air) if (!a.dead && !a.gnd) dots.push([a, '#6fd2ff', a.name]);
+  // labels step down out of each other's way
+  const boxes = [];
+  const place = (x, y, wd) => { let yy = y; for (let k = 0; k < 8 && boxes.some(b => x < b[0] + b[2] && x + wd > b[0] && Math.abs(yy - b[1]) < 11); k++) yy += 11; boxes.push([x, yy, wd]); return yy; };
   for (const [o, col, name] of dots) {
     const c = proj(P, o.x, o.y); if (Math.abs(c.off) > P.W || Math.abs(c.s) > P.L) continue;
     const x = X(c.s), y = Y(o.alt || 0), me = o === w.ref;
@@ -104,7 +108,9 @@ IC.drawSide = function (cv, S, w) {
     if (hp && hp.length > 1) { g.strokeStyle = col; g.globalAlpha = 0.35; g.beginPath(); hp.forEach((q, i) => { const e = proj(P, q.x, q.y); g[i ? 'lineTo' : 'moveTo'](X(e.s), Y(q.alt)); }); g.lineTo(x, y); g.stroke(); g.globalAlpha = 1; }
     g.fillStyle = col; g.beginPath(); g.arc(x, y, me ? 4.5 : 3, 0, 7); g.fill();
     if (me) { g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 7, 0, 7); g.stroke(); }
-    g.textAlign = 'left'; g.fillStyle = col; g.fillText(`${name} ${IC.tagAlt ? IC.tagAlt(o) : IC.altText(o)}`, x + 6, y - 4);
+    const lab = `${name} ${IC.tagAlt ? IC.tagAlt(o) : IC.altText(o)}`, wd = g.measureText(lab).width, ly = place(x + 6, y - 4, wd);
+    if (ly !== y - 4) { g.strokeStyle = col; g.globalAlpha = 0.4; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6, ly - 3); g.stroke(); g.globalAlpha = 1; }
+    g.textAlign = 'left'; g.fillStyle = col; g.fillText(lab, x + 6, ly);
   }
   g.textAlign = 'left'; g.fillStyle = 'rgba(200,215,225,0.8)'; g.fillText(w.kind === 'base' ? `looking ${U.compass(P.a + Math.PI / 2)} · dashed blue: lowest height radar sees` : 'dashed blue: lowest height radar sees', ml + 4, mt + 11);
   return P;
@@ -206,6 +212,7 @@ IC.aspAct = function (S, ap, ds) {
     case 'staff': if (sec) IC.aspSetStaff(S, sec, sec.staff + n); break;
     case 'space': if (sec) sec.rules.space = sec.rules.space > 1 ? 1 : 1.5; break;
     case 'depBelow': if (sec) sec.rules.depBelow = !sec.rules.depBelow; break;
+    case 'lanes': if (sec) sec.rules.lanes = sec.rules.lanes === false; break;
     case 'stack': if (sec) sec.rules.stack = n; break;
     case 'side': if (ap) IC.sideOpen(S, 'base', ap); break;
     case 'sector': IC.setMode({ kind: 'asp', op: 'sector' }); return;

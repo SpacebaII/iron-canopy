@@ -413,7 +413,7 @@ function ensureVols(S) {
     N.secs.push(newSector('acc', null, 'National area', 4, c.x, c.y));
   }
 }
-function newSector(kind, ap, name, staff, x, y) { return { id: IC.nid('sec'), kind, ap: ap ? ap.id : null, name, staff, x, y, rules: { space: 1, depBelow: true, stack: 6 }, load: 0, cap: 1, work: 0, peak: 0, hand: 0 }; }
+function newSector(kind, ap, name, staff, x, y) { return { id: IC.nid('sec'), kind, ap: ap ? ap.id : null, name, staff, x, y, rules: { space: 1, depBelow: true, stack: 6, lanes: true }, load: 0, cap: 1, work: 0, peak: 0, hand: 0 }; }
 /* the final approach fixes of an airport's runways (both ends): the control zone must hold them */
 IC.aspFafs = function (ap) {
   const L = [];
@@ -830,6 +830,37 @@ IC.atcHold = function (S, t, dt) {
   if (i <= 0 && S.time >= (t.slot || 0) - U.dist(fix, ap) / t.spd) { IC.atcLeave(S, t); t.inHold = false; t.hoa = null; return 'go'; }
   return t.holdT > 2400 ? 'divert' : 'hold';
 };
+/* ---------- standard arrival and departure lanes ----------
+   For the runway direction the wind has chosen: arrivals fly from their stack to a gate 15 km out on the extended
+   centre line of the main arrival runway, then straight in; departures fly the runway heading for 15 km before they
+   turn onto their route. With lanes off, everyone flies direct: shorter, but crossing each other's paths */
+A.laneOut = 150;
+IC.atcLanes = function (S, ap) {
+  const sec = IC.aspSectors(S).find(x => x.ap === ap.id && x.kind === 'app') || IC.aspSectors(S).find(x => x.ap === ap.id);
+  if (!sec || sec.rules.lanes === false || !ap.parts) return null;
+  const cfg = IC.aptConfig(S, ap); if (!cfg || !cfg.arr.length) return null;
+  const N = S.asp, L = N.lanes || (N.lanes = {}), key = `${cfg.t}|${cfg.arr.join()}|${cfg.dep.join()}|${N.volVer}`;
+  if (L[ap.id] && L[ap.id].key === key) return L[ap.id];
+  const rw = id => ap.parts.find(p => p.id === id);
+  const main = rw(cfg.arr[0]); if (!main) return null;
+  const d = IC.rwDir(main), dir = cfg.rw[main.id].dir, th = dir > 0 ? main.a : main.b;
+  const gate = { x: th.x - d.x * dir * A.laneOut, y: th.y - d.y * dir * A.laneOut, name: `${IC.rwEnd(main, dir)} gate` };
+  const out = { key, gate, rw: IC.rwEnd(main, dir), arr: STACKS.map(([k]) => ({ k, pts: [IC.atcStackPos(S, ap, k), gate, { x: th.x, y: th.y }] })), dep: [] };
+  for (const id of cfg.dep) {
+    const r = rw(id); if (!r) continue;
+    const dd = cfg.rw[id].dir, e = IC.rwDir(r), st = dd > 0 ? r.a : r.b, end = dd > 0 ? r.b : r.a;
+    out.dep.push({ rw: IC.rwEnd(r, dd), pts: [{ x: st.x, y: st.y }, { x: end.x + e.x * dd * A.laneOut, y: end.y + e.y * dd * A.laneOut }] });
+  }
+  return (L[ap.id] = out);
+};
+/* where a departure off this airport goes first: the end of its lane */
+IC.atcDepLane = function (S, ap, x, y) {
+  const Ln = IC.atcLanes(S, ap); if (!Ln || !Ln.dep.length) return null;
+  let best = null, bd = Infinity;
+  for (const l of Ln.dep) { const d = U.dxy(x, y, l.pts[0].x, l.pts[0].y); if (d < bd) { bd = d; best = l; } }
+  return best.pts[1];
+};
+
 /* the player on the radio: a level (km), a heading (radians), a hold where it is, clearance into an airport's
    airspace for a light aircraft, or back to the controllers */
 IC.atcCmd = function (S, t, c) {

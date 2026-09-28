@@ -157,6 +157,9 @@ IC.avDetour = function (S) {
 /* ---------- flying the legs ---------- */
 function launchLeg(S, t, from, to, x, y, alt, progress) {
   const path = IC.avPath(S, from, to);
+  // off our runway: out along the departure lane first
+  const lane = !progress && from.apt && S.byId[from.apt] && IC.atcDepLane(S, S.byId[from.apt], x, y);
+  if (lane && U.dist(lane, to) < U.dist(from, to)) path.pts.splice(1, 0, { x: lane.x, y: lane.y, lane: true });
   const r = routeOf(S, t), al = airlineOf(S, t.al);
   // an aircraft already under way starts part way along its route
   const at = progress ? IC.pathAt(path.pts, progress) : { x, y, ahead: path.pts.slice(1) };
@@ -180,9 +183,11 @@ IC.moveTail = function (S, t, dt) {
   if (t.stk) {
     const r = IC.atcHold(S, t, dt);
     if (r === 'divert') { IC.atcLeave(S, t); divert(S, t, 'too long in the holding stack'); }
-    if (r === 'go') { t.wps = [t.wps[t.wps.length - 1]]; t.dest = t.wps[0]; }
+    if (r === 'go') toGate(S, t);
     return;
   }
+  // a sequenced arrival near the airport joins the arrival lane at its gate
+  if (t.seq && !t.onLane && t.toApt && !t.drift && !t.pCmd && U.dist(t, S.byId[t.toApt] || t) < IC.ASP.stackR + 60) toGate(S, t);
   // GPS jamming or a deliberate turn pulls the aircraft off its route
   let d = t.dest;
   let hd = Math.atan2(d.y - t.y, d.x - t.x);
@@ -219,6 +224,13 @@ IC.moveTail = function (S, t, dt) {
   if (t.toApt && remain < APPROACH && !t.drift) beginApproach(S, t);
   if (t.x < -1200 || t.y < -1200 || t.x > IC.WW + 1200 || t.y > IC.WH + 1200) { t.dead = true; t.arrived = true; if (tl) arriveAway(S, tl, t); }
 };
+/* from a stack or the edge of the terminal area, by the arrival lane: to the gate, then in */
+function toGate(S, t) {
+  const ap = S.byId[t.toApt], end = t.wps[t.wps.length - 1], Ln = ap && IC.atcLanes(S, ap);
+  t.onLane = true;
+  t.wps = Ln && U.dist(t, Ln.gate) > 60 && U.dist(t, ap) > U.dist(Ln.gate, ap) - 30 ? [{ x: Ln.gate.x, y: Ln.gate.y, lane: true }, end] : [end];
+  t.dest = t.wps[0];
+}
 function beginApproach(S, t) {
   const ap = S.byId[t.toApt];
   t.spdF = 1; t.vector = null;
