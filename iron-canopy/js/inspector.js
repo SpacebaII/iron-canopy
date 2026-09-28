@@ -452,9 +452,22 @@ function buildPalette(b, civil) {
   const mat = m ? m.mat : P.mat, size = m ? m.size : P.size, zone = m ? m.zone : P.zone;
   const opts = `<h3 class="sh">Pavement <em>cost ×${IC.PAVE[mat || 'conc'].cost} · carries ${IC.PAVE[mat || 'conc'].t} t</em></h3>${seg('bpref', 'mat:' + (mat || 'conc'), IC.PAVE_ORDER.map(k => ['mat:' + k, IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), '', `${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost and build time ×${IC.PAVE[k].cost} and ×${IC.PAVE[k].build}.`]))}
     <h3 class="sh">Zone <em>for aprons and ramps</em></h3>${seg('bpref', 'zone:' + (zone || 'auto'), [['zone:auto', 'Auto', '', 'From what is next to it: terminal, cargo terminal, shelters']].concat(Object.entries(IC.ZONES).map(([k, z]) => ['zone:' + k, zoneWord(k), '', `${z.name} zone: only ${z.name.toLowerCase()} aircraft park here`])))}
-    <h3 class="sh">Stand size <em>for ramps and concourses</em></h3>${seg('bpref', 'size:' + size, Object.entries(IC.RAMP_SIZE).map(([k, n]) => ['size:' + k, n, '', `${IC.STAND[k].name} stand, ${Math.round(IC.STAND[k].w * 100)} m wide`]))}`;
+    ${standOpts(m, P, size)}`;
   return `<div class="palette">${parts}</div><h3 class="sh">Tools for big airports</h3><div class="palette">${tools}</div>${opts}
     <div class="acts"><button class="act" data-act="bundo" title="Ctrl+Z">Undo last</button><button class="act ${S.mode2 && S.mode2.kind === 'bulldoze' ? 'on' : ''}" data-act="bulldoze" title="Remove a part (click it on the map)">Bulldoze</button>${m && m.part === 'taxi' ? `<button class="act ${m.fillet ? 'on' : ''}" data-act="bpref" data-v="fillet">Round corners (F)</button>` : ''}</div>`;
+}
+/* stands: the size, and whether aircraft are pushed back from them or drive through */
+function standOpts(m, P, size) {
+  const drive = m ? m.drive : P.drive;
+  return `<h3 class="sh">Stands <em>size, and how aircraft leave them</em></h3>${seg('bpref', 'size:' + size, Object.entries(IC.RAMP_SIZE).map(([k, n]) => ['size:' + k, n, '', `${IC.STAND[k].name} stand, ${Math.round(IC.STAND[k].w * 100)} m wide, ${Math.round(IC.STAND[k].d * 100)} m deep`]))}
+    ${seg('bpref', 'drive:' + (drive ? '1' : ''), [['drive:', 'Nose-in', '', 'Parks nose first; a tug pushes it back to leave. Compact, and the usual way at a terminal.'], ['drive:1', 'Drive-through', '', 'Taxis in and out forwards: no tug and no pushback, but it needs room ahead of the nose.']])}`;
+}
+/* an apron's stands: laid out along its back edge automatically, or placed by hand */
+function apronStands(ap, p) {
+  const by = {}; for (const s of p.stands || []) by[s.size] = (by[s.size] || 0) + 1;
+  const gates = (p.stands || []).filter(s => s.contact).length, drive = (p.stands || []).filter(s => s.drive).length;
+  const what = Object.entries(by).map(([k, n]) => `${n} ${IC.RAMP_SIZE[k]}`).join(', ') || 'none';
+  return [['Stands', `${what}${gates ? ` · ${gates} at gates` : ''}${drive ? ` · ${drive} drive-through` : ''}<div class="acts"><button class="act ${p.ramp ? '' : 'on'}" data-act="apl" data-op="stands" data-v="auto" title="Stands in a row along the back edge; the apron's depth decides their size">Laid out automatically</button><button class="act ${p.ramp ? 'on' : ''}" data-act="apl" data-op="stands" data-v="hand" title="Place, turn and remove stands yourself with the Stand tool">Placed by hand</button></div>`]];
 }
 /* one job for the engineers: its stage, money spent, and why it waits */
 function workRow(b, w, i) {
@@ -479,8 +492,7 @@ function apart(sel) {
   if (p.kind === 'runway') { const c = ap.cfg && ap.cfg.rw[p.id]; rows.push(['Length', U.km(IC.rwLen(p))], ['Usable', U.km(IC.rwUsable(p))], ['Craters', `${p.craters.length}`], ['In use', c ? `${esc(c.name)} · ${{ arr: 'arrivals', dep: 'departures', mixed: 'arrivals and departures', spare: 'not in use' }[c.role]} · crosswind ${Math.round(c.cross)} kt` : 'no'], ['Landing systems', p.ends ? [['a', 1], ['b', -1]].filter(([e, d]) => IC.rwHasILS(ap, p, d)).map(([e]) => p.ends[e]).join(', ') || 'none' : 'none']); }
   else if (p.kind === 'taxi') { rows.push(['Length', U.km(IC.partMeasure(ap, p))], ['Cut', `${Object.keys(p.cut).length} places`], ['Traffic', p.oneway ? 'one way' : p.flow ? 'both ways, one preferred' : 'both ways']); }
   else if (p.kind === 'apron') {
-    const by = {}; for (const s of p.stands || []) by[s.size] = (by[s.size] || 0) + 1;
-    rows.push(['Stands', p.ramp ? (Object.entries(by).map(([k, n]) => `${n} ${IC.RAMP_SIZE[k]}`).join(', ') || 'none yet: pick Ramp stand in the Build list') : `${(p.stands || []).length} ${p.stands && p.stands[0] ? IC.STAND[p.stands[0].size].name : ''}${p.stands && p.stands[0] && p.stands[0].contact ? ' at gates' : ' remote'}`], ['Zone', IC.ZONES[IC.partZone(ap, p)].name], ['Area', `${(p.w * p.h).toFixed(1)} ha`]);
+    rows.push(...apronStands(ap, p), ['Zone', IC.ZONES[IC.partZone(ap, p)].name], ['Area', `${(p.w * p.h).toFixed(1)} ha`]);
   }
   else if (p.kind === 'fuel') rows.push(['Stock', `${Math.round(p.stock || 0)}/${D.cap}`]);
   else if (p.kind === 'terminal') rows.push(['Capacity', `${Math.round(D.pax * p.w * p.h).toLocaleString('en-US')} passengers/h`]);

@@ -111,10 +111,15 @@ IC.partBuildTime = (ap, p) => IC.APART[p.kind].build * Math.max(0.5, IC.partMeas
 
 /* stands laid out along an apron's back edge; the back is the side facing a terminal, or away from the taxiways */
 function standsFor(ap, p) {
-  // an open ramp: the stands the player placed, each entered straight off the ramp's edge taxiways
+  // stands placed by hand: any size, turned any way, nose-in (pushed back by a tug) or drive-through; a stand whose
+  // nose reaches a terminal is a gate, one whose nose reaches a cargo shed a cargo stand
   if (p.ramp) return (p.free || []).map((f, i) => {
-    const c = toWorld(p, f.lx, f.ly), old = p.stands && p.stands[i];
-    return { id: p.id + 's' + i, x: c.x, y: c.y, fx: c.x, fy: c.y, a: p.a + (f.rot || 0), size: f.size, apron: p.id, contact: false, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: false, ramp: true, zoneOwn: f.zone };
+    const S0 = IC.STAND[f.size], a = p.a + (f.rot || 0), hx = Math.cos(a), hy = Math.sin(a), c = toWorld(p, f.lx, f.ly), back = S0.d / 2 + 0.06;
+    const id = p.id + 's' + (f.k != null ? f.k : i), old = p.stands && p.stands.find(x => x.id === id);
+    const nose = { x: c.x + hx * (S0.d / 2 + 0.04), y: c.y + hy * (S0.d / 2 + 0.04) };
+    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectDist(q, nose) < 0.12);
+    return { id, x: c.x, y: c.y, fx: c.x - hx * back, fy: c.y - hy * back, ox: c.x + hx * back, oy: c.y + hy * back, a, size: f.size, apron: p.id,
+      contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone };
   });
   const depth = p.h * 0.64;
   const size = depth >= IC.STAND.l.d ? 'l' : depth >= IC.STAND.m.d ? 'm' : depth >= IC.STAND.s.d ? 's' : null;
@@ -129,7 +134,7 @@ function standsFor(ap, p) {
     const lx = -p.w / 2 + S.w * (i + 0.5), ly = back * (p.h / 2 - S.d / 2);
     const c = toWorld(p, lx, ly), f = toWorld(p, lx, back * (p.h / 2 - S.d - 0.08));
     const contact = !!(term && term.kind === 'terminal');
-    const old = p.stands && p.stands[i];
+    const old = p.stands && p.stands.find(x => x.id === p.id + 's' + i);
     out.push({ id: p.id + 's' + i, x: c.x, y: c.y, fx: f.x, fy: f.y, a: p.a + (back > 0 ? Math.PI / 2 : -Math.PI / 2), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: term && term.kind === 'cargo' });
   }
   return out;
@@ -234,15 +239,27 @@ IC.aptGraph = function (ap) {
         edge(on[i - 1].id, on[i].id, 'rwy', p.id, 0, IC.GOPS.RWTAXI, 0, 0);
       }
       rwn.set(p.id, on);
-    } else if (p.kind === 'apron') {
-      p.stands = standsFor(ap, p);
-      const z = IC.partZone(ap, p);
-      const hyd = parts.some(h => h.kind === 'hydrant' && h.hp > h.max * 0.25 && U.dist(h, p) < IC.APART.hydrant.reach);
-      const at = (onPart.get(p.id) || []).filter(n => n.on.kind === 'apron');
-      for (const s of p.stands) { s.zone = s.zoneOwn || z; s.hyd = hyd; node(s.id, s.fx, s.fy, 'stand', s); for (const a of at) edge(s.id, a.id, 'apron', p.id, 0, 0.04, 0, 0); }
-      for (let i = 0; i < at.length; i++) for (let j = i + 1; j < at.length; j++) edge(at[i].id, at[j].id, 'apron', p.id, 0, 0.05, 0, 0);
     }
   }
+  // aprons that touch are one paved area: aircraft cross from one to the other, so a stand is reached from wherever
+  // a taxiway meets any of them
+  const aprons = parts.filter(p => p.kind === 'apron'), gi = new Map(aprons.map((p, i) => [p, i]));
+  const up = aprons.map((_, i) => i), root = i => up[i] === i ? i : (up[i] = root(up[i]));
+  for (let i = 0; i < aprons.length; i++) for (let j = i + 1; j < aprons.length; j++) if (U.dist(aprons[i], aprons[j]) < (Math.max(aprons[i].w, aprons[i].h) + Math.max(aprons[j].w, aprons[j].h)) / 2 + 0.1 && rectGap(aprons[i], aprons[j]) < 0.05) up[root(i)] = root(j);
+  const groupAt = new Map();
+  for (const p of aprons) { const r = root(gi.get(p)); if (!groupAt.has(r)) groupAt.set(r, []); for (const n of onPart.get(p.id) || []) if (n.on.kind === 'apron') groupAt.get(r).push(n); }
+  for (const p of aprons) {
+    p.stands = standsFor(ap, p);
+    const z = IC.partZone(ap, p);
+    const hyd = parts.some(h => h.kind === 'hydrant' && h.hp > h.max * 0.25 && U.dist(h, p) < IC.APART.hydrant.reach);
+    const at = groupAt.get(root(gi.get(p)));
+    for (const s of p.stands) {
+      s.zone = s.zoneOwn || z; s.hyd = hyd; node(s.id, s.fx, s.fy, 'stand', s); for (const a of at) edge(s.id, a.id, 'apron', p.id, 0, 0.04, 0, 0);
+      // a drive-through stand is left by its nose: no tug, no pushback
+      if (s.drive) { node(s.id + 'o', s.ox, s.oy, 'standOut', s); edge(s.id, s.id + 'o', 'apron', p.id, 0, 0.04, 1, 0); for (const a of at) edge(s.id + 'o', a.id, 'apron', p.id, 0, 0.04, 1, 0); }
+    }
+  }
+  for (const at of groupAt.values()) for (let i = 0; i < at.length; i++) for (let j = i + 1; j < at.length; j++) edge(at[i].id, at[j].id, 'apron', at[i].on.part, 0, 0.05, 0, 0);
   // shelters join the network through the nearest taxi point in front of their doors
   const allN = Object.values(ap.nodes);
   for (const p of parts) {

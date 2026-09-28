@@ -400,6 +400,7 @@ function clearRun(rw, s0, s1) {
 }
 /* o: { type, node (start node id), stand, startT, contact, onAir(m), onDead(m), who, mil, scramble } */
 IC.gopsDepart = function (S, ap, o) {
+  if (o.stand && o.stand.drive && G(ap).N.has(o.stand.id + 'o')) o = Object.assign({}, o, { node: o.stand.id + 'o' });
   const m = newMove(S, ap, Object.assign({ kind: 'dep' }, o));
   m.phase = 'start'; m.t = o.startT || 0;
   const n = G(ap).N.get(o.node); if (n) { m.x = n.x; m.y = n.y; }
@@ -773,7 +774,8 @@ function step(S, ap, m, dt) {
     case 'start': {
       m.t -= dt;
       if (m.t > 0) return;
-      if (m.stand && m.stand.contact) { if (!pushOk(S, ap, m)) { m.waitT += dt; return; } m.phase = 'push'; m.t = 60; m.stand.pushT = S.time + 60; return; }
+      // nose-in stands: a tug pushes the aircraft back (a movement of its own); drive-through stands are left forwards
+      if (m.stand && !m.stand.drive) { if (!pushOk(S, ap, m)) { m.waitT += dt; return; } m.phase = 'push'; m.t = 60; m.stand.pushT = S.time + 60; countGround(S, ap, m, 'push'); return; }
       beginTaxi(S, ap, m); return;
     }
     case 'push': {
@@ -904,6 +906,10 @@ function step(S, ap, m, dt) {
     }
   }
 }
+/* ground movements besides taxiing to and from the runway: pushbacks, tows, and taxiing to a service (fuel,
+   de-icing, a hangar); counted per aircraft (m.gm) and per airport over the last hour */
+function countGround(S, ap, m, what) { m.gm = (m.gm || 0) + 1; (m.gmLog = m.gmLog || []).push(what); const L = ap.gmLog = ap.gmLog || []; L.push({ t: S.time, what }); if (L.length > 400) L.splice(0, L.length - 400); }
+IC.gopsCountGround = countGround;
 /* movements per hour, counted as they happen (the panel compares them with the rated capacity) */
 function countMove(S, ap, k, type, rw) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; IC.emit(S, 'rwMove', { ap, k, type, rw }); }
 /* pushbacks block only the stands either side, and only one pushes back from a row at a time */
@@ -1138,7 +1144,7 @@ IC.milDepart = function (S, b, a) {
   const r = a.r, sn = IC.milStartNode(S, b, r);
   if (!sn) return false;
   const type = IC.AIRKIND_TYPE[r.kind];
-  const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false }) : null, startT: sn.startT * (r.qra ? 0.5 : 1), mil: true, scramble: !!r.qra, who: r.name, flight: a, n: a.n,
+  const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false, drive: true }) : null, startT: sn.startT * (r.qra ? 0.5 : 1), mil: true, scramble: !!r.qra, who: r.name, flight: a, n: a.n,
     onAir: mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); },
     onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
   if (!m) return false;

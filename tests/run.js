@@ -831,6 +831,41 @@ test('airport life: a hangar placed near a taxiway snaps to it, faces it and con
   // and a departure can start from its door
   assert(IC.gopsCanDepart(S, cap, 'narrow', h.id + ':d'), 'no route from the hangar door to a runway');
 });
+test('airport life: an apron stretched by hand takes stands placed by hand, and aircraft use them', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const cap = S.byId[S.story.cap]; S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(cap, x, y), n0 = cap.parts.filter(p => p.kind === 'apron').length;
+  // the remote apron south of the runway: pull its far edge out 80 m
+  S.mode2 = IC.bldMode(S, cap, 'stretch');
+  for (const q of [P(-12, -2.58), P(-12, -3.4), P(-12, -3.4)]) IC.clickWorld(q, 0);
+  const strip = cap.parts.filter(p => p.kind === 'apron')[n0];
+  assert(strip && Math.abs(strip.h - 0.8) < 0.06, `no 80 m strip: ${strip ? U.km(strip.h) : 'none'}`);
+  finishWorks(S, cap);
+  S.mode2 = IC.bldMode(S, cap, 'stand'); S.mode2.size = 'm';
+  IC.clickWorld(P(-13.2, -3.0), 0);
+  S.mode2.drive = true; IC.clickWorld(P(-11.4, -3.0), 0);
+  assert(strip.ramp && strip.free.length === 2, `${strip.free ? strip.free.length : 0} stands placed on the new paving`);
+  IC.aptStats(S, cap);
+  const mine = strip.stands;
+  assert(mine.every(s => s.linked), 'the stands on the new paving do not reach a runway');
+  // every other stand is taken: an arrival must use one of ours, and a departure from the drive-through one leaves forwards
+  for (const s of IC.aptStands(cap)) if (s.apron !== strip.id) s.occ = 'x';
+  const s = IC.avFreeStand(S, cap, IC.ACTYPES.narrow);
+  assert(s && s.apron === strip.id, 'the free stand chosen is not on the new paving');
+  let parked = false;
+  const q = IC.gopsFaf(S, cap, 'narrow');
+  let m = 'hold';
+  for (let i = 0; i < 2400 && typeof m === 'string'; i++) { m = IC.gopsLand(S, cap, { type: 'narrow', target: s.id, stand: s, who: 'TEST 1', faf: q, onPark: () => { parked = true; } }); if (typeof m === 'string') IC.step(S, 0.5); }
+  assert(typeof m === 'object', `the arrival was never cleared (${m})`);
+  for (let i = 0; i < 7200 && !parked; i++) IC.step(S, 0.5);
+  assert(parked, `the arrival did not reach the stand; last phase ${m.phase}`);
+  const d = mine.find(x => x.drive);
+  let air = false;
+  const dep = IC.gopsDepart(S, cap, { type: 'narrow', node: d.id, stand: d, startT: 0, who: 'TEST 2', onAir: () => { air = true; } });
+  assert(dep && dep.node === d.id + 'o', 'a drive-through departure does not leave by the nose');
+  for (let i = 0; i < 7200 && !air; i++) IC.step(S, 0.5);
+  assert(air && !(dep.gmLog || []).includes('push'), `drive-through departure: ${air ? 'pushed back' : 'never took off, phase ' + dep.phase}`);
+});
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);

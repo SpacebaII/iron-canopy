@@ -342,7 +342,10 @@ function drawStand(g, s, px, z, marks, fine) {
   g.strokeStyle = 'rgba(236,236,226,0.35)'; g.lineWidth = Math.max(0.006, 0.6 * px);
   g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w);
   g.strokeStyle = YEL; g.lineWidth = Math.max(0.01, 0.8 * px);
-  g.beginPath(); g.moveTo(-S0.d / 2 - 0.08, 0); g.lineTo(S0.d * 0.35, 0); g.stroke();
+  // the lead-in line; a drive-through stand's runs on out through the nose
+  g.beginPath(); g.moveTo(-S0.d / 2 - 0.08, 0); g.lineTo(s.drive ? S0.d / 2 + 0.08 : S0.d * 0.35, 0); g.stroke();
+  // safety line round the stand, and the stop bar or arrow
+  if (fine) { g.strokeStyle = 'rgba(214,60,50,0.55)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.strokeRect(-S0.d / 2 + 0.02, -S0.w / 2 + 0.02, S0.d - 0.04, S0.w - 0.04); }
   // a jet bridge from the terminal to the front door
   if (s.contact) { g.fillStyle = 'rgba(176,180,186,0.95)'; g.fillRect(S0.d * 0.22, -S0.w * 0.2 - 0.012, S0.d * 0.3, 0.024); g.fillRect(S0.d * 0.22 - 0.02, -S0.w * 0.2 - 0.02, 0.04, 0.04); }
   g.fillStyle = YEL; g.fillRect(S0.d * 0.35, -0.04, 0.012, 0.08);
@@ -588,7 +591,15 @@ IC.drawBuildGhost = function (g, S, px) {
     }
   }
   // a ramp stand
-  if (plan.stand) { const st = plan.stand, S0 = IC.STAND[st.size], c = IC.rectWorld(st.ramp, st.lx, st.ly); g.save(); g.translate(c.x, c.y); g.rotate(st.ramp.a); g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = 1.5 * px; g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore(); }
+  if (plan.stand) {
+    const st = plan.stand, rm = st.remove, S0 = IC.STAND[rm ? rm.size : st.size], c = rm || IC.rectWorld(st.apron, st.lx, st.ly), a = rm ? rm.a : st.apron.a + st.rot;
+    g.save(); g.translate(c.x, c.y); g.rotate(a); g.strokeStyle = rm ? IC.C.hostile : col; g.fillStyle = rm ? 'rgba(255,91,79,0.25)' : fill; g.lineWidth = 1.5 * px;
+    g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w);
+    // the nose, and the way in and out
+    if (!rm) { g.beginPath(); g.moveTo(S0.d / 2, 0); g.lineTo(S0.d / 2 - 0.08, -0.05); g.lineTo(S0.d / 2 - 0.08, 0.05); g.closePath(); g.fillStyle = col; g.fill(); g.setLineDash([3 * px, 3 * px]); g.beginPath(); g.moveTo(-S0.d / 2 - 0.1, 0); g.lineTo(st.drive ? S0.d / 2 + 0.1 : S0.d * 0.3, 0); g.stroke(); g.setLineDash([]); }
+    g.restore();
+    if (!rm && ghostPlan) IC.drawPlane(g, c.x, c.y, a, { s: 'turbo', m: 'narrow', l: 'wide', xl: 'heavy' }[st.size], null, { alpha: 0.35, minPx: 6 });
+  }
   // the points placed so far; the last one pulses: click it again to build
   const pts = m.pts, now = performance.now() / 1000;
   pts.forEach((p, i) => {
