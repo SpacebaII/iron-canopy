@@ -123,8 +123,8 @@ function topbar() {
     setHTML($('stats'), `
       <div class="stat role" title="${esc(IC.ACTS[act].name)}: ${esc(IC.ACTS[act].title)}"><span>${esc(IC.ACTS[act].name)}</span><strong>${esc(st.role)}</strong></div>
       ${money}
-      <div class="stat" title="The Prime Minister's confidence in you. At zero you are replaced."><span>Confidence</span><strong class="${st.standing > 50 ? '' : st.standing > 25 ? 'amber' : 'hostile'}">${Math.round(st.standing)}</strong>${meter(st.standing / 100, st.standing > 50 ? 'var(--ok)' : st.standing > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>
-      <div class="stat" title="Average airline satisfaction"><span>Airlines</span><strong class="${sat > 60 ? '' : sat > 40 ? 'amber' : 'hostile'}">${Math.round(sat)}%</strong>${meter(sat / 100, 'var(--civil)')}</div>
+      <div class="stat" title="The Minister's confidence in you. ${esc(IC.storyDismissal(S).text)}"><span>Confidence</span><strong class="${st.standing > 50 ? '' : st.standing > 25 ? 'amber' : 'hostile'}">${Math.round(st.standing)}</strong>${meter(st.standing / 100, st.standing > 50 ? 'var(--ok)' : st.standing > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>
+      <div class="stat" title="Average airline satisfaction"><span>Airlines</span><strong class="${!S.av.airlines.length ? 'muted' : sat > 60 ? '' : sat > 40 ? 'amber' : 'hostile'}">${S.av.airlines.length ? Math.round(sat) + '%' : 'none yet'}</strong>${meter(S.av.airlines.length ? sat / 100 : 0, 'var(--civil)')}</div>
       <div class="stat" title="Passengers through our airports in the last hour"><span>Pax/h</span><strong>${Math.round(S.av.paxHour || 0).toLocaleString('en-US')}</strong></div>
       ${act >= 2 ? `<div class="stat" title="Tension with ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
       ${act >= 4 ? `<div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>` : ''}`);
@@ -175,6 +175,7 @@ function alerts() {
     const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id);
     if (hold.length >= 2 || hold.some(t => t.holdT > 600)) w.push(['amber', `${b.name}: ${hold.length} holding${hold.some(t => t.standShort) ? ' · stands full' : ''}`, b]);
   }
+  if (S.asp && S.asp.work > 1.05) w.push(['amber', `Controllers overloaded · ${Math.round(S.asp.load)} flights’ work for ${S.asp.cap}`, null]);
   const jam = S.units.filter(u => u.jamF < 0.97 && u.radarOn);
   if (jam.length) w.push(['info', `Jamming · ${jam.slice(0, 2).map(u => `${u.name} −${U.pct(1 - u.jamF)}`).join(' · ')}`, jam[0]]);
   const dry = S.units.filter(u => u.state === 'ready' && u.d.weapon === 'sam' && IC.activeMags(S, u).every(m => m.mag + m.store === 0));
@@ -318,13 +319,15 @@ function brief() {
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 2));
     h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 2)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}">${esc(s.text)}</div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
   } else if (S.story && S.story.act < 4) {
-    const st = S.story, A = IC.ACTS[st.act];
-    const done = st.goals.filter(g => g.done).length;
-    // the one place for goals: each with how far along it is
-    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(A.name)} · ${esc(A.title)}<em>${done} of ${st.goals.length} goals${st.cp ? ` · ${st.cp} command point${st.cp > 1 ? 's' : ''}` : ''}</em></h3>
-      <div class="gmeter" title="Goals done in this act">${st.goals.map(g => `<i class="${g.done ? 'on' : ''}"></i>`).join('')}</div>
-      <div class="goals">${st.goals.map((g, i) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.done ? '✓' : ''}</i><span>${esc(g.text)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p)}</small>` : ''}</span></button>`; }).join('')}</div>
-      <p class="hint">${done >= st.goals.length - 1 ? 'Something is coming. Keep the sector running.' : 'Goals earn command points (spend them in the Career room, C) and the Minister’s confidence.'}</p>`;
+    // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
+    const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
+    const done = st.goals.filter(g => g.done).length, shown = IC.storyShown(S).filter(x => !x.g.done || st.act > 1 || S.time - (x.g.doneT || 0) < 2 * 3600);
+    const tip = (IC.storyTip(S) || {}).text;
+    h = `<h3 data-act="briefMin" title="Collapse or expand">${ch ? `Chapter ${ch.n + 1} · ${esc(ch.title)}` : `${esc(A.name)} · ${esc(A.title)}`}<em>${done} of ${st.goals.length} goals${st.cp ? ` · ${st.cp} command point${st.cp > 1 ? 's' : ''}` : ''}</em></h3>
+      <div class="gmeter" title="Goals done">${st.goals.map(g => `<i class="${g.done ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="goals">${shown.map(({ g, i }) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p || '')}</small>` : ''}</span></button>`; }).join('')}</div>
+      ${tip ? `<p class="hint">${esc(tip)} <button class="btn sm" data-act="tutOff" title="Hide these tips (the goals stay)">Hide tips</button></p>` : ''}
+      <p class="hint">${ch ? esc(ch.next) : done >= st.goals.length - 1 ? 'Something is coming. Keep the sector running.' : 'Goals earn command points (spend them in the Career room, C) and the Minister’s confidence.'}</p>`;
   } else {
     const sug = C.objs || [];
     h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.chapter || 'Situation')}<em>${U.clock(S.time)}</em></h3>
@@ -405,7 +408,7 @@ function layers() {
   const L = [['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
   // with coverage on, a key to its colours: the lowest height controllers see
   const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
-  setHTML($('layers'), L.map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
+  setHTML($('layers'), L.filter(([k]) => IC.layerAllowed(S, k)).map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
 }
 function modeHint() {
   const m = S.mode2, el = $('modehint');

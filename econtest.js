@@ -1,11 +1,12 @@
-/* Economy balance run: Career Act I with a player who approves feasible airline requests and answers decisions
-   with the first option. Prints income, city growth and passenger demand every six hours, and the statement at
+/* Economy balance run: Career Act I with the scripted player of careerplayer.js (builds the national airport,
+   approves feasible airline requests and answers decisions with the first option). Prints income, city growth and passenger demand every six hours, and the statement at
    the end of each day. The run stays in Act I (the beat that ends it is taken out) unless "free" is given.
    node econtest.js [seed] [days] [free] */
 const IC = require('./headless.js');
 const U = IC.U;
+const { player } = require('./careerplayer.js');
 const seed = +process.argv[2] || 777, days = +process.argv[3] || 3;
-const S = IC.newGame({ seed, mode: 'story', hour: 7 });
+const S = IC.newGame({ seed, mode: 'story', hour: 7 }); IC.S = S;
 if (process.argv[4] !== 'free') S.story.beats = S.story.beats.filter(b => b.id !== 'collision');
 const E = S.econ, t0 = S.time, b0 = S.budget;
 const f0 = n => Math.round(n).toLocaleString('en-US');
@@ -27,8 +28,7 @@ report();
 for (let step = 0; S.time - t0 < days * 86400 && !S.over; step++) {
   IC.step(S, 0.5);
   if (step % 120 === 0) {
-    for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q)) IC.avDecide(S, q.id, true);
-    for (const e of S.story.events.slice()) if (S.time - e.t > 60) IC.storyChoose(S, e.id, 0);
+    player(S);
   }
   if (step % 43200 === 43199) report();
   const d = U.day(S.time);

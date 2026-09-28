@@ -53,15 +53,17 @@ function aviation() {
   const det = IC.avDetour(S);
   const nw = apts ? S.infra.filter(i => i.kind === 'airport' && (i.st && i.st.warn || []).length).length : 0;
   const top = pages('aviation', [['airlines', 'Airlines', A.requests.length ? `${A.requests.length} asking` : '', 'Route requests, the airlines and what they pay'], ['airports', 'Airports and routes', nw ? `${nw} with problems` : '', 'Every airport, and every route flown'], ['airspace', 'Airspace', '', 'Airways, radar cover, prohibited zones and light aircraft']]);
-  if (ui.sub.aviation === 'airports') return top + `<div class="card wide"><h3>Airports<em>click one to open it</em></h3><table class="t"><tr><th>Airport</th><th class="r">Pax/h</th><th class="r">Stands</th><th class="r">Taxi</th><th class="r">Delay</th><th class="r">Diversions</th><th class="r">Problems</th></tr>${apts}</table><div class="acts"><button class="btn" data-act="foundMode">+ Found a new airport · ${U.money(IC.FOUND_COST)}</button></div></div>
+  if (ui.sub.aviation === 'airports') return top + `<div class="card wide"><h3>Airports<em>click one to open it</em></h3><table class="t"><tr><th>Airport</th><th class="r">Pax/h</th><th class="r">Stands</th><th class="r">Taxi</th><th class="r">Delay</th><th class="r">Diversions</th><th class="r">Problems</th></tr>${apts}</table><div class="acts">${lockOr('found', `<button class="btn ${apts ? '' : 'primary'}" data-act="foundMode">+ Found a new airport · ${U.money(IC.FOUND_COST)}</button>`)}</div></div>
     <div class="card wide"><h3>Routes<em>${A.routes.filter(r => r.st === 'active').length} active · click one to see its airport</em></h3><table class="t"><tr><th>Airline</th><th>Route</th><th>Aircraft</th><th class="r">Flights</th><th class="r">Revenue</th></tr>${routes}</table></div>`;
-  if (ui.sub.aviation === 'airspace') return top + `<div class="card"><h3>Prohibited zones<em>routes are ${U.pct(det - 1)} longer</em></h3>${zones ? `<div class="list">${zones}</div>` : '<p class="hint">None. Airliners fly straight over everything, including our bases.</p>'}<div class="acts"><button class="btn" data-act="zoneMode">+ Draw a prohibited zone</button></div><p class="hint">Airliners route around zones: they cannot overfly what matters, and anything squawking as an airliner that enters one is off its route at once. Airlines dislike the detours.</p></div>
+  if (ui.sub.aviation === 'airspace') return top + `${IC.storyLock(S, 'zones') ? '' : `<div class="card"><h3>Prohibited zones<em>routes are ${U.pct(det - 1)} longer</em></h3>${zones ? `<div class="list">${zones}</div>` : '<p class="hint">None. Airliners fly straight over everything, including our bases.</p>'}<div class="acts"><button class="btn" data-act="zoneMode">+ Draw a prohibited zone</button></div><p class="hint">Airliners route around zones: they cannot overfly what matters, and anything squawking as an airliner that enters one is off its route at once. Airlines dislike the detours.</p></div>`}
     ${airspace()}`;
   return top + `<div class="card wide"><h3>Route requests<em>${A.requests.length} waiting</em></h3>${reqs ? `<div class="list">${reqs}</div>` : '<p class="hint">No requests. Happy airlines ask for more; airlines ask faster when they are happy and the airports can take their aircraft.</p>'}${S.story && S.story.del.routes ? '<p class="hint">The Route Planning Office approves feasible requests for you.</p>' : ''}</div>
-    <div class="card"><h3>Airlines<em>average ${Math.round(IC.avgSat(S))}%</em></h3><div class="list">${als}</div></div>
+    <div class="card"><h3>Airlines<em>${A.airlines.length ? `average ${Math.round(IC.avgSat(S))}%` : 'none yet'}</em></h3>${als ? `<div class="list">${als}</div>` : '<p class="hint">No airline flies here yet. They come when one of our airports can take their aircraft: a runway long enough, a stand, fire cover, a terminal and fuel.</p>'}</div>
     <div class="card"><h3>Revenue per hour<em>${U.money(tot)}/h</em></h3><table class="t"><tr><td>Landing fees</td><td class="r ok">+${L.land.toFixed(1)}</td></tr><tr><td>Passenger charges</td><td class="r ok">+${L.pax.toFixed(1)}</td></tr><tr><td>Cargo</td><td class="r ok">+${L.cargo.toFixed(1)}</td></tr><tr><td>Overflights</td><td class="r ok">+${L.over.toFixed(1)}</td></tr><tr><td>Airport upkeep</td><td class="r hostile">−${IC.avUpkeep(S).toFixed(1)}</td></tr></table>
       ${kv([['Passengers today', Math.round(A.day.pax).toLocaleString('en-US')], ['Flights today', A.day.flights], ['Diversions today', A.day.div]])}</div>`;
 }
+/* a button, or why the Career has not opened it yet */
+const lockOr = (key, html) => { const why = IC.storyLock(S, key); return why ? `<p class="hint">${esc(why)}</p>` : html; };
 /* the airspace: radar cover, airways, separation, light aircraft */
 function airspace() {
   const N = S.asp; if (!N) return '';
@@ -72,15 +74,20 @@ function airspace() {
   const onNet = airOn.filter(t => t.net).length, onRadar = airOn.filter(t => IC.aspSeen(S, t)).length;
   const fields = N.fields.map(f => `<div class="li click" data-act="selField" data-id="${f.id}"><b>${esc(f.name)}</b><small>${esc(f.club)} · mood ${Math.round(f.mood)}% · ${f.today} movements today</small></div>`).join('');
   const d = N.day;
-  return `<div class="card"><h3>Airspace<em>${N.fixes.length} fixes · ${N.ways.length} airways</em></h3>
-      ${kv([['Radar cover at cruise height', `<span class="${hi < 0.8 ? 'amber' : ''}">${U.pct(hi)}</span> of the country`], ['Radar cover at 1 km', `<span class="${lo < 0.5 ? 'amber' : ''}">${U.pct(lo)}</span>`],
+  // the controllers' load is shown from the start: the struggle comes before the tools to fix it
+  const work = `<span class="${N.work > 1 ? 'hostile' : N.work > 0.8 ? 'amber' : ''}">${U.pct(N.work || 0)}</span> · ${Math.round(N.load || 0)} flights’ worth of work for a team that handles ${N.cap}`;
+  if (IC.storyLock(S, 'airways')) return `<div class="card"><h3>Airspace<em>controllers work the old way</em></h3>
+      ${kv([['Controllers’ workload', work], ['Airliners over us now', airOn.length], ['Separation lost today', `<span class="${d.los ? 'amber' : ''}">${d.los}</span>`], ['Near misses today', `<span class="${d.near ? 'hostile' : ''}">${d.near}</span>`], ['Departures held for spacing', N.stats.held]])}
+      <p class="hint">Every flight flies direct and controllers keep them apart by the clock: slow, and it fails as the sky fills. ${esc(IC.storyLock(S, 'airways'))}</p></div>`;
+  return `<div class="card"><h3>Airspace<em>${N.fixes.length} fixes · ${IC.aspGates(S).length} entry points · ${N.ways.length} airways</em></h3>
+      ${kv([['Controllers’ workload', work], ['Radar cover at cruise height', `<span class="${hi < 0.8 ? 'amber' : ''}">${U.pct(hi)}</span> of the country`], ['Radar cover at 1 km', `<span class="${lo < 0.5 ? 'amber' : ''}">${U.pct(lo)}</span>`],
         ['Airports on the airways', `${joined} of ${apts.length}`], ['Airway crossings', xs], ['Airliners over us now', airOn.length], ['… on airways · on radar', `${onNet} · ${onRadar}`],
         ['Separation lost today', `<span class="${d.los ? 'amber' : ''}">${d.los}</span>`], ['Near misses today', `<span class="${d.near ? 'hostile' : ''}">${d.near}</span>`], ['Infringements today', d.inf],
         ['Conflicts solved by controllers', N.stats.solved], ['Departures held for spacing', N.stats.held]])}
       <div class="acts"><button class="btn primary" data-act="aspDraw">Draw airways</button><button class="btn" data-act="layer" data-v="coverage">${S.layers.coverage ? 'Hide' : 'Show'} radar cover</button></div>
-      <p class="hint">Controllers keep apart the flights they see on radar. Off the airways, or where radar does not reach, they space flights by time alone: fewer flights an hour, longer delays, and crossings that can go wrong. Radar sees less the lower an aircraft flies: hills and the curve of the earth hide it.</p></div>
+      <p class="hint">Entry points are fixes within 25 km of the border: once there are any, traffic from abroad joins the airways only there. Controllers keep apart the flights they see on radar. Off the airways, or where radar does not reach, they space flights by time alone: fewer flights an hour, longer delays, and crossings that can go wrong. Radar sees less the lower an aircraft flies: hills and the curve of the earth hide it.</p></div>
     <div class="card"><h3>Light aircraft<em>${S.threats.filter(t => !t.dead && t.type === 'ga').length} flying</em></h3>${fields ? `<div class="list">${fields}</div>` : ''}
-      <div class="acts"><button class="btn" data-act="fieldMode">+ Light-aircraft field · ${U.money(IC.ASP.FIELD_COST)}</button></div>
+      <div class="acts">${lockOr('fields', `<button class="btn" data-act="fieldMode">+ Light-aircraft field · ${U.money(IC.ASP.FIELD_COST)}</button>`)}</div>
       <p class="hint">Flying clubs fly slow and low, by sight, from grass fields and from our airports. On a big airport's runway each one takes as long as two airliners, so a field near the capital frees the runway. They must stay out of control zones unless cleared.</p></div>`;
 }
 
@@ -100,7 +107,8 @@ function actOpens(n) {
 }
 function staff() {
   const st = S.story, A = IC.ACTS[st.act];
-  const done = st.goals.filter(g => g.done).length;
+  const done = st.goals.filter(g => g.done).length, ch = IC.storyChapterInfo(S);
+  const chapters = ch ? IC.CHAPTERS.map((C, n) => `<div class="li ${n < ch.n ? 'muted' : ''}"><b>${n < ch.n ? '✓ ' : n === ch.n ? '▸ ' : ''}Chapter ${n + 1} · ${esc(C.title)}</b>${n === ch.n ? `<small>${esc(ch.next)}</small>` : n > ch.n ? '<small>not yet</small>' : ''}</div>`).join('') : '';
   const dels = Object.entries(IC.DELEGATES).map(([k, D]) => {
     const avail = st.act >= D.act, on = st.del[k], hired = st.hired && st.hired.has(k);
     return `<div class="li ${avail ? '' : 'shut'}"><b>${esc(D.name)}${ui.newTag('del:' + k)}</b><small>${esc(D.desc)} · ${U.money(D.cost)}/h${!hired && D.cp ? ` · ${D.cp} CP to appoint` : ''}${avail ? '' : ` · from ${IC.ACTS[D.act].name}`}</small><span class="la">${avail ? `<button class="btn sm ${on ? 'primary' : ''}" data-act="delegate" data-v="${k}" ${!hired && !on && st.cp < D.cp ? 'disabled' : ''}>${on ? 'On duty' : hired ? 'Off' : 'Appoint'}</button>` : ui.icon('lock', 'sm')}</span></div>`;
@@ -122,7 +130,8 @@ function staff() {
   const nextHow = st.act < 4 ? `<p class="hint">Finish this act's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
-      ${kv([['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from goals and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
+      ${kv([['Standing', esc(IC.storyDismissal(S).text)], ['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from ${st.act === 1 ? 'chapters' : 'goals'} and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
+    ${chapters ? `<div class="card"><h3>Act I<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card"><h3>Delegates<em>${U.money(IC.staffCost(S))}/h</em></h3><div class="list">${dels}</div><p class="hint">Delegates do routine work for you, for a running cost.</p></div>
     <div class="card"><h3>Requests<em>spend command points</em></h3><div class="list">${reqs}</div></div>
     <div class="card"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;

@@ -149,18 +149,19 @@ function buildGraph(W) {
   const G = { nodes: [], links: [], at: new Map() };
   const nodeOf = (k, p) => { let n = G.at.get(k); if (n == null) { n = G.nodes.length; G.nodes.push({ x: p.x, y: p.y, out: [], rank: 0 }); G.at.set(k, n); } return n; };
   for (const l of lines) {
-    let s = 0, a = nodeOf(keyOf(l, 0), l.pts[0]);
+    // nodes are made only for pieces that become links: a zero-length piece must not leave a node with no roads
+    let s = 0, ka = keyOf(l, 0), pa = l.pts[0];
     for (let i = 1; i < l.pts.length; i++) {
       const k = keyOf(l, i), last = i === l.pts.length - 1;
       if (!last && cnt.get(k) < 2 && !forced.has(Math.floor(k / 4))) continue;
-      const b = nodeOf(k, l.pts[i]), pts = l.pts.slice(s, i + 1);
-      s = i;
-      if (a === b && pts.length < 3) continue;
+      const pts = l.pts.slice(s, i + 1), k0 = ka, p0 = pa;
+      s = i; ka = k; pa = l.pts[i];
+      if (k0 === k && pts.length < 3) continue;
       const cum = cumOf(pts), len = cum[cum.length - 1];
       if (len < 1e-3) continue;
+      const a = nodeOf(k0, p0), b = nodeOf(k, l.pts[i]);
       const lk = { id: G.links.length, a, b, pts, cum, len, cls: l.cls, C: CLS[l.cls], one: 0, ref: l.ref, city: l.ref.city || null };
       G.links.push(lk); G.nodes[a].out.push(lk.id); G.nodes[b].out.push(lk.id);
-      a = b;
     }
   }
   // slip roads are one-way: which way depends on which carriageway (traffic keeps right) each end joins

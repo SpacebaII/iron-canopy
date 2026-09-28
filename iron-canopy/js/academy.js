@@ -214,9 +214,9 @@ IC.LESSONS = [
       flight(S, 'isr', 'REAPER 1', fwd(S));
       flight(S, 'ucav', 'HAWK 1', fwd(S));
       const v = flight(S, 'ftr', 'VIPER 1', fwd(S)); v.load = 'strike';
-      // the rocket battery shells the nearest place it can reach
-      const town = borderTown(S);
-      const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, town) - U.dist(c, town))[0];
+      // the rocket battery nearest the base (a drone flight away on the big map) shells the nearest place it can reach
+      const b = fwd(S);
+      const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, b) - U.dist(c, b))[0];
       const t = S.world.villages.filter(v => v.home).concat(IC.cities(S)).sort((a, c) => U.dist(a, site) - U.dist(c, site))[0];
       S.camp.town = t;
       for (let k = 0; k < 12; k++) S.camp.sched.push({ t: S.time + 300 + k * 2400, fn: () => { if (!S.stats.telKills) IC.enemyForceOp(S, 'rkt', { x: t.x, y: t.y, ref: t.kind === 'city' ? t : null, name: t.name }); } });

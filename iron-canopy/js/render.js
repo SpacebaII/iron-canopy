@@ -301,8 +301,10 @@ function drawAirways(S, px, now) {
       const on = (sel && sel.kind === 'fix' && sel.ref === f) || (edit && m.from === f.id), r = 6 * px;
       ctx.fillStyle = on ? '#ffffff' : C.airway; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1.2 * px;
       ctx.beginPath(); ctx.moveTo(f.x, f.y - r); ctx.lineTo(f.x + r * 0.9, f.y + r * 0.6); ctx.lineTo(f.x - r * 0.9, f.y + r * 0.6); ctx.closePath(); ctx.fill(); ctx.stroke();
+      // an entry and exit point on the border wears a ring
+      if (f.gate) { ctx.strokeStyle = on ? '#ffffff' : C.airway; ctx.lineWidth = 1.4 * px; ctx.beginPath(); ctx.arc(f.x, f.y, r * 1.7, 0, 7); ctx.stroke(); }
       if (on) brackets(f.x, f.y, 11 * px, px);
-      if (S.layers.labels || edit) label(f.name, f.x, f.y + 16 * px, px, on ? '#ffffff' : C.airway, 9, 'center', 700);
+      if (S.layers.labels || edit) label(f.gate ? `${f.name} · ENTRY` : f.name, f.x, f.y + 16 * px, px, on ? '#ffffff' : C.airway, 9, 'center', 700);
     }
   }
   // the selected flight's filed route

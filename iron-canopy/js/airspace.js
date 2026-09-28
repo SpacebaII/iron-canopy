@@ -13,6 +13,8 @@ const A = IC.ASP = {
   gaNear: 15, gaVsep: 0.15, // a light aircraft and an airliner within 1.5 km and 150 m
   link: 1200,              // an airport joins the network at a fix within 120 km
   gap: 60,                 // departures the same way: 1 min apart with radar and airways
+  gate: 250,               // a fix within 25 km of the border is an entry and exit point
+  ctl: 14,                 // flights the area controllers can watch at once (a flight on an airway, on radar, counts 0.6)
   gaRwy: 150,              // a light aircraft holds a big airport's runway as long as two airliners (s)
   tmaFloor: 1.2, tmaTop: 7,
   CS: 50,                  // coverage map cell: 5 km
@@ -24,7 +26,7 @@ const RE = 8495; // effective earth radius in km: radar waves bend a little, so 
 const short = n => n.replace(/ (International|Airport|Air Base)$/, '');
 
 IC.aspInit = function (S) {
-  S.asp = { fixes: [], ways: [], ver: 1, scanT: 0, dep: {}, pairs: {}, fields: makeFields(S),
+  S.asp = { fixes: [], ways: [], ver: 1, scanT: 0, dep: {}, pairs: {}, fields: makeFields(S), load: 0, work: 0, cap: A.ctl,
     stats: { los: 0, near: 0, inf: 0, solved: 0, held: 0 }, day: { los: 0, near: 0, inf: 0 }, hourT: 0 };
 };
 
@@ -154,16 +156,19 @@ IC.aspWay = (S, id) => S.asp.ways.find(w => w.id === id);
 /* where a fix may go: over our country or just outside it, where traffic joins */
 IC.aspFixWhy = (S, x, y) => x < 0 || y < 0 || x > IC.WW || y > IC.WH ? 'OFF THE MAP' : !IC.inHome(x, y) && !nearHome(x, y) ? 'OUTSIDE OUR AIRSPACE' : '';
 function nearHome(x, y) { for (let a = 0; a < 6.28; a += 0.8) if (IC.inHome(x + Math.cos(a) * 300, y + Math.sin(a) * 300)) return true; return false; }
+/* entry and exit points: fixes on the border, either side, where international traffic enters and leaves */
+IC.aspIsGate = (S, x, y) => Math.abs(S.world.depthOut(x, y)) < A.gate;
+IC.aspGates = S => S.asp.fixes.filter(f => f.gate);
 IC.aspAddFix = function (S, x, y) {
   if (IC.aspFixWhy(S, x, y)) return null;
-  const f = { id: IC.nid('fx'), x, y, name: fixName(S) };
+  const f = { id: IC.nid('fx'), x, y, name: fixName(S), gate: IC.aspIsGate(S, x, y) };
   S.asp.fixes.push(f); changed(S);
   IC.emit(S, 'fixAdded', f);
   return f;
 };
 IC.aspMoveFix = function (S, f, x, y) {
   if (IC.aspFixWhy(S, x, y)) return false;
-  f.x = x; f.y = y; changed(S);
+  f.x = x; f.y = y; f.gate = IC.aspIsGate(S, x, y); changed(S);
   return true;
 };
 IC.aspDelFix = function (S, id) {
@@ -258,7 +263,9 @@ IC.aspRoute = function (S, a, b) {
     const adj = F.map(() => []);
     for (const w of N.ways) { const i = idx.get(w.a), j = idx.get(w.b), L = U.dist(F[i], F[j]); adj[i].push([j, L]); adj[j].push([i, L]); }
     const dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
-    for (let i = 0; i < n; i++) if (adj[i].length) dist[i] = a.apt ? (F[i] === la ? U.dist(a, la) : Infinity) : joinCost(a, F[i]);
+    // once there are entry points, traffic from abroad joins the airways only there
+    const gated = F.some((f, i) => f.gate && adj[i].length), entry = f => !gated || f.gate;
+    for (let i = 0; i < n; i++) if (adj[i].length) dist[i] = a.apt ? (F[i] === la ? U.dist(a, la) : Infinity) : entry(F[i]) ? joinCost(a, F[i]) : Infinity;
     for (;;) {
       let u = -1; for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
       if (u < 0) break;
@@ -266,7 +273,7 @@ IC.aspRoute = function (S, a, b) {
       for (const [v, L] of adj[u]) if (dist[u] + L < dist[v]) { dist[v] = dist[u] + L; prev[v] = u; }
     }
     let end = -1, best = Infinity;
-    for (let i = 0; i < n; i++) if (dist[i] < Infinity) { const c = dist[i] + (b.apt ? (F[i] === lb ? U.dist(lb, b) : Infinity) : joinCost(b, F[i])); if (c < best) { best = c; end = i; } }
+    for (let i = 0; i < n; i++) if (dist[i] < Infinity) { const c = dist[i] + (b.apt ? (F[i] === lb ? U.dist(lb, b) : Infinity) : entry(F[i]) ? joinCost(b, F[i]) : Infinity); if (c < best) { best = c; end = i; } }
     if (end >= 0) {
       const path = []; for (let i = end; i >= 0; i = prev[i]) path.unshift(F[i]);
       const pts = [{ x: a.x, y: a.y }].concat(path.map(f => ({ x: f.x, y: f.y, fix: f.id, name: f.name })), [{ x: b.x, y: b.y }]);
@@ -320,7 +327,9 @@ IC.aspGap = function (S, from, to) {
   let p = from;
   if (!from.apt) { for (let i = 1; i <= 12; i++) { const q = { x: from.x + (to.x - from.x) * i / 12, y: from.y + (to.y - from.y) * i / 12 }; if (IC.inHome(q.x, q.y)) { p = q; break; } } }
   const covered = IC.aspCovAlt(S, p.x, p.y) <= (from.apt ? 1.5 : 9);
-  return { gap: A.gap * (net ? 1 : 2) * (covered ? 1 : 4), net, covered };
+  // overloaded controllers space departures wider still
+  const busy = Math.max(1, S.asp.work || 0);
+  return { gap: A.gap * (net ? 1 : 2) * (covered ? 1 : 4) * busy, net, covered, busy };
 };
 IC.aspRelease = function (S, from, to) {
   const N = S.asp; if (!N) return 0;
@@ -363,6 +372,7 @@ IC.airspace = function (S, dt) {
   if (S.mode === 'academy') return;
   for (const k in N.pairs) if (S.time - N.pairs[k].t > 900) delete N.pairs[k];
   const F = S.threats.filter(t => !t.dead && t.d.civil && !t.hostileCiv && t.alt > 0.2 && IC.inHome(t.x, t.y));
+  workload(S, F);
   for (let i = 0; i < F.length; i++) {
     const a = F[i];
     if (a.type === 'ga') infringe(S, a);
@@ -387,8 +397,11 @@ function pair(S, a, b) {
     const need = ga ? A.gaNear * 2 : A.sep, vneed = ga ? A.gaVsep * 2 : A.vsep;
     if (miss < need && dz < vneed + 0.3) {
       const sa = seen(S, a), sb = seen(S, b);
-      // with both on radar they solve it; by timing alone at a known crossing, most of the time
-      const can = sa && sb ? 1 : !ga && a.net && b.net ? 0.6 : 0;
+      // with both on radar they solve it; by timing alone at a known crossing, most of the time. Unseen and off the
+      // airways, procedural control (a level and a time slot for each flight) works while the sky is quiet and
+      // fails as it fills; overloaded controllers miss even what they can see
+      const w = N.work || 0, proc = ga ? 0 : U.clamp(0.9 * (1 - w), 0, 0.8);
+      const can = sa && sb ? 1 / Math.max(1, w * w) : Math.max(!ga && a.net && b.net ? 0.6 : 0, proc);
       P = N.pairs[key] = { t: S.time, ok: Math.random() < can, sa, sb };
       if (P.ok) { N.stats.solved++; solve(a, b); }
     }
@@ -404,6 +417,23 @@ function pair(S, a, b) {
   P.lost = S.time; P.near = near; P.t = S.time;
   lossOfSeparation(S, a, b, d, dz, near, P);
 }
+/* how busy the area controllers are: each airliner over the country takes their attention, less on an airway and
+   more where no radar sees it. An approach radar at an airport takes its arrivals and departures off their hands.
+   Over capacity they space departures wider and miss conflicts: the growing pain of a sky without a plan */
+function workload(S, F) {
+  const N = S.asp;
+  let load = 0;
+  for (const t of F) if (t.type !== 'ga') load += (t.net ? 0.6 : 1) * (seen(S, t) ? 1 : 1.5);
+  const atc = IC.bases(S).filter(b => b.owner === 'us' && b.kind === 'airport' && (b.parts || []).some(p => p.kind === 'atc' && p.built)).length;
+  N.load = load; N.cap = A.ctl + 4 * atc; N.work = load / N.cap;
+  if (N.work > 1.1 && S.time - (N.overT || -1e9) > 3 * 3600) {
+    N.overT = S.time;
+    const off = F.filter(t => t.type !== 'ga' && !t.net).length;
+    IC.log(S, 'warn', 'AIRSPACE', `Controllers are overloaded: ${Math.round(load)} flights' worth of work for a team that handles ${N.cap}. They hold departures longer and can miss a conflict. ${off ? `${off} flights are off the airways. ` : ''}Airways, entry points and radar make each flight easier to watch.`);
+    IC.emit(S, 'overload', { load, cap: N.cap });
+  }
+}
+IC.aspWork = S => S.asp ? { load: S.asp.load, cap: S.asp.cap, work: S.asp.work } : null;
 /* the controller moves one of them up or down 600 m for a few minutes */
 function solve(a, b) {
   const t = a.type === 'ga' ? b : b.type === 'ga' ? a : (a.cruise && a.alt >= a.cruise - 0.1 ? a : b);
@@ -426,7 +456,6 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   IC.log(S, 'warn', 'AIRSPACE', `${near ? 'Near miss: ' : ''}${txt}. ${why}.`, { x, y });
   for (const t of [a, b]) if (t.tail && S.av) { const al = IC.avAirline(S, t.tail.al); if (al) al.sat = Math.max(0, al.sat - (near ? 8 : 2)); }
   if (near) {
-    if (S.story) S.story.standing = Math.max(0, S.story.standing - 3);
     S.support = Math.max(0, S.support - 1);
     IC.news(S, `Near miss over ${where}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
     if (S.camp && IC.card) IC.card(S, 'Near miss', `${U.clock(S.time)} · near ${where}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
