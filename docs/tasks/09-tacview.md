@@ -1,6 +1,6 @@
 # 09 Replay in 3D and a tilted view
 
-Later wave. Needs 04, 05 and 08 merged.
+Replaced by [22](22-replay-3d-models.md).
 
 ## What the owner asked for
 
