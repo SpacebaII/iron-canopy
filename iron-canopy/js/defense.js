@@ -6,7 +6,7 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-const HIT = { IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
+const HIT = { INT: 1, IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
 
 IC.maxRange = function (S, u) {
   const d = u.d;
@@ -17,6 +17,50 @@ IC.maxRange = function (S, u) {
   if (d.ecm) return d.ecm.range;
   return 0;
 };
+/* ---------- launchers ----------
+   A battery's rounds sit on its launchers (m.l: rounds on each; m.mag is their sum). It fires from the emptiest
+   launcher that still has rounds, so one launcher runs dry while the others stay full, and the crew reloads one
+   launcher at a time from the stock on site: an empty one at once, a part-empty one when the battery is quiet. */
+IC.magSync = function (u, m) {
+  if (!m.l) {
+    const D = u.d.mags && u.d.mags.find(x => x.mun === m.mun);
+    m.ln = (D && D.ln) || 1; m.per = Math.max(1, Math.ceil(m.max / m.ln)); m.l = []; m.li = -1;
+  }
+  let n = 0; for (const k of m.l) n += k;
+  if (n !== m.mag || m.l.length !== m.ln) {
+    // the magazine was set from outside (a lesson, the test range): spread it over the launchers
+    let left = Math.max(0, m.mag); m.l = [];
+    for (let i = 0; i < m.ln; i++) { const k = Math.min(m.per, left); m.l.push(k); left -= k; }
+    m.li = -1; m.rl = 0;
+  }
+  return m;
+};
+IC.takeRound = function (u, m) {
+  IC.magSync(u, m);
+  let i = -1;
+  for (let k = 0; k < m.ln; k++) if (k !== m.li && m.l[k] > 0 && (i < 0 || m.l[k] < m.l[i])) i = k;
+  if (i < 0 && m.li >= 0 && m.l[m.li] > 0) i = m.li;   // only the launcher being reloaded has rounds left
+  if (i < 0) return false;
+  m.l[i]--; m.mag--;
+  return true;
+};
+function reloadStep(S, u, m, dt) {
+  IC.magSync(u, m);
+  if (m.li < 0) {
+    if (m.store <= 0) return;
+    let i = -1;
+    for (let k = 0; k < m.ln; k++) if (m.l[k] < m.per && (i < 0 || m.l[k] < m.l[i])) i = k;
+    if (i < 0 || (m.l[i] > 0 && S.time - u.lastFired < 60)) return;
+    m.li = i; m.rl = 0; m.rlT = m.reload * (0.4 + 0.6 * (m.per - m.l[i]) / m.per);
+  }
+  m.rl += dt * IC.fatigueFactor(u) * (0.4 + 0.6 * IC.ok(u, 'crew'));
+  if (m.rl < (m.rlT || m.reload)) return;
+  const q = Math.min(m.per - m.l[m.li], m.store);
+  m.l[m.li] += q; m.mag += q; m.store -= q; m.li = -1; m.rl = 0;
+}
+/* seconds until the launcher being reloaded is ready, or null */
+IC.reloadLeft = (S, u, m) => { IC.magSync(u, m); return m.li < 0 ? null : Math.max(0, ((m.rlT || m.reload) - m.rl) / (IC.fatigueFactor(u) * (0.4 + 0.6 * IC.ok(u, 'crew')))); };
+
 IC.typeRange = function (type) {
   const d = IC.UNITS[type];
   if (d.mags) return Math.max(...d.mags.map(m => IC.MUN[m.mun].range));
@@ -122,7 +166,7 @@ function canSee(S, u, t) {
   if (t.fcBy.includes(u.id)) return true;
   const f = u.d.fc;
   if (f && f.bmdOnly) return t.disc;
-  return (u.d.remote || IC.hasTech(S, 'a_remote')) && t.fc;
+  return (u.d.remote || IC.hasTech(S, 'a_remote') || !!IC.linkedBy(S, u)) && t.fc;
 }
 IC.canSee = canSee;
 
@@ -152,7 +196,7 @@ function priority(u, t, r) {
 
 function fire(S, u, t, m, r, P, hoj) {
   const M = IC.MUN[m.mun];
-  m.mag--; t.inbound++; t.shots = (t.shots || 0) + 1; S.stats.fired++;
+  IC.takeRound(u, m); t.inbound++; t.shots = (t.shots || 0) + 1; S.stats.fired++;
   u.lastFired = S.time; u.fat = Math.min(100, u.fat + 1.5);
   const a = Math.atan2((P ? P.y : t.y) - u.y, (P ? P.x : t.x) - u.x);
   const R = effRange(M, u, t), cls = IC.classOf(t);
@@ -177,10 +221,8 @@ IC.defense = function (S, dt) {
   for (const u of S.units) {
     if (u.state !== 'ready') { u.beam = null; u.why = u.state === 'transit' ? 'On the move' : 'Setting up'; continue; }
     const d = u.d;
-    for (const m of u.mags) {
-      if (!IC.hasTech(S, m.tech)) continue;
-      if (m.mag < m.max && m.store > 0) { m.rl += dt * IC.fatigueFactor(u) * (0.4 + 0.6 * IC.ok(u, 'crew')); if (m.rl >= m.reload) { m.rl = 0; m.mag++; m.store--; } }
-    }
+    for (const m of u.mags) if (IC.hasTech(S, m.tech)) reloadStep(S, u, m, dt);
+    if (d.link) { u.why = u.radarOn ? linkWhy(S, u) : 'Datalink off: batteries nearby fire only on their own radar'; continue; }
     if (!d.weapon || d.weapon === 'strike' || d.weapon === 'decoy') continue;
     const range = IC.maxRange(S, u);
     if (u.emcon === 'ambush') for (const t of S.threats) if (t.det && (t.aff === 'H' || t.aff === 'S') && U.dist(u, t) < range * 1.15) { u.ambushT = 120; break; }
@@ -236,7 +278,7 @@ IC.defense = function (S, dt) {
       } else {
         const empty = IC.activeMags(S, u).every(m => m.mag + m.store === 0);
         const reloading = IC.activeMags(S, u).every(m => m.mag === 0) && !empty;
-        u.why = empty ? 'Out of missiles: waiting for resupply' : reloading ? 'Reloading'
+        u.why = empty ? 'Out of missiles: waiting for resupply' : reloading ? reloadWhy(S, u)
           : blockedSee ? IC.fcWhy(S, u, blockedSee) : why.r ? cap1(why.r)
           : blockedRoe ? (IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Holding: targets not identified hostile')
           : engaged ? 'Holding: interceptors already on their way to every target in reach' : hojWhy ? hojWhy : sawAny ? 'Tracking' : 'No targets';
@@ -306,6 +348,26 @@ IC.defense = function (S, dt) {
   }
 };
 const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
+function reloadWhy(S, u) {
+  const m = IC.activeMags(S, u).find(m => m.li >= 0);
+  return m ? `Reloading launcher ${m.li + 1} of ${m.ln}: ready in ${U.dur(IC.reloadLeft(S, u, m))}` : 'Reloading';
+}
+
+/* ---------- command posts ----------
+   A command post that is on the air links every missile battery within its reach: they fire on any fire-control
+   track, as the IADS network does for all of them. */
+const cps = { S: null, t: -1, n: -1, list: [] };
+/* on the network: command guidance can come over the datalink from another radar's track (semi-active cannot) */
+const netted = (S, u) => u.d.remote || IC.hasTech(S, 'a_remote') || !!IC.linkedBy(S, u);
+IC.linkedBy = function (S, u) {
+  if (cps.S !== S || cps.t !== S.time || cps.n !== S.units.length) { cps.S = S; cps.t = S.time; cps.n = S.units.length; cps.list = S.units.filter(c => c.d.link && c.state === 'ready' && c.radarOn); }
+  for (const c of cps.list) if (U.dist(c, u) <= c.d.link.R) return c;
+  return null;
+};
+function linkWhy(S, c) {
+  const n = S.units.filter(u => u.d.weapon === 'sam' && !u.callin && U.dist(c, u) <= c.d.link.R).length;
+  return n ? `Linking ${n} batter${n === 1 ? 'y' : 'ies'} within ${U.km(c.d.link.R)}` : `No missile battery within ${U.km(c.d.link.R)} to link`;
+}
 
 /* why this battery can or cannot fire at this track, in plain words */
 IC.fcWhy = function (S, u, t) {
@@ -355,7 +417,7 @@ IC.updateMissiles = function (S, dt) {
       m.checked = true;
       const u = m.unit;
       if (m.hoj) { if (!t.jamming) { m.lostLock = true; m.pk *= 0.1; } }
-      else if (!u || u.dead || !u.radarOn || !t.fcBy.includes(u.id)) { m.lostLock = true; m.pk *= 0.08; }
+      else if (!u || u.dead || ((!u.radarOn || !t.fcBy.includes(u.id)) && !(m.M.seeker === 'CMD' && t.fc && netted(S, u)))) { m.lostLock = true; m.pk *= 0.08; }
     }
     if (m.hoj && m.M.seeker === 'ARH' && tt < 5 && !m.checked) { m.checked = true; if (!t.jamming && !t.det) { m.lostLock = true; m.pk *= 0.3; } }
     // the target fights back in the last seconds
@@ -438,7 +500,7 @@ IC.fireMission = function (S, u, target, n) {
   let fired = 0;
   const rep = { id: IC.nid('bda'), target, what: M.name, by: u.name, n: 0, hits: 0, dmg: 0, t: S.time, open: true };
   for (let i = 0; i < n && m.mag > 0; i++) {
-    m.mag--; fired++;
+    IC.takeRound(u, m); fired++;
     const spread = 8;
     const jit = { x: aim.x + U.rand(-spread, spread), y: aim.y + U.rand(-spread, spread) };
     const s = { id: IC.nid('s'), mun: m.mun, M, x: u.x + U.rand(-4, 4), y: u.y + U.rand(-4, 4), aim: jit, target, src: u.name, age: -i * (M.bal ? 4 : 20), side: 'us', rep, tr: null };
