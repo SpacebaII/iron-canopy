@@ -675,7 +675,9 @@ IC.money = function (S) {
   const L = S.ledger || {}, A = S.av, r = A && A.rate || {};
   const inc = [['base', L.base], ['av', L.av || 0], ['tax', L.tax], ['trade', L.trade], ['apt', L.apt], ['aid', L.aid]].filter(([, v]) => v > 0.005);
   const out = [['upAD', L.upAD], ['upAir', L.upAir], ['upApt', L.upApt], ['upStaff', L.upStaff], ['loan', L.loan]].filter(([, v]) => v > 0.005);
-  const name = k => k === 'av' ? 'Airline fees' : IC.STATEMENT[k];
+  // (before the war the only "air defence" the player runs is civil radar: call it that)
+  const civilOnly = S.units.every(u => u.d.civil || u.type === 'ssr');
+  const name = k => k === 'av' ? 'Airline fees' : k === 'upAD' && civilOnly ? 'Running costs: radars' : IC.STATEMENT[k];
   const line = ([k, v]) => ({ k, name: name(k), v, why: IC.moneyWhy(S, k, r) });
   const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
   const inH = I.reduce((s, l) => s + l.v, 0), outH = O.reduce((s, l) => s + l.v, 0), net = inH - outH;

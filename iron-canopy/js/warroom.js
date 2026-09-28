@@ -92,10 +92,12 @@ function timeline(ap) {
     g += `<rect class="arr${busy ? ' busy' : ''}" x="${x}" y="${mid - L.arr[h] * k}" width="${w}" height="${L.arr[h] * k}"><title>${String(h).padStart(2, '0')}:00 · ${L.arr[h]} arrivals, ${L.dep[h]} departures</title></rect><rect class="dep${busy ? ' busy' : ''}" x="${x}" y="${mid}" width="${w}" height="${L.dep[h] * k}"/>`;
     if (h % 3 === 0) g += `<text x="${h * bw + 2}" y="${H - 2}">${String(h).padStart(2, '0')}</text>`;
   }
-  const cy = n => `<line class="cap" x1="0" x2="${W}" y1="${mid - n * k}" y2="${mid - n * k}"/>`;
-  g += (st.arrPerHour ? cy(st.arrPerHour) : '') + `<line class="axis" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/><line class="now" x1="${(now + 0.5) * bw}" x2="${(now + 0.5) * bw}" y1="4" y2="${H - 12}"/>`;
+  // what the runways take, when it is within the chart (arrivals and departures are each capped by it)
+  const capIn = st.arrPerHour && st.arrPerHour <= mx;
+  const cy = n => `<line class="cap" x1="0" x2="${W}" y1="${mid - n * k}" y2="${mid - n * k}"/><line class="cap" x1="0" x2="${W}" y1="${mid + n * k}" y2="${mid + n * k}"/>`;
+  g += (capIn ? cy(st.arrPerHour) : '') + `<line class="axis" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/><line class="nowl" x1="${(now + 0.5) * bw}" x2="${(now + 0.5) * bw}" y1="4" y2="${H - 12}"/>`;
   const tot = L.arr.reduce((a, b) => a + b, 0) + L.dep.reduce((a, b) => a + b, 0), peak = L.arr.map((a, i) => a + L.dep[i]).reduce((b, v, i, arr) => v > arr[b] ? i : b, 0);
-  return `<div class="tl"><div class="tl-key"><span class="k arr">Arrivals</span><span class="k dep">Departures</span><span class="k ghost">Yesterday</span>${st.arrPerHour ? `<span class="k cap">What the runway takes: ${st.arrPerHour} arrivals an hour</span>` : ''}<span class="muted">${tot} movements today${tot ? `, busiest ${String(peak).padStart(2, '0')}:00` : ''}. Airliners fly 06:00–23:00; freighters at night.</span></div>
+  return `<div class="tl"><div class="tl-key"><span class="k arr">Arrivals</span><span class="k dep">Departures</span><span class="k ghost">Yesterday</span>${st.arrPerHour ? `<span class="${capIn ? 'k cap' : 'muted'}">The runways take ${st.arrPerHour} arrivals and ${st.depPerHour} departures an hour</span>` : ''}<span class="muted">${tot} movements today${tot ? `, busiest ${String(peak).padStart(2, '0')}:00` : ''}. Airliners fly 06:00–23:00; freighters at night.</span></div>
     <svg class="tl-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Movements by hour today">${g}</svg></div>`;
 }
 /* the flight information boards: what comes and goes next, from where, and how it is doing */
@@ -164,7 +166,7 @@ function dealCard(q) {
     <div class="dl-terms"><div><small>Aircraft</small><b>${q.n} × ${esc(T.name.toLowerCase())}</b></div><div><small>Flights</small><b>${k.perWk} a week</b></div><div><small>Length</small><b>${k.days} day${k.days > 1 ? 's' : ''}</b></div><div><small>Worth to us</small><b class="gold">${U.money(k.value)} a day</b></div></div>
     ${neg}
     <ul class="dl-needs">${need}</ul>
-    <p class="dl-small">Brings about ${brings || 'little'} a day · our name +${q.terms.rep}${q.terms.rep ? ' when it runs its course' : ''} · each late flight costs ${U.money(q.terms.late)}, each cancelled one ${U.money(q.terms.cancel)}</p>
+    <p class="dl-small">Brings about ${brings || 'little'} a day, and raises our name when it runs its term. Each late flight costs us ${U.money(q.terms.late)}, each cancelled one ${U.money(q.terms.cancel)}.</p>
     <div class="acts"><button class="btn primary" data-act="avYes" data-id="${q.id}" ${block || !k.ok ? 'disabled' : ''} title="${esc(block ? block.text : k.ok ? 'Sign on these terms' : k.why)}">Sign</button><button class="btn" data-act="avNo" data-id="${q.id}">Turn down</button>${block ? `<span class="amber dl-why">${esc(block.text)}</span>` : !k.ok ? `<span class="hostile dl-why">They will not sign: ${esc(k.why)}.</span>` : ''}</div></div>`;
 }
 function contractRow(d) {
@@ -196,7 +198,7 @@ function airlinePage(al) {
   const hub = S.byId[al.hub];
   // what it wants next: its open offer and what blocks it; or what it complains of; or more where it flies full
   const lf = hub && hub.svc ? hub.svc.lf : 0;
-  const wants = offers.length ? offers.map(q => { const why = IC.avReqBlock(S, q); return `${esc(q.why)}${why ? `, but <span class="amber">${esc(why)}</span>` : ', and the airport can take it: the offer is on the Deals page'}.`; }).join(' ')
+  const wants = offers.length ? offers.map(q => { const why = IC.avReqBlock(S, q); return `It ${esc(q.why)}${why ? `, but <span class="amber">${esc(why)}</span>` : ', and the airport can take it: the offer is on the Deals page'}.`; }).join(' ')
     : al.sat < 45 ? `Nothing more until its complaint is fixed: <span class="amber">${esc(al.lastWhy || 'poor service')}</span>. Below 28% for six hours it cuts a route.`
     : lf > 0.85 ? `More flights: its seats at ${esc(shortAp(hub.name))} fly ${U.pct(lf)} full. An offer comes as our name allows.` : `It is content. It adds flights where its seats run full; at ${esc(hub ? shortAp(hub.name) : 'its hub')} they fly ${U.pct(lf)} full.`;
   return `<div class="card wide alpage" style="--liv:${al.livery[0]};--liv2:${al.livery[1]}"><div class="alhero"><span class="band"></span><div><small>${esc(al.K.style)} · ${esc(al.code)} · based at ${esc(hub ? hub.name : 'abroad')}</small><h2>${esc(al.name)}</h2><p class="muted">Likes: ${esc(al.K.likes)} Dislikes: ${esc(al.K.dislikes || '')}</p></div>
@@ -592,7 +594,7 @@ function reference() {
   else if (ui.refCat === 'threats') body = Object.entries(IC.THR).filter(([k]) => k !== 'pen').map(([k, d]) => `<div class="ref"><canvas data-thr="${k}" width="68" height="52"></canvas><div><b>${esc(IC.fullName(d))}</b><p>${esc(d.desc || '')}</p>${kv([['Class', esc(IC.KLASS[d.klass] || d.klass)], ['Speed', d.spd ? U.kmh(d.spd) : 'ballistic'], ['Altitude', d.alt ? U.alt(d.alt) : 'varies'], ['Warhead', d.dmg ? d.dmg : '–']].concat(d.cm ? [['Countermeasures', 'chaff, flares' + (d.notch ? ', notching' : '')]] : []))}</div></div>`).join('');
   else if (ui.refCat === 'air') body = Object.entries(IC.AIR_KIND).map(([k, d]) => `<div class="ref"><span class="badge friend" style="display:grid;place-items:center;height:2.6rem;border-radius:10px;background:var(--well)">${d.short}</span><div><b>${esc(d.name)}</b>${kv([['Aircraft per flight', d.n], ['Speed', U.kmh(d.spd)], ['Endurance', U.dur(d.endur)], ['Turnaround', U.dur(d.turn)], ['Needs a runway', d.runway ? 'yes' : 'no']])}</div></div>`).join('');
   else {
-    const G = IC.guideFor(S), card = (g, cur) => `<div class="card guide ${cur ? 'now' : ''}">${cur ? '<small class="gnow">This chapter</small>' : ''}<b>${esc(g.t)}</b><p>${esc(g.d)}</p></div>`;
+    const G = IC.guideFor(S), card = (g, cur) => `<div class="card guide ${cur ? 'gcur' : ''}">${cur ? '<small class="gnow">This chapter</small>' : ''}<b>${esc(g.t)}</b><p>${esc(g.d)}</p></div>`;
     const ch = st && st.act === 1 ? IC.CHAPTERS[st.ch] : null;
     return `${tabs}${G.now.length ? `<div class="card wide ghead"><h3>${ch ? `Chapter ${st.ch + 1} · ${esc(ch.title)}` : st ? esc(IC.ACTS[st.act].name + ' · ' + IC.ACTS[st.act].title) : 'How it works'}<em>lessons for where you are now</em></h3></div>` : ''}${G.now.map(g => card(g, true)).join('')}
       ${G.past.length ? `<div class="card wide ghead"><h3>${G.now.length ? 'Earlier' : 'How it works'}<em>${G.past.length} lesson${G.past.length > 1 ? 's' : ''}</em></h3></div>${G.past.map(g => card(g)).join('')}` : ''}

@@ -748,7 +748,7 @@ IC.dealNeeds = function (S, q) {
       row('cargoStands', 'large stands for freighters', N.cargoStands, (P.cargoStands || 0) + Math.max(0, paxStands - fitting(N.stands, 'l')), 'more large stands, best in the cargo zone');
       row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
     } else {
-      row('stands', `${IC.STAND[T.stand].name} or larger stands`, fitting(N.stands, T.stand), paxStands, `more ${IC.STAND[T.stand].name} stands`);
+      row('stands', `${IC.STAND[T.stand].name}${T.stand === 'l' ? '' : ' or larger'} stands`, fitting(N.stands, T.stand), paxStands, `more ${IC.STAND[T.stand].name} stands`);
       if ((IC.DEAL.gates[al.kind] || 0) > 0) row('gates', 'stands at the terminal (gates)', N.gates, P.gates || 0, 'more stands beside a terminal');
       row('pax', 'terminal room, passengers an hour', Math.round(N.pax), Math.round(P.pax || 0), 'a bigger terminal');
     }
