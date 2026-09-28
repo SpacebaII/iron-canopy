@@ -2404,12 +2404,12 @@ test('recorder: keeps chaff, flares, lock phases and what each seeker did, where
   const ev = S.rec.ev, chaff = ev.find(e => e.kind === 'cm' && e.what === 'chaff');
   assert(chaff.alt > 0.5 && Number.isFinite(chaff.vx) && S.rec.of.has(chaff.tref), 'a chaff burst was recorded without its height, drift or aircraft');
   const lock = ev.find(e => e.kind === 'lock');
-  assert(lock && IC.GUIDE[lock.ph] && S.rec.of.has(lock.mref), 'no lock event with a guidance phase and its missile');
+  assert(lock && IC.GUIDANCE[lock.ph] && S.rec.of.has(lock.mref), 'no lock event with a guidance phase and its missile');
   assert(ev.some(e => e.kind === 'mstat' && e.text === 'NOTCHING') && ev.some(e => e.kind === 'mstat' && e.what === 'miss'), 'notching and misses were not recorded with their words');
   // every missile sample carries its guidance, and the track knows its target and launcher
   const m = S.rec.tracks.find(tr => tr.kind === 'missile' && tr.meta.mun === 'MR');
   assert(m && S.rec.of.get(m.meta.tref) && S.rec.of.get(m.meta.uref), 'a missile track does not know its target and launcher');
-  for (let i = 0; i < m.n; i++) assert(IC.GUIDE[IC.recGet(m, i, 8)], `missile sample ${i} has no guidance phase`);
+  for (let i = 0; i < m.n; i++) assert(IC.GUIDANCE[IC.recGet(m, i, 8)], `missile sample ${i} has no guidance phase`);
   // while missiles fly, they are sampled every step
   const gaps = []; for (let i = 1; i < m.n; i++) gaps.push(IC.recGet(m, i, 0) - IC.recGet(m, i - 1, 0));
   assert(Math.max(...gaps) <= 0.26, `a missile was sampled only every ${Math.max(...gaps).toFixed(2)} s`);

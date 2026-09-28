@@ -16,7 +16,7 @@ const CAP = Math.ceil(REC.span / REC.fine) + 2;
 
 /* how a missile is guided at a moment, as the replay colours its lock line. The simulation today knows the seeker
    and whether the lock was lost or a decoy took it; the phase a missile keeps itself (m.phase) wins when it has one */
-const GUIDE = IC.GUIDE = [
+const GUIDE = IC.GUIDANCE = [
   null,
   { k: 'mid', name: 'Midcourse', brief: 'flying on the launcher\'s data towards where the target will be', col: '#8fb8ff' },
   { k: 'sarh', name: 'Semi-active', brief: 'homing on the battery\'s radar reflected off the target: the radar must stay on it', col: '#ffd24a' },
@@ -28,7 +28,7 @@ const GUIDE = IC.GUIDE = [
   { k: 'decoy', name: 'Decoyed', brief: 'its seeker took a flare or a chaff cloud for the target', col: '#b48cff' }
 ];
 const PH = {}; GUIDE.forEach((g, i) => { if (g) PH[g.k] = i; });
-IC.GUIDE_ACTIVE_R = 150;   // an active seeker goes on its own in the last 15 km
+IC.GUIDANCE_ACTIVE_R = 150;   // an active seeker goes on its own in the last 15 km
 function phaseOf(S, m, enemy) {
   if (m.phase && PH[m.phase]) return PH[m.phase];
   if (m.lostLock) return PH.lost;
@@ -38,7 +38,7 @@ function phaseOf(S, m, enemy) {
     case 'SARH': return PH.sarh;
     case 'CMD': return PH.cmd;
     case 'IR': return PH.ir;
-    case 'ARH': return r < IC.GUIDE_ACTIVE_R ? PH.arh : PH.mid;
+    case 'ARH': return r < IC.GUIDANCE_ACTIVE_R ? PH.arh : PH.mid;
     case 'HTK': return (m.pip ? m.pip.T - S.time < 6 : r < 80) ? PH.term : PH.mid;
     default: return PH.mid;
   }

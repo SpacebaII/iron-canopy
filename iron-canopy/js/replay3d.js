@@ -465,7 +465,7 @@ function missileFx(v, m, t, st, hide) {
   }
   // lock lines: missile to target in the colour of its guidance; the battery's radar on the target for semi-active
   // and command guidance; the launcher's datalink to the missile in midcourse
-  const G = IC.GUIDE[st.ph | 0] || IC.GUIDE[1];
+  const G = IC.GUIDANCE[st.ph | 0] || IC.GUIDANCE[1];
   m.locks.visible = v.locks && !hide;
   m.cone.visible = false;
   if (!m.locks.visible && !v.cone) return;
@@ -478,7 +478,7 @@ function missileFx(v, m, t, st, hide) {
     const faint = G.k === 'lost' || G.k === 'decoy';
     if (Tp) seg(M, Tp, G.col, faint ? 0.35 : G.k === 'mid' ? 0.45 : 0.95);
     if (Lp && Tp && (G.k === 'sarh' || G.k === 'cmd')) seg(Lp, Tp, G.col, 0.55);
-    if (Lp && (G.k === 'cmd' || G.k === 'mid')) seg(Lp, M, IC.GUIDE[1].col, 0.35);
+    if (Lp && (G.k === 'cmd' || G.k === 'mid')) seg(Lp, M, IC.GUIDANCE[1].col, 0.35);
     g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true; g.setDrawRange(0, n);
   }
   // the seeker's cone, once it homes on its own
@@ -589,7 +589,7 @@ function updateCm(v, fx, t) {
 /* a word where something happened: LOST LOCK, DECOYED, NOTCHING, PASSED ABOVE, FLARES, ACTIVE */
 function makeTag(v, e) {
   const el = document.createElement('div'); el.className = 'rp-tag'; el.textContent = e.text; el.hidden = true;
-  el.style.color = TAG_COL[e.text] || (e.kind === 'lock' && IC.GUIDE[e.ph] ? IC.GUIDE[e.ph].col : '#e8eef2');
+  el.style.color = TAG_COL[e.text] || (e.kind === 'lock' && IC.GUIDANCE[e.ph] ? IC.GUIDANCE[e.ph].col : '#e8eef2');
   v.$('labels').appendChild(el);
   const tag = { e, el, p: { x: e.x - v.cx, y: hT(v.S, e.x, e.y) * v.hk + e.alt * KM * v.hk, z: e.y - v.cy } };
   v.tags.push(tag);
@@ -1035,7 +1035,7 @@ function labels(v, t) {
     if (p.z > 1 || p.x < -1.1 || p.x > 1.1 || p.y < -1.1 || p.y > 1.1) { m.label.hidden = true; return; }
     const st = m.st, a = m.att, tr = m.tr, gnd = tr.kind === 'veh' || tr.kind === 'unit' || (tr.kind === 'gnd' && st.alt < 0.005);
     let sub;
-    if (tr.kind === 'missile') { const G = IC.GUIDE[st.ph | 0]; sub = `${G ? G.name : ''} · ${U.kmh(st.spd)}${a.g > 2 ? ` · ${Math.round(a.g)} g` : ''}`; }
+    if (tr.kind === 'missile') { const G = IC.GUIDANCE[st.ph | 0]; sub = `${G ? G.name : ''} · ${U.kmh(st.spd)}${a.g > 2 ? ` · ${Math.round(a.g)} g` : ''}`; }
     else if (gnd) sub = st.spd > 0.02 ? U.kmh(st.spd) : tr.kind === 'unit' ? (st.det ? 'radar on' : 'radar silent') : 'stopped';
     else sub = `${m.ac ? IC.flText(st.alt) : IC.kmText(st.alt)} · ${st.spd > 0.02 ? U.kmh(st.spd) : 'stopped'}${a.g > 1.4 ? ` · ${a.g.toFixed(1)} g` : ''}${st.ph & 1 ? ' · notching' : ''}`;
     const txt = `${esc(tr.name)}<small>${sub}</small>`;
@@ -1085,7 +1085,7 @@ function panelRows(v, t) {
     if (other) rows.push([E.m === F ? 'TGT' : 'MSL', esc(other.tr.name)]);
     if (E.r != null) rows.push(['RNG', `${U.km(E.r)}${E.cls != null ? ` · closing ${U.kmh(Math.max(0, E.cls))}` : ''}`]);
     if (E.tti != null) rows.push(['TTI', `${E.tti < 10 ? E.tti.toFixed(1) : Math.round(E.tti)} s`]);
-    const G = IC.GUIDE[E.m.st.ph | 0];
+    const G = IC.GUIDANCE[E.m.st.ph | 0];
     if (G) rows.push(['GDE', `<span class="ph" style="background:${G.col}"></span>${G.name}`], ['why', G.brief]);
   }
   return rows;
