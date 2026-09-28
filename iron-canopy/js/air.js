@@ -225,6 +225,14 @@ IC.commitIntercept = function (S, who, t) {
   IC.emit(S, 'commit', { a: x, t });
   return x;
 };
+/* the flight that meets a track soonest: fighters in the air not already busy, then flights ready on the ground */
+IC.bestInterceptor = function (S, t) {
+  let best = null, bt = Infinity;
+  const cand = S.air.filter(a => a.kind === 'ftr' && a.r && !a.dead && a.state !== 'rtb' && a.state !== 'engage' && (a.aam > 0 || a.srm > 0) && !(a.mission && a.mission.type === 'intercept' && a.mission.track && !a.mission.track.dead && a.mission.track !== t))
+    .concat(S.roster.filter(r => r.kind === 'ftr' && r.st === 'ready'));
+  for (const w of cand) { const P = IC.interceptPlan(S, w, t); if (P.ok && P.T < bt) { bt = P.T; best = w; } }
+  return best;
+};
 /* hold where it is, or at a point: a racetrack orbit until told otherwise or short of fuel */
 IC.holdAir = function (S, a, p) {
   if (!a || a.dead || a.job) return;
