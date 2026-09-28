@@ -14,7 +14,8 @@ const A = IC.ASP = {
   link: 1200,              // an airport joins the network at a fix within 120 km
   gap: 60,                 // departures the same way: 1 min apart with radar and airways
   gate: 250,               // a fix within 25 km of the border is an entry and exit point
-  ctl: 14,                 // flights the area controllers can watch at once (a flight on an airway, on radar, counts 0.6)
+  ctl: 40,                 // flights the area controllers can watch at once (a flight on an airway, on radar, counts 0.6):
+                           // the centres of a country 3,000 km across
   gaRwy: 150,              // a light aircraft holds a big airport's runway as long as two airliners (s)
   tmaFloor: 1.2, tmaTop: 7,
   CS: 50,                  // coverage map cell: 5 km
@@ -484,7 +485,7 @@ function makeFields(S) {
   const bases = IC.bases(S), towns = W.cities.concat(W.villages).filter(c => IC.inHome(c.x, c.y) && !c.capital);
   const order = towns.map(c => [c, R()]).sort((p, q) => p[1] - q[1]).map(p => p[0]);
   for (const c of order) {
-    if (L.length >= 7) break;
+    if (L.length >= 20) break;   // some twenty clubs across the country
     const a = R.range(0, Math.PI * 2), x = c.x + Math.cos(a) * ((c.r || 20) + 40), y = c.y + Math.sin(a) * ((c.r || 20) + 40);
     if (!IC.inHome(x, y) || W.hAt(x, y) > 0.7 || (W.inLake && W.inLake(x, y)) || IC.hostileBorderDist(x, y) < 500) continue;
     if (bases.some(b => U.dxy(x, y, b.x, b.y) < 350) || L.some(f => U.dxy(x, y, f.x, f.y) < 500)) continue;

@@ -74,15 +74,19 @@ function buildGraph(W) {
   for (const r of W.ramps || []) add(r.pts, 'ramp', { ramp: r });
   for (const l of W.lanes) add(l.pts, 'ln', {});
   // crossings at grade: every pair of pieces that cross (motorways and slip roads never do)
-  const B = 4, bk = new Map(), key2 = (i, j) => (i + 100) * 8192 + j + 100;
+  const B = 4, bk = new Map(), key2 = (i, j) => (i + 100) * 32768 + j + 100;
+  // the cells a piece passes through (not its whole box: long country roads would fill millions)
+  const cover = (a, b, fn) => {
+    let x = Math.floor(a.x / B), y = Math.floor(a.y / B);
+    const X1 = Math.floor(b.x / B), Y1 = Math.floor(b.y / B), dx = b.x - a.x, dy = b.y - a.y, sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    const tdx = dx ? Math.abs(B / dx) : Infinity, tdy = dy ? Math.abs(B / dy) : Infinity;
+    let tx = dx ? (sx > 0 ? (x + 1) * B - a.x : a.x - x * B) / Math.abs(dx) : Infinity, ty = dy ? (sy > 0 ? (y + 1) * B - a.y : a.y - y * B) / Math.abs(dy) : Infinity;
+    fn(x, y);
+    for (let n = 0; n < 100000 && (x !== X1 || y !== Y1); n++) { if (tx < ty) { tx += tdx; x += sx; } else { ty += tdy; y += sy; } fn(x, y); }
+  };
   lines.forEach((l, li) => {
     if (l.cls === 'hw' || l.cls === 'ramp') return;
-    for (let i = 1; i < l.pts.length; i++) {
-      const a = l.pts[i - 1], b = l.pts[i];
-      for (let x = Math.floor(Math.min(a.x, b.x) / B); x <= Math.floor(Math.max(a.x, b.x) / B); x++) for (let y = Math.floor(Math.min(a.y, b.y) / B); y <= Math.floor(Math.max(a.y, b.y) / B); y++) {
-        const k = key2(x, y); let L = bk.get(k); if (!L) bk.set(k, L = []); L.push(li, i);
-      }
-    }
+    for (let i = 1; i < l.pts.length; i++) cover(l.pts[i - 1], l.pts[i], (x, y) => { const k = key2(x, y); let L = bk.get(k); if (!L) bk.set(k, L = []); L.push(li, i); });
   });
   const E = 1e-4, seen = new Set();
   for (const L of bk.values()) for (let p = 0; p < L.length; p += 2) for (let q = p + 2; q < L.length; q += 2) {
@@ -93,7 +97,7 @@ function buildGraph(W) {
     if (Math.abs(den) < 1e-12) continue;
     const t = ((b0.x - a0.x) * s2 - (b0.y - a0.y) * s1) / den, u = ((b0.x - a0.x) * r2 - (b0.y - a0.y) * r1) / den;
     if (t < -E || t > 1 + E || u < -E || u > 1 + E) continue;
-    const sk = la < lb ? ((la * 4096 + ia) * 16384 + lb) * 4096 + ib : ((lb * 4096 + ib) * 16384 + la) * 4096 + ia;
+    const sk = la < lb ? la + ':' + ia + ':' + lb + ':' + ib : lb + ':' + ib + ':' + la + ':' + ia;
     if (seen.has(sk)) continue; seen.add(sk);
     const x = a0.x + r1 * t, y = a0.y + r2 * t;
     A.ins.push({ i: ia, t, x, y }); Bl.ins.push({ i: ib, t: u, x, y });
@@ -102,10 +106,7 @@ function buildGraph(W) {
   const segB = new Map();
   lines.forEach((l, li) => {
     if (l.cls === 'ramp') return;
-    for (let i = 1; i < l.pts.length; i++) {
-      const a = l.pts[i - 1], b = l.pts[i];
-      for (let x = Math.floor(Math.min(a.x, b.x) / B); x <= Math.floor(Math.max(a.x, b.x) / B); x++) for (let y = Math.floor(Math.min(a.y, b.y) / B); y <= Math.floor(Math.max(a.y, b.y) / B); y++) { const k = key2(x, y); let M = segB.get(k); if (!M) segB.set(k, M = []); M.push(li, i); }
-    }
+    for (let i = 1; i < l.pts.length; i++) cover(l.pts[i - 1], l.pts[i], (x, y) => { const k = key2(x, y); let M = segB.get(k); if (!M) segB.set(k, M = []); M.push(li, i); });
   });
   const tie = (P, lineOk) => {
     let best = null, bd = 0.7;
@@ -131,7 +132,7 @@ function buildGraph(W) {
     P.x = t.x; P.y = t.y; l.tied = l.tied || []; l.tied[end] = t.l;
   }
   // put the crossing points into the lines
-  const kq = (x, y) => Math.round(x * 256) * 4194304 + Math.round(y * 256);
+  const kq = (x, y) => Math.round(x * 256) * 16777216 + Math.round(y * 256);
   const forced = new Set();
   for (const l of lines) {
     if (!l.ins.length) continue;
@@ -368,25 +369,28 @@ function assign(S) {
   }
   // every street carries its own residents and deliveries: a little traffic in proportion to what is built there
   const zb = new Map(), ZB = 10;
-  for (const z of Z) { const k = Math.floor(z.x / ZB) * 4096 + Math.floor(z.y / ZB); let L = zb.get(k); if (!L) zb.set(k, L = []); L.push(z); }
+  for (const z of Z) { const k = Math.floor(z.x / ZB) * 8192 + Math.floor(z.y / ZB); let L = zb.get(k); if (!L) zb.set(k, L = []); L.push(z); }
   for (const lk of G.links) {
     if (!lk.city && lk.cls !== 'ln') continue;
     const m = lk.pts[lk.pts.length >> 1], gx = Math.floor(m.x / ZB), gy = Math.floor(m.y / ZB);
     let best = null, bd = 12;
-    for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) for (const z of zb.get(x * 4096 + y) || []) { const d = U.dist(z, m); if (d < bd) { bd = d; best = z; } }
+    for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) for (const z of zb.get(x * 8192 + y) || []) { const d = U.dist(z, m); if (d < bd) { bd = d; best = z; } }
     const v = best ? (best.homes + best.jobs + best.frt * 0.5) / best.n * 0.3 : lk.cls === 'ln' ? 0.02 : 0;
     for (let d = 0; d < 2; d++) { F.gen[lk.id * 2 + d] += v; F.com[lk.id * 2 + d] += v * 0.5; }
   }
   // flows into loads, class by class: the busiest links of each class at a full rush hour run at what that class
-  // carries at its busiest in real cities (motorways at capacity, side streets far from it)
+  // carries at its busiest in real cities (motorways at capacity, side streets far from it). City streets are
+  // measured city by city: the many small towns of a big map would otherwise make every capital street a jam
+  const ck = lk => lk.city && (lk.cls === 'st' || lk.cls === 'art' || lk.cls === 'ring') ? lk.cls + '|' + (lk.city.id || lk.city) : lk.cls;
   const TOP = { hw: 1.05, ring: 0.85, rd: 0.8, art: 0.75, lc: 0.45, sp: 0.5, st: 0.4, ln: 0.12, ramp: 0.8 }, byCls = {};
   for (let i = 0; i < nL; i++) {
     const lk = G.links[i];
-    for (let d = 0; d < 2; d++) { const v = F.com[i * 2 + d] + F.frt[i * 2 + d] + F.apt[i * 2 + d] + F.gen[i * 2 + d]; if (v > 0) (byCls[lk.cls] = byCls[lk.cls] || []).push(v); }
+    for (let d = 0; d < 2; d++) { const v = F.com[i * 2 + d] + F.frt[i * 2 + d] + F.apt[i * 2 + d] + F.gen[i * 2 + d]; if (v > 0) (byCls[ck(lk)] = byCls[ck(lk)] || []).push(v); }
   }
   const kc = {};
-  for (const c in byCls) { const a = byCls[c].sort((x, y) => x - y); kc[c] = TOP[c] / Math.max(1e-9, a[Math.floor(a.length * 0.95)]); }
-  for (const p of PURP) for (let i = 0; i < F[p].length; i++) F[p][i] *= kc[G.links[i >> 1].cls] || 0;
+  for (const c in byCls) { const a = byCls[c].sort((x, y) => x - y); kc[c] = TOP[c.split('|')[0]] / Math.max(1e-9, a[Math.floor(a.length * 0.95)]); }
+  const kl = G.links.map(lk => kc[ck(lk)] || 0);
+  for (const p of PURP) for (let i = 0; i < F[p].length; i++) F[p][i] *= kl[i >> 1];
   T.F = F; T.zones = Z; T.places = P; T.G = G;
   T.nApt = S.infra.filter(a => a.kind === 'airport' && a.owner === 'us' && a.parts).length;
 }
@@ -438,7 +442,10 @@ IC.traffic = function (S, dt) {
       // the slots have ridden at the old speed since the last reading
       for (let d = 0; d < 2; d++) { L.ph[d] = (L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time))) % (BASE * 65536); }
       L.t0 = S.time;
-      const lk = L.l, i = lk.id * 2, c = lk.city;
+      const lk = L.l, i = lk.id * 2;
+      // the town a link runs through: its own streets, or national roads inside its built-up area
+      if (L.town === undefined) { const m = lk.pts[lk.pts.length >> 1]; L.town = lk.city || W.cities.find(t => U.dist(t, m) < (t.ext || t.r) * 1.1) || null; }
+      const c = L.town;
       // under an air raid alert people leave the roads for the shelters
       const raid = c && c.alert > 0 ? 0.25 : 1;
       const cut = lk.cut || (lk.ref.edge && W.blocked && W.blocked.has(lk.ref.edge.id)) ? 0.05 : 1;
@@ -446,7 +453,10 @@ IC.traffic = function (S, dt) {
         // commuters run home→work in the morning and back in the evening: the reverse direction's flow comes home
         const com = F.com[i + d] * fi + F.com[i + 1 - d] * fo, frt = F.frt[i + d] * ff, apt = F.apt[i + d] * fa, gen = F.gen[i + d] * fg;
         const tot = com + frt + apt + gen;
-        L.ld[d] = U.clamp(tot * g * raid * cut, 0, 1.3); (L.raw || (L.raw = [0, 0]))[d] = U.clamp(tot * g * raid, 0, 1.3);
+        // the demand, and the load the road can carry (a jammed street shows no direction; the demand still does);
+        // raw is the load without a cut, which drivers head for until they find the road cut
+        (L.dem || (L.dem = [0, 0]))[d] = tot * g * raid * cut;
+        L.ld[d] = U.clamp(L.dem[d], 0, 1.3); (L.raw || (L.raw = [0, 0]))[d] = U.clamp(tot * g * raid, 0, 1.3);
         const M = L.mix[d]; L.mixOk[d] = tot > 0 ? 1 : 0; if (tot > 0) { M[0] = com / tot; M[1] = frt / tot; M[2] = apt / tot; }
         // a full road slows down: at peak the motorways round the capital crawl
         L.v[d] = lk.C.v * (L.ld[d] > 0.75 ? U.clamp(1 - (L.ld[d] - 0.75) * 1.3, 0.3, 1) : 1) * (raid < 1 ? 0.4 : 1);
@@ -497,10 +507,10 @@ function busLines(S) {
   const cn = W.cities.map(c => G.nearNode(c.x, c.y, 8)), pairs = new Set(), road = lk => !!lk.ref.edge || lk.cls === 'ramp';
   W.cities.forEach((c, i) => {
     if (c.pop < 150 || cn[i] < 0) return;
-    const near = W.cities.map((o, j) => [o, j]).filter(([o, j]) => j !== i && cn[j] >= 0 && U.dist(o, c) < 1600).sort((p, q) => U.dist(p[0], c) - U.dist(q[0], c)).slice(0, 2);
+    const near = W.cities.map((o, j) => [o, j]).filter(([o, j]) => j !== i && cn[j] >= 0 && U.dist(o, c) < 4000).sort((p, q) => U.dist(p[0], c) - U.dist(q[0], c)).slice(0, 2);
     for (const [o, j] of near) {
       const k = Math.min(i, j) + ',' + Math.max(i, j); if (pairs.has(k)) continue; pairs.add(k);
-      const p = astar(G, cn[i], cn[j], 60000, road); if (p) mk(p, 'coach', `${c.name} – ${o.name}`, 1e9);
+      const p = astar(G, cn[i], cn[j], 200000, road); if (p) mk(p, 'coach', `${c.name} – ${o.name}`, 1e9);
     }
   });
   for (const p of T.places) {

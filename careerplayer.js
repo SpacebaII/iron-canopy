@@ -18,7 +18,8 @@ function site(S, c, rmin, rmax) {
   }
   return best;
 }
-const L = (ap, x, y) => IC.aptLocal(ap, x, y);
+// the terminal side of the runway (+1 or -1): the other side when a river or the site's edge is in the way
+const L = (ap, x, y) => IC.aptLocal(ap, x, y * (ap._side || 1));
 const has = (ap, k) => ap.parts.some(p => p.kind === k);
 const part = (S, ap, k, x, y, w, h, o) => { const c = L(ap, x, y); return IC.aptPlanPart(S, ap, k, c.x, c.y, ap.rwyA, w, h, o); };
 const taxi = (S, ap, pts) => IC.aptPlanTaxi(S, ap, pts.map(([x, y]) => L(ap, x, y)), 0.3, { mat: 'conc' });
@@ -26,7 +27,7 @@ const taxi = (S, ap, pts) => IC.aptPlanTaxi(S, ap, pts.map(([x, y]) => L(ap, x, 
 function starter(S, ap, len) {
   const h = len / 2, o = { mat: 'conc' };
   if (!has(ap, 'runway')) IC.aptPlanRunway(S, ap, L(ap, -h, 0), L(ap, h, 0), 'Runway 1', o);
-  if (!has(ap, 'apron')) part(S, ap, 'apron', 0, 4, 4, 1.3, o);
+  if (!has(ap, 'apron') && !part(S, ap, 'apron', 0, 4, 4, 1.3, o) && !ap._side) { ap._side = -1; part(S, ap, 'apron', 0, 4, 4, 1.3, o); }
   if (!has(ap, 'taxi')) taxi(S, ap, [[0, 0], [0, 3.35]]);
   if (!has(ap, 'terminal')) part(S, ap, 'terminal', 0, 5.1, 3, 0.8);
   if (!has(ap, 'fire')) part(S, ap, 'fire', 3.5, 1.5);
@@ -39,10 +40,11 @@ function grow(S, ap, st) {
   if (!has(ap, 'ils') && S.budget > 100) { const rw = ap.parts.find(p => p.kind === 'runway'); return rw && IC.aptPlanPart(S, ap, 'ils', rw.a.x, rw.a.y); }
   if (ap.parts.filter(p => p.kind === 'apron').length < 2 && S.budget > 150) { part(S, ap, 'apron', 4.3, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[4.3, 1.8], [4.3, 3.35]]); }
   if (ap.parts.filter(p => p.kind === 'fuel').length < 2 && S.budget > 120) return part(S, ap, 'fuel', -8, 4.5);
-  // more stands as the fleet grows: about one for every one and a half aircraft that use the airport
-  const fleet = S.av.tails.filter(t => t.where !== 'lost' && (S.av.routes.find(r => r.id === t.route) || {}).a === ap.id).length;
+  // more stands when they fill up: all but one taken (on long routes a fleet spends most of its time away, so the
+  // number of aircraft says little about the stands they need)
+  const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
   const aprons = ap.parts.filter(p => p.kind === 'apron' && p.zone !== 'cargo').length;
-  if (IC.aptStands(ap).length < fleet / 1.5 && aprons < 6 && S.budget > 150) { const x = [8.6, 12.9, -12.9, 17.2][aprons - 2] || 0; if (x) { part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[x, 1.8], [x, 3.35]]); } }
+  if (full && aprons < 6 && S.budget > 150) { const x = [8.6, 12.9, -12.9, 17.2][aprons - 2] || 0; if (x) { part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[x, 1.8], [x, 3.35]]); } }
   if (st.ch >= 5 && !has(ap, 'cargo') && S.budget > 200) { part(S, ap, 'cargo', -4.5, 6.2, 2.5, 0.8); part(S, ap, 'apron', -4.5, 4.9, 3, 1, { mat: 'conc', zone: 'cargo' }); return taxi(S, ap, [[-3, 1.8], [-3, 4.2]]); }
   return null;
 }
@@ -85,7 +87,9 @@ function player(S, log) {
   starter(S, ap, 30);
   // worn pavement and damage: resurface what needs it
   for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us') for (const it of IC.aptRepairList(b)) if (S.budget > it.cost + 40) IC.aptQueue(S, b, it.key);
-  if (st.ch >= 1 && !ap.works.length) grow(S, ap, st);
+  // (while the chapter asks for a second airport, the money is saved for it)
+  const saving = st.ch >= 4 && st.city2 && !st.apt2;
+  if (st.ch >= 1 && !ap.works.length && !saving) grow(S, ap, st);
   if (st.ch >= 2 && !IC.storyLock(S, 'airways')) airspace(S, ap);
   // the contract: a field near the town
   const c = st.contract;
@@ -94,7 +98,8 @@ function player(S, log) {
     for (let a = 0; a < 6.28; a += 0.4) { const x = t.x + Math.cos(a) * (t.r + 60), y = t.y + Math.sin(a) * (t.r + 60); if (!IC.aspFieldWhy(S, x, y)) { IC.aspFoundField(S, x, y); break; } }
   }
   // the second city's airport
-  if (st.ch >= 4 && st.city2 && !st.apt2 && S.budget > IC.FOUND_COST + 250) { const p = site(S, S.byId[st.city2], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
+  // (works are paid as they run: founding needs the site's price and some money in hand, not the whole airport)
+  if (st.ch >= 4 && st.city2 && !st.apt2 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city2], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
   if (st.apt2) starter(S, S.byId[st.apt2], 18);
 }
 module.exports = { player, site };

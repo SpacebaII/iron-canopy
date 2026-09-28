@@ -31,7 +31,7 @@ IC.avInit = function (S) {
   const neutralKs = [...new Set(ports.map(p => p.k))];
   const foreign = neutralKs.map(k => mk('foreign', cap, { country: k }));
   const port = k => ports.filter(p => !k || p.k === k);
-  const add = (al, a, b, type, n) => { if (!a || !b) return; IC.avAddRoute(S, al, a, b, type, n, true); };
+  const add = (al, a, b, type, n) => { if (!a || !b) return; IC.avAddRoute(S, al, a, b, type, IC.avFleet(S, a, b, type, n), true); };
   const portsAll = port();
   add(flag, cap, portsAll[0], 'narrow', 3);
   add(flag, cap, portsAll[1] || portsAll[0], 'narrow', 3);
@@ -69,14 +69,19 @@ IC.avCareerStart = function (S, cap) {
   if (A.airlines.length) return;
   const flag = IC.avAddAirline(S, 'flag', cap);
   const near = ports.slice().sort((a, b) => U.dist(a, cap) - U.dist(b, cap));
-  IC.avAddRoute(S, flag, cap, near[0], 'narrow', 1, true);
-  if (near[1]) IC.avAddRoute(S, flag, cap, near[1], 'narrow', 1, true);
+  // one aircraft each: the Career starts small, and traffic grows with the requests the player approves
+  const add = (al, b) => IC.avAddRoute(S, al, cap, b, 'narrow', 1, true);
+  add(flag, near[0]);
+  if (near[1]) add(flag, near[1]);
   const k = near[near.length > 2 ? 2 : 0].k, fr = IC.avAddAirline(S, 'foreign', cap, { country: k });
-  IC.avAddRoute(S, fr, cap, ports.find(p => p.k === k), 'narrow', 1, true);
+  add(fr, ports.find(p => p.k === k));
   A.reqT = 2 * 3600;
   return flag;
 };
 
+/* aircraft a route needs to fly n aircraft's worth of flights a day: a longer flight keeps each aircraft away longer
+   (the fleets were sized for flights of about 800 km; on the large map most go further) */
+IC.avFleet = (S, a, b, type, n) => { const T = IC.ACTYPES[type], d = U.dist(a, endPt(S, b)), k = (d / T.cruise + T.turn) / (8000 / T.cruise + T.turn); return Math.max(n, Math.round(n * U.clamp(k, 1, 3))); };
 /* where a route endpoint is */
 function endPt(S, e) { if (e.apt) { const ap = S.byId[e.apt]; return { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' }; } return e; }
 IC.avEnd = endPt;
@@ -381,7 +386,7 @@ function makeRequest(S) {
   const apts = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
   const W = S.world;
   const ports = W.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).filter((p, i, L) => L.findIndex(q => q.name === p.name) === i);
-  const type = U.pick(al.K.fleet);
+  let type = U.pick(al.K.fleet);
   // airlines go where passengers are waiting for seats
   const busy = L => U.wpick(L.map(x => [x, 0.3 + Math.min(3, IC.demandPull(S, x))])) || U.pick(L);
   let a = S.byId[al.hub], b;
@@ -396,6 +401,8 @@ function makeRequest(S) {
   if (al.kind === 'cargo') { if (IC.cargoPull && a.svc && IC.cargoPull(S, a) < 0.4) return; }
   else if ([a].concat(b.apt ? [S.byId[b.apt]] : []).some(x => x.svc && x.svc.seats > 0 && IC.demandPull(S, x) < 0.55)) return;
   const existing = A.routes.find(r => r.al === al.id && r.a === a.id && JSON.stringify(r.b) === JSON.stringify(b.apt ? { apt: b.apt } : b));
+  // long routes go to bigger aircraft where the airline has them
+  if (type === 'narrow' && U.dist(a, endPt(S, b)) > 25000 && al.K.fleet.includes('wide')) type = 'wide';
   const req = { id: IC.nid('rq'), al: al.id, a: a.id, b: b.apt ? { apt: b.apt } : b, type, n: al.sat > 75 && Math.random() < 0.5 ? 2 : 1, t: S.time, exp: S.time + 6 * 3600, more: !!existing };
   req.why = existing ? `wants another ${IC.ACTYPES[type].name.toLowerCase()} on ${routeName(S, existing)}` : `wants to open ${S.byId[a.id].name.replace(/ (International|Airport)$/, '')} – ${endPt(S, req.b).name.replace(/ (International|Airport)$/, '')}`;
   req.value = estValue(S, req);
@@ -541,7 +548,8 @@ function routeSafe(S, r) {
   if (r._safeT && S.time - r._safeT < 3600) return r._safe;
   const a = S.byId[r.a], b = endPt(S, r.b);
   let m = 1e9;
-  for (let i = 0; i <= 12; i++) { const x = a.x + (b.x - a.x) * i / 12, y = a.y + (b.y - a.y) * i / 12; if (IC.inHome(x, y)) m = Math.min(m, IC.hostileBorderDist(x, y)); }
+  const n = Math.max(12, Math.ceil(U.dist(a, b) / 200));   // every 20 km along the way
+  for (let i = 0; i <= n; i++) { const x = a.x + (b.x - a.x) * i / n, y = a.y + (b.y - a.y) * i / n; if (IC.inHome(x, y)) m = Math.min(m, IC.hostileBorderDist(x, y)); }
   r._safe = m > 1800; r._safeT = S.time;
   return r._safe;
 }

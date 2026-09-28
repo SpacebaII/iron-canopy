@@ -63,7 +63,7 @@ IC.LESSONS = [
       { text: () => 'While it drives and sets up, time runs at 1×: ten game seconds per real second. Press 3 to go 4× faster, Space to pause.', hint: { el: 'speed' }, done: S => S.units.some(u => u.type === 'vhf' && u.state === 'ready') },
       { text: () => 'It is on. The antenna turns once every 48 seconds, so a track only moves when the sweep passes it, then blinks while it coasts. It sees 440 km, but it cannot tell what anything is: every track is a yellow UNKNOWN. Click one.', done: S => S.sel && S.sel.kind === 'track' },
       { text: S => `The panel on the right shows everything we know: no altitude, no identity. Now deploy ${nm('mr3d')} near ${IC.cap(S).name}. It reads transponders and recognises aircraft types inside 65 km.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'mr3d' && u.state === 'ready') },
-      { text: () => 'Watch the tracks near it. Airliners squawking on their filed routes turn green: Assumed civil. Wait until four tracks have an identity.', done: S => affCount(S, ['A', 'N', 'H']) >= 4 },
+      { text: () => 'Watch the tracks near it. Airliners squawking on their filed routes turn green: Assumed civil. Wait until four tracks have an identity.', start(S) { const c = IC.cap(S), p = { x: c.x, y: c.y, name: c.name }; for (let i = 0; i < 4; i++) IC.gaLaunch(S, p, p, { progress: 0.1 + i * 0.1, xpdr: true, alt: 1.8 }); }, done: S => affCount(S, ['A', 'N', 'H']) >= 4 },
       { text: () => `Two slow tracks are crossing the border with no transponder. They will show Suspect. Let them fly into the ${nk('mr3d')}'s recognition range.`, start(S) { const cap = IC.cap(S), f = frontA(S), p = f.pts[Math.floor(f.pts.length / 2)]; for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'owa', p.x - p.nx * 150 + i * 30, p.y - p.ny * 150, { route: [{ x: cap.x, y: cap.y }], aim: { x: cap.x, y: cap.y }, target: cap, fromHostile: true, spd: 0.9 }); }, done: S => S.threats.some(t => t.type === 'owa' && t.aff === 'H') },
       { text: () => 'Recognised: attack drones, hostile. That is the whole ladder: a radar detects, a better one classifies, and the pieces add up to an identity. Lesson complete.', done: () => true, wait: 40 }
     ]
@@ -159,18 +159,21 @@ IC.LESSONS = [
     id: 'logi', title: 'Keep Them Fed', sub: 'Depots, truck companies, helicopters',
     learn: ['Depot service areas', 'Resupply priority and truck companies', 'Helicopter resupply'],
     setup(S) {
-      depot(S);
-      const t = borderTown(S);
+      const dep = depot(S);
+      // a town a long drive from the Central Depot (300–500 km, a few hours by lorry) but within a helicopter's
+      // reach, and the helicopter at the air base nearest the depot
+      const t = IC.cities(S).filter(c => !c.capital).sort((a, b) => Math.abs(U.dist(a, dep) - 4000) - Math.abs(U.dist(b, dep) - 4000))[0];
+      S.camp.town = t;
       const u = put(S, 'shorad', t, t.r + 40, t.r + 160, { emcon: 'on' });
       for (const m of u.mags) { m.mag = 0; m.store = 0; }
       S.camp.bat = u;
       S.reserve = { depot: 1 };
-      flight(S, 'heli', 'HOOK 1', fwd(S));
+      flight(S, 'heli', 'HOOK 1', IC.bases(S).filter(b => b.kind === 'airbase').sort((a, b) => U.dist(a, dep) - U.dist(b, dep))[0] || fwd(S));
       S.budget = 400;
       focus(S, t, 0.25);
     },
     steps: [
-      { text: S => `${S.camp.bat.name} near ${borderTown(S).name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
+      { text: S => `${S.camp.bat.name} near ${S.camp.town.name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
       { text: () => 'A depot serves units inside its ring, and refills from the Central Depot. Select it and set its resupply priority to First: units in its area go to the front of the queue.', done: S => S.units.some(u => u.type === 'depot' && !u.central && u.pri === 'first') },
       { text: () => 'It came with two truck companies. Add a third from its panel: more trucks, more deliveries at once.', done: S => S.units.some(u => u.type === 'depot' && !u.central && S.vehicles.filter(v => v.home === u).length >= 3) },
       { text: S => `Trucks take time. For an emergency, select ${S.camp.bat.name} and press Resupply by helicopter (H): its panel shows where the missiles come from, which helicopter and when it lands.`, done: S => S.air.some(a => a.job && a.job.to === S.camp.bat) || S.camp.bat.mags.some(m => m.mag + m.store > 0) },
@@ -217,6 +220,14 @@ IC.LESSONS = [
       // the rocket battery nearest the base (a drone flight away on the big map) shells the nearest place it can reach
       const b = fwd(S);
       const site = S.esites.filter(s => s.kind === 'rkt').sort((a, c) => U.dist(a, b) - U.dist(c, b))[0];
+      // on the large map the nearest battery may be far along the border: for the lesson it stands across the
+      // border from the base, 40 km into their side
+      const fp = S.world.fronts.flatMap(f => f.pts).sort((p, q) => U.dist(p, b) - U.dist(q, b))[0];
+      if (site && fp) for (let d = 400; d < 1200; d += 100) { const x = fp.x - fp.nx * d, y = fp.y - fp.ny * d; if (IC.inHostile(x, y)) {
+        site.x = x; site.y = y;
+        for (const tl of S.tels) if (tl.site === site) for (let k = 0; k < 20; k++) { const hx = x + U.rand(-150, 150), hy = y + U.rand(-150, 150); if (IC.inHostile(hx, hy)) { tl.x = hx; tl.y = hy; break; } }
+        break;
+      } }
       const t = S.world.villages.filter(v => v.home).concat(IC.cities(S)).sort((a, c) => U.dist(a, site) - U.dist(c, site))[0];
       S.camp.town = t;
       for (let k = 0; k < 12; k++) S.camp.sched.push({ t: S.time + 300 + k * 2400, fn: () => { if (!S.stats.telKills) IC.enemyForceOp(S, 'rkt', { x: t.x, y: t.y, ref: t.kind === 'city' ? t : null, name: t.name }); } });

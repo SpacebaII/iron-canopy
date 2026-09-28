@@ -53,7 +53,7 @@ IC.UNITS = {
             sensor: { R: 220, mast: 3, q: 'surv', acou: true, passive: true, per: 2, err: 40, idc: 'class' },
             desc: 'Microphone posts that hear drones and low cruise missiles. Cheap, silent, imprecise.' },
   ssr:    { cat: 'sensor', name: 'Secondary Surveillance Radar', short: 'SSR', mob: 'fixed', cost: 40, up: 0.6, build: 900, lead: 900, hp: 20, nato: 'SSR', civil: true,
-            sensor: { R: 2200, mast: 20, q: 'surv', ssr: true, per: 8, rot: true, err: 2, idc: 'iff', alt3d: true },
+            sensor: { R: 4000, mast: 20, q: 'surv', ssr: true, per: 8, rot: true, err: 2, idc: 'iff', alt3d: true },
             desc: 'Civil air traffic control radar. It only hears transponders: an aircraft flying with its transponder off is invisible to it.' },
   vhf:    { cat: 'sensor', name: 'VHF Surveillance Radar', short: 'VHF', mob: 'semi', cost: 110, up: 2.5, build: 480, lead: 1500, hp: 45, nato: 'EW',
             sensor: { R: 4400, mast: 20, q: 'surv', vhf: true, per: 48, rot: true, err: 45, idc: 'none', alt3d: false },

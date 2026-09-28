@@ -10,13 +10,15 @@ IC.squawk = octal;
 IC.civilInit = function (S) {
   S.civT = 60; S.gaT = 120;
   // the sky is already busy when the game starts
-  for (let i = 0; i < 18; i++) scheduleFlight(S, Math.random());
-  for (let i = 0; i < 5; i++) scheduleGA(S, Math.random());
+  for (let i = 0; i < 20; i++) scheduleFlight(S, Math.random());
+  for (let i = 0; i < 7; i++) scheduleGA(S, Math.random());
 };
 /* ---------- airliners ---------- */
 function minBorderDist(a, b) {
   let m = 1e9;
-  for (let i = 0; i <= 12; i++) { const x = a.x + (b.x - a.x) * i / 12, y = a.y + (b.y - a.y) * i / 12; if (IC.inHome(x, y)) m = Math.min(m, IC.hostileBorderDist(x, y)); }
+  // every 20 km along the way
+  const n = Math.max(12, Math.ceil(U.dist(a, b) / 200));
+  for (let i = 0; i <= n; i++) { const x = a.x + (b.x - a.x) * i / n, y = a.y + (b.y - a.y) * i / n; if (IC.inHome(x, y)) m = Math.min(m, IC.hostileBorderDist(x, y)); }
   return m;
 }
 function allowed(S, w) {
@@ -27,7 +29,7 @@ function allowed(S, w) {
   if (S.airspace === 'restricted') { if (w._safe == null) w._safe = minBorderDist(w.a, w.b) > 1800; return w._safe; }
   return true;
 }
-function crossesHome(w) { if (w._home == null) { w._home = false; for (let i = 1; i < 12; i++) if (IC.inHome(w.a.x + (w.b.x - w.a.x) * i / 12, w.a.y + (w.b.y - w.a.y) * i / 12)) { w._home = true; break; } } return w._home; }
+function crossesHome(w) { if (w._home == null) { w._home = false; const n = Math.max(12, Math.ceil(U.dist(w.a, w.b) / 200)); for (let i = 1; i < n; i++) if (IC.inHome(w.a.x + (w.b.x - w.a.x) * i / n, w.a.y + (w.b.y - w.a.y) * i / n)) { w._home = true; break; } } return w._home; }
 IC.crossesHome = crossesHome;
 
 function scheduleFlight(S, progress) {
@@ -123,15 +125,16 @@ function hostileNear(S, c) {
 
 IC.civil = function (S, dt) {
   const war = S.enemy && S.enemy.war;
-  const want = (S.airspace === 'closed' ? 6 : S.airspace === 'restricted' ? 12 : war ? 18 : 26) * (S.av ? 0.6 : 1);
+  // (flights stay longer over a larger country, so a few more at a time is about as many crossing an hour)
+  const want = (S.airspace === 'closed' ? 7 : S.airspace === 'restricted' ? 14 : war ? 21 : 30) * (S.av ? 0.6 : 1);
   const n = S.threats.filter(t => t.type === 'civ' && !t.dead && !t.tail).length;
   S.civT -= dt;
   if (S.civT <= 0) { S.civT = n < want ? U.rand(40, 120) : U.rand(200, 500); scheduleFlight(S); }
   S.gaT -= dt;
   const ga = S.threats.filter(t => t.type === 'ga' && !t.dead).length;
-  if (S.gaT <= 0) { S.gaT = ga < (war ? 2 : 6) ? U.rand(150, 400) : U.rand(600, 1200); scheduleGA(S); }
-  // airspace closure: flights in our airspace divert out of it
-  if (S.airspace === 'closed') for (const t of S.threats) if (t.d.civil && !t.dead && !t.hostileCiv && !t.diverted && IC.inHome(t.x, t.y)) { t.diverted = true; const out = S.world.crossings[0] ? S.world.crossings[0].far : { x: 0, y: 0 }; t.dest = { x: out.x, y: out.y, name: 'diversion', edge: true }; t.route = [t.dest]; t.wps = [t.dest]; t.toApt = null; t.appr = false; t.plan = { a: { x: t.x, y: t.y }, b: t.dest, cs: t.cs, pts: [{ x: t.x, y: t.y }, t.dest] }; }
+  if (S.gaT <= 0) { S.gaT = ga < (war ? 2 : 8) ? U.rand(150, 400) : U.rand(600, 1200); scheduleGA(S); }
+  // airspace closure: flights in our airspace divert out of it, by the nearest border crossing
+  if (S.airspace === 'closed') for (const t of S.threats) if (t.d.civil && !t.dead && !t.hostileCiv && !t.diverted && IC.inHome(t.x, t.y)) { t.diverted = true; const xo = S.world.crossings.slice().sort((p, q) => U.dist(p, t) - U.dist(q, t))[0], out = xo ? xo.far : { x: 0, y: 0 }; t.dest = { x: out.x, y: out.y, name: 'diversion', edge: true }; t.route = [t.dest]; t.wps = [t.dest]; t.toApt = null; t.appr = false; t.plan = { a: { x: t.x, y: t.y }, b: t.dest, cs: t.cs, pts: [{ x: t.x, y: t.y }, t.dest] }; }
   S.alertT = (S.alertT || 0) - dt;
   if (S.alertT <= 0) {
     S.alertT = 30;

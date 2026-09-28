@@ -9,9 +9,11 @@ const C = IC.C = {
   unknown: '#f2d14a', unknownFill: '#ffff80', civil: '#7fe8b0', decoy: '#8fa3b0', amber: '#f2b441', text: '#e4edf2', muted: '#9ab0bf', ink: '#0a1620', ok: '#58d39a', supply: '#e0b458',
   light: '#c9b0ff', airway: '#8fd8ff'
 };
-const cam = IC.cam = { x: 3000, y: 2250, z: 0.2, vw: 800, vh: 600 };
+const cam = IC.cam = { x: IC.WW / 3, y: IC.WH / 3, z: 0.05, vw: 800, vh: 600 };
 let ctx, cv, dpr = 1, hatchR = null;
-const cov = document.createElement('canvas'); cov.width = 600; cov.height = 450;
+// airborne early warning discs, drawn over the whole map at COVK pixels a unit
+const cov = document.createElement('canvas'); cov.width = 600; cov.height = Math.round(600 * IC.WH / IC.WW);
+const COVK = 600 / IC.WW;
 const cx2 = cov.getContext('2d');
 let view = { x0: 0, y0: 0, x1: 0, y1: 0 };
 const inView = (x, y, m) => x > view.x0 - m && x < view.x1 + m && y > view.y0 - m && y < view.y1 + m;
@@ -38,6 +40,14 @@ IC.zoomAt = function (sx, sy, f) {
   cam.z = U.clamp(cam.z * f, IC.minZoom(), IC.MAXZ);
   cam.x = wx - sx / cam.z; cam.y = wy - sy / cam.z; IC.clampCam(); cam.fly = null;
 };
+/* show the box x0..x1, y0..y1 (world units) with a margin, at once or by flying there */
+IC.frameZoom = (x0, y0, x1, y1, m) => Math.min(cam.vw / ((x1 - x0) * (m || 1.15) + 1), cam.vh / ((y1 - y0) * (m || 1.15) + 1));
+IC.frame = function (x0, y0, x1, y1, fly, m) {
+  const z = U.clamp(IC.frameZoom(x0, y0, x1, y1, m), IC.minZoom(), IC.MAXZ);
+  if (fly) IC.flyTo((x0 + x1) / 2, (y0 + y1) / 2, z); else { cam.z = z; IC.centerOn((x0 + x1) / 2, (y0 + y1) / 2); }
+};
+/* the home country's box, for framing the whole country */
+IC.homeBox = W => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x, y] of W.poly) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; };
 IC.centerOn = function (x, y) { cam.x = x - cam.vw / cam.z / 2; cam.y = y - cam.vh / cam.z / 2; IC.clampCam(); };
 /* smooth camera moves for jumps and cinematic moments */
 IC.flyTo = function (x, y, z) { cam.fly = { x, y, z: z || cam.z, t: 0 }; };
@@ -199,11 +209,16 @@ function drawLights(S, px, now, light) {
   }
   if (cam.z > 5) IC.streetLights(ctx, S, view, light, pf);
   ctx.globalAlpha = (1 - light) * 0.8;
-  for (const v of S.world.villages) {
-    if (!inView(v.x, v.y, 60)) continue;
-    const a = v.home ? 1 : 0.4;
-    ctx.fillStyle = `rgba(255,200,120,${0.5 * a})`;
-    for (const b of v.blocks) if (b.hp > 0 && (b.seed % 3) < 2) ctx.fillRect(b.x, b.y, 1.4 * Math.max(px, 0.5), 1.4 * Math.max(px, 0.5));
+  // village houses, ours bright and foreign dim, in one path each; far out a village is a few pixels, so one light
+  const far = cam.z < 0.15, d = 1.4 * Math.max(px, 0.5);
+  for (const home of [true, false]) {
+    ctx.fillStyle = `rgba(255,200,120,${home ? 0.5 : 0.2})`; ctx.beginPath();
+    for (const v of S.world.villages) {
+      if (v.home !== home || !inView(v.x, v.y, 60) || !v.blocks.length) continue;
+      if (far) { const r = Math.max(d, Math.sqrt(v.blocks.length) * 0.35); ctx.rect(v.x - r / 2, v.y - r / 2, r, r); continue; }
+      for (const b of v.blocks) if (b.hp > 0 && (b.seed % 3) < 2) ctx.rect(b.x, b.y, d, d);
+    }
+    ctx.fill();
   }
   for (const t of S.world.foreign) { if (!inView(t.x, t.y, 200)) continue; const gr = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, t.r * 1.4); gr.addColorStop(0, 'rgba(255,170,100,0.18)'); gr.addColorStop(1, 'rgba(255,170,100,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(t.x, t.y, t.r * 1.4, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -243,7 +258,7 @@ function drawCoverage(S) {
   const cc = covCanvas(S);
   if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
   // airborne early warning looks down from above the hills: a plain disc
-  cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, 600, 450); cx2.setTransform(0.05, 0, 0, 0.05, 0, 0);
+  cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, cov.width, cov.height); cx2.setTransform(COVK, 0, 0, COVK, 0, 0);
   let any = false;
   for (const s of S.sensors) {
     if (!s.air || s.air.kind !== 'aew') continue;
@@ -388,7 +403,8 @@ function drawInfra(S, px, now) {
       if (i.alert > 0) { const p = (now * 0.6) % 1; ctx.strokeStyle = `rgba(255,91,79,${0.7 * (1 - p)})`; ctx.lineWidth = 2 * px; ctx.beginPath(); ctx.arc(i.x, i.y, i.r * 0.7 + (6 + p * 34) * px, 0, 7); ctx.stroke(); }
       const nm = i.name.toUpperCase();
       const big = i.capital ? 14 : i.pop > 350 ? 12 : 10.5;
-      if (S.layers.labels || i.pop > 350) {
+      // far out, only the big cities are named, so the names stay readable
+      if ((S.layers.labels && (cam.z > 0.035 || i.pop > 150)) || i.pop > 350) {
         label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
         if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
       }
@@ -423,7 +439,7 @@ function drawInfra(S, px, now) {
     const W = S.world;
     for (const k of ['A', 'B', 'C', 'D']) {
       const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2, p = W.borderPt(a), r = Math.hypot(p.x - W.cx, p.y - W.cy);
-      const x = U.clamp(W.cx + (p.x - W.cx) * (r + 1300) / r, 900, IC.WW - 900), y = U.clamp(W.cy + (p.y - W.cy) * (r + 1300) / r, 300, IC.WH - 250);
+      const x = U.clamp(W.cx + (p.x - W.cx) * (r + 4000) / r, 2800, IC.WW - 2800), y = U.clamp(W.cy + (p.y - W.cy) * (r + 4000) / r, 900, IC.WH - 800);
       label(W.full[k].toUpperCase(), x, y, px, W.side[k] === 'hostile' ? 'rgba(255,150,130,0.4)' : 'rgba(200,210,220,0.3)', 18, 'center', 600);
     }
   }
@@ -493,7 +509,7 @@ IC.renderMini = function (S, mc, mw, mh) {
   g.drawImage(miniThumb, 0, 0, mw, mh);
   const k = mw / IC.WW;
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, mw, mh);
-  for (const i of IC.cities(S)) { g.fillStyle = '#f0e6d4'; g.fillRect(i.x * k - 1.5, i.y * k - 1.5, 3, 3); }
+  for (const i of IC.cities(S)) { const d = i.capital ? 3.5 : i.pop > 350 ? 2.5 : 1.5; g.fillStyle = '#f0e6d4'; g.fillRect(i.x * k - d / 2, i.y * k - d / 2, d, d); }
   g.fillStyle = C.friend; for (const u of S.units) g.fillRect(u.x * k - 1, u.y * k - 1, 2, 2);
   for (const t of S.threats) if (t.det && !t.dead && !t.border) { g.fillStyle = IC.AIRCOL[t.aff] || C.unknown; g.fillRect(t.px * k - 1, t.py * k - 1, 2.5, 2.5); }
   for (const s of S.esites) if (s.pk === 2 && !s.destroyed) { g.fillStyle = C.hostile; g.fillRect(s.x * k - 1.5, s.y * k - 1.5, 3, 3); }

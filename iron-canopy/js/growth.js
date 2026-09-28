@@ -71,8 +71,8 @@ IC.econInit = function (S) {
     .sort((a, b) => U.dist(b, cap) - U.dist(a, cap));
   const kinds = [];
   for (const v of cand) {
-    if (E.inds.length >= 5) break;
-    if (E.inds.some(i => U.dist(i, v) < 700)) continue;
+    if (E.inds.length >= 14) break;
+    if (E.inds.some(i => U.dist(i, v) < 1000)) continue;
     const h = W.hAt(v.x, v.y), forest = [0, 1, 2, 3].filter(k => W.forestAt(v.x + Math.cos(k * 1.57) * 40, v.y + Math.sin(k * 1.57) * 40)).length;
     let kind = h > 0.5 ? 'mine' : forest >= 2 ? 'timber' : W.farmAt(v.x, v.y) > 0.25 ? 'farm' : 'quarry';
     if (kinds.filter(k => k === kind).length >= 2) kind = ['farm', 'quarry', 'timber', 'mine'].find(k => !kinds.includes(k)) || kind;
@@ -690,7 +690,7 @@ IC.moneyWhy = function (S, k, r) {
   switch (k) {
     case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
     case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid per flight at our airports, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
-    case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${st.act === 3 ? 'a quarter of them' : 'none: they go to the Treasury'}.` : S.mode === 'campaign' ? ` The air defence gets ${U.pct(IC.QW_TAX_SHARE)} of them; the rest runs the country.` : ''}${mobTxt}`; }
+    case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${IC.STORY_TAX[st.act] ? U.pct(IC.STORY_TAX[st.act]) + ' of them' : 'none: they go to the Treasury'}.` : S.mode === 'campaign' ? ` The air defence gets ${U.pct(IC.QW_TAX_SHARE)} of them; the rest runs the country.` : ''}${mobTxt}`; }
     case 'trade': return `15% of what ${n(S.econ ? S.econ.inds.length : 0, 'remote industry', 'remote industries')} sell. Fast roads to a city and air cargo within ${IC.GROWTH.indCatch} h sell more.${st && st.act < 4 ? ' In the Career this grows with the acts, like taxes.' : ''}`;
     case 'apt': return 'Airports earn a fixed amount when no airlines are modelled.';
     case 'aid': return `Our allies pay more the more they support us (support ${Math.round(S.support)}).`;

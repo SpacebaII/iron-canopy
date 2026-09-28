@@ -11,9 +11,11 @@ const U = IC.U;
 
 IC.ACTS = {
   1: { name: 'Act I', title: 'The Director', role: 'Director of Civil Aviation', grant: 5 },
-  2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 16 },
-  3: { name: 'Act III', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 45 },
-  4: { name: 'Act IV', title: 'The Storm', role: 'Chief of the Air Force', grant: 25 }
+  // from Act II the military budget grows with the job, for a country of sixty cities: from Act II a share of the
+  // city taxes comes on top (IC.STORY_TAX)
+  2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 30 },
+  3: { name: 'Act III', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 80 },
+  4: { name: 'Act IV', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 }
 };
 /* delegates take routine work off your hands once your rank allows it */
 IC.DELEGATES = {
@@ -71,7 +73,7 @@ IC.storyForces = function (S) {
   S.budget = apts.length ? 220 : IC.CAREER_START;
   S.airspace = 'open';
 };
-IC.CAREER_START = 950;
+IC.CAREER_START = 1100;   // the national airport (about ₭700M in concrete) and running money: the airways of a large country need several radars
 IC.storyInit = function (S) {
   const W = S.world;
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: null };
@@ -216,7 +218,7 @@ function chapterGoals(S, ch) {
     g({ id: 'link', text: `Join ${nm()} to the airways, with routes to two foreign airports`, check: () => portsOnNet(S) >= 2, prog: () => `${portsOnNet(S)} foreign airports reachable on airways`,
       how: 'An airport joins the airways at the nearest fix within 120 km. Lay airways from it to the entry points: airliners then fly them in and out, and controllers know where to look.' });
     g({ id: 'radar', text: 'Put up a civil radar that sees 80% of the airways', check: () => wayCover(S) >= 0.8, prog: () => `${U.pct(wayCover(S))} of the airways seen at cruise height`,
-      how: 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 220 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.' });
+      how: 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 400 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.' });
     g({ id: 'over', text: 'Bring 15 overflights a day onto our airways', check: () => recent(st.cnt.overT, 86400, S.time) >= 15, prog: () => `${recent(st.cnt.overT, 86400, S.time)} in the last day`,
       how: 'Traffic crossing the country pays route charges: twice as much when it flies our airways, because controllers give it a service. Airways between entry points on opposite borders catch it.' });
     g({ id: 'calm', text: 'Twelve hours without a loss of separation', check: () => quietFor(S, st.cnt.losT) >= 12 * H, prog: () => `${U.dur(quietFor(S, st.cnt.losT))} so far` });
@@ -448,7 +450,7 @@ function startAct(S, n) {
     const fb = S.byId.ab_fwd;
     fb.locked = false;
     addFlight(S, 'ftr', 'VIPER 1', 'ab_fwd').st = 'ready';
-    S.budget += 150;
+    S.budget += 300;
     S.enemy.allow = new Set(['recon']);
     st.cp += 1;
     card(S, `${A.name} · ${A.title}`, U.clock(S.time), `After the collision the Prime Minister has made you ${A.role}: civil and military air traffic under one roof. You inherit ${fb.name}, mothballed for years, and VIPER flight: two fighters. Someone is testing our skies.`, 'chapter');
@@ -461,7 +463,7 @@ function startAct(S, n) {
     for (const b of S.infra.filter(i => i.kind === 'airbase')) b.locked = false;
     for (const s of S.esites) if (s.nat === 'A') s.dormant = false;
     S.enemy.allow = new Set(['recon', 'rkt']);
-    S.budget += 450;
+    S.budget += 900;
     st.cp += 2;
     // the defence ministry hands over what it has in the depots
     const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
@@ -478,7 +480,7 @@ function startAct(S, n) {
   } else if (n === 4) {
     S.enemy.allow = null;
     for (const s of S.esites) s.dormant = false;
-    S.budget += 600;
+    S.budget += 1000;
     st.cp += 2;
     st.grant = A.grant;
     S.mobil = Math.max(S.mobil, 1);
