@@ -67,7 +67,8 @@ IC.typeRange = function (type) {
   return d.gun ? d.gun.range : d.laser ? d.laser.range : d.hpm ? d.hpm.range : d.ecm ? d.ecm.range : d.sensor ? d.sensor.R : 0;
 };
 
-/* effective reach against this target: head-on shots reach furthest */
+/* effective reach against this target: its reach table at the target's height (flight.js), and head-on shots reach
+   furthest */
 function effRange(M, u, t) {
   let f = 1;
   const sp = Math.hypot(t.vx, t.vy);
@@ -76,8 +77,7 @@ function effRange(M, u, t) {
     const a = c <= 0 ? 0.55 + 0.45 * -c : 0.55 - 0.2 * c;   // c<0 closing
     f = 1 - (1 - a) * Math.min(1, sp / 2);
   }
-  if (M.range > 300 && t.alt < 1) f *= 0.72;
-  return M.range * f;
+  return IC.reachAt(M, t.alt) * f;
 }
 IC.effRange = effRange;
 
@@ -107,7 +107,7 @@ function planIntercept(u, t, M) {
     if (!vs || p.alt < M.alt[0] || p.alt > M.alt[1]) { hiAlt = Math.max(hiAlt, p.alt); continue; }
     altOk = true;
     const sl = Math.hypot(U.dxy(u.x, u.y, p.x, p.y), p.alt * 10);
-    if (sl > M.range) continue;
+    if (sl > IC.reachAt(M, p.alt)) continue;
     inReach = true;
     const fly = sl / M.spd * 1.1 + 2;
     if (fly > tau) continue;
@@ -144,8 +144,9 @@ function chooseMun(S, u, t, r, why) {
     if (!IC.hasTech(S, m.tech)) continue;
     const M = IC.MUN[m.mun];
     if (m.mag <= 0) { reason = reason || 'magazine empty'; continue; }
-    const R = effRange(M, u, t);
-    if (r > R) { reason = reason || (r <= M.range ? 'target crossing or receding: out of reach' : 'out of range'); continue; }
+    const R = effRange(M, u, t), band = IC.reachBand(M);
+    if (!R) { reason = reason || `${M.short} rounds reach ${IC.kmText(band[0])} – ${IC.kmText(band[1])} up; the target is at ${IC.kmText(t.alt)}`; continue; }
+    if (r > R) { reason = reason || (r <= IC.reachAt(M, t.alt) ? 'target crossing or receding: out of reach' : r <= M.range ? `out of reach at ${IC.kmText(t.alt)} up: ${M.short} rounds reach ${Math.round(R / 10)} km at that height` : 'out of range'); continue; }
     const tof = r / M.spd * 1.15;
     const alt = IC.altAt(t, tof);
     const c2 = t.d.move === 'bal' ? (alt >= 90 ? 'mid' : 'bal') : cls;
@@ -201,13 +202,15 @@ function fire(S, u, t, m, r, P, hoj) {
   const a = Math.atan2((P ? P.y : t.y) - u.y, (P ? P.x : t.x) - u.x);
   const R = effRange(M, u, t), cls = IC.classOf(t);
   const wx = IC.wx(S);
-  const reach = P ? 1 - 0.25 * Math.pow(P.sl / M.range, 2) : 1 - 0.45 * Math.pow(r / Math.max(1, R), 2);
+  const reach = P ? 1 - 0.25 * Math.pow(P.sl / Math.max(1, IC.reachAt(M, P.alt)), 2) : 1 - 0.45 * Math.pow(r / Math.max(1, R), 2);
   let pk = M.pk * (P ? P.vs : M.vs[cls] || 0) * reach * IC.fatigueFactor(u) * (0.6 + 0.4 * IC.ok(u, 'launch'));
   if (M.seeker === 'IR') pk *= wx.ir;
   if (t.d.evasive) pk *= t.d.evasive;
   const tr = IC.newTrail(S, M.range > 1500 ? 'big' : 'sam');
   const pip = P ? { x: P.x, y: P.y, alt: P.alt, T: S.time + P.tau, tof: P.tau } : null;
-  S.missiles.push({ id: IC.nid('m'), mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : M.range / M.spd * 1.6 + 5, src: u.name, unit: u, pk, trailT: 0, side: 'us', tr, pip, alt: 0, hoj: !!hoj });
+  S.missiles.push({ id: IC.nid('m'), mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : M.range / M.spd * 1.6 + 5, src: u.name, unit: u, pk, trailT: 0, side: 'us', tr, pip, alt: 0, hoj: !!hoj,
+    // a climb-and-descend path (flight.js): up to the top of its arc, then down onto the target
+    a0: 0, loft: IC.flyLoft(M, P ? U.dxy(u.x, u.y, P.x, P.y) : r), flown: 0 });
   for (let i = 0; i < 6; i++) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-3, 3), oy: U.rand(-3, 3), vx: U.rand(-14, 14), vy: U.rand(-14, 14), life: U.rand(0.8, 1.6), size: U.rand(3, 5), grow: 8, col: '170,178,186', a: 0.45 });
   IC.part(S, { x: u.x, y: u.y, life: 0.2, size: 8, grow: 30, col: '255,225,160', add: true, a: 0.9 });
   S.fx.flashes.push({ x: u.x, y: u.y, t: 0, r: 40, wr: 3 });
@@ -258,7 +261,7 @@ IC.defense = function (S, dt) {
         for (const j of u.jammers) {
           if (j.dead || j.inbound >= 1 || j.aff !== 'H') continue;
           const r = U.dist(u, j);
-          const m = IC.activeMags(S, u).find(m => m.mag > 0 && IC.MUN[m.mun].hoj && r <= IC.MUN[m.mun].range * 0.95 && j.alt <= IC.MUN[m.mun].alt[1]);
+          const m = IC.activeMags(S, u).find(m => m.mag > 0 && IC.MUN[m.mun].hoj && r <= IC.reachAt(m.mun, j.alt) * 0.95);
           if (!m) { hojWhy = hojWhy || `Jammed from ${U.compass(Math.atan2(j.y - u.y, j.x - u.x))}: the jammer is beyond missile reach`; continue; }
           fire(S, u, j, m, r, null, true);
           u.cool = 3 / IC.fatigueFactor(u); u.aim = Math.atan2(j.y - u.y, j.x - u.x);
@@ -408,10 +411,15 @@ IC.updateMissiles = function (S, dt) {
     const ax = t.x + t.vx * tt + (m.fooled ? m.fx : 0), ay = t.y + t.vy * tt + (m.fooled ? m.fy : 0);
     const da = U.angWrap(Math.atan2(ay - m.y, ax - m.x) - m.a), mt = 1.2 * dt;
     m.a += U.clamp(da, -mt, mt);
-    const step = m.spd * dt;
-    m.x += Math.cos(m.a) * step; m.y += Math.sin(m.a) * step;
+    // it flies in three dimensions: the climb or dive to the target's height takes some of its speed
+    if (m.alt == null) m.alt = t.alt;
+    if (m.a0 == null) { m.a0 = m.alt; m.loft = IC.flyLoft(m.M, r); m.flown = 0; }
+    const step = m.spd * dt, dzU = (IC.altAt(t, tt) - m.alt) * 10, hs = step * r / Math.max(1e-6, Math.hypot(r, dzU));
+    m.x += Math.cos(m.a) * hs; m.y += Math.sin(m.a) * hs; m.flown += hs;
+    const want = IC.flyAltWant(m.a0, IC.altAt(t, tt), m.loft, m.flown / Math.max(1e-6, m.flown + r)), vmax = step * 0.1;
+    m.alt += U.clamp(want - m.alt, -vmax, vmax);
     m.trailT -= dt;
-    if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
+    if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time, alt: m.alt }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
     // radar-guided missiles need the launching battery to keep illuminating the target
     if ((m.M.seeker === 'SARH' || m.M.seeker === 'CMD') && tt < 5 && !m.checked) {
       m.checked = true;
@@ -434,7 +442,15 @@ IC.updateMissiles = function (S, dt) {
         if (Math.random() < 0.5) { m.fooled = true; m.fx = U.rand(-8, 8); m.fy = U.rand(-8, 8); }
       }
     }
-    if (r < Math.max(6, step * 0.8)) {
+    const r2 = U.dist(m, t), hitR = Math.max(IC.HIT_R, step * 0.8);
+    if (r2 < hitR && Math.abs(m.alt - t.alt) * 10 >= hitR) {
+      // over the same point on the map, but not at the same height: it passes above or below and is spent
+      m.dead = true;
+      IC.text(S, m.x, m.y, m.alt > t.alt ? 'PASSED ABOVE' : 'PASSED BELOW', '#8fa3b0');
+      IC.emit(S, 'missHeight', { t, m, dz: m.alt - t.alt });
+      continue;
+    }
+    if (IC.dist3(m, t) < hitR) {
       m.dead = true;
       const inEnv = t.alt >= m.M.alt[0] - 2 && t.alt <= m.M.alt[1] + 5;
       let pk = m.pk;
@@ -460,9 +476,9 @@ function flyToPip(S, m, t, dt) {
   m.a = Math.atan2(P.y - m.y, P.x - m.x);
   const step = left > dt ? d / left * dt : d;
   m.x += Math.cos(m.a) * step; m.y += Math.sin(m.a) * step;
-  m.alt = P.alt * U.clamp(1 - left / P.tof, 0, 1);
+  m.alt = IC.flyAltWant(m.a0 || 0, P.alt, m.loft || 0, U.clamp(1 - left / P.tof, 0, 1));
   m.trailT -= dt;
-  if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
+  if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time, alt: m.alt }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
   if (left > 0) return;
   m.dead = true;
   const off = Math.hypot(U.dxy(t.x, t.y, P.x, P.y), (t.alt - P.alt) * 10);
