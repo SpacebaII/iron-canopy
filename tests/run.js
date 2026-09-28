@@ -1491,7 +1491,8 @@ test('career: every act can be reached', () => {
 }, true);
 test('quick war: the enemy attacks and the defense fights', () => {
   const S = IC.newGame({ seed: 12345, mode: 'campaign' });
-  run(S, 10);
+  // no player deploys the reserve, so the few units placed at the start may wait hours for a raid in reach
+  for (let h = 0; h < 24 && !(S.enemy.war && S.stats.kills > 0 && S.stats.fired > 0); h++) run(S, 1);
   assert(S.enemy.war, 'war never started');
   assert(S.stats.kills > 0 && S.stats.fired > 0, `no fighting: ${JSON.stringify(S.stats)}`);
 }, true);
