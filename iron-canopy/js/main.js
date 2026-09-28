@@ -313,6 +313,7 @@ function onAct(e) {
   if (!S) return;
   const sel = S.sel && S.sel.ref;
   const ui = IC.ui;
+  if (IC.savesAct(S, a, v)) { IC.sfx.ui('click'); return; }
   switch (a) {
     case 'begin': IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
@@ -330,7 +331,6 @@ function onAct(e) {
     case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
-    case 'restart': IC.showStart(); return;
     case 'pause': S.paused = !S.paused; S.skip = false; break;
     case 'speed': S.speed = +v; S.paused = false; S.skip = false; break;
     case 'skip': startSkip(); break;
@@ -694,6 +694,20 @@ IC.reroll = function () {
   $('startLead').textContent = 'Generating a new region…';
   setTimeout(() => generate((Math.random() * 1e9) >>> 0, 'campaign'), 30);
 };
+/* a loaded game takes over from the one on screen (saves.js) */
+IC.adopt = function (st, view) {
+  S = IC.S = st;
+  IC.resetMini();
+  IC.ui.bind(S);
+  // what the player had already read stays read: chapter cards and staff messages from before the save
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); }
+  resize();
+  $('seed').textContent = String(S.seed);
+  $('start').hidden = true; $('over').hidden = true;
+  if (view) { IC.cam.z = view.z; IC.centerOn(view.x, view.y); } else IC.frame(...IC.homeBox(S.world));
+  S.paused = true;
+  IC.ui.refresh(true);
+};
 IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
@@ -723,6 +737,8 @@ IC.ui.startPage('main');
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
+  // while a save loads, the world on screen is being replaced: nothing runs or draws
+  if (IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
@@ -747,6 +763,7 @@ function frame(now) {
     let g = gdt, guard = 0;
     const t0 = performance.now();
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(IC.MAX_STEP * (S.skip ? 2 : 1), g); IC.step(S, st); g -= st; if (performance.now() - t0 > 40) break; }
+    IC.autosaveTick(S);
   }
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);

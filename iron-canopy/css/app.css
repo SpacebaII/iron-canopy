@@ -679,3 +679,29 @@ table.t th.r{text-align:right}
 .oprow{display:grid;gap:.3rem;margin:.15rem 0 .55rem}
 .oprow>b{font-size:.86rem;font-weight:600}
 .oprow .seg{justify-self:start}
+
+/* ---------- saved games: Continue, the lists, the loading screen ---------- */
+.mode.cont{width:100%;margin-bottom:10px;grid-template-columns:auto 1fr;gap:.1rem 1rem;align-items:baseline;background:linear-gradient(160deg,rgba(88,211,154,.2),rgba(111,210,255,.05));box-shadow:inset 0 0 0 1px rgba(88,211,154,.35)}
+.mode.cont:hover{background:linear-gradient(160deg,rgba(88,211,154,.3),rgba(111,210,255,.08))}
+.mode.cont em{grid-row:1/3;font-style:normal;font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ok)}
+.mode.cont b{font-size:1.15rem;letter-spacing:.06em}
+.saves{display:grid;gap:5px;margin:.5rem 0}
+.saverow{display:flex;flex-wrap:wrap;gap:.4rem .8rem;align-items:center;justify-content:space-between;padding:.55rem .7rem;border-radius:10px;background:var(--well)}
+.saverow.auto{background:rgba(255,255,255,.035)}
+.sv-txt{display:grid;gap:.1rem;min-width:12rem;flex:1}
+.sv-txt b{font-size:1rem}
+.sv-txt span{font-size:.86rem;color:var(--muted)}
+.sv-txt small{font-family:var(--mono);font-size:.72rem;color:var(--dim)}
+.sv-acts{display:flex;gap:4px;flex-wrap:wrap}
+.btn.warn{color:#ffb6ad;background:rgba(255,91,79,.16)}
+.svnote{margin:0 0 .5rem;padding:.45rem .7rem;border-radius:9px;background:rgba(88,211,154,.12);color:#c9f3dd;font-size:.9rem}
+.svnote.bad{background:rgba(255,91,79,.14);color:#ffc9c2}
+.loading{z-index:20}
+.ld-box{width:min(30rem,100%);display:grid;gap:.5rem;padding:1.4rem 1.5rem}
+.ld-box h2{margin:0;font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:.08em;text-transform:uppercase;line-height:1.05}
+.ld-what{margin:0;color:var(--muted)}
+.ld-bar{height:8px;border-radius:4px;background:var(--well-2);overflow:hidden;margin-top:.4rem}
+.ld-bar i{display:block;height:100%;width:0;background:var(--amber);transition:width .25s var(--ease)}
+.ld-step{margin:0;font-family:var(--mono);font-size:.8rem;color:var(--muted);min-height:1.2em}
+.ld-err{display:grid;gap:.6rem;justify-items:start}
+.ld-err p{margin:0;color:#ffc9c2}
