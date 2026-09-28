@@ -40,7 +40,7 @@ const fbCorner = (i, j) => [i * FB + (U.hash(i * 3 + 1, j * 5 + 7) - 0.5) * FB *
 
 IC.buildTerrain = function (W) {
   const TS = IC.TS, CW = Math.round(IC.WW * TS), CH = Math.round(IC.WH * TS);
-  const BW = 1800, BH = Math.round(BW * IC.WH / IC.WW), cellX = IC.WW / BW, cellY = IC.WH / BH;
+  const BW = 1500, BH = Math.round(BW * IC.WH / IC.WW), cellX = IC.WW / BW, cellY = IC.WH / BH;
   // forest density on a 20-unit grid, shared by the detail tiles (which add a finer noise); worked out a chunk at a
   // time where the tiles first need it, as the whole map would take seconds and hundreds of megabytes
   const FC = 64, FU = FC * 20, FGW = Math.ceil(IC.WW / FU), FGH = Math.ceil(IC.WH / FU), FDc = new Map();
@@ -65,6 +65,12 @@ IC.buildTerrain = function (W) {
     const hx = (W.hAt(x + e, y) - W.hAt(x - e, y)) * k / (2 * e), hy = (W.hAt(x, y + e) - W.hAt(x, y - e)) * k / (2 * e);
     return (LIGHT[0] * -hx + LIGHT[1] * -hy + LIGHT[2]) / Math.sqrt(hx * hx + hy * hy + 1) - LIGHT[2];
   };
+  // which country a pixel is in (outside our border) and how wooded it is, worked out on 2 × 2 pixel blocks: the
+  // neighbours' jagged borders and the forest's noise take a while to ask about, and a pixel is 4 km here
+  const KB = new Array(Math.ceil(BW / 2) * Math.ceil(BH / 2)), KW = Math.ceil(BW / 2);
+  const FB2 = new Float32Array(KB.length).fill(NaN);
+  const forestOf = (x, y) => { const q = (y >> 1) * KW + (x >> 1); let v = FB2[q]; if (v !== v) v = FB2[q] = W.forestD(((x & ~1) + 1) * cellX, ((y & ~1) + 1) * cellY); return v; };
+  const countryOf = (x, y, wx, wy) => { if (W.inHome(wx, wy)) return 'H'; const q = (y >> 1) * KW + (x >> 1); return KB[q] || (KB[q] = W.countryAt(((x & ~1) + 1) * cellX, ((y & ~1) + 1) * cellY)); };
   for (let y = 0; y < BH; y++) {
     const wy = (y + 0.5) * cellY;
     for (let x = 0; x < BW; x++) {
@@ -75,7 +81,7 @@ IC.buildTerrain = function (W) {
       const hill = U.clamp((h - 0.3) / 0.35, 0, 1);
       const fx = hill ? (U.fbm((wx + 8) / 150 + 3, wy / 150, 3) - U.fbm((wx - 8) / 150 + 3, wy / 150, 3)) / 16 : 0, fy = hill ? (U.fbm(wx / 150 + 3, (wy + 8) / 150, 3) - U.fbm(wx / 150 + 3, (wy - 8) / 150, 3)) / 16 : 0;
       const shade = U.clamp(1 + hs(wx, wy, 40, 110) * 1.3 + hs(wx, wy, 200, 220) * 0.6 - (LIGHT[0] * fx + LIGHT[1] * fy) * 90 * hill, 0.45, 1.5);
-      const k = W.countryAt(wx, wy);
+      let k = countryOf(x, y, wx, wy); if (k === 'H' && !W.inHome(wx, wy)) k = W.countryAt(wx, wy);
       let c = ramp(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.08);
       const hsh = U.hash(x, y);
       // damp ground along the rivers is greener
@@ -85,7 +91,7 @@ IC.buildTerrain = function (W) {
         const i = Math.floor(wx / FB), j = Math.floor(wy / FB);
         c = mix(c, FIELDS[crop(U.hash(i * 31 + 7, j * 17 + 3))], fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
       }
-      const fo = W.forestD(wx, wy) - IC.FOREST_T;
+      const fo = forestOf(x, y) - IC.FOREST_T;
       if (fo > -0.03) c = mix(c, U.vnoise(wx / 7, wy / 7) > 0.5 ? [40, 62, 40] : [50, 74, 46], U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
       let r = c[0], g = c[1], b = c[2];
       if (k !== 'H') {

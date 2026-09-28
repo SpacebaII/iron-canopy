@@ -209,11 +209,16 @@ function drawLights(S, px, now, light) {
   }
   if (cam.z > 5) IC.streetLights(ctx, S, view, light, pf);
   ctx.globalAlpha = (1 - light) * 0.8;
-  for (const v of S.world.villages) {
-    if (!inView(v.x, v.y, 60)) continue;
-    const a = v.home ? 1 : 0.4;
-    ctx.fillStyle = `rgba(255,200,120,${0.5 * a})`;
-    for (const b of v.blocks) if (b.hp > 0 && (b.seed % 3) < 2) ctx.fillRect(b.x, b.y, 1.4 * Math.max(px, 0.5), 1.4 * Math.max(px, 0.5));
+  // village houses, ours bright and foreign dim, in one path each; far out a village is a few pixels, so one light
+  const far = cam.z < 0.15, d = 1.4 * Math.max(px, 0.5);
+  for (const home of [true, false]) {
+    ctx.fillStyle = `rgba(255,200,120,${home ? 0.5 : 0.2})`; ctx.beginPath();
+    for (const v of S.world.villages) {
+      if (v.home !== home || !inView(v.x, v.y, 60) || !v.blocks.length) continue;
+      if (far) { const r = Math.max(d, Math.sqrt(v.blocks.length) * 0.35); ctx.rect(v.x - r / 2, v.y - r / 2, r, r); continue; }
+      for (const b of v.blocks) if (b.hp > 0 && (b.seed % 3) < 2) ctx.rect(b.x, b.y, d, d);
+    }
+    ctx.fill();
   }
   for (const t of S.world.foreign) { if (!inView(t.x, t.y, 200)) continue; const gr = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, t.r * 1.4); gr.addColorStop(0, 'rgba(255,170,100,0.18)'); gr.addColorStop(1, 'rgba(255,170,100,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(t.x, t.y, t.r * 1.4, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
