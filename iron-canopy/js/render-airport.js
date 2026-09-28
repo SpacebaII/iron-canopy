@@ -736,11 +736,13 @@ const STAGE_I = { demo: 0, survey: 1, earth: 2, pave: 3, mark: 4, fit: 4, lights
 const LAMP = 'rgba(255,236,170,0.95)', LAMP_OFF = 'rgba(120,120,110,0.8)', TLAMP = 'rgba(90,220,120,0.95)', ELAMP = 'rgba(90,150,255,0.95)';
 /* runway edge lights along both sides, lit up to share f (the rest still dark) */
 function edgeLights(g, w, h, px, f, on) {
-  const st = Math.max(0.3, 10 * px), r = Math.max(0.012, 1.1 * px);
+  const st = Math.max(0.3, 12 * px), r = Math.max(0.012, 1.8 * px);
   for (let x = -w / 2, i = 0; x <= w / 2 + 1e-6; x += st, i++) {
     const lit = (x + w / 2) / w <= f;
-    g.fillStyle = lit ? LAMP : LAMP_OFF;
-    for (const y of [-h / 2, h / 2]) { g.beginPath(); g.arc(x, y, lit && on ? r * 1.6 : r, 0, 7); g.fill(); }
+    for (const y of [-h / 2, h / 2]) {
+      if (lit) { g.fillStyle = on ? 'rgba(255,236,170,0.22)' : 'rgba(255,236,170,0.14)'; g.beginPath(); g.arc(x, y, r * 3.5, 0, 7); g.fill(); }
+      g.fillStyle = lit ? LAMP : LAMP_OFF; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
   }
 }
 function stageRect(g, part, w, h, px, fill, runway, building) {
@@ -811,7 +813,7 @@ function drawCrew(g, S, ap, w, px, now) {
   // the front: where the paving, painting or wiring has got to; the earthworks and inspection move up and down
   const front = st.k === 'pave' || st.k === 'demo' || st.k === 'mark' || st.k === 'lights' || st.k === 'survey' ? f : 0.5 + 0.4 * Math.sin(now * 0.3 + p.x);
   const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
-  const mw = Math.max(0.1, 5 * px), mh = mw * 0.55;
+  const mw = Math.max(0.1, 7 * px), mh = mw * 0.55;
   const box = (x, y, hd, c, L) => { g.save(); g.translate(x, y); g.rotate(hd); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw * L / 2 + 0.01, -mh / 2 + 0.01, mw * L, mh); g.fillStyle = c; g.fillRect(-mw * L / 2, -mh / 2, mw * L, mh); g.restore(); };
   let fixed = 0;
   cols.forEach(([c, L, kind], i) => {

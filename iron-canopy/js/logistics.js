@@ -746,7 +746,8 @@ IC.waitText = function (S, w) {
   const left = work ? Math.max(0, work.w.cost - work.w.spent - Math.max(0, S.budget)) : w.amt - S.budget, r = IC.waitRate(S);
   if (left <= 0) return `Enough for ${w.what}.`;
   const eta = r > 0.01 ? left / r * 3600 : Infinity;
-  const when = !isFinite(eta) ? 'never at this rate: more goes out than comes in' : `about ${S.mode === 'story' ? U.months(eta) : U.dur(eta)} at this rate`;
+  const per = S.mode === 'story' ? IC.MO(S) / 3600 : 24, perW = S.mode === 'story' ? 'a month' : 'a day';
+  const when = !isFinite(eta) ? (r < -0.01 ? `never at this rate: ${U.money(-r * per)} ${perW} more goes out than comes in (the Economy room says where)` : 'never at this rate: running costs take all that comes in') : `about ${S.mode === 'story' ? U.months(eta) : U.dur(eta)} at this rate`;
   return `${U.money(left)} to go for ${w.what}, ${when}.`;
 };
 IC.waitStart = function (S, key) {

@@ -430,7 +430,8 @@ function economy() {
     <p class="hint">Hourly lines are what runs all the time. Buying and building are paid when you do them${IC.storyLock(S, 'statement') ? '' : ' and show in the month below'}.</p></div>`;
   const keys = [...new Set((wk ? wk.lines : []).concat(last ? last.lines : []).map(l => l.k))];
   const get = (st, k) => { const l = st && st.lines.find(x => x.k === k); return l ? l.v : 0; };
-  const rows = keys.sort((a, b) => get(wk, b) - get(wk, a)).map(k => `<tr><td>${esc(IC.STATEMENT[k] || k)}</td>${val(get(wk, k))}${last ? val(get(last, k)) : ''}</tr>`).join('');
+  const lname = k => { const l = (wk && wk.lines.find(x => x.k === k)) || (last && last.lines.find(x => x.k === k)); return l ? l.name : IC.STATEMENT[k] || k; };
+  const rows = keys.sort((a, b) => get(wk, b) - get(wk, a)).map(k => `<tr><td>${esc(lname(k))}</td>${val(get(wk, k))}${last ? val(get(last, k)) : ''}</tr>`).join('');
   const stmt = head + econLesson() + aptMoney() + (IC.storyLock(S, 'charges') ? '' : chargesCard()) + (IC.storyLock(S, 'statement') ? '' : `<div class="card wide"><h3>This month<em>everything paid in and out, by kind</em></h3>
     ${wk ? `<table class="t"><tr><th>${esc(wk.name)}${wk.days < IC.dpm(S) - 0.01 ? ` (${Math.max(1, Math.ceil(wk.days))} of ${IC.dpm(S)} days so far)` : ''}</th><th class="r">This month</th>${last ? `<th class="r">${esc(IC.MONTHS[last.m % 12])}</th>` : ''}</tr>${rows}
       <tr><td><b>Came in</b></td>${val(wk.income)}${last ? val(last.income) : ''}</tr><tr><td><b>Went out</b></td>${val(wk.spend)}${last ? val(last.spend) : ''}</tr><tr><td><b>Change in the treasury</b></td>${val(wk.net)}${last ? val(last.net) : ''}</tr></table>` : ''}

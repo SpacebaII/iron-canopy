@@ -49,10 +49,10 @@ console.log(`Step times: ${perS(tm.w)} ms a step of 8 s (${tm.w.n} steps), ${per
 // real minutes: IC.GS game seconds a real second at 1×; Wait runs a month in about a minute
 const real = (gs, sp) => gs / (IC.GS * sp) / 60;
 const fmt = m => m >= 120 ? `${(m / 60).toFixed(1)} h` : `${Math.round(m)} min`;
-console.log('\nTimeline'.padEnd(46) + 'starts'.padEnd(34) + 'lasts'.padEnd(14) + 'real time at 8× / 32× / Wait');
+console.log('\nTimeline'.padEnd(46) + 'starts'.padEnd(34) + 'lasts'.padEnd(14) + 'real time at 4× / 32× / Wait / a mix (a quarter at 32×, the rest waiting)');
 marks.forEach((c, i) => {
   const nx = marks[i + 1], gs = nx ? nx.t - c.t : 0;
-  console.log(`  ${c.what}`.padEnd(46) + `${U.date(c.t)} (+${mo(c.t).toFixed(1)} mo)`.padEnd(34) + (nx ? `${(gs / MO).toFixed(1)} months`.padEnd(14) + `${fmt(real(gs, 8))} / ${fmt(real(gs, 32))} / ${fmt(real(gs, IC.WAIT.speed))}` : ''));
+  console.log(`  ${c.what}`.padEnd(46) + `${U.date(c.t)} (+${mo(c.t).toFixed(1)} mo)`.padEnd(34) + (nx ? `${(gs / MO).toFixed(1)} months`.padEnd(14) + `${fmt(real(gs, 4))} / ${fmt(real(gs, 32))} / ${fmt(real(gs, IC.WAIT.speed))} / ${fmt(real(gs * 0.25, 32) + real(gs * 0.75, IC.WAIT.speed))}` : ''));
 });
 const act = n => marks.find(m => m.act === n), a2 = act(2);
 if (a2) console.log(`Act I: ${((a2.t - t0) / IC.YR(S)).toFixed(1)} years`);

@@ -7,7 +7,7 @@
 const IC = require('./headless.js');
 const QW = require('./qwplayer.js');
 const U = IC.U;
-const OVER = !!process.env.OVERBUILD;
+const OVER = typeof process !== 'undefined' && !!process.env.OVERBUILD;
 
 /* a flat site near a town, with few homes under the approaches */
 function site(S, c, rmin, rmax) {

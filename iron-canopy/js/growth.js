@@ -745,8 +745,10 @@ function closeBooks(S) {
 }
 function sumBooks(list) { const o = {}; for (const b of list) for (const k in b) o[k] = (o[k] || 0) + b[k]; return o; }
 /* statement lines from a book: income first, then spending */
-function statement(b) {
-  const lines = Object.keys(b).filter(k => Math.abs(b[k]) >= 0.05).sort((p, q) => b[q] - b[p]).map(k => ({ k, name: IC.STATEMENT[k] || k, v: b[k] }));
+function statement(b, S) {
+  // (before the war the only "air defence" the player runs is civil radar: call it that)
+  const civil = S && S.units.every(u => u.d.civil || u.type === 'ssr');
+  const lines = Object.keys(b).filter(k => Math.abs(b[k]) >= 0.05).sort((p, q) => b[q] - b[p]).map(k => ({ k, name: k === 'upAD' && civil ? 'Running costs: radars' : IC.STATEMENT[k] || k, v: b[k] }));
   const income = lines.filter(l => l.v > 0 && l.k !== 'loanIn').reduce((s, l) => s + l.v, 0);
   const spend = lines.filter(l => l.v < 0).reduce((s, l) => s + l.v, 0);
   return { lines, income, spend, net: income + spend + (b.loanIn || 0) };
@@ -780,7 +782,7 @@ IC.monthStatement = function (S, ago) {
   let b, m, days;
   if (!ago) { closeBooks(S); b = E.mb || {}; m = S.cal ? S.cal.m : 0; days = Math.min(IC.dpm(S), (S.time - (E.mT != null ? E.mT : E.t0)) / DAY); }
   else { const M = E.months && E.months[E.months.length - ago]; if (!M) return null; b = M.book; m = M.m; days = M.days; }
-  return Object.assign({ m, name: `${IC.MONTHS[m % 12]}, Year ${Math.floor(m / 12) + 1}`, days, whole: !!ago }, statement(b));
+  return Object.assign({ m, name: `${IC.MONTHS[m % 12]}, Year ${Math.floor(m / 12) + 1}`, days, whole: !!ago }, statement(b, S));
 };
 /* the year in review: money by line over the year's months, and what changed from its first month to its last */
 IC.yearReview = function (S, y) {
@@ -788,7 +790,7 @@ IC.yearReview = function (S, y) {
   const Ms = E.months.filter(M => Math.floor(M.m / 12) + 1 === y);
   if (!Ms.length) return null;
   const b = {}; for (const M of Ms) for (const k in M.book) b[k] = (b[k] || 0) + M.book[k];
-  const st = statement(b), a = Ms[0].start || Ms[0].end, z = Ms[Ms.length - 1].end;
+  const st = statement(b, S), a = Ms[0].start || Ms[0].end, z = Ms[Ms.length - 1].end;
   const ch = (x, y2, f) => x === y2 ? `${f(y2)}` : `${f(x)} → ${f(y2)}`;
   const n = v => String(Math.round(v));
   const rows = [

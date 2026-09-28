@@ -41,7 +41,7 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   await page.waitForTimeout(1500);
   const out = n => path.resolve(__dirname, `../shots/${n}.png`);
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });
-  const shot = async (n, clip, keepCard) => { if (!keepCard) await page.evaluate(() => { document.getElementById('cine').hidden = true; IC.ui.cineShown = IC.S.camp.cards.length; }); await page.waitForTimeout(700); await page.screenshot({ path: out(n), clip }); console.log('saved', out(n)); };
+  const shot = async (n, clip, keepCard) => { if (!keepCard) await page.evaluate(() => { document.getElementById('cine').hidden = true; IC.ui.cineShown = IC.S.camp.cards.length; }); await page.waitForTimeout(700); await page.screenshot(clip ? { path: out(n), clip } : { path: out(n) }); console.log('saved', out(n)); };
   const run = src => page.evaluate(`(async () => { const S = IC.S, ui = IC.ui; ${src}; ui.refresh(true); })()`);
 
   // the top bar at a busy moment of the day
@@ -61,9 +61,9 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   await run(`document.getElementById('cine').hidden = true; ui.cineShown = S.camp.cards.length; ui.waitPick = true`);
   await shot('cal-wait-pick', { x: 0, y: 0, width: 1440, height: 520 });
   await run(`for (const q of S.av.requests.slice()) IC.avDecide(S, q.id, !IC.avReqBlock(S, q)); for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0);
-    const t = IC.waitTargets(S).filter(x => x.sum)[2]; IC.waitStart(S, t.key); S.paused = false; ui.waitPick = false`);
-  await page.waitForTimeout(4000);
+    const t = IC.waitTargets(S).filter(x => x.sum)[2]; IC.waitStart(S, t.key); S.paused = true; ui.waitPick = false`);
   await shot('cal-wait', { x: 0, y: 0, width: 1440, height: 260 });
+  await run(`S.paused = false`);
   // how fast the wait really runs here, with this map: game seconds a real second, and frames a second
   const perf = await page.evaluate(async () => {
     const S = IC.S, again = () => { if (!S.wait) { for (const q of S.av.requests.slice()) IC.avDecide(S, q.id, false); const t = IC.waitTargets(S).find(x => x.sum && x.amt > S.budget + 900); IC.waitStart(S, t.key); } };
@@ -75,7 +75,8 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
   });
   console.log(`wait: ${perf.gs} game s a real second, a month in about ${perf.monthS} s, ${perf.fps} frames a second, ${perf.flights} flights in the air of ${perf.tails} aircraft${perf.waiting ? '' : ' (the wait stopped during the measure)'}`);
   // a second runway at the capital, 2 km beside the first, through its stages, close in
-  await run(`IC.waitStop(S); S.paused = true; S.budget = Math.max(S.budget, 4000);
+  // (from the next morning, so the stages are built in daylight)
+  await run(`IC.waitStop(S); S.paused = true; S.budget = Math.max(S.budget, 4000); S.time = Math.ceil((S.time - 6 * 3600) / 86400) * 86400 + 6 * 3600;
     const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway'), c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw);
     let p = null; for (const k of [-20, 20, -24, 24, -28, 28]) { const x = c.x - d.y * k, y = c.y + d.x * k; p = IC.aptPlanRunway(S, ap, { x: x - d.x * 8, y: y - d.y * 8 }, { x: x + d.x * 8, y: y + d.y * 8 }, 'Runway 2', { mat: 'conc' }); if (p) break; }
     window.__p = p; if (p) { const m = IC.rwAt(p, 0.5); IC.cam.fly = null; IC.cam.z = 55; IC.centerOn(m.x, m.y); }`);
