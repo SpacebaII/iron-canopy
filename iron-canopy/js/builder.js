@@ -49,7 +49,8 @@ const CONVOY = 600;     // lorries leave the supplier every ten minutes
 const LORRY = 0.25;     // 90 km/h on the road
 /* what a building takes to put up, in lorry loads */
 const BLD_NEED = { terminal: { conc: 14, steel: 5, area: true }, cargo: { conc: 10, steel: 5, area: true }, hangar: { conc: 12, steel: 8 }, has: { conc: 25, steel: 6 }, alert: { conc: 10, steel: 3 },
-  fuel: { conc: 3, steel: 6 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 6, steel: 3 }, fire: { conc: 4, steel: 2 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 } };
+  fuel: { conc: 3, steel: 6 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 6, steel: 3 }, fire: { conc: 4, steel: 2 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 },
+  deice: { conc: 6, steel: 1 }, fuelpad: { conc: 3, steel: 2 } };
 IC.partNeed = function (ap, p) {
   const out = {};
   if (IC.PAVED[p.kind]) {
@@ -519,10 +520,67 @@ function snapCorner(ap, m, p, tol, free) {
     if (!q.w || !q.h || q.kind === 'runway' || q.kind === 'taxi') continue;
     for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const c = IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2); if (U.dist(c, p) < tol) return { kind: 'corner', x: c.x, y: c.y }; }
   }
+  // then onto the edge of a taxiway or an apron, so a new apron or terminal meets it without a gap or an overlap
+  if (!free) {
+    let best = null, bd = tol;
+    for (const e of edgesNear(ap, p, tol + 0.3)) {
+      const L = U.dist(e.a, e.b); if (L < 0.1) continue;
+      const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = (p.x - e.a.x) * ux + (p.y - e.a.y) * uy;
+      if (t < -0.05 || t > L + 0.05) continue;
+      const off = (p.x - e.a.x) * -uy + (p.y - e.a.y) * ux, side = Math.sign(off) || 1, d = Math.abs(Math.abs(off) - e.half);
+      if (d < bd) { bd = d; best = { kind: 'edge', x: e.a.x + ux * t - uy * side * e.half, y: e.a.y + uy * t + ux * side * e.half, what: e.what }; }
+    }
+    if (best) return best;
+  }
   const r = { x: ap.x, y: ap.y, a: m.rot }, l = IC.rectLocal(r, p), g = free ? 0.01 : 0.05;
   const q = IC.rectWorld(r, Math.round(l.x / g) * g, Math.round(l.y / g) * g);
   return { kind: 'free', x: q.x, y: q.y };
 }
+/* buildings face the nearest taxiway or apron edge, set back by a gap, and get a way in: aircraft buildings a short
+   taxiway to their door, the others a service road. gap: metres of apron or verge between pavement and building /100 */
+IC.SNAP_GAP = { hangar: 0.3, has: 0.3, deice: 0.25, fuelpad: 0.2, fire: 0.3, tower: 0.35, fuel: 0.45, hydrant: 0.35, atc: 0.6, gradar: 0.5, ammo: 0.8 };
+const STUB = k => k === 'hangar' || k === 'has' || !!IC.APART[k].pad;
+/* the pavement edges near a point: taxiway centrelines (with their half width) and apron edges */
+function edgesNear(ap, p, R) {
+  const out = [];
+  for (const q of ap.parts) {
+    if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) {
+      const a = ap.nodes[q.nodes[i - 1]], b = ap.nodes[q.nodes[i]];
+      if (a && b && U.segDist(p.x, p.y, a.x, a.y, b.x, b.y) < R) out.push({ a, b, half: q.w / 2, part: q, what: 'taxiway' });
+    } else if (q.kind === 'apron' && IC.partDist(ap, q, p) < R) {
+      const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2));
+      for (let i = 0; i < 4; i++) out.push({ a: c[i], b: c[(i + 1) % 4], half: 0, part: q, what: 'apron', outN: IC.rectWorld(q, 0, 0) });
+    }
+  }
+  return out;
+}
+/* where a building goes when it snaps: facing the nearest edge within reach, slid along it by the cursor */
+IC.bldSnapBuilding = function (ap, kind, p) {
+  const D = IC.APART[kind], gap = IC.SNAP_GAP[kind];
+  if (gap == null || !D) return null;
+  const w = D.w || (D.r || 0.1) * 2, h = D.h || (D.r || 0.1) * 2;
+  let best = null;
+  for (const e of edgesNear(ap, p, h + gap + 1.2)) {
+    const L = U.dist(e.a, e.b); if (L < 0.2) continue;
+    const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L;
+    const t = U.clamp((p.x - e.a.x) * ux + (p.y - e.a.y) * uy, Math.min(L / 2, w / 2), Math.max(L / 2, L - w / 2));
+    const fx = e.a.x + ux * t, fy = e.a.y + uy * t, off = (p.x - fx) * -uy + (p.y - fy) * ux;
+    let side = Math.sign(off) || 1;
+    // an apron's building stands outside it
+    if (e.outN) { const o = (e.outN.x - fx) * -uy + (e.outN.y - fy) * ux; side = -Math.sign(o) || side; }
+    // the edge whose building would stand nearest the cursor (so a second click on it picks the same one)
+    const nx = -uy * side, ny = ux * side, dist = e.half + gap + h / 2, d = U.dxy(p.x, p.y, fx + nx * dist, fy + ny * dist);
+    if (best && d >= best.d) continue;
+    best = { d, x: fx + nx * dist, y: fy + ny * dist, a: Math.atan2(uy, ux), foot: { x: fx, y: fy }, edge: { x: fx + nx * e.half, y: fy + ny * e.half }, face: { x: fx + nx * (e.half + gap), y: fy + ny * (e.half + gap) }, door: { x: fx + nx * (e.half + gap - 0.05), y: fy + ny * (e.half + gap - 0.05) }, what: e.what, part: e.part };
+  }
+  if (!best) return null;
+  const spec = { kind, x: best.x, y: best.y, a: best.a };
+  const specs = [spec];
+  if (STUB(kind)) specs.push({ kind: 'taxi', pts: [best.door, best.what === 'apron' ? best.edge : best.foot], lane: true, stub: true });
+  else spec.link = [{ x: best.face.x, y: best.face.y }, { x: best.edge.x, y: best.edge.y }];
+  return { specs, snap: { kind: 'edge', x: best.x, y: best.y, what: best.what }, text: `faces the ${best.what}${STUB(kind) ? `, with a ${Math.round(U.dist(best.door, best.foot) * 100)} m taxiway to its door` : ', with a service road'}` };
+};
+
 const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1 };
 const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1 };
 IC.bldIsArea = t => !!AREA_TOOLS[t];
@@ -592,10 +650,11 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     return out;
   } else {
     // a building: one click places it, a second on the same spot builds it
-    const s = snapCorner(ap, m, hv, tol * 0.3, free); out.snap = s;
+    const s = snapCorner(ap, m, hv, tol * 0.3, free);
     const at = pts.length && U.dist(pts[0], s) < Math.max(tol, 0.05) ? pts[0] : s;
-    out.pts = [at];
-    out.specs.push({ kind: t, x: at.x, y: at.y, a: m.rot });
+    const sb = !free && t !== 'ils' && IC.bldSnapBuilding(ap, t, at);
+    if (sb) { out.snap = sb.snap; out.pts = [sb.snap]; out.specs.push(...sb.specs); out.text.push(sb.text); }
+    else { out.snap = s; out.pts = [at]; out.specs.push({ kind: t, x: at.x, y: at.y, a: m.rot }); }
   }
   // cost, time, clearance and effect of everything in the plan
   let homes = 0, comp = 0, roads = 0, res = 0; const clrAll = [];
@@ -725,7 +784,7 @@ IC.bldPlanSpecs = function (S, ap, specs) {
     let p = null;
     if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp }); }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

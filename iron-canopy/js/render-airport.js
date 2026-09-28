@@ -122,6 +122,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = IC.partZone(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
   if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) drawStand(g, s, px, z, marks, fine);
+  // service roads from buildings to the pavement they face
+  if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings
   for (const p of parts) {
     if (['runway', 'taxi', 'apron'].includes(p.kind)) continue;
@@ -358,7 +360,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.restore();
     return;
   }
-  const col = { terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
+  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
@@ -375,6 +377,15 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   } else if (p.kind === 'hangar') {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
     if (full && !dead) { g.fillStyle = 'rgba(255,255,255,0.1)'; for (let x = -w / 2; x < w / 2; x += 0.06) g.fillRect(x, -h / 2, 0.02, h); g.fillStyle = 'rgba(30,34,38,0.9)'; g.fillRect(-w * 0.45, (p.doorSide || -1) * h / 2 - 0.012, w * 0.9, 0.024); }
+  } else if (IC.APART[p.kind].pad) {
+    // a service pad: concrete with its markings, a pump or the de-icing rigs
+    g.fillStyle = CONC2; g.fillRect(-w / 2, -h / 2, w, h);
+    if (full && !dead) {
+      g.strokeStyle = p.kind === 'deice' ? 'rgba(90,200,140,0.9)' : YEL; g.lineWidth = Math.max(0.008, 0.7 * px); g.strokeRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h - 0.06);
+      g.beginPath(); g.moveTo(0, -h / 2); g.lineTo(0, h * 0.2); g.stroke();
+      if (p.kind === 'deice') { g.fillStyle = 'rgb(236,120,40)'; for (const sx of [-1, 1]) g.fillRect(sx * w * 0.42 - 0.03, -0.03, 0.06, 0.06); }
+      else { g.fillStyle = 'rgb(200,60,50)'; g.fillRect(w * 0.3, h * 0.25, 0.05, 0.04); }
+    }
   } else if (p.kind === 'tower') {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
     if (full && !dead) { g.fillStyle = 'rgba(40,70,90,0.95)'; g.beginPath(); g.arc(0, 0, w * 0.34, 0, 7); g.fill(); g.fillStyle = night ? 'rgba(170,230,255,0.9)' : 'rgba(150,200,220,0.6)'; g.beginPath(); g.arc(0, 0, w * 0.22, 0, 7); g.fill(); }
@@ -406,7 +417,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   } else if (hp < 0.6 && full) { g.fillStyle = 'rgba(20,14,10,0.5)'; g.beginPath(); g.arc(w * 0.15, -h * 0.1, Math.min(w, h) * 0.35, 0, 7); g.fill(); }
   if (hp < 0.5 && z > 0.8 && z < 6) { g.strokeStyle = dead ? IC.C.hostile : IC.C.amber; g.lineWidth = 1.2 * px; if (p.r) { g.beginPath(); g.arc(0, 0, p.r + 3 * px, 0, 7); g.stroke(); } else g.strokeRect(-w / 2 - 2 * px, -h / 2 - 2 * px, w + 4 * px, h + 4 * px); }
   g.restore();
-  if (p.linked === false && (p.kind === 'hangar' || p.kind === 'has' || p.kind === 'alert') && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
+  if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
 }
 function drawLights(g, ap, px, z, light, now) {
   const k = U.clamp((0.55 - light) / 0.4, 0, 1);
@@ -592,7 +603,7 @@ IC.drawBuildGhost = function (g, S, px) {
     g.strokeStyle = c2; g.lineWidth = 1.5 * px; g.beginPath();
     if (sn.kind === 'free') { g.moveTo(sn.x - 5 * px, sn.y); g.lineTo(sn.x + 5 * px, sn.y); g.moveTo(sn.x, sn.y - 5 * px); g.lineTo(sn.x, sn.y + 5 * px); } else g.arc(sn.x, sn.y, 5 * px, 0, 7);
     g.stroke();
-    const tag = { node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: 'corner' }[sn.kind] || (sn.ang != null ? `${(sn.ang + 360) % 180}° to the runway` : '');
+    const tag = { node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: 'corner', edge: sn.what ? 'against the ' + sn.what : 'edge' }[sn.kind] || (sn.ang != null ? `${(sn.ang + 360) % 180}° to the runway` : '');
     if (tag) lbl(g, tag, sn.x, sn.y + 16 * px, px, sn.kind === 'free' ? IC.C.muted : IC.C.ok, 8.5, 'center', 600);
   }
   // cost and what it does, beside the cursor

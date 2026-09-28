@@ -8,6 +8,14 @@
 const U = IC.U;
 const SNAP_RWY = 0.2, SNAP_APRON = 0.16;
 
+/* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
+IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
+IC.APART.fuelpad = { name: 'Fuel stand', w: 0.5, h: 0.4, cost: 12, build: 500, hp: 20, pad: true, desc: 'A paved stand by the fuel farm: small aircraft and those on remote stands taxi here to refuel instead of waiting for a truck.' };
+if (!IC.APART_ORDER.includes('deice')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('hydrant') + 1, 0, 'fuelpad', 'deice');
+/* parts aircraft taxi into through a door: shelters, hangars and service pads */
+const DOOR = k => k === 'hangar' || k === 'has' || k === 'alert' || !!(IC.APART[k] && IC.APART[k].pad);
+IC.aptDoor = DOOR;
+
 /* ---------- geometry ---------- */
 const rwLen = rw => U.dist(rw.a, rw.b);
 const rwDir = rw => { const L = rwLen(rw) || 1; return { x: (rw.b.x - rw.a.x) / L, y: (rw.b.y - rw.a.y) / L }; };
@@ -238,7 +246,7 @@ IC.aptGraph = function (ap) {
   // shelters join the network through the nearest taxi point in front of their doors
   const allN = Object.values(ap.nodes);
   for (const p of parts) {
-    if (p.kind !== 'hangar' && p.kind !== 'has' && p.kind !== 'alert') continue;
+    if (!DOOR(p.kind)) continue;
     if (!p.door) {
       // the doors face whichever side has taxiway nearby
       const sides = [toWorld(p, 0, -p.h / 2 - 0.05), toWorld(p, 0, p.h / 2 + 0.05)];
@@ -251,6 +259,8 @@ IC.aptGraph = function (ap) {
     for (const n of allN) { if (!adj.get(n.id).length && !(n.on && n.on.part === p.id)) continue; const d = U.dist(n, p.door); if (d < bd) { bd = d; best = n; } }
     if (p.kind === 'alert') for (const n of onPart.get(p.id) || []) edge(nid, n.id, 'apron', p.id, 0, 0.06, 0, 0);
     if (best) edge(nid, best.id, 'apron', p.id, 0, 0.05, 0, 0);
+    // a door that opens straight onto an apron: in through the apron's taxiway joins
+    else for (const a of parts) if (a.kind === 'apron' && rectDist(a, p.door) < 0.12) for (const n of onPart.get(a.id) || []) if (n.on.kind === 'apron') edge(nid, n.id, 'apron', a.id, 0, 0.05, 0, 0);
   }
   // each runway's nodes in order: where aircraft can get off (exit) and on (entry)
   for (const [id, on] of rwn) {
@@ -465,7 +475,7 @@ IC.aptStats = function (S, ap) {
   }
   const unlinked = stands.filter(s => !s.linked && s.hp > 0).length;
   if (unlinked) st.warn.push(`${unlinked} stand${unlinked > 1 ? 's are' : ' is'} not connected to a runway.`);
-  for (const p of ap.parts) if ((p.kind === 'hangar' || p.kind === 'has' || p.kind === 'alert') && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways.`); }
+  for (const p of ap.parts) if (DOOR(p.kind) && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds || 0; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways.`); }
   const tower = alive('tower').length > 0;
   const radar = alive('atc').length > 0 || !!(S && S.units.some(u => u.radarOn && u.d.sensor && !u.d.sensor.passive && U.dist(u, ap) < 900));
   st.tower = tower; st.radar = radar;
@@ -939,8 +949,8 @@ IC.updateBases = function (S, dt) {
         const before = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
         if (w.part.kind === 'runway' || w.part.kind === 'apron' || w.part.kind === 'alert') resolveFor(b, w.part);
-        if (['apron', 'hangar', 'has', 'alert'].includes(w.part.kind)) IC.aptAutoJoin(b, w.part);
-        if (w.part.kind === 'taxi') for (const q of b.parts) if (q.built && ['apron', 'hangar', 'has', 'alert'].includes(q.kind)) IC.aptAutoJoin(b, q);
+        if (w.part.kind === 'apron' || DOOR(w.part.kind)) IC.aptAutoJoin(b, w.part);
+        if (w.part.kind === 'taxi') for (const q of b.parts) if (q.built && (q.kind === 'apron' || DOOR(q.kind))) IC.aptAutoJoin(b, q);
         IC.aptExtent(b); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.kind === 'runway' ? w.part.name || 'runway' : IC.APART[w.part.kind].name.toLowerCase()} complete.`, w.part.x != null ? w.part : b); IC.emit(S, 'aptBuilt', { ap: b, part: w.part });
         b.dirty = true; IC.bldOpened(S, b, w, before); }
       else {
@@ -1063,7 +1073,7 @@ function nodeFor(ap, s) {
 }
 /* an apron or shelter built beside an existing taxiway joins it where they touch */
 IC.aptAutoJoin = function (ap, part) {
-  const shelter = part.kind === 'hangar' || part.kind === 'has';
+  const shelter = part.kind === 'hangar' || part.kind === 'has' || !!IC.APART[part.kind].pad;
   const door = shelter ? [toWorld(part, 0, -part.h / 2 - 0.05), toWorld(part, 0, part.h / 2 + 0.05)] : null;
   for (const q of ap.parts) {
     if (q.kind !== 'taxi' || q === part) continue;

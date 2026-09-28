@@ -812,6 +812,35 @@ const blind = S => {
   IC.step(S, 0.5); S.asp.scanT = 0; IC.step(S, 0.5);
 };
 /* a point d units from p, on the side away from the map edge */
+/* ---------- airport life: buildings that fit together, aprons, services, landside ---------- */
+test('airport life: a hangar placed near a taxiway snaps to it, faces it and connects', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap]; S.budget = 5000;
+  const P = (x, y) => IC.aptLocal(cap, x, y);
+  S.mode2 = IC.bldMode(S, cap, 'hangar');
+  // 80 m beyond the edge of the parallel taxiway, not lined up with anything
+  IC.clickWorld(P(6, 1.2), 0); IC.clickWorld(P(6, 1.2), 0);
+  const h = cap.parts.filter(p => p.kind === 'hangar').pop();
+  assert(h && !h.built, 'no hangar planned');
+  const stub = cap.parts.filter(p => p.kind === 'taxi').pop();
+  finishWorks(S, cap); IC.aptStats(S, cap);
+  const da = Math.abs(U.angWrap(h.a - cap.rwyA)) % Math.PI;
+  assert(da < 0.01 || Math.PI - da < 0.01, `the hangar is turned ${(da * 180 / Math.PI).toFixed(0)}° from the taxiway`);
+  assert(h.linked, 'the hangar is not connected to the taxiways');
+  assert(IC.partMeasure(cap, stub) < 0.6, `its connecting taxiway is ${U.km(IC.partMeasure(cap, stub))} long`);
+  // and a departure can start from its door
+  assert(IC.gopsCanDepart(S, cap, 'narrow', h.id + ':d'), 'no route from the hangar door to a runway');
+});
+test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
+  const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);
+  const inside = P(-5, -4);
+  assert(IC.aptInFence(cap, inside), 'the test point is not inside the fence');
+  assert(IC.canPlace(S, 'ssr', inside.x, inside.y), 'a beacon cannot be placed inside the airport');
+  const on = P(0, 0.3);
+  assert(!IC.canPlace(S, 'ssr', on.x, on.y), 'a beacon can be placed on the runway');
+});
+
 const off = (p, a, d) => ({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d });
 const pair = (S, c, alt) => {
   // two airliners 40 km apart, flying head on at the same height, 60 km from the capital
