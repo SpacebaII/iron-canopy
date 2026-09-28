@@ -1,98 +1,100 @@
-# 20 Altitude everywhere, airspace classes and real air traffic control
+# 20 Height in the simulation, airspace classes and air traffic control
 
-Wave 6. **Claude Fable 5.1.** Needs wave 5 (16, 17, 18) merged. Runs in parallel with 19, 21 and 22.
+Wave 6. Needs wave 5 merged. Runs in parallel with 19, 21 and 22.
+
+Iron Canopy is a management and strategy game, closer to an air traffic control game than to a flight simulator. Everything below is a game mechanic with simple, readable rules and made-up equipment. We want the right *feel*, not engineering accuracy.
 
 ## What the owner asked for
 
-> "I'm unsure if altitude is modelled properly. A missile can be directly where the other missile is, but it might be tens of thousands of feet different in altitude. We need that modelled for the missiles and also air traffic."
+> "I'm unsure if altitude is modelled properly. Two things can be at the same spot on the map but tens of thousands of feet apart in height. We need that modelled, for air traffic and for the air defence."
 
-> "That's where the player will really get into making airspaces for an individual airport, and different shelves or corridors: class A, B, C, D, E, G. Uncontrolled can be general though."
+> "That's where the player will really get into designing the airspace for an individual airport, with different shelves and corridors: class A, B, C, D, E, G. Uncontrolled can be general though."
 
-Earlier the owner also asked for "real air traffic control" to be built on Fable.
+The owner also asked for real air traffic control.
 
 ## What is there now
 
-- Threats have an altitude in km (`t.alt`), set by simple profiles in `threats.js`.
-- Engagement checks the target's altitude against a missile's band (`M.alt`), and the kill check (`defense.js`) uses the 3D miss distance.
-- **Our missiles do not really fly in 3D:** `m.alt` is a straight line from 0 to the aim point.
-- Airliners and light aircraft have altitudes. `airspace.js` has fixes, airways, radar cover by altitude, control zones (`ctr`, `tma`) and controllers who keep flights apart. But **airspace has no classes, no shelves and no vertical separation rules.**
+- Every flying object has a height in km (`t.alt`).
+- The air defence checks whether a target's height is inside a system's band (`M.alt`).
+- The interceptor tokens the defence fires (`S.missiles`) do not really change height: `m.alt` simply ramps from 0 to the target's height.
+- `airspace.js` has fixes, airways, radar cover by height, control zones (`ctr`, `tma`) and controllers who keep flights apart. But airspace has no classes, no shelves and no vertical spacing rules.
 
 ## Goal
 
-**1. Altitude is real for everything that flies.**
-- Our missiles fly a 3D path:
-  - boost, climb or loft, then glide or dive to the intercept;
-  - speed and turning lost with altitude and time;
-  - the altitude of the intercept point matters.
-- A missile that passes over a cruise missile 8 km above it misses. Proximity fuzes work on 3D distance.
-- Enemy weapons fly believable profiles:
-  - cruise missiles terrain-following, pop-up at the end;
-  - drones low and slow;
-  - ballistic arcs;
-  - glide vehicles that pull up and dive.
-- Radar sees by altitude, as now with the horizon and hills. A launcher's reach depends on target altitude: a table per munition that the player can see in the unit's panel as a side view of its envelope.
-- **Show altitude:**
-  - tags give flight level or height in feet for aircraft, km for missiles;
-  - a side view (vertical profile) opens for the selected track or airport, showing what is above what;
-  - a stack of tracks at one point on the map must be clearly several objects at different heights.
+**1. Height matters everywhere on the map.**
+- **Interceptors (air defence):**
+  - The interceptor tokens follow a simple climb-and-descend curve to their meeting point, instead of a straight ramp.
+  - They count as a hit only when they reach the target's height as well as its position. Two tokens at the same map point but far apart in height do not meet.
+  - Each system's reach shrinks against targets that are very low or far away. Keep this as a small table per system, which the unit's panel shows as a side-view chart ("reaches 2–25 km up, out to 80 km").
+- **Enemy tokens:** each type keeps a simple height profile that the player can learn: low and slow, high and fast, or a high arc. Most of this exists already; make it consistent and visible.
+- **Radar:** radar keeps seeing by height, with the horizon and hills, as now.
+- **Show height:**
+  - Tags give flight level or feet for aircraft, and km for everything else.
+  - A **side view** (vertical profile) opens for the selected track or airport and shows what is above what.
+  - Objects stacked at one point on the map must read clearly as several objects at different heights.
 
 **2. Airspace classes the player designs.** For each airport, the player shapes controlled airspace in 3D:
-- a control zone from the surface up (class D, or C for busier airports);
-- a terminal area as shelves stacked like a wedding cake: each ring has its own floor and ceiling (class C or B);
-- corridors and airways (class A above a transition level, E below);
-- everything else is uncontrolled (G), kept general.
-- Military areas: restricted and danger areas by altitude band, and air defence engagement zones by altitude, so a SAM zone can sit under a civil airway.
+- a control zone from the ground up (class D, or C for busier airports);
+- a terminal area built as shelves, like an upside-down wedding cake, where each ring has its own floor and ceiling (class C or B);
+- corridors and airways: class A above a transition level, E below;
+- everything else uncontrolled (G), kept simple;
+- military areas: restricted and danger areas by height band, and an air defence zone by height band, so an air defence area can sit under a civil airway.
 
 Classes mean something, in plain words on screen:
 - who needs a clearance;
-- radar and radio required;
+- whether radar and radio are required;
 - speed limits below a level;
-- how controllers separate traffic (vertical 1,000 ft or horizontal 5 nm in radar cover, wider without it);
-- light aircraft (flying by sight) stay out unless cleared.
+- how controllers keep traffic apart: 1,000 ft vertically or 5 nm sideways in radar cover, more without it;
+- light aircraft flying by sight stay out unless cleared.
 
-**Editor:**
-- Draw shelves on the map, with a side view to set floors and ceilings.
-- Presets per airport size: small field, regional, capital hub.
-- A warning when a shelf is too low for the approaches, or too big for the controllers.
-- Costs: controllers per sector, radar needed.
+The editor:
+- draw shelves on the map, with a side view to set floors and ceilings;
+- presets per airport size: small field, regional, capital hub;
+- a warning when a shelf is too low for the approaches, or too big for the controllers;
+- costs: controllers per sector, and the radar needed.
 
-**3. Real air traffic control:**
-- Sectors with controllers: tower, approach, area. Each has a workload that depends on traffic, class and radar.
-- Controllers assign levels and make aircraft step-climb. They vector and speed-control arrivals into a sequence, build holding stacks at levels, and hand flights from sector to sector.
-- Standard arrival and departure lanes per runway direction, which the player can draw or accept.
-- The player can take a flight and give it a level, heading or hold, and set sector rules.
-- Losses of separation are counted in 3D, with a cause. The number of near misses depends on design, staffing and radar.
-- Link to task 15's runway rules: the approach sequence feeds the arrival gap.
+**3. Real air traffic control.**
+- Sectors with controllers (tower, approach, area), each with a workload that depends on traffic, class and radar.
+- Controllers assign levels and step-climbs, and put arrivals in sequence with headings and speeds. They build holding stacks at different levels and hand flights from sector to sector.
+- Standard arrival and departure lanes for each runway direction, which the player can draw or accept.
+- The player can take a flight and give it a level, a heading or a hold, and can set sector rules.
+- Losses of spacing are counted in 3D, each with a cause. Near misses depend on the design, the staffing and the radar.
+- This links to task 15's runway rules: the approach sequence feeds the arrival gap.
 
 ## Scope
 
 In:
-- the flight profiles and altitude in `threats.js`;
-- missile flight and the 3D kill check in `defense.js`, only those parts;
+- height profiles in `threats.js`;
+- the interceptor path and the hit check in `defense.js` (only those parts);
 - `airspace.js`, and routing, levels and ATC in `aviation.js` and `civil.js`;
-- altitude tags and the side view: a new file `render-airspace.js` and a new file for the side-view panel;
+- height tags and the side view: a new `render-airspace.js` and a new file for the side-view panel;
 - the airport panel's Airspace tab, in its own function in `inspector.js`.
 
 Out:
-- The enemy's choices (19), our aircraft and air combat (21, though you provide the 3D flight and envelope code they call), the 3D replay (22), runway rules (15, merged).
+- The enemy's choices (19).
+- Our aircraft and air combat (21). You provide the height and reach helpers they call; see below.
+- The 3D replay (22).
+- Runway rules (15, merged).
+
+**Shared helpers for task 21:** early on, put the interceptor path and reach-table helpers in a new file (for example `iron-canopy/js/flight.js`, added to `index.html` and `headless.js`). Document them at the top and push, so task 21 can use them for its fighters' weapons.
 
 ## Performance
 
 - The step stays well under 1 ms with 300 flights in the air and a raid.
-- Separation checks use a spatial grid, never all pairs.
+- Spacing checks use a spatial grid, never all pairs.
 
 ## Done when
 
 - `npm test` is green, with tests:
-  - a missile passing a target 8 km above or below it misses;
-  - a long-range missile climbs and loses reach against a low target far out, as its envelope table says;
-  - two airliners on crossing airways at the same point but 2,000 ft apart are not a loss of separation, while 500 ft apart is;
+  - an interceptor token passing 8 km above or below a target does not count as a hit;
+  - a long-reach system reaches less far against a low target, as its table says;
+  - two airliners crossing at the same point 2,000 ft apart are not a loss of spacing, while 500 ft apart is;
   - a light aircraft stays out of a class C shelf unless cleared;
-  - arrivals are sequenced and held in a stack at different levels when the runway is busy;
-  - an overloaded sector produces more near misses than a well-staffed one;
-  - the airspace editor's presets are valid for the six-runway `'kden'` layout.
+  - arrivals are sequenced, and held in a stack at different levels when the runway is busy;
+  - an overloaded sector has more near misses than a well-staffed one;
+  - the airspace presets are valid for the six-runway `'kden'` layout.
 - Every Academy lesson still completes.
 - The pull request has:
-  - screenshots of a capital's airspace in plan and side view, a missile intercept in side view, and a holding stack;
-  - before and after step times;
+  - screenshots of a capital's airspace in plan and side view, an interception in side view, and a holding stack;
+  - step times before and after;
   - what you could not finish.
