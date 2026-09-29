@@ -7,7 +7,7 @@
 const M = IC.MODELS;
 
 const cache = new Map();
-const HIDE = { gear: 1, ab: 1, win: 1, flap: 1, rotor: 1, prop: 1 };
+const HIDE = { gear: 1, ab: 1, win: 1, flap: 1, rotor: 1, prop: 1, spoil: 1, slat: 1, rev: 1, revc: 1 };
 const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16); return `rgb(${Math.min(255, (n >> 16) * k) | 0},${Math.min(255, ((n >> 8) & 255) * k) | 0},${Math.min(255, (n & 255) * k) | 0})`; };
 /* the model painted from above: { cv, s (pixels a metre), ox, oy (the origin in the image), sil (its silhouette) } */
 function sprite(key, livery, body) {
