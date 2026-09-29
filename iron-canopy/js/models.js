@@ -422,8 +422,9 @@ function heli(B, s) {
   loft(B, st, ang, glass, { cap0: body });
   loft(B, s.boom.map(([x, r, z]) => ({ x, w: r, h: r * 1.1, z })), B.q ? ANG.mid : ANG.lo, () => body, { cap0: body });
   // fin, stabiliser, engines, the rotors
-  const bt = s.boom[0];
-  wing(B, plan(bt[0] + 2.2, 0, bt[2] + 0.2, s.finH, 2.2, 1.1, 40, 90, 0.14, 0.12), body, {});
+  // the fin and the tailplane at the end of the boom (stab.x: its leading edge ahead of the boom's end)
+  const bt = s.boom[s.boom.length - 1];
+  wing(B, plan(bt[0] + 1.9, 0, bt[2] + 0.1, s.finH, 2.2, 1.1, 40, 90, 0.14, 0.12), body, {});
   if (s.stab) wing(B, plan(bt[0] + s.stab.x, 0, bt[2] + (s.stab.z || 0), s.stab.span / 2, 1.1, 0.8, 5, 0, 0.12, 0.1), body, { mirror: true });
   for (const e of s.eng || []) loft(B, [{ x: e[0] + 1.6, y: e[1], w: 0.25, h: 0.25, z: e[2] }, { x: e[0] + 1.2, y: e[1], w: 0.5, h: 0.45, z: e[2] }, { x: e[0] - 1.2, y: e[1], w: 0.55, h: 0.45, z: e[2] }, { x: e[0] - 1.8, y: e[1], w: 0.35, h: 0.3, z: e[2] }], ANG.mid, () => body, { cap1: P.intake, cap0: P.nozzle });
   const mz = s.mast;
@@ -433,7 +434,11 @@ function heli(B, s) {
   rotor(B, 'trotor', tr[0], tr[1], tr[2], s.TR, s.tblades || 4, P.dgrey, { axis: [0, 1, 0], rpm: 4.5, chord: 0.25 });
   // wheels or skids, weapons on stub wings, a chin gun
   if (s.skids) for (const sg of [1, -1]) { cyl(B, [0.3, sg * W * 0.55, 0.12], L * 0.32, 0.08, P.dgrey, 'x', { segs: 5 }); for (const x of [1.4, -1]) box(B, x, sg * W * 0.48, 0.5, 0.1, 0.1, 0.8, P.dgrey, { roll: sg * 0.3 }); }
-  if (s.wheels) for (const [x, y, r] of s.wheels) { lathe(B, [[-0.14, r * 0.5], [-0.14, r], [0.14, r], [0.14, r * 0.5]], P.rubber, { at: [x, y, r], axis: 'y', segs: q ? 10 : 6, cap0: P.dgrey, cap1: P.dgrey, smooth: false }); box(B, x, y * 0.8, r + 0.3, 0.15, Math.abs(y) * 0.5, 0.12, P.dgrey); }
+  if (s.wheels) for (const [x, y, r] of s.wheels) {
+    lathe(B, [[-0.14, r * 0.5], [-0.14, r], [0.14, r], [0.14, r * 0.5]], P.rubber, { at: [x, y, r], axis: 'y', segs: q ? 10 : 6, cap0: P.dgrey, cap1: P.dgrey, smooth: false });
+    if (y) box(B, x, y * 0.8, r + 0.3, 0.15, Math.abs(y) * 0.5, 0.12, P.dgrey);
+    else { const top = s.boom.reduce((a, b2) => Math.abs(b2[0] - x) < Math.abs(a[0] - x) ? b2 : a)[2] - 0.2; box(B, x, 0, (r + top) / 2, 0.14, 0.14, top - r, P.dgrey); }   // a tail wheel on a strut
+  }
   if (s.stubs) {
     const S2 = s.stubs;
     wing(B, plan(S2.x, W * 0.4, S2.z, S2.span, 1.4, 1.1, 8, -8, 0.14, 0.12), body, { mirror: true });
@@ -607,7 +612,7 @@ def('heli', 'Helicopter', 'Our air wing', 19.8, 16.4, B => heli(B, {
   cabin: [[5.2, 0.12, 0.2, -0.2, 2], [4.9, 0.55, 0.62, -0.1, 2.4], [4.2, 0.9, 0.9, 0.05], [3.0, 1, 1, 0.1], [-1.0, 1, 1, 0.1], [-2.3, 0.8, 0.82, 0.25], [-3.0, 0.55, 0.55, 0.35]],
   glassF: (x, e) => x > 3.6 && e < 100 && e > 18,
   boom: [[-3.0, 0.5, 2.3], [-7.5, 0.32, 2.45], [-10.8, 0.22, 2.6]],
-  finH: 2.6, stab: { x: -0.8, span: 4.4, z: 0.1 },
+  finH: 2.6, stab: { x: 2.6, span: 4.4, z: 0.1 },
   eng: [[-0.2, 0.62, 3.0], [-0.2, -0.62, 3.0]],
   rx: 0.4, mast: 3.55, R: 8.18, blades: 4, chord: 0.53, tr: [-10.6, -0.35, 4.3], TR: 1.7, tblades: 4,
   wheels: [[2.9, 1.3, 0.4], [2.9, -1.3, 0.4], [-8.9, 0, 0.22]]
@@ -666,7 +671,7 @@ def('ahe', 'Attack helicopter', 'Enemy weapons', 17.0, 17.2, B => heli(B, {
   cabin: [[5.6, 0.1, 0.16, -0.5, 2], [5.3, 0.5, 0.5, -0.3, 2.4], [4.5, 0.8, 0.8, -0.15], [3.2, 0.95, 1.05, 0.1], [0.3, 1, 1.1, 0.2], [-1.6, 0.85, 0.9, 0.3], [-2.6, 0.55, 0.55, 0.45]],
   glassF: (x, e) => (x > 4.0 && x < 5.3 && e < 78 && e > 14) || (x > 2.4 && x < 3.8 && e < 50),
   boom: [[-2.6, 0.45, 2.45], [-7.0, 0.3, 2.6], [-10.2, 0.22, 2.75]],
-  finH: 2.8, stab: { x: -1.5, span: 3.0, z: 0.3 },
+  finH: 2.8, stab: { x: 2.4, span: 3.0, z: 0.3 },
   eng: [[0.3, 0.75, 3.1], [0.3, -0.75, 3.1]],
   rx: 0.0, mast: 3.8, R: 8.6, blades: 5, chord: 0.6, tr: [-10.0, -0.3, 4.4], TR: 1.9, tblades: 4,
   wheels: [[3.4, 1.1, 0.4], [3.4, -1.1, 0.4], [-9.4, 0, 0.25]], stubs: { x: 0.4, z: 1.9, span: 1.9 }, gun: true
