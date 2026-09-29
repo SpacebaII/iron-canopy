@@ -89,6 +89,7 @@ function sweep(B, rings, ctr, o) {
    col(x, a) the colour of the panel at station x and angle a */
 function loft(B, st, ang, col, o) {
   o = o || {};
+  st.ang = ang;                                 // for marks painted on it later (surf)
   st = st.slice().sort((a, b) => a.x - b.x);   // tail first: cap0 closes the back, cap1 the front
   const rings = [], ctr = [];
   for (const s of st) {
@@ -223,11 +224,21 @@ function rotor(B, name, x, y, z, R, n, col, o) {
 function surf(st, x, a, off) {
   let i = 0; while (i < st.length - 2 && st[i + 1].x < x) i++;
   const A = st[i], C = st[i + 1], t = U.clamp((x - A.x) / ((C.x - A.x) || 1), 0, 1), lp = (p, q) => p + (q - p) * t;
-  const r = a * RAD, sn = Math.sin(r), cs = Math.cos(r), n = lp(A.n || 2, C.n || 2), k = n <= 2 ? 1 : 2 / n;
-  const w = lp(A.w, C.w), h = cs > 0 ? lp(A.ht != null ? A.ht : A.h, C.ht != null ? C.ht : C.h) : lp(A.h, C.h);
-  const py = Math.sign(sn) * Math.pow(Math.abs(sn), k) * w, pz = Math.sign(cs) * Math.pow(Math.abs(cs), k) * h;
+  const n = lp(A.n || 2, C.n || 2), k = n <= 2 ? 1 : 2 / n, w = lp(A.w, C.w), yc = lp(A.y || 0, C.y || 0), zc = lp(A.z, C.z);
+  const at = d => {
+    const r = d * RAD, sn = Math.sin(r), cs = Math.cos(r), h = cs > 0 ? lp(A.ht != null ? A.ht : A.h, C.ht != null ? C.ht : C.h) : lp(A.h, C.h);
+    return [Math.sign(sn) * Math.pow(Math.abs(sn), k) * w, Math.sign(cs) * Math.pow(Math.abs(cs), k) * h, h];
+  };
+  // on the loft's flat facets (st.ang, the angles its rings were made at), not the curve they stand for
+  let [py, pz, h] = at(a);
+  const G = st.ang;
+  if (G) {
+    const aa = ((a % 360) + 360) % 360; let j = G.length - 1; while (j > 0 && G[j] > aa) j--;
+    const a0 = G[j], a1 = j + 1 < G.length ? G[j + 1] : G[0] + 360, f = (aa - a0) / ((a1 - a0) || 1), p0 = at(a0), p1 = at(a1);
+    py = p0[0] + (p1[0] - p0[0]) * f; pz = p0[1] + (p1[1] - p0[1]) * f;
+  }
   const nr = norm([0, py / (w * w + 1e-6), pz / (h * h + 1e-6)]);
-  return [x, lp(A.y || 0, C.y || 0) + py + nr[1] * off, lp(A.z, C.z) + pz + nr[2] * off];
+  return [x, yc + py + nr[1] * off, zc + pz + nr[2] * off];
 }
 /* a patch of skin from station xa to xb and angle a0 to a1, in colour col, split nx × na so it follows the curve */
 function decal(B, st, xa, xb, a0, a1, col, off, nx, na) {
@@ -235,7 +246,7 @@ function decal(B, st, xa, xb, a0, a1, col, off, nx, na) {
   const G = [];
   for (let i = 0; i <= nx; i++) { const r = []; for (let j = 0; j <= na; j++) r.push(surf(st, xa + (xb - xa) * i / nx, a0 + (a1 - a0) * j / na, off)); G.push(r); }
   for (let i = 0; i < nx; i++) for (let j = 0; j < na; j++) {
-    const c = surf(st, xa + (xb - xa) * (i + 0.5) / nx, 0, -50);   // well inside
+    const xm = xa + (xb - xa) * (i + 0.5) / nx, t = surf(st, xm, 0, 0), b = surf(st, xm, 180, 0), c = [xm, (t[1] + b[1]) / 2, (t[2] + b[2]) / 2];   // the section's middle
     B.tri(G[i][j], G[i + 1][j], G[i + 1][j + 1], col, c); B.tri(G[i][j], G[i + 1][j + 1], G[i][j + 1], col, c);
   }
 }
@@ -272,7 +283,7 @@ function regMark(B, st, x, e, hL, h, text) {
           const u0 = (col0 + c) * px, u1 = (col0 + c2) * px, a0 = e + r * de, a1 = e + (r + 1) * de;
           const L = text.length * 4 * px;
           const xa = sg > 0 ? x + u0 : x + L - u1, xb = sg > 0 ? x + u1 : x + L - u0;
-          decal(B, st, xa, xb, sg > 0 ? a0 : -a1, sg > 0 ? a1 : -a0, 'REG', 0.02);
+          decal(B, st, xa, xb, sg > 0 ? a0 : -a1, sg > 0 ? a1 : -a0, 'REG', 0.035);
           c = c2;
         }
       }
@@ -312,7 +323,7 @@ function airliner(B, s) {
     return BODY;
   };
   loft(B, st, q ? ANG.hi : ANG.lo, col, { cap0: BODY });
-  const sts = st.slice().sort((p, r) => p.x - r.x);
+  const sts = st.slice().sort((p, r) => p.x - r.x); sts.ang = st.ang;
   // the cockpit: two windscreen panes each side of the centre post and a side window behind them
   if (q && !s.glass) {
     const ck = s.cockpit || [0.36, 0.5, 0.62], dE = s.hump ? -6 : 0;
@@ -553,7 +564,7 @@ function heli(B, s) {
 const GA_PROF = [[0, 0.24, 0.24, -0.02], [0.03, 0.56, 0.56, -0.02], [0.1, 0.82, 0.78, -0.02], [0.2, 0.96, 0.92, 0], [0.3, 1, 1, 0.03], [0.45, 0.94, 0.9, 0.05], [0.6, 0.64, 0.58, 0.12], [0.78, 0.38, 0.34, 0.2], [0.92, 0.2, 0.2, 0.25], [1, 0.08, 0.12, 0.27]];
 function wheel(B, x, y, r, w, spat) {
   lathe(B, [[-w / 2, r * 0.5], [-w / 2, r * 0.92], [-w * 0.3, r], [w * 0.3, r], [w / 2, r * 0.92], [w / 2, r * 0.5]], P.rubber, { at: [x, y, r], axis: 'y', segs: B.q ? 10 : 6, cap0: P.dgrey, cap1: P.dgrey, smooth: false });
-  if (spat) lathe(B, [[r * 1.5, 0.02], [r * 1.1, r * 0.75], [0, r * 1.08], [-r * 1.3, r * 0.7], [-r * 1.9, 0.02]], spat, { at: [x, y, r * 1.05], ry: w * 0.9 / r, rz: 1, segs: B.q ? 10 : 6 });
+  if (spat) lathe(B, [[r * 1.25, 0.02], [r * 0.9, r * 0.62], [0, r * 0.9], [-r * 1.1, r * 0.6], [-r * 1.6, 0.02]], spat, { at: [x, y, r * 1.02], ry: w * 1.1 / r, rz: 1, segs: B.q ? 10 : 6 });
 }
 /* a thin strut from p to q (a wing strut, a gear leg), chord c */
 function strut(B, p, q, c, col) {
@@ -567,8 +578,8 @@ function gaPlane(B, s) {
   const nose = st[st.length - 1];
   loft(B, st, q ? ANG.hi : ANG.lo, (x, a) => { const e = a > 180 ? 360 - a : a; return e > 150 ? 'BELLY' : e > 112 ? 'STRIPE2' : e > 96 ? 'STRIPE' : x > X(0.08) && e < 150 ? 'ENG' : 'BODY'; }, { cap0: 'BODY' });
   // glazing: windscreen and side windows painted on the skin, or a bubble canopy
-  if (s.ws) decal(B, st, X(s.ws[1]), X(s.ws[0]), -(s.wsE || 50), s.wsE || 50, 'GLASS', 0.015, q ? 3 : 1, q ? 6 : 2);
-  for (const [f0, f1, e0, e1] of s.side || []) for (const sg of [1, -1]) decal(B, st, X(f1), X(f0), sg > 0 ? e0 : -e1, sg > 0 ? e1 : -e0, 'GLASS', 0.015, q ? 2 : 1, q ? 2 : 1);
+  if (s.ws) decal(B, st, X(s.ws[1]), X(s.ws[0]), -(s.wsE || 50), s.wsE || 50, 'GLASS', 0.03, q ? 3 : 1, q ? 6 : 2);
+  for (const [f0, f1, e0, e1] of s.side || []) for (const sg of [1, -1]) decal(B, st, X(f1), X(f0), sg > 0 ? e0 : -e1, sg > 0 ? e1 : -e0, 'GLASS', 0.03, q ? 2 : 1, q ? 2 : 1);
   if (s.bubble) {
     const c = s.bubble, cx = X(c.f), cl = c.l, z0 = surf(st, cx, 0, 0)[2] - c.h * 0.35;
     loft(B, [{ x: cx + cl * 0.5, w: 0.02, h: 0.02, z: z0 }, { x: cx + cl * 0.3, w: c.w * 0.8, h: c.h * 0.8, z: z0 }, { x: cx, w: c.w, h: c.h, z: z0 }, { x: cx - cl * 0.3, w: c.w * 0.85, h: c.h * 0.85, z: z0 }, { x: cx - cl * 0.5, w: 0.04, h: 0.04, z: z0 }], q ? ANG.hi : ANG.lo, (x, a) => { const e = a > 180 ? 360 - a : a; return e > 95 ? 'BODY' : 'GLASS'; }, {});
@@ -603,7 +614,7 @@ function gaPlane(B, s) {
     for (const sg of [1, -1]) gearLeg(B, sg > 0 ? 'gearR' : 'gearL', X(G.mf), sg * G.track / 2, (G.mtop || w.z) - 0.05, G.mr, 1, {});
   } else if (G.type === 'mono') {
     wheel(B, X(G.mf), 0, G.mr, 0.14, null);
-    box(B, X(0.96), 0, 0.1, 0.4, 0.06, 0.2, P.dgrey);
+    const tz = surf(st, X(0.95), 180, 0)[2]; box(B, X(0.95), 0, tz - 0.08, 0.35, 0.06, 0.16, P.dgrey);
   } else {
     for (const sg of [1, -1]) { const x = X(G.mf); strut(B, [x, sg * W * 0.35, bz + 0.1], [x, sg * G.track / 2, G.mr], 0.14, G.legCol || P.lgrey); wheel(B, x, sg * G.track / 2, G.mr, 0.16, G.spats ? 'BODY' : null); }
     if (G.type === 'tail') { const x = X(0.94); wheel(B, x, 0, G.nr, 0.08, null); strut(B, [x + 0.3, 0, st[1].z - st[1].h * 0.8], [x, 0, G.nr], 0.06, P.dgrey); }
@@ -891,7 +902,7 @@ def('bizprop', 'Business turboprop', BIZ, 14.22, 17.65, B => airliner(B, {
 // rare visitors: one of a kind, always in their own paint
 const RARE = 'Rare visitors';
 const paint = (B, m) => { B.remap = m; };
-def('vintage', 'Vintage four-engine airliner', RARE, 34.62, 37.49, B => { paint(B, { BODY: '#e8eae4', BELLY: '#b8bfc6', STRIPE: '#b3202c', STRIPE2: '#b3202c', FIN: '#e8eae4', ENG: '#b8bfc6', WING: '#b8bfc6', DOOR: '#8a9096', REG: '#b3202c' }); airliner(B, {
+def('vintage', 'Vintage four-engine airliner', RARE, 34.62, 37.49, B => { paint(B, { BODY: '#e8eae4', BELLY: '#b8bfc6', STRIPE: '#b3202c', STRIPE2: '#e8eae4', FIN: '#e8eae4', ENG: '#b8bfc6', WING: '#b8bfc6', DOOR: '#8a9096', REG: '#b3202c' }); airliner(B, {
   // a piston airliner of the 1950s: a long curved fuselage on tall gear, four radial engines, three fins
   L: 34.62, D: 3.5, H: 3.6, zc: 3.3, nose: 5.4, tail: 10, tailUp: 1.3,
   wing: { x: 3.2, span: 37.49, c0: 5.6, c1: 1.8, sweep: 4, dih: 7, z: -0.3, fairing: false },
@@ -933,7 +944,7 @@ def('outsize', 'Outsize freighter', RARE, 63.1, 60.3, B => { paint(B, { BODY: '#
 });
   const lobe = [{ x: 20.5, w: 0.3, h: 0.3, z: 8.0 }, { x: 18.5, w: 2.9, h: 2.6, z: 8.1 }, { x: 15, w: 4.1, h: 3.8, z: 8.0 }, { x: 9, w: 4.4, h: 4.3, z: 7.9 }, { x: -16, w: 4.4, h: 4.3, z: 7.9 }, { x: -22, w: 3.2, h: 3.2, z: 8.5 }, { x: -28, w: 1.2, h: 1.2, z: 9.6 }];
   loft(B, lobe, B.q ? ANG.hi : ANG.lo, (x, a) => { const e = a > 180 ? 360 - a : a; return e > 120 ? 'BELLY' : 'BODY'; }, { cap0: 'BODY' });
-  if (B.q) { const ls = lobe.slice().sort((a, b) => a.x - b.x); for (const sg of [1, -1]) decal(B, ls, 16.2, 17.4, sg > 0 ? 48 : -66, sg > 0 ? 66 : -48, '#1c2430', 0.03, 2, 2); }
+  if (B.q) { const ls = lobe.slice().sort((a, b) => a.x - b.x); ls.ang = lobe.ang; for (const sg of [1, -1]) decal(B, ls, 16.2, 17.4, sg > 0 ? 48 : -66, sg > 0 ? 66 : -48, '#1c2430', 0.03, 2, 2); }
 });
 def('airship', 'Airship', RARE, 75.1, 19.5, B => {
   // a semi-rigid airship: the envelope, a gondola under it, three tail fins, propellers to push and steer

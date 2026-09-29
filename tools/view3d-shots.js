@@ -122,6 +122,15 @@ const SCENES = {
       V.follow = m; camTo(V, 'follow'); V.cam = 'follow'; Object.assign(V.orbit, { yaw: 0.9, pitch: 0.28, dist: Math.max(12, IC.modelSize(k) * 1.1) });
       await wait(1500); await __snap('gallery-' + k);
     }`,
+  // brief 38's models one by one in the gallery, three-quarter view from the front (MODELS=key,key to choose)
+  'gallery-38': `
+    await IC.begin('range'); const V = IC.replayGallery(IC.S); await wait(4000);
+    const keys = window.MODELS ? window.MODELS.split(',') : Object.keys(IC.MODELS).filter(k => ['General aviation', 'Business aviation', 'Rare visitors'].includes(IC.MODELS[k].group) || ['rj', 'widel', 'jumbo', 'cargoprop'].includes(k));
+    for (const k of keys) {
+      const m = V.movers.find(m => m.tr.model === k); if (!m) continue;
+      V.follow = m; camTo(V, 'follow'); V.cam = 'follow'; Object.assign(V.orbit, { yaw: +(window.YAW || 0.75), pitch: +(window.PITCH || 0.22), dist: Math.max(8, IC.modelSize(k) * +(window.DIST || 0.62)) });
+      await wait(1300); await __snap('g38-' + k);
+    }`,
   // the live view full screen following an airliner round the capital's airport, recorded by the browser
   video: `
     const S = await game('sandbox', 11);
@@ -210,6 +219,7 @@ const SCENES = {
       ff = path.join(dir, '3d-live.mjpeg'); fs.writeFileSync(ff, '');
       await page.exposeFunction('__frame', b64 => fs.appendFileSync(ff, Buffer.from(b64, 'base64')));
     }
+    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
