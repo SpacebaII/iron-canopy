@@ -1035,6 +1035,102 @@ test('builder: a KDEN-scale airport built by hand in under 200 clicks handles it
   console.log(`        ${actions} actions; ${stands.length} stands; rated ${rated} movements an hour, flew ${at[2] - at[1]} in the second hour`);
 }, true);
 
+/* ---------- the build bar: its tabs, the tools (brief 44) ---------- */
+test('build bar: every tab has items, and each one can be placed on an airport', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap]; S.budget = 1e6;
+  // the research the Career locks is done, so the whole bar is open
+  if (S.tech) for (const k of Object.values(IC.APT_TECH)) S.tech.done.add(k);
+  const P = (x, y) => IC.aptLocal(ap, x, y);
+  const placed = [], skipped = [];
+  for (const tab of IC.BB_TABS) {
+    assert(tab.items.length, `tab ${tab.name} has no items`);
+    for (const k of tab.items) {
+      if (k === 'blueprint' && !(IC.showcaseKeys && IC.showcaseKeys().length)) { skipped.push(k); continue; }
+      if (k.startsWith('road:')) { assert(IC.ROADS[k.slice(5)], `${k} is not a road the player may build`); skipped.push(k); continue; }
+      const part = k === 'carpark' ? 'surface' : k;
+      if (IC.APART[part]) assert(!IC.aptLockWhy(S, part), `${k} is still locked: ${IC.aptLockWhy(S, part)}`);
+      // somewhere clear, well away from what is already built, in the airport's own frame
+      const n = placed.length, c = P(-20 + (n % 6) * 7, 14 + Math.floor(n / 6) * 6);
+      const m = IC.bldMode(S, ap, part);
+      if (k === 'carpark') m.surf = 'asph';
+      if (part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to: their own tests cover them)
+      S.mode2 = m; S.hover = c;
+      const n0 = ap.parts.length, two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
+      IC.clickWorld(c, 0);
+      if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
+      IC.clickWorld(two ? c2 : c, 0);
+      assert(ap.parts.length > n0, `${k} (${tab.name}) was not placed: ${m.err || 'no reason given'}`);
+      placed.push(k);
+    }
+  }
+  assert(placed.length >= 12, `only ${placed.length} of the bar's items were placed (skipped ${skipped.join(', ')})`);
+  // and each one the player reads about has a price, a use and what it needs
+  for (const tab of IC.BB_TABS) for (const k of tab.items) { const w = IC.BB_ITEM(S, k); assert(w.name && w.price && w.desc, `${k} has no name, price or description`); }
+});
+test('build bar: upgrading charges the difference and bulldozing refunds', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap]; S.budget = 1e5;
+  const tx = ap.parts.find(p => p.kind === 'taxi' && p.built);
+  // asphalt to concrete: the difference in price, not the whole price
+  tx.mat = 'asph';
+  const was = IC.partCost(ap, tx), to = IC.partCost(ap, Object.assign({}, tx, { mat: 'conc' }));
+  const q = IC.bldUpgradeCost(S, ap, tx, { mat: 'conc' });
+  assert(!q.why, `the upgrade was refused: ${q.why}`);
+  assert(Math.abs(q.cost - (to - was)) < 1e-6 && q.cost > 0, `charged ${U.money(q.cost)}, the difference is ${U.money(to - was)}`);
+  const b0 = S.budget;
+  assert(IC.bldUpgrade(S, ap, tx, { mat: 'conc' }), 'the upgrade did not start');
+  assert(tx.shut, 'the taxiway stays open while it is relaid');
+  for (let i = 0; i < 4000 && ap.works.length; i++) tick(S, 2);
+  assert(IC.paveOf(tx) === 'conc' && !tx.shut, `after the work it is ${IC.paveOf(tx)}${tx.shut ? ', still closed' : ''}`);
+  const paid = b0 - S.budget;
+  assert(Math.abs(paid - q.cost) < q.cost * 0.02, `paid ${U.money(paid)} for an upgrade quoted at ${U.money(q.cost)}`);
+  // a cheaper material costs nothing and gives nothing back
+  assert(IC.bldUpgradeCost(S, ap, tx, { mat: 'asph' }).cost === 0, 'a cheaper pavement is paid for');
+  // a wider runway, and lights taken off a runway close it at night
+  const rw = ap.parts.find(p => p.kind === 'runway' && p.built);
+  const wq = IC.bldUpgradeCost(S, ap, rw, { mat: IC.paveOf(rw), w: 0.6, lit: true });
+  assert(wq.cost > 0 && /60 m wide/.test(wq.what.join(' ')), `widening quoted ${U.money(wq.cost)} for ${wq.what.join(', ')}`);
+  // bulldozing: what comes back is what the panel said, and it is booked
+  const hangar = ap.parts.find(p => p.kind === 'hangar' && p.built);
+  const r = IC.bldRefund(S, ap, hangar);
+  assert(!r.why && r.refund > 0 && r.refund < IC.partCost(ap, hangar), `salvage ${U.money(r.refund)} of ${U.money(IC.partCost(ap, hangar))}`);
+  const b1 = S.budget, n0 = ap.parts.length;
+  assert(IC.bldBulldoze(S, ap, hangar), 'the hangar was not bulldozed');
+  assert(ap.parts.length === n0 - 1 && Math.abs(S.budget - (b1 + r.refund)) < 1e-6, `bulldozing gave back ${U.money(S.budget - b1)} instead of ${U.money(r.refund)}`);
+  // an apron with an aircraft on it is refused, with the reason
+  const apr = ap.parts.find(p => p.kind === 'apron' && (p.stands || []).length);
+  const st0 = IC.aptStands(ap).find(x => x.apron === apr.id);
+  if (st0) { st0.occ = 'test'; const q2 = IC.bldRefund(S, ap, apr); assert(/parked/.test(q2.why || ''), `an occupied apron says "${q2.why}"`); assert(!IC.bldBulldoze(S, ap, apr), 'an occupied apron was bulldozed'); st0.occ = null; }
+  // planned work not yet begun comes back in full
+  const m = IC.bldMode(S, ap, 'hangar'), c = IC.aptLocal(ap, -18, 12);
+  S.mode2 = m; S.hover = c; IC.clickWorld(c, 0); IC.clickWorld(c, 0);
+  const p2 = ap.parts[ap.parts.length - 1];
+  assert(p2 && !p2.built, 'the new hangar was not planned');
+  const b2 = S.budget;
+  assert(IC.bldBulldoze(S, ap, p2), 'the planned hangar was not removed');
+  assert(S.budget >= b2 - 1e-6, `removing planned work cost ${U.money(b2 - S.budget)}`);
+});
+test('build bar: a building moves for half its price, and the info views read the airport', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap]; S.budget = 1e5;
+  const fire = ap.parts.find(p => p.kind === 'fire' && p.built);
+  const q = IC.bldRelocateCost(S, ap, fire);
+  assert(!q.why && Math.abs(q.cost - IC.partCost(ap, fire) * 0.5) < 1e-6, `moving a built fire station quoted ${U.money(q.cost)} of ${U.money(IC.partCost(ap, fire))}`);
+  const to = IC.aptLocal(ap, -14, 9), b0 = S.budget;
+  assert(IC.bldRelocate(S, ap, fire, to.x, to.y, fire.a), 'the fire station did not move');
+  assert(U.dist(fire, to) < 0.2 && !fire.built, 'it did not go to the new place as work');
+  for (let i = 0; i < 6000 && ap.works.length; i++) tick(S, 2);
+  assert(fire.built, 'it was never put up again');
+  const paid = b0 - S.budget;
+  assert(paid > 0 && Math.abs(paid - q.cost) < q.cost * 0.15, `moving cost ${U.money(paid)}, quoted ${U.money(q.cost)}`);
+  // a runway is not moved: it is rebuilt
+  assert(/rebuilt/.test(IC.bldRelocateCost(S, ap, ap.parts.find(p => p.kind === 'runway')).why), 'a runway can be picked up and moved');
+  // the info views: each has a name and a sentence, and gathering runs headless
+  for (const [k, v] of Object.entries(IC.INFO_VIEWS)) assert(v.name && /\.$/.test(v.desc), `info view ${k} has no name or its line does not end in a full stop`);
+  const H = IC.infoGather(S, ap); tick(S, 600); IC.infoGather(S, ap);
+  assert(H && H.e instanceof Map && H.s instanceof Map, 'the info views keep no record of the taxiways and stands');
+});
 /* ---------- airspace ---------- */
 /* switch off every radar controllers could use: the civil radars and the approach radars at the airports */
 const blind = S => {

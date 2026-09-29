@@ -6,8 +6,32 @@
    (the ghost, snapping, guides, the cost by the cursor) is builder.js and render-airport.js. */
 (function (IC) {
 'use strict';
-const U = IC.U, esc = U.esc, $ = id => document.getElementById(id);
+const U = IC.U, esc = U.esc, $ = id => (typeof document === 'undefined' ? null : document.getElementById(id));
 const S_ = () => IC.S;
+
+/* The info views the bar's Info button opens (drawn by render-infoview.js) */
+IC.INFO_VIEWS = {
+  taxi: { name: 'Taxi congestion', desc: 'Where aircraft taxi and wait: green flows, red is where they queue.' },
+  stands: { name: 'Stand use', desc: 'How much of the last hours each stand has had an aircraft on it.' },
+  walk: { name: 'Walking to gates', desc: 'How far passengers walk from the terminal to each stand; beyond 400 m they go by bus.' },
+  service: { name: 'Fuel and services', desc: 'What the hydrant pipes reach, the fire station\'s three-minute reach, and where a burning tank spreads.' },
+  noise: { name: 'Noise over towns', desc: 'Under each runway\'s flight paths: the homes that hear every take-off and landing.' },
+  capacity: { name: 'Runway capacity', desc: 'What each runway takes an hour in the wind now, and what it is used for.' }
+};
+
+/* the heat on each taxiway edge and the use of each stand, gathered as the game runs (game seconds, fading over
+   about two hours) */
+function gather(S, ap) {
+  const H = ap._iv || (ap._iv = { t: S.time, e: new Map(), s: new Map() });
+  const dt = U.clamp(S.time - H.t, 0, 600); H.t = S.time; if (!dt) return H;
+  const k = Math.exp(-dt / 7200);
+  for (const [key, v] of H.e) H.e.set(key, v * k);
+  for (const [key, v] of H.s) H.s.set(key, v * k);
+  for (const m of ap.moves) if (!m.dead && m.edgeKey) H.e.set(m.edgeKey, (H.e.get(m.edgeKey) || 0) + dt * (m.holding ? 3 : 1));
+  for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) H.s.set(s.id, (H.s.get(s.id) || 0) + (s.occ ? dt : 0));
+  return H;
+}
+IC.infoGather = gather;
 
 /* the tabs and what is in each (part kinds from IC.APART, tools from IC.BTOOLS, roads from IC.ROADS) */
 IC.BB_TABS = [
@@ -140,6 +164,8 @@ function thumb(k) {
   return (THUMB[k] = c.toDataURL());
 }
 IC.bbThumb = thumb;
+/* what the bar says about an item (the tests read it too) */
+IC.BB_ITEM = (S, k) => itemOf(k);
 
 /* ---------- state ---------- */
 IC.bb = { open: false, tab: 'rw', view: null, hover: null };
@@ -293,4 +319,4 @@ function wire() {
   el.addEventListener('mouseleave', () => { if (IC.bb.hover) { IC.bb.hover = null; IC.ui.refresh(true); } });
 }
 if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire(); }
-})(window.IC);
+})(typeof window !== 'undefined' && window.IC ? window.IC : IC);

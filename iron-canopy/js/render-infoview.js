@@ -5,34 +5,13 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-IC.INFO_VIEWS = {
-  taxi: { name: 'Taxi congestion', desc: 'Where aircraft taxi and wait: green flows, red is where they queue.' },
-  stands: { name: 'Stand use', desc: 'How much of the last hours each stand has had an aircraft on it.' },
-  walk: { name: 'Walking to gates', desc: 'How far passengers walk from the terminal to each stand; beyond 400 m they go by bus.' },
-  service: { name: 'Fuel and services', desc: 'What the hydrant pipes reach, the fire station\'s three-minute reach, and where a burning tank spreads.' },
-  noise: { name: 'Noise over towns', desc: 'Under each runway\'s flight paths: the homes that hear every take-off and landing.' },
-  capacity: { name: 'Runway capacity', desc: 'What each runway takes an hour in the wind now, and what it is used for.' }
-};
 const heat = (f, a) => { f = U.clamp(f, 0, 1); const r = f < 0.5 ? 80 + f * 2 * 175 : 255, g = f < 0.5 ? 220 : 220 - (f - 0.5) * 2 * 170; return `rgba(${r | 0},${g | 0},70,${a == null ? 0.95 : a})`; };
 
-/* the heat on each taxiway edge and the use of each stand, gathered as the game runs (game seconds, fading over
-   about two hours) */
-function gather(S, ap) {
-  const H = ap._iv || (ap._iv = { t: S.time, e: new Map(), s: new Map() });
-  const dt = U.clamp(S.time - H.t, 0, 600); H.t = S.time; if (!dt) return H;
-  const k = Math.exp(-dt / 7200);
-  for (const [key, v] of H.e) H.e.set(key, v * k);
-  for (const [key, v] of H.s) H.s.set(key, v * k);
-  for (const m of ap.moves) if (!m.dead && m.edgeKey) H.e.set(m.edgeKey, (H.e.get(m.edgeKey) || 0) + dt * (m.holding ? 3 : 1));
-  for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) H.s.set(s.id, (H.s.get(s.id) || 0) + (s.occ ? dt : 0));
-  return H;
-}
-IC.infoGather = gather;
 
 IC.drawInfoView = function (g, S, px, now) {
   const v = IC.bb && IC.bb.view, ap = v && IC.bbAirport && IC.bbAirport(S);
   if (!v || !ap || !ap.parts) return;
-  const V = IC.rs.view, H = gather(S, ap), G = IC.aptGraph(ap);
+  const V = IC.rs.view, H = IC.infoGather(S, ap), G = IC.aptGraph(ap);
   // everything else dims
   g.fillStyle = 'rgba(3,8,14,0.62)'; g.fillRect(V.x0, V.y0, V.x1 - V.x0, V.y1 - V.y0);
   // the pavement as a pale outline, so the view has a map
