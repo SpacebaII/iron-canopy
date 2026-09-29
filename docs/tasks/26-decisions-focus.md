@@ -31,6 +31,12 @@ The coordinator suggested applying two principles to the whole game, and the own
 
 The player should be able to say why they chose something.
 
+## With the calendar (32)
+
+- **The month's turn is the natural moment for decisions.** A short monthly briefing lists the few things that need the player: offers, research done, a statement worth reading. It replaces a stream of pop-ups.
+- **Long stretches of calendar time need delegation to feel good:** what delegates handle month by month, and what they report.
+- Trade-offs can run for months: a loan's term, a deal's length, a research programme. Show what each costs per month and when it ends.
+
 ## Scope
 
 - `ui.js`, `warroom.js`, `inspector.js` (presentation and the alert queue); delegates in `story.js`; costs and effects where each decision lives.
