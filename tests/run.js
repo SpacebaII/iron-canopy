@@ -3167,6 +3167,44 @@ test('3D view: 300 frames of the live view and of a replay make nothing again, a
   assert(faced.length > 20 && worst.off < 0.2, `a model points ${(worst.off * 57.3).toFixed(0)}° off where it goes: ${worst.who}`);
   assert(out.turn.bank > 0.5 && Math.abs(out.turn.roll - out.turn.poseRoll) < 1e-6 && Math.abs(out.turn.roll) > 0.5, `the aircraft turning hardest (bank ${(out.turn.bank * 57.3).toFixed(0)}°) is drawn banked ${(out.turn.roll * 57.3).toFixed(0)}°`);
 }, true);
+test('3D life: a jet at a gate gets its jet bridge and vehicles, nothing is made from frame to frame, and the lights follow the phase', () => {
+  const cp = require('child_process'), path = require('path');
+  const out = JSON.parse(cp.execFileSync(process.execPath, [path.join(__dirname, 'view3d.js')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1e8 }).trim().split('\n').pop());
+  assert(!out.error, out.error);
+  const g = out.gate;
+  assert(g.stats.docked >= 1, `no jet bridge at the door of the ${g.turn.type} turning round (${g.stats.bridges} bridges drawn)`);
+  const k = g.stats.kinds, served = ['belt', 'bagtractor', 'bagcart', 'catering', 'refueller', 'dispenser'].filter(x => k[x] > 0);
+  assert(g.stats.vehicles >= 3 && served.length >= 2, `a turnaround ${Math.round(g.turn.age)} s in has ${g.stats.vehicles} vehicles: ${JSON.stringify(k)}`);
+  // (a touchdown's puff or a newcomer is made once, when it comes: the rest of the scene is not made again)
+  const fresh = (g.view.event || 0) + (g.view.mover || 0);
+  assert(g.lifeMade === 0 && !g.made.geometry && !g.made.texture && (g.made.object || 0) <= fresh * 12 && (g.made.material || 0) <= fresh * 12, `made again at the gate: ${JSON.stringify(g.made)} ${JSON.stringify(g.view)} ${g.lifeMade}`);
+  assert(g.lights.checked > 50 && g.lights.bad === 0, `${g.lights.bad} of ${g.lights.checked} aircraft lights do not follow the pose`);
+  assert(g.stats.bars > 0, 'no stop bars at the capital');
+}, true);
+test('3D life: crews switch the lights, spoilers and reversers by phase', () => {
+  const { S, tr } = flight('td');
+  assert(tr, 'no airliner landed in three hours');
+  const td = tr.marks.find(m => m[1] === 'td')[0], at = dt => IC.recPose(tr, td + dt, {}, S.wind);
+  // on to its stand
+  for (let i = 0; i < 4 * 1200 && !tr.marks.some(m => m[1] === 'pk' && m[0] < S.time - 25); i++) IC.step(S, 0.25);
+  const f = at(-20);
+  assert(f.land && f.strobe && f.beacon && f.nav && f.taxi, `on final: landing ${f.land}, strobes ${f.strobe}, beacon ${f.beacon}, taxi light ${f.taxi}`);
+  assert(at(1.5).spoil > 0.9 && at(4).rev > 0.9 && at(4).n1 > 0.6, `after touchdown: spoilers ${at(1.5).spoil.toFixed(2)}, reversers ${at(4).rev.toFixed(2)}, power ${at(4).n1.toFixed(2)}`);
+  let stow = null; for (let dt = 4; dt < 60; dt += 0.5) { const p = at(dt); if (p && p.phase === IC.REC_PHASE.land && p.rev < 0.05) { stow = p; break; } }
+  assert(stow && stow.spd < 0.42, 'the reversers are not stowed as the aircraft slows');
+  let taxi = null; for (let dt = 20; dt < 900 && !taxi; dt += 1) { const p = at(dt); if (p && p.phase === IC.REC_PHASE.taxi && p.spd > 0.03) taxi = p; }
+  assert(taxi && !taxi.strobe && !taxi.land && taxi.taxi && taxi.beacon && !taxi.spoil && !taxi.flap, `taxiing in: strobes ${taxi && taxi.strobe}, landing ${taxi && taxi.land}, taxi light ${taxi && taxi.taxi}, beacon ${taxi && taxi.beacon}, flaps ${taxi && taxi.flap}`);
+  let cruise = null; for (let i = 0; i < tr.n && !cruise; i++) { const p = IC.recPose(tr, IC.recGet(tr, i, 0), {}, S.wind); if (p && p.alt > 4) cruise = p; }
+  if (cruise) assert(!cruise.land && cruise.strobe && cruise.beacon && cruise.nav, `above 10,000 ft: landing lights ${cruise.land}, strobes ${cruise.strobe}`);
+  const pk = tr.marks.find(m => m[1] === 'pk');
+  if (pk) { const p = IC.recPose(tr, Math.min(tr.t1, pk[0] + 19.5), {}, S.wind); assert(p && p.beacon === 0 && p.n1 < 0.05, `parked: beacon ${p && p.beacon}, engines ${p && p.n1}`); }
+  // a departure: the beacon from the pushback, the engines started on it; strobes and landing lights for the roll
+  const d = flight('to'), t2 = d.tr, to = t2.marks.find(m => m[1] === 'to')[0], p0 = t2.marks.find(m => m[1] === 'p0');
+  if (p0) { const p = IC.recPose(t2, p0[0] + 50, {}, d.S.wind); assert(p.beacon && !p.strobe && p.n1 > 0.15, `pushing back: beacon ${p.beacon}, strobes ${p.strobe}, engines ${p.n1.toFixed(2)}`); }
+  const r = IC.recPose(t2, to - 3, {}, d.S.wind), up = IC.recPose(t2, to + 7, {}, d.S.wind);
+  assert(r.strobe && r.land && r.n1 > 0.9 && r.elev > 0.3, `rotating: strobes ${r.strobe}, landing ${r.land}, power ${r.n1.toFixed(2)}, elevator ${r.elev.toFixed(2)}`);
+  assert(up.gear > 0 && up.gear < 1, `the gear is not on its way up 7 s after lift-off (${up.gear})`);
+}, true);
 /* the sandbox's airports until an airliner has taken off and climbed away ('to') or landed ('td'): its track */
 function flight(mark) {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox' });
