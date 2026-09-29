@@ -283,7 +283,7 @@ function setAff(S, t, aff, why) {
   t.ided = aff === 'H' || aff === 'N';
   if (t.grp) t.grp.aff = grpAff(t.grp.members);
   if (!t.tn || t.d.civil && aff !== 'S' && aff !== 'H') return;
-  if (aff === 'H' && t.d.cls === 'air' && !t.border) IC.log(S, 'id', 'ID', `TN ${t.tn} identified HOSTILE: ${IC.KLASS[t.klass] || t.d.name}${why ? ' (' + why + ')' : ''}.`, t);
+  if (aff === 'H' && t.d.cls === 'air' && !t.border) { const k = IC.KLASS[t.klass] || t.d.name; IC.log(S, 'id', 'ID', `TN ${t.tn} identified HOSTILE: ${k}${why && !why.toLowerCase().startsWith(k.toLowerCase()) ? ' (' + why + ')' : ''}.`, t); }
   else if (aff === 'S' && (was === 'A' || was === 'N')) IC.log(S, 'warn', 'SUSPECT', `TN ${t.tn} ${t.sq ? 'squawking ' + t.sq : ''} is now SUSPECT: ${why}.`, t);
   if (aff === 'H' && t.disguise) { IC.emit(S, 'unmasked', t); IC.log(S, 'warn', 'DECEPTION', `TN ${t.tn} was posing as airliner ${t.cs}. It is a ${IC.THR[t.type].name.toLowerCase()}.`, t); }
   IC.emit(S, 'aff', t);
