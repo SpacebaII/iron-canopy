@@ -125,7 +125,7 @@ function leftClick(p, shift) {
   if (m) {
     if (m.kind === 'build') return buildIn(m, p, 0, shift);
     if (m.kind === 'bmove') {
-      if (IC.bldMove(S, m.ap, m.part, p.x, p.y, m.rot)) { IC.sfx.ui('ok'); ping(p); IC.setMode(null); IC.select({ kind: 'apart', ref: m.part, ap: m.ap }); }
+      if (IC.bldRelocate(S, m.ap, m.part, p.x, p.y, m.rot)) { IC.sfx.ui('ok'); ping(p); IC.setMode(null); IC.select({ kind: 'apart', ref: m.part, ap: m.ap }); }
       else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'DOES NOT FIT', IC.C.hostile); }
       return;
     }
@@ -140,8 +140,23 @@ function leftClick(p, shift) {
     }
     if (m.kind === 'bulldoze') {
       const part = IC.partAt(m.ap, p, 6 / IC.cam.z);
-      if (part) { if (IC.aptRemove(S, m.ap, part.id)) { IC.sfx.ui('ok'); ping(p); } else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'AIRCRAFT ON IT', IC.C.amber); } } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
+      if (part) { const q = IC.bldRefund(S, m.ap, part); if (!q.why && IC.bldBulldoze(S, m.ap, part)) { IC.sfx.ui('ok'); ping(p); if (q.refund) IC.text(S, p.x, p.y, '+' + U.money(q.refund), IC.C.money || '#f3d98b'); } else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, q.why ? 'IN USE' : 'NOT REMOVED', IC.C.amber); if (q.why) IC.toast(S, 'warn', 'NOT BULLDOZED', q.why, m.ap); } } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
       IC.ui.refresh(true); return;
+    }
+    // the build bar's Upgrade tool: the part clicked gets what the options bar says, for the difference in price
+    if (m.kind === 'upgrade') {
+      const part = IC.partAt(m.ap, p, 6 / IC.cam.z);
+      const o = { mat: m.mat, lit: m.lit !== false, w: part && part.kind === 'runway' ? m.rwid : part && part.kind === 'taxi' ? m.twid : null };
+      const q = part ? IC.bldUpgradeCost(S, m.ap, part, o) : { why: 'Click a runway, taxiway or apron.' };
+      if (!q.why && IC.bldUpgrade(S, m.ap, part, o)) { IC.sfx.ui('ok'); ping(p); IC.toast(S, 'info', 'UPGRADE', `${part.name || IC.APART[part.kind].name}: ${q.what.join(', ')} for ${U.money(q.cost)}, about ${U.dur(q.dur)}.`, m.ap); }
+      else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, (q.why || 'NOT UPGRADED').toUpperCase().replace(/\.$/, ''), IC.C.hostile); }
+      IC.ui.refresh(true); return;
+    }
+    // Move: pick the building, then place it
+    if (m.kind === 'bpick') {
+      const part = IC.partAt(m.ap, p, 6 / IC.cam.z), q = part ? IC.bldRelocateCost(S, m.ap, part) : { why: 'Click a building.' };
+      if (q.why) { IC.sfx.ui('err'); IC.text(S, p.x, p.y, q.why.toUpperCase().replace(/\.$/, ''), IC.C.hostile); return; }
+      IC.setMode({ kind: 'bmove', ap: m.ap, part, rot: part.a || 0, cost: q.cost }); IC.sfx.ui('click'); return;
     }
     if (m.kind === 'zone') {
       if (!m.c) { m.c = { x: p.x, y: p.y }; return; }
@@ -453,6 +468,7 @@ function onAct(e) {
     case 'zoneDel': IC.avRemoveZone(S, id); break;
     case 'foundMode': if (locked('found')) return; ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
     case 'tutOff': if (S.story) S.story.tut = false; break;
+    case 'bbToggle': IC.bbToggle(); return;
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
     case 'rushRepair': IC.rushRepair(S, id); break;
     case 'loan': IC.takeLoan(S, +v); break;
@@ -647,6 +663,11 @@ window.addEventListener('keydown', e => {
     if (S.sel.kind === 'fix') { IC.aspDelFix(S, S.sel.ref.id); if (S.mode2 && S.mode2.from === S.sel.ref.id) S.mode2.from = null; } else IC.aspDelWay(S, S.sel.ref.id);
     S.sel = null; IC.ui.refresh(true); return;
   }
+  // the build bar: B opens and closes it; while it is open 1–0 pick its tabs and U, M, Del, I its tools
+  const bbOn = IC.bb && IC.bb.open && $('bbar') && !$('bbar').hidden;
+  if (lk === 'b' && !(S.sel && S.sel.kind === 'track')) { IC.bbToggle(); return; }
+  if (bbOn && !(selUnits().length) && /^[0-9]$/.test(k)) { const t = IC.BB_TABS.find(x => x.key === k); if (t) { IC.bbTab(t.k); return; } }
+  if (bbOn && !(selUnits().length) && (lk === 'u' || lk === 'm' || lk === 'i' || k === 'Delete')) { IC.bbTool(lk === 'u' ? 'upgrade' : lk === 'm' ? 'move' : lk === 'i' ? 'info' : 'bulldoze'); return; }
   const selKind = S.sel && S.sel.kind;
   const unitSel = selUnits().length > 0, trackSel = selKind === 'track';
   const ukeys = { e: 'emcon', w: 'uroe', q: 'udoc', m: 'move', h: 'heli', p: 'repair', x: 'reserve', f: 'fireMode' };
@@ -663,6 +684,8 @@ window.addEventListener('keydown', e => {
     else if (!$('cine').hidden) ui.closeCine();
     else if (S.mode2) IC.setMode(null);
     else if (ui.room) ui.openRoom(null);
+    else if (IC.bb && IC.bb.open && IC.bb.view) { IC.bb.view = null; }
+    else if (IC.bb && IC.bb.open) IC.bbToggle(false);
     else if (S.icpt) S.icpt = null;
     else if (S.sel || S.group.length) { S.sel = null; S.group = []; }
     else if (S.over && !ui.overDismissed) return;

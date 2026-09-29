@@ -289,7 +289,7 @@ function base(b) {
   const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
   const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), pill, locked ? '' : bs.runway ? 'ok' : 'bad');
   // (a site with nothing on it yet has no plan to draw: an empty dark box looks broken)
-  const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button></div>`;
+  const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div>`;
   if (locked) return H + `<div class="ibody">${schem}<p class="hint">${esc(b.name)} belongs to the Air Force. It comes under your command later in your career.</p></div>`;
   const warn = st.warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${st.warn.length}</em></h3>${st.warn.slice(0, 6).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">No layout problems found.</div>';
   const fuelF = st.fuelCap ? st.fuel / st.fuelCap : 0;
@@ -323,7 +323,6 @@ function base(b) {
     <div><small>Gridlocks</small><b class="${kp.grid ? 'amber' : ''}">${kp.grid || 0}</b></div>
     <div><small>Diversions</small><b class="${kp.div ? 'hostile' : ''}">${kp.div || 0}</b></div>
     <div><small>Holding now</small><b class="${hold ? 'amber' : ''}">${hold}</b></div></div>`;
-  const palette = buildPalette(b, civil);
   const works = b.works.map((w, i) => workRow(b, w, i)).join('');
   const reps = IC.aptRepairList(b).filter(it => !b.works.some(w => w.key === it.key)).slice(0, 8).map(it => `<div class="li"><b>${esc(it.label)}</b><small>${U.money(it.cost)} · ${U.dur(it.dur)}</small><span class="la"><button class="btn sm" data-act="aptRepair" data-v="${it.key}" ${S.budget < it.cost ? 'disabled' : ''}>Repair</button></span></div>`).join('');
   const fl = flights.map(r => {
@@ -337,13 +336,12 @@ function base(b) {
   const fee = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
     <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="No departures 23:00–06:00. Cargo airlines hate it; the neighbours love it.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
   // four tabs instead of one long page, so the build tools are one click away
-  const tab = ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
+  const tab = ui.aptTab === 'build' ? 'info' : ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
   const tabs = `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
-    ['build', 'Build', '', 'Parts, tools and materials'], ['works', `Works${nw + nd ? ` <em>${nw + nd}</em>` : ''}`, '', 'Engineering crews, work queued and repairs'],
+    ['works', `Works${nw + nd ? ` <em>${nw + nd}</em>` : ''}`, '', 'Engineering crews, work queued and repairs'],
     ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here'], ['rules', 'Operations', '', 'The tower\'s rules: when aircraft may go onto a runway'],
     ['asp', `Airspace${S.asp && S.asp.shapes && IC.aspCheck(S, b).length ? ' <em class="amber">!</em>' : ''}`, '', 'Controlled airspace round the airport, drawn as on a chart: its shape, controllers and holding stacks']])}</div>`;
-  const body = tab === 'build' ? `<div class="sec"><h3 class="sh">Build <em>pick a part, then click the map</em></h3>${palette}</div>${st.warn.length ? warn : ''}`
-    : tab === 'works' ? `<div class="sec"><h3 class="sh">Engineering <em>${b.works.filter(w => !w.wait).length}/${b.crews} crews working</em></h3>${yard(b)}${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
+  const body = tab === 'works' ? `<div class="sec"><h3 class="sh">Engineering <em>${b.works.filter(w => !w.wait).length}/${b.crews} crews working</em></h3>${yard(b)}${works ? `<div class="list">${works}</div>` : '<p class="hint">No work queued.</p>'}
       ${reps ? `<h3 class="sh">Damage</h3><div class="list">${reps}</div>` : ''}
       <div class="acts"><button class="act" data-act="bwork" data-v="crew" ${S.budget < 20 ? 'disabled' : ''}>+ Crew · ₭20M</button><button class="act ${b.autoRepair ? 'on' : ''}" data-act="bauto">Auto-repair: ${b.autoRepair ? 'on' : 'off'}</button></div></div>`
     : tab === 'rules' ? opsTab(b, st)
@@ -471,26 +469,6 @@ function opsTab(b, st) {
     <div class="sec"><h3 class="sh">Intersection departures</h3>${interSec}</div>
     ${rwSec}${qSec}<div class="sec"><h3 class="sh">What the rules have cost</h3>${fig}</div>`;
 }
-/* the build palette: parts, big-airport tools, and the choices they are built with */
-function buildPalette(b, civil) {
-  const m = S.mode2 && S.mode2.kind === 'build' && S.mode2.ap === b ? S.mode2 : null, P = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
-  const kinds = IC.APART_ORDER.filter(k => civil ? !IC.APART[k].mil : true);
-  const btn = (k, name, sub, desc) => { const lock = IC.aptLockWhy(S, k); return `<button class="pal ${m && m.part === k ? 'on' : ''}" data-act="build" data-v="${k}" title="${esc(lock || desc)}" ${lock ? 'disabled' : ''}><b>${esc(name)}</b><small>${lock ? ui.icon('lock', 'sm') + ' research' : sub}</small></button>`; };
-  const parts = kinds.map(k => { const D = IC.APART[k]; return btn(k, D.name, U.money(D.cost) + (D.line ? '/100 m' : D.area ? '/ha' : ''), D.desc); }).join('');
-  const tools = Object.entries(IC.BTOOLS).filter(([, T]) => !T.avail || T.avail()).map(([k, T]) => btn(k, T.name, k === 'stand' ? '₭0.5M each' : k === 'blueprint' ? 'a whole airport' : 'several parts', T.desc)).join('');
-  const mat = m ? m.mat : P.mat, size = m ? m.size : P.size, zone = m ? m.zone : P.zone;
-  const opts = `<h3 class="sh">Pavement <em>cost ×${IC.PAVE[mat || 'conc'].cost} · carries ${IC.PAVE[mat || 'conc'].t} t</em></h3>${seg('bpref', 'mat:' + (mat || 'conc'), IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return ['mat:' + k, (lock ? ui.icon('lock', 'sm') + ' ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), lock ? 'dim' : '', `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost and build time ×${IC.PAVE[k].cost} and ×${IC.PAVE[k].build}.`]; }))}
-    <h3 class="sh">Zone <em>for aprons and ramps</em></h3>${seg('bpref', 'zone:' + (zone || 'auto'), [['zone:auto', 'Auto', '', 'From what is next to it: terminal, cargo terminal, shelters']].concat(Object.entries(IC.ZONES).map(([k, z]) => ['zone:' + k, zoneWord(k), '', `${z.name} zone: only ${z.name.toLowerCase()} aircraft park here`])))}
-    ${standOpts(m, P, size)}${m && m.part === 'surface' ? surfOpts(m) : ''}${m && m.part === 'blueprint' ? `<h3 class="sh">Blueprint <em>R turns it, Shift+R a quarter turn</em></h3>${seg('bpref', 'bp:' + m.bp, IC.showcaseKeys().map(k => ['bp:' + k, IC.REAL_APT[k].name, '', IC.REAL_APT[k].after]))}` : ''}`;
-  return `<div class="palette">${parts}</div><h3 class="sh">Tools for big airports</h3><div class="palette">${tools}</div>${opts}
-    <div class="acts"><button class="act" data-act="bundo" title="Ctrl+Z">Undo last</button><button class="act ${S.mode2 && S.mode2.kind === 'bulldoze' ? 'on' : ''}" data-act="bulldoze" title="Remove a part (click it on the map)">Bulldoze</button>${m && m.part === 'taxi' ? `<button class="act ${m.fillet ? 'on' : ''}" data-act="bpref" data-v="fillet">Round corners (F)</button>` : ''}</div>`;
-}
-/* stands: the size, and whether aircraft are pushed back from them or drive through */
-function standOpts(m, P, size) {
-  const drive = m ? m.drive : P.drive;
-  return `<h3 class="sh">Stands <em>size, and how aircraft leave them</em></h3>${seg('bpref', 'size:' + size, Object.entries(IC.RAMP_SIZE).map(([k, n]) => ['size:' + k, n, '', `${IC.STAND[k].name} stand, ${Math.round(IC.STAND[k].w * 100)} m wide, ${Math.round(IC.STAND[k].d * 100)} m deep`]))}
-    ${seg('bpref', 'drive:' + (drive ? '1' : ''), [['drive:', 'Nose-in', '', 'Parks nose first; a tug pushes it back to leave. Compact, and the usual way at a terminal.'], ['drive:1', 'Drive-through', '', 'Taxis in and out forwards: no tug and no pushback, but it needs room ahead of the nose.']])}`;
-}
 /* the airport at work: services on the ground, hangars, and the landside that has grown round it */
 function lifeRows(b) {
   const pv = IC.aptProvides(b), L = b.land, gm = (b.gmLog || []).filter(x => S.time - x.t < 3600), by = {};
@@ -505,10 +483,6 @@ function lifeRows(b) {
     rows.push(['Landside', `${L.road ? '' : '<span class="amber">no road reaches it</span> · '}${what || 'nothing yet: it grows with passengers'}${pv.parking ? ` · ${pv.parking.toLocaleString('en-US')} parking spaces` : ''}${L.earn ? ` · earns ${U.money(L.earn)} an hour` : ''}`]);
   }
   return rows;
-}
-/* the surface tool's ground covers, with their price a hectare */
-function surfOpts(m) {
-  return `<h3 class="sh">Surface <em>what the ground is painted with</em></h3>${seg('bpref', 'surf:' + (m.surf || 'grass'), Object.entries(IC.SURF).map(([k, v]) => ['surf:' + k, v.name, '', `${v.name}: ${U.money(IC.APART.surface.cost * v.k)} a hectare${v.park ? '. Outside the airfield it parks about ' + v.park + ' cars a hectare' : ''}`]))}`;
 }
 /* an apron's stands: laid out along its back edge automatically, or placed by hand */
 function apronStands(ap, p) {
@@ -564,7 +538,7 @@ function partControls(ap, p, w) {
   const out = [];
   const fix = IC.aptRepairList(ap).filter(it => it.part === p && !ap.works.some(x => x.key === it.key));
   if (fix.length) out.push(`<h3 class="sh">Repairs</h3><div class="acts">${fix.slice(0, 3).map(it => `<button class="act" data-act="aptRepair" data-v="${it.key}" ${S.budget < it.cost ? 'disabled' : ''}>${esc(it.label)} · ${U.money(it.cost)}</button>`).join('')}</div>`);
-  if (IC.PAVED[p.kind] && p.built && !w) out.push(`<h3 class="sh">Pavement <em>relaid in another material; closed meanwhile</em></h3><div class="seg two">${IC.PAVE_ORDER.map(k => { const q = Object.assign({}, p, { mat: k }); return `<button data-act="aptMat" data-v="${k}" aria-pressed="${k === IC.paveOf(p)}" title="${esc(IC.paveFits(k))}. ${esc(IC.PAVE[k].desc)}."><b>${IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced')}</b><small>${k === IC.paveOf(p) ? 'now' : U.money(IC.partCost(ap, q) * 0.8)} · ${IC.PAVE[k].t} t</small></button>`; }).join('')}</div>`);
+  if (IC.PAVED[p.kind] && p.built && !w) out.push(`<h3 class="sh">Pavement <em>relaid in another material for the difference in price; closed meanwhile</em></h3><div class="seg two">${IC.PAVE_ORDER.map(k => { const q = Object.assign({}, p, { mat: k }); return `<button data-act="aptMat" data-v="${k}" aria-pressed="${k === IC.paveOf(p)}" title="${esc(IC.paveFits(k))}. ${esc(IC.PAVE[k].desc)}."><b>${IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced')}</b><small>${k === IC.paveOf(p) ? 'now' : '+' + U.money(Math.max(0, IC.partCost(ap, q) - IC.partCost(ap, p)))} · ${IC.PAVE[k].t} t</small></button>`; }).join('')}</div>`);
   if (p.kind === 'apron') out.push(`<h3 class="sh">Zone <em>who may park here</em></h3>${seg('aptZone', IC.partZone(ap, p), Object.entries(IC.ZONES).map(([k, z]) => [k, zoneWord(k), '', `${z.name} zone`]))}`);
   if (p.kind === 'taxi') out.push(`<h3 class="sh">Traffic <em>one-way lanes keep opposite traffic apart</em></h3><div class="acts"><button class="act ${p.oneway ? 'on' : ''}" data-act="aptDir">${p.oneway ? `One way (${p.oneway > 0 ? 'as drawn' : 'reversed'}): change` : 'Both ways: make one way'}</button></div>`);
   if (!p.built && IC.bldCanMove(ap, p)) out.push(`<div class="acts"><button class="act" data-act="aptMove">Move</button><button class="act" data-act="aptRot">Turn 15°</button><button class="act" data-act="aptRot" data-v="${Math.PI / 2}">Turn 90°</button></div>`);

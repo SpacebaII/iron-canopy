@@ -203,7 +203,7 @@ function chapterGoals(S, ch) {
       how: `Open the Aviation room (V) and press “Found a new airport”. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. Move the mouse to turn the runway, into the prevailing wind if you can, and click again. The survey shows the cost before you commit.`,
       check: () => !!st.cap });
     g({ id: 'runway', text: 'Build a runway at least 2.1 km long', check: () => ((A() && A().st.longest) || 0) >= IC.ACTYPES.narrow.rwy, prog: () => building(A(), 'runway'),
-      how: `Select ${nm()} and open its Build tab. Pick Runway, click where one end goes, then the other end, then click it again to build. 2.5–3 km of concrete takes every airliner and costs ₭15M per 100 m. Asphalt is 30% cheaper, but heavy jets break it up within days.` });
+      how: `Select ${nm()}: the build bar opens along the bottom of the screen (B, or Build at the top). Under Runways pick Runway, click where one end goes, then the other end, then click it again to build. 2.5–3 km of concrete takes every airliner and costs ₭15M per 100 m. Asphalt is 30% cheaper, but heavy jets break it up within days.` });
     g({ id: 'apron', text: 'Build an apron with a taxiway to the runway', check: () => stands(A(), 'm') > 0, prog: () => building(A(), 'apron') || building(A(), 'taxi'),
       how: 'Pick Apron and click two corners beside the runway, about 400 m long and 120 m deep: deep enough for medium stands. Then pick Taxiway and click from the runway to the apron and again on the last point: an aircraft needs a way off the runway to its stand.' });
     g({ id: 'terminal', text: 'Build a terminal beside the apron', check: () => built(A(), 'terminal'), prog: () => building(A(), 'terminal'),
@@ -1059,7 +1059,7 @@ function foundedHere(S, ap) {
   if (!st.cap) {
     if (U.dist(ap, cc) <= 600) {
       st.cap = ap.id; ap.template = 'intl'; S.asp.zs = null;
-      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected: open its Build tab.`);
+      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected, and its build bar is open along the bottom of the screen: pick Runway under Runways.`);
     } else say(S, 'MIN', `${ap.name} is ${U.km(U.dist(ap, cc))} from ${cc.name}. The national airport has to be within 60 km of the capital, where the passengers are. Found it closer in; that one can wait.`);
   } else if (st.city2 && !st.apt2 && U.dist(ap, S.byId[st.city2]) <= 600) st.apt2 = ap.id;
   else if (st.city3 && !st.apt3 && U.dist(ap, S.byId[st.city3]) <= 600) st.apt3 = ap.id;

@@ -121,6 +121,8 @@ IC.render = function (S, now) {
   if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
   IC.drawHeightLadders(ctx, S, px, view);
+  // the build bar's info view over the airport being built on (render-infoview.js)
+  if (IC.bb && IC.bb.view && IC.drawInfoView) IC.drawInfoView(ctx, S, px, now);
 
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';

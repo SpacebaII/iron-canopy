@@ -165,7 +165,7 @@ function topbar() {
     ${act >= 3 ? `<div class="rl doctrine" title="Firing doctrine"><span>Doctrine</span>${seg('doctrine', S.ad.doctrine, [['sls', 'Look', '', 'Shoot-look-shoot: one missile, then another if it missed'], ['salvo', 'Salvo', '', 'Two missiles at once'], ['conserve', 'Save', 'amb', 'Only high-probability shots']])}</div>` : ''}
     <div class="rl airspace" title="Civil airspace: who may fly over the country"><span>Airspace</span>${seg('airspace', S.airspace, [['open', 'Open', '', 'Airliners fly their normal routes'], ['restricted', 'Restricted', 'amb', 'Airliners keep to the southern corridors only'], ['closed', 'Closed', 'red', 'No civil flights at all: the airlines lose money']])}</div>
 `);
-  setHTML($('sys'), `<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
+  setHTML($('sys'), `${S.mode !== 'range' ? `<button class="ib wide ${IC.bb && IC.bb.open ? 'on' : ''}" data-act="bbToggle" title="Build: the airport's build bar (B)">${ui.icon('aviation')}<span>Build</span></button>` : ''}<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
   alerts();
   incidents();
   evcard();
@@ -700,6 +700,7 @@ ui.refresh = function (force) {
   progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); firstRun();
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
+  if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
   // how much of the map's right side the inspector covers, for what the map draws beside the cursor
   { const lc = document.querySelector('.leftcol').getBoundingClientRect(); ui.mapLeft = lc.height > 40 ? lc.right - $('app').getBoundingClientRect().left + 8 : 0; }

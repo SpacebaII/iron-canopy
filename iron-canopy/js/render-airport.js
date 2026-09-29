@@ -784,7 +784,7 @@ function drawLights(g, ap, px, z, light, now) {
   const k = U.clamp((0.55 - light) / 0.4, 0, 1);
   g.globalCompositeOperation = 'lighter';
   const dot = (x, y, col, r) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, Math.max(r, 1.1 * px), 0, 7); g.fill(); };
-  for (const rw of ap.parts.filter(p => p.kind === 'runway' && p.built)) {
+  for (const rw of ap.parts.filter(p => p.kind === 'runway' && p.built && p.lit !== false)) {
     const L = IC.rwLen(rw), d = IC.rwDir(rw), n = { x: -d.y, y: d.x };
     const step = z > 3 ? 0.6 : 1.8;
     for (let s = 0; s <= L; s += step) {
@@ -798,7 +798,7 @@ function drawLights(g, ap, px, z, light, now) {
       for (let s = 0.6; s < 9; s += 0.6) { const q = { x: p.x + d.x * sgn * s, y: p.y + d.y * sgn * s }; const fl = (now * 2 + s * 0.1) % 1 < 0.08 ? 1.6 : 1; dot(q.x, q.y, `rgba(255,250,230,${0.7 * k * fl})`, 0.03); }
     }
   }
-  if (z > 1.5) for (const p of ap.parts.filter(q => q.kind === 'taxi' && q.built && !q.lane)) {
+  if (z > 1.5) for (const p of ap.parts.filter(q => q.kind === 'taxi' && q.built && !q.lane && q.lit !== false)) {
     for (let i = 1; i < p.nodes.length; i++) {
       const a = ap.nodes[p.nodes[i - 1]], b = ap.nodes[p.nodes[i]]; if (!a || !b) continue;
       const L = U.dist(a, b), nx = -(b.y - a.y) / (L || 1), ny = (b.x - a.x) / (L || 1);
@@ -1167,7 +1167,15 @@ IC.drawBuildGhost = function (g, S, px) {
   const m = S.mode2, hv = S.hover;
   if (!m || !hv) return;
   if (m.kind === 'found') { drawFoundGhost(g, S, m, hv, px); return; }
-  if (m.kind === 'bmove') { const p = m.part, ok = IC.aptCanPlace(S, m.ap, Object.assign({}, p, { x: hv.x, y: hv.y, a: m.rot })); g.save(); g.translate(hv.x, hv.y); g.rotate(m.rot); g.strokeStyle = ok ? 'rgba(111,210,255,0.9)' : IC.C.hostile; g.lineWidth = 1.5 * px; const w = p.w || p.r * 2, h = p.h || p.r * 2; g.strokeRect(-w / 2, -h / 2, w, h); g.restore(); return; }
+  if (m.kind === 'bulldoze' || m.kind === 'upgrade' || m.kind === 'bpick') { drawToolHover(g, S, m, hv, px); return; }
+  if (m.kind === 'bmove') {
+    const p = m.part, probe = Object.assign({}, p, { x: hv.x, y: hv.y, a: m.rot });
+    m.ap.parts = m.ap.parts.filter(q => q !== p); const ok = IC.aptCanPlace(S, m.ap, probe), why = IC.aptPlaceWhy; m.ap.parts.push(p);
+    const P = IC.partOutline(probe); g.beginPath(); P.forEach((c, i) => g[i ? 'lineTo' : 'moveTo'](c.x, c.y)); g.closePath(); g.fillStyle = ok ? OKF : NOF; g.fill(); g.strokeStyle = ok ? OKC : NOC; g.lineWidth = 1.5 * px; g.stroke();
+    g.setLineDash([4 * px, 4 * px]); g.strokeStyle = 'rgba(236,240,244,0.5)'; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(hv.x, hv.y); g.stroke(); g.setLineDash([]);
+    pill(g, ok ? (m.cost ? `put up here: ${U.money(m.cost)}` : 'moves here: free') : (why || 'does not fit here').replace(/\.$/, ''), hv.x, hv.y - 18 * px, px, ok ? '#b4f5c6' : '#ffb0a8');
+    return;
+  }
   if (m.kind !== 'build') return;
   const ap = m.ap, tol = Math.max(0.12, 8 * px);
   // the plan is worked out again only when the cursor or the plan changes
@@ -1175,7 +1183,7 @@ IC.drawBuildGhost = function (g, S, px) {
   const key = `${m.part}|${hv.x.toFixed(2)},${hv.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
   if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
-  const col = ok ? 'rgba(111,210,255,0.9)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(111,210,255,0.2)' : 'rgba(255,91,79,0.2)';
+  const col = ok ? 'rgba(110,230,140,0.95)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(110,230,140,0.2)' : 'rgba(255,91,79,0.2)';
   // homes that would come down
   for (const b of plan.blocks || []) { g.save(); g.translate(b.x, b.y); g.rotate(b.a || 0); g.strokeStyle = IC.C.hostile; g.lineWidth = 1.4 * px; g.fillStyle = 'rgba(255,91,79,0.3)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); g.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h); g.restore(); }
   // the part in the way of a plan that cannot be built
@@ -1190,7 +1198,7 @@ IC.drawBuildGhost = function (g, S, px) {
     if (sp.kind === 'taxi' || sp.kind === 'runway') {
       const pts = sp.kind === 'runway' ? [sp.a, sp.b] : sp.pts;
       g.lineCap = sp.kind === 'runway' ? 'butt' : 'round'; g.lineJoin = 'round'; g.globalAlpha = 0.55;
-      g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(200,220,235,0.9)' : 'rgba(111,210,255,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(D.w, 2 * px);
+      g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(190,240,200,0.9)' : 'rgba(110,230,140,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(sp.w || D.w, 2 * px);
       g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
       g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1 * px); g.setLineDash([5 * px, 4 * px]); g.stroke(); g.setLineDash([]);
     } else {
@@ -1286,12 +1294,25 @@ function drawGuides(g, m, sn, px) {
   if (sn.guides && sn.guides.length > 1) { g.strokeStyle = GUIDE_T; g.lineWidth = 1.2 * px; g.strokeRect(sn.x - 3.5 * px, sn.y - 3.5 * px, 7 * px, 7 * px); }
 }
 /* the part a refused plan runs into, outlined in red */
-function drawHit(g, ap, q, px) {
-  g.save(); g.strokeStyle = IC.C.hostile; g.lineWidth = 2 * px; g.setLineDash([4 * px, 3 * px]); g.fillStyle = 'rgba(255,91,79,0.12)';
+function drawHit(g, ap, q, px, col, fill) {
+  g.save(); g.strokeStyle = col || IC.C.hostile; g.lineWidth = 2 * px; g.setLineDash([4 * px, 3 * px]); g.fillStyle = fill || 'rgba(255,91,79,0.12)';
   if (q.kind === 'runway') { const c = IC.rwAt(q, 0.5), d = IC.rwDir(q), L = IC.rwLen(q); g.translate(c.x, c.y); g.rotate(Math.atan2(d.y, d.x)); g.fillRect(-L / 2, -q.w / 2, L, q.w); g.strokeRect(-L / 2, -q.w / 2, L, q.w); }
-  else if (q.kind === 'taxi') { g.lineWidth = Math.max(q.w, 3 * px); g.strokeStyle = 'rgba(255,91,79,0.45)'; g.beginPath(); q.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
-  else { const D = IC.APART[q.kind] || {}, r = q.r || D.r, w = q.w || D.w || 0.2, h = q.h || D.h || 0.2; g.translate(q.x, q.y); g.rotate(q.a || 0); g.beginPath(); if (r) g.arc(0, 0, r, 0, 7); else g.rect(-w / 2, -h / 2, w, h); g.fill(); g.stroke(); }
+  else if (q.kind === 'taxi') { g.lineWidth = Math.max(q.w, 3 * px); g.strokeStyle = fill ? col : 'rgba(255,91,79,0.45)'; g.globalAlpha = fill ? 0.5 : 1; g.beginPath(); q.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
+  else if (q.x != null) { const P = IC.partOutline(q); g.beginPath(); P.forEach((c, i) => g[i ? 'lineTo' : 'moveTo'](c.x, c.y)); g.closePath(); g.fill(); g.stroke(); }
   g.restore();
+}
+/* the build bar's tools under the cursor: the part they would act on, outlined, and what it would cost or return */
+const OKC = 'rgba(110,230,140,0.95)', OKF = 'rgba(110,230,140,0.16)', NOC = 'rgba(255,91,79,0.95)', NOF = 'rgba(255,91,79,0.16)';
+function drawToolHover(g, S, m, hv, px) {
+  const part = IC.partAt(m.ap, hv, 6 * px);
+  if (!part) { pill(g, m.kind === 'bulldoze' ? 'click a part to remove it' : m.kind === 'upgrade' ? 'click a runway, taxiway or apron' : 'click a building to move it', hv.x, hv.y - 16 * px, px, 'rgba(236,240,244,0.9)'); return; }
+  let t = '', ok = true;
+  if (m.kind === 'bulldoze') { const q = IC.bldRefund(S, m.ap, part); ok = !q.why; t = q.why ? q.why.split(':')[0].split('.')[0] : q.refund ? `remove: ${U.money(q.refund)} back` : 'remove: nothing back'; }
+  else if (m.kind === 'upgrade') { const q = IC.bldUpgradeCost(S, m.ap, part, { mat: m.mat, lit: m.lit !== false, w: part.kind === 'runway' ? m.rwid : part.kind === 'taxi' ? m.twid : null }); ok = !q.why; t = q.why ? q.why.replace(/\.$/, '') : `${q.what.join(', ')}: ${q.cost ? '+' + U.money(q.cost) : 'no charge'} · ${U.dur(q.dur)}`; }
+  else { const q = IC.bldRelocateCost(S, m.ap, part); ok = !q.why; t = q.why ? q.why.split(':')[0].replace(/\.$/, '') : q.cost ? `move: ${U.money(q.cost)}, rebuilt at half price` : 'move: free until its earthworks start'; }
+  const bad = m.kind === 'bulldoze' ? ok : !ok;
+  drawHit(g, m.ap, part, px, bad ? NOC : OKC, bad ? NOF : OKF);
+  pill(g, `${part.name || IC.APART[part.kind].name}: ${t}`, hv.x, hv.y - 16 * px, px, ok ? (m.kind === 'bulldoze' ? '#ffb0a8' : '#b4f5c6') : '#ffb0a8');
 }
 /* a measurement on a dark pill, readable on grass and on concrete; with a side (n), set off that way from the point */
 function pill(g, t, x, y, px, col, n) {

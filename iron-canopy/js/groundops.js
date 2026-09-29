@@ -33,9 +33,11 @@ IC.rwHasILS = (ap, rw, dir) => ap.parts.some(p => p.kind === 'ils' && p.rw === r
 IC.aptConfig = function (S, ap) {
   const g = G(ap), W = S.wind, old = ap.cfg;
   // keep the configuration while the wind holds steady: controllers do not swap runways every few minutes
-  if (old && old.ver === g.ver && S.time - old.t < 900 && Math.abs(W.kt - old.kt) < 5 && Math.abs(U.angWrap(W.dir - old.dir)) < 0.35 && old.ils === IC.needILS(S) && old.mode === (ap.rwMode || 'auto')) return old;
-  const imc = IC.needILS(S), rws = runways(ap).filter(rw => IC.rwUsable(rw) >= 6);
-  const cfg = { ver: g.ver, t: S.time, kt: W.kt, dir: W.dir, ils: imc, mode: ap.rwMode || 'auto', rw: {}, arr: [], dep: [], name: '', text: '' };
+  // (a runway without lights is closed from dusk to dawn)
+  const hr = ((S.time % 86400) + 86400) % 86400 / 3600, dark = hr < 5.5 || hr > 20.5;
+  if (old && old.dark === dark && old.ver === g.ver && S.time - old.t < 900 && Math.abs(W.kt - old.kt) < 5 && Math.abs(U.angWrap(W.dir - old.dir)) < 0.35 && old.ils === IC.needILS(S) && old.mode === (ap.rwMode || 'auto')) return old;
+  const imc = IC.needILS(S), rws = runways(ap).filter(rw => IC.rwUsable(rw) >= 6 && !(dark && rw.lit === false));
+  const cfg = { dark, ver: g.ver, t: S.time, kt: W.kt, dir: W.dir, ils: imc, mode: ap.rwMode || 'auto', rw: {}, arr: [], dep: [], name: '', text: '' };
   // each runway is used into the wind; a tailwind of a few knots is accepted to keep the current direction,
   // or to land on the end that has an instrument landing system in fog
   for (const rw of rws) {
@@ -931,7 +933,7 @@ function step(S, ap, m, dt) {
 function countGround(S, ap, m, what) { m.gm = (m.gm || 0) + 1; (m.gmLog = m.gmLog || []).push(what); const L = ap.gmLog = ap.gmLog || []; L.push({ t: S.time, what }); if (L.length > 400) L.splice(0, L.length - 400); }
 IC.gopsCountGround = countGround;
 /* movements per hour, counted as they happen (the panel compares them with the rated capacity) */
-function countMove(S, ap, k, type, rw) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; IC.emit(S, 'rwMove', { ap, k, type, rw }); }
+function countMove(S, ap, k, type, rw) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type, rw: rw && (rw.id || rw) }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; IC.emit(S, 'rwMove', { ap, k, type, rw }); }
 /* pushbacks block only the stands either side, and only one pushes back from a row at a time */
 function standNb(ap, s) { const a = ap.parts.find(p => p.id === s.apron), i = a && a.stands ? a.stands.indexOf(s) : -1; return i < 0 ? [] : [a.stands[i - 1], a.stands[i + 1]].filter(Boolean); }
 function pushOk(S, ap, m) { return !standNb(ap, m.stand).some(n => n.pushT > S.time); }

@@ -297,18 +297,86 @@ IC.bldStart = function (S, ap, part, pv) {
   (ap.undo = ap.undo || []).push(part.id);
   return w;
 };
-/* upgrading a part's pavement: the part is closed while the work runs */
-IC.bldUpgrade = function (S, ap, part, mat) {
-  if (!IC.PAVED[part.kind] || !IC.PAVE[mat] || !part.built || IC.paveOf(part) === mat || ap.works.some(w => w.part === part)) return false;
-  if (IC.aptLockWhy(S, part.kind, mat)) { IC.log(S, 'warn', 'BUILD', IC.aptLockWhy(S, part.kind, mat)); return false; }
-  const probe = Object.assign({}, part, { mat });
-  const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
-  if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
+/* Upgrade: a built runway, taxiway or apron gets a new pavement, width or lights. The player pays the difference
+   between what the part costs now and what it will cost (nothing back for a cheaper one); the part is closed while
+   the work runs. o: { mat, w, lit } (a string is a pavement) */
+IC.WIDTHS = { runway: [0.3, 0.45, 0.6], taxi: [0.15, 0.18, 0.23] };
+IC.bldUpgradeCost = function (S, ap, part, o) {
+  if (typeof o === 'string') o = { mat: o };
+  const out = { cost: 0, dur: 0, why: '', what: [] };
+  if (!IC.PAVED[part.kind]) { out.why = 'Only runways, taxiways and aprons can be upgraded.'; return out; }
+  if (!part.built) { out.why = 'It is still being built: remove it and plan it again instead.'; return out; }
+  if (ap.works.some(w => w.part === part)) { out.why = 'Work is already under way on it.'; return out; }
+  const to = Object.assign({}, part);
+  if (o.mat && IC.PAVE[o.mat] && o.mat !== IC.paveOf(part)) { to.mat = o.mat; out.what.push(IC.PAVE[o.mat].name.toLowerCase()); }
+  if (o.w && (part.kind === 'runway' || part.kind === 'taxi') && Math.abs(o.w - (part.w || IC.APART[part.kind].w)) > 1e-3) { to.w = o.w; out.what.push(`${Math.round(o.w * 100)} m wide`); }
+  if (o.lit != null && (part.kind === 'runway' || part.kind === 'taxi') && (part.lit !== false) !== !!o.lit) { to.lit = !!o.lit; out.what.push(o.lit ? 'edge lights' : 'no lights'); }
+  if (!out.what.length) { out.why = 'That is what it has already.'; return out; }
+  const lock = to.mat !== part.mat && IC.aptLockWhy(S, part.kind, to.mat); if (lock) { out.why = lock; return out; }
+  out.cost = Math.max(0, IC.partCost(ap, to) - IC.partCost(ap, part));
+  out.dur = Math.max(300, IC.partBuildTime(ap, to) * (to.mat !== part.mat || to.w !== part.w ? 0.6 : 0.15));
+  out.to = to;
+  if (S.budget < out.cost * 0.1) out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed now.`;
+  return out;
+};
+IC.bldUpgrade = function (S, ap, part, o) {
+  const q = IC.bldUpgradeCost(S, ap, part, o);
+  if (q.why) { IC.log(S, 'warn', 'BUILD', q.why); return false; }
+  const to = q.to, cost = q.cost, dur = q.dur, need = to.mat !== part.mat || to.w !== part.w ? IC.partNeed(ap, to) : {};
   const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'mark', name: 'Markings', dur: dur * 0.08, cost: cost * 0.07 }, { k: 'lights', name: 'Lights', dur: dur * 0.07, cost: cost * 0.08 }];
-  const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || U.lc(IC.APART[part.kind].name)}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
+  const nm = part.name || U.lc(IC.APART[part.kind].name);
+  const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${nm[0].toUpperCase() + nm.slice(1)}: ${q.what.join(', ')}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time,
+    mat: to.mat !== part.mat ? to.mat : null, w: to.w !== part.w ? to.w : null, lit: to.lit !== part.lit ? to.lit : null };
   ap.works.push(w);
   part.shut = w.id; ap.dirty = true; ap.cfg = null;
-  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)} (${U.money(cost)}). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)} (${U.money(cost)}, the difference in price). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
+  return true;
+};
+/* Bulldoze: what comes back. Planned work not yet begun is refunded in full, work under way half of what was spent;
+   a finished part is worth a fifth of its price as salvage, less for damage */
+IC.bldRefund = function (S, ap, part) {
+  const why = part.built ? IC.aptRemoveBlock(S, ap, part) : '';
+  const w = ap.works.find(x => x.part === part && x.stages);
+  let refund = 0;
+  if (!part.built) refund = w ? (w.si === 0 && !(w.stages[0].k === 'demo' && w.t > 0) ? w.spent || 0 : (w.spent || 0) * 0.5) : 0;
+  else refund = IC.partCost(ap, part) * 0.2 * U.clamp(part.hp / (part.max || 1), 0, 1);
+  return { refund, why };
+};
+IC.bldBulldoze = function (S, ap, part) {
+  const q = IC.bldRefund(S, ap, part);
+  if (q.why) { IC.log(S, 'warn', 'BUILD', q.why, ap); return false; }
+  if (!IC.aptRemove(S, ap, part.id)) return false;
+  if (q.refund) { if (IC.pay) IC.pay(S, 'refund', -q.refund); else S.budget += q.refund; }
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${part.name || U.lc(IC.APART[part.kind].name)} bulldozed${q.refund ? `, ${U.money(q.refund)} back` : ''}.`, ap);
+  return q.refund || true;
+};
+/* Move: a planned building moves free before its earthworks start; a finished one is taken down and put up again
+   at the new place for half its price and time (runways, taxiways and aprons are rebuilt, not moved) */
+IC.bldRelocateCost = function (S, ap, p) {
+  if (IC.PAVED[p.kind] || p.kind === 'taxi' || p.kind === 'runway' || p.kind === 'ils' || p.kind === 'people' || p.kind === 'skybridge') return { cost: 0, why: 'Runways, taxiways, aprons and bridges are rebuilt, not moved: bulldoze it and plan it again.' };
+  if (IC.bldCanMove(ap, p)) return { cost: 0, why: '' };
+  if (!p.built) return { cost: 0, why: 'Its earthworks have started: it can move once it is finished.' };
+  const why = IC.aptRemoveBlock(S, ap, p);
+  return { cost: IC.partCost(ap, p) * 0.5, why };
+};
+IC.bldRelocate = function (S, ap, p, x, y, a) {
+  if (IC.bldCanMove(ap, p)) return IC.bldMove(S, ap, p, x, y, a);
+  const q = IC.bldRelocateCost(S, ap, p); if (q.why || !p.built) return false;
+  if (S.budget < q.cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(q.cost * 0.1)} needed now.`); return false; }
+  const probe = Object.assign({}, p, { x, y, a: a != null ? a : p.a });
+  ap.parts = ap.parts.filter(q2 => q2 !== p);
+  const ok = IC.aptCanPlace(S, ap, probe);
+  ap.parts.push(p);
+  if (!ok) return false;
+  p.x = probe.x; p.y = probe.y; p.a = probe.a; p.door = null; p.built = false; p.prog = 0;
+  const pv = IC.bldPreview(S, ap, p);
+  for (const st of pv.stages) { st.cost *= 0.5; st.dur *= 0.5; }
+  pv.cost *= 0.5; pv.dur *= 0.5;
+  const w = IC.bldStart(S, ap, p, pv); w.label = `Move ${U.lc(IC.APART[p.kind].name)}`; ap.works.push(w);
+  // (undo takes back only what was planned new: a move is not undone by removing the building)
+  if (ap.undo && ap.undo[ap.undo.length - 1] === p.id) ap.undo.pop();
+  ap.dirty = true; IC.aptExtent(ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: the ${U.lc(IC.APART[p.kind].name)} is taken down and put up again at the new place: ${U.money(pv.cost)}, about ${U.dur(pv.dur)}.`, p);
   return true;
 };
 /* works finished or cancelled: reopen what they closed */
@@ -882,8 +950,8 @@ function planOf(S, m, hv, tol, free) {
     if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse') && pts.length === 2) pts[1] = s; else pts.push(s); }
     out.pts = pts;
     if (pts.length < 2) return out;
-    if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone });
-    else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat });
+    if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone, w: m.twid || null, lit: m.lit === false ? false : null, oneway: m.oneway || null });
+    else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat, w: m.rwid || null, lit: m.lit === false ? false : null });
     else if (t === 'people') {
       // under the runways in a tunnel, over everything else on a viaduct
       const probe = { kind: 'people', pts: pts.map(q => ({ x: q.x, y: q.y })), lv: 1 };
@@ -1152,9 +1220,9 @@ IC.bldPlanSpecs = function (S, ap, specs) {
   const order = specs.slice().sort((a, b) => (a.kind === 'taxi') - (b.kind === 'taxi'));
   for (const sp of order) {
     let p = null;
-    if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
+    if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane, w: sp.w, lit: sp.lit, oneway: sp.oneway });
     else if (sp.kind === 'people') p = IC.aptPlanMover(S, ap, sp.pts, sp.lv);
-    else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
+    else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat, w: sp.w, lit: sp.lit });
     else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, clear: sp.clear }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }

@@ -133,7 +133,9 @@ IC.partMeasure = function (ap, p) {
 };
 /* paved parts cost and take as long as their material says (concrete is the price list) */
 const paveK = (p, k) => IC.PAVED && IC.PAVED[p.kind] ? IC.PAVE[IC.paveOf(p)][k] : 1;
-IC.partCost = (ap, p) => IC.APART[p.kind].cost * IC.partMeasure(ap, p) * paveK(p, 'cost') * (p.kind === 'surface' ? (IC.SURF[p.surf] || IC.SURF.grass).k : 1);
+/* runways and taxiways cost by their width (against the standard one), and a tenth less without edge lights */
+const lineK = p => (p.kind === 'runway' || p.kind === 'taxi') ? (p.w || IC.APART[p.kind].w) / IC.APART[p.kind].w * (p.lit === false ? 0.9 : 1) : 1;
+IC.partCost = (ap, p) => IC.APART[p.kind].cost * IC.partMeasure(ap, p) * paveK(p, 'cost') * lineK(p) * (p.kind === 'surface' ? (IC.SURF[p.surf] || IC.SURF.grass).k : 1);
 IC.partBuildTime = (ap, p) => IC.APART[p.kind].build * Math.max(0.5, IC.partMeasure(ap, p)) * paveK(p, 'build');
 
 /* stands laid out along an apron's back edge; the back is the side facing a terminal, or away from the taxiways */
@@ -949,6 +951,8 @@ IC.aptAutoQueue = autoQueue;
 /* plan a new part: the engineers build it in stages, and each stage is paid for as it runs (builder.js) */
 IC.aptPlan = function (S, ap, part, o) {
   o = o || {};
+  // a runway's or taxiway's width, its edge lights, a one-way taxiway (the build bar's options)
+  if (part.kind === 'taxi' || part.kind === 'runway') { if (o.w) part.w = o.w; if (o.lit === false) part.lit = false; if (o.oneway && part.kind === 'taxi') part.oneway = o.oneway; }
   if (IC.PAVED[part.kind]) part.mat = part.mat || o.mat || 'conc';
   const lock = IC.aptLockWhy(S, part.kind, part.mat);
   if (lock) { IC.log(S, 'warn', 'BUILD', lock); return null; }
@@ -1154,7 +1158,7 @@ IC.updateBases = function (S, dt) {
       if (w.prog < 1) continue;
       w.done = true;
       IC.bldRelease(b, w);
-      if (w.kind === 'upgrade') { w.part.mat = w.mat; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
+      if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
       else if (w.kind === 'build') {
         const before = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
@@ -1326,7 +1330,7 @@ IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   const snaps = pts.map(p => IC.aptSnap(ap, p, o && o.exact ? 0.03 : tol)).filter((s, i, L) => i === 0 || U.dist(s, L[i - 1]) > 0.05);
   if (snaps.length < 2) return null;
   for (const s of snaps) if (!IC.inHome(s.x, s.y) || IC.inLake(s.x, s.y) || !IC.aptInSite(S, ap, s)) { IC.log(S, 'warn', 'BUILD', 'That taxiway leaves the airport site.'); return null; }
-  const probe = { kind: 'taxi', pts: snaps, mat: o && o.mat };
+  const probe = { kind: 'taxi', pts: snaps, mat: o && o.mat, w: o && o.w, lit: o && o.lit };
   if (S.budget < IC.partCost(ap, probe) * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(IC.partCost(ap, probe) * 0.1)} needed now.`); return null; }
   const ids = snaps.map(s => nodeFor(ap, s));
   const clean = ids.filter((id, i) => i === 0 || id !== ids[i - 1]);
