@@ -32,7 +32,9 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 function Builder(q) {
   const B = { q, groups: {}, slots: [], slotOf: new Map(), lights: [], xf: null, tris: 0 };
-  B.group = (name, meta) => { B.g = B.groups[name] || (B.groups[name] = Object.assign({ pos: [], nor: [], col: [] }, meta || {})); return B; };
+  // groups made while B.home names a moving group (a wing that bends) hang from it: parent
+  B.group = (name, meta) => { B.g = B.groups[name] || (B.groups[name] = Object.assign({ pos: [], nor: [], col: [] }, B.home && B.home !== name && meta ? { parent: B.home } : {}, meta || {})); return B; };
+  B.base = () => B.group(B.home || 'main');
   B.group('main');
   // B.remap bakes colours into a model that always wears the same paint (the rare visitors)
   B.slot = c => { if (B.remap && B.remap[c]) c = B.remap[c]; let i = B.slotOf.get(c); if (i == null) { i = B.slots.length; B.slots.push(c); B.slotOf.set(c, i); } return i; };
@@ -155,12 +157,13 @@ function surface(B, secs, f0, f1, c0, c1, kind, up, o) {
   const hinge = (s, dz) => fin ? [s.x - s.c * (o.hc != null ? o.hc : c0) + (o.fwd || 0), s.y, s.z] : [s.x - s.c * (o.hc != null ? o.hc : c0) + (o.fwd || 0), s.y, s.z + (dz || 0)];
   const p0 = hinge(A, o.drop), p1 = hinge(Bb, o.drop), ax = norm(sub(p1, p0)), sides = o.sides || (fin ? [1] : [1, -1]);
   for (const sg of sides) {
+    if (B.homeOf && !fin) B.homeOf(sg);
     const ay = fin ? ax : [ax[0] * sg, ax[1], ax[2] * sg];
     B.group(o.name ? o.name + (fin ? '' : sg > 0 ? 'R' : 'L') : kind + (fin ? '' : sg > 0 ? 'R' : 'L'), { kind, pivot: [p0[0], fin ? p0[1] : sg * p0[1], p0[2]], axis: ay, up: fin ? up : sg > 0 ? up : (o.mirror ? -up : up), side: fin ? 0 : sg });
     const sec = s => ({ x: s.x - s.c * c0, y: s.y, z: s.z + (o.lift || 0), c: s.c * (c1 - c0), t: o.t || 0.05 });
     wing(B, [sec(A), sec(Bb)], o.col || 'WING', { sides: fin ? [1] : [sg], thick: fin ? [0, 1, 0] : undefined, foil: o.foil });
   }
-  B.group('main');
+  B.base();
 }
 /* a body turned round an axis: prof = [[a (along the axis), r], ...]; o.at the centre, o.axis 'x' | 'y' | 'z', o.ry/rz
    squash it, o.col(i) the colour of each band, cap0/cap1 close the ends */
@@ -224,7 +227,7 @@ function prop(B, name, x, y, z, dia, n, col, o) {
     const a = i / n * Math.PI * 2 + (o.rot || 0);
     B.with(p => { const yy = p[1] - y, zz = p[2] - z; return [p[0], y + yy * Math.cos(a) - zz * Math.sin(a), z + yy * Math.sin(a) + zz * Math.cos(a)]; }, () => box(B, x, y, z + L / 2, cw * 0.25, cw, L, col || P.black, { roll: 0.35 }));
   }
-  B.group('main');
+  B.base();
   lathe(B, [[0.35 * dia * 0.18, 0], [0.1 * dia * 0.18, 0.5 * dia * 0.12], [-0.3 * dia * 0.18, dia * 0.07]], o.spin || P.dgrey, { at: [x + dia * 0.03, y, z], cap1: o.spin || P.dgrey });
 }
 /* a rotor of n blades about z (or about y for a tail rotor), radius R */
@@ -378,17 +381,23 @@ function airliner(B, s) {
   // the main wing, with its belly fairing, winglets and flap track fairings; flaps in their own group
   const w = s.wing, wz = zc + (w.z != null ? w.z : -0.3) * H;
   const secs = plan(w.x, 0, wz, w.span / 2, w.c0, w.c1, w.sweep, w.dih || 5, 0.15, 0.1, w.kink);
-  wing(B, secs, s.wingCol || 'WING', { mirror: true });
+  // close in, each half of the wing is a group of its own that bends at the root (it sags on the ground and lifts in
+  // flight); its flaps, ailerons, spoilers, slats and engines hang from it
+  const split = !!q, homeOf = sg => sg > 0 ? 'wingR' : 'wingL', home = sg => { if (split) { B.home = null; B.group(homeOf(sg), { kind: 'flex', pivot: [w.x - w.c0 * 0.4, sg * D * 0.45, wz], axis: [sg, 0, 0], up: 0.02 * Math.min(1.6, w.span / 36) }); B.home = homeOf(sg); } };
+  const unhome = () => { B.home = null; B.group('main'); };
+  if (split) { for (const sg of [1, -1]) { home(sg); wing(B, secs, s.wingCol || 'WING', { sides: [sg] }); } unhome(); B.homeOf = sg => { home(sg); }; }
+  else wing(B, secs, s.wingCol || 'WING', { mirror: true });
   if (w.fairing !== false) loft(B, [{ x: w.x + w.c0 * 0.12, w: 0.05, h: 0.05, z: zc - H * 0.34 }, { x: w.x - w.c0 * 0.1, w: D * 0.42, h: H * 0.2, z: zc - H * 0.34 }, { x: w.x - w.c0 * 0.9, w: D * 0.42, h: H * 0.2, z: zc - H * 0.34 }, { x: w.x - w.c0 * 1.2, w: 0.05, h: 0.05, z: zc - H * 0.3 }], ANG.lo, () => BELLY, {});
   const tip = secs[secs.length - 1];
   if (s.winglet && q !== -1) for (const sg of [1, -1]) {
     const h = s.winglet, wl = [{ x: tip.x - tip.c * 0.1, y: tip.y * sg, z: tip.z, c: tip.c * 0.9, t: 0.08 }, { x: tip.x - tip.c * 0.1 - h * 0.7, y: (tip.y + h * 0.18) * sg, z: tip.z + h, c: tip.c * 0.35, t: 0.08 }];
-    wing(B, wl, s.wingletCol || 'FIN', { thick: [0, sg, 0] });
+    home(sg); wing(B, wl, s.wingletCol || 'FIN', { thick: [0, sg, 0] });
   }
   if (q && s.canoes !== false) for (const sg of [1, -1]) for (const f of [0.28, 0.5, 0.72]) {
     const sa = secs[0], sb = secs[secs.length - 1], y = f * sb.y, xl = sa.x + (sb.x - sa.x) * f, c = sa.c + (sb.c - sa.c) * f, z = sa.z + (sb.z - sa.z) * f;
-    lathe(B, [[c * 0.1, 0.02], [0, 0.18], [-c * 0.35, 0.2], [-c * 0.55, 0.02]], 'WING', { at: [xl - c * 0.75, y * sg, z - 0.15], segs: 5, rz: 1.4 });
+    home(sg); lathe(B, [[c * 0.1, 0.02], [0, 0.18], [-c * 0.35, 0.2], [-c * 0.55, 0.02]], 'WING', { at: [xl - c * 0.75, y * sg, z - 0.15], segs: 5, rz: 1.4 });
   }
+  if (split) unhome();
   if (q && civil) {
     // flaps: plates under the trailing edge that swing down about it (the hinge axis runs along the edge, inboard to
     // outboard on the right and outboard to inboard on the left, so one negative angle lowers both)
@@ -396,16 +405,19 @@ function airliner(B, s) {
     const at = f => { const [x, y, z] = te(f); return { x: x + (sa.c + (sb.c - sa.c) * f) * 0.22, y, z: z - 0.08, c: (sa.c + (sb.c - sa.c) * f) * 0.24, t: 0.07 }; };
     const p0 = te(0.1), p1 = te(0.74), ax = norm([p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]]);
     for (const sg of [1, -1]) {
+      home(sg);
       B.group(sg > 0 ? 'flapR' : 'flapL', { kind: 'flap', pivot: [p0[0], sg * p0[1], p0[2]], axis: [ax[0] * sg, ax[1], ax[2] * sg], up: -0.55 });
       wing(B, [at(0.1), at(0.4)], 'WING', { sides: [sg] }); wing(B, [at(0.42), at(0.74)], 'WING', { sides: [sg] });
     }
-    B.group('main');
+    unhome();
     // ailerons outboard (+ rolls right: the right one up), spoilers on top ahead of the flaps (raised at
     // touchdown), slats along the leading edge (out and down with the flaps)
     surface(B, secs, 0.76, 0.96, 0.8, 1.03, 'ail', 0.3, { mirror: true, t: 0.04 });
     surface(B, secs, 0.14, 0.66, 0.55, 0.76, 'spoil', 0.8, { lift: 0.03, t: 0.03, foil: FOIL.flat });
     surface(B, secs, 0.16, 0.94, -0.01, 0.13, 'slat', 0.35, { hc: 0.18, drop: -0.35, t: 0.07 });
+    unhome();
   }
+  B.homeOf = null;
   // the tail: tailplane (or a T-tail on top of the fin) and fin, with a fillet
   const T = s.tail2, ftop = T.fz != null ? T.fz : zc + H * 0.42;
   const fsecs = plan(x0 + tail * 0.9 + T.fc0 * 0.15, 0, ftop - 0.3, T.fh, T.fc0, T.fc1, T.fsweep, 90, 0.12, 0.1);
@@ -421,6 +433,7 @@ function airliner(B, s) {
   // engines on pylons, turbofans or turboprops
   for (const e of s.eng || []) for (const sg of e.y ? [1, -1] : [0]) {
     const ey = e.y * sg, ez = e.z, len = e.len, r = e.d / 2, ex = e.tail ? e.x : w.x - e.y * Math.tan(w.sweep * RAD) + e.dx;
+    if (sg && !e.tail && e.wz == null) home(sg);
     if (e.prop) {
       lathe(B, [[len * 0.5, r * 0.45], [len * 0.42, r * 0.9], [len * 0.2, r], [-len * 0.2, r * 0.9], [-len * 0.5, r * 0.3]], 'ENG', { at: [ex, ey, ez], rz: 1.25, cap1: 'ENG' });
       B.np = (B.np || 0) + 1; prop(B, 'prop' + B.np, ex + len * 0.55, ey, ez, e.prop, e.blades || 6, P.black, { spin: e.spin || 'ENG' });
@@ -438,20 +451,21 @@ function airliner(B, s) {
         for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), r0 = r * 0.2, r1 = r * 0.82, tw = 0.5;
           const pt = (rr, s2) => [ex + len * 0.505 + s2 * 0.06, ey + ca * rr - sa * s2 * r * 0.16 * tw, ez + sa * rr + ca * s2 * r * 0.16 * tw];
           B.tri(pt(r0, -1), pt(r1, -1), pt(r1, 1), '#9aa2aa', [ex, ey, ez]); B.tri(pt(r0, -1), pt(r1, 1), pt(r0, 1), '#9aa2aa', [ex, ey, ez]); }
-        B.group('main');
+        B.base();
         lathe(B, [[len * 0.575, 0.02], [len * 0.54, r * 0.2], [len * 0.51, r * 0.27]], P.dgrey, { at: [ex, ey, ez], segs: 8 });
         // the thrust reverser: the aft cowl slides back (its own group, out of sight when stowed) over dark cascades
         B.group('revs' + B.np, { kind: 'rev', pivot: [ex, ey, ez], axis: [-1, 0, 0], up: len * 0.2 });
         lathe(B, [[len * 0.02, r * 0.985], [-len * 0.18, r * 0.83]], 'ENG', { at: [ex, ey, ez], segs: 8 });
         B.group('revc' + B.np, { kind: 'revc', pivot: [ex, ey, ez], axis: [1, 0, 0] });
         lathe(B, [[len * 0.02, r * 0.96], [-len * 0.16, r * 0.93]], '#2a2c2e', { at: [ex, ey, ez], segs: 8, smooth: false });
-        B.group('main');
+        B.base();
       }
       if (q) lathe(B, [[-len * 0.46, r * 0.4], [-len * 0.55, r * 0.26], [-len * 0.66, 0.02]], P.nozzle, { at: [ex, ey, ez], segs: 8 });
       // the pylon up to the wing
       const top = e.wz != null ? e.wz : wz + Math.abs(ey) * Math.tan((w.dih || 5) * RAD);
       wing(B, [{ x: ex + len * 0.3, y: ey, z: ez + r * 0.7, c: len * 0.85, t: 0.1 }, { x: ex + len * 0.05, y: ey, z: top, c: len * 0.95, t: 0.1 }], 'WING', { thick: [0, 1, 0] });
     }
+    if (B.home) unhome();
   }
   if (s.rotodome) { box(B, -L * 0.12, 0, zc + H / 2 + 1.1, 3.2, 0.4, 2.2, P.grey, { top: [0.6, 1] }); lathe(B, [[-0.9, 0.2], [-0.8, s.rotodome * 0.46], [0, s.rotodome / 2], [0.8, s.rotodome * 0.46], [0.9, 0.2]], P.lgrey, { at: [-L * 0.12, 0, zc + H / 2 + 3.2], axis: 'z', segs: q ? 20 : 8, cap0: P.lgrey, cap1: P.lgrey }); }
   if (s.probe) cyl(B, [x1 + s.probe / 2 - 0.5, 0, zc + H * 0.35], s.probe, 0.1, P.metal, 'x', { segs: 5 });
@@ -1316,6 +1330,7 @@ def('dispenser', 'Hydrant dispenser', AV, 7.2, 2.3, B => {
   box(B, -1.4, 0, 1.5, 4.0, 2.2, 0.35, P.dgrey); box(B, -2.1, 0, 2.5, 2.2, 2.0, 0.2, '#c8281e');
   for (const sg of [1, -1]) box(B, -2.1, sg * 0.95, 3.0, 2.2, 0.06, 0.8, YEL); cyl(B, [-0.6, 0.6, 2.0], 0.8, 0.45, P.dark, 'y', { segs: 8 }); beaconOn(B, 2.6, 0, 2.8);
 });
+def('lorry', 'Cargo lorry', AV, 10, 2.5, B => lorry(B, 10, 2.5, 3, WHT, { bed: 2.7, bedCol: '#d0d4d8' }));
 def('gpu', 'Ground power unit', AV, 2.6, 1.5, B => { box(B, 0, 0, 0.95, 2.4, 1.4, 1.1, '#dfe2e2'); box(B, 0, 0, 0.45, 2.4, 1.2, 0.15, P.dark); wheels(B, [0.8, -0.8], 1.5, 0.28, 0.12); box(B, 1.5, 0, 0.5, 0.8, 0.1, 0.08, P.dark); });
 // the real aircraft's height, metres (the gallery checks the models against length, span and height)
 const REAL_H = { light: 2.72, tourer: 2.22, retract: 2.62, twin: 2.97, taildrag: 2.62, utility: 4.71, helil: 3.28, helim: 4.95, glider: 1.55, micro: 3.5, rj: 9.73, widel: 18.5, jumbo: 24.09, cargoprop: 9.64, vlj: 4.35, bizjet: 6.1, bizlong: 7.82, bizprop: 4.37, vintage: 7.54, sst: 12.2, outsize: 18.9, airship: 17.4, amphib: 8.98, display: 3.98, state: 19.33, turbo: 7.65, narrow: 11.76, wide: 18.5, cargo: 19.4, fighter: 5.1, heavy: 12.6, drone: 3.8, heli: 5.1, ahe: 3.8, ftr_e: 5.9, str: 6.2, ewj: 6.3, bmr: 13.3, isr: 2.9 };
@@ -1342,7 +1357,7 @@ function finish(B, key) {
   const groups = {}, box = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
   for (const k in B.groups) {
     const g = B.groups[k]; if (!g.pos.length) continue;
-    groups[k] = { pos: Float32Array.from(g.pos), nor: Float32Array.from(g.nor), col: Uint8Array.from(g.col), kind: g.kind || 'main', pivot: g.pivot || [0, 0, 0], axis: g.axis || [0, 0, 1], up: g.up || 0, rpm: g.rpm || 1, R: g.R || 0 };
+    groups[k] = { pos: Float32Array.from(g.pos), nor: Float32Array.from(g.nor), col: Uint8Array.from(g.col), kind: g.kind || 'main', pivot: g.pivot || [0, 0, 0], axis: g.axis || [0, 0, 1], up: g.up || 0, rpm: g.rpm || 1, R: g.R || 0, parent: g.parent || null, side: g.side || 0 };
     for (let i = 0; i < g.pos.length; i += 3) for (let a = 0; a < 3; a++) { box[a] = Math.min(box[a], g.pos[i + a]); box[a + 3] = Math.max(box[a + 3], g.pos[i + a]); }
   }
   return { key, groups, slots: B.slots, lights: B.lights, tris: B.tris, box };

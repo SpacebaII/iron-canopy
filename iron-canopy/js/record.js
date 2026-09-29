@@ -396,8 +396,9 @@ function joined(R, key, now) {
 function markPhase(tr, now, code, alt) {
   const last = tr.n ? (at(tr, tr.n - 1, 8) | 0) >> 1 : -1;
   if (last === GPH.roll && (code === GPH.air || code === GPH.appr)) tr.marks.push([tr.t1, 'to']);
-  // the start of the take-off roll, of the pushback and of parking: the engines spool from these
-  if (code !== last) { if (code === GPH.roll) tr.marks.push([now, 'r0']); else if (code === GPH.push) tr.marks.push([now, 'p0']); else if (code === GPH.park) tr.marks.push([now, 'pk']); }
+  // the start of the take-off roll, of the pushback and of parking (the engines spool from these); the end of the
+  // pushback (the tug lets go)
+  if (code !== last) { if (code === GPH.roll) tr.marks.push([now, 'r0']); else if (code === GPH.push) tr.marks.push([now, 'p0']); else if (code === GPH.park) tr.marks.push([now, 'pk']); if (last === GPH.push) tr.marks.push([now, 'p1']); }
   if (last === GPH.final && code === GPH.land) tr.marks.push([now, 'td']);
   // handed from the approach to the runway: the final starts a little higher than the approach ended; the view
   // scales the final down so the two meet

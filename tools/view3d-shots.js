@@ -58,6 +58,29 @@ async function flicker(V) {
   for (let f = 1; f < frames.length - 1; f++) for (let i = 0; i < W * H * 4; i += 4) { const a = lum(f, i) - lum(f - 1, i), b = lum(f + 1, i) - lum(f, i); n++; if (Math.abs(a) > 30 && Math.abs(b) > 30 && Math.sign(a) !== Math.sign(b)) osc++; }
   return { flickerPct: +(osc / n * 100).toFixed(3), frames: frames.length };
 }
+/* brief 41: the live view on a place (no track to follow: the orbit camera is set by hand), and clips made frame by
+   frame (the game stepped between frames, speed game seconds a video second; labels drawn in) */
+async function liveAt(S, x, y) {
+  const L = IC.liveOpen(S, { x, y, name: 'here' });
+  for (let i = 0; i < 150 && !(L.renderer && L.tiles && L.tiles.size > 8); i++) await wait(100);
+  L.el.querySelector('[data-rp=full]').click(); camTo(L, 'orbit'); L.follow = null; await wait(1500);
+  return L;
+}
+function orbitAt(L, x, y, yaw, pitch, dist, h) { L.follow = null; Object.assign(L.orbit, { tx: x - L.cx, tz: y - L.cy, ty: (h || 0) + (L.flat && L.flat.length ? L.flat[0].e * L.hk : 0), yaw, pitch, dist }); }
+function clipStart(L, labels) {
+  window.requestAnimationFrame = () => 0;
+  const cv = document.createElement('canvas'); cv.width = 960; cv.height = 540;
+  L.rec = { cv, g: cv.getContext('2d'), o: { w: 960, h: 540, labels: labels !== false } };
+  return { L, cv, now: performance.now(), acc: 0, f: 0 };
+}
+/* one video frame: the game runs speed game seconds a video second (0: paused), the view draws, the frame is kept */
+async function clipFrame(C, S, speed, before) {
+  C.acc += (speed || 0) / 30; while (C.acc >= 0.25) { IC.step(S, 0.25); C.acc -= 0.25; }
+  if (before) before(C);
+  IC.replayStep(C.L, C.now += 1000 / 30);
+  await __frame(C.cv.toDataURL('image/jpeg', 0.9).slice(23));
+  C.f++; if (C.f % 150 === 0) console.log('frame', C.f, 'game', U.hhmm(S.time));
+}
 const frameTimes = async n => { const ts = []; let last = performance.now(); await new Promise(res => { const f = now => { ts.push(now - last); last = now; if (ts.length < n) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); ts.sort((a, b) => a - b); return { med: +ts[n >> 1].toFixed(1), p95: +ts[Math.floor(n * 0.95)].toFixed(1) }; };`;
 
 const SCENES = {
@@ -233,6 +256,59 @@ const SCENES = {
     t0 = performance.now(); for (let i = 0; i < 50; i++) IC.drawFieldLife(g, S, f, 0.05); const fieldMs = (performance.now() - t0) / 50;
     window.__perf = { aircraft: near(), stepMs: +stepMs.toFixed(3), apronMs: +apronMs.toFixed(3), fieldMs: +fieldMs.toFixed(3), mapClose, mapAirport, liveFull, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
     await __snap('frames-38'); S.paused = true;`,
+  // brief 41, stills to look at: a jet at a bridge with its vehicles; spoilers, reversers and tyre smoke; the gear
+  // coming up; a fighter's controls
+  'life-stills': `
+    const S = await game('sandbox', 11);
+    const q = steps(S, 3 * 3600, S => S.rec && S.rec.turns.find(q => q.kind === (window.KIND || 'bridge') && q.len > 0.3 && q.t1 == null && S.time - q.t0 > 400));
+    if (!q) throw new Error('no turnaround at a bridge');
+    console.log('turn', q.kind, q.type, q.cs, Math.round(S.time - q.t0), 's in of', q.dur);
+    const L = await liveAt(S, q.x, q.y);
+    orbitAt(L, q.x, q.y, q.a + 2.2, 0.32, 0.9); await wait(2500); await __snap('life-gate');
+    orbitAt(L, q.x, q.y, q.a - 1.2, 0.25, 0.7); await wait(2500); await __snap('life-gate-2');
+    orbitAt(L, q.x, q.y, q.a + 3.14, 0.9, 1.6); await wait(2500); await __snap('life-gate-3');
+    console.log('stats', JSON.stringify(IC.life3d.stats(L)));`,
+  'life-land': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 30 && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('no jet on final');
+    const L = await live(S, m, 'side', 1500); S.paused = false;
+    await new Promise(r => { const f = () => { if (m.phase === 'land' || m.dead) r(); else setTimeout(f, 30); }; f(); });
+    await wait(+(window.AFTER || 250)); S.paused = true; L.camK = +(window.K || 0.45); await wait(1500); await __snap('life-land');
+    camTo(L, 'chase'); L.camK = 0.6; await wait(2000); await __snap('life-land-2');`,
+  'life-takeoff': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'roll' && m.spd > 0.5 && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('no take-off roll');
+    const L = await live(S, m, 'side', 1200); S.paused = false; L.camK = 0.5;
+    await wait(+(window.AFTER || 900)); S.paused = true; await wait(1500); await __snap('life-takeoff');`,
+  // brief 41's clips, made frame by frame (960 × 540, 30 fps, labels drawn in). N limits the frames (a trial run)
+  // a landing: the flare, the touchdown with tyre smoke, spoilers up, reversers out and stowed, the rollout
+  'clip-landing': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.alt < 0.14 && m.alt > 0.1 && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('no jet on final');
+    const L = await live(S, m, 'side', 600); L.camK = 0.55;
+    const C = clipStart(L), N = +(window.N || 1500); let td = null;
+    for (let f = 0; f < N; f++) await clipFrame(C, S, 1, () => {
+      if (td == null && m.phase !== 'final') td = f;
+      if (td != null && f === td + 150) { camTo(L, 'chase'); L.camK = 0.75; }
+      if (td != null && f === td + 600) { camTo(L, 'side'); L.camK = 0.9; }
+    });
+    await __snap('clip-landing-last');`,
+  // a take-off: lining up, the roll, rotation, lift-off, the gear folding nose first, the climb-out
+  'clip-takeoff': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 3 * 3600, S => findMove(S, m => (m.phase === 'lineup' || m.phase === 'wait') && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('nothing lining up');
+    const L = await live(S, m, 'chase', 600); L.camK = 0.7;
+    const C = clipStart(L), N = +(window.N || 1500); let roll = null, air = null;
+    for (let f = 0; f < N; f++) await clipFrame(C, S, roll != null && air == null ? 1.4 : 1, () => {
+      if (roll == null && m.phase === 'roll') { roll = f; camTo(L, 'side'); L.camK = 0.5; }
+      if (air == null && roll != null && (m.dead || m.phase !== 'roll')) air = f;
+      if (air != null && f === air + 420) { camTo(L, 'chase'); L.camK = 0.9; }
+    });
+    await __snap('clip-takeoff-last');`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -249,7 +325,7 @@ const SCENES = {
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k));
+  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k) && !/^clip-/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -268,19 +344,22 @@ const SCENES = {
     if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
     if (process.env.VIDEO_MS) await page.addInitScript(ms => { window.VIDEO_MS = ms; }, process.env.VIDEO_MS);
     let ff = null;
-    if (name === 'movie') {
+    if (name === 'movie' || /^clip-/.test(name)) {
       // the frames go one after another into one file of JPEGs, which ffmpeg reads as a stream when they are done
-      ff = path.join(dir, '3d-live.mjpeg'); fs.writeFileSync(ff, '');
-      await page.exposeFunction('__frame', b64 => fs.appendFileSync(ff, Buffer.from(b64, 'base64')));
+      ff = path.join(dir, name === 'movie' ? '3d-live.mjpeg' : `3d-${name}.mjpeg`); fs.writeFileSync(ff, '');
+      // KEEP=n also keeps every nth frame as a picture of its own, to look at
+      const keep = +(process.env.KEEP || 0), fd = path.join(dir, `frames-${name}`); let fi = 0;
+      if (keep) fs.mkdirSync(fd, { recursive: true });
+      await page.exposeFunction('__frame', b64 => { const b = Buffer.from(b64, 'base64'); fs.appendFileSync(ff, b); if (keep && fi % keep === 0) fs.writeFileSync(path.join(fd, `f${String(fi).padStart(4, '0')}.jpg`), b); fi++; });
     }
-    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK', 'KIND', 'AFTER', 'K', 'N']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
     if (ff) {
-      const out = path.join(dir, '3d-live.webm'), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
+      const out = path.join(dir, name === 'movie' ? '3d-live.webm' : `3d-${name}.webm`), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
       require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', ff, '-c:v', 'libvpx', '-b:v', '3M', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
       fs.unlinkSync(ff); console.log('saved', out);
     }
