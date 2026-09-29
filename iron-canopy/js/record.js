@@ -181,10 +181,16 @@ IC.recPose = function (tr, t, out, wind) {
   o.roll = 0; o.pitch = 0; o.g = 1; o.gear = 0; o.flap = 0; o.crab = 0; o.lights = 0; o.ab = 0; o.rot = 0;
   if (ground) return o;
   if (o.gnd) {
+    // the nose follows the smoothed path round the taxiway's bends (backwards while pushing back); standing, the
+    // heading the ground move gives
+    const p = IC.recAt(tr, Math.max(IC.recFirstT(tr), t - 0.5), PQ), q = IC.recAt(tr, Math.min(tr.t1, t + 0.5), PR);
+    if (p && q && U.dxy(p.x, p.y, q.x, q.y) > 0.01) o.h = Math.atan2(q.y - p.y, q.x - p.x) + (code === GPH.push ? Math.PI : 0);
     o.gear = 1; o.lights = code === GPH.roll || code === GPH.land ? 1 : 0;
     if (code === GPH.roll) {
       // the roll: flaps set, the nose rises through the last few knots before lift-off
-      o.flap = 0.35; o.rot = U.clamp((c.spd - 0.74) / 0.14, 0, 1); o.pitch = o.rot * 8 * RD; o.ab = cls === 'fighter' ? 1 : 0;
+      // (in a replay the lift-off is known: the rotation takes the three seconds before it)
+      const lo = tr.marks.find(m => m[1] === 'to' && m[0] >= t && m[0] - t < 3);
+      o.flap = 0.35; o.rot = Math.max(U.clamp((c.spd - 0.66) / 0.14, 0, 1), lo ? 1 - (lo[0] - t) / 3 : 0); o.pitch = o.rot * 8 * RD; o.ab = cls === 'fighter' ? 1 : 0;
     } else if (code === GPH.land) {
       // touchdown on the main wheels, the nose coming down over three seconds
       const td = markAt(tr, 'td', t, 3); o.flap = 1; o.pitch = td != null ? 5 * RD * (1 - (t - td) / 3) : 0;
@@ -212,7 +218,12 @@ IC.recPose = function (tr, t, out, wind) {
     o.pitch = (3 + 3 * U.clamp((0.015 - c.alt) / 0.015, 0, 1)) * RD;
     if (wind && wind.kt > 0.5 && c.alt > 0.01) o.crab = Math.asin(U.clamp(wind.kt * 0.514 * Math.sin(wind.dir - c.h) / v, -0.4, 0.4)) * U.clamp((c.alt - 0.01) / 0.02, 0, 1);
   } else if (code === GPH.appr && c.alt < 1.2) { o.gear = c.alt < 0.9 ? 1 : 0; o.flap = 0.5; o.lights = 1; }
-  else if (to != null && t - to < 60) { o.gear = t - to < 5 ? 1 : 0; o.flap = 0.35; o.lights = 1; o.ab = cls === 'fighter' && t - to < 25 ? 1 : 0; }
+  else if (to != null && t - to < 60) {
+    // the initial climb: the nose held high (about 15° for an airliner) for the first half minute
+    const d = t - to;
+    o.gear = d < 5 ? 1 : 0; o.flap = 0.35; o.lights = 1; o.ab = cls === 'fighter' && d < 25 ? 1 : 0;
+    if (cls === 'civil' || cls === 'fighter') o.pitch = Math.max(o.pitch, (d < 4 ? 8 + d * 1.75 : 15 - Math.max(0, d - 20) * 0.4) * RD);
+  }
   if (cls === 'fighter' && gam > 0.18) o.ab = 1;
   return o;
 };
@@ -287,7 +298,8 @@ function sampleThreat(S, R, t, now) {
   tr.meta.klass = t.klass || tr.meta.klass;
   const aff = t.decoyKnown ? 'D' : t.aff || 'U', code = t.appr ? GPH.appr : GPH.air;
   markPhase(tr, now, code, t.alt || 0);
-  push(tr, now, t.x, t.y, t.alt || 0, hdgOf(t, tr, lastH(tr)), spdOf(t), t.det ? 1 : 0, AFF[aff] || 0, (t.notchT > 0 ? 1 : 0) + 2 * code);
+  // a flight's heading is where it is going: some keep an h from their take-off that is not kept up
+  push(tr, now, t.x, t.y, t.alt || 0, t.vx || t.vy ? Math.atan2(t.vy, t.vx) : hdgOf(t, tr, lastH(tr)), spdOf(t), t.det ? 1 : 0, AFF[aff] || 0, (t.notchT > 0 ? 1 : 0) + 2 * code);
   tr.seen = now;
 }
 /* key: the tail or air wing flight that joins a ground move to its flight; code: the phase (REC_PHASE) */
