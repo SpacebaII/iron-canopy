@@ -60,9 +60,9 @@ IC.replayUseThree = T => { THREE = T; };
 
 /* ---------- the windows ---------- */
 const CSS = `
-.replay{position:absolute;z-index:10;inset:12px;display:flex;flex-direction:column;border-radius:18px;background:rgba(6,11,16,.96);box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;animation:fadeIn .2s var(--ease)}
+.replay{position:absolute;z-index:10;inset:12px;display:flex;flex-direction:column;border-radius:18px;background:rgba(6,11,16,.96);box-shadow:0 0 0 40px rgba(4,8,12,.94),0 30px 80px rgba(0,0,0,.6);overflow:hidden;animation:fadeIn .2s var(--ease)}
 .live{position:absolute;z-index:9;display:flex;flex-direction:column;border-radius:14px;background:rgba(6,11,16,.94);box-shadow:0 18px 50px rgba(0,0,0,.55);overflow:hidden;resize:both;min-width:280px;min-height:180px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);animation:fadeIn .2s var(--ease)}
-.live.full{inset:12px!important;width:auto!important;height:auto!important;resize:none;z-index:10}
+.live.full{inset:12px!important;width:auto!important;height:auto!important;resize:none;z-index:10;box-shadow:0 0 0 40px rgba(4,8,12,.94)}
 .rp-head{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem .5rem;flex-wrap:wrap}
 .rp-head h2{margin:0;font-family:var(--display);font-weight:700;font-size:1.1rem;letter-spacing:.14em;text-transform:uppercase;color:var(--friend)}
 .rp-head .sub{color:var(--muted);font-size:.9rem;flex:1;min-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

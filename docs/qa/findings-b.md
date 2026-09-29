@@ -27,7 +27,7 @@ Severity: **blocker** (breaks play), **ugly** (looks unfinished or confuses), **
 | 17 | Academy, lesson 1 (and 3, 4, 5, 6) | "Pick Longwave from the Arsenal" but the arsenal opens on Air defence; the radar is on another tab | ugly | b22-lesson1 | yes: a step that asks for something from the arsenal opens it on the right tab |
 | 18 | Models gallery | Header: "Every model in 3D; down the side, from above and from the side inside the real size" | minor | qa3d/3d-gallery | yes: "Every model in the game, side by side at real size" |
 | 19 | Replay, over a city | Ground texture is blurry at low altitude and a straight diagonal seam shows across the city | minor | b16-replay | not fixed: needs a detail texture for the replay ground (after the release) |
-| 20 | Live view / replay full screen | The top bar's text peeks out in the 12 px margin round the full-screen window | minor | qa3d/3d-heli | not yet |
+| 20 | Live view / replay full screen | The top bar's text peeks out in the 12 px margin round the full-screen window | minor | qa3d/3d-heli | yes: a dark veil fills the margin |
 | 21 | Academy lesson panel | The panel scrolled: at step 4 the current step was cut off at the bottom, below three finished ones | ugly | b28-l1s4 | yes: the step before is cut to two lines, the current one is always whole |
 | 22 | Academy lesson 1, step 3 | "Every track is a yellow UNKNOWN. Click one." with none on screen (the few within 440 km were far out) | ugly | b26-l1s3 | yes: "Most are far out: press Tab to jump to one, or zoom out and click one." |
 | 23 | 3D chase on a missile | With the camera closer, the missile's flame filled the picture | ugly | replay-lr-1-boost-chase | yes: missiles are chased from further back |
