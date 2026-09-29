@@ -49,7 +49,8 @@ const CONVOY = 600;     // lorries leave the supplier every ten minutes
 const LORRY = 0.25;     // 90 km/h on the road
 /* what a building takes to put up, in lorry loads */
 const BLD_NEED = { terminal: { conc: 14, steel: 5, area: true }, cargo: { conc: 10, steel: 5, area: true }, hangar: { conc: 12, steel: 8 }, has: { conc: 25, steel: 6 }, alert: { conc: 10, steel: 3 },
-  fuel: { conc: 3, steel: 6 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 6, steel: 3 }, fire: { conc: 4, steel: 2 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 } };
+  fuel: { conc: 3, steel: 6 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 6, steel: 3 }, fire: { conc: 4, steel: 2 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 },
+  deice: { conc: 6, steel: 1 }, fuelpad: { conc: 3, steel: 2 } };
 IC.partNeed = function (ap, p) {
   const out = {};
   if (IC.PAVED[p.kind]) {
@@ -291,6 +292,7 @@ IC.bldStart = function (S, ap, part, pv) {
 /* upgrading a part's pavement: the part is closed while the work runs */
 IC.bldUpgrade = function (S, ap, part, mat) {
   if (!IC.PAVED[part.kind] || !IC.PAVE[mat] || !part.built || IC.paveOf(part) === mat || ap.works.some(w => w.part === part)) return false;
+  if (IC.aptLockWhy(S, part.kind, mat)) { IC.log(S, 'warn', 'BUILD', IC.aptLockWhy(S, part.kind, mat)); return false; }
   const probe = Object.assign({}, part, { mat });
   const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
   if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
@@ -385,7 +387,8 @@ IC.BTOOLS = {
   concourse: { name: 'Concourse', desc: 'Click the two ends of a pier: a terminal with gates (jet bridges) on both sides and a taxilane along each apron.' },
   remote: { name: 'Remote apron', desc: 'Two corners: an apron with a taxilane along its front. Stands served by bus.' },
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
-  stand: { name: 'Ramp stand', desc: 'Click on a ramp to paint a stand of the chosen size. Aircraft in the open turn round quicker but are easier to destroy.' }
+  stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go: the new paving joins it seamlessly. Aprons that touch are one paved area.' },
+  stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
 };
 /* the parallel taxiway to the side of a runway where the cursor is */
 function parallelSpec(ap, rw, p) {
@@ -519,15 +522,150 @@ function snapCorner(ap, m, p, tol, free) {
     if (!q.w || !q.h || q.kind === 'runway' || q.kind === 'taxi') continue;
     for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const c = IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2); if (U.dist(c, p) < tol) return { kind: 'corner', x: c.x, y: c.y }; }
   }
+  // then onto the edge of a taxiway or an apron, so a new apron or terminal meets it without a gap or an overlap
+  if (!free) {
+    let best = null, bd = tol;
+    for (const e of edgesNear(ap, p, tol + 0.3)) {
+      const L = U.dist(e.a, e.b); if (L < 0.1) continue;
+      const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = (p.x - e.a.x) * ux + (p.y - e.a.y) * uy;
+      if (t < -0.05 || t > L + 0.05) continue;
+      const off = (p.x - e.a.x) * -uy + (p.y - e.a.y) * ux, side = Math.sign(off) || 1, d = Math.abs(Math.abs(off) - e.half);
+      if (d < bd) { bd = d; best = { kind: 'edge', x: e.a.x + ux * t - uy * side * e.half, y: e.a.y + uy * t + ux * side * e.half, what: e.what }; }
+    }
+    if (best) return best;
+  }
   const r = { x: ap.x, y: ap.y, a: m.rot }, l = IC.rectLocal(r, p), g = free ? 0.01 : 0.05;
   const q = IC.rectWorld(r, Math.round(l.x / g) * g, Math.round(l.y / g) * g);
   return { kind: 'free', x: q.x, y: q.y };
 }
+/* buildings face the nearest taxiway or apron edge, set back by a gap, and get a way in: aircraft buildings a short
+   taxiway to their door, the others a service road. gap: metres of apron or verge between pavement and building /100 */
+IC.SNAP_GAP = { hangar: 0.3, has: 0.3, deice: 0.25, fuelpad: 0.2, fire: 0.3, tower: 0.35, fuel: 0.45, hydrant: 0.35, atc: 0.6, gradar: 0.5, ammo: 0.8 };
+const STUB = k => k === 'hangar' || k === 'has' || !!IC.APART[k].pad;
+/* the pavement edges near a point: taxiway centrelines (with their half width) and apron edges */
+function edgesNear(ap, p, R) {
+  const out = [];
+  for (const q of ap.parts) {
+    if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) {
+      const a = ap.nodes[q.nodes[i - 1]], b = ap.nodes[q.nodes[i]];
+      if (a && b && U.segDist(p.x, p.y, a.x, a.y, b.x, b.y) < R) out.push({ a, b, half: q.w / 2, part: q, what: 'taxiway' });
+    } else if (q.kind === 'apron' && IC.partDist(ap, q, p) < R) {
+      const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2));
+      for (let i = 0; i < 4; i++) out.push({ a: c[i], b: c[(i + 1) % 4], half: 0, part: q, what: 'apron', outN: IC.rectWorld(q, 0, 0) });
+    }
+  }
+  return out;
+}
+/* where a building goes when it snaps: facing the nearest edge within reach, slid along it by the cursor */
+IC.bldSnapBuilding = function (ap, kind, p) {
+  const D = IC.APART[kind], gap = IC.SNAP_GAP[kind];
+  if (gap == null || !D) return null;
+  const w = D.w || (D.r || 0.1) * 2, h = D.h || (D.r || 0.1) * 2;
+  let best = null;
+  for (const e of edgesNear(ap, p, h + gap + 1.2)) {
+    const L = U.dist(e.a, e.b); if (L < 0.2) continue;
+    const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L;
+    const t = U.clamp((p.x - e.a.x) * ux + (p.y - e.a.y) * uy, Math.min(L / 2, w / 2), Math.max(L / 2, L - w / 2));
+    const fx = e.a.x + ux * t, fy = e.a.y + uy * t, off = (p.x - fx) * -uy + (p.y - fy) * ux;
+    let side = Math.sign(off) || 1;
+    // an apron's building stands outside it
+    if (e.outN) { const o = (e.outN.x - fx) * -uy + (e.outN.y - fy) * ux; side = -Math.sign(o) || side; }
+    // the edge whose building would stand nearest the cursor (so a second click on it picks the same one)
+    const nx = -uy * side, ny = ux * side, dist = e.half + gap + h / 2, d = U.dxy(p.x, p.y, fx + nx * dist, fy + ny * dist);
+    if (best && d >= best.d) continue;
+    best = { d, x: fx + nx * dist, y: fy + ny * dist, a: Math.atan2(uy, ux), foot: { x: fx, y: fy }, edge: { x: fx + nx * e.half, y: fy + ny * e.half }, face: { x: fx + nx * (e.half + gap), y: fy + ny * (e.half + gap) }, door: { x: fx + nx * (e.half + gap - 0.05), y: fy + ny * (e.half + gap - 0.05) }, what: e.what, part: e.part };
+  }
+  if (!best) return null;
+  const spec = { kind, x: best.x, y: best.y, a: best.a };
+  const specs = [spec];
+  if (STUB(kind)) specs.push({ kind: 'taxi', pts: [best.door, best.what === 'apron' ? best.edge : best.foot], lane: true, stub: true });
+  else spec.link = [{ x: best.face.x, y: best.face.y }, { x: best.edge.x, y: best.edge.y }];
+  return { specs, snap: { kind: 'edge', x: best.x, y: best.y, what: best.what }, text: `faces the ${best.what}${STUB(kind) ? `, with a ${Math.round(U.dist(best.door, best.foot) * 100)} m taxiway to its door` : ', with a service road'}` };
+};
+
+/* service roads for buildings that have none (starting layouts, old games): from the face nearest the pavement */
+IC.aptAutoLinks = function (ap) {
+  for (const p of ap.parts) {
+    if (p.link || IC.SNAP_GAP[p.kind] == null || STUB(p.kind) || p.x == null) continue;
+    let best = null, bd = 1.2;
+    for (const e of edgesNear(ap, p, 1.5)) {
+      const L = U.dist(e.a, e.b); if (L < 0.1) continue;
+      const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = U.clamp((p.x - e.a.x) * ux + (p.y - e.a.y) * uy, 0, L);
+      const fx = e.a.x + ux * t, fy = e.a.y + uy * t, off = (p.x - fx) * -uy + (p.y - fy) * ux, side = Math.sign(off) || 1, q = { x: fx - uy * side * e.half, y: fy + ux * side * e.half }, d = U.dist(q, p);
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (!best) continue;
+    const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2, l = IC.rectLocal({ x: p.x, y: p.y, a: p.a || 0 }, best);
+    const face = Math.abs(l.x) / w > Math.abs(l.y) / h ? IC.rectWorld({ x: p.x, y: p.y, a: p.a || 0 }, Math.sign(l.x) * w / 2, 0) : IC.rectWorld({ x: p.x, y: p.y, a: p.a || 0 }, 0, Math.sign(l.y) * h / 2);
+    // never across a runway
+    const mid = { x: (face.x + best.x) / 2, y: (face.y + best.y) / 2 };
+    if (ap.parts.some(q => q.kind === 'runway' && (IC.partDist(ap, q, mid) < 0.3 || U.segX && U.segX(face.x, face.y, best.x, best.y, q.a.x, q.a.y, q.b.x, q.b.y) >= 0))) continue;
+    if (U.dist(face, best) > 0.05) p.link = [face, best];
+  }
+};
+
 const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1 };
-const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1 };
+const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1 };
 IC.bldIsArea = t => !!AREA_TOOLS[t];
 IC.bldIsLine = t => !!LINE_TOOLS[t];
 function runwayAt(ap, p, tol) { let best = null, bd = tol + 0.3; for (const q of ap.parts) if (q.kind === 'runway') { const d = IC.partDist(ap, q, p); if (d < bd) { bd = d; best = q; } } return best; }
+
+/* the apron edge nearest a point: the apron, which axis (x or y) the edge is across, its side, and the point on it */
+function apronEdge(ap, p, tol) {
+  let best = null, bd = tol;
+  for (const q of ap.parts) {
+    if (q.kind !== 'apron') continue;
+    const l = IC.rectLocal(q, p);
+    if (Math.abs(l.y) <= q.h / 2 + tol) { const d = Math.abs(Math.abs(l.x) - q.w / 2); if (d < bd) { bd = d; best = { apr: q, ax: true, s: Math.sign(l.x) || 1, p: IC.rectWorld(q, (Math.sign(l.x) || 1) * q.w / 2, U.clamp(l.y, -q.h / 2, q.h / 2)) }; } }
+    if (Math.abs(l.x) <= q.w / 2 + tol) { const d = Math.abs(Math.abs(l.y) - q.h / 2); if (d < bd) { bd = d; best = { apr: q, ax: false, s: Math.sign(l.y) || 1, p: IC.rectWorld(q, U.clamp(l.x, -q.w / 2, q.w / 2), (Math.sign(l.y) || 1) * q.h / 2) }; } }
+  }
+  return best;
+}
+
+/* ---------- stands placed by hand ---------- */
+/* a stand's footprint as a rectangle: length along its heading, width across */
+const standRect = s => ({ x: s.x, y: s.y, a: s.a, w: IC.STAND[s.size].d, h: IC.STAND[s.size].w });
+IC.bldStandAt = (ap, p) => { for (const q of ap.parts) if (q.kind === 'apron') for (const s of q.stands || []) { const l = IC.rectLocal(standRect(s), p); if (Math.abs(l.x) < IC.STAND[s.size].d / 2 && Math.abs(l.y) < IC.STAND[s.size].w / 2) return s; } return null; };
+/* where a stand goes under the cursor: on an apron, turned as the player turned it, or nose to the terminal when one
+   is close; a click on an existing stand removes it */
+IC.bldStandPlan = function (S, m, hv) {
+  const ap = m.ap, out = { ok: true, why: '', text: [], specs: [], cost: 0 };
+  const apr = ap.parts.find(q => q.kind === 'apron' && IC.partDist(ap, q, hv) < 0.01);
+  if (!apr) { out.ok = false; out.why = 'Stands go on an apron: draw or stretch one first.'; return out; }
+  const old = IC.bldStandAt(ap, hv);
+  if (old && old.apron === apr.id) {
+    out.stand = { apron: apr, remove: old };
+    if (old.occ) { out.ok = false; out.why = 'An aircraft is parked on that stand.'; } else out.text.push(`${IC.RAMP_SIZE[old.size]} stand: click to remove it`);
+    return out;
+  }
+  const size = m.size || 'm', sz = IC.STAND[size];
+  let a = m.rot, c = { x: hv.x, y: hv.y }, nose = '';
+  // near a terminal or cargo shed (and not turned by hand): nose in to its nearest face
+  if (m.rot === m.rot0) {
+    const term = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.w).map(q => ({ q, d: IC.partDist(ap, q, hv) })).filter(x => x.d < sz.d + 0.2).sort((x, y) => x.d - y.d)[0];
+    if (term) {
+      const l = IC.rectLocal(term.q, hv), q = term.q, dx = Math.abs(l.x) - q.w / 2, dy = Math.abs(l.y) - q.h / 2;
+      a = dy > dx ? q.a + (l.y > 0 ? -Math.PI / 2 : Math.PI / 2) : q.a + (l.x > 0 ? Math.PI : 0);
+      const e = dy > dx ? IC.rectWorld(q, U.clamp(l.x, -q.w / 2, q.w / 2), Math.sign(l.y || 1) * q.h / 2) : IC.rectWorld(q, Math.sign(l.x || 1) * q.w / 2, U.clamp(l.y, -q.h / 2, q.h / 2));
+      c = { x: e.x - Math.cos(a) * (sz.d / 2 + 0.03), y: e.y - Math.sin(a) * (sz.d / 2 + 0.03) };
+      nose = q.kind === 'terminal' ? 'gate' : 'cargo';
+    }
+  }
+  // a 5 m grid along the apron
+  const l = IC.rectLocal(apr, c), g = 0.05;
+  const lx = nose ? l.x : Math.round(l.x / g) * g, ly = nose ? l.y : Math.round(l.y / g) * g, w = IC.rectWorld(apr, lx, ly);
+  const me = { x: w.x, y: w.y, a, size };
+  const R = standRect(me);
+  const inside = [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([sx, sy]) => { const k = IC.rectLocal(apr, IC.rectWorld(R, sx * R.w / 2, sy * R.h / 2)); return Math.abs(k.x) <= apr.w / 2 + 0.02 && Math.abs(k.y) <= apr.h / 2 + 0.02; });
+  const hit = ap.parts.some(q => q.kind === 'apron' && (q.stands || []).some(s => IC.rectsOverlap(standRect(s), R, 0.01)));
+  out.stand = { apron: apr, lx, ly, rot: U.angWrap(a - apr.a), size, drive: !!m.drive, zone: m.zone };
+  out.ok = inside && !hit; out.why = !inside ? 'Does not fit on the apron.' : hit ? 'Overlaps another stand.' : '';
+  const fitsT = IC.STAND_FITS[size].map(z => Object.keys(IC.ACTYPES).filter(k => IC.ACTYPES[k].stand === z && !IC.ACTYPES[k].vtol).map(k => IC.ACTYPES[k].short).join(', ')).filter(Boolean).join(', ');
+  out.text.push(`${IC.RAMP_SIZE[size]} stand${nose === 'gate' ? ' at a gate' : nose === 'cargo' ? ' at the cargo shed' : ''}, ${m.drive ? 'drive-through' : 'nose-in (a tug pushes it back)'} · ₭0.5M · ${fitsT}`);
+  if (!apr.ramp) out.text.push('The apron\'s stands become yours to place: the ones laid out automatically stay until you remove them');
+  out.cost = 0.5;
+  return out;
+};
 
 /* ---------- the plan for what is under the cursor ---------- */
 /* m: the build mode; hv: the cursor. Returns { specs, text[], ok, why, cost, dur, snap } — the same for the ghost,
@@ -555,7 +693,19 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     if (rc.w < 0.3 || rc.h < 0.3) { out.ok = false; out.why = 'Too small: at least 30 m each way.'; return out; }
     const kind = t === 'remote' || t === 'ramp' ? 'apron' : t;
     if (t === 'remote') out.specs = remoteSpec(ap, rc).map(q => Object.assign(q, { mat: m.mat, zone: m.zone }));
-    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, rc, t === 'ramp' ? { ramp: true, free: [] } : null));
+    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : null));
+  } else if (t === 'stretch') {
+    // the edge of an apron nearest the first click, pushed out to the cursor
+    const from = pts[0] || hv, E = apronEdge(ap, from, Math.max(tol, 0.15));
+    if (!E) { out.ok = false; out.why = 'Click the edge of an apron.'; return out; }
+    out.snap = { kind: 'edge', x: E.p.x, y: E.p.y, what: 'apron' };
+    if (!pts.length) { out.text.push('Click this edge, then how far out to stretch it'); return out; }
+    const q = E.apr, l = IC.rectLocal(q, hv), along = E.ax ? l.x * E.s - q.w / 2 : l.y * E.s - q.h / 2, d = Math.round(Math.max(0, along) / 0.05) * 0.05;
+    out.pts = [pts[0], hv];
+    if (d < 0.3) { out.ok = false; out.why = 'Stretch it at least 30 m.'; return out; }
+    const c = E.ax ? IC.rectWorld(q, E.s * (q.w / 2 + d / 2), 0) : IC.rectWorld(q, 0, E.s * (q.h / 2 + d / 2));
+    out.specs.push(Object.assign({ kind: 'apron', x: c.x, y: c.y, a: q.a, w: E.ax ? d : q.w, h: E.ax ? q.h : d, mat: q.mat || m.mat, zone: q.zone || m.zone, ramp: true, free: [] }));
+    out.text.push(`Stretches the apron ${Math.round(d * 100)} m (${((E.ax ? d * q.h : d * q.w)).toFixed(1)} ha): place stands on it with the Stand tool`);
   } else if (t === 'parallel') {
     const rw = pts.length ? ap.parts.find(q => q.id === m.rw) : runwayAt(ap, hv, tol);
     if (!rw) { out.ok = false; out.why = 'Click a runway.'; return out; }
@@ -579,23 +729,16 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     if (H.bad) { out.ok = false; out.why = H.text[0]; }
     out.pts = m.pts.length ? [m.pts[0]] : [];
   } else if (t === 'stand') {
-    const ramp = ap.parts.find(q => q.ramp && IC.partDist(ap, q, hv) < 0.01);
-    const sz = IC.STAND[m.size || 'm'];
-    if (!ramp) { out.ok = false; out.why = 'Stands go on an open ramp: build one first.'; return out; }
-    const l = IC.rectLocal(ramp, hv), g = 0.05, lx = Math.round(l.x / g) * g, ly = Math.round(l.y / g) * g;
-    const fits = Math.abs(lx) + sz.d / 2 <= ramp.w / 2 + 0.01 && Math.abs(ly) + sz.w / 2 <= ramp.h / 2 + 0.01;
-    const hit = (ramp.free || []).some(f => Math.abs(f.lx - lx) < (IC.STAND[f.size].d + sz.d) / 2 - 0.01 && Math.abs(f.ly - ly) < (IC.STAND[f.size].w + sz.w) / 2 - 0.01);
-    out.stand = { ramp, lx, ly, size: m.size || 'm', zone: m.zone };
-    out.ok = fits && !hit; out.why = !fits ? 'Does not fit on the ramp.' : hit ? 'Overlaps another stand.' : '';
-    out.text.push(`${IC.RAMP_SIZE[m.size || 'm']} stand · ₭0.5M · ${IC.STAND_FITS[m.size || 'm'].map(z => Object.keys(IC.ACTYPES).filter(k => IC.ACTYPES[k].stand === z && !IC.ACTYPES[k].vtol).map(k => IC.ACTYPES[k].short).join(', ')).filter(Boolean).join(', ')}`);
-    out.cost = 0.5;
+    const P = IC.bldStandPlan(S, m, hv);
+    Object.assign(out, P);
     return out;
   } else {
     // a building: one click places it, a second on the same spot builds it
-    const s = snapCorner(ap, m, hv, tol * 0.3, free); out.snap = s;
+    const s = snapCorner(ap, m, hv, tol * 0.3, free);
     const at = pts.length && U.dist(pts[0], s) < Math.max(tol, 0.05) ? pts[0] : s;
-    out.pts = [at];
-    out.specs.push({ kind: t, x: at.x, y: at.y, a: m.rot });
+    const sb = !free && t !== 'ils' && IC.bldSnapBuilding(ap, t, at);
+    if (sb) { out.snap = sb.snap; out.pts = [sb.snap]; out.specs.push(...sb.specs); out.text.push(sb.text); }
+    else { out.snap = s; out.pts = [at]; out.specs.push({ kind: t, x: at.x, y: at.y, a: m.rot }); }
   }
   // cost, time, clearance and effect of everything in the plan
   let homes = 0, comp = 0, roads = 0, res = 0; const clrAll = [];
@@ -612,6 +755,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.why = probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${D.name.toLowerCase()} overlaps another part, stands in water or leaves the site.`; }
     if (probe.kind === 'runway' && !out.text.length) out.text.push(runwayText(S, ap, probe));
     if (probe.kind === 'apron' && t !== 'concourse') out.text.push(probe.ramp ? `Open ramp ${(probe.w * probe.h).toFixed(1)} ha: place stands of any size on it` : apronText(ap, probe));
+    if (probe.kind === 'surface') out.text.push(`${IC.SURF[probe.surf].name}, ${(probe.w * probe.h).toFixed(1)} ha${IC.SURF[probe.surf].park ? `: parks about ${Math.round(IC.SURF[probe.surf].park * probe.w * probe.h)} cars outside the airfield` : ''}`);
     if (probe.kind === 'terminal' && t !== 'concourse') out.text.push(`${Math.round(D.pax * probe.w * probe.h).toLocaleString('en-US')} passengers an hour`);
     if (probe.kind === 'taxi' && t === 'taxi') out.text.push(taxiText(S, ap, out, probe));
     if (probe.kind === 'fuel') { const near = ap.parts.filter(q => q.kind === 'fuel' && U.dist(q, probe) < 1.4).length; if (near) out.text.push(`${near} tank${near > 1 ? 's' : ''} within 140 m: one fire takes them all`); }
@@ -624,6 +768,8 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
   const len = LINE_TOOLS[t] && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
   if (out.specs.length) out.text.unshift(`${len ? U.km(len) + ' · ' : ''}${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);
   if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
+  const lock = out.specs.map(sp => IC.aptLockWhy(S, sp.kind, sp.mat || m.mat)).find(Boolean);
+  if (lock) { out.ok = false; out.why = lock; }
   return out;
 };
 const runwayNoise = (S, p) => { const c = { x: (p.a.x + p.b.x) / 2, y: (p.a.y + p.b.y) / 2 }; return IC.noiseOver(S, c.x, c.y, Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x), U.dist(p.a, p.b)); };
@@ -666,7 +812,7 @@ function taxiText(S, ap, out, p) {
 /* build mode for a tool, with the player's last choices of pavement, stand size and zone */
 IC.bldMode = function (S, ap, part) {
   const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
-  return { kind: 'build', ap, part, pts: [], rot: ap.rwyA || 0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet };
+  return { kind: 'build', ap, part, pts: [], rot: ap.rwyA || 0, rot0: ap.rwyA || 0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass' };
 };
 /* one click in build mode. btn 0 places, 2 takes back. Returns what happened: 'point', 'built', 'undo', 'exit',
    'err' (with m.err saying why) */
@@ -694,7 +840,9 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   }
   const s = plan.snap || p, last = m.pts[m.pts.length - 1];
   const again = last && U.dist(last, s) < Math.max(tol * 0.8, 0.05);
-  const need = LINE_TOOLS[m.part] ? 2 : AREA_TOOLS[m.part] ? 2 : 1;
+  const need = LINE_TOOLS[m.part] || AREA_TOOLS[m.part] || m.part === 'stretch' ? 2 : 1;
+  if (m.part === 'stretch' && m.pts.length) { if (m.pts.length === 2 && U.dist(m.pts[1], p) < Math.max(tol * 0.8, 0.05)) return finish(S, m, plan); m.pts[1] = { x: p.x, y: p.y }; return 'point'; }
+  if (m.part === 'stretch' && !plan.snap) { m.err = plan.why; return 'err'; }
   if (again && m.pts.length >= need) return finish(S, m, plan);
   if (again) return 'point';
   if ((m.part === 'runway' || m.part === 'concourse' || AREA_TOOLS[m.part]) && m.pts.length === 2) m.pts[1] = s;
@@ -705,7 +853,7 @@ IC.buildInput = function (S, m, p, btn, z, free) {
 /* Enter: build what is drawn */
 IC.buildFinish = function (S, m, z) {
   const last = m.pts[m.pts.length - 1]; if (!last) return 'err';
-  const plan = IC.bldPlanOf(S, m, m.part === 'parallel' ? m.pts[1] || last : last, Math.max(0.12, 8 / (z || 4)));
+  const plan = IC.bldPlanOf(S, m, m.part === 'parallel' || m.part === 'stretch' ? m.pts[1] || last : last, Math.max(0.12, 8 / (z || 4)));
   return finish(S, m, plan);
 };
 function finish(S, m, plan) {
@@ -725,19 +873,45 @@ IC.bldPlanSpecs = function (S, ap, specs) {
     let p = null;
     if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp }); }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }
   return made;
 };
-/* a stand painted on a ramp */
+/* stands by hand: an apron laid out automatically switches over, keeping its stands where they are */
+IC.bldManualStands = function (ap, apr) {
+  if (apr.ramp) return;
+  IC.aptGraph(ap);
+  apr.free = (apr.stands || []).map((s, i) => { const l = IC.rectLocal(apr, s); return { k: i, lx: l.x, ly: l.y, rot: U.angWrap(s.a - apr.a), size: s.size, zone: null }; });
+  apr.sN = apr.free.length; apr.ramp = true; ap.dirty = true;
+};
+/* back to the automatic layout, when no aircraft stands on it */
+IC.bldAutoStands = function (S, ap, apr) {
+  if (!apr.ramp || (apr.stands || []).some(s => s.occ)) return false;
+  apr.ramp = false; apr.free = null; apr.sN = 0; ap.dirty = true; IC.aptStats(S, ap);
+  return true;
+};
+/* a stand placed on an apron, or removed */
 IC.bldAddStand = function (S, ap, o) {
+  const apr = o.apron || o.ramp;
+  if (o.remove) {
+    if (o.remove.occ) return false;
+    IC.bldManualStands(ap, apr);
+    const k = o.remove.id.slice(apr.id.length + 1);
+    apr.free = apr.free.filter((f, i) => String(f.k != null ? f.k : i) !== k);
+    ap.dirty = true; IC.aptStats(S, ap);
+    return true;
+  }
   if (S.budget < 0.5) return false;
   S.budget -= 0.5;
-  (o.ramp.free = o.ramp.free || []).push({ lx: o.lx, ly: o.ly, size: o.size, zone: o.zone || null });
+  IC.bldManualStands(ap, apr);
+  apr.free = apr.free || [];
+  const k = apr.sN = Math.max(apr.sN || 0, apr.free.length);
+  apr.sN++;
+  apr.free.push({ k, lx: o.lx, ly: o.ly, rot: o.rot || 0, size: o.size, zone: o.zone || null, drive: !!o.drive });
   ap.dirty = true; IC.aptStats(S, ap);
-  (ap.undo = ap.undo || []).push({ stand: o.ramp.id });
+  (ap.undo = ap.undo || []).push({ stand: apr.id, k });
   return true;
 };
 /* undo the last placement: planned work that has not started is refunded in full */
@@ -745,7 +919,7 @@ IC.bldUndo = function (S, ap) {
   const L = ap.undo || [];
   while (L.length) {
     const top = L.pop(), ids = Array.isArray(top) ? top : [top];
-    if (top && top.stand) { const r = ap.parts.find(p => p.id === top.stand); if (r && r.free && r.free.length) { r.free.pop(); S.budget += 0.5; ap.dirty = true; IC.aptStats(S, ap); return 'stand'; } continue; }
+    if (top && top.stand) { const r = ap.parts.find(p => p.id === top.stand), i = r && r.free ? r.free.findIndex(f => f.k === top.k) : -1; if (i >= 0 && !(r.stands || []).some(s => s.id === r.id + 's' + top.k && s.occ)) { r.free.splice(i, 1); S.budget += 0.5; ap.dirty = true; IC.aptStats(S, ap); return 'stand'; } continue; }
     const parts = ids.map(id => ap.parts.find(p => p.id === id)).filter(p => p && !p.built);
     if (!parts.length) continue;
     let back = 0;
@@ -772,6 +946,24 @@ IC.bldMove = function (S, ap, p, x, y, a) {
   const w = ap.works.find(q => q.part === p);
   if (w) { const pv = IC.bldPreview(S, ap, p); w.near = pv.near ? pv.near.id : null; w.clrBox = pv.clr.box; if (w.si === 0 && w.stages[0].k !== 'demo' && pv.clr.blocks.length) { IC.log(S, 'warn', 'BUILD', 'Moved over homes: remove and plan it again to clear them.'); } }
   return !!was;
+};
+
+/* choosing a pavement: a locked one cannot be chosen until its research is done */
+IC.bldPick = function (S, mat) {
+  const lock = IC.aptLockWhy(S, 'runway', mat);
+  if (lock) { IC.log(S, 'warn', 'BUILD', `${IC.PAVE[mat].name}: ${lock}`); return false; }
+  const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
+  P.mat = mat; if (S.mode2 && S.mode2.kind === 'build') S.mode2.mat = mat;
+  return true;
+};
+/* the airport panel's airport-life buttons (data-act="apl", data-op=...) */
+IC.aplAct = function (S, ap, d) {
+  const sel = S.sel && S.sel.kind === 'apart' ? S.sel.ref : null;
+  if (d.op === 'stands' && sel && sel.kind === 'apron') {
+    if (d.v === 'hand') { IC.bldManualStands(ap, sel); IC.aptStats(S, ap); S.mode2 = IC.bldMode(S, ap, 'stand'); }
+    else if (!IC.bldAutoStands(S, ap, sel)) IC.log(S, 'warn', 'BUILD', `${ap.name}: aircraft are parked on that apron; the stands can be laid out again once it is empty.`, sel);
+  }
+  if (IC.aplActMore) IC.aplActMore(S, ap, d, sel);
 };
 
 /* ---------- founding an airport ---------- */

@@ -56,6 +56,15 @@ IC.buildTerrain = function (W) {
   };
   const fd = (x, y) => fdAt(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
   const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), frame: 0 };
+  // the same region again (the start screen's, now played): its images are the same, only the base is copied, as
+  // the game draws airfields and marks on it
+  const K = lastBuilt;
+  if (K && K.seed === W.seed && K.CW === CW) {
+    Object.assign(T, { ground: K.ground, shadeD: K.shadeD, shadeL: K.shadeL, far: K.far, grain: K.grain });
+    const cv = mk(CW, CH); cv.getContext('2d').drawImage(K.base0, 0, 0); T.base = cv;
+    for (const c of W.cities) IC.cityLights(c);
+    return T;
+  }
 
   // three images: the ground's colour (tiles start from it), its hillshade, and the two combined for the far view
   const alb = mk(BW, BH), ag = alb.getContext('2d'), ai = ag.createImageData(BW, BH), ad = ai.data;
@@ -142,9 +151,12 @@ IC.buildTerrain = function (W) {
   g.restore();
   T.base = cv;
   T.grain = grain();
+  const base0 = mk(CW, CH); base0.getContext('2d').drawImage(cv, 0, 0);
+  lastBuilt = { seed: W.seed, CW, ground: alb, shadeD, shadeL, far: tmp, grain: T.grain, base0 };
   for (const c of W.cities) IC.cityLights(c);
   return T;
 };
+let lastBuilt = null;
 
 /* redraw a box of the far view (world changed, a mark went) */
 function repaintBase(T, S, x0, y0, x1, y1) {
@@ -381,10 +393,17 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     }
     const a = lod ? 1 : 0.55;
     polyFill(g, Q.sub, `rgba(112,122,92,${0.6 * a})`); polyFill(g, Q.dense, `rgba(110,114,100,${a})`); polyFill(g, Q.ind.concat(Q.log, Q.rail), `rgba(122,122,116,${a})`); polyFill(g, Q.old.concat(Q.biz), `rgba(124,122,114,${a})`);
-    for (const p of c.parks || []) { g.fillStyle = 'rgba(62,94,60,0.85)'; g.beginPath(); g.ellipse(p.x, p.y, p.rx, p.ry, p.a, 0, 7); g.fill(); if (lod >= 3) trees(g, [p.x + p.rx * 0.5, p.y, p.x - p.rx * 0.4, p.y + p.ry * 0.3, p.x, p.y - p.ry * 0.5, p.x + p.rx * 0.1, p.y + p.ry * 0.6], 0.25, 0.1); }
+    for (const p of c.parks || []) {
+      g.fillStyle = 'rgba(62,94,60,0.85)'; g.beginPath();
+      // (a park of whole blocks is a rectangle, with paths across it)
+      if (p.rect) { g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.rect(-p.rx, -p.ry, p.rx * 2, p.ry * 2); g.fill(); if (lod >= 2) { g.strokeStyle = 'rgba(190,180,150,0.5)'; g.lineWidth = 0.08; g.beginPath(); g.moveTo(-p.rx, -p.ry * 0.3); g.bezierCurveTo(-p.rx * 0.2, 0, p.rx * 0.2, -p.ry * 0.5, p.rx, p.ry * 0.2); g.moveTo(-p.rx * 0.5, -p.ry); g.bezierCurveTo(0, -p.ry * 0.2, -p.rx * 0.4, p.ry * 0.4, p.rx * 0.3, p.ry); g.stroke(); } g.restore(); }
+      else { g.ellipse(p.x, p.y, p.rx, p.ry, p.a, 0, 7); g.fill(); }
+      if (lod >= 3) trees(g, [p.x + p.rx * 0.5, p.y, p.x - p.rx * 0.4, p.y + p.ry * 0.3, p.x, p.y - p.ry * 0.5, p.x + p.rx * 0.1, p.y + p.ry * 0.6], 0.25, 0.1); }
     if (lod >= 2) for (const q of c.squares || []) {
       g.save(); g.translate(q.x, q.y); g.rotate(q.a);
-      g.fillStyle = 'rgb(168,158,140)'; g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
+      g.fillStyle = 'rgb(168,158,140)';
+      if (q.round) { g.beginPath(); g.arc(0, 0, q.w / 2, 0, 7); g.fill(); if (lod >= 3) { g.fillStyle = 'rgba(62,94,60,0.8)'; g.beginPath(); g.arc(0, 0, q.w * 0.22, 0, 7); g.fill(); } g.restore(); continue; }
+      g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
       if (lod >= 3) { g.strokeStyle = 'rgba(120,110,96,0.6)'; g.lineWidth = 0.02; g.strokeRect(-q.w * 0.3, -q.h * 0.3, q.w * 0.6, q.h * 0.6); g.fillStyle = 'rgb(120,120,126)'; g.beginPath(); g.arc(0, 0, 0.06, 0, 7); g.fill(); }
       g.restore();
     }
@@ -399,7 +418,9 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     // close in, city streets are asphalt between pavements
     if (lod >= 3) { FILL.art = 'rgb(70,71,72)'; FILL.st = 'rgb(84,85,86)'; FILL.ring = 'rgb(66,67,68)'; }
     const layers = [];
-    if (lod) { layers.push(['ln', W.lanes]); for (const c of towns) if (c.streets && tIn(c)) for (const cls of ['st', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls)]); }
+    // (the national roads through a city are its avenues: far out drawn as the roads they are, close in as avenues)
+    const aves = lod >= 2 ? W.edges.filter(e => e.city) : [];
+    if (lod) { layers.push(['ln', W.lanes]); for (const c of towns) if (c.streets && tIn(c)) for (const cls of ['st', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls)]); layers.push(['art', aves.filter(e => e.ccls !== 'ring')], ['ring', aves.filter(e => e.ccls === 'ring')]); }
     if (lod < 2) { for (const cls of ['sp', 'lc', 'rd']) layers.push([cls, W.edges.filter(e => e.cls === cls)]); if (lod) layers.push(['ramp', W.ramps]); layers.push(['hw', W.edges.filter(e => e.cls === 'hw')]); }
     for (const pass of [0, 1]) for (const [cls, list] of layers) {
       const w = RW[cls] * K0; if (!w) continue;
@@ -414,14 +435,14 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     if (lod >= 4) for (const c of towns) {
       if (!c.streets || !tIn(c)) continue;
       g.beginPath();
-      for (const l of c.streets) { if ((l.cls !== 'art' && l.cls !== 'ring') || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
+      for (const l of c.streets.concat(aves.filter(e => e.city === c.id))) { if ((l.cls !== 'art' && l.cls !== 'ring' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
       g.strokeStyle = 'rgba(236,236,226,0.7)'; g.lineWidth = 0.012; g.setLineDash([0.06, 0.09]); g.stroke(); g.setLineDash([]);
     }
     if (lod >= 3) for (const c of towns) {
       if (!c.streets || !tIn(c)) continue;
       const P = [];
-      for (const l of c.streets) {
-        if (l.cls !== 'art' || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
+      for (const l of c.streets.concat(aves.filter(e => e.city === c.id))) {
+        if ((l.cls !== 'art' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
         for (let i = 1; i < l.pts.length; i++) {
           const a = l.pts[i - 1], b = l.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 0.01) continue;
           const nx = -(b.y - a.y) / L * 0.25, ny = (b.x - a.x) / L * 0.25;
