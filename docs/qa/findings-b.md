@@ -40,3 +40,7 @@ Severity: **blocker** (breaks play), **ugly** (looks unfinished or confuses), **
 | 30 | Journal | Tag "NCTR" (jargon) on type recognition | minor | – | yes: "TYPE" |
 | 31 | After-action cards | "2 cruise missiles at Noryn Power Station: nobody saw it"; the same reason listed three times with different heights ("out of reach at 300 m up… at 420 m up…") | minor | – | yes: "nobody saw them"; one line per reason |
 | 32 | News in a war | "Arvenna Airways reduces Holitz – Karel flights, citing smooth operations." | minor | – | yes: "citing poor service" when the last flight went well |
+| 33 | Any war room with an incident up | The incident toast stretched into a tall amber box over the middle of the room (my fix for #5 set a top that fought the room's bottom placement) | blocker (found and fixed in this pass) | b35-intel-day2 | yes: the incidents take the top only when no room is open |
+| 34 | Intel room | "Next raid being prepared, most likely towards 7.6 km SW of Ivel": the distance was meant to be cut off but the decimal escaped it; operations listed in lower case | minor | b35-intel-day2 | yes |
+| 35 | Suggestions | "SNT-1 and 18 more: crews exhausted" with no word of what to do | minor | b34-day2 | yes: "…; set some Silent to rest them" |
+| 36 | Replay over the capital on day 2 | One object recorded near the capital in 15 minutes of war; the city is a blurry flat picture from 2 km up | minor | b37-replay-day2 | noted for after the release (3D city blocks only close in) |

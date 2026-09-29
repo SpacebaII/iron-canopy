@@ -157,7 +157,7 @@ function suggestions(S) {
   if (freeSlots && S.budget > 150) add(2, `${freeSlots} research slot${freeSlots > 1 ? 's' : ''} idle`, null, 'tech');
   if (S.budget > 400) add(2, 'Money in hand: buy equipment from the arsenal; it arrives in minutes', null, 'arsenal');
   const tired = S.units.filter(u => u.fat > 80 && u.radarOn);
-  if (tired.length) add(4, `${tired[0].name}${tired.length > 1 ? ` and ${tired.length - 1} more` : ''}: crews exhausted`, tired[0], 'unit');
+  if (tired.length) add(4, `${tired[0].name}${tired.length > 1 ? ` and ${tired.length - 1} more` : ''}: crews exhausted; set some Silent to rest them`, tired[0], 'unit');
   L.sort((a, b) => b.pri - a.pri);
   S.camp.goal = S.enemy.war ? `Hold for ${IC.HOLD_DAYS} days: ${U.dur(Math.max(0, IC.HOLD_DAYS - IC.warDays(S)) * 86400)} to go, country ${U.pct(S.camp.work || IC.working(S))} working` : 'Prepare the defence';
   return L.slice(0, 5);

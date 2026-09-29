@@ -538,7 +538,7 @@ function enemyAgenda() {
   const E = S.enemy, act = E.act || 0, A = IC.EACTS[act];
   const steps = [1, 2, 3, 4].map(n => `<span class="${n === act ? 'on' : n < act ? 'past' : ''}" title="${esc(IC.EACTS[n].text)}">${n} · ${esc(IC.EACTS[n].name)}</span>`).join('');
   const head = !E.war ? 'Massing on the border. No shot fired yet.' : `${esc(A.text)}${act === 3 && S.time < (E.lullEnd || 0) ? ` <b>A lull: they are reassessing${E.lullEnd ? `, for a few hours more` : ''}.</b>` : ''}`;
-  const aim = E.war && E.aim ? `<p style="margin:0">Their aim, as intercepts read it: <b>${esc(IC.EAIMS[E.aim].name)}</b> (${esc(IC.EAIMS[E.aim].hint)}).${E.plan && E.plan.obj && E.raid ? ` Next raid being prepared${E.raid.warned ? `, most likely towards ${esc(IC.nearestPlace(S, E.plan.obj.x, E.plan.obj.y).replace(/^\d+ km \w+ of /, ''))}` : ''}.` : ''}</p>` : '';
+  const aim = E.war && E.aim ? `<p style="margin:0">Their aim, as intercepts read it: <b>${esc(IC.EAIMS[E.aim].name)}</b> (${esc(IC.EAIMS[E.aim].hint)}).${E.plan && E.plan.obj && E.raid ? ` Next raid being prepared${E.raid.warned ? `, most likely towards ${esc(IC.nearestPlace(S, E.plan.obj.x, E.plan.obj.y).replace(/^[\d.]+ km \w+ of /, ''))}` : ''}.` : ''}</p>` : '';
   const T = IC.enemyTally(S), sets = Object.entries(T.all).sort((a, b) => b[1] - a[1]);
   const hit = sets.length ? `<div class="bars long">${sets.map(([k, n]) => `<span>${esc(IC.ESETS[k].name)}</span>${bar(n / T.allN, 'var(--hostile)')}<span>${U.pct(n / T.allN)}</span>`).join('')}</div><p class="hint">Share of the ${T.allN} weapons fired at each kind of target. What they fire at says what they want.</p>` : '';
   let save = '';
@@ -553,7 +553,7 @@ function enemyAgenda() {
 }
 function intel() {
   const E = S.enemy;
-  const ops = E.ops.slice(-8).reverse().map(o => `<div class="li"><b>${esc(o.label)}</b><small>${U.hhmm(o.t0)} · ${o.launched} launched · ${o.lost} shot down · ${o.hits} hits</small></div>`).join('');
+  const ops = E.ops.slice(-8).reverse().map(o => `<div class="li"><b>${esc(o.label.charAt(0).toUpperCase() + o.label.slice(1))}</b><small>${U.hhmm(o.t0)} · ${o.launched} launched · ${o.lost} shot down · ${o.hits} hits</small></div>`).join('');
   const known = [...E.known.values()].filter(k => !k.ref.dead).sort((a, b) => b.t - a.t);
   // how they found it, in plain words
   const HOW = { ELINT: 'its radar was heard', observation: 'seen from the border', 'launch detection': 'seen launching', launch: 'seen launching', 'engaging its weapons': 'seen firing', prewar: 'known before the war', recon: 'photographed by a drone', range: 'placed on the range' };

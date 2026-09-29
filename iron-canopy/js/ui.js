@@ -162,8 +162,9 @@ function topbar() {
   alerts();
   incidents();
   evcard();
-  // the incidents hang under the alert pills, however many there are (both are centred under the top bar)
-  const ab = $('alerts').getBoundingClientRect(), top = ab.height ? `${Math.round(ab.bottom + 6)}px` : '';
+  // the incidents hang under the alert pills, however many there are (both are centred under the top bar); with a
+  // room open they sit at the bottom (CSS)
+  const ab = $('alerts').getBoundingClientRect(), top = ab.height && !ui.room ? `${Math.round(ab.bottom + 6)}px` : '';
   if ($('incidents').style.top !== top) $('incidents').style.top = top;
 }
 /* incidents: the short list of things that must not be missed */

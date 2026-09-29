@@ -509,7 +509,7 @@ function intel(S, E, text, who, at) {
 function strength(E) { const r = E.rec.slice(-3); return r.length ? r.reduce((s, x) => s + x.stop, 0) / r.length : 0.5; }
 const strong = E => (strength(E) - 0.4) / 0.5;   // 0 at 40% stopped, 1 at 90%
 IC.enemyStrength = S => strength(S.enemy);
-const place = (S, p) => IC.nearestPlace(S, p.x, p.y).replace(/^\d+ km \w+ of /, '');
+const place = (S, p) => IC.nearestPlace(S, p.x, p.y).replace(/^[\d.]+ km \w+ of /, '');
 
 /* ---------- aims ---------- */
 function pickAim(E, not) { return U.wpick(Object.entries(E.aims).filter(([k]) => k !== not).map(([k, w]) => [k, w])); }
@@ -964,7 +964,7 @@ function leakWhy(S, t) {
       const sn = u.d.sensor || u.d.fc; if (!sn || sn.passive || sn.bmdOnly || sn.rktOnly || sn.ssr) continue;
       const d = U.dist(u, p); if (d < bd && d < U.horizon(sn.mast || 10, 0.06) * 1.3) { bd = d; best = u; }
     }
-    if (best && (best.state !== 'ready' || !best.radarOn)) return `nobody saw it: ${best.name} near ${IC.nearestPlace(S, best.x, best.y).replace(/^\d+ km \w+ of /, '')} was ${best.state !== 'ready' ? 'not set up' : best.emcon === 'off' ? 'silent' : 'waiting in ambush'}`;
+    if (best && (best.state !== 'ready' || !best.radarOn)) return `nobody saw it: ${best.name} near ${IC.nearestPlace(S, best.x, best.y).replace(/^[\d.]+ km \w+ of /, '')} was ${best.state !== 'ready' ? 'not set up' : best.emcon === 'off' ? 'silent' : 'waiting in ambush'}`;
     if (best) return `nobody saw it: it came in low behind the hills past ${best.name}`;
     return 'nobody saw it: no radar covers that approach low down';
   }
