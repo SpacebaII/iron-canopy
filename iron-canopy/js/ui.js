@@ -89,7 +89,7 @@ ui.bind = function (state) {
   S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false;
   // nothing from the previous game stays on screen: its chapter card, its unlocks, its hints
   ui.fresh = new Set(); ui.known = null; ui.moments = []; ui.moment = null; ui.menu = false; IC.hint.clear();
-  for (const id of ['warroom', 'cine', 'unlock', 'menu']) $(id).hidden = true;
+  for (const id of ['warroom', 'cine', 'unlock', 'menu', 'tip']) $(id).hidden = true;
   ui.refresh(true);
 };
 
@@ -677,9 +677,11 @@ ui.refresh = function (force) {
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
   // how much of the map's right side the inspector covers, for what the map draws beside the cursor
+  { const lc = document.querySelector('.leftcol').getBoundingClientRect(); ui.mapLeft = lc.height > 40 ? lc.right - $('app').getBoundingClientRect().left + 8 : 0; }
   ui.mapRight = $('insp').innerHTML ? Math.max(0, $('app').getBoundingClientRect().right - $('insp').getBoundingClientRect().left) : 0;
   $('app').classList.toggle('at-start', !$('start').hidden);
   $('app').classList.toggle('has-room', !!ui.room);
+  $('app').classList.toggle('is-range', !!S.range);   // (the test range is an empty plane: no minimap to show)
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
 };
 function showOver() {

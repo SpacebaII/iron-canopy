@@ -42,6 +42,9 @@ body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--friend);outline-offset:2px}
 b{font-weight:600}
+/* form fields in the game's colours, not the browser's white boxes */
+input:not([type=range]):not([type=checkbox]),select,textarea{font:inherit;font-size:.9rem;background:rgba(10,22,32,.9);color:var(--text);border:1px solid rgba(160,200,230,.25);border-radius:6px;padding:.2rem .35rem;color-scheme:dark}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--friend);outline-offset:1px}
 .gold{color:var(--money)}.hostile{color:var(--hostile)}.friend{color:var(--friend)}.amber{color:var(--amber)}.ok{color:var(--ok)}.muted{color:var(--muted)}.unknown{color:var(--unknown)}.civil{color:var(--civil)}.suspect{color:var(--suspect)}.supply{color:var(--supply)}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
@@ -375,7 +378,9 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .tip b{display:block;font-family:var(--mono);font-size:.82rem}
 .tip span{display:block;font-size:.82rem;color:var(--muted)}
 .modehint{position:absolute;z-index:5;left:50%;bottom:10.5rem;transform:translateX(-50%);font-size:.95rem;background:rgba(6,26,38,.94);border-radius:16px;white-space:pre-line;line-height:1.45;padding:.5rem 1.1rem;color:#d5f2ff;box-shadow:0 0 22px rgba(111,210,255,.28);max-width:70%;text-align:center}
-.app.has-insp .modehint{left:calc((100% - 25rem - 24px) / 2);max-width:min(46rem,calc(100% - 25rem - 64px))}
+/* with a panel open the help line keeps to the map between the left panels and the minimap */
+.app.has-insp .modehint{left:calc(4.1rem + 24px + (100% - 4.1rem - 25rem - 15rem - 72px) / 2);max-width:min(40rem,calc(100% - 4.1rem - 25rem - 15rem - 96px))}
+.app.has-insp.no-arsenal .modehint{bottom:12px}
 .cine{position:absolute;z-index:7;left:50%;top:24%;transform:translateX(-50%);width:min(40rem,86%);text-align:center;display:grid;gap:.4rem;padding:1.4rem 1.6rem;border-radius:18px;background:radial-gradient(ellipse at center,rgba(6,11,16,.98),rgba(6,11,16,.95));box-shadow:0 30px 90px rgba(0,0,0,.7);animation:cineIn .6s var(--ease);cursor:pointer}
 @keyframes cineIn{from{opacity:0;transform:translate(-50%,10px) scale(.98);letter-spacing:.3em}}
 .cine small{font-family:var(--mono);font-size:.8rem;letter-spacing:.2em;text-transform:uppercase;color:var(--amber)}
@@ -477,6 +482,7 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .rail{max-height:calc(100% - var(--top) - 12px);overflow-y:auto;scrollbar-width:none}
 .rail button{height:3.55rem}
 .app.no-arsenal .arsenal{display:none}
+.app.is-range #mini{display:none}
 .acts4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:.6rem}
 .actstep{display:grid;align-content:start;gap:1px;padding:.45rem .55rem;border-radius:10px;background:var(--well);opacity:.55}
 .actstep small{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
@@ -492,6 +498,12 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
   .speed button{min-width:2rem;padding:0 .42rem}
   .clock span{letter-spacing:.07em}
   .stat.role strong{max-width:9.5rem;white-space:normal;text-align:right;line-height:1.05;font-size:.95rem}
+}
+/* a short screen (720 px): the goals panel keeps more room above the arsenal, the staff message takes less */
+@media (max-height:800px){
+  .leftcol{max-height:calc(100% - var(--top) - 13.2rem)}
+  .comms p{font-size:.92rem;min-height:0}
+  .brief{gap:.4rem;padding:.65rem .85rem}
 }
 @media (max-width:1400px){
   .app.has-insp .feed{display:none}
