@@ -3,7 +3,7 @@
    Scenes: airport (the capital's airport close in: airliners, light aircraft and business jets), builder (a taxiway
    drawn square to a runway on a snapping guide), airspace (the capital's airspace drawn as on a chart, in its tab),
    raid (a raid on the capital: missiles, trails and tracks), live (the 3D live view of a take-off), replay (the 3D
-   replay of an intercept, with a missile's data panel). Frames go to docs/release/screenshots/<n>-<scene>.png unless
+   replay of an intercept, with a missile's data panel). Frames go to docs/release/screenshots/<n>-<scene>.jpg unless
    --out names another folder. Needs Playwright and three.js on disk: npm i --no-save playwright three@0.160.0.
    Chromium runs with its GPU switches on; where there is no GPU it falls back to software (SwiftShader). */
 const path = require('path');
@@ -20,7 +20,7 @@ function quiet(S) {
   IC.ui.cineShown = 1e9; const c = document.getElementById('cine'); if (c) c.hidden = true;
   S.cfg.slowmo = false; S.cfg.bars = false; S.cfg.pauseOn = {};
   // the message feed and the staff's messages are for playing, not for a still
-  if (!document.getElementById('storeCss')) { const st = document.createElement('style'); st.id = 'storeCss'; st.textContent = '#feed,#comms{display:none!important}'; document.head.appendChild(st); }
+  if (!document.getElementById('storeCss')) { const st = document.createElement('style'); st.id = 'storeCss'; st.textContent = '#feed,#comms,#incidents,#unlock{display:none!important}'; document.head.appendChild(st); }
 }
 async function game(mode, hour, seed) {
   IC.S.seed = seed || 4242; Math.random = seeded(7);
@@ -88,11 +88,10 @@ const SCENES = {
     const ap = S.byId[S.story.cap];
     S.layers.coverage = false; S.layers.airways = true;
     IC.select({ kind: 'infra', ref: ap }); IC.ui.aptTab = 'asp'; IC.ui.refresh(true);
-    look(ap.x - 40, ap.y, 3.2); await wait(6000);`,
+    look(ap.x - 40, ap.y, +(window.Z || 3.2)); await wait(+(window.MS || 20000));`,
   // a raid on the capital: cruise missiles and drones coming in, interceptors climbing, tracks and trails
   raid: `
     const S = await war(15); const c = IC.cap(S);
-    for (const k of ['a_lrsam', 'a_pac3', 's_bmd']) S.tech.done.add(k);
     S.ad.doctrine = 'salvo';
     unit(S, 'lrsam', c.x - 120, c.y + 60); unit(S, 'lrsam', c.x + 60, c.y + 160); unit(S, 'mrsam', c.x + 110, c.y + 80); unit(S, 'mrsam', c.x + 40, c.y - 120); unit(S, 'mrsam', c.x - 100, c.y - 100);
     unit(S, 'shorad', c.x + 160, c.y - 40); unit(S, 'shorad', c.x + 220, c.y - 160); unit(S, 'spaag', c.x + 60, c.y - 60); unit(S, 'lr3d', c.x, c.y - 40); unit(S, 'gf', c.x + 200, c.y - 150);
@@ -101,7 +100,7 @@ const SCENES = {
     for (let i = 0; i < 4; i++) hostile(S, 'ftr', c.x + 1100, c.y - 700 + i * 50, c, { mission: 'sweep' });
     IC.launchBallistic(S, 'srbm', c.x + 2600, c.y - 1900, { x: c.x + 20, y: c.y });
     steps(S, 900, S => S.missiles.length >= 14);
-    S.layers.coverage = false; look(c.x + 230, c.y - 170, +(window.Z || 0.62)); await wait(5000);
+    S.layers.coverage = false; look(c.x + 280, c.y - 200, +(window.Z || 0.9)); await wait(40000);
     S.speed = 1; S.paused = false; await wait(+(window.MS || 2200)); S.paused = true; await wait(1500);`,
   // the 3D live view, full screen, of an airliner's take-off roll at the capital
   live: `
@@ -123,13 +122,29 @@ const SCENES = {
     steps(S, 400, S => S.rec.ev.some(e => e.kind === 'intercept' || e.kind === 'kill')); steps(S, 10);
     const e = S.rec.ev.find(e => e.kind === 'intercept' || e.kind === 'kill');
     if (!e) throw new Error('no intercept');
-    const m = S.rec.tracks.find(tr => tr.kind === 'missile' && tr.t0 < e.t && tr.t1 >= e.t - 1 && U.dxy(IC.recGet(tr, tr.n - 1, 1), IC.recGet(tr, tr.n - 1, 2), e.x, e.y) < 5) || S.rec.tracks.find(tr => tr.kind === 'missile');
+    const m = S.rec.tracks.filter(tr => tr.kind === 'missile' && tr.t1 - IC.recFirstT(tr) > 8).sort((a, b) => U.dxy(IC.recGet(a, a.n - 1, 1), IC.recGet(a, a.n - 1, 2), e.x, e.y) - U.dxy(IC.recGet(b, b.n - 1, 1), IC.recGet(b, b.n - 1, 2), e.x, e.y))[0];
     const V = IC.replayOpen(S, { follow: m && m.ref, x: e.x, y: e.y, t: e.t - 40, r: 60, cam: 'chase' });
     for (let i = 0; i < 150 && !(V.renderer && V.movers); i++) await wait(100);
-    V.t = e.t - +(window.BEFORE || 1.2); V.playing = false;
+    V.t = (m ? Math.min(m.t1, e.t) : e.t) - +(window.BEFORE || 1.2); V.playing = false;
     console.log('following', m && m.name, !!V.follow);
-    camTo(V, window.CAM || 'chase'); V.camK = +(window.K || 1.4); await wait(3500);`
+    camTo(V, window.CAM || 'chase'); V.camK = +(window.K || 0.6);
+    for (let i = 0; i < 6; i++) { await wait(+(window.MS || 15000) / 6); if (window.DBGV) console.log('cam', V.cam, V.follow && V.follow.tr.name, V.follow && V.follow.vis, V.camera.position.toArray().map(Math.round).join(','), V.t.toFixed(1), V.fps); }`
 };
+
+// Google's web fonts, kept on disk after the first fetch: the shots must not fall back to plain fonts when the network
+// hiccups (shots/.fonts, not committed)
+async function fontCache(page) {
+  const dir = path.resolve(__dirname, '../shots/.fonts'); fs.mkdirSync(dir, { recursive: true });
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, async r => {
+    const f = path.join(dir, require('crypto').createHash('md5').update(r.request().url()).digest('hex'));
+    if (!fs.existsSync(f)) for (let i = 0; i < 5 && !fs.existsSync(f); i++) {
+      try { const res = await r.fetch(); if (res.ok()) fs.writeFileSync(f, JSON.stringify({ type: res.headers()['content-type'], body: (await res.body()).toString('base64') })); } catch (e) { await new Promise(ok => setTimeout(ok, 1000 * (i + 1))); }
+    }
+    if (!fs.existsSync(f)) return r.abort();
+    const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+    return r.fulfill({ body: Buffer.from(c.body, 'base64'), contentType: c.type, headers: { 'Access-Control-Allow-Origin': '*' } });
+  });
+}
 
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out');
@@ -148,15 +163,16 @@ const SCENES = {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     if (process.env.DBG) page.on('console', m => console.log('page:', m.text().slice(0, 400)));
+    await fontCache(page);
     if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
-    for (const k of ['Z', 'PICK', 'BUSY', 'MIX', 'MS', 'K', 'CAM', 'BEFORE']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+    for (const k of ['Z', 'PICK', 'BUSY', 'MIX', 'MS', 'K', 'CAM', 'BEFORE', 'DBGV']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
     const mouse = await page.evaluate(() => window.__mouse);
     if (mouse) { await page.mouse.move(mouse[0], mouse[1]); await page.waitForTimeout(600); }
-    const n = Object.keys(SCENES).indexOf(name) + 1, out = path.join(outDir, `${n}-${name}.png`);
-    await page.screenshot({ path: out, timeout: 180000 });
+    const n = Object.keys(SCENES).indexOf(name) + 1, out = path.join(outDir, `${n}-${name}.jpg`);
+    await page.screenshot({ path: out, type: 'jpeg', quality: 90, timeout: 180000 });
     console.log('saved', out);
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }
     await page.close();
