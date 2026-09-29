@@ -187,7 +187,7 @@ const SCENES = {
     for (let i = 0; i < 28; i++) hostile(S, i % 2 ? 'lacm' : 'owa', x + 400 + (i % 4) * 40, y - 200 + i * 15, { x: c.x, y: c.y });
     steps(S, 150);
     const V = await replay({ x, y, t: S.time - 120, r: 120 }, S.time - 120, { yaw: -1.9, pitch: 0.35, dist: 120 });
-    V.speed = 2; document.getElementById('rpPlay').click();
+    V.speed = 2; V.$('play').click();
     const n = V.movers.length, times = [];
     let last = performance.now();
     await new Promise(res => { const f = now => { times.push(now - last); last = now; if (times.length < 240) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
