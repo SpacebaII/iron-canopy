@@ -147,7 +147,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (!tiles && marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine, tiles); }
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
-  // buildings
+  // buildings: every shadow first, so none falls across a roof
+  if (full) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind)) shadowOf(g, S, p);
   for (const p of parts) {
     if (['runway', 'taxi', 'apron', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
@@ -523,8 +524,6 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2;
-  // shadow
-  if (full && !dead) { g.fillStyle = 'rgba(0,0,0,0.35)'; if (p.r) { g.beginPath(); g.arc(0.03, 0.03, p.r, 0, 7); g.fill(); } else if (p.poly) { g.save(); g.translate(0.03 * (1 + (p.lvls || 1) * 0.3), 0.03 * (1 + (p.lvls || 1) * 0.3)); partPath(g, p, w, h); g.fill(); g.restore(); } else g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w, h); }
   if (p.kind === 'fuel') {
     if (full) { g.fillStyle = 'rgba(80,84,70,0.8)'; g.fillRect(-p.r * 1.35, -p.r * 1.35, p.r * 2.7, p.r * 2.7); g.fillStyle = 'rgba(120,128,104,0.9)'; g.fillRect(-p.r * 1.25, -p.r * 1.25, p.r * 2.5, p.r * 2.5); }
     g.fillStyle = fill; g.beginPath(); g.arc(0, 0, Math.max(p.r, 1.5 * px), 0, 7); g.fill();
@@ -534,6 +533,8 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     if (full && !dead) { g.fillStyle = 'rgba(40,40,36,0.8)'; g.fillRect(-w * 0.25, (p.doorSide || -1) * h / 2 - 0.01, w * 0.5, 0.02); g.fillStyle = 'rgba(255,255,255,0.12)'; g.beginPath(); g.ellipse(-w * 0.1, -h * 0.1, w * 0.3, h * 0.25, 0, 0, 7); g.fill(); }
   } else if (p.kind === 'hangar') {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
+    // a barrel roof: light on the side facing the sun, falling off to the other
+    if (full && !dead) { const gr = g.createLinearGradient(0, -h / 2, 0, h / 2); gr.addColorStop(0, 'rgba(255,255,255,0.22)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.05)'); gr.addColorStop(1, 'rgba(0,0,0,0.2)'); g.fillStyle = gr; g.fillRect(-w / 2, -h / 2, w, h); }
     if (full && !dead) { g.fillStyle = 'rgba(255,255,255,0.1)'; for (let x = -w / 2; x < w / 2; x += 0.06) g.fillRect(x, -h / 2, 0.02, h); g.fillStyle = 'rgba(30,34,38,0.9)'; g.fillRect(-w * 0.45, (p.doorSide || -1) * h / 2 - 0.012, w * 0.9, 0.024); }
   } else if (IC.APART[p.kind].pad) {
     // a service pad: concrete with its markings, a pump or the de-icing rigs
@@ -574,6 +575,38 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   if (hp < 0.5 && z > 0.8 && z < 6) { g.strokeStyle = dead ? IC.C.hostile : IC.C.amber; g.lineWidth = 1.2 * px; if (p.r) { g.beginPath(); g.arc(0, 0, p.r + 3 * px, 0, 7); g.stroke(); } else g.strokeRect(-w / 2 - 2 * px, -h / 2 - 2 * px, w + 4 * px, h + 4 * px); }
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
+}
+/* ---------- shadows ----------
+   The sun climbs from the east to the south at noon and sets in the west; a building of height h throws a shadow
+   h / tan(elevation) long, away from the sun. Two fills, the second a little longer and fainter, soften its edge. */
+const BLD_H = { terminal: 16, cargo: 14, hangar: 20, has: 9, alert: 6, support: 9, fire: 9, tower: 40, atc: 12, gradar: 14, fuel: 14, ammo: 4, hydrant: 4, ils: 3, skybridge: 18 };
+IC.sunNow = function (S) {
+  const h = (S.time % 86400) / 3600, day = U.clamp((h - 6) / 12, 0, 1);
+  const el = Math.max(0.12, Math.sin(day * Math.PI) * 1.05), az = Math.PI / 2 + day * Math.PI;   // east, south, west
+  // (the map: x east, y south; the shadow falls away from the sun)
+  const L = 1 / 100 / Math.tan(el);
+  return { dx: -Math.sin(az) * L, dy: Math.cos(az) * L, a: U.clamp(IC.daylight(S.time) * 0.34, 0.05, 0.34), el, az };
+};
+function hull(P) {
+  P = P.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cr = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lo = [], hi = [];
+  for (const q of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = P.length - 1; i >= 0; i--) { const q = P[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function shadowOf(g, S, p) {
+  const H = p.lvls ? p.lvls * 4.2 : BLD_H[p.kind] || 8; if (!H) return;
+  const sun = IC.sunNow(S), key = `${p.x},${p.y},${p.a},${p.w},${p.h},${Math.round(sun.dx * 400)},${Math.round(sun.dy * 400)}`;
+  if (p._shK !== key) {
+    const O = IC.partOutline(p), mk = f => hull(O.concat(O.map(q => ({ x: q.x + sun.dx * H * f, y: q.y + sun.dy * H * f }))));
+    // (a concave outline casts its own shape, moved along; its hull would fill the courtyard)
+    p._sh = p.poly && p.poly.length > 4 ? [1, 1.12].map(f => O.map(q => ({ x: q.x + sun.dx * H * f, y: q.y + sun.dy * H * f }))) : [mk(1), mk(1.12)];
+    p._shO = O; p._shK = key;
+  }
+  const poly = P => { g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
+  g.fillStyle = `rgba(8,12,18,${sun.a * 0.45})`; poly(p._sh[1]); g.fill();
+  g.fillStyle = `rgba(8,12,18,${sun.a})`; poly(p._sh[0]); g.fill();
+  if (p.poly && p.poly.length > 4) { const n = 6; for (let i = 1; i < n; i++) { g.fillStyle = `rgba(8,12,18,${sun.a / n})`; poly(p._shO.map(q => ({ x: q.x + sun.dx * H * i / n, y: q.y + sun.dy * H * i / n }))); g.fill(); } }
 }
 /* a blueprint's ghost: runways and taxiways at their width, aprons and buildings as outlines */
 function drawBlueprint(g, t, col, fill, px) {
@@ -700,21 +733,32 @@ const CAR_COL = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230
 /* a terminal or shed roof: parapet, roof panels, skylights along the spine, plant on the roof, glass on the long
    sides; a cargo shed gets loading doors instead */
 function roof(g, p, w, h, px, z, night) {
-  const long = w >= h, L = long ? w : h, D = long ? h : w;
+  const long = w >= h, L = long ? w : h, D = long ? h : w, seed = Math.round(p.x * 37 + p.y * 11);
   g.save(); if (!long) g.rotate(Math.PI / 2);
-  g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(-L / 2, -D / 2, L, D * 0.5);
+  // the sunny half of a pitched roof a shade lighter; the parapet round the edge
+  g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(-L / 2, -D / 2, L, D * 0.5);
+  if (z > 4) { g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = Math.max(0.003, 0.6 * px); g.strokeRect(-L / 2 + 0.008, -D / 2 + 0.008, L - 0.016, D - 0.016); }
   if (z > 6) {
-    // roof panels
-    g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath();
+    // membrane strips, laid across the roof
+    g.fillStyle = 'rgba(0,0,0,0.035)';
+    for (let x = -L / 2, i = 0; x < L / 2; x += 0.05, i++) if (i % 2) g.fillRect(x, -D / 2, 0.05, D);
+    g.strokeStyle = 'rgba(0,0,0,0.1)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath();
     for (let x = -L / 2 + 0.25; x < L / 2; x += 0.25) { g.moveTo(x, -D / 2); g.lineTo(x, D / 2); }
     g.stroke();
+    const glass = night ? 'rgba(255,226,160,0.85)' : 'rgba(120,168,200,0.85)';
     if (p.kind === 'terminal') {
-      // skylights along the spine, and air-conditioning plant
-      g.fillStyle = night ? 'rgba(255,226,160,0.8)' : 'rgba(150,190,215,0.8)';
-      for (let x = -L / 2 + 0.15; x < L / 2 - 0.15; x += 0.5) g.fillRect(x, -D * 0.06, 0.32, D * 0.12);
-      g.fillStyle = 'rgba(96,100,106,0.9)';
-      for (let i = 0; i < Math.floor(L / 1.2); i++) { const x = -L / 2 + 0.6 + i * 1.2 + (U.hash(i, 3) - 0.5) * 0.3, y = (U.hash(i, 9) > 0.5 ? 1 : -1) * D * 0.28; g.fillRect(x - 0.05, y - 0.03, 0.1, 0.06); }
+      // a glazed spine: skylights in bays along the middle, their frames showing close in
+      for (let x = -L / 2 + 0.15; x < L / 2 - 0.15; x += 0.5) {
+        const gr = g.createLinearGradient(0, -D * 0.07, 0, D * 0.07); gr.addColorStop(0, glass); gr.addColorStop(1, night ? 'rgba(255,200,120,0.7)' : 'rgba(80,120,150,0.85)');
+        g.fillStyle = gr; g.fillRect(x, -D * 0.07, 0.34, D * 0.14);
+        if (z > 25) { g.strokeStyle = 'rgba(40,50,60,0.5)'; g.lineWidth = Math.max(0.001, 0.4 * px); g.beginPath(); for (let k = 0.034; k < 0.34; k += 0.034) { g.moveTo(x + k, -D * 0.07); g.lineTo(x + k, D * 0.07); } g.stroke(); }
+      }
+      plant(g, L, D, seed, px, z, Math.floor(L / 0.9), 0.28);
     } else {
+      // a shed: rows of square rooflights, a few fans; the loading doors along the landside wall
+      g.fillStyle = night ? 'rgba(255,226,160,0.35)' : 'rgba(170,196,214,0.55)';
+      for (let x = -L / 2 + 0.08; x < L / 2 - 0.08; x += 0.14) for (let y = -D / 2 + 0.1; y < D / 2 - 0.1; y += 0.16) g.fillRect(x, y, 0.035, 0.035);
+      plant(g, L, D, seed, px, z, Math.floor(L / 2), 0.36);
       g.fillStyle = 'rgba(60,64,70,0.9)';
       for (let x = -L / 2 + 0.1; x < L / 2 - 0.1; x += 0.16) g.fillRect(x, D / 2 - 0.012, 0.1, 0.012);
     }
@@ -723,6 +767,18 @@ function roof(g, p, w, h, px, z, night) {
   g.fillStyle = night ? 'rgba(255,220,150,0.7)' : 'rgba(70,110,140,0.75)';
   if (p.kind === 'terminal') { g.fillRect(-L / 2, -D / 2, L, Math.max(0.01, 0.9 * px)); g.fillRect(-L / 2, D / 2 - Math.max(0.01, 0.9 * px), L, Math.max(0.01, 0.9 * px)); }
   g.restore();
+}
+/* air-conditioning plant on a roof: units in pairs, each with its fans, casting a small shadow */
+function plant(g, L, D, seed, px, z, n, off) {
+  for (let i = 0; i < n; i++) {
+    const x = -L / 2 + (i + 0.5) * L / n + (U.hash(i, seed) - 0.5) * 0.2, y = (U.hash(seed, i) > 0.5 ? 1 : -1) * D * off, uw = 0.07 + U.hash(i, 7) * 0.05, uh = 0.035;
+    for (const k of [0, 1]) {
+      const yy = y + k * (uh + 0.012) * (y > 0 ? -1 : 1);
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x - uw / 2 + 0.006, yy - uh / 2 + 0.006, uw, uh);
+      g.fillStyle = 'rgb(150,154,158)'; g.fillRect(x - uw / 2, yy - uh / 2, uw, uh);
+      if (z > 30) { g.fillStyle = 'rgb(70,74,80)'; const r = uh * 0.32; for (let f = -uw / 2 + r * 1.4; f < uw / 2 - r; f += r * 2.6) { g.beginPath(); g.arc(x + f, yy, r, 0, 7); g.fill(); } }
+    }
+  }
 }
 function drawLights(g, ap, px, z, light, now) {
   const k = U.clamp((0.55 - light) / 0.4, 0, 1);
