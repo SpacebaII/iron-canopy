@@ -33,6 +33,13 @@ Screenshots are in `docs/qa/shots/`, taken with headless Chromium through `tools
 | 24 | New game after another | The previous game's cursor tip ("Right-click: take the last point back") stayed on screen. | minor | `06-after-range-forms.jpg` (taken before this fix) | Fixed |
 | 25 | 1280 × 720 | The goals panel was squeezed to two lines under a tall staff message, above the arsenal. | ugly | – | Fixed: on short screens the staff message is smaller and the column longer |
 | 26 | Builder | The help line at the bottom repeats the cost line of the card beside the cursor. | minor | `03-after-builder-help.jpg` | Left: harmless, both are right |
+| 27 | Top bar | The treasury's hourly change read "−0/h" when it rounded to nothing. | minor | – | Fixed |
+| 28 | Wait chooser | The speed buttons' key hints (Space, 1–6, S, 7) showed through the top of the Wait list while the mouse was over it. | ugly | – | Fixed |
+| 29 | Map, close in | After a jump across the map (the minimap, Capital) the ground tiles paint in patches for a few seconds in a software-rendered browser. | minor | – | Left: tiles paint on demand by design; on a real GPU it is well under a second. Measure on the owner's laptop |
+| 30 | Map, airport | A light aircraft's data tag can sit on top of the runway's "08 ARR/DEP" label. | minor | – | Left: labels do not avoid each other yet |
+| 31 | Cards over rooms (Quick war, coordinator's "text over text") | A card that opened while the player read a room (Journal, say) sat on top of the room's text. | ugly | – | Fixed: a room opened over a card puts it away until the room closes |
+| 32 | Near-miss cards (coordinator's smoke run) | In a busy sky every near miss opened a card, one after another; the text read "passed 0.0 km apart and 0 ft above or below". | ugly | – | Fixed: one card in six hours (the Journal and incident list keep every one); "within 100 m at the same height" |
+| 33 | Airport landside | "offices opens by the terminal". | minor | – | Fixed |
 
 ## Automated checks added
 

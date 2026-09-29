@@ -71,6 +71,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .speed button{position:relative;min-width:2.3rem;height:2rem;padding:0 .55rem;border-radius:999px;font-family:var(--mono);font-size:.85rem;color:var(--muted);transition:background .15s,color .15s}
 .speed kbd{position:absolute;left:50%;top:calc(100% + 5px);transform:translateX(-50%);opacity:0;pointer-events:none;transition:opacity .15s;white-space:nowrap}
 .speed:hover kbd{opacity:1}
+.speed:has(.waitbar) kbd{opacity:0!important}
 .speed button:hover{background:var(--well-2);color:var(--text)}
 .speed button[aria-pressed="true"]{background:rgba(111,210,255,.22);color:var(--friend)}
 .speed button.pz[aria-pressed="true"]{background:rgba(242,180,65,.25);color:var(--amber)}

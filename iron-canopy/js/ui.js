@@ -141,7 +141,7 @@ function topbar() {
   const st = S.story, act = st ? st.act : 4;
   if (S.range) { const R = IC.rangeStats(S); setHTML($('stats'), `<div class="stat"><span>Shots</span><strong>${R.shots}</strong></div><div class="stat"><span>Kills</span><strong class="ok">${R.kills}</strong></div><div class="stat"><span>Leakers</span><strong class="${R.leaks ? 'hostile' : ''}">${R.leaks}</strong></div>`); }
   const left = S.moneyLeft == null ? Infinity : S.moneyLeft, short = left < 24;
-  const money = `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
+  const money = `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${Math.round(flow) >= 0 ? 'ok' : 'hostile'}">${Math.round(flow) >= 0 ? '+' : '−'}${Math.abs(Math.round(flow))}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
@@ -524,7 +524,8 @@ function cine() {
     ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
-  } else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
+  } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
+  else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
 }
 ui.closeCine = () => { const el = $('cine'); if (el.hidden) return; el.hidden = true; ui.cineShown++; ui.cineT = performance.now() + 800; };
 
