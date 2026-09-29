@@ -154,6 +154,35 @@ function importAirport(key, o) {
     L.taxi.push({ name: tag(w, 'ref') || undefined, n, w: r1(num(tag(w, 'width'), lane ? 15 : 23) / 100), lane: lane ? 1 : undefined, lv: tag(w, 'bridge') === 'yes' || +tag(w, 'layer') > 0 ? 1 : undefined, oneway: tag(w, 'oneway') === 'yes' ? 1 : tag(w, 'oneway') === '-1' ? -1 : undefined, maxht: num(tag(w, 'maxheight'), 0) || undefined, osm: w.id });
   }
 
+  // where two taxiways at the same level cross with no node in common (the map drawn a little loosely), or a taxiway
+  // crosses a runway with no node on it, they meet: a node is put in at the crossing
+  {
+    const segs = [], cell = 1, grid = new Map(), key = (i, j) => i * 100003 + j;
+    const pt = i => ({ x: L.nodes[i][0], y: L.nodes[i][1] });
+    L.taxi.forEach((t, ti) => { for (let k = 1; k < t.n.length; k++) segs.push({ ti, k, a: t.n[k - 1], b: t.n[k], lv: t.lv || 0 }); });
+    rwLines.forEach((r, ri) => segs.push({ rw: ri, a: r.a, b: r.b, lv: 0 }));
+    const P2 = s => s.rw != null ? [s.a, s.b] : [pt(s.a), pt(s.b)];
+    segs.forEach((s, si) => { const [a, b] = P2(s); for (let i = Math.floor(Math.min(a.x, b.x) / cell); i <= Math.floor(Math.max(a.x, b.x) / cell); i++) for (let j = Math.floor(Math.min(a.y, b.y) / cell); j <= Math.floor(Math.max(a.y, b.y) / cell); j++) { const k = key(i, j); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(si); } });
+    const cuts = new Map(), seen = new Set();   // taxi index → [{ k, t, node }]
+    let added = 0;
+    for (const list of grid.values()) for (let x = 0; x < list.length; x++) for (let y = x + 1; y < list.length; y++) {
+      const i = Math.min(list[x], list[y]), j = Math.max(list[x], list[y]), pk = i + ':' + j; if (seen.has(pk)) continue; seen.add(pk);
+      const A = segs[i], B = segs[j]; if (A.lv !== B.lv || (A.rw != null && B.rw != null)) continue;
+      if (A.rw == null && B.rw == null && (A.a === B.a || A.a === B.b || A.b === B.a || A.b === B.b)) continue;
+      const [a, b] = P2(A), [c, d] = P2(B);
+      const den = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x); if (Math.abs(den) < 1e-9) continue;
+      const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / den, u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / den;
+      if (t <= 0.001 || t >= 0.999 || u <= 0.001 || u >= 0.999) continue;
+      // (a taxiway ending on the runway centreline already joins it: the game links nodes within 20 m)
+      const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      if (A.rw != null || B.rw != null) { const T = A.rw != null ? B : A, [p0, p1] = P2(T); if (dist(p0, q) < 0.2 || dist(p1, q) < 0.2) continue; }
+      const id = L.nodes.length; L.nodes.push([r1(q.x), r1(q.y)]); added++;
+      for (const [S0, f] of [[A, t], [B, u]]) if (S0.rw == null) { if (!cuts.has(S0.ti)) cuts.set(S0.ti, []); cuts.get(S0.ti).push({ k: S0.k, f, node: id }); }
+    }
+    for (const [ti, L2] of cuts) { const t = L.taxi[ti]; L2.sort((p, q) => q.k - p.k || q.f - p.f); for (const c of L2) t.n.splice(c.k, 0, c.node); }
+    if (added) notes.push(`${added} crossing${added > 1 ? 's' : ''} of taxiways (with each other or a runway) had no node in the map: one was put in at each`);
+  }
+
   // --- aprons (de-icing pads apart), simplified to 1.5 m
   const APR = areas(t => t.aeroway === 'apron');
   const isDeice = t => /de-?icing/i.test([t.apron, t.name, t.description, t.usage].join(' ')) || t.deicing === 'yes';
