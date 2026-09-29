@@ -230,7 +230,8 @@ function approach(g, E, ppu) {
   }
   g.restore();
 }
-/* the perimeter road: a narrow service road just inside the fence (not across the landside) */
+/* the perimeter road just inside the fence (not across the landside), and a gate with its hut and barrier wherever a
+   road crosses the fence */
 function perimeter(g, ap, ppu, box) {
   const b = IC.aptFence(ap); if (!b || !b.poly || ppu < 3) return;
   const P = IC.polyGrow(b.poly, -0.14);
@@ -240,6 +241,26 @@ function perimeter(g, ap, ppu, box) {
   g.lineCap = 'round'; g.strokeStyle = paveFill(g, 'shoulder', ppu, 0, 0, 0); g.lineWidth = 0.05;
   g.beginPath(); polyPath(g, P); g.stroke();
   g.restore();
+  if (ppu < 12) return;
+  // the gates: where a service road or the landside's roads cross the fence
+  const F = b.poly, segs = [];
+  for (const r of (ap.svcRoads || []).concat(ap.land && ap.land.road ? [{ pts: ap.land.road.pts || [] }] : [], (ap.land && ap.land.roads || []).filter(q => q.kind === 'out')))
+    for (let i = 1; i < (r.pts || []).length; i++) segs.push([r.pts[i - 1], r.pts[i]]);
+  for (const [A, B] of segs) for (let i = 0; i < F.length; i++) {
+    const C = F[i], D = F[(i + 1) % F.length], t = U.segX(A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y);
+    if (t < 0) continue;
+    const x = A.x + (B.x - A.x) * t, y = A.y + (B.y - A.y) * t;
+    if (x < box.x0 - 0.5 || x > box.x1 + 0.5 || y < box.y0 - 0.5 || y > box.y1 + 0.5) continue;
+    const a = Math.atan2(B.y - A.y, B.x - A.x);
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.fillStyle = 'rgb(180,184,188)'; g.fillRect(-0.02, 0.05, 0.05, 0.05);            // the hut beside the road
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-0.012, 0.062, 0.05, 0.05);
+    g.fillStyle = 'rgb(180,184,188)'; g.fillRect(-0.02, 0.05, 0.05, 0.05);
+    g.strokeStyle = RED; g.lineWidth = Math.max(0.006, 1.4 / ppu);                     // the barrier across it
+    g.beginPath(); g.moveTo(0, 0.045); g.lineTo(0, -0.05); g.stroke();
+    g.setLineDash([0.014, 0.014]); g.strokeStyle = WHITE; g.stroke(); g.setLineDash([]);
+    g.restore();
+  }
 }
 /* rubber and tyre marks: dark streaks where the main gear touches down (150 to 900 m in), a faint track down every
    taxiway centreline, stains under the engines at each stand */
