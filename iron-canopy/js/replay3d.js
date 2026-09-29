@@ -591,6 +591,16 @@ function apronMesh(v, b, p, f) {
   }
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
   const y = f.e * v.hk + LIFT.pad, c = (lx, ly) => { const w = IC.rectWorld(p, lx, ly); return [w.x - v.cx, y, w.y - v.cy]; };
+  // (an apron drawn as an outline: its convex pieces, fanned, the texture laid over its rectangle)
+  if (p.poly && IC.convexPieces) {
+    const P = [], N = [], UV = [], I = [];
+    for (const piece of IC.convexPieces(p.poly.map(q => ({ x: q[0], y: q[1] })))) {
+      const k0 = P.length / 3;
+      for (const q of piece) { P.push(...c(q.x, q.y)); N.push(0, 1, 0); UV.push((q.x + p.w / 2) / p.w, 1 - (q.y + p.h / 2) / p.h); }
+      for (let i = 1; i + 1 < piece.length; i++) I.push(k0, k0 + i, k0 + i + 1, k0, k0 + i + 1, k0 + i);
+    }
+    return paveMat({ map: tex }, 'apron', new THREE.Mesh(geom(new Float32Array(P), new Float32Array(N), null, new Float32Array(UV), new Uint32Array(I))));
+  }
   const pos = new Float32Array([...c(-p.w / 2, -p.h / 2), ...c(p.w / 2, -p.h / 2), ...c(p.w / 2, p.h / 2), ...c(-p.w / 2, p.h / 2)]);
   const gm = geom(pos, new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), null, new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), new Uint16Array([0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]));
   return paveMat({ map: tex }, 'apron', new THREE.Mesh(gm));
@@ -602,6 +612,8 @@ function aptBuildings(v, b, f) {
   let nr = 0;
   for (const p of b.parts) {
     if (!p.built || PAVE[p.kind] === 1) continue;
+    // (parts drawn as outlines, passenger bridges and people movers: models-airport.js)
+    if (IC.aptMass3d && (p.poly || p.kind === 'skybridge' || p.kind === 'people')) { const st0 = B.groups.main.pos.length / 3; if (IC.aptMass3d(MB, B, p, b)) { items.push({ p, start: st0, end: B.groups.main.pos.length / 3 }); continue; } }
     const x = (p.x - b.x) * 100, y = (p.y - b.y) * 100, a = p.a || 0, W = (p.w || (p.r || 0.1) * 2) * 100, H = (p.h || (p.r || 0.1) * 2) * 100, dead = p.hp <= 0;
     const ca = Math.cos(a), sa = Math.sin(a), start = B.groups.main.pos.length / 3;
     B.with(q => [x + q[0] * ca - q[1] * sa, y + q[0] * sa + q[1] * ca, q[2]], () => {

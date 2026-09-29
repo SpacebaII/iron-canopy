@@ -126,6 +126,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   }
   // roads and railways that pass under the airfield: the tunnel's line, and a portal at each end
   if (z > 1.5 && S.world.tunnels) for (const t of S.world.tunnels) if (t.apt === ap.id) drawTunnel(g, t, px, z);
+  // service roads across the airside (from the map data): grey, with a white edge close in
+  if (z > 1.5 && ap.svcRoads && ap.svcRoads.length) { g.lineCap = 'round'; g.lineJoin = 'round'; for (const r of ap.svcRoads) { g.beginPath(); r.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); if (z > 12) { g.strokeStyle = 'rgba(236,236,226,0.55)'; g.lineWidth = r.w + 0.015; g.stroke(); } g.strokeStyle = 'rgb(84,86,86)'; g.lineWidth = Math.max(r.w, 1 * px); g.stroke(); } g.lineCap = 'butt'; g.lineJoin = 'miter'; }
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
@@ -381,25 +383,7 @@ function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
   g.fillStyle = paveCol(rw); g.fillRect(-L / 2, -W / 2, L, W);
   // worn pavement: patches and cracks where heavy aircraft have broken it up
   if (rw.wear > 0.2 && z > 1.5) { g.fillStyle = 'rgba(20,18,16,0.55)'; const n = Math.round(rw.wear * 40); for (let i = 0; i < n; i++) { const hx = (U.hash(i, 7) - 0.5) * L * 0.9, hy = (U.hash(7, i) - 0.5) * W * 0.8; g.fillRect(hx, hy, 0.25 + U.hash(i, i) * 0.4, 0.04 + U.hash(i, 3) * 0.08); } }
-  if (marks) {
-    g.fillStyle = PAINT;
-    // edge stripes
-    g.fillRect(-L / 2, -rw.w / 2 + 0.01, L, 0.009); g.fillRect(-L / 2, rw.w / 2 - 0.019, L, 0.009);
-    // threshold piano keys and designators
-    for (const e of [-1, 1]) {
-      const x0 = e * (L / 2 - 0.06);
-      for (let k = 0; k < 8; k++) { const y = -rw.w / 2 + 0.035 + k * (rw.w - 0.07) / 7.5; g.fillRect(x0 - (e > 0 ? 0.3 : 0), y, 0.3, 0.018); }
-      // aiming point and touchdown zone
-      g.fillRect(e * (L / 2 - 4) - 0.225, -0.1, 0.45, 0.05); g.fillRect(e * (L / 2 - 4) - 0.225, 0.05, 0.45, 0.05);
-      for (const t of [1.5, 3, 6, 7.5]) { g.fillRect(e * (L / 2 - t) - 0.11, -0.12, 0.22, 0.018); g.fillRect(e * (L / 2 - t) - 0.11, 0.1, 0.22, 0.018); }
-    }
-    // centreline
-    g.fillStyle = 'rgba(236,236,226,0.8)';
-    for (let x = -L / 2 + 1.2; x < L / 2 - 1.2; x += 0.5) g.fillRect(x, -0.0045, 0.3, 0.009);
-    if (fine && rw.name) {
-      const m = rw.name.match(/(\d\d[LCR]?)\/(\d\d[LCR]?)/);
-      if (m) for (const [e, num] of [[-1, m[1]], [1, m[2]]]) { g.save(); g.translate(e * (L / 2 - 0.62), 0); g.rotate(e > 0 ? -Math.PI / 2 : Math.PI / 2); g.font = '700 0.16px "IBM Plex Mono", monospace'; g.textAlign = 'center'; g.fillStyle = PAINT; g.fillText(num, 0, 0.06); g.restore(); }
-    }
+  if (marks) { runwayMarks(g, rw, L, fine);
   } else if (z > 0.8) { g.fillStyle = 'rgba(236,236,226,0.35)'; g.fillRect(-L / 2 + 0.5, -Math.max(0.01, 0.4 * px), L - 1, Math.max(0.02, 0.8 * px)); }
   // closed for works or worn out: yellow crosses on the runway, as pilots see them
   if (rw.shut || rw.wear >= 1) {
@@ -411,6 +395,52 @@ function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
   if ((rw.shut || rw.wear >= 1) && z < 6) lbl(g, rw.wear >= 1 ? 'CLOSED: WORN OUT' : 'CLOSED: WORKS', c.x, c.y - 10 * px, px, IC.C.amber, 8.5, 'center', 700);
   for (const cr of rw.craters) { const p = IC.rwAt(rw, cr.t); crater(g, p.x, p.y, cr.r, px); }
   if (rw.craters.length && z < 3) { const p = IC.rwAt(rw, rw.craters[0].t); g.strokeStyle = IC.C.hostile; g.lineWidth = 2 * px; g.beginPath(); g.arc(p.x, p.y, 7 * px, 0, 7); g.stroke(); }
+}
+/* Runway markings to the FAA's standard for a precision runway (AC 150/5340-1), in metres (1 unit = 100 m): edge
+   stripes; at each end the threshold stripes (by the runway's width: 12 on 45 m, 16 on 60 m, 45 m long, from 6 m in),
+   the designator 18 m tall, touchdown-zone bars in groups of 3, 2, 2, 1, 1 at 150 m steps, the aiming point 300 m in;
+   a centreline of 36 m stripes and 24 m gaps. A displaced threshold (rw.disp, m) is a white bar across the runway
+   with arrows leading up to it along the centreline. The frame is the runway's: x along it from −L/2 (end a). */
+function runwayMarks(g, rw, L, fine) {
+  const M = 0.01, W = rw.w, hw = W / 2;
+  g.fillStyle = PAINT;
+  g.fillRect(-L / 2, -hw + 0.4 * M, L, 0.9 * M); g.fillRect(-L / 2, hw - 1.3 * M, L, 0.9 * M);
+  const n = W >= 0.58 ? 16 : W >= 0.43 ? 12 : W >= 0.28 ? 8 : 4, sw = 1.75 * M, gap = (W - 2 * 3 * M - n * sw) / (n + 1);
+  const disp = rw.disp || [0, 0];
+  let c0 = -L / 2 + 1.2, c1 = L / 2 - 1.2;
+  for (const [e, dm] of [[-1, disp[0] || 0], [1, disp[1] || 0]]) {
+    const D = dm * M, t0 = L / 2 - D;   // (the landing threshold, from the middle)
+    const at = (d, len, y, h) => g.fillRect(e * (t0 - d) - (e > 0 ? len : 0), y, len, h);
+    // the displaced part: a threshold bar and arrows up to it
+    if (D > 0.05) {
+      g.fillRect(e * t0 - (e > 0 ? 3 * M : 0), -hw + 1.5 * M, 3 * M, W - 3 * M);
+      // (arrows point the way aircraft land: towards the threshold)
+      for (let d = 0.25; d < D - 0.1; d += 0.6) {
+        const tip = e * (t0 + d), tail = tip + e * 0.3, dir = -e;
+        g.fillRect(Math.min(tip, tail), -0.45 * M, 0.3, 0.9 * M);
+        g.beginPath(); g.moveTo(tip + dir * 0.05, 0); g.lineTo(tip - dir * 0.04, -2.2 * M); g.lineTo(tip - dir * 0.04, 2.2 * M); g.closePath(); g.fill();
+      }
+    }
+    // threshold stripes, either side of the centreline, then the designator
+    for (let k = 0; k < n; k++) { const y = -hw + 3 * M + gap * (k + 1) + sw * k + (k >= n / 2 ? gap * 0.6 : 0) - gap * 0.3; at(6 * M, 45 * M, y, sw); }
+    // touchdown zone and aiming point (runways over 1,300 m)
+    if (L > 13) {
+      const bars = (d, k) => { for (let i = 0; i < k; i++) { const y = 11 * M + i * 3.3 * M; at(d, 22.5 * M, y, 1.8 * M); at(d, 22.5 * M, -y - 1.8 * M, 1.8 * M); } };
+      bars(150 * M, 3); at(300 * M, 45 * M, 11 * M, 9 * M); at(300 * M, 45 * M, -20 * M, 9 * M);
+      if (L > 20) { bars(450 * M, 2); bars(600 * M, 2); bars(750 * M, 1); bars(900 * M, 1); }
+    }
+    if (e < 0) c0 = -t0 + 1.2; else c1 = t0 - 1.2;
+  }
+  g.fillStyle = 'rgba(236,236,226,0.8)';
+  for (let x = c0; x < c1 - 0.3; x += 0.61) g.fillRect(x, -0.45 * M, 0.366, 0.9 * M);
+  if (fine && rw.ends) for (const [e, num, dm] of [[-1, rw.ends.a, disp[0] || 0], [1, rw.ends.b, disp[1] || 0]]) {
+    if (!num) continue;
+    const m = /^(\d+)([LCR]?)$/.exec(num); if (!m) continue;
+    g.save(); g.translate(e * (L / 2 - dm * M - 0.72), 0); g.rotate(e > 0 ? -Math.PI / 2 : Math.PI / 2);
+    g.font = '700 0.18px "IBM Plex Mono", monospace'; g.textAlign = 'center'; g.fillStyle = PAINT;
+    g.fillText(m[1], 0, 0.06); if (m[2]) g.fillText(m[2], 0, -0.16);
+    g.restore();
+  }
 }
 function drawStand(g, s, px, z, marks, fine) {
   if (!marks) return;
@@ -672,7 +702,7 @@ function drawLights(g, ap, px, z, light, now) {
       for (let s = 0.6; s < 9; s += 0.6) { const q = { x: p.x + d.x * sgn * s, y: p.y + d.y * sgn * s }; const fl = (now * 2 + s * 0.1) % 1 < 0.08 ? 1.6 : 1; dot(q.x, q.y, `rgba(255,250,230,${0.7 * k * fl})`, 0.03); }
     }
   }
-  if (z > 1.5) for (const p of ap.parts.filter(q => q.kind === 'taxi' && q.built)) {
+  if (z > 1.5) for (const p of ap.parts.filter(q => q.kind === 'taxi' && q.built && !q.lane)) {
     for (let i = 1; i < p.nodes.length; i++) {
       const a = ap.nodes[p.nodes[i - 1]], b = ap.nodes[p.nodes[i]]; if (!a || !b) continue;
       const L = U.dist(a, b), nx = -(b.y - a.y) / (L || 1), ny = (b.x - a.x) / (L || 1);
@@ -682,6 +712,12 @@ function drawLights(g, ap, px, z, light, now) {
   }
   // floodlights along aprons and terminals: pools of light spaced along the building, not one glow for a whole concourse
   for (const p of ap.parts.filter(q => (q.kind === 'apron' || q.kind === 'terminal') && q.built && q.hp > q.max * 0.25)) {
+    // an outline apron: high masts on a grid over the paving (kept until it moves)
+    if (p.poly) {
+      if (!p._masts || p._mk !== p.x + ',' + p.y + ',' + p.a) { p._mk = p.x + ',' + p.y + ',' + p.a; const P = IC.partShape(ap, p).poly.map(q => [q.x, q.y]), st = p.kind === 'terminal' ? 1.4 : 1.1; p._masts = []; for (let v = -p.h / 2 + st / 2; v < p.h / 2; v += st) for (let u = -p.w / 2 + st / 2; u < p.w / 2; u += st) { const c = IC.rectWorld(p, u, v); if (U.inPoly(c.x, c.y, P)) p._masts.push(c); } }
+      for (const c of p._masts) { const gr = g.createRadialGradient(c.x, c.y, 0, c.x, c.y, 0.8); gr.addColorStop(0, `rgba(255,214,150,${0.13 * k})`); gr.addColorStop(1, 'rgba(255,214,150,0)'); g.fillStyle = gr; g.beginPath(); g.arc(c.x, c.y, 0.8, 0, 7); g.fill(); }
+      continue;
+    }
     const long = Math.max(p.w, p.h), r = U.clamp(Math.min(p.w, p.h) * 0.9, 0.5, 1.6), n = Math.max(1, Math.round(long / (r * 1.6)));
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n - 0.5, c = IC.rectWorld(p, p.w >= p.h ? f * p.w : 0, p.w >= p.h ? 0 : f * p.h);

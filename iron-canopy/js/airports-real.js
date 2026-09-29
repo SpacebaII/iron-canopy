@@ -286,7 +286,8 @@ IC.aptTraceFence = function (ap) {
     if (!moved || (x === si && y === sj)) break;
   }
   const simp = (P, tol) => { if (P.length < 4) return P; const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1; const st = [[0, P.length - 1]]; while (st.length) { const [a, b] = st.pop(); let m = -1, mi = -1; for (let i = a + 1; i < b; i++) { const dd = U.segDist(P[i].x, P[i].y, P[a].x, P[a].y, P[b].x, P[b].y); if (dd > m) { m = dd; mi = i; } } if (m > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); } } return P.filter((_, i) => keep[i]); };
-  const poly = simp(pts, 0.15);
+  // (the grid's 20 m steps straightened out: the fence runs in straight lengths between posts)
+  const poly = simp(pts, 0.3);
   if (poly.length < 3) return null;
   const a = ap.rwyA || 0, cs = Math.cos(-a), sn = Math.sin(-a);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
