@@ -316,7 +316,7 @@ function onAct(e) {
   const ui = IC.ui;
   if (IC.savesAct(S, a, v)) { IC.sfx.ui('click'); return; }
   switch (a) {
-    case 'begin': IC.begin(v); return;
+    case 'begin': if (/^showcase:/.test(v)) IC.begin('showcase', v.slice(9)); else IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
     case 'menu': ui.toggleMenu(); break;
     case 'roomLocked': { const n = ui.roomAct(v); IC.toast(S, 'info', 'LATER', `The ${ui.roomName(v)} room opens in ${IC.ACTS[n].name}, ${IC.ACTS[n].title}. Finish this act's goals to get there.`); IC.sfx.ui('err'); break; }
@@ -715,7 +715,9 @@ async function build(seed, mode, lesson) {
   const me = ++nth;
   loading++;
   let S2;
-  try { S2 = await IC.newGameAsync({ seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 }, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
+  // (the airport showcase is the Career's ready-made network with a real airport in place of the capital's)
+  const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
+  try { S2 = await IC.newGameAsync(o, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
   finally { loading--; }
   if (me !== nth) return null;
   S = IC.S = S2;
@@ -754,8 +756,9 @@ IC.begin = function (mode, lesson) {
     $('start').hidden = true; $('over').hidden = true;
     S.paused = false;
     const f = S.camp && S.camp.focus;
-    const ap = mode === 'story' && S.byId[S.story.cap];
-    if (ap) { IC.cam.z = 0.9; IC.centerOn(ap.x, ap.y); IC.flyTo(ap.x, ap.y, 2.4); }
+    const ap = (mode === 'story' || mode === 'showcase') && S.byId[S.story.cap];
+    if (ap && S.showcase) { const r = ap.radius || 60; IC.frame(ap.x - r, ap.y - r * 0.8, ap.x + r, ap.y + r * 0.8, false, 1); }
+    else if (ap) { IC.cam.z = 0.9; IC.centerOn(ap.x, ap.y); IC.flyTo(ap.x, ap.y, 2.4); }
     else if (f) { IC.cam.z = f.z; IC.centerOn(f.x, f.y); }
     else {
       // Quick war: the capital and the forward air base, where the war starts

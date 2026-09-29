@@ -70,7 +70,7 @@ IC.APART = {
   gradar:   { name: 'Ground radar', w: 0.1, h: 0.1, cost: 60, build: 900, hp: 20, desc: 'Shows the tower every aircraft on the ground, at night and in fog. Without it, an aircraft crossing a runway can stray onto one in use.' },
   hydrant:  { name: 'Hydrant fuel system', w: 0.24, h: 0.18, cost: 90, build: 1500, hp: 30, pipe: 900, reach: 14, desc: 'A pipeline feeds the tanks and pipes fuel under the aprons within 1.4 km: no fuel trucks to wait for, quicker turnarounds.' },
   support:  { name: 'Support building', area: true, cost: 15, build: 300, hp: 40, desc: 'Offices, workshops, catering, the airport authority. They keep the airport running; they add no capacity.' },
-  bridge:   { name: 'Passenger bridge', area: true, cost: 60, build: 600, hp: 40, over: true, desc: 'A walkway over a taxiway between a terminal and a concourse. Aircraft taxi under it only if their tail clears it.' },
+  skybridge: { name: 'Passenger bridge', area: true, cost: 400, build: 600, hp: 40, over: true, desc: 'A walkway over a taxiway between a terminal and a concourse. Aircraft taxi under it only if their tail clears it.' },
   people:   { name: 'People mover', line: true, w: 0.08, cost: 30, build: 400, hp: 40, desc: 'A driverless train between the terminal and its concourses, on a viaduct or in a tunnel: passengers change in minutes instead of a bus ride.' }
 };
 IC.APART_ORDER = ['runway', 'taxi', 'apron', 'terminal', 'cargo', 'hangar', 'fuel', 'hydrant', 'tower', 'fire', 'atc', 'gradar', 'ils', 'has', 'alert', 'ammo'];

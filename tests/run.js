@@ -1291,7 +1291,7 @@ test('shapes: a layout of outlines becomes an airport: stands on the aprons, gat
 });
 test('shapes: a passenger bridge over a taxiway lets a narrow-body under and keeps a wide-body out', () => {
   const { S, ap } = miniGame();
-  const br = ap.parts.find(p => p.kind === 'bridge'), rwA = ap.parts.find(p => p.kind === 'runway').id + ':a';
+  const br = ap.parts.find(p => p.kind === 'skybridge'), rwA = ap.parts.find(p => p.kind === 'runway').id + ':a';
   const far = IC.aptStands(ap).find(s => s.name === '11');
   assert(br.clear === 13 && far.maxHt === 12, `the stand beyond the bridge takes tails up to ${far.maxHt} m`);
   assert(IC.aptPath(ap, rwA, far.id, false, IC.ACTYPES.narrow.ht), 'a narrow-body (11.8 m) cannot pass under a 13 m bridge');
@@ -1327,6 +1327,47 @@ test('import: an OpenStreetMap extract becomes a layout the game builds: stands,
   assert(st.length === L.stands.length && st.every(s => s.linked && s.contact), `${st.filter(s => !s.linked).length} stands cut off, ${st.filter(s => !s.contact).length} not at a gate`);
   assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
 });
+test('showcase: the showcase opens with the real airport at the capital, on a flat site, with nothing overlapping and airlines using it', () => {
+  IC.REAL_APT.mini = MINI;
+  IC.seedRandom(12345);
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: 'mini', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  assert(S.showcase === 'mini' && ap.showcase === 'mini' && ap.name === MINI.name, 'the capital\'s airport is not the showcase');
+  assert(U.dist(ap, IC.cap(S)) < 1000, `the showcase is ${(U.dist(ap, IC.cap(S)) / 10).toFixed(0)} km from the capital`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+  // the country's road comes to the airport's own road, outside the fence
+  const n = S.world.nodes[ap.id];
+  assert(n && ap.exits.some(e => U.dist(e, n) < 0.05) && !IC.aptInFence(ap, n), 'the country\'s road does not end at the airport\'s road');
+  assert(!S.camp.cards.length && !S.story.goals.length, 'the showcase shows the Career\'s cards or goals');
+  for (let i = 0; i < 4 * 3600; i++) IC.step(S, 0.25);
+  assert(S.av.tails.some(t => t.at === ap.id || t.dest === ap.id || t.from === ap.id), 'no airline flies to the showcase airport');
+  delete IC.REAL_APT.mini;
+});
+test('blueprint: a real airport planned onto a new site, turned, is paid for as it is built and works like the original', () => {
+  IC.REAL_APT.mini = MINI;
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 9 }); IC.S = S; S.budget = 1e5;
+  const c = IC.cap(S); let ap = null;
+  for (let d = 150; d < 500 && !ap; d += 20) for (let k = 0; k < 12 && !ap; k++) { const x = c.x + Math.cos(k) * d, y = c.y + Math.sin(k) * d; if (!IC.foundCheck(S, x, y)) ap = IC.foundAirport(S, x, y, 0); }
+  assert(ap, 'no site to found an airport on');
+  // turned until it fits the site (clear of rivers)
+  let rot = 0.5, C = null; for (let k = 0; k < 18; k++, rot += 0.35) { C = IC.bldBlueprintCheck(S, ap, 'mini', ap.x, ap.y, rot); if (C.ok) break; }
+  assert(C.ok, C.why);
+  // it must fit: not across the border
+  const far = IC.bldBlueprintCheck(S, ap, 'mini', S.world.WW || 1e6, 0, 0);
+  assert(!far.ok && /border|lake/.test(far.why), `a blueprint off the map: "${far.why}"`);
+  const b0 = S.budget, made = IC.bldBlueprint(S, ap, 'mini', ap.x, ap.y, rot);
+  assert(made && made.length === C.parts && ap.works.length >= made.length, 'the blueprint was not planned part by part');
+  assert(b0 - S.budget < C.cost * 0.2, `paid ${U.money(b0 - S.budget)} up front of ${U.money(C.cost)}`);
+  // a second one on top is refused, naming what it would hit
+  const again = IC.bldBlueprintCheck(S, ap, 'mini', ap.x, ap.y, rot);
+  assert(!again.ok && /overlaps/.test(again.why), `a second blueprint on top: "${again.why}"`);
+  for (let i = 0; i < 80 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); }
+  ap.dirty = true; IC.aptStats(S, ap);
+  const st = IC.aptStands(ap);
+  assert(st.length === MINI.stands.length && st.every(s => s.linked && s.contact), `${st.filter(s => !s.linked).length} stands cut off`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+  delete IC.REAL_APT.mini;
+}, true);
 test('shapes: a layout turned and moved works like the original', () => {
   const A = miniGame(0), B = miniGame(1.1);
   const sa = IC.aptStands(A.ap), sb = IC.aptStands(B.ap);

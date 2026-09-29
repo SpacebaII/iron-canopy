@@ -146,7 +146,7 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings
   for (const p of parts) {
-    if (['runway', 'taxi', 'apron', 'surface', 'bridge', 'people'].includes(p.kind)) continue;
+    if (['runway', 'taxi', 'apron', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
   // people movers below ground: the line on the map, faint and dashed
@@ -172,7 +172,7 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) { const L = m.T.len * 0.5 + 0.03; veh(g, m.x + Math.cos(m.h) * L, m.y + Math.sin(m.h) * L, m.h, 0.06, 0.03, 'rgb(236,196,60)', px); }
   }
   // above the aircraft that taxi under them: passenger bridges, and people movers on their viaducts
-  for (const p of by('bridge')) drawSpan(g, ap, p, px, z, night);
+  for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
   if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
@@ -504,6 +504,17 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   if (hp < 0.5 && z > 0.8 && z < 6) { g.strokeStyle = dead ? IC.C.hostile : IC.C.amber; g.lineWidth = 1.2 * px; if (p.r) { g.beginPath(); g.arc(0, 0, p.r + 3 * px, 0, 7); g.stroke(); } else g.strokeRect(-w / 2 - 2 * px, -h / 2 - 2 * px, w + 4 * px, h + 4 * px); }
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
+}
+/* a blueprint's ghost: runways and taxiways at their width, aprons and buildings as outlines */
+function drawBlueprint(g, t, col, fill, px) {
+  g.save(); g.lineCap = 'round';
+  for (const p of t.parts) {
+    if (p.kind === 'runway') { g.strokeStyle = fill; g.lineWidth = Math.max(p.w, 2 * px); g.beginPath(); g.moveTo(p.a.x, p.a.y); g.lineTo(p.b.x, p.b.y); g.stroke(); g.strokeStyle = col; g.lineWidth = Math.max(0.01, px); g.stroke(); }
+    else if (p.kind === 'taxi') { g.strokeStyle = col; g.globalAlpha = 0.6; g.lineWidth = Math.max(p.w * 0.5, px); g.beginPath(); p.nodes.forEach((id, i) => { const n = t.nodes[id]; g[i ? 'lineTo' : 'moveTo'](n.x, n.y); }); g.stroke(); g.globalAlpha = 1; }
+    else if (p.kind === 'people') { g.setLineDash([4 * px, 4 * px]); g.strokeStyle = col; g.lineWidth = px; g.beginPath(); p.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.stroke(); g.setLineDash([]); }
+    else if (p.x != null && p.kind !== 'ils') { const P = IC.partOutline(p); g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.fillStyle = fill; g.fill(); g.strokeStyle = col; g.lineWidth = Math.max(0.005, px); g.stroke(); }
+  }
+  g.restore();
 }
 /* a tunnel under the airfield: its line faint and dashed, and at each end the portal: a dark mouth in a concrete
    headwall, wing walls splayed along the cutting */
@@ -1037,6 +1048,8 @@ IC.drawBuildGhost = function (g, S, px) {
   for (const b of plan.blocks || []) { g.save(); g.translate(b.x, b.y); g.rotate(b.a || 0); g.strokeStyle = IC.C.hostile; g.lineWidth = 1.4 * px; g.fillStyle = 'rgba(255,91,79,0.3)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); g.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h); g.restore(); }
   // the part in the way of a plan that cannot be built
   if (!ok && plan.hit) drawHit(g, m.ap, plan.hit, px);
+  // a blueprint: the whole airport where it would go
+  if (plan.bp && plan.bp.t) drawBlueprint(g, plan.bp.t, col, fill, px);
   // a runway that paving next to would close
   if (plan.near) { const rw = plan.near, c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw); g.save(); g.translate(c.x, c.y); g.rotate(Math.atan2(d.y, d.x)); g.fillStyle = 'rgba(242,180,65,0.25)'; g.fillRect(-IC.rwLen(rw) / 2, -rw.w, IC.rwLen(rw), rw.w * 2); g.restore(); }
   for (const sp of plan.specs) {

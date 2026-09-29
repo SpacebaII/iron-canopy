@@ -95,7 +95,7 @@ IC.storyInit = function (S) {
   // the Career builds its airports; the 'network' preset starts with three, the first chapter behind it
   st.fresh = !apts.length;
   if (apts.length) {
-    st.cap = apts.find(a => a.template === 'intl').id;
+    st.cap = (apts.find(a => a.template === 'intl' || a.showcase) || apts[0]).id;
     st.bad = (apts.find(a => a.template === 'regional_bad') || apts[1]).id;
     st.reg = (apts.find(a => a.template === 'regional_ok') || apts[1]).id;
     st.opened = true;
@@ -928,6 +928,8 @@ function delegates(S, dt) {
 
 /* ---------- the tick ---------- */
 IC.storyTick = function (S, dt) {
+  // (the airport showcase has no story: only the airport at work)
+  if (S.showcase) return;
   const st = S.story, C = S.camp;
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
   // goals

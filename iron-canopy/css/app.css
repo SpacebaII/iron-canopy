@@ -837,3 +837,5 @@ table.t th.r{text-align:right}
 /* the staff's messages folded away once read */
 #comms .cfold { background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; padding: 2px 4px; cursor: pointer; opacity: .8; }
 #comms .cfold:hover { opacity: 1; }
+.st-note{margin:.8rem .2rem 0;font-size:.8rem;color:var(--muted)}
+body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.showcase #arsenal,body.showcase #rail-staff,body.showcase #rail-economy,body.showcase #rail-air,body.showcase #rail-intel{display:none!important}

@@ -74,6 +74,8 @@ function* gameSteps(opts) {
     const apts = S.infra.filter(i => i.kind === 'airport').sort((a, b) => (b.city === W.cities[0].id) - (a.city === W.cities[0].id));
     apts.forEach((ap, i) => IC.layoutAirport(ap, i === 0 ? 'intl' : i === 1 || !story ? 'regional_ok' : 'regional_bad', ap.rwyA));
     for (const b of S.infra.filter(i => i.kind === 'airbase')) IC.layoutAirport(b, story && b.id === 'ab_fwd' ? 'mil_mothball' : 'mil_full', b.rwyA);
+    // the airport showcase: the capital's airport is a real one, laid out from data (airports-real.js)
+    if (opts.showcase) IC.showcaseSetup(S, opts.showcase);
     for (const b of IC.bases(S)) { b.crews = b.kind === 'airbase' ? 2 : 1; b.works = []; b.autoRepair = true; IC.aptStats(S, b); }
     // the country's roads come in to each airport's landside, round the airfield or under it (growth.js)
     for (const b of IC.bases(S)) IC.aptSeatRoads(S, b);
@@ -100,6 +102,8 @@ function* gameSteps(opts) {
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
+  // (the showcase is the airport at work: no chapter cards, no goals, no guide)
+  if (S.showcase) { S.budget = 1e6; S.camp.cards = []; S.camp.comms = []; S.camp.sched = []; S.story.goals = []; S.story.tut = false; S.camp.focus = { x: S.byId[S.story.cap].x, y: S.byId[S.story.cap].y, z: 0.5 }; }
   return S;
 }
 

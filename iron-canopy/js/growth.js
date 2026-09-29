@@ -439,6 +439,8 @@ function repairRoads(S, dt) {
    pass under its runways, taxiways or aprons go in a tunnel (W.tunnels); farm lanes that ran across the field stop
    at its edge, and streets under it are closed. Railways pass in a tunnel too. Called when an airport is laid out. */
 IC.aptGate = function (S, ap) {
+  // a landside laid out from data: the road end nearest the towns it serves
+  if (ap.land && ap.land.fixed && ap.exits && ap.exits.length) { const c = ap.cityRef || (S && IC.cap && IC.cap(S)) || ap; return ap.exits.slice().sort((a, b) => U.dist(a, c) - U.dist(b, c))[0]; }
   const terms = ap.parts.filter(p => p.kind === 'terminal').sort((a, b) => IC.partArea(b) - IC.partArea(a));
   const E = IC.aptKeepOut(S, ap, { m: 0.2 });
   const F = IC.aptFence(ap), hull = F ? IC.shapePoly(F.poly) : null;
@@ -460,7 +462,7 @@ IC.aptSeatRoads = function (S, ap) {
   W.tunnels = (W.tunnels || []).filter(t => t.apt !== ap.id);
   const els = IC.aptElements(S, ap, { noWorld: true });
   const terms = ap.parts.filter(p => p.kind === 'terminal' || p.kind === 'cargo');
-  const env = terms.map(t => IC.landEnvelope(ap, t));
+  const env = ap.land && ap.land.fixed ? [] : terms.map(t => IC.landEnvelope(ap, t));
   const fence = IC.aptFence(ap), keep = IC.aptKeepOut(S, ap, { els, m: 0.3, envelopes: env });
   // (the fence itself, less the landside: the road comes up to the gate outside it)
   if (fence) keep.push({ sh: IC.shapePoly(fence.poly), pad: 0.15, fence: true });

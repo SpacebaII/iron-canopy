@@ -26,6 +26,7 @@ IC.APART.surface = { name: 'Surface', area: true, cost: 1, build: 60, hp: 30, de
 IC.SURF = { grass: { name: 'Grass', k: 0.5 }, gravel: { name: 'Gravel', k: 1.5 }, green: { name: 'Landscaping', k: 3 }, asph: { name: 'Asphalt', k: 4, park: 350 }, conc: { name: 'Concrete', k: 6 } };
 if (!IC.APART_ORDER.includes('surface')) IC.APART_ORDER.push('surface');
 if (!IC.APART_ORDER.includes('deice')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('hydrant') + 1, 0, 'fuelpad', 'deice');
+if (!IC.APART_ORDER.includes('skybridge')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('cargo') + 1, 0, 'skybridge', 'people');
 /* parts aircraft taxi into through a door: shelters, hangars and service pads */
 const DOOR = k => k === 'hangar' || k === 'has' || k === 'alert' || !!(IC.APART[k] && IC.APART[k].pad);
 IC.aptDoor = DOOR;
@@ -288,7 +289,7 @@ IC.aptGraph = function (ap) {
   const parts = ap.parts.filter(p => p.built && !(p.shut && p.kind !== 'runway'));
   const rwn = new Map();
   // passenger bridges over taxiways: the edges under them carry the height a tail must clear (m)
-  const spans = ap.parts.filter(p => p.kind === 'bridge' && p.clear).map(p => ({ p, sh: IC.partShape(ap, p) }));
+  const spans = ap.parts.filter(p => p.kind === 'skybridge' && p.clear).map(p => ({ p, sh: IC.partShape(ap, p) }));
   const under = (a, b) => { let c = 0; for (const x of spans) if (IC.shapeDepth(x.sh, IC.shapeLine([a, b], 0.05)) > 0) c = c ? Math.min(c, x.p.clear) : x.p.clear; return c; };
   for (const p of parts) {
     if (p.kind === 'taxi') for (let i = 1; i < p.nodes.length; i++) {
@@ -952,6 +953,7 @@ IC.aptPlan = function (S, ap, part, o) {
   const lock = IC.aptLockWhy(S, part.kind, part.mat);
   if (lock) { IC.log(S, 'warn', 'BUILD', lock); return null; }
   if (o.zone && part.kind !== 'taxi') part.zone = o.zone;
+  if (part.kind === 'skybridge') { part.clear = part.clear || o.clear || IC.BRIDGE_CLEAR || 14; part.joins = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo') && IC.shapeDepth(IC.partShape(ap, part), IC.partShape(ap, q)) > -0.05).map(q => q.id); }
   if (o.ramp) { part.ramp = true; part.free = part.free || []; }
   if (o.smax && part.kind === 'apron' && !o.ramp) part.smax = o.smax;
   if (part.kind === 'ils') part.cat = IC.aptTechOk(S, 'ils3') ? 3 : 1;
@@ -1012,6 +1014,8 @@ IC.aptInFence = function (ap, p) {
 IC.aptFence = function (ap) {
   const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0) + ':' + ap.parts.reduce((s, p) => s + (p.x || 0), 0).toFixed(2);
   if (ap._box && ap._boxKey === key) return ap._box;
+  // (a landside laid out from data: the fence follows the airside closely, round the landside, IC.aptTraceFence)
+  if (ap.land && ap.land.fixed && IC.aptTraceFence) { ap._box = IC.aptTraceFence(ap); ap._boxKey = key; if (ap._box) return ap._box; }
   const pts = [], sq = (q, m) => { pts.push({ x: q.x - m, y: q.y - m }, { x: q.x + m, y: q.y - m }, { x: q.x + m, y: q.y + m }, { x: q.x - m, y: q.y + m }); };
   const fronts = ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.w && IC.landEnvelope);
   const carve = [];
@@ -1060,7 +1064,7 @@ IC.aptFencePath = function (g, b, pad) {
 
 /* inside the country and the site, and not on top of another part (touching is fine) */
 IC.aptCanPlace = function (S, ap, part) {
-  const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' ? part.pts : [part];
+  const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' || part.kind === 'people' ? part.pts : [part];
   // why not, in words, for the builder (IC.aptPlaceWhy)
   const no = (why, q) => { IC.aptPlaceWhy = why; IC.aptPlaceHit = q || null; return false; };
   IC.aptPlaceWhy = ''; IC.aptPlaceHit = null;
@@ -1078,8 +1082,10 @@ IC.aptCanPlace = function (S, ap, part) {
     for (const q of ap.parts) if (cover(q) && taxiThrough(pts, q)) return no(`It runs through ${IC.partName(ap, q)}: a taxiway joins an apron or a building at its edge.`, q);
     return true;
   }
-  if (cover(part)) for (const q of ap.parts) if (q.kind === 'taxi' && q !== part && taxiThrough(q.nodes.map(id => ap.nodes[id]).filter(Boolean), part)) return no(`It covers a taxiway: taxiways meet ${part.kind === 'apron' ? 'aprons' : 'buildings'} at the edge. Plan it beside the taxiway.`, q);
+  if (cover(part) && !(IC.APART[part.kind] || {}).over) for (const q of ap.parts) if (q.kind === 'taxi' && q !== part && taxiThrough(q.nodes.map(id => ap.nodes[id]).filter(Boolean), part)) return no(`It covers a taxiway: taxiways meet ${part.kind === 'apron' ? 'aprons' : 'buildings'} at the edge. Plan it beside the taxiway.`, q);
   const D = IC.APART[part.kind];
+  // a people mover rides over or under the airport: only its own rules (not across a runway above ground)
+  if (part.kind === 'people') { const L = IC.aptPlanOverlaps(S, ap, part); return L.length ? no(`${L[0].text}`, L[0].B.p || null) : true; }
   const probe = Object.assign({ w: D.w, h: D.h, r: D.r }, part);
   const shape = q => q.kind === 'runway' ? { x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q), h: q.w || IC.APART.runway.w } : q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q;
   const A = shape(probe);
@@ -1091,7 +1097,8 @@ IC.aptCanPlace = function (S, ap, part) {
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
     // a building may not stand on a taxiway (aprons and pads meet taxiways at their edges)
-    if (q.kind === 'taxi') { if (mine && !IC.PAVED[probe.kind] && !D.pad && IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.02) return no(`It stands on ${q.name ? 'taxiway ' + q.name : 'a taxiway'}: move it clear of the pavement.`, q); continue; }
+    if (q.kind === 'people' || (D.over && (q.kind === 'terminal' || q.kind === 'cargo'))) continue;
+    if (q.kind === 'taxi') { if (mine && !IC.PAVED[probe.kind] && !D.pad && !D.over && IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.02) return no(`It stands on ${q.name ? 'taxiway ' + q.name : 'a taxiway'}: move it clear of the pavement.`, q); continue; }
     if (mine ? IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.01 : rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
   }
   // roads, car parks and the landside round the airport
@@ -1333,6 +1340,13 @@ IC.aptPlanRunway = function (S, ap, a, b, name, o) {
   const r = IC.aptPlan(S, ap, part, o);
   if (r && !name) { nameRunways(ap); r.name = rwName(r); }
   return r;
+};
+/* plan a people mover along points; lv −1 in a tunnel, 1 on a viaduct */
+IC.aptPlanMover = function (S, ap, pts, lv, o) {
+  const part = { kind: 'people', pts: pts.map(q => ({ x: q.x, y: q.y })), lv: lv == null ? 1 : lv, w: IC.APART.people.w };
+  if (!IC.aptCanPlace(S, ap, part)) { IC.log(S, 'warn', 'BUILD', IC.aptPlaceWhy || 'The people mover cannot go there.'); return null; }
+  part.stops = ap.parts.filter(q => q.kind === 'terminal' && [part.pts[0], part.pts[part.pts.length - 1]].some(e => partDist(ap, q, e) < 0.5)).map(q => q.id);
+  return IC.aptPlan(S, ap, part, o);
 };
 /* plan an area or building; area parts take w and h */
 IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {

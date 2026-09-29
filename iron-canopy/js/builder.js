@@ -136,6 +136,8 @@ IC.bldClearText = function (clr) {
 /* the ground a part takes up, for clearing homes: a runway takes its 150 m strip */
 function footprint(ap, p) {
   if (p.kind === 'runway') return { line: [[p.a, p.b]], r: 1.5 };
+  // (a people mover on its viaduct or in its tunnel takes a narrow strip; homes under a viaduct are cleared)
+  if (p.kind === 'people') { const segs = []; for (let i = 1; i < p.pts.length; i++) segs.push([p.pts[i - 1], p.pts[i]]); return { line: segs, r: (p.lv || 0) < 0 ? 0 : 0.08 }; }
   if (p.kind === 'taxi') { const pts = p.pts || p.nodes.map(id => ap.nodes[id]); const segs = []; for (let i = 1; i < pts.length; i++) segs.push([pts[i - 1], pts[i]]); return { line: segs, r: 0.45 }; }
   const D = IC.APART[p.kind];
   const w = p.w || (p.r ? p.r * 2 : D.w || 0.3), h = p.h || (p.r ? p.r * 2 : D.h || 0.3);
@@ -429,6 +431,7 @@ IC.BTOOLS = {
   remote: { name: 'Remote apron', desc: 'Two corners: an apron with a taxilane along its front. Stands served by bus.' },
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
   stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go: the new paving joins it seamlessly. Aprons that touch are one paved area.' },
+  blueprint: { name: 'Blueprint', desc: 'A whole real airport, laid out from map data: pick one below, turn it with R, click where it goes. It is planned part by part and paid for as it is built, like anything else; it must fit the site: in the country, off lakes and rivers, clear of other airfields and of what is already here.', avail: () => !!(IC.showcaseKeys && IC.showcaseKeys().length) },
   stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
 };
 /* the parallel taxiway to the side of a runway where the cursor is */
@@ -786,8 +789,10 @@ IC.aptAutoLinks = function (ap) {
   }
 };
 
-const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1 };
-const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1 };
+const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, people: 1 };
+const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1, skybridge: 1 };
+/* a passenger bridge clears the tallest narrow-body with a metre and a half to spare, unless the player picks */
+IC.BRIDGE_CLEAR = 14;
 IC.bldIsArea = t => !!AREA_TOOLS[t];
 IC.bldIsLine = t => !!LINE_TOOLS[t];
 function runwayAt(ap, p, tol) { let best = null, bd = tol + 0.3; for (const q of ap.parts) if (q.kind === 'runway') { const d = IC.partDist(ap, q, p); if (d < bd) { bd = d; best = q; } } return best; }
@@ -861,6 +866,16 @@ function planOf(S, m, hv, tol, free) {
   const ap = m.ap, t = m.part, out = { specs: [], text: [], ok: true, why: '', cost: 0, dur: 0, snap: null };
   if (!hv) return out;
   const pts = m.pts.slice();
+  // a blueprint: the whole real airport at the cursor, turned by R (checked here, drawn by the ghost)
+  if (t === 'blueprint') {
+    if (!m.bp || !IC.REAL_APT[m.bp]) { out.ok = false; out.why = 'No blueprint to place.'; return out; }
+    const key = m.bp + '|' + hv.x.toFixed(1) + ',' + hv.y.toFixed(1) + '|' + (m.rot || 0).toFixed(3) + '|' + ap.parts.length + '|' + Math.round(S.budget);
+    if (m._bpKey !== key) { m._bpKey = key; m._bpC = IC.bldBlueprintCheck(S, ap, m.bp, hv.x, hv.y, m.rot || 0); }
+    const C = m._bpC, L = IC.REAL_APT[m.bp];
+    out.bp = { x: hv.x, y: hv.y, rot: m.rot || 0, t: C.t }; out.ok = C.ok; out.why = C.why; out.hit = C.hit; out.cost = C.cost || 0;
+    out.text.push(`${L.name}, ${L.after}: ${C.parts} parts, ${U.money(C.cost || 0)} paid as the work runs, ${U.money((C.cost || 0) * 0.1)} now. R turns it`);
+    return out;
+  }
   if (LINE_TOOLS[t]) {
     const s = snapLine(ap, m, hv, tol, free); out.snap = s;
     const last = pts[pts.length - 1];
@@ -869,6 +884,14 @@ function planOf(S, m, hv, tol, free) {
     if (pts.length < 2) return out;
     if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone });
     else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat });
+    else if (t === 'people') {
+      // under the runways in a tunnel, over everything else on a viaduct
+      const probe = { kind: 'people', pts: pts.map(q => ({ x: q.x, y: q.y })), lv: 1 };
+      const sh = IC.partShape(ap, probe), under = ap.parts.some(q => q.kind === 'runway' && IC.shapeDepth(sh, IC.shapeLine([q.a, q.b], 1.5)) > 0);
+      probe.lv = m.lv != null ? m.lv : under ? -1 : 1;
+      out.specs.push(probe);
+      out.text.push(`${(IC.partMeasure(ap, probe) / 10).toFixed(1)} km ${probe.lv < 0 ? 'in a tunnel' : 'on a viaduct'}: about ${Math.max(1, Math.round(IC.partMeasure(ap, probe) * 100 / 9 / 60 + 1))} min from end to end`);
+    }
     else { const c = concourseSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
   } else if (AREA_TOOLS[t]) {
     const s = snapCorner(ap, m, hv, tol, free, true); out.snap = s;
@@ -877,10 +900,11 @@ function planOf(S, m, hv, tol, free) {
     const r0 = { x: pts[0].x, y: pts[0].y, a: m.rot }, l = IC.rectLocal(r0, c2), c = IC.rectWorld(r0, l.x / 2, l.y / 2);
     const rc = { x: c.x, y: c.y, a: m.rot, w: Math.abs(l.x), h: Math.abs(l.y) };
     out.pts = [pts[0], c2];
-    if (rc.w < 0.3 || rc.h < 0.3) { out.ok = false; out.why = 'Too small: at least 30 m each way.'; return out; }
+    if (t === 'skybridge' ? Math.max(rc.w, rc.h) < 0.3 || Math.min(rc.w, rc.h) < 0.1 : rc.w < 0.3 || rc.h < 0.3) { out.ok = false; out.why = t === 'skybridge' ? 'Too small: a passenger bridge is at least 10 m wide and 30 m long.' : 'Too small: at least 30 m each way.'; return out; }
     const kind = t === 'remote' || t === 'ramp' ? 'apron' : t;
     if (t === 'remote') out.specs = remoteSpec(ap, rc).map(q => Object.assign(q, { mat: m.mat, zone: m.zone }));
-    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, kind === 'apron' && t !== 'ramp' ? { smax: m.size || 'm' } : null, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : null));
+    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, kind === 'apron' && t !== 'ramp' ? { smax: m.size || 'm' } : null, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : t === 'skybridge' ? { clear: m.clear || IC.BRIDGE_CLEAR } : null));
+    if (t === 'skybridge') { const fit = Object.values(IC.ACTYPES).filter(T => T.ht && T.ht <= (m.clear || IC.BRIDGE_CLEAR) - 1 && T.stand !== 's').sort((a, b) => b.ht - a.ht)[0]; out.text.push(`${m.clear || IC.BRIDGE_CLEAR} m above the taxiway: aircraft up to ${fit ? fit.name.toLowerCase() : 'a small one'} taxi under it; taller ones go round`); }
   } else if (t === 'stretch') {
     // the edge of an apron nearest the first click, pushed out to the cursor
     const from = pts[0] || hv, E = apronEdge(ap, from, Math.max(tol, 0.15));
@@ -1049,7 +1073,9 @@ function taxiText(S, ap, out, p) {
 /* build mode for a tool, with the player's last choices of pavement, stand size and zone */
 IC.bldMode = function (S, ap, part) {
   const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
-  return { kind: 'build', ap, part, pts: [], rot: ap.rwyA || 0, rot0: ap.rwyA || 0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass' };
+  // (a blueprint starts the way the real airport lies: north up)
+  const r0 = part === 'blueprint' ? 0 : ap.rwyA || 0, keys = IC.showcaseKeys ? IC.showcaseKeys() : [];
+  return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass', bp: keys.includes(P.bp) ? P.bp : keys[0] };
 };
 /* one click in build mode. btn 0 places, 2 takes back. Returns what happened: 'point', 'built', 'undo', 'exit',
    'err' (with m.err saying why) */
@@ -1061,6 +1087,13 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     return 'exit';
   }
   const plan = IC.bldPlanOf(S, m, p, tol, free);
+  if (m.part === 'blueprint') {
+    if (!plan.ok) { m.err = plan.why; return 'err'; }
+    const made = IC.bldBlueprint(S, ap, m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);
+    if (!made) { m.err = 'Could not plan it.'; return 'err'; }
+    m.done = `${IC.REAL_APT[m.bp].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs.`;
+    return 'built';
+  }
   if (m.part === 'stand') {
     if (!plan.ok) { m.err = plan.why; return 'err'; }
     return IC.bldAddStand(S, ap, plan.stand) ? 'built' : (m.err = 'Not enough money.', 'err');
@@ -1120,8 +1153,9 @@ IC.bldPlanSpecs = function (S, ap, specs) {
   for (const sp of order) {
     let p = null;
     if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
+    else if (sp.kind === 'people') p = IC.aptPlanMover(S, ap, sp.pts, sp.lv);
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax }); if (p && sp.link) p.link = sp.link; }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, clear: sp.clear }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

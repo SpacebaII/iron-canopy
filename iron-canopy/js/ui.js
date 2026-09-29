@@ -86,6 +86,8 @@ ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty(
 }
 
 ui.bind = function (state) {
+  // (the showcase is the airport alone: no treasury, act or arsenal on screen, css/app.css)
+  document.body.classList.toggle('showcase', !!(state && state.showcase));
   S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false;
   // nothing from the previous game stays on screen: its chapter card, its unlocks, its hints
   ui.fresh = new Set(); ui.known = null; ui.moments = []; ui.moment = null; ui.menu = false; IC.hint.clear();
@@ -336,11 +338,21 @@ function progress() {
   ui.moments.push({ items: fresh.map(k => Object.assign({ k }, now.get(k))), act: S.story && S.story.act });
 }
 
+/* the showcase: the airport, what it is after, and its day so far */
+function showcaseBrief() {
+  const ap = S.byId[S.story.cap]; if (!ap) return '';
+  const st = ap.st || {}, pv = IC.aptProvides(ap), k = ap.kpi || {};
+  const rw = ap.parts.filter(p => p.kind === 'runway').map(p => p.ends.a + '/' + p.ends.b).join(', ');
+  return `<h3 data-act="briefMin" title="Collapse or expand">${esc(ap.name)}<em>${esc(ap.after || '')}</em></h3>
+    <p class="hint">Runways ${esc(rw)}. ${pv.gates} gates and ${pv.remote} remote stands; rated ${st.movesPerHour || 0} movements an hour.</p>
+    <p class="hint">Today: ${(k.arr || 0) + (k.dep || 0)} movements, ${Math.round(ap.paxRate || 0).toLocaleString('en-US')} passengers an hour now. Scroll in to the gates; click a part to read what it does.</p>`;
+}
 /* ---------- situation: suggestions in the campaign, the lesson in the Academy ---------- */
 function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
   if (S.range) h = IC.rangePanel(S);
+  else if (S.showcase) h = showcaseBrief();
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;
@@ -485,6 +497,7 @@ function buildHint(m) {
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
     : t === 'stand' ? T.desc
+    : t === 'blueprint' ? 'Blueprint: move it where it should go, R turns it (Shift+R a quarter turn), click to plan the whole airport.'
     : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
     : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
@@ -644,6 +657,7 @@ function coach() {
 function firstRun() {
   if (ui.firstRunDone === S || S.over || !$('start').hidden || !$('cine').hidden || !$('evcard').hidden || ui.room) return;
   ui.firstRunDone = S;
+  if (S.showcase) return;
   if (S.story) IC.hint.tour('career1', [
     { el: 'goals', title: 'Your goals', text: 'This act\'s goals, with how far along each one is. Click a goal to see where it is on the map.' },
     { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' deals. Keys are on each button.' },
@@ -764,13 +778,22 @@ ui.toggleMenu = function (on) {
 /* ---------- start screen: the title, the modes, and pages for the Academy, settings and controls ---------- */
 ui.startPage = function (pg) {
   ui.stPage = pg || 'main';
-  for (const k of ['main', 'lessons', 'saves', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
+  for (const k of ['main', 'lessons', 'showcase', 'saves', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
   if (ui.stPage === 'lessons') ui.lessonList();
+  if (ui.stPage === 'showcase') ui.showcaseList();
   if (ui.stPage === 'saves' && IC.savesPage) IC.savesPage();
   if (ui.stPage === 'main' && IC.saves) IC.saves.refresh();
   if (ui.stPage === 'settings') setHTML($('stSettings'), IC.settingsHTML(S, true));
   const p = store.get('ic-academy', {}), n = IC.LESSONS.filter(l => p[l.id]).length;
   $('acaProg').textContent = n ? `${n} of ${IC.LESSONS.length} done · ${Object.values(p).reduce((a, b) => a + b, 0)} stars` : `${IC.LESSONS.length} lessons, 5 minutes each`;
+};
+/* the real airports shipped with the game (airports-real-data.js), each with what it has */
+IC.showcaseKeys = () => Object.keys(IC.REAL_APT || {}).filter(k => IC.REAL_APT[k].icao);
+ui.showcaseList = function () {
+  const keys = IC.showcaseKeys();
+  const one = k => { const L = IC.REAL_APT[k], rw = (L.runways || []).length, gates = (L.stands || []).filter(s => s.ref).length;
+    return `<button class="lesson" data-act="begin" data-v="showcase:${k}"><i>${esc(L.icao || '')}</i><b>${esc(L.name)}</b><span>${esc(L.after.charAt(0).toUpperCase() + L.after.slice(1))}. ${rw} runways, ${(L.stands || []).length} stands (${gates} gates numbered), ${(L.blds || []).filter(b => b.kind === 'terminal').length} terminals and concourses${(L.movers || []).length ? ', a people mover' : ''}.</span><em>Open</em></button>`; };
+  $('showcases').innerHTML = keys.length ? keys.map(one).join('') : '<p class="hint">The real airports are not in this build: their map data could not be fetched when it was made.</p>';
 };
 ui.lessonList = function () {
   const p = store.get('ic-academy', {});
