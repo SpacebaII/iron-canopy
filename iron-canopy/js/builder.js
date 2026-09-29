@@ -693,7 +693,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     if (rc.w < 0.3 || rc.h < 0.3) { out.ok = false; out.why = 'Too small: at least 30 m each way.'; return out; }
     const kind = t === 'remote' || t === 'ramp' ? 'apron' : t;
     if (t === 'remote') out.specs = remoteSpec(ap, rc).map(q => Object.assign(q, { mat: m.mat, zone: m.zone }));
-    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : null));
+    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, kind === 'apron' && t !== 'ramp' ? { smax: m.size || 'm' } : null, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : null));
   } else if (t === 'stretch') {
     // the edge of an apron nearest the first click, pushed out to the cursor
     const from = pts[0] || hv, E = apronEdge(ap, from, Math.max(tol, 0.15));
@@ -752,7 +752,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free) {
     out.cost += pv.cost; out.dur = Math.max(out.dur, pv.dur); homes += pv.clr.blocks.length; comp += pv.clr.comp; roads += pv.clr.roads; res += pv.clr.res; clrAll.push(...pv.clr.blocks);
     (out.blocks = out.blocks || []).push(...pv.clr.blocks.map(x => x.b));
     if (!out.near && pv.near) out.near = pv.near;
-    if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.why = probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${D.name.toLowerCase()} overlaps another part, stands in water or leaves the site.`; }
+    if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.why = IC.aptPlaceWhy || (probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${D.name.toLowerCase()} overlaps another part, stands in water or leaves the site.`); }
     if (probe.kind === 'runway' && !out.text.length) out.text.push(runwayText(S, ap, probe));
     if (probe.kind === 'apron' && t !== 'concourse') out.text.push(probe.ramp ? `Open ramp ${(probe.w * probe.h).toFixed(1)} ha: place stands of any size on it` : apronText(ap, probe));
     if (probe.kind === 'surface') out.text.push(`${IC.SURF[probe.surf].name}, ${(probe.w * probe.h).toFixed(1)} ha${IC.SURF[probe.surf].park ? `: parks about ${Math.round(IC.SURF[probe.surf].park * probe.w * probe.h)} cars outside the airfield` : ''}`);
@@ -781,12 +781,13 @@ function runwayText(S, ap, p) {
   return `Runway ${U.km(len)}: ${t.length ? 'fits ' + t.join(', ') : 'too short for airliners'} · ${w <= 15 ? 'into the prevailing wind' : w + '° off the prevailing wind'}${rel.length ? ` · ${rel.includes('cross') ? 'crosses' : 'closer than 760 m to'} another runway: they share one clearance` : ''}${noise.length ? ` · noise over ${noise.map(([k, n]) => `${n} city blocks of ${k}`).join(', ')}` : ''}`;
 }
 function apronText(ap, p) {
-  const dep = p.h * 0.64, sz = dep >= IC.STAND.l.d ? 'l' : dep >= IC.STAND.m.d ? 'm' : dep >= IC.STAND.s.d ? 's' : null;
+  const dep = p.h * 0.64, sz = IC.apronStandSize(p);
   const alt = p.w * 0.64 >= IC.STAND.s.d && p.w > p.h * 1.5 ? '' : ' (depth is measured across the rotation: press R to turn it)';
   if (!sz) return `Too shallow for stands: ${Math.round(IC.STAND.s.d / 0.64 * 100)} m deep at least${alt}`;
   const n = Math.floor(p.w / IC.STAND[sz].w);
   const term = ap.parts.some(q => q.kind === 'terminal' && IC.partDist(ap, q, p) < 0.5);
-  return `Adds ${n} ${IC.STAND[sz].name} stands${term ? ' at gates' : ' (remote: passengers go by bus)'}${sz !== 'l' ? ` · ${Math.round(IC.STAND[sz === 's' ? 'm' : 'l'].d / 0.64 * 100)} m deep for ${sz === 's' ? 'jets' : 'wide-bodies'}` : ''}`;
+  const deeper = p.smax && IC.apronStandSize(Object.assign({}, p, { smax: 'l' })) !== sz ? ` · deep enough for bigger stands: pick them under Stands` : '';
+  return `Adds ${n} ${IC.STAND[sz].name} stands${term ? ' at gates' : ' (remote: passengers go by bus)'}${deeper || (sz !== 'l' && (!p.smax || p.smax === 'l') ? ` · ${Math.round(IC.STAND[sz === 's' ? 'm' : 'l'].d / 0.64 * 100)} m deep for ${sz === 's' ? 'jets' : 'wide-bodies'}` : '')}`;
 }
 /* what a taxiway does: joins, and the runway time saved by a new exit */
 function taxiText(S, ap, out, p) {
@@ -863,6 +864,12 @@ function finish(S, m, plan) {
   const made = IC.bldPlanSpecs(S, ap, plan.specs);
   if (!made.length) { m.err = 'Could not plan it.'; return 'err'; }
   m.pts = []; m.rw = null; m.exitKey = null;
+  const W = made.map(p => ap.works.find(w => w.part === p)).filter(Boolean), cost = W.reduce((a, w) => a + (w.cost || 0), 0), dur = Math.max(0, ...W.map(w => w.dur || 0));
+  const name = made.length > 1 ? made.map(p => IC.APART[p.kind].name.toLowerCase()).filter((v, i, a) => a.indexOf(v) === i).join(', ') : made[0].kind === 'runway' ? made[0].name || 'Runway' : IC.APART[made[0].kind].name;
+  const busy = ap.works.filter(w => w.stages && !W.includes(w)), crews = ap.crews || 1;
+  m.done = `${name[0].toUpperCase() + name.slice(1)} planned: ${U.money(cost)}, about ${U.dur(dur)} of work. ` + (busy.length >= crews
+    ? `Queued: ${crews === 1 ? 'the crew is' : `all ${crews} crews are`} busy on ${busy[0].part && busy[0].part.kind === 'runway' ? busy[0].part.name : busy[0].label.replace(/^Build /, '').toLowerCase()}${busy.length > 1 ? ` and ${busy.length - 1} more` : ''}. More crews: the Works tab.`
+    : 'Work starts now.');
   return 'built';
 }
 /* plan several parts as one step (a concourse, a remote apron): areas first, so taxiways snap to them */
@@ -873,7 +880,7 @@ IC.bldPlanSpecs = function (S, ap, specs) {
     let p = null;
     if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf }); if (p && sp.link) p.link = sp.link; }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

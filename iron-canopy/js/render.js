@@ -416,7 +416,7 @@ function drawInfra(S, px, now) {
       }
       if (i.parts) {
         const st = IC.baseStatus(S, i);
-        if (!st.runway && !i.locked && i.parts.some(p => p.kind === 'runway')) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
+        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
         else if (cam.z <= 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
         const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === i.id).length;
         if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z > 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
