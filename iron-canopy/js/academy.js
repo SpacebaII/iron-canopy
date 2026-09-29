@@ -63,10 +63,10 @@ IC.LESSONS = [
       focus(S, cap, 0.18);
     },
     steps: [
-      { text: S => `Open the Arsenal at the bottom left, pick ${nm('vhf')} and click near ${IC.cap(S).name} to deploy it. It drives out of the depot and sets up.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'vhf') },
+      { text: S => `Open the Arsenal at the bottom left, pick ${nm('vhf')} and click near ${IC.cap(S).name} to deploy it. It drives out of the depot and sets up.`, hint: { el: 'arsenal', cat: 'sensor' }, done: S => S.units.some(u => u.type === 'vhf') },
       { text: () => 'While it drives and sets up, time runs at 1×: ten game seconds per real second. Press 3 to go 4× faster, Space to pause.', hint: { el: 'speed' }, done: S => S.units.some(u => u.type === 'vhf' && u.state === 'ready') },
       { text: () => 'It is on. The antenna turns once every 48 seconds: between sweeps each track glides on its last speed and heading, and a dashed ellipse shows where the aircraft could really be. It sees 440 km, but it cannot tell what anything is: every track is a yellow UNKNOWN. Click one.', done: S => S.sel && S.sel.kind === 'track' },
-      { text: S => `The panel on the right shows everything we know: no altitude, no identity. Now deploy ${nm('mr3d')} near ${IC.cap(S).name}. It reads transponders and recognises aircraft types inside 65 km.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'mr3d' && u.state === 'ready') },
+      { text: S => `The panel on the right shows everything we know: no altitude, no identity. Now deploy ${nm('mr3d')} near ${IC.cap(S).name}. It reads transponders and recognises aircraft types inside 65 km.`, hint: { el: 'arsenal', cat: 'sensor' }, done: S => S.units.some(u => u.type === 'mr3d' && u.state === 'ready') },
       { text: () => 'Watch the tracks near it. Airliners squawking on their filed routes turn green: Assumed civil. Wait until four tracks have an identity.', start(S) { const c = IC.cap(S), p = { x: c.x, y: c.y, name: c.name }; for (let i = 0; i < 4; i++) IC.gaLaunch(S, p, p, { progress: 0.1 + i * 0.1, xpdr: true, alt: 1.8 }); }, done: S => affCount(S, ['A', 'N', 'H']) >= 4 },
       { text: () => `Two slow tracks are crossing the border with no transponder. They will show Suspect. Let them fly into the ${nk('mr3d')}'s recognition range.`, start(S) { const cap = IC.cap(S), f = frontA(S), p = f.pts[Math.floor(f.pts.length / 2)]; for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'owa', p.x - p.nx * 150 + i * 30, p.y - p.ny * 150, { route: [{ x: cap.x, y: cap.y }], aim: { x: cap.x, y: cap.y }, target: cap, fromHostile: true, spd: 0.9 }); }, done: S => S.threats.some(t => t.type === 'owa' && t.aff === 'H') },
       { text: () => 'Recognised: attack drones, hostile. That is the whole ladder: a radar detects, a better one classifies, and the pieces add up to an identity. Lesson complete.', done: () => true, wait: 40 }
@@ -105,8 +105,8 @@ IC.LESSONS = [
       focus(S, b, 0.3);
     },
     steps: [
-      { text: S => `Cruise missiles fly at 30–50 m, below the horizon of most radars. Deploy ${nm('gf')} within 15 km of ${fwd(S).name}.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'gf' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
-      { text: S => `Now ${nm('shorad')}, close to ${fwd(S).name}. It is the last layer when something leaks through.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'shorad' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
+      { text: S => `Cruise missiles fly at 30–50 m, below the horizon of most radars. Deploy ${nm('gf')} within 15 km of ${fwd(S).name}.`, hint: { el: 'arsenal', cat: 'sensor' }, done: S => S.units.some(u => u.type === 'gf' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
+      { text: S => `Now ${nm('shorad')}, close to ${fwd(S).name}. It is the last layer when something leaks through.`, hint: { el: 'arsenal', cat: 'ad' }, done: S => S.units.some(u => u.type === 'shorad' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
       { text: () => 'Pick a firing doctrine in the top bar: Shoot-look-shoot saves missiles, Salvo fires two and kills more surely, Conserve only takes high-odds shots.', hint: { el: 'doctrine' }, done: S => !!S.flags.doctrine },
       { text: () => `Raid inbound: cruise missiles and drones, low. Watch the layers work: the ${nk('mrsam')} reaches far, the ${nk('gf')} gives it low tracks, the ${nk('shorad')} cleans up.`, start(S) { const b = fwd(S); const o = { x: b.x, y: b.y, ref: b, name: b.name }; S.camp.raid = [IC.enemyForceOp(S, 'cm', o, { n: 6, T: 2400, nat: 'A' }), IC.enemyForceOp(S, 'drones', o, { n: 4, nat: 'A' })]; }, done: S => S.time - S.camp.stepT > 600 && S.camp.raid.every(op => resolved(S, op)) },
       { text: () => 'Raid over. Layers cover each other\'s blind spots; no single system does it alone. Lesson complete.', done: () => true, wait: 40 }
@@ -127,7 +127,7 @@ IC.LESSONS = [
     },
     steps: [
       { text: () => `Select ${nm('lrsam')}. It carries two missiles: LR for aircraft, and BMD rounds that hit ballistic warheads directly, below 35 km.`, done: S => S.sel && S.sel.ref && S.sel.ref.type === 'lrsam' },
-      { text: S => `That is the lower tier: one chance, late. Deploy ${nm('hatd')} from the reserve within 30 km of ${fwd(S).name}. It meets warheads 40 to 150 km up, so the lower tier gets a second chance at what it misses.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'hatd' && u.state === 'ready') },
+      { text: S => `That is the lower tier: one chance, late. Deploy ${nm('hatd')} from the reserve within 30 km of ${fwd(S).name}. It meets warheads 40 to 150 km up, so the lower tier gets a second chance at what it misses.`, hint: { el: 'arsenal', cat: 'ad' }, done: S => S.units.some(u => u.type === 'hatd' && u.state === 'ready') },
       { text: () => 'Launch detected! The red ellipse is where the warheads will land. A battery does not chase a warhead: it waits, then fires two interceptors at the point where they will meet it (the blue cross, with its height and seconds to go).', start(S) { const b = fwd(S); S.camp.raid = [IC.enemyForceOp(S, 'bal', { x: b.x, y: b.y, ref: b, name: b.name }, { n: 5, T: 900 })]; }, done: S => S.time - S.camp.stepT > 600 && resolved(S, S.camp.raid[0]) },
       { text: () => 'All warheads accounted for. Two tiers, two interceptors each: most salvoes stop there. Lesson complete.', done: () => true, wait: 40 }
     ],
@@ -154,7 +154,7 @@ IC.LESSONS = [
     },
     steps: [
       { text: S => `A stand-off jammer is on station across the border. Select ${S.camp.rad.name}: the amber wedge is the jammer's strobe. Along it the radar only sees what is close enough to burn through; everywhere else it sees normally.`, hint: { at: S => S.camp.rad }, done: S => S.sel && S.sel.ref === S.camp.rad && !!S.camp.rad.jammers },
-      { text: () => `A strobe gives a direction, not a range. Deploy ${nm('mr3d')} at least 40 km to one side. Where the two strobes cross, the jammer is.`, hint: { el: 'arsenal' }, done: S => S.camp.jam.dead || S.camp.jam.triT > 0 },
+      { text: () => `A strobe gives a direction, not a range. Deploy ${nm('mr3d')} at least 40 km to one side. Where the two strobes cross, the jammer is.`, hint: { el: 'arsenal', cat: 'sensor' }, done: S => S.camp.jam.dead || S.camp.jam.triT > 0 },
       { text: S => `Located. Jamming is a hostile act, so the jammer is marked hostile. ${S.camp.bat.name} is on Weapons Hold: select it and set its weapons to Free (W). Its missiles home on the jammer's own noise.`, hint: { at: S => S.camp.bat }, done: S => S.camp.jam.dead },
       { text: () => 'The jammer is down and the strobes are gone. Jammers ride with every big raid: two radars far apart, and missiles that home on jamming, are the answer. Lesson complete.', done: () => true, wait: 40 }
     ]
@@ -177,7 +177,7 @@ IC.LESSONS = [
       focus(S, t, 0.25);
     },
     steps: [
-      { text: S => `${S.camp.bat.name} near ${S.camp.town.name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
+      { text: S => `${S.camp.bat.name} near ${S.camp.town.name} has no missiles left, and the central depot is far away. Deploy the Forward Depot within 60 km of it.`, hint: { el: 'arsenal', cat: 'log' }, done: S => S.units.some(u => u.type === 'depot' && !u.central && u.state === 'ready' && U.dist(u, S.camp.bat) < 600) },
       { text: () => 'A depot serves units inside its ring, and refills from the Central Depot. Select it and set its resupply priority to First: units in its area go to the front of the queue.', done: S => S.units.some(u => u.type === 'depot' && !u.central && u.pri === 'first') },
       { text: () => 'It came with two truck companies. Add a third from its panel: more trucks, more deliveries at once.', done: S => S.units.some(u => u.type === 'depot' && !u.central && S.vehicles.filter(v => v.home === u).length >= 3) },
       { text: S => `Trucks take time. For an emergency, select ${S.camp.bat.name} and press Resupply by helicopter (H): its panel shows where the missiles come from, which helicopter and when it lands.`, done: S => S.air.some(a => a.job && a.job.to === S.camp.bat) || S.camp.bat.mags.some(m => m.mag + m.store > 0) },

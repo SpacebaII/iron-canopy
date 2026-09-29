@@ -623,6 +623,8 @@ function coach() {
   const h = IC.stepHint && IC.stepHint(S), cur = hints.get('lesson');
   if (!h || !h.el) { if (cur) IC.hint.hide('lesson'); }
   else if (!cur || cur.el !== h.el) { hints.delete('lesson'); IC.hint.show('lesson', { el: h.el, persist: false }); }
+  // a lesson step that asks for something from the arsenal opens it on the right tab, once
+  if (h && h.cat && ui.hintCat !== h) { ui.hintCat = h; ui.cat = h.cat; ui.arMin = false; }
   const sh = S.hint || null, id = sh ? 'game:' + (sh.id || sh.el || 'at') : null;
   if (ui.gameHint && ui.gameHint !== id) { hints.delete(ui.gameHint); ui.gameHint = null; }
   if (id && !hints.has(id) && ui.gameHint !== id) { IC.hint.show(id, Object.assign({ btn: 'OK' }, sh, { persist: false })); ui.gameHint = id; }
