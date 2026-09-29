@@ -278,6 +278,17 @@ const SCENES = {
     await wait(+(window.AFTER || 250)); S.paused = true; L.camK = +(window.K || 0.45); await wait(1500); await __snap('life-land');
     const F = L.follow; if (F) console.log('pose', JSON.stringify({ now: S.time, vt: L.t, t1: F.tr.t1, marks: F.tr.marks, last: [0, 1, 2, 3, 4, 5].map(i => [IC.recGet(F.tr, F.tr.n - 1 - i, 0), IC.recGet(F.tr, F.tr.n - 1 - i, 8)]), mphase: m.phase, same: F.tr === S.rec.of.get(m), ph: F.st.phase, spoil: F.st.spoil, rev: F.st.rev, n1: F.st.n1, lod: F.lod, life: F.life && { spoil: F.life.spoil, rev: F.life.rev, n1: F.life.n1 }, anims: F.anims.map(A => A.a.name + ':' + A.node.visible + ':' + (A.node.parent && A.node.parent.type)) }));
     camTo(L, 'chase'); L.camK = 0.6; await wait(2000); await __snap('life-land-2');`,
+  // close round a jet just after touchdown: spoilers, reversers, tyre smoke (the game stepped by hand)
+  'life-rollout': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.alt < 0.1 && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('no jet on final');
+    const L = await live(S, m, 'orbit', 600);
+    const C = clipStart(L); let td = null;
+    for (let f = 0; f < 600; f++) { if (td == null && m.phase === 'land') td = f; if (td != null && f > td + (+(window.AFTER) || 90)) break; C.acc += 1 / 30; while (C.acc >= 0.25) { IC.step(S, 0.25); C.acc -= 0.25; } L.lod = 0; Object.assign(L.orbit, { yaw: +(window.YAW || 2.2), pitch: +(window.PITCH || 0.35), dist: +(window.DIST || 0.55) }); IC.replayStep(L, C.now += 33); }
+    L.lod = 0; IC.replayStep(L, C.now += 33);
+    const F = L.follow; console.log('pose', JSON.stringify({ ph: F.st.phase, spoil: F.st.spoil, rev: F.st.rev, life: { spoil: F.life.spoil, rev: F.life.rev }, vis: F.anims.filter(A => /spoil|rev/.test(A.a.name)).map(A => A.a.name + A.node.visible) }));
+    await __snap('life-rollout');`,
   'life-takeoff': `
     const S = await game('sandbox', 11);
     const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'roll' && m.spd > 0.5 && (m.type === 'narrow' || m.type === 'wide')));
@@ -291,11 +302,12 @@ const SCENES = {
     const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.alt < 0.14 && m.alt > 0.1 && (m.type === 'narrow' || m.type === 'wide')));
     if (!m) throw new Error('no jet on final');
     const L = await live(S, m, 'side', 600); L.camK = 0.55;
-    const C = clipStart(L), N = +(window.N || 1500); let td = null;
+    const C = clipStart(L), N = +(window.N || 1350); let td = null, yaw = 2.9;
     for (let f = 0; f < N; f++) await clipFrame(C, S, 1, () => {
       if (td == null && m.phase !== 'final') td = f;
-      if (td != null && f === td + 150) { camTo(L, 'chase'); L.camK = 0.75; }
-      if (td != null && f === td + 600) { camTo(L, 'side'); L.camK = 0.9; }
+      // close round it from just after touchdown: the spoilers up, the reversers out and stowed again
+      if (td != null && f === td + 25) { camTo(L, 'orbit'); }
+      if (td != null && f > td + 25) { yaw -= 0.0018; Object.assign(L.orbit, { yaw, pitch: 0.3, dist: 0.62 }); }
     });
     await __snap('clip-landing-last');`,
   // a take-off: lining up, the roll, rotation, lift-off, the gear folding nose first, the climb-out
@@ -303,11 +315,14 @@ const SCENES = {
     const S = await game('sandbox', 11);
     const m = steps(S, 3 * 3600, S => findMove(S, m => (m.phase === 'lineup' || m.phase === 'wait') && (m.type === 'narrow' || m.type === 'wide')));
     if (!m) throw new Error('nothing lining up');
-    const L = await live(S, m, 'chase', 600); L.camK = 0.7;
-    const C = clipStart(L), N = +(window.N || 1500); let roll = null, air = null;
+    const L = await live(S, m, 'chase', 600); L.camK = 0.7; L.orbit.yaw = 2.0;
+    const C = clipStart(L), N = +(window.N || 1400); let roll = null, air = null;
     for (let f = 0; f < N; f++) await clipFrame(C, S, roll != null && air == null ? 1.4 : 1, () => {
       if (roll == null && m.phase === 'roll') { roll = f; camTo(L, 'side'); L.camK = 0.5; }
       if (air == null && roll != null && (m.dead || m.phase !== 'roll')) air = f;
+      // off the ground: from below and to the side, the gear folding away nose first; then behind it
+      if (air != null && f === air + 20) camTo(L, 'orbit');
+      if (air != null && f > air + 20 && f < air + 420) Object.assign(L.orbit, { yaw: L.orbit.yaw + 0.002, pitch: -0.12, dist: 0.7 });
       if (air != null && f === air + 420) { camTo(L, 'chase'); L.camK = 0.9; }
     });
     await __snap('clip-takeoff-last');`,

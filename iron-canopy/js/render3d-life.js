@@ -23,9 +23,10 @@
    each frame; lights are points in one shader (size by distance, blinking by the clock in the shader); smoke, spray
    and flashes are two particle buffers rewritten each frame. What is out of reach is not drawn.
 
-   The light interface for brief 40 (its bloom): every glowing material made here is in v.life.glow and carries
-   userData.bloom; its objects are also on layer IC.LIFE3D.bloomLayer, for a selective bloom pass; the lights'
-   brightness is uGain (IC.life3d.gain(v, k): above 1 is HDR, for a tone-mapped pipeline). */
+   The light interface with brief 40 (render3d-fx.js, its bloom): every glowing material made here is marked with
+   its glow(material, k) (IC.R3D.glow, when it is there: drawn k times brighter, so it blooms), goes through the
+   picture's tone mapping and colour space, and is listed in v.life.glow; the objects are also on layer
+   IC.LIFE3D.bloomLayer for a selective pass; IC.life3d.gain(v, k) scales the lights' own brightness. */
 (function (IC) {
 'use strict';
 const U = IC.U;
@@ -39,7 +40,7 @@ const CFG = IC.LIFE3D = {
 };
 const M = 0.01;           // a metre in world units
 let T = null, H = null;
-const init = () => { H = IC.R3D; T = H.three(); return T; };
+const init = () => { H = IC.R3D; T = (H.three || H.THREE)(); return T; };
 const ramp = (x, a, b) => U.clamp((x - a) / (b - a), 0, 1);
 const ease = (cur, want, dt, secs) => cur == null || dt > 2 ? want : cur + U.clamp(want - cur, -dt / secs, dt / secs);
 
@@ -70,6 +71,8 @@ void main() {
   float a = ((1.0 - smoothstep(0.0, 0.42, r)) + pow(max(0.0, 1.0 - r), 3.0) * 0.5) * vA;
   if (a < 0.004) discard;
   gl_FragColor = vec4(vCol * a, a);
+  #include <tonemapping_fragment>
+  #include <OUT_CS>
 }`;
 const PART_VS = `
 attribute vec4 pcol; attribute float psz;
@@ -96,18 +99,22 @@ void main() {
   float a = vCol.a * (uAdd > 0.5 ? pow(max(0.0, 1.0 - r), 2.2) : (1.0 - smoothstep(0.25, 1.0, r)) * (0.85 + 0.15 * sin(c.x * 17.0 + c.y * 11.0)));
   if (a < 0.004) discard;
   gl_FragColor = uAdd > 0.5 ? vec4(vCol.rgb * a, a) : vec4(vCol.rgb, a);
+  #include <tonemapping_fragment>
+  #include <OUT_CS>
 }`;
+/* the output's colour space chunk by three's version (older ones call it encodings) */
+const fs = src => src.replace('#include <OUT_CS>', (+T.REVISION || 128) >= 152 ? '#include <colorspace_fragment>' : '#include <encodings_fragment>');
+/* brief 40's picture draws a material marked with glow k times brighter, so it blooms (render3d-fx.js) */
+const glowMark = (v, m, k) => { m.userData.bloom = true; v.life.glow.push(m); return H.glow ? H.glow(m, k) : m; };
 function lightMat(v) {
-  const m = new T.ShaderMaterial({ vertexShader: LIGHT_VS, fragmentShader: LIGHT_FS, transparent: true, depthWrite: false, blending: T.AdditiveBlending,
+  const m = new T.ShaderMaterial({ vertexShader: LIGHT_VS, fragmentShader: fs(LIGHT_FS), transparent: true, depthWrite: false, blending: T.AdditiveBlending,
     uniforms: { uTime: { value: 0 }, uFocal: { value: 1000 }, uMinPx: { value: 1.6 }, uMaxPx: { value: 72 }, uGain: { value: 1 }, uFar: { value: 900 } } });
-  m.userData.bloom = true; v.life.glow.push(m);
-  return m;
+  return glowMark(v, m, 5);
 }
 function partMat(v, add) {
-  const m = new T.ShaderMaterial({ vertexShader: PART_VS, fragmentShader: PART_FS, transparent: true, depthWrite: false, blending: add ? T.AdditiveBlending : T.NormalBlending,
+  const m = new T.ShaderMaterial({ vertexShader: PART_VS, fragmentShader: fs(PART_FS), transparent: true, depthWrite: false, blending: add ? T.AdditiveBlending : T.NormalBlending,
     uniforms: { uFocal: { value: 1000 }, uMaxPx: { value: 600 }, uFar: { value: 1400 }, uAdd: { value: add ? 1 : 0 } } });
-  if (add) { m.userData.bloom = true; v.life.glow.push(m); }
-  return m;
+  return add ? glowMark(v, m, 4) : m;
 }
 const bloom = o => { if (o.layers && o.layers.enable) o.layers.enable(CFG.bloomLayer); return o; };
 /* a set of light points: positions, colours, sizes (world units), blinking [period s, phase 0–1, share lit], on */
@@ -232,7 +239,7 @@ L3.scene = function (v) {
   v.life.dyn = lightSet(v, CFG.dynN); v.life.dyn.geometry.setDrawRange(0, 0);
   for (const x of [v.life.smoke, v.life.glowP, v.life.dyn]) v.scene.add(x);
   // pools of light on the ground (taxi and landing lights, floodlit aprons): brightness per instance by its colour
-  const pm = new T.MeshBasicMaterial({ map: poolTex(), transparent: true, blending: T.AdditiveBlending, depthWrite: false, color: '#ffffff' }); pm.userData.bloom = true; v.life.glow.push(pm);
+  const pm = new T.MeshBasicMaterial({ map: poolTex(), transparent: true, blending: T.AdditiveBlending, depthWrite: false, color: '#ffffff' }); glowMark(v, pm, 1);
   const pp = ipool(v, 'lpool', H.quadG(), pm, CFG.poolN); pp.mesh.renderOrder = 6; pp.color = true; bloom(pp.mesh);
   if (pp.mesh.setColorAt) { const c = new T.Color(0, 0, 0); for (let i = 0; i < CFG.poolN; i++) pp.mesh.setColorAt(i, c); }
   v.life.pcol = new T.Color();
