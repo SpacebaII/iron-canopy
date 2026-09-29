@@ -10,6 +10,26 @@ IC.TS = 0.06;          // base terrain canvas scale (px per world unit); closer 
 IC.MAX_STEP = 0.25;    // largest simulation step, in game seconds
 IC.MAXZ = 320;         // closest zoom (screen px per world unit): 320 px per 100 m shows the vehicles round an aircraft at the gate
 IC.SPEEDS = [1, 2, 4, 8, 16, 32];
+/* "wait for money": a month (3 days) in about a real minute while nothing happens, in steps of up to 8 game s
+   (the simulation gives the same flights, fees and delays at 8 s as at 1 s; main.js drops to fine steps as soon
+   as anything hostile or armed is in the air) */
+IC.WAIT = { speed: 432, step: 8 };
+
+/* Two clocks. The live clock is S.time in game seconds: aircraft, weather, day and night. The calendar counts months
+   and years on top of it: a month is DAYS_PER_MONTH live days, so a Career can span ten years while every flight
+   still takes its real minutes. Day 1 at midnight is 1 January, Year 1. A game keeps its month length in S.cal.dpm. */
+IC.DAYS_PER_MONTH = 3;
+IC.MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+IC.dpm = S => (S && S.cal && S.cal.dpm) || (IC.S && IC.S.cal && IC.S.cal.dpm) || IC.DAYS_PER_MONTH;
+/* game seconds in a calendar month (or n months) */
+IC.MO = (S, n) => IC.dpm(S) * 86400 * (n == null ? 1 : n);
+IC.YR = S => IC.MO(S, 12);
+/* the date at game time t: month index since the start (m), month of the year (mo, 0–11), year (from 1), day of the month */
+// (a month may be a fraction of a day: the tests run a whole Career on a short calendar)
+IC.calAt = (S, t) => {
+  const d = IC.dpm(S), M = d * 86400, m = Math.floor(t / M);
+  return { m, mo: m % 12, y: Math.floor(m / 12) + 1, d: Math.floor((t - m * M) / 86400) + 1, dpm: d };
+};
 
 let nid = 1;
 IC.nid = p => (p || 'e') + (nid++);
@@ -27,6 +47,18 @@ IC.REMAKE = {};
 IC.remake = (o, name, ...args) => { Object.defineProperty(o, '$rc', { value: [name, args], enumerable: false, configurable: true, writable: true }); return o; };
 /* a named handler run after dt game seconds (airport.js runs S.later) */
 IC.later = (S, dt, name, ...args) => { (S.later = S.later || []).push({ t: S.time + dt, fn: IC.hfn(name, ...args) }); };
+
+/* the calendar turns: a month, and every twelfth a year. Systems that keep monthly books hang on IC.onMonth */
+IC.MONTHLY = [];
+IC.onMonth = fn => { IC.MONTHLY.push(fn); };
+IC.calendar = function (S) {
+  const C = S.cal; if (!C) return;
+  const m = IC.calAt(S, S.time).m;
+  if (m === C.m) return;
+  const was = C.m; C.m = m;
+  for (const f of IC.MONTHLY) f(S, was, m);
+  IC.emit(S, 'month', { m, was, year: m % 12 === 0 });
+};
 
 /* seeded generator for world generation (mulberry32) */
 IC.makeRng = function (seed) {
@@ -102,7 +134,18 @@ const U = IC.U = {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   },
   day: t => Math.floor(t / 86400) + 1,
-  clock: t => `Day ${U.day(t)} · ${U.hhmm(t)}`,
+  /* "March, Year 3", and the short form "Mar Y3" for log lines */
+  date: (t, S) => { const c = IC.calAt(S, t); return `${IC.MONTHS[c.mo]}, Year ${c.y}`; },
+  dateS: (t, S) => { const c = IC.calAt(S, t); return `${IC.MONTHS[c.mo].slice(0, 3)} Y${c.y}`; },
+  // (a Quick war and the Academy run on the live clock: they count days; S defaults to the game on screen)
+  clock: (t, S) => { S = S || IC.S; return S && S.mode !== 'story' ? `Day ${U.day(t)} · ${U.hhmm(t)}` : `${U.dateS(t, S)} · ${U.hhmm(t)}`; },
+  /* game seconds → months ("5 months", "about 2 years") */
+  months(gs) {
+    const m = gs / IC.MO();
+    if (m < 0.9) { const d = gs / 86400; return d < 1.5 ? U.dur(gs) : Math.round(d) + ' days'; }
+    if (m < 18) return Math.round(m) + (Math.round(m) === 1 ? ' month' : ' months');
+    return (m / 12).toFixed(m < 60 ? 1 : 0).replace(/\.0$/, '') + ' years';
+  },
   money(v) {
     const a = Math.abs(v);
     const s = a < 10 && a % 1 ? a.toFixed(1) : Math.round(a).toLocaleString('en-US');

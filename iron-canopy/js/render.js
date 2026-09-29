@@ -480,6 +480,11 @@ function drawWeather(S, wx, now, light) {
   if (wx.precip > 0.05) {
     if (!drops) { drops = []; for (let i = 0; i < 260; i++) drops.push({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }); }
     const n = Math.round(260 * wx.precip), vx = S.wind.x * 0.3, len = 14;
+    // snow drifts down slowly as flakes; rain falls in streaks
+    if (wx.snow) {
+      ctx.fillStyle = `rgba(235,242,250,${0.35 + 0.2 * light})`;
+      for (let i = 0; i < n; i++) { const d = drops[i], y = (d.y + now * 0.12 * d.s) % 1, x = (d.x + now * vx * 0.05 + Math.sin(now + i) * 0.004 + 1) % 1; ctx.fillRect(x * cam.vw, y * cam.vh, 2 * d.s, 2 * d.s); }
+    } else {
     ctx.strokeStyle = `rgba(190,210,230,${0.18 + 0.12 * light})`; ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
@@ -488,6 +493,7 @@ function drawWeather(S, wx, now, light) {
       ctx.moveTo(X, Y); ctx.lineTo(X - vx * len, Y + len * d.s);
     }
     ctx.stroke();
+    }
   }
   if (wx.precip > 0.9 && !S.paused) {
     if (flashT <= 0 && Math.random() < 0.004) { flashT = 0.25; IC.sfx && IC.sfx.thunder && IC.sfx.thunder(); }

@@ -4,6 +4,7 @@
 
 IC.step = function (S, dt) {
   S.time += dt;
+  IC.calendar(S);
   if (S.range) { IC.rangeStep(S, dt); return tail(S, dt); }
   IC.weather(S, dt);
   IC.updateUnits(S, dt);
@@ -20,6 +21,7 @@ IC.step = function (S, dt) {
   IC.updateStrikes(S, dt);
   IC.logistics(S, dt);
   IC.economy(S, dt);
+  IC.waitTick(S, dt);
   IC.growth(S, dt);
   IC.civil(S, dt);
   IC.traffic(S, dt);

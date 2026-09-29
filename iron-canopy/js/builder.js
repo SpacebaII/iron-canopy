@@ -8,12 +8,13 @@ const U = IC.U;
 
 /* ---------- pavement ---------- */
 /* t = the heaviest aircraft (tonnes) it carries without wearing; cost and build scale the part's price and time;
-   crater scales the hole a bomb leaves; patch scales the time to fill one */
+   crater scales the hole a bomb leaves; patch scales the time to fill one; life is the calendar months weather and
+   age take to wear it out (a runway resurfaced every few years stays open) */
 IC.PAVE = {
-  grass: { name: 'Grass', t: 6, cost: 0.15, build: 0.3, crater: 1.3, patch: 0.5, need: {}, desc: 'light aircraft only' },
-  asph: { name: 'Asphalt', t: 90, cost: 0.7, build: 0.7, crater: 1, patch: 1, need: { asph: 8 }, desc: 'cheap and quick; heavy jets break it up' },
-  conc: { name: 'Concrete', t: 400, cost: 1, build: 1, crater: 0.8, patch: 1.2, need: { conc: 10 }, desc: 'carries every airliner' },
-  rconc: { name: 'Reinforced concrete', t: 600, cost: 1.6, build: 1.4, crater: 0.55, patch: 0.6, need: { conc: 12, steel: 3 }, desc: 'craters less, patched quickly' }
+  grass: { name: 'Grass', t: 6, cost: 0.15, build: 0.3, crater: 1.3, patch: 0.5, need: {}, life: 48, desc: 'light aircraft only' },
+  asph: { name: 'Asphalt', t: 90, cost: 0.7, build: 0.7, crater: 1, patch: 1, need: { asph: 8 }, life: 96, desc: 'cheap and quick; heavy jets break it up' },
+  conc: { name: 'Concrete', t: 400, cost: 1, build: 1, crater: 0.8, patch: 1.2, need: { conc: 10 }, life: 180, desc: 'carries every airliner' },
+  rconc: { name: 'Reinforced concrete', t: 600, cost: 1.6, build: 1.4, crater: 0.55, patch: 0.6, need: { conc: 12, steel: 3 }, life: 240, desc: 'craters less, patched quickly' }
 };
 IC.PAVE_ORDER = ['grass', 'asph', 'conc', 'rconc'];
 IC.PAVED = { runway: true, taxi: true, apron: true, alert: true };
@@ -109,12 +110,17 @@ function deliveries(S, ap, dt) {
 IC.bldTick = deliveries;
 
 /* ---------- construction in stages ---------- */
+/* the stages a crew works through, each one something to watch on site: surveyors pegging it out, graders and
+   dump lorries on bare earth, the paver and rollers laying the surface, the paint lorry, the lights coming on one by
+   one, and the inspection before it opens. t is its share of the part's build time (together a little over the
+   base time, so there is time to watch), c its share of the cost */
 const STAGE = [
-  { k: 'survey', name: 'Survey', bname: 'Survey', t: 0.06, c: 0.03 },
+  { k: 'survey', name: 'Survey', bname: 'Survey', t: 0.07, c: 0.03 },
   { k: 'earth', name: 'Earthworks', bname: 'Foundations', t: 0.28, c: 0.27 },
-  { k: 'pave', name: 'Paving', bname: 'Structure', t: 0.46, c: 0.5, mats: true, rw: true },
-  { k: 'fit', name: 'Markings and lights', bname: 'Fitting out', t: 0.15, c: 0.2 },
-  { k: 'open', name: 'Opening', bname: 'Opening', t: 0.05, c: 0 }
+  { k: 'pave', name: 'Paving', bname: 'Structure', t: 0.44, c: 0.5, mats: true, rw: true },
+  { k: 'mark', name: 'Markings', bname: 'Fitting out', t: 0.12, c: 0.08 },
+  { k: 'lights', name: 'Lights', bname: 'Power and systems', t: 0.14, c: 0.12 },
+  { k: 'open', name: 'Inspection', bname: 'Inspection', t: 0.1, c: 0 }
 ];
 IC.STAGE = STAGE;
 /* compensation for a city block (a street block of homes, shops or works) or a village house, in ₭M */
@@ -231,7 +237,7 @@ IC.bldAdvance = function (S, ap, w, dt) {
   for (const k in st.mats || {}) M[k] = Math.max(0, M[k] - st.mats[k] * f);
   w.t += f * st.dur; w.wait = null; w.short = false; w.busyT = S.time;
   if (w.part) w.part.stageF = w.t / st.dur;
-  if (w.t >= st.dur - 1e-6) { stageDone(S, ap, w, st); w.si++; w.t = 0; if (w.si >= w.stages.length) shut(ap, rw, w, false); }
+  if (w.t >= st.dur - 1e-6) { stageDone(S, ap, w, st); w.si++; w.t = 0; if (w.part) w.part.stageF = 0; if (w.si >= w.stages.length) shut(ap, rw, w, false); }
   let done = 0; for (let i = 0; i < w.si; i++) done += w.stages[i].dur;
   w.prog = w.si >= w.stages.length ? 1 : Math.min(0.999, (done + w.t) / w.dur);
   w.stage = w.stages[Math.min(w.si, w.stages.length - 1)].k;
@@ -271,7 +277,7 @@ IC.bldOpened = function (S, ap, w, before) {
   IC.sfx && IC.sfx.ui && IC.sfx.ui('ok');
   if (!['runway', 'terminal', 'cargo'].includes(p.kind) || !S.camp) return;
   const name = p.kind === 'runway' ? p.name : IC.APART[p.kind].name;
-  IC.card(S, `${name} opens`, `${ap.name} · ${U.hhmm(S.time)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
+  IC.card(S, `${name} opens`, `${ap.name} · ${U.clock(S.time, S)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
 };
 IC.bldSnapStats = ap => { const st = ap.st || {}; return { movesPerHour: st.movesPerHour, maxType: st.maxType, pax: st.pax, nst: IC.aptStands(ap).filter(s => s.linked !== false).length }; };
 /* start a planned part's work: called by IC.aptPlan once the part is added */
@@ -296,7 +302,7 @@ IC.bldUpgrade = function (S, ap, part, mat) {
   const probe = Object.assign({}, part, { mat });
   const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
   if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
-  const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'fit', name: 'Markings and lights', dur: dur * 0.15, cost: cost * 0.15 }];
+  const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'mark', name: 'Markings', dur: dur * 0.08, cost: cost * 0.07 }, { k: 'lights', name: 'Lights', dur: dur * 0.07, cost: cost * 0.08 }];
   const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || IC.APART[part.kind].name.toLowerCase()}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
   ap.works.push(w);
   part.shut = w.id; ap.dirty = true; ap.cfg = null;
@@ -322,6 +328,41 @@ IC.on((S, type, d) => {
     // parked in the open, aircraft turn round quicker than inside a hangar or shelter
     const b = IC.baseOf(S, d.r.base), pp = b && b.parts ? IC.parkPos(S, b, d.r) : null;
     if (pp && pp.stand && d.r.t > 0) d.r.t *= 0.8;
+  }
+});
+
+/* ageing, by the calendar (the Career): pavement wears out over its life in months, buildings lose condition and
+   need renewing after some fifteen years, and the airlines retire their oldest aircraft */
+IC.BUILDING_LIFE = 180;   // months before an untended building is down to nothing
+IC.AIRCRAFT_LIFE = 240;   // months an airliner flies before its airline replaces it
+IC.onMonth((S) => {
+  if (S.mode !== 'story') return;
+  for (const ap of IC.bases(S)) {
+    if (ap.owner !== 'us' || !ap.parts) continue;
+    for (const p of ap.parts) {
+      if (!p.built || p.shut) continue;
+      if (IC.PAVED[p.kind]) {
+        const P = IC.PAVE[IC.paveOf(p)], was = p.wear || 0;
+        // (only a runway closes when worn out; taxiways and aprons stay in use, worn)
+        p.wear = Math.min(p.kind === 'runway' ? 1 : 0.95, was + 1 / P.life);
+        if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || IC.APART[p.kind].name.toLowerCase()} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
+        if (was < 1 && p.wear >= 1) { ap.dirty = true; ap.cfg = null; IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${p.name || IC.APART[p.kind].name.toLowerCase()} is worn out and closed until it is resurfaced.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : ap); }
+      } else if (p.max && p.hp > 0) {
+        const was = p.hp / p.max;
+        p.hp = Math.max(p.max * 0.05, p.hp - p.max / IC.BUILDING_LIFE); p.aged = true;
+        if (was >= 0.5 && p.hp / p.max < 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: the ${IC.APART[p.kind].name.toLowerCase()} is showing its age (${U.pct(p.hp / p.max)} condition). Renew it in the airport's Works tab.`, p.x != null ? p : ap);
+      }
+    }
+  }
+  // airliners: each tail's age in months; the airline replaces one that reaches the end of its life
+  if (S.av) for (const t of S.av.tails) {
+    if (t.where === 'lost') continue;
+    if (t.bornM == null) t.bornM = S.cal.m - Math.floor(Math.random() * 120);
+    if (S.cal.m - t.bornM >= IC.AIRCRAFT_LIFE && (t.where === 'stand' || t.where === 'away')) {
+      t.bornM = S.cal.m;
+      const al = S.av.airlines.find(a => a.id === t.al);
+      if (al) { al.sat = Math.min(100, al.sat + 1); IC.log(S, 'info', 'AVIATION', `${al.name} retires ${t.cs}'s twenty-year-old ${t.T.name.toLowerCase()} and puts a new one on the route.`); }
+    }
   }
 });
 

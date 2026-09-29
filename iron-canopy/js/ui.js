@@ -106,14 +106,31 @@ function feed() {
   setHTML($('feed'), ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
 }
 
+/* ---------- waiting for money: the chooser, and the line that says what is still to come ---------- */
+function waitLine() {
+  if (S.wait) {
+    const r = ui.waitRate ? ` · ${S.mode === 'story' ? `a month in about ${Math.max(1, Math.round(IC.MO(S) / ui.waitRate))} s` : `${Math.round(ui.waitRate / IC.GS)}×`}` : '';
+    return `<div class="waitbar glass" role="status"><b>Waiting</b> ${esc(IC.waitText(S))}<small>Stops when it is there, when the month turns, or when something needs you${r}.</small><button class="btn sm" data-act="waitPick">Stop</button></div>`;
+  }
+  if (!ui.waitPick) return '';
+  const L = IC.waitTargets(S);
+  return `<div class="waitbar glass pick"><b>Wait until you can afford</b>${L.map(t => `<button class="li" data-act="wait" data-v="${esc(t.key)}"><span>${esc(t.what.charAt(0).toUpperCase() + t.what.slice(1))}</span><small>${esc(IC.waitText(S, t))}</small></button>`).join('')}<small>Time runs fast, and stops when the month turns or something needs you.</small></div>`;
+}
+
 /* ---------- top bar ---------- */
 function topbar() {
-  $('hClock').textContent = U.clock(S.time);
-  const L = IC.daylight(S.time), h = (S.time % 86400) / 3600;
-  $('hSky').textContent = `${L >= 1 ? 'Day' : L <= 0 ? 'Night' : (h < 12 ? 'Dawn' : 'Dusk')} · ${IC.WEATHER[S.weather.kind].name}`;
+  // two clocks: the calendar (months, years) and the live day and night inside it
+  const L = IC.daylight(S.time), h = (S.time % 86400) / 3600, cal = S.mode === 'story' && IC.calAt(S, S.time);
+  const sky = `${L >= 1 ? 'Day' : L <= 0 ? 'Night' : (h < 12 ? 'Dawn' : 'Dusk')} · ${IC.WEATHER[S.weather.kind].name}`;
+  const ck = $('hClock');
+  ck.textContent = cal ? `${U.hhmm(S.time)} · ${U.date(S.time)}` : U.clock(S.time);
+  ck.parentNode.title = cal ? `The calendar counts months and years; each month is ${cal.dpm} days and nights of live time. Aircraft, weather and building run on the live clock.` : '';
+  $('hSky').textContent = cal ? `Day ${cal.d} of ${cal.dpm} · ${IC.SEASON ? IC.SEASON[cal.mo].name + ' · ' : ''}${sky}` : sky;
   setHTML($('speed'), `<button class="pz" data-act="pause" aria-pressed="${S.paused}" title="Pause and resume (Space)">❚❚<kbd>Space</kbd></button>` +
     IC.SPEEDS.map((v, i) => `<button data-act="speed" data-v="${v}" aria-pressed="${!S.paused && !S.skip && S.speed === v}" title="${v}× speed: ${v * IC.GS} game seconds a second (key ${i + 1})">${v}×<kbd>${i + 1}</kbd></button>`).join('') +
-    `<button class="skip" data-act="skip" aria-pressed="${!!S.skip && !S.paused}" title="Skip ahead fast until something needs you (S)">⏭<kbd>S</kbd></button>`);
+    `<button class="skip" data-act="skip" aria-pressed="${!!S.skip && !S.paused}" title="Skip ahead fast until something needs you (S)">⏭<kbd>S</kbd></button>` +
+    (S.mode === 'story' || S.mode === 'sandbox' ? `<button class="wait" data-act="waitPick" aria-pressed="${!!S.wait}" aria-expanded="${!!ui.waitPick}" title="Wait for money: time runs fast until you can afford what you pick, the month turns, or something needs you (7)">Wait<kbd>7</kbd></button>` : '') +
+    waitLine());
   const flow = S.income - S.upkeep, m = IC.nationalMorale(S);
   const meter = (f, col) => `<div class="meter"><i style="width:${U.clamp(f, 0, 1) * 100}%;background:${col}"></i></div>`;
   const st = S.story, act = st ? st.act : 4;
@@ -377,7 +394,7 @@ function comms() {
   $('comms').classList.add('glass');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
     <p>${esc(m.text.slice(0, shown))}${full ? '' : '▍'}</p>
-    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.hhmm(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button></span></div>`);
+    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button></span></div>`);
 }
 
 /* ---------- arsenal: what is in reserve, what is on order ---------- */
