@@ -503,19 +503,29 @@ function holdSpec(ap, rw, p) {
   return { specs: [{ kind: 'taxi', pts: [{ x: r.x - d.y * par.off, y: r.y + d.x * par.off }, { x: q.x - d.y * par.off * 0.45, y: q.y + d.x * par.off * 0.45 }, { x: q.x, y: q.y }] }],
     text: [`Holding bay at the ${IC.rwEnd(rw, atA ? 1 : -1)} end: a second way onto the runway ${Math.round(s < L / 2 ? s * 100 : (L - s) * 100)} m from its end`] };
 }
-/* a pier: terminal along the spine, aprons each side deep enough for the stand size, a taxilane beyond each */
-function concourseSpec(ap, a, b, size) {
+/* a pier: terminal along the spine, aprons each side deep enough for the stand size, a taxilane beyond each. A pier
+   started on another pier's building branches from it (Y, T or X shapes, a satellite at the end): its building joins
+   the other, and each side's apron and taxilane start as soon as they clear the other pier's aprons */
+function concourseSpec(ap, a, b, size, S) {
   const L = U.dist(a, b), ang = Math.atan2(b.y - a.y, b.x - a.x), c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   const D = Math.ceil(IC.STAND[size].d / 0.64 * 100 + 2) / 100, tw = 0.5, r = { x: c.x, y: c.y, a: ang };
-  const specs = [{ kind: 'terminal', x: c.x, y: c.y, a: ang, w: L, h: tw }];
+  const from = ap.parts.find(q => q.kind === 'terminal' && !q.ring && q.w && IC.partDist(ap, q, a) < 0.03);
+  const specs = [Object.assign({ kind: 'terminal', x: c.x, y: c.y, a: ang, w: L, h: tw }, from ? { joins: from.id } : null)];
+  let n = 0;
   for (const s of [-1, 1]) {
-    const ac = IC.rectWorld(r, 0, s * (tw / 2 + D / 2));
-    specs.push({ kind: 'apron', x: ac.x, y: ac.y, a: ang, w: L, h: D });
-    const ly = s * (tw / 2 + D + 0.05);
-    specs.push({ kind: 'taxi', pts: [IC.rectWorld(r, -L / 2 - 0.6, ly), IC.rectWorld(r, 0, ly), IC.rectWorld(r, L / 2 + 0.6, ly)], lane: true });
+    // the side's apron and taxilane from x0 along the pier: 0, or the first 10 m step clear of the other pier
+    const side = x0 => { const w = L - x0, ac = IC.rectWorld(r, x0 / 2, s * (tw / 2 + D / 2)), ly = s * (tw / 2 + D + 0.05);
+      // a branch's taxilane starts 150 m out, leaving the junction free for the next branch; one that starts by
+      // another taxilane joins it
+      const lx = from ? Math.max(x0, 1.5) : -0.6, st = IC.rectWorld(r, -L / 2 + lx, ly), pts = [st, IC.rectWorld(r, (lx - 0.6) / 2 + 0.3, ly), IC.rectWorld(r, L / 2 + 0.6, ly)];
+      if (from) { let nb = null, nd = 0.8; for (const q of ap.parts) if (q.kind === 'taxi') for (const id of q.nodes) { const nn = ap.nodes[id]; if (nn && !(nn.on && nn.on.kind === 'rwy') && U.dist(nn, st) < nd) { nd = U.dist(nn, st); nb = nn; } } if (nb) pts.unshift({ x: nb.x, y: nb.y }); }
+      return [{ kind: 'apron', x: ac.x, y: ac.y, a: ang, w, h: D }, { kind: 'taxi', pts, lane: true }]; };
+    let x0 = 0, sp = side(0);
+    if (from) while (x0 < L - 0.6 && !sp.every(q => IC.aptCanPlace(S, ap, q.kind === 'taxi' ? { kind: 'taxi', pts: q.pts } : q))) { x0 += 0.1; sp = side(x0); }
+    specs.push(...sp);
+    n += Math.floor((L - x0) / IC.STAND[size].w);
   }
-  const n = Math.floor(L / IC.STAND[size].w) * 2;
-  return { specs, text: [`Concourse ${U.km(L)} · ${n} ${IC.STAND[size].name} gates with jet bridges · ${Math.round(IC.APART.terminal.pax * L * tw).toLocaleString('en-US')} passengers an hour`], gates: n };
+  return { specs, text: [`${from ? 'Branch from the pier' : 'Concourse'} ${U.km(L)} · ${n} ${IC.STAND[size].name} gates with jet bridges · ${Math.round(IC.APART.terminal.pax * L * tw).toLocaleString('en-US')} passengers an hour`], gates: n };
 }
 /* a round terminal, the ring of stands round it, and a taxilane round them (closed into a loop when planned) */
 function rotundaSpec(ap, c, e, size) {
@@ -907,7 +917,7 @@ function planOf(S, m, hv, tol, free) {
       if (c.bad) { out.ok = false; out.why = c.bad; return out; }
       out.specs = c.specs; out.text.push(...c.text);
     }
-    else { const c = concourseSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
+    else if (t === 'concourse') { const c = concourseSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm', S); out.specs = c.specs; out.text.push(...c.text); }
   } else if (AREA_TOOLS[t]) {
     const s = snapCorner(ap, m, hv, tol, free, true); out.snap = s;
     if (!pts.length) return out;
@@ -1164,7 +1174,7 @@ IC.bldPlanSpecs = function (S, ap, specs) {
       if (p && sp.loop && p.nodes.length > 3 && U.dist(ap.nodes[p.nodes[0]], ap.nodes[p.nodes[p.nodes.length - 1]]) < 0.05) { delete ap.nodes[p.nodes.pop()]; p.nodes.push(p.nodes[0]); ap.dirty = true; }
     }
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, ring: sp.ring, span: sp.span, face: sp.face }); if (p && sp.link) p.link = sp.link; }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, ring: sp.ring, span: sp.span, face: sp.face, joins: sp.joins }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

@@ -1074,6 +1074,29 @@ test('shapes: a curved terminal has gates along its outer side and a taxilane th
   assert(Math.abs(IC.partArea(T) - (T.span[1] - T.span[0]) * (T.ring[1] + T.ring[0]) / 2 * 0.5) < 1e-6, 'the curved terminal is not paid for by its real area');
 });
 
+test('shapes: a Y-shaped pier built from three concourses has every stand at a gate and reachable', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y), n0 = ap.parts.length;
+  const line = (tool, pts) => { S.mode2 = IC.bldMode(S, ap, tool); S.mode2.fillet = false; for (const q of pts) IC.clickWorld(P(...q), 0); const r = IC.clickWorld(P(...pts[pts.length - 1]), 0); assert(r === 'built', `${tool} to ${pts[pts.length - 1]}: ${S.mode2.err}`); };
+  line('concourse', [[4, -7], [10, -7]]);
+  // the branches start on the trunk's building and say so
+  S.mode2 = IC.bldMode(S, ap, 'concourse'); IC.clickWorld(P(10, -7), 0);
+  assert(/^Branch from the pier/.test(IC.bldPlanOf(S, S.mode2, P(14, -10), 0.4).text[1]), 'the second pier is not a branch');
+  line('concourse', [[10, -7], [14, -10]]);
+  line('concourse', [[10, -7], [14, -4]]);
+  // the trunk's taxilanes joined to the runway, as a player would
+  line('taxi', [[3.4, 0], [3.4, -5.9]]);
+  line('taxi', [[3.4, -5.9], [2.8, -5.9], [2.8, -8.11], [3.4, -8.11]]);
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  const Y = ap.parts.slice(n0).filter(p => p.kind === 'apron'), L = [].concat(...Y.map(p => p.stands));
+  assert(Y.length === 6 && L.length >= 50, `${Y.length} aprons, ${L.length} stands`);
+  assert(L.every(s => s.contact && s.linked), `${L.filter(s => !s.contact).length} stands not at a gate, ${L.filter(s => !s.linked).length} cut off`);
+  // including the stands inside the V, which a departure can leave
+  const T = ap.parts.slice(n0).filter(p => p.kind === 'terminal'), mid = { x: (T[1].x + T[2].x) / 2, y: (T[1].y + T[2].y) / 2 };
+  const v = L.slice().sort((a, b) => U.dist(a, mid) - U.dist(b, mid))[0];
+  assert(IC.gopsCanDepart(S, ap, 'narrow', v.id), 'no way out from the stand inside the V');
+});
+
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
   const { buildKden, finishAll } = require('../kdenbuild.js');
   const { S, ap, actions } = buildKden(12345, true);

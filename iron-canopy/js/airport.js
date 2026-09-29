@@ -196,13 +196,18 @@ function standsFor(ap, p) {
   if (!size) return [];
   const S = IC.STAND[size], n = Math.floor(p.w / S.w);
   let back = 1;
-  const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectGap(q, p) < 0.3);
+  // the building the stands face: of those within 30 m, the one running along the apron (a branching pier's
+  // neighbour may touch the apron's end)
+  const term = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectGap(q, p) < 0.3).sort((a, b) => Math.abs(Math.sin((a.a || 0) - p.a)) - Math.abs(Math.sin((b.a || 0) - p.a)))[0];
   if (term) back = toLocal(p, term).y >= 0 ? 1 : -1;
   else { const at = Object.values(ap.nodes).filter(nd => nd.on && nd.on.part === p.id); if (at.length) back = at.reduce((s, nd) => s + toLocal(p, nd).y, 0) > 0 ? -1 : 1; }
   const out = [];
+  // a pier's building that branches over this apron's end covers the stands there
+  const over = ap.parts.filter(q => q.kind === 'terminal' && q.joins && q.w && !q.ring && rectGap(q, p) === 0);
   for (let i = 0; i < n; i++) {
     const lx = -p.w / 2 + S.w * (i + 0.5), ly = back * (p.h / 2 - S.d / 2);
     const c = toWorld(p, lx, ly), f = toWorld(p, lx, back * (p.h / 2 - S.d - 0.08));
+    if (over.length && over.some(q => rectsOverlap(q, { x: c.x, y: c.y, a: p.a, w: S.w - 0.02, h: S.d - 0.02 }, 0.01))) continue;
     // a gate only where the terminal is right behind the stand (an apron may run on past the building's end)
     const contact = !!(term && term.kind === 'terminal' && rectDist(term, toWorld(p, lx, back * (p.h / 2 + 0.02))) < 0.4);
     const old = p.stands && p.stands.find(x => x.id === p.id + 's' + i);
@@ -1059,6 +1064,10 @@ IC.aptCanPlace = function (S, ap, part) {
   if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return no('It stands in a river.');
   for (const q of ap.parts) {
     if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
+    // a pier's building may run into the building it branches from
+    if (probe.joins && (q.id === probe.joins || q.joins === probe.joins) && q.kind === 'terminal') continue;
+    // and over the end of that pier's aprons: the stands it covers are not laid out
+    if (probe.joins && q.kind === 'apron' && !q.ring && ap.parts.some(t => t.kind === 'terminal' && !t.ring && t.w && (t.id === probe.joins || t.joins === probe.joins) && rectGap(t, q) < 0.05)) continue;
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
     if (rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
@@ -1310,6 +1319,8 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   if (D.area) { part.w = w; part.h = h; }
   // a round or curved part (see shaped parts above)
   if (o && o.ring) { part.ring = o.ring.slice(); if (o.span) part.span = o.span.slice(); if (o.face) part.face = o.face; }
+  // a pier branching from another pier's building: the two are one building
+  if (o && o.joins) part.joins = o.joins;
   // a landing system serves the runway end nearest the click
   if (kind === 'ils') {
     let bd = 1e9;
