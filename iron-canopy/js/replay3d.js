@@ -470,7 +470,7 @@ const LIFT = { pad: 0.003, rw: 0.004 };
 const PAVE_ORDER = { pad: 1, apron: 2, joint: 3, taxi: 4, runway: 5 };
 function paveMat(o, order, mesh) { const m = new THREE.MeshLambertMaterial(o); m.depthWrite = false; mesh.material = m; mesh.renderOrder = PAVE_ORDER[order]; return mesh; }
 function aptPad(v, b, f) {
-  const S = v.S, R = f.r0, T = Math.min(2048, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 36)))));
+  const S = v.S, R = f.r0, T = Math.min(4096, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 60)))));
   const cv = document.createElement('canvas'); cv.width = cv.height = T;
   const g = cv.getContext('2d'), z = T / (2 * R), px = 1 / z;
   const cam = IC.cam, saved = { x: cam.x, y: cam.y, z: cam.z, vw: cam.vw, vh: cam.vh }, rs = IC.rs, savedView = rs && rs.view;
@@ -479,7 +479,7 @@ function aptPad(v, b, f) {
   const hide = { moves: b.moves, roster: S.roster, tb: S.av && S.av.tailById, tt: S.av && S.av.tailMapT, cfg: b.cfg };
   Object.assign(cam, { x: b.x - R, y: b.y - R, z, vw: T, vh: T }); if (rs) rs.view = { x0: b.x - R, y0: b.y - R, x1: b.x + R, y1: b.y + R };
   b.moves = []; S.roster = []; b.cfg = null; if (S.av) { S.av.tailById = new Map(); S.av.tailMapT = S.time; }
-  try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1); } catch (e) { console.warn('3D airport', e); }
+  try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1, { pad: true }); } catch (e) { console.warn('3D airport', e); }
   b.moves = hide.moves; S.roster = hide.roster; b.cfg = hide.cfg; if (S.av) { S.av.tailById = hide.tb; S.av.tailMapT = hide.tt; }
   Object.assign(cam, saved); if (rs) rs.view = savedView;
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
@@ -750,8 +750,7 @@ function airportSync(v, fx, fy) {
     const f = v.flat.find(q => q.x === b.x && q.y === b.y); if (!f) continue;
     const G = new THREE.Group();
     G.add(aptPad(v, b, f));
-    for (const p of b.parts) if (p.kind === 'apron' && p.built) G.add(apronMesh(v, b, p, f));
-    for (const m of taxiMeshes(v, b, f)) G.add(m);
+    // (aprons, taxiways and their fillets are on the pad: the map's own pavement, render-pavement.js)
     b.parts.filter(p => p.kind === 'runway' && p.built).forEach((rw, i) => G.add(runwayMesh(v, rw, f.e, i)));
     const bl = aptBuildings(v, b, f); G.add(bl);
     const lt = aptLights(v, b, f); if (lt) { G.add(lt); v.nightLights.push(lt); }

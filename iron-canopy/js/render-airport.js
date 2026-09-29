@@ -5,7 +5,10 @@
 const U = IC.U;
 const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)', CONC2 = 'rgb(132,134,130)', PAINT = 'rgba(236,236,226,0.92)', YEL = 'rgba(236,196,60,0.95)';
 
+/* (no words in a picture for the 3D view: its labels are text on the screen, never letters lying on the ground) */
+let NOLBL = false;
 function lbl(g, txt, x, y, px, col, size, align, weight) {
+  if (NOLBL) return;
   g.font = `${weight || 600} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
   g.textAlign = align || 'center';
   g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillText(txt, x + 0.9 * px, y + 0.9 * px);
@@ -104,7 +107,8 @@ function drawShape(g, T, type, L, Sp, body, c1, c2) {
 }
 
 /* ---------- the airport ---------- */
-IC.drawAirport = function (g, S, ap, px, now, light) {
+IC.drawAirport = function (g, S, ap, px, now, light, o) {
+  NOLBL = !!(o && o.pad);
   const z = IC.cam.z;
   const full = z >= 1.2, marks = z >= 4, fine = z >= 9;
   const night = light < 0.55;
@@ -124,7 +128,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
   // the pavement: close in, one painted surface from the airport's tiles (render-pavement.js); far out, flat shapes
   const tiles = z * IC.dpr() >= 1;
-  if (tiles) IC.drawPaveTiles(g, S, ap, z, IC.dpr(), S.paused ? 16 : 6);
+  if (tiles && o && o.pad) IC.pavePaint(g, S, ap, z, IC.rs.view);
+  else if (tiles) IC.drawPaveTiles(g, S, ap, z, IC.dpr(), S.paused ? 16 : 6);
   if (box && z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); IC.aptFenceStroke(g, box); }
   // a terminal or shed still being built stands on bare ground
   if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null && !p.noApron && !p.built) {

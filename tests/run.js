@@ -1762,6 +1762,73 @@ test('airspace: a save from before shapes converts its rings and areas', () => {
   assert(back && IC.aspShapeOf(back, back.byId[ap.id]).rings.length === 2, 'the converted airspace did not survive a save');
 });
 
+/* ---------- the pavement: fillets, one outline (brief 44) ---------- */
+/* a small test field: a runway, a parallel taxiway with a stub to the runway (a T), a taxiway crossing the parallel
+   straight (an X), and a 90° corner at the parallel's east end */
+function paveField() {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap], x = ap.x, y = ap.y;
+  IC.initAirport(ap);
+  const N = (dx, dy) => IC.aptNode(ap, x + dx, y + dy);
+  IC.aptAddPart(ap, { kind: 'runway', a: { x: x - 12, y }, b: { x: x + 12, y } }, true);
+  const w0 = N(-10, 2), T = N(-4, 2), X = N(2, 2), E = N(8, 2), R = N(-4, 0), X1 = N(2, 0.9), X2 = N(2, 4), E2 = N(8, 5);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [w0, T, X, E] }, true);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [T, R] }, true);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [X1, X, X2] }, true);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [E, E2] }, true);
+  IC.resolveNodes(ap);
+  return { S, ap, n: id => ap.nodes[id], T, X, E };
+}
+test('pavement: a straight crossing has no fillet bulge and a turn has an inner curve', () => {
+  const { ap, n, T, X, E } = paveField(), w = IC.APART.taxi.w, at = (q, dx, dy) => IC.paveAt(ap, q.x + dx, q.y + dy);
+  // the T: the straight side stays straight, the two inner corners towards the runway are filled
+  assert(!at(n(T), 0, w / 2 + 0.02), 'pavement bulges out on the straight side of a T junction');
+  assert(at(n(T), -w / 2 - 0.02, -w / 2 - 0.02) && at(n(T), w / 2 + 0.02, -w / 2 - 0.02), 'no fillet in the corners of a T junction');
+  // the X: two taxiways crossing straight, nothing in any corner
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) assert(!at(n(X), sx * (w / 2 + 0.03), sy * (w / 2 + 0.03)), `a fillet at a straight crossing (${sx}, ${sy})`);
+  // the corner at the east end turns south: its inside (south-west) is a curve, not a square nor a disc
+  const C = { x: n(E).x - w / 2, y: n(E).y + w / 2 }, b = Math.SQRT1_2;
+  assert(at(C, -0.02 * b, 0.02 * b), 'nothing in the inside of the turn');
+  const f = IC.paveGeom(ap).fil.find(q => U.dist(q.f.N, n(E)) < 1e-6);
+  assert(f && f.f.R > 0.1, 'the turn has no fillet sized for the design aircraft');
+  const depth = f.f.R / Math.sin(f.f.gap / 2) - f.f.R;
+  assert(at(C, -(depth - 0.01) * b, (depth - 0.01) * b) && !at(C, -(depth + 0.02) * b, (depth + 0.02) * b), `the fillet's edge is not where its arc is (depth ${depth.toFixed(3)})`);
+  // the outside of the turn is not widened (no disc round the node)
+  assert(!at(n(E), w / 2 + 0.03, -w / 2 - 0.03), 'the outside of the turn bulges');
+  // the yellow line turns on an arc there; across the X it runs straight through
+  const G = IC.paveGeom(ap);
+  assert(G.cl.some(c => c.turn && c.pts.every(q => U.dist(q, n(E)) < 0.6)), 'no centreline curve at the corner');
+  assert(!G.cl.some(c => c.turn && c.pts.some(q => U.dist(q, n(X)) < 0.05)), 'a centreline curve at a straight crossing');
+  // lead-on lines curve off the stub onto the runway's centreline
+  assert(G.cl.filter(c => c.lead && c.pts.some(q => Math.abs(q.y - ap.y) < 0.01)).length === 2, 'the stub has no lead-on lines both ways onto the runway');
+});
+test('pavement: the outline has no gaps under taxiways, fillets join their legs, and the capital and Denver-size layouts are one surface', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const cap = S.byId[S.story.cap];
+  const check = (ap, name) => {
+    const G = IC.paveGeom(ap);
+    assert(G.fil.length > 10, `${name}: hardly any fillets (${G.fil.length})`);
+    for (const t of G.tw) for (let i = 1; i < t.pts.length; i++) {
+      const A = t.pts[i - 1], B = t.pts[i], L = U.dist(A, B); if (L < 0.01) continue;
+      const ux = (B.x - A.x) / L, uy = (B.y - A.y) / L;
+      for (let s = 0; s <= L; s += 0.05) for (const o of [-0.45, 0, 0.45]) {
+        const x = A.x + ux * s - uy * o * t.w, y = A.y + uy * s + ux * o * t.w;
+        assert(IC.paveAt(ap, x, y), `${name}: a gap under ${t.p.name || t.p.id} at ${x.toFixed(2)}, ${y.toFixed(2)}`);
+      }
+    }
+    // every fillet reaches into the pavement of both legs (no hairline between them)
+    for (const f of G.fil) for (const [arm, T] of [[f.f.A, f.f.T1], [f.f.B, f.f.T2]]) {
+      const s = (T.x - f.f.N.x) * arm.ux + (T.y - f.f.N.y) * arm.uy, c = { x: f.f.N.x + arm.ux * s, y: f.f.N.y + arm.uy * s };
+      const mid = { x: (c.x + T.x) / 2, y: (c.y + T.y) / 2 };
+      assert(U.segDist(mid.x, mid.y, f.f.N.x, f.f.N.y, f.f.N.x + arm.ux * arm.len, f.f.N.y + arm.uy * arm.len) <= arm.h + 1e-6, `${name}: a fillet at ${f.f.N.x.toFixed(2)}, ${f.f.N.y.toFixed(2)} does not overlap its leg`);
+    }
+    // the fillets are curves, not discs: none reaches further from its node than its legs are wide plus the arc's depth
+    for (const f of G.fil) for (const q of f.poly) assert(U.dist(q, f.f.N) < 3.5, `${name}: a fillet runs ${U.dist(q, f.f.N).toFixed(2)} from its node`);
+  };
+  check(cap, 'the capital');
+  IC.aptRelayout(S, cap, 'kden', 0);
+  check(cap, 'the Denver-size layout');
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };
