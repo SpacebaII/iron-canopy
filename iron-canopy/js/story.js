@@ -152,9 +152,9 @@ IC.ACT1_MIN_MO = 36;  // calendar months a good player needs for Act I: three ye
 IC.CHAPTERS = [
   { title: 'The national airport', min: 0, max: 0, need: 6 },
   { title: 'The capital’s airport', min: 10, max: 15, need: 7, wait: 'more airlines have seen the airport work' },
-  { title: 'The airspace', min: 9, max: 13, need: 4, wait: 'the airways have carried a season of traffic' },
-  { title: 'Light aircraft', min: 7, max: 10, need: 2, wait: 'the flying clubs have settled in' },
-  { title: 'A second city', min: 14, max: 19, need: 3, wait: 'the new airport has found its passengers' },
+  { title: 'The airspace', min: 10, max: 14, need: 4, wait: 'the airways have carried a season of traffic' },
+  { title: 'Light aircraft', min: 8, max: 11, need: 2, wait: 'the flying clubs have settled in' },
+  { title: 'A second city', min: 15, max: 20, need: 3, wait: 'the new airport has found its passengers' },
   { title: 'The economy', min: 14, max: 16, need: 3, wait: 'the Treasury has seen the figures' }
 ];
 const capApt = S => S.story.cap ? S.byId[S.story.cap] : null;
