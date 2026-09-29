@@ -679,8 +679,32 @@ function drawMover(g, p, px, z, night, now) {
    deck: the top deck of a parking garage, bays painted in rows, cars, a ramp at each end;
    saucer: a round restaurant on four crossed arches;
    glass: a glazed roof with mullions. */
-const ROOF_FILL = { tent: 'rgb(236,234,226)', deck: 'rgb(142,142,138)', saucer: 'rgb(226,226,220)', glass: 'rgb(120,150,170)' };
+const ROOF_FILL = { tent: 'rgb(236,234,226)', deck: 'rgb(142,142,138)', saucer: 'rgb(226,226,220)', glass: 'rgb(120,150,170)', dome: 'rgb(198,202,206)', arc: 'rgb(186,190,196)' };
 const ROOFS = {
+  /* dome: a round building's roof, rings of panels shading from the sunny side, ribs to a glazed oculus */
+  dome(g, p, w, h, px, z, night) {
+    const A = p.arc || { x: 0, y: 0, r1: Math.min(w, h) / 2 }, R = A.r1;
+    const gr = g.createRadialGradient(A.x - R * 0.35, A.y - R * 0.35, R * 0.1, A.x, A.y, R);
+    gr.addColorStop(0, night ? 'rgba(255,236,200,0.35)' : 'rgba(255,255,255,0.45)'); gr.addColorStop(0.7, 'rgba(255,255,255,0.05)'); gr.addColorStop(1, 'rgba(0,0,0,0.22)');
+    g.fillStyle = gr; g.beginPath(); g.arc(A.x, A.y, R, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(90,96,104,0.35)'; g.lineWidth = Math.max(0.003, 0.5 * px);
+    for (let r = R * 0.25; r < R - 0.01; r += Math.max(0.06, R / 7)) { g.beginPath(); g.arc(A.x, A.y, r, 0, 7); g.stroke(); }
+    if (z > 3) { g.beginPath(); for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; g.moveTo(A.x + Math.cos(a) * R * 0.25, A.y + Math.sin(a) * R * 0.25); g.lineTo(A.x + Math.cos(a) * R * 0.97, A.y + Math.sin(a) * R * 0.97); } g.stroke(); }
+    g.fillStyle = night ? 'rgba(255,214,140,0.8)' : 'rgba(130,178,210,0.85)'; g.beginPath(); g.arc(A.x, A.y, R * 0.22, 0, 7); g.fill();
+    if (z > 6) { g.strokeStyle = 'rgba(40,50,60,0.5)'; g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; g.moveTo(A.x, A.y); g.lineTo(A.x + Math.cos(a) * R * 0.22, A.y + Math.sin(a) * R * 0.22); } g.stroke(); }
+    // plant on the roof between the rings
+    if (z > 5) for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + 0.3, q = { x: A.x + Math.cos(a) * R * 0.62, y: A.y + Math.sin(a) * R * 0.62 }; g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(q.x - 0.015, q.y - 0.008, 0.036, 0.022); g.fillStyle = 'rgb(160,164,168)'; g.fillRect(q.x - 0.018, q.y - 0.012, 0.036, 0.022); }
+  },
+  /* arc: a curved building's roof, panels square to the curve, a glazed spine along its middle */
+  arc(g, p, w, h, px, z, night) {
+    const A = p.arc; if (!A) return;
+    const rm = (A.r0 + A.r1) / 2, a0 = Math.min(A.a0, A.a1), a1 = Math.max(A.a0, A.a1);
+    g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = (A.r1 - A.r0) * 0.46; g.beginPath(); g.arc(A.x, A.y, (A.r1 + rm) / 2, a0, a1); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.12)'; g.beginPath(); g.arc(A.x, A.y, (A.r0 + rm) / 2, a0, a1); g.stroke();
+    g.strokeStyle = night ? 'rgba(255,214,140,0.75)' : 'rgba(130,178,210,0.8)'; g.lineWidth = (A.r1 - A.r0) * 0.14; g.beginPath(); g.arc(A.x, A.y, rm, a0 + 0.01, a1 - 0.01); g.stroke();
+    if (z > 3) { g.strokeStyle = 'rgba(90,96,104,0.35)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); const n = Math.ceil((a1 - a0) * rm / 0.06); for (let k = 0; k <= n; k++) { const a = a0 + (a1 - a0) * k / n; g.moveTo(A.x + Math.cos(a) * A.r0, A.y + Math.sin(a) * A.r0); g.lineTo(A.x + Math.cos(a) * A.r1, A.y + Math.sin(a) * A.r1); } g.stroke(); }
+    if (z > 5) for (let a = a0 + 0.08; a < a1 - 0.05; a += 0.3) { const q = { x: A.x + Math.cos(a) * (A.r0 + (A.r1 - A.r0) * 0.25), y: A.y + Math.sin(a) * (A.r0 + (A.r1 - A.r0) * 0.25) }; g.fillStyle = 'rgb(160,164,168)'; g.fillRect(q.x - 0.016, q.y - 0.011, 0.032, 0.022); }
+  },
   tent(g, p, w, h, px, z, night) {
     const long = w >= h, L = long ? w : h, D = long ? h : w;
     g.save(); if (!long) g.rotate(Math.PI / 2);

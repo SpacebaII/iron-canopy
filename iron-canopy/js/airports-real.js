@@ -64,6 +64,8 @@ IC.aptFromLayout = function (ap, L, o) {
     const kind = IC.APART[B.kind] ? B.kind : 'support';
     if (IC.APART[kind].r && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r, name: B.name || undefined }); }
     const part = IC.polyPart(kind, P(B.poly));
+    // (a round or curved building keeps its circle, in its own frame, for the roof that follows it)
+    if (B.arc) { const c = X(B.arc[0], B.arc[1]), l = IC.rectLocal(part, c); part.arc = { x: l.x, y: l.y, r0: B.arc[2], r1: B.arc[3], a0: B.arc[4] + rot - part.a, a1: B.arc[5] + rot - part.a }; }
     return add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
   });
   // passenger bridges over taxiways, with the height a tail must clear
@@ -176,7 +178,8 @@ function scratch(ap, L, x, y, rot) {
 /* can the blueprint go here: in the country, on dry land, clear of other airfields and of what the airport already
    has; what it costs and what must be in hand to start */
 IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
-  const L = IC.REAL_APT[key]; if (!L) return { ok: false, why: 'No such blueprint.' };
+  // (key: a blueprint's name, or a layout itself: a terminal kit from the build bar)
+  const L = typeof key === 'string' ? IC.REAL_APT[key] : key; if (!L) return { ok: false, why: 'No such blueprint.' };
   const t = scratch(ap, L, x, y, rot), out = { ok: true, why: '', t, cost: 0, hit: null, parts: t.parts.length };
   const no = (why, hit) => Object.assign(out, { ok: false, why, hit: hit || null });
   const W = S.world;
@@ -203,7 +206,7 @@ IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
 IC.bldBlueprint = function (S, ap, key, x, y, rot) {
   const C = IC.bldBlueprintCheck(S, ap, key, x, y, rot);
   if (!C.ok) { IC.log(S, 'warn', 'BUILD', C.why); return null; }
-  const t = C.t, L = IC.REAL_APT[key], nid = {}, pid = {};
+  const t = C.t, L = typeof key === 'string' ? IC.REAL_APT[key] : key, nid = {}, pid = {};
   for (const n of Object.values(t.nodes)) { const id = ap.id + 'n' + (ap.nodeN++); nid[n.id] = id; ap.nodes[id] = { id, x: n.x, y: n.y, on: null }; }
   const made = [];
   for (const p0 of t.parts) {
@@ -225,15 +228,20 @@ IC.bldBlueprint = function (S, ap, key, x, y, rot) {
   for (const part of made) { const pv = IC.bldPreview(S, ap, part); const w = IC.bldStart(S, ap, part, pv); ap.works.push(w); }
   // one step to undo, like any plan of several parts
   ap.undo = ap.undo || []; ap.undo.splice(ap.undo.length - made.length, made.length, made.map(p => p.id));
-  // the landside as mapped, and where the country's roads come in
+  // the landside as mapped, and where the country's roads come in; a kit's landside (a semicircle's kerb and car
+  // park) joins the airport's own, kept when the rest of it is laid out again
   const land = IC.landInit(ap);
-  Object.assign(land, { fixed: true, items: t.land.items, roads: t.land.roads, jn: t.land.jn, road: true }); land.ver++;
-  ap.exits = t.exits; ap.svcRoads = (ap.svcRoads || []).concat(t.svcRoads || []);
-  ap.real = key; ap.after = L.after;
+  if (L.kit) { for (const r of t.land.roads) land.roads.push(Object.assign(r, { keep: true })); for (const it of t.land.items) land.items.push(Object.assign(it, { keep: true })); land.jn = (land.jn || []).concat(t.land.jn); land.ver++; }
+  else {
+    Object.assign(land, { fixed: true, items: t.land.items, roads: t.land.roads, jn: t.land.jn, road: true }); land.ver++;
+    ap.exits = t.exits; ap.svcRoads = (ap.svcRoads || []).concat(t.svcRoads || []);
+    ap.real = typeof key === 'string' ? key : null; ap.after = L.after;
+  }
   ap.dirty = true; IC.aptExtent(ap); ap.buildR = Math.max(ap.buildR || 0, ap.radius + 5);
   ap._seatKey = null; IC.aptReseat(S, ap);
   IC.aptStats(S, ap);
-  IC.log(S, 'info', 'BUILD', `${ap.name}: the ${L.name} blueprint (${L.after}) is planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now. More crews build it sooner (the Works tab).`, ap);
+  if (L.kit) IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(L.name)} planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now. Join its taxilanes to your taxiways.`, ap);
+  else IC.log(S, 'info', 'BUILD', `${ap.name}: the ${L.name} blueprint (${L.after}) is planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now. More crews build it sooner (the Works tab).`, ap);
   IC.emit(S, 'aptPlan', { ap, part: made[0], blueprint: key });
   return made;
 };

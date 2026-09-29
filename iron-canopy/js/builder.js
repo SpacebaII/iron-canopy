@@ -503,6 +503,16 @@ IC.BTOOLS = {
   svcroad: { name: 'Service road', desc: 'Click along the way it goes, then again on the last point: an airside road for tugs, buses, fuel trucks and fire tenders. It may cross taxiways (painted with a zebra or a stop line), never a runway. The airport lays most of its own; draw more where you want them.' },
   stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
 };
+// the terminal kits (airport-kits.js) are tools too, placed like a blueprint
+for (const [k, K] of Object.entries(IC.TERM_KITS || {})) IC.BTOOLS[k] = { name: K.name, desc: K.desc, kit: true };
+/* what a kit costs to build, at each gate size (a scratch airport, measured once) */
+const KIT_COST = {};
+IC.kitCost = function (key, size) {
+  const k = key + (size || 'm'); if (KIT_COST[k] != null) return KIT_COST[k];
+  const t = { id: 'kit', kind: 'airport', x: 0, y: 0, name: '' };
+  IC.aptFromLayout(t, IC.kitLayout(key, { size }), { x: 0, y: 0, rot: 0 });
+  return (KIT_COST[k] = t.parts.reduce((a, p) => a + IC.partCost(t, p), 0));
+};
 /* the parallel taxiway to the side of a runway where the cursor is */
 function parallelSpec(ap, rw, p) {
   const d = IC.rwDir(rw), L = IC.rwLen(rw), side = Math.sign((p.x - rw.a.x) * -d.y + (p.y - rw.a.y) * d.x) || 1;
@@ -951,6 +961,17 @@ function planOf(S, m, hv, tol, free) {
   if (!hv) return out;
   const pts = m.pts.slice();
   // a blueprint: the whole real airport at the cursor, turned by R (checked here, drawn by the ghost)
+  // a terminal kit (a round terminal, a satellite, a curved or branching pier): placed and turned like a blueprint
+  if (IC.TERM_KITS && IC.TERM_KITS[t]) {
+    const sz = m.size === 'l' ? 'l' : 'm', lk = t + sz;
+    if (!m._kitL || m._kitK !== lk) { m._kitK = lk; m._kitL = IC.kitLayout(t, { size: sz }); }
+    const key = lk + '|' + hv.x.toFixed(1) + ',' + hv.y.toFixed(1) + '|' + (m.rot || 0).toFixed(3) + '|' + ap.parts.length + '|' + Math.round(S.budget);
+    if (m._bpKey !== key) { m._bpKey = key; m._bpC = IC.bldBlueprintCheck(S, ap, m._kitL, hv.x, hv.y, m.rot || 0); }
+    const C = m._bpC, st = (m._kitL.stands || []).length;
+    out.bp = { x: hv.x, y: hv.y, rot: m.rot || 0, t: C.t }; out.ok = C.ok; out.why = C.why; out.hit = C.hit; out.cost = C.cost || 0;
+    out.text.push(`${IC.TERM_KITS[t].name}: ${st} ${IC.STAND[sz].name} gates with jet bridges · ${U.money(C.cost || 0)} paid as the work runs · R turns it`);
+    return out;
+  }
   if (t === 'blueprint') {
     if (!m.bp || !IC.REAL_APT[m.bp]) { out.ok = false; out.why = 'No blueprint to place.'; return out; }
     const key = m.bp + '|' + hv.x.toFixed(1) + ',' + hv.y.toFixed(1) + '|' + (m.rot || 0).toFixed(3) + '|' + ap.parts.length + '|' + Math.round(S.budget);
@@ -1181,6 +1202,13 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     return 'exit';
   }
   const plan = IC.bldPlanOf(S, m, p, tol, free);
+  if (IC.TERM_KITS && IC.TERM_KITS[m.part]) {
+    if (!plan.ok) { m.err = plan.why; return 'err'; }
+    const made = IC.bldBlueprint(S, ap, m._kitL, plan.bp.x, plan.bp.y, plan.bp.rot);
+    if (!made) { m.err = 'Could not plan it.'; return 'err'; }
+    m.done = `${IC.TERM_KITS[m.part].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs. Join its taxilanes to your taxiways.`;
+    return 'built';
+  }
   if (m.part === 'blueprint') {
     if (!plan.ok) { m.err = plan.why; return 'err'; }
     const made = IC.bldBlueprint(S, ap, m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);

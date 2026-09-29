@@ -17,10 +17,11 @@ IC.polyArea = P => Math.abs(area(P));
 const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
 const isConvex = P => { let sg = 0; for (let i = 0; i < P.length; i++) { const c = cross(P[i], P[(i + 1) % P.length], P[(i + 2) % P.length]); if (Math.abs(c) < 1e-12) continue; if (sg && Math.sign(c) !== sg) return false; sg = Math.sign(c); } return true; };
 IC.polyConvex = isConvex;
-/* counter-clockwise, without repeated or collinear points */
+/* counter-clockwise, without repeated or collinear points (area() is the signed area, positive counter-clockwise:
+   the ears below are the vertices that turn left) */
 function clean(P) {
   let Q = P.filter((p, i) => U.dist(p, P[(i + 1) % P.length]) > 1e-6);
-  if (area(Q) > 0) Q = Q.slice().reverse();
+  if (area(Q) < 0) Q = Q.slice().reverse();
   for (let k = 0; k < 3 && Q.length > 3; k++) Q = Q.filter((p, i) => Math.abs(cross(Q[(i + Q.length - 1) % Q.length], p, Q[(i + 1) % Q.length])) > 1e-9);
   return Q;
 }
@@ -31,7 +32,8 @@ function convexPieces(P0) {
   if (P.length < 3) return [];
   if (isConvex(P)) return [P];
   const idx = P.map((_, i) => i), tris = [];
-  const inTri = (p, a, b, c) => cross(a, b, p) > 0 && cross(b, c, p) > 0 && cross(c, a, p) > 0;
+  // (a vertex on the ear's edge counts as inside: an L's inner corner lies on the diagonal across it)
+  const inTri = (p, a, b, c) => cross(a, b, p) >= -1e-12 && cross(b, c, p) >= -1e-12 && cross(c, a, p) >= -1e-12 && U.dist(p, a) > 1e-9 && U.dist(p, b) > 1e-9 && U.dist(p, c) > 1e-9;
   let guard = 0;
   while (idx.length > 3 && guard++ < 5000) {
     let cut = false;

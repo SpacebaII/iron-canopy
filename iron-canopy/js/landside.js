@@ -168,7 +168,7 @@ IC.landUse = function (L, it) {
 /* the roads of each building's landside: the kerb, a road beyond each band in use, the two ends joining them into a
    loop, and the road out to the country's network (or the access road), round the airfield */
 function kerbs(S, ap, bl) {
-  const L = ap.land; if (L.fixed) return; L.kerbN = bl.length; L.roads = []; L.jn = [];
+  const L = ap.land; if (L.fixed) return; L.kerbN = bl.length; L.roads = L.roads.filter(r => r.keep); L.jn = [];
   const outs = [];
   for (const t of bl) {
     const sd = landSide(ap, t), mine = L.items.filter(it => it.by === t.id);

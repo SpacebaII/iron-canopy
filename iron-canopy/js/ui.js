@@ -502,6 +502,7 @@ function buildHint(m) {
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
     : t === 'stand' ? T.desc
     : t === 'blueprint' ? 'Blueprint: move it where it should go, R turns it (Shift+R a quarter turn), click to plan the whole airport.'
+    : IC.TERM_KITS && IC.TERM_KITS[t] ? `${IC.TERM_KITS[t].name}: move it where it should go, R turns it, click to plan it. Then join its taxilanes to your taxiways.`
     : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
     : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;

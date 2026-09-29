@@ -38,7 +38,7 @@ IC.BB_TABS = [
   { k: 'rw', key: '1', name: 'Runways', items: ['runway', 'exits'] },
   { k: 'tw', key: '2', name: 'Taxiways', items: ['taxi', 'parallel', 'hold'] },
   { k: 'ap', key: '3', name: 'Aprons & stands', items: ['apron', 'remote', 'ramp', 'stand', 'stretch', 'alert'] },
-  { k: 'tm', key: '4', name: 'Terminals & piers', items: ['terminal', 'concourse', 'skybridge', 'people'] },
+  { k: 'tm', key: '4', name: 'Terminals & piers', items: ['terminal', 'concourse', 'rotunda', 'satellite', 'curved', 'semicircle', 'pierT', 'pierY', 'pierX', 'skybridge', 'people'] },
   { k: 'cg', key: '5', name: 'Cargo & hangars', items: ['cargo', 'hangar', 'has', 'ammo'] },
   { k: 'fs', key: '6', name: 'Fuel & services', items: ['fuel', 'hydrant', 'fuelpad', 'deice', 'fire'] },
   { k: 'ls', key: '7', name: 'Landside & roads', items: ['svcroad', 'road:lc', 'road:rd', 'road:hw', 'carpark'] },
@@ -73,7 +73,9 @@ const USE = {
   parallel: 'a full-length taxiway beside a runway', hold: 'a second entry, so one aircraft can pass another', apron: 'stands along its back edge',
   remote: 'stands served by bus, with its own taxilane', ramp: 'paving where you place stands yourself', stand: 'one parking place, any size',
   stretch: 'makes an apron bigger', alert: 'fighters on alert at the runway end', terminal: 'passengers an hour; gates for the stands beside it',
-  concourse: 'a pier with gates on both sides', skybridge: 'a walkway over a taxiway', people: 'a train from the terminal to its concourses',
+  concourse: 'a pier with gates on both sides', rotunda: 'gates fanned round a round building', satellite: 'a round pod of gates on a people mover',
+  curved: 'a pier on an arc, gates both sides', semicircle: 'gates outside, parking inside the curve', pierT: 'a pier that splits at its end',
+  pierY: 'a pier that forks at its end', pierX: 'four piers from a hub', skybridge: 'a walkway over a taxiway', people: 'a train from the terminal to its concourses',
   cargo: 'freighters load and unload here', hangar: 'maintenance: airlines want some based here', has: 'protects one fighter flight', ammo: 'weapons for the air wing',
   fuel: 'fuel for departures, by truck', hydrant: 'fuel piped under the stands', fuelpad: 'a stand to refuel at', deice: 'de-icing on frosty mornings',
   fire: 'crash rescue: needed for large aircraft', ils: 'landings in fog, at one runway end', tower: 'clearances: many more movements an hour',
@@ -85,7 +87,8 @@ const NEEDS = {
   exits: 'A runway with a parallel taxiway.', hold: 'A runway end with a parallel taxiway.', parallel: 'A runway.',
   taxi: 'Something to join: a runway, an apron or another taxiway.', apron: 'A taxiway to reach it.', remote: 'Buses from the terminal (automatic).',
   stand: 'An apron or open ramp.', stretch: 'An apron to stretch.', alert: 'A runway end.', terminal: 'An apron beside it for gates; a road from the town.',
-  concourse: 'Room for aprons on both sides.', skybridge: 'A taxiway to bridge, between two terminal buildings.', people: 'A terminal and a concourse to join.',
+  concourse: 'Room for aprons on both sides.', rotunda: 'Room round it; a taxiway to its ring.', satellite: 'A terminal, and a people mover to it.',
+  curved: 'Room for its aprons.', semicircle: 'A road from the town to its kerb.', pierT: 'A terminal at its root.', pierY: 'A terminal at its root.', pierX: 'A people mover from the terminal.', skybridge: 'A taxiway to bridge, between two terminal buildings.', people: 'A terminal and a concourse to join.',
   cargo: 'An apron beside it.', hangar: 'A taxiway to its door.', has: 'A taxiway to its door.', fuel: 'Keep tanks 140 m apart: one fire takes them all.',
   hydrant: 'Fuel tanks; stands within reach of its pipes.', fuelpad: 'A taxiway, near the fuel farm.', deice: 'A taxiway near the runway ends.',
   fire: 'A place from which trucks reach every runway in three minutes.', ils: 'A runway end, and research for the best category.', tower: 'A view of the runways.',
@@ -101,6 +104,7 @@ function itemOf(k) {
     const per = D.line ? ' / 100 m' : D.area ? ' / ha' : '';
     return { k, name: D.name, price: U.money(D.cost) + per, use: USE[k] || '', desc: D.desc, upkeep: `${U.money(D.cost * 0.0012 * 24)}${per} a day`, time: U.dur(D.build), lock: IC.aptLockWhy(S, k), mil: D.mil };
   }
+  if (T && T.kit) return { k, name: T.name, price: `${U.money(IC.kitCost(k, 'm'))} (medium gates)`, use: USE[k] || '', desc: T.desc, upkeep: `${U.money(IC.kitCost(k, 'm') * 0.0012 * 24)} a day`, avail: true };
   if (T) return { k, name: T.name, price: k === 'stand' ? '₭0.5M each' : k === 'svcroad' ? `${U.money(IC.SVC_ROAD_COST)} / 100 m` : k === 'blueprint' ? 'a whole airport' : 'several parts', use: USE[k] || '', desc: T.desc, upkeep: '', avail: !T.avail || T.avail() };
   return { k, name: k, price: '', use: '', desc: '' };
 }
@@ -140,6 +144,9 @@ function thumb(k) {
     case 'terminal': apron(0, 44, 132, 32); bld(10, 10, 112, 30, '#b8bcc2'); g.fillStyle = 'rgba(130,178,210,0.9)'; for (let x = 18; x < 116; x += 20) g.fillRect(x, 22, 12, 5); stands(26, 44, 4, 27, false); break;
     case 'concourse': apron(0, 0, 132, 76); bld(8, 31, 116, 14, '#b8bcc2'); stands(22, 31, 5, 22, true); stands(22, 45, 5, 22, false); break;
     case 'skybridge': taxi([[66, 0], [66, 76]], 12); bld(4, 24, 36, 28, '#b8bcc2'); bld(92, 24, 36, 28, '#b8bcc2'); g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(40, 38, 52, 6); g.fillStyle = '#d6d8dc'; g.fillRect(40, 34, 52, 6); g.fillStyle = 'rgba(110,150,180,0.9)'; g.fillRect(40, 36, 52, 2); break;
+    case 'rotunda': case 'satellite': { g.fillStyle = conc; g.beginPath(); g.arc(66, 38, 36, 0, 7); g.fill(); g.strokeStyle = Y; lw(0.8); g.beginPath(); g.arc(66, 38, 33, 0, 7); g.stroke(); const R = k === 'rotunda' ? 17 : 12; for (let i = 0; i < (k === 'rotunda' ? 9 : 7); i++) { const a = i / (k === 'rotunda' ? 9 : 7) * 6.283; plane(66 + Math.cos(a) * (R + 9), 38 + Math.sin(a) * (R + 9), a + Math.PI, 0.8); } g.fillStyle = '#c6cace'; g.beginPath(); g.arc(66, 38, R, 0, 7); g.fill(); g.fillStyle = 'rgba(130,178,210,0.9)'; g.beginPath(); g.arc(66, 38, R * 0.3, 0, 7); g.fill(); if (k === 'satellite') { g.strokeStyle = '#c8c8c4'; lw(3); g.setLineDash([3, 2]); g.beginPath(); g.moveTo(66 - R, 38); g.lineTo(0, 38); g.stroke(); g.setLineDash([]); } break; }
+    case 'curved': case 'semicircle': { const cx = 66, cy = k === 'curved' ? 150 : 74, Rc = k === 'curved' ? 120 : 44, a0 = k === 'curved' ? -1.95 : -Math.PI, a1 = k === 'curved' ? -1.19 : 0; g.fillStyle = conc; g.beginPath(); g.arc(cx, cy, Rc + 26, a0, a1); g.arc(cx, cy, Rc - (k === 'curved' ? 26 : 8), a1, a0, true); g.fill(); g.fillStyle = '#b8bcc2'; g.beginPath(); g.arc(cx, cy, Rc + 6, a0, a1); g.arc(cx, cy, Rc - 6, a1, a0, true); g.fill(); for (let a = a0 + 0.1; a < a1; a += k === 'curved' ? 0.12 : 0.3) plane(cx + Math.cos(a) * (Rc + 15), cy + Math.sin(a) * (Rc + 15), a + Math.PI, 0.7); if (k === 'semicircle') { g.fillStyle = asph; g.beginPath(); g.arc(cx, cy, Rc - 10, Math.PI, 0); g.fill(); } break; }
+    case 'pierT': case 'pierY': case 'pierX': { g.fillStyle = conc; g.fillRect(0, 0, TW, TH); const arms = k === 'pierT' ? [Math.PI, -Math.PI / 2, Math.PI / 2] : k === 'pierY' ? [Math.PI, -0.6, 0.6] : [0.79, 2.36, 3.93, 5.5]; g.strokeStyle = '#b8bcc2'; lw(8); g.lineCap = 'butt'; for (const a of arms) { g.beginPath(); g.moveTo(66, 38); g.lineTo(66 + Math.cos(a) * 44, 38 + Math.sin(a) * 34); g.stroke(); } g.fillStyle = '#c6cace'; g.beginPath(); g.arc(66, 38, 8, 0, 7); g.fill(); break; }
     case 'people': bld(6, 20, 30, 36, '#b8bcc2'); bld(96, 20, 30, 36, '#b8bcc2'); g.strokeStyle = '#c8c8c4'; lw(4); g.beginPath(); g.moveTo(36, 38); g.bezierCurveTo(60, 20, 72, 56, 96, 38); g.stroke(); g.fillStyle = '#f0f2f4'; g.fillRect(56, 33, 14, 4); break;
     case 'cargo': apron(0, 46, 132, 30); bld(12, 8, 108, 34, '#a89e86'); g.fillStyle = 'rgba(170,196,214,0.7)'; for (let x = 20; x < 114; x += 10) for (let y = 14; y < 38; y += 10) g.fillRect(x, y, 3, 3); stands(40, 46, 2, 50, false); break;
     case 'hangar': taxi([[0, 66], [132, 66]]); apron(30, 50, 72, 16); bld(30, 10, 72, 40, '#8a9096'); { const gr = g.createLinearGradient(0, 10, 0, 50); gr.addColorStop(0, 'rgba(255,255,255,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0.25)'); g.fillStyle = gr; g.fillRect(30, 10, 72, 40); } g.fillStyle = '#2a2e32'; g.fillRect(34, 48, 64, 2); break;
@@ -240,6 +247,7 @@ function options(S, m) {
   if (STAND_TOOLS[t]) g.push(group('Stands', Object.entries(IC.RAMP_SIZE).map(([k, n]) => chip('size', k, n, (m.size || 'm') === k, `${IC.STAND[k].name} stand, ${Math.round(IC.STAND[k].w * 100)} m wide`)).join('') + chip('drive', '', 'Nose-in', !m.drive, 'Pushed back by a tug to leave') + chip('drive', 1, 'Drive-through', !!m.drive, 'Taxis in and out forwards: no tug, more room')));
   if (ZONE_TOOLS[t]) g.push(group('Zone', [chip('zone', 'auto', 'Auto', !m.zone, 'From what is next to it')].concat(Object.keys(IC.ZONES).map(k => chip('zone', k, ({ civil: 'Passenger', cargo: 'Cargo', light: 'Light', mil: 'Military' })[k] || IC.ZONES[k].name, m.zone === k, `Only ${IC.ZONES[k].name.toLowerCase()} aircraft park here`))).join('')));
   if (t === 'surface') g.push(group('Surface', Object.entries(IC.SURF).map(([k, v]) => chip('surf', k, v.name, (m.surf || 'grass') === k, `${U.money(IC.APART.surface.cost * v.k)} a hectare${v.park ? '; outside the airfield a car park' : ''}`)).join('')));
+  if (IC.TERM_KITS && IC.TERM_KITS[t]) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('') + '<em>R turns it</em>'));
   if (t === 'blueprint' && IC.showcaseKeys) g.push(group('Blueprint', IC.showcaseKeys().map(k => chip('bp', k, esc(IC.REAL_APT[k].name), m.bp === k, IC.REAL_APT[k].after)).join('') + '<em>R turns it</em>'));
   if (t === 'upgrade') g.unshift(`<div class="bb-say">${ico(TOOL_ICON.upgrade)} Click a runway, taxiway or apron: it gets what is chosen here, and you pay the difference.</div>`);
   return g.join('');
