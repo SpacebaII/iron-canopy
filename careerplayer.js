@@ -1,9 +1,13 @@
 /* A scripted Career player, for the balance run (storytest.js) and the tests. It plays Act I the way a steady
    player would: builds the national airport, grows it, draws the airspace, takes the contracts, founds a second
    airport and a freight operation, approves what the airports can take and answers every card with its first
-   choice. It uses the same functions as the interface. Call it every game minute or so: player(S). */
+   choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
+   forward base in Act II, and from Act III defends like the Quick war commander (qwplayer.js). It uses the same
+   functions as the interface. Call it every game minute or so: player(S). */
 const IC = require('./headless.js');
+const QW = require('./qwplayer.js');
 const U = IC.U;
+const OVER = typeof process !== 'undefined' && !!process.env.OVERBUILD;
 
 /* a flat site near a town, with few homes under the approaches */
 function site(S, c, rmin, rmax) {
@@ -19,33 +23,77 @@ function site(S, c, rmin, rmax) {
   return best;
 }
 // the terminal side of the runway (+1 or -1): the other side when a river or the site's edge is in the way
-const L = (ap, x, y) => IC.aptLocal(ap, x, y * (ap._side || 1));
+const L = (ap, x, y) => IC.aptLocal(ap, x, y * (ap.cpSide || 1));
 const has = (ap, k) => ap.parts.some(p => p.kind === k);
-const part = (S, ap, k, x, y, w, h, o) => { const c = L(ap, x, y); return IC.aptPlanPart(S, ap, k, c.x, c.y, ap.rwyA, w, h, o); };
+// (each part remembers the slot along the runway it was put in: aprons and their terminals line up by it)
+const part = (S, ap, k, x, y, w, h, o) => { const c = L(ap, x, y), p = IC.aptPlanPart(S, ap, k, c.x, c.y, ap.rwyA, w, h, o); if (p) p.slotX = x; return p; };
 const taxi = (S, ap, pts) => IC.aptPlanTaxi(S, ap, pts.map(([x, y]) => L(ap, x, y)), 0.3, { mat: 'conc' });
 /* the first airport: a 3 km runway, one apron, a stub taxiway, terminal, fire station and fuel */
 function starter(S, ap, len) {
   const h = len / 2, o = { mat: 'conc' };
   if (!has(ap, 'runway')) IC.aptPlanRunway(S, ap, L(ap, -h, 0), L(ap, h, 0), 'Runway 1', o);
-  if (!has(ap, 'apron') && !part(S, ap, 'apron', 0, 4, 4, 1.3, o) && !ap._side) { ap._side = -1; part(S, ap, 'apron', 0, 4, 4, 1.3, o); }
+  if (!has(ap, 'apron') && !part(S, ap, 'apron', 0, 4, 4, 1.3, o) && !ap.cpSide) { ap.cpSide = -1; part(S, ap, 'apron', 0, 4, 4, 1.3, o); }
   if (!has(ap, 'taxi')) taxi(S, ap, [[0, 0], [0, 3.35]]);
   if (!has(ap, 'terminal')) part(S, ap, 'terminal', 0, 5.1, 3, 0.8);
   if (!has(ap, 'fire')) part(S, ap, 'fire', 3.5, 1.5);
   if (!has(ap, 'fuel')) part(S, ap, 'fuel', -5, 4.5);
 }
-/* what a steady player does next at the capital: tower, taxiways to both ends, more stands, cargo */
+/* what the airlines' offers and deals find missing at this airport: the first unmet line (IC.dealNeeds) */
+function missing(S, ap) {
+  for (const q of S.av.requests) for (const x of IC.dealNeeds(S, q)) if (!x.ok && x.ap === ap.id) return x.k;
+  for (const d of S.av.deals) if (d.st === 'active' && d.badT) for (const x of IC.dealNeeds(S, Object.assign({ renew: d.id }, d))) if (!x.ok && x.ap === ap.id) return x.k;
+  return null;
+}
+const APRON_X = [0, 4.3, 8.6, 12.9, -12.9, 17.2];
+// fuel tanks between the first apron and the fifth, 140 m and more apart
+const FUEL_AT = [[-5, 4.5], [-8, 4.5], [-6.5, 6.2], [-9.5, 6.2]];
+const nextSlot = ap => APRON_X.find(x => !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
+const noTerminal = ap => ap.parts.find(p => p.kind === 'apron' && p.zone !== 'cargo' && p.slotX != null && !ap.parts.some(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.slotX === p.slotX));
+const count = (ap, k, f) => ap.parts.filter(p => p.kind === k && (!f || f(p))).length;
+/* what a steady player does next at the capital: tower, a hangar for the based fleet, taxiways to both ends, and
+   then whatever the airlines' offers say is missing: stands, gates and terminal, hangars, fuel, cargo */
 function grow(S, ap, st) {
   if (!has(ap, 'tower')) return part(S, ap, 'tower', 3.5, 2.6);
+  // (the parallel taxiway first: a hangar's doors face the taxiway nearest when it is built)
   if (!ap.parts.some(p => p.kind === 'taxi' && p.nodes.length > 3)) return taxi(S, ap, [[-15, 0], [-15, 1.8], [0, 1.8], [15, 1.8], [15, 0]]);
+  const hangars = count(ap, 'hangar'), hn = IC.aptNeeds(S, ap).hangar;
+  if (hangars < Math.max(1, Math.ceil(hn / 2)) && hangars < 4 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
   if (!has(ap, 'ils') && S.budget > 100) { const rw = ap.parts.find(p => p.kind === 'runway'); return rw && IC.aptPlanPart(S, ap, 'ils', rw.a.x, rw.a.y); }
-  if (ap.parts.filter(p => p.kind === 'apron').length < 2 && S.budget > 150) { part(S, ap, 'apron', 4.3, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[4.3, 1.8], [4.3, 3.35]]); }
-  if (ap.parts.filter(p => p.kind === 'fuel').length < 2 && S.budget > 120) return part(S, ap, 'fuel', -8, 4.5);
-  // more stands when they fill up: all but one taken (on long routes a fleet spends most of its time away, so the
-  // number of aircraft says little about the stands they need)
+  // winter fog and snow close the end without one: a landing system at the other end too
+  if (count(ap, 'ils') < 2 && S.budget > 250) { const rw = ap.parts.find(p => p.kind === 'runway'); const q = rw && IC.aptPlanPart(S, ap, 'ils', rw.b.x, rw.b.y); if (q) return q; }
+  const need = missing(S, ap), aprons = count(ap, 'apron', p => p.zone !== 'cargo');
+  // (a stand the terminal is beside is a gate: each apron gets its own stretch of terminal)
+  const bare = noTerminal(ap);
+  if ((need === 'gates' || need === 'pax') && bare && S.budget > 200) return part(S, ap, 'terminal', bare.slotX, 5.1, 3, 0.8);
+  if (aprons < 2 && S.budget > 150) { part(S, ap, 'apron', 4.3, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[4.3, 1.8], [4.3, 3.35]]); }
+  if (count(ap, 'fuel') < 2 && S.budget > 120) return part(S, ap, 'fuel', -8, 4.5);
+  if (need === 'fuelDeps' && S.budget > 150) { const n = count(ap, 'fuel'); return n < FUEL_AT.length ? part(S, ap, 'fuel', ...FUEL_AT[n]) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -3.5, 6.4); }
+  if (need === 'hangar' && hangars < 6 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
+  // freight: a cargo apron in the next slot along the terminal side, with a cargo terminal behind it
+  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc', zone: 'cargo' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'cargo', x, 5.1, 3, 0.8); }
+  if (need === 'cargoT' && count(ap, 'cargo') < 3 && S.budget > 150) { const c = ap.parts.find(p => p.kind === 'cargo'); return part(S, ap, 'cargo', (c ? c.slotX : 0) + (count(ap, 'cargo') % 2 ? 1 : -1) * 0.6, 5.1 + 0.9 * count(ap, 'cargo'), 3, 0.8); }
+  // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
-  const aprons = ap.parts.filter(p => p.kind === 'apron' && p.zone !== 'cargo').length;
-  if (full && aprons < 6 && S.budget > 150) { const x = [8.6, 12.9, -12.9, 17.2][aprons - 2] || 0; if (x) { part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); return taxi(S, ap, [[x, 1.8], [x, 3.35]]); } }
-  if (st.ch >= 5 && !has(ap, 'cargo') && S.budget > 200) { part(S, ap, 'cargo', -4.5, 6.2, 2.5, 0.8); part(S, ap, 'apron', -4.5, 4.9, 3, 1, { mat: 'conc', zone: 'cargo' }); return taxi(S, ap, [[-3, 1.8], [-3, 4.2]]); }
+  if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  // the overbuilder (OVERBUILD=1, for the balance run): builds every slot and a second runway before anyone asks
+  if (OVER && S.budget > 50) {
+    if (nextSlot(ap) != null) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+    if (count(ap, 'runway') < 2) { const r = IC.aptPlanRunway(S, ap, L(ap, -15, -3.2), L(ap, 15, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, ap, [[-15, -3.2], [-15, 0]]); taxi(S, ap, [[15, -3.2], [15, 0]]); return r; }
+    if (count(ap, 'hangar') < 8) return part(S, ap, 'hangar', -10 - count(ap, 'hangar') * 0.9, 2.32);
+  }
+  return null;
+}
+/* a regional airport: what its airlines' offers find missing (a hangar for the aircraft based there, stands, fuel) */
+function outpost(S, ap) {
+  if (ap.works.length || !ap.st || !ap.st.longest || S.budget < 150) return null;
+  const need = missing(S, ap);
+  if (need === 'hangar' && count(ap, 'hangar') < 2) {
+    // a short taxiway of its own first, so the hangar doors face it
+    if (!ap.parts.some(p => p.kind === 'taxi' && p.hangarWay)) { const w = taxi(S, ap, [[2, 0], [2, 1.6]]); if (w) w.hangarWay = true; return w; }
+    return part(S, ap, 'hangar', 2 + count(ap, 'hangar') * 0.9, 1.93);
+  }
+  if ((need === 'stands' || need === 'gates' || need === 'pax') && count(ap, 'apron') < 3) { const x = APRON_X[count(ap, 'apron')]; part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 0], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  if (need === 'fuelDeps' && count(ap, 'fuel') < 3) return part(S, ap, 'fuel', -5 - 3 * count(ap, 'fuel'), 4.5);
   return null;
 }
 /* the airspace: an entry point where the way to each foreign airport crosses the border, a fix near the airport,
@@ -80,11 +128,13 @@ function player(S, log) {
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
-  if (st.act !== 1) return;
+  if (st.act !== 1) { later(S, st); return; }
   // the national airport
   if (!st.cap) { const p = site(S, cc, 180, 380); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); return; }
   const ap = S.byId[st.cap];
   starter(S, ap, 30);
+  // once airliners use an airport, paving beside its runway waits for the night instead of closing it by day
+  for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us' && S.av.tails.some(t => t.at === b.id || (IC.avRoute(S, t) || {}).a === b.id)) for (const w of b.works) if (w.near && w.rwMode === 'close') w.rwMode = 'night';
   // worn pavement and damage: resurface what needs it
   for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us') for (const it of IC.aptRepairList(b)) if (S.budget > it.cost + 40) IC.aptQueue(S, b, it.key);
   // (while the chapter asks for a second airport, the money is saved for it)
@@ -100,6 +150,46 @@ function player(S, log) {
   // the second city's airport
   // (works are paid as they run: founding needs the site's price and some money in hand, not the whole airport)
   if (st.ch >= 4 && st.city2 && !st.apt2 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city2], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
-  if (st.apt2) starter(S, S.byId[st.apt2], 18);
+  if (st.apt2) { starter(S, S.byId[st.apt2], st.size2 === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt2]); }
+  // jets at the regional airport: a longer runway beside the first, joined by a taxiway
+  const a2 = st.apt2 && S.byId[st.apt2];
+  if (st.grow2 && !st.grow2.done && a2 && !a2.works.length && a2.parts.filter(p => p.kind === 'runway').length < 2 && S.budget > 500) { IC.aptPlanRunway(S, a2, L(a2, -12, -3.2), L(a2, 12, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, a2, [[0, -3.2], [0, 0]]); }
+  // a third city's field, when its contract is taken
+  if (st.contract3 && st.city3 && !st.apt3 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city3], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
+  if (st.apt3) { starter(S, S.byId[st.apt3], st.contract3 && st.contract3.size === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt3]); }
 }
-module.exports = { player, site };
+/* after Act I: the airports keep growing with the airlines, and the defence is built as the acts allow */
+function later(S, st) {
+  const ap = S.byId[st.cap];
+  for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us') for (const it of IC.aptRepairList(b)) if (S.budget > it.cost + 40) IC.aptQueue(S, b, it.key);
+  if (ap && !ap.works.length && S.budget > 400) grow(S, ap, st);
+  for (const id of [st.apt2, st.apt3]) if (id && S.byId[id]) outpost(S, S.byId[id]);
+  const fb = S.byId.ab_fwd;
+  if (st.act === 2) {
+    // a military radar near the border, in front of the forward base; a prohibited zone round the base
+    if (!S.units.some(u => (u.type === 'gf' || u.type === 'mr3d') && !u.dead) && S.budget > 200) {
+      // 50 km inside the hostile border, where it nears the forward base
+      let best = null, bd = 1e9;
+      for (const f of S.world.fronts) if (f.key === 'A') for (const q of f.pts) { const d = U.dist(q, fb); if (d < bd) { bd = d; best = q; } }
+      const c = best ? { x: best.x + best.nx * 500, y: best.y + best.ny * 500 } : fb, p = IC.findSpot(S, 'mr3d', c.x, c.y, 0, 250);
+      if (p) IC.deploy(S, 'mr3d', p.x, p.y);
+    }
+    if (!S.av.zones.length) IC.avAddZone(S, fb.x, fb.y, 150, 'Forward base');
+  }
+  // (before the war the defence is built as the income allows: a Quick war's worth of batteries costs twice what
+  // Act III brings in an hour; in the war everything goes)
+  if (st.act >= 3) {
+    if (S.supply) S.supply.auto = true;
+    if (st.act >= 4) QW.commander(S);
+    // one unit a day at most while the income covers it; when a month's running costs came to more than it brought
+    // in, the unit dearest to run goes back to the reserve (the Economy room's warning, heeded)
+    else if (S.time > (S._qwT || 0) + 86400) {
+      if (S.income - S.upkeep > 12 && S.budget > 400) { QW.commander(S, 1); S._qwT = S.time; }
+      else if (IC.waitRate(S) < -3) {
+        const u = S.units.filter(x => !x.dead && x.state === 'ready' && !x.d.civil && !x.central && x.type !== 'depot' && x.d.up).sort((a, b) => b.d.up - a.d.up)[0];
+        if (u) { IC.toReserve(S, u); S._qwT = S.time; }
+      }
+    }
+  }
+}
+module.exports = { player, site, starter, grow };

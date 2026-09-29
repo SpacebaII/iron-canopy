@@ -400,6 +400,7 @@ function clearRun(rw, s0, s1) {
 }
 /* o: { type, node (start node id), stand, startT, contact, onAir(m), onDead(m), who, mil, scramble } */
 IC.gopsDepart = function (S, ap, o) {
+  if (o.stand && o.stand.drive && G(ap).N.has(o.stand.id + 'o')) o = Object.assign({}, o, { node: o.stand.id + 'o' });
   const m = newMove(S, ap, Object.assign({ kind: 'dep' }, o));
   m.phase = 'start'; m.t = o.startT || 0;
   const n = G(ap).N.get(o.node); if (n) { m.x = n.x; m.y = n.y; }
@@ -408,6 +409,7 @@ IC.gopsDepart = function (S, ap, o) {
   const plan = planDeparture(S, ap, m, true);
   if (!plan) { ap.moves = ap.moves.filter(x => x !== m); return null; }
   m.plan = plan;
+  if (o.tail && !o.mil) m.via = serviceStops(S, ap, m);
   return m;
 };
 IC.gopsCanDepart = function (S, ap, type, node) { const m = { T: IC.ACTYPES[type], node, t: 0 }; return !!planDeparture(S, ap, m, true); };
@@ -588,7 +590,7 @@ function stepTaxi(S, ap, m, dt) {
       }
       occupy(ap, m, st, e); m.onEdge = true; m.blockT = 0; m.resT = 0; m.oppT = 0; m.holding = null;
     }
-    const spd = e.spd;
+    const spd = e.spd * (m.spdK || 1);
     let lim = e.len;
     if (k && !(m.locks && m.locks[k]) && e.kind !== 'rwy') lim = Math.max(0, e.len - HOLD);
     const lead = leader(ap, m, st, e);
@@ -747,6 +749,8 @@ function kill(S, ap, m) {
 function done(ap, m) { ap.kpi.n++; ap.kpi.taxi = ap.kpi.taxi * 0.9 + m.taxiT * 0.1; ap.kpi.wait = ap.kpi.wait * 0.9 + m.waitT * 0.1; }
 
 IC.gops = function (S, dt) {
+  S.svcT = (S.svcT || 0) - dt;
+  if (S.svcT <= 0) { S.svcT = 20; for (const ap of IC.bases(S)) if (ap.parts && ap.owner === 'us') servicesTick(S, ap); }
   for (const ap of IC.bases(S)) {
     if (!ap.parts || !ap.moves) continue;
     ap.kpi = ap.kpi || { taxi: 0, wait: 0, n: 0, grid: 0, div: 0, hold: 0 };
@@ -773,7 +777,8 @@ function step(S, ap, m, dt) {
     case 'start': {
       m.t -= dt;
       if (m.t > 0) return;
-      if (m.stand && m.stand.contact) { if (!pushOk(S, ap, m)) { m.waitT += dt; return; } m.phase = 'push'; m.t = 60; m.stand.pushT = S.time + 60; return; }
+      // nose-in stands: a tug pushes the aircraft back (a movement of its own); drive-through stands are left forwards
+      if (m.stand && !m.stand.drive) { if (!pushOk(S, ap, m)) { m.waitT += dt; return; } m.phase = 'push'; m.t = 60; m.stand.pushT = S.time + 60; countGround(S, ap, m, 'push'); return; }
       beginTaxi(S, ap, m); return;
     }
     case 'push': {
@@ -787,6 +792,7 @@ function step(S, ap, m, dt) {
       stepTaxi(S, ap, m, dt);
       if (m.path && m.pi >= m.path.length) {
         finishPath(m);
+        if (m.kind === 'dep' && m.via && m.via.length && m.node === m.via[0].node) { m.phase = 'svc'; m.t = m.via[0].t; m.svcIn = 0; return; }
         if (m.kind === 'dep') {
           // at the runway: line up once we hold it
           const k = keyOf(ap, m.plan.rw.id);
@@ -794,6 +800,22 @@ function step(S, ap, m, dt) {
           lineUp(S, ap, m);
         } else arriveAt(S, ap, m);
       }
+      return;
+    }
+    case 'svc': {
+      // on the pad (one aircraft at a time): in, serviced, out again, then on to the runway
+      const v = m.via[0], pad = v.part, busy = pad.busy && pad.busy !== m.id && ap.moves.some(x => x.id === pad.busy && !x.dead);
+      if (busy) { m.waitT += dt; m.holding = 'queue'; return; }
+      if (pad.busy !== m.id) { pad.busy = m.id; countGround(S, ap, m, v.what); }
+      m.holding = null;
+      m.svcIn += dt; m.t -= dt;
+      const door = G(ap).N.get(v.node), k2 = U.clamp(Math.min(m.svcIn, m.t) / 20, 0, 1);
+      if (door) { m.x = U.lerp(door.x, pad.x, k2); m.y = U.lerp(door.y, pad.y, k2); if (m.svcIn < 1) m.h = Math.atan2(pad.y - door.y, pad.x - door.x); }
+      if (m.t > 0) return;
+      pad.busy = null; pad.served = (pad.served || []).filter(t => S.time - t < 86400); pad.served.push(S.time);
+      if (door) { m.x = door.x; m.y = door.y; }
+      m.via.shift();
+      beginTaxi(S, ap, m);
       return;
     }
     case 'hold': {
@@ -897,13 +919,17 @@ function step(S, ap, m, dt) {
       if (m.stand) { m.x = U.lerp(m.stand.fx, m.stand.x, f); m.y = U.lerp(m.stand.fy, m.stand.y, f); m.h = m.stand.a; }
       if (m.t <= 0) {
         m.dead = true; kill(S, ap, m);
-        done(ap, m);
+        if (m.kind !== 'tow') done(ap, m);
         m.onPark && m.onPark(m);
       }
       return;
     }
   }
 }
+/* ground movements besides taxiing to and from the runway: pushbacks, tows, and taxiing to a service (fuel,
+   de-icing, a hangar); counted per aircraft (m.gm) and per airport over the last hour */
+function countGround(S, ap, m, what) { m.gm = (m.gm || 0) + 1; (m.gmLog = m.gmLog || []).push(what); const L = ap.gmLog = ap.gmLog || []; L.push({ t: S.time, what }); if (L.length > 400) L.splice(0, L.length - 400); }
+IC.gopsCountGround = countGround;
 /* movements per hour, counted as they happen (the panel compares them with the rated capacity) */
 function countMove(S, ap, k, type, rw) { const L = ap.mvLog = ap.mvLog || []; L.push({ t: S.time, k, type }); while (L.length && S.time - L[0].t > 3600) L.shift(); ap.kpi[k] = (ap.kpi[k] || 0) + 1; IC.emit(S, 'rwMove', { ap, k, type, rw }); }
 /* pushbacks block only the stands either side, and only one pushes back from a row at a time */
@@ -917,6 +943,17 @@ function setRwPos(ap, m, sgn) {
   m.h = Math.atan2(d.y * s, d.x * s);
 }
 function beginTaxi(S, ap, m) {
+  // a stop on the way: the fuel stand or the de-icing pad, then the runway
+  if (m.via && m.via.length) {
+    const v = m.via[0], p = v.node === m.node ? null : IC.aptSearch(ap, m.node, { to: v.node, avoidRwy: true, res: { m, t0: S.time } });
+    if (v.node === m.node || (p && p.dist.has(v.node))) {
+      m.path = v.node === m.node ? [] : IC.aptSteps(p, m.node, v.node); m.pi = 0; m.s = 0; m.phase = 'taxi'; m.onEdge = false;
+      if (m.path.length) reserve(S, ap, m, m.path, S.time);
+      leaveStand(m);
+      return;
+    }
+    m.via.shift();
+  }
   const plan = planDeparture(S, ap, m);
   if (!plan) {
     m.phase = 'start'; m.t = 60; m.waitT += 60;
@@ -926,9 +963,11 @@ function beginTaxi(S, ap, m) {
   }
   m.plan = plan; m.path = plan.p.steps; m.pi = 0; m.s = 0; m.phase = 'taxi'; m.onEdge = false;
   reserve(S, ap, m, m.path, S.time);
+  leaveStand(m);
+}
+function leaveStand(m) {
   if (m.stand) { m.stand.occ = null; m.stand.res = null; m.stand = null; }
-  m.left = true;
-  m.onLeave && m.onLeave(m);
+  if (!m.left) { m.left = true; m.onLeave && m.onLeave(m); }
 }
 /* why no runway will do, in plain words */
 IC.depBlockWhy = function (S, ap, T) {
@@ -988,9 +1027,132 @@ function goAround(S, ap, m, o) {
 function arriveAt(S, ap, m) {
   if (m.stand) { m.phase = 'parkin'; m.t = 20; return; }
   m.dead = true; kill(S, ap, m);
-  done(ap, m);
+  if (m.kind !== 'tow') done(ap, m);
   m.onPark && m.onPark(m);
 }
+
+/* ---------- services: what happens to an airliner on the ground between landing and take-off ---------- */
+/* frost on clear and foggy mornings: departures are de-iced, on a pad if there is one, else at the stand */
+IC.aptFrost = S => { const h = ((S.time % 86400) + 86400) % 86400 / 3600, k = S.weather && S.weather.kind; return h >= 4 && h < 8.5 && (k === 'clear' || k === 'fog'); };
+const padOf = (ap, kind, from) => {
+  const G0 = G(ap), a = G0.N.get(from); let best = null, bd = 1e9;
+  for (const p of ap.parts) if (p.kind === kind && p.built && p.hp > p.max * 0.25 && p.linked !== false && G0.N.has(p.id + ':d')) { const d = a ? U.dist(a, p) : 0; if (d < bd) { bd = d; best = p; } }
+  return best;
+};
+/* the stops a departure makes on its way to the runway: fuel (where the trucks could not come, or for small
+   aircraft that always self-serve) and de-icing */
+function serviceStops(S, ap, m) {
+  const via = [], T = m.T;
+  const fuelPad = padOf(ap, 'fuelpad', m.node);
+  if (fuelPad && (ap.padNext === S.time || T.rwy <= 13)) via.push({ node: fuelPad.id + ':d', part: fuelPad, what: 'fuel', t: 180 + (T.fuel || 1) * 25 });
+  if (IC.aptFrost(S)) {
+    const pad = padOf(ap, 'deice', m.node);
+    if (pad) via.push({ node: pad.id + ':d', part: pad, what: 'de-icing', t: 240 + T.span * 400 });
+    else { m.t += 480 + T.span * 800; (m.gmLog = m.gmLog || []).push('de-iced at the stand'); }
+  }
+  return via;
+}
+/* what serves an aircraft on its stand: a jet bridge or passengers walking at a gate, buses at a remote stand,
+   lorries at a cargo stand; a fuel truck or the hydrant. The drawing follows these (render-airport.js). */
+IC.standService = function (S, ap, s, tl) {
+  const st = ap.st || {}, T = tl.T;
+  const kind = T.cargo ? 'cargo' : s.contact ? (IC.aptTechOk(S, 'bridge') ? 'bridge' : 'walk') : 'bus';
+  return { t0: S.time, dur: tl.t, kind, n: kind === 'bus' ? Math.max(1, Math.ceil((T.seats || 0) / 80)) : kind === 'cargo' ? Math.max(2, Math.round((T.cargo || 40) / 25)) : 0,
+    fuel: s.hyd && st.hydrant ? 'hydrant' : 'truck', tail: tl.id };
+};
+IC.on((S, type, d) => {
+  if (type !== 'tailParked' || !d.ap || !d.ap.parts) return;
+  const tl = d.tl, ap = d.ap, s = IC.aptStands(ap).find(x => x.id === tl.stand);
+  if (!s) return;
+  s.svc = IC.standService(S, ap, s, tl);
+  // passengers walking out to the aircraft board slower than through a jet bridge
+  if (s.svc.kind === 'walk') { tl.t *= 1.08; s.svc.dur = tl.t; }
+  // every dozen or so landings an aircraft is due in the hangar for maintenance, where there is room
+  tl.legs = (tl.legs || 0) + 1;
+  tl.mxDue = tl.mxDue || U.randi(10, 16);
+  if (tl.legs >= tl.mxDue && !tl.mx) { const h = hangarFor(ap); if (h) tl.mx = { ap: ap.id, h: h.id, at: S.time + 1200 }; }
+});
+/* a hangar with room for one more */
+function hangarFor(ap) { return ap.parts.find(p => p.kind === 'hangar' && p.built && p.hp > p.max * 0.25 && p.linked !== false && (p.inside || []).length + (p.coming || 0) < IC.APART.hangar.holds); }
+IC.aptHangarFor = hangarFor;
+/* a tug tows an aircraft from one node to another (to a stand: it parks there) */
+function tow(S, ap, tl, from, to, stand, onPark) {
+  const al = IC.avAirline && IC.avAirline(S, tl.al);
+  const m = newMove(S, ap, { kind: 'tow', type: tl.type, node: from, who: `${tl.cs} (tow)`, tail: tl, livery: al && al.livery, stand, spdK: 0.5, onPark, onDead: () => IC.emit(S, 'tailLost', { ap, tail: tl.id, why: 'destroyed under tow' }) });
+  const n = G(ap).N.get(from); if (n) { m.x = n.x; m.y = n.y; }
+  const p = IC.aptSearch(ap, from, { to, avoidRwy: true, res: { m, t0: S.time } });
+  if (!p.dist.has(to)) { ap.moves = ap.moves.filter(x => x !== m); return null; }
+  m.path = IC.aptSteps(p, from, to); m.pi = 0; m.s = 0; m.phase = 'taxi'; m.onEdge = false; m.target = to;
+  reserve(S, ap, m, m.path, S.time);
+  countGround(S, ap, m, 'tow');
+  return m;
+}
+function tailOf(S, id) { return S.av && S.av.tails.find(t => t.id === id); }
+function servicesTick(S, ap) {
+  if (!S.av) return;
+  // due for maintenance and turned round: towed from the stand to the hangar
+  for (const tl of S.av.tails) {
+    if (!tl.mx || tl.mx.ap !== ap.id || tl.where !== 'stand' || S.time < tl.mx.at) continue;
+    const h = ap.parts.find(p => p.id === tl.mx.h), s = IC.aptStands(ap).find(x => x.id === tl.stand);
+    if (!h || !s || !h.built || h.hp <= h.max * 0.25 || (h.inside || []).length >= IC.APART.hangar.holds) { tl.mx = null; continue; }
+    h.coming = (h.coming || 0) + 1;
+    const m = tow(S, ap, tl, s.id, h.id + ':d', null, () => {
+      h.coming = Math.max(0, (h.coming || 1) - 1);
+      (h.inside = h.inside || []).push({ tl: tl.id, until: S.time + U.rand(1, 2.5) * 86400, why: 'maintenance' });
+      tl.where = 'hangar'; tl.at = ap.id;
+      IC.emit(S, 'hangarIn', { ap, tl, h });
+    });
+    if (!m) { h.coming--; tl.mx.at = S.time + 3600; continue; }
+    s.occ = null; tl.stand = null; tl.where = 'tow'; tl.mv = m; tl.mx = null; tl.legs = 0; tl.mxDue = null;
+  }
+  // maintenance done: towed out to a free stand, then back to flying
+  for (const h of ap.parts) {
+    if (h.kind !== 'hangar' || !(h.inside || []).length) continue;
+    for (const x of h.inside.slice()) {
+      const tl = tailOf(S, x.tl);
+      if (!tl || tl.where === 'lost') { h.inside = h.inside.filter(y => y !== x); continue; }
+      if (S.time < x.until || x.out) continue;
+      const s = IC.avFreeStand && IC.avFreeStand(S, ap, tl.T);
+      if (!s) continue;
+      s.occ = tl.id;
+      const m = tow(S, ap, tl, h.id + ':d', s.id, s, () => { tl.where = 'stand'; tl.stand = s.id; tl.at = ap.id; tl.mv = null; tl.t = 1800; });
+      if (!m) { s.occ = null; continue; }
+      x.out = true; h.inside = h.inside.filter(y => y !== x);
+      tl.where = 'tow'; tl.mv = m;
+    }
+  }
+}
+IC.gopsServicesTick = servicesTick;
+/* what a building is doing right now, with numbers, for its panel */
+IC.partNow = function (S, ap, p) {
+  const st = ap.st || {}, tails = S.av ? S.av.tails.filter(t => t.at === ap.id) : [], stands = IC.aptStands(ap);
+  const onStand = tails.filter(t => t.where === 'stand');
+  const svcNow = k => stands.filter(s => s.occ && s.svc && s.svc.kind === k && onStand.some(t => t.id === s.occ && t.t > 0)).length;
+  const hourN = x => (x || []).filter(t => S.time - t < 3600).length;
+  if (!p.built) return '';
+  if (p.kind === 'fuel') {
+    const tanks = ap.parts.filter(q => q.kind === 'fuel' && q.built && q.hp > q.max * 0.25).length;
+    const wait = onStand.filter(t => t.t <= 300 && t.fuelWait > 0), avg = wait.length ? wait.reduce((a, t) => a + t.fuelWait, 0) / wait.length : 0;
+    return st.hydrant ? `Fuel farm: ${tanks} tank${tanks > 1 ? 's' : ''} feeding the hydrant system; no trucks needed. This tank ${Math.round(p.stock || 0)} of ${IC.APART.fuel.cap}.`
+      : `Fuel farm: ${tanks * 2} trucks, ${wait.length} aircraft waiting${wait.length ? `, ${U.dur(avg)} average` : ''}. This tank ${Math.round(p.stock || 0)} of ${IC.APART.fuel.cap}.`;
+  }
+  if (p.kind === 'fuelpad') return `Fuel stand: ${hourN(p.served)} aircraft refuelled in the last hour${p.busy ? '; one refuelling now' : ''}.`;
+  if (p.kind === 'deice') return IC.aptFrost(S) ? `Frost this morning: departures stop here to be de-iced (${hourN(p.served)} in the last hour).` : `No frost now. On clear and foggy mornings departures stop here to be de-iced; without a pad it is done at the stand and takes longer.`;
+  if (p.kind === 'hangar') {
+    const x = (p.inside || []).map(y => { const t = tails.find(q => q.id === y.tl) || (S.av && S.av.tails.find(q => q.id === y.tl)); return t ? `${t.cs} (${t.T.short}, maintenance, ${U.dur(Math.max(0, y.until - S.time))} left)` : null; }).filter(Boolean);
+    return `Hangar: ${x.length} of ${IC.APART.hangar.holds} places in use${x.length ? ': ' + x.join('; ') : ''}${p.coming ? `; ${p.coming} on the way in` : ''}.`;
+  }
+  if (p.kind === 'terminal') {
+    const gates = stands.filter(s => s.contact && s.linked !== false).length, remote = stands.filter(s => !s.contact && !s.cargo && s.zone === 'civil' && s.linked !== false).length;
+    const load = st.pax ? (ap.paxRate || 0) / st.pax : 0;
+    return `Terminal: ${Math.round(ap.paxRate || 0).toLocaleString('en-US')} of ${Math.round(st.pax || 0).toLocaleString('en-US')} passengers an hour (${U.pct(load)} full${load > 0.8 ? ': boarding slows down' : ''}). ${gates} gate${gates === 1 ? '' : 's'} ${IC.aptTechOk(S, 'bridge') ? 'with jet bridges' : '(passengers walk out: jet bridges need research)'}, ${remote} remote stands. Now: ${svcNow('bridge') + svcNow('walk')} aircraft at gates, ${svcNow('bus')} served by bus.`;
+  }
+  if (p.kind === 'cargo') { const n = svcNow('cargo'); return `Cargo shed: ${n} freighter${n === 1 ? '' : 's'} loading now${n ? `, ${stands.filter(s => s.occ && s.svc && s.svc.kind === 'cargo').reduce((a, s) => a + s.svc.n, 0)} lorries on the apron` : ''}; handles ${Math.round(st.cargo || 0)} t an hour.`; }
+  if (p.kind === 'tower') { const n = (ap.mvLog || []).length; return `Tower: ${n} runway movements in the last hour, rated ${st.movesPerHour || 0}; ${(ap.gmLog || []).filter(x => S.time - x.t < 3600).length} pushbacks, tows and service stops on the ground.`; }
+  if (p.kind === 'fire') return `Fire station: trucks reach every runway in ${U.dur(st.rescue || 0)}${st.rescue > 180 ? ' (over the three-minute standard)' : ''}.`;
+  if (p.kind === 'apron') { const L = p.stands || []; return `Apron: ${L.filter(s => s.occ).length} of ${L.length} stands in use.`; }
+  return '';
+};
 
 /* ---------- crashes and incidents: rare, and always with a cause ---------- */
 /* the chance that this landing or take-off ends in an accident, and why. Zero in normal operations. */
@@ -1101,7 +1263,7 @@ function crashNow(S, ap, m) {
   const text = `${what}, crashed ${phase} on runway ${IC.rwEnd(rw, m.plan.dir)} at ${ap.name}. ${dead} of the ${on} people on board died. The cause: ${c.text}.${c.rule ? ` The tower's rule that allowed it: ${c.rule}.` : ''} ${resc}`;
   const fix = { gust: 'A runway pointing into the wind (a crosswind runway) would have kept it inside its limits.', tailwind: 'A runway pointing into the wind would have avoided the tailwind.', overrun: 'A longer runway, or one without craters, leaves a margin when it is wet.', incursion: 'A ground radar shows the tower every aircraft on the ground, day and night.', bird: 'Airports away from lakes and rivers see far fewer birds.', collision: 'A ground radar shows the tower every aircraft on the runway; without one, keep departures at the hold-short line after dark (Operations tab).' }[c.cause] || '';
   if (S.camp) {
-    (S.later = S.later || []).push({ t: S.time + 1800, fn: () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.hhmm(S.time)}`, `${text} ${fix}`, 'alarm'); } });
+    IC.later(S, 1800, 'gopsReport', S, ap, `${text} ${fix}`);
   }
   // on top of the loss of the aircraft itself (the Minister already counts that): the deaths and the headlines
   if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), 0, 100);
@@ -1133,14 +1295,18 @@ IC.milLaunchBlock = function (S, b, r) {
   if (!IC.gopsCanDepart(S, b, type, sn.node)) return 'No taxi route to a usable runway' + IC.depBlockWhy(S, b, IC.ACTYPES[type]);
   return '';
 };
+IC.H.gopsReport = (S, ap, text) => () => { if (S.camp) IC.card(S, 'Accident report', `${ap.name} · ${U.clock(S.time, S)}`, text, 'alarm'); };
+IC.H.milAirborne = (S, a) => mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); };
+IC.H.milParked = (S, a, b) => () => { a.gnd = false; a.faf = null; IC.airLand(S, a, b); };
+IC.H.milGoAround = (S, a) => mm => { a.gnd = false; a.ground = null; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.faf = null; a.nextTry = S.time + 90; };
+IC.H.milTaxiLost = a => () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } };
 /* returns true when the aircraft has been handed to ground ops (it appears in the air when it lifts off) */
 IC.milDepart = function (S, b, a) {
   const r = a.r, sn = IC.milStartNode(S, b, r);
   if (!sn) return false;
   const type = IC.AIRKIND_TYPE[r.kind];
-  const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false }) : null, startT: IC.alertStartT ? IC.alertStartT(r, sn.startT) : sn.startT, mil: true, scramble: IC.alertOf ? IC.alertOf(r) < 30 : !!r.qra, who: r.name, flight: a, n: a.n,
-    onAir: mm => { a.gnd = false; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.ground = null; a.tookOffT = S.time; IC.emit(S, 'airborne', a); },
-    onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
+  const m = IC.gopsDepart(S, b, { type, node: sn.node, door: sn.door, stand: sn.stand ? Object.assign({}, sn.stand, { contact: false, drive: true }) : null, startT: IC.alertStartT ? IC.alertStartT(r, sn.startT) : sn.startT, mil: true, scramble: IC.alertOf ? IC.alertOf(r) < 30 : !!r.qra, who: r.name, flight: a, n: a.n,
+    onAir: IC.hfn('milAirborne', S, a), onDead: IC.hfn('milTaxiLost', a) });
   if (!m) return false;
   a.gnd = true; a.ground = m;
   a.x = m.x; a.y = m.y;
@@ -1165,9 +1331,7 @@ IC.milApproach = function (S, b, a, dt) {
   const sn = IC.milStartNode(S, b, r) || {};
   if (!sn.node) return 'divert';
   const m = IC.gopsLand(S, b, { type, target: sn.node, stand: null, mil: true, who: a.name, flight: a, n: a.hp, faf,
-    onPark: () => { a.gnd = false; a.faf = null; IC.airLand(S, a, b); },
-    onGoAround: mm => { a.gnd = false; a.ground = null; a.x = mm.x; a.y = mm.y; a.h = mm.h; a.faf = null; a.nextTry = S.time + 90; },
-    onDead: () => { if (!a.dead) { a.dead = true; if (a.r) { a.r.st = 'lost'; a.r.ent = null; } } } });
+    onPark: IC.hfn('milParked', S, a, b), onGoAround: IC.hfn('milGoAround', S, a), onDead: IC.hfn('milTaxiLost', a) });
   if (m === 'divert') { a.faf = null; return 'divert'; }
   if (m === 'hold') { a.holdT = (a.holdT || 0) + dt; return holdPt; }
   a.gnd = true; a.ground = m;

@@ -96,8 +96,8 @@ function airwayClick(m, p) {
 function buildIn(m, p, btn, shift) {
   const r = IC.buildInput(S, m, p, btn, IC.cam.z, shift);
   if (r === 'exit') { IC.setMode(null); return r; }
-  if (r === 'built') { IC.sfx.ui('ok'); ping(p); }
-  else if (r === 'err') { IC.sfx.ui('err'); if (m.err) IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); }
+  if (r === 'built') { IC.sfx.ui('ok'); ping(p); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap); }
+  else if (r === 'err') { IC.sfx.ui('err'); if (m.err) { IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
   else IC.sfx.ui('click');
   IC.ui.refresh(true);
   return r;
@@ -140,7 +140,7 @@ function leftClick(p, shift) {
     }
     if (m.kind === 'bulldoze') {
       const part = IC.partAt(m.ap, p, 6 / IC.cam.z);
-      if (part) { IC.aptRemove(S, m.ap, part.id); IC.sfx.ui('ok'); ping(p); } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
+      if (part) { if (IC.aptRemove(S, m.ap, part.id)) { IC.sfx.ui('ok'); ping(p); } else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'AIRCRAFT ON IT', IC.C.amber); } } else IC.text(S, p.x, p.y, 'NOTHING HERE', IC.C.amber);
       IC.ui.refresh(true); return;
     }
     if (m.kind === 'zone') {
@@ -308,11 +308,13 @@ function onAct(e) {
   if (!b || b.disabled) return;
   if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
-  if (a && a.startsWith('range') && a !== 'rangeForm' && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
+  if (a && a.startsWith('range') && a !== 'rangeForm' && S && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   IC.sfx && IC.sfx.init();
-  if (!S) return;
-  const sel = S.sel && S.sel.ref;
+  // before the first region is built only the start screen answers (IC.begin waits for the region)
+  if (!S && a !== 'begin' && a !== 'lesson' && a !== 'stPage') return;
+  const sel = S && S.sel && S.sel.ref;
   const ui = IC.ui;
+  if (IC.savesAct(S, a, v)) { IC.sfx.ui('click'); return; }
   switch (a) {
     case 'begin': IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
@@ -330,9 +332,10 @@ function onAct(e) {
     case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
-    case 'restart': IC.showStart(); return;
-    case 'pause': S.paused = !S.paused; S.skip = false; break;
-    case 'speed': S.speed = +v; S.paused = false; S.skip = false; break;
+    case 'pause': S.paused = !S.paused; S.skip = false; IC.waitStop(S); break;
+    case 'speed': S.speed = +v; S.paused = false; S.skip = false; IC.waitStop(S); break;
+    case 'waitPick': if (S.wait) { IC.waitStop(S); ui.waitPick = false; } else ui.waitPick = !ui.waitPick; break;
+    case 'wait': ui.waitPick = false; IC.waitStart(S, v); break;
     case 'skip': startSkip(); break;
     case 'mute': if (!IC.sfx.on) IC.sfx.init(); else IC.sfx.toggle(); break;
     case 'roeAll': S.ad.roe = v; IC.log(S, 'info', 'WEAPONS', `National weapons status: ${v.toUpperCase()}.`); break;
@@ -350,8 +353,9 @@ function onAct(e) {
     case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.setAlert(S, r, IC.alertOf(r) === 5 ? 30 : 5); break; }
     case 'air': IC.airAct(S, b.dataset); break;
     case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { S.airspace = 'restricted'; IC.log(S, 'info', 'AIRSPACE', 'Civil airspace restricted.'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
-    case 'cnext': ui.ci++; ui.shownAt = performance.now() - 1e5; break;
-    case 'cprev': ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
+    case 'copen': ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
+    case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.shownAt = performance.now() - 1e5; break;
+    case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
     case 'zin': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.3); break;
     case 'zout': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1 / 1.3); break;
     case 'zhome': { const c = IC.cap(S); IC.flyTo(c.x, c.y, Math.max(IC.cam.z, 0.3)); break; }
@@ -410,7 +414,7 @@ function onAct(e) {
     case 'bcancel': { const ap = selAp(); if (ap) IC.cancelWork(S, ap, id); break; }
     case 'bauto': { const ap = selAp(); if (ap) ap.autoRepair = !ap.autoRepair; break; }
     case 'build': { const ap = selAp(); if (!ap || ap.locked) break; const cur = S.mode2; IC.setMode(cur && cur.kind === 'build' && cur.part === v && cur.ap === ap ? null : IC.bldMode(S, ap, v)); if (S.mode2 && IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2); return; }
-    case 'bpref': { const [k, x] = v.split(':'); const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
+    case 'bpref': { const [k, x] = v.split(':'); if (k === 'mat' && IC.bldPick && !IC.bldPick(S, x)) break; const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true }; const val = k === 'fillet' ? !P.fillet : x === 'auto' ? null : x; P[k] = val; if (S.mode2 && S.mode2.kind === 'build') { S.mode2[k] = val; S.mode2.exitKey = null; } break; }
     case 'bundo': { const ap = selAp(); if (ap && IC.bldUndo(S, ap)) IC.sfx.ui('ok'); else IC.sfx.ui('err'); break; }
     case 'bwhen': { const ap = selAp(); const w = ap && ap.works.find(x => x.id === id); if (w) { w.rwMode = w.rwMode === 'night' ? 'close' : 'night'; } break; }
     case 'aptMove': if (S.sel && S.sel.kind === 'apart') { IC.setMode({ kind: 'bmove', ap: S.sel.ap, part: S.sel.ref, rot: S.sel.ref.a || 0 }); return; } break;
@@ -425,10 +429,11 @@ function onAct(e) {
     case 'aptFee': { const ap = selAp(); if (ap) { IC.avSetFee(S, ap, +v); IC.log(S, 'info', 'AVIATION', `${ap.name}: charges set to ${Math.round(+v * 100)}%.`); } break; }
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
     case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
+    case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
-    case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;
+    case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { const why = IC.aptRemoveBlock(S, S.sel.ap, S.sel.ref); if (why) { IC.toast(S, 'warn', 'BULLDOZE', why); break; } IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;
     case 'aptBack': if (S.sel && S.sel.kind === 'apart') S.sel = { kind: 'infra', ref: S.sel.ap }; break;
     case 'incGo': { const it = ui.incRefs && ui.incRefs[+v]; if (it) { const r = it.ref; ui.jump(r && r.tn ? r : { x: it.x, y: it.y }, r && r.tn ? 'track' : r && r.parts ? 'infra' : null); } break; }
     case 'incX': IC.incidentDismiss(S, v); break;
@@ -437,6 +442,7 @@ function onAct(e) {
     case 'escortFire': { const a2 = S.air.find(x => x.id === id); if (a2 && sel) { a2.roe = 'free'; if (a2.r) a2.r.roe = 'free'; a2.tgt = sel; IC.log(S, 'warn', 'ORDERS', `${a2.name}: cleared to fire on TN ${sel.tn}.`, sel); IC.emit(S, 'fireOrder', { a: a2, t: sel }); } break; }
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
+    case 'av': IC.avRoomAct(S, v, id); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
     case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.04) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.05); } return;
     case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
@@ -458,6 +464,7 @@ function onAct(e) {
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
     case 'replay': ui.openRoom(null); IC.replayOpen(S, { x: +b.dataset.x, y: +b.dataset.y, t: +b.dataset.t }); return;
     case 'replayTrack': if (sel) IC.replayOpen(S, { follow: sel, x: sel.x, y: sel.y, t: S.time - 90 }); return;
+    case 'liveView': if (sel) IC.liveOpen(S, sel); return;
     case 'logf': ui.logFilter = v; break;
     case 'refcat': ui.refCat = v; break;
     case 'why': ui.why = ui.why === v ? null : v; break;
@@ -493,12 +500,15 @@ for (const id of ['arsenal', 'insp', 'wrBody', 'feed', 'comms', 'rail', 'brief']
 $('cine').addEventListener('click', () => IC.ui.closeCine());
 
 /* ---------- time: skip ahead and auto-pause ---------- */
-function startSkip() { S.skip = true; S.paused = false; S.skipT = S.time; }
-function stopSkip(why) { if (!S.skip) return; S.skip = false; if (why) IC.toast(S, 'info', 'SKIP', why); }
+function startSkip() { IC.waitStop(S); S.skip = true; S.paused = false; S.skipT = S.time; }
+// anything that stops skip stops a wait for money too
+function stopSkip(why) { if (S.wait) { IC.waitStop(S, why); return; } if (!S.skip) return; S.skip = false; if (why) IC.toast(S, 'info', 'SKIP', why); }
 IC.on((S2, type, d) => {
   if (S2 !== S) return;
   const P = S.cfg.pauseOn;
-  const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; IC.toast(S, 'warn', 'PAUSED', why); } };
+  const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; if (S.wait) IC.waitStop(S, why); IC.toast(S, 'warn', 'PAUSED', why); } };
+  // a wait ends on its own: back to the speed the player had, and say why
+  if (type === 'waitDone') { if (d.why) IC.toast(S, 'info', 'WAIT', d.why); IC.ui.waitPick = false; return; }
   if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.'); else stopSkip('Ballistic launch.'); }
   else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`); else stopSkip(`${d.name} lost.`); }
   else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`); else stopSkip(`${d.base.name} hit.`); }
@@ -509,6 +519,8 @@ IC.on((S2, type, d) => {
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
   else if (type === 'event') { if (P.event !== false) pause(d.title); else stopSkip(d.title); }
   else if (type === 'incidentAdded' || type === 'act' || type === 'goal') stopSkip();
+  else if (type === 'request') stopSkip(`${IC.avAirline(S, d.al).name} offers a deal.`);
+  else if (type === 'dealWarn' || type === 'dealStrike' || type === 'dealBroken') stopSkip(`${d.al.name}: its deal ${type === 'dealBroken' ? 'is over' : 'is at risk'}.`);
   else if (type === 'assault' || type === 'chapter' || type === 'war' || type === 'frontActive' || type === 'delivered' || type === 'lessonDone') stopSkip();
 });
 
@@ -534,6 +546,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const l = local(e, cv);
   S.hover = IC.toWorld(l.x, l.y);
+  IC.bldFree = e.shiftKey;   // Shift draws without snapping (builder.js)
   if (!ptrs.size) {
     const edge = aspEditing() && IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
     IC.ui.aspEdge = edge ? edge.id : null;
@@ -602,14 +615,15 @@ mini.addEventListener('pointermove', e => { if (e.buttons) miniMove(e); });
 
 const keys = new Set();
 window.addEventListener('keydown', e => {
-  if (!S) return;
+  if (e.key === 'Shift') IC.bldFree = true;
   if (e.target.closest && e.target.closest('input,textarea')) return;
-  // the start screen: Enter starts a Career, Esc goes back a page
+  // the start screen: Enter starts a Career, Esc goes back a page (also while the first region is still being built)
   if (!$('start').hidden) {
     if (e.key === 'Escape' && IC.ui.stPage && IC.ui.stPage !== 'main') IC.ui.startPage('main');
     else if (e.key === 'Enter' && (!IC.ui.stPage || IC.ui.stPage === 'main') && !(e.target.closest && e.target.closest('button'))) IC.begin('story');
     return;
   }
+  if (!S) return;
   if (IC.ui.menu && e.key !== 'Escape') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { const ap = (S.mode2 && S.mode2.ap) || selAp(); if (ap) { e.preventDefault(); IC.sfx.ui(IC.bldUndo(S, ap) ? 'ok' : 'err'); IC.ui.refresh(true); return; } }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -633,8 +647,9 @@ window.addEventListener('keydown', e => {
   const selKind = S.sel && S.sel.kind;
   const unitSel = selUnits().length > 0, trackSel = selKind === 'track';
   const ukeys = { e: 'emcon', w: 'uroe', q: 'udoc', m: 'move', h: 'heli', p: 'repair', x: 'reserve', f: 'fireMode' };
-  if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; }
-  else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; }
+  if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; IC.waitStop(S); }
+  else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; IC.waitStop(S); }
+  else if (k === '7') { if (S.wait) IC.waitStop(S); else ui.waitPick = !ui.waitPick; IC.ui.refresh(true); }
   else if (lk === 's') startSkip();
   // Esc always backs out of the top thing, one at a time; with nothing open it brings up the menu
   else if (k === 'Escape') {
@@ -665,7 +680,7 @@ window.addEventListener('keydown', e => {
   else return;
   IC.ui.refresh(true);
 });
-window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+window.addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); if (e.key === 'Shift') IC.bldFree = false; });
 window.addEventListener('blur', () => keys.clear());
 
 function resize() {
@@ -681,18 +696,53 @@ function describe(W) {
   return `The ${W.full.H} is landlocked between the hostile ${W.full.A} to the ${dirA} and the ${W.full.B} to the ${dirB}, with ${W.names.C} and ${W.names.D} neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
 }
 function compass(W, k) { const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2; return ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
-function generate(seed, mode, lesson) {
-  S = IC.S = IC.newGame({ seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 });
+/* while a game is built the page draws between stages (state.js); IC.onLoadProgress(stage, share done) says how far it
+   has got: here in the start screen's line, and a loading screen can put its own in place */
+const STAGE_WORDS = { relief: 'Raising the hills', rivers: 'Running the rivers', cities: 'Founding the cities', roads: 'Laying the roads and railways',
+  bridges: 'Bridging the rivers', towns: 'Building the towns', junctions: 'Joining the roads', routing: 'Mapping the routes', airports: 'Laying out the airports',
+  forces: 'Placing the forces', traffic: 'Setting the traffic going', economy: 'Setting up the budget', done: 'Ready' };
+IC.STAGE_WORDS = STAGE_WORDS;
+IC.onLoadProgress = IC.onLoadProgress || ((stage, f) => { $('startLead').textContent = `${STAGE_WORDS[stage] || 'Preparing'}… ${Math.round(f * 100)}%`; });
+let loading = 0, building = Promise.resolve(), nth = 0;
+IC.building = () => loading > 0;   // (IC.loading is a save being loaded, saves.js)
+function generate(seed, mode, lesson) { return (building = build(seed, mode, lesson)); }
+/* the latest build wins: one started later (a new map, another mode) makes an earlier one's game go unused, and it
+   resolves to null */
+async function build(seed, mode, lesson) {
+  const me = ++nth;
+  loading++;
+  let S2;
+  try { S2 = await IC.newGameAsync({ seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 }, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
+  finally { loading--; }
+  if (me !== nth) return null;
+  S = IC.S = S2;
   IC.resetMini();
   IC.ui.bind(S);
   resize();
   if (S.range) { IC.cam.z = IC.frameZoom(0, 0, 18000, 13500); IC.centerOn(S.world.cx, S.world.cy); } else IC.frame(...IC.homeBox(S.world));
   $('seed').textContent = String(seed);
   $('startLead').textContent = S.range ? 'The test range: a flat, empty plane.' : describe(S.world);
+  return S;
 }
 IC.reroll = function () {
   $('startLead').textContent = 'Generating a new region…';
   setTimeout(() => generate((Math.random() * 1e9) >>> 0, 'campaign'), 30);
+};
+/* the start screen's game is a fresh Quick war on its region: starting one uses it as it is instead of building it again */
+const fresh = (mode, seed) => mode === 'campaign' && S && S.mode === 'campaign' && S.world.seed === seed && !S.started;
+/* a loaded game takes over from the one on screen (saves.js) */
+IC.adopt = function (st, view) {
+  S = IC.S = st;
+  IC.resetMini();
+  IC.ui.bind(S);
+  // what the player had already read stays read: chapter cards and staff messages from before the save
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
+  resize();
+  $('seed').textContent = String(S.seed);
+  $('start').hidden = true; $('over').hidden = true;
+  if (view) { IC.cam.z = view.z; IC.centerOn(view.x, view.y); } else IC.frame(...IC.homeBox(S.world));
+  S.paused = true;
+  IC.ui.refresh(true);
 };
 IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
@@ -711,8 +761,13 @@ IC.begin = function (mode, lesson) {
     }
     IC.ui.refresh(true);
   };
-  $('startLead').textContent = 'Preparing…';
-  setTimeout(() => { generate(mode === 'academy' ? 20260926 : S.seed, mode, lesson); go(); }, 30);
+  // (a promise, kept when the game is ready: scripts and tools await it; a region still being built is finished first)
+  return building.catch(() => null).then(() => {
+    const seed = mode === 'academy' ? 20260926 : S.seed;
+    if (fresh(mode, seed)) { S.started = true; go(); return S; }
+    $('startLead').textContent = 'Preparing…';
+    return new Promise(ok => setTimeout(() => generate(seed, mode, lesson).then(S2 => { if (S2) { S.started = true; go(); } ok(S2); }), 30));
+  });
 };
 
 IC.initRender(cv);
@@ -723,6 +778,8 @@ IC.ui.startPage('main');
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
+  // nothing to draw until the first game is built, while the next is built, or while a save replaces it
+  if (!S || loading || IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
@@ -740,13 +797,19 @@ function frame(now) {
   let gdt = 0;
   const running = !S.paused && (!S.over || IC.ui.overDismissed) && $('start').hidden;
   if (running) {
-    let speed = S.skip ? 64 : S.speed;
+    let speed = S.wait ? IC.WAIT.speed : S.skip ? 64 : S.speed;
     if (C.slow > 0) speed = Math.min(speed, 0.3);
     gdt = dtR * IC.GS * speed;
     if (S.skip && S.time - (S.skipT || S.time) > 3 * 3600) stopSkip('Three hours passed quietly.');
+    // waiting for money takes long steps while the sky is calm, fine ones as soon as anything armed is about
+    const calm = S.wait && IC.calmSky(S);
+    const big = S.wait ? (calm ? IC.WAIT.step : IC.MAX_STEP * 2) : IC.MAX_STEP * (S.skip ? 2 : 1);
     let g = gdt, guard = 0;
     const t0 = performance.now();
-    while (g > 1e-6 && guard++ < 2000) { const st = Math.min(IC.MAX_STEP * (S.skip ? 2 : 1), g); IC.step(S, st); g -= st; if (performance.now() - t0 > 40) break; }
+    while (g > 1e-6 && guard++ < 2000) { const st = Math.min(big, g); IC.step(S, st); g -= st; if (performance.now() - t0 > (S.wait ? 30 : 40)) break; }
+    // (the rate the wait really runs at, for its line in the top bar)
+    if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; }
+    IC.autosaveTick(S);
   }
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);

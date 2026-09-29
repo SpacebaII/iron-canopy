@@ -6,7 +6,7 @@
 const U = IC.U;
 const $ = id => document.getElementById(id);
 const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, shownAt: 0, lastLen: 0, toasts: [], cineShown: 0, cineT: 0, roomScroll: {}, aptTab: 'info', arMin: false, logFilter: 'all', refCat: 'units',
-  sub: { aviation: 'airlines', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
+  sub: { aviation: 'ops', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
 let S = null;
 const esc = U.esc;
 ui.esc = esc;
@@ -106,14 +106,31 @@ function feed() {
   setHTML($('feed'), ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
 }
 
+/* ---------- waiting for money: the chooser, and the line that says what is still to come ---------- */
+function waitLine() {
+  if (S.wait) {
+    const r = ui.waitRate ? ` · ${S.mode === 'story' ? `a month in about ${Math.max(1, Math.round(IC.MO(S) / ui.waitRate))} s` : `${Math.round(ui.waitRate / IC.GS)}×`}` : '';
+    return `<div class="waitbar glass" role="status"><b>Waiting</b> ${esc(IC.waitText(S))}<small>Stops when it is there, when the month turns, or when something needs you${r}.</small><button class="btn sm" data-act="waitPick">Stop</button></div>`;
+  }
+  if (!ui.waitPick) return '';
+  const L = IC.waitTargets(S);
+  return `<div class="waitbar glass pick"><b>Wait until you can afford</b>${L.map(t => `<button class="li" data-act="wait" data-v="${esc(t.key)}"><span>${esc(t.what.charAt(0).toUpperCase() + t.what.slice(1))}</span><small>${esc(IC.waitText(S, t))}</small></button>`).join('')}<small>Time runs fast, and stops when the month turns or something needs you.</small></div>`;
+}
+
 /* ---------- top bar ---------- */
 function topbar() {
-  $('hClock').textContent = U.clock(S.time);
-  const L = IC.daylight(S.time), h = (S.time % 86400) / 3600;
-  $('hSky').textContent = `${L >= 1 ? 'Day' : L <= 0 ? 'Night' : (h < 12 ? 'Dawn' : 'Dusk')} · ${IC.WEATHER[S.weather.kind].name}`;
+  // two clocks: the calendar (months, years) and the live day and night inside it
+  const L = IC.daylight(S.time), h = (S.time % 86400) / 3600, cal = S.mode === 'story' && IC.calAt(S, S.time);
+  const sky = `${L >= 1 ? 'Day' : L <= 0 ? 'Night' : (h < 12 ? 'Dawn' : 'Dusk')} · ${IC.WEATHER[S.weather.kind].name}`;
+  const ck = $('hClock');
+  ck.textContent = cal ? `${U.hhmm(S.time)} · ${U.date(S.time)}` : U.clock(S.time);
+  ck.parentNode.title = cal ? `The calendar counts months and years; each month is ${cal.dpm} days and nights of live time. Aircraft, weather and building run on the live clock.` : '';
+  $('hSky').textContent = cal ? `Day ${cal.d} of ${cal.dpm} · ${IC.SEASON ? IC.SEASON[cal.mo].name + ' · ' : ''}${sky}` : sky;
   setHTML($('speed'), `<button class="pz" data-act="pause" aria-pressed="${S.paused}" title="Pause and resume (Space)">❚❚<kbd>Space</kbd></button>` +
     IC.SPEEDS.map((v, i) => `<button data-act="speed" data-v="${v}" aria-pressed="${!S.paused && !S.skip && S.speed === v}" title="${v}× speed: ${v * IC.GS} game seconds a second (key ${i + 1})">${v}×<kbd>${i + 1}</kbd></button>`).join('') +
-    `<button class="skip" data-act="skip" aria-pressed="${!!S.skip && !S.paused}" title="Skip ahead fast until something needs you (S)">⏭<kbd>S</kbd></button>`);
+    `<button class="skip" data-act="skip" aria-pressed="${!!S.skip && !S.paused}" title="Skip ahead fast until something needs you (S)">⏭<kbd>S</kbd></button>` +
+    (S.mode === 'story' || S.mode === 'sandbox' ? `<button class="wait" data-act="waitPick" aria-pressed="${!!S.wait}" aria-expanded="${!!ui.waitPick}" title="Wait for money: time runs fast until you can afford what you pick, the month turns, or something needs you (7)">Wait<kbd>7</kbd></button>` : '') +
+    waitLine());
   const flow = S.income - S.upkeep, m = IC.nationalMorale(S);
   const meter = (f, col) => `<div class="meter"><i style="width:${U.clamp(f, 0, 1) * 100}%;background:${col}"></i></div>`;
   const st = S.story, act = st ? st.act : 4;
@@ -172,7 +189,7 @@ function alerts() {
   if (raid.length >= 4) w.push(['amber', `Raid in progress · ${raid.length} hostile tracks`, raid[0]]);
   const sus = S.threats.filter(t => t.det && !t.dead && t.aff === 'S' && IC.inHome(t.px, t.py) && t.d.cls === 'air');
   if (sus.length) w.push(['amber', `${sus.length} suspect aircraft in our airspace · send a fighter to look`, sus[0]]);
-  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && !IC.baseStatus(S, b).runway) w.push(['amber', `${b.name}: runway closed`, b]);
+  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && IC.rwyState(S, b).closed) w.push(['amber', `${b.name}: runway closed`, b]);
   if (S.av) for (const b of S.infra.filter(i => i.kind === 'airport' && i.owner === 'us')) {
     const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id);
     if (hold.length >= 2 || hold.some(t => t.holdT > 600)) w.push(['amber', `${b.name}: ${hold.length} holding${hold.some(t => t.standShort) ? ' · stands full' : ''}`, b]);
@@ -271,7 +288,7 @@ ui.techOpens = t => Object.entries(IC.UNITS).filter(([, d]) => d.tech === t.id &
    looks at it, and arrives with a short card. Kept in the interface, not the game state. */
 const unitOk = (st, t) => { const d = IC.UNITS[t]; return !d.callin && !st.range && (!st.story || IC.storyAllows(st, t)) && IC.hasTech(st, d.tech); };
 ui.ROOM_INFO = {
-  aviation: 'Airlines, their route requests, our airports and the airspace.',
+  aviation: 'Operations at our airports, airline deals, the airlines, our airports and the airspace.',
   staff: 'Your career: what each act opens up, your delegates and what command points buy.',
   economy: 'The treasury, the weekly statement, city growth, roads and loans.',
   air: 'The air wing: flights at each base, standing patrols and new aircraft.',
@@ -359,18 +376,25 @@ function comms() {
   if (Q.length !== ui.lastLen) {
     if (!ui.lastLen) { ui.ci = 0; ui.shownAt = now; }
     else if (ui.ci >= ui.lastLen - 1) { ui.ci = ui.lastLen; ui.shownAt = now; }
-    ui.lastLen = Q.length;
+    ui.lastLen = Q.length; ui.cOpen = now;
   }
   if (ui.ci >= Q.length) ui.ci = Q.length - 1;
   const m = Q[ui.ci];
   const shown = Math.min(m.text.length, Math.floor((now - ui.shownAt) / 1000 * 75));
   const full = shown >= m.text.length;
   if (full && ui.ci < Q.length - 1 && now - ui.shownAt > Math.max(5000, m.text.length * 50)) { ui.ci++; ui.shownAt = now; }
+  // once the last message has been read for a while it folds away, so an old instruction does not linger; a click
+  // or the next message opens it again
+  if (full && ui.ci === Q.length - 1 && now - (ui.cOpen || 0) > Math.max(30000, m.text.length * 90)) {
+    $('comms').classList.add('glass');
+    setHTML($('comms'), `<button class="cfold" data-act="copen">${esc(m.name)} · ${Q.length} message${Q.length > 1 ? 's' : ''} ▸</button>`);
+    return;
+  }
   const init = m.tag === 'CMD' ? m.name.replace('Gen. ', '').split(' ').map(x => x[0]).join('') : m.tag;
   $('comms').classList.add('glass');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
     <p>${esc(m.text.slice(0, shown))}${full ? '' : '▍'}</p>
-    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.hhmm(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button></span></div>`);
+    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button></span></div>`);
 }
 
 /* ---------- arsenal: what is in reserve, what is on order ---------- */
@@ -448,11 +472,13 @@ function buildHint(m) {
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
     : t === 'stand' ? T.desc
+    : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
-    : `${D.name}: click to place, click the same spot again to build. R turns it.`;
-  const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z)) : null;
-  const info = plan ? (plan.ok ? plan.text : [plan.why].concat(plan.text)).filter(Boolean).join(' · ') : '';
-  return `${how} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
+    : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
+  const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z), !!IC.bldFree) : null;
+  const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
+  const snap = IC.bldIsLine(t) || IC.bldIsArea(t) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
+  return `${how}${snap} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
 }
 const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);
 ui.covTxt = covTxt;
@@ -469,7 +495,7 @@ ui.tip = function (ent, sx, sy, rc) {
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
   else if (ent.kind === 'site') { t = r.name; s = `${r.destroyed ? 'Destroyed' : r.pk >= 2 ? 'Located' : 'Suspected'}`; }
   else if (ent.kind === 'tel') { t = r.name; s = `Seen ${U.dur(S.time - r.kt)} ago`; }
-  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.baseStatus(S, r).runway ? 'Runway open' : 'Runway closed'} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
+  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.rwyState(S, r).word} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
   else if (ent.kind === 'fix') { t = `Fix ${r.name}`; s = `${S.asp.ways.filter(w => w.a === r.id || w.b === r.id).length} airways · radar sees down to ${covTxt(IC.aspCovAlt(S, r.x, r.y))} here`; }
   else if (ent.kind === 'airway') { const [a, b] = IC.aspWayEnds(S, r); t = `Airway ${a.name} – ${b.name}`; s = `${U.km(U.dist(a, b))} · radar sees ${U.pct(IC.aspWayCover(S, r, 9))} of it at cruise height`; }
   else if (ent.kind === 'field') { t = r.name; s = `Light aircraft · ${r.club} · ${r.today} movements today`; }
@@ -604,7 +630,7 @@ function firstRun() {
   ui.firstRunDone = S;
   if (S.story) IC.hint.tour('career1', [
     { el: 'goals', title: 'Your goals', text: 'This act\'s goals, with how far along each one is. Click a goal to see where it is on the map.' },
-    { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' route requests. Keys are on each button.' },
+    { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' deals. Keys are on each button.' },
     { el: 'speed', title: 'Time', text: 'The game runs at 1×: ten game seconds a second. Space pauses, 1–6 set the speed, S skips ahead until something needs you.' },
     { el: 'menu', title: 'The menu', text: 'Esc backs out of whatever is open; with nothing open it brings up the menu: settings, the Guide and quitting.' }
   ]);
@@ -718,8 +744,10 @@ ui.toggleMenu = function (on) {
 /* ---------- start screen: the title, the modes, and pages for the Academy, settings and controls ---------- */
 ui.startPage = function (pg) {
   ui.stPage = pg || 'main';
-  for (const k of ['main', 'lessons', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
+  for (const k of ['main', 'lessons', 'saves', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
   if (ui.stPage === 'lessons') ui.lessonList();
+  if (ui.stPage === 'saves' && IC.savesPage) IC.savesPage();
+  if (ui.stPage === 'main' && IC.saves) IC.saves.refresh();
   if (ui.stPage === 'settings') setHTML($('stSettings'), IC.settingsHTML(S, true));
   const p = store.get('ic-academy', {}), n = IC.LESSONS.filter(l => p[l.id]).length;
   $('acaProg').textContent = n ? `${n} of ${IC.LESSONS.length} done · ${Object.values(p).reduce((a, b) => a + b, 0)} stars` : `${IC.LESSONS.length} lessons, 5 minutes each`;

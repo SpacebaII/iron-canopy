@@ -18,20 +18,15 @@ IC.RANGE_PRESETS = {
 };
 IC.RANGE_TYPES = Object.keys(IC.THR).filter(k => !IC.THR[k].civil && k !== 'pen');
 
-/* the plane: every place is flat, the west half is ours and the east half theirs */
+/* the plane: every place is flat, the west half is ours and the east half theirs (named handlers, so a save keeps them) */
+const MID = IC.WW / 2;
+const FLAT = { hAt: () => 0.25, inLake: () => false, countryAt: x => x < MID ? 'H' : 'A', inHome: x => x < MID, inHostile: x => x >= MID,
+  hostileBorderDist: x => Math.abs(x - MID), depthOut: x => x - MID, townAt: () => null, terrainAt: () => 'open', farmAt: () => 0 };
+IC.H.flat = k => FLAT[k];
 function flatten(W) {
-  const mid = IC.WW / 2;
+  const mid = MID;
   for (const k of Object.keys(W)) if (Array.isArray(W[k])) W[k] = [];
-  W.hAt = () => 0.25;
-  W.inLake = () => false;
-  W.countryAt = x => x < mid ? 'H' : 'A';
-  W.inHome = x => x < mid;
-  W.inHostile = x => x >= mid;
-  W.hostileBorderDist = x => Math.abs(x - mid);
-  W.depthOut = x => x - mid;
-  W.townAt = () => null;
-  W.terrainAt = () => 'open';
-  W.farmAt = () => 0;
+  for (const k in FLAT) W[k] = IC.hfn('flat', k);
   const pts = []; for (let y = 60; y <= IC.WH - 60; y += 300) pts.push({ x: mid, y, nx: -1, ny: 0 });
   W.fronts = [{ key: 'A', pts, sectors: [] }];
   W.cx = mid - 900; W.cy = IC.WH / 2;
@@ -94,7 +89,7 @@ IC.rangeSpawn = function (S, spec, replay) {
   list.forEach((type, i) => {
     const off = (i - list.length / 2) * 12;
     const from = { x: P.x + nx * off, y: P.y + ny * off };
-    R.pending.push({ t: S.time + i * (IC.THR[type].move === 'bal' ? 8 : 4), fn: () => spawnOne(S, type, from, spec) });
+    R.pending.push({ t: S.time + i * (IC.THR[type].move === 'bal' ? 8 : 4), fn: IC.hfn('rangeOne', S, type, from, spec) });
   });
   return list.length;
 };
@@ -183,6 +178,8 @@ IC.rangeClear = function (S) {
   S.range.t0 = S.time;
   resetStats(S);
 };
+IC.H.rangeOne = (S, type, from, spec) => () => spawnOne(S, type, from, spec);
+IC.H.rangeWave = (S, w) => () => IC.rangeSpawn(S, w, true);
 /* play the scenario again from the start: the same units, and each wave at the same moment */
 IC.rangeReset = function (S) {
   const sc = S.range.scen;
@@ -190,7 +187,7 @@ IC.rangeReset = function (S) {
   S.range.target = { x: sc.target.x, y: sc.target.y };
   S.ad.roe = sc.roe || 'free'; S.ad.doctrine = sc.doctrine || 'sls';
   for (const u of sc.units) IC.rangeAddUnit(S, u.type, u.x, u.y, u, true);
-  for (const w of sc.waves) S.range.pending.push({ t: S.time + w.t, fn: () => IC.rangeSpawn(S, w, true) });
+  for (const w of sc.waves) S.range.pending.push({ t: S.time + w.t, fn: IC.hfn('rangeWave', S, w) });
 };
 IC.rangeNew = function (S) { S.range.scen = { units: [], waves: [], target: { x: S.range.target.x, y: S.range.target.y }, roe: S.ad.roe, doctrine: S.ad.doctrine }; IC.rangeClear(S); };
 IC.rangeExport = S => JSON.stringify(Object.assign({}, S.range.scen, { roe: S.ad.roe, doctrine: S.ad.doctrine }));

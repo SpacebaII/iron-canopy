@@ -3,10 +3,31 @@
 'use strict';
 const U = IC.U;
 
-IC.newGame = function (opts) {
+/* a new game is built in stages, like the world (gen.js): IC.newGame builds it at once; IC.newGameAsync lets the page
+   draw between stages and reports each (its name and about how far along it is) for a loading screen */
+IC.newGame = opts => { const g = gameSteps(opts); for (;;) { const r = g.next(); if (r.done) return r.value; } };
+// rough share of the time each stage takes, for the progress bar
+const STAGES = { relief: 0.02, rivers: 0.08, cities: 0.15, roads: 0.2, bridges: 0.36, towns: 0.37, junctions: 0.66, routing: 0.68,
+  airports: 0.7, forces: 0.72, traffic: 0.74, economy: 0.94, done: 1 };
+IC.LOAD_STAGES = STAGES;
+IC.newGameSteps = opts => gameSteps(opts);
+IC.newGameAsync = (opts, progress) => new Promise((ok, fail) => {
+  const g = gameSteps(opts);
+  const on = () => {
+    let r;
+    try { r = g.next(); } catch (e) { fail(e); return; }
+    if (progress) progress(r.done ? 'done' : r.value, r.done ? 1 : STAGES[r.value] || 0);
+    if (r.done) ok(r.value); else setTimeout(on, 0);
+  };
+  on();
+});
+function* gameSteps(opts) {
   const seed = opts.seed >>> 0;
-  const W = IC.W = IC.generate(seed);
+  const W = IC.W = yield* IC.generateSteps(seed);
+  yield 'routing';
   IC.buildRouting(W);
+  if (IC.worldBase) IC.worldBase(W);   // fingerprints of the fresh world, so a save stores only what changed (save.js)
+  yield 'airports';
   const mode = opts.mode || 'campaign';
   const sandbox = mode === 'sandbox';
   // the Career starts with no airports: the player builds the capital's. preset 'network' starts it with the
@@ -15,7 +36,7 @@ IC.newGame = function (opts) {
   const S = {
     mode, seed, world: W, lesson: opts.lesson || null,
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
-    budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
+    budget: sandbox ? 1600 : mode === 'campaign' ? 4800 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
     cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
@@ -29,8 +50,11 @@ IC.newGame = function (opts) {
     nextTN: 1001, shake: 0, wind: { x: U.rand(-1, 1) * 0.6, y: U.rand(0.1, 0.6) },
     sel: null, group: [], mode2: null, hover: null,
     layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false },
-    alertCities: 0
+    alertCities: 0,
+    // the calendar (core.js): the month length is kept with the game, and the month it last turned
+    cal: { dpm: opts.dpm || IC.DAYS_PER_MONTH, m: 0 }
   };
+  S.cal.m = IC.calAt(S, S.time).m;
   if (mode === 'range') return IC.rangeInit(S);
   S.terrain = IC.buildTerrain(W);
   S.clouds = IC.buildClouds();
@@ -60,6 +84,7 @@ IC.newGame = function (opts) {
   const plants = S.infra.filter(i => i.kind === 'power');
   for (const c of IC.cities(S)) { const p = plants.slice().sort((a, b) => U.dist(a, c) - U.dist(b, c))[0]; c.plant = p ? p.id : null; }
 
+  yield 'forces';
   IC.weatherInit(S);
   const story = mode === 'story';
   if (story) IC.storyForces(S); else if (mode !== 'academy') startingForces(S, sandbox);
@@ -67,12 +92,14 @@ IC.newGame = function (opts) {
   if (mode !== 'academy') IC.avInit(S);
   IC.aspInit(S);
   IC.civilInit(S);
+  yield 'traffic';
   IC.trafficInit(S);
+  yield 'economy';
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
   return S;
-};
+}
 
 IC.cap = S => S.infra.find(i => i.capital);
 IC.cities = S => S.infra.filter(i => i.kind === 'city');
@@ -93,15 +120,15 @@ function startingForces(S, sandbox) {
   const inward = (p, d) => ({ x: p.x + p.nx * d, y: p.y + p.ny * d });
   const put = (type, near, dmin, dmax, o) => {
     const p = IC.findSpot(S, type, near.x, near.y, dmin, dmax); if (!p) return null;
-    const u = IC.makeUnit(S, type, p.x, p.y, Object.assign({ instant: true, full: sandbox }, o || {}));
+    const u = IC.makeUnit(S, type, p.x, p.y, Object.assign({ instant: true, full: true }, o || {}));
     if ((type === 'mrsam' || type === 'lrsam') && !sandbox) u.emcon = 'ambush';
     return u;
   };
   const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
   dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
-  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12 };
+  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24 } : { IR: 30, SR: 48, MR: 24, LR: 12, RKT: 24 };
   for (const k in stock) dep.inv[k] = stock[k];
-  for (let i = 0; i < 4; i++) IC.addTruck(S, dep);
+  for (let i = 0; i < (sandbox ? 4 : 6); i++) IC.addTruck(S, dep);
   const fab = S.byId.ab_fwd || cap;
   put('lr3d', cap, 180, 420);
   put('vhf', { x: (cap.x + mid(fA).x) / 2, y: (cap.y + mid(fA).y) / 2 }, 0, 400);
@@ -112,11 +139,22 @@ function startingForces(S, sandbox) {
   put('shorad', cap, 220, 420);
   put('spaag', S.infra.find(i => i.kind === 'factory') || cap, 50, 140);
   put('spaag', dep, 40, 110);
+  // a country that expected this war: the capital, the main air base and the two largest cities each have a layer,
+  // with radars to see the northern border
+  if (!sandbox) {
+    const big = IC.cities(S).filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 2);
+    put('lrsam', cap, 150, 400); put('mrsam', fab, 120, 300); put('shorad', fab, 60, 200); put('spaag', fab, 40, 120);
+    for (const c of big) { put('mrsam', c, 100, 300); put('shorad', c, 80, 250); }
+    if (fA) { put('mr3d', inward(mid(fA), 1100), 0, 350); put('mr3d', inward(fA.pts[Math.floor(fA.pts.length * 0.25)], 900), 0, 350); put('gnss', inward(mid(fA), 1000), 0, 350); }
+    const fwd = fA && IC.makeUnit(S, 'depot', ...Object.values(IC.findSpot(S, 'depot', inward(mid(fA), 1800).x, inward(mid(fA), 1800).y, 0, 500) || inward(mid(fA), 1800)), { instant: true });
+    if (fwd) { fwd.name = 'Forward Depot'; for (const k of ['SR', 'MR', 'IR']) fwd.inv[k] = Math.round(stock[k] / 2); for (let i = 0; i < 3; i++) IC.addTruck(S, fwd); }
+    for (const id of ['a_remote', 'a_cram', 'a_pac3', 'e_decoy', 'e_eccm', 's_esm', 's_cbr', 's_nctr', 'c_teams', 'c_stay', 'l_trucks', 'l_rrr', 'f_aam', 'f_cm']) S.tech.done.add(id);
+  }
   if (sandbox) {
     put('lrsam', fab, 200, 450); put('mr3d', inward(mid(fA), 1100), 0, 350); put('gnss', inward(mid(fA), 1000), 0, 350);
     put('mlrs', inward(mid(fA), 700), 0, 300);
   }
-  S.reserve = sandbox ? { gf: 1, shorad: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 1, gf: 1, shorad: 2, spaag: 1, gnss: 1, mlrs: 1, lrsam: 1, depot: 1 };
+  S.reserve = sandbox ? { gf: 1, shorad: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 2, gf: 1, shorad: 4, spaag: 2, gnss: 1, mlrs: 1, lrsam: 2, mrsam: 2, cram: 1, depot: 1 };
 }
 
 IC.hasTech = (S, id) => !id || S.tech.done.has(id);

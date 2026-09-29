@@ -27,7 +27,7 @@ function quick(seed, days) {
     if (!raid && S.enemy.war) { raid = true; console.log('\n--- the first strike ---'); line(((S.time - t0) / 3600).toFixed(1)); }
     if (marks.length && S.time - t0 >= marks[0] * 3600) line(marks.shift());
   }
-  const st = IC.weekStatement(S, 0);
+  const st = IC.monthStatement(S, 0);
   console.log(`\n${S.over ? 'game over: ' + S.over : 'still going'} · statement so far: ${st.lines.map(l => `${l.name} ${l.v >= 0 ? '+' : ''}${l.v.toFixed(0)}`).join(', ')}`);
 }
 const seed = +process.argv[2] || 777, days = +process.argv[3] || 3;

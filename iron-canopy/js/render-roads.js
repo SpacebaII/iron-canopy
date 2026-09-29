@@ -36,7 +36,8 @@ IC.streetLights = function (g, S, v, light, pf) {
     if (c.x + c.r * 1.6 < view.x0 || c.x - c.r * 1.6 > view.x1 || c.y + c.r * 1.6 < view.y0 || c.y - c.r * 1.6 > view.y1) continue;
     const plant = c.plant && S.byId[c.plant]; if (plant && plant.offline) continue;
     for (const l of c.streets) if (l.cls !== 'st' || cam.z > 24) along(l, IC.ROAD_W[l.cls] * 0.55, sp);   // side streets only close in
-    for (const e of W.edges) if ((e.a === c.id || e.b === c.id) && e.cls !== 'sp') along({ pts: e.pts.filter(p => U.dist(p, c) < c.r * 1.3), bb: e.bb }, IC.ROAD_W[e.cls] * 0.55, sp);
+    // the national roads through town are its avenues; the bypass is lit round it
+    for (const e of W.edges) if (e.city === c.id || e.bypass === c.id) along(e, IC.ROAD_W[e.city ? 'art' : e.cls] * 0.55, sp);
   }
   for (const r of W.ramps || []) along(r, 0.07, sp);
   if (!P.length) return;
@@ -66,8 +67,9 @@ IC.drawRoads = function (g, S, px, v) {
   ctx = g; view = v;
   const W = S.world, z = cam.z, t = U.clamp((z - 3) / 6, 0, 1), m = 5;
   const vis = l => (l.bb || bbox(l)) && l.bb[2] > view.x0 - m && l.bb[0] < view.x1 + m && l.bb[3] > view.y0 - m && l.bb[1] < view.y1 + m;
-  const groups = { sp: [], lc: [], rd: [], ramp: [], hw: [] };
-  for (const e of W.edges) if (vis(e)) groups[e.cls].push(e);
+  const groups = { sp: [], lc: [], rd: [], art: [], ring: [], ramp: [], hw: [] };
+  // a national road inside a city is drawn as the avenue it has become
+  for (const e of W.edges) if (vis(e)) groups[e.city ? e.ccls || 'art' : e.cls].push(e);
   for (const r of W.ramps || []) if (vis(r)) groups.ramp.push(r);
   // only the stretches in view go into the path
   const path = list => {
@@ -86,7 +88,7 @@ IC.drawRoads = function (g, S, px, v) {
   const fill = k => { const c = ROAD[k][2]; return `rgb(${c[0] + (ASPHALT[0] - c[0]) * t | 0},${c[1] + (ASPHALT[1] - c[1]) * t | 0},${c[2] + (ASPHALT[2] - c[2]) * t | 0})`; };
   const stroke = (k, w, col, dash) => { if (!groups[k].length) return; path(groups[k]); ctx.strokeStyle = col; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash); ctx.stroke(); if (dash) ctx.setLineDash([]); };
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const order = ['sp', 'lc', 'rd', 'ramp', 'hw'];
+  const order = ['sp', 'lc', 'art', 'rd', 'ring', 'ramp', 'hw'];
   // verges: mown grass either side, then a dark edge far out or the kerb close in
   if (z > 2.5) for (const k of order) stroke(k, width(k) + (k === 'hw' ? 0.6 : 0.24), `rgba(132,150,98,${0.6 * t + 0.25})`);
   for (const k of order) stroke(k, width(k) * (1.45 - t * 0.35) + px * 0.8, 'rgba(22,20,16,0.55)');

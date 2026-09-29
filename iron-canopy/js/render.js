@@ -416,7 +416,7 @@ function drawInfra(S, px, now) {
       }
       if (i.parts) {
         const st = IC.baseStatus(S, i);
-        if (!st.runway && !i.locked && i.parts.some(p => p.kind === 'runway')) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
+        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
         else if (cam.z <= 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
         const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === i.id).length;
         if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z > 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
@@ -480,6 +480,11 @@ function drawWeather(S, wx, now, light) {
   if (wx.precip > 0.05) {
     if (!drops) { drops = []; for (let i = 0; i < 260; i++) drops.push({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }); }
     const n = Math.round(260 * wx.precip), vx = S.wind.x * 0.3, len = 14;
+    // snow drifts down slowly as flakes; rain falls in streaks
+    if (wx.snow) {
+      ctx.fillStyle = `rgba(235,242,250,${0.35 + 0.2 * light})`;
+      for (let i = 0; i < n; i++) { const d = drops[i], y = (d.y + now * 0.12 * d.s) % 1, x = (d.x + now * vx * 0.05 + Math.sin(now + i) * 0.004 + 1) % 1; ctx.fillRect(x * cam.vw, y * cam.vh, 2 * d.s, 2 * d.s); }
+    } else {
     ctx.strokeStyle = `rgba(190,210,230,${0.18 + 0.12 * light})`; ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
@@ -488,6 +493,7 @@ function drawWeather(S, wx, now, light) {
       ctx.moveTo(X, Y); ctx.lineTo(X - vx * len, Y + len * d.s);
     }
     ctx.stroke();
+    }
   }
   if (wx.precip > 0.9 && !S.paused) {
     if (flashT <= 0 && Math.random() < 0.004) { flashT = 0.25; IC.sfx && IC.sfx.thunder && IC.sfx.thunder(); }
