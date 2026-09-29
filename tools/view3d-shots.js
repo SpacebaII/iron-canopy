@@ -330,24 +330,23 @@ const SCENES = {
   // (the service time-lapsed), the bridge back, the tug, the pushback
   'clip-turnaround': `
     const S = await game('sandbox', 11);
-    const m = steps(S, 4 * 3600, S => findMove(S, m => m.phase === 'final' && m.alt < 0.2 && m.stand && m.stand.contact && (m.type === 'narrow' || m.type === 'wide')));
-    if (!m) throw new Error('no jet on final to a gate');
+    const m = steps(S, 4 * 3600, S => findMove(S, m => m.phase === 'rollout' && m.stand && m.stand.contact && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('no jet landing for a gate');
     const st = m.stand, tl = m.tail; console.log('arrival', m.who, m.type, 'to', st.id);
-    const L = await live(S, m, 'side', 600); L.camK = 0.7;
-    const C = clipStart(L), N = +(window.N || 4200); let ph = 'arr', f0 = 0, dep = null, q = null, yaw = st.a + 2.4;
+    const L = await live(S, m, 'chase', 600); L.camK = 1.5;
+    const C = clipStart(L), N = +(window.N || 3300); let ph = 'taxi', f0 = 0, dep = null, q = null, yaw = st.a + 2.4;
     for (let f = 0; f < N; f++) {
-      let speed = 1.5;
-      if (ph === 'arr' && m.phase !== 'final' && m.phase !== 'land') { ph = 'taxi'; camTo(L, 'chase'); L.camK = 1.6; }
-      if (ph === 'taxi') speed = 5;
+      let speed = 8;
       if (ph === 'taxi' && tl.where === 'stand') { ph = 'turn'; f0 = f; L.focusRef = { x: st.x, y: st.y, name: 'gate' }; camTo(L, 'orbit'); L.follow = null; q = S.rec.turns.find(x => x.tail === tl.id && x.t1 == null); }
       if (ph === 'turn') {
+        // the bridge out at the pace it moves, the service time-lapsed, the bridge back and the tug slower again
         const tt = q ? S.time - q.t0 : 0, left = q ? q.t0 + q.dur - S.time : 0;
-        speed = tt < 150 ? 6 : left > 700 ? 70 : 12;
-        yaw += speed > 20 ? 0.004 : 0.0015; orbitAt(L, st.x, st.y, yaw, 0.3, 0.95);
-        dep = findMove(S, x => x.tail === tl && (x.phase === 'push' || x.phase === 'start'));
-        if (dep && dep.phase === 'push') { ph = 'push'; f0 = f; IC.liveOpen(S, dep); L.follow = null; camTo(L, 'orbit'); }
+        speed = tt < 130 ? 7 : left > 330 ? 120 : left > -30 ? 16 : 45;
+        yaw += speed > 40 ? 0.0035 : 0.0012; orbitAt(L, st.x, st.y, yaw, 0.3, 0.95);
+        dep = findMove(S, x => x.tail === tl && x.phase === 'push');
+        if (dep) { ph = 'push'; f0 = f; IC.liveOpen(S, dep); L.follow = null; camTo(L, 'orbit'); }
       }
-      if (ph === 'push') { speed = 3; if (L.follow) { L.orbit.yaw += 0.002; L.orbit.pitch = 0.3; L.orbit.dist = 1.0; } if (f - f0 > 900) break; }
+      if (ph === 'push') { speed = 3; if (L.follow) { L.orbit.yaw += 0.002; L.orbit.pitch = 0.3; L.orbit.dist = 1.0; } if (f - f0 > 480) break; }
       await clipFrame(C, S, speed);
     }
     await __snap('clip-turnaround-last');`,
