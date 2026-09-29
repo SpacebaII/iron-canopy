@@ -239,6 +239,8 @@ function groundMaterial(o) {
     sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxDetail;\n' + NOISE + GRASS + sh.fragmentShader;
     grassIBL(sh);
     sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', 'float fxGrass = 0.0;', `{
+      // the map's own marks (white airport and town glyphs far out) are not brighter than concrete
+      diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.45));
       vec3 c = diffuseColor.rgb;
       float d = length(vFxW - cameraPosition);
       vec2 q = mod(vFxW.xz, 400.0);
@@ -266,14 +268,16 @@ function groundMaterial(o) {
 function paveMaterial(o) {
   const m = std(Object.assign({ roughness: 0.82, metalness: 0 }, o));
   m.userData.fxPave = true;
-  m.userData.lm = { value: null }; m.userData.lmBox = { value: new THREE.Vector4(0, 0, 1, 0) };
+  m.userData.lm = { value: null }; m.userData.lmBox = { value: new THREE.Vector4(0, 0, 1, 0) }; m.userData.pad = { value: 0 };
   return patch(m, 'fx-pave', sh => {
     useG(sh, 'snow', 'wet', 'night', 'detail', 'apt'); WPOS_V(sh);
-    sh.uniforms.fxLm = m.userData.lm; sh.uniforms.fxLmBox = m.userData.lmBox;
-    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxNight; uniform float fxDetail; uniform sampler2D fxLm; uniform vec4 fxLmBox;\n' + NOISE + GRASS + sh.fragmentShader;
+    sh.uniforms.fxLm = m.userData.lm; sh.uniforms.fxLmBox = m.userData.lmBox; sh.uniforms.fxPad = m.userData.pad;
+    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxNight; uniform float fxDetail; uniform sampler2D fxLm; uniform vec4 fxLmBox; uniform float fxPad;\n' + NOISE + GRASS + sh.fragmentShader;
     grassIBL(sh);
     sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', 'float fxGrass = 0.0;', `
       fxGrass = fxGrassOf(diffuseColor.rgb);
+      // the airport's picture is a square: its grass gives way to the country's in a ragged ring, not a straight edge
+      if (fxPad > 0.0 && fxGrass > 0.3) { vec2 pu = (vFxW.xz - fxLmBox.xy) / fxLmBox.z - 0.5; if (length(pu) * 2.0 > 0.72 + 0.22 * fxFbm3(vFxW.xz * 0.35)) discard; }
       if (fxGrass > 0.0) diffuseColor.rgb = fxGrade(diffuseColor.rgb, fxGrass) * (1.0 + fxGrass * fxStripe(vFxW.xz) * (1.0 - smoothstep(10.0, 60.0, length(vFxW - cameraPosition))));
       vec2 fxQ = mod(vFxW.xz, 400.0);
       float fxD = length(vFxW - cameraPosition);
@@ -827,7 +831,7 @@ function airport(v, b, grp, f) {
   }
   const lm = R.texSRGB(new THREE.CanvasTexture(cv));
   grp.traverse(o => { const m = o.material; if (m && m.userData && m.userData.fxPave) { m.userData.lm.value = lm; m.userData.lmBox.value.set(b.x - Rr - v.cx, b.y - Rr - v.cy, 2 * Rr, 1); } });
-  if (pad) pad.userData.lm = lm;   // dropped with the airport (its material's map is disposed; this one too)
+  if (pad) { pad.userData.lm = lm; pad.material.userData.pad.value = 1; }   // dropped with the airport (its material's map is disposed; this one too)
   const A = { b, f, pad: pad && pad.material.map, box: [b.x - Rr - v.cx, b.y - Rr - v.cy, 2 * Rr], ang: 0, lm };
   let best = 0; for (const p of b.parts) if (p.kind === 'runway' && p.built && IC.rwLen(p) > best) { best = IC.rwLen(p); const d = IC.rwDir(p); A.ang = Math.atan2(d.y, d.x); }
   // the lights, mirrored in wet pavement: a streak below each
@@ -1035,8 +1039,10 @@ function frame(v, t, dtR) {
   // the weather as the picture needs it
   const W = weatherNow(S, F.look.weather), fog = W.vis < 1.5 ? 1 - sstep(0.2, 1.5, W.vis) : 0;
   F.W = W;
-  F.wet = U.clamp(F.wet + (W.rain > 0.3 ? 1 : W.snow > 0.3 ? 0.4 : -0.3) * Math.min(dtR, 0.1) * 0.05 * 20, 0, 1);
-  if (F.frame < 3) F.wet = W.rain > 0.3 ? 1 : 0;
+  // wet after rain (snow only damps the pavement: slush, no puddles)
+  const wetTo = W.rain > 0.3 ? 1 : W.snow > 0.3 ? 0.3 : 0;
+  F.wet += U.clamp(wetTo - F.wet, -dtR * 0.05, dtR * 0.2);
+  if (F.frame < 3) F.wet = wetTo;
   F.snow = W.snow > 0.3 || (IC.seasonOf && IC.seasonOf(S).snow > 1 && W.cover > 0.8) ? Math.max(W.snow, 0.8) : 0;
   G.wet.value = F.wet; G.snow.value = F.snow;
   const K = skyParams(W.cover, fog);
@@ -1044,7 +1050,7 @@ function frame(v, t, dtR) {
   F.skyU.cover.value = W.cover * 0.95; F.stars.material.uniforms.cover.value = W.cover;
   // the sunlight (or moonlight) and its colour, the sky's light, the haze
   const sc = sunColour(sd.y, K, C1), day = sstep(-4, 6, el), overcast = sstep(0.5, 1, W.cover);
-  const sunI = day * (1 - overcast * 0.82) * (1 - fog * 0.75) * 4.2, moonI = night * sstep(-5, 10, Math.asin(U.clamp(md.y, -1, 1)) * 57.3) * (1 - W.cover * 0.8) * 0.35;
+  const sunI = day * (1 - overcast * 0.94) * (1 - fog * 0.75) * 4.2, moonI = night * sstep(-5, 10, Math.asin(U.clamp(md.y, -1, 1)) * 57.3) * (1 - W.cover * 0.8) * 0.35;
   const moonUp = moonI > sunI * 0.1 && sunI < 0.05;
   const L = v.sun, ld = moonUp ? md : sd;
   G.sunCol.value.setRGB(sc.r * sunI, sc.g * sunI, sc.b * sunI);

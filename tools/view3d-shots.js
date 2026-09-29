@@ -326,6 +326,36 @@ const SCENES = {
     IC.fx3d.debug.fog = 0; await film(L, S, 'dbg-b', 10, 1, f => f === 9 ? 'still' : null);
     IC.fx3d.debug.env = 0; await film(L, S, 'dbg-c', 10, 1, f => f === 9 ? 'still' : null);
     IC.fx3d.debug.fog = 1; IC.fx3d.debug.env = 1; IC.fx3d.debug.post = 0; await film(L, S, 'dbg-d', 10, 1, f => f === 9 ? 'still' : null);`,
+  // what the bright spots are: the snow frame, then with every point sprite hidden, then every glowing material hidden
+  'm-spots': `
+    const S = await game('sandbox', 10.5); wx(S, 'snow');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    const L = await live(S, m, 'side', 800); L.camK = 1.5;
+    await film(L, S, 'spots-a', 20, 1, f => f === 19 ? 'still' : null);
+    const hide = fn => L.scene.traverse(o => { if (fn(o)) o.visible = false; });
+    // the brightest pixel near the horizon, then each object hidden in turn until it goes dark
+    let spot = null, res = [];
+    film.after = () => { const c = grab(L, 320, 180), d = c.getContext('2d').getImageData(0, 0, 320, 180).data; let best = 0; for (let y = 40; y < 120; y++) for (let x = 0; x < 320; x++) { const i = (y * 320 + x) * 4, l = d[i] + d[i + 1] + d[i + 2]; if (l > best) { best = l; spot = [x, y, l]; } } };
+    await film(L, S, 'spots-x', 2, 1);
+    const lum = () => { const c = grab(L, 320, 180), d = c.getContext('2d').getImageData(spot[0], spot[1], 1, 1).data; return d[0] + d[1] + d[2]; };
+    let now = performance.now() + 1e6;
+    const tryIt = (name, on, off) => { on(); IC.replayStep(L, now += 33); IC.replayStep(L, now += 33); const l = lum(); off(); IC.replayStep(L, now += 33); console.log('spot test', name, l); };
+    tryIt('no fog', () => { IC.fx3d.debug.fog = 0; }, () => { IC.fx3d.debug.fog = 1; });
+    tryIt('overcast look', () => IC.fx3d.look(L, { weather: 'overcast' }), () => IC.fx3d.look(L, { weather: null }));
+    tryIt('no env', () => { IC.fx3d.debug.env = 0; }, () => { IC.fx3d.debug.env = 1; });
+    tryIt('no post', () => { IC.fx3d.debug.post = 0; }, () => { IC.fx3d.debug.post = 1; });
+    tryIt('no shadows', () => { L.renderer.shadowMap.enabled = false; }, () => { L.renderer.shadowMap.enabled = true; });
+    const objs = window.CULPRITS ? [] : []; L.scene.traverse(o => { if (window.CULPRITS && (o.isMesh || o.isPoints || o.isLine)) objs.push(o); });
+    for (const o of objs) { if (!o.visible) continue; o.visible = false; IC.replayStep(L, now += 33); const l = lum(); o.visible = true; if (l < spot[2] - 120) res.push([o.type, o.material && o.material.type, o.renderOrder, o.parent && o.parent.type, o.material && o.material.userData && Object.keys(o.material.userData).join('|'), l]); }
+    console.log('spot', JSON.stringify(spot), 'culprits', JSON.stringify(res.slice(0, 10)), objs.length);
+    film.after = () => hide(o => o.material && o.material.type === 'MeshBasicMaterial');
+    await film(L, S, 'spots-b', 3, 1, f => f === 2 ? 'still' : null);
+    film.after = () => hide(o => o.isInstancedMesh);
+    await film(L, S, 'spots-c', 3, 1, f => f === 2 ? 'still' : null);
+    film.after = () => hide(o => o.material && o.material.userData && o.material.userData.fxWin || o.material === IC.R3D.solidMat());
+    await film(L, S, 'spots-d', 3, 1, f => f === 2 ? 'still' : null);
+    const list = []; L.scene.traverse(o => { if (o.isPoints && o.visible !== undefined) list.push((o.material && o.material.type) + ':' + (o.material && o.material.userData && o.material.userData.glow) + ':' + (o.parent && o.parent.type) + ':' + (o.geometry && o.geometry.drawRange.count)); });
+    console.log('points', list.length, JSON.stringify(list.slice(0, 40)));`,
   // for tuning the look: HOUR, WX, CAM, K (camera distance), WHAT (taxi, roll, final, gate) from the environment
   'm-probe': `
     const S = await game('sandbox', +(window.HOUR || 11)); wx(S, window.WX || 'scattered');
