@@ -90,7 +90,7 @@ const cfgOf = (S, ap) => IC.aptConfig(S, ap);
    departure goes onto the runway; how far out the next arrival must be; crossings; intersection departures. */
 IC.OPS_KINDS = [['light', 'Light and club aircraft'], ['turbo', 'Turboprops and regional jets'], ['jet', 'Airliners'], ['heavy', 'Heavies'], ['mil', 'Military']];
 const KIND_OF = { light: 'light', turbo: 'turbo', narrow: 'jet', wide: 'heavy', cargo: 'heavy' };
-IC.opsKind = (type, T) => (T || IC.ACTYPES[type]).mil ? 'mil' : KIND_OF[type] || 'jet';
+IC.opsKind = (type, T) => { T = T || IC.ACTYPES[type]; return T.mil ? 'mil' : KIND_OF[type] || T.ops || (T.ga ? 'light' : 'jet'); };
 IC.OPS_ENTER = {
   hold: { name: 'Only when cleared for take-off', text: 'The aircraft waits at the hold-short line until the runway is empty and the next arrival is beyond the gap, then goes straight into its take-off. Safest; a queue of departures moves about 25 s slower each.' },
   luaw: { name: 'Line up and wait', text: 'The aircraft goes onto the runway behind a departure that is still rolling, lines up and waits there to be cleared for take-off. It saves the line-up time; in the dark, an aircraft waiting on the runway is easy for the tower to lose.' },

@@ -44,11 +44,13 @@ IC.avInit = function (S) {
   add(regional, second, { apt: third.id }, 'turbo', 2);
   add(regional, cap, { apt: third.id }, 'turbo', 2);
   add(cargo, cap, portsAll[0], 'cargo', 1);
-  for (const f of foreign) { const p = port(f.country)[0]; if (p) add(f, cap, p, U.pick(['narrow', 'narrow', 'wide']), 2); }
+  for (const f of foreign) { const p = port(f.country)[0], fl = IC.avFleetOf(f); if (p) add(f, cap, p, U.pick(['narrow', 'narrow', fl.find(k => IC.ACTYPES[k].seats > 300) || 'narrow']), 2); }
   // aircraft are spread over their routes when the game starts
   for (const t of A.tails) seedTail(S, t);
 };
 
+/* the aircraft an airline flies: one of its kind's fleets, the same for as long as it exists (by its name) */
+IC.avFleetOf = al => { const F = al.K.fleets || [al.K.fleet]; let h = 0; for (const c of al.name) h = (h * 31 + c.charCodeAt(0)) | 0; return F[Math.abs(h) % F.length]; };
 /* the foreign airports our airlines fly to */
 IC.avPorts = S => S.world.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).filter((p, i, L) => L.findIndex(q => q.name === p.name) === i);
 /* a new airline based at hub: flag carrier, budget, regional, cargo or a neighbour's ('foreign', with country) */
@@ -436,7 +438,8 @@ function makeRequest(S) {
   const apts = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
   const W = S.world;
   const ports = W.airways.filter(w => w.kind === 'intl').map(w => w.b.k === 'H' ? w.a : w.b).filter((p, i, L) => L.findIndex(q => q.name === p.name) === i);
-  let type = U.pick(al.K.fleet);
+  const fleet = IC.avFleetOf(al);
+  let type = U.pick(fleet);
   // airlines go where passengers are waiting for seats
   const busy = L => U.wpick(L.map(x => [x, 0.3 + Math.min(3, IC.demandPull(S, x))])) || U.pick(L);
   let a = S.byId[al.hub], b;
@@ -452,7 +455,8 @@ function makeRequest(S) {
   else if ([a].concat(b.apt ? [S.byId[b.apt]] : []).some(x => x.svc && x.svc.seats > 0 && IC.demandPull(S, x) < 0.55)) return;
   const existing = A.routes.find(r => r.al === al.id && r.a === a.id && JSON.stringify(r.b) === JSON.stringify(b.apt ? { apt: b.apt } : b));
   // long routes go to bigger aircraft where the airline has them
-  if (type === 'narrow' && U.dist(a, endPt(S, b)) > 25000 && al.K.fleet.includes('wide')) type = 'wide';
+  const big = fleet.find(k => IC.ACTYPES[k].seats > 300);
+  if (type === 'narrow' && U.dist(a, endPt(S, b)) > 25000 && big) type = big;
   // a route another airline holds exclusively is not on offer
   const bK = JSON.stringify(b.apt ? { apt: b.apt } : { name: b.name });
   if (A.deals.some(d => d.st === 'active' && d.excl && d.al !== al.id && d.a === a.id && JSON.stringify(d.b.apt ? { apt: d.b.apt } : { name: d.b.name }) === bK)) return;
