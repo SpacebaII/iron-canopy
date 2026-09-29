@@ -1104,6 +1104,48 @@ test('shapes: a Y-shaped pier built from three concourses has every stand at a g
   assert(IC.gopsCanDepart(S, ap, 'narrow', v.id), 'no way out from the stand inside the V');
 });
 
+test('shapes: a people mover shortens the connection to a far concourse, and removing it lengthens it again', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  const apr = rotundaAt(S, ap, 0, -6, 0.8);
+  finishWorks(S, ap);
+  const conn = () => { IC.aptStats(S, ap); return apr.stands.reduce((a, s) => a + s.conn, 0) / apr.stands.length; };
+  const bus = conn();
+  assert(ap.st.links.some(l => l.how === 'bus') && ap.st.warn.some(w => /has no link to the main terminal: passengers ride the bus/.test(w)), `links ${JSON.stringify(ap.st.links)}; ${ap.st.warn.join(' ')}`);
+  // a mover from the main terminal to the rotunda
+  S.mode2 = IC.bldMode(S, ap, 'mover');
+  for (const q of [P(1, 4.5), P(0, -6.3), P(0, -6.3)]) IC.clickWorld(q, 0);
+  const mv = ap.parts.find(p => p.kind === 'mover');
+  assert(mv, `no people mover planned: ${S.mode2.err}`);
+  finishWorks(S, ap);
+  const ride = conn();
+  assert(ride < bus - 3 && ap.st.links.some(l => l.how === 'mover'), `with the mover ${ride.toFixed(1)} min, by bus ${bus.toFixed(1)} min`);
+  // and the turnaround at those gates is shorter
+  IC.aptRemove(S, ap, mv.id);
+  const again = conn();
+  assert(Math.abs(again - bus) < 1e-6, `without the mover again ${again.toFixed(1)} min, first ${bus.toFixed(1)} min`);
+  // a mover must end on buildings
+  S.mode2 = IC.bldMode(S, ap, 'mover'); IC.clickWorld(P(1, 4.5), 0);
+  assert(!IC.bldPlanOf(S, S.mode2, P(10, -12), 0.4).ok, 'a mover into a field was allowed');
+});
+test('shapes: a taxiway under an airside bridge refuses aircraft too tall for it', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  // two buildings either side of a taxiway down to an apron, and a bridge 15 m up between them
+  for (const x of [5, 7]) IC.aptPlanPart(S, ap, 'terminal', P(x, -5).x, P(x, -5).y, ap.rwyA, 1, 0.6);
+  S.mode2 = IC.bldMode(S, ap, 'taxi'); for (const q of [P(6, 0), P(6, -8.3), P(6, -8.3)]) IC.clickWorld(q, 0);
+  IC.aptPlanPart(S, ap, 'apron', P(6, -9).x, P(6, -9).y, ap.rwyA, 3, 1.4);
+  S.mode2 = Object.assign(IC.bldMode(S, ap, 'skybridge'), { clear: 15 });
+  for (const q of [P(5.4, -5), P(6.6, -5)]) IC.clickWorld(q, 0);
+  assert(/B77, F74 cannot/.test(IC.bldPlanOf(S, S.mode2, P(6.6, -5), 0.4).text.join(' ')), 'the plan does not say which aircraft cannot pass');
+  assert(IC.clickWorld(P(6.6, -5), 0) === 'built', S.mode2.err);
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  const s = ap.parts.filter(p => p.kind === 'apron').pop().stands[0];
+  assert(s && s.size === 'l' && s.linked, 'no large stand beyond the bridge');
+  assert(IC.gopsCanDepart(S, ap, 'narrow', s.id) && !IC.gopsCanDepart(S, ap, 'wide', s.id), 'a wide-body passed under a 15 m bridge, or a narrow-body could not');
+  assert(ap.st.warn.some(w => /clears 15 m: B77, F74 cannot taxi under it/.test(w)), ap.st.warn.join(' '));
+});
+
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
   const { buildKden, finishAll } = require('../kdenbuild.js');
   const { S, ap, actions } = buildKden(12345, true);

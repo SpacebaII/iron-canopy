@@ -261,12 +261,15 @@ IC.aptLinks = function (S, ap, st) {
   const G = [...groups.values()].map(ts => { const a = ts.reduce((s, t) => s + IC.partArea(t), 0); return { ts, a, x: ts.reduce((s, t) => s + t.x * IC.partArea(t), 0) / a, y: ts.reduce((s, t) => s + t.y * IC.partArea(t), 0) / a }; });
   st.links = [];
   if (!G.length) return;
-  const town = ap.cityRef || (S && IC.cities ? IC.cities(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0] : null);
-  const main = town ? G.slice().sort((a, b) => Math.min(...a.ts.map(t => partDist(ap, t, town))) - Math.min(...b.ts.map(t => partDist(ap, t, town))))[0] : G.slice().sort((a, b) => b.a - a.a)[0];
+  // the main terminal has the kerb (landside.js); before there is one, the first building put up
+  const kerb = ap.land && ap.land.items && ap.land.items.find(it => it.by && T.some(t => t.id === it.by));
+  const main = G.find(g => g.ts.some(t => t.id === (kerb ? kerb.by : T[0].id)));
   const groupAt = q => G.find(g => g.ts.some(t => partDist(ap, t, q) < 0.3));
-  // rides by people mover from the main terminal, the quickest way (Dijkstra over the few buildings)
-  const movers = ap.parts.filter(p => p.kind === 'mover' && p.built && p.hp > p.max * 0.25);
-  for (const g of G) { g.t = g === main ? 0 : Infinity; g.at = { x: g.x, y: g.y }; g.how = g === main ? 'walk' : 'bus'; }
+  // rides by people mover and walks over airside bridges from the main terminal, the quickest way (Dijkstra over the
+  // few buildings)
+  const movers = ap.parts.filter(p => (p.kind === 'mover' || p.kind === 'skybridge') && p.built && p.hp > p.max * 0.25);
+  // by bus from the kerb to start with; a ride or a walk that is quicker wins
+  for (const g of G) { g.t = g === main ? 0 : IC.BUS.wait + U.dist(g, main) * 1.4 * 100 / IC.BUS.ms; g.at = { x: g.x, y: g.y }; g.how = g === main ? 'walk' : 'bus'; }
   const open = new Set(G);
   while (open.size) {
     let u = null; for (const g of open) if (!u || g.t < u.t) u = g;
@@ -274,14 +277,12 @@ IC.aptLinks = function (S, ap, st) {
     for (const mv of movers) {
       const e = [toWorld(mv, -mv.w / 2, 0), toWorld(mv, mv.w / 2, 0)], ga = groupAt(e[0]), gb = groupAt(e[1]);
       for (const [A, B, eb] of [[ga, gb, e[1]], [gb, ga, e[0]]]) {
-        if (A !== u || !B || !open.has(B)) continue;
-        const t = u.t + 90 + mv.w * 100 / (IC.APART.mover.speed / 3.6);
-        if (t < B.t) { B.t = t; B.how = 'mover'; B.at = eb; }
+        if (A !== u || !B || !open.has(B) || u.t === Infinity) continue;
+        const t = u.t + (mv.kind === 'mover' ? 90 + mv.w * 100 / (IC.APART.mover.speed / 3.6) : mv.w * 100 / IC.WALK_MS);
+        if (t < B.t) { B.t = t; B.how = mv.kind === 'mover' ? 'mover' : 'bridge'; B.at = eb; }
       }
     }
   }
-  // the rest by bus from the kerb
-  for (const g of G) if (g.t === Infinity) g.t = IC.BUS.wait + U.dist(g, main) * 1.4 * 100 / IC.BUS.ms;
   // names: the main terminal, then concourses A, B, C… outward
   const others = G.filter(g => g !== main).sort((a, b) => U.dist(a, main) - U.dist(b, main));
   main.name = 'the main terminal'; others.forEach((g, i) => { g.name = `Concourse ${String.fromCharCode(65 + i % 26)}`; });
@@ -292,7 +293,7 @@ IC.aptLinks = function (S, ap, st) {
     s.conn = g ? (g.t + U.dist(g.at, s) * 100 / IC.WALK_MS) / 60 : (IC.BUS.wait + U.dist(main, s) * 1.3 * 100 / IC.BUS.ms) / 60;
     s.bldg = g ? g.name : null;
   }
-  const mv = movers.length > 0;
+  const mv = movers.some(p => p.kind === 'mover');
   for (const g of others) if (g.how === 'bus' && g.t > 480) st.warn.push(mv ? `The people mover does not reach ${g.name}: passengers ride the bus there (${Math.round(g.t / 60)} min from the kerb).` : `${g.name} has no link to the main terminal: passengers ride the bus there (${Math.round(g.t / 60)} min). A people mover would be quicker.`);
   // bridges too low for the aircraft that use the airport
   for (const b of ap.parts.filter(p => p.kind === 'skybridge' && p.built)) {

@@ -525,6 +525,8 @@ function concourseSpec(ap, a, b, size, S) {
     specs.push(...sp);
     n += Math.floor((L - x0) / IC.STAND[size].w);
   }
+  // a branch's taxilanes are joined round its tip, so the side facing another branch is reached from outside
+  if (from) { const ly = tw / 2 + D + 0.05; specs.push({ kind: 'taxi', pts: [IC.rectWorld(r, L / 2 + 0.6, -ly), IC.rectWorld(r, L / 2 + 0.6, 0), IC.rectWorld(r, L / 2 + 0.6, ly)], lane: true }); }
   return { specs, text: [`${from ? 'Branch from the pier' : 'Concourse'} ${U.km(L)} · ${n} ${IC.STAND[size].name} gates with jet bridges · ${Math.round(IC.APART.terminal.pax * L * tw).toLocaleString('en-US')} passengers an hour`], gates: n };
 }
 /* a round terminal, the ring of stands round it, and a taxilane round them (closed into a loop when planned) */
@@ -666,7 +668,7 @@ function guideSnap(ap, p, tol) {
 /* the directions a line from the last point keeps to: the part it starts on, its own last leg, the runways */
 /* the point a new point is drawn from: the last one, or for a tool of two points that has both (a runway, a pier)
    the first, since the cursor moves the second */
-const FIXED = { runway: 2, concourse: 2 };
+const FIXED = { runway: 2, concourse: 2, rotunda: 2, mover: 2, skybridge: 2, curve: 3 };
 const lastAt = m => { const n = m.pts.length, k = FIXED[m.part]; return k && n >= k ? k - 2 : n - 1; };
 IC.bldFrom = m => m.pts[lastAt(m)];
 function angleRefs(ap, m) {
