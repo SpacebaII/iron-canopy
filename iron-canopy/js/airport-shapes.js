@@ -263,6 +263,43 @@ function meetAt(A, B) {
   for (const p of pts) { const d = IC.shapeDist(S2 === A ? B : A, p); if (d < bd) { bd = d; best = p; } }
   return best || pts[0];
 }
+/* The words the map puts on an airport at zoom z (brief 45): what each building is (at the middle zoom, the most
+   important first, none overlapping another: one that would is left out), and each building site's progress, small,
+   on the site, only close enough to see the site, gone when it is built. Each label keeps the thing it names (of)
+   and its box in world units; the renderer draws them, the tests check none hangs loose. */
+const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
+const LBL_RANK = { terminal: 0, cargo: 1, hangar: 2, tower: 3, fire: 4, fuel: 5, deice: 6, fuelpad: 7, atc: 8, gradar: 9, hydrant: 10, has: 11, ammo: 12, support: 13 };
+IC.BLD_TAG = BLD_TAG;
+IC.aptLabels = function (S, ap, z, o) {
+  o = o || {};
+  const px = 1 / z, out = [], boxes = [];
+  const fits = (x, y, w, h) => { const b = [x - w / 2, y - h, x + w / 2, y + h * 0.3]; if (boxes.some(q => q[0] < b[2] && b[0] < q[2] && q[1] < b[3] && b[1] < q[3])) return false; boxes.push(b); return true; };
+  const put = (txt, x, y, size, of, kind) => { const w = txt.length * size * 0.62 * px + 2 * px, h = size * px; if (!fits(x, y, w, h)) return false; out.push({ txt, x, y, size, of, kind, box: boxes[boxes.length - 1] }); return true; };
+  // building sites: on the part itself, only when it is big enough on screen to see (more than 20 px)
+  if (z > 1.5) for (const w of ap.works || []) {
+    if (!w.stages || !w.part || w.part.built) continue;
+    const p = w.part, size = p.kind === 'runway' ? IC.rwLen(p) : p.kind === 'taxi' ? IC.partMeasure(ap, p) : Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2);
+    if (size * z < 20) continue;
+    const c = p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.kind === 'taxi' ? (() => { const a = ap.nodes[p.nodes[p.nodes.length >> 1]], b = ap.nodes[p.nodes[Math.max(0, (p.nodes.length >> 1) - 1)]]; return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a; })() : p;
+    if (!c || c.x == null) continue;
+    const q = w.wait === 'queued: every crew is busy';
+    put(q ? 'QUEUED' : w.wait ? 'WAITING: ' + w.wait.replace(/^waiting for /, '').split(':')[0].toUpperCase() : `BUILDING ${U.pct(w.prog || 0)}`, c.x, c.y, 7, p, q || w.wait ? 'wait' : 'work');
+  }
+  // what each building is, at the middle zoom; one label for a fuel farm
+  if (z > 9 && z < 90 && !o.noNames) {
+    const done = [], list = ap.parts.filter(p => p.built && p.x != null && (p.name || BLD_TAG[p.kind])).sort((a, b) => (LBL_RANK[a.kind] != null ? LBL_RANK[a.kind] : 20) - (LBL_RANK[b.kind] != null ? LBL_RANK[b.kind] : 20) || (IC.partArea ? IC.partArea(b) - IC.partArea(a) : 0));
+    for (const p of list) {
+      const t = p.name ? p.name.replace(/^the /i, '').toUpperCase() : BLD_TAG[p.kind];
+      if (done.some(q => q.t === t && U.dist(q, p) < (p.kind === 'fuel' ? 6 : 2))) continue;
+      const hh = Math.max(p.h || 0, (p.r || 0) * 2, p.poly ? Math.max(p.w || 0, p.h || 0) * 0.5 : 0) / 2;
+      // (a big building has its name on it, a small one just above it)
+      const on = (p.w || 0) * z > t.length * 7.5 * 0.7 && (p.h || 0) * z > 14, y = on ? p.y + 3 * px : p.y - hh - 5 * px;
+      if (put(t, p.x, y, 7.5, p, 'name')) done.push({ t, x: p.x, y: p.y });
+    }
+  }
+  return out;
+};
+
 /* Everything on an airport that should be attached to something and is not (brief 45), in words: a gate whose jet
    bridge does not start at a terminal wall or does not reach the door, a passenger bridge over a taxiway that does
    not join two buildings, a people mover without a station at each end, a kerb road away from its building, a

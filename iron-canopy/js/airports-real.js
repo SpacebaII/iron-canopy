@@ -118,7 +118,7 @@ IC.layoutRadius = function (L) {
 IC.realSite = function (S, L, near) {
   const W = S.world, R = IC.layoutRadius(L) + 4, others = S.infra.filter(i => (i.kind === 'airport' || i.kind === 'airbase') && i !== near.ap);
   // (rivers by their lines, not the coarse distance grid: no river within the layout and 300 m round it)
-  const wet = (x, y) => { for (const r of W.rivers || []) { const bb = r.bb || [-1e9, -1e9, 1e9, 1e9], m = R + (r.w || 1) + 3; if (x < bb[0] - m || x > bb[2] + m || y < bb[1] - m || y > bb[3] + m) continue; const P = r.pts || []; for (let i = 1; i < P.length; i++) if (U.segDist(x, y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y) < m) return true; } return false; };
+  const wet = (x, y) => { for (const r of W.rivers || []) { const bb = r.bb || [-1e9, -1e9, 1e9, 1e9], m = R + (r.w || 1) + 8; if (x < bb[0] - m || x > bb[2] + m || y < bb[1] - m || y > bb[3] + m) continue; const P = r.pts || []; for (let i = 1; i < P.length; i++) if (U.segDist(x, y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y) < m) return true; } return false; };
   const fits = (x, y) => {
     if (others.some(b => U.dxy(b.x, b.y, x, y) < R + 60)) return false;
     if (wet(x, y)) return false;

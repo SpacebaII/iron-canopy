@@ -156,17 +156,6 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   }
   // people movers below ground: the line on the map, faint and dashed
   for (const p of by('people')) if ((p.lv || 0) < 0) drawMover(g, p, px, z, night, now);
-  // what each building is, in small letters at the middle zoom (one label for a cluster of fuel tanks)
-  if (z > 9 && z < 90 && S.layers.labels) {
-    const done = [];
-    for (const p of parts) {
-      const t = p.name ? p.name.replace(/^the /, '').toUpperCase() : BLD_TAG[p.kind]; if (!t || !p.built || p.x == null) continue;
-      // (one label for a cluster: a fuel farm's tanks stand a few hundred metres apart)
-      if (done.some(q => q.t === t && U.dist(q, p) < (p.kind === 'fuel' ? 6 : 2))) continue;
-      done.push({ t, x: p.x, y: p.y });
-      lbl(g, t, p.x, p.y - Math.max(p.h || 0, (p.r || 0) * 2) / 2 - 5 * px, px, 'rgba(236,236,226,0.75)', 7.5, 'center', 700);
-    }
-  }
   // aircraft parked
   if (z >= 0.8) drawParked(g, S, ap, px, z, light);
   // aircraft moving
@@ -199,14 +188,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   }
   // construction: crews and machines on site, lorries on the road in
   if (z > 0.25) drawConvoys(g, S, ap, px, z);
-  // every site says what it is and how it is getting on (a queued one is only its outline otherwise)
-  if (z > 1.5) for (const w of ap.works) {
-    if (!w.stages || !w.part) continue;
-    const p = w.part, c = p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.kind === 'taxi' ? workAt(ap, p, 0.5) : p;
-    if (!c || c.x == null) continue;
-    const q = w.wait === 'queued: every crew is busy';
-    lbl(g, `${(p.kind === 'runway' ? p.name || 'Runway' : IC.APART[p.kind].name).toUpperCase()} · ${q ? 'QUEUED: CREWS BUSY' : w.wait ? 'WAITING: ' + w.wait.replace(/^waiting for /, '').split(':')[0].toUpperCase() : 'BEING BUILT ' + U.pct(w.prog || 0)}`, c.x, c.y, px, q || w.wait ? 'rgba(242,180,65,0.95)' : 'rgba(236,236,226,0.9)', 8, 'center', 700);
-  }
+  // the words on the airport: each building site's progress, on the site, and what each building is at the middle
+  // zoom, the most important first and none over another (IC.aptLabels)
+  for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700);
   // only jobs a crew is on: the rest of the queue is just its outline
   for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
   // repairs
@@ -287,7 +271,6 @@ function drawConfig(g, S, ap, px, z) {
 }
 /* the rectangle, aligned with the main runway, that holds everything the airport has */
 const fieldBox = ap => IC.aptFence(ap);
-const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
 /* the airfield's grass: a flat mown colour over the terrain inside the fence, and mowing stripes close in */
 function drawField(g, box, px, z) {
   const k = U.clamp((z - 3) / 30, 0, 1);

@@ -2053,6 +2053,76 @@ test('airport: service roads are laid out by themselves, reach the fuel farm, ca
   IC.aptRelayout(S, ap, 'kden', ap.rwyA || 0); check('the Denver-size layout');
   for (const key of Object.keys(IC.REAL_APT)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0 }); check('the ' + key + ' blueprint'); }
 });
+/* ---------- terminal kits and blueprints (brief 45) ---------- */
+test('kits: every terminal kit has its stands fanned or lined along its walls, each with a bridge, and nothing overlaps', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap];
+  for (const k of Object.keys(IC.TERM_KITS)) for (const size of ['m', 'l']) {
+    IC.aptFromLayout(ap, IC.kitLayout(k, { size }), { x: ap.x, y: ap.y, rot: 0.7 }); ap.dirty = true;
+    const G = IC.aptGraph(ap), st = IC.aptStands(ap);
+    assert(st.length >= 4, `${k} (${size}): only ${st.length} stands`);
+    assert(st.every(s => s.contact && s.bridge), `${k} (${size}): a stand without a jet bridge (${st.filter(s => !s.bridge).length})`);
+    assert(st.every(s => (G.adj.get(s.id) || []).length), `${k} (${size}): a stand with no way to it`);
+    const u = IC.aptUnattached(S, ap), ov = IC.aptOverlaps(S, ap).filter(o => o.kind !== 'world' && o.kind !== 'fence');
+    assert(!u.length && !ov.length, `${k} (${size}): ${u.concat(ov).slice(0, 3).map(x => x.text).join(' ')}`);
+    // no two stands overlap (the fan keeps their inner corners apart)
+    for (let i = 0; i < st.length; i++) for (let j = i + 1; j < st.length; j++) {
+      const a = st[i], b = st[j], box = s => IC.shapePoly(IC.partOutline({ x: s.x, y: s.y, a: s.a, w: IC.STAND[s.size].d - 0.02, h: IC.STAND[s.size].w - 0.02 }));
+      assert(IC.shapeDepth(box(a), box(b)) <= 0.01, `${k} (${size}): stands ${a.id} and ${b.id} overlap`);
+    }
+  }
+  // and the build bar places one on an airport, planned like any other work
+  const S2 = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S2; S2.budget = 1e5;
+  const ap2 = S2.byId[S2.story.cap], m = IC.bldMode(S2, ap2, 'rotunda'), p = IC.aptLocal(ap2, 0, 9);
+  S2.mode2 = m; S2.hover = p;
+  const n0 = ap2.parts.length; assert(IC.clickWorld(p, 0) === 'built' || ap2.parts.length > n0, `the round terminal was not placed: ${m.err}`);
+  assert(ap2.parts.some(q => q.kind === 'terminal' && q.roof === 'dome' && !q.built) && ap2.works.length, 'no round terminal being built');
+});
+for (const key of ['ring', 'hub', 'spine', 'midfield', 'long']) test(`blueprints: ${key} passes every check and runs six hours of traffic without gridlock`, () => {
+  IC.seedRandom(7);
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: key, hour: 6 });
+  const ap = S.byId[S.story.cap], L = IC.REAL_APT[key];
+  assert(L.bp && /^after /.test(L.after) && L.name && ap.showcase === key, 'not a blueprint with a fictional name "after" its model');
+  assert(IC.REAL_APT[key].icao, 'the showcase does not list it');
+  ap.dirty = true; IC.aptGraph(ap); IC.aptStats(S, ap);
+  const st = IC.aptStands(ap);
+  assert(st.length >= 24 && st.every(s => s.linked !== false), `${st.filter(s => s.linked === false).length} of ${st.length} stands cannot be reached from a runway`);
+  const gates = st.filter(s => s.contact);
+  assert(gates.length >= 20 && gates.every(s => s.bridge), 'a gate without its bridge');
+  const u = IC.aptUnattached(S, ap), ov = IC.aptOverlaps(S, ap);
+  assert(!u.length, u.slice(0, 3).map(x => x.text).join(' '));
+  assert(!ov.length, ov.slice(0, 3).map(x => x.text).join(' '));
+  for (const k of ['fuel', 'cargo', 'fire', 'tower']) assert(ap.parts.some(p => p.kind === k), `no ${k}`);
+  const n0 = ap.kpi.n;
+  for (let i = 0; i < 6 * 3600 * 4; i++) IC.step(S, 0.25);
+  assert(ap.kpi.grid === 0 && !(ap.kpi.stuck > 0), `gridlock: ${ap.kpi.grid} tows, ${ap.kpi.stuck || 0} stranded`);
+  assert(ap.kpi.n - n0 >= 60, `only ${ap.kpi.n - n0} movements in six hours`);
+}, true);
+test('labels: every word on an airport sits on or just by what it names, none over another, and a site\'s goes when it is built', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); S.budget = 1e5;
+  const ap = S.byId[S.story.cap];
+  IC.aptPlanPart(S, ap, 'hangar', ...Object.values(IC.aptLocal(ap, -20, 14)), ap.rwyA);
+  const site = ap.parts.find(p => p.kind === 'hangar' && !p.built);
+  for (const z of [1, 3, 12, 40, 150]) {
+    const L = IC.aptLabels(S, ap, z);
+    for (const l of L) {
+      assert(ap.parts.includes(l.of), `a label for something that is not there (${l.txt})`);
+      const d = IC.partDist(ap, l.of, { x: l.x, y: l.y });
+      assert(d <= 12 / z + 0.02, `"${l.txt}" hangs ${Math.round(d * 100)} m from what it names at zoom ${z}`);
+      assert(l.kind === 'name' ? l.of.built : !l.of.built, `"${l.txt}" names a ${l.of.built ? 'finished' : 'unfinished'} part`);
+    }
+    for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const a = L[i].box, b = L[j].box; assert(!(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]), `"${L[i].txt}" and "${L[j].txt}" overlap at zoom ${z}`); }
+  }
+  assert(IC.aptLabels(S, ap, 40).some(l => l.of === site), 'the building site has no label close in');
+  assert(!IC.aptLabels(S, ap, 3).some(l => l.of === site), 'a small site is labelled from far out');
+  finishWorks(S, ap);
+  assert(site.built && !IC.aptLabels(S, ap, 40).some(l => l.of === site && l.kind !== 'name'), 'the site still says it is being built');
+  // the blueprints too, at the whole-airport and the middle zoom
+  for (const key of Object.keys(IC.BLUEPRINTS)) {
+    IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0 });
+    for (const z of [8, 20]) { const L = IC.aptLabels(S, ap, z); for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const a = L[i].box, b = L[j].box; assert(!(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]), `${key}: labels overlap`); } }
+  }
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };
