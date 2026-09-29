@@ -7,6 +7,11 @@
     "test:quick": "node tests/run.js --quick",
     "test:slow": "node tests/run.js --slow",
     "start": "python devserver.py",
-    "shot": "node tools/shot.js"
+    "shot": "node tools/shot.js",
+    "lint": "npx --yes eslint@8 --no-eslintrc --env browser,es2022 --parser-options=ecmaVersion:2022 --rule no-undef:error --global IC iron-canopy/js",
+    "textlint": "node tools/textlint.js",
+    "smoke": "node tools/smoke.js",
+    "qa": "npm run lint && node tools/textlint.js && node tools/smoke.js",
+    "package": "node tools/package.js"
   }
 }

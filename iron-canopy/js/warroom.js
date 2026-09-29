@@ -174,7 +174,7 @@ function contractRow(d) {
   const dots = Array.from({ length: IC.DEAL.strikes }, (_, i) => `<i class="${i < d.strikes ? 'on' : ''}"></i>`).join('');
   const cost = d.value * left / 86400 * 0.3 + 5;
   return `<div class="li contract"><b>${livery(al)}${esc(al.name)} · ${esc(routeLbl(d))} <span class="muted">· ${d.n} × ${esc(IC.ACTYPES[d.type].short)} · ${U.pct(d.charge)} charges${d.excl ? ' · exclusive' : ''}</span></b>
-    <small>${bar(f, d.badT ? 'var(--hostile)' : 'var(--friend)')} ${U.dur(left)} left · ${d.flown} flown, ${d.late} late, ${d.cancel} cancelled · penalties ${U.money(d.paid)} · <span class="strikes" title="Bad days: ${IC.DEAL.strikes} end the deal">${dots}</span>${d.badT ? ` · <span class="hostile">a facility it needs is missing: it walks out in ${U.dur(Math.max(0, 12 * 3600 - (S.time - d.badT)))}</span>` : ''}</small>
+    <small>${bar(f, d.badT ? 'var(--hostile)' : 'var(--friend)')} ${S.mode === 'story' ? U.months(left) : U.dur(left)} left · ${d.flown} flown, ${d.late} late, ${d.cancel} cancelled · penalties ${U.money(d.paid)} · <span class="strikes" title="Bad days: ${IC.DEAL.strikes} end the deal">${dots}</span>${d.badT ? ` · <span class="hostile">a facility it needs is missing: it walks out in ${U.dur(Math.max(0, 12 * 3600 - (S.time - d.badT)))}</span>` : ''}</small>
     <span class="la"><button class="btn sm" data-act="av" data-v="al" data-id="${al.id}">Airline</button><button class="btn sm" data-act="av" data-v="break" data-id="${d.id}" title="End the deal now: we pay ${U.money(cost)} and our name suffers">End · ${U.money(cost)}</button></span></div>`;
 }
 /* ---- Airlines ---- */

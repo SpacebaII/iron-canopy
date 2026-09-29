@@ -284,7 +284,7 @@ function base(b) {
   const locked = b.locked;
   const stands = IC.aptStands(b), used = stands.filter(s => s.occ).length, linked = stands.filter(s => s.linked !== false && s.hp > 0).length;
   const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id).length;
-  const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, ap).building ? IC.rwyState(S, ap).word : 'RUNWAY CLOSED';
+  const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, b).building ? IC.rwyState(S, b).word : 'RUNWAY CLOSED';
   const rw0 = b.parts.filter(p => p.kind === 'runway' && p.built);
   const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
   const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), pill, locked ? '' : bs.runway ? 'ok' : 'bad');

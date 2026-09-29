@@ -16,3 +16,15 @@ Screenshots are in `docs/qa/shots/`, taken with headless Chromium through `tools
 | 7 | Builder | The bottom help line was centred on the whole screen, so with the airport panel open it covered the build palette. The cost card beside the cursor ran under the panel. | ugly | – | Fixed: both keep to the visible map |
 | 8 | Builder, materials | "out of concrete; build runway 1 waits": the work kept the runway's first name after it became Runway 09/27. | minor | – | Fixed |
 | 9 | Founding | The access road was announced three times: two toasts saying the same thing and a card. | minor | – | Fixed: one toast and the card |
+| 10 | Airport panel | **Crash:** selecting an airport whose runway is built but closed (works, wear, a crater) threw "ap is not defined" every refresh, and the panel stopped updating. On main before this pass. | blocker | – | Fixed; `npm run lint` (ESLint's undefined-name rule) now catches this kind |
+| 11 | Map, any panel | Dragging on the map (an airspace handle, a box) selected the text of the panels it passed over, in blue. | ugly | – | Fixed: a drag that starts on the map selects nothing |
+| 12 | Journal, Works | "landing system (ils) complete": part names were lower-cased whole. | minor | – | Fixed: abbreviations keep their capitals |
+| 13 | Aviation room, Deals | "1691.2 h left" on a contract. | ugly | – | Fixed: the Career says "16 months left"; any duration over three days reads in days |
+| 14 | Runways | Named "Runway 26/08" when drawn west to east; charts put the lower number first. | minor | – | Fixed: "Runway 08/26" |
+| 15 | Start screen, Settings and Controls | The cards were cut off at the bottom of a 900 px screen, inside a box with its own thin scrollbar. | ugly | – | Fixed: the page scrolls as a whole |
+| 16 | Journal | The date column wrapped "Jan Y1 · 07:00" onto three lines. | ugly | – | Fixed |
+| 17 | Career tips | "press Wait (W)": the key is 7 (W is a unit's weapons). | ugly | – | Fixed |
+| 18 | Economy room, Chapter 1 | "Airline fees +₭4M" before any airport existed: it was overflight fees. | minor | – | Fixed: called overflight fees until an airport earns landing fees |
+| 19 | Academy | Lesson 3 said "Shoot-look-shoot … Conserve" but the buttons read Look, Salvo, Save; "Layered Defense" and "Air war room". | minor | – | Fixed |
+| 20 | Whole game | "defense" in eight places, "defence" in sixty. | minor | – | Fixed; the text lint now rejects American spellings |
+| 21 | Saves between browsers | A save made in one browser engine may not load in another: the map is regenerated from its seed, and engines differ in the last digit of some maths, so the map fingerprint differs ("made with a different version of the map generator"). Node and Chromium already differ. | minor (known issue) | – | Not fixed: needs engine-independent maths in the generator. Listed in the known issues; the export text no longer promises "another browser" |

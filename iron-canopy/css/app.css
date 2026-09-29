@@ -642,7 +642,8 @@ table.t th.r{text-align:right}
 .start .mode kbd{position:absolute;right:1rem;top:1rem}
 .start .mode em{font-style:normal;font-family:var(--mono);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
 .start .mode.hero{padding:1.2rem 1.3rem}
-.st-foot{display:flex;gap:6px;flex-wrap:wrap;margin-top:.3rem}
+.st-foot{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:.3rem}
+.st-ver{margin-left:auto;font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;color:var(--dim)}
 .st-page{display:grid;gap:.9rem}
 .st-head{display:flex;gap:1rem;align-items:center}
 .st-head h2{margin:0;font-family:var(--display);font-weight:700;font-size:1.8rem;letter-spacing:.12em;text-transform:uppercase}

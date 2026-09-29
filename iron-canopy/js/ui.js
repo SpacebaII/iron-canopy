@@ -454,7 +454,7 @@ function modeHint() {
     airSite: () => `Click an enemy target for ${m.r.name}.`,
     fireAt: () => `Click an enemy target for ${m.unit.name}.`,
     build: () => buildHint(m),
-    bmove: () => `Click where the ${IC.APART[m.part.kind].name.toLowerCase()} should go. R turns it. Esc to cancel.`,
+    bmove: () => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it. Esc to cancel.`,
     bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
     airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',

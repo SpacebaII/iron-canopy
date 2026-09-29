@@ -12,3 +12,6 @@ dbg*.js
 .vscode/
 node_modules/
 __pycache__/
+
+# the upload built by tools/package.js
+dist/

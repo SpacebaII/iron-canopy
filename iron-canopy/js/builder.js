@@ -227,7 +227,7 @@ IC.bldAdvance = function (S, ap, w, dt) {
     w.wait = `waiting for ${IC.MATS[k]}: ${next ? `lorries from ${next.from || sp.name} in ${U.dur(next.arr - S.time)}` : sp.rate ? `ordered from ${sp.name}, ${U.km(sp.km * 10)} by road` : 'no industrial town can reach this site by road'}`;
     // one message per airport and material while the shortage lasts, not one per job
     ap.shortT = ap.shortT || {};
-    if (!w.short && !(S.time - (ap.shortT[k] || -1e9) < 3 * 3600)) { ap.shortT[k] = S.time; const n = ap.works.filter(x => x.stages && x.stages[x.si] && x.stages[x.si].mats && x.stages[x.si].mats[k] > 0).length; IC.log(S, 'warn', 'BUILD', `${ap.name}: out of ${IC.MATS[k]}; ${n > 1 ? `${n} jobs wait` : `${w.part && w.part.kind === 'runway' ? w.part.name : w.label.replace(/^Build /, 'the ').toLowerCase()} waits`}. ${sp.rate ? `Lorries from ${sp.name} bring about ${sp.rate} loads an hour.` : 'No town with industry can reach it by road.'}`, w.part && w.part.x != null ? w.part : ap); }
+    if (!w.short && !(S.time - (ap.shortT[k] || -1e9) < 3 * 3600)) { ap.shortT[k] = S.time; const n = ap.works.filter(x => x.stages && x.stages[x.si] && x.stages[x.si].mats && x.stages[x.si].mats[k] > 0).length; IC.log(S, 'warn', 'BUILD', `${ap.name}: out of ${IC.MATS[k]}; ${n > 1 ? `${n} jobs wait` : `${w.part && w.part.kind === 'runway' ? w.part.name : U.lc(w.label.replace(/^Build /, 'the '))} waits`}. ${sp.rate ? `Lorries from ${sp.name} bring about ${sp.rate} loads an hour.` : 'No town with industry can reach it by road.'}`, w.part && w.part.x != null ? w.part : ap); }
     w.short = true;
     return false;
   }
@@ -251,7 +251,7 @@ function stageDone(S, ap, w, st) {
   for (const { b, c } of w.demo) { if (!by.has(c)) by.set(c, []); by.get(c).push(b); }
   for (const [c, L] of by) { const gone = new Set(L); c.blocks = c.blocks.filter(b => !gone.has(b)); if (c.light) c.light = null; }
   IC.worldChanged(S, w.clrBox);
-  IC.log(S, 'info', 'BUILD', `${ap.name}: ${IC.bldClearText({ blocks: w.demo, res: w.demoRes || 0 })} cleared for the ${IC.APART[w.part.kind].name.toLowerCase()}.`, w.part.x != null ? w.part : ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${IC.bldClearText({ blocks: w.demo, res: w.demoRes || 0 })} cleared for the ${U.lc(IC.APART[w.part.kind].name)}.`, w.part.x != null ? w.part : ap);
   w.demo = null;
 }
 /* the neighbours hear about it the day the plan is signed */
@@ -263,8 +263,8 @@ function protest(S, ap, p, clr) {
   for (const c of towns) if (c.morale != null) c.morale = Math.max(0, c.morale - Math.min(12, 1 + 2 * clr.blocks.filter(x => x.c === c).reduce((a, x) => a + WEIGHT(x), 0)));
   if (S.story) S.story.standing = Math.max(0, S.story.standing - Math.min(5, 0.3 * k));
   const where = Object.keys(clr.towns).join(' and ');
-  IC.log(S, 'warn', 'BUILD', `${ap.name}: ${IC.bldClearText(clr)} in ${where} to be cleared for the ${IC.APART[p.kind].name.toLowerCase()}; ${U.money(clr.comp)} in compensation. Residents are angry.`, p.x != null ? p : ap);
-  if (k >= 3 && S.camp) IC.card(S, `Protest in ${Object.keys(clr.towns)[0]}`, ap.name, `Residents marched on the town hall: ${IC.bldClearText(clr)} are to be bulldozed for a ${IC.APART[p.kind].name.toLowerCase()}. Compensation of ${U.money(clr.comp)} is paid as the buildings come down. Public support has dropped. A smaller layout, or building away from town, avoids this.`, 'alarm');
+  IC.log(S, 'warn', 'BUILD', `${ap.name}: ${IC.bldClearText(clr)} in ${where} to be cleared for the ${U.lc(IC.APART[p.kind].name)}; ${U.money(clr.comp)} in compensation. Residents are angry.`, p.x != null ? p : ap);
+  if (k >= 3 && S.camp) IC.card(S, `Protest in ${Object.keys(clr.towns)[0]}`, ap.name, `Residents marched on the town hall: ${IC.bldClearText(clr)} are to be bulldozed for a ${U.lc(IC.APART[p.kind].name)}. Compensation of ${U.money(clr.comp)} is paid as the buildings come down. Public support has dropped. A smaller layout, or building away from town, avoids this.`, 'alarm');
   IC.emit(S, 'aptClear', { ap, part: p, n });
 }
 /* a major opening: a card with the before and after numbers */
@@ -282,7 +282,7 @@ IC.bldOpened = function (S, ap, w, before) {
 IC.bldSnapStats = ap => { const st = ap.st || {}; return { movesPerHour: st.movesPerHour, maxType: st.maxType, pax: st.pax, nst: IC.aptStands(ap).filter(s => s.linked !== false).length }; };
 /* start a planned part's work: called by IC.aptPlan once the part is added */
 IC.bldStart = function (S, ap, part, pv) {
-  const w = { id: IC.nid('w'), key: 'bd:' + part.id, kind: 'build', label: `Build ${IC.APART[part.kind].name.toLowerCase()}`, prog: 0, dur: pv.dur, part, cost: pv.cost,
+  const w = { id: IC.nid('w'), key: 'bd:' + part.id, kind: 'build', label: `Build ${U.lc(IC.APART[part.kind].name)}`, prog: 0, dur: pv.dur, part, cost: pv.cost,
     stages: pv.stages, si: 0, t: 0, spent: 0, t0: S.time, near: pv.near ? pv.near.id : null, rwMode: 'close', demo: pv.clr.blocks.length ? pv.clr.blocks : null, demoRes: pv.clr.res, clrBox: pv.clr.box };
   if (part.kind === 'runway') w.label = `Build ${part.name || 'runway'}`;
   protest(S, ap, part, pv.clr);
@@ -303,10 +303,10 @@ IC.bldUpgrade = function (S, ap, part, mat) {
   const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
   if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
   const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'mark', name: 'Markings', dur: dur * 0.08, cost: cost * 0.07 }, { k: 'lights', name: 'Lights', dur: dur * 0.07, cost: cost * 0.08 }];
-  const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || IC.APART[part.kind].name.toLowerCase()}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
+  const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || U.lc(IC.APART[part.kind].name)}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
   ap.works.push(w);
   part.shut = w.id; ap.dirty = true; ap.cfg = null;
-  IC.log(S, 'info', 'BUILD', `${ap.name}: ${w.label.toLowerCase()} (${U.money(cost)}). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)} (${U.money(cost)}). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
   return true;
 };
 /* works finished or cancelled: reopen what they closed */
@@ -345,12 +345,12 @@ IC.onMonth((S) => {
         const P = IC.PAVE[IC.paveOf(p)], was = p.wear || 0;
         // (only a runway closes when worn out; taxiways and aprons stay in use, worn)
         p.wear = Math.min(p.kind === 'runway' ? 1 : 0.95, was + 1 / P.life);
-        if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || IC.APART[p.kind].name.toLowerCase()} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
-        if (was < 1 && p.wear >= 1) { ap.dirty = true; ap.cfg = null; IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${p.name || IC.APART[p.kind].name.toLowerCase()} is worn out and closed until it is resurfaced.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : ap); }
+        if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
+        if (was < 1 && p.wear >= 1) { ap.dirty = true; ap.cfg = null; IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is worn out and closed until it is resurfaced.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : ap); }
       } else if (p.max && p.hp > 0) {
         const was = p.hp / p.max;
         p.hp = Math.max(p.max * 0.05, p.hp - p.max / IC.BUILDING_LIFE); p.aged = true;
-        if (was >= 0.5 && p.hp / p.max < 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: the ${IC.APART[p.kind].name.toLowerCase()} is showing its age (${U.pct(p.hp / p.max)} condition). Renew it in the airport's Works tab.`, p.x != null ? p : ap);
+        if (was >= 0.5 && p.hp / p.max < 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: the ${U.lc(IC.APART[p.kind].name)} is showing its age (${U.pct(p.hp / p.max)} condition). Renew it in the airport's Works tab.`, p.x != null ? p : ap);
       }
     }
   }
@@ -582,7 +582,7 @@ function guidesOf(ap) {
       for (let i = 1; i < ns.length; i++) if (U.dist(ns[i - 1], ns[i]) >= 0.3) add(ns[i - 1], ns[i], 'taxiway line');
     } else {
       const r = rectOf(q); if (!r) continue;
-      const c = cornersOf(r), nm = IC.APART[q.kind].name.toLowerCase();
+      const c = cornersOf(r), nm = U.lc(IC.APART[q.kind].name);
       for (let i = 0; i < 4; i++) add(c[i], c[(i + 1) % 4], `${nm} edge`);
     }
   }
@@ -689,7 +689,7 @@ function snapCorner(ap, m, p, tol, free, rel) {
   tol = Math.min(tol, 0.35);
   if (!free) {
     let best = null, bd = tol;
-    for (const q of ap.parts) { const r = q.kind !== 'taxi' && rectOf(q); if (!r) continue; for (const c of cornersOf(r)) { const d = U.dist(c, p); if (d < bd) { bd = d; best = { kind: 'corner', x: c.x, y: c.y, a: r.a, what: IC.APART[q.kind].name.toLowerCase() }; } } }
+    for (const q of ap.parts) { const r = q.kind !== 'taxi' && rectOf(q); if (!r) continue; for (const c of cornersOf(r)) { const d = U.dist(c, p); if (d < bd) { bd = d; best = { kind: 'corner', x: c.x, y: c.y, a: r.a, what: U.lc(IC.APART[q.kind].name) }; } } }
     if (best) return best;
     // flush against the edge of a taxiway (beyond its half width), an apron or a building
     let e0 = null; bd = tol;
@@ -732,7 +732,7 @@ function edgesNear(ap, p, R, all) {
       for (let i = 0; i < 4; i++) out.push({ a: c[i], b: c[(i + 1) % 4], half: 0, part: q, what: 'apron', outN: IC.rectWorld(q, 0, 0) });
     } else if (all && q.kind !== 'runway') {
       const r = rectOf(q); if (!r || IC.rectGap(r, { x: p.x, y: p.y, a: 0, w: 0.001, h: 0.001 }) > R) continue;
-      const c = cornersOf(r), what = IC.APART[q.kind].name.toLowerCase();
+      const c = cornersOf(r), what = U.lc(IC.APART[q.kind].name);
       for (let i = 0; i < 4; i++) out.push({ a: c[i], b: c[(i + 1) % 4], half: 0, part: q, what });
     }
   }
@@ -939,7 +939,7 @@ function planOf(S, m, hv, tol, free) {
     out.cost += pv.cost; out.dur = Math.max(out.dur, pv.dur); homes += pv.clr.blocks.length; comp += pv.clr.comp; roads += pv.clr.roads; res += pv.clr.res; clrAll.push(...pv.clr.blocks);
     (out.blocks = out.blocks || []).push(...pv.clr.blocks.map(x => x.b));
     if (!out.near && pv.near) out.near = pv.near;
-    if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.hit = IC.aptPlaceHit; out.why = IC.aptPlaceWhy || (probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${D.name.toLowerCase()} overlaps another part, stands in water or leaves the site.`); }
+    if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.hit = IC.aptPlaceHit; out.why = IC.aptPlaceWhy || (probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${U.lc(D.name)} overlaps another part, stands in water or leaves the site.`); }
     if (probe.kind === 'runway' && !out.text.length) out.text.push(runwayText(S, ap, probe));
     if (probe.kind === 'apron' && t !== 'concourse') out.text.push(probe.ramp ? `Open ramp ${(probe.w * probe.h).toFixed(1)} ha: place stands of any size on it` : apronText(ap, probe));
     if (probe.kind === 'surface') out.text.push(`${IC.SURF[probe.surf].name}, ${(probe.w * probe.h).toFixed(1)} ha${IC.SURF[probe.surf].park ? `: parks about ${Math.round(IC.SURF[probe.surf].park * probe.w * probe.h)} cars outside the airfield` : ''}`);
@@ -1106,10 +1106,10 @@ function finish(S, m, plan) {
   if (!made.length) { m.err = 'Could not plan it.'; return 'err'; }
   m.pts = []; m.rw = null; m.exitKey = null;
   const W = made.map(p => ap.works.find(w => w.part === p)).filter(Boolean), cost = W.reduce((a, w) => a + (w.cost || 0), 0), dur = Math.max(0, ...W.map(w => w.dur || 0));
-  const name = made.length > 1 ? made.map(p => IC.APART[p.kind].name.toLowerCase()).filter((v, i, a) => a.indexOf(v) === i).join(', ') : made[0].kind === 'runway' ? made[0].name || 'Runway' : IC.APART[made[0].kind].name;
+  const name = made.length > 1 ? made.map(p => U.lc(IC.APART[p.kind].name)).filter((v, i, a) => a.indexOf(v) === i).join(', ') : made[0].kind === 'runway' ? made[0].name || 'Runway' : IC.APART[made[0].kind].name;
   const busy = ap.works.filter(w => w.stages && !W.includes(w)), crews = ap.crews || 1;
   m.done = `${name[0].toUpperCase() + name.slice(1)} planned: ${U.money(cost)}, about ${U.dur(dur)} of work. ` + (busy.length >= crews
-    ? `Queued: ${crews === 1 ? 'the crew is' : `all ${crews} crews are`} busy on ${busy[0].part && busy[0].part.kind === 'runway' ? busy[0].part.name : busy[0].label.replace(/^Build /, '').toLowerCase()}${busy.length > 1 ? ` and ${busy.length - 1} more` : ''}. More crews: the Works tab.`
+    ? `Queued: ${crews === 1 ? 'the crew is' : `all ${crews} crews are`} busy on ${busy[0].part && busy[0].part.kind === 'runway' ? busy[0].part.name : U.lc(busy[0].label.replace(/^Build /, ''))}${busy.length > 1 ? ` and ${busy.length - 1} more` : ''}. More crews: the Works tab.`
     : 'Work starts now.');
   return 'built';
 }
