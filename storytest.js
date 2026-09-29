@@ -24,7 +24,7 @@ const marks = [];   // { what, t }
 let chSeen = process.env.LOAD ? st.ch : -1, actSeen = st.act, wall = Date.now(), lastM = S.cal.m;
 console.log(`seed ${seed}: ${S.world.cities.length} cities, capital ${IC.cap(S).name}, budget ${U.money(S.budget)}; a month is ${IC.dpm(S)} days`);
 marks.push(process.env.LOAD ? { what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title} (from the save)`, t: S.time } : { what: 'Act I', t: S.time });
-const calm = () => !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
+const calm = () => IC.calmSky(S);
 let nextP = 0;
 // step times: at the wait speed's 8 s steps and at 1 s, over the run and over each month (the busiest month shows)
 const tm = { w: { n: 0, us: 0 }, f: { n: 0, us: 0 }, mw: { n: 0, us: 0 }, worst: { ms: 0, when: '' } };

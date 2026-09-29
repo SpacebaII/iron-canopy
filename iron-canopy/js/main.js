@@ -798,7 +798,7 @@ function frame(now) {
     gdt = dtR * IC.GS * speed;
     if (S.skip && S.time - (S.skipT || S.time) > 3 * 3600) stopSkip('Three hours passed quietly.');
     // waiting for money takes long steps while the sky is calm, fine ones as soon as anything armed is about
-    const calm = S.wait && !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
+    const calm = S.wait && IC.calmSky(S);
     const big = S.wait ? (calm ? IC.WAIT.step : IC.MAX_STEP * 2) : IC.MAX_STEP * (S.skip ? 2 : 1);
     let g = gdt, guard = 0;
     const t0 = performance.now();

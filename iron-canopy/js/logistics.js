@@ -753,6 +753,10 @@ IC.waitText = function (S, w) {
   const when = !isFinite(eta) ? (r < -0.01 ? `never at this rate: ${U.money(-r * per)} ${perW} more goes out than comes in (the Economy room says where)` : 'never at this rate: running costs take all that comes in') : `about ${S.mode === 'story' ? U.months(eta) : U.dur(eta)} at this rate`;
   return `${U.money(left)} to go for ${w.what}, ${when}.`;
 };
+/* a calm sky, when time may run in long steps: no missile in flight and nothing armed of theirs over our country
+   more than 15 km inside the border (their standing patrols along the border and unarmed reconnaissance drones do not count: in Act III some are
+   nearly always up; anything that fires, or is fired at, brings the fine steps back) */
+IC.calmSky = S => !S.missiles.length && !(S.eaam && S.eaam.length) && !S.threats.some(t => !t.dead && !(t.d && t.d.civil) && t.type !== 'isr' && !(t.border && (t.mission === 'patrol' || t.mission === 'rtb')) && IC.inHome(t.x, t.y) && IC.hostileBorderDist(t.x, t.y) > 150);
 IC.waitStart = function (S, key) {
   const t = IC.waitTargets(S).find(x => x.key === key) || (key && key.startsWith('amt:') ? { key, what: `${U.money(+key.slice(4))} in the treasury`, amt: +key.slice(4) } : null);
   if (!t) return false;

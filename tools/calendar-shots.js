@@ -27,7 +27,7 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
     let m = { exports: {} }; new Function('module', 'require', qw)(m, req); mods.qw = m.exports;
     m = { exports: {} }; new Function('module', 'require', cp)(m, req); const player = m.exports.player;
     const S = IC.newGame({ seed, mode: 'story', hour: 7 }); IC.adopt(S); document.getElementById('start').hidden = true;
-    const calm = () => !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
+    const calm = () => IC.calmSky(S);
     let next = 0;
     // (to the middle of the month, in daylight: the month's statement has something in it)
     const end = IC.MO(S, months + 0.5);
