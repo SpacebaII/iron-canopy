@@ -104,7 +104,7 @@ float fxStripe(vec2 w) {
   }
   return k;
 }`;
-const grassIBL = sh => { sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'iblIrradiance *= 1.0 - fxGrass * 0.65; radiance *= 1.0 - fxGrass * 0.8;'); };
+const grassIBL = sh => { sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'iblIrradiance *= 1.0 - fxGrass * 0.35; radiance *= 1.0 - fxGrass * 0.6;'); };
 /* uniforms every patched material shares by reference: set once a frame, read by all */
 const G = {
   fxFog: null, sunDir: null, sunCol: null, ambCol: null, night: { value: 0 }, wet: { value: 0 }, snow: { value: 0 }, time: { value: 0 },
@@ -1072,10 +1072,10 @@ function frame(v, t, dtR) {
   v.hemi.color.setRGB(amb.r, amb.g, amb.b); v.hemi.groundColor.setRGB(amb.r * 0.35 + sc.r * sunI * 0.03, amb.g * 0.35 + sc.g * sunI * 0.03, amb.b * 0.3 + sc.b * sunI * 0.02);
   v.hemi.intensity = Q.env ? 0.15 : 1.8;
   // fog: the weather's visibility at the ground; clear air is a haze of 40–60 km that thins with height
-  const vis = W.vis >= 8 ? 80 + (1 - W.cover) * 40 : Math.max(0.15, W.vis) * (W.vis < 1.5 ? 1 : 1.6);
+  const vis = W.vis >= 8 ? 60 + (1 - W.cover) * 30 : Math.max(0.15, W.vis) * (W.vis < 1.5 ? 1 : 1.6);
   const gnd = R.hT(v, cp.x + v.cx, cp.z + v.cy) * hk;
   G.camG.value = gnd;
-  FOGV.x = 3.0 / (vis * 10); FOGV.y = F.gY != null ? F.gY : gnd; FOGV.z = (fog > 0.3 ? 1.2 + (1 - fog) * 4 : W.vis < 8 ? 6 : 10) * hk; FOGV.w = DBG.fog;
+  FOGV.x = 3.9 / (vis * 10); FOGV.y = F.gY != null ? F.gY : gnd; FOGV.z = (fog > 0.3 ? 1.2 + (1 - fog) * 4 : W.vis < 8 ? 6 : 10) * hk; FOGV.w = DBG.fog;
   v.scene.fog.color.setRGB(fr, fg, fb);
   F.skyU.fogK.value = fog * 0.92;
   // exposure: the night is brought up to dark blue, not black

@@ -78,6 +78,7 @@ async function film(V, S, name, N, speed, hook) {
     const r = hook ? await hook(f) : null;
     IC.replayStep(V, now += 1000 / 30); film.now = now;
     if (film.after) film.after(f);
+    if (film.stop && film.stop()) { film.stop = null; N = f + 1; }
     // both pictures straight after the frame is drawn: once the page yields, the drawing buffer is gone
     const still = r === 'still' || (f === N - 1 && !film.took) ? grab(V, 1280, 720).toDataURL('image/jpeg', 0.93).slice(23) : null;
     const clip = window.CLIPS ? grab(V, CLIP.w, CLIP.h).toDataURL('image/jpeg', 0.9).slice(23) : null;
@@ -309,9 +310,11 @@ const SCENES = {
     if (!mis) throw new Error('no missile before the hit: ' + JSON.stringify(kill).slice(0, 200));
     const tl = IC.recFirstT(mis); console.log('launch at', U.hhmm(tl), 'hit at', U.hhmm(kill.t));
     const tg = S.rec.of.get(mis.meta.tref) || mis;
-    const V = await replay({ follow: tg.ref, x: kill.x, y: kill.y, t: tl - 3, r: 150, cam: 'auto' }, tl - 3);
+    // the director follows the missile from the launch to the hit; the clip ends a few seconds after it
+    const V = await replay({ follow: mis.ref, x: kill.x, y: kill.y, t: tl - 2, r: 150, cam: 'auto' }, tl - 2);
     V.slowmo = true; V.playing = true; V.speed = 2; let shot = 0;
-    await film(V, null, 'm-intercept', +(window.FRAMES || Math.min(900, Math.round((kill.t - tl + 3) * 15 + 150))), 1, f => { if (!shot && V.t > kill.t + 0.3) { shot = 1; return 'still'; } });`,
+    const N = +(window.FRAMES || 900); film.stop = () => V.t > kill.t + 3.5;
+    await film(V, null, 'm-intercept', N, 1, f => { if (!shot && V.t > kill.t + 0.25) { shot = 1; return 'still'; } });`,
   // the same frame with the fog, then the sky's light, switched off: what each does to the colours
   'm-debug': `
     const S = await game('sandbox', 11); wx(S, 'scattered');
