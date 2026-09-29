@@ -1056,11 +1056,11 @@ test('build bar: every tab has items, and each one can be placed on an airport',
       if (k === 'carpark') m.surf = 'asph';
       if (part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to: their own tests cover them)
       S.mode2 = m; S.hover = c;
-      const n0 = ap.parts.length, two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
+      const cnt = () => ap.parts.length + (ap.svcRoads || []).length, n0 = cnt(), two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
       IC.clickWorld(c, 0);
       if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
       IC.clickWorld(two ? c2 : c, 0);
-      assert(ap.parts.length > n0, `${k} (${tab.name}) was not placed: ${m.err || 'no reason given'}`);
+      assert(cnt() > n0, `${k} (${tab.name}) was not placed: ${m.err || 'no reason given'}`);
       placed.push(k);
     }
   }
@@ -2024,6 +2024,34 @@ test('airport: a holding bay is one slab with its own tracks, and a departure th
   for (let i = 0; i < 4 * 1200 && !air.includes('B'); i++) IC.step(S, 0.25);
   assert(air.includes('B') && !air.includes('A'), `the ready departure did not pass (${air})`);
   assert(B.plan.start.id !== A.plan.start.id && ap.kpi.grid === 0, 'it went by the same track, or there was a gridlock');
+});
+test('airport: service roads are laid out by themselves, reach the fuel farm, cargo and fire station as one network, and follow the airport as it grows (brief 45)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap];
+  const near = (N, p) => N.roads.some(r => { const P = r.closed ? r.pts.concat([r.pts[0]]) : r.pts; return P.some((q, i) => i && IC.shapeDist(IC.partShape(ap, p), { x: (P[i - 1].x + q.x) / 2, y: (P[i - 1].y + q.y) / 2 }) < 0.2 || IC.partDist(ap, p, q) < 0.15); });
+  const check = name => {
+    ap.dirty = true; IC.aptGraph(ap);
+    const N = IC.svcNet(ap);
+    for (const k of ['fuel', 'cargo', 'fire']) { const ps = ap.parts.filter(p => p.built && p.kind === k); if (ps.length) assert(ps.some(p => near(N, p)), `${name}: no service road reaches the ${k === 'fuel' ? 'fuel farm' : k === 'cargo' ? 'cargo shed' : 'fire station'}`); }
+    for (const p of ap.parts.filter(q => q.built && (q.kind === 'cargo' || q.kind === 'fire'))) assert(near(N, p), `${name}: ${p.kind} ${p.id} has no road`);
+    // one network, and never across a runway
+    const bad = IC.svcRoadEnds(S, ap).filter(e => !e.ok);
+    assert(!bad.length, `${name}: ${bad.length} service roads end in the grass`);
+    for (const r of N.roads) if (r.kind !== 'perim' && r.kind !== 'drawn') for (const rw of ap.parts.filter(q => q.kind === 'runway')) for (let i = 1; i < r.pts.length; i++) {
+      const A = r.pts[i - 1], B = r.pts[i];
+      for (let t = 0; t <= 1; t += 0.1) { const q = { x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t }; assert(IC.partDist(ap, rw, q) > 0.05, `${name}: a ${r.kind} road runs over ${rw.name}`); }
+    }
+    return N;
+  };
+  const N0 = check('the capital');
+  assert(N0.roads.some(r => r.kind === 'edge') && N0.roads.some(r => r.kind === 'equip') && N0.roads.some(r => r.kind === 'perim'), 'no apron edge, equipment or perimeter road');
+  // a new fire station gets its road without anyone drawing it
+  S.budget = 1e5; const rw = ap.parts.find(p => p.kind === 'runway'), c = IC.rwAt(rw, 0.3), d = IC.rwDir(rw);
+  IC.aptPlanPart(S, ap, 'fire', c.x + d.y * 3, c.y - d.x * 3, ap.rwyA); finishWorks(S, ap);
+  const fire = ap.parts.filter(p => p.kind === 'fire').pop();
+  assert(fire.built && near(IC.svcNet(ap), fire), 'the new fire station has no service road');
+  IC.aptRelayout(S, ap, 'kden', ap.rwyA || 0); check('the Denver-size layout');
+  for (const key of Object.keys(IC.REAL_APT)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0 }); check('the ' + key + ' blueprint'); }
 });
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */

@@ -282,6 +282,15 @@ IC.aptTraceFence = function (ap) {
     else if (e.cat === 'road' && e.own && (e.lv || 0) >= 0) land.push({ sh: e.sh, pad: 0.35 });
     else if ((e.cat === 'park' || e.cat === 'land') && e.own) land.push({ sh: e.sh, pad: 0.2 });
   }
+  // (a landside the game lays out: each terminal's and shed's landside face is outside, and so is the ground its
+  // kerb, car parks and roads take or will take, as far as they reach now)
+  if (!(ap.land && ap.land.fixed)) for (const t of ap.parts) if ((t.kind === 'terminal' || t.kind === 'cargo') && t.w && IC.landSide && !t.poly) {
+    if (t.kind === 'cargo' && !(ap.land && ap.land.items.some(it => it.by === t.id))) continue;
+    const sd = IC.landSide(ap, t), used = ap.land ? ap.land.items.filter(it => it.by === t.id) : [];
+    let depth = 0.5; for (const it of used) depth = Math.max(depth, Math.abs(IC.rectLocal(t, it).y) - t.h / 2 + (it.h || 0.5) / 2 + 0.2);
+    const c = IC.rectWorld(t, 0, sd * (t.h / 2 + depth / 2));
+    land.push({ sh: IC.shapePoly(IC.partOutline({ x: c.x, y: c.y, a: t.a || 0, w: t.w + 0.4, h: depth })), pad: 0.1 });
+  }
   if (!air.length) return null;
   let bb = [1e9, 1e9, -1e9, -1e9];
   for (const b of air) { const q = b.sh.bb; bb = [Math.min(bb[0], q[0]), Math.min(bb[1], q[1]), Math.max(bb[2], q[2]), Math.max(bb[3], q[3])]; }

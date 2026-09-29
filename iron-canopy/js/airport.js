@@ -1053,7 +1053,9 @@ IC.aptFence = function (ap) {
   const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0) + ':' + ap.parts.reduce((s, p) => s + (p.x || 0), 0).toFixed(2);
   if (ap._box && ap._boxKey === key) return ap._box;
   // (a landside laid out from data: the fence follows the airside closely, round the landside, IC.aptTraceFence)
-  if (ap.land && ap.land.fixed && IC.aptTraceFence) { ap._box = IC.aptTraceFence(ap); ap._boxKey = key; if (ap._box) return ap._box; }
+  // (and any airport with a landside and a runway: traced, the fence runs round the landside cleanly instead of
+  // cutting a rectangle out of a hull)
+  if (IC.aptTraceFence && ((ap.land && ap.land.fixed) || (ap.kind === 'airport' && ap.parts.some(p => p.kind === 'runway' && p.built)))) { ap._box = IC.aptTraceFence(ap); ap._boxKey = key; if (ap._box) return ap._box; }
   const pts = [], sq = (q, m) => { pts.push({ x: q.x - m, y: q.y - m }, { x: q.x + m, y: q.y - m }, { x: q.x + m, y: q.y + m }, { x: q.x - m, y: q.y + m }); };
   const fronts = ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.w && IC.landEnvelope);
   const carve = [];

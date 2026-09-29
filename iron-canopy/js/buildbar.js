@@ -41,7 +41,7 @@ IC.BB_TABS = [
   { k: 'tm', key: '4', name: 'Terminals & piers', items: ['terminal', 'concourse', 'skybridge', 'people'] },
   { k: 'cg', key: '5', name: 'Cargo & hangars', items: ['cargo', 'hangar', 'has', 'ammo'] },
   { k: 'fs', key: '6', name: 'Fuel & services', items: ['fuel', 'hydrant', 'fuelpad', 'deice', 'fire'] },
-  { k: 'ls', key: '7', name: 'Landside & roads', items: ['road:lc', 'road:rd', 'road:hw', 'carpark'] },
+  { k: 'ls', key: '7', name: 'Landside & roads', items: ['svcroad', 'road:lc', 'road:rd', 'road:hw', 'carpark'] },
   { k: 'nv', key: '8', name: 'Navaids & radar', items: ['ils', 'tower', 'atc', 'gradar'] },
   { k: 'lk', key: '9', name: 'Looks & paint', items: ['surface'] },
   { k: 'bp', key: '0', name: 'Blueprints', items: ['blueprint'] }
@@ -78,7 +78,7 @@ const USE = {
   fuel: 'fuel for departures, by truck', hydrant: 'fuel piped under the stands', fuelpad: 'a stand to refuel at', deice: 'de-icing on frosty mornings',
   fire: 'crash rescue: needed for large aircraft', ils: 'landings in fog, at one runway end', tower: 'clearances: many more movements an hour',
   atc: 'closer spacing of arrivals', gradar: 'the tower sees aircraft on the ground in fog', surface: 'grass, gravel, paving or planting', blueprint: 'a whole real airport',
-  'road:lc': 'a two-lane road to the nearest road', 'road:rd': 'a main road to a town', 'road:hw': 'a motorway spur and interchange', carpark: 'parking outside the airfield: income'
+  svcroad: 'an airside road for the ground vehicles', 'road:lc': 'a two-lane road to the nearest road', 'road:rd': 'a main road to a town', 'road:hw': 'a motorway spur and interchange', carpark: 'parking outside the airfield: income'
 };
 const NEEDS = {
   runway: 'Room in line with the wind, clear of towns under the approach. Paving it needs lorry loads of concrete or asphalt.',
@@ -90,7 +90,7 @@ const NEEDS = {
   hydrant: 'Fuel tanks; stands within reach of its pipes.', fuelpad: 'A taxiway, near the fuel farm.', deice: 'A taxiway near the runway ends.',
   fire: 'A place from which trucks reach every runway in three minutes.', ils: 'A runway end, and research for the best category.', tower: 'A view of the runways.',
   atc: 'Nothing: it covers about 110 km.', gradar: 'Research (Career).', surface: 'Nothing. Aircraft never use it.', blueprint: 'A flat site big enough for it.',
-  'road:lc': 'An airport.', 'road:rd': 'An airport.', 'road:hw': 'An airport, and a motorway within reach.', carpark: 'Ground outside the fence, near the terminal.'
+  svcroad: 'Nothing: it may cross taxiways, not runways.', 'road:lc': 'An airport.', 'road:rd': 'An airport.', 'road:hw': 'An airport, and a motorway within reach.', carpark: 'Ground outside the fence, near the terminal.'
 };
 function itemOf(k) {
   const S = S_(), R = k.startsWith('road:') ? IC.ROADS[k.slice(5)] : null;
@@ -101,7 +101,7 @@ function itemOf(k) {
     const per = D.line ? ' / 100 m' : D.area ? ' / ha' : '';
     return { k, name: D.name, price: U.money(D.cost) + per, use: USE[k] || '', desc: D.desc, upkeep: `${U.money(D.cost * 0.0012 * 24)}${per} a day`, time: U.dur(D.build), lock: IC.aptLockWhy(S, k), mil: D.mil };
   }
-  if (T) return { k, name: T.name, price: k === 'stand' ? '₭0.5M each' : k === 'blueprint' ? 'a whole airport' : 'several parts', use: USE[k] || '', desc: T.desc, upkeep: '', avail: !T.avail || T.avail() };
+  if (T) return { k, name: T.name, price: k === 'stand' ? '₭0.5M each' : k === 'svcroad' ? `${U.money(IC.SVC_ROAD_COST)} / 100 m` : k === 'blueprint' ? 'a whole airport' : 'several parts', use: USE[k] || '', desc: T.desc, upkeep: '', avail: !T.avail || T.avail() };
   return { k, name: k, price: '', use: '', desc: '' };
 }
 
@@ -130,7 +130,7 @@ function thumb(k) {
     case 'exits': runway(24, 0, 132); taxi([[16, 58], [120, 58]]); taxi([[40, 24], [70, 58]]); taxi([[80, 24], [110, 58]]); break;
     case 'taxi': taxi([[10, 66], [10, 44], [16, 30], [34, 22], [124, 22]], 8); break;
     case 'parallel': runway(22, 0, 132); taxi([[8, 22], [8, 56], [124, 56], [124, 22]]); taxi([[66, 22], [66, 56]]); break;
-    case 'hold': runway(20, 30, 132); taxi([[34, 20], [34, 58], [124, 58]]); taxi([[22, 50], [22, 30], [34, 20]]); taxi([[22, 50], [34, 58]]); break;
+    case 'hold': runway(14, 0, 132); g.fillStyle = conc; g.beginPath(); g.moveTo(10, 23); g.lineTo(96, 23); g.lineTo(122, 62); g.lineTo(10, 62); g.closePath(); g.fill(); taxi([[0, 66], [132, 66]]); g.strokeStyle = Y; lw(0.9); for (const x of [22, 50, 78]) { g.beginPath(); g.moveTo(x + 24, 64); g.quadraticCurveTo(x, 58, x, 40); g.lineTo(x, 14); g.stroke(); g.fillStyle = Y; g.fillRect(x - 4, 32, 8, 1.2); g.fillRect(x - 4, 34, 8, 1.2); } plane(50, 44, -Math.PI / 2, 0.9); break;
     case 'apron': taxi([[0, 66], [132, 66]]); apron(10, 10, 112, 48); stands(28, 14, 4, 26, false); break;
     case 'remote': taxi([[0, 10], [132, 10]]); apron(8, 16, 116, 50); stands(24, 62, 5, 22, true); break;
     case 'ramp': apron(8, 8, 116, 60); plane(40, 34, 0.4, 1.1); plane(92, 40, -0.3, 1.4); break;
@@ -155,6 +155,7 @@ function thumb(k) {
     case 'atc': case 'gradar': g.strokeStyle = 'rgba(111,210,255,0.35)'; lw(1); for (const r of [14, 26, 38]) { g.beginPath(); g.arc(66, 38, r, 0, 7); g.stroke(); } g.fillStyle = '#c8ccd0'; g.beginPath(); g.arc(66, 38, 8, 0, 7); g.fill(); g.strokeStyle = '#222'; lw(2.5); g.beginPath(); g.moveTo(58, 44); g.lineTo(74, 32); g.stroke(); break;
     case 'surface': g.fillStyle = IC.paveFill ? IC.paveFill(g, 'gravel', 120, 0, 0, 0) : '#968e78'; g.fillRect(8, 8, 56, 28); g.fillStyle = conc; g.fillRect(68, 8, 56, 28); g.fillStyle = asph; g.fillRect(8, 40, 56, 28); g.fillStyle = '#5c8048'; g.fillRect(68, 40, 56, 28); g.fillStyle = '#3e6a34'; for (let i = 0; i < 9; i++) { g.beginPath(); g.arc(74 + (i % 3) * 20, 46 + Math.floor(i / 3) * 8, 3.5, 0, 7); g.fill(); } break;
     case 'blueprint': g.fillStyle = 'rgba(20,50,80,0.55)'; g.fillRect(0, 0, TW, TH); g.strokeStyle = 'rgba(160,210,255,0.9)'; lw(3); for (const [a, b, c2, d] of [[10, 10, 122, 10], [18, 20, 18, 68], [114, 20, 114, 68], [30, 66, 102, 66]]) { g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d); g.stroke(); } lw(1); g.strokeRect(46, 28, 40, 22); break;
+    case 'svcroad': apron(0, 0, 50, 76); taxi([[92, 0], [92, 76]], 14); road([[0, 44], [132, 44]], 5); g.fillStyle = W; for (let x = 85; x < 100; x += 3) g.fillRect(x, 41, 1.5, 6); g.font = '700 5px monospace'; g.fillText('STOP', 64, 40); break;
     case 'road:lc': road([[0, 50], [50, 44], [132, 26]], 5); break;
     case 'road:rd': road([[0, 54], [60, 40], [132, 30]], 7); break;
     case 'road:hw': road([[0, 20], [132, 20]], 9); road([[0, 60], [52, 56], [80, 34], [96, 20]], 6); break;

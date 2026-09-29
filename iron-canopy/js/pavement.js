@@ -36,7 +36,9 @@ const ang = (x, y) => Math.atan2(y, x);
 
 /* what the pavement looks like depends on: every paved part built, where it is, its material and width */
 IC.paveSig = function (ap) {
-  let s = ap.parts.length + ':' + ap.nodeN;
+  // (the service roads are painted with it: the buildings they reach and the roads drawn by hand count too)
+  let s = ap.parts.length + ':' + ap.nodeN + ':' + (ap.svcRoads || []).length + ':' + (ap.land ? ap.land.ver : 0);
+  for (const p of ap.parts) if (p.built && p.x != null && !IC.PAVED[p.kind]) s += p.kind[0] + (p.x + p.y).toFixed(2);
   for (const p of ap.parts) {
     if (!p.built || !(IC.PAVED[p.kind] || p.kind === 'terminal' || p.kind === 'cargo' || (IC.APART[p.kind] && IC.APART[p.kind].pad))) continue;
     s += '|' + p.id + (p.mat || '') + (p.w || 0) + (p.oneway || p.flow || '') + Math.round((p.wear || 0) * 4);

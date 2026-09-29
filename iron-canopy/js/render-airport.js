@@ -121,7 +121,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // roads and railways that pass under the airfield: the tunnel's line, and a portal at each end
   if (z > 1.5 && S.world.tunnels) for (const t of S.world.tunnels) if (t.apt === ap.id) drawTunnel(g, t, px, z);
   // service roads across the airside (from the map data): grey, with a white edge close in
-  if (z > 1.5 && ap.svcRoads && ap.svcRoads.length) { g.lineCap = 'round'; g.lineJoin = 'round'; for (const r of ap.svcRoads) { g.beginPath(); r.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); if (z > 12) { g.strokeStyle = 'rgba(236,236,226,0.55)'; g.lineWidth = r.w + 0.015; g.stroke(); } g.strokeStyle = 'rgb(84,86,86)'; g.lineWidth = Math.max(r.w, 1 * px); g.stroke(); } g.lineCap = 'butt'; g.lineJoin = 'miter'; }
+  // (the airside service roads, laid out or drawn, are painted with the pavement: svcroads.js, render-pavement.js)
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
@@ -1192,10 +1192,10 @@ IC.drawBuildGhost = function (g, S, px) {
   for (const sp of plan.specs) {
     const D = IC.APART[sp.kind];
     g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = 1.5 * px;
-    if (sp.kind === 'taxi' || sp.kind === 'runway') {
+    if (sp.kind === 'taxi' || sp.kind === 'runway' || sp.kind === 'svcroad') {
       const pts = sp.kind === 'runway' ? [sp.a, sp.b] : sp.pts;
       g.lineCap = sp.kind === 'runway' ? 'butt' : 'round'; g.lineJoin = 'round'; g.globalAlpha = 0.55;
-      g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(190,240,200,0.9)' : 'rgba(110,230,140,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(sp.w || D.w, 2 * px);
+      g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(190,240,200,0.9)' : 'rgba(110,230,140,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(sp.w || (D ? D.w : IC.SVC_ROAD_W), 2 * px);
       g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
       g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1 * px); g.setLineDash([5 * px, 4 * px]); g.stroke(); g.setLineDash([]);
     } else {

@@ -160,6 +160,8 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
   if (!o.noSurround) perimeter(g, ap, ppu, box);
   // approach lights on their gravel track, over the grass beyond each end
   if (!o.noSurround) for (const E of ends) if (E.lights) approach(g, E, ppu);
+  // the airside service roads, under the pavement they cross
+  if (!o.noSurround && ppu >= 3) svcRoads(g, ap, ppu, box);
   // one slab grid for the whole airport's taxiways, fillets and aprons (the airport's axis), so joints run on across
   // every join and a piece drawn over another leaves no seam; runways have their own, drawn on top
   const ga = ap.rwyA || 0, fill = mat => paveFill(g, mat, ppu, ap.x, ap.y, ga);
@@ -207,6 +209,8 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
     if (ppu >= 8) holdLines(g, ap, ppu, box);
     if (ppu >= 8) for (const { t } of tws) if (t.p.oneway || t.p.flow) oneWay(g, t, ppu);
   }
+  // where the service roads cross taxiways: zebras on taxilanes, a stop line and STOP at a taxiway
+  if (!o.noSurround && ppu >= 20) svcCross(g, ap, ppu, box);
   // stands: lead-in lines, stop bars, safety lines, numbers; the service road along the terminal
   if (ppu >= 8) for (const { a } of ars) standsPaint(g, ap, a, ppu, box);
   if (ppu >= 8) for (const { a } of ars) if (a.fore) forecourt(g, ap, a, ppu);
@@ -354,6 +358,59 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
   lg.globalCompositeOperation = 'source-in'; lg.setTransform(1, 0, 0, 1, 0, 0); lg.fillStyle = YEL; lg.fillRect(0, 0, W, H);
   lg.globalCompositeOperation = 'source-over';
   g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = o.edgeAlpha || 0.92; g.drawImage(L, 0, 0, W, H, 0, 0, W, H); g.restore();
+}
+/* the service roads: asphalt, a white line along each edge and a dashed one down the middle close in (the equipment
+   road on the forecourts is painted there by forecourt(); the perimeter road by perimeter()) */
+function svcRoads(g, ap, ppu, box) {
+  if (!IC.svcNet) return;
+  const N = IC.svcNet(ap), px = 1 / ppu, list = N.roads.filter(r => r.kind !== 'perim' && r.kind !== 'equip' && hit(r._bb || (r._bb = bbOf(r.pts, 0.2)), box));
+  if (!list.length) return;
+  const path = r => { g.beginPath(); linePath(g, r.pts); if (r.closed) g.closePath(); };
+  const b = IC.aptFence(ap);
+  g.save();
+  if (b && b.carve && b.carve.length) { g.beginPath(); g.rect(-1e6, -1e6, 2e6, 2e6); for (const cv of b.carve) polyPath(g, cv); g.clip('evenodd'); }
+  g.lineCap = 'butt'; g.lineJoin = 'round';
+  g.strokeStyle = paveFill(g, 'asph', ppu, ap.x, ap.y, 0);
+  for (const r of list) { g.lineWidth = Math.max(r.w, 1.2 * px); path(r); g.stroke(); }
+  if (ppu >= 25) {
+    g.strokeStyle = WHITE; g.lineWidth = Math.max(0.003, 1 * px);
+    for (const r of list) for (const s of [-1, 1]) { const P = r.closed ? IC.polyGrow(r.pts, s * (r.w / 2 - 0.006)) : offsetLine(r.pts, s * (r.w / 2 - 0.006)); g.beginPath(); linePath(g, P); if (r.closed) g.closePath(); g.stroke(); }
+    g.setLineDash([0.03, 0.03]);
+    for (const r of list) { path(r); g.stroke(); }
+    g.setLineDash([]);
+  }
+  g.restore();
+}
+/* a polyline moved sideways by d (left of its direction for d > 0), corners mitred */
+function offsetLine(P, d) {
+  const out = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], L = U.dist(a, b) || 1;
+    out.push({ x: P[i].x - (b.y - a.y) / L * d, y: P[i].y + (b.x - a.x) / L * d });
+  }
+  return out;
+}
+function svcCross(g, ap, ppu, box) {
+  if (!IC.svcNet) return;
+  const px = 1 / ppu;
+  for (const c of IC.svcNet(ap).cross) {
+    if (c.x < box.x0 - 0.5 || c.x > box.x1 + 0.5 || c.y < box.y0 - 0.5 || c.y > box.y1 + 0.5) continue;
+    // (how far along the road the taxiway's pavement reaches, for the angle they cross at)
+    const s = Math.abs(Math.sin(c.a - c.ta)) || 1, half = c.w / 2 / s;
+    g.save(); g.translate(c.x, c.y); g.rotate(c.a); g.fillStyle = WHITE;
+    if (c.lane) {
+      // a zebra across the taxilane, in the road's width
+      for (let x = -half + 0.01; x < half - 0.005; x += 0.02) g.fillRect(x, -c.rw / 2 + 0.008, 0.01, c.rw - 0.016);
+    } else {
+      // a stop line and STOP on the road, facing traffic coming up to each edge of the taxiway
+      for (const sg of [-1, 1]) {
+        const x = sg * (half + 0.03);
+        g.fillRect(x - 0.005, -c.rw / 2 + 0.004, 0.01, c.rw - 0.008);
+        if (ppu >= 50) { g.save(); g.translate(sg * (half + 0.085), 0); g.rotate(sg > 0 ? Math.PI / 2 : -Math.PI / 2); g.font = `700 0.034px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 0, 0); g.restore(); }
+      }
+    }
+    g.restore();
+  }
 }
 /* hold lines: four yellow lines across the taxiway, the two on the taxiway side solid, the two on the runway side
    dashed (a pilot may cross them leaving the runway, never entering) */

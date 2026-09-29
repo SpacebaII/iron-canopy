@@ -500,6 +500,7 @@ IC.BTOOLS = {
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
   stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go: the new paving joins it seamlessly. Aprons that touch are one paved area.' },
   blueprint: { name: 'Blueprint', desc: 'A whole real airport, laid out from map data: pick one below, turn it with R, click where it goes. It is planned part by part and paid for as it is built, like anything else; it must fit the site: in the country, off lakes and rivers, clear of other airfields and of what is already here.', avail: () => !!(IC.showcaseKeys && IC.showcaseKeys().length) },
+  svcroad: { name: 'Service road', desc: 'Click along the way it goes, then again on the last point: an airside road for tugs, buses, fuel trucks and fire tenders. It may cross taxiways (painted with a zebra or a stop line), never a runway. The airport lays most of its own; draw more where you want them.' },
   stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
 };
 /* the parallel taxiway to the side of a runway where the cursor is */
@@ -872,7 +873,7 @@ IC.aptAutoLinks = function (ap) {
   }
 };
 
-const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, people: 1 };
+const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, people: 1, svcroad: 1 };
 const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1, skybridge: 1 };
 /* a passenger bridge clears the tallest narrow-body with a metre and a half to spare, unless the player picks */
 IC.BRIDGE_CLEAR = 14;
@@ -965,6 +966,15 @@ function planOf(S, m, hv, tol, free) {
     if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse') && pts.length === 2) pts[1] = s; else pts.push(s); }
     out.pts = pts;
     if (pts.length < 2) return out;
+    if (t === 'svcroad') {
+      const len = pts.reduce((a, q, i) => a + (i ? U.dist(pts[i - 1], q) : 0), 0), cost = IC.SVC_ROAD_COST * len;
+      out.specs.push({ kind: 'svcroad', pts: pts.map(q => ({ x: q.x, y: q.y })) }); out.cost = cost;
+      out.text.push(`${U.km(len)} · ${U.money(cost)} · open at once`);
+      const rw = ap.parts.find(q => q.kind === 'runway' && pts.some((a, i) => i && [0, 0.25, 0.5, 0.75, 1].some(f => IC.partDist(ap, q, { x: pts[i - 1].x + (a.x - pts[i - 1].x) * f, y: pts[i - 1].y + (a.y - pts[i - 1].y) * f }) < 0.05)));
+      if (rw) { out.ok = false; out.why = `It crosses ${rw.name}: a service road goes round a runway, never across it.`; }
+      else if (S.budget < cost) { out.ok = false; out.why = `Not enough money: ${U.money(cost)} needed.`; }
+      return out;
+    }
     if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone, w: m.twid || null, lit: m.lit === false ? false : null, oneway: m.oneway || null });
     else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat, w: m.rwid || null, lit: m.lit === false ? false : null });
     else if (t === 'people') {
@@ -1219,6 +1229,7 @@ function finish(S, m, plan) {
   const ap = m.ap;
   if (!plan.specs.length) { m.err = plan.why || 'Nothing to build yet.'; return 'err'; }
   if (!plan.ok) { m.err = plan.why; IC.log(S, 'warn', 'BUILD', plan.why); return 'err'; }
+  if (plan.specs[0].kind === 'svcroad') { IC.bldSvcRoad(S, ap, plan.specs[0].pts); m.pts = []; m.done = `Service road open: ${U.money(plan.cost)}.`; return 'built'; }
   const made = IC.bldPlanSpecs(S, ap, plan.specs);
   if (!made.length) { m.err = 'Could not plan it.'; return 'err'; }
   m.pts = []; m.rw = null; m.exitKey = null;
@@ -1244,6 +1255,16 @@ IC.bldPlanSpecs = function (S, ap, specs) {
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }
   return made;
+};
+/* a service road drawn by hand: paid for and open at once (it is a strip of asphalt), one step to undo */
+IC.SVC_ROAD_COST = 0.4;   // ₭M per 100 m
+IC.bldSvcRoad = function (S, ap, pts) {
+  let len = 0; for (let i = 1; i < pts.length; i++) len += U.dist(pts[i - 1], pts[i]);
+  const cost = IC.SVC_ROAD_COST * len; if (S.budget < cost) return false;
+  S.budget -= cost;
+  (ap.svcRoads = ap.svcRoads || []).push({ pts: pts.map(q => ({ x: q.x, y: q.y })), w: IC.SVC_ROAD_W || 0.075, cost });
+  (ap.undo = ap.undo || []).push({ svc: ap.svcRoads.length - 1 });
+  return true;
 };
 /* stands by hand: an apron laid out automatically switches over, keeping its stands where they are */
 IC.bldManualStands = function (ap, apr) {
@@ -1285,6 +1306,7 @@ IC.bldUndo = function (S, ap) {
   const L = ap.undo || [];
   while (L.length) {
     const top = L.pop(), ids = Array.isArray(top) ? top : [top];
+    if (top && top.svc != null) { const r = (ap.svcRoads || [])[top.svc]; if (r) { ap.svcRoads.splice(top.svc, 1); S.budget += r.cost || 0; return 'part'; } continue; }
     if (top && top.stand) { const r = ap.parts.find(p => p.id === top.stand), i = r && r.free ? r.free.findIndex(f => f.k === top.k) : -1; if (i >= 0 && !(r.stands || []).some(s => s.id === r.id + 's' + top.k && s.occ)) { r.free.splice(i, 1); S.budget += 0.5; ap.dirty = true; IC.aptStats(S, ap); return 'stand'; } continue; }
     const parts = ids.map(id => ap.parts.find(p => p.id === id)).filter(p => p && !p.built);
     if (!parts.length) continue;
