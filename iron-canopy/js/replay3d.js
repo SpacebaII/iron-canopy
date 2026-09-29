@@ -278,6 +278,13 @@ function tileMat(tex, li) {
   m.stencilFunc = li === 0 ? THREE.AlwaysStencilFunc : THREE.GreaterStencilFunc;
   return m;
 }
+/* small fields, a pixel or two each, in the colours of crops, grass and fallow */
+const grain = () => share('grain', () => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'), rnd = seeded(77);
+  g.fillStyle = '#808080'; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 1400; i++) { const r = rnd(), k = 0.75 + rnd() * 0.5, c = r < 0.25 ? [168, 156, 96] : r < 0.4 ? [136, 110, 84] : r < 0.7 ? [112, 132, 92] : [128, 128, 128]; g.fillStyle = `rgb(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0})`; g.fillRect(rnd() * 128 | 0, rnd() * 128 | 0, 1 + rnd() * 3 | 0, 1 + rnd() * 2 | 0); }
+  return c;
+});
 function paintTile(v, reg, T, lod) {
   const S = v.S, R = reg.R, cv = document.createElement('canvas'); cv.width = cv.height = T;
   const g = cv.getContext('2d'), z = T / (2 * R), px = 1 / z;
@@ -289,7 +296,14 @@ function paintTile(v, reg, T, lod) {
     g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z);
     g.fillStyle = '#3c4a3a'; g.fillRect(view.x0, view.y0, 2 * R, 2 * R);
     if (S.flat) { g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = px; g.beginPath(); for (let x = Math.ceil(view.x0 / 10) * 10; x < view.x1; x += 10) { g.moveTo(x, view.y0); g.lineTo(x, view.y1); } for (let y = Math.ceil(view.y0 / 10) * 10; y < view.y1; y += 10) { g.moveTo(view.x0, y); g.lineTo(view.x1, y); } g.stroke(); }
-    else if (S.terrain && IC.drawTerrain) { for (let i = 0; i < 6; i++) if (!IC.drawTerrain(g, S.terrain, cam, 1, 1e4, S)) break; }
+    // the map's painting at the detail it has at this scale; the coarse ring near the middle one step finer, so it
+    // shows fields like the rings inside it (the map's coarsest picture has none)
+    else if (S.terrain && IC.drawTerrain) {
+      for (let i = 0; i < 6; i++) if (!IC.drawTerrain(g, S.terrain, cam, 1, 1e4, S)) break;
+      // the coarsest ring: the map's overall picture has no fields; a fine grain of them over it, so it reads like
+      // the rings inside it
+      if (lod === 2) { g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.8; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, T, T); g.restore(); }
+    }
     // roads near their real width (the map draws them wider to read from far out)
     if (IC.drawRoads && !S.flat && lod < 2) { cam.z = Math.max(z, lod ? 7 : 12); IC.drawRoads(g, S, px, view); cam.z = z; }
   } catch (e) { console.warn('3D ground', e); }
@@ -326,7 +340,8 @@ function buildTile(v, key, li, i, j) {
   if (li === 0 && !S.flat) { const b = buildings(v, reg, CFG.boxes); if (b) g.add(b); }   // buildings only close in
   if (li === 0 && v.lowGnd === false) g.visible = false;
   v.static.add(g); v.tiles.set(key, g); v.made.tile++;
-  v.tileMs = performance.now() - t0;
+  v.tileMs = performance.now() - t0; v.tileMsMax = Math.max(v.tileMsMax || 0, v.tileMs); v.tileMsSum = (v.tileMsSum || 0) + v.tileMs;
+  (v.tileMsBy || (v.tileMsBy = {}))[li] = ((v.tileMsBy || {})[li] || 0) + v.tileMs;
   return g;
 }
 function dropTile(v, key) {
@@ -340,6 +355,7 @@ function dropTile(v, key) {
 function groundSync(v, fx, fy) {
   const need = [];
   CFG.levels.forEach((L, li) => {
+    if (li === 0 && v.lowGnd === false) return;   // the finest ring only while the camera is low
     const i0 = Math.floor(fx / L.T), j0 = Math.floor(fy / L.T);
     for (let i = i0 - L.ring; i <= i0 + L.ring; i++) for (let j = j0 - L.ring; j <= j0 + L.ring; j++) { const k = li + ':' + i + ':' + j; if (!v.tiles.has(k)) need.push([k, li, i, j, (2 - li) * 1e4 + Math.hypot(i - i0, j - j0)]); }
     for (const k of [...v.tiles.keys()]) { const [l, i, j] = k.split(':').map(Number); if (l === li && (Math.abs(i - i0) > L.ring + 1 || Math.abs(j - j0) > L.ring + 1)) dropTile(v, k); }
@@ -349,7 +365,7 @@ function groundSync(v, fx, fy) {
 /* builds from the queue for up to ms milliseconds */
 function groundWork(v, ms) {
   const t0 = performance.now();
-  while (v.tileQ.length && performance.now() - t0 < ms) { const [k, li, i, j] = v.tileQ.shift(); if (!v.tiles.has(k)) buildTile(v, k, li, i, j); }
+  while (v.tileQ.length && performance.now() - t0 < ms) { const [k, li, i, j] = v.tileQ.shift(); if (!v.tiles.has(k) && !(li === 0 && v.lowGnd === false)) buildTile(v, k, li, i, j); }
 }
 /* the time a live view spends on the ground: a tile at a time when the browser is idle */
 function groundIdle(v) {
@@ -1300,6 +1316,7 @@ function buildReplay(v) {
   sceneBase(v);
   v.camera = new THREE.PerspectiveCamera(50, 1.6, CFG.near, CFG.far);
   v.evs = IC.recEvents(S, v.t0, v.t1).filter(e => U.dxy(e.x, e.y, cx, cy) < R * 1.4);
+  v.lowGnd = lowStart(v);
   staticSync(v, cx, cy, true);
   // the movers that came through the box in the window
   for (const tr of IC.recTracks(S)) if (IC.recNear(tr, cx, cy, R * 1.6, v.t0, v.t1)) makeMover(v, tr);
@@ -1326,6 +1343,11 @@ function staticSync(v, fx, fy, now) {
   if (now) groundWork(v, 1e5);
   airportSync(v, fx, fy);
   parkedSync(v);
+}
+/* will the camera start low (the finest ground ring worth building at once)? From what it follows, or the orbit */
+function lowStart(v) {
+  const tr = trackOf(v, v.followRef || v.focusRef), st = tr && IC.recAt(tr, Math.min(v.t, tr.t1), {});
+  return (st ? st.alt * KM * v.hk : 0) + (v.followRef || v.focusRef ? 1 : v.orbit.dist * Math.sin(v.orbit.pitch)) < 20;
 }
 /* heights ×3 or real: everything on the ground is built again at the new scale */
 function rebuildStatic(v) {
@@ -1569,7 +1591,7 @@ function step(v, now) {
   for (const L of v.nightLights) L.visible = v.night;
   // the finest ring of ground shows only from low down: from higher up the next ring is fine enough, and the two
   // are painted the same way (the finest adds the fields the map shows close in)
-  const low = ch < (v.lowGnd ? 30 : 20); if (low !== v.lowGnd) { v.lowGnd = low; for (const [k, T] of v.tiles) if (T.userData.li === 0) T.visible = low; }
+  const low = ch < (v.lowGnd ? 30 : 20); if (low !== v.lowGnd) { v.lowGnd = low; for (const [k, T] of v.tiles) if (T.userData.li === 0) T.visible = low; if (low && v.sfx != null) groundSync(v, v.sfx, v.sfy); }
   for (const A of v.apts.values()) for (const r of A.radars) r.rotation.y = -t * 1.3;
   // the ground follows what the camera looks at
   if (v.kind !== 'live' && v.lookAt && v.kind !== 'gallery') { const fx = v.lookAt.x + v.cx, fy = v.lookAt.z + v.cy; if (U.dxy(fx, fy, v.sfx, v.sfy) > 15) staticSync(v, fx, fy); groundIdle(v); }
@@ -1817,7 +1839,7 @@ function buildLive(v) {
   flatOf(v);
   sceneBase(v);
   v.camera = new THREE.PerspectiveCamera(50, 1.6, CFG.near, CFG.far);
-  v.evSeen = 0;
+  v.evSeen = 0; v.lowGnd = lowStart(v);
   // what happened in the last half minute is shown as it comes in
   const R = v.S.rec; for (const e of R.ev) if (e.t < v.S.time - 30) v.evSeen = e.id;
   bindPointer(v);
