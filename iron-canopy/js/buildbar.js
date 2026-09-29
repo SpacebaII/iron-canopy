@@ -270,7 +270,8 @@ IC.renderBuildBar = function (S) {
   const el = $('bbar'); if (!el) return;
   const bb = IC.bb, sa = selAp(S);
   // selecting one of our airports brings the bar up (unless it was closed while that airport was selected)
-  if (sa && !sa.locked && sa.id !== bb.selId && bb.closed !== sa.id) bb.open = true;
+  // (not in the Academy: its lessons are about the air defence, and the bar would cover their hints)
+  if (sa && !sa.locked && sa.id !== bb.selId && bb.closed !== sa.id && S.mode !== 'academy' && !S.range) bb.open = true;
   bb.selId = sa ? sa.id : null;
   const ap = bb.open ? IC.bbAirport(S) : null;
   const show = bb.open && !IC.ui.room && $('start').hidden;
