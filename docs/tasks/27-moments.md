@@ -26,6 +26,12 @@ Tie each to what the player did, never a scripted outcome.
 
 **Sound and look:** a light pass on audio and screen effects for these moments. Keep it restrained and readable.
 
+## With the calendar (32)
+
+- Every moment carries its calendar date ("March, Year 3").
+- **The yearly review:** each year ends with its moments (firsts, records, near-misses, losses), each with its replay if one was recorded, next to the year's money and traffic.
+- Over ten years the Journal grows long. Group it by year and month, and keep the moments easy to find.
+
 ## Scope
 
 - A new `moments.js` (beats and their triggers), the report in `warroom.js`/`inspector.js` in its own function, links into `replay3d.js`, and `audio.js`.

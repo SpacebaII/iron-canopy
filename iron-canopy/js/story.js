@@ -472,6 +472,7 @@ IC.storyTip = function (S) {
 /* what is hidden until the story reaches it: '' when open, else why not */
 const LOCKS = {
   airways: [2, 'The airway editor opens when the Minister asks you to design the airspace (Chapter 3).'],
+  airspace: [2, 'Airspace design comes with the airspace chapter (Chapter 3).'],
   radar: [2, 'Civil radar comes with the airspace chapter (Chapter 3).'],
   coverage: [2, 'Radar cover comes with the airspace chapter (Chapter 3).'],
   fields: [3, 'Light-aircraft fields come with Chapter 4.'],

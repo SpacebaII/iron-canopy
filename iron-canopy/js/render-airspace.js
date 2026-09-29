@@ -1,5 +1,6 @@
-/* Iron Canopy — the airspace on the map. Each airport's volumes by class (the control zone and the rings of its
-   shelves, each labelled with its floor and ceiling), military height bands, the holding stacks with their levels,
+/* Iron Canopy — the airspace on the map, drawn as a chart does: class B solid blue, C solid magenta, D dashed blue,
+   E dashed magenta, restricted and military areas hatched; each ring labelled with its ceiling over its floor; the
+   notch and the approach extension; the editing handles while the Airspace tab is open; military height bands, the holding stacks with their levels,
    the area sectors' centres, the height tags of tracks (flight level or feet for aircraft, km for everything else),
    and a ladder beside any point where several things fly over the same spot at different heights. */
 (function (IC) {
@@ -25,39 +26,120 @@ function text(ctx, s, x, y, px, col, size, align, weight) {
 }
 const inView = (v, x, y, r) => x + r > v.x0 && x - r < v.x1 && y + r > v.y0 && y - r < v.y1;
 
+/* how a chart draws each class: B solid, C solid magenta, D dashed, E dashed magenta; areas hatched */
+const STY = { B: 'solid', C: 'solid', D: 'dash', E: 'dash', A: 'solid', G: 'dash', R: 'hatch', Q: 'hatch', X: 'hatch' };
+function ringPath(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+function stroke(ctx, cls, px, hot, fade) {
+  const C = IC.ASP_CLS[cls], sty = STY[cls] || 'solid', a = (hot ? 0.95 : 0.6) * (fade || 1);
+  ctx.strokeStyle = `rgba(${C.col},${a})`; ctx.lineWidth = (hot ? 2.4 : 1.7) * px;
+  if (sty === 'dash') ctx.setLineDash([8 * px, 5 * px]);
+  ctx.stroke(); ctx.setLineDash([]);
+}
+/* the ticks of a hatched border, just inside a circle */
+function hatch(ctx, x, y, r, cls, px, hot) {
+  const C = IC.ASP_CLS[cls], k = 5 * px;
+  if (r <= k) return;
+  ctx.save(); ctx.strokeStyle = `rgba(${C.col},${hot ? 0.8 : 0.5})`; ctx.lineWidth = k * 2; ctx.setLineDash([1.6 * px, 5 * px]);
+  ringPath(ctx, x, y, r - k); ctx.stroke(); ctx.restore();
+}
+/* a chart label: ceiling over floor, with a bar between */
+function chartLabel(ctx, v, x, y, px, col, big) {
+  const hi = IC.aspChart(v.hi), lo = IC.aspChart(v.lo), sz = big ? 11 : 9.5;
+  ctx.font = `700 ${sz * px}px "IBM Plex Mono", monospace`;
+  const w = Math.max(ctx.measureText(hi).width, ctx.measureText(lo).width) + 4 * px;
+  ctx.fillStyle = 'rgba(6,14,22,0.55)'; ctx.fillRect(x - w / 2 - 2 * px, y - sz * 1.25 * px, w + 4 * px, sz * 2.5 * px);
+  text(ctx, hi, x, y - 2.5 * px, px, col, sz, 'center', 700);
+  text(ctx, lo, x, y + sz * px, px, col, sz, 'center', 700);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x + w / 2, y); ctx.stroke();
+}
+/* the outline of the approach extension: both arms, from where they leave the core */
+function extPath(ctx, v) {
+  const c = Math.cos(v.rot), s = Math.sin(v.rot), w = v.ext.w, L = v.r1 + v.ext.len, a0 = Math.sqrt(Math.max(0, v.r1 * v.r1 - w * w));
+  const P = (al, cr) => [v.x + al * c - cr * s, v.y + al * s + cr * c];
+  ctx.beginPath();
+  for (const k of [1, -1]) { ctx.moveTo(...P(k * a0, -w)); ctx.lineTo(...P(k * L, -w)); ctx.lineTo(...P(k * L, w)); ctx.lineTo(...P(k * a0, w)); }
+}
 IC.drawAirspace = function (ctx, S, px, view, labels, vols) {
   const N = S.asp; if (!N || !N.vols) return;
   const z = IC.cam.z, sel = S.sel, selAp = sel && sel.kind === 'infra' && sel.ref.parts ? sel.ref : sel && sel.kind === 'apart' ? sel.ap : null;
-  const edit = IC.ui && IC.ui.aspVol, m = S.mode2;
-  if (vols !== false) for (const v of N.vols) {
-    if (!inView(view, v.x, v.y, v.r1) || v.r1 * z < 3) continue;
-    const C = IC.ASP_CLS[v.cls], hot = (selAp && v.ap === selAp.id) || edit === v.id || (m && m.kind === 'asp' && m.vol === v.id), grab = IC.ui && IC.ui.aspEdge === v.id;
-    const col = C.col, mil = v.kind === 'mil';
-    ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); if (v.r0 > 0) ctx.arc(v.x, v.y, v.r0, 7, 0, true);
-    ctx.fillStyle = `rgba(${col},${mil ? 0.07 : hot ? 0.06 : 0.025})`; ctx.fill('evenodd');
-    ctx.lineWidth = (hot ? 2 : mil ? 1.6 : 1.1) * px; ctx.strokeStyle = `rgba(${col},${hot ? 0.85 : mil ? 0.6 : 0.4})`;
-    if (v.cls === 'D' || v.cls === 'E' || v.cls === 'Q') ctx.setLineDash([7 * px, 5 * px]); else if (mil) ctx.setLineDash([12 * px, 4 * px, 2 * px, 4 * px]);
-    ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); ctx.stroke(); ctx.setLineDash([]);
-    // the edge under the pointer (or being dragged), and the selected ring's fill
-    if (grab) { ctx.lineWidth = 4 * px; ctx.strokeStyle = `rgba(${col},0.9)`; ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); ctx.stroke(); }
-    if (edit === v.id) { ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); if (v.r0 > 0) ctx.arc(v.x, v.y, v.r0, 7, 0, true); ctx.fillStyle = `rgba(${col},0.10)`; ctx.fill('evenodd'); }
-    // floor and ceiling on the ring's rim, where the ring is wide enough on screen to read
-    if (labels && (hot || z > 0.05) && v.r1 * z > 40) {
-      const k = N.vols.filter(w => w.ap === v.ap && w.x === v.x && w.r1 < v.r1).length, a = -Math.PI / 2 + (v.ap ? 0.22 * k : 0);
-      const x = v.x + Math.cos(a) * (v.r1 - 7 * px), y = v.y + Math.sin(a) * (v.r1 - 7 * px);
-      text(ctx, `${mil ? v.cls === 'X' ? 'ADZ' : v.cls : v.cls} ${lvl(v.lo)}–${lvl(v.hi)}`, x, y, px, `rgba(${col},${hot ? 1 : 0.8})`, hot ? 10 : 8.5, 'center', 700);
-      if (mil && v.r1 * z > 80) text(ctx, v.name.toUpperCase(), v.x, v.y, px, `rgba(${col},0.7)`, 8.5, 'center', 600);
+  const edit = IC.ui && IC.ui.aspVol, m = S.mode2, tab = IC.ui && IC.ui.aptTab === 'asp' && selAp && selAp.owner === 'us' && sel.kind === 'infra';
+  const editing = tab ? new Set(IC.aspShapesNear(S, selAp).map(s => s.id)) : null;
+  if (vols !== false && N.shapes) for (const sh of N.shapes) {
+    const o = sh.rings[sh.rings.length - 1].r, reach = o + (sh.ext ? sh.ext.len + sh.ext.w : 0);
+    if (!inView(view, sh.x, sh.y, reach) || o * z < 3) continue;
+    const hotSh = (selAp && sh.ap === selAp.id) || (editing && editing.has(sh.id)), V = N.vols.filter(v => v.sh === sh.id);
+    // a light tint of the whole shape; a stronger one on the ring picked in the tab
+    for (const v of V) {
+      if (v.kind === 'ext') continue;
+      const C = IC.ASP_CLS[v.cls], mil = v.kind === 'mil';
+      ctx.beginPath(); ctx.arc(v.x, v.y, v.r1, 0, 7); if (v.r0 > 0) ctx.arc(v.x, v.y, v.r0, 7, 0, true);
+      ctx.fillStyle = `rgba(${C.col},${edit === v.id ? 0.12 : mil ? 0.06 : hotSh ? 0.05 : 0.025})`; ctx.fill('evenodd');
+    }
+    for (const v of V) {
+      const C = IC.ASP_CLS[v.cls], hot = hotSh || edit === v.id, grab = IC.ui && IC.ui.aspEdge === v.id;
+      if (v.kind === 'ext') {
+        extPath(ctx, v); stroke(ctx, 'E', px, hot || edit === v.id);
+        if (edit === v.id) { ctx.strokeStyle = `rgba(${C.col},0.25)`; ctx.lineWidth = 6 * px; ctx.stroke(); }
+        continue;
+      }
+      ringPath(ctx, v.x, v.y, v.r1); stroke(ctx, v.cls, px, hot);
+      if (STY[v.cls] === 'hatch') hatch(ctx, v.x, v.y, v.r1, v.cls, px, hot);
+      if (grab) { ctx.lineWidth = 5 * px; ctx.strokeStyle = `rgba(${C.col},0.5)`; ringPath(ctx, v.x, v.y, v.r1); ctx.stroke(); }
+    }
+    // the notch: its sides and inner edge, where the floor steps up
+    const n = sh.notch;
+    if (n) {
+      const C = IC.ASP_CLS[sh.rings[0].cls], a0 = sh.rot + n.a - n.w, a1 = sh.rot + n.a + n.w;
+      ctx.beginPath();
+      for (const a of [a0, a1]) { ctx.moveTo(sh.x + Math.cos(a) * n.r, sh.y + Math.sin(a) * n.r); ctx.lineTo(sh.x + Math.cos(a) * o, sh.y + Math.sin(a) * o); }
+      ctx.moveTo(sh.x + Math.cos(a0) * n.r, sh.y + Math.sin(a0) * n.r); ctx.arc(sh.x, sh.y, n.r, a0, a1);
+      ctx.strokeStyle = `rgba(${C.col},${hotSh ? 0.9 : 0.55})`; ctx.lineWidth = 1.4 * px; ctx.setLineDash([3 * px, 3 * px]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // ceiling over floor in each ring, on a line square to the runway (away from it), as a chart prints them
+    if (labels && (hotSh || z > 0.04)) {
+      const la = sh.ap ? sh.rot + Math.PI / 2 : -Math.PI / 2;
+      for (const v of V) {
+        if (v.kind === 'ext') continue;
+        const r = v.r0 ? (v.r0 + v.r1) / 2 : v.r1 * (V.length > 1 ? 0.55 : 0.6), band = (v.r1 - v.r0) * z;
+        if (band < 26 && !hotSh) continue;
+        chartLabel(ctx, v, v.x + Math.cos(la) * r, v.y + Math.sin(la) * r, px, `rgba(${IC.ASP_CLS[v.cls].col},${hotSh ? 1 : 0.85})`, hotSh);
+      }
+      if (n && (o - n.r) * z > 30) {
+        const a = sh.rot + n.a, r = (Math.max(n.r, sh.rings[0].r * 0.4) + o) / 2, top = V.filter(v => v.kind !== 'ext').reduce((p, q) => q.hi > p ? q.hi : p, 0);
+        const lab = { hi: top, lo: n.lo };
+        if (n.lo >= top) text(ctx, 'NOTCH', sh.x + Math.cos(a) * r, sh.y + Math.sin(a) * r, px, `rgba(${IC.ASP_CLS[sh.rings[0].cls].col},0.9)`, 9, 'center', 700);
+        else chartLabel(ctx, lab, sh.x + Math.cos(a) * r, sh.y + Math.sin(a) * r, px, `rgba(${IC.ASP_CLS[sh.rings[0].cls].col},0.95)`, false);
+      }
+      if (!sh.ap && o * z > 80) text(ctx, sh.name.toUpperCase(), sh.x, sh.y + 4 * px, px, `rgba(${IC.ASP_CLS[sh.rings[0].cls].col},0.75)`, 9, 'center', 600);
+    }
+    // the handles, while the Airspace tab edits this shape
+    if (editing && editing.has(sh.id)) for (const h of IC.aspHandles(S, sh)) {
+      const on = IC.ui.aspEdge === h.id, k = (on ? 7 : 5.5) * px;
+      ctx.fillStyle = on ? '#ffffff' : 'rgba(235,245,255,0.92)'; ctx.strokeStyle = 'rgba(6,14,22,0.9)'; ctx.lineWidth = 1.5 * px;
+      ctx.beginPath();
+      if (h.hk === 'scale') ctx.rect(h.hx - k, h.hy - k, 2 * k, 2 * k);
+      else if (h.hk === 'ring') ctx.arc(h.hx, h.hy, k, 0, 7);
+      else if (h.hk === 'notch') { ctx.moveTo(h.hx, h.hy - k * 1.3); ctx.lineTo(h.hx + k * 1.3, h.hy); ctx.lineTo(h.hx, h.hy + k * 1.3); ctx.lineTo(h.hx - k * 1.3, h.hy); ctx.closePath(); }
+      else { const a = sh.rot + h.flip; ctx.moveTo(h.hx + Math.cos(a) * k * 1.5, h.hy + Math.sin(a) * k * 1.5); ctx.lineTo(h.hx + Math.cos(a + 2.4) * k * 1.3, h.hy + Math.sin(a + 2.4) * k * 1.3); ctx.lineTo(h.hx + Math.cos(a - 2.4) * k * 1.3, h.hy + Math.sin(a - 2.4) * k * 1.3); ctx.closePath(); }
+      ctx.fill(); ctx.stroke();
+      if (on && labels) text(ctx, h.hk === 'scale' ? `${Math.round(h.r1 / 10)} km` : h.hk === 'ring' ? `${h.name} ${Math.round(h.r1 / 10)} km` : h.hk === 'notch' ? `notch from ${Math.round(h.r1 / 10)} km` : `extension ${Math.round((h.r1 - sh.rings[0].r) / 10)} km`, h.hx, h.hy - 12 * px, px, '#ffffff', 10, 'center', 700);
     }
   }
-  // drawing on the map: the ring the next click makes
-  if (m && m.kind === 'asp' && S.hover && (m.op === 'radius' || m.op === 'shelf' || (m.op === 'mil' && m.c))) {
-    const c = m.op === 'mil' ? m.c : m.op === 'shelf' ? S.byId[m.ap] : IC.aspVol(S, m.vol);
-    if (c) {
-      const r = U.dist(c, S.hover), col = m.op === 'mil' ? IC.ASP_CLS[m.cls || 'X'].col : '205,110,235';
-      ctx.setLineDash([6 * px, 4 * px]); ctx.lineWidth = 2 * px; ctx.strokeStyle = `rgba(${col},0.9)`;
-      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
-      text(ctx, `${Math.round(r / 10)} km`, S.hover.x, S.hover.y - 12 * px, px, `rgb(${col})`, 10, 'center', 700);
+  // in the tab, the ring under the pointer in plain words, like a chart's legend
+  if (editing && S.hover && labels && !(IC.ui && IC.ui.aspEdge)) {
+    const v = IC.aspVolUnder(S, selAp, S.hover);
+    if (v) {
+      const C = IC.ASP_CLS[v.cls], lo = IC.aspFloorAt(v, S.hover.x, S.hover.y);
+      text(ctx, `${v.kind === 'ext' ? 'Approach extension' : v.name} · ${C.name} · ${lo <= 0.01 ? 'the ground' : IC.flText(lo)} to ${IC.flText(v.hi)}`, S.hover.x + 14 * px, S.hover.y - 16 * px, px, `rgb(${C.col})`, 10, 'left', 700);
+      text(ctx, C.brief, S.hover.x + 14 * px, S.hover.y - 3 * px, px, 'rgba(225,235,245,0.9)', 9.5, 'left', 600);
     }
+  }
+  // placing an area on the map: the circle the next click makes
+  if (m && m.kind === 'asp' && m.op === 'area' && m.c && S.hover) {
+    const r = U.dist(m.c, S.hover), cls = (IC.ASP_SHAPES[m.key] || {}).cls || 'X', col = IC.ASP_CLS[cls].col;
+    ctx.setLineDash([6 * px, 4 * px]); ctx.lineWidth = 2 * px; ctx.strokeStyle = `rgba(${col},0.9)`;
+    ctx.beginPath(); ctx.arc(m.c.x, m.c.y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    text(ctx, `${Math.round(r / 10)} km`, S.hover.x, S.hover.y - 12 * px, px, `rgb(${col})`, 10, 'center', 700);
   }
   // the selected airport's arrival and departure lanes, with arrows the way they are flown
   const Ln = selAp && selAp.owner === 'us' && IC.atcLanes(S, selAp);
