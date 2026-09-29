@@ -6,6 +6,8 @@ const U = IC.U;
 
 function buildKden(seed) {
   const S = IC.newGame({ seed: seed || 12345, mode: 'story', preset: 'network', hour: 10 });
+  // a hub this size uses what research opens: hydrant fuel, ground radar, CAT III landing systems, jet bridges
+  for (const t of ['p_hydrant', 'p_gradar', 'p_ils3', 'p_bridge', 'p_rconc']) S.tech.done.add(t);
   const ap = S.byId[S.story.cap];
   if (S.av) { S.av.tails = []; S.av.routes = []; }
   S.threats = S.threats.filter(t => !t.tail);

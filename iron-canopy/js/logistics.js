@@ -554,7 +554,10 @@ function autoHeli(S, u, m, src) {
 function whyNot(S, u, m, home, busy) {
   const name = IC.munWords(m.mun);
   if (busy) {
-    const back = Math.min(...S.vehicles.filter(v => v.home === busy && !v.dead).map(v => truckBack(S, v)));
+    const out = S.vehicles.filter(v => v.home === busy && !v.dead);
+    // a depot whose lorries were all destroyed or moved away has none out to wait for
+    if (!out.length) return `${busy.name} has no truck companies left. Buy one there (₭12M, in Supply, L), or Resupply by helicopter (H).`;
+    const back = Math.min(...out.map(v => truckBack(S, v)));
     return `All ${busy.name}'s truck companies are out. The first is back in about ${U.dur(back)}. More companies, a depot nearer, or Resupply by helicopter (H) is quicker.`;
   }
   if (!home) return 'No depot. Place a depot, or the Central Depot is lost.';
@@ -712,6 +715,17 @@ function moneyWatch(S) {
   if (S.budget <= 0 && !S.broke) { S.broke = true; IC.log(S, 'leak', 'TREASURY', 'The treasury is empty. Nothing can be bought until money comes in; the Ministry will not buy stock.'); }
   if (S.budget > 0) S.broke = false;
   S.moneyTier = tier;
+}
+/* research for airports: in the Career these open airport items (IC.APT_TECH in airport.js); each says what it opens */
+if (!IC.TECH_CATS.some(c => c.id === 'apt')) {
+  IC.TECH_CATS.push({ id: 'apt', name: 'Airports' });
+  IC.TECH.push(
+    { id: 'p_bridge', cat: 'apt', name: 'Jet bridges', cost: 60, time: 1800, req: [], desc: 'Opens: jet bridges at gates. Passengers board through a covered bridge instead of walking out across the apron: turnarounds at gates about 8% quicker.' },
+    { id: 'p_rconc', cat: 'apt', name: 'Reinforced concrete', cost: 90, time: 2700, req: [], desc: 'Opens: reinforced concrete pavement. It carries 600 t, and a bomb leaves a crater about half the size.' },
+    { id: 'p_hydrant', cat: 'apt', name: 'Hydrant fuel systems', cost: 120, time: 3600, req: ['p_bridge'], desc: 'Opens: the hydrant fuel system. Fuel piped under the aprons: no waiting for a fuel truck.' },
+    { id: 'p_gradar', cat: 'apt', name: 'Ground movement radar', cost: 100, time: 2700, req: [], desc: 'Opens: the ground radar. The tower sees every aircraft on the ground, at night and in fog.' },
+    { id: 'p_ils3', cat: 'apt', name: 'CAT III landing systems', cost: 150, time: 3600, req: ['p_gradar'], desc: 'Opens: CAT III landing systems. Landing systems built after it keep movements closely spaced in fog; earlier ones are CAT I, and fog then spaces every movement 60% wider.' }
+  );
 }
 IC.researching = (S, id) => S.tech.slots.find(s => s && s.id === id);
 IC.startResearch = function (S, id) {

@@ -14,7 +14,12 @@ IC.canPlace = function (S, type, x, y, ignore) {
     const r = (d.mob === 'fixed' || u.d.mob === 'fixed') ? 34 : 16;
     if (U.dxy(u.x, u.y, x, y) < r) return false;
   }
-  for (const i of S.infra) if (i.kind !== 'city' && i.kind !== 'bridge' && U.dxy(i.x, i.y, x, y) < (i.parts ? Math.max(12, i.radius * 0.8) : 22)) return false;
+  for (const i of S.infra) {
+    if (i.kind === 'city' || i.kind === 'bridge') continue;
+    // on an airfield: anywhere off the pavement, the buildings and the runway strips (a radar, a beacon, a gun)
+    if (i.parts) { if (IC.aptOnPart(i, { x, y }) || (U.dxy(i.x, i.y, x, y) < 12 && !i.parts.length)) return false; continue; }
+    if (U.dxy(i.x, i.y, x, y) < 22) return false;
+  }
   return true;
 };
 
