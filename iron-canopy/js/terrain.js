@@ -425,7 +425,7 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     for (const pass of [0, 1]) for (const [cls, list] of layers) {
       const w = RW[cls] * K0; if (!w) continue;
       g.beginPath();
-      for (const l of list) { if (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3])) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
+      for (const l of list) { if (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3])) continue; for (const P of IC.roadRuns ? IC.roadRuns(W, l) : [l.pts]) P.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
       // close in, streets have pavements either side; far out, roads a dark edge
       const pave = lod >= 3 && (cls === 'st' || cls === 'art' || cls === 'ring');
       if (pass === 0) { g.strokeStyle = pave ? 'rgb(152,150,142)' : cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + (pave ? 0.1 : [3 * K0, 1.2, 0.3, 0.1, 0.06][lod]); }

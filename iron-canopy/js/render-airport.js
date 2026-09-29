@@ -20,6 +20,13 @@ const paveCol = p => PAVE_COL[IC.paveOf(p)], paveCol2 = p => PAVE_COL2[IC.paveOf
 const ZONE_FILL = { civil: CONC, cargo: 'rgb(128,120,104)', light: 'rgb(112,122,128)', mil: 'rgb(104,112,96)' };
 const ROLE_COL = { arr: 'rgba(127,232,176,0.95)', dep: 'rgba(128,224,255,0.95)', mixed: 'rgba(236,236,226,0.95)' };
 const ROLE_TXT = { arr: 'ARR', dep: 'DEP', mixed: 'ARR/DEP' };
+/* a part's outline as a path in its own frame (after translate and rotate): its polygon, or its rectangle */
+function partPath(g, p, w, h, grow) {
+  g.beginPath();
+  if (p.poly) { const P = grow ? IC.polyGrow(p.poly.map(q => ({ x: q[0], y: q[1] })), grow) : null; (P ? P.map(q => [q.x, q.y]) : p.poly).forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q[0], q[1])); g.closePath(); }
+  else { const e = grow || 0; g.rect(-w / 2 - e, -h / 2 - e, w + 2 * e, h + 2 * e); }
+}
+IC.partPath = partPath;
 const rect = (g, p, w, h, fill) => { g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h); g.restore(); };
 
 /* ---------- aircraft seen from above, at their real size ---------- */
@@ -113,7 +120,12 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     rect(g, { x: c.x, y: c.y, a: Math.atan2(d.y, d.x) }, L + 3, 3.2, 'rgba(146,158,112,0.35)');
   }
   // paved surrounds: terminals and sheds stand on a forecourt that meets the apron, hangars open onto a ramp
-  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null) rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)');
+  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null && !p.noApron) {
+    if (!p.poly) { rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)'); continue; }
+    g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = p.built ? CONC : 'rgba(120,110,90,0.4)'; partPath(g, p, p.w, p.h, 0.15); g.fill(); g.restore();
+  }
+  // roads and railways that pass under the airfield: the tunnel's line, and a portal at each end
+  if (z > 1.5 && S.world.tunnels) for (const t of S.world.tunnels) if (t.apt === ap.id) drawTunnel(g, t, px, z);
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
@@ -129,19 +141,21 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   for (const rw of by('runway')) drawRunway(g, S, ap, rw, px, z, marks, fine, night, now);
   if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = IC.partZone(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
-  if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) drawStand(g, s, px, z, marks, fine);
+  if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine); }
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings
   for (const p of parts) {
-    if (['runway', 'taxi', 'apron', 'surface'].includes(p.kind)) continue;
+    if (['runway', 'taxi', 'apron', 'surface', 'bridge', 'people'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
+  // people movers below ground: the line on the map, faint and dashed
+  for (const p of by('people')) if ((p.lv || 0) < 0) drawMover(g, p, px, z, night, now);
   // what each building is, in small letters at the middle zoom (one label for a cluster of fuel tanks)
   if (z > 9 && z < 90 && S.layers.labels) {
     const done = [];
     for (const p of parts) {
-      const t = BLD_TAG[p.kind]; if (!t || !p.built || p.x == null) continue;
+      const t = p.name ? p.name.replace(/^the /, '').toUpperCase() : BLD_TAG[p.kind]; if (!t || !p.built || p.x == null) continue;
       if (done.some(q => q.t === t && U.dist(q, p) < 2)) continue;
       done.push({ t, x: p.x, y: p.y });
       lbl(g, t, p.x, p.y - Math.max(p.h || 0, (p.r || 0) * 2) / 2 - 5 * px, px, 'rgba(236,236,226,0.75)', 7.5, 'center', 700);
@@ -157,6 +171,9 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     // a tug at the nose: pushing back, or towing to and from the hangar
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) { const L = m.T.len * 0.5 + 0.03; veh(g, m.x + Math.cos(m.h) * L, m.y + Math.sin(m.h) * L, m.h, 0.06, 0.03, 'rgb(236,196,60)', px); }
   }
+  // above the aircraft that taxi under them: passenger bridges, and people movers on their viaducts
+  for (const p of by('bridge')) drawSpan(g, ap, p, px, z, night);
+  for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
   if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
@@ -285,10 +302,11 @@ function drawArea(g, p, fill, px, part) {
   const w = p.w, h = p.h;
   if (!part.built) stageRect(g, part, w, h, px, paveCol2(part));
   else {
-    g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; g.fillRect(-w / 2, -h / 2, w, h);
+    g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; partPath(g, p, w, h); g.fill();
     // the painted edge of the apron
-    if (IC.cam.z > 4) { g.strokeStyle = 'rgba(236,196,60,0.5)'; g.lineWidth = Math.max(0.006, 0.6 * px); g.strokeRect(-w / 2 + 0.02, -h / 2 + 0.02, w - 0.04, h - 0.04); }
-    if (IC.cam.z > 9) { g.strokeStyle = 'rgba(0,0,0,0.08)'; g.lineWidth = 0.004; g.beginPath(); for (let x = -w / 2; x < w / 2; x += 0.075) { g.moveTo(x, -h / 2); g.lineTo(x, h / 2); } for (let y = -h / 2; y < h / 2; y += 0.075) { g.moveTo(-w / 2, y); g.lineTo(w / 2, y); } g.stroke(); }
+    if (IC.cam.z > 4) { g.strokeStyle = 'rgba(236,196,60,0.5)'; g.lineWidth = Math.max(0.006, 0.6 * px); if (p.poly) { partPath(g, p, w, h, -0.02); g.stroke(); } else g.strokeRect(-w / 2 + 0.02, -h / 2 + 0.02, w - 0.04, h - 0.04); }
+    // the joints between the slabs (7.5 m), inside the outline
+    if (IC.cam.z > 9) { g.save(); if (p.poly) { partPath(g, p, w, h); g.clip(); } g.strokeStyle = 'rgba(0,0,0,0.08)'; g.lineWidth = 0.004; g.beginPath(); for (let x = -w / 2; x < w / 2; x += 0.075) { g.moveTo(x, -h / 2); g.lineTo(x, h / 2); } for (let y = -h / 2; y < h / 2; y += 0.075) { g.moveTo(-w / 2, y); g.lineTo(w / 2, y); } g.stroke(); g.restore(); }
   }
   g.restore();
   // hits leave scorch marks where they landed, not across the whole slab
@@ -411,7 +429,14 @@ function drawStand(g, s, px, z, marks, fine) {
   g.fillStyle = YEL; g.fillRect(S0.d * 0.35, -0.04, 0.012, 0.08);
   if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
   g.restore();
-  if (z > 22) lbl(g, s.id.split('s').pop(), s.fx, s.fy, px, 'rgba(236,196,60,0.8)', 7, 'center', 700);
+  if (z > 22) lbl(g, s.name || s.id.split('s').pop(), s.fx, s.fy, px, 'rgba(236,196,60,0.8)', 7, 'center', 700);
+}
+/* a stand's lead-in line from the taxilane: a curve from the node it leaves to the line behind the stand */
+function drawLeadIn(g, ap, s, px) {
+  const n = s.via && ap.nodes[s.via]; if (!n) return;
+  const hx = Math.cos(s.a), hy = Math.sin(s.a), c = { x: s.fx - hx * 0.25, y: s.fy - hy * 0.25 };
+  g.strokeStyle = YEL; g.lineWidth = Math.max(0.008, 0.7 * px);
+  g.beginPath(); g.moveTo(n.x, n.y); g.quadraticCurveTo(c.x, c.y, s.fx, s.fy); g.stroke();
 }
 function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   const D = IC.APART[p.kind];
@@ -429,7 +454,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2;
   // shadow
-  if (full && !dead) { g.fillStyle = 'rgba(0,0,0,0.35)'; if (p.r) { g.beginPath(); g.arc(0.03, 0.03, p.r, 0, 7); g.fill(); } else g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w, h); }
+  if (full && !dead) { g.fillStyle = 'rgba(0,0,0,0.35)'; if (p.r) { g.beginPath(); g.arc(0.03, 0.03, p.r, 0, 7); g.fill(); } else if (p.poly) { g.save(); g.translate(0.03 * (1 + (p.lvls || 1) * 0.3), 0.03 * (1 + (p.lvls || 1) * 0.3)); partPath(g, p, w, h); g.fill(); g.restore(); } else g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w, h); }
   if (p.kind === 'fuel') {
     if (full) { g.fillStyle = 'rgba(80,84,70,0.8)'; g.fillRect(-p.r * 1.35, -p.r * 1.35, p.r * 2.7, p.r * 2.7); g.fillStyle = 'rgba(120,128,104,0.9)'; g.fillRect(-p.r * 1.25, -p.r * 1.25, p.r * 2.5, p.r * 2.5); }
     g.fillStyle = fill; g.beginPath(); g.arc(0, 0, Math.max(p.r, 1.5 * px), 0, 7); g.fill();
@@ -463,23 +488,134 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.fillStyle = fill; g.beginPath(); g.arc(0, 0, Math.max(w / 2, 1.5 * px), 0, 7); g.fill();
     if (!dead && full) { const a = now * 1.3; g.strokeStyle = 'rgba(30,34,40,0.9)'; g.lineWidth = 0.02; g.beginPath(); g.moveTo(-Math.cos(a) * w * 0.8, -Math.sin(a) * w * 0.8); g.lineTo(Math.cos(a) * w * 0.8, Math.sin(a) * w * 0.8); g.stroke(); }
   } else {
-    g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
-    if (full && !dead && (p.kind === 'terminal' || p.kind === 'cargo')) roof(g, p, w, h, px, z, night);
+    g.fillStyle = p.roof && ROOF_FILL[p.roof] && !dead ? ROOF_FILL[p.roof] : fill; partPath(g, p, w, h); g.fill();
+    if (full && !dead && (p.roof || p.kind === 'terminal' || p.kind === 'cargo')) { g.save(); if (p.poly) { partPath(g, p, w, h); g.clip(); } (ROOFS[p.roof] || roof)(g, p, w, h, px, z, night); g.restore(); }
     if (full && !dead && p.kind === 'fire') { g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(-w * 0.08, -h * 0.3, w * 0.16, h * 0.6); g.fillRect(-w * 0.25, -h * 0.08, w * 0.5, h * 0.16); }
     if (full && !dead && p.kind === 'ammo') { g.fillStyle = 'rgba(60,80,52,0.9)'; for (let i = -1; i <= 1; i++) g.fillRect(i * w * 0.3 - w * 0.12, -h * 0.35, w * 0.24, h * 0.7); }
     if (full && !dead && p.kind === 'alert') { g.fillStyle = 'rgba(96,98,94,0.95)'; g.fillRect(-w * 0.3, -h * 0.35, w * 0.6, h * 0.7); }
   }
   // an outline, so buildings read against pavement and grass
-  if (full && !dead && !p.r && p.kind !== 'ils') { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
+  if (full && !dead && !p.r && p.kind !== 'ils') { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); partPath(g, p, w, h); g.stroke(); }
   // damage
   if (dead) {
-    g.fillStyle = 'rgba(24,18,14,0.85)'; if (p.r) { g.beginPath(); g.arc(0, 0, p.r * 1.1, 0, 7); g.fill(); } else g.fillRect(-w / 2, -h / 2, w, h);
+    g.fillStyle = 'rgba(24,18,14,0.85)'; if (p.r) { g.beginPath(); g.arc(0, 0, p.r * 1.1, 0, 7); g.fill(); } else { partPath(g, p, w, h); g.fill(); }
     if (full) { g.fillStyle = 'rgba(110,96,80,0.9)'; for (let i = 0; i < 6; i++) { const hx = U.hash(i, p.x * 100 | 0) - 0.5, hy = U.hash(p.y * 100 | 0, i) - 0.5; g.fillRect(hx * w * 0.8, hy * h * 0.8, w * 0.12, h * 0.1); } }
   } else if (hp < 0.6 && full) { g.fillStyle = 'rgba(20,14,10,0.5)'; g.beginPath(); g.arc(w * 0.15, -h * 0.1, Math.min(w, h) * 0.35, 0, 7); g.fill(); }
   if (hp < 0.5 && z > 0.8 && z < 6) { g.strokeStyle = dead ? IC.C.hostile : IC.C.amber; g.lineWidth = 1.2 * px; if (p.r) { g.beginPath(); g.arc(0, 0, p.r + 3 * px, 0, 7); g.stroke(); } else g.strokeRect(-w / 2 - 2 * px, -h / 2 - 2 * px, w + 4 * px, h + 4 * px); }
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
 }
+/* a tunnel under the airfield: its line faint and dashed, and at each end the portal: a dark mouth in a concrete
+   headwall, wing walls splayed along the cutting */
+function drawTunnel(g, t, px, z) {
+  const L = U.dist(t.a, t.b) || 0.01, dx = (t.b.x - t.a.x) / L, dy = (t.b.y - t.a.y) / L, w = t.w;
+  g.setLineDash([5 * px, 4 * px]); g.strokeStyle = t.what === 'rail' ? 'rgba(170,150,130,0.4)' : 'rgba(150,150,142,0.4)'; g.lineWidth = Math.max(w * 0.5, 1.2 * px);
+  g.beginPath(); g.moveTo(t.a.x, t.a.y); g.lineTo(t.b.x, t.b.y); g.stroke(); g.setLineDash([]);
+  for (const [e, s] of [[t.a, 1], [t.b, -1]]) {
+    g.save(); g.translate(e.x, e.y); g.rotate(Math.atan2(dy * s, dx * s));
+    // the cutting down to the portal, the mouth and its headwall
+    g.fillStyle = 'rgba(110,104,92,0.9)'; g.beginPath(); g.moveTo(-0.3, -w * 0.9); g.lineTo(0, -w * 0.6); g.lineTo(0, w * 0.6); g.lineTo(-0.3, w * 0.9); g.closePath(); g.fill();
+    g.fillStyle = 'rgb(18,18,20)'; g.fillRect(0, -w * 0.5, 0.06, w);
+    g.fillStyle = 'rgb(176,176,170)'; g.fillRect(0.04, -w * 0.62, Math.max(0.03, 1.5 * px), w * 1.24);
+    g.restore();
+  }
+}
+/* a passenger bridge over a taxiway: a glazed walkway on piers, its shadow on the pavement below, the clearance
+   painted on the taxiway either side (so a pilot can read it) */
+function drawSpan(g, ap, p, px, z, night) {
+  const w = p.w, h = p.h;
+  g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
+  if (!p.built) { stageRect(g, p, w, h, px, 'rgb(150,150,146)', false, true); g.restore(); return; }
+  g.fillStyle = 'rgba(0,0,0,0.3)'; g.save(); g.translate(0.08, 0.08); partPath(g, p, w, h); g.fill(); g.restore();
+  g.fillStyle = 'rgb(214,216,220)'; partPath(g, p, w, h); g.fill();
+  if (z > 3) {
+    const long = w >= h, L = long ? w : h, D = long ? h : w;
+    if (!long) g.rotate(Math.PI / 2);
+    g.fillStyle = night ? 'rgba(255,226,160,0.85)' : 'rgba(110,150,180,0.8)'; g.fillRect(-L / 2, -D * 0.3, L, D * 0.6);
+    g.strokeStyle = 'rgba(40,44,50,0.6)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); for (let x = -L / 2; x <= L / 2; x += 0.05) { g.moveTo(x, -D * 0.3); g.lineTo(x, D * 0.3); } g.stroke();
+  }
+  g.restore();
+  if (z > 6 && p.clear) lbl(g, `${Math.round(p.clear)} m`, p.x, p.y + Math.max(w, h) * 0.0 + 10 * px, px, 'rgba(236,196,60,0.9)', 7.5, 'center', 700);
+}
+/* a people mover: the guideway on its viaduct (two running tracks) with the trains on it; underground only the line */
+function drawMover(g, p, px, z, night, now) {
+  const P = p.pts; if (!P || P.length < 2) return;
+  const under = (p.lv || 0) < 0;
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y));
+  if (under) { g.setLineDash([6 * px, 5 * px]); g.strokeStyle = 'rgba(120,200,255,0.55)'; g.lineWidth = Math.max(0.02, 1.4 * px); g.stroke(); g.setLineDash([]); }
+  else {
+    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(0.1, 2 * px); g.save(); g.translate(0.06, 0.06); g.stroke(); g.restore();
+    g.strokeStyle = 'rgb(200,200,196)'; g.lineWidth = Math.max(0.08, 1.8 * px); g.stroke();
+    if (z > 4) { g.strokeStyle = 'rgba(90,92,96,0.8)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.stroke(); }
+  }
+  g.lineCap = 'butt';
+  // the trains: two or three cars, shuttling
+  if (z > 1.5 && p.built !== false) {
+    let L = 0; const cum = [0]; for (let i = 1; i < P.length; i++) { L += U.dist(P[i - 1], P[i]); cum.push(L); }
+    const at = d => { for (let i = 1; i < P.length; i++) if (d <= cum[i]) { const f = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1); return { x: P[i - 1].x + (P[i].x - P[i - 1].x) * f, y: P[i - 1].y + (P[i].y - P[i - 1].y) * f, h: Math.atan2(P[i].y - P[i - 1].y, P[i].x - P[i - 1].x) }; } return { x: P[P.length - 1].x, y: P[P.length - 1].y, h: 0 }; };
+    const n = Math.max(1, Math.round(L / 12));
+    for (let k = 0; k < n; k++) {
+      const ph = ((now * 0.9 / Math.max(1, L)) + k / n) % 2, d = (ph < 1 ? ph : 2 - ph) * L, q = at(d);
+      g.save(); g.translate(q.x, q.y); g.rotate(q.h);
+      g.fillStyle = under ? 'rgba(160,220,255,0.7)' : night ? 'rgb(255,236,190)' : 'rgb(236,238,240)'; g.fillRect(-0.18, -0.018, 0.36, 0.036);
+      g.restore();
+    }
+  }
+}
+/* Roofs that are looks only (brief 39): part.roof picks one. They never change what a building does.
+   tent: white fabric on masts, rows of peaks (lightest at each mast, the fabric sagging between);
+   deck: the top deck of a parking garage, bays painted in rows, cars, a ramp at each end;
+   saucer: a round restaurant on four crossed arches;
+   glass: a glazed roof with mullions. */
+const ROOF_FILL = { tent: 'rgb(236,234,226)', deck: 'rgb(142,142,138)', saucer: 'rgb(226,226,220)', glass: 'rgb(120,150,170)' };
+const ROOFS = {
+  tent(g, p, w, h, px, z, night) {
+    const long = w >= h, L = long ? w : h, D = long ? h : w;
+    g.save(); if (!long) g.rotate(Math.PI / 2);
+    const rows = p.rows || (D > 0.9 ? 2 : 1), n = p.peaks || Math.max(2, Math.round(L / 0.55)), dx = L / n;
+    for (let r = 0; r < rows; r++) {
+      const y = rows === 1 ? 0 : (r - (rows - 1) / 2) * D / rows;
+      for (let i = 0; i < n; i++) {
+        const x = -L / 2 + dx * (i + 0.5), rr = Math.max(dx, D / rows) * 0.62;
+        const gr = g.createRadialGradient(x - rr * 0.15, y - rr * 0.15, 0, x, y, rr);
+        gr.addColorStop(0, night ? 'rgba(255,244,214,1)' : 'rgba(255,255,255,1)'); gr.addColorStop(0.55, night ? 'rgba(214,200,170,0.9)' : 'rgba(226,226,220,0.9)'); gr.addColorStop(1, night ? 'rgba(150,140,120,0.5)' : 'rgba(178,180,180,0.55)');
+        g.fillStyle = gr; g.beginPath(); g.moveTo(x, y - D / rows / 2); g.lineTo(x + dx / 2, y); g.lineTo(x, y + D / rows / 2); g.lineTo(x - dx / 2, y); g.closePath(); g.fill();
+        if (z > 3) { g.strokeStyle = 'rgba(120,120,116,0.35)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); g.moveTo(x - dx / 2, y); g.lineTo(x + dx / 2, y); g.moveTo(x, y - D / rows / 2); g.lineTo(x, y + D / rows / 2); g.stroke(); }
+        // the mast at the peak
+        if (z > 6) { g.fillStyle = 'rgba(90,92,96,0.9)'; g.beginPath(); g.arc(x, y, Math.max(0.006, 0.9 * px), 0, 7); g.fill(); }
+      }
+    }
+    g.restore();
+  },
+  deck(g, p, w, h, px, z) {
+    const long = w >= h, L = long ? w : h, D = long ? h : w;
+    g.save(); if (!long) g.rotate(Math.PI / 2);
+    if (z > 3) {
+      // bays in rows across the deck, 2.5 m wide, 5 m deep, with a 7 m aisle between each pair of rows
+      g.strokeStyle = 'rgba(240,240,236,0.55)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath();
+      for (let y = -D / 2 + 0.02; y + 0.17 < D / 2; y += 0.17) { g.moveTo(-L / 2 + 0.06, y + 0.05); g.lineTo(L / 2 - 0.06, y + 0.05); if (z > 8) for (let x = -L / 2 + 0.06; x < L / 2 - 0.06; x += 0.025) { g.moveTo(x, y); g.lineTo(x, y + 0.05); g.moveTo(x, y + 0.05); g.lineTo(x, y + 0.1); } }
+      g.stroke();
+      if (z > 6) { let i = 0; for (let y = -D / 2 + 0.02; y + 0.17 < D / 2; y += 0.17) for (let x = -L / 2 + 0.07; x < L / 2 - 0.07; x += 0.025) { i++; if (U.hash(i, (p.x * 37) | 0) > 0.7) continue; g.fillStyle = CAR_COL[i % CAR_COL.length]; g.fillRect(x + 0.003, y + 0.004 + (i % 2) * 0.05, 0.018, 0.04); } }
+      // ramps at the ends
+      g.fillStyle = 'rgba(96,96,94,0.9)'; g.fillRect(-L / 2 + 0.02, -D / 2 + 0.02, 0.1, D * 0.3); g.fillRect(L / 2 - 0.12, D / 2 - 0.02 - D * 0.3, 0.1, D * 0.3);
+    }
+    g.restore();
+  },
+  saucer(g, p, w, h, px, z, night) {
+    const R = Math.min(w, h) / 2;
+    // two parabolic arches crossing, seen from above as two long legs, and the restaurant in the middle
+    g.strokeStyle = night ? 'rgba(200,180,255,0.9)' : 'rgba(250,250,246,0.95)'; g.lineWidth = Math.max(0.01, R * 0.12); g.lineCap = 'round';
+    g.beginPath(); g.moveTo(-w / 2, -h / 2 * 0.2); g.lineTo(w / 2, h / 2 * 0.2); g.moveTo(-w / 2 * 0.2, -h / 2); g.lineTo(w / 2 * 0.2, h / 2); g.stroke(); g.lineCap = 'butt';
+    g.fillStyle = night ? 'rgba(170,140,255,0.9)' : 'rgb(246,246,242)'; g.beginPath(); g.arc(0, 0, R * 0.45, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(80,90,100,0.6)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); g.arc(0, 0, R * 0.3, 0, 7); g.stroke();
+  },
+  glass(g, p, w, h, px, z, night) {
+    g.fillStyle = night ? 'rgba(255,220,150,0.35)' : 'rgba(170,200,220,0.35)'; g.fillRect(-w / 2, -h / 2, w, h * 0.5);
+    if (z > 5) { g.strokeStyle = 'rgba(40,50,60,0.35)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath(); for (let x = -w / 2; x < w / 2; x += 0.06) { g.moveTo(x, -h / 2); g.lineTo(x, h / 2); } g.stroke(); }
+  }
+};
+const CAR_COL = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230,230,226)', 'rgb(60,80,120)', 'rgb(120,124,128)'];
 /* a terminal or shed roof: parapet, roof panels, skylights along the spine, plant on the roof, glass on the long
    sides; a cargo shed gets loading doors instead */
 function roof(g, p, w, h, px, z, night) {
@@ -608,21 +744,19 @@ const CARS = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230,23
 function drawLandside(g, S, ap, px, z, night) {
   const L = ap.land, V = IC.rs && IC.rs.view;
   const vis = it => !V || (it.x > V.x0 - 2 && it.x < V.x1 + 2 && it.y > V.y0 - 2 && it.y < V.y1 + 2);
-  // roads first: dark asphalt with a pale edge, a centre line close in
+  // roads first: dark asphalt with a pale edge, a centre line close in; roads in a tunnel only as a faint line,
+  // upper decks after the buildings (below)
   g.lineCap = 'round'; g.lineJoin = 'round';
-  for (const r of L.roads || []) {
-    g.strokeStyle = 'rgb(150,150,142)'; g.lineWidth = Math.max(r.w + 0.03, 2 * px); g.beginPath(); r.pts.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.stroke();
-    g.strokeStyle = 'rgb(58,60,62)'; g.lineWidth = Math.max(r.w, 1.4 * px); g.stroke();
-    if (z > 25 && r.w > 0.1) { g.strokeStyle = 'rgba(236,236,226,0.8)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.setLineDash([0.03, 0.03]); g.stroke(); g.setLineDash([]); }
-  }
+  for (const r of L.roads || []) if ((r.lv || 0) <= 0) landRoad(g, r, px, z);
   g.lineCap = 'butt'; g.lineJoin = 'miter';
   for (const it of L.items) {
     if (!vis(it)) continue;
     g.save(); g.translate(it.x, it.y); g.rotate(it.a || 0);
     const w = it.w, h = it.h, k = it.kind, use = it.use == null ? 0.5 : it.use;
+    if (it.poly) { partPath(g, it, w, h); g.save(); g.clip(); }
     if (k === 'park' || k === 'taxi') {
       g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.strokeStyle = 'rgba(150,150,142,0.9)'; g.lineWidth = Math.max(0.006, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(150,150,142,0.9)'; g.lineWidth = Math.max(0.006, 0.7 * px); if (!it.poly) g.strokeRect(-w / 2, -h / 2, w, h);
       if (z > 12) {
         // rows of bays either side of the aisles, and cars in them as full as the car park is
         const bay = 0.026, depth = 0.05, rows = [];
@@ -639,6 +773,8 @@ function drawLandside(g, S, ap, px, z, night) {
         paths.forEach((P, c) => { g.fillStyle = CARS[c]; g.fill(P); }); g.fillStyle = 'rgb(236,196,50)'; g.fill(taxiP);
       }
       if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
+    } else if (k === 'garage' && it.poly) {
+      g.fillStyle = ROOF_FILL.deck; g.fillRect(-w / 2, -h / 2, w, h); ROOFS.deck(g, it, w, h, px, z, night);
     } else if (k === 'garage') {
       g.fillStyle = 'rgb(150,150,146)'; g.fillRect(-w / 2, -h / 2, w, h);
       g.fillStyle = 'rgb(120,120,116)'; g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h - 0.06);
@@ -666,9 +802,32 @@ function drawLandside(g, S, ap, px, z, night) {
       g.fillStyle = 'rgba(0,0,0,0.12)'; for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += 0.06) g.fillRect(x, -h / 2 + 0.03, 0.01, h * 0.62);
       for (let i = 0, x = -w / 2 + 0.08; x < w / 2 - 0.08; x += 0.1, i++) if (U.hash(i, it.x | 0) < use) { g.fillStyle = 'rgb(210,120,50)'; g.fillRect(x, -h / 2 + 0.03 + h * 0.62, 0.035, 0.14); }
     }
-    if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
+    if (it.poly) { g.restore(); g.strokeStyle = k === 'park' || k === 'taxi' ? 'rgba(150,150,142,0.9)' : 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); partPath(g, it, w, h); g.stroke(); }
+    else if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
     g.restore();
     if (z > 30 && IC.cam.z < 200) lbl(g, (it.name || IC.LAND[k].name).toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700);
+  }
+  // the upper decks: their shadow on the road below, concrete parapets, then the road on top
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const r of L.roads || []) if ((r.lv || 0) > 0) landRoad(g, r, px, z);
+  g.lineCap = 'butt'; g.lineJoin = 'miter';
+}
+/* one landside road at its level: a tunnel as a faint dashed line, the ground as asphalt with a pale kerb, an upper
+   deck with its shadow and parapets; lanes and arrows close in */
+function landRoad(g, r, px, z) {
+  const lv = r.lv || 0, path = () => { g.beginPath(); r.pts.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); };
+  if (lv < 0) { path(); g.setLineDash([5 * px, 4 * px]); g.strokeStyle = 'rgba(150,150,142,0.45)'; g.lineWidth = Math.max(r.w * 0.6, 1.2 * px); g.stroke(); g.setLineDash([]); return; }
+  if (lv > 0) { g.save(); g.translate(0.05 * lv, 0.06 * lv); path(); g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = Math.max(r.w + 0.06, 2.6 * px); g.stroke(); g.restore(); }
+  path();
+  g.strokeStyle = lv > 0 ? 'rgb(196,196,190)' : 'rgb(150,150,142)'; g.lineWidth = Math.max(r.w + (lv > 0 ? 0.05 : 0.03), 2 * px); g.stroke();
+  g.strokeStyle = lv > 0 ? 'rgb(70,72,74)' : 'rgb(58,60,62)'; g.lineWidth = Math.max(r.w, 1.4 * px); g.stroke();
+  if (z > 25 && r.w > 0.1) {
+    const lanes = r.lanes || (r.w > 0.2 ? 3 : 2), lw = r.w / lanes;
+    g.strokeStyle = 'rgba(236,236,226,0.8)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.setLineDash([0.03, 0.03]);
+    for (let k = 1; k < lanes; k++) { const off = -r.w / 2 + lw * k; g.beginPath(); r.pts.forEach((q, i) => { const a = r.pts[Math.max(0, i - 1)], b = r.pts[Math.min(r.pts.length - 1, i + 1)], L = U.dist(a, b) || 1, nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L; i ? g.lineTo(q.x + nx * off, q.y + ny * off) : g.moveTo(q.x + nx * off, q.y + ny * off); }); g.stroke(); }
+    g.setLineDash([]);
+    // one way: arrows along it
+    if (r.oneway && z > 40) { g.fillStyle = 'rgba(236,236,226,0.8)'; for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i], L = U.dist(a, b), h = Math.atan2(b.y - a.y, b.x - a.x) + (r.oneway < 0 ? Math.PI : 0); for (let d = 0.2; d < L; d += 0.4) { const x = a.x + (b.x - a.x) * d / L, y = a.y + (b.y - a.y) * d / L; g.save(); g.translate(x, y); g.rotate(h); g.beginPath(); g.moveTo(0.025, 0); g.lineTo(-0.015, -0.012); g.lineTo(-0.015, 0.012); g.fill(); g.restore(); } } }
   }
 }
 

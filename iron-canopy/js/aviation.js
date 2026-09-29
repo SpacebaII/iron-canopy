@@ -129,7 +129,7 @@ IC.aptStands = standsOf;
 function freeStand(S, ap, T, pref) {
   IC.aptGraph(ap);
   const milSlots = new Set(S.roster.filter(r => r.base === ap.id).map(r => r.slot));
-  const ok = standsOf(ap).filter(s => s.hp > 0 && s.linked !== false && !s.occ && !milSlots.has(s.id) && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T));
+  const ok = standsOf(ap).filter(s => s.hp > 0 && s.linked !== false && !s.occ && !milSlots.has(s.id) && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T) && !(s.maxHt && T.ht > s.maxHt));
   if (!ok.length) return null;
   const order = { s: 0, m: 1, l: 2 };
   ok.sort((a, b) => ((b.zone === T.zone) - (a.zone === T.zone)) || (order[a.size] - order[b.size]) || ((b.contact === (pref !== 'cargo')) - (a.contact === (pref !== 'cargo'))) || (T.cargo ? (b.cargo - a.cargo) : 0));

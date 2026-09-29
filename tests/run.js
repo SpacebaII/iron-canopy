@@ -1261,6 +1261,85 @@ test('overlaps: the builder refuses a building on a taxiway, a road or the lands
   assert(IC.aptOverlaps(S, cap).length === 0, 'the test airport overlaps before anything is built');
 });
 
+/* ---------- shapes: outlines, bridges, movers, two-level roads (brief 39) ---------- */
+const MINI = require('./fixtures/mini-layout.js');
+/* the made-up test field in place of the capital's airport, turned by rot */
+const miniGame = (rot, hour) => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: hour == null ? 9 : hour }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  if (S.av) { S.av.tails = []; S.av.routes = []; }
+  S.threats = S.threats.filter(t => !t.tail);
+  IC.aptFromLayout(ap, MINI, { x: ap.x, y: ap.y, rot: rot || 0 });
+  ap._seatKey = null; IC.aptReseat(S, ap); IC.aptStats(S, ap);
+  return { S, ap };
+};
+test('shapes: a layout of outlines becomes an airport: stands on the aprons, gates at the terminals, all of them reached from a runway and back', () => {
+  const { S, ap } = miniGame();
+  const st = IC.aptStands(ap);
+  assert(st.length === MINI.stands.length, `${st.length} stands of ${MINI.stands.length}`);
+  assert(st.every(s => s.contact), `${st.filter(s => !s.contact).map(s => s.name).join(', ')} not at a gate`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+  // an L-shaped terminal measures its own outline, not its bounding box
+  const t = ap.parts.find(p => p.name === 'Main Terminal');
+  assert(Math.abs(IC.partMeasure(ap, t) - (16 * 2.6 - 9 * 1)) < 0.05, `the terminal measures ${IC.partMeasure(ap, t).toFixed(2)} ha`);
+  const rwA = ap.parts.find(p => p.kind === 'runway').id + ':a';
+  for (const s of st) {
+    assert(IC.aptPath(ap, rwA, s.id, false, IC.ACTYPES.narrow.ht) && IC.aptPath(ap, s.id, rwA, true, IC.ACTYPES.narrow.ht), `stand ${s.name} cannot be reached from the runway and back`);
+    assert(s.linked, `stand ${s.name} is not linked`);
+  }
+  assert(ap.parts.find(p => p.kind === 'runway').name === 'Runway 09/27', 'the runway lost its real name');
+});
+test('shapes: a passenger bridge over a taxiway lets a narrow-body under and keeps a wide-body out', () => {
+  const { S, ap } = miniGame();
+  const br = ap.parts.find(p => p.kind === 'bridge'), rwA = ap.parts.find(p => p.kind === 'runway').id + ':a';
+  const far = IC.aptStands(ap).find(s => s.name === '11');
+  assert(br.clear === 13 && far.maxHt === 12, `the stand beyond the bridge takes tails up to ${far.maxHt} m`);
+  assert(IC.aptPath(ap, rwA, far.id, false, IC.ACTYPES.narrow.ht), 'a narrow-body (11.8 m) cannot pass under a 13 m bridge');
+  assert(!IC.aptPath(ap, rwA, far.id, false, IC.ACTYPES.wide.ht), 'a wide-body (18.5 m) was routed under a 13 m bridge');
+  // and an airline never sends one there
+  far.size = 'l';
+  const T = IC.ACTYPES.wide;
+  assert(!(IC.STAND_FITS[far.size].includes(T.stand) && !(far.maxHt && T.ht > far.maxHt)), 'a wide-body would be given the stand beyond the bridge');
+});
+test('shapes: the two levels of the kerb road never meet, and at one level they would', () => {
+  const { S, ap } = miniGame();
+  const up = ap.land.roads.find(r => r.kind === 'upper'), lo = ap.land.roads.find(r => r.kind === 'lower');
+  assert(up.lv === 1 && lo.lv === 0 && IC.aptOverlaps(S, ap).length === 0, 'the two decks are reported as overlapping');
+  // a road across the kerb at grade, with no junction, is reported; the same road on the upper deck is not
+  ap.land.roads.push({ pts: [IC.layoutXf({ x: ap.x, y: ap.y })(12, -8.9), IC.layoutXf({ x: ap.x, y: ap.y })(12, -10)], w: 0.1, lv: 0, kind: 'drive' });
+  assert(IC.aptOverlaps(S, ap).some(o => o.kind === 'road'), 'a road across the arrivals road at grade is not reported');
+  ap.land.roads[ap.land.roads.length - 1].lv = 1;
+  assert(!IC.aptOverlaps(S, ap).some(o => o.kind === 'road' && /arrivals/.test(o.text)), 'a road on the upper deck is reported as crossing the arrivals road');
+});
+test('import: an OpenStreetMap extract becomes a layout the game builds: stands, gates, the bridge and its height, the mover, the roads', () => {
+  const { importAirport } = require('../tools/airport-import.js');
+  const L = importAirport('mini');
+  assert(L.runways.length === 1 && L.runways[0].ends.join('/') === '09/27', 'the runway');
+  assert(L.stands.length === MINI.stands.length && L.stands.every(s => s.ref), `${L.stands.length} stands with gate numbers`);
+  assert(L.bridges.length === 1 && L.bridges[0].clear === 13, 'the bridge and its clearance from min_height');
+  assert(L.movers.length === 1 && L.movers[0].lv === -1 && L.movers[0].stops.length === 2, 'the underground mover between the two terminals');
+  assert(L.roads.some(r => r.lv === 1) && L.roads.some(r => !r.lv), 'the two levels of the kerb road');
+  assert(L.parks.some(p => p.kind === 'garage' && p.lvls === 5), 'the garage and its levels');
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  IC.aptFromLayout(ap, L, { x: ap.x, y: ap.y }); ap._seatKey = null; IC.aptReseat(S, ap); IC.aptStats(S, ap);
+  const st = IC.aptStands(ap);
+  assert(st.length === L.stands.length && st.every(s => s.linked && s.contact), `${st.filter(s => !s.linked).length} stands cut off, ${st.filter(s => !s.contact).length} not at a gate`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+});
+test('shapes: a layout turned and moved works like the original', () => {
+  const A = miniGame(0), B = miniGame(1.1);
+  const sa = IC.aptStands(A.ap), sb = IC.aptStands(B.ap);
+  assert(sa.length === sb.length && sb.every(s => s.linked && s.contact), 'the turned layout lost stands or gates');
+  assert(IC.aptOverlaps(B.S, B.ap).length === 0, IC.overlapText(IC.aptOverlaps(B.S, B.ap)));
+  const st = [IC.aptStats(A.S, A.ap), IC.aptStats(B.S, B.ap)];
+  assert(st[0].movesPerHour === st[1].movesPerHour, `rated ${st[0].movesPerHour} against ${st[1].movesPerHour} movements an hour`);
+  // turned 63 degrees, runway 09/27 becomes 15/33
+  assert(B.ap.parts.find(p => p.kind === 'runway').name === 'Runway 15/33', B.ap.parts.find(p => p.kind === 'runway').name);
+  const r = drive(B.S, B.ap, { arr: 10, dep: 10, hours: 2, fill: 0.5, mix: [['narrow', 1]] });
+  assert(r.grid === 0 && r.stuck === 0 && r.arr + r.dep >= 25, `turned: ${r.arr} arrivals, ${r.dep} departures, ${r.grid} gridlocks, ${r.stuck} stranded`);
+}, true);
+
 const off = (p, a, d) => ({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d });
 const pair = (S, c, alt) => {
   // two airliners 40 km apart, flying head on at the same height, 60 km from the capital

@@ -11,7 +11,7 @@ function tick(S, dt) { S.time += dt; IC.weather(S, dt); IC.updateBases(S, dt); I
 function drive(S, ap, o) {
   const mix = o.mix || [['narrow', 6], ['wide', 3], ['turbo', 1]];
   const stands = IC.aptStands(ap).filter(s => s.linked && s.hp > 0 && (s.zone === 'civil' || !s.zone));
-  const fits = (s, type) => IC.STAND_FITS[s.size].includes(IC.ACTYPES[type].stand);
+  const fits = (s, type) => IC.STAND_FITS[s.size].includes(IC.ACTYPES[type].stand) && !(s.maxHt && IC.ACTYPES[type].ht > s.maxHt);
   const r = { arr: 0, dep: 0, ga: 0, div: 0, divWhy: {}, crash: 0, pending: [], maxHold: 0, left: 0, peak: 0, parkedTypes: new Map() };
   let n = 0;
   // aircraft already parked, ready to leave

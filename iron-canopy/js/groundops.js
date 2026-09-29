@@ -361,7 +361,7 @@ function finishPath(m) { m.path = null; m.pi = 0; m.s = 0; }
 /* the best runway entry for this aircraft: into the wind, on a departure runway, with enough runway ahead */
 function planDeparture(S, ap, m, dry) {
   const g = G(ap), cfg = cfgOf(S, ap), T = m.T;
-  const tree = dry ? IC.aptTree(ap, m.node) : IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) } });
+  const tree = dry ? IC.aptTree(ap, m.node, false, T.ht) : IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) } });
   let best = null;
   for (const rw of runways(ap)) {
     const c = cfg.rw[rw.id]; if (!c) continue;
@@ -455,7 +455,7 @@ IC.rwOcc = function (S, ap, rw, dir, T, R) {
 };
 function planArrival(S, ap, T, target, pref, mil) {
   const g = G(ap), cfg = cfgOf(S, ap), imc = IC.needILS(S) && !mil;
-  const back = IC.aptTree(ap, target, true);
+  const back = IC.aptTree(ap, target, true, T.ht);
   let best = null;
   for (const rw of runways(ap)) {
     const c = cfg.rw[rw.id]; if (!c) continue;

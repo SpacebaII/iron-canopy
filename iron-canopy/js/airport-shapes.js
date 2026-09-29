@@ -113,6 +113,8 @@ IC.shapeDist = function (A, p) {
   return inside ? 0 : m;
 };
 
+/* the distance from a point to a polygon's edges (inside or out) */
+IC.polyEdgeDist = function (P, p) { let m = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) m = Math.min(m, U.segDist(p.x, p.y, P[i].x, P[i].y, P[j].x, P[j].y)); return m; };
 /* a convex polygon moved out by d on every side (each edge pushed out along its normal, corners where they meet) */
 IC.polyGrow = function (P, d) {
   const n = P.length, sg = area(P) > 0 ? 1 : -1, L = [];
@@ -142,6 +144,7 @@ IC.partOutline = function (p) {
 /* the shape of a part, cached until it moves: runways by their pavement, taxiways as lines */
 IC.partShape = function (ap, p) {
   if (p.kind === 'taxi') { const pts = p.nodes ? p.nodes.map(id => ap.nodes[id]).filter(Boolean) : p.pts; const k = pts.map(q => q.x.toFixed(3) + q.y.toFixed(3)).join() + p.w; if (p._shk !== k) { p._shk = k; p._sh = IC.shapeLine(pts, (p.w || IC.APART.taxi.w) / 2); } return p._sh; }
+  if (p.kind === 'people') { const k = p.pts.map(q => q.x.toFixed(3) + q.y.toFixed(3)).join(); if (p._shk !== k) { p._shk = k; p._sh = IC.shapeLine(p.pts, (p.w || IC.APART.people.w) / 2); } return p._sh; }
   if (p.kind === 'runway') { const k = [p.a.x, p.a.y, p.b.x, p.b.y, p.w].join(); if (p._shk !== k) { p._shk = k; p._sh = IC.shapeLine([p.a, p.b], (p.w || IC.APART.runway.w) / 2); } return p._sh; }
   const k = [p.x, p.y, p.a, p.w, p.h, p.r, p.poly && p.poly.length].join();
   if (p._shk !== k) { p._shk = k; p._sh = IC.shapePoly(IC.partOutline(p)); }
@@ -304,6 +307,16 @@ IC.aptOverlaps = function (S, ap, o) {
   for (const A of parks) for (const B of roads) if (pair(A, B) && (B.lv || 0) === 0 && deep(A, B, 0.02) && !(B.land && B.land.to === A.it)) say('park', A, B, `${cap(A.name)} lies across ${B.name}.`, meetAt(A.sh, B.sh));
   for (let i = 0; i < parks.length; i++) for (let j = i + 1; j < parks.length; j++) { const A = parks[i], B = parks[j]; if (pair(A, B) && deep(A, B, 0.02)) say('park', A, B, `${cap(A.name)} overlaps ${B.name}.`, meetAt(A.sh, B.sh)); }
   for (const A of parks) for (const B of bld) if (pair(A, B) && deep(A, B, 0.02)) say('park', A, B, `${cap(A.name)} overlaps ${B.name}.`, meetAt(A.sh, B.sh));
+  // passenger bridges span taxiways, never a runway strip, and stand clear of other buildings (their ends meet the
+  // buildings they join); people movers ride over or under everything but a runway strip, which they pass under
+  const spans = E.filter(e => e.cat === 'span'), movers = E.filter(e => e.cat === 'mover');
+  for (const A of spans) for (const B of air) {
+    if (!pair(A, B)) continue;
+    if (B.cat === 'rwy' && IC.shapeDepth(A.sh, B.strip) > HIT) say('span', A, B, `${cap(A.name)} crosses ${B.name}'s strip: a bridge may span a taxiway, not a runway.`, meetAt(A.sh, B.strip));
+    else if (B.cat === 'bld' && !(A.p.joins || []).includes(B.p.id) && deep(A, B, 0.02)) say('span', A, B, `${cap(A.name)} runs into ${B.name}.`, meetAt(A.sh, B.sh));
+  }
+  for (const A of movers) for (const B of air) if (pair(A, B) && B.cat === 'rwy' && (A.lv || 0) >= 0 && IC.shapeDepth(A.sh, B.strip) > HIT) say('mover', A, B, `${cap(A.name)} crosses ${B.name} above ground: it must pass under the runway in a tunnel.`, meetAt(A.sh, B.strip));
+  for (const A of movers) for (const B of air) if (pair(A, B) && B.cat === 'twy' && (A.lv || 0) === 0 && (B.lv || 0) === 0 && deep(A, B)) say('mover', A, B, `${cap(A.name)} crosses ${B.name} at grade: it needs a viaduct or a tunnel.`, meetAt(A.sh, B.sh));
   // the country's roads and railways inside the fence (not in a tunnel): the airport's own road stops at its gate
   const F = !only && IC.aptFence ? IC.aptFence(ap) : null;
   if (F) for (const A of roads.concat(rails)) {

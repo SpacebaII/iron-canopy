@@ -126,7 +126,8 @@ IC.landsideTick = function (S, ap, dt) {
   const want = IC.landWant(L, terms.length, sheds.length, railNear(S, ap));
   const have = k => L.items.filter(x => x.kind === k).length;
   let added = null;
-  for (const [k, n] of want) {
+  // (a landside laid out from real data is kept as it is: it only earns)
+  if (!L.fixed) for (const [k, n] of want) {
     if (have(k) >= n) continue;
     const it = place(S, ap, k, k === 'warehouse' ? sheds : terms);
     if (!it) continue;
@@ -134,7 +135,7 @@ IC.landsideTick = function (S, ap, dt) {
     L.items.push(it); L.ver++; added = it;
     break;   // one at a time: the landside grows over hours, not in a moment
   }
-  if (added || L.kerbN !== terms.length + sheds.length) kerbs(S, ap, terms.concat(sheds));
+  if (!L.fixed && (added || L.kerbN !== terms.length + sheds.length)) kerbs(S, ap, terms.concat(sheds));
   if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo
   let v = 0;
@@ -167,7 +168,7 @@ IC.landUse = function (L, it) {
 /* the roads of each building's landside: the kerb, a road beyond each band in use, the two ends joining them into a
    loop, and the road out to the country's network (or the access road), round the airfield */
 function kerbs(S, ap, bl) {
-  const L = ap.land; L.kerbN = bl.length; L.roads = []; L.jn = [];
+  const L = ap.land; if (L.fixed) return; L.kerbN = bl.length; L.roads = []; L.jn = [];
   const outs = [];
   for (const t of bl) {
     const sd = landSide(ap, t), mine = L.items.filter(it => it.by === t.id);
