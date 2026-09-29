@@ -446,7 +446,7 @@ function init(v) {
   once();
   const st = startLevel(), r = v.renderer;
   v.fxs = { q: st.q, Q: P[st.q], auto: st.auto, made: 0, frame: 0, probe: st.auto ? { n: 0, ms: [] } : null, flash: 0, flashT: 0, bolt: 0, envKey: '', envT: -1e9,
-    look: {}, sunDir: new THREE.Vector3(0, 1, 0), moonDir: new THREE.Vector3(0, -1, 0), night: 0, wet: 0, snow: 0, tv: new THREE.Vector3(), tv2: new THREE.Vector3(), tv3: new THREE.Vector3(), size: new THREE.Vector2(), objs: [] };
+    look: {}, msRing: new Float32Array(64), sunDir: new THREE.Vector3(0, 1, 0), moonDir: new THREE.Vector3(0, -1, 0), night: 0, wet: 0, snow: 0, tv: new THREE.Vector3(), tv2: new THREE.Vector3(), tv3: new THREE.Vector3(), size: new THREE.Vector2(), objs: [] };
   if (THREE.ACESFilmicToneMapping) r.toneMapping = THREE.ACESFilmicToneMapping;
   if (THREE.SRGBColorSpace) r.outputColorSpace = THREE.SRGBColorSpace;
   if (r.shadowMap) { r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; }
@@ -699,7 +699,8 @@ const treeGeo = () => R.share('fx:tree', () => {
   const me = IC.MB.finish(B, 'tree');
   const pos = [], nor = [], col = [];
   const G0 = me.groups.main; for (let i = 0; i < G0.pos.length; i += 9) for (const j of [0, 6, 3]) { const a = i + j, c = new THREE.Color(me.slots[G0.col[a / 3]]); pos.push(G0.pos[a] * 0.01, G0.pos[a + 2] * 0.01, G0.pos[a + 1] * 0.01); nor.push(G0.nor[a], G0.nor[a + 2], G0.nor[a + 1]); col.push(c.r, c.g, c.b); }
-  return R.geom(new Float32Array(pos), new Float32Array(nor), new Float32Array(col));
+  const g = R.geom(new Float32Array(pos), new Float32Array(nor), new Float32Array(col)); g.userData.keep = true;
+  return g;
 });
 const treeMat = () => R.share('fx:treeMat', () => { const m = std({ vertexColors: true, roughness: 0.9, metalness: 0 }); m.userData.keep = true; return m; });
 function tile(v, g, reg, li) {
@@ -720,7 +721,7 @@ function tile(v, g, reg, li) {
     p.set(x - v.cx, R.hT(v, x, y) * v.hk - 0.005, y - v.cy); s.set(h, h * v.hk, h); M.compose(p, q, s); mesh.setMatrixAt(i, M);
     if (mesh.setColorAt) { c.setRGB(0.75 + r * 0.4, 0.8 + r * 0.3, 0.75 + r * 0.25); mesh.setColorAt(i, c); }
   });
-  mesh.userData.keep = true; mesh.userData.fxTree = true; mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.userData.fxTree = true; mesh.castShadow = true; mesh.receiveShadow = true;
   g.add(mesh);
 }
 
@@ -1009,7 +1010,7 @@ function weatherNow(S, look) {
 }
 function frame(v, t, dtR) {
   const F = v.fxs; if (!F || !v.fxOn) return;
-  const S = v.S, Q = F.Q, cam = v.camera, cp = cam.position, hk = v.hk;
+  const S = v.S, Q = F.Q, cam = v.camera, cp = cam.position, hk = v.hk, t0 = performance.now();
   F.frame++;
   G.time.value = t % 3600;
   // the sun, the moon, and how dark it is (a look can set another hour: the game's clock is not touched)
@@ -1103,7 +1104,7 @@ function frame(v, t, dtR) {
   G.winGlow.value = 1;
   // the nearest airports: stripes on their grass, tufts on the nearest one's
   airportsNear(v, cp);
-  cars(v, dtR);
+  const tc = performance.now(); cars(v, dtR); const cm = performance.now() - tc; F.carMs = F.carMs == null ? cm : F.carMs * 0.95 + cm * 0.05;
   // shadows round what the camera looks at
   shadows(v, ld, moonUp ? 0 : sunI);
   // the environment map, again only when the sky has changed enough to see
@@ -1111,6 +1112,7 @@ function frame(v, t, dtR) {
   // the passes' numbers
   if (Q.post && F.rt) postFrame(v, sd, sc, sunI, W, night, gnd, dtR);
   flags(v);
+  F.msRing[F.frame % 64] = performance.now() - t0;
   probe(v);
 }
 const APT_TMP = [];
@@ -1261,7 +1263,7 @@ IC.fx3d.look = (v, o) => { if (v && v.fxs) Object.assign(v.fxs.look, o); };
 /* what the picture is doing, for the tests and the tools */
 IC.fx3d.state = v => { const F = v.fxs; return F && { q: F.q, night: F.night, wet: F.wet, snow: F.snow, rain: F.rain && F.rain.visible, flakes: F.snowP && F.snowP.visible, fog: FOGV.x, fogH: FOGV.z,
   cover: F.W && F.W.cover, expo: F.expo, sunEl: Math.asin(U.clamp(F.sunDir.y, -1, 1)) * 57.2958, shadows: !!v.sunShadow, clouds: (F.clouds || []).filter(c => c.visible).length, flash: F.skyU ? F.skyU.flash.value : 0,
-  post: !!F.rt, env: !!v.scene.environment, grass: !!(F.grass && F.grass.visible), made: F.made }; };
+  post: !!F.rt, cpuMs: Array.from(F.msRing).sort((a, b) => a - b)[32], carMs: F.carMs, env: !!v.scene.environment, grass: !!(F.grass && F.grass.visible), made: F.made }; };
 IC.fx3dPreset = q => { if (IC.q3d) IC.q3d.set(q); };
 /* ready as soon as replay3d.js is: the materials need three.js, which is loaded by the time this file is */
 if (IC.R3D) { R = IC.R3D; if (R.THREE()) { once(); IC.fx3d.ok = true; } }

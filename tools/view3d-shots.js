@@ -307,7 +307,7 @@ const SCENES = {
     const tg = S.rec.of.get(mis.meta.tref) || mis;
     const V = await replay({ follow: tg.ref, x: kill.x, y: kill.y, t: tl - 3, r: 150, cam: 'auto' }, tl - 3);
     V.slowmo = true; V.playing = true; V.speed = 2; let shot = 0;
-    await film(V, null, 'm-intercept', +(window.FRAMES || Math.min(900, Math.round((kill.t - tl + 3) * 15 + 150))), 1, f => { if (!shot && V.t > kill.t - 0.15) { shot = 1; return 'still'; } });`,
+    await film(V, null, 'm-intercept', +(window.FRAMES || Math.min(900, Math.round((kill.t - tl + 3) * 15 + 150))), 1, f => { if (!shot && V.t > kill.t + 0.3) { shot = 1; return 'still'; } });`,
   // the same frame with the fog, then the sky's light, switched off: what each does to the colours
   'm-debug': `
     const S = await game('sandbox', 11); wx(S, 'scattered');
@@ -336,7 +336,7 @@ const SCENES = {
     for (const q of ['low', 'medium', 'high', 'ultra']) {
       IC.q3d.set(q); await wait(2500);
       const ft = await frameTimes(+(window.N || 40));
-      out[q] = Object.assign(ft, { fps: +(1000 / ft.med).toFixed(1), upMs: +L.upMs.toFixed(2), px: [L.renderer.domElement.width, L.renderer.domElement.height], calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles });
+      out[q] = Object.assign(ft, { fps: +(1000 / ft.med).toFixed(1), upMs: +L.upMs.toFixed(2), fxMs: +IC.fx3d.state(L).cpuMs.toFixed(3), carMs: +(L.fxs.carMs || 0).toFixed(3), drawMs: +L.drawMs.toFixed(2), px: [L.renderer.domElement.width, L.renderer.domElement.height], calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles });
       console.log(q, JSON.stringify(out[q]));
     }
     window.__perf = out; S.paused = true;`,

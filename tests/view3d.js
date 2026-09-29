@@ -90,7 +90,7 @@ class PerspectiveCamera extends Object3D {
 class OrthographicCamera extends Object3D {}
 class BufferAttribute { constructor(a, n) { this.array = a; this.itemSize = n; this.count = a.length / n; this.needsUpdate = false; } }
 class BufferGeometry {
-  constructor() { made.geometry++; born(this, 'geometry'); this.attributes = {}; this.index = null; this.drawRange = { start: 0, count: Infinity }; }
+  constructor() { made.geometry++; born(this, 'geometry'); this.userData = {}; this.attributes = {}; this.index = null; this.drawRange = { start: 0, count: Infinity }; }
   setAttribute(k, a) { this.attributes[k] = a; return this; } setIndex(a) { this.index = a; return this; }
   setDrawRange(s, c) { this.drawRange = { start: s, count: c }; } dispose() { gone(this); }
 }

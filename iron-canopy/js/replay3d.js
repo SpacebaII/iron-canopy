@@ -392,10 +392,11 @@ function finishTile(v, J) {
   v.tileMs = J.ms; v.tileMsMax = Math.max(v.tileMsMax || 0, J.ms); v.tileMsSum = (v.tileMsSum || 0) + J.ms;
   return g;
 }
+const kept = x => x.userData && x.userData.keep;   // shared by every tile or window (render3d-fx.js marks its own)
 function dropTile(v, key) {
   const T = v.tiles.get(key); if (!T) return;
   v.static.remove(T);
-  T.traverse(x => { if (x.userData.keep) return; if (x.geometry && x.geometry !== v.keepGeom) x.geometry.dispose(); if (x.material && x.material !== solidMat() && x.material !== bldMat()) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); } });
+  T.traverse(x => { if (x.userData.keep) return; if (x.isInstancedMesh && x.dispose) x.dispose(); if (x.geometry && x.geometry !== v.keepGeom && !kept(x.geometry)) x.geometry.dispose(); if (x.material && x.material !== solidMat() && x.material !== bldMat() && !kept(x.material)) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); } });
   v.tiles.delete(key);
 }
 /* keeps the rings of tiles round (fx, fy): what is missing goes in the queue, coarse rings first so there is never a
@@ -1254,10 +1255,10 @@ function disposeView(v) {
   // what the windows share stays: materials, textures, the models' geometry
   const keep = new Set(shared.values()); for (const P of partsCache.values()) { for (const g of [P.solid, P.win, P.rest, P.restHi, P.mat]) keep.add(g); for (const a of P.anim) keep.add(a.geom); }
   v.scene.traverse(x => {
-    if (x.geometry && !keep.has(x.geometry) && !x.userData.keep) x.geometry.dispose();
+    if (x.geometry && !keep.has(x.geometry) && !x.userData.keep && !kept(x.geometry)) x.geometry.dispose();
     if (x.isInstancedMesh && x.dispose) x.dispose();
     const ms = Array.isArray(x.material) ? x.material : x.material ? [x.material] : [];
-    for (const m of ms) { if (x.userData.keep || m.userData.keep) continue; if (m.map && !keep.has(m.map)) m.map.dispose(); if (!keep.has(m)) m.dispose(); }
+    for (const m of ms) { if (x.userData.keep || kept(m)) continue; if (m.map && !keep.has(m.map)) m.map.dispose(); if (!keep.has(m)) m.dispose(); }
   });
   v.renderer.dispose();
   if (v.renderer.forceContextLoss) v.renderer.forceContextLoss();
