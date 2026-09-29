@@ -1539,7 +1539,7 @@ function camera(v, t, dtR) {
     return;
   }
   if (shot.mode === 'chase' && S) {
-    const d = camDist(S) * v.camK, f = dirOf(S, vec(2));
+    const d = camDist(S) * 0.8 * v.camK, f = dirOf(S, vec(2));
     // behind, a little above and to one side, so the trail and what lies ahead both show
     const side = vec(3).crossVectors(f, up); if (side.lengthSq() < 1e-6) side.set(1, 0, 0); side.normalize();
     want.copy(S.grp.position).addScaledVector(f, -d).addScaledVector(side, d * 0.3); want.y += d * 0.35;
@@ -1578,7 +1578,16 @@ function camera(v, t, dtR) {
   const gnd = hT(v, want.x + v.cx, want.z + v.cy) * v.hk + 0.02;
   if (want.y < gnd) want.y = gnd;
   // the cinematic cameras ease after what they film, so a jittery path does not shake the picture
-  if (v.snap || !v.camPos || v.camPos.distanceTo(want) > 3 * Math.max(0.5, want.distanceTo(look))) { (v.camPos || (v.camPos = new THREE.Vector3())).copy(want); (v.lookAt || (v.lookAt = new THREE.Vector3())).copy(look); v.snap = false; }
+  // (the chase eases in the frame of what it follows: eased in the world, a fast jet ran away from its own camera)
+  const rel = shot.mode === 'chase' && S ? S.grp.position : null;
+  if (rel) {
+    want.sub(rel); look.sub(rel);
+    if (v.snap || !v.chOff || v.chOff.distanceTo(want) > 3 * Math.max(0.5, want.distanceTo(look))) { (v.chOff || (v.chOff = new THREE.Vector3())).copy(want); (v.chLook || (v.chLook = new THREE.Vector3())).copy(look); v.snap = false; }
+    else { const k = 1 - Math.exp(-dtR * 7); v.chOff.lerp(want, k); v.chLook.lerp(look, Math.min(1, k * 1.5)); }
+    want.copy(v.chOff).add(rel); look.copy(v.chLook).add(rel);
+    want.y = Math.max(want.y, hT(v, want.x + v.cx, want.z + v.cy) * v.hk + 0.02);
+    (v.camPos || (v.camPos = new THREE.Vector3())).copy(want); (v.lookAt || (v.lookAt = new THREE.Vector3())).copy(look);
+  } else if (v.snap || !v.camPos || v.camPos.distanceTo(want) > 3 * Math.max(0.5, want.distanceTo(look))) { (v.camPos || (v.camPos = new THREE.Vector3())).copy(want); (v.lookAt || (v.lookAt = new THREE.Vector3())).copy(look); v.snap = false; }
   else { const k = 1 - Math.exp(-dtR * 7); v.camPos.lerp(want, k); v.lookAt.lerp(look, Math.min(1, k * 1.5)); }
   cam.position.copy(v.camPos); cam.lookAt(v.lookAt);
   cam.updateMatrixWorld();   // the labels project with this frame's camera, not the last one's
@@ -1958,7 +1967,7 @@ function liveSync(v, now, force) {
    inside a dashed box of the real aircraft's length, span and height, so the proportions can be checked ---------- */
 IC.replayGallery = function (S) {
   if (V) IC.replayClose();
-  const el = makeReplayWindow('Models', 'Every model in 3D; down the side, from above and from the side inside the real size');
+  const el = makeReplayWindow('Models', 'Every model in the game, side by side at real size');
   const v = V = newView(S, el, 'gallery');
   Object.assign(v, { cx: 0, cy: 0, R: 60, labels: true, wasPaused: S.paused, orbit: { yaw: 1.25, pitch: 0.7, dist: 110, tx: 0, ty: 0, tz: 0 } });
   S.paused = true;
