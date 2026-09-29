@@ -475,7 +475,7 @@ const LIFT = { pad: 0.003, rw: 0.004 };
 const PAVE_ORDER = { pad: 1, apron: 2, joint: 3, taxi: 4, runway: 5 };
 function paveMat(o, order, mesh) { const m = new THREE.MeshLambertMaterial(o); m.depthWrite = false; mesh.material = m; mesh.renderOrder = PAVE_ORDER[order]; return mesh; }
 function aptPad(v, b, f) {
-  const S = v.S, R = f.r0, T = Math.min(2048, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 36)))));
+  const S = v.S, R = f.r0, T = Math.min(4096, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 60)))));
   const cv = document.createElement('canvas'); cv.width = cv.height = T;
   const g = cv.getContext('2d'), z = T / (2 * R), px = 1 / z;
   const cam = IC.cam, saved = { x: cam.x, y: cam.y, z: cam.z, vw: cam.vw, vh: cam.vh }, rs = IC.rs, savedView = rs && rs.view;
@@ -484,7 +484,7 @@ function aptPad(v, b, f) {
   const hide = { moves: b.moves, roster: S.roster, tb: S.av && S.av.tailById, tt: S.av && S.av.tailMapT, cfg: b.cfg };
   Object.assign(cam, { x: b.x - R, y: b.y - R, z, vw: T, vh: T }); if (rs) rs.view = { x0: b.x - R, y0: b.y - R, x1: b.x + R, y1: b.y + R };
   b.moves = []; S.roster = []; b.cfg = null; if (S.av) { S.av.tailById = new Map(); S.av.tailMapT = S.time; }
-  try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1); } catch (e) { console.warn('3D airport', e); }
+  try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1, { pad: true }); } catch (e) { console.warn('3D airport', e); }
   b.moves = hide.moves; S.roster = hide.roster; b.cfg = hide.cfg; if (S.av) { S.av.tailById = hide.tb; S.av.tailMapT = hide.tt; }
   Object.assign(cam, saved); if (rs) rs.view = savedView;
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
@@ -596,6 +596,16 @@ function apronMesh(v, b, p, f) {
   }
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
   const y = f.e * v.hk + LIFT.pad, c = (lx, ly) => { const w = IC.rectWorld(p, lx, ly); return [w.x - v.cx, y, w.y - v.cy]; };
+  // (an apron drawn as an outline: its convex pieces, fanned, the texture laid over its rectangle)
+  if (p.poly && IC.convexPieces) {
+    const P = [], N = [], UV = [], I = [];
+    for (const piece of IC.convexPieces(p.poly.map(q => ({ x: q[0], y: q[1] })))) {
+      const k0 = P.length / 3;
+      for (const q of piece) { P.push(...c(q.x, q.y)); N.push(0, 1, 0); UV.push((q.x + p.w / 2) / p.w, 1 - (q.y + p.h / 2) / p.h); }
+      for (let i = 1; i + 1 < piece.length; i++) I.push(k0, k0 + i, k0 + i + 1, k0, k0 + i + 1, k0 + i);
+    }
+    return paveMat({ map: tex }, 'apron', new THREE.Mesh(geom(new Float32Array(P), new Float32Array(N), null, new Float32Array(UV), new Uint32Array(I))));
+  }
   const pos = new Float32Array([...c(-p.w / 2, -p.h / 2), ...c(p.w / 2, -p.h / 2), ...c(p.w / 2, p.h / 2), ...c(-p.w / 2, p.h / 2)]);
   const gm = geom(pos, new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), null, new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), new Uint16Array([0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]));
   return paveMat({ map: tex }, 'apron', new THREE.Mesh(gm));
@@ -607,6 +617,8 @@ function aptBuildings(v, b, f) {
   let nr = 0;
   for (const p of b.parts) {
     if (!p.built || PAVE[p.kind] === 1) continue;
+    // (parts drawn as outlines, passenger bridges and people movers: models-airport.js)
+    if (IC.aptMass3d && (p.poly || p.kind === 'skybridge' || p.kind === 'people')) { const st0 = B.groups.main.pos.length / 3; if (IC.aptMass3d(MB, B, p, b)) { items.push({ p, start: st0, end: B.groups.main.pos.length / 3 }); continue; } }
     const x = (p.x - b.x) * 100, y = (p.y - b.y) * 100, a = p.a || 0, W = (p.w || (p.r || 0.1) * 2) * 100, H = (p.h || (p.r || 0.1) * 2) * 100, dead = p.hp <= 0;
     const ca = Math.cos(a), sa = Math.sin(a), start = B.groups.main.pos.length / 3;
     B.with(q => [x + q[0] * ca - q[1] * sa, y + q[0] * sa + q[1] * ca, q[2]], () => {
@@ -743,8 +755,7 @@ function airportSync(v, fx, fy) {
     const f = v.flat.find(q => q.x === b.x && q.y === b.y); if (!f) continue;
     const G = new THREE.Group();
     G.add(aptPad(v, b, f));
-    for (const p of b.parts) if (p.kind === 'apron' && p.built) G.add(apronMesh(v, b, p, f));
-    for (const m of taxiMeshes(v, b, f)) G.add(m);
+    // (aprons, taxiways and their fillets are on the pad: the map's own pavement, render-pavement.js)
     b.parts.filter(p => p.kind === 'runway' && p.built).forEach((rw, i) => G.add(runwayMesh(v, rw, f.e, i)));
     const bl = aptBuildings(v, b, f); G.add(bl);
     const lt = LIFE() ? null : aptLights(v, b, f); if (lt) { G.add(lt); v.nightLights.push(lt); }

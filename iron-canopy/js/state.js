@@ -56,7 +56,6 @@ function* gameSteps(opts) {
   };
   S.cal.m = IC.calAt(S, S.time).m;
   if (mode === 'range') return IC.rangeInit(S);
-  S.terrain = IC.buildTerrain(W);
   S.clouds = IC.buildClouds();
 
   for (const c of W.cities) S.infra.push(Object.assign(c, { infra: true, max: 130 + c.pop * 0.2, morale: 78, alert: 0, prosp: 1, owner: 'us', ind: Math.round(8 + c.pop * 0.05) }));
@@ -75,8 +74,13 @@ function* gameSteps(opts) {
     const apts = S.infra.filter(i => i.kind === 'airport').sort((a, b) => (b.city === W.cities[0].id) - (a.city === W.cities[0].id));
     apts.forEach((ap, i) => IC.layoutAirport(ap, i === 0 ? 'intl' : i === 1 || !story ? 'regional_ok' : 'regional_bad', ap.rwyA));
     for (const b of S.infra.filter(i => i.kind === 'airbase')) IC.layoutAirport(b, story && b.id === 'ab_fwd' ? 'mil_mothball' : 'mil_full', b.rwyA);
+    // the airport showcase: the capital's airport is a real one, laid out from data (airports-real.js)
+    if (opts.showcase) IC.showcaseSetup(S, opts.showcase);
     for (const b of IC.bases(S)) { b.crews = b.kind === 'airbase' ? 2 : 1; b.works = []; b.autoRepair = true; IC.aptStats(S, b); }
+    // the country's roads come in to each airport's landside, round the airfield or under it (growth.js)
+    for (const b of IC.bases(S)) IC.aptSeatRoads(S, b);
   }
+  S.terrain = IC.buildTerrain(W);
   for (const b of W.bridges) S.infra.push(Object.assign(b, { infra: true, owner: 'us', r: 8, max: 40, home: W.inHome(b.x, b.y) }));
   for (const i of S.infra) i.hp = i.max;
   S.byId = {}; for (const i of S.infra) S.byId[i.id] = i;
@@ -98,6 +102,8 @@ function* gameSteps(opts) {
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
+  // (the showcase is the airport at work: no chapter cards, no goals, no guide)
+  if (S.showcase) { S.budget = 1e6; S.camp.cards = []; S.camp.comms = []; S.camp.sched = []; S.story.goals = []; S.story.tut = false; S.camp.focus = { x: S.byId[S.story.cap].x, y: S.byId[S.story.cap].y, z: 0.5 }; }
   return S;
 }
 

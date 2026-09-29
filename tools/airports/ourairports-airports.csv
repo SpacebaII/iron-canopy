@@ -1,0 +1,3 @@
+"id","ident","type","name","latitude_deg","longitude_deg","elevation_ft","continent","iso_country","iso_region","municipality","scheduled_service","icao_code","iata_code","gps_code","local_code","home_link","wikipedia_link","keywords"
+3486,"KDEN","large_airport","Denver International Airport",39.860027,-104.673792,5431,"NA","US","US-CO","Denver","yes","KDEN","DEN","KDEN","DEN","http://www.flydenver.com/","https://en.wikipedia.org/wiki/Denver_International_Airport","DVX, KVDX"
+3632,"KLAX","large_airport","Los Angeles International Airport",33.942501,-118.407997,125,"NA","US","US-CA","Los Angeles","yes","KLAX","LAX","KLAX","LAX","https://www.flylax.com/","https://en.wikipedia.org/wiki/Los_Angeles_International_Airport","Tom Bradley"

@@ -98,9 +98,8 @@ IC.render = function (S, now) {
     // airports darken their own field (render-airport.js), so the night here leaves those boxes out
     ctx.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; ctx.beginPath(); ctx.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
     if (z >= 0.3) for (const b of IC.bases(S)) {
-      const k = b._box; if (!k || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
-      const c = Math.cos(k.a), sn = Math.sin(k.a), w = k.w / 2 + 0.05, h = k.h / 2 + 0.05;
-      [[-w, -h], [w, -h], [w, h], [-w, h]].forEach(([u, v], i) => ctx[i ? 'lineTo' : 'moveTo'](k.x + u * c - v * sn, k.y + u * sn + v * c)); ctx.closePath();
+      const k = b._box; if (!k || !k.poly || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
+      IC.aptFencePath(ctx, k);
     }
     ctx.fill('evenodd');
   }
@@ -122,6 +121,8 @@ IC.render = function (S, now) {
   if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
   IC.drawHeightLadders(ctx, S, px, view);
+  // the build bar's info view over the airport being built on (render-infoview.js)
+  if (IC.bb && IC.bb.view && IC.drawInfoView) IC.drawInfoView(ctx, S, px, now);
 
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';

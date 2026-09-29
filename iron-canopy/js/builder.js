@@ -136,6 +136,8 @@ IC.bldClearText = function (clr) {
 /* the ground a part takes up, for clearing homes: a runway takes its 150 m strip */
 function footprint(ap, p) {
   if (p.kind === 'runway') return { line: [[p.a, p.b]], r: 1.5 };
+  // (a people mover on its viaduct or in its tunnel takes a narrow strip; homes under a viaduct are cleared)
+  if (p.kind === 'people') { const segs = []; for (let i = 1; i < p.pts.length; i++) segs.push([p.pts[i - 1], p.pts[i]]); return { line: segs, r: (p.lv || 0) < 0 ? 0 : 0.08 }; }
   if (p.kind === 'taxi') { const pts = p.pts || p.nodes.map(id => ap.nodes[id]); const segs = []; for (let i = 1; i < pts.length; i++) segs.push([pts[i - 1], pts[i]]); return { line: segs, r: 0.45 }; }
   const D = IC.APART[p.kind];
   const w = p.w || (p.r ? p.r * 2 : D.w || 0.3), h = p.h || (p.r ? p.r * 2 : D.h || 0.3);
@@ -295,18 +297,86 @@ IC.bldStart = function (S, ap, part, pv) {
   (ap.undo = ap.undo || []).push(part.id);
   return w;
 };
-/* upgrading a part's pavement: the part is closed while the work runs */
-IC.bldUpgrade = function (S, ap, part, mat) {
-  if (!IC.PAVED[part.kind] || !IC.PAVE[mat] || !part.built || IC.paveOf(part) === mat || ap.works.some(w => w.part === part)) return false;
-  if (IC.aptLockWhy(S, part.kind, mat)) { IC.log(S, 'warn', 'BUILD', IC.aptLockWhy(S, part.kind, mat)); return false; }
-  const probe = Object.assign({}, part, { mat });
-  const cost = IC.partCost(ap, probe) * 0.8, dur = IC.partBuildTime(ap, probe) * 0.6, need = IC.partNeed(ap, probe);
-  if (S.budget < cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(cost * 0.1)} needed now.`); return false; }
+/* Upgrade: a built runway, taxiway or apron gets a new pavement, width or lights. The player pays the difference
+   between what the part costs now and what it will cost (nothing back for a cheaper one); the part is closed while
+   the work runs. o: { mat, w, lit } (a string is a pavement) */
+IC.WIDTHS = { runway: [0.3, 0.45, 0.6], taxi: [0.15, 0.18, 0.23] };
+IC.bldUpgradeCost = function (S, ap, part, o) {
+  if (typeof o === 'string') o = { mat: o };
+  const out = { cost: 0, dur: 0, why: '', what: [] };
+  if (!IC.PAVED[part.kind]) { out.why = 'Only runways, taxiways and aprons can be upgraded.'; return out; }
+  if (!part.built) { out.why = 'It is still being built: remove it and plan it again instead.'; return out; }
+  if (ap.works.some(w => w.part === part)) { out.why = 'Work is already under way on it.'; return out; }
+  const to = Object.assign({}, part);
+  if (o.mat && IC.PAVE[o.mat] && o.mat !== IC.paveOf(part)) { to.mat = o.mat; out.what.push(IC.PAVE[o.mat].name.toLowerCase()); }
+  if (o.w && (part.kind === 'runway' || part.kind === 'taxi') && Math.abs(o.w - (part.w || IC.APART[part.kind].w)) > 1e-3) { to.w = o.w; out.what.push(`${Math.round(o.w * 100)} m wide`); }
+  if (o.lit != null && (part.kind === 'runway' || part.kind === 'taxi') && (part.lit !== false) !== !!o.lit) { to.lit = !!o.lit; out.what.push(o.lit ? 'edge lights' : 'no lights'); }
+  if (!out.what.length) { out.why = 'That is what it has already.'; return out; }
+  const lock = to.mat !== part.mat && IC.aptLockWhy(S, part.kind, to.mat); if (lock) { out.why = lock; return out; }
+  out.cost = Math.max(0, IC.partCost(ap, to) - IC.partCost(ap, part));
+  out.dur = Math.max(300, IC.partBuildTime(ap, to) * (to.mat !== part.mat || to.w !== part.w ? 0.6 : 0.15));
+  out.to = to;
+  if (S.budget < out.cost * 0.1) out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed now.`;
+  return out;
+};
+IC.bldUpgrade = function (S, ap, part, o) {
+  const q = IC.bldUpgradeCost(S, ap, part, o);
+  if (q.why) { IC.log(S, 'warn', 'BUILD', q.why); return false; }
+  const to = q.to, cost = q.cost, dur = q.dur, need = to.mat !== part.mat || to.w !== part.w ? IC.partNeed(ap, to) : {};
   const stages = [{ k: 'earth', name: 'Breaking out the old surface', dur: dur * 0.35, cost: cost * 0.3 }, { k: 'pave', name: 'Paving', dur: dur * 0.5, cost: cost * 0.55, mats: need }, { k: 'mark', name: 'Markings', dur: dur * 0.08, cost: cost * 0.07 }, { k: 'lights', name: 'Lights', dur: dur * 0.07, cost: cost * 0.08 }];
-  const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${IC.PAVE[mat].name} for ${part.name || U.lc(IC.APART[part.kind].name)}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time, mat };
+  const nm = part.name || U.lc(IC.APART[part.kind].name);
+  const w = { id: IC.nid('w'), key: 'up:' + part.id, kind: 'upgrade', label: `${nm[0].toUpperCase() + nm.slice(1)}: ${q.what.join(', ')}`, prog: 0, dur, part, cost, stages, si: 0, t: 0, spent: 0, t0: S.time,
+    mat: to.mat !== part.mat ? to.mat : null, w: to.w !== part.w ? to.w : null, lit: to.lit !== part.lit ? to.lit : null };
   ap.works.push(w);
   part.shut = w.id; ap.dirty = true; ap.cfg = null;
-  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)} (${U.money(cost)}). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)} (${U.money(cost)}, the difference in price). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
+  return true;
+};
+/* Bulldoze: what comes back. Planned work not yet begun is refunded in full, work under way half of what was spent;
+   a finished part is worth a fifth of its price as salvage, less for damage */
+IC.bldRefund = function (S, ap, part) {
+  const why = part.built ? IC.aptRemoveBlock(S, ap, part) : '';
+  const w = ap.works.find(x => x.part === part && x.stages);
+  let refund = 0;
+  if (!part.built) refund = w ? (w.si === 0 && !(w.stages[0].k === 'demo' && w.t > 0) ? w.spent || 0 : (w.spent || 0) * 0.5) : 0;
+  else refund = IC.partCost(ap, part) * 0.2 * U.clamp(part.hp / (part.max || 1), 0, 1);
+  return { refund, why };
+};
+IC.bldBulldoze = function (S, ap, part) {
+  const q = IC.bldRefund(S, ap, part);
+  if (q.why) { IC.log(S, 'warn', 'BUILD', q.why, ap); return false; }
+  if (!IC.aptRemove(S, ap, part.id)) return false;
+  if (q.refund) { if (IC.pay) IC.pay(S, 'refund', -q.refund); else S.budget += q.refund; }
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${part.name || U.lc(IC.APART[part.kind].name)} bulldozed${q.refund ? `, ${U.money(q.refund)} back` : ''}.`, ap);
+  return q.refund || true;
+};
+/* Move: a planned building moves free before its earthworks start; a finished one is taken down and put up again
+   at the new place for half its price and time (runways, taxiways and aprons are rebuilt, not moved) */
+IC.bldRelocateCost = function (S, ap, p) {
+  if (IC.PAVED[p.kind] || p.kind === 'taxi' || p.kind === 'runway' || p.kind === 'ils' || p.kind === 'people' || p.kind === 'skybridge') return { cost: 0, why: 'Runways, taxiways, aprons and bridges are rebuilt, not moved: bulldoze it and plan it again.' };
+  if (IC.bldCanMove(ap, p)) return { cost: 0, why: '' };
+  if (!p.built) return { cost: 0, why: 'Its earthworks have started: it can move once it is finished.' };
+  const why = IC.aptRemoveBlock(S, ap, p);
+  return { cost: IC.partCost(ap, p) * 0.5, why };
+};
+IC.bldRelocate = function (S, ap, p, x, y, a) {
+  if (IC.bldCanMove(ap, p)) return IC.bldMove(S, ap, p, x, y, a);
+  const q = IC.bldRelocateCost(S, ap, p); if (q.why || !p.built) return false;
+  if (S.budget < q.cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(q.cost * 0.1)} needed now.`); return false; }
+  const probe = Object.assign({}, p, { x, y, a: a != null ? a : p.a });
+  ap.parts = ap.parts.filter(q2 => q2 !== p);
+  const ok = IC.aptCanPlace(S, ap, probe);
+  ap.parts.push(p);
+  if (!ok) return false;
+  p.x = probe.x; p.y = probe.y; p.a = probe.a; p.door = null; p.built = false; p.prog = 0;
+  const pv = IC.bldPreview(S, ap, p);
+  for (const st of pv.stages) { st.cost *= 0.5; st.dur *= 0.5; }
+  pv.cost *= 0.5; pv.dur *= 0.5;
+  const w = IC.bldStart(S, ap, p, pv); w.label = `Move ${U.lc(IC.APART[p.kind].name)}`; ap.works.push(w);
+  // (undo takes back only what was planned new: a move is not undone by removing the building)
+  if (ap.undo && ap.undo[ap.undo.length - 1] === p.id) ap.undo.pop();
+  ap.dirty = true; IC.aptExtent(ap);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: the ${U.lc(IC.APART[p.kind].name)} is taken down and put up again at the new place: ${U.money(pv.cost)}, about ${U.dur(pv.dur)}.`, p);
   return true;
 };
 /* works finished or cancelled: reopen what they closed */
@@ -429,6 +499,7 @@ IC.BTOOLS = {
   remote: { name: 'Remote apron', desc: 'Two corners: an apron with a taxilane along its front. Stands served by bus.' },
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
   stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go: the new paving joins it seamlessly. Aprons that touch are one paved area.' },
+  blueprint: { name: 'Blueprint', desc: 'A whole real airport, laid out from map data: pick one below, turn it with R, click where it goes. It is planned part by part and paid for as it is built, like anything else; it must fit the site: in the country, off lakes and rivers, clear of other airfields and of what is already here.', avail: () => !!(IC.showcaseKeys && IC.showcaseKeys().length) },
   stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
 };
 /* the parallel taxiway to the side of a runway where the cursor is */
@@ -786,8 +857,10 @@ IC.aptAutoLinks = function (ap) {
   }
 };
 
-const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1 };
-const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1 };
+const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, people: 1 };
+const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1, skybridge: 1 };
+/* a passenger bridge clears the tallest narrow-body with a metre and a half to spare, unless the player picks */
+IC.BRIDGE_CLEAR = 14;
 IC.bldIsArea = t => !!AREA_TOOLS[t];
 IC.bldIsLine = t => !!LINE_TOOLS[t];
 function runwayAt(ap, p, tol) { let best = null, bd = tol + 0.3; for (const q of ap.parts) if (q.kind === 'runway') { const d = IC.partDist(ap, q, p); if (d < bd) { bd = d; best = q; } } return best; }
@@ -861,14 +934,32 @@ function planOf(S, m, hv, tol, free) {
   const ap = m.ap, t = m.part, out = { specs: [], text: [], ok: true, why: '', cost: 0, dur: 0, snap: null };
   if (!hv) return out;
   const pts = m.pts.slice();
+  // a blueprint: the whole real airport at the cursor, turned by R (checked here, drawn by the ghost)
+  if (t === 'blueprint') {
+    if (!m.bp || !IC.REAL_APT[m.bp]) { out.ok = false; out.why = 'No blueprint to place.'; return out; }
+    const key = m.bp + '|' + hv.x.toFixed(1) + ',' + hv.y.toFixed(1) + '|' + (m.rot || 0).toFixed(3) + '|' + ap.parts.length + '|' + Math.round(S.budget);
+    if (m._bpKey !== key) { m._bpKey = key; m._bpC = IC.bldBlueprintCheck(S, ap, m.bp, hv.x, hv.y, m.rot || 0); }
+    const C = m._bpC, L = IC.REAL_APT[m.bp];
+    out.bp = { x: hv.x, y: hv.y, rot: m.rot || 0, t: C.t }; out.ok = C.ok; out.why = C.why; out.hit = C.hit; out.cost = C.cost || 0;
+    out.text.push(`${L.name}, ${L.after}: ${C.parts} parts, ${U.money(C.cost || 0)} paid as the work runs, ${U.money((C.cost || 0) * 0.1)} now. R turns it`);
+    return out;
+  }
   if (LINE_TOOLS[t]) {
     const s = snapLine(ap, m, hv, tol, free); out.snap = s;
     const last = pts[pts.length - 1];
     if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse') && pts.length === 2) pts[1] = s; else pts.push(s); }
     out.pts = pts;
     if (pts.length < 2) return out;
-    if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone });
-    else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat });
+    if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone, w: m.twid || null, lit: m.lit === false ? false : null, oneway: m.oneway || null });
+    else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat, w: m.rwid || null, lit: m.lit === false ? false : null });
+    else if (t === 'people') {
+      // under the runways in a tunnel, over everything else on a viaduct
+      const probe = { kind: 'people', pts: pts.map(q => ({ x: q.x, y: q.y })), lv: 1 };
+      const sh = IC.partShape(ap, probe), under = ap.parts.some(q => q.kind === 'runway' && IC.shapeDepth(sh, IC.shapeLine([q.a, q.b], 1.5)) > 0);
+      probe.lv = m.lv != null ? m.lv : under ? -1 : 1;
+      out.specs.push(probe);
+      out.text.push(`${(IC.partMeasure(ap, probe) / 10).toFixed(1)} km ${probe.lv < 0 ? 'in a tunnel' : 'on a viaduct'}: about ${Math.max(1, Math.round(IC.partMeasure(ap, probe) * 100 / 9 / 60 + 1))} min from end to end`);
+    }
     else { const c = concourseSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
   } else if (AREA_TOOLS[t]) {
     const s = snapCorner(ap, m, hv, tol, free, true); out.snap = s;
@@ -877,10 +968,11 @@ function planOf(S, m, hv, tol, free) {
     const r0 = { x: pts[0].x, y: pts[0].y, a: m.rot }, l = IC.rectLocal(r0, c2), c = IC.rectWorld(r0, l.x / 2, l.y / 2);
     const rc = { x: c.x, y: c.y, a: m.rot, w: Math.abs(l.x), h: Math.abs(l.y) };
     out.pts = [pts[0], c2];
-    if (rc.w < 0.3 || rc.h < 0.3) { out.ok = false; out.why = 'Too small: at least 30 m each way.'; return out; }
+    if (t === 'skybridge' ? Math.max(rc.w, rc.h) < 0.3 || Math.min(rc.w, rc.h) < 0.1 : rc.w < 0.3 || rc.h < 0.3) { out.ok = false; out.why = t === 'skybridge' ? 'Too small: a passenger bridge is at least 10 m wide and 30 m long.' : 'Too small: at least 30 m each way.'; return out; }
     const kind = t === 'remote' || t === 'ramp' ? 'apron' : t;
     if (t === 'remote') out.specs = remoteSpec(ap, rc).map(q => Object.assign(q, { mat: m.mat, zone: m.zone }));
-    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, kind === 'apron' && t !== 'ramp' ? { smax: m.size || 'm' } : null, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : null));
+    else out.specs.push(Object.assign({ kind, mat: m.mat, zone: m.zone }, kind === 'apron' && t !== 'ramp' ? { smax: m.size || 'm' } : null, rc, t === 'ramp' ? { ramp: true, free: [] } : t === 'surface' ? { surf: m.surf || 'grass' } : t === 'skybridge' ? { clear: m.clear || IC.BRIDGE_CLEAR } : null));
+    if (t === 'skybridge') { const fit = Object.values(IC.ACTYPES).filter(T => T.ht && T.ht <= (m.clear || IC.BRIDGE_CLEAR) - 1 && T.stand !== 's').sort((a, b) => b.ht - a.ht)[0]; out.text.push(`${m.clear || IC.BRIDGE_CLEAR} m above the taxiway: aircraft up to ${fit ? fit.name.toLowerCase() : 'a small one'} taxi under it; taller ones go round`); }
   } else if (t === 'stretch') {
     // the edge of an apron nearest the first click, pushed out to the cursor
     const from = pts[0] || hv, E = apronEdge(ap, from, Math.max(tol, 0.15));
@@ -1049,7 +1141,10 @@ function taxiText(S, ap, out, p) {
 /* build mode for a tool, with the player's last choices of pavement, stand size and zone */
 IC.bldMode = function (S, ap, part) {
   const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
-  return { kind: 'build', ap, part, pts: [], rot: ap.rwyA || 0, rot0: ap.rwyA || 0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass' };
+  // (a blueprint starts the way the real airport lies: north up)
+  const r0 = part === 'blueprint' ? 0 : ap.rwyA || 0, keys = IC.showcaseKeys ? IC.showcaseKeys() : [];
+  return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass',
+    rwid: P.rwid || null, twid: P.twid || null, lit: P.lit === false ? false : true, oneway: P.oneway || 0, bp: keys.includes(P.bp) ? P.bp : keys[0] };
 };
 /* one click in build mode. btn 0 places, 2 takes back. Returns what happened: 'point', 'built', 'undo', 'exit',
    'err' (with m.err saying why) */
@@ -1061,6 +1156,13 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     return 'exit';
   }
   const plan = IC.bldPlanOf(S, m, p, tol, free);
+  if (m.part === 'blueprint') {
+    if (!plan.ok) { m.err = plan.why; return 'err'; }
+    const made = IC.bldBlueprint(S, ap, m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);
+    if (!made) { m.err = 'Could not plan it.'; return 'err'; }
+    m.done = `${IC.REAL_APT[m.bp].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs.`;
+    return 'built';
+  }
   if (m.part === 'stand') {
     if (!plan.ok) { m.err = plan.why; return 'err'; }
     return IC.bldAddStand(S, ap, plan.stand) ? 'built' : (m.err = 'Not enough money.', 'err');
@@ -1119,9 +1221,10 @@ IC.bldPlanSpecs = function (S, ap, specs) {
   const order = specs.slice().sort((a, b) => (a.kind === 'taxi') - (b.kind === 'taxi'));
   for (const sp of order) {
     let p = null;
-    if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
-    else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax }); if (p && sp.link) p.link = sp.link; }
+    if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane, w: sp.w, lit: sp.lit, oneway: sp.oneway });
+    else if (sp.kind === 'people') p = IC.aptPlanMover(S, ap, sp.pts, sp.lv);
+    else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat, w: sp.w, lit: sp.lit });
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, clear: sp.clear }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }
