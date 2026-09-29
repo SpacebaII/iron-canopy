@@ -45,7 +45,7 @@ b{font-weight:600}
 .gold{color:var(--money)}.hostile{color:var(--hostile)}.friend{color:var(--friend)}.amber{color:var(--amber)}.ok{color:var(--ok)}.muted{color:var(--muted)}.unknown{color:var(--unknown)}.civil{color:var(--civil)}.suspect{color:var(--suspect)}.supply{color:var(--supply)}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-.app{position:relative;height:100%;border-radius:14px;overflow:hidden;background:var(--bg)}
+.app{position:relative;height:100%;border-radius:14px;overflow:hidden;overflow:clip;background:var(--bg)}
 #map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:default}
 #map.placing{cursor:crosshair}#map.dragging{cursor:grabbing}
 .glass{background:var(--glass);border-radius:14px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(12px) saturate(1.15);backdrop-filter:blur(12px) saturate(1.15)}
@@ -355,9 +355,10 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .prog{height:4px;background:var(--well);border-radius:2px;overflow:hidden}
 .prog i{display:block;height:100%;background:var(--amber)}
 .log{list-style:none;margin:0;padding:0;display:grid;gap:2px;font-size:.88rem}
-.log li{display:grid;grid-template-columns:3.2rem 5.2rem 1fr;gap:.5rem;padding:.25rem .4rem;border-radius:6px;line-height:1.35}
+.log li{display:grid;grid-template-columns:3.2rem 5.2rem 1fr auto;gap:.5rem;padding:.25rem .4rem;border-radius:6px;line-height:1.35}
+.log.cal li{grid-template-columns:7.4rem 5.2rem 1fr auto}
 .log li.click{cursor:pointer}.log li.click:hover{background:var(--well)}
-.log time{font-family:var(--mono);color:var(--dim);font-size:.8rem}
+.log time{font-family:var(--mono);color:var(--dim);font-size:.8rem;white-space:nowrap}
 .log .tg{font-family:var(--mono);font-size:.75rem;font-weight:600}
 .t-kill{color:var(--friend)}.t-leak{color:var(--hostile)}.t-warn{color:var(--amber)}.t-info{color:var(--muted)}.t-id{color:var(--unknown)}
 .ref{display:grid;grid-template-columns:3.4rem 1fr;gap:.6rem;align-items:start;padding:.5rem .6rem;border-radius:12px;background:var(--well)}
@@ -374,6 +375,7 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .tip b{display:block;font-family:var(--mono);font-size:.82rem}
 .tip span{display:block;font-size:.82rem;color:var(--muted)}
 .modehint{position:absolute;z-index:5;left:50%;bottom:10.5rem;transform:translateX(-50%);font-size:.95rem;background:rgba(6,26,38,.94);border-radius:16px;white-space:pre-line;line-height:1.45;padding:.5rem 1.1rem;color:#d5f2ff;box-shadow:0 0 22px rgba(111,210,255,.28);max-width:70%;text-align:center}
+.app.has-insp .modehint{left:calc((100% - 25rem - 24px) / 2);max-width:min(46rem,calc(100% - 25rem - 64px))}
 .cine{position:absolute;z-index:7;left:50%;top:24%;transform:translateX(-50%);width:min(40rem,86%);text-align:center;display:grid;gap:.4rem;padding:1.4rem 1.6rem;border-radius:18px;background:radial-gradient(ellipse at center,rgba(6,11,16,.98),rgba(6,11,16,.95));box-shadow:0 30px 90px rgba(0,0,0,.7);animation:cineIn .6s var(--ease);cursor:pointer}
 @keyframes cineIn{from{opacity:0;transform:translate(-50%,10px) scale(.98);letter-spacing:.3em}}
 .cine small{font-family:var(--mono);font-size:.8rem;letter-spacing:.2em;text-transform:uppercase;color:var(--amber)}
@@ -483,6 +485,14 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .actstep.cur{opacity:1;background:rgba(242,180,65,.14);box-shadow:inset 0 0 0 1px rgba(242,180,65,.45)}
 .actstep.done{opacity:.85}.actstep.done b{color:var(--ok)}
 
+/* a narrower screen keeps the top bar on one line: no brand, no row labels (their tooltips stay), tighter speeds */
+@media (max-width:1600px){
+  .brand{display:none}
+  .rules .rl>span{display:none}
+  .speed button{min-width:2rem;padding:0 .42rem}
+  .clock span{letter-spacing:.07em}
+  .stat.role strong{max-width:9.5rem;white-space:normal;text-align:right;line-height:1.05;font-size:.95rem}
+}
 @media (max-width:1400px){
   .app.has-insp .feed{display:none}
   .arsenal{width:min(34rem,40%)}
@@ -636,7 +646,7 @@ table.t th.r{text-align:right}
 .st-page{display:grid;gap:.9rem}
 .st-head{display:flex;gap:1rem;align-items:center}
 .st-head h2{margin:0;font-family:var(--display);font-weight:700;font-size:1.8rem;letter-spacing:.12em;text-transform:uppercase}
-.st-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:10px;max-height:62vh;overflow:auto;scrollbar-width:thin}
+.st-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:10px}
 .st-region{align-self:end;display:grid;gap:.6rem;padding:1rem 1.1rem;border-radius:var(--r);background:rgba(6,11,16,.7);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .st-region small{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
 .st-region .lead{font-size:.95rem;color:var(--muted)}

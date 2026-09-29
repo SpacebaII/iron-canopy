@@ -27,22 +27,22 @@ IC.campaignInit = function (S) {
   if (S.mode === 'sandbox') {
     S.camp.sched = [{ t: 7 * 3600, fn: IC.hfn('qwSandboxWar', S) }, { t: 30 * 3600, fn: IC.hfn('qwWake', S) }];
     S.camp.chapter = 'Open War';
-    say(S, 'CDS', `${W.full.A} will strike at dawn. Most of our equipment is deployed and the nation is partly mobilized. Good luck.`);
+    say(S, 'CDS', `The ${W.full.A} will strike at dawn. Most of our equipment is deployed and the nation is partly mobilized. Good luck.`);
     return;
   }
   E.allow = new Set(['recon']);
   for (const s of S.esites) if (s.nat === 'B') s.dormant = true;
   const war = S.time + U.rand(3, 4.5) * 3600, second = war + U.rand(20, 30) * 3600;
   S.camp.sched = ['qwRecon', 'qwRockets', 'qwSigint', 'qwWar', 'qwSecond'].map((h, i) => ({ t: [S.time + U.rand(0.6, 1) * 3600, S.time + U.rand(1.6, 2.2) * 3600, war - 1500, war, second][i], fn: IC.hfn(h, S) }));
-  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `${W.full.A} has closed the border and its forces are massing. We are not on a war footing: good equipment, much of it still in the depots, and thin magazines. Use the time.`, 'chapter');
+  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `The ${W.full.A} has closed the border and its forces are massing. We are not on a war footing: good equipment, much of it still in the depots, and thin magazines. Use the time.`, 'chapter');
   S.camp.chapter = 'Tension';
-  say(S, 'CDS', `${W.full.A} is massing on the border. We have hours, not days. Get equipment out of the reserve, fill the magazines, and decide what we protect first.`);
+  say(S, 'CDS', `The ${W.full.A} is massing on the border. We have hours, not days. Get equipment out of the reserve, fill the magazines, and decide what we protect first.`);
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
   say(S, 'LOG', 'Depots are low. Order munitions at the factories or buy abroad, and put a forward depot near the northern border so convoys have short runs.');
 };
 /* the Quick war's timetable (S.camp.sched) */
 const H = IC.H;
-H.qwSandboxWar = S => () => { IC.enemyOpening(S, { act: 2 }); chapter(S, 'Open War', `${S.world.full.A} has attacked.`); };
+H.qwSandboxWar = S => () => { IC.enemyOpening(S, { act: 2 }); chapter(S, 'Open War', `The ${S.world.full.A} has attacked.`); };
 H.qwWake = S => () => { for (const s of S.esites) s.dormant = false; };
 H.qwRecon = S => () => { IC.enemyForceOp(S, 'recon', nearTown(S)); say(S, 'INT', `An unidentified slow track has crossed from ${S.world.names.A}. Probably a reconnaissance drone photographing our positions. Shooting it down now would be legal, but it would also tell them where our batteries are.`); };
 H.qwRockets = S => () => { const E = S.enemy; E.allow.add('rkt'); const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name}! A ${S.world.names.A} battery is shelling across the border. Our counter-battery radar or a reconnaissance drone could find the launcher.`); E.allow.delete('rkt'); };
@@ -50,10 +50,10 @@ H.qwSigint = S => () => say(S, 'INT', `Signals intelligence: heavy radio traffic
 H.qwWar = S => () => {
   // a defence that is ready when the war comes cuts their probing short: up to four hours
   const W = S.world; S.enemy.allow = null; IC.enemyOpening(S, { head: 4 * readiness(S) });
-  chapter(S, 'The First Strike', `${W.full.A} has opened fire. Drones and a few missiles are in the air.`);
+  chapter(S, 'The First Strike', `The ${W.full.A} has opened fire. Drones and a few missiles are in the air.`);
   say(S, 'CDS', `This is war. The first strikes are probes: drones and single missiles along the border. They want to see what fires and from where. They have far more than this: they are holding it back.`);
 };
-H.qwSecond = S => () => { for (const s of S.esites) s.dormant = false; chapter(S, 'Two Fronts', `${S.world.full.B} has joined the war.`); };
+H.qwSecond = S => () => { for (const s of S.esites) s.dormant = false; chapter(S, 'Two Fronts', `The ${S.world.full.B} has joined the war.`); };
 /* how ready the defence is when the war comes: the share of the capital, the main air base and the two largest
    cities with a battery set up over them */
 function readiness(S) {
@@ -106,7 +106,7 @@ IC.campaignTick = function (S, dt) {
     const w = C.work = IC.working(S), m = IC.nationalMorale(S);
     pmHit(S, ((w - 0.85) * 1.5 + (m < 40 ? -0.6 : 0)) / 60);
     if (S.pm < 1) IC.gameOver(S, `The Prime Minister has lost confidence in the air defence and asked ${S.world.names.A} for a ceasefire on its terms.`);
-    else if (S.enemy.war && IC.warDays(S) >= IC.HOLD_DAYS) IC.victory(S, `You held for ${IC.HOLD_DAYS} days. ${S.world.full.A} has agreed to talks: its raids did not break the country (${U.pct(w)} still working).`);
+    else if (S.enemy.war && IC.warDays(S) >= IC.HOLD_DAYS) IC.victory(S, `You held for ${IC.HOLD_DAYS} days. The ${S.world.full.A} has agreed to talks: its raids did not break the country (${U.pct(w)} still working).`);
   }
   // tired crews
   C.fatT = (C.fatT || 0) - dt;
@@ -187,7 +187,7 @@ IC.on((S, type, d) => {
     case 'arm': if (once('arm')) say(S, 'ADA', `Anti-radiation missile inbound on ${d.target ? d.target.name : 'one of our radars'}. Switch it to Silent and the missile loses its lock. Anything its radar was guiding will miss too.`); break;
     case 'baseHit': if (!d.runway && once('rwy')) say(S, 'ENG', `The runway at ${d.base.name} is cratered. Jets there cannot fly and returning flights will divert. My crews start on the runway automatically; select the base to add crews or rebuild hangars.`); if (d.acLost && once('acg', 3600)) say(S, 'AIR', `We lost ${d.acLost} aircraft on the ground at ${d.base.name}. Hardened shelters would have saved most of them.`); break;
     case 'unmasked': say(S, 'INT', `TN ${d.tn} was squawking as airliner ${d.cs}. It is a bomber. They will try that again: watch for airliners that leave their routes.`); break;
-    case 'convoyLost': if (once('convoy')) say(S, 'LOG', `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defense along the route, or a depot further back, keeps them alive.`); break;
+    case 'convoyLost': if (once('convoy')) say(S, 'LOG', `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defence along the route, or a depot further back, keeps them alive.`); break;
     case 'unitLost': if (once('unitLost')) say(S, 'ADA', `${d.name} is gone. The enemy found it: radiating, firing and sitting near the border all give positions away. Move batteries after they fire when you can.`); break;
     // the enemy's acts: a chapter in Quick war, a card in the Career
     case 'enemyAct': {

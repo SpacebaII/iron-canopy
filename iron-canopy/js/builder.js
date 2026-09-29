@@ -227,7 +227,7 @@ IC.bldAdvance = function (S, ap, w, dt) {
     w.wait = `waiting for ${IC.MATS[k]}: ${next ? `lorries from ${next.from || sp.name} in ${U.dur(next.arr - S.time)}` : sp.rate ? `ordered from ${sp.name}, ${U.km(sp.km * 10)} by road` : 'no industrial town can reach this site by road'}`;
     // one message per airport and material while the shortage lasts, not one per job
     ap.shortT = ap.shortT || {};
-    if (!w.short && !(S.time - (ap.shortT[k] || -1e9) < 3 * 3600)) { ap.shortT[k] = S.time; const n = ap.works.filter(x => x.stages && x.stages[x.si] && x.stages[x.si].mats && x.stages[x.si].mats[k] > 0).length; IC.log(S, 'warn', 'BUILD', `${ap.name}: out of ${IC.MATS[k]}; ${n > 1 ? `${n} jobs wait` : `${w.label.toLowerCase()} waits`}. ${sp.rate ? `Lorries from ${sp.name} bring about ${sp.rate} loads an hour.` : 'No town with industry can reach it by road.'}`, w.part && w.part.x != null ? w.part : ap); }
+    if (!w.short && !(S.time - (ap.shortT[k] || -1e9) < 3 * 3600)) { ap.shortT[k] = S.time; const n = ap.works.filter(x => x.stages && x.stages[x.si] && x.stages[x.si].mats && x.stages[x.si].mats[k] > 0).length; IC.log(S, 'warn', 'BUILD', `${ap.name}: out of ${IC.MATS[k]}; ${n > 1 ? `${n} jobs wait` : `${w.part && w.part.kind === 'runway' ? w.part.name : w.label.replace(/^Build /, 'the ').toLowerCase()} waits`}. ${sp.rate ? `Lorries from ${sp.name} bring about ${sp.rate} loads an hour.` : 'No town with industry can reach it by road.'}`, w.part && w.part.x != null ? w.part : ap); }
     w.short = true;
     return false;
   }

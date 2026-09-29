@@ -6,7 +6,7 @@
 /* ---------- Munitions ----------
    range in world units (100 m), spd units/game-second, alt window km, w = truck weight,
    prod = factory seconds per round per line. seeker: IR (flares), CMD/SARH (need our radar until impact),
-   ARH (own radar at the end, chaff), HTK (hit-to-kill ballistic defense). */
+   ARH (own radar at the end, chaff), HTK (hit-to-kill ballistic defence). */
 IC.MUN = {
   IR:  { name: 'IR missile', short: 'IR', seeker: 'IR', cost: 0.3, w: 0.25, prod: 300, range: 55, spd: 7, pk: 0.62, alt: [0, 4], vs: { drone: 1, heli: 1, cm: 0.6, air: 0.75, ga: 1 } },
   IR2: { name: 'Imaging IR missile', short: 'IR+', seeker: 'IR', cost: 0.5, w: 0.25, prod: 400, range: 65, spd: 7.5, pk: 0.74, alt: [0, 4.5], vs: { drone: 1, heli: 1, cm: 0.75, air: 0.85, ga: 1 }, ircm: 0.8 },
@@ -35,7 +35,7 @@ IC.SEEKER = {
 
 IC.CATS = [
   { id: 'sensor', name: 'Sensors', key: 'Z' },
-  { id: 'ad', name: 'Air defense', key: 'X' },
+  { id: 'ad', name: 'Air defence', key: 'X' },
   { id: 'ew', name: 'EW', key: 'C' },
   { id: 'strike', name: 'Strike', key: 'V' },
   { id: 'log', name: 'Logistics', key: 'B' }
@@ -91,7 +91,7 @@ IC.UNITS = {
             desc: 'Radar-directed 35 mm twin cannon. Never runs dry.' },
   cram:   { cat: 'ad', name: 'C-RAM Gun', short: 'CRM', mob: 'fixed', cost: 45, up: 1.5, build: 600, lead: 900, hp: 30, nato: 'CR', tech: 'a_cram',
             fc: { R: 250, mast: 6, nctr: 150 }, weapon: 'gun', gun: { range: 30, rof: 0.6, acc: 0.3, vs: { rkt: 1, drone: 1, cm: 0.7, arm: 0.6 } },
-            desc: 'Point-defense gun that shoots down rockets, drones and ARMs.' },
+            desc: 'Point-defence gun that shoots down rockets, drones and ARMs.' },
   shorad: { cat: 'ad', name: 'SHORAD Vehicle', short: 'SHO', mob: 'mobile', cost: 60, up: 2, build: 180, lead: 900, hp: 30, nato: 'SR',
             fc: { R: 320, mast: 5, nctr: 160 }, weapon: 'sam', mags: [{ mun: 'SR', ln: 2, per: 6, store: 24, reload: 60 }],
             desc: 'Short-range command-guided missiles with its own radar. 20 km reach.' },
@@ -101,13 +101,13 @@ IC.UNITS = {
   lrsam:  { cat: 'ad', name: 'LRSAM Battery', short: 'LRS', mob: 'semi', cost: 700, up: 14, build: 900, lead: 3000, hp: 70, nato: 'LR', tech: 'a_lrsam',
             fc: { R: 1700, mast: 10, nctr: 700 }, weapon: 'sam',
             mags: [{ mun: 'LR', ln: 4, per: 4, store: 16, reload: 150 }, { mun: 'TBD', ln: 2, per: 6, store: 12, reload: 180, tech: 'a_pac3' }],
-            desc: '160 km area defense. Its long-range missiles need the battery radar on until impact. With BMD rounds it kills ballistic missiles.' },
+            desc: '160 km area defence. Its long-range missiles need the battery radar on until impact. With BMD rounds it kills ballistic missiles.' },
   hatd:   { cat: 'ad', name: 'High-Altitude BMD', short: 'HAT', mob: 'semi', cost: 1200, up: 20, build: 1200, lead: 4200, hp: 70, nato: 'HA', tech: 'a_hatd',
             fc: { R: 3500, mast: 10, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'HAT', ln: 2, per: 4, store: 8, reload: 300 }],
             desc: 'Kills ballistic missiles at 35–150 km altitude.' },
   exo:    { cat: 'ad', name: 'Exo Interceptor Site', short: 'EXO', mob: 'fixed', cost: 2000, up: 30, build: 3600, lead: 6000, hp: 80, nato: 'EX', tech: 'a_exo',
             fc: { R: 3500, mast: 20, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'EXO', ln: 6, per: 1, store: 2, reload: 1200 }],
-            desc: 'Midcourse defense that hits ballistic missiles in space.' },
+            desc: 'Midcourse defence that hits ballistic missiles in space.' },
   vshorad:{ cat: 'ad', name: 'IR Missile Vehicle', short: 'IRV', mob: 'mobile', fast: true, cost: 25, up: 0.6, build: 60, lead: 300, hp: 20, nato: 'IR',
             fc: { R: 90, mast: 3, passive: true }, weapon: 'sam', mags: [{ mun: 'IR', ln: 2, per: 4, store: 16, reload: 30 }],
             desc: 'Heat-seeking missiles on a light vehicle, aimed by a thermal sight. Silent, cheap, 5 km reach.' },
@@ -242,13 +242,13 @@ IC.TECH = [
   { id: 'c_stay', cat: 'ad', name: 'Longer team stays', cost: 50, time: 1500, req: [], desc: 'Call-in teams stay 14 minutes instead of 8.' },
   { id: 'c_msl', cat: 'ad', name: 'Imaging IR missiles', cost: 90, time: 2400, req: ['c_teams'], desc: 'Call-in teams carry missiles with longer reach that flares fool less.' },
   { id: 'c_teams2', cat: 'ad', name: 'Rapid team rotation', cost: 110, time: 2700, req: ['c_teams', 'c_stay'], desc: 'A fourth team, and teams come back 30% sooner.' },
-  { id: 'a_cram', cat: 'ad', name: 'C-RAM', cost: 100, time: 2400, req: [], desc: 'Point-defense guns against rockets and drones.' },
+  { id: 'a_cram', cat: 'ad', name: 'C-RAM', cost: 100, time: 2400, req: [], desc: 'Point-defence guns against rockets and drones.' },
   { id: 'a_laser',cat: 'ad', name: 'High-energy laser', cost: 250, time: 4500, req: ['a_cram'], desc: 'Kill drones for the cost of electricity.' },
   { id: 'a_hpm',  cat: 'ad', name: 'High-power microwave', cost: 250, time: 4500, req: ['a_laser'], desc: 'Area kill against drone swarms.' },
-  { id: 'a_lrsam',cat: 'ad', name: 'Long-range SAM', cost: 400, time: 4500, req: [], desc: '160 km area defense battery.' },
+  { id: 'a_lrsam',cat: 'ad', name: 'Long-range SAM', cost: 400, time: 4500, req: [], desc: '160 km area defence battery.' },
   { id: 'a_remote',cat:'ad', name: 'IADS network', cost: 200, time: 3600, req: [], desc: 'Every SAM can fire on any fire-control track, even with its own radar silent.' },
   { id: 'a_pac3', cat: 'ad', name: 'Terminal BMD rounds', cost: 300, time: 3600, req: ['a_lrsam'], desc: 'Hit-to-kill rounds for LRSAM batteries.' },
-  { id: 'a_hatd', cat: 'ad', name: 'High-altitude BMD', cost: 800, time: 7200, req: ['a_pac3', 's_bmd'], desc: 'Upper-tier terminal defense at 35–150 km altitude.' },
+  { id: 'a_hatd', cat: 'ad', name: 'High-altitude BMD', cost: 800, time: 7200, req: ['a_pac3', 's_bmd'], desc: 'Upper-tier terminal defence at 35–150 km altitude.' },
   { id: 'a_exo',  cat: 'ad', name: 'Exo-atmospheric intercept', cost: 1200, time: 9000, req: ['a_hatd'], desc: 'Midcourse interceptors that kill in space.' },
   { id: 'e_decoy',cat: 'ew', name: 'Radar decoys', cost: 80, time: 1800, req: [], desc: 'Cheap emitters that soak up ARMs.' },
   { id: 'e_eccm', cat: 'ew', name: 'ECCM upgrade', cost: 200, time: 3600, req: [], desc: 'All radars resist jamming 30% better and hold tracks through notching.' },
@@ -264,7 +264,7 @@ IC.TECH = [
   { id: 'f_cm',   cat: 'air', name: 'Improved countermeasures', cost: 160, time: 2700, req: [], desc: 'Our aircraft carry more chaff and flares, and use them better.' }
 ];
 IC.TECH_CATS = [
-  { id: 'sensor', name: 'Sensors' }, { id: 'ad', name: 'Air defense' }, { id: 'ew', name: 'Electronic warfare' },
+  { id: 'sensor', name: 'Sensors' }, { id: 'ad', name: 'Air defence' }, { id: 'ew', name: 'Electronic warfare' },
   { id: 'strike', name: 'Strike & ISR' }, { id: 'log', name: 'Logistics & industry' }, { id: 'air', name: 'Air force' }
 ];
 

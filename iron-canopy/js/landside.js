@@ -191,7 +191,8 @@ IC.landAccessRoad = function (S, ap) {
   const w = IC.roadFinish(S, { cls: 'lc', pts, snaps });
   if (!w) return null;
   const L = IC.landInit(ap); L.road = true; L.access = { pts: pts.map(p => ({ x: p.x, y: p.y })), cost: P.cost, km: P.km, work: w.id };
-  IC.log(S, 'info', 'ROADS', `${ap.name}: an access road to ${city.name} is laid automatically: ${P.km.toFixed(1)} km for ${U.money(P.cost)}, open in about ${U.dur(P.hours * 3600)}. The road tool builds more.`, start);
+  // (the road works log their own line; a card says the rest, so the line is only for games without cards)
+  if (!(S.camp && IC.card)) IC.log(S, 'info', 'ROADS', `${ap.name}: an access road to ${city.name} is laid automatically: ${P.km.toFixed(1)} km for ${U.money(P.cost)}, open in about ${U.dur(P.hours * 3600)}. The road tool builds more.`, start);
   if (S.camp && IC.card) IC.card(S, 'Access road', ap.name, `An airport needs a road. A ${P.km.toFixed(1)} km access road from ${ap.name} to ${end.node === city.id ? city.name : `the road to ${city.name}`} has been laid out and paid for (${U.money(P.cost)}); the works take about ${U.dur(P.hours * 3600)}. Better roads bring more passengers: the road tool in the airport panel builds link roads and motorway spurs.`, 'info');
   return w;
 };

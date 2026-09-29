@@ -500,7 +500,7 @@ IC.GUIDE = [
   { id: 'airport', act: 1, ch: 0, t: 'Airports are built part by part', d: 'Runways, taxiways, aprons, terminals, hangars, fuel tanks, tower and fire station are separate parts at real size. Aircraft taxi along the network you build: a runway with no exit near where aircraft stop blocks it for minutes, a runway with no taxiway to its ends makes every departure backtrack, and a single taxiway carries traffic one way at a time. The airport panel lists what is wrong.' },
   { id: 'building', act: 1, ch: 0, t: 'Building takes time, money and materials', d: 'Engineers build in stages: survey, earthworks, paving, markings and lights, then the opening. Each stage is paid as it runs, and paving uses concrete, asphalt and steel that lorries bring from the nearest town with industry: when the site runs out, work stops and the panel says why. Paving next to a runway closes it, unless you set the job to night work. Homes in the way are bought and cleared; their town will not thank you.' },
   { id: 'pavement', act: 1, ch: 0, t: 'Pavement', d: 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.' },
-  { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (W) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
+  { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (7) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
   { id: 'money1', act: 1, ch: 0, t: 'Money in, money out', d: 'At first the money comes from the Treasury: a large sum to build the national airport, and a small grant an hour. Once airlines fly, they pay a landing fee for every aircraft and a charge for every passenger. What you build costs a little every hour to keep (0.12% of its price), so build what the airlines will use. The Economy room (E) shows both sides.' },
   { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the contract is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
   { id: 'runway', act: 1, ch: 1, t: 'Runway capacity', d: 'Without a tower, arrivals and departures are kept 8 minutes apart; with one, 2 minutes; an approach radar tightens it further. A taxiway to each runway end stops departures backtracking, and exits where landing aircraft slow down free the runway sooner.' },
@@ -598,11 +598,11 @@ function startAct(S, n) {
   if (n === 1) {
     const cc = IC.cap(S);
     if (st.fresh) {
-      card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of ${W.full.H}. The country has no airport worth the name: airliners cross its sky and nobody lands. The Treasury has set aside the money for a national airport near ${cc.name}. Next door, ${W.full.A} has been quiet for years.`, 'chapter');
+      card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of the ${W.full.H}. The country has no airport worth the name: airliners cross its sky and nobody lands. The Treasury has set aside the money for a national airport near ${cc.name}. Next door, the ${W.full.A} has been quiet for years.`, 'chapter');
       say(S, 'MIN', `Welcome, Director. Aviation is how a country earns its living and talks to the world, and we have none. Build the national airport near ${cc.name}, get the airlines in, and grow it. The Treasury has given you ${U.money(IC.CAREER_START)}: build big enough that the airlines want to come, because that airport will pay for everything else. I judge you on the airlines and the passengers.`);
       say(S, 'APT', `Lena Okafor, airports. I will walk you through the first one: the steps are in the goals panel, top left. Nothing waits for you to follow them, and you can hide the tips.`);
     } else {
-      card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of ${W.full.H}. Three airports, a handful of airlines, and a Minister who wants the sector to grow. Next door, ${W.full.A} has been quiet for years.`, 'chapter');
+      card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of the ${W.full.H}. Three airports, a handful of airlines, and a Minister who wants the sector to grow. Next door, the ${W.full.A} has been quiet for years.`, 'chapter');
       say(S, 'MIN', `Welcome, Director. Aviation is how this country earns its living and how it talks to the world. Grow it: more routes, more passengers, airlines that want to be here. I judge you on that.`);
     }
     startChapter(S, st.fresh ? 0 : 1, true);
@@ -634,7 +634,7 @@ function startAct(S, n) {
     addFlight(S, 'ftr', 'LANCE 2', 'ab_rear').st = 'ready';
     addFlight(S, 'isr', 'REAPER 2', 'ab_rear').st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `Blood has been spilled over ${W.full.H}. The cabinet has made you ${A.role}. Missiles, radars and depots are yours, and the equipment is in the reserve. ${W.names.A} has not declared war. It does not need to.`, 'chapter');
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `Blood has been spilled over the ${W.full.H}. The cabinet has made you ${A.role}. Missiles, radars and depots are yours, and the equipment is in the reserve. ${W.names.A} has not declared war. It does not need to.`, 'chapter');
     say(S, 'CDS', `Gen. Voss. You have the air defences now. The equipment in the reserve is what the depots had: deploy it. Protect the capital and ${short(S.byId.ab_fwd.name)} first, and do not let the airliners stop.`);
     say(S, 'ADA', `Every radar you switch on is seen from across the border, and radars on the same band crowded together blind each other. More is not always better. Put them where they add something.`);
   } else if (n === 4) {
@@ -648,7 +648,7 @@ function startAct(S, n) {
     const fwd = 'ab_fwd', rear = S.byId.ab_rear ? 'ab_rear' : 'ab_fwd';
     for (const [k, nm, b] of [['heli', 'HOOK 2', rear], ['cargo', 'ATLAS 1', rear], ['ucav', 'HAWK 1', rear], ['aew', 'SENTRY 2', rear]]) if (!S.roster.some(r => r.name === nm)) addFlight(S, k, nm, b).st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.`, 'chapter');
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `The ${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.`, 'chapter');
     say(S, 'CDS', `This is war. Missiles, drones and aircraft will come in raids. You decide where the air goes and what we defend.`);
   }
 }
@@ -993,7 +993,7 @@ IC.storyTick = function (S, dt) {
   if (st.act >= 4) {
     C.sugT = (C.sugT || 0) - dt;
     if (C.sugT <= 0) { C.sugT = 10; C.objs = IC.suggestions(S); }
-    if (S.enemy.will < 20 && !S.over) IC.victory(S, `${S.world.full.A} has asked for a ceasefire. You held.`);
+    if (S.enemy.will < 20 && !S.over) IC.victory(S, `The ${S.world.full.A} has asked for a ceasefire. You held.`);
   }
   S.camp.goal = `${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`;
 };
@@ -1056,7 +1056,7 @@ function foundedHere(S, ap) {
   const st = S.story, cc = IC.cap(S);
   if (!st.cap) {
     if (U.dist(ap, cc) <= 600) {
-      st.cap = ap.id; ap.template = 'intl'; ap.name = `${cc.name} International`; S.asp.zs = null;
+      st.cap = ap.id; ap.template = 'intl'; S.asp.zs = null;
       say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected: open its Build tab.`);
     } else say(S, 'MIN', `${ap.name} is ${U.km(U.dist(ap, cc))} from ${cc.name}. The national airport has to be within 60 km of the capital, where the passengers are. Found it closer in; that one can wait.`);
   } else if (st.city2 && !st.apt2 && U.dist(ap, S.byId[st.city2]) <= 600) st.apt2 = ap.id;
@@ -1076,6 +1076,7 @@ IC.on((S, type, d) => {
     case 'dealDone': if (!d.d.strikes) again(0.5); break;
     case 'dealWarn': if (st.act === 1 && IC.tipOnce(S, 'dealWarn', 3 * H)) say(S, 'APT', `${d.al.name} has written about its deal: ${d.text}. They give us 12 hours.`); break;
     case 'tailParked': st.cnt.parked++; break;
+    case 'naming': if (!st.cap && U.dist(d, IC.cap(S)) <= 600) d.name = `${IC.cap(S).name} International`; break;
     case 'founded': foundedHere(S, d); break;
     case 'overflight': if (d.net) { st.cnt.overT.push(S.time); if (st.cnt.overT.length > 200) st.cnt.overT = st.cnt.overT.filter(t => S.time - t < 86400); } break;
     case 'lossSep': case 'nearMiss':

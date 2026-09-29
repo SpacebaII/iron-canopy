@@ -103,7 +103,12 @@ IC.toast = function (st, kind, tag, msg, at) {
 function feed() {
   const now = performance.now();
   ui.toasts = ui.toasts.filter(t => now - t.t < 9000);
-  setHTML($('feed'), ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
+  const el = $('feed');
+  setHTML(el, ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
+  // the newest are on top: the older ones that would run into the map controls below are left out (the Journal has them all)
+  const box = $('mapbox').getBoundingClientRect(), room = box.height ? box.top - el.getBoundingClientRect().top - 8 : Infinity;
+  let full = false;
+  for (const c of el.children) { if (!full && c.offsetTop + c.offsetHeight > room) full = true; c.style.visibility = full ? 'hidden' : ''; }
 }
 
 /* ---------- waiting for money: the chooser, and the line that says what is still to come ---------- */
@@ -145,7 +150,7 @@ function topbar() {
       <div class="stat" title="The Minister's confidence in you. ${esc(IC.storyDismissal(S).text)}"><span>Confidence</span><strong class="${st.standing > 50 ? '' : st.standing > 25 ? 'amber' : 'hostile'}">${Math.round(st.standing)}</strong>${meter(st.standing / 100, st.standing > 50 ? 'var(--ok)' : st.standing > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>
       <div class="stat" title="Average airline satisfaction"><span>Airlines</span><strong class="${!S.av.airlines.length ? 'muted' : sat > 60 ? '' : sat > 40 ? 'amber' : 'hostile'}">${S.av.airlines.length ? Math.round(sat) + '%' : 'none yet'}</strong>${meter(S.av.airlines.length ? sat / 100 : 0, 'var(--civil)')}</div>
       <div class="stat" title="Passengers through our airports in the last hour"><span>Pax/h</span><strong>${Math.round(S.av.paxHour || 0).toLocaleString('en-US')}</strong></div>
-      ${act >= 2 ? `<div class="stat" title="Tension with ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
+      ${act >= 2 ? `<div class="stat" title="Tension with the ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
       ${act >= 4 ? `<div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>` : ''}`);
   } else if (!S.range) setHTML($('stats'), `${money}
     <div class="stat" title="National morale: below 12% the government asks for terms"><span>Morale</span><strong class="${m > 55 ? '' : m > 30 ? 'amber' : 'hostile'}">${Math.round(m)}%</strong>${meter(m / 100, m > 55 ? 'var(--ok)' : m > 30 ? 'var(--amber)' : 'var(--hostile)')}</div>
@@ -671,6 +676,8 @@ ui.refresh = function (force) {
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
+  // how much of the map's right side the inspector covers, for what the map draws beside the cursor
+  ui.mapRight = $('insp').innerHTML ? Math.max(0, $('app').getBoundingClientRect().right - $('insp').getBoundingClientRect().left) : 0;
   $('app').classList.toggle('at-start', !$('start').hidden);
   $('app').classList.toggle('has-room', !!ui.room);
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
@@ -679,7 +686,7 @@ function showOver() {
   $('over').hidden = false; ui.closeCine(); ui.closeMoment(); IC.hint.clear(); ui.toggleMenu(false);
   const aca = S.mode === 'academy', story = !!S.story;
   $('overKicker').textContent = aca ? 'Academy' : story ? `${IC.ACTS[S.story.act].name} · ${S.story.role}` : S.won ? 'Victory' : 'Defeat';
-  $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defense has failed';
+  $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defence has failed';
   $('overTitle').style.color = S.won ? 'var(--friend)' : 'var(--hostile)';
   $('overText').textContent = S.over;
   $('overStars').textContent = aca && S.won ? '★'.repeat(S.stars || 1) + '☆'.repeat(3 - (S.stars || 1)) : '';

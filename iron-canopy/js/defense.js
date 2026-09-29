@@ -1,4 +1,4 @@
-/* Iron Canopy — air defense engagements and our own strike weapons.
+/* Iron Canopy — air defence engagements and our own strike weapons.
    Missiles have a real envelope: reach shrinks against crossing and receding targets and down low.
    Seekers matter: semi-active and command-guided missiles need the battery radar until impact, heat-seekers
    fall for flares, radar seekers for chaff and notching. Every battery keeps a plain-language reason for what

@@ -185,6 +185,8 @@ function nameRunways(ap) {
     }
   }
   for (const rw of rws) if (!rw.custom) rw.name = `Runway ${rw.ends.a}/${rw.ends.b}`;
+  // (work already queued on a runway goes by its new name)
+  for (const w of ap.works || []) if (w.kind === 'build' && w.part && w.part.kind === 'runway') w.label = `Build ${w.part.name}`;
 }
 IC.aptNameRunways = nameRunways;
 /* runways that cannot be used independently: they cross, or they are parallel and closer than 760 m */
@@ -1298,6 +1300,8 @@ IC.foundAirport = function (S, x, y, a) {
   ap.template = 'new'; ap.crews = 1; ap.works = []; ap.autoRepair = true; ap.survey = sv; ap.mat = { asph: 0, conc: 0, steel: 0 };
   S.infra.push(ap); S.byId[ap.id] = ap;
   IC.aptStats(S, ap);
+  // (the story names it before anyone else mentions it: the national airport is the capital's International)
+  IC.emit(S, 'naming', ap);
   // noise: towns under the flight paths object, the more homes the louder
   for (const [name, n] of Object.entries(sv.noise)) {
     const c = IC.cities(S).find(q => q.name === name);
