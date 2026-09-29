@@ -93,7 +93,7 @@ const edgeName = (S, id) => {
   const e = S.world.edges.find(x => x.id === id); if (!e) return 'a cut road';
   if (e.cutName) return e.cutName;
   const br = S.infra.find(i => i.kind === 'bridge' && i.offline && i.edge === id);
-  return br ? `${br.name} down` : `${{ hw: 'Motorway', rd: 'Main road', lc: 'Local road', sp: 'Access road' }[e.cls] || 'Road'} cut ${IC.nearestPlace(S, e.pts[e.pts.length >> 1].x, e.pts[e.pts.length >> 1].y)}`;
+  return br ? `${br.name} down` : `${{ hw: 'Motorway', rd: 'Main road', lc: 'Local road', sp: 'Access road' }[e.cls] || 'Road'} cut ${IC.nearPlace(S, e.pts[e.pts.length >> 1].x, e.pts[e.pts.length >> 1].y)}`;
 };
 /* seconds to drive a route, the cut it crosses and the time the cut costs */
 function routeInfo(S, from, r) {

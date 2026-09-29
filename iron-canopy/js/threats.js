@@ -78,7 +78,7 @@ function spoofedDrift(S, t, dt) {
   if (t.spoofT <= 0) {
     t.dead = true;
     IC.explode(S, t.x, t.y, 0.5, 'ground');
-    if (t.tn) IC.log(S, 'kill', 'SPOOFED', `TN ${t.tn} ${t.aff === 'H' ? t.d.code : 'UNK'} lost navigation and crashed ${IC.nearestPlace(S, t.x, t.y)}.`);
+    if (t.tn) IC.log(S, 'kill', 'SPOOFED', `TN ${t.tn} ${t.aff === 'H' ? t.d.code : 'UNK'} lost navigation and crashed ${IC.nearPlace(S, t.x, t.y)}.`);
     S.stats.kills++;
     if (t.op) t.op.done++;
   }

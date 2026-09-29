@@ -457,9 +457,9 @@ function onNewTrack(S, t) {
   } else if (c === 'arm') {
     IC.log(S, 'leak', 'ARM', `TN ${t.tn} anti-radiation missile inbound on ${t.target ? t.target.name : 'unknown'}.`, t);
     IC.emit(S, 'arm', t);
-  } else if (c === 'air' && !t.border && !t.disguise) IC.log(S, 'id', 'TRACK', `TN ${t.tn} new air track ${U.compass(Math.atan2(t.vy, t.vx))}-bound, ${IC.nearestPlace(S, t.x, t.y)}.`);
-  else if (c === 'cm') IC.log(S, 'id', 'TRACK', `TN ${t.tn} low fast track near ${IC.nearestPlace(S, t.x, t.y)}.`);
-  else if (c === 'rkt' && Math.random() < 0.3) IC.log(S, 'leak', 'ROCKETS', `Rocket fire detected near ${IC.nearestPlace(S, t.x, t.y)}.`);
+  } else if (c === 'air' && !t.border && !t.disguise) IC.log(S, 'id', 'TRACK', `TN ${t.tn} new air track ${U.compass(Math.atan2(t.vy, t.vx))}-bound, ${IC.nearPlace(S, t.x, t.y)}.`);
+  else if (c === 'cm') IC.log(S, 'id', 'TRACK', `TN ${t.tn} low fast track ${IC.nearPlace(S, t.x, t.y)}.`);
+  else if (c === 'rkt' && Math.random() < 0.3) IC.log(S, 'leak', 'ROCKETS', `Rocket fire detected ${IC.nearPlace(S, t.x, t.y)}.`);
 }
 
 })(window.IC);
