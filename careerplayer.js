@@ -1,9 +1,13 @@
 /* A scripted Career player, for the balance run (storytest.js) and the tests. It plays Act I the way a steady
    player would: builds the national airport, grows it, draws the airspace, takes the contracts, founds a second
    airport and a freight operation, approves what the airports can take and answers every card with its first
-   choice. It uses the same functions as the interface. Call it every game minute or so: player(S). */
+   choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
+   forward base in Act II, and from Act III defends like the Quick war commander (qwplayer.js). It uses the same
+   functions as the interface. Call it every game minute or so: player(S). */
 const IC = require('./headless.js');
+const QW = require('./qwplayer.js');
 const U = IC.U;
+const OVER = typeof process !== 'undefined' && !!process.env.OVERBUILD;
 
 /* a flat site near a town, with few homes under the approaches */
 function site(S, c, rmin, rmax) {
@@ -55,6 +59,8 @@ function grow(S, ap, st) {
   const hangars = count(ap, 'hangar'), hn = IC.aptNeeds(S, ap).hangar;
   if (hangars < Math.max(1, Math.ceil(hn / 2)) && hangars < 4 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
   if (!has(ap, 'ils') && S.budget > 100) { const rw = ap.parts.find(p => p.kind === 'runway'); return rw && IC.aptPlanPart(S, ap, 'ils', rw.a.x, rw.a.y); }
+  // winter fog and snow close the end without one: a landing system at the other end too
+  if (count(ap, 'ils') < 2 && S.budget > 250) { const rw = ap.parts.find(p => p.kind === 'runway'); const q = rw && IC.aptPlanPart(S, ap, 'ils', rw.b.x, rw.b.y); if (q) return q; }
   const need = missing(S, ap), aprons = count(ap, 'apron', p => p.zone !== 'cargo');
   // (a stand the terminal is beside is a gate: each apron gets its own stretch of terminal)
   const bare = noTerminal(ap);
@@ -69,6 +75,12 @@ function grow(S, ap, st) {
   // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
   if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  // the overbuilder (OVERBUILD=1, for the balance run): builds every slot and a second runway before anyone asks
+  if (OVER && S.budget > 50) {
+    if (nextSlot(ap) != null) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+    if (count(ap, 'runway') < 2) { const r = IC.aptPlanRunway(S, ap, L(ap, -15, -3.2), L(ap, 15, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, ap, [[-15, -3.2], [-15, 0]]); taxi(S, ap, [[15, -3.2], [15, 0]]); return r; }
+    if (count(ap, 'hangar') < 8) return part(S, ap, 'hangar', -10 - count(ap, 'hangar') * 0.9, 2.32);
+  }
   return null;
 }
 /* a regional airport: what its airlines' offers find missing (a hangar for the aircraft based there, stands, fuel) */
@@ -116,7 +128,7 @@ function player(S, log) {
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
-  if (st.act !== 1) return;
+  if (st.act !== 1) { later(S, st); return; }
   // the national airport
   if (!st.cap) { const p = site(S, cc, 180, 380); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); return; }
   const ap = S.byId[st.cap];
@@ -145,5 +157,39 @@ function player(S, log) {
   // a third city's field, when its contract is taken
   if (st.contract3 && st.city3 && !st.apt3 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city3], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
   if (st.apt3) { starter(S, S.byId[st.apt3], st.contract3 && st.contract3.size === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt3]); }
+}
+/* after Act I: the airports keep growing with the airlines, and the defence is built as the acts allow */
+function later(S, st) {
+  const ap = S.byId[st.cap];
+  for (const b of IC.bases(S)) if (b.kind === 'airport' && b.owner === 'us') for (const it of IC.aptRepairList(b)) if (S.budget > it.cost + 40) IC.aptQueue(S, b, it.key);
+  if (ap && !ap.works.length && S.budget > 400) grow(S, ap, st);
+  for (const id of [st.apt2, st.apt3]) if (id && S.byId[id]) outpost(S, S.byId[id]);
+  const fb = S.byId.ab_fwd;
+  if (st.act === 2) {
+    // a military radar near the border, in front of the forward base; a prohibited zone round the base
+    if (!S.units.some(u => (u.type === 'gf' || u.type === 'mr3d') && !u.dead) && S.budget > 200) {
+      // 50 km inside the hostile border, where it nears the forward base
+      let best = null, bd = 1e9;
+      for (const f of S.world.fronts) if (f.key === 'A') for (const q of f.pts) { const d = U.dist(q, fb); if (d < bd) { bd = d; best = q; } }
+      const c = best ? { x: best.x + best.nx * 500, y: best.y + best.ny * 500 } : fb, p = IC.findSpot(S, 'mr3d', c.x, c.y, 0, 250);
+      if (p) IC.deploy(S, 'mr3d', p.x, p.y);
+    }
+    if (!S.av.zones.length) IC.avAddZone(S, fb.x, fb.y, 150, 'Forward base');
+  }
+  // (before the war the defence is built as the income allows: a Quick war's worth of batteries costs twice what
+  // Act III brings in an hour; in the war everything goes)
+  if (st.act >= 3) {
+    if (S.supply) S.supply.auto = true;
+    if (st.act >= 4) QW.commander(S);
+    // one unit a day at most while the income covers it; when a month's running costs came to more than it brought
+    // in, the unit dearest to run goes back to the reserve (the Economy room's warning, heeded)
+    else if (S.time > (S._qwT || 0) + 86400) {
+      if (S.income - S.upkeep > 12 && S.budget > 400) { QW.commander(S, 1); S._qwT = S.time; }
+      else if (IC.waitRate(S) < -3) {
+        const u = S.units.filter(x => !x.dead && x.state === 'ready' && !x.d.civil && !x.central && x.type !== 'depot' && x.d.up).sort((a, b) => b.d.up - a.d.up)[0];
+        if (u) { IC.toReserve(S, u); S._qwT = S.time; }
+      }
+    }
+  }
 }
 module.exports = { player, site, starter, grow };

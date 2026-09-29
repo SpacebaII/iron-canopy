@@ -526,7 +526,10 @@ function setWeights(S, E, act) {
   for (const k in IC.ESETS) {
     let w = (A[k] || 0.15) * M[k] * E.setW[k];
     const sh = share(k);
-    if (act < 4 && sh > CAP.set) w = 0; else w *= Math.pow(1 - Math.min(1, sh), 3);
+    // before enough has been fired to judge a share, still lean against the set hit most so far (a strong defence
+    // makes the first raids fail, and without this they all went to the same soft set)
+    const early = N < 15 ? ((E.tally[k] || 0) + 2) / (N + 10) : sh;
+    if (act < 4 && sh > CAP.set) w = 0; else w *= Math.pow(1 - Math.min(1, early), 3);
     out[k] = w;
   }
   // everything over its share: the one that has taken least
@@ -704,7 +707,7 @@ function mixFor(S, E, kind, obj) {
     // the other targets first: launchers and a site's missiles run out, and the main target should not take them all.
     // Each target's set gets what keeps it near a quarter of all that will have been fired by the end of the shock.
     const N = E.tallyN + bal + cms + 4 * k, left = {};
-    for (const t of more.concat([obj])) left[t.set] = Math.max(3, Math.floor(0.28 * N - (E.tally[t.set] || 0)));
+    for (const t of more.concat([obj])) left[t.set] = Math.max(3, Math.floor(0.25 * N - (E.tally[t.set] || 0)));
     for (const t of more.concat([null])) {
       const tt = t || obj, x = t ? { obj: t, set: t.set } : {}, dm = droneHours(S, tt) <= 5;
       const nb = Math.min(share(bal), left[tt.set]), nc = Math.min(share(cms), left[tt.set] - nb), nd = dm ? Math.min(4, left[tt.set] - nb - nc) : 0;
@@ -987,7 +990,7 @@ function report(S, E, R) {
   text += ` They were after ${R.obj.name}${R.set ? ` (${IC.ESETS[R.set].name})` : ''}.`;
   R.text = text; R.res = res;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
-  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time)}`, text, 'report');
+  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report');
   IC.emit(S, 'raidOver', R);
   // the commander learns what worked
   learn(S, E, R, ops);
@@ -1563,7 +1566,10 @@ IC.enemyTick = function (S, dt) {
   }
 
   if (!E.war) {
-    if (E.allow && E.allow.has('recon') && S.time > E.nextThink) { E.nextThink = S.time + U.rand(3600, 5400); OPS.recon(S, E); }
+    // before the war their reconnaissance is the gray zone: in the Career it comes by the calendar (Acts II and III
+    // last years), every half-month to a month in Act II and about weekly in Act III; elsewhere every hour or so
+    const st = S.mode === 'story' && S.story, gap = st ? IC.MO(S, st.act >= 3 ? U.rand(0.2, 0.4) : U.rand(0.5, 1)) : U.rand(3600, 5400);
+    if (E.allow && E.allow.has('recon') && S.time > E.nextThink) { E.nextThink = S.time + gap; OPS.recon(S, E); }
     return;
   }
   runCycle(S, E);
