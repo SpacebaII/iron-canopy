@@ -110,7 +110,7 @@ let L = null;   // the live view
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // the frame-rate readout is for measuring, not for players: it shows with #debug on the page's address
-const style = () => { document.documentElement.classList.toggle('dbg', /debug/.test(location.hash)); if (!$('rpStyle')) { const st = document.createElement('style'); st.id = 'rpStyle'; st.textContent = CSS; document.head.appendChild(st); } };
+const style = () => { const root = document.documentElement; if (root && root.classList) root.classList.toggle('dbg', /debug/.test((typeof location !== 'undefined' && location.hash) || '')); if (!$('rpStyle')) { const st = document.createElement('style'); st.id = 'rpStyle'; st.textContent = CSS; document.head.appendChild(st); } };
 const camSelect = (cur, skip) => `<label title="Camera">Camera <select data-rp="cam">${CAMS.filter(c => !(skip || []).includes(c[0])).map(([k, n, t]) => `<option value="${k}" title="${esc(t)}" ${k === cur ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`;
 const viewInner = () => `<canvas data-el="canvas"></canvas><div class="rp-labels" data-el="labels"></div><div class="rp-panel" data-el="panel" hidden></div><div class="rp-fps" data-el="fps"></div><div class="rp-msg" data-el="msg">Loading the 3D library…</div>`;
 
