@@ -757,7 +757,7 @@ IC.bldSnapBuilding = function (ap, kind, p) {
   const specs = [spec];
   if (STUB(kind)) specs.push({ kind: 'taxi', pts: [best.door, best.what === 'apron' ? best.edge : best.foot], lane: true, stub: true });
   else spec.link = [{ x: best.face.x, y: best.face.y }, { x: best.edge.x, y: best.edge.y }];
-  return { specs, snap: { kind: 'edge', x: best.x, y: best.y, what: best.what }, text: `faces the ${best.what}${STUB(kind) ? `, with a ${Math.round(U.dist(best.door, best.foot) * 100)} m taxiway to its door` : ', with a service road'}` };
+  return { specs, snap: { kind: 'edge', x: best.x, y: best.y, what: best.what, face: true }, text: `faces the ${best.what}${STUB(kind) ? `, with a ${Math.round(U.dist(best.door, best.foot) * 100)} m taxiway to its door` : ', with a service road'}` };
 };
 
 /* service roads for buildings that have none (starting layouts, old games): from the face nearest the pavement */
@@ -882,7 +882,7 @@ function planOf(S, m, hv, tol, free) {
     if (!E) { out.ok = false; out.why = 'Click the edge of an apron.'; return out; }
     out.snap = { kind: 'edge', x: E.p.x, y: E.p.y, what: 'apron' };
     if (!pts.length) { out.text.push('Click this edge, then how far out to stretch it'); return out; }
-    const q = E.apr, l = IC.rectLocal(q, hv), along = E.ax ? l.x * E.s - q.w / 2 : l.y * E.s - q.h / 2, d = Math.round(Math.max(0, along) / 0.05) * 0.05;
+    const q = E.apr, l = IC.rectLocal(q, hv), along = E.ax ? l.x * E.s - q.w / 2 : l.y * E.s - q.h / 2, d = rnd(Math.max(0, along), free ? 0.01 : GRID);
     out.pts = [pts[0], hv];
     if (d < 0.3) { out.ok = false; out.why = 'Stretch it at least 30 m.'; return out; }
     const c = E.ax ? IC.rectWorld(q, E.s * (q.w / 2 + d / 2), 0) : IC.rectWorld(q, 0, E.s * (q.h / 2 + d / 2));

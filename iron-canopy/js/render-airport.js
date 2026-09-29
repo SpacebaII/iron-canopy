@@ -927,7 +927,7 @@ IC.drawBuildGhost = function (g, S, px) {
     g.strokeStyle = c2; g.lineWidth = 1.5 * px; g.beginPath();
     if (sn.kind === 'free') { g.moveTo(sn.x - 5 * px, sn.y); g.lineTo(sn.x + 5 * px, sn.y); g.moveTo(sn.x, sn.y - 5 * px); g.lineTo(sn.x, sn.y + 5 * px); } else g.arc(sn.x, sn.y, 5 * px, 0, 7);
     g.stroke();
-    const tag = [{ node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: `corner of the ${sn.what || 'part'}`, edge: sn.what ? 'flush with the ' + sn.what : 'edge' }[sn.kind], sn.lock, sn.guides && !sn.lock ? 'on the ' + sn.guides.map(q => q.what).join(' and ') : ''].filter(Boolean).join(' · ');
+    const tag = [{ node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: `corner of the ${sn.what || 'part'}`, edge: sn.what ? (sn.face ? 'faces the ' : 'flush with the ') + sn.what : 'edge' }[sn.kind], sn.lock, sn.guides && !sn.lock ? 'on the ' + sn.guides.map(q => q.what).join(' and ') : ''].filter(Boolean).join(' · ');
     const dist = (plan.marks || []).find(k => k.cursor);
     let y = sn.y + 17 * px;
     if (tag) { pill(g, tag, sn.x, y, px, sn.kind === 'free' && !sn.lock && !sn.guides ? IC.C.muted : GUIDE_T); y += 15 * px; }
