@@ -2508,6 +2508,70 @@ test('replay: a hard turn shows bank and g, straight flight none (the model roll
   assert(Math.abs(s0.x - IC.recGet(tr, i, 1)) < 1e-3 && U.dxy(mid.x, mid.y, raw.x, raw.y) < 2, 'the smoothed path strays from the samples');
 });
 
+/* ---------- the 3D view (brief 34) ---------- */
+test('3D view: 300 frames of the live view and of a replay make nothing again, and every model faces where it goes', () => {
+  // tests/view3d.js runs the view headless with a stand-in for three.js that counts what is made (its own process:
+  // the game here must stay without the view)
+  const cp = require('child_process'), path = require('path');
+  const out = JSON.parse(cp.execFileSync(process.execPath, [path.join(__dirname, 'view3d.js')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1e8 }).trim().split('\n').pop());
+  assert(!out.error, out.error);
+  const none = (d, what) => assert(!Object.keys(d).filter(k => k !== 'html').length, `${what}: made again ${JSON.stringify(d)}`);
+  none(out.livePaused.made, 'live view, paused'); none(out.livePaused.view, 'live view, paused (scene parts)');
+  assert(!out.livePaused.made.html, 'the live view rewrote labels while nothing moved');
+  none(out.replay.made, 'replay'); none(out.replay.view, 'replay (scene parts)');
+  assert(out.liveRunning.again === 0 && out.liveRunning.rebuilt === 0, `running: ${out.liveRunning.again} movers and ${out.liveRunning.rebuilt} ground tiles made twice`);
+  assert(out.livePaused.movers > 5 && out.replay.movers > 5, `too little to look at: ${out.livePaused.movers} and ${out.replay.movers} movers`);
+  const faced = out.liveRunning.faced.concat(out.replay.faced, out.turn.faced), worst = faced.reduce((a, f) => f.off > a.off ? f : a, { off: 0 });
+  assert(faced.length > 20 && worst.off < 0.2, `a model points ${(worst.off * 57.3).toFixed(0)}° off where it goes: ${worst.who}`);
+  assert(out.turn.bank > 0.5 && Math.abs(out.turn.roll - out.turn.poseRoll) < 1e-6 && Math.abs(out.turn.roll) > 0.5, `the aircraft turning hardest (bank ${(out.turn.bank * 57.3).toFixed(0)}°) is drawn banked ${(out.turn.roll * 57.3).toFixed(0)}°`);
+}, true);
+/* the sandbox's airports until an airliner has taken off and climbed away ('to') or landed ('td'): its track */
+function flight(mark) {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox' });
+  let tr = null;
+  for (let i = 0; i < 3 * 3600 * 2 && !tr; i++) {
+    IC.step(S, 0.5);
+    if (i % 20) continue;
+    for (const x of S.rec.tracks) { const m = x.marks.find(q => q[1] === mark); if (m && x.t1 > m[0] + 60 && (mark === 'td' || x.model === 'narrow')) { tr = x; break; } }
+  }
+  return { S, tr };
+}
+test('3D view: a take-off rolls along the runway, rotates, lifts off and climbs away with its gear coming up', () => {
+  const { S, tr } = flight('to');
+  assert(tr, 'no airliner took off in three hours');
+  const t0 = tr.marks.find(m => m[1] === 'to')[0], ap = S.byId[tr.meta.ap];
+  const rws = ap.parts.filter(p => p.kind === 'runway' && p.built);
+  // on the roll: on the runway's centreline, pointing along it
+  let rolled = 0;
+  for (let t = t0 - 30; t <= t0; t += 0.5) {
+    const p = IC.recPose(tr, t, {}, S.wind); if (!p || p.phase !== IC.REC_PHASE.roll) continue;
+    const rw = rws.reduce((a, r) => { const d = IC.partDist(ap, r, p); return !a || d < a[1] ? [r, d] : a; }, null)[0];
+    const off = Math.abs((p.x - rw.a.x) * -IC.rwDir(rw).y + (p.y - rw.a.y) * IC.rwDir(rw).x), dh = Math.abs(Math.sin(p.h - Math.atan2(IC.rwDir(rw).y, IC.rwDir(rw).x)));
+    assert(off < 0.05 && dh < 0.05 && p.gnd && p.gear === 1, `on the take-off roll ${(off * 100).toFixed(0)} m off the centreline, ${(Math.asin(dh) * 57.3).toFixed(0)}° off its heading`);
+    rolled++;
+  }
+  assert(rolled > 10, `only ${rolled} half-seconds of take-off roll`);
+  const at = dt => IC.recPose(tr, t0 + dt, {}, S.wind);
+  assert(at(-0.5).pitch > 3 / 57.3, `no rotation before lift-off (pitch ${(at(-0.5).pitch * 57.3).toFixed(1)}°)`);
+  // the climb-out: from the runway, without a jump, gear down just after lift-off and up a few seconds later
+  let last = 0;
+  for (let dt = 0.5; dt < 40; dt += 0.5) { const a = at(dt).alt; assert(a >= last - 1e-6 && a - last < 0.02, `the climb-out jumps from ${last.toFixed(3)} to ${a.toFixed(3)} km at ${dt} s`); last = a; }
+  assert(at(2).alt < 0.03 && at(2).gear === 1 && at(12).gear === 0 && at(2).pitch > 8 / 57.3, `just after lift-off: ${(at(2).alt * 1000).toFixed(0)} m, gear ${at(2).gear}, then gear ${at(12).gear}; pitch ${(at(2).pitch * 57.3).toFixed(0)}°`);
+}, true);
+test('3D view: gear and flaps are down on approach and up in the cruise; the flare and touchdown', () => {
+  const { S, tr } = flight('td');
+  assert(tr, 'no airliner landed in three hours');
+  const t1 = tr.marks.find(m => m[1] === 'td')[0];
+  const at = dt => IC.recPose(tr, t1 + dt, {}, S.wind);
+  let cruise = null;
+  for (let i = 0; i < tr.n; i++) { const t = IC.recGet(tr, i, 0), p = IC.recPose(tr, t, {}, S.wind); if (p && p.alt > 6) { cruise = p; break; } }
+  assert(cruise && cruise.gear === 0 && cruise.flap === 0, `in the cruise: ${cruise ? `gear ${cruise.gear}, flaps ${cruise.flap}` : 'never high enough'}`);
+  const fin = at(-20);
+  assert(fin.phase === IC.REC_PHASE.final && fin.gear === 1 && fin.flap === 1 && fin.alt > 0.05, `20 s out: phase ${fin.phase}, gear ${fin.gear}, flaps ${fin.flap}, ${(fin.alt * 1000).toFixed(0)} m`);
+  assert(at(-1).pitch > at(-20).pitch, 'no flare before touchdown');
+  assert(at(0.5).gnd && at(0.5).pitch > 0 && at(4).pitch === 0, 'the nose does not come down after touchdown');
+}, true);
+
 /* ---------- engine health ---------- */
 test('engine: a game built in stages is the game built at once, and it reports every stage in order', () => {
   const opts = { seed: 777, mode: 'story', preset: 'network', hour: 7 };
