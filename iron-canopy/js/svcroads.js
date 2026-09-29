@@ -203,6 +203,40 @@ function edgeToward(p, q) {
 }
 /* the network for the service vehicles: every road as a polyline (closed ones end where they start) */
 IC.svcNetwork = ap => IC.svcNet(ap).roads.map(r => ({ pts: polyLine(r.pts, r.closed), w: r.w, kind: r.kind }));
+/* the way along the service roads from a to b (world points): onto the nearest road, along the network, off at the
+   point nearest b. The roads are split wherever another meets or crosses them, so the graph is one piece. null when
+   the airport has no roads */
+IC.svcPath = function (ap, a, b) {
+  const N = IC.svcNet(ap);
+  if (!N._g) {
+    const lines = N.roads.map(r => polyLine(r.pts, r.closed)), key = q => Math.round(q.x * 200) + ',' + Math.round(q.y * 200);
+    const cuts = lines.map(P => P.map(() => []));
+    // (every end that lands on another road, and every crossing, splits the segment it lands on)
+    for (let i = 0; i < lines.length; i++) for (let j = 0; j < lines.length; j++) {
+      if (i === j) continue;
+      const P = lines[i], Q = lines[j];
+      for (const e of [Q[0], Q[Q.length - 1]]) for (let k = 1; k < P.length; k++) if (U.segDist(e.x, e.y, P[k - 1].x, P[k - 1].y, P[k].x, P[k].y) < 0.03) cuts[i][k].push(e);
+      if (i < j) for (let k = 1; k < P.length; k++) for (let m = 1; m < Q.length; m++) { const t = U.segX(P[k - 1].x, P[k - 1].y, P[k].x, P[k].y, Q[m - 1].x, Q[m - 1].y, Q[m].x, Q[m].y); if (t < 0) continue; const x = { x: P[k - 1].x + (P[k].x - P[k - 1].x) * t, y: P[k - 1].y + (P[k].y - P[k - 1].y) * t }; cuts[i][k].push(x); cuts[j][m].push(x); }
+    }
+    const nodes = new Map(), adj = new Map(), nodeOf = q => { const k = key(q); if (!nodes.has(k)) { nodes.set(k, { x: q.x, y: q.y, k }); adj.set(k, []); } return k; };
+    const link = (p, q) => { const u = nodeOf(p), v = nodeOf(q); if (u === v) return; const d = U.dist(p, q); adj.get(u).push([v, d]); adj.get(v).push([u, d]); };
+    lines.forEach((P, i) => { for (let k = 1; k < P.length; k++) { const A = P[k - 1], B = P[k], pts = [A].concat(cuts[i][k].slice().sort((p, q) => U.dist(A, p) - U.dist(A, q)), [B]); for (let m = 1; m < pts.length; m++) link(pts[m - 1], pts[m]); } });
+    N._g = { nodes, adj };
+  }
+  const { nodes, adj } = N._g; if (!nodes.size) return null;
+  const near = q => { let best = null, bd = 1e9; for (const n of nodes.values()) { const d = U.dist(n, q); if (d < bd) { bd = d; best = n; } } return best; };
+  const s0 = near(a), s1 = near(b), dist = new Map([[s0.k, 0]]), prev = new Map(), done = new Set(), Q = [[0, s0.k]];
+  while (Q.length) {
+    let bi = 0; for (let i = 1; i < Q.length; i++) if (Q[i][0] < Q[bi][0]) bi = i;
+    const [d, u] = Q[bi]; Q[bi] = Q[Q.length - 1]; Q.pop();
+    if (done.has(u)) continue; done.add(u); if (u === s1.k) break;
+    for (const [v, w] of adj.get(u)) if (!dist.has(v) || d + w < dist.get(v)) { dist.set(v, d + w); prev.set(v, u); Q.push([d + w, v]); }
+  }
+  if (!dist.has(s1.k)) return null;
+  const out = [b]; for (let k = s1.k; k; k = prev.get(k)) { out.push(nodes.get(k)); if (k === s0.k) break; }
+  out.push(a);
+  return out.reverse().map(q => ({ x: q.x, y: q.y }));
+};
 /* the ends of roads: joined (on another road, or at a building or pavement) or left in the grass */
 IC.svcRoadEnds = function (S, ap) {
   const N = IC.svcNet(ap), out = [];

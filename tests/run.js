@@ -1466,7 +1466,8 @@ test('blueprint: a real airport planned onto a new site, turned, is paid for as 
 }, true);
 test('accuracy: each real airport against its sources: runway ends within 30 m, gates within 5%, terminal footprints within 10%', () => {
   const { accuracy, accuracyText } = require('../tools/airport-import.js');
-  const keys = ['mini'].concat(IC.showcaseKeys ? IC.showcaseKeys() : Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].icao));
+  // (the real airports from map data: the blueprints made from kits have their own tests)
+  const keys = ['mini'].concat((IC.showcaseKeys ? IC.showcaseKeys() : Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].icao)).filter(k => !IC.REAL_APT[k].bp));
   for (const k of keys) {
     const A = accuracy(k, k === 'mini' ? require('../tools/airport-import.js').importAirport('mini') : null);
     console.log(accuracyText(A).split('\n').map(l => '        ' + l).join('\n'));
@@ -1477,7 +1478,7 @@ test('accuracy: each real airport against its sources: runway ends within 30 m, 
 });
 test('showcase: a day at each real airport at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates', () => {
   IC.REAL_APT.mini = MINI;
-  const keys = [['mini', 6]].concat((IC.showcaseKeys ? IC.showcaseKeys() : []).map(k => [k, 24]));
+  const keys = [['mini', 6]].concat((IC.showcaseKeys ? IC.showcaseKeys() : []).filter(k => !IC.REAL_APT[k].bp).map(k => [k, 24]));
   for (const [k, hours] of keys) {
     IC.seedRandom(4242);
     const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: k, hour: 5 }); IC.S = S;
@@ -2044,6 +2045,10 @@ test('airport: service roads are laid out by themselves, reach the fuel farm, ca
     return N;
   };
   const N0 = check('the capital');
+  // the service vehicles' way from the fuel farm to a stand keeps to the roads, never across a runway
+  const fuel = ap.parts.find(p => p.kind === 'fuel'), st = IC.aptStands(ap)[2], way = IC.svcPath(ap, fuel, st);
+  assert(way && way.length > 2, 'no way along the service roads from the fuel farm to a stand');
+  for (let i = 1; i < way.length; i++) for (const rw of ap.parts.filter(q => q.kind === 'runway')) for (let t = 0.1; t < 1; t += 0.1) assert(IC.partDist(ap, rw, { x: way[i - 1].x + (way[i].x - way[i - 1].x) * t, y: way[i - 1].y + (way[i].y - way[i - 1].y) * t }) > 0.05, 'the fuel truck drives across a runway');
   assert(N0.roads.some(r => r.kind === 'edge') && N0.roads.some(r => r.kind === 'equip') && N0.roads.some(r => r.kind === 'perim'), 'no apron edge, equipment or perimeter road');
   // a new fire station gets its road without anyone drawing it
   S.budget = 1e5; const rw = ap.parts.find(p => p.kind === 'runway'), c = IC.rwAt(rw, 0.3), d = IC.rwDir(rw);

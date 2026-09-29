@@ -795,11 +795,16 @@ function planOf(v, A, q) {
   const depot = kinds => kerb(b, kinds, lane0) || at(Ln / 2 + 0.16, 3);
   const term = depot(['terminal', 'concourse']), fuel = depot(['fuel', 'hydrant', 'terminal']), cargo = depot(['cargo', 'terminal']);
   // spot: where the vehicle stops, and which way it faces then (a unit vector)
+  // (a depot away from the stand, the fuel farm or the cargo shed: by the airport's service roads, svcroads.js)
+  const byRoad = {};
   const route = (from, spot, face, back) => {
-    const lp = { x: lane0.x + r.x * ((from.x - lane0.x) * r.x + (from.y - lane0.y) * r.y), y: lane0.y + r.y * ((from.x - lane0.x) * r.x + (from.y - lane0.y) * r.y) };
+    let way = [from];
+    if (U.dist(from, lane0) > 2 && IC.svcPath) { const k = from.x.toFixed(2) + ',' + from.y.toFixed(2); if (!(k in byRoad)) byRoad[k] = IC.svcPath(b, from, lane0); if (byRoad[k]) way = byRoad[k].slice(0, -1); }
+    const start = way[way.length - 1];
+    const lp = { x: lane0.x + r.x * ((start.x - lane0.x) * r.x + (start.y - lane0.y) * r.y), y: lane0.y + r.y * ((start.x - lane0.x) * r.x + (start.y - lane0.y) * r.y) };
     const la = { x: lane0.x + r.x * U.clamp((spot.x - lane0.x) * r.x + (spot.y - lane0.y) * r.y, -2, 2), y: lane0.y + r.y * U.clamp((spot.x - lane0.x) * r.x + (spot.y - lane0.y) * r.y, -2, 2) };
     const app = { x: spot.x - face.x * (back || 0.12), y: spot.y - face.y * (back || 0.12) };
-    return mkPath([from, lp, la, app, spot]);
+    return mkPath(way.concat([lp, la, app, spot]));
   };
   const toF = { x: -r.x, y: -r.y };   // from the starboard side towards the fuselage
   P = {
