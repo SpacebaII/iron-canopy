@@ -187,14 +187,14 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
     if (!ap.parts || ap.x + ap.radius < x0 || ap.x - ap.radius > x1 || ap.y + ap.radius < y0 || ap.y - ap.radius > y1) continue;
     const b = IC.aptFence && IC.aptFence(ap);
     if (b && b.poly && b.poly.length > 2) {
-      g.fillStyle = 'rgba(100,118,74,0.3)'; poly(IC.polyGrow(b.poly, 2.5)); g.fill();
-      g.fillStyle = 'rgba(100,122,74,0.95)'; poly(IC.polyGrow(b.poly, 0.2)); g.fill();
+      g.fillStyle = 'rgba(96,112,70,0.3)'; poly(IC.polyGrow(b.poly, 2.5)); g.fill();
+      g.fillStyle = 'rgba(88,106,62,0.85)'; poly(IC.polyGrow(b.poly, 0.2)); g.fill();
       // (close in, the same grass as the airport's own tiles: tufts and mottling)
       if (lod >= 2 && IC.paveFill) { g.globalAlpha = 0.6; g.fillStyle = IC.paveFill(g, 'grass', LOD(lod).ppu, 0, 0, 0); g.fill(); g.globalAlpha = 1; }
     }
     const paved = ap.parts.filter(p => p.built !== false && (p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron' || p.kind === 'alert'));
     // mown: 40 m along taxiways and round aprons
-    g.strokeStyle = g.fillStyle = 'rgba(106,128,78,0.55)'; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = g.fillStyle = 'rgba(104,122,72,0.5)'; g.lineCap = 'round'; g.lineJoin = 'round';
     for (const p of paved) {
       if (p.kind === 'taxi') { g.lineWidth = (p.w || 0.23) + 0.8; g.beginPath(); p.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
       else if (p.kind !== 'runway' && IC.partOutline) { const P = IC.partOutline(p); g.lineWidth = 0.8; poly(P); g.fill(); g.stroke(); }
@@ -202,7 +202,7 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
     // the graded strip: 150 m either side of the runway and 60 m beyond its ends, kept short
     for (const p of paved) if (p.kind === 'runway') {
       const a = IC.rwAt(p, 0), c = IC.rwAt(p, 1), L = Math.hypot(c.x - a.x, c.y - a.y) || 1, ux = (c.x - a.x) / L, uy = (c.y - a.y) / L, h = p.w / 2 + 1.5, e = 0.6;
-      g.fillStyle = 'rgba(110,132,80,0.7)';
+      g.fillStyle = 'rgba(106,126,74,0.75)';
       poly([{ x: a.x - ux * e - uy * h, y: a.y - uy * e + ux * h }, { x: c.x + ux * e - uy * h, y: c.y + uy * e + ux * h }, { x: c.x + ux * e + uy * h, y: c.y + uy * e - ux * h }, { x: a.x - ux * e + uy * h, y: a.y - uy * e - ux * h }]); g.fill();
       if (lod >= 3) {
         // the mowers' passes along it, 15 m wide

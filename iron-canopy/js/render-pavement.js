@@ -12,11 +12,11 @@ const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; 
 /* ---------- textures: one palette, so a runway, its taxiways and its aprons look like one airport ----------
    rep: the ground one texture repeat covers (units); slabs are 5 m, joints sealed dark */
 const PAL = {
-  conc: { rgb: [146, 147, 141], v: 6, rep: 0.4, kind: 'slab' },
-  rconc: { rgb: [158, 160, 157], v: 5, rep: 0.4, kind: 'slab' },
+  conc: { rgb: [132, 133, 128], v: 6, rep: 0.4, kind: 'slab' },
+  rconc: { rgb: [144, 146, 143], v: 5, rep: 0.4, kind: 'slab' },
   asph: { rgb: [60, 62, 64], v: 9, rep: 0.6, kind: 'asph' },
-  shoulder: { rgb: [100, 101, 98], v: 8, rep: 0.6, kind: 'asph' },
-  grass: { rgb: [98, 122, 70], v: 16, rep: 0.4, kind: 'grass' },
+  shoulder: { rgb: [92, 93, 90], v: 8, rep: 0.6, kind: 'asph' },
+  grass: { rgb: [94, 114, 66], v: 16, rep: 0.4, kind: 'grass' },
   gravel: { rgb: [150, 142, 122], v: 20, rep: 0.3, kind: 'gravel' }
 };
 IC.PAVE_PAL = PAL;
@@ -148,6 +148,9 @@ function prep(ap, G) {
 IC.pavePaint = function (g, S, ap, ppu, box, o) {
   o = o || {};
   const G = IC.paveGeom(ap), R = prep(ap, G), px = 1 / ppu;
+  // far out a runway is a couple of pixels wide and a taxiway less: they are drawn at least this wide, as a map
+  // draws a road, so an airport still reads as an airport from the regional zoom
+  const wide = (w, k) => Math.max(w, k * px);
   const V = r => hit(r.bb, box);
   const rws = R.rw.filter(V), tws = R.tw.filter(V), ars = R.ar.filter(V), fils = R.fil.filter(V), ends = R.ends.filter(V);
   g.lineJoin = 'round';
@@ -156,20 +159,20 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
   // approach lights on their gravel track, over the grass beyond each end
   if (!o.noSurround) for (const E of ends) if (E.lights) approach(g, E, ppu);
   // shoulders: a lighter asphalt beyond the edge line (not load-bearing), then blast pads
-  for (const { r, sh } of rws) { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
+  for (const { r, sh } of rws) if (ppu > 6) { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
   g.lineCap = 'round';
-  for (const { t, sh } of tws) if (sh) { g.strokeStyle = paveFill(g, 'shoulder', ppu, t.pts[0].x, t.pts[0].y, 0); g.lineWidth = t.w + 2 * sh; g.beginPath(); linePath(g, t.pts); g.stroke(); }
+  for (const { t, sh } of tws) if (sh && ppu > 6) { g.strokeStyle = paveFill(g, 'shoulder', ppu, t.pts[0].x, t.pts[0].y, 0); g.lineWidth = t.w + 2 * sh; g.beginPath(); linePath(g, t.pts); g.stroke(); }
   if (tws.length) for (const f of IC.paveFillets(ap, 0.1)) if (hit(bbOf(f.poly, 0), box)) { g.fillStyle = paveFill(g, 'shoulder', ppu, f.f.N.x, f.f.N.y, 0); g.beginPath(); polyPath(g, f.poly); g.fill(); }
   for (const E of ends) if (E.pad) { const r = E.r; g.fillStyle = paveFill(g, 'shoulder', ppu, E.e.x, E.e.y, Math.atan2(E.uy, E.ux)); g.beginPath(); padPath(g, E, r.w / 2 + R.rw.find(q => q.r === r).sh); g.fill(); }
   // the pavement: aprons and forecourts, then fillets and taxiways, runways last (their slabs run through)
   for (const { a } of ars) { g.fillStyle = paveFill(g, a.mat, ppu, a.p.x || a.poly[0].x, a.p.y || a.poly[0].y, a.a); g.beginPath(); polyPath(g, a.poly); g.fill(); }
-  for (const { f } of fils) { g.fillStyle = paveFill(g, f.mat, ppu, f.f.N.x, f.f.N.y, f.th); g.beginPath(); polyPath(g, f.poly); g.fill(); }
+  if (ppu > 6) for (const { f } of fils) { g.fillStyle = paveFill(g, f.mat, ppu, f.f.N.x, f.f.N.y, f.th); g.beginPath(); polyPath(g, f.poly); g.fill(); }
   for (const { t } of tws) for (let i = 1; i < t.pts.length; i++) {
     const A = t.pts[i - 1], B = t.pts[i];
-    g.strokeStyle = paveFill(g, t.mat, ppu, A.x, A.y, Math.atan2(B.y - A.y, B.x - A.x)); g.lineWidth = t.w;
+    g.strokeStyle = paveFill(g, t.mat, ppu, A.x, A.y, Math.atan2(B.y - A.y, B.x - A.x)); g.lineWidth = wide(t.w, 2.2);
     g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.stroke();
   }
-  for (const { r } of rws) { g.fillStyle = paveFill(g, r.mat, ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, 0, 0); g.fill(); }
+  for (const { r } of rws) { g.fillStyle = paveFill(g, r.mat, ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, Math.max(0, (wide(r.w, 3.2) - r.w) / 2), 0); g.fill(); }
   // wear: rubber in the touchdown zones, tyre tracks down the taxiway centrelines, stains where aircraft stand
   if (ppu >= 3) grime(g, ap, G, rws, tws, ars, ppu);
   // blast pads: yellow chevrons pointing at the runway
@@ -179,8 +182,8 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
   // runway markings
   for (const { r } of rws) runwayPaint(g, r, ppu);
   // centrelines, lead-on and lead-off lines, taxilanes; hold lines; one-way arrows
-  if (ppu >= 16) {
-    g.strokeStyle = YEL; g.lineCap = 'butt'; g.globalAlpha = U.clamp((ppu - 8) / 40, 0.4, 1);
+  if (ppu >= 8) {
+    g.strokeStyle = YEL; g.lineCap = 'butt'; g.globalAlpha = U.clamp((ppu - 6) / 40, 0.35, 1);
     for (const c of G.cl) {
       if (!hit(c._bb || (c._bb = bbOf(c.pts, 0.1)), box)) continue;
       g.lineWidth = Math.max(0.0035, (c.lane ? 0.7 : 0.9) * px); g.beginPath(); linePath(g, c.pts); g.stroke();
