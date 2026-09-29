@@ -82,6 +82,7 @@ const SCENES = {
     // the box between the battery and the intercept, seen from the side so the climb and the arcs read
     const mx = (x + e.x) / 2, my = (y + e.y) / 2, a = Math.atan2(e.y - y, e.x - x);
     const V = await replay({ x: mx, y: my, t: e.t - 90, r: 220 }, e.t - 3, { yaw: a + Math.PI / 2, pitch: 0.1, dist: 480, ty: e.alt * 10 * 0.55 });
+    window.__perf = { tiles: V.tiles.size, tileMsMax: +V.tileMsMax.toFixed(0), tileMsSum: +V.tileMsSum.toFixed(0) };
     if (window.DBG) window.__dbg = { e, cam: V.camera.position.toArray().map(Math.round), movers: V.movers.map(m => [m.tr.name, m.tr.kind, m.grp.visible, m.grp.position.toArray().map(Math.round), m.grp.scale.x.toFixed(1), m.line.visible]) };`,
   // the Journal's Replay button on the city strike, and the replay it opens
   journal: `
@@ -186,7 +187,7 @@ const SCENES = {
     for (let i = 0; i < 28; i++) hostile(S, i % 2 ? 'lacm' : 'owa', x + 400 + (i % 4) * 40, y - 200 + i * 15, { x: c.x, y: c.y });
     steps(S, 150);
     const V = await replay({ x, y, t: S.time - 120, r: 120 }, S.time - 120, { yaw: -1.9, pitch: 0.35, dist: 120 });
-    V.speed = 2; document.getElementById('rpPlay').click();
+    V.speed = 2; V.$('play').click();
     const n = V.movers.length, times = [];
     let last = performance.now();
     await new Promise(res => { const f = now => { times.push(now - last); last = now; if (times.length < 240) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
@@ -219,7 +220,7 @@ const SCENES = {
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`);
     if (process.env.DBG) console.log(JSON.stringify(await page.evaluate(() => window.__dbg)));
-    if (name === 'perf' || name === 'live') console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
+    if (name === 'perf' || name === 'live' || name === 'engagement') console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (name === 'lrshot') console.log('long-range shot', JSON.stringify(await page.evaluate(() => window.__lr)));
     if (name === 'perf' || /^(notch|flares|lrshot|live|video)$/.test(name)) { /* frames saved by the scene */ }
     else { const out = path.resolve(__dirname, `../shots/replay-${name}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); }
