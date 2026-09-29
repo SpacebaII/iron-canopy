@@ -585,7 +585,7 @@ IC.aviation = function (S, dt) {
       if (al.lowT >= 6) {
         al.lowT = 0;
         const r = A.routes.filter(x => x.al === al.id && x.st === 'active' && x.n > 0).sort((p, q) => p.rev - q.rev)[0];
-        if (r) cutRoute(S, al, r, al.lastWhy);
+        if (r) cutRoute(S, al, r, al.lastWhy !== 'smooth operations' ? al.lastWhy : null);
       }
     }
     for (const q of A.requests.filter(q => S.time > q.exp)) { const al = airlineOf(S, q.al); if (al) al.sat = Math.max(0, al.sat - 3); const d = q.renew && A.deals.find(x => x.id === q.renew); if (d && d.st === 'done') retireDeal(S, d); }

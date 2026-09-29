@@ -981,8 +981,10 @@ function report(S, E, R) {
   const leaks = R.leaks.length;
   // group what got through by kind, reason and place
   const g = new Map();
-  for (const L of R.leaks) { const key = L.cls + '|' + L.why + '|' + L.place; const e = g.get(key) || { n: 0, cls: L.cls, why: L.why, place: L.place }; e.n++; g.set(key, e); }
-  const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${e.why}.`);
+  // (the same reason at other heights or ranges is the same reason)
+  for (const L of R.leaks) { const key = L.cls + '|' + L.why.replace(/[\d.,]+/g, '#') + '|' + L.place; const e = g.get(key) || { n: 0, cls: L.cls, why: L.why, place: L.place }; e.n++; g.set(key, e); }
+  const they = (w, n) => n > 1 ? w.replace('nobody saw it', 'nobody saw them').replace('it came in low', 'they came in low').replace('no battery covers it', 'no battery covers them') : w;
+  const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${they(e.why, e.n)}.`);
   const res = { id: R.id, kind: R.kind, name: R.name, obj: R.obj.name, t: S.time, day: U.day(R.T), threats: launched, kills: lost, leaks, hits: R.hits || 0, fired: S.stats.fired - (R.fired0 || 0) };
   (S.raids = S.raids || []).push(res);
   const head = `${launched} threats, ${lost} shot down, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}. ${res.fired} interceptors fired.`;

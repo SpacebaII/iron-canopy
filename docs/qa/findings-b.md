@@ -38,3 +38,5 @@ Severity: **blocker** (breaks play), **ugly** (looks unfinished or confuses), **
 | 28 | Quick war, 2 days (headless scan of every message) | About 70 near misses and 170 diversions in two days, each a toast or an incident: civil air traffic control noise the war commander cannot act on | ugly | – | yes: outside the Career, separation and near misses go to the Journal (no toasts, no news in a war); diversions toast once an hour per airport |
 | 29 | Impact log | "SNT-2 hit by an one-way attack drone" | minor | – | yes: "a one-way…" |
 | 30 | Journal | Tag "NCTR" (jargon) on type recognition | minor | – | yes: "TYPE" |
+| 31 | After-action cards | "2 cruise missiles at Noryn Power Station: nobody saw it"; the same reason listed three times with different heights ("out of reach at 300 m up… at 420 m up…") | minor | – | yes: "nobody saw them"; one line per reason |
+| 32 | News in a war | "Arvenna Airways reduces Holitz – Karel flights, citing smooth operations." | minor | – | yes: "citing poor service" when the last flight went well |
