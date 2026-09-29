@@ -960,8 +960,8 @@ IC.aptFence = function (ap) {
 IC.aptCanPlace = function (S, ap, part) {
   const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' ? part.pts : [part];
   // why not, in words, for the builder (IC.aptPlaceWhy)
-  const no = why => { IC.aptPlaceWhy = why; return false; };
-  IC.aptPlaceWhy = '';
+  const no = (why, q) => { IC.aptPlaceWhy = why; IC.aptPlaceHit = q || null; return false; };
+  IC.aptPlaceWhy = ''; IC.aptPlaceHit = null;
   for (const p of pts) {
     if (!IC.inHome(p.x, p.y)) return no('It crosses the border.');
     if (IC.inLake(p.x, p.y)) return no('It stands in a lake.');
@@ -970,7 +970,13 @@ IC.aptCanPlace = function (S, ap, part) {
   // no part in a river: sample along lines, and the corners of areas
   const wet = p => IC.onRiver && IC.onRiver(p.x, p.y);
   if (part.kind === 'runway' || part.kind === 'taxi') { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 0.5); for (let k = 0; k <= n; k++) if (wet({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return no('It crosses a river.'); } }
-  if (part.kind === 'taxi') return true;
+  // taxiways join aprons and buildings at their edge; they do not run through them, nor a new part over a taxiway
+  const cover = q => q.kind !== 'taxi' && q.kind !== 'runway' && q.kind !== 'ils' && q.kind !== 'surface' && q.x != null;
+  if (part.kind === 'taxi') {
+    for (const q of ap.parts) if (cover(q) && taxiThrough(pts, q)) return no(`It runs through ${IC.partName(ap, q)}: a taxiway joins an apron or a building at its edge.`, q);
+    return true;
+  }
+  if (cover(part)) for (const q of ap.parts) if (q.kind === 'taxi' && q !== part && taxiThrough(q.nodes.map(id => ap.nodes[id]).filter(Boolean), part)) return no(`It covers a taxiway: taxiways meet ${part.kind === 'apron' ? 'aprons' : 'buildings'} at the edge. Plan it beside the taxiway.`, q);
   const D = IC.APART[part.kind];
   const probe = Object.assign({ w: D.w, h: D.h, r: D.r }, part);
   const shape = q => q.kind === 'runway' ? { x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q), h: q.w || IC.APART.runway.w } : q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q;
@@ -980,9 +986,30 @@ IC.aptCanPlace = function (S, ap, part) {
     if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
-    if (rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${q.kind === 'runway' ? q.name || 'the runway' : 'the ' + IC.APART[q.kind].name.toLowerCase()}${q.built ? '' : ' being built'}: move it, or bulldoze that first.`);
+    if (rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
   }
   return true;
+};
+/* a taxiway line runs more than 8 m inside a part (a round tank by its radius) */
+function taxiThrough(pts, q) {
+  const D = IC.APART[q.kind] || {}, r = q.r || D.r, w = q.w || D.w, h = q.h || D.h, R = r || Math.hypot(w || 0, h || 0) / 2;
+  if (!R) return false;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (U.segDist(q.x, q.y, a.x, a.y, b.x, b.y) > R) continue;
+    const n = Math.max(1, Math.ceil(U.dist(a, b) / 0.05));
+    for (let k = 0; k <= n; k++) {
+      const p = { x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n };
+      if (r ? U.dist(p, q) < r - 0.08 : (l => Math.abs(l.x) < w / 2 - 0.08 && Math.abs(l.y) < h / 2 - 0.08)(toLocal({ x: q.x, y: q.y, a: q.a || 0 }, p))) return true;
+    }
+  }
+  return false;
+}
+/* a part in words: a runway by its name, the rest by kind, numbered when there are several ("Apron 2") */
+IC.partName = function (ap, q) {
+  if (q.kind === 'runway') return q.name || 'the runway';
+  const D = IC.APART[q.kind] || { name: q.kind }, same = ap.parts.filter(p => p.kind === q.kind), i = same.indexOf(q);
+  return same.length > 1 && i >= 0 ? `${D.name} ${i + 1}` : `the ${D.name.toLowerCase()}`;
 };
 /* two rotated rectangles overlap by more than a margin (separating axis test) */
 function rectsOverlap(A, B, m) {

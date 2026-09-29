@@ -475,9 +475,10 @@ function buildHint(m) {
     : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
     : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
-  const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z)) : null;
-  const info = plan ? (plan.ok ? plan.text : [plan.why].concat(plan.text)).filter(Boolean).join(' · ') : '';
-  return `${how} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
+  const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z), !!IC.bldFree) : null;
+  const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
+  const snap = IC.bldIsLine(t) || IC.bldIsArea(t) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
+  return `${how}${snap} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
 }
 const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);
 ui.covTxt = covTxt;

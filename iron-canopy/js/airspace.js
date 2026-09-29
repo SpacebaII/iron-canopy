@@ -545,8 +545,8 @@ IC.aspSuggest = function (S, ap) {
   if (ap.kind !== 'airport' || !IC.aspTaught(S)) return null;
   const sh = IC.aspShapeOf(S, ap), next = sh && { D: 'C', C: 'B' }[sh.key]; if (!next) return null;
   const mv = (ap.mvLog || []).filter(m => S.time - m.t <= 3600).length, radar = !!(ap.st && ap.st.radar), need = next === 'C' ? 20 : 40, nm = short(ap.name);
-  if (mv >= need && radar) return { key: next, ok: true, text: next === 'C' ? `${nm} has ${mv} movements an hour and approach radar: Class C would let controllers keep VFR traffic apart from the airliners.` : `${nm} has ${mv} movements an hour and approach radar: Class B would keep every flight apart, light aircraft too.` };
-  return { key: next, ok: false, text: `Class ${next} pays off from about ${need} movements an hour with an approach radar. ${nm} has ${mv} movements an hour, ${radar ? 'with' : 'without'} approach radar.` };
+  if (mv >= need && radar) return { key: next, ok: true, text: next === 'C' ? `${nm} flew ${mv} movements in the last hour and has approach radar: Class C would let controllers keep VFR traffic apart from the airliners.` : `${nm} flew ${mv} movements in the last hour and has approach radar: Class B would keep every flight apart, light aircraft too.` };
+  return { key: next, ok: false, text: `Class ${next} pays off from about ${need} movements an hour with an approach radar. ${nm} flew ${mv} in the last hour (its runways could take ${ap.st && ap.st.movesPerHour || 0}), ${radar ? 'with' : 'without'} approach radar.` };
 };
 IC.aspVols = (S, ap) => (S.asp.vols || []).filter(v => !ap || v.ap === ap.id);
 IC.aspVol = (S, id) => (S.asp.vols || []).find(v => v.id === id);
