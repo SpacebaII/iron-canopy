@@ -77,6 +77,7 @@ function clipStart(L, labels) {
 async function clipFrame(C, S, speed, before) {
   C.acc += (speed || 0) / 30; while (C.acc >= 0.25) { IC.step(S, 0.25); C.acc -= 0.25; }
   if (before) before(C);
+  C.L.lod = 0;   // full detail: software drawing is slow, the view would otherwise drop its costly effects
   IC.replayStep(C.L, C.now += 1000 / 30);
   await __frame(C.cv.toDataURL('image/jpeg', 0.9).slice(23));
   C.f++; if (C.f % 150 === 0) console.log('frame', C.f, 'game', U.hhmm(S.time));
@@ -275,6 +276,7 @@ const SCENES = {
     const L = await live(S, m, 'side', 1500); S.paused = false;
     await new Promise(r => { const f = () => { if (m.phase === 'land' || m.dead) r(); else setTimeout(f, 30); }; f(); });
     await wait(+(window.AFTER || 250)); S.paused = true; L.camK = +(window.K || 0.45); await wait(1500); await __snap('life-land');
+    const F = L.follow; if (F) console.log('pose', JSON.stringify({ now: S.time, vt: L.t, t1: F.tr.t1, marks: F.tr.marks, last: [0, 1, 2, 3, 4, 5].map(i => [IC.recGet(F.tr, F.tr.n - 1 - i, 0), IC.recGet(F.tr, F.tr.n - 1 - i, 8)]), mphase: m.phase, same: F.tr === S.rec.of.get(m), ph: F.st.phase, spoil: F.st.spoil, rev: F.st.rev, n1: F.st.n1, lod: F.lod, life: F.life && { spoil: F.life.spoil, rev: F.life.rev, n1: F.life.n1 }, anims: F.anims.map(A => A.a.name + ':' + A.node.visible + ':' + (A.node.parent && A.node.parent.type)) }));
     camTo(L, 'chase'); L.camK = 0.6; await wait(2000); await __snap('life-land-2');`,
   'life-takeoff': `
     const S = await game('sandbox', 11);
@@ -309,6 +311,82 @@ const SCENES = {
       if (air != null && f === air + 420) { camTo(L, 'chase'); L.camK = 0.9; }
     });
     await __snap('clip-takeoff-last');`,
+  // a full turnaround at a gate: the arrival, the jet bridge out to the door, the vehicles by the turnaround's clock
+  // (the service time-lapsed), the bridge back, the tug, the pushback
+  'clip-turnaround': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 4 * 3600, S => findMove(S, m => m.phase === 'final' && m.alt < 0.2 && m.stand && m.stand.contact && (m.type === 'narrow' || m.type === 'wide')));
+    if (!m) throw new Error('no jet on final to a gate');
+    const st = m.stand, tl = m.tail; console.log('arrival', m.who, m.type, 'to', st.id);
+    const L = await live(S, m, 'side', 600); L.camK = 0.7;
+    const C = clipStart(L), N = +(window.N || 4200); let ph = 'arr', f0 = 0, dep = null, q = null, yaw = st.a + 2.4;
+    for (let f = 0; f < N; f++) {
+      let speed = 1.5;
+      if (ph === 'arr' && m.phase !== 'final' && m.phase !== 'land') { ph = 'taxi'; camTo(L, 'chase'); L.camK = 1.6; }
+      if (ph === 'taxi') speed = 5;
+      if (ph === 'taxi' && tl.where === 'stand') { ph = 'turn'; f0 = f; L.focusRef = { x: st.x, y: st.y, name: 'gate' }; camTo(L, 'orbit'); L.follow = null; q = S.rec.turns.find(x => x.tail === tl.id && x.t1 == null); }
+      if (ph === 'turn') {
+        const tt = q ? S.time - q.t0 : 0, left = q ? q.t0 + q.dur - S.time : 0;
+        speed = tt < 150 ? 6 : left > 700 ? 70 : 12;
+        yaw += speed > 20 ? 0.004 : 0.0015; orbitAt(L, st.x, st.y, yaw, 0.3, 0.95);
+        dep = findMove(S, x => x.tail === tl && (x.phase === 'push' || x.phase === 'start'));
+        if (dep && dep.phase === 'push') { ph = 'push'; f0 = f; IC.liveOpen(S, dep); L.follow = null; camTo(L, 'orbit'); }
+      }
+      if (ph === 'push') { speed = 3; if (L.follow) { L.orbit.yaw += 0.002; L.orbit.pitch = 0.3; L.orbit.dist = 1.0; } if (f - f0 > 900) break; }
+      await clipFrame(C, S, speed);
+    }
+    await __snap('clip-turnaround-last');`,
+  // the capital's airport at night: a slow orbit over the lights, then an aircraft taxiing out past the stop bars
+  'clip-night': `
+    const S = await game('sandbox', 21.3);
+    const ap = S.byId.i0; steps(S, 600);
+    const L = await liveAt(S, ap.x, ap.y);
+    const C = clipStart(L), N = +(window.N || 900); let yaw = 0.6, m = null;
+    for (let f = 0; f < N; f++) {
+      if (f < 420) { yaw += 0.0022; orbitAt(L, ap.x, ap.y, yaw, 0.2 - f * 0.0002, 30 - f * 0.035); }
+      if (f === 420) { m = findMove(S, x => x.phase === 'taxi' && x.kind === 'dep' && x.type !== 'light' && !x.mil) || findMove(S, x => x.phase === 'taxi' && x.type !== 'light'); if (m) { IC.liveOpen(S, m); camTo(L, 'chase'); L.camK = 2.2; } }
+      await clipFrame(C, S, f < 420 ? 4 : 1.5);
+    }
+    await __snap('clip-night-last');`,
+  // a long-range battery fires: the launcher up, the flash and the dust, the smoke column, the booster falling away
+  'clip-launch': `
+    Math.random = seeded(3); await IC.begin('range'); const S = IC.S; S.paused = true;
+    IC.ui.cineShown = 1e9; for (const id of ['cine', 'comms']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+    const T = S.range.target;
+    IC.rangeAddUnit(S, 'lrsam', T.x - 30, T.y); IC.rangeAddUnit(S, 'lr3d', T.x - 40, T.y + 20);
+    IC.rangeSpawn(S, { what: 'str', n: 3, brg: 90, km: 160, alt: '' });
+    let tr = null; steps(S, 600, S => (tr = S.rec.tracks.find(t => t.kind === 'missile' && t.meta.mun === 'LR')) && S.time > IC.recFirstT(tr) + 40);
+    if (!tr) throw new Error('no long-range shot');
+    const u = S.units.find(x => x.type === 'lrsam'), t0 = IC.recFirstT(tr);
+    const V = IC.replayOpen(S, { x: u.x, y: u.y, t: t0 - 3, r: 150, cam: 'orbit' });
+    for (let i = 0; i < 150 && !(V.renderer && V.movers && V.tiles.size > 8); i++) await wait(100);
+    await wait(2000); V.playing = false; V.t = t0 - 3;
+    const C = clipStart(V), N = +(window.N || 1050), mv = V.moverOf.get(tr);
+    let yaw = 2.6;
+    for (let f = 0; f < N; f++) {
+      const k = V.t - t0;
+      V.t += (k < 7 ? 0.35 : 0.6) / 30;
+      if (k < 1.2) { yaw += 0.0015; V.cam = 'orbit'; V.follow = null; Object.assign(V.orbit, { tx: u.x - V.cx, tz: u.y - V.cy, ty: (V.flat[0] ? V.flat[0].e : 0) * V.hk + 0.04, yaw, pitch: 0.12, dist: 1.1 }); }
+      else if (k < 9) { if (V.cam !== 'chase') { V.follow = mv; camTo(V, 'chase'); V.camK = 3; } }
+      else if (V.cam !== 'side') { camTo(V, 'side'); V.camK = 1.2; }
+      await clipFrame(C, S, 0);
+    }
+    await __snap('clip-launch-last');`,
+  // brief 41's frame times: the capital's airport busy at midday and at night, the live view full screen; what the
+  // scene's script costs a frame, what the life of it (render3d-life.js) costs, and what is drawn
+  'frames-life': `
+    const out = {};
+    for (const hour of [11, 21.5]) {
+      const S = await game('sandbox', hour); steps(S, 1800);
+      const ap = S.byId.i0, st = IC.aptStands(ap).find(s => s.occ) || ap;
+      const L = await liveAt(S, st.x, st.y); orbitAt(L, st.x, st.y, 2.2, 0.35, 2.5);
+      S.paused = false; S.speed = 1; await wait(4000);
+      const ft = await frameTimes(60);
+      const life = IC.life3d.stats(L);
+      out[hour < 12 ? 'noon' : 'night'] = { frames: ft, upMs: +L.upMs.toFixed(2), drawMs: +L.drawMs.toFixed(2), lifeMs: life.ms, vehicles: life.vehicles, bridges: life.bridges, particles: life.particles, lights: life.lights, movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles, px: L.renderer.domElement.width + 'x' + L.renderer.domElement.height };
+      S.paused = true; IC.liveClose(); await wait(500);
+    }
+    window.__perf = out;`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -336,7 +414,8 @@ const SCENES = {
   let bad = 0;
   for (const name of names) {
     const vid = name === 'video';
-    const ctx = await browser.newContext(Object.assign({ viewport: { width: 1280, height: 800 }, ignoreHTTPSErrors: true }, vid ? { recordVideo: { dir, size: { width: 1280, height: 800 } } } : {}));
+    const [vw, vh] = (process.env.VIEW || '1280x800').split('x').map(Number);
+    const ctx = await browser.newContext(Object.assign({ viewport: { width: vw, height: vh }, ignoreHTTPSErrors: true }, vid ? { recordVideo: { dir, size: { width: 1280, height: 800 } } } : {}));
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));

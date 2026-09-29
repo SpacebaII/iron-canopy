@@ -67,7 +67,7 @@ varying vec3 vCol; varying float vA;
 void main() {
   #include <logdepthbuf_fragment>
   float r = length(gl_PointCoord - 0.5) * 2.0;
-  float a = (smoothstep(0.42, 0.0, r) + pow(max(0.0, 1.0 - r), 3.0) * 0.5) * vA;
+  float a = ((1.0 - smoothstep(0.0, 0.42, r)) + pow(max(0.0, 1.0 - r), 3.0) * 0.5) * vA;
   if (a < 0.004) discard;
   gl_FragColor = vec4(vCol * a, a);
 }`;
@@ -93,7 +93,7 @@ uniform float uAdd;
 void main() {
   #include <logdepthbuf_fragment>
   vec2 c = gl_PointCoord - 0.5; float r = length(c) * 2.0;
-  float a = vCol.a * (uAdd > 0.5 ? pow(max(0.0, 1.0 - r), 2.2) : smoothstep(1.0, 0.25, r) * (0.85 + 0.15 * sin(c.x * 17.0 + c.y * 11.0)));
+  float a = vCol.a * (uAdd > 0.5 ? pow(max(0.0, 1.0 - r), 2.2) : (1.0 - smoothstep(0.25, 1.0, r)) * (0.85 + 0.15 * sin(c.x * 17.0 + c.y * 11.0)));
   if (a < 0.004) discard;
   gl_FragColor = uAdd > 0.5 ? vec4(vCol.rgb * a, a) : vec4(vCol.rgb, a);
 }`;
@@ -175,7 +175,7 @@ const discX = () => H.share('life:discX', () => {
 });
 const fanMat = () => H.share('life:fanMat', () => new T.MeshBasicMaterial({ map: blurTex(), transparent: true, depthWrite: false, side: T.DoubleSide }));
 const propMat = () => H.share('life:propMat', () => new T.MeshBasicMaterial({ map: blurTex(), transparent: true, opacity: 0.55, depthWrite: false, side: T.DoubleSide }));
-const beamMat = () => H.share('life:beam', () => { const m = new T.MeshBasicMaterial({ color: '#fff2d8', transparent: true, opacity: 0.06, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide }); m.userData.bloom = true; return m; });
+const beamMat = () => H.share('life:beam', () => { const m = new T.MeshBasicMaterial({ color: '#fff2d8', transparent: true, opacity: 0.035, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide }); m.userData.bloom = true; return m; });
 
 /* ---------- geometry of the pieces, from models.js ---------- */
 /* a model or a fixture in one piece, in world units about its origin; and its moving groups apart */
@@ -226,7 +226,7 @@ function instPart(v, key, part, x, y, z, h, ang, d, s) {
 /* ---------- the scene: what every view has ---------- */
 L3.scene = function (v) {
   init(); tmp();
-  v.life = { glow: [], pools: new Map(), want: new Map(), made: 0, apts: [], plans: new Map(), booster: 0, stats: {}, clock: 0, dtR: 1 / 30 };
+  v.life = { glow: [], pools: new Map(), want: new Map(), made: 0, apts: [], plans: new Map(), booster: 0, stats: {}, clock: 0, dtR: 1 / 30, updAcc: 0 };
   v.life.lightMat = lightMat(v);
   v.life.smoke = partSet(v, CFG.smokeN, false); v.life.glowP = partSet(v, CFG.glowN, true);
   v.life.dyn = lightSet(v, CFG.dynN); v.life.dyn.geometry.setDrawRange(0, 0);
@@ -356,6 +356,9 @@ function toWorld(m, lx, ly, lz, out) {
 }
 L3.upd = function (v, m, st, t, dt, dot) {
   const X = m.life; if (!X || !v.life) return;
+  const t0 = performance.now(); updOne(v, m, X, st, t, dt, dot); v.life.updAcc += performance.now() - t0;
+};
+function updOne(v, m, X, st, t, dt, dot) {
   if (m.tr.kind === 'missile') { missileFx(v, m, st, t); return; }
   if (!m.ac || !m.body) return;
   const lod = !dot && m.lod, night = v.life.nightK > 0.35;
@@ -369,9 +372,11 @@ L3.upd = function (v, m, st, t, dt, dot) {
       on.needsUpdate = true;
     }
   }
-  for (const b of X.beams) b.b.visible = lod && night && !v.radar && (b.kind === 'land' ? st.land : st.taxi) > 0 && (b.kind === 'taxi' || st.alt < 3);
-  if (v.radar || v.lod > 1) return;
-  const S = v.S, P = WP, alt = st.alt, spd = st.spd, gnd = st.gnd;
+  // the beams show in the air and on the runway (on the taxiway the pool on the ground says it)
+  for (const b of X.beams) b.b.visible = lod && night && !v.radar && b.kind === 'land' && st.land > 0 && st.alt < 3 && (!st.gnd || st.phase === IC.REC_PHASE.roll || st.phase === IC.REC_PHASE.land);
+  if (v.radar) return;
+  // when the view is short of time (v.lod 2) the costly effects go first: contrails, vapour, haze, spray
+  const S = v.S, P = WP, alt = st.alt, spd = st.spd, gnd = st.gnd, rich = v.lod < 2;
   // the pools the taxi and landing lights throw on the ground ahead
   if (night && !dot && (st.taxi || (st.land && alt < 0.15))) {
     const ahead = gnd ? 0.35 + m.MP.len * 0.5 : Math.min(2.5, alt * KMh(v) / 0.09), g0 = H.hT(v, st.x, st.y) * v.hk + H.LIFT.rw + 0.001;
@@ -414,20 +419,20 @@ L3.upd = function (v, m, st, t, dt, dot) {
     else emit(v.life.smoke, P.x, P.y, P.z, 0.02 + a * 0.08, 0.72, 0.68, 0.6, 0.12 * (1 - a) * X.rev);
   }
   // spray off a wet runway behind the wheels at speed
-  if (wet && gnd && spd > 0.3) for (const sg of [1, -1]) for (let i = 0; i < 10; i++) { const a = (t * 2 + i / 10) % 1; toWorld(m, X.mainX - 0.02 - a * spd * 0.4, 0.005 + a * 0.03, sg * X.mainY * (1 + a * 0.8), P); emit(v.life.smoke, P.x, P.y, P.z, 0.02 + a * 0.08, 0.86, 0.88, 0.9, 0.3 * (1 - a) * ramp(spd, 0.3, 0.6)); }
+  if (rich && wet && gnd && spd > 0.3) for (const sg of [1, -1]) for (let i = 0; i < 10; i++) { const a = (t * 2 + i / 10) % 1; toWorld(m, X.mainX - 0.02 - a * spd * 0.4, 0.005 + a * 0.03, sg * X.mainY * (1 + a * 0.8), P); emit(v.life.smoke, P.x, P.y, P.z, 0.02 + a * 0.08, 0.86, 0.88, 0.9, 0.3 * (1 - a) * ramp(spd, 0.3, 0.6)); }
   // heat haze behind the engines at high power on the ground (a faint shimmer)
-  if (gnd && (X.n1 || 0) > 0.6 && lod) for (const e of X.engines) for (let i = 0; i < 6; i++) { const a = (t * 3 + i / 6) % 1; toWorld(m, e[0] - 0.05 - a * 0.25, e[1] + a * 0.01, e[2] + Math.sin(t * 13 + i) * 0.004, P); emit(v.life.smoke, P.x, P.y, P.z, 0.03 + a * 0.05, 0.85, 0.85, 0.82, 0.05 * (1 - a)); }
+  if (rich && gnd && (X.n1 || 0) > 0.6 && lod) for (const e of X.engines) for (let i = 0; i < 6; i++) { const a = (t * 3 + i / 6) % 1; toWorld(m, e[0] - 0.05 - a * 0.25, e[1] + a * 0.01, e[2] + Math.sin(t * 13 + i) * 0.004, P); emit(v.life.smoke, P.x, P.y, P.z, 0.03 + a * 0.05, 0.85, 0.85, 0.82, 0.05 * (1 - a)); }
   // a fighter's afterburner: shock diamonds in the flame
   if (st.ab && lod) for (let i = 0; i < 5; i++) { toWorld(m, -m.MP.len / 2 - 0.012 - i * 0.012, m.MP.top * 0.4, 0, P); emit(v.life.glowP, P.x, P.y, P.z, 0.008 * (1 - i * 0.12), 1, 0.75 + 0.05 * i, 0.5, (0.8 - i * 0.12) * (0.85 + 0.15 * Math.sin(t * 40 + i))); }
   // contrails above about FL260 in cold air (jets only); a trail behind each engine along the recorded path
-  if (X.jet && alt > 7.6 && X.wet < 0.75) contrail(v, m, st, t, ramp(alt, 7.6, 8.6) * (0.6 + X.wet * 0.5));
+  if (rich && X.jet && alt > 7.6 && X.wet < 0.75) contrail(v, m, st, t, ramp(alt, 7.6, 8.6) * (0.6 + X.wet * 0.5));
   // wingtip vapour: humid air on the approach, or a hard pull
-  if (!gnd && !dot && (humid && st.flap > 0.3 || st.g > 1.6)) for (const sg of [1, -1]) for (let i = 0; i < 16; i++) {
+  if (rich && !gnd && !dot && (humid && st.flap > 0.3 || st.g > 1.6)) for (const sg of [1, -1]) for (let i = 0; i < 16; i++) {
     const a = i / 16, back = a * spd * 1.2;
     toWorld(m, X.tipX - back, 0, sg * X.tip, P);
     emit(v.life.smoke, P.x, P.y, P.z, 0.006 + a * 0.012, 0.95, 0.96, 0.98, 0.35 * (1 - a) * (humid ? 1 : ramp(st.g, 1.6, 3)));
   }
-};
+}
 const KMh = v => IC.R3D.KM * v.hk;
 function lastMark(tr, kind, t, within) { for (let i = tr.marks.length - 1; i >= 0; i--) { const q = tr.marks[i]; if (q[1] === kind && q[0] <= t) return t - q[0] < within ? q[0] : null; } return null; }
 function pool(v, x, y, z, h, sx, sz, k, g, b) {
@@ -460,8 +465,11 @@ function contrail(v, m, st, t, k) {
 const BOOST = { LR: 4.5, EXO: 5, HAT: 5, MR: 3.2, TBD: 3.5, VLR: 6, ER: 5 };
 function missileInit(v, m) {
   const X = m.life, mun = m.tr.meta.mun, st0 = IC.recAt(m.tr, IC.recFirstT(m.tr), {});
-  X.tL = IC.recFirstT(m.tr);
-  X.ground = !!st0 && st0.alt < 0.05;
+  X.tL = IC.recFirstT(m.tr) - IC.REC.fine;
+  // fired from the ground: from its launcher (the missile's first sample may already be well on its way)
+  const ut = v.S.rec && m.tr.meta.uref ? v.S.rec.of.get(m.tr.meta.uref) : null, us = ut && (ut.kind === 'unit' || ut.kind === 'veh') ? IC.recAt(ut, X.tL, {}) || IC.recAt(ut, ut.t1, {}) : null;
+  X.ground = !!us || (!!st0 && st0.alt < 0.05);
+  X.x0 = us ? us.x : st0 ? st0.x : 0; X.y0 = us ? us.y : st0 ? st0.y : 0; X.p0 = st0;
   X.sep = BOOST[mun] != null ? X.tL + BOOST[mun] : null;
   if (X.sep != null) { const p = v.life.pools.get('booster'); if (p && v.life.booster + 1 > p.cap) ipool(v, 'booster', p.mesh.geometry, p.mesh.material, p.cap * 2); v.life.booster++; }
   X.s0 = null; X.s1 = null;
@@ -471,7 +479,9 @@ function missileFx(v, m, st, t) {
   if (v.radar) return;
   // the launch: a flash, dust thrown out in a ring along the ground, a cloud of smoke that hangs and drifts
   if (X.ground && age >= 0 && age < 40) {
-    const x0 = (X.x0 != null ? X.x0 : (X.x0 = IC.recAt(m.tr, X.tL, {}).x)), y0 = X.y0 != null ? X.y0 : (X.y0 = IC.recAt(m.tr, X.tL, {}).y), g0 = H.hT(v, x0, y0) * v.hk, w = v.S.wind || { x: 0, y: 0 };
+    const x0 = X.x0, y0 = X.y0, g0 = H.hT(v, x0, y0) * v.hk, w = v.S.wind || { x: 0, y: 0 };
+    // the smoke from the launcher up to where the missile was first seen, spreading and thinning
+    if (X.p0) { const px = X.p0.x, py = X.p0.y, pz = H.hT(v, px, py) * v.hk + X.p0.alt * KMh(v), n = Math.min(60, Math.ceil(Math.hypot(px - x0, py - y0, pz - g0) / 0.06)); for (let i = 0; i <= n; i++) { const f = i / n, sp = 0.04 + age * 0.012 * (0.5 + f); emit(sm, x0 + (px - x0) * f + w.x * age * 0.08 - v.cx, g0 + 0.02 + (pz - g0) * f, y0 + (py - y0) * f + w.y * age * 0.08 - v.cy, sp, 0.9, 0.9, 0.88, 0.55 * U.clamp(1 - age / 35, 0, 1)); } }
     if (age < 0.6) emit(gl, x0 - v.cx, g0 + 0.03, y0 - v.cy, 0.5 * (1 - age / 0.6) + 0.1, 1, 0.85, 0.55, 1 - age / 0.6);
     if (age < 8) for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2, r = 0.05 + 0.35 * (1 - Math.exp(-age * 1.2)); emit(sm, x0 + Math.cos(a) * r - v.cx, g0 + 0.01 + age * 0.002, y0 + Math.sin(a) * r - v.cy, 0.08 + age * 0.03, 0.62, 0.58, 0.52, 0.45 * (1 - age / 8)); }
     for (let i = 0; i < 12; i++) { const a = age - i * 0.25; if (a < 0) continue; const k = seedOf(i + 11) - 0.5; emit(sm, x0 + k * 0.1 + w.x * a * 0.1 - v.cx, g0 + 0.02 + a * 0.004 + i * 0.01, y0 + (seedOf(i) - 0.5) * 0.1 + w.y * a * 0.1 - v.cy, 0.1 + a * 0.02, 0.86, 0.86, 0.84, 0.5 * (1 - age / 40)); }
@@ -633,6 +643,7 @@ L3.dropAirport = function (v, A) { v.life.apts = v.life.apts.filter(x => x !== A
 /* ---------- every frame ---------- */
 L3.frame = function (v, t, dt) {
   const life = v.life; if (!life) return;
+  const t0 = performance.now();
   const cam = v.camera, S = v.S;
   for (const m of life.glow) if (m.uniforms) { if (m.uniforms.uTime) m.uniforms.uTime.value = life.clock; if (m.uniforms.uFocal) m.uniforms.uFocal.value = v.focalPx || 1000; if (m.uniforms.uFar) m.uniforms.uFar.value = v.scene.fog ? v.scene.fog.far * 1.3 : 900; }
   if (life.smoke.material.uniforms) { life.smoke.material.uniforms.uFocal.value = v.focalPx || 1000; life.smoke.material.uniforms.uFar.value = v.scene.fog ? v.scene.fog.far * 1.2 : 1400; }
@@ -642,8 +653,12 @@ L3.frame = function (v, t, dt) {
   for (const A of life.apts) airportFrame(v, A, t, nightK, cam, stats);
   // flush what this frame drew
   for (const p of life.pools.values()) { p.mesh.count = p.n; p.mesh.instanceMatrix.needsUpdate = true; if (p.color && p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true; p.n = 0; }
+  stats.particles = life.smoke.userData.n + life.glowP.userData.n; stats.lights = life.apts.reduce((n, A) => n + A.end, 0);
   partFlush(life.smoke); partFlush(life.glowP);
   lightsDone(life.dyn); life.dyn.userData.n = 0;
+  // what the life of the scene costs a frame, in ms of script (the movers' part and the airports' part)
+  const ms = performance.now() - t0; life.ms = life.ms == null ? ms : life.ms * 0.95 + ms * 0.05; life.updMs = life.updMs == null ? life.updAcc : life.updMs * 0.95 + life.updAcc * 0.05; life.updAcc = 0;
+  stats.ms = +(life.ms + life.updMs).toFixed(3);
 };
 const PC = {};
 function airportFrame(v, A, t, nightK, cam, stats) {
@@ -676,7 +691,7 @@ function airportFrame(v, A, t, nightK, cam, stats) {
   if (dCam > CFG.reach * 3) return;
   const near = dCam < CFG.reach && cam.position.y - A.y0 < 60;
   // floodlit aprons at night: a pool of light under each mast
-  if (near && nightK > 0.3) for (const q of A.floods) { const x = q.x + (q.into.x - q.x) * 0.55, y = q.y + (q.into.y - q.y) * 0.55; pool(v, x - cx, A.y0 + 0.0035, y - cy, 0, 0.9, 0.9, 0.35 * nightK, 0.88, 0.7); }
+  if (near && nightK > 0.3) for (const q of A.floods) { const x = q.x + (q.into.x - q.x) * 0.55, y = q.y + (q.into.y - q.y) * 0.55; pool(v, x - cx, A.y0 + 0.0035, y - cy, 0, 1.1, 1.1, 0.16 * nightK, 0.86, 0.66); }
   // the turnarounds going on now: their bridges, and close in their vehicles
   const R = S.rec; A.frame = (A.frame || 0) + 1;
   if (R) for (const q of R.turns) {

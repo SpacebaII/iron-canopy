@@ -413,7 +413,7 @@ function airliner(B, s) {
     // ailerons outboard (+ rolls right: the right one up), spoilers on top ahead of the flaps (raised at
     // touchdown), slats along the leading edge (out and down with the flaps)
     surface(B, secs, 0.76, 0.96, 0.8, 1.03, 'ail', 0.3, { mirror: true, t: 0.04 });
-    surface(B, secs, 0.14, 0.66, 0.55, 0.76, 'spoil', 0.8, { lift: 0.03, t: 0.03, foil: FOIL.flat });
+    surface(B, secs, 0.14, 0.66, 0.55, 0.76, 'spoil', 0.8, { lift: 0.03, t: 0.03, foil: FOIL.flat, col: '#7c8288' });
     surface(B, secs, 0.16, 0.94, -0.01, 0.13, 'slat', 0.35, { hc: 0.18, drop: -0.35, t: 0.07 });
     unhome();
   }
@@ -454,10 +454,10 @@ function airliner(B, s) {
         B.base();
         lathe(B, [[len * 0.575, 0.02], [len * 0.54, r * 0.2], [len * 0.51, r * 0.27]], P.dgrey, { at: [ex, ey, ez], segs: 8 });
         // the thrust reverser: the aft cowl slides back (its own group, out of sight when stowed) over dark cascades
-        B.group('revs' + B.np, { kind: 'rev', pivot: [ex, ey, ez], axis: [-1, 0, 0], up: len * 0.2 });
+        B.group('revs' + B.np, { kind: 'rev', pivot: [ex, ey, ez], axis: [-1, 0, 0], up: len * 0.26 });
         lathe(B, [[len * 0.02, r * 0.985], [-len * 0.18, r * 0.83]], 'ENG', { at: [ex, ey, ez], segs: 8 });
         B.group('revc' + B.np, { kind: 'revc', pivot: [ex, ey, ez], axis: [1, 0, 0] });
-        lathe(B, [[len * 0.02, r * 0.96], [-len * 0.16, r * 0.93]], '#2a2c2e', { at: [ex, ey, ez], segs: 8, smooth: false });
+        lathe(B, [[len * 0.02, r * 0.96], [-len * 0.24, r * 0.9]], '#18191a', { at: [ex, ey, ez], segs: 8, smooth: false });
         B.base();
       }
       if (q) lathe(B, [[-len * 0.46, r * 0.4], [-len * 0.55, r * 0.26], [-len * 0.66, 0.02]], P.nozzle, { at: [ex, ey, ez], segs: 8 });

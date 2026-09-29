@@ -2984,6 +2984,8 @@ test('3D life: crews switch the lights, spoilers and reversers by phase', () => 
   const { S, tr } = flight('td');
   assert(tr, 'no airliner landed in three hours');
   const td = tr.marks.find(m => m[1] === 'td')[0], at = dt => IC.recPose(tr, td + dt, {}, S.wind);
+  // on to its stand
+  for (let i = 0; i < 4 * 1200 && !tr.marks.some(m => m[1] === 'pk' && m[0] < S.time - 25); i++) IC.step(S, 0.25);
   const f = at(-20);
   assert(f.land && f.strobe && f.beacon && f.nav && f.taxi, `on final: landing ${f.land}, strobes ${f.strobe}, beacon ${f.beacon}, taxi light ${f.taxi}`);
   assert(at(1.5).spoil > 0.9 && at(4).rev > 0.9 && at(4).n1 > 0.6, `after touchdown: spoilers ${at(1.5).spoil.toFixed(2)}, reversers ${at(4).rev.toFixed(2)}, power ${at(4).n1.toFixed(2)}`);
