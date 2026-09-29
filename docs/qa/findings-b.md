@@ -28,3 +28,10 @@ Severity: **blocker** (breaks play), **ugly** (looks unfinished or confuses), **
 | 18 | Models gallery | Header: "Every model in 3D; down the side, from above and from the side inside the real size" | minor | qa3d/3d-gallery | yes: "Every model in the game, side by side at real size" |
 | 19 | Replay, over a city | Ground texture is blurry at low altitude and a straight diagonal seam shows across the city | minor | b16-replay | not fixed: needs a detail texture for the replay ground (after the release) |
 | 20 | Live view / replay full screen | The top bar's text peeks out in the 12 px margin round the full-screen window | minor | qa3d/3d-heli | not yet |
+| 21 | Academy lesson panel | The panel scrolled: at step 4 the current step was cut off at the bottom, below three finished ones | ugly | b28-l1s4 | yes: the step before is cut to two lines, the current one is always whole |
+| 22 | Academy lesson 1, step 3 | "Every track is a yellow UNKNOWN. Click one." with none on screen (the few within 440 km were far out) | ugly | b26-l1s3 | yes: "Most are far out: press Tab to jump to one, or zoom out and click one." |
+| 23 | 3D chase on a missile | With the camera closer, the missile's flame filled the picture | ugly | replay-lr-1-boost-chase | yes: missiles are chased from further back |
+| 24 | News | "claims its strike on LOW-2 was a success", "celebrates… over VIX-1": our unit codes in the enemy's news | minor | – | yes: "air defences near Orvice" |
+| 25 | Supply room | "guided rockets" in lower case among "IR missiles", "SR missiles" | minor | b31-depots | yes |
+| 26 | Replay | "Computed radius is NaN" (coordinator's smoke run) | – | – | not reproduced after brief 34: none in the engagement, long-range shot, fighter, drone, helicopter, airliner, live or gallery scenes; every model's geometry is finite |
+| 27 | Quick war, Supply | The Forward Depot starts with "0 units within 140 km": nothing is deployed near it | minor | b31-depots | the officer's line now says it supplies what you deploy up there; the placement is balance, left as is |
