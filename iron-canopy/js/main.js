@@ -96,8 +96,8 @@ function airwayClick(m, p) {
 function buildIn(m, p, btn, shift) {
   const r = IC.buildInput(S, m, p, btn, IC.cam.z, shift);
   if (r === 'exit') { IC.setMode(null); return r; }
-  if (r === 'built') { IC.sfx.ui('ok'); ping(p); }
-  else if (r === 'err') { IC.sfx.ui('err'); if (m.err) IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); }
+  if (r === 'built') { IC.sfx.ui('ok'); ping(p); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap); }
+  else if (r === 'err') { IC.sfx.ui('err'); if (m.err) { IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
   else IC.sfx.ui('click');
   IC.ui.refresh(true);
   return r;
@@ -353,8 +353,9 @@ function onAct(e) {
     case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.setAlert(S, r, IC.alertOf(r) === 5 ? 30 : 5); break; }
     case 'air': IC.airAct(S, b.dataset); break;
     case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { S.airspace = 'restricted'; IC.log(S, 'info', 'AIRSPACE', 'Civil airspace restricted.'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
-    case 'cnext': ui.ci++; ui.shownAt = performance.now() - 1e5; break;
-    case 'cprev': ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
+    case 'copen': ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
+    case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.shownAt = performance.now() - 1e5; break;
+    case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
     case 'zin': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.3); break;
     case 'zout': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1 / 1.3); break;
     case 'zhome': { const c = IC.cap(S); IC.flyTo(c.x, c.y, Math.max(IC.cam.z, 0.3)); break; }
@@ -463,6 +464,7 @@ function onAct(e) {
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
     case 'replay': ui.openRoom(null); IC.replayOpen(S, { x: +b.dataset.x, y: +b.dataset.y, t: +b.dataset.t }); return;
     case 'replayTrack': if (sel) IC.replayOpen(S, { follow: sel, x: sel.x, y: sel.y, t: S.time - 90 }); return;
+    case 'liveView': if (sel) IC.liveOpen(S, sel); return;
     case 'logf': ui.logFilter = v; break;
     case 'refcat': ui.refCat = v; break;
     case 'why': ui.why = ui.why === v ? null : v; break;

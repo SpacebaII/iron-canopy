@@ -346,38 +346,46 @@ IC.aspRelease = function (S, from, to) {
 };
 
 /* ---------- airspace classes ----------
-   Each airport's controlled airspace is a set of volumes the player shapes: a control zone from the ground up and
-   the shelves of a terminal area above it, each ring with its own floor and ceiling (an upside-down wedding cake).
-   Airways are corridors: class A above FL195, E below. Military areas close a height band. Everything else is G.
-   Heights are above the ground, in km, like every t.alt. */
+   Each airport's controlled airspace is one shape, drawn from above like a chart (see "shapes" below). Airways are
+   corridors: class A above FL195, E below. Military areas close a height band. Everything else is G. Heights are
+   above the ground, in km, like every t.alt; on screen they read in feet below 6,000 ft and flight levels above. */
 IC.ASP_CLS = {
-  A: { name: 'Class A', col: '120,140,255', ctl: 1, vfr: 'no', sepVfr: 1, radar: 1,
-    brief: 'airways high up: clearance for all, no light aircraft',
-    who: 'Every flight needs a clearance. Light aircraft flying by sight may not enter.', sep: 'Controllers keep every flight apart.', need: 'Radar and radio.' },
-  B: { name: 'Class B', col: '80,140,255', ctl: 1, vfr: 'clr', sepVfr: 1, radar: 1, kt: 250,
-    brief: 'busiest airports: clearance for all, everyone kept apart',
-    who: 'Every flight needs a clearance, light aircraft too.', sep: 'Controllers keep every flight apart, light aircraft too.', need: 'Radar, radio and a transponder. 250 kt below FL100.' },
-  C: { name: 'Class C', col: '205,110,235', ctl: 1, vfr: 'clr', sepVfr: 1, radar: 1, kt: 250,
-    brief: 'busy airports: clearance for all, airliners kept apart from everyone',
-    who: 'Every flight needs a clearance, light aircraft too.', sep: 'Airliners are kept apart from everything; light aircraft are only told about each other.', need: 'Radar, radio and a transponder. 250 kt below FL100.' },
-  D: { name: 'Class D', col: '110,175,255', ctl: 1, vfr: 'call', sepVfr: 0, radar: 0, kt: 250,
-    brief: 'small airports: light aircraft call the tower, airliners kept apart',
-    who: 'Airliners need a clearance; light aircraft must call the tower before they come in.', sep: 'Airliners are kept apart from each other; light aircraft are only told where the airliners are.', need: 'Radio. 250 kt below FL100.' },
-  E: { name: 'Class E', col: '120,200,185', ctl: 1, vfr: 'free', sepVfr: 0, radar: 0, kt: 250,
-    brief: 'airways lower down: airliners need a clearance, light aircraft fly free',
-    who: 'Airliners need a clearance; light aircraft flying by sight do not.', sep: 'Airliners are kept apart from each other only.', need: 'Radio for airliners.' },
+  A: { name: 'Class A', col: '150,160,255', ctl: 1, vfr: 'no', sepVfr: 1, radar: 1,
+    brief: 'high airways: instrument flights only',
+    who: 'Every flight needs a clearance and flies on instruments; nobody flies by sight.', sep: 'Controllers keep every flight apart.', need: 'Radar and radio.',
+    rule: 'The airways from FL195 up.' },
+  B: { name: 'Class B', col: '95,150,255', ctl: 1, vfr: 'clr', sepVfr: 1, radar: 1, kt: 250,
+    brief: 'the busiest hubs: everyone cleared, everyone kept apart',
+    who: 'Every flight needs a clearance, light aircraft too: "cleared into Class B", or stay out.', sep: 'Controllers keep every flight apart, light aircraft too.', need: 'An approach radar that sees all of it, and two or three approach controllers. 250 kt below FL100.',
+    rule: 'Three rings like an upside-down wedding cake, for an airport with an airliner every minute or two.' },
+  C: { name: 'Class C', col: '220,90,200', ctl: 1, vfr: 'clr', sepVfr: 1, radar: 1, kt: 250,
+    brief: 'busy airports: everyone cleared, airliners kept apart from everyone',
+    who: 'Every flight needs a clearance, light aircraft too.', sep: 'Airliners are kept apart from everything; light aircraft are only told about each other.', need: 'An approach radar and an approach controller. 250 kt below FL100.',
+    rule: 'Two rings, a core and a shelf, for an airport with an approach radar and steady airline traffic.' },
+  D: { name: 'Class D', col: '95,150,255', ctl: 1, vfr: 'call', sepVfr: 0, radar: 0, kt: 250,
+    brief: 'fields with a tower: light aircraft call it, airliners are cleared',
+    who: 'Airliners need a clearance; light aircraft must talk to the tower before they come in.', sep: 'Airliners are kept apart from each other; light aircraft are only told where the airliners are.', need: 'A tower and a radio. 250 kt below FL100.',
+    rule: 'A cylinder about 9 km out and 2,500 ft up, round any field with a tower.' },
+  E: { name: 'Class E', col: '220,90,200', ctl: 1, vfr: 'free', sepVfr: 0, radar: 0, kt: 250,
+    brief: 'controlled for airliners only: light aircraft fly free',
+    who: 'Airliners need a clearance; light aircraft flying by sight do not.', sep: 'Airliners are kept apart from each other only; light aircraft look out.', need: 'Radio for airliners.',
+    rule: 'The airways below FL195, and the extensions that keep a final approach in controlled airspace.' },
   G: { name: 'Class G', col: '160,170,170', ctl: 0, vfr: 'free', sepVfr: 0, radar: 0, kt: 250,
     brief: 'uncontrolled: no clearance, nobody kept apart',
-    who: 'Nobody needs a clearance.', sep: 'Nobody is kept apart: pilots look out, and controllers only pass on what they see.', need: 'Nothing.' },
-  R: { name: 'Restricted area', col: '255,110,90', mil: 1, vfr: 'no',
-    brief: 'military only in its height band',
-    who: 'Nobody may fly in its height band without the military\'s clearance.', sep: 'Controllers send civil flights above or below it.', need: '' },
-  Q: { name: 'Danger area', col: '255,175,80', mil: 1, vfr: 'free',
-    brief: 'military firing: airliners kept out, light aircraft at own risk',
-    who: 'Firing or military flying: airliners are kept out of its band; light aircraft enter at their own risk.', sep: 'Controllers send airliners above or below it.', need: '' },
-  X: { name: 'Air defence zone', col: '255,70,70', mil: 1, vfr: 'no',
+    who: 'Nobody needs a clearance.', sep: 'Nobody is kept apart: pilots look out, and controllers only pass on what they see.', need: 'Nothing.',
+    rule: 'Everything the chart does not mark.' },
+  R: { name: 'Restricted area', col: '255,120,95', mil: 1, vfr: 'no',
+    brief: 'keep out of its height band unless the military clears you',
+    who: 'Nobody may fly in its height band without the military\'s clearance.', sep: 'Controllers send civil flights above or below it.', need: '',
+    rule: 'Firing ranges and sensitive sites.' },
+  Q: { name: 'Training area', col: '220,90,200', mil: 1, vfr: 'free',
+    brief: 'military jets train here: airliners go round, light aircraft cross at their own risk',
+    who: 'Military jets train in its height band. Airliners are sent above or below it; light aircraft may cross, looking out hard.', sep: 'Controllers send airliners above or below it.', need: '',
+    rule: 'Wide areas away from the airways where fighters can practise.' },
+  X: { name: 'Air defence zone', col: '255,75,75', mil: 1, vfr: 'no',
     brief: 'anything in its height band without clearance is suspect',
-    who: 'Anything in its height band without clearance is treated as suspect.', sep: 'Civil flights are kept above or below it, so an airway can pass over it.', need: '' }
+    who: 'Anything in its height band without clearance is treated as suspect.', sep: 'Civil flights are kept above or below it, so an airway can pass over it.', need: '',
+    rule: 'Round what must not be surprised: the capital, an air base.' }
 };
 const RANK = 'RXQABCDEG';
 const needsClr = c => { const C = IC.ASP_CLS[c]; return C.vfr === 'no' || C.vfr === 'clr' || C.vfr === 'call'; };
@@ -396,129 +404,323 @@ A.maxSpd = 0.2;              // speed control takes up to a fifth of the time le
 /* the height an arrival passes at d units from the runway, and a departure */
 IC.aspDescent = d => 0.2 + Math.max(0, d) / A.glide;
 IC.aspClimbAt = d => 0.3 + Math.max(0, d) / A.climb;
+/* heights in words (the ground, 2,500 ft, FL100) and as a chart shows them: hundreds of feet, or the flight level */
+const lvlT = a => a <= 0.01 ? 'the ground' : IC.flText(a);
+IC.aspChart = a => a <= 0.01 ? 'SFC' : a >= IC.TA - 0.01 ? IC.flText(a) : String(Math.round(a * IC.FT / 100));
+const ft = f => f / IC.FT;
 
-IC.ASP_PRESETS = {
-  field: { name: 'Small field', words: 'A class D control zone to 2,500 ft, 9 km across the runway. Nothing above it is controlled.',
-    vols: [{ kind: 'ctr', cls: 'D', r0: 0, r1: 90, lo: 0, hi: IC.flKm(25) }], staff: { twr: 1, app: 0 } },
-  regional: { name: 'Regional', words: 'A class D zone to 2,500 ft with two class C shelves above it, out to 40 km and up to FL100.',
-    vols: [{ kind: 'ctr', cls: 'D', r0: 0, r1: 110, lo: 0, hi: IC.flKm(25) }, { kind: 'shelf', cls: 'C', r0: 0, r1: 250, lo: IC.flKm(25), hi: IC.flKm(100) }, { kind: 'shelf', cls: 'C', r0: 250, r1: 400, lo: IC.flKm(50), hi: IC.flKm(100) }], staff: { twr: 1, app: 1 } },
-  hub: { name: 'Capital hub', words: 'Class B from the ground to FL150 in the middle, with shelves stepping up to 3,000, 5,000 and 7,000 ft out to 60 km: an upside-down wedding cake.',
-    vols: [{ kind: 'ctr', cls: 'B', r0: 0, r1: 150, lo: 0, hi: IC.flKm(150) }, { kind: 'shelf', cls: 'B', r0: 150, r1: 300, lo: IC.flKm(30), hi: IC.flKm(150) }, { kind: 'shelf', cls: 'B', r0: 300, r1: 450, lo: IC.flKm(50), hi: IC.flKm(150) }, { kind: 'shelf', cls: 'B', r0: 450, r1: 600, lo: IC.flKm(70), hi: IC.flKm(150) }], staff: { twr: 2, app: 3 } },
-  base: { name: 'Air base', words: 'A class D military control zone to 5,000 ft, 18 km across.',
-    vols: [{ kind: 'ctr', cls: 'D', r0: 0, r1: 180, lo: 0, hi: IC.flKm(50) }], staff: { twr: 1, app: 0 } }
+/* ---------- shapes ----------
+   An airport's airspace is one shape from a short list, as on a chart: a class D cylinder for a small field, class C
+   in two rings, class B in three (the upside-down wedding cake), a military zone round an air base; and areas on
+   their own: restricted, training and air defence. A shape is rings round a centre, each with an outer radius, a
+   floor, a ceiling and a class. One handle scales the whole shape, one per ring sets its radius, and two light
+   touches reshape it: a notch (a slice from some distance out where the floor is raised, for a nearby field or a
+   VFR corridor) and an approach extension (class E from the ground along the runway line, both ways). The rules
+   (classes, clearances, spacing, sectors) work on volumes, S.asp.vols, which are made from the shapes. */
+IC.ASP_SHAPES = {
+  D: { name: 'Class D', apt: 1, rings: [[93, 0, 2500, 'D']], staff: { twr: 1, app: 0 },
+    what: 'One cylinder out to 9 km, from the ground to 2,500 ft.',
+    why: 'For a field with a tower. Light aircraft call the tower before they come in. One tower controller; no radar needed.' },
+  C: { name: 'Class C', apt: 1, rings: [[93, 0, 4000, 'C'], [185, 1200, 4000, 'C']], staff: { twr: 1, app: 1 },
+    what: 'A core out to 9 km from the ground to 4,000 ft, and a shelf out to 19 km from 1,200 ft.',
+    why: 'For a busy airport with an approach radar: everyone needs a clearance, and airliners are kept apart from light aircraft. One tower and one approach controller.' },
+  B: { name: 'Class B', apt: 1, rings: [[185, 0, 10000, 'B'], [370, 3000, 10000, 'B'], [555, 5000, 10000, 'B']], staff: { twr: 2, app: 3 },
+    what: 'Three rings to FL100: a core out to 19 km from the ground, then shelves from 3,000 ft out to 37 km and from 5,000 ft out to 56 km.',
+    why: 'For a hub with an airliner every minute or two: every flight is cleared and kept apart. Two tower and three approach controllers, and radar over all of it.' },
+  M: { name: 'Military zone', apt: 1, rings: [[93, 0, 3000, 'D']], ext: { len: 90, w: 37 }, staff: { twr: 1, app: 0 },
+    what: 'A zone out to 9 km from the ground to 3,000 ft, with stubs 9 km along the runway line for the approach.',
+    why: 'Round an air base: light aircraft call the tower before they come in, and jets join and leave inside it.' },
+  R: { name: 'Restricted area', cls: 'R', rings: [[150, 0, 10000, 'R']],
+    what: 'A circle closed from the ground to FL100.', why: 'Keeps everyone out of a firing range or a sensitive site.' },
+  T: { name: 'Training area', cls: 'Q', rings: [[300, 3000, 18000, 'Q']],
+    what: 'A wide circle from 3,000 ft to FL180.', why: 'Room for fighters to practise: airliners are sent above or below it.' },
+  X: { name: 'Air defence zone', cls: 'X', rings: [[300, 0, 10000, 'X']],
+    what: 'A circle from the ground to FL100.', why: 'Anything inside it without a clearance is treated as suspect.' }
 };
-IC.aspPresetFor = ap => ap.kind === 'airbase' ? 'base' : ap.template === 'intl' || ap.template === 'kden' ? 'hub' : /regional/.test(ap.template || '') ? 'regional' : 'field';
+const OLD = { field: 'D', regional: 'C', hub: 'B', base: 'M' };   // the names of the presets before shapes
+const AREA_OF = { R: 'R', Q: 'T', X: 'X' };
+IC.aspPresetFor = ap => ap.kind === 'airbase' ? 'M' : ap.template === 'intl' || ap.template === 'kden' ? 'C' : 'D';
 const volsChanged = S => { S.asp.volVer = (S.asp.volVer || 0) + 1; S.asp.vi = null; S.asp.zs = null; };
-/* every airport of ours has its airspace: the preset for its size until the player changes it */
+/* the airspace chapter: before it, the game says nothing about airspace design */
+IC.aspTaught = S => !(IC.storyLock && IC.storyLock(S, 'airspace'));
+/* every airport of ours has its airspace: the shape for its size until the player changes it */
 function ensureVols(S) {
   const N = S.asp; N.vols = N.vols || []; N.secs = N.secs || [];
+  if (!N.shapes) convertOld(S);
   for (const ap of IC.bases(S)) {
-    if (ap.owner !== 'us') { if (N.vols.some(v => v.ap === ap.id)) { N.vols = N.vols.filter(v => v.ap !== ap.id); N.secs = N.secs.filter(s => s.ap !== ap.id); volsChanged(S); } continue; }
+    if (ap.owner !== 'us') { if (N.shapes.some(s => s.ap === ap.id)) { dropShape(S, IC.aspShapeOf(S, ap)); N.secs = N.secs.filter(s => s.ap !== ap.id); } continue; }
     const k = IC.aspPresetFor(ap);
-    if (!ap.asp || (ap.asp.auto && ap.asp.preset !== k)) IC.aspPreset(S, ap, k, true);
+    if (!ap.asp || !IC.aspShapeOf(S, ap) || (ap.asp.auto && ap.asp.preset !== k)) IC.aspPreset(S, ap, k, true);
+    // the next size up, said once when traffic and radar support it
+    const sg = IC.aspSuggest(S, ap);
+    if (sg && sg.ok && ap.asp.sug !== sg.key) { ap.asp.sug = sg.key; IC.log(S, 'info', 'AIRSPACE', `${sg.text} Pick it in the airport's Airspace tab.`, ap); }
   }
   if (!N.secs.some(s => s.kind === 'acc')) {
     const c = IC.cap(S) || { x: IC.WW / 2, y: IC.WH / 2 };
     N.secs.push(newSector('acc', null, 'National area', 4, c.x, c.y));
   }
 }
+/* a save from before shapes: each airport's rings become its shape, each military circle an area */
+function convertOld(S) {
+  const N = S.asp, old = N.vols; N.shapes = []; N.vols = [];
+  const byAp = new Map();
+  for (const v of old) if (v.ap) (byAp.get(v.ap) || byAp.set(v.ap, []).get(v.ap)).push(v);
+  for (const [id, L] of byAp) {
+    const ap = S.byId[id]; if (!ap) continue;
+    L.sort((a, b) => a.r1 - b.r1);
+    const key = OLD[ap.asp && ap.asp.preset] || (ap.asp && ap.asp.preset) || IC.aspPresetFor(ap);
+    const sh = newShape(key, ap.id, ap.x, ap.y, runwayRot(ap), L.map(v => ({ r: v.r1, lo: v.lo, hi: v.hi, cls: v.cls })));
+    N.shapes.push(sh); syncVols(S, sh);
+    ap.asp = { preset: key, auto: !!(ap.asp && ap.asp.auto) };
+  }
+  for (const v of old) if (!v.ap) { const sh = newShape(AREA_OF[v.cls] || 'X', null, v.x, v.y, 0, [{ r: v.r1, lo: v.lo, hi: v.hi, cls: v.cls }]); sh.name = v.name; N.shapes.push(sh); syncVols(S, sh); }
+}
+function newShape(key, ap, x, y, rot, rings) { return { id: IC.nid('as'), ap, key, name: IC.ASP_SHAPES[key] ? IC.ASP_SHAPES[key].name : 'Airspace', x, y, rot, rings, notch: null, ext: null }; }
 function newSector(kind, ap, name, staff, x, y) { return { id: IC.nid('sec'), kind, ap: ap ? ap.id : null, name, staff, x, y, rules: { space: 1, depBelow: true, stack: 6, lanes: true }, load: 0, cap: 1, work: 0, peak: 0, hand: 0 }; }
-/* the final approach fixes of an airport's runways (both ends): the control zone must hold them */
+/* the ring names a pilot would use */
+function ringName(sh, i) {
+  const n = sh.rings.length;
+  if (!sh.ap) return sh.name;
+  if (n === 1) return 'Zone';
+  if (!i) return 'Core';
+  return n === 2 ? 'Shelf' : n === 3 ? (i === 1 ? 'Inner shelf' : 'Outer shelf') : `Shelf ${i}`;
+}
+IC.aspRingName = ringName;
+/* the shape's volumes, made again after every change (the same objects, so references and ids stay) */
+function syncVols(S, sh) {
+  const N = S.asp, want = [];
+  sh.rings.forEach((g, i) => want.push({ id: `${sh.id}:${i}`, kind: sh.ap ? (i ? 'shelf' : 'ctr') : 'mil', cls: g.cls, r0: i ? sh.rings[i - 1].r : 0, r1: g.r, lo: g.lo, hi: g.hi, name: ringName(sh, i) }));
+  if (sh.ext) want.push({ id: `${sh.id}:e`, kind: 'ext', cls: 'E', r0: 0, r1: sh.rings[0].r, lo: 0, hi: sh.rings[0].hi, name: 'Approach extension' });
+  const old = new Map(N.vols.filter(v => v.sh === sh.id).map(v => [v.id, v]));
+  N.vols = N.vols.filter(v => v.sh !== sh.id);
+  for (const w of want) {
+    const v = Object.assign(old.get(w.id) || {}, w, { sh: sh.id, ap: sh.ap, x: sh.x, y: sh.y, rot: sh.rot, notch: sh.notch, ext: w.kind === 'ext' ? sh.ext : null });
+    v.R = w.kind === 'ext' ? v.r1 + sh.ext.len + sh.ext.w : v.r1;
+    N.vols.push(v);
+  }
+  volsChanged(S);
+}
+function dropShape(S, sh) {
+  if (!sh) return;
+  S.asp.shapes = S.asp.shapes.filter(s => s !== sh); S.asp.vols = S.asp.vols.filter(v => v.sh !== sh.id); volsChanged(S);
+}
+/* the direction of the longest runway, else the heading the airport was founded with */
+function runwayRot(ap) {
+  let best = null, bl = 0;
+  for (const rw of (ap.parts || []).filter(p => p.kind === 'runway')) { const l = U.dist(rw.a, rw.b); if (l > bl) { bl = l; best = rw; } }
+  if (best) { const d = IC.rwDir(best); return Math.atan2(d.y, d.x); }
+  return ap.rwyA || 0;
+}
+IC.aspRunwayRot = runwayRot;
+/* the final approach fixes of an airport's runways (both ends): the airspace must hold them */
 IC.aspFafs = function (ap) {
   const L = [];
   for (const rw of (ap.parts || []).filter(p => p.kind === 'runway')) {
     const d = IC.rwDir(rw);
-    L.push({ x: rw.a.x - d.x * IC.GOPS.FAF, y: rw.a.y - d.y * IC.GOPS.FAF, rw, end: IC.rwEnd(rw, 1) }, { x: rw.b.x + d.x * IC.GOPS.FAF, y: rw.b.y + d.y * IC.GOPS.FAF, rw, end: IC.rwEnd(rw, -1) });
+    L.push({ x: rw.a.x - d.x * IC.GOPS.FAF, y: rw.a.y - d.y * IC.GOPS.FAF, rw, end: IC.rwEnd(rw, 1), dx: -d.x, dy: -d.y }, { x: rw.b.x + d.x * IC.GOPS.FAF, y: rw.b.y + d.y * IC.GOPS.FAF, rw, end: IC.rwEnd(rw, -1), dx: d.x, dy: d.y });
   }
   return L;
 };
+IC.aspShape = (S, id) => (S.asp.shapes || []).find(s => s.id === id);
+IC.aspShapeOf = (S, ap) => (S.asp.shapes || []).find(s => s.ap === ap.id);
 IC.aspPreset = function (S, ap, key, auto) {
-  const P = IC.ASP_PRESETS[key]; if (!P) return false;
-  const N = S.asp; N.vols = (N.vols || []).filter(v => v.ap !== ap.id);
-  // a big layout stretches the preset so that every final approach starts inside the control zone
-  const ext = Math.max(0, ...IC.aspFafs(ap).map(f => U.dist(f, ap))) + 25, k = Math.max(1, ext / P.vols[0].r1);
-  P.vols.forEach((v, i) => N.vols.push(Object.assign({ id: IC.nid('av'), ap: ap.id, x: ap.x, y: ap.y, name: v.kind === 'ctr' ? 'Control zone' : `Shelf ${i}` }, v, { r0: v.r0 * k, r1: v.r1 * k })));
-  ap.asp = { preset: key, auto: !!auto };
+  key = OLD[key] || key;
+  const P = IC.ASP_SHAPES[key]; if (!P || !P.apt) return false;
+  const N = S.asp; N.vols = N.vols || []; N.shapes = N.shapes || [];
+  dropShape(S, IC.aspShapeOf(S, ap));
+  // a big layout scales the shape up so that every final approach starts inside it
+  const ext = Math.max(0, ...IC.aspFafs(ap).map(f => U.dist(f, ap))) + 25, k = Math.max(1, ext / P.rings[0][0]);
+  const sh = newShape(key, ap.id, ap.x, ap.y, runwayRot(ap), P.rings.map(([r, lo, hi, cls]) => ({ r: r * k, lo: ft(lo), hi: ft(hi), cls })));
+  if (P.ext) sh.ext = Object.assign({}, P.ext);
+  N.shapes.push(sh); syncVols(S, sh);
+  ap.asp = { preset: key, auto: !!auto, sug: ap.asp && ap.asp.sug };
   N.secs = (N.secs || []).filter(s => s.ap !== ap.id);
   const nm = short(ap.name);
   N.secs.push(newSector('twr', ap, `${nm} Tower`, P.staff.twr, ap.x, ap.y));
-  if (P.vols.some(v => v.kind === 'shelf')) N.secs.push(newSector('app', ap, `${nm} Approach`, Math.max(1, P.staff.app), ap.x, ap.y));
-  volsChanged(S);
+  if (sh.rings.length > 1) N.secs.push(newSector('app', ap, `${nm} Approach`, Math.max(1, P.staff.app), ap.x, ap.y));
   return true;
+};
+/* the next shape up for an airport, when its traffic in the last hour and an approach radar support it */
+IC.aspSuggest = function (S, ap) {
+  if (ap.kind !== 'airport' || !IC.aspTaught(S)) return null;
+  const sh = IC.aspShapeOf(S, ap), next = sh && { D: 'C', C: 'B' }[sh.key]; if (!next) return null;
+  const mv = (ap.mvLog || []).filter(m => S.time - m.t <= 3600).length, radar = !!(ap.st && ap.st.radar), need = next === 'C' ? 20 : 40, nm = short(ap.name);
+  if (mv >= need && radar) return { key: next, ok: true, text: next === 'C' ? `${nm} has ${mv} movements an hour and approach radar: Class C would let controllers keep VFR traffic apart from the airliners.` : `${nm} has ${mv} movements an hour and approach radar: Class B would keep every flight apart, light aircraft too.` };
+  return { key: next, ok: false, text: `Class ${next} pays off from about ${need} movements an hour with an approach radar. ${nm} has ${mv} movements an hour, ${radar ? 'with' : 'without'} approach radar.` };
 };
 IC.aspVols = (S, ap) => (S.asp.vols || []).filter(v => !ap || v.ap === ap.id);
 IC.aspVol = (S, id) => (S.asp.vols || []).find(v => v.id === id);
-/* the player reshapes a volume: radii in world units, floor and ceiling in km */
+const shapeOfVol = (S, v) => v && IC.aspShape(S, v.sh);
+const own = (S, sh) => { const ap = sh && sh.ap && S.byId[sh.ap]; if (ap && ap.asp) { ap.asp.auto = false; ap.asp.mod = true; } };
+const outer = sh => sh.rings[sh.rings.length - 1].r;
+/* ---- the player's changes: scale, one ring's radius, floor and ceiling, notch, extension, rotation ---- */
+IC.aspScale = function (S, sh, f) {
+  f = U.clamp(f, 30 / sh.rings[0].r, 1500 / outer(sh));
+  for (const g of sh.rings) g.r *= f;
+  if (sh.notch) sh.notch.r *= f;
+  if (sh.ext) sh.ext.len = U.clamp(sh.ext.len * f, 20, 400);
+  own(S, sh); syncVols(S, sh);
+};
+IC.aspRingR = function (S, sh, i, r) {
+  const R = sh.rings, lo = i ? R[i - 1].r + 20 : 30, hi = i < R.length - 1 ? R[i + 1].r - 20 : 1500;
+  R[i].r = U.clamp(r, lo, Math.max(lo, hi));
+  if (sh.notch) sh.notch.r = Math.min(sh.notch.r, outer(sh) - 20);
+  own(S, sh); syncVols(S, sh);
+};
+IC.aspRingSet = function (S, sh, i, o) {
+  const g = sh.rings[i];
+  if (o.cls && IC.ASP_CLS[o.cls]) g.cls = o.cls;
+  if (o.lo != null) g.lo = sh.ap && !i ? 0 : U.clamp(o.lo, 0, g.hi - 0.15);
+  if (o.hi != null) g.hi = U.clamp(o.hi, g.lo + 0.15, 20);
+  own(S, sh); syncVols(S, sh);
+};
+/* the notch: a slice (bearing a from the shape's line, half-width w) from r out, where the floor is lo */
+IC.aspNotch = function (S, sh, o) {
+  if (o === null) sh.notch = null;
+  else {
+    if (!sh.notch) {
+      // towards the nearest light-aircraft field, else square to the runway
+      const f = (S.asp.fields || []).filter(q => U.dist(q, sh) < outer(sh) * 2).sort((p, q) => U.dist(p, sh) - U.dist(q, sh))[0];
+      sh.notch = { a: f ? U.angWrap(Math.atan2(f.y - sh.y, f.x - sh.x) - sh.rot) : Math.PI / 2, w: 0.35, r: outer(sh) * 0.45, lo: ft(1500) };
+    }
+    Object.assign(sh.notch, o);
+    const n = sh.notch; n.a = U.angWrap(n.a); n.w = U.clamp(n.w, 0.09, 1.05); n.r = U.clamp(n.r, 20, outer(sh) - 20); n.lo = U.clamp(n.lo, ft(500), 20);
+  }
+  own(S, sh); syncVols(S, sh);
+};
+/* the approach extension: class E from the ground to the core's ceiling, len beyond the core, w either side */
+IC.aspExt = function (S, sh, o) {
+  if (o === null) sh.ext = null;
+  else { sh.ext = Object.assign(sh.ext || { len: 60, w: 20 }, o); sh.ext.len = U.clamp(sh.ext.len, 20, 400); sh.ext.w = U.clamp(sh.ext.w, 10, 60); }
+  own(S, sh); syncVols(S, sh);
+};
+IC.aspRotate = function (S, sh, rot) { sh.rot = U.angWrap(rot); own(S, sh); syncVols(S, sh); };
+/* compatibility: set one ring's class, floor, ceiling or radius by its volume */
 IC.aspSetVol = function (S, v, o) {
-  if (o.cls && IC.ASP_CLS[o.cls]) v.cls = o.cls;
-  if (o.r1 != null) v.r1 = U.clamp(o.r1, v.r0 + 20, 1500);
-  if (o.r0 != null) v.r0 = U.clamp(o.r0, 0, v.r1 - 20);
-  if (o.lo != null) v.lo = U.clamp(o.lo, 0, v.hi - 0.15);
-  if (o.hi != null) v.hi = U.clamp(o.hi, v.lo + 0.15, 20);
-  const ap = v.ap && S.byId[v.ap]; if (ap && ap.asp) ap.asp.auto = false;
-  volsChanged(S);
+  const sh = shapeOfVol(S, v); if (!sh) return;
+  const i = +String(v.id).split(':')[1];
+  if (v.kind === 'ext') { if (o.r1 != null) IC.aspExt(S, sh, { len: o.r1 - sh.rings[0].r }); return; }
+  if (o.r1 != null) IC.aspRingR(S, sh, i, o.r1);
+  IC.aspRingSet(S, sh, i, o);
 };
-/* move a ring's outer edge; the rings of the same airport that started at it move with it, so they stay touching */
-IC.aspResize = function (S, v, r1) {
-  const old = v.r1, nb = v.ap ? IC.aspVols(S, S.byId[v.ap]).filter(w => w !== v && Math.abs(w.r0 - old) < 1) : [];
-  const max = Math.min(1500, ...nb.map(w => w.r1 - 20));
-  IC.aspSetVol(S, v, { r1: Math.min(r1, max) });
-  for (const w of nb) IC.aspSetVol(S, w, { r0: v.r1 });
+/* the handles on the map: a square that scales the whole shape, a dot on each ring, a diamond at the notch, a
+   triangle at each end of the extension. x, y are the shape's centre (the map measures a drag from it), hx, hy where
+   the handle is drawn. */
+IC.aspHandles = function (S, sh) {
+  const H = [], o = outer(sh), at = (a, r) => ({ hx: sh.x + Math.cos(a) * r, hy: sh.y + Math.sin(a) * r });
+  const h = (hk, id, name, r1, a, r, x) => H.push(Object.assign({ hk, id, name, r1, x: sh.x, y: sh.y, sh: sh.id }, at(a, r), x));
+  h('scale', sh.id + '/scale', sh.ap ? 'whole airspace' : sh.name.toLowerCase(), o, -Math.PI / 4, o);
+  if (sh.rings.length > 1) sh.rings.forEach((g, i) => h('ring', `${sh.id}:${i}`, ringName(sh, i).toLowerCase(), g.r, Math.PI / 4 + i * 0.1, g.r, { i }));
+  if (sh.notch) h('notch', sh.id + '/notch', 'notch', sh.notch.r, sh.rot + sh.notch.a, sh.notch.r);
+  if (sh.ext) for (const e of [0, Math.PI]) h('ext', sh.id + '/ext', 'approach extension', sh.rings[0].r + sh.ext.len, sh.rot + e, sh.rings[0].r + sh.ext.len, { flip: e });
+  return H;
 };
-/* the ring edge of an airport's airspace under a map point (within tol units), and the ring under it */
+/* the shapes an airport's Airspace tab edits: its own, and the areas near it */
+IC.aspShapesNear = (S, ap) => (S.asp.shapes || []).filter(s => s.ap === ap.id || (!s.ap && U.dist(s, ap) < 2500));
+/* the handle (or ring edge) under a map point, within tol units */
 IC.aspEdgeAt = function (S, ap, p, tol) {
   let best = null, bd = tol;
-  for (const v of IC.aspVols(S, ap)) { const d = Math.abs(U.dist(v, p) - v.r1); if (d < bd) { bd = d; best = v; } }
+  for (const sh of IC.aspShapesNear(S, ap)) for (const h of IC.aspHandles(S, sh)) { const d = U.dxy(p.x, p.y, h.hx, h.hy); if (d < bd) { bd = d; best = h; } }
+  if (best) return best;
+  // a ring's edge anywhere round it works as its handle
+  for (const sh of IC.aspShapesNear(S, ap)) {
+    const d = U.dist(sh, p), H = IC.aspHandles(S, sh);
+    sh.rings.forEach((g, i) => { const e = Math.abs(d - g.r); if (e < bd) { bd = e; best = H.find(h => sh.rings.length > 1 ? h.hk === 'ring' && h.i === i : h.hk === 'scale'); } });
+  }
   return best;
 };
+/* drag a handle to a map point */
+IC.aspDrag = function (S, h, p) {
+  const sh = IC.aspShape(S, h.sh); if (!sh || !p) return;
+  const d = U.dist(sh, p), a = Math.atan2(p.y - sh.y, p.x - sh.x);
+  if (h.hk === 'scale') IC.aspScale(S, sh, d / outer(sh));
+  else if (h.hk === 'ring') IC.aspRingR(S, sh, h.i, d);
+  else if (h.hk === 'notch') IC.aspNotch(S, sh, { a: a - sh.rot, r: d });
+  else if (h.hk === 'ext') { sh.rot = U.angWrap(a - (h.flip || 0)); IC.aspExt(S, sh, { len: d - sh.rings[0].r }); }
+  const h2 = IC.aspHandles(S, sh).find(x => x.id === h.id && x.flip === h.flip); if (h2) { h.hx = h2.hx; h.hy = h2.hy; }
+  h.r1 = h.hk === 'scale' ? outer(sh) : h.hk === 'ring' ? sh.rings[h.i].r : h.hk === 'notch' ? sh.notch.r : sh.rings[0].r + sh.ext.len;
+};
+/* the map drags a handle (or, in older callers, a ring) to r units from the centre, towards the pointer */
+IC.aspResize = function (S, v, r, p) {
+  if (v.hk) { const q = p || S.hover; IC.aspDrag(S, v, q && U.dist(v, q) > 0 ? q : { x: v.x + r, y: v.y }); return; }
+  IC.aspSetVol(S, v, { r1: r });
+};
+/* the ring (or extension) a map point is in, lowest first, among the shapes the tab edits */
 IC.aspVolUnder = function (S, ap, p) {
-  const d = U.dist(ap, p);
-  return IC.aspVols(S, ap).filter(v => d >= v.r0 && d < v.r1).sort((a, b) => a.lo - b.lo)[0] || null;
+  const ids = new Set(IC.aspShapesNear(S, ap).map(s => s.id));
+  return S.asp.vols.filter(v => ids.has(v.sh) && inVol(v, p.x, p.y, null)).sort((a, b) => (a.kind === 'ext') - (b.kind === 'ext') || a.lo - b.lo)[0] || null;
 };
-/* one volume in one line, for the log: Shelf 2 is now class C, 5,000 ft to FL100, 25–48 km out */
-IC.aspShort = v => `${v.name} is now class ${v.cls}, ${v.lo <= 0.01 ? 'the ground' : IC.flText(v.lo)} to ${IC.flText(v.hi)}, ${v.r0 ? `${Math.round(v.r0 / 10)}–${Math.round(v.r1 / 10)} km out` : `out to ${Math.round(v.r1 / 10)} km`}.`;
-/* one volume in plain words: what it is, where, and what it asks of pilots */
+/* one shape in one line, for the log */
+IC.aspShapeText = function (S, sh) {
+  const R = sh.rings.map((g, i) => `${sh.rings.length > 1 ? `${ringName(sh, i).toLowerCase()} ` : ''}out to ${Math.round(g.r / 10)} km, ${lvlT(g.lo)} to ${IC.flText(g.hi)}`).join('; ');
+  const n = sh.notch, e = sh.ext;
+  return `${sh.name}: ${R}${n ? `; a notch towards ${U.compass(sh.rot + n.a)} from ${Math.round(n.r / 10)} km out with its floor at ${IC.flText(n.lo)}` : ''}${e ? `; class E ${Math.round(e.len / 10)} km out along the runway line` : ''}.`;
+};
+/* one ring (or a handle's shape) in one line, for the log: Shelf is now 1,200 ft to 4,000 ft, 9–19 km out */
+IC.aspShort = function (v) {
+  const S = IC.S;
+  if (v.hk) { const sh = S && IC.aspShape(S, v.sh); return sh ? IC.aspShapeText(S, sh) : ''; }
+  if (v.kind === 'ext') return `The approach extension now reaches ${Math.round((v.r1 + v.ext.len) / 10)} km out along the runway line, class E from the ground to ${IC.flText(v.hi)}.`;
+  return `${v.name} is now class ${v.cls}, ${lvlT(v.lo)} to ${IC.flText(v.hi)}, ${v.r0 ? `${Math.round(v.r0 / 10)}–${Math.round(v.r1 / 10)} km out` : `out to ${Math.round(v.r1 / 10)} km`}.`;
+};
+/* one ring in plain words: what it is, where, and what it asks of pilots */
 IC.aspWords = function (v) {
-  const C = IC.ASP_CLS[v.cls], lo = v.lo <= 0.01 ? 'the ground' : IC.flText(v.lo);
-  const where = v.r0 ? `a ring ${Math.round(v.r0 / 10)}–${Math.round(v.r1 / 10)} km from the airport` : `a circle ${Math.round(v.r1 / 10)} km round ${v.kind === 'mil' ? 'its centre' : 'the airport'}`;
-  const under = v.lo > 0.01 && v.kind !== 'mil' ? ` Below ${IC.flText(v.lo)} it is open air: light aircraft may pass under it.` : '';
-  return `${C.name} from ${lo} to ${IC.flText(v.hi)}, ${where}. ${C.who}${under}`;
+  const C = IC.ASP_CLS[v.cls], lo = lvlT(v.lo);
+  if (v.kind === 'ext') return `Class E from the ground to ${IC.flText(v.hi)}, ${Math.round(v.ext.len / 10)} km beyond the core along the runway line. Arrivals stay in controlled airspace all the way down the final approach; light aircraft may cross without a clearance.`;
+  const where = v.r0 ? `a ring ${Math.round(v.r0 / 10)}–${Math.round(v.r1 / 10)} km from the field` : `out to ${Math.round(v.r1 / 10)} km from ${v.kind === 'mil' ? 'its centre' : 'the field'}`;
+  const under = v.lo > 0.01 ? ` Below ${lo} light aircraft fly under it without a clearance.` : '';
+  const n = v.notch, notch = n && n.lo > v.lo ? n.lo >= v.hi ? ' The notch cuts it out altogether.' : ` In the notch its floor is ${IC.flText(n.lo)}.` : '';
+  return `${C.name} from ${lo} to ${IC.flText(v.hi)}, ${where}. ${C.who}${under}${notch}`;
 };
-/* a new shelf outside the airport's outermost ring, a step higher */
-IC.aspAddShelf = function (S, ap, r1) {
-  const L = IC.aspVols(S, ap), out = L.reduce((m, v) => v.r1 > m.r1 ? v : m, { r1: 0, lo: 0, hi: IC.flKm(100), cls: 'C' });
-  const r0 = out.r1, lo = Math.max(IC.flKm(30), out.lo + IC.flKm(20)), hi = Math.max(lo + 0.6, out.hi);
-  const v = { id: IC.nid('av'), ap: ap.id, x: ap.x, y: ap.y, kind: 'shelf', cls: out.kind === 'ctr' ? (out.cls === 'B' ? 'B' : 'C') : out.cls, r0, r1: Math.max(r0 + 60, r1 || r0 + 150), lo, hi, name: `Shelf ${L.length}` };
-  S.asp.vols.push(v);
-  if (!S.asp.secs.some(s => s.ap === ap.id && s.kind === 'app')) S.asp.secs.push(newSector('app', ap, `${short(ap.name)} Approach`, 1, ap.x, ap.y));
-  if (ap.asp) ap.asp.auto = false;
-  volsChanged(S);
-  return v;
+/* areas on their own: restricted, training, air defence */
+IC.aspAddArea = function (S, key, x, y, r) {
+  const P = IC.ASP_SHAPES[key]; if (!P || P.apt) return null;
+  S.asp.shapes = S.asp.shapes || [];
+  const sh = newShape(key, null, x, y, 0, P.rings.map(([r0, lo, hi, cls]) => ({ r: r || r0, lo: ft(lo), hi: ft(hi), cls })));
+  sh.name = `${P.name} ${IC.nearestPlace(S, x, y).replace(/^(near|over) /, '')}`;
+  S.asp.shapes.push(sh); syncVols(S, sh);
+  const g = sh.rings[0];
+  IC.log(S, 'info', 'AIRSPACE', `${sh.name} published: out to ${Math.round(g.r / 10)} km, ${lvlT(g.lo)} to ${IC.flText(g.hi)}. ${IC.ASP_CLS[g.cls].sep}`, sh);
+  return sh;
 };
-IC.aspDelVol = function (S, v) {
-  S.asp.vols = S.asp.vols.filter(x => x !== v);
-  const ap = v.ap && S.byId[v.ap];
-  if (ap) { if (ap.asp) ap.asp.auto = false; if (!IC.aspVols(S, ap).some(x => x.kind === 'shelf')) S.asp.secs = S.asp.secs.filter(s => !(s.ap === ap.id && s.kind === 'app')); }
-  volsChanged(S);
-};
-/* military areas: restricted (R), danger (Q) or air defence zone (X), each a circle over a height band */
+/* older callers: a military circle by class, returned as its volume */
 IC.aspAddMil = function (S, x, y, r, lo, hi, cls, name) {
-  const v = { id: IC.nid('av'), ap: null, kind: 'mil', cls: cls || 'X', x, y, r0: 0, r1: r, lo, hi, name: name || `${IC.ASP_CLS[cls || 'X'].name} ${IC.nearestPlace(S, x, y)}` };
-  S.asp.vols.push(v); volsChanged(S);
-  IC.log(S, 'info', 'AIRSPACE', `${v.name} published: ${U.km(r)} radius, ${IC.flText(lo)} to ${IC.flText(hi)}. ${IC.ASP_CLS[v.cls].sep}`, v);
-  return v;
+  const sh = IC.aspAddArea(S, AREA_OF[cls || 'X'] || 'X', x, y, r); if (!sh) return null;
+  if (name) sh.name = name;
+  IC.aspRingSet(S, sh, 0, { lo, hi });
+  return S.asp.vols.find(v => v.sh === sh.id);
+};
+IC.aspDelArea = function (S, sh) { if (sh && !sh.ap) dropShape(S, sh); };
+/* is a point in a volume (and at a height, when alt is given)? The notch raises the floor inside its slice */
+function inVol(v, x, y, alt) {
+  const dx = x - v.x, dy = y - v.y, d = Math.hypot(dx, dy);
+  if (v.kind === 'ext') {
+    if (d < v.r1) return false;
+    const c = Math.cos(v.rot), s = Math.sin(v.rot), al = dx * c + dy * s, cr = -dx * s + dy * c;
+    if (Math.abs(cr) >= v.ext.w || Math.abs(al) >= v.r1 + v.ext.len) return false;
+  } else if (d < v.r0 || d >= v.r1) return false;
+  let lo = v.lo;
+  const n = v.notch;
+  if (n && d >= n.r && Math.abs(U.angWrap(Math.atan2(dy, dx) - v.rot - n.a)) < n.w) lo = Math.max(lo, n.lo);
+  return alt == null ? lo < v.hi : alt >= lo && alt < v.hi;
+}
+IC.aspInVol = inVol;
+/* the floor of a volume at a point: raised in the notch */
+IC.aspFloorAt = function (v, x, y) {
+  const n = v.notch, d = U.dxy(x, y, v.x, v.y);
+  return n && d >= n.r && Math.abs(U.angWrap(Math.atan2(y - v.y, x - v.x) - v.rot - n.a)) < n.w ? Math.max(v.lo, n.lo) : v.lo;
 };
 /* the volumes over a point, found through a coarse grid */
 function volIndex(S) {
   const N = S.asp;
   if (N.vi && N.vi.ver === N.volVer) return N.vi;
   const CS = 1000, m = new Map();
-  for (const v of N.vols) for (let i = Math.floor((v.x - v.r1) / CS); i <= Math.floor((v.x + v.r1) / CS); i++) for (let j = Math.floor((v.y - v.r1) / CS); j <= Math.floor((v.y + v.r1) / CS); j++) { const k = i * 4096 + j; (m.get(k) || m.set(k, []).get(k)).push(v); }
+  for (const v of N.vols) { const R = v.R || v.r1; for (let i = Math.floor((v.x - R) / CS); i <= Math.floor((v.x + R) / CS); i++) for (let j = Math.floor((v.y - R) / CS); j <= Math.floor((v.y + R) / CS); j++) { const k = i * 4096 + j; (m.get(k) || m.set(k, []).get(k)).push(v); } }
   return (N.vi = { ver: N.volVer, m, CS });
 }
 IC.aspVolsAt = function (S, x, y, alt) {
   const I = volIndex(S), L = I.m.get(Math.floor(x / I.CS) * 4096 + Math.floor(y / I.CS)), out = [];
-  if (L) for (const v of L) { if (alt != null && (alt < v.lo || alt >= v.hi)) continue; const d = U.dxy(x, y, v.x, v.y); if (d >= v.r0 && d < v.r1) out.push(v); }
+  if (L) for (const v of L) if (inVol(v, x, y, alt)) out.push(v);
   return out;
 };
 /* the airway corridor a point is in, if any */
@@ -541,7 +743,7 @@ IC.aspZoneAt = function (S, x, y, alt) {
 };
 /* each airport's airspace as circles, for drawing and the old callers */
 IC.aspZones = function (S) {
-  const N = S.asp; if (!N.vols) ensureVols(S);
+  const N = S.asp; if (!N.vols || !N.shapes) ensureVols(S);
   if (N.zs && N.zs.ver === N.volVer) return N.zs.L;
   const L = [];
   for (const ap of IC.bases(S)) { const V = IC.aspVols(S, ap); if (!V.length) continue; const c = V.find(v => v.kind === 'ctr'); L.push({ ap, x: ap.x, y: ap.y, ctr: c ? c.r1 : 0, tma: Math.max(0, ...V.filter(v => v.kind === 'shelf').map(v => v.r1)) }); }
@@ -549,45 +751,44 @@ IC.aspZones = function (S) {
   return L;
 };
 IC.aspTop = (S, ap) => Math.max(0, ...IC.aspVols(S, ap).map(v => v.hi));
-IC.aspOuter = (S, ap) => Math.max(0, ...IC.aspVols(S, ap).map(v => v.r1));
+IC.aspOuter = (S, ap) => Math.max(0, ...IC.aspVols(S, ap).filter(v => v.kind !== 'ext').map(v => v.r1));
 
-/* ---------- the design: what is wrong with an airport's airspace, in plain words ---------- */
+/* ---------- the design: what is wrong with an airport's airspace, in plain words (from the airspace chapter) ---------- */
 IC.aspCheck = function (S, ap) {
+  if (!IC.aspTaught(S)) return [];
   const V = IC.aspVols(S, ap), W = [];
   if (!V.length) return ['No controlled airspace: airliners and light aircraft mix here with nobody keeping them apart.'];
-  const outer = IC.aspOuter(S, ap), top = IC.aspTop(S, ap);
-  // arrivals must stay inside on the way down: find where the descent leaves every volume
-  let gap = null;
-  for (let r = 45; r < outer; r += 10) {
-    const a = IC.aspDescent(r);
-    if (a > top) break;
-    const inside = V.some(v => r >= v.r0 && r < v.r1 && a >= v.lo && a < v.hi);
-    if (!inside) { if (!gap) gap = { r0: r - 5, a }; gap.r1 = r + 5; }
-    else if (gap) break;
+  const out = IC.aspOuter(S, ap), F = IC.aspFafs(ap);
+  // every final approach starts inside, from the ground up
+  const bad = F.filter(f => !V.some(v => inVol(v, f.x, f.y, 0.45)));
+  if (bad.length) W.push(`The final approach to runway ${bad.map(f => f.end).join(', ')} starts ${Math.round(Math.max(...bad.map(f => U.dist(f, ap))) / 10)} km out, outside controlled airspace. Scale the shape up, or add an approach extension along the runway.`);
+  // arrivals come down the runway line: under a shelf's floor they meet light aircraft that fly there freely
+  for (const f of F) {
+    let gap = null;
+    for (let s = 0; s < out + 40; s += 10) {
+      const x = f.x + f.dx * s, y = f.y + f.dy * s, d = U.dxy(x, y, ap.x, ap.y), a = IC.aspDescent(d);
+      if (V.some(v => inVol(v, x, y, a))) { if (gap) break; continue; }
+      const over = V.find(v => inVol(v, x, y, null) && IC.aspFloorAt(v, x, y) > a && a < v.hi);
+      if (over) { if (!gap) gap = { d0: d, v: over, a, fl: IC.aspFloorAt(over, x, y) }; gap.d1 = d; }
+      else if (gap) break;
+    }
+    if (gap) { W.push(`Arrivals to runway ${f.end} pass under the ${gap.v.name.toLowerCase()} ${Math.round(gap.d0 / 10)}–${Math.round(gap.d1 / 10)} km out, at about ${IC.flText(gap.a)} against its floor of ${IC.flText(gap.fl)}: light aircraft fly there without a clearance. Lower that floor.`); break; }
   }
-  if (gap) {
-    const v = V.find(v => gap.r0 + 5 >= v.r0 && gap.r0 + 5 < v.r1 && v.lo > gap.a);
-    W.push(`Arrivals leave controlled airspace ${Math.round(gap.r0 / 10)}–${Math.round(gap.r1 / 10)} km out: they pass there at about ${IC.flText(gap.a)}${v ? `, under the floor of ${v.name.toLowerCase()} (${IC.flText(v.lo)})` : ', above the ceiling'}. ${v ? 'Lower that floor' : 'Raise the ceiling'} so they stay inside.`);
-  }
-  const out = IC.aspFafs(ap).filter(f => !V.some(v => { const d = U.dist(f, v); return d >= v.r0 && d < v.r1 && v.lo <= 0.45 && v.hi > 0.45; }));
-  if (out.length) W.push(`The final approach to runway ${out.map(f => f.end).join(', ')} starts outside controlled airspace: make the control zone at least ${Math.ceil(Math.max(...IC.aspFafs(ap).map(f => U.dist(f, ap))) / 10 + 2)} km across the middle.`);
-  if (top < IC.aspDescent(outer) - 0.2) W.push(`The terminal area's ceiling (${IC.flText(top)}) is below where arrivals start down at its edge (${IC.flText(IC.aspDescent(outer))}): they come in from above, uncontrolled until they reach it.`);
   // radar: classes B and C need it
   const need = V.filter(v => IC.ASP_CLS[v.cls].radar);
   if (need.length) {
-    let n = 0, seen = 0;
-    for (const v of need) for (let k = 0; k < 16; k++) { const a = k / 16 * 6.283, r = (v.r0 + v.r1) / 2, x = v.x + Math.cos(a) * r, y = v.y + Math.sin(a) * r; n++; if (IC.aspCovAlt(S, x, y) <= Math.max(v.lo, 0.3)) seen++; }
-    if (seen / n < 0.8) W.push(`Class ${need[0].cls} needs radar, but radar sees only ${Math.round(seen / n * 100)}% of it at its floor. An approach radar at the airport, or a radar nearby, would cover it.`);
+    let n = 0, sn = 0;
+    for (const v of need) for (let k = 0; k < 16; k++) { const a = k / 16 * 6.283, r = (v.r0 + v.r1) / 2, x = v.x + Math.cos(a) * r, y = v.y + Math.sin(a) * r; n++; if (IC.aspCovAlt(S, x, y) <= Math.max(v.lo, 0.3)) sn++; }
+    if (sn / n < 0.8) W.push(`Class ${need[0].cls} needs radar, but radar sees only ${Math.round(sn / n * 100)}% of it at its floor. An approach radar at the airport, or a radar nearby, would cover it.`);
   }
   // the controllers: the traffic the terminal area holds at once
   const st = ap.st || {}, mv = st.movesPerHour || 0;
   for (const s of IC.aspSectors(S).filter(s => s.ap === ap.id)) {
-    const est = s.kind === 'app' ? mv * (outer / 18) / 3600 * 1.3 : mv * 90 / 3600, cap = sectorCap(S, s);
-    if (Math.max(est, s.peak) > cap * 1.05) W.push(`${s.name}: about ${Math.round(Math.max(est, s.peak))} flights' work at the busiest for ${s.staff} controller${s.staff > 1 ? 's' : ''} (they handle ${Math.round(cap)}). ${s.kind === 'app' ? 'Add a controller, or make the terminal area smaller.' : 'Add a controller.'}`);
+    const est = s.kind === 'app' ? mv * (out / 18) / 3600 * 1.3 : mv * 90 / 3600, cap = sectorCap(S, s);
+    if (Math.max(est, s.peak) > cap * 1.05) W.push(`${s.name}: about ${Math.round(Math.max(est, s.peak))} flights' work at the busiest for ${s.staff} controller${s.staff > 1 ? 's' : ''} (they handle ${Math.round(cap)}). ${s.kind === 'app' ? 'Add a controller, or make the shape smaller.' : 'Add a controller.'}`);
   }
-  if (ap.kind === 'airport' && V.some(v => v.cls === 'D') && mv > 30) W.push('A busy airport with class D: light aircraft only call the tower and are not kept apart from airliners. Class C or B keeps them apart.');
-  const low = V.find(v => v.kind === 'shelf' && v.lo < 0.45 && v.r1 > 200);
-  if (low) W.push(`${low.name} starts only ${IC.flText(low.lo)} up out to ${Math.round(low.r1 / 10)} km: light aircraft have no room to pass under it and must fly round.`);
+  const low = V.find(v => v.kind === 'shelf' && v.lo < 0.45 && v.r1 - v.r0 > 150);
+  if (low) W.push(`The ${low.name.toLowerCase()} starts only ${IC.flText(low.lo)} up out to ${Math.round(low.r1 / 10)} km: light aircraft have no room to pass under it and must fly round.`);
   return W;
 };
 
@@ -614,7 +815,7 @@ IC.aspDelSector = function (S, s) { if (s.kind !== 'acc' || IC.aspSectors(S).fil
 IC.aspSectorAt = function (S, x, y, alt) {
   const L = IC.aspSectors(S);
   for (const v of IC.aspVolsAt(S, x, y, alt)) if (v.ap) {
-    const want = v.kind === 'ctr' ? 'twr' : 'app';
+    const want = v.kind === 'shelf' ? 'app' : 'twr';
     const s = L.find(s => s.ap === v.ap && s.kind === want) || L.find(s => s.ap === v.ap);
     if (s && s.staff > 0) return s;
   }
@@ -626,7 +827,8 @@ IC.aspStaffCost = S => IC.aspSectors(S).reduce((a, s) => a + s.staff, 0) * A.ctl
 
 IC.airspace = function (S, dt) {
   const N = S.asp; if (!N) return;
-  if (!N.vols || !N.secs) ensureVols(S);
+  // a new airport gets its shape at once
+  if (!N.vols || !N.secs || !N.shapes || N.nb !== S.infra.length) { N.nb = S.infra.length; ensureVols(S); }
   N.hourT += dt;
   if (N.hourT >= 3600) { N.hourT -= 3600; clubs(S); ensureVols(S); for (const s of N.secs) s.peak *= 0.5; if (((S.time % 86400) + 86400) % 86400 < 3600) N.day = { los: 0, near: 0, inf: 0 }; }
   N.scanT -= dt; if (N.scanT > 0) return;
@@ -977,23 +1179,33 @@ IC.gaWeatherOk = function (S) {
    into, and military bands */
 const barred = (S, v, cleared) => needsClr(v.cls) && !(v.ap && cleared.includes(v.ap));
 /* a light aircraft's way from a to b: round the volumes that reach down to the ground it is not cleared into
-   (it flies under the shelves) and round the prohibited zones */
+   (it flies under the shelves, and through a notch whose floor leaves room below it) and round the prohibited zones */
+const inNotch = (v, x, y) => { const n = v.notch; return n && U.dxy(x, y, v.x, v.y) >= n.r && Math.abs(U.angWrap(Math.atan2(y - v.y, x - v.x) - v.rot - n.a)) < n.w; };
+const throughNotch = (v, a, b) => {
+  if (!v.notch || v.notch.lo < 0.45) return false;
+  for (let k = 0; k <= 40; k++) { const x = a.x + (b.x - a.x) * k / 40, y = a.y + (b.y - a.y) * k / 40; if (U.dxy(x, y, v.x, v.y) < v.r1 * 1.1 && !inNotch(v, x, y)) return false; }
+  return true;
+};
 IC.gaPath = function (S, a, b, cleared, careless) {
   const pts = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
   if (careless) return pts;
-  if (!S.asp.vols) ensureVols(S);
-  const C = S.asp.vols.filter(v => v.lo < 0.45 && v.r0 < 20 && barred(S, v, cleared)).map(v => ({ x: v.x, y: v.y, r: v.r1 * 1.15 }));
+  if (!S.asp.vols || !S.asp.shapes) ensureVols(S);
+  const C = S.asp.vols.filter(v => v.lo < 0.45 && v.r0 < 20 && barred(S, v, cleared) && !throughNotch(v, a, b)).map(v => ({ x: v.x, y: v.y, r: v.r1 * 1.15 }));
   if (S.av) for (const z of S.av.zones) C.push({ x: z.x, y: z.y, r: z.r * 1.05 });
   return IC.bendPath(pts, C);
 };
-/* the height a light aircraft may fly at here: under the shelves it is not cleared into (starting down 15 km out) */
+/* the height a light aircraft may fly at here: under the shelves it is not cleared into (starting down 15 km out),
+   and under the floor of a notch it flies through */
 IC.gaCeiling = function (S, t) {
   if (t.careless) return 99;
   let cap = 99;
   for (const v of S.asp.vols || []) {
-    if (v.lo < 0.45 && v.r0 < 20 || !barred(S, v, t.cleared || [])) continue;
+    if (!barred(S, v, t.cleared || [])) continue;
     const d = U.dxy(t.x, t.y, v.x, v.y);
-    if (d < v.r1 + 150 && d > v.r0 - 150) cap = Math.min(cap, v.lo - 0.15);
+    if (d > v.r1 + 150 || d < v.r0 - 150) continue;
+    const n = v.notch, near = n && d >= n.r - 150 && Math.abs(U.angWrap(Math.atan2(t.y - v.y, t.x - v.x) - v.rot - n.a)) < n.w + 150 / Math.max(d, 150);
+    if (near && n.lo > v.lo) cap = Math.min(cap, n.lo - 0.15);
+    else if (!(v.lo < 0.45 && v.r0 < 20)) cap = Math.min(cap, v.lo - 0.15);
   }
   return Math.max(0.3, cap);
 };

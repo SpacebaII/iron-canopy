@@ -23,6 +23,10 @@ A new start-screen mode, **Showcase**: a guided 20-minute scenario on a fixed ma
 - It ends with a clear summary and an invitation to the full Career.
 - Two runs can end differently depending on the player's choices.
 
+## With the calendar (32)
+
+The Showcase keeps its own tight time. It may show the calendar jumping between its parts ("Eight months later…") to hint at the Career's scale, but it never waits for months to pass.
+
 ## Scope
 
 - A new `showcase.js` (scenario script, like the Academy lessons but longer) and start screen entries.

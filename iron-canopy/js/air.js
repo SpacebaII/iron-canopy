@@ -640,17 +640,18 @@ IC.updateAir = function (S, dt) {
     if (r / m.spd < 5 && !m.cmDone) {
       m.cmDone = true;
       t.threatA = Math.atan2(m.y - t.y, m.x - t.x);
-      if (t.kind === 'ftr' && !m.ir) { t.notchT = 12; m.pk *= 0.7; }
+      if (t.kind === 'ftr' && !m.ir) { t.notchT = 12; m.pk *= 0.7; IC.emit(S, 'mstat', { m, t, what: 'notch', text: 'NOTCHING' }); }
       if (t.cm > 0) { t.cm--; m.pk *= m.ir ? 0.5 : 0.7; if (m.ir) IC.flares(S, t); else IC.chaffFx(S, t); }
     }
     if (r < 8) {
       m.dead = true;
       if (Math.random() < m.pk) {
+        IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'HIT' });
         // some come home damaged
         if (t.r && Math.random() < IC.AIR_LOSS.damaged && (t.dmg || 0) < t.hp) { t.dmg = (t.dmg || 0) + 1; IC.text(S, m.x, m.y, 'DAMAGED', '#ffd08a'); IC.log(S, 'warn', 'AIR', `${t.name} hit: one aircraft damaged, returning to base.`, t); if (!t.job) { t.state = 'rtb'; t.task = null; } }
         else lostOne(S, t, m.ir ? 'a shoulder-fired missile' : 'an enemy fighter');
       }
-      else IC.text(S, m.x, m.y, 'EVADED', '#9fe0ff');
+      else { IC.text(S, m.x, m.y, 'EVADED', '#9fe0ff'); IC.emit(S, 'mstat', { m, t, what: 'miss', text: 'EVADED' }); }
     }
   }
   S.eaam = S.eaam.filter(m => !m.dead);
