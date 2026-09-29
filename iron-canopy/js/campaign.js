@@ -34,11 +34,11 @@ IC.campaignInit = function (S) {
   for (const s of S.esites) if (s.nat === 'B') s.dormant = true;
   const war = S.time + U.rand(3, 4.5) * 3600, second = war + U.rand(20, 30) * 3600;
   S.camp.sched = ['qwRecon', 'qwRockets', 'qwSigint', 'qwWar', 'qwSecond'].map((h, i) => ({ t: [S.time + U.rand(0.6, 1) * 3600, S.time + U.rand(1.6, 2.2) * 3600, war - 1500, war, second][i], fn: IC.hfn(h, S) }));
-  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `${W.full.A} has closed the border and its forces are massing. We are not on a war footing: good equipment, much of it still in the depots, and thin magazines. Use the time.`, 'chapter');
+  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `${W.full.A} has closed the border and its forces are massing. Our layers are up over the capital, the main air base and the two largest cities, but more equipment waits in the reserve and the spare missiles at each site are only half stocked. Use the time.`, 'chapter');
   S.camp.chapter = 'Tension';
-  say(S, 'CDS', `${W.full.A} is massing on the border. We have hours, not days. Get equipment out of the reserve, fill the magazines, and decide what we protect first.`);
+  say(S, 'CDS', `${W.full.A} is massing on the border. We have hours, not days. Deploy what is still in the reserve, top up the stores, and decide what else we protect.`);
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
-  say(S, 'LOG', 'Depots are low. Order munitions at the factories or buy abroad, and put a forward depot near the northern border so convoys have short runs.');
+  say(S, 'LOG', `Launchers are loaded, but the spare missiles at each site are only half stocked. Order more from the factories or buy abroad (Supply); the Forward Depot near the border keeps the convoys' runs short.`);
 };
 /* the Quick war's timetable (S.camp.sched) */
 const H = IC.H;
