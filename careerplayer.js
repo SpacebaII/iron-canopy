@@ -176,6 +176,8 @@ function later(S, st) {
     }
     if (!S.av.zones.length) IC.avAddZone(S, fb.x, fb.y, 150, 'Forward base');
   }
-  if (st.act >= 3) { if (S.supply) S.supply.auto = true; QW.commander(S); }
+  // (before the war the defence is built as the income allows: a Quick war's worth of batteries costs twice what
+  // Act III brings in an hour; in the war everything goes)
+  if (st.act >= 3) { if (S.supply) S.supply.auto = true; if (st.act >= 4 || (S.income - S.upkeep > 12 && S.budget > 400)) QW.commander(S); }
 }
 module.exports = { player, site, starter, grow };

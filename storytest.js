@@ -32,7 +32,7 @@ while (mo(S.time) < years * 12 && !S.over && st.act < stopAct) {
   const us = Number(process.hrtime.bigint() - c0) / 1000, T = dt === 8 ? tm.w : tm.f; T.n++; T.us += us; tm.mw.n += dt === 8 ? 1 : 0; tm.mw.us += dt === 8 ? us : 0;
   if (S.time >= nextP) { player(S); nextP = S.time + 64; }
   if (st.act === 1 && st.ch !== chSeen) { chSeen = st.ch; marks.push({ what: `Chapter ${st.ch + 1} ${IC.CHAPTERS[st.ch].title}`, t: S.time, ch: st.ch }); console.log(`\n=== ${stamp(S.time)} Chapter ${st.ch + 1}: ${IC.CHAPTERS[st.ch].title}`); }
-  if (st.act !== actSeen) { actSeen = st.act; marks.push({ what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title}`, t: S.time, act: st.act }); console.log(`\n=== ${stamp(S.time)} ${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`); }
+  if (st.act !== actSeen) { actSeen = st.act; if (process.env.SAVE) require('fs').writeFileSync(process.env.SAVE.replace(/\.json$/, `-act${st.act}.json`), JSON.stringify(IC.saveGame(S))); marks.push({ what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title}`, t: S.time, act: st.act }); console.log(`\n=== ${stamp(S.time)} ${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`); }
   if (S.cal.m !== lastM) {
     lastM = S.cal.m;
     if (tm.mw.n) { const ms = tm.mw.us / tm.mw.n / 1000; if (ms > tm.worst.ms) tm.worst = { ms, when: U.date(S.time - 1), flights: S.threats.filter(t => t.tail && !t.dead).length }; } tm.mw = { n: 0, us: 0 };
