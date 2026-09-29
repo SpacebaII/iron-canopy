@@ -58,6 +58,33 @@ async function flicker(V) {
   for (let f = 1; f < frames.length - 1; f++) for (let i = 0; i < W * H * 4; i += 4) { const a = lum(f, i) - lum(f - 1, i), b = lum(f + 1, i) - lum(f, i); n++; if (Math.abs(a) > 30 && Math.abs(b) > 30 && Math.sign(a) !== Math.sign(b)) osc++; }
   return { flickerPct: +(osc / n * 100).toFixed(3), frames: frames.length };
 }
+/* brief 40's moments: the weather held, the picture filmed frame by frame from the view's own canvas (16:9, cut
+   from its middle), labels off; a still where the moment peaks */
+function wx(S, k) { const w = S.weather; if (!w) return; w.kind = w.prev = k; w.fade = 1; w.next = S.time + 864000; w.hold = true; if (IC.WEATHER[k]) IC.emit(S, 'weather', k); }
+const CLIP = { w: 960, h: 540 };
+function grab(V, w, h) {
+  const src = V.renderer.domElement, sw = src.width, sh = src.height, k = Math.min(sw / w, sh / h), cw = w * k, ch = h * k;
+  const cv = grab.cv || (grab.cv = document.createElement('canvas')); cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, w, h);
+  return cv;
+}
+async function film(V, S, name, N, speed, hook) {
+  window.requestAnimationFrame = () => 0;   // the frames are made here, one by one
+  V.labels = false; for (const m of V.movers) m.label.hidden = true;
+  const pn = V.$('panel'); if (pn) pn.style.display = 'none';
+  let now = film.now || (film.now = performance.now()), acc = 0, stillAt = null;
+  for (let f = 0; f < N; f++) {
+    if (S && V.kind === 'live') { acc += speed / 30; while (acc >= 0.25) { IC.step(S, 0.25); acc -= 0.25; } }
+    const r = hook ? await hook(f) : null;
+    IC.replayStep(V, now += 1000 / 30); film.now = now;
+    if (window.CLIPS) await __frame(name, grab(V, CLIP.w, CLIP.h).toDataURL('image/jpeg', 0.9).slice(23));
+    if (r === 'still' || (f === N - 1 && !film.took)) { film.took = true; await __still(name, grab(V, 1280, 720).toDataURL('image/jpeg', 0.93).slice(23)); }
+    if (f % 60 === 0) console.log(name, 'frame', f, U.hhmm(S ? S.time : V.t));
+  }
+  film.took = false;
+}
+function cam(V, c) { const s = V.el.querySelector('[data-rp=cam]'); if (s) { s.value = c; s.dispatchEvent(new Event('change', { bubbles: true })); } }
+if (window.QUALITY) try { localStorage.setItem('ic-3d', window.QUALITY); } catch (e) { /* file page */ }
 const frameTimes = async n => { const ts = []; let last = performance.now(); await new Promise(res => { const f = now => { ts.push(now - last); last = now; if (ts.length < n) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); ts.sort((a, b) => a - b); return { med: +ts[n >> 1].toFixed(1), p95: +ts[Math.floor(n * 0.95)].toFixed(1) }; };`;
 
 const SCENES = {
@@ -233,6 +260,60 @@ const SCENES = {
     t0 = performance.now(); for (let i = 0; i < 50; i++) IC.drawFieldLife(g, S, f, 0.05); const fieldMs = (performance.now() - t0) / 50;
     window.__perf = { aircraft: near(), stepMs: +stepMs.toFixed(3), apronMs: +apronMs.toFixed(3), fieldMs: +fieldMs.toFixed(3), mapClose, mapAirport, liveFull, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
     await __snap('frames-38'); S.paused = true;`,
+  // brief 40: the six moments, filmed frame by frame (CLIPS=1 makes the clips; the still is taken where it peaks)
+  'm-takeoff': `
+    const S = await game('sandbox', 11.6); wx(S, 'clear');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'roll' && m.spd < 0.05 && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    if (!m) throw new Error('no take-off roll'); console.log('take-off at', U.hhmm(S.time));
+    const L = await live(S, m, 'chase', 800); L.camK = 1.3; let shot = 0;
+    await film(L, S, 'm-takeoff', +(window.FRAMES || 360), 3, f => { if (f === 150) cam(L, 'side'); if (!shot && m.phase !== 'roll' && f > 150) { shot = 1; return 'still'; } });`,
+  'm-landing': `
+    const S = await game('sandbox', 18.6); wx(S, 'scattered');
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 20 && m.type !== 'light'));
+    if (!m) throw new Error('no arrival on final'); console.log('landing at', U.hhmm(S.time));
+    const L = await live(S, m, 'side', 800); L.camK = 1.2; let shot = 0;
+    await film(L, S, 'm-landing', +(window.FRAMES || 330), 2, f => { if (f === 200) cam(L, 'chase'); if (!shot && m.phase !== 'final' && f > 20) { shot = 1; return 'still'; } });`,
+  'm-night-rain': `
+    const S = await game('sandbox', 21.7); wx(S, 'rain');
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 20 && m.type !== 'light'));
+    if (!m) throw new Error('no arrival on final'); console.log('night arrival at', U.hhmm(S.time));
+    const L = await live(S, m, 'chase', 800); L.camK = 1.6; let shot = 0;
+    await film(L, S, 'm-night-rain', +(window.FRAMES || 300), 2, f => { if (f === 180) cam(L, 'side'); if (!shot && m.phase !== 'final' && f > 20) { shot = 1; return 'still'; } });`,
+  'm-fog': `
+    const S = await game('sandbox', 6.9); wx(S, 'fog');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    if (!m) throw new Error('nothing taxiing'); console.log('fog taxi at', U.hhmm(S.time));
+    const L = await live(S, m, 'chase', 800); L.camK = 1.8;
+    await film(L, S, 'm-fog', +(window.FRAMES || 240), 2, f => { if (f === 120) cam(L, 'side'); if (f === 200) return 'still'; });`,
+  'm-snow': `
+    const S = await game('sandbox', 10.5); wx(S, 'snow');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    if (!m) throw new Error('nothing taxiing'); console.log('snow taxi at', U.hhmm(S.time));
+    const L = await live(S, m, 'side', 800); L.camK = 1.5;
+    await film(L, S, 'm-snow', +(window.FRAMES || 240), 2, f => { if (f === 90) cam(L, 'chase'); if (f === 60) return 'still'; });`,
+  'm-intercept': `
+    Math.random = seeded(11); await IC.begin('range'); const S = IC.S; S.paused = true;
+    IC.ui.cineShown = 1e9; for (const id of ['cine', 'comms']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+    S.time = Math.floor(S.time / 86400) * 86400 + 15.5 * 3600; wx(S, 'scattered');
+    const T = S.range.target;
+    IC.rangeAddUnit(S, 'mrsam', T.x - 30, T.y); IC.rangeAddUnit(S, 'lr3d', T.x - 60, T.y + 20);
+    IC.rangeSpawn(S, { what: 'str', n: 2, brg: 80, km: 90, alt: 4 });
+    let kill = null; steps(S, 900, S => (kill = S.rec.ev.find(e => e.kind === 'kill' || e.kind === 'intercept' || (e.kind === 'mstat' && e.what === 'hit'))));
+    if (!kill) throw new Error('no intercept');
+    const mis = S.rec.tracks.find(t => t.kind === 'missile' && t.ref === kill.mref) || S.rec.tracks.filter(t => t.kind === 'missile' && t.meta.tref === kill.tref).pop();
+    const tl = IC.recFirstT(mis); console.log('launch at', U.hhmm(tl), 'hit at', U.hhmm(kill.t));
+    const tg = S.rec.of.get(mis.meta.tref) || mis;
+    const V = await replay({ follow: tg.ref, x: kill.x, y: kill.y, t: tl - 3, r: 150, cam: 'auto' }, tl - 3);
+    V.slowmo = true; V.playing = true; V.speed = 2; let shot = 0;
+    await film(V, null, 'm-intercept', +(window.FRAMES || Math.min(900, Math.round((kill.t - tl + 3) * 15 + 150))), 1, f => { if (!shot && V.t > kill.t - 0.15) { shot = 1; return 'still'; } });`,
+  // for tuning the look: HOUR, WX, CAM, K (camera distance), WHAT (taxi, roll, final, gate) from the environment
+  'm-probe': `
+    const S = await game('sandbox', +(window.HOUR || 11)); wx(S, window.WX || 'scattered');
+    const what = window.WHAT || 'taxi';
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === what && (what !== 'taxi' || m.kind === 'dep') && (what !== 'final' || m.t > 20) && m.type !== 'light' && !m.mil));
+    if (!m) throw new Error('nothing ' + what);
+    const L = await live(S, m, window.CAM || 'chase', 600); L.camK = +(window.K || 1.4);
+    await film(L, S, window.NAME || 'm-probe', +(window.FRAMES || 40), 1, f => { if (f === +(window.FRAMES || 40) - 1) { const F = L.fxs; console.log('fx', F && JSON.stringify({ q: F.q, expo: F.expo, night: F.night, sun: F.sunDir, wet: F.wet, W: F.W, fog: [IC.fx3d && 0] })); return 'still'; } });`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -249,7 +330,7 @@ const SCENES = {
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k));
+  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^m-/.test(k) && !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -268,6 +349,12 @@ const SCENES = {
     if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
     if (process.env.VIDEO_MS) await page.addInitScript(ms => { window.VIDEO_MS = ms; }, process.env.VIDEO_MS);
     let ff = null;
+    const clips = new Set();
+    if (/^m-/.test(name)) {
+      await page.exposeFunction('__frame', (n, b64) => { const f = path.join(dir, `3d-${n}.mjpeg`); if (!clips.has(n)) { clips.add(n); fs.writeFileSync(f, ''); } fs.appendFileSync(f, Buffer.from(b64, 'base64')); });
+      await page.exposeFunction('__still', (n, b64) => { const out = path.join(dir, `3d-${n}.jpg`); fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('saved', out); });
+      for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+    }
     if (name === 'movie') {
       // the frames go one after another into one file of JPEGs, which ffmpeg reads as a stream when they are done
       ff = path.join(dir, '3d-live.mjpeg'); fs.writeFileSync(ff, '');
@@ -276,13 +363,18 @@ const SCENES = {
     for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
-    await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
+    await page.goto('file://' + (process.env.GAME ? path.resolve(process.env.GAME) : path.resolve(__dirname, '../iron-canopy/index.html')));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
     if (ff) {
       const out = path.join(dir, '3d-live.webm'), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
       require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', ff, '-c:v', 'libvpx', '-b:v', '3M', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
       fs.unlinkSync(ff); console.log('saved', out);
+    }
+    for (const n of clips) {
+      const src = path.join(dir, `3d-${n}.mjpeg`), out = path.join(dir, `3d-${n}.webm`), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
+      require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', src, '-c:v', 'libvpx', '-b:v', '2500k', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
+      fs.unlinkSync(src); console.log('saved', out);
     }
     if (/^frames/.test(name) || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }

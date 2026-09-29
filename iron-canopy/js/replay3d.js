@@ -21,6 +21,7 @@ const CFG = IC.REPLAY = {
   threeUrl: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js',
   fallbackUrl: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
   trail: 60, maxLabels: 40, boxes: 6000,
+  fxFiles: ['js/render3d-fx.js'],
   // the ground: tiles of T world units painted at px pixels, seg squares a side, ring tiles round the focus
   levels: [{ T: 60, px: 512, seg: 20, ring: 2 }, { T: 240, px: 512, seg: 20, ring: 2 }, { T: 960, px: 256, seg: 16, ring: 2 }],
   near: 0.01, far: 60000, farPx: 3, lodPx: 70,
@@ -51,9 +52,14 @@ function loadThree() {
   if (window.THREE) return Promise.resolve(THREE = window.THREE);
   if (loading) return loading;
   const byTag = url => new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.onload = () => window.THREE ? res(window.THREE) : rej(new Error('no THREE')); s.onerror = () => rej(new Error('load failed')); document.head.appendChild(s); });
-  loading = import(CFG.threeUrl).then(m => (THREE = m.default && m.default.Scene ? m.default : m)).catch(() => byTag(CFG.fallbackUrl).then(t => (THREE = t)));
+  loading = import(CFG.threeUrl).then(m => (THREE = m.default && m.default.Scene ? m.default : m)).catch(() => byTag(CFG.fallbackUrl).then(t => (THREE = t))).then(t => loadFx().then(() => t));
   loading.catch(() => { loading = null; });
   return loading;
+}
+/* the picture (render3d-fx.js: light, sky, weather, the image pipeline) comes with the view; without it the view
+   draws plainly */
+function loadFx() {
+  return Promise.all(CFG.fxFiles.filter(f => !IC.fx3d || !/fx\.js$/.test(f)).map(f => new Promise(res => { const s = document.createElement('script'); s.src = f; s.onload = s.onerror = () => res(); document.head.appendChild(s); })));
 }
 /* the tests hand in a stand-in for three.js to count what the view makes */
 IC.replayUseThree = T => { THREE = T; };
@@ -70,6 +76,7 @@ const CSS = `
 .rp-head select{background:var(--well);color:var(--text);border:0;border-radius:8px;padding:.2rem .4rem;font:inherit;font-size:.85rem}
 .live .rp-head{padding:.3rem .4rem .3rem .8rem;gap:.4rem;cursor:move;user-select:none;flex-wrap:nowrap}
 .live .rp-head h2{font-size:.85rem}.live .rp-head .sub{font-size:.78rem;min-width:3rem}.live .rp-head select{font-size:.78rem}
+.live:not(.full) .rp-head .q3d{display:none}
 .live .rp-head .x{width:1.8rem;height:1.8rem;font-size:.9rem;flex:none}
 .live .rp-head .x.live-dot{background:none;color:#ff5b4f;width:auto;cursor:move;font-size:.7rem}
 .rp-view{position:relative;flex:1;min-height:0;background:#04080c}
@@ -112,6 +119,14 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&am
 // the frame-rate readout is for measuring, not for players: it shows with #debug on the page's address
 const style = () => { const root = document.documentElement; if (root && root.classList) root.classList.toggle('dbg', /debug/.test((typeof location !== 'undefined' && location.hash) || '')); if (!$('rpStyle')) { const st = document.createElement('style'); st.id = 'rpStyle'; st.textContent = CSS; document.head.appendChild(st); } };
 const camSelect = (cur, skip) => `<label title="Camera">Camera <select data-rp="cam">${CAMS.filter(c => !(skip || []).includes(c[0])).map(([k, n, t]) => `<option value="${k}" title="${esc(t)}" ${k === cur ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`;
+/* the picture's quality (render3d-fx.js): Auto picks it from the graphics card; kept in this browser */
+IC.Q3D = [['auto', 'Auto', 'Picked from your graphics card and a short test'], ['low', 'Low', 'Plain light, no effects: for slow or software graphics'], ['medium', 'Medium', 'Sun shadows, glow, clouds and weather'],
+  ['high', 'High', 'Adds soft shadows at the ground, depth of field and motion blur'], ['ultra', 'Ultra', 'Sharper shadows, denser grass and trees, full resolution']];
+IC.q3d = {
+  get() { try { return localStorage.getItem('ic-3d') || 'auto'; } catch (e) { return 'auto'; } },
+  set(q) { try { localStorage.setItem('ic-3d', q); } catch (e) { /* private window */ } for (const w of [V, L]) if (w && w.renderer && IC.fx3d && IC.fx3d.ok) IC.fx3d.setQuality(w, q); }
+};
+const qualSelect = () => { const q = IC.q3d.get(); return `<label class="q3d" title="Picture quality">Picture <select data-rp="q3d">${IC.Q3D.map(([k, n, t]) => `<option value="${k}" title="${esc(t)}" ${k === q ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`; };
 const viewInner = () => `<canvas data-el="canvas"></canvas><div class="rp-labels" data-el="labels"></div><div class="rp-panel" data-el="panel" hidden></div><div class="rp-fps" data-el="fps"></div><div class="rp-msg" data-el="msg">Loading the 3D library…</div>`;
 
 function newView(S, el, kind) {
@@ -130,7 +145,7 @@ function makeReplayWindow(title, sub) {
   if (!el) { el = document.createElement('div'); el.id = 'replay'; el.className = 'replay'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Replay'); ($('app') || document.body).appendChild(el); }
   const seg = (act, cur, opts) => `<div class="seg">${opts.map(([v, n, t]) => `<button data-rp="${act}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
   el.innerHTML = `<div class="rp-head"><h2>${esc(title)}</h2><span class="sub" data-el="sub">${esc(sub)}</span>
-      ${camSelect('orbit')}
+      ${camSelect('orbit')}${qualSelect()}
       <label title="Only what our radars saw at the time, in identity colours"><input type="checkbox" data-rp="radar"> Radar picture</label>
       <label><input type="checkbox" data-rp="labels" checked> Labels</label>
       <label title="Lines from the radar or the missile to its target, coloured by how the missile is guided"><input type="checkbox" data-rp="locks" checked> Locks</label>
@@ -165,19 +180,24 @@ const colorOf = hex => { let c = colCache.get(hex); if (!c) { c = new THREE.Colo
    map's y): the axes swap, so each triangle's winding turns round; origin o and scale k (0.01 for metres) */
 function toScene(me, names, cols, o, k, shade) {
   let n = 0; for (const nm of names) n += me.groups[nm].pos.length;
-  const pos = new Float32Array(n), nor = new Float32Array(n), col = new Float32Array(n);
+  const pos = new Float32Array(n), nor = new Float32Array(n), col = new Float32Array(n), fx = FX(), pbr = fx && new Float32Array(n);
   let w = 0;
   const ox = o ? o[0] : 0, oy = o ? o[1] : 0, oz = o ? o[2] : 0;
   for (const nm of names) {
     const G = me.groups[nm], p = G.pos, q = G.nor;
     for (let i = 0; i < p.length; i += 9) for (const j of [0, 6, 3]) {
-      const a = i + j, c = colorOf(cols[me.slots[G.col[a / 3]]] || me.slots[G.col[a / 3]]), s = shade ? shade(q[a + 2]) : 1;
+      const a = i + j, sl = me.slots[G.col[a / 3]], c = colorOf(cols[sl] || sl), s = shade ? shade(q[a + 2]) : 1;
       pos[w] = (p[a] - ox) * k; pos[w + 1] = (p[a + 2] - oz) * k; pos[w + 2] = (p[a + 1] - oy) * k;
       nor[w] = q[a]; nor[w + 1] = q[a + 2]; nor[w + 2] = q[a + 1];
-      col[w] = c.r * s; col[w + 1] = c.g * s; col[w + 2] = c.b * s; w += 3;
+      col[w] = c.r * s; col[w + 1] = c.g * s; col[w + 2] = c.b * s;
+      // what the surface is made of (paint, metal, glass), for the light: from the colour's slot
+      if (pbr) { const f = fx.surface(sl, c); pbr[w] = f[0]; pbr[w + 1] = f[1]; pbr[w + 2] = f[2]; }
+      w += 3;
     }
   }
-  return geom(pos, nor, col);
+  const g = geom(pos, nor, col);
+  if (pbr) g.setAttribute('pbr', new THREE.BufferAttribute(pbr, 3));
+  return g;
 }
 const ANIM = { gear: 1, flap: 1, prop: 1, rotor: 1, radar: 1, turret: 1, launch: 1, ab: 1 };
 const LIGHT_COL = { red: '#ff3a2a', green: '#3aff6a', white: '#ffffff', strobe: '#ffffff', beacon: '#ff2a1a', land: '#fff4d8' };
@@ -205,17 +225,22 @@ function modelParts(key, livery, body) {
   };
   const mg = me.groups.gearL || me.groups.gearR;
   P.xm = mg ? mg.pivot[0] * 0.01 : 0;
+  if (FX() && IC.modelIsAircraft(key)) P.mat = FX().livery(key, livery, me, P);   // paint, panel lines, registration
   partsCache.set(ck, P);
   return P;
 }
 /* what several windows share and none disposes: materials, textures, unit shapes */
 const shared = new Map();
 function share(k, make) { let x = shared.get(k); if (!x) { x = make(); shared.set(k, x); } return x; }
-const solidMat = () => share('solid', () => new THREE.MeshLambertMaterial({ vertexColors: true }));
+const FX = () => IC.fx3d && IC.fx3d.ok ? IC.fx3d : null;
+const solidMat = () => share('solid', () => FX() ? FX().mat('solid') : new THREE.MeshLambertMaterial({ vertexColors: true }));
+const bldMat = () => share('bld', () => FX() ? FX().mat('bld') : solidMat());
 const basicMat = () => share('basic', () => new THREE.MeshBasicMaterial({ vertexColors: true }));
 /* windows: dark glass by day, warm light at night (the colour follows the time of day each frame) */
-const winMat = () => share('win', () => new THREE.MeshBasicMaterial({ vertexColors: false, color: '#303a44' }));
-const abMat = () => share('ab', () => new THREE.MeshBasicMaterial({ color: '#ffb070', transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }));
+const winMat = () => share('win', () => FX() ? FX().mat('win') : new THREE.MeshBasicMaterial({ vertexColors: false, color: '#303a44' }));
+/* what gives light (flames, flashes, lights): drawn brighter than white in the picture, so it glows (render3d-fx.js) */
+const glow = (m, k) => { m.userData.glow = k || 1; return FX() ? FX().glow(m) : m; };
+const abMat = () => share('ab', () => glow(new THREE.MeshBasicMaterial({ color: '#ffb070', transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }), 3));
 const discMat = () => share('disc', () => new THREE.MeshBasicMaterial({ color: '#3a4046', transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
 /* a soft shadow on the ground under an aircraft that is on it or just above it */
 const shadowTex = () => share('shadowTex', () => {
@@ -282,7 +307,7 @@ const inSq = (x, y, reg, pad) => Math.abs(x - reg.x) <= reg.R + (pad || 0) && Ma
    roads, towns). The finest tiles write the stencil first; a coarser tile only draws where no finer one has, so the
    rings meet without a seam and never flicker against each other. Beyond them, a wide disc in the haze. */
 function tileMat(tex, li) {
-  const m = new THREE.MeshLambertMaterial({ map: tex });
+  const m = FX() ? FX().mat('ground', { map: tex }) : new THREE.MeshLambertMaterial({ map: tex });
   m.stencilWrite = true; m.stencilRef = 4 - li; m.stencilZPass = THREE.ReplaceStencilOp;
   m.stencilFunc = li === 0 ? THREE.AlwaysStencilFunc : THREE.GreaterStencilFunc;
   return m;
@@ -360,6 +385,7 @@ function finishTile(v, J) {
     const mesh = new THREE.Mesh(terrainGeom(v, J.reg, L.seg, v.hk), tileMat(paintTex(v, J.cv), li));
     mesh.renderOrder = -4 + li; g.add(mesh);
     if (li === 0 && !S.flat) { const b = buildings(v, J.reg, CFG.boxes); if (b) g.add(b); }   // buildings only close in
+    if (FX()) FX().tile(v, g, J.reg, li);
     if (li === 0 && v.lowGnd === false) g.visible = false;
   }
   v.static.add(g); v.tiles.set(J.key, g); v.made.tile++;
@@ -369,7 +395,7 @@ function finishTile(v, J) {
 function dropTile(v, key) {
   const T = v.tiles.get(key); if (!T) return;
   v.static.remove(T);
-  T.traverse(x => { if (x.geometry && x.geometry !== v.keepGeom) x.geometry.dispose(); if (x.material && x.material !== solidMat()) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); } });
+  T.traverse(x => { if (x.userData.keep) return; if (x.geometry && x.geometry !== v.keepGeom) x.geometry.dispose(); if (x.material && x.material !== solidMat() && x.material !== bldMat()) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); } });
   v.tiles.delete(key);
 }
 /* keeps the rings of tiles round (fx, fy): what is missing goes in the queue, coarse rings first so there is never a
@@ -439,7 +465,7 @@ function buildings(v, reg, maxBoxes) {
     }
     items.push({ start, end: w / 3, t: dmgT.has(b) ? dmgT.get(b) : b.hp < 1 ? -1e18 : 1e18, dark: false });
   }
-  const mesh = new THREE.Mesh(geom(pos.subarray(0, w), nor.subarray(0, w), col.subarray(0, w)), solidMat());
+  const mesh = new THREE.Mesh(geom(pos.subarray(0, w), nor.subarray(0, w), col.subarray(0, w)), bldMat());
   mesh.userData.items = items; mesh.userData.base = Float32Array.from(col.subarray(0, w));
   v.dmgMeshes.push(mesh);
   return mesh;
@@ -468,7 +494,7 @@ const PAVE = { runway: 1, taxi: 1, apron: 1, surface: 1, deice: 0, fuelpad: 0 };
    another (the airport's picture, aprons, taxiway joints, taxiways, runways), so where two meet nothing can flicker */
 const LIFT = { pad: 0.003, rw: 0.004 };
 const PAVE_ORDER = { pad: 1, apron: 2, joint: 3, taxi: 4, runway: 5 };
-function paveMat(o, order, mesh) { const m = new THREE.MeshLambertMaterial(o); m.depthWrite = false; mesh.material = m; mesh.renderOrder = PAVE_ORDER[order]; return mesh; }
+function paveMat(o, order, mesh) { const m = FX() ? FX().mat('pave', o) : new THREE.MeshLambertMaterial(o); m.depthWrite = false; mesh.material = m; mesh.renderOrder = PAVE_ORDER[order]; return mesh; }
 function aptPad(v, b, f) {
   const S = v.S, R = f.r0, T = Math.min(2048, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 36)))));
   const cv = document.createElement('canvas'); cv.width = cv.height = T;
@@ -721,7 +747,7 @@ function aptLights(v, b, f) {
     }
   }
   if (!P.length) return null;
-  const pts = new THREE.Points(geom(new Float32Array(P), null, new Float32Array(C)), new THREE.PointsMaterial({ size: 4.5, sizeAttenuation: false, vertexColors: true, map: puffTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const pts = new THREE.Points(geom(new Float32Array(P), null, new Float32Array(C)), glow(new THREE.PointsMaterial({ size: 4.5, sizeAttenuation: false, vertexColors: true, map: puffTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 4));
   pts.frustumCulled = false;
   return pts;
 }
@@ -743,12 +769,14 @@ function airportSync(v, fx, fy) {
     b.parts.filter(p => p.kind === 'runway' && p.built).forEach((rw, i) => G.add(runwayMesh(v, rw, f.e, i)));
     const bl = aptBuildings(v, b, f); G.add(bl);
     const lt = aptLights(v, b, f); if (lt) { G.add(lt); v.nightLights.push(lt); }
+    if (FX()) FX().airport(v, b, G, f);
     v.static.add(G); v.apts.set(b.id, { G, sig, radars: bl.userData.radars, lights: lt });
     v.made.airport++;
   }
 }
 function dropApt(v, id) {
   const A = v.apts.get(id); if (!A) return;
+  if (FX()) FX().dropAirport(v, id);
   v.static.remove(A.G);
   A.G.traverse(x => { if (x.geometry && !x.isInstancedMesh) x.geometry.dispose(); if (x.material && !isShared(x.material)) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); } });
   v.dmgMeshes = v.dmgMeshes.filter(m => { let inside = false; A.G.traverse(x => { if (x === m) inside = true; }); return !inside; });
@@ -801,7 +829,7 @@ function parkedSync(v) {
   for (const p of v.pools.values()) if (p.parked) { p.n = 0; if (p.mesh) p.mesh.count = 0; }
   const e = new THREE.Euler(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), P3 = new THREE.Vector3(), M = new THREE.Matrix4();
   for (const [key, liv, x, y, h, b] of list) {
-    const MP = modelParts(key, liv, null), p = pool(v, 'park|' + key + '|' + (liv ? liv.join() : ''), MP.restHi, solidMat());
+    const MP = modelParts(key, liv, null), p = pool(v, 'park|' + key + '|' + (liv ? liv.join() : ''), MP.restHi, MP.mat || solidMat());
     p.parked = true; poolGrow(v, p, p.n + 1);
     const f = v.flat.find(q2 => q2.x === b.x && q2.y === b.y);
     P3.set(x - v.cx, (f ? f.e : hT(v, x, y)) * v.hk + LIFT.rw, y - v.cy); e.set(0, -h, 0, 'YZX'); q.setFromEuler(e); M.compose(P3, q, one);
@@ -821,7 +849,7 @@ const AFF_COL = ['#f2d14a', '#6fd2ff', '#7fe8b0', '#ff9a3c', '#ff5b4f', '#8fa3b0
 const SMOKE_N = 600;
 const instanced = tr => tr.kind === 'missile' || tr.kind === 'veh' || (tr.kind === 'threat' && !IC.modelIsAircraft(tr.model));
 const radarMat = hex => share('radar:' + hex, () => new THREE.MeshBasicMaterial({ color: hex }));
-const navMat = () => share('nav', () => new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true, map: puffTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+const navMat = () => share('nav', () => glow(new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true, map: puffTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 5));
 function lightPoints(list) {
   if (!list.length) return null;
   const pos = new Float32Array(list.length * 3), col = new Float32Array(list.length * 3);
@@ -836,16 +864,16 @@ function makeMover(v, tr) {
     ac: IC.modelIsAircraft(tr.model), ph0: (v.made.mover * 0.377) % 1, gearK: null, flapK: null, launchK: null, lastT: null, tdSeen: 0 };
   if (!m.inst) {
     const body = m.body = new THREE.Group(); grp.add(body);
-    m.solid = new THREE.Mesh(MP.solid, solidMat()); m.solid.userData.tr = tr; body.add(m.solid);
+    m.solid = new THREE.Mesh(MP.solid, MP.mat || solidMat()); m.solid.userData.tr = tr; body.add(m.solid);
     if (MP.win) { m.win = new THREE.Mesh(MP.win, winMat()); body.add(m.win); }
     for (const a of MP.anim) {
       const node = new THREE.Group(); node.position.set(a.pivot[0], a.pivot[1], a.pivot[2]);
-      node.add(new THREE.Mesh(a.geom, a.kind === 'ab' ? abMat() : solidMat()));
+      node.add(new THREE.Mesh(a.geom, a.kind === 'ab' ? abMat() : MP.mat || solidMat()));
       if (a.kind === 'rotor' && a.axis[1] > 0.5) { const d = new THREE.Mesh(discG(), discMat()); const R = IC.modelMesh(tr.model, 1).groups[a.name].R * 0.01; d.scale.set(R, 1, R); body.add(d); d.position.set(a.pivot[0], a.pivot[1], a.pivot[2]); }
       body.add(node);
       m.anims.push({ a, node, axis: new THREE.Vector3(a.axis[0], a.axis[1], a.axis[2]).normalize() });
     }
-    m.far = new THREE.Mesh(MP.rest, solidMat()); m.far.visible = false; m.far.userData.tr = tr; body.add(m.far);
+    m.far = new THREE.Mesh(MP.rest, MP.mat || solidMat()); m.far.visible = false; m.far.userData.tr = tr; body.add(m.far);
     if (IC.modelIsAircraft(tr.model)) { m.shadow = new THREE.Mesh(quadG(), new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false, opacity: 1 })); m.shadow.renderOrder = 6; m.shadow.visible = false; sc.add(m.shadow); }
     if (m.ac) {
       m.nav = lightPoints(MP.lights.filter(l => l.kind === 'red' || l.kind === 'green' || l.kind === 'white'));
@@ -863,10 +891,10 @@ function makeMover(v, tr) {
   Object.assign(m, { line, label, maxPts, lblTxt: '', lblCls: label.className, lblOn: false });
   if (missile) {
     // the motor: a white-hot cone at the nozzle and a glow that reads from far away
-    const len = MP.len, plume = new THREE.Mesh(plumeG(), new THREE.MeshBasicMaterial({ color: '#ffc46a', transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+    const len = MP.len, plume = new THREE.Mesh(plumeG(), glow(new THREE.MeshBasicMaterial({ color: '#ffc46a', transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }), 6));
     plume.position.x = -len / 2; plume.visible = false; grp.add(plume);
-    const glow = new THREE.Points(geom(new Float32Array([-len / 2, 0, 0])), new THREE.PointsMaterial({ size: 14, sizeAttenuation: false, map: puffTex(), color: '#ffc070', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-    glow.visible = false; glow.frustumCulled = false; grp.add(glow);
+    const mglow = new THREE.Points(geom(new Float32Array([-len / 2, 0, 0])), glow(new THREE.PointsMaterial({ size: 14, sizeAttenuation: false, map: puffTex(), color: '#ffc070', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 4));
+    mglow.visible = false; mglow.frustumCulled = false; grp.add(mglow);
     const smoke = new THREE.Points(lineGeom(SMOKE_N), new THREE.PointsMaterial({ size: SMOKE[tr.meta.mun] || 0.14, map: puffTex(), color: '#dcdcd6', transparent: true, opacity: 0.5, depthWrite: false }));
     smoke.frustumCulled = false; sc.add(smoke);
     // the same smoke as a fine line of dots, so the burn still reads from far away
@@ -875,7 +903,7 @@ function makeMover(v, tr) {
     const locks = new THREE.LineSegments(lineGeom(8, true), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     locks.frustumCulled = false; sc.add(locks);
     const cone = new THREE.Mesh(coneG(), additive('#ffffff', 0.05)); cone.visible = false; sc.add(cone);
-    Object.assign(m, { plume, glow, smoke, locks, cone, burn: burnOf(tr), tL: IC.recFirstT(tr) });
+    Object.assign(m, { plume, glow: mglow, smoke, locks, cone, burn: burnOf(tr), tL: IC.recFirstT(tr) });
   }
   v.movers.push(m); v.moverOf.set(tr, m); v.made.mover++;
   return m;
@@ -920,7 +948,7 @@ function updMover(v, m, t) {
   else if (!dot) {
     const lod = px < CFG.lodPx * (m.lod ? 0.85 : 1.15) ? 0 : 1;
     if (lod !== m.lod) { m.lod = lod; m.solid.visible = !!lod; if (m.win) m.win.visible = !!lod; m.far.visible = !lod; for (const A of m.anims) A.node.visible = !!lod; }
-    const mat = v.radar ? radarMat(m.tr.kind === 'threat' ? AFF_COL[st.aff | 0] : SIDE_COL[m.tr.side] || '#ffffff') : solidMat();
+    const mat = v.radar ? radarMat(m.tr.kind === 'threat' ? AFF_COL[st.aff | 0] : SIDE_COL[m.tr.side] || '#ffffff') : m.MP.mat || solidMat();
     if (m.solid.material !== mat) { m.solid.material = mat; m.far.material = mat; }
     if (lod) animate(v, m, st, t, dt);
     if (m.ac) { const on = v.night && !v.radar; if (m.nav) m.nav.visible = on; if (m.flash) m.flash.visible = on && ((t + m.ph0) % 1.1) < 0.07; if (m.land) m.land.visible = on && st.lights > 0; }
@@ -928,7 +956,7 @@ function updMover(v, m, t) {
   if (dot) v.dotList.push(m);
   // its shadow on the ground, fading as it climbs away (the sun is high enough to put it under it)
   if (m.shadow) {
-    const on = !dot && !v.radar && st.alt < 0.4 && v.light > 0.25 && m.px > 6; m.shadow.visible = on;
+    const on = !dot && !v.radar && !v.sunShadow && st.alt < 0.4 && v.light > 0.25 && m.px > 6; m.shadow.visible = on;
     if (on) { const g0 = hT(v, st.x, st.y) * hk + LIFT.rw + 0.0005; m.shadow.position.set(m.grp.position.x + st.alt * KM * 0.3, g0, m.grp.position.z + st.alt * KM * 0.2); m.shadow.rotation.set(0, -st.h, 0); m.shadow.scale.set(m.MP.len * 1.1, 1, m.size * 0.95); m.shadow.material.opacity = (1 - st.alt / 0.4) * 0.85; }
   }
   // the trail, smoothed between the samples, at the heights shown (not along the ground)
@@ -961,7 +989,7 @@ const MI = {};
 /* a mover drawn from its model's instanced mesh this frame */
 function instance(v, m, st) {
   const key = (v.radar ? 'r|' + (m.tr.kind === 'threat' ? AFF_COL[st.aff | 0] : SIDE_COL[m.tr.side] || '#fff') + '|' : 'm|') + m.MP.key + '|' + (m.tr.meta.livery ? m.tr.meta.livery.join() : '');
-  const p = pool(v, key, m.MP.rest, v.radar ? radarMat(m.tr.kind === 'threat' ? AFF_COL[st.aff | 0] : SIDE_COL[m.tr.side] || '#ffffff') : solidMat());
+  const p = pool(v, key, m.MP.rest, v.radar ? radarMat(m.tr.kind === 'threat' ? AFF_COL[st.aff | 0] : SIDE_COL[m.tr.side] || '#ffffff') : m.MP.mat || solidMat());
   if (!m.grp.visible) return;
   poolGrow(v, p, p.n + 1);
   m.grp.updateMatrix(); p.mesh.setMatrixAt(p.n, m.grp.matrix); p.users[p.n] = m; p.n++;
@@ -1066,7 +1094,7 @@ function makeEvent(v, e) {
   for (const d of e.dmg || []) if (d.kind === 'block') for (const q of IC.blockBoxes(d.b, true)) top = Math.max(top, q.ht); else if (d.kind === 'part') top = Math.max(top, 0.1);
   const y0 = hT(v, e.x, e.y) * hk + e.alt * KM * hk + top * hk + (td ? LIFT.rw : 0);
   const air = e.alt > 0.05, burst = e.kind === 'intercept' || (e.kind === 'kill' && air) || (e.kind === 'mstat' && (e.what === 'hit' || e.text === 'MISS'));
-  const flash = new THREE.Mesh(sphereG(), new THREE.MeshBasicMaterial({ color: e.kind === 'launch' || e.kind === 'fire' ? '#ffe0a0' : '#ffb060', transparent: true, opacity: 0.9 }));
+  const flash = new THREE.Mesh(sphereG(), glow(new THREE.MeshBasicMaterial({ color: e.kind === 'launch' || e.kind === 'fire' ? '#ffe0a0' : '#ffb060', transparent: true, opacity: 0.9 }), 8));
   flash.position.set(e.x - v.cx, y0, e.y - v.cy); flash.visible = false; sc.add(flash);
   const puffs = [], rnd = seeded(e.id * 7919);
   if (!e.quiet) for (let i = 0; i < (td ? 4 : 7); i++) {
@@ -1076,14 +1104,14 @@ function makeEvent(v, e) {
   }
   // a hit on the ground keeps burning for a while, so the damage still reads after the flash
   let fire = null;
-  if (e.kind === 'impact' || e.kind === 'crash') { fire = new THREE.Mesh(flameG(), new THREE.MeshBasicMaterial({ color: '#ff8a30', transparent: true, opacity: 0.8, depthWrite: false })); fire.visible = false; sc.add(fire); }
+  if (e.kind === 'impact' || e.kind === 'crash') { fire = new THREE.Mesh(flameG(), glow(new THREE.MeshBasicMaterial({ color: '#ff8a30', transparent: true, opacity: 0.8, depthWrite: false }), 3)); fire.visible = false; sc.add(fire); }
   // a proximity fuse: fragments thrown out in a shell round the warhead
   let frag = null;
   if (burst) {
     const N = 90, g = lineGeom(N), dirs = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) { const u = rnd() * 2 - 1, a = rnd() * Math.PI * 2, r = Math.sqrt(1 - u * u), k = 0.6 + rnd() * 0.5; dirs[i * 3] = r * Math.cos(a) * k; dirs[i * 3 + 1] = u * k; dirs[i * 3 + 2] = r * Math.sin(a) * k; }
     g.setDrawRange(0, N);
-    frag = new THREE.Points(g, new THREE.PointsMaterial({ size: 3, sizeAttenuation: false, color: '#ffd8a0', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    frag = new THREE.Points(g, glow(new THREE.PointsMaterial({ size: 3, sizeAttenuation: false, color: '#ffd8a0', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 4));
     frag.frustumCulled = false; frag.visible = false; frag.userData.dirs = dirs; sc.add(frag);
   }
   const ev = { e, flash, puffs, fire, frag, y0, td, sz: burst && e.kind === 'mstat' ? 0.5 : e.sz || 1 };
@@ -1133,6 +1161,7 @@ function makeCm(v, e) {
   }
   const pts = new THREE.Points(lineGeom(N), new THREE.PointsMaterial(flare ? { size: 0.14, map: puffTex(), color: '#fff2c0', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }
     : { size: 2.2, sizeAttenuation: false, color: '#dfe6ee', transparent: true, opacity: 0.85, depthWrite: false }));
+  if (flare) glow(pts.material, 8);
   pts.frustumCulled = false; pts.visible = false; v.scene.add(pts);
   let smoke = null;
   if (TR) { smoke = new THREE.Points(lineGeom(N * TR), new THREE.PointsMaterial({ size: 0.07, map: puffTex(), color: '#d0d0cc', transparent: true, opacity: 0.45, depthWrite: false })); smoke.frustumCulled = false; smoke.visible = false; v.scene.add(smoke); }
@@ -1221,13 +1250,14 @@ function disposeView(v) {
   if (v.ro) v.ro.disconnect();
   window.removeEventListener('resize', v.onResize);
   if (!v.renderer) return;
+  if (FX()) FX().dispose(v);
   // what the windows share stays: materials, textures, the models' geometry
-  const keep = new Set(shared.values()); for (const P of partsCache.values()) { for (const g of [P.solid, P.win, P.rest, P.restHi]) keep.add(g); for (const a of P.anim) keep.add(a.geom); }
+  const keep = new Set(shared.values()); for (const P of partsCache.values()) { for (const g of [P.solid, P.win, P.rest, P.restHi, P.mat]) keep.add(g); for (const a of P.anim) keep.add(a.geom); }
   v.scene.traverse(x => {
-    if (x.geometry && !keep.has(x.geometry)) x.geometry.dispose();
+    if (x.geometry && !keep.has(x.geometry) && !x.userData.keep) x.geometry.dispose();
     if (x.isInstancedMesh && x.dispose) x.dispose();
     const ms = Array.isArray(x.material) ? x.material : x.material ? [x.material] : [];
-    for (const m of ms) { if (m.map && !keep.has(m.map)) m.map.dispose(); if (!keep.has(m)) m.dispose(); }
+    for (const m of ms) { if (x.userData.keep || m.userData.keep) continue; if (m.map && !keep.has(m.map)) m.map.dispose(); if (!keep.has(m)) m.dispose(); }
   });
   v.renderer.dispose();
   if (v.renderer.forceContextLoss) v.renderer.forceContextLoss();
@@ -1258,6 +1288,7 @@ function bindWindow(v) {
     else if (a === 'slowmo') v.slowmo = e.target.checked;
     else if (a === 'hk') { v.hk = +e.target.value; if (v.scene) rebuildStatic(v); }
     else if (a === 'cam') setCam(v, e.target.value);
+    else if (a === 'q3d') IC.q3d.set(e.target.value);
   };
   el.oninput = e => { if (e.target.dataset.el === 'range') { v.t = +e.target.value; v.playing = false; v.$('play').textContent = '▶'; } };
   if (v.kind !== 'replay' && v.kind !== 'gallery') return;
@@ -1317,10 +1348,11 @@ function makeRenderer(v) {
   let renderer;
   // a logarithmic depth buffer: a metre apart is told apart at 1 m and at 500 km, so nothing flickers against the
   // ground; the stencil lets the finest ground tiles cover the coarser ones
-  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, stencil: true, logarithmicDepthBuffer: true, powerPreference: v.kind === 'live' ? 'low-power' : 'default' }); } catch (e) { msg(v, 'WebGL is not available in this browser, so the 3D view cannot draw.'); return null; }
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: FX() ? FX().canvasAA(v) : true, alpha: false, stencil: true, logarithmicDepthBuffer: true, powerPreference: v.kind === 'live' && !FX() ? 'low-power' : 'high-performance' }); } catch (e) { msg(v, 'WebGL is not available in this browser, so the 3D view cannot draw.'); return null; }
   v.aniso = renderer.capabilities && renderer.capabilities.getMaxAnisotropy ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 4;
   renderer.setPixelRatio(Math.min(v.kind === 'live' ? 1.5 : 2, window.devicePixelRatio || 1));
   v.renderer = renderer;
+  if (FX()) FX().init(v);
   v.onResize = () => v.renderer && !v.closed && resize(v);
   window.addEventListener('resize', v.onResize);
   if (window.ResizeObserver) { v.ro = new ResizeObserver(v.onResize); v.ro.observe(v.$('view')); }
@@ -1351,7 +1383,8 @@ function sceneBase(v) {
   v.dots = new THREE.Points(lineGeom(512, true), new THREE.PointsMaterial({ size: 4, sizeAttenuation: false, vertexColors: true, depthWrite: false }));
   v.dots.frustumCulled = false; v.dots.renderOrder = 2; scene.add(v.dots);
   // windows lit at dusk
-  winMat().color.set(v.night ? '#ffd890' : light < 0.8 ? '#8a7a5a' : '#303a44');
+  if (!FX()) winMat().color.set(v.night ? '#ffd890' : light < 0.8 ? '#8a7a5a' : '#303a44');
+  else FX().scene(v);
   return scene;
 }
 function buildReplay(v) {
@@ -1654,7 +1687,8 @@ function step(v, now) {
   if (v.labels) labels(v, t); else for (const tg of v.tags) if (tg.on) { tg.el.hidden = true; tg.on = false; }
   if (now - v.panelT > 120) { v.panelT = now; panel(v, t); }
   // what a frame costs: the scene update in script, then the draw call submission (the GPU works after)
-  const t1 = performance.now(); v.renderer.render(v.scene, v.camera); const t2 = performance.now();
+  if (FX()) FX().frame(v, t, dtR);
+  const t1 = performance.now(); if (FX()) FX().render(v); else v.renderer.render(v.scene, v.camera); const t2 = performance.now();
   v.upMs = v.upMs == null ? t1 - now : v.upMs * 0.95 + (t1 - now) * 0.05; v.drawMs = v.drawMs == null ? t2 - t1 : v.drawMs * 0.95 + (t2 - t1) * 0.05;
   // detail goes before frame rate: shorter trails and no smoke when the scene gets expensive
   v.cost = v.upMs + v.drawMs; if (v.kind === 'live') v.lod = v.cost > 7 ? 2 : v.cost > 4 ? 1 : 0;
@@ -1849,7 +1883,7 @@ IC.liveOpen = function (S, ref) {
   el.style.width = W + 'px'; el.style.height = H + 'px';
   el.style.left = Math.max(12, x) + 'px'; el.style.top = Math.max(12, y) + 'px';
   el.innerHTML = `<div class="rp-head" data-el="head"><span class="x live-dot" title="Live: it follows the game as it runs">● LIVE</span><span class="sub" data-el="sub"></span>
-      ${camSelect('auto', ['free', 'follow'])}
+      ${camSelect('auto', ['free', 'follow'])}${qualSelect()}
       <button class="x" data-rp="toReplay" title="Replay the last 15 minutes here">⟲</button><button class="x" data-rp="full" data-el="fullBtn" title="Fill the screen">⤢</button><button class="x" data-rp="close" aria-label="Close" title="Close">✕</button></div>
     <div class="rp-view" data-el="view">${viewInner()}</div>`;
   host.appendChild(el);
@@ -2064,5 +2098,7 @@ function galleryFrame(v) {
 }
 
 IC.replayState = () => V;
+/* what render3d-fx.js (and the other files of the 3D view) build on */
+IC.R3D = { THREE: () => THREE, CFG, KM, LIFT, share, geom, colorOf, lineGeom, puffTex, sphereG, discG, quadG, texSRGB, seeded, glow, hT, solidMat, winMat, views: () => [V, L].filter(Boolean) };
 
 })(window.IC);

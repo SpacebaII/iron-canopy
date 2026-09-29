@@ -8,6 +8,10 @@ const U = IC.U;
 
 /* ---------- counting ---------- */
 const made = { geometry: 0, material: 0, object: 0, texture: 0, element: 0, html: 0 };
+// what is alive (made and not disposed): a preset switched back and forth must come back to the same numbers
+const alive = { geometry: 0, material: 0, texture: 0 };
+const born = (o, k) => { alive[k]++; o._k = k; };
+const gone = o => { if (o._gone) return; o._gone = true; alive[o._k]--; };
 
 /* ---------- a stand-in for three.js ---------- */
 class Vector3 {
@@ -36,7 +40,8 @@ class Vector3 {
     return this.set(d.dot(r) / (z * t * cam.aspect), d.dot(u) / (z * t), 0.5);
   }
 }
-class Vector2 { constructor(x, y) { this.x = x || 0; this.y = y || 0; } }
+class Vector2 { constructor(x, y) { this.x = x || 0; this.y = y || 0; } set(x, y) { this.x = x; this.y = y; return this; } }
+class Vector4 { constructor(x, y, z, w) { this.set(x || 0, y || 0, z || 0, w || 0); } set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; } }
 class Color {
   constructor(c) { this.r = this.g = this.b = 1; if (c != null) this.set(c); }
   set(c) {
@@ -47,11 +52,12 @@ class Color {
     return this;
   }
   clone() { const c = new Color(); c.r = this.r; c.g = this.g; c.b = this.b; return c; }
+  setRGB(r, g, b) { this.r = r; this.g = g; this.b = b; return this; } setScalar(k) { this.r = this.g = this.b = k; return this; } copy(c) { return this.set(c); }
   lerp(c, k) { this.r += (c.r - this.r) * k; this.g += (c.g - this.g) * k; this.b += (c.b - this.b) * k; return this; }
 }
 class Euler { constructor() { this.x = this.y = this.z = 0; this.order = 'XYZ'; } set(x, y, z, o) { this.x = x; this.y = y; this.z = z; if (o) this.order = o; return this; } }
 class Quaternion { constructor() { this.x = this.y = this.z = 0; this.w = 1; } setFromAxisAngle(a, t) { const s = Math.sin(t / 2); this.x = a.x * s; this.y = a.y * s; this.z = a.z * s; this.w = Math.cos(t / 2); return this; } setFromEuler(e) { this.e = [e.x, e.y, e.z]; return this; } copy(q) { Object.assign(this, q); return this; } }
-class Matrix4 { constructor() { this.elements = new Array(16).fill(0); } compose(p, q, s) { this.p = p.toArray(); return this; } copy(m) { this.p = m.p; return this; } }
+class Matrix4 { constructor() { this.elements = new Array(16).fill(0); } compose(p, q, s) { this.p = p.toArray(); return this; } copy(m) { this.p = m.p; return this; } multiplyMatrices() { return this; } }
 class Object3D {
   constructor() { made.object++; this.position = new Vector3(); this.rotation = new Euler(); this.quaternion = new Quaternion(); this.scale = new Vector3(1, 1, 1); this.children = []; this.visible = true; this.userData = {}; this.renderOrder = 0; this.matrix = new Matrix4(); this.parent = null; }
   add(c) { if (c.parent) c.parent.remove(c); this.children.push(c); c.parent = this; return this; }
@@ -68,7 +74,7 @@ class Line extends Mesh {}
 class LineSegments extends Mesh {}
 class InstancedMesh extends Mesh {
   constructor(g, m, n) { super(g, m); this.count = n; this.isInstancedMesh = true; this.instanceMatrix = { needsUpdate: false }; this.m = []; }
-  setMatrixAt(i, M) { this.m[i] = M.p; } getMatrixAt(i, M) { M.p = this.m[i]; } dispose() {}
+  setMatrixAt(i, M) { this.m[i] = M.p; } getMatrixAt(i, M) { M.p = this.m[i]; } setColorAt() {} dispose() {}
 }
 class PerspectiveCamera extends Object3D {
   constructor(fov, aspect, near, far) { super(); Object.assign(this, { fov, aspect, near, far }); this._f = new Vector3(1, 0, 0); this._r = new Vector3(0, 0, 1); this._u = new Vector3(0, 1, 0); }
@@ -78,27 +84,37 @@ class PerspectiveCamera extends Object3D {
   }
   getWorldDirection(o) { return o.copy(this._f); }
   updateProjectionMatrix() {} setViewOffset() {}
+  get projectionMatrix() { return this._pm || (this._pm = new Matrix4()); } get projectionMatrixInverse() { return this._pmi || (this._pmi = new Matrix4()); }
+  get matrixWorld() { return this._mw || (this._mw = new Matrix4()); } get matrixWorldInverse() { return this._mwi || (this._mwi = new Matrix4()); }
 }
+class OrthographicCamera extends Object3D {}
 class BufferAttribute { constructor(a, n) { this.array = a; this.itemSize = n; this.count = a.length / n; this.needsUpdate = false; } }
 class BufferGeometry {
-  constructor() { made.geometry++; this.attributes = {}; this.index = null; this.drawRange = { start: 0, count: Infinity }; }
+  constructor() { made.geometry++; born(this, 'geometry'); this.attributes = {}; this.index = null; this.drawRange = { start: 0, count: Infinity }; }
   setAttribute(k, a) { this.attributes[k] = a; return this; } setIndex(a) { this.index = a; return this; }
-  setDrawRange(s, c) { this.drawRange = { start: s, count: c }; } dispose() {}
+  setDrawRange(s, c) { this.drawRange = { start: s, count: c }; } dispose() { gone(this); }
 }
-class Material { constructor(o) { made.material++; Object.assign(this, { opacity: 1, transparent: false }, o || {}); this.color = new Color(o && o.color != null ? o.color : '#ffffff'); } dispose() {} }
-class Texture { constructor(c) { made.texture++; this.image = c; } dispose() {} }
-class Light extends Object3D { constructor(a, b, i) { super(); this.intensity = i; } }
+class Material { constructor(o) { made.material++; born(this, 'material'); this.userData = {}; Object.assign(this, { opacity: 1, transparent: false }, o || {}); this.color = new Color(o && o.color != null ? o.color : '#ffffff'); } dispose() { gone(this); } }
+class Texture { constructor(c) { made.texture++; born(this, 'texture'); this.image = c; } dispose() { gone(this); } }
+class WebGLRenderTarget { constructor(w, h) { this.width = w; this.height = h; this.texture = new Texture(); this.depthTexture = null; } dispose() { this.texture.dispose(); } }
+class Light extends Object3D {
+  constructor(a, b, i) { super(); this.intensity = i; this.color = new Color(a); this.groundColor = new Color(b); this.target = new Object3D(); this.castShadow = false;
+    this.shadow = { mapSize: new Vector2(512, 512), camera: { updateProjectionMatrix() {} }, map: null, bias: 0, normalBias: 0 }; }
+}
 class WebGLRenderer {
-  constructor(o) { this.domElement = o && o.canvas; this.frames = 0; this.capabilities = { getMaxAnisotropy: () => 8 }; this.info = { render: { calls: 0, triangles: 0 } }; }
-  setPixelRatio() {} setSize() {} dispose() {} forceContextLoss() {}
-  render() { this.frames++; }
+  constructor(o) { this.domElement = o && o.canvas; this.frames = 0; this.passes = 0; this.capabilities = { getMaxAnisotropy: () => 8 }; this.info = { render: { calls: 0, triangles: 0 }, reset() {} }; this.shadowMap = {}; this.target = null; }
+  setPixelRatio() {} setSize() {} dispose() {} forceContextLoss() {} setRenderTarget(t) { this.target = t; } getDrawingBufferSize(v) { return v.set(960, 540); }
+  render(s, c) { if (c instanceof OrthographicCamera) this.passes++; else this.frames++; }
 }
+class PMREMGenerator { constructor() { this.made = 0; } fromScene() { this.made++; return new WebGLRenderTarget(256, 256); } dispose() {} }
 const THREE = {
-  REVISION: '160', Vector3, Vector2, Color, Euler, Quaternion, Matrix4, Object3D, Group, Scene, Mesh, Points, Line, LineSegments, InstancedMesh, PerspectiveCamera,
+  REVISION: '160', Vector3, Vector2, Vector4, Color, OrthographicCamera, WebGLRenderTarget, PMREMGenerator, DepthTexture: Texture,
+  MeshStandardMaterial: Material, ShaderMaterial: Material, ShaderChunk: {}, ShaderLib: { standard: { uniforms: { fogColor: { value: null } } } },
+  HalfFloatType: 1016, UnsignedByteType: 1009, LinearFilter: 1006, DepthStencilFormat: 1027, UnsignedInt248Type: 1020, ACESFilmicToneMapping: 4, PCFSoftShadowMap: 2, SRGBColorSpace: 'srgb', BackSide: 1, Euler, Quaternion, Matrix4, Object3D, Group, Scene, Mesh, Points, Line, LineSegments, InstancedMesh, PerspectiveCamera,
   BufferAttribute, BufferGeometry, WebGLRenderer, Fog: class { constructor(c, n, f) { this.color = c; this.near = n; this.far = f; } },
   MeshLambertMaterial: Material, MeshBasicMaterial: Material, PointsMaterial: Material, LineBasicMaterial: Material,
   CanvasTexture: Texture, HemisphereLight: Light, DirectionalLight: Light, Raycaster: class {},
-  AdditiveBlending: 2, DoubleSide: 2, SRGBColorSpace: 'srgb', GreaterStencilFunc: 516, AlwaysStencilFunc: 519, ReplaceStencilOp: 7681, RepeatWrapping: 1000, ClampToEdgeWrapping: 1001
+  AdditiveBlending: 2, DoubleSide: 2, GreaterStencilFunc: 516, AlwaysStencilFunc: 519, ReplaceStencilOp: 7681, RepeatWrapping: 1000, ClampToEdgeWrapping: 1001
 };
 
 /* ---------- a stand-in for the page ---------- */
@@ -122,6 +138,7 @@ IC.drawTerrain = () => 0;   // the map's painters need a canvas: the ground is l
 IC.daylight = t => { const h = (t % 86400) / 3600; return h < 5 || h > 20.5 ? 0 : h < 7.5 ? (h - 5) / 2.5 : h > 18 ? 1 - (h - 18) / 2.5 : 1; };
 require('../iron-canopy/js/replay3d.js');
 IC.replayUseThree(THREE);
+require('../iron-canopy/js/render3d-fx.js');   // the picture (brief 40): its passes, sky and weather run here too
 
 /* ---------- the runs ---------- */
 const tick = () => new Promise(r => setImmediate(r));
@@ -189,5 +206,34 @@ function facing(v) {
   const f = W.moverOf.get(tr);
   out.turn = { bank, roll: f.grp.rotation.x, poseRoll: f.st.roll, faced: facing(W) };
   IC.replayClose();
+  // the picture's presets: each switched to and run, then back to the first; weather and hours of the day built
+  {
+    const S2 = IC.newGame({ seed: 4242, mode: 'sandbox' });
+    for (let i = 0; i < 4 * 1200; i++) IC.step(S2, 0.25);
+    let m2 = null; for (let i = 0; i < 4 * 1800 && !m2; i++) { IC.step(S2, 0.25); for (const b of IC.bases(S2)) for (const x of b.moves || []) if (!m2 && x.phase === 'taxi' && x.type !== 'light') m2 = x; }
+    const Lq = IC.liveOpen(S2, m2); await tick(); await tick();
+    for (let i = 0; i < 20; i++) IC.replayStep(Lq, now += 33);
+    const q = {}, al = () => Object.assign({}, alive);
+    for (const [k, lvl] of [['medium', 'medium'], ['low', 'low'], ['high', 'high'], ['ultra', 'ultra'], ['medium2', 'medium']]) {
+      IC.fx3d.setQuality(Lq, lvl);
+      for (let i = 0; i < 20; i++) IC.replayStep(Lq, now += 33);
+      const a = snap(), p0 = Lq.renderer.passes;
+      for (let i = 0; i < 60; i++) IC.replayStep(Lq, now += 33);
+      q[k] = { made: diff(a, snap()), alive: al(), state: IC.fx3d.state(Lq), passes: (Lq.renderer.passes - p0) / 60 };
+    }
+    out.presets = q;
+    // the weather and the time of day: each state set, a few frames to settle, then frames that must make nothing
+    const W = {};
+    for (const [kind, hour] of [['clear', 12], ['clear', 19.6], ['clear', 23.5], ['scattered', 12], ['overcast', 12], ['rain', 22.5], ['storm', 15], ['fog', 7], ['snow', 11]]) {
+      IC.fx3d.look(Lq, { hour, weather: kind });
+      for (let i = 0; i < 10; i++) IC.replayStep(Lq, now += 33);
+      const a = snap(); let flashes = 0;
+      for (let i = 0; i < 700; i++) { IC.replayStep(Lq, now += 33); if (IC.fx3d.state(Lq).flash > 0.5) flashes++; }
+      W[kind + '@' + hour] = Object.assign(IC.fx3d.state(Lq), { flashes, made: diff(a, snap()) });
+    }
+    out.weather = W;
+    IC.liveClose();
+    out.closed = al();
+  }
   process.stdout.write(JSON.stringify(out) + '\n');
 })().catch(e => { process.stdout.write(JSON.stringify({ error: e.stack }) + '\n'); process.exit(1); });
