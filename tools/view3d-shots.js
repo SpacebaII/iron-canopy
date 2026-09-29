@@ -76,7 +76,7 @@ const SCENES = {
     await live(S, m, 'chase', 4000); await __snap('taxi');`,
   takeoff: `
     const S = await game('sandbox', 11);
-    const m = steps(S, 1800, S => findMove(S, m => m.phase === 'roll' && m.spd > 0.45 && m.type !== 'light' && m.type !== 'turbo'));
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'roll' && m.spd > 0.4 && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
     if (!m) throw new Error('no take-off roll');
     await live(S, m, 'side', 2200); await __snap('takeoff');`,
   cruise: `
@@ -155,7 +155,9 @@ const SCENES = {
     const S = await game('sandbox', 11);
     const m = steps(S, 3600, S => findMove(S, m => (m.phase === 'lineup' || m.phase === 'hold') && m.type === 'narrow'));
     if (!m) throw new Error('nothing lining up');
+    console.log('movie: lining up at', S.time);
     const L = await live(S, m, 'chase', 2500); L.camK = 1.6;
+    console.log('movie: live view open');
     window.requestAnimationFrame = () => 0;   // the frames are made here, one by one
     const cv = document.createElement('canvas'); cv.width = 960; cv.height = 540;
     L.rec = { cv, g: cv.getContext('2d'), o: { w: 960, h: 540, labels: true } };
@@ -165,6 +167,7 @@ const SCENES = {
       if (f === 330) { const s = L.el.querySelector('[data-rp=cam]'); s.value = 'side'; s.dispatchEvent(new Event('change', { bubbles: true })); }
       IC.replayStep(L, now += 1000 / 30);
       await __frame(cv.toDataURL('image/jpeg', 0.88).slice(23));
+      if (f % 30 === 0) console.log('movie: frame', f);
     }
     await __snap('movie-last');`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
@@ -203,15 +206,20 @@ const SCENES = {
     if (process.env.VIDEO_MS) await page.addInitScript(ms => { window.VIDEO_MS = ms; }, process.env.VIDEO_MS);
     let ff = null;
     if (name === 'movie') {
-      ff = require('child_process').spawn('/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux', ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', '-', '-c:v', 'libvpx', '-b:v', '4M', '-auto-alt-ref', '0', path.join(dir, '3d-live.webm')], { stdio: ['pipe', 'ignore', 'inherit'] });
-      await page.exposeFunction('__frame', b64 => new Promise(res => ff.stdin.write(Buffer.from(b64, 'base64'), res)));
+      // the frames go one after another into one file of JPEGs, which ffmpeg reads as a stream when they are done
+      ff = path.join(dir, '3d-live.mjpeg'); fs.writeFileSync(ff, '');
+      await page.exposeFunction('__frame', b64 => fs.appendFileSync(ff, Buffer.from(b64, 'base64')));
     }
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
-    if (ff) { ff.stdin.end(); await new Promise(r => ff.on('close', r)); console.log('saved', path.join(dir, '3d-live.webm')); }
+    if (ff) {
+      const out = path.join(dir, '3d-live.webm'), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
+      require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', ff, '-c:v', 'libvpx', '-b:v', '3M', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
+      fs.unlinkSync(ff); console.log('saved', out);
+    }
     if (name === 'frames' || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }
     await page.close(); await ctx.close();
