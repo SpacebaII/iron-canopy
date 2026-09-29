@@ -111,7 +111,7 @@ function moveWp(S, t, dt) {
   if (t.altHold != null && toAim > 60) t.alt = t.altHold;
 }
 
-/* loitering munition: fly to an area, then hunt vehicles and air defense */
+/* loitering munition: fly to an area, then hunt vehicles and air defence */
 function moveLm(S, t, dt) {
   if (t.spoofed) return spoofedDrift(S, t, dt);
   t.endT = (t.endT == null ? 3600 : t.endT) - dt;

@@ -96,7 +96,7 @@ IC.LESSONS = [
     score: S => S.camp.bomber && !S.camp.bomber.released ? 3 : 2
   },
   {
-    id: 'layers', title: 'Layered Defense', sub: 'Low fliers, gap fillers, doctrine',
+    id: 'layers', title: 'Layered Defence', sub: 'Low fliers, gap fillers, doctrine',
     learn: ['Radar horizon and low-flying missiles', 'Short-range last layer', 'Shoot-look-shoot vs salvo'],
     setup(S) {
       const b = fwd(S); depot(S);
@@ -107,7 +107,7 @@ IC.LESSONS = [
     steps: [
       { text: S => `Cruise missiles fly at 30–50 m, below the horizon of most radars. Deploy ${nm('gf')} within 15 km of ${fwd(S).name}.`, hint: { el: 'arsenal', cat: 'sensor' }, done: S => S.units.some(u => u.type === 'gf' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
       { text: S => `Now ${nm('shorad')}, close to ${fwd(S).name}. It is the last layer when something leaks through.`, hint: { el: 'arsenal', cat: 'ad' }, done: S => S.units.some(u => u.type === 'shorad' && u.state === 'ready' && U.dist(u, fwd(S)) < 160) },
-      { text: () => 'Pick a firing doctrine in the top bar: Shoot-look-shoot saves missiles, Salvo fires two and kills more surely, Conserve only takes high-odds shots.', hint: { el: 'doctrine' }, done: S => !!S.flags.doctrine },
+      { text: () => 'Pick a firing doctrine in the top bar: Look (shoot, look, shoot again) saves missiles, Salvo fires two and kills more surely, Save only takes high-odds shots.', hint: { el: 'doctrine' }, done: S => !!S.flags.doctrine },
       { text: () => `Raid inbound: cruise missiles and drones, low. Watch the layers work: the ${nk('mrsam')} reaches far, the ${nk('gf')} gives it low tracks, the ${nk('shorad')} cleans up.`, start(S) { const b = fwd(S); const o = { x: b.x, y: b.y, ref: b, name: b.name }; S.camp.raid = [IC.enemyForceOp(S, 'cm', o, { n: 6, T: 2400, nat: 'A' }), IC.enemyForceOp(S, 'drones', o, { n: 4, nat: 'A' })]; }, done: S => S.time - S.camp.stepT > 600 && S.camp.raid.every(op => resolved(S, op)) },
       { text: () => 'Raid over. Layers cover each other\'s blind spots; no single system does it alone. Lesson complete.', done: () => true, wait: 40 }
     ],
@@ -244,7 +244,7 @@ IC.LESSONS = [
       focus(S, t, 0.2);
     },
     steps: [
-      { text: S => `Rockets are about to fall on ${S.camp.town.name}. Send REAPER 1 to look for the launcher: open the Air war room (A), pick REAPER 1, Recon, and click the dashed enemy area across the border.`, hint: { el: 'rail-air' }, ensure: reaper, done: S => S.tels.some(t => t.kind === 'rkt' && t.known && !t.dead) },
+      { text: S => `Rockets are about to fall on ${S.camp.town.name}. Send REAPER 1 to look for the launcher: open the Air room (A), pick REAPER 1, Recon, and click the dashed enemy area across the border.`, hint: { el: 'rail-air' }, ensure: reaper, done: S => S.tels.some(t => t.kind === 'rkt' && t.known && !t.dead) },
       { text: () => 'Launcher located! Strike it from the air: select HAWK 1 (a strike drone with two bombs) or VIPER 1 (strike loadout) and right-click the launcher, or pick one in the launcher\'s panel. Launchers move soon after they are seen: if it has gone, send the drone to find it again.', ensure: S => { reaper(S); strikers(S); }, done: S => S.stats.telKills >= 1 },
       { text: () => 'Destroyed. Every strike ends with a damage report: read them, because a launcher that moved means an empty crater. Lesson complete.', done: () => true, wait: 40 }
     ]

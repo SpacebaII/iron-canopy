@@ -90,7 +90,7 @@ IC.landsideTick = function (S, ap, dt) {
     break;   // one at a time: the landside grows over hours, not in a moment
   }
   if (added || L.kerbN !== terms.length + sheds.length) kerbs(S, ap, terms.concat(sheds));
-  if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} opens by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
+  if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo
   let v = 0;
   for (const it of L.items) { it.use = IC.landUse(L, it); v += IC.LAND[it.kind].earn * it.use; }
@@ -191,7 +191,8 @@ IC.landAccessRoad = function (S, ap) {
   const w = IC.roadFinish(S, { cls: 'lc', pts, snaps });
   if (!w) return null;
   const L = IC.landInit(ap); L.road = true; L.access = { pts: pts.map(p => ({ x: p.x, y: p.y })), cost: P.cost, km: P.km, work: w.id };
-  IC.log(S, 'info', 'ROADS', `${ap.name}: an access road to ${city.name} is laid automatically: ${P.km.toFixed(1)} km for ${U.money(P.cost)}, open in about ${U.dur(P.hours * 3600)}. The road tool builds more.`, start);
+  // (the road works log their own line; a card says the rest, so the line is only for games without cards)
+  if (!(S.camp && IC.card)) IC.log(S, 'info', 'ROADS', `${ap.name}: an access road to ${city.name} is laid automatically: ${P.km.toFixed(1)} km for ${U.money(P.cost)}, open in about ${U.dur(P.hours * 3600)}. The road tool builds more.`, start);
   if (S.camp && IC.card) IC.card(S, 'Access road', ap.name, `An airport needs a road. A ${P.km.toFixed(1)} km access road from ${ap.name} to ${end.node === city.id ? city.name : `the road to ${city.name}`} has been laid out and paid for (${U.money(P.cost)}); the works take about ${U.dur(P.hours * 3600)}. Better roads bring more passengers: the road tool in the airport panel builds link roads and motorway spurs.`, 'info');
   return w;
 };

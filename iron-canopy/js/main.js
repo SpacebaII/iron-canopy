@@ -529,6 +529,8 @@ const ptrs = new Map();
 let drag = null, pinch = null, lastClick = { t: 0, x: 0, y: 0 };
 const local = (e, el) => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 cv.addEventListener('pointerdown', e => {
+  // (a drag that starts on the map must not select the text of the panels it passes over)
+  e.preventDefault(); if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   cv.setPointerCapture(e.pointerId);
   const l = local(e, cv);
   ptrs.set(e.pointerId, l);
@@ -771,6 +773,7 @@ IC.begin = function (mode, lesson) {
 };
 
 IC.initRender(cv);
+$('stVer').textContent = 'v' + IC.VERSION;
 new ResizeObserver(resize).observe(app);
 generate((Math.random() * 1e9) >>> 0, 'campaign');
 IC.ui.startPage('main');

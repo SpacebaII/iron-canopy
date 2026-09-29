@@ -970,8 +970,9 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
     : P.w > 1 ? ['staff', `${P.sec || 'The sector'} was overloaded (${Math.round(P.w * 100)}% of what its controllers can handle) and missed it. Another controller would have caught it`]
     : ['timing', 'Both were outside radar cover on airways, and controllers kept them apart by timing alone at the crossing'];
   N.causes = N.causes || {}; N.causes[cause] = (N.causes[cause] || 0) + 1;
-  // under a kilometre in metres; within 100 ft is the same level
-  const ft = Math.round(dz * IC.FT / 100) * 100, gap = `${d < 10 ? Math.max(10, Math.round(d * 10) * 10) + ' m' : U.km(d)} apart${ft ? ` and ${ft.toLocaleString('en-GB')} ft above or below` : ' at the same level'}`;
+  // under a kilometre in metres; within 100 ft is the same height
+  const ft = Math.round(dz * IC.FT / 100) * 100;
+  const gap = `${d < 10 ? `${Math.max(10, Math.round(d * 10) * 10)} m` : U.km(d)} apart${ft ? ` and ${ft.toLocaleString('en-US')} ft above or below` : ' at the same height'}`;
   if (near) { N.stats.near++; N.day.near++; }
   const txt = near ? `${a.cs} and ${b.cs} passed ${gap} ${at}` : `${a.cs} and ${b.cs} lost spacing ${at}: ${gap}`;
   if (near && S.inc) for (const it of S.inc.list) if (it.kind === 'separation' && (it.ref === a || it.ref === b)) it.done = true;
@@ -982,7 +983,8 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   if (near) {
     S.support = Math.max(0, S.support - 1);
     if (S.story || !(S.enemy && S.enemy.war)) IC.news(S, `Near miss ${at}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
-    if (S.camp && IC.card && !(S.enemy && S.enemy.war)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · ${at}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
+    // (a card for the first in six hours, and none in a war; the rest go to the Journal, or a busy sky is all cards)
+    if (S.camp && IC.card && !(S.enemy && S.enemy.war) && !(S.time - (N.nmCardT || -1e9) < 6 * 3600) && (N.nmCardT = S.time)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · ${at}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why, cause });
 }
