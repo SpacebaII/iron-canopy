@@ -773,6 +773,12 @@ IC.aptStats = function (S, ap) {
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');
   st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 ? 'cargo' : best >= 27 ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
   IC.aptLinks(S, ap, st);
+  ap.charm = IC.aptCharm ? IC.aptCharm(ap) : 0;
+  // painted pavement that meets the taxiways or a runway: it looks like a way through, and is not
+  for (const pt of ap.paint || []) {
+    const K = IC.PAINT && IC.PAINT[pt.mat]; if (!K || !K.pave) continue;
+    if (pt.pts.some(q => ap.parts.some(r => (r.kind === 'taxi' || r.kind === 'runway') && r.built && partDist(ap, r, q) < 0.2))) { st.warn.push(`Paint only: the painted ${K.name.toLowerCase()} by the taxiways is not a working taxiway. Aircraft do not use it.`); break; }
+  }
   ap.st = st;
   return st;
 };

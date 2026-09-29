@@ -123,6 +123,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   }
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
+  // hand-drawn paint (builder.js): fills from a cached image, lines on top
+  if (ap.paint && ap.paint.length) drawPaint(g, ap, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
   if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
   // aprons and other paved areas, tinted by zone
@@ -454,10 +456,12 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     return;
   }
   const col = { skybridge: [150, 186, 204], deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
+  const tint = p.look && p.look.tint && IC.LOOK && IC.LOOK.tint[p.look.tint], c0 = tint ? tint.rgb : col;
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
-  const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
+  const fill = `rgb(${c0[0] * k | 0},${c0[1] * k | 0},${c0[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2;
+  if (p.kind === 'fountain' || p.kind === 'art') { drawDeco(g, p, w, px, now); g.restore(); return; }
   // shadow
   if (full && !dead) { g.fillStyle = 'rgba(0,0,0,0.35)'; if (p.r) { g.beginPath(); g.arc(0.03, 0.03, p.r, 0, 7); g.fill(); } else g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w, h); }
   if (p.kind === 'fuel') {
@@ -479,6 +483,12 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
       if (p.kind === 'deice') { g.fillStyle = 'rgb(236,120,40)'; for (const sx of [-1, 1]) g.fillRect(sx * w * 0.42 - 0.03, -0.03, 0.06, 0.06); }
       else { g.fillStyle = 'rgb(200,60,50)'; g.fillRect(w * 0.3, h * 0.25, 0.05, 0.04); }
     }
+  } else if (p.kind === 'tower' && p.look && p.look.tower && p.look.tower !== 'plain') {
+    // a needle: a slim shaft and a small cab; a flared cab: a wide ring of glass
+    const nd = p.look.tower === 'needle';
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(w * 0.9, h * 0.5, w * (nd ? 0.9 : 0.6), w * 0.12, 0.5, 0, 7); g.fill();
+    g.fillStyle = fill; g.beginPath(); g.arc(0, 0, w * (nd ? 0.3 : 0.5), 0, 7); g.fill();
+    if (full && !dead) { g.fillStyle = night ? 'rgba(170,230,255,0.9)' : 'rgba(90,150,180,0.85)'; g.beginPath(); g.arc(0, 0, w * (nd ? 0.22 : 0.44), 0, 7); g.fill(); g.fillStyle = fill; g.beginPath(); g.arc(0, 0, w * (nd ? 0.1 : 0.26), 0, 7); g.fill(); }
   } else if (p.kind === 'tower') {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
     if (full && !dead) { g.fillStyle = 'rgba(40,70,90,0.95)'; g.beginPath(); g.arc(0, 0, w * 0.34, 0, 7); g.fill(); g.fillStyle = night ? 'rgba(170,230,255,0.9)' : 'rgba(150,200,220,0.6)'; g.beginPath(); g.arc(0, 0, w * 0.22, 0, 7); g.fill(); }
@@ -495,6 +505,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   } else {
     g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
     if (full && !dead && (p.kind === 'terminal' || p.kind === 'cargo')) roof(g, p, w, h, px, z, night);
+    if (full && !dead && p.look) lookExtras(g, ap, p, w, h, px, z, night);
     if (full && !dead && p.kind === 'fire') { g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(-w * 0.08, -h * 0.3, w * 0.16, h * 0.6); g.fillRect(-w * 0.25, -h * 0.08, w * 0.5, h * 0.16); }
     if (full && !dead && p.kind === 'ammo') { g.fillStyle = 'rgba(60,80,52,0.9)'; for (let i = -1; i <= 1; i++) g.fillRect(i * w * 0.3 - w * 0.12, -h * 0.35, w * 0.24, h * 0.7); }
     if (full && !dead && p.kind === 'alert') { g.fillStyle = 'rgba(96,98,94,0.95)'; g.fillRect(-w * 0.3, -h * 0.35, w * 0.6, h * 0.7); }
@@ -523,7 +534,8 @@ function drawBandBuilding(g, p, px, z, full, night, hp) {
   const dead = hp <= 0.25, k = dead ? 0.3 : 0.6 + 0.4 * hp;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   if (!p.built) { g.save(); bandPath(g, p); g.clip('evenodd'); stageRect(g, p, p.w, p.h, px, 'rgb(150,150,146)', false, true); g.restore(); g.strokeStyle = 'rgba(236,236,226,0.6)'; g.setLineDash([4 * px, 3 * px]); g.lineWidth = px; bandPath(g, p); g.stroke(); g.setLineDash([]); g.restore(); return; }
-  g.fillStyle = `rgb(${176 * k | 0},${180 * k | 0},${186 * k | 0})`; bandPath(g, p); g.fill('evenodd');
+  const c0 = (p.look && p.look.tint && IC.LOOK.tint[p.look.tint].rgb) || [176, 180, 186];
+  g.fillStyle = `rgb(${c0[0] * k | 0},${c0[1] * k | 0},${c0[2] * k | 0})`; bandPath(g, p); g.fill('evenodd');
   const [r0, r1] = p.ring, rm = r0 > 0 ? (r0 + r1) / 2 : r1 * 0.55, a0 = p.span ? p.span[0] : 0, a1 = p.span ? p.span[1] : Math.PI * 2;
   if (full && !dead) {
     g.fillStyle = 'rgba(255,255,255,0.06)'; bandPath(g, p, -(r1 - r0) * 0.25); g.fill('evenodd');
@@ -537,9 +549,81 @@ function drawBandBuilding(g, p, px, z, full, night, hp) {
     g.strokeStyle = night ? 'rgba(255,220,150,0.7)' : 'rgba(70,110,140,0.75)'; g.lineWidth = Math.max(0.01, 0.9 * px);
     g.beginPath(); g.arc(0, 0, r1 - 0.01, a0, a1); g.stroke(); if (r0 > 0) { g.beginPath(); g.arc(0, 0, r0 + 0.01, a0, a1); g.stroke(); }
   }
+  // tent peaks round the spine, glass over it
+  if (full && !dead && p.look && p.look.roof === 'tent') { const n = Math.max(3, Math.round((a1 - a0) * rm / 0.4)), wd = (r1 - r0) * (r0 > 0 ? 0.45 : 0.3); for (let i = 0; i < n; i++) { const t = a0 + (a1 - a0) * (i + 0.5) / n, cx = Math.cos(t) * rm, cy = Math.sin(t) * rm, tx = -Math.sin(t), ty = Math.cos(t), rr = Math.min(0.2, (a1 - a0) * rm / n * 0.48); g.fillStyle = 'rgb(242,242,238)'; g.beginPath(); g.moveTo(cx - tx * rr, cy - ty * rr); g.lineTo(cx + Math.cos(t) * wd, cy + Math.sin(t) * wd); g.lineTo(cx + tx * rr, cy + ty * rr); g.lineTo(cx - Math.cos(t) * wd, cy - Math.sin(t) * wd); g.closePath(); g.fill(); } }
+  if (full && !dead && p.look && p.look.roof === 'glass') { g.fillStyle = night ? 'rgba(255,220,150,0.45)' : 'rgba(120,175,205,0.55)'; bandPath(g, p, -0.02); g.fill('evenodd'); }
   if (full && !dead) { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); bandPath(g, p); g.stroke(); }
   if (dead) { g.fillStyle = 'rgba(24,18,14,0.85)'; bandPath(g, p); g.fill('evenodd'); }
   g.restore();
+}
+/* a terminal's chosen roof, its name on the landside face, and feature lighting at night (builder.js, IC.LOOK) */
+function lookExtras(g, ap, p, w, h, px, z, night) {
+  const L = p.look, long = w >= h, Ln = long ? w : h, D = long ? h : w;
+  g.save(); if (!long) g.rotate(Math.PI / 2);
+  if (L.roof === 'tent') {
+    // white fabric peaks in a row along the spine, as at Denver: each a diamond with its ridge
+    const n = Math.max(1, Math.round(Ln / Math.max(0.35, D * 0.7))), s = Ln / n;
+    for (let i = 0; i < n; i++) { const x = -Ln / 2 + s * (i + 0.5), r = Math.min(s, D) * 0.48;
+      g.fillStyle = 'rgb(242,242,238)'; g.beginPath(); g.moveTo(x - r, 0); g.lineTo(x, -D * 0.46); g.lineTo(x + r, 0); g.lineTo(x, D * 0.46); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(150,160,170,0.35)'; g.beginPath(); g.moveTo(x, -D * 0.46); g.lineTo(x + r, 0); g.lineTo(x, D * 0.46); g.closePath(); g.fill(); }
+  } else if (L.roof === 'glass') {
+    g.fillStyle = night ? 'rgba(255,220,150,0.45)' : 'rgba(120,175,205,0.55)'; g.fillRect(-Ln / 2 + 0.02, -D / 2 + 0.02, Ln - 0.04, D - 0.04);
+    if (z > 8) { g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); for (let x = -Ln / 2; x < Ln / 2; x += 0.08) { g.moveTo(x, -D / 2); g.lineTo(x, D / 2); } g.stroke(); }
+  } else if (L.roof === 'canopy') {
+    g.strokeStyle = 'rgba(245,245,240,0.8)'; g.lineWidth = Math.max(0.01, D * 0.08);
+    for (const o of [-0.25, 0, 0.25]) { g.beginPath(); for (let x = -Ln / 2; x <= Ln / 2 + 1e-6; x += 0.05) { const y = o * D + Math.sin(x * 4) * D * 0.08; x === -Ln / 2 ? g.moveTo(x, y) : g.lineTo(x, y); } g.stroke(); }
+  }
+  if (L.lights && night) { g.strokeStyle = 'rgba(255,200,120,0.8)'; g.lineWidth = Math.max(0.012, 1.4 * px); g.strokeRect(-Ln / 2, -D / 2, Ln, D); }
+  g.restore();
+  if (L.sign && z > 8) { g.save(); g.rotate(long ? 0 : Math.PI / 2); lbl(g, ap.name.toUpperCase(), 0, (long ? h : w) / 2 - 3 * px, px, night ? 'rgba(255,230,170,0.95)' : 'rgba(250,250,245,0.95)', Math.min(12, Math.max(6, D * IC.cam.z * 0.18)), 'center', 700); g.restore(); }
+}
+/* paint: the fills baked once into an image of their own (redrawn only when the paint changes), the lines as lines
+   so kerbs and fences stay sharp close in */
+function paintImage(ap) {
+  if (ap._pimg && ap._pimgVer === ap.paintVer) return ap._pimg;
+  const fills = ap.paint.filter(p => IC.PAINT[p.mat] && IC.PAINT[p.mat].fill && p.pts.length > 2);
+  ap._pimgVer = ap.paintVer; ap._pimg = null;
+  if (!fills.length || typeof document === 'undefined') return null;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const f of fills) for (const q of f.pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+  const k = Math.min(60, 2048 / Math.max(0.1, x1 - x0, y1 - y0)), c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil((x1 - x0) * k)); c.height = Math.max(1, Math.ceil((y1 - y0) * k));
+  const q = c.getContext('2d');
+  for (const f of fills) {
+    const K = IC.PAINT[f.mat]; q.fillStyle = `rgb(${K.rgb.join(',')})`; q.beginPath();
+    f.pts.forEach((p, i) => i ? q.lineTo((p.x - x0) * k, (p.y - y0) * k) : q.moveTo((p.x - x0) * k, (p.y - y0) * k)); q.closePath(); q.fill();
+    // a little texture: water ripples, planting clumps, grass stripes
+    q.save(); q.clip(); q.globalAlpha = 0.18; q.strokeStyle = f.mat === 'water' ? '#dff' : '#000'; q.lineWidth = 1;
+    for (let y = 0; y < c.height; y += f.mat === 'water' ? 7 : 5) { q.beginPath(); q.moveTo(0, y); q.lineTo(c.width, y + (f.mat === 'planting' ? 3 : 0)); q.stroke(); }
+    q.restore();
+  }
+  return (ap._pimg = { c, x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+}
+function drawPaint(g, ap, px, z) {
+  const P = paintImage(ap);
+  if (P) g.drawImage(P.c, P.x, P.y, P.w, P.h);
+  if (z < 2) return;
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const f of ap.paint) {
+    const K = IC.PAINT[f.mat]; if (!K || K.fill) continue;
+    g.strokeStyle = `rgb(${K.rgb.join(',')})`; g.lineWidth = Math.max(K.w, 0.8 * px);
+    if (f.mat === 'fence') g.setLineDash([Math.max(0.02, 3 * px), Math.max(0.01, 1.5 * px)]);
+    g.beginPath(); f.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.setLineDash([]);
+  }
+  g.lineCap = 'butt'; g.lineJoin = 'miter';
+}
+/* public art and water features: looks only */
+function drawDeco(g, p, w, px, now) {
+  if (!p.built) { g.strokeStyle = 'rgba(236,236,226,0.6)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = px; g.beginPath(); g.arc(0, 0, w / 2, 0, 7); g.stroke(); g.setLineDash([]); return; }
+  if (p.kind === 'fountain') {
+    g.fillStyle = 'rgb(170,168,160)'; g.beginPath(); g.arc(0, 0, w / 2, 0, 7); g.fill();
+    g.fillStyle = 'rgb(70,140,190)'; g.beginPath(); g.arc(0, 0, w * 0.42, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(230,245,255,0.7)'; g.lineWidth = Math.max(0.003, 0.6 * px); const t = (now * 0.6) % 1;
+    for (const f of [t, (t + 0.5) % 1]) { g.beginPath(); g.arc(0, 0, w * 0.42 * f, 0, 7); g.stroke(); }
+  } else {
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(w * 0.4, w * 0.25, w * 0.5, w * 0.15, 0.6, 0, 7); g.fill();
+    g.fillStyle = 'rgb(176,120,70)'; g.beginPath(); g.moveTo(0, -w / 2); g.lineTo(w / 2, w / 3); g.lineTo(-w / 2, w / 3); g.closePath(); g.fill();
+  }
 }
 /* a terminal or shed roof: parapet, roof panels, skylights along the spine, plant on the roof, glass on the long
    sides; a cargo shed gets loading doors instead */
@@ -960,6 +1044,13 @@ IC.drawBuildGhost = function (g, S, px) {
       if (sp.kind === 'apron' && !sp.ramp) { const dep = h * 0.64, sz = dep >= IC.STAND.l.d ? 'l' : dep >= IC.STAND.m.d ? 'm' : dep >= IC.STAND.s.d ? 's' : null; if (sz) { const S0 = IC.STAND[sz]; g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.005, 0.6 * px); for (let i = 0; i < Math.floor(w / S0.w); i++) { const x = -w / 2 + S0.w * i; g.strokeRect(x, -h / 2, S0.w, S0.d); g.strokeRect(x, h / 2 - S0.d, S0.w, S0.d); } } }
       g.restore();
     }
+  }
+  // paint under the cursor
+  if (plan.paint) {
+    const K = IC.PAINT[plan.paint.mat], P2 = plan.paint.pts; g.save(); g.globalAlpha = 0.7;
+    g.fillStyle = g.strokeStyle = `rgb(${K.rgb.join(',')})`; g.lineWidth = Math.max(K.w || 0, 2 * px); g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); P2.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); if (K.fill && P2.length > 2) { g.closePath(); g.fill(); } else g.stroke();
+    g.restore();
   }
   // a ramp stand
   if (plan.stand) {

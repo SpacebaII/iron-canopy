@@ -976,6 +976,8 @@ function planOf(S, m, hv, tol, free) {
     const H = holdSpec(ap, rw, hv); out.specs = H.specs.map(q => Object.assign(q, { mat: m.mat })); out.text.push(...H.text);
     if (H.bad) { out.ok = false; out.why = H.text[0]; }
     out.pts = m.pts.length ? [m.pts[0]] : [];
+  } else if (t === 'paint') {
+    return paintPlan(m, hv);
   } else if (t === 'stand') {
     const P = IC.bldStandPlan(S, m, hv);
     Object.assign(out, P);
@@ -1110,7 +1112,7 @@ function taxiText(S, ap, out, p) {
 /* build mode for a tool, with the player's last choices of pavement, stand size and zone */
 IC.bldMode = function (S, ap, part) {
   const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
-  return { kind: 'build', ap, part, pts: [], rot: ap.rwyA || 0, rot0: ap.rwyA || 0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass' };
+  return { kind: 'build', ap, part, pts: [], rot: ap.rwyA || 0, rot0: ap.rwyA || 0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass', paint: P.paint || 'grass' };
 };
 /* one click in build mode. btn 0 places, 2 takes back. Returns what happened: 'point', 'built', 'undo', 'exit',
    'err' (with m.err saying why) */
@@ -1122,6 +1124,15 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     return 'exit';
   }
   const plan = IC.bldPlanOf(S, m, p, tol, free);
+  if (m.part === 'paint') {
+    const last = m.pts[m.pts.length - 1], K = IC.PAINT[m.paint || 'grass'];
+    if (last && U.dist(last, p) < Math.max(tol * 0.8, 0.05)) {
+      if (m.pts.length < (K.fill ? 3 : 2)) { m.err = K.fill ? 'A fill needs three points or more.' : 'A line needs two points or more.'; return 'err'; }
+      if (!IC.bldPaint(S, ap, { mat: m.paint || 'grass', pts: m.pts })) { m.err = 'Not enough money.'; return 'err'; }
+      m.pts = []; m.done = `${K.name} painted: ${U.money(plan.cost)}.`; return 'built';
+    }
+    m.pts.push({ x: p.x, y: p.y }); return 'point';
+  }
   if (m.part === 'stand') {
     if (!plan.ok) { m.err = plan.why; return 'err'; }
     return IC.bldAddStand(S, ap, plan.stand) ? 'built' : (m.err = 'Not enough money.', 'err');
@@ -1233,6 +1244,7 @@ IC.bldUndo = function (S, ap) {
   const L = ap.undo || [];
   while (L.length) {
     const top = L.pop(), ids = Array.isArray(top) ? top : [top];
+    if (top && top.paint != null) { if (ap.paint && ap.paint[top.paint]) { ap.paint.splice(top.paint, 1); ap.paintVer = (ap.paintVer || 0) + 1; return 'paint'; } continue; }
     if (top && top.stand) { const r = ap.parts.find(p => p.id === top.stand), i = r && r.free ? r.free.findIndex(f => f.k === top.k) : -1; if (i >= 0 && !(r.stands || []).some(s => s.id === r.id + 's' + top.k && s.occ)) { r.free.splice(i, 1); S.budget += 0.5; ap.dirty = true; IC.aptStats(S, ap); return 'stand'; } continue; }
     const parts = ids.map(id => ap.parts.find(p => p.id === id)).filter(p => p && !p.built);
     if (!parts.length) continue;
@@ -1270,6 +1282,99 @@ IC.bldPick = function (S, mat) {
   P.mat = mat; if (S.mode2 && S.mode2.kind === 'build') S.mode2.mat = mat;
   return true;
 };
+/* ---------- paint: hand-drawn looks ----------
+   The paint tool lays strokes (a line of some width: kerbs, fences, hedges, paths, painted markings) and fills (a
+   drawn shape: grass, concrete and asphalt tones, gravel, planting, water, sand). Paint is kept with the airport
+   (ap.paint) and drawn from a cached image (render-airport.js). It is looks only: a painted strip is never a
+   taxiway, and the tool says so. */
+IC.PAINT = {
+  grass: { name: 'Grass', rgb: [104, 138, 72], fill: true }, meadow: { name: 'Long grass', rgb: [128, 146, 84], fill: true },
+  conc: { name: 'Concrete', rgb: [168, 170, 166], fill: true, pave: true }, asph: { name: 'Asphalt', rgb: [74, 76, 78], fill: true, pave: true },
+  gravel: { name: 'Gravel', rgb: [150, 142, 128], fill: true }, planting: { name: 'Planting beds', rgb: [70, 104, 58], fill: true },
+  water: { name: 'Water', rgb: [70, 120, 160], fill: true }, sand: { name: 'Sand', rgb: [214, 196, 150], fill: true },
+  marking: { name: 'Apron markings', rgb: [236, 196, 60], w: 0.012, pave: true }, walkway: { name: 'Walkway', rgb: [236, 236, 226], w: 0.03 },
+  kerb: { name: 'Kerb', rgb: [210, 210, 204], w: 0.015 }, fence: { name: 'Fence', rgb: [90, 94, 96], w: 0.01 },
+  hedge: { name: 'Hedge', rgb: [52, 86, 46], w: 0.05 }, path: { name: 'Path', rgb: [196, 184, 160], w: 0.03 }
+};
+IC.PAINT_COST = 0.05;   // ₭M per 100 m of stroke or per hectare filled
+IC.BTOOLS.paint = { name: 'Paint', desc: 'Looks only, and cheap: click points, then the last one again. A fill (grass, concrete, water…) paints the shape; a line (kerb, fence, hedge, path, markings) runs along the points. Paint never makes something work: a painted strip is not a taxiway.' };
+/* the stroke under the cursor: its cost, and the reminder that paint is paint */
+function paintPlan(m, hv) {
+  const pts = m.pts.slice(), K = IC.PAINT[m.paint || 'grass'], out = { specs: [], text: [], ok: true, why: '', cost: 0, dur: 0, snap: { kind: 'free', x: hv.x, y: hv.y } };
+  if (!pts.length || U.dist(pts[pts.length - 1], hv) > 0.02) pts.push({ x: hv.x, y: hv.y });
+  out.pts = pts;
+  let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]);
+  const area = K.fill && pts.length > 2 ? Math.abs(pts.reduce((a, q, i) => { const r = pts[(i + 1) % pts.length]; return a + q.x * r.y - r.x * q.y; }, 0)) / 2 : 0;
+  out.cost = Math.max(0.01, (K.fill ? area : L) * IC.PAINT_COST);
+  out.paint = { mat: m.paint || 'grass', pts };
+  out.text.push(`${K.name}: ${K.fill ? `${area.toFixed(2)} ha` : IC.bldLen(L)} · ${U.money(out.cost)} · looks only`);
+  if (K.pave) out.text.push('Paint only: this is not a working taxiway or apron. Use the Taxiway or Apron tool for aircraft.');
+  return out;
+}
+IC.bldPaint = function (S, ap, st) {
+  const K = IC.PAINT[st.mat]; if (!K || st.pts.length < (K.fill ? 3 : 2)) return false;
+  const P = paintPlan({ pts: st.pts.slice(0, -1), paint: st.mat }, st.pts[st.pts.length - 1]);
+  if (S.budget < P.cost) return false;
+  IC.pay(S, 'other', P.cost);
+  (ap.paint = ap.paint || []).push({ mat: st.mat, pts: st.pts.map(q => ({ x: q.x, y: q.y })) });
+  ap.paintVer = (ap.paintVer || 0) + 1;
+  (ap.undo = ap.undo || []).push({ paint: ap.paint.length - 1 });
+  return true;
+};
+
+/* ---------- the look: cheap, and never capacity ----------
+   A terminal's roof, colour, the airport's name on it and feature lighting; a tower's style; public art and water
+   features. They cost a few ₭M and give the airport a small name with passengers and airlines (ap.charm, at most
+   5%: airlines are a little happier, a little more demand), and change nothing else. */
+IC.LOOK = {
+  roof: { flat: { name: 'Flat', cost: 0, pts: 0 }, tent: { name: 'Tent peaks', cost: 8, pts: 0.015 }, glass: { name: 'Glass', cost: 6, pts: 0.012 }, canopy: { name: 'Wave canopy', cost: 5, pts: 0.01 } },
+  tint: { grey: { name: 'Grey', rgb: [176, 180, 186], cost: 0 }, white: { name: 'White', rgb: [224, 226, 228], cost: 1 }, sand: { name: 'Sand', rgb: [206, 190, 160], cost: 1 }, slate: { name: 'Slate', rgb: [118, 128, 140], cost: 1 }, copper: { name: 'Copper', rgb: [176, 122, 88], cost: 1 } },
+  tower: { plain: { name: 'Plain', cost: 0, pts: 0 }, needle: { name: 'Needle', cost: 3, pts: 0.006 }, flared: { name: 'Flared cab', cost: 3, pts: 0.006 } },
+  sign: { name: 'Name on the building', cost: 1, pts: 0.005 },
+  lights: { name: 'Feature lighting', cost: 2, pts: 0.005 }
+};
+IC.CHARM_MAX = 0.05;
+IC.APART.art = { name: 'Public art', w: 0.08, h: 0.08, cost: 3, build: 300, hp: 10, deco: 0.004, desc: 'A sculpture on the forecourt. Looks only: a little goodwill with passengers and airlines.' };
+IC.APART.fountain = { name: 'Water feature', r: 0.12, cost: 4, build: 400, hp: 10, deco: 0.005, desc: 'A pool and fountain by the terminal. Looks only: a little goodwill with passengers and airlines.' };
+for (const k of ['art', 'fountain']) if (!IC.APART_ORDER.includes(k)) IC.APART_ORDER.push(k);
+/* the airport's charm: what its looks add up to, capped */
+IC.aptCharm = function (ap) {
+  let c = 0;
+  for (const p of ap.parts) {
+    if (!p.built || p.hp <= p.max * 0.25) continue;
+    const L = p.look || {};
+    if (L.roof) c += IC.LOOK.roof[L.roof].pts;
+    if (L.tint && L.tint !== 'grey') c += 0.002;
+    if (L.sign) c += IC.LOOK.sign.pts;
+    if (L.lights) c += IC.LOOK.lights.pts;
+    if (L.tower) c += IC.LOOK.tower[L.tower].pts;
+    if (IC.APART[p.kind].deco) c += IC.APART[p.kind].deco;
+    if (p.kind === 'surface' && p.surf === 'green') c += Math.min(0.01, 0.002 * IC.partArea(p));
+  }
+  return Math.min(IC.CHARM_MAX, c);
+};
+/* change one thing about a part's look, paid at once */
+IC.bldLook = function (S, ap, p, k, v) {
+  const L = IC.LOOK, cost = k === 'roof' ? L.roof[v].cost : k === 'tint' ? L.tint[v].cost : k === 'tower' ? L.tower[v].cost : L[k] && v ? L[k].cost : 0;
+  if (cost && S.budget < cost) { IC.log(S, 'warn', 'BUILD', `Not enough money: ${U.money(cost)} needed.`); return false; }
+  p.look = Object.assign({}, p.look, { [k]: k === 'sign' || k === 'lights' ? !!v : v });
+  if (cost) IC.pay(S, 'other', cost);
+  ap.charm = IC.aptCharm(ap);
+  return true;
+};
+/* the Look section of a terminal's or tower's panel (inspector.js) */
+IC.partLookHtml = function (S, ap, p) {
+  if (p.kind !== 'terminal' && p.kind !== 'tower') return '';
+  const L = p.look || {}, b = (k, v, name, cost, on) => `<button class="act ${on ? 'on' : ''}" data-act="apl" data-op="look" data-k="${k}" data-v="${v}" title="${cost ? U.money(cost) : 'free'}">${name}</button>`;
+  const rows = p.kind === 'tower' ? [Object.entries(IC.LOOK.tower).map(([k, o]) => b('tower', k, o.name, o.cost, (L.tower || 'plain') === k)).join('')]
+    : [Object.entries(IC.LOOK.roof).map(([k, o]) => b('roof', k, o.name, o.cost, (L.roof || 'flat') === k)).join(''), Object.entries(IC.LOOK.tint).map(([k, o]) => b('tint', k, o.name, o.cost, (L.tint || 'grey') === k)).join(''),
+      b('sign', L.sign ? '' : '1', IC.LOOK.sign.name, IC.LOOK.sign.cost, L.sign) + b('lights', L.lights ? '' : '1', IC.LOOK.lights.name, IC.LOOK.lights.cost, L.lights)];
+  return `<h3 class="sh">Look <em>a few ₭M; a little goodwill (${U.pct(ap.charm || 0)} of at most ${U.pct(IC.CHARM_MAX)}), never capacity</em></h3>${rows.map(r => `<div class="acts">${r}</div>`).join('')}`;
+};
+IC.aplActMore = function (S, ap, d, sel) {
+  if (d.op === 'look' && sel) IC.bldLook(S, ap, sel, d.k, d.v);
+};
+
 /* the airport panel's airport-life buttons (data-act="apl", data-op=...) */
 IC.aplAct = function (S, ap, d) {
   const sel = S.sel && S.sel.kind === 'apart' ? S.sel.ref : null;

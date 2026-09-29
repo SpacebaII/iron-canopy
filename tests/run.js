@@ -1146,6 +1146,49 @@ test('shapes: a taxiway under an airside bridge refuses aircraft too tall for it
   assert(ap.st.warn.some(w => /clears 15 m: B77, F74 cannot taxi under it/.test(w)), ap.st.warn.join(' '));
 });
 
+test('shapes: cosmetics change the look and the airport\'s name with passengers and airlines, never its capacity', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 5000;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  const cap = () => { const st = IC.aptStats(S, ap); return JSON.stringify([st.pax, st.cargo, st.stands, st.movesPerHour, st.arrPerHour, st.depPerHour, IC.aptStands(ap).filter(s => s.contact).length]); };
+  const before = cap(), c0 = ap.charm || 0, b0 = S.budget;
+  const T = ap.parts.find(p => p.kind === 'terminal'), tw = ap.parts.find(p => p.kind === 'tower');
+  for (const [p, k, v] of [[T, 'roof', 'tent'], [T, 'tint', 'white'], [T, 'sign', '1'], [T, 'lights', '1'], [tw, 'tower', 'needle']]) assert(IC.bldLook(S, ap, p, k, v), `could not set ${k}`);
+  S.mode2 = IC.bldMode(S, ap, 'fountain'); IC.clickWorld(P(1, 6.3), 0); IC.clickWorld(P(1, 6.3), 0);
+  S.mode2 = IC.bldMode(S, ap, 'art'); IC.clickWorld(P(-3, 6.2), 0); IC.clickWorld(P(-3, 6.2), 0);
+  finishWorks(S, ap);
+  assert(T.look.roof === 'tent' && T.look.sign && tw.look.tower === 'needle', 'the looks were not kept');
+  assert(ap.parts.some(p => p.kind === 'fountain' && p.built) && ap.parts.some(p => p.kind === 'art' && p.built), 'the decorations were not built');
+  const after = cap();
+  assert(after === before, `capacity changed: ${before} → ${after}`);
+  assert(ap.charm > c0 + 0.03 && ap.charm <= IC.CHARM_MAX, `charm ${c0} → ${ap.charm}`);
+  assert(b0 - S.budget < 30, `the looks cost ${U.money(b0 - S.budget)}`);
+  // however much is spent, the name bonus stops at the cap
+  for (const t of ap.parts.filter(p => p.kind === 'terminal')) IC.bldLook(S, ap, t, 'roof', 'glass');
+  for (let i = 0; i < 20; i++) ap.parts.push(Object.assign({}, ap.parts.find(p => p.kind === 'fountain'), { id: 'f' + i }));
+  assert(IC.aptCharm(ap) === IC.CHARM_MAX, `charm ${IC.aptCharm(ap)} over the cap`);
+});
+
+test('shapes: paint changes the look only: a painted taxiway carries no traffic, and the airport says so', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 5000;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  const G0 = IC.aptGraph(ap), edges0 = [...G0.adj.values()].reduce((a, L) => a + L.length, 0), st0 = IC.aptStats(S, ap), b0 = S.budget;
+  // an "asphalt taxiway" painted from the runway to open grass, and a grass fill with a hedge round it
+  S.mode2 = IC.bldMode(S, ap, 'paint'); S.mode2.paint = 'asph';
+  const plan = IC.bldPlanOf(S, S.mode2, P(6, -3), 0.4);
+  assert(plan.text.some(t => /Paint only: this is not a working taxiway/.test(t)), 'the tool does not say paint is paint');
+  for (const q of [P(6, 0), P(6.1, -3), P(6.3, -3), P(6.2, 0), P(6.2, 0)]) IC.clickWorld(q, 0);
+  S.mode2.paint = 'hedge'; for (const q of [P(8, -3), P(10, -3), P(10, -5), P(10, -5)]) IC.clickWorld(q, 0);
+  assert(ap.paint.length === 2 && b0 - S.budget < 2, `${ap.paint.length} strokes for ${U.money(b0 - S.budget)}`);
+  ap.dirty = true;
+  const G1 = IC.aptGraph(ap), edges1 = [...G1.adj.values()].reduce((a, L) => a + L.length, 0), st1 = IC.aptStats(S, ap);
+  assert(edges1 === edges0 && st1.movesPerHour === st0.movesPerHour && JSON.stringify(st1.stands) === JSON.stringify(st0.stands), 'paint changed the network or the capacity');
+  assert(st1.warn.some(w => /^Paint only: .* not a working taxiway/.test(w)), st1.warn.join(' '));
+  // paint is kept with the game
+  assert(JSON.stringify(ap.paint).length > 50 && ap.paint.every(p => p.pts.every(q => isFinite(q.x))), 'paint is not plain data');
+  // and taken back like any placement
+  assert(IC.bldUndo(S, ap) === 'paint' && ap.paint.length === 1, 'undo did not take the last stroke back');
+});
+
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
   const { buildKden, finishAll } = require('../kdenbuild.js');
   const { S, ap, actions } = buildKden(12345, true);

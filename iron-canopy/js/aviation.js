@@ -419,6 +419,8 @@ function judge(S, al, tl, ap, o) {
   if (tl.netDetour > 1.12) { score -= (tl.netDetour - 1.12) * 120; why.push('long airway routes'); }
   if (K.foreign || al.kind === 'flag') score -= (S.tension || 0) * (K.foreign ? 0.5 : 0.15);
   if (al.kind === 'cargo' && ap && ap.curfew) { score -= 12; why.push('the night curfew'); }
+  // an airport with some looks is a little nicer to fly to (builder.js, at most 5 points)
+  if (ap && ap.charm) score += ap.charm * 100;
   score = U.clamp(score, 0, 100);
   al.sat = U.clamp(al.sat * 0.9 + score * 0.1, 0, 100);
   al.lastWhy = why.length ? why.join(', ') : 'smooth operations';

@@ -22,6 +22,22 @@ const SCENES = {
       ['taxi', [[3.4, 0], [3.4, -5.9], [3.4, -5.9]]], ['taxi', [[3.4, -5.9], [2.8, -5.9], [2.8, -8.11], [3.4, -8.11], [3.4, -8.11]]]],
     z: 26, c: [9.5, -7]
   },
+  plain: { build: [], z: 40, c: [1, 5.2], night: false },
+  looks: {
+    build: [['fountain', [[1, 6.3], [1, 6.3]]], ['art', [[-3, 6.2], [-3, 6.2]]], ['art', [[5, 6.2], [5, 6.2]]]],
+    after: `const T = ap.parts.find(p => p.kind === 'terminal'), tw = ap.parts.find(p => p.kind === 'tower'); IC.bldLook(S, ap, T, 'roof', 'tent'); IC.bldLook(S, ap, T, 'tint', 'white'); IC.bldLook(S, ap, T, 'sign', '1'); IC.bldLook(S, ap, tw, 'tower', 'flared');`,
+    z: 40, c: [1, 5.2]
+  },
+  paint: {
+    build: [['fountain', [[1, 6.3], [1, 6.3]]]],
+    after: `const T = ap.parts.find(p => p.kind === 'terminal'); IC.bldLook(S, ap, T, 'roof', 'tent'); IC.bldLook(S, ap, T, 'sign', '1');
+      const st = (mat, pts) => IC.bldPaint(S, ap, { mat, pts: pts.map(q => P(q)) });
+      st('grass', [[-4.5, 5.5], [6.5, 5.5], [6.5, 7.5], [-4.5, 7.5]]); st('planting', [[-4, 5.7], [-1, 5.7], [-1, 6.2], [-4, 6.2]]); st('planting', [[3, 5.7], [6, 5.7], [6, 6.2], [3, 6.2]]);
+      st('water', [[-3.6, 6.6], [-2.2, 6.5], [-1.8, 7.0], [-2.8, 7.3], [-3.7, 7.1]]); st('path', [[1, 5.3], [1, 7.4]]); st('path', [[-4.3, 6.4], [6.3, 6.4]]);
+      st('hedge', [[-4.5, 7.5], [6.5, 7.5]]); st('fence', [[-4.8, 5.4], [-4.8, 7.8]]); st('kerb', [[-4.5, 5.45], [6.5, 5.45]]);
+      const F = ap.parts.find(p => p.kind === 'fountain'); IC.bldMove && 0;`,
+    z: 50, c: [1, 6.2]
+  },
   ghost: {
     build: [], tool: ['curve', [[-12, -6], [-8, -8.4]]], at: [-4, -6.1], z: 20, c: [-8, -6.5]
   }
@@ -48,6 +64,7 @@ const SCENES = {
       for (const [tool, pts] of sc.build) { const m = IC.bldMode(S, ap, tool); for (const q of pts) { const r = IC.buildInput(S, m, P(q), 0, 30); if (r === 'err') errs.push(`${tool}: ${m.err}`); } }
       for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); }
       ap.dirty = true; IC.aptStats(S, ap);
+      if (sc.after) new Function('S', 'ap', 'P', sc.after)(S, ap, P);
       S.mode2 = null;
       if (sc.tool) { const m = S.mode2 = IC.bldMode(S, ap, sc.tool[0]); for (const q of sc.tool[1]) IC.buildInput(S, m, P(q), 0, sc.z); S.hover = P(sc.at); }
       const c = P(sc.c); IC.cam.fly = null; IC.cam.z = sc.z; IC.centerOn(c.x, c.y);

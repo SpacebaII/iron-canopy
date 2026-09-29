@@ -172,7 +172,7 @@ function airService(S) {
     v.relF = U.clamp(1 - (v.delay - 5) / 60, 0.4, 1);
     v.fareF = U.clamp(1.3 - 0.3 * (ap.feeLevel || 1), 0.6, 1.15);
     v.destF = 1 - Math.exp(-v.dests.size / G.dests);
-    v.q = ap.offline ? 0 : (0.5 * v.freqF + 0.5 * v.destF) * v.relF * v.fareF;
+    v.q = ap.offline ? 0 : (0.5 * v.freqF + 0.5 * v.destF) * v.relF * v.fareF * (1 + (ap.charm || 0));
     // room for cargo: freighters, then belly holds; a cargo terminal makes the most of it
     v.cargoF = U.clamp(v.cargoT / 250, 0, 1) * (ap.st && ap.st.cargo ? 1 : 0.6) * (ap.offline ? 0 : 1);
   }
