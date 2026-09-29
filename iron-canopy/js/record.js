@@ -3,6 +3,9 @@
    game minutes; while missiles fly, they and their targets are noted every step, so turns and breaks read. It keeps
    the events of that time from the event bus: launches, hits, chaff and flares, lost locks, decoys and misses.
    The replay and the live view (replay3d.js) read them back, smoothed, with bank, pitch and g (IC.recAttitude).
+   An aircraft keeps one track from pushback through take-off, the flight and the landing to its stand: the ground
+   move and the flight are joined by their tail (or air wing flight), each sample carries the ground phase, and
+   IC.recPose turns that into how the model sits: attitude, gear, flaps, the crab into a crosswind, the flare.
    Nothing here touches the DOM, and the recorder only reads what the state holds. */
 (function (IC) {
 'use strict';
@@ -28,6 +31,10 @@ const GUIDE = IC.GUIDANCE = [
   { k: 'decoy', name: 'Decoyed', brief: 'its seeker took a flare or a chaff cloud for the target', col: '#b48cff' }
 ];
 const PH = {}; GUIDE.forEach((g, i) => { if (g) PH[g.k] = i; });
+/* an aircraft's phase, in the sample's last field (times two; the low bit is the notch): on the ground from
+   groundops.js, and in the air the approach */
+const GPH = IC.REC_PHASE = { air: 0, push: 1, taxi: 2, hold: 3, roll: 4, final: 5, land: 6, rollout: 7, park: 8, appr: 9 };
+const GOPS_PH = { push: 1, taxi: 2, hold: 3, lineup: 3, wait: 3, svc: 3, roll: 4, final: 5, land: 6, rollout: 7, parkin: 8, stranded: 8 };
 IC.GUIDANCE_ACTIVE_R = 150;   // an active seeker goes on its own in the last 15 km
 function phaseOf(S, m, enemy) {
   if (m.phase && PH[m.phase]) return PH[m.phase];
@@ -48,7 +55,7 @@ IC.recPhaseOf = phaseOf;
 /* the recorder lives on the state but stays out of any save: it is derived data */
 function recOf(S) {
   if (S.rec) return S.rec;
-  const R = { t0: S.time, next: S.time, nextFine: S.time, tracks: [], of: new WeakMap(), ev: [], evN: 0, purgeT: S.time, ms: 0, n: 0 };
+  const R = { t0: S.time, next: S.time, nextFine: S.time, tracks: [], of: new WeakMap(), link: new WeakMap(), ev: [], evN: 0, purgeT: S.time, ms: 0, n: 0 };
   Object.defineProperty(S, 'rec', { value: R, enumerable: false, configurable: true, writable: true });
   return R;
 }
@@ -56,7 +63,7 @@ IC.recOf = recOf;
 
 /* ---------- ring buffers ---------- */
 function newTrack(R, ref, kind, model, name, side, meta) {
-  const tr = { id: ref.id || IC.nid('rec'), ref, kind, model, name, side, meta: meta || {}, buf: new Float32Array(32 * F), cap: 32, n: 0, head: 0, t0: 0, t1: 0, live: true, seen: 0 };
+  const tr = { id: ref.id || IC.nid('rec'), ref, kind, model, name, side, meta: meta || {}, buf: new Float32Array(32 * F), cap: 32, n: 0, head: 0, t0: 0, t1: 0, live: true, seen: 0, marks: [] };
   R.tracks.push(tr); R.of.set(ref, tr);
   return tr;
 }
@@ -132,11 +139,97 @@ IC.recAttitude = function (tr, t, out) {
   if (tr.kind !== 'missile') o.roll = U.clamp(Math.atan2(lat, G0), -1.45, 1.45);
   return o;
 };
-/* the samples between t0 and t1 as [x, y, alt, t, ...] pushed into out (for trails; the replay smooths them) */
-IC.recPath = function (tr, t0, t1, out) {
+/* ---------- how a model sits: IC.recPose ----------
+   From the track at time t: where it is, the height shown (the climb-out rises from the runway instead of starting
+   at the flight's first sample), where the nose points (the heading on the ground; into the wind on final), bank
+   from the turn rate over two seconds (capped by what the aircraft does: 30° for an airliner), pitch from the
+   climb plus the angle the wing flies at (more when slow), the rotation at the end of the take-off roll and the
+   flare before touchdown, and the gear and flaps the phase calls for (1 down, 0 up). wind: S.wind, for the crab. */
+const RD = Math.PI / 180, PP = {}, PQ = {}, PR = {};
+const BANK = { civil: 30 * RD, fighter: 75 * RD, heli: 30 * RD, drone: 35 * RD, missile: 0 };
+/* the height shown after lift-off, rising from the runway until it meets the flight's own: km/s once climbing
+   (an airliner about 2,500 ft a minute; the simulation puts a fighter at its patrol height at once) */
+const CLIMB = { civil: 0.013, fighter: 0.06, drone: 0.005, heli: 0.008, missile: 1 };
+const climbOut = (dt, v) => dt < 3 ? v / 6 * dt * dt : v * 1.5 + v * (dt - 3);
+function mark(tr, kind, t, within) { for (let i = tr.marks.length - 1; i >= 0; i--) { const m = tr.marks[i]; if (m[1] === kind && m[0] <= t) return t - m[0] < within ? m : null; } return null; }
+const markAt = (tr, kind, t, within) => { const m = mark(tr, kind, t, within); return m ? m[0] : null; };
+function visAlt(tr, t, st, cls) {
+  const code = (st.ph | 0) >> 1;
+  if (code === GPH.final) { const f = mark(tr, 'fin', t, 300); return f ? st.alt * f[2] : st.alt; }
+  const to = markAt(tr, 'to', t, 900);
+  return to != null ? Math.min(st.alt, climbOut(t - to, CLIMB[cls] || 0.013)) : st.alt;
+}
+/* what kind of flyer a model is, for its bank, climb and attitude */
+const clsCache = {};
+function flyer(key) {
+  if (clsCache[key]) return clsCache[key];
+  const d = IC.MODELS[key], g = d && d.group;
+  const c = /^(fighter|ftr_e|str)$/.test(key) ? 'fighter' : /^(heli|ahe)$/.test(key) ? 'heli' : /^(drone|isr|owa|jdr|lm|esj)$/.test(key) ? 'drone'
+    : g === 'Missiles' || (g === 'Enemy weapons' && !IC.modelIsAircraft(key)) ? 'missile' : 'civil';
+  return (clsCache[key] = c);
+}
+IC.recFlyer = flyer;
+IC.recPose = function (tr, t, out, wind) {
+  const o = out || {};
+  const c = IC.recAt(tr, t, PP); if (!c) return null;
+  const missile = tr.kind === 'missile', ground = tr.kind === 'veh' || tr.kind === 'unit';
+  const code = missile || ground ? 0 : (c.ph | 0) >> 1;
+  o.x = c.x; o.y = c.y; o.h = c.h; o.spd = c.spd; o.det = c.det; o.aff = c.aff; o.ph = c.ph; o.t = t; o.phase = code;
+  o.gnd = ground || (code >= GPH.push && code <= GPH.park && code !== GPH.final);
+  const cls = missile ? 'missile' : flyer(tr.model);
+  o.alt = o.gnd ? 0 : visAlt(tr, t, c, cls);
+  o.roll = 0; o.pitch = 0; o.g = 1; o.gear = 0; o.flap = 0; o.crab = 0; o.lights = 0; o.ab = 0; o.rot = 0;
+  if (ground) return o;
+  if (o.gnd) {
+    o.gear = 1; o.lights = code === GPH.roll || code === GPH.land ? 1 : 0;
+    if (code === GPH.roll) {
+      // the roll: flaps set, the nose rises through the last few knots before lift-off
+      o.flap = 0.35; o.rot = U.clamp((c.spd - 0.74) / 0.14, 0, 1); o.pitch = o.rot * 8 * RD; o.ab = cls === 'fighter' ? 1 : 0;
+    } else if (code === GPH.land) {
+      // touchdown on the main wheels, the nose coming down over three seconds
+      const td = markAt(tr, 'td', t, 3); o.flap = 1; o.pitch = td != null ? 5 * RD * (1 - (t - td) / 3) : 0;
+    } else if (code === GPH.rollout) o.flap = 0.6;
+    return o;
+  }
+  // in the air: the turn and the climb over two seconds either side, as far as the record goes
+  const t0 = Math.max(IC.recFirstT(tr), t - 1), t1 = Math.min(tr.t1, t + 1);
+  const a = IC.recAt(tr, t0, PQ) || c, b = IC.recAt(tr, t1, PR) || c, dt = Math.max(0.2, b.t - a.t), v = Math.max(1, c.spd * 100);
+  let dh = b.h - a.h; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+  const w = b.t - a.t > 0.15 ? dh / dt : 0, lat = v * w;
+  const va = visAlt(tr, a.t, a, cls), vb = visAlt(tr, b.t, b, cls), run = Math.max(1, U.dxy(a.x, a.y, b.x, b.y) * 100);
+  const gam = b.t - a.t > 0.15 ? Math.atan2((vb - va) * 1000, run) : 0;
+  o.g = Math.min(60, Math.hypot(lat, G0) / G0);
+  if (cls === 'missile') { o.pitch = gam; return o; }
+  // near the ground nothing banks hard
+  const bank = Math.min(BANK[cls], 12 * RD + o.alt * 60 * RD);
+  o.roll = U.clamp(Math.atan2(lat, G0), -bank, bank);
+  const slow = c.spd < 1.2, aoa = cls === 'heli' ? 0 : cls === 'fighter' ? (slow ? 8 : 3) * RD : (slow ? 6 : c.spd < 1.8 ? 4 : 2.2) * RD;
+  o.pitch = cls === 'heli' ? U.clamp(-c.spd * 0.12, -0.2, 0.05) : cls === 'civil' ? U.clamp(gam + aoa, -4 * RD, 18 * RD) : gam + aoa;
+  const to = markAt(tr, 'to', t, 60);
+  if (code === GPH.final) {
+    // on final: gear and flaps down, the nose held up for the approach, the flare in the last 15 m
+    o.gear = 1; o.flap = 1; o.lights = 1;
+    o.pitch = (3 + 3 * U.clamp((0.015 - c.alt) / 0.015, 0, 1)) * RD;
+    if (wind && wind.kt > 0.5 && c.alt > 0.01) o.crab = Math.asin(U.clamp(wind.kt * 0.514 * Math.sin(wind.dir - c.h) / v, -0.4, 0.4)) * U.clamp((c.alt - 0.01) / 0.02, 0, 1);
+  } else if (code === GPH.appr && c.alt < 1.2) { o.gear = c.alt < 0.9 ? 1 : 0; o.flap = 0.5; o.lights = 1; }
+  else if (to != null && t - to < 60) { o.gear = t - to < 5 ? 1 : 0; o.flap = 0.35; o.lights = 1; o.ab = cls === 'fighter' && t - to < 25 ? 1 : 0; }
+  if (cls === 'fighter' && gam > 0.18) o.ab = 1;
+  return o;
+};
+
+/* the samples between t0 and t1 as [x, y, alt, t, ...] pushed into out (for trails; the replay smooths them);
+   shown: the heights as IC.recPose shows them (the climb-out from the runway, the final) */
+const PS2 = {};
+IC.recPath = function (tr, t0, t1, out, shown) {
   out = out || [];
   let i = indexAt(tr, t0); if (i < 0) i = 0;
-  for (; i < tr.n; i++) { const t = at(tr, i, 0); if (t > t1) break; if (t >= t0 - REC.dt) out.push(at(tr, i, 1), at(tr, i, 2), at(tr, i, 3), t); }
+  const cls = shown && tr.kind !== 'missile' && tr.kind !== 'veh' && tr.kind !== 'unit' ? flyer(tr.model) : null;
+  for (; i < tr.n; i++) {
+    const t = at(tr, i, 0); if (t > t1) break; if (t < t0 - REC.dt) continue;
+    let alt = at(tr, i, 3);
+    if (cls) { PS2.alt = alt; PS2.ph = at(tr, i, 8); alt = ((PS2.ph | 0) >> 1) >= GPH.push && ((PS2.ph | 0) >> 1) <= GPH.park && ((PS2.ph | 0) >> 1) !== GPH.final ? 0 : visAlt(tr, t, PS2, cls); }
+    out.push(at(tr, i, 1), at(tr, i, 2), alt, t);
+  }
   return out;
 };
 /* did the track come within r of (x, y) between t0 and t1? */
@@ -166,23 +259,49 @@ function missileAlt(m, tr) {
   if (tr.meta.d0 == null) tr.meta.d0 = Math.max(d, 1);
   return t.alt * U.clamp(1 - d / tr.meta.d0, 0, 1);
 }
+/* the track an aircraft already has from its ground move or its flight, if that ended just now: the same tail or
+   air wing flight going on (lift-off) or coming back (the approach handed to the runway) */
+function joined(R, key, now) {
+  const tr = key && R.link.get(key);
+  return tr && tr.t1 >= now - 4 ? tr : null;
+}
+/* a phase change worth marking on the track: lift-off (the take-off roll went airborne) and touchdown */
+function markPhase(tr, now, code, alt) {
+  const last = tr.n ? (at(tr, tr.n - 1, 8) | 0) >> 1 : -1;
+  if (last === GPH.roll && (code === GPH.air || code === GPH.appr)) tr.marks.push([tr.t1, 'to']);
+  if (last === GPH.final && code === GPH.land) tr.marks.push([now, 'td']);
+  // handed from the approach to the runway: the final starts a little higher than the approach ended; the view
+  // scales the final down so the two meet
+  if ((last === GPH.appr || last === GPH.air) && code === GPH.final && alt > 0) tr.marks.push([now, 'fin', Math.min(1, at(tr, tr.n - 1, 3) / alt)]);
+}
 function sampleThreat(S, R, t, now) {
   let tr = R.of.get(t);
   if (!tr) {
     const civ = !!t.d.civil, name = t.tn ? `TN ${t.tn}` : t.cs || IC.fullName(t.d);
-    tr = newTrack(R, t, 'threat', IC.modelOfThreat(t, true), name, civ ? 'civil' : 'enemy', { type: t.type, klass: t.d.klass, cs: t.cs, livery: t.livery || null, civil: civ });
+    tr = joined(R, t.tail, now);
+    if (tr) R.of.set(t, tr);
+    else tr = newTrack(R, t, 'threat', IC.modelOfThreat(t, true), name, civ ? 'civil' : 'enemy', { type: t.type, klass: t.d.klass, cs: t.cs, livery: t.livery || null, civil: civ });
+    if (t.tail) R.link.set(t.tail, tr);
   }
   if (t.tn && !tr.meta.tn) { tr.meta.tn = t.tn; tr.name = `TN ${t.tn}${t.cs ? ' · ' + t.cs : ''}`; }
   tr.meta.klass = t.klass || tr.meta.klass;
-  const aff = t.decoyKnown ? 'D' : t.aff || 'U';
-  push(tr, now, t.x, t.y, t.alt || 0, hdgOf(t, tr, lastH(tr)), spdOf(t), t.det ? 1 : 0, AFF[aff] || 0, t.notchT > 0 ? 1 : 0);
+  const aff = t.decoyKnown ? 'D' : t.aff || 'U', code = t.appr ? GPH.appr : GPH.air;
+  markPhase(tr, now, code, t.alt || 0);
+  push(tr, now, t.x, t.y, t.alt || 0, hdgOf(t, tr, lastH(tr)), spdOf(t), t.det ? 1 : 0, AFF[aff] || 0, (t.notchT > 0 ? 1 : 0) + 2 * code);
   tr.seen = now;
 }
-function sampleSimple(R, o, now, kind, model, name, side, alt, meta) {
+/* key: the tail or air wing flight that joins a ground move to its flight; code: the phase (REC_PHASE) */
+function sampleSimple(R, o, now, kind, model, name, side, alt, meta, key, code) {
   let tr = R.of.get(o);
-  if (!tr) tr = newTrack(R, o, kind, model, name, side, meta);
-  const spd = kind === 'veh' || kind === 'unit' ? (tr.n ? U.dxy(o.x, o.y, at(tr, tr.n - 1, 1), at(tr, tr.n - 1, 2)) / Math.max(1e-3, now - tr.t1) : 0) : spdOf(o);
-  push(tr, now, o.x, o.y, alt, hdgOf(o, tr, lastH(tr)), spd, o.radarOn ? 1 : 0, o.side === 'us' || side === 'us' ? 1 : 4, o.notchT > 0 ? 1 : 0);
+  if (!tr) {
+    tr = joined(R, key, now);
+    if (tr) R.of.set(o, tr); else tr = newTrack(R, o, kind, model, name, side, meta);
+    if (key) R.link.set(key, tr);
+  }
+  // on the ground the speed is how far it went since the last sample (a move keeps no speed on final)
+  const spd = kind === 'veh' || kind === 'unit' || kind === 'gnd' ? (tr.n && now > tr.t1 ? U.dxy(o.x, o.y, at(tr, tr.n - 1, 1), at(tr, tr.n - 1, 2)) / (now - tr.t1) : 0) : spdOf(o);
+  if (code != null) markPhase(tr, now, code, alt);
+  push(tr, now, o.x, o.y, alt, hdgOf(o, tr, lastH(tr)), spd, o.radarOn ? 1 : 0, o.side === 'us' || side === 'us' ? 1 : 4, (o.notchT > 0 ? 1 : 0) + 2 * (code || 0));
   tr.seen = now;
 }
 /* a missile, ours or theirs: its guidance goes in the sample, and a change of phase becomes an event */
@@ -202,13 +321,18 @@ function sampleMissile(S, R, m, now, enemy) {
 function sampleFine(S, R, now) {
   for (const m of S.missiles) if (!m.dead) {
     sampleMissile(S, R, m, now, false);
-    const t = m.target; if (t && !t.dead && t.x != null && (R.of.get(t) || {}).t1 !== now) { if (t.d && S.threats.includes(t)) sampleThreat(S, R, t, now); else if (t.kind) sampleSimple(R, t, now, 'air', IC.modelOfAir(t), t.name, 'us', t.alt || 0, { kind: t.kind, n: t.n }); }
+    const t = m.target; if (t && !t.dead && t.x != null && (R.of.get(t) || {}).t1 !== now) { if (t.d && S.threats.includes(t)) sampleThreat(S, R, t, now); else if (t.kind) sampleAir(R, t, now); }
   }
   for (const m of S.eaam) if (!m.dead) {
     sampleMissile(S, R, m, now, true);
-    const a = m.target; if (a && !a.dead && (R.of.get(a) || {}).t1 !== now) sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n });
+    const a = m.target; if (a && !a.dead && (R.of.get(a) || {}).t1 !== now) sampleAir(R, a, now);
   }
 }
+
+/* one of our flights in the air, joined to its take-off and landing */
+const sampleAir = (R, a, now) => sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n }, a, a.faf && (a.alt || 0) < 1.5 ? GPH.appr : GPH.air);
+/* an aircraft moving on one of our airports (or on final to it) */
+const sampleMove = (R, m, b, now) => sampleSimple(R, m, now, 'gnd', IC.modelOfType(m.type), m.who || m.T.name, m.mil ? 'us' : 'civil', m.alt || 0, { type: m.type, livery: m.livery || null, ap: b.id, civil: !m.mil }, m.tail || m.flight || null, GOPS_PH[m.phase] || GPH.taxi);
 
 /* the step: a sample of everything that moves every REC.dt game seconds */
 IC.record = function (S, dt) {
@@ -223,15 +347,15 @@ IC.record = function (S, dt) {
   for (const t of S.threats) if (!t.dead && (R.of.get(t) || {}).t1 !== now) sampleThreat(S, R, t, now);
   if (!fine) { for (const m of S.missiles) if (!m.dead) sampleMissile(S, R, m, now, false); for (const m of S.eaam) if (!m.dead) sampleMissile(S, R, m, now, true); }
   for (const s of S.strikes) { let tr = R.of.get(s); if (!tr) tr = newTrack(R, s, 'missile', s.mun === 'GBU' ? 'gbu' : 'cm', `${s.mun} from ${s.src || 'a launcher'}`, s.side === 'us' ? 'us' : 'enemy', { mun: s.mun }); push(tr, now, s.x, s.y, s.alt || 0, hdgOf(s, tr, lastH(tr)), s.spd || 0, 1, s.side === 'us' ? 1 : 4); tr.seen = now; }
-  for (const a of S.air) if (!a.dead && !a.gnd && (R.of.get(a) || {}).t1 !== now) sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n });
-  for (const b of S.infra) if (b.parts && b.moves) for (const m of b.moves) if (!m.dead && m.phase !== 'start') sampleSimple(R, m, now, 'gnd', IC.modelOfType(m.type), m.who || m.T.name, m.mil ? 'us' : 'civil', m.alt || 0, { type: m.type, livery: m.livery || null, ap: b.id });
+  for (const a of S.air) if (!a.dead && !a.gnd && (R.of.get(a) || {}).t1 !== now) sampleAir(R, a, now);
+  for (const b of S.infra) if (b.parts && b.moves) for (const m of b.moves) if (!m.dead && m.phase !== 'start') sampleMove(R, m, b, now);
   for (const v of S.vehicles) if (!v.dead) sampleSimple(R, v, now, 'veh', v.kind === 'truck' ? 'truck' : 'truck', v.name, 'us', 0, { trucks: v.trucks });
   for (const u of S.units) if (!u.dead) sampleSimple(R, u, now, 'unit', IC.modelOfUnit(u.type), u.name, 'us', 0, { type: u.type, n: IC.unitVehicles(u.d) });
   // what is gone stays in the record until its last sample ages out
   if (now - R.purgeT > REC.purgeEvery) {
     R.purgeT = now;
     const old = now - REC.span;
-    R.tracks = R.tracks.filter(tr => { if (tr.seen < now - REC.dt * 1.5) tr.live = false; return tr.t1 > old; });
+    R.tracks = R.tracks.filter(tr => { if (tr.seen < now - REC.dt * 1.5) tr.live = false; while (tr.marks.length && tr.marks[0][0] < old) tr.marks.shift(); return tr.t1 > old; });
     R.ev = R.ev.filter(e => e.t > old);
     if (R.t0 < old) R.t0 = old;
   }
