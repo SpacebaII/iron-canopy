@@ -114,16 +114,6 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   const box = fieldBox(ap);
   // inside the fence the ground is mown grass: no trees or crops on an airfield, stripes where the mowers went
   if (box && z > 2) drawField(g, box, px, z);
-  if (box && z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); IC.aptFenceStroke(g, box); }
-  for (const rw of by('runway')) {
-    const L = IC.rwLen(rw), d = IC.rwDir(rw), c = IC.rwAt(rw, 0.5);
-    rect(g, { x: c.x, y: c.y, a: Math.atan2(d.y, d.x) }, L + 3, 3.2, 'rgba(146,158,112,0.35)');
-  }
-  // paved surrounds: terminals and sheds stand on a forecourt that meets the apron, hangars open onto a ramp
-  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null && !p.noApron) {
-    if (!p.poly) { rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)'); continue; }
-    g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = p.built ? CONC : 'rgba(120,110,90,0.4)'; partPath(g, p, p.w, p.h, 0.15); g.fill(); g.restore();
-  }
   // roads and railways that pass under the airfield: the tunnel's line, and a portal at each end
   if (z > 1.5 && S.world.tunnels) for (const t of S.world.tunnels) if (t.apt === ap.id) drawTunnel(g, t, px, z);
   // service roads across the airside (from the map data): grey, with a white edge close in
@@ -132,18 +122,24 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
   if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
-  // aprons and other paved areas, tinted by zone
-  for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p);
-  for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p);
-  // fillets: where taxiways meet each other, a runway or an apron, the pavement widens so the wheels stay on it
-  if (full) drawFillets(g, ap, px);
-  // taxiways
-  for (const p of by('taxi')) drawTaxi(g, ap, p, px, z, full, marks, night);
-  // runways
-  for (const rw of by('runway')) drawRunway(g, S, ap, rw, px, z, marks, fine, night, now);
+  // the pavement: close in, one painted surface from the airport's tiles (render-pavement.js); far out, flat shapes
+  const tiles = z * IC.dpr() >= 1;
+  if (tiles) IC.drawPaveTiles(g, S, ap, z, IC.dpr(), S.paused ? 16 : 6);
+  if (box && z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); IC.aptFenceStroke(g, box); }
+  // a terminal or shed still being built stands on bare ground
+  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null && !p.noApron && !p.built) {
+    if (!p.poly) { rect(g, p, p.w + 0.3, p.h + 0.3, 'rgba(120,110,90,0.4)'); continue; }
+    g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = 'rgba(120,110,90,0.4)'; partPath(g, p, p.w, p.h, 0.15); g.fill(); g.restore();
+  }
+  // aprons and other paved areas: being built, or far out; hits leave scorch marks
+  for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p, tiles);
+  for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p, tiles);
+  // taxiways and runways: being built or far out drawn here; on the tiles only what changes (closures, craters)
+  for (const p of by('taxi')) drawTaxi(g, ap, p, px, z, full, false, night, tiles);
+  for (const rw of by('runway')) drawRunway(g, S, ap, rw, px, z, false, false, night, now, tiles);
   if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = IC.partZone(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
-  if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine); }
+  if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (!tiles && marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine, tiles); }
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings
@@ -219,6 +215,7 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
 
 /* stop bars: a row of red lights across the taxiway at every hold-short line; when an aircraft is cleared onto the
    runway, the bar goes out and green lead-on lights show it the way to the centreline */
+IC.aptHoldBars = holdBars;
 function holdBars(ap) {
   const G = IC.aptGraph(ap);
   if (ap._bars && ap._barsV === G.ver) return ap._bars;
@@ -251,7 +248,7 @@ function drawStopBars(g, ap, px, z, light) {
       for (let s = 0; s <= IC.GOPS.HOLD + 0.01; s += 0.15) dot(b.x - b.ux * s, b.y - b.uy * s, s < 0.3 ? `rgba(255,214,80,${k})` : `rgba(70,255,130,${k})`, 0.02, 'rgba(60,255,120,0.18)');
       continue;
     }
-    if (z < 5 && !waiting) continue;
+    if (z < 12 && !waiting) continue;
     // a dark housing so the bar reads by day too
     if (!night) { g.strokeStyle = 'rgba(20,20,20,0.8)'; g.lineWidth = Math.max(0.03, 3.4 * px); g.beginPath(); g.moveTo(b.x - b.uy * b.w * 0.6, b.y + b.ux * b.w * 0.6); g.lineTo(b.x + b.uy * b.w * 0.6, b.y - b.ux * b.w * 0.6); g.stroke(); }
     const n = 7, a = waiting ? 1 : 0.75;
@@ -288,23 +285,23 @@ const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 
 function drawField(g, box, px, z) {
   const k = U.clamp((z - 3) / 30, 0, 1);
   g.save(); g.beginPath(); IC.aptFencePath(g, box); g.clip('evenodd');
-  g.fillStyle = `rgba(98,124,86,${0.25 + 0.65 * k})`; g.fill('evenodd');
+  // (the grass itself is on the map's tiles, terrain.js)
   if (z > 12) {
     // only the stripes in view, along the main runway
     g.translate(box.x, box.y); g.rotate(box.a);
     const V = IC.rs && IC.rs.view, st = 0.3;
     let y0 = -box.h / 2, y1 = box.h / 2;
     if (V) { const c = Math.cos(-box.a), sn = Math.sin(-box.a), ys = [[V.x0, V.y0], [V.x1, V.y0], [V.x1, V.y1], [V.x0, V.y1]].map(([x, y]) => (x - box.x) * sn + (y - box.y) * c); y0 = Math.max(y0, Math.min(...ys)); y1 = Math.min(y1, Math.max(...ys)); }
-    g.fillStyle = `rgba(150,170,110,${0.12 * U.clamp((z - 12) / 12, 0, 1)})`;
+    g.fillStyle = `rgba(150,170,110,${0.07 * k * U.clamp((z - 12) / 12, 0, 1)})`;
     for (let y = Math.floor(y0 / (2 * st)) * 2 * st; y < y1; y += 2 * st) g.fillRect(-box.w / 2, y, box.w, st);
   }
   g.restore();
 }
-function drawArea(g, p, fill, px, part) {
+function drawArea(g, p, fill, px, part, tiles) {
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w, h = p.h;
   if (!part.built) stageRect(g, part, w, h, px, paveCol2(part));
-  else {
+  else if (!tiles) {
     g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; partPath(g, p, w, h); g.fill();
     // the painted edge of the apron
     if (IC.cam.z > 4) { g.strokeStyle = 'rgba(236,196,60,0.5)'; g.lineWidth = Math.max(0.006, 0.6 * px); if (p.poly) { partPath(g, p, w, h, -0.02); g.stroke(); } else g.strokeRect(-w / 2 + 0.02, -h / 2 + 0.02, w - 0.04, h - 0.04); }
@@ -332,11 +329,16 @@ function fillets(ap) {
 function drawFillets(g, ap, px) {
   for (const f of fillets(ap)) { g.fillStyle = paveCol2(f.p); g.beginPath(); g.arc(f.x, f.y, f.r + 0.04, 0, 7); g.fill(); g.fillStyle = paveCol(f.p); g.beginPath(); g.arc(f.x, f.y, f.r, 0, 7); g.fill(); }
 }
-function drawTaxi(g, ap, p, px, z, full, marks, night) {
+function drawTaxi(g, ap, p, px, z, full, marks, night, tiles) {
   const pts = p.nodes.map(id => ap.nodes[id]).filter(Boolean);
   if (pts.length < 2) return;
   g.lineCap = 'round'; g.lineJoin = 'round';
   if (!p.built) { stageLine(g, pts, p.w, p, px); g.lineCap = 'butt'; g.lineJoin = 'miter'; return; }
+  if (tiles) {
+    // closed for works: a darker, dusty surface with yellow crosses at each end
+    if (p.shut) { g.strokeStyle = 'rgba(96,84,60,0.55)'; g.lineWidth = p.w; g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const q of pts.slice(1)) g.lineTo(q.x, q.y); g.stroke(); }
+    g.lineCap = 'butt'; g.lineJoin = 'miter';
+  } else {
   g.strokeStyle = paveCol2(p); g.lineWidth = Math.max(p.w + 0.08, 1.2 * px);
   g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const q of pts.slice(1)) g.lineTo(q.x, q.y); g.stroke();
   g.strokeStyle = p.shut ? 'rgb(90,80,60)' : paveCol(p); g.lineWidth = Math.max(p.w, 1 * px); g.stroke();
@@ -363,6 +365,7 @@ function drawTaxi(g, ap, p, px, z, full, marks, night) {
       }
     }
   }
+  }
   // cut segments
   for (const i in p.cut) {
     const a = ap.nodes[p.nodes[i - 1]], b = ap.nodes[p.nodes[i]]; if (!a || !b) continue;
@@ -375,17 +378,19 @@ function crater(g, x, y, r, px) {
   g.fillStyle = 'rgba(70,56,44,0.95)'; g.beginPath(); g.arc(x, y, Math.max(r * 1.25, 2 * px), 0, 7); g.fill();
   g.fillStyle = 'rgba(22,16,12,0.95)'; g.beginPath(); g.arc(x, y, Math.max(r * 0.8, 1.4 * px), 0, 7); g.fill();
 }
-function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
+function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now, tiles) {
   const L = IC.rwLen(rw), d = IC.rwDir(rw), c = IC.rwAt(rw, 0.5), a = Math.atan2(d.y, d.x);
   g.save(); g.translate(c.x, c.y); g.rotate(a);
   if (!rw.built) { stageRect(g, rw, L, Math.max(rw.w, 2 * px), px, paveCol(rw), true); g.restore(); return; }
   const W = Math.max(rw.w, 2 * px);
+  if (!tiles) {
   g.fillStyle = 'rgba(90,94,88,0.9)'; g.fillRect(-L / 2 - 0.3, -W / 2 - 0.08, L + 0.6, W + 0.16);
   g.fillStyle = paveCol(rw); g.fillRect(-L / 2, -W / 2, L, W);
   // worn pavement: patches and cracks where heavy aircraft have broken it up
   if (rw.wear > 0.2 && z > 1.5) { g.fillStyle = 'rgba(20,18,16,0.55)'; const n = Math.round(rw.wear * 40); for (let i = 0; i < n; i++) { const hx = (U.hash(i, 7) - 0.5) * L * 0.9, hy = (U.hash(7, i) - 0.5) * W * 0.8; g.fillRect(hx, hy, 0.25 + U.hash(i, i) * 0.4, 0.04 + U.hash(i, 3) * 0.08); } }
   if (marks) { runwayMarks(g, rw, L, fine);
   } else if (z > 0.8) { g.fillStyle = 'rgba(236,236,226,0.35)'; g.fillRect(-L / 2 + 0.5, -Math.max(0.01, 0.4 * px), L - 1, Math.max(0.02, 0.8 * px)); }
+  }
   // closed for works or worn out: yellow crosses on the runway, as pilots see them
   if (rw.shut || rw.wear >= 1) {
     g.strokeStyle = 'rgba(242,200,60,0.95)'; g.lineWidth = Math.max(W * 0.12, 1.5 * px);
@@ -402,6 +407,7 @@ function drawRunway(g, S, ap, rw, px, z, marks, fine, night, now) {
    the designator 18 m tall, touchdown-zone bars in groups of 3, 2, 2, 1, 1 at 150 m steps, the aiming point 300 m in;
    a centreline of 36 m stripes and 24 m gaps. A displaced threshold (rw.disp, m) is a white bar across the runway
    with arrows leading up to it along the centreline. The frame is the runway's: x along it from −L/2 (end a). */
+IC.runwayMarks = runwayMarks;
 function runwayMarks(g, rw, L, fine) {
   const M = 0.01, W = rw.w, hw = W / 2;
   g.fillStyle = PAINT;
@@ -443,11 +449,17 @@ function runwayMarks(g, rw, L, fine) {
     g.restore();
   }
 }
-function drawStand(g, s, px, z, marks, fine) {
+function drawStand(g, s, px, z, marks, fine, tiles) {
   if (!marks) return;
   const S0 = IC.STAND[s.size];
   g.save(); g.translate(s.x, s.y); g.rotate(s.a);
   if (s.hp <= 0) { crater(g, 0, 0, 0.14, px); g.restore(); return; }
+  // (the markings are on the tiles: here the jet bridge, and a stand no taxiway reaches)
+  if (tiles) {
+    if (s.contact) jetBridge(g, s, S0, px, z);
+    if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
+    g.restore(); return;
+  }
   g.strokeStyle = 'rgba(236,236,226,0.35)'; g.lineWidth = Math.max(0.006, 0.6 * px);
   g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w);
   g.strokeStyle = YEL; g.lineWidth = Math.max(0.01, 0.8 * px);
@@ -461,6 +473,28 @@ function drawStand(g, s, px, z, marks, fine) {
   if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
   g.restore();
   if (z > 22) lbl(g, s.name || s.id.split('s').pop(), s.fx, s.fy, px, 'rgba(236,196,60,0.8)', 7, 'center', 700);
+}
+/* a jet bridge in the stand's frame (x along the aircraft, nose ahead): the rotunda at the terminal, the telescopic
+   tunnel on its drive wheels, the cab turned to the front door; a shadow on the pavement below */
+function jetBridge(g, s, S0, px, z) {
+  const R = { x: S0.d / 2 + 0.05, y: -S0.w * 0.16 }, D = { x: S0.d * 0.26, y: -0.034 }, len = U.dist(R, D), a = Math.atan2(D.y - R.y, D.x - R.x), w = 0.028;
+  // the fixed link from the terminal's wall to the rotunda
+  g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(R.x + 0.02, R.y - w / 2 + 0.016, 0.1, w);
+  g.fillStyle = 'rgb(196,200,206)'; g.fillRect(R.x, R.y - w / 2, 0.1, w);
+  g.save(); g.translate(0.02, 0.016); g.fillStyle = 'rgba(0,0,0,0.28)';
+  g.save(); g.translate(R.x, R.y); g.rotate(a); g.fillRect(0, -w / 2, len, w); g.restore(); g.beginPath(); g.arc(R.x, R.y, 0.024, 0, 7); g.fill(); g.restore();
+  g.save(); g.translate(R.x, R.y); g.rotate(a);
+  // two telescoping sections, the outer a shade darker, and the wheels near the cab
+  g.fillStyle = 'rgb(186,190,196)'; g.fillRect(0, -w / 2, len * 0.55, w);
+  g.fillStyle = 'rgb(168,172,178)'; g.fillRect(len * 0.5, -w / 2 * 0.9, len * 0.5, w * 0.9);
+  if (z > 40) { g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(0, -w / 2, len, w * 0.18); g.fillStyle = 'rgba(40,44,50,0.9)'; g.fillRect(len * 0.72, -w / 2 - 0.006, 0.012, w + 0.012); }
+  // the cab at the door, square to the fuselage
+  g.translate(len, 0); g.rotate(-a);
+  g.fillStyle = 'rgb(150,154,160)'; g.fillRect(-0.02, -0.018, 0.034, 0.03);
+  g.fillStyle = 'rgba(40,50,60,0.8)'; if (z > 40) g.fillRect(-0.02, 0.008, 0.034, 0.004);
+  g.restore();
+  g.fillStyle = 'rgb(200,202,206)'; g.beginPath(); g.arc(R.x, R.y, 0.022, 0, 7); g.fill();
+  g.strokeStyle = 'rgba(60,64,70,0.6)'; g.lineWidth = Math.max(0.002, 0.5 * px); g.stroke();
 }
 /* a stand's lead-in line from the taxilane: a curve from the node it leaves to the line behind the stand */
 function drawLeadIn(g, ap, s, px) {

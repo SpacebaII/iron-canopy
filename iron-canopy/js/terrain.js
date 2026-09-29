@@ -179,33 +179,36 @@ function dirtyBox(T, x0, y0, x1, y1) {
   }
 }
 
-/* the ground of an airfield: rough grass inside the perimeter instead of crops, mown grass along everything paved */
+/* the ground of an airfield: meadow round the fence, mown grass inside it (no crops or trees on an airfield), the
+   graded strip along each runway a lighter green, mown verges along the taxiways and round the aprons */
 function airfields(g, S, x0, y0, x1, y1, lod) {
+  const poly = P => { g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
   for (const ap of IC.bases(S)) {
     if (!ap.parts || ap.x + ap.radius < x0 || ap.x - ap.radius > x1 || ap.y + ap.radius < y0 || ap.y - ap.radius > y1) continue;
-    const paved = ap.parts.filter(p => p.built !== false && (p.kind === 'runway' || p.kind === 'taxi' || (p.w && p.h)));
-    // a runway or taxiway is a line of its width; an apron or building a rotated rectangle
-    const shape = p => {
-      g.beginPath();
-      if (p.kind === 'runway') { const a = IC.rwAt(p, 0), b = IC.rwAt(p, 1); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); return p.w; }
-      if (p.kind === 'taxi') { p.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); return 0.25; }
-      const c = Math.cos(p.a || 0), s = Math.sin(p.a || 0), w = (p.w || 1) / 2, h = (p.h || 1) / 2;
-      [[-w, -h], [w, -h], [w, h], [-w, h]].forEach(([u, v], i) => g[i ? 'lineTo' : 'moveTo'](p.x + u * c - v * s, p.y + u * s + v * c));
-      g.closePath(); return 0;
-    };
-    const layer = (grow, col) => { g.strokeStyle = g.fillStyle = col; for (const p of paved) { const w = shape(p); g.lineWidth = w + grow; g.stroke(); if (!w && p.kind !== 'taxi') g.fill(); } };
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    // cleared ground reaches some 800 m out from the paving: meadow, not crops
-    layer(16, 'rgba(98,116,72,0.5)'); layer(10, 'rgba(102,120,74,0.85)');
-    // mown: the runway strip 150 m either side, 40 m along taxiways and round aprons
-    g.strokeStyle = g.fillStyle = 'rgba(120,140,86,0.9)';
-    for (const p of paved) { const w = shape(p); g.lineWidth = w + (p.kind === 'runway' ? 3 : 0.8); g.stroke(); if (!w && p.kind !== 'taxi') g.fill(); }
-    if (lod >= 3) {
-      // mowing lines along the runway strip
-      g.strokeStyle = 'rgba(146,166,102,0.35)'; g.lineWidth = 0.18;
-      for (const p of paved) if (p.kind === 'runway') for (const off of [-1.2, -0.8, 0.8, 1.2]) {
-        const a = IC.rwAt(p, 0), b = IC.rwAt(p, 1), L = Math.hypot(b.x - a.x, b.y - a.y), nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L, o = off + Math.sign(off) * p.w / 2;
-        g.beginPath(); g.moveTo(a.x + nx * o, a.y + ny * o); g.lineTo(b.x + nx * o, b.y + ny * o); g.stroke();
+    const b = IC.aptFence && IC.aptFence(ap);
+    if (b && b.poly && b.poly.length > 2) {
+      g.fillStyle = 'rgba(100,118,74,0.3)'; poly(IC.polyGrow(b.poly, 2.5)); g.fill();
+      g.fillStyle = 'rgba(100,122,74,0.95)'; poly(IC.polyGrow(b.poly, 0.2)); g.fill();
+      // (close in, the same grass as the airport's own tiles: tufts and mottling)
+      if (lod >= 2 && IC.paveFill) { g.globalAlpha = 0.6; g.fillStyle = IC.paveFill(g, 'grass', LOD(lod).ppu, 0, 0, 0); g.fill(); g.globalAlpha = 1; }
+    }
+    const paved = ap.parts.filter(p => p.built !== false && (p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron' || p.kind === 'alert'));
+    // mown: 40 m along taxiways and round aprons
+    g.strokeStyle = g.fillStyle = 'rgba(106,128,78,0.55)'; g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const p of paved) {
+      if (p.kind === 'taxi') { g.lineWidth = (p.w || 0.23) + 0.8; g.beginPath(); p.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
+      else if (p.kind !== 'runway' && IC.partOutline) { const P = IC.partOutline(p); g.lineWidth = 0.8; poly(P); g.fill(); g.stroke(); }
+    }
+    // the graded strip: 150 m either side of the runway and 60 m beyond its ends, kept short
+    for (const p of paved) if (p.kind === 'runway') {
+      const a = IC.rwAt(p, 0), c = IC.rwAt(p, 1), L = Math.hypot(c.x - a.x, c.y - a.y) || 1, ux = (c.x - a.x) / L, uy = (c.y - a.y) / L, h = p.w / 2 + 1.5, e = 0.6;
+      g.fillStyle = 'rgba(110,132,80,0.7)';
+      poly([{ x: a.x - ux * e - uy * h, y: a.y - uy * e + ux * h }, { x: c.x + ux * e - uy * h, y: c.y + uy * e + ux * h }, { x: c.x + ux * e + uy * h, y: c.y + uy * e - ux * h }, { x: a.x - ux * e + uy * h, y: a.y - uy * e - ux * h }]); g.fill();
+      if (lod >= 3) {
+        // the mowers' passes along it, 15 m wide
+        g.save(); g.clip(); g.fillStyle = 'rgba(150,170,104,0.14)';
+        for (let o = -h; o < h; o += 0.3) poly([{ x: a.x - ux * e - uy * o, y: a.y - uy * e + ux * o }, { x: c.x + ux * e - uy * o, y: c.y + uy * e + ux * o }, { x: c.x + ux * e - uy * (o + 0.15), y: c.y + uy * e + ux * (o + 0.15) }, { x: a.x - ux * e - uy * (o + 0.15), y: a.y - uy * e + ux * (o + 0.15) }]), g.fill();
+        g.restore();
       }
     }
   }
@@ -780,8 +783,8 @@ function paintTile(T, lod, tx, ty, S) {
   g.lineCap = 'round'; g.lineJoin = 'round';
   const m = [6, 2, 1, 0.5][lod - 1];
   fields(g, T, lod, x0 - m, y0 - m, x1 + m, y1 + m);
-  if (S) airfields(g, S, x0 - m, y0 - m, x1 + m, y1 + m, lod);
   forest(g, T, lod, x0 - m, y0 - m, x1 + m, y1 + m);
+  if (S) airfields(g, S, x0 - m, y0 - m, x1 + m, y1 + m, lod);
   // hills: the hillshade laid over everything on the ground
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalCompositeOperation = 'multiply';
