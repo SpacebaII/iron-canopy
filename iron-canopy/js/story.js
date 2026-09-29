@@ -151,11 +151,11 @@ const MO = (S, n) => IC.MO(S, n);
 IC.ACT1_MIN_MO = 36;  // calendar months a good player needs for Act I: three years (the tests hold the scripted player to it)
 IC.CHAPTERS = [
   { title: 'The national airport', min: 0, max: 0, need: 6 },
-  { title: 'The capital’s airport', min: 8, max: 14, need: 7, wait: 'more airlines have seen the airport work' },
-  { title: 'The airspace', min: 7, max: 11, need: 4, wait: 'the airways have carried a season of traffic' },
-  { title: 'Light aircraft', min: 6, max: 9, need: 2, wait: 'the flying clubs have settled in' },
-  { title: 'A second city', min: 10, max: 15, need: 3, wait: 'the new airport has found its passengers' },
-  { title: 'The economy', min: 10, max: 14, need: 3, wait: 'the Treasury has seen the figures' }
+  { title: 'The capital’s airport', min: 10, max: 15, need: 7, wait: 'more airlines have seen the airport work' },
+  { title: 'The airspace', min: 9, max: 13, need: 4, wait: 'the airways have carried a season of traffic' },
+  { title: 'Light aircraft', min: 7, max: 10, need: 2, wait: 'the flying clubs have settled in' },
+  { title: 'A second city', min: 14, max: 19, need: 3, wait: 'the new airport has found its passengers' },
+  { title: 'The economy', min: 14, max: 16, need: 3, wait: 'the Treasury has seen the figures' }
 ];
 const capApt = S => S.story.cap ? S.byId[S.story.cap] : null;
 const built = (ap, k) => !!ap && ap.parts.some(p => p.kind === k && p.built && p.hp > 0);
@@ -706,15 +706,15 @@ function beatsFor(S, act) {
     } });
     B.push({ id: 'jam', need: () => (doneCount(S) >= 1 && inAct(S) > MO(S, 5)) || inAct(S) > MO(S, 9), gap: [3600, 6000], run: () => jamming(S) });
     B.push({ id: 'shadow', need: () => (doneCount(S) >= 2 && inAct(S) > MO(S, 11)) || inAct(S) > MO(S, 17), gap: [3600, 5400], run: () => shadow(S) });
-    B.push({ id: 'aptdrones', need: () => inAct(S) > MO(S, 16), gap: [3600, 5400], run: () => airportDrones(S) });
-    B.push({ id: 'dilemma', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, 26)) || inAct(S) > MO(S, 34), gap: [3600, 7200], run: () => dilemma(S) });
+    B.push({ id: 'aptdrones', need: () => inAct(S) > MO(S, 18), gap: [3600, 5400], run: () => airportDrones(S) });
+    B.push({ id: 'dilemma', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, 30)) || inAct(S) > MO(S, 36), gap: [3600, 7200], run: () => dilemma(S) });
     B.push({ id: 'firstblood', need: () => st.dilemmaDone, gap: [3600, 7200], run: () => firstBlood(S) });
   } else if (act === 3) {
     // the gray zone rises month by month: probes and rockets come closer together as the act goes on
-    const rise = () => U.clamp(1 - inAct(S) / MO(S, 20), 0.3, 1);
+    const rise = () => U.clamp(1 - inAct(S) / MO(S, 24), 0.3, 1);
     B.push({ id: 'probe', gap: [3600, 5400], repeat: [MO(S, 1), MO(S, 1.8)], rise, run: () => grayStrike(S) });
     B.push({ id: 'rkt', gap: [MO(S, 1), MO(S, 2)], repeat: [MO(S, 1.5), MO(S, 3)], rise, run: () => { const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name} from across the border. They deny it, of course.`); raise(S, 4); } });
-    B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, 16)) || inAct(S) > MO(S, 22), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
+    B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, 24)) || inAct(S) > MO(S, 28), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
     B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time, S), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
     B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
       // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
