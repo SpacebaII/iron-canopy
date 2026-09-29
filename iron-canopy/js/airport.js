@@ -136,7 +136,7 @@ function standsFor(ap, p) {
       contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone };
   });
   const depth = p.h * 0.64;
-  const size = depth >= IC.STAND.l.d ? 'l' : depth >= IC.STAND.m.d ? 'm' : depth >= IC.STAND.s.d ? 's' : null;
+  const size = IC.apronStandSize(p);
   if (!size) return [];
   const S = IC.STAND[size], n = Math.floor(p.w / S.w);
   let back = 1;
@@ -685,6 +685,20 @@ IC.baseStatus = function (S, b) {
   if (b.kind === 'airbase' && !b.parts.some(p => p.kind === 'ammo' && p.built && p.hp > p.max * 0.25)) turn *= 1.3;
   return { runway: (st.longest || 0) >= 10 && st.rwy.some(r => r.exits > 0), rwyLen: st.longest || 0, turn, cap: st.shelters, off: b.offline || b.owner === 'enemy', st };
 };
+/* the runway in a word: open, being built (before any runway has opened, so it is no emergency), closed, or none */
+/* the stand size an apron lays out: the deepest that fits, but no larger than the size the player picked (p.smax) */
+IC.apronStandSize = p => {
+  const depth = p.h * 0.64, cap = { s: 0, m: 1, l: 2, xl: 2 }[p.smax] ?? 2;
+  return ['l', 'm', 's'].find((k, i) => 2 - i <= cap && depth >= IC.STAND[k].d) || null;
+};
+IC.rwyState = function (S, b) {
+  if (!b || !b.parts) return { open: true, word: 'Runway open' };
+  if (!b.parts.some(p => p.kind === 'runway')) return { none: true, word: 'No runway' };
+  if (IC.baseStatus(S, b).runway) return { open: true, word: 'Runway open' };
+  const w = !b.parts.some(p => p.kind === 'runway' && p.built) && (b.works || []).find(x => x.part && x.part.kind === 'runway');
+  if (w) return { building: true, word: `Runway being built · ${U.pct(w.prog || 0)}`, prog: w.prog || 0 };
+  return { closed: true, word: 'Runway closed' };
+};
 IC.canLaunch = function (S, r) {
   const b = IC.baseOf(S, r.base);
   if (!b || b.dead || b.owner === 'enemy' || (b.state !== undefined && b.state !== 'ready')) return false;
@@ -872,6 +886,7 @@ IC.aptPlan = function (S, ap, part, o) {
   if (lock) { IC.log(S, 'warn', 'BUILD', lock); return null; }
   if (o.zone && part.kind !== 'taxi') part.zone = o.zone;
   if (o.ramp) { part.ramp = true; part.free = part.free || []; }
+  if (o.smax && part.kind === 'apron' && !o.ramp) part.smax = o.smax;
   if (part.kind === 'ils') part.cat = IC.aptTechOk(S, 'ils3') ? 3 : 1;
   if (part.kind === 'surface') part.surf = part.surf || o.surf || 'grass';
   const pv = IC.bldPreview(S, ap, part);
@@ -944,21 +959,28 @@ IC.aptFence = function (ap) {
 /* inside the country and the site, and not on top of another part (touching is fine) */
 IC.aptCanPlace = function (S, ap, part) {
   const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' ? part.pts : [part];
-  for (const p of pts) { if (!IC.inHome(p.x, p.y) || IC.inLake(p.x, p.y)) return false; if (!IC.aptInSite(S, ap, p)) return false; }
+  // why not, in words, for the builder (IC.aptPlaceWhy)
+  const no = why => { IC.aptPlaceWhy = why; return false; };
+  IC.aptPlaceWhy = '';
+  for (const p of pts) {
+    if (!IC.inHome(p.x, p.y)) return no('It crosses the border.');
+    if (IC.inLake(p.x, p.y)) return no('It stands in a lake.');
+    if (!IC.aptInSite(S, ap, p)) return no(`It leaves ${ap.name}'s site (the green area): keep it inside, or found the airport bigger.`);
+  }
   // no part in a river: sample along lines, and the corners of areas
   const wet = p => IC.onRiver && IC.onRiver(p.x, p.y);
-  if (part.kind === 'runway' || part.kind === 'taxi') { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 0.5); for (let k = 0; k <= n; k++) if (wet({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return false; } }
+  if (part.kind === 'runway' || part.kind === 'taxi') { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 0.5); for (let k = 0; k <= n; k++) if (wet({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return no('It crosses a river.'); } }
   if (part.kind === 'taxi') return true;
   const D = IC.APART[part.kind];
   const probe = Object.assign({ w: D.w, h: D.h, r: D.r }, part);
   const shape = q => q.kind === 'runway' ? { x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q), h: q.w || IC.APART.runway.w } : q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q;
   const A = shape(probe);
-  if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return false;
+  if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return no('It stands in a river.');
   for (const q of ap.parts) {
     if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
-    if (rectsOverlap(A, shape(q), 0.01)) return false;
+    if (rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${q.kind === 'runway' ? q.name || 'the runway' : 'the ' + IC.APART[q.kind].name.toLowerCase()}${q.built ? '' : ' being built'}: move it, or bulldoze that first.`);
   }
   return true;
 };

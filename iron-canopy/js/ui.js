@@ -172,7 +172,7 @@ function alerts() {
   if (raid.length >= 4) w.push(['amber', `Raid in progress · ${raid.length} hostile tracks`, raid[0]]);
   const sus = S.threats.filter(t => t.det && !t.dead && t.aff === 'S' && IC.inHome(t.px, t.py) && t.d.cls === 'air');
   if (sus.length) w.push(['amber', `${sus.length} suspect aircraft in our airspace · send a fighter to look`, sus[0]]);
-  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && !IC.baseStatus(S, b).runway) w.push(['amber', `${b.name}: runway closed`, b]);
+  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && IC.rwyState(S, b).closed) w.push(['amber', `${b.name}: runway closed`, b]);
   if (S.av) for (const b of S.infra.filter(i => i.kind === 'airport' && i.owner === 'us')) {
     const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id);
     if (hold.length >= 2 || hold.some(t => t.holdT > 600)) w.push(['amber', `${b.name}: ${hold.length} holding${hold.some(t => t.standShort) ? ' · stands full' : ''}`, b]);
@@ -359,13 +359,20 @@ function comms() {
   if (Q.length !== ui.lastLen) {
     if (!ui.lastLen) { ui.ci = 0; ui.shownAt = now; }
     else if (ui.ci >= ui.lastLen - 1) { ui.ci = ui.lastLen; ui.shownAt = now; }
-    ui.lastLen = Q.length;
+    ui.lastLen = Q.length; ui.cOpen = now;
   }
   if (ui.ci >= Q.length) ui.ci = Q.length - 1;
   const m = Q[ui.ci];
   const shown = Math.min(m.text.length, Math.floor((now - ui.shownAt) / 1000 * 75));
   const full = shown >= m.text.length;
   if (full && ui.ci < Q.length - 1 && now - ui.shownAt > Math.max(5000, m.text.length * 50)) { ui.ci++; ui.shownAt = now; }
+  // once the last message has been read for a while it folds away, so an old instruction does not linger; a click
+  // or the next message opens it again
+  if (full && ui.ci === Q.length - 1 && now - (ui.cOpen || 0) > Math.max(30000, m.text.length * 90)) {
+    $('comms').classList.add('glass');
+    setHTML($('comms'), `<button class="cfold" data-act="copen">${esc(m.name)} · ${Q.length} message${Q.length > 1 ? 's' : ''} ▸</button>`);
+    return;
+  }
   const init = m.tag === 'CMD' ? m.name.replace('Gen. ', '').split(' ').map(x => x[0]).join('') : m.tag;
   $('comms').classList.add('glass');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
@@ -470,7 +477,7 @@ ui.tip = function (ent, sx, sy, rc) {
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
   else if (ent.kind === 'site') { t = r.name; s = `${r.destroyed ? 'Destroyed' : r.pk >= 2 ? 'Located' : 'Suspected'}`; }
   else if (ent.kind === 'tel') { t = r.name; s = `Seen ${U.dur(S.time - r.kt)} ago`; }
-  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.baseStatus(S, r).runway ? 'Runway open' : 'Runway closed'} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
+  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.rwyState(S, r).word} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
   else if (ent.kind === 'fix') { t = `Fix ${r.name}`; s = `${S.asp.ways.filter(w => w.a === r.id || w.b === r.id).length} airways · radar sees down to ${covTxt(IC.aspCovAlt(S, r.x, r.y))} here`; }
   else if (ent.kind === 'airway') { const [a, b] = IC.aspWayEnds(S, r); t = `Airway ${a.name} – ${b.name}`; s = `${U.km(U.dist(a, b))} · radar sees ${U.pct(IC.aspWayCover(S, r, 9))} of it at cruise height`; }
   else if (ent.kind === 'field') { t = r.name; s = `Light aircraft · ${r.club} · ${r.today} movements today`; }
