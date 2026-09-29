@@ -574,6 +574,7 @@ IC.aptStats = function (S, ap) {
     if (w) st.warn.push(`${p.name || IC.APART[p.kind].name} closed for works (${w.kind === 'upgrade' ? 'new pavement' : U.lc(w.label)}) for about ${U.dur(Math.max(60, (1 - w.prog) * w.dur))}.`);
     if (p.wear >= 1) st.warn.push(`${p.name || IC.APART[p.kind].name}: the ${IC.PAVE[IC.paveOf(p)].name.toLowerCase()} is worn out; closed until resurfaced.`);
     else if (p.wear >= 0.5) st.warn.push(`${p.name || IC.APART[p.kind].name}: ${U.pct(p.wear)} worn. Aircraft heavier than ${IC.PAVE[IC.paveOf(p)].t} t break up ${IC.PAVE[IC.paveOf(p)].name.toLowerCase()}.`);
+    if (p.lit === false && p.kind === 'runway') st.warn.push(`${p.name || 'A runway'} has no edge lights: it closes from dusk to dawn. Upgrade it on the build bar to light it.`);
   }
   const unlinked = stands.filter(s => !s.linked && s.hp > 0).length;
   if (unlinked) st.warn.push(`${unlinked} stand${unlinked > 1 ? 's are' : ' is'} not connected to a runway.`);
