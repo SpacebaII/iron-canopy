@@ -91,6 +91,28 @@ Wave 11. Absorbs 31's second part (the missile energy simulation, never done). O
   - pilots and batteries earn a record (kills, missiles defeated) shown in their panel.
 - **The 3D replay's highlight reel** (42) picks up the best intercept.
 
+**6. Reach and mobility (the owner, later: "although 100 km is large there are still a lot of gaps that a much longer SAM needs to reach; IR needs a bit more range, it feels useless or heavily micromanaged; mobile launchers need to be faster and able to fire on the move … to move to intercept"):**
+
+- **Very long range.** A research line of upgrades for the long-range battery and a new very-long-range system, with their own stock, cost and research:
+  - an extended-range round at about 250 km against high targets (much less low down, per `IC.REACH`);
+  - a very-long-range interceptor at about 400 km for aircraft, AWACS, tankers and jammers standing off, with its own fire-control radar; expensive, few rounds, slow to reload.
+- **Filling the gaps (fewer holes, not only bigger circles):**
+  - **Engage on remote:** a battery fires on a track from another radar (a 3D radar, an airborne early-warning aircraft, a gap filler) through the air defence network, so its reach is its missile's, not its own radar's.
+  - **Airborne early warning** that sees low targets past the hills.
+  - **Launchers placed away from their radar** (remote launchers, 5–20 km forward), linked by the network.
+  - **Show the gaps.** Where the cover is thin by height is shown on the coverage layer, and the staff suggest where one more launcher or radar closes the biggest hole.
+- **IR that is worth having:**
+  - man-portable IR to about 8 km and the imaging IR to about 12 km at low level;
+  - a vehicle-mounted IR launcher (4–8 ready rounds, its own search sensor, fires on the move) to about 12–15 km;
+  - IR teams take care of themselves: they cue off the network, pick targets by threat and do not waste rounds on decoys when they can tell. No micromanagement needed.
+- **Mobile launchers that act mobile:**
+  - Mobile units drive faster, off road at a real cross-country speed and on roads at road speed.
+  - Short-range and IR vehicles fire on the move (with a small accuracy cost); guns fire on the short halt.
+  - Semi-mobile batteries still need to set up.
+  - **Move to intercept:** order a mobile unit to "Intercept" a raid and it drives to where the raid will pass and engages. Or put it on "Hunt" in an area, where it moves toward drones the network sees.
+  - Shoot-and-scoot: after firing, a mobile unit can move before counter-battery fire arrives.
+  - **Balance** cost and upkeep so a mobile screen is a real choice against fixed batteries.
+
 ## Done when
 
 - `npm test` and `npm run qa` are green, with tests:
@@ -101,6 +123,10 @@ Wave 11. Absorbs 31's second part (the missile energy simulation, never done). O
   - a raid that loses its escort aborts;
   - a probing fighter turns back when locked;
   - the raid result card counts right;
+  - engage-on-remote reaches past a battery's own radar;
+  - a short-range vehicle hits while moving;
+  - an Intercept order meets the raid;
+  - IR reaches 8–12 km;
   - every Academy lesson still completes.
 - Balance runs are printed in the pull request: `econtest.js quick`, `tools/enemy-timeline.js`, and the Career's Act IV in `storytest.js`.
 - The pull request has clips, frame by frame, of:
