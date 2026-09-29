@@ -110,9 +110,9 @@ const PARTS = {
     const m = S.rec.tracks.filter(tr => tr.kind === 'missile' && tr.t1 - IC.recFirstT(tr) > 8).sort((a, b) => U.dxy(IC.recGet(a, a.n - 1, 1), IC.recGet(a, a.n - 1, 2), e.x, e.y) - U.dxy(IC.recGet(b, b.n - 1, 1), IC.recGet(b, b.n - 1, 2), e.x, e.y))[0];
     const V = IC.replayOpen(S, { follow: m && m.ref, x: e.x, y: e.y, t: e.t - 40, r: 60, cam: 'chase' });
     for (let i = 0; i < 150 && !(V.renderer && V.movers); i++) await wait(100);
-    V.t = Math.min(m.t1, e.t) - 5; camTo(V, 'chase'); V.camK = 0.8; await wait(2000);
+    V.t = Math.min(m.t1, e.t) - 4; camTo(V, 'chase'); V.camK = 0.8; await wait(2000);
     caption('Replay every engagement in 3D');
-    V.playing = true;`
+    V.$('play').click();`
 };
 
 // Google's web fonts, kept on disk after the first fetch: the shots must not fall back to plain fonts when the network
@@ -134,7 +134,7 @@ async function fontCache(page) {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), si = args.indexOf('--seconds');
   const out = oi >= 0 ? path.resolve(args[oi + 1]) : path.resolve(__dirname, '../docs/release/iron-canopy-clip.webm');
   const secs = si >= 0 ? +args[si + 1] : 12;
-  const want = args.filter((a, i) => !a.startsWith('--') && i !== oi + 1 && i !== si + 1);
+  const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1) && !(si >= 0 && i === si + 1));
   const names = want.length ? want : Object.keys(PARTS);
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const gpu = { args: ['--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] };

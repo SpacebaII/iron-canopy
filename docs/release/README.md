@@ -6,7 +6,7 @@
 | `playtester-guide.md` | One page for playtesters: what to try and how to send feedback |
 | `CHANGELOG.md` | What v1.0 has, in plain words |
 | `screenshots/` | Six store screenshots, 1920 × 1080 (`node tools/store-shots.js` makes them again) |
-| `iron-canopy-clip.webm`, `iron-canopy-clip.gif` | A 48 s gameplay clip, 1280 × 720 at 30 fps (`node tools/clip.js`; the GIF, smaller, with `python3 tools/clip-gif.py`) |
+| `iron-canopy-clip.webm`, `iron-canopy-clip.gif` | A 48 s gameplay clip: the WebM 1280 × 720 at 30 fps, 15 MB (`KEEP=1 node tools/clip.js`); the GIF 432 × 243 at 7.5 fps, 8.7 MB (`python3 tools/clip-gif.py`, from the frames the clip kept) |
 | `../../tools/package.js` | `npm run package` builds `dist/iron-canopy-v1.0.zip`, index.html at its root, for itch.io's HTML upload |
 
 **The upload:** `dist/iron-canopy-v1.0.zip` is **788 KB** (56 files, 2.3 MB unpacked). Unzipped into a local folder it plays

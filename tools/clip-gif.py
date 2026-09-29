@@ -1,8 +1,8 @@
 """The gameplay clip as a GIF, for places that do not play video: python3 tools/clip-gif.py [frames.mjpeg] [out.gif]
 
-Reads the frames tools/clip.js keeps when run with KEEP=1 (docs/release/iron-canopy-clip.mjpeg), takes every third one
-(10 fps), shrinks them to 480 x 270 and writes docs/release/iron-canopy-clip.gif, with one palette for the whole clip so
-colours do not flicker. Needs Pillow (pip install pillow); Playwright's ffmpeg has no GIF encoder.
+Reads the frames tools/clip.js keeps when run with KEEP=1 (docs/release/iron-canopy-clip.mjpeg), takes every fourth one
+(7.5 fps), shrinks them to 432 x 243 (under 10 MB) and writes docs/release/iron-canopy-clip.gif, with one palette
+for the whole clip so colours do not flicker. Needs Pillow (pip install pillow); Playwright's ffmpeg has no GIF encoder.
 """
 import io
 import os
@@ -13,7 +13,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, '../docs/release/iron-canopy-clip.mjpeg')
 out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, '../docs/release/iron-canopy-clip.gif')
-STEP, SIZE = int(os.environ.get('STEP', 3)), (480, 270)
+STEP, SIZE = int(os.environ.get('STEP', 4)), (432, 243)
 
 data = open(src, 'rb').read()
 # a JPEG starts with FF D8 FF; the file is one after another
