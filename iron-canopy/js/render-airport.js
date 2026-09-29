@@ -597,16 +597,16 @@ function hull(P) {
 function shadowOf(g, S, p) {
   const H = p.lvls ? p.lvls * 4.2 : BLD_H[p.kind] || 8; if (!H) return;
   const sun = IC.sunNow(S), key = `${p.x},${p.y},${p.a},${p.w},${p.h},${Math.round(sun.dx * 400)},${Math.round(sun.dy * 400)}`;
-  if (p._shK !== key) {
+  if (p._shdK !== key) {
     const O = IC.partOutline(p), mk = f => hull(O.concat(O.map(q => ({ x: q.x + sun.dx * H * f, y: q.y + sun.dy * H * f }))));
     // (a concave outline casts its own shape, moved along; its hull would fill the courtyard)
-    p._sh = p.poly && p.poly.length > 4 ? [1, 1.12].map(f => O.map(q => ({ x: q.x + sun.dx * H * f, y: q.y + sun.dy * H * f }))) : [mk(1), mk(1.12)];
-    p._shO = O; p._shK = key;
+    p._shd = p.poly && p.poly.length > 4 ? [1, 1.12].map(f => O.map(q => ({ x: q.x + sun.dx * H * f, y: q.y + sun.dy * H * f }))) : [mk(1), mk(1.12)];
+    p._shdO = O; p._shdK = key;
   }
   const poly = P => { g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
-  g.fillStyle = `rgba(8,12,18,${sun.a * 0.45})`; poly(p._sh[1]); g.fill();
-  g.fillStyle = `rgba(8,12,18,${sun.a})`; poly(p._sh[0]); g.fill();
-  if (p.poly && p.poly.length > 4) { const n = 6; for (let i = 1; i < n; i++) { g.fillStyle = `rgba(8,12,18,${sun.a / n})`; poly(p._shO.map(q => ({ x: q.x + sun.dx * H * i / n, y: q.y + sun.dy * H * i / n }))); g.fill(); } }
+  g.fillStyle = `rgba(8,12,18,${sun.a * 0.45})`; poly(p._shd[1]); g.fill();
+  g.fillStyle = `rgba(8,12,18,${sun.a})`; poly(p._shd[0]); g.fill();
+  if (p.poly && p.poly.length > 4) { const n = 6; for (let i = 1; i < n; i++) { g.fillStyle = `rgba(8,12,18,${sun.a / n})`; poly(p._shdO.map(q => ({ x: q.x + sun.dx * H * i / n, y: q.y + sun.dy * H * i / n }))); g.fill(); } }
 }
 /* a blueprint's ghost: runways and taxiways at their width, aprons and buildings as outlines */
 function drawBlueprint(g, t, col, fill, px) {
