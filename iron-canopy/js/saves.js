@@ -176,7 +176,7 @@ async function exportSave(id) {
     a.download = `iron-canopy-${(meta ? meta.name : id).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    say(`Exported ${meta ? meta.name : 'the save'} as a file. Import it on the Saved games page to play it here or in another browser.`);
+    say(`Exported ${meta ? meta.name : 'the save'} as a file. Import it on the Saved games page, here or in the same browser on another computer.`);
   } catch (e) { say('Could not export it: ' + e.message, true); }
 }
 function importSave() {
@@ -217,7 +217,7 @@ const noteHTML = () => saves.note && Date.now() - saves.noteT < 20000 ? `<p clas
 IC.savesPage = function () {
   const el = $('stSaves'); if (!el) return;
   el.innerHTML = `<div class="card wide">${noteHTML()}${rows(false)}<div class="acts"><button class="btn" data-act="saveImport">Import a save file</button></div>
-    <p class="hint">Saves are kept in this browser only. Export one to keep a copy or to play it in another browser. The last three autosaves are kept.</p></div>`;
+    <p class="hint">Saves are kept in this browser only. Export one to keep a copy or to play it on another computer (in the same browser). The last three autosaves are kept.</p></div>`;
 };
 /* the Settings room's Game card */
 IC.savesCardHTML = function (S) {

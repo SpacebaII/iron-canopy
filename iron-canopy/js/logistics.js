@@ -696,7 +696,7 @@ IC.economy = function (S, dt) {
     if (sl.prog >= 1) {
       T.done.add(tech.id); T.slots[i] = null;
       IC.log(S, 'kill', 'RESEARCH', `${tech.name} complete.`);
-      IC.news(S, `Defense ministry fields new capability: ${tech.name.toLowerCase()}.`);
+      IC.news(S, `Defence ministry fields new capability: ${tech.name.toLowerCase()}.`);
       IC.techAir(S, tech.id);
       IC.sfx && IC.sfx.ui('ok');
       IC.emit(S, 'research', tech.id);
@@ -725,7 +725,7 @@ IC.waitTargets = function (S) {
   const L = [];
   for (const { ap, w } of worksOf(S)) {
     const left = Math.max(0, (w.cost || 0) - (w.spent || 0));
-    if (left > 1) L.push({ key: 'work:' + w.id, what: `${w.label.replace(/^Build /, 'the ').toLowerCase()} at ${ap.name.replace(/ (International|Airport|Air Base)$/, '')}`, amt: left, work: w.id, money: /money/.test(w.wait || '') });
+    if (left > 1) L.push({ key: 'work:' + w.id, what: `${w.part && w.part.kind === 'runway' && w.kind === 'build' ? w.part.name : U.lc(w.label.replace(/^Build /, 'the '))} at ${ap.name.replace(/ (International|Airport|Air Base)$/, '')}`, amt: left, work: w.id, money: /money/.test(w.wait || '') });
   }
   for (const t of IC.TECH) if (!S.tech.done.has(t.id) && !IC.researching(S, t.id) && t.req.every(r => S.tech.done.has(r)) && t.cost > S.budget && (!S.story || t.cat === 'apt' || S.story.act >= 3))
     L.push({ key: 'tech:' + t.id, what: `research: ${t.name.toLowerCase()}`, amt: t.cost });

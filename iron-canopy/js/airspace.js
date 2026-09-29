@@ -969,7 +969,8 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
     : P.w > 1 ? ['staff', `${P.sec || 'The sector'} was overloaded (${Math.round(P.w * 100)}% of what its controllers can handle) and missed it. Another controller would have caught it`]
     : ['timing', 'Both were outside radar cover on airways, and controllers kept them apart by timing alone at the crossing'];
   N.causes = N.causes || {}; N.causes[cause] = (N.causes[cause] || 0) + 1;
-  const gap = `${U.km(d)} apart and ${Math.round(dz * IC.FT / 100) * 100} ft above or below`;
+  const ft = Math.round(dz * IC.FT / 100) * 100;
+  const gap = `${d < 0.1 ? 'within 100 m' : `${U.km(d)} apart`}${ft ? ` and ${ft.toLocaleString('en-US')} ft above or below` : ' at the same height'}`;
   if (near) { N.stats.near++; N.day.near++; }
   const txt = near ? `${a.cs} and ${b.cs} passed ${gap} near ${where}` : `${a.cs} and ${b.cs} lost spacing near ${where}: ${gap}`;
   if (near && S.inc) for (const it of S.inc.list) if (it.kind === 'separation' && (it.ref === a || it.ref === b)) it.done = true;
@@ -979,7 +980,8 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   if (near) {
     S.support = Math.max(0, S.support - 1);
     IC.news(S, `Near miss over ${where}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
-    if (S.camp && IC.card) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · near ${where}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
+    // (a card for the first in six hours; the rest go to the Journal and the incident list, or a busy sky is all cards)
+    if (S.camp && IC.card && !(S.time - (N.nmCardT || -1e9) < 6 * 3600) && (N.nmCardT = S.time)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · near ${where}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why, cause });
 }

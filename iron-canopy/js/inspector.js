@@ -82,7 +82,7 @@ function field(f) {
     <p class="hint">Light aircraft fly slow and low, by sight, in daylight and fair weather. Many have no flight plan and some no transponder. Clubs pay little, but grounding them for long makes them loud.</p></div>`;
 }
 
-/* ---------- our air defense, sensors, launchers, depots ---------- */
+/* ---------- our air defence, sensors, launchers, depots ---------- */
 function unit(u) {
   const d = u.d, [st, cls] = IC.unitState(u);
   const k = S.enemy.known.get(u.id);
@@ -284,11 +284,12 @@ function base(b) {
   const locked = b.locked;
   const stands = IC.aptStands(b), used = stands.filter(s => s.occ).length, linked = stands.filter(s => s.linked !== false && s.hp > 0).length;
   const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id).length;
-  const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, ap).building ? IC.rwyState(S, ap).word : 'RUNWAY CLOSED';
+  const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, b).building ? IC.rwyState(S, b).word : 'RUNWAY CLOSED';
   const rw0 = b.parts.filter(p => p.kind === 'runway' && p.built);
   const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
   const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), pill, locked ? '' : bs.runway ? 'ok' : 'bad');
-  const schem = `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas><div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button></div>`;
+  // (a site with nothing on it yet has no plan to draw: an empty dark box looks broken)
+  const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button></div>`;
   if (locked) return H + `<div class="ibody">${schem}<p class="hint">${esc(b.name)} belongs to the Air Force. It comes under your command later in your career.</p></div>`;
   const warn = st.warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${st.warn.length}</em></h3>${st.warn.slice(0, 6).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">No layout problems found.</div>';
   const fuelF = st.fuelCap ? st.fuel / st.fuelCap : 0;

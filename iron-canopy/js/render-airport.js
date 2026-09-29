@@ -941,10 +941,12 @@ IC.drawBuildGhost = function (g, S, px) {
   if (ok) add(plan.text[0] || '', IC.C.text, true); else add(plan.why, IC.C.hostile, true);
   if (plan.size) add(plan.size, IC.C.amber, true);
   for (const t of plan.text.slice(ok ? 1 : 0, ok ? 3 : 1)) add(t, 'rgba(210,225,235,0.85)', false);
-  const sc = IC.toScreen(hv.x, hv.y), left = sc.x > IC.cam.vw - 480;
+  const sc = IC.toScreen(hv.x, hv.y), left = sc.x > IC.cam.vw - (IC.ui.mapRight || 0) - 480;
   g.font = `500 ${9.5 * px}px "IBM Plex Mono", monospace`;
   const W = Math.max(...lines.map(l => g.measureText(l.t).width)) + 12 * px, H = lines.length * 13 * px + 8 * px;
-  const x0 = left ? hv.x - 20 * px - W : hv.x + 20 * px, y0 = hv.y - 44 * px - H / 2 + 12 * px;
+  // (kept clear of the panels over the map: the goals on the left, the airport panel on the right)
+  const lo = IC.cam.x + (IC.ui.mapLeft || 0) / IC.cam.z, hi = IC.cam.x + (IC.cam.vw - (IC.ui.mapRight || 0)) / IC.cam.z - W;
+  const x0 = U.clamp(left ? hv.x - 20 * px - W : hv.x + 20 * px, lo, Math.max(lo, hi)), y0 = hv.y - 44 * px - H / 2 + 12 * px;
   g.fillStyle = 'rgba(12,18,24,0.74)'; g.fillRect(x0, y0, W, H);
   if (!ok) { g.fillStyle = IC.C.hostile; g.fillRect(x0, y0, 2 * px, H); }
   lines.forEach((l, i) => { g.font = `${l.b ? 700 : 500} ${9.5 * px}px "IBM Plex Mono", monospace`; g.fillStyle = l.c; g.fillText(l.t, x0 + 6 * px, y0 + 14 * px + i * 13 * px); });
