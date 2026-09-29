@@ -40,7 +40,7 @@ IC.drawInfoView = function (g, S, px, now) {
       const f = (H.s.get(s.id) || 0) / max; n++; if (s.occ) used++;
       const S0 = IC.STAND[s.size] || IC.STAND.m;
       g.save(); g.translate(s.x, s.y); g.rotate(s.a); g.fillStyle = s.linked === false ? 'rgba(255,91,79,0.6)' : heat(f, 0.75); g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore();
-      if (IC.cam.z > 6) label(g, `${s.name || s.id.split('s').pop()} ${IC.RAMP_SIZE[s.size] ? IC.RAMP_SIZE[s.size][0].toUpperCase() : ''}`, s.x, s.y, px);
+      if (IC.cam.z > 26) label(g, `${s.name || s.id.split('s').pop()} ${IC.RAMP_SIZE[s.size] ? IC.RAMP_SIZE[s.size][0].toUpperCase() : ''}`, s.x, s.y, px);
     }
     legend.push(['Stand use', `${used} of ${n} stands in use now · shaded by use while this view is open`], [heat(0), 'hardly used'], [heat(0.5), 'half the time'], [heat(1), 'always full'], ['rgba(255,91,79,0.8)', 'no taxiway reaches it']);
   } else if (v === 'walk') {
@@ -53,7 +53,7 @@ IC.drawInfoView = function (g, S, px, now) {
       const S0 = IC.STAND[s.size] || IC.STAND.m;
       g.save(); g.translate(s.x, s.y); g.rotate(s.a); g.fillStyle = heat(f, 0.75); g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore();
       if (best && !s.contact) { g.strokeStyle = heat(f, 0.6); g.lineWidth = Math.max(0.01, 1.2 * px); g.setLineDash([4 * px, 3 * px]); g.beginPath(); g.moveTo(s.x, s.y); g.lineTo(best.x, best.y); g.stroke(); g.setLineDash([]); }
-      if (IC.cam.z > 6) label(g, s.contact ? 'gate' : m > 400 ? `bus ${Math.round(m)} m` : `${Math.round(m)} m`, s.x, s.y, px);
+      if (IC.cam.z > 22) label(g, s.contact ? 'gate' : m > 400 ? `bus ${Math.round(m)} m` : `${Math.round(m)} m`, s.x, s.y, px);
     }
     legend.push(['Walking to gates', `${far} stands need a bus (over 400 m)`], [heat(0), 'a gate: a jet bridge'], [heat(0.5), 'a walk'], [heat(1), 'a bus ride']);
   } else if (v === 'service') {
@@ -111,12 +111,14 @@ function drawLegend(g, L) {
   if (!L.length) return;
   const dpr = IC.dpr ? IC.dpr() : 1, T = g.getTransform();
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.font = '700 15px "Saira Condensed", sans-serif';
+  const hw = g.measureText(L[0][0].toUpperCase()).width + 10;
   g.font = '500 12px "IBM Plex Sans Condensed", sans-serif';
-  const w1 = g.measureText(L[0][1]).width + L[0][0].length * 9 + 40, w2 = L.slice(1).reduce((a, q) => a + g.measureText(q[1]).width + 33, 14);
+  const w1 = g.measureText(L[0][1]).width + hw + 30, w2 = L.slice(1).reduce((a, q) => a + g.measureText(q[1]).width + 33, 14);
   const w = Math.min(IC.cam.vw - 40, Math.max(w1, w2)), x = (IC.cam.vw - w) / 2, y = 150, h = 50;
   g.fillStyle = 'rgba(4,10,15,0.92)'; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, 12); else g.rect(x, y, w, h); g.fill();
   g.font = '700 15px "Saira Condensed", sans-serif'; g.fillStyle = '#e8f0f5'; g.fillText(L[0][0].toUpperCase(), x + 14, y + 20);
-  g.font = '500 12px "IBM Plex Sans Condensed", sans-serif'; g.fillStyle = '#9ab0bf'; g.fillText(L[0][1], x + 14 + g.measureText(L[0][0].toUpperCase()).width * 1.15 + 10, y + 20);
+  g.font = '500 12px "IBM Plex Sans Condensed", sans-serif'; g.fillStyle = '#9ab0bf'; g.fillText(L[0][1], x + 14 + hw, y + 20);
   let cx = x + 14;
   for (const [col, t] of L.slice(1)) { g.fillStyle = col; g.fillRect(cx, y + 31, 12, 10); g.fillStyle = '#c8d6e0'; g.fillText(t, cx + 17, y + 40); cx += 17 + g.measureText(t).width + 16; }
   g.setTransform(T);
