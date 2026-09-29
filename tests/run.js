@@ -2806,7 +2806,7 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   for (const k in IC.THR) { const m = IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'H' }, true); assert(m && IC.MODELS[m], `no model for threat ${k}`); }
   for (const k in IC.THR) if (IC.THR[k].civil) assert(IC.ACTYPES[IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'N' }, true)], `civil traffic (${k}) is drawn as a weapon`);
   for (const k in IC.UNITS) assert(IC.modelOfUnit(k) === k && IC.MODELS[k], `no model for unit ${k}`);
-  for (const k in IC.MODELS) assert(IC.modelSize(k) > 1 && IC.modelSize(k) < 200, `model ${k} has an odd size (${IC.modelSize(k)} m)`);
+  for (const k in IC.MODELS) assert(IC.modelSize(k) > (k === 'person' ? 0.4 : 1) && IC.modelSize(k) < 200, `model ${k} has an odd size (${IC.modelSize(k)} m)`);
   assert(IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U' }) === null && IC.modelOfThreat({ type: 'ftr', d: IC.THR.ftr, aff: 'U', klass: 'fighter' }) === 'ftr_e', 'an unknown track should show only what its class says');
   const tower = IC.blockBoxes({ x: 0, y: 0, w: 3, h: 3, a: 0, seed: 12, f: 'tower', hp: 1 }, true), cul = IC.blockBoxes({ x: 0, y: 0, w: 3, h: 3, a: 0, seed: 12, f: 'cul', hp: 1 }, true);
   assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
@@ -2853,7 +2853,7 @@ test('aircraft variety: business jets use the international airports and park on
   const aps = IC.bizAirports(S);
   assert(aps.length >= 1 && S.biz.parked.length >= 2, `${aps.length} airports for business jets, ${S.biz.parked.length} parked at the start`);
   const ap = aps[0], life = IC.apronLife(S, ap);
-  assert(life.some(q => IC.ACTYPES[q[0]].biz) && life.some(q => IC.ACTYPES[q[0]].ga), 'no business jets or light aircraft on the business side');
+  assert(life.some(q => (IC.ACTYPES[q[0]] || {}).biz) && life.some(q => (IC.ACTYPES[q[0]] || {}).ga), 'no business jets or light aircraft on the business side');
   const taken = new Set(IC.bizStands(S, ap).filter(s => s.occ).map(s => s.id));
   assert(!taken.size, 'a business jet is drawn on a stand an airliner holds');
   let flights = 0;

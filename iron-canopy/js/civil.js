@@ -213,6 +213,7 @@ IC.bizStands = function (S, ap) {
 IC.apronLife = function (S, ap) {
   const out = []; if (!S.biz || !ap.parts) return out;
   const stands = IC.bizStands(S, ap); if (!stands.length) return out;
+  const fbo = fboSpot(ap, stands); if (fbo) out.push(fbo);
   const used = new Set(), H = S.rare && S.rare.here;
   if (H && H.ap === ap.id) {
     const T = IC.ACTYPES[H.type], fit = stands.filter(s => IC.STAND_FITS[s.size].includes(T.stand)).concat(stands);
@@ -232,6 +233,21 @@ IC.apronLife = function (S, ap) {
   }
   return out;
 };
+
+/* the business terminal (FBO): a small building behind the middle of the business apron's back edge, where there is
+   open ground for it */
+const segDist = (x, y, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, t = U.clamp(((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1); return U.dxy(x, y, a.x + dx * t, a.y + dy * t); };
+function fboSpot(ap, stands) {
+  const p = ap.parts.find(q => q.id === stands[0].apron); if (!p || p.w == null || (p.stands || []).length < 3) return null;
+  const ux = Math.cos(p.a), uy = Math.sin(p.a), nx = -uy, ny = ux, sg = Math.sign((stands[0].x - p.x) * nx + (stands[0].y - p.y) * ny) || 1;
+  const d = p.h / 2 + 0.2, x = p.x + nx * sg * d + ux * (p.w / 2 - 0.35), y = p.y + ny * sg * d + uy * (p.w / 2 - 0.35);
+  for (const q of ap.parts) {
+    if (q === p) continue;
+    const r = q.a && q.b && q.a.x != null ? segDist(x, y, q.a, q.b) - 0.25 : U.dxy(x, y, q.x, q.y) - Math.max(q.w || 0, q.h || 0) / 2;
+    if (r < 0.25) return null;
+  }
+  return ['fbo', null, x, y, p.a + (sg > 0 ? 0 : Math.PI)];
+}
 
 /* ---------- a light-aircraft field on the ground: the club's aircraft in a row, covered and tied down, some out
    flying; the clubhouse, hangar and pump; a helicopter on its pad; the fuel bowser going from one to the next and
@@ -275,15 +291,14 @@ IC.fieldLife = function (S, f) {
 
 /* ---------- rare visitors: now and then something one of a kind comes to one of our airports for a few hours ---------- */
 IC.RARE = {
-  vintage: { w: 3, why: 'a restored 1950s airliner on a tour, and people come out to watch it', from: 'abroad' },
-  sst: { w: 1, why: 'a supersonic airliner on a charter; over land it flies slower than sound', from: 'abroad' },
-  outsize: { w: 2, why: 'an outsize freighter delivering a large load', from: 'abroad' },
-  airship: { w: 2, why: 'an airship on a sightseeing tour, at walking pace for an aircraft', from: 'home' },
-  amphib: { w: 2, why: 'a firefighting amphibian on its way to the forest fire season', from: 'home' },
-  display: { w: 2, why: 'the national display team, practising for an air show: seven jets in formation', from: 'home' },
-  state: { w: 1, why: 'a head of state on an official visit', from: 'abroad' }
+  vintage: { w: 3, from: 'abroad', say: ap => `A vintage four-engine airliner is visiting ${ap} today, restored and on a tour; people will come out to watch.` },
+  sst: { w: 1, from: 'abroad', say: ap => `A supersonic airliner is visiting ${ap} today on a charter. Over land it flies slower than sound.` },
+  outsize: { w: 2, from: 'abroad', say: ap => `An outsize freighter is visiting ${ap} today, with a load too big for any other aircraft.` },
+  airship: { w: 2, from: 'home', say: ap => `An airship is visiting ${ap} today on a sightseeing tour, at about 110 km/h.` },
+  amphib: { w: 2, from: 'home', say: ap => `A firefighting amphibian is visiting ${ap} today, on its way to the forest fire season.` },
+  display: { w: 2, from: 'home', say: ap => `The national display team is visiting ${ap} today: seven jets in formation, practising for an air show.` },
+  state: { w: 1, from: 'abroad', say: ap => `A head of state is visiting ${ap} today, in a four-engine jet of their own.` }
 };
-const article = s => (/^[aeiou]/i.test(s) ? 'An ' : 'A ') + s.toLowerCase();
 function rareVisitors(S, war) {
   const R = S.rare, H = R.here;
   // the visitor leaves when its day is done
@@ -296,19 +311,25 @@ function rareVisitors(S, war) {
   R.next = S.time + U.rand(1.5, 3.5) * 86400;
   if (war || S.airspace !== 'open') return;
   const recent = R.seen.slice(-3), opts = Object.keys(IC.RARE).filter(k => !recent.includes(k));
-  const type = U.wpick(opts.map(k => [k, IC.RARE[k].w])), T = IC.ACTYPES[type];
+  IC.rareVisit(S, U.wpick(opts.map(k => [k, IC.RARE[k].w])));
+}
+/* a visitor of a given type sets off for one of our airports with a runway long enough (null if there is none) */
+IC.rareVisit = function (S, type, apId) {
+  const R = S.rare, T = IC.ACTYPES[type];
   const aps = IC.bases(S).filter(ap => ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && ap.parts && ap.parts.some(p => p.kind === 'runway' && p.built && U.dist(p.a, p.b) >= T.rwy));
-  const ap = U.pick(aps); if (!ap) return;
+  const ap = (apId && S.byId[apId]) || U.pick(aps); if (!ap) return null;
   const to = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, port = U.pick(IC.avPorts(S));
   const from = IC.RARE[type].from === 'home' || !port ? farTown(S, ap) : { x: port.x, y: port.y, name: port.name };
   const cs = type === 'state' ? `${S.world.names.H.slice(0, 3).toUpperCase()} 1` : type === 'display' ? 'ARROWS' : IC.regOf(S.time | 0, 'K');
   const t = rareFly(S, type, from, to, cs, { type });
   R.seen.push(type); R.flying = t.id;
   const eta = U.dist(from, to) / t.spd;
-  IC.log(S, 'info', 'VISITOR', `${article(T.name)} is visiting ${ap.name} today: ${IC.RARE[type].why}. It lands in about ${U.dur(eta)}; select it to follow it in the live view.`, t);
-  IC.news(S, `${article(T.name)} is visiting ${ap.name} today.`);
+  const say = IC.RARE[type].say(ap.name);
+  IC.log(S, 'info', 'VISITOR', `${say} It lands in about ${U.dur(eta)}. Select it to follow it in the live view.`, t);
+  IC.news(S, say.split(/[,:;.]/)[0] + '.');
   IC.emit(S, 'rareVisitor', { type, ap: ap.id, cs });
-}
+  return t;
+};
 /* one rare visitor in the air (a display team: the leader and six wingmen in an arrowhead) */
 function rareFly(S, type, from, to, cs, visit) {
   const T = IC.ACTYPES[type], alt = type === 'airship' ? 0.4 : type === 'display' ? 1.2 : Math.min(T.alt, 6);

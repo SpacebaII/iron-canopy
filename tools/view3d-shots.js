@@ -131,6 +131,36 @@ const SCENES = {
       V.follow = m; camTo(V, 'follow'); V.cam = 'follow'; Object.assign(V.orbit, { yaw: +(window.YAW || 0.75), pitch: +(window.PITCH || 0.22), dist: Math.max(8, IC.modelSize(k) * +(window.DIST || 0.62)) });
       await wait(1300); await __snap('g38-' + k);
     }`,
+  // brief 38: a light-aircraft field by day: a light aircraft leaving it, then the club's row seen from the replay
+  'ga-field': `
+    Math.random = seeded(5); IC.S.seed = 4242; await IC.begin('story'); const S = IC.S; S.paused = true;
+    IC.ui.cineShown = 1e9; for (const id of ['cine', 'comms']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+    S.time = Math.floor(S.time / 86400) * 86400 + 86400 + 10.5 * 3600;
+    const t = steps(S, 3 * 3600, S => S.threats.find(x => !x.dead && x.type === 'ga' && x.gaFrom && x.gaFrom.field && !x.tow && x.age > 20 && x.age < 30));
+    if (!t) throw new Error('nothing leaving a field');
+    const L = await live(S, t, 'chase', 1500); L.camK = 2.6; await wait(1500); await __snap('ga-field');
+    IC.liveClose(); S.paused = true;
+    const f = S.asp.fields.find(x => x.id === t.gaFrom.field), ux = Math.cos(f.a), uy = Math.sin(f.a);
+    const cx = f.x - ux * 0.3 - uy * 0.62, cy = f.y - uy * 0.3 + ux * 0.62;
+    await replay({ x: cx, y: cy, t: S.time - 2, r: 25 }, S.time - 2, { dist: +(window.DIST || 1.4), pitch: 0.36, yaw: f.a + +(window.YAW || 2.3) });
+    await __snap('ga-field-2');`,
+  // brief 38: the capital's business side, jets and light aircraft on the free stands, from the replay window
+  'biz-apron': `
+    const S = await game('sandbox', 11); steps(S, 1200);
+    const ap = S.byId.i0, life = IC.apronLife(S, ap), c = life[Math.min(+(window.PICK || 2), life.length - 1)];
+    console.log('business side:', life.map(q => q[0]).join(', '));
+    await replay({ x: c[2], y: c[3], t: S.time - 2, r: 25 }, S.time - 2, { dist: +(window.DIST || 1.6), pitch: 0.4, yaw: +(window.YAW || 2.4) });
+    await __snap('biz-apron');`,
+  // brief 38: rare visitors in flight, followed in the live view
+  rare: `
+    const S = await game('sandbox', 10);
+    for (const [k, cam, K] of [['vintage', 'chase', 1.6], ['airship', 'side', 1.2], ['display', 'chase', 2.2], ['sst', 'side', 1.0], ['outsize', 'chase', 1.3]]) {
+      if (window.MODELS && !window.MODELS.split(',').includes(k)) continue;
+      S.rare.flying = null; S.rare.here = null;
+      const t = IC.rareVisit(S, k); steps(S, 240);
+      const L = await live(S, t, cam, 2500); L.camK = K; await wait(2000); await __snap('rare-' + k);
+      IC.liveClose(); S.paused = true;
+    }`,
   // the live view full screen following an airliner round the capital's airport, recorded by the browser
   video: `
     const S = await game('sandbox', 11);
@@ -179,6 +209,25 @@ const SCENES = {
       if (f % 30 === 0) console.log('movie: frame', f);
     }
     await __snap('movie-last');`,
+  // brief 38's busy airport: the capital with its business side full and sixty light aircraft round it (about 150
+  // aircraft), frame times on the map close in and in the live view full screen, and the step's cost
+  'frames-38': `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light'));
+    const ap = S.byId.i0, home = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id };
+    for (let i = 0, n = IC.bizStands(S, ap).length; i < n; i++) S.biz.parked.push({ ap: ap.id, type: IC.BIZ_MIX[i % 4][0], cs: 'X' + i, liv: IC.gaLivery(i), until: S.time + 86400 });
+    for (let i = 0; i < 60; i++) IC.gaLaunch(S, home, home, { type: IC.GA_MIX[i % 8][0], circuit: 3, progress: i / 60, alt: 0.3 });
+    const near = () => S.threats.filter(t => !t.dead && U.dist(t, ap) < 150).length + (ap.moves || []).filter(x => !x.dead).length + ap.parts.filter(p => p.kind === 'apron').reduce((n, p) => n + (p.stands || []).filter(s => s.occ).length, 0) + IC.apronLife(S, ap).length;
+    let t0 = performance.now(); for (let i = 0; i < 400; i++) IC.step(S, 0.25); const stepMs = (performance.now() - t0) / 400;
+    IC.cam.fly = null; IC.cam.z = 20; IC.centerOn(ap.x - 10, ap.y - 2);
+    S.paused = false; S.speed = 1; await wait(2500);
+    const mapClose = await frameTimes(120);
+    IC.cam.z = 6; IC.centerOn(ap.x, ap.y); await wait(1500); const mapAirport = await frameTimes(120);
+    const L = IC.liveOpen(S, m); for (let i = 0; i < 150 && !(L.renderer && L.tiles && L.tiles.size > 8); i++) await wait(100);
+    L.el.querySelector('[data-rp=full]').click(); await wait(3500);
+    const liveFull = await frameTimes(120);
+    window.__perf = { aircraft: near(), stepMs: +stepMs.toFixed(3), mapClose, mapAirport, liveFull, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
+    await __snap('frames-38'); S.paused = true;`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -195,7 +244,7 @@ const SCENES = {
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => k !== 'frames' && k !== 'video' && k !== 'movie' && !/^flicker/.test(k));
+  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -219,7 +268,7 @@ const SCENES = {
       ff = path.join(dir, '3d-live.mjpeg'); fs.writeFileSync(ff, '');
       await page.exposeFunction('__frame', b64 => fs.appendFileSync(ff, Buffer.from(b64, 'base64')));
     }
-    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
@@ -230,7 +279,7 @@ const SCENES = {
       require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', ff, '-c:v', 'libvpx', '-b:v', '3M', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
       fs.unlinkSync(ff); console.log('saved', out);
     }
-    if (name === 'frames' || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
+    if (/^frames/.test(name) || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }
     await page.close(); await ctx.close();
     if (vid) { const v = await page.video(); if (v) { const p = await v.path(); fs.renameSync(p, path.join(dir, '3d-live.webm')); console.log('saved', path.join(dir, '3d-live.webm')); } }

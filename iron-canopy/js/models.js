@@ -1183,6 +1183,13 @@ def('fieldkit', 'Flying club', 'Airfield', 60, 30, B => {
   cyl(B, [22, 6, 1.0], 2.0, 0.5, P.fuel, 'z'); box(B, 22, 8, 0.9, 0.6, 0.4, 1.8, '#c8323c');
   cyl(B, [28, 10, 3.0], 6.0, 0.05, P.lgrey, 'z', { segs: 4 }); lathe(B, [[0, 0.45], [-2.4, 0.2]], '#ff7a1a', { at: [27.9, 10, 5.7], segs: 6, cap0: '#ff7a1a' });
 });
+def('fbo', 'Business terminal', 'Airfield', 36, 18, B => {
+  // the business-aviation terminal: a low glass front to the apron, a flat roof, a canopy over the door, cars behind
+  box(B, 0, 0, 2.6, 34, 14, 5.2, '#d9dcd8'); box(B, 0, 0, 5.4, 35, 15, 0.4, '#50565c');
+  box(B, 0, 7.05, 2.4, 30, 0.1, 3.4, P.glass); box(B, 0, 9, 4.2, 8, 4, 0.3, '#50565c');
+  for (const x of [-3.6, 3.6]) cyl(B, [x, 10.6, 2.1], 4.2, 0.12, P.lgrey, 'z', { segs: 5 });
+  for (let i = 0; i < 4; i++) box(B, -12 + i * 6, -11, 0.7, 4.4, 1.8, 1.3, ['#2a3a5a', '#8a1c22', '#c8ccd0', '#1a1c1e'][i]);
+});
 def('helipad', 'Helicopter pad', 'Airfield', 22, 22, B => {
   lathe(B, [[0, 11], [0.08, 11]], '#9a9e98', { at: [0, 0, 0], axis: 'z', segs: B.q ? 20 : 10, cap1: '#9a9e98' });
   lathe(B, [[0.08, 9.4], [0.1, 9.4], [0.1, 8.8], [0.08, 8.8]], '#f0f0ee', { at: [0, 0, 0], axis: 'z', segs: B.q ? 20 : 10 });
