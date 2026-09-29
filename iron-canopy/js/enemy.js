@@ -990,7 +990,7 @@ function report(S, E, R) {
   text += ` They were after ${R.obj.name}${R.set ? ` (${IC.ESETS[R.set].name})` : ''}.`;
   R.text = text; R.res = res;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
-  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time)}`, text, 'report');
+  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report');
   IC.emit(S, 'raidOver', R);
   // the commander learns what worked
   learn(S, E, R, ops);
@@ -1566,7 +1566,10 @@ IC.enemyTick = function (S, dt) {
   }
 
   if (!E.war) {
-    if (E.allow && E.allow.has('recon') && S.time > E.nextThink) { E.nextThink = S.time + U.rand(3600, 5400); OPS.recon(S, E); }
+    // before the war their reconnaissance is the gray zone: in the Career it comes by the calendar (Acts II and III
+    // last years), every half-month to a month in Act II and about weekly in Act III; elsewhere every hour or so
+    const st = S.mode === 'story' && S.story, gap = st ? IC.MO(S, st.act >= 3 ? U.rand(0.2, 0.4) : U.rand(0.5, 1)) : U.rand(3600, 5400);
+    if (E.allow && E.allow.has('recon') && S.time > E.nextThink) { E.nextThink = S.time + gap; OPS.recon(S, E); }
     return;
   }
   runCycle(S, E);

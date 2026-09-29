@@ -338,7 +338,8 @@ IC.WEATHER = {
   overcast: { name: 'Overcast', cloud: 0.7, eo: 0.75, ir: 0.85, heli: true, precip: 0, fog: 0.05 },
   rain:     { name: 'Rain', cloud: 0.85, eo: 0.55, ir: 0.7, heli: true, precip: 0.6, fog: 0.1 },
   storm:    { name: 'Thunderstorms', cloud: 1, eo: 0.4, ir: 0.6, heli: false, precip: 1, fog: 0.15 },
-  fog:      { name: 'Fog', cloud: 0.3, eo: 0.35, ir: 0.65, heli: false, precip: 0, fog: 0.6 }
+  fog:      { name: 'Fog', cloud: 0.3, eo: 0.35, ir: 0.65, heli: false, precip: 0, fog: 0.6 },
+  snow:     { name: 'Snow', cloud: 0.9, eo: 0.5, ir: 0.7, heli: false, precip: 0.7, fog: 0.2, snow: true }
 };
 
 /* ---------- Names for procedural worlds ---------- */

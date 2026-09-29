@@ -740,17 +740,47 @@ function drawTurn(g, S, ap, s, t, px, z) {
 /* ---------- construction you can watch ---------- */
 /* a part under construction in local coordinates (centred, rotated): survey stakes, bare earth, paving or the
    structure rising from one end, then the finished surface waiting for its markings */
-const STAGE_I = { demo: 0, survey: 1, earth: 2, pave: 3, fit: 4, open: 5 };
+const STAGE_I = { demo: 0, survey: 1, earth: 2, pave: 3, mark: 4, fit: 4, lights: 5, open: 6 };
+const LAMP = 'rgba(255,236,170,0.95)', LAMP_OFF = 'rgba(120,120,110,0.8)', TLAMP = 'rgba(90,220,120,0.95)', ELAMP = 'rgba(90,150,255,0.95)';
+/* runway edge lights along both sides, lit up to share f (the rest still dark) */
+function edgeLights(g, w, h, px, f, on) {
+  const st = Math.max(0.3, 12 * px), r = Math.max(0.012, 1.8 * px);
+  for (let x = -w / 2, i = 0; x <= w / 2 + 1e-6; x += st, i++) {
+    const lit = (x + w / 2) / w <= f;
+    for (const y of [-h / 2, h / 2]) {
+      if (lit) { g.fillStyle = on ? 'rgba(255,236,170,0.22)' : 'rgba(255,236,170,0.14)'; g.beginPath(); g.arc(x, y, r * 3.5, 0, 7); g.fill(); }
+      g.fillStyle = lit ? LAMP : LAMP_OFF; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+  }
+}
 function stageRect(g, part, w, h, px, fill, runway, building) {
   const k = STAGE_I[part.stage || 'survey'], f = part.stageF || 0;
   if (k >= 2) { g.fillStyle = DIRT; g.fillRect(-w / 2, -h / 2, w, h); }
+  // earthworks: graded strips spread from one end
   if (k === 2) { g.fillStyle = DIRT2; for (let x = -w / 2; x < w / 2 * (2 * f - 1) + 1e-6; x += Math.max(0.08, 3 * px)) g.fillRect(x, -h / 2, Math.max(0.03, 1.2 * px), h); }
   if (k === 3) { g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w * f, h); if (building) { g.strokeStyle = 'rgba(60,60,60,0.8)'; g.lineWidth = Math.max(0.01, px); for (let x = -w / 2; x < -w / 2 + w * f; x += Math.max(0.1, 4 * px)) { g.beginPath(); g.moveTo(x, -h / 2); g.lineTo(x, h / 2); g.stroke(); } } }
-  if (k >= 4) { g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h); if (runway && k === 4) { g.fillStyle = PAINT; g.fillRect(-w / 2, -0.005, w * f, 0.01); } }
+  if (k >= 4) { g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h); }
+  // markings: the centreline is painted from one end, then the threshold bars
+  if (runway && k >= 4) {
+    const m = k === 4 ? f : 1, dash = Math.max(0.3, 9 * px);
+    g.fillStyle = PAINT;
+    for (let x = -w / 2 + 0.4; x < -w / 2 + (w - 0.4) * m; x += dash * 2) g.fillRect(x, -0.005, Math.min(dash, -w / 2 + (w - 0.4) * m - x), 0.01);
+    if (m > 0.6) for (const e of [-1, 1]) for (let i = -3; i <= 3; i++) if (i) g.fillRect(e * (w / 2 - 0.25) - 0.1, i * h / 9 - 0.006, 0.2, 0.012);
+  }
+  // lights: edge lights come on one by one; at the inspection they all burn
+  if (runway && k >= 5) edgeLights(g, w, h, px, k === 5 ? f : 1, k === 6);
+  // aprons and pads: the yellow edge line painted round, then floodlights along the long sides switched on in turn
+  if (!runway && !building && k >= 4) {
+    g.strokeStyle = YEL; g.lineWidth = Math.max(0.006, 0.8 * px);
+    const m = k === 4 ? f : 1; g.beginPath(); g.moveTo(-w / 2, -h / 2); g.lineTo(-w / 2 + w * m, -h / 2); g.moveTo(-w / 2, h / 2); g.lineTo(-w / 2 + w * m, h / 2); g.stroke();
+    if (k >= 5) { const st = Math.max(0.6, 18 * px), r = Math.max(0.02, 1.4 * px), on = k === 5 ? f : 1; for (let x = -w / 2 + st / 2; x < w / 2; x += st) { const lit = (x + w / 2) / w <= on; g.fillStyle = lit ? LAMP : LAMP_OFF; for (const y of [-h / 2 - 0.03, h / 2 + 0.03]) { g.beginPath(); g.arc(x, y, lit ? r * 1.5 : r, 0, 7); g.fill(); if (lit) { g.fillStyle = 'rgba(255,236,170,0.12)'; g.beginPath(); g.arc(x, y, r * 6, 0, 7); g.fill(); g.fillStyle = LAMP; } } } }
+  }
+  if (building && k === 5) { g.fillStyle = `rgba(255,236,170,${0.25 + 0.5 * f})`; const n = Math.max(1, Math.round(w / Math.max(0.1, 6 * px))); for (let i = 0; i < n * f; i++) g.fillRect(-w / 2 + (i + 0.3) * w / n, -h / 2 + h * 0.3, w / n * 0.4, h * 0.4); }
   if (k <= 1) { g.fillStyle = k === 0 ? 'rgba(160,110,90,0.35)' : 'rgba(242,180,65,0.1)'; g.fillRect(-w / 2, -h / 2, w, h); }
   // the outline stays dashed until it opens
   g.strokeStyle = STAKE; g.setLineDash([4 * px, 3 * px]); g.lineWidth = 1.2 * px; g.strokeRect(-w / 2, -h / 2, w, h); g.setLineDash([]);
-  if (k <= 1) { g.fillStyle = STAKE; const st = Math.max(0.3, 14 * px); for (let x = -w / 2; x <= w / 2 + 1e-6; x += st) for (const y of [-h / 2, h / 2]) g.fillRect(x - 1 * px, y - 1 * px, 2 * px, 2 * px); }
+  // survey: pegs go in round the outline as the surveyors walk it
+  if (k <= 1) { g.fillStyle = STAKE; const st = Math.max(0.3, 14 * px), n = Math.ceil((w / st + 1) * (k === 1 ? f : 1)); let i = 0; for (let x = -w / 2; x <= w / 2 + 1e-6 && i < n; x += st, i++) for (const y of [-h / 2, h / 2]) g.fillRect(x - 1 * px, y - 1 * px, 2 * px, 2 * px); }
 }
 function stageLine(g, pts, w, part, px) {
   const k = STAGE_I[part.stage || 'survey'], f = part.stageF || 0;
@@ -759,7 +789,10 @@ function stageLine(g, pts, w, part, px) {
   if (k >= 2) { g.strokeStyle = DIRT; g.lineWidth = Math.max(w + 0.1, 1.5 * px); path(1); g.stroke(); }
   if (k === 3) { g.strokeStyle = paveCol(part); g.lineWidth = Math.max(w, 1.2 * px); path(f); g.stroke(); }
   if (k >= 4) { g.strokeStyle = paveCol(part); g.lineWidth = Math.max(w, 1.2 * px); path(1); g.stroke(); }
-  if (k <= 1 || k >= 4) { g.strokeStyle = STAKE; g.setLineDash([5 * px, 4 * px]); g.lineWidth = Math.max(k <= 1 ? w : 0.01, 1.5 * px); g.globalAlpha = k <= 1 ? 0.6 : 0.8; path(1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1; }
+  // the yellow centreline, painted along; then its green lights come on
+  if (k >= 4) { g.strokeStyle = YEL; g.lineWidth = Math.max(0.006, 0.8 * px); path(k === 4 ? f : 1); g.stroke(); }
+  if (k >= 5) { g.strokeStyle = TLAMP; g.lineWidth = Math.max(0.01, (k === 6 ? 2 : 1.4) * px); g.setLineDash([1 * px, 7 * px]); path(k === 5 ? f : 1); g.stroke(); g.setLineDash([]); }
+  if (k <= 1 || k >= 4) { g.strokeStyle = STAKE; g.setLineDash([5 * px, 4 * px]); g.lineWidth = Math.max(k <= 1 ? w : 0.01, 1.5 * px); g.globalAlpha = k <= 1 ? 0.6 : 0.8; path(k === 1 ? Math.max(0.05, f) : 1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1; }
 }
 /* where on a part the work is happening now: the front of the paving, or somewhere along it */
 function workAt(ap, p, f) {
@@ -767,22 +800,47 @@ function workAt(ap, p, f) {
   if (p.kind === 'taxi') { const pts = p.nodes.map(id => ap.nodes[id]).filter(Boolean); let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); let left = L * f; for (let i = 1; i < pts.length; i++) { const d = U.dist(pts[i - 1], pts[i]); if (left <= d) return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * left / (d || 1), y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * left / (d || 1), h: Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x) }; left -= d; } return pts[pts.length - 1]; }
   const w = p.w || 0.3; return IC.rectWorld(p, -w / 2 + w * f, 0);
 }
-const MACHINE = { demo: ['#c8a040', '#6a6a6a'], survey: ['#f0f0f0'], earth: ['#e8b820', '#e8b820', '#d0d0d0'], pave: ['#303030', '#e8b820', '#d0d0d0'], fit: ['#f0f0f0', '#e07b1a'], open: ['#f0f0f0'] };
-/* an engineer crew: machines at the working front, moving while they work, parked while they wait */
+/* the machines of each stage (colour, length and width in units; 'truck' ones shuttle along the site) */
+const MACHINE = {
+  demo: [['#c8a040', 1], ['#6a6a6a', 1]],
+  survey: [['#f0f0f0', 0.8], ['#e07b1a', 0.4]],
+  earth: [['#e8b820', 1.2], ['#e8b820', 1], ['#d88a20', 1, 'truck'], ['#d88a20', 1, 'truck']],
+  pave: [['#303030', 1.3], ['#e8b820', 0.9], ['#d0d0d0', 0.8], ['#d88a20', 1, 'truck']],
+  mark: [['#f0f0f0', 1], ['#f2d14a', 0.6]],
+  fit: [['#f0f0f0', 1], ['#e07b1a', 0.8]],
+  lights: [['#e07b1a', 0.9], ['#f0f0f0', 0.8]],
+  open: [['#f0f0f0', 0.7]]
+};
+/* an engineer crew: machines at the working front, moving while they work, parked while they wait; dump and
+   concrete lorries shuttle between the front and the site gate */
 function drawCrew(g, S, ap, w, px, now) {
   const p = w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
   const busy = !w.wait, cols = MACHINE[st.k] || MACHINE.fit;
   // a stalled site: the machines stand idle at the front, marked amber
   if (!busy && !(w.si > 0 || w.t > 0)) return;
-  const front = st.k === 'pave' || st.k === 'demo' ? f : 0.5 + 0.4 * Math.sin(now * 0.3 + p.x);
+  // the front: where the grading, paving, painting or wiring has got to; the inspection drives up and down
+  const front = st.k === 'open' ? 0.5 + 0.4 * Math.sin(now * 0.3 + p.x) : f;
   const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
-  const mw = Math.max(0.1, 5 * px), mh = mw * 0.55;
-  cols.forEach((c, i) => {
-    const jig = busy ? Math.sin(now * 1.7 + i * 2.1) * 0.08 : 0, off = (i - (cols.length - 1) / 2) * mw * 1.6;
-    const x = at.x + Math.cos(h) * (jig - i * mw * 0.6) - Math.sin(h) * off, y = at.y + Math.sin(h) * (jig - i * mw * 0.6) + Math.cos(h) * off;
-    g.save(); g.translate(x, y); g.rotate(h); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw / 2 + 0.01, -mh / 2 + 0.01, mw, mh); g.fillStyle = c; g.fillRect(-mw / 2, -mh / 2, mw, mh); g.restore();
+  const mw = Math.max(0.1, 7 * px), mh = mw * 0.55;
+  const box = (x, y, hd, c, L) => { g.save(); g.translate(x, y); g.rotate(hd); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw * L / 2 + 0.01, -mh / 2 + 0.01, mw * L, mh); g.fillStyle = c; g.fillRect(-mw * L / 2, -mh / 2, mw * L, mh); g.restore(); };
+  let fixed = 0;
+  cols.forEach(([c, L, kind], i) => {
+    if (kind === 'truck') {
+      // back and forth between the gate (the part's start) and the front, loaded one way
+      const ph = ((now * (busy ? 0.08 : 0) + i * 0.37) % 1), t = ph < 0.5 ? ph * 2 : 2 - ph * 2;
+      const q = workAt(ap, p, U.clamp(t * Math.max(0.05, front), 0, 1)), qh = (q.h != null ? q.h : h) + (ph < 0.5 ? 0 : Math.PI);
+      box(q.x - Math.sin(h) * mh * 1.4, q.y + Math.cos(h) * mh * 1.4, qh, c, L);
+      return;
+    }
+    const jig = busy ? Math.sin(now * 1.7 + i * 2.1) * 0.08 : 0, off = (fixed - (cols.length - 1) / 2) * mw * 1.6;
+    const x = at.x + Math.cos(h) * (jig - fixed * mw * 0.6) - Math.sin(h) * off, y = at.y + Math.sin(h) * (jig - fixed * mw * 0.6) + Math.cos(h) * off;
+    fixed++;
+    box(x, y, h, c, L);
   });
   if (busy && st.k === 'earth' && Math.random() < 0.15) IC.part(S, { x: at.x + U.rand(-0.1, 0.1), y: at.y + U.rand(-0.1, 0.1), vy: -2, life: 1.4, size: 2.5, grow: 4, col: '170,140,100', a: 0.35 });
+  if (busy && st.k === 'pave' && Math.random() < 0.06) IC.part(S, { x: at.x, y: at.y, vy: -1.5, life: 1.6, size: 2, grow: 3, col: '120,120,120', a: 0.25 });
+  // the electricians' test: a light blinks at the front
+  if (busy && st.k === 'lights' && Math.sin(now * 6) > 0) { g.fillStyle = LAMP; g.beginPath(); g.arc(at.x, at.y, 2.5 * px, 0, 7); g.fill(); }
   if (w.wait) { g.fillStyle = IC.C.amber; g.beginPath(); g.arc(at.x, at.y - 9 * px, 3 * px, 0, 7); g.fill(); if (IC.cam.z > 30) lbl(g, w.wait.split(':')[0].toUpperCase(), at.x, at.y - 15 * px, px, IC.C.amber, 7.5, 'center', 700); }
   else if (IC.cam.z > 14) lbl(g, st.name.toUpperCase(), at.x, at.y - 10 * px, px, 'rgba(236,236,226,0.8)', 7.5, 'center', 700);
 }
@@ -814,12 +872,15 @@ IC.drawBuildGhost = function (g, S, px) {
   if (m.kind !== 'build') return;
   const ap = m.ap, tol = Math.max(0.12, 8 * px);
   // the plan is worked out again only when the cursor or the plan changes
-  const key = `${m.part}|${hv.x.toFixed(2)},${hv.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}`;
-  if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol); }
+  const free = !!IC.bldFree;
+  const key = `${m.part}|${hv.x.toFixed(2)},${hv.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
+  if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
   const col = ok ? 'rgba(111,210,255,0.9)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(111,210,255,0.2)' : 'rgba(255,91,79,0.2)';
   // homes that would come down
   for (const b of plan.blocks || []) { g.save(); g.translate(b.x, b.y); g.rotate(b.a || 0); g.strokeStyle = IC.C.hostile; g.lineWidth = 1.4 * px; g.fillStyle = 'rgba(255,91,79,0.3)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); g.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h); g.restore(); }
+  // the part in the way of a plan that cannot be built
+  if (!ok && plan.hit) drawHit(g, m.ap, plan.hit, px);
   // a runway that paving next to would close
   if (plan.near) { const rw = plan.near, c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw); g.save(); g.translate(c.x, c.y); g.rotate(Math.atan2(d.y, d.x)); g.fillStyle = 'rgba(242,180,65,0.25)'; g.fillRect(-IC.rwLen(rw) / 2, -rw.w, IC.rwLen(rw), rw.w * 2); g.restore(); }
   for (const sp of plan.specs) {
@@ -857,23 +918,86 @@ IC.drawBuildGhost = function (g, S, px) {
     g.strokeStyle = last ? IC.C.ok : 'rgba(236,236,226,0.9)'; g.lineWidth = 1.5 * px;
     g.beginPath(); g.arc(p.x, p.y, (last ? 6 + 2 * Math.sin(now * 6) : 4) * px, 0, 7); g.stroke();
   });
-  // the snap target
+  // the guides the point locked onto, and the straight line from the last point
   const sn = plan.snap;
+  if (sn) drawGuides(g, m, sn, px);
+  // the snap target
   if (sn) {
     const c2 = sn.kind === 'free' ? 'rgba(200,210,220,0.8)' : sn.kind === 'rwy' ? 'rgba(255,240,200,0.95)' : IC.C.ok;
     g.strokeStyle = c2; g.lineWidth = 1.5 * px; g.beginPath();
     if (sn.kind === 'free') { g.moveTo(sn.x - 5 * px, sn.y); g.lineTo(sn.x + 5 * px, sn.y); g.moveTo(sn.x, sn.y - 5 * px); g.lineTo(sn.x, sn.y + 5 * px); } else g.arc(sn.x, sn.y, 5 * px, 0, 7);
     g.stroke();
-    const tag = { node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: 'corner', edge: sn.what ? 'against the ' + sn.what : 'edge' }[sn.kind] || (sn.ang != null ? `${(sn.ang + 360) % 180}° to the runway` : '');
-    if (tag) lbl(g, tag, sn.x, sn.y + 16 * px, px, sn.kind === 'free' ? IC.C.muted : IC.C.ok, 8.5, 'center', 600);
+    const tag = [{ node: 'joins', rwy: 'onto runway', taxi: 'joins taxiway', apron: 'joins apron', corner: `corner of the ${sn.what || 'part'}`, edge: sn.what ? (sn.face ? 'faces the ' : 'flush with the ') + sn.what : 'edge' }[sn.kind], sn.lock, sn.guides && !sn.lock ? 'on the ' + sn.guides.map(q => q.what).join(' and ') : ''].filter(Boolean).join(' · ');
+    const dist = (plan.marks || []).find(k => k.cursor);
+    let y = sn.y + 17 * px;
+    if (tag) { pill(g, tag, sn.x, y, px, sn.kind === 'free' && !sn.lock && !sn.guides ? IC.C.muted : GUIDE_T); y += 15 * px; }
+    if (dist) pill(g, dist.t, sn.x, y, px, 'rgba(200,215,228,0.95)');
   }
-  // cost and what it does, beside the cursor
-  const lines = ok ? plan.text.slice(0, 3) : [plan.why].concat(plan.text.slice(0, 1));
-  const at = hv;
-  lines.forEach((t, i) => lbl(g, t, at.x + 18 * px, at.y - 40 * px + i * 13 * px, px, i === 0 ? (ok ? IC.C.text : IC.C.hostile) : 'rgba(210,225,235,0.85)', i === 0 ? 10 : 9, 'left', i === 0 ? 700 : 500));
+  // lengths on their legs, an area's sides beside them
+  for (const k of plan.marks || []) if (!k.cursor) pill(g, k.t, k.x + (k.n ? k.n.x * 14 * px : 0), k.y + (k.n ? k.n.y * 14 * px : 0), px, GUIDE_T, k.n && !k.leg ? k.n : null);
+  // cost and what it does, beside the cursor on a dark card; a part far bigger than needed says so in amber
+  const lines = [];
+  const add = (t, c, b) => { for (const w of wrap(t, 62)) { lines.push({ t: w, c, b }); b = false; } };
+  if (ok) add(plan.text[0] || '', IC.C.text, true); else add(plan.why, IC.C.hostile, true);
+  if (plan.size) add(plan.size, IC.C.amber, true);
+  for (const t of plan.text.slice(ok ? 1 : 0, ok ? 3 : 1)) add(t, 'rgba(210,225,235,0.85)', false);
+  const sc = IC.toScreen(hv.x, hv.y), left = sc.x > IC.cam.vw - 480;
+  g.font = `500 ${9.5 * px}px "IBM Plex Mono", monospace`;
+  const W = Math.max(...lines.map(l => g.measureText(l.t).width)) + 12 * px, H = lines.length * 13 * px + 8 * px;
+  const x0 = left ? hv.x - 20 * px - W : hv.x + 20 * px, y0 = hv.y - 44 * px - H / 2 + 12 * px;
+  g.fillStyle = 'rgba(12,18,24,0.74)'; g.fillRect(x0, y0, W, H);
+  if (!ok) { g.fillStyle = IC.C.hostile; g.fillRect(x0, y0, 2 * px, H); }
+  lines.forEach((l, i) => { g.font = `${l.b ? 700 : 500} ${9.5 * px}px "IBM Plex Mono", monospace`; g.fillStyle = l.c; g.fillText(l.t, x0 + 6 * px, y0 + 14 * px + i * 13 * px); });
   const need = IC.bldIsLine(m.part) || IC.bldIsArea(m.part) ? 2 : 1;
   if (ok && pts.length >= need && m.part !== 'stand') { const q = m.part === 'parallel' ? hv : pts[pts.length - 1]; lbl(g, 'click again to build', q.x, q.y + 28 * px, px, IC.C.ok, 8.5, 'center', 700); }
 };
+/* words broken into lines of at most n characters */
+function wrap(t, n) { const out = []; let cur = ''; for (const w of String(t).split(' ')) { if (cur && cur.length + w.length + 1 > n) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; } if (cur) out.push(cur); return out; }
+/* guides: dashed lines from the edge or centreline a point locked onto, through the point and a little beyond; a
+   locked line runs on from the last point so the player sees it is straight */
+const GUIDE = 'rgba(150,215,255,0.55)', GUIDE_T = 'rgba(170,225,255,0.95)';
+function drawGuides(g, m, sn, px) {
+  g.save(); g.strokeStyle = GUIDE; g.lineWidth = Math.max(0.004, 1 * px); g.setLineDash([6 * px, 5 * px]);
+  for (const q of sn.guides || []) {
+    // from the nearer end of what the guide comes from
+    const ta = (q.a.x - sn.x) * q.ux + (q.a.y - sn.y) * q.uy, tb = (q.b.x - sn.x) * q.ux + (q.b.y - sn.y) * q.uy;
+    const from = Math.abs(ta) < Math.abs(tb) ? ta : tb, lo = Math.min(from, 0) - 60 * px, hi = Math.max(from, 0) + 60 * px;
+    if (ta * tb < 0) continue;   // the point is on the part itself: nothing to extend
+    g.beginPath(); g.moveTo(sn.x + q.ux * lo, sn.y + q.uy * lo); g.lineTo(sn.x + q.ux * hi, sn.y + q.uy * hi); g.stroke();
+  }
+  const prev = IC.bldFrom(m);
+  if (sn.lock && prev) {
+    const L = U.dist(prev, sn) || 1, ux = (sn.x - prev.x) / L, uy = (sn.y - prev.y) / L;
+    g.strokeStyle = 'rgba(150,215,255,0.35)'; g.beginPath(); g.moveTo(sn.x, sn.y); g.lineTo(sn.x + ux * 90 * px, sn.y + uy * 90 * px); g.stroke();
+    // the angle at the last point: the reference line, and a square corner or an arc
+    if (sn.lockRef != null) {
+      const r = 16 * px, rx = Math.cos(sn.lockRef), ry = Math.sin(sn.lockRef), side = Math.sign(rx * uy - ry * ux) || 1;
+      g.setLineDash([]); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.004, 1.1 * px);
+      g.beginPath(); g.moveTo(prev.x - rx * r * 1.6, prev.y - ry * r * 1.6); g.lineTo(prev.x + rx * r * 1.6, prev.y + ry * r * 1.6); g.stroke();
+      if (sn.lockK === 2) { const q = r * 0.55; g.beginPath(); g.moveTo(prev.x + rx * q, prev.y + ry * q); g.lineTo(prev.x + rx * q + ux * q, prev.y + ry * q + uy * q); g.lineTo(prev.x + ux * q, prev.y + uy * q); g.stroke(); }
+      else if (sn.lockK) { const a0 = sn.lockRef, a1 = Math.atan2(uy, ux); g.beginPath(); g.arc(prev.x, prev.y, r * 0.8, a0, a1, side < 0); g.stroke(); }
+    }
+  }
+  g.restore();
+  // where two guides cross, a small square
+  if (sn.guides && sn.guides.length > 1) { g.strokeStyle = GUIDE_T; g.lineWidth = 1.2 * px; g.strokeRect(sn.x - 3.5 * px, sn.y - 3.5 * px, 7 * px, 7 * px); }
+}
+/* the part a refused plan runs into, outlined in red */
+function drawHit(g, ap, q, px) {
+  g.save(); g.strokeStyle = IC.C.hostile; g.lineWidth = 2 * px; g.setLineDash([4 * px, 3 * px]); g.fillStyle = 'rgba(255,91,79,0.12)';
+  if (q.kind === 'runway') { const c = IC.rwAt(q, 0.5), d = IC.rwDir(q), L = IC.rwLen(q); g.translate(c.x, c.y); g.rotate(Math.atan2(d.y, d.x)); g.fillRect(-L / 2, -q.w / 2, L, q.w); g.strokeRect(-L / 2, -q.w / 2, L, q.w); }
+  else if (q.kind === 'taxi') { g.lineWidth = Math.max(q.w, 3 * px); g.strokeStyle = 'rgba(255,91,79,0.45)'; g.beginPath(); q.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
+  else { const D = IC.APART[q.kind] || {}, r = q.r || D.r, w = q.w || D.w || 0.2, h = q.h || D.h || 0.2; g.translate(q.x, q.y); g.rotate(q.a || 0); g.beginPath(); if (r) g.arc(0, 0, r, 0, 7); else g.rect(-w / 2, -h / 2, w, h); g.fill(); g.stroke(); }
+  g.restore();
+}
+/* a measurement on a dark pill, readable on grass and on concrete; with a side (n), set off that way from the point */
+function pill(g, t, x, y, px, col, n) {
+  g.font = `600 ${9 * px}px "IBM Plex Mono", monospace`;
+  const w = g.measureText(t).width + 8 * px, h = 13 * px;
+  if (n) { x += n.x * (w / 2 - 6 * px); y += n.y * (h / 2 - 2 * px); }
+  g.fillStyle = 'rgba(12,18,24,0.72)'; g.fillRect(x - w / 2, y - h / 2, w, h);
+  g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y + 0.5 * px); g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+}
 /* founding: the site, the runway turned by the cursor, the noise footprint and what the survey found */
 function drawFoundGhost(g, S, m, hv, px) {
   if (!m.site) {

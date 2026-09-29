@@ -979,7 +979,7 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   if (near) {
     S.support = Math.max(0, S.support - 1);
     IC.news(S, `Near miss over ${where}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
-    if (S.camp && IC.card) IC.card(S, 'Near miss', `${U.clock(S.time)} · near ${where}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
+    if (S.camp && IC.card) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · near ${where}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why, cause });
 }

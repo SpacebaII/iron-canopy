@@ -38,7 +38,7 @@ IC.DEPOT_PRI = {
 IC.FLOORS = [0, 50, 150, 400];
 IC.QW_TAX_SHARE = 0.75;   // Quick war: the share of city and trade taxes that goes to the air defence
 IC.QW_GRANT = 300;        // Quick war: the defence ministry's grant an hour, for a country of sixty cities
-IC.STORY_TAX = [0, 0, 0.1, 0.25, 1];   // Career: the share of city and trade taxes by act
+IC.STORY_TAX = [0, 0, 0.01, 0.15, 1];   // Career: the share of city and trade taxes by act (Acts II and III run for years)
 const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry carries
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
@@ -692,7 +692,7 @@ IC.economy = function (S, dt) {
   T.slots.forEach((sl, i) => {
     if (!sl) return;
     const tech = IC.TECH.find(x => x.id === sl.id);
-    sl.prog += dt / tech.time;
+    sl.prog += dt / IC.techTime(S, tech);
     if (sl.prog >= 1) {
       T.done.add(tech.id); T.slots[i] = null;
       IC.log(S, 'kill', 'RESEARCH', `${tech.name} complete.`);
@@ -716,6 +716,72 @@ function moneyWatch(S) {
   if (S.budget > 0) S.broke = false;
   S.moneyTier = tier;
 }
+/* ---------- waiting for money ----------
+   Time runs fast (IC.WAIT) until the treasury reaches what the player is saving for, the month turns, or something
+   needs the player (main.js stops it on the same events as skip). S.wait = { key, what, amt, m0 } */
+const worksOf = S => IC.bases(S).filter(b => b.owner === 'us' && b.works).flatMap(b => b.works.filter(w => w.stages).map(w => ({ ap: b, w })));
+/* the things worth saving for: works waiting for money, research not yet affordable, and round sums */
+IC.waitTargets = function (S) {
+  const L = [];
+  for (const { ap, w } of worksOf(S)) {
+    const left = Math.max(0, (w.cost || 0) - (w.spent || 0));
+    if (left > 1) L.push({ key: 'work:' + w.id, what: `${w.label.replace(/^Build /, 'the ').toLowerCase()} at ${ap.name.replace(/ (International|Airport|Air Base)$/, '')}`, amt: left, work: w.id, money: /money/.test(w.wait || '') });
+  }
+  for (const t of IC.TECH) if (!S.tech.done.has(t.id) && !IC.researching(S, t.id) && t.req.every(r => S.tech.done.has(r)) && t.cost > S.budget && (!S.story || t.cat === 'apt' || S.story.act >= 3))
+    L.push({ key: 'tech:' + t.id, what: `research: ${t.name.toLowerCase()}`, amt: t.cost });
+  L.sort((a, b) => (b.money ? 1 : 0) - (a.money ? 1 : 0) || a.amt - b.amt);
+  const out = L.slice(0, 6);
+  for (const v of [250, 500, 1000, 2000]) { const amt = Math.ceil((Math.max(0, S.budget) + v) / 50) * 50; out.push({ key: 'amt:' + amt, what: `${U.money(amt)} in the treasury`, amt, sum: true }); }
+  return out;
+};
+/* money coming in an hour: last month's income less its running costs (building and buying left out), or while
+   there is no finished month yet, the flow averaged over the last day or so (fees come and go with the flights) */
+const RECUR = ['base', 'tax', 'trade', 'apt', 'aid', 'fee_land', 'fee_pax', 'fee_cargo', 'fee_over', 'landside', 'upAD', 'upAir', 'upApt', 'upStaff', 'loan', 'penalty'];
+IC.waitRate = S => {
+  const E = S.econ, M = E && E.months && E.months[E.months.length - 1];
+  if (M && M.days > 0.5) { let v = 0; for (const k in M.book) if (RECUR.includes(k)) v += M.book[k]; return v / (M.days * 24); }
+  return S.netAvg != null ? S.netAvg : S.income - S.upkeep;
+};
+/* what is still to come, and roughly when: "₭400M to go for the second runway, about 5 months at this rate" */
+IC.waitText = function (S, w) {
+  w = w || S.wait; if (!w) return '';
+  const work = w.work && worksOf(S).find(x => x.w.id === w.work);
+  const left = work ? Math.max(0, work.w.cost - work.w.spent - Math.max(0, S.budget)) : w.amt - S.budget, r = IC.waitRate(S);
+  if (left <= 0) return `Enough for ${w.what}.`;
+  const eta = r > 0.01 ? left / r * 3600 : Infinity;
+  const per = S.mode === 'story' ? IC.MO(S) / 3600 : 24, perW = S.mode === 'story' ? 'a month' : 'a day';
+  const when = !isFinite(eta) ? (r < -0.01 ? `never at this rate: ${U.money(-r * per)} ${perW} more goes out than comes in (the Economy room says where)` : 'never at this rate: running costs take all that comes in') : `about ${S.mode === 'story' ? U.months(eta) : U.dur(eta)} at this rate`;
+  return `${U.money(left)} to go for ${w.what}, ${when}.`;
+};
+/* a calm sky, when time may run in long steps: no missile in flight and nothing armed of theirs over our country
+   more than 15 km inside the border (their standing patrols along the border and unarmed reconnaissance drones do not count: in Act III some are
+   nearly always up; anything that fires, or is fired at, brings the fine steps back) */
+IC.calmSky = S => !S.missiles.length && !(S.eaam && S.eaam.length) && !S.threats.some(t => !t.dead && !(t.d && t.d.civil) && t.type !== 'isr' && !(t.border && (t.mission === 'patrol' || t.mission === 'rtb')) && IC.inHome(t.x, t.y) && IC.hostileBorderDist(t.x, t.y) > 150);
+IC.waitStart = function (S, key) {
+  const t = IC.waitTargets(S).find(x => x.key === key) || (key && key.startsWith('amt:') ? { key, what: `${U.money(+key.slice(4))} in the treasury`, amt: +key.slice(4) } : null);
+  if (!t) return false;
+  S.wait = { key: t.key, what: t.what, amt: t.amt, work: t.work || null, m0: S.cal ? S.cal.m : 0, t0: S.time };
+  S.skip = false; S.paused = false;
+  IC.emit(S, 'waitStart', S.wait);
+  return true;
+};
+IC.waitStop = function (S, why) {
+  if (!S.wait) return;
+  const w = S.wait; S.wait = null;
+  IC.emit(S, 'waitDone', { w, why });
+};
+/* every step: has what we wait for come? (headless: the tests run it) */
+IC.waitTick = function (S, dt) {
+  // the money coming in, averaged over about a day of live time
+  const net = S.income - S.upkeep, k = Math.min(1, dt / 86400 * 1.5);
+  S.netAvg = S.netAvg == null ? net : S.netAvg + (net - S.netAvg) * k;
+  const w = S.wait; if (!w) return;
+  if (w.work) { const x = worksOf(S).find(q => q.w.id === w.work); if (!x) return IC.waitStop(S, `${cap1(w.what)} is finished.`); if (x.w.cost - x.w.spent <= Math.max(0, S.budget)) return IC.waitStop(S, `There is enough to finish ${w.what}.`); }
+  else if (S.budget >= w.amt) return IC.waitStop(S, `${U.money(S.budget)} in the treasury: enough for ${w.what}.`);
+  if (S.cal && S.cal.m !== w.m0) return IC.waitStop(S, `${IC.MONTHS[S.cal.m % 12]} begins. ${IC.waitText(S, w)}`);
+};
+const cap1 = t => t.charAt(0).toUpperCase() + t.slice(1);
+
 /* research for airports: in the Career these open airport items (IC.APT_TECH in airport.js); each says what it opens */
 if (!IC.TECH_CATS.some(c => c.id === 'apt')) {
   IC.TECH_CATS.push({ id: 'apt', name: 'Airports' });
@@ -727,6 +793,11 @@ if (!IC.TECH_CATS.some(c => c.id === 'apt')) {
     { id: 'p_ils3', cat: 'apt', name: 'CAT III landing systems', cost: 150, time: 3600, req: ['p_gradar'], desc: 'Opens: CAT III landing systems. Landing systems built after it keep movements closely spaced in fog; earlier ones are CAT I, and fog then spaces every movement 60% wider.' }
   );
 }
+/* how long a project takes: in the Career by the calendar (about a month for every 12½ live minutes it used to take,
+   so a big one takes a year), on the live clock in a Quick war */
+IC.techMonths = t => t.mo || Math.max(1, Math.round(t.time / 750));
+IC.techTime = (S, t) => S.mode === 'story' ? IC.MO(S, IC.techMonths(t)) : t.time;
+IC.techDur = (S, t, f) => { const g = (f == null ? 1 : f) * IC.techTime(S, t); return S.mode === 'story' ? U.months(g) : U.dur(g); };
 IC.researching = (S, id) => S.tech.slots.find(s => s && s.id === id);
 IC.startResearch = function (S, id) {
   const t = IC.TECH.find(x => x.id === id);
@@ -735,7 +806,7 @@ IC.startResearch = function (S, id) {
   if (!t.req.every(r => S.tech.done.has(r))) return false;
   IC.pay(S, 'research', t.cost);
   S.tech.slots[slot] = { id, prog: 0 };
-  IC.log(S, 'info', 'RESEARCH', `Started ${t.name} (${U.dur(t.time)}).`);
+  IC.log(S, 'info', 'RESEARCH', `Started ${t.name}: ready in ${IC.techDur(S, t)}.`);
   IC.emit(S, 'researchStart', id);
   return true;
 };
