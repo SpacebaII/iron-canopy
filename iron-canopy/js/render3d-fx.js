@@ -44,7 +44,7 @@ const P = IC.FX3D = {
 };
 const LEVELS = ['low', 'medium', 'high', 'ultra'];
 /* switches for looking at one thing at a time (the tools) */
-const DBG = { fog: 1, env: 1 };
+const DBG = { fog: 1, env: 1, post: 1 };
 
 /* the graphics card's name, once a page */
 let gpu = null;
@@ -89,6 +89,22 @@ float fxFbm3(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s +
 const VHEAD = '#include <common>\n#include <logdepthbuf_pars_vertex>\n';
 const FHEAD = '#include <common>\n#include <logdepthbuf_pars_fragment>\n';
 
+/* grass, wherever a picture paints it (the map's fields, the airfield round the runways): a warmer green than the
+   map's, less of the blue sky's light, mowing stripes along the nearest airports' main runway */
+const GRASS = `
+uniform vec4 fxApt[4];
+float fxGrassOf(vec3 c) { return smoothstep(0.02, 0.07, c.g - max(c.r, c.b) * 0.9); }
+vec3 fxGrade(vec3 c, float g) { return mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, 1.0 + g * 0.25) * mix(vec3(1.03, 1.0, 0.94), vec3(1.1, 1.0, 0.76), g); }
+float fxStripe(vec2 w) {
+  float k = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec4 a = fxApt[i]; if (a.z <= 0.0) continue;
+    vec2 r = w - a.xy; float in_ = 1.0 - smoothstep(a.z * 0.85, a.z, length(r));
+    k += in_ * (step(0.5, fract(dot(r, vec2(-sin(a.w), cos(a.w))) / 0.16)) * 0.11 - 0.055);
+  }
+  return k;
+}`;
+const grassIBL = sh => { sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'iblIrradiance *= 1.0 - fxGrass * 0.65; radiance *= 1.0 - fxGrass * 0.8;'); };
 /* uniforms every patched material shares by reference: set once a frame, read by all */
 const G = {
   fxFog: null, sunDir: null, sunCol: null, ambCol: null, night: { value: 0 }, wet: { value: 0 }, snow: { value: 0 }, time: { value: 0 },
@@ -216,32 +232,25 @@ function floodPatch(sh) {
 }
 /* the ground's tiles: the map's picture, with grain close in, mowing stripes round airports, snow lying, a wet sheen */
 function groundMaterial(o) {
-  const m = std(Object.assign({ roughness: 0.95, metalness: 0, envMapIntensity: 0.45 }, o));
+  const m = std(Object.assign({ roughness: 0.95, metalness: 0 }, o));
   m.userData.fxGround = true;
   return patch(m, 'fx-ground', sh => {
     useG(sh, 'snow', 'wet', 'detail', 'apt', 'camG'); WPOS_V(sh);
-    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxDetail; uniform vec4 fxApt[4];\n' + NOISE + sh.fragmentShader;
-    sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', '', `{
+    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxDetail;\n' + NOISE + GRASS + sh.fragmentShader;
+    grassIBL(sh);
+    sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', 'float fxGrass = 0.0;', `{
       vec3 c = diffuseColor.rgb;
       float d = length(vFxW - cameraPosition);
       vec2 q = mod(vFxW.xz, 400.0);
-      float grass = smoothstep(0.02, 0.07, c.g - max(c.r, c.b) * 0.9);
-      diffuseColor.rgb = mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, 1.0 + grass * 0.25) * vec3(1.03, 1.0, 0.94);
+      float grass = fxGrassOf(c); fxGrass = grass;
+      diffuseColor.rgb = fxGrade(c, grass);
       if (fxDetail > 0.0) {
         // grain close in, at two scales, fading out by a few km
         float near = 1.0 - smoothstep(4.0, 40.0, d);
         float n1 = fxFbm3(q * 9.0), n2 = fxNoise(q * 70.0);
         diffuseColor.rgb *= mix(1.0, 0.82 + 0.36 * n1, near * 0.9) * mix(1.0, 0.9 + 0.2 * n2, near * (1.0 - smoothstep(0.5, 4.0, d)));
         // mowing stripes on the airfield grass, along its main runway
-        for (int i = 0; i < 4; i++) {
-          vec4 a = fxApt[i];
-          if (a.z <= 0.0) continue;
-          vec2 r = vFxW.xz - a.xy; float in_ = 1.0 - smoothstep(a.z * 0.85, a.z, length(r));
-          if (in_ <= 0.0) continue;
-          float s = dot(r, vec2(-sin(a.w), cos(a.w)));
-          float band = step(0.5, fract(s / 0.16));
-          diffuseColor.rgb *= 1.0 + in_ * grass * (band * 0.16 - 0.08) * (1.0 - smoothstep(10.0, 60.0, d));
-        }
+        diffuseColor.rgb *= 1.0 + grass * fxStripe(vFxW.xz) * (1.0 - smoothstep(10.0, 60.0, d));
       }
       // snow lying on open ground; thinner on slopes and where the map shows dark forest
       float lie = fxSnow * smoothstep(0.55, 0.85, vFxN.y) * (0.75 + 0.25 * fxFbm3(q * 3.0));
@@ -259,18 +268,21 @@ function paveMaterial(o) {
   m.userData.fxPave = true;
   m.userData.lm = { value: null }; m.userData.lmBox = { value: new THREE.Vector4(0, 0, 1, 0) };
   return patch(m, 'fx-pave', sh => {
-    useG(sh, 'snow', 'wet', 'night', 'detail'); WPOS_V(sh);
+    useG(sh, 'snow', 'wet', 'night', 'detail', 'apt'); WPOS_V(sh);
     sh.uniforms.fxLm = m.userData.lm; sh.uniforms.fxLmBox = m.userData.lmBox;
-    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxNight; uniform float fxDetail; uniform sampler2D fxLm; uniform vec4 fxLmBox;\n' + NOISE + sh.fragmentShader;
-    sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', '', `
+    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxNight; uniform float fxDetail; uniform sampler2D fxLm; uniform vec4 fxLmBox;\n' + NOISE + GRASS + sh.fragmentShader;
+    grassIBL(sh);
+    sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', 'float fxGrass = 0.0;', `
+      fxGrass = fxGrassOf(diffuseColor.rgb);
+      if (fxGrass > 0.0) diffuseColor.rgb = fxGrade(diffuseColor.rgb, fxGrass) * (1.0 + fxGrass * fxStripe(vFxW.xz) * (1.0 - smoothstep(10.0, 60.0, length(vFxW - cameraPosition))));
       vec2 fxQ = mod(vFxW.xz, 400.0);
       float fxD = length(vFxW - cameraPosition);
-      float fxPud = smoothstep(0.52, 0.68, fxFbm3(fxQ * 4.0)) * fxWet;
+      float fxPud = smoothstep(0.52, 0.68, fxFbm3(fxQ * 4.0)) * fxWet * (1.0 - fxGrass);
       if (fxDetail > 0.0) diffuseColor.rgb *= mix(1.0, 0.9 + 0.2 * fxNoise(fxQ * 60.0), 1.0 - smoothstep(0.5, 6.0, fxD));
-      diffuseColor.rgb *= 1.0 - fxWet * (0.35 + 0.25 * fxPud);
-      float fxSn = fxSnow * smoothstep(0.62, 0.8, fxFbm3(fxQ * 2.5)) * 0.8;
+      diffuseColor.rgb *= 1.0 - fxWet * mix(0.35 + 0.25 * fxPud, 0.2, fxGrass);
+      float fxSn = fxSnow * mix(smoothstep(0.62, 0.8, fxFbm3(fxQ * 2.5)) * 0.8, 0.8 + 0.15 * fxFbm3(fxQ * 3.0), fxGrass);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.87, 0.9), fxSn);`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(roughness, mix(0.3, 0.06, fxPud), fxWet) + fxSn * 0.1;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(mix(roughness, mix(0.3, 0.06, fxPud), fxWet) + fxSn * 0.1, 0.95, fxGrass);');
     sh.fragmentShader = inc(sh.fragmentShader, 'emissivemap_fragment', '', `if (fxLmBox.w > 0.0 && fxNight > 0.01) { vec2 u = (vFxW.xz - fxLmBox.xy) / fxLmBox.z; if (u.x > 0.0 && u.x < 1.0 && u.y > 0.0 && u.y < 1.0) totalEmissiveRadiance += diffuseColor.rgb * texture2D(fxLm, vec2(u.x, 1.0 - u.y)).rgb * fxNight * 1.5; }`);
   });
 }
@@ -987,7 +999,7 @@ function pass(v, m, target) {
 function render(v) {
   const F = v.fxs, r = v.renderer, Q = F.Q;
   if (r.info && r.info.reset) r.info.reset();
-  if (!Q.post || !F.rt) { r.setRenderTarget && r.setRenderTarget(null); r.toneMappingExposure = F.expo || 1; r.render(v.scene, v.camera); return; }
+  if (!Q.post || !F.rt || !DBG.post) { r.setRenderTarget && r.setRenderTarget(null); r.toneMappingExposure = F.expo || 1; r.render(v.scene, v.camera); return; }
   r.getDrawingBufferSize(F.size);
   if (F.size.x !== F.pw || F.size.y !== F.ph) post(v);
   r.toneMappingExposure = 1;
@@ -1052,7 +1064,7 @@ function frame(v, t, dtR) {
   // the haze: the horizon's colour across the sun's line, a little of it toward the sun
   skyRGB(hdir.x * 0.97, 0.05, hdir.z * 0.97, sd, K, F.skyU.gain.value, C1); skyRGB(-hdir.z * 0.97, 0.05, hdir.x * 0.97, sd, K, F.skyU.gain.value, C3);
   let fr = (C1.r * 0.2 + C3.r * 0.8) * (1 - night) + g0 * 0.8, fg = (C1.g * 0.2 + C3.g * 0.8) * (1 - night) + g0 * 1.0, fb = (C1.b * 0.2 + C3.b * 0.8) * (1 - night) + g0 * 1.8;
-  const fgrey = (fr + fg + fb) / 3; const gk = Math.max(W.cover * 0.6, fog, 0.45 * (1 - sstep(4, 25, el)) * (1 - night)) * 0.8; fr += (fgrey * 1.05 - fr) * gk; fg += (fgrey * 1.05 - fg) * gk; fb += (fgrey * 1.1 - fb) * gk;
+  const fgrey = (fr + fg + fb) / 3; const gk = Math.max(0.3, W.cover * 0.6, fog, 0.45 * (1 - sstep(4, 25, el)) * (1 - night)) * 0.8; fr += (fgrey * 1.05 - fr) * gk; fg += (fgrey * 1.05 - fg) * gk; fb += (fgrey * 1.1 - fb) * gk;
   // compressed like the sky's glow, and never brighter than the lit ground it lies over
   const fl = fr * 0.2126 + fg * 0.7152 + fb * 0.0722, cap = (amb.r * 0.2126 + amb.g * 0.7152 + amb.b * 0.0722) * 1.6 + sunI * Math.max(sd.y, 0) * 0.22 + 0.004;
   const dim = (1 - overcast * 0.45 - fog * 0.2) / (1 + fl / 2) * Math.min(1, cap / Math.max(1e-4, fl / (1 + fl / 2))); fr *= dim; fg *= dim; fb *= dim;

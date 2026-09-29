@@ -77,8 +77,12 @@ async function film(V, S, name, N, speed, hook) {
     if (S && V.kind === 'live') { acc += speed / 30; while (acc >= 0.25) { IC.step(S, 0.25); acc -= 0.25; } }
     const r = hook ? await hook(f) : null;
     IC.replayStep(V, now += 1000 / 30); film.now = now;
-    if (window.CLIPS) await __frame(name, grab(V, CLIP.w, CLIP.h).toDataURL('image/jpeg', 0.9).slice(23));
-    if (r === 'still' || (f === N - 1 && !film.took)) { film.took = true; await __still(name, grab(V, 1280, 720).toDataURL('image/jpeg', 0.93).slice(23)); }
+    if (film.after) film.after(f);
+    // both pictures straight after the frame is drawn: once the page yields, the drawing buffer is gone
+    const still = r === 'still' || (f === N - 1 && !film.took) ? grab(V, 1280, 720).toDataURL('image/jpeg', 0.93).slice(23) : null;
+    const clip = window.CLIPS ? grab(V, CLIP.w, CLIP.h).toDataURL('image/jpeg', 0.9).slice(23) : null;
+    if (clip) await __frame(name, clip);
+    if (still) { film.took = true; await __still(name, still); }
     if (f % 60 === 0) console.log(name, 'frame', f, U.hhmm(S ? S.time : V.t));
   }
   film.took = false;
@@ -312,12 +316,13 @@ const SCENES = {
   'm-debug': `
     const S = await game('sandbox', 11); wx(S, 'scattered');
     const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light' && !m.mil));
-    const L = await live(S, m, 'chase', 600); L.camK = 3;
-    await film(L, S, 'dbg-a', 20, 1, f => f === 19 ? 'still' : null);
+    const L = await live(S, m, 'chase', 600); L.camK = +(window.K || 1.2);
+    const px = () => { const c = grab(L, 64, 36), d = c.getContext('2d').getImageData(0, 0, 64, 36).data; const at = (x, y) => [d[(y * 64 + x) * 4], d[(y * 64 + x) * 4 + 1], d[(y * 64 + x) * 4 + 2]]; return [at(8, 33), at(32, 30), at(50, 22), at(32, 3)]; };
+    film.after = f => { if (f === 9) console.log('pixels near, mid, far, sky', JSON.stringify(px()), JSON.stringify(IC.fx3d.debug)); };
+    await film(L, S, 'dbg-a', 10, 1, f => f === 9 ? 'still' : null);
     IC.fx3d.debug.fog = 0; await film(L, S, 'dbg-b', 10, 1, f => f === 9 ? 'still' : null);
     IC.fx3d.debug.env = 0; await film(L, S, 'dbg-c', 10, 1, f => f === 9 ? 'still' : null);
-    const px = (n) => { const c = grab(L, 64, 36), d = c.getContext('2d').getImageData(0, 0, 64, 36).data; return [d[(30 * 64 + 10) * 4], d[(30 * 64 + 10) * 4 + 1], d[(30 * 64 + 10) * 4 + 2]]; };
-    console.log('pixel', JSON.stringify(px()));`,
+    IC.fx3d.debug.fog = 1; IC.fx3d.debug.env = 1; IC.fx3d.debug.post = 0; await film(L, S, 'dbg-d', 10, 1, f => f === 9 ? 'still' : null);`,
   // for tuning the look: HOUR, WX, CAM, K (camera distance), WHAT (taxi, roll, final, gate) from the environment
   'm-probe': `
     const S = await game('sandbox', +(window.HOUR || 11)); wx(S, window.WX || 'scattered');
