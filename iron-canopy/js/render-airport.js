@@ -1025,7 +1025,7 @@ function drawGuides(g, m, sn, px) {
     if (ta * tb < 0) continue;   // the point is on the part itself: nothing to extend
     g.beginPath(); g.moveTo(sn.x + q.ux * lo, sn.y + q.uy * lo); g.lineTo(sn.x + q.ux * hi, sn.y + q.uy * hi); g.stroke();
   }
-  const prev = m.pts[m.pts.length - 1];
+  const prev = IC.bldFrom(m);
   if (sn.lock && prev) {
     const L = U.dist(prev, sn) || 1, ux = (sn.x - prev.x) / L, uy = (sn.y - prev.y) / L;
     g.strokeStyle = 'rgba(150,215,255,0.35)'; g.beginPath(); g.moveTo(sn.x, sn.y); g.lineTo(sn.x + ux * 90 * px, sn.y + uy * 90 * px); g.stroke();

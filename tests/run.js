@@ -939,6 +939,13 @@ test('builder: a taxiway drawn off a runway locks square to it, and its length r
   }
   assert(n >= 5, `only ${n} free legs tried`);
 });
+test('builder: moving a runway\'s far end after both are placed still locks it parallel to the first runway', () => {
+  const { S, ap, P, L, near } = snapAp(), m = IC.bldMode(S, ap, 'runway');
+  IC.buildInput(S, m, P(-17, -13), 0, 20); IC.buildInput(S, m, P(10, -13.6), 0, 20);
+  assert(m.pts.length === 2, `${m.pts.length} points placed`);
+  const s = IC.bldPlanOf(S, m, P(16.9, -14.1), 0.4).snap;
+  assert(near(L(s).y, -13) && /along/.test(s.lock), `the far end is at ${L(s).x.toFixed(2)}, ${L(s).y.toFixed(2)} (${s.lock})`);
+});
 test('builder: a line keeps to 90° from the part it starts on, and Shift draws freely', () => {
   const { S, ap, P, L, near } = snapAp();
   // a taxiway at 34° to the runway, then a new one started on it
