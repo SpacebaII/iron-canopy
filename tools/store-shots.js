@@ -168,6 +168,8 @@ async function fontCache(page) {
     for (const k of ['Z', 'PICK', 'BUSY', 'MIX', 'MS', 'K', 'CAM', 'BEFORE', 'DBGV']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
+    // no sliding panels: in software rendering a frame can take seconds, and a shot would catch them halfway
+    await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
     const mouse = await page.evaluate(() => window.__mouse);
     if (mouse) { await page.mouse.move(mouse[0], mouse[1]); await page.waitForTimeout(600); }
