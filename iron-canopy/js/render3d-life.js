@@ -233,7 +233,7 @@ function instPart(v, key, part, x, y, z, h, ang, d, s) {
 /* ---------- the scene: what every view has ---------- */
 L3.scene = function (v) {
   init(); tmp();
-  v.life = { glow: [], pools: new Map(), want: new Map(), made: 0, apts: [], plans: new Map(), booster: 0, stats: {}, clock: 0, dtR: 1 / 30, updAcc: 0 };
+  v.life = { glow: [], pools: new Map(), want: new Map(), made: 0, apts: [], plans: new Map(), booster: 0, stats: {}, clock: 0, fN: 0, dtR: 1 / 30, updAcc: 0 };
   v.life.lightMat = lightMat(v);
   v.life.smoke = partSet(v, CFG.smokeN, false); v.life.glowP = partSet(v, CFG.glowN, true);
   v.life.dyn = lightSet(v, CFG.dynN); v.life.dyn.geometry.setDrawRange(0, 0);
@@ -262,7 +262,7 @@ const LDAY = { nav: 0.25, strobe: 1, beacon: 0.9, land: 0.45, taxi: 0.25, logo: 
 const LBIT = { nav: 1, strobe: 2, beacon: 4, land: 8, taxi: 16, logo: 32 };
 L3.mover = function (v, m) {
   if (!v.life) return;
-  const X = m.life = { beams: [], blur: [], jet: false, fans: [], engines: [], tips: null, td: null, gear: [] };
+  const X = m.life = { beams: [], blur: [], jet: false, fans: [], engines: [], tips: null, td: null, gear: [], fr: -1, gearK: null, ail: null, elev: null, rud: null, spoil: null, flex: null, rev: null, n1: null };
   if (m.tr.kind === 'missile') { missileInit(v, m); return; }
   if (!m.ac || !m.body) return;
   const nodeOf = new Map(m.anims.map(A => [A.a.name, A]));
@@ -309,9 +309,19 @@ L3.hide = function (v, m) { const X = m.life; if (!X) return; for (const b of X.
 /* the model's moving parts, from the pose: true when this took the part (else replay3d's own animation does) */
 L3.anim = function (v, m, A, st, t, dt) {
   const k = A.a.kind, X = m.life;
+  // eased once a frame for the whole aircraft (a model has two ailerons, three gear legs...)
+  if (X && X.fr !== (v.life ? v.life.fN : t)) {
+    X.fr = v.life ? v.life.fN : t;
+    // the gear keeps the pose's own timing (it already takes eight seconds); the ease only smooths a jump
+    X.gearK = ease(X.gearK, st.gear, dt, 1.2);
+    X.ail = ease(X.ail, st.ail || 0, dt, 0.35); X.elev = ease(X.elev, st.elev || 0, dt, 0.35); X.rud = ease(X.rud, st.rud || 0, dt, 0.5);
+    X.spoil = ease(X.spoil, st.spoil || 0, dt, 0.7); X.flex = ease(X.flex, st.flex == null ? 1 : st.flex, dt, 0.6);
+    X.rev = ease(X.rev, st.rev || 0, dt / 2, 1.2);
+    X.n1 = ease(X.n1, st.n1 == null ? (v.kind === 'gallery' ? 0 : 0.8) : st.n1, dt / 2, 1.5);
+  }
   if (k === 'gear') {
     // the nose leg folds first, the mains after it; the nose wheel steers on the taxi
-    const g = m.gearK == null ? st.gear : m.gearK, nose = A.a.name === 'gearN', legK = nose ? ramp(g, 0.4, 1) : ramp(g, 0, 0.6);
+    const g = X && X.gearK != null ? X.gearK : m.gearK == null ? st.gear : m.gearK, nose = A.a.name === 'gearN', legK = nose ? ramp(g, 0.4, 1) : ramp(g, 0, 0.6);
     A.node.visible = legK > 0.02;
     A.node.quaternion.setFromAxisAngle(A.axis, -(1 - legK) * A.a.up);
     if (nose && st.steer) { TP.ax.set(0, 1, 0); TQ.q3.setFromAxisAngle(TP.ax, -st.steer); A.node.quaternion.multiply(TQ.q3); }
@@ -321,20 +331,19 @@ L3.anim = function (v, m, A, st, t, dt) {
   const q = (ang) => { A.node.quaternion.setFromAxisAngle(A.axis, -ang); return true; };
   switch (k) {
     case 'flap': A.node.visible = m.flapK > 0.02; return q(m.flapK * A.a.up);
-    case 'ail': X.ail = ease(X.ail, st.ail || 0, dt, 0.35); return q(X.ail * A.a.up);
-    case 'elev': X.elev = ease(X.elev, st.elev || 0, dt, 0.35); return q(X.elev * A.a.up);
-    case 'rud': X.rud = ease(X.rud, st.rud || 0, dt, 0.5); return q(X.rud * A.a.up);
-    case 'spoil': X.spoil = ease(X.spoil, st.spoil || 0, dt, 0.7); A.node.visible = X.spoil > 0.02; return q(X.spoil * A.a.up);
+    case 'ail': return q(X.ail * A.a.up);
+    case 'elev': return q(X.elev * A.a.up);
+    case 'rud': return q(X.rud * A.a.up);
+    case 'spoil': A.node.visible = X.spoil > 0.02; return q(X.spoil * A.a.up);
     case 'slat': A.node.visible = m.flapK > 0.02; return q(Math.min(1, m.flapK * 3) * A.a.up);
-    case 'flex': { X.flex = ease(X.flex, st.flex == null ? 1 : st.flex, dt, 0.6); return q((X.flex - 1) * A.a.up); }
+    case 'flex': return q((X.flex - 1) * A.a.up);
     case 'rev': case 'revc': {
-      X.rev = ease(X.rev, st.rev || 0, dt / 2, 1.2); A.node.visible = X.rev > 0.02;
+      A.node.visible = X.rev > 0.02;
       if (k === 'rev') A.node.position.set(A.base.x + A.axis.x * X.rev * A.a.up * M, A.base.y, A.base.z + A.axis.z * X.rev * A.a.up * M);
       return true;
     }
     case 'fan': case 'prop': {
       // the engines spool: the fan turns with n1 and blurs at speed; propellers blur sooner
-      X.n1 = ease(X.n1, st.n1 == null ? (v.kind === 'gallery' ? 0 : 0.8) : st.n1, dt / 2, 1.5);
       // (turning by the real clock: at game speed they would only flicker)
       const fan = k === 'fan', w = fan ? 2 + X.n1 * 24 : (4 + X.n1 * 30) * (A.a.rpm || 1);
       A.ang = ((A.ang || 0) + (v.life ? v.life.dtR : 0.02) * w) % (Math.PI * 2);
@@ -656,7 +665,7 @@ L3.frame = function (v, t, dt) {
   if (life.smoke.material.uniforms) { life.smoke.material.uniforms.uFocal.value = v.focalPx || 1000; life.smoke.material.uniforms.uFar.value = v.scene.fog ? v.scene.fog.far * 1.2 : 1400; }
   const vis = IC.sky ? IC.sky(S).vis : 10, lowVis = vis < 5, nightK = Math.max(life.nightK, lowVis ? 0.8 : 0);
   const stats = life.stats; stats.bridges = 0; stats.docked = 0; stats.vehicles = 0; stats.bars = 0; stats.barsClear = 0; if (!stats.kinds) stats.kinds = {}; for (const k in stats.kinds) stats.kinds[k] = 0;
-  life.clock += Math.min(0.1, dt || 0); life.dtR = Math.min(0.1, dt || 0);
+  life.fN++; life.clock += Math.min(0.1, dt || 0); life.dtR = Math.min(0.1, dt || 0);
   for (const A of life.apts) airportFrame(v, A, t, nightK, cam, stats);
   // flush what this frame drew
   for (const p of life.pools.values()) { p.mesh.count = p.n; p.mesh.instanceMatrix.needsUpdate = true; if (p.color && p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true; p.n = 0; }

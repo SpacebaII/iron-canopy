@@ -317,11 +317,12 @@ const SCENES = {
     if (!m) throw new Error('nothing lining up');
     const L = await live(S, m, 'chase', 600); L.camK = 0.7; L.orbit.yaw = 2.0;
     const C = clipStart(L), N = +(window.N || 1400); let roll = null, air = null;
-    for (let f = 0; f < N; f++) await clipFrame(C, S, roll != null && air == null ? 1.4 : 1, () => {
+    // standing at the line-up, time runs faster: the clip is the roll and the climb
+    for (let f = 0; f < N; f++) await clipFrame(C, S, m.spd < 0.01 && air == null ? 6 : roll != null && air == null ? 1.4 : 1, () => {
       if (roll == null && m.phase === 'roll') { roll = f; camTo(L, 'side'); L.camK = 0.5; }
       if (air == null && roll != null && (m.dead || m.phase !== 'roll')) air = f;
       // off the ground: from below and to the side, the gear folding away nose first; then behind it
-      if (air != null && f === air + 20) camTo(L, 'orbit');
+      if (air != null && f === air + 20) { camTo(L, 'orbit'); Object.assign(L.orbit, { pitch: -0.12, dist: 0.7 }); }
       if (air != null && f > air + 20 && f < air + 420) Object.assign(L.orbit, { yaw: L.orbit.yaw + 0.002, pitch: -0.12, dist: 0.7 });
       if (air != null && f === air + 420) { camTo(L, 'chase'); L.camK = 0.9; }
     });
