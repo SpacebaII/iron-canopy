@@ -1143,7 +1143,8 @@ IC.bldMode = function (S, ap, part) {
   const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
   // (a blueprint starts the way the real airport lies: north up)
   const r0 = part === 'blueprint' ? 0 : ap.rwyA || 0, keys = IC.showcaseKeys ? IC.showcaseKeys() : [];
-  return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass', bp: keys.includes(P.bp) ? P.bp : keys[0] };
+  return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass',
+    rwid: P.rwid || null, twid: P.twid || null, lit: P.lit === false ? false : true, oneway: P.oneway || 0, bp: keys.includes(P.bp) ? P.bp : keys[0] };
 };
 /* one click in build mode. btn 0 places, 2 takes back. Returns what happened: 'point', 'built', 'undo', 'exit',
    'err' (with m.err saying why) */
