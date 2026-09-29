@@ -7,8 +7,8 @@
    node tests/run.js --shard=1/2  one of two halves of equal length (by tests/times.json), for two machines at once
    IC_JOBS=n sets the number of workers (one per core by default, up to 8 and 1.6 GB of memory each); IC_JOBS=1
    runs everything in this process, one test after another.
-   Every test starts from the same seeded random numbers (IC.seedRandom, from its name), so it plays out the same
-   alone, in a full run or in any worker, and a failure can be repeated. */
+   Every test starts from the same seeded random numbers (IC.seedRandom, from its name) and the same ids, so it plays
+   out the same alone, in a full run or in any worker, and a failure can be repeated. */
 const IC = require('../headless.js');
 const { playLesson } = require('../academytest.js');
 const Q = require('../qwplayer.js');
@@ -3406,6 +3406,9 @@ function runOne(t) {
   // listeners a test adds go when it ends: they hold its game, which would otherwise stay in memory
   IC.on = fn => { const off = on(fn); offs.push(off); return off; };
   IC.seedRandom(seedOf(t.name));
+  // (and the same ids: the id counter runs on over every game a worker makes, and ids break ties, so a test would
+  // play out differently after different tests in its worker)
+  IC.nidSet(1);
   const t0 = Date.now();
   let err = null;
   try { t.fn(); } catch (e) { err = e.stack.split('\n').slice(0, 3).join('\n        '); }
