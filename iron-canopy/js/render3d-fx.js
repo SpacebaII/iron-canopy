@@ -43,6 +43,8 @@ const P = IC.FX3D = {
   ultra:  { name: 'Ultra', post: 1, msaa: 4, pr: 2, bloom: 1, ao: 1, dof: 1, mblur: 1, flare: 1, grain: 1, shadow: 4096, env: 1, clouds: 3, rain: 20000, grass: 20000, trees: 6000, detail: 1, shimmer: 1 }
 };
 const LEVELS = ['low', 'medium', 'high', 'ultra'];
+/* switches for looking at one thing at a time (the tools) */
+const DBG = { fog: 1, env: 1 };
 
 /* the graphics card's name, once a page */
 let gpu = null;
@@ -269,7 +271,7 @@ function paveMaterial(o) {
       float fxSn = fxSnow * smoothstep(0.62, 0.8, fxFbm3(fxQ * 2.5)) * 0.8;
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.87, 0.9), fxSn);`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(roughness, mix(0.3, 0.06, fxPud), fxWet) + fxSn * 0.1;');
-    sh.fragmentShader = inc(sh.fragmentShader, 'emissivemap_fragment', '', `if (fxLmBox.w > 0.0 && fxNight > 0.01) { vec2 u = (vFxW.xz - fxLmBox.xy) / fxLmBox.z; if (u.x > 0.0 && u.x < 1.0 && u.y > 0.0 && u.y < 1.0) totalEmissiveRadiance += diffuseColor.rgb * texture2D(fxLm, vec2(u.x, 1.0 - u.y)).rgb * fxNight * 2.2; }`);
+    sh.fragmentShader = inc(sh.fragmentShader, 'emissivemap_fragment', '', `if (fxLmBox.w > 0.0 && fxNight > 0.01) { vec2 u = (vFxW.xz - fxLmBox.xy) / fxLmBox.z; if (u.x > 0.0 && u.x < 1.0 && u.y > 0.0 && u.y < 1.0) totalEmissiveRadiance += diffuseColor.rgb * texture2D(fxLm, vec2(u.x, 1.0 - u.y)).rgb * fxNight * 1.5; }`);
   });
 }
 /* a material that gives light: k times brighter than its colour (it blooms) */
@@ -394,7 +396,7 @@ void main() {
   vec3 bt = (vBetaR * rPh + vBetaM * mPh) / (vBetaR + vBetaM);
   vec3 Lin = pow(vSunE * bt * (1.0 - Fex), vec3(1.5));
   Lin *= mix(vec3(1.0), pow(vSunE * bt * Fex, vec3(0.5)), clamp(pow(1.0 - sunDir.y, 5.0), 0.0, 1.0));
-  float disk = smoothstep(0.99995, 0.99998, ct) * (1.0 - cover);
+  float disk = smoothstep(0.99995, 0.99998, ct) * (1.0 - smoothstep(0.55, 0.85, cover));
   vec3 col = (Lin + vec3(0.1) * Fex) * 0.04 * gain;
   // the glow round a low sun is kept within what a camera shows
   col /= 1.0 + dot(col, vec3(0.2126, 0.7152, 0.0722)) / 2.0;
@@ -474,6 +476,7 @@ function scene(v) {
   build(v);
   v.fxOn = true;
 }
+const dropObj = o => { if (o.geometry && !o.userData.keep) o.geometry.dispose(); if (o.material && !o.userData.keepMat) o.material.dispose(); if (o.isInstancedMesh && o.dispose) o.dispose(); };
 /* what depends on the preset: made again when it changes */
 function build(v) {
   const F = v.fxs, Q = F.Q, sc = v.scene;
@@ -487,7 +490,7 @@ function build(v) {
   if (Q.env && THREE.PMREMGenerator && !F.pmrem) { F.pmrem = new THREE.PMREMGenerator(v.renderer); F.envScene = new THREE.Scene(); F.envScene.add(F.envSky); }
   F.envKey = '';
   // clouds, rain and snow, lightning, grass, reflections of the lights on wet pavement
-  for (const o of F.objs) { sc.remove(o); if (o.geometry && !o.userData.keep) o.geometry.dispose(); if (o.material && !o.userData.keepMat) o.material.dispose(); }
+  for (const o of F.objs) { sc.remove(o); o.traverse(dropObj); }
   F.objs = [];
   const add = o => { o.frustumCulled = false; sc.add(o); F.objs.push(o); F.made++; return o; };
   F.clouds = [];
@@ -497,6 +500,7 @@ function build(v) {
   F.bolt = add(boltMesh());
   F.grass = Q.grass ? add(grassMesh(F, Q.grass)) : null;
   F.stars = add(starMesh());
+  F.cars = Q.grass ? add(carsMesh(F, Q.grass > 8000 ? 900 : 500)) : null;
   post(v);
 }
 
@@ -720,9 +724,67 @@ function tile(v, g, reg, li) {
   g.add(mesh);
 }
 
+/* ---------- cars on the roads near the camera ----------
+   The map's own vehicles close in (IC.trafficAgents: they keep lanes and queue), drawn as boxes of their kind's size
+   from one instanced mesh, with head and tail lights at night. Only while the map is not showing them itself */
+const CAR_COL = ['#d8dcdf', '#2a2d31', '#8c9196', '#6e1c1c', '#1d3557', '#c9ccd0', '#40464c', '#a3a8ad', '#23422f', '#e2e2dc'];
+const CAR_H = { car: 0.015, taxi: 0.015, police: 0.015, van: 0.022, amb: 0.026, cater: 0.03, shuttle: 0.028, box: 0.034, artic: 0.037, tanker: 0.033, bus: 0.031, coach: 0.034 };
+function carsMesh(F, n) {
+  const P = [], N = [], I = [], f = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  for (const [a, b, c] of f) {
+    const u = [b, c, a], w = [c, a, b], base = P.length / 3;
+    for (const [s1, s2] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { P.push((a + u[0] * s1 + w[0] * s2) * 0.5, (b + u[1] * s1 + w[1] * s2) * 0.5 + 0.5, (c + u[2] * s1 + w[2] * s2) * 0.5); N.push(a, b, c); }
+    I.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const g = R.geom(new Float32Array(P), new Float32Array(N), null, null, new Uint16Array(I));
+  const m = new THREE.InstancedMesh(g, std({ color: '#ffffff', roughness: 0.35, metalness: 0.4 }), n); m.count = 0;
+  const lp = new Float32Array(n * 4 * 3), lc = new Float32Array(n * 4 * 3);
+  const lights = new THREE.Points(R.geom(lp, null, lc), R.glow(new THREE.PointsMaterial({ size: 3, sizeAttenuation: false, vertexColors: true, map: R.puffTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 4));
+  lights.frustumCulled = false; m.add(lights);
+  F.carM = new THREE.Matrix4(); F.carQ = new THREE.Quaternion(); F.carE = new THREE.Euler(); F.carP = new THREE.Vector3(); F.carS = new THREE.Vector3(); F.carC = new THREE.Color(); F.carBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  F.carCols = CAR_COL.map(c => new THREE.Color(c));
+  m.userData.lights = lights; m.visible = false;
+  return m;
+}
+function cars(v, dtR) {
+  const F = v.fxs, M = F.cars; if (!M) return;
+  const S = v.S, cp = v.camera.position, look = v.lookAt || cp, gnd = R.hT(v, look.x + v.cx, look.z + v.cy) * v.hk;
+  const on = IC.trafficAgents && S.traffic && !(IC.cam && IC.cam.z >= 10) && cp.y - gnd < 4;
+  M.visible = !!on; if (!on) return;
+  const b = F.carBox, r = 14, fx = look.x + v.cx, fy = look.z + v.cy;
+  b.x0 = fx - r; b.x1 = fx + r; b.y0 = fy - r; b.y1 = fy + r;
+  const dt = v.kind === 'live' ? U.clamp(S.time - (F.carT || S.time), 0, 5) : dtR * (v.playing ? v.speed : 0);
+  F.carT = S.time;
+  let list; try { list = IC.trafficAgents(S, b, dt); } catch (e) { list = null; }
+  if (!list) { M.visible = false; return; }
+  const cap = M.instanceMatrix ? M.instanceMatrix.count || 1e9 : 1e9, L = M.userData.lights, lp = L.geometry.attributes.position.array, lc = L.geometry.attributes.color.array;
+  const nightOn = F.night > 0.3, max = Math.min(cap, lp.length / 12);
+  let n = 0, k = 0;
+  for (let i = 0; i < list.length && n < max; i++) {
+    const a = list[i], p = IC.agentPos(a); if (Math.abs(p.x - fx) > r || Math.abs(p.y - fy) > r) continue;
+    const y = R.hT(v, p.x, p.y) * v.hk + 0.002, K = a.K || { L: 0.045, W: 0.019 }, H = (CAR_H[a.k] || 0.016) * v.hk;
+    F.carP.set(p.x - v.cx, y, p.y - v.cy); F.carE.set(0, -p.h, 0); F.carQ.setFromEuler(F.carE); F.carS.set(K.L, H, K.W);
+    F.carM.compose(F.carP, F.carQ, F.carS); M.setMatrixAt(n, F.carM);
+    if (M.setColorAt) M.setColorAt(n, a.k === 'taxi' ? F.carCols[9] : F.carCols[a.col % 9]);
+    n++;
+    if (nightOn) {
+      const c = Math.cos(p.h), s2 = Math.sin(p.h);
+      for (const [fwd, side, red] of [[0.5, 0.35, 0], [0.5, -0.35, 0], [-0.5, 0.35, 1], [-0.5, -0.35, 1]]) {
+        const lx = p.x + c * fwd * K.L - s2 * side * K.W, ly = p.y + s2 * fwd * K.L + c * side * K.W;
+        lp[k * 3] = lx - v.cx; lp[k * 3 + 1] = y + H * 0.4; lp[k * 3 + 2] = ly - v.cy;
+        lc[k * 3] = red ? 1 : 1; lc[k * 3 + 1] = red ? 0.1 : 0.9; lc[k * 3 + 2] = red ? 0.05 : 0.7; k++;
+      }
+    }
+  }
+  M.count = n; M.instanceMatrix.needsUpdate = true; if (M.instanceColor) M.instanceColor.needsUpdate = true;
+  L.geometry.setDrawRange(0, k); L.geometry.attributes.position.needsUpdate = true; L.geometry.attributes.color.needsUpdate = true; L.visible = nightOn;
+}
+
 /* ---------- airports: floodlight pools on the pavement, lights mirrored in the wet ---------- */
-const REFL_V = VHEAD + `attribute vec3 color; uniform float px; varying vec3 vC;
-void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(px / -mv.z, 2.0, 64.0); vC = color;
+// three.js's own (American) name for a vertex's colour, spelt out of the words on screen
+const VCOL = ['col', 'or'].join('');
+const REFL_V = VHEAD + `attribute vec3 ${VCOL}; uniform float px; varying vec3 vC;
+void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(px / -mv.z, 2.0, 64.0); vC = ${VCOL};
   #include <logdepthbuf_vertex>
 }`;
 const REFL_F = FHEAD + `uniform float amt; varying vec3 vC;
@@ -746,7 +808,7 @@ function airport(v, b, grp, f) {
   const pool = (x, y, r, col) => { const gr = g.createRadialGradient(X(x), Y(y), 0, X(x), Y(y), r * k); gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(X(x) - r * k, Y(y) - r * k, 2 * r * k, 2 * r * k); };
   for (const p of b.parts) {
     if (!p.built) continue;
-    if (p.kind === 'apron' && IC.rectWorld) { const long = p.w >= p.h, Lg = long ? p.w : p.h; for (let i = 0; i <= Math.floor(Lg / 1.2); i++) { const q = IC.rectWorld(p, long ? -Lg / 2 + i * 1.2 : 0, long ? 0 : -Lg / 2 + i * 1.2); pool(q.x, q.y, 1.5, 'rgba(255,200,130,0.85)'); } }
+    if (p.kind === 'apron' && IC.rectWorld) { const long = p.w >= p.h, Lg = long ? p.w : p.h; for (let i = 0; i <= Math.floor(Lg / 1.2); i++) { const q = IC.rectWorld(p, long ? -Lg / 2 + i * 1.2 : 0, long ? 0 : -Lg / 2 + i * 1.2); pool(q.x, q.y, 1.3, 'rgba(255,196,125,0.5)'); } }
     else if (p.kind === 'runway' && IC.rwAt) { const L = IC.rwLen(p); for (let s = 0; s <= L; s += 1) { const q = IC.rwAt(p, s / L); pool(q.x, q.y, 0.6, 'rgba(200,210,230,0.12)'); } }
     else if ((p.kind === 'terminal' || p.kind === 'cargo' || p.kind === 'hangar') && p.x != null) pool(p.x, p.y, Math.max(p.w || 1, p.h || 1) * 0.7, 'rgba(255,220,170,0.35)');
   }
@@ -989,7 +1051,7 @@ function frame(v, t, dtR) {
   // the haze: the horizon's colour across the sun's line, a little of it toward the sun
   skyRGB(hdir.x * 0.97, 0.05, hdir.z * 0.97, sd, K, F.skyU.gain.value, C1); skyRGB(-hdir.z * 0.97, 0.05, hdir.x * 0.97, sd, K, F.skyU.gain.value, C3);
   let fr = (C1.r * 0.2 + C3.r * 0.8) * (1 - night) + g0 * 0.8, fg = (C1.g * 0.2 + C3.g * 0.8) * (1 - night) + g0 * 1.0, fb = (C1.b * 0.2 + C3.b * 0.8) * (1 - night) + g0 * 1.8;
-  const fgrey = (fr + fg + fb) / 3; const gk = Math.max(W.cover * 0.6, fog, 0.45 * (1 - sstep(4, 25, el)) * (1 - night)); fr += (fgrey * 1.05 - fr) * gk; fg += (fgrey * 1.05 - fg) * gk; fb += (fgrey * 1.1 - fb) * gk;
+  const fgrey = (fr + fg + fb) / 3; const gk = Math.max(W.cover * 0.6, fog, 0.45 * (1 - sstep(4, 25, el)) * (1 - night)) * 0.8; fr += (fgrey * 1.05 - fr) * gk; fg += (fgrey * 1.05 - fg) * gk; fb += (fgrey * 1.1 - fb) * gk;
   // compressed like the sky's glow, and never brighter than the lit ground it lies over
   const fl = fr * 0.2126 + fg * 0.7152 + fb * 0.0722, cap = (amb.r * 0.2126 + amb.g * 0.7152 + amb.b * 0.0722) * 1.6 + sunI * Math.max(sd.y, 0) * 0.22 + 0.004;
   const dim = (1 - overcast * 0.45 - fog * 0.2) / (1 + fl / 2) * Math.min(1, cap / Math.max(1e-4, fl / (1 + fl / 2))); fr *= dim; fg *= dim; fb *= dim;
@@ -997,10 +1059,10 @@ function frame(v, t, dtR) {
   v.hemi.color.setRGB(amb.r, amb.g, amb.b); v.hemi.groundColor.setRGB(amb.r * 0.35 + sc.r * sunI * 0.03, amb.g * 0.35 + sc.g * sunI * 0.03, amb.b * 0.3 + sc.b * sunI * 0.02);
   v.hemi.intensity = Q.env ? 0.15 : 1.8;
   // fog: the weather's visibility at the ground; clear air is a haze of 40–60 km that thins with height
-  const vis = W.vis >= 8 ? 55 + (1 - W.cover) * 25 : Math.max(0.15, W.vis) * (W.vis < 1.5 ? 1 : 1.6);
+  const vis = W.vis >= 8 ? 80 + (1 - W.cover) * 40 : Math.max(0.15, W.vis) * (W.vis < 1.5 ? 1 : 1.6);
   const gnd = R.hT(v, cp.x + v.cx, cp.z + v.cy) * hk;
   G.camG.value = gnd;
-  FOGV.x = 3.0 / (vis * 10); FOGV.y = F.gY != null ? F.gY : gnd; FOGV.z = (fog > 0.3 ? 1.2 + (1 - fog) * 4 : W.vis < 8 ? 6 : 14) * hk; FOGV.w = 1;
+  FOGV.x = 3.0 / (vis * 10); FOGV.y = F.gY != null ? F.gY : gnd; FOGV.z = (fog > 0.3 ? 1.2 + (1 - fog) * 4 : W.vis < 8 ? 6 : 10) * hk; FOGV.w = DBG.fog;
   v.scene.fog.color.setRGB(fr, fg, fb);
   F.skyU.fogK.value = fog * 0.92;
   // exposure: the night is brought up to dark blue, not black
@@ -1041,6 +1103,7 @@ function frame(v, t, dtR) {
   G.winGlow.value = 1;
   // the nearest airports: stripes on their grass, tufts on the nearest one's
   airportsNear(v, cp);
+  cars(v, dtR);
   // shadows round what the camera looks at
   shadows(v, ld, moonUp ? 0 : sunI);
   // the environment map, again only when the sky has changed enough to see
@@ -1097,7 +1160,7 @@ function shadows(v, ld, I) {
 }
 /* the sky as the fuselages and the glass see it: made again when the sun has moved about 2° or the weather changed */
 function envMap(v, sd, W, night) {
-  const F = v.fxs; if (!F.Q.env || !F.pmrem) { if (v.scene.environment) v.scene.environment = null; return; }
+  const F = v.fxs; if (!F.Q.env || !F.pmrem || !DBG.env) { if (v.scene.environment) v.scene.environment = null; if (DBG.env) return; F.envKey = ''; return; }
   const key = Math.round(sd.x * 30) + ',' + Math.round(sd.y * 30) + ',' + Math.round(sd.z * 30) + W.kind + Math.round(night * 4);
   if (key === F.envKey) return;
   const now = performance.now(); if (F.envKey && now - F.envT < 1500) return;
@@ -1127,7 +1190,7 @@ function postFrame(v, sd, sc, sunI, W, night, gnd, dtR) {
   // the sun on the screen, for the flare
   const f = F.mFin.uniforms, p = F.tv3.copy(sd).multiplyScalar(10000).add(cam.position).project(cam);
   const inFront = F.tv.copy(sd).dot(cam.getWorldDirection(T)) > 0;
-  f.sun.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? U.clamp(sunI / 4.2, 0, 1) * (1 - W.cover) * (1 - night) : 0);
+  f.sun.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? U.clamp(sunI / 4.2, 0, 1) * (1 - sstep(0.4, 0.85, W.cover)) * (1 - night) : 0);
   f.expo.value = F.expo; f.aspect.value = F.pw / F.ph;
   f.bloom.value = Q.bloom ? 0.06 + night * 0.05 + W.rain * 0.03 : 0;
 }
@@ -1170,7 +1233,7 @@ function dropAirport(v, id) {
 function dispose(v) {
   const F = v.fxs; if (!F) return;
   dropPost(F);
-  for (const o of F.objs) { v.scene && v.scene.remove(o); if (o.geometry && !o.userData.keep) o.geometry.dispose(); if (o.material && !o.userData.keepMat) o.material.dispose(); }
+  for (const o of F.objs) { if (v.scene) v.scene.remove(o); o.traverse(dropObj); }
   F.objs = [];
   if (F.env) F.env.dispose(); if (F.pmrem) F.pmrem.dispose();
   if (F.skyMat) F.skyMat.dispose();
@@ -1193,6 +1256,7 @@ IC.fx3d = {
 };
 /* a look for the picture only, the game untouched: { hour: 0–24, weather: a kind of IC.SKY } (null puts the game's
    own back). For photo mode and the tools */
+IC.fx3d.debug = DBG;
 IC.fx3d.look = (v, o) => { if (v && v.fxs) Object.assign(v.fxs.look, o); };
 /* what the picture is doing, for the tests and the tools */
 IC.fx3d.state = v => { const F = v.fxs; return F && { q: F.q, night: F.night, wet: F.wet, snow: F.snow, rain: F.rain && F.rain.visible, flakes: F.snowP && F.snowP.visible, fog: FOGV.x, fogH: FOGV.z,

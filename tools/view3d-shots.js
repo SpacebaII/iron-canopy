@@ -283,8 +283,8 @@ const SCENES = {
     const S = await game('sandbox', 6.9); wx(S, 'fog');
     const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
     if (!m) throw new Error('nothing taxiing'); console.log('fog taxi at', U.hhmm(S.time));
-    const L = await live(S, m, 'chase', 800); L.camK = 1.8;
-    await film(L, S, 'm-fog', +(window.FRAMES || 240), 2, f => { if (f === 120) cam(L, 'side'); if (f === 200) return 'still'; });`,
+    const L = await live(S, m, 'chase', 800); L.camK = 0.9;
+    await film(L, S, 'm-fog', +(window.FRAMES || 240), 2, f => { if (f === 120) { cam(L, 'side'); L.camK = 0.35; } if (f === 200) return 'still'; });`,
   'm-snow': `
     const S = await game('sandbox', 10.5); wx(S, 'snow');
     const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
@@ -300,12 +300,24 @@ const SCENES = {
     IC.rangeSpawn(S, { what: 'str', n: 2, brg: 80, km: 90, alt: 4 });
     let kill = null; steps(S, 900, S => (kill = S.rec.ev.find(e => e.kind === 'kill' || e.kind === 'intercept' || (e.kind === 'mstat' && e.what === 'hit'))));
     if (!kill) throw new Error('no intercept');
-    const mis = S.rec.tracks.find(t => t.kind === 'missile' && t.ref === kill.mref) || S.rec.tracks.filter(t => t.kind === 'missile' && t.meta.tref === kill.tref).pop();
+    const ms = S.rec.tracks.filter(t => t.kind === 'missile' && IC.recFirstT(t) < kill.t);
+    const mis = ms.find(t => t.ref === kill.mref) || ms.filter(t => t.meta.tref === kill.tref).pop() || ms.pop();
+    if (!mis) throw new Error('no missile before the hit: ' + JSON.stringify(kill).slice(0, 200));
     const tl = IC.recFirstT(mis); console.log('launch at', U.hhmm(tl), 'hit at', U.hhmm(kill.t));
     const tg = S.rec.of.get(mis.meta.tref) || mis;
     const V = await replay({ follow: tg.ref, x: kill.x, y: kill.y, t: tl - 3, r: 150, cam: 'auto' }, tl - 3);
     V.slowmo = true; V.playing = true; V.speed = 2; let shot = 0;
     await film(V, null, 'm-intercept', +(window.FRAMES || Math.min(900, Math.round((kill.t - tl + 3) * 15 + 150))), 1, f => { if (!shot && V.t > kill.t - 0.15) { shot = 1; return 'still'; } });`,
+  // the same frame with the fog, then the sky's light, switched off: what each does to the colours
+  'm-debug': `
+    const S = await game('sandbox', 11); wx(S, 'scattered');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light' && !m.mil));
+    const L = await live(S, m, 'chase', 600); L.camK = 3;
+    await film(L, S, 'dbg-a', 20, 1, f => f === 19 ? 'still' : null);
+    IC.fx3d.debug.fog = 0; await film(L, S, 'dbg-b', 10, 1, f => f === 9 ? 'still' : null);
+    IC.fx3d.debug.env = 0; await film(L, S, 'dbg-c', 10, 1, f => f === 9 ? 'still' : null);
+    const px = (n) => { const c = grab(L, 64, 36), d = c.getContext('2d').getImageData(0, 0, 64, 36).data; return [d[(30 * 64 + 10) * 4], d[(30 * 64 + 10) * 4 + 1], d[(30 * 64 + 10) * 4 + 2]]; };
+    console.log('pixel', JSON.stringify(px()));`,
   // for tuning the look: HOUR, WX, CAM, K (camera distance), WHAT (taxi, roll, final, gate) from the environment
   'm-probe': `
     const S = await game('sandbox', +(window.HOUR || 11)); wx(S, window.WX || 'scattered');
@@ -314,6 +326,20 @@ const SCENES = {
     if (!m) throw new Error('nothing ' + what);
     const L = await live(S, m, window.CAM || 'chase', 600); L.camK = +(window.K || 1.4);
     await film(L, S, window.NAME || 'm-probe', +(window.FRAMES || 40), 1, f => { if (f === +(window.FRAMES || 40) - 1) { const F = L.fxs; console.log('fx', F && JSON.stringify({ q: F.q, expo: F.expo, night: F.night, sun: F.sunDir, wet: F.wet, W: F.W, fog: [IC.fx3d && 0] })); return 'still'; } });`,
+  // brief 40: frame times per preset, the live view full screen following an airliner at the capital (VIEWPORT=1920x1080)
+  'frames-40': `
+    const S = await game('sandbox', 11); wx(S, 'scattered');
+    const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light'));
+    const L = IC.liveOpen(S, m); for (let i = 0; i < 150 && !(L.renderer && L.tiles && L.tiles.size > 8); i++) await wait(100);
+    L.el.querySelector('[data-rp=full]').click(); S.paused = false; S.speed = 1; await wait(2500);
+    const out = { gpu: IC.fx3d.gpuName(), size: [L.renderer.domElement.width, L.renderer.domElement.height] };
+    for (const q of ['low', 'medium', 'high', 'ultra']) {
+      IC.q3d.set(q); await wait(2500);
+      const ft = await frameTimes(+(window.N || 40));
+      out[q] = Object.assign(ft, { fps: +(1000 / ft.med).toFixed(1), upMs: +L.upMs.toFixed(2), px: [L.renderer.domElement.width, L.renderer.domElement.height], calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles });
+      console.log(q, JSON.stringify(out[q]));
+    }
+    window.__perf = out; S.paused = true;`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -341,7 +367,8 @@ const SCENES = {
   let bad = 0;
   for (const name of names) {
     const vid = name === 'video';
-    const ctx = await browser.newContext(Object.assign({ viewport: { width: 1280, height: 800 }, ignoreHTTPSErrors: true }, vid ? { recordVideo: { dir, size: { width: 1280, height: 800 } } } : {}));
+    const vp = (process.env.VIEWPORT || '1280x800').split('x').map(Number);
+    const ctx = await browser.newContext(Object.assign({ viewport: { width: vp[0], height: vp[1] }, ignoreHTTPSErrors: true }, vid ? { recordVideo: { dir, size: { width: 1280, height: 800 } } } : {}));
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
