@@ -1817,9 +1817,22 @@ IC.liveOpen = function (S, ref) {
   if (L) IC.liveClose();
   style();
   const el = document.createElement('div'); el.className = 'live'; el.id = 'liveView'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Live view');
-  const host = $('app') || document.body, W = CFG.live.w, H = CFG.live.h;
+  const host = $('app') || document.body;
+  // at the bottom of the open map, between the arsenal and the inspector and minimap, never over them (smaller
+  // where the gap is narrow)
+  const hw = host.clientWidth || innerWidth, hh = host.clientHeight || innerHeight, hr = host.getBoundingClientRect(), box = id => { const e = $(id), r = e && e.offsetParent && e.getBoundingClientRect(); return r && r.width ? r : null; };
+  let right = hw - 12, left = 12;
+  for (const id of ['insp', 'mapbox']) { const r = box(id); if (r) right = Math.min(right, r.left - hr.left - 12); }
+  const ar = box('arsenal'); if (ar) left = ar.right - hr.left + 12;
+  let W = Math.round(U.clamp(right - left, 320, CFG.live.w)), H = Math.round(W * CFG.live.h / CFG.live.w), x = right - W, y = hh - H - 12;
+  // too narrow there (the inspector is open): above the minimap instead, as large as fits under the top bar
+  const mb = box('mapbox'), tb = box('topbar'), roof = tb ? tb.bottom - hr.top + 60 : 140;
+  if (right - left < 400 && mb) {
+    const h = Math.min(CFG.live.h, mb.top - hr.top - 12 - roof), w = Math.round(h * CFG.live.w / CFG.live.h);
+    if (w >= 320) { W = w; H = h; x = mb.right - hr.left - W; y = mb.top - hr.top - 12 - H; }
+  }
   el.style.width = W + 'px'; el.style.height = H + 'px';
-  el.style.left = Math.max(12, (host.clientWidth || innerWidth) - W - 24) + 'px'; el.style.top = Math.max(12, (host.clientHeight || innerHeight) - H - 110) + 'px';
+  el.style.left = Math.max(12, x) + 'px'; el.style.top = Math.max(12, y) + 'px';
   el.innerHTML = `<div class="rp-head" data-el="head"><span class="x live-dot" title="Live: it follows the game as it runs">● LIVE</span><span class="sub" data-el="sub"></span>
       ${camSelect('auto', ['free', 'follow'])}
       <button class="x" data-rp="toReplay" title="Replay the last 15 minutes here">⟲</button><button class="x" data-rp="full" data-el="fullBtn" title="Fill the screen">⤢</button><button class="x" data-rp="close" aria-label="Close" title="Close">✕</button></div>
