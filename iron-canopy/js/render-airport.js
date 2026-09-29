@@ -139,9 +139,11 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) drawStand(g, s, px, z, marks, fine);
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
+  // people movers run underground: a dashed line between their stations
+  for (const p of by('mover')) drawMover(g, p, px, z);
   // buildings
   for (const p of parts) {
-    if (['runway', 'taxi', 'apron', 'surface'].includes(p.kind)) continue;
+    if (['runway', 'taxi', 'apron', 'surface', 'mover'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
   // what each building is, in small letters at the middle zoom (one label for a cluster of fuel tanks)
@@ -451,7 +453,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.restore();
     return;
   }
-  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
+  const col = { skybridge: [150, 186, 204], deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
@@ -507,6 +509,14 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   if (hp < 0.5 && z > 0.8 && z < 6) { g.strokeStyle = dead ? IC.C.hostile : IC.C.amber; g.lineWidth = 1.2 * px; if (p.r) { g.beginPath(); g.arc(0, 0, p.r + 3 * px, 0, 7); g.stroke(); } else g.strokeRect(-w / 2 - 2 * px, -h / 2 - 2 * px, w + 4 * px, h + 4 * px); }
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
+}
+function drawMover(g, p, px, z) {
+  const a = IC.rectWorld(p, -p.w / 2, 0), b = IC.rectWorld(p, p.w / 2, 0);
+  g.save(); g.strokeStyle = p.built ? 'rgba(120,200,255,0.75)' : 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.03, 1.6 * px); g.setLineDash([6 * px, 4 * px]);
+  g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); g.setLineDash([]);
+  g.fillStyle = p.built ? 'rgb(120,200,255)' : 'rgba(236,236,226,0.6)'; for (const e of [a, b]) g.fillRect(e.x - Math.max(0.05, 3 * px), e.y - Math.max(0.05, 3 * px), Math.max(0.1, 6 * px), Math.max(0.1, 6 * px));
+  if (z > 6) lbl(g, 'PEOPLE MOVER', (a.x + b.x) / 2, (a.y + b.y) / 2 - 6 * px, px, 'rgba(160,215,255,0.85)', 7.5, 'center', 700);
+  g.restore();
 }
 /* a round or curved terminal: the roof follows the shape, with skylights round its spine and glass on its faces */
 function drawBandBuilding(g, p, px, z, full, night, hp) {

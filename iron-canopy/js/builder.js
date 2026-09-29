@@ -827,7 +827,7 @@ IC.aptAutoLinks = function (ap) {
   }
 };
 
-const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, rotunda: 1, curve: 1 };
+const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, rotunda: 1, curve: 1, mover: 1, skybridge: 1 };
 const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1 };
 IC.bldIsArea = t => !!AREA_TOOLS[t];
 IC.bldIsLine = t => !!LINE_TOOLS[t];
@@ -905,11 +905,17 @@ function planOf(S, m, hv, tol, free) {
   if (LINE_TOOLS[t]) {
     const s = snapLine(ap, m, hv, tol, free); out.snap = s;
     const last = pts[pts.length - 1];
-    if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse' || t === 'rotunda') && pts.length === 2) pts[1] = s; else if (t === 'curve' && pts.length === 3) pts[2] = s; else pts.push(s); }
+    if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse' || t === 'rotunda' || t === 'mover' || t === 'skybridge') && pts.length === 2) pts[1] = s; else if (t === 'curve' && pts.length === 3) pts[2] = s; else pts.push(s); }
     out.pts = pts;
     if (pts.length < 2) return out;
     if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone });
     else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat });
+    else if (t === 'mover' || t === 'skybridge') {
+      const a = pts[0], b = pts[1], L = U.dist(a, b), D = IC.APART[t], clear = m.clear || IC.APART.skybridge.clear;
+      out.specs.push({ kind: t, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, a: Math.atan2(b.y - a.y, b.x - a.x), w: L, h: D.w, clear: t === 'skybridge' ? clear : undefined });
+      if (t === 'mover') out.text.push(`People mover ${IC.bldLen(L)}: about ${Math.max(1, Math.round((90 + L * 100 / (D.speed / 3.6)) / 60))} min from station to station, underground`);
+      else { const ok2 = Object.keys(IC.TAIL_H).filter(k => IC.ACTYPES[k] && !IC.ACTYPES[k].mil && IC.TAIL_H[k] + 1 <= clear).map(k => IC.ACTYPES[k].short), no = Object.keys(IC.TAIL_H).filter(k => IC.ACTYPES[k] && !IC.ACTYPES[k].mil && IC.TAIL_H[k] + 1 > clear).map(k => IC.ACTYPES[k].short); out.text.push(`Bridge ${IC.bldLen(L)}, ${clear} m clear: ${ok2.join(', ')} pass under it${no.length ? `; ${no.join(', ')} cannot` : ''}`); }
+    }
     else if (t === 'rotunda') { const c = rotundaSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
     else if (t === 'curve') {
       if (pts.length < 3) { out.text.push('Click a point on the curve, then the far end'); return out; }
@@ -1000,7 +1006,7 @@ function planOf(S, m, hv, tol, free) {
   if (homes) out.text.push(`Clears ${IC.bldClearText({ blocks: clrAll, res })}: ${U.money(comp)} compensation, and the town will protest`);
   if (roads) out.text.push(`${roads > 1 ? roads + ' roads run' : 'a road runs'} under it in a tunnel`);
   if (out.near) out.text.push(`Closes ${out.near.name} while paving next to it (or set night work in the panel)`);
-  const len = LINE_TOOLS[t] && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
+  const len = LINE_TOOLS[t] && t !== 'rotunda' && t !== 'curve' && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
   if (out.specs.length) out.text.unshift(`${len ? U.km(len) + ' · ' : ''}${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);
   if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
   const lock = out.specs.map(sp => IC.aptLockWhy(S, sp.kind, sp.mat || m.mat)).find(Boolean);
@@ -1135,7 +1141,7 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     let a = s.a; for (let k = 0; k < 4 && Math.abs(U.angWrap(a - m.rot0)) > Math.PI / 4 + 1e-6; k++) a += Math.PI / 2;
     m.rot = m.rotAuto = U.angWrap(a);
   }
-  if ((m.part === 'runway' || m.part === 'concourse' || m.part === 'rotunda' || AREA_TOOLS[m.part]) && m.pts.length === 2) m.pts[1] = s;
+  if ((m.part === 'runway' || m.part === 'concourse' || m.part === 'rotunda' || m.part === 'mover' || m.part === 'skybridge' || AREA_TOOLS[m.part]) && m.pts.length === 2) m.pts[1] = s;
   else if (m.part === 'curve' && m.pts.length === 3) m.pts[2] = s;
   else if (need === 1) m.pts = [s];
   else m.pts.push(s);
@@ -1174,7 +1180,7 @@ IC.bldPlanSpecs = function (S, ap, specs) {
       if (p && sp.loop && p.nodes.length > 3 && U.dist(ap.nodes[p.nodes[0]], ap.nodes[p.nodes[p.nodes.length - 1]]) < 0.05) { delete ap.nodes[p.nodes.pop()]; p.nodes.push(p.nodes[0]); ap.dirty = true; }
     }
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, ring: sp.ring, span: sp.span, face: sp.face, joins: sp.joins }); if (p && sp.link) p.link = sp.link; }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, ring: sp.ring, span: sp.span, face: sp.face, joins: sp.joins, clear: sp.clear }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

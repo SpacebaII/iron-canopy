@@ -361,7 +361,7 @@ function finishPath(m) { m.path = null; m.pi = 0; m.s = 0; }
 /* the best runway entry for this aircraft: into the wind, on a departure runway, with enough runway ahead */
 function planDeparture(S, ap, m, dry) {
   const g = G(ap), cfg = cfgOf(S, ap), T = m.T;
-  const tree = dry ? IC.aptTree(ap, m.node) : IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) } });
+  const tree = dry ? IC.aptTree(ap, m.node, false, T.tail) : IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) } });
   let best = null;
   for (const rw of runways(ap)) {
     const c = cfg.rw[rw.id]; if (!c) continue;
@@ -455,7 +455,7 @@ IC.rwOcc = function (S, ap, rw, dir, T, R) {
 };
 function planArrival(S, ap, T, target, pref, mil) {
   const g = G(ap), cfg = cfgOf(S, ap), imc = IC.needILS(S) && !mil;
-  const back = IC.aptTree(ap, target, true);
+  const back = IC.aptTree(ap, target, true, T.tail);
   let best = null;
   for (const rw of runways(ap)) {
     const c = cfg.rw[rw.id]; if (!c) continue;
@@ -906,7 +906,7 @@ function step(S, ap, m, dt) {
     }
     case 'stranded': {
       m.t += dt; m.waitT += dt;
-      const p = IC.aptSearch(ap, m.plan ? m.plan.exit.id : m.node, { to: m.target, avoidRwy: true });
+      const p = IC.aptSearch(ap, m.plan ? m.plan.exit.id : m.node, { to: m.target, avoidRwy: true, h: m.T && m.T.tail });
       if (p.dist.has(m.target)) { m.node = m.plan.exit.id; m.path = IC.aptSteps(p, m.node, m.target); m.pi = 0; m.s = 0; m.phase = 'taxi'; m.onEdge = false; reserve(S, ap, m, m.path, S.time); return; }
       if (m.t > 1800) { m.dead = true; kill(S, ap, m); ap.kpi.div++; m.onDead && m.onDead(m, 'towed'); }
       return;

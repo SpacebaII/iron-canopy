@@ -325,6 +325,8 @@ function parked(S, tl, ap, s, m) {
   const load = termLoad(S, ap);
   if (tl.T.seats) turn *= 1 + Math.max(0, load - 0.8) * 2.5;
   if (tl.T.cargo && !st.cargo) turn *= 2;
+  // boarding waits for the last passengers from the kerb: a far gate, a bus or a slow connection (airport.js)
+  if (tl.T.seats && s.conn) turn += Math.max(0, s.conn - 5) * 60 * 0.4;
   tl.t = turn; tl.turn0 = turn;
   judge(S, al, tl, ap, { taxi: m.taxiT, wait: m.waitT + (tl.hold || 0), kind: 'arr' });
   IC.emit(S, 'tailParked', { tl, ap });

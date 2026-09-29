@@ -21,6 +21,16 @@ IC.aptLockWhy = function (S, kind, mat) {
 /* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
 IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
 IC.APART.fuelpad = { name: 'Fuel stand', w: 0.5, h: 0.4, cost: 12, build: 500, hp: 20, pad: true, desc: 'A paved stand by the fuel farm: small aircraft and those on remote stands taxi here to refuel instead of waiting for a truck.' };
+/* straight parts drawn from end to end, kept as a turned rectangle (centre, angle a, length w, width h): a people
+   mover between terminal buildings, underground, and a passenger bridge over a taxiway, which aircraft taller
+   than its clearance cannot pass under */
+IC.APART.mover = { name: 'People mover', span: true, w: 0.1, cost: 18, build: 600, hp: 40, speed: 40, desc: 'An underground train between terminal buildings: passengers ride to a far concourse in minutes instead of walking or taking the bus. Costs per 100 m to build and keep.' };
+IC.APART.skybridge = { name: 'Airside bridge', span: true, w: 0.12, cost: 30, build: 900, hp: 40, clear: 20, desc: 'A passenger bridge over a taxiway, between two buildings. Aircraft taller than its clearance cannot pass under it.' };
+/* tail heights in metres, for the bridges they must pass under */
+IC.TAIL_H = { light: 2.7, turbo: 7.7, narrow: 11.8, wide: 18.5, cargo: 19.4, fighter: 5, heavy: 12.5, drone: 2.5, heli: 4.5 };
+if (!IC.APART_ORDER.includes('mover')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('terminal') + 1, 0, 'mover', 'skybridge');
+IC.tailH = type => IC.TAIL_H[type] || 12;
+for (const k in IC.TAIL_H) if (IC.ACTYPES[k]) IC.ACTYPES[k].tail = IC.TAIL_H[k];
 /* ground surfaces the player paints: for looks, and for cheap areas like car parks; aircraft never use them */
 IC.APART.surface = { name: 'Surface', area: true, cost: 1, build: 60, hp: 30, desc: 'Paint the ground: grass, gravel, concrete, asphalt or landscaping. Asphalt outside the airfield is a car park. Aircraft do not use it.' };
 IC.SURF = { grass: { name: 'Grass', k: 0.5 }, gravel: { name: 'Gravel', k: 1.5 }, green: { name: 'Landscaping', k: 3 }, asph: { name: 'Asphalt', k: 4, park: 350 }, conc: { name: 'Concrete', k: 6 } };
@@ -172,6 +182,7 @@ IC.partMeasure = function (ap, p) {
   if (p.kind === 'runway') return rwLen(p);
   if (p.kind === 'taxi') { const pts = p.nodes ? p.nodes.map(id => ap.nodes[id]) : p.pts; let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); return L; }
   if (D.area) return IC.partArea(p);
+  if (D.span) return p.w;
   return 1;
 };
 /* paved parts cost and take as long as their material says (concrete is the price list) */
@@ -234,6 +245,61 @@ function bandStands(ap, p) {
   }
   return out;
 }
+
+/* ---------- getting to the gate ----------
+   Terminals that touch (or branch from each other) are one building. The one nearest the town is the main terminal,
+   with the kerb; passengers reach any other building by people mover, or else by bus. Every stand gets its time from
+   the kerb in minutes (s.conn): the ride, then the walk inside the building to its gate (or the bus to a remote
+   stand). Boarding waits for the last passengers, so long connections lengthen turnarounds (aviation.js). */
+IC.WALK_MS = 1.3;   // walking pace with moving walkways, m/s
+IC.BUS = { wait: 300, ms: 7 };
+IC.aptLinks = function (S, ap, st) {
+  const T = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25 && p.x != null);
+  const up = T.map((_, i) => i), root = i => up[i] === i ? i : (up[i] = root(up[i]));
+  for (let i = 0; i < T.length; i++) for (let j = i + 1; j < T.length; j++) if (T[i].joins === T[j].id || T[j].joins === T[i].id || (T[i].joins && T[i].joins === T[j].joins) || rectGap(T[i], T[j]) < 0.05) up[root(i)] = root(j);
+  const groups = new Map(); T.forEach((t, i) => { const r = root(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(t); });
+  const G = [...groups.values()].map(ts => { const a = ts.reduce((s, t) => s + IC.partArea(t), 0); return { ts, a, x: ts.reduce((s, t) => s + t.x * IC.partArea(t), 0) / a, y: ts.reduce((s, t) => s + t.y * IC.partArea(t), 0) / a }; });
+  st.links = [];
+  if (!G.length) return;
+  const town = ap.cityRef || (S && IC.cities ? IC.cities(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0] : null);
+  const main = town ? G.slice().sort((a, b) => Math.min(...a.ts.map(t => partDist(ap, t, town))) - Math.min(...b.ts.map(t => partDist(ap, t, town))))[0] : G.slice().sort((a, b) => b.a - a.a)[0];
+  const groupAt = q => G.find(g => g.ts.some(t => partDist(ap, t, q) < 0.3));
+  // rides by people mover from the main terminal, the quickest way (Dijkstra over the few buildings)
+  const movers = ap.parts.filter(p => p.kind === 'mover' && p.built && p.hp > p.max * 0.25);
+  for (const g of G) { g.t = g === main ? 0 : Infinity; g.at = { x: g.x, y: g.y }; g.how = g === main ? 'walk' : 'bus'; }
+  const open = new Set(G);
+  while (open.size) {
+    let u = null; for (const g of open) if (!u || g.t < u.t) u = g;
+    open.delete(u); if (u.t === Infinity) break;
+    for (const mv of movers) {
+      const e = [toWorld(mv, -mv.w / 2, 0), toWorld(mv, mv.w / 2, 0)], ga = groupAt(e[0]), gb = groupAt(e[1]);
+      for (const [A, B, eb] of [[ga, gb, e[1]], [gb, ga, e[0]]]) {
+        if (A !== u || !B || !open.has(B)) continue;
+        const t = u.t + 90 + mv.w * 100 / (IC.APART.mover.speed / 3.6);
+        if (t < B.t) { B.t = t; B.how = 'mover'; B.at = eb; }
+      }
+    }
+  }
+  // the rest by bus from the kerb
+  for (const g of G) if (g.t === Infinity) g.t = IC.BUS.wait + U.dist(g, main) * 1.4 * 100 / IC.BUS.ms;
+  // names: the main terminal, then concourses A, B, C… outward
+  const others = G.filter(g => g !== main).sort((a, b) => U.dist(a, main) - U.dist(b, main));
+  main.name = 'the main terminal'; others.forEach((g, i) => { g.name = `Concourse ${String.fromCharCode(65 + i % 26)}`; });
+  for (const g of G) { st.links.push({ name: g.name, how: g.how, min: g.t / 60 }); for (const t of g.ts) t.bldg = g.name; }
+  // each stand: to its building, then the walk inside to the gate; a remote stand by bus from the kerb
+  for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
+    const g = s.contact ? G.find(g2 => g2.ts.some(t => partDist(ap, t, s) < 0.9)) : null;
+    s.conn = g ? (g.t + U.dist(g.at, s) * 100 / IC.WALK_MS) / 60 : (IC.BUS.wait + U.dist(main, s) * 1.3 * 100 / IC.BUS.ms) / 60;
+    s.bldg = g ? g.name : null;
+  }
+  const mv = movers.length > 0;
+  for (const g of others) if (g.how === 'bus' && g.t > 480) st.warn.push(mv ? `The people mover does not reach ${g.name}: passengers ride the bus there (${Math.round(g.t / 60)} min from the kerb).` : `${g.name} has no link to the main terminal: passengers ride the bus there (${Math.round(g.t / 60)} min). A people mover would be quicker.`);
+  // bridges too low for the aircraft that use the airport
+  for (const b of ap.parts.filter(p => p.kind === 'skybridge' && p.built)) {
+    const tall = Object.keys(IC.TAIL_H).filter(k => IC.ACTYPES[k] && !IC.ACTYPES[k].mil && IC.TAIL_H[k] + 1 > (b.clear || IC.APART.skybridge.clear));
+    if (tall.length) st.warn.push(`The airside bridge clears ${b.clear || IC.APART.skybridge.clear} m: ${tall.map(k => IC.ACTYPES[k].short).join(', ')} cannot taxi under it.`);
+  }
+};
 
 /* ---------- runway names and groups ---------- */
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
@@ -320,9 +386,16 @@ IC.aptGraph = function (ap) {
     if (n.on) { if (!onPart.has(n.on.part)) onPart.set(n.on.part, []); onPart.get(n.on.part).push(n); }
   }
   const parts = ap.parts.filter(p => p.built && !(p.shut && p.kind !== 'runway'));
-  const rwn = new Map();
+  const rwn = new Map(), bridges = parts.filter(p => p.kind === 'skybridge');
   for (const p of parts) {
-    if (p.kind === 'taxi') for (let i = 1; i < p.nodes.length; i++) { if (!p.cut[i]) edge(p.nodes[i - 1], p.nodes[i], 'taxi', p.id, i, IC.GOPS.TAXI, p.oneway || 0, p.flow || 0); }
+    if (p.kind === 'taxi') for (let i = 1; i < p.nodes.length; i++) {
+      if (p.cut[i]) continue;
+      const n0 = adj.get(p.nodes[i - 1]) ? adj.get(p.nodes[i - 1]).length : 0, A = ap.nodes[p.nodes[i - 1]], B = ap.nodes[p.nodes[i]];
+      edge(p.nodes[i - 1], p.nodes[i], 'taxi', p.id, i, IC.GOPS.TAXI, p.oneway || 0, p.flow || 0);
+      // under a passenger bridge: only aircraft lower than its clearance
+      const low = A && B && bridges.filter(b => U.segDist(b.x, b.y, A.x, A.y, B.x, B.y) < b.w / 2 + 0.3 && rectsOverlap(b, { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, a: Math.atan2(B.y - A.y, B.x - A.x), w: U.dist(A, B), h: 0.05 }, 0));
+      if (low && low.length) { const h = Math.min(...low.map(b => b.clear || IC.APART.skybridge.clear)); for (const e of adj.get(p.nodes[i - 1]).slice(n0).concat(adj.get(p.nodes[i]).filter(e => e.to === p.nodes[i - 1]))) e.maxH = h; }
+    }
     else if (p.kind === 'runway') {
       node(p.id + ':a', p.a.x, p.a.y, 'rwyEnd', { part: p.id, t: 0 }, p.id); node(p.id + ':b', p.b.x, p.b.y, 'rwyEnd', { part: p.id, t: 1 }, p.id);
       const on = [{ id: p.id + ':a', t: 0 }, { id: p.id + ':b', t: 1 }].concat((onPart.get(p.id) || []).map(n => ({ id: n.id, t: n.on.t })));
@@ -418,6 +491,8 @@ IC.aptSearch = function (ap, src, o) {
   dist.set(src, 0); if (time) time.set(src, o.res.t0);
   const H = new Heap(); H.push(src, 0);
   const rwK = o.avoidRwy ? 6 : 2;
+  // the aircraft's tail height, for bridges it must pass under (with a metre to spare)
+  const H0 = o.h || (o.res && o.res.m && o.res.m.T && o.res.m.T.tail) || 0;
   while (H.k.length) {
     const u = H.pop();
     if (done.has(u)) continue; done.add(u);
@@ -426,6 +501,7 @@ IC.aptSearch = function (ap, src, o) {
     for (const e of A.get(u)) {
       const v = o.rev ? e.from : e.to;
       if (done.has(v) || v === o.avoid) continue;
+      if (e.maxH && H0 && e.maxH < H0 + 1) continue;
       let w = e.w / e.spd * (e.kind === 'rwy' ? rwK : 1), tv;
       // a taxiway onto a runway means a hold at the line, a long one if the runway is in use
       const B = G.N.get(e.to);
@@ -445,10 +521,10 @@ IC.aptSteps = function (tree, src, to) {
   return out;
 };
 /* cached route trees (without reservations) until the network changes */
-IC.aptTree = function (ap, src, rev) {
-  const G = IC.aptGraph(ap), key = src + (rev ? '<' : '>');
+IC.aptTree = function (ap, src, rev, h) {
+  const G = IC.aptGraph(ap), key = src + (rev ? '<' : '>') + (h || '');
   let t = G.trees.get(key);
-  if (!t) { if (G.trees.size > 400) G.trees.clear(); t = IC.aptSearch(ap, src, { rev, avoidRwy: rev }); G.trees.set(key, t); }
+  if (!t) { if (G.trees.size > 400) G.trees.clear(); t = IC.aptSearch(ap, src, { rev, avoidRwy: rev, h }); G.trees.set(key, t); }
   return t;
 };
 /* cheapest path in seconds; runway edges cost extra because using one blocks the runway */
@@ -695,6 +771,7 @@ IC.aptStats = function (S, ap) {
   const ammo = alive('ammo');
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');
   st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 ? 'cargo' : best >= 27 ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
+  IC.aptLinks(S, ap, st);
   ap.st = st;
   return st;
 };
@@ -1050,8 +1127,17 @@ IC.aptCanPlace = function (S, ap, part) {
   // no part in a river: sample along lines, and the corners of areas
   const wet = p => IC.onRiver && IC.onRiver(p.x, p.y);
   if (part.kind === 'runway' || part.kind === 'taxi') { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.ceil(U.dist(a, b) / 0.5); for (let k = 0; k <= n; k++) if (wet({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return no('It crosses a river.'); } }
+  // a people mover runs underground from a terminal building to another; a bridge crosses taxiways between buildings
+  if (part.kind === 'mover' || part.kind === 'skybridge') {
+    const ends = [toWorld(part, -part.w / 2, 0), toWorld(part, part.w / 2, 0)], at = e => ap.parts.find(q => q.kind === 'terminal' && q.x != null && partDist(ap, q, e) < 0.3);
+    if (!ends.every(at)) return no(`A ${IC.APART[part.kind].name.toLowerCase()} runs from one terminal building to another: start and end it on one.`);
+    if (at(ends[0]) === at(ends[1]) || (at(ends[0]).joins || at(ends[0]).id) === (at(ends[1]).joins || at(ends[1]).id)) return no('Both ends are on the same building: passengers walk inside it.');
+    if (part.kind === 'mover') return true;
+    for (const q of ap.parts) if (q.kind === 'runway' && rectsOverlap({ x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q) + 2, h: 2.4 }, part, 0)) return no(`It crosses the strip of ${q.name || 'the runway'}: aircraft take off there.`, q);
+    return true;
+  }
   // taxiways join aprons and buildings at their edge; they do not run through them, nor a new part over a taxiway
-  const cover = q => q.kind !== 'taxi' && q.kind !== 'runway' && q.kind !== 'ils' && q.kind !== 'surface' && q.x != null;
+  const cover = q => q.kind !== 'taxi' && q.kind !== 'runway' && q.kind !== 'ils' && q.kind !== 'surface' && !IC.APART[q.kind].span && q.x != null;
   if (part.kind === 'taxi') {
     for (const q of ap.parts) if (cover(q) && taxiThrough(pts, q)) return no(`It runs through ${IC.partName(ap, q)}: a taxiway joins an apron or a building at its edge.`, q);
     return true;
@@ -1063,7 +1149,8 @@ IC.aptCanPlace = function (S, ap, part) {
   const A = shape(probe);
   if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return no('It stands in a river.');
   for (const q of ap.parts) {
-    if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
+    if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface' || q.kind === 'mover') continue;
+    if (q.kind === 'skybridge' && (probe.kind === 'terminal' || probe.kind === 'apron')) continue;
     // a pier's building may run into the building it branches from
     if (probe.joins && (q.id === probe.joins || q.joins === probe.joins) && q.kind === 'terminal') continue;
     // and over the end of that pier's aprons: the stands it covers are not laid out
@@ -1316,7 +1403,8 @@ IC.aptPlanRunway = function (S, ap, a, b, name, o) {
 IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   const D = IC.APART[kind];
   const part = { kind, x, y, a: a != null ? a : ap.rwyA || 0 };
-  if (D.area) { part.w = w; part.h = h; }
+  if (D.area || D.span) { part.w = w; part.h = D.span ? D.w : h; }
+  if (kind === 'skybridge') part.clear = (o && o.clear) || D.clear;
   // a round or curved part (see shaped parts above)
   if (o && o.ring) { part.ring = o.ring.slice(); if (o.span) part.span = o.span.slice(); if (o.face) part.face = o.face; }
   // a pier branching from another pier's building: the two are one building
