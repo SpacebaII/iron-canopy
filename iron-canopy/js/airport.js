@@ -40,7 +40,61 @@ IC.rwLen = rwLen; IC.rwAt = rwAt; IC.rwT = rwT; IC.rwDir = rwDir;
 function toLocal(r, p) { const c = Math.cos(-r.a), s = Math.sin(-r.a), dx = p.x - r.x, dy = p.y - r.y; return { x: dx * c - dy * s, y: dx * s + dy * c }; }
 function toWorld(r, lx, ly) { const c = Math.cos(r.a), s = Math.sin(r.a); return { x: r.x + lx * c - ly * s, y: r.y + lx * s + ly * c }; }
 IC.rectLocal = toLocal; IC.rectWorld = toWorld;
-function rectDist(r, p) { const l = toLocal(r, p), dx = Math.max(0, Math.abs(l.x) - r.w / 2), dy = Math.max(0, Math.abs(l.y) - r.h / 2); return Math.hypot(dx, dy); }
+/* ---------- shaped parts ----------
+   A part may be a band round its centre (x, y) instead of a rectangle: ring [r0, r1] between two radii, over the
+   angles span [a0, a1] measured from its turn a (the whole way round without a span). A round terminal is a band
+   from 0; the apron round it a ring; a curved terminal and its apron are bands over a span. Such a part keeps w and h
+   as its bounding square, so code that only needs a rough footprint works unchanged. */
+const TAU = Math.PI * 2;
+const polar = (p, q) => { const dx = q.x - p.x, dy = q.y - p.y; return { rho: Math.hypot(dx, dy), th: Math.atan2(dy, dx) - (p.a || 0) }; };
+/* the angle th brought into the span, or null when it lies outside */
+function inSpan(p, th) { if (!p.span) return th; let t = th; while (t < p.span[0]) t += TAU; while (t > p.span[0] + TAU) t -= TAU; return t <= p.span[1] + 1e-9 ? t : null; }
+const bandEnd = (p, a, r) => ({ x: p.x + Math.cos(a + (p.a || 0)) * r, y: p.y + Math.sin(a + (p.a || 0)) * r });
+/* distance from q to the band (0 inside), and to its outline (inside too) */
+function bandDist(p, q) {
+  const o = polar(p, q), [r0, r1] = p.ring;
+  if (inSpan(p, o.th) != null) return Math.max(0, r0 - o.rho, o.rho - r1);
+  return Math.min(...p.span.map(a => { const e0 = bandEnd(p, a, r0), e1 = bandEnd(p, a, r1); return U.segDist(q.x, q.y, e0.x, e0.y, e1.x, e1.y); }));
+}
+function bandEdge(p, q) {
+  const o = polar(p, q), [r0, r1] = p.ring, t = inSpan(p, o.th);
+  if (t == null || o.rho < r0 || o.rho > r1) return bandDist(p, q);
+  let d = Math.min(r1 - o.rho, r0 > 0 ? o.rho - r0 : 1e9);
+  if (p.span) for (const a of p.span) d = Math.min(d, Math.abs(Math.sin(t - a)) * o.rho);
+  return d;
+}
+/* the nearest point on the band's outline */
+function bandProject(p, q) {
+  const o = polar(p, q), [r0, r1] = p.ring, t = inSpan(p, o.th);
+  if (t != null) { const r = r0 > 0 && Math.abs(o.rho - r0) < Math.abs(o.rho - r1) ? r0 : r1; return bandEnd(p, t, r); }
+  let best = null, bd = 1e9;
+  for (const a of p.span) { const e0 = bandEnd(p, a, r0), e1 = bandEnd(p, a, r1), L = U.dist(e0, e1) || 1, f = U.clamp(((q.x - e0.x) * (e1.x - e0.x) + (q.y - e0.y) * (e1.y - e0.y)) / (L * L), 0, 1), c = { x: e0.x + (e1.x - e0.x) * f, y: e0.y + (e1.y - e0.y) * f }, d = U.dist(c, q); if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+IC.bandDist = bandDist; IC.bandEdge = bandEdge; IC.bandProject = bandProject; IC.inSpan = inSpan;
+/* the angle a band covers, and its area (hectares when units are 100 m) */
+const spanOf = p => p.span ? p.span[1] - p.span[0] : TAU;
+IC.partArea = p => p.ring ? spanOf(p) / 2 * (p.ring[1] * p.ring[1] - p.ring[0] * p.ring[0]) : (p.w || 0) * (p.h || 0);
+/* points spread over a shape, for overlap tests between a band and anything else */
+function samples(P, m) {
+  const out = [];
+  if (P.ring) {
+    const [r0, r1] = P.ring, a0 = P.span ? P.span[0] : 0, sp = spanOf(P), n = Math.max(12, Math.ceil(sp * r1 / 0.12));
+    for (const r of r0 > 0 ? [r0 + m, (r0 + r1) / 2, r1 - m] : [0, r1 * 0.5, r1 - m]) for (let i = 0; i <= n; i++) out.push(bandEnd(P, a0 + sp * (P.span ? U.clamp(i / n, 0.002, 0.998) : i / n), Math.max(0, r)));
+    return out;
+  }
+  const nx = U.clamp(Math.ceil(P.w / 0.15), 2, 40), ny = U.clamp(Math.ceil(P.h / 0.15), 2, 40);
+  for (let i = 0; i <= nx; i++) for (let j = 0; j <= ny; j++) out.push(toWorld(P, (i / nx - 0.5) * (P.w - 2 * m), (j / ny - 0.5) * (P.h - 2 * m)));
+  return out;
+}
+/* inside a shape by more than a margin */
+const insideBy = (P, q, m) => P.ring ? bandDist(P, q) === 0 && bandEdge(P, q) > m : (l => Math.abs(l.x) < P.w / 2 - m && Math.abs(l.y) < P.h / 2 - m)(toLocal(P, q));
+IC.insideShape = insideBy;
+function shapeOverlap(A, B, m) {
+  if (U.dist(A, B) > Math.hypot(A.w, A.h) / 2 + Math.hypot(B.w, B.h) / 2) return false;
+  return samples(A, m).some(q => insideBy(B, q, m)) || samples(B, m).some(q => insideBy(A, q, m));
+}
+function rectDist(r, p) { if (r.ring) return bandDist(r, p); const l = toLocal(r, p), dx = Math.max(0, Math.abs(l.x) - r.w / 2), dy = Math.max(0, Math.abs(l.y) - r.h / 2); return Math.hypot(dx, dy); }
 function partDist(ap, part, p) {
   if (part.kind === 'runway') { const t = U.clamp(rwT(part, p), 0, 1); return Math.max(0, U.dist(rwAt(part, t), p) - part.w / 2); }
   if (part.kind === 'taxi') { let m = 1e9; for (let i = 1; i < part.nodes.length; i++) { const a = ap.nodes[part.nodes[i - 1]], b = ap.nodes[part.nodes[i]]; m = Math.min(m, U.segDist(p.x, p.y, a.x, a.y, b.x, b.y)); } return Math.max(0, m - part.w / 2); }
@@ -51,6 +105,7 @@ IC.partDist = partDist;
 /* the gap between two rotated rectangles (0 when they touch or overlap): the nearest corner of one to the other */
 function rectGap(A, B) {
   if (rectsOverlap(A, B, 0)) return 0;
+  if (A.ring || B.ring) { let m = 1e9; for (const q of samples(A, 0)) m = Math.min(m, rectDist(B, q)); for (const q of samples(B, 0)) m = Math.min(m, rectDist(A, q)); return m; }
   const cs = R => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(R, sx * R.w / 2, sy * R.h / 2));
   let m = 1e9;
   for (const c of cs(A)) m = Math.min(m, rectDist(B, c));
@@ -74,13 +129,14 @@ function resolveNode(ap, n) {
     if (p.kind === 'runway') { const t = rwT(p, n), off = Math.abs(rwOff(p, n)); if (t >= -0.01 && t <= 1.01 && off < SNAP_RWY) { n.on = { kind: 'rwy', part: p.id, t: U.clamp(t, 0, 1) }; return; } }
   }
   for (const p of ap.parts) {
+    if ((p.kind === 'apron' || p.kind === 'alert') && p.ring) { const o = onApron(p, n); if (o) { n.on = o; return; } continue; }
     if (p.kind === 'apron' || p.kind === 'alert') { const l = toLocal(p, n); if (Math.abs(l.x) <= p.w / 2 + SNAP_APRON && Math.abs(l.y) <= p.h / 2 + SNAP_APRON && (Math.abs(Math.abs(l.x) - p.w / 2) < SNAP_APRON || Math.abs(Math.abs(l.y) - p.h / 2) < SNAP_APRON)) { n.on = { kind: 'apron', part: p.id }; return; } }
   }
 }
 IC.resolveNodes = ap => { for (const n of Object.values(ap.nodes)) resolveNode(ap, n); };
 /* a new runway or apron only changes the nodes it touches (a runway wins over an apron) */
 function onRunway(p, n) { const t = rwT(p, n), off = Math.abs(rwOff(p, n)); return t >= -0.01 && t <= 1.01 && off < SNAP_RWY ? { kind: 'rwy', part: p.id, t: U.clamp(t, 0, 1) } : null; }
-function onApron(p, n) { const l = toLocal(p, n); return Math.abs(l.x) <= p.w / 2 + SNAP_APRON && Math.abs(l.y) <= p.h / 2 + SNAP_APRON && (Math.abs(Math.abs(l.x) - p.w / 2) < SNAP_APRON || Math.abs(Math.abs(l.y) - p.h / 2) < SNAP_APRON) ? { kind: 'apron', part: p.id } : null; }
+function onApron(p, n) { if (p.ring) return bandDist(p, n) <= SNAP_APRON && bandEdge(p, n) < SNAP_APRON ? { kind: 'apron', part: p.id } : null; const l = toLocal(p, n); return Math.abs(l.x) <= p.w / 2 + SNAP_APRON && Math.abs(l.y) <= p.h / 2 + SNAP_APRON && (Math.abs(Math.abs(l.x) - p.w / 2) < SNAP_APRON || Math.abs(Math.abs(l.y) - p.h / 2) < SNAP_APRON) ? { kind: 'apron', part: p.id } : null; }
 function resolveFor(ap, p) {
   for (const n of Object.values(ap.nodes)) {
     if (p.kind === 'runway') { if (n.on && n.on.kind === 'rwy') continue; const o = onRunway(p, n); if (o) n.on = o; }
@@ -115,7 +171,7 @@ IC.partMeasure = function (ap, p) {
   const D = IC.APART[p.kind];
   if (p.kind === 'runway') return rwLen(p);
   if (p.kind === 'taxi') { const pts = p.nodes ? p.nodes.map(id => ap.nodes[id]) : p.pts; let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); return L; }
-  if (D.area) return p.w * p.h;
+  if (D.area) return IC.partArea(p);
   return 1;
 };
 /* paved parts cost and take as long as their material says (concrete is the price list) */
@@ -135,7 +191,7 @@ function standsFor(ap, p) {
     return { id, x: c.x, y: c.y, fx: c.x - hx * back, fy: c.y - hy * back, ox: c.x + hx * back, oy: c.y + hy * back, a, size: f.size, apron: p.id,
       contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone };
   });
-  const depth = p.h * 0.64;
+  if (p.ring) return bandStands(ap, p);
   const size = IC.apronStandSize(p);
   if (!size) return [];
   const S = IC.STAND[size], n = Math.floor(p.w / S.w);
@@ -151,6 +207,25 @@ function standsFor(ap, p) {
     const contact = !!(term && term.kind === 'terminal' && rectDist(term, toWorld(p, lx, back * (p.h / 2 + 0.02))) < 0.4);
     const old = p.stands && p.stands.find(x => x.id === p.id + 's' + i);
     out.push({ id: p.id + 's' + i, x: c.x, y: c.y, fx: f.x, fy: f.y, a: p.a + (back > 0 ? Math.PI / 2 : -Math.PI / 2), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: term && term.kind === 'cargo' });
+  }
+  return out;
+}
+
+/* stands round a band apron, fanned so each points its nose at the building: inward to a rotunda or a curved
+   terminal inside the band (face -1), outward to one outside it (face 1). The wings need the width at mid-stand */
+function bandStands(ap, p) {
+  const [r0, r1] = p.ring, size = IC.apronStandSize({ h: r1 - r0, smax: p.smax });
+  if (!size) return [];
+  const S = IC.STAND[size], term = ap.parts.find(q => q.kind === 'terminal' && q.built && q.x != null && rectGap(q, p) < 0.3);
+  let face = p.face || -1;
+  if (!p.face && term) face = term.ring && U.dist(term, p) < 0.05 && term.ring[0] >= r1 - 0.05 ? 1 : polar(p, term).rho > r1 ? 1 : -1;
+  const rc = face < 0 ? r0 + S.d / 2 : r1 - S.d / 2, rf = face < 0 ? r0 + S.d + 0.08 : r1 - S.d - 0.08, rn = face < 0 ? r0 - 0.02 : r1 + 0.02;
+  const sp = spanOf(p), n = Math.floor(sp * rc / S.w), a0 = p.span ? p.span[0] : 0, out = [];
+  for (let i = 0; i < n; i++) {
+    const t = a0 + sp * (i + 0.5) / n, c = bandEnd(p, t, rc), f = bandEnd(p, t, rf), nose = bandEnd(p, t, rn);
+    const contact = !!(term && rectDist(term, nose) < 0.4);
+    const old = p.stands && p.stands.find(x => x.id === p.id + 's' + i);
+    out.push({ id: p.id + 's' + i, x: c.x, y: c.y, fx: f.x, fy: f.y, a: t + (p.a || 0) + (face < 0 ? Math.PI : 0), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: false, fan: true });
   }
   return out;
 }
@@ -598,8 +673,8 @@ IC.aptStats = function (S, ap) {
   if (!st.fire) st.warn.push('No fire station near the runway: only turboprops may use it.');
   else if (st.rescue > 180) { const far = rws.find(rw => [0, 0.5, 1].some(t => IC.aptRescue(ap, rwAt(rw, t)) > 180)); st.warn.push(`Fire trucks need ${U.dur(st.rescue)} to reach the far end of ${far ? far.name : 'a runway'}; three minutes is the standard. More people die in a crash there.`); }
   if (rws.length) { const w = waterNear(S, ap, rws); if (w.near && ap.kind !== 'airbase') st.warn.push(`A ${w.what} ${U.km(w.d)} from the runway attracts birds: now and then one hits an aircraft.`); }
-  for (const t of alive('terminal')) st.pax += IC.APART.terminal.pax * t.w * t.h;
-  for (const t of alive('cargo')) st.cargo += 60 * t.w * t.h;
+  for (const t of alive('terminal')) st.pax += IC.APART.terminal.pax * IC.partArea(t);
+  for (const t of alive('cargo')) st.cargo += 60 * IC.partArea(t);
   // fuel: stock in the tanks, resupply by road or pipeline, and how many aircraft the trucks can refuel an hour
   const tanks = alive('fuel');
   st.hydrant = alive('hydrant').length > 0;
@@ -1000,7 +1075,7 @@ function taxiThrough(pts, q) {
     const n = Math.max(1, Math.ceil(U.dist(a, b) / 0.05));
     for (let k = 0; k <= n; k++) {
       const p = { x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n };
-      if (r ? U.dist(p, q) < r - 0.08 : (l => Math.abs(l.x) < w / 2 - 0.08 && Math.abs(l.y) < h / 2 - 0.08)(toLocal({ x: q.x, y: q.y, a: q.a || 0 }, p))) return true;
+      if (q.ring ? insideBy(q, p, 0.08) : r ? U.dist(p, q) < r - 0.08 : (l => Math.abs(l.x) < w / 2 - 0.08 && Math.abs(l.y) < h / 2 - 0.08)(toLocal({ x: q.x, y: q.y, a: q.a || 0 }, p))) return true;
     }
   }
   return false;
@@ -1013,6 +1088,7 @@ IC.partName = function (ap, q) {
 };
 /* two rotated rectangles overlap by more than a margin (separating axis test) */
 function rectsOverlap(A, B, m) {
+  if (A.ring || B.ring) return shapeOverlap(A, B, m);
   const corners = R => { const c = Math.cos(R.a || 0), s = Math.sin(R.a || 0), hw = R.w / 2 - m, hh = R.h / 2 - m; return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => ({ x: R.x + x * c - y * s, y: R.y + x * s + y * c })); };
   const ca = corners(A), cb = corners(B);
   for (const R of [A, B]) for (const ang of [R.a || 0, (R.a || 0) + Math.PI / 2]) {
@@ -1146,6 +1222,7 @@ IC.aptSnap = function (ap, p, tol) {
   }
   for (const q of ap.parts) {
     if (q.kind !== 'apron' && q.kind !== 'alert') continue;
+    if (q.ring) { const et = Math.min(tol, 0.2); if (bandDist(q, p) > et || bandEdge(q, p) > et) continue; const e = bandProject(q, p); return { kind: 'apron', part: q.id, x: e.x, y: e.y }; }
     const l = toLocal(q, p), et = Math.min(tol, 0.2);
     if (Math.abs(l.x) > q.w / 2 + et || Math.abs(l.y) > q.h / 2 + et) continue;
     // only near an edge: a click in the middle of an apron is not a connection
@@ -1231,6 +1308,8 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   const D = IC.APART[kind];
   const part = { kind, x, y, a: a != null ? a : ap.rwyA || 0 };
   if (D.area) { part.w = w; part.h = h; }
+  // a round or curved part (see shaped parts above)
+  if (o && o.ring) { part.ring = o.ring.slice(); if (o.span) part.span = o.span.slice(); if (o.face) part.face = o.face; }
   // a landing system serves the runway end nearest the click
   if (kind === 'ils') {
     let bd = 1e9;

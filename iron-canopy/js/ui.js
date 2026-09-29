@@ -468,6 +468,8 @@ function buildHint(m) {
   const how = t === 'taxi' ? `Taxiway: click points; ends snap to runways, aprons and taxiways. ${n >= 2 ? again[0].toUpperCase() + again.slice(1) + '.' : ''} Corners are ${m.fillet ? 'rounded (F: sharp)' : 'sharp (F: rounded)'}.`
     : t === 'runway' ? (n < 2 ? 'Runway: click one end, then the other.' : `Runway: click the far end again (or Enter) to build; click elsewhere to move it.`)
     : t === 'concourse' ? (n < 2 ? 'Concourse: click one end of the pier, then the other.' : 'Concourse: click the far end again (or Enter) to build.')
+    : t === 'rotunda' ? (n < 2 ? 'Rotunda: click the centre, then the edge of the building.' : 'Rotunda: click the edge again (or Enter) to build; click elsewhere to change its size.')
+    : t === 'curve' ? (n < 1 ? 'Curved terminal: click one end.' : n < 2 ? 'Curved terminal: click a point on the curve.' : n < 3 ? 'Curved terminal: click the other end.' : 'Curved terminal: click the far end again (or Enter) to build.')
     : t === 'parallel' ? (n ? 'Move out from the runway to set the distance; click again to build.' : T.desc)
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)

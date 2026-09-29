@@ -1011,6 +1011,69 @@ test('builder: a part far bigger than needed says so before the click, with its 
   assert(/longer than any airliner needs/.test(IC.bldPlanOf(S, r, P(25, -15), 0.4).size || ''), 'a 5 km runway says nothing');
 });
 
+/* ---------- shapes: round and curved terminals, branching piers ---------- */
+/* a rotunda south of the capital's runway, joined to it by a taxiway */
+const rotundaAt = (S, ap, x, y, R) => {
+  const P = (a, b) => IC.aptLocal(ap, a, b);
+  S.mode2 = IC.bldMode(S, ap, 'rotunda');
+  for (const q of [P(x, y), P(x + R, y), P(x + R, y)]) IC.clickWorld(q, 0);
+  const rl = R + IC.STAND.m.d / 0.64 + 0.03 + 0.05, yy = y + Math.sqrt(rl * rl - 1);
+  S.mode2 = IC.bldMode(S, ap, 'taxi');
+  for (const q of [P(x + 1, 0), P(x + 1, yy), P(x + 1, yy)]) IC.clickWorld(q, 0);
+  S.mode2 = null;
+  return ap.parts.find(p => p.kind === 'apron' && p.ring && !p.span && U.dist(p, P(x, y)) < 0.01);
+};
+test('shapes: a round terminal gets gates all round it, and aircraft taxi to and from them', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap];
+  sky(S, 'clear'); calm(S, ap.rwyA, 5);
+  const apr = rotundaAt(S, ap, 0, -6, 0.8);
+  assert(apr, 'no ring apron planned');
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  const T = ap.parts.find(p => p.kind === 'terminal' && p.ring), L = apr.stands;
+  assert(L.length >= 12 && L.every(s => s.contact && s.linked), `${L.length} stands, ${L.filter(s => s.contact).length} at gates, ${L.filter(s => s.linked).length} reachable`);
+  // all the way round: every stand points its nose at the terminal, and they cover every quarter
+  const q = new Set(L.map(s => Math.floor(((Math.atan2(s.y - T.y, s.x - T.x) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 2))));
+  assert(q.size === 4 && L.every(s => Math.abs(U.angWrap(s.a - Math.atan2(T.y - s.y, T.x - s.x))) < 0.01), `stands in ${q.size} quarters`);
+  // an arrival lands and parks at the stand farthest round, then leaves from it
+  for (const s of IC.aptStands(ap)) if (s.apron !== apr.id) s.occ = 'x';
+  const far = L.slice().sort((a, b) => U.dist(IC.aptLocal(ap, 0, 0), b) - U.dist(IC.aptLocal(ap, 0, 0), a))[0];
+  let parked = false, m = 'hold';
+  const faf = IC.gopsFaf(S, ap, 'narrow');
+  for (let i = 0; i < 2400 && typeof m === 'string'; i++) { m = IC.gopsLand(S, ap, { type: 'narrow', target: far.id, stand: far, who: 'TEST 1', faf, onPark: () => { parked = true; } }); if (typeof m === 'string') IC.step(S, 0.5); }
+  assert(typeof m === 'object', `the arrival was never cleared (${m})`);
+  for (let i = 0; i < 7200 && !parked; i++) IC.step(S, 0.5);
+  assert(parked, `the arrival did not reach the rotunda stand; last phase ${m.phase}`);
+  let air = false;
+  const dep = IC.gopsDepart(S, ap, { type: 'narrow', node: far.id, stand: far, startT: 0, who: 'TEST 2', onAir: () => { air = true; } });
+  for (let i = 0; i < 7200 && !air; i++) IC.step(S, 0.5);
+  assert(air, `the departure from the rotunda never took off, phase ${dep && dep.phase}`);
+});
+test('shapes: a curved terminal has gates along its outer side and a taxilane that follows them', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  S.mode2 = IC.bldMode(S, ap, 'curve');
+  for (const q of [P(-4, -6), P(-8, -8.4), P(-12, -6)]) IC.clickWorld(q, 0);
+  const plan = IC.bldPlanOf(S, S.mode2, P(-12, -6), 0.4);
+  assert(plan.ok && /Curved terminal .* gates on its outer side/.test(plan.text.join(' ')), `the plan says ${plan.why || plan.text.join(' · ')}`);
+  assert(IC.clickWorld(P(-12, -6), 0) === 'built', S.mode2.err);
+  const T = ap.parts.find(p => p.kind === 'terminal' && p.span), apr = ap.parts.find(p => p.kind === 'apron' && p.span), lane = ap.parts[ap.parts.length - 1];
+  // the lane's end joins the network: a taxiway from the parallel taxiway to it
+  // (from the runway, at the end clear of the south apron)
+  const le = [lane.nodes[0], lane.nodes[lane.nodes.length - 1]].map(id => IC.rectLocal({ x: ap.x, y: ap.y, a: ap.rwyA }, ap.nodes[id])).sort((a, b) => b.x - a.x)[0];
+  S.mode2 = IC.bldMode(S, ap, 'taxi'); S.mode2.fillet = false;
+  for (const q of [P(le.x, 0), P(le.x, le.y), P(le.x, le.y)]) IC.clickWorld(q, 0);
+  assert(!S.mode2.pts.length, `the joining taxiway was not built: ${S.mode2.err}`);
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  const L = apr.stands, rt = s => U.dist(s, T);
+  assert(L.length >= 15 && L.every(s => s.contact && s.linked), `${L.length} stands, ${L.filter(s => s.contact).length} at gates, ${L.filter(s => s.linked).length} reachable`);
+  assert(L.every(s => rt(s) > T.ring[1]), 'a stand is on the inner side');
+  // one arc: the lane stays the same distance from the centre
+  const d = lane.nodes.map(id => U.dist(ap.nodes[id], T));
+  assert(Math.max(...d) - Math.min(...d) < 0.02, `the taxilane wanders ${U.km(Math.max(...d) - Math.min(...d))} off its arc`);
+  assert(Math.abs(IC.partArea(T) - (T.span[1] - T.span[0]) * (T.ring[1] + T.ring[0]) / 2 * 0.5) < 1e-6, 'the curved terminal is not paid for by its real area');
+});
+
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
   const { buildKden, finishAll } = require('../kdenbuild.js');
   const { S, ap, actions } = buildKden(12345, true);

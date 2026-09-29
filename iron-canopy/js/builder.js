@@ -429,6 +429,8 @@ IC.BTOOLS = {
   remote: { name: 'Remote apron', desc: 'Two corners: an apron with a taxilane along its front. Stands served by bus.' },
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
   stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go: the new paving joins it seamlessly. Aprons that touch are one paved area.' },
+  rotunda: { name: 'Rotunda', desc: 'Click the centre, then the edge: a round terminal with gates all round it, their stands fanned like the spokes of a wheel, and a taxilane round the outside. A satellite, as at Tampa or Paris.' },
+  curve: { name: 'Curved terminal', desc: 'Click one end, a point on the curve, then the other end: a terminal bent along the curve with gates on its outer side and a taxilane that follows them, as at Paris T2 or Dallas.' },
   stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
 };
 /* the parallel taxiway to the side of a runway where the cursor is */
@@ -515,6 +517,40 @@ function concourseSpec(ap, a, b, size) {
   const n = Math.floor(L / IC.STAND[size].w) * 2;
   return { specs, text: [`Concourse ${U.km(L)} · ${n} ${IC.STAND[size].name} gates with jet bridges · ${Math.round(IC.APART.terminal.pax * L * tw).toLocaleString('en-US')} passengers an hour`], gates: n };
 }
+/* a round terminal, the ring of stands round it, and a taxilane round them (closed into a loop when planned) */
+function rotundaSpec(ap, c, e, size) {
+  const S0 = IC.STAND[size], R = Math.max(0.3, Math.round(U.dist(c, e) * 10) / 10), D = Math.ceil(S0.d / 0.64 * 100 + 2) / 100, a = axis(ap);
+  const specs = [{ kind: 'terminal', x: c.x, y: c.y, a, w: 2 * R, h: 2 * R, ring: [0, R] }, { kind: 'apron', x: c.x, y: c.y, a, w: 2 * (R + D), h: 2 * (R + D), ring: [R, R + D], smax: size }];
+  const rl = R + D + 0.05, n = Math.max(16, Math.ceil(2 * Math.PI * rl / 0.25)), pts = [];
+  for (let i = 0; i <= n; i++) pts.push({ x: c.x + Math.cos(a + 2 * Math.PI * i / n) * rl, y: c.y + Math.sin(a + 2 * Math.PI * i / n) * rl });
+  specs.push({ kind: 'taxi', pts, lane: true, loop: true });
+  const gates = Math.floor(2 * Math.PI * (R + S0.d / 2) / S0.w);
+  return { specs, gates, text: [`Rotunda ${IC.bldLen(2 * R)} across · ${gates} ${S0.name} gates round it · ${Math.round(IC.APART.terminal.pax * Math.PI * R * R).toLocaleString('en-US')} passengers an hour`] };
+}
+/* the circle through three points, or null when they lie on a line */
+function circle3(p, q, r) {
+  const d = 2 * (p.x * (q.y - r.y) + q.x * (r.y - p.y) + r.x * (p.y - q.y)); if (Math.abs(d) < 1e-6) return null;
+  const s = (P) => P.x * P.x + P.y * P.y, x = (s(p) * (q.y - r.y) + s(q) * (r.y - p.y) + s(r) * (p.y - q.y)) / d, y = (s(p) * (r.x - q.x) + s(q) * (p.x - r.x) + s(r) * (q.x - p.x)) / d;
+  return { x, y, R: Math.hypot(p.x - x, p.y - y) };
+}
+/* a terminal bent along the arc through three clicks, gates on its outer side, a taxilane along them */
+function curveSpec(ap, p0, pm, p1, size) {
+  const C = circle3(p0, pm, p1);
+  if (!C || C.R > 60) return { bad: 'The three points lie on a line: use the Concourse tool for a straight pier.' };
+  const S0 = IC.STAND[size], tw = 0.5, D = Math.ceil(S0.d / 0.64 * 100 + 2) / 100, ang = q => Math.atan2(q.y - C.y, q.x - C.x), ccw = (a, b) => ((b - a) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  let a0 = ang(p0), a1 = ang(p1);
+  // the way round that passes the middle click
+  if (ccw(a0, ang(pm)) > ccw(a0, a1)) { const t = a0; a0 = a1; a1 = t; }
+  const span = [a0, a0 + ccw(a0, a1)], Rc = C.R, r0 = Rc - tw / 2;
+  if (r0 < 0.3) return { bad: 'The curve is too tight: spread the clicks further apart.' };
+  const box = 2 * (Rc + tw / 2 + D);
+  const specs = [{ kind: 'terminal', x: C.x, y: C.y, a: 0, w: box, h: box, ring: [r0, Rc + tw / 2], span }, { kind: 'apron', x: C.x, y: C.y, a: 0, w: box, h: box, ring: [Rc + tw / 2, Rc + tw / 2 + D], span, smax: size }];
+  const rl = Rc + tw / 2 + D + 0.05, ext = 0.6 / rl, sp = span[1] - span[0] + 2 * ext, n = Math.max(4, Math.ceil(sp * rl / 0.25)), pts = [];
+  for (let i = 0; i <= n; i++) { const t = span[0] - ext + sp * i / n; pts.push({ x: C.x + Math.cos(t) * rl, y: C.y + Math.sin(t) * rl }); }
+  specs.push({ kind: 'taxi', pts, lane: true });
+  const gates = Math.floor((span[1] - span[0]) * (Rc + tw / 2 + S0.d / 2) / S0.w), L = (span[1] - span[0]) * Rc;
+  return { specs, gates, text: [`Curved terminal ${IC.bldLen(L)} along a ${IC.bldLen(Rc)} radius · ${gates} ${S0.name} gates on its outer side · ${Math.round(IC.APART.terminal.pax * L * tw).toLocaleString('en-US')} passengers an hour`] };
+}
 /* an apron block with its taxilane along the side facing the airfield */
 function remoteSpec(ap, rc) {
   const specs = [Object.assign({ kind: 'apron' }, rc)];
@@ -554,7 +590,7 @@ const rnd = (v, g) => Math.round(v / g) * g;
 /* a length in words, metres up to a kilometre */
 IC.bldLen = L => L < 9.995 ? `${Math.round(L * 100).toLocaleString('en-US')} m` : `${(L / 10).toFixed(2)} km`;
 /* a part's rectangle, buildings at their standard size */
-const rectOf = q => { const D = IC.APART[q.kind]; if (q.x == null || !D || q.kind === 'ils' || q.kind === 'runway') return null; const w = q.w || D.w, h = q.h || D.h; return w && h ? { x: q.x, y: q.y, a: q.a || 0, w, h } : null; };
+const rectOf = q => { const D = IC.APART[q.kind]; if (q.ring || q.x == null || !D || q.kind === 'ils' || q.kind === 'runway') return null; const w = q.w || D.w, h = q.h || D.h; return w && h ? { x: q.x, y: q.y, a: q.a || 0, w, h } : null; };
 const cornersOf = r => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(r, sx * r.w / 2, sy * r.h / 2));
 /* every guide: a line through (x, y) along (ux, uy), the stretch a–b it comes from, and what it is */
 function guidesOf(ap) {
@@ -722,7 +758,7 @@ function edgesNear(ap, p, R, all) {
     if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) {
       const a = ap.nodes[q.nodes[i - 1]], b = ap.nodes[q.nodes[i]];
       if (a && b && U.segDist(p.x, p.y, a.x, a.y, b.x, b.y) < R) out.push({ a, b, half: q.w / 2, part: q, what: 'taxiway' });
-    } else if (q.kind === 'apron' && IC.partDist(ap, q, p) < R) {
+    } else if (q.kind === 'apron' && !q.ring && IC.partDist(ap, q, p) < R) {
       const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2));
       for (let i = 0; i < 4; i++) out.push({ a: c[i], b: c[(i + 1) % 4], half: 0, part: q, what: 'apron', outN: IC.rectWorld(q, 0, 0) });
     } else if (all && q.kind !== 'runway') {
@@ -781,7 +817,7 @@ IC.aptAutoLinks = function (ap) {
   }
 };
 
-const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1 };
+const LINE_TOOLS = { taxi: 1, runway: 1, concourse: 1, rotunda: 1, curve: 1 };
 const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surface: 1 };
 IC.bldIsArea = t => !!AREA_TOOLS[t];
 IC.bldIsLine = t => !!LINE_TOOLS[t];
@@ -791,7 +827,7 @@ function runwayAt(ap, p, tol) { let best = null, bd = tol + 0.3; for (const q of
 function apronEdge(ap, p, tol) {
   let best = null, bd = tol;
   for (const q of ap.parts) {
-    if (q.kind !== 'apron') continue;
+    if (q.kind !== 'apron' || q.ring) continue;
     const l = IC.rectLocal(q, p);
     if (Math.abs(l.y) <= q.h / 2 + tol) { const d = Math.abs(Math.abs(l.x) - q.w / 2); if (d < bd) { bd = d; best = { apr: q, ax: true, s: Math.sign(l.x) || 1, p: IC.rectWorld(q, (Math.sign(l.x) || 1) * q.w / 2, U.clamp(l.y, -q.h / 2, q.h / 2)) }; } }
     if (Math.abs(l.x) <= q.w / 2 + tol) { const d = Math.abs(Math.abs(l.y) - q.h / 2); if (d < bd) { bd = d; best = { apr: q, ax: false, s: Math.sign(l.y) || 1, p: IC.rectWorld(q, U.clamp(l.x, -q.w / 2, q.w / 2), (Math.sign(l.y) || 1) * q.h / 2) }; } }
@@ -859,11 +895,18 @@ function planOf(S, m, hv, tol, free) {
   if (LINE_TOOLS[t]) {
     const s = snapLine(ap, m, hv, tol, free); out.snap = s;
     const last = pts[pts.length - 1];
-    if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse') && pts.length === 2) pts[1] = s; else pts.push(s); }
+    if (!last || U.dist(last, s) > 0.02) { if ((t === 'runway' || t === 'concourse' || t === 'rotunda') && pts.length === 2) pts[1] = s; else if (t === 'curve' && pts.length === 3) pts[2] = s; else pts.push(s); }
     out.pts = pts;
     if (pts.length < 2) return out;
     if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone });
     else if (t === 'runway') out.specs.push({ kind: 'runway', a: pts[0], b: pts[1], mat: m.mat });
+    else if (t === 'rotunda') { const c = rotundaSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
+    else if (t === 'curve') {
+      if (pts.length < 3) { out.text.push('Click a point on the curve, then the far end'); return out; }
+      const c = curveSpec(ap, pts[0], pts[1], pts[2], m.size === 'l' ? 'l' : 'm');
+      if (c.bad) { out.ok = false; out.why = c.bad; return out; }
+      out.specs = c.specs; out.text.push(...c.text);
+    }
     else { const c = concourseSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
   } else if (AREA_TOOLS[t]) {
     const s = snapCorner(ap, m, hv, tol, free, true); out.snap = s;
@@ -1072,7 +1115,7 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   }
   const s = plan.snap || p, last = m.pts[m.pts.length - 1];
   const again = last && U.dist(last, s) < Math.max(tol * 0.8, 0.05);
-  const need = LINE_TOOLS[m.part] || AREA_TOOLS[m.part] || m.part === 'stretch' ? 2 : 1;
+  const need = m.part === 'curve' ? 3 : LINE_TOOLS[m.part] || AREA_TOOLS[m.part] || m.part === 'stretch' ? 2 : 1;
   if (m.part === 'stretch' && m.pts.length) { if (m.pts.length === 2 && U.dist(m.pts[1], p) < Math.max(tol * 0.8, 0.05)) return finish(S, m, plan); m.pts[1] = { x: p.x, y: p.y }; return 'point'; }
   if (m.part === 'stretch' && !plan.snap) { m.err = plan.why; return 'err'; }
   if (again && m.pts.length >= need) return finish(S, m, plan);
@@ -1082,7 +1125,8 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     let a = s.a; for (let k = 0; k < 4 && Math.abs(U.angWrap(a - m.rot0)) > Math.PI / 4 + 1e-6; k++) a += Math.PI / 2;
     m.rot = m.rotAuto = U.angWrap(a);
   }
-  if ((m.part === 'runway' || m.part === 'concourse' || AREA_TOOLS[m.part]) && m.pts.length === 2) m.pts[1] = s;
+  if ((m.part === 'runway' || m.part === 'concourse' || m.part === 'rotunda' || AREA_TOOLS[m.part]) && m.pts.length === 2) m.pts[1] = s;
+  else if (m.part === 'curve' && m.pts.length === 3) m.pts[2] = s;
   else if (need === 1) m.pts = [s];
   else m.pts.push(s);
   return 'point';
@@ -1114,9 +1158,13 @@ IC.bldPlanSpecs = function (S, ap, specs) {
   const order = specs.slice().sort((a, b) => (a.kind === 'taxi') - (b.kind === 'taxi'));
   for (const sp of order) {
     let p = null;
-    if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
+    if (sp.kind === 'taxi') {
+      p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
+      // a loop closes on its first node
+      if (p && sp.loop && p.nodes.length > 3 && U.dist(ap.nodes[p.nodes[0]], ap.nodes[p.nodes[p.nodes.length - 1]]) < 0.05) { delete ap.nodes[p.nodes.pop()]; p.nodes.push(p.nodes[0]); ap.dirty = true; }
+    }
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax }); if (p && sp.link) p.link = sp.link; }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, ring: sp.ring, span: sp.span, face: sp.face }); if (p && sp.link) p.link = sp.link; }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

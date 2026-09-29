@@ -117,7 +117,10 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     rect(g, { x: c.x, y: c.y, a: Math.atan2(d.y, d.x) }, L + 3, 3.2, 'rgba(146,158,112,0.35)');
   }
   // paved surrounds: terminals and sheds stand on a forecourt that meets the apron, hangars open onto a ramp
-  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null) rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)');
+  if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null) {
+    if (p.ring) { g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = p.built ? CONC : 'rgba(120,110,90,0.4)'; bandPath(g, p, 0.15); g.fill('evenodd'); g.restore(); }
+    else rect(g, p, p.w + 0.3, p.h + 0.3, p.built ? CONC : 'rgba(120,110,90,0.4)');
+  }
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
@@ -283,9 +286,29 @@ function drawField(g, box, px, z) {
   }
   g.restore();
 }
+/* the outline of a round or curved part (airport.js, shaped parts) in its own frame, grown by g0: the outer arc,
+   then the inner one back (a whole ring is two circles, filled even-odd) */
+function bandPath(g, p, g0) {
+  const r0 = Math.max(0, p.ring[0] - (g0 || 0)), r1 = p.ring[1] + (g0 || 0);
+  g.beginPath();
+  if (!p.span) { g.arc(0, 0, r1, 0, Math.PI * 2); if (r0 > 0) { g.moveTo(r0, 0); g.arc(0, 0, r0, 0, Math.PI * 2, true); } return; }
+  const [a0, a1] = p.span;
+  g.arc(0, 0, r1, a0, a1); if (r0 > 0) g.arc(0, 0, r0, a1, a0, true); else g.lineTo(0, 0);
+  g.closePath();
+}
+IC.bandPath = bandPath;
 function drawArea(g, p, fill, px, part) {
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w, h = p.h;
+  if (p.ring) {
+    if (!part.built) { g.save(); bandPath(g, p); g.clip('evenodd'); stageRect(g, part, w, h, px, paveCol2(part)); g.restore(); g.strokeStyle = 'rgba(236,236,226,0.5)'; g.setLineDash([4 * px, 3 * px]); g.lineWidth = px; bandPath(g, p); g.stroke(); g.setLineDash([]); }
+    else {
+      g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; bandPath(g, p); g.fill('evenodd');
+      if (IC.cam.z > 4) { g.strokeStyle = 'rgba(236,196,60,0.5)'; g.lineWidth = Math.max(0.006, 0.6 * px); bandPath(g, p, -0.02); g.stroke(); }
+    }
+    g.restore();
+    return;
+  }
   if (!part.built) stageRect(g, part, w, h, px, paveCol2(part));
   else {
     g.fillStyle = IC.paveOf(part) === 'asph' ? 'rgb(64,66,68)' : IC.paveOf(part) === 'grass' ? PAVE_COL.grass : fill; g.fillRect(-w / 2, -h / 2, w, h);
@@ -307,7 +330,7 @@ function fillets(ap) {
   const deg = new Map(), mat = new Map();
   for (const q of ap.parts) if (q.kind === 'taxi' && q.built) q.nodes.forEach((id, i) => { const d = (i === 0 || i === q.nodes.length - 1) ? 1 : 2; deg.set(id, (deg.get(id) || 0) + d); mat.set(id, q); });
   const out = [];
-  for (const [id, d] of deg) { const n = ap.nodes[id]; if (n && (d >= 3 || (n.on && d >= 1))) out.push({ x: n.x, y: n.y, p: mat.get(id), r: n.on && n.on.kind === 'rwy' ? 0.18 : 0.16 }); }
+  for (const [id, d] of deg) { const n = ap.nodes[id]; if (n && (d >= 3 || (n.on && (d === 1 || n.on.kind === 'rwy')))) out.push({ x: n.x, y: n.y, p: mat.get(id), r: n.on && n.on.kind === 'rwy' ? 0.18 : 0.16 }); }
   ap._fil = out; ap._filKey = key;
   return out;
 }
@@ -403,12 +426,13 @@ function drawStand(g, s, px, z, marks, fine) {
   g.save(); g.translate(s.x, s.y); g.rotate(s.a);
   if (s.hp <= 0) { crater(g, 0, 0, 0.14, px); g.restore(); return; }
   g.strokeStyle = 'rgba(236,236,226,0.35)'; g.lineWidth = Math.max(0.006, 0.6 * px);
-  g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w);
+  // (stands fanned round a rotunda share the room at the nose: no box, only the lead-in and the stop bar)
+  if (!s.fan) g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w);
   g.strokeStyle = YEL; g.lineWidth = Math.max(0.01, 0.8 * px);
   // the lead-in line; a drive-through stand's runs on out through the nose
   g.beginPath(); g.moveTo(-S0.d / 2 - 0.08, 0); g.lineTo(s.drive ? S0.d / 2 + 0.08 : S0.d * 0.35, 0); g.stroke();
   // safety line round the stand, and the stop bar or arrow
-  if (fine) { g.strokeStyle = 'rgba(214,60,50,0.55)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.strokeRect(-S0.d / 2 + 0.02, -S0.w / 2 + 0.02, S0.d - 0.04, S0.w - 0.04); }
+  if (fine && !s.fan) { g.strokeStyle = 'rgba(214,60,50,0.55)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.strokeRect(-S0.d / 2 + 0.02, -S0.w / 2 + 0.02, S0.d - 0.04, S0.w - 0.04); }
   // a jet bridge from the terminal to the front door
   if (s.contact) { g.fillStyle = 'rgba(176,180,186,0.95)'; g.fillRect(S0.d * 0.22, -S0.w * 0.2 - 0.012, S0.d * 0.3, 0.024); g.fillRect(S0.d * 0.22 - 0.02, -S0.w * 0.2 - 0.02, 0.04, 0.04); }
   g.fillStyle = YEL; g.fillRect(S0.d * 0.35, -0.04, 0.012, 0.08);
@@ -419,6 +443,7 @@ function drawStand(g, s, px, z, marks, fine) {
 function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   const D = IC.APART[p.kind];
   const hp = p.hp / p.max, dead = hp <= 0.25;
+  if (p.ring) { drawBandBuilding(g, p, px, z, full, night, hp); return; }
   if (!p.built) {
     g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
     const w = p.w || p.r * 2, h = p.h || p.r * 2;
@@ -483,6 +508,29 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
 }
+/* a round or curved terminal: the roof follows the shape, with skylights round its spine and glass on its faces */
+function drawBandBuilding(g, p, px, z, full, night, hp) {
+  const dead = hp <= 0.25, k = dead ? 0.3 : 0.6 + 0.4 * hp;
+  g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
+  if (!p.built) { g.save(); bandPath(g, p); g.clip('evenodd'); stageRect(g, p, p.w, p.h, px, 'rgb(150,150,146)', false, true); g.restore(); g.strokeStyle = 'rgba(236,236,226,0.6)'; g.setLineDash([4 * px, 3 * px]); g.lineWidth = px; bandPath(g, p); g.stroke(); g.setLineDash([]); g.restore(); return; }
+  g.fillStyle = `rgb(${176 * k | 0},${180 * k | 0},${186 * k | 0})`; bandPath(g, p); g.fill('evenodd');
+  const [r0, r1] = p.ring, rm = r0 > 0 ? (r0 + r1) / 2 : r1 * 0.55, a0 = p.span ? p.span[0] : 0, a1 = p.span ? p.span[1] : Math.PI * 2;
+  if (full && !dead) {
+    g.fillStyle = 'rgba(255,255,255,0.06)'; bandPath(g, p, -(r1 - r0) * 0.25); g.fill('evenodd');
+    if (z > 6) {
+      // skylights round the spine
+      g.strokeStyle = night ? 'rgba(255,226,160,0.8)' : 'rgba(150,190,215,0.8)'; g.lineWidth = Math.max(0.02, (r1 - r0) * 0.1); g.setLineDash([0.3, 0.2]);
+      g.beginPath(); g.arc(0, 0, rm, a0, a1); g.stroke(); g.setLineDash([]);
+      if (r0 === 0) { g.fillStyle = night ? 'rgba(255,226,160,0.8)' : 'rgba(150,190,215,0.8)'; g.beginPath(); g.arc(0, 0, r1 * 0.2, 0, 7); g.fill(); }
+    }
+    // glass on the faces
+    g.strokeStyle = night ? 'rgba(255,220,150,0.7)' : 'rgba(70,110,140,0.75)'; g.lineWidth = Math.max(0.01, 0.9 * px);
+    g.beginPath(); g.arc(0, 0, r1 - 0.01, a0, a1); g.stroke(); if (r0 > 0) { g.beginPath(); g.arc(0, 0, r0 + 0.01, a0, a1); g.stroke(); }
+  }
+  if (full && !dead) { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); bandPath(g, p); g.stroke(); }
+  if (dead) { g.fillStyle = 'rgba(24,18,14,0.85)'; bandPath(g, p); g.fill('evenodd'); }
+  g.restore();
+}
 /* a terminal or shed roof: parapet, roof panels, skylights along the spine, plant on the roof, glass on the long
    sides; a cargo shed gets loading doors instead */
 function roof(g, p, w, h, px, z, night) {
@@ -538,9 +586,10 @@ function drawLights(g, ap, px, z, light, now) {
   }
   // floodlights along aprons and terminals: pools of light spaced along the building, not one glow for a whole concourse
   for (const p of ap.parts.filter(q => (q.kind === 'apron' || q.kind === 'terminal') && q.built && q.hp > q.max * 0.25)) {
-    const long = Math.max(p.w, p.h), r = U.clamp(Math.min(p.w, p.h) * 0.9, 0.5, 1.6), n = Math.max(1, Math.round(long / (r * 1.6)));
+    const band = p.ring ? { rm: (p.ring[0] + p.ring[1]) / 2, a0: p.span ? p.span[0] : 0, sp: p.span ? p.span[1] - p.span[0] : Math.PI * 2 } : null;
+    const long = band ? band.rm * band.sp : Math.max(p.w, p.h), r = U.clamp(band ? (p.ring[1] - p.ring[0]) * 0.9 : Math.min(p.w, p.h) * 0.9, 0.5, 1.6), n = Math.max(1, Math.round(long / (r * 1.6)));
     for (let i = 0; i < n; i++) {
-      const f = (i + 0.5) / n - 0.5, c = IC.rectWorld(p, p.w >= p.h ? f * p.w : 0, p.w >= p.h ? 0 : f * p.h);
+      const f = (i + 0.5) / n - 0.5, c = band ? IC.rectWorld(p, Math.cos(band.a0 + band.sp * (f + 0.5)) * band.rm, Math.sin(band.a0 + band.sp * (f + 0.5)) * band.rm) : IC.rectWorld(p, p.w >= p.h ? f * p.w : 0, p.w >= p.h ? 0 : f * p.h);
       const gr = g.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
       gr.addColorStop(0, `rgba(255,214,150,${0.14 * k})`); gr.addColorStop(1, 'rgba(255,214,150,0)');
       g.fillStyle = gr; g.beginPath(); g.arc(c.x, c.y, r, 0, 7); g.fill();
@@ -895,6 +944,7 @@ IC.drawBuildGhost = function (g, S, px) {
     } else {
       const w = sp.w || D.w || (D.r || 0.1) * 2, h = sp.h || D.h || (D.r || 0.1) * 2;
       g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0);
+      if (sp.ring) { bandPath(g, sp); g.fill('evenodd'); g.stroke(); g.restore(); continue; }
       if (D.r) { g.beginPath(); g.arc(0, 0, D.r, 0, 7); g.fill(); g.stroke(); } else { g.fillRect(-w / 2, -h / 2, w, h); g.strokeRect(-w / 2, -h / 2, w, h); }
       // the stands the apron will get
       if (sp.kind === 'apron' && !sp.ramp) { const dep = h * 0.64, sz = dep >= IC.STAND.l.d ? 'l' : dep >= IC.STAND.m.d ? 'm' : dep >= IC.STAND.s.d ? 's' : null; if (sz) { const S0 = IC.STAND[sz]; g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.005, 0.6 * px); for (let i = 0; i < Math.floor(w / S0.w); i++) { const x = -w / 2 + S0.w * i; g.strokeRect(x, -h / 2, S0.w, S0.d); g.strokeRect(x, h / 2 - S0.d, S0.w, S0.d); } } }
