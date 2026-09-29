@@ -338,8 +338,9 @@ function brief() {
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;
-    const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 2));
-    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 2)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}">${esc(s.text)}</div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
+    // the step before, cut to two lines, and the current one whole: the current step must never scroll out of sight
+    const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
+    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
   } else if (S.story && S.story.act < 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
     const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
