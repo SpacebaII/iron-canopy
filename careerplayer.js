@@ -178,6 +178,18 @@ function later(S, st) {
   }
   // (before the war the defence is built as the income allows: a Quick war's worth of batteries costs twice what
   // Act III brings in an hour; in the war everything goes)
-  if (st.act >= 3) { if (S.supply) S.supply.auto = true; if (st.act >= 4 || (S.income - S.upkeep > 12 && S.budget > 400)) QW.commander(S); }
+  if (st.act >= 3) {
+    if (S.supply) S.supply.auto = true;
+    if (st.act >= 4) QW.commander(S);
+    // one unit a day at most while the income covers it; when a month's running costs came to more than it brought
+    // in, the unit dearest to run goes back to the reserve (the Economy room's warning, heeded)
+    else if (S.time > (S._qwT || 0) + 86400) {
+      if (S.income - S.upkeep > 12 && S.budget > 400) { QW.commander(S, 1); S._qwT = S.time; }
+      else if (IC.waitRate(S) < -3) {
+        const u = S.units.filter(x => !x.dead && x.state === 'ready' && !x.d.civil && !x.central && x.type !== 'depot' && x.d.up).sort((a, b) => b.d.up - a.d.up)[0];
+        if (u) { IC.toReserve(S, u); S._qwT = S.time; }
+      }
+    }
+  }
 }
 module.exports = { player, site, starter, grow };

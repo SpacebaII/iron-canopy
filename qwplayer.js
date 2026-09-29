@@ -57,8 +57,8 @@ function nextGoal(S) {
   return null;
 }
 /* one decision: deploy from the reserve, or buy if the money is there (keeping KEEP back) */
-function commander(S) {
-  for (let k = 0; k < 6 && decide(S); k++);
+function commander(S, max) {
+  for (let k = 0; k < (max || 6) && decide(S); k++);
 }
 function decide(S) {
   if (S.over) return false;
