@@ -450,6 +450,9 @@ function modeHint() {
   const m = S.mode2, el = $('modehint');
   if (!m) { el.hidden = true; return; }
   el.hidden = false;
+  // above the arsenal, however tall it is today (a war's arsenal is taller than the Career's first one)
+  const ar = $('arsenal'), ab = ar && !ar.hidden ? ar.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
+  el.style.bottom = ab && ab.height ? Math.max(12, app.bottom - ab.top + 10) + 'px' : '';
   el.textContent = {
     rangeTarget: () => 'Click the map where the threats should aim.',
     callin: () => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
@@ -505,7 +508,7 @@ ui.tip = function (ent, sx, sy, rc) {
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
   else if (ent.kind === 'site') { t = r.name; s = `${r.destroyed ? 'Destroyed' : r.pk >= 2 ? 'Located' : 'Suspected'}`; }
   else if (ent.kind === 'tel') { t = r.name; s = `Seen ${U.dur(S.time - r.kt)} ago`; }
-  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.rwyState(S, r).word} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problems` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
+  else if (ent.kind === 'infra') { t = r.name; s = r.kind === 'city' ? `${r.pop}k · morale ${Math.round(r.morale)}%` : r.kind === 'bridge' ? (r.offline ? 'Destroyed' : 'Bridge') : r.parts ? (r.locked ? 'Air Force base' : `${IC.rwyState(S, r).word} · ${IC.aptStands(r).filter(x => x.occ).length}/${IC.aptStands(r).length} stands${r.kind === 'airbase' ? ` · ${S.roster.filter(x => x.base === r.id && x.st !== 'lost').length} flights` : ''}${r.st && r.st.warn.length ? ` · ${r.st.warn.length} problem${r.st.warn.length > 1 ? 's' : ''}` : ''}`) : ({ factory: 'Arms factory', power: 'Power plant' }[r.kind]); }
   else if (ent.kind === 'fix') { t = `Fix ${r.name}`; s = `${S.asp.ways.filter(w => w.a === r.id || w.b === r.id).length} airways · radar sees down to ${covTxt(IC.aspCovAlt(S, r.x, r.y))} here`; }
   else if (ent.kind === 'airway') { const [a, b] = IC.aspWayEnds(S, r); t = `Airway ${a.name} – ${b.name}`; s = `${U.km(U.dist(a, b))} · radar sees ${U.pct(IC.aspWayCover(S, r, 9))} of it at cruise height`; }
   else if (ent.kind === 'field') { t = r.name; s = `Light aircraft · ${r.club} · ${r.today} movements today`; }

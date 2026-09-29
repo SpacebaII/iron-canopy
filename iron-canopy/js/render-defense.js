@@ -44,13 +44,18 @@ function pips(S, px, now) {
 /* a battery with hostiles near and not firing says why, under its symbol */
 function holding(S, px) {
   if (IC.cam.z < 0.12) return;
+  // batteries close together zoomed out would write their reasons over each other: the first one says it
+  const boxes = [];
   for (const u of S.units) {
     if (u.state !== 'ready' || !(u.d.weapon === 'sam' || u.d.weapon === 'gun') || !u.why) continue;
     if (/^(Engaging|Firing|Home-on-jam|No targets|Watching|Tracking)/.test(u.why)) continue;
     const R = IC.maxRange(S, u) * 1.3;
     if (!S.threats.some(t => t.det && !t.dead && t.aff === 'H' && U.dist(u, t) < R)) continue;
     const txt = u.why.length > 46 ? u.why.slice(0, 44) + '…' : u.why;
-    label(txt, u.x, u.y + 26 * px, px, '#ffcf8a', 8.5, 'center', 600);
+    const w = txt.length * 2.7 * px, y = u.y + 26 * px;
+    if (boxes.some(b => Math.abs(b.x - u.x) < b.w + w && Math.abs(b.y - y) < 13 * px)) continue;
+    boxes.push({ x: u.x, y, w });
+    label(txt, u.x, y, px, '#ffcf8a', 8.5, 'center', 600);
   }
 }
 

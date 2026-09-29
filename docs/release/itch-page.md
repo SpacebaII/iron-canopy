@@ -56,7 +56,10 @@ The start screen's Controls page lists every key.
 
 ## Known issues
 
+- **Saves across browser engines.** A save exported from one browser may not load in another browser engine (Chrome to Firefox, say): the map is rebuilt from its seed and the engines round some maths differently. The same browser on another computer is fine.
+- **The 3D ground away from airports is blurry and flat.** Airports, their aircraft and city blocks close in are modelled; the countryside and towns further out are a flat picture of the map, soft from low down.
+- **Map labels can overlap close in.** Aircraft tags, runway labels, patrol stations and depot names do not yet move out of each other's way.
+- **The 3D view needs a graphics card.** The map runs on any recent laptop; the replay and live view want a GPU to be smooth (on software rendering they draw a few frames a second).
 - The game needs a desktop browser; Chrome, Edge and Firefox are tested most. It loads its fonts from Google Fonts and, for the 3D replay only, three.js from a CDN: offline it plays with plain fonts and without the replay.
-- A save exported from one browser may not load in another browser engine (Chrome to Firefox, say): the map is rebuilt from its seed and the engines round some maths differently. The same browser on another computer is fine.
 - The Career is long (Act I alone is several hours at normal speed). Use the speeds, S and Wait.
 - A very busy capital airport, zoomed all the way in, is the heaviest scene; on an older laptop drop the speed or zoom out a little.

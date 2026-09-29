@@ -28,8 +28,8 @@
   --new:#b99cff;
   --r:12px;
   --gap:.6rem;
-  --display:'Saira Condensed','Arial Narrow',sans-serif;
-  --body:'IBM Plex Sans Condensed','Arial Narrow',system-ui,sans-serif;
+  --display:'Saira Condensed','Arial Narrow','Roboto Condensed','Liberation Sans Narrow','DejaVu Sans Condensed',sans-serif;
+  --body:'IBM Plex Sans Condensed','Arial Narrow','Roboto Condensed','Liberation Sans Narrow','DejaVu Sans Condensed',system-ui,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
   --shadow:0 14px 44px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);
   --ease:cubic-bezier(.2,.7,.2,1);
@@ -201,6 +201,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .ihead canvas{width:4rem;height:3.1rem}
 .itabs{padding:0 .95rem .65rem}
 .itabs .seg button{flex:1;padding-inline:.4rem}
+/* (without the web fonts the tabs can be wider than the panel: they wrap rather than run off its edge) */
+.itabs .seg{flex-wrap:wrap;border-radius:14px}
 .itabs em{font-style:normal;font-family:var(--mono);font-size:.75rem;margin-left:.3rem;color:var(--dim)}
 .itabs em.amber{color:var(--amber)}
 .ihead .badge{min-width:3.4rem;height:2.4rem;display:grid;place-items:center;border-radius:10px;font-family:var(--mono);font-weight:700;font-size:.85rem;background:var(--well)}
