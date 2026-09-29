@@ -115,8 +115,11 @@ IC.layoutRadius = function (L) {
    and other airfields, the ground level over the whole of it. The nearest such site wins. */
 IC.realSite = function (S, L, near) {
   const W = S.world, R = IC.layoutRadius(L) + 4, others = S.infra.filter(i => (i.kind === 'airport' || i.kind === 'airbase') && i !== near.ap);
+  // (rivers by their lines, not the coarse distance grid: no river within the layout and 300 m round it)
+  const wet = (x, y) => { for (const r of W.rivers || []) { const bb = r.bb || [-1e9, -1e9, 1e9, 1e9], m = R + (r.w || 1) + 3; if (x < bb[0] - m || x > bb[2] + m || y < bb[1] - m || y > bb[3] + m) continue; const P = r.pts || []; for (let i = 1; i < P.length; i++) if (U.segDist(x, y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y) < m) return true; } return false; };
   const fits = (x, y) => {
     if (others.some(b => U.dxy(b.x, b.y, x, y) < R + 60)) return false;
+    if (wet(x, y)) return false;
     for (const c of W.cities) if (U.dxy(c.x, c.y, x, y) < R + (c.r || 20) * 1.3) return false;
     for (const v of W.villages || []) if (U.dxy(v.x, v.y, x, y) < R + 4) return false;
     for (let j = -R; j <= R; j += R / 6) for (let i = -R; i <= R; i += R / 6) {
@@ -282,13 +285,24 @@ IC.aptTraceFence = function (ap) {
   if (!air.length) return null;
   let bb = [1e9, 1e9, -1e9, -1e9];
   for (const b of air) { const q = b.sh.bb; bb = [Math.min(bb[0], q[0]), Math.min(bb[1], q[1]), Math.max(bb[2], q[2]), Math.max(bb[3], q[3])]; }
-  const c = 0.2, M = 4, box = [bb[0] - M, bb[1] - M, bb[2] + M, bb[3] + M];
+  // (cells of 20 m, coarser on a big airport: about 400 across)
+  const R = 5, M = R + 2, c = Math.max(0.2, Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 400), box = [bb[0] - M, bb[1] - M, bb[2] + M, bb[3] + M];
   const A = IC.shapeRaster(box, c, air), Lr = IC.shapeRaster(box, c, land);
   if (!A) return null;
   const { nx, ny } = A;
-  // close: grow by r cells, then shrink by r
-  const grow = (src, r, val) => { const out = new Uint8Array(src.length); for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { let hit = false; for (let dj = -r; dj <= r && !hit; dj++) { const jj = j + dj; if (jj < 0 || jj >= ny) { if (!val) hit = true; continue; } for (let di = -r; di <= r; di++) { const ii = i + di; if (ii < 0 || ii >= nx) { if (!val) { hit = true; break; } continue; } if (di * di + dj * dj <= r * r && src[jj * nx + ii] === val) { hit = true; break; } } } out[j * nx + i] = val ? (hit ? 1 : 0) : (hit ? 0 : 1); } return out; };
-  let F = grow(A.bad, 8, 1); F = grow(F, 8, 0);
+  // close the gaps up to 1 km: grow by R (units), then shrink by R, each by a two-pass distance transform
+  const dt = (src, val) => {
+    const D = new Float32Array(src.length).fill(1e9), s2 = Math.SQRT2;
+    for (let k = 0; k < src.length; k++) if (src[k] === val) D[k] = 0;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const k = j * nx + i; let d = D[k]; if (i) d = Math.min(d, D[k - 1] + 1); if (j) { d = Math.min(d, D[k - nx] + 1); if (i) d = Math.min(d, D[k - nx - 1] + s2); if (i < nx - 1) d = Math.min(d, D[k - nx + 1] + s2); } D[k] = d; }
+    for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) { const k = j * nx + i; let d = D[k]; if (i < nx - 1) d = Math.min(d, D[k + 1] + 1); if (j < ny - 1) { d = Math.min(d, D[k + nx] + 1); if (i < nx - 1) d = Math.min(d, D[k + nx + 1] + s2); if (i) d = Math.min(d, D[k + nx - 1] + s2); } D[k] = d; }
+    return D;
+  };
+  const r = R / c, D1 = dt(A.bad, 1), G = new Uint8Array(A.bad.length);
+  for (let k = 0; k < G.length; k++) G[k] = D1[k] <= r ? 1 : 0;
+  const D2 = dt(G, 0), F = new Uint8Array(G.length);
+  for (let k = 0; k < F.length; k++) F[k] = D2[k] > r ? 1 : 0;
+  for (let k = 0; k < F.length; k++) if (A.bad[k]) F[k] = 1;
   // the landside is outside, and so is anything it cuts off from the airside
   for (let k = 0; k < F.length; k++) if (Lr.bad[k] && !A.bad[k]) F[k] = 0;
   // the largest piece only
@@ -315,8 +329,8 @@ IC.aptTraceFence = function (ap) {
     if (!moved || (x === si && y === sj)) break;
   }
   const simp = (P, tol) => { if (P.length < 4) return P; const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1; const st = [[0, P.length - 1]]; while (st.length) { const [a, b] = st.pop(); let m = -1, mi = -1; for (let i = a + 1; i < b; i++) { const dd = U.segDist(P[i].x, P[i].y, P[a].x, P[a].y, P[b].x, P[b].y); if (dd > m) { m = dd; mi = i; } } if (m > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); } } return P.filter((_, i) => keep[i]); };
-  // (the grid's 20 m steps straightened out: the fence runs in straight lengths between posts)
-  const poly = simp(pts, 0.3);
+  // (the grid's steps straightened out: the fence runs in straight lengths between posts)
+  const poly = simp(pts, Math.max(0.3, c * 1.5));
   if (poly.length < 3) return null;
   const a = ap.rwyA || 0, cs = Math.cos(-a), sn = Math.sin(-a);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;

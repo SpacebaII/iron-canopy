@@ -158,7 +158,8 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     const done = [];
     for (const p of parts) {
       const t = p.name ? p.name.replace(/^the /, '').toUpperCase() : BLD_TAG[p.kind]; if (!t || !p.built || p.x == null) continue;
-      if (done.some(q => q.t === t && U.dist(q, p) < 2)) continue;
+      // (one label for a cluster: a fuel farm's tanks stand a few hundred metres apart)
+      if (done.some(q => q.t === t && U.dist(q, p) < (p.kind === 'fuel' ? 6 : 2))) continue;
       done.push({ t, x: p.x, y: p.y });
       lbl(g, t, p.x, p.y - Math.max(p.h || 0, (p.r || 0) * 2) / 2 - 5 * px, px, 'rgba(236,236,226,0.75)', 7.5, 'center', 700);
     }
