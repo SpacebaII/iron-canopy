@@ -209,14 +209,14 @@ const SCENES = {
       if (f % 30 === 0) console.log('movie: frame', f);
     }
     await __snap('movie-last');`,
-  // brief 38's busy airport: the capital with its business side full and sixty light aircraft round it (about 150
+  // brief 38's busy airport: the capital with its business side full and a hundred and ten light aircraft round it (about 150
   // aircraft), frame times on the map close in and in the live view full screen, and the step's cost
   'frames-38': `
     const S = await game('sandbox', 11);
     const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light'));
     const ap = S.byId.i0, home = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id };
     for (let i = 0, n = IC.bizStands(S, ap).length; i < n; i++) S.biz.parked.push({ ap: ap.id, type: IC.BIZ_MIX[i % 4][0], cs: 'X' + i, liv: IC.gaLivery(i), until: S.time + 86400 });
-    for (let i = 0; i < 60; i++) IC.gaLaunch(S, home, home, { type: IC.GA_MIX[i % 8][0], circuit: 3, progress: i / 60, alt: 0.3 });
+    for (let i = 0; i < 110; i++) IC.gaLaunch(S, home, home, { type: IC.GA_MIX[i % 8][0], circuit: 12, progress: i / 110 * 0.7, alt: 0.3 });
     const near = () => S.threats.filter(t => !t.dead && U.dist(t, ap) < 150).length + (ap.moves || []).filter(x => !x.dead).length + ap.parts.filter(p => p.kind === 'apron').reduce((n, p) => n + (p.stands || []).filter(s => s.occ).length, 0) + IC.apronLife(S, ap).length;
     let t0 = performance.now(); for (let i = 0; i < 400; i++) IC.step(S, 0.25); const stepMs = (performance.now() - t0) / 400;
     IC.cam.fly = null; IC.cam.z = 20; IC.centerOn(ap.x - 10, ap.y - 2);
@@ -226,7 +226,12 @@ const SCENES = {
     const L = IC.liveOpen(S, m); for (let i = 0; i < 150 && !(L.renderer && L.tiles && L.tiles.size > 8); i++) await wait(100);
     L.el.querySelector('[data-rp=full]').click(); await wait(3500);
     const liveFull = await frameTimes(120);
-    window.__perf = { aircraft: near(), stepMs: +stepMs.toFixed(3), mapClose, mapAirport, liveFull, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
+    // what brief 38 adds to a map frame: the business side and a field's life drawn 50 times, per call
+    const cv = document.createElement('canvas'); cv.width = 800; cv.height = 600; const g = cv.getContext('2d'), f = S.asp.fields[0];
+    IC.drawApronLife(g, S, ap, 0.05); IC.drawFieldLife(g, S, f, 0.05);
+    t0 = performance.now(); for (let i = 0; i < 50; i++) IC.drawApronLife(g, S, ap, 0.05); const apronMs = (performance.now() - t0) / 50;
+    t0 = performance.now(); for (let i = 0; i < 50; i++) IC.drawFieldLife(g, S, f, 0.05); const fieldMs = (performance.now() - t0) / 50;
+    window.__perf = { aircraft: near(), stepMs: +stepMs.toFixed(3), apronMs: +apronMs.toFixed(3), fieldMs: +fieldMs.toFixed(3), mapClose, mapAirport, liveFull, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
     await __snap('frames-38'); S.paused = true;`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `

@@ -626,7 +626,7 @@ function gaPlane(B, s) {
     for (const dx of [0.8, -0.9]) strut(B, [X(F.f) + dx, sg * F.y, F.d], [X(F.f) + dx, sg * W * 0.4, bz + 0.1], 0.1, P.lgrey);
   }
   // the registration along the rear fuselage
-  if (q && s.reg !== false) { const r = s.reg || [0.5, 84, 0.36], xa = X(r[0] + 0.24); regMark(B, st, xa, r[1], r[2], surf(st, xa, 90, 0)[1], IC.regOf(s.seed || L * 7 + W, s.regPre)); }
+  if (q && s.reg !== false) { const r = s.reg || [0.46, 80, 0.24], xa = X(r[0] + 0.2); regMark(B, st, xa, r[1], r[2], surf(st, xa, 90, 0)[1], IC.regOf(s.seed || L * 7 + W, s.regPre)); }
   // lights: red to port, green to starboard at the tips, white on the tail, a red beacon on top of the fin, strobes,
   // and a landing light in the wing's leading edge
   B.light(tip.x - tip.c * 0.2, tip.y, tip.z, 'green'); B.light(tip.x - tip.c * 0.2, -tip.y, tip.z, 'red');
@@ -746,9 +746,9 @@ def('twin', 'Light twin', GA, 9.09, 11.53, B => gaPlane(B, {
 }));
 def('taildrag', 'Aerobatic taildragger', GA, 7.12, 8.0, B => gaPlane(B, {
   L: 6.52, W: 0.96, H: 1.1, zc: 1.45, n: 2.2, bubble: { f: 0.42, l: 1.9, w: 0.42, h: 0.42 },
-  prof: [[0, 0.3, 0.3, 0], [0.03, 0.66, 0.66, 0], [0.12, 0.92, 0.9, 0], [0.26, 1, 1, 0.02], [0.4, 0.92, 0.9, 0.05], [0.58, 0.6, 0.55, 0.1], [0.76, 0.36, 0.32, 0.14], [0.92, 0.18, 0.2, 0.17], [1, 0.06, 0.1, 0.18]],
+  prof: [[0, 0.3, 0.3, 0.1], [0.03, 0.66, 0.66, 0.1], [0.12, 0.92, 0.9, 0.08], [0.26, 1, 1, 0.04], [0.4, 0.92, 0.9, -0.02], [0.58, 0.6, 0.55, -0.12], [0.76, 0.36, 0.32, -0.3], [0.92, 0.18, 0.2, -0.46], [1, 0.06, 0.1, -0.5]],
   wing: { f: 0.28, z: 1.2, span: 8.0, c0: 1.9, c1: 1.0, dih: 0, t: 0.16 },
-  tail: { f: 0.87, fz: 1.6, fh: 1.0, fc0: 1.3, fc1: 0.7, fsweep: 30, hs: 3.2, hc0: 1.0, hc1: 0.7, hz: 1.6, hf: 0.87 },
+  tail: { f: 0.87, fz: 0.98, fh: 1.45, fc0: 1.3, fc1: 0.7, fsweep: 30, hs: 3.2, hc0: 1.0, hc1: 0.7, hz: 0.98, hf: 0.87 },
   prop: { dia: 1.9, n: 3 }, gear: { type: 'tail', mf: 0.2, track: 1.9, nr: 0.12, mr: 0.3, spats: true, legCol: 'BODY' }, reg: [0.46, 82, 0.3]
 }));
 def('utility', 'Utility turboprop', GA, 12.67, 15.87, B => { gaPlane(B, {
