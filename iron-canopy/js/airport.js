@@ -199,6 +199,34 @@ function polyStands(ap, p) {
   return out;
 }
 
+/* A stand's jet bridge, in world points: from the wall of a terminal or pier (w), by a fixed link where the wall is
+   set back, to the rotunda (r) on its column, and the telescopic tunnel to the cab at the front door (d). null when
+   no wall is near enough in front of the aircraft's nose: that stand is remote, with stairs, whatever it touches. */
+IC.BRIDGE_REACH = { link: 0.3, tunnel: 0.42 };
+IC.standBridge = function (ap, s) {
+  const S0 = IC.STAND[s.size] || IC.STAND.m, c = Math.cos(s.a), sn = Math.sin(s.a);
+  const W = (lx, ly) => ({ x: s.x + lx * c - ly * sn, y: s.y + lx * sn + ly * c });
+  const door = W(S0.d * 0.26, -0.034), Q = W(S0.d / 2 + 0.05, -S0.w * 0.16);
+  let best = null, bd = 1e9;
+  for (const q of ap.parts) {
+    if (q.kind !== 'terminal' || !q.built || q.x == null) continue;
+    if (U.dist(q, Q) > Math.max(q.w || 0, q.h || 0, (q.r || 0) * 2) + 2) continue;
+    const P = IC.partOutline(q);
+    for (let i = 0; i < P.length; i++) {
+      const A = P[i], B = P[(i + 1) % P.length], L = U.dist(A, B) || 1e-9, t = U.clamp(((Q.x - A.x) * (B.x - A.x) + (Q.y - A.y) * (B.y - A.y)) / (L * L), 0, 1);
+      const x = A.x + (B.x - A.x) * t, y = A.y + (B.y - A.y) * t, d = U.dxy(x, y, Q.x, Q.y);
+      if (d < bd) { bd = d; best = { x, y, q }; }
+    }
+  }
+  if (!best || bd > IC.BRIDGE_REACH.link + 0.05) return null;
+  // (the wall must be ahead of the nose, not beside the wing)
+  if ((best.x - s.x) * c + (best.y - s.y) * sn < S0.d * 0.3) return null;
+  const out = bd > 1e-4 ? { x: (Q.x - best.x) / bd, y: (Q.y - best.y) / bd } : { x: -c, y: -sn };
+  const r = bd < 0.08 ? { x: best.x + out.x * 0.025, y: best.y + out.y * 0.025 } : Q;
+  if (U.dist(r, door) > IC.BRIDGE_REACH.tunnel) return null;
+  return { wx: best.x, wy: best.y, rx: r.x, ry: r.y, dx: door.x, dy: door.y, link: bd >= 0.08, term: best.q.id };
+};
+
 /* ---------- runway names and groups ---------- */
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
 IC.rwEnd = (rw, dir) => (rw.ends ? rw.ends[dir > 0 ? 'a' : 'b'] : '') || (dir > 0 ? 'A' : 'B');
@@ -322,6 +350,8 @@ IC.aptGraph = function (ap) {
   for (const p of aprons) { const r = root(gi.get(p)); if (!groupAt.has(r)) groupAt.set(r, []); for (const n of onPart.get(p.id) || []) if (n.on.kind === 'apron') groupAt.get(r).push(n); }
   for (const p of aprons) {
     p.stands = standsFor(ap, p);
+    // a gate only where its bridge reaches a wall: the rest are remote stands with stairs, and say why
+    for (const s of p.stands) { const want = s.contact; s.bridge = want ? IC.standBridge(ap, s) : null; s.contact = !!s.bridge; s.noBridge = want && !s.bridge; }
     const z = IC.partZone(ap, p);
     const hyd = parts.some(h => h.kind === 'hydrant' && h.hp > h.max * 0.25 && U.dist(h, p) < IC.APART.hydrant.reach);
     const at = groupAt.get(root(gi.get(p)));

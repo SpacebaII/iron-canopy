@@ -461,7 +461,7 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
   // safety line round the stand, and the stop bar or arrow
   if (fine) { g.strokeStyle = 'rgba(214,60,50,0.55)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.strokeRect(-S0.d / 2 + 0.02, -S0.w / 2 + 0.02, S0.d - 0.04, S0.w - 0.04); }
   // a jet bridge from the terminal to the front door
-  if (s.contact) { g.fillStyle = 'rgba(176,180,186,0.95)'; g.fillRect(S0.d * 0.22, -S0.w * 0.2 - 0.012, S0.d * 0.3, 0.024); g.fillRect(S0.d * 0.22 - 0.02, -S0.w * 0.2 - 0.02, 0.04, 0.04); }
+  if (s.contact) jetBridge(g, s, S0, px, z);
   g.fillStyle = YEL; g.fillRect(S0.d * 0.35, -0.04, 0.012, 0.08);
   if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
   g.restore();
@@ -470,10 +470,18 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
 /* a jet bridge in the stand's frame (x along the aircraft, nose ahead): the rotunda at the terminal, the telescopic
    tunnel on its drive wheels, the cab turned to the front door; a shadow on the pavement below */
 function jetBridge(g, s, S0, px, z) {
-  const R = { x: S0.d / 2 + 0.05, y: -S0.w * 0.16 }, D = { x: S0.d * 0.26, y: -0.034 }, len = U.dist(R, D), a = Math.atan2(D.y - R.y, D.x - R.x), w = 0.028;
-  // the fixed link from the terminal's wall to the rotunda
-  g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(R.x + 0.02, R.y - w / 2 + 0.016, 0.1, w);
-  g.fillStyle = 'rgb(196,200,206)'; g.fillRect(R.x, R.y - w / 2, 0.1, w);
+  const B = s.bridge; if (!B) return;
+  const c = Math.cos(-s.a), sn = Math.sin(-s.a), L = (x, y) => ({ x: (x - s.x) * c - (y - s.y) * sn, y: (x - s.x) * sn + (y - s.y) * c });
+  const Wl = L(B.wx, B.wy), R = L(B.rx, B.ry), D = L(B.dx, B.dy), len = U.dist(R, D), a = Math.atan2(D.y - R.y, D.x - R.x), w = 0.028;
+  // the fixed link from the wall to the rotunda, where the wall is set back from the stand
+  if (B.link) {
+    const la = Math.atan2(R.y - Wl.y, R.x - Wl.x), ll = U.dist(Wl, R);
+    g.save(); g.translate(Wl.x, Wl.y); g.rotate(la);
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(0.01, -w / 2 + 0.016, ll, w);
+    g.fillStyle = 'rgb(196,200,206)'; g.fillRect(0, -w / 2, ll, w);
+    if (z > 40) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(0, -w / 2, ll, w * 0.2); }
+    g.restore();
+  }
   g.save(); g.translate(0.02, 0.016); g.fillStyle = 'rgba(0,0,0,0.28)';
   g.save(); g.translate(R.x, R.y); g.rotate(a); g.fillRect(0, -w / 2, len, w); g.restore(); g.beginPath(); g.arc(R.x, R.y, 0.024, 0, 7); g.fill(); g.restore();
   g.save(); g.translate(R.x, R.y); g.rotate(a);
@@ -486,6 +494,7 @@ function jetBridge(g, s, S0, px, z) {
   g.fillStyle = 'rgb(150,154,160)'; g.fillRect(-0.02, -0.018, 0.034, 0.03);
   g.fillStyle = 'rgba(40,50,60,0.8)'; if (z > 40) g.fillRect(-0.02, 0.008, 0.034, 0.004);
   g.restore();
+  // the rotunda on its column, on the wall or at the end of the link
   g.fillStyle = 'rgb(200,202,206)'; g.beginPath(); g.arc(R.x, R.y, 0.022, 0, 7); g.fill();
   g.strokeStyle = 'rgba(60,64,70,0.6)'; g.lineWidth = Math.max(0.002, 0.5 * px); g.stroke();
 }

@@ -640,7 +640,7 @@ L3.airport = function (v, b, f, G) {
   need(v, 'catering.body', stands.length + 2, cat.still, H.solidMat(), A); for (const q of cat.moving) need(v, 'catering.' + q.kind, stands.length + 2, q.geom, H.solidMat(), A);
   need(v, 'belt.body', stands.length * 2 + 2, belt.still, H.solidMat(), A); need(v, 'belt.belt', stands.length * 2 + 2, belt.moving[0].geom, H.solidMat(), A);
   const contact = stands.filter(s => s.contact).length;
-  for (const k of ['jbRot', 'jbTunnel', 'jbCab', 'jbLeg']) need(v, k, contact + 2, partsOf(k, true).all, H.solidMat(), A);
+  for (const k of ['jbRot', 'jbTunnel', 'jbCab', 'jbLeg']) need(v, k, (k === 'jbTunnel' ? 2 : 1) * contact + 2, partsOf(k, true).all, H.solidMat(), A);
   const fires = b.parts.filter(p => p.kind === 'fire' && p.built);
   need(v, 'firetruck', fires.length * 3 + 2, partsOf('firetruck').all, H.solidMat(), A);
   for (const p of fires) {
@@ -651,9 +651,10 @@ L3.airport = function (v, b, f, G) {
   for (const s of stands) if (s.contact) {
     const f2 = { x: Math.cos(s.a), y: Math.sin(s.a) }, port = { x: Math.sin(s.a), y: -Math.cos(s.a) };
     const door = { x: s.x + f2.x * 0.13 + port.x * 0.02, y: s.y + f2.y * 0.13 + port.y * 0.02 };
-    const k = kerb(b, ['terminal', 'concourse'], door); if (!k) continue;
+    // (the rotunda where the map has it: on the wall, or at the end of its fixed link)
+    const B = s.bridge, k = B ? { x: B.wx, y: B.wy } : kerb(b, ['terminal', 'concourse'], door); if (!k) continue;
     const out = U.dist(k, door) > 1e-4 ? { x: (door.x - k.x) / U.dist(k, door), y: (door.y - k.y) / U.dist(k, door) } : f2;
-    A.stands.push({ s, rot: { x: k.x + out.x * 0.04, y: k.y + out.y * 0.04 }, out });
+    A.stands.push({ s, rot: B ? { x: B.rx, y: B.ry } : { x: k.x + out.x * 0.04, y: k.y + out.y * 0.04 }, out, wall: k });
   }
   v.life.apts.push(A);
   return A;
@@ -829,6 +830,8 @@ function bridge(v, A, J, q, k, t, stats) {
   const cab = { x: R.x + Math.cos(dir) * len, y: R.y + Math.sin(dir) * len };
   const y = A.y0, drop = ((q ? SILL[q.type] || 3.4 : 4.2) - 3.65) * M * k, pitch = Math.atan2(drop, Math.max(0.05, len));
   inst(v, 'jbRot', R.x - v.cx, y, R.y - v.cy, dir);
+  // the fixed link from the wall, where the rotunda stands out from it
+  if (J.wall && U.dist(J.wall, R) > 0.05) { const W = J.wall, la = Math.atan2(R.y - W.y, R.x - W.x); inst(v, 'jbTunnel', W.x - v.cx, y, W.y - v.cy, la, 0, 0, U.dist(W, R) * 100, 1, 1); }
   inst(v, 'jbTunnel', R.x + Math.cos(dir) * 0.02 - v.cx, y, R.y + Math.sin(dir) * 0.02 - v.cy, dir, pitch, 0, (len - 0.036) * 100, 1, 1);
   inst(v, 'jbCab', cab.x - v.cx, y + drop, cab.y - v.cy, dir + (k > 0.9 ? (a - Math.PI / 2 - dir) * 0 : 0));
   const lg = { x: R.x + Math.cos(dir) * len * 0.72, y: R.y + Math.sin(dir) * len * 0.72 };

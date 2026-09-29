@@ -1969,6 +1969,32 @@ test('pavement: every kind of junction joins without a round edge, and a runway 
   const lead = G.cl.filter(c => c.lead && c.pts.some(q => U.dist(q, n(r0)) < 2.5));
   assert(lead.length === 1 && U.dist(lead[0].pts[0], lead[0].pts[lead[0].pts.length - 1]) > 0.4, `the rapid exit's lead-off line is missing or short (${lead.length})`);
 });
+test('airport: every jet bridge starts at a terminal wall and reaches the door, on every preset and blueprint (brief 45)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap];
+  const check = name => {
+    ap.dirty = true; IC.aptGraph(ap);
+    const st = IC.aptStands(ap), gates = st.filter(s => s.contact);
+    for (const s of gates) {
+      const B = s.bridge, t = B && ap.parts.find(q => q.id === B.term);
+      assert(B && t && t.kind === 'terminal', `${name}: gate ${s.id} has no bridge from a terminal`);
+      assert(U.dxy(B.rx, B.ry, B.dx, B.dy) <= IC.BRIDGE_REACH.tunnel + 1e-6, `${name}: gate ${s.id}'s bridge is longer than a bridge reaches`);
+    }
+    const u = IC.aptUnattached(S, ap);
+    assert(!u.length, `${name}: ${u.length} things unattached: ${u.slice(0, 4).map(x => x.text).join(' ')}`);
+    return gates.length;
+  };
+  for (const k of ['intl', 'regional_ok', 'regional_bad', 'kden']) { IC.aptRelayout(S, ap, k, ap.rwyA || 0); const n = check(k); if (k !== 'regional_bad') assert(n > 0, `${k}: no gates at all`); }
+  for (const key of Object.keys(IC.REAL_APT)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0.4 }); check('the ' + key + ' blueprint'); }
+  // a stand next to the terminal's end, beyond its wall, is remote with stairs, and its apron says so
+  IC.aptRelayout(S, ap, 'intl', ap.rwyA || 0);
+  const term = ap.parts.find(p => p.kind === 'terminal'), apr = ap.parts.find(p => p.kind === 'apron' && IC.rectGap(p, term) < 0.3);
+  const far = { x: term.x, y: term.y }, T = IC.rectWorld(term, term.w / 2 + 1.2, 0);
+  IC.bldManualStands(ap, apr); const l = IC.rectLocal(apr, T);
+  apr.free.push({ k: 99, lx: l.x, ly: l.y, rot: IC.U.angWrap(Math.atan2(far.y - T.y, far.x - T.x) - apr.a), size: 'm' }); ap.dirty = true; IC.aptGraph(ap);
+  const s = apr.stands.find(q => q.id === apr.id + 's99');
+  assert(s && !s.contact && !s.bridge, 'a stand 120 m past the end of the terminal got a jet bridge');
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };

@@ -261,6 +261,36 @@ function meetAt(A, B) {
   for (const p of pts) { const d = IC.shapeDist(S2 === A ? B : A, p); if (d < bd) { bd = d; best = p; } }
   return best || pts[0];
 }
+/* Everything on an airport that should be attached to something and is not (brief 45), in words: a gate whose jet
+   bridge does not start at a terminal wall or does not reach the door, a passenger bridge over a taxiway that does
+   not join two buildings, a people mover without a station at each end, a kerb road away from its building, a
+   service road that ends in the grass. The tests assert none on every preset and blueprint. */
+IC.aptUnattached = function (S, ap) {
+  const out = [], name = p => p.name || (IC.APART[p.kind] || {}).name || p.kind;
+  const wallDist = (t, x, y) => { const P = IC.partOutline(t); let m = 1e9; for (let i = 0; i < P.length; i++) { const A = P[i], B = P[(i + 1) % P.length]; m = Math.min(m, U.segDist(x, y, A.x, A.y, B.x, B.y)); } return m; };
+  for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
+    const sn = s.name || s.id.split('s').pop();
+    if (s.contact && !s.bridge) { out.push({ what: 'stand', s, text: `Gate ${sn} has no jet bridge.` }); continue; }
+    if (!s.bridge) continue;
+    const B = s.bridge, t = ap.parts.find(q => q.id === B.term);
+    if (!t || !t.built || wallDist(t, B.wx, B.wy) > 0.01) out.push({ what: 'bridge', s, text: `The jet bridge at gate ${sn} starts off the terminal wall.` });
+    else if (U.dxy(B.rx, B.ry, B.dx, B.dy) > IC.BRIDGE_REACH.tunnel + 1e-6 || U.dxy(B.wx, B.wy, B.rx, B.ry) > IC.BRIDGE_REACH.link + 0.05) out.push({ what: 'bridge', s, text: `The jet bridge at gate ${sn} does not reach the door.` });
+  }
+  for (const p of ap.parts) {
+    if (!p.built) continue;
+    if (p.kind === 'skybridge' && (p.joins || []).filter(id => { const q = ap.parts.find(x => x.id === id); return q && q.built; }).length < 2) out.push({ what: 'skybridge', p, text: `${name(p)} does not join two buildings.` });
+    if (p.kind === 'people' && (p.stops || []).length < 2) out.push({ what: 'people', p, text: `${name(p)} has no station at ${(p.stops || []).length ? 'one end' : 'either end'}.` });
+  }
+  const L = ap.land;
+  if (L && L.roads) for (const r of L.roads) if (r.kind === 'kerb' && r.by) {
+    const t = ap.parts.find(q => q.id === r.by); if (!t) { out.push({ what: 'kerb', r, text: 'A kerb road serves a building that is gone.' }); continue; }
+    const mid = { x: (r.pts[0].x + r.pts[r.pts.length - 1].x) / 2, y: (r.pts[0].y + r.pts[r.pts.length - 1].y) / 2 };
+    if (IC.partDist(ap, t, mid) > 0.35) out.push({ what: 'kerb', r, text: `The kerb road of ${name(t)} is ${Math.round(IC.partDist(ap, t, mid) * 100)} m from its front.` });
+  }
+  if (IC.svcRoadEnds) for (const e of IC.svcRoadEnds(S, ap)) if (!e.ok) out.push({ what: 'service', e, text: `A service road ends in the grass at ${Math.round((e.x - ap.x) * 100)} m, ${Math.round((e.y - ap.y) * 100)} m from the middle of the airport.` });
+  return out;
+};
+
 /* rules: which pairs of categories may not overlap, how deep before it counts, and the words */
 const HIT = 0.015;
 IC.aptOverlaps = function (S, ap, o) {
