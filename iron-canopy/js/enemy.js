@@ -509,7 +509,7 @@ function intel(S, E, text, who, at) {
 function strength(E) { const r = E.rec.slice(-3); return r.length ? r.reduce((s, x) => s + x.stop, 0) / r.length : 0.5; }
 const strong = E => (strength(E) - 0.4) / 0.5;   // 0 at 40% stopped, 1 at 90%
 IC.enemyStrength = S => strength(S.enemy);
-const place = (S, p) => IC.nearestPlace(S, p.x, p.y).replace(/^\d+ km \w+ of /, '');
+const place = (S, p) => IC.nearestPlace(S, p.x, p.y).replace(/^[\d.]+ km \w+ of /, '');
 
 /* ---------- aims ---------- */
 function pickAim(E, not) { return U.wpick(Object.entries(E.aims).filter(([k]) => k !== not).map(([k, w]) => [k, w])); }
@@ -964,7 +964,7 @@ function leakWhy(S, t) {
       const sn = u.d.sensor || u.d.fc; if (!sn || sn.passive || sn.bmdOnly || sn.rktOnly || sn.ssr) continue;
       const d = U.dist(u, p); if (d < bd && d < U.horizon(sn.mast || 10, 0.06) * 1.3) { bd = d; best = u; }
     }
-    if (best && (best.state !== 'ready' || !best.radarOn)) return `nobody saw it: ${best.name} near ${IC.nearestPlace(S, best.x, best.y).replace(/^\d+ km \w+ of /, '')} was ${best.state !== 'ready' ? 'not set up' : best.emcon === 'off' ? 'silent' : 'waiting in ambush'}`;
+    if (best && (best.state !== 'ready' || !best.radarOn)) return `nobody saw it: ${best.name} near ${IC.nearestPlace(S, best.x, best.y).replace(/^[\d.]+ km \w+ of /, '')} was ${best.state !== 'ready' ? 'not set up' : best.emcon === 'off' ? 'silent' : 'waiting in ambush'}`;
     if (best) return `nobody saw it: it came in low behind the hills past ${best.name}`;
     return 'nobody saw it: no radar covers that approach low down';
   }
@@ -981,13 +981,17 @@ function report(S, E, R) {
   const leaks = R.leaks.length;
   // group what got through by kind, reason and place
   const g = new Map();
-  for (const L of R.leaks) { const key = L.cls + '|' + L.why + '|' + L.place; const e = g.get(key) || { n: 0, cls: L.cls, why: L.why, place: L.place }; e.n++; g.set(key, e); }
-  const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${e.why}.`);
+  // (the same reason at other heights or ranges is the same reason)
+  for (const L of R.leaks) { const key = L.cls + '|' + L.why.replace(/[\d.,]+/g, '#') + '|' + L.place; const e = g.get(key) || { n: 0, cls: L.cls, why: L.why, place: L.place }; e.n++; g.set(key, e); }
+  const they = (w, n) => n > 1 ? w.replace('nobody saw it', 'nobody saw them').replace('it came in low', 'they came in low').replace('no battery covers it', 'no battery covers them') : w;
+  const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${they(e.why, e.n)}.`);
   const res = { id: R.id, kind: R.kind, name: R.name, obj: R.obj.name, t: S.time, day: U.day(R.T), threats: launched, kills: lost, leaks, hits: R.hits || 0, fired: S.stats.fired - (R.fired0 || 0) };
   (S.raids = S.raids || []).push(res);
   const head = `${launched} threats, ${lost} shot down, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}. ${res.fired} interceptors fired.`;
   let text = `${head}${lines.length ? ' ' + lines.join(' ') : ''}`;
-  text += ` They were after ${R.obj.name}${R.set ? ` (${IC.ESETS[R.set].name})` : ''}.`;
+  // a unit's code means little to a player: say what it is
+  const r = R.obj.ref, what = r && r.d && r.d.role ? `${R.obj.name}, ${/^[aeiou]/i.test(r.d.role) ? 'an' : 'a'} ${r.d.role}` : R.obj.name;
+  text += ` Their main target was ${what}${R.set ? `, in their push on ${IC.ESETS[R.set].name}` : ''}.`;
   R.text = text; R.res = res;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
   if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report');
@@ -1032,15 +1036,17 @@ function learn(S, E, R, ops) {
     E.method[m] = U.clamp(E.method[m] * (0.85 + (st.n ? st.hit / st.n : 0) * 0.5), 0.3, 1.5);
   }
   note(S, E, `Raid ${R.id} on ${R.obj.name}: ${launched} launched, ${lost} shot down (${U.pct(stop)}), ${R.hits || 0} hits: ${success ? 'got what it came for' : stop >= 0.75 ? 'the defence there keeps winning, avoid it' : 'not enough'}.${E.winning ? ' Their defence is winning.' : ''}`);
-  if (success) IC.news(S, `${S.world.names.A} claims its strike on ${R.obj.name} was a success.`);
-  else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defences blunt a ${R.name} on ${R.obj.name}.`); }
+  // (the news does not know our units' codes: a unit is "air defences near Orvice")
+  const news = R.obj.ref && R.obj.ref.d ? `air defences near ${place(S, R.obj)}` : R.obj.name;
+  if (success) IC.news(S, `${S.world.names.A} claims its strike on ${news} was a success.`);
+  else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defences blunt a ${R.name} on ${news}.`); }
   // the shock: then a lull while the commander reassesses
   if (R.kind === 'shock') {
     const f = strong(E);
     E.act = 3; E.actT = S.time; E.lullEnd = S.time + lerp(IC.EPACE.lull[0], IC.EPACE.lull[1], f) * H; E.shock.done = S.time; E.shock.res = { launched, lost, hits: R.hits || 0 };
     note(S, E, `Act 3: the shock is spent (${launched} launched, ${R.hits || 0} hits). Reassesses until ${U.hhmm(E.lullEnd)}: no raids, reconnaissance only.`);
     intel(S, E, `After the strike on ${R.obj.name}, ${S.world.names.A}'s channels have gone quiet. They are counting what worked and what did not. When they come back it will be planned: use the time to repair, reload and move.`);
-    IC.news(S, success || (R.hits || 0) >= 4 ? `${S.world.names.A} celebrates "the night the sky fell" over ${R.obj.name}.` : `The largest strike of the war largely fails: ${lost} of ${launched} shot down over ${place(S, R.obj)}.`);
+    IC.news(S, success || (R.hits || 0) >= 4 ? `${S.world.names.A} celebrates "the night the sky fell" over ${place(S, R.obj)}.` : `The largest strike of the war largely fails: ${lost} of ${launched} shot down over ${place(S, R.obj)}.`);
     IC.emit(S, 'enemyAct', { act: 3, name: IC.EACTS[3].name, text: IC.EACTS[3].text, R });
   } else if (E.aimFail >= 2 && S.time - (E.aimT || 0) > 12 * H) switchAim(S, E, `${E.aimFail} raids in a row did not get what they came for`);
   else if (S.time - (E.aimT || 0) > 30 * H && Math.random() < 0.3) switchAim(S, E, 'a new plan after days on the old one');

@@ -117,7 +117,7 @@ function stations(S, px) {
     if (IC.cam.z < 0.012) continue;
     const name = { cap: 'CAP', tanker: 'TANKER', aew: 'AEW', isr: 'RECON' }[task.type];
     const L = [`${name} · ${IC.nearestPlace(S, task.x, task.y).toUpperCase()}`];
-    if (!st.on.length) L.push(st.relief ? `${st.relief.name} ON THE WAY` : 'UNCOVERED: NO AIRCRAFT READY');
+    if (!st.on.length) L.push(st.relief ? `${st.relief.name} ON THE WAY` : st.far ? 'UNCOVERED: TOO FAR FROM OUR AIR BASES' : 'UNCOVERED: NO AIRCRAFT READY');
     for (const o of st.on) L.push(`${o.a.name} ${o.a.state === 'station' ? 'ON STATION' : o.a.state === 'refuel' ? 'REFUELLING' : o.a.state === 'engage' ? 'ENGAGING' : 'EN ROUTE'} · ${U.dur(Math.max(0, o.left))} LEFT${o.a.kind === 'tkr' ? ` · ${U.dur(o.a.give || 0)} TO GIVE` : ''}`);
     if (st.on.length) L.push(st.relief ? (st.launchIn > 0 ? `RELIEF ${st.relief.name} LAUNCHES IN ${U.dur(st.launchIn)}` : `RELIEF ${st.relief.name} LAUNCHING`) : st.emptyIn < 7200 ? `NO RELIEF: EMPTY IN ${U.dur(Math.max(0, st.emptyIn))}` : 'NO RELIEF READY');
     L.forEach((s, i) => label(s, task.x, task.y - R - (6 + (L.length - 1 - i) * 11) * px, px, i === L.length - 1 && /NO RELIEF|UNCOVERED/.test(s) ? IC.C.amber : col, 8.5, 'center', i ? 500 : 700));

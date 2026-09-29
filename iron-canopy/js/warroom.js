@@ -370,7 +370,7 @@ function logi() {
     for (const j of S.jobs) if (j.mun === k && j.state === 'active') moving += j.qty;
     const want = Math.max(4, Math.ceil(need[k] || 0)), low = (have[k] || 0) < want * IC.SUPPLY.reorder;
     const q = Math.max(4, Math.ceil(want / 2 / 4) * 4), cost = IC.canBuyMun(S, k) && depots.length ? IC.stockSource(S, k, q, depots[0]).cost : 0;
-    return `<tr><td>${esc(IC.munWords(k))}</td><td class="r ${low ? 'amber' : ''}">${Math.floor(dep)}</td><td class="r">${need[k] ? want : '–'}</td><td class="r">${units || '–'}</td><td class="r">${moving || '–'}</td><td class="r">${cost ? `<button class="btn sm" data-act="buyStock" data-v="${k}:${q}" ${S.budget < cost ? 'disabled' : ''} title="Bought now, sent by rail to the depot that needs it most">+${q} · ${U.money(cost)}</button>` : ''}</td></tr>`;
+    return `<tr><td>${esc(IC.munWords(k).charAt(0).toUpperCase() + IC.munWords(k).slice(1))}</td><td class="r ${low ? 'amber' : ''}">${Math.floor(dep)}</td><td class="r">${need[k] ? want : '–'}</td><td class="r">${units || '–'}</td><td class="r">${moving || '–'}</td><td class="r">${cost ? `<button class="btn sm" data-act="buyStock" data-v="${k}:${q}" ${S.budget < cost ? 'disabled' : ''} title="Bought now, sent by rail to the depot that needs it most">+${q} · ${U.money(cost)}</button>` : ''}</td></tr>`;
   }).join('');
   const plantsUp = S.infra.filter(f => f.kind === 'factory' && f.owner === 'us' && !f.offline).length;
   const stock = `<div class="card wide"><h3>Stock<em>${plantsUp ? `${plantsUp} arms plant${plantsUp > 1 ? 's' : ''} working` : '<span class="hostile">every arms plant is down: imports only, by air</span>'}</em></h3>
@@ -538,7 +538,7 @@ function enemyAgenda() {
   const E = S.enemy, act = E.act || 0, A = IC.EACTS[act];
   const steps = [1, 2, 3, 4].map(n => `<span class="${n === act ? 'on' : n < act ? 'past' : ''}" title="${esc(IC.EACTS[n].text)}">${n} · ${esc(IC.EACTS[n].name)}</span>`).join('');
   const head = !E.war ? 'Massing on the border. No shot fired yet.' : `${esc(A.text)}${act === 3 && S.time < (E.lullEnd || 0) ? ` <b>A lull: they are reassessing${E.lullEnd ? `, for a few hours more` : ''}.</b>` : ''}`;
-  const aim = E.war && E.aim ? `<p style="margin:0">Their aim, as intercepts read it: <b>${esc(IC.EAIMS[E.aim].name)}</b> (${esc(IC.EAIMS[E.aim].hint)}).${E.plan && E.plan.obj && E.raid ? ` Next raid being prepared${E.raid.warned ? `, most likely towards ${esc(IC.nearestPlace(S, E.plan.obj.x, E.plan.obj.y).replace(/^\d+ km \w+ of /, ''))}` : ''}.` : ''}</p>` : '';
+  const aim = E.war && E.aim ? `<p style="margin:0">Their aim, as intercepts read it: <b>${esc(IC.EAIMS[E.aim].name)}</b> (${esc(IC.EAIMS[E.aim].hint)}).${E.plan && E.plan.obj && E.raid ? ` Next raid being prepared${E.raid.warned ? `, most likely towards ${esc(IC.nearestPlace(S, E.plan.obj.x, E.plan.obj.y).replace(/^[\d.]+ km \w+ of /, ''))}` : ''}.` : ''}</p>` : '';
   const T = IC.enemyTally(S), sets = Object.entries(T.all).sort((a, b) => b[1] - a[1]);
   const hit = sets.length ? `<div class="bars long">${sets.map(([k, n]) => `<span>${esc(IC.ESETS[k].name)}</span>${bar(n / T.allN, 'var(--hostile)')}<span>${U.pct(n / T.allN)}</span>`).join('')}</div><p class="hint">Share of the ${T.allN} weapons fired at each kind of target. What they fire at says what they want.</p>` : '';
   let save = '';
@@ -553,9 +553,11 @@ function enemyAgenda() {
 }
 function intel() {
   const E = S.enemy;
-  const ops = E.ops.slice(-8).reverse().map(o => `<div class="li"><b>${esc(o.label)}</b><small>${U.hhmm(o.t0)} · ${o.launched} launched · ${o.lost} shot down · ${o.hits} hits</small></div>`).join('');
+  const ops = E.ops.slice(-8).reverse().map(o => `<div class="li"><b>${esc(o.label.charAt(0).toUpperCase() + o.label.slice(1))}</b><small>${U.hhmm(o.t0)} · ${o.launched} launched · ${o.lost} shot down · ${o.hits} hits</small></div>`).join('');
   const known = [...E.known.values()].filter(k => !k.ref.dead).sort((a, b) => b.t - a.t);
-  const mine = known.slice(0, 10).map(k => `<button class="li" data-act="selu" data-id="${k.ref.id}"><b>${esc(k.ref.name)}</b><small>${esc(k.ref.d.name)} · via ${esc(k.how)} · ${U.dur(S.time - k.t)} ago${U.dxy(k.x, k.y, k.ref.x, k.ref.y) > 30 ? ' · moved since' : ''}</small></button>`).join('');
+  // how they found it, in plain words
+  const HOW = { ELINT: 'its radar was heard', observation: 'seen from the border', 'launch detection': 'seen launching', launch: 'seen launching', 'engaging its weapons': 'seen firing', prewar: 'known before the war', recon: 'photographed by a drone', range: 'placed on the range' };
+  const mine = known.slice(0, 10).map(k => `<button class="li" data-act="selu" data-id="${k.ref.id}"><b>${esc(k.ref.name)}</b><small>${esc(k.ref.d.name)} · ${esc(HOW[k.how] || k.how)} · ${U.dur(S.time - k.t)} ago${U.dxy(k.x, k.y, k.ref.x, k.ref.y) > 30 ? ' · moved since' : ''}</small></button>`).join('');
   const sites = S.esites.filter(s => s.pk > 0).map(s => `<button class="li" data-act="sels" data-id="${s.id}"><b>${esc(s.name)}</b><small>${s.destroyed ? 'destroyed' : s.pk >= 2 ? `located · ${U.pct(s.hp / s.max)} intact` : 'suspected'}</small></button>`).join('');
   const tels = S.tels.filter(t => t.known && !t.dead).map(t => `<button class="li" data-act="selt" data-id="${t.id}"><b>${esc(t.name)}</b><small>last seen ${U.dur(S.time - t.kt)} ago</small></button>`).join('');
   const bda = S.reports.slice(0, 8).map(r => `<div class="li"><b>${esc(r.by)} → ${esc(r.target.name)}</b><small>${U.hhmm(r.t)} · ${esc(r.text)}</small></div>`).join('');
@@ -563,7 +565,7 @@ function intel() {
     <div class="card"><h3>Recent enemy operations</h3>${ops ? `<div class="list">${ops}</div>` : '<p class="hint">Nothing yet.</p>'}</div>
     <div class="card"><h3>Strike reports</h3>${bda ? `<div class="list">${bda}</div>` : '<p class="hint">No strikes yet.</p>'}</div>
     <div class="card"><h3>What they know about us<em>${known.length} of ${S.units.length} units</em></h3>${mine ? `<div class="list">${mine}</div>` : '<p class="hint">No fix on any of our units.</p>'}<p class="hint">Radiating, firing and sitting near the border give units away. Moving makes their fix stale.</p></div>
-    <div class="card"><h3>Enemy installations<em>${S.esites.filter(s => s.pk === 0).length} unlocated</em></h3><div class="list">${sites}</div></div>
+    <div class="card"><h3>Enemy installations<em>${S.esites.filter(s => s.pk > 0).length} found · ${S.esites.filter(s => s.pk === 0).length} not yet</em></h3><div class="list">${sites}</div></div>
     <div class="card"><h3>Mobile launchers</h3>${tels ? `<div class="list">${tels}</div>` : '<p class="hint">None located. Satellite warning, counter-battery radar and reconnaissance find them.</p>'}</div>`;
 }
 

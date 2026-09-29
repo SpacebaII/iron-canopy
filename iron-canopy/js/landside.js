@@ -90,7 +90,7 @@ IC.landsideTick = function (S, ap, dt) {
     break;   // one at a time: the landside grows over hours, not in a moment
   }
   if (added || L.kerbN !== terms.length + sheds.length) kerbs(S, ap, terms.concat(sheds));
-  if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, added); }
+  if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo
   let v = 0;
   for (const it of L.items) { it.use = IC.landUse(L, it); v += IC.LAND[it.kind].earn * it.use; }

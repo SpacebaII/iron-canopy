@@ -663,7 +663,7 @@ function planBox(who, t) {
   const tn = t.grp ? `the raid of ${t.grp.n} led by TN ${t.tn}` : `TN ${t.tn}`;
   if (P.x == null) return `<div class="sec plan"><h3 class="sh">Intercept ${esc(tn)}</h3><div class="warnbox">${esc(P.why || 'No intercept possible.')}</div><div class="acts"><button class="act" data-act="air" data-op="cancel">Cancel</button></div></div>`;
   const rows = [
-    ['Meets it', `in ${U.dur(P.T)}${P.delay > 30 ? ` <span class="muted">(${U.dur(P.delay)} of it on the ground)</span>` : ''} near ${esc(IC.nearestPlace(S, P.x, P.y))}`],
+    ['Meets it', `in ${U.dur(P.T)}${P.delay > 30 ? ` <span class="muted">(${U.dur(P.delay)} of it on the ground)</span>` : ''} ${esc(IC.nearPlace(S, P.x, P.y))}`],
     ['Fuel after', P.fuelBack > 0 ? `${U.dur(P.fuelBack)} once home` : `<span class="hostile">not enough to come back</span>${S.air.some(k => k.kind === 'tkr' && k.state === 'station') ? ' · a tanker is up' : ''}`],
     ['Weapons', `${P.aam} radar missiles, ${P.srm} heat-seeking · reach ${esc(P.reachWords)}`],
     ['Kill chance', P.idFirst ? '<span class="unknown">identify first: nobody fires at it until a pilot has seen it</span>' : `${U.pct(P.pk)} a target with two missiles${P.n > 1 ? ` · ${P.enough ? `enough for all ${P.n}` : `<span class="amber">missiles for ${Math.floor((P.aam + P.srm) / 2)} of ${P.n}</span>`}` : ''}${P.weapons === 'hold' ? ' · <span class="amber">weapons on Hold: it will only escort</span>' : ''}`]

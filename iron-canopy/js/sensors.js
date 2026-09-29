@@ -283,7 +283,7 @@ function setAff(S, t, aff, why) {
   t.ided = aff === 'H' || aff === 'N';
   if (t.grp) t.grp.aff = grpAff(t.grp.members);
   if (!t.tn || t.d.civil && aff !== 'S' && aff !== 'H') return;
-  if (aff === 'H' && t.d.cls === 'air' && !t.border) IC.log(S, 'id', 'ID', `TN ${t.tn} identified HOSTILE: ${IC.KLASS[t.klass] || t.d.name}${why ? ' (' + why + ')' : ''}.`, t);
+  if (aff === 'H' && t.d.cls === 'air' && !t.border) { const k = IC.KLASS[t.klass] || t.d.name; IC.log(S, 'id', 'ID', `TN ${t.tn} identified HOSTILE: ${k}${why && !why.toLowerCase().startsWith(k.toLowerCase()) ? ' (' + why + ')' : ''}.`, t); }
   else if (aff === 'S' && (was === 'A' || was === 'N')) IC.log(S, 'warn', 'SUSPECT', `TN ${t.tn} ${t.sq ? 'squawking ' + t.sq : ''} is now SUSPECT: ${why}.`, t);
   if (aff === 'H' && t.disguise) { IC.emit(S, 'unmasked', t); IC.log(S, 'warn', 'DECEPTION', `TN ${t.tn} was posing as airliner ${t.cs}. It is a ${IC.THR[t.type].name.toLowerCase()}.`, t); }
   IC.emit(S, 'aff', t);
@@ -404,7 +404,7 @@ function identify(S, t, dt, nctr, iff) {
     if (t.idp >= 1) {
       t.klass = t.d.klass;
       if (t.d.decoy && Math.random() < 0.5) { t.klass = 'decoy'; t.decoyKnown = true; }
-      if (t.tn && !t.d.civil) IC.log(S, 'id', 'NCTR', `TN ${t.tn} recognised as ${(IC.KLASS[t.klass] || t.klass).toLowerCase()}.`);
+      if (t.tn && !t.d.civil) IC.log(S, 'id', 'TYPE', `TN ${t.tn} recognised as ${(IC.KLASS[t.klass] || t.klass).toLowerCase()}.`);
     }
   }
   if (t.klass) {
@@ -457,9 +457,9 @@ function onNewTrack(S, t) {
   } else if (c === 'arm') {
     IC.log(S, 'leak', 'ARM', `TN ${t.tn} anti-radiation missile inbound on ${t.target ? t.target.name : 'unknown'}.`, t);
     IC.emit(S, 'arm', t);
-  } else if (c === 'air' && !t.border && !t.disguise) IC.log(S, 'id', 'TRACK', `TN ${t.tn} new air track ${U.compass(Math.atan2(t.vy, t.vx))}-bound, ${IC.nearestPlace(S, t.x, t.y)}.`);
-  else if (c === 'cm') IC.log(S, 'id', 'TRACK', `TN ${t.tn} low fast track near ${IC.nearestPlace(S, t.x, t.y)}.`);
-  else if (c === 'rkt' && Math.random() < 0.3) IC.log(S, 'leak', 'ROCKETS', `Rocket fire detected near ${IC.nearestPlace(S, t.x, t.y)}.`);
+  } else if (c === 'air' && !t.border && !t.disguise) IC.log(S, 'id', 'TRACK', `TN ${t.tn} new air track ${U.compass(Math.atan2(t.vy, t.vx))}-bound, ${IC.nearPlace(S, t.x, t.y)}.`);
+  else if (c === 'cm') IC.log(S, 'id', 'TRACK', `TN ${t.tn} low fast track ${IC.nearPlace(S, t.x, t.y)}.`);
+  else if (c === 'rkt' && Math.random() < 0.3) IC.log(S, 'leak', 'ROCKETS', `Rocket fire detected ${IC.nearPlace(S, t.x, t.y)}.`);
 }
 
 })(window.IC);

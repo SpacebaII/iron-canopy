@@ -44,7 +44,7 @@ IC.incidents = function (S, dt) {
     // unknown or suspect aircraft entering our airspace
     if (!t.d.civil && (t.aff === 'U' || t.aff === 'S') && (t.d.cls === 'air' || t.d.cls === 'drone' || t.d.cls === 'ga') && !t.border && IC.inHome(t.x, t.y) && !t.intrudeFlag) {
       t.intrudeFlag = true;
-      add(S, 'intrusion', t, `TN ${t.tn}: unidentified aircraft in our airspace near ${IC.nearestPlace(S, t.x, t.y)}`, 'warn');
+      add(S, 'intrusion', t, `TN ${t.tn}: unidentified aircraft in our airspace ${IC.nearPlace(S, t.x, t.y)}`, 'warn');
     }
   }
   for (const it of I.list) {
@@ -59,9 +59,9 @@ IC.activeIncidents = S => S.inc ? S.inc.list.filter(x => !x.done) : [];
 IC.on((S, type, d) => {
   if (S.range) return;
   switch (type) {
-    case 'weaponRelease': add(S, 'launch', d, `${d.tn ? 'TN ' + d.tn : 'An aircraft'}${d.cs ? ' (' + d.cs + ')' : ''} has released weapons near ${IC.nearestPlace(S, d.x, d.y)}`, 'alarm'); break;
+    case 'weaponRelease': add(S, 'launch', d, `${d.tn ? 'TN ' + d.tn : 'An aircraft'}${d.cs ? ' (' + d.cs + ')' : ''} has released weapons ${IC.nearPlace(S, d.x, d.y)}`, 'alarm'); break;
     case 'collision': add(S, 'collision', d.t, `MAYDAY: ${d.t.cs} mid-air collision ${d.place}`, 'alarm'); break;
-    case 'violation': add(S, 'violation', d, `Foreign fighters inside our airspace near ${IC.nearestPlace(S, d.x, d.y)}`, 'warn'); break;
+    case 'violation': add(S, 'violation', d, `Foreign fighters inside our airspace ${IC.nearPlace(S, d.x, d.y)}`, 'warn'); break;
     case 'incident': add(S, d.kind, d.t, d.text, d.level || 'warn'); if (d.t) d.t.offFlag = true; break;
     case 'ballistic': add(S, 'ballistic', d, `Ballistic missile TN ${d.tn} in flight`, 'alarm'); break;
     case 'noRoute': add(S, 'ground', d.m, `${d.ap.name}: ${d.m.who || 'an aircraft'} has no taxi route to a runway`, 'warn'); break;

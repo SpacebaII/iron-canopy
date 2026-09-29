@@ -60,9 +60,9 @@ IC.replayUseThree = T => { THREE = T; };
 
 /* ---------- the windows ---------- */
 const CSS = `
-.replay{position:absolute;z-index:10;inset:12px;display:flex;flex-direction:column;border-radius:18px;background:rgba(6,11,16,.96);box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;animation:fadeIn .2s var(--ease)}
+.replay{position:absolute;z-index:10;inset:12px;display:flex;flex-direction:column;border-radius:18px;background:rgba(6,11,16,.96);box-shadow:0 0 0 40px rgba(4,8,12,.94),0 30px 80px rgba(0,0,0,.6);overflow:hidden;animation:fadeIn .2s var(--ease)}
 .live{position:absolute;z-index:9;display:flex;flex-direction:column;border-radius:14px;background:rgba(6,11,16,.94);box-shadow:0 18px 50px rgba(0,0,0,.55);overflow:hidden;resize:both;min-width:280px;min-height:180px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);animation:fadeIn .2s var(--ease)}
-.live.full{inset:12px!important;width:auto!important;height:auto!important;resize:none;z-index:10}
+.live.full{inset:12px!important;width:auto!important;height:auto!important;resize:none;z-index:10;box-shadow:0 0 0 40px rgba(4,8,12,.94)}
 .rp-head{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem .5rem;flex-wrap:wrap}
 .rp-head h2{margin:0;font-family:var(--display);font-weight:700;font-size:1.1rem;letter-spacing:.14em;text-transform:uppercase;color:var(--friend)}
 .rp-head .sub{color:var(--muted);font-size:.9rem;flex:1;min-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1539,7 +1539,8 @@ function camera(v, t, dtR) {
     return;
   }
   if (shot.mode === 'chase' && S) {
-    const d = camDist(S) * v.camK, f = dirOf(S, vec(2));
+    // an aircraft fills a fair part of the picture; a missile is watched from further back, clear of its flame
+    const d = camDist(S) * (S.tr.kind === 'missile' ? 1.6 : 0.8) * v.camK, f = dirOf(S, vec(2));
     // behind, a little above and to one side, so the trail and what lies ahead both show
     const side = vec(3).crossVectors(f, up); if (side.lengthSq() < 1e-6) side.set(1, 0, 0); side.normalize();
     want.copy(S.grp.position).addScaledVector(f, -d).addScaledVector(side, d * 0.3); want.y += d * 0.35;
@@ -1578,7 +1579,16 @@ function camera(v, t, dtR) {
   const gnd = hT(v, want.x + v.cx, want.z + v.cy) * v.hk + 0.02;
   if (want.y < gnd) want.y = gnd;
   // the cinematic cameras ease after what they film, so a jittery path does not shake the picture
-  if (v.snap || !v.camPos || v.camPos.distanceTo(want) > 3 * Math.max(0.5, want.distanceTo(look))) { (v.camPos || (v.camPos = new THREE.Vector3())).copy(want); (v.lookAt || (v.lookAt = new THREE.Vector3())).copy(look); v.snap = false; }
+  // (the chase eases in the frame of what it follows: eased in the world, a fast jet ran away from its own camera)
+  const rel = shot.mode === 'chase' && S ? S.grp.position : null;
+  if (rel) {
+    want.sub(rel); look.sub(rel);
+    if (v.snap || !v.chOff || v.chOff.distanceTo(want) > 3 * Math.max(0.5, want.distanceTo(look))) { (v.chOff || (v.chOff = new THREE.Vector3())).copy(want); (v.chLook || (v.chLook = new THREE.Vector3())).copy(look); v.snap = false; }
+    else { const k = 1 - Math.exp(-dtR * 7); v.chOff.lerp(want, k); v.chLook.lerp(look, Math.min(1, k * 1.5)); }
+    want.copy(v.chOff).add(rel); look.copy(v.chLook).add(rel);
+    want.y = Math.max(want.y, hT(v, want.x + v.cx, want.z + v.cy) * v.hk + 0.02);
+    (v.camPos || (v.camPos = new THREE.Vector3())).copy(want); (v.lookAt || (v.lookAt = new THREE.Vector3())).copy(look);
+  } else if (v.snap || !v.camPos || v.camPos.distanceTo(want) > 3 * Math.max(0.5, want.distanceTo(look))) { (v.camPos || (v.camPos = new THREE.Vector3())).copy(want); (v.lookAt || (v.lookAt = new THREE.Vector3())).copy(look); v.snap = false; }
   else { const k = 1 - Math.exp(-dtR * 7); v.camPos.lerp(want, k); v.lookAt.lerp(look, Math.min(1, k * 1.5)); }
   cam.position.copy(v.camPos); cam.lookAt(v.lookAt);
   cam.updateMatrixWorld();   // the labels project with this frame's camera, not the last one's
@@ -1817,9 +1827,22 @@ IC.liveOpen = function (S, ref) {
   if (L) IC.liveClose();
   style();
   const el = document.createElement('div'); el.className = 'live'; el.id = 'liveView'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Live view');
-  const host = $('app') || document.body, W = CFG.live.w, H = CFG.live.h;
+  const host = $('app') || document.body;
+  // at the bottom of the open map, between the arsenal and the inspector and minimap, never over them (smaller
+  // where the gap is narrow)
+  const hw = host.clientWidth || innerWidth, hh = host.clientHeight || innerHeight, hr = host.getBoundingClientRect(), box = id => { const e = $(id), r = e && e.offsetParent && e.getBoundingClientRect(); return r && r.width ? r : null; };
+  let right = hw - 12, left = 12;
+  for (const id of ['insp', 'mapbox']) { const r = box(id); if (r) right = Math.min(right, r.left - hr.left - 12); }
+  const ar = box('arsenal'); if (ar) left = ar.right - hr.left + 12;
+  let W = Math.round(U.clamp(right - left, 320, CFG.live.w)), H = Math.round(W * CFG.live.h / CFG.live.w), x = right - W, y = hh - H - 12;
+  // too narrow there (the inspector is open): above the minimap instead, as large as fits under the top bar
+  const mb = box('mapbox'), tb = box('topbar'), roof = tb ? tb.bottom - hr.top + 60 : 140;
+  if (right - left < 400 && mb) {
+    const h = Math.min(CFG.live.h, mb.top - hr.top - 12 - roof), w = Math.round(h * CFG.live.w / CFG.live.h);
+    if (w >= 320) { W = w; H = h; x = mb.right - hr.left - W; y = mb.top - hr.top - 12 - H; }
+  }
   el.style.width = W + 'px'; el.style.height = H + 'px';
-  el.style.left = Math.max(12, (host.clientWidth || innerWidth) - W - 24) + 'px'; el.style.top = Math.max(12, (host.clientHeight || innerHeight) - H - 110) + 'px';
+  el.style.left = Math.max(12, x) + 'px'; el.style.top = Math.max(12, y) + 'px';
   el.innerHTML = `<div class="rp-head" data-el="head"><span class="x live-dot" title="Live: it follows the game as it runs">● LIVE</span><span class="sub" data-el="sub"></span>
       ${camSelect('auto', ['free', 'follow'])}
       <button class="x" data-rp="toReplay" title="Replay the last 15 minutes here">⟲</button><button class="x" data-rp="full" data-el="fullBtn" title="Fill the screen">⤢</button><button class="x" data-rp="close" aria-label="Close" title="Close">✕</button></div>
@@ -1945,7 +1968,7 @@ function liveSync(v, now, force) {
    inside a dashed box of the real aircraft's length, span and height, so the proportions can be checked ---------- */
 IC.replayGallery = function (S) {
   if (V) IC.replayClose();
-  const el = makeReplayWindow('Models', 'Every model in 3D; down the side, from above and from the side inside the real size');
+  const el = makeReplayWindow('Models', 'Every model in the game, side by side at real size');
   const v = V = newView(S, el, 'gallery');
   Object.assign(v, { cx: 0, cy: 0, R: 60, labels: true, wasPaused: S.paused, orbit: { yaw: 1.25, pitch: 0.7, dist: 110, tx: 0, ty: 0, tz: 0 } });
   S.paused = true;
