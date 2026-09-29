@@ -11,17 +11,19 @@ const U = IC.U;
 const seed = +process.argv[2] || 12345, years = +process.argv[3] || 14, stopAct = +process.argv[4] || 5;
 const quiet = process.env.QUIET;
 if (process.env.START) IC.CAREER_START = +process.env.START;   // (to try another starting treasury)
-const S = IC.newGame({ seed, mode: 'story', hour: 7 }); IC.S = S;
-const st = S.story, t0 = S.time, MO = IC.MO(S);
+// LOAD=file.json goes on from a save the run made (SAVE=… writes one at each act): the dates stay the Career's
+const S = process.env.LOAD ? IC.loadSave(require('fs').readFileSync(process.env.LOAD, 'utf8')) : IC.newGame({ seed, mode: 'story', hour: 7 }); IC.S = S;
+if (process.env.LOAD) S.story.grant = S.story.grant0 = IC.ACTS[S.story.act].grant;   // (the act's grant as the code now has it)
+const st = S.story, t0 = 7 * 3600, MO = IC.MO(S);
 const logs = [];
 const origLog = IC.log;
 IC.log = function (S2, kind, tag, msg, at) { if (['GOAL', 'MAYDAY', 'DECISION', 'AIRSPACE', 'MIN', 'PM', 'INT', 'GOV'].includes(tag) && !quiet) logs.push(`${U.clock(S2.time)} [${tag}] ${msg}`); return origLog(S2, kind, tag, msg, at); };
 const mo = t => (t - t0) / MO;
 const stamp = t => `${U.date(t)} (+${mo(t).toFixed(1)} months)`;
 const marks = [];   // { what, t }
-let chSeen = -1, actSeen = 1, wall = Date.now(), lastM = S.cal.m;
+let chSeen = process.env.LOAD ? st.ch : -1, actSeen = st.act, wall = Date.now(), lastM = S.cal.m;
 console.log(`seed ${seed}: ${S.world.cities.length} cities, capital ${IC.cap(S).name}, budget ${U.money(S.budget)}; a month is ${IC.dpm(S)} days`);
-marks.push({ what: 'Act I', t: S.time });
+marks.push(process.env.LOAD ? { what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title} (from the save)`, t: S.time } : { what: 'Act I', t: S.time });
 const calm = () => !S.threats.some(t => !t.dead && !(t.d && t.d.civil)) && !S.missiles.length;
 let nextP = 0;
 // step times: at the wait speed's 8 s steps and at 1 s, over the run and over each month (the busiest month shows)

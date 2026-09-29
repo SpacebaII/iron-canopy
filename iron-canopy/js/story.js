@@ -17,7 +17,7 @@ IC.ACTS = {
   // from Act II the military budget grows with the job, for a country of sixty cities: from Act III a share of the
   // city taxes comes on top (IC.STORY_TAX)
   2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 4 },
-  3: { name: 'Act III', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 20 },
+  3: { name: 'Act III', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 60 },
   4: { name: 'Act IV', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 }
 };
 /* delegates take routine work off your hands once your rank allows it */
