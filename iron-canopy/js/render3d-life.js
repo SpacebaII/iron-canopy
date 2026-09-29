@@ -496,12 +496,16 @@ function missileFx(v, m, st, t) {
   // the booster: burnt out, it drops away and tumbles to the ground
   if (X.sep != null && !X.s1 && t > X.sep + 0.5 && t < X.sep + 60) { X.s0 = IC.recAt(m.tr, X.sep, {}); X.s1 = X.s0 && IC.recAt(m.tr, X.sep + 0.5, {}); }
   if (X.sep != null && X.s0 && X.s1 && t > X.sep) {
-    const a = t - X.sep, vx = (X.s1.x - X.s0.x) / 0.5, vy = (X.s1.y - X.s0.y) / 0.5, vz = (X.s1.alt - X.s0.alt) * KMh(v) / 0.5, c = 1.8 * (1 - Math.exp(-a / 1.8));
-    const x = X.s0.x + vx * c, y = X.s0.y + vy * c, z = H.hT(v, X.s0.x, X.s0.y) * v.hk + X.s0.alt * KMh(v) + vz * c - 0.5 * 0.0981 * v.hk * a * a;
-    if (z > H.hT(v, x, y) * v.hk && a < 60) {
+    const a = t - X.sep, vx = (X.s1.x - X.s0.x) / 0.5, vy = (X.s1.y - X.s0.y) / 0.5, vz = (X.s1.alt - X.s0.alt) * KMh(v) / 0.5, g0 = H.hT(v, X.s0.x, X.s0.y) * v.hk;
+    // slowed hard by the air, then falling: where it is b seconds after it let go
+    const at = (b, o) => { const c = 1.8 * (1 - Math.exp(-b / 1.8)); o.x = X.s0.x + vx * c; o.y = X.s0.y + vy * c; o.z = g0 + X.s0.alt * KMh(v) + vz * c - 0.5 * 0.0981 * v.hk * b * b; return o; };
+    const q = at(a, WQ);
+    if (q.z > H.hT(v, q.x, q.y) * v.hk && a < 60) {
       const s = m.MP.len * 100 * 0.35;
-      inst(v, 'booster', x - v.cx, z, y - v.cy, Math.atan2(vy, vx), a * 2.1, a * 1.3, s, 1.3, 1.3);
-      if (a < 1.5) emit(v.life.smoke, x - v.cx, z, y - v.cy, 0.05, 0.9, 0.9, 0.88, 0.4 * (1 - a / 1.5));
+      inst(v, 'booster', q.x - v.cx, q.z, q.y - v.cy, Math.atan2(vy, vx), a * 2.1, a * 1.3, s, 1.3, 1.3);
+      X.bpos = X.bpos || {}; X.bpos.x = q.x - v.cx; X.bpos.y = q.z; X.bpos.z = q.y - v.cy;   // where it is (for a camera)
+      // the last of its smoke trails behind it as it tumbles
+      for (let b = Math.max(0, a - 6); b < a; b += 0.2) { const r = at(b, FQ), k = 1 - (a - b) / 6; emit(v.life.smoke, r.x - v.cx, r.z, r.y - v.cy, 0.03 + (a - b) * 0.01, 0.88, 0.88, 0.86, 0.35 * k * U.clamp(1 - b / 8, 0, 1)); }
     }
   }
 }

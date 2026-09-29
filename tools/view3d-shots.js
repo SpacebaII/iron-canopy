@@ -381,8 +381,13 @@ const SCENES = {
       const k = V.t - t0;
       V.t += (k < 7 ? 0.35 : 0.6) / 30;
       if (k < 1.2) { yaw += 0.0015; V.cam = 'orbit'; V.follow = null; Object.assign(V.orbit, { tx: u.x - V.cx, tz: u.y - V.cy, ty: (V.flat[0] ? V.flat[0].e : 0) * V.hk + 0.04, yaw, pitch: 0.12, dist: 1.1 }); }
-      else if (k < 9) { if (V.cam !== 'chase') { V.follow = mv; camTo(V, 'chase'); V.camK = 3; } }
-      else if (V.cam !== 'side') { camTo(V, 'side'); V.camK = 1.2; }
+      else if (k < 3.8) { if (V.cam !== 'chase') { V.follow = mv; camTo(V, 'chase'); V.camK = 3; } }
+      else if (k < 14) {
+        // held where the booster lets go (4.5 s after launch): the missile goes on, the booster falls away tumbling
+        const sp = IC.recAt(tr, t0 - 0.25 + 4.5, {}), bp = mv.life && mv.life.bpos; V.cam = 'orbit'; V.follow = null;
+        if (bp && k > 4.3) Object.assign(V.orbit, { tx: bp.x, ty: bp.y, tz: bp.z, yaw: 1.2 + k * 0.03, pitch: 0.15, dist: 0.25 });
+        else if (sp) Object.assign(V.orbit, { tx: sp.x - V.cx, tz: sp.y - V.cy, ty: sp.alt * 10 * V.hk, yaw: 1.2 + k * 0.03, pitch: 0.15, dist: 0.6 });
+      } else if (V.cam !== 'side') { V.follow = mv; camTo(V, 'side'); V.camK = 1.2; }
       await clipFrame(C, S, 0);
     }
     await __snap('clip-launch-last');`,
