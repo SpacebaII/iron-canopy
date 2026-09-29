@@ -634,6 +634,9 @@ window.addEventListener('keydown', e => {
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
+  // blueprints: M mirrors, N picks the next one
+  if (bm && bm.part === 'blueprint' && lk === 'm') { bm.mirror = !bm.mirror; IC.ui.refresh(true); return; }
+  if (bm && bm.part === 'blueprint' && lk === 'n') { bm.bpi = (bm.bpi || 0) + 1; IC.ui.refresh(true); return; }
   // the paint tool: P picks the next paint, Shift+P the one before
   if (bm && bm.part === 'paint' && lk === 'p') { const K = Object.keys(IC.PAINT), i = K.indexOf(bm.paint); bm.paint = S.bldPref.paint = K[(i + (e.shiftKey ? K.length - 1 : 1)) % K.length]; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { const r = IC.buildFinish(S, bm, IC.cam.z); IC.sfx.ui(r === 'built' ? 'ok' : 'err'); if (r === 'err' && bm.err && S.hover) IC.text(S, S.hover.x, S.hover.y, bm.err.toUpperCase(), IC.C.hostile); IC.ui.refresh(true); return; }

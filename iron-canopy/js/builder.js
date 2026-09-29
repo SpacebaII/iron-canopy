@@ -978,6 +978,12 @@ function planOf(S, m, hv, tol, free) {
     out.pts = m.pts.length ? [m.pts[0]] : [];
   } else if (t === 'paint') {
     return paintPlan(m, hv);
+  } else if (t === 'blueprint') {
+    blueprintPlan(S, m, hv, out);
+  } else if (t === 'bpsave') {
+    const s = snapCorner(ap, m, hv, tol, true, true); out.snap = s; out.pts = m.pts.length ? [m.pts[0], s] : [s];
+    if (m.pts.length) { const n = ap.parts.filter(q => q.x != null && IC.insideShape({ x: (m.pts[0].x + s.x) / 2, y: (m.pts[0].y + s.y) / 2, a: 0, w: Math.abs(s.x - m.pts[0].x), h: Math.abs(s.y - m.pts[0].y) }, q, 0)).length; out.text.push(`Saves about ${n} parts inside the box as a blueprint: click the corner again`); }
+    return out;
   } else if (t === 'stand') {
     const P = IC.bldStandPlan(S, m, hv);
     Object.assign(out, P);
@@ -1133,9 +1139,23 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     }
     m.pts.push({ x: p.x, y: p.y }); return 'point';
   }
+  if (m.part === 'bpsave') {
+    const last = m.pts[m.pts.length - 1];
+    if (!last) { m.pts = [{ x: p.x, y: p.y }]; return 'point'; }
+    if (m.pts.length === 2 && U.dist(m.pts[1], p) < Math.max(tol * 0.8, 0.05)) {
+      const bp = IC.bpSave(S, ap, m.pts[0], m.pts[1]); m.pts = [];
+      if (!bp) { m.err = 'Nothing inside the box to save.'; return 'err'; }
+      m.done = `Saved as ${bp.name}: ${bp.specs.length} parts. Place it with the Blueprint tool.`; return 'built';
+    }
+    m.pts[1] = { x: p.x, y: p.y }; return 'point';
+  }
   if (m.part === 'stand') {
     if (!plan.ok) { m.err = plan.why; return 'err'; }
     return IC.bldAddStand(S, ap, plan.stand) ? 'built' : (m.err = 'Not enough money.', 'err');
+  }
+  if (m.part === 'blueprint') {
+    if (m.pts.length && U.dist(m.pts[0], p) < Math.max(tol * 0.8, 0.05)) return finish(S, m, plan);
+    m.pts = [plan.snap]; return 'point';
   }
   if (m.part === 'exits' || m.part === 'hold') {
     if (!plan.rw) { m.err = plan.why; return 'err'; }
@@ -1189,9 +1209,11 @@ function finish(S, m, plan) {
 /* plan several parts as one step (a concourse, a remote apron): areas first, so taxiways snap to them */
 IC.bldPlanSpecs = function (S, ap, specs) {
   const made = [];
-  const order = specs.slice().sort((a, b) => (a.kind === 'taxi') - (b.kind === 'taxi'));
+  // (a blueprint's buildings that branch from another come after it, so the one they join exists)
+  const order = specs.slice().sort((a, b) => ((a.kind === 'taxi') - (b.kind === 'taxi')) || (!!a.jref - !!b.jref)), made2 = {};
   for (const sp of order) {
     let p = null;
+    if (sp.jref) sp.joins = made2[sp.jref] ? made2[sp.jref].id : undefined;
     if (sp.kind === 'taxi') {
       p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane });
       // a loop closes on its first node
@@ -1199,7 +1221,7 @@ IC.bldPlanSpecs = function (S, ap, specs) {
     }
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat });
     else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, ring: sp.ring, span: sp.span, face: sp.face, joins: sp.joins, clear: sp.clear }); if (p && sp.link) p.link = sp.link; }
-    if (p) made.push(p);
+    if (p) { made.push(p); if (sp.id) made2[sp.id] = p; if (sp.look) p.look = Object.assign({}, sp.look); if (sp.free && p.kind === 'apron') { p.ramp = true; p.free = sp.free.map(f => Object.assign({}, f)); p.sN = p.free.length; } }
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }
   return made;
@@ -1321,6 +1343,63 @@ IC.bldPaint = function (S, ap, st) {
   (ap.undo = ap.undo || []).push({ paint: ap.paint.length - 1 });
   return true;
 };
+
+/* ---------- blueprints ----------
+   A blueprint is a layout kept in a frame of its own (x along the frame, 100 m units): part specs as the builder
+   plans them. The player saves any part of an airport as one (two corners of a box), and places it again turned
+   and mirrored, paid for and checked like anything drawn by hand. A small library of layouts after real airports,
+   under names of their own, is always there. They are data (S.bps), so they are saved with the game. */
+IC.BTOOLS.blueprint = { name: 'Blueprint', desc: 'Place a saved layout: move it with the cursor, R turns it, M mirrors it, N picks the next one; click, then click again to build. It is paid for and checked like anything you draw.' };
+IC.BTOOLS.bpsave = { name: 'Save blueprint', desc: 'Click two corners of a box round part of an airport: everything inside is saved as a blueprint to place again, anywhere.' };
+const BP0 = { x: 0, y: 0, rwyA: 0, parts: [], nodes: {} };
+IC.BP_LIBRARY = [
+  { name: 'Palm Satellite', after: 'Tampa', make: () => rotundaSpec(BP0, { x: 0, y: 0 }, { x: 0.8, y: 0 }, 'm').specs },
+  { name: 'Crescent', after: 'Paris Charles de Gaulle T2', make: () => curveSpec(BP0, { x: -6, y: 0 }, { x: 0, y: -2.5 }, { x: 6, y: 0 }, 'l').specs },
+  { name: 'Horseshoe', after: 'Dallas Fort Worth', make: () => curveSpec(BP0, { x: -3.2, y: 0 }, { x: 0, y: -3.2 }, { x: 3.2, y: 0 }, 'm').specs },
+  { name: 'Midfield Pair', after: 'Atlanta', make: () => concourseSpec(BP0, { x: -10, y: 0 }, { x: 10, y: 0 }, 'l', null).specs.concat(concourseSpec(BP0, { x: -10, y: 3.6 }, { x: 10, y: 3.6 }, 'l', null).specs) }
+];
+/* the blueprints the player can place: the library, then their own */
+IC.bpList = S => IC.BP_LIBRARY.map(b => ({ name: b.name, after: b.after, specs: b.make() })).concat(S.bps || []);
+/* a blueprint's specs in the world: at a point, turned by rot, mirrored across its own x axis when mir */
+IC.bpPlace = function (bp, at, rot, mir) {
+  const k = mir ? -1 : 1, c = Math.cos(rot), s2 = Math.sin(rot);
+  const P = q => ({ x: at.x + q.x * c - q.y * k * s2, y: at.y + q.x * s2 + q.y * k * c });
+  return bp.specs.map(sp => {
+    const o = Object.assign({}, sp);
+    if (sp.pts) o.pts = sp.pts.map(P);
+    if (sp.kind === 'runway') { o.a = P(sp.a); o.b = P(sp.b); return o; }
+    if (sp.x != null) { const q = P(sp); o.x = q.x; o.y = q.y; o.a = k * (sp.a || 0) + rot; }
+    if (sp.span) o.span = mir ? [-sp.span[1], -sp.span[0]] : sp.span.slice();
+    if (sp.free) o.free = sp.free.map(f => Object.assign({}, f, { ly: k * f.ly, rot: k * (f.rot || 0) }));
+    return o;
+  });
+};
+/* save the parts inside a box as a blueprint, in a frame along the airport's runway axis */
+IC.bpSave = function (S, ap, a, b, name) {
+  const fr = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, a: axis(ap) }, la = IC.rectLocal(fr, a), lb = IC.rectLocal(fr, b);
+  const inBox = q => { const l = IC.rectLocal(fr, q); return l.x >= Math.min(la.x, lb.x) && l.x <= Math.max(la.x, lb.x) && l.y >= Math.min(la.y, lb.y) && l.y <= Math.max(la.y, lb.y); };
+  const L = q => IC.rectLocal(fr, q), specs = [];
+  for (const p of ap.parts) {
+    if (p.kind === 'ils') continue;
+    if (p.kind === 'taxi') { const ns = p.nodes.map(id => ap.nodes[id]).filter(Boolean); if (ns.length > 1 && ns.every(inBox)) specs.push({ kind: 'taxi', pts: ns.map(L), lane: true, mat: p.mat }); continue; }
+    if (p.kind === 'runway') { if (inBox(p.a) && inBox(p.b)) specs.push({ kind: 'runway', a: L(p.a), b: L(p.b), mat: p.mat }); continue; }
+    if (p.x == null || !inBox(p)) continue;
+    const q = L(p);
+    specs.push(Object.assign({ kind: p.kind, x: q.x, y: q.y, a: U.angWrap((p.a || 0) - fr.a), w: p.w, h: p.h, id: p.id }, ...['ring', 'span', 'face', 'smax', 'zone', 'mat', 'ramp', 'surf', 'clear', 'look'].filter(k2 => p[k2] != null).map(k2 => ({ [k2]: Array.isArray(p[k2]) ? p[k2].slice() : typeof p[k2] === 'object' ? Object.assign({}, p[k2]) : p[k2] })), p.joins ? { jref: p.joins } : null, p.ramp && p.free ? { free: p.free.map(f => Object.assign({}, f)) } : null));
+  }
+  if (!specs.length) return null;
+  const bp = { name: name || `Blueprint ${(S.bps || []).length + 1}`, specs };
+  (S.bps = S.bps || []).push(bp);
+  return bp;
+};
+function blueprintPlan(S, m, hv, out) {
+  const L = IC.bpList(S), bp = L[(m.bpi || 0) % L.length];
+  const l = loc(m.ap, hv), at = m.pts[0] || wld(m.ap, rnd(l.x, GRID), rnd(l.y, GRID));
+  out.snap = { kind: 'free', x: at.x, y: at.y }; out.pts = [at];
+  out.specs = IC.bpPlace(bp, at, (m.rot - m.rot0) + axis(m.ap), !!m.mirror);
+  out.bp = bp;
+  out.text.push(`${bp.name}${bp.after ? `, after ${bp.after}` : ''}: ${out.specs.filter(q => q.kind !== 'taxi').length} parts and ${out.specs.filter(q => q.kind === 'taxi').length} taxiways${m.mirror ? ' · mirrored' : ''} · N for the next of ${L.length}`);
+}
 
 /* ---------- the look: cheap, and never capacity ----------
    A terminal's roof, colour, the airport's name on it and feature lighting; a tower's style; public art and water

@@ -218,7 +218,7 @@ function standsFor(ap, p) {
   for (let i = 0; i < n; i++) {
     const lx = -p.w / 2 + S.w * (i + 0.5), ly = back * (p.h / 2 - S.d / 2);
     const c = toWorld(p, lx, ly), f = toWorld(p, lx, back * (p.h / 2 - S.d - 0.08));
-    if (over.length && over.some(q => rectsOverlap(q, { x: c.x, y: c.y, a: p.a, w: S.w - 0.02, h: S.d - 0.02 }, 0.01))) continue;
+    if (over.length && over.some(q => rectsOverlap(q, { x: c.x, y: c.y, a: p.a, w: S.w, h: S.d }, 0.05))) continue;
     // a gate only where the terminal is right behind the stand (an apron may run on past the building's end)
     const contact = !!(term && term.kind === 'terminal' && rectDist(term, toWorld(p, lx, back * (p.h / 2 + 0.02))) < 0.4);
     const old = p.stands && p.stands.find(x => x.id === p.id + 's' + i);

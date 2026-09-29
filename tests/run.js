@@ -1189,6 +1189,38 @@ test('shapes: paint changes the look only: a painted taxiway carries no traffic,
   assert(IC.bldUndo(S, ap) === 'paint' && ap.paint.length === 1, 'undo did not take the last stroke back');
 });
 
+test('shapes: a blueprint placed turned and mirrored works like the original', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y), F = { x: ap.x, y: ap.y, a: ap.rwyA };
+  const line = (tool, pts) => { S.mode2 = IC.bldMode(S, ap, tool); S.mode2.fillet = false; for (const q of pts) IC.clickWorld(P(...q), 0); const r = IC.clickWorld(P(...pts[pts.length - 1]), 0); assert(r === 'built', `${tool}: ${S.mode2.err}`); };
+  // the Y from the test above, its taxilanes joined in a loop behind the trunk
+  line('concourse', [[4, -7], [10, -7]]); line('concourse', [[10, -7], [14, -10]]); line('concourse', [[10, -7], [14, -4]]);
+  line('taxi', [[3.4, -5.9], [2.8, -5.9], [2.8, -8.11], [3.4, -8.11]]);
+  line('taxi', [[3.4, 0], [3.4, -5.9]]);
+  finishWorks(S, ap);
+  // saved with the Save blueprint tool
+  S.mode2 = IC.bldMode(S, ap, 'bpsave');
+  for (const q of [P(2.6, -12), P(16, -2), P(16, -2)]) IC.clickWorld(q, 0);
+  const bp = S.bps && S.bps[0];
+  assert(bp && bp.specs.filter(q => q.kind === 'terminal').length === 3, `saved ${bp ? bp.specs.length : 0} parts`);
+  // placed again 30° round and mirrored, and joined to the runway at its loop
+  const at = P(-2, -15), rot = Math.PI / 6;
+  S.mode2 = Object.assign(IC.bldMode(S, ap, 'blueprint'), { bpi: IC.bpList(S).length - 1, mirror: true }); S.mode2.rot += rot;
+  const plan = IC.bldPlanOf(S, S.mode2, at, 0.4);
+  assert(plan.ok, `the blueprint cannot go there: ${plan.why}`);
+  IC.clickWorld(at, 0);
+  assert(IC.clickWorld(at, 0) === 'built', S.mode2.err);
+  const loop = IC.rectLocal(F, IC.bpPlace({ specs: [{ kind: 'x', x: 2.8 - 9.3, y: 0 }] }, at, rot + ap.rwyA, true)[0]);
+  line('taxi', [[loop.x, 0], [loop.x, loop.y]]);
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  const side = [[], []];
+  for (const a of ap.parts.filter(p => p.kind === 'apron')) { const l = IC.rectLocal(F, a); if (l.y < -3.5) side[l.x > 2.5 && l.y > -12 ? 0 : 1].push(...a.stands); }
+  const sum = L => `${L.length} stands, ${L.filter(s => s.contact).length} at gates, ${L.filter(s => s.linked).length} reachable, sizes ${[...new Set(L.map(s => s.size))].join('')}`;
+  assert(side[0].length >= 50 && sum(side[0]) === sum(side[1]), `original: ${sum(side[0])}; copy: ${sum(side[1])}`);
+  // the library is there too, each layout fitting open ground at this airport
+  assert(IC.BP_LIBRARY.length >= 4 && IC.BP_LIBRARY.every(b => b.make().some(q => q.kind === 'terminal')), 'no library of blueprints');
+});
+
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
   const { buildKden, finishAll } = require('../kdenbuild.js');
   const { S, ap, actions } = buildKden(12345, true);

@@ -473,6 +473,8 @@ function buildHint(m) {
     : t === 'parallel' ? (n ? 'Move out from the runway to set the distance; click again to build.' : T.desc)
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
+    : t === 'blueprint' ? (n ? 'Blueprint: click the same spot again (or Enter) to build; click elsewhere to move it. R turns it, M mirrors it, N picks the next one.' : T.desc)
+    : t === 'bpsave' ? (n < 2 ? T.desc : 'Click the second corner again to save.')
     : t === 'paint' ? `Paint: ${IC.PAINT[m.paint].name} (P for the next paint: ${Object.values(IC.PAINT).map(k => k.name.toLowerCase()).join(', ')}). ${T.desc}`
     : t === 'stand' ? T.desc
     : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
