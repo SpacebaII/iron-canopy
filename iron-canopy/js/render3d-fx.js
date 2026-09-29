@@ -105,7 +105,7 @@ float fxStripe(vec2 w) {
   return k;
 }`;
 const grassIBL = sh => {
-  sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'iblIrradiance *= 1.0 - fxGrass * 0.35; radiance *= 1.0 - fxGrass * 0.6;');
+  sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'radiance *= 1.0 - fxGrass * 0.6;');
   // no pixel of the ground is a light: nothing undefined or brighter than sunlit snow goes on to glow
   sh.fragmentShader = inc(sh.fragmentShader, 'tonemapping_fragment', 'if (!(gl_FragColor.r == gl_FragColor.r && gl_FragColor.g == gl_FragColor.g && gl_FragColor.b == gl_FragColor.b)) gl_FragColor.rgb = vec3(0.0); gl_FragColor.rgb = clamp(gl_FragColor.rgb, 0.0, 1.3);');
 };
