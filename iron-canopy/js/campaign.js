@@ -38,7 +38,7 @@ IC.campaignInit = function (S) {
   S.camp.chapter = 'Tension';
   say(S, 'CDS', `The ${W.full.A} is massing on the border. We have hours, not days. Deploy what is still in the reserve, top up the stores, and decide what else we protect.`);
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
-  say(S, 'LOG', `Launchers are loaded, but the spare missiles at each site are only half stocked. Order more from the factories or buy abroad (Supply); the Forward Depot near the border keeps the convoys' runs short.`);
+  say(S, 'LOG', `Launchers are loaded, but the spare missiles at each site are only half stocked. Order more from the arms plants or abroad in the Supply room (L). The Forward Depot near the border supplies whatever you deploy up there.`);
 };
 /* the Quick war's timetable (S.camp.sched) */
 const H = IC.H;

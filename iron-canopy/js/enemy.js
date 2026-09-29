@@ -1034,15 +1034,17 @@ function learn(S, E, R, ops) {
     E.method[m] = U.clamp(E.method[m] * (0.85 + (st.n ? st.hit / st.n : 0) * 0.5), 0.3, 1.5);
   }
   note(S, E, `Raid ${R.id} on ${R.obj.name}: ${launched} launched, ${lost} shot down (${U.pct(stop)}), ${R.hits || 0} hits: ${success ? 'got what it came for' : stop >= 0.75 ? 'the defence there keeps winning, avoid it' : 'not enough'}.${E.winning ? ' Their defence is winning.' : ''}`);
-  if (success) IC.news(S, `${S.world.names.A} claims its strike on ${R.obj.name} was a success.`);
-  else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defences blunt a ${R.name} on ${R.obj.name}.`); }
+  // (the news does not know our units' codes: a unit is "air defences near Orvice")
+  const news = R.obj.ref && R.obj.ref.d ? `air defences near ${place(S, R.obj)}` : R.obj.name;
+  if (success) IC.news(S, `${S.world.names.A} claims its strike on ${news} was a success.`);
+  else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defences blunt a ${R.name} on ${news}.`); }
   // the shock: then a lull while the commander reassesses
   if (R.kind === 'shock') {
     const f = strong(E);
     E.act = 3; E.actT = S.time; E.lullEnd = S.time + lerp(IC.EPACE.lull[0], IC.EPACE.lull[1], f) * H; E.shock.done = S.time; E.shock.res = { launched, lost, hits: R.hits || 0 };
     note(S, E, `Act 3: the shock is spent (${launched} launched, ${R.hits || 0} hits). Reassesses until ${U.hhmm(E.lullEnd)}: no raids, reconnaissance only.`);
     intel(S, E, `After the strike on ${R.obj.name}, ${S.world.names.A}'s channels have gone quiet. They are counting what worked and what did not. When they come back it will be planned: use the time to repair, reload and move.`);
-    IC.news(S, success || (R.hits || 0) >= 4 ? `${S.world.names.A} celebrates "the night the sky fell" over ${R.obj.name}.` : `The largest strike of the war largely fails: ${lost} of ${launched} shot down over ${place(S, R.obj)}.`);
+    IC.news(S, success || (R.hits || 0) >= 4 ? `${S.world.names.A} celebrates "the night the sky fell" over ${place(S, R.obj)}.` : `The largest strike of the war largely fails: ${lost} of ${launched} shot down over ${place(S, R.obj)}.`);
     IC.emit(S, 'enemyAct', { act: 3, name: IC.EACTS[3].name, text: IC.EACTS[3].text, R });
   } else if (E.aimFail >= 2 && S.time - (E.aimT || 0) > 12 * H) switchAim(S, E, `${E.aimFail} raids in a row did not get what they came for`);
   else if (S.time - (E.aimT || 0) > 30 * H && Math.random() < 0.3) switchAim(S, E, 'a new plan after days on the old one');

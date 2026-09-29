@@ -370,7 +370,7 @@ function logi() {
     for (const j of S.jobs) if (j.mun === k && j.state === 'active') moving += j.qty;
     const want = Math.max(4, Math.ceil(need[k] || 0)), low = (have[k] || 0) < want * IC.SUPPLY.reorder;
     const q = Math.max(4, Math.ceil(want / 2 / 4) * 4), cost = IC.canBuyMun(S, k) && depots.length ? IC.stockSource(S, k, q, depots[0]).cost : 0;
-    return `<tr><td>${esc(IC.munWords(k))}</td><td class="r ${low ? 'amber' : ''}">${Math.floor(dep)}</td><td class="r">${need[k] ? want : '–'}</td><td class="r">${units || '–'}</td><td class="r">${moving || '–'}</td><td class="r">${cost ? `<button class="btn sm" data-act="buyStock" data-v="${k}:${q}" ${S.budget < cost ? 'disabled' : ''} title="Bought now, sent by rail to the depot that needs it most">+${q} · ${U.money(cost)}</button>` : ''}</td></tr>`;
+    return `<tr><td>${esc(IC.munWords(k).charAt(0).toUpperCase() + IC.munWords(k).slice(1))}</td><td class="r ${low ? 'amber' : ''}">${Math.floor(dep)}</td><td class="r">${need[k] ? want : '–'}</td><td class="r">${units || '–'}</td><td class="r">${moving || '–'}</td><td class="r">${cost ? `<button class="btn sm" data-act="buyStock" data-v="${k}:${q}" ${S.budget < cost ? 'disabled' : ''} title="Bought now, sent by rail to the depot that needs it most">+${q} · ${U.money(cost)}</button>` : ''}</td></tr>`;
   }).join('');
   const plantsUp = S.infra.filter(f => f.kind === 'factory' && f.owner === 'us' && !f.offline).length;
   const stock = `<div class="card wide"><h3>Stock<em>${plantsUp ? `${plantsUp} arms plant${plantsUp > 1 ? 's' : ''} working` : '<span class="hostile">every arms plant is down: imports only, by air</span>'}</em></h3>
