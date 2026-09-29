@@ -404,7 +404,7 @@ function identify(S, t, dt, nctr, iff) {
     if (t.idp >= 1) {
       t.klass = t.d.klass;
       if (t.d.decoy && Math.random() < 0.5) { t.klass = 'decoy'; t.decoyKnown = true; }
-      if (t.tn && !t.d.civil) IC.log(S, 'id', 'NCTR', `TN ${t.tn} recognised as ${(IC.KLASS[t.klass] || t.klass).toLowerCase()}.`);
+      if (t.tn && !t.d.civil) IC.log(S, 'id', 'TYPE', `TN ${t.tn} recognised as ${(IC.KLASS[t.klass] || t.klass).toLowerCase()}.`);
     }
   }
   if (t.klass) {

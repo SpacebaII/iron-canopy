@@ -348,7 +348,9 @@ function divert(S, t, why) {
   t.toApt = null; t.wps = [{ x: out.x, y: out.y }]; t.dest = t.wps[0]; t.plan = { a: { x: t.x, y: t.y }, b: out, cs: t.cs, pts: [{ x: t.x, y: t.y }, { x: out.x, y: out.y }] };
   if (tl) { if (tl.resStand) { const s = standById(ap, tl.resStand); if (s && s.occ === tl.id) s.occ = null; tl.resStand = null; } const al = airlineOf(S, tl.al); judge(S, al, tl, ap, { divert: true }); }
   S.av.day.div++; ap.kpi.div++;
-  IC.log(S, 'warn', 'AVIATION', `${t.cs} diverted away from ${ap.name}: ${why}.`, ap);
+  // outside the Career one toast an hour for each airport (in a war they come in dozens); the Journal has them all
+  const loud = S.story || !ap.divLogT || S.time - ap.divLogT > 3600; if (loud) ap.divLogT = S.time;
+  IC.log(S, loud ? 'warn' : 'info', 'AVIATION', `${t.cs} diverted away from ${ap.name}: ${why}.`, loud ? ap : null);
   IC.emit(S, 'divert', { t, ap, why });
 }
 function tailLost(S, tl, ap, why) {

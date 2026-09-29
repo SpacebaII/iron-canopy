@@ -273,7 +273,7 @@ IC.detonate = function (S, x, y, dmg, src) {
   for (const v of S.vehicles) if (!v.dead && U.dxy(x, y, v.x, v.y) < 3 + dmg * 0.05) { IC.hitConvoy(S, v, src2.d ? src2.d.code : 'strike'); hit = hit || v; }
   if (hit && dmg > 25 && !aptHit) IC.addFire(S, x + U.rand(-4, 4), y + U.rand(-4, 4), 0.6 + dmg / 120, 900 + dmg * 20);
   // in plain words: "a subsonic cruise missile (TN 1060)", "an unseen drone"
-  const kind = (src2.d && src2.d.name ? src2.d.name : 'weapon').toLowerCase(), an = w => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
+  const kind = (src2.d && src2.d.name ? src2.d.name : 'weapon').toLowerCase(), an = w => (/^[aeiou]/.test(w) && !/^one/.test(w) ? 'an ' : 'a ') + w;
   const lbl = src2.tn ? `${an(kind)} (TN ${src2.tn})` : an(`unseen ${kind}`);
   if (hit) { S.stats.leakers++; IC.log(S, 'leak', 'IMPACT', `${hit.name} hit by ${lbl}.`, { x, y }); IC.emit(S, 'impact', { x, y, hit, src: src2 }); }
   else IC.log(S, 'info', 'IMPACT', `${lbl.charAt(0).toUpperCase() + lbl.slice(1)} struck open ground ${IC.nearPlace(S, x, y)}.`);

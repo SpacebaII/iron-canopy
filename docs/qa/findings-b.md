@@ -35,3 +35,6 @@ Severity: **blocker** (breaks play), **ugly** (looks unfinished or confuses), **
 | 25 | Supply room | "guided rockets" in lower case among "IR missiles", "SR missiles" | minor | b31-depots | yes |
 | 26 | Replay | "Computed radius is NaN" (coordinator's smoke run) | – | – | not reproduced after brief 34: none in the engagement, long-range shot, fighter, drone, helicopter, airliner, live or gallery scenes; every model's geometry is finite |
 | 27 | Quick war, Supply | The Forward Depot starts with "0 units within 140 km": nothing is deployed near it | minor | b31-depots | the officer's line now says it supplies what you deploy up there; the placement is balance, left as is |
+| 28 | Quick war, 2 days (headless scan of every message) | About 70 near misses and 170 diversions in two days, each a toast or an incident: civil air traffic control noise the war commander cannot act on | ugly | – | yes: outside the Career, separation and near misses go to the Journal (no toasts, no news in a war); diversions toast once an hour per airport |
+| 29 | Impact log | "SNT-2 hit by an one-way attack drone" | minor | – | yes: "a one-way…" |
+| 30 | Journal | Tag "NCTR" (jargon) on type recognition | minor | – | yes: "TYPE" |

@@ -975,13 +975,13 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   if (near) { N.stats.near++; N.day.near++; }
   const txt = near ? `${a.cs} and ${b.cs} passed ${gap} ${at}` : `${a.cs} and ${b.cs} lost spacing ${at}: ${gap}`;
   if (near && S.inc) for (const it of S.inc.list) if (it.kind === 'separation' && (it.ref === a || it.ref === b)) it.done = true;
-  // a war commander gets near misses on screen; lost spacing alone stays in the log
-  if (near || S.story) IC.incidentAdd(S, near ? 'nearmiss' : 'separation', ifr, txt, near ? 'alarm' : 'warn');
-  IC.log(S, near || S.story ? 'warn' : 'info', 'AIRSPACE', `${near ? 'Near miss: ' : ''}${txt}. ${why}.`, near || S.story ? { x, y } : null);
+  // civil separation is the Career's: elsewhere near misses and lost spacing stay in the Journal and the news
+  if (S.story) IC.incidentAdd(S, near ? 'nearmiss' : 'separation', ifr, txt, near ? 'alarm' : 'warn');
+  IC.log(S, S.story ? 'warn' : 'info', 'AIRSPACE', `${near ? 'Near miss: ' : ''}${txt}. ${why}.`, S.story ? { x, y } : null);
   for (const t of [a, b]) if (t.tail && S.av) { const al = IC.avAirline(S, t.tail.al); if (al) al.sat = Math.max(0, al.sat - (near ? 8 : 2)); }
   if (near) {
     S.support = Math.max(0, S.support - 1);
-    IC.news(S, `Near miss ${at}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
+    if (S.story || !(S.enemy && S.enemy.war)) IC.news(S, `Near miss ${at}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
     if (S.camp && IC.card && !(S.enemy && S.enemy.war)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · ${at}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why, cause });
