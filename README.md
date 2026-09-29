@@ -14,7 +14,7 @@ python devserver.py
 
 then go to http://localhost:8766/iron-canopy/index.html.
 
-On the start screen, **Career** is the story mode, **Academy** has eight short lessons on the defence systems, **Quick war** skips straight to the crisis, and **Sandbox** starts at war with everything deployed.
+On the start screen, **Career** is the story mode, **Academy** has eight short lessons on the defence systems, **Quick war** skips straight to the crisis, **Test range** is an empty plane to try any system against any threat, and **Sandbox** starts at war with everything deployed.
 
 ## What is in it
 
@@ -27,7 +27,7 @@ On the start screen, **Career** is the story mode, **Academy** has eight short l
 
 ## Controls
 
-Drag to pan, scroll to zoom (zoom all the way in to watch aircraft at the gate), click to select, right-click to give orders. Space pauses, 1–6 set the speed, S skips ahead until something needs you. War rooms: V aviation, T staff, A air, G army, L supply, I industry, N intelligence, K research, J journal.
+Drag to pan, scroll to zoom (zoom all the way in to watch aircraft at the gate), click to select, right-click to give orders. Space pauses, 1–6 set the speed, S skips ahead until something needs you, 7 waits for money in the Career. Rooms: V Aviation, C Career, E Economy, A Air, L Supply, I Intel, R Research, J Journal, ? Guide; Esc backs out of anything and opens the menu. The start screen's Controls page lists the rest.
 
 ## Code
 
@@ -47,10 +47,12 @@ All game code is in `iron-canopy/js/`, loaded in order by `iron-canopy/index.htm
 The simulation runs headless in Node (`headless.js` loads the game files and stubs out the canvas). GitHub runs the suite on every push.
 
 ```
-npm test                       # the whole suite, about 40 s
+npm test                       # the whole suite (about 12 minutes on four cores)
 npm run test:quick             # skip the slow runs
 node tests/run.js airport      # only tests whose name contains "airport"
 ```
+
+Before a release, `npm run qa` checks names the code uses but never defines (ESLint's no-undef), lints the words on screen (`tools/textlint.js`) and plays every mode in a browser (`tools/smoke.js`, needs `npm i --no-save playwright`). `npm run package` builds the upload zip in `dist/` (`tools/package.js`); `docs/release/` has the store page, screenshots and the playtester guide.
 
 Longer diagnostic runs print what happens as they go: `node storytest.js 12345 30` (a scripted player through the Career), `node camptest.js 12345 24` (Quick war), `node academytest.js [lesson]`.
 

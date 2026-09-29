@@ -174,7 +174,7 @@ function contractRow(d) {
   const dots = Array.from({ length: IC.DEAL.strikes }, (_, i) => `<i class="${i < d.strikes ? 'on' : ''}"></i>`).join('');
   const cost = d.value * left / 86400 * 0.3 + 5;
   return `<div class="li contract"><b>${livery(al)}${esc(al.name)} · ${esc(routeLbl(d))} <span class="muted">· ${d.n} × ${esc(IC.ACTYPES[d.type].short)} · ${U.pct(d.charge)} charges${d.excl ? ' · exclusive' : ''}</span></b>
-    <small>${bar(f, d.badT ? 'var(--hostile)' : 'var(--friend)')} ${U.dur(left)} left · ${d.flown} flown, ${d.late} late, ${d.cancel} cancelled · penalties ${U.money(d.paid)} · <span class="strikes" title="Bad days: ${IC.DEAL.strikes} end the deal">${dots}</span>${d.badT ? ` · <span class="hostile">a facility it needs is missing: it walks out in ${U.dur(Math.max(0, 12 * 3600 - (S.time - d.badT)))}</span>` : ''}</small>
+    <small>${bar(f, d.badT ? 'var(--hostile)' : 'var(--friend)')} ${S.mode === 'story' ? U.months(left) : U.dur(left)} left · ${d.flown} flown, ${d.late} late, ${d.cancel} cancelled · penalties ${U.money(d.paid)} · <span class="strikes" title="Bad days: ${IC.DEAL.strikes} end the deal">${dots}</span>${d.badT ? ` · <span class="hostile">a facility it needs is missing: it walks out in ${U.dur(Math.max(0, 12 * 3600 - (S.time - d.badT)))}</span>` : ''}</small>
     <span class="la"><button class="btn sm" data-act="av" data-v="al" data-id="${al.id}">Airline</button><button class="btn sm" data-act="av" data-v="break" data-id="${d.id}" title="End the deal now: we pay ${U.money(cost)} and our name suffers">End · ${U.money(cost)}</button></span></div>`;
 }
 /* ---- Airlines ---- */
@@ -619,7 +619,7 @@ function journal() {
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
   return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
-    <ol class="log">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
+    <ol class="log${S.mode === 'story' ? ' cal' : ''}">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
 }
 
 /* ---------- reference ---------- */

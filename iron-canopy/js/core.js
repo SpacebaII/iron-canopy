@@ -3,6 +3,7 @@ window.IC = window.IC || {};
 (function (IC) {
 'use strict';
 
+IC.VERSION = '1.0';     // shown on the start screen; tools/package.js names the zip by it
 IC.WW = 57000;         // world width in units (1 unit = 100 m → 5,700 km)
 IC.WH = 43000;         // world height (4,300 km)
 IC.GS = 10;            // game seconds per real second at 1× speed
@@ -134,6 +135,8 @@ const U = IC.U = {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   },
   day: t => Math.floor(t / 86400) + 1,
+  // a name in running text: "Fuel tank" → "fuel tank", but "Landing system (ILS)" keeps its capitals where they are an abbreviation
+  lc: s => String(s).replace(/\b[A-Z](?=[a-z])/g, c => c.toLowerCase()),
   /* "March, Year 3", and the short form "Mar Y3" for log lines */
   date: (t, S) => { const c = IC.calAt(S, t); return `${IC.MONTHS[c.mo]}, Year ${c.y}`; },
   dateS: (t, S) => { const c = IC.calAt(S, t); return `${IC.MONTHS[c.mo].slice(0, 3)} Y${c.y}`; },
@@ -158,6 +161,8 @@ const U = IC.U = {
   dur(gs) {
     if (gs < 90) return Math.max(0, Math.ceil(gs)) + ' s';
     if (gs < 5400) return Math.ceil(gs / 60) + ' min';
+    // (past three days hours stop meaning much: "1691.2 h" is 70 days)
+    if (gs >= 3 * 86400) return (gs / 86400).toFixed(gs < 10 * 86400 ? 1 : 0) + ' days';
     return (gs / 3600).toFixed(1) + ' h';
   },
   /* game seconds → real seconds at 1× (for the "about a minute" style hints) */

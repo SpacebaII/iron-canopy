@@ -3087,6 +3087,24 @@ test('save: a save from another version of the map generator, or of the game, is
   assert(/not an Iron Canopy save/.test(IC.saveProblem({ hello: 1 })), 'any JSON passes for a save');
 });
 
+/* ---------- words on screen ---------- */
+test('text: the interface\'s own words have no doubled spaces, repeated words, "aircrafts" or American spellings', () => {
+  const P = require('../tools/textlint.js').lintSource();
+  assert(!P.length, `${P.length} problems, first: ${P[0]}`);
+});
+test('text: ten hours of Career and four of Quick war write no "undefined", "NaN" or "1 minutes"', () => {
+  const T = require('../tools/textlint.js'), out = [], seen = new Set();
+  const take = (S, where) => {
+    const L = (S.logs || []).map(l => l.msg).concat(S.camp ? S.camp.cards.map(c => `${c.title} · ${c.sub} · ${c.text}`).concat(S.camp.comms.map(c => c.text)) : [], (S.news || []).map(n => n.text));
+    for (const t of L) if (!seen.has(t)) { seen.add(t); T.check(String(t), where, out); }
+  };
+  const C = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = C;
+  run(C, 10, player); take(C, 'Career');
+  const Q2 = IC.newGame({ seed: 778, mode: 'campaign' }); IC.S = Q2;
+  run(Q2, 4, S => Q.commander(S)); take(Q2, 'Quick war');
+  assert(!out.length, `${out.length} problems, first: ${out[0]}`);
+}, true);
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

@@ -89,7 +89,7 @@ ui.bind = function (state) {
   S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false;
   // nothing from the previous game stays on screen: its chapter card, its unlocks, its hints
   ui.fresh = new Set(); ui.known = null; ui.moments = []; ui.moment = null; ui.menu = false; IC.hint.clear();
-  for (const id of ['warroom', 'cine', 'unlock', 'menu']) $(id).hidden = true;
+  for (const id of ['warroom', 'cine', 'unlock', 'menu', 'tip']) $(id).hidden = true;
   ui.refresh(true);
 };
 
@@ -103,7 +103,12 @@ IC.toast = function (st, kind, tag, msg, at) {
 function feed() {
   const now = performance.now();
   ui.toasts = ui.toasts.filter(t => now - t.t < 9000);
-  setHTML($('feed'), ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
+  const el = $('feed');
+  setHTML(el, ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
+  // the newest are on top: the older ones that would run into the map controls below are left out (the Journal has them all)
+  const box = $('mapbox').getBoundingClientRect(), room = box.height ? box.top - el.getBoundingClientRect().top - 8 : Infinity;
+  let full = false;
+  for (const c of el.children) { if (!full && c.offsetTop + c.offsetHeight > room) full = true; c.style.visibility = full ? 'hidden' : ''; }
 }
 
 /* ---------- waiting for money: the chooser, and the line that says what is still to come ---------- */
@@ -136,7 +141,7 @@ function topbar() {
   const st = S.story, act = st ? st.act : 4;
   if (S.range) { const R = IC.rangeStats(S); setHTML($('stats'), `<div class="stat"><span>Shots</span><strong>${R.shots}</strong></div><div class="stat"><span>Kills</span><strong class="ok">${R.kills}</strong></div><div class="stat"><span>Leakers</span><strong class="${R.leaks ? 'hostile' : ''}">${R.leaks}</strong></div>`); }
   const left = S.moneyLeft == null ? Infinity : S.moneyLeft, short = left < 24;
-  const money = `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${flow >= 0 ? 'ok' : 'hostile'}">${flow >= 0 ? '+' : '−'}${Math.abs(flow).toFixed(0)}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
+  const money = `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${Math.round(flow) >= 0 ? 'ok' : 'hostile'}">${Math.round(flow) >= 0 ? '+' : '−'}${Math.abs(Math.round(flow))}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
@@ -145,7 +150,7 @@ function topbar() {
       <div class="stat" title="The Minister's confidence in you. ${esc(IC.storyDismissal(S).text)}"><span>Confidence</span><strong class="${st.standing > 50 ? '' : st.standing > 25 ? 'amber' : 'hostile'}">${Math.round(st.standing)}</strong>${meter(st.standing / 100, st.standing > 50 ? 'var(--ok)' : st.standing > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>
       <div class="stat" title="Average airline satisfaction"><span>Airlines</span><strong class="${!S.av.airlines.length ? 'muted' : sat > 60 ? '' : sat > 40 ? 'amber' : 'hostile'}">${S.av.airlines.length ? Math.round(sat) + '%' : 'none yet'}</strong>${meter(S.av.airlines.length ? sat / 100 : 0, 'var(--civil)')}</div>
       <div class="stat" title="Passengers through our airports in the last hour"><span>Pax/h</span><strong>${Math.round(S.av.paxHour || 0).toLocaleString('en-US')}</strong></div>
-      ${act >= 2 ? `<div class="stat" title="Tension with ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
+      ${act >= 2 ? `<div class="stat" title="Tension with the ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
       ${act >= 4 ? `<div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>` : ''}`);
   } else if (!S.range) setHTML($('stats'), `${money}
     <div class="stat" title="National morale: below 12% the government asks for terms"><span>Morale</span><strong class="${m > 55 ? '' : m > 30 ? 'amber' : 'hostile'}">${Math.round(m)}%</strong>${meter(m / 100, m > 55 ? 'var(--ok)' : m > 30 ? 'var(--amber)' : 'var(--hostile)')}</div>
@@ -449,7 +454,7 @@ function modeHint() {
     airSite: () => `Click an enemy target for ${m.r.name}.`,
     fireAt: () => `Click an enemy target for ${m.unit.name}.`,
     build: () => buildHint(m),
-    bmove: () => `Click where the ${IC.APART[m.part.kind].name.toLowerCase()} should go. R turns it. Esc to cancel.`,
+    bmove: () => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it. Esc to cancel.`,
     bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
     airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
@@ -519,7 +524,8 @@ function cine() {
     ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
-  } else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
+  } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
+  else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
 }
 ui.closeCine = () => { const el = $('cine'); if (el.hidden) return; el.hidden = true; ui.cineShown++; ui.cineT = performance.now() + 800; };
 
@@ -671,15 +677,19 @@ ui.refresh = function (force) {
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
+  // how much of the map's right side the inspector covers, for what the map draws beside the cursor
+  { const lc = document.querySelector('.leftcol').getBoundingClientRect(); ui.mapLeft = lc.height > 40 ? lc.right - $('app').getBoundingClientRect().left + 8 : 0; }
+  ui.mapRight = $('insp').innerHTML ? Math.max(0, $('app').getBoundingClientRect().right - $('insp').getBoundingClientRect().left) : 0;
   $('app').classList.toggle('at-start', !$('start').hidden);
   $('app').classList.toggle('has-room', !!ui.room);
+  $('app').classList.toggle('is-range', !!S.range);   // (the test range is an empty plane: no minimap to show)
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
 };
 function showOver() {
   $('over').hidden = false; ui.closeCine(); ui.closeMoment(); IC.hint.clear(); ui.toggleMenu(false);
   const aca = S.mode === 'academy', story = !!S.story;
   $('overKicker').textContent = aca ? 'Academy' : story ? `${IC.ACTS[S.story.act].name} · ${S.story.role}` : S.won ? 'Victory' : 'Defeat';
-  $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defense has failed';
+  $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defence has failed';
   $('overTitle').style.color = S.won ? 'var(--friend)' : 'var(--hostile)';
   $('overText').textContent = S.over;
   $('overStars').textContent = aca && S.won ? '★'.repeat(S.stars || 1) + '☆'.repeat(3 - (S.stars || 1)) : '';

@@ -158,6 +158,8 @@ function standsFor(ap, p) {
 /* ---------- runway names and groups ---------- */
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
 IC.rwEnd = (rw, dir) => (rw.ends ? rw.ends[dir > 0 ? 'a' : 'b'] : '') || (dir > 0 ? 'A' : 'B');
+// (as on a chart: the lower number first, "Runway 08/26")
+const rwName = rw => `Runway ${parseInt(rw.ends.a) <= parseInt(rw.ends.b) ? `${rw.ends.a}/${rw.ends.b}` : `${rw.ends.b}/${rw.ends.a}`}`;
 function nameRunways(ap) {
   const rws = ap.parts.filter(p => p.kind === 'runway');
   const num = (rw, dir) => { const d = rwDir(rw), n = Math.round(IC.bearing(Math.atan2(d.y * dir, d.x * dir)) / 10) || 36; return String(n > 36 ? n - 36 : n).padStart(2, '0'); };
@@ -184,7 +186,9 @@ function nameRunways(ap) {
       L.forEach((rw, i) => { rw.ends[e] = k + suf[i]; });
     }
   }
-  for (const rw of rws) if (!rw.custom) rw.name = `Runway ${rw.ends.a}/${rw.ends.b}`;
+  for (const rw of rws) if (!rw.custom) rw.name = rwName(rw);
+  // (work already queued on a runway goes by its new name)
+  for (const w of ap.works || []) if (w.kind === 'build' && w.part && w.part.kind === 'runway') w.label = `Build ${w.part.name}`;
 }
 IC.aptNameRunways = nameRunways;
 /* runways that cannot be used independently: they cross, or they are parallel and closer than 760 m */
@@ -501,7 +505,7 @@ IC.aptStats = function (S, ap) {
   for (const p of ap.parts) {
     if (!p.built) continue;
     const w = p.shut && ap.works.find(x => x.id === p.shut);
-    if (w) st.warn.push(`${p.name || IC.APART[p.kind].name} closed for works (${w.kind === 'upgrade' ? 'new pavement' : w.label.toLowerCase()}) for about ${U.dur(Math.max(60, (1 - w.prog) * w.dur))}.`);
+    if (w) st.warn.push(`${p.name || IC.APART[p.kind].name} closed for works (${w.kind === 'upgrade' ? 'new pavement' : U.lc(w.label)}) for about ${U.dur(Math.max(60, (1 - w.prog) * w.dur))}.`);
     if (p.wear >= 1) st.warn.push(`${p.name || IC.APART[p.kind].name}: the ${IC.PAVE[IC.paveOf(p)].name.toLowerCase()} is worn out; closed until resurfaced.`);
     else if (p.wear >= 0.5) st.warn.push(`${p.name || IC.APART[p.kind].name}: ${U.pct(p.wear)} worn. Aircraft heavier than ${IC.PAVE[IC.paveOf(p)].t} t break up ${IC.PAVE[IC.paveOf(p)].name.toLowerCase()}.`);
   }
@@ -790,7 +794,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
     const hard = part.kind === 'has' ? 0.35 : part.kind === 'alert' ? 0.7 : 1;
     part.hp = Math.max(0, part.hp - dmg * (1 - d / rb * 0.5) * hard);
     if (was > part.max * 0.25 && part.hp <= part.max * 0.25) {
-      hitNames.push(`${IC.APART[part.kind].name.toLowerCase()} destroyed`);
+      hitNames.push(`${U.lc(IC.APART[part.kind].name)} destroyed`);
       IC.addScar(S, { kind: 'burn', x: part.x, y: part.y, r: Math.max(part.w || part.r * 2, part.h || 0) * 1.4 });
       if (part.kind === 'fuel') { part.burning = 5400; part.stock = 0; IC.explode(S, part.x, part.y, 1.8, 'ground', { big: 0.6 }); IC.addFire(S, part.x, part.y, 1.8, 9000); }
       else if (part.kind === 'ammo') { IC.explode(S, part.x, part.y, 2, 'ground', { big: 0.8 }); IC.addFire(S, part.x, part.y, 1.2, 6000); IC.later(S, 2, 'aptSecondary', S, ap, part.x + 0.05, part.y + 0.05); }
@@ -835,13 +839,13 @@ IC.aptRepairList = function (ap) {
   for (const p of ap.parts) {
     if (!p.built) continue;
     if (p.kind === 'runway') for (const c of p.craters) L.push(c.wreck ? { key: 'cr:' + c.id, label: `Clear wreckage from ${p.name || 'the runway'}`, cost: 6, dur: 2400, part: p, crater: c } : { key: 'cr:' + c.id, label: `Fill crater on ${p.name || 'the runway'}`, cost: 10, dur: 700 * paveK(p, 'patch'), part: p, crater: c });
-    if (p.wear >= 0.3) L.push({ key: 'rs:' + p.id, label: `Resurface ${p.name || IC.APART[p.kind].name.toLowerCase()} (${U.pct(p.wear)} worn)`, cost: Math.max(3, IC.partCost(ap, p) * 0.3 * p.wear), dur: Math.max(600, IC.partBuildTime(ap, p) * 0.3 * p.wear), part: p, wear: true });
+    if (p.wear >= 0.3) L.push({ key: 'rs:' + p.id, label: `Resurface ${p.name || U.lc(IC.APART[p.kind].name)} (${U.pct(p.wear)} worn)`, cost: Math.max(3, IC.partCost(ap, p) * 0.3 * p.wear), dur: Math.max(600, IC.partBuildTime(ap, p) * 0.3 * p.wear), part: p, wear: true });
     else if (p.kind === 'taxi') for (const i in p.cut) L.push({ key: 'tx:' + p.id + ':' + i, label: 'Repair taxiway', cost: 4, dur: 420, part: p, seg: +i });
     else if (p.kind === 'apron') {
       for (const s of p.stands || []) if (s.hp <= 0) L.push({ key: 'st:' + s.id, label: 'Repair stand', cost: 5, dur: 500, part: p, stand: s });
       if (p.hp < p.max * 0.8) L.push({ key: 'pt:' + p.id, label: 'Resurface apron', cost: Math.max(3, IC.partCost(ap, p) * 0.3), dur: 900, part: p });
     }
-    else if (p.hp < p.max && (!p.aged || p.hp < p.max * 0.8)) { const f = 1 - p.hp / p.max; L.push({ key: 'pt:' + p.id, label: `${p.hp <= p.max * 0.25 ? 'Rebuild' : p.aged ? 'Renew' : 'Repair'} ${IC.APART[p.kind].name.toLowerCase()}${p.aged ? ` (${U.pct(p.hp / p.max)} condition)` : ''}`, cost: Math.max(2, IC.partCost(ap, p) * f * 0.6), dur: Math.max(300, IC.partBuildTime(ap, p) * f * 0.7), part: p }); }
+    else if (p.hp < p.max && (!p.aged || p.hp < p.max * 0.8)) { const f = 1 - p.hp / p.max; L.push({ key: 'pt:' + p.id, label: `${p.hp <= p.max * 0.25 ? 'Rebuild' : p.aged ? 'Renew' : 'Repair'} ${U.lc(IC.APART[p.kind].name)}${p.aged ? ` (${U.pct(p.hp / p.max)} condition)` : ''}`, cost: Math.max(2, IC.partCost(ap, p) * f * 0.6), dur: Math.max(300, IC.partBuildTime(ap, p) * f * 0.7), part: p }); }
   }
   return L;
 };
@@ -869,7 +873,7 @@ IC.cancelWork = function (S, b, id) {
   b.works = b.works.filter(x => x !== w);
   IC.bldRelease(b, w);
   // money already spent on a stage is gone; the rest was never paid
-  if (w.kind === 'build') { IC.aptRemove(S, b, w.part.id); if (w.spent) IC.log(S, 'info', 'BUILD', `${b.name}: ${w.label.toLowerCase()} cancelled; ${U.money(w.spent)} already spent.`); }
+  if (w.kind === 'build') { IC.aptRemove(S, b, w.part.id); if (w.spent) IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} cancelled; ${U.money(w.spent)} already spent.`); }
 };
 function autoQueue(S, ap) {
   // runway craters and cut taxiways always; with a Chief Engineer on duty, everything else too
@@ -897,7 +901,7 @@ IC.aptPlan = function (S, ap, part, o) {
   const w = IC.bldStart(S, ap, part, pv);
   ap.works.push(w);
   IC.aptExtent(ap);
-  IC.log(S, 'info', 'BUILD', `${ap.name}: ${IC.APART[part.kind].name.toLowerCase()} planned (${U.money(pv.cost)} paid as the work runs, about ${U.dur(w.dur)} of engineer work).`);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(IC.APART[part.kind].name)} planned (${U.money(pv.cost)} paid as the work runs, about ${U.dur(w.dur)} of engineer work).`);
   IC.emit(S, 'aptPlan', { ap, part });
   return part;
 };
@@ -1009,7 +1013,7 @@ function taxiThrough(pts, q) {
 IC.partName = function (ap, q) {
   if (q.kind === 'runway') return q.name || 'the runway';
   const D = IC.APART[q.kind] || { name: q.kind }, same = ap.parts.filter(p => p.kind === q.kind), i = same.indexOf(q);
-  return same.length > 1 && i >= 0 ? `${D.name} ${i + 1}` : `the ${D.name.toLowerCase()}`;
+  return same.length > 1 && i >= 0 ? `${D.name} ${i + 1}` : `the ${U.lc(D.name)}`;
 };
 /* two rotated rectangles overlap by more than a margin (separating axis test) */
 function rectsOverlap(A, B, m) {
@@ -1039,14 +1043,14 @@ IC.updateBases = function (S, dt) {
       if (w.prog < 1) continue;
       w.done = true;
       IC.bldRelease(b, w);
-      if (w.kind === 'upgrade') { w.part.mat = w.mat; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${w.label.toLowerCase()} done; open again.`, w.part.x != null ? w.part : b); }
+      if (w.kind === 'upgrade') { w.part.mat = w.mat; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
       else if (w.kind === 'build') {
         const before = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
         if (w.part.kind === 'runway' || w.part.kind === 'apron' || w.part.kind === 'alert') resolveFor(b, w.part);
         if (w.part.kind === 'apron' || DOOR(w.part.kind)) IC.aptAutoJoin(b, w.part);
         if (w.part.kind === 'taxi') for (const q of b.parts) if (q.built && (q.kind === 'apron' || DOOR(q.kind))) IC.aptAutoJoin(b, q);
-        IC.aptExtent(b); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.kind === 'runway' ? w.part.name || 'runway' : IC.APART[w.part.kind].name.toLowerCase()} complete.`, w.part.x != null ? w.part : b); IC.emit(S, 'aptBuilt', { ap: b, part: w.part });
+        IC.aptExtent(b); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.kind === 'runway' ? w.part.name || 'runway' : U.lc(IC.APART[w.part.kind].name)} complete.`, w.part.x != null ? w.part : b); IC.emit(S, 'aptBuilt', { ap: b, part: w.part });
         b.dirty = true; IC.bldOpened(S, b, w, before); }
       else {
         const it = w.it;
@@ -1072,7 +1076,7 @@ IC.updateBases = function (S, dt) {
         const was = q.hp;
         q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? 9 : 4) * (1 - d / 1.6));
         if (was > q.max * 0.25 && q.hp <= q.max * 0.25) {
-          IC.log(S, 'leak', 'FIRE', `${b.name}: fire spreads to the ${IC.APART[q.kind].name.toLowerCase()}.`, q);
+          IC.log(S, 'leak', 'FIRE', `${b.name}: fire spreads to the ${U.lc(IC.APART[q.kind].name)}.`, q);
           if (q.kind === 'fuel') { q.burning = 5400; q.stock = 0; IC.explode(S, q.x, q.y, 1.6, 'ground'); IC.addFire(S, q.x, q.y, 1.6, 8000); }
           b.dirty = true;
         }
@@ -1223,7 +1227,7 @@ IC.aptPlanRunway = function (S, ap, a, b, name, o) {
   const part = { kind: 'runway', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, name: name || `Runway ${ap.parts.filter(p => p.kind === 'runway').length + 1}` };
   if (!IC.aptCanPlace(S, ap, part)) { IC.log(S, 'warn', 'BUILD', 'A runway cannot go there: it leaves the site or runs into a building.'); return null; }
   const r = IC.aptPlan(S, ap, part, o);
-  if (r && !name) { nameRunways(ap); r.name = `Runway ${r.ends.a}/${r.ends.b}`; }
+  if (r && !name) { nameRunways(ap); r.name = rwName(r); }
   return r;
 };
 /* plan an area or building; area parts take w and h */
@@ -1240,7 +1244,7 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
     placeILS(ap, part);
     return IC.aptPlan(S, ap, part, o);
   }
-  if (!IC.aptCanPlace(S, ap, part)) { IC.log(S, 'warn', 'BUILD', `The ${D.name.toLowerCase()} does not fit there: it overlaps another part or leaves the site.`); return null; }
+  if (!IC.aptCanPlace(S, ap, part)) { IC.log(S, 'warn', 'BUILD', `The ${U.lc(D.name)} does not fit there: it overlaps another part or leaves the site.`); return null; }
   return IC.aptPlan(S, ap, part, o);
 };
 /* why a part cannot be bulldozed now: aircraft parked on an apron or inside a hangar would be left nowhere */
@@ -1254,7 +1258,7 @@ IC.aptRemoveBlock = function (S, ap, p) {
 IC.aptRemove = function (S, ap, id) {
   const p = ap.parts.find(x => x.id === id); if (!p) return false;
   const why = p.built ? IC.aptRemoveBlock(S, ap, p) : '';
-  if (why) { IC.log(S, 'warn', 'BUILD', `${ap.name}: the ${(IC.APART[p.kind] || {}).name ? IC.APART[p.kind].name.toLowerCase() : p.kind} cannot be bulldozed yet. ${why}`, ap); return false; }
+  if (why) { IC.log(S, 'warn', 'BUILD', `${ap.name}: the ${(IC.APART[p.kind] || {}).name ? U.lc(IC.APART[p.kind].name) : p.kind} cannot be bulldozed yet. ${why}`, ap); return false; }
   const gone = ap.parts.filter(x => x === p || (p.kind === 'runway' && x.kind === 'ils' && x.rw === p.id));
   for (const w of ap.works.filter(x => gone.includes(x.part) || (x.it && gone.includes(x.it.part)))) { ap.works = ap.works.filter(x => x !== w); IC.bldRelease(ap, w); }
   ap.parts = ap.parts.filter(x => !gone.includes(x));
@@ -1298,6 +1302,8 @@ IC.foundAirport = function (S, x, y, a) {
   ap.template = 'new'; ap.crews = 1; ap.works = []; ap.autoRepair = true; ap.survey = sv; ap.mat = { asph: 0, conc: 0, steel: 0 };
   S.infra.push(ap); S.byId[ap.id] = ap;
   IC.aptStats(S, ap);
+  // (the story names it before anyone else mentions it: the national airport is the capital's International)
+  IC.emit(S, 'naming', ap);
   // noise: towns under the flight paths object, the more homes the louder
   for (const [name, n] of Object.entries(sv.noise)) {
     const c = IC.cities(S).find(q => q.name === name);

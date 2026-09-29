@@ -718,7 +718,8 @@ IC.money = function (S) {
   const out = [['upAD', L.upAD], ['upAir', L.upAir], ['upApt', L.upApt], ['upStaff', L.upStaff], ['loan', L.loan]].filter(([, v]) => v > 0.005);
   // (before the war the only "air defence" the player runs is civil radar: call it that)
   const civilOnly = S.units.every(u => u.d.civil || u.type === 'ssr');
-  const name = k => k === 'av' ? 'Airline fees' : k === 'upAD' && civilOnly ? 'Running costs: radars' : IC.STATEMENT[k];
+  // (before any airport opens the airlines pay only to fly over us: say so)
+  const name = k => k === 'av' ? ((r.land || 0) + (r.pax || 0) + (r.cargo || 0) > 0.005 ? 'Airline fees' : 'Overflight fees') : k === 'upAD' && civilOnly ? 'Running costs: radars' : IC.STATEMENT[k];
   const line = ([k, v]) => ({ k, name: name(k), v, why: IC.moneyWhy(S, k, r) });
   const I = inc.map(line).sort((a, b) => b.v - a.v), O = out.map(line).sort((a, b) => b.v - a.v);
   const inH = I.reduce((s, l) => s + l.v, 0), outH = O.reduce((s, l) => s + l.v, 0), net = inH - outH;
@@ -734,7 +735,7 @@ IC.moneyWhy = function (S, k, r) {
   const mobTxt = S.mobil ? ` ${mob.name} ${k.startsWith('up') ? `adds ${U.pct(mob.up - 1)}` : `takes ${U.pct(1 - mob.tax)}`}.` : '';
   switch (k) {
     case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
-    case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid per flight at our airports, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
+    case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid by the airlines for landings and passengers at our airports, and for flying over the country, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
     case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${IC.STORY_TAX[st.act] ? U.pct(IC.STORY_TAX[st.act]) + ' of them' : 'none: they go to the Treasury'}.` : S.mode === 'campaign' ? ` The air defence gets ${U.pct(IC.QW_TAX_SHARE)} of them; the rest runs the country.` : ''}${mobTxt}`; }
     case 'trade': return `15% of what ${n(S.econ ? S.econ.inds.length : 0, 'remote industry', 'remote industries')} sell. Fast roads to a city and air cargo within ${IC.GROWTH.indCatch} h sell more.${st && st.act < 4 ? ' In the Career this grows with the acts, like taxes.' : ''}`;
     case 'apt': return 'Airports earn a fixed amount when no airlines are modelled.';
