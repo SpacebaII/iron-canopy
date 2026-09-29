@@ -33,7 +33,8 @@ module.exports = {
     { kind: 'terminal', poly: [7, -7.6, 16, -7.6, 16, -6.6, 23, -6.6, 23, -9.2, 7, -9.2], name: 'Main Terminal', roof: 'tent' },
     { kind: 'terminal', poly: R(33, -10.2, 38, -9.2), name: 'East Concourse', noApron: true },
     { kind: 'tower', poly: R(26, -6, 26.14, -5.86) },
-    { kind: 'fire', poly: R(12, 1.5, 12.28, 1.7) }
+    { kind: 'fire', poly: R(12, 1.5, 12.28, 1.7) },
+    { kind: 'fuel', c: [27, -8.6], r: 0.13 }, { kind: 'fuel', c: [27.6, -8.6], r: 0.13 }, { kind: 'fuel', c: [27, -9.2], r: 0.13 }
   ],
   bridges: [{ poly: R(23, -8.05, 33, -7.65), clear: 13, name: 'the bridge to the East Concourse', joins: [0, 1] }],
   movers: [{ pts: [15, -8.4, 25, -12.5, 35.5, -9.8], lv: -1, name: 'the concourse train', stops: [0, 1] }],

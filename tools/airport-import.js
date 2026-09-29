@@ -174,7 +174,8 @@ function importAirport(key, o) {
     if (t.amenity === 'fire_station' || /fire station|arff|crash fire/i.test(s)) return 'fire';
     if (t.aeroway === 'hangar' || t.building === 'hangar') return 'hangar';
     if (/cargo|freight/i.test(s) || (t.building === 'warehouse')) return 'cargo';
-    if (t.man_made === 'storage_tank' && /fuel|oil|jet/i.test([t.content, t.substance, s].join(' '))) return 'fuel';
+    // (a storage tank inside the aerodrome is fuel unless the map says it holds water: the map rarely says)
+    if (t.man_made === 'storage_tank' && !/water|sewage/i.test([t.content, t.substance, s].join(' '))) return 'fuel';
     return 'support';
   };
   const tanks = [];
@@ -182,7 +183,7 @@ function importAirport(key, o) {
     if (B.tags['building:part'] && !B.tags.building) continue;
     const pts = simplify(B.pts.concat([B.pts[0]]), 0.01).slice(0, -1); if (pts.length < 3) continue;
     const a = area(pts), c = centroid(pts), k = kindOf(B.tags);
-    if (!aero || !airside(c)) { if (!(k === 'terminal' || /parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
+    if (aero && !airside(c)) { if (!(k === 'terminal' || /parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
     if (k === 'support' && a < 0.04) continue;   // (sheds under 400 m² are left out)
     if (k === 'fuel') { tanks.push({ c, r: Math.sqrt(a / Math.PI) }); continue; }
     const roof = (C.roofs || []).find(([re]) => re.test(B.tags.name || '')), lv = num(B.tags['building:levels'], 0);
@@ -190,7 +191,7 @@ function importAirport(key, o) {
     if (parking) continue;   // (garages come in with the car parks)
     L.blds.push({ kind: k, poly: flat(pts), name: B.tags.name || undefined, roof: roof ? roof[1] : undefined, lvls: lv || undefined, noApron: k === 'terminal' || undefined, _p: pts, _a: a });
   }
-  for (const n of O.N.values()) if (n.tags && n.tags.man_made === 'storage_tank' && /fuel|oil|jet/i.test([n.tags.content, n.tags.substance, n.tags.name].join(' '))) tanks.push({ c: proj(n.lat, n.lon), r: 0.13 });
+  for (const n of O.N.values()) if (n.tags && n.tags.man_made === 'storage_tank' && !/water|sewage/i.test([n.tags.content, n.tags.substance, n.tags.name].join(' ')) && airside(proj(n.lat, n.lon))) tanks.push({ c: proj(n.lat, n.lon), r: 0.13 });
   for (const n of O.N.values()) if (n.tags && (n.tags.aeroway === 'control_tower' || n.tags['tower:type'] === 'airport_control') && !L.blds.some(b => b.kind === 'tower' && polyDist(proj(n.lat, n.lon), b._p) < 0.2)) { const c = proj(n.lat, n.lon); L.blds.push({ kind: 'tower', poly: flat([{ x: c.x - 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y + 0.07 }, { x: c.x - 0.07, y: c.y + 0.07 }]), name: n.tags.name, _p: [] }); }
   for (const t of tanks) L.blds.push({ kind: 'fuel', c: [r1(t.c.x), r1(t.c.y)], r: r1(Math.max(0.06, t.r)) });
 
@@ -318,7 +319,68 @@ ${body}
   return out;
 }
 
-module.exports = { importAirport, readOsm, projector, csv, write };
+/* ---------- the accuracy check (brief 39): the airport as the game builds it, against the sources ---------- */
+/* runway ends against OurAirports (and the map's runway lines, where it has them) in metres; gates numbered against
+   the extract's parking positions and gates; each terminal's footprint against its outline in the map. Needs the
+   game loaded (headless.js) for IC.aptFromLayout. */
+function accuracy(key, L0) {
+  const IC = global.IC || require('../headless.js');
+  const C = CFG[key], L = L0 || IC.REAL_APT[key] || importAirport(key);
+  if (!L || L.missing) return null;
+  const ap = { id: 'chk' + key, kind: 'airport', x: 0, y: 0, name: L.name };
+  IC.aptFromLayout(ap, L, { x: 0, y: 0, rot: 0 });
+  const out = { key, name: L.name, runways: [], gates: null, terminals: [] };
+  // runway ends: the source is OurAirports' latitude and longitude, projected the same way
+  const rows = C.ident ? csv(fs.readFileSync(path.join(DIR, 'ourairports-runways.csv'), 'utf8')).filter(r => r.airport_ident === C.ident && r.closed !== '1') : [];
+  const proj = projector(L.ref[0], L.ref[1]);
+  const O = C.osm && fs.existsSync(path.join(DIR, C.osm)) ? readOsm(path.join(DIR, C.osm)) : null;
+  const osmRw = O ? [...O.W.values()].filter(w => w.tags && w.tags.aeroway === 'runway' && w.nodes[0] !== w.nodes[w.nodes.length - 1]).map(w => ({ ref: w.tags.ref || '', pts: w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)) })) : [];
+  for (const rw of ap.parts.filter(p => p.kind === 'runway')) {
+    const r = { name: rw.name, len: Math.round(IC.rwLen(rw) * 100), w: Math.round(rw.w * 100) };
+    const row = rows.find(q => [q.le_ident, q.he_ident].some(e => rw.ends.a.replace(/^0/, '') === e.replace(/^0/, '')));
+    if (row) {
+      const a = proj(+row.le_latitude_deg, +row.le_longitude_deg), b = proj(+row.he_latitude_deg, +row.he_longitude_deg);
+      const same = rw.ends.a.replace(/^0/, '') === row.le_ident.replace(/^0/, '');
+      r.ourairports = Math.round(Math.max(dist(same ? a : b, rw.a), dist(same ? b : a, rw.b)) * 100 * 10) / 10;
+      r.lenSrc = Math.round(+row.length_ft * 0.3048);
+    }
+    // the map's runway line nearest this runway: the distance of each end from it, along and across
+    const m = osmRw.map(o => ({ o, d: Math.min(dist(o.pts[0], rw.a) + dist(o.pts[o.pts.length - 1], rw.b), dist(o.pts[0], rw.b) + dist(o.pts[o.pts.length - 1], rw.a)) })).sort((x, y) => x.d - y.d)[0];
+    if (m) { const e = m.o.pts, f = dist(e[0], rw.a) < dist(e[0], rw.b); r.osm = Math.round(Math.max(dist(f ? e[0] : e[e.length - 1], rw.a), dist(f ? e[e.length - 1] : e[0], rw.b)) * 100 * 10) / 10; }
+    out.runways.push(r);
+  }
+  // gates: stands with a gate number in the game, against the map's numbered parking positions (or gates)
+  IC.aptGraph(ap);
+  const st = IC.aptStands ? IC.aptStands(ap) : [];
+  const inGame = ap.parts.filter(p => p.kind === 'apron').reduce((n, p) => n + (p.stands || []).filter(s => s.name && s.contact).length, 0);
+  let src = null;
+  if (O) {
+    const refs = new Set(); for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'parking_position' && n.tags.ref) refs.add(n.tags.ref);
+    for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'parking_position' && w.tags.ref) refs.add(w.tags.ref);
+    const gates = new Set(); for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'gate' && (n.tags.ref || n.tags.name)) gates.add(n.tags.ref || n.tags.name);
+    src = { parking: refs.size, gates: gates.size };
+  }
+  out.gates = { game: inGame, stands: st.length, src };
+  // terminal footprints: the part's area in the game against the outline's area in the map
+  const area = P => { let s = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) s += (P[j].x - P[i].x) * (P[j].y + P[i].y); return Math.abs(s / 2); };
+  const srcT = O ? [...O.W.values()].filter(w => w.tags && (w.tags.aeroway === 'terminal' || w.tags.building === 'terminal') && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => ({ name: w.tags.name, a: area(w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) })) : [];
+  for (const t of ap.parts.filter(p => p.kind === 'terminal')) {
+    const a = IC.partArea(t), s0 = srcT.filter(x => x.name && x.name === t.name).sort((x, y) => Math.abs(x.a - a) - Math.abs(y.a - a))[0];
+    out.terminals.push({ name: t.name || 'terminal', ha: Math.round(a * 100) / 100, src: s0 ? Math.round(s0.a * 100) / 100 : null, off: s0 ? Math.round((a / s0.a - 1) * 1000) / 10 : null });
+  }
+  return out;
+}
+/* the check in words, one line a thing */
+function accuracyText(A) {
+  const L = [`${A.name}:`];
+  for (const r of A.runways) L.push(`  ${r.name}: ${r.len} m × ${r.w} m${r.lenSrc ? ` (source ${r.lenSrc} m)` : ''}; ends within ${r.ourairports != null ? r.ourairports + ' m of OurAirports' : '—'}${r.osm != null ? `, ${r.osm} m of the map's runway line` : ''}`);
+  const g = A.gates;
+  L.push(`  gates: ${g.game} numbered stands at a terminal (${g.stands} stands in all)${g.src ? `; the map has ${g.src.parking} numbered parking positions and ${g.src.gates} gates` : ''}`);
+  for (const t of A.terminals) L.push(`  ${t.name}: ${t.ha} ha${t.src != null ? ` (map ${t.src} ha, ${t.off > 0 ? '+' : ''}${t.off}%)` : ''}`);
+  return L.join('\n');
+}
+
+module.exports = { importAirport, readOsm, projector, csv, write, accuracy, accuracyText };
 
 if (require.main === module) {
   const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
@@ -332,4 +394,5 @@ if (require.main === module) {
     done.push(L);
   }
   if (done.length && !process.argv.includes('--check')) console.log('wrote ' + path.relative(process.cwd(), write(done)));
+  if (process.argv.includes('--check')) for (const L of done) console.log(accuracyText(accuracy(L.key, L)));
 }

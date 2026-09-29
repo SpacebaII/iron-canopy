@@ -18,7 +18,7 @@ IC.avInit = function (S) {
     day: { pax: 0, flights: 0, delays: 0, div: 0 }, hist: [], deals: [], reqT: 3 * 3600, cutT: 0, paxTotal: 0, flightsTotal: 0 };
   const apts = S.infra.filter(i => i.kind === 'airport');
   if (!apts.length) return;
-  const cap = apts.find(a => a.template === 'intl') || apts[0];
+  const cap = apts.find(a => a.showcase) || apts.find(a => a.template === 'intl') || apts[0];
   const second = apts.find(a => a !== cap && a.template === 'regional_ok') || apts[1] || cap;
   const third = apts.find(a => a !== cap && a !== second) || second;
   const ports = IC.avPorts(S);
@@ -45,6 +45,8 @@ IC.avInit = function (S) {
   add(regional, cap, { apt: third.id }, 'turbo', 2);
   add(cargo, cap, portsAll[0], 'cargo', 1);
   for (const f of foreign) { const p = port(f.country)[0], fl = IC.avFleetOf(f); if (p) add(f, cap, p, U.pick(['narrow', 'narrow', fl.find(k => IC.ACTYPES[k].seats > 300) || 'narrow']), 2); }
+  // the airport showcase: a busy day in proportion to its stands (airports-real.js)
+  if (cap.showcase && IC.showcaseTraffic) IC.showcaseTraffic(S, cap, { add, mk, ports: portsAll, second, third, foreign });
   // aircraft are spread over their routes when the game starts
   for (const t of A.tails) seedTail(S, t);
 };

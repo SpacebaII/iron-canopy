@@ -235,6 +235,35 @@ IC.bldBlueprint = function (S, ap, key, x, y, rot) {
   return made;
 };
 
+/* The showcase's day: aircraft in proportion to the airport's stands (about one and a quarter per stand, so the gates
+   stay busy all day), by stand size: wide-bodies for the large stands, narrow-bodies for the medium, regional jets and
+   turboprops for the small; freighters for the cargo stands. Flag, low-cost, regional, cargo and foreign airlines, to
+   the foreign ports and the country's other airports. */
+IC.showcaseTraffic = function (S, ap, o) {
+  ap.dirty = true; IC.aptGraph(ap); IC.aptStats(S, ap);
+  const st = IC.aptStands(ap).filter(s => s.linked && s.hp > 0);
+  const n = { l: 0, m: 0, s: 0, cargo: 0 };
+  for (const s of st) { if (s.zone === 'mil' || s.zone === 'light') continue; if (s.cargo || s.zone === 'cargo') n.cargo++; else n[s.size === 'xl' ? 'l' : s.size]++; }
+  const P = o.ports.length ? o.ports : [{ apt: o.second.id }];
+  const dom = [o.second, o.third].filter(x => x && x !== ap).map(x => ({ apt: x.id }));
+  const al = { flag: o.mk('flag', ap), budget: o.mk('budget', ap), regional: o.mk('regional', ap), cargo: o.mk('cargo', ap) };
+  // fleets: [airline, type, share of the stands of that size, destinations]
+  const plan = [
+    [al.flag, 'widel', n.l * 0.35, P], [al.flag, 'wide', n.l * 0.3, P], [al.flag, 'jumbo', n.l * 0.1, P],
+    [al.flag, 'narrow', n.m * 0.45, P.concat(dom)], [al.budget, 'narrow', n.m * 0.55, P.concat(dom)],
+    [al.regional, 'rj', n.s * 0.6, dom.concat(P)], [al.regional, 'turbo', n.s * 0.5, dom.length ? dom : P],
+    [al.cargo, 'cargo', n.cargo * 0.9, P], [al.cargo, 'cargoprop', n.cargo * 0.3, dom.length ? dom : P]
+  ];
+  for (const f of o.foreign) plan.push([f, U.pick(['wide', 'widel', 'narrow']), Math.max(1, n.l * 0.08), P.filter(p => p.k === f.country).concat(P)]);
+  let k = 0;
+  for (const [a, type, share, dest] of plan) {
+    let left = Math.round(share * 1.25);
+    // (spread over the destinations, a few aircraft to each route)
+    while (left > 0 && dest.length) { const m = Math.min(left, 3); o.add(a, ap, dest[k++ % dest.length], type, m); left -= m; }
+  }
+  return S.av.tails.length;
+};
+
 /* The fence of an airport laid out from data: the airside and its clearances (runway strips, taxiways and their
    verges, aprons, airside buildings) on a 20 m grid, gaps under 300 m closed, the mapped landside (its roads, car
    parks, garages and the terminals' landside faces) taken out, and the outline traced and straightened. Concave:

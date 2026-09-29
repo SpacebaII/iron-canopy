@@ -1368,6 +1368,41 @@ test('blueprint: a real airport planned onto a new site, turned, is paid for as 
   assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
   delete IC.REAL_APT.mini;
 }, true);
+test('accuracy: each real airport against its sources: runway ends within 30 m, gates within 5%, terminal footprints within 10%', () => {
+  const { accuracy, accuracyText } = require('../tools/airport-import.js');
+  const keys = ['mini'].concat(IC.showcaseKeys ? IC.showcaseKeys() : Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].icao));
+  for (const k of keys) {
+    const A = accuracy(k, k === 'mini' ? require('../tools/airport-import.js').importAirport('mini') : null);
+    console.log(accuracyText(A).split('\n').map(l => '        ' + l).join('\n'));
+    for (const r of A.runways) { if (r.ourairports != null) assert(r.ourairports <= 30, `${A.name} ${r.name}: an end ${r.ourairports} m from OurAirports`); if (r.osm != null) assert(r.osm <= 30, `${A.name} ${r.name}: an end ${r.osm} m from the map's runway`); }
+    const g = A.gates; if (g.src && g.src.parking) assert(Math.abs(g.game / g.src.parking - 1) <= 0.05, `${A.name}: ${g.game} gates against ${g.src.parking} in the map`);
+    for (const t of A.terminals) if (t.off != null) assert(Math.abs(t.off) <= 10, `${A.name} ${t.name}: ${t.off}% off its footprint`);
+  }
+});
+test('showcase: a day at each real airport at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates', () => {
+  IC.REAL_APT.mini = MINI;
+  const keys = [['mini', 6]].concat((IC.showcaseKeys ? IC.showcaseKeys() : []).map(k => [k, 24]));
+  for (const [k, hours] of keys) {
+    IC.seedRandom(4242);
+    const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: k, hour: 5 }); IC.S = S;
+    const ap = S.byId[S.story.cap];
+    const r = { dep: 0, arr: 0, wrongRw: 0, gate: 0, bus: 0, cargo: 0 };
+    const off = IC.on((S2, type, d) => {
+      if (S2 !== S || !d || d.ap !== ap) return;
+      if (type === 'rwMove') { r[d.k] = (r[d.k] || 0) + 1; const c = ap.cfg && ap.cfg.rw[d.rw]; if (c && ((d.k === 'dep' && c.role === 'arr') || (d.k === 'arr' && c.role === 'dep'))) r.wrongRw++; }
+      if (type === 'tailParked') { const s = IC.aptStands(ap).find(x => x.id === d.tl.stand); if (s && s.svc) r[s.svc.kind === 'cargo' ? 'cargo' : s.svc.kind === 'bus' ? 'bus' : 'gate']++; }
+    });
+    for (let i = 0; i < hours * 3600 * 4; i++) IC.step(S, 0.25);
+    off();
+    const kp = ap.kpi, oldest = ap.moves.reduce((m, x) => Math.max(m, S.time - x.born), 0);
+    console.log(`        ${ap.name}: ${hours} h, ${r.arr} arrivals and ${r.dep} departures (${Math.round((r.arr + r.dep) / hours)} an hour), ${r.gate} parked at gates, ${r.bus} by bus, ${r.cargo} at cargo stands; ${kp.div || 0} diversions, ${kp.grid || 0} gridlocks; the oldest on the ground ${U.dur(oldest)}`);
+    assert(!kp.grid && !kp.stuck, `${ap.name}: ${kp.grid || 0} gridlocks, ${kp.stuck || 0} stranded`);
+    assert(r.wrongRw === 0, `${ap.name}: ${r.wrongRw} movements on a runway set for the other kind`);
+    assert(oldest < 3 * 3600, `${ap.name}: an aircraft has been on the ground ${U.dur(oldest)}`);
+    assert(r.gate > 0 && r.arr + r.dep >= (k === 'mini' ? 30 : 400), `${ap.name}: ${r.arr + r.dep} movements, ${r.gate} at gates`);
+  }
+  delete IC.REAL_APT.mini;
+}, true);
 test('shapes: a layout turned and moved works like the original', () => {
   const A = miniGame(0), B = miniGame(1.1);
   const sa = IC.aptStands(A.ap), sb = IC.aptStands(B.ap);
