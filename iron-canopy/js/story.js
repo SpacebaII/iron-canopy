@@ -1066,10 +1066,13 @@ function foundedHere(S, ap) {
 IC.on((S, type, d) => {
   if (!S.story) return;
   const st = S.story;
+  // (things that happen again and again on the live clock push confidence at the Career's pace before the war:
+  // over a month of live days the old pushes ran it to the floor; one-off disasters keep their full weight)
+  const again = v => { st.standing += v * (st.act < 4 ? IC.CONF_PACE : 1); };
   switch (type) {
     case 'approve': st.cnt.approve++; break;
-    case 'dealBroken': st.standing -= d.byUs ? 2 : 4; if (st.act === 1 && IC.tipOnce(S, 'dealBroken', 6 * H)) say(S, 'MIN', `${d.al.name} ${d.byUs ? 'lost its deal' : 'walked out'}, and the papers have it. Airlines talk to each other: fewer offers will come until our name recovers.`); break;
-    case 'dealDone': if (!d.d.strikes) st.standing += 0.5; break;
+    case 'dealBroken': again(d.byUs ? -2 : -4); if (st.act === 1 && IC.tipOnce(S, 'dealBroken', 6 * H)) say(S, 'MIN', `${d.al.name} ${d.byUs ? 'lost its deal' : 'walked out'}, and the papers have it. Airlines talk to each other: fewer offers will come until our name recovers.`); break;
+    case 'dealDone': if (!d.d.strikes) again(0.5); break;
     case 'dealWarn': if (st.act === 1 && IC.tipOnce(S, 'dealWarn', 3 * H)) say(S, 'APT', `${d.al.name} has written about its deal: ${d.text}. They give us 12 hours.`); break;
     case 'tailParked': st.cnt.parked++; break;
     case 'founded': foundedHere(S, d); break;
@@ -1079,15 +1082,15 @@ IC.on((S, type, d) => {
       // before the airspace is the player's to design, a near miss is the controllers' old procedures failing: it
       // brings the question forward instead of costing confidence
       if (st.act === 1 && st.ch < 2) st.hurry = true;
-      else if (type === 'nearMiss' && IC.tipOnce(S, 'nearMissConf', 3 * H)) st.standing -= 2;
+      else if (type === 'nearMiss' && IC.tipOnce(S, 'nearMissConf', 3 * H)) again(-2);
       break;
     case 'overload': if (st.act === 1 && st.ch === 1) st.hurry = true; break;
     case 'infringement': st.cnt.infT.push(S.time); if (st.cnt.infT.length > 100) st.cnt.infT = st.cnt.infT.filter(t => S.time - t < 86400); break;
     case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; break;
     case 'zone': st.cnt.zone++; break;
     // a bad evening of diversions costs at most 2.4 an hour
-    case 'divert': if (S.time - (st.divT || -1e9) >= 600) { st.divT = S.time; st.standing -= 0.4; } break;
-    case 'routeCut': st.standing -= 1.5; if (IC.tipOnce(S, 'cut', 3 * 3600)) say(S, 'MIN', `${d.al.name} is cutting flights and telling the papers why. Fix what they complain about.`); break;
+    case 'divert': if (S.time - (st.divT || -1e9) >= 600) { st.divT = S.time; again(-0.4); } break;
+    case 'routeCut': again(-1.5); if (IC.tipOnce(S, 'cut', 3 * 3600)) say(S, 'MIN', `${d.al.name} is cutting flights and telling the papers why. Fix what they complain about.`); break;
     case 'tailDestroyed': st.standing -= st.act >= 4 ? 2 : 10; break;
     case 'civilKill': st.standing -= 35; if (d.tail || d.d.civil) IC.news(S, `The Director of ${IC.ACTS[st.act].role.includes('Civil') ? 'Civil Aviation' : 'Airspace Security'} faces calls to resign.`); break;
     case 'gridlock': if (IC.tipOnce(S, 'grid', 3 * 3600)) say(S, 'APT', `${d.ap.name}: two aircraft met nose to nose on a single taxiway. Parallel taxiways let traffic flow both ways.`); break;
@@ -1095,8 +1098,8 @@ IC.on((S, type, d) => {
     case 'airborne': if (d.mission && (d.mission.type === 'intercept' || d.mission.type === 'cap') && d.orderT != null) { const dt = S.time - d.orderT; st.cnt.quickest = Math.min(st.cnt.quickest, dt); if (IC.tipOnce(S, 'qra1')) say(S, 'AIR', `${d.name} airborne ${U.dur(dt)} after the order. ${dt > 420 ? 'Too slow. An alert pad at the runway end and a short taxi would halve that.' : 'Good.'}`); } break;
     case 'aff': if (d.affWhy === 'visual identification' && !d.d.civil && IC.inHome(d.x, d.y)) st.cnt.vid++; break;
     case 'kill': if (d.gray && st.act === 2 && !d.spy) { raise(S, 8); if (IC.tipOnce(S, 'grayKill', 3600)) say(S, 'INT', `We shot down their ${d.d.name.toLowerCase()}. They will say it was over their side of the border. They will remember it.`); } break;
-    case 'acLost': st.standing -= 3; break;
-    case 'unmasked': st.standing += 2; break;
+    case 'acLost': again(-3); break;
+    case 'unmasked': again(2); break;
     case 'incident': break;
   }
 });
