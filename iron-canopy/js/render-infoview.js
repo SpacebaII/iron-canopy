@@ -32,7 +32,7 @@ IC.drawInfoView = function (g, S, px, now) {
       g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
     }
     const wait = ap.moves.filter(m => !m.dead && m.holding).length;
-    legend.push(['Taxi congestion', `green flows, red queues · ${wait} waiting now · average taxi ${U.dur((ap.kpi && ap.kpi.taxi) || 0)}`], [heat(0), 'little'], [heat(0.5), 'busy'], [heat(1), 'aircraft queue here']);
+    legend.push(['Taxi congestion', `while this view is open · ${wait} waiting now · average taxi ${U.dur((ap.kpi && ap.kpi.taxi) || 0)}`], [heat(0), 'little'], [heat(0.5), 'busy'], [heat(1), 'aircraft queue here']);
   } else if (v === 'stands') {
     let max = 1; for (const x of H.s.values()) max = Math.max(max, x);
     let n = 0, used = 0;
@@ -42,7 +42,7 @@ IC.drawInfoView = function (g, S, px, now) {
       g.save(); g.translate(s.x, s.y); g.rotate(s.a); g.fillStyle = s.linked === false ? 'rgba(255,91,79,0.6)' : heat(f, 0.75); g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore();
       if (IC.cam.z > 6) label(g, `${s.name || s.id.split('s').pop()} ${IC.RAMP_SIZE[s.size] ? IC.RAMP_SIZE[s.size][0].toUpperCase() : ''}`, s.x, s.y, px);
     }
-    legend.push(['Stand use', `${used} of ${n} stands in use now`], [heat(0), 'hardly used'], [heat(0.5), 'half the time'], [heat(1), 'always full'], ['rgba(255,91,79,0.8)', 'no taxiway reaches it']);
+    legend.push(['Stand use', `${used} of ${n} stands in use now · shaded by use while this view is open`], [heat(0), 'hardly used'], [heat(0.5), 'half the time'], [heat(1), 'always full'], ['rgba(255,91,79,0.8)', 'no taxiway reaches it']);
   } else if (v === 'walk') {
     const terms = ap.parts.filter(p => (p.kind === 'terminal') && p.built);
     let far = 0;

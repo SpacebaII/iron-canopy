@@ -443,7 +443,7 @@ function runwayPaint(g, r, ppu) {
    Seven levels, each 2.5 times the last, from the regional zoom to the gate. A frame draws the level that is at least
    as sharp as the screen, from tiles painted within a time budget; where one is missing, the next coarser level
    shows until it is painted. */
-const LEVELS = [1.6, 4, 10, 25, 64, 160, 400], TPX = 512, MAXT = 90;
+const LEVELS = [1.6, 4, 10, 25, 64, 160, 400], TPX = 512, MAXT = 48;   // (48 tiles of 512 px: about 50 MB)
 const TILES = new Map();
 let tick = 0, spent = 0, spentT = 0;
 IC.paveLevels = LEVELS;

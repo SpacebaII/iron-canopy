@@ -11,16 +11,16 @@ const S_ = () => IC.S;
 
 /* The info views the bar's Info button opens (drawn by render-infoview.js) */
 IC.INFO_VIEWS = {
-  taxi: { name: 'Taxi congestion', desc: 'Where aircraft taxi and wait: green flows, red is where they queue.' },
-  stands: { name: 'Stand use', desc: 'How much of the last hours each stand has had an aircraft on it.' },
+  taxi: { name: 'Taxi congestion', desc: 'Where aircraft taxi and where they wait, while this view is open: green flows, red queues.' },
+  stands: { name: 'Stand use', desc: 'How much of the time each stand has had an aircraft on it, while this view is open.' },
   walk: { name: 'Walking to gates', desc: 'How far passengers walk from the terminal to each stand; beyond 400 m they go by bus.' },
   service: { name: 'Fuel and services', desc: 'What the hydrant pipes reach, the fire station\'s three-minute reach, and where a burning tank spreads.' },
   noise: { name: 'Noise over towns', desc: 'Under each runway\'s flight paths: the homes that hear every take-off and landing.' },
   capacity: { name: 'Runway capacity', desc: 'What each runway takes an hour in the wind now, and what it is used for.' }
 };
 
-/* the heat on each taxiway edge and the use of each stand, gathered as the game runs (game seconds, fading over
-   about two hours) */
+/* The heat on each taxiway edge and the use of each stand, gathered while the info view is open (game seconds,
+   fading over about two hours). Leave it open through a busy morning and it shows where the queues form. */
 function gather(S, ap) {
   const H = ap._iv || (ap._iv = { t: S.time, e: new Map(), s: new Map() });
   const dt = U.clamp(S.time - H.t, 0, 600); H.t = S.time; if (!dt) return H;
