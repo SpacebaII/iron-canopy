@@ -1,14 +1,14 @@
 /* Iron Canopy — the side view: a vertical slice through the map along a line, showing what flies above what.
    For a track the line runs along its path; for an airport, across it (turnable). It shows the ground, the lowest
    height radar sees, each airport's airspace as blocks (the wedding cake), military bands, holding stacks, and every
-   flight, weapon and interceptor near the line at its height, interceptors with the arc they flew. In an airport's
-   side view the floors and ceilings can be dragged. Also here: the reach chart for a unit's missiles, and the
+   flight, weapon and interceptor near the line at its height, interceptors with the arc they flew. It is a picture
+   only: the airspace is shaped on the map and in the Airspace tab. Also here: the reach chart for a unit's missiles, and the
    airport Airspace tab's and the radio's orders (IC.aspAct, IC.atcAct, IC.aspMapClick). */
 (function (IC) {
 'use strict';
 const U = IC.U;
 const esc = s => U.esc ? U.esc(s) : String(s);
-const SV = IC.side = { open: false, what: null, S: null, drag: null, ang: 0 };
+const SV = IC.side = { open: false, what: null, S: null, ang: 0 };
 const lvl = a => IC.lvlShort ? IC.lvlShort(a) : IC.flText(a);
 
 /* the slice: centre, direction, half-length (units), corridor half-width (units), height shown (km) */
@@ -61,21 +61,25 @@ IC.drawSide = function (cv, S, w) {
   // distance along
   g.textAlign = 'center';
   for (let k = -4; k <= 4; k++) { const s = k * P.L / 4; g.fillStyle = 'rgba(160,190,210,0.5)'; g.fillText(`${Math.round(Math.abs(s) / 10)} km`, X(s), H - 6); }
-  // airspace volumes cut by the line
+  // airspace volumes cut by the line, sampled along it so that notches and extensions show as they are
   if (S.asp && S.asp.vols) for (const v of S.asp.vols) {
-    const c = proj(P, v.x, v.y); if (Math.abs(c.off) >= v.r1) continue;
-    const h1 = Math.sqrt(v.r1 * v.r1 - c.off * c.off), h0 = Math.abs(c.off) < v.r0 ? Math.sqrt(v.r0 * v.r0 - c.off * c.off) : 0;
-    const C = IC.ASP_CLS[v.cls], hot = IC.ui && IC.ui.aspVol === v.id;
-    const segs = h0 ? [[c.s - h1, c.s - h0], [c.s + h0, c.s + h1]] : [[c.s - h1, c.s + h1]];
-    for (const [s0, s1] of segs) {
-      if (s1 < -P.L || s0 > P.L) continue;
-      const x0 = X(Math.max(-P.L, s0)), x1 = X(Math.min(P.L, s1)), y0 = Y(v.hi), y1 = Y(v.lo);
+    const c = proj(P, v.x, v.y), R = v.R || v.r1; if (Math.abs(c.off) >= R || Math.abs(c.s) > P.L + R) continue;
+    const C = IC.ASP_CLS[v.cls], hot = IC.ui && IC.ui.aspVol === v.id, n = 160, ds = 2 * P.L / n;
+    let run = null;
+    const flush = () => {
+      if (!run) return;
+      const x0 = X(run.s0), x1 = X(run.s1), y0 = Y(v.hi), y1 = Y(run.lo);
       g.fillStyle = `rgba(${C.col},${hot ? 0.24 : 0.13})`; g.fillRect(x0, y0, x1 - x0, y1 - y0);
       g.strokeStyle = `rgba(${C.col},${hot ? 1 : 0.7})`; g.lineWidth = hot ? 2 : 1; g.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
       if (x1 - x0 > 34) { g.fillStyle = `rgb(${C.col})`; g.textAlign = 'center'; g.fillText(v.kind === 'mil' ? (v.cls === 'X' ? 'ADZ' : v.cls) : v.cls, (x0 + x1) / 2, Math.min(y1 - 4, y0 + 13)); }
-      // the selected block: grips on the edges that can be dragged
-      if (hot && w.kind === 'base' && v.ap === w.ref.id) for (const y of v.lo > 0 ? [y0, y1] : [y0]) { const xm = (x0 + x1) / 2; g.fillStyle = `rgb(${C.col})`; g.fillRect(xm - 12, y - 2.5, 24, 5); g.fillStyle = 'rgba(6,14,22,0.9)'; g.fillRect(xm - 7, y - 0.5, 14, 1); }
+      run = null;
+    };
+    for (let i = 0; i < n; i++) {
+      const s = -P.L + (i + 0.5) * ds, p = at(P, s), inside = IC.aspInVol(v, p.x, p.y, null), lo = inside ? IC.aspFloorAt(v, p.x, p.y) : 0;
+      if (run && (!inside || Math.abs(lo - run.lo) > 1e-6)) flush();
+      if (inside) { if (!run) run = { s0: s - ds / 2, lo }; run.s1 = s + ds / 2; }
     }
+    flush();
   }
   // the ground (heights are above it) and the lowest height radar sees: hills leave holes behind them
   const n = 90;
@@ -124,8 +128,8 @@ IC.drawSide = function (cv, S, w) {
 let el = null, cv = null, raf = 0;
 const CSS = `.sideview{position:absolute;left:calc(50% - 195px);bottom:92px;transform:translateX(-50%);width:min(760px,calc(100% - 440px));min-width:420px;z-index:30;padding:.55rem .7rem .7rem;display:none}
 .sideview.on{display:block}.sideview header{display:flex;gap:.5rem;align-items:center;margin-bottom:.35rem}.sideview header b{flex:1;font-size:.95rem}
-.sideview canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:default}.sideview canvas.drag,canvas[data-side].drag{cursor:ns-resize}
-.sideview .x{min-width:2rem}.reach{width:100%;max-width:100%;height:auto;display:block;border-radius:8px;margin:.2rem 0}`;
+.sideview canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:default}
+.sideview .x{min-width:2rem}.asprow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin:.15rem 0 .15rem .5rem}.asprow>span{flex:1;min-width:6rem;color:var(--dim,#9ab)}.asprow>span small{display:block;opacity:.8}.asprow .act{margin:0}.aspsel{font:inherit;font-size:.9rem;background:rgba(10,22,32,.9);color:inherit;border:1px solid rgba(160,200,230,.25);border-radius:6px;padding:.2rem .35rem}.aspval{min-width:4.5em;text-align:center}.li{position:relative}.chart{display:inline-flex;flex-direction:column;align-items:center;position:absolute;right:.7rem;top:50%;transform:translateY(-50%);font:700 .78rem 'IBM Plex Mono',monospace;line-height:1.05;margin-left:.4rem}.chart b:first-child{border-bottom:1.5px solid currentColor;padding:0 .15rem}.reach{width:100%;max-width:100%;height:auto;display:block;border-radius:8px;margin:.2rem 0}`;
 if (typeof document !== 'undefined' && document.head) { const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st); }
 function build() {
   if (el) return;
@@ -135,46 +139,6 @@ function build() {
   cv = el.querySelector('canvas');
   el.addEventListener('click', e => { const b = e.target.closest('[data-sv]'); if (!b) return; if (b.dataset.sv === 'close') IC.sideClose(); else { SV.ang += Math.PI / 4; } });
 }
-/* dragging a floor or ceiling: in the floating side view or in the Airspace tab's own slice */
-function hitOn(c, P, ref, e) {
-  if (!P || !ref || !ref.parts) return null;
-  const r = c.getBoundingClientRect(), x = (e.clientX - r.left) * c.width / r.width, y = (e.clientY - r.top) * c.height / r.height;
-  const s = (x - P.ml) / P.pw * 2 * P.L - P.L;
-  let best = null, bd = 7;
-  for (const v of IC.aspVols(SV.S, ref)) {
-    const q = proj(P, v.x, v.y), d = Math.abs(s - q.s); if (Math.abs(q.off) >= v.r1) continue;
-    const h1 = Math.sqrt(v.r1 * v.r1 - q.off * q.off), h0 = Math.abs(q.off) < v.r0 ? Math.sqrt(v.r0 * v.r0 - q.off * q.off) : 0;
-    if (d > h1 + 2 || d < h0 - 2) continue;
-    for (const k of v.lo > 0 ? ['hi', 'lo'] : ['hi']) { const dy = Math.abs(y - P.Y(v[k])); if (dy < bd) { bd = dy; best = { v, k }; } }
-  }
-  return best;
-}
-const sideOf = e => {
-  const c = e.target && e.target.closest && e.target.closest('canvas[data-side], .sideview canvas'); if (!c) return null;
-  SV.S = SV.S || IC.S;
-  return c === cv ? { c, P: SV.what && SV.what.P, ref: SV.what && SV.what.kind === 'base' && SV.what.ref } : { c, P: c._P, ref: SV.S && SV.S.byId[c.dataset.side] };
-};
-if (typeof document !== 'undefined') {
-  document.addEventListener('pointerdown', e => {
-    const o = sideOf(e); if (!o) return;
-    const h = hitOn(o.c, o.P, o.ref, e); if (!h) return;
-    const r = o.c.getBoundingClientRect();
-    SV.drag = Object.assign(h, { c: o.c, P: o.P, ref: o.ref, top: r.top, sy: o.c.height / r.height });
-    IC.ui.aspVol = h.v.id; IC.ui.busyUntil = performance.now() + 60000; e.preventDefault();
-  });
-  document.addEventListener('pointermove', e => {
-    const D = SV.drag;
-    if (!D) { const o = sideOf(e); if (o) o.c.classList.toggle('drag', !!hitOn(o.c, o.P, o.ref, e)); return; }
-    const P = D.P, y = (e.clientY - D.top) * D.sy, a = Math.max(0, (P.mt + P.ph - y) / P.ph * P.H);
-    IC.aspSetVol(SV.S, D.v, { [D.k]: Math.round(a * IC.FT / 500) * 500 / IC.FT });
-    if (D.c !== cv && D.c.isConnected) D.c._P = IC.drawSide(D.c, SV.S, { kind: 'base', ref: D.ref });
-  });
-  document.addEventListener('pointerup', () => {
-    const D = SV.drag; if (!D) return; SV.drag = null;
-    IC.ui.busyUntil = performance.now() + 150; if (IC.ui.refresh) IC.ui.refresh(true);
-    IC.log(SV.S, 'info', 'AIRSPACE', `${D.ref.name}: ${IC.aspShort(D.v)}`, D.ref);
-  });
-}
 function loop() {
   raf = 0;
   if (!SV.open) return;
@@ -183,7 +147,7 @@ function loop() {
   remember(S);
   IC.drawSide(cv, S, w);
   document.getElementById('svT').textContent = w.P.title;
-  document.getElementById('svH').textContent = w.kind === 'base' ? 'Drag a block\'s top or bottom edge to set that ceiling or floor (500 ft steps). Arrivals come down about 1,000 ft every 5 km; they should stay inside the blocks.' : 'Each dot is at its height. Lines are the last minutes of each path; interceptors show the arc they flew.';
+  document.getElementById('svH').textContent = w.kind === 'base' ? 'A slice through the airspace, to look at: shape it on the map and in the Airspace tab. Arrivals come down about 1,000 ft every 5 km; they should stay inside the blocks.' : 'Each dot is at its height. Lines are the last minutes of each path; interceptors show the arc they flew.';
   raf = requestAnimationFrame(loop);
 }
 IC.sideOpen = function (S, kind, ref) {
@@ -217,17 +181,22 @@ IC.drawReachChart = function (cv2, muns) {
 /* ---------- orders from the airport's Airspace tab ---------- */
 IC.aspAct = function (S, ap, ds) {
   const ui = IC.ui, v = ds.id ? IC.aspVol(S, ds.id) : null, sec = ds.sec ? IC.aspSector(S, ds.sec) : null, n = +ds.v;
+  const sh = ds.sh ? IC.aspShape(S, ds.sh) : v ? IC.aspShape(S, v.sh) : ap && IC.aspShapeOf(S, ap), i = v ? +String(v.id).split(':')[1] : 0;
+  const said = () => { if (sh) IC.log(S, 'info', 'AIRSPACE', IC.aspShapeText(S, sh), ap || sh); };
   switch (ds.op) {
-    case 'preset': if (ap) { IC.aspPreset(S, ap, ds.v); ui.aspVol = null; IC.log(S, 'info', 'AIRSPACE', `${ap.name}: airspace set to the ${IC.ASP_PRESETS[ds.v].name.toLowerCase()} layout. ${IC.ASP_PRESETS[ds.v].words}`, ap); } break;
+    case 'preset': if (ap && IC.aspPreset(S, ap, ds.v)) { ui.aspVol = null; const P = IC.ASP_SHAPES[ds.v]; IC.log(S, 'info', 'AIRSPACE', `${ap.name} now has ${P.name}. ${P.what} ${P.why}`, ap); } break;
     case 'sel': ui.aspVol = ui.aspVol === ds.id ? null : ds.id; break;
-    case 'cls': if (v) IC.aspSetVol(S, v, { cls: ds.v }); break;
-    case 'lo': if (v) IC.aspSetVol(S, v, { lo: v.lo + n * 500 / IC.FT }); break;
-    case 'hi': if (v) IC.aspSetVol(S, v, { hi: v.hi + n * 500 / IC.FT }); break;
-    case 'r': if (v) IC.aspResize(S, v, v.r1 + n * 50); break;
-    case 'del': if (v) { IC.aspDelVol(S, v); ui.aspVol = null; } break;
-    case 'shelf': if (ap) { IC.setMode({ kind: 'asp', op: 'shelf', ap: ap.id }); return; } break;
-    case 'draw': if (v) { IC.setMode({ kind: 'asp', op: 'radius', vol: v.id }); return; } break;
-    case 'mil': IC.setMode({ kind: 'asp', op: 'mil', cls: ds.v || 'X' }); return;
+    case 'lo': case 'hi': if (v && sh) { IC.aspRingSet(S, sh, i, { [ds.op]: n / IC.FT }); IC.log(S, 'info', 'AIRSPACE', IC.aspShort(v), ap || sh); } break;
+    case 'r': if (v && sh) IC.aspRingR(S, sh, i, v.r1 + n * 50); break;
+    case 'scale': if (sh) IC.aspScale(S, sh, n > 0 ? 1.1 : 1 / 1.1); break;
+    case 'notch': if (sh) { IC.aspNotch(S, sh, ds.v === 'del' ? null : {}); said(); } break;
+    case 'nlo': if (sh && sh.notch) { IC.aspNotch(S, sh, { lo: n / IC.FT }); said(); } break;
+    case 'nw': if (sh && sh.notch) IC.aspNotch(S, sh, { w: n / 2 * Math.PI / 180 }); break;
+    case 'ext': if (sh) { if (ds.v === 'del') IC.aspExt(S, sh, null); else { IC.aspRotate(S, sh, IC.aspRunwayRot(ap)); IC.aspExt(S, sh, {}); } said(); } break;
+    case 'ew': if (sh && sh.ext) IC.aspExt(S, sh, { w: n * 5 }); break;
+    case 'align': if (sh && ap) IC.aspRotate(S, sh, IC.aspRunwayRot(ap)); break;
+    case 'area': IC.setMode({ kind: 'asp', op: 'area', key: ds.v }); return;
+    case 'adel': if (sh && !sh.ap) { IC.log(S, 'info', 'AIRSPACE', `${sh.name} withdrawn.`, sh); IC.aspDelArea(S, sh); ui.aspVol = null; } break;
     case 'staff': if (sec) IC.aspSetStaff(S, sec, sec.staff + n); break;
     case 'space': if (sec) sec.rules.space = sec.rules.space > 1 ? 1 : 1.5; break;
     case 'depBelow': if (sec) sec.rules.depBelow = !sec.rules.depBelow; break;
@@ -238,22 +207,23 @@ IC.aspAct = function (S, ap, ds) {
     case 'secDel': if (sec && !IC.aspDelSector(S, sec)) IC.sfx && IC.sfx.ui('err'); break;
   }
 };
-/* a click on the map in an airspace mode: a shelf's outer edge, a military area (centre, then edge), a sector */
+/* the Airspace tab's lists of floors and ceilings: a pick is an order like a button */
+if (typeof document !== 'undefined') document.addEventListener('change', e => {
+  const el = e.target; if (!el || !el.dataset || !el.dataset.asel || !IC.S) return;
+  const S = IC.S, ap = S.byId[el.dataset.ap];
+  IC.aspAct(S, ap, Object.assign({}, el.dataset, { v: el.value }));
+  IC.ui.busyUntil = 0; IC.ui.refresh(true);
+});
+/* a click on the map in an airspace mode: an area (centre, then edge), a sector */
 IC.aspMapClick = function (S, m, p) {
-  if (m.op === 'radius') { const v = IC.aspVol(S, m.vol); if (v) IC.aspResize(S, v, U.dist(v, p)); IC.setMode(null); return; }
-  if (m.op === 'shelf') {
-    const ap = S.byId[m.ap], out = ap && IC.aspOuter(S, ap);
-    if (!ap || U.dist(ap, p) < out + 30) { IC.text(S, p.x, p.y, 'CLICK OUTSIDE THE LAST RING', IC.C.amber); return; }
-    IC.ui.aspVol = IC.aspAddShelf(S, ap, U.dist(ap, p)).id; IC.setMode(null); return;
-  }
   if (m.op === 'sector') { IC.aspAddSector(S, p.x, p.y); IC.setMode(null); return; }
-  if (m.op === 'mil') {
+  if (m.op === 'area') {
     if (!m.c) { m.c = { x: p.x, y: p.y }; return; }
-    const v = IC.aspAddMil(S, m.c.x, m.c.y, Math.max(80, U.dist(m.c, p)), 0, IC.flKm(100), m.cls);
-    IC.ui.aspVol = v.id; IC.setMode(null);
+    const sh = IC.aspAddArea(S, m.key, m.c.x, m.c.y, Math.max(60, U.dist(m.c, p)));
+    IC.ui.aspVol = sh ? `${sh.id}:0` : null; IC.setMode(null);
   }
 };
-IC.aspModeHint = m => m.op === 'radius' ? 'Click where the outer edge of the shelf should be.' : m.op === 'shelf' ? 'Click where the new shelf should end: it runs from the last ring out to there, a step higher. Then set its floor and ceiling in the side view.' : m.op === 'sector' ? 'Click where the new area sector should be centred. Flights go to the nearest sector centre.' : m.c ? 'Click the edge of the area. It starts from the ground to FL100; set its band in the Airspace tab.' : 'Click the centre of the military area.';
+IC.aspModeHint = m => m.op === 'sector' ? 'Click where the new area sector should be centred. Flights go to the nearest sector centre.' : m.c ? 'Click where its edge should be. Set its floor and ceiling in the Airspace tab.' : `Click the centre of the ${IC.ASP_SHAPES[m.key] ? IC.ASP_SHAPES[m.key].name.toLowerCase() : 'area'}.`;
 
 /* ---------- orders on the radio to one flight ---------- */
 IC.atcAct = function (S, t, ds) {
