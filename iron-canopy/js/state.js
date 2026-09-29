@@ -36,7 +36,7 @@ function* gameSteps(opts) {
   const S = {
     mode, seed, world: W, lesson: opts.lesson || null,
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
-    budget: sandbox ? 1600 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
+    budget: sandbox ? 1600 : mode === 'campaign' ? 4800 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
     cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
@@ -117,15 +117,15 @@ function startingForces(S, sandbox) {
   const inward = (p, d) => ({ x: p.x + p.nx * d, y: p.y + p.ny * d });
   const put = (type, near, dmin, dmax, o) => {
     const p = IC.findSpot(S, type, near.x, near.y, dmin, dmax); if (!p) return null;
-    const u = IC.makeUnit(S, type, p.x, p.y, Object.assign({ instant: true, full: sandbox }, o || {}));
+    const u = IC.makeUnit(S, type, p.x, p.y, Object.assign({ instant: true, full: true }, o || {}));
     if ((type === 'mrsam' || type === 'lrsam') && !sandbox) u.emcon = 'ambush';
     return u;
   };
   const dep = IC.makeUnit(S, 'depot', W.depotPos.x, W.depotPos.y, { instant: true });
   dep.name = 'Central Depot'; dep.central = true; dep.d_cap = 3000; dep.hp = dep.max = 300; dep.reach = 1e9;
-  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24 } : { IR: 12, SR: 16, MR: 8, LR: 4, RKT: 12 };
+  const stock = sandbox ? { IR: 20, SR: 36, MR: 18, LR: 10, RKT: 24 } : { IR: 30, SR: 48, MR: 24, LR: 12, RKT: 24 };
   for (const k in stock) dep.inv[k] = stock[k];
-  for (let i = 0; i < 4; i++) IC.addTruck(S, dep);
+  for (let i = 0; i < (sandbox ? 4 : 6); i++) IC.addTruck(S, dep);
   const fab = S.byId.ab_fwd || cap;
   put('lr3d', cap, 180, 420);
   put('vhf', { x: (cap.x + mid(fA).x) / 2, y: (cap.y + mid(fA).y) / 2 }, 0, 400);
@@ -136,11 +136,22 @@ function startingForces(S, sandbox) {
   put('shorad', cap, 220, 420);
   put('spaag', S.infra.find(i => i.kind === 'factory') || cap, 50, 140);
   put('spaag', dep, 40, 110);
+  // a country that expected this war: the capital, the main air base and the two largest cities each have a layer,
+  // with radars to see the northern border
+  if (!sandbox) {
+    const big = IC.cities(S).filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 2);
+    put('lrsam', cap, 150, 400); put('mrsam', fab, 120, 300); put('shorad', fab, 60, 200); put('spaag', fab, 40, 120);
+    for (const c of big) { put('mrsam', c, 100, 300); put('shorad', c, 80, 250); }
+    if (fA) { put('mr3d', inward(mid(fA), 1100), 0, 350); put('mr3d', inward(fA.pts[Math.floor(fA.pts.length * 0.25)], 900), 0, 350); put('gnss', inward(mid(fA), 1000), 0, 350); }
+    const fwd = fA && IC.makeUnit(S, 'depot', ...Object.values(IC.findSpot(S, 'depot', inward(mid(fA), 1800).x, inward(mid(fA), 1800).y, 0, 500) || inward(mid(fA), 1800)), { instant: true });
+    if (fwd) { fwd.name = 'Forward Depot'; for (const k of ['SR', 'MR', 'IR']) fwd.inv[k] = Math.round(stock[k] / 2); for (let i = 0; i < 3; i++) IC.addTruck(S, fwd); }
+    for (const id of ['a_remote', 'a_cram', 'a_pac3', 'e_decoy', 'e_eccm', 's_esm', 's_cbr', 's_nctr', 'c_teams', 'c_stay', 'l_trucks', 'l_rrr', 'f_aam', 'f_cm']) S.tech.done.add(id);
+  }
   if (sandbox) {
     put('lrsam', fab, 200, 450); put('mr3d', inward(mid(fA), 1100), 0, 350); put('gnss', inward(mid(fA), 1000), 0, 350);
     put('mlrs', inward(mid(fA), 700), 0, 300);
   }
-  S.reserve = sandbox ? { gf: 1, shorad: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 1, gf: 1, shorad: 2, spaag: 1, gnss: 1, mlrs: 1, lrsam: 1, depot: 1 };
+  S.reserve = sandbox ? { gf: 1, shorad: 2, mlrs: 1, depot: 1, mr3d: 1 } : { mr3d: 2, gf: 1, shorad: 4, spaag: 2, gnss: 1, mlrs: 1, lrsam: 2, mrsam: 2, cram: 1, depot: 1 };
 }
 
 IC.hasTech = (S, id) => !id || S.tech.done.has(id);

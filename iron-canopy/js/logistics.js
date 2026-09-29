@@ -36,8 +36,8 @@ IC.DEPOT_PRI = {
   last: { name: 'Last', w: 0, desc: 'Resupplied only when nobody else is waiting.' }
 };
 IC.FLOORS = [0, 50, 150, 400];
-IC.QW_TAX_SHARE = 0.25;   // Quick war: the share of city and trade taxes that goes to the air defence
-IC.QW_GRANT = 60;         // Quick war: the defence ministry's grant an hour, for a country of sixty cities
+IC.QW_TAX_SHARE = 0.75;   // Quick war: the share of city and trade taxes that goes to the air defence
+IC.QW_GRANT = 300;        // Quick war: the defence ministry's grant an hour, for a country of sixty cities
 IC.STORY_TAX = [0, 0, 0.1, 0.25, 1];   // Career: the share of city and trade taxes by act
 const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry carries
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;

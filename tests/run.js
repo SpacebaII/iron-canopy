@@ -1336,7 +1336,7 @@ test('airspace: a new airport starts with the small shape, and the next size up 
   ap.mvLog = []; for (let i = 0; i < 30; i++) ap.mvLog.push({ t: S.time - i * 60, k: 'x', type: 'arr' });
   ap.st.radar = true;
   const sg = IC.aspSuggest(S, ap);
-  assert(sg.ok && sg.key === 'C' && /30 movements an hour and approach radar: Class C/.test(sg.text), sg.text);
+  assert(sg.ok && sg.key === 'C' && /flew 30 movements in the last hour and has approach radar: Class C/.test(sg.text), sg.text);
 });
 test('airspace shapes: scaling keeps the rings nested, a ring stops at its neighbours, and changes are said in words', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }), ap = S.infra.find(i => i.kind === 'airport'); IC.S = S;
@@ -2082,15 +2082,15 @@ test('height: a long-reach missile reaches less far against a low target, as its
   assert(high === M.range, `at 8 km the long-range missile should reach its full ${M.range / 10} km (got ${high / 10})`);
   assert(low < high * 0.6 && low > R[0][1] * 10 - 1, `against a target at 40 m it should reach ${R[0][1]}–${R[1][1]} km (got ${low / 10})`);
   assert(IC.reachAt(M, 30) === 0 && IC.reachAt('HAT', 5) === 0, 'reach outside the band should be zero');
-  assert(/km up, out to 100 km/.test(IC.reachText('LR')), IC.reachText('LR'));
-  // and the battery holds fire on a sea-skimming cruise missile 60 km out that it would shoot at 3 km up
+  assert(/km up, out to 160 km/.test(IC.reachText('LR')), IC.reachText('LR'));
+  // and the battery holds fire on a sea-skimming cruise missile 100 km out that it would shoot at 3 km up
   const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'lrsam', T.x, T.y);
-  const t = IC.spawnThreat(S, 'lacm', T.x + 600, T.y, { alt: 0.04, route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, det: true, fc: true });
+  const t = IC.spawnThreat(S, 'lacm', T.x + 1000, T.y, { alt: 0.04, route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, det: true, fc: true });
   t.vx = -t.spd; t.vy = 0;
   const why = {};
-  assert(!IC.chooseMun(S, u, t, 600, why), 'the long-range battery would fire on a cruise missile at 40 m from 60 km');
+  assert(!IC.chooseMun(S, u, t, 1000, why), 'the long-range battery would fire on a cruise missile at 40 m from 100 km');
   t.alt = 3;
-  assert(IC.chooseMun(S, u, t, 600, {}), 'the long-range battery would not fire on a target 3 km up at 60 km');
+  assert(IC.chooseMun(S, u, t, 1000, {}), 'the long-range battery would not fire on a target 3 km up at 100 km');
 });
 test('height: tags give flight levels or feet for aircraft and km for everything else', () => {
   assert(IC.altText({ d: IC.THR.civ, alt: 10.97 }) === 'FL360', IC.altText({ d: IC.THR.civ, alt: 10.97 }));
@@ -2499,7 +2499,9 @@ test('enemy: in act 4 raids go for batteries low on missiles more often than cha
 function lowBatteries() {
   const S = IC.newGame({ seed: 12345, mode: 'campaign' }), E = S.enemy, b = IC.mainBase(S);
   E.allow = null; IC.enemyOpening(S, { act: 2 }); E.pending = [];
-  S.units = S.units.filter(u => u.d.weapon !== 'sam');
+  // only these six batteries: the enemy's choice among them is what is measured
+  S.units = S.units.filter(u => u.type === 'depot');
+  for (const id of [...E.known.keys()]) if (!S.units.some(u => u.id === id)) E.known.delete(id);
   const bats = [];
   for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; const u = IC.makeUnit(S, 'mrsam', b.x + Math.cos(a) * 200, b.y + Math.sin(a) * 200, { instant: true }); IC.enemyLearn(S, u, 'test'); bats.push(u); }
   // three of them have fired most of their missiles, and the enemy saw it
@@ -2636,7 +2638,8 @@ test('replay: a hard turn shows bank and g, straight flight none (the model roll
   for (const tr of S.rec.tracks) if (tr.kind === 'threat') for (let i = 1; i < tr.n - 1; i++) if (IC.recGet(tr, i, 8) & 1) { const a = IC.recAttitude(tr, IC.recGet(tr, i, 0)); if (Math.abs(a.roll) > bank) { bank = Math.abs(a.roll); g = a.g; notched = tr; } }
   assert(notched, 'no aircraft notched in the record');
   assert(bank > 0.5 && g > 1.3, `a notching aircraft banks only ${(bank * 57.3).toFixed(0)}° at ${g.toFixed(1)} g`);
-  const a0 = IC.recAttitude(notched, IC.recFirstT(notched) + 20);
+  // straight and level somewhere before its first turn (with longer missile reach it may turn early): the flattest moment
+  let a0 = null; for (let t = IC.recFirstT(notched) + 1; t < IC.recFirstT(notched) + 40; t += 0.5) { const a = IC.recAttitude(notched, t); if (!a0 || Math.abs(a.roll) < Math.abs(a0.roll)) a0 = a; }
   assert(Math.abs(a0.roll) < 0.05 && Math.abs(a0.g - 1) < 0.1, `straight and level it banks ${(a0.roll * 57.3).toFixed(1)}° at ${a0.g.toFixed(2)} g`);
   // a right turn banks right: the sign follows the heading's change
   let tr = null, t = 0; for (const x of S.rec.tracks) if (x.kind === 'threat') for (let i = 2; i < x.n - 2 && !tr; i++) { const at = IC.recGet(x, i, 0), a = IC.recAttitude(x, at); if (Math.abs(a.roll) > 0.4) { tr = x; t = at; } }
