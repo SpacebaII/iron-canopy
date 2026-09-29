@@ -203,6 +203,8 @@ IC.nearestPlace = function (S, x, y) {
   if (!best) return IC.gridRef(x, y);
   return bd < (best.r || 60) * 1.4 ? best.name : `${U.km(bd)} ${U.compass(Math.atan2(y - best.y, x - best.x))} of ${best.name}`;
 };
+/* the same, to follow a verb: "near Ostec" or "109 km E of Ostec" */
+IC.nearPlace = (S, x, y) => { const p = IC.nearestPlace(S, x, y); return /^\d/.test(p) ? p : 'near ' + p; };
 
 /* ---------- effects ----------
    parts: screen-sized particles that evolve in real time. World-sized pieces (fireballs, plumes, craters)
@@ -270,9 +272,11 @@ IC.detonate = function (S, x, y, dmg, src) {
   }
   for (const v of S.vehicles) if (!v.dead && U.dxy(x, y, v.x, v.y) < 3 + dmg * 0.05) { IC.hitConvoy(S, v, src2.d ? src2.d.code : 'strike'); hit = hit || v; }
   if (hit && dmg > 25 && !aptHit) IC.addFire(S, x + U.rand(-4, 4), y + U.rand(-4, 4), 0.6 + dmg / 120, 900 + dmg * 20);
-  const lbl = src2.tn ? `TN ${src2.tn} ${src2.d.code}` : `Undetected ${src2.d ? src2.d.code : 'weapon'}`;
+  // in plain words: "a subsonic cruise missile (TN 1060)", "an unseen drone"
+  const kind = (src2.d && src2.d.name ? src2.d.name : 'weapon').toLowerCase(), an = w => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
+  const lbl = src2.tn ? `${an(kind)} (TN ${src2.tn})` : an(`unseen ${kind}`);
   if (hit) { S.stats.leakers++; IC.log(S, 'leak', 'IMPACT', `${hit.name} hit by ${lbl}.`, { x, y }); IC.emit(S, 'impact', { x, y, hit, src: src2 }); }
-  else IC.log(S, 'info', 'IMPACT', `${lbl} struck open ground ${IC.nearestPlace(S, x, y)}.`);
+  else IC.log(S, 'info', 'IMPACT', `${lbl.charAt(0).toUpperCase() + lbl.slice(1)} struck open ground ${IC.nearPlace(S, x, y)}.`);
   return hit;
 };
 IC.cityHit = function (S, c, x, y, dmg, src) {
@@ -475,7 +479,7 @@ IC.hitConvoy = function (S, v, what) {
     v.dead = true;
     S.stats.convoysLost++;
     if (v.job) IC.failJob(S, v.job);
-    IC.log(S, 'leak', 'CONVOY', `${v.name} destroyed${what ? ' by ' + what : ''} ${IC.nearestPlace(S, v.x, v.y)}.`, v);
+    IC.log(S, 'leak', 'CONVOY', `${v.name} destroyed${what ? ' by ' + what : ''} ${IC.nearPlace(S, v.x, v.y)}.`, v);
     IC.emit(S, 'convoyLost', v);
   } else IC.log(S, 'warn', 'CONVOY', `${v.name} hit${what ? ' by ' + what : ''}; ${v.trucks} trucks left.`, v);
 };

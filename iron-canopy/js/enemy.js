@@ -987,7 +987,9 @@ function report(S, E, R) {
   (S.raids = S.raids || []).push(res);
   const head = `${launched} threats, ${lost} shot down, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}. ${res.fired} interceptors fired.`;
   let text = `${head}${lines.length ? ' ' + lines.join(' ') : ''}`;
-  text += ` They were after ${R.obj.name}${R.set ? ` (${IC.ESETS[R.set].name})` : ''}.`;
+  // a unit's code means little to a player: say what it is
+  const r = R.obj.ref, what = r && r.d && r.d.role ? `${R.obj.name}, ${/^[aeiou]/i.test(r.d.role) ? 'an' : 'a'} ${r.d.role}` : R.obj.name;
+  text += ` Their main target was ${what}${R.set ? `, in their push on ${IC.ESETS[R.set].name}` : ''}.`;
   R.text = text; R.res = res;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
   if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report');
