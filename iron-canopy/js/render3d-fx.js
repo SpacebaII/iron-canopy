@@ -539,7 +539,7 @@ void main() {
   float thick = mix(1.0, 0.32 + 0.35 * (1.0 - d), below) * (1.0 - storm * 0.55 * below);
   vec3 c = sunCol * lit * thick * max(0.0, sunDir.y + 0.08) * 2.4 + ambCol * mix(0.9, 0.6, below * d);
   // bright edges toward the sun (from below), and the lightning inside
-  c += sunCol * pow(max(dot(V, sunDir), 0.0), 10.0) * (1.0 - d) * 2.0 * below;
+  c += sunCol * pow(max(dot(V, sunDir), 0.0), 10.0) * (1.0 - d) * 2.0 * below * (1.0 - cover * 0.8);
   c += vec3(0.8, 0.82, 1.0) * flash * 6.0 * exp(-length(vWp.xz - flashAt.xz) / 60.0);
   c += vec3(0.05, 0.036, 0.022) * night * below * (0.5 + 0.5 * d);   // the towns' light on the cloud's underside
   float dist = length(vWp.xz - cameraPosition.xz);
@@ -932,10 +932,10 @@ void main() {
     vis *= 0.2 * flare * sun.z;
     if (vis > 0.0) {
       vec2 axis = vec2(0.5) - sun.xy; vec3 f = vec3(0.0);
-      f += vec3(0.9, 0.7, 0.5) * disc(vUv - (sun.xy + axis * 0.55), 0.035, 0.02) * 0.06;
-      f += vec3(0.4, 0.7, 1.0) * disc(vUv - (sun.xy + axis * 0.9), 0.06, 0.04) * 0.04;
+      f += vec3(0.9, 0.7, 0.5) * disc(vUv - (sun.xy + axis * 0.55), 0.025, 0.015) * 0.04;
+      f += vec3(0.4, 0.7, 1.0) * disc(vUv - (sun.xy + axis * 0.9), 0.04, 0.03) * 0.025;
       f += vec3(0.8, 0.5, 1.0) * disc(vUv - (sun.xy + axis * 1.35), 0.02, 0.012) * 0.08;
-      f += vec3(0.5, 1.0, 0.7) * disc(vUv - (sun.xy + axis * 1.7), 0.09, 0.07) * 0.03;
+      f += vec3(0.5, 1.0, 0.7) * disc(vUv - (sun.xy + axis * 1.7), 0.05, 0.04) * 0.02;
       vec2 d = (vUv - sun.xy) * vec2(aspect, 1.0); float r = length(d);
       f += vec3(1.0, 0.85, 0.7) * smoothstep(0.03, 0.0, abs(r - 0.28)) * 0.012;
       f += vec3(1.0, 0.9, 0.8) * exp(-abs(d.y) * 400.0) * exp(-abs(d.x) * 9.0) * 0.06;
@@ -1053,7 +1053,7 @@ function frame(v, t, dtR) {
   // the sky's brightness as an eye adapted to the day would see it: Preetham's sky darkens much faster than the
   // light as the sun goes down, so it is brought back to a zenith that follows the sun's height
   skyRGB(0, 1, 0, sd, K, 1, C2);
-  const zl = C2.r * 0.2126 + C2.g * 0.7152 + C2.b * 0.0722, want = 0.12 * (0.25 + 0.75 * sstep(-2, 40, el)) * (el > -7 ? 1 : 0);
+  const zl = C2.r * 0.2126 + C2.g * 0.7152 + C2.b * 0.0722, want = 0.12 * (0.4 + 0.6 * sstep(-2, 40, el)) * (el > -7 ? 1 : 0);
   F.skyU.gain.value = zl > 1e-6 ? U.clamp(want / zl, 0, 60) : 0;
   C2.setRGB(C2.r * F.skyU.gain.value, C2.g * F.skyU.gain.value, C2.b * F.skyU.gain.value);
   const g0 = 0.006 + night * 0.01;
@@ -1082,7 +1082,7 @@ function frame(v, t, dtR) {
   // exposure, as a camera would set it: from how much light falls on the ground (the midday sun is 1); the night is
   // brought up to dark blue, not black
   const key = sunI * (sc.r * 0.2126 + sc.g * 0.7152 + sc.b * 0.0722) * Math.max(sd.y, 0) / Math.PI + (amb.r * 0.2126 + amb.g * 0.7152 + amb.b * 0.0722);
-  F.expo = (U.clamp(Math.pow(1.2 / Math.max(key, 1e-3), 0.6), 1, 3.2) * (1 - night) + 2.6 * night) * (1 + fog * 0.2);
+  F.expo = (U.clamp(Math.pow(1.2 / Math.max(key, 1e-3), 0.6), 1, 4) * (1 - night) + 2.6 * night) * (1 + fog * 0.2);
   if (!Q.post) { // straight to the screen: the fog mixes after the tone mapping, so it goes there as the screen shows it
     const a = x => { x *= 0.6 * F.expo; return U.clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0, 1); };
     const lin = x => x;   // the renderer's output conversion comes after

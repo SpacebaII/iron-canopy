@@ -270,7 +270,7 @@ const SCENES = {
     const m = steps(S, 3600, S => findMove(S, m => m.phase === 'roll' && m.spd < 0.05 && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
     if (!m) throw new Error('no take-off roll'); console.log('take-off at', U.hhmm(S.time));
     const L = await live(S, m, 'chase', 800); L.camK = 1.3; let shot = 0;
-    await film(L, S, 'm-takeoff', +(window.FRAMES || 360), 3, f => { if (f === 150) cam(L, 'side'); if (!shot && m.phase !== 'roll' && f > 150) { shot = 1; return 'still'; } });`,
+    await film(L, S, 'm-takeoff', +(window.FRAMES || 360), 3, f => { if (f === 150) { cam(L, 'side'); L.camK = 0.5; } if (!shot && m.phase !== 'roll' && f > 150) { shot = 1; return 'still'; } });`,
   'm-landing': `
     const S = await game('sandbox', 18.6); wx(S, 'scattered');
     const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 20 && m.type !== 'light'));
@@ -281,8 +281,8 @@ const SCENES = {
     const S = await game('sandbox', 21.7); wx(S, 'rain');
     const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 20 && m.type !== 'light'));
     if (!m) throw new Error('no arrival on final'); console.log('night arrival at', U.hhmm(S.time));
-    const L = await live(S, m, 'chase', 800); L.camK = 1.6; let shot = 0;
-    await film(L, S, 'm-night-rain', +(window.FRAMES || 300), 2, f => { if (f === 180) cam(L, 'side'); if (!shot && m.phase !== 'final' && f > 20) { shot = 1; return 'still'; } });`,
+    const L = await live(S, m, 'chase', 800); L.camK = 1.0; let shot = 0;
+    await film(L, S, 'm-night-rain', +(window.FRAMES || 300), 2, f => { if (f === 180) { cam(L, 'side'); L.camK = 0.6; } if (!shot && m.phase !== 'final' && f > 20) { shot = 1; return 'still'; } });`,
   'm-fog': `
     const S = await game('sandbox', 6.9); wx(S, 'fog');
     const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
