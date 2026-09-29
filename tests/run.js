@@ -1182,7 +1182,7 @@ test('airspace: light aircraft avoid controlled airspace unless cleared', () => 
   assert(!ok.zones.size, `a careful pilot entered controlled airspace: ${[...ok.zones]}`);
   const home = fly(A, { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, {});
   assert(home.zones.has(ap.id + ':ctr'), 'a light aircraft cleared to land at the capital never entered its control zone');
-  const bad = fly(A, B, { careless: true });
+  const bad = fly(A, B, { careless: true, alt: 0.9 });
   assert(bad.zones.size && bad.inc, 'a careless pilot crossed the capital without an infringement incident');
 }, true);
 
@@ -1210,19 +1210,20 @@ test('airspace: two airliners crossing 2,000 ft apart keep their spacing; 500 ft
 test('airspace: a light aircraft stays out of a class C shelf unless cleared', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 });
   const ap = S.byId[S.story.reg];
-  IC.aspPreset(S, ap, 'regional');
+  IC.aspPreset(S, ap, 'C');
   const C = IC.aspVols(S, ap).filter(v => v.cls === 'C');
-  assert(C.length >= 2, 'the regional preset has no class C shelves');
-  // a line 20 km from the airport, under the shelves, well clear of the control zone
-  const A = off(off(ap, 0.2 + Math.PI / 2, 200), 0.2, 700), B = off(off(ap, 0.2 + Math.PI / 2, 200), 0.2 + Math.PI, 700);
+  assert(C.length >= 2, 'the class C shape has no shelf');
+  const shelf = C.find(v => v.kind === 'shelf'), mid = (shelf.r0 + shelf.r1) / 2;
+  // a line through the middle of the shelf ring, well clear of the core
+  const A = off(off(ap, 0.2 + Math.PI / 2, mid), 0.2, 700), B = off(off(ap, 0.2 + Math.PI / 2, mid), 0.2 + Math.PI, 700);
   const fly = o => {
-    const t = IC.gaLaunch(S, A, B, Object.assign({ xpdr: true, alt: 1.8 }, o));
+    const t = IC.gaLaunch(S, A, B, Object.assign({ xpdr: true, alt: 0.9 }, o));
     let inC = 0, n = 0;
-    for (let i = 0; i < 12000 && !t.dead; i++) { IC.step(S, 0.5); if (t.alt > 0.2 && IC.aspVolsAt(S, t.x, t.y, t.alt).some(v => v.cls === 'C')) inC++; if (U.dist(t, ap) < 400) n++; }
+    for (let i = 0; i < 12000 && !t.dead; i++) { IC.step(S, 0.5); if (t.alt > 0.2 && IC.aspVolsAt(S, t.x, t.y, t.alt).some(v => v.cls === 'C')) inC++; if (U.dist(t, ap) < shelf.r1) n++; }
     return { t, inC, n };
   };
   const out = fly({});
-  assert(out.t.dead && out.n > 50, 'the light aircraft never flew under the shelves');
+  assert(out.t.dead && out.n > 50, 'the light aircraft never flew under the shelf');
   assert(!out.inC, `a light aircraft without clearance was inside a class C shelf for ${out.inC} steps`);
   const inn = fly({ cleared: [ap.id] });
   assert(inn.inC > 20, 'a light aircraft cleared into the class C airspace still kept under it');
@@ -1269,39 +1270,139 @@ test('airspace: an overloaded sector has more near misses than a well-staffed on
   assert(busy > calm, `one controller: ${busy} near misses; twelve: ${calm}`);
   assert(calm <= 2, `a well-staffed sector under radar let ${calm} near misses happen`);
 });
-test('airspace: the presets are valid for the six-runway KDEN layout', () => {
+test('airspace: the shapes are valid for the six-runway KDEN layout', () => {
   const { S, ap } = kdenGame(12345, 10);
   IC.step(S, 0.5);
-  for (const k of ['field', 'regional', 'hub']) {
+  for (const k of ['D', 'C', 'B']) {
     IC.aspPreset(S, ap, k);
-    const bad = IC.aspCheck(S, ap).filter(w => /leave controlled|final approach|ceiling/.test(w));
+    const bad = IC.aspCheck(S, ap).filter(w => /final approach|pass under/.test(w));
     assert(!bad.length, `${k}: ${bad.join(' ')}`);
-    // every runway end's final approach fix is inside the control zone, and the zone reaches the ground
+    // every runway end's final approach fix is inside the core, and the core reaches the ground
     const ctr = IC.aspVols(S, ap).find(v => v.kind === 'ctr');
-    assert(ctr && ctr.lo === 0, `${k}: no control zone from the ground up`);
-    for (const f of IC.aspFafs(ap)) assert(U.dist(f, ap) < ctr.r1, `${k}: the final approach to ${f.end} starts outside the control zone`);
+    assert(ctr && ctr.lo === 0, `${k}: no core from the ground up`);
+    for (const f of IC.aspFafs(ap)) assert(U.dist(f, ap) < ctr.r1, `${k}: the final approach to ${f.end} starts outside the core`);
     assert(IC.aspSectors(S).some(s => s.ap === ap.id && s.kind === 'twr' && s.staff > 0), `${k}: no tower controllers`);
   }
 });
-test('airspace editor: rings dragged on the map stay touching, a drawn shelf starts at the last ring, and every change is said in words', () => {
-  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }), ap = S.infra.find(i => i.kind === 'airport');
+test('airspace: a new airport starts with the small shape, and the next size up is suggested when traffic and radar support it', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  S.budget = 5000;
+  const t = townWithSite(S); assert(t, 'no site near any town');
+  const ap = IC.foundAirport(S, t.p.x, t.p.y, IC.PREVAIL);
   IC.step(S, 0.5);
-  IC.aspPreset(S, ap, 'regional');
-  const [ctr, s1, s2] = IC.aspVols(S, ap).sort((a, b) => a.r1 - b.r1);
-  // the inner shelf's edge pushed out: the outer shelf now starts where it ends, and it cannot swallow the outer one
-  IC.aspResize(S, s1, s1.r1 + 60);
-  assert(Math.abs(s2.r0 - s1.r1) < 1, `outer shelf starts at ${s2.r0}, inner one ends at ${s1.r1}`);
-  IC.aspResize(S, s1, s2.r1 + 500);
-  assert(s1.r1 < s2.r1, 'the inner shelf grew past the outer one');
-  assert(!ap.asp.auto, 'a reshaped airspace still counts as the preset');
-  // a shelf drawn to a point 70 km out runs from the outermost ring to there, and has its own words
-  const out = IC.aspOuter(S, ap), v = IC.aspAddShelf(S, ap, 700);
-  assert(Math.abs(v.r0 - out) < 1 && Math.abs(v.r1 - 700) < 1, `drawn shelf ${v.r0}–${v.r1}, last ring ended at ${out}`);
-  assert(IC.aspVolUnder(S, ap, { x: ap.x + 650, y: ap.y }) === v, 'a click on the new ring does not pick it');
-  assert(IC.aspEdgeAt(S, ap, { x: ap.x, y: ap.y + 703 }, 10) === v, 'the new ring\'s edge cannot be grabbed');
-  assert(/light aircraft may pass under it/.test(IC.aspWords(v)) && /Class C/.test(IC.aspWords(s1)), IC.aspWords(v));
-  assert(IC.aspWords(ctr).includes('from the ground'), IC.aspWords(ctr));
+  const sh = IC.aspShapeOf(S, ap);
+  assert(sh && sh.key === 'D' && sh.rings.length === 1, `a new airport got ${sh && sh.key}`);
+  assert(IC.aspShapeOf(S, S.byId[S.story.cap]).key === 'C', 'the international airport does not start with class C');
+  assert(IC.bases(S).filter(b => b.kind === 'airbase' && b.owner === 'us').every(b => IC.aspShapeOf(S, b).key === 'M'), 'an air base has no military zone');
+  assert(!IC.aspSuggest(S, ap).ok, 'class C suggested for an airport with no traffic');
+  ap.mvLog = []; for (let i = 0; i < 30; i++) ap.mvLog.push({ t: S.time - i * 60, k: 'x', type: 'arr' });
+  ap.st.radar = true;
+  const sg = IC.aspSuggest(S, ap);
+  assert(sg.ok && sg.key === 'C' && /30 movements an hour and approach radar: Class C/.test(sg.text), sg.text);
 });
+test('airspace shapes: scaling keeps the rings nested, a ring stops at its neighbours, and changes are said in words', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }), ap = S.infra.find(i => i.kind === 'airport'); IC.S = S;
+  IC.step(S, 0.5);
+  IC.aspPreset(S, ap, 'B');
+  const sh = IC.aspShapeOf(S, ap), nested = () => sh.rings.every((g, i) => !i || g.r > sh.rings[i - 1].r) && IC.aspVols(S, ap).filter(v => v.kind !== 'ext').every(v => v.r0 < v.r1);
+  const r0 = sh.rings.map(g => g.r);
+  for (const f of [1.5, 0.3, 4, 0.01]) { IC.aspScale(S, sh, f); assert(nested(), `scaled ×${f}: rings ${sh.rings.map(g => Math.round(g.r))}`); }
+  IC.aspScale(S, sh, r0[0] / sh.rings[0].r);
+  sh.rings.forEach((g, i) => assert(Math.abs(g.r / r0[i] - sh.rings[0].r / r0[0]) < 1e-6, 'scaling did not keep the proportions'));
+  // one ring dragged past the next stops short of it; the next ring's inner edge follows
+  IC.aspRingR(S, sh, 1, sh.rings[2].r + 500);
+  assert(nested() && sh.rings[1].r < sh.rings[2].r, 'the inner shelf grew past the outer one');
+  const [core, s1] = IC.aspVols(S, ap).sort((a, b) => a.r1 - b.r1);
+  assert(Math.abs(IC.aspVols(S, ap).find(v => v.name === 'Outer shelf').r0 - s1.r1) < 1e-6, 'the outer shelf does not start where the inner one ends');
+  assert(ap.asp.mod && !ap.asp.auto, 'a reshaped airspace still counts as the shape');
+  // a handle dragged on the map: the square scales the whole shape to where the pointer is
+  const h = IC.aspHandles(S, sh).find(x => x.hk === 'scale'), out0 = sh.rings[2].r;
+  IC.aspResize(S, h, out0 * 0.8, { x: ap.x + out0 * 0.8, y: ap.y });
+  assert(Math.abs(sh.rings[2].r - out0 * 0.8) < 1 && nested(), 'the scale handle did not scale the shape');
+  const h2 = IC.aspHandles(S, sh).find(x => x.hk === 'scale');
+  assert(IC.aspEdgeAt(S, ap, { x: h2.hx, y: h2.hy }, 10).hk === 'scale', 'the scale handle cannot be grabbed');
+  assert(/Class B from 3,000 ft to FL100/.test(IC.aspWords(s1)) && /light aircraft fly under it/.test(IC.aspWords(s1)), IC.aspWords(s1));
+  assert(IC.aspWords(core).includes('from the ground'), IC.aspWords(core));
+  assert(/^Class B: core out to \d+ km, the ground to FL100; inner shelf/.test(IC.aspShapeText(S, sh)), IC.aspShapeText(S, sh));
+  // the approach extension is class E along the runway line, and turns with the shape
+  IC.aspExt(S, sh, { len: 100 });
+  const e = IC.aspVols(S, ap).find(v => v.kind === 'ext'), far = sh.rings[0].r + 50;
+  const p = { x: ap.x + Math.cos(sh.rot) * far, y: ap.y + Math.sin(sh.rot) * far };
+  assert(e && e.cls === 'E' && IC.aspVolsAt(S, p.x, p.y, 0.2).includes(e), 'no class E extension along the runway line');
+  IC.aspRotate(S, sh, sh.rot + Math.PI / 2);
+  assert(!IC.aspVolsAt(S, p.x, p.y, 0.2).includes(e), 'the extension did not turn with the shape');
+});
+test('airspace shapes: a notch lets a light aircraft through below its floor without a clearance', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.reg];
+  IC.aspPreset(S, ap, 'D');
+  const sh = IC.aspShapeOf(S, ap), ctr = IC.aspVols(S, ap)[0], R = ctr.r1;
+  // a line 7 km from the field, square to the notch's bearing, across the zone
+  const b = sh.rot + Math.PI / 2, mid = off(ap, b, 70), A = off(mid, b + Math.PI / 2, 600), B = off(mid, b - Math.PI / 2, 600);
+  const fly = () => {
+    const t = IC.gaLaunch(S, A, B, { xpdr: true, alt: 0.9 });
+    let inside = 0, minD = 1e9;
+    for (let i = 0; i < 12000 && !t.dead; i++) { IC.step(S, 0.5); if (IC.aspVolsAt(S, t.x, t.y, t.alt).some(v => v.ap === ap.id && IC.aspNeedsClr(v.cls))) inside++; minD = Math.min(minD, U.dist(t, ap)); }
+    return { t, inside, minD };
+  };
+  const round = fly();
+  assert(round.t.dead && !round.inside && round.minD > R, `without a notch it flew ${Math.round(round.minD)} from the field (zone ${Math.round(R)}), ${round.inside} steps inside`);
+  // a notch 115° wide from 3 km out towards the line, floor 1,500 ft: the light aircraft goes through under it
+  IC.aspNotch(S, sh, { a: Math.PI / 2, w: 1.0, r: 30, lo: 1500 / IC.FT });
+  assert(!IC.aspVolsAt(S, mid.x, mid.y, 0.3).length && IC.aspVolsAt(S, mid.x, mid.y, 0.6).includes(ctr), 'the notch does not raise the floor');
+  const thru = fly();
+  assert(thru.t.dead && thru.minD < R - 10, `with a notch it still flew round (${Math.round(thru.minD)} from the field)`);
+  assert(!thru.inside, `it was inside the class D zone without a clearance for ${thru.inside} steps`);
+}, true);
+test('airspace: no airspace warnings before the Airspace chapter', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  IC.aspPreset(S, ap, 'B'); blind(S);
+  Object.assign(S.story, { fresh: true, act: 1, ch: 1 });
+  assert(!IC.aspTaught(S) && !IC.aspCheck(S, ap).length, `warned in chapter 2: ${IC.aspCheck(S, ap).join(' ')}`);
+  assert(!IC.aspSuggest(S, ap), 'suggested a shape before the airspace chapter');
+  S.story.ch = 2;
+  assert(IC.aspCheck(S, ap).some(w => /needs radar/.test(w)), 'no radar warning in the airspace chapter');
+});
+test('airspace: heights read the same way everywhere, feet below 6,000 ft and flight levels above', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  IC.step(S, 0.5);
+  const ap = S.byId[S.story.cap], texts = [];
+  for (const k of ['D', 'C', 'B', 'M']) {
+    IC.aspPreset(S, ap, k); const sh = IC.aspShapeOf(S, ap);
+    IC.aspNotch(S, sh, {}); IC.aspExt(S, sh, {});
+    texts.push(IC.ASP_SHAPES[k].what, IC.aspShapeText(S, sh), ...IC.aspVols(S, ap).map(IC.aspWords), ...IC.aspVols(S, ap).map(IC.aspShort), ...IC.aspCheck(S, ap));
+  }
+  for (const k in IC.ASP_CLS) texts.push(IC.ASP_CLS[k].who, IC.ASP_CLS[k].need, IC.ASP_CLS[k].rule);
+  for (const t of texts) {
+    for (const m of t.matchAll(/(\d{1,2}),(\d{3}) ft/g)) assert(+(m[1] + m[2]) < 6000, `"${m[0]}" should be a flight level: ${t}`);
+    for (const m of t.matchAll(/FL(\d{3})/g)) assert(+m[1] >= 60, `"${m[0]}" should be in feet: ${t}`);
+  }
+  // the chart's labels: hundreds of feet below 6,000 ft, flight levels above, and the list says the same
+  assert(IC.aspChart(0) === 'SFC' && IC.aspChart(1200 / IC.FT) === '12' && IC.aspChart(10000 / IC.FT) === 'FL100', 'chart labels');
+  assert(IC.flText(4000 / IC.FT) === '4,000 ft' && IC.flText(7000 / IC.FT) === 'FL070', 'the list and the text disagree');
+});
+test('airspace: a save from before shapes converts its rings and areas', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  IC.step(S, 0.5);
+  const ap = S.byId[S.story.cap], k = 1000 / IC.FT;
+  // the old form: rings as volumes, a preset name, a military circle
+  delete S.asp.shapes;
+  S.asp.vols = [{ id: 'av1', ap: ap.id, x: ap.x, y: ap.y, kind: 'ctr', cls: 'D', r0: 0, r1: 110, lo: 0, hi: 2.5 * k, name: 'Control zone' },
+    { id: 'av2', ap: ap.id, x: ap.x, y: ap.y, kind: 'shelf', cls: 'C', r0: 110, r1: 250, lo: 2.5 * k, hi: 10 * k, name: 'Shelf 1' },
+    { id: 'av3', ap: null, x: ap.x + 900, y: ap.y, kind: 'mil', cls: 'Q', r0: 0, r1: 200, lo: 0, hi: 10 * k, name: 'Danger area Somewhere' }];
+  ap.asp = { preset: 'regional', auto: false };
+  IC.step(S, 0.5);
+  const sh = IC.aspShapeOf(S, ap);
+  assert(sh && sh.key === 'C' && sh.rings.length === 2 && sh.rings[0].cls === 'D' && Math.abs(sh.rings[1].r - 250) < 1e-6 && Math.abs(sh.rings[1].lo - 2.5 * k) < 1e-6, `converted to ${JSON.stringify(sh && sh.rings)}`);
+  const area = S.asp.shapes.find(s => !s.ap && s.key === 'T');
+  assert(area && area.name === 'Danger area Somewhere' && IC.aspClassAt(S, ap.x + 900, ap.y, 1).cls === 'Q', 'the military circle was not kept');
+  assert(!S.asp.vols.some(v => v.id === 'av1'), 'old volumes are still there');
+  // and the converted game saves and loads
+  const back = IC.loadSave(IC.saveGame(S));
+  assert(back && IC.aspShapeOf(back, back.byId[ap.id]).rings.length === 2, 'the converted airspace did not survive a save');
+});
+
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };
