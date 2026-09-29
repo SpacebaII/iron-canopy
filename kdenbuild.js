@@ -63,6 +63,9 @@ function buildKdenAt(S, ap) {
     tool('remote'); line([[-10.4, 9.5], [10.4, 10.8]]);
     tool('terminal'); line([[-6, -12.5], [6, -15.5]]);
   });
+  step('an underground train from the main terminal to each concourse, as at Denver', () => {
+    tool('mover'); for (const [a, b] of [[-12.6, -8], [-8, -1.2], [-1.2, 4.6]]) line([[0, a], [0, b]]);
+  });
   step('fuel farm with a hydrant system', () => {
     tool('fuel'); for (const x of [-8, -6, -4, -2]) for (const y of [16, 18]) { click(x, y); again(x, y); }
     tool('hydrant'); click(2, 17); again(2, 17);
