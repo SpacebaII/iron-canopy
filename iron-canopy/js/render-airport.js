@@ -322,19 +322,6 @@ function drawArea(g, p, fill, px, part, tiles) {
     g.fillStyle = gr; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 7); g.fill();
   }
 }
-function fillets(ap) {
-  const key = ap.parts.length + ':' + ap.nodeN + ':' + ap.parts.filter(q => q.built).length;
-  if (ap._fil && ap._filKey === key) return ap._fil;
-  const deg = new Map(), mat = new Map();
-  for (const q of ap.parts) if (q.kind === 'taxi' && q.built) q.nodes.forEach((id, i) => { const d = (i === 0 || i === q.nodes.length - 1) ? 1 : 2; deg.set(id, (deg.get(id) || 0) + d); mat.set(id, q); });
-  const out = [];
-  for (const [id, d] of deg) { const n = ap.nodes[id]; if (n && (d >= 3 || (n.on && d >= 1))) out.push({ x: n.x, y: n.y, p: mat.get(id), r: n.on && n.on.kind === 'rwy' ? 0.18 : 0.16 }); }
-  ap._fil = out; ap._filKey = key;
-  return out;
-}
-function drawFillets(g, ap, px) {
-  for (const f of fillets(ap)) { g.fillStyle = paveCol2(f.p); g.beginPath(); g.arc(f.x, f.y, f.r + 0.04, 0, 7); g.fill(); g.fillStyle = paveCol(f.p); g.beginPath(); g.arc(f.x, f.y, f.r, 0, 7); g.fill(); }
-}
 function drawTaxi(g, ap, p, px, z, full, marks, night, tiles) {
   const pts = p.nodes.map(id => ap.nodes[id]).filter(Boolean);
   if (pts.length < 2) return;

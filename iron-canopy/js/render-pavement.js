@@ -118,6 +118,8 @@ function rwPath(g, r, grow, ext) {
 }
 function polyPath(g, P) { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); }
 function linePath(g, P) { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); }
+/* a taxiway as separate straight pieces (no joins: the junction hubs fill the nodes, square ends everywhere else) */
+function segPath(g, P) { for (let i = 1; i < P.length; i++) { g.moveTo(P[i - 1].x, P[i - 1].y); g.lineTo(P[i].x, P[i].y); } }
 const bbOf = (P, m) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of P) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); } return { x0: x0 - m, y0: y0 - m, x1: x1 + m, y1: y1 + m }; };
 const hit = (a, b) => !(a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1);
 
@@ -126,7 +128,7 @@ function prep(ap, G) {
   if (G._prep) return G._prep;
   const R = { rw: [], tw: [], ar: [], fil: [], ends: [], road: null };
   for (const r of G.rw) {
-    const sh = r.w >= 0.4 ? 0.075 : r.w >= 0.3 ? 0.05 : 0.03;
+    const sh = IC.rwShoulder(r.w);
     R.rw.push({ r, sh, bb: bbOf([r.a, r.b], r.w + 0.4) });
     for (const [e, sg] of [[r.a, -1], [r.b, 1]]) {
       // a blast pad beyond each end (only where the runway is long enough to carry jets), and the approach lights
@@ -158,20 +160,33 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
   if (!o.noSurround) perimeter(g, ap, ppu, box);
   // approach lights on their gravel track, over the grass beyond each end
   if (!o.noSurround) for (const E of ends) if (E.lights) approach(g, E, ppu);
-  // shoulders: a lighter asphalt beyond the edge line (not load-bearing), then blast pads
-  for (const { r, sh } of rws) if (ppu > 6) { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
-  g.lineCap = 'round';
-  for (const { t, sh } of tws) if (sh && ppu > 6) { g.strokeStyle = paveFill(g, 'shoulder', ppu, t.pts[0].x, t.pts[0].y, 0); g.lineWidth = t.w + 2 * sh; g.beginPath(); linePath(g, t.pts); g.stroke(); }
-  if (tws.length) for (const f of IC.paveFillets(ap, 0.1)) if (hit(bbOf(f.poly, 0), box)) { g.fillStyle = paveFill(g, 'shoulder', ppu, f.f.N.x, f.f.N.y, 0); g.beginPath(); polyPath(g, f.poly); g.fill(); }
-  for (const E of ends) if (E.pad) { const r = E.r; g.fillStyle = paveFill(g, 'shoulder', ppu, E.e.x, E.e.y, Math.atan2(E.uy, E.ux)); g.beginPath(); padPath(g, E, r.w / 2 + R.rw.find(q => q.r === r).sh); g.fill(); }
-  // the pavement: aprons and forecourts, then fillets and taxiways, runways last (their slabs run through)
-  for (const { a } of ars) { g.fillStyle = paveFill(g, a.mat, ppu, a.p.x || a.poly[0].x, a.p.y || a.poly[0].y, a.a); g.beginPath(); polyPath(g, a.poly); g.fill(); }
-  if (ppu > 6) for (const { f } of fils) { g.fillStyle = paveFill(g, f.mat, ppu, f.f.N.x, f.f.N.y, f.th); g.beginPath(); polyPath(g, f.poly); g.fill(); }
-  for (const { t } of tws) for (let i = 1; i < t.pts.length; i++) {
-    const A = t.pts[i - 1], B = t.pts[i];
-    g.strokeStyle = paveFill(g, t.mat, ppu, A.x, A.y, Math.atan2(B.y - A.y, B.x - A.x)); g.lineWidth = wide(t.w, 2.2);
-    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.stroke();
+  // one slab grid for the whole airport's taxiways, fillets and aprons (the airport's axis), so joints run on across
+  // every join and a piece drawn over another leaves no seam; runways have their own, drawn on top
+  const ga = ap.rwyA || 0, fill = mat => paveFill(g, mat, ppu, ap.x, ap.y, ga);
+  const hubs = e => IC.paveHubs(ap, e).filter(h => hit(h._bb || (h._bb = bbOf(h.poly, 0.3)), box));
+  // shoulders: a lighter asphalt beyond the edge line (not load-bearing), round the fillets and junctions too
+  g.lineCap = 'butt';
+  if (ppu > 6 && tws.length) {
+    g.fillStyle = g.strokeStyle = fill('shoulder');
+    const bySh = new Map(); for (const q of tws) if (q.sh) { if (!bySh.has(q.sh)) bySh.set(q.sh, []); bySh.get(q.sh).push(q.t); }
+    for (const [sh, list] of bySh) for (const t of list) { g.lineWidth = t.w + 2 * sh; g.beginPath(); segPath(g, t.pts); g.stroke(); }
+    const sh0 = Math.max(0, ...tws.map(q => q.sh));
+    g.beginPath(); for (const f of IC.paveFillets(ap, sh0)) if (hit(bbOf(f.poly, 0), box)) polyPath(g, f.poly); g.fill();
+    g.beginPath(); for (const h of hubs(sh0)) polyPath(g, h.poly); g.fill();
   }
+  for (const E of ends) if (E.pad) { const r = E.r; g.fillStyle = paveFill(g, 'shoulder', ppu, E.e.x, E.e.y, Math.atan2(E.uy, E.ux)); g.beginPath(); padPath(g, E, r.w / 2 + R.rw.find(q => q.r === r).sh); g.fill(); }
+  // the pavement: aprons and forecourts, then fillets, junctions and taxiways, one fill per material
+  for (const { a } of ars) { g.fillStyle = fill(a.mat); g.beginPath(); polyPath(g, a.poly); g.fill(); }
+  const mats = new Set(tws.map(q => q.t.mat));
+  for (const m of mats) {
+    g.fillStyle = g.strokeStyle = fill(m);
+    if (ppu > 6) { g.beginPath(); for (const { f } of fils) if (f.mat === m) polyPath(g, f.poly); g.fill(); }
+    g.beginPath(); for (const h of hubs(0)) if (h.mat === m) polyPath(g, h.poly); g.fill();
+    const ws = new Map(); for (const { t } of tws) if (t.mat === m) { const w = wide(t.w, 2.2); if (!ws.has(w)) ws.set(w, []); ws.get(w).push(t); }
+    for (const [w, list] of ws) { g.lineWidth = w; g.beginPath(); for (const t of list) segPath(g, t.pts); g.stroke(); }
+  }
+  // runways over everything that meets them: shoulders, then the runway, so its edges run straight through
+  for (const { r, sh } of rws) if (ppu > 6 && r.mat !== 'grass') { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
   for (const { r } of rws) { g.fillStyle = paveFill(g, r.mat, ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, Math.max(0, (wide(r.w, 3.2) - r.w) / 2), 0); g.fill(); }
   // wear: rubber in the touchdown zones, tyre tracks down the taxiway centrelines, stains where aircraft stand
   if (ppu >= 3) grime(g, ap, G, rws, tws, ars, ppu);
@@ -310,14 +325,16 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
   const tws = R.tw.filter(q => !q.t.lane && hit(q.bb, box));
   const band = (e, op) => {
     lg.globalCompositeOperation = op; lg.fillStyle = lg.strokeStyle = '#000'; lg.lineCap = 'round'; lg.lineJoin = 'round';
-    for (const { t } of tws) { lg.lineWidth = Math.max(0.001, t.w - 2 * e); lg.beginPath(); linePath(lg, t.pts); lg.stroke(); }
-    for (const f of IC.paveFillets(ap, -e)) if (hit(bbOf(f.poly, 0), box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
+    lg.lineCap = 'butt';
+    for (const { t } of tws) { lg.lineWidth = Math.max(0.001, t.w - 2 * e); lg.beginPath(); segPath(lg, t.pts); lg.stroke(); }
+    lg.beginPath(); for (const f of IC.paveFillets(ap, -e)) if (hit(bbOf(f.poly, 0), box)) polyPath(lg, f.poly); lg.fill();
+    lg.beginPath(); for (const h of IC.paveHubs(ap, -e)) if (hit(bbOf(h.poly, 0), box)) polyPath(lg, h.poly); lg.fill();
   };
   band(0, 'source-over'); band(lw, 'destination-out');
   if (dbl) { band(lw + gap, 'source-over'); band(2 * lw + gap, 'destination-out'); }
   // not across a runway, an apron, a pad or a taxilane
   lg.globalCompositeOperation = 'destination-out';
-  for (const { r, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, 0.004, 0); lg.fill(); }
+  for (const { r, sh, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, sh + 0.004, 0); lg.fill(); }
   for (const { a, bb } of R.ar) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, a.poly); lg.fill(); }
   // the aprons' own edge: inside their outline, cut where a taxiway comes in
   lg.globalCompositeOperation = 'source-over';
@@ -328,9 +345,11 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
     lg.restore();
   }
   lg.globalCompositeOperation = 'destination-out';
-  for (const { t } of tws) { lg.lineWidth = t.w * 0.98; lg.beginPath(); linePath(lg, t.pts); lg.stroke(); }
+  lg.lineCap = 'butt';
+  for (const { t } of tws) { lg.lineWidth = t.w * 0.98; lg.beginPath(); segPath(lg, t.pts); lg.stroke(); }
   for (const { f, bb } of R.fil) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
-  for (const { r, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, 0.004, 0); lg.fill(); }
+  lg.beginPath(); for (const h of IC.paveHubs(ap, -lw * 0.5)) if (hit(bbOf(h.poly, 0), box)) polyPath(lg, h.poly); lg.fill();
+  for (const { r, sh, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, sh + 0.004, 0); lg.fill(); }
   // tint the mask yellow and lay it on
   lg.globalCompositeOperation = 'source-in'; lg.setTransform(1, 0, 0, 1, 0, 0); lg.fillStyle = YEL; lg.fillRect(0, 0, W, H);
   lg.globalCompositeOperation = 'source-over';

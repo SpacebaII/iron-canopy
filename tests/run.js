@@ -1925,6 +1925,50 @@ test('pavement: the outline has no gaps under taxiways, fillets join their legs,
   IC.aptRelayout(S, cap, 'kden', 0);
   check(cap, 'the Denver-size layout');
 });
+test('pavement: every kind of junction joins without a round edge, and a runway lies over what meets it (brief 45)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap], x = ap.x, y = ap.y;
+  IC.initAirport(ap);
+  const N = (dx, dy) => IC.aptNode(ap, x + dx, y + dy), P = (nodes, o) => IC.aptAddPart(ap, Object.assign({ kind: 'taxi', nodes }, o), true);
+  IC.aptAddPart(ap, { kind: 'runway', a: { x: x - 12, y }, b: { x: x + 12, y } }, true);
+  const e0 = N(-12, 0), e1 = N(-12, 2), T = N(-4, 2), X = N(0, 2), E = N(8, 2), R = N(-4, 0);
+  P([e0, e1, T, X, E]); P([T, R]); P([N(0, 0.9), X, N(0, 3.5)]);
+  const r0 = N(3, 0), r1 = N(3 + 3.46, 2); P([r0, r1]);                       // a rapid exit at 30°
+  const na = N(-8, 6), nb = N(-4, 6), nc = N(0, 6), nd = N(3, 6), st = N(-4, 8);
+  P([na, nb, nc, nd], { w: 0.1 }); P([nb, st], { w: 0.23 }); P([nc, N(2.6, 7.5)], { w: 0.1 });   // wide stem on a narrow lane; a fork
+  const E2 = N(8, 7.5); P([E, E2]);
+  IC.aptAddPart(ap, { kind: 'apron', x: x + 8, y: y + 9, a: 0, w: 4, h: 3 }, true);
+  IC.resolveNodes(ap);
+  const n = id => ap.nodes[id], at = (q, dx, dy) => IC.paveAt(ap, q.x + dx, q.y + dy), lay = (q, dx, dy) => IC.paveLayer(ap, q.x + dx, q.y + dy);
+  const kinds = new Set(IC.paveJoins(ap).map(j => j.type));
+  for (const k of ['end', 'entry', 'rapid', 'apron', 'X', 'T', 'Y', 'bend']) assert(kinds.has(k), `no ${k} junction in the test field (${[...kinds]})`);
+  // a wide stem on a narrow lane: nothing round pokes out on the far side, and its dead end is square
+  assert(!at(n(nb), 0, -0.07), 'a wide taxiway pokes a disc out through the far side of a narrow one');
+  assert(at(n(st), 0.1, -0.01) && !at(n(st), 0.08, 0.06), 'a dead end is round, not square');
+  // the runway, its edge line and its shoulder run straight through every junction on it
+  const rw = ap.parts.find(p => p.kind === 'runway'), hw = rw.w / 2, sh = IC.rwShoulder(rw.w);
+  for (const id of [R, r0, e0]) for (const dx of id === e0 ? [0.02, 0.08] : [-0.08, 0, 0.08]) for (const o of [hw - 0.01, hw + sh / 2]) assert(lay(n(id), dx, o) === 'rwy', `the runway is not on top at ${id} (${dx}, ${o})`);
+  assert(lay(n(R), 0, hw + sh + 0.03) === 'taxi', 'the taxiway does not meet the runway shoulder');
+  // every turn that is taxied has a fillet, curving off the shoulder's edge; the outside of a hairpin has none
+  const G = IC.paveGeom(ap), fil = id => G.fil.filter(f => U.dist(f.f.N, n(id)) < 1e-6);
+  assert(fil(R).length === 2 && fil(T).length === 2, 'a right-angle entry or T without its two fillets');
+  const rf = fil(r0);
+  assert(rf.length === 1 && rf[0].f.gap > 2 && U.dist(rf[0].f.T1, rf[0].f.T2) > 0.3, 'a rapid exit without one long fillet on the inside of the turn');
+  assert(fil(nc).every(f => f.f.gap > 1), 'a fillet in the acute corner of a fork');
+  assert(fil(E2).length === 2, 'a taxiway onto an apron without fillets both sides');
+  for (const f of G.fil) if (f.f.A.kind === 'rwy' || f.f.B.kind === 'rwy') {
+    const T0 = f.f.A.kind === 'rwy' ? f.f.T1 : f.f.T2, o = Math.abs((T0.x - rw.a.x) * -IC.rwDir(rw).y + (T0.y - rw.a.y) * IC.rwDir(rw).x);
+    assert(Math.abs(o - hw - sh) < 0.005, `a fillet meets the runway ${o.toFixed(3)} from its centreline, not at the shoulder's edge (${(hw + sh).toFixed(3)})`);
+  }
+  // the junctions' middles: nothing reaches past the widest taxiway there, except round the outside of a bend
+  for (const h of IC.paveHubs(ap, 0)) {
+    const J = G.J.find(j => j.N === h.N), wmax = Math.max(...J.A.filter(a => a.kind === 'taxi').map(a => a.h));
+    for (const q of h.poly) assert(U.dist(q, h.N) <= wmax + 1e-6, 'a junction reaches past its taxiways');
+  }
+  // the lead-off line from a rapid exit sweeps onto the runway's centreline on a long curve
+  const lead = G.cl.filter(c => c.lead && c.pts.some(q => U.dist(q, n(r0)) < 2.5));
+  assert(lead.length === 1 && U.dist(lead[0].pts[0], lead[0].pts[lead[0].pts.length - 1]) > 0.4, `the rapid exit's lead-off line is missing or short (${lead.length})`);
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };

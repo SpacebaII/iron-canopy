@@ -563,6 +563,7 @@ function exitSpec(S, ap, rw) {
   if (!specs.length) text.push(`${rw.name} already has exits where aircraft slow down.`);
   return { specs, text, bad: !specs.length };
 }
+IC.bldExitSpec = exitSpec;
 /* a holding bay: a bypass entry from the parallel taxiway onto the runway a little way in from its end */
 function holdSpec(ap, rw, p) {
   const par = findParallel(ap, rw);

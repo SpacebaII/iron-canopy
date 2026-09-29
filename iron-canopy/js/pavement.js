@@ -25,6 +25,13 @@ IC.PAVE_DESIGN = DESIGN;
 const designOf = w => DESIGN.find(d => w >= d.w) || DESIGN[DESIGN.length - 1];
 IC.paveDesign = designOf;
 const STRAIGHT = Math.PI - 0.09;   // a gap wider than this (about 175°) is a straight run: no fillet
+const ACUTE = 1.0;   // a gap narrower than this (about 57°) is the outside of a hairpin nobody taxis: no fillet or curve
+/* the fillet's radius against the centreline radius: bold at a right angle, longer and gentler for a shallow turn
+   (a rapid exit's inside edge widens over a long taper), wider still onto a runway */
+const filK = (turn, rwy) => (rwy ? 1.6 : 1.3) * (1 + 3 * Math.pow(Math.max(0, 1 - turn / (Math.PI / 2)), 2));
+/* a runway's paved shoulder beyond its edge line: it is drawn over the taxiways that meet it, so fillets onto a
+   runway are tangent to the shoulder's outer edge and the runway reads as one piece through every junction */
+IC.rwShoulder = w => w >= 0.4 ? 0.075 : w >= 0.3 ? 0.05 : 0.03;   // a gap wider than this (about 175°) is a straight run: no fillet
 const ang = (x, y) => Math.atan2(y, x);
 
 /* what the pavement looks like depends on: every paved part built, where it is, its material and width */
@@ -48,9 +55,9 @@ function arms(ap, id, legs) {
   if (n.on && n.on.kind === 'rwy') {
     const rw = ap.parts.find(p => p.id === n.on.part);
     if (rw && rw.built) {
-      const d = IC.rwDir(rw), Lr = IC.rwLen(rw), t = IC.rwT(rw, n) * Lr;
-      if (t < Lr - 0.05) out.push({ ux: d.x, uy: d.y, h: rw.w / 2, len: Lr - t, kind: 'rwy', part: rw, mat: IC.paveOf(rw) });
-      if (t > 0.05) out.push({ ux: -d.x, uy: -d.y, h: rw.w / 2, len: t, kind: 'rwy', part: rw, mat: IC.paveOf(rw) });
+      const d = IC.rwDir(rw), Lr = IC.rwLen(rw), t = IC.rwT(rw, n) * Lr, h = rw.w / 2 + (IC.paveOf(rw) === 'grass' ? 0 : IC.rwShoulder(rw.w));
+      if (t < Lr - 0.05) out.push({ ux: d.x, uy: d.y, h, len: Lr - t, kind: 'rwy', part: rw, mat: IC.paveOf(rw) });
+      if (t > 0.05) out.push({ ux: -d.x, uy: -d.y, h, len: t, kind: 'rwy', part: rw, mat: IC.paveOf(rw) });
     }
   } else if (n.on && n.on.kind === 'apron' && !n.on.inside) {
     const a = ap.parts.find(p => p.id === n.on.part);
@@ -92,19 +99,22 @@ function legsOf(ap) {
 /* one inner corner between arm A and the next arm B (counter-clockwise), grown outwards by e: the corner C where their
    edges meet, the tangent points and the arc. null when the corner needs no fillet */
 function corner(N, A, B, gap, e, straightX) {
-  if (gap >= STRAIGHT || gap < 0.03 || straightX) return null;
+  if (gap >= STRAIGHT || gap < ACUTE || straightX) return null;
   if (A.kind !== 'taxi' && B.kind !== 'taxi') return null;
   const T = A.kind === 'taxi' && (B.kind !== 'taxi' || A.h >= B.h) ? A : B, D = designOf(T.h * 2);
   // the edges facing each other: A's on its counter-clockwise side, B's on its clockwise side
   const nA = { x: -A.uy, y: A.ux }, nB = { x: B.uy, y: -B.ux };
-  const hA = A.h + e, hB = B.h + e;
+  // (a runway's side is its shoulder's outer edge whatever e is: a taxiway's shoulder thins out into the runway's)
+  const hA = A.h + (A.kind === 'rwy' ? 0 : e), hB = B.h + (B.kind === 'rwy' ? 0 : e);
   const pA = { x: N.x + nA.x * hA, y: N.y + nA.y * hA }, pB = { x: N.x + nB.x * hB, y: N.y + nB.y * hB };
   const den = A.ux * B.uy - A.uy * B.ux; if (Math.abs(den) < 1e-6) return null;
   const s = ((pB.x - pA.x) * B.uy - (pB.y - pA.y) * B.ux) / den;
   const C = { x: pA.x + A.ux * s, y: pA.y + A.uy * s };
   // the turn is π − gap; the main gear cuts in by the track-in, less on a gentle turn
   const turn = Math.PI - gap, tin = (D.Rc - Math.sqrt(Math.max(0, D.Rc * D.Rc - D.d * D.d))) * Math.min(1, turn / (Math.PI / 2));
-  let R = Math.max(0.01, D.Rc - T.h - tin) - e;
+  // (as bold as the real ones: the edge arc runs from well before the corner, about 1.3 times the centreline radius
+  // less the gear's cut-in; onto a runway the entry is wider still, so a turn from either way reads as a funnel)
+  let R = Math.max(0.01, D.Rc * filK(turn, A.kind === 'rwy' || B.kind === 'rwy') - tin) - e;
   if (R < 0.004) R = 0.004;
   const tg = Math.tan(gap / 2);
   // no fillet longer than the legs it joins (a short leg to the next junction takes a tighter one)
@@ -162,6 +172,40 @@ IC.paveFillets = function (ap, e) {
   return out;
 };
 
+/* The middle of each junction, grown by e: the points where every arm's edges leave the node, joined in order round
+   it, with an arc round the outside of a turn (the reflex side, where no arm is). Taxiways are drawn with square
+   ends, so this is what fills a junction: nothing round pokes out of it, whatever the widths that meet. */
+IC.paveHubs = function (ap, e) {
+  const G = IC.paveGeom(ap), k = 'h' + (e || 0).toFixed(4);
+  if (G[k]) return G[k];
+  const out = [];
+  e = e || 0;
+  for (const J of G.J) {
+    const A = J.A; if (A.length < 2 || !A.some(a => a.kind === 'taxi')) continue;
+    const N = J.N, pts = [];
+    const at = (th, r) => pts.push({ th, x: N.x + Math.cos(th) * r, y: N.y + Math.sin(th) * r });
+    // (only the taxiways' edges: a runway or an apron covers its own side of the node)
+    A.forEach((a, i) => {
+      if (a.kind !== 'taxi') return;
+      const h = Math.max(0.002, a.h + e);
+      at(a.th + Math.PI / 2, h); at(a.th - Math.PI / 2, h);
+      const b = A[(i + 1) % A.length], gap = J.gaps[i];
+      if (gap > Math.PI + 0.05 && a.kind === 'taxi' && b.kind === 'taxi') {
+        // the outside of the turn: an arc from a's left edge to b's right edge
+        const t0 = a.th + Math.PI / 2, t1 = a.th + gap - Math.PI / 2, hb = Math.max(0.002, b.h + e), n = Math.max(2, Math.ceil((t1 - t0) / 0.15));
+        for (let j = 1; j < n; j++) at(t0 + (t1 - t0) * j / n, h + (hb - h) * j / n);
+      }
+    });
+    if (pts.length < 3) continue;
+    for (const q of pts) q.th = Math.atan2(q.y - N.y, q.x - N.x);
+    pts.sort((p, q) => p.th - q.th);
+    const T = A.filter(a => a.kind === 'taxi').sort((p, q) => q.h - p.h)[0];
+    out.push({ poly: pts.map(q => ({ x: q.x, y: q.y })), mat: T.mat, N });
+  }
+  G[k] = out;
+  return out;
+};
+
 /* The geometry, cached until the pavement changes:
    rw  runways { p, a, b, w, d (unit along), L, mat }
    tw  taxiways { p, pts, w, mat, lane }
@@ -215,9 +259,10 @@ function centrelines(ap, G) {
     if (J.cross) continue;
     for (let i = 0; i < n; i++) {
       const a = J.A[i], b = J.A[(i + 1) % n], gap = J.gaps[i];
-      if (gap >= STRAIGHT || gap < 0.2 || (a.kind !== 'taxi' && b.kind !== 'taxi') || a.kind === 'apron' || b.kind === 'apron') continue;
+      if (gap >= STRAIGHT || gap < ACUTE || (a.kind !== 'taxi' && b.kind !== 'taxi') || a.kind === 'apron' || b.kind === 'apron') continue;
       const T = a.kind === 'taxi' ? a : b, D = designOf(T.h * 2), tg = Math.tan(gap / 2);
-      let Rc = D.Rc; const room = Math.min(a.len, b.len) * 0.85;
+      // (a shallow turn, as off a rapid exit, on a long sweeping curve)
+      let Rc = D.Rc * (1 + 3 * Math.pow(Math.max(0, 1 - (Math.PI - gap) / (Math.PI / 2)), 2)); const room = Math.min(a.len, b.len) * 0.85;
       if (Rc / tg > room) Rc = room * tg;
       const t = Rc / tg, N = J.N;
       const P1 = { x: N.x + a.ux * t, y: N.y + a.uy * t }, P2 = { x: N.x + b.ux * t, y: N.y + b.uy * t };
@@ -241,13 +286,56 @@ function centrelines(ap, G) {
   }
 }
 
+/* every junction by its kind, for the audit and the pictures: 'end' (a taxiway at a runway's end), 'entry' (onto a
+   runway at about a right angle), 'rapid' (onto a runway at an acute angle), 'apron' (onto an apron edge), 'X' (a
+   crossing), 'T', 'Y' (a fork with an acute angle between two arms), 'bend' (one taxiway turning) */
+IC.paveJoins = function (ap) {
+  const G = IC.paveGeom(ap), out = [];
+  for (const J of G.J) {
+    if (J.A.length < 2) continue;
+    const rw = J.A.find(a => a.kind === 'rwy'), taxi = J.A.filter(a => a.kind === 'taxi');
+    let type;
+    if (rw) {
+      const r = rw.part, Lr = IC.rwLen(r), t = IC.rwT(r, J.N) * Lr;
+      const acute = taxi.some(a => { const c = Math.abs(a.ux * rw.ux + a.uy * rw.uy); return c > 0.64 && c < 0.985; });
+      type = t < 0.6 || t > Lr - 0.6 ? 'end' : acute ? 'rapid' : 'entry';
+    } else if (J.A.some(a => a.kind === 'apron')) type = 'apron';
+    else if (J.A.length === 2) type = 'bend';
+    else if (J.cross || J.A.length >= 4) type = 'X';
+    else type = J.gaps.some(g => g < 1.05) ? 'Y' : 'T';
+    out.push({ id: J.id, x: J.N.x, y: J.N.y, type, J });
+  }
+  return out;
+};
+
+/* what is on top at a point, in the order the pavement is painted: 'rwy' (a runway or its shoulder, over everything
+   that meets it), 'taxi' (a taxiway, fillet or junction), 'apron', or null */
+IC.paveLayer = function (ap, x, y) {
+  const G = IC.paveGeom(ap);
+  for (const r of G.rw) { const t = (x - r.a.x) * r.d.x + (y - r.a.y) * r.d.y, o = (x - r.a.x) * -r.d.y + (y - r.a.y) * r.d.x; if (t >= 0 && t <= r.L && Math.abs(o) <= r.w / 2 + (r.mat === 'grass' ? 0 : IC.rwShoulder(r.w))) return 'rwy'; }
+  const m = IC.paveAt(ap, x, y);
+  if (!m) return null;
+  for (const a of G.ar) if (U.inPoly(x, y, a.poly.map(v => [v.x, v.y]))) {
+    // (a taxiway over its apron entry)
+    const on = G.tw.some(t => t.pts.some((q, i) => i && U.segDist(x, y, t.pts[i - 1].x, t.pts[i - 1].y, q.x, q.y) <= t.w / 2));
+    return on ? 'taxi' : 'apron';
+  }
+  return 'taxi';
+};
+
 /* the pavement under a point: 'conc', 'asph', 'rconc', 'grass' or null (the fillets count; buildings do not) */
 IC.paveAt = function (ap, x, y) {
   const G = IC.paveGeom(ap);
   for (const r of G.rw) { const t = (x - r.a.x) * r.d.x + (y - r.a.y) * r.d.y, o = (x - r.a.x) * -r.d.y + (y - r.a.y) * r.d.x; if (t >= 0 && t <= r.L && Math.abs(o) <= r.w / 2) return r.mat; }
-  for (const t of G.tw) for (let i = 1; i < t.pts.length; i++) if (U.segDist(x, y, t.pts[i - 1].x, t.pts[i - 1].y, t.pts[i].x, t.pts[i].y) <= t.w / 2 + 1e-6) return t.mat;
+  // (square ends: the hubs fill the junctions)
+  for (const t of G.tw) for (let i = 1; i < t.pts.length; i++) {
+    const A = t.pts[i - 1], B = t.pts[i], L = U.dist(A, B); if (L < 1e-6) continue;
+    const ux = (B.x - A.x) / L, uy = (B.y - A.y) / L, s = (x - A.x) * ux + (y - A.y) * uy, o = (x - A.x) * -uy + (y - A.y) * ux;
+    if (s >= -1e-6 && s <= L + 1e-6 && Math.abs(o) <= t.w / 2 + 1e-6) return t.mat;
+  }
   for (const a of G.ar) if (U.inPoly(x, y, a.poly.map(v => [v.x, v.y]))) return a.mat;
   for (const f of G.fil) if (U.inPoly(x, y, f.poly.map(v => [v.x, v.y]))) return f.mat;
+  for (const f of IC.paveHubs(ap, 0)) if (U.inPoly(x, y, f.poly.map(v => [v.x, v.y]))) return f.mat;
   return null;
 };
 
