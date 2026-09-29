@@ -56,7 +56,6 @@ function* gameSteps(opts) {
   };
   S.cal.m = IC.calAt(S, S.time).m;
   if (mode === 'range') return IC.rangeInit(S);
-  S.terrain = IC.buildTerrain(W);
   S.clouds = IC.buildClouds();
 
   for (const c of W.cities) S.infra.push(Object.assign(c, { infra: true, max: 130 + c.pop * 0.2, morale: 78, alert: 0, prosp: 1, owner: 'us', ind: Math.round(8 + c.pop * 0.05) }));
@@ -76,7 +75,10 @@ function* gameSteps(opts) {
     apts.forEach((ap, i) => IC.layoutAirport(ap, i === 0 ? 'intl' : i === 1 || !story ? 'regional_ok' : 'regional_bad', ap.rwyA));
     for (const b of S.infra.filter(i => i.kind === 'airbase')) IC.layoutAirport(b, story && b.id === 'ab_fwd' ? 'mil_mothball' : 'mil_full', b.rwyA);
     for (const b of IC.bases(S)) { b.crews = b.kind === 'airbase' ? 2 : 1; b.works = []; b.autoRepair = true; IC.aptStats(S, b); }
+    // the country's roads come in to each airport's landside, round the airfield or under it (growth.js)
+    for (const b of IC.bases(S)) IC.aptSeatRoads(S, b);
   }
+  S.terrain = IC.buildTerrain(W);
   for (const b of W.bridges) S.infra.push(Object.assign(b, { infra: true, owner: 'us', r: 8, max: 40, home: W.inHome(b.x, b.y) }));
   for (const i of S.infra) i.hp = i.max;
   S.byId = {}; for (const i of S.infra) S.byId[i.id] = i;

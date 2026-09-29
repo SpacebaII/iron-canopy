@@ -105,13 +105,9 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
   const by = k => parts.filter(p => p.kind === k);
   // the airfield's grass is part of the terrain (terrain.js); here only the perimeter fence
   const box = fieldBox(ap);
-  if (box) {
-    g.save(); g.translate(box.x, box.y); g.rotate(box.a);
-    if (z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); g.strokeRect(-box.w / 2, -box.h / 2, box.w, box.h); }
-    g.restore();
-  }
   // inside the fence the ground is mown grass: no trees or crops on an airfield, stripes where the mowers went
   if (box && z > 2) drawField(g, box, px, z);
+  if (box && z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); IC.aptFenceStroke(g, box); }
   for (const rw of by('runway')) {
     const L = IC.rwLen(rw), d = IC.rwDir(rw), c = IC.rwAt(rw, 0.5);
     rect(g, { x: c.x, y: c.y, a: Math.atan2(d.y, d.x) }, L + 3, 3.2, 'rgba(146,158,112,0.35)');
@@ -162,7 +158,7 @@ IC.drawAirport = function (g, S, ap, px, now, light) {
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) { const L = m.T.len * 0.5 + 0.03; veh(g, m.x + Math.cos(m.h) * L, m.y + Math.sin(m.h) * L, m.h, 0.06, 0.03, 'rgb(236,196,60)', px); }
   }
   // the airport sits under the same night as everything else; its lights do not
-  if (light < 1 && box) { g.save(); g.translate(box.x, box.y); g.rotate(box.a); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fillRect(-box.w / 2 - 0.05, -box.h / 2 - 0.05, box.w + 0.1, box.h + 0.1); g.restore(); }
+  if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // stop bars at the hold-short lines: red until the tower lets the aircraft on, then green lights lead it on
   if (z > 2.5) drawStopBars(g, ap, px, z, light);
@@ -271,10 +267,11 @@ const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 
 /* the airfield's grass: a flat mown colour over the terrain inside the fence, and mowing stripes close in */
 function drawField(g, box, px, z) {
   const k = U.clamp((z - 3) / 30, 0, 1);
-  g.save(); g.translate(box.x, box.y); g.rotate(box.a);
-  g.fillStyle = `rgba(98,124,86,${0.25 + 0.65 * k})`; g.fillRect(-box.w / 2, -box.h / 2, box.w, box.h);
+  g.save(); g.beginPath(); IC.aptFencePath(g, box); g.clip('evenodd');
+  g.fillStyle = `rgba(98,124,86,${0.25 + 0.65 * k})`; g.fill('evenodd');
   if (z > 12) {
-    // only the stripes in view
+    // only the stripes in view, along the main runway
+    g.translate(box.x, box.y); g.rotate(box.a);
     const V = IC.rs && IC.rs.view, st = 0.3;
     let y0 = -box.h / 2, y1 = box.h / 2;
     if (V) { const c = Math.cos(-box.a), sn = Math.sin(-box.a), ys = [[V.x0, V.y0], [V.x1, V.y0], [V.x1, V.y1], [V.x0, V.y1]].map(([x, y]) => (x - box.x) * sn + (y - box.y) * c); y0 = Math.max(y0, Math.min(...ys)); y1 = Math.min(y1, Math.max(...ys)); }

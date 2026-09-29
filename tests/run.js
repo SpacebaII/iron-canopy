@@ -1208,7 +1208,7 @@ test('airport life: the landside grows with passengers and pays a small income',
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);
-  const inside = P(-5, -4);
+  const inside = P(-6, -2.8);
   assert(IC.aptInFence(cap, inside), 'the test point is not inside the fence');
   assert(IC.canPlace(S, 'ssr', inside.x, inside.y), 'a beacon cannot be placed inside the airport');
   const on = P(0, 0.3);

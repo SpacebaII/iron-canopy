@@ -434,6 +434,76 @@ function repairRoads(S, dt) {
   }
 }
 
+/* ---------- where the country's roads meet an airport ---------- */
+/* An airport's own road comes in to a gate on its landside, round the airfield, never across it. Other roads that
+   pass under its runways, taxiways or aprons go in a tunnel (W.tunnels); farm lanes that ran across the field stop
+   at its edge, and streets under it are closed. Railways pass in a tunnel too. Called when an airport is laid out. */
+IC.aptGate = function (S, ap) {
+  const terms = ap.parts.filter(p => p.kind === 'terminal').sort((a, b) => IC.partArea(b) - IC.partArea(a));
+  const E = IC.aptKeepOut(S, ap, { m: 0.2 });
+  const F = IC.aptFence(ap), hull = F ? IC.shapePoly(F.poly) : null;
+  const clear = p => !E.some(b => IC.shapeDist(b.sh, p) < b.pad + 0.4) && !(hull && IC.shapeDist(hull, p) < 0.5 && !F.carveA.some(cv => U.inPoly(p.x, p.y, cv)));
+  if (terms.length) {
+    const t = terms[0], sd = IC.landSide(ap, t);
+    for (let d = IC.LAND_DEPTH + 0.6; d < 30; d += 0.5) { const g = IC.rectWorld(t, 0, sd * (t.h / 2 + d)); if (clear(g)) return g; }
+  }
+  // no terminal: out from the side where the buildings are (an air base's gate is by its hangars and tower)
+  const loc = p => IC.rectLocal({ x: ap.x, y: ap.y, a: ap.rwyA || 0 }, p);
+  const blds = ap.parts.filter(p => p.x != null && p.kind !== 'ils' && p.kind !== 'apron' && p.kind !== 'surface');
+  const my = blds.reduce((s, p) => s + loc(p).y, 0) / Math.max(1, blds.length), mx = blds.reduce((s, p) => s + loc(p).x, 0) / Math.max(1, blds.length);
+  const sd = my < 0 ? -1 : 1;
+  for (let d = 2; d < 60; d += 0.5) { const g = IC.aptLocal(ap, mx, my + sd * d); if (clear(g)) return g; }
+  return null;
+};
+IC.aptSeatRoads = function (S, ap) {
+  const W = S.world; if (!W || !W.edges || !ap.parts || !ap.parts.length) return;
+  W.tunnels = W.tunnels || [];
+  const els = IC.aptElements(S, ap, { noWorld: true });
+  const terms = ap.parts.filter(p => p.kind === 'terminal' || p.kind === 'cargo');
+  const env = terms.map(t => IC.landEnvelope(ap, t));
+  const fence = IC.aptFence(ap), keep = IC.aptKeepOut(S, ap, { els, m: 0.3, envelopes: env });
+  // (the fence itself, less the landside: the road comes up to the gate outside it)
+  if (fence) keep.push({ sh: IC.shapePoly(fence.poly), pad: 0.15, fence: true });
+  const airOnly = IC.aptKeepOut(S, ap, { els, m: 0, skip: e => e.cat === 'land' || e.cat === 'park' });
+  const near = (p, pad) => keep.some(b => IC.shapeDist(b.sh, p) < b.pad + pad);
+  const box = pts => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); } return [x0, y0, x1, y1]; };
+  const abox = box(els.flatMap(e => e.sh.poly || e.sh.line || []));
+  const n0 = W.nodes[ap.id];
+  let moved = false;
+  // the airport's own road: kept as far as the approach to the airfield, then round it to the gate
+  const G = n0 ? IC.aptGate(S, ap) : null;
+  if (G) for (const e of W.edges.filter(x => x.a === ap.id || x.b === ap.id)) {
+    const pts = e.a === ap.id ? e.pts.slice().reverse() : e.pts.slice();
+    let k = pts.findIndex(p => near(p, 3));
+    if (k < 0) k = pts.length - 1;
+    const start = pts[Math.max(0, k - 1)] || pts[0];
+    const bb = box([start, G]), R = [Math.min(bb[0], abox[0]) - 8, Math.min(bb[1], abox[1]) - 8, Math.max(bb[2], abox[2]) + 8, Math.max(bb[3], abox[3]) + 8];
+    const path = IC.gridRoute(R, 0.25, keep, start, (x, y) => U.dxy(x, y, G.x, G.y) < 0.3, { to: G, snapEnd: () => ({ x: G.x, y: G.y }) });
+    if (!path) continue;
+    const np = pts.slice(0, Math.max(0, k - 1)).concat(path);
+    e.pts = e.a === ap.id ? np.reverse() : np;
+    e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
+    edgeBB(e); e.cum = null; moved = true;
+  }
+  if (moved) { n0.x = G.x; n0.y = G.y; n0.gate = ap.id; }
+  // everything else that runs across the field: lanes stop short, streets close, roads and railways go under
+  const hits = pts => { const runs = []; let cur = null; for (let i = 0; i < pts.length; i++) { const p = pts[i]; const q = i ? pts[i - 1] : p, n = i ? Math.max(1, Math.ceil(U.dist(p, q) / 0.1)) : 1; for (let j = 1; j <= n; j++) { const s = { x: q.x + (p.x - q.x) * j / n, y: q.y + (p.y - q.y) * j / n }, bad = airOnly.some(b => IC.shapeDist(b.sh, s) < b.pad + 0.12); if (bad && !cur) { cur = [s, s]; runs.push(cur); } else if (bad) cur[1] = s; else cur = null; } } return runs; };
+  const inBox = l => { const b = l.bb || box(l.pts); return b[0] < abox[2] + 2 && b[2] > abox[0] - 2 && b[1] < abox[3] + 2 && b[3] > abox[1] - 2; };
+  const tunnel = (l, cls, what) => { for (const [a, b] of hits(l.pts)) { const L = U.dist(a, b) || 0.01, dx = (b.x - a.x) / L, dy = (b.y - a.y) / L; W.tunnels.push({ a: { x: a.x - dx * 0.3, y: a.y - dy * 0.3 }, b: { x: b.x + dx * 0.3, y: b.y + dy * 0.3 }, w: (IC.ROAD_W[cls] || 0.2) + 0.06, apt: ap.id, what }); } };
+  for (const e of W.edges) if (!(e.a === ap.id || e.b === ap.id) && inBox(e)) tunnel(e, e.cls, 'road');
+  for (const r of W.rails || []) if (inBox(r)) tunnel(r, 'rd', 'rail');
+  for (const r of W.ramps || []) if (inBox(r)) tunnel(r, 'lc', 'road');
+  W.lanes = W.lanes.filter(l => {
+    if (!inBox(l)) return true;
+    const k = l.pts.findIndex(p => near(p, 0.25));
+    if (k < 0) return true;
+    l.pts = l.pts.slice(0, Math.max(0, k - 1)); l.bb = null;
+    return l.pts.length >= 3;
+  });
+  for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dist(c, ap) < (c.r || 20) * 2 + 120) c.streets = c.streets.filter(l => !(inBox(l) && hits(l.pts).length));
+  if (IC.buildRouting) IC.buildRouting(W, W.blocked);
+};
+
 /* ---------- roads the player builds ---------- */
 /* what a click at x, y joins: a road node, a point on a road (the road is split there), or open ground */
 IC.roadSnap = function (S, x, y, r) {

@@ -27,41 +27,85 @@ function landSide(ap, t) {
   const c = ap.cityRef;
   return c ? (IC.rectLocal(t, c).y >= 0 ? 1 : -1) : 1;
 }
-/* candidate plots along a building's landside, nearest first: rows further out, each row spreading from the middle */
+IC.landSide = landSide;
+/* The landside of a building is laid out in rows, like a real terminal front: the kerb road along the building, then
+   bands of car parks, garages and hotels, with a road beyond each band, the rows joined at both ends into one loop.
+   Items front onto the road on the building's side of their band, so no driveway crosses anything. BANDS are the
+   distances of each band from the building's face (units: 100 m). */
+const BANDS = [[0.34, 1.0], [1.22, 2.08], [2.3, 3.16], [3.38, 4.24]];
+const ROW = k => BANDS[k][1] + 0.11, KERB = 0.2;
+const BAND_OF = { stop: [0], taxi: [0], garage: [0, 1, 2], park: [1, 2, 3, 0], hotel: [2, 3, 1], office: [3, 2, 1], warehouse: [0, 1] };
+IC.LAND_DEPTH = ROW(3) + 0.12;
+const depthOf = t => t.kind === 'cargo' ? ROW(1) + 0.12 : IC.LAND_DEPTH;
+const halfLen = t => Math.max(t.w / 2 + 1.2, 3.2);
+/* the ground a building's landside may take, in its frame: the whole loop at its full size */
+IC.landEnvelope = function (ap, t, side) {
+  const sd = side || landSide(ap, t), X = halfLen(t) + 0.3, D = depthOf(t);
+  const c = IC.rectWorld(t, 0, sd * (t.h / 2 + D / 2));
+  return IC.shapePoly(IC.partOutline({ x: c.x, y: c.y, a: t.a || 0, w: 2 * X, h: D }));
+};
+/* the envelope keeps off the airfield: no runway strip, taxiway or apron in it (buildings in it stand on the landside) */
+IC.landClear = function (ap, t, env) {
+  for (const e of IC.aptElements(null, ap, { noWorld: true })) {
+    const sh = e.cat === 'rwy' ? e.strip : e.cat === 'twy' ? IC.shapeLine(e.sh.line, e.sh.r + 0.1) : e.cat === 'apron' ? e.sh : null;
+    if (sh && IC.shapeDepth(sh, env) > 0.01) return false;
+  }
+  return true;
+};
+/* candidate plots for an item in a building's bands, nearest band first, each band spreading from the middle */
 function plots(t, side, kind) {
-  const L = Math.max(t.w, 2), out = [], D = IC.LAND[kind];
-  const rows = kind === 'stop' || kind === 'taxi' ? [0.45] : kind === 'garage' ? [0.45, 1.2] : kind === 'park' ? [1.2, 2.2, 3.2] : kind === 'warehouse' ? [0.5, 1.4] : [2.3, 3.3, 4.3];
-  for (const r of rows) for (let i = 0; i < 24; i++) {
-    const k = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2), x = k * (D.w + 0.12);
-    if (Math.abs(x) > L / 2 + 3) continue;
-    out.push(IC.rectWorld(t, x, side * (t.h / 2 + r + D.h / 2)));
+  const out = [], D = IC.LAND[kind], X = halfLen(t);
+  for (const k of BAND_OF[kind] || [1]) {
+    if (D.h > BANDS[k][1] - BANDS[k][0] + 1e-6 || ROW(k) > depthOf(t)) continue;
+    for (let i = 0; i < 40; i++) {
+      const n = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2), x = n * (D.w + 0.12) / 2;
+      if (Math.abs(x) + D.w / 2 > X) continue;
+      out.push(Object.assign(IC.rectWorld(t, x, side * (t.h / 2 + BANDS[k][0] + D.h / 2)), { band: k }));
+    }
   }
   return out;
 }
-/* a plot is free when it keeps off the airport's parts, the other landside items, water, the country's edge and towns */
-function free(S, ap, r) {
+/* what the landside must keep off: the airfield, other buildings, the country's roads and other buildings' landside */
+function blockers(S, ap, by) {
+  const E = IC.aptElements(S, ap), L = ap.land, out = [];
+  for (const e of E) {
+    if (e.cat === 'rwy') out.push(e.strip);
+    else if (e.cat === 'twy') out.push(IC.shapeLine(e.sh.line, e.sh.r + 0.12));
+    else if (e.cat === 'apron' || e.cat === 'bld' || e.cat === 'rail') out.push(e.sh);
+    else if (e.cat === 'road' && (e.world || (e.land && e.land.by !== by))) out.push(e.sh);
+    else if ((e.cat === 'land' || e.cat === 'park') && e.own) out.push(e.sh);
+  }
+  void L;
+  return out;
+}
+/* a plot is free when it keeps off all that, water, the country's edge and towns */
+function free(S, ap, r, B) {
   const W = S.world;
   if (!IC.inHome(r.x, r.y) || (W.inLake && W.inLake(r.x, r.y)) || (IC.onRiver && IC.onRiver(r.x, r.y))) return false;
-  for (const q of ap.parts) {
-    if (q.kind === 'runway') { if (IC.partDist(ap, q, r) < 1.5 + Math.max(r.w, r.h) / 2) return false; continue; }
-    if (q.kind === 'taxi') { if (IC.partDist(ap, q, r) < 0.35 + Math.max(r.w, r.h) / 2) return false; continue; }
-    const shp = q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q.w ? q : null;
-    if (shp && IC.rectsOverlap(shp, { x: r.x, y: r.y, a: r.a, w: r.w + 0.2, h: r.h + 0.2 }, 0)) return false;
-  }
-  for (const it of ap.land.items) if (IC.rectsOverlap(it, { x: r.x, y: r.y, a: r.a, w: r.w + 0.1, h: r.h + 0.1 }, 0)) return false;
+  const sh = IC.shapePoly(IC.partOutline({ x: r.x, y: r.y, a: r.a, w: r.w + 0.04, h: r.h + 0.04 }));
+  for (const b of B) if (IC.shapeDepth(sh, b) > 0.005) return false;
   for (const c of IC.cities(S)) { if (U.dist(c, r) > (c.r || 20) * 1.6 + 5) continue; for (const b of c.blocks || []) if (b.hp > 0 && U.dxy(b.x, b.y, r.x, r.y) < Math.max(r.w, r.h) / 2 + Math.max(b.w, b.h) * 0.4) return false; }
   return true;
 }
 function place(S, ap, kind, near) {
   const D = IC.LAND[kind];
   for (const t of near) {
-    const side = landSide(ap, t);
+    const side = landSide(ap, t), B = blockers(S, ap, t.id);
+    // (a building whose loop road cannot be laid gets no landside)
+    if (!loopFits(S, ap, t, side, B)) continue;
     for (const c of plots(t, side, kind)) {
-      const r = { kind, x: c.x, y: c.y, a: t.a, w: D.w, h: D.h, cap: D.cap, t0: null, by: t.id };
-      if (free(S, ap, r)) return r;
+      const r = { kind, x: c.x, y: c.y, a: t.a, w: D.w, h: D.h, cap: D.cap, t0: null, by: t.id, band: c.band };
+      if (free(S, ap, r, B)) return r;
     }
   }
   return null;
+}
+/* the loop at its full size keeps off the airfield and the other buildings */
+function loopFits(S, ap, t, side, B) {
+  const X = halfLen(t) + 0.15, D = t.h / 2 + depthOf(t) - 0.12;
+  const pts = [IC.rectWorld(t, -X, side * (t.h / 2 + KERB)), IC.rectWorld(t, X, side * (t.h / 2 + KERB)), IC.rectWorld(t, X, side * D), IC.rectWorld(t, -X, side * D)];
+  const sh = IC.shapeLine(pts.concat([pts[0]]), 0.07);
+  return !B.some(b => IC.shapeDepth(sh, b) > 0.005);
 }
 IC.landInit = ap => ap.land || (ap.land = { items: [], pax: 0, cargo: 0, ver: 0, road: false, roads: [], t: 0 });
 
@@ -119,42 +163,61 @@ IC.landUse = function (L, it) {
   if (it.kind === 'park' || it.kind === 'garage') { const cap = L.items.filter(x => x.kind === 'park' || x.kind === 'garage').reduce((a, x) => a + x.cap, 0); return U.clamp(p * 2.2 / Math.max(1, cap), 0.1, 1); }
   return U.clamp(p / 1500, 0.3, 1);
 };
-/* the kerb road along each terminal's and shed's landside, driveways to the items, and the road out to the network */
+/* the roads of each building's landside: the kerb, a road beyond each band in use, the two ends joining them into a
+   loop, and the road out to the country's network (or the access road), round the airfield */
 function kerbs(S, ap, bl) {
-  const L = ap.land; L.kerbN = bl.length; L.roads = [];
+  const L = ap.land; L.kerbN = bl.length; L.roads = []; L.jn = [];
+  const outs = [];
   for (const t of bl) {
-    const sd = landSide(ap, t), y = sd * (t.h / 2 + 0.2);
-    L.roads.push({ pts: [IC.rectWorld(t, -t.w / 2 - 0.5, y), IC.rectWorld(t, t.w / 2 + 0.5, y)], w: 0.14, kerb: true, by: t.id });
+    const sd = landSide(ap, t), mine = L.items.filter(it => it.by === t.id);
+    if (!mine.length && t.kind === 'cargo') continue;
+    const nb = Math.max(1, ...mine.map(it => (it.band != null ? it.band : 0) + 1)), y = d => sd * (t.h / 2 + d);
+    // the loop is as long as what it serves: the building's front, or the items beyond it
+    const X = Math.max(t.w / 2 + 0.4, ...mine.map(it => Math.abs(IC.rectLocal(t, it).x) + it.w / 2 + 0.15));
+    const road = (x0, d0, x1, d1, kind, w) => { const r = { pts: [IC.rectWorld(t, x0, y(d0)), IC.rectWorld(t, x1, y(d1))], w, kind, by: t.id }; L.roads.push(r); return r; };
+    const k = road(-X, KERB, X, KERB, 'kerb', 0.14); k.kerb = true; k.oneway = 1;
+    for (let i = 0; i < nb; i++) road(-X, ROW(i), X, ROW(i), 'loop', 0.12);
+    road(-X, KERB, -X, ROW(nb - 1), 'loop', 0.12); road(X, KERB, X, ROW(nb - 1), 'loop', 0.12);
+    outs.push({ t, from: IC.rectWorld(t, 0, y(ROW(nb - 1))), n: IC.rectWorld(t, 0, y(ROW(nb - 1) + 0.3)) });
   }
-  for (const it of L.items) {
-    const t = ap.parts.find(q => q.id === it.by); if (!t) continue;
-    const sd = landSide(ap, t), l = IC.rectLocal(t, it), near = IC.rectWorld(t, l.x, l.y - sd * it.h / 2), ky = sd * (t.h / 2 + 0.2);
-    L.roads.push({ pts: [near, IC.rectWorld(t, U.clamp(l.x, -t.w / 2 - 0.5, t.w / 2 + 0.5), ky)], w: 0.07 });
+  // out to the network: the nearest road outside the airfield, the airport's gate or the access road, or another
+  // building's landside, found round everything in the way
+  const B = [];
+  for (const e of IC.aptElements(S, ap, { noWorld: true })) {
+    if (e.cat === 'rwy') B.push({ sh: e.strip, pad: 0.05 }); else if (e.cat === 'twy') B.push({ sh: e.sh, pad: 0.18 });
+    else if (e.cat === 'apron' || e.cat === 'bld') B.push({ sh: e.sh, pad: 0.06 });
+    else if ((e.cat === 'land' || e.cat === 'park') && e.own) B.push({ sh: e.sh, pad: 0.04 });
   }
-  // out to the nearest road (or the access road's start) from the nearest kerb end, on the landside and without
-  // crossing the airfield
-  const k0 = L.roads.find(r => r.kerb);
-  if (k0) {
-    const t = ap.parts.find(q => q.id === k0.by), sd = landSide(ap, t), out = IC.rectWorld(t, 0, sd * (t.h / 2 + 3));
-    let tgt = L.access ? L.access.pts[0] : null;
-    if (!tgt && IC.roadSnap) { const sn = IC.roadSnap(S, out.x, out.y, 40); if (sn && (sn.node || sn.edge)) tgt = { x: sn.x, y: sn.y }; }
-    const ends = L.roads.filter(r => r.kerb).flatMap(r => r.pts);
-    const e = tgt && ends.slice().sort((a, b) => U.dist(a, tgt) - U.dist(b, tgt))[0];
-    if (e && sd * IC.rectLocal(t, tgt).y > 0 && !crossesField(ap, e, tgt)) L.roads.push({ pts: [e, tgt], w: 0.12, out: true });
+  const F = IC.aptFence(ap); if (F) B.push({ sh: IC.shapePoly(F.poly), pad: 0.05, carve: F.carveA });
+  for (const o of outs) {
+    const lines = [];
+    const W = S.world, R = 30, bb = [o.from.x - R, o.from.y - R, o.from.x + R, o.from.y + R];
+    if (L.access) lines.push(L.access.pts);
+    for (const e of W.edges || []) { if (e.bb && (e.bb[2] < bb[0] || e.bb[0] > bb[2] || e.bb[3] < bb[1] || e.bb[1] > bb[3])) continue; for (const run of IC.openRuns(W, e.pts)) lines.push(run); }
+    for (const q of outs) if (q !== o) for (const r of L.roads) if (r.by === q.t.id && r.kind === 'loop') lines.push(r.pts);
+    // the rows of this loop are in the way of the road out, the loop's own ends are not
+    const own = L.roads.filter(r => r.by === o.t.id).map(r => ({ sh: IC.shapeLine(r.pts, 0.02), pad: 0.03 }));
+    const near = (x, y) => { for (const l of lines) for (let i = 1; i < l.length; i++) if (U.segDist(x, y, l[i - 1].x, l[i - 1].y, l[i].x, l[i].y) < 0.1) return true; return false; };
+    const snap = p => { let best = p, bd = Infinity; for (const l of lines) for (let i = 1; i < l.length; i++) { const a = l[i - 1], b = l[i], dx = b.x - a.x, dy = b.y - a.y, LL = dx * dx + dy * dy || 1, f = U.clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / LL, 0, 1), q = { x: a.x + dx * f, y: a.y + dy * f }, d = U.dist(p, q); if (d < bd) { bd = d; best = q; } } return best; };
+    if (!lines.length) continue;
+    // step off the loop first, straight out
+    const path = IC.gridRoute(bb, 0.1, B.concat(own), o.n, near, { snapEnd: snap });
+    if (!path) continue;
+    const pts = [o.from].concat(path);
+    L.roads.push({ pts, w: 0.12, out: true, kind: 'out', by: o.t.id });
+    L.jn.push(pts[pts.length - 1]);
+  }
+  // wherever the airport's roads meet another at grade, that is a junction
+  const own = L.roads.filter(r => r.kind === 'out');
+  for (const r of own) {
+    for (const e of IC.aptElements(S, ap).filter(e => e.cat === 'road' && e.world)) for (let i = 1; i < r.pts.length; i++) for (let j = 1; j < e.sh.line.length; j++) {
+      const a = r.pts[i - 1], b = r.pts[i], c = e.sh.line[j - 1], d = e.sh.line[j], t = U.segX(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y);
+      if (t >= 0) L.jn.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
   }
   L.ver++;
 }
 IC.landKerbs = kerbs;
-/* a straight road from a to b would cross a runway, taxiway or apron */
-function crossesField(ap, a, b) {
-  const X = (p, q) => U.segX(a.x, a.y, b.x, b.y, p.x, p.y, q.x, q.y) >= 0;
-  for (const q of ap.parts) {
-    if (q.kind === 'runway' && X(q.a, q.b)) return true;
-    if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) { const n0 = ap.nodes[q.nodes[i - 1]], n1 = ap.nodes[q.nodes[i]]; if (n0 && n1 && X(n0, n1)) return true; }
-    if (q.kind === 'apron') { const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2)); for (let i = 0; i < 4; i++) if (X(c[i], c[(i + 1) % 4])) return true; }
-  }
-  return false;
-}
 /* a road reaches the airport: any road node or road within 3 km of it */
 function hasRoad(S, ap) {
   const W = S.world, R = 30;

@@ -936,28 +936,61 @@ IC.aptOnPart = function (ap, p, pad) {
   for (const q of ap.parts) { const r = q.kind === 'runway' ? 1.2 : q.kind === 'taxi' ? 0.3 : pad == null ? 0.2 : pad; if (partDist(ap, q, p) < r) return q; }
   return null;
 };
-/* inside the fence: within the rectangle that holds everything built */
+/* inside the fence: within the airside's outline and not on a terminal's landside */
 IC.aptInFence = function (ap, p) {
   const b = IC.aptFence(ap); if (!b) return false;
-  const l = toLocal(b, p); return Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.h / 2;
+  return U.inPoly(p.x, p.y, b.hullA) && !b.carveA.some(c => U.inPoly(p.x, p.y, c));
 };
-/* the perimeter fence: a rectangle along the main runway round everything the airport has, with room to spare */
+/* the perimeter fence: round everything airside with room to spare (the convex hull of it), less the landside in front
+   of each terminal and cargo shed, which the public reaches by road. b.poly is the hull, b.carve the landside cut out
+   of it; x, y, w, h, a the rectangle along the main runway that holds it all. */
 IC.aptFence = function (ap) {
-  const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0);
+  const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0) + ':' + ap.parts.reduce((s, p) => s + (p.x || 0), 0).toFixed(2);
   if (ap._box && ap._boxKey === key) return ap._box;
+  const pts = [], sq = (q, m) => { pts.push({ x: q.x - m, y: q.y - m }, { x: q.x + m, y: q.y - m }, { x: q.x + m, y: q.y + m }, { x: q.x - m, y: q.y + m }); };
+  const fronts = ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.w && IC.landEnvelope);
+  const carve = [];
+  for (const t of fronts) { if (t.kind === 'cargo' && !(ap.land && ap.land.items.some(it => it.by === t.id))) continue; const env = IC.landEnvelope(ap, t); if (IC.landClear && !IC.landClear(ap, t, env)) continue; carve.push(env.poly); }
+  const inCarve = p => carve.some(c => U.inPoly(p.x, p.y, c.map(q => [q.x, q.y])));
+  for (const p of ap.parts) {
+    if (p.kind === 'runway') { const d = rwDir(p), n = { x: -d.y, y: d.x }; for (const e of [p.a, p.b]) for (const s1 of [-1, 1]) for (const s2 of [-1, 1]) pts.push({ x: e.x + d.x * s1 * 1.2 + n.x * s2 * 1.6, y: e.y + d.y * s1 * 1.2 + n.y * s2 * 1.6 }); }
+    else if (p.kind === 'taxi') { for (const id of p.nodes) if (ap.nodes[id]) sq(ap.nodes[id], 0.45); }
+    else if (p.kind === 'ils') continue;
+    else if (p.x != null) {
+      if (p.kind !== 'terminal' && p.kind !== 'cargo' && inCarve(p)) continue;
+      const m = p.kind === 'terminal' || p.kind === 'cargo' ? 0 : 0.3;
+      for (const c of IC.partOutline ? IC.partOutline(p) : [p]) sq(c, m);
+    }
+  }
+  if (!pts.length) return null;
+  // the convex hull (monotone chain)
+  pts.sort((a, b) => a.x - b.x || a.y - b.y);
+  const cr = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lo = [], hi = [];
+  for (const q of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = pts.length - 1; i >= 0; i--) { const q = pts[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  const hull = lo.slice(0, -1).concat(hi.slice(0, -1));
   const a = ap.rwyA || 0, c = Math.cos(-a), s = Math.sin(-a);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-  const grow = (p, m) => { const dx = p.x - ap.x, dy = p.y - ap.y, lx = dx * c - dy * s, ly = dx * s + dy * c; x0 = Math.min(x0, lx - m); x1 = Math.max(x1, lx + m); y0 = Math.min(y0, ly - m); y1 = Math.max(y1, ly + m); };
-  for (const p of ap.parts) {
-    if (p.kind === 'runway') { grow(p.a, 1.2); grow(p.b, 1.2); }
-    else if (p.kind === 'taxi') for (const id of p.nodes) { if (ap.nodes[id]) grow(ap.nodes[id], 0.5); }
-    else grow(p, Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2) * 0.75 + 0.3);
-  }
-  if (x0 > x1) return null;
+  for (const q of hull) { const dx = q.x - ap.x, dy = q.y - ap.y, lx = dx * c - dy * s, ly = dx * s + dy * c; x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); y0 = Math.min(y0, ly); y1 = Math.max(y1, ly); }
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  ap._box = { x: ap.x + cx * Math.cos(a) - cy * Math.sin(a), y: ap.y + cx * Math.sin(a) + cy * Math.cos(a), w: x1 - x0, h: y1 - y0, a };
+  ap._box = { x: ap.x + cx * Math.cos(a) - cy * Math.sin(a), y: ap.y + cx * Math.sin(a) + cy * Math.cos(a), w: x1 - x0, h: y1 - y0, a,
+    poly: hull, carve, hullA: hull.map(q => [q.x, q.y]), carveA: carve.map(cv => cv.map(q => [q.x, q.y])) };
   ap._boxKey = key;
   return ap._box;
+};
+/* the fence line: the hull where it is not landside, and the edges of the landside inside the hull */
+IC.aptFenceStroke = function (g, b) {
+  g.save(); g.beginPath(); g.rect(-1e6, -1e6, 2e6, 2e6); for (const cv of b.carve) { cv.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); } g.clip('evenodd');
+  g.beginPath(); b.poly.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); g.restore();
+  if (!b.carve.length) return;
+  g.save(); g.beginPath(); b.poly.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.clip();
+  g.beginPath(); for (const cv of b.carve) { cv.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); } g.stroke(); g.restore();
+};
+/* the fence as a canvas path: the hull, and the landside cut out of it (fill with 'evenodd') */
+IC.aptFencePath = function (g, b, pad) {
+  const P = pad ? IC.polyGrow(b.poly, pad) : b.poly;
+  P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath();
+  for (const cv of b.carve) { cv.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); }
 };
 
 /* inside the country and the site, and not on top of another part (touching is fine) */
