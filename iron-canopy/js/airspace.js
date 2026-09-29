@@ -924,7 +924,7 @@ function workload(S, F) {
     load += s.load; cap += s.cap;
     if (s.work > 1.1 && S.time - (s.overT || -1e9) > 3 * 3600) {
       s.overT = S.time;
-      IC.log(S, 'warn', 'AIRSPACE', `${s.name} is overloaded: ${Math.round(s.load)} flights' worth of work for ${s.staff} controller${s.staff === 1 ? '' : 's'}, who handle ${Math.round(s.cap)}. They hold departures longer and can miss a conflict. Add a controller${s.kind === 'acc' ? ', split the area into another sector,' : ''} or put flights on airways under radar.`, s.ap ? S.byId[s.ap] : null);
+      IC.log(S, S.story ? 'warn' : 'info', 'AIRSPACE', `${s.name} is overloaded: ${Math.round(s.load)} flights' worth of work for ${s.staff} controller${s.staff === 1 ? '' : 's'}, who handle ${Math.round(s.cap)}. They hold departures longer and can miss a conflict. Add a controller${s.kind === 'acc' ? ', split the area into another sector,' : ''} or put flights on airways under radar.`, S.story && s.ap ? S.byId[s.ap] : null);
       IC.emit(S, 'overload', { load: s.load, cap: s.cap, sec: s });
     }
   }
@@ -958,7 +958,7 @@ function levels(S, t) {
   if (t.milV) { const v = IC.aspVol(S, t.milV); if (!v || U.dist(t, v) > v.r1 + 300) { t.milV = null; if (!t.pCmd) t.clr = null; } }
 }
 function lossOfSeparation(S, a, b, d, dz, near, P) {
-  const N = S.asp, x = (a.x + b.x) / 2, y = (a.y + b.y) / 2, where = IC.nearestPlace(S, x, y);
+  const N = S.asp, x = (a.x + b.x) / 2, y = (a.y + b.y) / 2, at = IC.nearPlace(S, x, y);
   const ga = a.type === 'ga' ? a : b.type === 'ga' ? b : null, ifr = ga === a ? b : a;
   const C = P.cls || IC.ASP_CLS[IC.aspClassAt(S, x, y, Math.min(a.alt, b.alt)).cls];
   const [cause, why] = P.man ? ['player', `${(a.pCmd ? a : b).cs} was flying the level or heading you gave it, and the controllers left it to you`]
@@ -973,16 +973,16 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
   // under a kilometre in metres; within 100 ft is the same level
   const ft = Math.round(dz * IC.FT / 100) * 100, gap = `${d < 10 ? Math.max(10, Math.round(d * 10) * 10) + ' m' : U.km(d)} apart${ft ? ` and ${ft.toLocaleString('en-GB')} ft above or below` : ' at the same level'}`;
   if (near) { N.stats.near++; N.day.near++; }
-  const txt = near ? `${a.cs} and ${b.cs} passed ${gap} near ${where}` : `${a.cs} and ${b.cs} lost spacing near ${where}: ${gap}`;
+  const txt = near ? `${a.cs} and ${b.cs} passed ${gap} ${at}` : `${a.cs} and ${b.cs} lost spacing ${at}: ${gap}`;
   if (near && S.inc) for (const it of S.inc.list) if (it.kind === 'separation' && (it.ref === a || it.ref === b)) it.done = true;
   // a war commander gets near misses on screen; lost spacing alone stays in the log
   if (near || S.story) IC.incidentAdd(S, near ? 'nearmiss' : 'separation', ifr, txt, near ? 'alarm' : 'warn');
-  IC.log(S, 'warn', 'AIRSPACE', `${near ? 'Near miss: ' : ''}${txt}. ${why}.`, { x, y });
+  IC.log(S, near || S.story ? 'warn' : 'info', 'AIRSPACE', `${near ? 'Near miss: ' : ''}${txt}. ${why}.`, near || S.story ? { x, y } : null);
   for (const t of [a, b]) if (t.tail && S.av) { const al = IC.avAirline(S, t.tail.al); if (al) al.sat = Math.max(0, al.sat - (near ? 8 : 2)); }
   if (near) {
     S.support = Math.max(0, S.support - 1);
-    IC.news(S, `Near miss over ${where}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
-    if (S.camp && IC.card && !(S.enemy && S.enemy.war)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · near ${where}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
+    IC.news(S, `Near miss ${at}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
+    if (S.camp && IC.card && !(S.enemy && S.enemy.war)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · ${at}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why, cause });
 }
