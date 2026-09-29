@@ -38,6 +38,26 @@ function plots(t, side, kind) {
   }
   return out;
 }
+/* plots round a curved terminal, on the side away from its apron, following the curve: the kerb, car parks and
+   hotels hug it as they do a straight one. A round satellite has aprons all round it and no landside */
+function bandPlots(ap, t, kind) {
+  if (!t.span) return [];
+  const D = IC.LAND[kind], out = [], [r0, r1] = t.ring;
+  const inner = !ap.parts.some(q => q.kind === 'apron' && q.ring && U.dist(q, t) < 0.05 && q.ring[1] <= r0 + 0.05);
+  const rows = kind === 'stop' || kind === 'taxi' ? [0.45] : kind === 'garage' ? [0.45, 1.2] : kind === 'park' ? [1.2, 2.2, 3.2] : kind === 'warehouse' ? [0.5, 1.4] : [2.3, 3.3, 4.3];
+  const mid = (t.span[0] + t.span[1]) / 2;
+  for (const row of rows) {
+    const r = inner ? r0 - row - D.h / 2 : r1 + row + D.h / 2; if (r < D.w) continue;
+    const step = (D.w + 0.12) / r;
+    for (let i = 0; i < 24; i++) {
+      const th = mid + (i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2)) * step;
+      if (th < t.span[0] || th > t.span[1]) continue;
+      const a = th + (t.a || 0);
+      out.push({ x: t.x + Math.cos(a) * r, y: t.y + Math.sin(a) * r, a: a + Math.PI / 2 });
+    }
+  }
+  return out;
+}
 /* a plot is free when it keeps off the airport's parts, the other landside items, water, the country's edge and towns */
 function free(S, ap, r) {
   const W = S.world;
@@ -55,9 +75,9 @@ function free(S, ap, r) {
 function place(S, ap, kind, near) {
   const D = IC.LAND[kind];
   for (const t of near) {
-    const side = landSide(ap, t);
-    for (const c of plots(t, side, kind)) {
-      const r = { kind, x: c.x, y: c.y, a: t.a, w: D.w, h: D.h, cap: D.cap, t0: null, by: t.id };
+    const side = t.ring ? 0 : landSide(ap, t);
+    for (const c of t.ring ? bandPlots(ap, t, kind) : plots(t, side, kind)) {
+      const r = { kind, x: c.x, y: c.y, a: c.a != null ? c.a : t.a, w: D.w, h: D.h, cap: D.cap, t0: null, by: t.id };
       if (free(S, ap, r)) return r;
     }
   }

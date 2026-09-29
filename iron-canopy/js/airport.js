@@ -421,9 +421,11 @@ IC.aptGraph = function (ap) {
     p.stands = standsFor(ap, p);
     const z = IC.partZone(ap, p);
     const hyd = parts.some(h => h.kind === 'hydrant' && h.hp > h.max * 0.25 && U.dist(h, p) < IC.APART.hydrant.reach);
+    // cargo is loaded where there is cargo handling: the cargo zone, or a cargo shed the loaders reach across the apron
+    const cargoNear = parts.some(c => c.kind === 'cargo' && c.hp > c.max * 0.25 && c.x != null && rectGap(c, p) < 1.5);
     const at = groupAt.get(root(gi.get(p)));
     for (const s of p.stands) {
-      s.zone = s.zoneOwn || z; s.hyd = hyd; node(s.id, s.fx, s.fy, 'stand', s); for (const a of at) edge(s.id, a.id, 'apron', p.id, 0, 0.04, 0, 0);
+      s.zone = s.zoneOwn || z; s.hyd = hyd; s.cargoOk = !!s.cargo || cargoNear; node(s.id, s.fx, s.fy, 'stand', s); for (const a of at) edge(s.id, a.id, 'apron', p.id, 0, 0.04, 0, 0);
       // a drive-through stand is left by its nose: no tug, no pushback
       if (s.drive) { node(s.id + 'o', s.ox, s.oy, 'standOut', s); edge(s.id, s.id + 'o', 'apron', p.id, 0, 0.04, 1, 0); for (const a of at) edge(s.id + 'o', a.id, 'apron', p.id, 0, 0.04, 1, 0); }
     }
@@ -774,6 +776,19 @@ IC.aptStats = function (S, ap) {
   st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 ? 'cargo' : best >= 27 ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
   IC.aptLinks(S, ap, st);
   ap.charm = IC.aptCharm ? IC.aptCharm(ap) : 0;
+  // fuel trucks drive from the fuel farm over the taxiways and aprons, across a runway but never along one
+  const farm = alive('fuel'), reachF = new Set();
+  if (farm.length) {
+    const Q = [];
+    for (const t of farm) { let best = null, bd = 6; for (const n of G.N.values()) { if (n.kind === 'rwyEnd' || n.rw) continue; const d = U.dist(n, t); if (d < bd) { bd = d; best = n; } } if (best && !reachF.has(best.id)) { reachF.add(best.id); Q.push(best.id); } }
+    while (Q.length) { const u = Q.pop(); for (const e of (G.adj.get(u) || []).concat(G.radj.get(u) || [])) { if (e.kind === 'rwy' && e.len > 0.02) continue; const v = e.from === u ? e.to : e.from; if (!reachF.has(v)) { reachF.add(v); Q.push(v); } } }
+  }
+  // a cargo apron with no cargo shed its loaders can reach
+  const dry = ap.parts.filter(p => p.kind === 'apron' && p.built && IC.partZone(ap, p) === 'cargo' && (p.stands || []).some(q => q.linked && !q.cargoOk));
+  for (const p of dry) st.warn.push(`Cargo stands on ${IC.partName(ap, p)} have no cargo terminal within 150 m: freighters cannot load there.`);
+  let noTruck = 0;
+  for (const s of stands) { s.fuelOk = !!((s.hyd && st.hydrant) || reachF.has(s.id)); if (s.linked && !s.fuelOk && farm.length) noTruck++; }
+  if (noTruck) st.warn.push(`${noTruck} stand${noTruck > 1 ? 's' : ''} cannot be reached by the fuel trucks without driving along a runway: aircraft there wait about 20 minutes for an escorted bowser. Join their apron to the taxiways the fuel farm is on, or pipe a hydrant system to it.`);
   // painted pavement that meets the taxiways or a runway: it looks like a way through, and is not
   for (const pt of ap.paint || []) {
     const K = IC.PAINT && IC.PAINT[pt.mat]; if (!K || !K.pave) continue;
@@ -835,7 +850,7 @@ IC.standZoneOk = function (s, T) {
   const z = s.zone || 'civil';
   if (T.mil) return z === 'mil';
   if (z === 'mil') return false;
-  if (T.cargo) return z === 'cargo' || z === 'civil';
+  if (T.cargo) return (z === 'cargo' || z === 'civil') && s.cargoOk !== false;
   if (T.zone === 'light') return z === 'light' || z === 'civil';
   return z === 'civil';
 };
@@ -1521,6 +1536,8 @@ IC.layoutAirport = function (ap, template, a) {
     bld('tower', 3.5, 5.7); bld('fire', 0, -1.5); bld('atc', -8, -3.2);
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
+    // a crossing to the remote apron, so fuel trucks and tugs get there across the runway, not along it
+    tx([[-12, 0], [-12, 1.8]]);
   } else if (template === 'regional_bad') {
     // one stub in the middle of the runway: every departure backtracks, every landing blocks the runway for minutes
     rw(-12, 12, 0, nm());

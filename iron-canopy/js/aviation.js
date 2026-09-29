@@ -276,7 +276,7 @@ IC.aptCanTake = function (S, ap, T) {
   if (ap.owner !== 'us' || ap.offline) return 'the airport is closed';
   if ((st.longest || 0) < T.rwy) return `the runway is too short (needs ${U.km(T.rwy)})`;
   if (!T.mil && T !== IC.ACTYPES.turbo && !st.fire) return 'no fire station covers the runway';
-  if (!standsOf(ap).some(s => s.linked !== false && s.hp > 0 && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T))) return `no ${IC.STAND[T.stand].name} ${T.cargo ? 'cargo or passenger' : 'passenger'} stand connected to the runway`;
+  if (!standsOf(ap).some(s => s.linked !== false && s.hp > 0 && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T))) return T.cargo ? `no ${IC.STAND[T.stand].name} stand with cargo handling connected to the runway (freighters load in the cargo zone, or at a stand with a cargo shed within 150 m)` : `no ${IC.STAND[T.stand].name} passenger stand connected to the runway`;
   return '';
 };
 /* an arrival's ground move: parked, destroyed on the ground, or gone around */
@@ -320,17 +320,23 @@ function parked(S, tl, ap, s, m) {
   s.occ = tl.id;
   const al = airlineOf(S, tl.al);
   // turnaround: contact stands and a terminal with room are quicker
-  const st = ap.st || {};
-  let turn = tl.T.turn * (s.contact ? 1 : 1.25);
-  const load = termLoad(S, ap);
-  if (tl.T.seats) turn *= 1 + Math.max(0, load - 0.8) * 2.5;
-  if (tl.T.cargo && !st.cargo) turn *= 2;
-  // boarding waits for the last passengers from the kerb: a far gate, a bus or a slow connection (airport.js)
-  if (tl.T.seats && s.conn) turn += Math.max(0, s.conn - 5) * 60 * 0.4;
+  const turn = turnFor(S, ap, s, tl.T);
   tl.t = turn; tl.turn0 = turn;
   judge(S, al, tl, ap, { taxi: m.taxiT, wait: m.waitT + (tl.hold || 0), kind: 'arr' });
   IC.emit(S, 'tailParked', { tl, ap });
 }
+/* how long an aircraft stays on a stand: contact stands and a terminal with room are quicker; boarding waits for
+   the last passengers from the kerb, so a far gate, a bus or a slow connection (airport.js, s.conn) adds time */
+function turnFor(S, ap, s, T) {
+  const st = ap.st || {};
+  let turn = T.turn * (s.contact ? 1 : 1.25);
+  const load = termLoad(S, ap);
+  if (T.seats) turn *= 1 + Math.max(0, load - 0.8) * 2.5;
+  if (T.cargo && !st.cargo) turn *= 2;
+  if (T.seats && s.conn) turn += Math.max(0, s.conn - 5) * 60 * 0.4;
+  return turn;
+}
+IC.avTurnFor = turnFor;
 function termLoad(S, ap) {
   const cap = (ap.st && ap.st.pax) || 1;
   const L = ap.paxRate || 0;
@@ -529,8 +535,10 @@ IC.aviation = function (S, dt) {
       const night = !dayOps(S);
       if (night && (ap.curfew || al.kind !== 'cargo')) { tl.t = 300; continue; }
       // fuelled once: held back below (light aircraft, spacing, no taxi route) it keeps what it took
+      // a stand the fuel trucks cannot reach: an escorted bowser comes along the runway when it is free
+      if (!tl.fuelled && s.fuelOk === false && !tl.bowser) { tl.bowser = true; tl.t = 1200; if (!ap.bowserLogT || S.time - ap.bowserLogT > 3600) { ap.bowserLogT = S.time; IC.log(S, 'warn', 'AVIATION', `${ap.name}: an aircraft on a stand the fuel trucks cannot reach waits for an escorted bowser (about 20 min).`, ap); } continue; }
       if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
-      tl.fuelled = true;
+      tl.fuelled = true; tl.bowser = false;
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       // light aircraft on the runway, or controllers still spacing the last departure the same way

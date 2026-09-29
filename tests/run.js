@@ -1221,6 +1221,62 @@ test('shapes: a blueprint placed turned and mirrored works like the original', (
   assert(IC.BP_LIBRARY.length >= 4 && IC.BP_LIBRARY.every(b => b.make().some(q => q.kind === 'terminal')), 'no library of blueprints');
 });
 
+/* ---------- what is drawn is what works ---------- */
+test('drawn: boarding is at the gate that serves the stand, and a far gate takes longer', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  // a long pier south of the runway, a people mover to its middle
+  S.mode2 = IC.bldMode(S, ap, 'concourse'); for (const q of [P(-6, -8), P(10, -8), P(10, -8)]) IC.clickWorld(q, 0);
+  S.mode2 = IC.bldMode(S, ap, 'mover'); for (const q of [P(1, 4.5), P(2, -8), P(2, -8)]) IC.clickWorld(q, 0);
+  assert(ap.parts.some(p => p.kind === 'mover'), `no mover: ${S.mode2.err}`);
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  const pier = ap.parts.filter(p => p.kind === 'apron').slice(-2), L = [].concat(...pier.map(p => p.stands));
+  const station = P(2, -8), byDist = L.slice().sort((a, b) => U.dist(a, station) - U.dist(b, station)), near = byDist[0], far = byDist[byDist.length - 1];
+  assert(L.every(s => s.contact && /^Concourse/.test(s.bldg)), 'a pier stand is not served by the concourse');
+  assert(far.conn > near.conn + 1, `the far gate is ${far.conn.toFixed(1)} min from the kerb, the near one ${near.conn.toFixed(1)}`);
+  const T = IC.ACTYPES.narrow;
+  assert(IC.avTurnFor(S, ap, far, T) > IC.avTurnFor(S, ap, near, T), 'the far gate does not turn aircraft round more slowly');
+  // the main terminal's nearest gate is closer than any gate out on the pier (its far ends may not be: 600 m on foot)
+  const home = IC.aptStands(ap).filter(s => s.bldg === 'the main terminal');
+  assert(home.length && Math.min(...home.map(s => s.conn)) < near.conn, 'every main terminal gate is further than the pier');
+});
+test('drawn: cargo loads only where there is cargo handling, and a freighter elsewhere is refused with the reason', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap], T = IC.ACTYPES.cargo; IC.aptStats(S, ap);
+  const all = IC.aptStats(S, ap) && IC.aptStands(ap).filter(s => s.linked && IC.STAND_FITS[s.size].includes(T.stand));
+  const ok = all.filter(s => IC.standZoneOk(s, T)), no = all.filter(s => !IC.standZoneOk(s, T));
+  assert(ok.length && ok.every(s => s.cargoOk), `${ok.length} stands take freighters`);
+  assert(!IC.aptCanTake(S, ap, T), IC.aptCanTake(S, ap, T));
+  // with the cargo stands taken, the freighter is not sent to a passenger stand far from the shed
+  for (const s of ok) s.occ = 'x';
+  assert(!IC.avFreeStand(S, ap, T), 'a freighter was given a stand with no cargo handling');
+  // and without them, the airport says why it cannot take freighters
+  for (const s of ok) s.hp = 0;
+  assert(/cargo handling/.test(IC.aptCanTake(S, ap, T)), `the reason is "${IC.aptCanTake(S, ap, T)}"`);
+});
+test('drawn: a stand the fuel trucks cannot reach is flagged, and aircraft there wait for a bowser', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y);
+  let st = IC.aptStats(S, ap);
+  assert(!st.warn.some(w => /fuel trucks/.test(w)) && IC.aptStands(ap).every(s => s.fuelOk), 'the ready-made capital has a stand the trucks cannot reach');
+  // without the crossing, the remote apron south of the runway is reached only along the runway
+  const cross = ap.parts.find(p => p.kind === 'taxi' && p.nodes.length === 2 && p.nodes.every(id => Math.abs(IC.rectLocal({ x: ap.x, y: ap.y, a: ap.rwyA }, ap.nodes[id]).x + 12) < 0.01) && p.nodes.some(id => IC.rectLocal({ x: ap.x, y: ap.y, a: ap.rwyA }, ap.nodes[id]).y > 1));
+  assert(cross, 'no crossing in the ready-made layout');
+  IC.aptRemove(S, ap, cross.id); st = IC.aptStats(S, ap);
+  const cut = IC.aptStands(ap).filter(s => !s.fuelOk);
+  assert(cut.length >= 5 && cut.every(s => U.dist(s, P(-12, -2.1)) < 3), `${cut.length} stands flagged`);
+  assert(st.warn.some(w => /cannot be reached by the fuel trucks/.test(w)), st.warn.join(' '));
+  assert(IC.standService(S, ap, cut[0], { id: 'x', t: 100, T: IC.ACTYPES.narrow }).fuel === 'bowser', 'aircraft there are still fuelled by truck');
+  // an aircraft parked there waits for the bowser before it can leave
+  sky(S, 'clear');
+  const tl = S.av.tails.find(t => t.where === 'stand' && t.at === ap.id) || S.av.tails[0];
+  assert(tl, 'no aircraft to park');
+  const s0 = IC.aptStands(ap).find(s => s.occ === tl.id); if (s0) s0.occ = null;
+  Object.assign(tl, { where: 'stand', at: ap.id, stand: cut[0].id, t: 0, fuelled: false, bowser: false }); cut[0].occ = tl.id;
+  for (let i = 0; i < 20 && !tl.bowser; i++) IC.step(S, 0.5);
+  assert(tl.bowser && tl.t > 900, `the aircraft did not wait for a bowser (${tl.t})`);
+});
+
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {
   const { buildKden, finishAll } = require('../kdenbuild.js');
   const { S, ap, actions } = buildKden(12345, true);

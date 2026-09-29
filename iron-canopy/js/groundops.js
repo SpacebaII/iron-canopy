@@ -1058,7 +1058,7 @@ IC.standService = function (S, ap, s, tl) {
   const st = ap.st || {}, T = tl.T;
   const kind = T.cargo ? 'cargo' : s.contact ? (IC.aptTechOk(S, 'bridge') ? 'bridge' : 'walk') : 'bus';
   return { t0: S.time, dur: tl.t, kind, n: kind === 'bus' ? Math.max(1, Math.ceil((T.seats || 0) / 80)) : kind === 'cargo' ? Math.max(2, Math.round((T.cargo || 40) / 25)) : 0,
-    fuel: s.hyd && st.hydrant ? 'hydrant' : 'truck', tail: tl.id };
+    fuel: s.hyd && st.hydrant ? 'hydrant' : s.fuelOk === false ? 'bowser' : 'truck', tail: tl.id };
 };
 IC.on((S, type, d) => {
   if (type !== 'tailParked' || !d.ap || !d.ap.parts) return;

@@ -833,7 +833,7 @@ const lerpP = (a, b, f) => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f
 function kerb(ap, kinds, p) {
   let best = null, bd = 1e9;
   for (const q of ap.parts) if (kinds.includes(q.kind) && q.built && q.hp > q.max * 0.25) {
-    const w = q.w || (q.r || 0.1) * 2, h = q.h || (q.r || 0.1) * 2, l = IC.rectLocal(q, p), c = IC.rectWorld(q, U.clamp(l.x, -w / 2, w / 2), U.clamp(l.y, -h / 2, h / 2)), d = U.dist(c, p);
+    const w = q.w || (q.r || 0.1) * 2, h = q.h || (q.r || 0.1) * 2, l = IC.rectLocal(q, p), c = q.ring ? IC.bandProject(q, p) : IC.rectWorld(q, U.clamp(l.x, -w / 2, w / 2), U.clamp(l.y, -h / 2, h / 2)), d = U.dist(c, p);
     if (d < bd) { bd = d; best = c; }
   }
   return best;
