@@ -27,6 +27,18 @@ A player should be able to rebuild a real airport's layout closely, at its real 
 | Orlando (KMCO) | the landside hub with airside satellites and a people mover |
 | Tampa (KTPA) | the round satellites |
 
+**Snapping and guides, like Cities: Skylines (do this first).** The owner: "we need some Cities: Skylines sort of snapping, and lines to keep things straight, because the airport looking slightly wrong is very annoying due to wrong angles."
+- **Angle snapping:** 0°, 90° and 45° to the runway, and to the part being joined, by default. Shift draws freely.
+- **Guide lines:** dashed lines from existing edges and centrelines (parallel, perpendicular, extended), shown while drawing, that the cursor snaps to.
+- **Length and distance readouts** as you draw: the length of each segment, the distance from the runway centreline, and the apron depth in stand rows. Snap to round lengths (10 m).
+- **Edge and corner snapping:** new aprons, terminals and hangars snap flush to existing edges and corners.
+- **Clear feedback:**
+  - a plan that cannot be built is drawn red, with the reason in the hint bar that names the part it hits ("overlaps Terminal 1");
+  - a refused click says why, and the message stays;
+  - a started build says so ("Apron started: ₭853M, about 2.9 h").
+- **Size guidance:** when a part is far bigger than the chapter asks for, or than traffic needs, say so before the click ("This apron is 15 times what one airliner needs: ₭853M").
+- **Overlaps:** taxiways may not run through aprons or buildings; they join them at the edge.
+
 **Shapes (they cost what they are made of, as now):**
 - Terminals and piers as polygons, arcs, circles and rotundas, not only rectangles.
 - A pier can bend and branch: Y, T and X shapes, and a satellite at its end.
