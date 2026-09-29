@@ -104,7 +104,11 @@ float fxStripe(vec2 w) {
   }
   return k;
 }`;
-const grassIBL = sh => { sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'iblIrradiance *= 1.0 - fxGrass * 0.35; radiance *= 1.0 - fxGrass * 0.6;'); };
+const grassIBL = sh => {
+  sh.fragmentShader = inc(sh.fragmentShader, 'lights_fragment_maps', '', 'iblIrradiance *= 1.0 - fxGrass * 0.35; radiance *= 1.0 - fxGrass * 0.6;');
+  // no pixel of the ground is a light: nothing undefined or brighter than sunlit snow goes on to glow
+  sh.fragmentShader = inc(sh.fragmentShader, 'tonemapping_fragment', 'if (!(gl_FragColor.r == gl_FragColor.r && gl_FragColor.g == gl_FragColor.g && gl_FragColor.b == gl_FragColor.b)) gl_FragColor.rgb = vec3(0.0); gl_FragColor.rgb = clamp(gl_FragColor.rgb, 0.0, 1.3);');
+};
 /* uniforms every patched material shares by reference: set once a frame, read by all */
 const G = {
   fxFog: null, sunDir: null, sunCol: null, ambCol: null, night: { value: 0 }, wet: { value: 0 }, snow: { value: 0 }, time: { value: 0 },
@@ -398,7 +402,7 @@ void main() {
 }`;
 const SKY_F = FHEAD + NOISE + `
 uniform vec3 sunDir; uniform vec3 moonDir; uniform float mieG; uniform float gain; uniform float night; uniform float cover;
-uniform vec3 fogCol; uniform float fogK; uniform float flash; uniform vec3 nightCol; uniform float moonK;
+uniform vec3 fogCol; uniform float fogK; uniform float flash; uniform vec3 nightCol; uniform float moonK; uniform vec3 ovc;
 varying vec3 vWp; varying vec3 vBetaR; varying vec3 vBetaM; varying float vSunE;
 void main() {
   #include <logdepthbuf_fragment>
@@ -418,7 +422,8 @@ void main() {
   col /= 1.0 + dot(col, vec3(0.2126, 0.7152, 0.0722)) / 2.0;
   col += min(vSunE * Fex * disk * 2.0, vec3(80.0)) * max(sunDir.y + 0.05, 0.0);
   // below the horizon the haze; overcast greys the sky; the night's own dark blue, the moon's glow
-  col = mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))) * 0.8, cover * 0.7);
+  // under cloud the sky is one even grey (and so is what glass and wet pavement mirror of it)
+  col = mix(col, ovc, smoothstep(0.3, 0.9, cover));
   vec3 nc = nightCol * (0.6 + 0.4 * (1.0 - dir.y));
   float md = max(0.0, dot(dir, moonDir));
   nc += vec3(0.5, 0.6, 0.8) * (pow(md, 400.0) * 0.4 + pow(md, 12.0) * 0.02) * moonK * (1.0 - cover);
@@ -478,7 +483,7 @@ function scene(v) {
   // the sky dome replaces the plain one; the ground beyond the tiles takes the ground's colour at the horizon
   sc.remove(v.sky); v.sky.geometry.dispose(); v.sky.material.dispose();
   F.skyU = { sunDir: G.sunDir, moonDir: { value: F.moonDir }, rayleigh: { value: SKY.ray }, turbidity: { value: SKY.turb }, mieCoef: { value: SKY.mie }, mieG: { value: SKY.g }, gain: { value: 0.3 }, night: G.night,
-    cover: { value: 0 }, fogCol: { value: new THREE.Color() }, fogK: { value: 0 }, flash: { value: 0 }, nightCol: { value: new THREE.Color(0.006, 0.011, 0.028) }, moonK: { value: 1 } };
+    cover: { value: 0 }, ovc: { value: new THREE.Color() }, fogCol: { value: new THREE.Color() }, fogK: { value: 0 }, flash: { value: 0 }, nightCol: { value: new THREE.Color(0.006, 0.011, 0.028) }, moonK: { value: 1 } };
   F.skyMat = new THREE.ShaderMaterial({ uniforms: F.skyU, vertexShader: SKY_V, fragmentShader: SKY_F, side: THREE.DoubleSide, depthWrite: false, fog: false });
   v.sky = new THREE.Mesh(R.sphereG(), F.skyMat); v.sky.scale.setScalar(30000); v.sky.renderOrder = -10; v.sky.frustumCulled = false; v.sky.userData.keep = true; sc.add(v.sky);
   F.envSky = new THREE.Mesh(R.sphereG(), F.skyMat); F.envSky.scale.setScalar(1000); F.envSky.userData.keep = true;
@@ -876,6 +881,8 @@ const RES_F = LOGD + NOISE + `
 uniform sampler2D tCol; uniform sampler2D tDepth; uniform sampler2D tAO; uniform vec2 px; uniform float useAO; uniform float aoK;
 uniform mat4 invProj; uniform mat4 camWorld; uniform mat4 prevVP; uniform float mblur; uniform float focus; uniform float coc; uniform float shimmer; uniform float time; uniform float groundY;
 varying vec2 vUv;
+// a colour kept finite and not below black (a glint can pass what a half float holds)
+vec3 tc(vec2 u) { vec3 c = texture2D(tCol, u).rgb; return (c.r == c.r && c.g == c.g && c.b == c.b) ? clamp(c, 0.0, 60.0) : vec3(0.0); }
 vec3 world(vec2 uv, float z, out vec4 wp) { vec4 v = invProj * vec4(uv * 2.0 - 1.0, 0.0, 1.0); v.xyz = v.xyz / v.w; v.xyz *= z / -v.z; wp = camWorld * vec4(v.xyz, 1.0); return v.xyz; }
 void main() {
   vec2 uv = vUv;
@@ -884,7 +891,7 @@ void main() {
   // heat over the tarmac: the air near the ground, some way off, wavers
   if (shimmer > 0.0) { float h = wp.y - groundY; float k = shimmer * (1.0 - smoothstep(0.0, 0.08, h)) * smoothstep(2.0, 6.0, z) * (1.0 - smoothstep(30.0, 80.0, z));
     uv.x += (fxNoise(vec2(uv.y * 300.0, time * 6.0)) - 0.5) * 0.0025 * k; uv.y += (fxNoise(vec2(uv.x * 260.0, time * 5.0 + 3.0)) - 0.5) * 0.0012 * k; }
-  vec3 c = texture2D(tCol, uv).rgb;
+  vec3 c = tc(uv);
   // depth of field: a disc of samples as wide as the circle of confusion, each only where it is itself blurred
   if (coc > 0.0) {
     float r0 = coc * abs(1.0 - focus / z);
@@ -892,7 +899,7 @@ void main() {
       vec3 s = c; float w = 1.0;
       for (int i = 0; i < 16; i++) { float fi = float(i), a = fi * 2.3999, r = sqrt((fi + 0.5) / 16.0) * min(r0, 14.0);
         vec2 o = vec2(cos(a), sin(a)) * r * px; float dz = texture2D(tDepth, uv + o).x; float zz = dz > 0.9999 ? 1e5 : viewZ(dz);
-        float rr = coc * abs(1.0 - focus / zz); float k = smoothstep(r - 0.5, r + 0.5, rr); s += texture2D(tCol, uv + o).rgb * k; w += k; }
+        float rr = coc * abs(1.0 - focus / zz); float k = smoothstep(r - 0.5, r + 0.5, rr); s += tc(uv + o) * k; w += k; }
       c = s / w;
     }
   }
@@ -901,17 +908,19 @@ void main() {
     vec4 pp = prevVP * wp; vec2 puv = pp.xy / pp.w * 0.5 + 0.5; vec2 vel = (uv - puv) * mblur;
     vel *= smoothstep(0.15, 0.5, abs(1.0 - focus / z));
     float L = length(vel / px);
-    if (L > 1.5) { vel *= min(1.0, 30.0 / L); vec3 s = c; for (int i = 1; i < 8; i++) s += texture2D(tCol, uv - vel * (float(i) / 7.0 - 0.5)).rgb; c = s / 8.0; }
+    if (L > 1.5) { vel *= min(1.0, 30.0 / L); vec3 s = c; for (int i = 1; i < 8; i++) s += tc(uv - vel * (float(i) / 7.0 - 0.5)); c = s / 8.0; }
   }
   if (useAO > 0.0) c *= mix(1.0, texture2D(tAO, uv).r, aoK);
   gl_FragColor = vec4(c, 1.0);
 }`;
 const DOWN_F = `uniform sampler2D t; uniform vec2 px; uniform float first; uniform float thr; varying vec2 vUv;
-vec3 s(vec2 o) { return texture2D(t, vUv + o * px).rgb; }
+// a glint off glass or a puddle can pass what a half float holds: every sample is kept finite first
+vec3 s(vec2 o) { vec3 c = texture2D(t, vUv + o * px).rgb; if (!(c.r == c.r && c.g == c.g && c.b == c.b)) return vec3(0.0); return clamp(c, 0.0, first > 0.0 ? 30.0 : 1e4); }
 void main() {
   vec3 c = s(vec2(0.0)) * 0.125 + (s(vec2(-1.0, -1.0)) + s(vec2(1.0, -1.0)) + s(vec2(-1.0, 1.0)) + s(vec2(1.0, 1.0))) * 0.125
     + (s(vec2(-2.0, 0.0)) + s(vec2(2.0, 0.0)) + s(vec2(0.0, -2.0)) + s(vec2(0.0, 2.0))) * 0.0625
     + (s(vec2(-2.0, -2.0)) + s(vec2(2.0, -2.0)) + s(vec2(-2.0, 2.0)) + s(vec2(2.0, 2.0))) * 0.03125;
+  if (!(c.r == c.r && c.g == c.g && c.b == c.b)) c = vec3(0.0);
   if (first > 0.0) { float l = max(c.r, max(c.g, c.b)); float k = clamp(l - thr, 0.0, 2.0 * 0.5); k = k * k / (4.0 * 0.5 + 1e-4); c *= max(k, l - thr) / max(l, 1e-4); c = min(c, vec3(40.0)); }
   gl_FragColor = vec4(c, 1.0);
 }`;
@@ -1075,6 +1084,7 @@ function frame(v, t, dtR) {
   const fl = fr * 0.2126 + fg * 0.7152 + fb * 0.0722, cap = (amb.r * 0.2126 + amb.g * 0.7152 + amb.b * 0.0722) * 1.6 + sunI * Math.max(sd.y, 0) * 0.22 + 0.004;
   const dim = (1 - overcast * 0.45 - fog * 0.2) / (1 + fl / 2) * Math.min(1, cap / Math.max(1e-4, fl / (1 + fl / 2))); fr *= dim; fg *= dim; fb *= dim;
   F.skyU.fogCol.value.setRGB(fr, fg, fb);
+  const og = (fr * 0.2126 + fg * 0.7152 + fb * 0.0722) * 1.1; F.skyU.ovc.value.setRGB(og * 0.98, og, og * 1.04);
   v.hemi.color.setRGB(amb.r, amb.g, amb.b); v.hemi.groundColor.setRGB(amb.r * 0.35 + sc.r * sunI * 0.03, amb.g * 0.35 + sc.g * sunI * 0.03, amb.b * 0.3 + sc.b * sunI * 0.02);
   v.hemi.intensity = Q.env ? 0.15 : 1.8;
   // fog: the weather's visibility at the ground; clear air is a haze of 40–60 km that thins with height

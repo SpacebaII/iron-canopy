@@ -348,8 +348,10 @@ const SCENES = {
     const objs = window.CULPRITS ? [] : []; L.scene.traverse(o => { if (window.CULPRITS && (o.isMesh || o.isPoints || o.isLine)) objs.push(o); });
     for (const o of objs) { if (!o.visible) continue; o.visible = false; IC.replayStep(L, now += 33); const l = lum(); o.visible = true; if (l < spot[2] - 120) res.push([o.type, o.material && o.material.type, o.renderOrder, o.parent && o.parent.type, o.material && o.material.userData && Object.keys(o.material.userData).join('|'), l]); }
     console.log('spot', JSON.stringify(spot), 'culprits', JSON.stringify(res.slice(0, 10)), objs.length);
-    film.after = () => hide(o => o.material && o.material.type === 'MeshBasicMaterial');
-    await film(L, S, 'spots-b', 3, 1, f => f === 2 ? 'still' : null);
+    IC.fx3d.debug.post = 0; await film(L, S, 'spots-b', 3, 1, f => f === 2 ? 'still' : null); IC.fx3d.debug.post = 1;
+    const Q = L.fxs.Q; Q.ao = Q.dof = Q.mblur = 0; await film(L, S, 'spots-c', 3, 1, f => f === 2 ? 'still' : null);
+    Q.bloom = 0; await film(L, S, 'spots-d', 3, 1, f => f === 2 ? 'still' : null);
+    return;
     film.after = () => hide(o => o.isInstancedMesh);
     await film(L, S, 'spots-c', 3, 1, f => f === 2 ? 'still' : null);
     film.after = () => hide(o => o.material && o.material.userData && o.material.userData.fxWin || o.material === IC.R3D.solidMat());
@@ -418,7 +420,7 @@ const SCENES = {
     if (/^m-/.test(name)) {
       await page.exposeFunction('__frame', (n, b64) => { const f = path.join(dir, `3d-${n}.mjpeg`); if (!clips.has(n)) { clips.add(n); fs.writeFileSync(f, ''); } fs.appendFileSync(f, Buffer.from(b64, 'base64')); });
       await page.exposeFunction('__still', (n, b64) => { const out = path.join(dir, `3d-${n}.jpg`); fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('saved', out); });
-      for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+      for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME', 'CULPRITS']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     }
     if (name === 'movie') {
       // the frames go one after another into one file of JPEGs, which ffmpeg reads as a stream when they are done
