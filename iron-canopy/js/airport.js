@@ -903,6 +903,8 @@ IC.aptPlan = function (S, ap, part, o) {
   IC.aptExtent(ap);
   IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(IC.APART[part.kind].name)} planned (${U.money(pv.cost)} paid as the work runs, about ${U.dur(w.dur)} of engineer work).`);
   IC.emit(S, 'aptPlan', { ap, part });
+  // the country's roads keep off the new pavement: the airport's own road goes round to its gate, others under
+  if (S.world && IC.aptReseat) IC.aptReseat(S, ap, part);
   return part;
 };
 /* place a building automatically next to others of its kind (used by quick buttons and the Academy) */
@@ -1019,12 +1021,18 @@ IC.aptCanPlace = function (S, ap, part) {
   const shape = q => q.kind === 'runway' ? { x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q), h: q.w || IC.APART.runway.w } : q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q;
   const A = shape(probe);
   if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return no('It stands in a river.');
+  // (by their real shapes: an L-shaped terminal or a round tank is not its bounding box)
+  const mine = IC.partShape ? IC.partShape(ap, probe) : null;
   for (const q of ap.parts) {
-    if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
+    if (q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
-    if (rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
+    // a building may not stand on a taxiway (aprons and pads meet taxiways at their edges)
+    if (q.kind === 'taxi') { if (mine && !IC.PAVED[probe.kind] && !D.pad && IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.02) return no(`It stands on ${q.name ? 'taxiway ' + q.name : 'a taxiway'}: move it clear of the pavement.`, q); continue; }
+    if (mine ? IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.01 : rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
   }
+  // roads, car parks and the landside round the airport
+  if (S && S.world && IC.aptPlanOverlaps) { const L = IC.aptPlanOverlaps(S, ap, Object.assign({ _probe: true }, probe)); if (L.length) { const o = L[0], other = o.A.name === `the new ${U.lc(D.name)}` ? o.B : o.A; return no(`${o.text} Move it clear.`, other.p || other.it || other.r || other.l || null); } }
   return true;
 };
 /* a taxiway line runs more than 8 m inside a part (a round tank by its radius) */
@@ -1472,7 +1480,7 @@ function layoutKden(ap, L) {
   // fuel farm with a hydrant system, fire stations within three minutes of every runway end, tower and radars
   for (const x of [-8, -6, -4, -2]) { bld('fuel', x, 16); bld('fuel', x, 18); }
   bld('hydrant', 2, 17);
-  bld('fire', -22.5, -18); bld('fire', 22.5, 24); bld('fire', -24, 19.5); bld('fire', 24, -24.5);
+  bld('fire', -22.5, -18); bld('fire', 22.5, 24); bld('fire', -24, 19.5); bld('fire', 23.2, -24.6);
   bld('tower', 8, -14); bld('atc', 4, 20); bld('gradar', -9.5, 12);
 }
 /* how far the airport reaches from its reference point (for strikes, picking and drawing) */

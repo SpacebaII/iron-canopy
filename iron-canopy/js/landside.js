@@ -116,6 +116,7 @@ IC.landsideTick = function (S, ap, dt) {
   L.t -= dt;
   if (L.t > 0) return;
   L.t = 600;
+  IC.aptReseat(S, ap);
   // passengers and cargo, averaged over some hours so a busy hour does not build a hotel
   const cargoH = (ap.mvLog || []).filter(x => x.type === 'cargo' && x.k === 'arr').length * 60;
   L.pax += ((ap.paxRate || 0) - L.pax) * 0.05; L.cargo += (cargoH - L.cargo) * 0.05;
@@ -171,6 +172,8 @@ function kerbs(S, ap, bl) {
   for (const t of bl) {
     const sd = landSide(ap, t), mine = L.items.filter(it => it.by === t.id);
     if (!mine.length && t.kind === 'cargo') continue;
+    // (a concourse with aprons on both sides, or hemmed in, has no landside: passengers come by the terminal)
+    if (!mine.length && !loopFits(S, ap, t, sd, blockers(S, ap, t.id))) continue;
     const nb = Math.max(1, ...mine.map(it => (it.band != null ? it.band : 0) + 1)), y = d => sd * (t.h / 2 + d);
     // the loop is as long as what it serves: the building's front, or the items beyond it
     const X = Math.max(t.w / 2 + 0.4, ...mine.map(it => Math.abs(IC.rectLocal(t, it).x) + it.w / 2 + 0.15));
@@ -191,7 +194,7 @@ function kerbs(S, ap, bl) {
   const F = IC.aptFence(ap); if (F) B.push({ sh: IC.shapePoly(F.poly), pad: 0.05, carve: F.carveA });
   for (const o of outs) {
     const lines = [];
-    const W = S.world, R = 30, bb = [o.from.x - R, o.from.y - R, o.from.x + R, o.from.y + R];
+    const W = S.world, R = 30, box = r => [o.from.x - r, o.from.y - r, o.from.x + r, o.from.y + r], bb = box(R);
     if (L.access) lines.push(L.access.pts);
     for (const e of W.edges || []) { if (e.bb && (e.bb[2] < bb[0] || e.bb[0] > bb[2] || e.bb[3] < bb[1] || e.bb[1] > bb[3])) continue; for (const run of IC.openRuns(W, e.pts)) lines.push(run); }
     for (const q of outs) if (q !== o) for (const r of L.roads) if (r.by === q.t.id && r.kind === 'loop') lines.push(r.pts);
@@ -201,7 +204,8 @@ function kerbs(S, ap, bl) {
     const snap = p => { let best = p, bd = Infinity; for (const l of lines) for (let i = 1; i < l.length; i++) { const a = l[i - 1], b = l[i], dx = b.x - a.x, dy = b.y - a.y, LL = dx * dx + dy * dy || 1, f = U.clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / LL, 0, 1), q = { x: a.x + dx * f, y: a.y + dy * f }, d = U.dist(p, q); if (d < bd) { bd = d; best = q; } } return best; };
     if (!lines.length) continue;
     // step off the loop first, straight out
-    const path = IC.gridRoute(bb, 0.1, B.concat(own), o.n, near, { snapEnd: snap });
+    // (a small search first: the network is usually close)
+    const path = IC.gridRoute(box(8), 0.1, B.concat(own), o.n, near, { snapEnd: snap }) || IC.gridRoute(bb, 0.1, B.concat(own), o.n, near, { snapEnd: snap });
     if (!path) continue;
     const pts = [o.from].concat(path);
     L.roads.push({ pts, w: 0.12, out: true, kind: 'out', by: o.t.id });

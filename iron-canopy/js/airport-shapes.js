@@ -192,21 +192,22 @@ const LAND_WORD = { kerb: 'kerb road', loop: 'landside road', drive: 'driveway',
 /* everything on and near an airport, as shapes with a category:
    rwy, twy, apron (pavement), bld (airside building), land (landside building), park (car park and the like),
    road (lv: 0 on the ground, 1 on a bridge or upper deck, -1 in a tunnel), rail */
+IC.aptElementOf = function (ap, p, o) {
+  if (p.kind === 'ils') return null;
+  const sh = IC.partShape(ap, p), name = IC.partName(ap, p);
+  if (p.kind === 'runway') return { cat: 'rwy', p, sh, strip: IC.shapeLine([p.a, p.b], RWY_STRIP), name };
+  if (p.kind === 'taxi') return { cat: 'twy', p, sh, name: p.name ? `taxiway ${p.name}` : 'a taxiway', lv: p.lv || 0 };
+  if (p.kind === 'apron' || (IC.APART[p.kind] && IC.APART[p.kind].pad) || p.kind === 'alert') return { cat: 'apron', p, sh, name };
+  if (p.kind === 'surface') return IC.SURF[p.surf] && IC.SURF[p.surf].park && !(o && o.noSurface) ? { cat: 'park', p, sh, name: 'the car park', surf: true } : null;
+  if (p.kind === 'people') return { cat: 'mover', p, sh: IC.shapeLine(p.pts || [], 0.04), name: p.name || 'the people mover', lv: p.lv != null ? p.lv : 1 };
+  if (p.kind === 'bridge') return { cat: 'span', p, sh, name: p.name || 'the passenger bridge', lv: 1, clear: p.clear || 0 };
+  return { cat: 'bld', p, sh, name };
+};
 IC.aptElements = function (S, ap, o) {
   o = o || {};
   const out = [], W = S && S.world;
   const name = p => IC.partName(ap, p);
-  for (const p of ap.parts) {
-    if (p.kind === 'ils') continue;
-    const sh = IC.partShape(ap, p);
-    if (p.kind === 'runway') out.push({ cat: 'rwy', p, sh, strip: IC.shapeLine([p.a, p.b], RWY_STRIP), name: name(p) });
-    else if (p.kind === 'taxi') out.push({ cat: 'twy', p, sh, name: p.name ? `taxiway ${p.name}` : 'a taxiway', lv: p.lv || 0 });
-    else if (p.kind === 'apron' || (IC.APART[p.kind] && IC.APART[p.kind].pad) || p.kind === 'alert') out.push({ cat: 'apron', p, sh, name: name(p) });
-    else if (p.kind === 'surface') { if (IC.SURF[p.surf] && IC.SURF[p.surf].park && !o.noSurface) out.push({ cat: 'park', p, sh, name: 'the car park', surf: true }); }
-    else if (p.kind === 'people') out.push({ cat: 'mover', p, sh: IC.shapeLine(p.pts || [], 0.04), name: p.name || 'the people mover', lv: p.lv != null ? p.lv : 1 });
-    else if (p.kind === 'bridge') out.push({ cat: 'span', p, sh, name: p.name || 'the passenger bridge', lv: 1, clear: p.clear || 0 });
-    else out.push({ cat: 'bld', p, sh, name: name(p) });
-  }
+  for (const p of ap.parts) { const e = IC.aptElementOf(ap, p, o); if (e) out.push(e); }
   const L = ap.land;
   if (L) {
     for (const it of L.items) {
@@ -227,7 +228,7 @@ IC.aptElements = function (S, ap, o) {
         for (const run of IC.openRuns(W, l.pts)) out.push(Object.assign({ cat, l, sh: IC.shapeLine(run, (IC.ROAD_W[l.cls] || 0.1) / 2), name: word, world: true, lv: 0 }, extra || {}));
       };
       const place = l => { const m = l.pts[l.pts.length >> 1]; return S.infra ? IC.nearPlace(S, m.x, m.y) : ''; };
-      for (const e of W.edges || []) add(e, 'road', `the ${CLS_WORD[e.cls] || 'road'} ${place(e)}`, { edge: e });
+      for (const e of W.edges || []) add(e, 'road', `the ${CLS_WORD[e.cls] || 'road'} ${place(e)}`, { edge: e, ownRoad: e.a === ap.id || e.b === ap.id || e.apt === ap.id });
       for (const r of W.ramps || []) add(r, 'road', `a slip road ${place(r)}`, { ramp: true });
       for (const l of W.lanes || []) add(l, 'road', `a farm lane ${place(l)}`, { lane: true });
       for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dxy(c.x, c.y, (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2) < (c.r || 20) * 2 + (bb[2] - bb[0])) for (const l of c.streets) add(l, 'road', `a street of ${c.name}`, { street: c });
@@ -303,6 +304,15 @@ IC.aptOverlaps = function (S, ap, o) {
   for (const A of parks) for (const B of roads) if (pair(A, B) && (B.lv || 0) === 0 && deep(A, B, 0.02) && !(B.land && B.land.to === A.it)) say('park', A, B, `${cap(A.name)} lies across ${B.name}.`, meetAt(A.sh, B.sh));
   for (let i = 0; i < parks.length; i++) for (let j = i + 1; j < parks.length; j++) { const A = parks[i], B = parks[j]; if (pair(A, B) && deep(A, B, 0.02)) say('park', A, B, `${cap(A.name)} overlaps ${B.name}.`, meetAt(A.sh, B.sh)); }
   for (const A of parks) for (const B of bld) if (pair(A, B) && deep(A, B, 0.02)) say('park', A, B, `${cap(A.name)} overlaps ${B.name}.`, meetAt(A.sh, B.sh));
+  // the country's roads and railways inside the fence (not in a tunnel): the airport's own road stops at its gate
+  const F = !only && IC.aptFence ? IC.aptFence(ap) : null;
+  if (F) for (const A of roads.concat(rails)) {
+    if (!A.world || A.ownRoad || (A.lv || 0) !== 0 || !bbHit(A.sh.bb, IC.shapePoly(F.poly).bb, 0)) continue;
+    const L = A.sh.line;
+    let at = null;
+    for (let i = 1; i < L.length && !at; i++) { const n = Math.max(1, Math.ceil(U.dist(L[i - 1], L[i]) / 0.2)); for (let k = 0; k <= n && !at; k++) { const q = { x: L[i - 1].x + (L[i].x - L[i - 1].x) * k / n, y: L[i - 1].y + (L[i].y - L[i - 1].y) * k / n }; if (U.inPoly(q.x, q.y, F.hullA) && !F.carveA.some(c => U.inPoly(q.x, q.y, c))) at = q; } }
+    if (at) say('fence', A, { name: `the fence of ${ap.name}` }, `${cap(A.name)} runs through the fence of ${ap.name}: roads and railways pass round the airfield or under it.`, at);
+  }
   // landside items on the airfield: in a runway strip, on a taxiway or apron, or on an airside building
   for (const A of lands) for (const B of air) {
     if (!A.own || !pair(A, B)) continue;
@@ -328,18 +338,32 @@ IC.aptKeepOut = function (S, ap, o) {
 };
 /* A* on a grid of cells c units across, inside box [x0, y0, x1, y1], from a point to the nearest goal cell
    (goal(x, y) → true), round the blocked shapes; the path is pulled straight where the way is clear */
-IC.gridRoute = function (box, c, blocks, from, goal, o) {
-  o = o || {};
+/* the blocked shapes as a grid of cells c units across inside box: bad[k] = 1 where a cell's centre is within a
+   block's pad (a line one segment at a time, so a long diagonal runway strip does not scan its whole box) */
+IC.shapeRaster = function (box, c, blocks) {
   const nx = Math.max(2, Math.ceil((box[2] - box[0]) / c)), ny = Math.max(2, Math.ceil((box[3] - box[1]) / c)), N = nx * ny;
   if (N > 4e6) return null;
   const bad = new Uint8Array(N);
   const X = i => box[0] + (i + 0.5) * c, Y = j => box[1] + (j + 0.5) * c;
-  for (const b of blocks) {
-    const bb = b.sh.bb, pad = b.pad + c * 0.71;
+  const mark = (bb, pad, test) => {
     const i0 = Math.max(0, Math.floor((bb[0] - pad - box[0]) / c)), i1 = Math.min(nx - 1, Math.floor((bb[2] + pad - box[0]) / c));
     const j0 = Math.max(0, Math.floor((bb[1] - pad - box[1]) / c)), j1 = Math.min(ny - 1, Math.floor((bb[3] + pad - box[1]) / c));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (!bad[j * nx + i] && IC.shapeDist(b.sh, { x: X(i), y: Y(j) }) < b.pad + c * 0.5 && !(b.carve && b.carve.some(cv => U.inPoly(X(i), Y(j), cv)))) bad[j * nx + i] = 1;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (!bad[j * nx + i] && test(X(i), Y(j))) bad[j * nx + i] = 1;
+  };
+  for (const b of blocks) {
+    const pad = b.pad + c * 0.71, lim = b.pad + c * 0.5;
+    if (b.sh.bb[2] < box[0] - pad || b.sh.bb[0] > box[2] + pad || b.sh.bb[3] < box[1] - pad || b.sh.bb[1] > box[3] + pad) continue;
+    if (b.sh.line) { const L = b.sh.line, r = b.sh.r; for (let k = 1; k < L.length; k++) { const a = L[k - 1], q = L[k]; mark([Math.min(a.x, q.x) - r, Math.min(a.y, q.y) - r, Math.max(a.x, q.x) + r, Math.max(a.y, q.y) + r], pad, (x, y) => U.segDist(x, y, a.x, a.y, q.x, q.y) - r < lim); } continue; }
+    if (b.inside) { mark(b.sh.bb, 0, (x, y) => U.inPoly(x, y, b.inside) && !(b.carve && b.carve.some(cv => U.inPoly(x, y, cv)))); continue; }
+    mark(b.sh.bb, pad, (x, y) => IC.shapeDist(b.sh, { x, y }) < lim && !(b.carve && b.carve.some(cv => U.inPoly(x, y, cv))));
   }
+  const cellOf = p => { const i = Math.floor((p.x - box[0]) / c), j = Math.floor((p.y - box[1]) / c); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
+  return { nx, ny, N, bad, X, Y, cellOf, at: p => { const k = cellOf(p); return k >= 0 && bad[k] === 1; } };
+};
+IC.gridRoute = function (box, c, blocks, from, goal, o) {
+  o = o || {};
+  const R = IC.shapeRaster(box, c, blocks); if (!R) return null;
+  const { nx, ny, N, bad, X, Y } = R;
   const cellOf = p => { const i = Math.floor((p.x - box[0]) / c), j = Math.floor((p.y - box[1]) / c); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
   const s0 = cellOf(from); if (s0 < 0) return null;
   // (the start may sit at the edge of what it serves: free a few cells round it)
@@ -373,6 +397,19 @@ IC.gridRoute = function (box, c, blocks, from, goal, o) {
   return out;
 };
 
+/* what a planned part would overlap, before it is committed: buildings on roads, car parks or the landside, pavement
+   on the landside. (Pavement over the country's roads is fine: they are carried under it in a tunnel and charged for,
+   IC.bldClearance; the airport's own road is moved round to its gate, IC.aptReseat.) The elements round the airport
+   are kept until the airport or its landside changes, so a plan dragged over the map stays quick. */
+IC.aptPlanOverlaps = function (S, ap, part) {
+  const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0) + ':' + ((S && S.world && S.world.edges) || []).length + ':' + ((S && S.world && S.world.tunnels) || []).length;
+  if (ap._elsKey !== key || !ap._els) { ap._els = IC.aptElements(S, ap).filter(e => !e.p || !e.p._probe); ap._elsKey = key; }
+  const me = IC.aptElementOf(ap, part); if (!me) return [];
+  me.name = `the new ${U.lc((IC.APART[part.kind] || { name: part.kind }).name)}`;
+  const els = ap._els.filter(e => !(e.p && (e.p === part || (part._was && e.p === part._was))) && !e.ownRoad);
+  const L = IC.aptOverlaps(S, ap, { els: els.concat([me]), only: me });
+  return L.filter(o => !((o.A.world || o.B.world) && (me.cat === 'rwy' || me.cat === 'twy' || me.cat === 'apron')));
+};
 /* one line for a list of overlaps */
 IC.overlapText = L => !L.length ? 'Nothing overlaps.' : L.length === 1 ? L[0].text : `${L[0].text} (and ${L.length - 1} more)`;
 

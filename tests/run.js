@@ -1215,6 +1215,52 @@ test('airport life: a radar and a beacon can stand inside the airport, but not o
   assert(!IC.canPlace(S, 'ssr', on.x, on.y), 'a beacon can be placed on the runway');
 });
 
+/* ---------- nothing overlaps (brief 39) ---------- */
+const overlapsOf = (S, ap) => IC.aptOverlaps(S, ap).map(o => `${ap.name}: ${o.text}`);
+/* the landside at its fullest: passengers and cargo far beyond any real day */
+const growLand = (S, ap) => { const L = IC.landInit(ap); for (let i = 0, n = -1; i < 60 && L.items.length !== n; i++) { n = i < 3 ? -1 : L.items.length; ap.paxRate = 9000; ap.mvLog = Array.from({ length: 8 }, () => ({ type: 'cargo', k: 'arr' })); L.pax = 9000; L.cargo = 400; L.t = 0; IC.landsideTick(S, ap, 1); } };
+test('overlaps: nothing overlaps on the starting airports of three worlds, even with the landside grown in full', () => {
+  const bad = [];
+  for (const [seed, mode] of [[12345, 'story'], [777, 'quick'], [9001, 'quick']]) {
+    IC.seedRandom(seed);
+    const S = IC.newGame({ seed, mode, preset: mode === 'story' ? 'network' : undefined, hour: 8 });
+    for (const ap of IC.bases(S)) { if (ap.kind === 'airport') growLand(S, ap); bad.push(...overlapsOf(S, ap)); }
+    // the country's own roads to each airport end at a gate on its landside, outside the fence
+    for (const ap of IC.bases(S)) { const n = S.world.nodes[ap.id]; if (n && n.gate) assert(!IC.aptInFence(ap, n), `${ap.name}: its road ends inside the fence`); }
+  }
+  assert(!bad.length, `${bad.length} overlaps: ${bad.slice(0, 4).join(' ')}`);
+}, true);
+test('overlaps: the KDEN-scale airport has none, laid out or built by hand on a new site', () => {
+  const { S, ap } = kdenGame(12345, 9);
+  const a = overlapsOf(S, ap);
+  assert(!a.length, `laid out: ${a.length}: ${a.slice(0, 3).join(' ')}`);
+  const { buildKden, finishAll } = require('../kdenbuild.js');
+  const K = buildKden(12345, true); finishAll(K.S, K.ap); growLand(K.S, K.ap);
+  const b = overlapsOf(K.S, K.ap);
+  assert(!b.length, `built by hand: ${b.length}: ${b.slice(0, 3).join(' ')}`);
+  // the airport's own road was moved round the airfield as it grew, not left under the runways
+  const acc = K.S.world.edges.filter(e => e.apt === K.ap.id || e.a === K.ap.id || e.b === K.ap.id);
+  assert(acc.length && acc.every(e => e.pts.every(p => !IC.aptOnPart(K.ap, p, 0.05))), 'the access road still runs over the airfield');
+}, true);
+test('overlaps: the builder refuses a building on a taxiway, a road or the landside, and says what it would hit', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S; S.budget = 1e5;
+  const cap = S.byId[S.story.cap];
+  growLand(S, cap);
+  // on a taxiway
+  const tw = cap.parts.find(p => p.kind === 'taxi' && p.nodes.length > 2), n = cap.nodes[tw.nodes[1]];
+  assert(!IC.aptCanPlace(S, cap, { kind: 'fire', x: n.x, y: n.y, a: 0 }) && /taxiway/.test(IC.aptPlaceWhy), `a fire station on a taxiway: "${IC.aptPlaceWhy}"`);
+  // on the landside: a car park and its road
+  const park = cap.land.items.find(it => it.kind === 'park');
+  assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: park.x, y: park.y, a: park.a }) && /car park/i.test(IC.aptPlaceWhy), `a hangar on the car park: "${IC.aptPlaceWhy}"`);
+  const kerb = cap.land.roads.find(r => r.kerb), mid = { x: (kerb.pts[0].x + kerb.pts[1].x) / 2, y: (kerb.pts[0].y + kerb.pts[1].y) / 2 };
+  assert(!IC.aptCanPlace(S, cap, { kind: 'fuel', x: mid.x, y: mid.y, a: 0 }) && /road/.test(IC.aptPlaceWhy), `a fuel tank on the kerb road: "${IC.aptPlaceWhy}"`);
+  // on a country road outside the airfield (within the site)
+  const e = S.world.edges.find(e => e.pts.some(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p) && !IC.aptInFence(cap, p)));
+  if (e) { const p = e.pts.find(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p)); assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: p.x, y: p.y, a: 0 }) && /road|street|lane/.test(IC.aptPlaceWhy), `a hangar on a road: "${IC.aptPlaceWhy}"`); }
+  // clear ground is fine
+  assert(IC.aptOverlaps(S, cap).length === 0, 'the test airport overlaps before anything is built');
+});
+
 const off = (p, a, d) => ({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d });
 const pair = (S, c, alt) => {
   // two airliners 40 km apart, flying head on at the same height, 60 km from the capital

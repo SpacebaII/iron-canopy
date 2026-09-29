@@ -67,8 +67,7 @@ function drive(S, ap, o) {
 /* lay an airport out again; airliners parked there are sent away first, since their stands go */
 function relayout(S, ap, template) {
   if (S.av) for (const t of S.av.tails) if (t.at === ap.id && t.where === 'stand') { t.where = 'away'; t.at = null; t.stand = null; t.t = U.rand(300, 1800); }
-  IC.layoutAirport(ap, template, 0);
-  IC.aptStats(S, ap);
+  IC.aptRelayout(S, ap, template, 0);
 }
 /* a game with the KDEN-scale layout in place of the capital airport */
 function kdenGame(seed, hour) {
@@ -77,8 +76,7 @@ function kdenGame(seed, hour) {
   // the airlines are sent elsewhere so the test sees only its own traffic
   if (S.av) { S.av.tails = []; S.av.routes = []; }
   S.threats = S.threats.filter(t => !t.tail);
-  IC.layoutAirport(ap, 'kden', 0);
-  IC.aptStats(S, ap);
+  IC.aptRelayout(S, ap, 'kden', 0);
   S.weather.hold = true;
   return { S, ap };
 }

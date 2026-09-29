@@ -457,7 +457,7 @@ IC.aptGate = function (S, ap) {
 };
 IC.aptSeatRoads = function (S, ap) {
   const W = S.world; if (!W || !W.edges || !ap.parts || !ap.parts.length) return;
-  W.tunnels = W.tunnels || [];
+  W.tunnels = (W.tunnels || []).filter(t => t.apt !== ap.id);
   const els = IC.aptElements(S, ap, { noWorld: true });
   const terms = ap.parts.filter(p => p.kind === 'terminal' || p.kind === 'cargo');
   const env = terms.map(t => IC.landEnvelope(ap, t));
@@ -468,12 +468,17 @@ IC.aptSeatRoads = function (S, ap) {
   const near = (p, pad) => keep.some(b => IC.shapeDist(b.sh, p) < b.pad + pad);
   const box = pts => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); } return [x0, y0, x1, y1]; };
   const abox = box(els.flatMap(e => e.sh.poly || e.sh.line || []));
-  const n0 = W.nodes[ap.id];
-  let moved = false;
-  // the airport's own road: kept as far as the approach to the airfield, then round it to the gate
-  const G = n0 ? IC.aptGate(S, ap) : null;
-  if (G) for (const e of W.edges.filter(x => x.a === ap.id || x.b === ap.id)) {
-    const pts = e.a === ap.id ? e.pts.slice().reverse() : e.pts.slice();
+  const inFence = p => fence && U.inPoly(p.x, p.y, fence.hullA) && !fence.carveA.some(c => U.inPoly(p.x, p.y, c));
+  // the airport's own roads: the one generation gave it (its node), and roads built for it (e.apt), each by the end
+  // nearer the airfield; kept as far as the approach to the airfield, then round it to the gate
+  const own = W.edges.filter(e => e.a === ap.id || e.b === ap.id || e.apt === ap.id);
+  const G = own.length ? IC.aptGate(S, ap) : null;
+  const moved = new Set();
+  if (G) for (const e of own) {
+    const endA = e.a === ap.id || (e.b !== ap.id && U.dist(e.pts[0], ap) < U.dist(e.pts[e.pts.length - 1], ap));
+    const pts = endA ? e.pts.slice().reverse() : e.pts.slice(), endId = endA ? e.a : e.b;
+    // (already at the gate and clear of the airfield: nothing to do)
+    if (U.dist(pts[pts.length - 1], G) < 0.35 && !pts.slice(0, -1).some(p => near(p, 0))) continue;
     let k = pts.findIndex(p => near(p, 3));
     if (k < 0) k = pts.length - 1;
     const start = pts[Math.max(0, k - 1)] || pts[0];
@@ -481,27 +486,63 @@ IC.aptSeatRoads = function (S, ap) {
     const path = IC.gridRoute(R, 0.25, keep, start, (x, y) => U.dxy(x, y, G.x, G.y) < 0.3, { to: G, snapEnd: () => ({ x: G.x, y: G.y }) });
     if (!path) continue;
     const np = pts.slice(0, Math.max(0, k - 1)).concat(path);
-    e.pts = e.a === ap.id ? np.reverse() : np;
+    e.pts = endA ? np.reverse() : np;
     e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
-    edgeBB(e); e.cum = null; moved = true;
+    edgeBB(e); e.cum = null; moved.add(endId);
   }
-  if (moved) { n0.x = G.x; n0.y = G.y; n0.gate = ap.id; }
-  // everything else that runs across the field: lanes stop short, streets close, roads and railways go under
-  const hits = pts => { const runs = []; let cur = null; for (let i = 0; i < pts.length; i++) { const p = pts[i]; const q = i ? pts[i - 1] : p, n = i ? Math.max(1, Math.ceil(U.dist(p, q) / 0.1)) : 1; for (let j = 1; j <= n; j++) { const s = { x: q.x + (p.x - q.x) * j / n, y: q.y + (p.y - q.y) * j / n }, bad = airOnly.some(b => IC.shapeDist(b.sh, s) < b.pad + 0.12); if (bad && !cur) { cur = [s, s]; runs.push(cur); } else if (bad) cur[1] = s; else cur = null; } } return runs; };
+  for (const id of moved) { const n = W.nodes[id]; if (n) { n.x = G.x; n.y = G.y; n.gate = ap.id; } }
+  if (moved.size && ap.land && ap.land.access) { const e = own.find(x => x.apt === ap.id); if (e) ap.land.access.pts = e.pts.map(p => ({ x: p.x, y: p.y })); }
+  // everything else that runs across the field or inside the fence: lanes stop short, streets close, roads and
+  // railways go under
+  // (one raster of the airfield and the fence, 20 m cells, so each road is tested cell by cell)
+  const rb = [abox[0] - 3, abox[1] - 3, abox[2] + 3, abox[3] + 3];
+  const RA = IC.shapeRaster(rb, 0.2, airOnly.map(b => ({ sh: b.sh, pad: b.pad + 0.12 })).concat(fence ? [{ sh: IC.shapePoly(fence.poly), pad: 0, inside: fence.hullA, carve: fence.carveA }] : []));
+  const bad = s => RA ? RA.at(s) : inFence(s) || airOnly.some(b => IC.shapeDist(b.sh, s) < b.pad + 0.12);
+  const hits = pts => { const runs = []; let cur = null; for (let i = 0; i < pts.length; i++) { const p = pts[i]; const q = i ? pts[i - 1] : p, n = i ? Math.max(1, Math.ceil(U.dist(p, q) / 0.1)) : 1; for (let j = 1; j <= n; j++) { const s = { x: q.x + (p.x - q.x) * j / n, y: q.y + (p.y - q.y) * j / n }; if (bad(s) && !cur) { cur = [s, s]; runs.push(cur); } else if (bad(s)) cur[1] = s; else cur = null; } } return runs; };
   const inBox = l => { const b = l.bb || box(l.pts); return b[0] < abox[2] + 2 && b[2] > abox[0] - 2 && b[1] < abox[3] + 2 && b[3] > abox[1] - 2; };
   const tunnel = (l, cls, what) => { for (const [a, b] of hits(l.pts)) { const L = U.dist(a, b) || 0.01, dx = (b.x - a.x) / L, dy = (b.y - a.y) / L; W.tunnels.push({ a: { x: a.x - dx * 0.3, y: a.y - dy * 0.3 }, b: { x: b.x + dx * 0.3, y: b.y + dy * 0.3 }, w: (IC.ROAD_W[cls] || 0.2) + 0.06, apt: ap.id, what }); } };
-  for (const e of W.edges) if (!(e.a === ap.id || e.b === ap.id) && inBox(e)) tunnel(e, e.cls, 'road');
+  for (const e of W.edges) if (!own.includes(e) && inBox(e)) tunnel(e, e.cls, 'road');
   for (const r of W.rails || []) if (inBox(r)) tunnel(r, 'rd', 'rail');
   for (const r of W.ramps || []) if (inBox(r)) tunnel(r, 'lc', 'road');
   W.lanes = W.lanes.filter(l => {
     if (!inBox(l)) return true;
-    const k = l.pts.findIndex(p => near(p, 0.25));
+    const k = l.pts.findIndex(p => near(p, 0.25) || bad(p));
     if (k < 0) return true;
     l.pts = l.pts.slice(0, Math.max(0, k - 1)); l.bb = null;
     return l.pts.length >= 3;
   });
   for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dist(c, ap) < (c.r || 20) * 2 + 120) c.streets = c.streets.filter(l => !(inBox(l) && hits(l.pts).length));
+  ap._seatKey = seatKey(ap);
   if (IC.buildRouting) IC.buildRouting(W, W.blocked);
+};
+/* lay an airport out again (a template in place of what it had) and seat the roads round it */
+IC.aptRelayout = function (S, ap, template, a) {
+  IC.layoutAirport(ap, template, a != null ? a : ap.rwyA || 0);
+  if (ap.land) { ap.land.items = []; ap.land.roads = []; ap.land.kerbN = null; ap.land.ver++; }
+  ap._seatKey = null; IC.aptReseat(S, ap);
+  IC.aptStats(S, ap);
+  return ap;
+};
+/* a road, lane, railway or street within 1 km of a part */
+function roadNear(S, ap, part) {
+  const W = S.world, sh = IC.partShape(ap, part), bb = sh.bb, m = 10;
+  const hit = l => { const b = l.bb || (l.bb = [Math.min(...l.pts.map(p => p.x)), Math.min(...l.pts.map(p => p.y)), Math.max(...l.pts.map(p => p.x)), Math.max(...l.pts.map(p => p.y))]); if (b[2] < bb[0] - m || b[0] > bb[2] + m || b[3] < bb[1] - m || b[1] > bb[3] + m) return false; for (const p of l.pts) if (p.x > bb[0] - m && p.x < bb[2] + m && p.y > bb[1] - m && p.y < bb[3] + m) return true; for (let i = 1; i < l.pts.length; i++) if (U.segDist((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y) < m + Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) / 2) return true; return false; };
+  if (W.edges.some(hit) || (W.rails || []).some(hit) || (W.lanes || []).some(hit) || (W.ramps || []).some(hit)) return true;
+  for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dist(c, part.a && part.a.x != null ? part.a : part) < (c.r || 20) * 2 + 100 && c.streets.some(hit)) return true;
+  return false;
+}
+/* what the roads were seated for: the parts and the landside (re-seat when it changes) */
+const seatKey = ap => ap.parts.length + ':' + ap.nodeN + ':' + ap.parts.reduce((s, p) => s + (p.x || 0) + (p.a && p.a.x || 0), 0).toFixed(2);
+/* after the airfield grows: seat the roads again if anything changed (the builder calls it when a plan is made) */
+IC.aptReseat = function (S, ap, part) {
+  if (!ap || !ap.parts || ap._seatKey === seatKey(ap)) return false;
+  // (a new part far from every road changes nothing now; the landside's ten-minute tick seats the rest)
+  if (part && !roadNear(S, ap, part)) return false;
+  IC.aptSeatRoads(S, ap);
+  if (ap.land && ap.land.kerbN != null && IC.landKerbs) IC.landKerbs(S, ap, ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.built && p.hp > p.max * 0.25));
+  if (IC.roadsChanged) IC.roadsChanged(S);
+  if (IC.worldChanged) { const r = (ap.radius || 30) + 10; IC.worldChanged(S, { x0: ap.x - r, y0: ap.y - r, x1: ap.x + r, y1: ap.y + r }); }
+  return true;
 };
 
 /* ---------- roads the player builds ---------- */
@@ -669,7 +710,7 @@ function openRoad(S, w) {
   const a = endNode(S, w.ends[0]), b = endNode(S, w.ends[1]);
   const pts = w.pts.map(p => ({ x: p.x, y: p.y }));
   pts[0] = { x: W.nodes[a].x, y: W.nodes[a].y }; pts[pts.length - 1] = { x: W.nodes[b].x, y: W.nodes[b].y };
-  const e = { id: 'ep' + (E.nid++), a, b, cls: w.cls, pts, built: S.time, player: true };
+  const e = { id: 'ep' + (E.nid++), a, b, cls: w.cls, pts, built: S.time, player: true, apt: w.apt || null };
   e.len = 0; for (let i = 1; i < pts.length; i++) e.len += U.dist(pts[i - 1], pts[i]);
   edgeBB(e);
   W.edges.push(e);
@@ -690,6 +731,7 @@ function openRoad(S, w) {
   const after = before ? tripTime(S, pa, pb) : 0;
   let gain = before && after < before - 60 ? ` ${pa.name} to ${pb.name} now takes ${hm(after)} instead of ${hm(before)}.` : '';
   const ap = w.apt && S.byId[w.apt];
+  if (ap && ap.parts) { ap._seatKey = null; IC.aptReseat(S, ap); }
   if (ap) { const c1 = IC.aptCatchment(S, ap), c0 = w.catchB != null ? w.catchB : c1; if (c1 > c0 + 4) gain += ` ${ap.name} now reaches ${Math.round(c1 - c0)}k more people within ${IC.GROWTH.catch[1]} h by road.`; }
   IC.log(S, 'kill', 'ROADS', `${w.name} is open.${gain}`, pts[0]);
   IC.news(S, `New ${IC.ROADS[w.cls].short} opens near ${pa ? pa.name : 'the capital'}.`);
