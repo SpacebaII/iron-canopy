@@ -450,6 +450,9 @@ function modeHint() {
   const m = S.mode2, el = $('modehint');
   if (!m) { el.hidden = true; return; }
   el.hidden = false;
+  // above the arsenal, however tall it is today (a war's arsenal is taller than the Career's first one)
+  const ar = $('arsenal'), ab = ar && !ar.hidden ? ar.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
+  el.style.bottom = ab && ab.height ? Math.max(12, app.bottom - ab.top + 10) + 'px' : '';
   el.textContent = {
     rangeTarget: () => 'Click the map where the threats should aim.',
     callin: () => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
