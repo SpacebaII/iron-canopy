@@ -474,11 +474,12 @@ function aptPad(v, b, f) {
   const g = cv.getContext('2d'), z = T / (2 * R), px = 1 / z;
   const cam = IC.cam, saved = { x: cam.x, y: cam.y, z: cam.z, vw: cam.vw, vh: cam.vh }, rs = IC.rs, savedView = rs && rs.view;
   // the airport as the map paints it, without what the 3D scene shows itself: moving and parked aircraft, lights
-  const hide = { moves: b.moves, roster: S.roster, tb: S.av && S.av.tailById, tt: S.av && S.av.tailMapT };
+  // (and the arrows the map shows for which way each runway is in use)
+  const hide = { moves: b.moves, roster: S.roster, tb: S.av && S.av.tailById, tt: S.av && S.av.tailMapT, cfg: b.cfg };
   Object.assign(cam, { x: b.x - R, y: b.y - R, z, vw: T, vh: T }); if (rs) rs.view = { x0: b.x - R, y0: b.y - R, x1: b.x + R, y1: b.y + R };
-  b.moves = []; S.roster = []; if (S.av) { S.av.tailById = new Map(); S.av.tailMapT = S.time; }
+  b.moves = []; S.roster = []; b.cfg = null; if (S.av) { S.av.tailById = new Map(); S.av.tailMapT = S.time; }
   try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1); } catch (e) { console.warn('3D airport', e); }
-  b.moves = hide.moves; S.roster = hide.roster; if (S.av) { S.av.tailById = hide.tb; S.av.tailMapT = hide.tt; }
+  b.moves = hide.moves; S.roster = hide.roster; b.cfg = hide.cfg; if (S.av) { S.av.tailById = hide.tb; S.av.tailMapT = hide.tt; }
   Object.assign(cam, saved); if (rs) rs.view = savedView;
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
   const y = f.e * v.hk + LIFT.pad, x0 = b.x - R - v.cx, z0 = b.y - R - v.cy, x1 = x0 + 2 * R, z1 = z0 + 2 * R;
@@ -607,11 +608,14 @@ function aptBuildings(v, b, f) {
       const long = W >= H, Lg = long ? W : H, Dp = long ? H : W, along = (px, py) => long ? [px, py] : [py, px];
       switch (p.kind) {
         case 'terminal': {
+          // a glass front on both long sides between a plinth and the roof, mullions every 8 m, the roof overhanging
           MB.box(B, 0, 0, 8, W, H, 16, '#c8ccd0', { top: [0.99, 0.99] });
-          MB.box(B, 0, 0, 16.6, W * 0.96, H * 0.9, 1.2, '#9ea4aa');
+          MB.box(B, 0, 0, 16.6, (long ? W : W + 8) + 4, (long ? H + 8 : H) + 4, 1.2, '#aeb4ba');
+          MB.box(B, 0, 0, 17.8, W * 0.96, H * 0.9, 1.2, '#9ea4aa');
           B.group('win', { kind: 'win' });
           for (const s of [-1, 1]) { const [px, py] = along(0, s * (Dp / 2 + 0.15)); MB.box(B, px, py, 8.5, long ? W * 0.97 : 0.3, long ? 0.3 : H * 0.97, 10, 'WIN'); }
           B.group('main');
+          for (const s of [-1, 1]) for (let q = -Lg / 2 + 4; q < Lg / 2; q += 8) { const [px, py] = along(q, s * (Dp / 2 + 0.35)); MB.box(B, px, py, 8.5, long ? 0.35 : 0.3, long ? 0.3 : 0.35, 10, '#8c949c'); }
           for (let i = 0; i < Math.floor(Lg / 60); i++) { const [px, py] = along(-Lg / 2 + 40 + i * 60, (U.hash(i, 3) - 0.5) * Dp * 0.5); MB.box(B, px, py, 18.2, 8, 6, 3, '#8a9096'); }
           break;
         }
