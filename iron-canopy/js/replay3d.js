@@ -783,6 +783,8 @@ function parkedSync(v) {
       const al = IC.avAirline && IC.avAirline(S, t.al);
       list.push([IC.modelOfType(t.type), al ? al.livery : null, s.x, s.y, s.a, b]);
     }
+    // business jets, a rare visitor and light aircraft on the free stands (civil.js)
+    if (IC.apronLife && b.kind === 'airport') for (const q of IC.apronLife(S, b)) list.push([q[0], q[1], q[2], q[3], q[4], b]);
     for (const r of S.roster || []) {
       if (r.base !== b.id || r.st === 'lost' || r.st === 'air') continue;
       const pp = IC.parkPos(S, b, r); if (pp.inside) continue;
@@ -790,6 +792,8 @@ function parkedSync(v) {
       for (let i = 0; i < n; i++) { const off = (i - (n - 1) / 2) * (IC.ACTYPES[type].span * 1.3); list.push([IC.modelOfType(type), null, pp.x - Math.sin(h) * off, pp.y + Math.cos(h) * off, h, b]); }
     }
   }
+  // light-aircraft fields near the view: the club's buildings and aircraft (people walking are left to the map)
+  if (IC.fieldLife && S.asp) for (const f of S.asp.fields) if (Math.hypot(f.x - v.cx, f.y - v.cy) < 400) for (const o of IC.fieldLife(S, f)) if (!o.walk) list.push([o.key, o.liv || null, o.x, o.y, o.h, f]);
   const sig = list.map(q => q[0] + (q[1] || '') + q[2].toFixed(2) + q[3].toFixed(2)).join('|');
   if (sig === v.parkSig) return;
   v.parkSig = sig;

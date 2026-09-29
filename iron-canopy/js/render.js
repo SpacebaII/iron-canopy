@@ -337,6 +337,7 @@ function drawFields(S, px) {
     ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
     ctx.fillStyle = 'rgba(128,170,96,0.95)'; ctx.fillRect(-4.5, -0.15, 9, 0.3);
     ctx.restore();
+    if (IC.drawFieldLife) IC.drawFieldLife(ctx, S, f, px);
     if (cam.z < 3) {
       ctx.strokeStyle = C.light; ctx.lineWidth = 1.4 * px;
       ctx.beginPath(); ctx.arc(f.x, f.y, 5 * px, 0, 7); ctx.stroke();
@@ -359,6 +360,7 @@ function drawBases(S, px, now, light) {
   for (const b of IC.bases(S)) {
     if (!b.parts || !inView(b.x, b.y, b.radius + 20) || cam.z < 0.3) continue;
     IC.drawAirport(ctx, S, b, px, now, light);
+    if (IC.drawApronLife && b.kind === 'airport') IC.drawApronLife(ctx, S, b, px);
     if (b.locked && cam.z < 4) label(S.story && S.story.act < 2 ? 'AIR FORCE · NOT UNDER YOUR COMMAND' : 'AIR FORCE', b.x, b.y - b.radius * 0.4 - 12 * px, px, C.muted, 8.5, 'center', 600);
   }
 }

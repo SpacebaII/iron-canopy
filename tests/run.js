@@ -2812,6 +2812,82 @@ test('replay: the game runs headless without three.js, and every aircraft, threa
   assert(tower.length && Math.max(...tower.map(b => b.ht)) > 0.25 && Math.max(...cul.map(b => b.ht)) < 0.1, 'building heights do not follow the block form');
 });
 
+/* ---------- aircraft variety (brief 38): general aviation, business jets, rare visitors ---------- */
+test('aircraft variety: every aircraft type has a model at its real size, low enough in triangles', () => {
+  for (const k in IC.ACTYPES) {
+    const T = IC.ACTYPES[k], d = IC.MODELS[IC.modelOfType(k)], me = IC.modelMesh(k, 1), far = IC.modelMesh(k, 0);
+    assert(d && d.key === k, `aircraft type ${k} has no model of its own`);
+    const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; let R = 0;
+    for (const n in me.groups) { const G = me.groups[n]; if (G.kind === 'ab') continue; if (G.kind === 'rotor' && G.axis[2]) R = Math.max(R, G.R); for (let i = 0; i < G.pos.length; i += 3) for (let a = 0; a < 3; a++) { b[a] = Math.min(b[a], G.pos[i + a]); b[a + 3] = Math.max(b[a + 3], G.pos[i + a]); } }
+    const L = b[3] - b[0], Sp = Math.max(b[4] - b[1], 2 * R), H = b[5] - b[2], off = (x, y) => Math.abs(x - y) / y;
+    if (!T.mil) {
+      assert(off(L, T.len * 100) < 0.1 && off(Sp, T.span * 100) < 0.1, `${k}: the model is ${L.toFixed(1)} × ${Sp.toFixed(1)} m, the type ${T.len * 100} × ${T.span * 100} m`);
+      assert(d.h && off(H, d.h) < 0.1, `${k}: the model is ${H.toFixed(1)} m high, the real one ${d.h} m`);
+    }
+    assert(me.tris < 5000 && far.tris < me.tris * 0.7, `${k}: ${me.tris} triangles close, ${far.tris} far`);
+  }
+  // light aircraft wear white with stripes; the rare visitors their own paint whatever livery they are given
+  const ga = IC.liveryCols(IC.gaLivery(3), null);
+  assert(ga.BODY === ga.BELLY && ga.STRIPE !== ga.BODY && ga.FIN === ga.STRIPE, 'a light aircraft is not white with stripes');
+  assert(IC.modelMesh('vintage', 1).slots.every(c => c[0] === '#' || c === 'WIN' || c === 'GLASS'), 'the vintage airliner takes an airline livery');
+});
+test('aircraft variety: general aviation fills a light-aircraft field over a day', () => {
+  // (in the Career's first act: no war to ground the clubs)
+  const S = IC.newGame({ seed: 4242, mode: 'story' });
+  S.time = Math.floor(S.time / 86400) * 86400 + 86400 + 7 * 3600;
+  const types = new Set(), from = new Map(); let circuits = 0, tows = 0;
+  run(S, 12, S => { for (const t of S.threats) if (t.type === 'ga' && !t.dead && !t.biz && !t.visit) { types.add(t.acType); if (t.gaFrom && t.gaFrom.field) from.set(t.id, t.gaFrom.field); if (t.circuit) circuits++; if (t.tow) tows++; } });
+  const moves = S.asp.fields.reduce((n, f) => n + f.moves, 0), busiest = Math.max(...S.asp.fields.map(f => f.moves));
+  assert(moves >= 25 && busiest >= 3, `${moves} light-aircraft movements at the fields in a day (the busiest ${busiest})`);
+  assert(types.size >= 7, `only ${types.size} kinds of light aircraft flew: ${[...types].join(', ')}`);
+  assert(circuits > 0 && tows > 0, `club flying: ${circuits} circuit samples, ${tows} glider tows`);
+  // on the ground: a row of aircraft, the club's buildings, the helicopter pad; covered and tied down at night
+  const f = S.asp.fields[0], day = IC.fieldLife(S, f);
+  assert(day.filter(o => o.kind === 'plane').length >= 5 && day.some(o => o.key === 'fieldkit') && day.some(o => o.key === 'helipad'), 'a field shows no aircraft or buildings');
+  S.time += 6 * 3600;   // one in the morning
+  const night = IC.fieldLife(S, f).filter(o => o.kind === 'plane' && o.key !== 'helil' && o.key !== 'helim');
+  assert(night.length && night.every(o => o.cover && o.liv[3] === 'cover'), 'at night the club\'s aircraft are not covered');
+}, true);
+test('aircraft variety: business jets use the international airports and park on the business side', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox' });
+  const aps = IC.bizAirports(S);
+  assert(aps.length >= 1 && S.biz.parked.length >= 2, `${aps.length} airports for business jets, ${S.biz.parked.length} parked at the start`);
+  const ap = aps[0], life = IC.apronLife(S, ap);
+  assert(life.some(q => IC.ACTYPES[q[0]].biz) && life.some(q => IC.ACTYPES[q[0]].ga), 'no business jets or light aircraft on the business side');
+  const taken = new Set(IC.bizStands(S, ap).filter(s => s.occ).map(s => s.id));
+  assert(!taken.size, 'a business jet is drawn on a stand an airliner holds');
+  let flights = 0;
+  run(S, 6, S => { flights = Math.max(flights, S.threats.filter(t => !t.dead && t.type === 'ga' && IC.ACTYPES[t.acType].biz).length); });
+  assert(flights >= 1, 'no business jet flew in six hours');
+});
+test('aircraft variety: a rare visitor comes within two game days, is logged, lands and leaves', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox' });
+  assert(S.rare.next - S.time <= 1.5 * 86400, `the first visitor is ${((S.rare.next - S.time) / 3600).toFixed(0)} h away`);
+  S.rare.next = S.time + 60;
+  let t = null;
+  for (let i = 0; i < 4 * 3600 * 12 && !(S.rare.here); i++) { IC.step(S, 0.5); if (!t && S.rare.flying) t = S.threats.find(x => x.id === S.rare.flying); }
+  const log = S.logs.find(l => l.tag === 'VISITOR');
+  assert(t && log && /is visiting .* today/.test(log.msg) && log.at, `no visitor, or it was not logged: ${log && log.msg}`);
+  assert(IC.MODELS[IC.modelOfThreat(t, true)] && IC.ACTYPES[t.acType].rare, 'the visitor has no model of its own');
+  assert(S.rare.here && S.rare.here.type === t.acType, 'the visitor did not land');
+  const ap = S.byId[S.rare.here.ap];
+  assert(IC.apronLife(S, ap).some(q => q[0] === t.acType), 'the visitor is not on the business side of the airport');
+  S.time = S.rare.here.until; IC.step(S, 0.5);
+  assert(!S.rare.here && S.rare.next > S.time, 'the visitor did not leave');
+});
+test('aircraft variety: the majors keep one fleet and one livery per airline', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox' });
+  run(S, 1);
+  const liv = new Set();
+  for (const al of S.av.airlines) {
+    const fleet = IC.avFleetOf(al), tails = S.av.tails.filter(t => t.al === al.id);
+    assert(tails.every(t => fleet.includes(t.type)), `${al.name} flies ${[...new Set(tails.map(t => t.type))].join(', ')} outside its fleet ${fleet.join(', ')}`);
+    assert(!liv.has(al.livery.join()), `${al.name} shares a livery`); liv.add(al.livery.join());
+    assert(IC.avFleetOf(al) === fleet, 'an airline changes fleet');
+  }
+  for (const t of S.threats) if (t.tail && !t.dead) assert(t.livery === IC.avAirline(S, t.tail.al).livery, `${t.cs} is not in its airline's livery`);
+});
+
 /* an engagement on the Test range with chaff (a battery of active-radar missiles against strike aircraft) and then
    flares (heat-seekers against fighters close in, a wave at a time until one drops them) */
 function cmFight() {

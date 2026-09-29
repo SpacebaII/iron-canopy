@@ -7,7 +7,7 @@
 const M = IC.MODELS;
 
 const cache = new Map();
-const HIDE = { gear: 1, ab: 1, win: 1, flap: 1, rotor: 1 };
+const HIDE = { gear: 1, ab: 1, win: 1, flap: 1, rotor: 1, prop: 1 };
 const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16); return `rgb(${Math.min(255, (n >> 16) * k) | 0},${Math.min(255, ((n >> 8) & 255) * k) | 0},${Math.min(255, (n & 255) * k) | 0})`; };
 /* the model painted from above: { cv, s (pixels a metre), ox, oy (the origin in the image), sil (its silhouette) } */
 function sprite(key, livery, body) {
@@ -34,9 +34,14 @@ function sprite(key, livery, body) {
   for (const t of tris) { g.fillStyle = g.strokeStyle = t[7]; g.beginPath(); g.moveTo(ox + t[1] * s, oy + t[2] * s); g.lineTo(ox + t[3] * s, oy + t[4] * s); g.lineTo(ox + t[5] * s, oy + t[6] * s); g.closePath(); g.fill(); g.stroke(); }
   const sil = document.createElement('canvas'); sil.width = cv.width; sil.height = cv.height;
   const sg = sil.getContext('2d'); sg.drawImage(cv, 0, 0); sg.globalCompositeOperation = 'source-in'; sg.fillStyle = '#000'; sg.fillRect(0, 0, sil.width, sil.height);
-  const rotors = [];
-  for (const k in me.groups) if (me.groups[k].kind === 'rotor' && me.groups[k].axis[2]) rotors.push(me.groups[k]);
-  sp = { cv, sil, s, ox, oy, rotors, tint: {} };
+  const rotors = [], props = [];
+  for (const k in me.groups) {
+    const G = me.groups[k];
+    if (G.kind === 'rotor' && G.axis[2]) rotors.push(G);
+    // a propeller seen from above: a line across its disc (its radius from the blades)
+    if (G.kind === 'prop') { let R = 0; for (let i = 0; i < G.pos.length; i += 3) R = Math.max(R, Math.hypot(G.pos[i + 1] - G.pivot[1], G.pos[i + 2] - G.pivot[2])); props.push({ x: G.pivot[0], y: G.pivot[1], R }); }
+  }
+  sp = { cv, sil, s, ox, oy, rotors, props, tint: {} };
   cache.set(ck, sp);
   return sp;
 }
@@ -67,6 +72,12 @@ IC.modelTop = function (g, key, x, y, h, o) {
   if (o.outline) { const im = tint(sp, o.outline); for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(im, -sp.ox + dx * px * 1.2, -sp.oy + dy * px * 1.2); }
   else if (Lw * z * k > 10) { g.save(); g.globalAlpha *= 0.55; g.drawImage(sp.sil, -sp.ox + px * 0.6, -sp.oy + px * 0.6); g.restore(); }
   g.drawImage(sp.cv, -sp.ox, -sp.oy);
+  // propellers: turning, a grey blur across the disc with a blade flicking through it; parked, one blade at rest
+  for (const r of sp.props) {
+    const cx = r.x * sp.s, cy = r.y * sp.s, R = r.R * sp.s, w = Math.max(0.35 * sp.s, px * 0.8);
+    if (o.now) { g.fillStyle = 'rgba(40,44,48,0.28)'; g.fillRect(cx - w / 2, cy - R, w, 2 * R); const b = Math.cos(o.now * 47 + r.y) * R; g.fillStyle = 'rgba(20,22,24,0.7)'; g.fillRect(cx - w / 2, cy - Math.abs(b), w, 2 * Math.abs(b)); }
+    else { const b = R * 0.8; g.fillStyle = 'rgba(20,22,24,0.85)'; g.fillRect(cx - w / 2, cy - b, w, 2 * b); }
+  }
   // rotors: a faint disc and two blades turning
   for (const r of sp.rotors) {
     const cx = r.pivot[0] * sp.s, cy = r.pivot[1] * sp.s, R = r.R * sp.s;
@@ -90,6 +101,7 @@ IC.modelTopCanvas = function (key, w, h, o) {
   g.globalAlpha = 0.35; g.drawImage(sp.sil, 2 / k, 2 / k); g.globalAlpha = 1;
   g.drawImage(sp.cv, 0, 0);
   for (const r of sp.rotors) { g.fillStyle = 'rgba(30,34,38,0.25)'; g.beginPath(); g.arc(sp.ox + r.pivot[0] * sp.s, sp.oy + r.pivot[1] * sp.s, r.R * sp.s, 0, 7); g.fill(); }
+  for (const r of sp.props) { g.fillStyle = 'rgba(20,22,24,0.85)'; g.fillRect(sp.ox + r.x * sp.s - 0.2 * sp.s, sp.oy + (r.y - r.R * 0.8) * sp.s, 0.4 * sp.s, 1.6 * r.R * sp.s); }
   return c;
 };
 
@@ -119,6 +131,33 @@ IC.modelRefCanvas = function (key, w, h, o) {
   g.setLineDash([]); g.fillStyle = 'rgba(242,209,74,0.95)'; g.font = '11px monospace'; g.textAlign = 'center';
   g.fillText(`${L.toFixed(1)} × ${Sp.toFixed(1)} m`, cx, h - 3); g.fillText(`height ${H.toFixed(1)} m`, sx, h - 3);
   return c;
+};
+
+/* ---------- life on the ground (civil.js says what stands where) ----------
+   A light-aircraft field close in: the club's buildings, its aircraft in a row (covered ones tied down, three pegs
+   each), the helicopter pad, the bowser, pilots walking out. The business side of an airport: jets, a visitor and
+   the town's light aircraft on the free stands. */
+IC.drawFieldLife = function (g, S, f, px) {
+  const z = IC.cam ? IC.cam.z : 1;
+  if (z < 4) return;
+  // the mown parking area along the strip, and the track from it to the runway
+  g.save(); g.translate(f.x, f.y); g.rotate(f.a);
+  g.fillStyle = 'rgba(160,190,118,0.85)'; g.fillRect(-2.2, 0.5, 3.75, 0.42); g.fillRect(-0.05, 0.15, 0.1, 0.36);
+  g.restore();
+  for (const o of IC.fieldLife(S, f)) {
+    if (o.kind === 'person') { if (z < 20) continue; g.fillStyle = o.walk ? '#f2d14a' : '#d8dde2'; g.beginPath(); g.arc(o.x, o.y, Math.max(0.006, 1.4 * px), 0, 7); g.fill(); continue; }
+    IC.modelTop(g, o.key, o.x, o.y, o.h, { livery: o.liv, minPx: o.kind === 'kit' ? 1 : 2, shadow: o.kind === 'plane' ? 0.01 : 0 });
+    if (o.tie && z > 12) {
+      const T = IC.ACTYPES[o.key], sp = (T ? T.span : 0.1) * 0.42, c = Math.cos(o.h), s2 = Math.sin(o.h);
+      g.fillStyle = 'rgba(30,30,28,0.8)';
+      for (const [a, b] of [[0, sp], [0, -sp], [-(T ? T.len : 0.08) * 0.48, 0]]) { g.beginPath(); g.arc(o.x + a * c - b * s2, o.y + a * s2 + b * c, Math.max(0.004, 0.9 * px), 0, 7); g.fill(); }
+    }
+  }
+};
+IC.drawApronLife = function (g, S, ap, px) {
+  const z = IC.cam ? IC.cam.z : 1;
+  if (z < 2) return;
+  for (const [key, liv, x, y, h] of IC.apronLife(S, ap)) IC.modelTop(g, key, x, y, h, { livery: liv, minPx: 3, shadow: 0.03 });
 };
 
 })(window.IC);
