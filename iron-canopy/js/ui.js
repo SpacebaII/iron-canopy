@@ -460,32 +460,36 @@ function layers() {
 }
 function modeHint() {
   const m = S.mode2, el = $('modehint');
-  if (!m) { el.hidden = true; return; }
+  if (!m || !HINT[m.kind]) { el.hidden = true; return; }
   el.hidden = false;
   // above the arsenal, however tall it is today (a war's arsenal is taller than the Career's first one)
   const ar = $('arsenal'), ab = ar && !ar.hidden ? ar.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
   el.style.bottom = ab && ab.height ? Math.max(12, app.bottom - ab.top + 10) + 'px' : '';
-  el.textContent = {
-    rangeTarget: () => 'Click the map where the threats should aim.',
-    callin: () => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
-    deploy: () => `Click inside ${S.world.names.H} to place the ${IC.UNITS[m.type].name}${S.reserve[m.type] > 0 ? ' from the reserve' : `: ${U.money(IC.unitCost(S, m.type))}, paid when placed`}. The dashed rings show its reach. Shift+click places more. Right-click or Esc to cancel.`,
-    move: () => `Click where ${m.unit.name} should go.`,
-    airPoint: () => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
-    airSite: () => `Click an enemy target for ${m.r.name}.`,
-    fireAt: () => `Click an enemy target for ${m.unit.name}.`,
-    build: () => buildHint(m),
-    bmove: () => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it. Esc to cancel.`,
-    bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
-    airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
-      : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
-    field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
-    asp: () => IC.aspModeHint(m),
-    zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
-    road: () => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
-    found: () => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
-      : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
-  }[m.kind]();
+  el.textContent = HINT[m.kind](m);
 }
+/* what each mode tells the player to do (m is S.mode2) */
+const HINT = {
+    rangeTarget: () => 'Click the map where the threats should aim.',
+    callin: m => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
+    deploy: m => `Click inside ${S.world.names.H} to place the ${IC.UNITS[m.type].name}${S.reserve[m.type] > 0 ? ' from the reserve' : `: ${U.money(IC.unitCost(S, m.type))}, paid when placed`}. The dashed rings show its reach. Shift+click places more. Right-click or Esc to cancel.`,
+    move: m => `Click where ${m.unit.name} should go.`,
+    airPoint: m => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
+    airSite: m => `Click an enemy target for ${m.r.name}.`,
+    fireAt: m => `Click an enemy target for ${m.unit.name}.`,
+    build: m => buildHint(m),
+    bmove: m => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it${m.cost ? `; it is taken down and put up again for ${U.money(m.cost)}` : ', free until its earthworks start'}. Esc to cancel.`,
+    bpick: m => 'Move: click a building to pick it up. A planned one moves free until its earthworks start; a finished one is taken down and put up again for half its price. Esc to stop.',
+    bulldoze: m => 'Bulldoze: click a part of the airport to remove it. What comes back shows by the cursor before you click. Esc to stop.',
+    upgrade: m => `Upgrade: click a runway, taxiway or apron to relay it in ${IC.PAVE[m.mat || 'conc'].name.toLowerCase()}${m.lit === false ? ', with no lights' : ''}, for the difference in price. It is closed while the work runs. Esc to stop.`,
+    airway: m => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
+      : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
+    field: m => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
+    asp: m => IC.aspModeHint(m),
+    zone: m => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
+    road: m => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
+    found: m => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
+      : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
+};
 /* the builder: how to use the tool, and what the plan under the cursor will do */
 function buildHint(m) {
   const t = m.part, n = m.pts.length, D = IC.APART[t], T = IC.BTOOLS[t];
