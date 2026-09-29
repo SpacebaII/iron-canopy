@@ -458,7 +458,10 @@ IC.aptGate = function (S, ap) {
   return null;
 };
 IC.aptSeatRoads = function (S, ap) {
-  const W = S.world; if (!W || !W.edges || !ap.parts || !ap.parts.length) return;
+  const W = S.world; if (!W || !W.edges || !ap.parts || !ap.parts.length) return false;
+  // (what the roads were before: the answer is whether anything changed)
+  const sig = () => { let h = 0; for (const e of W.edges) if (e.a === ap.id || e.b === ap.id || e.apt === ap.id) for (const q of e.pts) h = (h * 31 + Math.round(q.x * 10) + Math.round(q.y * 10) * 7) % 1e9; for (const t of W.tunnels || []) if (t.apt === ap.id) h = (h * 31 + Math.round(t.a.x * 10) + Math.round(t.b.y * 10)) % 1e9; return h + ':' + W.lanes.length + ':' + (W.cities || []).reduce((n, c) => n + (c.streets ? c.streets.length : 0), 0); };
+  const before = sig();
   W.tunnels = (W.tunnels || []).filter(t => t.apt !== ap.id);
   const els = IC.aptElements(S, ap, { noWorld: true });
   const terms = ap.parts.filter(p => p.kind === 'terminal' || p.kind === 'cargo');
@@ -515,13 +518,17 @@ IC.aptSeatRoads = function (S, ap) {
   });
   for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dist(c, ap) < (c.r || 20) * 2 + 120) c.streets = c.streets.filter(l => !(inBox(l) && hits(l.pts).length));
   ap._seatKey = seatKey(ap);
-  if (IC.buildRouting) IC.buildRouting(W, W.blocked);
+  const changed = sig() !== before;
+  if (changed && IC.buildRouting) IC.buildRouting(W, W.blocked);
+  return changed;
 };
 /* lay an airport out again (a template in place of what it had) and seat the roads round it */
 IC.aptRelayout = function (S, ap, template, a) {
   IC.layoutAirport(ap, template, a != null ? a : ap.rwyA || 0);
   if (ap.land) { ap.land.items = []; ap.land.roads = []; ap.land.kerbN = null; ap.land.ver++; }
   ap._seatKey = null; IC.aptReseat(S, ap);
+  // (a setup step: the travel times are worked out now, not in the next step of play)
+  if (S.econ && S.econ.roadsDirty) refreshRoads(S);
   IC.aptStats(S, ap);
   return ap;
 };
@@ -540,7 +547,7 @@ IC.aptReseat = function (S, ap, part) {
   if (!ap || !ap.parts || ap._seatKey === seatKey(ap)) return false;
   // (a new part far from every road changes nothing now; the landside's ten-minute tick seats the rest)
   if (part && !roadNear(S, ap, part)) return false;
-  IC.aptSeatRoads(S, ap);
+  if (!IC.aptSeatRoads(S, ap)) return false;
   if (ap.land && ap.land.kerbN != null && IC.landKerbs) IC.landKerbs(S, ap, ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.built && p.hp > p.max * 0.25));
   if (IC.roadsChanged) IC.roadsChanged(S);
   if (IC.worldChanged) { const r = (ap.radius || 30) + 10; IC.worldChanged(S, { x0: ap.x - r, y0: ap.y - r, x1: ap.x + r, y1: ap.y + r }); }
