@@ -618,8 +618,13 @@ function guideSnap(ap, p, tol) {
   return { x: n.g.x + n.g.ux * t, y: n.g.y + n.g.uy * t, guides: [n.g] };
 }
 /* the directions a line from the last point keeps to: the part it starts on, its own last leg, the runways */
+/* the point a new point is drawn from: the last one, or for a tool of two points that has both (a runway, a pier)
+   the first, since the cursor moves the second */
+const FIXED = { runway: 2, concourse: 2 };
+const lastAt = m => { const n = m.pts.length, k = FIXED[m.part]; return k && n >= k ? k - 2 : n - 1; };
+IC.bldFrom = m => m.pts[lastAt(m)];
 function angleRefs(ap, m) {
-  const n = m.pts.length, prev = m.pts[n - 1], refs = [];
+  const n = lastAt(m) + 1, prev = m.pts[n - 1], refs = [];
   const seg = (a, b, what) => { if (a && b && U.dist(a, b) > 0.02) refs.push({ a: Math.atan2(b.y - a.y, b.x - a.x), what }); };
   const q = prev.part && ap.parts.find(x => x.id === prev.part);
   if (prev.kind === 'taxi' && q) seg(ap.nodes[q.nodes[prev.seg - 1]], ap.nodes[q.nodes[prev.seg]], 'the taxiway');
@@ -652,7 +657,7 @@ function meetPart(ap, s, a, u) {
 }
 /* a point for a line tool: the network first, then the angle lock with the guides it crosses, then 10 m lengths */
 function snapLine(ap, m, p, tol, free) {
-  const s = IC.aptSnap(ap, p, tol), prev = m.pts[m.pts.length - 1], gt = Math.min(tol * 0.6, 0.25);
+  const s = IC.aptSnap(ap, p, tol), prev = m.pts[lastAt(m)], gt = Math.min(tol * 0.6, 0.25);
   if (free || s.kind === 'node') return s;
   if (!prev) {
     if (s.kind !== 'free') return s;
