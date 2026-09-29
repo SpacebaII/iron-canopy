@@ -1295,6 +1295,21 @@ test('airspace: a loss of separation produces an incident', () => {
   assert(lost, 'no loss of separation recorded');
   assert(S.inc.list.some(it => (it.kind === 'separation' || it.kind === 'nearmiss') && (it.ref === a || it.ref === b)), 'no incident raised');
 });
+test('airspace: a pair that loses spacing is reported once, however long they stay close', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+  blind(S);
+  // two airliners side by side, 6 km apart, flying the same way at the same height: they stay too close for long
+  const m = off(IC.cap(S), 0.4, 600), q = off(m, 0, 4000);
+  const mk = (p, cs) => IC.spawnThreat(S, 'civ', p.x, p.y, { dest: off(q, 0, 0), wps: [off(p, 0, 4000)], orig: { x: p.x, y: p.y, edge: true }, cs, sq: IC.squawk(), alt: 9.5, cruise: 9.5, pax: 100, plan: null, route: [q], aim: q });
+  const a = mk(off(m, Math.PI / 2, 30), 'TST 101'), b = mk(off(m, -Math.PI / 2, 30), 'TST 202');
+  const seen = { lossSep: 0, nearMiss: 0 };
+  IC.on((S2, type, d) => { if (S2 === S && seen[type] != null && (d.a === a || d.b === a)) seen[type]++; });
+  const ctl = IC.ASP.ctl; IC.ASP.ctl = 1;
+  // for 20 minutes, looked at again every 5 minutes
+  try { for (let i = 0; i < 2400; i++) IC.step(S, 0.5); } finally { IC.ASP.ctl = ctl; }
+  assert(seen.lossSep + seen.nearMiss > 0, 'no loss of separation recorded');
+  assert(seen.lossSep <= 1 && seen.nearMiss <= 1, `reported again and again: ${JSON.stringify(seen)}`);
+});
 test('airspace: controllers keep apart flights they can see', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   run(S, 0.02);

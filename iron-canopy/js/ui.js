@@ -167,6 +167,10 @@ function topbar() {
   alerts();
   incidents();
   evcard();
+  // the incidents hang under the alert pills, however many there are (both are centred under the top bar); with a
+  // room open they sit at the bottom (CSS)
+  const ab = $('alerts').getBoundingClientRect(), top = ab.height && !ui.room ? `${Math.round(ab.bottom + 6)}px` : '';
+  if ($('incidents').style.top !== top) $('incidents').style.top = top;
 }
 /* incidents: the short list of things that must not be missed */
 function incidents() {
@@ -340,8 +344,9 @@ function brief() {
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;
-    const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 2));
-    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 2)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}">${esc(s.text)}</div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
+    // the step before, cut to two lines, and the current one whole: the current step must never scroll out of sight
+    const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
+    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
   } else if (S.story && S.story.act < 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
     const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
@@ -626,6 +631,8 @@ function coach() {
   const h = IC.stepHint && IC.stepHint(S), cur = hints.get('lesson');
   if (!h || !h.el) { if (cur) IC.hint.hide('lesson'); }
   else if (!cur || cur.el !== h.el) { hints.delete('lesson'); IC.hint.show('lesson', { el: h.el, persist: false }); }
+  // a lesson step that asks for something from the arsenal opens it on the right tab, once
+  if (h && h.cat && ui.hintCat !== h) { ui.hintCat = h; ui.cat = h.cat; ui.arMin = false; }
   const sh = S.hint || null, id = sh ? 'game:' + (sh.id || sh.el || 'at') : null;
   if (ui.gameHint && ui.gameHint !== id) { hints.delete(ui.gameHint); ui.gameHint = null; }
   if (id && !hints.has(id) && ui.gameHint !== id) { IC.hint.show(id, Object.assign({ btn: 'OK' }, sh, { persist: false })); ui.gameHint = id; }

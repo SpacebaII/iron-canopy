@@ -57,7 +57,7 @@ function arrive(S, job) {
   u.callin = true; u.expire = S.time + K.stay; u.stay = K.stay;
   u.mags = [{ mun: K.mun, max: 3, mag: 3, storeMax: 3, store: 3, reload: 30, rl: 0, inc: 0 }];
   u.pri = false;
-  IC.log(S, 'info', 'CALL-IN', `${u.name} in position ${IC.nearestPlace(S, u.x, u.y)}. It stays ${U.dur(K.stay)}.`, u);
+  IC.log(S, 'info', 'CALL-IN', `${u.name} in position ${IC.nearPlace(S, u.x, u.y)}. It stays ${U.dur(K.stay)}.`, u);
   IC.emit(S, 'teamIn', u);
 }
 function dissolve(S, u, why) {

@@ -23,12 +23,14 @@ IC.airInit = function (S, sandbox, academy, story) {
   S.pilots = { spare: IC.AIR_LOSS.pilots, trainT: IC.AIR_LOSS.train, rescue: [] };
   if (!academy && !story) {
     add('ftr', 'VIPER 1', fwd); add('ftr', 'VIPER 2', fwd); add('isr', 'REAPER 1', fwd); add('heli', 'HOOK 1', fwd);
-    add('ftr', 'LANCE 1', rear); add('ftr', 'LANCE 2', rear); add('aew', 'SENTRY 1', rear); add('tkr', 'TEXACO 1', rear); add('isr', 'REAPER 2', rear); add('cargo', 'ATLAS 1', rear); add('heli', 'HOOK 2', rear); add('ucav', 'HAWK 1', rear);
+    add('ftr', 'LANCE 1', rear); add('ftr', 'LANCE 2', rear); add('aew', 'SENTRY 1', fwd); add('tkr', 'TEXACO 1', rear); add('isr', 'REAPER 2', rear); add('cargo', 'ATLAS 1', rear); add('heli', 'HOOK 2', rear); add('ucav', 'HAWK 1', rear);
   }
   for (const b of IC.bases(S)) IC.assignSlots(S, b);
   if (sandbox) {
     const cap = IC.cap(S), fA = S.world.fronts.find(f => f.key === 'A');
-    IC.addTask(S, 'cap', { x: cap.x, y: cap.y });
+    // over the forward air base: the capital is beyond the fighters' reach for a standing patrol
+    const fb = IC.baseOf(S, fwd) || cap;
+    IC.addTask(S, 'cap', { x: fb.x, y: fb.y });
     if (fA) { const p = fA.pts[Math.floor(fA.pts.length / 2)]; IC.addTask(S, 'aew', { x: p.x + p.nx * 1300, y: p.y + p.ny * 1300 }); }
   }
 };
@@ -221,7 +223,7 @@ IC.commitIntercept = function (S, who, t) {
   else x = IC.launchAir(S, r, mission);
   if (!x) return null;
   const what = t.grp ? `group of ${t.grp.n} led by TN ${t.tn}` : `TN ${t.tn}`;
-  IC.log(S, 'info', 'AIR', `${x.name} committed on ${what}: meets it in about ${U.dur(P.T)} near ${IC.nearestPlace(S, P.x, P.y)}.`, t);
+  IC.log(S, 'info', 'AIR', `${x.name} committed on ${what}: meets it in about ${U.dur(P.T)} ${IC.nearPlace(S, P.x, P.y)}.`, t);
   IC.emit(S, 'commit', { a: x, t });
   return x;
 };
@@ -239,7 +241,7 @@ IC.holdAir = function (S, a, p) {
   a.task = null; a.tgt = null; a.refuel = null;
   a.mission = { type: 'hold', x: p ? p.x : a.x, y: p ? p.y : a.y };
   a.state = 'out';
-  IC.log(S, 'info', 'AIR', `${a.name} holding near ${IC.nearestPlace(S, a.mission.x, a.mission.y)}.`);
+  IC.log(S, 'info', 'AIR', `${a.name} holding ${IC.nearPlace(S, a.mission.x, a.mission.y)}.`);
 };
 IC.escortAir = function (S, a, who) {
   if (!a || a.dead || a.kind !== 'ftr' || !who || who === a) return false;
@@ -270,6 +272,7 @@ IC.leaveIn = function (S, a, p) {
   const get = a.state === 'station' ? 0 : U.dist(a, p) / K.spd;
   return a.fuel - get - U.dist(p, base) / K.spd * 1.25 - 300;
 };
+const canCover = (A, d) => A.endur - d / A.spd * 2.25 - 300 >= 600;
 function reliefFor(S, task) {
   const K = IC.TASK_KIND[task.type];
   let best = null, bs = 1e12;
@@ -279,6 +282,8 @@ function reliefFor(S, task) {
     if (r.st === 'ready' && IC.missionOk(S, r, 'cap')) continue;
     const b = IC.baseOf(S, r.base), A = IC.AIR_KIND[r.kind], d = U.dist(b, task);
     if (A.reach && d > A.reach) continue;
+    // one that would have to turn home within 10 minutes of getting there is no cover
+    if (!canCover(A, d)) continue;
     const lead = IC.launchDelay(S, r) + d / A.spd;
     const pref = (task.type === 'isr' ? { isr: 0, ucav: 400 }[r.kind] : 0) + (r.fat || 0) * 600;
     if (lead + pref < bs) { bs = lead + pref; best = { r, lead }; }
@@ -291,7 +296,9 @@ IC.taskStatus = function (S, task) {
   const rel = reliefFor(S, task);
   const lead = rel ? rel.lead : 0;
   const soonest = on.length ? Math.min(...on.map(o => o.left)) : 0;
-  return { on, relief: rel && rel.r, lead, launchIn: rel ? Math.max(0, soonest - lead - 300) : null, emptyIn: soonest };
+  // no flight of the right kind can reach the station and stay there
+  const K = IC.TASK_KIND[task.type], far = !rel && !S.roster.some(r => K.roles.includes(r.kind) && r.st !== 'lost' && canCover(IC.AIR_KIND[r.kind], U.dist(IC.baseOf(S, r.base), task)));
+  return { on, relief: rel && rel.r, lead, launchIn: rel ? Math.max(0, soonest - lead - 300) : null, emptyIn: soonest, far };
 };
 function dispatch(S) {
   for (const task of S.ato) {
@@ -345,9 +352,9 @@ IC.launchAir = function (S, r, mission, auto) {
   r.st = 'air'; r.ent = a;
   S.air.push(a);
   IC.pay(S, 'upAir', SORTIE_COST[r.kind] || 0);
-  const what = { cap: `patrol over ${IC.nearestPlace(S, mission.x, mission.y)}`, intercept: `intercept TN ${mission.track && mission.track.tn}`,
-    strike: `strike on ${mission.site && mission.site.name}`, orbit: `early-warning orbit`, tanker: `tanker track near ${IC.nearestPlace(S, mission.x, mission.y)}`,
-    isr: `reconnaissance near ${IC.nearestPlace(S, mission.x, mission.y)}`, escort: `escort for ${mission.who && mission.who.name}` }[mission.type];
+  const what = { cap: `patrol ${IC.nearPlace(S, mission.x, mission.y)}`, intercept: `intercept TN ${mission.track && mission.track.tn}`,
+    strike: `strike on ${mission.site && mission.site.name}`, orbit: `early-warning orbit`, tanker: `tanker track ${IC.nearPlace(S, mission.x, mission.y)}`,
+    isr: `reconnaissance ${IC.nearPlace(S, mission.x, mission.y)}`, escort: `escort for ${mission.who && mission.who.name}` }[mission.type];
   if (what && !auto) IC.log(S, 'info', 'AIR', a.gnd ? `${r.name} starting up (${U.dur(a.ground.t)} to engine start): ${what}.` : `${r.name} airborne: ${what}.`);
   IC.sfx && (r.kind === 'heli' ? IC.sfx.rotor(b.x, b.y) : IC.sfx.jet(b.x, b.y));
   IC.emit(S, 'sortie', a);

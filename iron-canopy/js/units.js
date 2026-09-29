@@ -96,7 +96,7 @@ IC.deploy = function (S, type, x, y) {
   const P = IC.deliveryPlan(S, type, x, y), cost = bought ? ` (bought, ${U.money(bought)})` : '';
   if (P.fixed) {
     const u = IC.makeUnit(S, type, x, y, {});
-    IC.log(S, 'info', 'BUILD', `${u.name} ${d.name}${cost} under construction near ${IC.nearestPlace(S, x, y)}: ready in ${U.dur(d.build)}.`);
+    IC.log(S, 'info', 'BUILD', `${u.name} ${d.name}${cost} under construction ${IC.nearPlace(S, x, y)}: ready in ${U.dur(d.build)}.`);
     return u;
   }
   const u = IC.makeUnit(S, type, P.from.x + U.rand(-3, 3), P.from.y + U.rand(-3, 3), {});

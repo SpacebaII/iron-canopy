@@ -169,6 +169,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .step{display:grid;grid-template-columns:1.4rem 1fr;gap:.5rem;align-items:start;font-size:.92rem;line-height:1.35;padding:.35rem .45rem;border-radius:10px;color:var(--dim)}
 .step::before{counter-increment:st;content:counter(st);width:1.35rem;height:1.35rem;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:.72rem;background:var(--well)}
 .step.done{color:var(--muted)}
+.step.done span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .step.done::before{content:'✓';background:rgba(88,211,154,.25);color:var(--ok)}
 .step.cur{color:var(--text);background:rgba(242,180,65,.1)}
 .step.cur::before{background:var(--amber);color:#1b1204}
