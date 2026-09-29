@@ -82,7 +82,7 @@ const CSS = `
 .rp-lbl.enemy{color:#ffb0a8}.rp-lbl.civil{color:#b8f0d0}.rp-lbl.us{color:#c0e8ff}.rp-lbl.sel{color:var(--amber)}
 .rp-tag{position:absolute;left:0;top:0;font-family:var(--display);font-weight:700;letter-spacing:.08em;font-size:.85rem;text-shadow:0 1px 3px #000,0 0 8px #000;white-space:nowrap;pointer-events:none}
 .rp-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:1rem 1.4rem;border-radius:12px;background:rgba(6,11,16,.85);color:var(--text);font-size:.95rem;max-width:26rem;text-align:center;z-index:2}
-.rp-fps{position:absolute;right:.6rem;top:.4rem;font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.rp-fps{position:absolute;right:.6rem;top:.4rem;font-family:var(--mono);font-size:.7rem;color:var(--muted);display:none}html.dbg .rp-fps{display:block}
 .rp-panel{position:absolute;left:.6rem;top:.5rem;z-index:1;padding:.45rem .65rem;border-radius:10px;background:rgba(6,11,16,.74);font-family:var(--mono);font-size:.72rem;line-height:1.4;color:var(--text);pointer-events:none;white-space:nowrap}
 .rp-panel b{color:var(--amber);font-weight:600}.rp-panel .k{color:var(--muted);display:inline-block;width:3.3em}.rp-panel hr{border:0;border-top:1px solid rgba(255,255,255,.12);margin:.25rem 0}
 .rp-panel .ph{display:inline-block;width:.62em;height:.62em;border-radius:50%;margin-right:.35em;vertical-align:-.05em}
@@ -109,7 +109,8 @@ let V = null;   // the replay or the gallery
 let L = null;   // the live view
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const style = () => { if (!$('rpStyle')) { const st = document.createElement('style'); st.id = 'rpStyle'; st.textContent = CSS; document.head.appendChild(st); } };
+// the frame-rate readout is for measuring, not for players: it shows with #debug on the page's address
+const style = () => { document.documentElement.classList.toggle('dbg', /debug/.test(location.hash)); if (!$('rpStyle')) { const st = document.createElement('style'); st.id = 'rpStyle'; st.textContent = CSS; document.head.appendChild(st); } };
 const camSelect = (cur, skip) => `<label title="Camera">Camera <select data-rp="cam">${CAMS.filter(c => !(skip || []).includes(c[0])).map(([k, n, t]) => `<option value="${k}" title="${esc(t)}" ${k === cur ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`;
 const viewInner = () => `<canvas data-el="canvas"></canvas><div class="rp-labels" data-el="labels"></div><div class="rp-panel" data-el="panel" hidden></div><div class="rp-fps" data-el="fps"></div><div class="rp-msg" data-el="msg">Loading the 3D library…</div>`;
 
