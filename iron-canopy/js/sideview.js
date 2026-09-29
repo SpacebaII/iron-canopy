@@ -16,7 +16,7 @@ function slice(S, w) {
   const r = w.ref;
   if (w.kind === 'base') {
     const out = Math.max(300, IC.aspOuter(S, r)) * 1.15;
-    return { x: r.x, y: r.y, a: SV.ang, L: out, W: 300, H: Math.max(5, IC.aspTop(S, r) * 1.35), title: `${r.name} · airspace from the side` };
+    return { x: r.x, y: r.y, a: SV.ang, L: out, W: 300, H: Math.max(1.5, IC.aspTop(S, r) * 1.5), title: `${r.name} · airspace from the side` };
   }
   if (r.d && (r.d.move === 'bal' || r.d.move === 'hgv') && r.x0 != null) {
     const L = U.dxy(r.x0, r.y0, r.x1, r.y1) / 2 + 100;
