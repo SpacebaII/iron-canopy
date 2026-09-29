@@ -98,11 +98,14 @@ IC.kitCurve = function (B, o) {
     const wall = Rc + sg * bw, rs = wall + sg * (WALL + S0.d / 2), rl = wall + sg * (WALL + S0.d + LANE_OFF), ro = rl + sg * MARGIN;
     if (rl < 0.4) return;
     const tipR = Math.max(0.15, (S0.d + 0.1)) / Math.max(0.3, Math.abs(rl));
-    const ai = B.apron(band(c, Math.min(wall - sg * 0.04, ro), Math.max(wall - sg * 0.04, ro), a0 - tipR - 0.03, a1 + tipR + 0.03), { name: o.apName });
+    const e0 = o.sa0 != null ? o.sa0 - 0.08 : a0 - tipR - 0.03, e1 = o.sa1 != null ? o.sa1 + 0.08 : a1 + tipR + 0.03;
+    const ai = B.apron(band(c, Math.min(wall - sg * 0.04, ro), Math.max(wall - sg * 0.04, ro), e0, e1), { name: o.apName });
     // stands along the wall, spaced by their span at the narrowest point of the fan
-    const rn = sg > 0 ? wall + WALL : Math.max(0.3, wall - WALL - S0.d), step = (S0.w + 0.02) / rn, n = Math.max(1, Math.floor((a1 - a0) / step)), da = (a1 - a0) / n;
-    const angs = []; for (let i = 0; i < n; i++) angs.push(a0 + da * (i + 0.5));
-    const la = new Set(angs.map(r3)); for (let a = a0 - tipR; a <= a1 + tipR + 1e-9; a += Math.PI / 24) la.add(r3(a)); la.add(r3(a0 - tipR)); la.add(r3(a1 + tipR));
+    const b0 = o.sa0 != null ? o.sa0 : a0, b1 = o.sa1 != null ? o.sa1 : a1;
+    const rn = sg > 0 ? wall + WALL : Math.max(0.3, wall - WALL - S0.d), step = (S0.w + 0.02) / rn, n = Math.max(1, Math.floor((b1 - b0) / step)), da = (b1 - b0) / n;
+    const angs = []; for (let i = 0; i < n; i++) angs.push(b0 + da * (i + 0.5));
+    const t0 = b0 - (o.sa0 != null ? 0.05 : tipR), t1 = b1 + (o.sa1 != null ? 0.05 : tipR);
+    const la = new Set(angs.map(r3)); for (let a = t0; a <= t1 + 1e-9; a += Math.PI / 24) la.add(r3(a)); la.add(r3(t0)); la.add(r3(t1));
     const lp = [...la].sort((x, y) => x - y).map(a => polar(c, rl, a));
     out.lanes.push({ sg, pts: lp, n: B.lane(lp), ends: [lp[0], lp[lp.length - 1]], rl });
     for (const a of angs) B.stand(ai, polar(c, rs, a), sg > 0 ? a + Math.PI : a, o.size || 'm', B.node(polar(c, rl, a)));
@@ -131,6 +134,12 @@ IC.kitPier = function (B, o) {
   }
   // round the tip: the two lanes joined across it
   if (sides.length === 2 && !o.openTip) { const a = W(L + ext, bw + WALL + S0.d + LANE_OFF), b = W(L + ext, -(bw + WALL + S0.d + LANE_OFF)); out.tip = B.lane([a, W(L + ext, 0), b]); }
+  if (sides.length === 2 && o.cap0) { const a = W(-ext, bw + WALL + S0.d + LANE_OFF), b = W(-ext, -(bw + WALL + S0.d + LANE_OFF)); out.cap0 = B.lane([a, W(-ext, 0), b]); }
+  // (paved across the tip, where the lanes join round it)
+  const od = bw + WALL + S0.d + LANE_OFF + MARGIN;
+  if (out.tip && out.tip.length) B.apron([W(L - 0.02, -od), W(L + ext + MARGIN, -od), W(L + ext + MARGIN, od), W(L - 0.02, od)]);
+  if (out.cap0) B.apron([W(-ext - MARGIN, -od), W(0.02, -od), W(0.02, od), W(-ext - MARGIN, od)]);
+  out.W = W; out.off = bw + WALL + S0.d + LANE_OFF;
   return out;
 };
 /* piers from a round hub at c: arms at the given angles (T, Y, X and the rest), each from the hub's wall to len.
@@ -198,5 +207,219 @@ IC.kitLayout = function (key, o) {
   B.L.key = key; B.L.name = K.name; B.L.kit = true;
   return B.L;
 };
+
+/* ---------- blueprints ---------- */
+/* a runway from a to b with its parallel taxiway off to one side (off, signed: + is to the left of a → b), links
+   to the runway at both ends and at the stations given (distances from a), the parallel carrying a node at every
+   station and every join (joins: distances where other taxiways meet it). Returns where a distance along it is. */
+function runwayPar(B, o) {
+  const a = o.a, b = o.b, L = U.dist(a, b), ux = (b.x - a.x) / L, uy = (b.y - a.y) / L, nx = -uy, ny = ux;
+  const W = (s, t) => pt(a.x + ux * s + nx * t, a.y + uy * s + ny * t);
+  B.runway(a, b, o.w || 0.45, { sfx: o.sfx });
+  const links = [0, L].concat(o.links || []), st = new Set(links.concat(o.joins || []).map(r3));
+  const ss = [...st].filter(v => v >= -1e-6 && v <= L + 1e-6).sort((x, y) => x - y);
+  B.taxi(ss.map(v => W(v, o.off)), { name: o.name });
+  for (const v of links) B.taxi([W(v, 0), W(v, o.off)]);
+  return { W, L, par: s2 => W(s2, o.off) };
+}
+/* the landside in front of a terminal face: a one-way kerb loop, garages and car parks behind it, and the road out
+   (from the face at distance 0 outwards along n, the face running along u for len, centred at c) */
+function frontLand(B, c, u, len, out, o) {
+  o = o || {};
+  const n = { x: -u.y * out, y: u.x * out }, W = (s, t) => pt(c.x + u.x * s + n.x * t, c.y + u.y * s + n.y * t), h = len / 2;
+  B.road([W(-h + 0.2, 0.2), W(h - 0.2, 0.2)], { kind: 'kerb', oneway: 1, w: 0.14, name: 'Departures kerb' });
+  B.road([W(h - 0.2, 0.2), W(h + 0.25, 0.2), W(h + 0.25, 1.9), W(-h - 0.25, 1.9), W(-h - 0.25, 0.2), W(-h + 0.2, 0.2)], { kind: 'loop', oneway: 1, w: 0.12, name: 'Terminal loop' });
+  B.park([W(-h + 0.15, 0.4), W(-0.1, 0.4), W(-0.1, 1.05), W(-h + 0.15, 1.05)], 'garage', { lvls: 5, name: 'Garage' });
+  B.park([W(0.1, 0.4), W(h - 0.15, 0.4), W(h - 0.15, 1.05), W(0.1, 1.05)], 'garage', { lvls: 5, name: 'Garage' });
+  B.park([W(-h + 0.15, 1.2), W(h - 0.15, 1.2), W(h - 0.15, 1.75), W(-h + 0.15, 1.75)], 'park', { name: 'Car park' });
+  const far = W(o.outS || 0, o.outT || 6);
+  B.road([W(o.outS || 0, 1.9), far], { kind: 'out', w: 0.16, name: o.road || 'Airport road' });
+  B.L.exits = (B.L.exits || []).concat([[r3(far.x), r3(far.y)]]);
+  B.L.junctions.push([r3(W(o.outS || 0, 1.9).x), r3(W(o.outS || 0, 1.9).y)], [r3(W(h - 0.2, 0.2).x), r3(W(h - 0.2, 0.2).y)], [r3(W(-h + 0.2, 0.2).x), r3(W(-h + 0.2, 0.2).y)]);
+}
+/* join a point to the nearest node of a list of kit ring or lane points with a taxilane */
+const nearest = (list, q) => list.reduce((b, p) => (!b || U.dist(p, q) < U.dist(b, q) ? p : b), null);
+
+/* the support area every blueprint has: a cargo shed with its apron and stands, two hangars on the cargo lane, a fuel
+   farm, the tower, an approach radar, a ground radar and two fire stations; laid out at c along u (the cargo lane
+   on the +n side, joined to the points in o.join) */
+function support(B, c, u, o) {
+  const n = { x: -u.y, y: u.x }, W = (s, t) => pt(c.x + u.x * s + n.x * t, c.y + u.y * s + n.y * t), a = Math.atan2(u.y, u.x);
+  const S0 = IC.STAND.m, face = 0.4, sd = face + WALL + S0.d / 2, ld = face + WALL + S0.d + LANE_OFF, od = ld + MARGIN;
+  const shed = B.box('cargo', W(0, 0), a, 3, 0.8, { name: 'Cargo centre' });
+  const ai = B.apron([W(-1.6, face - 0.04), W(1.6, face - 0.04), W(1.6, od), W(-1.6, od)], { zone: 'cargo', name: 'Cargo apron' });
+  const ss = [-1.2, -0.7, -0.2, 0.3, 0.8, 1.3];
+  const lane = [W(-4.2, ld), W(-3.4, ld), W(-2.4, ld), W(-1.6, ld)].concat(ss.map(x => W(x, ld)), [W(1.6, ld), W(o.east || 2.2, ld)]);
+  B.lane(lane, { w: 0.23 });
+  for (const x of ss) B.stand(ai, W(x, sd), a - Math.PI / 2 * (n.y * Math.cos(a) - n.x * Math.sin(a) > 0 ? 1 : -1), 'm', B.node(W(x, ld)));
+  // (stands nose to the shed: their heading points along −n)
+  const st = B.L.stands.slice(-ss.length); for (const q of st) q.h = r3(Math.atan2(-n.y, -n.x));
+  // hangars on the lane beyond the shed, doors to it
+  B.box('hangar', W(-3.4, ld - 0.2 - 0.275 - 0.05 - 0.12), a, 0.7, 0.55, { name: 'Hangar' });
+  B.box('hangar', W(-2.4, ld - 0.2 - 0.275 - 0.05 - 0.12), a, 0.7, 0.55, { name: 'Hangar' });
+  // behind the shed: fuel, tower, radars, a fire station; another fire station by the lane's far end
+  // (the tanks 150 m apart, so one burning does not set fire to the next)
+  for (const [x, y] of [[-1.6, -1.1], [-0.1, -1.1], [2.9, -1.1]]) { const q = W(x, y); B.L.blds.push({ kind: 'fuel', c: [r3(q.x), r3(q.y)], name: 'Fuel farm' }); }
+  B.box('tower', W(1.2, -1.1), a, 0.14, 0.14, { name: 'Tower' });
+  B.box('atc', W(2.0, -1.2), a, 0.12, 0.12, { name: 'Approach radar' });
+  B.box('gradar', W(1.6, -0.9), a, 0.1, 0.1, { name: 'Ground radar' });
+  B.box('hydrant', W(0.7, -1.6), a, 0.24, 0.18, { name: 'Hydrant fuel system' });
+  B.box('fire', W(-3.0, -0.6), a, 0.28, 0.2, { name: 'Fire station' });
+  if (o.fire2) B.box('fire', o.fire2, a, 0.28, 0.2, { name: 'Fire station' });
+  for (const [from, to] of o.join || []) B.taxi(from === 'w' ? [W(-4.2, ld), to] : [W(o.east || 2.2, ld), to]);
+  return { w: W(-4.2, ld), e: W(o.east || 2.2, ld), W, ld };
+}
+
+IC.BLUEPRINTS = {
+  /* a round terminal in the middle, its landside inside a ring road, six round satellites round it reached by tubes
+     under the apron; two parallel runways, north and south */
+  ring: {
+    name: 'Anneau International', after: 'after Paris–Charles de Gaulle Terminal 1', icao: 'XRNG',
+    make(B) {
+      const c = pt(0, 0), D = 4.3, R0 = 1.0;
+      const main = B.round('terminal', c, R0, { name: 'Terminal 1', roof: 'dome', lvls: 3 });
+      const angs = [180, -144, -108, -72, -36, 0].map(d => d * Math.PI / 180), sats = [];
+      angs.forEach((a, k) => {
+        const sc = polar(c, D, a), toC = a + Math.PI;
+        const K = IC.kitRound(B, { c: sc, R: 0.45, size: 'm', a0: toC + 0.75, a1: toC + Math.PI * 2 - 0.75, name: `Satellite ${k + 1}`, ref: i => `${k + 1}${String(i + 1).padStart(2, '0')}` });
+        sats.push({ K, sc, a });
+        B.mover([polar(c, R0 - 0.05, a), polar(sc, 0.4, toC)], [main, K.term], -1, `Tube ${k + 1}`);
+      });
+      // the outer ring taxiway joining every satellite's ring and the parallels, one node wherever something joins it
+      const Ro = D + 1.25 + 0.75, joinA = [];
+      // (every angle rounded once, so a join lands on the ring's own node)
+      const nrm = a => r3(((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)), onRing = a => polar(c, Ro, nrm(a));
+      for (const S of sats) { const q = nearest(S.K.ring.map(r => r.q), polar(c, Ro, S.a)); S.q = q; S.ja = Math.atan2(q.y - c.y, q.x - c.x); joinA.push(S.ja); }
+      const up = [-3.5, 0, 3.5].map(dx => ({ dx, a: Math.atan2(-Math.sqrt(Ro * Ro - dx * dx), dx) })), dn = [-3.5, 3.5].map(dx => ({ dx, a: Math.atan2(Math.sqrt(Ro * Ro - dx * dx), dx) }));
+      for (const q of up.concat(dn)) joinA.push(q.a);
+      const ringA = new Set(joinA.map(nrm));
+      for (let d = 0; d < 360; d += 10) ringA.add(r3(d * Math.PI / 180));
+      const RA = [...ringA].sort((x, y) => x - y);
+      B.taxi(RA.map(onRing).concat([onRing(RA[0])]), { name: 'Ring' });
+      for (const S of sats) B.taxi([S.q, onRing(S.ja)]);
+      const N = runwayPar(B, { a: pt(-19, -9.4), b: pt(19, -9.4), off: 1.9, links: [5, 9.5, 19, 28.5, 33], joins: [19 - 3.5, 19, 19 + 3.5, 19 + 15.0], name: 'A' });
+      const Sr = runwayPar(B, { a: pt(-19, 9.4), b: pt(19, 9.4), off: -1.9, links: [5, 9.5, 19, 28.5, 33], joins: [19 - 3.5, 19 + 3.5, 19 + 15.0], name: 'B' });
+      for (const q of up) B.taxi([N.par(19 + q.dx), onRing(q.a)]);
+      for (const q of dn) B.taxi([Sr.par(19 + q.dx), onRing(q.a)]);
+      // the landside: a ring road round the terminal, car parks, and the road out in a tunnel under the south side
+      B.road(arc(c, R0 + 0.2, Math.PI / 2, Math.PI / 2 + Math.PI * 2), { kind: 'loop', oneway: 1, w: 0.14, name: 'Terminal ring road' });
+      B.park(band(c, R0 + 0.45, R0 + 1.35, 0.3, Math.PI / 2 - 0.2), 'garage', { lvls: 4, name: 'Car park' });
+      B.park(band(c, R0 + 0.45, R0 + 1.35, Math.PI / 2 + 0.2, Math.PI - 0.3), 'garage', { lvls: 4, name: 'Car park' });
+      B.park(band(c, R0 + 0.45, R0 + 1.35, -Math.PI + 0.3, -0.3), 'park', { name: 'Car park' });
+      B.road([polar(c, R0 + 0.2, Math.PI / 2), pt(0, 2.6)], { kind: 'out', w: 0.16 });
+      B.road([pt(0, 2.6), pt(0, 12.4)], { kind: 'out', w: 0.16, lv: -1, name: 'Access tunnel' });
+      B.road([pt(0, 12.4), pt(0, 15)], { kind: 'out', w: 0.16, name: 'Airport road' });
+      B.L.exits = [[0, 15]]; B.L.junctions.push([0, r3(R0 + 0.2)], [0, 2.6], [0, 12.4]);
+      const Sp = support(B, pt(11.2, 0.6), { x: 1, y: 0 }, { east: 2.4, join: [['w', onRing(RA.find(a => Math.abs(a) < 1e-6) || 0)]], fire2: pt(-11, 0) });
+      B.taxi([Sp.e, pt(15.0, Sp.e.y), N.par(19 + 15.0)]);
+      B.taxi([pt(15.0, Sp.e.y), Sr.par(19 + 15.0)]);
+    }
+  },
+  /* a landside terminal with four airsides round it on people movers: two round, two X-shaped; runways east and west */
+  hub: {
+    name: 'Bayshore International', after: 'after Tampa International', icao: 'XBAY',
+    make(B) {
+      const T = B.box('terminal', pt(0, 0), 0, 5.6, 1.4, { name: 'Main terminal', lvls: 3 });
+      const air = [{ c: pt(-7.0, -5.0), kind: 'round' }, { c: pt(-2.8, -6.2), kind: 'x' }, { c: pt(2.8, -6.2), kind: 'x' }, { c: pt(7.0, -5.0), kind: 'round' }];
+      air.forEach((A, k) => {
+        const toT = Math.atan2(0 - A.c.y, 0 - A.c.x), nm = `Airside ${'ACEF'[k]}`;
+        if (A.kind === 'round') { const K = IC.kitRound(B, { c: A.c, R: 0.55, size: 'm', a0: toT + 0.7, a1: toT + Math.PI * 2 - 0.7, name: nm }); A.term = K.term; A.pts = K.ring.map(r => r.q); }
+        else { const K = IC.kitStar(B, { c: A.c, size: 'm', hubR: 0.42, arms: [toT + Math.PI / 2, toT + Math.PI, toT - Math.PI / 2].map(a => ({ a, len: 1.6 })).concat([{ a: toT, len: 1.0, conn: true }]), name: nm }); A.term = K.hub; A.pts = [].concat(...K.arms.map(x => x.lanes.map(l => l.ends).flat())); }
+        // the shuttle on its viaduct from the terminal's airside face
+        B.mover([pt(A.c.x * 0.3, -0.7), polar(A.c, A.kind === 'round' ? 0.5 : 0.38, toT)], [T, A.term], 1, `Shuttle to ${U.lc(nm)}`);
+      });
+      // runways east and west with their parallels; a taxiway north of the airsides and one between them and the terminal
+      const W = runwayPar(B, { a: pt(-12.5, 17), b: pt(-12.5, -17), off: 2.2, links: [5, 11, 17, 23, 29], joins: [17 + 9.4, 17 + 2.4], name: 'W' });
+      const E = runwayPar(B, { a: pt(12.5, 17), b: pt(12.5, -17), off: -2.2, links: [5, 11, 17, 23, 29], joins: [17 + 9.4, 17 + 2.4], name: 'E' });
+      const tops = air.map(A => { const q = nearest(A.pts, pt(A.c.x, -9.4)); return { A, q, x: A.kind === 'round' ? A.c.x : q.x }; });
+      B.taxi([W.par(17 + 9.4)].concat(tops.map(t => pt(t.x, -9.4)).sort((a, b) => a.x - b.x), [E.par(17 + 9.4)]), { name: 'N' });
+      for (const t of tops) B.taxi([t.q, pt(t.x, -9.4)]);
+      const bots = air.filter(A => A.kind === 'round').map(A => ({ A, q: nearest(A.pts, pt(A.c.x, -2.4)) }));
+      B.taxi([W.par(17 + 2.4)].concat(bots.map(b => pt(b.A.c.x, -2.4)).sort((a, b) => a.x - b.x), [E.par(17 + 2.4)]), { name: 'M' });
+      for (const b of bots) B.taxi([b.q, pt(b.A.c.x, -2.4)]);
+      // (the X airsides' lower lanes down to the middle taxiway too)
+      for (const A of air.filter(q => q.kind === 'x')) { const q = nearest(A.pts, pt(A.c.x + (A.c.x < 0 ? -1.5 : 1.5), -2.4)); void q; }
+      frontLand(B, pt(0, 0.7), { x: 1, y: 0 }, 5.6, 1, { outT: 16.3 });
+      support(B, pt(-5.0, 6.0), { x: 1, y: 0 }, { east: 2.2, join: [['w', W.par(17 - 6.9)]], fire2: pt(7, 3.2) });
+      B.L.taxi.push({ n: [B.node(W.par(17 - 6.9)), B.node(W.W(17 - 6.9, 0))] });
+    }
+  },
+  /* four semicircular terminals along a spine road, each its own kerb and parking inside the curve; runways east and
+     west */
+  spine: {
+    name: 'Prairie International', after: 'after Dallas–Fort Worth', icao: 'XPRA',
+    make(B) {
+      const Rc = 2.0, bw = 0.24, rIn = Rc - bw, lanes = [];
+      B.road([pt(0, -17), pt(0, 17)], { kind: 'out', w: 0.2, name: 'Spine road' });
+      B.L.exits = [[0, -17], [0, 17]];
+      for (const [cx, yk, side, k] of [[0.35, -3.6, 1, 'A'], [0.35, 3.6, 1, 'C'], [-0.35, -3.6, -1, 'B'], [-0.35, 3.6, -1, 'D']]) {
+        const c = pt(cx, yk), a0 = side > 0 ? -Math.PI / 2 : Math.PI / 2, a1 = side > 0 ? Math.PI / 2 : Math.PI * 1.5;
+        const K = IC.kitCurve(B, { c, Rc, bw, a0, a1, sa0: a0 + 0.42, sa1: a1 - 0.42, size: 'm', name: `Terminal ${k}` });
+        lanes.push({ K, side, c });
+        // the kerb inside the curve, joined to the spine at both ends; a car park in the middle
+        const kb = arc(c, rIn - 0.14, a0 + 0.06, a1 - 0.06);
+        B.road(kb, { kind: 'kerb', oneway: 1, w: 0.14, name: `Terminal ${k} kerb` });
+        B.road([kb[kb.length - 1], pt(0, kb[kb.length - 1].y)], { kind: 'loop', w: 0.12 });
+        B.road([pt(0, kb[0].y), kb[0]], { kind: 'loop', w: 0.12 });
+        B.L.junctions.push([0, r3(kb[0].y)], [0, r3(kb[kb.length - 1].y)]);
+        B.park(band(c, 0.5, rIn - 0.34, a0 + 0.3, a1 - 0.3), 'park', { name: `Car park ${k}` });
+      }
+      // each terminal's taxilane to its runway's parallel at both ends
+      const Sup = support(B, pt(5.2, 10.4), { x: 1, y: 0 }, { east: 4.3, fire2: pt(-6, -10) });
+      const ends = { 1: [Sup.e], [-1]: [] };
+      for (const { K, side } of lanes) for (const e of K.lanes[0].ends) ends[side].push(e);
+      const E = runwayPar(B, { a: pt(11.5, 17), b: pt(11.5, -17), off: -2, links: [4, 10, 17, 24, 30], joins: ends[1].map(e => 17 - e.y), name: 'E' });
+      const Wr = runwayPar(B, { a: pt(-11.5, -17), b: pt(-11.5, 17), off: -2, links: [4, 10, 17, 24, 30], joins: ends[-1].map(e => e.y + 17), name: 'W' });
+      for (const e of ends[1]) B.taxi([e, E.par(17 - e.y)]);
+      for (const e of ends[-1]) B.taxi([e, Wr.par(e.y + 17)]);
+    }
+  },
+  /* midfield concourses side by side between two pairs of runways, a train under them from the landside terminal */
+  midfield: {
+    name: 'Magnolia International', after: 'after Hartsfield–Jackson Atlanta', icao: 'XMAG',
+    make(B) {
+      const xs = [0, 3.8, 7.6, 11.4, 15.2], names = ['T', 'A', 'B', 'C', 'D'], con = [];
+      const T = B.box('terminal', pt(-6, 0), Math.PI / 2, 6, 2.2, { name: 'Terminal', lvls: 3 });
+      xs.forEach((x, i) => { const P = IC.kitPier(B, { p0: pt(x, -5), p1: pt(x, 5), bw: 0.24, size: 'm', cap0: true, name: `Concourse ${names[i]}` }); con.push(P); });
+      B.mover([pt(-4.9, 0), pt(15.2, 0)], [T].concat(con.map(c => c.term)), -1, 'Plane train');
+      const off = 0.24 + 0.06 + 0.5 + 0.12;
+      const par = (y, o2, nm) => runwayPar(B, { a: pt(-19, y), b: pt(21, y), off: o2, links: [4, 9, 14, 20, 26, 31, 36], joins: [].concat(...xs.map(x => [x + 19 - off, x + 19 + off])).concat([19 + 19.6]), name: nm });
+      const N = par(-8.6, 2, 'N'), Sp = par(8.6, -2, 'S');
+      // the outer runways of each pair, joined to the inner ones at the ends
+      B.runway(pt(-19, -11.2), pt(21, -11.2), 0.45, { sfx: ['R', 'L'] }); B.runway(pt(-19, 11.2), pt(21, 11.2), 0.45, { sfx: ['L', 'R'] });
+      for (const x of [-19, -15, -10, -5, 1, 7, 12, 17, 21]) { B.taxi([pt(x, -8.6), pt(x, -11.2)]); B.taxi([pt(x, 8.6), pt(x, 11.2)]); }
+      // the concourses' taxilanes onto the parallels at both ends
+      for (const x of xs) for (const dx of [-off, off]) { B.taxi([pt(x + dx, -5.6), pt(x + dx, -6.6)]); B.taxi([pt(x + dx, 5.6), pt(x + dx, 6.6)]); }
+      frontLand(B, pt(-7.1, 0), { x: 0, y: 1 }, 6, 1, { outT: 11.5 });
+      support(B, pt(19.6, 2.0), { x: 0, y: -1 }, { east: 2.0, join: [['e', N.par(19 + 19.6)]], fire2: pt(-10, -5) });
+      B.taxi([pt(19.6 + 0.4 + WALL + 0.5 + LANE_OFF, 2.0 + 4.2), Sp.par(19 + 19.6)]);
+      void Sp;
+    }
+  },
+  /* two long concourses of wide-body gates between two runways, a train from the terminal to both */
+  long: {
+    name: 'Gulf International', after: 'after Dubai International', icao: 'XGLF',
+    make(B) {
+      const T = B.box('terminal', pt(-10.4, 0.5), Math.PI / 2, 7, 2.4, { name: 'Terminal 3', lvls: 3, roof: 'glass' });
+      const Bc = IC.kitPier(B, { p0: pt(-6.5, -2.2), p1: pt(7.5, -2.2), bw: 0.26, size: 'l', cap0: true, name: 'Concourse B' });
+      const Ac = IC.kitPier(B, { p0: pt(-5, 3.4), p1: pt(5, 3.4), bw: 0.26, size: 'l', cap0: true, name: 'Concourse A' });
+      B.mover([pt(-9.1, -2.2), pt(0.5, -2.2), pt(0.5, 3.4)], [T, Bc.term, Ac.term], -1, 'Airport train');
+      const off = 0.26 + 0.06 + 0.8 + 0.12;
+      const N = runwayPar(B, { a: pt(-20, -8.4), b: pt(22, -8.4), off: 1.9, links: [5, 10, 16, 21, 26, 32, 37], joins: [-7.1 + 20, 8.1 + 20, 0.5 + 20, 13 + 20], name: 'N' });
+      const Sp = runwayPar(B, { a: pt(-20, 9.4), b: pt(22, 9.4), off: -1.9, links: [5, 10, 16, 21, 26, 32, 37], joins: [-5.6 + 20, 5.6 + 20, 0 + 20, 13 + 20], name: 'S' });
+      B.taxi([pt(-7.1, -2.2 - off), N.par(-7.1 + 20)]); B.taxi([pt(8.1, -2.2 - off), N.par(8.1 + 20)]); B.taxi([pt(0.5, -2.2 - off), N.par(0.5 + 20)]);
+      B.taxi([pt(-5.6, 3.4 + off), Sp.par(-5.6 + 20)]); B.taxi([pt(5.6, 3.4 + off), Sp.par(5.6 + 20)]); B.taxi([pt(0, 3.4 + off), Sp.par(0 + 20)]);
+      // (the inner lanes, B's south and A's north, joined round both ends)
+      B.taxi([pt(-7.1, -2.2 + off), pt(-7.1, 0.6), pt(-5.6, 0.6), pt(-5.6, 3.4 - off)]); B.taxi([pt(8.1, -2.2 + off), pt(8.1, 0.6), pt(5.6, 0.6), pt(5.6, 3.4 - off)]);
+      frontLand(B, pt(-11.6, 0.5), { x: 0, y: 1 }, 7, 1, { outT: 8.4 });
+      support(B, pt(13, 1.2), { x: 1, y: 0 }, { east: 2.4, join: [['w', pt(8.1, 0.6)]], fire2: pt(-14, -5) });
+      B.taxi([pt(13 + 2.4, 1.2 + 0.4 + WALL + 0.5 + LANE_OFF), N.par(13 + 20)]); B.taxi([pt(13 + 2.4, 1.2 + 0.4 + WALL + 0.5 + LANE_OFF), Sp.par(13 + 20)]);
+    }
+  }
+};
+for (const [key, D] of Object.entries(IC.BLUEPRINTS)) {
+  const B = IC.layoutBuilder(); D.make(B);
+  IC.REAL_APT[key] = Object.assign(B.L, { key, name: D.name, after: D.after, icao: D.icao, bp: true });
+}
 
 })(window.IC);

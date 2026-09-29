@@ -486,30 +486,35 @@ IC.aptSeatRoads = function (S, ap) {
     for (const q of r.pts) { if (U.dist(q, G) < 0.6) flush(); else run.push(q); }
     flush();
   }
-  const moved = new Set();
+  const moved = new Map();
   if (G) for (const e of own) {
     const endA = e.a === ap.id || (e.b !== ap.id && U.dist(e.pts[0], ap) < U.dist(e.pts[e.pts.length - 1], ap));
     const pts = endA ? e.pts.slice().reverse() : e.pts.slice(), endId = endA ? e.a : e.b;
+    // (a layout with a road out at each end: each country road comes to the end on its own side)
+    let Ge = G;
+    if (ap.land && ap.land.fixed && ap.exits && ap.exits.length > 1) { const far = pts[Math.max(0, pts.findIndex(p => near(p, 3)) - 1)] || pts[0]; Ge = ap.exits.slice().sort((a, b) => U.dist(a, far) - U.dist(b, far))[0]; }
     // (already at the gate and clear of the airfield: nothing to do)
-    if (U.dist(pts[pts.length - 1], G) < 0.35 && !pts.slice(0, -1).some(p => near(p, 0))) continue;
+    if (U.dist(pts[pts.length - 1], Ge) < 0.35 && !pts.slice(0, -1).some(p => near(p, 0))) continue;
     let k = pts.findIndex(p => near(p, 3));
     if (k < 0) k = pts.length - 1;
     const start = pts[Math.max(0, k - 1)] || pts[0];
-    const bb = box([start, G]), R = [Math.min(bb[0], abox[0]) - 8, Math.min(bb[1], abox[1]) - 8, Math.max(bb[2], abox[2]) + 8, Math.max(bb[3], abox[3]) + 8];
-    const path = IC.gridRoute(R, 0.25, keep, start, (x, y) => U.dxy(x, y, G.x, G.y) < 0.3, { to: G, snapEnd: () => ({ x: G.x, y: G.y }) });
+    const bb = box([start, Ge]), R = [Math.min(bb[0], abox[0]) - 8, Math.min(bb[1], abox[1]) - 8, Math.max(bb[2], abox[2]) + 8, Math.max(bb[3], abox[3]) + 8];
+    const path = IC.gridRoute(R, 0.25, keep, start, (x, y) => U.dxy(x, y, Ge.x, Ge.y) < 0.3, { to: Ge, snapEnd: () => ({ x: Ge.x, y: Ge.y }) });
     if (!path) continue;
     const np = pts.slice(0, Math.max(0, k - 1)).concat(path);
     e.pts = endA ? np.reverse() : np;
     e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
-    edgeBB(e); e.cum = null; moved.add(endId);
+    edgeBB(e); e.cum = null; moved.set(endId, Ge);
   }
-  for (const id of moved) { const n = W.nodes[id]; if (n) { n.x = G.x; n.y = G.y; n.gate = ap.id; } }
+  for (const [id, g] of moved) { const n = W.nodes[id]; if (n) { n.x = g.x; n.y = g.y; n.gate = ap.id; } }
   if (moved.size && ap.land && ap.land.access) { const e = own.find(x => x.apt === ap.id); if (e) ap.land.access.pts = e.pts.map(p => ({ x: p.x, y: p.y })); }
   // everything else that runs across the field or inside the fence: lanes stop short, streets close, roads and
   // railways go under
   // (one raster of the airfield and the fence, 20 m cells, so each road is tested cell by cell)
   const rb = [abox[0] - 3, abox[1] - 3, abox[2] + 3, abox[3] + 3];
-  const RA = IC.shapeRaster(rb, 0.2, airOnly.map(b => ({ sh: b.sh, pad: b.pad + 0.12 })).concat(fence ? [{ sh: IC.shapePoly(fence.poly), pad: 0, inside: fence.hullA, carve: fence.carveA }] : []));
+  // (and a landside laid out from data: a country road does not cross its car parks and buildings, it goes under)
+  const landF = ap.land && ap.land.fixed ? els.filter(e => (e.cat === 'land' || e.cat === 'park') && e.own).map(e => ({ sh: e.sh, pad: 0.05 })) : [];
+  const RA = IC.shapeRaster(rb, 0.2, airOnly.map(b => ({ sh: b.sh, pad: b.pad + 0.12 })).concat(landF, fence ? [{ sh: IC.shapePoly(fence.poly), pad: 0, inside: fence.hullA, carve: fence.carveA }] : []));
   const bad = s => RA ? RA.at(s) : inFence(s) || airOnly.some(b => IC.shapeDist(b.sh, s) < b.pad + 0.12);
   const hits = pts => { const runs = []; let cur = null; for (let i = 0; i < pts.length; i++) { const p = pts[i]; const q = i ? pts[i - 1] : p, n = i ? Math.max(1, Math.ceil(U.dist(p, q) / 0.1)) : 1; for (let j = 1; j <= n; j++) { const s = { x: q.x + (p.x - q.x) * j / n, y: q.y + (p.y - q.y) * j / n }; if (bad(s) && !cur) { cur = [s, s]; runs.push(cur); } else if (bad(s)) cur[1] = s; else cur = null; } } return runs; };
   const inBox = l => { const b = l.bb || box(l.pts); return b[0] < abox[2] + 2 && b[2] > abox[0] - 2 && b[1] < abox[3] + 2 && b[3] > abox[1] - 2; };

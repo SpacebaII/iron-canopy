@@ -283,7 +283,9 @@ IC.aptTraceFence = function (ap) {
   const E = IC.aptElements(null, ap, { noWorld: true });
   const air = [], land = [];
   for (const e of E) {
-    if (e.cat === 'rwy') air.push({ sh: e.strip, pad: 0.3 });
+    // (a mapped fence hugs the strip; the game's own keeps 300 m from a runway's centreline, room for its lights and
+    // the radars and beacons beside it)
+    if (e.cat === 'rwy') air.push({ sh: e.strip, pad: ap.land && ap.land.fixed ? 0.3 : 1.5 });
     else if (e.cat === 'twy') air.push({ sh: e.sh, pad: 0.5 });
     else if (e.cat === 'apron') air.push({ sh: e.sh, pad: 0.3 });
     else if (e.cat === 'bld' && e.p.kind !== 'terminal') air.push({ sh: e.sh, pad: 0.2 });

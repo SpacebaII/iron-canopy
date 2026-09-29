@@ -870,6 +870,13 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .bb-tools button:disabled{opacity:.4}
 .bb-top .x{width:1.9rem;height:1.9rem;flex:none;align-self:flex-start}
 .app.bb-open .leftcol{max-height:calc(100% - var(--top) - var(--bbh,14rem) - 30px)}
+/* building (brief 45): the goals fold away to a tab and the inspector narrows, so the map is the page, as in a city
+   builder; hovering the tab brings the goals back */
+.app.bb-open .leftcol{width:auto;max-width:22rem}
+.app.bb-open .leftcol>*{max-height:2.6rem;overflow:hidden;opacity:.82;transition:max-height .25s var(--ease),opacity .2s}
+.app.bb-open .leftcol:hover>*{max-height:40rem;opacity:1}
+.app.bb-open .insp{width:19rem;bottom:calc(var(--bbh,14rem) + 24px)}
+.app.has-insp.bb-open .bbar{right:12px}
 .bb-items{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;min-width:0;flex:1}
 .bb-it{flex:0 0 9.4rem;display:flex;flex-direction:column;align-items:stretch;text-align:left;border-radius:12px;background:var(--well);padding:.3rem .3rem .4rem;gap:1px;transition:background .15s,transform .15s,box-shadow .15s}
 .bb-it img{width:100%;aspect-ratio:132/76;border-radius:8px;display:block;margin-bottom:.25rem}
