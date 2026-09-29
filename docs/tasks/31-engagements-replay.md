@@ -30,7 +30,7 @@ The replay shows turns as flat heading changes. There is no bank, no chaff or fl
 - **Energy:**
   - a boost phase (a few seconds at high thrust), then a coast in which the missile slows from drag, more in thick low air and in hard turns;
   - flight times come out about 2–3 times today's for long shots;
-  - reach tables (`IC.REACH`) come from this energy model, not a fixed range;
+  - reach tables (`IC.REACH`) come from this energy model, not a fixed range. The owner asked for longer SAM range, and the best-height reach is now short range 20 km, medium 70 km and long 160 km: the energy model must keep these;
   - a missile that runs out of energy before it arrives misses, and the report says so ("ran out of energy 8 km short").
 - **Guidance in phases:**
   - midcourse on the launcher's data;
