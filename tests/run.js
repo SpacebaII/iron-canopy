@@ -763,7 +763,7 @@ test('builder: a build says it has started or is queued, and a refused one names
   const [r1, m1] = lay(2.5);
   assert(r1 === 'built' && /planned: ₭/.test(m1.done) && /Work starts now/.test(m1.done), `the first runway says "${m1.done}"`);
   const [r2, m2] = lay(-2.5);
-  assert(r2 === 'err' && /overlaps the apron/.test(m2.err), `a runway across the apron is refused with "${m2.err}"`);
+  assert(r2 === 'err' && /overlaps (the apron|Apron \d)/.test(m2.err), `a runway across the apron is refused with "${m2.err}"`);
   const m = IC.bldMode(S, ap, 'apron'), c = { x: ap.x + 30, y: ap.y + 30 };
   IC.buildInput(S, m, c, 0, 20); IC.buildInput(S, m, { x: c.x + 3, y: c.y + 2 }, 0, 20);
   assert(IC.buildInput(S, m, { x: c.x + 3, y: c.y + 2 }, 0, 20) === 'built' && /Queued: the crew is busy on Runway/.test(m.done), `the apron says "${m.done}"`);
@@ -913,6 +913,102 @@ test('builder: a part planned over houses clears them, pays compensation and cos
   assert(!t.c.blocks.includes(home) && t.c.blocks.length < n0, 'the homes are still standing');
   assert(S.worldDirty && S.worldDirty.length, 'the map was not told');
   assert(bud - S.budget >= w.stages[0].cost - 0.01, `paid ${U.money(bud - S.budget)}, compensation is ${U.money(w.stages[0].cost)}`);
+});
+
+/* snapping and guides: the capital of the ready-made network, in its own frame (x along the runway, which runs from
+   -17 to 17; the parallel taxiway at y 1.8; the south apron from x -14.3 to -9.7, y -2.58 to -1.62) */
+const snapAp = () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(ap, x, y), L = p => IC.rectLocal({ x: ap.x, y: ap.y, a: ap.rwyA }, p);
+  return { S, ap, P, L, near: (a, b, e) => Math.abs(a - b) < (e || 1e-6) };
+};
+test('builder: a taxiway drawn off a runway locks square to it, and its length rounds to 10 m', () => {
+  const { S, ap, P, L, near } = snapAp(), m = IC.bldMode(S, ap, 'taxi');
+  IC.buildInput(S, m, P(4, 0), 0, 20);
+  assert(m.pts[0].kind === 'rwy', `the first point is not on the runway: ${m.pts[0].kind}`);
+  // six degrees off square
+  const plan = IC.bldPlanOf(S, m, P(4.23, -2.2), 0.4), q = L(plan.snap);
+  assert(near(q.x, 4) && near(q.y, -2.2), `the end is at ${q.x.toFixed(3)}, ${q.y.toFixed(3)}, not square 220 m out`);
+  assert(/square to/.test(plan.snap.lock), `the lock says "${plan.snap.lock}"`);
+  // without a lock the length still rounds to 10 m
+  let n = 0;
+  for (let k = 0; k < 40; k++) {
+    const q2 = IC.bldPlanOf(S, m, P(6.43 + k * 0.137, -1.21 - k * 0.061), 0.4).snap, d = U.dist(q2, P(4, 0));
+    if (q2.lock || q2.guides || q2.kind !== 'free') continue;
+    n++; assert(near(d * 10, Math.round(d * 10), 1e-6), `a free leg is ${(d * 100).toFixed(2)} m long`);
+  }
+  assert(n >= 5, `only ${n} free legs tried`);
+});
+test('builder: a line keeps to 90° from the part it starts on, and Shift draws freely', () => {
+  const { S, ap, P, L, near } = snapAp();
+  // a taxiway at 34° to the runway, then a new one started on it
+  IC.aptPlanTaxi(S, ap, [P(20, 5), P(26, 9)], 0.1);
+  const m = IC.bldMode(S, ap, 'taxi');
+  IC.buildInput(S, m, P(23, 7), 0, 20);
+  assert(m.pts[0].kind === 'taxi', `the first point is not on the taxiway: ${m.pts[0].kind}`);
+  const u = Math.atan2(4, 6) + Math.PI / 2 + 0.07, at = P(23 + Math.cos(u) * 2, 7 + Math.sin(u) * 2);
+  const s = IC.bldPlanOf(S, m, at, 0.4).snap, a = Math.atan2(L(s).y - 7, L(s).x - 23);
+  assert(near(a, Math.atan2(4, 6) + Math.PI / 2, 1e-6) && /square to the taxiway/.test(s.lock), `drawn at ${(a * 180 / Math.PI).toFixed(2)}° (${s.lock})`);
+  const f = IC.bldPlanOf(S, m, at, 0.4, true).snap;
+  assert(!f.lock && U.dist(f, at) < 1e-9, 'Shift did not draw freely');
+});
+test('builder: a point locks onto guides from edges and centrelines, and onto where two cross', () => {
+  const { S, ap, P, L, near } = snapAp(), m = IC.bldMode(S, ap, 'taxi');
+  // the south apron's far edge, extended east, meets the line of the taxiway at x 4
+  const s = IC.bldPlanOf(S, m, P(4.05, -2.55), 0.4).snap, q = L(s);
+  assert(s.guides && s.guides.length === 2 && near(q.x, 4) && near(q.y, -2.58), `snapped to ${q.x.toFixed(3)}, ${q.y.toFixed(3)} on ${(s.guides || []).map(g => g.what).join(', ')}`);
+  // a line locked square to the runway stops on the apron edge's guide
+  IC.buildInput(S, m, P(4, 0), 0, 20);
+  const e = IC.bldPlanOf(S, m, P(4.2, -2.5), 0.4).snap;
+  assert(near(L(e).y, -2.58) && e.lock && e.guides && /apron edge/.test(e.guides[0].what), `the end is at y ${L(e).y.toFixed(3)} (${e.guides ? e.guides[0].what : 'no guide'})`);
+});
+test('builder: readouts give each leg, the distance from the runway, and an apron\'s sides and depth', () => {
+  const { S, ap, P } = snapAp(), m = IC.bldMode(S, ap, 'taxi');
+  IC.buildInput(S, m, P(4, 0), 0, 20);
+  const plan = IC.bldPlanOf(S, m, P(4.23, -2.2), 0.4), t = plan.marks.map(k => k.t);
+  assert(t.includes('220 m') && t.some(x => /^220 m from the Runway .* centreline$/.test(x)), `the readouts are ${t.join(' | ')}`);
+  const a = IC.bldMode(S, ap, 'apron');
+  IC.buildInput(S, a, P(0, -4), 0, 20);
+  const ta = IC.bldPlanOf(S, a, P(4.62, -5.02), 0.4).marks.map(k => k.t);
+  assert(ta.includes('460 m') && ta.some(x => /^100 m deep · medium stands$/.test(x)), `the apron readouts are ${ta.join(' | ')}`);
+});
+test('builder: an area snaps to corners and flush to edges, and turns to line up with a part at an angle', () => {
+  const { S, ap, P, L, near } = snapAp(), m = IC.bldMode(S, ap, 'apron');
+  const c = IC.bldPlanOf(S, m, P(-9.73, -1.65), 0.4).snap;
+  assert(c.kind === 'corner' && near(L(c).x, -9.7) && near(L(c).y, -1.62), `the corner snap is ${c.kind} at ${L(c).x.toFixed(3)}, ${L(c).y.toFixed(3)}`);
+  const e = IC.bldPlanOf(S, m, P(-11, -2.64), 0.4).snap;
+  assert(e.kind === 'edge' && near(L(e).y, -2.58), `the edge snap is ${e.kind} at y ${L(e).y.toFixed(3)}`);
+  // a terminal turned 17° from the runway: an apron started against it turns with it
+  const T = IC.aptPlanPart(S, ap, 'terminal', P(25, -9).x, P(25, -9).y, ap.rwyA + 0.3, 3, 1);
+  assert(T, 'could not plan the turned terminal');
+  const at = IC.rectWorld(T, 0.4, 0.55);
+  IC.buildInput(S, m, at, 0, 20);
+  const da = Math.abs(U.angWrap(m.rot - T.a)) % (Math.PI / 2);
+  assert(m.pts.length === 1 && (da < 1e-6 || Math.PI / 2 - da < 1e-6), `the apron is turned ${(U.angWrap(m.rot - ap.rwyA) * 180 / Math.PI).toFixed(1)}° from the runway, the terminal ${(0.3 * 180 / Math.PI).toFixed(1)}°`);
+});
+test('builder: a taxiway through an apron is refused, drawn red, naming the apron; a building may not cover a taxiway', () => {
+  const { S, ap, P } = snapAp(), m = IC.bldMode(S, ap, 'taxi');
+  IC.buildInput(S, m, P(-2, 1.8), 0, 20);
+  const plan = IC.bldPlanOf(S, m, P(-2.04, 3.6), 0.4);
+  assert(!plan.ok && /runs through Apron \d/.test(plan.why) && plan.hit && plan.hit.kind === 'apron', `the plan says "${plan.why}"`);
+  assert(IC.buildInput(S, m, P(-2.04, 3.6), 0, 20) === 'point' && IC.buildInput(S, m, P(-2.04, 3.6), 0, 20) === 'err' && /runs through/.test(m.err), `the click says "${m.err}"`);
+  // ending on the apron's edge is how a taxiway joins it
+  const j = IC.bldMode(S, ap, 'taxi'); IC.buildInput(S, j, P(-2, 1.8), 0, 20);
+  const ok = IC.bldPlanOf(S, j, P(-2, 2.76), 0.4);
+  assert(ok.ok && ok.snap.kind === 'apron', `a taxiway to the apron edge is refused: ${ok.why}`);
+  const h = P(2, 1.8);
+  assert(!IC.aptCanPlace(S, ap, { kind: 'hangar', x: h.x, y: h.y, a: ap.rwyA }) && /covers a taxiway/.test(IC.aptPlaceWhy), `a hangar on the taxiway: "${IC.aptPlaceWhy}"`);
+});
+test('builder: a part far bigger than needed says so before the click, with its price', () => {
+  const { S, ap, P } = snapAp(), m = IC.bldMode(S, ap, 'apron');
+  IC.buildInput(S, m, P(0, -4), 0, 20);
+  const big = IC.bldPlanOf(S, m, P(14, -9.5), 0.4);
+  assert(big.ok && /times what one airliner needs: ₭/.test(big.size) && /paving no aircraft uses/.test(big.size), `a 1.4 km apron says "${big.size}"`);
+  const small = IC.bldPlanOf(S, m, P(2, -4.8), 0.4);
+  assert(small.ok && !small.size, `a 200 m apron says "${small.size}"`);
+  const r = IC.bldMode(S, ap, 'runway');
+  IC.buildInput(S, r, P(-25, -15), 0, 20);
+  assert(/longer than any airliner needs/.test(IC.bldPlanOf(S, r, P(25, -15), 0.4).size || ''), 'a 5 km runway says nothing');
 });
 
 test('builder: a KDEN-scale airport built by hand in under 200 clicks handles its rated traffic', () => {

@@ -546,6 +546,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const l = local(e, cv);
   S.hover = IC.toWorld(l.x, l.y);
+  IC.bldFree = e.shiftKey;   // Shift draws without snapping (builder.js)
   if (!ptrs.size) {
     const edge = aspEditing() && IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
     IC.ui.aspEdge = edge ? edge.id : null;
@@ -614,6 +615,7 @@ mini.addEventListener('pointermove', e => { if (e.buttons) miniMove(e); });
 
 const keys = new Set();
 window.addEventListener('keydown', e => {
+  if (e.key === 'Shift') IC.bldFree = true;
   if (e.target.closest && e.target.closest('input,textarea')) return;
   // the start screen: Enter starts a Career, Esc goes back a page (also while the first region is still being built)
   if (!$('start').hidden) {
@@ -678,7 +680,7 @@ window.addEventListener('keydown', e => {
   else return;
   IC.ui.refresh(true);
 });
-window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+window.addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); if (e.key === 'Shift') IC.bldFree = false; });
 window.addEventListener('blur', () => keys.clear());
 
 function resize() {
