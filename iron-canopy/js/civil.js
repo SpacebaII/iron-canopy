@@ -317,7 +317,9 @@ function rareVisitors(S, war) {
 IC.rareVisit = function (S, type, apId) {
   const R = S.rare, T = IC.ACTYPES[type];
   const aps = IC.bases(S).filter(ap => ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && ap.parts && ap.parts.some(p => p.kind === 'runway' && p.built && U.dist(p.a, p.b) >= T.rwy));
-  const ap = (apId && S.byId[apId]) || U.pick(aps); if (!ap) return null;
+  // one with a business side to park on, if there is one (the visitor stands there, not on an airline's stand)
+  const withSide = aps.filter(a => IC.bizStands(S, a).length);
+  const ap = (apId && S.byId[apId]) || U.pick(withSide.length ? withSide : aps); if (!ap) return null;
   const to = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, port = U.pick(IC.avPorts(S));
   const from = IC.RARE[type].from === 'home' || !port ? farTown(S, ap) : { x: port.x, y: port.y, name: port.name };
   const cs = type === 'state' ? `${S.world.names.H.slice(0, 3).toUpperCase()} 1` : type === 'display' ? 'ARROWS' : IC.regOf(S.time | 0, 'K');
