@@ -1539,7 +1539,8 @@ function camera(v, t, dtR) {
     return;
   }
   if (shot.mode === 'chase' && S) {
-    const d = camDist(S) * 0.8 * v.camK, f = dirOf(S, vec(2));
+    // an aircraft fills a fair part of the picture; a missile is watched from further back, clear of its flame
+    const d = camDist(S) * (S.tr.kind === 'missile' ? 1.6 : 0.8) * v.camK, f = dirOf(S, vec(2));
     // behind, a little above and to one side, so the trail and what lies ahead both show
     const side = vec(3).crossVectors(f, up); if (side.lengthSq() < 1e-6) side.set(1, 0, 0); side.normalize();
     want.copy(S.grp.position).addScaledVector(f, -d).addScaledVector(side, d * 0.3); want.y += d * 0.35;
