@@ -478,6 +478,14 @@ IC.aptSeatRoads = function (S, ap) {
   // nearer the airfield; kept as far as the approach to the airfield, then round it to the gate
   const own = W.edges.filter(e => e.a === ap.id || e.b === ap.id || e.apt === ap.id);
   const G = own.length ? IC.aptGate(S, ap) : null;
+  // (a landside laid out from data: the road comes to its end without crossing its other roads on the way)
+  if (G && ap.land && ap.land.fixed) for (const r of ap.land.roads) {
+    if ((r.lv || 0) < 0) continue;
+    let run = [];
+    const flush = () => { if (run.length > 1) keep.push({ sh: IC.shapeLine(run, (r.w || 0.1) / 2), pad: 0.1 }); run = []; };
+    for (const q of r.pts) { if (U.dist(q, G) < 0.6) flush(); else run.push(q); }
+    flush();
+  }
   const moved = new Set();
   if (G) for (const e of own) {
     const endA = e.a === ap.id || (e.b !== ap.id && U.dist(e.pts[0], ap) < U.dist(e.pts[e.pts.length - 1], ap));
@@ -517,6 +525,17 @@ IC.aptSeatRoads = function (S, ap) {
     return l.pts.length >= 3;
   });
   for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dist(c, ap) < (c.r || 20) * 2 + 120) c.streets = c.streets.filter(l => !(inBox(l) && hits(l.pts).length));
+  // a mapped landside's roads meet the country's roads where they cross at the same level: a junction
+  if (ap.land && ap.land.fixed) {
+    const L = ap.land; L.jn = (L.jn || []).filter(q => !q.world);
+    const lines = W.edges.filter(e => !own.includes(e) && inBox(e)).map(e => e.pts).concat((W.lanes || []).filter(inBox).map(l => l.pts));
+    for (const r of L.roads) if ((r.lv || 0) === 0) for (const pts of lines) for (let i = 1; i < r.pts.length; i++) for (let j = 1; j < pts.length; j++) {
+      const a = r.pts[i - 1], b = r.pts[i], c = pts[j - 1], d = pts[j], t = U.segX(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y);
+      if (t < 0) continue;
+      const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, world: true };
+      if (!IC.inTunnel(W, q.x, q.y)) L.jn.push(q);
+    }
+  }
   ap._seatKey = seatKey(ap);
   const changed = sig() !== before;
   if (changed && IC.buildRouting) IC.buildRouting(W, W.blocked);
