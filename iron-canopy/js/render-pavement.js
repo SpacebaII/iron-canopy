@@ -338,7 +338,7 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
   for (const { a, bb } of R.ar) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, a.poly); lg.fill(); }
   // the aprons' own edge: inside their outline, cut where a taxiway comes in
   lg.globalCompositeOperation = 'source-over';
-  for (const { a, bb } of R.ar) if (!a.fore && hit(bb, box)) {
+  for (const { a, bb } of R.ar) if (!a.fore && a.p.kind !== 'holdbay' && hit(bb, box)) {
     lg.save(); lg.beginPath(); polyPath(lg, a.poly); lg.clip();
     lg.lineWidth = 2 * lw; lg.beginPath(); polyPath(lg, a.poly); lg.stroke();
     if (dbl) { lg.lineWidth = 2 * (2 * lw + gap); lg.stroke(); lg.globalCompositeOperation = 'destination-out'; lg.lineWidth = 2 * (lw + gap); lg.stroke(); lg.globalCompositeOperation = 'source-over'; lg.lineWidth = 2 * lw; lg.stroke(); }

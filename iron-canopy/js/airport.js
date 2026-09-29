@@ -21,6 +21,9 @@ IC.aptLockWhy = function (S, kind, mat) {
 /* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
 IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
 IC.APART.fuelpad = { name: 'Fuel stand', w: 0.5, h: 0.4, cost: 12, build: 500, hp: 20, pad: true, desc: 'A paved stand by the fuel farm: small aircraft and those on remote stands taxi here to refuel instead of waiting for a truck.' };
+/* a holding bay: a slab beside a runway end, on which departures wait on separate painted tracks, each with its own
+   holding position, so one that is ready passes one still waiting for its release (builder.js lays it out) */
+IC.APART.holdbay = { name: 'Holding bay', area: true, cost: 12, build: 150, hp: 60, over: true, desc: 'A slab of concrete beside a runway end with two to four painted tracks onto the runway, each with its own holding position. A departure still waiting for its release waits on one; one that is ready taxis past it on another.' };
 /* ground surfaces the player paints: for looks, and for cheap areas like car parks; aircraft never use them */
 IC.APART.surface = { name: 'Surface', area: true, cost: 1, build: 60, hp: 30, desc: 'Paint the ground: grass, gravel, concrete, asphalt or landscaping. Asphalt outside the airfield is a car park. Aircraft do not use it.' };
 IC.SURF = { grass: { name: 'Grass', k: 0.5 }, gravel: { name: 'Gravel', k: 1.5 }, green: { name: 'Landscaping', k: 3 }, asph: { name: 'Asphalt', k: 4, park: 350 }, conc: { name: 'Concrete', k: 6 } };
@@ -397,7 +400,7 @@ IC.aptGraph = function (ap) {
   for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) if (IC.rwDependent(rws[i], rws[j])) { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; }
   for (const r of rws) grp[r.id] = find(r.id);
   ap.gver = (ap.gver || 0) + 1;
-  ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map() };
+  ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map(), bays: new Set(parts.filter(p => p.bay && p.built).map(p => p.id)) };
   ap.dirty = false;
   return ap.G;
 };

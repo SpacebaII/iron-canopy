@@ -17,7 +17,7 @@ IC.PAVE = {
   rconc: { name: 'Reinforced concrete', t: 600, cost: 1.6, build: 1.4, crater: 0.55, patch: 0.6, need: { conc: 12, steel: 3 }, life: 240, desc: 'craters less, patched quickly' }
 };
 IC.PAVE_ORDER = ['grass', 'asph', 'conc', 'rconc'];
-IC.PAVED = { runway: true, taxi: true, apron: true, alert: true };
+IC.PAVED = { runway: true, taxi: true, apron: true, alert: true, holdbay: true };
 /* maximum take-off weight in tonnes, for pavement strength */
 IC.MTOW = { light: 1.1, turbo: 23, narrow: 79, wide: 350, cargo: 400, fighter: 22, heavy: 190, drone: 6, heli: 11 };
 IC.paveOf = p => IC.PAVE[p.mat] ? p.mat : 'conc';
@@ -564,14 +564,28 @@ function exitSpec(S, ap, rw) {
   return { specs, text, bad: !specs.length };
 }
 IC.bldExitSpec = exitSpec;
-/* a holding bay: a bypass entry from the parallel taxiway onto the runway a little way in from its end */
+IC.bldHoldSpec = (ap, rw, p) => holdSpec(ap, rw, p);
+/* A holding bay: one slab of concrete between the parallel taxiway and the runway near its end, with two to four
+   painted tracks across it onto the runway, side by side 80 m apart (a wide-body's span and a margin), each with its
+   holding position 75 m from the centreline on a straight run square to the runway. A departure waiting for its
+   release waits on one track; one that is ready takes another (groundops.js). */
 function holdSpec(ap, rw, p) {
   const par = findParallel(ap, rw);
   if (!par) return { specs: [], text: [`${rw.name} needs a parallel taxiway first.`], bad: true };
-  const L = IC.rwLen(rw), d = IC.rwDir(rw), atA = U.dist(p, rw.a) < U.dist(p, rw.b), s = atA ? 1.2 : L - 1.2, s2 = atA ? 3 : L - 3;
-  const q = IC.rwAt(rw, s / L), r = IC.rwAt(rw, s2 / L);
-  return { specs: [{ kind: 'taxi', pts: [{ x: r.x - d.y * par.off, y: r.y + d.x * par.off }, { x: q.x - d.y * par.off * 0.45, y: q.y + d.x * par.off * 0.45 }, { x: q.x, y: q.y }] }],
-    text: [`Holding bay at the ${IC.rwEnd(rw, atA ? 1 : -1)} end: a second way onto the runway ${Math.round(s < L / 2 ? s * 100 : (L - s) * 100)} m from its end`] };
+  const L = IC.rwLen(rw), d = IC.rwDir(rw), atA = U.dist(p, rw.a) < U.dist(p, rw.b), E = atA ? rw.a : rw.b;
+  const u = atA ? d : { x: -d.x, y: -d.y }, sg = Math.sign(par.off) || 1, nv = { x: -d.y * sg, y: d.x * sg }, off = Math.abs(par.off);
+  const at = (s, n) => ({ x: E.x + u.x * s + nv.x * n, y: E.y + u.y * s + nv.y * n });
+  const hw = rw.w / 2 + IC.rwShoulder(rw.w), twh = IC.APART.taxi.w / 2;
+  const K = off >= 2.2 ? 4 : off >= 1.4 ? 3 : 2, nH = Math.min(1.05, off - 0.45), run = Math.min(0.8, off - nH + 0.3);
+  if (nH < IC.GOPS.HOLD + 0.1 || L < 12) return { specs: [], text: [`${rw.name}: its parallel taxiway is too close for a holding bay (the holding positions are 75 m from the centreline).`], bad: true };
+  const specs = [], s0 = 0.9;
+  for (let i = 0; i < K; i++) { const si = s0 + i * 0.8; specs.push({ kind: 'taxi', pts: [at(si + run, off), at(si, nH), at(si, 0)], lane: true, bay: true }); }
+  // (from the taxiway at the runway's end, so it is one pavement with it, tapering into the parallel taxiway)
+  const sA = twh, sB = s0 + (K - 1) * 0.8 + run + 0.35, nA = hw, nB = off - twh, c = at((sA + sB) / 2, (nA + nB) / 2);
+  const hw2 = (sB - sA) / 2, hh = (nB - nA) / 2, fl = sg * (atA ? 1 : -1);   // (local y runs the way nv does, or against it)
+  const poly = [[-hw2, -hh * fl], [hw2 - 0.3, -hh * fl], [hw2 + 0.5, hh * fl], [-hw2, hh * fl]];
+  specs.unshift({ kind: 'holdbay', x: c.x, y: c.y, a: Math.atan2(u.y, u.x), w: sB - sA, h: nB - nA, poly });
+  return { specs, text: [`Holding bay at the ${IC.rwEnd(rw, atA ? 1 : -1)} end: ${K} tracks onto the runway, so a departure that is ready passes one still waiting for its release`] };
 }
 /* a pier: terminal along the spine, aprons each side deep enough for the stand size, a taxilane beyond each */
 function concourseSpec(ap, a, b, size) {
@@ -1222,10 +1236,10 @@ IC.bldPlanSpecs = function (S, ap, specs) {
   const order = specs.slice().sort((a, b) => (a.kind === 'taxi') - (b.kind === 'taxi'));
   for (const sp of order) {
     let p = null;
-    if (sp.kind === 'taxi') p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane, w: sp.w, lit: sp.lit, oneway: sp.oneway });
+    if (sp.kind === 'taxi') { p = IC.aptPlanTaxi(S, ap, sp.pts, 0.1, { mat: sp.mat, zone: sp.zone, exact: sp.lane, w: sp.w, lit: sp.lit, oneway: sp.oneway }); if (p && sp.bay) { p.bay = true; p.lane = 1; } }
     else if (sp.kind === 'people') p = IC.aptPlanMover(S, ap, sp.pts, sp.lv);
     else if (sp.kind === 'runway') p = IC.aptPlanRunway(S, ap, sp.a, sp.b, null, { mat: sp.mat, w: sp.w, lit: sp.lit });
-    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, clear: sp.clear }); if (p && sp.link) p.link = sp.link; }
+    else { p = IC.aptPlanPart(S, ap, sp.kind, sp.x, sp.y, sp.a, sp.w, sp.h, { mat: sp.mat, zone: sp.zone, ramp: sp.ramp, surf: sp.surf, smax: sp.smax, clear: sp.clear }); if (p && sp.link) p.link = sp.link; if (p && sp.poly) { p.poly = sp.poly; ap.dirty = true; } }
     if (p) made.push(p);
   }
   if (made.length > 1) { const ids = made.map(p => p.id); ap.undo.splice(ap.undo.length - made.length, made.length, ids); }

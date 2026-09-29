@@ -139,6 +139,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // aprons and other paved areas: being built, or far out; hits leave scorch marks
   for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p, tiles);
   for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p, tiles);
+  for (const p of by('holdbay')) drawArea(g, p, p.built ? CONC : null, px, p, tiles);
   // taxiways and runways: being built or far out drawn here; on the tiles only what changes (closures, craters)
   for (const p of by('taxi')) drawTaxi(g, ap, p, px, z, full, false, night, tiles);
   for (const rw of by('runway')) drawRunway(g, S, ap, rw, px, z, false, false, night, now, tiles);
@@ -148,9 +149,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings: every shadow first, so none falls across a roof
-  if (full) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind)) shadowOf(g, S, p);
+  if (full) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind)) shadowOf(g, S, p);
   for (const p of parts) {
-    if (['runway', 'taxi', 'apron', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
+    if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
   // people movers below ground: the line on the map, faint and dashed

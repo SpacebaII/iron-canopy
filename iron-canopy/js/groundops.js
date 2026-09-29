@@ -380,8 +380,11 @@ function planDeparture(S, ap, m, dry) {
       if (room < need || room < full || !clearRun(rw, n.s, n.s + dir * need)) continue;
       const cost = n.id === m.node ? 0 : tree.dist.get(n.id);
       if (cost == null) continue;
+      // (an entry where a departure is waiting for its release is taken only if there is no other: a holding bay's
+      // other tracks let a ready aircraft pass it)
+      const waiting = ap.moves.some(x => x !== m && x.kind === 'dep' && !x.dead && x.readyT > S.time && x.plan && x.plan.start && x.plan.start.id === n.id && x.phase !== 'start' && x.phase !== 'push');
       // the tower balances the departure runways: a longer taxi is worth it to skip a queue
-      const total = cost * 0.5 + role + (room < L * 0.6 ? 25 : 0);
+      const total = cost * 0.5 + role + (room < L * 0.6 ? 25 : 0) + (waiting ? 900 : 0);
       if (!best || total < best.cost) best = { cost: total, rw, dir, start: n };
     }
   }
@@ -405,6 +408,8 @@ IC.gopsDepart = function (S, ap, o) {
   if (o.stand && o.stand.drive && G(ap).N.has(o.stand.id + 'o')) o = Object.assign({}, o, { node: o.stand.id + 'o' });
   const m = newMove(S, ap, Object.assign({ kind: 'dep' }, o));
   m.phase = 'start'; m.t = o.startT || 0;
+  // (taxiing out ahead of its release: it may not take off before then, and waits at the holding position)
+  m.readyT = o.readyT || 0;
   const n = G(ap).N.get(o.node); if (n) { m.x = n.x; m.y = n.y; }
   if (o.stand) { m.x = o.stand.x; m.y = o.stand.y; m.h = o.stand.a; }
   if (o.door) { m.x = o.door.x; m.y = o.door.y; }
@@ -571,6 +576,12 @@ function stepTaxi(S, ap, m, dt) {
     if (!e) { replan(S, ap, m); m.waitT += budget; return; }
     const rwId = rwNeed(ap, st, e), k = rwId && keyOf(ap, rwId);
     const needLock = k && !(m.locks && m.locks[k]);
+    if (!m.onEdge && m.kind === 'dep' && !m.bayPick && G(ap).bays && G(ap).bays.has(e.part)) {
+      // at the mouth of a holding bay: the tower picks the track, past anyone still waiting for a release
+      m.bayPick = true;
+      const p = planDeparture(S, ap, m);
+      if (p && p.rw === m.plan.rw && p.start.id !== m.plan.start.id && p.p.steps && p.p.steps.length) { unreserve(ap, m); m.plan = p; m.path = p.p.steps; m.pi = 0; m.s = 0; reserve(S, ap, m, m.path, S.time); continue; }
+    }
     if (!m.onEdge) {
       // a runway edge needs the runway before we move at all; the approach to a runway stops at the hold-short line
       if (needLock && (e.kind === 'rwy' || e.len <= HOLD + 0.05)) {
@@ -641,6 +652,8 @@ function holdShort(S, ap, m, k, dt, cross, rwId) {
       if (m.crossBlk > 90) { m.crossBlk = 0; replan(S, ap, m, ex.from); return false; }
     }
   }
+  const own = !cross && m.kind === 'dep' && m.plan && keyOf(ap, m.plan.rw.id) === k;
+  if (!why && own && m.readyT > S.time) { m.waitT += dt; m.holding = 'release'; m.holdWhy = `waiting for its release, ${Math.ceil(m.readyT - S.time)} s`; place(ap, m); return false; }
   if (!why) why = mayEnter(S, ap, m, k, cross, rwId);
   if (!why) {
     take(ap, k, m, cross, S.time); m.holding = null; m.holdWhy = null; m.holdLog = false; m.crossBlk = 0;
@@ -798,7 +811,7 @@ function step(S, ap, m, dt) {
         if (m.kind === 'dep') {
           // at the runway: line up once we hold it
           const k = keyOf(ap, m.plan.rw.id);
-          if (!(m.locks && m.locks[k])) { const why = mayEnter(S, ap, m, k, null); if (why) { wantIt(S, ap, k, m); m.waitT += dt; m.path = []; m.pi = 0; m.phase = 'hold'; m.holding = 'runway'; m.holdWhy = why; return; } take(ap, k, m, null, S.time); }
+          if (!(m.locks && m.locks[k])) { const why = m.readyT > S.time ? 'release' : mayEnter(S, ap, m, k, null); if (why) { if (why !== 'release') wantIt(S, ap, k, m); m.waitT += dt; m.path = []; m.pi = 0; m.phase = 'hold'; m.holding = 'runway'; m.holdWhy = why; return; } take(ap, k, m, null, S.time); }
           lineUp(S, ap, m);
         } else arriveAt(S, ap, m);
       }
@@ -821,6 +834,7 @@ function step(S, ap, m, dt) {
       return;
     }
     case 'hold': {
+      if (m.readyT > S.time) { m.waitT += dt; m.holding = 'release'; m.holdWhy = `waiting for its release, ${Math.ceil(m.readyT - S.time)} s`; return; }
       const k = keyOf(ap, m.plan.rw.id), why = mayEnter(S, ap, m, k, null);
       if (why) { wantIt(S, ap, k, m); m.waitT += dt; ap.depWait = (ap.depWait || 0) + 1; m.holding = 'runway'; m.holdWhy = why; return; }
       take(ap, k, m, null, S.time); m.holding = null; m.holdWhy = null; lineUp(S, ap, m); return;

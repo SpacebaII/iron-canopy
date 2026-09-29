@@ -1995,6 +1995,36 @@ test('airport: every jet bridge starts at a terminal wall and reaches the door, 
   const s = apr.stands.find(q => q.id === apr.id + 's99');
   assert(s && !s.contact && !s.bridge, 'a stand 120 m past the end of the terminal got a jet bridge');
 });
+test('airport: a holding bay is one slab with its own tracks, and a departure that is ready passes one waiting for its release (brief 45)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap]; S.budget = 1e5; S.av.tails.length = 0; ap.moves.length = 0;
+  const rw = ap.parts.find(p => p.kind === 'runway');
+  for (const e of [rw.a, rw.b]) { const H = IC.bldHoldSpec(ap, rw, e); assert(!H.bad, H.text[0]); IC.bldPlanSpecs(S, ap, H.specs); }
+  finishWorks(S, ap); ap.dirty = true;
+  const G = IC.aptGraph(ap), bays = ap.parts.filter(p => p.kind === 'holdbay' && p.built), tracks = ap.parts.filter(p => p.bay && p.built);
+  assert(bays.length === 2 && tracks.length >= 4 && tracks.length <= 8, `${bays.length} slabs, ${tracks.length} tracks`);
+  // every track has its holding position, on the slab
+  const bars = IC.aptHoldBars ? IC.aptHoldBars(ap) : null;
+  for (const t of tracks) {
+    const onRw = t.nodes.map(id => ap.nodes[id]).find(n => n.on && n.on.kind === 'rwy');
+    assert(onRw, 'a track that does not reach the runway');
+    const end = G.N.get(onRw.id), prev = G.N.get(t.nodes[t.nodes.indexOf(onRw.id) - 1] || t.nodes[1]);
+    const hold = { x: end.x + (prev.x - end.x) / U.dist(prev, end) * IC.GOPS.HOLD, y: end.y + (prev.y - end.y) / U.dist(prev, end) * IC.GOPS.HOLD };
+    assert(bays.some(b => U.inPoly(hold.x, hold.y, IC.partOutline(b).map(q => [q.x, q.y]))) && IC.paveAt(ap, hold.x, hold.y), 'a holding position off the slab');
+    if (bars) assert(bars.some(b => U.dxy(b.x, b.y, hold.x, hold.y) < 0.05), 'a track without its holding position marking');
+  }
+  assert(!IC.aptUnattached(S, ap).length && !IC.aptOverlaps(S, ap).some(o => /holding bay/i.test(o.text || o)), 'the bay overlaps something or is left hanging');
+  const st = IC.aptStands(ap).filter(s => s.linked !== false && !s.occ && s.zone === 'civil');
+  const air = []; IC.H.tBayAir = w => () => air.push(w);
+  const A = IC.gopsDepart(S, ap, { type: 'wide', node: st[0].id, stand: st[0], who: 'A', readyT: S.time + 7200, onAir: IC.hfn('tBayAir', 'A') });
+  st[0].occ = 'x';
+  for (let i = 0; i < 4 * 600; i++) IC.step(S, 0.25);
+  assert(A.holding === 'release', `the waiting departure is not holding for its release (${A.phase}, ${A.holding})`);
+  const B = IC.gopsDepart(S, ap, { type: 'narrow', node: st[1].id, stand: st[1], who: 'B', onAir: IC.hfn('tBayAir', 'B') });
+  for (let i = 0; i < 4 * 1200 && !air.includes('B'); i++) IC.step(S, 0.25);
+  assert(air.includes('B') && !air.includes('A'), `the ready departure did not pass (${air})`);
+  assert(B.plan.start.id !== A.plan.start.id && ap.kpi.grid === 0, 'it went by the same track, or there was a gridlock');
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };

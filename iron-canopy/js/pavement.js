@@ -223,7 +223,7 @@ IC.paveGeom = function (ap) {
     if (!p.built) continue;
     if (p.kind === 'runway') { const L = IC.rwLen(p), d = IC.rwDir(p); G.rw.push({ p, a: p.a, b: p.b, w: p.w, d, L, mat: IC.paveOf(p) }); grow(p.a.x, p.a.y, 9); grow(p.b.x, p.b.y, 9); }
     else if (p.kind === 'taxi') { const pts = p.nodes.map(id => ap.nodes[id]).filter(Boolean); if (pts.length < 2) continue; G.tw.push({ p, pts, w: p.w || IC.APART.taxi.w, mat: IC.paveOf(p), lane: !!p.lane }); for (const q of pts) grow(q.x, q.y, 1); }
-    else if (p.kind === 'apron' || p.kind === 'alert' || (IC.APART[p.kind] && IC.APART[p.kind].pad)) { const P = IC.partOutline(p); G.ar.push({ p, poly: P, mat: IC.PAVED[p.kind] ? IC.paveOf(p) : 'conc', a: p.a || 0, pad: !IC.PAVED[p.kind] }); for (const q of P) grow(q.x, q.y, 1); }
+    else if (p.kind === 'apron' || p.kind === 'alert' || p.kind === 'holdbay' || (IC.APART[p.kind] && IC.APART[p.kind].pad)) { const P = IC.partOutline(p); G.ar.push({ p, poly: P, mat: IC.PAVED[p.kind] ? IC.paveOf(p) : 'conc', a: p.a || 0, pad: !IC.PAVED[p.kind] }); for (const q of P) grow(q.x, q.y, 1); }
     else if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null && !p.noApron) {
       // a terminal or shed stands on a forecourt that meets the apron
       const P = p.poly ? IC.polyGrow(IC.partOutline(p), 0.15) : IC.partOutline(Object.assign({}, p, { w: p.w + 0.3, h: p.h + 0.3, poly: null }));

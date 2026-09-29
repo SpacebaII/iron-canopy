@@ -200,7 +200,7 @@ IC.aptElementOf = function (ap, p, o) {
   const sh = IC.partShape(ap, p), name = IC.partName(ap, p);
   if (p.kind === 'runway') return { cat: 'rwy', p, sh, strip: IC.shapeLine([p.a, p.b], RWY_STRIP), name };
   if (p.kind === 'taxi') return { cat: 'twy', p, sh, name: p.name ? `taxiway ${p.name}` : 'a taxiway', lv: p.lv || 0 };
-  if (p.kind === 'apron' || (IC.APART[p.kind] && IC.APART[p.kind].pad) || p.kind === 'alert') return { cat: 'apron', p, sh, name };
+  if (p.kind === 'apron' || (IC.APART[p.kind] && IC.APART[p.kind].pad) || p.kind === 'alert' || p.kind === 'holdbay') return { cat: 'apron', p, sh, name };
   if (p.kind === 'surface') return IC.SURF[p.surf] && IC.SURF[p.surf].park && !(o && o.noSurface) ? { cat: 'park', p, sh, name: 'the car park', surf: true } : null;
   if (p.kind === 'people') return { cat: 'mover', p, sh: IC.shapeLine(p.pts || [], 0.04), name: p.name || 'the people mover', lv: p.lv != null ? p.lv : 1 };
   if (p.kind === 'skybridge') return { cat: 'span', p, sh, name: p.name || 'the passenger bridge', lv: 1, clear: p.clear || 0 };
