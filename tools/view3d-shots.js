@@ -45,6 +45,19 @@ async function replay(o, at, orbit) {
   return V;
 }
 function camTo(V, c) { const s = V.el.querySelector('[data-rp=cam]'); s.value = c; s.dispatchEvent(new Event('change', { bubbles: true })); }
+async function flicker(V) {
+  const W = 480, H = 300, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d', { willReadFrequently: true });
+  const frames = [], R = V.renderer, orig = R.render;
+  // the orbit camera, turned a fraction of a pixel each frame: smooth things barely change, flicker jumps
+  const sel = V.el.querySelector('[data-rp=cam]'); sel.value = 'orbit'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+  await wait(800);
+  await new Promise(res => { R.render = function (s, c) { orig.call(R, s, c); if (frames.length < 24) { g.drawImage(R.domElement, 0, 0, W, H); frames.push(g.getImageData(0, 0, W, H).data.slice()); V.orbit.yaw += 0.0002; } else res(); }; });
+  R.render = orig;
+  let osc = 0, n = 0;
+  const lum = (k, i) => frames[k][i] * 0.3 + frames[k][i + 1] * 0.59 + frames[k][i + 2] * 0.11;
+  for (let f = 1; f < frames.length - 1; f++) for (let i = 0; i < W * H * 4; i += 4) { const a = lum(f, i) - lum(f - 1, i), b = lum(f + 1, i) - lum(f, i); n++; if (Math.abs(a) > 30 && Math.abs(b) > 30 && Math.sign(a) !== Math.sign(b)) osc++; }
+  return { flickerPct: +(osc / n * 100).toFixed(3), frames: frames.length };
+}
 const frameTimes = async n => { const ts = []; let last = performance.now(); await new Promise(res => { const f = now => { ts.push(now - last); last = now; if (ts.length < n) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); ts.sort((a, b) => a - b); return { med: +ts[n >> 1].toFixed(1), p95: +ts[Math.floor(n * 0.95)].toFixed(1) }; };`;
 
 const SCENES = {
@@ -115,6 +128,21 @@ const SCENES = {
     const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type === 'narrow'));
     if (!m) throw new Error('nothing taxiing');
     await live(S, m, 'auto', 1500); S.paused = false; S.speed = 2; await wait(+(window.VIDEO_MS || 15000)); S.paused = true;`,
+  // blinking, measured: 24 frames in a row while the camera turns slowly round a paused scene; a pixel that jumps and
+  // jumps straight back is flicker (a slow turn moves things smoothly). Works on older versions of the view too
+  flicker: `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light'));
+    steps(S, 6);
+    const L = await live(S, m, 'spin', 4000);
+    window.__perf = await flicker(L);
+    await __snap('flicker');`,
+  'flicker-air': `
+    const S = await game('sandbox', 11);
+    const t = steps(S, 1800, S => S.threats.find(t => t.tail && t.alt > 9));
+    const L = await live(S, t, 'spin', 5000);
+    window.__perf = await flicker(L);
+    await __snap('flicker-air');`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -131,7 +159,7 @@ const SCENES = {
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => k !== 'frames' && k !== 'video');
+  const names = want.length ? want : Object.keys(SCENES).filter(k => k !== 'frames' && k !== 'video' && !/^flicker/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -153,7 +181,7 @@ const SCENES = {
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
-    if (name === 'frames') console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
+    if (name === 'frames' || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }
     await page.close(); await ctx.close();
     if (vid) { const v = await page.video(); if (v) { const p = await v.path(); fs.renameSync(p, path.join(dir, '3d-live.webm')); console.log('saved', path.join(dir, '3d-live.webm')); } }
