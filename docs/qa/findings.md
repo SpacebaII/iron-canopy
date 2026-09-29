@@ -53,3 +53,24 @@ Screenshots are in `docs/qa/shots/`, taken with headless Chromium through `tools
 - #21: saves across browser engines.
 - The cursor card and the help line in the builder say the same thing twice (#26).
 - The side view's axis labels are small at 1280 px.
+
+## Final pass before v1.0 (after QA sessions A and B, the 3D rebuild and aircraft variety)
+
+Played the new aircraft at the airports close in and in 3D (the business side, light-aircraft fields, rare visitors in
+flight), made the store screenshots and the clip, and ran `npm run qa` on the merged main (clean, smoke 605 s).
+
+| # | Where | What | Severity | Fixed? |
+| --- | --- | --- | --- | --- |
+| F1 | Replay and live view | A frame-rate readout ("2 fps · 8 objects · 50.9 ms") in the corner of every 3D view: debug text | ugly | Fixed: shows only with `#debug` on the address |
+| F2 | Builder | Hovering the airport while placing points put its hover card ("Morice International · Runway open · 11/36 stands · 1 problems · Right-click: take the last point back") over the builder's own card and the snapping guide's labels | ugly | Fixed: no hover card while building (the help line says what a right-click does) |
+| F3 | Airport hover card | "1 problems" | minor | Fixed |
+| F4 | Builder | The help line at the bottom covered the top of the arsenal (it sat at a fixed height; the arsenal is taller in a war) | ugly | Fixed: it sits above the arsenal, whatever its height |
+| F5 | Map, a raid zoomed out | Batteries close together wrote their reasons for holding fire over each other ("Out of reach at 50 m up: MR rounds reach 34…" three times over) | ugly | Fixed: where two would overlap, the first says it |
+| F6 | Without the web fonts (offline, or Google Fonts blocked) | The airport panel's last tab ran off the panel ("Airsp"); the fallback was a wide system font | ugly | Fixed: condensed system fonts first, and the tabs wrap |
+| F7 | Map, software rendering | After a jump the detail tiles paint in patches for several seconds (as #29) | minor | Left: on a GPU it is well under a second |
+| F8 | Replay over the country | The ground away from airports is a flat, soft picture (as B#19, B#36) | minor | Left: in the known issues |
+| F9 | Arsenal | The last card in a full row is cut at the panel's edge ("medium-range missil") | minor | Left: the row scrolls sideways; noted for after the release |
+
+Looked at and fine: the business apron and its FBO in 3D, jets and light aircraft two to a stand; a club's row of
+light aircraft with its fuel bowser; a microlight, an airship, the display team, the vintage airliner, the supersonic
+jet and the outsize freighter in the live view; the live view's take-off roll and climb-out.
