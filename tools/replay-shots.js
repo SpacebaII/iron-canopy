@@ -82,7 +82,7 @@ const SCENES = {
     // the box between the battery and the intercept, seen from the side so the climb and the arcs read
     const mx = (x + e.x) / 2, my = (y + e.y) / 2, a = Math.atan2(e.y - y, e.x - x);
     const V = await replay({ x: mx, y: my, t: e.t - 90, r: 220 }, e.t - 3, { yaw: a + Math.PI / 2, pitch: 0.1, dist: 480, ty: e.alt * 10 * 0.55 });
-    window.__perf = { tiles: V.tiles.size, tileMsMax: +V.tileMsMax.toFixed(0), tileMsSum: +V.tileMsSum.toFixed(0), by: V.tileMsBy, pt: V.pt };
+    window.__perf = { tiles: V.tiles.size, tileMsMax: +V.tileMsMax.toFixed(0), tileMsSum: +V.tileMsSum.toFixed(0) };
     if (window.DBG) window.__dbg = { e, cam: V.camera.position.toArray().map(Math.round), movers: V.movers.map(m => [m.tr.name, m.tr.kind, m.grp.visible, m.grp.position.toArray().map(Math.round), m.grp.scale.x.toFixed(1), m.line.visible]) };`,
   // the Journal's Replay button on the city strike, and the replay it opens
   journal: `

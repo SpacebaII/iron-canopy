@@ -128,7 +128,13 @@ const SCENES = {
     const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type === 'narrow'));
     if (!m) throw new Error('nothing taxiing');
     await live(S, m, 'auto', 1500); S.paused = false; S.speed = 2; await wait(+(window.VIDEO_MS || 15000)); S.paused = true;`,
-  // blinking, measured: 24 frames in a row while the camera turns slowly round a paused scene; a pixel that jumps and
+  // the capital's airport at night: lights on the runways and taxiways, lit windows, aircraft lights
+  night: `
+    const S = await game('sandbox', 21.5);
+    const m = steps(S, 2400, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light' && !m.mil));
+    if (!m) throw new Error('nothing taxiing at night'); steps(S, 6);
+    const L = await live(S, m, 'chase', 3000); L.camK = 2.2; await wait(1500); await __snap('night');`,
+    // blinking, measured: 24 frames in a row while the camera turns slowly round a paused scene; a pixel that jumps and
   // jumps straight back is flicker (a slow turn moves things smoothly). Works on older versions of the view too
   flicker: `
     const S = await game('sandbox', 11);
@@ -143,6 +149,24 @@ const SCENES = {
     const L = await live(S, t, 'spin', 5000);
     window.__perf = await flicker(L);
     await __snap('flicker-air');`,
+  // a video of the live view made frame by frame at 30 fps (smooth however slowly this machine draws): an airliner
+  // lines up, takes off and climbs away, the game at twice real time; labels and panel drawn in
+  movie: `
+    const S = await game('sandbox', 11);
+    const m = steps(S, 3600, S => findMove(S, m => (m.phase === 'lineup' || m.phase === 'hold') && m.type === 'narrow'));
+    if (!m) throw new Error('nothing lining up');
+    const L = await live(S, m, 'chase', 2500); L.camK = 1.6;
+    window.requestAnimationFrame = () => 0;   // the frames are made here, one by one
+    const cv = document.createElement('canvas'); cv.width = 960; cv.height = 540;
+    L.rec = { cv, g: cv.getContext('2d'), o: { w: 960, h: 540, labels: true } };
+    const N = +(window.MOVIE_FRAMES || 750), speed = 2; let now = performance.now(), acc = 0;
+    for (let f = 0; f < N; f++) {
+      acc += speed / 30; while (acc >= 0.25) { IC.step(S, 0.25); acc -= 0.25; }
+      if (f === 330) { const s = L.el.querySelector('[data-rp=cam]'); s.value = 'side'; s.dispatchEvent(new Event('change', { bubbles: true })); }
+      IC.replayStep(L, now += 1000 / 30);
+      await __frame(cv.toDataURL('image/jpeg', 0.88).slice(23));
+    }
+    await __snap('movie-last');`,
   // frame times: the live view small over the capital's airport, then full screen over a raid
   frames: `
     const S = await game('sandbox', 11);
@@ -159,7 +183,7 @@ const SCENES = {
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => k !== 'frames' && k !== 'video' && !/^flicker/.test(k));
+  const names = want.length ? want : Object.keys(SCENES).filter(k => k !== 'frames' && k !== 'video' && k !== 'movie' && !/^flicker/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -177,10 +201,17 @@ const SCENES = {
     if (process.env.DBG) page.on('console', m => console.log('page:', m.text().slice(0, 600)));
     if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
     if (process.env.VIDEO_MS) await page.addInitScript(ms => { window.VIDEO_MS = ms; }, process.env.VIDEO_MS);
+    let ff = null;
+    if (name === 'movie') {
+      ff = require('child_process').spawn('/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux', ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', '-', '-c:v', 'libvpx', '-b:v', '4M', '-auto-alt-ref', '0', path.join(dir, '3d-live.webm')], { stdio: ['pipe', 'ignore', 'inherit'] });
+      await page.exposeFunction('__frame', b64 => new Promise(res => ff.stdin.write(Buffer.from(b64, 'base64'), res)));
+    }
+    if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
+    if (ff) { ff.stdin.end(); await new Promise(r => ff.on('close', r)); console.log('saved', path.join(dir, '3d-live.webm')); }
     if (name === 'frames' || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }
     await page.close(); await ctx.close();
