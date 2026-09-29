@@ -755,6 +755,44 @@ test('builder: the big-airport tools lay out a parallel taxiway, exits and a hol
   assert(on.filter(n => n.exit).length >= 5, `only ${on.filter(n => n.exit).length} ways off the runway`);
   assert(on.filter(n => n.entry && n.s < 2).length >= 2, 'no holding bay beside the first entry');
 });
+test('builder: a build says it has started or is queued, and a refused one names what is in the way', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); S.budget = 1e5;
+  const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
+  const rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), n = { x: -d.y, y: d.x };
+  const lay = k => { const m = IC.bldMode(S, ap, 'runway'), a = { x: rw.a.x + n.x * k, y: rw.a.y + n.y * k }, b = { x: rw.b.x + n.x * k, y: rw.b.y + n.y * k }; IC.buildInput(S, m, a, 0, 20); IC.buildInput(S, m, b, 0, 20); return [IC.buildInput(S, m, b, 0, 20), m]; };
+  const [r1, m1] = lay(2.5);
+  assert(r1 === 'built' && /planned: ₭/.test(m1.done) && /Work starts now/.test(m1.done), `the first runway says "${m1.done}"`);
+  const [r2, m2] = lay(-2.5);
+  assert(r2 === 'err' && /overlaps the apron/.test(m2.err), `a runway across the apron is refused with "${m2.err}"`);
+  const m = IC.bldMode(S, ap, 'apron'), c = { x: ap.x + 30, y: ap.y + 30 };
+  IC.buildInput(S, m, c, 0, 20); IC.buildInput(S, m, { x: c.x + 3, y: c.y + 2 }, 0, 20);
+  assert(IC.buildInput(S, m, { x: c.x + 3, y: c.y + 2 }, 0, 20) === 'built' && /Queued: the crew is busy on Runway/.test(m.done), `the apron says "${m.done}"`);
+});
+test('builder: an apron lays out stands no larger than the size picked, and says when it could take bigger ones', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); S.budget = 1e5;
+  const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
+  const deep = { w: 4, h: 2 };
+  assert(IC.apronStandSize(deep) === 'l' && IC.apronStandSize(Object.assign({ smax: 'm' }, deep)) === 'm' && IC.apronStandSize(Object.assign({ smax: 's' }, deep)) === 's', 'the picked size does not cap the stands');
+  const m = IC.bldMode(S, ap, 'apron'); m.size = 'm';
+  const c = { x: ap.x + 30, y: ap.y + 30 };
+  IC.buildInput(S, m, c, 0, 20); IC.buildInput(S, m, { x: c.x + 4, y: c.y + 2 }, 0, 20);
+  const plan = IC.bldPlanOf(S, m, { x: c.x + 4, y: c.y + 2 }, 0.2);
+  assert(plan.text.some(t => /medium stands/.test(t) && /bigger stands/.test(t)), `the preview says ${plan.text.join(' · ')}`);
+  assert(IC.buildInput(S, m, { x: c.x + 4, y: c.y + 2 }, 0, 20) === 'built', m.err);
+  const apr = ap.parts[ap.parts.length - 1];
+  assert(apr.kind === 'apron' && apr.smax === 'm', 'the apron did not keep the size picked');
+});
+test('airport: a runway under construction is not reported closed', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); S.budget = 1e5;
+  const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
+  const rw = ap.parts.find(p => p.kind === 'runway');
+  assert(IC.rwyState(S, ap).open, 'the ready-made runway is not open');
+  const saved = ap.parts.filter(p => p.kind === 'runway'); for (const p of saved) p.built = false;
+  ap.works.push({ id: 'w-test', key: 'bd:' + rw.id, kind: 'build', label: 'Build runway', part: rw, prog: 0.14, stages: [] });
+  IC.aptStats(S, ap);
+  const st = IC.rwyState(S, ap);
+  assert(st.building && /being built · 14%/.test(st.word), `a runway being built reads "${st.word}"`);
+});
 test('builder: a planned part can be moved and turned before its earthworks start', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
   const ap = S.byId[S.story.cap]; S.budget = 3000; ap.crews = 0;
