@@ -63,7 +63,7 @@ window.__roads = async function (hour) {
   if (lx) out.railx = [lx.x, lx.y, 260];
   if (RJ.xings && RJ.xings[0]) out.xing = [RJ.xings[0].x, RJ.xings[0].y, 90];
   const kerb = L.roads.find(r => r.kerb) || L.roads[0];
-  if (kerb) { const p = kerb.pts[Math.floor(kerb.pts.length / 2)]; out.landside = [p.x, p.y, 45]; }
+  if (kerb) { const a = kerb.pts[0], b = kerb.pts[kerb.pts.length - 1]; out.landside = [(a.x + b.x) / 2, (a.y + b.y) / 2, 80]; out.kerb = [a.x + (b.x - a.x) * 0.85, a.y + (b.y - a.y) * 0.85, 230]; }
   out.capital = [cap.x, cap.y, 1.2];
   return out;
 };

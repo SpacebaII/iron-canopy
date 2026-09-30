@@ -917,10 +917,11 @@ function drawLandside(g, S, ap, px, z, night) {
         // trees: round the edge, and a planted strip down the middle of each double row
         if (k === 'park') {
           const T = [];
-          for (let x = -w / 2 + 0.03; x < w / 2 - 0.02; x += 0.09) T.push(x, -h / 2 + 0.014, x + 0.045, h / 2 - 0.014);
-          for (const y of rows) for (let x = -w / 2 + 0.06 + (U.hash(y * 100 | 0, 3) * 0.05); x < w / 2 - 0.05; x += 0.16) T.push(x, y + depth);
-          g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); for (let i = 0; i < T.length; i += 2) { const r = 0.011 + 0.004 * U.hash(i, 9); g.moveTo(T[i] + r + 0.006, T[i + 1] + 0.007); g.arc(T[i] + 0.006, T[i + 1] + 0.007, r, 0, 7); } g.fill();
-          for (let i = 0; i < T.length; i += 2) { const r = 0.011 + 0.004 * U.hash(i, 9); g.fillStyle = ['rgb(58,90,48)', 'rgb(70,102,54)', 'rgb(50,80,44)'][i % 3]; g.beginPath(); g.arc(T[i], T[i + 1], r, 0, 7); g.fill(); }
+          for (let x = -w / 2 + 0.04; x < w / 2 - 0.02; x += 0.13) T.push(x, -h / 2 + 0.018, x + 0.06, h / 2 - 0.018);
+          for (const y of rows) for (let x = -w / 2 + 0.08 + (U.hash(y * 100 | 0, 3) * 0.06); x < w / 2 - 0.06; x += 0.24) T.push(x, y + depth);
+          const rad = i => 0.022 + 0.01 * U.hash(i, 9);
+          g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); for (let i = 0; i < T.length; i += 2) { const r = rad(i); g.moveTo(T[i] + r + 0.012, T[i + 1] + 0.014); g.arc(T[i] + 0.012, T[i + 1] + 0.014, r, 0, 7); } g.fill();
+          for (let i = 0; i < T.length; i += 2) { const r = rad(i); g.fillStyle = ['rgb(58,90,48)', 'rgb(70,102,54)', 'rgb(50,80,44)'][i % 3]; g.beginPath(); g.arc(T[i], T[i + 1], r, 0, 7); g.fill(); g.fillStyle = 'rgba(150,180,110,0.25)'; g.beginPath(); g.arc(T[i] - r * 0.3, T[i + 1] - r * 0.3, r * 0.5, 0, 7); g.fill(); }
         }
       }
       if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
