@@ -1504,9 +1504,10 @@ IC.layoutAirport = function (ap, template, a) {
     bld('fuel', -12, -4.5); bld('fuel', -4, -5.2); bld('fuel', 11, -4.6);
     bld('ammo', 0, -7); bld('tower', 1.2, -3.8); bld('fire', -1.2, 1.3);
     tx([[-14.8, -1.7], [-15.6, -1.15]]);
-  } else if (template === 'kden') {
-    // the real Denver (airports-real-data.js), turned so its first runway lies along a
-    const L = IC.REAL_APT && IC.REAL_APT.kden;
+  } else if (template === 'kden' || template === 'kden6') {
+    // the real Denver (airports-real-data.js), turned so its first runway lies along a; 'kden6' is the six-runway
+    // layout built in code, kept for the engine's capacity test (the real one's outer runways cross the inner ones)
+    const L = template === 'kden' && IC.REAL_APT && IC.REAL_APT.kden;
     if (L) { const r0 = L.runways[0], la = Math.atan2(r0.b[1] - r0.a[1], r0.b[0] - r0.a[0]); IC.aptFromLayout(ap, L, { x: ap.x, y: ap.y, rot: a - la }); ap.template = 'kden'; return; }
     layoutKden(ap, { rw, tx, rect, bld, ils, zone });
   }

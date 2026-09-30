@@ -440,7 +440,9 @@ const sky = (S, kind) => { S.weather.kind = S.weather.prev = kind; S.weather.fad
 /* finish every planned part at once */
 const finishWorks = (S, ap) => { for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); } };
 test('airport: the KDEN-scale layout handles its rated movements for two hours', () => {
-  const { S, ap } = kdenGame(12345, 9);
+  // (the six-runway layout built in code: on the real Denver, arrivals on the outer runways cross the inner ones through
+  // the same exits, which the panel's rating does not count, so demand set to the rating queues)
+  const { S, ap } = kdenGame(12345, 9, 'kden6');
   sky(S, 'clear'); calm(S, -Math.PI / 2, 12);
   const st = IC.aptStats(S, ap);
   assert(ap.parts.filter(p => p.kind === 'runway').length === 6 && IC.aptStands(ap).length >= 150, 'not a six-runway, 150-stand airport');
@@ -641,7 +643,8 @@ test('runway rules: "line up and wait" lets a departure line up behind one that 
   const rate = enter => {
     const { S, ap } = kdenGame(12345, 10);
     sky(S, 'clear'); calm(S, -Math.PI / 2, 10);
-    IC.opsOf(ap).r.enter.jet = enter; IC.aptStats(S, ap);
+    // (every class: the real Denver's small stands send turboprops too, and by day those line up and wait by default)
+    const R = IC.opsOf(ap).r; for (const k of Object.keys(R.enter)) R.enter[k] = enter; IC.aptStats(S, ap);
     let behind = 0, t0 = 0, d0 = 0; const start = S.time;
     const watch = onEntry(S, ap, m => { const L = lockAt(ap, m.plan.rw.id), o = L.by && L.by !== m.id && ap.moves.find(x => x.id === L.by); if (o && o.phase === 'roll') behind++; });
     // arrivals keep the arrival runways busy, so departures stay on their own
