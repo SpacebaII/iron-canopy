@@ -180,6 +180,8 @@ IC.drawRoads = function (g, S, px, v) {
   }
   // bridges at interchanges: the road that crosses over, with its shadow and parapets
   for (const j of W.junctions || []) if (j.over && inView(j.x, j.y, 3)) overpass(j, width, fill, px);
+  // a slip road crossing a road it does not join rides a bridge over it
+  if (R) for (const x of R.xings) if (inView(x.x, x.y, 1)) overpass({ x: x.x, y: x.y, over: [x.a], dirs: [{ a: x.a, x: Math.cos(x.a), y: Math.sin(x.a), cls: 'ramp' }] }, width, fill, px, Math.max(0.12, width(x.under) * 0.8 + 0.05));
   if (z > 2) for (const x of IC.railCrossings(W)) {
     if (!inView(x.x, x.y, 2)) continue;
     if (x.level && z > 5) levelCrossing(x, width(x.cls), lw, px, S);

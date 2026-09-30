@@ -61,6 +61,7 @@ window.__roads = async function (hour) {
   if (me) out.merge = [me.q.x, me.q.y, 90];
   const lx = IC.railCrossings(W).filter(x => x.level).sort((a, b) => Math.hypot(a.x - ap.x, a.y - ap.y) - Math.hypot(b.x - ap.x, b.y - ap.y))[0];
   if (lx) out.railx = [lx.x, lx.y, 260];
+  if (RJ.xings && RJ.xings[0]) out.xing = [RJ.xings[0].x, RJ.xings[0].y, 90];
   const kerb = L.roads.find(r => r.kerb) || L.roads[0];
   if (kerb) { const p = kerb.pts[Math.floor(kerb.pts.length / 2)]; out.landside = [p.x, p.y, 45]; }
   out.capital = [cap.x, cap.y, 1.2];

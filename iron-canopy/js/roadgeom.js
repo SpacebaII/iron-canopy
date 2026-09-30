@@ -29,10 +29,11 @@ const SPEC = {
   ramp: { w: 0.075, lane: 0.04, lanes: 1, sh: 0.025, strip: 0.01, R: 0.22, px: 1.8 },
   art: { w: 0.4, lane: 0.035, lanes: 2, sh: 0.03, R: 0.1, px: 2.2, centre: 'solid' },
   st: { w: 0.34, lane: 0.035, lanes: 1, sh: 0.1, R: 0.08, px: 1.4 },
-  ln: { w: 0.05, lane: 0.025, lanes: 1, sh: 0, R: 0.06, px: 1.1 }
+  ln: { w: 0.05, lane: 0.025, lanes: 1, sh: 0, R: 0.06, px: 1.1 },
+  land: { w: 0.12, lane: 0.035, lanes: 1, sh: 0.01, R: 0.07, px: 1.4 }
 };
 IC.ROAD_SPEC = SPEC;
-const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, st: 1, sp: 1, ln: 0 };
+const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, land: 2, st: 1, sp: 1, ln: 0 };
 IC.ROAD_RANK = RANK;
 /* the width a road is drawn at zoom z: its real width close in, wider far out so it reads */
 IC.roadWidth = (k, z) => { const s = SPEC[k] || SPEC.lc; return Math.max(s.w, s.px / z * (1 - U.clamp((z - 3) / 6, 0, 1) * 0.5)); };
@@ -178,6 +179,15 @@ IC.curbJoin = function (N, arms, opt) {
     const m = mouth[i], nx = -a.uy, ny = a.ux, h1 = hr(a) + e, h2 = hl(a) + e;
     out.push({ x: N.x + a.ux * m - nx * h1, y: N.y + a.uy * m - ny * h1 }, { x: N.x + a.ux * m + nx * h2, y: N.y + a.uy * m + ny * h2 });
     const f = fil[i]; if (f) out.push(...f.arc);
+    else if (gaps[i] > Math.PI + 0.05 && arms.length > 1) {
+      // a reflex corner (a bend, or the back of a Y): the two outer edges meet behind the node
+      const b = arms[(i + 1) % arms.length], hA = hl(a) + e, hB = hr(b) + e, den = a.ux * b.uy - a.uy * b.ux;
+      if (Math.abs(den) > 1e-6) {
+        const pA = { x: N.x - a.uy * hA, y: N.y + a.ux * hA }, pB = { x: N.x + b.uy * hB, y: N.y - b.ux * hB };
+        const t = ((pB.x - pA.x) * b.uy - (pB.y - pA.y) * b.ux) / den, C = { x: pA.x + a.ux * t, y: pA.y + a.uy * t };
+        if (Math.hypot(C.x - N.x, C.y - N.y) < (hA + hB) * 3) out.push(C);
+      }
+    }
   });
   // the main road: the two arms of the highest rank most nearly opposite
   let main = null, best = -1;
@@ -254,15 +264,32 @@ IC.roadJoins = function (W) {
     T.arms.push(l > 0.02 ? { ux: dx / l, uy: dy / l, len: 1.2, cls: 'ramp' } : { ux: -rx, uy: -ry, len: 1.2, cls: 'ramp' });
     T.stubs.push({ cls: 'ramp', pts: [{ x: T.x, y: T.y }, q] });
   }
+  // a slip road that crosses a road it does not join (away from the junction's own bridge) goes over it on a bridge
+  R.xings = [];
+  for (const J of W.junctions || []) for (const r of J.ramps || []) {
+    const others = J.dirs.filter(d => d.e).map(d => ({ pts: d.e.pts, cls: d.e.city ? 'art' : d.cls, over: (J.over || []).includes(d.a) })).concat(J.ramps.filter(q => q !== r).map(q => ({ pts: q.pts, cls: 'ramp' })));
+    const P = r.pts, e0 = P[0], e1 = P[P.length - 1];
+    for (const o of others) for (let i = 1; i < P.length; i++) for (let k = 1; k < o.pts.length; k++) {
+      const A = P[i - 1], B = P[i], C = o.pts[k - 1], D = o.pts[k];
+      if (Math.max(A.x, B.x) < Math.min(C.x, D.x) || Math.min(A.x, B.x) > Math.max(C.x, D.x) || Math.max(A.y, B.y) < Math.min(C.y, D.y) || Math.min(A.y, B.y) > Math.max(C.y, D.y)) continue;
+      const t = U.segX(A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y); if (t < 0) continue;
+      const x = A.x + (B.x - A.x) * t, y = A.y + (B.y - A.y) * t;
+      // (where it joins that road, or under the junction's bridge, it is no crossing)
+      if (Math.min(Math.hypot(x - e0.x, y - e0.y), Math.hypot(x - e1.x, y - e1.y)) < 0.35) continue;
+      if (o.over && Math.hypot(x - J.x, y - J.y) < 0.6) continue;
+      if (o.cls === 'ramp' && R.xings.some(q => Math.hypot(q.x - x, q.y - y) < 0.1)) continue;
+      R.xings.push({ x, y, a: Math.atan2(B.y - A.y, B.x - A.x), under: o.cls, J: J.id });
+    }
+  }
   return R;
 };
 /* a join's geometry at the widths drawn (half widths from h(cls)), grown by e, cached while they stay the same */
 IC.joinGeom = function (site, h, e) {
-  const key = site.arms.map(a => h(a.cls).toFixed(4)).join() + '|' + (e || 0).toFixed(4);
+  const key = site.arms.map(a => (a.w ? a.w / 2 : h(a.cls)).toFixed(4)).join() + '|' + (e || 0).toFixed(4);
   const M = site._g || (site._g = new Map());
   let G = M.get(key); if (G) return G;
   if (M.size > 6) M.clear();
-  G = IC.curbJoin({ x: site.x, y: site.y }, site.arms.map(a => ({ ux: a.ux, uy: a.uy, len: a.len, cls: a.cls, rank: a.rank, h: h(a.cls), hl: a.hl, hr: a.hr, src: a })), { e, R: site.R });
+  G = IC.curbJoin({ x: site.x, y: site.y }, site.arms.map(a => ({ ux: a.ux, uy: a.uy, len: a.len, cls: a.cls, rank: a.rank, h: a.w ? a.w / 2 : h(a.cls), hl: a.hl, hr: a.hr, src: a })), { e, R: site.R });
   M.set(key, G);
   return G;
 };
@@ -342,7 +369,7 @@ IC.taperGeom = function (end, hw, hr) {
     base.push({ x: m.x + (p.x - m.x) / (m.d || 1) * edge, y: m.y + (p.y - m.y) / (m.d || 1) * edge });
     if (gap > Math.max(0.06, hr * 1.6)) { nose = { x: p.x, y: p.y, s }; break; }
   }
-  const G = { aux, gore: gore.length > 2 && nose ? gore.concat(base.reverse()) : null, nose, side, along, lane: lane, edge };
+  const G = { aux, gore: gore.length > 2 && nose ? gore.concat(base.reverse()) : null, nose, side, along, lane, edge, len: La + Lt };
   end._g = G; end._k = key;
   return G;
 };
@@ -374,6 +401,20 @@ IC.streetJoins = function (W, c) {
   const lines = c.streets.concat(W.edges.filter(e => e.city === c.id).map(e => ({ cls: 'art', pts: e.pts, ave: true })));
   const sig = lines.length + ':' + lines.reduce((s, l) => s + l.pts.length, 0);
   if (c._sj && c._sj.sig === sig) return c._sj.joins;
+  c._sj = { sig, joins: lineJoins(lines, c.blocks, 3) };
+  return c._sj.joins;
+};
+/* an airport's landside roads (landside.js), at ground level: their corners and T junctions */
+IC.landJoins = function (ap) {
+  const L = ap.land; if (!L || !L.roads) return [];
+  const lines = L.roads.filter(r => (r.lv || 0) === 0 && r.pts.length > 1).map(r => ({ cls: 'land', pts: r.pts, w: r.w || 0.12, road: r }));
+  const sig = (L.ver || 0) + ':' + lines.length + ':' + lines.reduce((s, l) => s + l.pts.length + l.pts[0].x, 0);
+  if (L._lj && L._lj.sig === sig) return L._lj.joins;
+  L._lj = { sig, joins: lineJoins(lines, null, 2) };
+  return L._lj.joins;
+};
+/* where drawn lines cross or end on one another; blocks (optional): the lots that narrow a street's open width */
+function lineJoins(lines, blocks, minArms) {
   const cum = lines.map(l => { const a = [0]; for (let i = 1; i < l.pts.length; i++) a.push(a[i - 1] + Math.hypot(l.pts[i].x - l.pts[i - 1].x, l.pts[i].y - l.pts[i - 1].y)); return a; });
   // segments into a grid of 2-unit cells
   const G = new Map(), CS = 2, key = (i, j) => i * 100003 + j;
@@ -421,7 +462,7 @@ IC.streetJoins = function (W, c) {
   // how far the blocks' lots (their pavements and yards) leave the street open on each side of an arm: the kerb is
   // where the lot begins
   const BG = new Map(), BC = 3;
-  for (const b of c.blocks) { if (b.empty) continue; const k = key(Math.floor(b.x / BC), Math.floor(b.y / BC)); let L = BG.get(k); if (!L) BG.set(k, L = []); L.push(b); }
+  for (const b of blocks || []) { if (b.empty) continue; const k = key(Math.floor(b.x / BC), Math.floor(b.y / BC)); let L = BG.get(k); if (!L) BG.set(k, L = []); L.push(b); }
   const open = (x, y, nx, ny, h) => {
     let best = h;
     for (let gx = Math.floor(x / BC) - 1; gx <= Math.floor(x / BC) + 1; gx++) for (let gy = Math.floor(y / BC) - 1; gy <= Math.floor(y / BC) + 1; gy++) for (const b of BG.get(key(gx, gy)) || []) {
@@ -448,18 +489,19 @@ IC.streetJoins = function (W, c) {
         const room = dir > 0 ? Math.min(tot - s, (next - s)) : Math.min(s, (s - prev));
         if (room < 0.05) continue;
         const q = PL.at(l.pts, U.clamp(s + dir * Math.min(0.25, room * 0.5), 0, tot)), dx = q.x - p.x, dy = q.y - p.y, dl = Math.hypot(dx, dy); if (dl < 1e-4) continue;
-        const arm = { ux: dx / dl, uy: dy / dl, len: room * (dir > 0 && next < 1e8 || dir < 0 && prev > -1e8 ? 1 : 2), cls: l.cls, line: l, dir };
+        const arm = { ux: dx / dl, uy: dy / dl, len: room * (dir > 0 && next < 1e8 || dir < 0 && prev > -1e8 ? 1 : 2), cls: l.cls, line: l, dir, w: l.w };
         // the street's open width a little way out (never less than a lane each way)
-        const h = (SPEC[l.cls] || SPEC.st).w / 2, sm = Math.min(room * 0.5, 0.5), m = PL.at(l.pts, U.clamp(s + dir * sm, 0, tot));
-        const nx = -arm.uy, ny = arm.ux;
-        arm.hl = Math.max(0.07, open(m.x, m.y, nx, ny, h)); arm.hr = Math.max(0.07, open(m.x, m.y, -nx, -ny, h));
+        if (blocks) {
+          const h = (SPEC[l.cls] || SPEC.st).w / 2, sm = Math.min(room * 0.5, 0.5), m = PL.at(l.pts, U.clamp(s + dir * sm, 0, tot));
+          const nx = -arm.uy, ny = arm.ux;
+          arm.hl = Math.max(0.04, open(m.x, m.y, nx, ny, h)); arm.hr = Math.max(0.04, open(m.x, m.y, -nx, -ny, h));
+        }
         arms.push(arm);
       }
     }
-    if (arms.length >= 3) joins.push({ x: p.x, y: p.y, arms, big: arms.some(a => a.cls === 'art' || a.cls === 'ring'), ave: arms.some(a => a.line.ave) });
+    if (arms.length >= minArms) joins.push({ x: p.x, y: p.y, arms, big: arms.some(a => a.cls === 'art' || a.cls === 'ring'), ave: arms.some(a => a.line.ave) });
   });
-  c._sj = { sig, joins };
   return joins;
-};
+}
 
 })(window.IC);
