@@ -101,6 +101,25 @@ IC.drawRoads = function (g, S, px, v) {
   const top = site => site.arms.reduce((a, b) => (IC.ROAD_RANK[b.cls] || 0) > (IC.ROAD_RANK[a.cls] || 0) ? b : a).cls;
   const geo = s => IC.joinGeom(s, half);
   ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+  // close in, the railways under the roads: ballast, sleepers and the two rails (a road crosses on a bridge or at a
+  // level crossing, drawn after)
+  if (z > 30) for (const r of W.rails) {
+    if (!vis(r)) continue;
+    // (only the stretches in view)
+    const runs = []; let cur = null;
+    for (let i = 1; i < r.pts.length; i++) {
+      const a = r.pts[i - 1], b = r.pts[i];
+      if (Math.max(a.x, b.x) < view.x0 - 1 || Math.min(a.x, b.x) > view.x1 + 1 || Math.max(a.y, b.y) < view.y0 - 1 || Math.min(a.y, b.y) > view.y1 + 1) { cur = null; continue; }
+      if (!cur) runs.push(cur = [a]); cur.push(b);
+    }
+    for (const P of runs) {
+      ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.strokeStyle = 'rgb(126,118,104)'; ctx.lineWidth = 0.055; ctx.stroke();
+      if (z > 90) { ctx.strokeStyle = 'rgb(88,72,58)'; ctx.lineWidth = 0.026; ctx.setLineDash([0.0025, 0.0035]); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.strokeStyle = 'rgb(150,150,150)'; ctx.lineWidth = Math.max(0.0012, px * 0.9);
+      ctx.beginPath(); for (const o of [-0.0072, 0.0072]) IC.PL.offset(P, o).forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    }
+  }
   const order = ['sp', 'lc', 'art', 'rd', 'ring', 'ramp', 'hw'];
   // verges: mown grass either side
   if (z > 2.5) {
@@ -327,7 +346,7 @@ function levelCrossing(x, w, lw, px, S) {
   // stop lines and barriers on each approach (right-hand traffic: the barrier closes the lane coming in)
   const shut = S && IC.trainNear ? IC.trainNear(S, x) : false;
   for (const sg of [1, -1]) {
-    const s = sg * (0.06 + w * 0.2), nx = -uy, ny = ux, r = sg;   // the lane coming in is on the right of travel towards the rails
+    const s = sg * (0.06 + w * 0.2), nx = -uy, ny = ux, r = -sg;   // the lane coming in is on the right of travel towards the rails
     ctx.strokeStyle = PAINT; ctx.lineWidth = Math.max(0.004, lw * 1.8);
     ctx.beginPath(); ctx.moveTo(x.x + ux * s, x.y + uy * s); ctx.lineTo(x.x + ux * s + nx * r * w / 2, x.y + uy * s + ny * r * w / 2); ctx.stroke();
     const b0 = { x: x.x + ux * (s - sg * 0.012) + nx * r * (w / 2 + 0.012), y: x.y + uy * (s - sg * 0.012) + ny * r * (w / 2 + 0.012) };
@@ -555,7 +574,8 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
       const p = IC.trainPos({ r: t.r, s: t.s - t.dir * k * tl * 1.1 });
       if (!inView(p.x, p.y, 10)) continue;
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.h);
-      ctx.fillStyle = night ? (k === 0 ? 'rgba(255,230,170,0.95)' : 'rgba(255,210,140,0.55)') : k === 0 ? 'rgba(210,90,60,0.95)' : 'rgba(120,110,100,0.95)'; ctx.fillRect(-tl / 2, -tl * 0.2, tl, tl * 0.4);
+      const tw = Math.max(0.032, 2 * px);   // a carriage is about 3 m wide
+      ctx.fillStyle = night ? (k === 0 ? 'rgba(255,230,170,0.95)' : 'rgba(255,210,140,0.55)') : k === 0 ? 'rgba(210,90,60,0.95)' : 'rgba(120,110,100,0.95)'; ctx.fillRect(-tl / 2 + tl * 0.02, -tw / 2, tl * 0.96, tw);
       ctx.restore();
     }
   }

@@ -56,6 +56,11 @@ window.__roads = async function (hour) {
   const mx = near('mx')[0]; if (mx) { out.diamond = [mx.x, mx.y, 40]; out.bridge = [mx.x, mx.y, 150]; }
   const mm = near('mm').find(j => !inTown(j.x, j.y, 0.8)) || near('mm')[0]; if (mm) out.cloverleaf = [mm.x, mm.y, 40];
   out.citygrid = [cap.x, cap.y, 45];
+  // where a slip road leaves the motorway, and a level crossing
+  const RJ = IC.roadJoins(W), me = RJ.ends.filter(e => e.kind === 'merge' && e.r.kind === 'slip').sort((a, b) => Math.hypot(a.q.x - ap.x, a.q.y - ap.y) - Math.hypot(b.q.x - ap.x, b.q.y - ap.y))[0];
+  if (me) out.merge = [me.q.x, me.q.y, 90];
+  const lx = IC.railCrossings(W).filter(x => x.level).sort((a, b) => Math.hypot(a.x - ap.x, a.y - ap.y) - Math.hypot(b.x - ap.x, b.y - ap.y))[0];
+  if (lx) out.railx = [lx.x, lx.y, 260];
   const kerb = L.roads.find(r => r.kerb) || L.roads[0];
   if (kerb) { const p = kerb.pts[Math.floor(kerb.pts.length / 2)]; out.landside = [p.x, p.y, 45]; }
   out.capital = [cap.x, cap.y, 1.2];

@@ -378,8 +378,14 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   for (const r of W.rails) {
     if (!inb(r.bb[0] - 10, r.bb[1] - 10, r.bb[2] + 10, r.bb[3] + 10)) continue;
     const line = () => { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); };
-    g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4 * K0, 1.6, 0.7, 0.4, 0.3][lod]; line(); g.stroke();
-    if (lod >= 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 0.4; g.setLineDash([0.3, 0.9]); line(); g.stroke(); g.setLineDash([]); }
+    // far out a dark line; close in the ballast bed at its real width (the rails and sleepers are drawn live closer)
+    if (lod < 3) { g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4 * K0, 1.6, 0.7][lod]; line(); g.stroke(); }
+    if (lod === 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 0.4; g.setLineDash([0.3, 0.9]); line(); g.stroke(); g.setLineDash([]); }
+    if (lod >= 3) {
+      g.strokeStyle = 'rgba(40,36,30,0.45)'; g.lineWidth = lod === 3 ? 0.16 : 0.075; line(); g.stroke();
+      g.strokeStyle = 'rgb(126,118,104)'; g.lineWidth = lod === 3 ? 0.12 : 0.055; line(); g.stroke();
+      g.strokeStyle = 'rgba(52,46,40,0.8)'; g.lineWidth = lod === 3 ? 0.05 : 0.022; line(); g.stroke();
+    }
   }
   // settlements: the built-up ground (paving in the centre, gardens in the suburbs, yards by the factories), so a
   // town is one piece of fabric following its own ragged shape, then parks and squares
