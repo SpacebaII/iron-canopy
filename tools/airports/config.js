@@ -12,6 +12,9 @@ module.exports = {
     // the pedestrian bridge to Concourse A: the taxiway under it takes tails up to this height (m) when the data has
     // no maxheight or min_height on it (a 747's tail, 19.4 m, passes; an A380's, 24 m, does not)
     bridgeClear: 20,
+    // the airport's ground radar (ASDE-X), which the map does not show: put by the tower. The approach radar is
+    // the mapped approach control (TRACON) building
+    radars: ['gradar'],
     ils: ['16L', '16R', '17L', '17R', '34L', '34R', '35L', '35R', '07', '08', '25', '26']
   },
   klax: {
@@ -22,6 +25,8 @@ module.exports = {
     margin: 2, approach: /^(Century Boulevard|(North |South )?Sepulveda Boulevard)$/, reach: 12,
     roofs: [[/Theme Building/i, 'saucer']],
     bridgeClear: 0,
+    // ground radar (ASDE-X) and approach radar (ASR-9), neither in the map: put by the tower
+    radars: ['gradar', 'atc'],
     ils: ['06L', '06R', '07L', '07R', '24L', '24R', '25L', '25R']
   },
   // a made-up extract for the importer's own test (tests/fixtures/mini.osm.json)

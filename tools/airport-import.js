@@ -132,6 +132,19 @@ function importAirport(key, o) {
       ils: [(C.ils || []).includes(e1) ? 'a' : null, (C.ils || []).includes(e2) ? 'b' : null].filter(Boolean) });
   }
   const osmRwy = [...O.W.values()].filter(w => tag(w, 'aeroway') === 'runway' && w.nodes[0] !== w.nodes[w.nodes.length - 1]);
+  // OurAirports gives some airports to 0.001° (about 50 m); the map's runway line is surveyed from imagery to a metre
+  // or two and the taxiways are drawn to it. Where the two disagree, each runway lies on the map's line, with
+  // OurAirports' ends carried along it (its lengths are the published ones)
+  for (const r of L.runways) {
+    const a = { x: r.a[0], y: r.a[1] }, b = { x: r.b[0], y: r.b[1] };
+    const m = osmRwy.map(w => { const pts = wayPts(w); return { pts, d: Math.min(dist(pts[0], a) + dist(pts[pts.length - 1], b), dist(pts[0], b) + dist(pts[pts.length - 1], a)) }; }).filter(x => x.pts.length > 1 && x.d < 3).sort((x, y) => x.d - y.d)[0];
+    if (!m) continue;
+    const p0 = m.pts[0], p1 = m.pts[m.pts.length - 1], L0 = dist(p0, p1) || 1, ux = (p1.x - p0.x) / L0, uy = (p1.y - p0.y) / L0;
+    const on = q => { const t = (q.x - p0.x) * ux + (q.y - p0.y) * uy; return { x: p0.x + ux * t, y: p0.y + uy * t }; };
+    const a2 = on(a), b2 = on(b), moved = Math.max(dist(a, a2), dist(b, b2));
+    if (moved > 0.02) notes.push(`runway ${r.ends.join('/')}: OurAirports' ends lie ${Math.round(moved * 100)} m across the map's runway line: moved onto it`);
+    r.a = [r1(a2.x), r1(a2.y)]; r.b = [r1(b2.x), r1(b2.y)];
+  }
   if (!L.runways.length) for (const w of osmRwy) {
     const pts = wayPts(w), a = pts[0], b = pts[pts.length - 1], ref = (tag(w, 'ref') || '').split('/');
     L.runways.push({ a: [r1(a.x), r1(a.y)], b: [r1(b.x), r1(b.y)], w: r1(num(tag(w, 'width'), 45) / 100), ends: [ref[0] || 'A', ref[1] || 'B'], hdg: null, disp: [0, 0], ils: [] });
@@ -227,6 +240,7 @@ function importAirport(key, o) {
   const kindOf = t => {
     const s = [t.name, t.operator, t.description].join(' ');
     if (t.aeroway === 'terminal' || t.building === 'terminal' || /concourse|terminal/i.test(t.name || '')) return 'terminal';
+    if (/tracon|approach control|radar facility/i.test(s)) return 'atc';
     if (t.aeroway === 'control_tower' || t.aeroway === 'tower' || /^(airport|aircraft)_control$/.test(t['tower:type'] || '') || t['building:part'] === 'control_tower' || /control tower|atct/i.test(s)) return 'tower';
     if (t.amenity === 'fire_station' || /fire station|arff|crash fire/i.test(s)) return 'fire';
     if (t.aeroway === 'hangar' || t.building === 'hangar') return 'hangar';
@@ -277,6 +291,19 @@ function importAirport(key, o) {
   // (a tank mapped as a point is as big as the room to its neighbours allows, up to the standard tank)
   for (const t of ptTanks) { let nn = 1e9; for (const u of ptTanks.concat(tanks)) if (u !== t) nn = Math.min(nn, dist(t.c, u.c)); t.r = Math.max(0.03, Math.min(0.13, nn / 2 - 0.02)); }
   tanks.push(...ptTanks);
+  // radars the map does not show (a ground radar, an approach radar where no approach control is mapped): by the
+  // tower, on the first clear ground round it, when the config says the airport has them
+  for (const kind of C.radars || []) {
+    if (kind === 'atc' && L.blds.some(b => b.kind === 'atc')) continue;
+    const tower = L.blds.find(b => b.kind === 'tower' && b._p && b._p.length); if (!tower) { notes.push(`no tower in the map to put the ${kind} by`); continue; }
+    const c = centroid(tower._p), size = kind === 'atc' ? 0.12 : 0.1, clear = q => !L.blds.some(b => b._p && b._p.length && polyDist(q, b._p) < size) && !L.aprons.some(A => polyDist(q, A._p) < size) && !L.taxi.some(t => t.n.some((i, k) => k && segDist(q, { x: L.nodes[t.n[k - 1]][0], y: L.nodes[t.n[k - 1]][1] }, { x: L.nodes[i][0], y: L.nodes[i][1] }) < size + t.w / 2)) && !rwLines.some(r => segDist(q, r.a, r.b) < 1.5 + size);
+    let spot = null;
+    for (let d = 0.25; d < 1.5 && !spot; d += 0.1) for (let k = 0; k < 16 && !spot; k++) { const q = { x: c.x + Math.cos(k / 16 * Math.PI * 2) * d, y: c.y + Math.sin(k / 16 * Math.PI * 2) * d }; if (clear(q)) spot = q; }
+    if (!spot) { notes.push(`no clear ground by the tower for the ${kind}`); continue; }
+    const h = size / 2;
+    L.blds.push({ kind, poly: flat([{ x: spot.x - h, y: spot.y - h }, { x: spot.x + h, y: spot.y - h }, { x: spot.x + h, y: spot.y + h }, { x: spot.x - h, y: spot.y + h }]), _p: [{ x: spot.x - h, y: spot.y - h }, { x: spot.x + h, y: spot.y - h }, { x: spot.x + h, y: spot.y + h }, { x: spot.x - h, y: spot.y + h }], _a: size * size });
+    notes.push(`${kind === 'atc' ? 'approach radar' : 'ground radar'} placed by the tower (the map does not show it)`);
+  }
   for (const n of O.N.values()) if (n.tags && (n.tags.aeroway === 'control_tower' || n.tags['tower:type'] === 'airport_control') && !L.blds.some(b => b.kind === 'tower' && polyDist(proj(n.lat, n.lon), b._p) < 0.2)) { const c = proj(n.lat, n.lon); L.blds.push({ kind: 'tower', poly: flat([{ x: c.x - 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y + 0.07 }, { x: c.x - 0.07, y: c.y + 0.07 }]), name: n.tags.name, _p: [] }); }
   // tanks drawn over one another are one tank, the biggest; tanks touching are pulled apart, each keeping its share
   // of the gap
@@ -388,13 +415,14 @@ function importAirport(key, o) {
     let ref = S.tags.ref || S.tags.name;
     if (!ref) { let bd = 0.8; for (const g of gates) { const d = dist(g.p, S.p); if (d < bd) { bd = d; ref = g.ref; } } }
     S.hh = h; S.ref = ref;
-    S.gate = jetPts.some(q => dist(q, S.p) < 0.4) || gates.some(g => dist(g.p, S.p) < 0.5);
+    // (a jet bridge drawn to the stand, or a gate marked at it: a gate node further off marks a bus gate)
+    S.gate = jetPts.some(q => dist(q, S.p) < 0.4) || gates.some(g => dist(g.p, S.p) < 0.3);
   }
   // two positions on the same spot (a gate and its wide-body alternative, drawn twice) are one stand: the plain
   // number wins, then the one with a lead-in
   PP.sort((a, b) => (b.ref ? 1 : 0) - (a.ref ? 1 : 0) || (a.ref || '').length - (b.ref || '').length || (b.h != null) - (a.h != null));
   const standsOk = [];
-  for (const S of PP) { if (standsOk.some(T => dist(T.p, S.p) < 0.22)) continue; standsOk.push(S); }
+  for (const S of PP) { if (standsOk.some(T => dist(T.p, S.p) < 0.1)) continue; standsOk.push(S); }
   if (standsOk.length < PP.length) notes.push(`${PP.length - standsOk.length} parking positions lie on another's spot: one stand each`);
   for (const S of standsOk) {
     // the size from the room it has: the gap to the stands either side, across its heading
@@ -438,7 +466,7 @@ function importAirport(key, o) {
   if (orphans.length) {
     // clusters within 150 m of each other
     const cl = orphans.map((_, i) => i), root = i => cl[i] === i ? i : (cl[i] = root(cl[i]));
-    for (let i = 0; i < orphans.length; i++) for (let j = i + 1; j < orphans.length; j++) if (dist(orphans[i].c, orphans[j].c) < 1.5) cl[root(i)] = root(j);
+    for (let i = 0; i < orphans.length; i++) for (let j = i + 1; j < orphans.length; j++) if (dist(orphans[i].c, orphans[j].c) < 0.7) cl[root(i)] = root(j);
     const groups = new Map(); orphans.forEach((S, i) => { const r = root(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(S); });
     for (const G of groups.values()) {
       const pts = [];
@@ -574,8 +602,24 @@ function importAirport(key, o) {
       const dense = densify(A._p.concat([A._p[0]]), 0.05).slice(0, -1);
       let moved = false;
       const out = dense.map(q => { const n = nearest(q); if (!n || n.d >= n.m) return q; moved = true; const d = n.d || 1e-6, ux = (q.x - n.c.x) / d, uy = (q.y - n.c.y) / d; return { x: n.c.x + ux * (n.m + 0.005), y: n.c.y + uy * (n.m + 0.005) }; });
+      let P2 = simplify(out.concat([out[0]]), 0.005).slice(0, -1);
+      // a road that runs through the apron cuts it: the side with the apron's centre stays (Sutherland–Hodgman
+      // against the road's edge, one segment at a time)
+      for (const r of R) for (let i = 1; i < r.pts.length; i++) {
+        const a = r.pts[i - 1], b = r.pts[i], mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        if (!inPoly(a, P2) && !inPoly(b, P2) && !inPoly(mid, P2)) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, LL = Math.hypot(dx, dy) || 1, nx = -dy / LL, ny = dx / LL, c = centroid(P2);
+        const side = Math.sign((c.x - a.x) * nx + (c.y - a.y) * ny) || 1;   // the centre's side of the road
+        const f = q => (q.x - a.x) * nx * side + (q.y - a.y) * ny * side - r.m;   // > 0: clear of the road, on the kept side
+        const clipped = [];
+        for (let k = 0; k < P2.length; k++) {
+          const p = P2[k], q = P2[(k + 1) % P2.length], fp = f(p), fq = f(q);
+          if (fp >= 0) clipped.push(p);
+          if ((fp >= 0) !== (fq >= 0)) { const t = fp / (fp - fq); clipped.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }); }
+        }
+        if (clipped.length >= 3 && area(clipped) > 0.05) { P2 = clipped; moved = true; }
+      }
       if (!moved) continue;
-      const P2 = simplify(out.concat([out[0]]), 0.005).slice(0, -1);
       if (P2.length >= 3 && area(P2) > 0.05) { A._p = P2; A.poly = flat(P2); pushed++; }
     }
     if (pushed) notes.push(`${pushed} aprons reached over a public road in the map: their outlines are pushed off it`);
@@ -675,25 +719,36 @@ function accuracy(key, L0) {
       const same = rw.ends.a.replace(/^0/, '') === row.le_ident.replace(/^0/, '');
       r.ourairports = Math.round(Math.max(dist(same ? a : b, rw.a), dist(same ? b : a, rw.b)) * 100 * 10) / 10;
       r.lenSrc = Math.round(+row.length_ft * 0.3048);
+      // (half a unit in the last decimal place the source gives, in metres, on both axes: some rows are given to
+      // 0.001°, and come through single-precision floats, so a value counts as d decimals when it lies within a
+      // float's rounding of such a number)
+      const dec = v => { for (let d = 1; d <= 6; d++) if (Math.abs(v * Math.pow(10, d) - Math.round(v * Math.pow(10, d))) < 1e-5 * Math.pow(10, d)) return d; return 7; };
+      const d = Math.min(...[row.le_latitude_deg, row.le_longitude_deg, row.he_latitude_deg, row.he_longitude_deg].map(v => dec(+v)));
+      r.prec = Math.round(0.5 * Math.pow(10, -d) * 111320 * Math.SQRT2);
+      r.decimals = d;
     }
     // the map's runway line nearest this runway: the distance of each end from it, along and across
     const m = osmRw.map(o => ({ o, d: Math.min(dist(o.pts[0], rw.a) + dist(o.pts[o.pts.length - 1], rw.b), dist(o.pts[0], rw.b) + dist(o.pts[o.pts.length - 1], rw.a)) })).sort((x, y) => x.d - y.d)[0];
     // (across the map's line: the map's ends are drawn to the pavement or the threshold as the mapper saw them)
-    if (m) { const e = m.o.pts; r.osm = Math.round(Math.max(segDist(rw.a, e[0], e[e.length - 1]), segDist(rw.b, e[0], e[e.length - 1])) * 100 * 10) / 10; }
+    if (m) { const e = m.o.pts, a = e[0], b = e[e.length - 1], L0 = dist(a, b) || 1, off = q => Math.abs((b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x)) / L0; r.osm = Math.round(Math.max(off(rw.a), off(rw.b)) * 100 * 10) / 10; }
     out.runways.push(r);
   }
   // gates: stands with a gate number in the game, against the map's numbered parking positions (or gates)
   IC.aptGraph(ap);
   const st = IC.aptStands ? IC.aptStands(ap) : [];
-  const inGame = ap.parts.filter(p => p.kind === 'apron').reduce((n, p) => n + (p.stands || []).filter(s => s.name && s.contact).length, 0);
+  // (distinct gate numbers: a gate the map draws twice, for two aircraft sizes, is one gate)
+  const inGame = new Set(ap.parts.filter(p => p.kind === 'apron').flatMap(p => (p.stands || []).filter(s => s.name && s.contact).map(s => s.name))).size;
   let src = null;
   if (O) {
-    // the map's gates: parking positions numbered with a jet bridge (aeroway=jet_bridge) or a gate node at them
+    // the map's gates: numbered parking positions with a jet bridge (aeroway=jet_bridge), a gate node at them, or
+    // drawn up to a terminal's wall (ground-loaded regional gates)
+    const termP = [...O.W.values()].filter(w => w.tags && (w.tags.aeroway === 'terminal' || w.tags.building === 'terminal') && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)));
+    for (const rel of O.R) if (rel.tags && (rel.tags.aeroway === 'terminal' || rel.tags.building === 'terminal') && /multipolygon/.test(rel.tags.type || '')) for (const ring of rings(O, rel, 'outer')) termP.push(ring.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)));
     const pp = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'parking_position' && n.tags.ref) pp.push({ ref: n.tags.ref, p: proj(n.lat, n.lon) });
     for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'parking_position' && w.tags.ref) { const pts = w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)); if (pts.length) pp.push({ ref: w.tags.ref, p: pts[pts.length - 1], q: pts[0] }); }
     const jet = []; for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'jet_bridge') for (const n of w.nodes) { const x = O.N.get(n); if (x) jet.push(proj(x.lat, x.lon)); }
     const gn = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'gate') gn.push(proj(n.lat, n.lon));
-    const at = s => jet.some(j => dist(j, s.p) < 0.4 || (s.q && dist(j, s.q) < 0.4)) || gn.some(g => dist(g, s.p) < 0.5 || (s.q && dist(g, s.q) < 0.5));
+    const at = s => jet.some(j => dist(j, s.p) < 0.4 || (s.q && dist(j, s.q) < 0.4)) || gn.some(g => dist(g, s.p) < 0.3 || (s.q && dist(g, s.q) < 0.3)) || termP.some(T => T.length > 2 && (polyDist(s.p, T) < 0.5 || (s.q && polyDist(s.q, T) < 0.5)));
     const refs = new Set(pp.map(s => s.ref)), gates = new Set(pp.filter(at).map(s => s.ref));
     src = { parking: refs.size, gates: gates.size };
   }
@@ -711,9 +766,9 @@ function accuracy(key, L0) {
 /* the check in words, one line a thing */
 function accuracyText(A) {
   const L = [`${A.name}:`];
-  for (const r of A.runways) L.push(`  ${r.name}: ${r.len} m × ${r.w} m${r.lenSrc ? ` (source ${r.lenSrc} m)` : ''}; ends within ${r.ourairports != null ? r.ourairports + ' m of OurAirports' : '—'}${r.osm != null ? `, ${r.osm} m of the map's runway line` : ''}`);
+  for (const r of A.runways) L.push(`  ${r.name}: ${r.len} m × ${r.w} m${r.lenSrc ? ` (source ${r.lenSrc} m)` : ''}; ends within ${r.ourairports != null ? r.ourairports + ' m of OurAirports' + (r.prec > 30 ? ` (given to ${r.decimals} decimals, about ${r.prec} m)` : '') : '—'}${r.osm != null ? `, ${r.osm} m across the map's runway line` : ''}`);
   const g = A.gates;
-  L.push(`  gates: ${g.game} numbered stands at a terminal (${g.stands} stands in all)${g.src ? `; the map has ${g.src.parking} numbered parking positions, ${g.src.gates} of them with a jet bridge or a gate` : ''}`);
+  L.push(`  gates: ${g.game} numbered gates (${g.stands} stands in all)${g.src ? `; the map has ${g.src.parking} numbered parking positions, ${g.src.gates} of them at a terminal` : ''}`);
   for (const t of A.terminals) L.push(`  ${t.name}: ${t.ha} ha${t.src != null ? ` (map ${t.src} ha, ${t.off > 0 ? '+' : ''}${t.off}%)` : ''}`);
   return L.join('\n');
 }

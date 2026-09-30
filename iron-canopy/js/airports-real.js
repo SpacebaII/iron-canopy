@@ -242,8 +242,8 @@ IC.bldBlueprint = function (S, ap, key, x, y, rot) {
   return made;
 };
 
-/* The showcase's day: aircraft in proportion to the airport's stands (about one and a quarter per stand, so the gates
-   stay busy all day), by stand size: wide-bodies for the large stands, narrow-bodies for the medium, regional jets and
+/* The showcase's day: aircraft in proportion to the airport's stands (about four for every five stands: the gates
+   stay busy all day, and the step stays within its budget at a 300-stand airport), by stand size: wide-bodies for the large stands, narrow-bodies for the medium, regional jets and
    turboprops for the small; freighters for the cargo stands. Flag, low-cost, regional, cargo and foreign airlines, to
    the foreign ports and the country's other airports. */
 IC.showcaseTraffic = function (S, ap, o) {
@@ -264,7 +264,7 @@ IC.showcaseTraffic = function (S, ap, o) {
   for (const f of o.foreign) plan.push([f, U.pick(['wide', 'widel', 'narrow']), Math.max(1, n.l * 0.08), P.filter(p => p.k === f.country).concat(P)]);
   let k = 0;
   for (const [a, type, share, dest] of plan) {
-    let left = Math.round(share * 1.25);
+    let left = Math.round(share * 0.8);
     // (spread over the destinations, a few aircraft to each route)
     while (left > 0 && dest.length) { const m = Math.min(left, 3); o.add(a, ap, dest[k++ % dest.length], type, m); left -= m; }
   }

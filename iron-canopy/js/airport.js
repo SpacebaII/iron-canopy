@@ -147,7 +147,7 @@ function standsFor(ap, p) {
     const id = p.id + 's' + (f.k != null ? f.k : i), old = p.stands && p.stands.find(x => x.id === id);
     const nose = { x: c.x + hx * (S0.d / 2 + 0.04), y: c.y + hy * (S0.d / 2 + 0.04) };
     // (a stand the data marks as a gate has its jet bridge: the terminal may be a bridge's length away)
-    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, nose) < (f.gate ? 0.6 : 0.12));
+    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, nose) < (f.gate ? 0.8 : 0.12));
     return { id, x: c.x, y: c.y, fx: c.x - hx * back, fy: c.y - hy * back, ox: c.x + hx * back, oy: c.y + hy * back, a, size: f.size, apron: p.id,
       contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone, via: f.via || null, name: f.name || null };
   });
@@ -1501,7 +1501,12 @@ IC.layoutAirport = function (ap, template, a) {
     bld('fuel', -12, -4.5); bld('fuel', -4, -5.2); bld('fuel', 11, -4.6);
     bld('ammo', 0, -7); bld('tower', 1.2, -3.8); bld('fire', -1.2, 1.3);
     tx([[-14.8, -1.7], [-15.6, -1.15]]);
-  } else if (template === 'kden') layoutKden(ap, { rw, tx, rect, bld, ils, zone });
+  } else if (template === 'kden') {
+    // the real Denver (airports-real-data.js), turned so its first runway lies along a
+    const L = IC.REAL_APT && IC.REAL_APT.kden;
+    if (L) { const r0 = L.runways[0], la = Math.atan2(r0.b[1] - r0.a[1], r0.b[0] - r0.a[0]); IC.aptFromLayout(ap, L, { x: ap.x, y: ap.y, rot: a - la }); ap.template = 'kden'; return; }
+    layoutKden(ap, { rw, tx, rect, bld, ils, zone });
+  }
   IC.resolveNodes(ap);
   for (const p of ap.parts) if (p.kind === 'apron' || p.kind === 'hangar' || p.kind === 'has' || p.kind === 'alert') IC.aptAutoJoin(ap, p);
   ap.dirty = true;
@@ -1511,9 +1516,9 @@ IC.layoutAirport = function (ap, template, a) {
   if (IC.aptAutoLinks) IC.aptAutoLinks(ap);
   IC.aptExtent(ap);
 };
-/* A Denver-sized airport: six runways in a pinwheel round three concourses (well over a hundred gates), end-around
-   taxiways, one-way lanes between the concourses, cargo, light-aircraft and military ramps. Proof that the model
-   scales, and the test for it. Local x runs along the first runway, y across it; 1 unit = 100 m. */
+/* A Denver-sized airport drawn in code: six runways in a pinwheel round three concourses, end-around taxiways, one-way
+   lanes between the concourses, cargo, light-aircraft and military ramps. Superseded by the real Denver from map data
+   (IC.REAL_APT.kden, brief 39); kept only for a build without the data file. Local x runs along the first runway. */
 function layoutKden(ap, L) {
   const { rw, tx, rect, bld, ils, zone } = L;
   ap.buildR = Math.max(ap.buildR, 62);
