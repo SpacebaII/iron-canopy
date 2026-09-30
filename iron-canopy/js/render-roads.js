@@ -59,7 +59,7 @@ IC.streetLights = function (g, S, v, light, pf) {
    disc, no overlap of strokes): curb returns, the main road's lines running through, give-way lines on the roads
    that meet it, roundabouts with their islands, tapers and gores where slip roads leave and join, bridges, and
    level crossings where a small road crosses a railway. */
-const TONE = { hw: [238, 176, 104], ring: [232, 190, 130], rd: [214, 198, 158], art: [178, 174, 164], lc: [198, 186, 154], sp: [198, 186, 154], st: [148, 146, 140], ln: [160, 140, 100], ramp: [230, 184, 124] };
+const TONE = IC.ROAD_TONE;
 const ASPHALT = [72, 73, 74], SHOULDER = [84, 85, 85];
 const PAINT = 'rgba(238,238,230,0.88)', VERGE = 'rgb(118,138,84)';
 const SP = IC.ROAD_SPEC;

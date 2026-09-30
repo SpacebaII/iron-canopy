@@ -23,7 +23,7 @@ const U = IC.U;
 const SPEC = {
   hw: { w: 0.28, lane: 0.0375, lanes: 2, sh: 0.03, strip: 0.01, med: 0.05, R: 0.5, px: 4.6 },
   ring: { w: 0.26, lane: 0.035, lanes: 2, sh: 0.02, strip: 0.01, med: 0.04, R: 0.14, px: 3.6 },
-  rd: { w: 0.11, lane: 0.035, lanes: 1, sh: 0.02, R: 0.18, px: 3.2, centre: 'dash' },
+  rd: { w: 0.105, lane: 0.0325, lanes: 1, sh: 0.02, R: 0.18, px: 3.2, centre: 'dash' },
   lc: { w: 0.07, lane: 0.03, lanes: 1, sh: 0.005, R: 0.12, px: 2.2, centre: 'dash' },
   sp: { w: 0.055, lane: 0.0275, lanes: 1, sh: 0, R: 0.1, px: 1.9 },
   ramp: { w: 0.075, lane: 0.04, lanes: 1, sh: 0.025, strip: 0.01, R: 0.22, px: 1.8 },
@@ -33,6 +33,9 @@ const SPEC = {
   land: { w: 0.12, lane: 0.035, lanes: 1, sh: 0.01, R: 0.07, px: 1.4 }
 };
 IC.ROAD_SPEC = SPEC;
+/* how each class looks far out, where a road is a line on the map (the tiles' far levels, and the live drawing as it
+   zooms in, which blends these into the asphalt): pale concrete and asphalt greys, the busier the lighter */
+IC.ROAD_TONE = { hw: [206, 196, 174], ring: [200, 192, 172], rd: [190, 184, 166], art: [178, 174, 164], lc: [172, 166, 148], sp: [172, 166, 148], st: [148, 146, 140], ln: [160, 140, 100], ramp: [200, 192, 172] };
 const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, land: 2, st: 1, sp: 1, ln: 0 };
 IC.ROAD_RANK = RANK;
 /* the width a road is drawn at zoom z: its real width close in, wider far out so it reads */

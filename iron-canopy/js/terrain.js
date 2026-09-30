@@ -422,7 +422,9 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   {
     const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, ring: 2.4, ramp: 1 },
       { ln: 0.3, art: 0.7, st: 0.5, ring: 0.9 }, { ln: 0.12, art: 0.4, st: 0.34, ring: 0.36 }, { ln: 0.07, art: 0.4, st: 0.34, ring: 0.36 }][lod];
-    const FILL = { ramp: 'rgba(230,184,124,0.85)', hw: 'rgba(238,176,104,0.92)', rd: 'rgba(222,204,156,0.75)', lc: 'rgba(196,184,150,0.5)', sp: 'rgba(196,184,150,0.5)', ln: 'rgba(160,140,100,0.55)', art: 'rgba(178,174,164,0.75)', st: 'rgba(148,146,140,0.6)', ring: 'rgba(232,190,130,0.85)' };
+    // (the same tones as the live drawing far out: roadgeom.js IC.ROAD_TONE)
+    const T = IC.ROAD_TONE, tc = (k, a) => `rgba(${T[k][0]},${T[k][1]},${T[k][2]},${a})`;
+    const FILL = { ramp: tc('ramp', 0.85), hw: tc('hw', 0.92), rd: tc('rd', 0.8), lc: tc('lc', 0.6), sp: tc('sp', 0.6), ln: tc('ln', 0.55), art: tc('art', 0.75), st: tc('st', 0.6), ring: tc('ring', 0.85) };
     if (lod >= 2) { FILL.art = 'rgb(150,148,142)'; FILL.st = 'rgb(128,127,122)'; FILL.ring = 'rgb(128,127,122)'; FILL.ln = 'rgba(140,122,90,0.8)'; }
     // close in, city streets are asphalt between pavements
     if (lod >= 3 && IC.STREET_ASP) { FILL.art = IC.STREET_ASP.art; FILL.st = IC.STREET_ASP.st; FILL.ring = IC.STREET_ASP.ring; }
