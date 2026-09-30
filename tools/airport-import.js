@@ -90,6 +90,8 @@ function simplify(P, tol, keep) {
   }
   return P.filter((_, i) => mark[i]);
 }
+/* the polyline with a point every step along it */
+const densify = (P, step) => { const out = []; P.forEach((p, i) => { if (i) { const a = P[i - 1], n = Math.ceil(dist(a, p) / step); for (let k = 1; k < n; k++) out.push({ x: a.x + (p.x - a.x) * k / n, y: a.y + (p.y - a.y) * k / n }); } out.push(p); }); return out; };
 const r1 = v => Math.round(v * 1000) / 1000;   // 0.1 m
 const flat = P => P.flatMap(p => [r1(p.x), r1(p.y)]);
 const num = (v, d) => { const n = parseFloat(v); return isFinite(n) ? n : d; };
@@ -205,6 +207,10 @@ function importAirport(key, o) {
     if (added) notes.push(`${added} crossing${added > 1 ? 's' : ''} of taxiways (with each other or a runway) had no node in the map: one was put in at each`);
   }
 
+  // the taxiways as lines, for what crosses them (nodes put in later lie on these lines)
+  const TWshape = L.taxi.map(t => t.n.map(i => ({ x: L.nodes[i][0], y: L.nodes[i][1] })));
+  const crossesTaxi = pts => TWshape.some(T => pts.some((p, i) => i && T.some((q, j) => j && segX(pts[i - 1], p, T[j - 1], q))));
+
   // --- aprons (de-icing pads apart), simplified to 1.5 m
   const APR = areas(t => t.aeroway === 'apron');
   const isDeice = t => /de-?icing/i.test([t.apron, t.name, t.description, t.usage].join(' ')) || t.deicing === 'yes';
@@ -234,7 +240,7 @@ function importAirport(key, o) {
     if (B.tags['building:part'] && !B.tags.building && kindOf(B.tags) !== 'tower') continue;
     const pts = simplify(B.pts.concat([B.pts[0]]), 0.01).slice(0, -1); if (pts.length < 3) continue;
     const a = area(pts), c = centroid(pts); let k = kindOf(B.tags);
-    if (aero && !airside(c)) { if (!near(c) || !(k === 'terminal' || /parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
+    if (aero && !airside(c)) { if (!near(c) || (k === 'support' && !/parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
     if (k === 'support' && a < 0.04) continue;   // (sheds under 400 m² are left out)
     if (k === 'fuel') { tanks.push({ c, r: Math.sqrt(a / Math.PI) }); continue; }
     const roof = (C.roofs || []).find(([re]) => re.test(B.tags.name || '')), lv = num(B.tags['building:levels'], 0);
@@ -272,9 +278,92 @@ function importAirport(key, o) {
   for (const t of ptTanks) { let nn = 1e9; for (const u of ptTanks.concat(tanks)) if (u !== t) nn = Math.min(nn, dist(t.c, u.c)); t.r = Math.max(0.03, Math.min(0.13, nn / 2 - 0.02)); }
   tanks.push(...ptTanks);
   for (const n of O.N.values()) if (n.tags && (n.tags.aeroway === 'control_tower' || n.tags['tower:type'] === 'airport_control') && !L.blds.some(b => b.kind === 'tower' && polyDist(proj(n.lat, n.lon), b._p) < 0.2)) { const c = proj(n.lat, n.lon); L.blds.push({ kind: 'tower', poly: flat([{ x: c.x - 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y + 0.07 }, { x: c.x - 0.07, y: c.y + 0.07 }]), name: n.tags.name, _p: [] }); }
-  // tanks drawn touching or over one another are pulled apart: each keeps its share of the gap
+  // tanks drawn over one another are one tank, the biggest; tanks touching are pulled apart, each keeping its share
+  // of the gap
+  tanks.sort((a, b) => b.r - a.r);
+  { const kept = []; for (const t of tanks) if (!kept.some(u => dist(u.c, t.c) < Math.max(u.r, t.r))) kept.push(t); tanks.length = 0; tanks.push(...kept); }
   for (let k = 0; k < 4; k++) for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) { const a = tanks[i], b = tanks[j], d = dist(a.c, b.c); if (d < a.r + b.r + 0.03) { const f = Math.max(0.02, d - 0.03) / (a.r + b.r); a.r *= f; b.r *= f; } }
-  for (const t of tanks) L.blds.push({ kind: 'fuel', c: [r1(t.c.x), r1(t.c.y)], r: r1(Math.max(0.04, t.r)) });
+  for (const t of tanks) if (t.r >= 0.03) L.blds.push({ kind: 'fuel', c: [r1(t.c.x), r1(t.c.y)], r: r1(t.r) });
+
+  // --- roads: public roads and the landside's own, on their levels; airside service roads apart. Kept: what lies
+  // within the margin (cut where it leaves), the approach roads by name in full, and the roads that meet them
+  // (their slip roads and the motorway they leave) for 500 m from the meeting point
+  const PUB = /^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)(_link)?$/;
+  const isRoad = w => { const t = w.tags || {}; return t.highway && (PUB.test(t.highway) || t.highway === 'service') && t.area !== 'yes'; };
+  const lanesOf = (t, cls) => num(t.lanes, /motorway|trunk/.test(cls) ? 4 : /primary|secondary/.test(cls) ? 3 : 2);
+  const approach = w => C.approach && isRoad(w) && C.approach.test(w.tags.name || w.tags.ref || '');
+  const reach = C.reach != null ? C.reach : 30;
+  const nodePts = w => w.nodes.map(id => ({ id, p: P(id) })).filter(x => x.p);
+  const keptWays = new Map();   // way → its runs of points (projected)
+  const addRuns = (w, runs) => { runs = runs.filter(r => r.length > 1); if (runs.length) keptWays.set(w, (keptWays.get(w) || []).concat(runs)); };
+  const runsWhere = (pts, ok) => { const runs = []; let run = []; for (const p of pts) { if (ok(p)) run.push(p); else { if (run.length > 1) runs.push(run); run = []; } } if (run.length > 1) runs.push(run); return runs; };
+  // hop 1: the approach roads out to C.reach; hop 2: the slip roads that leave them (whole) and the roads they meet
+  // for 500 m; hop 3: the motorway those slip roads join, for 600 m either side
+  const hop1 = [...O.W.values()].filter(approach);
+  const seen = new Set(hop1);
+  for (const w of hop1) addRuns(w, runsWhere(nodePts(w).map(x => x.p), p => polyDist(p, aero ? aero.pts : []) <= reach));
+  const meet = ways => { const ids = new Set(); for (const w of ways) if (keptWays.has(w)) for (const x of nodePts(w)) if (keptWays.get(w).some(r => r.includes(x.p))) ids.add(x.id); return ids; };
+  const hop = (from, r, whole) => {
+    const ids = meet(from), out = [];
+    for (const w of O.W.values()) {
+      if (seen.has(w) || !isRoad(w)) continue;
+      const np = nodePts(w), m = np.filter(x => ids.has(x.id)).map(x => x.p); if (!m.length) continue;
+      seen.add(w); out.push(w);
+      const pts = np.map(x => x.p);
+      addRuns(w, whole && /_link$/.test(w.tags.highway) ? [pts] : runsWhere(pts, p => m.some(q => dist(p, q) <= r)));
+    }
+    return out;
+  };
+  const hop2 = hop(hop1, 5, true);
+  hop(hop2, 6, false);
+  // everything else within the margin, cut where it leaves
+  for (const w of O.W.values()) { if (seen.has(w) || !isRoad(w)) continue; const pts = nodePts(w).map(x => x.p); if (pts.length > 1 && nearAny(pts)) addRuns(w, clipNear(pts)); }
+  const cutEnds = [];
+  for (const [w, runs] of keptWays) for (const pts0 of runs) {
+    const t = w.tags, cls = t.highway;
+    const pts = simplify(pts0, 0.01); if (pts.length < 2) continue;
+    let lv = t.tunnel && t.tunnel !== 'no' ? -1 : (t.bridge && t.bridge !== 'no') ? Math.max(1, +t.layer || 1) : +t.layer > 0 ? +t.layer : +t.layer < 0 ? -1 : 0;
+    const mid = pts[pts.length >> 1], dense = densify(pts, 0.05);
+    // airside: a road that crosses a taxiway or enters an apron, or a service road or a closed road (access=no,
+    // private) inside the aerodrome; the roads under a terminal (the kerbs and the tunnel under the concourse) are
+    // its own
+    const wHalf = Math.min(0.3, lanesOf(t, cls) * 3.5 / 100 + 0.02) / 2 + 0.02;
+    const termAt = L.blds.findIndex(b => b.kind === 'terminal' && b._p.length && dense.some(q => polyDist(q, b._p) < wHalf));
+    const nearTaxi = pts => TWshape.some(T => T.some((q, j) => j && pts.some(p => segDist(p, T[j - 1], q) < 0.25)));
+    const onField = crossesTaxi(pts) || dense.some(q => L.aprons.some(A => inPoly(q, A._p)));
+    const airRoad = onField || (termAt < 0 && aero && airside(mid) && (cls === 'service' || /^(no|private)$/.test(t.access || '')));
+    if (airRoad && !/^(motorway|trunk|primary|secondary)/.test(cls)) { L.service.push({ pts: flat(pts) }); continue; }
+    // (a main road with a height limit that crosses the field passes under it: the map's tunnel tag is on another piece)
+    if (!lv && t.maxheight && (onField || nearTaxi(dense))) lv = -1;
+    if (cls === 'service' && /parking_aisle|driveway/.test(t.service || '')) continue;   // (the car parks are areas)
+    const lanes = lanesOf(t, cls), oneway = t.oneway === 'yes' || /motorway|_link/.test(cls) && t.oneway !== 'no' ? 1 : t.oneway === '-1' ? -1 : 0;
+    L.roads.push({ pts: flat(pts), w: r1(Math.min(0.3, lanes * 3.5 / 100 + 0.02)), lv: lv || undefined, oneway: oneway || undefined, lanes, name: t.name || undefined, cls, kind: lv > 0 ? 'upper' : 'road', kerb: termAt >= 0 ? termAt : undefined, out: aero && !dense.some(airside) ? 1 : undefined, _pts: pts, _osm: w.id, _svc: t.service });
+    // a run cut short of the way's own end leads on out of the layout
+    const first = P(w.nodes[0]), last = P(w.nodes[w.nodes.length - 1]);
+    for (const e of [pts[0], pts[pts.length - 1]]) if (!lv && /^(motorway|trunk|primary|secondary)$/.test(cls) && (approach(w) || (dist(e, first) > 0.02 && dist(e, last) > 0.02))) cutEnds.push({ e, w });
+  }
+  // junctions where kept roads share a node; the exits are the cut ends of the main roads (the country's road comes
+  // to the one nearest the towns it serves)
+  const onRoads = new Map();
+  for (const [w] of keptWays) for (const id of w.nodes) onRoads.set(id, (onRoads.get(id) || 0) + 1);
+  for (const [id, n] of onRoads) if (n > 1) { const p = P(id); if (p) L.junctions.push([r1(p.x), r1(p.y)]); }
+  {
+    let fixed = 0;
+    const R = L.roads.map(r => ({ r, pts: r._pts, lv: r.lv || 0, bb: r._pts.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]) }));
+    for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) {
+      const A = R[i], B = R[j]; if (A.lv !== B.lv || A.bb[2] < B.bb[0] || B.bb[2] < A.bb[0] || A.bb[3] < B.bb[1] || B.bb[3] < A.bb[1]) continue;
+      for (let a = 1; a < A.pts.length; a++) for (let b = 1; b < B.pts.length; b++) {
+        if (!segX(A.pts[a - 1], A.pts[a], B.pts[b - 1], B.pts[b])) continue;
+        const p0 = A.pts[a - 1], p1 = A.pts[a], q0 = B.pts[b - 1], q1 = B.pts[b], den = (p1.x - p0.x) * (q1.y - q0.y) - (p1.y - p0.y) * (q1.x - q0.x); if (!den) continue;
+        const t = ((q0.x - p0.x) * (q1.y - q0.y) - (q0.y - p0.y) * (q1.x - q0.x)) / den, q = { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t };
+        if (!L.junctions.some(J => Math.hypot(J[0] - q.x, J[1] - q.y) < 0.08)) { L.junctions.push([r1(q.x), r1(q.y)]); fixed++; }
+      }
+    }
+    if (fixed) notes.push(`${fixed} roads cross another with no node in the map (a slip road, or a bridge with no layer): a junction is put at each`);
+  }
+  // (an approach road's own far end counts when no other kept road goes on from it)
+  const loose = ({ e, w }) => !approach(w) || ![...keptWays.keys()].some(v => v !== w && v.nodes.some(id => { const p = P(id); return p && dist(p, e) < 0.02; }));
+  for (const c of cutEnds) if (loose(c) && !L.exits.some(x => Math.hypot(x[0] - c.e.x, x[1] - c.e.y) < 0.5)) L.exits.push([r1(c.e.x), r1(c.e.y)]);
 
   // --- stands: parking positions (a node, or a lead-in way ending at the stand), their gate numbers and sizes
   const gates = [...O.N.values()].filter(n => tag(n, 'aeroway') === 'gate').map(n => ({ p: proj(n.lat, n.lon), ref: tag(n, 'ref') || tag(n, 'name') }));
@@ -356,7 +445,7 @@ function importAirport(key, o) {
       for (const S of G) {
         const W0 = { l: 0.76, m: 0.46, s: 0.32 }[S.size] / 2 + 0.1, D0 = { l: 0.8, m: 0.5, s: 0.36 }[S.size] / 2 + 0.15, hx = Math.cos(S.hh), hy = Math.sin(S.hh);
         for (const [u, v] of [[-W0, -D0], [W0, -D0], [W0, D0], [-W0, D0]]) pts.push({ x: S.c.x - hy * u + hx * v, y: S.c.y + hx * u + hy * v });
-        const via = viaOf(S); if (via != null) { S.via = via; const q = L.nodes[via]; pts.push({ x: q[0], y: q[1] }); }
+        const via = viaOf(S); if (via != null) { S.via = via; const q = L.nodes[via], dq = Math.min(0.6, dist({ x: q[0], y: q[1] }, S.c)), ux = (q[0] - S.c.x) / (dist({ x: q[0], y: q[1] }, S.c) || 1), uy = (q[1] - S.c.y) / (dist({ x: q[0], y: q[1] }, S.c) || 1); pts.push({ x: S.c.x + ux * dq, y: S.c.y + uy * dq }); }
       }
       const hull = convexHull(pts), c = centroid(hull), poly = hull.map(q => { const d = dist(q, c) || 1; return { x: q.x + (q.x - c.x) / d * 0.15, y: q.y + (q.y - c.y) / d * 0.15 }; });
       L.aprons.push({ poly: flat(poly), name: undefined, _p: poly, implied: 1 });
@@ -364,10 +453,31 @@ function importAirport(key, o) {
       notes.push(`${G.length} stands (${G.map(S => S.ref).filter(Boolean).slice(0, 4).join(', ')}${G.length > 4 ? ', …' : ''}) stand on pavement the map has no apron for: one is laid under them`);
     }
   }
+  // (a position the map puts on a public road or a terminal's kerb is no stand)
+  {
+    const roads = L.roads.filter(r => (r.lv || 0) === 0 && (/^(motorway|trunk|primary|secondary|tertiary)/.test(r.cls) || r.kerb != null));
+    const onRoad = S => roads.some(r => r._pts.some((q, i) => i && segDist(S.c, r._pts[i - 1], q) < r.w / 2 + 0.3));
+    const n0 = standsOk.length; for (let i = standsOk.length - 1; i >= 0; i--) if (onRoad(standsOk[i])) standsOk.splice(i, 1);
+    if (standsOk.length < n0) notes.push(`${n0 - standsOk.length} parking positions lie on a public road in the map: left out`);
+  }
   for (const S of standsOk) {
     if (S.via === undefined) S.via = viaOf(S);
     if (S.via == null) notes.push(`stand ${S.ref || ''} at ${r1(S.p.x)}, ${r1(S.p.y)} has no taxiway within 250 m behind it`);
     L.stands.push({ ap: S.ai, x: r1(S.c.x), y: r1(S.c.y), h: Math.round(S.hh * 1000) / 1000, size: S.size, via: S.via != null ? S.via : undefined, ref: S.ref || undefined, gate: S.gate ? 1 : undefined });
+  }
+
+  // --- a taxiway that runs between a terminal's piers is a taxilane, no wider than the room the piers leave it
+  {
+    const terms = L.blds.filter(b => b.kind === 'terminal' && b._p && b._p.length), IC = game(), tsh = terms.map(b => IC.shapePoly(b._p));
+    let narrowed = 0;
+    for (const t of L.taxi) {
+      const pts = t.n.map(i => ({ x: L.nodes[i][0], y: L.nodes[i][1] }));
+      let room = 1e9;
+      const dense = densify(pts, 0.1);
+      for (let k = 0; k < tsh.length; k++) { const sh = tsh[k]; for (const q of dense) if (q.x > sh.bb[0] - 0.3 && q.x < sh.bb[2] + 0.3 && q.y > sh.bb[1] - 0.3 && q.y < sh.bb[3] + 0.3) room = Math.min(room, IC.shapeDist(sh, q)); }
+      if (room < t.w / 2 + 0.03) { t.w = r1(Math.max(0.1, 2 * (room - 0.03))); t.lane = 1; narrowed++; }
+    }
+    if (narrowed) notes.push(`${narrowed} taxiways run within their width of a terminal: made taxilanes as wide as the room allows`);
   }
 
   // --- hangars: the game links a hangar by the door in the middle of its long side; where no taxiway comes within
@@ -378,7 +488,7 @@ function importAirport(key, o) {
     for (const B of L.blds) {
       if (B.kind !== 'hangar' || !B._p || !B._p.length) continue;
       const part = IC.polyPart('hangar', B._p), c = Math.cos(part.a), sn = Math.sin(part.a);
-      const sides = [-1, 1].map(sg => ({ x: part.x - sn * sg * (part.h / 2 + 0.05), y: part.y + c * sg * (part.h / 2 + 0.05) }));
+      const sides = [-1, 1].map(sg => ({ x: part.x - sn * sg * (part.h / 2 + 0.12), y: part.y + c * sg * (part.h / 2 + 0.12) }));
       const nearest = q => { let best = null; L.taxi.forEach(t => { for (let k = 1; k < t.n.length; k++) { const a = L.nodes[t.n[k - 1]], b = L.nodes[t.n[k]], dx = b[0] - a[0], dy = b[1] - a[1], LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((q.x - a[0]) * dx + (q.y - a[1]) * dy) / LL)), pt = { x: a[0] + dx * f, y: a[1] + dy * f }, d = dist(pt, q); if (!best || d < best.d) best = { d, t, k, pt, a, b }; } }); return best; };
       const near2 = sides.map(nearest).filter(Boolean);
       if (!near2.length || near2.some(n => n.d < 0.5)) continue;
@@ -396,9 +506,35 @@ function importAirport(key, o) {
     if (laid) notes.push(`${laid} hangars had no taxiway within 50 m of their doors: a taxilane is laid to each`);
   }
 
+  // --- a taxiway drawn into a hangar (the map takes the lane inside) stops at the wall, a lane's half-width short
+  {
+    const H = L.blds.filter(b => b.kind === 'hangar' && b._p && b._p.length).map(b => b._p);
+    const outside = (p, m) => !H.some(P2 => polyDist(p, P2) < m);
+    const edge = (a, b, m) => { let lo = 0, hi = 1; for (let k = 0; k < 14; k++) { const f = (lo + hi) / 2, q = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }; if (outside(q, m)) lo = f; else hi = f; } return { x: a.x + (b.x - a.x) * lo, y: a.y + (b.y - a.y) * lo }; };
+    const more = [];
+    let cut = 0;
+    for (const t of L.taxi) {
+      const m = t.w / 2 + 0.03, ids = t.n.slice(), pts = ids.map(i => ({ x: L.nodes[i][0], y: L.nodes[i][1] }));
+      // (the way sampled every 5 m, each sample knowing the node it is, if any)
+      const smp = []; pts.forEach((p, i) => { if (i) { const a = pts[i - 1], n = Math.ceil(dist(a, p) / 0.05); for (let k = 1; k < n; k++) smp.push({ x: a.x + (p.x - a.x) * k / n, y: a.y + (p.y - a.y) * k / n, id: null }); } smp.push({ x: p.x, y: p.y, id: ids[i] }); });
+      if (smp.every(p => outside(p, m))) continue;
+      const newNode = q => { const id = L.nodes.length; L.nodes.push([r1(q.x), r1(q.y)]); return id; };
+      const runs = []; let run = null;
+      smp.forEach((p, i) => {
+        if (outside(p, m)) { if (!run) { run = []; if (i) run.push(newNode(edge(p, smp[i - 1], m))); } if (p.id != null) run.push(p.id); }
+        else if (run) { run.push(newNode(edge(smp[i - 1], p, m))); runs.push(run); run = null; }
+      });
+      if (run) runs.push(run);
+      const good = runs.filter(r => r.length > 1);
+      if (!good.length) { t.n = []; cut++; continue; }
+      t.n = good[0]; for (const r of good.slice(1)) more.push(Object.assign({}, t, { n: r }));
+      cut++;
+    }
+    L.taxi = L.taxi.filter(t => t.n.length > 1).concat(more);
+    if (cut) notes.push(`${cut} taxiways run into a hangar in the map: each stops at the wall`);
+  }
+
   // --- passenger bridges over taxiways: footways, corridors or buildings mapped as bridges that cross one
-  const TWshape = L.taxi.map(t => t.n.map(i => ({ x: L.nodes[i][0], y: L.nodes[i][1] })));
-  const crossesTaxi = pts => TWshape.some(T => pts.some((p, i) => i && T.some((q, j) => j && segX(pts[i - 1], p, T[j - 1], q))));
   for (const w of O.W.values()) {
     const t = w.tags || {}; if (!(t.bridge && t.bridge !== 'no') || !(/footway|corridor|pedestrian|steps/.test(t.highway || '') || t.indoor || t.building || t['building:part'] || t.man_made === 'bridge')) continue;
     const pts = wayPts(w); if (pts.length < 2 || !crossesTaxi(pts)) continue;
@@ -408,7 +544,7 @@ function importAirport(key, o) {
     const under = L.taxi.filter(x => x.maxht && pts.some((p, i) => i && x.n.some((k, j) => j && segX(pts[i - 1], p, { x: L.nodes[x.n[j - 1]][0], y: L.nodes[x.n[j - 1]][1] }, { x: L.nodes[k][0], y: L.nodes[k][1] }))));
     const clear = num(t.min_height, 0) || (under[0] && under[0].maxht) || C.bridgeClear || 0;
     if (!clear) notes.push(`${t.name || 'a passenger bridge'} over a taxiway has no clearance in the data (min_height or maxheight): left without a height limit`);
-    const joins = L.blds.map((B, i) => B._p && B._p.length && (polyDist(a, B._p) < 0.3 || polyDist(b, B._p) < 0.3) ? i : -1).filter(i => i >= 0);
+    const joins = L.blds.map((B, i) => B._p && B._p.length && poly.some(q => polyDist(q, B._p) < 0.3) ? i : -1).filter(i => i >= 0);
     L.bridges.push({ poly: flat(poly), clear: clear || undefined, name: t.name || undefined, joins });
   }
 
@@ -424,79 +560,26 @@ function importAirport(key, o) {
   }
   for (const M of L.movers) { const pts = []; for (let i = 0; i < M.pts.length; i += 2) pts.push({ x: M.pts[i], y: M.pts[i + 1] }); M.stops = L.blds.map((B, i) => B.kind === 'terminal' && B._p.some(() => true) && pts.some(p => polyDist(p, B._p) < 0.5) ? i : -1).filter(i => i >= 0); }
 
-  // --- roads: public roads and the landside's own, on their levels; airside service roads apart. Kept: what lies
-  // within the margin (cut where it leaves), the approach roads by name in full, and the roads that meet them
-  // (their slip roads and the motorway they leave) for 500 m from the meeting point
-  const PUB = /^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)(_link)?$/;
-  const isRoad = w => { const t = w.tags || {}; return t.highway && (PUB.test(t.highway) || t.highway === 'service') && t.area !== 'yes'; };
-  const lanesOf = (t, cls) => num(t.lanes, /motorway|trunk/.test(cls) ? 4 : /primary|secondary/.test(cls) ? 3 : 2);
-  const approach = w => C.approach && isRoad(w) && C.approach.test(w.tags.name || w.tags.ref || '');
-  const reach = C.reach != null ? C.reach : 30;
-  const nodePts = w => w.nodes.map(id => ({ id, p: P(id) })).filter(x => x.p);
-  const keptWays = new Map();   // way → its runs of points (projected)
-  const addRuns = (w, runs) => { runs = runs.filter(r => r.length > 1); if (runs.length) keptWays.set(w, (keptWays.get(w) || []).concat(runs)); };
-  const runsWhere = (pts, ok) => { const runs = []; let run = []; for (const p of pts) { if (ok(p)) run.push(p); else { if (run.length > 1) runs.push(run); run = []; } } if (run.length > 1) runs.push(run); return runs; };
-  // hop 1: the approach roads out to C.reach; hop 2: the slip roads that leave them (whole) and the roads they meet
-  // for 500 m; hop 3: the motorway those slip roads join, for 600 m either side
-  const hop1 = [...O.W.values()].filter(approach);
-  const seen = new Set(hop1);
-  for (const w of hop1) addRuns(w, runsWhere(nodePts(w).map(x => x.p), p => polyDist(p, aero ? aero.pts : []) <= reach));
-  const meet = ways => { const ids = new Set(); for (const w of ways) if (keptWays.has(w)) for (const x of nodePts(w)) if (keptWays.get(w).some(r => r.includes(x.p))) ids.add(x.id); return ids; };
-  const hop = (from, r, whole) => {
-    const ids = meet(from), out = [];
-    for (const w of O.W.values()) {
-      if (seen.has(w) || !isRoad(w)) continue;
-      const np = nodePts(w), m = np.filter(x => ids.has(x.id)).map(x => x.p); if (!m.length) continue;
-      seen.add(w); out.push(w);
-      const pts = np.map(x => x.p);
-      addRuns(w, whole && /_link$/.test(w.tags.highway) ? [pts] : runsWhere(pts, p => m.some(q => dist(p, q) <= r)));
-    }
-    return out;
-  };
-  const hop2 = hop(hop1, 5, true);
-  hop(hop2, 6, false);
-  // everything else within the margin, cut where it leaves
-  for (const w of O.W.values()) { if (seen.has(w) || !isRoad(w)) continue; const pts = nodePts(w).map(x => x.p); if (pts.length > 1 && nearAny(pts)) addRuns(w, clipNear(pts)); }
-  const cutEnds = [];
-  for (const [w, runs] of keptWays) for (const pts0 of runs) {
-    const t = w.tags, cls = t.highway;
-    const pts = simplify(pts0, 0.01); if (pts.length < 2) continue;
-    const lv = t.tunnel && t.tunnel !== 'no' ? -1 : (t.bridge && t.bridge !== 'no') ? Math.max(1, +t.layer || 1) : +t.layer > 0 ? +t.layer : +t.layer < 0 ? -1 : 0;
-    const mid = pts[pts.length >> 1];
-    // airside: a road that crosses a taxiway or enters an apron, or a service road or a closed road (access=no,
-    // private) inside the aerodrome; a road under a terminal (its tunnel) is landside on its level
-    const inTerm = L.blds.some(b => b.kind === 'terminal' && b._p.length && pts.some(q => inPoly(q, b._p)));
-    const airRoad = !inTerm && (crossesTaxi(pts) || pts.some(q => L.aprons.some(A => inPoly(q, A._p))) || (aero && airside(mid) && (cls === 'service' || /^(no|private)$/.test(t.access || ''))));
-    if (airRoad && !/^(motorway|trunk|primary|secondary)/.test(cls)) { L.service.push({ pts: flat(pts) }); continue; }
-    if (cls === 'service' && /parking_aisle|driveway/.test(t.service || '')) continue;   // (the car parks are areas)
-    const lanes = lanesOf(t, cls), oneway = t.oneway === 'yes' || /motorway|_link/.test(cls) && t.oneway !== 'no' ? 1 : t.oneway === '-1' ? -1 : 0;
-    L.roads.push({ pts: flat(pts), w: r1(Math.min(0.3, lanes * 3.5 / 100 + 0.02)), lv: lv || undefined, oneway: oneway || undefined, lanes, name: t.name || undefined, cls, kind: lv > 0 ? 'upper' : 'road', _pts: pts, _osm: w.id, _svc: t.service });
-    // a run cut short of the way's own end leads on out of the layout
-    const first = P(w.nodes[0]), last = P(w.nodes[w.nodes.length - 1]);
-    for (const e of [pts[0], pts[pts.length - 1]]) if (!lv && /^(motorway|trunk|primary|secondary)$/.test(cls) && (approach(w) || (dist(e, first) > 0.02 && dist(e, last) > 0.02))) cutEnds.push({ e, w });
-  }
-  // junctions where kept roads share a node; the exits are the cut ends of the main roads (the country's road comes
-  // to the one nearest the towns it serves)
-  const onRoads = new Map();
-  for (const [w] of keptWays) for (const id of w.nodes) onRoads.set(id, (onRoads.get(id) || 0) + 1);
-  for (const [id, n] of onRoads) if (n > 1) { const p = P(id); if (p) L.junctions.push([r1(p.x), r1(p.y)]); }
+  // --- an apron drawn over a public road or a terminal's kerb (the map's outline reaches a little too far) gives way:
+  // its outline is pushed off the road, a road's half-width and 3 m clear
   {
-    let fixed = 0;
-    const R = L.roads.map(r => ({ r, pts: r._pts, lv: r.lv || 0, bb: r._pts.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]) }));
-    for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) {
-      const A = R[i], B = R[j]; if (A.lv !== B.lv || A.bb[2] < B.bb[0] || B.bb[2] < A.bb[0] || A.bb[3] < B.bb[1] || B.bb[3] < A.bb[1]) continue;
-      for (let a = 1; a < A.pts.length; a++) for (let b = 1; b < B.pts.length; b++) {
-        if (!segX(A.pts[a - 1], A.pts[a], B.pts[b - 1], B.pts[b])) continue;
-        const p0 = A.pts[a - 1], p1 = A.pts[a], q0 = B.pts[b - 1], q1 = B.pts[b], den = (p1.x - p0.x) * (q1.y - q0.y) - (p1.y - p0.y) * (q1.x - q0.x); if (!den) continue;
-        const t = ((q0.x - p0.x) * (q1.y - q0.y) - (q0.y - p0.y) * (q1.x - q0.x)) / den, q = { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t };
-        if (!L.junctions.some(J => Math.hypot(J[0] - q.x, J[1] - q.y) < 0.08)) { L.junctions.push([r1(q.x), r1(q.y)]); fixed++; }
-      }
+    const roads = L.roads.filter(r => (r.lv || 0) === 0 && (/^(motorway|trunk|primary|secondary|tertiary)/.test(r.cls) || r.kerb != null)).map(r => ({ pts: r._pts, m: r.w / 2 + 0.03, bb: r._pts.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]) }));
+    let pushed = 0;
+    for (const A of L.aprons) {
+      const bb = A._p.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]);
+      const R = roads.filter(r => !(r.bb[2] + r.m < bb[0] || bb[2] < r.bb[0] - r.m || r.bb[3] + r.m < bb[1] || bb[3] < r.bb[1] - r.m));
+      if (!R.length) continue;
+      // the nearest road point to q, and how far
+      const nearest = q => { let best = null; for (const r of R) for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i], dx = b.x - a.x, dy = b.y - a.y, LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / LL)), c = { x: a.x + dx * f, y: a.y + dy * f }, d = dist(c, q); if (!best || d < best.d) best = { d, c, m: r.m }; } return best; };
+      const dense = densify(A._p.concat([A._p[0]]), 0.05).slice(0, -1);
+      let moved = false;
+      const out = dense.map(q => { const n = nearest(q); if (!n || n.d >= n.m) return q; moved = true; const d = n.d || 1e-6, ux = (q.x - n.c.x) / d, uy = (q.y - n.c.y) / d; return { x: n.c.x + ux * (n.m + 0.005), y: n.c.y + uy * (n.m + 0.005) }; });
+      if (!moved) continue;
+      const P2 = simplify(out.concat([out[0]]), 0.005).slice(0, -1);
+      if (P2.length >= 3 && area(P2) > 0.05) { A._p = P2; A.poly = flat(P2); pushed++; }
     }
-    if (fixed) notes.push(`${fixed} roads cross another with no node in the map (a slip road, or a bridge with no layer): a junction is put at each`);
+    if (pushed) notes.push(`${pushed} aprons reached over a public road in the map: their outlines are pushed off it`);
   }
-  // (an approach road's own far end counts when no other kept road goes on from it)
-  const loose = ({ e, w }) => !approach(w) || ![...keptWays.keys()].some(v => v !== w && v.nodes.some(id => { const p = P(id); return p && dist(p, e) < 0.02; }));
-  for (const c of cutEnds) if (loose(c) && !L.exits.some(x => Math.hypot(x[0] - c.e.x, x[1] - c.e.y) < 0.5)) L.exits.push([r1(c.e.x), r1(c.e.y)]);
 
   // --- car parks and garages
   for (const A of areas(t => t.amenity === 'parking' || t.parking === 'multi-storey' || t.building === 'parking')) {
@@ -529,10 +612,11 @@ function importAirport(key, o) {
     // the landside's roads stop at a car park's or a building's edge (the lot is an area, its aisles are not drawn;
     // the road into a garage or a loading dock ends at the wall), checked every 5 m along them
     const out = [], polys = L.parks.map(k => k._p).concat(L.blds.filter(b => b._p && b._p.length && b.kind !== 'terminal').map(b => b._p));
-    const inside = p => polys.some(P2 => inPoly(p, P2));
+    const pbb = polys.map(P2 => P2.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]));
     for (const R of L.roads) {
       if ((R.lv || 0) !== 0) { out.push(R); continue; }
-      const dense = []; R._pts.forEach((p, i) => { if (i) { const a = R._pts[i - 1], n = Math.ceil(dist(a, p) / 0.05); for (let k = 1; k < n; k++) dense.push({ x: a.x + (p.x - a.x) * k / n, y: a.y + (p.y - a.y) * k / n, mid: true }); } dense.push(p); });
+      const m = R.w / 2 + 0.02, inside = p => polys.some((P2, i) => p.x > pbb[i][0] - m && p.x < pbb[i][2] + m && p.y > pbb[i][1] - m && p.y < pbb[i][3] + m && polyDist(p, P2) < m);
+      const dense = densify(R._pts, 0.05);
       if (!dense.some(inside)) { out.push(R); continue; }
       let run = []; const flush = () => { const r = simplify(run, 0.01); if (r.length > 1) out.push(Object.assign({}, R, { pts: flat(r), _pts: r })); run = []; };
       for (const p of dense) { if (inside(p)) flush(); else run.push(p); }

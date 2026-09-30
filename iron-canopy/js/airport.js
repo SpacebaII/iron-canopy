@@ -1129,6 +1129,7 @@ function taxiThrough(pts, q) {
 /* a part in words: a runway by its name, the rest by kind, numbered when there are several ("Apron 2") */
 IC.partName = function (ap, q) {
   if (q.kind === 'runway') return q.name || 'the runway';
+  if (q.name && q.kind !== 'taxi') return q.name;   // (a building named in the data, or by the player)
   const D = IC.APART[q.kind] || { name: q.kind }, same = ap.parts.filter(p => p.kind === q.kind), i = same.indexOf(q);
   return same.length > 1 && i >= 0 ? `${D.name} ${i + 1}` : `the ${U.lc(D.name)}`;
 };

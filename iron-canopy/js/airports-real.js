@@ -73,7 +73,8 @@ IC.aptFromLayout = function (ap, L, o) {
   // the landside, fixed as mapped: roads on their levels, car parks and garages
   const land = IC.landInit(ap);
   land.fixed = true; land.items = []; land.roads = []; land.jn = []; land.road = true;
-  for (const R of L.roads || []) land.roads.push({ pts: P(R.pts), w: R.w || 0.1, lv: R.lv || 0, oneway: R.oneway || 0, lanes: R.lanes || 0, name: R.name || undefined, kind: R.kind || 'loop', cls: R.cls || 'service' });
+  // (a road under a terminal is its kerb road: the building may stand over it)
+  for (const R of L.roads || []) land.roads.push({ pts: P(R.pts), w: R.w || 0.1, lv: R.lv || 0, oneway: R.oneway || 0, lanes: R.lanes || 0, name: R.name || undefined, kind: R.kind || 'loop', cls: R.cls || 'service', kerb: R.kerb != null || undefined, by: R.kerb != null && blds[R.kerb] ? blds[R.kerb].id : undefined, out: R.out || undefined });
   for (const K of L.parks || []) {
     const kind = K.kind === 'garage' ? 'garage' : K.kind === 'taxi' ? 'taxi' : 'park', D = IC.LAND[kind], it = IC.polyPart(kind, P(K.poly));
     const ha = IC.partArea(it);
