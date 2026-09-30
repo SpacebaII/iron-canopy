@@ -39,7 +39,7 @@ window.__roads = async function (hour) {
   // a village T junction: a main road running through, a local road ending on it, away from the towns
   const tj = W.junctions.filter(j => j.kind === 'tj' && j.dirs.length === 3 && j.dirs.filter(d => d.cls === 'rd').length === 2 && j.dirs.some(d => d.cls !== 'rd') && !inTown(j.x, j.y))
     .sort((a, b) => Math.hypot(a.x - ap.x, a.y - ap.y) - Math.hypot(b.x - ap.x, b.y - ap.y))[0];
-  if (tj) out.tjunction = [tj.x, tj.y, 110];
+  if (tj) out.tjunction = [tj.x, tj.y, 240];
   // a town crossroads: two streets crossing near the middle of a middle-sized town
   const town = W.cities.filter(c => c !== cap && c.streets.length > 20).sort((a, b) => a.pop - b.pop)[Math.floor(W.cities.length / 3)] || cap;
   let best = null, bd = 1e9;
@@ -50,14 +50,14 @@ window.__roads = async function (hour) {
     const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, dd = Math.hypot(x - town.x, y - town.y);
     if (dd < bd) { bd = dd; best = [x, y]; }
   }
-  if (best) out.crossroads = [best[0], best[1], 90];
+  if (best) out.crossroads = [best[0], best[1], 110];
   const near = k => W.junctions.filter(j => j.kind === k).sort((a, b) => Math.hypot(a.x - ap.x, a.y - ap.y) - Math.hypot(b.x - ap.x, b.y - ap.y));
-  const rb = near('rb').find(j => !inTown(j.x, j.y, 1)); if (rb) out.roundabout = [rb.x, rb.y, 60];
-  const mx = near('mx')[0]; if (mx) out.diamond = [mx.x, mx.y, 14];
-  const mm = near('mm').find(j => !inTown(j.x, j.y, 0.8)) || near('mm')[0]; if (mm) out.cloverleaf = [mm.x, mm.y, 7];
-  out.citygrid = [cap.x, cap.y, 32];
+  const rb = near('rb').find(j => !inTown(j.x, j.y, 1)); if (rb) out.roundabout = [rb.x, rb.y, 200];
+  const mx = near('mx')[0]; if (mx) { out.diamond = [mx.x, mx.y, 40]; out.bridge = [mx.x, mx.y, 150]; }
+  const mm = near('mm').find(j => !inTown(j.x, j.y, 0.8)) || near('mm')[0]; if (mm) out.cloverleaf = [mm.x, mm.y, 40];
+  out.citygrid = [cap.x, cap.y, 45];
   const kerb = L.roads.find(r => r.kerb) || L.roads[0];
-  if (kerb) { const p = kerb.pts[Math.floor(kerb.pts.length / 2)]; out.landside = [p.x, p.y, 26]; }
+  if (kerb) { const p = kerb.pts[Math.floor(kerb.pts.length / 2)]; out.landside = [p.x, p.y, 45]; }
   out.capital = [cap.x, cap.y, 1.2];
   return out;
 };
@@ -87,7 +87,7 @@ window.__frames = async function (n) {
     if (only.length && !only.includes(k)) continue;
     const zz = +((args.find(a => a.startsWith('--z=')) || '--z=0').slice(4)) || z;
     await page.evaluate(`__cam(${x}, ${y}, ${zz})`);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(+((args.find(a => a.startsWith('--wait=')) || '--wait=1500').slice(7)));
     const f = await page.evaluate('__frames(60)');
     const file = path.resolve(__dirname, `../shots/road-${tag}-${k}.png`);
     await page.screenshot(clip.length === 4 ? { path: file, clip: { x: clip[0], y: clip[1], width: clip[2], height: clip[3] } } : { path: file });
