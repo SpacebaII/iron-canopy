@@ -182,8 +182,10 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
   // runway markings
   for (const { r } of rws) runwayPaint(g, r, ppu);
   // centrelines, lead-on and lead-off lines, taxilanes; hold lines; one-way arrows
+  // (from the whole-airport zoom the lines fade in: at 14 px a unit a taxiway is 3 px wide, and a yellow line on it
+  // would turn it orange)
   if (ppu >= 8) {
-    g.strokeStyle = YEL; g.lineCap = 'butt'; g.globalAlpha = U.clamp((ppu - 6) / 40, 0.35, 1);
+    g.strokeStyle = YEL; g.lineCap = 'butt'; g.globalAlpha = U.clamp((ppu - 8) / 30, 0.08, 1);
     for (const c of G.cl) {
       if (!hit(c._bb || (c._bb = bbOf(c.pts, 0.1)), box)) continue;
       g.lineWidth = Math.max(0.0035, (c.lane ? 0.7 : 0.9) * px); g.beginPath(); linePath(g, c.pts); g.stroke();

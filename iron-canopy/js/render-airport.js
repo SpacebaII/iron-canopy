@@ -691,11 +691,14 @@ const ROOFS = {
     for (let r = 0; r < rows; r++) {
       const y = rows === 1 ? 0 : (r - (rows - 1) / 2) * D / rows;
       for (let i = 0; i < n; i++) {
-        const x = -L / 2 + dx * (i + 0.5), rr = Math.max(dx, D / rows) * 0.62;
-        const gr = g.createRadialGradient(x - rr * 0.15, y - rr * 0.15, 0, x, y, rr);
-        gr.addColorStop(0, night ? 'rgba(255,244,214,1)' : 'rgba(255,255,255,1)'); gr.addColorStop(0.55, night ? 'rgba(214,200,170,0.9)' : 'rgba(226,226,220,0.9)'); gr.addColorStop(1, night ? 'rgba(150,140,120,0.5)' : 'rgba(178,180,180,0.55)');
-        g.fillStyle = gr; g.beginPath(); g.moveTo(x, y - D / rows / 2); g.lineTo(x + dx / 2, y); g.lineTo(x, y + D / rows / 2); g.lineTo(x - dx / 2, y); g.closePath(); g.fill();
-        if (z > 3) { g.strokeStyle = 'rgba(120,120,116,0.35)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); g.moveTo(x - dx / 2, y); g.lineTo(x + dx / 2, y); g.moveTo(x, y - D / rows / 2); g.lineTo(x, y + D / rows / 2); g.stroke(); }
+        const x = -L / 2 + dx * (i + 0.5), hy = D / rows / 2, hx = dx / 2;
+        // four facets of fabric falling from the mast, lit from the north-west: the facet facing the sun near white,
+        // the one turned away in shade, so each peak reads as a peak and not a tile
+        const F = [[[x, y - hy], [x + hx, y]], [[x + hx, y], [x, y + hy]], [[x, y + hy], [x - hx, y]], [[x - hx, y], [x, y - hy]]];
+        const T = night ? ['rgb(232,222,196)', 'rgb(190,176,150)', 'rgb(150,140,120)', 'rgb(206,194,166)'] : ['rgb(252,252,248)', 'rgb(214,214,208)', 'rgb(186,188,186)', 'rgb(236,236,230)'];
+        for (let f = 0; f < 4; f++) { g.fillStyle = T[f]; g.beginPath(); g.moveTo(x, y); g.lineTo(F[f][0][0], F[f][0][1]); g.lineTo(F[f][1][0], F[f][1][1]); g.closePath(); g.fill(); }
+        // the fabric sags between the masts: a soft light at the peak
+        if (z > 2) { const rr = Math.min(hx, hy) * 0.8, gr = g.createRadialGradient(x, y, 0, x, y, rr); gr.addColorStop(0, 'rgba(255,255,255,0.7)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(x - rr, y - rr, 2 * rr, 2 * rr); }
         // the mast at the peak
         if (z > 6) { g.fillStyle = 'rgba(90,92,96,0.9)'; g.beginPath(); g.arc(x, y, Math.max(0.006, 0.9 * px), 0, 7); g.fill(); }
       }
@@ -892,6 +895,7 @@ function drawLandside(g, S, ap, px, z, night) {
   g.lineCap = 'round'; g.lineJoin = 'round';
   for (const r of L.roads || []) if ((r.lv || 0) <= 0) landRoad(g, r, px, z);
   g.lineCap = 'butt'; g.lineJoin = 'miter';
+  const named = [];
   for (const it of L.items) {
     if (!vis(it)) continue;
     g.save(); g.translate(it.x, it.y); g.rotate(it.a || 0);
@@ -948,7 +952,8 @@ function drawLandside(g, S, ap, px, z, night) {
     if (it.poly) { g.restore(); g.strokeStyle = k === 'park' || k === 'taxi' ? 'rgba(150,150,142,0.9)' : 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); partPath(g, it, w, h); g.stroke(); }
     else if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
     g.restore();
-    if (z > 30 && IC.cam.z < 200) lbl(g, (it.name || IC.LAND[k].name).toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700);
+    // (a name once: a lot the map draws in pieces is one lot; on a mapped landside the unnamed lots say nothing)
+    if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) { named.push({ t, x: it.x, y: it.y }); lbl(g, t.toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700); } }
   }
   // the upper decks: their shadow on the road below, concrete parapets, then the road on top
   g.lineCap = 'round'; g.lineJoin = 'round';

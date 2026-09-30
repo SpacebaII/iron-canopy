@@ -40,6 +40,25 @@ function isTerminal(t) {
   if (/cargo|freight|fdx|fedex|ups\b|dhl/i.test([t.name, t.operator].join(' '))) return false;
   return t.aeroway === 'terminal' || t.building === 'terminal' || /concourse|terminal/i.test(t.name || '');
 }
+/* The name a building shows in the game. The game's names are its own (brief 39): terminals and concourses keep
+   theirs (the owner knows them by name), and so do roads and aprons; a company's hangar, cargo shed, hotel, rental-car
+   lot or fire station shows what it is, not whose it is. The airport's config may rename what it likes first. */
+const BRAND = /\b(united|delta|american|frontier|southwest|alaska|jetblue|spirit|qantas|air canada|lufthansa|mexicana|air general|contego|swissport|fedex|fdx|ups|usps|dhl|lsg|sky chefs|gate gourmet|flying food|signature|atlantic aviation|westin|hyatt|marriott|hilton|sheraton|hertz|avis|alamo|national|payless|budget|enterprise|dollar|thrifty|sixt|denver|dia|los angeles|lax|lawa|world airports|city of)\b/i;
+function plainName(name, kind, C) {
+  if (!name) return name;
+  for (const [re, to] of (C.rename || [])) if (re.test(name)) return to;
+  if (kind === 'terminal') return name.replace(/\s*\(.*\)\s*/, '').trim();
+  if (!BRAND.test(name)) return name;
+  if (kind === 'fire') { const m = /station\s*(\d+)/i.exec(name); return m ? `Fire Station ${m[1]}` : 'Fire Station'; }
+  if (kind === 'hangar') return /hangars/i.test(name) ? 'Hangars' : 'Hangar';
+  if (kind === 'cargo') return 'Cargo';
+  if (/hotel|westin|hyatt|marriott|hilton|sheraton/i.test(name)) return 'Hotel';
+  if (/rent|hertz|avis|alamo|national|payless|budget|enterprise|dollar|thrifty|sixt/i.test(name)) return 'Rental Cars';
+  if (/maintenance/i.test(name)) return 'Maintenance';
+  if (/catering|sky chefs|flight kitchen/i.test(name)) return 'Catering';
+  if (/parking|lot|garage/i.test(name)) return name.replace(BRAND, '').replace(/\s{2,}/g, ' ').trim();
+  return undefined;
+}
 /* the extract: nodes by id, ways with their points, multipolygon relations joined into rings */
 function readOsm(file) {
   const J = JSON.parse(fs.readFileSync(file, 'utf8')), E = J.elements || [];
@@ -266,7 +285,8 @@ function importAirport(key, o) {
     if (B.tags['building:part'] && !B.tags.building && kindOf(B.tags) !== 'tower') continue;
     const pts = simplify(B.pts.concat([B.pts[0]]), 0.01).slice(0, -1); if (pts.length < 3) continue;
     const a = area(pts), c = centroid(pts); let k = kindOf(B.tags);
-    if (aero && !airside(c)) { if (!near(c) || (k === 'support' && !/parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
+    const landmark = (C.roofs || []).some(([re]) => re.test(B.tags.name || ''));
+    if (aero && !airside(c) && !landmark) { if (!near(c) || (k === 'support' && !/parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
     if (k === 'support' && a < 0.04) continue;   // (sheds under 400 m² are left out)
     if (k === 'fuel') { tanks.push({ c, r: Math.sqrt(a / Math.PI) }); continue; }
     const roof = (C.roofs || []).find(([re]) => re.test(B.tags.name || '')), lv = num(B.tags['building:levels'], 0);
@@ -275,7 +295,7 @@ function importAirport(key, o) {
     // (a scrap of terminal with no name is no terminal: a bridge landing, a link drawn as its own outline, or a bus
     // shelter at a remote pad, which stays as a support building)
     if (k === 'terminal' && !B.tags.name && a < TERM_HA) { if (a < 0.04) continue; k = 'support'; }
-    L.blds.push({ kind: k, poly: flat(pts), name: B.tags.name || undefined, roof: roof ? roof[1] : undefined, lvls: lv || undefined, noApron: k === 'terminal' || undefined, _p: pts, _a: a, _lv: +B.tags.layer || 0 });
+    L.blds.push({ kind: k, poly: flat(pts), name: plainName(B.tags.name, k, C) || undefined, roof: roof ? roof[1] : undefined, rows: roof && roof[2] ? roof[2].rows : undefined, peaks: roof && roof[2] ? roof[2].peaks : undefined, lvls: lv || undefined, noApron: k === 'terminal' || undefined, _p: pts, _a: a, _lv: +B.tags.layer || 0 });
   }
   // buildings drawn over one another in the map (an outline and its parts, a shed inside a bigger one): the lesser
   // one goes. Terminals first, then the buildings the airport works by, then support buildings; the larger on a tie
@@ -646,7 +666,7 @@ function importAirport(key, o) {
     if (!near(centroid(pts))) continue;
     if (aero && airside(centroid(pts)) && !/public|customer/.test(A.tags.access || 'public')) continue;
     const garage = A.tags.parking === 'multi-storey' || A.tags.building === 'parking' || A.tags.building === 'garage' || +A.tags['building:levels'] > 1;
-    L.parks.push({ kind: garage ? 'garage' : /rental|taxi/i.test(A.tags.name || '') ? 'taxi' : 'park', poly: flat(pts), lvls: num(A.tags['building:levels'], garage ? 4 : 0) || undefined, name: A.tags.name || undefined, _p: pts, _a: area(pts), _air: aero && airside(centroid(pts)) });
+    L.parks.push({ kind: garage ? 'garage' : /rental|taxi/i.test(A.tags.name || '') ? 'taxi' : 'park', poly: flat(pts), lvls: num(A.tags['building:levels'], garage ? 4 : 0) || undefined, name: plainName(A.tags.name, 'park', C) || undefined, _p: pts, _a: area(pts), _air: aero && airside(centroid(pts)) });
   }
   {
     // a lot drawn round its sections, or round a garage, is the same car park twice: the whole goes, the parts stay

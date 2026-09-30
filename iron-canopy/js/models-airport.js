@@ -51,8 +51,10 @@ function tent(MB, B, p, z) {
   for (let k = 0; k < rows; k++) for (let i = 0; i < n; i++) {
     const u = -L / 2 + dx * (i + 0.5), v = rows === 1 ? 0 : (k - (rows - 1) / 2) * D / rows, lx = long ? u : v, ly = long ? v : u;
     if (inside && IC.shapeDist(inside, { x: lx / 100, y: ly / 100 }) > 0) continue;
-    MB.lathe(B, [[0, r], [r * 0.35, r * 0.62], [r * 0.7, r * 0.22], [r * 0.82, 0.3]], '#f4f4ee', { axis: 'z', at: [lx, ly, z], segs: 10, cap0: '#e6e6e0' });
-    MB.cyl(B, [lx, ly, z + r * 0.95], r * 0.3, 0.25, '#8a8e94', 'z', { segs: 4 });
+    // (the peak rises about 1.6 times its radius: Denver's masts stand some 20 m over the roof deck)
+    const h = Math.min(28, r * 1.6);
+    MB.lathe(B, [[0, r], [h * 0.4, r * 0.62], [h * 0.8, r * 0.22], [h, 0.3]], '#f4f4ee', { axis: 'z', at: [lx, ly, z], segs: 10, cap0: '#e6e6e0' });
+    MB.cyl(B, [lx, ly, z + h * 1.1], h * 0.3, 0.25, '#8a8e94', 'z', { segs: 4 });
   }
 }
 /* the saucer on four crossed parabolic legs: two arches over the middle, the round restaurant under them */
