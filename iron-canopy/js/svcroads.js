@@ -246,4 +246,61 @@ IC.svcRoadEnds = function (S, ap) {
   return out;
 };
 
+/* The small things on an airfield's grass, laid out by themselves (cached like the roads): by each end of a paved
+   runway the four lights that show a pilot the glide path (PAPI) 300 m in, a windsock in its white ring by the
+   touchdown zone and, where a landing system serves that end, its glide-slope mast; a radio beacon (VOR) on a big
+   airport's field; a blast fence behind each holding bay. Each sits on open grass inside the fence, clear of pavement,
+   buildings and roads, or is left out. [{ k: 'papi' | 'sock' | 'gs' | 'vor' | 'blast', x, y, a, len? }] */
+IC.aptFurniture = function (ap) {
+  const N = IC.svcNet(ap), ils = ap.parts.filter(p => p.kind === 'ils' && p.built).map(p => p.rw + p.end).join();
+  const k = N.sig + '|' + ils;
+  if (ap._furn && ap._furn.sig === k) return ap._furn.items;
+  const out = [], F = IC.aptFence(ap), fp = F && F.poly.map(q => [q.x, q.y]);
+  const roads = N.roads.map(r => polyLine(r.pts, r.closed));
+  const blds = ap.parts.filter(p => p.built && p.x != null && !IC.PAVED[p.kind] && p.kind !== 'surface');
+  // clear ground: no pavement within r, no building, road or other furniture near, inside the fence
+  const free = (x, y, r) => {
+    if (fp && !U.inPoly(x, y, fp)) return false;
+    for (const [dx, dy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) if (IC.paveAt(ap, x + dx, y + dy)) return false;
+    if (blds.some(p => IC.partDist(ap, p, { x, y }) < r + 0.1)) return false;
+    if (roads.some(P => P.some((q, i) => i && U.segDist(x, y, P[i - 1].x, P[i - 1].y, q.x, q.y) < r + W))) return false;
+    return !out.some(o => U.dist(o, { x, y }) < r + 0.25);
+  };
+  const put = (kind, cands, r, a) => { for (const q of cands) if (free(q.x, q.y, r)) { out.push(Object.assign({ k: kind, x: q.x, y: q.y, a }, q.o)); return true; } return false; };
+  const rws = ap.parts.filter(p => p.kind === 'runway' && p.built && IC.paveOf(p) !== 'grass');
+  for (const r of rws) {
+    const L = IC.rwLen(r); if (L < 12) continue;
+    for (const e of ['a', 'b']) {
+      const T = r[e], u = e === 'a' ? IC.rwDir(r) : { x: -IC.rwDir(r).x, y: -IC.rwDir(r).y }, n = { x: -u.y, y: u.x };
+      const at = (s, side, off) => ({ x: T.x + u.x * s + n.x * side * off, y: T.y + u.y * s + n.y * side * off });
+      const h = r.w / 2 + IC.rwShoulder(r.w);
+      // (the left of the pilot landing, else the right)
+      let side = 1;
+      if (!put('papi', [at(3, 1, h + 0.25), at(3, -1, h + 0.25), at(2.4, 1, h + 0.25), at(2.4, -1, h + 0.25)].map(q => q), 0.14, Math.atan2(n.y, n.x))) continue;
+      const P = out[out.length - 1]; side = ((P.x - T.x) * n.x + (P.y - T.y) * n.y) > 0 ? 1 : -1;
+      if (ils.includes(r.id + e)) put('gs', [at(3.2, side, h + 1.2), at(3.2, -side, h + 1.2), at(3.6, side, h + 1.6)], 0.12, Math.atan2(u.y, u.x));
+      put('sock', [at(1.6, -side, h + 1), at(1.6, side, h + 1.4), at(1.1, -side, h + 1.4), at(2.2, side, h + 2)], 0.16, 0);
+    }
+  }
+  // a VOR on a long runway's field, well clear of everything (its signal wants open ground)
+  const big = rws.filter(r => IC.rwLen(r) >= 25).sort((a, b) => IC.rwLen(b) - IC.rwLen(a))[0];
+  if (big) {
+    const d = IC.rwDir(big), n = { x: -d.y, y: d.x }, c = [];
+    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8]) for (const off of [4, 5.5, 3]) for (const s of [1, -1]) { const m = IC.rwAt(big, t); c.push({ x: m.x + n.x * s * (big.w / 2 + off), y: m.y + n.y * s * (big.w / 2 + off) }); }
+    put('vor', c, 0.45, 0);
+  }
+  // a blast fence along the back of each holding bay, away from the runway
+  for (const b of ap.parts) if (b.kind === 'holdbay' && b.built) {
+    const P = IC.partOutline(b), rw = ap.parts.find(p => p.id === b.rw) || rws[0]; if (!rw || P.length < 3) continue;
+    const far = q => { const d = IC.rwDir(rw); return Math.abs((q.x - rw.a.x) * -d.y + (q.y - rw.a.y) * d.x); };
+    let best = null;
+    for (let i = 0; i < P.length; i++) { const A = P[i], B = P[(i + 1) % P.length], m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }; if (!best || far(m) > far(best.m)) best = { A, B, m }; }
+    const len = U.dist(best.A, best.B), cx = b.x, cy = b.y, dm = U.dist(best.m, { x: cx, y: cy }) || 1;
+    const q = { x: best.m.x + (best.m.x - cx) / dm * 0.25, y: best.m.y + (best.m.y - cy) / dm * 0.25 };
+    if (!IC.paveAt(ap, q.x, q.y)) out.push({ k: 'blast', x: q.x, y: q.y, a: Math.atan2(best.B.y - best.A.y, best.B.x - best.A.x), len: len * 0.9 });
+  }
+  ap._furn = { sig: k, items: out };
+  return out;
+};
+
 })(window.IC);

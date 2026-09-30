@@ -460,13 +460,19 @@ function layers() {
 }
 function modeHint() {
   const m = S.mode2, el = $('modehint');
-  if (!m || !HINT[m.kind]) { el.hidden = true; return; }
+  // (with the build bar up, its top line says what to do and the ghost's tag what it costs: no second copy here)
+  const inBar = BAR_MODES[m && m.kind] && IC.bb && IC.bb.open && $('bbar') && !$('bbar').hidden;
+  if (!m || !HINT[m.kind] || inBar) { el.hidden = true; return; }
   el.hidden = false;
   // above the arsenal, however tall it is today (a war's arsenal is taller than the Career's first one)
   const ar = $('arsenal'), ab = ar && !ar.hidden ? ar.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
   el.style.bottom = ab && ab.height ? Math.max(12, app.bottom - ab.top + 10) + 'px' : '';
   el.textContent = HINT[m.kind](m);
 }
+const BAR_MODES = { build: 1, bulldoze: 1, upgrade: 1, bpick: 1, bmove: 1 };
+/* the one line the build bar shows for a builder mode: how to use the tool (the plan's price and problems are on the
+   ghost's tag by the cursor) */
+ui.barHint = m => !m || !BAR_MODES[m.kind] ? '' : m.kind === 'build' ? buildHint(m, true) : HINT[m.kind](m).split('\n')[0];
 /* what each mode tells the player to do (m is S.mode2) */
 const HINT = {
     rangeTarget: () => 'Click the map where the threats should aim.',
@@ -491,7 +497,7 @@ const HINT = {
       : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
 };
 /* the builder: how to use the tool, and what the plan under the cursor will do */
-function buildHint(m) {
+function buildHint(m, short) {
   const t = m.part, n = m.pts.length, D = IC.APART[t], T = IC.BTOOLS[t];
   const again = 'click the last point again (or Enter) to build';
   const how = t === 'taxi' ? `Taxiway: click points; ends snap to runways, aprons and taxiways. ${n >= 2 ? again[0].toUpperCase() + again.slice(1) + '.' : ''} Corners are ${m.fillet ? 'rounded (F: sharp)' : 'sharp (F: rounded)'}.`
@@ -506,6 +512,7 @@ function buildHint(m) {
     : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
     : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
+  if (short) return `${how} Right-click takes a point back; Esc stops.`;
   const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z), !!IC.bldFree) : null;
   const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
   const snap = IC.bldIsLine(t) || IC.bldIsArea(t) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';

@@ -164,6 +164,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
     if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
+  // what stands on the grass: glide-path lights, windsocks, glide-slope masts, a VOR, blast fences
+  if (z > 3 && !(o && o.pad)) drawFurniture(g, S, ap, px, z, now, night);
   // people movers below ground: the line on the map, faint and dashed
   for (const p of by('people')) if ((p.lv || 0) < 0) drawMover(g, p, px, z, night, now);
   // aircraft parked
@@ -583,6 +585,64 @@ function hull(P) {
   for (const q of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
   for (let i = P.length - 1; i >= 0; i--) { const q = P[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
   return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+/* the furniture on the grass (IC.aptFurniture), a little larger than life so it reads from the usual zoom */
+function drawFurniture(g, S, ap, px, z, now, night) {
+  const V = IC.rs && IC.rs.view, wind = S.wind || { x: 0, y: 0 }, wa = Math.atan2(wind.y || 0, wind.x || 0), wk = U.clamp((S.wind && S.wind.kt || 0) / 15, 0.25, 1);
+  const lw = Math.max(0.004, 0.8 * px);
+  for (const f of IC.aptFurniture(ap)) {
+    if (V && (f.x < V.x0 - 1 || f.x > V.x1 + 1 || f.y < V.y0 - 1 || f.y > V.y1 + 1)) continue;
+    g.save(); g.translate(f.x, f.y); g.rotate(f.a || 0);
+    if (f.k === 'papi') {
+      // four light boxes in a row, square to the runway; at night two white, two red
+      const b = Math.max(0.07, 5 * px), sp = b * 1.6;
+      for (let i = 0; i < 4; i++) {
+        const x = (i - 1.5) * sp;
+        g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x - b / 2 + b * 0.25, -b / 2 + b * 0.25, b, b * 0.7);
+        g.fillStyle = 'rgb(214,214,206)'; g.fillRect(x - b / 2, -b / 2, b, b * 0.7);
+        g.strokeStyle = 'rgba(30,30,30,0.7)'; g.lineWidth = lw; g.strokeRect(x - b / 2, -b / 2, b, b * 0.7);
+        if (night) { g.fillStyle = i < 2 ? 'rgba(255,250,230,0.95)' : 'rgba(255,60,50,0.95)'; g.beginPath(); g.arc(x, 0, b * 0.35, 0, 7); g.fill(); }
+      }
+    } else if (f.k === 'gs') {
+      // the glide-slope mast and its shelter, on a gravel pad
+      const s = Math.max(0.1, 7 * px);
+      g.fillStyle = 'rgba(150,146,134,0.8)'; g.fillRect(-s, -s * 0.7, s * 2, s * 1.4);
+      g.fillStyle = 'rgb(226,226,220)'; g.fillRect(-s * 0.8, -s * 0.5, s * 0.8, s * 0.7);
+      g.strokeStyle = 'rgba(30,30,30,0.7)'; g.lineWidth = lw; g.strokeRect(-s * 0.8, -s * 0.5, s * 0.8, s * 0.7);
+      g.fillStyle = 'rgb(210,60,50)'; g.beginPath(); g.arc(s * 0.5, 0, s * 0.28, 0, 7); g.fill();
+      g.fillStyle = 'rgb(240,240,236)'; g.beginPath(); g.arc(s * 0.5, 0, s * 0.13, 0, 7); g.fill();
+    } else if (f.k === 'sock') {
+      // the white ring round the mast, and the orange-and-white sock blowing downwind (fuller in a stronger wind)
+      const R = Math.max(0.22, 12 * px);
+      g.strokeStyle = 'rgba(236,236,228,0.85)'; g.lineWidth = Math.max(0.012, 1.4 * px); g.setLineDash([R * 0.5, R * 0.3]);
+      g.beginPath(); g.arc(0, 0, R, 0, 7); g.stroke(); g.setLineDash([]);
+      g.rotate(wa + Math.sin(now * 3 + f.x) * 0.12 * (1.2 - wk));
+      const l = R * 0.9, w0 = R * 0.22, w1 = w0 * (0.35 + 0.4 * wk);
+      for (let i = 0; i < 5; i++) {
+        const a = l * i / 5, b = l * (i + 1) / 5, wa0 = w0 + (w1 - w0) * i / 5, wb = w0 + (w1 - w0) * (i + 1) / 5;
+        g.fillStyle = i & 1 ? 'rgb(240,238,230)' : 'rgb(236,112,36)';
+        g.beginPath(); g.moveTo(a, -wa0 / 2); g.lineTo(b, -wb / 2); g.lineTo(b, wb / 2); g.lineTo(a, wa0 / 2); g.closePath(); g.fill();
+      }
+      g.fillStyle = 'rgb(60,60,60)'; g.beginPath(); g.arc(0, 0, Math.max(0.01, 1.3 * px), 0, 7); g.fill();
+    } else if (f.k === 'vor') {
+      // a VOR: the round counterpoise on its legs, the ring of antennas at its rim, the hut in the middle
+      const R = 0.3;
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.arc(R * 0.15, R * 0.15, R, 0, 7); g.fill();
+      g.fillStyle = 'rgb(206,208,204)'; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(60,64,64,0.8)'; g.lineWidth = lw; g.stroke();
+      if (z > 10) { g.fillStyle = 'rgb(90,94,96)'; for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; g.beginPath(); g.arc(Math.cos(a) * R * 0.86, Math.sin(a) * R * 0.86, Math.max(0.004, 0.6 * px), 0, 7); g.fill(); } }
+      g.fillStyle = 'rgb(236,236,230)'; g.fillRect(-R * 0.3, -R * 0.3, R * 0.6, R * 0.6); g.strokeRect(-R * 0.3, -R * 0.3, R * 0.6, R * 0.6);
+      g.fillStyle = 'rgb(210,60,50)'; g.beginPath(); g.arc(0, 0, R * 0.12, 0, 7); g.fill();
+    } else if (f.k === 'blast') {
+      // a blast fence: slatted steel, leaning away from the engines, with its shadow on the grass
+      const L = f.len, t = Math.max(0.03, 2.5 * px);
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(-L / 2 + t * 0.4, -t / 2 + t * 0.9, L, t);
+      g.fillStyle = 'rgb(128,134,136)'; g.fillRect(-L / 2, -t / 2, L, t);
+      if (z > 8) { g.strokeStyle = 'rgba(60,64,66,0.8)'; g.lineWidth = lw; g.beginPath(); for (let x = -L / 2; x <= L / 2; x += Math.max(0.03, 3 * px)) { g.moveTo(x, -t / 2); g.lineTo(x, t / 2); } g.stroke(); }
+      g.strokeStyle = 'rgba(30,30,30,0.6)'; g.lineWidth = lw; g.strokeRect(-L / 2, -t / 2, L, t);
+    }
+    g.restore();
+  }
 }
 function shadowOf(g, S, p) {
   const H = p.lvls ? p.lvls * 4.2 : BLD_H[p.kind] || 8; if (!H) return;

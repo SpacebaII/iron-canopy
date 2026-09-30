@@ -237,8 +237,11 @@ function options(S, m) {
   if (!m) return '';
   const P = S.bldPref || {}, g = [];
   const mat = m.mat || P.mat || 'conc', t = m.kind === 'build' ? m.part : m.kind;
-  // (bulldozing and moving say what to do in the hint over the map: no chips to choose here)
-  if (m.kind === 'bulldoze' || m.kind === 'bpick' || m.kind === 'bmove') return '';
+  // what to do, on one line at the top (the price and any problem are on the ghost's tag by the cursor)
+  const say = IC.ui.barHint ? `<div class="bb-say one" title="${esc(IC.ui.barHint(m))}">${esc(IC.ui.barHint(m))}</div>` : '';
+  // (bulldozing and moving: no chips to choose, only the line)
+  if (m.kind === 'bulldoze' || m.kind === 'bpick' || m.kind === 'bmove') return say;
+  if (m.kind === 'build') g.push(say);
   if (t === 'upgrade' || PAVED_TOOLS[t]) g.push(group('Pavement', IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return chip('mat', k, (lock ? '🔒 ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), mat === k, `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost ×${IC.PAVE[k].cost}, time ×${IC.PAVE[k].build}.`, !!lock); }).join('')));
   if (t === 'runway' || t === 'upgrade') g.push(group(t === 'upgrade' ? 'Runway width' : 'Width', IC.WIDTHS.runway.map(w => chip('rwid', w, `${Math.round(w * 100)} m`, (m.rwid || IC.APART.runway.w) === w, w < 0.4 ? 'Narrow: cheaper; enough for regional aircraft and narrow-bodies' : w > 0.5 ? 'Wide: for the largest aircraft, and more margin in a crosswind' : 'The standard width for airliners')).join('')));
   if (TAXI_TOOLS[t] || t === 'upgrade') g.push(group(t === 'upgrade' ? 'Taxiway width' : 'Width', IC.WIDTHS.taxi.map(w => chip('twid', w, `${Math.round(w * 100)} m`, (m.twid || IC.APART.taxi.w) === w, w < 0.16 ? 'A taxilane: narrow-bodies and smaller, at walking pace on the apron' : w < 0.2 ? 'For narrow-bodies' : 'For wide-bodies: the standard')).join('')));
