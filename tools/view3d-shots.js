@@ -389,7 +389,7 @@ const SCENES = {
     const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === what && (what !== 'taxi' || m.kind === 'dep') && (what !== 'final' || m.t > 20) && m.type !== 'light' && !m.mil));
     if (!m) throw new Error('nothing ' + what);
     const L = await live(S, m, window.CAM || 'chase', 600); L.camK = +(window.K || 1.4);
-    await film(L, S, window.NAME || 'm-probe', +(window.FRAMES || 40), 1, f => { if (f === +(window.FRAMES || 40) - 1) { const F = L.fxs; console.log('fx', F && JSON.stringify({ q: F.q, expo: F.expo, night: F.night, sun: F.sunDir, wet: F.wet, W: F.W, fog: [IC.fx3d && 0] })); return 'still'; } });`,
+    await film(L, S, window.NAME || 'm-probe', +(window.FRAMES || 40), 1, f => { if (f === +(window.FRAMES || 40) - 1) { const F = L.fxs; console.log('fx', F && JSON.stringify({ q: F.q, expo: F.expo, night: F.night, sun: F.sunDir, wet: F.wet, W: F.W, fog: [IC.fx3d && 0] })); if (window.PADPX && F.grassU && F.grassU.pad.value) { const u = F.grassU, im = u.pad.value.image, b = u.padBox.value, c = u.camAt.value, out = []; for (const [dx, dz] of [[0, 0], [0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { const x = ((c.x + dx - b.x) / b.z) * im.width, y = ((c.z + dz - b.y) / b.z) * im.height; out.push([Math.round(x), Math.round(y), Array.from(im.getContext('2d').getImageData(x | 0, y | 0, 1, 1).data)]); } console.log('pad under the grass', F.grass && F.grass.visible, JSON.stringify(out)); } return 'still'; } });`,
   // brief 40: frame times per preset, the live view full screen following an airliner at the capital (VIEWPORT=1920x1080)
   'frames-40': `
     const S = await game('sandbox', 11); wx(S, 'scattered');
@@ -594,7 +594,7 @@ const SCENES = {
     if (/^m-/.test(name)) {
       await page.exposeFunction('__frame', (n, b64) => { const f = path.join(dir, `3d-${n}.mjpeg`); if (!clips.has(n)) { clips.add(n); fs.writeFileSync(f, ''); } fs.appendFileSync(f, Buffer.from(b64, 'base64')); });
       await page.exposeFunction('__still', (n, b64) => { const out = path.join(dir, `3d-${n}.jpg`); fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('saved', out); });
-      for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME', 'CULPRITS']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+      for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME', 'CULPRITS', 'PADPX']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     }
     if (name === 'movie' || /^clip-/.test(name)) {
       // the frames go one after another into one file of JPEGs, which ffmpeg reads as a stream when they are done
