@@ -1081,6 +1081,8 @@ function frame(v, t, dtR) {
   // brief 41's lights (strobes, beacons, runway lights) glow at night; by day they are small bright points, no halo
   const lg = Math.round((0.3 + 0.7 * Math.max(night, fog)) * 20) / 20;
   if (v.life && IC.life3d && F.lifeGain !== lg) { F.lifeGain = lg; IC.life3d.gain(v, lg); }
+  // and their idea of day and night follows this sun (the look's hour too), not the hour the view opened at
+  if (v.life) { const d = U.clamp((v.light - 0.3) / 0.4, 0, 1); v.life.day = d; v.life.nightK = 1 - d; }
   // wet after rain (snow only damps the pavement: slush, no puddles)
   const wetTo = W.rain > 0.3 ? 1 : W.snow > 0.3 ? 0.3 : 0;
   F.wet += U.clamp(wetTo - F.wet, -dtR * 0.05, dtR * 0.2);
@@ -1226,8 +1228,10 @@ function envMap(v, sd, W, night) {
   const F = v.fxs; if (!F.Q.env || !F.pmrem || !DBG.env) { if (v.scene.environment) v.scene.environment = null; if (DBG.env) return; F.envKey = ''; return; }
   const key = Math.round(sd.x * 30) + ',' + Math.round(sd.y * 30) + ',' + Math.round(sd.z * 30) + W.kind + Math.round(night * 4);
   if (key === F.envKey) return;
-  const now = performance.now(); if (F.envKey && now - F.envT < 1500) return;
-  F.envKey = key; F.envT = now;
+  // the sun creeping along is caught up with every 1.5 s at most; new weather or nightfall at once
+  const now = performance.now(), sky = W.kind + Math.round(night * 4), E = F.envSun || (F.envSun = new THREE.Vector3(0, -1, 0));
+  if (F.envKey && sky === F.envSky && E.dot(sd) > 0.995 && now - F.envT < 1500) return;
+  F.envKey = key; F.envT = now; F.envSky = sky; E.copy(sd);
   const flash = F.skyU.flash.value; F.skyU.flash.value = 0;
   // the sky dome's copy stands at the middle of the environment scene; the ground below is the haze's colour
   const target = F.pmrem.fromScene(F.envScene, 0.03, 0.1, 5000);

@@ -984,7 +984,8 @@ function updMover(v, m, t) {
     if (on) { const g0 = hT(v, st.x, st.y) * hk + LIFT.rw + 0.0005; m.shadow.position.set(m.grp.position.x + st.alt * KM * 0.3, g0, m.grp.position.z + st.alt * KM * 0.2); m.shadow.rotation.set(0, -st.h, 0); m.shadow.scale.set(m.MP.len * 1.1, 1, m.size * 0.95); m.shadow.material.opacity = (1 - st.alt / 0.4) * 0.85; }
   }
   // the trail, smoothed between the samples, at the heights shown (not along the ground)
-  const tl = m.tr.kind === 'missile' ? 900 : m.tr.kind === 'veh' || m.tr.kind === 'unit' ? 0 : (v.lod > 0 ? 30 : CFG.trail);
+  // (v.trails false: aircraft draw none, as in a film; a missile keeps its smoke)
+  const tl = m.tr.kind === 'missile' ? 900 : m.tr.kind === 'veh' || m.tr.kind === 'unit' || v.trails === false ? 0 : (v.lod > 0 ? 30 : CFG.trail);
   if (tl && !st.gnd) trail(v, m, t - tl, t, st, y); else m.line.visible = false;
   if (m.smoke) missileFx(v, m, t, st, hide);
   // a touchdown leaves a puff of tyre smoke

@@ -70,7 +70,7 @@ function grab(V, w, h) {
 }
 async function film(V, S, name, N, speed, hook) {
   window.requestAnimationFrame = () => 0;   // the frames are made here, one by one
-  V.labels = false; for (const m of V.movers) m.label.hidden = true;
+  V.labels = false; V.trails = false; for (const m of V.movers) m.label.hidden = true;
   const pn = V.$('panel'); if (pn) pn.style.display = 'none';
   let now = film.now || (film.now = performance.now()), acc = 0, stillAt = null;
   for (let f = 0; f < N; f++) {
