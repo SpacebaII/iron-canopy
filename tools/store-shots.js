@@ -71,12 +71,13 @@ const SCENES = {
     IC.ui.cineShown = S.camp.cards.length; document.getElementById('cine').hidden = true;
     S.layers.coverage = false; S.paused = false; S.speed = 1;
     look(c.x, c.y, z); await wait(3500); look(c.x, c.y, z); S.paused = true; await wait(800);`,
-  // the builder: a taxiway from the runway, locked square to it and stopped on a guide, its length and cost by the cursor
+  // the builder: the build bar open on the Taxiways tab, a taxiway from the runway locked square to it and stopped on
+  // a guide, its length and cost by the cursor
   builder: `
     const S = await career(11); steps(S, 600); S.paused = true;
     const ap = S.byId[S.story.cap], P = ([x, y]) => IC.aptLocal(ap, x, y);
-    S.layers.coverage = false; IC.select({ kind: 'infra', ref: ap }); IC.ui.aptTab = 'build';
-    S.mode2 = IC.bldMode(S, ap, 'taxi');
+    S.layers.coverage = false; IC.select({ kind: 'infra', ref: ap });
+    IC.bbToggle(true); IC.bbTab('tw'); IC.bbPick('taxi');
     IC.buildInput(S, S.mode2, P([4, 0]), 0, 38);
     S.hover = P([4.08, -2.63]);
     const c = P([2.6, -1.6]); look(c.x, c.y, 34); IC.ui.refresh(true); await wait(5000);

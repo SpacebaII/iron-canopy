@@ -179,7 +179,12 @@ function toScene(me, names, cols, o, k, shade) {
   }
   return geom(pos, nor, col);
 }
-const ANIM = { gear: 1, flap: 1, prop: 1, rotor: 1, radar: 1, turret: 1, launch: 1, ab: 1 };
+const ANIM = { gear: 1, flap: 1, prop: 1, rotor: 1, radar: 1, turret: 1, launch: 1, ab: 1, flex: 1, ail: 1, elev: 1, rud: 1, spoil: 1, slat: 1, fan: 1, rev: 1, revc: 1, lift: 1, scissor: 1, sock: 1 };
+/* what is out of sight at rest (and so left out of the model in one piece): flaps, spoilers, slats, reversers */
+const HIDDEN = { ab: 1, flap: 1, spoil: 1, slat: 1, rev: 1, revc: 1 };
+/* the life of the scene (render3d-life.js): aircraft that move like real ones, the airports' lights, jet bridges and
+   vehicles, launches. When it is loaded it takes the hooks below; without it the view is as it was */
+const LIFE = () => IC.life3d;
 const LIGHT_COL = { red: '#ff3a2a', green: '#3aff6a', white: '#ffffff', strobe: '#ffffff', beacon: '#ff2a1a', land: '#fff4d8' };
 /* a model as the view uses it, built once per model, livery and detail:
    solid (everything that does not move), win (windows, lit at night), anim (each moving part with its pivot and axis),
@@ -192,13 +197,13 @@ function modelParts(key, livery, body) {
   const names = k => Object.keys(me.groups).filter(k);
   const solid = names(n => !ANIM[me.groups[n].kind] && me.groups[n].kind !== 'win');
   const win = names(n => me.groups[n].kind === 'win');
-  const restOf = m => Object.keys(m.groups).filter(n => { const g = m.groups[n]; return g.kind !== 'ab' && g.kind !== 'flap'; });
+  const restOf = m => Object.keys(m.groups).filter(n => !HIDDEN[m.groups[n].kind]);
   P = {
     key, solid: toScene(me, solid, cols, null, 0.01), win: win.length ? toScene(me, win, cols, null, 0.01) : null,
     rest: toScene(lo, restOf(lo), cols, null, 0.01), restHi: toScene(me, restOf(me), cols, null, 0.01),
     anim: names(n => ANIM[me.groups[n].kind]).map(n => {
       const g = me.groups[n], pv = g.pivot;
-      return { name: n, kind: g.kind, up: g.up, rpm: g.rpm, geom: toScene(me, [n], cols, pv, 0.01), pivot: [pv[0] * 0.01, pv[2] * 0.01, pv[1] * 0.01], axis: [g.axis[0], g.axis[2], g.axis[1]] };
+      return { name: n, kind: g.kind, up: g.up, rpm: g.rpm, R: g.R, side: g.side, parent: g.parent, geom: toScene(me, [n], cols, pv, 0.01), pivot: [pv[0] * 0.01, pv[2] * 0.01, pv[1] * 0.01], axis: [g.axis[0], g.axis[2], g.axis[1]] };
     }),
     lights: me.lights.map(l => ({ p: [l.x * 0.01, l.z * 0.01, l.y * 0.01], kind: l.kind })),
     size: IC.modelSize(key) / 100, top: me.box[5] * 0.01, len: (me.box[3] - me.box[0]) * 0.01
@@ -470,7 +475,7 @@ const LIFT = { pad: 0.003, rw: 0.004 };
 const PAVE_ORDER = { pad: 1, apron: 2, joint: 3, taxi: 4, runway: 5 };
 function paveMat(o, order, mesh) { const m = new THREE.MeshLambertMaterial(o); m.depthWrite = false; mesh.material = m; mesh.renderOrder = PAVE_ORDER[order]; return mesh; }
 function aptPad(v, b, f) {
-  const S = v.S, R = f.r0, T = Math.min(2048, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 36)))));
+  const S = v.S, R = f.r0, T = Math.min(4096, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 60)))));
   const cv = document.createElement('canvas'); cv.width = cv.height = T;
   const g = cv.getContext('2d'), z = T / (2 * R), px = 1 / z;
   const cam = IC.cam, saved = { x: cam.x, y: cam.y, z: cam.z, vw: cam.vw, vh: cam.vh }, rs = IC.rs, savedView = rs && rs.view;
@@ -479,7 +484,7 @@ function aptPad(v, b, f) {
   const hide = { moves: b.moves, roster: S.roster, tb: S.av && S.av.tailById, tt: S.av && S.av.tailMapT, cfg: b.cfg };
   Object.assign(cam, { x: b.x - R, y: b.y - R, z, vw: T, vh: T }); if (rs) rs.view = { x0: b.x - R, y0: b.y - R, x1: b.x + R, y1: b.y + R };
   b.moves = []; S.roster = []; b.cfg = null; if (S.av) { S.av.tailById = new Map(); S.av.tailMapT = S.time; }
-  try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1); } catch (e) { console.warn('3D airport', e); }
+  try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1, { pad: true }); } catch (e) { console.warn('3D airport', e); }
   b.moves = hide.moves; S.roster = hide.roster; b.cfg = hide.cfg; if (S.av) { S.av.tailById = hide.tb; S.av.tailMapT = hide.tt; }
   Object.assign(cam, saved); if (rs) rs.view = savedView;
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
@@ -591,6 +596,16 @@ function apronMesh(v, b, p, f) {
   }
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
   const y = f.e * v.hk + LIFT.pad, c = (lx, ly) => { const w = IC.rectWorld(p, lx, ly); return [w.x - v.cx, y, w.y - v.cy]; };
+  // (an apron drawn as an outline: its convex pieces, fanned, the texture laid over its rectangle)
+  if (p.poly && IC.convexPieces) {
+    const P = [], N = [], UV = [], I = [];
+    for (const piece of IC.convexPieces(p.poly.map(q => ({ x: q[0], y: q[1] })))) {
+      const k0 = P.length / 3;
+      for (const q of piece) { P.push(...c(q.x, q.y)); N.push(0, 1, 0); UV.push((q.x + p.w / 2) / p.w, 1 - (q.y + p.h / 2) / p.h); }
+      for (let i = 1; i + 1 < piece.length; i++) I.push(k0, k0 + i, k0 + i + 1, k0, k0 + i + 1, k0 + i);
+    }
+    return paveMat({ map: tex }, 'apron', new THREE.Mesh(geom(new Float32Array(P), new Float32Array(N), null, new Float32Array(UV), new Uint32Array(I))));
+  }
   const pos = new Float32Array([...c(-p.w / 2, -p.h / 2), ...c(p.w / 2, -p.h / 2), ...c(p.w / 2, p.h / 2), ...c(-p.w / 2, p.h / 2)]);
   const gm = geom(pos, new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), null, new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), new Uint16Array([0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]));
   return paveMat({ map: tex }, 'apron', new THREE.Mesh(gm));
@@ -602,6 +617,8 @@ function aptBuildings(v, b, f) {
   let nr = 0;
   for (const p of b.parts) {
     if (!p.built || PAVE[p.kind] === 1) continue;
+    // (parts drawn as outlines, passenger bridges and people movers: models-airport.js)
+    if (IC.aptMass3d && (p.poly || p.kind === 'skybridge' || p.kind === 'people')) { const st0 = B.groups.main.pos.length / 3; if (IC.aptMass3d(MB, B, p, b)) { items.push({ p, start: st0, end: B.groups.main.pos.length / 3 }); continue; } }
     const x = (p.x - b.x) * 100, y = (p.y - b.y) * 100, a = p.a || 0, W = (p.w || (p.r || 0.1) * 2) * 100, H = (p.h || (p.r || 0.1) * 2) * 100, dead = p.hp <= 0;
     const ca = Math.cos(a), sa = Math.sin(a), start = B.groups.main.pos.length / 3;
     B.with(q => [x + q[0] * ca - q[1] * sa, y + q[0] * sa + q[1] * ca, q[2]], () => {
@@ -668,8 +685,8 @@ function aptBuildings(v, b, f) {
     });
     items.push({ p, start, end: B.groups.main.pos.length / 3 });
   }
-  // jet bridges from the terminal to the front door of each contact stand
-  for (const ap of b.parts) if (ap.kind === 'apron' && ap.built) for (const s of ap.stands || []) {
+  // jet bridges from the terminal to the front door of each contact stand (the life of the scene moves its own)
+  if (!LIFE()) for (const ap of b.parts) if (ap.kind === 'apron' && ap.built) for (const s of ap.stands || []) {
     if (!s.contact || s.hp <= 0) continue;
     const S0 = IC.STAND[s.size], ca = Math.cos(s.a), sa = Math.sin(s.a), sx = (s.x - b.x) * 100, sy = (s.y - b.y) * 100;
     B.with(q => [sx + q[0] * ca - q[1] * sa, sy + q[0] * sa + q[1] * ca, q[2]], () => { MB.box(B, S0.d * 37, -S0.w * 20, 4.6, S0.d * 30, 3, 3, '#b0b4ba'); MB.cyl(B, [S0.d * 24, -S0.w * 20, 2.2], 4.4, 0.4, '#70767c', 'z', { segs: 5 }); });
@@ -738,17 +755,19 @@ function airportSync(v, fx, fy) {
     const f = v.flat.find(q => q.x === b.x && q.y === b.y); if (!f) continue;
     const G = new THREE.Group();
     G.add(aptPad(v, b, f));
-    for (const p of b.parts) if (p.kind === 'apron' && p.built) G.add(apronMesh(v, b, p, f));
-    for (const m of taxiMeshes(v, b, f)) G.add(m);
+    // (aprons, taxiways and their fillets are on the pad: the map's own pavement, render-pavement.js)
     b.parts.filter(p => p.kind === 'runway' && p.built).forEach((rw, i) => G.add(runwayMesh(v, rw, f.e, i)));
     const bl = aptBuildings(v, b, f); G.add(bl);
-    const lt = aptLights(v, b, f); if (lt) { G.add(lt); v.nightLights.push(lt); }
-    v.static.add(G); v.apts.set(b.id, { G, sig, radars: bl.userData.radars, lights: lt });
+    const lt = LIFE() ? null : aptLights(v, b, f); if (lt) { G.add(lt); v.nightLights.push(lt); }
+    const A2 = { G, sig, radars: bl.userData.radars, lights: lt };
+    if (LIFE()) A2.life = LIFE().airport(v, b, f, G);
+    v.static.add(G); v.apts.set(b.id, A2);
     v.made.airport++;
   }
 }
 function dropApt(v, id) {
   const A = v.apts.get(id); if (!A) return;
+  if (A.life && LIFE()) LIFE().dropAirport(v, A.life);
   v.static.remove(A.G);
   A.G.traverse(x => { if (x.geometry && !x.isInstancedMesh) x.geometry.dispose(); if (x.material && !isShared(x.material)) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); } });
   v.dmgMeshes = v.dmgMeshes.filter(m => { let inside = false; A.G.traverse(x => { if (x === m) inside = true; }); return !inside; });
@@ -847,7 +866,7 @@ function makeMover(v, tr) {
     }
     m.far = new THREE.Mesh(MP.rest, solidMat()); m.far.visible = false; m.far.userData.tr = tr; body.add(m.far);
     if (IC.modelIsAircraft(tr.model)) { m.shadow = new THREE.Mesh(quadG(), new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false, opacity: 1 })); m.shadow.renderOrder = 6; m.shadow.visible = false; sc.add(m.shadow); }
-    if (m.ac) {
+    if (m.ac && !LIFE()) {
       m.nav = lightPoints(MP.lights.filter(l => l.kind === 'red' || l.kind === 'green' || l.kind === 'white'));
       m.flash = lightPoints(MP.lights.filter(l => l.kind === 'strobe' || l.kind === 'beacon'));
       m.land = lightPoints(MP.lights.filter(l => l.kind === 'land'));
@@ -878,6 +897,7 @@ function makeMover(v, tr) {
     Object.assign(m, { plume, glow, smoke, locks, cone, burn: burnOf(tr), tL: IC.recFirstT(tr) });
   }
   v.movers.push(m); v.moverOf.set(tr, m); v.made.mover++;
+  if (LIFE()) LIFE().mover(v, m);
   return m;
 }
 function dropMover(v, m) {
@@ -888,6 +908,7 @@ function dropMover(v, m) {
   for (const x of [m.line, m.smoke, m.locks, m.glow, m.cone, m.plume]) if (x) x.material.dispose();
   if (m.smoke) m.smoke.children[0].material.dispose();
   m.label.remove();
+  if (LIFE()) LIFE().dropMover(v, m);
   v.movers.splice(v.movers.indexOf(m), 1); v.moverOf.delete(m.tr);
   if (v.follow === m) v.follow = null;
 }
@@ -905,7 +926,7 @@ function updMover(v, m, t) {
   const S = v.S, hk = v.hk, st = IC.recPose(m.tr, t, m.st, S.wind);
   const hide = !st || (v.radar && m.tr.kind === 'threat' && !st.det && !m.tr.meta.civil && st.aff !== 1);
   m.vis = !!st && !hide;
-  if (!m.vis) { m.grp.visible = false; m.line.visible = false; if (m.lblOn) { m.label.hidden = true; m.lblOn = false; } if (m.smoke) { m.smoke.visible = false; m.locks.visible = false; m.cone.visible = false; } return; }
+  if (!m.vis) { m.grp.visible = false; m.line.visible = false; if (m.lblOn) { m.label.hidden = true; m.lblOn = false; } if (m.smoke) { m.smoke.visible = false; m.locks.visible = false; m.cone.visible = false; } if (LIFE()) LIFE().hide(v, m); return; }
   const dt = m.lastT == null ? 99 : Math.abs(t - m.lastT); m.lastT = t;
   const onGnd = st.gnd && m.ac, y = hT(v, st.x, st.y) * hk + (onGnd ? LIFT.rw : st.alt * KM * hk);
   const pitch = hk > 1 ? Math.atan(Math.tan(st.pitch) * hk) : st.pitch;
@@ -923,8 +944,9 @@ function updMover(v, m, t) {
     const mat = v.radar ? radarMat(m.tr.kind === 'threat' ? AFF_COL[st.aff | 0] : SIDE_COL[m.tr.side] || '#ffffff') : solidMat();
     if (m.solid.material !== mat) { m.solid.material = mat; m.far.material = mat; }
     if (lod) animate(v, m, st, t, dt);
-    if (m.ac) { const on = v.night && !v.radar; if (m.nav) m.nav.visible = on; if (m.flash) m.flash.visible = on && ((t + m.ph0) % 1.1) < 0.07; if (m.land) m.land.visible = on && st.lights > 0; }
+    if (m.ac && !LIFE()) { const on = v.night && !v.radar; if (m.nav) m.nav.visible = on; if (m.flash) m.flash.visible = on && ((t + m.ph0) % 1.1) < 0.07; if (m.land) m.land.visible = on && st.lights > 0; }
   }
+  if (LIFE()) LIFE().upd(v, m, st, t, dt, dot);
   if (dot) v.dotList.push(m);
   // its shadow on the ground, fading as it climbs away (the sun is high enough to put it under it)
   if (m.shadow) {
@@ -942,7 +964,9 @@ function updMover(v, m, t) {
 function animate(v, m, st, t, dt) {
   m.gearK = ease(m.gearK, st.gear, dt, 8); m.flapK = ease(m.flapK, st.flap, dt, 6);
   m.launchK = ease(m.launchK, st.spd < 0.002 ? 1 : 0, dt, 6);
+  const life = LIFE();
   for (const A of m.anims) {
+    if (life && life.anim(v, m, A, st, t, dt)) continue;
     const k = A.a.kind;
     let ang = 0;
     if (k === 'gear') { A.node.visible = m.gearK > 0.02; ang = (1 - m.gearK) * A.a.up; }
@@ -1352,6 +1376,7 @@ function sceneBase(v) {
   v.dots.frustumCulled = false; v.dots.renderOrder = 2; scene.add(v.dots);
   // windows lit at dusk
   winMat().color.set(v.night ? '#ffd890' : light < 0.8 ? '#8a7a5a' : '#303a44');
+  if (LIFE()) LIFE().scene(v);
   return scene;
 }
 function buildReplay(v) {
@@ -1645,6 +1670,7 @@ function step(v, now) {
   for (const fx of v.fx) updateCm(v, fx, t);
   for (const m of v.dmgMeshes) applyDamage(m, t);
   for (const L of v.nightLights) L.visible = v.night;
+  if (LIFE() && v.life) LIFE().frame(v, t, dtR);
   // the finest ring of ground shows only from low down: from higher up the next ring is fine enough, and the two
   // are painted the same way (the finest adds the fields the map shows close in)
   const low = ch < (v.lowGnd ? 30 : 20); if (low !== v.lowGnd) { v.lowGnd = low; for (const [k, T] of v.tiles) if (T.userData.li === 0) T.visible = low; if (low && v.sfx != null) groundSync(v, v.sfx, v.sfy); }
@@ -1708,7 +1734,7 @@ function labels(v, t) {
 }
 
 /* ---------- the panel: what a debrief shows for the chosen object ---------- */
-const GND_WORDS = ['', 'pushing back', 'taxiing', 'holding', 'take-off roll', 'on final', 'landing', 'leaving the runway', 'parking', ''];
+const GND_WORDS = ['', 'pushing back', 'taxiing', 'holding', 'take-off roll', 'on final', 'landing', 'leaving the runway', 'parking', '', 'lining up'];
 const mach = (spd, alt) => spd * 100 / (340.3 - 4.05 * Math.min(11, Math.max(0, alt)));
 const compass = h => Math.round(((h * 180 / Math.PI + 90) % 360 + 360) % 360);
 function panelRows(v, t) {
@@ -1994,6 +2020,8 @@ function buildGallery(v, side) {
   const sun = new THREE.DirectionalLight(0xfff0dc, 1.25 * lk); sun.position.set(-300, 400, 200); scene.add(sun);
   v.dmgMeshes = []; v.nightLights = []; v.dotList = []; v.static = new THREE.Group(); scene.add(v.static);
   winMat().color.set('#303a44');
+  v.light = 1; v.night = false;
+  if (LIFE()) LIFE().scene(v);
   // a grey slab with a 10 m grid
   const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d');
   g.fillStyle = '#3a4038'; g.fillRect(0, 0, 512, 512); g.strokeStyle = 'rgba(255,255,255,0.1)'; g.beginPath(); for (let i = 0; i <= 512; i += 32) { g.moveTo(i, 0); g.lineTo(i, 512); g.moveTo(0, i); g.lineTo(512, i); } g.stroke();
@@ -2064,5 +2092,7 @@ function galleryFrame(v) {
 }
 
 IC.replayState = () => V;
+/* what the life of the scene (render3d-life.js) builds with: the same geometry, materials and ground as the view */
+IC.R3D = { three: () => THREE, geom, toScene, colorOf, share, solidMat, basicMat, puffTex, sphereG, discG, coneG, quadG, lineGeom, texSRGB, seeded, modelParts, hT, hRaw, KM, LIFT, isShared };
 
 })(window.IC);

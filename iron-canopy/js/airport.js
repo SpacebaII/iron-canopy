@@ -26,6 +26,7 @@ IC.APART.surface = { name: 'Surface', area: true, cost: 1, build: 60, hp: 30, de
 IC.SURF = { grass: { name: 'Grass', k: 0.5 }, gravel: { name: 'Gravel', k: 1.5 }, green: { name: 'Landscaping', k: 3 }, asph: { name: 'Asphalt', k: 4, park: 350 }, conc: { name: 'Concrete', k: 6 } };
 if (!IC.APART_ORDER.includes('surface')) IC.APART_ORDER.push('surface');
 if (!IC.APART_ORDER.includes('deice')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('hydrant') + 1, 0, 'fuelpad', 'deice');
+if (!IC.APART_ORDER.includes('skybridge')) IC.APART_ORDER.splice(IC.APART_ORDER.indexOf('cargo') + 1, 0, 'skybridge', 'people');
 /* parts aircraft taxi into through a door: shelters, hangars and service pads */
 const DOOR = k => k === 'hangar' || k === 'has' || k === 'alert' || !!(IC.APART[k] && IC.APART[k].pad);
 IC.aptDoor = DOOR;
@@ -45,11 +46,14 @@ function partDist(ap, part, p) {
   if (part.kind === 'runway') { const t = U.clamp(rwT(part, p), 0, 1); return Math.max(0, U.dist(rwAt(part, t), p) - part.w / 2); }
   if (part.kind === 'taxi') { let m = 1e9; for (let i = 1; i < part.nodes.length; i++) { const a = ap.nodes[part.nodes[i - 1]], b = ap.nodes[part.nodes[i]]; m = Math.min(m, U.segDist(p.x, p.y, a.x, a.y, b.x, b.y)); } return Math.max(0, m - part.w / 2); }
   if (part.r) return Math.max(0, U.dist(part, p) - part.r);
+  // (a part drawn as any outline: by its shape)
+  if (part.poly) return IC.shapeDist(IC.partShape(ap, part), p);
   return rectDist(part, p);
 }
 IC.partDist = partDist;
 /* the gap between two rotated rectangles (0 when they touch or overlap): the nearest corner of one to the other */
 function rectGap(A, B) {
+  if (A.poly || B.poly) { const a = IC.partShape(null, A), b = IC.partShape(null, B); if (IC.shapeDepth(a, b) > 0) return 0; let m = 1e9; for (const c of a.poly) m = Math.min(m, IC.shapeDist(b, c)); for (const c of b.poly) m = Math.min(m, IC.shapeDist(a, c)); return m; }
   if (rectsOverlap(A, B, 0)) return 0;
   const cs = R => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(R, sx * R.w / 2, sy * R.h / 2));
   let m = 1e9;
@@ -74,13 +78,22 @@ function resolveNode(ap, n) {
     if (p.kind === 'runway') { const t = rwT(p, n), off = Math.abs(rwOff(p, n)); if (t >= -0.01 && t <= 1.01 && off < SNAP_RWY) { n.on = { kind: 'rwy', part: p.id, t: U.clamp(t, 0, 1) }; return; } }
   }
   for (const p of ap.parts) {
-    if (p.kind === 'apron' || p.kind === 'alert') { const l = toLocal(p, n); if (Math.abs(l.x) <= p.w / 2 + SNAP_APRON && Math.abs(l.y) <= p.h / 2 + SNAP_APRON && (Math.abs(Math.abs(l.x) - p.w / 2) < SNAP_APRON || Math.abs(Math.abs(l.y) - p.h / 2) < SNAP_APRON)) { n.on = { kind: 'apron', part: p.id }; return; } }
+    if ((p.kind === 'apron' || p.kind === 'alert') && onApron(p, n)) { n.on = { kind: 'apron', part: p.id }; return; }
   }
 }
 IC.resolveNodes = ap => { for (const n of Object.values(ap.nodes)) resolveNode(ap, n); };
 /* a new runway or apron only changes the nodes it touches (a runway wins over an apron) */
 function onRunway(p, n) { const t = rwT(p, n), off = Math.abs(rwOff(p, n)); return t >= -0.01 && t <= 1.01 && off < SNAP_RWY ? { kind: 'rwy', part: p.id, t: U.clamp(t, 0, 1) } : null; }
-function onApron(p, n) { const l = toLocal(p, n); return Math.abs(l.x) <= p.w / 2 + SNAP_APRON && Math.abs(l.y) <= p.h / 2 + SNAP_APRON && (Math.abs(Math.abs(l.x) - p.w / 2) < SNAP_APRON || Math.abs(Math.abs(l.y) - p.h / 2) < SNAP_APRON) ? { kind: 'apron', part: p.id } : null; }
+function onApron(p, n) {
+  // an outline: on its edge, inside or just outside it
+  if (p.poly) {
+    if (U.dxy(p.x, p.y, n.x, n.y) > Math.max(p.w, p.h) / 2 + SNAP_APRON) return null;
+    const P = IC.partShape(null, p).poly;
+    if (IC.polyEdgeDist(P, n) < SNAP_APRON) return { kind: 'apron', part: p.id };
+    // (a taxilane's node well inside the apron: stands lead in from it)
+    return U.inPoly(n.x, n.y, P.map(v => [v.x, v.y])) ? { kind: 'apron', part: p.id, inside: true } : null;
+  }
+  const l = toLocal(p, n); return Math.abs(l.x) <= p.w / 2 + SNAP_APRON && Math.abs(l.y) <= p.h / 2 + SNAP_APRON && (Math.abs(Math.abs(l.x) - p.w / 2) < SNAP_APRON || Math.abs(Math.abs(l.y) - p.h / 2) < SNAP_APRON) ? { kind: 'apron', part: p.id } : null; }
 function resolveFor(ap, p) {
   for (const n of Object.values(ap.nodes)) {
     if (p.kind === 'runway') { if (n.on && n.on.kind === 'rwy') continue; const o = onRunway(p, n); if (o) n.on = o; }
@@ -114,13 +127,15 @@ function placeILS(ap, part) {
 IC.partMeasure = function (ap, p) {
   const D = IC.APART[p.kind];
   if (p.kind === 'runway') return rwLen(p);
-  if (p.kind === 'taxi') { const pts = p.nodes ? p.nodes.map(id => ap.nodes[id]) : p.pts; let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); return L; }
-  if (D.area) return p.w * p.h;
+  if (p.kind === 'taxi' || p.kind === 'people') { const pts = p.nodes ? p.nodes.map(id => ap.nodes[id]) : p.pts; let L = 0; for (let i = 1; i < pts.length; i++) L += U.dist(pts[i - 1], pts[i]); return L; }
+  if (D.area) return p.poly ? IC.partArea(p) : p.w * p.h;
   return 1;
 };
 /* paved parts cost and take as long as their material says (concrete is the price list) */
 const paveK = (p, k) => IC.PAVED && IC.PAVED[p.kind] ? IC.PAVE[IC.paveOf(p)][k] : 1;
-IC.partCost = (ap, p) => IC.APART[p.kind].cost * IC.partMeasure(ap, p) * paveK(p, 'cost') * (p.kind === 'surface' ? (IC.SURF[p.surf] || IC.SURF.grass).k : 1);
+/* runways and taxiways cost by their width (against the standard one), and a tenth less without edge lights */
+const lineK = p => (p.kind === 'runway' || p.kind === 'taxi') ? (p.w || IC.APART[p.kind].w) / IC.APART[p.kind].w * (p.lit === false ? 0.9 : 1) : 1;
+IC.partCost = (ap, p) => IC.APART[p.kind].cost * IC.partMeasure(ap, p) * paveK(p, 'cost') * lineK(p) * (p.kind === 'surface' ? (IC.SURF[p.surf] || IC.SURF.grass).k : 1);
 IC.partBuildTime = (ap, p) => IC.APART[p.kind].build * Math.max(0.5, IC.partMeasure(ap, p)) * paveK(p, 'build');
 
 /* stands laid out along an apron's back edge; the back is the side facing a terminal, or away from the taxiways */
@@ -131,10 +146,11 @@ function standsFor(ap, p) {
     const S0 = IC.STAND[f.size], a = p.a + (f.rot || 0), hx = Math.cos(a), hy = Math.sin(a), c = toWorld(p, f.lx, f.ly), back = S0.d / 2 + 0.06;
     const id = p.id + 's' + (f.k != null ? f.k : i), old = p.stands && p.stands.find(x => x.id === id);
     const nose = { x: c.x + hx * (S0.d / 2 + 0.04), y: c.y + hy * (S0.d / 2 + 0.04) };
-    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectDist(q, nose) < 0.12);
+    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, nose) < 0.12);
     return { id, x: c.x, y: c.y, fx: c.x - hx * back, fy: c.y - hy * back, ox: c.x + hx * back, oy: c.y + hy * back, a, size: f.size, apron: p.id,
-      contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone };
+      contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone, via: f.via || null, name: f.name || null };
   });
+  if (p.poly) return polyStands(ap, p);
   const depth = p.h * 0.64;
   const size = IC.apronStandSize(p);
   if (!size) return [];
@@ -155,13 +171,42 @@ function standsFor(ap, p) {
   return out;
 }
 
+/* stands along the edges of an apron drawn as an outline: every edge that a terminal or cargo shed stands behind gets
+   a row, noses to the building, as big as fit inside the outline (up to the apron's largest size) */
+function polyStands(ap, p) {
+  const sh = IC.partShape(ap, p), P = sh.poly, out = [], inside = q => U.inPoly(q.x, q.y, P.map(v => [v.x, v.y]));
+  const ccw = IC.polyArea ? P.reduce((s, v, i) => { const w = P[(i + 1) % P.length]; return s + (v.x * w.y - w.x * v.y); }, 0) > 0 : true;
+  const sizes = ['l', 'm', 's'].filter(k => !p.smax || 'sml'.indexOf(k) <= 'sml'.indexOf(p.smax));
+  let k = 0;
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], L = U.dist(a, b); if (L < IC.STAND.s.w) continue;
+    const ex = (b.x - a.x) / L, ey = (b.y - a.y) / L, nx = ccw ? ey : -ey, ny = ccw ? -ex : ex;   // (n: outward)
+    const mid = { x: (a.x + b.x) / 2 + nx * 0.05, y: (a.y + b.y) / 2 + ny * 0.05 };
+    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, mid) < 0.3);
+    if (!term) continue;
+    const size = sizes.find(z => { const S0 = IC.STAND[z], c = { x: mid.x - nx * (S0.d + 0.1), y: mid.y - ny * (S0.d + 0.1) }; return inside(c); });
+    if (!size) continue;
+    const S0 = IC.STAND[size], n = Math.floor(L / S0.w);
+    for (let j = 0; j < n; j++) {
+      const t = (L - n * S0.w) / 2 + S0.w * (j + 0.5), e = { x: a.x + ex * t, y: a.y + ey * t };
+      const c = { x: e.x - nx * S0.d / 2, y: e.y - ny * S0.d / 2 }, f = { x: e.x - nx * (S0.d + 0.08), y: e.y - ny * (S0.d + 0.08) };
+      if (!inside(c) || !inside(f)) continue;
+      const id = p.id + 's' + (k++), old = p.stands && p.stands.find(x => x.id === id);
+      const contact = term.kind === 'terminal' && partDist(ap, term, { x: e.x + nx * 0.02, y: e.y + ny * 0.02 }) < 0.4;
+      out.push({ id, x: c.x, y: c.y, fx: f.x, fy: f.y, a: Math.atan2(ny, nx), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: term.kind === 'cargo' });
+    }
+  }
+  return out;
+}
+
 /* ---------- runway names and groups ---------- */
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
 IC.rwEnd = (rw, dir) => (rw.ends ? rw.ends[dir > 0 ? 'a' : 'b'] : '') || (dir > 0 ? 'A' : 'B');
 // (as on a chart: the lower number first, "Runway 08/26")
 const rwName = rw => `Runway ${parseInt(rw.ends.a) <= parseInt(rw.ends.b) ? `${rw.ends.a}/${rw.ends.b}` : `${rw.ends.b}/${rw.ends.a}`}`;
 function nameRunways(ap) {
-  const rws = ap.parts.filter(p => p.kind === 'runway');
+  // (runways laid out from real data keep their real names: airports-real.js)
+  const rws = ap.parts.filter(p => p.kind === 'runway' && !p.real);
   const num = (rw, dir) => { const d = rwDir(rw), n = Math.round(IC.bearing(Math.atan2(d.y * dir, d.x * dir)) / 10) || 36; return String(n > 36 ? n - 36 : n).padStart(2, '0'); };
   for (const rw of rws) rw.ends = { a: num(rw, 1), b: num(rw, -1) };
   // more than three parallels: the right-hand half take the next number, as at Denver (16/34 and 17/35)
@@ -245,8 +290,16 @@ IC.aptGraph = function (ap) {
   }
   const parts = ap.parts.filter(p => p.built && !(p.shut && p.kind !== 'runway'));
   const rwn = new Map();
+  // passenger bridges over taxiways: the edges under them carry the height a tail must clear (m)
+  const spans = ap.parts.filter(p => p.kind === 'skybridge' && p.clear).map(p => ({ p, sh: IC.partShape(ap, p) }));
+  const under = (a, b) => { let c = 0; for (const x of spans) if (IC.shapeDepth(x.sh, IC.shapeLine([a, b], 0.05)) > 0) c = c ? Math.min(c, x.p.clear) : x.p.clear; return c; };
   for (const p of parts) {
-    if (p.kind === 'taxi') for (let i = 1; i < p.nodes.length; i++) { if (!p.cut[i]) edge(p.nodes[i - 1], p.nodes[i], 'taxi', p.id, i, IC.GOPS.TAXI, p.oneway || 0, p.flow || 0); }
+    if (p.kind === 'taxi') for (let i = 1; i < p.nodes.length; i++) {
+      if (p.cut[i]) continue;
+      edge(p.nodes[i - 1], p.nodes[i], 'taxi', p.id, i, IC.GOPS.TAXI, p.oneway || 0, p.flow || 0);
+      const c = spans.length ? under(ap.nodes[p.nodes[i - 1]], ap.nodes[p.nodes[i]]) : 0;
+      if (c) for (const e of adj.get(p.nodes[i - 1]).concat(adj.get(p.nodes[i]))) if (e.part === p.id && e.seg === i) e.clear = c;
+    }
     else if (p.kind === 'runway') {
       node(p.id + ':a', p.a.x, p.a.y, 'rwyEnd', { part: p.id, t: 0 }, p.id); node(p.id + ':b', p.b.x, p.b.y, 'rwyEnd', { part: p.id, t: 1 }, p.id);
       const on = [{ id: p.id + ':a', t: 0 }, { id: p.id + ':b', t: 1 }].concat((onPart.get(p.id) || []).map(n => ({ id: n.id, t: n.on.t })));
@@ -273,12 +326,16 @@ IC.aptGraph = function (ap) {
     const hyd = parts.some(h => h.kind === 'hydrant' && h.hp > h.max * 0.25 && U.dist(h, p) < IC.APART.hydrant.reach);
     const at = groupAt.get(root(gi.get(p)));
     for (const s of p.stands) {
-      s.zone = s.zoneOwn || z; s.hyd = hyd; node(s.id, s.fx, s.fy, 'stand', s); for (const a of at) edge(s.id, a.id, 'apron', p.id, 0, 0.04, 0, 0);
+      s.zone = s.zoneOwn || z; s.hyd = hyd; node(s.id, s.fx, s.fy, 'stand', s);
+      // (an outline apron, or a stand with its own lead-in: from the nearest nodes only, as a lead-in line runs)
+      const lead = s.via && N.has(s.via) ? [N.get(s.via)] : p.poly ? at.slice().sort((u, v) => U.dxy(u.x, u.y, s.fx, s.fy) - U.dxy(v.x, v.y, s.fx, s.fy)).slice(0, 2) : at;
+      for (const a of lead) edge(s.id, a.id, 'apron', p.id, 0, 0.04, 0, 0);
       // a drive-through stand is left by its nose: no tug, no pushback
       if (s.drive) { node(s.id + 'o', s.ox, s.oy, 'standOut', s); edge(s.id, s.id + 'o', 'apron', p.id, 0, 0.04, 1, 0); for (const a of at) edge(s.id + 'o', a.id, 'apron', p.id, 0, 0.04, 1, 0); }
     }
   }
-  for (const at of groupAt.values()) for (let i = 0; i < at.length; i++) for (let j = i + 1; j < at.length; j++) edge(at[i].id, at[j].id, 'apron', at[i].on.part, 0, 0.05, 0, 0);
+  // across the apron between its edge nodes (a taxilane's nodes inside it are joined by the taxilane)
+  for (const at of groupAt.values()) { const E = at.filter(n => !n.on.inside); for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) edge(E[i].id, E[j].id, 'apron', E[i].on.part, 0, 0.05, 0, 0); }
   // shelters join the network through the nearest taxi point in front of their doors
   const allN = Object.values(ap.nodes);
   for (const p of parts) {
@@ -341,7 +398,7 @@ IC.aptSearch = function (ap, src, o) {
   if (!G.N.has(src)) return { dist, prev, time };
   dist.set(src, 0); if (time) time.set(src, o.res.t0);
   const H = new Heap(); H.push(src, 0);
-  const rwK = o.avoidRwy ? 6 : 2;
+  const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0;
   while (H.k.length) {
     const u = H.pop();
     if (done.has(u)) continue; done.add(u);
@@ -350,6 +407,8 @@ IC.aptSearch = function (ap, src, o) {
     for (const e of A.get(u)) {
       const v = o.rev ? e.from : e.to;
       if (done.has(v) || v === o.avoid) continue;
+      // (a tail too tall for the bridge over this taxiway goes round)
+      if (e.clear && ht > e.clear - 1) continue;
       let w = e.w / e.spd * (e.kind === 'rwy' ? rwK : 1), tv;
       // a taxiway onto a runway means a hold at the line, a long one if the runway is in use
       const B = G.N.get(e.to);
@@ -369,24 +428,27 @@ IC.aptSteps = function (tree, src, to) {
   return out;
 };
 /* cached route trees (without reservations) until the network changes */
-IC.aptTree = function (ap, src, rev) {
-  const G = IC.aptGraph(ap), key = src + (rev ? '<' : '>');
+IC.aptTree = function (ap, src, rev, ht) {
+  const G = IC.aptGraph(ap);
+  // (where a bridge spans a taxiway, the tall tails have trees of their own: 1 m of margin under the span)
+  if (G.lowSpan == null) { G.lowSpan = 0; for (const L of G.adj.values()) for (const e of L) if (e.clear) G.lowSpan = G.lowSpan ? Math.min(G.lowSpan, e.clear) : e.clear; }
+  const tall = G.lowSpan && ht && ht > G.lowSpan - 1 ? Math.ceil(ht) : 0, key = src + (rev ? '<' : '>') + (tall ? 'h' + tall : '');
   let t = G.trees.get(key);
-  if (!t) { if (G.trees.size > 400) G.trees.clear(); t = IC.aptSearch(ap, src, { rev, avoidRwy: rev }); G.trees.set(key, t); }
+  if (!t) { if (G.trees.size > 400) G.trees.clear(); t = IC.aptSearch(ap, src, { rev, avoidRwy: rev, ht: tall }); G.trees.set(key, t); }
   return t;
 };
 /* cheapest path in seconds; runway edges cost extra because using one blocks the runway */
-IC.aptPath = function (ap, from, to, avoidRwy) {
+IC.aptPath = function (ap, from, to, avoidRwy, ht) {
   const G = IC.aptGraph(ap);
   if (!G.N.has(from) || !G.N.has(to)) return null;
-  const t = IC.aptSearch(ap, from, { to, avoidRwy });
+  const t = IC.aptSearch(ap, from, { to, avoidRwy, ht });
   if (!t.dist.has(to)) return null;
   return { cost: t.dist.get(to), steps: IC.aptSteps(t, from, to) };
 };
 /* all nodes reachable from a start (for connectivity checks), ignoring one-way rules */
-function reach(ap, start) {
+function reach(ap, start, noSpan) {
   const G = IC.aptGraph(ap), seen = new Set([start]), Q = [start];
-  while (Q.length) { const u = Q.pop(); for (const e of G.adj.get(u) || []) if (!seen.has(e.to)) { seen.add(e.to); Q.push(e.to); } for (const e of G.radj.get(u) || []) if (!seen.has(e.from)) { seen.add(e.from); Q.push(e.from); } }
+  while (Q.length) { const u = Q.pop(); for (const e of G.adj.get(u) || []) if (!seen.has(e.to) && !(noSpan && e.clear)) { seen.add(e.to); Q.push(e.to); } for (const e of G.radj.get(u) || []) if (!seen.has(e.from) && !(noSpan && e.clear)) { seen.add(e.from); Q.push(e.from); } }
   return seen;
 }
 
@@ -492,9 +554,13 @@ IC.aptStats = function (S, ap) {
   // which stands can actually reach a runway
   let reachAny = null;
   if (rws.length) { const r = reach(ap, rws[0].id + ':a'); for (const rw of rws.slice(1)) if (!r.has(rw.id + ':a')) for (const x of reach(ap, rw.id + ':a')) r.add(x); reachAny = r; }
+  // stands reached only under a passenger bridge take tails up to its clearance (less a metre to spare)
+  let tall = null, low = 0;
+  for (const L of G.adj.values()) for (const e of L) if (e.clear) low = low ? Math.min(low, e.clear) : e.clear;
+  if (low && rws.length) { tall = new Set(); for (const rw of rws) if (!tall.has(rw.id + ':a')) for (const x of reach(ap, rw.id + ':a', true)) tall.add(x); }
   for (const s of stands) {
     const ok = reachAny && reachAny.has(s.id) && s.hp > 0;
-    s.linked = ok;
+    s.linked = ok; s.maxHt = ok && tall && !tall.has(s.id) ? low - 1 : 0;
     if (!ok) continue;
     st.stands[s.size]++;
     if (!s.occ) st.standsFree[s.size]++;
@@ -508,6 +574,7 @@ IC.aptStats = function (S, ap) {
     if (w) st.warn.push(`${p.name || IC.APART[p.kind].name} closed for works (${w.kind === 'upgrade' ? 'new pavement' : U.lc(w.label)}) for about ${U.dur(Math.max(60, (1 - w.prog) * w.dur))}.`);
     if (p.wear >= 1) st.warn.push(`${p.name || IC.APART[p.kind].name}: the ${IC.PAVE[IC.paveOf(p)].name.toLowerCase()} is worn out; closed until resurfaced.`);
     else if (p.wear >= 0.5) st.warn.push(`${p.name || IC.APART[p.kind].name}: ${U.pct(p.wear)} worn. Aircraft heavier than ${IC.PAVE[IC.paveOf(p)].t} t break up ${IC.PAVE[IC.paveOf(p)].name.toLowerCase()}.`);
+    if (p.lit === false && p.kind === 'runway') st.warn.push(`${p.name || 'A runway'} has no edge lights: it closes from dusk to dawn. Upgrade it on the build bar to light it.`);
   }
   const unlinked = stands.filter(s => !s.linked && s.hp > 0).length;
   if (unlinked) st.warn.push(`${unlinked} stand${unlinked > 1 ? 's are' : ' is'} not connected to a runway.`);
@@ -885,10 +952,13 @@ IC.aptAutoQueue = autoQueue;
 /* plan a new part: the engineers build it in stages, and each stage is paid for as it runs (builder.js) */
 IC.aptPlan = function (S, ap, part, o) {
   o = o || {};
+  // a runway's or taxiway's width, its edge lights, a one-way taxiway (the build bar's options)
+  if (part.kind === 'taxi' || part.kind === 'runway') { if (o.w) part.w = o.w; if (o.lit === false) part.lit = false; if (o.oneway && part.kind === 'taxi') part.oneway = o.oneway; }
   if (IC.PAVED[part.kind]) part.mat = part.mat || o.mat || 'conc';
   const lock = IC.aptLockWhy(S, part.kind, part.mat);
   if (lock) { IC.log(S, 'warn', 'BUILD', lock); return null; }
   if (o.zone && part.kind !== 'taxi') part.zone = o.zone;
+  if (part.kind === 'skybridge') { part.clear = part.clear || o.clear || IC.BRIDGE_CLEAR || 14; part.joins = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo') && IC.shapeDepth(IC.partShape(ap, part), IC.partShape(ap, q)) > -0.05).map(q => q.id); }
   if (o.ramp) { part.ramp = true; part.free = part.free || []; }
   if (o.smax && part.kind === 'apron' && !o.ramp) part.smax = o.smax;
   if (part.kind === 'ils') part.cat = IC.aptTechOk(S, 'ils3') ? 3 : 1;
@@ -903,6 +973,8 @@ IC.aptPlan = function (S, ap, part, o) {
   IC.aptExtent(ap);
   IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(IC.APART[part.kind].name)} planned (${U.money(pv.cost)} paid as the work runs, about ${U.dur(w.dur)} of engineer work).`);
   IC.emit(S, 'aptPlan', { ap, part });
+  // the country's roads keep off the new pavement: the airport's own road goes round to its gate, others under
+  if (S.world && IC.aptReseat) IC.aptReseat(S, ap, part);
   return part;
 };
 /* place a building automatically next to others of its kind (used by quick buttons and the Academy) */
@@ -936,33 +1008,68 @@ IC.aptOnPart = function (ap, p, pad) {
   for (const q of ap.parts) { const r = q.kind === 'runway' ? 1.2 : q.kind === 'taxi' ? 0.3 : pad == null ? 0.2 : pad; if (partDist(ap, q, p) < r) return q; }
   return null;
 };
-/* inside the fence: within the rectangle that holds everything built */
+/* inside the fence: within the airside's outline and not on a terminal's landside */
 IC.aptInFence = function (ap, p) {
   const b = IC.aptFence(ap); if (!b) return false;
-  const l = toLocal(b, p); return Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.h / 2;
+  return U.inPoly(p.x, p.y, b.hullA) && !b.carveA.some(c => U.inPoly(p.x, p.y, c));
 };
-/* the perimeter fence: a rectangle along the main runway round everything the airport has, with room to spare */
+/* the perimeter fence: round everything airside with room to spare (the convex hull of it), less the landside in front
+   of each terminal and cargo shed, which the public reaches by road. b.poly is the hull, b.carve the landside cut out
+   of it; x, y, w, h, a the rectangle along the main runway that holds it all. */
 IC.aptFence = function (ap) {
-  const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0);
+  const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0) + ':' + ap.parts.reduce((s, p) => s + (p.x || 0), 0).toFixed(2);
   if (ap._box && ap._boxKey === key) return ap._box;
+  // (a landside laid out from data: the fence follows the airside closely, round the landside, IC.aptTraceFence)
+  if (ap.land && ap.land.fixed && IC.aptTraceFence) { ap._box = IC.aptTraceFence(ap); ap._boxKey = key; if (ap._box) return ap._box; }
+  const pts = [], sq = (q, m) => { pts.push({ x: q.x - m, y: q.y - m }, { x: q.x + m, y: q.y - m }, { x: q.x + m, y: q.y + m }, { x: q.x - m, y: q.y + m }); };
+  const fronts = ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.w && IC.landEnvelope);
+  const carve = [];
+  for (const t of fronts) { if (t.kind === 'cargo' && !(ap.land && ap.land.items.some(it => it.by === t.id))) continue; const env = IC.landEnvelope(ap, t); if (IC.landClear && !IC.landClear(ap, t, env)) continue; carve.push(env.poly); }
+  const inCarve = p => carve.some(c => U.inPoly(p.x, p.y, c.map(q => [q.x, q.y])));
+  for (const p of ap.parts) {
+    if (p.kind === 'runway') { const d = rwDir(p), n = { x: -d.y, y: d.x }; for (const e of [p.a, p.b]) for (const s1 of [-1, 1]) for (const s2 of [-1, 1]) pts.push({ x: e.x + d.x * s1 * 1.2 + n.x * s2 * 1.6, y: e.y + d.y * s1 * 1.2 + n.y * s2 * 1.6 }); }
+    else if (p.kind === 'taxi') { for (const id of p.nodes) if (ap.nodes[id]) sq(ap.nodes[id], 0.45); }
+    else if (p.kind === 'ils') continue;
+    else if (p.x != null) {
+      if (p.kind !== 'terminal' && p.kind !== 'cargo' && inCarve(p)) continue;
+      const m = p.kind === 'terminal' || p.kind === 'cargo' ? 0 : 0.3;
+      for (const c of IC.partOutline ? IC.partOutline(p) : [p]) sq(c, m);
+    }
+  }
+  if (!pts.length) return null;
+  // the convex hull (monotone chain)
+  pts.sort((a, b) => a.x - b.x || a.y - b.y);
+  const cr = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lo = [], hi = [];
+  for (const q of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = pts.length - 1; i >= 0; i--) { const q = pts[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  const hull = lo.slice(0, -1).concat(hi.slice(0, -1));
   const a = ap.rwyA || 0, c = Math.cos(-a), s = Math.sin(-a);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-  const grow = (p, m) => { const dx = p.x - ap.x, dy = p.y - ap.y, lx = dx * c - dy * s, ly = dx * s + dy * c; x0 = Math.min(x0, lx - m); x1 = Math.max(x1, lx + m); y0 = Math.min(y0, ly - m); y1 = Math.max(y1, ly + m); };
-  for (const p of ap.parts) {
-    if (p.kind === 'runway') { grow(p.a, 1.2); grow(p.b, 1.2); }
-    else if (p.kind === 'taxi') for (const id of p.nodes) { if (ap.nodes[id]) grow(ap.nodes[id], 0.5); }
-    else grow(p, Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2) * 0.75 + 0.3);
-  }
-  if (x0 > x1) return null;
+  for (const q of hull) { const dx = q.x - ap.x, dy = q.y - ap.y, lx = dx * c - dy * s, ly = dx * s + dy * c; x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); y0 = Math.min(y0, ly); y1 = Math.max(y1, ly); }
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  ap._box = { x: ap.x + cx * Math.cos(a) - cy * Math.sin(a), y: ap.y + cx * Math.sin(a) + cy * Math.cos(a), w: x1 - x0, h: y1 - y0, a };
+  ap._box = { x: ap.x + cx * Math.cos(a) - cy * Math.sin(a), y: ap.y + cx * Math.sin(a) + cy * Math.cos(a), w: x1 - x0, h: y1 - y0, a,
+    poly: hull, carve, hullA: hull.map(q => [q.x, q.y]), carveA: carve.map(cv => cv.map(q => [q.x, q.y])) };
   ap._boxKey = key;
   return ap._box;
+};
+/* the fence line: the hull where it is not landside, and the edges of the landside inside the hull */
+IC.aptFenceStroke = function (g, b) {
+  g.save(); g.beginPath(); g.rect(-1e6, -1e6, 2e6, 2e6); for (const cv of b.carve) { cv.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); } g.clip('evenodd');
+  g.beginPath(); b.poly.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); g.restore();
+  if (!b.carve.length) return;
+  g.save(); g.beginPath(); b.poly.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.clip();
+  g.beginPath(); for (const cv of b.carve) { cv.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); } g.stroke(); g.restore();
+};
+/* the fence as a canvas path: the hull, and the landside cut out of it (fill with 'evenodd') */
+IC.aptFencePath = function (g, b, pad) {
+  const P = pad ? IC.polyGrow(b.poly, pad) : b.poly;
+  P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath();
+  for (const cv of b.carve) { cv.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); }
 };
 
 /* inside the country and the site, and not on top of another part (touching is fine) */
 IC.aptCanPlace = function (S, ap, part) {
-  const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' ? part.pts : [part];
+  const pts = part.kind === 'runway' ? [part.a, part.b] : part.kind === 'taxi' || part.kind === 'people' ? part.pts : [part];
   // why not, in words, for the builder (IC.aptPlaceWhy)
   const no = (why, q) => { IC.aptPlaceWhy = why; IC.aptPlaceHit = q || null; return false; };
   IC.aptPlaceWhy = ''; IC.aptPlaceHit = null;
@@ -980,18 +1087,27 @@ IC.aptCanPlace = function (S, ap, part) {
     for (const q of ap.parts) if (cover(q) && taxiThrough(pts, q)) return no(`It runs through ${IC.partName(ap, q)}: a taxiway joins an apron or a building at its edge.`, q);
     return true;
   }
-  if (cover(part)) for (const q of ap.parts) if (q.kind === 'taxi' && q !== part && taxiThrough(q.nodes.map(id => ap.nodes[id]).filter(Boolean), part)) return no(`It covers a taxiway: taxiways meet ${part.kind === 'apron' ? 'aprons' : 'buildings'} at the edge. Plan it beside the taxiway.`, q);
+  if (cover(part) && !(IC.APART[part.kind] || {}).over) for (const q of ap.parts) if (q.kind === 'taxi' && q !== part && taxiThrough(q.nodes.map(id => ap.nodes[id]).filter(Boolean), part)) return no(`It covers a taxiway: taxiways meet ${part.kind === 'apron' ? 'aprons' : 'buildings'} at the edge. Plan it beside the taxiway.`, q);
   const D = IC.APART[part.kind];
+  // a people mover rides over or under the airport: only its own rules (not across a runway above ground)
+  if (part.kind === 'people') { const L = IC.aptPlanOverlaps(S, ap, part); return L.length ? no(`${L[0].text}`, L[0].B.p || null) : true; }
   const probe = Object.assign({ w: D.w, h: D.h, r: D.r }, part);
   const shape = q => q.kind === 'runway' ? { x: (q.a.x + q.b.x) / 2, y: (q.a.y + q.b.y) / 2, a: Math.atan2(q.b.y - q.a.y, q.b.x - q.a.x), w: rwLen(q), h: q.w || IC.APART.runway.w } : q.r ? { x: q.x, y: q.y, a: 0, w: q.r * 2, h: q.r * 2 } : q;
   const A = shape(probe);
   if (part.kind !== 'runway') for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) if (wet(toWorld(A, sx * A.w / 2, sy * A.h / 2))) return no('It stands in a river.');
+  // (by their real shapes: an L-shaped terminal or a round tank is not its bounding box)
+  const mine = IC.partShape ? IC.partShape(ap, probe) : null;
   for (const q of ap.parts) {
-    if (q.kind === 'taxi' || q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
+    if (q === part || q.kind === 'ils' || q.kind === 'surface' || probe.kind === 'surface') continue;
     // runways cross runways; everything else keeps off them
     if (q.kind === 'runway' && probe.kind === 'runway') continue;
-    if (rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
+    // a building may not stand on a taxiway (aprons and pads meet taxiways at their edges)
+    if (q.kind === 'people' || (D.over && (q.kind === 'terminal' || q.kind === 'cargo'))) continue;
+    if (q.kind === 'taxi') { if (mine && !IC.PAVED[probe.kind] && !D.pad && !D.over && IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.02) return no(`It stands on ${q.name ? 'taxiway ' + q.name : 'a taxiway'}: move it clear of the pavement.`, q); continue; }
+    if (mine ? IC.shapeDepth(mine, IC.partShape(ap, q)) > 0.01 : rectsOverlap(A, shape(q), 0.01)) return no(`It overlaps ${IC.partName(ap, q)}${q.built ? '' : ' (being built)'}: move it, or bulldoze that first.`, q);
   }
+  // roads, car parks and the landside round the airport
+  if (S && S.world && IC.aptPlanOverlaps) { const L = IC.aptPlanOverlaps(S, ap, Object.assign({ _probe: true }, probe)); if (L.length) { const o = L[0], other = o.A.name === `the new ${U.lc(D.name)}` ? o.B : o.A; return no(`${o.text} Move it clear.`, other.p || other.it || other.r || other.l || null); } }
   return true;
 };
 /* a taxiway line runs more than 8 m inside a part (a round tank by its radius) */
@@ -1043,7 +1159,7 @@ IC.updateBases = function (S, dt) {
       if (w.prog < 1) continue;
       w.done = true;
       IC.bldRelease(b, w);
-      if (w.kind === 'upgrade') { w.part.mat = w.mat; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
+      if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
       else if (w.kind === 'build') {
         const before = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
@@ -1215,7 +1331,7 @@ IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   const snaps = pts.map(p => IC.aptSnap(ap, p, o && o.exact ? 0.03 : tol)).filter((s, i, L) => i === 0 || U.dist(s, L[i - 1]) > 0.05);
   if (snaps.length < 2) return null;
   for (const s of snaps) if (!IC.inHome(s.x, s.y) || IC.inLake(s.x, s.y) || !IC.aptInSite(S, ap, s)) { IC.log(S, 'warn', 'BUILD', 'That taxiway leaves the airport site.'); return null; }
-  const probe = { kind: 'taxi', pts: snaps, mat: o && o.mat };
+  const probe = { kind: 'taxi', pts: snaps, mat: o && o.mat, w: o && o.w, lit: o && o.lit };
   if (S.budget < IC.partCost(ap, probe) * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(IC.partCost(ap, probe) * 0.1)} needed now.`); return null; }
   const ids = snaps.map(s => nodeFor(ap, s));
   const clean = ids.filter((id, i) => i === 0 || id !== ids[i - 1]);
@@ -1229,6 +1345,13 @@ IC.aptPlanRunway = function (S, ap, a, b, name, o) {
   const r = IC.aptPlan(S, ap, part, o);
   if (r && !name) { nameRunways(ap); r.name = rwName(r); }
   return r;
+};
+/* plan a people mover along points; lv −1 in a tunnel, 1 on a viaduct */
+IC.aptPlanMover = function (S, ap, pts, lv, o) {
+  const part = { kind: 'people', pts: pts.map(q => ({ x: q.x, y: q.y })), lv: lv == null ? 1 : lv, w: IC.APART.people.w };
+  if (!IC.aptCanPlace(S, ap, part)) { IC.log(S, 'warn', 'BUILD', IC.aptPlaceWhy || 'The people mover cannot go there.'); return null; }
+  part.stops = ap.parts.filter(q => q.kind === 'terminal' && [part.pts[0], part.pts[part.pts.length - 1]].some(e => partDist(ap, q, e) < 0.5)).map(q => q.id);
+  return IC.aptPlan(S, ap, part, o);
 };
 /* plan an area or building; area parts take w and h */
 IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
@@ -1439,7 +1562,7 @@ function layoutKden(ap, L) {
   // fuel farm with a hydrant system, fire stations within three minutes of every runway end, tower and radars
   for (const x of [-8, -6, -4, -2]) { bld('fuel', x, 16); bld('fuel', x, 18); }
   bld('hydrant', 2, 17);
-  bld('fire', -22.5, -18); bld('fire', 22.5, 24); bld('fire', -24, 19.5); bld('fire', 24, -24.5);
+  bld('fire', -22.5, -18); bld('fire', 22.5, 24); bld('fire', -24, 19.5); bld('fire', 23.2, -24.6);
   bld('tower', 8, -14); bld('atc', 4, 20); bld('gradar', -9.5, 12);
 }
 /* how far the airport reaches from its reference point (for strikes, picking and drawing) */
@@ -1448,7 +1571,8 @@ IC.aptExtent = function (ap) {
   for (const p of ap.parts) {
     if (p.kind === 'runway') r = Math.max(r, U.dist(ap, p.a), U.dist(ap, p.b));
     else if (p.kind === 'taxi') for (const id of p.nodes) r = Math.max(r, U.dist(ap, ap.nodes[id]));
-    else r = Math.max(r, U.dist(ap, p) + Math.max(p.w || 0, p.h || 0, p.r || 0));
+    else if (p.pts) for (const q of p.pts) r = Math.max(r, U.dist(ap, q));
+    else if (p.x != null) r = Math.max(r, U.dist(ap, p) + Math.max(p.w || 0, p.h || 0, p.r || 0));
   }
   ap.radius = r + 1;
   return ap.radius;

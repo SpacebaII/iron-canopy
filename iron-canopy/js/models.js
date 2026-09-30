@@ -32,7 +32,9 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 function Builder(q) {
   const B = { q, groups: {}, slots: [], slotOf: new Map(), lights: [], xf: null, tris: 0 };
-  B.group = (name, meta) => { B.g = B.groups[name] || (B.groups[name] = Object.assign({ pos: [], nor: [], col: [] }, meta || {})); return B; };
+  // groups made while B.home names a moving group (a wing that bends) hang from it: parent
+  B.group = (name, meta) => { B.g = B.groups[name] || (B.groups[name] = Object.assign({ pos: [], nor: [], col: [] }, B.home && B.home !== name && meta ? { parent: B.home } : {}, meta || {})); return B; };
+  B.base = () => B.group(B.home || 'main');
   B.group('main');
   // B.remap bakes colours into a model that always wears the same paint (the rare visitors)
   B.slot = c => { if (B.remap && B.remap[c]) c = B.remap[c]; let i = B.slotOf.get(c); if (i == null) { i = B.slots.length; B.slots.push(c); B.slotOf.set(c, i); } return i; };
@@ -138,6 +140,31 @@ function plan(x, y, z, span, c0, c1, sweep, dih, t0, t1, kink) {
   out.push(at(1, c1, t1));
   return out;
 }
+/* a wing's section at fraction f of its span (secs from plan(), root to tip): leading edge x, y, z and chord */
+function spanAt(secs, f) {
+  const y = secs[0].y + (secs[secs.length - 1].y - secs[0].y) * f;
+  let i = 0; while (i < secs.length - 2 && secs[i + 1].y < y) i++;
+  const a = secs[i], b = secs[i + 1], k = U.clamp((y - a.y) / ((b.y - a.y) || 1), 0, 1), lp = (p, q) => p + (q - p) * k;
+  return { x: lp(a.x, b.x), y, z: lp(a.z, b.z), c: lp(a.c, b.c) };
+}
+/* a control surface hinged along a wing's chord line between span fractions f0 and f1, from chord fraction c0 to c1
+   (past 1: it overhangs the trailing edge, so it reads behind the wing), in its own group: kind, the hinge at c0 as its
+   axis (outboard on the right, the mirror on the left, as the flaps), up the angle for a full deflection. o.lift
+   raises it off the surface (spoilers), o.drop and o.fwd move the hinge (slats), o.name its group's name */
+function surface(B, secs, f0, f1, c0, c1, kind, up, o) {
+  o = o || {};
+  const A = spanAt(secs, f0), Bb = spanAt(secs, f1), fin = !!o.fin;
+  const hinge = (s, dz) => fin ? [s.x - s.c * (o.hc != null ? o.hc : c0) + (o.fwd || 0), s.y, s.z] : [s.x - s.c * (o.hc != null ? o.hc : c0) + (o.fwd || 0), s.y, s.z + (dz || 0)];
+  const p0 = hinge(A, o.drop), p1 = hinge(Bb, o.drop), ax = norm(sub(p1, p0)), sides = o.sides || (fin ? [1] : [1, -1]);
+  for (const sg of sides) {
+    if (B.homeOf && !fin) B.homeOf(sg);
+    const ay = fin ? ax : [ax[0] * sg, ax[1], ax[2] * sg];
+    B.group(o.name ? o.name + (fin ? '' : sg > 0 ? 'R' : 'L') : kind + (fin ? '' : sg > 0 ? 'R' : 'L'), { kind, pivot: [p0[0], fin ? p0[1] : sg * p0[1], p0[2]], axis: ay, up: fin ? up : sg > 0 ? up : (o.mirror ? -up : up), side: fin ? 0 : sg });
+    const sec = s => ({ x: s.x - s.c * c0, y: s.y, z: s.z + (o.lift || 0), c: s.c * (c1 - c0), t: o.t || 0.05 });
+    wing(B, [sec(A), sec(Bb)], o.col || 'WING', { sides: fin ? [1] : [sg], thick: fin ? [0, 1, 0] : undefined, foil: o.foil });
+  }
+  B.base();
+}
 /* a body turned round an axis: prof = [[a (along the axis), r], ...]; o.at the centre, o.axis 'x' | 'y' | 'z', o.ry/rz
    squash it, o.col(i) the colour of each band, cap0/cap1 close the ends */
 function lathe(B, prof, col, o) {
@@ -200,7 +227,7 @@ function prop(B, name, x, y, z, dia, n, col, o) {
     const a = i / n * Math.PI * 2 + (o.rot || 0);
     B.with(p => { const yy = p[1] - y, zz = p[2] - z; return [p[0], y + yy * Math.cos(a) - zz * Math.sin(a), z + yy * Math.sin(a) + zz * Math.cos(a)]; }, () => box(B, x, y, z + L / 2, cw * 0.25, cw, L, col || P.black, { roll: 0.35 }));
   }
-  B.group('main');
+  B.base();
   lathe(B, [[0.35 * dia * 0.18, 0], [0.1 * dia * 0.18, 0.5 * dia * 0.12], [-0.3 * dia * 0.18, dia * 0.07]], o.spin || P.dgrey, { at: [x + dia * 0.03, y, z], cap1: o.spin || P.dgrey });
 }
 /* a rotor of n blades about z (or about y for a tail rotor), radius R */
@@ -354,17 +381,23 @@ function airliner(B, s) {
   // the main wing, with its belly fairing, winglets and flap track fairings; flaps in their own group
   const w = s.wing, wz = zc + (w.z != null ? w.z : -0.3) * H;
   const secs = plan(w.x, 0, wz, w.span / 2, w.c0, w.c1, w.sweep, w.dih || 5, 0.15, 0.1, w.kink);
-  wing(B, secs, s.wingCol || 'WING', { mirror: true });
+  // close in, each half of the wing is a group of its own that bends at the root (it sags on the ground and lifts in
+  // flight); its flaps, ailerons, spoilers, slats and engines hang from it
+  const split = !!q, homeOf = sg => sg > 0 ? 'wingR' : 'wingL', home = sg => { if (split) { B.home = null; B.group(homeOf(sg), { kind: 'flex', pivot: [w.x - w.c0 * 0.4, sg * D * 0.45, wz], axis: [sg, 0, 0], up: 0.02 * Math.min(1.6, w.span / 36) }); B.home = homeOf(sg); } };
+  const unhome = () => { B.home = null; B.group('main'); };
+  if (split) { for (const sg of [1, -1]) { home(sg); wing(B, secs, s.wingCol || 'WING', { sides: [sg] }); } unhome(); B.homeOf = sg => { home(sg); }; }
+  else wing(B, secs, s.wingCol || 'WING', { mirror: true });
   if (w.fairing !== false) loft(B, [{ x: w.x + w.c0 * 0.12, w: 0.05, h: 0.05, z: zc - H * 0.34 }, { x: w.x - w.c0 * 0.1, w: D * 0.42, h: H * 0.2, z: zc - H * 0.34 }, { x: w.x - w.c0 * 0.9, w: D * 0.42, h: H * 0.2, z: zc - H * 0.34 }, { x: w.x - w.c0 * 1.2, w: 0.05, h: 0.05, z: zc - H * 0.3 }], ANG.lo, () => BELLY, {});
   const tip = secs[secs.length - 1];
   if (s.winglet && q !== -1) for (const sg of [1, -1]) {
     const h = s.winglet, wl = [{ x: tip.x - tip.c * 0.1, y: tip.y * sg, z: tip.z, c: tip.c * 0.9, t: 0.08 }, { x: tip.x - tip.c * 0.1 - h * 0.7, y: (tip.y + h * 0.18) * sg, z: tip.z + h, c: tip.c * 0.35, t: 0.08 }];
-    wing(B, wl, s.wingletCol || 'FIN', { thick: [0, sg, 0] });
+    home(sg); wing(B, wl, s.wingletCol || 'FIN', { thick: [0, sg, 0] });
   }
   if (q && s.canoes !== false) for (const sg of [1, -1]) for (const f of [0.28, 0.5, 0.72]) {
     const sa = secs[0], sb = secs[secs.length - 1], y = f * sb.y, xl = sa.x + (sb.x - sa.x) * f, c = sa.c + (sb.c - sa.c) * f, z = sa.z + (sb.z - sa.z) * f;
-    lathe(B, [[c * 0.1, 0.02], [0, 0.18], [-c * 0.35, 0.2], [-c * 0.55, 0.02]], 'WING', { at: [xl - c * 0.75, y * sg, z - 0.15], segs: 5, rz: 1.4 });
+    home(sg); lathe(B, [[c * 0.1, 0.02], [0, 0.18], [-c * 0.35, 0.2], [-c * 0.55, 0.02]], 'WING', { at: [xl - c * 0.75, y * sg, z - 0.15], segs: 5, rz: 1.4 });
   }
+  if (split) unhome();
   if (q && civil) {
     // flaps: plates under the trailing edge that swing down about it (the hinge axis runs along the edge, inboard to
     // outboard on the right and outboard to inboard on the left, so one negative angle lowers both)
@@ -372,11 +405,19 @@ function airliner(B, s) {
     const at = f => { const [x, y, z] = te(f); return { x: x + (sa.c + (sb.c - sa.c) * f) * 0.22, y, z: z - 0.08, c: (sa.c + (sb.c - sa.c) * f) * 0.24, t: 0.07 }; };
     const p0 = te(0.1), p1 = te(0.74), ax = norm([p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]]);
     for (const sg of [1, -1]) {
+      home(sg);
       B.group(sg > 0 ? 'flapR' : 'flapL', { kind: 'flap', pivot: [p0[0], sg * p0[1], p0[2]], axis: [ax[0] * sg, ax[1], ax[2] * sg], up: -0.55 });
       wing(B, [at(0.1), at(0.4)], 'WING', { sides: [sg] }); wing(B, [at(0.42), at(0.74)], 'WING', { sides: [sg] });
     }
-    B.group('main');
+    unhome();
+    // ailerons outboard (+ rolls right: the right one up), spoilers on top ahead of the flaps (raised at
+    // touchdown), slats along the leading edge (out and down with the flaps)
+    surface(B, secs, 0.76, 0.96, 0.8, 1.03, 'ail', 0.3, { mirror: true, t: 0.04 });
+    surface(B, secs, 0.14, 0.66, 0.55, 0.76, 'spoil', 0.8, { lift: 0.03, t: 0.03, foil: FOIL.flat, col: '#7c8288' });
+    surface(B, secs, 0.16, 0.94, -0.01, 0.13, 'slat', 0.35, { hc: 0.18, drop: -0.35, t: 0.07 });
+    unhome();
   }
+  B.homeOf = null;
   // the tail: tailplane (or a T-tail on top of the fin) and fin, with a fillet
   const T = s.tail2, ftop = T.fz != null ? T.fz : zc + H * 0.42;
   const fsecs = plan(x0 + tail * 0.9 + T.fc0 * 0.15, 0, ftop - 0.3, T.fh, T.fc0, T.fc1, T.fsweep, 90, 0.12, 0.1);
@@ -385,11 +426,14 @@ function airliner(B, s) {
   const hz = T.t ? fsecs[1].z - 0.2 : zc + (T.hz || 0.1) * H, hx = T.t ? fsecs[1].x + T.hc0 * 0.1 : x0 + tail * 0.72;
   const hsecs = plan(hx, 0, hz, T.hs / 2, T.hc0, T.hc1, T.hsweep, T.t ? 0 : (T.hdih == null ? 6 : T.hdih), 0.12, 0.1);
   wing(B, hsecs, s.hsCol || 'WING', { mirror: true });
+  // elevators behind the tailplane (+ nose up: trailing edges up) and the rudder behind the fin (+ yaws right)
+  if (q) { surface(B, hsecs, 0.08, 0.94, 0.72, 1.03, 'elev', 0.3, { t: 0.05, col: s.hsCol || 'WING' }); surface(B, fsecs, 0.08, 0.9, 0.7, 1.03, 'rud', -0.4, { fin: true, t: 0.05, col: 'FIN' }); }
   // fins at the tailplane's tips: a triple tail, or the end plates of an outsize freighter
   if (T.tipFin) { const ht = hsecs[hsecs.length - 1]; for (const sg of [1, -1]) wing(B, plan(ht.x + 0.2, sg * ht.y, ht.z - T.tipFin * 0.35, T.tipFin, ht.c * 1.15, ht.c * 0.7, T.fsweep * 0.6, 90, 0.1, 0.1), 'FIN', {}); }
   // engines on pylons, turbofans or turboprops
   for (const e of s.eng || []) for (const sg of e.y ? [1, -1] : [0]) {
     const ey = e.y * sg, ez = e.z, len = e.len, r = e.d / 2, ex = e.tail ? e.x : w.x - e.y * Math.tan(w.sweep * RAD) + e.dx;
+    if (sg && !e.tail && e.wz == null) home(sg);
     if (e.prop) {
       lathe(B, [[len * 0.5, r * 0.45], [len * 0.42, r * 0.9], [len * 0.2, r], [-len * 0.2, r * 0.9], [-len * 0.5, r * 0.3]], 'ENG', { at: [ex, ey, ez], rz: 1.25, cap1: 'ENG' });
       B.np = (B.np || 0) + 1; prop(B, 'prop' + B.np, ex + len * 0.55, ey, ez, e.prop, e.blades || 6, P.black, { spin: e.spin || 'ENG' });
@@ -400,12 +444,28 @@ function airliner(B, s) {
     } else {
       // nacelle: the lip, the fan cowl, the core cowl tapering to the nozzle and the exhaust plug; the intake dark
       lathe(B, [[len * 0.5, r * 0.84], [len * 0.47, r * 0.98], [len * 0.36, r], [len * 0.02, r * 0.97], [-len * 0.18, r * 0.8], [-len * 0.36, r * 0.56], [-len * 0.46, r * 0.46]], 'ENG', { at: [ex, ey, ez], cap0: P.intake, cap1: P.nozzle, segs: q ? 14 : 6 });
-      if (q) lathe(B, [[len * 0.46, 0], [len * 0.4, r * 0.25], [len * 0.36, r * 0.32]], P.dgrey, { at: [ex, ey, ez], segs: 8 });
+      // the fan just inside the lip, turning in its own group (the view blurs it at speed), its spinner in front
+      if (q) {
+        B.np = (B.np || 0) + 1;
+        B.group('fan' + B.np, { kind: 'fan', pivot: [ex + len * 0.505, ey, ez], axis: [1, 0, 0], R: r * 0.8 });
+        for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), r0 = r * 0.2, r1 = r * 0.82, tw = 0.5;
+          const pt = (rr, s2) => [ex + len * 0.505 + s2 * 0.06, ey + ca * rr - sa * s2 * r * 0.16 * tw, ez + sa * rr + ca * s2 * r * 0.16 * tw];
+          B.tri(pt(r0, -1), pt(r1, -1), pt(r1, 1), '#9aa2aa', [ex, ey, ez]); B.tri(pt(r0, -1), pt(r1, 1), pt(r0, 1), '#9aa2aa', [ex, ey, ez]); }
+        B.base();
+        lathe(B, [[len * 0.575, 0.02], [len * 0.54, r * 0.2], [len * 0.51, r * 0.27]], P.dgrey, { at: [ex, ey, ez], segs: 8 });
+        // the thrust reverser: the aft cowl slides back (its own group, out of sight when stowed) over dark cascades
+        B.group('revs' + B.np, { kind: 'rev', pivot: [ex, ey, ez], axis: [-1, 0, 0], up: len * 0.26 });
+        lathe(B, [[len * 0.02, r * 0.985], [-len * 0.18, r * 0.83]], 'ENG', { at: [ex, ey, ez], segs: 8 });
+        B.group('revc' + B.np, { kind: 'revc', pivot: [ex, ey, ez], axis: [1, 0, 0] });
+        lathe(B, [[len * 0.02, r * 0.96], [-len * 0.24, r * 0.9]], '#18191a', { at: [ex, ey, ez], segs: 8, smooth: false });
+        B.base();
+      }
       if (q) lathe(B, [[-len * 0.46, r * 0.4], [-len * 0.55, r * 0.26], [-len * 0.66, 0.02]], P.nozzle, { at: [ex, ey, ez], segs: 8 });
       // the pylon up to the wing
       const top = e.wz != null ? e.wz : wz + Math.abs(ey) * Math.tan((w.dih || 5) * RAD);
       wing(B, [{ x: ex + len * 0.3, y: ey, z: ez + r * 0.7, c: len * 0.85, t: 0.1 }, { x: ex + len * 0.05, y: ey, z: top, c: len * 0.95, t: 0.1 }], 'WING', { thick: [0, 1, 0] });
     }
+    if (B.home) unhome();
   }
   if (s.rotodome) { box(B, -L * 0.12, 0, zc + H / 2 + 1.1, 3.2, 0.4, 2.2, P.grey, { top: [0.6, 1] }); lathe(B, [[-0.9, 0.2], [-0.8, s.rotodome * 0.46], [0, s.rotodome / 2], [0.8, s.rotodome * 0.46], [0.9, 0.2]], P.lgrey, { at: [-L * 0.12, 0, zc + H / 2 + 3.2], axis: 'z', segs: q ? 20 : 8, cap0: P.lgrey, cap1: P.lgrey }); }
   if (s.probe) cyl(B, [x1 + s.probe / 2 - 0.5, 0, zc + H * 0.35], s.probe, 0.1, P.metal, 'x', { segs: 5 });
@@ -423,6 +483,9 @@ function airliner(B, s) {
   B.light(tip.x - tip.c * 0.5, tip.y, tip.z, 'strobe'); B.light(tip.x - tip.c * 0.5, -tip.y, tip.z, 'strobe');
   B.light(w.x - w.c0 * 0.3, 0, zc + H / 2 + 0.1, 'beacon'); B.light(w.x - w.c0 * 0.6, 0, zc - H / 2 - 0.1, 'beacon');
   B.light(w.x - 0.5, D / 2 + 0.5, wz, 'land'); B.light(w.x - 0.5, -D / 2 - 0.5, wz, 'land');
+  if (G) B.light(G.nx + 0.3, 0, zc - H / 2 + 0.4, 'taxi');
+  // logo lights on the tailplane's top, shining up at the fin
+  const hr = hsecs[0]; for (const sg of [1, -1]) B.light(hr.x - hr.c * 0.4, sg * Math.max(1, T.hs * 0.12), hz + 0.25, 'logo');
 }
 
 /* a jet fighter: blended body, bubble canopy, intakes, wings, stabilators, one or two fins, nozzle and afterburner */
@@ -446,11 +509,13 @@ function fighter(B, s) {
   const w = s.wing, secs = plan(w.x, w.y0 || 0, zc + (w.z || 0) * H, w.span / 2 - (w.y0 || 0), w.c0, w.c1, w.sweep, w.dih || 0, 0.06, 0.04);
   wing(B, secs, s.wingCol || body, { mirror: true });
   if (s.lerx) wing(B, [{ x: w.x + s.lerx, y: 0, z: zc + (w.z || 0) * H, c: s.lerx + w.c0 * 0.3, t: 0.04 }, { x: w.x, y: W * 0.62, z: zc + (w.z || 0) * H, c: w.c0 * 0.3, t: 0.04 }], s.wingCol || body, { mirror: true });
-  const h = s.stab;
-  wing(B, plan(h.x, h.y0 || 0, zc + (h.z || 0) * H, h.span / 2 - (h.y0 || 0), h.c0, h.c1, h.sweep, h.dih || 0, 0.05, 0.04), s.wingCol || body, { mirror: true });
+  const h = s.stab, hs = plan(h.x, h.y0 || 0, zc + (h.z || 0) * H, h.span / 2 - (h.y0 || 0), h.c0, h.c1, h.sweep, h.dih || 0, 0.05, 0.04);
+  // the stabilators turn whole (+ nose up), in their own groups when close; the ailerons on the wing's trailing edge
+  if (q) { for (const sg of [1, -1]) { const hy = [hs[0].x - hs[0].c * 0.35, sg * hs[0].y, hs[0].z]; B.group(sg > 0 ? 'elevR' : 'elevL', { kind: 'elev', pivot: hy, axis: [0, 1, 0], up: 0.25, side: sg }); wing(B, hs, s.wingCol || body, { sides: [sg] }); } B.group('main'); surface(B, secs, 0.55, 0.92, 0.78, 1.02, 'ail', 0.3, { mirror: true, t: 0.03, col: s.wingCol || body }); }
+  else wing(B, hs, s.wingCol || body, { mirror: true });
   // fins: one on the spine, or two canted out on the engine booms
   const f = s.fin;
-  for (const sg of f.twin ? [1, -1] : [0]) wing(B, plan(f.x, sg * f.y, zc + (f.z || 0.3) * H, f.h, f.c0, f.c1, f.sweep, 90 - (f.cant || 0) * (sg || 1), 0.06, 0.05), s.finCol || top, {});
+  for (const sg of f.twin ? [1, -1] : [0]) { const fs = plan(f.x, sg * f.y, zc + (f.z || 0.3) * H, f.h, f.c0, f.c1, f.sweep, 90 - (f.cant || 0) * (sg || 1), 0.06, 0.05); wing(B, fs, s.finCol || top, {}); if (q) surface(B, fs, 0.1, 0.8, 0.72, 1.02, 'rud', -0.35, { fin: true, t: 0.04, col: s.finCol || top, name: 'rud' + (sg + 1) }); }
   if (s.ventral) for (const sg of [1, -1]) wing(B, plan(x0 + L * 0.2, sg * W * 0.3, zc - H * 0.3, 0.8, 1.6, 0.9, 40, -60, 0.05, 0.05), body, {});
   // nozzles and the afterburner's glow (its own group, lit when the pilot pushes the throttles through)
   for (const sg of s.twinEng ? [1, -1] : [0]) {
@@ -1196,11 +1261,82 @@ def('helipad', 'Helicopter pad', 'Airfield', 22, 22, B => {
   for (const y of [-2.2, 2.2]) box(B, 0, y, 0.1, 6.5, 0.9, 0.04, '#f0f0ee'); box(B, 0, 0, 0.1, 0.9, 4.4, 0.04, '#f0f0ee');
 });
 
+// the airport's own vehicles (brief 41): what serves an aircraft on its stand, the pushback tug, the follow-me car and
+// the fire service; drawn many times over in the 3D view, so they stay a few hundred triangles each
+const AV = 'Airport vehicles', YEL = '#e8c23a', WHT = '#e8eae6';
+const wheels = (B, xs, w, r, wd) => { for (const x of xs) for (const k of [-1, 1]) lathe(B, [[-(wd || 0.2), r * 0.5], [-(wd || 0.2), r], [wd || 0.2, r], [wd || 0.2, r * 0.5]], P.rubber, { at: [x, k * (w / 2 - (wd || 0.2)), r], axis: 'y', segs: B.q ? 8 : 5, cap0: P.dgrey, cap1: P.dgrey, smooth: false }); };
+const beaconOn = (B, x, y, z) => { box(B, x, y, z, 0.25, 0.25, 0.18, '#ff9a1a'); B.light(x, y, z + 0.15, 'amber'); };
+def('tug', 'Pushback tug', AV, 6.6, 2.9, B => {
+  box(B, 0, 0, 0.85, 6.6, 2.9, 0.9, YEL, { top: [0.96, 0.96] }); box(B, 0, 0, 0.35, 6.2, 2.5, 0.3, P.dark);
+  box(B, -2.2, 0.75, 1.75, 1.5, 1.3, 1.0, P.glass, { top: [0.9, 0.9] }); box(B, -2.2, 0.75, 2.3, 1.6, 1.4, 0.1, YEL);
+  box(B, 3.2, 0, 0.9, 0.3, 2.6, 0.5, P.dark); wheels(B, [2.1, -2.1], 2.9, 0.55, 0.3); beaconOn(B, -2.2, 0.75, 2.45);
+});
+def('bagtractor', 'Baggage tractor', AV, 3.1, 1.5, B => {
+  box(B, 0.3, 0, 0.62, 2.4, 1.4, 0.55, WHT); box(B, -0.5, 0, 1.0, 1.0, 1.3, 0.25, P.dark);
+  for (const [x, y] of [[-0.95, 0.6], [-0.95, -0.6], [0.05, 0.6], [0.05, -0.6]]) box(B, x, y, 1.5, 0.08, 0.08, 1.0, P.dark);
+  box(B, -0.45, 0, 2.02, 1.2, 1.4, 0.06, WHT); wheels(B, [0.9, -0.8], 1.5, 0.33, 0.14); box(B, -1.5, 0, 0.45, 0.4, 0.2, 0.12, P.dark); beaconOn(B, -0.45, 0, 2.1);
+});
+def('bagcart', 'Baggage cart', AV, 3.3, 1.6, B => {
+  box(B, 0, 0, 0.5, 3.0, 1.5, 0.12, P.dgrey); box(B, 0, 0, 1.25, 2.9, 1.45, 1.35, '#56687a', { top: [0.98, 0.94] });
+  box(B, 0, 0.74, 1.15, 2.4, 0.03, 0.9, '#c8a86a'); box(B, 1.7, 0, 0.4, 0.6, 0.1, 0.08, P.dark); wheels(B, [1.0, -1.0], 1.5, 0.22, 0.1);
+});
+def('belt', 'Belt loader', AV, 8, 2.1, B => {
+  box(B, 0, 0, 0.6, 7.6, 1.9, 0.35, WHT); box(B, 2.8, -0.35, 1.2, 1.1, 1.0, 1.0, P.glass, { top: [0.9, 0.9] });
+  B.group('belt', { kind: 'launch', pivot: [-3.4, 0, 1.0], axis: [0, -1, 0], up: 0.36 });
+  box(B, 0.4, 0.2, 1.05, 7.8, 0.85, 0.2, '#2a2c2e'); for (const sg of [1, -1]) box(B, 0.4, 0.2 + sg * 0.46, 1.25, 7.8, 0.06, 0.35, WHT);
+  B.group('main'); wheels(B, [2.6, -2.2], 1.9, 0.38, 0.16); beaconOn(B, 2.8, -0.35, 1.8);
+});
+def('catering', 'Catering truck', AV, 9.5, 2.5, B => {
+  lorry(B, 9.5, 2.5, 2, WHT, { cabL: 2.2, cabH: 1.7 });
+  // the body rides up on its scissors to the galley door
+  B.group('lift', { kind: 'lift', pivot: [-1.2, 0, 0], axis: [0, 0, 1], up: 3.4 });
+  box(B, -1.2, 0, 2.9, 6.2, 2.45, 2.4, WHT, { col: [WHT, WHT, '#2f5d9a', '#2f5d9a', WHT, P.dgrey] }); box(B, 2.1, 0, 3.9, 0.5, 1.8, 0.1, P.steel);
+  B.group('scissor', { kind: 'scissor', pivot: [-1.2, 0, 1.5], axis: [0, 0, 1], up: 3.4 });
+  for (const sg of [1, -1]) box(B, -1.2, sg * 0.9, 1.6, 4.8, 0.12, 0.2, P.steel, { pitch: sg * 0.2 });
+  B.group('main'); beaconOn(B, 3.3, 0, 3.2);
+});
+def('stairs', 'Passenger stairs', AV, 8, 2.5, B => {
+  lorry(B, 8, 2.4, 2, WHT, { cabL: 1.8, cabH: 1.5, h: 0.8 });
+  const n = 12; for (let i = 0; i < n; i++) box(B, 1.1 - i * 0.42, 0, 1.4 + i * 0.25, 0.42, 1.5, 0.12, P.steel);
+  for (const sg of [1, -1]) { box(B, -1.2, sg * 0.8, 2.9, 5.6, 0.08, 0.08, WHT, { pitch: 0.54 }); box(B, -1.2, sg * 0.8, 2.3, 5.6, 0.1, 0.9, '#c8c8c0', { pitch: 0.54 }); }
+  box(B, -3.8, 0, 4.2, 1.3, 1.6, 0.12, P.steel); box(B, -3.8, 0, 5.2, 1.3, 1.7, 1.9, '#d8d8d4', { col: [P.glass, P.glass, P.glass, P.glass, WHT, WHT] });
+});
+def('apbus', 'Apron bus', AV, 13.8, 3, B => {
+  box(B, 0, 0, 0.62, 13.6, 2.9, 0.55, '#dfe2e2'); box(B, 0, 0, 1.95, 13.6, 3.0, 2.1, WHT, { top: [0.99, 0.97] });
+  for (const sg of [1, -1]) box(B, 0, sg * 1.51, 2.05, 12.8, 0.03, 1.4, P.glass);
+  box(B, 6.81, 0, 2.05, 0.03, 2.6, 1.5, P.glass); box(B, 0, 0, 3.02, 13.6, 3.0, 0.06, '#2f5d9a', { col: ['#2f5d9a', '#2f5d9a', '#2f5d9a', '#2f5d9a', '#c8ccd0', '#c8ccd0'] });
+  for (let i = -1; i <= 1; i++) box(B, i * 4.5, 1.52, 1.6, 1.8, 0.04, 2.2, '#2f5d9a');
+  wheels(B, [4.8, -4.8], 2.9, 0.45, 0.25);
+});
+def('followme', 'Follow-me car', AV, 4.6, 1.8, B => {
+  box(B, 0, 0, 0.7, 4.6, 1.8, 0.6, YEL); box(B, -0.2, 0, 1.25, 2.3, 1.6, 0.5, P.glass, { top: [0.8, 0.9] });
+  box(B, -0.2, 0, 1.75, 0.2, 1.5, 0.45, '#111111'); for (let i = 0; i < 6; i++) box(B, -0.1, -0.62 + i * 0.25, 1.75 + (i % 2 ? 0.11 : -0.11), 0.21, 0.25, 0.22, YEL);
+  wheels(B, [1.4, -1.4], 1.8, 0.33, 0.14); beaconOn(B, -0.2, 0.6, 2.05); beaconOn(B, -0.2, -0.6, 2.05);
+});
+def('firetruck', 'Airport fire tender', AV, 12, 3, B => {
+  box(B, 0, 0, 1.0, 11.6, 2.9, 0.5, '#8c1c16'); box(B, 0, 0, 2.3, 8.2, 3.0, 2.3, '#c8281e', { top: [0.99, 0.96] });
+  box(B, 4.7, 0, 2.0, 2.4, 3.0, 1.9, '#c8281e', { top: [0.8, 0.96], shift: -0.3 }); box(B, 5.4, 0, 2.3, 0.5, 2.8, 0.9, P.glass, { pitch: -0.3 });
+  box(B, -1, 0, 1.9, 8.2, 3.02, 0.1, '#e8e4dc');
+  B.group('monitor', { kind: 'turret', pivot: [3.4, 0, 3.6], axis: [0, 0, 1] }); cyl(B, [3.4, 0, 3.7], 0.5, 0.3, P.steel, 'z', { segs: 6 }); cyl(B, [4.1, 0, 3.95], 1.4, 0.1, P.steel, 'x', { segs: 5 }); B.group('main');
+  wheels(B, [3.9, -1.6, -3.9], 2.9, 0.62, 0.3); beaconOn(B, 4.4, 1.1, 3.05); beaconOn(B, 4.4, -1.1, 3.05);
+});
+def('refueller', 'Refuelling truck', AV, 12, 2.5, B => {
+  lorry(B, 12, 2.5, 3, '#c8281e', { cabL: 2.3 });
+  lathe(B, [[-4.0, 0.95], [-4.1, 1.1], [4.0, 1.1], [4.1, 0.95]], WHT, { at: [-1.5, 0, 2.35], rz: 0.95, cap0: WHT, cap1: WHT });
+  box(B, -1.5, 0, 2.35, 8.1, 2.22, 0.3, '#c8281e'); box(B, -5.9, 0, 1.6, 0.4, 2.0, 1.2, P.dgrey); beaconOn(B, 4.9, 0, 3.55);
+});
+def('dispenser', 'Hydrant dispenser', AV, 7.2, 2.3, B => {
+  lorry(B, 7.2, 2.3, 2, WHT, { cabL: 2.0, cabH: 1.6, h: 0.8 });
+  box(B, -1.4, 0, 1.5, 4.0, 2.2, 0.35, P.dgrey); box(B, -2.1, 0, 2.5, 2.2, 2.0, 0.2, '#c8281e');
+  for (const sg of [1, -1]) box(B, -2.1, sg * 0.95, 3.0, 2.2, 0.06, 0.8, YEL); cyl(B, [-0.6, 0.6, 2.0], 0.8, 0.45, P.dark, 'y', { segs: 8 }); beaconOn(B, 2.6, 0, 2.8);
+});
+def('lorry', 'Cargo lorry', AV, 10, 2.5, B => lorry(B, 10, 2.5, 3, WHT, { bed: 2.7, bedCol: '#d0d4d8' }));
+def('gpu', 'Ground power unit', AV, 2.6, 1.5, B => { box(B, 0, 0, 0.95, 2.4, 1.4, 1.1, '#dfe2e2'); box(B, 0, 0, 0.45, 2.4, 1.2, 0.15, P.dark); wheels(B, [0.8, -0.8], 1.5, 0.28, 0.12); box(B, 1.5, 0, 0.5, 0.8, 0.1, 0.08, P.dark); });
 // the real aircraft's height, metres (the gallery checks the models against length, span and height)
 const REAL_H = { light: 2.72, tourer: 2.22, retract: 2.62, twin: 2.97, taildrag: 2.62, utility: 4.71, helil: 3.28, helim: 4.95, glider: 1.55, micro: 3.5, rj: 9.73, widel: 18.5, jumbo: 24.09, cargoprop: 9.64, vlj: 4.35, bizjet: 6.1, bizlong: 7.82, bizprop: 4.37, vintage: 7.54, sst: 12.2, outsize: 18.9, airship: 17.4, amphib: 8.98, display: 3.98, state: 19.33, turbo: 7.65, narrow: 11.76, wide: 18.5, cargo: 19.4, fighter: 5.1, heavy: 12.6, drone: 3.8, heli: 5.1, ahe: 3.8, ftr_e: 5.9, str: 6.2, ewj: 6.3, bmr: 13.3, isr: 2.9 };
 for (const k in REAL_H) M[k].h = REAL_H[k];
 IC.MODELS = M;
-IC.MODEL_GROUPS = ['Civil aircraft', 'Business aviation', 'General aviation', 'Rare visitors', 'Our air wing', 'Missiles', 'Enemy weapons', 'Our units', 'Vehicles'];
+IC.MODEL_GROUPS = ['Civil aircraft', 'Business aviation', 'General aviation', 'Rare visitors', 'Our air wing', 'Missiles', 'Enemy weapons', 'Our units', 'Vehicles', 'Airport vehicles'];
 
 /* ---------- a model as arrays: IC.modelMesh(key, q) ----------
    { groups: { name: { pos, nor (Float32Array, metres), col (Uint8Array slot per vertex), kind, pivot, axis, up } },
@@ -1221,7 +1357,7 @@ function finish(B, key) {
   const groups = {}, box = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
   for (const k in B.groups) {
     const g = B.groups[k]; if (!g.pos.length) continue;
-    groups[k] = { pos: Float32Array.from(g.pos), nor: Float32Array.from(g.nor), col: Uint8Array.from(g.col), kind: g.kind || 'main', pivot: g.pivot || [0, 0, 0], axis: g.axis || [0, 0, 1], up: g.up || 0, rpm: g.rpm || 1, R: g.R || 0 };
+    groups[k] = { pos: Float32Array.from(g.pos), nor: Float32Array.from(g.nor), col: Uint8Array.from(g.col), kind: g.kind || 'main', pivot: g.pivot || [0, 0, 0], axis: g.axis || [0, 0, 1], up: g.up || 0, rpm: g.rpm || 1, R: g.R || 0, parent: g.parent || null, side: g.side || 0 };
     for (let i = 0; i < g.pos.length; i += 3) for (let a = 0; a < 3; a++) { box[a] = Math.min(box[a], g.pos[i + a]); box[a + 3] = Math.max(box[a + 3], g.pos[i + a]); }
   }
   return { key, groups, slots: B.slots, lights: B.lights, tris: B.tris, box };
@@ -1232,6 +1368,33 @@ IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, P }
 /* what a model has that moves: its gear, flaps, rotors, propellers, radar, launcher, afterburner */
 IC.modelMoves = key => { const m = IC.modelMesh(key, 1), out = {}; for (const k in m.groups) out[m.groups[k].kind] = true; return out; };
 
+
+/* ---------- the airport's fixtures in 3D (brief 41) ----------
+   Pieces the 3D view places and moves itself, built the same way but not models of their own: the jet bridge
+   (rotunda, a tunnel one metre long that is stretched to reach, the cab at the door, the wheeled leg), a windsock
+   (the sock turns and fills with the wind), a floodlight mast, a PAPI box, a missile's booster. Metres, as above. */
+const FIX = {
+  jbRot: B => { cyl(B, [0, 0, 2.6], 5.2, 0.35, P.steel, 'z', { segs: 6 }); lathe(B, [[0, 2.3], [3.2, 2.3]], '#b0b4ba', { at: [0, 0, 3.6], axis: 'z', cap0: '#9aa0a6', cap1: '#c4c8cc', segs: 12 }); },
+  jbTunnel: B => { box(B, 0.5, 0, 5.2, 1.0, 2.7, 2.9, '#b8bcc2', { col: ['#b8bcc2', '#b8bcc2', '#a8acb2', '#a8acb2', '#c8ccd0', '#8a8e94'] }); box(B, 0.5, 1.36, 5.6, 1.0, 0.02, 0.9, P.glass); box(B, 0.5, -1.36, 5.6, 1.0, 0.02, 0.9, P.glass); },
+  jbCab: B => { box(B, 0, 0, 5.2, 3.2, 3.6, 3.1, '#c4c8cc'); box(B, 1.9, 0, 5.1, 0.7, 3.0, 2.6, '#2a2c2e'); box(B, -0.2, 1.81, 5.6, 2.4, 0.02, 1.0, P.glass); },
+  jbLeg: B => { cyl(B, [0, 0, 2.0], 3.6, 0.28, P.steel, 'z', { segs: 6 }); box(B, 0, 0, 0.45, 1.4, 3.0, 0.4, P.dgrey); wheels(B, [0], 3.0, 0.42, 0.22); },
+  sock: B => {
+    cyl(B, [0, 0, 3.2], 6.4, 0.07, '#e8e8e6', 'z', { segs: 6 }); box(B, 0, 0, 0.1, 1.2, 1.2, 0.2, P.concrete);
+    B.group('sock', { kind: 'sock', pivot: [0, 0, 6.2], axis: [0, 0, 1] });
+    for (let i = 0; i < 5; i++) lathe(B, [[-i * 0.72, 0.45 - i * 0.055], [-(i + 1) * 0.72, 0.45 - (i + 1) * 0.055]], i % 2 ? '#f2f2ee' : '#f07a1e', { at: [0, 0, 6.2], segs: 10 });
+    B.group('main');
+  },
+  flood: B => { cyl(B, [0, 0, 12], 24, 0.28, '#9aa0a6', 'z', { segs: 6 }); box(B, 0, 0, 24.3, 1.2, 3.6, 0.8, '#6c7278'); for (let i = -1; i <= 1; i++) box(B, 0.62, i * 1.1, 24.2, 0.05, 0.9, 0.55, '#fff4d8'); },
+  papi: B => { box(B, 0, 0, 0.45, 1.2, 1.0, 0.6, '#d8d8d0'); box(B, 0, 0, 0.1, 1.2, 0.3, 0.2, P.dgrey); },
+  booster: B => { missileBody(B, [0, 0, 0], 1, 0.34, '#dcdcd6', { fins: 0.3, noseL: 0.001 }); }
+};
+const fixCache = new Map();
+IC.fixtureMesh = function (key, q) {
+  const ck = key + '|' + (q ? 1 : 0);
+  let m = fixCache.get(ck); if (m) return m;
+  const B = Builder(q ? 1 : 0); FIX[key](B); m = finish(B, key); fixCache.set(ck, m);
+  return m;
+};
 /* an airline's colours for the slots, from its livery [primary, secondary]: one of three schemes by the livery, so
    airlines differ at a glance. o.body is the airframe's own colour where there is no livery */
 const SCHEME = [

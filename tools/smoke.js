@@ -85,10 +85,12 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
     if (!ap) problems.push('career: founding with the mouse did not make the national airport');
     else {
       await look('career-founded');
-      // the runway: the Build tab, Runway, one end, the other, and again to build
+      // the runway: the build bar (open with the airport selected), its Runways tab, Runway, one end, the other, and
+      // again to build
       await ev(`IC.cam.fly = null; IC.cam.z = 4; IC.centerOn(${ap.x}, ${ap.y})`); await wait(300);
-      await page.click('button[data-act=aptTab][data-v=build]'); await wait(300);
-      await page.click('button[data-act=build][data-v=runway]'); await wait(200);
+      if (!(await ev(`!document.getElementById('bbar').hidden`))) { await page.click('button[data-act=bbToggle]'); await wait(300); }
+      await page.click('#bbar button[data-bb=tab][data-v=rw]'); await wait(200);
+      await page.click('#bbar button[data-bb=item][data-v=runway]'); await wait(200);
       const P = (l) => ({ x: ap.x + Math.cos(ap.a) * l, y: ap.y + Math.sin(ap.a) * l });
       const a = P(-15), b = P(15);
       await clickWorld(a.x, a.y); await clickWorld(b.x, b.y); await clickWorld(b.x, b.y);
@@ -96,6 +98,14 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
       if (!rw) problems.push('career: the runway was not planned by clicking its two ends');
       await page.keyboard.press('Escape'); await wait(200);
       await look('career-runway');
+      // the rest of the build bar: a tab by its key, an item, the tools and an info view
+      await page.keyboard.press('2'); await wait(200);
+      await page.click('#bbar button[data-bb=item][data-v=taxi]'); await wait(200); await look('career-bar-taxiway');
+      await page.keyboard.press('Escape'); await wait(200);
+      for (const t of ['upgrade', 'move', 'bulldoze']) { await page.click(`#bbar button[data-bb=tool][data-v=${t}]`); await wait(200); await look(`career-bar-${t}`); await page.keyboard.press('Escape'); await wait(150); }
+      await page.click('#bbar button[data-bb=tool][data-v=info]'); await wait(300); await look('career-bar-info');
+      if (!(await ev(`!!IC.bb.view`))) problems.push('career: the info view did not open from the build bar');
+      await page.keyboard.press('Escape'); await wait(150);
     }
   }
   await run(3, 4); await wait(500); await clear(); await look('career-3h');

@@ -7,8 +7,8 @@
    node tests/run.js --shard=1/2  one of two halves of equal length (by tests/times.json), for two machines at once
    IC_JOBS=n sets the number of workers (one per core by default, up to 8 and 1.6 GB of memory each); IC_JOBS=1
    runs everything in this process, one test after another.
-   Every test starts from the same seeded random numbers (IC.seedRandom, from its name), so it plays out the same
-   alone, in a full run or in any worker, and a failure can be repeated. */
+   Every test starts from the same seeded random numbers (IC.seedRandom, from its name) and the same ids, so it plays
+   out the same alone, in a full run or in any worker, and a failure can be repeated. */
 const IC = require('../headless.js');
 const { playLesson } = require('../academytest.js');
 const Q = require('../qwplayer.js');
@@ -1035,6 +1035,102 @@ test('builder: a KDEN-scale airport built by hand in under 200 clicks handles it
   console.log(`        ${actions} actions; ${stands.length} stands; rated ${rated} movements an hour, flew ${at[2] - at[1]} in the second hour`);
 }, true);
 
+/* ---------- the build bar: its tabs, the tools (brief 44) ---------- */
+test('build bar: every tab has items, and each one can be placed on an airport', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap]; S.budget = 1e6;
+  // the research the Career locks is done, so the whole bar is open
+  if (S.tech) for (const k of Object.values(IC.APT_TECH)) S.tech.done.add(k);
+  const P = (x, y) => IC.aptLocal(ap, x, y);
+  const placed = [], skipped = [];
+  for (const tab of IC.BB_TABS) {
+    assert(tab.items.length, `tab ${tab.name} has no items`);
+    for (const k of tab.items) {
+      if (k === 'blueprint' && !(IC.showcaseKeys && IC.showcaseKeys().length)) { skipped.push(k); continue; }
+      if (k.startsWith('road:')) { assert(IC.ROADS[k.slice(5)], `${k} is not a road the player may build`); skipped.push(k); continue; }
+      const part = k === 'carpark' ? 'surface' : k;
+      if (IC.APART[part]) assert(!IC.aptLockWhy(S, part), `${k} is still locked: ${IC.aptLockWhy(S, part)}`);
+      // somewhere clear, well away from what is already built, in the airport's own frame
+      const n = placed.length, c = P(-20 + (n % 6) * 7, 14 + Math.floor(n / 6) * 6);
+      const m = IC.bldMode(S, ap, part);
+      if (k === 'carpark') m.surf = 'asph';
+      if (part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to: their own tests cover them)
+      S.mode2 = m; S.hover = c;
+      const n0 = ap.parts.length, two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
+      IC.clickWorld(c, 0);
+      if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
+      IC.clickWorld(two ? c2 : c, 0);
+      assert(ap.parts.length > n0, `${k} (${tab.name}) was not placed: ${m.err || 'no reason given'}`);
+      placed.push(k);
+    }
+  }
+  assert(placed.length >= 12, `only ${placed.length} of the bar's items were placed (skipped ${skipped.join(', ')})`);
+  // and each one the player reads about has a price, a use and what it needs
+  for (const tab of IC.BB_TABS) for (const k of tab.items) { const w = IC.BB_ITEM(S, k); assert(w.name && w.price && w.desc, `${k} has no name, price or description`); }
+});
+test('build bar: upgrading charges the difference and bulldozing refunds', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap]; S.budget = 1e5;
+  const tx = ap.parts.find(p => p.kind === 'taxi' && p.built);
+  // asphalt to concrete: the difference in price, not the whole price
+  tx.mat = 'asph';
+  const was = IC.partCost(ap, tx), to = IC.partCost(ap, Object.assign({}, tx, { mat: 'conc' }));
+  const q = IC.bldUpgradeCost(S, ap, tx, { mat: 'conc' });
+  assert(!q.why, `the upgrade was refused: ${q.why}`);
+  assert(Math.abs(q.cost - (to - was)) < 1e-6 && q.cost > 0, `charged ${U.money(q.cost)}, the difference is ${U.money(to - was)}`);
+  const b0 = S.budget;
+  assert(IC.bldUpgrade(S, ap, tx, { mat: 'conc' }), 'the upgrade did not start');
+  assert(tx.shut, 'the taxiway stays open while it is relaid');
+  for (let i = 0; i < 4000 && ap.works.length; i++) tick(S, 2);
+  assert(IC.paveOf(tx) === 'conc' && !tx.shut, `after the work it is ${IC.paveOf(tx)}${tx.shut ? ', still closed' : ''}`);
+  const paid = b0 - S.budget;
+  assert(Math.abs(paid - q.cost) < q.cost * 0.02, `paid ${U.money(paid)} for an upgrade quoted at ${U.money(q.cost)}`);
+  // a cheaper material costs nothing and gives nothing back
+  assert(IC.bldUpgradeCost(S, ap, tx, { mat: 'asph' }).cost === 0, 'a cheaper pavement is paid for');
+  // a wider runway, and lights taken off a runway close it at night
+  const rw = ap.parts.find(p => p.kind === 'runway' && p.built);
+  const wq = IC.bldUpgradeCost(S, ap, rw, { mat: IC.paveOf(rw), w: 0.6, lit: true });
+  assert(wq.cost > 0 && /60 m wide/.test(wq.what.join(' ')), `widening quoted ${U.money(wq.cost)} for ${wq.what.join(', ')}`);
+  // bulldozing: what comes back is what the panel said, and it is booked
+  const hangar = ap.parts.find(p => p.kind === 'hangar' && p.built);
+  const r = IC.bldRefund(S, ap, hangar);
+  assert(!r.why && r.refund > 0 && r.refund < IC.partCost(ap, hangar), `salvage ${U.money(r.refund)} of ${U.money(IC.partCost(ap, hangar))}`);
+  const b1 = S.budget, n0 = ap.parts.length;
+  assert(IC.bldBulldoze(S, ap, hangar), 'the hangar was not bulldozed');
+  assert(ap.parts.length === n0 - 1 && Math.abs(S.budget - (b1 + r.refund)) < 1e-6, `bulldozing gave back ${U.money(S.budget - b1)} instead of ${U.money(r.refund)}`);
+  // an apron with an aircraft on it is refused, with the reason
+  const apr = ap.parts.find(p => p.kind === 'apron' && (p.stands || []).length);
+  const st0 = IC.aptStands(ap).find(x => x.apron === apr.id);
+  if (st0) { st0.occ = 'test'; const q2 = IC.bldRefund(S, ap, apr); assert(/parked/.test(q2.why || ''), `an occupied apron says "${q2.why}"`); assert(!IC.bldBulldoze(S, ap, apr), 'an occupied apron was bulldozed'); st0.occ = null; }
+  // planned work not yet begun comes back in full
+  const m = IC.bldMode(S, ap, 'hangar'), c = IC.aptLocal(ap, -18, 12);
+  S.mode2 = m; S.hover = c; IC.clickWorld(c, 0); IC.clickWorld(c, 0);
+  const p2 = ap.parts[ap.parts.length - 1];
+  assert(p2 && !p2.built, 'the new hangar was not planned');
+  const b2 = S.budget;
+  assert(IC.bldBulldoze(S, ap, p2), 'the planned hangar was not removed');
+  assert(S.budget >= b2 - 1e-6, `removing planned work cost ${U.money(b2 - S.budget)}`);
+});
+test('build bar: a building moves for half its price, and the info views read the airport', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap]; S.budget = 1e5;
+  const fire = ap.parts.find(p => p.kind === 'fire' && p.built);
+  const q = IC.bldRelocateCost(S, ap, fire);
+  assert(!q.why && Math.abs(q.cost - IC.partCost(ap, fire) * 0.5) < 1e-6, `moving a built fire station quoted ${U.money(q.cost)} of ${U.money(IC.partCost(ap, fire))}`);
+  const to = IC.aptLocal(ap, -14, 9), b0 = S.budget;
+  assert(IC.bldRelocate(S, ap, fire, to.x, to.y, fire.a), 'the fire station did not move');
+  assert(U.dist(fire, to) < 0.2 && !fire.built, 'it did not go to the new place as work');
+  for (let i = 0; i < 6000 && ap.works.length; i++) tick(S, 2);
+  assert(fire.built, 'it was never put up again');
+  const paid = b0 - S.budget;
+  assert(paid > 0 && Math.abs(paid - q.cost) < q.cost * 0.15, `moving cost ${U.money(paid)}, quoted ${U.money(q.cost)}`);
+  // a runway is not moved: it is rebuilt
+  assert(/rebuilt/.test(IC.bldRelocateCost(S, ap, ap.parts.find(p => p.kind === 'runway')).why), 'a runway can be picked up and moved');
+  // the info views: each has a name and a sentence, and gathering runs headless
+  for (const [k, v] of Object.entries(IC.INFO_VIEWS)) assert(v.name && /\.$/.test(v.desc), `info view ${k} has no name or its line does not end in a full stop`);
+  const H = IC.infoGather(S, ap); tick(S, 600); IC.infoGather(S, ap);
+  assert(H && H.e instanceof Map && H.s instanceof Map, 'the info views keep no record of the taxiways and stands');
+});
 /* ---------- airspace ---------- */
 /* switch off every radar controllers could use: the civil radars and the approach radars at the airports */
 const blind = S => {
@@ -1208,12 +1304,213 @@ test('airport life: the landside grows with passengers and pays a small income',
 test('airport life: a radar and a beacon can stand inside the airport, but not on a runway', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
   const cap = S.byId[S.story.cap], P = (x, y) => IC.aptLocal(cap, x, y);
-  const inside = P(-5, -4);
+  const inside = P(-6, -2.8);
   assert(IC.aptInFence(cap, inside), 'the test point is not inside the fence');
   assert(IC.canPlace(S, 'ssr', inside.x, inside.y), 'a beacon cannot be placed inside the airport');
   const on = P(0, 0.3);
   assert(!IC.canPlace(S, 'ssr', on.x, on.y), 'a beacon can be placed on the runway');
 });
+
+/* ---------- nothing overlaps (brief 39) ---------- */
+const overlapsOf = (S, ap) => IC.aptOverlaps(S, ap).map(o => `${ap.name}: ${o.text}`);
+/* the landside at its fullest: passengers and cargo far beyond any real day */
+const growLand = (S, ap) => { const L = IC.landInit(ap); for (let i = 0, n = -1; i < 60 && L.items.length !== n; i++) { n = i < 3 ? -1 : L.items.length; ap.paxRate = 9000; ap.mvLog = Array.from({ length: 8 }, () => ({ type: 'cargo', k: 'arr' })); L.pax = 9000; L.cargo = 400; L.t = 0; IC.landsideTick(S, ap, 1); } };
+test('overlaps: nothing overlaps on the starting airports of three worlds, even with the landside grown in full', () => {
+  const bad = [];
+  for (const [seed, mode] of [[12345, 'story'], [777, 'quick'], [9001, 'quick']]) {
+    IC.seedRandom(seed);
+    const S = IC.newGame({ seed, mode, preset: mode === 'story' ? 'network' : undefined, hour: 8 });
+    for (const ap of IC.bases(S)) { if (ap.kind === 'airport') growLand(S, ap); bad.push(...overlapsOf(S, ap)); }
+    // the country's own roads to each airport end at a gate on its landside, outside the fence
+    for (const ap of IC.bases(S)) { const n = S.world.nodes[ap.id]; if (n && n.gate) assert(!IC.aptInFence(ap, n), `${ap.name}: its road ends inside the fence`); }
+  }
+  assert(!bad.length, `${bad.length} overlaps: ${bad.slice(0, 4).join(' ')}`);
+}, true);
+test('overlaps: the KDEN-scale airport has none, laid out or built by hand on a new site', () => {
+  const { S, ap } = kdenGame(12345, 9);
+  const a = overlapsOf(S, ap);
+  assert(!a.length, `laid out: ${a.length}: ${a.slice(0, 3).join(' ')}`);
+  const { buildKden, finishAll } = require('../kdenbuild.js');
+  const K = buildKden(12345, true); finishAll(K.S, K.ap); growLand(K.S, K.ap);
+  const b = overlapsOf(K.S, K.ap);
+  assert(!b.length, `built by hand: ${b.length}: ${b.slice(0, 3).join(' ')}`);
+  // the airport's own road was moved round the airfield as it grew, not left under the runways
+  const acc = K.S.world.edges.filter(e => e.apt === K.ap.id || e.a === K.ap.id || e.b === K.ap.id);
+  assert(acc.length && acc.every(e => e.pts.every(p => !IC.aptOnPart(K.ap, p, 0.05))), 'the access road still runs over the airfield');
+}, true);
+test('overlaps: the builder refuses a building on a taxiway, a road or the landside, and says what it would hit', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S; S.budget = 1e5;
+  const cap = S.byId[S.story.cap];
+  growLand(S, cap);
+  // on a taxiway
+  const tw = cap.parts.find(p => p.kind === 'taxi' && p.nodes.length > 2), n = cap.nodes[tw.nodes[1]];
+  assert(!IC.aptCanPlace(S, cap, { kind: 'fire', x: n.x, y: n.y, a: 0 }) && /taxiway/.test(IC.aptPlaceWhy), `a fire station on a taxiway: "${IC.aptPlaceWhy}"`);
+  // on the landside: a car park and its road
+  const park = cap.land.items.find(it => it.kind === 'park');
+  assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: park.x, y: park.y, a: park.a }) && /car park/i.test(IC.aptPlaceWhy), `a hangar on the car park: "${IC.aptPlaceWhy}"`);
+  const kerb = cap.land.roads.find(r => r.kerb), mid = { x: (kerb.pts[0].x + kerb.pts[1].x) / 2, y: (kerb.pts[0].y + kerb.pts[1].y) / 2 };
+  assert(!IC.aptCanPlace(S, cap, { kind: 'fuel', x: mid.x, y: mid.y, a: 0 }) && /road/.test(IC.aptPlaceWhy), `a fuel tank on the kerb road: "${IC.aptPlaceWhy}"`);
+  // on a country road outside the airfield (within the site)
+  const e = S.world.edges.find(e => e.pts.some(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p) && !IC.aptInFence(cap, p)));
+  if (e) { const p = e.pts.find(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p)); assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: p.x, y: p.y, a: 0 }) && /road|street|lane/.test(IC.aptPlaceWhy), `a hangar on a road: "${IC.aptPlaceWhy}"`); }
+  // clear ground is fine
+  assert(IC.aptOverlaps(S, cap).length === 0, 'the test airport overlaps before anything is built');
+});
+
+/* ---------- shapes: outlines, bridges, movers, two-level roads (brief 39) ---------- */
+const MINI = require('./fixtures/mini-layout.js');
+/* the made-up test field in place of the capital's airport, turned by rot */
+const miniGame = (rot, hour) => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: hour == null ? 9 : hour }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  if (S.av) { S.av.tails = []; S.av.routes = []; }
+  S.threats = S.threats.filter(t => !t.tail);
+  IC.aptFromLayout(ap, MINI, { x: ap.x, y: ap.y, rot: rot || 0 });
+  ap._seatKey = null; IC.aptReseat(S, ap); IC.aptStats(S, ap);
+  return { S, ap };
+};
+test('shapes: a layout of outlines becomes an airport: stands on the aprons, gates at the terminals, all of them reached from a runway and back', () => {
+  const { S, ap } = miniGame();
+  const st = IC.aptStands(ap);
+  assert(st.length === MINI.stands.length, `${st.length} stands of ${MINI.stands.length}`);
+  assert(st.every(s => s.contact), `${st.filter(s => !s.contact).map(s => s.name).join(', ')} not at a gate`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+  // an L-shaped terminal measures its own outline, not its bounding box
+  const t = ap.parts.find(p => p.name === 'Main Terminal');
+  assert(Math.abs(IC.partMeasure(ap, t) - (16 * 2.6 - 9 * 1)) < 0.05, `the terminal measures ${IC.partMeasure(ap, t).toFixed(2)} ha`);
+  const rwA = ap.parts.find(p => p.kind === 'runway').id + ':a';
+  for (const s of st) {
+    assert(IC.aptPath(ap, rwA, s.id, false, IC.ACTYPES.narrow.ht) && IC.aptPath(ap, s.id, rwA, true, IC.ACTYPES.narrow.ht), `stand ${s.name} cannot be reached from the runway and back`);
+    assert(s.linked, `stand ${s.name} is not linked`);
+  }
+  assert(ap.parts.find(p => p.kind === 'runway').name === 'Runway 09/27', 'the runway lost its real name');
+});
+test('shapes: a passenger bridge over a taxiway lets a narrow-body under and keeps a wide-body out', () => {
+  const { S, ap } = miniGame();
+  const br = ap.parts.find(p => p.kind === 'skybridge'), rwA = ap.parts.find(p => p.kind === 'runway').id + ':a';
+  const far = IC.aptStands(ap).find(s => s.name === '11');
+  assert(br.clear === 13 && far.maxHt === 12, `the stand beyond the bridge takes tails up to ${far.maxHt} m`);
+  assert(IC.aptPath(ap, rwA, far.id, false, IC.ACTYPES.narrow.ht), 'a narrow-body (11.8 m) cannot pass under a 13 m bridge');
+  assert(!IC.aptPath(ap, rwA, far.id, false, IC.ACTYPES.wide.ht), 'a wide-body (18.5 m) was routed under a 13 m bridge');
+  // and an airline never sends one there
+  far.size = 'l';
+  const T = IC.ACTYPES.wide;
+  assert(!(IC.STAND_FITS[far.size].includes(T.stand) && !(far.maxHt && T.ht > far.maxHt)), 'a wide-body would be given the stand beyond the bridge');
+});
+test('shapes: the two levels of the kerb road never meet, and at one level they would', () => {
+  const { S, ap } = miniGame();
+  const up = ap.land.roads.find(r => r.kind === 'upper'), lo = ap.land.roads.find(r => r.kind === 'lower');
+  assert(up.lv === 1 && lo.lv === 0 && IC.aptOverlaps(S, ap).length === 0, 'the two decks are reported as overlapping');
+  // a road across the kerb at grade, with no junction, is reported; the same road on the upper deck is not
+  ap.land.roads.push({ pts: [IC.layoutXf({ x: ap.x, y: ap.y })(12, -8.9), IC.layoutXf({ x: ap.x, y: ap.y })(12, -10)], w: 0.1, lv: 0, kind: 'drive' });
+  assert(IC.aptOverlaps(S, ap).some(o => o.kind === 'road'), 'a road across the arrivals road at grade is not reported');
+  ap.land.roads[ap.land.roads.length - 1].lv = 1;
+  assert(!IC.aptOverlaps(S, ap).some(o => o.kind === 'road' && /arrivals/.test(o.text)), 'a road on the upper deck is reported as crossing the arrivals road');
+});
+test('import: an OpenStreetMap extract becomes a layout the game builds: stands, gates, the bridge and its height, the mover, the roads', () => {
+  const { importAirport } = require('../tools/airport-import.js');
+  const L = importAirport('mini');
+  assert(L.runways.length === 1 && L.runways[0].ends.join('/') === '09/27', 'the runway');
+  assert(L.stands.length === MINI.stands.length && L.stands.every(s => s.ref), `${L.stands.length} stands with gate numbers`);
+  assert(L.bridges.length === 1 && L.bridges[0].clear === 13, 'the bridge and its clearance from min_height');
+  assert(L.movers.length === 1 && L.movers[0].lv === -1 && L.movers[0].stops.length === 2, 'the underground mover between the two terminals');
+  assert(L.roads.some(r => r.lv === 1) && L.roads.some(r => !r.lv), 'the two levels of the kerb road');
+  assert(L.parks.some(p => p.kind === 'garage' && p.lvls === 5), 'the garage and its levels');
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  IC.aptFromLayout(ap, L, { x: ap.x, y: ap.y }); ap._seatKey = null; IC.aptReseat(S, ap); IC.aptStats(S, ap);
+  const st = IC.aptStands(ap);
+  assert(st.length === L.stands.length && st.every(s => s.linked && s.contact), `${st.filter(s => !s.linked).length} stands cut off, ${st.filter(s => !s.contact).length} not at a gate`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+});
+test('showcase: the showcase opens with the real airport at the capital, on a flat site, with nothing overlapping and airlines using it', () => {
+  IC.REAL_APT.mini = MINI;
+  IC.seedRandom(12345);
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: 'mini', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  assert(S.showcase === 'mini' && ap.showcase === 'mini' && ap.name === MINI.name, 'the capital\'s airport is not the showcase');
+  assert(U.dist(ap, IC.cap(S)) < 1000, `the showcase is ${(U.dist(ap, IC.cap(S)) / 10).toFixed(0)} km from the capital`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+  // the country's road comes to the airport's own road, outside the fence
+  const n = S.world.nodes[ap.id];
+  assert(n && ap.exits.some(e => U.dist(e, n) < 0.05) && !IC.aptInFence(ap, n), 'the country\'s road does not end at the airport\'s road');
+  assert(!S.camp.cards.length && !S.story.goals.length, 'the showcase shows the Career\'s cards or goals');
+  for (let i = 0; i < 4 * 3600; i++) IC.step(S, 0.25);
+  assert(S.av.tails.some(t => t.at === ap.id || t.dest === ap.id || t.from === ap.id), 'no airline flies to the showcase airport');
+  delete IC.REAL_APT.mini;
+});
+test('blueprint: a real airport planned onto a new site, turned, is paid for as it is built and works like the original', () => {
+  IC.REAL_APT.mini = MINI;
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 9 }); IC.S = S; S.budget = 1e5;
+  const c = IC.cap(S); let ap = null;
+  for (let d = 150; d < 500 && !ap; d += 20) for (let k = 0; k < 12 && !ap; k++) { const x = c.x + Math.cos(k) * d, y = c.y + Math.sin(k) * d; if (!IC.foundCheck(S, x, y)) ap = IC.foundAirport(S, x, y, 0); }
+  assert(ap, 'no site to found an airport on');
+  // turned until it fits the site (clear of rivers)
+  let rot = 0.5, C = null; for (let k = 0; k < 18; k++, rot += 0.35) { C = IC.bldBlueprintCheck(S, ap, 'mini', ap.x, ap.y, rot); if (C.ok) break; }
+  assert(C.ok, C.why);
+  // it must fit: not across the border
+  const far = IC.bldBlueprintCheck(S, ap, 'mini', S.world.WW || 1e6, 0, 0);
+  assert(!far.ok && /border|lake/.test(far.why), `a blueprint off the map: "${far.why}"`);
+  const b0 = S.budget, made = IC.bldBlueprint(S, ap, 'mini', ap.x, ap.y, rot);
+  assert(made && made.length === C.parts && ap.works.length >= made.length, 'the blueprint was not planned part by part');
+  assert(b0 - S.budget < C.cost * 0.2, `paid ${U.money(b0 - S.budget)} up front of ${U.money(C.cost)}`);
+  // a second one on top is refused, naming what it would hit
+  const again = IC.bldBlueprintCheck(S, ap, 'mini', ap.x, ap.y, rot);
+  assert(!again.ok && /overlaps/.test(again.why), `a second blueprint on top: "${again.why}"`);
+  for (let i = 0; i < 80 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); }
+  ap.dirty = true; IC.aptStats(S, ap);
+  const st = IC.aptStands(ap);
+  assert(st.length === MINI.stands.length && st.every(s => s.linked && s.contact), `${st.filter(s => !s.linked).length} stands cut off`);
+  assert(IC.aptOverlaps(S, ap).length === 0, IC.overlapText(IC.aptOverlaps(S, ap)));
+  delete IC.REAL_APT.mini;
+}, true);
+test('accuracy: each real airport against its sources: runway ends within 30 m, gates within 5%, terminal footprints within 10%', () => {
+  const { accuracy, accuracyText } = require('../tools/airport-import.js');
+  const keys = ['mini'].concat(IC.showcaseKeys ? IC.showcaseKeys() : Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].icao));
+  for (const k of keys) {
+    const A = accuracy(k, k === 'mini' ? require('../tools/airport-import.js').importAirport('mini') : null);
+    console.log(accuracyText(A).split('\n').map(l => '        ' + l).join('\n'));
+    for (const r of A.runways) { if (r.ourairports != null) assert(r.ourairports <= 30, `${A.name} ${r.name}: an end ${r.ourairports} m from OurAirports`); if (r.osm != null) assert(r.osm <= 30, `${A.name} ${r.name}: an end ${r.osm} m from the map's runway`); }
+    const g = A.gates; if (g.src && g.src.parking) assert(Math.abs(g.game / g.src.parking - 1) <= 0.05, `${A.name}: ${g.game} gates against ${g.src.parking} in the map`);
+    for (const t of A.terminals) if (t.off != null) assert(Math.abs(t.off) <= 10, `${A.name} ${t.name}: ${t.off}% off its footprint`);
+  }
+});
+test('showcase: a day at each real airport at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates', () => {
+  IC.REAL_APT.mini = MINI;
+  const keys = [['mini', 6]].concat((IC.showcaseKeys ? IC.showcaseKeys() : []).map(k => [k, 24]));
+  for (const [k, hours] of keys) {
+    IC.seedRandom(4242);
+    const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: k, hour: 5 }); IC.S = S;
+    const ap = S.byId[S.story.cap];
+    const r = { dep: 0, arr: 0, wrongRw: 0, gate: 0, bus: 0, cargo: 0 };
+    const off = IC.on((S2, type, d) => {
+      if (S2 !== S || !d || d.ap !== ap) return;
+      if (type === 'rwMove') { r[d.k] = (r[d.k] || 0) + 1; const c = ap.cfg && ap.cfg.rw[d.rw]; if (c && ((d.k === 'dep' && c.role === 'arr') || (d.k === 'arr' && c.role === 'dep'))) r.wrongRw++; }
+      if (type === 'tailParked') { const s = IC.aptStands(ap).find(x => x.id === d.tl.stand); if (s && s.svc) r[s.svc.kind === 'cargo' ? 'cargo' : s.svc.kind === 'bus' ? 'bus' : 'gate']++; }
+    });
+    for (let i = 0; i < hours * 3600 * 4; i++) IC.step(S, 0.25);
+    off();
+    const kp = ap.kpi, oldest = ap.moves.reduce((m, x) => Math.max(m, S.time - x.born), 0);
+    console.log(`        ${ap.name}: ${hours} h, ${r.arr} arrivals and ${r.dep} departures (${Math.round((r.arr + r.dep) / hours)} an hour), ${r.gate} parked at gates, ${r.bus} by bus, ${r.cargo} at cargo stands; ${kp.div || 0} diversions, ${kp.grid || 0} gridlocks; the oldest on the ground ${U.dur(oldest)}`);
+    assert(!kp.grid && !kp.stuck, `${ap.name}: ${kp.grid || 0} gridlocks, ${kp.stuck || 0} stranded`);
+    assert(r.wrongRw === 0, `${ap.name}: ${r.wrongRw} movements on a runway set for the other kind`);
+    assert(oldest < 3 * 3600, `${ap.name}: an aircraft has been on the ground ${U.dur(oldest)}`);
+    assert(r.gate > 0 && r.arr + r.dep >= (k === 'mini' ? 30 : 400), `${ap.name}: ${r.arr + r.dep} movements, ${r.gate} at gates`);
+  }
+  delete IC.REAL_APT.mini;
+}, true);
+test('shapes: a layout turned and moved works like the original', () => {
+  const A = miniGame(0), B = miniGame(1.1);
+  const sa = IC.aptStands(A.ap), sb = IC.aptStands(B.ap);
+  assert(sa.length === sb.length && sb.every(s => s.linked && s.contact), 'the turned layout lost stands or gates');
+  assert(IC.aptOverlaps(B.S, B.ap).length === 0, IC.overlapText(IC.aptOverlaps(B.S, B.ap)));
+  const st = [IC.aptStats(A.S, A.ap), IC.aptStats(B.S, B.ap)];
+  assert(st[0].movesPerHour === st[1].movesPerHour, `rated ${st[0].movesPerHour} against ${st[1].movesPerHour} movements an hour`);
+  // turned 63 degrees, runway 09/27 becomes 15/33
+  assert(B.ap.parts.find(p => p.kind === 'runway').name === 'Runway 15/33', B.ap.parts.find(p => p.kind === 'runway').name);
+  const r = drive(B.S, B.ap, { arr: 10, dep: 10, hours: 2, fill: 0.5, mix: [['narrow', 1]] });
+  assert(r.grid === 0 && r.stuck === 0 && r.arr + r.dep >= 25, `turned: ${r.arr} arrivals, ${r.dep} departures, ${r.grid} gridlocks, ${r.stuck} stranded`);
+}, true);
 
 const off = (p, a, d) => ({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d });
 const pair = (S, c, alt) => {
@@ -1561,6 +1858,73 @@ test('airspace: a save from before shapes converts its rings and areas', () => {
   assert(back && IC.aspShapeOf(back, back.byId[ap.id]).rings.length === 2, 'the converted airspace did not survive a save');
 });
 
+/* ---------- the pavement: fillets, one outline (brief 44) ---------- */
+/* a small test field: a runway, a parallel taxiway with a stub to the runway (a T), a taxiway crossing the parallel
+   straight (an X), and a 90° corner at the parallel's east end */
+function paveField() {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap], x = ap.x, y = ap.y;
+  IC.initAirport(ap);
+  const N = (dx, dy) => IC.aptNode(ap, x + dx, y + dy);
+  IC.aptAddPart(ap, { kind: 'runway', a: { x: x - 12, y }, b: { x: x + 12, y } }, true);
+  const w0 = N(-10, 2), T = N(-4, 2), X = N(2, 2), E = N(8, 2), R = N(-4, 0), X1 = N(2, 0.9), X2 = N(2, 4), E2 = N(8, 5);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [w0, T, X, E] }, true);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [T, R] }, true);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [X1, X, X2] }, true);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [E, E2] }, true);
+  IC.resolveNodes(ap);
+  return { S, ap, n: id => ap.nodes[id], T, X, E };
+}
+test('pavement: a straight crossing has no fillet bulge and a turn has an inner curve', () => {
+  const { ap, n, T, X, E } = paveField(), w = IC.APART.taxi.w, at = (q, dx, dy) => IC.paveAt(ap, q.x + dx, q.y + dy);
+  // the T: the straight side stays straight, the two inner corners towards the runway are filled
+  assert(!at(n(T), 0, w / 2 + 0.02), 'pavement bulges out on the straight side of a T junction');
+  assert(at(n(T), -w / 2 - 0.02, -w / 2 - 0.02) && at(n(T), w / 2 + 0.02, -w / 2 - 0.02), 'no fillet in the corners of a T junction');
+  // the X: two taxiways crossing straight, nothing in any corner
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) assert(!at(n(X), sx * (w / 2 + 0.03), sy * (w / 2 + 0.03)), `a fillet at a straight crossing (${sx}, ${sy})`);
+  // the corner at the east end turns south: its inside (south-west) is a curve, not a square nor a disc
+  const C = { x: n(E).x - w / 2, y: n(E).y + w / 2 }, b = Math.SQRT1_2;
+  assert(at(C, -0.02 * b, 0.02 * b), 'nothing in the inside of the turn');
+  const f = IC.paveGeom(ap).fil.find(q => U.dist(q.f.N, n(E)) < 1e-6);
+  assert(f && f.f.R > 0.1, 'the turn has no fillet sized for the design aircraft');
+  const depth = f.f.R / Math.sin(f.f.gap / 2) - f.f.R;
+  assert(at(C, -(depth - 0.01) * b, (depth - 0.01) * b) && !at(C, -(depth + 0.02) * b, (depth + 0.02) * b), `the fillet's edge is not where its arc is (depth ${depth.toFixed(3)})`);
+  // the outside of the turn is not widened (no disc round the node)
+  assert(!at(n(E), w / 2 + 0.03, -w / 2 - 0.03), 'the outside of the turn bulges');
+  // the yellow line turns on an arc there; across the X it runs straight through
+  const G = IC.paveGeom(ap);
+  assert(G.cl.some(c => c.turn && c.pts.every(q => U.dist(q, n(E)) < 0.6)), 'no centreline curve at the corner');
+  assert(!G.cl.some(c => c.turn && c.pts.some(q => U.dist(q, n(X)) < 0.05)), 'a centreline curve at a straight crossing');
+  // lead-on lines curve off the stub onto the runway's centreline
+  assert(G.cl.filter(c => c.lead && c.pts.some(q => Math.abs(q.y - ap.y) < 0.01)).length === 2, 'the stub has no lead-on lines both ways onto the runway');
+});
+test('pavement: the outline has no gaps under taxiways, fillets join their legs, and the capital and Denver-size layouts are one surface', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const cap = S.byId[S.story.cap];
+  const check = (ap, name) => {
+    const G = IC.paveGeom(ap);
+    assert(G.fil.length > 10, `${name}: hardly any fillets (${G.fil.length})`);
+    for (const t of G.tw) for (let i = 1; i < t.pts.length; i++) {
+      const A = t.pts[i - 1], B = t.pts[i], L = U.dist(A, B); if (L < 0.01) continue;
+      const ux = (B.x - A.x) / L, uy = (B.y - A.y) / L;
+      for (let s = 0; s <= L; s += 0.05) for (const o of [-0.45, 0, 0.45]) {
+        const x = A.x + ux * s - uy * o * t.w, y = A.y + uy * s + ux * o * t.w;
+        assert(IC.paveAt(ap, x, y), `${name}: a gap under ${t.p.name || t.p.id} at ${x.toFixed(2)}, ${y.toFixed(2)}`);
+      }
+    }
+    // every fillet reaches into the pavement of both legs (no hairline between them)
+    for (const f of G.fil) for (const [arm, T] of [[f.f.A, f.f.T1], [f.f.B, f.f.T2]]) {
+      const s = (T.x - f.f.N.x) * arm.ux + (T.y - f.f.N.y) * arm.uy, c = { x: f.f.N.x + arm.ux * s, y: f.f.N.y + arm.uy * s };
+      const mid = { x: (c.x + T.x) / 2, y: (c.y + T.y) / 2 };
+      assert(U.segDist(mid.x, mid.y, f.f.N.x, f.f.N.y, f.f.N.x + arm.ux * arm.len, f.f.N.y + arm.uy * arm.len) <= arm.h + 1e-6, `${name}: a fillet at ${f.f.N.x.toFixed(2)}, ${f.f.N.y.toFixed(2)} does not overlap its leg`);
+    }
+    // the fillets are curves, not discs: none reaches further from its node than its legs are wide plus the arc's depth
+    for (const f of G.fil) for (const q of f.poly) assert(U.dist(q, f.f.N) < 3.5, `${name}: a fillet runs ${U.dist(q, f.f.N).toFixed(2)} from its node`);
+  };
+  check(cap, 'the capital');
+  IC.aptRelayout(S, cap, 'kden', 0);
+  check(cap, 'the Denver-size layout');
+});
 /* ---------- growth, trade and roads ---------- */
 /* the economy alone, a five-minute tick at a time (flights are not flown; demand follows the timetable) */
 const econDays = (S, days) => { for (let i = 0; i < days * 288; i++) { S.time += 300; S.econ.tickT = 0; IC.growth(S, 300); } };
@@ -2966,6 +3330,44 @@ test('3D view: 300 frames of the live view and of a replay make nothing again, a
   assert(faced.length > 20 && worst.off < 0.2, `a model points ${(worst.off * 57.3).toFixed(0)}° off where it goes: ${worst.who}`);
   assert(out.turn.bank > 0.5 && Math.abs(out.turn.roll - out.turn.poseRoll) < 1e-6 && Math.abs(out.turn.roll) > 0.5, `the aircraft turning hardest (bank ${(out.turn.bank * 57.3).toFixed(0)}°) is drawn banked ${(out.turn.roll * 57.3).toFixed(0)}°`);
 }, true);
+test('3D life: a jet at a gate gets its jet bridge and vehicles, nothing is made from frame to frame, and the lights follow the phase', () => {
+  const cp = require('child_process'), path = require('path');
+  const out = JSON.parse(cp.execFileSync(process.execPath, [path.join(__dirname, 'view3d.js')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1e8 }).trim().split('\n').pop());
+  assert(!out.error, out.error);
+  const g = out.gate;
+  assert(g.stats.docked >= 1, `no jet bridge at the door of the ${g.turn.type} turning round (${g.stats.bridges} bridges drawn)`);
+  const k = g.stats.kinds, served = ['belt', 'bagtractor', 'bagcart', 'catering', 'refueller', 'dispenser'].filter(x => k[x] > 0);
+  assert(g.stats.vehicles >= 3 && served.length >= 2, `a turnaround ${Math.round(g.turn.age)} s in has ${g.stats.vehicles} vehicles: ${JSON.stringify(k)}`);
+  // (a touchdown's puff or a newcomer is made once, when it comes: the rest of the scene is not made again)
+  const fresh = (g.view.event || 0) + (g.view.mover || 0);
+  assert(g.lifeMade === 0 && !g.made.geometry && !g.made.texture && (g.made.object || 0) <= fresh * 12 && (g.made.material || 0) <= fresh * 12, `made again at the gate: ${JSON.stringify(g.made)} ${JSON.stringify(g.view)} ${g.lifeMade}`);
+  assert(g.lights.checked > 50 && g.lights.bad === 0, `${g.lights.bad} of ${g.lights.checked} aircraft lights do not follow the pose`);
+  assert(g.stats.bars > 0, 'no stop bars at the capital');
+}, true);
+test('3D life: crews switch the lights, spoilers and reversers by phase', () => {
+  const { S, tr } = flight('td');
+  assert(tr, 'no airliner landed in three hours');
+  const td = tr.marks.find(m => m[1] === 'td')[0], at = dt => IC.recPose(tr, td + dt, {}, S.wind);
+  // on to its stand
+  for (let i = 0; i < 4 * 1200 && !tr.marks.some(m => m[1] === 'pk' && m[0] < S.time - 25); i++) IC.step(S, 0.25);
+  const f = at(-20);
+  assert(f.land && f.strobe && f.beacon && f.nav && f.taxi, `on final: landing ${f.land}, strobes ${f.strobe}, beacon ${f.beacon}, taxi light ${f.taxi}`);
+  assert(at(1.5).spoil > 0.9 && at(4).rev > 0.9 && at(4).n1 > 0.6, `after touchdown: spoilers ${at(1.5).spoil.toFixed(2)}, reversers ${at(4).rev.toFixed(2)}, power ${at(4).n1.toFixed(2)}`);
+  let stow = null; for (let dt = 4; dt < 60; dt += 0.5) { const p = at(dt); if (p && p.phase === IC.REC_PHASE.land && p.rev < 0.05) { stow = p; break; } }
+  assert(stow && stow.spd < 0.42, 'the reversers are not stowed as the aircraft slows');
+  let taxi = null; for (let dt = 20; dt < 900 && !taxi; dt += 1) { const p = at(dt); if (p && p.phase === IC.REC_PHASE.taxi && p.spd > 0.03) taxi = p; }
+  assert(taxi && !taxi.strobe && !taxi.land && taxi.taxi && taxi.beacon && !taxi.spoil && !taxi.flap, `taxiing in: strobes ${taxi && taxi.strobe}, landing ${taxi && taxi.land}, taxi light ${taxi && taxi.taxi}, beacon ${taxi && taxi.beacon}, flaps ${taxi && taxi.flap}`);
+  let cruise = null; for (let i = 0; i < tr.n && !cruise; i++) { const p = IC.recPose(tr, IC.recGet(tr, i, 0), {}, S.wind); if (p && p.alt > 4) cruise = p; }
+  if (cruise) assert(!cruise.land && cruise.strobe && cruise.beacon && cruise.nav, `above 10,000 ft: landing lights ${cruise.land}, strobes ${cruise.strobe}`);
+  const pk = tr.marks.find(m => m[1] === 'pk');
+  if (pk) { const p = IC.recPose(tr, Math.min(tr.t1, pk[0] + 19.5), {}, S.wind); assert(p && p.beacon === 0 && p.n1 < 0.05, `parked: beacon ${p && p.beacon}, engines ${p && p.n1}`); }
+  // a departure: the beacon from the pushback, the engines started on it; strobes and landing lights for the roll
+  const d = flight('to'), t2 = d.tr, to = t2.marks.find(m => m[1] === 'to')[0], p0 = t2.marks.find(m => m[1] === 'p0');
+  if (p0) { const p = IC.recPose(t2, p0[0] + 50, {}, d.S.wind); assert(p.beacon && !p.strobe && p.n1 > 0.15, `pushing back: beacon ${p.beacon}, strobes ${p.strobe}, engines ${p.n1.toFixed(2)}`); }
+  const r = IC.recPose(t2, to - 3, {}, d.S.wind), up = IC.recPose(t2, to + 7, {}, d.S.wind);
+  assert(r.strobe && r.land && r.n1 > 0.9 && r.elev > 0.3, `rotating: strobes ${r.strobe}, landing ${r.land}, power ${r.n1.toFixed(2)}, elevator ${r.elev.toFixed(2)}`);
+  assert(up.gear > 0 && up.gear < 1, `the gear is not on its way up 7 s after lift-off (${up.gear})`);
+}, true);
 /* the sandbox's airports until an airliner has taken off and climbed away ('to') or landed ('td'): its track */
 function flight(mark) {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox' });
@@ -3205,6 +3607,9 @@ function runOne(t) {
   // listeners a test adds go when it ends: they hold its game, which would otherwise stay in memory
   IC.on = fn => { const off = on(fn); offs.push(off); return off; };
   IC.seedRandom(seedOf(t.name));
+  // (and the same ids: the id counter runs on over every game a worker makes, and ids break ties, so a test would
+  // play out differently after different tests in its worker)
+  IC.nidSet(1);
   const t0 = Date.now();
   let err = null;
   try { t.fn(); } catch (e) { err = e.stack.split('\n').slice(0, 3).join('\n        '); }

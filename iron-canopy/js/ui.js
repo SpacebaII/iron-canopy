@@ -86,6 +86,8 @@ ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty(
 }
 
 ui.bind = function (state) {
+  // (the showcase is the airport alone: no treasury, act or arsenal on screen, css/app.css)
+  document.body.classList.toggle('showcase', !!(state && state.showcase));
   S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false;
   // nothing from the previous game stays on screen: its chapter card, its unlocks, its hints
   ui.fresh = new Set(); ui.known = null; ui.moments = []; ui.moment = null; ui.menu = false; IC.hint.clear();
@@ -163,7 +165,7 @@ function topbar() {
     ${act >= 3 ? `<div class="rl doctrine" title="Firing doctrine"><span>Doctrine</span>${seg('doctrine', S.ad.doctrine, [['sls', 'Look', '', 'Shoot-look-shoot: one missile, then another if it missed'], ['salvo', 'Salvo', '', 'Two missiles at once'], ['conserve', 'Save', 'amb', 'Only high-probability shots']])}</div>` : ''}
     <div class="rl airspace" title="Civil airspace: who may fly over the country"><span>Airspace</span>${seg('airspace', S.airspace, [['open', 'Open', '', 'Airliners fly their normal routes'], ['restricted', 'Restricted', 'amb', 'Airliners keep to the southern corridors only'], ['closed', 'Closed', 'red', 'No civil flights at all: the airlines lose money']])}</div>
 `);
-  setHTML($('sys'), `<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
+  setHTML($('sys'), `${S.mode !== 'range' ? `<button class="ib wide ${IC.bb && IC.bb.open ? 'on' : ''}" data-act="bbToggle" title="Build: the airport's build bar (B)">${ui.icon('aviation')}<span>Build</span></button>` : ''}<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
   alerts();
   incidents();
   evcard();
@@ -336,11 +338,21 @@ function progress() {
   ui.moments.push({ items: fresh.map(k => Object.assign({ k }, now.get(k))), act: S.story && S.story.act });
 }
 
+/* the showcase: the airport, what it is after, and its day so far */
+function showcaseBrief() {
+  const ap = S.byId[S.story.cap]; if (!ap) return '';
+  const st = ap.st || {}, pv = IC.aptProvides(ap), k = ap.kpi || {};
+  const rw = ap.parts.filter(p => p.kind === 'runway').map(p => p.ends.a + '/' + p.ends.b).join(', ');
+  return `<h3 data-act="briefMin" title="Collapse or expand">${esc(ap.name)}<em>${esc(ap.after || '')}</em></h3>
+    <p class="hint">Runways ${esc(rw)}. ${pv.gates} gates and ${pv.remote} remote stands; rated ${st.movesPerHour || 0} movements an hour.</p>
+    <p class="hint">Today: ${(k.arr || 0) + (k.dep || 0)} movements, ${Math.round(ap.paxRate || 0).toLocaleString('en-US')} passengers an hour now. Scroll in to the gates; click a part to read what it does.</p>`;
+}
 /* ---------- situation: suggestions in the campaign, the lesson in the Academy ---------- */
 function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
   if (S.range) h = IC.rangePanel(S);
+  else if (S.showcase) h = showcaseBrief();
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;
@@ -448,32 +460,36 @@ function layers() {
 }
 function modeHint() {
   const m = S.mode2, el = $('modehint');
-  if (!m) { el.hidden = true; return; }
+  if (!m || !HINT[m.kind]) { el.hidden = true; return; }
   el.hidden = false;
   // above the arsenal, however tall it is today (a war's arsenal is taller than the Career's first one)
   const ar = $('arsenal'), ab = ar && !ar.hidden ? ar.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
   el.style.bottom = ab && ab.height ? Math.max(12, app.bottom - ab.top + 10) + 'px' : '';
-  el.textContent = {
-    rangeTarget: () => 'Click the map where the threats should aim.',
-    callin: () => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
-    deploy: () => `Click inside ${S.world.names.H} to place the ${IC.UNITS[m.type].name}${S.reserve[m.type] > 0 ? ' from the reserve' : `: ${U.money(IC.unitCost(S, m.type))}, paid when placed`}. The dashed rings show its reach. Shift+click places more. Right-click or Esc to cancel.`,
-    move: () => `Click where ${m.unit.name} should go.`,
-    airPoint: () => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
-    airSite: () => `Click an enemy target for ${m.r.name}.`,
-    fireAt: () => `Click an enemy target for ${m.unit.name}.`,
-    build: () => buildHint(m),
-    bmove: () => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it. Esc to cancel.`,
-    bulldoze: () => 'Click a part of the airport to remove it. Planned work is refunded in part. Esc to stop.',
-    airway: () => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
-      : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
-    field: () => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
-    asp: () => IC.aspModeHint(m),
-    zone: () => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
-    road: () => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
-    found: () => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
-      : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
-  }[m.kind]();
+  el.textContent = HINT[m.kind](m);
 }
+/* what each mode tells the player to do (m is S.mode2) */
+const HINT = {
+    rangeTarget: () => 'Click the map where the threats should aim.',
+    callin: m => `Click inside ${S.world.names.H} to drop a missile team there. Shift-click to call another. Right-click or Esc to cancel.`,
+    deploy: m => `Click inside ${S.world.names.H} to place the ${IC.UNITS[m.type].name}${S.reserve[m.type] > 0 ? ' from the reserve' : `: ${U.money(IC.unitCost(S, m.type))}, paid when placed`}. The dashed rings show its reach. Shift+click places more. Right-click or Esc to cancel.`,
+    move: m => `Click where ${m.unit.name} should go.`,
+    airPoint: m => m.task ? `Click the map to place the ${IC.TASK_KIND[m.task].name.toLowerCase()} station.` : `Click the map to send ${m.r.name}.`,
+    airSite: m => `Click an enemy target for ${m.r.name}.`,
+    fireAt: m => `Click an enemy target for ${m.unit.name}.`,
+    build: m => buildHint(m),
+    bmove: m => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it${m.cost ? `; it is taken down and put up again for ${U.money(m.cost)}` : ', free until its earthworks start'}. Esc to cancel.`,
+    bpick: m => 'Move: click a building to pick it up. A planned one moves free until its earthworks start; a finished one is taken down and put up again for half its price. Esc to stop.',
+    bulldoze: m => 'Bulldoze: click a part of the airport to remove it. What comes back shows by the cursor before you click. Esc to stop.',
+    upgrade: m => `Upgrade: click a runway, taxiway or apron to relay it in ${IC.PAVE[m.mat || 'conc'].name.toLowerCase()}${m.lit === false ? ', with no lights' : ''}, for the difference in price. It is closed while the work runs. Esc to stop.`,
+    airway: m => m.from ? `Click the next fix, or empty map for a new one, to extend the airway from ${IC.aspFix(S, m.from) ? IC.aspFix(S, m.from).name : 'here'}. Right-click ends the airway; drag a fix to move it; Delete removes the selected one. Esc to stop.`
+      : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
+    field: m => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
+    asp: m => IC.aspModeHint(m),
+    zone: m => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
+    road: m => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
+    found: m => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
+      : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
+};
 /* the builder: how to use the tool, and what the plan under the cursor will do */
 function buildHint(m) {
   const t = m.part, n = m.pts.length, D = IC.APART[t], T = IC.BTOOLS[t];
@@ -485,6 +501,7 @@ function buildHint(m) {
     : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
     : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
     : t === 'stand' ? T.desc
+    : t === 'blueprint' ? 'Blueprint: move it where it should go, R turns it (Shift+R a quarter turn), click to plan the whole airport.'
     : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
     : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
@@ -644,6 +661,7 @@ function coach() {
 function firstRun() {
   if (ui.firstRunDone === S || S.over || !$('start').hidden || !$('cine').hidden || !$('evcard').hidden || ui.room) return;
   ui.firstRunDone = S;
+  if (S.showcase) return;
   if (S.story) IC.hint.tour('career1', [
     { el: 'goals', title: 'Your goals', text: 'This act\'s goals, with how far along each one is. Click a goal to see where it is on the map.' },
     { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' deals. Keys are on each button.' },
@@ -686,6 +704,7 @@ ui.refresh = function (force) {
   progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); firstRun();
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
+  if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
   // how much of the map's right side the inspector covers, for what the map draws beside the cursor
   { const lc = document.querySelector('.leftcol').getBoundingClientRect(); ui.mapLeft = lc.height > 40 ? lc.right - $('app').getBoundingClientRect().left + 8 : 0; }
@@ -764,13 +783,22 @@ ui.toggleMenu = function (on) {
 /* ---------- start screen: the title, the modes, and pages for the Academy, settings and controls ---------- */
 ui.startPage = function (pg) {
   ui.stPage = pg || 'main';
-  for (const k of ['main', 'lessons', 'saves', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
+  for (const k of ['main', 'lessons', 'showcase', 'saves', 'settings', 'keys']) $('st-' + k).hidden = k !== ui.stPage;
   if (ui.stPage === 'lessons') ui.lessonList();
+  if (ui.stPage === 'showcase') ui.showcaseList();
   if (ui.stPage === 'saves' && IC.savesPage) IC.savesPage();
   if (ui.stPage === 'main' && IC.saves) IC.saves.refresh();
   if (ui.stPage === 'settings') setHTML($('stSettings'), IC.settingsHTML(S, true));
   const p = store.get('ic-academy', {}), n = IC.LESSONS.filter(l => p[l.id]).length;
   $('acaProg').textContent = n ? `${n} of ${IC.LESSONS.length} done · ${Object.values(p).reduce((a, b) => a + b, 0)} stars` : `${IC.LESSONS.length} lessons, 5 minutes each`;
+};
+/* the real airports shipped with the game (airports-real-data.js), each with what it has */
+IC.showcaseKeys = () => Object.keys(IC.REAL_APT || {}).filter(k => IC.REAL_APT[k].icao);
+ui.showcaseList = function () {
+  const keys = IC.showcaseKeys();
+  const one = k => { const L = IC.REAL_APT[k], rw = (L.runways || []).length, gates = (L.stands || []).filter(s => s.ref).length;
+    return `<button class="lesson" data-act="begin" data-v="showcase:${k}"><i>${esc(L.icao || '')}</i><b>${esc(L.name)}</b><span>${esc(L.after.charAt(0).toUpperCase() + L.after.slice(1))}. ${rw} runways, ${(L.stands || []).length} stands (${gates} gates numbered), ${(L.blds || []).filter(b => b.kind === 'terminal').length} terminals and concourses${(L.movers || []).length ? ', a people mover' : ''}.</span><em>Open</em></button>`; };
+  $('showcases').innerHTML = keys.length ? keys.map(one).join('') : '<p class="hint">The real airports are not in this build: their map data could not be fetched when it was made.</p>';
 };
 ui.lessonList = function () {
   const p = store.get('ic-academy', {});
