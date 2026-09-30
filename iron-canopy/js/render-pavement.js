@@ -560,9 +560,17 @@ IC.drawPaveTiles = function (g, S, ap, z, dpr, budget) {
     }
     return missing;
   };
-  // the coarser level under it first, while this one is still being painted
-  const has = (l) => { const T = TPX / LEVELS[l]; for (let ty = Math.floor(vy0 / T); ty <= Math.floor(vy1 / T); ty++) for (let tx = Math.floor(vx0 / T); tx <= Math.floor(vx1 / T); tx++) if (!TILES.has(ap.id + ':' + l + ':' + tx + ':' + ty)) return false; return true; };
-  if (!has(li)) { for (let l = li - 1; l >= 0; l--) if (has(l) || l === 0) { draw(l, l === 0); break; } }
+  // under the tiles still being painted, a finer level already painted, or else the flat shapes (ap._gap, drawn by
+  // render-airport.js): never the coarsest level, whose runway spreads soft over the grass as a white blur, and only
+  // under the missing tiles (a painted tile is transparent off the pavement)
+  const miss = (l) => { const T = TPX / LEVELS[l], out = []; for (let ty = Math.floor(vy0 / T); ty <= Math.floor(vy1 / T); ty++) for (let tx = Math.floor(vx0 / T); tx <= Math.floor(vx1 / T); tx++) if (!TILES.has(ap.id + ':' + l + ':' + tx + ':' + ty)) out.push([tx * T, ty * T, T]); return out; };
+  const gap = miss(li);
+  ap._gap = null;
+  if (gap.length) {
+    let l = li - 1; while (l >= 1 && (LEVELS[l] < want / 8 || miss(l).length)) l--;
+    if (l >= 1 && LEVELS[l] >= want / 8) { g.save(); g.beginPath(); for (const [x, y, T] of gap) g.rect(x, y, T, T); g.clip(); draw(l, false); g.restore(); }
+    else ap._gap = gap;
+  }
   draw(li, true);
   if (TILES.size > MAXT) { const all = [...TILES.entries()].sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < all.length - MAXT; i++) TILES.delete(all[i][0]); }
   return made;

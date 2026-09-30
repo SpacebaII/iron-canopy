@@ -129,7 +129,17 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // the pavement: close in, one painted surface from the airport's tiles (render-pavement.js); far out, flat shapes
   const tiles = z * IC.dpr() >= 1;
   if (tiles && o && o.pad) IC.pavePaint(g, S, ap, z, IC.rs.view);
-  else if (tiles) IC.drawPaveTiles(g, S, ap, z, IC.dpr(), S.paused ? 16 : 6);
+  else if (tiles) {
+    IC.drawPaveTiles(g, S, ap, z, IC.dpr(), S.paused ? 16 : 6);
+    // where its tiles are still being painted, the flat shapes of the far view, sharp
+    if (ap._gap) {
+      g.save(); g.beginPath(); for (const [x, y, T] of ap._gap) g.rect(x, y, T, T); g.clip();
+      for (const p of parts) if (p.built && (p.kind === 'apron' || p.kind === 'alert' || p.kind === 'holdbay')) drawArea(g, p, p.kind === 'apron' ? ZONE_FILL[IC.partZone(ap, p)] || CONC : p.kind === 'alert' ? CONC2 : CONC, px, Object.create(p, { scorch: { value: null } }), false);
+      for (const p of by('taxi')) if (p.built) drawTaxi(g, ap, p, px, z, full, false, night, false);
+      for (const rw of by('runway')) if (rw.built && !rw.shut) drawRunway(g, S, ap, rw, px, z, false, false, night, now, false);
+      g.restore();
+    }
+  }
   if (box && z > 2) { g.strokeStyle = 'rgba(40,44,40,0.7)'; g.lineWidth = Math.max(0.02, 0.8 * px); IC.aptFenceStroke(g, box); }
   // a terminal or shed still being built stands on bare ground
   if (full) for (const p of parts) if ((p.kind === 'terminal' || p.kind === 'cargo') && p.x != null && !p.noApron && !p.built) {

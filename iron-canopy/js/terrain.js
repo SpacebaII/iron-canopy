@@ -899,11 +899,10 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
     if (mine.length > L.max) { mine.sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < mine.length - L.max; i++) T.tiles.delete(mine[i][0]); }
     return missing;
   };
-  if (lodWanted === 4) { draw(3, true); draw(4, false); }
-  else if (lodWanted === 3) { draw(2, true); draw(3, false); }
-  else if (lodWanted === 2) { draw(1, true); draw(2, false); }
-  else if (lodWanted === 1) { draw(0, true); draw(1, false); }
-  else draw(0, false);
+  // the level under it is painted first (ten to sixteen times fewer tiles): where a tile is still missing it shows the same
+  // tone, where the base image alone would show a darker rectangle
+  if (lodWanted) draw(lodWanted - 1, false);
+  draw(lodWanted, false);
   return made;
 };
 /* the world changed (IC.worldChanged), airports were built on, marks faded: repaint what shows it */
