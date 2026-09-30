@@ -64,7 +64,10 @@ IC.aptFromLayout = function (ap, L, o) {
     const kind = IC.APART[B.kind] ? B.kind : 'support';
     if (IC.APART[kind].r && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r, name: B.name || undefined }); }
     const part = IC.polyPart(kind, P(B.poly));
-    return add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, rows: B.rows || undefined, peaks: B.peaks || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
+    const made = add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, rows: B.rows || undefined, peaks: B.peaks || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
+    // (a hangar's door where the map's taxiway meets its wall)
+    if (B.door) { made.door = X(B.door[0], B.door[1]); made.doorSide = IC.rectLocal(made, made.door).y >= 0 ? 1 : -1; }
+    return made;
   });
   // passenger bridges over taxiways, with the height a tail must clear
   for (const B of L.bridges || []) add(Object.assign(IC.polyPart('skybridge', P(B.poly)), { clear: B.clear, name: B.name || undefined, joins: (B.joins || []).map(i => blds[i] && blds[i].id).filter(Boolean) }));

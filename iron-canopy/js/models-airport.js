@@ -64,7 +64,7 @@ function saucer(MB, B, p) {
     const cx = Math.cos(t), cy = Math.sin(t), span = Math.max(W, H) * 0.5, top = 41;
     for (let i = 0; i < 12; i++) {
       const s0 = -1 + i / 6, s1 = s0 + 1 / 6, z0 = top * (1 - s0 * s0), z1 = top * (1 - s1 * s1), m = (s0 + s1) / 2;
-      MB.box(B, cx * m * span, cy * m * span, (z0 + z1) / 2, 2.2, 2.2, Math.abs(z1 - z0) + 2.2, '#f2f2ee', { yaw: t });
+      MB.box(B, cx * m * span, cy * m * span, (z0 + z1) / 2, 3.2, 3.2, Math.abs(z1 - z0) + 3.2, '#e8e6de', { yaw: t });
     }
   }
   MB.lathe(B, [[14, R * 0.2], [15, R * 0.42], [19, R * 0.42], [20, R * 0.2]], '#eeeeea', { axis: 'z', segs: 16, cap0: '#e2e2de', cap1: '#e2e2de' });

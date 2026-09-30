@@ -545,34 +545,6 @@ function importAirport(key, o) {
     if (narrowed) notes.push(`${narrowed} taxiways run within their width of a terminal: made taxilanes as wide as the room allows`);
   }
 
-  // --- hangars: the game links a hangar by the door in the middle of its long side; where no taxiway comes within
-  // 50 m of either side, a taxilane is laid from the nearer side to the nearest taxiway
-  {
-    const IC = game();
-    let laid = 0;
-    for (const B of L.blds) {
-      if (B.kind !== 'hangar' || !B._p || !B._p.length) continue;
-      const part = IC.polyPart('hangar', B._p), c = Math.cos(part.a), sn = Math.sin(part.a);
-      const sides = [-1, 1].map(sg => ({ x: part.x - sn * sg * (part.h / 2 + 0.12), y: part.y + c * sg * (part.h / 2 + 0.12) }));
-      const nearest = q => { let best = null; L.taxi.forEach(t => { for (let k = 1; k < t.n.length; k++) { const a = L.nodes[t.n[k - 1]], b = L.nodes[t.n[k]], dx = b[0] - a[0], dy = b[1] - a[1], LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((q.x - a[0]) * dx + (q.y - a[1]) * dy) / LL)), pt = { x: a[0] + dx * f, y: a[1] + dy * f }, d = dist(pt, q); if (!best || d < best.d) best = { d, t, k, pt, a, b }; } }); return best; };
-      const near2 = sides.map(nearest).filter(Boolean);
-      // (the game joins a door to a taxi node within 55 m, not to the middle of a long taxiway: a side with a node
-      // that near needs nothing; a taxiway passing without one gets a node and a short lane)
-      const isNode = n => dist(n.pt, { x: n.a[0], y: n.a[1] }) < 0.05 || dist(n.pt, { x: n.b[0], y: n.b[1] }) < 0.05;
-      if (!near2.length || near2.some(n => n.d < 0.5 && isNode(n))) continue;
-      const si = near2[0].d <= near2[1].d ? 0 : 1, n = near2[si], door = sides[si];
-      // (the lane must not run through the hangar: its door side faces the taxiway)
-      if (inPoly({ x: (door.x + n.pt.x) / 2, y: (door.y + n.pt.y) / 2 }, B._p)) continue;
-      let at;
-      if (dist(n.pt, { x: n.a[0], y: n.a[1] }) < 0.05) at = n.t.n[n.k - 1];
-      else if (dist(n.pt, { x: n.b[0], y: n.b[1] }) < 0.05) at = n.t.n[n.k];
-      else { at = L.nodes.length; L.nodes.push([r1(n.pt.x), r1(n.pt.y)]); n.t.n.splice(n.k, 0, at); }
-      const d = L.nodes.length; L.nodes.push([r1(door.x), r1(door.y)]);
-      L.taxi.push({ n: [at, d], w: 0.15, lane: 1 });
-      laid++;
-    }
-    if (laid) notes.push(`${laid} hangars had no taxiway within 50 m of their doors: a taxilane is laid to each`);
-  }
 
   // --- a taxiway drawn into a hangar (the map takes the lane inside) stops at the wall, a lane's half-width short
   {
@@ -586,7 +558,8 @@ function importAirport(key, o) {
       // (the way sampled every 5 m, each sample knowing the node it is, if any)
       const smp = []; pts.forEach((p, i) => { if (i) { const a = pts[i - 1], n = Math.ceil(dist(a, p) / 0.05); for (let k = 1; k < n; k++) smp.push({ x: a.x + (p.x - a.x) * k / n, y: a.y + (p.y - a.y) * k / n, id: null }); } smp.push({ x: p.x, y: p.y, id: ids[i] }); });
       if (smp.every(p => outside(p, m))) continue;
-      const newNode = q => { const id = L.nodes.length; L.nodes.push([r1(q.x), r1(q.y)]); return id; };
+      // (where the taxiway meets the wall is the hangar's door: the game links the hangar there)
+      const newNode = q => { const id = L.nodes.length; L.nodes.push([r1(q.x), r1(q.y)]); for (const b of L.blds) if (b.kind === 'hangar' && b._p && !b.door && polyDist(q, b._p) < m + 0.02) b.door = [r1(q.x), r1(q.y)]; return id; };
       const runs = []; let run = null;
       smp.forEach((p, i) => {
         if (outside(p, m)) { if (!run) { run = []; if (i) run.push(newNode(edge(p, smp[i - 1], m))); } if (p.id != null) run.push(p.id); }
@@ -600,6 +573,53 @@ function importAirport(key, o) {
     }
     L.taxi = L.taxi.filter(t => t.n.length > 1).concat(more);
     if (cut) notes.push(`${cut} taxiways run into a hangar in the map: each stops at the wall`);
+  }
+
+  // --- hangars (after the cuts above, so a lane joins a taxiway as it finally runs): the game links a hangar by the door in the middle of its long side; where no taxiway comes within
+  // 50 m of either side, a taxilane is laid from the nearer side to the nearest taxiway
+  {
+    const IC = game();
+    let laid = 0;
+    for (const B of L.blds) {
+      if (B.kind !== 'hangar' || !B._p || !B._p.length || B.door) continue;
+      const part = IC.polyPart('hangar', B._p), c = Math.cos(part.a), sn = Math.sin(part.a);
+      // (the long sides first, as the game puts doors; a short side when only it reaches a taxiway, and then the
+      // layout tells the game where the door is)
+      const sides = [-1, 1].map(sg => ({ x: part.x - sn * sg * (part.h / 2 + 0.12), y: part.y + c * sg * (part.h / 2 + 0.12) })).concat([-1, 1].map(sg => ({ x: part.x + c * sg * (part.w / 2 + 0.12), y: part.y + sn * sg * (part.w / 2 + 0.12), short: 1 })));
+      // (a lane laid to another hangar's door is no place to join)
+      const nearest = q => { let best = null; L.taxi.forEach(t => { if (t._hlane) return; for (let k = 1; k < t.n.length; k++) { const a = L.nodes[t.n[k - 1]], b = L.nodes[t.n[k]], dx = b[0] - a[0], dy = b[1] - a[1], LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((q.x - a[0]) * dx + (q.y - a[1]) * dy) / LL)), pt = { x: a[0] + dx * f, y: a[1] + dy * f }, d = dist(pt, q); if (!best || d < best.d) best = { d, t, k, pt, a, b }; } }); return best; };
+      const near2 = sides.map(nearest);
+      if (near2.some(n => !n)) continue;
+      // (the game joins a door to a taxi node within 55 m, not to the middle of a long taxiway: a side with a node
+      // that near needs nothing; a taxiway passing without one gets a node and a short lane)
+      const isNode = n => dist(n.pt, { x: n.a[0], y: n.a[1] }) < 0.05 || dist(n.pt, { x: n.b[0], y: n.b[1] }) < 0.05;
+      if (!near2.length || near2.some(n => n.d < 0.5 && isNode(n))) continue;
+      // (the lane must not run through this hangar or any other building: the nearer side first, then the other)
+      // (a lane must keep its half-width and a margin from every building, its own hangar's walls included, and
+      // cross no public road: sampled every 5 m along it)
+      const LW = 0.15, clear = (a, b) => { const n = Math.max(1, Math.ceil(dist(a, b) / 0.05)); for (let k = 0; k <= n; k++) { const q = { x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n }; if (L.blds.some(X => X._p && X._p.length > 2 && polyDist(q, X._p) < LW / 2 + 0.03)) return false; } return !L.roads.some(R => (R.lv || 0) === 0 && !R._svc && R._pts.some((q, i) => i && segX(a, b, R._pts[i - 1], q))); };
+      // the lane leaves the door straight out, then turns for the taxiway (a diagonal would graze the wall)
+      const legs = k => { const s0 = sides[k], out = { x: s0.x + (s0.x - part.x) / (dist(s0, part) || 1) * 0.25, y: s0.y + (s0.y - part.y) / (dist(s0, part) || 1) * 0.25 }; return clear(s0, out) && clear(out, near2[k].pt) ? [s0, out] : clear(s0, near2[k].pt) ? [s0] : null; };
+      const order = [0, 1, 2, 3].sort((i, j) => (sides[i].short || 0) - (sides[j].short || 0) || near2[i].d - near2[j].d);
+      let si = null, way = null; for (const k of order) { way = legs(k); if (way) { si = k; break; } }
+      if (si == null) {
+        if (process.env.HANGAR_DEBUG) for (const k of order) { const s0 = sides[k], out = { x: s0.x + (s0.x - part.x) / (dist(s0, part) || 1) * 0.25, y: s0.y + (s0.y - part.y) / (dist(s0, part) || 1) * 0.25 }; const hit = (a, b) => L.blds.filter(X => X._p && X._p.length > 2 && [0, 0.25, 0.5, 0.75, 1].some(f => polyDist({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }, X._p) < LW / 2 + 0.03)).map(X => `${X.kind} ${X.name || ''} at ${r1(centroid(X._p).x)},${r1(centroid(X._p).y)}`); console.log(`   side ${k} ${r1(s0.x)},${r1(s0.y)} -> taxi ${r1(near2[k].pt.x)},${r1(near2[k].pt.y)} d ${near2[k].d.toFixed(2)}: out ${clear(s0, out)} leg ${clear(out, near2[k].pt)} direct ${clear(s0, near2[k].pt)} hits ${hit(s0, out).concat(hit(out, near2[k].pt)).join('; ')}`); }
+        notes.push(`hangar ${B.name || ''} at ${r1(part.x)}, ${r1(part.y)}: no lane reaches its door without crossing a building or a road`); continue;
+      }
+      const n = near2[si], door = sides[si];
+      if (door.short) B.door = [r1(door.x), r1(door.y)];
+      let at;
+      if (dist(n.pt, { x: n.a[0], y: n.a[1] }) < 0.05) at = n.t.n[n.k - 1];
+      else if (dist(n.pt, { x: n.b[0], y: n.b[1] }) < 0.05) at = n.t.n[n.k];
+      else { at = L.nodes.length; L.nodes.push([r1(n.pt.x), r1(n.pt.y)]); n.t.n.splice(n.k, 0, at); }
+      const chain = [at];
+      for (const q of way.slice(1).reverse()) { chain.push(L.nodes.length); L.nodes.push([r1(q.x), r1(q.y)]); }
+      chain.push(L.nodes.length); L.nodes.push([r1(door.x), r1(door.y)]);
+      L.taxi.push({ n: chain, w: LW, lane: 1, _hlane: 1 });
+      laid++;
+    }
+    for (const t of L.taxi) delete t._hlane;
+    if (laid) notes.push(`${laid} hangars had no taxiway within 50 m of their doors: a taxilane is laid to each`);
   }
 
   // --- passenger bridges over taxiways: footways, corridors or buildings mapped as bridges that cross one
