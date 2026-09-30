@@ -95,7 +95,7 @@ IC.storyInit = function (S) {
   // the Career builds its airports; the 'network' preset starts with three, the first chapter behind it
   st.fresh = !apts.length;
   if (apts.length) {
-    st.cap = apts.find(a => a.template === 'intl').id;
+    st.cap = (apts.find(a => a.template === 'intl' || a.showcase) || apts[0]).id;
     st.bad = (apts.find(a => a.template === 'regional_bad') || apts[1]).id;
     st.reg = (apts.find(a => a.template === 'regional_ok') || apts[1]).id;
     st.opened = true;
@@ -203,7 +203,7 @@ function chapterGoals(S, ch) {
       how: `Open the Aviation room (V) and press “Found a new airport”. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. Move the mouse to turn the runway, into the prevailing wind if you can, and click again. The survey shows the cost before you commit.`,
       check: () => !!st.cap });
     g({ id: 'runway', text: 'Build a runway at least 2.1 km long', check: () => ((A() && A().st.longest) || 0) >= IC.ACTYPES.narrow.rwy, prog: () => building(A(), 'runway'),
-      how: `Select ${nm()} and open its Build tab. Pick Runway, click where one end goes, then the other end, then click it again to build. 2.5–3 km of concrete takes every airliner and costs ₭15M per 100 m. Asphalt is 30% cheaper, but heavy jets break it up within days.` });
+      how: `Select ${nm()}: the build bar opens along the bottom of the screen (B, or Build at the top). Under Runways pick Runway, click where one end goes, then the other end, then click it again to build. 2.5–3 km of concrete takes every airliner and costs ₭15M per 100 m. Asphalt is 30% cheaper, but heavy jets break it up within days.` });
     g({ id: 'apron', text: 'Build an apron with a taxiway to the runway', check: () => stands(A(), 'm') > 0, prog: () => building(A(), 'apron') || building(A(), 'taxi'),
       how: 'Pick Apron and click two corners beside the runway, about 400 m long and 120 m deep: deep enough for medium stands. Then pick Taxiway and click from the runway to the apron and again on the last point: an aircraft needs a way off the runway to its stand.' });
     g({ id: 'terminal', text: 'Build a terminal beside the apron', check: () => built(A(), 'terminal'), prog: () => building(A(), 'terminal'),
@@ -498,6 +498,7 @@ IC.storyLock = function (S, key) {
    current chapter's first; outside the Career it shows them all. */
 IC.GUIDE = [
   { id: 'airport', act: 1, ch: 0, t: 'Airports are built part by part', d: 'Runways, taxiways, aprons, terminals, hangars, fuel tanks, tower and fire station are separate parts at real size. Aircraft taxi along the network you build: a runway with no exit near where aircraft stop blocks it for minutes, a runway with no taxiway to its ends makes every departure backtrack, and a single taxiway carries traffic one way at a time. The airport panel lists what is wrong.' },
+  { id: 'buildbar', act: 1, ch: 0, t: 'The build bar', d: 'Select one of your airports and the build bar opens along the bottom of the screen (B, or Build in the top bar). Its tabs (1–0) hold runways, taxiways, aprons and stands, terminals and piers, cargo and hangars, fuel and services, landside and roads, navaids and radar, paint and blueprints; pick an item and its options appear above it: pavement, width, lights, stand size, zone. Then click the map: a green ghost is buildable, a red one says why not, and the tag by the cursor gives the price and the work time. Upgrade (U) relays a runway, taxiway or apron for the difference in price, Move (M) picks a building up, Bulldoze (Del) shows what comes back before you click, Ctrl+Z undoes, and Info views (I) show taxi congestion, stand use, how far passengers walk, fuel and fire cover, noise over the towns and what each runway can take.' },
   { id: 'building', act: 1, ch: 0, t: 'Building takes time, money and materials', d: 'Engineers build in stages: survey, earthworks, paving, markings and lights, then the opening. Each stage is paid as it runs, and paving uses concrete, asphalt and steel that lorries bring from the nearest town with industry: when the site runs out, work stops and the panel says why. Paving next to a runway closes it, unless you set the job to night work. Homes in the way are bought and cleared; their town will not thank you.' },
   { id: 'pavement', act: 1, ch: 0, t: 'Pavement', d: 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.' },
   { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (7) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
@@ -928,6 +929,8 @@ function delegates(S, dt) {
 
 /* ---------- the tick ---------- */
 IC.storyTick = function (S, dt) {
+  // (the airport showcase has no story: only the airport at work)
+  if (S.showcase) return;
   const st = S.story, C = S.camp;
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
   // goals
@@ -1057,7 +1060,7 @@ function foundedHere(S, ap) {
   if (!st.cap) {
     if (U.dist(ap, cc) <= 600) {
       st.cap = ap.id; ap.template = 'intl'; S.asp.zs = null;
-      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected: open its Build tab.`);
+      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected, and its build bar is open along the bottom of the screen: pick Runway under Runways.`);
     } else say(S, 'MIN', `${ap.name} is ${U.km(U.dist(ap, cc))} from ${cc.name}. The national airport has to be within 60 km of the capital, where the passengers are. Found it closer in; that one can wait.`);
   } else if (st.city2 && !st.apt2 && U.dist(ap, S.byId[st.city2]) <= 600) st.apt2 = ap.id;
   else if (st.city3 && !st.apt3 && U.dist(ap, S.byId[st.city3]) <= 600) st.apt3 = ap.id;

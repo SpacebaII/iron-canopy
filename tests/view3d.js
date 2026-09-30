@@ -33,6 +33,11 @@ class Vector3 {
   lerp(v, k) { this.x += (v.x - this.x) * k; this.y += (v.y - this.y) * k; this.z += (v.z - this.z) * k; return this; }
   crossVectors(a, b) { return this.set(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
   toArray() { return [this.x, this.y, this.z]; }
+  applyQuaternion(q) {
+    const x = this.x, y = this.y, z = this.z, qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    const ix = qw * x + qy * z - qz * y, iy = qw * y + qz * x - qx * z, iz = qw * z + qx * y - qy * x, iw = -qx * x - qy * y - qz * z;
+    return this.set(ix * qw + iw * -qx + iy * -qz - iz * -qy, iy * qw + iw * -qy + iz * -qx - ix * -qz, iz * qw + iw * -qz + ix * -qy - iy * -qx);
+  }
   project(cam) {
     const d = this.clone().sub(cam.position), f = cam._f, r = cam._r, u = cam._u, z = d.dot(f);
     if (z <= 1e-6) return this.set(0, 0, 2);
@@ -56,10 +61,17 @@ class Color {
   lerp(c, k) { this.r += (c.r - this.r) * k; this.g += (c.g - this.g) * k; this.b += (c.b - this.b) * k; return this; }
 }
 class Euler { constructor() { this.x = this.y = this.z = 0; this.order = 'XYZ'; } set(x, y, z, o) { this.x = x; this.y = y; this.z = z; if (o) this.order = o; return this; } }
-class Quaternion { constructor() { this.x = this.y = this.z = 0; this.w = 1; } setFromAxisAngle(a, t) { const s = Math.sin(t / 2); this.x = a.x * s; this.y = a.y * s; this.z = a.z * s; this.w = Math.cos(t / 2); return this; } setFromEuler(e) { this.e = [e.x, e.y, e.z]; return this; } copy(q) { Object.assign(this, q); return this; } }
+class Quaternion {
+  constructor() { this.x = this.y = this.z = 0; this.w = 1; }
+  set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; }
+  setFromAxisAngle(a, t) { const s = Math.sin(t / 2); this.x = a.x * s; this.y = a.y * s; this.z = a.z * s; this.w = Math.cos(t / 2); return this; }
+  setFromEuler(e) { this.e = [e.x, e.y, e.z]; this.x = this.y = this.z = 0; this.w = 1; return this; }
+  multiply(q) { const a = this; return this.set(a.w * q.x + a.x * q.w + a.y * q.z - a.z * q.y, a.w * q.y - a.x * q.z + a.y * q.w + a.z * q.x, a.w * q.z + a.x * q.y - a.y * q.x + a.z * q.w, a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z); }
+  copy(q) { Object.assign(this, q); return this; }
+}
 class Matrix4 { constructor() { this.elements = new Array(16).fill(0); } compose(p, q, s) { this.p = p.toArray(); return this; } copy(m) { this.p = m.p; return this; } multiplyMatrices() { return this; } }
 class Object3D {
-  constructor() { made.object++; this.position = new Vector3(); this.rotation = new Euler(); this.quaternion = new Quaternion(); this.scale = new Vector3(1, 1, 1); this.children = []; this.visible = true; this.userData = {}; this.renderOrder = 0; this.matrix = new Matrix4(); this.parent = null; }
+  constructor() { made.object++; this.layers = { enable() {}, set() {} }; this.position = new Vector3(); this.rotation = new Euler(); this.quaternion = new Quaternion(); this.scale = new Vector3(1, 1, 1); this.children = []; this.visible = true; this.userData = {}; this.renderOrder = 0; this.matrix = new Matrix4(); this.parent = null; }
   add(c) { if (c.parent) c.parent.remove(c); this.children.push(c); c.parent = this; return this; }
   remove(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); c.parent = null; return this; }
   traverse(fn) { fn(this); for (const c of this.children.slice()) c.traverse(fn); }
@@ -74,7 +86,8 @@ class Line extends Mesh {}
 class LineSegments extends Mesh {}
 class InstancedMesh extends Mesh {
   constructor(g, m, n) { super(g, m); this.count = n; this.isInstancedMesh = true; this.instanceMatrix = { needsUpdate: false }; this.m = []; }
-  setMatrixAt(i, M) { this.m[i] = M.p; } getMatrixAt(i, M) { M.p = this.m[i]; } setColorAt() {} dispose() {}
+  setMatrixAt(i, M) { this.m[i] = M.p; } getMatrixAt(i, M) { M.p = this.m[i]; } dispose() {}
+  setColorAt(i, c) { if (!this.instanceColor) this.instanceColor = { needsUpdate: false }; }
 }
 class PerspectiveCamera extends Object3D {
   constructor(fov, aspect, near, far) { super(); Object.assign(this, { fov, aspect, near, far }); this._f = new Vector3(1, 0, 0); this._r = new Vector3(0, 0, 1); this._u = new Vector3(0, 1, 0); }
@@ -112,9 +125,9 @@ const THREE = {
   MeshStandardMaterial: Material, ShaderMaterial: Material, ShaderChunk: {}, ShaderLib: { standard: { uniforms: { fogColor: { value: null } } } },
   HalfFloatType: 1016, UnsignedByteType: 1009, LinearFilter: 1006, DepthStencilFormat: 1027, UnsignedInt248Type: 1020, ACESFilmicToneMapping: 4, PCFSoftShadowMap: 2, SRGBColorSpace: 'srgb', BackSide: 1, Euler, Quaternion, Matrix4, Object3D, Group, Scene, Mesh, Points, Line, LineSegments, InstancedMesh, PerspectiveCamera,
   BufferAttribute, BufferGeometry, WebGLRenderer, Fog: class { constructor(c, n, f) { this.color = c; this.near = n; this.far = f; } },
-  MeshLambertMaterial: Material, MeshBasicMaterial: Material, PointsMaterial: Material, LineBasicMaterial: Material,
+  MeshLambertMaterial: Material, MeshBasicMaterial: Material, PointsMaterial: Material, LineBasicMaterial: Material, ShaderMaterial: Material,
   CanvasTexture: Texture, HemisphereLight: Light, DirectionalLight: Light, Raycaster: class {},
-  AdditiveBlending: 2, DoubleSide: 2, GreaterStencilFunc: 516, AlwaysStencilFunc: 519, ReplaceStencilOp: 7681, RepeatWrapping: 1000, ClampToEdgeWrapping: 1001
+  AdditiveBlending: 2, NormalBlending: 1, DoubleSide: 2, GreaterStencilFunc: 516, AlwaysStencilFunc: 519, ReplaceStencilOp: 7681, RepeatWrapping: 1000, ClampToEdgeWrapping: 1001
 };
 
 /* ---------- a stand-in for the page ---------- */
@@ -137,6 +150,7 @@ IC.drawAirport = () => {};
 IC.drawTerrain = () => 0;   // the map's painters need a canvas: the ground is left unpainted here
 IC.daylight = t => { const h = (t % 86400) / 3600; return h < 5 || h > 20.5 ? 0 : h < 7.5 ? (h - 5) / 2.5 : h > 18 ? 1 - (h - 18) / 2.5 : 1; };
 require('../iron-canopy/js/replay3d.js');
+require('../iron-canopy/js/render3d-life.js');
 IC.replayUseThree(THREE);
 require('../iron-canopy/js/render3d-fx.js');   // the picture (brief 40): its passes, sky and weather run here too
 
@@ -206,6 +220,29 @@ function facing(v) {
   const f = W.moverOf.get(tr);
   out.turn = { bank, roll: f.grp.rotation.x, poseRoll: f.st.roll, faced: facing(W) };
   IC.replayClose();
+  // brief 41: a jet at a gate gets its jet bridge and its vehicles, nothing is made from frame to frame, and each
+  // aircraft's lights burn as its pose says (the strobes on the runway and in the air, the beacon with the engines)
+  {
+    const G2 = IC.newGame({ seed: 4242, mode: 'sandbox' }); G2.time = Math.floor(G2.time / 86400) * 86400 + 11 * 3600;
+    let q = null;
+    for (let i = 0; i < 4 * 4 * 3600 && !q; i++) { IC.step(G2, 0.25); if (i % 40 === 0) q = G2.rec.turns.find(x => x.kind === 'bridge' && x.len > 0.3 && x.t1 == null && G2.time - x.t0 > 400 && G2.time - x.t0 < x.dur * 0.45); }
+    if (!q) throw new Error('no jet turned round at a jet bridge in four hours');
+    const L2 = IC.liveOpen(G2, { x: q.x, y: q.y, name: 'stand' }); await tick(); await tick();
+    L2.cam = 'orbit'; L2.follow = null; Object.assign(L2.orbit, { tx: q.x - L2.cx, tz: q.y - L2.cy, ty: 0, yaw: 1, pitch: 0.4, dist: 1 });
+    for (let i = 0; i < 30; i++) IC.replayStep(L2, now += 33);
+    const g0 = snap(), gv0 = Object.assign({}, L2.made), lm0 = L2.life.made;
+    let bad = 0, checked = 0;
+    for (let i = 0; i < 200; i++) {
+      IC.step(G2, 0.25); IC.replayStep(L2, now += 33);
+      for (const m of L2.movers) if (m.life && m.life.lights && m.vis) {
+        const on = m.life.lights.geometry.attributes.lon.array;
+        m.life.lk.forEach((k, j) => { if (k === 'logo') return; checked++; if ((on[j] > 0) !== !!m.st[k]) bad++; });
+      }
+    }
+    const st = IC.life3d.stats(L2);
+    out.gate = { stats: { bridges: st.bridges, docked: st.docked, vehicles: st.vehicles, kinds: Object.assign({}, st.kinds), bars: st.bars }, made: diff(g0, snap()), view: diff(gv0, L2.made), lifeMade: L2.life.made - lm0, lights: { checked, bad }, turn: { kind: q.kind, type: q.type, age: G2.time - q.t0 } };
+    IC.liveClose();
+  }
   // the picture's presets: each switched to and run, then back to the first; weather and hours of the day built
   {
     const S2 = IC.newGame({ seed: 4242, mode: 'sandbox' });

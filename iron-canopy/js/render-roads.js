@@ -74,8 +74,8 @@ IC.drawRoads = function (g, S, px, v) {
   // only the stretches in view go into the path
   const path = list => {
     ctx.beginPath();
-    for (const l of list) {
-      const P = l.pts; let on = false;
+    for (const l of list) for (const P of IC.roadRuns(W, l)) {
+      let on = false;
       for (let i = 1; i < P.length; i++) {
         const a = P[i - 1], b = P[i];
         if (Math.max(a.x, b.x) < view.x0 - m || Math.min(a.x, b.x) > view.x1 + m || Math.max(a.y, b.y) < view.y0 - m || Math.min(a.y, b.y) > view.y1 + m) { on = false; continue; }
@@ -114,6 +114,12 @@ IC.drawRoads = function (g, S, px, v) {
   if (z > 2) for (const x of W.railX || []) if (inView(x.x, x.y, 2)) overpass({ x: x.x, y: x.y, over: [x.a], dirs: [{ a: x.a, x: Math.cos(x.a), y: Math.sin(x.a), cls: x.cls }] }, width, fill, px, 0.25);
   // craters and patches in the roads, over the live road drawing
   for (const mk of S.marks) if (mk.kind === 'road' && inView(mk.x, mk.y, mk.r * 2)) IC.drawMark(ctx, mk, S.time, 3);
+};
+/* a road's stretches above ground: cut where it runs in a tunnel under an airfield (kept until the tunnels change) */
+IC.roadRuns = function (W, l) {
+  const T = W.tunnels; if (!T || !T.length) return [l.pts];
+  if (l._rk !== T.length || l._rp !== l.pts) { l._rk = T.length; l._rp = l.pts; l._runs = IC.openRuns(W, l.pts); }
+  return l._runs;
 };
 function bbox(l) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; return l.bb; }
 /* a roundabout: a ring of road round a grass island; the roads coming in stop at the ring */

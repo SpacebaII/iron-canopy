@@ -68,7 +68,7 @@ function buildKdenAt(S, ap) {
     tool('hydrant'); click(2, 17); again(2, 17);
   });
   step('fire stations, tower, approach and ground radar', () => {
-    tool('fire'); for (const [x, y] of [[-22.5, -18], [22.5, 24], [-24, 19.5], [24, -24.5]]) { click(x, y); again(x, y); }
+    tool('fire'); for (const [x, y] of [[-22.5, -18], [22.5, 24], [-24, 19.5], [23.2, -24.6]]) { click(x, y); again(x, y); }
     tool('tower'); click(8, -14); again(8, -14);
     tool('atc'); click(4, 20); again(4, 20);
     tool('gradar'); click(-9.5, 12); again(-9.5, 12);

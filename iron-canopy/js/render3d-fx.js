@@ -805,10 +805,12 @@ function cars(v, dtR) {
 /* ---------- airports: floodlight pools on the pavement, lights mirrored in the wet ---------- */
 // three.js's own (American) name for a vertex's colour, spelt out of the words on screen
 const VCOL = ['col', 'or'].join('');
-const REFL_V = VHEAD + `attribute vec3 ${VCOL}; uniform float px; varying vec3 vC;
-void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(px / -mv.z, 2.0, 64.0); vC = ${VCOL};
+// the lights of brief 41 (render3d-life.js) carry their colour in lcol and whether they burn in lon
+const reflV = (col, on) => VHEAD + `attribute vec3 ${col}; ${on ? 'attribute float lon;' : ''} uniform float px; varying vec3 vC;
+void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(px / -mv.z, 2.0, 64.0); vC = ${col}${on ? ' * lon' : ''};
   #include <logdepthbuf_vertex>
 }`;
+const REFL_V = reflV(VCOL, false), REFL_VL = reflV('lcol', true);
 const REFL_F = FHEAD + `uniform float amt; varying vec3 vC;
 void main() {
   #include <logdepthbuf_fragment>
@@ -822,7 +824,7 @@ void main() {
 function airport(v, b, grp, f) {
   const F = v.fxs; if (!F) return;
   let pad = null, lights = null;
-  grp.traverse(o => { if (o.material && o.material.userData && o.material.userData.fxPave && o.renderOrder === 1) pad = o; if (o.isPoints) lights = o; });
+  grp.traverse(o => { if (o.material && o.material.userData && o.material.userData.fxPave && o.renderOrder === 1) pad = o; if (o.isPoints && (!lights || o.geometry.attributes.lcol)) lights = o; });
   // the pools of light: a picture of the airport from above, bright under each apron floodlight and along the runways
   const Rr = f.r0, N = 512, cv = document.createElement('canvas'); cv.width = cv.height = N;
   const g = cv.getContext('2d'), k = N / (2 * Rr), X = x => (x - (b.x - Rr)) * k, Y = y => (y - (b.y - Rr)) * k;
@@ -841,7 +843,7 @@ function airport(v, b, grp, f) {
   let best = 0; for (const p of b.parts) if (p.kind === 'runway' && p.built && IC.rwLen(p) > best) { best = IC.rwLen(p); const d = IC.rwDir(p); A.ang = Math.atan2(d.y, d.x); }
   // the lights, mirrored in wet pavement: a streak below each
   if (lights) {
-    const m = new THREE.ShaderMaterial({ uniforms: { px: { value: 60 }, amt: G.wet }, vertexShader: REFL_V, fragmentShader: REFL_F, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const m = new THREE.ShaderMaterial({ uniforms: { px: { value: 60 }, amt: G.wet }, vertexShader: lights.geometry.attributes.lcol ? REFL_VL : REFL_V, fragmentShader: REFL_F, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
     const refl = new THREE.Points(lights.geometry, m); refl.frustumCulled = false; refl.userData.keep = true; refl.renderOrder = 7; lights.add(refl);
     A.refl = refl;
   }

@@ -13,8 +13,10 @@ The first version for playtesters and the public. What is in the box:
 ### Airports at real scale
 
 - Build part by part: runways, taxiways, aprons, terminals, hangars, fuel tanks, towers, landing systems, radars. A 3.4 km runway is 3.4 km long on the map.
+- The build bar runs along the bottom of the screen (B, or Build in the top bar): ten tabs of parts, each with a picture of what it looks like, its price and what it is for; options above it for pavement, width, lights, stand size and zone; and the tools — Upgrade for the difference in price, Move, Bulldoze with the refund shown before the click, Undo, and info views for taxi congestion, stand use, walking distance, services, noise and runway capacity.
 - The builder snaps to runways, aprons and taxiways, keeps lines square, and shows the length, cost, work time and what the part will change, beside the cursor. Tools for big airports lay a parallel taxiway, rapid exits, a concourse or a remote apron in one go.
 - Pavement matters: grass, asphalt, concrete or reinforced concrete, each carrying aircraft up to a weight. Building takes time, money and lorry loads of concrete from the nearest industrial town, and may mean clearing homes.
+- An airport is drawn as one paved surface: real fillets curving through every turn, concrete slabs and asphalt patches, shoulders, edge and hold lines, blast pads, stand numbers, approach lights and a perimeter fence with its gates.
 - Aircraft taxi, hold short, cross runways, line up, take off and land along the network you built. The wind picks the runway; fog needs a landing system. Bad layouts cost minutes and money, and the airport's panel says why in plain words.
 - Accidents are rare and always have a cause, and an accident report follows.
 

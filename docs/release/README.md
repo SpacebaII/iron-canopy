@@ -30,3 +30,14 @@ How they were made: headless Chromium on a cloud machine with no graphics card, 
 with Chromium's GPU switches on. The pictures are what a GPU draws; the clip was made frame by frame on a virtual clock,
 so it plays at a smooth 30 fps though the machine drew only a few frames a second. The replay's own Video button records
 in real time, which on software rendering gives a slideshow; on a machine with a GPU it is the quickest way to record more.
+
+## Credits and licences
+
+- **Map data** for the airport showcase and the Career's blueprints (the layouts in `iron-canopy/js/airports-real-data.js`,
+  made by `tools/airport-import.js` from the extracts in `tools/airports/`): © OpenStreetMap contributors, available under
+  the Open Database Licence (ODbL 1.0), https://www.openstreetmap.org/copyright. The layouts are a derivative database
+  of OpenStreetMap and are themselves available under the ODbL; the extracts they are made from ship in the repository,
+  with the importer, so anyone can rebuild them.
+- **Runway ends**: OurAirports (public domain), https://ourairports.com/data/.
+- **three.js** (MIT licence), loaded from cdnjs for the 3D replay only.
+- The game credits these in Settings (Credits) and on the showcase page.

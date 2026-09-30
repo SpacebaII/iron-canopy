@@ -11,7 +11,7 @@ function tick(S, dt) { S.time += dt; IC.weather(S, dt); IC.updateBases(S, dt); I
 function drive(S, ap, o) {
   const mix = o.mix || [['narrow', 6], ['wide', 3], ['turbo', 1]];
   const stands = IC.aptStands(ap).filter(s => s.linked && s.hp > 0 && (s.zone === 'civil' || !s.zone));
-  const fits = (s, type) => IC.STAND_FITS[s.size].includes(IC.ACTYPES[type].stand);
+  const fits = (s, type) => IC.STAND_FITS[s.size].includes(IC.ACTYPES[type].stand) && !(s.maxHt && IC.ACTYPES[type].ht > s.maxHt);
   const r = { arr: 0, dep: 0, ga: 0, div: 0, divWhy: {}, crash: 0, pending: [], maxHold: 0, left: 0, peak: 0, parkedTypes: new Map() };
   let n = 0;
   // aircraft already parked, ready to leave
@@ -67,8 +67,7 @@ function drive(S, ap, o) {
 /* lay an airport out again; airliners parked there are sent away first, since their stands go */
 function relayout(S, ap, template) {
   if (S.av) for (const t of S.av.tails) if (t.at === ap.id && t.where === 'stand') { t.where = 'away'; t.at = null; t.stand = null; t.t = U.rand(300, 1800); }
-  IC.layoutAirport(ap, template, 0);
-  IC.aptStats(S, ap);
+  IC.aptRelayout(S, ap, template, 0);
 }
 /* a game with the KDEN-scale layout in place of the capital airport */
 function kdenGame(seed, hour) {
@@ -77,8 +76,7 @@ function kdenGame(seed, hour) {
   // the airlines are sent elsewhere so the test sees only its own traffic
   if (S.av) { S.av.tails = []; S.av.routes = []; }
   S.threats = S.threats.filter(t => !t.tail);
-  IC.layoutAirport(ap, 'kden', 0);
-  IC.aptStats(S, ap);
+  IC.aptRelayout(S, ap, 'kden', 0);
   S.weather.hold = true;
   return { S, ap };
 }
