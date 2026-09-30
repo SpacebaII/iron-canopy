@@ -1,7 +1,7 @@
 /* Pictures of roads where they meet (brief 46), with the interface hidden, for before-and-after comparisons:
    a village T junction, a town crossroads, a roundabout, a motorway interchange (diamond and cloverleaf), a city grid
    close in, an airport's landside loop, and the whole capital at the regional zoom.
-     node tools/road-shots.js <tag> [scene ...] [--night] [--w=1440] [--h=900] [--z=zoom] [--dpr=2] [--clip=x,y,w,h]
+     node tools/road-shots.js <tag> [scene ...] [--night] [--w=1440] [--h=900] [--z=zoom] [--dpr=2] [--clip=x,y,w,h] [--wait=ms] [--jpg]
    Saves shots/road-<tag>-<scene>.png and prints the frame time of each scene. Needs Playwright
    (npm i --no-save playwright three@0.160.0). */
 const path = require('path');
@@ -57,9 +57,9 @@ window.__roads = async function (hour) {
   const mm = near('mm').find(j => !inTown(j.x, j.y, 0.8)) || near('mm')[0]; if (mm) out.cloverleaf = [mm.x, mm.y, 40];
   out.citygrid = [cap.x, cap.y, 45];
   // where a slip road leaves the motorway, and a level crossing
-  const RJ = IC.roadJoins(W), me = RJ.ends.filter(e => e.kind === 'merge' && e.r.kind === 'slip').sort((a, b) => Math.hypot(a.q.x - ap.x, a.q.y - ap.y) - Math.hypot(b.q.x - ap.x, b.q.y - ap.y))[0];
+  const RJ = IC.roadJoins ? IC.roadJoins(W) : { ends: [] }, me = RJ.ends.filter(e => e.kind === 'merge' && e.r.kind === 'slip').sort((a, b) => Math.hypot(a.q.x - ap.x, a.q.y - ap.y) - Math.hypot(b.q.x - ap.x, b.q.y - ap.y))[0];
   if (me) out.merge = [me.q.x, me.q.y, 90];
-  const lx = IC.railCrossings(W).filter(x => x.level).sort((a, b) => Math.hypot(a.x - ap.x, a.y - ap.y) - Math.hypot(b.x - ap.x, b.y - ap.y))[0];
+  const lx = (IC.railCrossings ? IC.railCrossings(W) : []).filter(x => x.level).sort((a, b) => Math.hypot(a.x - ap.x, a.y - ap.y) - Math.hypot(b.x - ap.x, b.y - ap.y))[0];
   if (lx) out.railx = [lx.x, lx.y, 260];
   if (RJ.xings && RJ.xings[0]) out.xing = [RJ.xings[0].x, RJ.xings[0].y, 90];
   const kerb = L.roads.find(r => r.kerb) || L.roads[0];
@@ -89,14 +89,16 @@ window.__frames = async function (n) {
   await page.evaluate(SETUP);
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });
   const P = await page.evaluate(`__roads(${night ? 22 : 11})`);
+  // extra places by hand: --at=name:x,y,z;name:x,y,z
+  for (const q of ((args.find(a => a.startsWith('--at=')) || '--at=').slice(5)).split(';').filter(Boolean)) { const [k, v] = q.split(':'); P[k] = v.split(',').map(Number); }
   for (const [k, [x, y, z]] of Object.entries(P)) {
     if (only.length && !only.includes(k)) continue;
     const zz = +((args.find(a => a.startsWith('--z=')) || '--z=0').slice(4)) || z;
     await page.evaluate(`__cam(${x}, ${y}, ${zz})`);
     await page.waitForTimeout(+((args.find(a => a.startsWith('--wait=')) || '--wait=1500').slice(7)));
     const f = await page.evaluate('__frames(60)');
-    const file = path.resolve(__dirname, `../shots/road-${tag}-${k}.png`);
-    await page.screenshot(clip.length === 4 ? { path: file, clip: { x: clip[0], y: clip[1], width: clip[2], height: clip[3] } } : { path: file });
+    const jpg = args.includes('--jpg'), file = path.resolve(__dirname, `../shots/road-${tag}-${k}.${jpg ? 'jpg' : 'png'}`), o = jpg ? { path: file, type: 'jpeg', quality: 84 } : { path: file };
+    await page.screenshot(clip.length === 4 ? Object.assign(o, { clip: { x: clip[0], y: clip[1], width: clip[2], height: clip[3] } }) : o);
     console.log(`${k} (${x.toFixed(0)}, ${y.toFixed(0)}) z=${zz}: frame median ${f.med.toFixed(1)} ms, 90% ${f.p90.toFixed(1)} ms  ${path.relative(process.cwd(), file)}`);
   }
   await browser.close();

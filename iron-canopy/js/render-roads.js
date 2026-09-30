@@ -240,18 +240,11 @@ function junction(j, G, asp, lw, D, z, t, px) {
     // the centre line runs through
     const cl = a.cls === 'rd' ? [D(0.03, 5), D(0.06, 8)] : a.cls === 'lc' ? [D(0.03, 4), D(0.07, 9)] : null;
     if (cl && (a.cls !== 'lc' || z > 9)) { ctx.lineWidth = lw; ctx.setLineDash(cl); pline([at(a, ma, 0), N, at(b, mb, 0)]); ctx.stroke(); ctx.setLineDash([]); }
-    // and its edge line, broken, across the mouth of each road that meets it: from where the curb return leaves it
-    // on one side to where the next comes back
+    // and its edge line, solid, along the side nothing joins (it stops at the mouth of a road that does, where the
+    // curb returns take it round the corner)
     if (edged(a) && edged(b)) for (const [p, q] of [[i, k], [k, i]]) {
-      if ((q - p + A.length) % A.length === 1) {
-        // nothing meets it on this side: the edge line runs on, solid (a curb return on a bend has drawn it already)
-        if (!G.fil[p]) { ctx.lineWidth = lw; pline([at(A[p], G.mouth[p], eo(A[p])), at(A[q], G.mouth[q], -eo(A[q]))]); ctx.stroke(); }
-        continue;
-      }
-      const f0 = G.fil[p], f1 = G.fil[(q - 1 + A.length) % A.length];
-      const P0 = f0 ? at(A[p], (f0.T1.x - N.x) * A[p].ux + (f0.T1.y - N.y) * A[p].uy, eo(A[p])) : at(A[p], G.mouth[p], eo(A[p]));
-      const P1 = f1 ? at(A[q], (f1.T2.x - N.x) * A[q].ux + (f1.T2.y - N.y) * A[q].uy, -eo(A[q])) : at(A[q], G.mouth[q], -eo(A[q]));
-      ctx.lineWidth = lw; ctx.setLineDash([D(0.02, 3), D(0.02, 3)]); pline([P0, P1]); ctx.stroke(); ctx.setLineDash([]);
+      if ((q - p + A.length) % A.length !== 1 || G.fil[p]) continue;
+      ctx.lineWidth = lw; pline([at(A[p], G.mouth[p], eo(A[p])), at(A[q], G.mouth[q], -eo(A[q]))]); ctx.stroke();
     }
   }
   // give way: a double dashed line across the lane coming in (right-hand traffic: on the arm's clockwise side),
@@ -326,6 +319,14 @@ function overpass(j, width, fill, px, span) {
     ctx.strokeStyle = 'rgb(170,168,160)'; ctx.lineWidth = w + Math.max(0.012, px * 2.4); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
     ctx.strokeStyle = 'rgb(206,204,196)'; ctx.lineWidth = w + Math.max(0.006, px * 1.2); ctx.stroke();
     ctx.strokeStyle = fill(cls); ctx.lineWidth = w; ctx.stroke();
+    // its lines carry on over it
+    const Sp = SP[cls] || SP.lc, f = w / Sp.w, lw = Math.max(0.0022, 0.8 * px);
+    if (w * cam.z > 9 && (Sp.med || cls === 'rd' || cls === 'ramp')) {
+      const e = Sp.med ? Sp.med / 2 + Sp.strip + Sp.lane * Sp.lanes * 2 : Sp.lane * Sp.lanes;
+      ctx.strokeStyle = PAINT; ctx.lineWidth = 2 * e * f + lw; ctx.stroke(); ctx.strokeStyle = fill(cls); ctx.lineWidth = 2 * e * f - lw; ctx.stroke();
+      if (Sp.med) { ctx.strokeStyle = 'rgb(180,180,174)'; ctx.lineWidth = Sp.med * f * 0.5; ctx.stroke(); }
+      else if (cls === 'rd') { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.setLineDash([Math.max(0.03, 5 * px), Math.max(0.06, 8 * px)]); ctx.stroke(); ctx.setLineDash([]); }
+    }
     // the deck's joint where it comes down to the ground
     const nx = -d.y * w / 2, ny = d.x * w / 2, bx = x1 - d.x * Math.max(0.006, px * 2), by = y1 - d.y * Math.max(0.006, px * 2);
     ctx.strokeStyle = 'rgba(30,30,30,0.5)'; ctx.lineWidth = Math.max(0.003, px); ctx.beginPath(); ctx.moveTo(bx - nx, by - ny); ctx.lineTo(bx + nx, by + ny);
