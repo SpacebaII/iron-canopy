@@ -655,13 +655,15 @@ function drawSpan(g, ap, p, px, z, night) {
 function drawMover(g, p, px, z, night, now) {
   const P = p.pts; if (!P || P.length < 2) return;
   const under = (p.lv || 0) < 0;
-  g.lineJoin = 'round'; g.lineCap = 'round';
+  // (a viaduct is a concrete guideway with square ends and two rails, not a pipe)
+  g.lineJoin = 'round'; g.lineCap = under ? 'round' : 'butt';
   g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y));
   if (under) { g.setLineDash([6 * px, 5 * px]); g.strokeStyle = 'rgba(120,200,255,0.55)'; g.lineWidth = Math.max(0.02, 1.4 * px); g.stroke(); g.setLineDash([]); }
   else {
     g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(0.1, 2 * px); g.save(); g.translate(0.06, 0.06); g.stroke(); g.restore();
-    g.strokeStyle = 'rgb(200,200,196)'; g.lineWidth = Math.max(0.08, 1.8 * px); g.stroke();
-    if (z > 4) { g.strokeStyle = 'rgba(90,92,96,0.8)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.stroke(); }
+    g.strokeStyle = 'rgb(176,178,172)'; g.lineWidth = Math.max(0.08, 1.8 * px); g.stroke();
+    g.strokeStyle = 'rgb(206,206,200)'; g.lineWidth = Math.max(0.06, 1.2 * px); g.stroke();
+    if (z > 6) { g.strokeStyle = 'rgba(70,72,76,0.7)'; g.lineWidth = Math.max(0.003, 0.4 * px); g.setLineDash([]); g.beginPath(); for (const s of [-0.018, 0.018]) { P.forEach((q, i) => { const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], L0 = U.dist(a, b) || 1, nx = -(b.y - a.y) / L0 * s, ny = (b.x - a.x) / L0 * s; g[i ? 'lineTo' : 'moveTo'](q.x + nx, q.y + ny); }); } g.stroke(); }
   }
   g.lineCap = 'butt';
   // the trains: two or three cars, shuttling

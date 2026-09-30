@@ -43,11 +43,13 @@ function isTerminal(t) {
 /* The name a building shows in the game. The game's names are its own (brief 39): terminals and concourses keep
    theirs (the owner knows them by name), and so do roads and aprons; a company's hangar, cargo shed, hotel, rental-car
    lot or fire station shows what it is, not whose it is. The airport's config may rename what it likes first. */
-const BRAND = /\b(united|delta|american|frontier|southwest|alaska|jetblue|spirit|qantas|air canada|lufthansa|mexicana|air general|contego|swissport|fedex|fdx|ups|usps|dhl|lsg|sky chefs|gate gourmet|flying food|signature|atlantic aviation|westin|hyatt|marriott|hilton|sheraton|hertz|avis|alamo|national|payless|budget|enterprise|dollar|thrifty|sixt|denver|dia|los angeles|lax|lawa|world airports|city of)\b/i;
+const BRAND = /\b(ual|dal|aal|jal|dlh|kal|sia|cal|cpa|ana|klm|raytheon|boeing|lockheed|northrop|menzies|mercury|atlas|aeromexico|air france|british airways|virgin|emirates|qatar|cathay|singapore|eva air|china airlines|korean air|japan airlines|united|delta|american|frontier|southwest|alaska|jetblue|spirit|qantas|air canada|lufthansa|mexicana|air general|contego|swissport|fedex|fdx|ups|usps|dhl|lsg|sky chefs|gate gourmet|flying food|signature|atlantic aviation|westin|hyatt|marriott|hilton|sheraton|hertz|avis|alamo|national|payless|budget|enterprise|dollar|thrifty|sixt|denver|dia|los angeles|lax|lawa|world airports|city of)\b/i;
 function plainName(name, kind, C) {
   if (!name) return name;
   for (const [re, to] of (C.rename || [])) if (re.test(name)) return to;
   if (kind === 'terminal') return name.replace(/\s*\(.*\)\s*/, '').trim();
+  // (an apron named by an airline's code is unnamed)
+  if (kind === 'apron' && /^[A-Z]{2,4}$/.test(name)) return undefined;
   if (!BRAND.test(name)) return name;
   if (kind === 'fire') { const m = /station\s*(\d+)/i.exec(name); return m ? `Fire Station ${m[1]}` : 'Fire Station'; }
   if (kind === 'hangar') return /hangars/i.test(name) ? 'Hangars' : 'Hangar';
@@ -262,7 +264,7 @@ function importAirport(key, o) {
     if (pts.length < 3 || area(pts) < 0.05) continue;
     if (isDeice(A.tags)) { L.blds.push({ kind: 'deice', poly: flat(pts), name: A.tags.name || 'De-icing pad' }); continue; }
     const zone = /cargo|freight/i.test([A.tags.name, A.tags.apron, A.tags.operator].join(' ')) ? 'cargo' : /general|fbo|ga\b/i.test([A.tags.name, A.tags.apron].join(' ')) ? 'light' : /military/i.test(A.tags.apron || '') ? 'mil' : undefined;
-    L.aprons.push({ poly: flat(pts), zone, name: A.tags.name || undefined, _p: pts });
+    L.aprons.push({ poly: flat(pts), zone, name: plainName(A.tags.name, 'apron', C) || undefined, _p: pts });
   }
 
   // --- buildings: terminals and concourses, cargo, hangars, the tower, fire stations, fuel tanks, the rest
@@ -554,7 +556,10 @@ function importAirport(key, o) {
       const sides = [-1, 1].map(sg => ({ x: part.x - sn * sg * (part.h / 2 + 0.12), y: part.y + c * sg * (part.h / 2 + 0.12) }));
       const nearest = q => { let best = null; L.taxi.forEach(t => { for (let k = 1; k < t.n.length; k++) { const a = L.nodes[t.n[k - 1]], b = L.nodes[t.n[k]], dx = b[0] - a[0], dy = b[1] - a[1], LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((q.x - a[0]) * dx + (q.y - a[1]) * dy) / LL)), pt = { x: a[0] + dx * f, y: a[1] + dy * f }, d = dist(pt, q); if (!best || d < best.d) best = { d, t, k, pt, a, b }; } }); return best; };
       const near2 = sides.map(nearest).filter(Boolean);
-      if (!near2.length || near2.some(n => n.d < 0.5)) continue;
+      // (the game joins a door to a taxi node within 55 m, not to the middle of a long taxiway: a side with a node
+      // that near needs nothing; a taxiway passing without one gets a node and a short lane)
+      const isNode = n => dist(n.pt, { x: n.a[0], y: n.a[1] }) < 0.05 || dist(n.pt, { x: n.b[0], y: n.b[1] }) < 0.05;
+      if (!near2.length || near2.some(n => n.d < 0.5 && isNode(n))) continue;
       const si = near2[0].d <= near2[1].d ? 0 : 1, n = near2[si], door = sides[si];
       // (the lane must not run through the hangar: its door side faces the taxiway)
       if (inPoly({ x: (door.x + n.pt.x) / 2, y: (door.y + n.pt.y) / 2 }, B._p)) continue;
@@ -608,7 +613,15 @@ function importAirport(key, o) {
     const clear = num(t.min_height, 0) || (under[0] && under[0].maxht) || C.bridgeClear || 0;
     if (!clear) notes.push(`${t.name || 'a passenger bridge'} over a taxiway has no clearance in the data (min_height or maxheight): left without a height limit`);
     const joins = L.blds.map((B, i) => B._p && B._p.length && poly.some(q => polyDist(q, B._p) < 0.3) ? i : -1).filter(i => i >= 0);
-    L.bridges.push({ poly: flat(poly), clear: clear || undefined, name: t.name || undefined, joins });
+    L.bridges.push({ poly: flat(poly), clear: clear || undefined, name: t.name || undefined, joins, _p: poly });
+  }
+  // (the walkways inside a covered bridge are mapped as bridges too: a piece lying within another is that bridge)
+  {
+    const inside = (A, B) => A !== B && A._p.every(q => polyDist(q, B._p) < 0.15 || inPoly(q, B._p));
+    const n0 = L.bridges.length;
+    L.bridges = L.bridges.filter(A => !L.bridges.some(B => inside(A, B) && (B.name || !A.name) && B._p.length >= A._p.length));
+    if (L.bridges.length < n0) notes.push(`${n0 - L.bridges.length} walkways mapped inside a passenger bridge: one bridge`);
+    for (const B of L.bridges) delete B._p;
   }
 
   // --- people movers and trains: light rail, subway, monorail; their stations join the terminals

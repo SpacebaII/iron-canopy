@@ -13,6 +13,8 @@ const which = args[0] && !args[0].startsWith('--') ? args[0] : 'all';
 const night = args.includes('--night');
 const outDir = path.resolve(__dirname, '..', (args.find(a => a.startsWith('--out=')) || '--out=shots').slice(6));
 const only = (args.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
+// --at=x,y,z: one more picture at layout coordinates x, y (units from the reference point) at zoom z
+const at = (args.find(a => a.startsWith('--at=')) || '').slice(5).split(',').map(Number);
 const W = 1440, H = 900;
 
 /* runs in the page: the showcase game for a key, an hour of traffic, and the places worth a picture */
@@ -49,7 +51,7 @@ window.__real = async function (key, hour) {
   const see = q => { bb = [Math.min(bb[0], q.x), Math.min(bb[1], q.y), Math.max(bb[2], q.x), Math.max(bb[3], q.y)]; };
   for (const p of ap.parts) { if (p.kind === 'runway') { see(p.a); see(p.b); } else if ((p.kind === 'apron' || p.kind === 'terminal') && p.pts) p.pts.forEach(see); }
   const r = Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 2 + 3;
-  return { ap: { x: (bb[0] + bb[2]) / 2, y: (bb[1] + bb[3]) / 2, r, w: bb[2] - bb[0] + 6, h: bb[3] - bb[1] + 6 }, places, name: ap.name };
+  return { ap: { x: (bb[0] + bb[2]) / 2, y: (bb[1] + bb[3]) / 2, r, w: bb[2] - bb[0] + 6, h: bb[3] - bb[1] + 6 }, ref: { x: ap.x, y: ap.y }, places, name: ap.name };
 };
 window.__cam = function (x, y, z) { IC.cam.fly = null; IC.cam.z = z; IC.centerOn(x, y); };
 window.__frames = async function (n) {
@@ -100,6 +102,7 @@ window.__diagram = function (key, on) {
     const zA = Math.min(W / L.ap.w, H / L.ap.h);
     const shots = [['airport', L.ap.x, L.ap.y, zA], ['diagram', L.ap.x, L.ap.y, zA]];
     for (const [what, [p, z]] of Object.entries(L.places)) if (p) shots.push([what, p.x, p.y, z]);
+    if (at.length === 3) shots.push(['at', L.ref.x + at[0], L.ref.y + at[1], at[2]]);
     for (const [what, x, y, z] of shots) {
       if (only.length && !only.includes(what)) continue;
       await page.evaluate(`__cam(${x}, ${y}, ${z})`);
