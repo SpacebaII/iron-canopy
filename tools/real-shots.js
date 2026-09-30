@@ -54,6 +54,16 @@ window.__real = async function (key, hour) {
   return { ap: { x: (bb[0] + bb[2]) / 2, y: (bb[1] + bb[3]) / 2, r, w: bb[2] - bb[0] + 6, h: bb[3] - bb[1] + 6 }, ref: { x: ap.x, y: ap.y }, places, name: ap.name };
 };
 window.__cam = function (x, y, z) { IC.cam.fly = null; IC.cam.z = z; IC.centerOn(x, y); };
+/* the sim run on until an aircraft is taxiing under a passenger bridge (up to 40 game minutes) */
+window.__under = function () {
+  const S = IC.S, ap = S.byId[S.story.cap], B = ap.parts.filter(p => p.kind === 'skybridge');
+  if (!B.length) return false;
+  const under = () => ap.moves.some(m => !m.dead && m.phase === 'taxi' && B.some(b => IC.partDist(ap, b, m) < 0.05));
+  S.paused = false;
+  for (let i = 0; i < 40 * 60 * 4 && !under(); i++) IC.step(S, 0.25);
+  S.paused = true; ap.dirty = true; IC.redraw && IC.redraw();
+  return under();
+};
 window.__frames = async function (n) {
   const t = []; let last = performance.now();
   for (let i = 0; i < n; i++) { await new Promise(r => requestAnimationFrame(r)); const now = performance.now(); t.push(now - last); last = now; }
@@ -105,6 +115,7 @@ window.__diagram = function (key, on) {
     if (at.length === 3) shots.push(['at', L.ref.x + at[0], L.ref.y + at[1], at[2]]);
     for (const [what, x, y, z] of shots) {
       if (only.length && !only.includes(what)) continue;
+      if (what === 'bridge') console.log(`  an aircraft under the bridge: ${await page.evaluate('__under()')}`);
       await page.evaluate(`__cam(${x}, ${y}, ${z})`);
       await page.waitForTimeout(what === 'airport' || what === 'diagram' ? 4000 : 1800);
       const f = what === 'diagram' ? null : await page.evaluate('__frames(60)');

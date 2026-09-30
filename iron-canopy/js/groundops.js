@@ -1,7 +1,7 @@
 /* Iron Canopy — ground operations. Every aircraft that uses one of our airports taxis along the network the player
    built: pushback, taxi, hold short, line up, take-off roll; approach, landing roll, exit, taxi in, park.
    The wind picks a runway configuration: which runways are in use, which way, for arrivals, departures or both.
-   Runways that depend on each other (crossing, or parallel and closer than 760 m) are cleared as one.
+   Runways that cross are cleared as one; parallels closer than 760 m land on one and depart on the other.
    Taxi routes are planned ahead with time reservations so aircraft do not meet nose to nose on a single taxiway.
    Crashes are rare and always have a cause the player can see: gusts beyond a crew's limit, a wet runway too short
    for the landing, an aircraft straying onto a runway in use where there is no ground radar, birds near water. */
@@ -70,6 +70,14 @@ IC.aptConfig = function (S, ap) {
     for (const k of lg.concat(og)) roleOf[k] = arr.includes(k) ? 'arr' : 'dep';
     // a single well-aligned runway with only crosswind runways beside it lands and departs both
     if (lg.length === 1 && !og.length) roleOf[lg[0]] = 'mixed';
+    // parallels closer than 760 m are used as a pair: departures on the longer, arrivals on the shorter (the outer
+    // runway lands, the inner departs, as at Los Angeles), never both landing side by side
+    for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) {
+      const a = rws[i], b = rws[j], ka = g.grp[a.id], kb = g.grp[b.id];
+      if (ka === kb || IC.rwDependent(a, b) !== 'close' || !roleOf[ka] || !roleOf[kb] || roleOf[ka] !== roleOf[kb] || roleOf[ka] === 'mixed') continue;
+      const [lng, sht] = IC.rwUsable(a) >= IC.rwUsable(b) ? [ka, kb] : [kb, ka];
+      roleOf[lng] = 'dep'; roleOf[sht] = 'arr';
+    }
     for (const rw of rws) cfg.rw[rw.id].role = roleOf[g.grp[rw.id]] || 'spare';
   } else for (const rw of rws) cfg.rw[rw.id].role = ok.includes(rw) || !ok.length ? 'mixed' : 'spare';
   for (const rw of rws) { const r = cfg.rw[rw.id]; if (r.role === 'arr' || r.role === 'mixed') cfg.arr.push(rw.id); if (r.role === 'dep' || r.role === 'mixed') cfg.dep.push(rw.id); }

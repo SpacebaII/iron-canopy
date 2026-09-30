@@ -238,7 +238,8 @@ function nameRunways(ap) {
   for (const w of ap.works || []) if (w.kind === 'build' && w.part && w.part.kind === 'runway') w.label = `Build ${w.part.name}`;
 }
 IC.aptNameRunways = nameRunways;
-/* runways that cannot be used independently: they cross, or they are parallel and closer than 760 m */
+/* runways that cannot be used independently: they cross, or they are parallel and closer than 760 m (a close pair
+   is not cleared as one: the configuration lands on one and departs on the other, as Los Angeles does) */
 IC.RWY_INDEP = 7.6;
 function segX(a, b, c, d) { const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)); return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b); }
 IC.rwDependent = function (p, q) {
@@ -366,7 +367,8 @@ IC.aptGraph = function (ap) {
   const rws = parts.filter(p => p.kind === 'runway'), grp = {};
   for (const r of rws) grp[r.id] = r.id;
   const find = id => grp[id] === id ? id : (grp[id] = find(grp[id]));
-  for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) if (IC.rwDependent(rws[i], rws[j])) { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; }
+  // (close parallels keep their own clearances: one lands while the other departs, as the configuration pairs them)
+  for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) { const d = IC.rwDependent(rws[i], rws[j]); if (d && d !== 'close') { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; } }
   for (const r of rws) grp[r.id] = find(r.id);
   ap.gver = (ap.gver || 0) + 1;
   ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map() };

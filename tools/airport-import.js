@@ -36,7 +36,9 @@ function csv(text) {
 /* a passenger terminal or concourse in the map: tagged as one, or named as one, but not a cargo terminal (FedEx's
    shed at Los Angeles is tagged aeroway=terminal), a station on the people mover, or a building site */
 function isTerminal(t) {
-  if (!t || t.building === 'train_station' || t.railway === 'station' || t.building === 'construction') return false;
+  if (!t || t.building === 'train_station' || t.railway === 'station') return false;
+  // (a terminal being rebuilt is still a terminal; a building site drawn beside one is not)
+  if (t.building === 'construction' && !(t.aeroway === 'terminal' && t.name && !/modernization|construction|expansion/i.test(t.name))) return false;
   if (/cargo|freight|fdx|fedex|ups\b|dhl/i.test([t.name, t.operator].join(' '))) return false;
   return t.aeroway === 'terminal' || t.building === 'terminal' || /concourse|terminal/i.test(t.name || '');
 }
@@ -277,6 +279,7 @@ function importAirport(key, o) {
     if (t.aeroway === 'control_tower' || t.aeroway === 'tower' || /^(airport|aircraft)_control$/.test(t['tower:type'] || '') || t['building:part'] === 'control_tower' || /control tower|atct/i.test(s)) return 'tower';
     if (t.amenity === 'fire_station' || /fire station|arff|crash fire/i.test(s)) return 'fire';
     if (t.aeroway === 'hangar' || t.building === 'hangar') return 'hangar';
+    if (t.building === 'construction') return 'support';
     if (/cargo|freight|fdx|fedex|ups\b|dhl/i.test(s) || (t.building === 'warehouse') || t.aeroway === 'terminal') return 'cargo';
     // (a storage tank inside the aerodrome is fuel unless the map says it holds water: the map rarely says)
     if (t.man_made === 'storage_tank' && !/water|sewage/i.test([t.content, t.substance, s].join(' '))) return 'fuel';
@@ -620,6 +623,22 @@ function importAirport(key, o) {
     }
     for (const t of L.taxi) delete t._hlane;
     if (laid) notes.push(`${laid} hangars had no taxiway within 50 m of their doors: a taxilane is laid to each`);
+  }
+
+  // --- nodes within 6 m of each other are one node (a node put in at a crossing or a lead-in beside one the map
+  // had: a 2 m taxi edge between two nodes deadlocks aircraft meeting round it)
+  {
+    const root = L.nodes.map((_, i) => i), find = i => root[i] === i ? i : (root[i] = find(root[i]));
+    const cell = new Map(), key = (x, y) => `${Math.floor(x / 0.1)},${Math.floor(y / 0.1)}`;
+    L.nodes.forEach((q, i) => { const k = key(q[0], q[1]); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(i); });
+    L.nodes.forEach((q, i) => { for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const j of cell.get(`${Math.floor(q[0] / 0.1) + dx},${Math.floor(q[1] / 0.1) + dy}`) || []) if (j > i && Math.hypot(q[0] - L.nodes[j][0], q[1] - L.nodes[j][1]) < 0.06) root[find(j)] = find(i); });
+    let merged = 0; L.nodes.forEach((_, i) => { if (find(i) !== i) merged++; });
+    if (merged) {
+      for (const t of L.taxi) { const n = []; for (const i of t.n) { const r = find(i); if (!n.length || n[n.length - 1] !== r) n.push(r); } t.n = n; }
+      L.taxi = L.taxi.filter(t => t.n.length > 1);
+      for (const S of L.stands) if (S.via != null) S.via = find(S.via);
+      notes.push(`${merged} taxi nodes within 6 m of another: merged`);
+    }
   }
 
   // --- passenger bridges over taxiways: footways, corridors or buildings mapped as bridges that cross one
