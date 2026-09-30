@@ -23,3 +23,11 @@ The coordinator's running art review, done after each merge: the six store scene
 **Combat map (paused with 43):**
 - The arsenal's cards are cut off at the right in a war.
 - Battery reason labels ("Holding: targets not identified hostile") are useful but plain; they could be chips.
+
+**Taxiway to ramp (the owner, round 1: "do the same for the taxiways to the ramp as well, I want it looking good all around"; 45 owns it, and its review checks every point):**
+- Where a taxiway meets an apron, the apron edge opens with curved fillets on both sides, sized like 44's taxiway fillets: no square notch, no circle, no taxiway stroke laid over the apron.
+- The taxiway's yellow centreline continues onto the apron as the taxilane centreline, and branches to each stand's lead-in line on smooth curves.
+- Apron edge lines, shoulders and the service road stop at the opening and resume after it.
+- Concrete slabs are continuous from taxiway to apron: one joint pattern, one tone.
+- A taxiway that runs along an apron's edge merges into it (the apron edge taxilane) without a double edge.
+- The same holds at cargo ramps, GA ramps, remote aprons, holding bays and de-icing pads.
