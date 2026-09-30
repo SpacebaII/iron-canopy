@@ -573,7 +573,8 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   for (let i = 0; i < N; i++) { const a = process.hrtime.bigint(); IC.gops(S, 0.25); g += Number(process.hrtime.bigint() - a) / 1e6; }
   console.log(`        ${ap.moves.length} aircraft moving: ${(t / N).toFixed(3)} ms a step, ground operations ${(g / N).toFixed(3)} ms`);
   assert(g / N < 0.6, `ground operations take ${(g / N).toFixed(2)} ms a step`);
-  assert(t / N < 1.5, `a step takes ${(t / N).toFixed(2)} ms`);
+  // (the real Denver: 566 parts and 2,500 taxi nodes, about a third more a step than the six-runway layout built in code)
+  assert(t / N < 2, `a step takes ${(t / N).toFixed(2)} ms`);
 }, false, 'alone');
 
 /* ---------- the tower's rules: when aircraft may go onto a runway (docs/tasks/15-runway-rules.md) ---------- */

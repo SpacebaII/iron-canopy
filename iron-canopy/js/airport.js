@@ -401,7 +401,12 @@ IC.aptSearch = function (ap, src, o) {
   const dist = new Map(), prev = new Map(), time = o.res ? new Map() : null, done = new Set();
   if (!G.N.has(src)) return { dist, prev, time };
   dist.set(src, 0); if (time) time.set(src, o.res.t0);
-  const H = new Heap(); H.push(src, 0);
+  // (with a goal, A*: the heap is ordered by cost so far plus the straight-line time to the goal at the fastest
+  // taxi speed, which never overstates it, so a big airport's search stays near the line between the two)
+  const goal = o.to && !o.rev ? G.N.get(o.to) : null;
+  if (goal && G.vmax == null) { G.vmax = 0.01; for (const L of G.adj.values()) for (const e of L) G.vmax = Math.max(G.vmax, e.spd || 0); }
+  const h = goal ? v => { const n = G.N.get(v); return n ? U.dxy(n.x, n.y, goal.x, goal.y) / G.vmax : 0; } : () => 0;
+  const H = new Heap(); H.push(src, h(src));
   const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0;
   while (H.k.length) {
     const u = H.pop();
@@ -419,7 +424,7 @@ IC.aptSearch = function (ap, src, o) {
       if (e.kind !== 'rwy' && B.rw) { const c = ap.cfg && ap.cfg.rw[B.rw]; w += c && c.role !== 'spare' ? 60 : 20; }
       if (time) { const tu = time.get(u), wait = o.res.m ? IC.gopsResWait(ap, e, tu, o.res.m) : 0; w += wait * 1.5; tv = tu + wait + e.len / e.spd; }
       const nd = du + w;
-      if (nd < (dist.has(v) ? dist.get(v) : Infinity)) { dist.set(v, nd); prev.set(v, e); if (time) time.set(v, tv); H.push(v, nd); }
+      if (nd < (dist.has(v) ? dist.get(v) : Infinity)) { dist.set(v, nd); prev.set(v, e); if (time) time.set(v, tv); H.push(v, nd + h(v)); }
     }
   }
   return { dist, prev, time };
