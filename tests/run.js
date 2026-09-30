@@ -1499,6 +1499,11 @@ test('showcase: a day at each real airport at its busy schedule: no gridlock, de
     off();
     const kp = ap.kpi, oldest = ap.moves.reduce((m, x) => Math.max(m, S.time - x.born), 0);
     console.log(`        ${ap.name}: ${hours} h, ${r.arr} arrivals and ${r.dep} departures (${Math.round((r.arr + r.dep) / hours)} an hour), ${r.gate} parked at gates, ${r.bus} by bus, ${r.cargo} at cargo stands; ${kp.div || 0} diversions, ${kp.grid || 0} gridlocks; the oldest on the ground ${U.dur(oldest)}`);
+    // (what the oldest is doing, when it has been there too long)
+    for (const m of ap.moves.filter(x => S.time - x.born > 2 * 3600).slice(0, 3)) {
+      const st = m.path && m.path[m.pi], on = st && ap.eo && ap.eo.get(st.e.key) || [];
+      console.log(`          ${m.who} ${m.kind} ${m.type} phase=${m.phase} holding=${m.holding || '-'} wait=${U.dur(m.waitT || 0)} node=${m.node} step=${m.pi}/${m.path ? m.path.length : '-'} next=${st ? st.e.kind + ' ' + st.e.key + ' len ' + st.e.len.toFixed(2) : '-'} t=${Math.round(m.t || 0)} stuck=${!!m.stuck} tow=${!!m.tow} at ${m.x.toFixed(1)},${m.y.toFixed(1)}; on that edge: ${on.map(o => `${o.m.who} ${o.m.kind} ${o.m.phase} d=${o.d}${o.pre ? ' pre' : ''} dead=${!!o.m.dead} in moves=${ap.moves.includes(o.m)} hold=${o.m.holding || '-'} node=${o.m.node} s=${(o.m.s || 0).toFixed(2)}`).join(' | ') || 'nobody'}; claim=${ap.claim && ap.claim.get(st.e.key) ? ap.claim.get(st.e.key).m.who : '-'}`);
+    }
     assert(!kp.grid && !kp.stuck, `${ap.name}: ${kp.grid || 0} gridlocks, ${kp.stuck || 0} stranded`);
     assert(r.wrongRw === 0, `${ap.name}: ${r.wrongRw} movements on a runway set for the other kind`);
     assert(oldest < 3 * 3600, `${ap.name}: an aircraft has been on the ground ${U.dur(oldest)}`);

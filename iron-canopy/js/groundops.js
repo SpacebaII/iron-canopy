@@ -613,6 +613,9 @@ function stepTaxi(S, ap, m, dt) {
         if (!holdShort(S, ap, m, k, budget, crossKey(m, st, e), rwId)) return;
         continue;
       }
+      // a hair short of the edge's end (the aircraft ahead let it advance to within rounding of it): the edge is
+      // done, on to the next; queueing here instead would never end
+      if (m.s >= e.len - 1e-6) { vacate(ap, m); m.onEdge = false; m.s = 0; m.node = st.to; m.pi++; if (m.locks) freeBehind(S, ap, m, null); continue; }
       // queueing behind the aircraft ahead
       m.waitT += budget; m.holding = 'queue';
       return;
