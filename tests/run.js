@@ -1471,7 +1471,7 @@ test('accuracy: each real airport against its sources: runway ends within 30 m, 
     const A = accuracy(k, k === 'mini' ? require('../tools/airport-import.js').importAirport('mini') : null);
     console.log(accuracyText(A).split('\n').map(l => '        ' + l).join('\n'));
     for (const r of A.runways) { if (r.ourairports != null) assert(r.ourairports <= 30, `${A.name} ${r.name}: an end ${r.ourairports} m from OurAirports`); if (r.osm != null) assert(r.osm <= 30, `${A.name} ${r.name}: an end ${r.osm} m from the map's runway`); }
-    const g = A.gates; if (g.src && g.src.parking) assert(Math.abs(g.game / g.src.parking - 1) <= 0.05, `${A.name}: ${g.game} gates against ${g.src.parking} in the map`);
+    const g = A.gates; if (g.src && g.src.gates) assert(Math.abs(g.game / g.src.gates - 1) <= 0.05, `${A.name}: ${g.game} gates against ${g.src.gates} in the map`);
     for (const t of A.terminals) if (t.off != null) assert(Math.abs(t.off) <= 10, `${A.name} ${t.name}: ${t.off}% off its footprint`);
   }
 });

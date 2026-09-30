@@ -71,6 +71,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const segDist = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy; const t = L ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L)) : 0; return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t); };
 const area = P => { let s = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) s += (P[j].x - P[i].x) * (P[j].y + P[i].y); return Math.abs(s / 2); };
 const centroid = P => { let x = 0, y = 0; for (const p of P) { x += p.x; y += p.y; } return { x: x / P.length, y: y / P.length }; };
+const convexHull = P => { const Q = P.slice().sort((a, b) => a.x - b.x || a.y - b.y), cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); const lo = [], up = []; for (const q of Q) { while (lo.length > 1 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); } for (const q of Q.reverse()) { while (up.length > 1 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 const inPoly = (p, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) if ((P[i].y > p.y) !== (P[j].y > p.y) && p.x < (P[j].x - P[i].x) * (p.y - P[i].y) / (P[j].y - P[i].y) + P[i].x) c = !c; return c; };
 const polyDist = (p, P) => { let m = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) m = Math.min(m, segDist(p, P[j], P[i])); return inPoly(p, P) ? 0 : m; };
 /* Douglas–Peucker, keeping the points that must stay (shared nodes, ends) */
@@ -92,6 +93,9 @@ function simplify(P, tol, keep) {
 const r1 = v => Math.round(v * 1000) / 1000;   // 0.1 m
 const flat = P => P.flatMap(p => [r1(p.x), r1(p.y)]);
 const num = (v, d) => { const n = parseFloat(v); return isFinite(n) ? n : d; };
+
+/* the game's own geometry (headless.js), for the checks that match its overlap checker */
+const game = () => global.IC || (global.IC = require('../headless.js'));
 
 /* ---------- the import ---------- */
 function importAirport(key, o) {
@@ -132,9 +136,27 @@ function importAirport(key, o) {
   }
   const rwLines = L.runways.map(r => ({ a: { x: r.a[0], y: r.a[1] }, b: { x: r.b[0], y: r.b[1] }, w: r.w }));
 
-  // --- the aerodrome's outline (the fence runs round it): roads inside it are airside
+  // --- the aerodrome's outline (the fence runs round it): roads inside it are airside. The landside the game ships
+  // is what lies within C.margin of it (the terminal kerbs, car parks, hotels and the airport's own roads), plus the
+  // approach roads named in C.approach with their interchanges: the extract reaches further, into the towns round
+  // the airport, and that is left out
   const aero = areas(t => t.aeroway === 'aerodrome').sort((p, q) => area(q.pts) - area(p.pts))[0];
   const airside = p => aero ? inPoly(p, aero.pts) : true;
+  const margin = C.margin != null ? C.margin : 1.5;
+  const near = p => !aero || polyDist(p, aero.pts) <= margin;
+  const nearAny = pts => pts.some(near);
+  /* the runs of a polyline within the margin, each cut where it leaves (the last point moved back to the edge) */
+  const clipNear = pts => {
+    if (!aero) return [pts];
+    const edge = (a, b) => { let lo = 0, hi = 1; for (let k = 0; k < 12; k++) { const m = (lo + hi) / 2, q = { x: a.x + (b.x - a.x) * m, y: a.y + (b.y - a.y) * m }; if (near(q)) lo = m; else hi = m; } return { x: a.x + (b.x - a.x) * lo, y: a.y + (b.y - a.y) * lo }; };
+    const runs = []; let run = null;
+    pts.forEach((p, i) => {
+      if (near(p)) { if (!run) { run = []; if (i) run.push(edge(p, pts[i - 1])); } run.push(p); }
+      else if (run) { run.push(edge(pts[i - 1], p)); runs.push(run); run = null; }
+    });
+    if (run) runs.push(run);
+    return runs.filter(r => r.length > 1);
+  };
 
   // --- taxiways and taxilanes: a node for every point two ways share, every end, and every bend that matters
   const TW = [...O.W.values()].filter(w => /^(taxiway|taxilane)$/.test(tag(w, 'aeroway') || '') && w.nodes.length >= 2 && tag(w, 'area') !== 'yes');
@@ -199,7 +221,7 @@ function importAirport(key, o) {
   const kindOf = t => {
     const s = [t.name, t.operator, t.description].join(' ');
     if (t.aeroway === 'terminal' || t.building === 'terminal' || /concourse|terminal/i.test(t.name || '')) return 'terminal';
-    if (t.aeroway === 'control_tower' || t['tower:type'] === 'airport_control' || /control tower|atct/i.test(s)) return 'tower';
+    if (t.aeroway === 'control_tower' || t.aeroway === 'tower' || /^(airport|aircraft)_control$/.test(t['tower:type'] || '') || t['building:part'] === 'control_tower' || /control tower|atct/i.test(s)) return 'tower';
     if (t.amenity === 'fire_station' || /fire station|arff|crash fire/i.test(s)) return 'fire';
     if (t.aeroway === 'hangar' || t.building === 'hangar') return 'hangar';
     if (/cargo|freight/i.test(s) || (t.building === 'warehouse')) return 'cargo';
@@ -209,20 +231,50 @@ function importAirport(key, o) {
   };
   const tanks = [];
   for (const B of BLD) {
-    if (B.tags['building:part'] && !B.tags.building) continue;
+    if (B.tags['building:part'] && !B.tags.building && kindOf(B.tags) !== 'tower') continue;
     const pts = simplify(B.pts.concat([B.pts[0]]), 0.01).slice(0, -1); if (pts.length < 3) continue;
-    const a = area(pts), c = centroid(pts), k = kindOf(B.tags);
-    if (aero && !airside(c)) { if (!(k === 'terminal' || /parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
+    const a = area(pts), c = centroid(pts); let k = kindOf(B.tags);
+    if (aero && !airside(c)) { if (!near(c) || !(k === 'terminal' || /parking|garage|hotel|station/i.test([B.tags.name, B.tags.building, B.tags.amenity].join(' ')))) continue; }
     if (k === 'support' && a < 0.04) continue;   // (sheds under 400 m² are left out)
     if (k === 'fuel') { tanks.push({ c, r: Math.sqrt(a / Math.PI) }); continue; }
     const roof = (C.roofs || []).find(([re]) => re.test(B.tags.name || '')), lv = num(B.tags['building:levels'], 0);
-    const parking = B.tags.amenity === 'parking' || B.tags.parking === 'multi-storey' || B.tags.building === 'parking';
+    const parking = B.tags.amenity === 'parking' || B.tags.parking === 'multi-storey' || /^(parking|garage)$/.test(B.tags.building || '') || /garage|parking/i.test(B.tags.name || '');
     if (parking) continue;   // (garages come in with the car parks)
-    L.blds.push({ kind: k, poly: flat(pts), name: B.tags.name || undefined, roof: roof ? roof[1] : undefined, lvls: lv || undefined, noApron: k === 'terminal' || undefined, _p: pts, _a: a });
+    // (a scrap of terminal with no name: a bridge landing or a link drawn as its own outline)
+    if (k === 'terminal' && !B.tags.name && a < 0.5) continue;
+    L.blds.push({ kind: k, poly: flat(pts), name: B.tags.name || undefined, roof: roof ? roof[1] : undefined, lvls: lv || undefined, noApron: k === 'terminal' || undefined, _p: pts, _a: a, _lv: +B.tags.layer || 0 });
   }
-  for (const n of O.N.values()) if (n.tags && n.tags.man_made === 'storage_tank' && !/water|sewage/i.test([n.tags.content, n.tags.substance, n.tags.name].join(' ')) && airside(proj(n.lat, n.lon))) tanks.push({ c: proj(n.lat, n.lon), r: 0.13 });
+  // buildings drawn over one another in the map (an outline and its parts, a shed inside a bigger one): the lesser
+  // one goes. Terminals first, then the buildings the airport works by, then support buildings; the larger on a tie
+  {
+    const IC = game(), rank = b => b.kind === 'terminal' ? 3 : b.kind === 'support' ? 1 : 2;
+    const sh = L.blds.map(b => b._p && b._p.length ? IC.shapePoly(b._p) : null), drop = new Set();
+    for (let i = 0; i < L.blds.length; i++) for (let j = i + 1; j < L.blds.length; j++) {
+      if (!sh[i] || !sh[j] || drop.has(i) || drop.has(j)) continue;
+      const A = L.blds[i], B = L.blds[j]; if (A._lv !== B._lv && (A.kind === 'terminal' || B.kind === 'terminal')) { /* (a concourse over a road or a link on another level) */ }
+      const bi = sh[i].bb, bj = sh[j].bb; if (bi[2] < bj[0] || bj[2] < bi[0] || bi[3] < bj[1] || bj[3] < bi[1]) continue;
+      if (IC.shapeDepth(sh[i], sh[j]) <= 0.02) continue;
+      const lose = rank(A) !== rank(B) ? (rank(A) < rank(B) ? i : j) : (A._a < B._a ? i : j);
+      drop.add(lose);
+    }
+    if (drop.size) { notes.push(`${drop.size} buildings drawn over another in the map are left out`); L.blds = L.blds.filter((_, i) => !drop.has(i)); }
+  }
+  // buildings on a taxiway or a runway (the map draws some under a bridge or over a tunnel): left out
+  {
+    const IC = game(), tw = L.taxi.map(t => IC.shapeLine(t.n.map(i => ({ x: L.nodes[i][0], y: L.nodes[i][1] })), (t.w || 0.23) / 2)), rw = rwLines.map(r => IC.shapeLine([r.a, r.b], r.w / 2));
+    const on = b => { if (!b._p || !b._p.length) return false; const sh = IC.shapePoly(b._p); return tw.concat(rw).some(x => !(x.bb[2] < sh.bb[0] || sh.bb[2] < x.bb[0] || x.bb[3] < sh.bb[1] || sh.bb[3] < x.bb[1]) && IC.shapeDepth(sh, x) > 0.02); };
+    const n0 = L.blds.length; L.blds = L.blds.filter(b => b.kind === 'terminal' || !on(b));
+    if (L.blds.length < n0) notes.push(`${n0 - L.blds.length} buildings stand on a taxiway or runway in the map: left out`);
+  }
+  const ptTanks = [];
+  for (const n of O.N.values()) if (n.tags && n.tags.man_made === 'storage_tank' && !/water|sewage/i.test([n.tags.content, n.tags.substance, n.tags.name].join(' ')) && airside(proj(n.lat, n.lon))) ptTanks.push({ c: proj(n.lat, n.lon), r: 0.13 });
+  // (a tank mapped as a point is as big as the room to its neighbours allows, up to the standard tank)
+  for (const t of ptTanks) { let nn = 1e9; for (const u of ptTanks.concat(tanks)) if (u !== t) nn = Math.min(nn, dist(t.c, u.c)); t.r = Math.max(0.03, Math.min(0.13, nn / 2 - 0.02)); }
+  tanks.push(...ptTanks);
   for (const n of O.N.values()) if (n.tags && (n.tags.aeroway === 'control_tower' || n.tags['tower:type'] === 'airport_control') && !L.blds.some(b => b.kind === 'tower' && polyDist(proj(n.lat, n.lon), b._p) < 0.2)) { const c = proj(n.lat, n.lon); L.blds.push({ kind: 'tower', poly: flat([{ x: c.x - 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y - 0.07 }, { x: c.x + 0.07, y: c.y + 0.07 }, { x: c.x - 0.07, y: c.y + 0.07 }]), name: n.tags.name, _p: [] }); }
-  for (const t of tanks) L.blds.push({ kind: 'fuel', c: [r1(t.c.x), r1(t.c.y)], r: r1(Math.max(0.06, t.r)) });
+  // tanks drawn touching or over one another are pulled apart: each keeps its share of the gap
+  for (let k = 0; k < 4; k++) for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) { const a = tanks[i], b = tanks[j], d = dist(a.c, b.c); if (d < a.r + b.r + 0.03) { const f = Math.max(0.02, d - 0.03) / (a.r + b.r); a.r *= f; b.r *= f; } }
+  for (const t of tanks) L.blds.push({ kind: 'fuel', c: [r1(t.c.x), r1(t.c.y)], r: r1(Math.max(0.04, t.r)) });
 
   // --- stands: parking positions (a node, or a lead-in way ending at the stand), their gate numbers and sizes
   const gates = [...O.N.values()].filter(n => tag(n, 'aeroway') === 'gate').map(n => ({ p: proj(n.lat, n.lon), ref: tag(n, 'ref') || tag(n, 'name') }));
@@ -237,32 +289,111 @@ function importAirport(key, o) {
     PP.push({ p: s, tags: w.tags, h: Math.atan2(s.y - t0.y, s.x - t0.x) });
   }
   const bldsNear = PP.length ? L.blds.filter(b => b._p && b._p.length && (b.kind === 'terminal' || b.kind === 'cargo' || b.kind === 'support' || b.kind === 'hangar')) : [];
+  // a jet bridge in the map (aeroway=jet_bridge) or a gate node near the stand makes it a gate
+  const jetPts = []; for (const w of O.W.values()) if (tag(w, 'aeroway') === 'jet_bridge') for (const q of wayPts(w)) jetPts.push(q);
   for (const S of PP) {
-    // the apron it stands on
-    let ai = L.aprons.findIndex(A => inPoly(S.p, A._p));
-    if (ai < 0) { let bd = 0.3; L.aprons.forEach((A, i) => { const d = polyDist(S.p, A._p); if (d < bd) { bd = d; ai = i; } }); }
-    if (ai < 0) { notes.push(`stand ${S.tags.ref || ''} at ${r1(S.p.x)}, ${r1(S.p.y)} is on no apron: left out`); continue; }
     // nose to the nearest building edge when the data gives no lead-in
     let h = S.h;
     if (h == null) { let bd = 1.5, best = null; for (const b of bldsNear) { const P2 = b._p; for (let i = 0, j = P2.length - 1; i < P2.length; j = i++) { const a = P2[j], c = P2[i], dx = c.x - a.x, dy = c.y - a.y, LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((S.p.x - a.x) * dx + (S.p.y - a.y) * dy) / LL)), q = { x: a.x + dx * f, y: a.y + dy * f }, d = dist(q, S.p); if (d < bd) { bd = d; best = q; } } } h = best ? Math.atan2(best.y - S.p.y, best.x - S.p.x) : 0; }
     // its gate number: the tag, else the gate node nearest the stand
     let ref = S.tags.ref || S.tags.name;
     if (!ref) { let bd = 0.8; for (const g of gates) { const d = dist(g.p, S.p); if (d < bd) { bd = d; ref = g.ref; } } }
-    S.ai = ai; S.hh = h; S.ref = ref;
+    S.hh = h; S.ref = ref;
+    S.gate = jetPts.some(q => dist(q, S.p) < 0.4) || gates.some(g => dist(g.p, S.p) < 0.5);
   }
-  const standsOk = PP.filter(S => S.ai != null);
+  // two positions on the same spot (a gate and its wide-body alternative, drawn twice) are one stand: the plain
+  // number wins, then the one with a lead-in
+  PP.sort((a, b) => (b.ref ? 1 : 0) - (a.ref ? 1 : 0) || (a.ref || '').length - (b.ref || '').length || (b.h != null) - (a.h != null));
+  const standsOk = [];
+  for (const S of PP) { if (standsOk.some(T => dist(T.p, S.p) < 0.22)) continue; standsOk.push(S); }
+  if (standsOk.length < PP.length) notes.push(`${PP.length - standsOk.length} parking positions lie on another's spot: one stand each`);
   for (const S of standsOk) {
     // the size from the room it has: the gap to the stands either side, across its heading
     let gap = 1e9;
     for (const T of standsOk) { if (T === S) continue; const dx = T.p.x - S.p.x, dy = T.p.y - S.p.y, along = Math.abs(dx * Math.cos(S.hh) + dy * Math.sin(S.hh)), across = Math.abs(-dx * Math.sin(S.hh) + dy * Math.cos(S.hh)); if (along < 0.35 && across < gap) gap = across; }
-    const size = /heavy|wide|[ABCDEF]\b/.test(S.tags['aircraft:size'] || '') ? null : gap >= 0.7 ? 'l' : gap >= 0.44 ? 'm' : 's';
+    const size = /heavy|wide|[DEF]\b/.test(S.tags['aircraft:size'] || '') ? 'l' : gap >= 0.6 ? 'l' : gap >= 0.4 ? 'm' : 's';
     // the stand's own point is where the nose wheel stops; the game's stand is the aircraft's middle
-    const back = { l: 0.4, m: 0.25, s: 0.18 }[size || 'm'];
-    const c = { x: S.p.x - Math.cos(S.hh) * back, y: S.p.y - Math.sin(S.hh) * back };
-    // the lead-in: the taxi node behind the stand, nearest along its line
-    let via = null, bv = 1.6;
-    L.nodes.forEach((q, i) => { const d = Math.hypot(q[0] - c.x, q[1] - c.y), behind = -((q[0] - c.x) * Math.cos(S.hh) + (q[1] - c.y) * Math.sin(S.hh)); if (behind > back && d < bv) { bv = d; via = i; } });
-    L.stands.push({ ap: S.ai, x: r1(c.x), y: r1(c.y), h: Math.round(S.hh * 1000) / 1000, size: size || 'm', via: via != null ? via : undefined, ref: S.ref || undefined });
+    const back = { l: 0.4, m: 0.25, s: 0.18 }[size];
+    S.size = size; S.c = { x: S.p.x - Math.cos(S.hh) * back, y: S.p.y - Math.sin(S.hh) * back }; S.back = back;
+  }
+  // the lead-in: the nearest point on a taxilane or taxiway behind the stand (within 250 m), where a node is put in
+  // if there is none, as a lead-in line meets the lane
+  const viaOf = S => {
+    let best = null;
+    const hx = Math.cos(S.hh), hy = Math.sin(S.hh);
+    L.taxi.forEach((t, ti) => {
+      for (let k = 1; k < t.n.length; k++) {
+        const a = L.nodes[t.n[k - 1]], b = L.nodes[t.n[k]], dx = b[0] - a[0], dy = b[1] - a[1], LL = dx * dx + dy * dy || 1;
+        const f = Math.max(0, Math.min(1, ((S.c.x - a[0]) * dx + (S.c.y - a[1]) * dy) / LL)), q = { x: a[0] + dx * f, y: a[1] + dy * f };
+        const d = dist(q, S.c), behind = -((q.x - S.c.x) * hx + (q.y - S.c.y) * hy);
+        if (behind < S.back * 0.8 || d > 2.5) continue;
+        const score = d + (t.lane ? 0 : 0.3);   // (a taxilane on the apron before the taxiway beyond it)
+        if (!best || score < best.score) best = { score, ti, k, f, q, a, b };
+      }
+    });
+    if (!best) return null;
+    const t = L.taxi[best.ti];
+    if (dist(best.q, { x: best.a[0], y: best.a[1] }) < 0.05) return t.n[best.k - 1];
+    if (dist(best.q, { x: best.b[0], y: best.b[1] }) < 0.05) return t.n[best.k];
+    const id = L.nodes.length; L.nodes.push([r1(best.q.x), r1(best.q.y)]); t.n.splice(best.k, 0, id);
+    return id;
+  };
+  // the apron each stand is on; stands on pavement the map has no apron for (a terminal being rebuilt, a remote
+  // ramp drawn as taxiways only) get one laid under them, round their outlines and lead-ins
+  for (const S of standsOk) {
+    let ai = L.aprons.findIndex(A => inPoly(S.p, A._p));
+    if (ai < 0) { let bd = 0.3; L.aprons.forEach((A, i) => { const d = polyDist(S.p, A._p); if (d < bd) { bd = d; ai = i; } }); }
+    S.ai = ai >= 0 ? ai : null;
+  }
+  const orphans = standsOk.filter(S => S.ai == null);
+  if (orphans.length) {
+    // clusters within 150 m of each other
+    const cl = orphans.map((_, i) => i), root = i => cl[i] === i ? i : (cl[i] = root(cl[i]));
+    for (let i = 0; i < orphans.length; i++) for (let j = i + 1; j < orphans.length; j++) if (dist(orphans[i].c, orphans[j].c) < 1.5) cl[root(i)] = root(j);
+    const groups = new Map(); orphans.forEach((S, i) => { const r = root(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(S); });
+    for (const G of groups.values()) {
+      const pts = [];
+      for (const S of G) {
+        const W0 = { l: 0.76, m: 0.46, s: 0.32 }[S.size] / 2 + 0.1, D0 = { l: 0.8, m: 0.5, s: 0.36 }[S.size] / 2 + 0.15, hx = Math.cos(S.hh), hy = Math.sin(S.hh);
+        for (const [u, v] of [[-W0, -D0], [W0, -D0], [W0, D0], [-W0, D0]]) pts.push({ x: S.c.x - hy * u + hx * v, y: S.c.y + hx * u + hy * v });
+        const via = viaOf(S); if (via != null) { S.via = via; const q = L.nodes[via]; pts.push({ x: q[0], y: q[1] }); }
+      }
+      const hull = convexHull(pts), c = centroid(hull), poly = hull.map(q => { const d = dist(q, c) || 1; return { x: q.x + (q.x - c.x) / d * 0.15, y: q.y + (q.y - c.y) / d * 0.15 }; });
+      L.aprons.push({ poly: flat(poly), name: undefined, _p: poly, implied: 1 });
+      for (const S of G) S.ai = L.aprons.length - 1;
+      notes.push(`${G.length} stands (${G.map(S => S.ref).filter(Boolean).slice(0, 4).join(', ')}${G.length > 4 ? ', …' : ''}) stand on pavement the map has no apron for: one is laid under them`);
+    }
+  }
+  for (const S of standsOk) {
+    if (S.via === undefined) S.via = viaOf(S);
+    if (S.via == null) notes.push(`stand ${S.ref || ''} at ${r1(S.p.x)}, ${r1(S.p.y)} has no taxiway within 250 m behind it`);
+    L.stands.push({ ap: S.ai, x: r1(S.c.x), y: r1(S.c.y), h: Math.round(S.hh * 1000) / 1000, size: S.size, via: S.via != null ? S.via : undefined, ref: S.ref || undefined, gate: S.gate ? 1 : undefined });
+  }
+
+  // --- hangars: the game links a hangar by the door in the middle of its long side; where no taxiway comes within
+  // 50 m of either side, a taxilane is laid from the nearer side to the nearest taxiway
+  {
+    const IC = game();
+    let laid = 0;
+    for (const B of L.blds) {
+      if (B.kind !== 'hangar' || !B._p || !B._p.length) continue;
+      const part = IC.polyPart('hangar', B._p), c = Math.cos(part.a), sn = Math.sin(part.a);
+      const sides = [-1, 1].map(sg => ({ x: part.x - sn * sg * (part.h / 2 + 0.05), y: part.y + c * sg * (part.h / 2 + 0.05) }));
+      const nearest = q => { let best = null; L.taxi.forEach(t => { for (let k = 1; k < t.n.length; k++) { const a = L.nodes[t.n[k - 1]], b = L.nodes[t.n[k]], dx = b[0] - a[0], dy = b[1] - a[1], LL = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((q.x - a[0]) * dx + (q.y - a[1]) * dy) / LL)), pt = { x: a[0] + dx * f, y: a[1] + dy * f }, d = dist(pt, q); if (!best || d < best.d) best = { d, t, k, pt, a, b }; } }); return best; };
+      const near2 = sides.map(nearest).filter(Boolean);
+      if (!near2.length || near2.some(n => n.d < 0.5)) continue;
+      const si = near2[0].d <= near2[1].d ? 0 : 1, n = near2[si], door = sides[si];
+      // (the lane must not run through the hangar: its door side faces the taxiway)
+      if (inPoly({ x: (door.x + n.pt.x) / 2, y: (door.y + n.pt.y) / 2 }, B._p)) continue;
+      let at;
+      if (dist(n.pt, { x: n.a[0], y: n.a[1] }) < 0.05) at = n.t.n[n.k - 1];
+      else if (dist(n.pt, { x: n.b[0], y: n.b[1] }) < 0.05) at = n.t.n[n.k];
+      else { at = L.nodes.length; L.nodes.push([r1(n.pt.x), r1(n.pt.y)]); n.t.n.splice(n.k, 0, at); }
+      const d = L.nodes.length; L.nodes.push([r1(door.x), r1(door.y)]);
+      L.taxi.push({ n: [at, d], w: 0.15, lane: 1 });
+      laid++;
+    }
+    if (laid) notes.push(`${laid} hangars had no taxiway within 50 m of their doors: a taxilane is laid to each`);
   }
 
   // --- passenger bridges over taxiways: footways, corridors or buildings mapped as bridges that cross one
@@ -283,47 +414,135 @@ function importAirport(key, o) {
 
   // --- people movers and trains: light rail, subway, monorail; their stations join the terminals
   for (const w of O.W.values()) {
-    const t = w.tags || {}; if (!/^(light_rail|subway|monorail|funicular|rail|narrow_gauge)$/.test(t.railway || '')) continue;
+    const t = w.tags || {}; if (!/^(light_rail|subway|monorail|funicular|rail|narrow_gauge)$/.test(t.railway || t['construction:railway'] || '')) continue;
     const pts = simplify(wayPts(w), 0.02); if (pts.length < 2) continue;
     const lv = t.tunnel && t.tunnel !== 'no' ? -1 : (t.bridge && t.bridge !== 'no') || +t.layer > 0 ? 1 : 0;
-    const mover = /people mover|apm|automated|train|guideway|skylink|landside access/i.test([t.name, t.service, t.usage, t.description].join(' ')) || t.railway === 'monorail' || (t.railway === 'subway' && airside(centroid(pts)));
+    const mover = /people mover|apm|automated|train|guideway|skylink|landside access/i.test([t.name, t.service, t.usage, t.description, t.network].join(' ')) || t.railway === 'monorail' || (t.railway === 'subway' && airside(centroid(pts)));
+    if (!mover && !nearAny(pts)) continue;
     if (mover) L.movers.push({ pts: flat(pts), lv, name: t.name || undefined });
     else L.rails.push({ pts: flat(pts), lv, name: t.name || undefined, cls: t.railway });
   }
   for (const M of L.movers) { const pts = []; for (let i = 0; i < M.pts.length; i += 2) pts.push({ x: M.pts[i], y: M.pts[i + 1] }); M.stops = L.blds.map((B, i) => B.kind === 'terminal' && B._p.some(() => true) && pts.some(p => polyDist(p, B._p) < 0.5) ? i : -1).filter(i => i >= 0); }
 
-  // --- roads: public roads and the landside's own, on their levels; airside service roads apart
+  // --- roads: public roads and the landside's own, on their levels; airside service roads apart. Kept: what lies
+  // within the margin (cut where it leaves), the approach roads by name in full, and the roads that meet them
+  // (their slip roads and the motorway they leave) for 500 m from the meeting point
   const PUB = /^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)(_link)?$/;
+  const isRoad = w => { const t = w.tags || {}; return t.highway && (PUB.test(t.highway) || t.highway === 'service') && t.area !== 'yes'; };
   const lanesOf = (t, cls) => num(t.lanes, /motorway|trunk/.test(cls) ? 4 : /primary|secondary/.test(cls) ? 3 : 2);
-  const roadEnds = new Map();
-  for (const w of O.W.values()) {
-    const t = w.tags || {}; const cls = t.highway; if (!cls || !(PUB.test(cls) || cls === 'service')) continue;
-    if (t.area === 'yes') continue;
-    const pts = simplify(wayPts(w), 0.01); if (pts.length < 2) continue;
+  const approach = w => C.approach && isRoad(w) && C.approach.test(w.tags.name || w.tags.ref || '');
+  const reach = C.reach != null ? C.reach : 30;
+  const nodePts = w => w.nodes.map(id => ({ id, p: P(id) })).filter(x => x.p);
+  const keptWays = new Map();   // way → its runs of points (projected)
+  const addRuns = (w, runs) => { runs = runs.filter(r => r.length > 1); if (runs.length) keptWays.set(w, (keptWays.get(w) || []).concat(runs)); };
+  const runsWhere = (pts, ok) => { const runs = []; let run = []; for (const p of pts) { if (ok(p)) run.push(p); else { if (run.length > 1) runs.push(run); run = []; } } if (run.length > 1) runs.push(run); return runs; };
+  // hop 1: the approach roads out to C.reach; hop 2: the slip roads that leave them (whole) and the roads they meet
+  // for 500 m; hop 3: the motorway those slip roads join, for 600 m either side
+  const hop1 = [...O.W.values()].filter(approach);
+  const seen = new Set(hop1);
+  for (const w of hop1) addRuns(w, runsWhere(nodePts(w).map(x => x.p), p => polyDist(p, aero ? aero.pts : []) <= reach));
+  const meet = ways => { const ids = new Set(); for (const w of ways) if (keptWays.has(w)) for (const x of nodePts(w)) if (keptWays.get(w).some(r => r.includes(x.p))) ids.add(x.id); return ids; };
+  const hop = (from, r, whole) => {
+    const ids = meet(from), out = [];
+    for (const w of O.W.values()) {
+      if (seen.has(w) || !isRoad(w)) continue;
+      const np = nodePts(w), m = np.filter(x => ids.has(x.id)).map(x => x.p); if (!m.length) continue;
+      seen.add(w); out.push(w);
+      const pts = np.map(x => x.p);
+      addRuns(w, whole && /_link$/.test(w.tags.highway) ? [pts] : runsWhere(pts, p => m.some(q => dist(p, q) <= r)));
+    }
+    return out;
+  };
+  const hop2 = hop(hop1, 5, true);
+  hop(hop2, 6, false);
+  // everything else within the margin, cut where it leaves
+  for (const w of O.W.values()) { if (seen.has(w) || !isRoad(w)) continue; const pts = nodePts(w).map(x => x.p); if (pts.length > 1 && nearAny(pts)) addRuns(w, clipNear(pts)); }
+  const cutEnds = [];
+  for (const [w, runs] of keptWays) for (const pts0 of runs) {
+    const t = w.tags, cls = t.highway;
+    const pts = simplify(pts0, 0.01); if (pts.length < 2) continue;
     const lv = t.tunnel && t.tunnel !== 'no' ? -1 : (t.bridge && t.bridge !== 'no') ? Math.max(1, +t.layer || 1) : +t.layer > 0 ? +t.layer : +t.layer < 0 ? -1 : 0;
     const mid = pts[pts.length >> 1];
-    if (cls === 'service' && aero && airside(mid) && !inPoly(mid, (L.blds.find(b => b.kind === 'terminal') || { _p: [] })._p)) { L.service.push({ pts: flat(pts) }); continue; }
+    // airside: a road that crosses a taxiway or enters an apron, or a service road or a closed road (access=no,
+    // private) inside the aerodrome; a road under a terminal (its tunnel) is landside on its level
+    const inTerm = L.blds.some(b => b.kind === 'terminal' && b._p.length && pts.some(q => inPoly(q, b._p)));
+    const airRoad = !inTerm && (crossesTaxi(pts) || pts.some(q => L.aprons.some(A => inPoly(q, A._p))) || (aero && airside(mid) && (cls === 'service' || /^(no|private)$/.test(t.access || ''))));
+    if (airRoad && !/^(motorway|trunk|primary|secondary)/.test(cls)) { L.service.push({ pts: flat(pts) }); continue; }
+    if (cls === 'service' && /parking_aisle|driveway/.test(t.service || '')) continue;   // (the car parks are areas)
     const lanes = lanesOf(t, cls), oneway = t.oneway === 'yes' || /motorway|_link/.test(cls) && t.oneway !== 'no' ? 1 : t.oneway === '-1' ? -1 : 0;
-    L.roads.push({ pts: flat(pts), w: r1(Math.min(0.3, lanes * 3.5 / 100 + 0.02)), lv: lv || undefined, oneway: oneway || undefined, lanes, name: t.name || undefined, cls, kind: lv > 0 ? 'upper' : 'road' });
-    for (const id of [w.nodes[0], w.nodes[w.nodes.length - 1]]) roadEnds.set(id, (roadEnds.get(id) || 0) + 1);
+    L.roads.push({ pts: flat(pts), w: r1(Math.min(0.3, lanes * 3.5 / 100 + 0.02)), lv: lv || undefined, oneway: oneway || undefined, lanes, name: t.name || undefined, cls, kind: lv > 0 ? 'upper' : 'road', _pts: pts, _osm: w.id, _svc: t.service });
+    // a run cut short of the way's own end leads on out of the layout
+    const first = P(w.nodes[0]), last = P(w.nodes[w.nodes.length - 1]);
+    for (const e of [pts[0], pts[pts.length - 1]]) if (!lv && /^(motorway|trunk|primary|secondary)$/.test(cls) && (approach(w) || (dist(e, first) > 0.02 && dist(e, last) > 0.02))) cutEnds.push({ e, w });
   }
-  // junctions where roads share a node at the same level; road ends that lead out of the extract are its exits
+  // junctions where kept roads share a node; the exits are the cut ends of the main roads (the country's road comes
+  // to the one nearest the towns it serves)
   const onRoads = new Map();
-  for (const w of O.W.values()) { const t = w.tags || {}; if (!t.highway || !(PUB.test(t.highway) || t.highway === 'service')) continue; for (const id of w.nodes) onRoads.set(id, (onRoads.get(id) || 0) + 1); }
+  for (const [w] of keptWays) for (const id of w.nodes) onRoads.set(id, (onRoads.get(id) || 0) + 1);
   for (const [id, n] of onRoads) if (n > 1) { const p = P(id); if (p) L.junctions.push([r1(p.x), r1(p.y)]); }
-  const bbox = [...O.N.values()].reduce((b, n) => { const p = proj(n.lat, n.lon); return [Math.min(b[0], p.x), Math.min(b[1], p.y), Math.max(b[2], p.x), Math.max(b[3], p.y)]; }, [1e9, 1e9, -1e9, -1e9]);
-  for (const [id, n] of roadEnds) { if (n !== 1 || (onRoads.get(id) || 0) > 1) continue; const p = P(id); if (p && Math.min(p.x - bbox[0], bbox[2] - p.x, p.y - bbox[1], bbox[3] - p.y) < 2) L.exits.push([r1(p.x), r1(p.y)]); }
+  {
+    let fixed = 0;
+    const R = L.roads.map(r => ({ r, pts: r._pts, lv: r.lv || 0, bb: r._pts.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]) }));
+    for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) {
+      const A = R[i], B = R[j]; if (A.lv !== B.lv || A.bb[2] < B.bb[0] || B.bb[2] < A.bb[0] || A.bb[3] < B.bb[1] || B.bb[3] < A.bb[1]) continue;
+      for (let a = 1; a < A.pts.length; a++) for (let b = 1; b < B.pts.length; b++) {
+        if (!segX(A.pts[a - 1], A.pts[a], B.pts[b - 1], B.pts[b])) continue;
+        const p0 = A.pts[a - 1], p1 = A.pts[a], q0 = B.pts[b - 1], q1 = B.pts[b], den = (p1.x - p0.x) * (q1.y - q0.y) - (p1.y - p0.y) * (q1.x - q0.x); if (!den) continue;
+        const t = ((q0.x - p0.x) * (q1.y - q0.y) - (q0.y - p0.y) * (q1.x - q0.x)) / den, q = { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t };
+        if (!L.junctions.some(J => Math.hypot(J[0] - q.x, J[1] - q.y) < 0.08)) { L.junctions.push([r1(q.x), r1(q.y)]); fixed++; }
+      }
+    }
+    if (fixed) notes.push(`${fixed} roads cross another with no node in the map (a slip road, or a bridge with no layer): a junction is put at each`);
+  }
+  // (an approach road's own far end counts when no other kept road goes on from it)
+  const loose = ({ e, w }) => !approach(w) || ![...keptWays.keys()].some(v => v !== w && v.nodes.some(id => { const p = P(id); return p && dist(p, e) < 0.02; }));
+  for (const c of cutEnds) if (loose(c) && !L.exits.some(x => Math.hypot(x[0] - c.e.x, x[1] - c.e.y) < 0.5)) L.exits.push([r1(c.e.x), r1(c.e.y)]);
 
   // --- car parks and garages
   for (const A of areas(t => t.amenity === 'parking' || t.parking === 'multi-storey' || t.building === 'parking')) {
     const pts = simplify(A.pts.concat([A.pts[0]]), 0.01).slice(0, -1); if (pts.length < 3 || area(pts) < 0.02) continue;
+    if (!near(centroid(pts))) continue;
     if (aero && airside(centroid(pts)) && !/public|customer/.test(A.tags.access || 'public')) continue;
     const garage = A.tags.parking === 'multi-storey' || A.tags.building === 'parking' || A.tags.building === 'garage' || +A.tags['building:levels'] > 1;
-    L.parks.push({ kind: garage ? 'garage' : /rental|taxi/i.test(A.tags.name || '') ? 'taxi' : 'park', poly: flat(pts), lvls: num(A.tags['building:levels'], garage ? 4 : 0) || undefined, name: A.tags.name || undefined });
+    L.parks.push({ kind: garage ? 'garage' : /rental|taxi/i.test(A.tags.name || '') ? 'taxi' : 'park', poly: flat(pts), lvls: num(A.tags['building:levels'], garage ? 4 : 0) || undefined, name: A.tags.name || undefined, _p: pts, _a: area(pts), _air: aero && airside(centroid(pts)) });
+  }
+  {
+    // a lot drawn round its sections, or round a garage, is the same car park twice: the whole goes, the parts stay
+    // (a garage before a lot on the same outline)
+    const IC = game(), drop = new Set(), sh = L.parks.map(k => IC.shapePoly(k._p));
+    for (let i = 0; i < L.parks.length; i++) for (let j = 0; j < L.parks.length; j++) {
+      if (i === j || drop.has(i) || drop.has(j)) continue;
+      const A = L.parks[i], B = L.parks[j]; if (!inPoly(centroid(B._p), A._p)) continue;
+      const both = inPoly(centroid(A._p), B._p);
+      if (both) { if (A.kind === 'garage' && B.kind !== 'garage') drop.add(j); else if (B.kind === 'garage' && A.kind !== 'garage') drop.add(i); else drop.add(A._a >= B._a ? i : j); }
+      else drop.add(i);
+    }
+    // car parks over an airside building or an apron (the map's lots reach under sheds and onto ramps): left out
+    const bsh = L.blds.map(b => b._p && b._p.length ? IC.shapePoly(b._p) : null), ash = L.aprons.map(a => IC.shapePoly(a._p));
+    for (let i = 0; i < L.parks.length; i++) {
+      if (drop.has(i)) continue;
+      const over = x => x && !(x.bb[2] < sh[i].bb[0] || sh[i].bb[2] < x.bb[0] || x.bb[3] < sh[i].bb[1] || sh[i].bb[3] < x.bb[1]) && IC.shapeDepth(sh[i], x) > 0.02;
+      if (ash.some(over)) { drop.add(i); continue; }
+      for (let bi = bsh.findIndex(over); bi >= 0 && !drop.has(i); bi = bsh.findIndex(over)) { if (L.blds[bi].kind === 'support' && L.parks[i]._air) { L.blds.splice(bi, 1); bsh.splice(bi, 1); } else drop.add(i); }
+    }
+    if (drop.size) { notes.push(`${drop.size} car parks drawn over another, a building or an apron are left out`); L.parks = L.parks.filter((_, i) => !drop.has(i)); }
+    // the landside's roads stop at a car park's or a building's edge (the lot is an area, its aisles are not drawn;
+    // the road into a garage or a loading dock ends at the wall), checked every 5 m along them
+    const out = [], polys = L.parks.map(k => k._p).concat(L.blds.filter(b => b._p && b._p.length && b.kind !== 'terminal').map(b => b._p));
+    const inside = p => polys.some(P2 => inPoly(p, P2));
+    for (const R of L.roads) {
+      if ((R.lv || 0) !== 0) { out.push(R); continue; }
+      const dense = []; R._pts.forEach((p, i) => { if (i) { const a = R._pts[i - 1], n = Math.ceil(dist(a, p) / 0.05); for (let k = 1; k < n; k++) dense.push({ x: a.x + (p.x - a.x) * k / n, y: a.y + (p.y - a.y) * k / n, mid: true }); } dense.push(p); });
+      if (!dense.some(inside)) { out.push(R); continue; }
+      let run = []; const flush = () => { const r = simplify(run, 0.01); if (r.length > 1) out.push(Object.assign({}, R, { pts: flat(r), _pts: r })); run = []; };
+      for (const p of dense) { if (inside(p)) flush(); else run.push(p); }
+      flush();
+    }
+    L.roads = out;
   }
 
   // tidy: drop the working fields
-  for (const k of ['aprons', 'blds']) for (const x of L[k]) { delete x._p; delete x._a; }
+  if (!o.debug) for (const k of ['aprons', 'blds', 'parks', 'roads']) for (const x of L[k]) for (const f of Object.keys(x)) if (f.charAt(0) === '_') delete x[f];
   L.notes = notes;
   // the check against the map's own runway ways, where it has them
   L.check = { osmRunways: osmRwy.map(w => { const pts = wayPts(w); return { ref: tag(w, 'ref'), a: pts[0], b: pts[pts.length - 1] }; }) };
@@ -375,7 +594,8 @@ function accuracy(key, L0) {
     }
     // the map's runway line nearest this runway: the distance of each end from it, along and across
     const m = osmRw.map(o => ({ o, d: Math.min(dist(o.pts[0], rw.a) + dist(o.pts[o.pts.length - 1], rw.b), dist(o.pts[0], rw.b) + dist(o.pts[o.pts.length - 1], rw.a)) })).sort((x, y) => x.d - y.d)[0];
-    if (m) { const e = m.o.pts, f = dist(e[0], rw.a) < dist(e[0], rw.b); r.osm = Math.round(Math.max(dist(f ? e[0] : e[e.length - 1], rw.a), dist(f ? e[e.length - 1] : e[0], rw.b)) * 100 * 10) / 10; }
+    // (across the map's line: the map's ends are drawn to the pavement or the threshold as the mapper saw them)
+    if (m) { const e = m.o.pts; r.osm = Math.round(Math.max(segDist(rw.a, e[0], e[e.length - 1]), segDist(rw.b, e[0], e[e.length - 1])) * 100 * 10) / 10; }
     out.runways.push(r);
   }
   // gates: stands with a gate number in the game, against the map's numbered parking positions (or gates)
@@ -384,15 +604,20 @@ function accuracy(key, L0) {
   const inGame = ap.parts.filter(p => p.kind === 'apron').reduce((n, p) => n + (p.stands || []).filter(s => s.name && s.contact).length, 0);
   let src = null;
   if (O) {
-    const refs = new Set(); for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'parking_position' && n.tags.ref) refs.add(n.tags.ref);
-    for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'parking_position' && w.tags.ref) refs.add(w.tags.ref);
-    const gates = new Set(); for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'gate' && (n.tags.ref || n.tags.name)) gates.add(n.tags.ref || n.tags.name);
+    // the map's gates: parking positions numbered with a jet bridge (aeroway=jet_bridge) or a gate node at them
+    const pp = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'parking_position' && n.tags.ref) pp.push({ ref: n.tags.ref, p: proj(n.lat, n.lon) });
+    for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'parking_position' && w.tags.ref) { const pts = w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)); if (pts.length) pp.push({ ref: w.tags.ref, p: pts[pts.length - 1], q: pts[0] }); }
+    const jet = []; for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'jet_bridge') for (const n of w.nodes) { const x = O.N.get(n); if (x) jet.push(proj(x.lat, x.lon)); }
+    const gn = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'gate') gn.push(proj(n.lat, n.lon));
+    const at = s => jet.some(j => dist(j, s.p) < 0.4 || (s.q && dist(j, s.q) < 0.4)) || gn.some(g => dist(g, s.p) < 0.5 || (s.q && dist(g, s.q) < 0.5));
+    const refs = new Set(pp.map(s => s.ref)), gates = new Set(pp.filter(at).map(s => s.ref));
     src = { parking: refs.size, gates: gates.size };
   }
   out.gates = { game: inGame, stands: st.length, src };
   // terminal footprints: the part's area in the game against the outline's area in the map
   const area = P => { let s = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) s += (P[j].x - P[i].x) * (P[j].y + P[i].y); return Math.abs(s / 2); };
   const srcT = O ? [...O.W.values()].filter(w => w.tags && (w.tags.aeroway === 'terminal' || w.tags.building === 'terminal') && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => ({ name: w.tags.name, a: area(w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) })) : [];
+  if (O) for (const rel of O.R) if (rel.tags && (rel.tags.aeroway === 'terminal' || rel.tags.building === 'terminal') && /multipolygon/.test(rel.tags.type || '')) for (const ring of rings(O, rel, 'outer')) srcT.push({ name: rel.tags.name, a: area(ring.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) });
   for (const t of ap.parts.filter(p => p.kind === 'terminal')) {
     const a = IC.partArea(t), s0 = srcT.filter(x => x.name && x.name === t.name).sort((x, y) => Math.abs(x.a - a) - Math.abs(y.a - a))[0];
     out.terminals.push({ name: t.name || 'terminal', ha: Math.round(a * 100) / 100, src: s0 ? Math.round(s0.a * 100) / 100 : null, off: s0 ? Math.round((a / s0.a - 1) * 1000) / 10 : null });
@@ -404,7 +629,7 @@ function accuracyText(A) {
   const L = [`${A.name}:`];
   for (const r of A.runways) L.push(`  ${r.name}: ${r.len} m × ${r.w} m${r.lenSrc ? ` (source ${r.lenSrc} m)` : ''}; ends within ${r.ourairports != null ? r.ourairports + ' m of OurAirports' : '—'}${r.osm != null ? `, ${r.osm} m of the map's runway line` : ''}`);
   const g = A.gates;
-  L.push(`  gates: ${g.game} numbered stands at a terminal (${g.stands} stands in all)${g.src ? `; the map has ${g.src.parking} numbered parking positions and ${g.src.gates} gates` : ''}`);
+  L.push(`  gates: ${g.game} numbered stands at a terminal (${g.stands} stands in all)${g.src ? `; the map has ${g.src.parking} numbered parking positions, ${g.src.gates} of them with a jet bridge or a gate` : ''}`);
   for (const t of A.terminals) L.push(`  ${t.name}: ${t.ha} ha${t.src != null ? ` (map ${t.src} ha, ${t.off > 0 ? '+' : ''}${t.off}%)` : ''}`);
   return L.join('\n');
 }

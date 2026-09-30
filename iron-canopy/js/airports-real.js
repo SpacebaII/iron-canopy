@@ -57,7 +57,7 @@ IC.aptFromLayout = function (ap, L, o) {
   for (const s of L.stands || []) {
     const A = aprons[s.ap]; if (!A) continue;
     const c = X(s.x, s.y), l = IC.rectLocal(A, c);
-    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, k: A.free.length });
+    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, gate: s.gate ? 1 : undefined, k: A.free.length });
   }
   // buildings: terminals and concourses, cargo sheds, hangars, the tower and fire stations, fuel, support
   const blds = (L.blds || []).map(B => {
@@ -122,6 +122,9 @@ IC.realSite = function (S, L, near) {
     if (wet(x, y)) return false;
     for (const c of W.cities) if (U.dxy(c.x, c.y, x, y) < R + (c.r || 20) * 1.3) return false;
     for (const v of W.villages || []) if (U.dxy(v.x, v.y, x, y) < R + 4) return false;
+    // (no road or railway of the country across it: the landside is laid out as mapped, so nothing is moved round it)
+    const across = l => { if (!l.pts || l.pts.length < 2) return false; const b = l.bb || (l.bb = [Math.min(...l.pts.map(q => q.x)), Math.min(...l.pts.map(q => q.y)), Math.max(...l.pts.map(q => q.x)), Math.max(...l.pts.map(q => q.y))]); if (x < b[0] - R || x > b[2] + R || y < b[1] - R || y > b[3] + R) return false; for (let i = 1; i < l.pts.length; i++) if (U.segDist(x, y, l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y) < R) return true; return false; };
+    if (W.edges.some(e => (e.a !== near.ap.id && e.b !== near.ap.id) && across(e)) || (W.rails || []).some(across)) return false;
     for (let j = -R; j <= R; j += R / 6) for (let i = -R; i <= R; i += R / 6) {
       if (i * i + j * j > R * R) continue;
       const px = x + i, py = y + j;
