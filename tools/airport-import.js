@@ -20,6 +20,10 @@ const fs = require('fs');
 const path = require('path');
 const DIR = path.join(__dirname, 'airports');
 const CFG = require('./airports/config.js');
+/* a parking position this close to a terminal's wall (units) is a gate, jet bridge or not: the game and the check count it the same */
+const GATE_D = 0.5;
+/* an unnamed outline tagged as a terminal under this many hectares is a shelter or a link, not a terminal */
+const TERM_HA = 0.5;
 
 /* ---------- reading ---------- */
 function csv(text) {
@@ -28,6 +32,13 @@ function csv(text) {
   const head = split(lines[0]);
   for (const l of lines.slice(1)) { const v = split(l), r = {}; head.forEach((h, i) => { r[h] = v[i]; }); rows.push(r); }
   return rows;
+}
+/* a passenger terminal or concourse in the map: tagged as one, or named as one, but not a cargo terminal (FedEx's
+   shed at Los Angeles is tagged aeroway=terminal), a station on the people mover, or a building site */
+function isTerminal(t) {
+  if (!t || t.building === 'train_station' || t.railway === 'station' || t.building === 'construction') return false;
+  if (/cargo|freight|fdx|fedex|ups\b|dhl/i.test([t.name, t.operator].join(' '))) return false;
+  return t.aeroway === 'terminal' || t.building === 'terminal' || /concourse|terminal/i.test(t.name || '');
 }
 /* the extract: nodes by id, ways with their points, multipolygon relations joined into rings */
 function readOsm(file) {
@@ -239,12 +250,13 @@ function importAirport(key, o) {
   const BLD = areas(t => t.building || t.aeroway === 'terminal' || t.aeroway === 'hangar' || t['building:part']);
   const kindOf = t => {
     const s = [t.name, t.operator, t.description].join(' ');
-    if (t.aeroway === 'terminal' || t.building === 'terminal' || /concourse|terminal/i.test(t.name || '')) return 'terminal';
+    if (isTerminal(t)) return 'terminal';
+    if (t.building === 'train_station' || t.railway === 'station' || t.public_transport === 'station') return 'support';
     if (/tracon|approach control|radar facility/i.test(s)) return 'atc';
     if (t.aeroway === 'control_tower' || t.aeroway === 'tower' || /^(airport|aircraft)_control$/.test(t['tower:type'] || '') || t['building:part'] === 'control_tower' || /control tower|atct/i.test(s)) return 'tower';
     if (t.amenity === 'fire_station' || /fire station|arff|crash fire/i.test(s)) return 'fire';
     if (t.aeroway === 'hangar' || t.building === 'hangar') return 'hangar';
-    if (/cargo|freight/i.test(s) || (t.building === 'warehouse')) return 'cargo';
+    if (/cargo|freight|fdx|fedex|ups\b|dhl/i.test(s) || (t.building === 'warehouse') || t.aeroway === 'terminal') return 'cargo';
     // (a storage tank inside the aerodrome is fuel unless the map says it holds water: the map rarely says)
     if (t.man_made === 'storage_tank' && !/water|sewage/i.test([t.content, t.substance, s].join(' '))) return 'fuel';
     return 'support';
@@ -260,8 +272,9 @@ function importAirport(key, o) {
     const roof = (C.roofs || []).find(([re]) => re.test(B.tags.name || '')), lv = num(B.tags['building:levels'], 0);
     const parking = B.tags.amenity === 'parking' || B.tags.parking === 'multi-storey' || /^(parking|garage)$/.test(B.tags.building || '') || /garage|parking/i.test(B.tags.name || '');
     if (parking) continue;   // (garages come in with the car parks)
-    // (a scrap of terminal with no name: a bridge landing or a link drawn as its own outline)
-    if (k === 'terminal' && !B.tags.name && a < 0.5) continue;
+    // (a scrap of terminal with no name is no terminal: a bridge landing, a link drawn as its own outline, or a bus
+    // shelter at a remote pad, which stays as a support building)
+    if (k === 'terminal' && !B.tags.name && a < TERM_HA) { if (a < 0.04) continue; k = 'support'; }
     L.blds.push({ kind: k, poly: flat(pts), name: B.tags.name || undefined, roof: roof ? roof[1] : undefined, lvls: lv || undefined, noApron: k === 'terminal' || undefined, _p: pts, _a: a, _lv: +B.tags.layer || 0 });
   }
   // buildings drawn over one another in the map (an outline and its parts, a shed inside a bigger one): the lesser
@@ -404,6 +417,7 @@ function importAirport(key, o) {
     const [s, t0] = d(pts[pts.length - 1]) <= d(pts[0]) ? [pts[pts.length - 1], pts[pts.length - 2]] : [pts[0], pts[1]];
     PP.push({ p: s, tags: w.tags, h: Math.atan2(s.y - t0.y, s.x - t0.x) });
   }
+  const termPolys = L.blds.filter(b => b.kind === 'terminal' && b._p && b._p.length > 2).map(b => b._p);
   const bldsNear = PP.length ? L.blds.filter(b => b._p && b._p.length && (b.kind === 'terminal' || b.kind === 'cargo' || b.kind === 'support' || b.kind === 'hangar')) : [];
   // a jet bridge in the map (aeroway=jet_bridge) or a gate node near the stand makes it a gate
   const jetPts = []; for (const w of O.W.values()) if (tag(w, 'aeroway') === 'jet_bridge') for (const q of wayPts(w)) jetPts.push(q);
@@ -416,7 +430,8 @@ function importAirport(key, o) {
     if (!ref) { let bd = 0.8; for (const g of gates) { const d = dist(g.p, S.p); if (d < bd) { bd = d; ref = g.ref; } } }
     S.hh = h; S.ref = ref;
     // (a jet bridge drawn to the stand, or a gate marked at it: a gate node further off marks a bus gate)
-    S.gate = jetPts.some(q => dist(q, S.p) < 0.4) || gates.some(g => dist(g.p, S.p) < 0.3);
+    // (or drawn up to a terminal's wall: a ground-loaded gate, boarded by stairs; the accuracy check counts the same)
+    S.gate = jetPts.some(q => dist(q, S.p) < 0.4) || gates.some(g => dist(g.p, S.p) < 0.3) || termPolys.some(T => polyDist(S.p, T) < GATE_D);
   }
   // two positions on the same spot (a gate and its wide-body alternative, drawn twice) are one stand: the plain
   // number wins, then the one with a lead-in
@@ -738,25 +753,32 @@ function accuracy(key, L0) {
   const st = IC.aptStands ? IC.aptStands(ap) : [];
   // (distinct gate numbers: a gate the map draws twice, for two aircraft sizes, is one gate)
   const inGame = new Set(ap.parts.filter(p => p.kind === 'apron').flatMap(p => (p.stands || []).filter(s => s.name && s.contact).map(s => s.name))).size;
+  const area = P => { let s = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) s += (P[j].x - P[i].x) * (P[j].y + P[i].y); return Math.abs(s / 2); };
   let src = null;
   if (O) {
-    // the map's gates: numbered parking positions with a jet bridge (aeroway=jet_bridge), a gate node at them, or
-    // drawn up to a terminal's wall (ground-loaded regional gates)
-    const termP = [...O.W.values()].filter(w => w.tags && (w.tags.aeroway === 'terminal' || w.tags.building === 'terminal') && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)));
-    for (const rel of O.R) if (rel.tags && (rel.tags.aeroway === 'terminal' || rel.tags.building === 'terminal') && /multipolygon/.test(rel.tags.type || '')) for (const ring of rings(O, rel, 'outer')) termP.push(ring.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)));
-    const pp = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'parking_position' && n.tags.ref) pp.push({ ref: n.tags.ref, p: proj(n.lat, n.lon) });
-    for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'parking_position' && w.tags.ref) { const pts = w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)); if (pts.length) pp.push({ ref: w.tags.ref, p: pts[pts.length - 1], q: pts[0] }); }
+    // the map's gates, counted as the importer counts stands: parking positions (a node, or a lead-in way ending at
+    // the stand) numbered by their tag or by the gate node nearest them, one per spot (a gate drawn twice, for two
+    // aircraft sizes, is one gate), at a terminal when a jet bridge is drawn to them or they stand within GATE_D of a
+    // terminal's wall (a gate node alone marks a bus gate at a remote pad)
+    const termP = [...O.W.values()].filter(w => isTerminal(w.tags) && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => ({ t: w.tags, P: w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)) }));
+    for (const rel of O.R) if (isTerminal(rel.tags) && /multipolygon/.test(rel.tags.type || '')) for (const ring of rings(O, rel, 'outer')) termP.push({ t: rel.tags, P: ring.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)) });
+    // (as the importer: an unnamed scrap under TERM_HA is no terminal)
+    const termQ = termP.filter(x => x.t.name || area(x.P) >= TERM_HA).map(x => x.P);
+    const gn = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'gate') gn.push({ p: proj(n.lat, n.lon), ref: n.tags.ref || n.tags.name });
+    const refOf = (t, p) => { if (t.ref || t.name) return t.ref || t.name; let bd = 0.8, ref = null; for (const g of gn) { const d = dist(g.p, p); if (d < bd) { bd = d; ref = g.ref; } } return ref; };
+    const pp = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'parking_position') { const p = proj(n.lat, n.lon); pp.push({ ref: refOf(n.tags, p), p }); }
+    for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'parking_position') { const pts = w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon)); if (pts.length) pp.push({ ref: refOf(w.tags, pts[pts.length - 1]), p: pts[pts.length - 1], q: pts[0] }); }
     const jet = []; for (const w of O.W.values()) if (w.tags && w.tags.aeroway === 'jet_bridge') for (const n of w.nodes) { const x = O.N.get(n); if (x) jet.push(proj(x.lat, x.lon)); }
-    const gn = []; for (const n of O.N.values()) if (n.tags && n.tags.aeroway === 'gate') gn.push(proj(n.lat, n.lon));
-    const at = s => jet.some(j => dist(j, s.p) < 0.4 || (s.q && dist(j, s.q) < 0.4)) || gn.some(g => dist(g, s.p) < 0.3 || (s.q && dist(g, s.q) < 0.3)) || termP.some(T => T.length > 2 && (polyDist(s.p, T) < 0.5 || (s.q && polyDist(s.q, T) < 0.5)));
-    const refs = new Set(pp.map(s => s.ref)), gates = new Set(pp.filter(at).map(s => s.ref));
+    const at = s => jet.some(j => dist(j, s.p) < 0.4 || (s.q && dist(j, s.q) < 0.4)) || termQ.some(T => T.length > 2 && (polyDist(s.p, T) < GATE_D || (s.q && polyDist(s.q, T) < GATE_D)));
+    const one = [];
+    for (const s of pp.filter(x => x.ref).sort((a, b) => a.ref.length - b.ref.length)) if (!one.some(t => dist(t.p, s.p) < 0.1)) one.push(s);
+    const refs = new Set(one.map(s => s.ref)), gates = new Set(one.filter(at).map(s => s.ref));
     src = { parking: refs.size, gates: gates.size };
   }
   out.gates = { game: inGame, stands: st.length, src };
   // terminal footprints: the part's area in the game against the outline's area in the map
-  const area = P => { let s = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) s += (P[j].x - P[i].x) * (P[j].y + P[i].y); return Math.abs(s / 2); };
-  const srcT = O ? [...O.W.values()].filter(w => w.tags && (w.tags.aeroway === 'terminal' || w.tags.building === 'terminal') && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => ({ name: w.tags.name, a: area(w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) })) : [];
-  if (O) for (const rel of O.R) if (rel.tags && (rel.tags.aeroway === 'terminal' || rel.tags.building === 'terminal') && /multipolygon/.test(rel.tags.type || '')) for (const ring of rings(O, rel, 'outer')) srcT.push({ name: rel.tags.name, a: area(ring.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) });
+  const srcT = O ? [...O.W.values()].filter(w => isTerminal(w.tags) && w.nodes[0] === w.nodes[w.nodes.length - 1]).map(w => ({ name: w.tags.name, a: area(w.nodes.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) })) : [];
+  if (O) for (const rel of O.R) if (isTerminal(rel.tags) && /multipolygon/.test(rel.tags.type || '')) for (const ring of rings(O, rel, 'outer')) srcT.push({ name: rel.tags.name, a: area(ring.map(id => O.N.get(id)).filter(Boolean).map(n => proj(n.lat, n.lon))) });
   for (const t of ap.parts.filter(p => p.kind === 'terminal')) {
     const a = IC.partArea(t), s0 = srcT.filter(x => x.name && x.name === t.name).sort((x, y) => Math.abs(x.a - a) - Math.abs(y.a - a))[0];
     out.terminals.push({ name: t.name || 'terminal', ha: Math.round(a * 100) / 100, src: s0 ? Math.round(s0.a * 100) / 100 : null, off: s0 ? Math.round((a / s0.a - 1) * 1000) / 10 : null });
