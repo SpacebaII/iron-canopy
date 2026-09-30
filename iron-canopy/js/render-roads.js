@@ -35,9 +35,9 @@ IC.streetLights = function (g, S, v, light, pf) {
   for (const c of W.cities) {
     if (c.x + c.r * 1.6 < view.x0 || c.x - c.r * 1.6 > view.x1 || c.y + c.r * 1.6 < view.y0 || c.y - c.r * 1.6 > view.y1) continue;
     const plant = c.plant && S.byId[c.plant]; if (plant && plant.offline) continue;
-    for (const l of c.streets) if (l.cls !== 'st' || cam.z > 24) along(l, IC.ROAD_W[l.cls] * 0.55, sp);   // side streets only close in
+    for (const l of c.streets) if (l.cls !== 'st' || cam.z > 24) along(l, IC.ROAD_SPEC[l.cls].w * 0.55, sp);   // side streets only close in
     // the national roads through town are its avenues; the bypass is lit round it
-    for (const e of W.edges) if (e.city === c.id || e.bypass === c.id) along(e, IC.ROAD_W[e.city ? 'art' : e.cls] * 0.55, sp);
+    for (const e of W.edges) if (e.city === c.id || e.bypass === c.id) along(e, IC.ROAD_SPEC[e.city ? 'art' : e.cls].w * 0.55 + 0.02, sp);
   }
   for (const r of W.ramps || []) along(r, 0.07, sp);
   if (!P.length) return;
@@ -53,25 +53,31 @@ IC.streetLights = function (g, S, v, light, pf) {
   ctx.globalAlpha = 1;
 };
 
-/* roads close in: drawn live, at real width once that is wider than a few pixels. Far out a clean hierarchy by width
-   and colour; close in asphalt with verges, lane markings, crash barriers, slip roads, bridges and roundabouts */
-const ROAD = {
-  // real width (world units), smallest on screen (px), fill colour
-  hw: [0.42, 4.6, [238, 176, 104]], ring: [0.36, 3.6, [232, 190, 130]], rd: [0.2, 3.2, [214, 198, 158]], art: [0.4, 2.2, [178, 174, 164]],
-  lc: [0.13, 2.2, [198, 186, 154]], sp: [0.11, 1.9, [198, 186, 154]], st: [0.34, 1.4, [148, 146, 140]], ln: [0.07, 1.1, [160, 140, 100]],
-  ramp: [0.1, 1.8, [230, 184, 124]]
-};
-IC.roadWidth = (k, z) => Math.max(ROAD[k][0], ROAD[k][1] / z * (1 - U.clamp((z - 3) / 6, 0, 1) * 0.6));
-const ASPHALT = [72, 73, 74];
+/* roads close in: drawn live at the width of their real cross-section (roadgeom.js) once that is wider than a few
+   pixels. Far out a clean hierarchy by width and colour; close in asphalt with verges, edge and lane lines, crash
+   barriers and slip roads. Where roads meet, the junction is one surface laid over the roads' own markings (no
+   disc, no overlap of strokes): curb returns, the main road's lines running through, give-way lines on the roads
+   that meet it, roundabouts with their islands, tapers and gores where slip roads leave and join, bridges, and
+   level crossings where a small road crosses a railway. */
+const TONE = { hw: [238, 176, 104], ring: [232, 190, 130], rd: [214, 198, 158], art: [178, 174, 164], lc: [198, 186, 154], sp: [198, 186, 154], st: [148, 146, 140], ln: [160, 140, 100], ramp: [230, 184, 124] };
+const ASPHALT = [72, 73, 74], SHOULDER = [84, 85, 85];
+const PAINT = 'rgba(238,238,230,0.88)', VERGE = 'rgb(118,138,84)';
+const SP = IC.ROAD_SPEC;
 IC.drawRoads = function (g, S, px, v) {
   ctx = g; view = v;
   const W = S.world, z = cam.z, t = U.clamp((z - 3) / 6, 0, 1), m = 5;
   const vis = l => (l.bb || bbox(l)) && l.bb[2] > view.x0 - m && l.bb[0] < view.x1 + m && l.bb[3] > view.y0 - m && l.bb[1] < view.y1 + m;
   const groups = { sp: [], lc: [], rd: [], art: [], ring: [], ramp: [], hw: [] };
-  // a national road inside a city is drawn as the avenue it has become
   for (const e of W.edges) if (vis(e)) groups[e.city ? e.ccls || 'art' : e.cls].push(e);
   for (const r of W.ramps || []) if (vis(r)) groups.ramp.push(r);
-  // only the stretches in view go into the path
+  // where roads meet (worked out once, roadgeom.js); close in only, where the shapes show
+  const R = z > 3 ? IC.roadJoins(W) : null;
+  const joins = [], rbs = [], merges = [];
+  if (R) {
+    for (const j of R.joins) if (inView(j.x, j.y, 1)) { joins.push(j); if (j.stubs) groups.ramp.push(...j.stubs); }
+    for (const j of R.rbs) if (inView(j.x, j.y, 2)) rbs.push(j);
+    for (const e of R.ends) if (e.kind === 'merge' && inView(e.q.x, e.q.y, 3)) merges.push(e);
+  }
   const path = list => {
     ctx.beginPath();
     for (const l of list) for (const P of IC.roadRuns(W, l)) {
@@ -84,34 +90,77 @@ IC.drawRoads = function (g, S, px, v) {
       }
     }
   };
-  const width = k => IC.roadWidth(k, z);
-  const fill = k => { const c = ROAD[k][2]; return `rgb(${c[0] + (ASPHALT[0] - c[0]) * t | 0},${c[1] + (ASPHALT[1] - c[1]) * t | 0},${c[2] + (ASPHALT[2] - c[2]) * t | 0})`; };
+  const width = k => IC.roadWidth(k, z), half = k => IC.roadWidth(k, z) / 2;
+  const tone = (k, base) => { const c = TONE[k] || TONE.lc, a = base || ASPHALT; return `rgb(${c[0] + (a[0] - c[0]) * t | 0},${c[1] + (a[1] - c[1]) * t | 0},${c[2] + (a[2] - c[2]) * t | 0})`; };
+  const fill = k => tone(k);
   const stroke = (k, w, col, dash) => { if (!groups[k].length) return; path(groups[k]); ctx.strokeStyle = col; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash); ctx.stroke(); if (dash) ctx.setLineDash([]); };
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const poly = P => { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); };
+  const line = P => { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); };
+  // a painted line: its real width (15–20 cm) or a pixel, whichever is wider; dashes likewise
+  const lw = Math.max(0.0022, 0.8 * px), D = (real, pxs) => Math.max(real, pxs * px);
+  const top = site => site.arms.reduce((a, b) => (IC.ROAD_RANK[b.cls] || 0) > (IC.ROAD_RANK[a.cls] || 0) ? b : a).cls;
+  const geo = s => IC.joinGeom(s, half);
+  ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
   const order = ['sp', 'lc', 'art', 'rd', 'ring', 'ramp', 'hw'];
-  // verges: mown grass either side, then a dark edge far out or the kerb close in
-  if (z > 2.5) for (const k of order) stroke(k, width(k) + (k === 'hw' ? 0.6 : 0.24), `rgba(132,150,98,${0.6 * t + 0.25})`);
-  for (const k of order) stroke(k, width(k) * (1.45 - t * 0.35) + px * 0.8, 'rgba(22,20,16,0.55)');
-  for (const k of order) {
-    if (k === 'hw' && z > 5) stroke(k, width(k) * 1.1, 'rgb(170,170,164)');   // crash barriers along the outer edge
-    stroke(k, width(k) * (k === 'hw' && z > 5 ? 1.04 : 1), fill(k));
+  // verges: mown grass either side
+  if (z > 2.5) {
+    const col = `rgba(118,138,84,${0.6 * t + 0.25})`;
+    for (const k of order) stroke(k, width(k) + (k === 'hw' ? 0.08 : k === 'rd' ? 0.05 : 0.03), col);
+    ctx.fillStyle = col; ctx.strokeStyle = col;
+    for (const j of joins) { const G = geo(j); poly(G.surf); ctx.lineWidth = 0.05; ctx.stroke(); ctx.fill(); }
+    for (const j of rbs) { const G = IC.rbGeom(j, half); ctx.beginPath(); ctx.arc(G.C.x, G.C.y, G.Ro + 0.04, 0, 7); ctx.fill(); for (const a of G.arms) { poly(a.surf); ctx.lineWidth = 0.06; ctx.stroke(); } }
   }
-  const J = W.junctions || [];
-  for (const j of J) if (j.kind === 'rb' && inView(j.x, j.y, 2)) roundabout(j, width, fill);
-  if (z > 4) for (const j of J) if (j.kind === 'tj' && inView(j.x, j.y, 2)) kerbs(j, width, fill);
+  // the road's edge: a dark line far out, the kerb and crumb of the asphalt close in
+  const edgeW = k => width(k) * (0.45 - t * 0.38) + px * 0.8;
+  const edgeCol = 'rgba(22,20,16,0.55)';
+  for (const k of order) stroke(k, width(k) + edgeW(k), edgeCol);
+  ctx.strokeStyle = edgeCol; ctx.fillStyle = edgeCol;
+  for (const j of joins) { const G = geo(j); poly(G.surf); ctx.lineWidth = edgeW(top(j)); ctx.stroke(); }
+  for (const j of rbs) { const G = IC.rbGeom(j, half); ctx.beginPath(); ctx.arc(G.C.x, G.C.y, G.Ro + edgeW('rd') / 2, 0, 7); ctx.fill(); ctx.lineWidth = edgeW('rd'); for (const a of G.arms) { poly(a.surf); ctx.stroke(); } }
+  if (z > 4) for (const e of merges) { const T = IC.taperGeom(e, half('hw'), half('ramp')); ctx.lineWidth = edgeW('ramp'); poly(T.aux); ctx.stroke(); if (T.gore) { poly(T.gore); ctx.stroke(); } }
+  // the asphalt: shoulders a shade lighter close in, crash barriers along motorways
+  for (const k of order) {
+    if (k === 'hw' && z > 5) stroke(k, width(k) + lw * 3, 'rgb(170,170,164)');
+    stroke(k, width(k), z > 5 && (k === 'hw' || k === 'rd' || k === 'ramp' || k === 'ring') ? tone(k, SHOULDER) : fill(k));
+  }
+  for (const j of joins) { ctx.fillStyle = fill(top(j)); poly(geo(j).surf); ctx.fill(); }
+  if (z > 4) for (const e of merges) { const T = IC.taperGeom(e, half('hw'), half('ramp')); ctx.fillStyle = tone('hw', z > 5 ? SHOULDER : ASPHALT); poly(T.aux); ctx.fill(); if (T.gore) { poly(T.gore); ctx.fill(); } }
+  // (each line only once the road is wide enough on screen to carry it)
+  const pw = k => width(k) * z;
   if (z > 5) {
     // motorways: two carriageways of two lanes, edge lines, a central reservation with a barrier
-    const w = width('hw'), asp = fill('hw');
-    stroke('hw', w * 0.95, 'rgba(236,236,228,0.8)'); stroke('hw', w * 0.91, asp);
-    stroke('hw', w * 0.55, 'rgba(236,236,228,0.8)', [0.09, 0.14]); stroke('hw', w * 0.51, asp);
-    stroke('hw', w * 0.14, 'rgba(236,236,228,0.8)'); stroke('hw', w * 0.1, 'rgb(112,122,92)'); stroke('hw', w * 0.02, 'rgb(186,186,180)');
-    const wr = width('ramp'); stroke('ramp', wr * 0.9, 'rgba(236,236,228,0.7)'); stroke('ramp', wr * 0.8, fill('ramp'));
-    stroke('rd', width('rd') * 0.92, 'rgba(236,236,228,0.55)'); stroke('rd', width('rd') * 0.86, fill('rd'));
-    stroke('rd', 0.012, 'rgba(235,235,225,0.7)', [0.08, 0.1]);
+    const s = SP.hw, f = width('hw') / s.w, asp = fill('hw'), o = s.med / 2 + s.strip, c = o + 2 * s.lane;
+    if (pw('hw') > 9) { stroke('hw', 2 * c * f + lw, PAINT); stroke('hw', 2 * c * f - lw, asp); }
+    if (pw('hw') > 18) { stroke('hw', 2 * (o + s.lane) * f + lw, PAINT, [D(0.06, 6), D(0.12, 10)]); stroke('hw', 2 * (o + s.lane) * f - lw, asp); }
+    if (pw('hw') > 14) { stroke('hw', 2 * o * f + lw, PAINT); stroke('hw', 2 * o * f - lw, tone('hw', SHOULDER)); }
+    stroke('hw', s.med * f, 'rgb(112,128,86)'); if (pw('hw') > 14) stroke('hw', Math.max(0.004, px * 1.2), 'rgb(186,186,180)');
+    // slip roads: one lane between edge lines
+    const fr = width('ramp') / SP.ramp.w; if (pw('ramp') > 8) { stroke('ramp', SP.ramp.lane * fr + lw, PAINT); stroke('ramp', SP.ramp.lane * fr - lw, fill('ramp')); }
+    // main roads: edge lines inside the hard strips, a dashed centre line
+    const fd = width('rd') / SP.rd.w; if (pw('rd') > 9) { stroke('rd', 2 * SP.rd.lane * fd + lw, PAINT); stroke('rd', 2 * SP.rd.lane * fd - lw, fill('rd')); }
+    if (pw('rd') > 5) stroke('rd', lw, PAINT, [D(0.03, 5), D(0.06, 8)]);
+    if (pw('lc') > 6) stroke('lc', lw, 'rgba(238,238,230,0.7)', [D(0.03, 4), D(0.07, 9)]);
+    if (pw('art') > 10) stroke('art', lw, 'rgba(236,236,226,0.7)', [D(0.06, 5), D(0.09, 8)]);
   }
+  // slip roads leaving and joining: the auxiliary lane (the motorway's edge line broken beside it), the taper, the
+  // gore of chevrons in the V where they part
+  if (z > 5) for (const e of merges) {
+    const T = IC.taperGeom(e, half('hw'), half('ramp'));
+    ctx.fillStyle = fill('hw'); poly(T.aux); ctx.fill();
+    ctx.strokeStyle = PAINT; ctx.lineWidth = lw * 1.8; ctx.setLineDash([D(0.03, 4), D(0.03, 4)]); line(T.aux.slice(T.aux.length / 2)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = lw; line(T.lane.map((p, i) => { const q = T.aux[T.aux.length - 1 - i]; return { x: p.x + (q.x - p.x) * 0.12, y: p.y + (q.y - p.y) * 0.12 }; })); ctx.stroke();
+    if (T.gore) gore(T.gore, lw, px);
+  }
+  // junctions: one surface over the roads' markings, then its own
+  for (const j of joins) junction(j, geo(j), fill(top(j)), lw, D, z, t, px);
+  for (const j of rbs) roundabout(j, IC.rbGeom(j, half), fill, lw, D, z, px);
   // bridges at interchanges: the road that crosses over, with its shadow and parapets
-  for (const j of J) if (j.over && inView(j.x, j.y, 3)) overpass(j, width, fill, px);
-  if (z > 2) for (const x of W.railX || []) if (inView(x.x, x.y, 2)) overpass({ x: x.x, y: x.y, over: [x.a], dirs: [{ a: x.a, x: Math.cos(x.a), y: Math.sin(x.a), cls: x.cls }] }, width, fill, px, 0.25);
+  for (const j of W.junctions || []) if (j.over && inView(j.x, j.y, 3)) overpass(j, width, fill, px);
+  if (z > 2) for (const x of IC.railCrossings(W)) {
+    if (!inView(x.x, x.y, 2)) continue;
+    if (x.level && z > 5) levelCrossing(x, width(x.cls), lw, px, S);
+    else if (!x.level) overpass({ x: x.x, y: x.y, over: [x.a], dirs: [{ a: x.a, x: Math.cos(x.a), y: Math.sin(x.a), cls: x.cls }] }, width, fill, px, Math.max(0.16, width(x.cls) * 1.2));
+  }
   // craters and patches in the roads, over the live road drawing
   for (const mk of S.marks) if (mk.kind === 'road' && inView(mk.x, mk.y, mk.r * 2)) IC.drawMark(ctx, mk, S.time, 3);
 };
@@ -122,38 +171,169 @@ IC.roadRuns = function (W, l) {
   return l._runs;
 };
 function bbox(l) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; return l.bb; }
-/* a roundabout: a ring of road round a grass island; the roads coming in stop at the ring */
-function roundabout(j, width, fill) {
-  const w = Math.max(...j.dirs.map(d => width(d.cls))), r = Math.max(j.r, w * 1.1);
-  ctx.fillStyle = fill(j.dirs.some(d => d.cls === 'hw') ? 'hw' : 'rd'); ctx.beginPath(); ctx.arc(j.x, j.y, r + w * 0.5, 0, 7); ctx.fill();
-  ctx.fillStyle = 'rgb(104,128,80)'; ctx.beginPath(); ctx.arc(j.x, j.y, Math.max(r - w * 0.5, w * 0.3), 0, 7); ctx.fill();
-  if (cam.z > 5) { ctx.strokeStyle = 'rgba(236,236,228,0.6)'; ctx.lineWidth = 0.01; ctx.beginPath(); ctx.arc(j.x, j.y, r - w * 0.5 + 0.02, 0, 7); ctx.stroke(); }
+const pline = P => { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); };
+const ppoly = P => { pline(P); ctx.closePath(); };
+/* the gore where a slip road parts from the carriageway: white edges and chevrons between */
+function gore(P, lw, px) {
+  ctx.save(); ppoly(P); ctx.clip();
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of P) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const a = Math.atan2(P[P.length - 1].y - P[0].y, P[P.length - 1].x - P[0].x) + 0.9, st = Math.max(0.03, 5 * px);
+  ctx.strokeStyle = PAINT; ctx.lineWidth = Math.max(0.006, 1.6 * px); ctx.beginPath();
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = Math.hypot(x1 - x0, y1 - y0) / 2 + 0.05;
+  for (let d = -r; d <= r; d += st) { const ox = Math.cos(a + Math.PI / 2) * d, oy = Math.sin(a + Math.PI / 2) * d; ctx.moveTo(cx + ox - Math.cos(a) * r, cy + oy - Math.sin(a) * r); ctx.lineTo(cx + ox + Math.cos(a) * r, cy + oy + Math.sin(a) * r); }
+  ctx.stroke(); ctx.restore();
+  ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ppoly(P); ctx.stroke();
 }
-/* curved kerbs where lesser roads meet: the corner between two roads is paved round a curve */
-function kerbs(j, width, fill) {
-  const D = j.dirs;
-  for (let i = 0; i < D.length; i++) {
-    const a = D[i], b = D[(i + 1) % D.length], gap = U.mod(b.a - a.a, Math.PI * 2);
-    if (gap > 2.6 || gap < 0.3) continue;
-    const wa = width(a.cls) / 2, wb = width(b.cls) / 2, k = Math.min(wa, wb) * 1.6 + 0.08;
-    const na = { x: -a.y, y: a.x }, nb = { x: b.y, y: -b.x };
-    const pa = { x: j.x + a.x * (wb + k) + na.x * wa, y: j.y + a.y * (wb + k) + na.y * wa }, pb = { x: j.x + b.x * (wa + k) + nb.x * wb, y: j.y + b.y * (wa + k) + nb.y * wb };
-    const c = { x: j.x + na.x * wa + nb.x * wb, y: j.y + na.y * wa + nb.y * wb };
-    ctx.fillStyle = fill(a.cls === 'rd' || b.cls === 'rd' ? 'rd' : 'lc');
-    ctx.beginPath(); ctx.moveTo(j.x, j.y); ctx.lineTo(pa.x, pa.y); ctx.quadraticCurveTo(c.x, c.y, pb.x, pb.y); ctx.closePath(); ctx.fill();
+/* a junction's own surface and markings: the curb returns' edge lines, the main road's centre and edge lines through
+   (broken across the mouths of the roads that meet it) and a give-way line across the lane coming in on each of those */
+function junction(j, G, asp, lw, D, z, t, px) {
+  ctx.fillStyle = asp; ppoly(G.surf); ctx.fill();
+  if (z < 5) return;
+  const A = G.arms, N = G.N, inset = Math.max(lw * 1.5, 0.004);
+  const edged = a => a.cls === 'rd' || a.cls === 'ramp' || a.cls === 'hw';
+  ctx.strokeStyle = PAINT; ctx.lineWidth = lw;
+  const at = (a, s, o) => ({ x: N.x + a.ux * s - a.uy * o, y: N.y + a.uy * s + a.ux * o });
+  const eo = a => SPEC_LANE(a) * (a.h / SP[a.cls].w * 2);   // where an arm's edge line runs, from its centre
+  // the edge lines follow each curb return round from one road's edge line to the other's
+  const ft = new Map();
+  G.fil.forEach((f, i) => {
+    if (!f || !(edged(f.A) || edged(f.B))) return;
+    const sh = a => edged(a) ? a.h - eo(a) : inset;
+    const ins = Math.min(Math.max(sh(f.A), sh(f.B)), Math.min(f.A.h, f.B.h) * 0.5), j = (i + 1) % A.length;
+    const P = IC.roadArc(f.O, f.R + ins, f.T1, f.T2);
+    const sA = (P[0].x - N.x) * f.A.ux + (P[0].y - N.y) * f.A.uy, sB = (P[P.length - 1].x - N.x) * f.B.ux + (P[P.length - 1].y - N.y) * f.B.uy;
+    const L = [];
+    if (edged(f.A)) L.push(at(f.A, Math.max(G.mouth[i], sA), eo(f.A)));
+    L.push(...P);
+    if (edged(f.B)) L.push(at(f.B, Math.max(G.mouth[j], sB), -eo(f.B)));
+    ctx.lineWidth = lw; pline(L); ctx.stroke();
+    ft.set(i, { a: P[0], b: P[P.length - 1] });
+  });
+  if (G.main) {
+    const [i, k] = G.main, a = A[i], b = A[k], ma = G.mouth[i], mb = G.mouth[k];
+    // the centre line runs through
+    const cl = a.cls === 'rd' ? [D(0.03, 5), D(0.06, 8)] : a.cls === 'lc' ? [D(0.03, 4), D(0.07, 9)] : null;
+    if (cl && (a.cls !== 'lc' || z > 9)) { ctx.lineWidth = lw; ctx.setLineDash(cl); pline([at(a, ma, 0), N, at(b, mb, 0)]); ctx.stroke(); ctx.setLineDash([]); }
+    // and its edge line, broken, across the mouth of each road that meets it: from where the curb return leaves it
+    // on one side to where the next comes back
+    if (edged(a) && edged(b)) for (const [p, q] of [[i, k], [k, i]]) {
+      if ((q - p + A.length) % A.length === 1) {
+        // nothing meets it on this side: the edge line runs on, solid (a curb return on a bend has drawn it already)
+        if (!G.fil[p]) { ctx.lineWidth = lw; pline([at(A[p], G.mouth[p], eo(A[p])), at(A[q], G.mouth[q], -eo(A[q]))]); ctx.stroke(); }
+        continue;
+      }
+      const f0 = G.fil[p], f1 = G.fil[(q - 1 + A.length) % A.length];
+      const P0 = f0 ? at(A[p], (f0.T1.x - N.x) * A[p].ux + (f0.T1.y - N.y) * A[p].uy, eo(A[p])) : at(A[p], G.mouth[p], eo(A[p]));
+      const P1 = f1 ? at(A[q], (f1.T2.x - N.x) * A[q].ux + (f1.T2.y - N.y) * A[q].uy, -eo(A[q])) : at(A[q], G.mouth[q], -eo(A[q]));
+      ctx.lineWidth = lw; ctx.setLineDash([D(0.02, 3), D(0.02, 3)]); pline([P0, P1]); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  // give way: a double dashed line across the lane coming in (right-hand traffic: on the arm's clockwise side),
+  // where the main road's edge line would run across it
+  const gwAt = (a, q) => {
+    if (!G.main) return G.mouth[q];
+    let s0 = 0;
+    for (const i of G.main) {
+      const b = A[i], o = edged(b) ? SPEC_LANE(b) * (b.h / SP[b.cls].w * 2) : b.h, sn = Math.abs(a.ux * b.uy - a.uy * b.ux);
+      if (sn > 0.2) s0 = Math.max(s0, (o + a.h * Math.abs(a.ux * b.ux + a.uy * b.uy)) / sn);
+    }
+    return Math.min(G.mouth[q], s0 + lw);
+  };
+  A.forEach((a, q) => {
+    if (G.main && G.main.includes(q)) return;
+    if (!G.main && A.length < 4) return;
+    const m = gwAt(a, q) + lw * 2, w = a.h * (edged(a) ? 0.66 : 0.92);
+    ctx.lineWidth = Math.max(0.004, lw * 1.6); ctx.setLineDash([D(0.012, 3), D(0.008, 2)]);
+    pline([at(a, m, 0), at(a, m, -w)]); ctx.stroke();
+    pline([at(a, m + Math.max(0.01, lw * 4), 0), at(a, m + Math.max(0.01, lw * 4), -w)]); ctx.stroke();
+    ctx.setLineDash([]);
+    // (the centre line leading up to it is solid)
+    if (a.cls !== 'sp' && z > 9) { ctx.lineWidth = lw; pline([at(a, m, 0), at(a, m + Math.min(0.25, a.len * 0.3), 0)]); ctx.stroke(); }
+  });
+}
+const SPEC_LANE = a => (SP[a.cls] || SP.lc).lane * ((SP[a.cls] || SP.lc).lanes || 1);
+/* a roundabout: the ring, the flared entries with their curb returns, the kerbed island (a strip of cobbles for
+   lorries, grass, planting in the middle), splitter islands and give-way lines */
+function roundabout(j, G, fill, lw, D, z, px) {
+  const C = G.C, asp = fill('rd');
+  ctx.fillStyle = asp; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro, 0, 7); ctx.fill();
+  if (z > 5) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro - Math.max(0.006, lw * 2), 0, 7); ctx.stroke(); }
+  for (const a of G.arms) { ctx.fillStyle = fill(a.a.cls === 'hw' ? 'rd' : a.a.cls); ppoly(a.surf); ctx.fill(); }
+  // the island
+  const kerb = Math.max(0.004, px * 1.2);
+  ctx.fillStyle = 'rgb(178,176,168)'; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgb(128,118,104)'; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri - kerb, 0, 7); ctx.fill();
+  const gr = G.Ri - G.apron;
+  ctx.fillStyle = 'rgb(176,174,166)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgb(98,132,70)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr - kerb, 0, 7); ctx.fill();
+  if (z > 5) {
+    // cobbles on the lorry apron, mowing rings, a bed of shrubs and trees in the middle
+    if (z > 20) { ctx.strokeStyle = 'rgba(90,82,70,0.5)'; ctx.lineWidth = px * 0.6; ctx.setLineDash([px * 2, px * 2]); ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri - G.apron / 2, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.strokeStyle = 'rgba(120,152,86,0.5)'; ctx.lineWidth = gr * 0.08; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.75, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgb(122,104,76)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.42, 0, 7); ctx.fill();
+    const n = 7, seed = (j.x * 13 + j.y * 7) | 0;
+    ctx.fillStyle = 'rgba(8,14,8,0.35)'; ctx.beginPath();
+    for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed), d = gr * (i ? 0.26 : 0), r = gr * (0.12 + 0.05 * U.hash(seed, i)); ctx.moveTo(C.x + Math.cos(an) * d + r + gr * 0.04, C.y + Math.sin(an) * d + gr * 0.05); ctx.arc(C.x + Math.cos(an) * d + gr * 0.04, C.y + Math.sin(an) * d + gr * 0.05, r, 0, 7); }
+    ctx.fill();
+    for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed), d = gr * (i ? 0.26 : 0), r = gr * (0.12 + 0.05 * U.hash(seed, i)); ctx.fillStyle = ['rgb(52,82,44)', 'rgb(64,96,50)', 'rgb(46,72,40)'][i % 3]; ctx.beginPath(); ctx.arc(C.x + Math.cos(an) * d, C.y + Math.sin(an) * d, r, 0, 7); ctx.fill(); }
+    ctx.fillStyle = 'rgba(210,190,90,0.7)'; ctx.beginPath(); for (let i = 0; i < 18; i++) { const an = i / 18 * 6.283, x = C.x + Math.cos(an) * gr * 0.5, y = C.y + Math.sin(an) * gr * 0.5; ctx.moveTo(x + gr * 0.025, y); ctx.arc(x, y, gr * 0.025, 0, 7); } ctx.fill();
+    // each entry: the splitter island, its painted outline, the give-way line
+    for (const a of G.arms) {
+      ctx.fillStyle = 'rgb(178,176,168)'; ppoly(a.isl); ctx.fill();
+      ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ppoly(a.isl); ctx.stroke();
+      ctx.lineWidth = Math.max(0.004, lw * 1.6); ctx.setLineDash([D(0.012, 3), D(0.008, 2)]); pline(a.gy); ctx.stroke(); ctx.setLineDash([]);
+      // a hatched nose leading up to the island
+      const s1 = a.s1, s2 = Math.min(a.a.len * 0.45, s1 + (a.s1 - a.s0) * 0.7);
+      if (s2 > s1 + 0.01) { ctx.lineWidth = lw; pline([a.P(s1, 0), a.P(s2, 0)]); ctx.stroke(); }
+    }
   }
 }
-/* the road that crosses at an interchange rides a bridge over the motorway */
+/* the road that crosses at an interchange (or over a railway) rides a bridge: its shadow, the deck, parapets. At an
+   interchange each road over it has its own half of the deck, from the junction out along it (so a road that bends
+   there has a bent bridge); over a railway the deck runs both ways */
 function overpass(j, width, fill, px, span) {
   ctx.lineCap = 'butt';
   for (const a of j.over) {
     const d = j.dirs.find(q => q.a === a); if (!d) continue;
-    const w = width(d.cls), L = span || width('hw') * 0.9 + 0.2, x0 = j.x - d.x * L, y0 = j.y - d.y * L, x1 = j.x + d.x * L, y1 = j.y + d.y * L;
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = w * 1.35; ctx.beginPath(); ctx.moveTo(x0 + w * 0.3, y0 + w * 0.35); ctx.lineTo(x1 + w * 0.3, y1 + w * 0.35); ctx.stroke();
-    ctx.strokeStyle = 'rgb(176,174,166)'; ctx.lineWidth = w * 1.3; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-    ctx.strokeStyle = fill(d.cls); ctx.lineWidth = w; ctx.stroke();
+    const cls = d.e && d.e.city ? 'art' : d.cls, w = width(cls), L = span || width('hw') * 0.55 + Math.max(0.12, w * 1.2);
+    const x0 = span ? j.x - d.x * L : j.x - d.x * w * 0.5, y0 = span ? j.y - d.y * L : j.y - d.y * w * 0.5, x1 = j.x + d.x * L, y1 = j.y + d.y * L;
+    const sh = Math.max(w * 0.4, 0.04);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = w * 1.4; ctx.beginPath(); ctx.moveTo(x0 + sh * 0.7, y0 + sh); ctx.lineTo(x1 + sh * 0.7, y1 + sh); ctx.stroke();
+    ctx.strokeStyle = 'rgb(170,168,160)'; ctx.lineWidth = w + Math.max(0.012, px * 2.4); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = 'rgb(206,204,196)'; ctx.lineWidth = w + Math.max(0.006, px * 1.2); ctx.stroke();
+    ctx.strokeStyle = fill(cls); ctx.lineWidth = w; ctx.stroke();
+    // the deck's joint where it comes down to the ground
+    const nx = -d.y * w / 2, ny = d.x * w / 2, bx = x1 - d.x * Math.max(0.006, px * 2), by = y1 - d.y * Math.max(0.006, px * 2);
+    ctx.strokeStyle = 'rgba(30,30,30,0.5)'; ctx.lineWidth = Math.max(0.003, px); ctx.beginPath(); ctx.moveTo(bx - nx, by - ny); ctx.lineTo(bx + nx, by + ny);
+    if (span) { const cx = x0 + d.x * Math.max(0.006, px * 2), cy = y0 + d.y * Math.max(0.006, px * 2); ctx.moveTo(cx - nx, cy - ny); ctx.lineTo(cx + nx, cy + ny); }
+    ctx.stroke();
   }
-  ctx.lineCap = 'round';
+}
+/* a level crossing: rubber panels across the road, the rails, stop lines and a half barrier on each approach */
+function levelCrossing(x, w, lw, px, S) {
+  const ra = x.ra, rx = Math.cos(ra), ry = Math.sin(ra), ux = Math.cos(x.a), uy = Math.sin(x.a);
+  // along the road (u) and along the rails (r)
+  const P = (s, o) => ({ x: x.x + ux * s + rx * o, y: x.y + uy * s + ry * o });
+  const sin = Math.abs(ux * ry - uy * rx) || 1, half = w / 2 / sin + 0.02;
+  ctx.fillStyle = 'rgb(46,46,48)'; ppoly([P(-0.025, -half), P(-0.025, half), P(0.025, half), P(0.025, -half)]); ctx.fill();
+  ctx.strokeStyle = 'rgb(168,168,164)'; ctx.lineWidth = Math.max(0.002, px * 0.8); ctx.beginPath();
+  for (const o of [-0.0072, 0.0072]) { const nx = -ry * o, ny = rx * o; ctx.moveTo(x.x + nx - rx * (half + 0.03), x.y + ny - ry * (half + 0.03)); ctx.lineTo(x.x + nx + rx * (half + 0.03), x.y + ny + ry * (half + 0.03)); }
+  ctx.stroke();
+  // stop lines and barriers on each approach (right-hand traffic: the barrier closes the lane coming in)
+  const shut = S && IC.trainNear ? IC.trainNear(S, x) : false;
+  for (const sg of [1, -1]) {
+    const s = sg * (0.06 + w * 0.2), nx = -uy, ny = ux, r = sg;   // the lane coming in is on the right of travel towards the rails
+    ctx.strokeStyle = PAINT; ctx.lineWidth = Math.max(0.004, lw * 1.8);
+    ctx.beginPath(); ctx.moveTo(x.x + ux * s, x.y + uy * s); ctx.lineTo(x.x + ux * s + nx * r * w / 2, x.y + uy * s + ny * r * w / 2); ctx.stroke();
+    const b0 = { x: x.x + ux * (s - sg * 0.012) + nx * r * (w / 2 + 0.012), y: x.y + uy * (s - sg * 0.012) + ny * r * (w / 2 + 0.012) };
+    const L = shut ? w / 2 + 0.006 : 0.012, b1 = shut ? { x: b0.x - nx * r * L, y: b0.y - ny * r * L } : { x: b0.x - ux * sg * 0.035, y: b0.y - uy * sg * 0.035 };
+    ctx.lineCap = 'butt'; ctx.lineWidth = Math.max(0.004, px * 1.6);
+    ctx.strokeStyle = 'rgb(240,240,236)'; ctx.beginPath(); ctx.moveTo(b0.x, b0.y); ctx.lineTo(b1.x, b1.y); ctx.stroke();
+    ctx.strokeStyle = 'rgb(200,40,36)'; ctx.setLineDash([Math.max(0.006, px * 2), Math.max(0.006, px * 2)]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgb(60,60,62)'; ctx.beginPath(); ctx.arc(b0.x, b0.y, Math.max(0.004, px * 1.6), 0, 7); ctx.fill();
+    // the crossbuck board on its post
+    ctx.fillStyle = 'rgb(236,236,232)'; ctx.fillRect(b0.x - ux * sg * 0.004 - Math.max(0.003, px), b0.y - uy * sg * 0.004 - Math.max(0.003, px), Math.max(0.006, px * 2), Math.max(0.006, px * 2));
+  }
 }
 
 // how wide a river is drawn close in (terrain.js: 0.3 of its width in the far view)
@@ -283,7 +463,7 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
     // real size is 4.5 m for a car, 16 m for an articulated lorry; never smaller than a couple of pixels
     const m = Math.max(0.045, 4.4 * px), list = [];
     // the lane offset scaled to the road as drawn (wider than real far out)
-    const wk = k => IC.roadWidth(k === 'ramp' ? 'ramp' : k, z) / (IC.ROAD_W[k] || 0.1);
+    const wk = k => IC.roadWidth(k, z) / (IC.ROAD_SPEC[k] || IC.ROAD_SPEC.lc).w;
     if (z < AGZ) {
       IC.trafficVisible(S, view, Math.max(0.3, 7 * px), (x, y, h, k, cls, off) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); list.push({ x: x - n * o, y: y + c * o, h, k, col: (x * 7 + y * 13) & 1023 }); }, z < 2.5 ? { st: 1, ln: 1 } : null);
     } else {
@@ -297,6 +477,18 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
       const lk = b.line.path[0][0], o = (IC.TRAFFIC_CLS.st.off[0]) * (z < AGZ ? wk('art') : 1);
       list.push({ x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h, k: b.kind, col: 0 });
       void lk;
+    }
+    // at a roundabout the routes run through its middle: whoever is inside the ring drives round it (anticlockwise,
+    // as seen from above, for right-hand traffic)
+    const RJ = z > 3 && IC.roadJoins(S.world);
+    if (RJ) for (const j of RJ.rbs) {
+      if (!inView(j.x, j.y, 1)) continue;
+      const G = IC.rbGeom(j, k => IC.roadWidth(k, z) / 2), rr = G.r + G.cw * 0.2;
+      for (const v of list) {
+        const dx = v.x - G.C.x, dy = v.y - G.C.y, d = Math.hypot(dx, dy); if (d > G.Ro) continue;
+        const a = d > 1e-6 ? Math.atan2(dy, dx) : v.h;
+        v.x = G.C.x + Math.cos(a) * rr; v.y = G.C.y + Math.sin(a) * rr; v.h = a - Math.PI / 2;
+      }
     }
     vehicles(list, px, night, now, m, z > 18);
   }

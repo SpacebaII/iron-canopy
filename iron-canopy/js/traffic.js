@@ -15,10 +15,10 @@ const U = IC.U;
 // per class: vehicles per unit (100 m) of lane at full flow, free speed (units per game second), lanes each way,
 // lane offsets from the centre line (world units), and rank at junctions
 const CLS = {
-  hw: { dens: 2.4, v: 0.31, lanes: 2, off: [0.07, 0.155], rank: 5 }, ring: { dens: 2, v: 0.22, lanes: 2, off: [0.06, 0.14], rank: 4 },
-  rd: { dens: 0.9, v: 0.22, lanes: 1, off: [0.05], rank: 4 }, art: { dens: 1.5, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
-  lc: { dens: 0.3, v: 0.17, lanes: 1, off: [0.034], rank: 2 }, sp: { dens: 0.3, v: 0.12, lanes: 1, off: [0.03], rank: 1 },
-  st: { dens: 0.7, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.05, v: 0.1, lanes: 1, off: [0.018], rank: 0 },
+  hw: { dens: 2.4, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 2, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
+  rd: { dens: 0.9, v: 0.22, lanes: 1, off: [0.0175], rank: 4 }, art: { dens: 1.5, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
+  lc: { dens: 0.3, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.3, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
+  st: { dens: 0.7, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.05, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
   ramp: { dens: 1.2, v: 0.16, lanes: 1, off: [0], rank: 2 }
 };
 IC.TRAFFIC_CLS = CLS;
