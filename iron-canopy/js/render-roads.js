@@ -286,12 +286,10 @@ function roundabout(j, G, fill, lw, D, z, px) {
   if (z > 5) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro - Math.max(0.006, lw * 2), 0, 7); ctx.stroke(); }
   for (const a of G.arms) { ctx.fillStyle = fill(a.a.cls === 'hw' ? 'rd' : a.a.cls); ppoly(a.surf); ctx.fill(); }
   // the island
-  const kerb = Math.max(0.004, px * 1.2);
-  ctx.fillStyle = 'rgb(178,176,168)'; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri, 0, 7); ctx.fill();
-  ctx.fillStyle = 'rgb(128,118,104)'; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri - kerb, 0, 7); ctx.fill();
-  const gr = G.Ri - G.apron;
-  ctx.fillStyle = 'rgb(176,174,166)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr, 0, 7); ctx.fill();
-  ctx.fillStyle = 'rgb(98,132,70)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr - kerb, 0, 7); ctx.fill();
+  // (far out the kerb and apron shrink with the island, so nothing turns inside out)
+  const kerb = Math.min(Math.max(0.004, px * 1.2), G.Ri * 0.12), disc = (r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(C.x, C.y, Math.max(0.001, r), 0, 7); ctx.fill(); };
+  const gr = Math.max(G.Ri * 0.5, G.Ri - G.apron);
+  disc(G.Ri, 'rgb(178,176,168)'); disc(G.Ri - kerb, 'rgb(128,118,104)'); disc(gr, 'rgb(176,174,166)'); disc(gr - kerb, 'rgb(98,132,70)');
   if (z > 5) {
     // cobbles on the lorry apron, mowing rings, a bed of shrubs and trees in the middle
     if (z > 20) { ctx.strokeStyle = 'rgba(90,82,70,0.5)'; ctx.lineWidth = px * 0.6; ctx.setLineDash([px * 2, px * 2]); ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri - G.apron / 2, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
