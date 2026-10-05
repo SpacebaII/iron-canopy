@@ -823,8 +823,9 @@ function accuracy(key, L0) {
   // gates: stands with a gate number in the game, against the map's numbered parking positions (or gates)
   IC.aptGraph(ap);
   const st = IC.aptStands ? IC.aptStands(ap) : [];
-  // (distinct gate numbers: a gate the map draws twice, for two aircraft sizes, is one gate)
-  const inGame = new Set(ap.parts.filter(p => p.kind === 'apron').flatMap(p => (p.stands || []).filter(s => s.name && s.contact).map(s => s.name))).size;
+  // (distinct gate numbers: a gate the map draws twice, for two aircraft sizes, is one gate; a stand at a terminal wall
+  // its bridge cannot reach, boarded by stairs (brief 45: s.noBridge), is still a ground-loaded gate)
+  const inGame = new Set(ap.parts.filter(p => p.kind === 'apron').flatMap(p => (p.stands || []).filter(s => s.name && (s.contact || s.noBridge)).map(s => s.name))).size;
   const area = P => { let s = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) s += (P[j].x - P[i].x) * (P[j].y + P[i].y); return Math.abs(s / 2); };
   let src = null;
   if (O) {
