@@ -195,6 +195,25 @@ function priority(u, t, r) {
   return s + r * 0.2;
 }
 
+/* every missile in flight, ours or theirs, has this one shape (the step's loops over them stay fast): what flight.js's
+   energy model and the renderer fill in later is declared here. IC.mslInit then sets its energy for a reach of R */
+IC.newMissile = (S, o, R, v0) => {
+  const m = Object.assign({ id: IC.nid('m'), mun: null, M: null, x: 0, y: 0, alt: 0, a: 0, spd: 0, target: null, life: 60, src: '', unit: null, by: null, pk: 0, trailT: 0, side: 'us', tr: null, pip: null, hoj: false,
+    a0: 0, loft: 0, flown: 0, dead: false, counted: false, ir: false, end: null, t0: S.time, r0: 0,
+    P: null, age: 0, v0: 0, v: 0, c: 0, vb: 0, nh: 0, closeT: 0, rPrev: null, rhPrev: null, lostLock: false, fooled: false, tti: Infinity,
+    active: false, launchSeen: false, phase: null, fx: 0, fy: 0, fvx: 0, fvy: 0, lockT: 0, semiT: 0, warned: false }, o);
+  m.r0 = m.target ? U.dxy(m.x, m.y, m.target.x, m.target.y) : 0;
+  IC.mslInit(m, m.M, R, v0);
+  // it flies until it is spent; the life is only a backstop
+  if (!m.pip) { const T = IC.mslTime(m.M, R * 0.999, m.target ? m.target.alt || 0 : 0, m.v0); m.life = Math.max(40, (isFinite(T) ? T : 60) * 1.6 + 20); }
+  return m;
+};
+/* the kill chance when the fuse goes off: a slow missile cannot follow the target's last turn */
+IC.fusePk = function (m, d) {
+  const P = m.P || {}, near = d < IC.FUSE_R ? 1 : 0.5;
+  const en = P.cruise || !P.vmin ? 1 : U.clamp((m.v - P.vmin) / P.vmin, 0.55, 1);
+  return m.pk * near * en;
+};
 function fire(S, u, t, m, r, P, hoj) {
   const M = IC.MUN[m.mun];
   IC.takeRound(u, m); t.inbound++; t.shots = (t.shots || 0) + 1; S.stats.fired++;
@@ -202,21 +221,26 @@ function fire(S, u, t, m, r, P, hoj) {
   const a = Math.atan2((P ? P.y : t.y) - u.y, (P ? P.x : t.x) - u.x);
   const R = effRange(M, u, t), cls = IC.classOf(t);
   const wx = IC.wx(S);
-  const reach = P ? 1 - 0.25 * Math.pow(P.sl / Math.max(1, IC.reachAt(M, P.alt)), 2) : 1 - 0.45 * Math.pow(r / Math.max(1, R), 2);
+  // (the energy model takes care of a long shot: a missile at the end of its reach is slow and turns badly)
+  const reach = P ? 1 - 0.25 * Math.pow(P.sl / Math.max(1, IC.reachAt(M, P.alt)), 2) : 1 - 0.2 * Math.pow(r / Math.max(1, R), 2);
   let pk = M.pk * (P ? P.vs : M.vs[cls] || 0) * reach * IC.fatigueFactor(u) * (0.6 + 0.4 * IC.ok(u, 'launch'));
   if (M.seeker === 'IR') pk *= wx.ir;
   if (t.d.evasive) pk *= t.d.evasive;
   const tr = IC.newTrail(S, M.range > 1500 ? 'big' : 'sam');
   const pip = P ? { x: P.x, y: P.y, alt: P.alt, T: S.time + P.tau, tof: P.tau } : null;
-  S.missiles.push({ id: IC.nid('m'), mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : M.range / M.spd * 1.6 + 5, src: u.name, unit: u, pk, trailT: 0, side: 'us', tr, pip, alt: 0, hoj: !!hoj,
+  const ms = IC.newMissile(S, { mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : 60, src: u.name, unit: u, pk, side: 'us', tr, pip, alt: 0, hoj: !!hoj,
     // a climb-and-descend path (flight.js): up to the top of its arc, then down onto the target
-    a0: 0, loft: IC.flyLoft(M, P ? U.dxy(u.x, u.y, P.x, P.y) : r), flown: 0 });
+    a0: 0, loft: IC.flyLoft(M, P ? U.dxy(u.x, u.y, P.x, P.y) : r) }, IC.reachAt(M, t.alt || 0) || M.range, 0);
+  if (pip) ms.life = P.tau + 5;
+  S.missiles.push(ms);
+  // a radar lock warns the crew at once (semi-active and command-guided missiles need the battery radar on it)
+  if (M.seeker === 'SARH' || M.seeker === 'CMD') ms.launchSeen = true;
   for (let i = 0; i < 6; i++) IC.part(S, { x: u.x, y: u.y, ox: U.rand(-3, 3), oy: U.rand(-3, 3), vx: U.rand(-14, 14), vy: U.rand(-14, 14), life: U.rand(0.8, 1.6), size: U.rand(3, 5), grow: 8, col: '170,178,186', a: 0.45 });
   IC.part(S, { x: u.x, y: u.y, life: 0.2, size: 8, grow: 30, col: '255,225,160', add: true, a: 0.9 });
   S.fx.flashes.push({ x: u.x, y: u.y, t: 0, r: 40, wr: 3 });
   IC.sfx && IC.sfx.launch(u.x, u.y, M.range > 1500 ? 1.4 : M.range > 300 ? 1 : 0.7);
-  if (M.range > 1500) IC.log(S, 'info', 'LAUNCH', `${u.name} fires ${M.name.toLowerCase()} at TN ${t.tn}.`);
-  IC.emit(S, 'launch', { u, t, mun: m.mun });
+  if (M.range > 1500) IC.log(S, 'info', 'LAUNCH', `${u.name} fires ${M.name.toLowerCase()} at TN ${t.tn}: ${U.km(r)} out, about ${U.dur(pip ? P.tau : IC.mslTime(M, Math.min(r, IC.reachAt(M, t.alt || 0) * 0.999), t.alt || 0))} to the target.`);
+  IC.emit(S, 'launch', { u, t, mun: m.mun, m: ms });
 }
 
 IC.defense = function (S, dt) {
@@ -362,7 +386,7 @@ function reloadWhy(S, u) {
    track, as the IADS network does for all of them. */
 const cps = { S: null, t: -1, n: -1, list: [] };
 /* on the network: command guidance can come over the datalink from another radar's track (semi-active cannot) */
-const netted = (S, u) => u.d.remote || IC.hasTech(S, 'a_remote') || !!IC.linkedBy(S, u);
+const netted = IC.netted = (S, u) => u.d.remote || IC.hasTech(S, 'a_remote') || !!IC.linkedBy(S, u);
 IC.linkedBy = function (S, u) {
   if (cps.S !== S || cps.t !== S.time || cps.n !== S.units.length) { cps.S = S; cps.t = S.time; cps.n = S.units.length; cps.list = S.units.filter(c => c.d.link && c.state === 'ready' && c.radarOn); }
   for (const c of cps.list) if (U.dist(c, u) <= c.d.link.R) return c;
@@ -400,80 +424,46 @@ IC.engageWhy = function (S, u, t) {
   return u.cool > 0 ? 'Can engage: firing next' : 'Can engage now';
 };
 
-/* ---------- interceptors in flight ---------- */
+/* ---------- interceptors in flight ----------
+   Each flies by flight.js's energy model (IC.mslFly): the motor, the coast, every turn, the seeker and what guides it.
+   What comes of it follows from that: the fuse (and a last roll for the warhead), lost lock, decoyed, out of energy,
+   passed above or below. */
 IC.updateMissiles = function (S, dt) {
   for (const m of S.missiles) {
     const t = m.target;
     m.life -= dt;
     if (t.dead || m.life <= 0) { m.dead = true; IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 14, col: '180,220,255', add: true, a: 0.6 }); continue; }
     if (m.pip) { flyToPip(S, m, t, dt); continue; }
-    const r = U.dist(m, t), tt = r / m.spd;
-    // guidance: lead the target unless the seeker has been fooled
-    const ax = t.x + t.vx * tt + (m.fooled ? m.fx : 0), ay = t.y + t.vy * tt + (m.fooled ? m.fy : 0);
-    const da = U.angWrap(Math.atan2(ay - m.y, ax - m.x) - m.a), mt = 1.2 * dt;
-    m.a += U.clamp(da, -mt, mt);
-    // it flies in three dimensions: the climb or dive to the target's height takes some of its speed
-    if (m.alt == null) m.alt = t.alt;
-    if (m.a0 == null) { m.a0 = m.alt; m.loft = IC.flyLoft(m.M, r); m.flown = 0; }
-    const step = m.spd * dt, dzU = (IC.altAt(t, tt) - m.alt) * 10, hs = step * r / Math.max(1e-6, Math.hypot(r, dzU));
-    m.x += Math.cos(m.a) * hs; m.y += Math.sin(m.a) * hs; m.flown += hs;
-    const want = IC.flyAltWant(m.a0, IC.altAt(t, tt), m.loft, m.flown / Math.max(1e-6, m.flown + r)), vmax = step * 0.1;
-    m.alt += U.clamp(want - m.alt, -vmax, vmax);
+    const res = IC.mslFly(S, m, dt);
     m.trailT -= dt;
-    if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time, alt: m.alt }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
-    // radar-guided missiles need the launching battery to keep illuminating the target
-    if ((m.M.seeker === 'SARH' || m.M.seeker === 'CMD') && tt < 5 && !m.checked) {
-      m.checked = true;
-      const u = m.unit;
-      if (m.hoj) { if (!t.jamming) { m.lostLock = true; m.pk *= 0.1; } }
-      else if (!u || u.dead || ((!u.radarOn || !t.fcBy.includes(u.id)) && !(m.M.seeker === 'CMD' && t.fc && netted(S, u)))) { m.lostLock = true; m.pk *= 0.08; }
-      if (m.lostLock) IC.emit(S, 'mstat', { m, t, what: 'lost', text: 'LOST LOCK' });
-    }
-    if (m.hoj && m.M.seeker === 'ARH' && tt < 5 && !m.checked) { m.checked = true; if (!t.jamming && !t.det) { m.lostLock = true; m.pk *= 0.3; IC.emit(S, 'mstat', { m, t, what: 'lost', text: 'LOST LOCK' }); } }
-    // the target fights back in the last seconds
-    if (tt < 5 && !m.cmDone && (t.d.cls === 'air' || t.d.cls === 'heli')) {
-      m.cmDone = true;
-      if (t.d.notch && (m.M.seeker === 'SARH' || m.M.seeker === 'ARH' || m.M.seeker === 'CMD') && Math.random() < 0.8) {
-        t.notchT = 14; t.notchA = Math.atan2(m.y - t.y, m.x - t.x); m.pk *= m.M.seeker === 'SARH' ? 0.65 : 0.8;
-        if (t.det) IC.text(S, t.px, t.py, 'NOTCHING', '#ffb0a6');
-        IC.emit(S, 'mstat', { m, t, what: 'notch', text: 'NOTCHING' });
-      }
-      if (t.cm > 0) {
-        t.cm--;
-        if (m.M.seeker === 'IR') { m.pk *= m.M.ircm || 0.5; flares(S, t); }
-        else { m.pk *= m.M.seeker === 'SARH' ? 0.7 : 0.82; chaff(S, t); }
-        if (Math.random() < 0.5) { m.fooled = true; m.fx = U.rand(-8, 8); m.fy = U.rand(-8, 8); IC.emit(S, 'mstat', { m, t, what: 'decoyed', text: 'DECOYED' }); }
-      }
-    }
-    const r2 = U.dist(m, t), hitR = Math.max(IC.HIT_R, step * 0.8);
-    if (r2 < hitR && Math.abs(m.alt - t.alt) * 10 >= hitR) {
-      // over the same point on the map, but not at the same height: it passes above or below and is spent
-      m.dead = true;
-      IC.text(S, m.x, m.y, m.alt > t.alt ? 'PASSED ABOVE' : 'PASSED BELOW', '#8fa3b0');
-      IC.emit(S, 'missHeight', { t, m, dz: m.alt - t.alt });
-      continue;
-    }
-    if (IC.dist3(m, t) < hitR) {
-      m.dead = true;
-      const inEnv = t.alt >= m.M.alt[0] - 2 && t.alt <= m.M.alt[1] + 5;
-      let pk = m.pk;
-      if (m.M.air && IC.hasTech(S, 'f_aam')) pk += 0.1;
-      if (inEnv && Math.random() < pk) {
-        IC.explode(S, t.x, t.y, 0.6, 'us');
-        t.hp -= HIT[m.mun] || 2;
-        if (t.hp <= 0 || t.d.cls !== 'air') IC.killThreat(S, t, m.src);
-        else { IC.text(S, t.x, t.y, 'DAMAGED', '#ffd08a'); t.spd *= 0.85; IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'DAMAGED' }); }
-      } else {
-        const why = !inEnv ? 'OUT OF ENVELOPE' : m.lostLock ? 'LOST LOCK' : m.fooled ? 'DECOYED' : 'MISS';
-        IC.text(S, m.x, m.y, why, '#8fa3b0');
-        IC.emit(S, 'mstat', { m, t, what: 'miss', text: why });
-        IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
-      }
-    }
+    if (m.trailT <= 0 && m.tr) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time, alt: m.alt }); if (m.tr.pts.length > 120) m.tr.pts.shift(); }
+    if (res) missileEnd(S, m, t, res);
   }
   for (const m of S.missiles) if (m.dead && !m.counted) { m.counted = true; m.target.inbound--; }
   S.missiles = S.missiles.filter(m => !m.dead);
 };
+function missileEnd(S, m, t, res) {
+  m.dead = true; m.end = res;
+  if (res.end === 'fuse') {
+    const inEnv = t.alt >= m.M.alt[0] - 2 && t.alt <= m.M.alt[1] + 5;
+    let pk = IC.fusePk(m, res.d);
+    if (m.M.air && IC.hasTech(S, 'f_aam')) pk += 0.1;
+    if (inEnv && Math.random() < pk) {
+      IC.explode(S, t.x, t.y, 0.6, 'us');
+      t.hp -= HIT[m.mun] || 2;
+      if (t.hp <= 0 || t.d.cls !== 'air') IC.killThreat(S, t, m.src);
+      else { IC.text(S, t.x, t.y, 'DAMAGED', '#ffd08a'); t.spd *= 0.85; IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'DAMAGED' }); }
+      return;
+    }
+    res = { end: 'miss', why: !inEnv ? 'OUT OF ENVELOPE' : 'MISS', d: res.d };
+  }
+  IC.text(S, m.x, m.y, res.why, '#8fa3b0');
+  if (/^PASSED/.test(res.why)) IC.emit(S, 'missHeight', { t, m, dz: res.dz / 10 });
+  IC.emit(S, 'mstat', { m, t, what: res.why === 'OUT OF ENERGY' ? 'spent' : 'miss', text: res.why });
+  IC.emit(S, 'mslDefeated', { m, t, why: res.why });
+  IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
+}
+IC.missileEnd = missileEnd;
 /* an interceptor on its way to a predicted intercept point: it arrives when the warhead should, and its seeker
    does the last few hundred metres */
 function flyToPip(S, m, t, dt) {

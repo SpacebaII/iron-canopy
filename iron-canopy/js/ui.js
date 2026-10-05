@@ -75,7 +75,7 @@ ui.store = store;
 // a decision and a peacetime launch pause the game unless the player turned them off
 ui.pauseOnIs = (P, k) => k === 'launch' || k === 'event' ? P[k] !== false : !!P[k];
 IC.savedCfg = () => { const c = store.get('ic-cfg', {}); return c.game || {}; };
-ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
+ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
 ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty('--ui', v); };
 {
   const c = store.get('ic-cfg', {});
@@ -545,12 +545,23 @@ function cine() {
   if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
     const c = C.cards[ui.cineShown];
     el.className = 'cine ' + c.kind; el.hidden = false;
-    el.innerHTML = `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
+    el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
+    if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
     ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
   } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
   else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
+}
+/* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
+function resultCard(c) {
+  const r = c.res, C = S.combat || {};
+  const rows = [['Came', IC.raidCameText(r)], ['Stopped', `${r.stopped} of ${r.n}`], ['Got through', r.through ? `${r.through}${r.hits ? `, ${r.hits} hit something` : ', none hit anything'}` : 'nothing']]
+    .concat(r.why.length ? [['Why', r.why.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('. ')]] : [])
+    .concat([['Spent', `${r.rounds} interceptors, ${U.money(r.spent)}`], ['Saved', `about ${U.money(r.prevented)} of damage prevented`]]);
+  return `<small>${esc(c.sub)}</small><div class="rgrade g${r.grade}">${r.grade}</div><h2>${esc(c.title)}</h2>
+    <table class="t rtab">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
+    ${r.held && C.streak >= 2 ? `<p class="rstreak">${C.streak} raids held in a row</p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 }
 ui.closeCine = () => { const el = $('cine'); if (el.hidden) return; el.hidden = true; ui.cineShown++; ui.cineT = performance.now() + 800; };
 

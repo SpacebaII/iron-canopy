@@ -38,7 +38,7 @@ function* gameSteps(opts) {
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
     budget: sandbox ? 1600 : mode === 'campaign' ? 4800 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
-    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
+    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, combat: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
     vehicles: [], jobs: [], trains: [], imports: [],
@@ -175,7 +175,9 @@ IC.makeUnit = function (S, type, x, y, opts = {}) {
     emitter, emcon: emitter ? 'on' : 'off', radarOn: false, ambushT: 0,
     roe: type === 'hatd' || type === 'exo' ? 'free' : 'auto', doctrine: 'auto',
     comp: {}, fat: opts.fat || 10, mags: [], cool: 0, prio: null, heat: 0, over: false, beam: null, cd: 0,
-    lastFired: -1e9, route: null, dest: null, invested: d.cost, why: ''
+    lastFired: -1e9, route: null, dest: null, invested: d.cost, why: '',
+    // painted by an enemy radar (combat.js), and its record: kills, missiles fired, missiles defeated
+    lockBy: null, lockT: -1e9, rec: { kills: 0, fired: 0, defeated: 0 }
   };
   for (const c of IC.compsOf(d)) u.comp[c] = 1;
   if (d.mags) for (const m of d.mags) u.mags.push({ mun: m.mun, tech: m.tech, max: m.mag, mag: opts.empty ? 0 : m.mag, storeMax: m.store, store: opts.full ? Math.ceil(m.store / 2) : 0, reload: m.reload, rl: 0, inc: 0 });

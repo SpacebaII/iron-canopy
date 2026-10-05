@@ -75,7 +75,9 @@ IC.flyAt = (P, f) => ({ x: P.x0 + (P.x1 - P.x0) * f, y: P.y0 + (P.y1 - P.y0) * f
 /* ---------- reach ---------- */
 /* [target height km, reach km]. The first and last rows are the band: nothing outside it. Wave 11 moved these toward
    the real ones: a short-range round 25 km, medium 90, long 200 (the extended-range round 250, the very-long-range
-   interceptor 400), heat-seekers 8 km from the shoulder, 12 imaging, 14 from a vehicle, a fighter's radar missile 90 */
+   interceptor 400), heat-seekers 8 km from the shoulder, 12 imaging, 14 from a vehicle, a fighter's radar missile 90
+   (SRM its heat-seeker; EAAM and EIR the enemy fighters' radar and heat-seeking missiles). Air-to-air rows are from a
+   shooter at 10 km: IC.aamReach (air.js) shortens them for a lower shooter and a receding target */
 IC.REACH = {
   IR:  [[0.02, 4], [0.1, 7.5], [3, 8], [4.5, 4]],
   IR2: [[0.02, 5], [0.1, 11], [3.5, 12], [5, 6]],
@@ -87,13 +89,17 @@ IC.REACH = {
   LRE: [[0.03, 80], [0.3, 130], [4, 250], [20, 250], [30, 140]],
   VLR: [[0.05, 90], [0.5, 160], [6, 400], [25, 400], [35, 220]],
   AAM: [[0.03, 30], [0.5, 50], [4, 80], [15, 90], [20, 60]],
+  SRM: [[0.03, 6], [0.5, 11], [6, 15], [15, 15], [18, 9]],
   EAAM:[[0.03, 25], [0.5, 45], [4, 70], [15, 80], [20, 55]],
+  EIR: [[0.03, 5], [0.5, 9], [6, 12], [15, 12], [18, 8]],
   TBD: [[0.05, 18], [1, 28], [5, 35], [25, 35], [35, 20]],
   HAT: [[40, 120], [60, 200], [120, 200], [150, 120]],
   EXO: [[90, 300], [200, 500], [600, 500], [700, 300]]
 };
-const keyOf = M => typeof M === 'string' ? M : M._k || (M._k = Object.keys(IC.MUN).find(k => IC.MUN[k] === M));
-const munOf = M => typeof M === 'string' ? IC.MUN[M] : M;
+/* a munition's key in IC.REACH: its key in IC.MUN, or the row a fighter's missile names (IC.AAMS, IC.EAAMS) */
+const keyOf = M => typeof M === 'string' ? M : M.reach || M._k || (M._k = Object.keys(IC.MUN).find(k => IC.MUN[k] === M));
+const AIRK = { SRM: () => IC.AAMS.srm, EAAM: () => IC.EAAMS.mrm, EIR: () => IC.EAAMS.srm };
+const munOf = M => typeof M === 'string' ? IC.MUN[M] || (AIRK[M] && AIRK[M]()) : M;
 IC.reachRows = function (M) {
   const k = keyOf(M), m = munOf(M);
   return IC.REACH[k] || (m && m.alt ? [[m.alt[0], m.range / 10], [m.alt[1], m.range / 10]] : [[0, 0]]);
@@ -207,7 +213,7 @@ IC.mslInit = function (m, M, R, v0) {
   m.P = P; m.age = 0; m.v0 = v0 == null ? P.vb * 0.25 : v0;
   if (P.cruise) { m.v = munOf(M).spd; m.c = 0; m.vb = m.v; }
   else { m.vb = P.vb + (v0 ? v0 * 0.5 : 0); m.v = m.v0; m.c = Math.log(m.vb / P.vmin) / Math.max(20, R - P.boost * (m.v0 + m.vb) / 2); }
-  m.spd = m.v; m.nh = 0; m.closeT = 0; m.rPrev = null; m.lostLock = false; m.fooled = false; m.tti = Infinity;
+  m.spd = m.v; m.nh = 0; m.closeT = 0; m.rPrev = null; m.rhPrev = null; m.lostLock = false; m.fooled = false; m.tti = Infinity;
   return m;
 };
 /* the radar that guides a missile now: the launcher's (semi-active and command all the way, active ones until their
@@ -254,14 +260,17 @@ IC.mslFly = function (S, m, dt) {
     // ---- the seeker and what guides it ----
     if (sk === 'ARH' || sk === 'HTK') { if (!m.active && U.dxy(m.x, m.y, t.x, t.y) < (sk === 'HTK' ? 80 : IC.GUIDANCE_ACTIVE_R)) { m.active = true; m.launchSeen = true; } }
     const G = guideOf(m);
-    const notch = t.def === 'notch' && inNotch(m, t, G);
+    // (a missile homing on a jammer's noise does not care about the doppler notch)
+    const notch = t.def === 'notch' && !(m.hoj && t.jamming) && inNotch(m, t, G);
     m.nh = notch ? m.nh + h : Math.max(0, m.nh - h * 0.5);
     const coast = IC.NOTCH_COAST + (m.side === 'us' && IC.hasTech(S, 'e_eccm') ? 2 : 0);
-    const semi = (sk === 'SARH' || sk === 'CMD') && !illuminated(S, m, t);
+    // (semi-active and command guidance need the radar on the target; its tracker coasts a few seconds without it)
+    m.semiT = (sk === 'SARH' || sk === 'CMD') && !illuminated(S, m, t) ? m.semiT + h : 0;
+    const semi = m.semiT > coast;
     if (!m.lostLock && (m.nh > coast || semi)) {
       m.lostLock = true; m.lockT = S.time;
       status(S, m, t, 'lost', 'LOST LOCK', !notch);
-    } else if (m.lostLock && !notch && !semi && S.time - m.lockT > 1) {
+    } else if (m.lostLock && !notch && !semi && S.time - m.lockT > 4) {
       // a seeker that lost it may find it again: an active one inside its own reach and cone, a semi-active one when
       // the radar has it again
       const can = sk === 'SARH' || sk === 'CMD' || (U.dxy(m.x, m.y, t.x, t.y) < IC.GUIDANCE_ACTIVE_R * 1.2 && cone(m, t, 0.8));
@@ -275,6 +284,9 @@ IC.mslFly = function (S, m, dt) {
     const clos = m.v + ((t.vx || 0) * (m.x - t.x) + (t.vy || 0) * (m.y - t.y)) / (r || 1);
     const tgo = r / Math.max(0.5, clos);
     m.tti = clos > 0.2 ? r / clos : Infinity;
+    // the target defends against whichever missile is closest to arriving
+    const q = t.mslIn;
+    if (!q || q === m || q.dead || !(q.tti <= m.tti)) t.mslIn = m;
     let da = 0;
     if (!m.lostLock) {
       const ax = m.fooled ? m.fx : t.x + (t.vx || 0) * tgo, ay = m.fooled ? m.fy : t.y + (t.vy || 0) * tgo;
@@ -291,7 +303,8 @@ IC.mslFly = function (S, m, dt) {
     m.spd = m.v;
     // ---- move, climbing or diving toward the target's height along the loft ----
     const x0 = m.x, y0 = m.y, z0 = m.alt;
-    const step = m.v * h, zt = IC.altAt(t, tgo), dzU = (zt - m.alt) * 10, hs = step * r / Math.max(1e-6, Math.hypot(r, dzU));
+    // (it climbs or dives at most about 45°: the rest of its speed carries it on over the ground)
+    const step = m.v * h, zt = t.d ? IC.altAt(t, tgo) : t.alt || 0, dzU = (zt - m.alt) * 10, hs = step * Math.max(0.7, r / Math.max(1e-6, Math.hypot(r, dzU)));
     m.x += Math.cos(m.a) * hs; m.y += Math.sin(m.a) * hs; m.flown = (m.flown || 0) + hs;
     const want = IC.flyAltWant(m.a0 || 0, zt, m.loft || 0, m.flown / Math.max(1e-6, m.flown + r)), vmax = step * 0.1;
     m.alt += U.clamp(want - m.alt, -vmax, vmax);
@@ -300,14 +313,15 @@ IC.mslFly = function (S, m, dt) {
     const ww = wx * wx + wy * wy + wz * wz, f = ww > 0 ? U.clamp(-(px * wx + py * wy + pz * wz) / ww, 0, 1) : 0;
     const d = Math.hypot(px + wx * f, py + wy * f, pz + wz * f);
     if (d < IC.FUSE_R) { m.x = x0 + wx * f; m.y = y0 + wy * f; m.alt = z0 + wz * f / 10; return { end: 'fuse', d }; }
-    const d3 = IC.dist3(m, t);
-    // passed it: the range opens again after coming close
-    if (m.rPrev != null && d3 > m.rPrev && m.rPrev < Math.max(40, step * 4) && f < 1) {
-      const dz = (m.alt - (t.alt || 0)) * 10, dh = Math.hypot(px + wx * f, py + wy * f);
+    // passed it: over the ground it was close, and now the range opens again
+    // (or it went over or under it: past it over the ground with a kilometre or more between them in height)
+    const rh = U.dxy(m.x, m.y, t.x, t.y), d3 = IC.dist3(m, t), dzNow = (m.alt - (t.alt || 0)) * 10;
+    if (m.rPrev != null && m.rhPrev < Math.max(40, step * 4) && ((d3 > m.rPrev && f < 1) || (rh > m.rhPrev && Math.abs(dzNow) > Math.max(rh, IC.FUSE_R * 4)))) {
+      const dz = dzNow, dh = Math.hypot(px + wx * f, py + wy * f);
       const why = m.fooled ? 'DECOYED' : m.lostLock ? 'LOST LOCK' : Math.abs(dz) > dh ? (dz > 0 ? 'PASSED ABOVE' : 'PASSED BELOW') : m.v < P.vmin * 1.6 ? 'OUT OF ENERGY' : `MISSED BY ${Math.round(d * 100 / 50) * 50} m`;
       return { end: 'miss', why, d, dz };
     }
-    m.rPrev = d3;
+    m.rPrev = d3; m.rhPrev = rh;
     // ---- spent: too slow to fly on, or it cannot catch what it chases ----
     m.closeT = clos <= 0.05 && r > 40 ? m.closeT + h : 0;
     if (!P.cruise && m.age > P.boost && (m.v < P.vmin || m.closeT > 3)) return { end: 'spent', why: 'OUT OF ENERGY', d: r };
@@ -318,7 +332,7 @@ IC.mslFly = function (S, m, dt) {
    against a heat-seeker (imaging seekers see through most of them) */
 IC.mslDecoy = function (S, m, w, kind) {
   if (kind === 'flare') IC.flares && IC.flares(S, w); else IC.chaffFx && IC.chaffFx(S, w);
-  if (m.fooled || m.lostLock) return false;
+  if (m.fooled || m.lostLock || (m.hoj && w.jamming)) return false;
   const M = m.M, ir = M.seeker === 'IR';
   if ((kind === 'flare') !== ir) return false;
   let p = ir ? 0.5 * (1 - (M.ircm != null ? M.ircm : 0.3)) : 0.08 + (w.notchT > 0 ? 0.3 : 0);
@@ -334,6 +348,7 @@ IC.DEF = { react: [9, 2], notchTti: 24, notchR: 220, dragV: 1.6, turn: 0.14 };
 IC.defendPlan = function (S, w, dt, skill) {
   const m = w.mslIn;
   if (!m || m.dead) {
+    w.mslIn = null;
     if (!w.def) return null;
     if (w.def !== 'recommit') { w.def = 'recommit'; w.defT = S.time; }
     if (S.time - w.defT > 8) { w.def = null; return null; }
