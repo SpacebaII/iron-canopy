@@ -24,7 +24,7 @@ window.__look = async function (key, hour) {
   if (!document.getElementById('aptCss')) { const s = document.createElement('style'); s.id = 'aptCss';
     s.textContent = '#app > *:not(#map){display:none!important} #start,#cine,#evcard,#hints,#unlock{display:none!important}'; document.head.appendChild(s); }
   const ap = S.byId[S.story.cap];
-  if (key === 'kden') IC.aptRelayout(S, ap, 'kden', 0);
+  if (key === 'kden') IC.aptRelayout(S, ap, 'kden', 0);   // (the real Denver, from map data)
   S.weather.hold = true; S.wind.kt = 6;
   for (let i = 0; i < 2400; i++) IC.step(S, 0.25);
   S.paused = true;
