@@ -70,13 +70,14 @@ function relayout(S, ap, template) {
   IC.aptRelayout(S, ap, template, 0);
 }
 /* a game with the KDEN-scale layout in place of the capital airport */
-function kdenGame(seed, hour) {
+/* the capital's airport relaid as the real Denver (template 'kden'), or as the six-runway layout built in code ('kden6') */
+function kdenGame(seed, hour, template) {
   const S = IC.newGame({ seed: seed || 12345, mode: 'story', preset: 'network', hour: hour == null ? 10 : hour });
   const ap = S.byId[S.story.cap];
   // the airlines are sent elsewhere so the test sees only its own traffic
   if (S.av) { S.av.tails = []; S.av.routes = []; }
   S.threats = S.threats.filter(t => !t.tail);
-  IC.aptRelayout(S, ap, 'kden', 0);
+  IC.aptRelayout(S, ap, template || 'kden', 0);
   S.weather.hold = true;
   return { S, ap };
 }
