@@ -44,6 +44,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 9 | [27 Moments and after-action reports](27-moments.md) | 19, 22 | new `moments.js`, the report, replay links, audio |
 | 9 | [28 A 20-minute Showcase for the portfolio](28-vertical-slice.md) | 25–27 | new `showcase.js` |
 | 11 | [39 Denver and Los Angeles, near one to one](39-real-airports.md) | 23, 33 part 1, 38 | real layouts imported from data, shapes in `airport.js`, an overlap checker, `landside.js`, `render-airport.js`, a showcase start |
+| 11 | [47 Building airports: a QA audit of construction](47-construction-qa.md) | 45 | `builder.js`, `airport.js`, `render-airport.js`, `inspector.js`, `main.js`, `buildbar.js`, the tower, fuel farm and fire station in 3D |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.
@@ -62,4 +63,4 @@ Wave 9 comes from the owner's view of pace: the Career should span ten years or 
 
 After wave 6: a full `/code-review ultra`, then fixes and long balance runs.
 
-Wave 11 comes from the owner's look at v1.0: airport fidelity must be much higher before a public release. No roads over roads or over the airfield, and Denver and Los Angeles rebuilt near one to one from real data (39).
+Wave 11 comes from the owner's look at v1.0: airport fidelity must be much higher before a public release. No roads over roads or over the airfield, and Denver and Los Angeles rebuilt near one to one from real data (39). After 45 the owner asked for a large QA audit of construction (47): ramps flush with their taxiway, a tower, fuel farm and fire station that look and matter, building wrong allowed and explained, and no more "click the same spot again to build". 47 is first among new work, then 43, 36, and 25–28 adjusted to the calendar.
