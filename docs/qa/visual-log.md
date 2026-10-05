@@ -5,15 +5,15 @@ The coordinator's running art review, done after each merge: the six store scene
 ## Round 1: after #40 (3D life) and #41 (airport look), main 0918044
 
 **2D map, airports (owner of the fix: 45, airport polish):**
-- **The graded runway strip is a soft white blur.** At the capital's zoom (store scene 1) the lighter strip along each runway reads as fog or a smear across the airfield, not as mown grass. Make it a crisp, slightly lighter mown green with the mowing stripes and a clean edge.
-- **Tile seams in tone.** A darker rectangle shows behind the goals panel at the top left of scene 1: two tile levels, or tiles painted before and after the pavement change, with different tones. Find it and make the tone continuous across every tile and level.
-- **Empty airfield.** Large areas of plain grass between runways and taxiways; no service roads, no perimeter road, no navaids, no ILS antennas, no windsock, no blast fences. (45 owns service roads; add the small furniture.)
-- **Landside loop road** outside the terminal is a plain dark rectangle with no kerbs, car-park rows or trees. It makes the terminal side look unfinished.
-- **The fence** has a rectangular bump by the terminal (already in 45).
+- **Done (45, e312d8d).** **The graded runway strip is a soft white blur.** At the capital's zoom (store scene 1) the lighter strip along each runway reads as fog or a smear across the airfield, not as mown grass. Make it a crisp, slightly lighter mown green with the mowing stripes and a clean edge.
+- **Done (45, d19847c).** **Tile seams in tone.** A darker rectangle shows behind the goals panel at the top left of scene 1: two tile levels, or tiles painted before and after the pavement change, with different tones. Find it and make the tone continuous across every tile and level.
+- **Done (45, 54202e2 service and perimeter roads, e312d8d PAPIs, windsocks, glide-slope masts, VOR, blast fences).** **Empty airfield.** Large areas of plain grass between runways and taxiways; no service roads, no perimeter road, no navaids, no ILS antennas, no windsock, no blast fences. (45 owns service roads; add the small furniture.)
+- **Done (46, 27e3c4f and 88430b0: kerbed corners, the kerb lane, zebras, car parks planted with trees).** **Landside loop road** outside the terminal is a plain dark rectangle with no kerbs, car-park rows or trees. It makes the terminal side look unfinished.
+- **Done (45, 54202e2: traced round the landside).** **The fence** has a rectangular bump by the terminal (already in 45).
 
 **Build mode (45):**
-- **Two copies of the same information on screen.** The old centred help box (modehint) now duplicates the ghost's tag and the options bar. Shrink it to one line at the top of the bar, or drop it.
-- **Panels crowd the map** while building (already in 45: fold the goals panel, narrow the airport panel).
+- **Done (45, e312d8d).** **Two copies of the same information on screen.** The old centred help box (modehint) now duplicates the ghost's tag and the options bar. Shrink it to one line at the top of the bar, or drop it.
+- **Done (45, 097e263).** **Panels crowd the map** while building (already in 45: fold the goals panel, narrow the airport panel).
 
 **3D (40 picture, 42 direction):**
 - **Unchanged until 40 merges:** flat lighting, flat green to the horizon, the terminal a grey slab.
@@ -23,3 +23,11 @@ The coordinator's running art review, done after each merge: the six store scene
 **Combat map (paused with 43):**
 - The arsenal's cards are cut off at the right in a war.
 - Battery reason labels ("Holding: targets not identified hostile") are useful but plain; they could be chips.
+
+**Taxiway to ramp (the owner, round 1: "do the same for the taxiways to the ramp as well, I want it looking good all around"; 45 owns it, and its review checks every point):**
+- **Done (45, 2ba58dd).** Where a taxiway meets an apron, the apron edge opens with curved fillets on both sides, sized like 44's taxiway fillets: no square notch, no circle, no taxiway stroke laid over the apron.
+- **Done (45, 2ba58dd).** The taxiway's yellow centreline continues onto the apron as the taxilane centreline, and branches to each stand's lead-in line on smooth curves.
+- **Done (45, 2ba58dd).** Apron edge lines, shoulders and the service road stop at the opening and resume after it.
+- **Done (45, 2ba58dd).** Concrete slabs are continuous from taxiway to apron: one joint pattern, one tone.
+- **Done (45, 2ba58dd).** A taxiway that runs along an apron's edge merges into it (the apron edge taxilane) without a double edge.
+- **Done (45, 2ba58dd).** The same holds at cargo ramps, GA ramps, remote aprons, holding bays and de-icing pads.
