@@ -487,7 +487,7 @@ IC.hitConvoy = function (S, v, what) {
     if (v.job) IC.failJob(S, v.job);
     IC.log(S, 'leak', 'CONVOY', `${v.name} destroyed${what ? ' by ' + what : ''} ${IC.nearPlace(S, v.x, v.y)}.`, v);
     IC.emit(S, 'convoyLost', v);
-  } else IC.log(S, 'warn', 'CONVOY', `${v.name} hit${what ? ' by ' + what : ''}; ${v.trucks} trucks left.`, v);
+  } else IC.log(S, 'warn', 'CONVOY', `${v.name} hit${what ? ' by ' + what : ''}; ${v.trucks} truck${v.trucks === 1 ? "" : "s"} left.`, v);
 };
 
 /* crews tire while their radars radiate and threats are near, and recover when stood down */

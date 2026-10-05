@@ -655,13 +655,15 @@ function drawSpan(g, ap, p, px, z, night) {
 function drawMover(g, p, px, z, night, now) {
   const P = p.pts; if (!P || P.length < 2) return;
   const under = (p.lv || 0) < 0;
-  g.lineJoin = 'round'; g.lineCap = 'round';
+  // (a viaduct is a concrete guideway with square ends and two rails, not a pipe)
+  g.lineJoin = 'round'; g.lineCap = under ? 'round' : 'butt';
   g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y));
   if (under) { g.setLineDash([6 * px, 5 * px]); g.strokeStyle = 'rgba(120,200,255,0.55)'; g.lineWidth = Math.max(0.02, 1.4 * px); g.stroke(); g.setLineDash([]); }
   else {
     g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(0.1, 2 * px); g.save(); g.translate(0.06, 0.06); g.stroke(); g.restore();
-    g.strokeStyle = 'rgb(200,200,196)'; g.lineWidth = Math.max(0.08, 1.8 * px); g.stroke();
-    if (z > 4) { g.strokeStyle = 'rgba(90,92,96,0.8)'; g.lineWidth = Math.max(0.004, 0.5 * px); g.stroke(); }
+    g.strokeStyle = 'rgb(176,178,172)'; g.lineWidth = Math.max(0.08, 1.8 * px); g.stroke();
+    g.strokeStyle = 'rgb(206,206,200)'; g.lineWidth = Math.max(0.06, 1.2 * px); g.stroke();
+    if (z > 6) { g.strokeStyle = 'rgba(70,72,76,0.7)'; g.lineWidth = Math.max(0.003, 0.4 * px); g.setLineDash([]); g.beginPath(); for (const s of [-0.018, 0.018]) { P.forEach((q, i) => { const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], L0 = U.dist(a, b) || 1, nx = -(b.y - a.y) / L0 * s, ny = (b.x - a.x) / L0 * s; g[i ? 'lineTo' : 'moveTo'](q.x + nx, q.y + ny); }); } g.stroke(); }
   }
   g.lineCap = 'butt';
   // the trains: two or three cars, shuttling
@@ -691,11 +693,14 @@ const ROOFS = {
     for (let r = 0; r < rows; r++) {
       const y = rows === 1 ? 0 : (r - (rows - 1) / 2) * D / rows;
       for (let i = 0; i < n; i++) {
-        const x = -L / 2 + dx * (i + 0.5), rr = Math.max(dx, D / rows) * 0.62;
-        const gr = g.createRadialGradient(x - rr * 0.15, y - rr * 0.15, 0, x, y, rr);
-        gr.addColorStop(0, night ? 'rgba(255,244,214,1)' : 'rgba(255,255,255,1)'); gr.addColorStop(0.55, night ? 'rgba(214,200,170,0.9)' : 'rgba(226,226,220,0.9)'); gr.addColorStop(1, night ? 'rgba(150,140,120,0.5)' : 'rgba(178,180,180,0.55)');
-        g.fillStyle = gr; g.beginPath(); g.moveTo(x, y - D / rows / 2); g.lineTo(x + dx / 2, y); g.lineTo(x, y + D / rows / 2); g.lineTo(x - dx / 2, y); g.closePath(); g.fill();
-        if (z > 3) { g.strokeStyle = 'rgba(120,120,116,0.35)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); g.moveTo(x - dx / 2, y); g.lineTo(x + dx / 2, y); g.moveTo(x, y - D / rows / 2); g.lineTo(x, y + D / rows / 2); g.stroke(); }
+        const x = -L / 2 + dx * (i + 0.5), hy = D / rows / 2, hx = dx / 2;
+        // four facets of fabric falling from the mast, lit from the north-west: the facet facing the sun near white,
+        // the one turned away in shade, so each peak reads as a peak and not a tile
+        const F = [[[x, y - hy], [x + hx, y]], [[x + hx, y], [x, y + hy]], [[x, y + hy], [x - hx, y]], [[x - hx, y], [x, y - hy]]];
+        const T = night ? ['rgb(232,222,196)', 'rgb(190,176,150)', 'rgb(150,140,120)', 'rgb(206,194,166)'] : ['rgb(252,252,248)', 'rgb(214,214,208)', 'rgb(186,188,186)', 'rgb(236,236,230)'];
+        for (let f = 0; f < 4; f++) { g.fillStyle = T[f]; g.beginPath(); g.moveTo(x, y); g.lineTo(F[f][0][0], F[f][0][1]); g.lineTo(F[f][1][0], F[f][1][1]); g.closePath(); g.fill(); }
+        // the fabric sags between the masts: a soft light at the peak
+        if (z > 2) { const rr = Math.min(hx, hy) * 0.8, gr = g.createRadialGradient(x, y, 0, x, y, rr); gr.addColorStop(0, 'rgba(255,255,255,0.7)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(x - rr, y - rr, 2 * rr, 2 * rr); }
         // the mast at the peak
         if (z > 6) { g.fillStyle = 'rgba(90,92,96,0.9)'; g.beginPath(); g.arc(x, y, Math.max(0.006, 0.9 * px), 0, 7); g.fill(); }
       }
@@ -719,7 +724,7 @@ const ROOFS = {
   saucer(g, p, w, h, px, z, night) {
     const R = Math.min(w, h) / 2;
     // two parabolic arches crossing, seen from above as two long legs, and the restaurant in the middle
-    g.strokeStyle = night ? 'rgba(200,180,255,0.9)' : 'rgba(250,250,246,0.95)'; g.lineWidth = Math.max(0.01, R * 0.12); g.lineCap = 'round';
+    g.strokeStyle = night ? 'rgba(200,180,255,0.9)' : 'rgba(250,250,246,0.95)'; g.lineWidth = Math.max(0.01, R * 0.05); g.lineCap = 'round';
     g.beginPath(); g.moveTo(-w / 2, -h / 2 * 0.2); g.lineTo(w / 2, h / 2 * 0.2); g.moveTo(-w / 2 * 0.2, -h / 2); g.lineTo(w / 2 * 0.2, h / 2); g.stroke(); g.lineCap = 'butt';
     g.fillStyle = night ? 'rgba(170,140,255,0.9)' : 'rgb(246,246,242)'; g.beginPath(); g.arc(0, 0, R * 0.45, 0, 7); g.fill();
     g.strokeStyle = 'rgba(80,90,100,0.6)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.beginPath(); g.arc(0, 0, R * 0.3, 0, 7); g.stroke();
@@ -890,8 +895,9 @@ function drawLandside(g, S, ap, px, z, night) {
   // roads first: dark asphalt with a pale edge, a centre line close in; roads in a tunnel only as a faint line,
   // upper decks after the buildings (below)
   g.lineCap = 'round'; g.lineJoin = 'round';
-  for (const r of L.roads || []) if ((r.lv || 0) <= 0) landRoad(g, r, px, z);
+  landRoads(g, S, ap, L, px, z);
   g.lineCap = 'butt'; g.lineJoin = 'miter';
+  const named = [];
   for (const it of L.items) {
     if (!vis(it)) continue;
     g.save(); g.translate(it.x, it.y); g.rotate(it.a || 0);
@@ -914,6 +920,15 @@ function drawLandside(g, S, ap, px, z, night) {
           (k === 'taxi' && U.hash(i, 5) < 0.6 ? taxiP : paths[(U.hash(i, 11) * CARS.length) | 0]).rect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
         }
         paths.forEach((P, c) => { g.fillStyle = CARS[c]; g.fill(P); }); g.fillStyle = 'rgb(236,196,50)'; g.fill(taxiP);
+        // trees: round the edge, and a planted strip down the middle of each double row
+        if (k === 'park') {
+          const T = [];
+          for (let x = -w / 2 + 0.04; x < w / 2 - 0.02; x += 0.13) T.push(x, -h / 2 + 0.018, x + 0.06, h / 2 - 0.018);
+          for (const y of rows) for (let x = -w / 2 + 0.08 + (U.hash(y * 100 | 0, 3) * 0.06); x < w / 2 - 0.06; x += 0.24) T.push(x, y + depth);
+          const rad = i => 0.022 + 0.01 * U.hash(i, 9);
+          g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); for (let i = 0; i < T.length; i += 2) { const r = rad(i); g.moveTo(T[i] + r + 0.012, T[i + 1] + 0.014); g.arc(T[i] + 0.012, T[i + 1] + 0.014, r, 0, 7); } g.fill();
+          for (let i = 0; i < T.length; i += 2) { const r = rad(i); g.fillStyle = ['rgb(58,90,48)', 'rgb(70,102,54)', 'rgb(50,80,44)'][i % 3]; g.beginPath(); g.arc(T[i], T[i + 1], r, 0, 7); g.fill(); g.fillStyle = 'rgba(150,180,110,0.25)'; g.beginPath(); g.arc(T[i] - r * 0.3, T[i + 1] - r * 0.3, r * 0.5, 0, 7); g.fill(); }
+        }
       }
       if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
     } else if (k === 'garage' && it.poly) {
@@ -948,7 +963,8 @@ function drawLandside(g, S, ap, px, z, night) {
     if (it.poly) { g.restore(); g.strokeStyle = k === 'park' || k === 'taxi' ? 'rgba(150,150,142,0.9)' : 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); partPath(g, it, w, h); g.stroke(); }
     else if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
     g.restore();
-    if (z > 30 && IC.cam.z < 200) lbl(g, (it.name || IC.LAND[k].name).toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700);
+    // (a name once: a lot the map draws in pieces is one lot; on a mapped landside the unnamed lots say nothing)
+    if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) { named.push({ t, x: it.x, y: it.y }); lbl(g, t.toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700); } }
   }
   // the upper decks: their shadow on the road below, concrete parapets, then the road on top
   g.lineCap = 'round'; g.lineJoin = 'round';
@@ -971,6 +987,67 @@ function landRoad(g, r, px, z) {
     g.setLineDash([]);
     // one way: arrows along it
     if (r.oneway && z > 40) { g.fillStyle = 'rgba(236,236,226,0.8)'; for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i], L = U.dist(a, b), h = Math.atan2(b.y - a.y, b.x - a.x) + (r.oneway < 0 ? Math.PI : 0); for (let d = 0.2; d < L; d += 0.4) { const x = a.x + (b.x - a.x) * d / L, y = a.y + (b.y - a.y) * d / L; g.save(); g.translate(x, y); g.rotate(h); g.beginPath(); g.moveTo(0.025, 0); g.lineTo(-0.015, -0.012); g.lineTo(-0.015, 0.012); g.fill(); g.restore(); } } }
+  }
+}
+
+/* the landside's roads on the ground (brief 46): kerbs, asphalt, the corners and T junctions as one surface with curb
+   returns (roadgeom.js IC.landJoins), lanes and one-way arrows, and along the terminal the kerb: a drop-off lane
+   and zebra crossings to the doors */
+function landRoads(g, S, ap, L, px, z) {
+  const R = (L.roads || []).filter(r => (r.lv || 0) === 0), J = z > 6 && IC.landJoins ? IC.landJoins(ap) : [];
+  for (const r of L.roads || []) if ((r.lv || 0) < 0) landRoad(g, r, px, z);
+  const path = r => { g.beginPath(); r.pts.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); };
+  const poly = P => { g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.closePath(); };
+  const G = J.map(j => IC.joinGeom(j, () => 0.06));
+  g.lineCap = 'butt'; g.lineJoin = 'round';
+  g.strokeStyle = g.fillStyle = 'rgb(150,150,142)';
+  for (const r of R) { path(r); g.lineWidth = Math.max(r.w + 0.03, 2 * px); g.stroke(); }
+  for (const q of G) { poly(q.surf); g.lineWidth = 0.03; g.stroke(); g.fill(); }
+  const ASP = 'rgb(58,60,62)';
+  g.strokeStyle = g.fillStyle = ASP;
+  for (const r of R) { path(r); g.lineWidth = Math.max(r.w, 1.4 * px); g.stroke(); }
+  for (const q of G) { poly(q.surf); g.fill(); }
+  if (z > 25) {
+    for (const r of R) if (r.w > 0.1) {
+      const lanes = r.lanes || (r.w > 0.2 ? 3 : 2), lw = r.w / lanes;
+      g.strokeStyle = 'rgba(236,236,226,0.8)'; g.lineWidth = Math.max(0.003, 0.5 * px); g.setLineDash([0.03, 0.03]);
+      for (let k = 1; k < lanes; k++) { g.beginPath(); IC.PL.offset(r.pts, -r.w / 2 + lw * k).forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.stroke(); }
+      g.setLineDash([]);
+    }
+    // the junctions over the lane lines, with their kerbs
+    g.fillStyle = ASP; for (const q of G) { poly(q.surf); g.fill(); }
+    g.strokeStyle = 'rgba(200,200,192,0.9)'; g.lineWidth = Math.max(0.004, 0.8 * px);
+    for (const q of G) for (const f of q.fil) if (f) { g.beginPath(); f.arc.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); }
+    // one way: arrows along it
+    for (const r of R) if (r.oneway) {
+      g.fillStyle = 'rgba(236,236,226,0.85)';
+      for (let i = 1; i < r.pts.length; i++) {
+        const a = r.pts[i - 1], b = r.pts[i], LL = U.dist(a, b), hd = Math.atan2(b.y - a.y, b.x - a.x) + (r.oneway < 0 ? Math.PI : 0);
+        for (let d = 0.25; d < LL - 0.15; d += 0.45) for (const o of r.kerb ? [-r.w / 6, r.w / 6] : [0]) {
+          const x = a.x + (b.x - a.x) * d / LL, y = a.y + (b.y - a.y) * d / LL;
+          g.save(); g.translate(x - Math.sin(hd) * o, y + Math.cos(hd) * o); g.rotate(hd);
+          g.beginPath(); g.moveTo(0.03, 0); g.lineTo(0.008, -0.011); g.lineTo(0.008, -0.004); g.lineTo(-0.03, -0.004); g.lineTo(-0.03, 0.004); g.lineTo(0.008, 0.004); g.lineTo(0.008, 0.011); g.closePath(); g.fill();
+          g.restore();
+        }
+      }
+    }
+    // the kerb along a terminal: the drop-off lane beside the building, bays marked in it, zebras to the doors
+    for (const r of R) if (r.kerb) {
+      const t = ap.parts.find(p => p.id === r.by); if (!t) continue;
+      const a = r.pts[0], b = r.pts[r.pts.length - 1], LL = U.dist(a, b) || 1, ux = (b.x - a.x) / LL, uy = (b.y - a.y) / LL;
+      const sd = Math.sign((t.x - a.x) * -uy + (t.y - a.y) * ux) || 1, nx = -uy * sd, ny = ux * sd, lane = r.w / 3;
+      const P = (s, o) => ({ x: a.x + ux * s + nx * o, y: a.y + uy * s + ny * o });
+      g.strokeStyle = 'rgba(236,236,226,0.85)'; g.lineWidth = Math.max(0.003, 0.6 * px);
+      g.beginPath(); const p0 = P(0.2, r.w / 2 - lane), p1 = P(LL - 0.2, r.w / 2 - lane); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke();
+      if (z > 60) { g.beginPath(); for (let s0 = 0.2; s0 < LL - 0.2; s0 += 0.065) { const q0 = P(s0, r.w / 2 - lane), q1 = P(s0, r.w / 2 - 0.004); g.moveTo(q0.x, q0.y); g.lineTo(q1.x, q1.y); } g.stroke(); }
+      // zebras across to the terminal's doors
+      g.fillStyle = 'rgba(240,240,232,0.9)';
+      for (let s0 = 0.5; s0 < LL - 0.4; s0 += 0.9) {
+        const n = 9, st = (r.w + 0.02) / n; g.beginPath();
+        for (let i = 0; i < n; i += 2) { const o0 = -r.w / 2 - 0.01 + i * st, Q = [P(s0, o0), P(s0, o0 + st), P(s0 + 0.035, o0 + st), P(s0 + 0.035, o0)]; g.moveTo(Q[0].x, Q[0].y); for (const q of Q.slice(1)) g.lineTo(q.x, q.y); g.closePath(); }
+        if (st * z > 1.2) g.fill(); else { g.globalAlpha = 0.5; poly([P(s0, -r.w / 2), P(s0, r.w / 2), P(s0 + 0.035, r.w / 2), P(s0 + 0.035, -r.w / 2)]); g.fill(); g.globalAlpha = 1; }
+      }
+    }
   }
 }
 

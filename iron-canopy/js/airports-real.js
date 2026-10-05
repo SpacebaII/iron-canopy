@@ -57,14 +57,17 @@ IC.aptFromLayout = function (ap, L, o) {
   for (const s of L.stands || []) {
     const A = aprons[s.ap]; if (!A) continue;
     const c = X(s.x, s.y), l = IC.rectLocal(A, c);
-    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, k: A.free.length });
+    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, gate: s.gate ? 1 : undefined, k: A.free.length });
   }
   // buildings: terminals and concourses, cargo sheds, hangars, the tower and fire stations, fuel, support
   const blds = (L.blds || []).map(B => {
     const kind = IC.APART[B.kind] ? B.kind : 'support';
     if (IC.APART[kind].r && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r, name: B.name || undefined }); }
     const part = IC.polyPart(kind, P(B.poly));
-    return add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
+    const made = add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, rows: B.rows || undefined, peaks: B.peaks || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
+    // (a hangar's door where the map's taxiway meets its wall)
+    if (B.door) { made.door = X(B.door[0], B.door[1]); made.doorSide = IC.rectLocal(made, made.door).y >= 0 ? 1 : -1; }
+    return made;
   });
   // passenger bridges over taxiways, with the height a tail must clear
   for (const B of L.bridges || []) add(Object.assign(IC.polyPart('skybridge', P(B.poly)), { clear: B.clear, name: B.name || undefined, joins: (B.joins || []).map(i => blds[i] && blds[i].id).filter(Boolean) }));
@@ -73,7 +76,8 @@ IC.aptFromLayout = function (ap, L, o) {
   // the landside, fixed as mapped: roads on their levels, car parks and garages
   const land = IC.landInit(ap);
   land.fixed = true; land.items = []; land.roads = []; land.jn = []; land.road = true;
-  for (const R of L.roads || []) land.roads.push({ pts: P(R.pts), w: R.w || 0.1, lv: R.lv || 0, oneway: R.oneway || 0, lanes: R.lanes || 0, name: R.name || undefined, kind: R.kind || 'loop', cls: R.cls || 'service' });
+  // (a road under a terminal is its kerb road: the building may stand over it)
+  for (const R of L.roads || []) land.roads.push({ pts: P(R.pts), w: R.w || 0.1, lv: R.lv || 0, oneway: R.oneway || 0, lanes: R.lanes || 0, name: R.name || undefined, kind: R.kind || 'loop', cls: R.cls || 'service', kerb: R.kerb != null || undefined, by: R.kerb != null && blds[R.kerb] ? blds[R.kerb].id : undefined, out: R.out || undefined });
   for (const K of L.parks || []) {
     const kind = K.kind === 'garage' ? 'garage' : K.kind === 'taxi' ? 'taxi' : 'park', D = IC.LAND[kind], it = IC.polyPart(kind, P(K.poly));
     const ha = IC.partArea(it);
@@ -116,12 +120,15 @@ IC.layoutRadius = function (L) {
 IC.realSite = function (S, L, near) {
   const W = S.world, R = IC.layoutRadius(L) + 4, others = S.infra.filter(i => (i.kind === 'airport' || i.kind === 'airbase') && i !== near.ap);
   // (rivers by their lines, not the coarse distance grid: no river within the layout and 300 m round it)
-  const wet = (x, y) => { for (const r of W.rivers || []) { const bb = r.bb || [-1e9, -1e9, 1e9, 1e9], m = R + (r.w || 1) + 3; if (x < bb[0] - m || x > bb[2] + m || y < bb[1] - m || y > bb[3] + m) continue; const P = r.pts || []; for (let i = 1; i < P.length; i++) if (U.segDist(x, y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y) < m) return true; } return false; };
+  const wet = (x, y) => { for (const r of W.rivers || []) { const bb = r.bb || [-1e9, -1e9, 1e9, 1e9], m = R + (r.w || 1) + 3; if (x < bb[0] - m || x > bb[2] + m || y < bb[1] - m || y > bb[3] + m) continue; const P = r.pts || []; for (let i = 1; i < P.length; i++) if (U.segDist(x, y, P[i - 1][0], P[i - 1][1], P[i][0], P[i][1]) < m) return true; } return false; };
   const fits = (x, y) => {
     if (others.some(b => U.dxy(b.x, b.y, x, y) < R + 60)) return false;
     if (wet(x, y)) return false;
     for (const c of W.cities) if (U.dxy(c.x, c.y, x, y) < R + (c.r || 20) * 1.3) return false;
     for (const v of W.villages || []) if (U.dxy(v.x, v.y, x, y) < R + 4) return false;
+    // (no road or railway of the country across it: the landside is laid out as mapped, so nothing is moved round it)
+    const across = l => { if (!l.pts || l.pts.length < 2) return false; const b = l.bb || (l.bb = [Math.min(...l.pts.map(q => q.x)), Math.min(...l.pts.map(q => q.y)), Math.max(...l.pts.map(q => q.x)), Math.max(...l.pts.map(q => q.y))]); if (x < b[0] - R || x > b[2] + R || y < b[1] - R || y > b[3] + R) return false; for (let i = 1; i < l.pts.length; i++) if (U.segDist(x, y, l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y) < R) return true; return false; };
+    if (W.edges.some(e => (e.a !== near.ap.id && e.b !== near.ap.id) && across(e)) || (W.rails || []).some(across)) return false;
     for (let j = -R; j <= R; j += R / 6) for (let i = -R; i <= R; i += R / 6) {
       if (i * i + j * j > R * R) continue;
       const px = x + i, py = y + j;
@@ -238,8 +245,8 @@ IC.bldBlueprint = function (S, ap, key, x, y, rot) {
   return made;
 };
 
-/* The showcase's day: aircraft in proportion to the airport's stands (about one and a quarter per stand, so the gates
-   stay busy all day), by stand size: wide-bodies for the large stands, narrow-bodies for the medium, regional jets and
+/* The showcase's day: aircraft in proportion to the airport's stands (about four for every five stands: the gates
+   stay busy all day, and the step stays within its budget at a 300-stand airport), by stand size: wide-bodies for the large stands, narrow-bodies for the medium, regional jets and
    turboprops for the small; freighters for the cargo stands. Flag, low-cost, regional, cargo and foreign airlines, to
    the foreign ports and the country's other airports. */
 IC.showcaseTraffic = function (S, ap, o) {
@@ -260,7 +267,7 @@ IC.showcaseTraffic = function (S, ap, o) {
   for (const f of o.foreign) plan.push([f, U.pick(['wide', 'widel', 'narrow']), Math.max(1, n.l * 0.08), P.filter(p => p.k === f.country).concat(P)]);
   let k = 0;
   for (const [a, type, share, dest] of plan) {
-    let left = Math.round(share * 1.25);
+    let left = Math.round(share * 0.8);
     // (spread over the destinations, a few aircraft to each route)
     while (left > 0 && dest.length) { const m = Math.min(left, 3); o.add(a, ap, dest[k++ % dest.length], type, m); left -= m; }
   }
