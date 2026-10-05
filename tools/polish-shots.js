@@ -53,7 +53,7 @@ const root = (args.find(a => a.startsWith('--root=')) || '').slice(7) || path.re
   });
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });
   for (const [k, q] of Object.entries(spots)) {
-    await page.evaluate(([x, y, z]) => { IC.cam.fly = null; IC.cam.z = z; IC.centerOn(x, y); }, [q.x, q.y, q.z || (k === 'hold' ? 95 : 130)]);
+    await page.evaluate(([x, y, z]) => { IC.cam.fly = null; IC.cam.z = z; IC.centerOn(x, y); }, [q.x, q.y, q.z || +(process.env.PZ || 0) || (k === "hold" ? 95 : 130)]);
     await page.waitForTimeout(1800);
     const file = path.resolve(__dirname, `../shots/polish-${tag}-${k}.png`);
     await page.screenshot({ path: file });

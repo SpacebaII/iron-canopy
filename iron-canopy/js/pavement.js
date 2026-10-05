@@ -146,15 +146,57 @@ function filletPoly(f) {
 }
 
 /* every junction's arms and whether it is a straight crossing */
-function junctions(ap) {
+function junctions(ap, G) {
   const legs = legsOf(ap), out = [];
-  for (const id of legs.keys()) {
-    const N = ap.nodes[id], A = arms(ap, id, legs);
-    if (A.length < 2) { out.push({ id, N, A, gaps: [], cross: false }); continue; }
+  const add = (id, N, A) => {
+    if (A.length < 2) { out.push({ id, N, A, gaps: [], cross: false }); return; }
     const gaps = A.map((a, i) => { const b = A[(i + 1) % A.length]; let g = b.th - a.th; if (i === A.length - 1) g += 2 * Math.PI; return g; });
     // a straight crossing: four or more arms, every one continued straight through by another
     const cross = A.length >= 4 && A.every(a => A.some(b => b !== a && Math.abs(Math.PI - Math.abs(Math.atan2(Math.sin(a.th - b.th), Math.cos(a.th - b.th)))) < 0.09));
     out.push({ id, N, A, gaps, cross });
+  };
+  for (const id of legs.keys()) add(id, ap.nodes[id], arms(ap, id, legs));
+  for (const X of edgeCrossings(ap, G)) add(X.id, X.N, X.A);
+  return out;
+}
+
+/* Taxi legs that run into an apron or a pad with no node on its edge (the stub to a de-icing pad or a fuel stand, a
+   taxilane into a ramp): a junction where the leg crosses the edge, so the edge opens with fillets as at any other
+   apron entry. Not where the edge already lies on another taxiway's pavement (a holding bay's slab along its
+   parallel taxiway), nor on a holding bay at all: that slab is laid round its tracks. */
+function edgeCrossings(ap, G) {
+  const out = [], polys = G.ar.filter(a => !a.fore && a.p.kind !== 'holdbay');
+  if (!polys.length) return out;
+  const onOther = (q, part) => G.tw.some(t => t.p !== part && t.pts.some((b, i) => i && U.segDist(q.x, q.y, t.pts[i - 1].x, t.pts[i - 1].y, b.x, b.y) <= t.w / 2 + 0.02));
+  for (const t of G.tw) for (let i = 1; i < t.p.nodes.length; i++) for (const [ia, ib] of [[i - 1, i], [i, i - 1]]) {
+    const A = ap.nodes[t.p.nodes[ia]], B = ap.nodes[t.p.nodes[ib]]; if (!A || !B) continue;
+    for (const a of polys) {
+      if (A.on && A.on.part === a.p.id) continue;
+      const P = a.poly, pp = a._pp || (a._pp = P.map(v => [v.x, v.y]));
+      if (U.inPoly(A.x, A.y, pp)) continue;
+      // the first edge the leg crosses, going in; or (a stub that stops at a pad's face, as older ones did) the edge
+      // just ahead of its end
+      let best = null, N;
+      if (U.inPoly(B.x, B.y, pp)) {
+        for (let k = 0; k < P.length; k++) { const C = P[k], D = P[(k + 1) % P.length], s = U.segX(A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y); if (s >= 0 && (!best || s < best.s)) best = { s, C, D }; }
+        if (!best) continue;
+        N = { x: A.x + (B.x - A.x) * best.s, y: A.y + (B.y - A.y) * best.s };
+        if (U.dist(N, B) < 0.03) continue;
+      } else {
+        if (ib !== 0 && ib !== t.p.nodes.length - 1) continue;
+        const L0 = U.dist(A, B) || 1, F = { x: B.x + (B.x - A.x) / L0 * 0.1, y: B.y + (B.y - A.y) / L0 * 0.1 };
+        for (let k = 0; k < P.length; k++) { const C = P[k], D = P[(k + 1) % P.length], s = U.segX(B.x, B.y, F.x, F.y, C.x, C.y, D.x, D.y); if (s >= 0 && (!best || s < best.s)) best = { s, C, D }; }
+        if (!best) continue;
+        N = { x: B.x + (F.x - B.x) * best.s, y: B.y + (F.y - B.y) * best.s };
+      }
+      if (U.dist(N, A) < 0.03 || onOther(N, t.p)) continue;
+      const L = U.dist(A, N), El = U.dist(best.C, best.D) || 1, ex = (best.D.x - best.C.x) / El, ey = (best.D.y - best.C.y) / El, te = (N.x - best.C.x) * ex + (N.y - best.C.y) * ey;
+      const Ar = [{ ux: (A.x - N.x) / L, uy: (A.y - N.y) / L, h: t.w / 2, len: U.dist(N, A), kind: 'taxi', part: t.p, mat: t.mat, lane: t.lane, to: t.p.nodes[ia] }];
+      if (El - te > 0.02) Ar.push({ ux: ex, uy: ey, h: 0, len: El - te, kind: 'apron', part: a.p, mat: a.mat });
+      if (te > 0.02) Ar.push({ ux: -ex, uy: -ey, h: 0, len: te, kind: 'apron', part: a.p, mat: a.mat });
+      for (const q of Ar) q.th = ang(q.ux, q.uy);
+      out.push({ id: 'x' + t.p.id + ':' + ia + ':' + a.p.id, N, A: Ar.sort((p, q) => p.th - q.th) });
+    }
   }
   return out;
 }
@@ -170,6 +212,33 @@ IC.paveFillets = function (ap, e) {
     const f = corner(J.N, a, b, J.gaps[i], e || 0, J.cross); if (!f) return;
     out.push({ poly: filletPoly(f), mat: (a.kind === 'taxi' ? a : b).mat, f, th: (a.kind === 'taxi' ? a : b).th });
   });
+  G[k] = out;
+  return out;
+};
+
+/* A short stub from a taxiway to a pad (de-icing, fuel), whose fillets on each side nearly meet: the paving between
+   them is filled out to a straight edge from one fillet's far end to the other's, so no sliver of shoulder or grass is left
+   between two curves. Grown by e, as the fillets are. */
+IC.paveChamfers = function (ap, e) {
+  const G = IC.paveGeom(ap), k = 'c' + (e || 0).toFixed(4);
+  if (G[k]) return G[k];
+  const F = IC.paveFillets(ap, e), out = [];
+  const legOf = f => [[f.f.A, f.f.T2], [f.f.B, f.f.T1]].filter(q => q[0].kind === 'taxi');
+  for (let i = 0; i < F.length; i++) for (const [X, To] of legOf(F[i])) {
+    // (a pad's stub only: a link to an apron keeps its two curves, the grass between them)
+    const E = F[i].f.A.kind === 'apron' ? F[i].f.A : F[i].f.B.kind === 'apron' ? F[i].f.B : null;
+    if (!E || !(IC.APART[E.part.kind] && IC.APART[E.part.kind].pad)) continue;
+    const N = F[i].f.N, M = { x: N.x + X.ux * X.len, y: N.y + X.uy * X.len }, side = Math.sign(X.ux * (F[i].f.C.y - N.y) - X.uy * (F[i].f.C.x - N.x));
+    for (let j = 0; j < F.length; j++) {
+      const g = F[j]; if (j === i || U.dist(g.f.N, M) > 0.01) continue;
+      for (const [Y, Uo] of legOf(g)) {
+        if (Y.ux * X.ux + Y.uy * X.uy > -0.999 || Math.sign(X.ux * (g.f.C.y - N.y) - X.uy * (g.f.C.x - N.x)) !== side) continue;
+        // (whatever their size at this growth: the shoulder, the pavement and the edge line agree)
+        if (X.len > 1.2) continue;
+        out.push({ poly: [To, F[i].f.C, g.f.C, Uo], mat: F[i].mat });
+      }
+    }
+  }
   G[k] = out;
   return out;
 };
@@ -233,9 +302,11 @@ IC.paveGeom = function (ap) {
     }
   }
   G.bb = x0 < x1 ? { x0, y0, x1, y1 } : null;
-  G.J = junctions(ap);
+  G.J = junctions(ap, G);
   G.fil = IC.paveFillets(ap, 0);
   centrelines(ap, G);
+  G.mouths = mouths(G);
+  for (const c of apronLines(ap, G)) G.cl.push(c);
   return G;
 };
 
@@ -288,6 +359,144 @@ function centrelines(ap, G) {
   }
 }
 
+/* The openings in apron edges: where a taxiway comes into an apron (not one running along its edge), the stretch of
+   edge between the two fillets' tangent points (or the taxiway's own edges where a side has no fillet). The edge line,
+   the shoulder and the service road stop there and resume after it. [{ part, N, a, b, n (into the apron) }] */
+function mouths(G) {
+  const out = [];
+  for (const J of G.J) {
+    const E = J.A.filter(a => a.kind === 'apron'), T = J.A.filter(a => a.kind === 'taxi' && E.every(e => Math.abs(a.ux * e.ux + a.uy * e.uy) < 0.97));
+    if (!E.length || !T.length) continue;
+    const N = J.N, reach = e => {
+      let d = 0;
+      for (const t of T) d = Math.max(d, Math.min(0.6, t.h / (Math.abs(t.ux * e.uy - t.uy * e.ux) || 1)));
+      for (const f of G.fil) if (f.f.N === N && (f.f.A === e || f.f.B === e)) { const P = f.f.A === e ? f.f.T1 : f.f.T2; d = Math.max(d, (P.x - N.x) * e.ux + (P.y - N.y) * e.uy); }
+      return Math.min(d, e.len);
+    };
+    const e0 = E[0], d0 = reach(e0), e1 = E[1] || { ux: -e0.ux, uy: -e0.uy, len: d0 }, d1 = E[1] ? reach(e1) : d0;
+    // (the apron's side of its edge: the taxiway comes from the other)
+    const sg = (T[0].ux * -e0.uy + T[0].uy * e0.ux) > 0 ? -1 : 1;
+    out.push({ part: e0.part, N, a: { x: N.x + e0.ux * d0, y: N.y + e0.uy * d0 }, b: { x: N.x + e1.ux * d1, y: N.y + e1.uy * d1 }, n: { x: -e0.uy * sg, y: e0.ux * sg } });
+  }
+  return out;
+}
+IC.paveMouths = ap => IC.paveGeom(ap).mouths;
+
+/* The yellow lines on an apron: each row of stands has its taxilane behind the tails (the taxiway along the apron's
+   edge where one runs there, else a line of its own, as far in front of the tails as a lead-in turn needs), every
+   stand's lead-in line leaves it on a curve either way, and each taxiway coming in carries its centreline on to the
+   taxilane and turns onto it either way. Stands with a lead-in of their own (s.via, on an open ramp) keep it. */
+const LEAD_R = { s: 0.2, m: 0.3, l: 0.42 };
+/* the turn at J from arm a (unit, away from J) onto arm b: the arc of radius R tangent to both */
+function turnAt(J, a, b, R) {
+  const gap = Math.acos(U.clamp(a.x * b.x + a.y * b.y, -1, 1));
+  if (gap >= STRAIGHT || gap < ACUTE) return null;
+  const tl = R / Math.tan(gap / 2), bx = a.x + b.x, by = a.y + b.y, bl = Math.hypot(bx, by) || 1, k = R / Math.sin(gap / 2);
+  const P1 = { x: J.x + a.x * tl, y: J.y + a.y * tl }, P2 = { x: J.x + b.x * tl, y: J.y + b.y * tl };
+  return { tl, P1, P2, pts: arcPts({ x: J.x + bx / bl * k, y: J.y + by / bl * k }, R, P1, P2) };
+}
+function apronLines(ap, G) {
+  const out = [];
+  for (const a of G.ar) {
+    const p = a.p; if ((p.kind !== 'apron' && p.kind !== 'alert') || !p.stands || !p.stands.length) continue;
+    // (the openings aircraft come in by: taxiways into the apron, else any node on its edge)
+    const P = a.poly, mo = G.mouths.filter(m => m.part === p).map(m => m.N);
+    const ents = mo.length ? mo : G.J.filter(J => J.A.some(e => e.kind === 'apron' && e.part === p)).map(J => J.N);
+    // the rows: stands turned the same way with their tails in line
+    const rows = new Map();
+    for (const s of p.stands) {
+      if (s.via && ap.nodes[s.via]) continue;
+      const hx = Math.cos(s.a), hy = Math.sin(s.a), k = Math.round(Math.atan2(hy, hx) * 30) + ':' + Math.round((s.fx * hx + s.fy * hy) * 12);
+      if (!rows.has(k)) rows.set(k, { h: { x: hx, y: hy }, u: { x: -hy, y: hx }, st: [] });
+      rows.get(k).st.push(s);
+    }
+    const own = [];
+    for (const R of rows.values()) {
+      const { h, u, st } = R, f0 = st[0], fd = f0.fx * h.x + f0.fy * h.y, ts = st.map(s => s.fx * u.x + s.fy * u.y);
+      const r0 = Math.max(...st.map(s => LEAD_R[s.size] || LEAD_R.m)), t0 = Math.min(...ts), t1 = Math.max(...ts);
+      // a taxiway running along behind the tails
+      let D = null, flow = 0;
+      for (const t of G.tw) for (let i = 1; i < t.pts.length; i++) {
+        const A = t.pts[i - 1], B = t.pts[i], L = U.dist(A, B); if (L < 0.05) continue;
+        const c = ((B.x - A.x) * u.x + (B.y - A.y) * u.y) / L;
+        if (Math.abs(c) < 0.985) continue;
+        const d = fd - (A.x * h.x + A.y * h.y), ua = A.x * u.x + A.y * u.y, ub = B.x * u.x + B.y * u.y;
+        // (a one-way taxiway: aircraft come along it from one side only, and turn in from there)
+        if (d > 0.05 && d < 1.3 && Math.max(ua, ub) > t0 - 0.05 && Math.min(ua, ub) < t1 + 0.05 && (D == null || d < D)) { D = d; flow = -Math.sign(c * (t.p.oneway || t.p.flow || 0)); }
+      }
+      R.mine = D == null;
+      if (R.mine) {
+        // a line of its own, in front of the tails (no closer to the apron's edge than it is to the tails)
+        let room = 3;
+        const m = st[Math.floor(st.length / 2)];
+        for (let i = 0; i < P.length; i++) { const C = P[i], E = P[(i + 1) % P.length], q = U.segX(m.fx, m.fy, m.fx - h.x * 3, m.fy - h.y * 3, C.x, C.y, E.x, E.y); if (q >= 0) room = Math.min(room, q * 3); }
+        D = Math.min(r0, room * 0.55);
+        if (D < 0.06) continue;
+      }
+      R.D = D; R.lo = t0 - r0; R.hi = t1 + r0; R.line = fd - D;
+      // the lead-ins: straight from the tail back to the turn, and the turn onto the taxilane: either way where there
+      // is room, else from the way aircraft come (along a one-way taxiway, or from the nearest opening)
+      const sorted = ts.slice().sort((x, y) => x - y); let gapMin = 9;
+      for (let i = 1; i < sorted.length; i++) gapMin = Math.min(gapMin, sorted[i] - sorted[i - 1]);
+      for (const s of st) {
+        const r = Math.min(LEAD_R[s.size] || LEAD_R.m, D), J = { x: s.fx - h.x * D, y: s.fy - h.y * D };
+        const P1 = { x: s.fx - h.x * (D - r), y: s.fy - h.y * (D - r) };
+        if (D - r > 0.005) out.push({ pts: [P1, { x: s.fx, y: s.fy }], lane: true, apron: true });
+        let sides = [-1, 1];
+        if (2 * r > gapMin * 1.02) {
+          if (flow) sides = [flow];
+          else {
+            const tu = s.fx * u.x + s.fy * u.y; let near = null;
+            for (const m of ents) { const d = m.x * u.x + m.y * u.y - tu; if (near == null || Math.abs(d) < Math.abs(near)) near = d; }
+            sides = [near != null && Math.abs(near) > 0.05 ? Math.sign(near) : 1];
+          }
+        }
+        for (const sg of sides) { const T = turnAt(J, h, { x: u.x * sg, y: u.y * sg }, r); if (T) out.push({ pts: T.pts, lane: true, apron: true, turn: true }); }
+      }
+      if (R.mine) own.push(R);
+    }
+    if (!own.length) continue;
+    // each taxiway coming in: its centreline on to the nearest taxilane ahead, turning onto it both ways
+    for (const J of G.J) {
+      if (!J.A.some(e => e.kind === 'apron' && e.part === p)) continue;
+      for (const t of J.A) {
+        if (t.kind !== 'taxi') continue;
+        const v = { x: -t.ux, y: -t.uy }, E = J.N;
+        let best = null;
+        for (const R of own) {
+          const dn = v.x * R.h.x + v.y * R.h.y, off = E.x * R.h.x + E.y * R.h.y - R.line;
+          if (Math.abs(dn) > 0.35) { const s = -off / dn; if (s > 0.02 && s < 4 && (!best || s < best.s)) best = { R, s }; }
+          else if (Math.abs(off) < 0.25 && (!best || Math.abs(off) < best.s)) best = { R, s: Math.abs(off), along: true };
+        }
+        if (!best) continue;
+        const R = best.R, X = best.along ? { x: E.x - R.h.x * (E.x * R.h.x + E.y * R.h.y - R.line), y: E.y - R.h.y * (E.x * R.h.x + E.y * R.h.y - R.line) } : { x: E.x + v.x * best.s, y: E.y + v.y * best.s };
+        const tu = X.x * R.u.x + X.y * R.u.y;
+        if (best.along) { if (best.s > 0.005) out.push({ pts: [E, X], lane: true, apron: true }); R.lo = Math.min(R.lo, tu); R.hi = Math.max(R.hi, tu); continue; }
+        const rc = Math.min(IC.paveDesign(t.h * 2).Rc, best.s * 0.9);
+        let tl = best.s;
+        for (const sg of [-1, 1]) {
+          const T = turnAt(X, { x: -v.x, y: -v.y }, { x: R.u.x * sg, y: R.u.y * sg }, rc); if (!T) continue;
+          out.push({ pts: T.pts, lane: true, apron: true, turn: true }); tl = Math.min(tl, T.tl);
+          const e = tu + sg * T.tl; R.lo = Math.min(R.lo, e); R.hi = Math.max(R.hi, e);
+        }
+        if (best.s - tl > 0.005) out.push({ pts: [E, { x: X.x - v.x * tl, y: X.y - v.y * tl }], lane: true, apron: true });
+      }
+    }
+    // the taxilanes, kept inside the apron
+    for (const R of own) {
+      const O = { x: R.h.x * R.line, y: R.h.y * R.line }, at = t => ({ x: O.x + R.u.x * t, y: O.y + R.u.y * t });
+      const cuts = [], mid = (R.lo + R.hi) / 2, A = at(mid - 60), B = at(mid + 60);
+      for (let i = 0; i < P.length; i++) { const C = P[i], E = P[(i + 1) % P.length], q = U.segX(A.x, A.y, B.x, B.y, C.x, C.y, E.x, E.y); if (q >= 0) cuts.push(mid - 60 + q * 120); }
+      cuts.sort((x, y) => x - y);
+      let lo = R.lo, hi = R.hi;
+      for (let i = 1; i < cuts.length; i++) if (cuts[i - 1] <= mid && mid <= cuts[i]) { lo = Math.max(lo, cuts[i - 1] + 0.02); hi = Math.min(hi, cuts[i] - 0.02); }
+      if (hi - lo > 0.05) out.push({ pts: [at(lo), at(hi)], lane: true, apron: true, taxilane: true });
+    }
+  }
+  return out;
+}
+IC.paveApronLines = ap => IC.paveGeom(ap).cl.filter(c => c.apron);
+
 /* every junction by its kind, for the audit and the pictures: 'end' (a taxiway at a runway's end), 'entry' (onto a
    runway at about a right angle), 'rapid' (onto a runway at an acute angle), 'apron' (onto an apron edge), 'X' (a
    crossing), 'T', 'Y' (a fork with an acute angle between two arms), 'bend' (one taxiway turning) */
@@ -317,12 +526,20 @@ IC.paveLayer = function (ap, x, y) {
   for (const r of G.rw) { const t = (x - r.a.x) * r.d.x + (y - r.a.y) * r.d.y, o = (x - r.a.x) * -r.d.y + (y - r.a.y) * r.d.x; if (t >= 0 && t <= r.L && Math.abs(o) <= r.w / 2 + (r.mat === 'grass' ? 0 : IC.rwShoulder(r.w))) return 'rwy'; }
   const m = IC.paveAt(ap, x, y);
   if (!m) return null;
-  for (const a of G.ar) if (U.inPoly(x, y, a.poly.map(v => [v.x, v.y]))) {
-    // (a taxiway over its apron entry)
-    const on = G.tw.some(t => t.pts.some((q, i) => i && U.segDist(x, y, t.pts[i - 1].x, t.pts[i - 1].y, q.x, q.y) <= t.w / 2));
-    return on ? 'taxi' : 'apron';
-  }
+  // (an apron is painted over the taxiways that come into it: one slab, no taxiway stroke laid across it)
+  for (const a of G.ar) if (U.inPoly(x, y, a.poly.map(v => [v.x, v.y]))) return 'apron';
   return 'taxi';
+};
+
+/* a fast test for pavement within r of x, y (what IC.paveAt counts, the pieces far away left out): for walking
+   along a line a step at a time */
+IC.paveNear = function (ap, x, y, r) {
+  const G = IC.paveGeom(ap), near = P => P.some(q => Math.abs(q.x - x) < r + 1 && Math.abs(q.y - y) < r + 1);
+  const rw = G.rw.filter(q => U.segDist(x, y, q.a.x, q.a.y, q.b.x, q.b.y) < r + q.w);
+  const segs = []; for (const t of G.tw) for (let i = 1; i < t.pts.length; i++) if (U.segDist(x, y, t.pts[i - 1].x, t.pts[i - 1].y, t.pts[i].x, t.pts[i].y) < r + t.w) segs.push([t.pts[i - 1], t.pts[i], t.w / 2]);
+  const polys = G.ar.map(a => a.poly).concat(G.fil.map(f => f.poly), IC.paveChamfers(ap, 0).map(f => f.poly), IC.paveHubs(ap, 0).map(h => h.poly)).filter(near).map(P => P.map(v => [v.x, v.y]));
+  return (px, py) => rw.some(q => { const t = (px - q.a.x) * q.d.x + (py - q.a.y) * q.d.y, o = (px - q.a.x) * -q.d.y + (py - q.a.y) * q.d.x; return t >= 0 && t <= q.L && Math.abs(o) <= q.w / 2; })
+    || segs.some(([A, B, h]) => U.segDist(px, py, A.x, A.y, B.x, B.y) <= h) || polys.some(P => U.inPoly(px, py, P));
 };
 
 /* the pavement under a point: 'conc', 'asph', 'rconc', 'grass' or null (the fillets count; buildings do not) */
@@ -337,6 +554,7 @@ IC.paveAt = function (ap, x, y) {
   }
   for (const a of G.ar) if (U.inPoly(x, y, a.poly.map(v => [v.x, v.y]))) return a.mat;
   for (const f of G.fil) if (U.inPoly(x, y, f.poly.map(v => [v.x, v.y]))) return f.mat;
+  for (const f of IC.paveChamfers(ap, 0)) if (U.inPoly(x, y, f.poly.map(v => [v.x, v.y]))) return f.mat;
   for (const f of IC.paveHubs(ap, 0)) if (U.inPoly(x, y, f.poly.map(v => [v.x, v.y]))) return f.mat;
   return null;
 };

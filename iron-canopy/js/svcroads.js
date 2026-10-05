@@ -138,7 +138,10 @@ IC.svcNet = function (ap) {
         const s = U.segX(P[i - 1].x, P[i - 1].y, P[i].x, P[i].y, Q[j - 1].x, Q[j - 1].y, Q[j].x, Q[j].y); if (s < 0) continue;
         const x = P[i - 1].x + (P[i].x - P[i - 1].x) * s, y = P[i - 1].y + (P[i].y - P[i - 1].y) * s;
         const ra = Math.atan2(P[i].y - P[i - 1].y, P[i].x - P[i - 1].x), ta = Math.atan2(Q[j].y - Q[j - 1].y, Q[j].x - Q[j - 1].x);
-        cross.push({ x, y, a: ra, ta, lane: !!t.lane, w: t.w || IC.APART.taxi.w, rw: r.w });
+        // (where the pavement ends either way along the road: the fillets of an apron's opening reach past the taxiway)
+        const ux = Math.cos(ra), uy = Math.sin(ra), d0 = (t.w || IC.APART.taxi.w) / 2 / (Math.abs(Math.sin(ra - ta)) || 1);
+        const on = t.lane ? null : IC.paveNear(ap, x, y, 1.3), edge = sg => { let d = d0; while (d < 1.2 && on(x + ux * sg * (d + 0.01), y + uy * sg * (d + 0.01))) d += 0.015; return d; };
+        cross.push({ x, y, a: ra, ta, lane: !!t.lane, w: t.w || IC.APART.taxi.w, rw: r.w, p0: t.lane ? 0 : edge(-1), p1: t.lane ? 0 : edge(1) });
       }
     }
   }
@@ -291,13 +294,18 @@ IC.aptFurniture = function (ap) {
   }
   // a blast fence along the back of each holding bay, away from the runway
   for (const b of ap.parts) if (b.kind === 'holdbay' && b.built) {
-    const P = IC.partOutline(b), rw = ap.parts.find(p => p.id === b.rw) || rws[0]; if (!rw || P.length < 3) continue;
+    const P = IC.partOutline(b), rw = rws.slice().sort((p, q) => IC.partDist(ap, p, b) - IC.partDist(ap, q, b))[0]; if (!rw || P.length < 3) continue;
     const far = q => { const d = IC.rwDir(rw); return Math.abs((q.x - rw.a.x) * -d.y + (q.y - rw.a.y) * d.x); };
     let best = null;
     for (let i = 0; i < P.length; i++) { const A = P[i], B = P[(i + 1) % P.length], m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }; if (!best || far(m) > far(best.m)) best = { A, B, m }; }
     const len = U.dist(best.A, best.B), cx = b.x, cy = b.y, dm = U.dist(best.m, { x: cx, y: cy }) || 1;
-    const q = { x: best.m.x + (best.m.x - cx) / dm * 0.25, y: best.m.y + (best.m.y - cy) / dm * 0.25 };
-    if (!IC.paveAt(ap, q.x, q.y)) out.push({ k: 'blast', x: q.x, y: q.y, a: Math.atan2(best.B.y - best.A.y, best.B.x - best.A.x), len: len * 0.9 });
+    // (out past the parallel taxiway and its shoulders, on the grass)
+    const a = Math.atan2(best.B.y - best.A.y, best.B.x - best.A.x), ux = Math.cos(a), uy = Math.sin(a);
+    for (let o = 0.25; o <= 0.9; o += 0.05) {
+      const q = { x: best.m.x + (best.m.x - cx) / dm * o, y: best.m.y + (best.m.y - cy) / dm * o };
+      if ([-0.45, 0, 0.45].some(k => [-0.1, 0, 0.1].some(n => IC.paveAt(ap, q.x + ux * len * k + (best.m.x - cx) / dm * n, q.y + uy * len * k + (best.m.y - cy) / dm * n)))) continue;
+      out.push({ k: 'blast', x: q.x, y: q.y, a, len: len * 0.9 }); break;
+    }
   }
   ap._furn = { sig: k, items: out };
   return out;

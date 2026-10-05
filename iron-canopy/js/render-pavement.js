@@ -173,20 +173,22 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
     const bySh = new Map(); for (const q of tws) if (q.sh) { if (!bySh.has(q.sh)) bySh.set(q.sh, []); bySh.get(q.sh).push(q.t); }
     for (const [sh, list] of bySh) for (const t of list) { g.lineWidth = t.w + 2 * sh; g.beginPath(); segPath(g, t.pts); g.stroke(); }
     const sh0 = Math.max(0, ...tws.map(q => q.sh));
-    g.beginPath(); for (const f of IC.paveFillets(ap, sh0)) if (hit(bbOf(f.poly, 0), box)) polyPath(g, f.poly); g.fill();
+    // (each piece filled on its own: overlapping outlines in one path wound opposite ways would leave holes)
+    for (const L of [IC.paveFillets(ap, sh0), IC.paveChamfers(ap, sh0)]) for (const f of L) if (hit(bbOf(f.poly, 0), box)) { g.beginPath(); polyPath(g, f.poly); g.fill(); }
     g.beginPath(); for (const h of hubs(sh0)) polyPath(g, h.poly); g.fill();
   }
   for (const E of ends) if (E.pad) { const r = E.r; g.fillStyle = paveFill(g, 'shoulder', ppu, E.e.x, E.e.y, Math.atan2(E.uy, E.ux)); g.beginPath(); padPath(g, E, r.w / 2 + R.rw.find(q => q.r === r).sh); g.fill(); }
-  // the pavement: aprons and forecourts, then fillets, junctions and taxiways, one fill per material
-  for (const { a } of ars) { g.fillStyle = fill(a.mat); g.beginPath(); polyPath(g, a.poly); g.fill(); }
+  // the pavement: fillets, junctions and taxiways, one fill per material, then the aprons and forecourts over the
+  // taxiways that come into them (one slab: the taxiway ends at the edge, its fillets open the edge either side)
   const mats = new Set(tws.map(q => q.t.mat));
   for (const m of mats) {
     g.fillStyle = g.strokeStyle = fill(m);
-    if (ppu > 6) { g.beginPath(); for (const { f } of fils) if (f.mat === m) polyPath(g, f.poly); g.fill(); }
+    if (ppu > 6) for (const f of fils.map(q => q.f).concat(IC.paveChamfers(ap, 0))) if (f.mat === m) { g.beginPath(); polyPath(g, f.poly); g.fill(); }
     g.beginPath(); for (const h of hubs(0)) if (h.mat === m) polyPath(g, h.poly); g.fill();
     const ws = new Map(); for (const { t } of tws) if (t.mat === m) { const w = wide(t.w, 2.2); if (!ws.has(w)) ws.set(w, []); ws.get(w).push(t); }
     for (const [w, list] of ws) { g.lineWidth = w; g.beginPath(); for (const t of list) segPath(g, t.pts); g.stroke(); }
   }
+  for (const { a } of ars) { g.fillStyle = fill(a.mat); g.beginPath(); polyPath(g, a.poly); g.fill(); }
   // runways over everything that meets them: shoulders, then the runway, so its edges run straight through
   for (const { r, sh } of rws) if (ppu > 6 && r.mat !== 'grass') { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
   for (const { r } of rws) { g.fillStyle = paveFill(g, r.mat, ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, Math.max(0, (wide(r.w, 3.2) - r.w) / 2), 0); g.fill(); }
@@ -331,7 +333,7 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
     lg.globalCompositeOperation = op; lg.fillStyle = lg.strokeStyle = '#000'; lg.lineCap = 'round'; lg.lineJoin = 'round';
     lg.lineCap = 'butt';
     for (const { t } of tws) { lg.lineWidth = Math.max(0.001, t.w - 2 * e); lg.beginPath(); segPath(lg, t.pts); lg.stroke(); }
-    lg.beginPath(); for (const f of IC.paveFillets(ap, -e)) if (hit(bbOf(f.poly, 0), box)) polyPath(lg, f.poly); lg.fill();
+    for (const L of [IC.paveFillets(ap, -e), IC.paveChamfers(ap, -e)]) for (const f of L) if (hit(bbOf(f.poly, 0), box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
     lg.beginPath(); for (const h of IC.paveHubs(ap, -e)) if (hit(bbOf(h.poly, 0), box)) polyPath(lg, h.poly); lg.fill();
   };
   band(0, 'source-over'); band(lw, 'destination-out');
@@ -349,9 +351,16 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
     lg.restore();
   }
   lg.globalCompositeOperation = 'destination-out';
+  // the openings where taxiways come in: the apron's edge line stops at each fillet and resumes after it
+  const dep = 2 * lw + gap + 0.004;
+  for (const m of G.mouths) if (hit(m._bb || (m._bb = bbOf([m.a, m.b], 0.1)), box)) {
+    lg.beginPath(); lg.moveTo(m.a.x - m.n.x * 0.004, m.a.y - m.n.y * 0.004); lg.lineTo(m.b.x - m.n.x * 0.004, m.b.y - m.n.y * 0.004);
+    lg.lineTo(m.b.x + m.n.x * dep, m.b.y + m.n.y * dep); lg.lineTo(m.a.x + m.n.x * dep, m.a.y + m.n.y * dep); lg.closePath(); lg.fill();
+  }
   lg.lineCap = 'butt';
   for (const { t } of tws) { lg.lineWidth = t.w * 0.98; lg.beginPath(); segPath(lg, t.pts); lg.stroke(); }
   for (const { f, bb } of R.fil) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
+  for (const f of IC.paveChamfers(ap, 0)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
   lg.beginPath(); for (const h of IC.paveHubs(ap, -lw * 0.5)) if (hit(bbOf(h.poly, 0), box)) polyPath(lg, h.poly); lg.fill();
   for (const { r, sh, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, sh + 0.004, 0); lg.fill(); }
   // tint the mask yellow and lay it on
@@ -402,11 +411,12 @@ function svcCross(g, ap, ppu, box) {
       // a zebra across the taxilane, in the road's width
       for (let x = -half + 0.01; x < half - 0.005; x += 0.02) g.fillRect(x, -c.rw / 2 + 0.008, 0.01, c.rw - 0.016);
     } else {
-      // a stop line and STOP on the road, facing traffic coming up to each edge of the taxiway
+      // a stop line and STOP on the road, facing traffic coming up to each edge of the pavement (past the fillets, at
+      // an apron's opening)
       for (const sg of [-1, 1]) {
-        const x = sg * (half + 0.03);
+        const e = Math.max(half, sg < 0 ? c.p0 || 0 : c.p1 || 0), x = sg * (e + 0.03);
         g.fillRect(x - 0.005, -c.rw / 2 + 0.004, 0.01, c.rw - 0.008);
-        if (ppu >= 50) { g.save(); g.translate(sg * (half + 0.085), 0); g.rotate(sg > 0 ? Math.PI / 2 : -Math.PI / 2); g.font = `700 0.034px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 0, 0); g.restore(); }
+        if (ppu >= 50) { g.save(); g.translate(sg * (e + 0.085), 0); g.rotate(sg > 0 ? Math.PI / 2 : -Math.PI / 2); g.font = `700 0.034px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 0, 0); g.restore(); }
       }
     }
     g.restore();

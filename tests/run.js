@@ -2090,6 +2090,79 @@ test('pavement: every kind of junction joins without a round edge, and a runway 
   const lead = G.cl.filter(c => c.lead && c.pts.some(q => U.dist(q, n(r0)) < 2.5));
   assert(lead.length === 1 && U.dist(lead[0].pts[0], lead[0].pts[lead[0].pts.length - 1]) > 0.4, `the rapid exit's lead-off line is missing or short (${lead.length})`);
 });
+test('pavement: a taxiway into an apron opens its edge with fillets, its centreline runs on to the stands, and the edge line stops at the opening (brief 45)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap], x = ap.x, y = ap.y;
+  IC.initAirport(ap);
+  const N = (dx, dy) => IC.aptNode(ap, x + dx, y + dy);
+  // a taxiway from the south meets the middle of an apron's long edge, square on
+  const E = N(0, 7.5);
+  IC.aptAddPart(ap, { kind: 'taxi', nodes: [N(0, 4), E] }, true);
+  IC.aptAddPart(ap, { kind: 'apron', x, y: y + 9, a: 0, w: 6, h: 3 }, true);
+  IC.resolveNodes(ap); ap.dirty = true; IC.aptGraph(ap);
+  const apr = ap.parts.find(p => p.kind === 'apron'), n = ap.nodes[E], at = (dx, dy) => IC.paveAt(ap, n.x + dx, n.y + dy);
+  assert(apr.stands.length >= 4, `the apron has ${apr.stands.length} stands`);
+  // fillets either side, sized like a taxiway's (no square notch, no disc): pavement in the corners, grass further out
+  const G = IC.paveGeom(ap), fil = G.fil.filter(f => U.dist(f.f.N, n) < 1e-6);
+  assert(fil.length === 2 && fil.every(f => f.f.R > 0.2), `the opening has ${fil.length} fillets`);
+  const w = IC.APART.taxi.w;
+  for (const sx of [-1, 1]) assert(at(sx * (w / 2 + 0.04), -0.04) && !at(sx * (w / 2 + 0.04), -0.6), `no curved fillet on the ${sx < 0 ? 'west' : 'east'} side`);
+  // the apron is on top inside its edge: no taxiway stroke laid across it
+  assert(IC.paveLayer(ap, n.x, n.y + 0.1) === 'apron', 'a taxiway is painted over the apron');
+  // the opening: the edge line, shoulder and service road stop between the fillets' ends
+  const m = IC.paveMouths(ap).find(q => q.N === n);
+  assert(m && U.dist(m.a, m.b) > w + 0.3, `the opening is ${m ? U.dist(m.a, m.b).toFixed(2) : 'missing'}, not as wide as the fillets`);
+  assert(m.n.y > 0.9, 'the opening does not face into the apron');
+  // the yellow line runs on from the edge to the taxilane, which every stand's lead-in leaves on a curve
+  const L = IC.paveApronLines(ap), lane = L.find(c => c.taxilane);
+  assert(lane, 'no taxilane on the apron');
+  const ly = lane.pts[0].y;
+  assert(Math.abs(lane.pts[1].y - ly) < 1e-6 && ly > n.y + 0.1, 'the taxilane is not a line across the apron in front of the stands');
+  assert(L.some(c => !c.turn && c.pts.some(q => U.dist(q, n) < 1e-6)), 'the taxiway centreline stops at the apron edge');
+  assert(L.filter(c => c.turn && c.pts.some(q => Math.abs(q.x - n.x) < 0.01 && q.y < ly - 0.05)).length === 2, 'no turns both ways off the entry onto the taxilane');
+  // (kept inside the apron)
+  for (const q of lane.pts) assert(Math.abs(q.x - apr.x) < apr.w / 2, 'the taxilane runs off the apron');
+  for (const s of apr.stands) {
+    const turn = L.find(c => c.turn && c.pts.some(q => Math.abs(q.y - ly) < 1e-4) && c.pts.some(q => Math.abs(q.x - s.fx) < 1e-4 && q.y > ly));
+    assert(turn, `stand ${s.id}'s lead-in does not curve off the taxilane`);
+  }
+  // every line lies on the apron
+  for (const c of L) for (const q of c.pts) assert(IC.paveAt(ap, q.x, q.y), 'an apron line off the pavement');
+});
+test('pavement: a de-icing pad meets its taxiway as one piece, and a service road stops short of an apron opening (brief 45)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap]; S.budget = 1e5;
+  IC.aptGraph(ap);
+  // a pad beside a taxiway, from the builder's own tool
+  let pad = null;
+  for (const t of ap.parts.filter(p => p.kind === 'taxi' && p.built && !p.lane)) {
+    const a = ap.nodes[t.nodes[0]], b = ap.nodes[t.nodes[t.nodes.length - 1]], L = U.dist(a, b); if (L < 2) continue;
+    const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
+    for (const sg of [1, -1]) { const m = IC.bldMode(S, ap, 'deice'), plan = IC.bldPlanOf(S, m, { x: c.x + nx * sg * 0.8, y: c.y + ny * sg * 0.8 }, 0.5); if (plan.ok) { IC.bldPlanSpecs(S, ap, plan.specs); break; } }
+    pad = ap.parts.find(p => p.kind === 'deice'); if (pad) break;
+  }
+  assert(pad, 'no de-icing pad could be placed');
+  for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); }
+  ap.dirty = true; IC.aptGraph(ap);
+  const P = IC.partOutline(pad).map(v => [v.x, v.y]);
+  // its stub runs onto it, and where it crosses the edge the edge opens with a fillet each side
+  const J = IC.paveJoins(ap).find(j => j.type === 'apron' && j.J.A.some(a => a.part === pad));
+  assert(J, 'the pad has no opening where its taxiway comes in');
+  const fil = IC.paveGeom(ap).fil.filter(f => f.f.N === J.J.N);
+  assert(fil.length === 2, `the pad's opening has ${fil.length} fillets`);
+  // between the stub's fillets at the pad and at the taxiway: paving, no sliver of grass
+  const ch = IC.paveChamfers(ap, 0).filter(c => c.poly.some(q => U.dist(q, J.J.N) < 0.6));
+  assert(ch.length === 2, `the stub's sides are not filled out (${ch.length})`);
+  for (const c of ch) { const m = { x: c.poly.reduce((s, q) => s + q.x, 0) / 4, y: c.poly.reduce((s, q) => s + q.y, 0) / 4 }; assert(IC.paveAt(ap, m.x, m.y) && !U.inPoly(m.x, m.y, P), 'a stub side is left unpaved'); }
+  // a service road across an apron opening: its stop lines are where the pavement ends, past the fillets
+  const N0 = IC.svcNet(ap), mo = IC.paveMouths(ap);
+  const c = N0.cross.find(q => !q.lane && mo.some(m => U.dist(m.N, q) < 0.4));
+  if (c) {
+    const s = Math.abs(Math.sin(c.a - c.ta)) || 1;
+    assert(Math.max(c.p0, c.p1) > c.w / 2 / s + 0.1, `the stop line at an apron opening is on the pavement (${c.p0.toFixed(2)}, ${c.p1.toFixed(2)})`);
+    for (const sg of [-1, 1]) { const d = (sg < 0 ? c.p0 : c.p1) + 0.03; assert(!IC.paveAt(ap, c.x + Math.cos(c.a) * sg * d, c.y + Math.sin(c.a) * sg * d), 'a stop line painted on the pavement'); }
+  }
+});
 test('airport: every jet bridge starts at a terminal wall and reaches the door, on every preset and blueprint (brief 45)', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.cap];

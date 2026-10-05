@@ -840,6 +840,8 @@ IC.bldSnapBuilding = function (ap, kind, p) {
   const D = IC.APART[kind], gap = IC.SNAP_GAP[kind];
   if (gap == null || !D) return null;
   const w = D.w || (D.r || 0.1) * 2, h = D.h || (D.r || 0.1) * 2;
+  // (a building's door is at its wall; a pad's stub runs onto the pad, so the pavement is one piece)
+  const dIn = D.pad ? 0.04 : -0.05;
   let best = null;
   for (const e of edgesNear(ap, p, h + gap + 1.2)) {
     const L = U.dist(e.a, e.b); if (L < 0.2) continue;
@@ -852,7 +854,7 @@ IC.bldSnapBuilding = function (ap, kind, p) {
     // the edge whose building would stand nearest the cursor (so a second click on it picks the same one)
     const nx = -uy * side, ny = ux * side, dist = e.half + gap + h / 2, d = U.dxy(p.x, p.y, fx + nx * dist, fy + ny * dist);
     if (best && d >= best.d) continue;
-    best = { d, x: fx + nx * dist, y: fy + ny * dist, a: Math.atan2(uy, ux), foot: { x: fx, y: fy }, edge: { x: fx + nx * e.half, y: fy + ny * e.half }, face: { x: fx + nx * (e.half + gap), y: fy + ny * (e.half + gap) }, door: { x: fx + nx * (e.half + gap - 0.05), y: fy + ny * (e.half + gap - 0.05) }, what: e.what, part: e.part };
+    best = { d, x: fx + nx * dist, y: fy + ny * dist, a: Math.atan2(uy, ux), foot: { x: fx, y: fy }, edge: { x: fx + nx * e.half, y: fy + ny * e.half }, face: { x: fx + nx * (e.half + gap), y: fy + ny * (e.half + gap) }, door: { x: fx + nx * (e.half + gap + dIn), y: fy + ny * (e.half + gap + dIn) }, what: e.what, part: e.part };
   }
   if (!best) return null;
   const spec = { kind, x: best.x, y: best.y, a: best.a };
