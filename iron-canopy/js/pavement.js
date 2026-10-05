@@ -112,9 +112,11 @@ function corner(N, A, B, gap, e, straightX) {
   const den = A.ux * B.uy - A.uy * B.ux; if (Math.abs(den) < 1e-6) return null;
   const s = ((pB.x - pA.x) * B.uy - (pB.y - pA.y) * B.ux) / den;
   const C = { x: pA.x + A.ux * s, y: pA.y + A.uy * s };
-  // (a corner behind the node along either arm, as where a narrow taxiway leaves a wide runway at a shallow angle,
-  // lies over the other arm's pavement: nothing to fill there)
-  if ((C.x - N.x) * A.ux + (C.y - N.y) * A.uy < 0 || (C.x - N.x) * B.ux + (C.y - N.y) * B.uy < 0) return null;
+  // (a corner more than 2 m behind the node along a taxiway, as where a narrow taxiway leaves a wide runway at a shallow angle, lies
+  // over the other arm's pavement: nothing to fill there. Behind it along a runway, the inside of a rapid exit, the
+  // fillet still runs out ahead of the node unless its tangent point falls behind too: checked below)
+  const back = q => (C.x - N.x) * q.ux + (C.y - N.y) * q.uy < -0.02;
+  if ((back(A) && A.kind !== 'rwy') || (back(B) && B.kind !== 'rwy')) return null;
   // the turn is π − gap; the main gear cuts in by the track-in, less on a gentle turn
   const turn = Math.PI - gap, tin = (D.Rc - Math.sqrt(Math.max(0, D.Rc * D.Rc - D.d * D.d))) * Math.min(1, turn / (Math.PI / 2));
   // (as bold as the real ones: the edge arc runs from well before the corner, about 1.3 times the centreline radius
@@ -129,6 +131,7 @@ function corner(N, A, B, gap, e, straightX) {
   const t = R / tg, bx = A.ux + B.ux, by = A.uy + B.uy, bl = Math.hypot(bx, by) || 1;
   const O = { x: C.x + bx / bl * R / Math.sin(gap / 2), y: C.y + by / bl * R / Math.sin(gap / 2) };
   const T1 = { x: C.x + A.ux * t, y: C.y + A.uy * t }, T2 = { x: C.x + B.ux * t, y: C.y + B.uy * t };
+  if ((T1.x - N.x) * A.ux + (T1.y - N.y) * A.uy < 0 || (T2.x - N.x) * B.ux + (T2.y - N.y) * B.uy < 0) return null;
   return { N, A, B, C, O, R, T1, T2, gap, D };
 }
 /* the arc's points from T1 to T2 round O (the short way, bulging towards the corner) */
@@ -192,7 +195,8 @@ function edgeCrossings(ap, G) {
         if (!best) continue;
         N = { x: B.x + (F.x - B.x) * best.s, y: B.y + (F.y - B.y) * best.s };
       }
-      if (U.dist(N, A) < 0.03 || onOther(N, t.p)) continue;
+      // (not where a node already sits on this edge: arms() makes that junction)
+      if (U.dist(N, A) < 0.03 || onOther(N, t.p) || t.p.nodes.some(id => { const q = ap.nodes[id]; return q && q.on && q.on.part === a.p.id && U.dist(q, N) < 0.05; })) continue;
       const L = U.dist(A, N), El = U.dist(best.C, best.D) || 1, ex = (best.D.x - best.C.x) / El, ey = (best.D.y - best.C.y) / El, te = (N.x - best.C.x) * ex + (N.y - best.C.y) * ey;
       const Ar = [{ ux: (A.x - N.x) / L, uy: (A.y - N.y) / L, h: t.w / 2, len: U.dist(N, A), kind: 'taxi', part: t.p, mat: t.mat, lane: t.lane, to: t.p.nodes[ia] }];
       if (El - te > 0.02) Ar.push({ ux: ex, uy: ey, h: 0, len: El - te, kind: 'apron', part: a.p, mat: a.mat });
@@ -399,9 +403,12 @@ function turnAt(J, a, b, R) {
   return { tl, P1, P2, pts: arcPts({ x: J.x + bx / bl * k, y: J.y + by / bl * k }, R, P1, P2) };
 }
 function apronLines(ap, G) {
-  const out = [];
+  const all = [];
   for (const a of G.ar) {
     const p = a.p; if ((p.kind !== 'apron' && p.kind !== 'alert') || !p.stands || !p.stands.length) continue;
+    // (every line kept on the apron: a turn off a row's end or an entry at a corner that would leave it is left out)
+    const out = [], pp = a.poly.map(v => [v.x, v.y]), onIt = q => U.inPoly(q.x, q.y, pp) || IC.polyEdgeDist(a.poly, q) < 0.03;
+    const keep = () => { for (const c of out) if (c.pts.every(onIt)) all.push(c); };
     // (the openings aircraft come in by: taxiways into the apron, else any node on its edge)
     const P = a.poly, mo = G.mouths.filter(m => m.part === p).map(m => m.N);
     const ents = mo.length ? mo : G.J.filter(J => J.A.some(e => e.kind === 'apron' && e.part === p)).map(J => J.N);
@@ -458,7 +465,7 @@ function apronLines(ap, G) {
       }
       if (R.mine) own.push(R);
     }
-    if (!own.length) continue;
+    if (!own.length) { keep(); continue; }
     // each taxiway coming in: its centreline on to the nearest taxilane ahead, turning onto it both ways
     for (const J of G.J) {
       if (!J.A.some(e => e.kind === 'apron' && e.part === p)) continue;
@@ -469,7 +476,11 @@ function apronLines(ap, G) {
         for (const R of own) {
           const dn = v.x * R.h.x + v.y * R.h.y, off = E.x * R.h.x + E.y * R.h.y - R.line;
           if (Math.abs(dn) > 0.35) { const s = -off / dn; if (s > 0.02 && s < 4 && (!best || s < best.s)) best = { R, s }; }
-          else if (Math.abs(off) < 0.25 && (!best || Math.abs(off) < best.s)) best = { R, s: Math.abs(off), along: true };
+          else if (Math.abs(off) < 0.25 && (!best || Math.abs(off) < best.s)) {
+            // (a taxiway coming in along the taxilane's line: only from just past the row's end)
+            const tu = E.x * R.u.x + E.y * R.u.y;
+            if (tu > R.lo - 1 && tu < R.hi + 1) best = { R, s: Math.abs(off), along: true };
+          }
         }
         if (!best) continue;
         const R = best.R, X = best.along ? { x: E.x - R.h.x * (E.x * R.h.x + E.y * R.h.y - R.line), y: E.y - R.h.y * (E.x * R.h.x + E.y * R.h.y - R.line) } : { x: E.x + v.x * best.s, y: E.y + v.y * best.s };
@@ -495,8 +506,9 @@ function apronLines(ap, G) {
       for (let i = 1; i < cuts.length; i++) if (cuts[i - 1] <= mid && mid <= cuts[i]) { lo = Math.max(lo, cuts[i - 1] + 0.02); hi = Math.min(hi, cuts[i] - 0.02); }
       if (hi - lo > 0.05) out.push({ pts: [at(lo), at(hi)], lane: true, apron: true, taxilane: true });
     }
+    keep();
   }
-  return out;
+  return all;
 }
 IC.paveApronLines = ap => IC.paveGeom(ap).cl.filter(c => c.apron);
 

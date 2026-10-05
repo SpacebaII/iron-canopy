@@ -2192,8 +2192,9 @@ test('airport: every jet bridge starts at a terminal wall and reaches the door, 
     assert(!u.length, `${name}: ${u.length} things unattached: ${u.slice(0, 4).map(x => x.text).join(' ')}`);
     return gates.length;
   };
-  for (const k of ['intl', 'regional_ok', 'regional_bad', 'kden']) { IC.aptRelayout(S, ap, k, ap.rwyA || 0); const n = check(k); if (k !== 'regional_bad') assert(n > 0, `${k}: no gates at all`); }
-  for (const key of Object.keys(IC.REAL_APT)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0.4 }); check('the ' + key + ' blueprint'); }
+  for (const k of ['intl', 'regional_ok', 'regional_bad', 'kden6']) { IC.aptRelayout(S, ap, k, ap.rwyA || 0); const n = check(k); if (k !== 'regional_bad') assert(n > 0, `${k}: no gates at all`); }
+  // (the blueprints made from kits; the real airports from map data have their own checks, brief 39)
+  for (const key of Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].bp)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0.4 }); check('the ' + key + ' blueprint'); }
   // a stand next to the terminal's end, beyond its wall, is remote with stairs, and its apron says so
   IC.aptRelayout(S, ap, 'intl', ap.rwyA || 0);
   const term = ap.parts.find(p => p.kind === 'terminal'), apr = ap.parts.find(p => p.kind === 'apron' && IC.rectGap(p, term) < 0.3);
@@ -2262,8 +2263,8 @@ test('airport: service roads are laid out by themselves, reach the fuel farm, ca
   IC.aptPlanPart(S, ap, 'fire', c.x + d.y * 3, c.y - d.x * 3, ap.rwyA); finishWorks(S, ap);
   const fire = ap.parts.filter(p => p.kind === 'fire').pop();
   assert(fire.built && near(IC.svcNet(ap), fire), 'the new fire station has no service road');
-  IC.aptRelayout(S, ap, 'kden', ap.rwyA || 0); check('the Denver-size layout');
-  for (const key of Object.keys(IC.REAL_APT)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0 }); check('the ' + key + ' blueprint'); }
+  IC.aptRelayout(S, ap, 'kden6', ap.rwyA || 0); check('the Denver-size layout');
+  for (const key of Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].bp)) { IC.aptFromLayout(ap, IC.REAL_APT[key], { x: ap.x, y: ap.y, rot: 0 }); check('the ' + key + ' blueprint'); }
 });
 /* ---------- terminal kits and blueprints (brief 45) ---------- */
 test('kits: every terminal kit has its stands fanned or lined along its walls, each with a bridge, and nothing overlaps', () => {
