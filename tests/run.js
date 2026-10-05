@@ -1363,6 +1363,126 @@ test('overlaps: the builder refuses a building on a taxiway, a road or the lands
   assert(IC.aptOverlaps(S, cap).length === 0, 'the test airport overlaps before anything is built');
 });
 
+/* ---------- roads where they meet (brief 46) ---------- */
+const roadWorld = (() => { let W = null; return () => W || (W = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }).world); })();
+const halfAt = z => k => IC.roadWidth(k, z) / 2;
+test('roads: a T junction has curb returns tangent to both edges, and no disc', () => {
+  const W = roadWorld(), R = IC.roadJoins(W);
+  // (not the rare forks where two roads leave at almost the same angle)
+  const T = R.joins.filter(j => j.kind === 'tj' && j.arms.length === 3 && IC.joinGeom(j, halfAt(200)).gaps.every(g => g > 0.3));
+  assert(T.length > 50, `only ${T.length} T junctions`);
+  for (const j of T.slice(0, 40)) {
+    const G = IC.joinGeom(j, halfAt(200)), F = G.fil.filter(Boolean);
+    assert(F.length >= 2, `a T junction at ${j.x | 0}, ${j.y | 0} has ${F.length} curb returns`);
+    for (const f of F) {
+      // the arc's centre is its radius away from each road's edge line: tangent, not a blob
+      const dA = Math.abs((f.O.x - G.N.x) * -f.A.uy + (f.O.y - G.N.y) * f.A.ux) - f.A.h, dB = Math.abs((f.O.x - G.N.x) * -f.B.uy + (f.O.y - G.N.y) * f.B.ux) - f.B.h;
+      assert(Math.abs(dA - f.R) < 1e-6 && Math.abs(dB - f.R) < 1e-6, `a curb return is not tangent (${dA.toFixed(4)}, ${dB.toFixed(4)} against ${f.R.toFixed(4)})`);
+      assert(f.R >= 0.03 || f.A.len < 0.5 || f.B.len < 0.5, `a curb return of ${(f.R * 100).toFixed(0)} m on country roads`);
+    }
+    // the junction's surface follows the roads: far from round (a disc would be as wide every way)
+    const d = G.surf.map(p => Math.hypot(p.x - G.N.x, p.y - G.N.y)), lo = Math.min(...d), hi = Math.max(...d);
+    assert(hi > lo * 1.6, `the junction at ${j.x | 0}, ${j.y | 0} is round (${lo.toFixed(3)} to ${hi.toFixed(3)})`);
+  }
+  // and nothing on the map is drawn as a circle at a T junction: the painter has no disc for them
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../iron-canopy/js/render-roads.js'), 'utf8');
+  assert(!/function kerbs\(/.test(src) && !/j\.kind === 'tj'[^\n]*arc\(/.test(src), 'the road painter still stamps discs on junctions');
+});
+test('roads: a main road\'s centre line and far edge run straight through a minor junction; the minor road gives way', () => {
+  const W = roadWorld(), R = IC.roadJoins(W);
+  const T = R.joins.filter(j => j.kind === 'tj' && j.arms.length === 3 && j.arms.filter(a => a.cls === 'rd').length === 2 && j.arms.some(a => a.cls === 'lc' || a.cls === 'sp'));
+  assert(T.length >= 5, `only ${T.length} main-road T junctions`);
+  let straight = 0;
+  for (const j of T) {
+    const G = IC.joinGeom(j, halfAt(200));
+    assert(G.main && G.main.every(i => G.arms[i].cls === 'rd'), `the main road at ${j.x | 0}, ${j.y | 0} is not the main road (${G.main})`);
+    const minor = G.arms.findIndex((a, i) => !G.main.includes(i));
+    assert(minor >= 0 && G.mouth[minor] > 0, 'the minor road has no mouth to give way at');
+    // where the main road runs straight on, its far side has no curb return: the edge line continues
+    const [i, k] = G.main, a = G.arms[i], b = G.arms[k];
+    if (-(a.ux * b.ux + a.uy * b.uy) > 0.995) { straight++; const far = (i + 1) % 3 === k ? i : k; assert(!G.fil[far], 'a curb return on the straight side of a main road'); }
+  }
+  assert(straight > 0, 'no straight main road through a junction to check');
+});
+test('roads: a roundabout has a kerbed island, flared entries with curb returns tangent to the ring, and splitter islands', () => {
+  const W = roadWorld(), R = IC.roadJoins(W);
+  assert(R.rbs.length >= 10, `only ${R.rbs.length} roundabouts`);
+  for (const j of R.rbs) {
+    const G = IC.rbGeom(j, halfAt(200));
+    assert(G.Ri > 0.1 && G.Ro > G.Ri + 0.05, `the roundabout at ${j.x | 0}, ${j.y | 0}: island ${G.Ri.toFixed(2)}, ring to ${G.Ro.toFixed(2)}`);
+    for (const a of G.arms) {
+      assert(a.he > a.ha * 1.2, 'an entry is not flared');
+      for (const sd of a.side) assert(Math.abs(Math.hypot(sd.Q.x - G.C.x, sd.Q.y - G.C.y) - (G.Ro + Math.hypot(sd.Q.x - sd.Tc.x, sd.Q.y - sd.Tc.y))) < 1e-6, 'an entry curb is not tangent to the ring');
+      let area = 0; for (let i = 0; i < a.isl.length; i++) { const p = a.isl[i], q = a.isl[(i + 1) % a.isl.length]; area += p.x * q.y - q.x * p.y; }
+      assert(Math.abs(area) / 2 > 1e-4, 'an entry has no splitter island');
+      assert(a.gy.length === 2, 'an entry has no give-way line');
+    }
+  }
+});
+test('roads: an interchange\'s slip roads leave and join the motorway with a taper, and a gore where they part', () => {
+  const W = roadWorld(), R = IC.roadJoins(W), hw = halfAt(200)('hw'), hr = halfAt(200)('ramp');
+  const M = R.ends.filter(e => e.kind === 'merge');
+  assert(M.length >= 40, `only ${M.length} slip road ends on motorways`);
+  let gores = 0;
+  for (const e of M) {
+    const T = IC.taperGeom(e, hw, hr), n = T.lane.length;
+    if (T.gore) gores++;
+    // (a loop that starts beside the junction's bridge runs on its own parallel lane: no room for a taper there)
+    if (T.len < 0.3) continue;
+    const wAt = i => { const p = T.lane[i], q = T.aux[T.aux.length - 1 - i]; return Math.hypot(p.x - q.x, p.y - q.y); };
+    // full width beside the slip road, tapering to nothing at the far end
+    assert(wAt(0) > hr * 1.5, `the auxiliary lane is ${(wAt(0) * 100).toFixed(1)} m wide at the slip road`);
+    assert(wAt(n - 1) < 0.01 || T.lane.length < 3, `the taper ends ${(wAt(n - 1) * 100).toFixed(1)} m wide`);
+  }
+  assert(gores >= M.length * 0.9, `only ${gores} of ${M.length} slip roads have a gore`);
+});
+test('roads: no road surface crosses another at grade: over the deck, on a bridge, or at a junction', () => {
+  const W = roadWorld(), R = IC.roadJoins(W);
+  let n = 0;
+  for (const J of W.junctions) for (const r of J.ramps || []) {
+    const P = r.pts, others = J.dirs.filter(d => d.e).map(d => ({ pts: d.e.pts, over: (J.over || []).includes(d.a) }));
+    for (const o of others) for (let i = 1; i < P.length; i++) for (let k = 1; k < o.pts.length; k++) {
+      const A = P[i - 1], B = P[i], C = o.pts[k - 1], D = o.pts[k], t = U.segX(A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y); if (t < 0) continue;
+      const x = A.x + (B.x - A.x) * t, y = A.y + (B.y - A.y) * t; n++;
+      const atEnd = Math.min(U.dxy(x, y, P[0].x, P[0].y), U.dxy(x, y, P[P.length - 1].x, P[P.length - 1].y)) < 0.35;
+      const underDeck = o.over && U.dxy(x, y, J.x, J.y) < 0.6;
+      const bridge = R.xings.some(q => U.dxy(q.x, q.y, x, y) < 0.05);
+      assert(atEnd || underDeck || bridge, `a slip road crosses a road at grade at ${x.toFixed(1)}, ${y.toFixed(1)}`);
+    }
+  }
+  assert(n > 0, 'no crossings to check');
+  // at every interchange one road crosses over the other on a deck; a railway is crossed on a bridge, or level by a small road
+  for (const J of W.junctions) if (J.kind === 'mm' || J.kind === 'mx') assert(J.over && J.over.length, `the interchange at ${J.x | 0}, ${J.y | 0} has no bridge`);
+  for (const x of IC.railCrossings(W)) assert(x.level === (x.cls === 'lc' || x.cls === 'sp'), `a ${x.cls} road crosses the railway ${x.level ? 'level' : 'on a bridge'}`);
+});
+test('roads: city streets cross at kerbed corners that meet the blocks\' lots, never cutting into a building', () => {
+  const W = roadWorld(), c = W.cities[0], J = IC.streetJoins(W, c);
+  assert(J.length > 300, `only ${J.length} street crossings in the capital`);
+  const inRect = (b, x, y, m) => { const ca = Math.cos(b.a), sa = Math.sin(b.a), lx = (x - b.x) * ca + (y - b.y) * sa, ly = -(x - b.x) * sa + (y - b.y) * ca; return Math.abs(lx) < b.w / 2 + m && Math.abs(ly) < b.h / 2 + m; };
+  let arcs = 0, cut = 0, meet = 0;
+  for (const j of J) {
+    const G = IC.joinGeom(j, k => IC.ROAD_SPEC[k].w / 2);
+    for (const f of G.fil) {
+      if (!f) continue;
+      arcs++;
+      const mid = f.arc[f.arc.length >> 1], near = c.blocks.filter(b => !b.empty && U.dxy(b.x, b.y, mid.x, mid.y) < 6);
+      if (near.some(b => inRect(b, mid.x, mid.y, -0.02))) cut++;
+      if (near.some(b => inRect(b, mid.x, mid.y, 0.25))) meet++;
+    }
+  }
+  assert(arcs > J.length * 2, `only ${arcs} kerbed corners at ${J.length} crossings`);
+  assert(cut <= arcs * 0.005, `${cut} of ${arcs} kerbed corners cut into a building`);
+  assert(meet >= arcs * 0.35, `only ${meet} of ${arcs} kerbed corners meet a block's lot`);
+});
+test('roads: the landside\'s roads meet at kerbed corners and T junctions', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }), cap = S.byId[S.story.cap];
+  growLand(S, cap);
+  const J = IC.landJoins(cap);
+  assert(J.length >= 6, `only ${J.length} junctions on the capital's landside`);
+  const F = J.map(j => IC.joinGeom(j, () => 0.06)).flatMap(G => G.fil.filter(Boolean));
+  assert(F.length >= J.length, `only ${F.length} curb returns at ${J.length} landside junctions`);
+});
+
 /* ---------- shapes: outlines, bridges, movers, two-level roads (brief 39) ---------- */
 const MINI = require('./fixtures/mini-layout.js');
 /* the made-up test field in place of the capital's airport, turned by rot */

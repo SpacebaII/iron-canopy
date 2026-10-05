@@ -378,8 +378,14 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   for (const r of W.rails) {
     if (!inb(r.bb[0] - 10, r.bb[1] - 10, r.bb[2] + 10, r.bb[3] + 10)) continue;
     const line = () => { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); };
-    g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4 * K0, 1.6, 0.7, 0.4, 0.3][lod]; line(); g.stroke();
-    if (lod >= 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 0.4; g.setLineDash([0.3, 0.9]); line(); g.stroke(); g.setLineDash([]); }
+    // far out a dark line; close in the ballast bed at its real width (the rails and sleepers are drawn live closer)
+    if (lod < 3) { g.strokeStyle = 'rgba(30,28,26,0.55)'; g.lineWidth = [4 * K0, 1.6, 0.7][lod]; line(); g.stroke(); }
+    if (lod === 2) { g.strokeStyle = 'rgba(170,160,140,0.55)'; g.lineWidth = 0.4; g.setLineDash([0.3, 0.9]); line(); g.stroke(); g.setLineDash([]); }
+    if (lod >= 3) {
+      g.strokeStyle = 'rgba(40,36,30,0.45)'; g.lineWidth = lod === 3 ? 0.16 : 0.075; line(); g.stroke();
+      g.strokeStyle = 'rgb(126,118,104)'; g.lineWidth = lod === 3 ? 0.12 : 0.055; line(); g.stroke();
+      g.strokeStyle = 'rgba(52,46,40,0.8)'; g.lineWidth = lod === 3 ? 0.05 : 0.022; line(); g.stroke();
+    }
   }
   // settlements: the built-up ground (paving in the centre, gardens in the suburbs, yards by the factories), so a
   // town is one piece of fabric following its own ragged shape, then parks and squares
@@ -416,10 +422,12 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   {
     const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, ring: 2.4, ramp: 1 },
       { ln: 0.3, art: 0.7, st: 0.5, ring: 0.9 }, { ln: 0.12, art: 0.4, st: 0.34, ring: 0.36 }, { ln: 0.07, art: 0.4, st: 0.34, ring: 0.36 }][lod];
-    const FILL = { ramp: 'rgba(230,184,124,0.85)', hw: 'rgba(238,176,104,0.92)', rd: 'rgba(222,204,156,0.75)', lc: 'rgba(196,184,150,0.5)', sp: 'rgba(196,184,150,0.5)', ln: 'rgba(160,140,100,0.55)', art: 'rgba(178,174,164,0.75)', st: 'rgba(148,146,140,0.6)', ring: 'rgba(232,190,130,0.85)' };
+    // (the same tones as the live drawing far out: roadgeom.js IC.ROAD_TONE)
+    const T = IC.ROAD_TONE, tc = (k, a) => `rgba(${T[k][0]},${T[k][1]},${T[k][2]},${a})`;
+    const FILL = { ramp: tc('ramp', 0.85), hw: tc('hw', 0.92), rd: tc('rd', 0.8), lc: tc('lc', 0.6), sp: tc('sp', 0.6), ln: tc('ln', 0.55), art: tc('art', 0.75), st: tc('st', 0.6), ring: tc('ring', 0.85) };
     if (lod >= 2) { FILL.art = 'rgb(150,148,142)'; FILL.st = 'rgb(128,127,122)'; FILL.ring = 'rgb(128,127,122)'; FILL.ln = 'rgba(140,122,90,0.8)'; }
     // close in, city streets are asphalt between pavements
-    if (lod >= 3) { FILL.art = 'rgb(70,71,72)'; FILL.st = 'rgb(84,85,86)'; FILL.ring = 'rgb(66,67,68)'; }
+    if (lod >= 3 && IC.STREET_ASP) { FILL.art = IC.STREET_ASP.art; FILL.st = IC.STREET_ASP.st; FILL.ring = IC.STREET_ASP.ring; }
     const layers = [];
     // (the national roads through a city are its avenues: far out drawn as the roads they are, close in as avenues)
     const aves = lod >= 2 ? W.edges.filter(e => e.city) : [];
@@ -460,6 +468,8 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   g.strokeStyle = 'rgba(170,140,120,0.35)'; g.lineWidth = lod ? 2 : 6 * K0;
   for (const r of W.eroads) { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); }
   for (const c of towns) if (tIn(c)) for (const b of c.blocks) if (inT(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) block(g, b, lod, c.kind === 'ftown', true);
+  // close in, the streets cross at kerbed corners (render-roads.js; the same code draws them live over the avenues)
+  if (lod >= 3 && IC.paintStreetJoins) for (const c of towns) if (tIn(c)) IC.paintStreetJoins(g, W, c, x0 + p, y0 + p, x1 - p, y1 - p, lod, 1 / LOD(lod).ppu);
   for (const v of W.villages) {
     if (!inb(v.x - 90, v.y - 90, v.x + 90, v.y + 90)) continue;
     const foreign = v.kind === 'ftown' || !v.home;

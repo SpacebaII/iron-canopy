@@ -43,6 +43,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 9 | [26 Fewer things on screen, every choice a trade-off](26-decisions-focus.md) | 24 | `ui.js`, `warroom.js`, `inspector.js`, alerts, delegates |
 | 9 | [27 Moments and after-action reports](27-moments.md) | 19, 22 | new `moments.js`, the report, replay links, audio |
 | 9 | [28 A 20-minute Showcase for the portfolio](28-vertical-slice.md) | 25–27 | new `showcase.js` |
+| 11 | [39 Denver and Los Angeles, near one to one](39-real-airports.md) | 23, 33 part 1, 38 | real layouts imported from data, shapes in `airport.js`, an overlap checker, `landside.js`, `render-airport.js`, a showcase start |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.
@@ -60,3 +61,5 @@ Wave 8 comes from the coordinator's ideas that the owner approved (a session-tim
 Wave 9 comes from the owner's view of pace: the Career should span ten years or more on a calendar by months, construction stays quick, and the player has time to let revenue come in. Release (the owner: "I just want a product"): after 32, 33 part 1 and 34, and one content pass the owner asked for (38, aircraft variety), scope is frozen and 37 (QA and release materials) runs; 31's missile simulation, 36, 33 part 2 and 25–28 wait until after v1.0. After the owner's first long play of wave 8: 34 (3D quality) and 35 (airspace) first, 32 finishing, then 33 (with snapping and guides first), 36 (performance), 31's missile simulation (the owner wants to rebuild real airports: round terminals, midfield concourses, people movers, cheap cosmetics); 25–28 wait for 32 and are adjusted to the calendar before they start.
 
 After wave 6: a full `/code-review ultra`, then fixes and long balance runs.
+
+Wave 11 comes from the owner's look at v1.0: airport fidelity must be much higher before a public release. No roads over roads or over the airfield, and Denver and Los Angeles rebuilt near one to one from real data (39).
