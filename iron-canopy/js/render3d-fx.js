@@ -1330,7 +1330,9 @@ IC.fx3d.state = v => { const F = v.fxs; return F && { q: F.q, night: F.night, we
   cover: F.W && F.W.cover, expo: F.expo, sunEl: Math.asin(U.clamp(F.sunDir.y, -1, 1)) * 57.2958, shadows: !!v.sunShadow, clouds: (F.clouds || []).filter(c => c.visible).length, flash: F.skyU ? F.skyU.flash.value : 0,
   post: !!F.rt, cpuMs: Array.from(F.msRing).sort((a, b) => a - b)[32], carMs: F.carMs, env: !!v.scene.environment, grass: !!(F.grass && F.grass.visible), made: F.made }; };
 IC.fx3dPreset = q => { if (IC.q3d) IC.q3d.set(q); };
-/* ready as soon as replay3d.js is: the materials need three.js, which is loaded by the time this file is */
-if (IC.R3D) { R = IC.R3D; if (R.THREE()) { once(); IC.fx3d.ok = true; } }
+/* ready as soon as replay3d.js is: the materials need three.js, which is loaded by the time this file is. The shaders
+   need r155 or later (colour-space chunks, physical light units): on the old fallback build the view draws plainly */
+IC.fx3d.MIN_REV = 155;
+if (IC.R3D) { R = IC.R3D; const T = R.THREE(); if (T && (+T.REVISION || 0) >= IC.fx3d.MIN_REV) { once(); IC.fx3d.ok = true; } }
 
 })(window.IC);
