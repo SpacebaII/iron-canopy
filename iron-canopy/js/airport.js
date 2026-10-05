@@ -149,7 +149,9 @@ function standsFor(ap, p) {
     const S0 = IC.STAND[f.size], a = p.a + (f.rot || 0), hx = Math.cos(a), hy = Math.sin(a), c = toWorld(p, f.lx, f.ly), back = S0.d / 2 + 0.06;
     const id = p.id + 's' + (f.k != null ? f.k : i), old = p.stands && p.stands.find(x => x.id === id);
     const nose = { x: c.x + hx * (S0.d / 2 + 0.04), y: c.y + hy * (S0.d / 2 + 0.04) };
-    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, nose) < 0.12);
+    // (a stand the data marks as a gate has its jet bridge: the terminal may be a bridge's length away)
+    let term = null, td = f.gate ? 0.8 : 0.12;
+    for (const q of ap.parts) { if ((q.kind !== 'terminal' && q.kind !== 'cargo') || !q.built) continue; const d = partDist(ap, q, nose); if (d < td) { td = d; term = q; } }
     return { id, x: c.x, y: c.y, fx: c.x - hx * back, fy: c.y - hy * back, ox: c.x + hx * back, oy: c.y + hy * back, a, size: f.size, apron: p.id,
       contact: !!(term && term.kind === 'terminal'), cargo: !!(term && term.kind === 'cargo'), drive: !!f.drive, hp: old ? old.hp : 1, occ: old ? old.occ : null, ramp: true, zoneOwn: f.zone, via: f.via || null, name: f.name || null };
   });
@@ -267,7 +269,8 @@ function nameRunways(ap) {
   for (const w of ap.works || []) if (w.kind === 'build' && w.part && w.part.kind === 'runway') w.label = `Build ${w.part.name}`;
 }
 IC.aptNameRunways = nameRunways;
-/* runways that cannot be used independently: they cross, or they are parallel and closer than 760 m */
+/* runways that cannot be used independently: they cross, or they are parallel and closer than 760 m (a close pair
+   is not cleared as one: the configuration lands on one and departs on the other, as Los Angeles does) */
 IC.RWY_INDEP = 7.6;
 function segX(a, b, c, d) { const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)); return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b); }
 IC.rwDependent = function (p, q) {
@@ -397,7 +400,8 @@ IC.aptGraph = function (ap) {
   const rws = parts.filter(p => p.kind === 'runway'), grp = {};
   for (const r of rws) grp[r.id] = r.id;
   const find = id => grp[id] === id ? id : (grp[id] = find(grp[id]));
-  for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) if (IC.rwDependent(rws[i], rws[j])) { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; }
+  // (close parallels keep their own clearances: one lands while the other departs, as the configuration pairs them)
+  for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) { const d = IC.rwDependent(rws[i], rws[j]); if (d && d !== 'close') { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; } }
   for (const r of rws) grp[r.id] = find(r.id);
   ap.gver = (ap.gver || 0) + 1;
   ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map(), bays: new Set(parts.filter(p => p.bay && p.built).map(p => p.id)) };
@@ -430,7 +434,13 @@ IC.aptSearch = function (ap, src, o) {
   const dist = new Map(), prev = new Map(), time = o.res ? new Map() : null, done = new Set();
   if (!G.N.has(src)) return { dist, prev, time };
   dist.set(src, 0); if (time) time.set(src, o.res.t0);
-  const H = new Heap(); H.push(src, 0);
+  // (with a goal, A*: the heap is ordered by cost so far plus the straight-line time to the goal at the fastest
+  // taxi speed, times 0.85 for a taxiway's preferred flow, which never overstates it, so a big airport's search stays
+  // near the line between the two)
+  const goal = o.to && !o.rev ? G.N.get(o.to) : null;
+  if (goal && G.vmax == null) { G.vmax = 0.01; for (const L of G.adj.values()) for (const e of L) G.vmax = Math.max(G.vmax, e.spd || 0); }
+  const h = goal ? v => { const n = G.N.get(v); return n ? U.dxy(n.x, n.y, goal.x, goal.y) * 0.85 / G.vmax : 0; } : () => 0;
+  const H = new Heap(); H.push(src, h(src));
   const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0;
   while (H.k.length) {
     const u = H.pop();
@@ -448,7 +458,7 @@ IC.aptSearch = function (ap, src, o) {
       if (e.kind !== 'rwy' && B.rw) { const c = ap.cfg && ap.cfg.rw[B.rw]; w += c && c.role !== 'spare' ? 60 : 20; }
       if (time) { const tu = time.get(u), wait = o.res.m ? IC.gopsResWait(ap, e, tu, o.res.m) : 0; w += wait * 1.5; tv = tu + wait + e.len / e.spd; }
       const nd = du + w;
-      if (nd < (dist.has(v) ? dist.get(v) : Infinity)) { dist.set(v, nd); prev.set(v, e); if (time) time.set(v, tv); H.push(v, nd); }
+      if (nd < (dist.has(v) ? dist.get(v) : Infinity)) { dist.set(v, nd); prev.set(v, e); if (time) time.set(v, tv); H.push(v, nd + h(v)); }
     }
   }
   return { dist, prev, time };
@@ -1163,6 +1173,7 @@ function taxiThrough(pts, q) {
 /* a part in words: a runway by its name, the rest by kind, numbered when there are several ("Apron 2") */
 IC.partName = function (ap, q) {
   if (q.kind === 'runway') return q.name || 'the runway';
+  if (q.name && q.kind !== 'taxi') return q.name;   // (a building named in the data, or by the player)
   const D = IC.APART[q.kind] || { name: q.kind }, same = ap.parts.filter(p => p.kind === q.kind), i = same.indexOf(q);
   return same.length > 1 && i >= 0 ? `${D.name} ${i + 1}` : `the ${U.lc(D.name)}`;
 };
@@ -1534,7 +1545,13 @@ IC.layoutAirport = function (ap, template, a) {
     bld('fuel', -12, -4.5); bld('fuel', -4, -5.2); bld('fuel', 11, -4.6);
     bld('ammo', 0, -7); bld('tower', 1.2, -3.8); bld('fire', -1.2, 1.3);
     tx([[-14.8, -1.7], [-15.6, -1.15]]);
-  } else if (template === 'kden') layoutKden(ap, { rw, tx, rect, bld, ils, zone });
+  } else if (template === 'kden' || template === 'kden6') {
+    // the real Denver (airports-real-data.js), turned so its first runway lies along a; 'kden6' is the six-runway
+    // layout built in code, kept for the engine's capacity test (the real one's outer runways cross the inner ones)
+    const L = template === 'kden' && IC.REAL_APT && IC.REAL_APT.kden;
+    if (L) { const r0 = L.runways[0], la = Math.atan2(r0.b[1] - r0.a[1], r0.b[0] - r0.a[0]); IC.aptFromLayout(ap, L, { x: ap.x, y: ap.y, rot: a - la }); ap.template = 'kden'; return; }
+    layoutKden(ap, { rw, tx, rect, bld, ils, zone });
+  }
   IC.resolveNodes(ap);
   for (const p of ap.parts) if (p.kind === 'apron' || p.kind === 'hangar' || p.kind === 'has' || p.kind === 'alert') IC.aptAutoJoin(ap, p);
   ap.dirty = true;
@@ -1544,9 +1561,9 @@ IC.layoutAirport = function (ap, template, a) {
   if (IC.aptAutoLinks) IC.aptAutoLinks(ap);
   IC.aptExtent(ap);
 };
-/* A Denver-sized airport: six runways in a pinwheel round three concourses (well over a hundred gates), end-around
-   taxiways, one-way lanes between the concourses, cargo, light-aircraft and military ramps. Proof that the model
-   scales, and the test for it. Local x runs along the first runway, y across it; 1 unit = 100 m. */
+/* A Denver-sized airport drawn in code: six runways in a pinwheel round three concourses, end-around taxiways, one-way
+   lanes between the concourses, cargo, light-aircraft and military ramps. Superseded by the real Denver from map data
+   (IC.REAL_APT.kden, brief 39); kept only for a build without the data file. Local x runs along the first runway. */
 function layoutKden(ap, L) {
   const { rw, tx, rect, bld, ils, zone } = L;
   ap.buildR = Math.max(ap.buildR, 62);

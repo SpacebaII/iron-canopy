@@ -1154,7 +1154,7 @@ function runwayText(S, ap, p) {
   const a = Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x), off = Math.abs(U.angWrap(((a - IC.PREVAIL) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2)) * 180 / Math.PI, w = Math.round(Math.min(off, 180 - off));
   const rel = ap.parts.filter(q => q.kind === 'runway').map(q => IC.rwDependent(q, p)).filter(Boolean);
   const noise = Object.entries(runwayNoise(S, p));
-  return `Runway ${U.km(len)}: ${t.length ? 'fits ' + t.join(', ') : 'too short for airliners'} · ${w <= 15 ? 'into the prevailing wind' : w + '° off the prevailing wind'}${rel.length ? ` · ${rel.includes('cross') ? 'crosses' : 'closer than 760 m to'} another runway: they share one clearance` : ''}${noise.length ? ` · noise over ${noise.map(([k, n]) => `${n} city blocks of ${k}`).join(', ')}` : ''}`;
+  return `Runway ${U.km(len)}: ${t.length ? 'fits ' + t.join(', ') : 'too short for airliners'} · ${w <= 15 ? 'into the prevailing wind' : w + '° off the prevailing wind'}${rel.length ? ` · ${rel.includes('cross') ? 'crosses another runway: they share one clearance' : 'closer than 760 m to another runway: one lands while the other departs'}` : ''}${noise.length ? ` · noise over ${noise.map(([k, n]) => `${n} city blocks of ${k}`).join(', ')}` : ''}`;
 }
 function apronText(ap, p) {
   const dep = p.h * 0.64, sz = IC.apronStandSize(p);

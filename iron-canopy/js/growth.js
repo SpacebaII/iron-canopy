@@ -548,8 +548,10 @@ IC.aptSeatRoads = function (S, ap) {
 };
 /* lay an airport out again (a template in place of what it had) and seat the roads round it */
 IC.aptRelayout = function (S, ap, template, a) {
+  if (ap.land) ap.land.fixed = false;
   IC.layoutAirport(ap, template, a != null ? a : ap.rwyA || 0);
-  if (ap.land) { ap.land.items = []; ap.land.roads = []; ap.land.kerbN = null; ap.land.ver++; }
+  // (a layout from data brings its own landside; a code layout grows one)
+  if (ap.land && !ap.land.fixed) { ap.land.items = []; ap.land.roads = []; ap.land.kerbN = null; ap.land.ver++; }
   ap._seatKey = null; IC.aptReseat(S, ap);
   // (a setup step: the travel times are worked out now, not in the next step of play)
   if (S.econ && S.econ.roadsDirty) refreshRoads(S);

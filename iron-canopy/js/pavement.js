@@ -112,6 +112,9 @@ function corner(N, A, B, gap, e, straightX) {
   const den = A.ux * B.uy - A.uy * B.ux; if (Math.abs(den) < 1e-6) return null;
   const s = ((pB.x - pA.x) * B.uy - (pB.y - pA.y) * B.ux) / den;
   const C = { x: pA.x + A.ux * s, y: pA.y + A.uy * s };
+  // (a corner behind the node along either arm, as where a narrow taxiway leaves a wide runway at a shallow angle,
+  // lies over the other arm's pavement: nothing to fill there)
+  if ((C.x - N.x) * A.ux + (C.y - N.y) * A.uy < 0 || (C.x - N.x) * B.ux + (C.y - N.y) * B.uy < 0) return null;
   // the turn is π − gap; the main gear cuts in by the track-in, less on a gentle turn
   const turn = Math.PI - gap, tin = (D.Rc - Math.sqrt(Math.max(0, D.Rc * D.Rc - D.d * D.d))) * Math.min(1, turn / (Math.PI / 2));
   // (as bold as the real ones: the edge arc runs from well before the corner, about 1.3 times the centreline radius
