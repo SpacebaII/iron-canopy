@@ -499,6 +499,7 @@ function onAct(e) {
     case 'uiscale': ui.applyScale(+v); ui.saveCfg(); setTimeout(resize, 50); break;
     case 'cfg': S.cfg[v] = !S.cfg[v]; ui.saveCfg(); break;
     case 'radarFx': S.cfg.radarFx = v; ui.saveCfg(); break;
+    case 'q3d': if (IC.q3d) IC.q3d.set(v); break;
     case 'pauseRoom': ui.pauseRoom = !ui.pauseRoom; ui.saveCfg(); break;
     case 'pauseOn': S.cfg.pauseOn[v] = !ui.pauseOnIs(S.cfg.pauseOn, v); ui.saveCfg(); break;
     case 'selu': case 'sels': case 'selt': case 'selv': {

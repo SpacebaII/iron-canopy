@@ -3627,6 +3627,23 @@ test('3D view: 300 frames of the live view and of a replay make nothing again, a
   const faced = out.liveRunning.faced.concat(out.replay.faced, out.turn.faced), worst = faced.reduce((a, f) => f.off > a.off ? f : a, { off: 0 });
   assert(faced.length > 20 && worst.off < 0.2, `a model points ${(worst.off * 57.3).toFixed(0)}° off where it goes: ${worst.who}`);
   assert(out.turn.bank > 0.5 && Math.abs(out.turn.roll - out.turn.poseRoll) < 1e-6 && Math.abs(out.turn.roll) > 0.5, `the aircraft turning hardest (bank ${(out.turn.bank * 57.3).toFixed(0)}°) is drawn banked ${(out.turn.roll * 57.3).toFixed(0)}°`);
+  // the picture (brief 40): every preset draws without making anything per frame, and switching back leaks nothing
+  const P = out.presets;
+  for (const k in P) none(P[k].made, `the ${k} preset`);
+  assert(JSON.stringify(P.medium.alive) === JSON.stringify(P.medium2.alive), `presets leak: medium had ${JSON.stringify(P.medium.alive)}, after low, high and ultra ${JSON.stringify(P.medium2.alive)}`);
+  assert(!P.low.state.post && P.medium.state.post && P.ultra.state.post, 'Low should draw straight to the screen and the others through the passes');
+  assert(P.low.passes === 0 && P.medium.passes > 5 && P.high.passes > P.medium.passes, `passes a frame: low ${P.low.passes}, medium ${P.medium.passes}, high ${P.high.passes}`);
+  // the weather and the hours build, make nothing per frame, and look like what they are
+  const W = out.weather;
+  for (const k in W) none(W[k].made, `weather ${k}`);
+  assert(W['clear@12'].sunEl > 40 && W['clear@12'].shadows && W['clear@12'].night === 0, `noon: the sun at ${W['clear@12'].sunEl.toFixed(0)}°, shadows ${W['clear@12'].shadows}`);
+  assert(W['clear@19.6'].sunEl > 1 && W['clear@19.6'].sunEl < 15 && W['clear@19.6'].night < 0.1, `golden hour: the sun at ${W['clear@19.6'].sunEl.toFixed(1)}°`);
+  assert(W['clear@23.5'].night === 1 && !W['clear@23.5'].shadows, 'at night it is dark and nothing casts a sun shadow');
+  assert(W['rain@22.5'].rain && W['rain@22.5'].wet > 0.9 && !W['clear@12'].rain, 'rain falls and wets the pavement');
+  assert(W['snow@11'].flakes && W['snow@11'].snow > 0.5 && !W['clear@12'].flakes, 'snow falls and lies');
+  assert(W['fog@7'].fog > 50 * W['clear@12'].fog && W['fog@7'].fogH < W['clear@12'].fogH / 4, `fog is a thick layer on the ground: ${W['fog@7'].fog} against ${W['clear@12'].fog}`);
+  assert(W['storm@15'].flashes > 0 && W['clear@12'].flashes === 0, 'a storm flashes with lightning, a clear day does not');
+  assert(W['overcast@12'].cover > 0.8 && !W['overcast@12'].shadows && W['scattered@12'].clouds >= 2, 'overcast covers the sun');
 }, true);
 test('3D life: a jet at a gate gets its jet bridge and vehicles, nothing is made from frame to frame, and the lights follow the phase', () => {
   const cp = require('child_process'), path = require('path');
