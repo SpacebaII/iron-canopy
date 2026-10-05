@@ -381,7 +381,7 @@ function updOne(v, m, X, st, t, dt, dot) {
   if (X.lights) {
     X.lights.visible = !dot && !v.radar;
     // which lights burn: a mask of the pose's switches; the brightness written only when it changes
-    const mask = (st.nav ? 1 : 0) | (st.strobe ? 2 : 0) | (st.beacon ? 4 : 0) | (st.land ? 8 : 0) | (st.taxi ? 16 : 0) | (st.logo && night ? 32 : 0);
+    const mask = (st.nav ? 1 : 0) | (st.strobe ? 2 : 0) | (st.beacon ? 4 : 0) | (st.land ? 8 : 0) | (st.taxi ? 16 : 0) | (st.logo && night ? 32 : 0) | Math.round(v.life.nightK * 10) << 6;   // (and again as dusk falls)
     if (mask !== X.lmask) {
       X.lmask = mask; const on = X.lights.geometry.attributes.lon;
       for (let j = 0; j < X.lk.length; j++) { const k = X.lk[j]; on.array[j] = mask & LBIT[k] ? (night ? 1 : LDAY[k] * v.life.day + v.life.nightK) : 0; }

@@ -58,6 +58,38 @@ async function flicker(V) {
   for (let f = 1; f < frames.length - 1; f++) for (let i = 0; i < W * H * 4; i += 4) { const a = lum(f, i) - lum(f - 1, i), b = lum(f + 1, i) - lum(f, i); n++; if (Math.abs(a) > 30 && Math.abs(b) > 30 && Math.sign(a) !== Math.sign(b)) osc++; }
   return { flickerPct: +(osc / n * 100).toFixed(3), frames: frames.length };
 }
+/* brief 40's moments: the weather held, the picture filmed frame by frame from the view's own canvas (16:9, cut
+   from its middle), labels off; a still where the moment peaks */
+function wx(S, k) { const w = S.weather; if (!w) return; w.kind = w.prev = k; w.fade = 1; w.next = S.time + 864000; w.hold = true; if (IC.WEATHER[k]) IC.emit(S, 'weather', k); }
+const CLIP = { w: 960, h: 540 };
+function grab(V, w, h) {
+  const src = V.renderer.domElement, sw = src.width, sh = src.height, k = Math.min(sw / w, sh / h), cw = w * k, ch = h * k;
+  const cv = grab.cv || (grab.cv = document.createElement('canvas')); cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, w, h);
+  return cv;
+}
+async function film(V, S, name, N, speed, hook) {
+  window.requestAnimationFrame = () => 0;   // the frames are made here, one by one
+  V.labels = false; V.trails = false; for (const m of V.movers) m.label.hidden = true;
+  const pn = V.$('panel'); if (pn) pn.style.display = 'none';
+  let now = film.now || (film.now = performance.now()), acc = 0, stillAt = null;
+  for (let f = 0; f < N; f++) {
+    if (S && V.kind === 'live') { acc += speed / 30; while (acc >= 0.25) { IC.step(S, 0.25); acc -= 0.25; } }
+    const r = hook ? await hook(f) : null;
+    IC.replayStep(V, now += 1000 / 30); film.now = now;
+    if (film.after) film.after(f);
+    if (film.stop && film.stop()) { film.stop = null; N = f + 1; }
+    // both pictures straight after the frame is drawn: once the page yields, the drawing buffer is gone
+    const still = r === 'still' || (f === N - 1 && !film.took) ? grab(V, 1280, 720).toDataURL('image/jpeg', 0.93).slice(23) : null;
+    const clip = window.CLIPS ? grab(V, CLIP.w, CLIP.h).toDataURL('image/jpeg', 0.9).slice(23) : null;
+    if (clip) await __frame(name, clip);
+    if (still) { film.took = true; await __still(name, still); }
+    if (f % 60 === 0) console.log(name, 'frame', f, U.hhmm(S ? S.time : V.t));
+  }
+  film.took = false;
+}
+function cam(V, c) { const s = V.el.querySelector('[data-rp=cam]'); if (s) { s.value = c; s.dispatchEvent(new Event('change', { bubbles: true })); } }
+if (window.QUALITY) try { localStorage.setItem('ic-3d', window.QUALITY); } catch (e) { /* file page */ }
 /* brief 41: the live view on a place (no track to follow: the orbit camera is set by hand), and clips made frame by
    frame (the game stepped between frames, speed game seconds a video second; labels drawn in) */
 async function liveAt(S, x, y) {
@@ -257,6 +289,121 @@ const SCENES = {
     t0 = performance.now(); for (let i = 0; i < 50; i++) IC.drawFieldLife(g, S, f, 0.05); const fieldMs = (performance.now() - t0) / 50;
     window.__perf = { aircraft: near(), stepMs: +stepMs.toFixed(3), apronMs: +apronMs.toFixed(3), fieldMs: +fieldMs.toFixed(3), mapClose, mapAirport, liveFull, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
     await __snap('frames-38'); S.paused = true;`,
+  // brief 40: the six moments, filmed frame by frame (CLIPS=1 makes the clips; the still is taken where it peaks)
+  'm-takeoff': `
+    const S = await game('sandbox', 11.6); wx(S, 'clear');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'roll' && m.spd < 0.05 && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    if (!m) throw new Error('no take-off roll'); console.log('take-off at', U.hhmm(S.time));
+    const L = await live(S, m, 'chase', 800); L.camK = 1.3; let shot = 0;
+    await film(L, S, 'm-takeoff', +(window.FRAMES || 360), 3, f => { if (f === 150) { cam(L, 'side'); L.camK = 0.5; } if (!shot && m.phase !== 'roll' && f > 150) { shot = 1; return 'still'; } });`,
+  'm-landing': `
+    const S = await game('sandbox', 18.6); wx(S, 'scattered');
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 20 && m.type !== 'light'));
+    if (!m) throw new Error('no arrival on final'); console.log('landing at', U.hhmm(S.time));
+    const L = await live(S, m, 'side', 800); L.camK = 1.2; let shot = 0;
+    await film(L, S, 'm-landing', +(window.FRAMES || 330), 2, f => { if (f === 200) cam(L, 'chase'); if (!shot && m.phase !== 'final' && f > 20) { shot = 1; return 'still'; } });`,
+  'm-night-rain': `
+    const S = await game('sandbox', 21.7); wx(S, 'rain');
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === 'final' && m.t > 20 && m.type !== 'light'));
+    if (!m) throw new Error('no arrival on final'); console.log('night arrival at', U.hhmm(S.time));
+    const L = await live(S, m, 'chase', 800); L.camK = 1.0; let shot = 0;
+    await film(L, S, 'm-night-rain', +(window.FRAMES || 300), 2, f => { if (f === 180) { cam(L, 'side'); L.camK = 0.6; } if (!shot && m.phase !== 'final' && f > 20) { shot = 1; return 'still'; } });`,
+  'm-fog': `
+    const S = await game('sandbox', 6.9); wx(S, 'fog');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    if (!m) throw new Error('nothing taxiing'); console.log('fog taxi at', U.hhmm(S.time));
+    const L = await live(S, m, 'chase', 800); L.camK = 0.9;
+    await film(L, S, 'm-fog', +(window.FRAMES || 240), 2, f => { if (f === 120) { cam(L, 'side'); L.camK = 0.35; } if (f === 200) return 'still'; });`,
+  'm-snow': `
+    const S = await game('sandbox', 10.5); wx(S, 'snow');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    if (!m) throw new Error('nothing taxiing'); console.log('snow taxi at', U.hhmm(S.time));
+    const L = await live(S, m, 'side', 800); L.camK = 1.5;
+    await film(L, S, 'm-snow', +(window.FRAMES || 240), 2, f => { if (f === 90) cam(L, 'chase'); if (f === 60) return 'still'; });`,
+  'm-intercept': `
+    Math.random = seeded(11); await IC.begin('range'); const S = IC.S; S.paused = true;
+    IC.ui.cineShown = 1e9; for (const id of ['cine', 'comms']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+    S.time = Math.floor(S.time / 86400) * 86400 + 15.5 * 3600; wx(S, 'scattered');
+    const T = S.range.target;
+    IC.rangeAddUnit(S, 'mrsam', T.x - 30, T.y); IC.rangeAddUnit(S, 'lr3d', T.x - 60, T.y + 20);
+    IC.rangeSpawn(S, { what: 'str', n: 2, brg: 80, km: 90, alt: 4 });
+    let kill = null; steps(S, 900, S => (kill = S.rec.ev.find(e => e.kind === 'kill' || e.kind === 'intercept' || (e.kind === 'mstat' && e.what === 'hit'))));
+    if (!kill) throw new Error('no intercept');
+    const ms = S.rec.tracks.filter(t => t.kind === 'missile' && IC.recFirstT(t) < kill.t);
+    const mis = ms.find(t => t.ref === kill.mref) || ms.filter(t => t.meta.tref === kill.tref).pop() || ms.pop();
+    if (!mis) throw new Error('no missile before the hit: ' + JSON.stringify(kill).slice(0, 200));
+    const tl = IC.recFirstT(mis); console.log('launch at', U.hhmm(tl), 'hit at', U.hhmm(kill.t));
+    const tg = S.rec.of.get(mis.meta.tref) || mis;
+    // the director follows the missile from the launch to the hit; the clip ends a few seconds after it
+    const V = await replay({ follow: mis.ref, x: kill.x, y: kill.y, t: tl - 2, r: 150, cam: 'auto' }, tl - 2);
+    V.slowmo = true; V.playing = true; V.speed = 2; let shot = 0;
+    const N = +(window.FRAMES || 900); film.stop = () => V.t > kill.t + 3.5;
+    await film(V, null, 'm-intercept', N, 1, f => { if (!shot && V.t > kill.t + 0.25) { shot = 1; return 'still'; } });`,
+  // the same frame with the fog, then the sky's light, switched off: what each does to the colours
+  'm-debug': `
+    const S = await game('sandbox', 11); wx(S, 'scattered');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light' && !m.mil));
+    const L = await live(S, m, 'chase', 600); L.camK = +(window.K || 1.2);
+    const px = () => { const c = grab(L, 64, 36), d = c.getContext('2d').getImageData(0, 0, 64, 36).data; const at = (x, y) => [d[(y * 64 + x) * 4], d[(y * 64 + x) * 4 + 1], d[(y * 64 + x) * 4 + 2]]; return [at(8, 33), at(32, 30), at(50, 22), at(32, 3)]; };
+    film.after = f => { if (f === 9) console.log('pixels near, mid, far, sky', JSON.stringify(px()), JSON.stringify(IC.fx3d.debug)); };
+    await film(L, S, 'dbg-a', 10, 1, f => f === 9 ? 'still' : null);
+    IC.fx3d.debug.fog = 0; await film(L, S, 'dbg-b', 10, 1, f => f === 9 ? 'still' : null);
+    IC.fx3d.debug.env = 0; await film(L, S, 'dbg-c', 10, 1, f => f === 9 ? 'still' : null);
+    IC.fx3d.debug.fog = 1; IC.fx3d.debug.env = 1; IC.fx3d.debug.post = 0; await film(L, S, 'dbg-d', 10, 1, f => f === 9 ? 'still' : null);`,
+  // what the bright spots are: the snow frame, then with every point sprite hidden, then every glowing material hidden
+  'm-spots': `
+    const S = await game('sandbox', 10.5); wx(S, 'snow');
+    const m = steps(S, 3600, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && (m.type === 'narrow' || m.type === 'wide') && !m.mil));
+    const L = await live(S, m, 'side', 800); L.camK = 1.5;
+    await film(L, S, 'spots-a', 20, 1, f => f === 19 ? 'still' : null);
+    const hide = fn => L.scene.traverse(o => { if (fn(o)) o.visible = false; });
+    // the brightest pixel near the horizon, then each object hidden in turn until it goes dark
+    let spot = null, res = [];
+    film.after = () => { const c = grab(L, 320, 180), d = c.getContext('2d').getImageData(0, 0, 320, 180).data; let best = 0; for (let y = 40; y < 120; y++) for (let x = 0; x < 320; x++) { const i = (y * 320 + x) * 4, l = d[i] + d[i + 1] + d[i + 2]; if (l > best) { best = l; spot = [x, y, l]; } } };
+    await film(L, S, 'spots-x', 2, 1);
+    const lum = () => { const c = grab(L, 320, 180), d = c.getContext('2d').getImageData(spot[0], spot[1], 1, 1).data; return d[0] + d[1] + d[2]; };
+    let now = performance.now() + 1e6;
+    const tryIt = (name, on, off) => { on(); IC.replayStep(L, now += 33); IC.replayStep(L, now += 33); const l = lum(); off(); IC.replayStep(L, now += 33); console.log('spot test', name, l); };
+    tryIt('no fog', () => { IC.fx3d.debug.fog = 0; }, () => { IC.fx3d.debug.fog = 1; });
+    tryIt('overcast look', () => IC.fx3d.look(L, { weather: 'overcast' }), () => IC.fx3d.look(L, { weather: null }));
+    tryIt('no env', () => { IC.fx3d.debug.env = 0; }, () => { IC.fx3d.debug.env = 1; });
+    tryIt('no post', () => { IC.fx3d.debug.post = 0; }, () => { IC.fx3d.debug.post = 1; });
+    tryIt('no shadows', () => { L.renderer.shadowMap.enabled = false; }, () => { L.renderer.shadowMap.enabled = true; });
+    const objs = window.CULPRITS ? [] : []; L.scene.traverse(o => { if (window.CULPRITS && (o.isMesh || o.isPoints || o.isLine)) objs.push(o); });
+    for (const o of objs) { if (!o.visible) continue; o.visible = false; IC.replayStep(L, now += 33); const l = lum(); o.visible = true; if (l < spot[2] - 120) res.push([o.type, o.material && o.material.type, o.renderOrder, o.parent && o.parent.type, o.material && o.material.userData && Object.keys(o.material.userData).join('|'), l]); }
+    console.log('spot', JSON.stringify(spot), 'culprits', JSON.stringify(res.slice(0, 10)), objs.length);
+    IC.fx3d.debug.post = 0; await film(L, S, 'spots-b', 3, 1, f => f === 2 ? 'still' : null); IC.fx3d.debug.post = 1;
+    const Q = L.fxs.Q; Q.ao = Q.dof = Q.mblur = 0; await film(L, S, 'spots-c', 3, 1, f => f === 2 ? 'still' : null);
+    Q.bloom = 0; await film(L, S, 'spots-d', 3, 1, f => f === 2 ? 'still' : null);
+    return;
+    film.after = () => hide(o => o.isInstancedMesh);
+    await film(L, S, 'spots-c', 3, 1, f => f === 2 ? 'still' : null);
+    film.after = () => hide(o => o.material && o.material.userData && o.material.userData.fxWin || o.material === IC.R3D.solidMat());
+    await film(L, S, 'spots-d', 3, 1, f => f === 2 ? 'still' : null);
+    const list = []; L.scene.traverse(o => { if (o.isPoints && o.visible !== undefined) list.push((o.material && o.material.type) + ':' + (o.material && o.material.userData && o.material.userData.glow) + ':' + (o.parent && o.parent.type) + ':' + (o.geometry && o.geometry.drawRange.count)); });
+    console.log('points', list.length, JSON.stringify(list.slice(0, 40)));`,
+  // for tuning the look: HOUR, WX, CAM, K (camera distance), WHAT (taxi, roll, final, gate) from the environment
+  'm-probe': `
+    const S = await game('sandbox', +(window.HOUR || 11)); wx(S, window.WX || 'scattered');
+    const what = window.WHAT || 'taxi';
+    const m = steps(S, 3 * 3600, S => findMove(S, m => m.phase === what && (what !== 'taxi' || m.kind === 'dep') && (what !== 'final' || m.t > 20) && m.type !== 'light' && !m.mil));
+    if (!m) throw new Error('nothing ' + what);
+    const L = await live(S, m, window.CAM || 'chase', 600); L.camK = +(window.K || 1.4);
+    await film(L, S, window.NAME || 'm-probe', +(window.FRAMES || 40), 1, f => { if (f === +(window.FRAMES || 40) - 1) { const F = L.fxs; console.log('fx', F && JSON.stringify({ q: F.q, expo: F.expo, night: F.night, sun: F.sunDir, wet: F.wet, W: F.W, fog: [IC.fx3d && 0] })); if (window.PADPX && F.grassU && F.grassU.pad.value) { const u = F.grassU, im = u.pad.value.image, b = u.padBox.value, c = u.camAt.value, out = []; for (const [dx, dz] of [[0, 0], [0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { const x = ((c.x + dx - b.x) / b.z) * im.width, y = ((c.z + dz - b.y) / b.z) * im.height; out.push([Math.round(x), Math.round(y), Array.from(im.getContext('2d').getImageData(x | 0, y | 0, 1, 1).data)]); } console.log('pad under the grass', F.grass && F.grass.visible, JSON.stringify(out)); } return 'still'; } });`,
+  // brief 40: frame times per preset, the live view full screen following an airliner at the capital (VIEWPORT=1920x1080)
+  'frames-40': `
+    const S = await game('sandbox', 11); wx(S, 'scattered');
+    const m = steps(S, 1800, S => findMove(S, m => m.phase === 'taxi' && m.kind === 'dep' && m.type !== 'light'));
+    const L = IC.liveOpen(S, m); for (let i = 0; i < 150 && !(L.renderer && L.tiles && L.tiles.size > 8); i++) await wait(100);
+    L.el.querySelector('[data-rp=full]').click(); S.paused = false; S.speed = 1; await wait(2500);
+    const out = { gpu: IC.fx3d.gpuName(), size: [L.renderer.domElement.width, L.renderer.domElement.height] };
+    for (const q of ['low', 'medium', 'high', 'ultra']) {
+      IC.q3d.set(q); await wait(2500);
+      const ft = await frameTimes(+(window.N || 40));
+      out[q] = Object.assign(ft, { fps: +(1000 / ft.med).toFixed(1), upMs: +L.upMs.toFixed(2), fxMs: +IC.fx3d.state(L).cpuMs.toFixed(3), carMs: +(L.fxs.carMs || 0).toFixed(3), drawMs: +L.drawMs.toFixed(2), px: [L.renderer.domElement.width, L.renderer.domElement.height], calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles });
+      console.log(q, JSON.stringify(out[q]));
+    }
+    window.__perf = out; S.paused = true;`,
   // brief 41, stills to look at: a jet at a bridge with its vehicles; spoilers, reversers and tyre smoke; the gear
   // coming up; a fighter's controls
   'life-stills': `
@@ -423,7 +570,7 @@ const SCENES = {
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k) && !/^clip-/.test(k));
+  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^m-/.test(k) && !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k) && !/^clip-/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -434,7 +581,7 @@ const SCENES = {
   let bad = 0;
   for (const name of names) {
     const vid = name === 'video';
-    const [vw, vh] = (process.env.VIEW || '1280x800').split('x').map(Number);
+    const [vw, vh] = (process.env.VIEWPORT || process.env.VIEW || '1280x800').split('x').map(Number);
     const ctx = await browser.newContext(Object.assign({ viewport: { width: vw, height: vh }, ignoreHTTPSErrors: true }, vid ? { recordVideo: { dir, size: { width: 1280, height: 800 } } } : {}));
     const page = await ctx.newPage();
     const errors = [];
@@ -443,6 +590,12 @@ const SCENES = {
     if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
     if (process.env.VIDEO_MS) await page.addInitScript(ms => { window.VIDEO_MS = ms; }, process.env.VIDEO_MS);
     let ff = null;
+    const clips = new Set();
+    if (/^m-/.test(name)) {
+      await page.exposeFunction('__frame', (n, b64) => { const f = path.join(dir, `3d-${n}.mjpeg`); if (!clips.has(n)) { clips.add(n); fs.writeFileSync(f, ''); } fs.appendFileSync(f, Buffer.from(b64, 'base64')); });
+      await page.exposeFunction('__still', (n, b64) => { const out = path.join(dir, `3d-${n}.jpg`); fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('saved', out); });
+      for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME', 'CULPRITS', 'PADPX']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+    }
     if (name === 'movie' || /^clip-/.test(name)) {
       // the frames go one after another into one file of JPEGs, which ffmpeg reads as a stream when they are done
       ff = path.join(dir, name === 'movie' ? '3d-live.mjpeg' : `3d-${name}.mjpeg`); fs.writeFileSync(ff, '');
@@ -454,13 +607,18 @@ const SCENES = {
     for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK', 'KIND', 'AFTER', 'K', 'N']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
-    await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
+    await page.goto('file://' + (process.env.GAME ? path.resolve(process.env.GAME) : path.resolve(__dirname, '../iron-canopy/index.html')));
     await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
     if (ff) {
       const out = path.join(dir, name === 'movie' ? '3d-live.webm' : `3d-${name}.webm`), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
       require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', ff, '-c:v', 'libvpx', '-b:v', '3M', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
       fs.unlinkSync(ff); console.log('saved', out);
+    }
+    for (const n of clips) {
+      const src = path.join(dir, `3d-${n}.mjpeg`), out = path.join(dir, `3d-${n}.webm`), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
+      require('child_process').execFileSync(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', src, '-c:v', 'libvpx', '-b:v', '2500k', '-auto-alt-ref', '0', out], { stdio: 'ignore' });
+      fs.unlinkSync(src); console.log('saved', out);
     }
     if (/^frames/.test(name) || /^flicker/.test(name)) console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));
     if (errors.length) { bad++; console.log(name, 'errors:\n  ' + errors.join('\n  ')); }
