@@ -402,10 +402,11 @@ IC.aptSearch = function (ap, src, o) {
   if (!G.N.has(src)) return { dist, prev, time };
   dist.set(src, 0); if (time) time.set(src, o.res.t0);
   // (with a goal, A*: the heap is ordered by cost so far plus the straight-line time to the goal at the fastest
-  // taxi speed, which never overstates it, so a big airport's search stays near the line between the two)
+  // taxi speed, times 0.85 for a taxiway's preferred flow, which never overstates it, so a big airport's search stays
+  // near the line between the two)
   const goal = o.to && !o.rev ? G.N.get(o.to) : null;
   if (goal && G.vmax == null) { G.vmax = 0.01; for (const L of G.adj.values()) for (const e of L) G.vmax = Math.max(G.vmax, e.spd || 0); }
-  const h = goal ? v => { const n = G.N.get(v); return n ? U.dxy(n.x, n.y, goal.x, goal.y) / G.vmax : 0; } : () => 0;
+  const h = goal ? v => { const n = G.N.get(v); return n ? U.dxy(n.x, n.y, goal.x, goal.y) * 0.85 / G.vmax : 0; } : () => 0;
   const H = new Heap(); H.push(src, h(src));
   const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0;
   while (H.k.length) {
