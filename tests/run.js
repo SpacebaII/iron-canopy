@@ -2901,7 +2901,7 @@ test('test range: a raid against a defence reports shots, kills, leakers and the
 /* ---------- magazines, reloads, helicopter resupply, new units ---------- */
 test('magazines: a long-range battery fires about 16, pauses, then reloads launcher by launcher from site stock and keeps firing', () => {
   const S = range(), T = S.range.target;
-  S.tech.done.delete('a_pac3');   // long-range rounds only
+  S.tech.done.delete('a_pac3'); S.tech.done.delete('a_lre');   // long-range rounds only
   const u = IC.rangeAddUnit(S, 'lrsam', T.x - 50, T.y), m = IC.magSync(u, u.mags[0]);
   assert(m.max === 16 && m.ln === 4 && m.store === 16, `the battery has ${m.max} ready on ${m.ln} launchers and ${m.store} on site`);
   const shots = [];
