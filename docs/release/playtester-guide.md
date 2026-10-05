@@ -5,7 +5,7 @@ Thank you for playing. This is one page: what to try, what we want to know, and 
 ## Before you start
 
 - Use a desktop browser (Chrome, Edge or Firefox) on a screen at least 1280 × 720, full screen if you can.
-- Everything saves in your browser. Esc opens the menu with "Save the game"; the game also saves itself every 10 game minutes and when you quit to the menu.
+- Everything saves in your browser. Esc opens the menu with "Save the game"; the game also saves itself every 10 game minutes, every 5 minutes of play (paused too), when you leave the page and when you quit to the menu; the last five autosaves are kept.
 - Pause is Space. Esc always backs out of whatever is open.
 
 ## What to try (about an hour)

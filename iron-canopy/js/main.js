@@ -840,8 +840,8 @@ function frame(now) {
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(big, g); IC.step(S, st); g -= st; if (performance.now() - t0 > (S.wait ? 30 : 40)) break; }
     // (the rate the wait really runs at, for its line in the top bar)
     if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; }
-    IC.autosaveTick(S);
   }
+  IC.autosaveTick(S);
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);
   IC.renderMini(S, mini, mw, mh);
