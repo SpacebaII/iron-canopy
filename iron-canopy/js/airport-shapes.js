@@ -20,7 +20,7 @@ IC.polyConvex = isConvex;
 /* counter-clockwise, without repeated or collinear points */
 function clean(P) {
   let Q = P.filter((p, i) => U.dist(p, P[(i + 1) % P.length]) > 1e-6);
-  if (area(Q) > 0) Q = Q.slice().reverse();
+  if (area(Q) < 0) Q = Q.slice().reverse();
   for (let k = 0; k < 3 && Q.length > 3; k++) Q = Q.filter((p, i) => Math.abs(cross(Q[(i + Q.length - 1) % Q.length], p, Q[(i + 1) % Q.length])) > 1e-9);
   return Q;
 }
@@ -290,7 +290,9 @@ IC.aptOverlaps = function (S, ap, o) {
   for (const A of roads.concat(rails)) for (const B of air) {
     if (!pair(A, B) || !bbHit(A.sh.bb, (B.strip || B.sh).bb, 0.2)) continue;
     const lv = A.lv || 0, what = A.cat === 'rail' ? 'railway' : 'road';
-    if (B.cat === 'rwy') { if (lv >= 0 && IC.shapeDepth(A.sh, B.strip) > HIT) say(A.world ? 'world' : 'field', A, B, `${cap(A.name)} crosses ${B.name} with no tunnel${A.world ? ': a ' + what + ' may not run through the airfield' : ''}.`, meetAt(A.sh, B.strip)); }
+    // (a road of the layout that runs wholly outside the fence, as a public road passes an airfield, may run beside the
+    // strip: only the pavement and 30 m round it are barred)
+    if (B.cat === 'rwy') { const strip = A.land && A.land.out ? IC.shapeLine([B.p.a, B.p.b], (B.p.w || IC.APART.runway.w) / 2 + 0.3) : B.strip; if (lv >= 0 && IC.shapeDepth(A.sh, strip) > HIT) say(A.world ? 'world' : 'field', A, B, `${cap(A.name)} crosses ${B.name} with no tunnel${A.world ? ': a ' + what + ' may not run through the airfield' : ''}.`, meetAt(A.sh, strip)); }
     else if (B.cat === 'twy') { if (lv === 0 && (B.lv || 0) === 0 && IC.shapeDepth(A.sh, IC.shapeLine(B.sh.line, B.sh.r + TWY_CLEAR)) > HIT) say(A.world ? 'world' : 'field', A, B, `${cap(A.name)} crosses ${B.name} with no tunnel or bridge.`, meetAt(A.sh, B.sh)); }
     else if (B.cat === 'apron') { if (lv === 0 && deep(A, B)) say(A.world ? 'world' : 'field', A, B, `${cap(A.name)} runs across ${B.name}.`, meetAt(A.sh, B.sh)); }
     else if (lv === 0 && deep(A, B, 0.02) && !(A.land && A.land.by === B.p.id && A.land.kerb)) say(A.world ? 'world' : 'building', A, B, `${cap(B.name)} stands on ${A.name}.`, meetAt(A.sh, B.sh));
