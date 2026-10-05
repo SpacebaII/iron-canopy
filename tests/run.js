@@ -1604,11 +1604,12 @@ test('accuracy: each real airport against its sources: runway ends within 30 m, 
     for (const t of A.terminals) if (t.off != null) assert(Math.abs(t.off) <= 10, `${A.name} ${t.name}: ${t.off}% off its footprint`);
   }
 });
-test('showcase: a day at each real airport at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates', () => {
-  IC.REAL_APT.mini = MINI;
-  // (the real airports from map data: the blueprints made from kits have their own tests)
-  const keys = [['mini', 6]].concat(Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].icao && !IC.REAL_APT[k].bp).map(k => [k, 24]));
-  for (const [k, hours] of keys) {
+/* a day at each real airport from map data (the blueprints made from kits have their own tests): one test each, so
+   the two halves of the suite can share them out (a day at Denver or Los Angeles takes minutes) */
+for (const [k, hours] of [['mini', 6]].concat(Object.keys(IC.REAL_APT).filter(k => IC.REAL_APT[k].icao && !IC.REAL_APT[k].bp).map(k => [k, 24])))
+test(`showcase: a day at ${k === 'mini' ? 'the small test layout' : IC.REAL_APT[k].icao} at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates`, () => {
+  if (k === 'mini') IC.REAL_APT.mini = MINI;
+  {
     IC.seedRandom(4242);
     const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', showcase: k, hour: 5 }); IC.S = S;
     const ap = S.byId[S.story.cap];
@@ -1632,7 +1633,7 @@ test('showcase: a day at each real airport at its busy schedule: no gridlock, de
     assert(oldest < 3 * 3600, `${ap.name}: an aircraft has been on the ground ${U.dur(oldest)}`);
     assert(r.gate > 0 && r.arr + r.dep >= (k === 'mini' ? 30 : 400), `${ap.name}: ${r.arr + r.dep} movements, ${r.gate} at gates`);
   }
-  delete IC.REAL_APT.mini;
+  if (k === 'mini') delete IC.REAL_APT.mini;
 }, true);
 test('shapes: a layout turned and moved works like the original', () => {
   const A = miniGame(0), B = miniGame(1.1);
