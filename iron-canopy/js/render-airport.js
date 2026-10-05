@@ -6,7 +6,7 @@ const U = IC.U;
 const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)', CONC2 = 'rgb(132,134,130)', PAINT = 'rgba(236,236,226,0.92)', YEL = 'rgba(236,196,60,0.95)';
 
 /* (no words in a picture for the 3D view: its labels are text on the screen, never letters lying on the ground) */
-let NOLBL = false;
+let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
 function lbl(g, txt, x, y, px, col, size, align, weight) {
   if (NOLBL) return;
   g.font = `${weight || 600} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
@@ -159,7 +159,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings: every shadow first, so none falls across a roof
-  if (full) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind)) shadowOf(g, S, p);
+  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind)) shadowOf(g, S, p);
   for (const p of parts) {
     if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
@@ -445,7 +445,7 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
   if (s.hp <= 0) { crater(g, 0, 0, 0.14, px); g.restore(); return; }
   // (the markings are on the tiles: here the jet bridge, and a stand no taxiway reaches)
   if (tiles) {
-    if (s.contact) jetBridge(g, s, S0, px, z);
+    if (s.contact && !NOLBL) jetBridge(g, s, S0, px, z);
     if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
     g.restore(); return;
   }
