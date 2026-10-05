@@ -280,8 +280,10 @@ const TECH_WORDS = {
   c_msl: 'Call-in teams get missiles that reach further and that flares fool less.',
   a_cram: 'Fast-firing guns that shoot down rockets, shells and drones close to what they guard.',
   a_hpm: 'A microwave weapon that knocks down a whole swarm of drones at once.',
-  a_lrsam: 'A long-range missile battery that covers 100 km around it.',
+  a_lrsam: 'A long-range missile battery that covers 200 km around it against aircraft high up.',
   a_remote: 'Links every battery: any of them can fire on another radar\'s track, even with its own radar silent.',
+  a_lre: 'Rounds with a bigger motor for the long-range batteries: 250 km against aircraft high up.',
+  a_vlr: 'A battery that reaches 400 km: bombers, jammers and early-warning aircraft standing off are no longer safe.',
   a_pac3: 'Missiles that hit ballistic warheads head-on, for the long-range batteries.',
   a_hatd: 'A battery that meets ballistic missiles 35 to 150 km up, before the lower tier gets its turn.',
   a_exo: 'Interceptors that destroy ballistic missiles in space, halfway through their flight.',
@@ -556,7 +558,7 @@ function cine() {
 /* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
 function resultCard(c) {
   const r = c.res, C = S.combat || {};
-  const rows = [['Came', IC.raidCameText(r)], ['Stopped', `${r.stopped} of ${r.n}`], ['Got through', r.through ? `${r.through}${r.hits ? `, ${r.hits} hit something` : ', none hit anything'}` : 'nothing']]
+  const rows = [['Came', IC.raidCameText(r)], ['Stopped', `${r.stopped} of ${r.n}${r.ac ? `, and ${r.ac} aircraft shot down` : ''}`], ['Got through', r.through ? `${r.through}${r.hits ? `, ${r.hits} hit something` : ', none hit anything'}` : 'nothing']]
     .concat(r.why.length ? [['Why', r.why.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('. ')]] : [])
     .concat([['Spent', `${r.rounds} interceptors, ${U.money(r.spent)}`], ['Saved', `about ${U.money(r.prevented)} of damage prevented`]]);
   return `<small>${esc(c.sub)}</small><div class="rgrade g${r.grade}">${r.grade}</div><h2>${esc(c.title)}</h2>

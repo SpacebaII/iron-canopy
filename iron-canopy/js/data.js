@@ -10,9 +10,11 @@
 IC.MUN = {
   IR:  { name: 'IR missile', short: 'IR', seeker: 'IR', cost: 0.3, w: 0.25, prod: 300, range: 80, spd: 7, pk: 0.62, alt: [0, 4], vs: { drone: 1, heli: 1, cm: 0.6, air: 0.75, ga: 1 } },
   IR2: { name: 'Imaging IR missile', short: 'IR+', seeker: 'IR', cost: 0.5, w: 0.25, prod: 400, range: 120, spd: 7.5, pk: 0.74, alt: [0, 4.5], vs: { drone: 1, heli: 1, cm: 0.75, air: 0.85, ga: 1 }, ircm: 0.8 },
-  SR:  { name: 'Short-range missile', short: 'SR', seeker: 'CMD', cost: 0.8, w: 0.5, prod: 600, range: 250, spd: 10, pk: 0.78, alt: [0, 6], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 0.8, ga: 1 } },
-  MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 900, spd: 13, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 }, hoj: true },
-  LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 2000, spd: 12, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 }, hoj: true },
+  SR:  { name: 'Short-range missile', short: 'SR', seeker: 'CMD', cost: 0.8, w: 0.5, prod: 600, range: 250, spd: 9, pk: 0.78, alt: [0, 6], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 0.8, ga: 1 } },
+  MR:  { name: 'Medium-range missile', short: 'MR', seeker: 'ARH', cost: 1.6, w: 1, prod: 1200, range: 900, spd: 12, pk: 0.8, alt: [0, 20], vs: { drone: 1, heli: 1, cm: 1, air: 1, arm: 1, ga: 1 }, hoj: true },
+  LR:  { name: 'Long-range missile', short: 'LR', seeker: 'SARH', cost: 4, w: 2, prod: 2400, range: 2000, spd: 15, pk: 0.82, alt: [0, 25], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, bal: 0.45, ga: 1 }, hoj: true },
+  LRE: { name: 'Extended-range missile', short: 'LR+', seeker: 'SARH', cost: 6, w: 2.4, prod: 3000, range: 2500, spd: 16, pk: 0.8, alt: [0, 30], vs: { air: 1, cm: 1, arm: 1, drone: 0.8, ga: 1 }, hoj: true },
+  VLR: { name: 'Very-long-range interceptor', short: 'VLR', seeker: 'ARH', cost: 14, w: 4, prod: 6000, range: 4000, spd: 18, pk: 0.8, alt: [0.05, 35], vs: { air: 1, ga: 1 }, hoj: true },
   TBD: { name: 'Hit-to-kill BMD missile', short: 'BMD', seeker: 'HTK', cost: 6, w: 1.5, prod: 3000, range: 350, spd: 17, pk: 0.85, alt: [0, 35], vs: { bal: 1, cm: 1, air: 1, hgv: 0.45 } },
   HAT: { name: 'High-altitude interceptor', short: 'HAT', seeker: 'HTK', cost: 14, w: 4, prod: 6000, range: 2000, spd: 26, pk: 0.85, alt: [40, 150], vs: { bal: 1, mid: 1, hgv: 0.55 } },
   EXO: { name: 'Exo-atmospheric interceptor', short: 'EXO', seeker: 'HTK', cost: 28, w: 6, prod: 10800, range: 5000, spd: 33, pk: 0.8, alt: [90, 700], vs: { mid: 1 } },
@@ -22,9 +24,9 @@ IC.MUN = {
   INT: { name: 'Interceptor drone', short: 'INT', seeker: 'IR', cost: 0.04, w: 0.1, prod: 120, range: 150, spd: 1.6, pk: 0.72, alt: [0, 4], vs: { drone: 1, heli: 0.5, ga: 0.8 } },
   RKT: { name: 'Guided rocket', short: 'RKT', cost: 0.3, w: 0.15, prod: 180, range: 800, spd: 9, dmg: 14, strike: true, bal: true }
 };
-IC.MUN_ORDER = ['IR', 'INT', 'SR', 'MR', 'LR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT'];
+IC.MUN_ORDER = ['IR', 'INT', 'SR', 'MR', 'LR', 'LRE', 'VLR', 'TBD', 'HAT', 'EXO', 'CRS', 'SRB', 'RKT'];
 IC.STOCK_KEYS = IC.MUN_ORDER.slice();
-IC.MUN_TECH = { TBD: 'a_pac3', HAT: 'a_hatd', EXO: 'a_exo', CRS: 'x_glcm', SRB: 'x_tbm', LR: 'a_lrsam' };
+IC.MUN_TECH = { LRE: 'a_lre', VLR: 'a_vlr', TBD: 'a_pac3', HAT: 'a_hatd', EXO: 'a_exo', CRS: 'x_glcm', SRB: 'x_tbm', LR: 'a_lrsam' };
 IC.SEEKER = {
   IR: 'Heat-seeking. Flares decoy it; rain and cloud cut its range.',
   CMD: 'Command-guided by the launcher\'s radar until impact.',
@@ -100,8 +102,11 @@ IC.UNITS = {
             desc: 'Networked medium-range battery with active-seeker missiles. Fires on any friendly fire-control track.' },
   lrsam:  { cat: 'ad', name: 'LRSAM Battery', short: 'LRS', mob: 'semi', cost: 700, up: 14, build: 900, lead: 3000, hp: 70, nato: 'LR', tech: 'a_lrsam',
             fc: { R: 2400, mast: 10, nctr: 700 }, weapon: 'sam',
-            mags: [{ mun: 'LR', ln: 4, per: 4, store: 16, reload: 150 }, { mun: 'TBD', ln: 2, per: 6, store: 12, reload: 180, tech: 'a_pac3' }],
+            mags: [{ mun: 'LR', ln: 4, per: 4, store: 16, reload: 150 }, { mun: 'TBD', ln: 2, per: 6, store: 12, reload: 180, tech: 'a_pac3' }, { mun: 'LRE', ln: 2, per: 4, store: 8, reload: 180, tech: 'a_lre' }],
             desc: '200 km area defence against high targets (75 km against a cruise missile at 30 m). Its long-range missiles need the battery radar on until impact. With BMD rounds it kills ballistic missiles.' },
+  vlrsam: { cat: 'ad', name: 'VLRSAM Battery', short: 'VLR', mob: 'fixed', cost: 1600, up: 30, build: 1800, lead: 5400, hp: 80, nato: 'VL', tech: 'a_vlr',
+            fc: { R: 4500, mast: 14, nctr: 1500 }, weapon: 'sam', mags: [{ mun: 'VLR', ln: 2, per: 3, store: 6, reload: 600 }],
+            desc: 'Very-long-range interceptors, 400 km against aircraft high up: bombers, jammers, early-warning aircraft and tankers standing off. Few rounds, slow to reload, expensive.' },
   hatd:   { cat: 'ad', name: 'High-Altitude BMD', short: 'HAT', mob: 'semi', cost: 1200, up: 20, build: 1200, lead: 4200, hp: 70, nato: 'HA', tech: 'a_hatd',
             fc: { R: 3500, mast: 10, bmdOnly: true, disc: true }, weapon: 'sam', mags: [{ mun: 'HAT', ln: 2, per: 4, store: 8, reload: 300 }],
             desc: 'Kills ballistic missiles at 35–150 km altitude.' },
@@ -247,6 +252,8 @@ IC.TECH = [
   { id: 'a_hpm',  cat: 'ad', name: 'High-power microwave', cost: 250, time: 4500, req: ['a_laser'], desc: 'Area kill against drone swarms.' },
   { id: 'a_lrsam',cat: 'ad', name: 'Long-range SAM', cost: 400, time: 4500, req: [], desc: '200 km area defence battery.' },
   { id: 'a_remote',cat:'ad', name: 'IADS network', cost: 200, time: 3600, req: [], desc: 'Every SAM can fire on any fire-control track, even with its own radar silent.' },
+  { id: 'a_lre',  cat: 'ad', name: 'Extended-range rounds', cost: 350, time: 4500, req: ['a_lrsam'], desc: 'LRSAM batteries get rounds that reach 250 km against high targets.' },
+  { id: 'a_vlr',  cat: 'ad', name: 'Very-long-range SAM', cost: 700, time: 7200, req: ['a_lre'], desc: 'A battery that reaches 400 km against aircraft standing off.' },
   { id: 'a_pac3', cat: 'ad', name: 'Terminal BMD rounds', cost: 300, time: 3600, req: ['a_lrsam'], desc: 'Hit-to-kill rounds for LRSAM batteries.' },
   { id: 'a_hatd', cat: 'ad', name: 'High-altitude BMD', cost: 800, time: 7200, req: ['a_pac3', 's_bmd'], desc: 'Upper-tier terminal defence at 35–150 km altitude.' },
   { id: 'a_exo',  cat: 'ad', name: 'Exo-atmospheric intercept', cost: 1200, time: 9000, req: ['a_hatd'], desc: 'Midcourse interceptors that kill in space.' },

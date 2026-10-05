@@ -6,7 +6,7 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-const HIT = { INT: 1, IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
+const HIT = { INT: 1, IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, LRE: 2.5, VLR: 3, AAM: 1.8, TBD: 3, HAT: 3, EXO: 3 };
 
 IC.maxRange = function (S, u) {
   const d = u.d;

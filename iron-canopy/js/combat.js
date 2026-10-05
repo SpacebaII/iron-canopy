@@ -73,27 +73,34 @@ IC.combatTime = function (S, box) {
 };
 
 /* ---------- the raid in the air ---------- */
+const acDown = R => (R.ml || 0) + (R.escLost || 0) + (R.jamLost || 0);
 IC.raidTally = function (S) {
   const E = S.enemy, R = E && E.cycle && E.cycle.phase === 'raid' ? E.cycle.R : null;
   if (!R) return null;
   const ops = E.ops.filter(o => o.raid === R);
-  const n = ops.reduce((s, o) => s + o.launched, 0), stopped = ops.reduce((s, o) => s + o.lost, 0);
+  // (weapons count as launched; aircraft shot down are counted apart)
+  const ac = acDown(R), n = ops.reduce((s, o) => s + o.launched, 0), stopped = Math.min(n, Math.max(0, ops.reduce((s, o) => s + o.lost, 0) - ac));
   const through = R.leaks.length, air = Math.max(0, n - stopped - through);
-  return { R, n, stopped, through, air };
+  return { R, n, stopped, through, air, ac };
 };
 /* the result card: what came, what we stopped, what got through and why, what it cost against what it saved, and a
    grade. Money spent is the interceptors fired; damage prevented what the weapons we stopped would have done */
 const GRADE = [[0.9, 'A'], [0.75, 'B'], [0.6, 'C'], [0.4, 'D'], [-Infinity, 'F']];
 IC.raidResult = function (S, R, ops, success) {
-  const came = {};
-  for (const L of R.leaks) came[L.cls] = (came[L.cls] || 0) + 1;
-  for (const [cls, n] of Object.entries(R.downCls || {})) came[cls] = (came[cls] || 0) + n;
-  const n = ops.reduce((s, o) => s + o.launched, 0), stopped = ops.reduce((s, o) => s + o.lost, 0), hits = R.hits || 0;
+  // what came: every weapon in the air and every aircraft of the raid (enemy.js counts them), and at least what we
+  // saw shot down or come through
+  const came = Object.assign({}, R.came), seen = {};
+  for (const L of R.leaks) seen[L.cls] = (seen[L.cls] || 0) + 1;
+  for (const [cls, n] of Object.entries(R.downCls || {})) seen[cls] = (seen[cls] || 0) + n;
+  for (const [cls, n] of Object.entries(seen)) came[cls] = Math.max(came[cls] || 0, n);
+  // (weapons: what was launched, or what came if that is more, as with the jamming drones that fly with a raid)
+  const wpn = Object.entries(came).reduce((s, [c, k]) => s + (c === 'air' || c === 'heli' ? 0 : k), 0);
+  const ac = acDown(R), n = Math.max(wpn, ops.reduce((s, o) => s + o.launched, 0)), stopped = Math.min(n, Math.max(0, ops.reduce((s, o) => s + o.lost, 0) - ac)), hits = R.hits || 0;
   const stop = n ? Math.min(1, stopped / n) : 1, score = stop - Math.min(0.4, hits * 0.06) - (success ? 0.25 : 0);
   const grade = GRADE.find(([v]) => score >= v)[1];
   const held = !success && (stop >= 0.6 || hits <= 1);
-  return { n, stopped, through: R.leaks.length, hits, came, spent: R.spent || 0, rounds: R.rounds || 0, prevented: Math.round(R.prevented || 0), grade, held, success,
-    why: R.leaks.slice(0, 3).map(L => L.why) };
+  return { n, stopped, ac, through: R.leaks.length, hits, came, spent: R.spent || 0, rounds: R.rounds || 0, prevented: Math.round(R.prevented || 0), grade, held, success,
+    why: [...new Set(R.leaks.map(L => L.why))].slice(0, 3) };
 };
 IC.RAID_WORDS = { drone: ['drone', 'drones'], cm: ['cruise missile', 'cruise missiles'], bal: ['ballistic missile', 'ballistic missiles'], hgv: ['glider', 'gliders'], arm: ['anti-radiation missile', 'anti-radiation missiles'], rkt: ['rocket', 'rockets'], air: ['aircraft', 'aircraft'], heli: ['helicopter', 'helicopters'] };
 IC.raidCameText = res => Object.entries(res.came).sort((a, b) => b[1] - a[1]).map(([c, k]) => `${k} ${(IC.RAID_WORDS[c] || ['weapon', 'weapons'])[k > 1 ? 1 : 0]}`).join(', ') || 'nothing';

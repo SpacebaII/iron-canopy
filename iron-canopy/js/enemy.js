@@ -955,14 +955,15 @@ function raidOver(S, R) {
 /* a raid that has lost too much turns back: the aircraft still on their way go home (what they launched flies on).
    It breaks when its stand-off jammer is gone, when its escort is gone, or when half its strike aircraft are down */
 const MANNED = { strike: 1, bomber: 1, sead: 1, escort: 1, jam: 1 };
+function enlist(R, t) {
+  t.abort = false;
+  const Q = R.came || (R.came = {}); Q[t.d.cls] = (Q[t.d.cls] || 0) + 1;
+  R.mn = (R.mn || 0) + (t.mission === 'escort' || t.mission === 'jam' ? 0 : 1);
+  if (t.mission === 'jam') R.jam = (R.jam || 0) + 1;
+  if (t.mission === 'escort') R.esc = (R.esc || 0) + 1;
+}
 function raidBreak(S, E, R) {
-  for (const t of S.threats) {
-    if (t.dead || !t.op || t.op.raid !== R || !MANNED[t.mission] || t.abort !== undefined) continue;
-    t.abort = false;
-    R.mn = (R.mn || 0) + (t.mission === 'escort' || t.mission === 'jam' ? 0 : 1);
-    if (t.mission === 'jam') R.jam = (R.jam || 0) + 1;
-    if (t.mission === 'escort') R.esc = (R.esc || 0) + 1;
-  }
+  for (const t of S.threats) if (!t.dead && t.op && t.op.raid === R && MANNED[t.mission] && t.abort === undefined) enlist(R, t);
   if (R.aborted) return;
   const why = R.jam && (R.jamLost || 0) >= R.jam ? 'its jammer is down' : R.esc && (R.escLost || 0) >= R.esc ? 'its escort is gone'
     : R.mn >= 2 && (R.ml || 0) >= R.mn / 2 ? `${R.ml} of its ${R.mn} strike aircraft are down` : '';
@@ -980,8 +981,9 @@ function raidBreak(S, E, R) {
 }
 IC.enemyRaidBreak = (S, R) => raidBreak(S, S.enemy, R);
 IC.on((S, type, t) => {
-  if (type !== 'kill' || !t.op || !t.op.raid || t.abort === undefined) return;
+  if (type !== 'kill' || !t.op || !t.op.raid || !(MANNED[t.mission] || t.abort !== undefined)) return;
   const R = t.op.raid;
+  if (t.abort === undefined) enlist(R, t);
   if (t.mission === 'jam') R.jamLost = (R.jamLost || 0) + 1;
   else if (t.mission === 'escort') R.escLost = (R.escLost || 0) + 1;
   else if (t.mission !== 'rtb' || t.abort) R.ml = (R.ml || 0) + 1;
@@ -1336,6 +1338,7 @@ IC.moveEnemyAir = function (S, t, dt) {
       if (r > IC.aamReach(W, t.alt, a, t) * 0.8) continue;
       if (t.border && IC.borderDist(a.x, a.y) > 600) continue;
       S.eaam.push(IC.launchAAM(S, t, a, W, { pk: W.pk, side: 'them', src: t, by: t }));
+      S.fx.flashes.push({ x: t.x, y: t.y, t: 0, r: 30, wr: 3 }); IC.sfx && IC.sfx.launch(t.x, t.y, 0.5);
       IC.emit(S, 'elaunch', { t, a });
       t.aam--; t.cool = 90; break;
     }
@@ -1563,6 +1566,8 @@ function tally(S, E) {
   for (const t of S.threats) {
     if (t.tal || !t.op || !t.d.dmg || t.d.cls === 'air') continue;
     t.tal = true;
+    // what came, by kind, for the raid's result card
+    if (t.op.raid) { const Q = t.op.raid.came || (t.op.raid.came = {}); Q[t.d.cls] = (Q[t.d.cls] || 0) + 1; }
     const set = t.op.set || (t.op.raid && t.op.raid.set);
     if (!set) continue;
     const ref = t.op.obj || (t.op.raid && t.op.raid.obj.ref), id = ref && ref.id;
@@ -1647,6 +1652,25 @@ IC.enemyTick = function (S, dt) {
     return;
   }
   runCycle(S, E);
+  if (S.time - (E.lossT || E.warT || S.time) >= 86400 || !E.lossSnap) lossReport(S, E);
 };
+/* once a day of war, intelligence counts what they have left against the day before: the defence's work, in their
+   stocks ("they have 40% fewer long-range drones than yesterday") */
+const STOCKS = [['long-range drones', ['owa', 'jdr']], ['cruise missiles', ['lacm', 'mcm', 'scm']], ['ballistic missiles', ['srbm', 'marv', 'mrbm']]];
+function stockSnap(S) {
+  const o = { ac: 0 };
+  for (const [k, ks] of STOCKS) o[k] = S.esites.reduce((n, s) => n + ks.reduce((m, x) => m + Math.floor(s.inv && s.inv[x] || 0), 0), 0);
+  for (const s of S.esites) if (s.acMax) for (const k in s.acMax) o.ac += s.acMax[k];
+  return o;
+}
+function lossReport(S, E) {
+  const now = stockSnap(S), was = E.lossSnap;
+  E.lossT = S.time; E.lossSnap = now;
+  if (!was || !E.war) return;
+  const parts = [];
+  for (const [k] of STOCKS) if (was[k] > 0 && now[k] < was[k] * 0.9) parts.push(`${Math.round(100 * (1 - now[k] / was[k]))}% fewer ${k}`);
+  if (now.ac < was.ac) parts.push(`${was.ac - now.ac} fewer aircraft`);
+  if (parts.length) intel(S, E, `Counting their stocks: ${S.world.names.A} has ${parts.join(', ')} than a day ago. What they fire and what we destroy is not being replaced as fast.`);
+}
 
 })(window.IC);

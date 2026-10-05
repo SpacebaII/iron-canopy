@@ -1,7 +1,9 @@
 /* Combat scenes for looking at missiles, explosions and symbols, and for timing frames with a big raid on screen.
    Needs Playwright (see tools/shot.js). Usage:
      node tools/combat-shots.js [scene ...] [--game=path/to/index.html]
-   Scenes: symbols, arsenal, threats, sam-day-near, sam-day-far, sam-night-near, sam-night-far, bmd, raid, perf.
+   Scenes: symbols, arsenal, threats, sam-day-near, sam-day-far, sam-night-near, sam-night-far, bmd, raid, perf, and brief
+   43's: long-shot (a long SAM shot and a notch), duel (fighters), drones (a drone wave with combat time), abort (a raid
+   that turns back), result (the raid's result card).
    Frames go to shots/<scene>-<n>.png. `perf` prints render and frame times; run it on two checkouts to compare. */
 const path = require('path');
 const fs = require('fs');
@@ -12,7 +14,7 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
 const LIB = `
 const wait = ms => new Promise(r => setTimeout(r, ms));
 // the map alone: goals, message feed and alert banners out of the way
-const clean = () => { IC.ui.arMin = true; const st = document.createElement('style'); st.textContent = '#brief,#feed,#incidents,#alerts{display:none!important}'; document.head.appendChild(st); };
+const clean = () => { IC.ui.arMin = true; const st = document.createElement('style'); st.textContent = '#brief,#feed,#incidents,#alerts,#unlock,#hints{display:none!important}'; document.head.appendChild(st); IC.ui.hintsOn = false; };
 const quiet = () => { IC.ui.cineShown = 1e9; const c = document.getElementById('cine'); if (c) c.hidden = true; const m = document.getElementById('comms'); if (m) m.style.display = 'none'; };
 // the same world and the same dice every run, so frames and timings compare
 const seeded = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -104,6 +106,58 @@ const SCENES = {
     look(at.x + 25, at.y - 10, 6); S.speed = 1; S.paused = false;` },
   // a dozen missiles in the air: drones and cruise missiles on the capital, three batteries firing salvos
   raid: { frames: [0, 1500, 3000], setup: raidScene(15) },
+  // brief 43: a long-range battery fires 120 km at a strike aircraft; it cranks, then notches and dives
+  'long-shot': { frames: [0, 2500, 5000, 7500, 10000, 12500, 15000], setup: `
+    const S = await war(11); const c = IC.cap(S); clean();
+    const u = unit(S, 'lrsam', c.x, c.y); unit(S, 'lr3d', c.x - 60, c.y + 30);
+    const t = hostile(S, 'str', c.x + 1250, c.y - 400, c, { mission: 'strike', route: [{ x: c.x, y: c.y }], home: { x: c.x + 6000, y: c.y - 2000 }, tgt: { x: c.x, y: c.y, name: c.name } });
+    steps(S, 900, S => S.missiles.length > 0);
+    look(c.x + 600, c.y - 200, 0.42); S.speed = 4; S.paused = false;` },
+  // brief 43: two of our fighters on patrol against two of theirs: long shots, defending, the merge
+  duel: { frames: [0, 2500, 5000, 7500, 10000, 13000, 16000], setup: `
+    const S = await war(12); const c = IC.cap(S); clean();
+    const r = S.roster.find(r => r.kind === 'ftr' && r.st === 'ready');
+    const a = r && IC.launchAir(S, r, { type: 'hold', x: c.x + 500, y: c.y - 300 });
+    if (a) { a.gnd = false; a.x = c.x + 300; a.y = c.y - 200; a.alt = 9; a.roe = 'free'; a.h = -0.4; }
+    for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'ftr', c.x + 1500 + i * 30, c.y - 700 + i * 30, { home: { x: c.x + 5000, y: c.y - 2500 }, mission: 'patrol', st: { x: c.x + 600, y: c.y - 300 }, route: [{ x: c.x + 600, y: c.y - 300 }], fromHostile: true, aff: 'H' });
+    steps(S, 900, S => S.missiles.length + S.eaam.length > 0);
+    look(c.x + 800, c.y - 420, 0.5); S.speed = 2; S.paused = false;` },
+  // brief 43: a wave of drones on the capital at 16x: combat time eases the clock, the wave is counted, arrows point at
+  // what is off the screen
+  drones: { frames: [0, 2000, 4000, 7000, 10000], setup: `
+    const S = await war(10); const c = IC.cap(S); clean();
+    unit(S, 'shorad', c.x + 100, c.y - 40); unit(S, 'spaag', c.x + 40, c.y - 30); unit(S, 'gf', c.x + 60, c.y - 60); unit(S, 'mrsam', c.x - 60, c.y + 40);
+    const op = { id: 'opd', type: 'strike', label: 'drones', launched: 0, done: 0, hits: 0, lost: 0, shots: 0, t0: S.time };
+    unit(S, 'lr3d', c.x - 20, c.y + 20);
+    for (let i = 0; i < 12; i++) hostile(S, 'owa', c.x + 420 + (i % 4) * 25, c.y - 260 + Math.floor(i / 4) * 30, c, { op });
+    for (let i = 0; i < 3; i++) hostile(S, 'jdr', c.x - 1800, c.y + 1200 + i * 30, c);
+    steps(S, 60);
+    look(c.x + 200, c.y - 110, 1.6); S.cfg.combat = true; S.speed = 16; S.paused = false;` },
+  // brief 43: a bomber with two fighters as escort; the escort is shot down and the raid turns back
+  abort: { frames: [0, 3000, 6000, 9000], setup: `
+    const S = await war(14); const c = IC.cap(S); clean();
+    unit(S, 'lr3d', c.x, c.y);
+    S.camp.sched = []; const E = S.enemy, home = { x: c.x + 6000, y: c.y - 3000, acAvail: { ftr: 4, bmr: 1 }, acMax: { ftr: 4, bmr: 1 } };
+    const R = { id: 9, kind: 'limited', name: 'limited strike', obj: { x: c.x, y: c.y, name: c.name }, T: S.time + 3600, ops: [], leaks: [], mix: [] };
+    const op = { id: 'op9', type: 'strike', label: 'test', launched: 0, done: 0, hits: 0, lost: 0, shots: 0, t0: S.time, raid: R };
+    E.ops.push(op); R.ops.push(op); E.raid = R; E.cycle = { phase: 'raid', next: S.time + 9000, R };
+    const b = IC.spawnThreat(S, 'bmr', c.x + 1600, c.y - 900, { home, mission: 'bomber', route: [{ x: c.x + 300, y: c.y - 150 }], load: 4, tgt: R.obj, op, esc: 2, fromHostile: true, aff: 'H' });
+    steps(S, 60);
+    for (const e of S.threats.filter(t => t.escortOf === b)) IC.killThreat(S, e, 'VIPER 1');
+    steps(S, 4); IC.enemyRaidBreak(S, R); steps(S, 2);
+    look(b.x - 150, b.y + 60, 0.7); S.speed = 2; S.paused = false;` },
+  // brief 43: a small raid on the capital played out, then its result card
+  result: { frames: [0], setup: `
+    IC.S.seed = 4242; Math.random = seeded(7);
+    await IC.begin('sandbox');
+    const S = IC.S; S.paused = true; quiet(); S.camp.sched = []; S.ad.roe = 'free'; S.enemy.war = true; S.enemy.warT = S.time; S.enemy.allow = null; for (const s of S.esites) s.dormant = false;
+    const c = IC.cap(S);
+    let done = null; IC.on((S2, type, d) => { if (S2 === S && type === 'raidResult') done = d; });
+    IC.enemyForceOp(S, 'strike', { x: c.x, y: c.y, ref: c, name: c.name }, { kind: 'limited', T: 2400 });
+    for (let i = 0; i < 4 * 4 * 3600 && !done; i++) IC.step(S, 0.25);
+    S.combat.streak = Math.max(S.combat.streak, 3);
+    const k = S.camp.cards.findIndex(x => x.res); IC.ui.cineShown = k; IC.ui.cineT = 0;
+    look(c.x, c.y, 0.3); await wait(1500);` },
   perf: { perf: true, setup: raidScene(15) }
 };
 function samScene(hour, z) {
@@ -144,7 +198,10 @@ function raidScene(hour) {
   const game = gameArg ? path.resolve(gameArg.slice(7)) : path.resolve(__dirname, '../iron-canopy/index.html');
   const names = args.filter(a => !a.startsWith('--'));
   const list = names.length ? names : Object.keys(SCENES).filter(k => k !== 'perf');
-  const browser = await chromium.launch({ args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist'] });
+  const bopt = { args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist'] };
+  let browser;
+  // a Playwright whose own browser is missing can still drive a preinstalled Chromium
+  try { browser = await chromium.launch(bopt); } catch (e) { const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium'; if (!fs.existsSync(alt)) throw e; browser = await chromium.launch(Object.assign({ executablePath: alt }, bopt)); }
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });
   for (const name of list) {
     const sc = SCENES[name]; if (!sc) { console.log('no scene', name); continue; }

@@ -371,6 +371,8 @@ IC.defendPlan = function (S, w, dt, skill) {
     // dive into the ground clutter (a poor crew forgets)
     if (skill > 0.3 && sk !== 'IR') alt = Math.min(w.alt, 0.6);
   } else { mode = 'crank'; const s = U.angWrap(hNow - bT) >= 0 ? 1 : -1; h = bT + s * 1.05; }
+  // turning side-on is the moment to see: the word on the map and in the record
+  if (mode === 'notch' && w.def !== 'notch') { IC.emit(S, 'mstat', { m, t: w, what: 'notch', text: 'NOTCHING' }); if (w.det || w.kind) IC.text(S, w.x, w.y, 'NOTCHING', '#ffb0a6'); }
   w.def = mode;
   w.notchT = mode === 'notch' ? 1.5 : 0;
   // chaff or flares in the last seconds, a salvo every two seconds or so while they last

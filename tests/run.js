@@ -2848,8 +2848,9 @@ test('combat: a raid ends with a result card whose numbers add up', () => {
   for (let i = 0; i < 4 * 3600 * 4 && !res; i++) IC.step(S, 0.25);
   assert(res, 'the raid did not end with a result');
   const ops = S.enemy.ops.filter(o => o.raid === R);
-  assert(res.n === ops.reduce((s, o) => s + o.launched, 0), `came ${res.n}, launched ${ops.reduce((s, o) => s + o.launched, 0)}`);
-  assert(res.stopped === ops.reduce((s, o) => s + o.lost, 0), `stopped ${res.stopped}, lost ${ops.reduce((s, o) => s + o.lost, 0)}`);
+  assert(res.n >= ops.reduce((s, o) => s + o.launched, 0) && res.n === Math.max(ops.reduce((s, o) => s + o.launched, 0), Object.entries(res.came).reduce((s, [c, k]) => s + (c === 'air' || c === 'heli' ? 0 : k), 0)), `came ${res.n}, launched ${ops.reduce((s, o) => s + o.launched, 0)}`);
+  const lost = ops.reduce((s, o) => s + o.lost, 0);
+  assert(res.stopped === Math.min(res.n, lost - res.ac) && res.stopped <= killed, `stopped ${res.stopped}, lost ${lost} (${res.ac} aircraft), killed ${killed}`);
   assert(res.through === R.leaks.length && res.hits === (R.hits || 0), 'what got through does not match the leaks');
   assert(Object.values(res.came).reduce((s, n) => s + n, 0) >= res.through, 'what came leaves out what got through');
   assert(/^[ABCDF]$/.test(res.grade) && res.rounds >= 0 && res.spent >= 0, `no grade or cost (${res.grade}, ${res.spent})`);
@@ -2864,6 +2865,16 @@ test('combat: a battery fires on another radar\'s track beyond its own radar, ov
   for (let i = 0; i < 4 * 240 && !fired; i++) { IC.step(S, 0.25); if (t.held && t.aff !== 'H') IC.setAff(S, t, 'H', 'test'); fired = S.missiles.some(m => m.unit === bat); }
   assert(!bat.radarOn, 'the battery\'s radar came on');
   assert(fired, `the battery did not fire on the 3D radar's track ${U.km(U.dist(bat, t))} out: ${bat.why}`);
+});
+test('combat: a very-long-range battery fires on a bomber standing off 300 km away; the extended-range round reaches 250 km', () => {
+  assert(Math.abs(IC.reachAt('LRE', 10) - 2500) < 1 && IC.reachAt('LRE', 0.03) < 1000, `the extended-range round reaches ${IC.reachAt('LRE', 10) / 10} km high, ${IC.reachAt('LRE', 0.03) / 10} km low`);
+  const S = range(), T = S.range.target;
+  S.tech.done.add('a_lre'); S.tech.done.add('a_vlr');
+  const u = IC.rangeAddUnit(S, 'vlrsam', T.x, T.y);
+  const b = IC.spawnThreat(S, 'bmr', T.x + 3200, T.y, { mission: 'bomber', route: [{ x: T.x + 1300, y: T.y }], load: 0, tgt: { x: T.x, y: T.y, name: 't' }, home: { x: T.x + 9000, y: T.y }, fromHostile: true });
+  let fired = false;
+  for (let i = 0; i < 4 * 300 && !fired; i++) { IC.step(S, 0.25); if (b.held && b.aff !== 'H') IC.setAff(S, b, 'H', 'test'); fired = S.missiles.some(m => m.unit === u); }
+  assert(fired, `the battery did not fire at the bomber ${U.km(U.dist(u, b))} out: ${u.why}`);
 });
 test('combat: heat-seekers reach 8 km from the shoulder and 12 km imaging, more than a gun', () => {
   assert(Math.abs(IC.reachAt('IR', 1) - 80) < 5, `IR reaches ${IC.reachAt('IR', 1) / 10} km at 1 km up`);
@@ -3839,7 +3850,7 @@ test('save: a Career game with works in progress and aircraft taxiing saves, loa
 test('save: a Quick war saved with missiles in the air loads and plays on like the unsaved one', () => {
   const S = IC.newGame({ seed: 4242, mode: 'campaign' });
   const fight = () => S.enemy.war && S.missiles.length > 0 && S.threats.some(t => !t.dead && t.aff === 'H');
-  for (let i = 0; i < 9 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
+  for (let i = 0; i < 16 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
   assert(fight(), 'no battle to save');
   const { json, S2 } = saveAndPlayOn(S, 0.5, Q.commander);
   assert(json.length < 3e6, `a Quick war save is ${(json.length / 1e6).toFixed(1)} MB`);

@@ -677,7 +677,7 @@ const CLS = {
   aam: { burn: 4, loft: 0.02, flash: 0.35, dust: 0, smoke: 0.7, glow: HOT, len: 5 },
   eaam:{ burn: 4, loft: 0.02, flash: 0.3, dust: 0, smoke: 0.6, glow: GLOW, len: 5, red: true }
 };
-const MUN_CLS = { IR: 'ir', SR: 'sr', MR: 'mr', LR: 'lr', TBD: 'bmd', HAT: 'hat', EXO: 'exo', AAM: 'aam' };
+const MUN_CLS = { IR: 'ir', SR: 'sr', MR: 'mr', LR: 'lr', LRE: 'lr', VLR: 'hat', TBD: 'bmd', HAT: 'hat', EXO: 'exo', AAM: 'aam' };
 FX.cls = m => MUN_CLS[m.mun] || (m.M && m.M.range > 1500 ? 'hat' : m.M && m.M.range > 300 ? 'mr' : 'sr');
 
 const vis = FX.vis = new Map();   // missile id → what we draw for it

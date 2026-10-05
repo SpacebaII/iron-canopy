@@ -22,15 +22,18 @@ function pill(txt, x, y, px, col, bg, size) {
 /* ---------- on the map ---------- */
 IC.drawWarnings = function (c, S, px, now) {
   ctx = c;
-  const list = IC.inbound(S), shown = new Set();
+  const list = IC.inbound(S), shown = new Set(), group = new Set();
   let n = 0;
   for (const it of list) {
     const o = it.o, p = it.kind === 'missile' ? o : posOf(o);
     if (!RS.inView(p.x, p.y, 2000) && !(it.aim && RS.inView(it.aim.x, it.aim.y, 200))) continue;
     if (++n > 40) break;
     const soon = it.tti < 120, a = soon ? 0.75 : 0.4;
+    // a swarm or a salvo on one aim point gets one path, one cross and one countdown: its leader's
+    const gk = it.aim ? (o.op ? o.op.id : '') + ':' + Math.round(it.aim.x / 60) + ':' + Math.round(it.aim.y / 60) : o;
+    const lead = !group.has(gk); group.add(gk);
     // the predicted path to the aim point
-    if (it.aim && it.kind !== 'missile') {
+    if (lead && it.aim && it.kind !== 'missile') {
       ctx.strokeStyle = `rgba(${RED},${a * 0.6})`; ctx.lineWidth = 1.1 * px; ctx.setLineDash([5 * px, 6 * px]);
       ctx.beginPath(); ctx.moveTo(p.x, p.y);
       if (o.route && o.route.length && o.d.move !== 'bal') for (const q of o.route) ctx.lineTo(q.x, q.y); else ctx.lineTo(it.aim.x, it.aim.y);
@@ -48,7 +51,7 @@ IC.drawWarnings = function (c, S, px, now) {
       ctx.beginPath(); ctx.arc(tg.x, tg.y, (14 + k * 20) * px, 0, 7); ctx.stroke();
     }
     // the countdown by the weapon
-    if (cam.z > 0.03 && n <= 16 && it.kind !== 'missile') label(`impact ${mmss(it.tti)}`, p.x, p.y + 17 * px, px, soon ? '#ff8a80' : 'rgba(255,170,160,0.8)', 8.5, 'center', 700);
+    if (lead && cam.z > 0.03 && n <= 16 && it.kind === 'weapon') label(`impact ${mmss(it.tti)}`, p.x, p.y + 17 * px, px, soon ? '#ff8a80' : 'rgba(255,170,160,0.8)', 8.5, 'center', 700);
   }
   locks(S, px, now);
   ourMissiles(S, px);
@@ -89,6 +92,8 @@ function defending(S, px, now) {
   const tag = (x, y, w, col) => { if (w.def && w.def !== 'react' || (w.def === 'react' && w.mslIn)) label(IC.DEF_WORDS[w.def] || 'DEFENDING', x, y + 26 * px, px, col, 8.5, 'center', 700); };
   for (const a of S.air) if (!a.dead && !a.gnd && a.def && RS.inView(a.x, a.y, 200)) tag(a.x, a.y, a, '#9fe0ff');
   for (const t of S.threats) if (!t.dead && t.held && t.def && RS.inView(t.px, t.py, 200)) tag(t.px, t.py, t, '#ffb0a6');
+  // a raid that broke: its aircraft say so all the way home
+  for (const t of S.threats) if (!t.dead && t.held && t.abort === true && !t.def && RS.inView(t.px, t.py, 200)) label('RAID ABORTED · going home', t.px, t.py + 26 * px, px, '#9fe0ff', 8.5, 'center', 700);
 }
 /* drone groups: how many, and how long until the first arrives */
 function droneGroups(S, px) {
@@ -102,9 +107,8 @@ function droneGroups(S, px) {
     if (!g) G.set(k, { n: 1, lead: it.o, tti: it.tti }); else { g.n++; if (it.tti < g.tti) { g.tti = it.tti; g.lead = it.o; } }
   }
   for (const g of G.values()) {
-    if (g.n < 2) continue;
     const p = posOf(g.lead); if (!RS.inView(p.x, p.y, 300)) continue;
-    pill(`${g.n} drones · ${g.tti >= 60 ? Math.round(g.tti / 60) + ' min' : Math.round(g.tti) + ' s'} out`, p.x, p.y - 26 * px, px, '#ffe1dc', 'rgba(60,12,10,0.8)', 9);
+    pill(`${g.n} drone${g.n > 1 ? 's' : ''} · ${g.tti >= 60 ? Math.round(g.tti / 60) + ' min' : Math.round(g.tti) + ' s'} out`, p.x, p.y - 26 * px, px, '#ffe1dc', 'rgba(60,12,10,0.8)', 9);
   }
 }
 /* kill confirmation: a burst, the track struck through and SPLASH, for a few real seconds */
@@ -175,14 +179,13 @@ function edgeArrows(S, now) {
 /* the raid in the air: what came, what we stopped so far, what is still flying */
 function tally(S) {
   const T = IC.raidTally(S);
-  if (!T || !T.n) return;
-  const x = cam.vw / 2, y = 78;
-  const txt = `${T.R.name.toUpperCase()} · ${T.stopped} of ${T.n} stopped${T.air ? ` · ${T.air} in the air` : ''}${T.through ? ` · ${T.through} through` : ''}${T.R.aborted ? ' · RAID ABORTED' : ''}`;
+  if (!T || !(T.n || T.R.aborted)) return;
+  const x = cam.vw / 2, y = 134;
+  const txt = `${T.R.name.toUpperCase()} · ${T.stopped} of ${T.n} stopped${T.air ? ` · ${T.air} in the air` : ''}${T.ac ? ` · ${T.ac} aircraft down` : ''}${T.through ? ` · ${T.through} through` : ''}${T.R.aborted ? ' · RAID ABORTED' : ''}`;
   ctx.font = '700 12.5px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
   const w = ctx.measureText(txt).width + 22;
   ctx.fillStyle = 'rgba(6,11,16,0.82)'; ctx.fillRect(x - w / 2, y - 16, w, 24);
-  ctx.fillStyle = `rgba(${RED},0.9)`; ctx.fillRect(x - w / 2, y + 6, w * (T.through / T.n), 2);
-  ctx.fillStyle = 'rgba(88,211,154,0.95)'; ctx.fillRect(x - w / 2, y + 6, w * (T.stopped / T.n), 2);
+  if (T.n) { ctx.fillStyle = `rgba(${RED},0.9)`; ctx.fillRect(x - w / 2, y + 6, w * (T.through / T.n), 2); ctx.fillStyle = 'rgba(88,211,154,0.95)'; ctx.fillRect(x - w / 2, y + 6, w * (T.stopped / T.n), 2); }
   ctx.fillStyle = '#e4edf2'; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
 }
 
