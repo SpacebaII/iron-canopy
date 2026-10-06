@@ -171,18 +171,28 @@ const OVERLAY = `(() => {
     const c2 = await planCost();
     if (!c2) log(k, 'not buildable here:', await ev(`(() => { const S = IC.S, m = S.mode2; const o = m && IC.bldPlanOf(S, m); return o ? o.why + ' / ' + (o.text || []).join(' ') : 'no mode'; })()`));
     else if (Math.abs(c2 - (await ev(`IC.pieceCost('${k}')`))) > 1) { const c3 = await money(c2); await cap(title, sub + ' · ' + c3); scn.price = sub + ' · ' + c3; }
-    gg = glideTo(...Object.values(await boxOf('#bldgo [data-go="build"]')), 0.8);
-    await shoot(1.2, gg);
-    await page.mouse.click(mouse.x, mouse.y);
+    await pressBuild();
+    log(k, 'planned; parts now:', await ev(`(() => { const a = IC.S.byId[IC.S.story.cap], c = {}; for (const q of a.parts) c[q.kind] = (c[q.kind] || 0) + 1; return JSON.stringify(c) + ' works ' + a.works.length; })()`));
     await shoot(0.6);
     await cap('');
     await shoot(0.4);
+  };
+  // Build: the cursor goes to the Build button when it is on screen, and Enter builds (as the bar says)
+  const pressBuild = async () => {
+    const n0 = await ev('(IC.S.mode2 && IC.S.mode2.ap ? IC.S.mode2.ap.parts.length : 0)');
+    const b = await boxOf('#bldgo [data-go="build"]');
+    if (b && b.x > 60 && b.x < W - 60 && b.y > 60 && b.y < H - 20) { const gg = glideTo(b.x, b.y, 1.0); await shoot(1.3, gg); }
+    else await shoot(0.6);
+    await page.keyboard.press('Enter');
+    const n1 = await ev('(IC.S.mode2 && IC.S.mode2.ap ? IC.S.mode2.ap.parts.length : -1)');
+    if (n1 === n0) log('Build did nothing:', await ev(`(() => { const S = IC.S, m = S.mode2; const o = m && m.kind === 'build' && IC.bldPlanOf(S, m); return o ? (o.why || '') + ' / ' + (o.text || []).join(' ') : 'no mode'; })()`));
   };
   let capId, AP, ap, F, at, mid, g, p;
   // the airport's frame: its runway's direction, and which side its parallel taxiway is on
   const frameOf = async () => {
     capId = await ev('IC.S.story.cap'); AP = `IC.S.byId['${capId}']`;
     ap = await ev(`(() => { const a = ${AP}; return { x: a.x, y: a.y }; })()`);
+    for (let i = 0; i < 20 && !(await ev(`${AP}.parts.some(q => q.kind === 'runway')`)); i++) { if (i === 4) { log('runway not planned: Enter'); await page.keyboard.press('Enter'); } await hold(250); }
     F = await ev(`(() => { const a = ${AP}, rw = a.parts.find(q => q.kind === 'runway'), d = IC.rwDir(rw), mid = IC.rwAt(rw, 0.5);
       const A = a.parts.find(q => q.kind === 'taxi' && q.name === 'A') || a.parts.find(q => q.kind === 'taxi'), n0 = a.nodes[A.nodes[0]];
       const sg = ((n0.x - mid.x) * -d.y + (n0.y - mid.y) * d.x) >= 0 ? 1 : -1;
@@ -236,14 +246,13 @@ const OVERLAY = `(() => {
     await stopAt('found');
 
     // 3. the runway with its taxiways: the surveyed plan, its price, Build
-    await camNow(ap.x, ap.y, 15); await hold(800);
+    const sv = await ev(`(() => { const a = ${AP}, v = a.survey || a; return { x: v.x, y: v.y }; })()`);
+    await camNow(sv.x, sv.y, 15); await hold(800);
     const rwCost = await planCost();
     await scene('runway', 'Runway with taxiways', `3 km of concrete · parallel taxiway · rapid exits · landing systems · ${await money(rwCost)}`);
-    await camTo(ap.x, ap.y, 20, 3800);
+    await camTo(sv.x, sv.y, 20, 3800);
     await shoot(3.6);
-    g = glideTo(...Object.values(await boxOf('#bldgo [data-go="build"]')), 1.0);
-    await shoot(1.3, g);
-    await page.mouse.click(mouse.x, mouse.y);
+    await pressBuild();
     await shoot(0.8);
     await cap('');
     await shoot(0.4);
@@ -311,6 +320,7 @@ const OVERLAY = `(() => {
       const bx = await boxOf(mk);
       if (bx) { g = glideTo(bx.x, bx.y, 1.2); await shoot(2.4, g); await page.mouse.click(bx.x, bx.y); } else log('no marker button');
       await shoot(1.6);
+      if (!(await ev('!!(IC.S.mode2 && IC.S.mode2.kind === "build")'))) await ev(`(() => { const S = IC.S, a = ${AP}, p = IC.aptProblems(S, a).find(q => q.id === '${prob.id}'); if (p) IC.fixOpen(S, a, p.fix.part, p.fix.near, p.fix.size); })()`);
       log('fix placed:', await ev(`(() => { const m = IC.S.mode2; return m ? m.kind + ':' + m.part + ':' + !!m.set : 'none'; })()`));
       const bb = await boxOf('#bldgo [data-go="build"]');
       if (bb) { g = glideTo(bb.x, bb.y, 0.9); await shoot(1.4, g); await page.mouse.click(bb.x, bb.y); }
@@ -318,6 +328,7 @@ const OVERLAY = `(() => {
       await ev(`IC.bbToggle(false); IC.S.paused = false; IC.waitStart(IC.S, 'works:${capId}')`);
       await shoot(2.5);
       await cap(''); await shoot(0.4);
+      await ev(`document.body.classList.add('tr-nomarks')`);
       await filmOff();
       for (let i = 0; i < 200; i++) { if (!(await ev(`${AP}.works.length`))) break; await hold(500); }
       await ev('IC.waitStop && IC.waitStop(IC.S); window.trRun = true'); await page.keyboard.press('6');
@@ -327,16 +338,19 @@ const OVERLAY = `(() => {
     const tl = await ev('IC.S.first && IC.S.first.tl'); log('first', tl);
     if (!tl || STOP === 'diag') log('no first:', await ev(`JSON.stringify({ req: IC.S.av.requests.map(q => [q.id, IC.avReqBlock(IC.S, q)]), als: IC.S.av.airlines.length, tails: IC.S.av.tails.length, probs: IC.aptProblems(IC.S, ${AP}).map(p => p.kind + ':' + p.title), tw: IC.S.av.tails.map(t => t.where + ':' + t.t), ev: !document.getElementById('evcard').hidden && document.querySelector('#evcard h2').textContent, goal: (IC.S.story.goals[0] || {}).text, date: IC.U.clock(IC.S.time, IC.S) })`));
     await stopAt('diag');
-    const Z = { air: 9, final: 26, land: 60, rollout: 70, taxi: 95, parkin: 140, stand: 170, start: 150, wait: 150, push: 120, hold: 90, lineup: 70, roll: 45 };
+    const Z = { air: 30, final: 45, land: 60, rollout: 70, taxi: 100, parkin: 160, stand: 240, start: 200, wait: 200, push: 140, hold: 100, lineup: 80, roll: 55 };
     await ev(`window.trFollow = { id: '${tl}', Z: ${JSON.stringify(Z)}, snap: true }`);
     const where = () => ev(`(() => { const S = IC.S, tl = S.av.tails.find(t => t.id === '${tl}'), w = trWhere('${tl}'); if (!w) return {}; return { air: !!w.t, d: w.t && w.ap ? IC.U.dist(w.t, w.ap) : 0, ph: w.m ? w.m.phase || 'taxi' : w.t ? 'air' : 'stand', alt: w.alt || 0, where: tl.where, txt: IC.tailPhase(S, tl), z: Math.round(IC.cam.z) }; })()`);
     if (process.argv.includes('--debug')) dbg = where;
     await page.keyboard.press('3');
-    await scene('final', 'The first airliner', 'Spaced in by the arrival manager, lined up on the landing system');
-    await shoot(12, null, async () => { const w = await where(); return !w.air || w.d < 45; });
+    // (in the air it is a speck at any zoom that shows the ground: filming starts when the tower has it on final)
+    for (let i = 0; i < 600; i++) { await hold(200); const w = await where(); if (!w.air) break; }
     await page.keyboard.press('1');
+    await ev(`window.trFollow.snap = true`);
+    await scene('final', 'The first airliner, on final', 'Spaced in by the arrival manager, down the landing system');
+    await shoot(12, null, async () => { const w = await where(); return w.ph === 'land' || w.ph === 'rollout' || w.ph === 'taxi'; });
     await scene('land', 'Touchdown, then a rapid exit', 'Off the runway sooner, so the next one can land');
-    await shoot(30, null, async () => { const w = await where(); return w.ph === 'taxi' || w.ph === 'parkin' || w.where === 'stand'; });
+    await shoot(14, null, async () => { const w = await where(); return w.ph === 'taxi' || w.ph === 'parkin' || w.where === 'stand'; });
     await page.keyboard.press('3');
     await scene('taxi', 'Taxi to the stand', 'Routes are reserved ahead: no one meets nose to nose');
     await shoot(12, null, async () => (await where()).where === 'stand');
@@ -357,8 +371,10 @@ const OVERLAY = `(() => {
     await page.keyboard.press('3');
     await scene('push', 'Pushback, taxi out, hold short', 'Cleared by a tower that can see the runway');
     await shoot(14, null, async () => { const w = await where(); return w.ph === 'lineup' || w.ph === 'roll'; });
+    await page.keyboard.press('1');
     await scene('takeoff', 'Line up and go', 'Departures wait under the arrivals until they are clear');
-    await shoot(12, null, async () => { const w = await where(); return w.air && w.alt > 0.4; });
+    let rolled = 0;
+    await shoot(14, null, async () => { const w = await where(); if (w.ph === 'roll' || w.air) rolled++; return rolled > 30 && (w.air || !w.ph); });
     await ev('window.trFollow = null');
     await cap(''); await shoot(0.4);
     await stopAt('takeoff');
@@ -369,8 +385,7 @@ const OVERLAY = `(() => {
     const tried = new Set();
     const fixOne = async () => {
       const pr = (await probs()).find(q => !tried.has(q.id)); if (!pr) return false; tried.add(pr.id);
-      const b = await boxOf(`#pmarks [data-act="pmFix"][data-v="${pr.id}"]`); if (!b) return false;
-      await page.mouse.click(b.x, b.y); await hold(600);
+      await ev(`(() => { const S = IC.S, a = ${AP}, p = IC.aptProblems(S, a).find(q => q.id === '${pr.id}'); if (p) IC.fixOpen(S, a, p.fix.part, p.fix.near, p.fix.size); })()`); await hold(600);
       const go = await boxOf('#bldgo [data-go="build"]'); if (!go) { await page.keyboard.press('Escape'); return false; }
       await page.mouse.click(go.x, go.y); await hold(300); await ev('IC.bbToggle(false)'); log('built for a deal:', pr.part, pr.title); return true;
     };
@@ -454,6 +469,6 @@ const OVERLAY = `(() => {
   log('frames', nFrames, 'errors', errors.length ? errors.join(' / ') : 'none');
   fs.writeFileSync(path.join(FR, 'scenes.json'), JSON.stringify(scenes, null, 1));
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(FR, '%06d.jpg'),
-    '-vf', 'format=yuv420p', '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-movflags', '+faststart', OUTV]);
+    '-vf', 'format=yuv420p', '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-movflags', '+faststart', OUTV]);
   console.log(JSON.stringify({ length: +(nFrames / FPS).toFixed(1), scenes: scenes.map(s => ({ name: s.name, at: +(s.a / FPS).toFixed(1), len: +((s.b - s.a) / FPS).toFixed(1), caption: s.caption, price: s.price })), errors }, null, 1));
 })().catch(e => { console.error(e); process.exit(1); });
