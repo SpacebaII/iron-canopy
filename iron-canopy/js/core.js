@@ -26,8 +26,10 @@ IC.WAIT = { speed: 432, step: 8 };
    calm: the civil act shows nothing military: staff, controls, rooms and words of later acts wait for their act
    hands: the airport is the interface: one airport panel, parts with their live state and actions, problems
      marked on the map where they happen with a one-click fix, deals signed from there (problems.js)
-   chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js) */
-IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true };
+   chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js)
+   progress: (round 4) Act I's chapters move by goals, not months; each goal says what it gives; passenger
+     milestones open the bigger pieces; a peacetime event deck (deck.js); money split into running and invested */
+IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true };
 /* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */
 IC.civilAct = S => !!(IC.FOCUS.calm && S && S.mode === 'story' && S.story && S.story.act < 2);
 

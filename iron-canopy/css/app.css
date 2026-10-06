@@ -101,6 +101,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .stat span{font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .stat strong{font-family:var(--mono);font-weight:500;font-size:1.1rem;line-height:1.1;font-variant-numeric:tabular-nums}
 .stat em{font-style:normal;font-family:var(--mono);font-size:.75rem}
+.stat em .inv{color:var(--muted)}
 .stat .meter{width:4.4rem;height:4px;border-radius:2px;background:var(--well);overflow:hidden}
 .stat .meter i{display:block;height:100%}
 .rules{display:flex;gap:10px;align-items:center;flex-wrap:nowrap;justify-content:flex-end}
@@ -443,6 +444,7 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .goalrow i{width:1.1rem;height:1.1rem;border-radius:5px;box-shadow:inset 0 0 0 1.5px var(--muted);display:grid;place-items:center;font-style:normal;font-size:.8rem;color:var(--ok);margin-top:.1rem}
 .goalrow.done{opacity:.6}.goalrow.done i{box-shadow:inset 0 0 0 1.5px var(--ok);background:rgba(88,211,154,.14)}
 .goalrow small{display:block;font-family:var(--mono);font-size:.74rem;color:var(--amber);margin-top:.1rem}
+.goalrow .gives{font-weight:600;color:var(--ok);white-space:nowrap}
 .li.goalrow{display:grid;grid-template-columns:1fr}
 .li.goalrow b{font-size:.9rem}
 .evcard{position:absolute;z-index:9;left:50%;top:18%;transform:translateX(-50%);width:min(38rem,88%);display:grid;gap:.5rem;padding:1.3rem 1.4rem 1.2rem;border-radius:18px;background:linear-gradient(170deg,rgba(26,20,8,.97),rgba(8,12,16,.97));box-shadow:0 30px 90px rgba(0,0,0,.75),inset 0 0 0 1px rgba(242,180,65,.3);animation:cineIn .5s var(--ease)}

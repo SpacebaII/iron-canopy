@@ -161,7 +161,7 @@ function topbar() {
   const left = S.moneyLeft == null ? Infinity : S.moneyLeft, short = left < 24;
   // (round 3) in the Career, one money line everywhere: this month's change in the treasury, from the statement
   const ML = IC.FOCUS.chain && S.mode === 'story' && IC.moneyLine ? IC.moneyLine(S) : null;
-  const money = ML ? `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${esc(ML.text)} Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${ML.net >= 0 ? 'ok' : 'hostile'}">${ML.sign} this month</em></button>`
+  const money = ML ? `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${esc(ML.text)} Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong>${ML.split ? `<em class="${ML.run >= 0 ? 'ok' : 'hostile'}">Running ${ML.runSign}${ML.build > 0.5 ? `<span class="inv"> · Invested ${U.money(ML.build)}</span>` : ''}</em>` : `<em class="${ML.net >= 0 ? 'ok' : 'hostile'}">${ML.sign} this month</em>`}</button>`
     : `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${Math.round(flow) >= 0 ? 'ok' : 'hostile'}">${Math.round(flow) >= 0 ? '+' : '−'}${Math.abs(Math.round(flow))}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
@@ -409,7 +409,9 @@ function brief() {
 function nextGoal() {
   const st = S.story, ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
   const done = st.goals.filter(g => g.done).length, open = st.goals.map((g, i) => ({ g, i })).filter(x => !x.g.done && !x.g.failed);
-  const row = ({ g, i }) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p || '')}</small>` : ''}</span></button>`; };
+  // (round 4) each goal with what it gives: "→ opens the Terminal with a pier", "→ +₭40M from the Ministry"
+  const gv = g => IC.FOCUS.progress && g.gives && !g.done ? ` <b class="gives">${esc(IC.goalGives(g))}</b>` : '';
+  const row = ({ g, i }) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${gv(g)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p || '')}</small>` : ''}</span></button>`; };
   const where = ch ? `Chapter ${ch.n + 1} · ${ch.title}` : `${A.name} · ${A.title}`;
   const tip = (IC.storyTip(S) || {}).text, now = performance.now();
   ui.tipSeen = ui.tipSeen || new Map();

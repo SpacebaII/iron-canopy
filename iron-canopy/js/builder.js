@@ -236,6 +236,7 @@ IC.bldAdvance = function (S, ap, w, dt) {
   const pay = st.cost * f;
   if (S.budget < pay) { w.wait = `waiting for money: ${U.money(st.cost * (1 - w.t / st.dur))} to finish ${st.name.toLowerCase()}`; return false; }
   S.budget -= pay; w.spent = (w.spent || 0) + pay;
+  if (IC.investBook) IC.investBook(S, ap, pay);
   for (const k in st.mats || {}) M[k] = Math.max(0, M[k] - st.mats[k] * f);
   w.t += f * st.dur; w.wait = null; w.short = false; w.busyT = S.time;
   if (w.part) w.part.stageF = w.t / st.dur;

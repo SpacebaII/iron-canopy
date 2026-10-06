@@ -120,7 +120,8 @@ IC.pieceCost = function (k) {
 function itemOf(k) {
   const S = S_(), R = k.startsWith('road:') ? IC.ROADS[k.slice(5)] : null;
   const PC = IC.PIECES && IC.PIECES[k];
-  if (PC) return { k, name: PC.name, price: `${k === 'rwkit' ? 'about ' : ''}${U.money(IC.pieceCost(k))}`, use: PC.use, desc: PC.desc, upkeep: `${U.money(IC.pieceCost(k) * 0.0012 * 24)} a day`, piece: true };
+  // (round 4) the bigger pieces open with the airport's growth: the lock says what opens it (IC.pieceLock, deck.js)
+  if (PC) { const lock = IC.pieceLock ? IC.pieceLock(S, k, IC.bbAirport(S)) : ''; return { k, name: PC.name, price: `${k === 'rwkit' ? 'about ' : ''}${U.money(IC.pieceCost(k))}`, use: PC.use, desc: PC.desc, upkeep: `${U.money(IC.pieceCost(k) * 0.0012 * 24)} a day`, piece: true, lock, lockShort: lock ? `🔒 ${IC.pieceLockShort(S, k)}` : '' }; }
   if (R) return { k, name: R.name, price: `${U.money(R.perKm)} a km`, use: USE[k], desc: `${R.what[0].toUpperCase() + R.what.slice(1)}. It is built at ${R.kmh} km a game hour; bridges cost ${U.money(R.bridge)} each.`, upkeep: '' };
   if (k === 'carpark') return { k, name: 'Car park', price: `${U.money(IC.APART.surface.cost * IC.SURF.asph.k)} a ha`, use: USE[k], desc: `Asphalt outside the airfield parks about ${IC.SURF.asph.park} cars a hectare, and travellers pay to park.`, upkeep: '' };
   const D = IC.APART[k], T = IC.BTOOLS[k];
@@ -252,7 +253,7 @@ IC.bbPick = function (k) {
   if (k.startsWith('road:')) { IC.setMode(cur && cur.kind === 'road' && cur.cls === k.slice(5) ? null : { kind: 'road', cls: k.slice(5), pts: [], snaps: [] }); return true; }
   const part = k === 'carpark' ? 'surface' : k;
   if (cur && cur.kind === 'build' && cur.part === part && cur.ap === ap && (k !== 'carpark' || cur.surf === 'asph')) { IC.setMode(null); return true; }
-  const lock = IC.APART[part] && IC.aptLockWhy(S, part);
+  const lock = IC.APART[part] ? IC.aptLockWhy(S, part) : IC.PIECES && IC.PIECES[part] && IC.pieceLock ? IC.pieceLock(S, part, ap) : '';
   if (lock) { IC.toast(S, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   const m = IC.bldMode(S, ap, part);
   if (k === 'carpark') m.surf = 'asph';
@@ -356,7 +357,7 @@ IC.renderBuildBar = function (S) {
   const opts = (views + options(S, m));
   const head = ap ? `<span class="bb-apt">${esc(ap.name)}</span>` : '<span class="bb-apt amber">Select an airport to build on</span>';
   const body = !ap ? `<div class="bb-empty">Click one of your airports on the map, or found a new one.${IC.storyLock && !IC.storyLock(S, 'found') ? ' <button class="btn" data-act="foundMode">Found an airport</button>' : ''}</div>`
-    : items.length ? items.map(it => `<button class="bb-it ${cur === it.k ? 'on' : ''}" data-bb="item" data-v="${it.k}" ${it.lock ? 'data-lock="1"' : ''} aria-label="${esc(it.name)}"><img src="${thumb(it.k)}" alt=""><b>${esc(it.name)}</b><small>${it.lock ? '🔒 research' : esc(it.price)}</small><em>${esc(it.use)}</em></button>`).join('')
+    : items.length ? items.map(it => `<button class="bb-it ${cur === it.k ? 'on' : ''}" data-bb="item" data-v="${it.k}" ${it.lock ? 'data-lock="1"' : ''} aria-label="${esc(it.name)}"><img src="${thumb(it.k)}" alt=""><b>${esc(it.name)}</b><small>${it.lock ? esc(it.lockShort || '🔒 research') : esc(it.price)}</small><em>${esc(it.use)}</em></button>`).join('')
     : `<div class="bb-empty">${tab.k === 'bp' ? 'No blueprints yet: the real airports come with their map data.' : 'Nothing here for this airport.'}</div>`;
   const html = `${opts ? `<div class="bb-opts">${opts}</div>` : ''}
     <div class="bb-main">
