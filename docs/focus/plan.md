@@ -1,6 +1,6 @@
 # Focus plan: the Career and building airports
 
-Status: **for the owner's sign-off.** Nothing in it starts changing the game until it is signed off.
+Status: **signed off by the owner** ("yes, go ahead with round 1-5 overnight"). Rounds 1–5 run one after another without waiting between them; each still lands only when green and played.
 
 ## Why we are changing how we work
 
