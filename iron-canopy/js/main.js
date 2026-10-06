@@ -368,7 +368,7 @@ function onAct(e) {
     case 'roeAll': S.ad.roe = v; IC.log(S, 'info', 'WEAPONS', `National weapons status: ${v.toUpperCase()}.`); break;
     case 'doctrine': S.ad.doctrine = v; IC.emit(S, 'doctrine', v); IC.log(S, 'info', 'DOCTRINE', `Firing doctrine: ${{ sls: 'shoot-look-shoot', salvo: 'salvo', conserve: 'conserve' }[v]}.`); break;
     case 'airspace':
-      if (S.airspace !== v) { S.airspace = v; IC.log(S, 'info', 'AIRSPACE', `Civil airspace ${v}.`); IC.news(S, v === 'closed' ? 'Government closes the national airspace to all civil flights.' : v === 'restricted' ? 'Airspace restricted to southern corridors.' : 'Airspace reopens to civil traffic.'); }
+      IC.airspaceSet(S, v);
       break;
     // the rail and the keys open and close a room; its own tab strip only switches rooms
     case 'aptTab': ui.aptTab = v; break;
@@ -379,7 +379,7 @@ function onAct(e) {
     case 'goal': { const g = S.story && S.story.goals[+v]; if (g && g.ref) { if (ui.room) ui.openRoom(null); ui.jump(g.ref, g.ref.parts || g.ref.kind === 'city' ? 'infra' : null); } break; }
     case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.setAlert(S, r, IC.alertOf(r) === 5 ? 30 : 5); break; }
     case 'air': IC.airAct(S, b.dataset); break;
-    case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { S.airspace = 'restricted'; IC.log(S, 'info', 'AIRSPACE', 'Civil airspace restricted.'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
+    case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { IC.airspaceSet(S, 'restricted'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
     case 'copen': ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
     case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.shownAt = performance.now() - 1e5; break;
     case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
