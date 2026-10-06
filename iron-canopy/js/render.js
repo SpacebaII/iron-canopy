@@ -128,7 +128,8 @@ IC.render = function (S, now) {
 
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
-  for (const x of S.fx.texts) { ctx.globalAlpha = Math.max(0, 1 - x.t / 1.8); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(x.s, x.x + px, x.y - (8 + x.t * 16) * px + px); ctx.fillStyle = x.color; ctx.fillText(x.s, x.x, x.y - (8 + x.t * 16) * px); }
+  let li = 0;
+  for (const x of S.fx.texts) { const L = x.life || 1.8, rise = (8 + Math.min(x.t, 1.8) * 16 + (x.life ? 18 * li++ : 0)) * px; ctx.globalAlpha = Math.max(0, Math.min(1, (L - x.t) / 0.8)); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(x.s, x.x + px, x.y - rise + px); ctx.fillStyle = x.color; ctx.fillText(x.s, x.x, x.y - rise); }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 
   if (S.layers.weather && S.clouds && wx.cloud > 0.4 && z < 0.5) {

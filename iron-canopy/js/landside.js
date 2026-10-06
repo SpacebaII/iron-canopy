@@ -238,24 +238,36 @@ function railNear(S, ap) {
 
 /* ---------- the access road a new airport gets ---------- */
 /* from the landside of the site (the side towards the nearest city) to the nearest road, or straight into town */
-IC.landAccessRoad = function (S, ap) {
+/* the access road a site at x, y with its runway at a would get: { P (the road plan), pts, snaps, city, end }, or
+   null. The site survey prices it before Found (playtest 1: a 20 km road was a hidden ₭48M) */
+IC.landAccessPlan = function (S, x, y, a, probe) {
   const W = S.world;
   if (!IC.roadPlan || !IC.roadFinish || !W.edges) return null;
-  const city = IC.cities(S).filter(c => c.owner !== 'enemy').sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0];
+  const at = { x, y };
+  const city = IC.cities(S).filter(c => c.owner !== 'enemy').sort((p, q) => U.dist(p, at) - U.dist(q, at))[0];
   if (!city) return null;
-  ap.cityRef = { x: city.x, y: city.y };
   // leave the site at right angles to the runway, on the city's side, 500 m out
-  const a = ap.rwyA || 0, nx = -Math.sin(a), ny = Math.cos(a), side = ((city.x - ap.x) * nx + (city.y - ap.y) * ny) >= 0 ? 1 : -1;
-  const start = { x: ap.x + nx * side * 5, y: ap.y + ny * side * 5 };
+  const nx = -Math.sin(a || 0), ny = Math.cos(a || 0), side = ((city.x - x) * nx + (city.y - y) * ny) >= 0 ? 1 : -1;
+  const start = { x: x + nx * side * 5, y: y + ny * side * 5 };
   // the nearest road, within 25 km; failing that, the city's own junction
   let end = null;
   for (const r of [15, 60, 250]) { const sn = IC.roadSnap(S, start.x, start.y, r); if (sn.node || sn.edge) { end = sn; break; } }
   if (!end && W.nodes[city.id]) end = { x: city.x, y: city.y, node: city.id };
   if (!end) return null;
   const pts = [start, { x: end.x, y: end.y }], snaps = [{ x: start.x, y: start.y }, end];
-  let P = IC.roadPlan(S, 'lc', pts, snaps);
-  if (P.why && W.nodes[city.id] && !end.node) { const e2 = { x: city.x, y: city.y, node: city.id }; const P2 = IC.roadPlan(S, 'lc', [start, e2], [snaps[0], e2]); if (!P2.why) { P = P2; pts[1] = e2; snaps[1] = e2; } }
+  // (a probe for a site not yet founded: the road will serve the airport once it is there)
+  const plan = (p, s) => { const P = IC.roadPlan(S, 'lc', p, s); if (probe && /serve one of your airports/.test(P.why)) P.why = ''; return P; };
+  let P = plan(pts, snaps);
+  if (P.why && W.nodes[city.id] && !end.node) { const e2 = { x: city.x, y: city.y, node: city.id }; const P2 = plan([start, e2], [snaps[0], e2]); if (!P2.why) { P = P2; pts[1] = e2; snaps[1] = e2; end = e2; } }
+  return { P, pts, snaps, city, end };
+};
+IC.landAccessRoad = function (S, ap) {
+  const W = S.world;
+  const A = IC.landAccessPlan(S, ap.x, ap.y, ap.rwyA || 0); if (!A) return null;
+  const { P, pts, snaps, city, end } = A, start = pts[0];
+  ap.cityRef = { x: city.x, y: city.y };
   if (P.why) { IC.log(S, 'warn', 'ROADS', `${ap.name}: no access road could be laid automatically (${P.why.replace(/\.$/, '').toLowerCase()}). Build one with the road tool in the airport panel.`, ap); return null; }
+
   const w = IC.roadFinish(S, { cls: 'lc', pts, snaps });
   if (!w) return null;
   const L = IC.landInit(ap); L.road = true; L.access = { pts: pts.map(p => ({ x: p.x, y: p.y })), cost: P.cost, km: P.km, work: w.id };

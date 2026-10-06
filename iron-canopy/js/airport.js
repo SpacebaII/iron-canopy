@@ -761,6 +761,9 @@ IC.aptStats = function (S, ap) {
   const deadT = G.dead ? ap.parts.filter(p => p.kind === 'taxi' && p.built && !p.cut[1] && p.nodes.some(id => G.dead.has(id))).length : 0;
   if (deadT) st.warn.push(`${deadT} taxiway${deadT > 1 ? 's end' : ' ends'} in the grass, joined to nothing: no aircraft uses ${deadT > 1 ? 'them' : 'it'}. Join ${deadT > 1 ? 'them' : 'it'} to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway).`);
   for (const p of ap.parts) if (DOOR(p.kind) && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds || 0; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways: no aircraft can use it. Draw a taxiway to its door.`); }
+  // (round 1) buildings inside a runway's strip: accepted, but said, with the fix (playtest 1: a fire station 110 m
+  // from the centreline went unremarked)
+  for (const p of ap.parts) { const why = IC.aptStripWhy(ap, p); if (why) st.warn.push(why); }
   const towers = alive('tower'), tower = towers.length > 0;
   // the cab must see each runway it works: within 8 km and over the roofs in between
   st.unseen = {};
@@ -843,7 +846,7 @@ IC.aptStats = function (S, ap) {
   }
   // fog and low cloud
   st.ilsEnds = rws.reduce((n, rw) => n + (IC.rwHasILS(ap, rw, 1) ? 1 : 0) + (IC.rwHasILS(ap, rw, -1) ? 1 : 0), 0);
-  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase') st.warn.push('No landing system (ILS): in fog and low cloud every arrival diverts.');
+  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase') st.warn.push('No landing system (ILS): in fog, low cloud and snow every arrival diverts. One at the end aircraft land toward (₭25M, Navaids) lets them land.');
   // fire and rescue: how long the trucks take to reach the far end of each runway
   const fires = alive('fire');
   const fireSt = fires.filter(f => rws.some(rw => U.dist(f, rwAt(rw, 0.5)) < 15));
@@ -880,6 +883,21 @@ IC.aptStats = function (S, ap) {
 };
 const FAF_T = () => IC.GOPS.FAF / 0.95 + IC.GOPS.CLEAR / IC.GOPS.TAXI + 30;
 IC.FUEL_IN = 45;
+/* A building inside a runway's strip (150 m either side of the centreline, 60 m beyond its ends), in plain words
+   with the fix, or ''. Navaids that belong there (the landing system, radars) and paving are not buildings */
+IC.STRIP = 1.5;
+const STRIP_OK = { runway: 1, taxi: 1, apron: 1, alert: 1, holdbay: 1, ils: 1, atc: 1, gradar: 1, surface: 1, people: 1, skybridge: 1, svcroad: 1 };
+IC.aptStripWhy = function (ap, p, rws) {
+  if (!p || STRIP_OK[p.kind] || p.x == null || !IC.APART[p.kind] || IC.APART[p.kind].pad) return '';
+  const P = IC.partOutline(p);
+  for (const rw of rws || ap.parts.filter(q => q.kind === 'runway')) {
+    const L = IC.rwLen(rw), d = IC.rwDir(rw);
+    let off = Infinity;
+    for (const q of P.concat([{ x: p.x, y: p.y }])) { const s = (q.x - rw.a.x) * d.x + (q.y - rw.a.y) * d.y; if (s < -0.6 || s > L + 0.6) continue; off = Math.min(off, Math.abs((q.x - rw.a.x) * -d.y + (q.y - rw.a.y) * d.x)); }
+    if (off < IC.STRIP) return `${p.name || IC.APART[p.kind].name} stands ${Math.round(off * 100)} m from the ${rw.name || 'runway'} centreline, inside its 150 m strip: an aircraft that runs off the side would hit it. Move it at least ${Math.ceil((IC.STRIP - off) * 100 / 10) * 10} m further out (Move on the build bar).`;
+  }
+  return '';
+};
 /* why an arrival of this type cannot land here right now (wind, fog), or '' */
 IC.aptLandWhy = function (S, ap, T) {
   const cfg = IC.aptConfig(S, ap), rws = ap.parts.filter(p => p.kind === 'runway' && p.built && p.hp > p.max * 0.25 && IC.rwUsable(p) >= T.rwy);
@@ -1645,8 +1663,10 @@ IC.foundAirport = function (S, x, y, a) {
   const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL);
   if (S.budget < sv.cost) { IC.log(S, 'warn', 'BUILD', `The site costs ${U.money(sv.cost)} with land and levelling.`); return null; }
   if (sv.river) { IC.log(S, 'warn', 'BUILD', 'A river crosses the runway line: turn the runway or pick another site.'); IC.text(S, x, y, 'A RIVER CROSSES THE RUNWAY LINE', IC.C.hostile); return null; }
-  S.budget -= sv.cost;
-  const city = IC.cities(S).slice().sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
+  // (the access road is paid as it is laid, by landside.js: the survey's total counts it)
+  S.budget -= sv.site != null ? sv.site : sv.cost;
+  const city = IC.cities(S).slice()
+.sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
   const n = S.infra.filter(i => i.kind === 'airport').length;
   const ap = { id: 'apt' + n + IC.nid(''), kind: 'airport', name: `${city ? city.name : 'New'} ${S.infra.some(i => i.name === (city ? city.name : 'New') + ' Airport') ? 'Field' : 'Airport'}`, x, y, owner: 'us', infra: true, r: 50, max: 150, hp: 150, city: city && city.id, inv: {}, inc: {} };
   ap.rwyA = sv.a;

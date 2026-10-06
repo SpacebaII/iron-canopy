@@ -758,11 +758,33 @@ IC.waitText = function (S, w) {
    nearly always up; anything that fires, or is fired at, brings the fine steps back) */
 IC.calmSky = S => !S.missiles.length && !(S.eaam && S.eaam.length) && !S.threats.some(t => !t.dead && !(t.d && t.d.civil) && t.type !== 'isr' && !(t.border && (t.mission === 'patrol' || t.mission === 'rtb')) && IC.inHome(t.x, t.y) && IC.hostileBorderDist(t.x, t.y) > 150);
 IC.waitStart = function (S, key) {
+  // (round 1) Finish now: time runs on fast until every work at the airport is done (works: + its id)
+  const ws = key && key.startsWith('works:') ? S.byId[key.slice(6)] : null;
+  if (ws) { if (!ws.works || !ws.works.some(w => w.stages)) return false; S.wait = { key, what: `the works at ${ws.name}`, amt: 0, works: ws.id, speed: IC.WAIT.speed * 3, m0: S.cal ? S.cal.m : 0, t0: S.time }; S.skip = false; S.paused = false; IC.emit(S, 'waitStart', S.wait); return true; }
   const t = IC.waitTargets(S).find(x => x.key === key) || (key && key.startsWith('amt:') ? { key, what: `${U.money(+key.slice(4))} in the treasury`, amt: +key.slice(4) } : null);
   if (!t) return false;
   S.wait = { key: t.key, what: t.what, amt: t.amt, work: t.work || null, m0: S.cal ? S.cal.m : 0, t0: S.time };
   S.skip = false; S.paused = false;
   IC.emit(S, 'waitStart', S.wait);
+  return true;
+};
+/* Should this stop a wait (or skip)? Only what the player can act on now, and never the same thing twice: the same
+   kind of incident about the same aircraft, or the same kind more than once a game day while waiting (playtest 1:
+   one airspace incident nobody could fix in Act I stopped Wait ten times in a row) */
+IC.waitWorth = function (S, type, d) {
+  if (type !== 'incidentAdded' || !d) return true;
+  const st = S.story;
+  // in Act I the airspace is not the player's yet: no radar, no airways to give; foreign overflights never are
+  const sep = d.kind === 'separation' || d.kind === 'nearmiss';
+  if (sep && st && st.act === 1 && st.ch < 2) return false;
+  if (sep && st && st.act === 1 && d.ref && !d.ref.tail) return false;
+  const seen = S.waitSeen || (S.waitSeen = {}), ref = d.ref ? d.ref.id || d.ref.cs || d.ref.tn || '' : '';
+  const k1 = d.kind + ':' + ref, k2 = 'kind:' + d.kind;
+  if (seen[k1] != null) return false;
+  if (seen[k2] != null && S.time - seen[k2] < 86400) return false;
+  seen[k1] = seen[k2] = S.time;
+  // (forget the oldest: a long Career meets thousands of aircraft)
+  const ks = Object.keys(seen); if (ks.length > 200) for (const k of ks.slice(0, 100)) delete seen[k];
   return true;
 };
 IC.waitStop = function (S, why) {
@@ -776,7 +798,14 @@ IC.waitTick = function (S, dt) {
   const net = S.income - S.upkeep, k = Math.min(1, dt / 86400 * 1.5);
   S.netAvg = S.netAvg == null ? net : S.netAvg + (net - S.netAvg) * k;
   const w = S.wait; if (!w) return;
-  if (w.work) { const x = worksOf(S).find(q => q.w.id === w.work); if (!x) return IC.waitStop(S, `${cap1(w.what)} is finished.`); if (x.w.cost - x.w.spent <= Math.max(0, S.budget)) return IC.waitStop(S, `There is enough to finish ${w.what}.`); }
+  if (w.works) {
+    const ap = S.byId[w.works], left = ap && ap.works ? ap.works.filter(x => x.stages) : [];
+    if (!left.length) return IC.waitStop(S, `Every work at ${ap ? ap.name : 'the airport'} is finished.`);
+    if (left.every(x => /money/.test(x.wait || ''))) return IC.waitStop(S, `The works at ${ap.name} wait for money: ${IC.waitText(S, { what: 'them', amt: S.budget + left.reduce((a, x) => a + Math.max(0, x.cost - x.spent), 0) })}`);
+    return;
+  }
+  if (w.work) {
+ const x = worksOf(S).find(q => q.w.id === w.work); if (!x) return IC.waitStop(S, `${cap1(w.what)} is finished.`); if (x.w.cost - x.w.spent <= Math.max(0, S.budget)) return IC.waitStop(S, `There is enough to finish ${w.what}.`); }
   else if (S.budget >= w.amt) return IC.waitStop(S, `${U.money(S.budget)} in the treasury: enough for ${w.what}.`);
   if (S.cal && S.cal.m !== w.m0) return IC.waitStop(S, `${IC.MONTHS[S.cal.m % 12]} begins. ${IC.waitText(S, w)}`);
 };

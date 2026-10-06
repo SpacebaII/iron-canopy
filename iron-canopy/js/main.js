@@ -13,7 +13,7 @@ function fx(S, dtR, gdt) {
   for (const p of F.parts) { p.t += dtR; const k = Math.max(0, 1 - p.drag * dtR); p.vx *= k; p.vy *= k; p.ox += p.vx * dtR; p.oy += p.vy * dtR; p.size += p.grow * dtR; }
   F.parts = F.parts.filter(p => p.t < p.life);
   for (const b of F.booms) b.t += dtR; F.booms = F.booms.filter(b => b.t < 0.8);
-  for (const x of F.texts) x.t += dtR; F.texts = F.texts.filter(x => x.t < 1.8);
+  for (const x of F.texts) x.t += dtR; F.texts = F.texts.filter(x => x.t < (x.life || 1.8));
   for (const x of F.tracers) x.t += dtR; F.tracers = F.tracers.filter(x => x.t < 0.08);
   for (const r of F.rings) r.t += dtR; F.rings = F.rings.filter(r => r.t < 1);
   for (const f of F.flashes) f.t += dtR; F.flashes = F.flashes.filter(f => f.t < 0.35);
@@ -128,7 +128,11 @@ function buildGo() {
   }
   if (m.kind !== 'build') return;
   const r = IC.buildFinish(S, m), at = m.at || m.pts[m.pts.length - 1] || S.hover;
-  if (r === 'built') { IC.sfx.ui('ok'); if (at) ping(at); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap); }
+  if (r === 'built') {
+    IC.sfx.ui('ok'); if (at) ping(at); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap);
+    // a whole airport, or the surveyed runway: the tool is put down (one more click would order a second)
+    if (m.part === 'starter' || m.fromSurvey) IC.setMode(null);
+  }
   else { IC.sfx.ui('err'); if (m.err && at) { IC.text(S, at.x, at.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
   IC.ui.refresh(true);
 }
@@ -152,7 +156,12 @@ function foundIn(m, p, btn) {
 }
 function foundGo() {
   const m = S.mode2, r = IC.foundFinish(S, m);
-  if (r === 'built') { IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, 1.2)); IC.sfx.ui('ok'); return r; }
+  if (r === 'built') {
+    IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, 1.2)); IC.sfx.ui('ok');
+    // (round 1) the surveyed runway stays on the map as a placed plan: Build (or Enter) lays it, with its taxiways
+    if (m.next) { IC.bb.ap = m.ap; IC.bb.tab = 'pc'; IC.bbToggle(true); IC.setMode(m.next); }
+    return r;
+  }
   IC.sfx.ui('err'); if (m.err && S.hover) IC.text(S, S.hover.x, S.hover.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile);
   IC.ui.refresh(true);
   return r;
@@ -168,7 +177,7 @@ goEl.addEventListener('click', e => {
   if (v === 'build') buildGo();
   else if (v === 'cancel') { if (!buildEsc()) IC.setMode(null); }
   else if (v === 'turn' && m && m.kind === 'found') { IC.foundTurn(m, +b.dataset.d); IC.ui.refresh(true); }
-  else if (v === 'turn' && m) { m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.ui.refresh(true); }
+  else if (v === 'turn' && m) { if (!IC.pieceTurn(m, +b.dataset.d)) m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.ui.refresh(true); }
 });
 function goFrame() {
   const m = S && S.mode2;
@@ -444,6 +453,7 @@ function onAct(e) {
     case 'speed': S.speed = +v; S.paused = false; S.skip = false; IC.waitStop(S); break;
     case 'waitPick': if (S.wait) { IC.waitStop(S); ui.waitPick = false; } else ui.waitPick = !ui.waitPick; break;
     case 'wait': ui.waitPick = false; IC.waitStart(S, v); break;
+    case 'finishNow': ui.waitPick = false; if (!IC.waitStart(S, 'works:' + v)) IC.toast(S, 'info', 'WORKS', 'Nothing is being built here.'); break;
     case 'skip': startSkip(); break;
     case 'mute': if (!IC.sfx.on) IC.sfx.init(); else IC.sfx.toggle(); break;
     case 'roeAll': S.ad.roe = v; IC.log(S, 'info', 'WEAPONS', `National weapons status: ${v.toUpperCase()}.`); break;
@@ -488,7 +498,16 @@ function onAct(e) {
     case 'research': IC.startResearch(S, v); break;
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
-    case 'desel': S.sel = null; S.group = []; break;
+    // (closing the panel keeps the build bar on the airport it was building: only Esc on the map lets go of it)
+    case 'desel': { const a = selAp(); if (a && IC.bb) IC.bb.ap = a; S.sel = null; S.group = []; break; }
+    // a card's fix: the airport, the build bar and the piece that fixes it, in one click
+    case 'buildPick': {
+      const a = (b.dataset.ap && S.byId[b.dataset.ap]) || selAp() || IC.bbAirport(S); if (!a) break;
+      ui.closeCine(); if (ui.room) ui.openRoom(null);
+      IC.bb.ap = a; IC.select({ kind: 'infra', ref: a }); IC.bbToggle(true); IC.bbPick(v);
+      IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 2.2)); return;
+    }
+
     case 'emcon': case 'uroe': case 'udoc': case 'move': case 'heli': case 'pri': case 'repair': case 'clearPrio': case 'reserve': case 'fireMode': case 'assignBest': case 'scramble': command(a, v); return;
     case 'emconAll': command('emcon', v); return;
     case 'dpri': { const d = id ? S.units.find(u => u.id === id) : sel; if (d) { d.pri = v; IC.log(S, 'info', 'LOGI', `${d.name}: resupply priority ${IC.DEPOT_PRI[v].name.toLowerCase()}.`); } break; }
@@ -628,7 +647,10 @@ IC.on((S2, type, d) => {
   else if (type === 'track' && (d.d.cls === 'air' || d.d.cls === 'cm') && !d.border) stopSkip(`New track TN ${d.tn}.`);
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
   else if (type === 'event') { if (P.event !== false) pause(d.title); else stopSkip(d.title); }
-  else if (type === 'incidentAdded' || type === 'act' || type === 'goal') stopSkip();
+  else if (type === 'incidentAdded') { if ((S.wait || S.skip) && IC.waitWorth(S, type, d)) stopSkip(d.text ? d.text.charAt(0).toUpperCase() + d.text.slice(1) + '.' : ''); }
+  // (Finish now runs through the goals its own works tick off: the airport opening is what it waits for)
+  else if (type === 'act' || type === 'goal') { if (!(S.wait && S.wait.works && type === 'goal')) stopSkip(); }
+
   else if (type === 'request') stopSkip(`${IC.avAirline(S, d.al).name} offers a deal.`);
   else if (type === 'dealWarn' || type === 'dealStrike' || type === 'dealBroken') stopSkip(`${d.al.name}: its deal ${type === 'dealBroken' ? 'is over' : 'is at risk'}.`);
   else if (type === 'assault' || type === 'chapter' || type === 'war' || type === 'frontActive' || type === 'delivered' || type === 'lessonDone') stopSkip();
@@ -652,6 +674,9 @@ cv.addEventListener('pointerdown', e => {
     if (e.button === 0 && S.mode2 && S.mode2.kind === 'airway') drag.fix = IC.aspFixAt(S, S.hover, 12 / IC.cam.z);
     // a planned airport's runway turns by dragging along it
     if (e.button === 0 && S.mode2 && S.mode2.kind === 'found' && S.mode2.site && U.dist(S.mode2.site, S.hover) < 18) drag.turn = true;
+    // (round 1) a two-point piece or area drags out from where the button went down: drag to stretch
+    const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
+    if (e.button === 0 && bm && !bm.set && !bm.pts.length && IC.bldDragPart(bm.part)) drag.bstart = { x: S.hover.x, y: S.hover.y };
     // in the airport's Airspace tab, a ring's edge can be dragged
     if (e.button === 0 && aspEditing()) drag.edge = IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
   }
@@ -667,7 +692,7 @@ cv.addEventListener('pointermove', e => {
     if (edge) { IC.ui.tip(null); cv.title = `Drag to move the edge of the ${edge.name.toLowerCase()} (now ${U.km(edge.r1)} out)`; cv.style.cursor = 'grab'; return; }
     cv.title = '';
     // (the builder's own card sits by the cursor and its help line says what a right-click does: no hover card over it)
-    const ent = pick(S.hover); if (S.mode2 && S.mode2.kind === 'build') IC.ui.tip(null); else IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return;
+    const ent = pick(S.hover); if (S.mode2 && (S.mode2.kind === 'build' || S.mode2.kind === 'found')) IC.ui.tip(null); else IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return;
   }
   IC.ui.tip(null);
   if (!ptrs.has(e.pointerId)) return;
@@ -683,6 +708,7 @@ cv.addEventListener('pointermove', e => {
     if (drag.moved) {
       if (drag.fix) IC.aspMoveFix(S, drag.fix, S.hover.x, S.hover.y);
       else if (drag.turn) IC.foundTurn(S.mode2, 0, S.hover);
+      else if (drag.bstart) { if (!drag.bplaced && S.mode2 && S.mode2.kind === 'build') { drag.bplaced = buildIn(S.mode2, drag.bstart, 0, e.shiftKey) === 'point'; if (!drag.bplaced) drag.bstart = null; } }
       else if (drag.edge) { IC.aspResize(S, drag.edge, U.dist(drag.edge, S.hover)); IC.ui.aspVol = drag.edge.id; IC.ui.aspEdge = drag.edge.id; cv.style.cursor = 'grabbing'; }
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
       else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); }
@@ -694,7 +720,8 @@ function up(e) {
   ptrs.delete(e.pointerId);
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
   if (had && drag && e.type === 'pointerup') {
-    if (drag.fix && drag.moved) IC.ui.refresh(true);
+    if (drag.bplaced && drag.moved && S.mode2 && S.mode2.kind === 'build') buildIn(S.mode2, S.hover, 0, e.shiftKey);
+    else if (drag.fix && drag.moved) IC.ui.refresh(true);
     else if (drag.edge && drag.moved) { const v = drag.edge; IC.log(S, 'info', 'AIRSPACE', `${selAp().name}: ${IC.aspShort(v)}`, selAp()); IC.ui.refresh(true); }
     else if (drag.box && S.box) {
       const b = S.box, a = IC.toWorld(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1)), c = IC.toWorld(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1));
@@ -723,7 +750,10 @@ cv.addEventListener('pointerup', up);
 cv.addEventListener('pointercancel', up);
 cv.addEventListener('pointerleave', () => { if (!ptrs.size) { S.hover = null; IC.ui.tip(null); } });
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('wheel', e => { e.preventDefault(); const l = local(e, cv); IC.zoomAt(l.x, l.y, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+// (round 1) one notch of the wheel is one step of about 20%, however large the browser reports it; a touchpad's
+// small deltas still zoom smoothly
+cv.addEventListener('wheel', e => { e.preventDefault(); const l = local(e, cv), d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1); IC.zoomAt(l.x, l.y, Math.exp(-U.clamp(d * 0.0018, -0.18, 0.18))); }, { passive: false });
+
 
 function miniMove(e) { const l = local(e, mini); IC.cam.fly = null; IC.centerOn(l.x / mw * IC.WW, l.y / mh * IC.WH); }
 mini.addEventListener('pointerdown', e => { mini.setPointerCapture(e.pointerId); miniMove(e); });
@@ -748,7 +778,10 @@ window.addEventListener('keydown', e => {
   // the keys shown on the rail (and the old ones, N K T, still work)
   const rooms = { a: 'air', l: 'logi', i: 'intel', n: 'intel', r: 'research', k: 'research', j: 'journal', v: 'aviation', c: 'staff', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
-  if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
+  if (bm && lk === 'r') {
+    if (!IC.pieceTurn(bm, 1, e.shiftKey)) bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12);
+    IC.ui.refresh(true); return;
+  }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
@@ -767,7 +800,9 @@ window.addEventListener('keydown', e => {
   // the build bar: B opens and closes it; while it is open 1–0 pick its tabs and U, M, Del, I its tools
   const bbOn = IC.bb && IC.bb.open && $('bbar') && !$('bbar').hidden;
   if (lk === 'b' && !(S.sel && S.sel.kind === 'track')) { IC.bbToggle(); return; }
-  if (bbOn && !(selUnits().length) && /^[0-9]$/.test(k)) { const t = IC.BB_TABS.find(x => x.key === k); if (t) { IC.bbTab(t.k); return; } }
+  // (round 1) the number keys are the speeds everywhere; Shift with a number picks the build bar's tab
+  const dg = /^Digit([0-9])$/.exec(e.code || '');
+  if (bbOn && !(selUnits().length) && e.shiftKey && dg) { const t = IC.bbTabs(S).find(x => x.key === dg[1]); if (t) { IC.bbTab(t.k); return; } }
   if (bbOn && !(selUnits().length) && (lk === 'u' || lk === 'm' || lk === 'i' || k === 'Delete')) { IC.bbTool(lk === 'u' ? 'upgrade' : lk === 'm' ? 'move' : lk === 'i' ? 'info' : 'bulldoze'); return; }
   const selKind = S.sel && S.sel.kind;
   const unitSel = selUnits().length > 0, trackSel = selKind === 'track';
@@ -929,7 +964,7 @@ function frame(now) {
   let gdt = 0;
   const running = !S.paused && (!S.over || IC.ui.overDismissed) && $('start').hidden;
   if (running) {
-    let speed = combatSpeed(S, S.wait ? IC.WAIT.speed : S.skip ? 64 : S.speed, dtR);
+    let speed = combatSpeed(S, S.wait ? (S.wait.speed || IC.WAIT.speed) : S.skip ? 64 : S.speed, dtR);
     gdt = dtR * IC.GS * speed;
     if (S.skip && S.time - (S.skipT || S.time) > 3 * 3600) stopSkip('Three hours passed quietly.');
     // waiting for money takes long steps while the sky is calm, fine ones as soon as anything armed is about

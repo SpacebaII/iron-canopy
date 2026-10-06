@@ -998,7 +998,9 @@ function lossOfSeparation(S, a, b, d, dz, near, P) {
     S.support = Math.max(0, S.support - 1);
     if (S.story || !(S.enemy && S.enemy.war)) IC.news(S, `Near miss ${at}: ${a.cs} and ${b.cs} came within ${U.km(d)} of each other.`);
     // (a card for the first in six hours, and none in a war; the rest go to the Journal, or a busy sky is all cards)
-    if (S.camp && IC.card && !(S.enemy && S.enemy.war) && !(S.time - (N.nmCardT || -1e9) < 6 * 3600) && (N.nmCardT = S.time)) IC.card(S, 'Near miss', `${U.clock(S.time, S)} · ${at}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
+    // (no card in Act I before the airspace chapter: the player has no radar or airways to give yet; the Journal has it)
+    if (S.camp && IC.card && !(S.enemy && S.enemy.war) && !(S.story && S.story.act === 1 && S.story.ch < 2) && !(S.time - (N.nmCardT || -1e9) < 6 * 3600) && (N.nmCardT = S.time))
+ IC.card(S, 'Near miss', `${U.clock(S.time, S)} · ${at}`, `${a.cs} and ${b.cs} passed ${gap}. ${why}. The Prime Minister's office wants to know how it happened.`, 'event');
   }
   IC.emit(S, near ? 'nearMiss' : 'lossSep', { a, b, d, dz, x, y, why, cause });
 }

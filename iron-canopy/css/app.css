@@ -196,6 +196,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
 /* ---------- inspector ---------- */
 .insp{position:absolute;z-index:3;right:12px;top:var(--top);bottom:12px;width:25rem;display:flex;flex-direction:column;overflow:hidden;animation:slideIn .2s var(--ease)}
+/* (round 1) while placing a piece the panel steps aside: the map is what the player looks at */
+.app.building .insp,#app.building .insp{transform:translateX(calc(100% + 20px));opacity:0;pointer-events:none;transition:transform .2s var(--ease),opacity .2s}
 .insp:empty{display:none}
 .ihead{display:grid;grid-template-columns:auto 1fr auto;gap:.7rem;align-items:center;padding:.85rem .95rem .6rem}
 .ihead canvas{width:4rem;height:3.1rem}

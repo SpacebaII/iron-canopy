@@ -46,7 +46,21 @@ IC.BB_TABS = [
   { k: 'lk', key: '9', name: 'Looks & paint', items: ['surface'] },
   { k: 'bp', key: '0', name: 'Blueprints', items: ['blueprint'] }
 ];
+/* (round 1) the bar opens on whole pieces; the parts one by one are folded under Detail (IC.FOCUS.pieces) */
+IC.BB_PIECE_TABS = [
+  { k: 'pc', key: '1', name: 'Airport pieces', items: ['rwkit', 'tstraight', 'tpier', 'tround', 'services', 'cargoarea'] },
+  { k: 'bq', key: '2', name: 'Blueprints', items: ['starter', 'blueprint'] }
+];
+/* the tabs on show: the pieces and blueprints, then the parts one by one when Detail is open (or always, without
+   the focus switch) */
+IC.bbTabs = function () {
+  if (!(IC.FOCUS && IC.FOCUS.pieces)) return IC.BB_TABS;
+  if (!IC.bb.detail) return IC.BB_PIECE_TABS;
+  return IC.BB_PIECE_TABS.concat(IC.BB_TABS.filter(t => t.k !== 'bp').map((t, i) => Object.assign({}, t, { key: String((i + 3) % 10) })));
+};
 const TAB_ICON = {
+  pc: '<path d="M3 15h18M6 15V9h12v6M9 9V5h6v4M4 19h16"/>',
+  bq: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M9 21V9M14 13h4M14 17h4"/>',
   rw: '<path d="M9 2l-3 20M15 2l3 20M12 4v3M12 10v3M12 16v3"/>',
   tw: '<path d="M4 21v-8a6 6 0 0 1 6-6h10M4 13a6 6 0 0 1 6-6"/><path d="M8 21v-7a3 3 0 0 1 3-3h9" opacity=".5"/>',
   ap: '<rect x="3" y="6" width="18" height="13" rx="1"/><path d="M7 19v-6M12 19v-6M17 19v-6"/>',
@@ -95,8 +109,18 @@ const NEEDS = {
   atc: 'Nothing: it covers about 110 km.', gradar: 'Research (Career).', surface: 'Nothing. Aircraft never use it.', blueprint: 'A flat site big enough for it.',
   svcroad: 'Nothing: it may cross taxiways, not runways.', 'road:lc': 'An airport.', 'road:rd': 'An airport.', 'road:hw': 'An airport, and a motorway within reach.', carpark: 'Ground outside the fence, near the terminal.'
 };
+/* a piece's price, measured once on a scratch airport at its usual size */
+const PIECE_COST = {};
+IC.pieceCost = function (k) {
+  if (PIECE_COST[k] != null) return PIECE_COST[k];
+  const t = { id: 'pc', kind: 'airport', x: 0, y: 0, name: '' };
+  IC.aptFromLayout(t, IC.PIECES[k].make({ len: 30, size: 'm' }), { x: 0, y: 0, rot: 0 });
+  return (PIECE_COST[k] = t.parts.reduce((a, p) => a + IC.partCost(t, p), 0));
+};
 function itemOf(k) {
   const S = S_(), R = k.startsWith('road:') ? IC.ROADS[k.slice(5)] : null;
+  const PC = IC.PIECES && IC.PIECES[k];
+  if (PC) return { k, name: PC.name, price: `${k === 'rwkit' ? 'about ' : ''}${U.money(IC.pieceCost(k))}`, use: PC.use, desc: PC.desc, upkeep: `${U.money(IC.pieceCost(k) * 0.0012 * 24)} a day`, piece: true };
   if (R) return { k, name: R.name, price: `${U.money(R.perKm)} a km`, use: USE[k], desc: `${R.what[0].toUpperCase() + R.what.slice(1)}. It is built at ${R.kmh} km a game hour; bridges cost ${U.money(R.bridge)} each.`, upkeep: '' };
   if (k === 'carpark') return { k, name: 'Car park', price: `${U.money(IC.APART.surface.cost * IC.SURF.asph.k)} a ha`, use: USE[k], desc: `Asphalt outside the airfield parks about ${IC.SURF.asph.park} cars a hectare, and travellers pay to park.`, upkeep: '' };
   const D = IC.APART[k], T = IC.BTOOLS[k];
@@ -129,6 +153,7 @@ function thumb(k) {
   const bld = (x, y, w, h, col) => { g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + 3, y + 3, w, h); g.fillStyle = col; g.fillRect(x, y, w, h); g.strokeStyle = 'rgba(255,255,255,0.25)'; lw(0.8); g.strokeRect(x + 1, y + 1, w - 2, h - 2); };
   const stands = (x, y, n, sp, up) => { for (let i = 0; i < n; i++) { const cx = x + i * sp; g.strokeStyle = Y; lw(0.7); g.beginPath(); g.moveTo(cx, y); g.lineTo(cx, y + (up ? -16 : 16)); g.stroke(); plane(cx, y + (up ? -8 : 8), up ? -Math.PI / 2 : Math.PI / 2, 0.85); } };
   const road = (pts, w) => { g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = '#2e3032'; lw(w + 1.5); g.beginPath(); pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q[0], q[1])); g.stroke(); g.strokeStyle = asph; lw(w); g.stroke(); g.setLineDash([4, 4]); g.strokeStyle = W; lw(0.7); g.stroke(); g.setLineDash([]); };
+  if (IC.PIECES && IC.PIECES[k]) { pieceThumb(g, IC.PIECES[k].make({ len: 30, size: 'm' }), conc, asph); return (THUMB[k] = c.toDataURL()); }
   switch (k) {
     case 'runway': runway(38, 6, 126); g.fillStyle = W; g.font = '700 7px monospace'; g.fillText('09', 16, 41); break;
     case 'exits': runway(24, 0, 132); taxi([[16, 58], [120, 58]]); taxi([[40, 24], [70, 58]]); taxi([[80, 24], [110, 58]]); break;
@@ -172,11 +197,31 @@ function thumb(k) {
   return (THUMB[k] = c.toDataURL());
 }
 IC.bbThumb = thumb;
+/* a piece's picture: its own layout, scaled to fit (runway, taxiways, aprons, buildings, aircraft on the stands) */
+function pieceThumb(g, L, conc, asph) {
+  const P = []; const see = F => { for (let i = 0; i + 1 < F.length; i += 2) P.push([F[i], F[i + 1]]); };
+  for (const r of L.runways) see(r.a.concat(r.b)); for (const q of L.nodes) see(q); for (const a of L.aprons) see(a.poly); for (const b of L.blds) if (b.poly) see(b.poly); else if (b.c) see(b.c);
+  if (!P.length) return;
+  const x0 = Math.min(...P.map(q => q[0])), x1 = Math.max(...P.map(q => q[0])), y0 = Math.min(...P.map(q => q[1])), y1 = Math.max(...P.map(q => q[1]));
+  const s = Math.min((TW - 12) / Math.max(0.5, x1 - x0), (TH - 12) / Math.max(0.5, y1 - y0)), ox = TW / 2 - (x0 + x1) / 2 * s, oy = TH / 2 - (y0 + y1) / 2 * s;
+  const X = (x, y) => [ox + x * s, oy + y * s], poly = F => { g.beginPath(); for (let i = 0; i + 1 < F.length; i += 2) { const [x, y] = X(F[i], F[i + 1]); g[i ? 'lineTo' : 'moveTo'](x, y); } g.closePath(); };
+  for (const a of L.aprons) { poly(a.poly); g.fillStyle = conc; g.fill(); }
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  for (const t of L.taxi) { g.strokeStyle = '#8a8c86'; g.lineWidth = Math.max(1.6, (t.w || 0.23) * s); g.beginPath(); t.n.forEach((i, j) => { const [x, y] = X(L.nodes[i][0], L.nodes[i][1]); g[j ? 'lineTo' : 'moveTo'](x, y); }); g.stroke(); g.strokeStyle = '#e8bc34'; g.lineWidth = 0.6; g.stroke(); }
+  for (const r of L.runways) { const [ax, ay] = X(r.a[0], r.a[1]), [bx, by] = X(r.b[0], r.b[1]); g.lineCap = 'butt'; g.strokeStyle = '#3e4042'; g.lineWidth = Math.max(4, (r.w || 0.45) * s); g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.strokeStyle = '#eeeee6'; g.lineWidth = 0.7; g.setLineDash([3, 3]); g.stroke(); g.setLineDash([]); }
+  for (const b of L.blds) {
+    const col = { terminal: '#c8ccd2', cargo: '#a89e86', fire: '#b04638', tower: '#e0e2e6', fuel: '#e2e0d4' }[b.kind] || '#b8bcc2';
+    if (b.poly) { poly(b.poly); g.fillStyle = col; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.6; g.stroke(); }
+    else if (b.c) { const [x, y] = X(b.c[0], b.c[1]); g.fillStyle = col; g.beginPath(); g.arc(x, y, Math.max(2, 0.35 * s), 0, 7); g.fill(); }
+  }
+  for (const st of L.stands) { const [x, y] = X(st.x, st.y); g.save(); g.translate(x, y); g.rotate(st.h); g.fillStyle = '#f2f3f4'; const k = Math.max(0.25, Math.min(0.6, s * 0.035)); g.scale(k, k); g.beginPath(); g.moveTo(9, 0); g.lineTo(-2, -8); g.lineTo(-4, -8); g.lineTo(-6, 0); g.lineTo(-4, 8); g.lineTo(-2, 8); g.closePath(); g.fill(); g.restore(); }
+}
 /* what the bar says about an item (the tests read it too) */
 IC.BB_ITEM = (S, k) => itemOf(k);
 
 /* ---------- state ---------- */
-IC.bb = { open: false, tab: 'rw', view: null, hover: null };
+IC.bb = { open: false, tab: IC.FOCUS && IC.FOCUS.pieces ? 'pc' : 'rw', view: null, hover: null, detail: false };
+
 const selAp = S => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 /* the airport the bar builds on: the one being built on, the one selected, or the nearest of ours on screen */
 IC.bbAirport = function (S) {
@@ -199,7 +244,7 @@ IC.bbToggle = function (open) {
   IC.ui.refresh(true);
 };
 /* pick a tab (1–0) */
-IC.bbTab = function (k) { IC.bb.tab = k; IC.bb.open = true; IC.ui.refresh(true); };
+IC.bbTab = function (k) { if (IC.FOCUS && IC.FOCUS.pieces && !IC.BB_PIECE_TABS.some(t => t.k === k)) IC.bb.detail = true; IC.bb.tab = k; IC.bb.open = true; if (IC.ui && IC.ui.refresh) IC.ui.refresh(true); };
 /* start placing an item */
 IC.bbPick = function (k) {
   const S = S_(), ap = IC.bbAirport(S); if (!ap) return false;
@@ -212,7 +257,9 @@ IC.bbPick = function (k) {
   const m = IC.bldMode(S, ap, part);
   if (k === 'carpark') m.surf = 'asph';
   IC.setMode(m);
-  if (IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2);
+  // (a whole piece is placed beside the runway: close enough to see where it goes, the whole airport in view)
+  if (IC.PIECES && IC.PIECES[k]) { if (IC.cam.z < 6) IC.flyTo(ap.x, ap.y, U.clamp(Math.min(IC.cam.vw, IC.cam.vh) / 70, 6, 14)); }
+  else if (IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2);
   return true;
 };
 /* the tools: upgrade, move, bulldoze (each a mode that waits for a click on a part), undo, the info views */
@@ -242,6 +289,12 @@ function options(S, m) {
   // (bulldozing and moving: no chips to choose, only the line)
   if (m.kind === 'bulldoze' || m.kind === 'bpick' || m.kind === 'bmove') return say;
   if (m.kind === 'build') g.push(say);
+  // (round 1) a whole piece is built with sensible defaults: concrete, lit, the zone from what it is; Detail has the rest
+  if (IC.PIECES && IC.PIECES[t]) {
+    if (/^t(straight|pier|round)$/.test(t)) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('')));
+    g.push(`<em>${IC.PIECES[t].line ? 'Click or drag from end to end · R: taxiway on the other side' : 'Click to place · R turns it'} · Enter builds · Esc cancels</em>`);
+    return g.join('');
+  }
   if (t === 'upgrade' || PAVED_TOOLS[t]) g.push(group('Pavement', IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return chip('mat', k, (lock ? '🔒 ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), mat === k, `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost ×${IC.PAVE[k].cost}, time ×${IC.PAVE[k].build}.`, !!lock); }).join('')));
   if (t === 'runway' || t === 'upgrade') g.push(group(t === 'upgrade' ? 'Runway width' : 'Width', IC.WIDTHS.runway.map(w => chip('rwid', w, `${Math.round(w * 100)} m`, (m.rwid || IC.APART.runway.w) === w, w < 0.4 ? 'Narrow: cheaper; enough for regional aircraft and narrow-bodies' : w > 0.5 ? 'Wide: for the largest aircraft, and more margin in a crosswind' : 'The standard width for airliners')).join('')));
   if (TAXI_TOOLS[t] || t === 'upgrade') g.push(group(t === 'upgrade' ? 'Taxiway width' : 'Width', IC.WIDTHS.taxi.map(w => chip('twid', w, `${Math.round(w * 100)} m`, (m.twid || IC.APART.taxi.w) === w, w < 0.16 ? 'A taxilane: narrow-bodies and smaller, at walking pace on the apron' : w < 0.2 ? 'For narrow-bodies' : 'For wide-bodies: the standard')).join('')));
@@ -284,6 +337,8 @@ IC.renderBuildBar = function (S) {
   // selecting one of our airports brings the bar up (unless it was closed while that airport was selected)
   // (not in the Academy: its lessons are about the air defence, and the bar would cover their hints)
   if (sa && !sa.locked && sa.id !== bb.selId && bb.closed !== sa.id && S.mode !== 'academy' && !S.range) bb.open = true;
+  // (the bar keeps the airport it builds on when the selection goes: closing the panel does not empty it)
+  if (sa && !sa.locked) bb.ap = sa;
   bb.selId = sa ? sa.id : null;
   const ap = bb.open ? IC.bbAirport(S) : null;
   const show = bb.open && !IC.ui.room && $('start').hidden;
@@ -293,7 +348,7 @@ IC.renderBuildBar = function (S) {
   const m = S.mode2 && S.mode2.ap === ap ? S.mode2 : S.mode2 && S.mode2.kind === 'road' ? S.mode2 : null;
   const cur = m && m.kind === 'build' ? (m.part === 'surface' && m.surf === 'asph' && bb.last === 'carpark' ? 'carpark' : m.part) : m && m.kind === 'road' ? 'road:' + m.cls : null;
   const civil = ap && ap.kind === 'airport';
-  const tab = IC.BB_TABS.find(t => t.k === bb.tab) || IC.BB_TABS[0];
+  const TABS = IC.bbTabs(S), tab = TABS.find(t => t.k === bb.tab) || TABS[0];
   const items = tab.items.map(itemOf).filter(it => it.avail !== false && !(civil && it.mil));
   const tools = [['upgrade', 'Upgrade', 'U'], ['move', 'Move', 'M'], ['bulldoze', 'Bulldoze', 'Del'], ['undo', 'Undo', 'Ctrl+Z'], ['info', 'Info views', 'I']];
   const toolOn = t => !!(m && (m.kind === t || (t === 'move' && (m.kind === 'bpick' || m.kind === 'bmove')))) || (t === 'info' && !!bb.view);
@@ -305,7 +360,7 @@ IC.renderBuildBar = function (S) {
     : `<div class="bb-empty">${tab.k === 'bp' ? 'No blueprints yet: the real airports come with their map data.' : 'Nothing here for this airport.'}</div>`;
   const html = `${opts ? `<div class="bb-opts">${opts}</div>` : ''}
     <div class="bb-main">
-      <div class="bb-top">${head}<nav class="bb-tabs">${IC.BB_TABS.map(t => `<button class="${t.k === tab.k ? 'on' : ''}" data-bb="tab" data-v="${t.k}" title="${esc(t.name)} (${t.key})">${ico(TAB_ICON[t.k])}<span>${esc(t.name)}</span><kbd>${t.key}</kbd></button>`).join('')}</nav><button class="x" data-bb="close" title="Close (B)" aria-label="Close the build bar">✕</button></div>
+      <div class="bb-top">${head}<nav class="bb-tabs">${TABS.map(t => `<button class="${t.k === tab.k ? 'on' : ''}" data-bb="tab" data-v="${t.k}" title="${esc(t.name)} (Shift+${t.key})">${ico(TAB_ICON[t.k])}<span>${esc(t.name)}</span><kbd>⇧${t.key}</kbd></button>`).join('')}${IC.FOCUS && IC.FOCUS.pieces ? `<button class="${bb.detail ? 'on' : ''}" data-bb="detail" title="The parts one by one: runways, taxiways, aprons, terminals, services, roads, navaids, with pavement, width, lights and zone">${bb.detail ? '▾' : '▸'} <span>Detail</span></button>` : ''}</nav>${ap && ap.works && ap.works.some(w => w.stages) ? `<button class="btn" data-act="finishNow" data-v="${esc(ap.id)}" title="Run time on until every planned work here is finished (it stops for anything that needs you)">⏩ Finish now</button>` : ''}<button class="x" data-bb="close" title="Close (B)" aria-label="Close the build bar">✕</button></div>
       <div class="bb-row"><div class="bb-tools">${tools.map(([k, n, key]) => `<button class="${toolOn(k) ? 'on' : ''}" data-bb="tool" data-v="${k}" title="${n} (${key})" ${ap ? '' : 'disabled'}>${ico(TOOL_ICON[k])}<span>${n}</span></button>`).join('')}</div>
       <div class="bb-items">${body}</div></div>
     </div>
@@ -326,6 +381,7 @@ function wire() {
     else if (k === 'pref') IC.bbPref(b.dataset.k, v);
     else if (k === 'view') { IC.bb.view = IC.bb.view === v ? null : v; IC.ui.refresh(true); }
     else if (k === 'close') IC.bbToggle(false);
+    else if (k === 'detail') { IC.bb.detail = !IC.bb.detail; if (!IC.bb.detail && !IC.BB_PIECE_TABS.some(t => t.k === IC.bb.tab)) IC.bb.tab = 'pc'; IC.ui.refresh(true); }
     IC.sfx && IC.sfx.ui('click');
   });
   el.addEventListener('mouseover', e => { const b = e.target.closest('.bb-it'); const v = b ? b.dataset.v : null; if (v !== IC.bb.hover) { IC.bb.hover = v; IC.ui.refresh(true); } });

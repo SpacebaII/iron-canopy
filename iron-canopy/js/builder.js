@@ -277,6 +277,17 @@ IC.bldOpened = function (S, ap, w, before) {
   const txt = [line('Movements an hour', before.movesPerHour || 0, st.movesPerHour), line('Largest aircraft', T(before.maxType), T(st.maxType)),
     line('Stands', before.nst, IC.aptStands(ap).filter(s => s.linked !== false).length), line('Passengers an hour', Math.round(before.pax || 0), Math.round(st.pax))].filter(Boolean).join(' ');
   IC.sfx && IC.sfx.ui && IC.sfx.ui('ok');
+  // (round 1) what the finished piece changed, risen over it on the map: the number the player cares about
+  const nst = IC.aptStands(ap).filter(s => s.linked !== false).length, gain = [];
+  if ((st.movesPerHour || 0) > (before.movesPerHour || 0)) gain.push(`+${st.movesPerHour - (before.movesPerHour || 0)} movements an hour`);
+  if (nst > (before.nst || 0)) gain.push(`+${nst - (before.nst || 0)} stand${nst - (before.nst || 0) > 1 ? 's' : ''}`);
+  if (Math.round(st.pax || 0) > Math.round(before.pax || 0) + 5) gain.push(`+${Math.round((st.pax || 0) - (before.pax || 0)).toLocaleString('en-US')} passengers an hour`);
+  if (st.maxType !== before.maxType && st.maxType) gain.push(`${T(st.maxType)} can land`);
+  if (gain.length) {
+    const at = p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.nodes ? ap.nodes[p.nodes[Math.floor(p.nodes.length / 2)]] || ap : p.x != null ? p : ap;
+    IC.text(S, at.x, at.y, gain.join(' · ').toUpperCase(), '#7fe8b0', 6);
+    (ap.gains = ap.gains || []).push({ t: S.time, text: gain.join(', ') }); if (ap.gains.length > 8) ap.gains.shift();
+  }
   if (!['runway', 'terminal', 'cargo'].includes(p.kind) || !S.camp) return;
   const name = p.kind === 'runway' ? p.name : IC.APART[p.kind].name;
   IC.card(S, `${name} opens`, `${ap.name} · ${U.clock(S.time, S)}`, `${txt || 'Nothing uses it yet: it needs a taxiway to the aprons.'}${w.spent ? ` It cost ${U.money(w.spent)} and took ${U.dur(S.time - w.t0)}.` : ''}`, 'chapter');
@@ -451,6 +462,7 @@ IC.noiseOver = function (S, x, y, a, len) {
   }
   return out;
 };
+const ROAD_Q = new Map();
 IC.foundSurvey = function (S, x, y, a) {
   const W = S.world, d = { x: Math.cos(a), y: Math.sin(a) };
   const h0 = W.hAt(x, y);
@@ -471,7 +483,12 @@ IC.foundSurvey = function (S, x, y, a) {
   const off = Math.abs(U.angWrap(((a - IC.PREVAIL) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2)) * 180 / Math.PI;
   const wind = Math.round(Math.min(off, 180 - off));
   const hdg = IC.bearing(a), end = n => String(Math.round(n / 10) % 36 || 36).padStart(2, '0');
-  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, cost: IC.FOUND_COST + earth + land, obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
+  // the access road it will get, priced now: Found's price is the whole price (worked out once a site and heading)
+  const rk = `${x.toFixed(1)},${y.toFixed(1)},${a.toFixed(2)}`;
+  if (!ROAD_Q.has(rk)) { const A = IC.landAccessPlan ? IC.landAccessPlan(S, x, y, a, true) : null; ROAD_Q.set(rk, A && !A.P.why ? { cost: A.P.cost, km: A.P.km } : null);
+ if (ROAD_Q.size > 64) ROAD_Q.delete(ROAD_Q.keys().next().value); }
+  const road = ROAD_Q.get(rk), site = IC.FOUND_COST + earth + land;
+  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, road, site, cost: site + (road ? road.cost : 0), obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
     windOff: wind, ends: [end(hdg), end(hdg + 180)], name: [end(hdg), end(hdg + 180)].sort().join('/'), cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
 };
 /* the survey in plain words, one line each */
@@ -482,7 +499,8 @@ IC.foundLines = function (S, sv) {
   if (sv.river) L.push('A river crosses the runway line: a runway cannot be built across it. Turn the runway or move the site');
   if (sv.obst > 20) L.push(`Hills ${sv.obstAt.toFixed(0)} km off one end rise ${sv.obst} m above the approach slope`);
   L.push(sv.homes ? `Noise over ${Object.entries(sv.noise).map(([k, v]) => `${v} city blocks of ${k}`).join(', ')}` : 'No homes under the flight paths');
-  L.push(`Total ${U.money(sv.cost)}`);
+  L.push(sv.road ? `Access road ${U.km(sv.road.km * 10)} to the nearest road: ${U.money(sv.road.cost)}` : 'Access road: none needed');
+  L.push(`${sv.city ? `${Math.round(sv.cityKm)} km from ${sv.city} · ` : ''}Total ${U.money(sv.cost)}, everything included`);
   return L;
 };
 
@@ -924,6 +942,9 @@ const AREA_TOOLS = { apron: 1, terminal: 1, cargo: 1, remote: 1, ramp: 1, surfac
 /* a passenger bridge clears the tallest narrow-body with a metre and a half to spare, unless the player picks */
 IC.BRIDGE_CLEAR = 14;
 IC.bldIsArea = t => !!AREA_TOOLS[t];
+/* parts placed by two points, which a drag can place in one go */
+IC.bldDragPart = t => !!AREA_TOOLS[t] || t === 'runway' || t === 'concourse' || !!(IC.PIECES && IC.PIECES[t] && IC.PIECES[t].line);
+
 IC.bldIsLine = t => !!LINE_TOOLS[t];
 function runwayAt(ap, p, tol) { let best = null, bd = tol + 0.3; for (const q of ap.parts) if (q.kind === 'runway') { const d = IC.partDist(ap, q, p); if (d < bd) { bd = d; best = q; } } return best; }
 
@@ -1010,7 +1031,10 @@ function consequences(S, m, out) {
   const reached = r => taxis.some(q => seg(q, (a, b) => { for (let k = 0; k <= 8; k++) { const p = { x: a.x + (b.x - a.x) * k / 8, y: a.y + (b.y - a.y) * k / 8 }; if (IC.rectGap(r, { x: p.x, y: p.y, a: 0, w: 0.001, h: 0.001 }) < 0.16) return true; } return false; }))
     || planned.some(q => q.pts.some(p => IC.rectGap(r, { x: p.x, y: p.y, a: 0, w: 0.001, h: 0.001 }) < 0.16));
   for (const sp of out.specs) {
-    if (sp.kind === 'apron' && !reached(sp)) say('Nothing reaches this apron yet: no aircraft can park on it until a taxiway joins its edge.');
+    // (round 1) a building in a runway's strip: said on the ghost before it is built
+    if (sp.x != null && IC.aptStripWhy) { const w = IC.aptStripWhy(ap, Object.assign({ kind: sp.kind, x: sp.x, y: sp.y, a: sp.a || 0, w: sp.w || IC.APART[sp.kind].w, h: sp.h || IC.APART[sp.kind].h }, sp.poly ? { poly: sp.poly } : null)); if (w) say(w.replace(/Move it at least (\d+) m further out \(Move on the build bar\)\./, 'Place it at least $1 m further out.')); }
+    if (sp.kind === 'apron' && !reached(sp)) say(
+'Nothing reaches this apron yet: no aircraft can park on it until a taxiway joins its edge.');
     if (IC.aptDoor(sp.kind) && sp.kind !== 'alert' && !out.specs.some(q => q.stub) && !taxis.some(q => seg(q, (a, b) => U.segDist(sp.x, sp.y, a.x, a.y, b.x, b.y) < Math.hypot(IC.APART[sp.kind].w || 0.3, IC.APART[sp.kind].h || 0.3) / 2 + 0.55))) say(`No taxiway reaches its door: no aircraft can use the ${U.lc(IC.APART[sp.kind].name)} until one does.`);
     if (sp.kind === 'runway') {
       const rw = { a: sp.a, b: sp.b, w: sp.w || IC.APART.runway.w }, mid = { x: (sp.a.x + sp.b.x) / 2, y: (sp.a.y + sp.b.y) / 2 }, L = U.dist(sp.a, sp.b);
@@ -1033,6 +1057,8 @@ function planOf(S, m, hv, tol, free, only) {
   const ap = m.ap, t = m.part, out = { specs: [], text: [], ok: true, why: '', cost: 0, dur: 0, snap: null };
   if (!hv) return out;
   const pts = m.pts.slice();
+  // a whole piece (round 1: pieces.js): placed, turned and stretched, built as one
+  if (IC.PIECES && IC.PIECES[t]) return IC.piecePlan(S, m, hv, out);
   // a blueprint: the whole real airport at the cursor, turned by R (checked here, drawn by the ghost)
   // a terminal kit (a round terminal, a satellite, a curved or branching pier): placed and turned like a blueprint
   if (IC.TERM_KITS && IC.TERM_KITS[t]) {
@@ -1290,7 +1316,14 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   const was = m.set; m.set = false;
   const plan = IC.bldPlanOf(S, m, p, tol, free);
   m.set = was;
-  const T = IC.TERM_KITS && IC.TERM_KITS[m.part];
+  const T = IC.TERM_KITS && IC.TERM_KITS[m.part], PC = IC.PIECES && IC.PIECES[m.part];
+  // a piece: the runway piece by its two ends (a click after both moves the far one), the rest by one click
+  if (PC && PC.line) {
+    if (!m.pts.length) { m.pts = [{ x: p.x, y: p.y }]; return 'point'; }
+    if (!plan.bp) { m.err = plan.why || 'Too short.'; return 'err'; }
+    m.pts[1] = { x: p.x, y: p.y }; return placed(m, p, tol, free);
+  }
+  if (PC) { if (!plan.bp) { m.err = plan.why; return 'err'; } m.pts = [{ x: p.x, y: p.y }]; return placed(m, p, tol, free); }
   if (T || m.part === 'blueprint') {
     if (!plan.bp) { m.err = plan.why; return 'err'; }
     m.pts = [{ x: p.x, y: p.y }]; return placed(m, p, tol, free);
@@ -1339,7 +1372,7 @@ IC.bldReady = function (S, m) {
   if (!m || m.kind !== 'build' || m.part === 'stand') return null;
   const line = LINE_TOOLS[m.part] && m.part !== 'runway' && m.part !== 'concourse';
   if (!(m.set || (line && m.pts.length >= 2))) return null;
-  const ap = m.ap, key = [m.part, m.set, m.at && m.at.x, m.at && m.at.y, m.pts.map(q => q.x.toFixed(3) + ',' + q.y.toFixed(3)).join(';'), m.rot, m.mat, m.size, m.zone, m.fillet, m.bp, m.rwid, m.twid, m.lit, m.oneway, m.drive, m.surf, ap.parts.length, ap.nodeN, Math.round(S.budget)].join('|');
+  const ap = m.ap, key = [m.part, m.set, m.at && m.at.x, m.at && m.at.y, m.pts.map(q => q.x.toFixed(3) + ',' + q.y.toFixed(3)).join(';'), m.rot, m.flip, m.rotHand, m.mat, m.size, m.zone, m.fillet, m.bp, m.rwid, m.twid, m.lit, m.oneway, m.drive, m.surf, ap.parts.length, ap.nodeN, Math.round(S.budget)].join('|');
   if (m._readyK !== key) { m._readyK = key; m._ready = IC.bldPlanOf(S, m, m.at || m.pts[m.pts.length - 1], m.tol || 0.12, m.free, !m.set); }
   return m._ready;
 };
@@ -1353,6 +1386,17 @@ IC.buildFinish = function (S, m) {
 function finish(S, m, plan) {
   const ap = m.ap;
   const done = () => { m.pts = []; m.set = false; m.at = null; m.rw = null; m.exitKey = null; m._readyK = null; return 'built'; };
+  if (plan.piece) {
+    if (!plan.ok) { m.err = plan.why; IC.log(S, 'warn', 'BUILD', plan.why); return 'err'; }
+    const r = IC.pieceBuild(S, m, plan);
+    if (!r) { m.err = 'Could not plan it.'; return 'err'; }
+    const W = r.made.map(p => ap.works.find(w => w.part === p)).filter(Boolean), crews = ap.crews || 1;
+    const work = W.reduce((a, w) => a + (w.dur || 0), 0) / crews;
+    m.done = `${r.name} planned: ${r.made.length} parts, ${U.money(plan.cost)} paid as the work runs, about ${U.dur(work)} of work for ${crews === 1 ? 'one crew' : `${crews} crews`}. Finish now (in the Works tab) runs time on until it is done.`;
+    m.lastPiece = { made: r.made.map(p => p.id), t: S.time };
+    return done();
+  }
+
   if (plan.bp) {
     if (!plan.ok) { m.err = plan.why; IC.log(S, 'warn', 'BUILD', plan.why); return 'err'; }
     const kit = IC.TERM_KITS && IC.TERM_KITS[m.part], made = IC.bldBlueprint(S, ap, kit ? m._kitL : m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);
@@ -1513,6 +1557,8 @@ IC.foundFinish = function (S, m) {
   const ap = IC.foundAirport(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL);
   if (!ap) { m.err = 'Cannot found it here.'; return 'err'; }
   m.site = null; m.ap = ap;
+  // (round 1) the surveyed runway stays as a placed plan, ready to Build: nobody redraws it by eye
+  m.next = IC.pieceFromSurvey ? IC.pieceFromSurvey(S, ap) : null;
   return 'built';
 };
 /* for tests without a browser: a click at a world position in the current mode (main.js replaces this) */

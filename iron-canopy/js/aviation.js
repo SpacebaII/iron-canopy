@@ -356,6 +356,12 @@ function divert(S, t, why) {
   // outside the Career one toast an hour for each airport (in a war they come in dozens); the Journal has them all
   const loud = S.story || !ap.divLogT || S.time - ap.divLogT > 3600; if (loud) ap.divLogT = S.time;
   IC.log(S, loud ? 'warn' : 'info', 'AVIATION', `${t.cs} diverted away from ${ap.name}: ${why}.`, loud ? ap : null);
+  // (a rule the player may not have met yet: say what happened and the fix, once in six hours an airport)
+  if (S.story && /landing system/.test(why) && !(ap.ilsCardT != null && S.time - ap.ilsCardT < 6 * 3600)) {
+    ap.ilsCardT = S.time;
+    IC.text(S, ap.x, ap.y, 'DIVERTED: NO LANDING SYSTEM', IC.C ? IC.C.hostile : '#f55');
+    if (IC.card && S.camp) IC.card(S, 'Diverted in the fog', `${U.clock(S.time, S)} · ${ap.name}`, `${t.cs} could not see the runway and flew to another country: in fog, low cloud or snow a pilot needs a landing system (ILS). Every arrival will divert until one stands at the end they land toward. It costs ₭25M and takes a few hours to build.`, 'event', { fix: { label: 'Build a landing system', v: 'ils' }, ap: ap.id });
+  }
   IC.emit(S, 'divert', { t, ap, why });
 }
 function tailLost(S, tl, ap, why) {
