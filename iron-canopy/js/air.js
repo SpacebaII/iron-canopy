@@ -15,7 +15,7 @@ const NAMES = { ftr: 'VIPER', ucav: 'HAWK', aew: 'SENTRY', tkr: 'TEXACO', isr: '
 IC.AIRKIND_TYPE.tkr = IC.AIRKIND_TYPE.tkr || 'heavy';
 
 IC.newFlight = (S, kind, name, base) => ({ id: IC.nid('r'), kind, name, base, st: 'ready', t: 0, ent: null, n: IC.AIR_KIND[kind].n, nMax: IC.AIR_KIND[kind].n,
-  load: kind === 'ftr' ? 'aa' : null, slot: null, roe: 'auto', alert: 30, fat: 0, back: [] });
+  load: kind === 'ftr' ? 'aa' : null, slot: null, roe: 'auto', alert: 30, fat: 0, back: [], rec: { kills: 0, fired: 0, defeated: 0 } });
 
 IC.airInit = function (S, sandbox, academy, story) {
   const fwd = S.byId.ab_fwd ? 'ab_fwd' : 'ab_rear', rear = S.byId.ab_rear ? 'ab_rear' : fwd;
@@ -105,20 +105,15 @@ function orderBack(S, r, lost, damaged) {
 IC.flightBackText = (S, r) => (r.back || []).map(b => `${b.why === 'new' ? 'a replacement' : 'one in repair'} in ${U.dur(Math.max(0, b.t - S.time))}`).join(', ');
 
 /* ---------- missiles and reach ---------- */
-function rowsAt(R, alt) {
-  if (alt < R[0][0] - 1e-6) return R[0][1] * 10 * Math.max(0.3, alt / R[0][0]);
-  if (alt > R[R.length - 1][0] + 1e-6) return 0;
-  for (let i = 1; i < R.length; i++) if (alt <= R[i][0]) { const [a0, r0] = R[i - 1], [a1, r1] = R[i]; return (r0 + (r1 - r0) * (a1 > a0 ? (alt - a0) / (a1 - a0) : 1)) * 10; }
-  return R[R.length - 1][1] * 10;
-}
-/* how far a missile reaches from a shooter at altKm against a target: its height, and whether it comes at the
-   shooter (head-on) or flies away (a tail chase). World units */
+/* how far a missile reaches from a shooter at altKm against a target: its row of IC.REACH at the target's height, and
+   whether it comes at the shooter (head-on) or flies away (a tail chase). w: 'mrm' or 'srm' (ours), or an entry of
+   IC.AAMS / IC.EAAMS. World units */
 IC.aamReach = function (w, shooterAlt, t, shooter) {
-  const W = IC.AAMS[w];
+  const W = typeof w === 'string' ? IC.AAMS[w] : w;
   const talt = t.alt || 0;
-  // the radar missile uses task 20's shared reach table; the heat-seeker its own
-  let R = w === 'mrm' && IC.reachAt ? IC.reachAt('AAM', talt) : rowsAt(W.rows, talt);
-  if (!R && w === 'mrm' && talt < 0.03) R = rowsAt(W.rows, talt);
+  // (below the table's lowest row the reach falls off, never to nothing)
+  const lo = IC.REACH[W.reach][0];
+  const R = talt < lo[0] ? lo[1] * 10 * Math.max(0.3, talt / lo[0]) : IC.reachAt(W.reach, talt);
   const high = 0.55 + 0.45 * U.clamp((shooterAlt || 0) / 10, 0, 1);
   let asp = 1;
   if (shooter) {
@@ -130,19 +125,28 @@ IC.aamReach = function (w, shooterAlt, t, shooter) {
 /* one missile's kill chance at range r */
 function shotPk(S, w, a, t, r, R) {
   const W = IC.AAMS[w], cls = IC.classOf ? IC.classOf(t) : t.d.cls;
-  let pk = W.pk * (IC.MUN.AAM.vs[cls] != null ? IC.MUN.AAM.vs[cls] : 0.8) * (1 - 0.45 * Math.pow(U.clamp(r / (R || 1), 0, 1), 2));
+  let pk = W.pk * (IC.MUN.AAM.vs[cls] != null ? IC.MUN.AAM.vs[cls] : 0.8) * (1 - 0.2 * Math.pow(U.clamp(r / (R || 1), 0, 1), 2));
   if (a && a.r && (a.r.fat || 0) > IC.FATIGUE.tired) pk *= 0.85;
   if (IC.hasTech(S, 'f_aam')) pk += 0.08;
   return U.clamp(pk, 0.05, 0.95);
 }
+/* a fighter's missile: launched at the fighter's own speed and height, it flies the energy model (flight.js) */
+IC.launchAAM = function (S, a, t, W, o) {
+  const R = IC.aamReach(W, a.alt, t, a), sp = Math.hypot(a.vx || 0, a.vy || 0);
+  const m = IC.newMissile(S, Object.assign({ mun: W.short === 'SRM' ? 'SRM' : W === IC.AAMS.mrm ? 'AAM' : W.short, M: W, x: a.x, y: a.y, alt: a.alt || 0, a0: a.alt || 0, loft: W.seeker === 'IR' ? 0 : Math.min(3, U.dist(a, t) / 10 * 0.04),
+    a: Math.atan2(t.y - a.y, t.x - a.x), spd: W.spd, target: t, src: a.name, by: a, ir: W.seeker === 'IR' }, o), Math.max(R, U.dist(a, t) * 1.05), sp);
+  // a fighter's radar locking on is heard at once; an active seeker or a heat-seeker only close in (flight.js)
+  m.launchSeen = W.seeker === 'ARH' && U.dist(a, t) < 250;
+  return m;
+};
 function fireAAM(S, a, t, w) {
   const W = IC.AAMS[w], r = U.dist(a, t), R = IC.aamReach(w, a.alt, t, a);
   if (w === 'mrm') a.aam--; else a.srm--;
   a.cool = w === 'srm' ? 6 : 10; t.inbound++; S.stats.fired++;
-  const M = Object.assign({}, IC.MUN.AAM, { name: W.name, short: W.short, seeker: W.seeker, spd: W.spd, pk: W.pk, ircm: W.ircm, range: R });
-  S.missiles.push({ id: IC.nid('m'), mun: 'AAM', M, x: a.x, y: a.y, alt: a.alt, a: Math.atan2(t.y - a.y, t.x - a.x), spd: W.spd, target: t, life: Math.max(40, R / W.spd * 1.3), src: a.name,
-    pk: shotPk(S, w, a, t, r, R), trailT: 0, side: 'us', tr: IC.newTrail(S, 'aam'), by: a });
+  const m = IC.launchAAM(S, a, t, W, { pk: shotPk(S, w, a, t, r, R), side: 'us', tr: IC.newTrail(S, 'aam') });
+  S.missiles.push(m);
   IC.sfx && IC.sfx.launch(a.x, a.y, 0.6);
+  IC.emit(S, 'aamLaunch', { a, t, mun: m.mun, m });
 }
 
 /* ---------- intercept geometry ---------- */
@@ -342,7 +346,7 @@ IC.launchAir = function (S, r, mission, auto) {
   const aamPer = L ? (IC.hasTech(S, 'f_aam') && r.load === 'aa' ? 6 : L.aam) : 0;
   const a = { id: IC.nid('a'), kind: r.kind, r, name: r.name, x: b.x, y: b.y, vx: 0, vy: 0, h: b.rwyA != null ? b.rwyA : -Math.PI / 2, state: 'out', mission,
     fuel: K.endur, aam: r.kind === 'ftr' ? aamPer * n : 0, srm: r.kind === 'ftr' && L ? (L.srm || 0) * n : 0, gbu: L ? L.gbu * n : r.kind === 'ucav' ? 2 : 0, hp: n, n, dmg: 0,
-    cm: Math.round((K.cm || 0) * n * (IC.hasTech(S, 'f_cm') ? 1.5 : 1)), cool: 0, oa: Math.random() * 6, scan: 0, notchT: 0,
+    cm: Math.round((K.cm || 0) * n * (IC.hasTech(S, 'f_cm') ? 1.5 : 1)), cool: 0, oa: Math.random() * 6, scan: 0, notchT: 0, mslIn: null, def: null, defT: 0, cmT: 0, defended: 0, lockBy: null, lockT: -1e9,
     alt: K.alt || 8, roe: r.roe, give: K.give || 0 };
   if (mission && mission.orderT == null) mission.orderT = S.time;
   // jets taxi out along the base's own taxiways before they are airborne
@@ -622,10 +626,13 @@ IC.updateAir = function (S, dt) {
       if (a.kind === 'isr' || a.kind === 'ucav') { a.scan -= dt; if (a.scan <= 0) { a.scan = 20; isrScan(S, a); } }
     }
     if (spd > K.spd * 1.05) a.fuel -= dt * (IC.DASH_BURN - 1);
-    // a notching aircraft turns side-on to whatever is chasing it
+    // a missile coming for it: the crew defends (flight.js): cranks, turns side-on and dives, drops chaff or flares,
+    // turns away to run it out of energy, and turns back in when it is spent
     let want = Math.atan2(ty - a.y, tx - a.x);
-    if (a.notchT > 0 && a.threatA != null) want = a.threatA + Math.PI / 2;
-    const turn = a.kind === 'heli' ? 1 : a.kind === 'ftr' ? 0.08 : 0.04;
+    const D = a.mslIn || a.def ? IC.defendPlan(S, a, dt, a.kind === 'ftr' ? 0.75 : 0.5) : null;
+    let turn = a.kind === 'heli' ? 1 : a.kind === 'ftr' ? 0.08 : 0.04;
+    if (D && D.h != null) { want = D.h; turn = Math.max(turn, a.kind === 'ftr' ? IC.DEF.turn : 0.06); spd = Math.max(spd, K.dash || spd); }
+    if (D && D.alt != null) a.alt = Math.max(D.alt, a.alt - 0.15 * dt);
     const dd = U.dxy(a.x, a.y, tx, ty);
     if (dd > 1e-6) a.h = a.h + U.clamp(U.angWrap(want - a.h), -turn * dt, turn * dt);
     const v = a.state === 'refuel' ? Math.min(spd, dd / dt) : spd;
@@ -635,30 +642,24 @@ IC.updateAir = function (S, dt) {
   }
   S.air = S.air.filter(a => !a.dead);
 
-  // enemy missiles chasing our aircraft: our crews use flares, chaff and notching too
+  // enemy missiles chasing our aircraft: they fly the same energy model, and our crews defend (above)
   for (const m of S.eaam) {
     const t = m.target; m.life -= dt;
     if (t.dead || m.life <= 0) { m.dead = true; continue; }
-    const r = U.dist(m, t);
-    m.a += U.clamp(U.angWrap(Math.atan2(t.y - m.y, t.x - m.x) - m.a), -dt, dt);
-    m.x += Math.cos(m.a) * m.spd * dt; m.y += Math.sin(m.a) * m.spd * dt;
     if (!m.tr) m.tr = IC.newTrail(S, 'eaam');
+    const res = IC.mslFly(S, m, dt);
     m.trT = (m.trT || 0) - dt; if (m.trT <= 0) { m.trT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time }); }
-    if (r / m.spd < 5 && !m.cmDone) {
-      m.cmDone = true;
-      t.threatA = Math.atan2(m.y - t.y, m.x - t.x);
-      if (t.kind === 'ftr' && !m.ir) { t.notchT = 12; m.pk *= 0.7; IC.emit(S, 'mstat', { m, t, what: 'notch', text: 'NOTCHING' }); }
-      if (t.cm > 0) { t.cm--; m.pk *= m.ir ? 0.5 : 0.7; if (m.ir) IC.flares(S, t); else IC.chaffFx(S, t); }
-    }
-    if (r < 8) {
-      m.dead = true;
-      if (Math.random() < m.pk) {
-        IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'HIT' });
-        // some come home damaged
-        if (t.r && Math.random() < IC.AIR_LOSS.damaged && (t.dmg || 0) < t.hp) { t.dmg = (t.dmg || 0) + 1; IC.text(S, m.x, m.y, 'DAMAGED', '#ffd08a'); IC.log(S, 'warn', 'AIR', `${t.name} hit: one aircraft damaged, returning to base.`, t); if (!t.job) { t.state = 'rtb'; t.task = null; } }
-        else lostOne(S, t, m.ir ? 'a shoulder-fired missile' : 'an enemy fighter');
-      }
-      else { IC.text(S, m.x, m.y, 'EVADED', '#9fe0ff'); IC.emit(S, 'mstat', { m, t, what: 'miss', text: 'EVADED' }); }
+    if (!res) continue;
+    m.dead = true; m.end = res;
+    if (res.end === 'fuse' && Math.random() < IC.fusePk(m, res.d)) {
+      IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'HIT' });
+      // some come home damaged
+      if (t.r && Math.random() < IC.AIR_LOSS.damaged && (t.dmg || 0) < t.hp) { t.dmg = (t.dmg || 0) + 1; IC.text(S, m.x, m.y, 'DAMAGED', '#ffd08a'); IC.log(S, 'warn', 'AIR', `${t.name} hit: one aircraft damaged, returning to base.`, t); if (!t.job) { t.state = 'rtb'; t.task = null; } }
+      else lostOne(S, t, m.ir ? 'a heat-seeking missile' : 'an enemy fighter');
+    } else {
+      const why = res.end === 'fuse' ? 'EVADED' : res.why;
+      t.defended = (t.defended || 0) + 1;
+      IC.text(S, m.x, m.y, why, '#9fe0ff'); IC.emit(S, 'mstat', { m, t, what: 'miss', text: why }); IC.emit(S, 'mslDefeated', { m, t, why });
     }
   }
   S.eaam = S.eaam.filter(m => !m.dead);

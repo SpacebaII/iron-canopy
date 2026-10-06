@@ -311,6 +311,26 @@ A.radio = function () {
   const g = ctx.createGain(); env(g, t0, 0.07, 0.004, 0.1); n.connect(bp); bp.connect(g); g.connect(sfxBus);
   tone('sine', 1000, 1000, 0.05, 0.04, null, 0.12); tone('sine', 1400, 1400, 0.05, 0.04, null, 0.19);
 };
+/* being shot at: a radar lock is a steady warble, a missile in the air a fast high beep (like a radar warning
+   receiver), a drone close by a buzz */
+A.lockTone = function () {
+  if (!ctx || !A.on || !throttle('lock', 2500)) return;
+  for (let i = 0; i < 4; i++) tone('square', i % 2 ? 1150 : 950, i % 2 ? 1150 : 950, 0.09, 0.025, null, i * 0.1);
+};
+A.mslWarn = function () {
+  if (!ctx || !A.on || !throttle('mslwarn', 3000)) return;
+  for (let i = 0; i < 8; i++) tone('square', 1800, 1800, 0.05, 0.03, null, i * 0.08);
+};
+A.buzz = function (x, y) {
+  if (!ctx || !A.on) return;
+  const { g, pan } = spatial(x, y, 0.6);
+  if (g < 0.1 || !throttle('buzz', 2600)) return;
+  const t0 = ctx.currentTime, o = ctx.createOscillator(), bp = ctx.createBiquadFilter(), og = out(1, pan);
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(118, t0); o.frequency.linearRampToValueAtTime(126, t0 + 2.4);
+  bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.8;
+  og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.05 * g, t0 + 0.6); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.5);
+  o.connect(bp); bp.connect(og); o.start(t0); o.stop(t0 + 2.6);
+};
 A.ui = function (kind) {
   if (!ctx || !A.on) return;
   if (kind === 'ok') { tone('sine', 660, 660, 0.09, 0.04); tone('sine', 990, 990, 0.12, 0.04, null, 0.09); }
