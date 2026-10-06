@@ -43,7 +43,7 @@ const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
 /* what a load is called, in words the player knows */
-const NOUN = { INT: 'interceptor drones', IR: 'IR missiles', IR2: 'imaging IR missiles', SR: 'SR missiles', MR: 'MR missiles', LR: 'LR missiles', TBD: 'BMD missiles', HAT: 'HAT interceptors', EXO: 'EXO interceptors', CRS: 'cruise missiles', SRB: 'ballistic missiles', RKT: 'guided rockets' };
+const NOUN = { INT: 'interceptor drones', IR: 'IR missiles', IR2: 'imaging IR missiles', SR: 'SR missiles', MR: 'MR missiles', LR: 'LR missiles', LRE: 'extended-range missiles', VLR: 'very-long-range interceptors', TBD: 'BMD missiles', HAT: 'HAT interceptors', EXO: 'EXO interceptors', CRS: 'cruise missiles', SRB: 'ballistic missiles', RKT: 'guided rockets' };
 IC.munWords = (mun, n) => n == null ? NOUN[mun] || mun : `${n} ${n === 1 ? (NOUN[mun] || mun).replace(/s$/, '') : NOUN[mun] || mun}`;
 /* the lorries a load rides on: missile transporters, rocket carriers, flatbeds */
 IC.cargoKind = mun => !mun ? 'empty' : IC.MUN[mun].strike ? 'rocket' : 'missile';

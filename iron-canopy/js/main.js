@@ -31,15 +31,27 @@ function fx(S, dtR, gdt) {
   }
 }
 
-/* big moments slow the clock for a breath, if they happen on screen */
+/* big moments on screen: the cinema bars for a breath (combat time, below, sets the pace while weapons fly) */
 IC.cinematic = function (S2, x, y, big) {
   const c = IC.cam, C = IC.cine;
-  if (!c || C.cool > 0 || !S2.cfg.slowmo) return;
+  if (!c || C.cool > 0 || !S2.cfg.bars) return;
   const inV = x > c.x && x < c.x + c.vw / c.z && y > c.y && y < c.y + c.vh / c.z;
   if (!inV || c.z < 0.12) return;
-  C.slow = 1.6 * big + 0.4; C.cool = 25;
-  if (S2.cfg.bars) C.barsT = Math.max(C.barsT, C.slow + 0.6);
+  C.cool = 25; C.barsT = Math.max(C.barsT, 1.6 * big + 1);
 };
+/* combat time: while hostile weapons fly near what is on screen, the clock eases down to a watchable speed
+   (IC.combatTime in combat.js) and back up when they are gone. Down fast, up gently. A setting, on by default */
+function combatSpeed(S, speed, dtR) {
+  const C = IC.cine;
+  if (S.cfg.combat === false || S.wait || S.skip) { C.ct = null; IC.combatNow = null; return speed; }
+  const c = IC.cam, cap = IC.combatTime(S, { x0: c.x, y0: c.y, x1: c.x + c.vw / c.z, y1: c.y + c.vh / c.z });
+  const want = Math.min(speed, cap);
+  if (C.ct == null) C.ct = speed;
+  C.ct = Math.min(speed, C.ct + (want - C.ct) * Math.min(1, dtR * (want < C.ct ? 3 : 0.7)));
+  if (want >= speed && C.ct > speed * 0.97) C.ct = speed;
+  IC.combatNow = { active: C.ct < speed - 0.01, speed: C.ct };
+  return C.ct;
+}
 
 /* ---------- picking ---------- */
 function pick(p) {
@@ -917,8 +929,7 @@ function frame(now) {
   let gdt = 0;
   const running = !S.paused && (!S.over || IC.ui.overDismissed) && $('start').hidden;
   if (running) {
-    let speed = S.wait ? IC.WAIT.speed : S.skip ? 64 : S.speed;
-    if (C.slow > 0) speed = Math.min(speed, 0.3);
+    let speed = combatSpeed(S, S.wait ? IC.WAIT.speed : S.skip ? 64 : S.speed, dtR);
     gdt = dtR * IC.GS * speed;
     if (S.skip && S.time - (S.skipT || S.time) > 3 * 3600) stopSkip('Three hours passed quietly.');
     // waiting for money takes long steps while the sky is calm, fine ones as soon as anything armed is about

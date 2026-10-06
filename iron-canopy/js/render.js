@@ -120,6 +120,7 @@ IC.render = function (S, now) {
   IC.drawForces(S, px, now);
   if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
+  if (IC.drawWarnings) IC.drawWarnings(ctx, S, px, now);
   IC.drawHeightLadders(ctx, S, px, view);
   // the build bar's info view over the airport being built on (render-infoview.js)
   if (IC.bb && IC.bb.view && IC.drawInfoView) IC.drawInfoView(ctx, S, px, now);
@@ -142,6 +143,7 @@ IC.render = function (S, now) {
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawWeather(S, wx, now, light);
+  if (IC.drawWarnHud) IC.drawWarnHud(ctx, S, now);
   // an alarm washes the screen edges red for a moment
   if (S.alarmFx > 0) {
     const k = S.alarmFx * (0.6 + 0.4 * Math.sin(now * 10));

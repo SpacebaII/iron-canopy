@@ -359,7 +359,7 @@ const W = {
     const T = U.dist(b, lp) / IC.THR.sead.spd + 500;
     for (let i = 0; i < 2; i++) {
       b.acAvail.sead--;
-      later(S, arriveAt ? arriveAt - S.time - T - 300 : i * 30, 'eSpawn', S, 'sead', b.x, b.y, { home: b, mission: 'sead', route: [{ x: lp.x + i * 60, y: lp.y }], arms: 2, op, dcy: E.escal >= 1 ? 2 : 0, tgt }, 0, 0);
+      later(S, arriveAt ? arriveAt - S.time - T - 300 : i * 30, 'eSpawn', S, 'sead', b.x, b.y, { home: b, mission: 'sead', route: [{ x: lp.x + i * 60, y: lp.y }], arms: 2, op, dcy: E.escal >= 1 ? 2 : 0, tgt, esc: i === 0 ? 2 : 0 }, 0, 0);
     }
     return 2;
   },
@@ -369,7 +369,7 @@ const W = {
     b.acAvail.bmr--;
     const st = standoff(obj, b, 500);
     const T = U.dist(b, st) / IC.THR.bmr.spd + U.dist(st, obj) / 2.4;
-    later(S, arriveAt ? arriveAt - S.time - T : 0, 'eSpawn', S, 'bmr', b.x, b.y, { home: b, mission: 'bomber', route: [st], load: E.escal >= 2 ? 6 : 4, tgt: obj, op }, 0, 0);
+    later(S, arriveAt ? arriveAt - S.time - T : 0, 'eSpawn', S, 'bmr', b.x, b.y, { home: b, mission: 'bomber', route: [st], load: E.escal >= 2 ? 6 : 4, tgt: obj, op, esc: 2 }, 0, 0);
     return 1;
   },
   /* a bomber posing as an airliner: it flies a real airway with a civil squawk, then turns off to launch */
@@ -952,6 +952,43 @@ function raidOver(S, R) {
   if (S.tels.some(t => t.mission && mine(t.mission.op))) return false;
   return true;
 }
+/* a raid that has lost too much turns back: the aircraft still on their way go home (what they launched flies on).
+   It breaks when its stand-off jammer is gone, when its escort is gone, or when half its strike aircraft are down */
+const MANNED = { strike: 1, bomber: 1, sead: 1, escort: 1, jam: 1 };
+function enlist(R, t) {
+  t.abort = false;
+  const Q = R.came || (R.came = {}); Q[t.d.cls] = (Q[t.d.cls] || 0) + 1;
+  R.mn = (R.mn || 0) + (t.mission === 'escort' || t.mission === 'jam' ? 0 : 1);
+  if (t.mission === 'jam') R.jam = (R.jam || 0) + 1;
+  if (t.mission === 'escort') R.esc = (R.esc || 0) + 1;
+}
+function raidBreak(S, E, R) {
+  for (const t of S.threats) if (!t.dead && t.op && t.op.raid === R && MANNED[t.mission] && t.abort === undefined) enlist(R, t);
+  if (R.aborted) return;
+  const why = R.jam && (R.jamLost || 0) >= R.jam ? 'its jammer is down' : R.esc && (R.escLost || 0) >= R.esc ? 'its escort is gone'
+    : R.mn >= 2 && (R.ml || 0) >= R.mn / 2 ? `${R.ml} of its ${R.mn} strike aircraft are down` : '';
+  if (!why) return;
+  const going = S.threats.filter(t => !t.dead && t.op && t.op.raid === R && MANNED[t.mission] && t.mission !== 'jam' && t.home);
+  if (!going.length) return;
+  R.aborted = { t: S.time, why };
+  for (const t of going) {
+    t.mission = 'rtb'; t.abort = true; t.jamming = false; t.lead = null; t.route = [{ x: t.home.x, y: t.home.y }];
+    if (t.det) IC.text(S, t.x, t.y, 'RAID ABORTED', '#9fe0ff');
+  }
+  note(S, E, `Raid ${R.id} on ${R.obj.name} called off: ${why}.`);
+  IC.log(S, 'kill', 'RAID ABORTED', `The ${R.name} on ${R.obj.name} has turned back: ${why}. ${going.length} aircraft heading home.`, going[0]);
+  IC.emit(S, 'raidAbort', { R, why, n: going.length });
+}
+IC.enemyRaidBreak = (S, R) => raidBreak(S, S.enemy, R);
+IC.on((S, type, t) => {
+  if (type !== 'kill' || !t.op || !t.op.raid || !(MANNED[t.mission] || t.abort !== undefined)) return;
+  const R = t.op.raid;
+  if (t.abort === undefined) enlist(R, t);
+  if (t.mission === 'jam') R.jamLost = (R.jamLost || 0) + 1;
+  else if (t.mission === 'escort') R.escLost = (R.escLost || 0) + 1;
+  else if (t.mission !== 'rtb' || t.abort) R.ml = (R.ml || 0) + 1;
+});
+
 /* ---------- after-action report ---------- */
 const WORD = { drone: ['drone', 'drones'], cm: ['cruise missile', 'cruise missiles'], bal: ['ballistic missile', 'ballistic missiles'], hgv: ['hypersonic glider', 'hypersonic gliders'], arm: ['anti-radiation missile', 'anti-radiation missiles'], rkt: ['rocket', 'rockets'], air: ['aircraft', 'aircraft'] };
 /* why did this one get through? */
@@ -992,9 +1029,14 @@ function report(S, E, R) {
   // a unit's code means little to a player: say what it is
   const r = R.obj.ref, what = r && r.d && r.d.role ? `${R.obj.name}, ${/^[aeiou]/i.test(r.d.role) ? 'an' : 'a'} ${r.d.role}` : R.obj.name;
   text += ` Their main target was ${what}${R.set ? `, in their push on ${IC.ESETS[R.set].name}` : ''}.`;
-  R.text = text; R.res = res;
+  // the result card: what came, what we stopped, what got through and why, what it cost, and a grade
+  const result = IC.raidResult(S, R, ops, achieved(S, R));
+  res.held = result.held; res.grade = result.grade;
+  if (R.aborted) text += ` They turned back: ${R.aborted.why}.`;
+  R.text = text; R.res = res; R.result = result;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
-  if (S.camp && IC.card) IC.card(S, `After-action · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report');
+  if (S.camp && IC.card) IC.card(S, `${result.held ? 'Raid held' : result.success ? 'Raid got through' : 'Raid over'} · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report', { res: result, name: R.name });
+  IC.emit(S, 'raidResult', { R, res: result });
   IC.emit(S, 'raidOver', R);
   // the commander learns what worked
   learn(S, E, R, ops);
@@ -1066,6 +1108,8 @@ function runCycle(S, E) {
   } else if (C.phase === 'buildup') {
     if (S.time >= C.next - 900) { E.cycle = { phase: 'raid', next: C.next + 5400, R: C.R }; E.mood = `${C.R.name} on ${C.R.obj.name}`; IC.emit(S, 'raidStart', C.R); }
   } else if (C.phase === 'raid') {
+    C.brk = (C.brk || 0) - 1;
+    if (C.brk <= 0) { C.brk = 10; raidBreak(S, E, C.R); }
     if (raidOver(S, C.R) || S.time > C.next) {
       report(S, E, C.R);
       E.raid = null;
@@ -1261,6 +1305,12 @@ IC.moveEnemyAir = function (S, t, dt) {
     else if (U.dist(t, v) > 30) t.route = [{ x: v.x + (t.side || 12), y: v.y + 8 }];
     else { t.side = t.side || (Math.random() < 0.5 ? -14 : 14); t.x = v.x - v.vy / (v.spd || 1) * t.side; t.y = v.y + v.vx / (v.spd || 1) * t.side; t.vx = v.vx; t.vy = v.vy; if (IC.inHome(t.x, t.y) && !t.violated) { t.violated = true; IC.emit(S, 'violation', t); } return; }
   }
+  // a package's escort takes off with it, while the base has fighters to spare
+  if (t.esc > 0) {
+    const b = t.home, n = b && b.acAvail ? Math.min(t.esc, Math.floor(b.acAvail.ftr || 0)) : 0;
+    t.esc = 0;
+    for (let i = 0; i < n; i++) { b.acAvail.ftr--; IC.spawnThreat(S, 'ftr', t.x + (i ? 25 : -25), t.y + 15, { home: b, mission: 'escort', escortOf: t, op: t.op, slot: i + 1 }); }
+  }
   // fuel: short of it, home
   if (t.fuel == null) t.fuel = EFUEL[t.type] || 14400;
   t.fuel -= dt;
@@ -1282,17 +1332,33 @@ IC.moveEnemyAir = function (S, t, dt) {
     t.cool = (t.cool || 0) - dt;
     if (t.aam == null) t.aam = 4;
     if (t.aam > 0 && t.cool <= 0) for (const a of S.air) {
-      const R = Math.min(700, (IC.reachAt ? IC.reachAt('AAM', Math.max(0.03, a.alt || 0)) : 450) * 1.1);
-      if (a.dead || a.gnd || U.dist(a, t) > R || a.allied) continue;
+      if (a.dead || a.gnd || a.allied) continue;
+      // inside the heat-seeker's reach close in, the radar missile's further out (both from IC.REACH, at our height)
+      const r = U.dist(a, t), W = r < IC.aamReach(IC.EAAMS.srm, t.alt, a, t) * 0.8 ? IC.EAAMS.srm : IC.EAAMS.mrm;
+      if (r > IC.aamReach(W, t.alt, a, t) * 0.8) continue;
       if (t.border && IC.borderDist(a.x, a.y) > 600) continue;
-      const close = U.dist(a, t) < 90;
-      S.eaam.push({ x: t.x, y: t.y, a: Math.atan2(a.y - t.y, a.x - t.x), spd: close ? 9 : 11, target: a, pk: close ? 0.55 : 0.5, life: 70, src: t, ir: close });
+      S.eaam.push(IC.launchAAM(S, t, a, W, { pk: W.pk, side: 'them', src: t, by: t }));
+      S.fx.flashes.push({ x: t.x, y: t.y, t: 0, r: 30, wr: 3 }); IC.sfx && IC.sfx.launch(t.x, t.y, 0.5);
+      IC.emit(S, 'elaunch', { t, a });
       t.aam--; t.cool = 90; break;
     }
   }
+  // its radar on one of ours: the lock our crews hear (combat.js)
+  if (chase && U.dist(chase, t) < 1100 && IC.combatLock) IC.combatLock(S, chase, t);
   // locked on by a missile or a fire-control radar: break away; locked on too often, go home
   if (t.evadeT > 0) t.evadeT -= dt;
   const locked = lockedOn(S, t);
+  // fighters probing the border turn back once one of our fire-control radars holds them for a while: a win
+  // without firing a shot
+  if (t.mission === 'feint' && t.fc && t.fcBy.length && t.home) {
+    t.feintT = (t.feintT || 0) + dt;
+    if (t.feintT > 12) {
+      t.mission = 'rtb'; t.route = [{ x: t.home.x, y: t.home.y }]; t.lead = null;
+      if (t.det) IC.text(S, t.x, t.y, 'TURNED BACK', '#9fe0ff');
+      if (t.tn) IC.log(S, 'kill', 'TURNED BACK', `TN ${t.tn} turned back when our radar locked on: the border held without a shot.`, t);
+      IC.emit(S, 'turnedBack', t);
+    }
+  }
   // radar hunters do not break away (a radar locking on is what they came for), nor do the big jammers and bombers,
   // which cannot out-turn a missile and whose work is to hold their station
   if (locked && !t.wasLocked && !(t.evadeT > 0) && t.mission !== 'rtb' && t.mission !== 'sead' && turnRate(t) > 0.03 && !t.disguise) {
@@ -1346,14 +1412,19 @@ IC.moveEnemyAir = function (S, t, dt) {
   if (tx == null) { tx = t.x + (t.vx || 1); ty = t.y + (t.vy || 0); }
   let want = Math.atan2(ty - t.y, tx - t.x);
   if (t.evadeT > 0 && t.evadeA != null) { want = t.evadeA; spd = t.spd * 1.15; }
-  if (t.notchT > 0 && t.notchA != null) want = t.notchA + Math.PI / 2;
+  // a missile coming for it: the crew defends as ours do (flight.js), fighters hard, the big aircraft as they can
+  let rate = turnRate(t);
+  const D = t.mslIn || t.def ? IC.defendPlan(S, t, dt, t.d.skill != null ? t.d.skill : 0.5) : null;
+  if (D && D.h != null) { want = D.h; spd = t.spd * 1.15; if (rate > 0.03) rate = Math.max(rate, IC.DEF.turn); }
   const cur = Math.atan2(t.vy || (ty - t.y), t.vx || (tx - t.x));
-  const rate = turnRate(t);
   const h = cur + U.clamp(U.angWrap(want - cur), -rate * dt, rate * dt);
   t.vx = Math.cos(h) * spd; t.vy = Math.sin(h) * spd;
   t.x += t.vx * dt; t.y += t.vy * dt;
-  if (t.low) t.alt = 0.1 + 0.05 * Math.sin(t.age * 0.05);
+  if (D && D.alt != null) t.alt = Math.max(D.alt, t.alt - 0.15 * dt);
+  else if (t.low) t.alt = 0.1 + 0.05 * Math.sin(t.age * 0.05);
   else if (t.altHold != null) t.alt = t.altHold;
+  // back up to its height once the missile is gone
+  else if (!t.def && t.alt < (t.d.alt || 0) - 0.05) t.alt = Math.min(t.d.alt, t.alt + 0.08 * dt);
 };
 function arriveAir(S, t) {
   const home = () => { t.mission = 'rtb'; t.route = [{ x: t.home.x, y: t.home.y }]; };
@@ -1495,6 +1566,8 @@ function tally(S, E) {
   for (const t of S.threats) {
     if (t.tal || !t.op || !t.d.dmg || t.d.cls === 'air') continue;
     t.tal = true;
+    // what came, by kind, for the raid's result card
+    if (t.op.raid) { const Q = t.op.raid.came || (t.op.raid.came = {}); Q[t.d.cls] = (Q[t.d.cls] || 0) + 1; }
     const set = t.op.set || (t.op.raid && t.op.raid.set);
     if (!set) continue;
     const ref = t.op.obj || (t.op.raid && t.op.raid.obj.ref), id = ref && ref.id;
@@ -1579,6 +1652,25 @@ IC.enemyTick = function (S, dt) {
     return;
   }
   runCycle(S, E);
+  if (S.time - (E.lossT || E.warT || S.time) >= 86400 || !E.lossSnap) lossReport(S, E);
 };
+/* once a day of war, intelligence counts what they have left against the day before: the defence's work, in their
+   stocks ("they have 40% fewer long-range drones than yesterday") */
+const STOCKS = [['long-range drones', ['owa', 'jdr']], ['cruise missiles', ['lacm', 'mcm', 'scm']], ['ballistic missiles', ['srbm', 'marv', 'mrbm']]];
+function stockSnap(S) {
+  const o = { ac: 0 };
+  for (const [k, ks] of STOCKS) o[k] = S.esites.reduce((n, s) => n + ks.reduce((m, x) => m + Math.floor(s.inv && s.inv[x] || 0), 0), 0);
+  for (const s of S.esites) if (s.acMax) for (const k in s.acMax) o.ac += s.acMax[k];
+  return o;
+}
+function lossReport(S, E) {
+  const now = stockSnap(S), was = E.lossSnap;
+  E.lossT = S.time; E.lossSnap = now;
+  if (!was || !E.war) return;
+  const parts = [];
+  for (const [k] of STOCKS) if (was[k] > 0 && now[k] < was[k] * 0.9) parts.push(`${Math.round(100 * (1 - now[k] / was[k]))}% fewer ${k}`);
+  if (now.ac < was.ac) parts.push(`${was.ac - now.ac} fewer aircraft`);
+  if (parts.length) intel(S, E, `Counting their stocks: ${S.world.names.A} has ${parts.join(', ')} than a day ago. What they fire and what we destroy is not being replaced as fast.`);
+}
 
 })(window.IC);

@@ -1210,6 +1210,7 @@ def('vshorad', 'Thistle', 'Our units', 6, 2.5, B => { lorry(B, 5.5, 2.2, 2, G, {
 def('mrsam', 'Aegir', 'Our units', 12, 3, B => tel(B, 4, 5.5, 0.55, G, { pitch: 1.1 }));
 def('mrmob', 'Rover', 'Our units', 10, 3.3, B => { hull(B, 9, 3.2, G); canisters(B, -1.5, 3, 4, 4.5, 0.45, P.canvas, 0.9, 0.55); antenna(B, 2.5, 2.6, 1.6, 1.2, P.radar, -0.4, false); });
 def('lrsam', 'Bastion', 'Our units', 13, 3, B => tel(B, 4, 7.5, 0.75, G, { pitch: 1.35, len: 13 }));
+def('vlrsam', 'Farwatch', 'Our units', 15, 3.4, B => tel(B, 2, 9.5, 1, G, { pitch: 1.4, len: 15, gap: 1.2 }));
 def('hatd', 'Highwall', 'Our units', 13, 3, B => tel(B, 8, 6.5, 0.5, G, { pitch: 0.55, len: 13, gap: 0.62 }));
 def('exo', 'Zenith', 'Our units', 10, 10, B => { box(B, 0, 0, 0.3, 10, 10, 0.6, P.concrete); canisters(B, 0, 2, 4, 9, 1.1, P.steel, 1.5, 1.6); });
 def('dgun', 'Rattler', 'Our units', 6, 2.4, B => { lorry(B, 5.8, 2.3, 2, G, { cabL: 1.8, bed: 0.6 }); B.group('radar', { kind: 'turret', pivot: [-1.6, 0, 1.7], axis: [0, 0, 1] }); turret(B, -1.6, 1.7, 1.4, G2, 1, 2.2); box(B, -2.4, 0, 3, 0.2, 1, 0.8, P.radar, { pitch: -0.3 }); B.group('main'); });

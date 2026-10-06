@@ -500,7 +500,8 @@ function drawTrack(S, t, px, now) {
   }
   ctx.globalAlpha = blink;
   const close = cam.z > 0.9 && t.klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
-  const s = px * (t.d.cls === 'air' ? 1.3 : 1.05);
+  // (drones are slow and small: drawn larger, with a longer heading line, so a swarm reads at a glance)
+  const s = px * (t.d.cls === 'air' ? 1.3 : t.d.cls === 'drone' && aff === 'H' ? 1.4 : 1.05);
   let col;
   const mk = close && cam.z > 2.5 && IC.modelTop ? IC.modelOfThreat(t) : null;
   if (mk) {
@@ -527,13 +528,12 @@ function drawTrack(S, t, px, now) {
     if (t.d.jam && t.jamming) { const p = (now * 2 + t.seed) % 1; ctx.strokeStyle = `rgba(200,150,255,${1 - p})`; ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.arc(x, y, (9 + p * 12) * px, 0, 7); ctx.stroke(); }
   }
   const sp = Math.hypot(t.pvx || t.vx, t.pvy || t.vy) || 1;
-  const Ld = Math.min(55 * px, sp * 140);
+  const Ld = t.d.cls === 'drone' ? Math.max(24 * px, Math.min(55 * px, sp * 140)) : Math.min(55 * px, sp * 140);
   ctx.strokeStyle = col; ctx.lineWidth = 1.4 * px;
   ctx.globalAlpha = 0.6 * blink; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (t.pvx || t.vx) / sp * Ld, y + (t.pvy || t.vy) / sp * Ld); ctx.stroke();
   ctx.globalAlpha = 1;
   if (t.spoofed) { ctx.strokeStyle = 'rgba(92,200,255,0.7)'; ctx.setLineDash([2 * px, 3 * px]); ctx.beginPath(); ctx.arc(x, y, 12 * px, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
   if (t.satOnly) { ctx.strokeStyle = 'rgba(242,209,74,0.5)'; ctx.beginPath(); ctx.arc(x, y, 14 * px, 0, 7); ctx.stroke(); }
-  if (t.notchT > 0 && t.det && cam.z > 0.25) label('NOTCH', x, y + 16 * px, px, C.suspect, 8, 'center', 700);
   const selT = S.sel && S.sel.ref === t;
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
   // a raid carries one label, its leader's (render-air.js boxes the group)
@@ -677,7 +677,7 @@ const CLS = {
   aam: { burn: 4, loft: 0.02, flash: 0.35, dust: 0, smoke: 0.7, glow: HOT, len: 5 },
   eaam:{ burn: 4, loft: 0.02, flash: 0.3, dust: 0, smoke: 0.6, glow: GLOW, len: 5, red: true }
 };
-const MUN_CLS = { IR: 'ir', SR: 'sr', MR: 'mr', LR: 'lr', TBD: 'bmd', HAT: 'hat', EXO: 'exo', AAM: 'aam' };
+const MUN_CLS = { IR: 'ir', SR: 'sr', MR: 'mr', LR: 'lr', LRE: 'lr', VLR: 'hat', TBD: 'bmd', HAT: 'hat', EXO: 'exo', AAM: 'aam' };
 FX.cls = m => MUN_CLS[m.mun] || (m.M && m.M.range > 1500 ? 'hat' : m.M && m.M.range > 300 ? 'mr' : 'sr');
 
 const vis = FX.vis = new Map();   // missile id → what we draw for it

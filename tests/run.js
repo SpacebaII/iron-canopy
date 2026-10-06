@@ -3206,7 +3206,7 @@ test('height: a long-reach missile reaches less far against a low target, as its
   assert(high === M.range, `at 8 km the long-range missile should reach its full ${M.range / 10} km (got ${high / 10})`);
   assert(low < high * 0.6 && low > R[0][1] * 10 - 1, `against a target at 40 m it should reach ${R[0][1]}–${R[1][1]} km (got ${low / 10})`);
   assert(IC.reachAt(M, 30) === 0 && IC.reachAt('HAT', 5) === 0, 'reach outside the band should be zero');
-  assert(/km up, out to 160 km/.test(IC.reachText('LR')), IC.reachText('LR'));
+  assert(/km up, out to 200 km/.test(IC.reachText('LR')), IC.reachText('LR'));
   // and the battery holds fire on a sea-skimming cruise missile 100 km out that it would shoot at 3 km up
   const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'lrsam', T.x, T.y);
   const t = IC.spawnThreat(S, 'lacm', T.x + 1000, T.y, { alt: 0.04, route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, det: true, fc: true });
@@ -3221,6 +3221,171 @@ test('height: tags give flight levels or feet for aircraft and km for everything
   assert(IC.altText({ d: IC.THR.ga, alt: 1.2 }) === '3,900 ft', IC.altText({ d: IC.THR.ga, alt: 1.2 }));
   assert(IC.altText({ d: IC.THR.srbm, alt: 62 }) === '62 km' && IC.altText({ d: IC.THR.lacm, alt: 0.04 }) === '40 m', 'missile heights should be in km or m');
   for (const k in IC.THR) assert(IC.profileOf(k).name, `no height profile for ${k}`);
+});
+/* ---------- combat you can see (brief 43) ---------- */
+/* one missile of ours at a target, flown to its end; returns { end, T, vmax, vend } */
+const shot = (S, u, t, mun) => {
+  const M = IC.MUN[mun];
+  const m = IC.newMissile(S, { mun, M, x: u.x, y: u.y, a: Math.atan2(t.y - u.y, t.x - u.x), spd: M.spd, target: t, src: u.name, unit: u, pk: 1, side: 'us', tr: IC.newTrail(S, 'sam'), loft: IC.flyLoft(M, U.dist(u, t)) }, IC.reachAt(M, t.alt), 0);
+  S.missiles.push(m); t.inbound++;
+  const t0 = S.time; let vmax = 0, vend = 0;
+  for (let i = 0; i < 4 * 600 && !m.dead && !t.dead; i++) { IC.step(S, 0.25); vmax = Math.max(vmax, m.v); vend = m.v; }
+  return { m, end: m.end || (t.dead ? { end: 'fuse' } : null), T: S.time - t0, vmax, vend };
+};
+test('combat: a long-range shot at 100 km takes two to three minutes, and the missile coasts and slows', () => {
+  const T0 = IC.mslTime('LR', 1000, 8), A0 = IC.mslTime('AAM', 450, 6, 2.6);
+  assert(T0 >= 110 && T0 <= 180, `the table says a long-range shot at 100 km takes ${Math.round(T0)} s`);
+  assert(A0 >= 55 && A0 <= 85, `the table says an air-to-air shot at 45 km takes ${Math.round(A0)} s`);
+  assert(IC.mslNez('LR', 8) < IC.reachAt('LR', 8) * 0.5, 'the no-escape zone is not much smaller than the reach');
+  const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'lrsam', T.x, T.y);
+  // a reconnaissance drone does not defend: the shot is flown to the end
+  const t = IC.spawnThreat(S, 'isr', T.x + 1000, T.y, { area: { x: T.x + 1000, y: T.y + 3000 }, phase: 'out', loiterT: 1e5, home: { x: T.x + 1000, y: T.y + 9000 }, alt: 6 });
+  const r = shot(S, u, t, 'LR');
+  assert(r.end && r.end.end === 'fuse', `the shot did not reach the drone (${JSON.stringify(r.end)})`);
+  assert(r.T >= 100 && r.T <= 200, `the shot took ${Math.round(r.T)} s`);
+  assert(r.vend < r.vmax * 0.75, `it did not slow after the motor burnt out (peak ${r.vmax.toFixed(1)}, at the end ${r.vend.toFixed(1)})`);
+});
+test('combat: an aircraft that notches defeats a long shot, but not one inside the no-escape zone', () => {
+  const fly = km => {
+    const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'lrsam', T.x, T.y);
+    S.ad.roe = 'hold';
+    const t = IC.spawnThreat(S, 'str', T.x + km * 10, T.y + 20, { route: [{ x: T.x - 3000, y: T.y }], mission: 'strike', home: { x: T.x + 9000, y: T.y }, tgt: { x: T.x, y: T.y, name: 't' }, op: S.range.op, fromHostile: true, aff: 'H', cm: 0 });
+    const modes = new Set();
+    IC.on((S2, type, d) => { if (S2 === S && type === 'mstat') modes.add(d.text); });
+    const r = shot(S, u, t, 'LR');
+    return { r, modes, def: t.def };
+  };
+  const far = fly(120), near = fly(25);
+  assert(far.r.end && far.r.end.end !== 'fuse', `the long shot reached the aircraft (${JSON.stringify(far.r.end)})`);
+  assert(/LOST LOCK|DECOYED|OUT OF ENERGY/.test(far.r.end.why), `the long shot ended ${far.r.end.why}`);
+  assert(near.r.end && near.r.end.end === 'fuse', `inside the no-escape zone the missile did not reach the aircraft (${JSON.stringify(near.r.end)})`);
+});
+test('combat: an enemy missile at one of our fighters shows its time to impact, the fighter is locked and defends', () => {
+  const S = range(), T = S.range.target;
+  const r = IC.newFlight(S, 'ftr', 'VIPER 9', 'x'), K = IC.AIR_KIND.ftr;
+  const a = { id: IC.nid('a'), kind: 'ftr', r, name: r.name, x: T.x, y: T.y, vx: K.spd, vy: 0, h: 0, state: 'out', mission: { type: 'hold', x: T.x + 3000, y: T.y }, fuel: K.endur, aam: 0, srm: 0, gbu: 0, hp: 2, n: 2, dmg: 0, cm: 8, cool: 0, oa: 0, scan: 0, notchT: 0, mslIn: null, def: null, defT: 0, cmT: 0, defended: 0, lockBy: null, lockT: -1e9, alt: 9, roe: 'hold', give: 0 };
+  S.air.push(a);
+  const e = IC.spawnThreat(S, 'ftr', T.x + 700, T.y, { mission: 'patrol', st: { x: T.x + 700, y: T.y }, route: [], home: { x: T.x + 5000, y: T.y }, aam: 2 });
+  let warned = null;
+  for (let i = 0; i < 4 * 120 && !S.eaam.length; i++) IC.step(S, 0.25);
+  assert(S.eaam.length, 'the enemy fighter did not fire');
+  for (let i = 0; i < 4 * 30; i++) {
+    IC.step(S, 0.25);
+    const it = IC.inbound(S).find(x => x.kind === 'missile' && x.tgt === a);
+    if (it && !warned) warned = { tti: it.tti, t: S.time };
+    if (warned && it && S.time - warned.t >= 5) { assert(it.tti < warned.tti - 2, `the time to impact does not count down (${warned.tti.toFixed(0)} → ${it.tti.toFixed(0)})`); break; }
+  }
+  assert(warned && isFinite(warned.tti) && warned.tti < 200, `no missile warning with a time to impact (${JSON.stringify(warned)})`);
+  assert(IC.lockedOn(S, a), 'our fighter is not shown locked');
+  for (let i = 0; i < 4 * 60 && !a.def; i++) IC.step(S, 0.25);
+  assert(a.def, 'our fighter did not defend');
+  void e;
+});
+test('combat: a battery an anti-radiation missile homes on shows it is locked, until its radar goes silent', () => {
+  const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'mrsam', T.x, T.y);
+  S.ad.roe = 'hold';
+  IC.updateEmcon(S, 0.25);
+  IC.spawnThreat(S, 'arm', T.x + 400, T.y, { target: u, aim: { x: u.x, y: u.y } });
+  for (let i = 0; i < 8; i++) IC.step(S, 0.25);
+  assert(IC.lockedOn(S, u), 'the battery is not shown locked');
+  assert(IC.inbound(S).some(it => it.tgt === u && it.tti < 200), 'no time to impact for the missile aimed at the battery');
+  u.emcon = 'off';
+  for (let i = 0; i < 4 * 6; i++) IC.step(S, 0.25);
+  assert(!IC.lockedOn(S, u), 'the battery is still shown locked with its radar silent');
+});
+test('combat: combat time slows the clock while weapons fly near the view, and gives it back after', () => {
+  const S = range(), T = S.range.target;
+  const box = { x0: T.x - 600, y0: T.y - 400, x1: T.x + 600, y1: T.y + 400 };
+  assert(IC.combatTime(S, box) === Infinity, 'the clock is held back with nothing in the air');
+  IC.rangeAddUnit(S, 'gf', T.x - 50, T.y);
+  const d = IC.spawnThreat(S, 'owa', T.x + 300, T.y, { route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, fromHostile: true });
+  for (let i = 0; i < 4 * 40 && !d.held; i++) IC.step(S, 0.25);
+  IC.setAff(S, d, 'H', 'test');
+  S._inb = null;
+  const cap = IC.combatTime(S, box);
+  assert(cap >= 1 && cap <= 25, `a drone ${Math.round(IC.timeToImpact(d))} s from impact allows ${cap}×`);
+  const far = { x0: T.x + 30000, y0: T.y + 30000, x1: T.x + 31000, y1: T.y + 31000 };
+  assert(IC.combatTime(S, far) === Infinity, 'a drone far from the view holds back the clock');
+  // the last seconds of an intercept: half speed
+  const u = IC.rangeAddUnit(S, 'shorad', T.x + 200, T.y + 5);
+  const m = IC.newMissile(S, { mun: 'SR', M: IC.MUN.SR, x: d.x + 20, y: d.y, target: d, pk: 0, src: u.name, unit: u, tr: IC.newTrail(S, 'sam') }, 2000, 10);
+  m.tti = 4; S.missiles.push(m); d.inbound++;
+  assert(IC.combatTime(S, box) === IC.COMBAT.slow, 'the last seconds of an intercept are not slowed to half speed');
+  d.dead = true; S.missiles = []; S.threats = []; S._inb = null;
+  assert(IC.combatTime(S, box) === Infinity, 'the clock is not given back once the weapons are gone');
+});
+test('combat: a bomber raid that loses its escort turns back, and says so', () => {
+  const S = range(), T = S.range.target, E = S.enemy;
+  const home = { x: T.x + 9000, y: T.y, acAvail: { ftr: 4, bmr: 1 }, acMax: { ftr: 4, bmr: 1 } };
+  const R = { id: 7, kind: 'limited', name: 'limited strike', obj: { x: T.x, y: T.y, name: 'the target' }, T: S.time + 3600, ops: [], leaks: [], mix: [] };
+  const op = { id: 'op7', type: 'strike', label: 'test', launched: 0, done: 0, hits: 0, lost: 0, shots: 0, t0: S.time, raid: R };
+  E.ops.push(op); R.ops.push(op); E.raid = R; E.cycle = { phase: 'raid', next: S.time + 9000, R };
+  const b = IC.spawnThreat(S, 'bmr', T.x + 6000, T.y, { home, mission: 'bomber', route: [{ x: T.x + 1500, y: T.y }], load: 4, tgt: R.obj, op, esc: 2 });
+  let ab = null; IC.on((S2, type, d) => { if (S2 === S && type === 'raidAbort') ab = d; });
+  for (let i = 0; i < 4 * 15; i++) { IC.step(S, 0.25); IC.enemyRaidBreak(S, R); }
+  const esc = S.threats.filter(t => t.mission === 'escort' && t.escortOf === b);
+  assert(esc.length === 2, `the bomber took off with ${esc.length} escorts`);
+  assert(b.mission === 'bomber', 'the raid turned back before losing anything');
+  for (const e of esc) IC.killThreat(S, e, 'test');
+  for (let i = 0; i < 4 * 15 && !ab; i++) { IC.step(S, 0.25); IC.enemyRaidBreak(S, R); }
+  assert(ab && /escort/.test(ab.why), `the raid did not turn back when its escort was gone (${ab && ab.why})`);
+  assert(b.mission === 'rtb' && b.abort, 'the bomber did not turn for home');
+  assert(S.logs.some(l => l.tag === 'RAID ABORTED'), 'no RAID ABORTED in the log');
+});
+test('combat: fighters probing the border turn back when our radar locks on, without a shot', () => {
+  const S = range(), T = S.range.target;
+  IC.rangeAddUnit(S, 'mrsam', T.x, T.y);
+  S.ad.roe = 'hold';
+  const f = IC.spawnThreat(S, 'ftr', T.x + 2500, T.y, { home: { x: T.x + 9000, y: T.y }, mission: 'feint', route: [{ x: T.x + 300, y: T.y }], feint: true });
+  let back = false; IC.on((S2, type, d) => { if (S2 === S && type === 'turnedBack' && d === f) back = true; });
+  for (let i = 0; i < 4 * 900 && !back; i++) IC.step(S, 0.25);
+  assert(back && f.mission === 'rtb', `the probing fighter did not turn back (${f.mission}, ${U.km(U.dist(f, T))} from the battery)`);
+  assert(!S.missiles.length && S.stats.fired === 0, 'a missile was fired');
+});
+test('combat: a raid ends with a result card whose numbers add up', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'campaign' });
+  S.ad.roe = 'free';
+  const cap = IC.cap(S);
+  let res = null, killed = 0, R = null;
+  IC.on((S2, type, d) => { if (S2 !== S) return; if (type === 'raidResult') { res = d.res; R = d.R; } if (type === 'kill' && d.op && d.op.raid && !d.d.civil) killed++; });
+  for (const s of S.esites) s.dormant = false;
+  S.camp.sched = []; S.enemy.war = true; S.enemy.warT = S.time; S.enemy.allow = null;
+  IC.enemyForceOp(S, 'strike', { x: cap.x, y: cap.y, ref: cap, name: cap.name }, { kind: 'limited', T: 2400 });
+  for (let i = 0; i < 4 * 3600 * 4 && !res; i++) IC.step(S, 0.25);
+  assert(res, 'the raid did not end with a result');
+  const ops = S.enemy.ops.filter(o => o.raid === R);
+  assert(res.n >= ops.reduce((s, o) => s + o.launched, 0) && res.n === Math.max(ops.reduce((s, o) => s + o.launched, 0), Object.entries(res.came).reduce((s, [c, k]) => s + (c === 'air' || c === 'heli' ? 0 : k), 0)), `came ${res.n}, launched ${ops.reduce((s, o) => s + o.launched, 0)}`);
+  const lost = ops.reduce((s, o) => s + o.lost, 0);
+  assert(res.stopped === Math.min(res.n, lost - res.ac) && res.stopped <= killed, `stopped ${res.stopped}, lost ${lost} (${res.ac} aircraft), killed ${killed}`);
+  assert(res.through === R.leaks.length && res.hits === (R.hits || 0), 'what got through does not match the leaks');
+  assert(Object.values(res.came).reduce((s, n) => s + n, 0) >= res.through, 'what came leaves out what got through');
+  assert(/^[ABCDF]$/.test(res.grade) && res.rounds >= 0 && res.spent >= 0, `no grade or cost (${res.grade}, ${res.spent})`);
+  assert(S.camp.cards.some(c => c.res === res), 'no result card');
+}, true);
+test('combat: a battery fires on another radar\'s track beyond its own radar, over the network', () => {
+  const S = range(), T = S.range.target;
+  const bat = IC.rangeAddUnit(S, 'mrsam', T.x, T.y, { emcon: 'off' });
+  IC.rangeAddUnit(S, 'lr3d', T.x - 100, T.y);
+  const t = IC.spawnThreat(S, 'jdr', T.x + 760, T.y, { route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, alt: 6, fromHostile: true, altHold: 6 });
+  let fired = false;
+  for (let i = 0; i < 4 * 240 && !fired; i++) { IC.step(S, 0.25); if (t.held && t.aff !== 'H') IC.setAff(S, t, 'H', 'test'); fired = S.missiles.some(m => m.unit === bat); }
+  assert(!bat.radarOn, 'the battery\'s radar came on');
+  assert(fired, `the battery did not fire on the 3D radar's track ${U.km(U.dist(bat, t))} out: ${bat.why}`);
+});
+test('combat: a very-long-range battery fires on a bomber standing off 300 km away; the extended-range round reaches 250 km', () => {
+  assert(Math.abs(IC.reachAt('LRE', 10) - 2500) < 1 && IC.reachAt('LRE', 0.03) < 1000, `the extended-range round reaches ${IC.reachAt('LRE', 10) / 10} km high, ${IC.reachAt('LRE', 0.03) / 10} km low`);
+  const S = range(), T = S.range.target;
+  S.tech.done.add('a_lre'); S.tech.done.add('a_vlr');
+  const u = IC.rangeAddUnit(S, 'vlrsam', T.x, T.y);
+  const b = IC.spawnThreat(S, 'bmr', T.x + 3200, T.y, { mission: 'bomber', route: [{ x: T.x + 1300, y: T.y }], load: 0, tgt: { x: T.x, y: T.y, name: 't' }, home: { x: T.x + 9000, y: T.y }, fromHostile: true });
+  let fired = false;
+  for (let i = 0; i < 4 * 300 && !fired; i++) { IC.step(S, 0.25); if (b.held && b.aff !== 'H') IC.setAff(S, b, 'H', 'test'); fired = S.missiles.some(m => m.unit === u); }
+  assert(fired, `the battery did not fire at the bomber ${U.km(U.dist(u, b))} out: ${u.why}`);
+});
+test('combat: heat-seekers reach 8 km from the shoulder and 12 km imaging, more than a gun', () => {
+  assert(Math.abs(IC.reachAt('IR', 1) - 80) < 5, `IR reaches ${IC.reachAt('IR', 1) / 10} km at 1 km up`);
+  assert(Math.abs(IC.reachAt('IR2', 2) - 120) < 8, `imaging IR reaches ${IC.reachAt('IR2', 2) / 10} km at 2 km up`);
+  assert(IC.typeRange('vshorad') >= 80 && IC.typeRange('manpads') >= 80, 'the IR units do not reach 8 km');
 });
 test('test range: a raid against a defence reports shots, kills, leakers and the cost exchange', () => {
   const S = range(), T = S.range.target;
@@ -3242,7 +3407,7 @@ test('test range: a raid against a defence reports shots, kills, leakers and the
 /* ---------- magazines, reloads, helicopter resupply, new units ---------- */
 test('magazines: a long-range battery fires about 16, pauses, then reloads launcher by launcher from site stock and keeps firing', () => {
   const S = range(), T = S.range.target;
-  S.tech.done.delete('a_pac3');   // long-range rounds only
+  S.tech.done.delete('a_pac3'); S.tech.done.delete('a_lre');   // long-range rounds only
   const u = IC.rangeAddUnit(S, 'lrsam', T.x - 50, T.y), m = IC.magSync(u, u.mags[0]);
   assert(m.max === 16 && m.ln === 4 && m.store === 16, `the battery has ${m.max} ready on ${m.ln} launchers and ${m.store} on site`);
   const shots = [];
@@ -4208,7 +4373,7 @@ test('save: a Career game with works in progress and aircraft taxiing saves, loa
 test('save: a Quick war saved with missiles in the air loads and plays on like the unsaved one', () => {
   const S = IC.newGame({ seed: 4242, mode: 'campaign' });
   const fight = () => S.enemy.war && S.missiles.length > 0 && S.threats.some(t => !t.dead && t.aff === 'H');
-  for (let i = 0; i < 9 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
+  for (let i = 0; i < 16 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
   assert(fight(), 'no battle to save');
   const { json, S2 } = saveAndPlayOn(S, 0.5, Q.commander);
   assert(json.length < 3e6, `a Quick war save is ${(json.length / 1e6).toFixed(1)} MB`);

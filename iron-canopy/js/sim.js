@@ -29,6 +29,7 @@ IC.step = function (S, dt) {
   IC.fatigue(S, dt);
   IC.airspace(S, dt);
   IC.incidents(S, dt);
+  IC.combat(S, dt);
   if (S.mode === 'academy') IC.academyTick(S, dt); else if (S.mode === 'story') IC.storyTick(S, dt); else IC.campaignTick(S, dt);
   tail(S, dt);
 };
