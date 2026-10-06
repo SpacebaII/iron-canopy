@@ -291,6 +291,10 @@ IC.paveHubs = function (ap, e) {
    J   junctions (arms and gaps), fil the fillets
    cl  the yellow centrelines: straight runs trimmed where a curve takes over, and the curves { pts, lead } */
 IC.paveGeom = function (ap) {
+  // (asked many times a frame while the map is drawn: the signature, which walks every part, once a frame; IC.frameN
+  // counts the frames drawn, and a change marks the airport dirty)
+  if (ap._pg && IC.frameN && ap._pgN === IC.frameN && ap._pgL === ap.parts.length && !ap.dirty) return ap._pg;
+  ap._pgN = IC.frameN; ap._pgL = ap.parts.length;
   const sig = IC.paveSig(ap);
   if (ap._pg && ap._pg.sig === sig) return ap._pg;
   const G = { sig, rw: [], tw: [], ar: [], cl: [] };

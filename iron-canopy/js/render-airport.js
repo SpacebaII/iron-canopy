@@ -106,6 +106,13 @@ function drawShape(g, T, type, L, Sp, body, c1, c2) {
   g.fillStyle = 'rgba(30,44,60,0.85)'; g.fillRect(L * 0.42, -f * 0.28, L * 0.03, f * 0.56);
 }
 
+/* an apron's zone, kept until the airport changes (asked for every apron every frame: a big airport has hundreds) */
+function zoneOf(ap, p) {
+  if (ap.dirty) return IC.partZone(ap, p);
+  if (ap._zG !== ap.G || !ap._zones) { ap._zG = ap.G; ap._zones = new Map(); }
+  let zn = ap._zones.get(p); if (zn === undefined) { zn = IC.partZone(ap, p); ap._zones.set(p, zn); }
+  return zn;
+}
 /* ---------- the airport ---------- */
 IC.drawAirport = function (g, S, ap, px, now, light, o) {
   NOLBL = !!(o && o.pad);
@@ -114,6 +121,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   const night = light < 0.55;
   const parts = ap.parts;
   const by = k => parts.filter(p => p.kind === k);
+  // only what is in view is drawn: close in, most of a big airport is off the screen (o.pad: a picture of the whole)
+  const V = o && o.pad ? null : IC.rs.view, seen = (x, y, r) => !V || (x + r > V.x0 && x - r < V.x1 && y + r > V.y0 && y - r < V.y1);
+  const near = p => p.x == null || seen(p.x, p.y, Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2) * 0.75 + 1.5);
   // the airfield's grass is part of the terrain (terrain.js); here only the perimeter fence
   const box = fieldBox(ap);
   // inside the fence the ground is mown grass: no trees or crops on an airfield, stripes where the mowers went
@@ -134,7 +144,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
     // where its tiles are still being painted, the flat shapes of the far view, sharp
     if (ap._gap) {
       g.save(); g.beginPath(); for (const [x, y, T] of ap._gap) g.rect(x, y, T, T); g.clip();
-      for (const p of parts) if (p.built && (p.kind === 'apron' || p.kind === 'alert' || p.kind === 'holdbay')) drawArea(g, p, p.kind === 'apron' ? ZONE_FILL[IC.partZone(ap, p)] || CONC : p.kind === 'alert' ? CONC2 : CONC, px, Object.create(p, { scorch: { value: null } }), false);
+      for (const p of parts) if (p.built && (p.kind === 'apron' || p.kind === 'alert' || p.kind === 'holdbay')) drawArea(g, p, p.kind === 'apron' ? ZONE_FILL[zoneOf(ap, p)] || CONC : p.kind === 'alert' ? CONC2 : CONC, px, Object.create(p, { scorch: { value: null } }), false);
       for (const p of by('taxi')) if (p.built) drawTaxi(g, ap, p, px, z, full, false, night, false);
       for (const rw of by('runway')) if (rw.built && !rw.shut) drawRunway(g, S, ap, rw, px, z, false, false, night, now, false);
       g.restore();
@@ -147,21 +157,21 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
     g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0); g.fillStyle = 'rgba(120,110,90,0.4)'; partPath(g, p, p.w, p.h, 0.15); g.fill(); g.restore();
   }
   // aprons and other paved areas: being built, or far out; hits leave scorch marks
-  for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[IC.partZone(ap, p)] || CONC : null, px, p, tiles);
+  for (const p of by('apron')) drawArea(g, p, p.built ? ZONE_FILL[zoneOf(ap, p)] || CONC : null, px, p, tiles);
   for (const p of by('alert')) drawArea(g, p, p.built ? CONC2 : null, px, p, tiles);
   for (const p of by('holdbay')) drawArea(g, p, p.built ? CONC : null, px, p, tiles);
   // taxiways and runways: being built or far out drawn here; on the tiles only what changes (closures, craters)
   for (const p of by('taxi')) drawTaxi(g, ap, p, px, z, full, false, night, tiles);
   for (const rw of by('runway')) drawRunway(g, S, ap, rw, px, z, false, false, night, now, tiles);
-  if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = IC.partZone(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
+  if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = zoneOf(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
-  if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (!tiles && marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine, tiles); }
+  if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (!seen(s.x, s.y, 1 + 40 * px)) continue; if (!tiles && marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine, tiles); }
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings: every shadow first, so none falls across a roof
-  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind)) shadowOf(g, S, p);
+  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind) && near(p)) shadowOf(g, S, p);
   for (const p of parts) {
-    if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind)) continue;
+    if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind) || !near(p)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
   // the fire trucks out on a run
@@ -171,10 +181,10 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // people movers below ground: the line on the map, faint and dashed
   for (const p of by('people')) if ((p.lv || 0) < 0) drawMover(g, p, px, z, night, now);
   // aircraft parked
-  if (z >= 0.8) drawParked(g, S, ap, px, z, light);
+  if (z >= 0.8) drawParked(g, S, ap, px, z, light, seen);
   // aircraft moving
   if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead) continue;
+    if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
     const air = m.phase === 'final';
     IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8 });
     // a tug at the nose: pushing back, or towing to and from the hangar
@@ -192,7 +202,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (z > 0.35) drawConfig(g, S, ap, px, z);
   const tags = [];
   if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead) continue;
+    if (m.dead || !seen(m.x, m.y, 1 + 80 * px)) continue;
     if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
     // why it waits, in a few words: "holding: arrival 5 km out"
     // one tag where aircraft stand nose to tail: the first one's
@@ -1011,11 +1021,11 @@ function drawLights(g, ap, px, z, light, now) {
   }
   g.globalCompositeOperation = 'source-over';
 }
-function drawParked(g, S, ap, px, z, light) {
+function drawParked(g, S, ap, px, z, light, seen) {
   const tails = S.av ? S.av.tailById || (S.av.tailById = new Map()) : null;
   if (tails && S.av.tailMapT !== S.time) { tails.clear(); for (const t of S.av.tails) tails.set(t.id, t); S.av.tailMapT = S.time; }
   for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
-    if (!s.occ) continue;
+    if (!s.occ || (seen && !seen(s.x, s.y, 1))) continue;
     const t = tails && tails.get(s.occ);
     if (!t || t.where !== 'stand') continue;
     const al = IC.avAirline(S, t.al);
@@ -1071,6 +1081,38 @@ function drawSurface(g, p, px, z) {
 
 /* ---------- the landside ---------- */
 const CARS = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230,230,226)', 'rgb(60,80,120)', 'rgb(120,124,128)', 'rgb(180,160,120)'];
+const TREE = ['rgb(58,90,48)', 'rgb(70,102,54)', 'rgb(50,80,44)'];
+/* a car park's bays, cars and trees as paths in its own frame, kept on the lot (it._lot) until it fills or empties */
+function lotPaths(it, w, h, k, use) {
+  const C = it._lot;
+  if (C && C.use === use && C.w === w && C.h === h && C.k === k && C.x === it.x) return C;
+  const bay = 0.026, depth = 0.05, rows = [];
+  for (let y = -h / 2 + 0.03; y + 2 * depth < h / 2 - 0.02; y += 2 * depth + 0.07) rows.push(y);
+  const lines = new Path2D();
+  for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += bay) { lines.moveTo(x, y); lines.lineTo(x, y + 2 * depth); }
+  let i = 0; const cars = CARS.map(() => new Path2D()), taxi = new Path2D();
+  for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03 - bay; x += bay) for (const yy of [y, y + depth]) {
+    i++;
+    if (U.hash(i, it.x * 10 | 0) > (k === 'taxi' ? 0.7 : use)) continue;
+    (k === 'taxi' && U.hash(i, 5) < 0.6 ? taxi : cars[(U.hash(i, 11) * CARS.length) | 0]).rect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
+  }
+  const out = { use, w, h, k, x: it.x, lines, cars, taxi, shade: null, crowns: null, hi: null };
+  // trees: round the edge, and a planted strip down the middle of each double row
+  if (k === 'park') {
+    const T = [];
+    for (let x = -w / 2 + 0.04; x < w / 2 - 0.02; x += 0.13) T.push(x, -h / 2 + 0.018, x + 0.06, h / 2 - 0.018);
+    for (const y of rows) for (let x = -w / 2 + 0.08 + (U.hash(y * 100 | 0, 3) * 0.06); x < w / 2 - 0.06; x += 0.24) T.push(x, y + depth);
+    const rad = i => 0.022 + 0.01 * U.hash(i, 9);
+    out.shade = new Path2D(); out.crowns = TREE.map(() => new Path2D()); out.hi = new Path2D();
+    for (let i = 0; i < T.length; i += 2) {
+      const r = rad(i), c = out.crowns[i % 3];
+      out.shade.moveTo(T[i] + r + 0.012, T[i + 1] + 0.014); out.shade.arc(T[i] + 0.012, T[i + 1] + 0.014, r, 0, 7);
+      c.moveTo(T[i] + r, T[i + 1]); c.arc(T[i], T[i + 1], r, 0, 7);
+      out.hi.moveTo(T[i] - r * 0.3 + r * 0.5, T[i + 1] - r * 0.3); out.hi.arc(T[i] - r * 0.3, T[i + 1] - r * 0.3, r * 0.5, 0, 7);
+    }
+  }
+  return (it._lot = out);
+}
 function drawLandside(g, S, ap, px, z, night) {
   const L = ap.land, V = IC.rs && IC.rs.view;
   const vis = it => !V || (it.x > V.x0 - 2 && it.x < V.x1 + 2 && it.y > V.y0 - 2 && it.y < V.y1 + 2);
@@ -1089,28 +1131,14 @@ function drawLandside(g, S, ap, px, z, night) {
       g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
       g.strokeStyle = 'rgba(150,150,142,0.9)'; g.lineWidth = Math.max(0.006, 0.7 * px); if (!it.poly) g.strokeRect(-w / 2, -h / 2, w, h);
       if (z > 12) {
-        // rows of bays either side of the aisles, and cars in them as full as the car park is
-        const bay = 0.026, depth = 0.05, rows = [];
-        for (let y = -h / 2 + 0.03; y + 2 * depth < h / 2 - 0.02; y += 2 * depth + 0.07) rows.push(y);
-        g.strokeStyle = 'rgba(236,236,226,0.45)'; g.lineWidth = Math.max(0.002, 0.4 * px);
+        // rows of bays either side of the aisles, cars in them as full as the car park is, and trees: worked out once
+        // into paths in the lot's own frame (a big airport's car parks hold tens of thousands of bays), again when the
+        // lot fills or empties
+        const P = lotPaths(it, w, h, k, use);
+        if (z > 40) { g.strokeStyle = 'rgba(236,236,226,0.45)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.stroke(P.lines); }
         // cars batched by colour: one fill per colour, not one per car
-        let i = 0; const paths = CARS.map(() => new Path2D()), taxiP = new Path2D();
-        if (z > 40) { g.beginPath(); for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += bay) { g.moveTo(x, y); g.lineTo(x, y + 2 * depth); } g.stroke(); }
-        for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03 - bay; x += bay) for (const yy of [y, y + depth]) {
-          i++;
-          if (U.hash(i, it.x * 10 | 0) > (k === 'taxi' ? 0.7 : use)) continue;
-          (k === 'taxi' && U.hash(i, 5) < 0.6 ? taxiP : paths[(U.hash(i, 11) * CARS.length) | 0]).rect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
-        }
-        paths.forEach((P, c) => { g.fillStyle = CARS[c]; g.fill(P); }); g.fillStyle = 'rgb(236,196,50)'; g.fill(taxiP);
-        // trees: round the edge, and a planted strip down the middle of each double row
-        if (k === 'park') {
-          const T = [];
-          for (let x = -w / 2 + 0.04; x < w / 2 - 0.02; x += 0.13) T.push(x, -h / 2 + 0.018, x + 0.06, h / 2 - 0.018);
-          for (const y of rows) for (let x = -w / 2 + 0.08 + (U.hash(y * 100 | 0, 3) * 0.06); x < w / 2 - 0.06; x += 0.24) T.push(x, y + depth);
-          const rad = i => 0.022 + 0.01 * U.hash(i, 9);
-          g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); for (let i = 0; i < T.length; i += 2) { const r = rad(i); g.moveTo(T[i] + r + 0.012, T[i + 1] + 0.014); g.arc(T[i] + 0.012, T[i + 1] + 0.014, r, 0, 7); } g.fill();
-          for (let i = 0; i < T.length; i += 2) { const r = rad(i); g.fillStyle = ['rgb(58,90,48)', 'rgb(70,102,54)', 'rgb(50,80,44)'][i % 3]; g.beginPath(); g.arc(T[i], T[i + 1], r, 0, 7); g.fill(); g.fillStyle = 'rgba(150,180,110,0.25)'; g.beginPath(); g.arc(T[i] - r * 0.3, T[i + 1] - r * 0.3, r * 0.5, 0, 7); g.fill(); }
-        }
+        P.cars.forEach((Q, c) => { g.fillStyle = CARS[c]; g.fill(Q); }); g.fillStyle = 'rgb(236,196,50)'; g.fill(P.taxi);
+        if (P.shade) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fill(P.shade); TREE.forEach((col, c) => { g.fillStyle = col; g.fill(P.crowns[c]); }); g.fillStyle = 'rgba(150,180,110,0.25)'; g.fill(P.hi); }
       }
       if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
     } else if (k === 'garage' && it.poly) {

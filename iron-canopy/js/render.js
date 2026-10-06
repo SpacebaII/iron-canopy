@@ -72,6 +72,7 @@ IC.daylight = function (t) {
 /* ---------- main draw ---------- */
 IC.render = function (S, now) {
   const z = cam.z, px = 1 / z;
+  IC.frameN = (IC.frameN || 0) + 1;
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }

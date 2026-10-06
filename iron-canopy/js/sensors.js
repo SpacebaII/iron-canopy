@@ -293,27 +293,37 @@ IC.setAff = setAff;
 /* sensors bucketed on a coarse grid by reach: a target meets only the sensors listed in its cell, in the same order
    as the full list, so what is seen and in what order it is plotted do not change. A cell lists a sensor when any of
    it lies within three times the sensor's reach, beyond which detects() sees nothing */
-const SG = 2000, SGM = 4, SGR = { cells: [], stamp: [], n: 0, nx: 0, ny: 0 };   // cells of 200 km, 4 of margin round the world
+const SG = 2000, SGM = 4, SGR = { cells: [], stamp: [], n: 0, nx: 0, ny: 0, box: null };   // cells of 200 km, 4 of margin round the world
+// (the cells list sensors by their place in the list, and are kept while every sensor covers the same cells as on
+// the step before: most steps, nothing has moved far enough to change them)
 function sensorGrid(L) {
   const G = SGR, nx = Math.ceil(IC.WW / SG) + 2 * SGM, ny = Math.ceil(IC.WH / SG) + 2 * SGM;
-  if (G.nx !== nx || G.ny !== ny) { G.nx = nx; G.ny = ny; G.cells = []; G.stamp = new Int32Array(nx * ny); }
+  if (G.nx !== nx || G.ny !== ny) { G.nx = nx; G.ny = ny; G.cells = []; G.stamp = new Int32Array(nx * ny); G.box = null; }
+  const box = new Int32Array(L.length * 4);
+  for (let q = 0; q < L.length; q++) {
+    const s = L[q], R = s.R * 3;
+    box[q * 4] = Math.max(0, Math.floor((s.x - R) / SG) + SGM); box[q * 4 + 1] = Math.min(nx - 1, Math.floor((s.x + R) / SG) + SGM);
+    box[q * 4 + 2] = Math.max(0, Math.floor((s.y - R) / SG) + SGM); box[q * 4 + 3] = Math.min(ny - 1, Math.floor((s.y + R) / SG) + SGM);
+  }
+  const old = G.box;
+  if (old && old.length === box.length) { let same = true; for (let i = 0; i < box.length; i++) if (old[i] !== box[i]) { same = false; break; } if (same) return G; }
+  G.box = box;
   const n = ++G.n;
-  for (const s of L) {
-    const R = s.R * 3;
-    const x0 = Math.max(0, Math.floor((s.x - R) / SG) + SGM), x1 = Math.min(nx - 1, Math.floor((s.x + R) / SG) + SGM);
-    const y0 = Math.max(0, Math.floor((s.y - R) / SG) + SGM), y1 = Math.min(ny - 1, Math.floor((s.y + R) / SG) + SGM);
+  for (let q = 0; q < L.length; q++) {
+    const x0 = box[q * 4], x1 = box[q * 4 + 1], y0 = box[q * 4 + 2], y1 = box[q * 4 + 3];
     for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) {
       const k = j * nx + i;
       if (G.stamp[k] !== n) { G.stamp[k] = n; if (G.cells[k]) G.cells[k].length = 0; else G.cells[k] = []; }
-      G.cells[k].push(s);
+      G.cells[k].push(q);
     }
   }
   return G;
 }
 const NONE = [];
-function sensorsAt(G, L, x, y) {
+/* the places in the list of the sensors that may see a point; null: off the grid, ask every sensor */
+function sensorsAt(G, x, y) {
   const i = Math.floor(x / SG) + SGM, j = Math.floor(y / SG) + SGM;
-  if (i < 0 || j < 0 || i >= G.nx || j >= G.ny) return L;   // off the grid: ask every sensor
+  if (i < 0 || j < 0 || i >= G.nx || j >= G.ny) return null;
   const k = j * G.nx + i;
   return G.stamp[k] === G.n ? G.cells[k] : NONE;
 }
@@ -335,7 +345,9 @@ IC.sense = function (S, dt) {
     const wasDet = t.det;
     t.fcBy.length = 0; t.vis = false; t.inView = false;
     let nctr = 0, iff = false, civ = null, mil = false;
-    for (const s of sensorsAt(G, L, t.x, t.y)) {
+    const near = sensorsAt(G, t.x, t.y), nn = near ? near.length : L.length;
+    for (let q = 0; q < nn; q++) {
+      const s = near ? L[near[q]] : L[q];
       if (!detects(s, t)) continue;
       t.inView = true;
       if (s.part || (s.unit && s.unit.d.civil)) civ = civ || s; else mil = true;

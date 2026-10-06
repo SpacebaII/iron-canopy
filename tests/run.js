@@ -362,6 +362,31 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   }
   assert(IC.trafficAgentsOf(S).stats.turned > 0, 'no vehicle turned back in front of the cut road');
 });
+test('traffic: zooming in and out, the vehicles on the streets never jump or vanish (brief 36)', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S);
+  for (let i = 0; i < 8; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
+  // the vehicles the map shows in a window of 3 × 1.8 km in the capital, frame by frame as a wheel zooms (3% a frame)
+  const W = { x0: cap.x - 15, y0: cap.y - 9, x1: cap.x + 15, y1: cap.y + 9 };
+  const shown = z => {
+    const w = 1440 / z / 2, h = 900 / z / 2;
+    let n = 0; S.time += 0.17; IC.traffic(S, 0.17);
+    IC.trafficShown(S, { x0: cap.x - w, y0: cap.y - h, x1: cap.x + w, y1: cap.y + h }, z, 0.17, (x, y) => { if (x > W.x0 && x < W.x1 && y > W.y0 && y < W.y1) n++; });
+    return n;
+  };
+  const zs = []; for (let z = 1.2; z < 48; z *= 1.03) zs.push(z);
+  for (const pass of [zs, zs.slice().reverse()]) {
+    let last = null;
+    for (const z of pass) {
+      const n = shown(z);
+      if (last != null) assert(Math.abs(n - last.n) <= Math.max(4, last.n * 0.4), `${last.n} vehicles in the window at z ${last.z.toFixed(1)}, ${n} at z ${z.toFixed(1)}`);
+      last = { z, n };
+    }
+  }
+  // close in, the vehicles on their own trips are as many as the slots of the middle zoom would show at full share
+  const full = IC.trafficVisible(S, W, 0.3, () => {}), near = shown(45);
+  assert(near > full * 0.5 && near < full * 2, `close in ${near} vehicles in the window, the flows put ${full} there`);
+});
 test('traffic: a busy hour stays inside the time budget', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S);
@@ -578,12 +603,10 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   for (let i = 0; i < N; i++) { const a = process.hrtime.bigint(); IC.step(S, 0.25); t += Number(process.hrtime.bigint() - a) / 1e6; }
   for (let i = 0; i < N; i++) { const a = process.hrtime.bigint(); IC.gops(S, 0.25); g += Number(process.hrtime.bigint() - a) / 1e6; }
   console.log(`        ${ap.moves.length} aircraft moving: ${(t / N).toFixed(3)} ms a step, ground operations ${(g / N).toFixed(3)} ms`);
-  // (the real Denver: 566 parts and 2,500 taxi nodes. Its ground operations cost two to three times the six-runway layout
-  // built in code, which the 0.6 ms was set for; brief 36 owns making them cheaper. The whole step: about a third more)
-  assert(g / N < 0.8, `ground operations take ${(g / N).toFixed(2)} ms a step`);
-  // (the whole step at the real Denver measures 1.8–2.0 ms on GitHub's machines from run to run, with the cost spread
-  // over ground operations, traffic, sensors and the recorder: 2.3 ms here; brief 36 brings it back under 2)
-  assert(t / N < 2.3, `a step takes ${(t / N).toFixed(2)} ms`);
+  // (the real Denver: 566 parts and 2,500 taxi nodes; brief 36 brought both back under the limits set for the six-runway
+  // layout built in code: searches on arrays, departures planned without searching the whole graph, moves of one shape)
+  assert(g / N < 0.6, `ground operations take ${(g / N).toFixed(2)} ms a step`);
+  assert(t / N < 2, `a step takes ${(t / N).toFixed(2)} ms`);
 }, false, 'alone');
 
 /* ---------- the tower's rules: when aircraft may go onto a runway (docs/tasks/15-runway-rules.md) ---------- */
