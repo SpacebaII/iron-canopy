@@ -489,7 +489,10 @@ function apronStands(ap, p) {
   const by = {}; for (const s of p.stands || []) by[s.size] = (by[s.size] || 0) + 1;
   const gates = (p.stands || []).filter(s => s.contact).length, drive = (p.stands || []).filter(s => s.drive).length;
   const what = Object.entries(by).map(([k, n]) => `${n} ${IC.RAMP_SIZE[k]}`).join(', ') || 'none';
-  return [['Stands', `${what}${gates ? ` · ${gates} at gates` : ''}${drive ? ` · ${drive} drive-through` : ''}<div class="acts"><button class="act ${p.ramp ? '' : 'on'}" data-act="apl" data-op="stands" data-v="auto" title="Stands in a row along the back edge; the apron's depth decides their size">Laid out automatically</button><button class="act ${p.ramp ? 'on' : ''}" data-act="apl" data-op="stands" data-v="hand" title="Place, turn and remove stands yourself with the Stand tool">Placed by hand</button></div>`]];
+  // (next to a terminal but too far from its wall for a jet bridge: remote, with stairs, and the panel says so)
+  const far = (p.stands || []).filter(s => s.noBridge).map(s => s.name || s.id.split('s').pop());
+  const farTxt = far.length ? ` · <span class="amber">${far.length > 1 ? `stands ${far.join(', ')} are` : `stand ${far[0]} is`} remote, with stairs: a jet bridge reaches ${Math.round(IC.BRIDGE_REACH.tunnel * 100)} m from a terminal wall in front of the nose, and ${far.length > 1 ? 'they are' : 'it is'} further</span>` : '';
+  return [['Stands', `${what}${gates ? ` · ${gates} at gates` : ''}${drive ? ` · ${drive} drive-through` : ''}${farTxt}<div class="acts"><button class="act ${p.ramp ? '' : 'on'}" data-act="apl" data-op="stands" data-v="auto" title="Stands in a row along the back edge; the apron's depth decides their size">Laid out automatically</button><button class="act ${p.ramp ? 'on' : ''}" data-act="apl" data-op="stands" data-v="hand" title="Place, turn and remove stands yourself with the Stand tool">Placed by hand</button></div>`]];
 }
 /* one job for the engineers: its stage, money spent, and why it waits */
 function workRow(b, w, i) {

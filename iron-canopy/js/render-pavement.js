@@ -118,6 +118,8 @@ function rwPath(g, r, grow, ext) {
 }
 function polyPath(g, P) { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); }
 function linePath(g, P) { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); }
+/* a taxiway as separate straight pieces (no joins: the junction hubs fill the nodes, square ends everywhere else) */
+function segPath(g, P) { for (let i = 1; i < P.length; i++) { g.moveTo(P[i - 1].x, P[i - 1].y); g.lineTo(P[i].x, P[i].y); } }
 const bbOf = (P, m) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of P) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); } return { x0: x0 - m, y0: y0 - m, x1: x1 + m, y1: y1 + m }; };
 const hit = (a, b) => !(a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1);
 
@@ -126,7 +128,7 @@ function prep(ap, G) {
   if (G._prep) return G._prep;
   const R = { rw: [], tw: [], ar: [], fil: [], ends: [], road: null };
   for (const r of G.rw) {
-    const sh = r.w >= 0.4 ? 0.075 : r.w >= 0.3 ? 0.05 : 0.03;
+    const sh = IC.rwShoulder(r.w);
     R.rw.push({ r, sh, bb: bbOf([r.a, r.b], r.w + 0.4) });
     for (const [e, sg] of [[r.a, -1], [r.b, 1]]) {
       // a blast pad beyond each end (only where the runway is long enough to carry jets), and the approach lights
@@ -158,20 +160,37 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
   if (!o.noSurround) perimeter(g, ap, ppu, box);
   // approach lights on their gravel track, over the grass beyond each end
   if (!o.noSurround) for (const E of ends) if (E.lights) approach(g, E, ppu);
-  // shoulders: a lighter asphalt beyond the edge line (not load-bearing), then blast pads
-  for (const { r, sh } of rws) if (ppu > 6) { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
-  g.lineCap = 'round';
-  for (const { t, sh } of tws) if (sh && ppu > 6) { g.strokeStyle = paveFill(g, 'shoulder', ppu, t.pts[0].x, t.pts[0].y, 0); g.lineWidth = t.w + 2 * sh; g.beginPath(); linePath(g, t.pts); g.stroke(); }
-  if (tws.length) for (const f of IC.paveFillets(ap, 0.1)) if (hit(bbOf(f.poly, 0), box)) { g.fillStyle = paveFill(g, 'shoulder', ppu, f.f.N.x, f.f.N.y, 0); g.beginPath(); polyPath(g, f.poly); g.fill(); }
-  for (const E of ends) if (E.pad) { const r = E.r; g.fillStyle = paveFill(g, 'shoulder', ppu, E.e.x, E.e.y, Math.atan2(E.uy, E.ux)); g.beginPath(); padPath(g, E, r.w / 2 + R.rw.find(q => q.r === r).sh); g.fill(); }
-  // the pavement: aprons and forecourts, then fillets and taxiways, runways last (their slabs run through)
-  for (const { a } of ars) { g.fillStyle = paveFill(g, a.mat, ppu, a.p.x || a.poly[0].x, a.p.y || a.poly[0].y, a.a); g.beginPath(); polyPath(g, a.poly); g.fill(); }
-  if (ppu > 6) for (const { f } of fils) { g.fillStyle = paveFill(g, f.mat, ppu, f.f.N.x, f.f.N.y, f.th); g.beginPath(); polyPath(g, f.poly); g.fill(); }
-  for (const { t } of tws) for (let i = 1; i < t.pts.length; i++) {
-    const A = t.pts[i - 1], B = t.pts[i];
-    g.strokeStyle = paveFill(g, t.mat, ppu, A.x, A.y, Math.atan2(B.y - A.y, B.x - A.x)); g.lineWidth = wide(t.w, 2.2);
-    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.stroke();
+  // the airside service roads, under the pavement they cross
+  if (!o.noSurround && ppu >= 3) svcRoads(g, ap, ppu, box);
+  // one slab grid for the whole airport's taxiways, fillets and aprons (the airport's axis), so joints run on across
+  // every join and a piece drawn over another leaves no seam; runways have their own, drawn on top
+  const ga = ap.rwyA || 0, fill = mat => paveFill(g, mat, ppu, ap.x, ap.y, ga);
+  const hubs = e => IC.paveHubs(ap, e).filter(h => hit(h._bb || (h._bb = bbOf(h.poly, 0.3)), box));
+  // shoulders: a lighter asphalt beyond the edge line (not load-bearing), round the fillets and junctions too
+  g.lineCap = 'butt';
+  if (ppu > 6 && tws.length) {
+    g.fillStyle = g.strokeStyle = fill('shoulder');
+    const bySh = new Map(); for (const q of tws) if (q.sh) { if (!bySh.has(q.sh)) bySh.set(q.sh, []); bySh.get(q.sh).push(q.t); }
+    for (const [sh, list] of bySh) for (const t of list) { g.lineWidth = t.w + 2 * sh; g.beginPath(); segPath(g, t.pts); g.stroke(); }
+    const sh0 = Math.max(0, ...tws.map(q => q.sh));
+    // (each piece filled on its own: overlapping outlines in one path wound opposite ways would leave holes)
+    for (const L of [IC.paveFillets(ap, sh0), IC.paveChamfers(ap, sh0)]) for (const f of L) if (hit(bbOf(f.poly, 0), box)) { g.beginPath(); polyPath(g, f.poly); g.fill(); }
+    g.beginPath(); for (const h of hubs(sh0)) polyPath(g, h.poly); g.fill();
   }
+  for (const E of ends) if (E.pad) { const r = E.r; g.fillStyle = paveFill(g, 'shoulder', ppu, E.e.x, E.e.y, Math.atan2(E.uy, E.ux)); g.beginPath(); padPath(g, E, r.w / 2 + R.rw.find(q => q.r === r).sh); g.fill(); }
+  // the pavement: fillets, junctions and taxiways, one fill per material, then the aprons and forecourts over the
+  // taxiways that come into them (one slab: the taxiway ends at the edge, its fillets open the edge either side)
+  const mats = new Set(tws.map(q => q.t.mat));
+  for (const m of mats) {
+    g.fillStyle = g.strokeStyle = fill(m);
+    if (ppu > 6) for (const f of fils.map(q => q.f).concat(IC.paveChamfers(ap, 0))) if (f.mat === m) { g.beginPath(); polyPath(g, f.poly); g.fill(); }
+    g.beginPath(); for (const h of hubs(0)) if (h.mat === m) polyPath(g, h.poly); g.fill();
+    const ws = new Map(); for (const { t } of tws) if (t.mat === m) { const w = wide(t.w, 2.2); if (!ws.has(w)) ws.set(w, []); ws.get(w).push(t); }
+    for (const [w, list] of ws) { g.lineWidth = w; g.beginPath(); for (const t of list) segPath(g, t.pts); g.stroke(); }
+  }
+  for (const { a } of ars) { g.fillStyle = fill(a.mat); g.beginPath(); polyPath(g, a.poly); g.fill(); }
+  // runways over everything that meets them: shoulders, then the runway, so its edges run straight through
+  for (const { r, sh } of rws) if (ppu > 6 && r.mat !== 'grass') { g.fillStyle = paveFill(g, 'shoulder', ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, sh, 0); g.fill(); }
   for (const { r } of rws) { g.fillStyle = paveFill(g, r.mat, ppu, r.a.x, r.a.y, Math.atan2(r.d.y, r.d.x)); g.beginPath(); rwPath(g, r, Math.max(0, (wide(r.w, 3.2) - r.w) / 2), 0); g.fill(); }
   // wear: rubber in the touchdown zones, tyre tracks down the taxiway centrelines, stains where aircraft stand
   if (ppu >= 3) grime(g, ap, G, rws, tws, ars, ppu);
@@ -194,6 +213,8 @@ IC.pavePaint = function (g, S, ap, ppu, box, o) {
     if (ppu >= 8) holdLines(g, ap, ppu, box);
     if (ppu >= 8) for (const { t } of tws) if (t.p.oneway || t.p.flow) oneWay(g, t, ppu);
   }
+  // where the service roads cross taxiways: zebras on taxilanes, a stop line and STOP at a taxiway
+  if (!o.noSurround && ppu >= 20) svcCross(g, ap, ppu, box);
   // stands: lead-in lines, stop bars, safety lines, numbers; the service road along the terminal
   if (ppu >= 8) for (const { a } of ars) standsPaint(g, ap, a, ppu, box);
   if (ppu >= 8) for (const { a } of ars) if (a.fore) forecourt(g, ap, a, ppu);
@@ -312,31 +333,96 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
   const tws = R.tw.filter(q => !q.t.lane && hit(q.bb, box));
   const band = (e, op) => {
     lg.globalCompositeOperation = op; lg.fillStyle = lg.strokeStyle = '#000'; lg.lineCap = 'round'; lg.lineJoin = 'round';
-    for (const { t } of tws) { lg.lineWidth = Math.max(0.001, t.w - 2 * e); lg.beginPath(); linePath(lg, t.pts); lg.stroke(); }
-    for (const f of IC.paveFillets(ap, -e)) if (hit(bbOf(f.poly, 0), box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
+    lg.lineCap = 'butt';
+    for (const { t } of tws) { lg.lineWidth = Math.max(0.001, t.w - 2 * e); lg.beginPath(); segPath(lg, t.pts); lg.stroke(); }
+    for (const L of [IC.paveFillets(ap, -e), IC.paveChamfers(ap, -e)]) for (const f of L) if (hit(bbOf(f.poly, 0), box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
+    lg.beginPath(); for (const h of IC.paveHubs(ap, -e)) if (hit(bbOf(h.poly, 0), box)) polyPath(lg, h.poly); lg.fill();
   };
   band(0, 'source-over'); band(lw, 'destination-out');
   if (dbl) { band(lw + gap, 'source-over'); band(2 * lw + gap, 'destination-out'); }
   // not across a runway, an apron, a pad or a taxilane
   lg.globalCompositeOperation = 'destination-out';
-  for (const { r, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, 0.004, 0); lg.fill(); }
+  for (const { r, sh, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, sh + 0.004, 0); lg.fill(); }
   for (const { a, bb } of R.ar) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, a.poly); lg.fill(); }
   // the aprons' own edge: inside their outline, cut where a taxiway comes in
   lg.globalCompositeOperation = 'source-over';
-  for (const { a, bb } of R.ar) if (!a.fore && hit(bb, box)) {
+  for (const { a, bb } of R.ar) if (!a.fore && a.p.kind !== 'holdbay' && hit(bb, box)) {
     lg.save(); lg.beginPath(); polyPath(lg, a.poly); lg.clip();
     lg.lineWidth = 2 * lw; lg.beginPath(); polyPath(lg, a.poly); lg.stroke();
     if (dbl) { lg.lineWidth = 2 * (2 * lw + gap); lg.stroke(); lg.globalCompositeOperation = 'destination-out'; lg.lineWidth = 2 * (lw + gap); lg.stroke(); lg.globalCompositeOperation = 'source-over'; lg.lineWidth = 2 * lw; lg.stroke(); }
     lg.restore();
   }
   lg.globalCompositeOperation = 'destination-out';
-  for (const { t } of tws) { lg.lineWidth = t.w * 0.98; lg.beginPath(); linePath(lg, t.pts); lg.stroke(); }
+  // the openings where taxiways come in: the apron's edge line stops at each fillet and resumes after it
+  const dep = 2 * lw + gap + 0.004;
+  for (const m of G.mouths) if (hit(m._bb || (m._bb = bbOf([m.a, m.b], 0.1)), box)) {
+    lg.beginPath(); lg.moveTo(m.a.x - m.n.x * 0.004, m.a.y - m.n.y * 0.004); lg.lineTo(m.b.x - m.n.x * 0.004, m.b.y - m.n.y * 0.004);
+    lg.lineTo(m.b.x + m.n.x * dep, m.b.y + m.n.y * dep); lg.lineTo(m.a.x + m.n.x * dep, m.a.y + m.n.y * dep); lg.closePath(); lg.fill();
+  }
+  lg.lineCap = 'butt';
+  for (const { t } of tws) { lg.lineWidth = t.w * 0.98; lg.beginPath(); segPath(lg, t.pts); lg.stroke(); }
   for (const { f, bb } of R.fil) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
-  for (const { r, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, 0.004, 0); lg.fill(); }
+  for (const f of IC.paveChamfers(ap, 0)) { lg.beginPath(); polyPath(lg, f.poly); lg.fill(); }
+  lg.beginPath(); for (const h of IC.paveHubs(ap, -lw * 0.5)) if (hit(bbOf(h.poly, 0), box)) polyPath(lg, h.poly); lg.fill();
+  for (const { r, sh, bb } of R.rw) if (hit(bb, box)) { lg.beginPath(); rwPath(lg, r, sh + 0.004, 0); lg.fill(); }
   // tint the mask yellow and lay it on
   lg.globalCompositeOperation = 'source-in'; lg.setTransform(1, 0, 0, 1, 0, 0); lg.fillStyle = YEL; lg.fillRect(0, 0, W, H);
   lg.globalCompositeOperation = 'source-over';
   g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = o.edgeAlpha || 0.92; g.drawImage(L, 0, 0, W, H, 0, 0, W, H); g.restore();
+}
+/* the service roads: asphalt, a white line along each edge and a dashed one down the middle close in (the equipment
+   road on the forecourts is painted there by forecourt(); the perimeter road by perimeter()) */
+function svcRoads(g, ap, ppu, box) {
+  if (!IC.svcNet) return;
+  const N = IC.svcNet(ap), px = 1 / ppu, list = N.roads.filter(r => r.kind !== 'perim' && r.kind !== 'equip' && hit(r._bb || (r._bb = bbOf(r.pts, 0.2)), box));
+  if (!list.length) return;
+  const path = r => { g.beginPath(); linePath(g, r.pts); if (r.closed) g.closePath(); };
+  const b = IC.aptFence(ap);
+  g.save();
+  if (b && b.carve && b.carve.length) { g.beginPath(); g.rect(-1e6, -1e6, 2e6, 2e6); for (const cv of b.carve) polyPath(g, cv); g.clip('evenodd'); }
+  g.lineCap = 'butt'; g.lineJoin = 'round';
+  g.strokeStyle = paveFill(g, 'asph', ppu, ap.x, ap.y, 0);
+  for (const r of list) { g.lineWidth = Math.max(r.w, 1.2 * px); path(r); g.stroke(); }
+  if (ppu >= 25) {
+    g.strokeStyle = WHITE; g.lineWidth = Math.max(0.003, 1 * px);
+    for (const r of list) for (const s of [-1, 1]) { const P = r.closed ? IC.polyGrow(r.pts, s * (r.w / 2 - 0.006)) : offsetLine(r.pts, s * (r.w / 2 - 0.006)); g.beginPath(); linePath(g, P); if (r.closed) g.closePath(); g.stroke(); }
+    g.setLineDash([0.03, 0.03]);
+    for (const r of list) { path(r); g.stroke(); }
+    g.setLineDash([]);
+  }
+  g.restore();
+}
+/* a polyline moved sideways by d (left of its direction for d > 0), corners mitred */
+function offsetLine(P, d) {
+  const out = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], L = U.dist(a, b) || 1;
+    out.push({ x: P[i].x - (b.y - a.y) / L * d, y: P[i].y + (b.x - a.x) / L * d });
+  }
+  return out;
+}
+function svcCross(g, ap, ppu, box) {
+  if (!IC.svcNet) return;
+  const px = 1 / ppu;
+  for (const c of IC.svcNet(ap).cross) {
+    if (c.x < box.x0 - 0.5 || c.x > box.x1 + 0.5 || c.y < box.y0 - 0.5 || c.y > box.y1 + 0.5) continue;
+    // (how far along the road the taxiway's pavement reaches, for the angle they cross at)
+    const s = Math.abs(Math.sin(c.a - c.ta)) || 1, half = c.w / 2 / s;
+    g.save(); g.translate(c.x, c.y); g.rotate(c.a); g.fillStyle = WHITE;
+    if (c.lane) {
+      // a zebra across the taxilane, in the road's width
+      for (let x = -half + 0.01; x < half - 0.005; x += 0.02) g.fillRect(x, -c.rw / 2 + 0.008, 0.01, c.rw - 0.016);
+    } else {
+      // a stop line and STOP on the road, facing traffic coming up to each edge of the pavement (past the fillets, at
+      // an apron's opening)
+      for (const sg of [-1, 1]) {
+        const e = Math.max(half, sg < 0 ? c.p0 || 0 : c.p1 || 0), x = sg * (e + 0.03);
+        g.fillRect(x - 0.005, -c.rw / 2 + 0.004, 0.01, c.rw - 0.008);
+        if (ppu >= 50) { g.save(); g.translate(sg * (e + 0.085), 0); g.rotate(sg > 0 ? Math.PI / 2 : -Math.PI / 2); g.font = `700 0.034px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 0, 0); g.restore(); }
+      }
+    }
+    g.restore();
+  }
 }
 /* hold lines: four yellow lines across the taxiway, the two on the taxiway side solid, the two on the runway side
    dashed (a pilot may cross them leaving the runway, never entering) */
@@ -486,9 +572,17 @@ IC.drawPaveTiles = function (g, S, ap, z, dpr, budget) {
     }
     return missing;
   };
-  // the coarser level under it first, while this one is still being painted
-  const has = (l) => { const T = TPX / LEVELS[l]; for (let ty = Math.floor(vy0 / T); ty <= Math.floor(vy1 / T); ty++) for (let tx = Math.floor(vx0 / T); tx <= Math.floor(vx1 / T); tx++) if (!TILES.has(ap.id + ':' + l + ':' + tx + ':' + ty)) return false; return true; };
-  if (!has(li)) { for (let l = li - 1; l >= 0; l--) if (has(l) || l === 0) { draw(l, l === 0); break; } }
+  // under the tiles still being painted, a finer level already painted, or else the flat shapes (ap._gap, drawn by
+  // render-airport.js): never the coarsest level, whose runway spreads soft over the grass as a white blur, and only
+  // under the missing tiles (a painted tile is transparent off the pavement)
+  const miss = (l) => { const T = TPX / LEVELS[l], out = []; for (let ty = Math.floor(vy0 / T); ty <= Math.floor(vy1 / T); ty++) for (let tx = Math.floor(vx0 / T); tx <= Math.floor(vx1 / T); tx++) if (!TILES.has(ap.id + ':' + l + ':' + tx + ':' + ty)) out.push([tx * T, ty * T, T]); return out; };
+  const gap = miss(li);
+  ap._gap = null;
+  if (gap.length) {
+    let l = li - 1; while (l >= 1 && (LEVELS[l] < want / 8 || miss(l).length)) l--;
+    if (l >= 1 && LEVELS[l] >= want / 8) { g.save(); g.beginPath(); for (const [x, y, T] of gap) g.rect(x, y, T, T); g.clip(); draw(l, false); g.restore(); }
+    else ap._gap = gap;
+  }
   draw(li, true);
   if (TILES.size > MAXT) { const all = [...TILES.entries()].sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < all.length - MAXT; i++) TILES.delete(all[i][0]); }
   return made;

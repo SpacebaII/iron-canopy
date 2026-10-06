@@ -333,13 +333,16 @@ IC.aspGap = function (S, from, to) {
   const busy = Math.max(1, S.asp.work || 0, sec ? sec.work : 0) * (sec ? sec.rules.space : 1);
   return { gap: A.gap * (net ? 1 : 2) * (covered ? 1 : 4) * busy, net, covered, busy };
 };
-IC.aspRelease = function (S, from, to) {
+/* ahead (s): a departure that may taxi out before its release (to wait in a holding bay) books the release now and
+   gets it back as a negative number: minus the seconds until it may take off */
+IC.aspRelease = function (S, from, to, ahead) {
   const N = S.asp; if (!N) return 0;
   const key = from.apt || from.name || `${Math.round(from.x)},${Math.round(from.y)}`;
   const hd = Math.atan2(to.y - from.y, to.x - from.x), g = IC.aspGap(S, from, to).gap;
   const L = N.dep[key] = (N.dep[key] || []).filter(d => S.time - d.t < 1800);
   let wait = 0;
   for (const d of L) if (Math.abs(U.angWrap(d.hd - hd)) < 0.8) wait = Math.max(wait, d.t + g - S.time);
+  if (wait > 0 && ahead && wait <= ahead) { N.stats.held++; L.push({ t: S.time + wait, hd }); return -Math.ceil(wait); }
   if (wait > 0) { N.stats.held++; return Math.ceil(wait); }
   L.push({ t: S.time, hd });
   return 0;
