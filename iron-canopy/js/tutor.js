@@ -73,7 +73,7 @@ IC.TUTORS = {
   follow: { title: 'Following an aircraft', guide: 'follow', trig: [['firstArrival']], when: S => civil(S) && !!S.first, steps: [
     { at: S => tailAt(S), title: 'Your first airliner', text: 'The camera is following it in. Click the aircraft for its panel.', on: [['select', 'tail'], ['select', 'track']], ok: S => !!(S.sel && (S.sel.kind === 'tail' || (S.sel.kind === 'track' && S.sel.ref.tail))) },
     { el: '#insp .turnsec', title: 'The turnaround', text: 'On the stand the panel lists each service as it works: stairs or bridge, bags, catering, the fuel truck, then the tug. Roll the wheel in to watch them.', on: [['ui', 'zin']], ok: () => !!(IC.cam && IC.cam.z >= 40) },
-    { el: '#insp [data-act="follow"]', title: 'Let it go', text: 'Stop following hands the camera back. Follow, on any airliner, picks one up again.', on: [['ui', 'follow'], ['ui', 'followOff']] }
+    { el: '#insp [data-act="follow"]', title: 'Let it go', text: 'Stop following hands the camera back. Follow, on any airliner, picks one up again.', on: [['ui', 'follow'], ['ui', 'followOff']], ok: S => !S.follow }
   ] },
   deals: { title: 'Airline offers', guide: 'deals', trig: [['request']], when: S => civil(S) && !!(S.av && S.av.requests.length), steps: [
     { el: '#pmarks .pmark.deal [data-act="pmGo"]', title: 'An offer', text: 'Offers show as green markers at the airport. Click this one to read it.', on: [['ui', 'pmGo'], ['ui', 'pmFix']], seen: '#insp .dl-needs' },

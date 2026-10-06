@@ -507,8 +507,11 @@ function arsenal() {
     </div>`;
   }).join('');
   $('arsenal').classList.add('glass');
-  $('arsenal').classList.toggle('min', ui.arMin);
-  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick one, then click the map</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
+  // (round 5c) in the civil act the equipment card stays folded to its tab unless a goal needs it (Chapter 3's radar),
+  // something is being placed from it, or the player opened it: it is not pinned over the map for the rest of the act
+  const civMin = IC.FOCUS.polish && IC.civilAct(S) && !ui.arOpen && !(S.mode2 && S.mode2.kind === 'deploy') && !(S.story && S.story.goals.some(g => g.id === 'radar' && !g.done));
+  $('arsenal').classList.toggle('min', ui.arMin || civMin);
+  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin || civMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin || civMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick one, then click the map</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
 }
 
 function layers() {
@@ -731,7 +734,7 @@ IC.hint = {
 ui.topHint = () => { let id = null; for (const [k, o] of hints) if (o.text) id = k; return id; };
 /* placed every frame (things on screen move, the map scrolls); each hint keeps its own elements */
 const hEls = new Map();
-const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
+const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor && o.look ? '<button class="btn sm primary" data-act="tutorLook" title="The place is off the screen: the camera goes there">Show me where</button>' : ''}${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
 ui.hintFrame = function () {
   const L = $('hints');
   for (const [id, h] of hEls) if (hints.get(id) !== h.o) { h.ring.remove(); if (h.note) h.note.remove(); hEls.delete(id); }
@@ -750,12 +753,16 @@ ui.hintFrame = function () {
     if (o.at) { const p = typeof o.at === 'function' ? o.at(S) : o.at; if (p) { const q = IC.toScreen(p.x, p.y), R = o.r || 26;
       // (off the screen: the ring waits at the edge, on the side it is)
       const qx = U.clamp(q.x, (ui.mapLeft || 0) + 40, W.width - (ui.mapRight || 0) - 40), qy = U.clamp(q.y, 90, W.height - 60);
-      r = { left: qx - R, top: qy - R, width: 2 * R, height: 2 * R }; } }
+      r = { left: qx - R, top: qy - R, width: 2 * R, height: 2 * R };
+      // (round 5c) off the screen, the note offers to take the camera there instead of a ring on the wrong thing
+      const off = qx !== q.x || qy !== q.y;
+      if (h.note && h.off !== off && o.tutor) { h.off = off; h.note.innerHTML = noteHTML(id, Object.assign({}, o, { look: off })); }
+      if (off && o.tutor) r = { left: W.width / 2 - 30, top: W.height * 0.42, width: 60, height: 1, offRing: true }; } }
     let inCard = false;
     if (!o.at) { const e = anchorEl(o.el); if (e && e.offsetParent !== null && !(covered && !$('warroom').contains(e))) { const b = e.getBoundingClientRect(); if (b.width) r = { left: b.left - W.left, top: b.top - W.top, width: b.width, height: b.height }; inCard = !!e.closest('#evcard, #cine, #unlock'); } }
     // a note waits while a card, the menu or a room covers the screen (unless it points into the room, or the card)
     if (r && o.text && blocked && !inCard) r = null;
-    h.ring.hidden = !r || !o.ring; if (h.note) h.note.hidden = !r;
+    h.ring.hidden = !r || !o.ring || !!r.offRing; if (h.note) h.note.hidden = !r;
     if (!r) continue;
     h.ring.classList.toggle('round', !!o.at);
     h.ring.style.cssText = `left:${r.left - 5}px;top:${r.top - 5}px;width:${r.width + 10}px;height:${r.height + 10}px`;

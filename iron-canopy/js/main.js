@@ -421,6 +421,7 @@ function onAct(e) {
   switch (a) {
     case 'tutorSkip': IC.tutorSkip(S); break;
     case 'tutorGo': ui.tutorGo(v); break;
+    case 'tutorLook': { const N = IC.tutorNow(S), st = N && IC.TUTORS[N.id].steps[N.i], q = st && st.at && st.at(S); if (q) { if (S.follow) IC.followStop(S); IC.flyTo(q.x, q.y, Math.max(IC.cam.z, 2.5)); } break; }
     case 'begin': if (/^showcase:/.test(v)) IC.begin('showcase', v.slice(9)); else IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
     case 'menu': ui.toggleMenu(); break;
@@ -431,7 +432,7 @@ function onAct(e) {
     case 'hintOk': IC.hint.hide(v, true); if (v.startsWith('game:') && S.hint) S.hint.done = true; break;
     case 'hintSkip': IC.hint.skipTour(v); break;
     case 'hintsOn': ui.hintsOn = !ui.hintsOn; ui.store.set('ic-hints-on', ui.hintsOn); if (!ui.hintsOn) for (const k of ['career1', 'war1']) IC.hint.skipTour(k); break;
-    case 'hintsReset': IC.hint.reset(); ui.firstRunDone = null; IC.toast(S, 'info', 'HINTS', 'Every hint will show again.'); break;
+    case 'hintsReset': IC.hint.reset(); ui.firstRunDone = null; if (S.tutor) { S.tutor.over = {}; S.tutor.done = {}; S.tutor.cur = null; } IC.toast(S, 'info', 'HINTS', IC.FOCUS.tutors ? 'Each tutorial will show again when you next meet what it teaches.' : 'Every hint will show again.'); break;
     case 'lesson': IC.begin('academy', v); return;
     case 'nextLesson': { const i = IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id); if (IC.LESSONS[i + 1]) IC.begin('academy', IC.LESSONS[i + 1].id); return; }
     case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
@@ -468,7 +469,7 @@ function onAct(e) {
     case 'zfull': IC.flyTo(IC.WW / 2, IC.WH / 2, IC.minZoom()); break;
     case 'layer': S.layers[v] = !S.layers[v]; break;
     case 'cat': ui.cat = v; ui.arMin = false; break;
-    case 'arMin': ui.arMin = !ui.arMin; break;
+    case 'arMin': if (IC.FOCUS.polish && IC.civilAct(S)) { ui.arOpen = document.getElementById('arsenal').classList.contains('min'); ui.arMin = false; } else ui.arMin = !ui.arMin; break;
     case 'briefMin': if (ui.compact()) ui.briefOpen = !ui.briefOpen; else ui.briefMin = !ui.briefMin; break;
     // (round 3) the one-line goal, message and feed open on demand
     case 'tipFold': ui.tipOpen = null; if (ui.tipSeen) for (const k of ui.tipSeen.keys()) ui.tipSeen.set(k, -1e9); break;

@@ -241,7 +241,7 @@ function chapterGoals(S, ch) {
     g({ id: 'deals', text: 'Six deals running at once', gives: 'Chapter 3: the airspace', check: () => dealsOn(S) >= 6, prog: () => `${dealsOn(S)} of 6` });
   } else if (ch === 1) {
     g({ id: 'approve', text: IC.FOCUS.hands ? 'Sign a deal with an airline: its offer shows on the map at the airport' : 'Sign a deal with an airline (Aviation room → Deals)', check: () => st.cnt.approve >= 1,
-      how: (IC.FOCUS.hands ? 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers ' : 'Airlines offer deals in the Aviation room (V): ') + 'so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the contract is shorter; give a little and it is longer.' });
+      how: (IC.FOCUS.hands ? 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers ' : 'Airlines offer deals in the Aviation room (V): ') + 'so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the deal is shorter; give a little and it runs longer.' });
     g({ id: 'hangar', text: 'Hangar space for the aircraft based here', check: () => { const h = hangarNeed(S); return h.have > 0 && h.have >= h.need; }, prog: () => { const h = hangarNeed(S); return building(A(), 'hangar') || `${h.have} of ${Math.max(1, h.need)} spaces`; },
       how: `${S.av.airlines[0] ? S.av.airlines[0].name : 'The flag carrier'} bases its aircraft here and must service them: its deal gives you a day to build a hangar. A hangar holds two aircraft; put it beside a taxiway, away from the runway.` });
     g({ id: 'tower', text: 'Build a control tower', check: () => built(A(), 'tower'), prog: () => building(A(), 'tower'),
@@ -349,7 +349,7 @@ function newAirline(S, kind, delay, hub, to) {
   const al = IC.avAddAirline(S, kind, ap, extra), T = { cargo: 'cargo', regional: 'turbo' }[kind] || 'narrow';
   const dest = to || (kind === 'foreign' ? ports.find(p => p.k === al.country) : U.pick(ports));
   IC.avRequest(S, al, ap, dest.apt ? dest : dest, T, kind === 'cargo' ? 1 : 2, kind === 'cargo' ? 'wants to start freight flights' : `wants to start flying to ${ap.name.replace(/ (International|Airport)$/, '')}`, MO(S, 1));
-  say(S, 'APT', `${al.name}, ${al.K.style.toLowerCase()}, ${kind === 'cargo' ? 'wants to fly freight from' : 'wants to fly to'} ${short(ap.name)}. Their offer is in the Aviation room, with what they need from us.${kind === 'cargo' && IC.aptCanTake(S, ap, IC.ACTYPES.cargo) ? ` ${short(ap.name)} cannot take a freighter yet: ${IC.aptCanTake(S, ap, IC.ACTYPES.cargo)}.` : ''}`);
+  say(S, 'APT', `${al.name}, ${al.K.style.toLowerCase()}, ${kind === 'cargo' ? 'wants to fly freight from' : 'wants to fly to'} ${short(ap.name)}. Their offer is on the map at the airport, with what they need from us.${kind === 'cargo' && IC.aptCanTake(S, ap, IC.ACTYPES.cargo) ? ` ${short(ap.name)} cannot take a freighter yet: ${IC.aptCanTake(S, ap, IC.ACTYPES.cargo)}.` : ''}`);
   return al;
 }
 // (the opener asks again after so many months)
@@ -561,7 +561,7 @@ IC.GUIDE = [
   { id: 'pavement', act: 1, ch: 0, t: 'Pavement', d: 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.' },
   { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (7) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
   { id: 'money1', act: 1, ch: 0, t: 'Money in, money out', d: 'At first the money comes from the Treasury: a large sum to build the national airport, and a small grant an hour. Once airlines fly, they pay a landing fee for every aircraft and a charge for every passenger. What you build costs a little every hour to keep (0.12% of its price), so build what the airlines will use. The Economy room (E) shows both sides.' },
-  { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the contract is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
+  { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the deal is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
   { id: 'runway', act: 1, ch: 1, t: 'Runway capacity', d: 'Without a tower, arrivals and departures are kept 8 minutes apart; with one, 2 minutes; an approach radar tightens it further. A taxiway to each runway end stops departures backtracking, and exits where landing aircraft slow down free the runway sooner.' },
   { id: 'follow', act: 1, ch: 1, t: 'Watching an aircraft', d: 'Click an airliner and press Follow: the camera stays with it from the approach to the stand and back out. On the stand its panel lists each service as it works (stairs or jet bridge, bags, catering, the fuel truck, the tug) with the time left; roll the wheel in to watch them. Drag the map or press Stop following to let it go.' },
   { id: 'growth1', act: 1, ch: 1, t: 'Milestones', d: 'At 2,000, 6,000, 15,000 and 50,000 passengers a day the airport reaches a milestone, and each opens a bigger piece: a terminal with a pier, a second runway, a round terminal. The card says why the airport needs it; the piece waits on the build bar until you place it.' },
@@ -771,7 +771,7 @@ function beatsFor(S, act) {
     B.push({ id: 'nudge', need: () => !st.opened && inAct(S) > MO(S, 1), gap: [0, 1800], repeat: [MO(S, 1), MO(S, 1.5)], run: () => {
       if (st.opened) return;
       st.standing -= 3;
-      say(S, 'MIN', st.cap ? `The Treasury asks when ${short(apName(S, st.cap))} opens. Every day it stands empty is money spent and nothing earned. What is it waiting for? (The goals panel says what is missing.)` : `Director, the cabinet asks where the national airport is. There is not even a site yet. Aviation room, Found a new airport.`);
+      say(S, 'MIN', st.cap ? `The Treasury asks when ${short(apName(S, st.cap))} opens. Every day it stands empty is money spent and nothing earned. The goals panel says what it still lacks.` : `Director, the cabinet asks where the national airport is. There is not even a site yet. Build bar (B), Found an airport.`);
     } });
     // the network grows by demand: a regional airport whose turboprops fly full asks for jets; another city beyond
     // reach asks for a field of its own once enough of its people want to fly
@@ -1147,7 +1147,7 @@ function actOneTick(S) {
   if (g2 && !g2.done && a2 && openTo(S, a2, 'narrow')) { g2.done = true; st.standing += 3; say(S, 'MIN', `${short(a2.name)} takes jets now. The region is pleased, and so am I.`); }
   else if (g2 && !g2.done && !g2.late && S.time > g2.due) { g2.late = true; st.standing -= 4; say(S, 'MIN', `${short(a2 ? a2.name : 'The regional airport')} still cannot take jets. The Governor has stopped asking me politely.`); }
   const c3 = st.contract3, a3 = st.apt3 && S.byId[st.apt3];
-  if (c3 && !c3.done && a3 && openTo(S, a3, c3.size === 'jets' ? 'narrow' : 'turbo')) { c3.done = true; st.standing += 3; say(S, 'MIN', `${short(a3.name)} is open. A country with more than one airport worth the name: well done.`); }
+  if (c3 && !c3.done && a3 && openTo(S, a3, c3.size === 'jets' ? 'narrow' : 'turbo')) { c3.done = true; st.standing += 3; say(S, 'MIN', `${short(a3.name)} is open. A country with two airports worth the name. The regions noticed.`); }
   else if (c3 && !c3.done && !c3.late && S.time > c3.due) { c3.late = true; st.standing -= 4; }
   if (!st.feeHist.length || S.time - st.feeHist[st.feeHist.length - 1].t >= H) {
     st.feeHist.push({ t: S.time, v: S.av.feeTotal || 0 });
@@ -1160,7 +1160,7 @@ function foundedHere(S, ap) {
   if (!st.cap) {
     if (U.dist(ap, cc) <= 600) {
       st.cap = ap.id; ap.template = 'intl'; S.asp.zs = null;
-      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected, and its build bar is open along the bottom of the screen: pick Runway under Runways.`);
+      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself: the surveyed one is placed on the map, and Build lays it. Blueprints has the whole Starter airport at one price.`);
     } else say(S, 'MIN', `${ap.name} is ${U.km(U.dist(ap, cc))} from ${cc.name}. The national airport has to be within 60 km of the capital, where the passengers are. Found it closer in; that one can wait.`);
   } else if (st.city2 && !st.apt2 && U.dist(ap, S.byId[st.city2]) <= 600) st.apt2 = ap.id;
   else if (st.city3 && !st.apt3 && U.dist(ap, S.byId[st.city3]) <= 600) st.apt3 = ap.id;

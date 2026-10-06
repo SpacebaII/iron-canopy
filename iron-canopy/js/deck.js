@@ -130,7 +130,7 @@ EV.bird = (S, id, cs) => { const ap = S.byId[id]; cs = cs || 'An airliner';
       { t: 'Cut the grass shorter: ₭2M', tip: 'It helps a little.', fx: () => { money(S, -2); } }
     ] }; };
 EV.airshow = (S, id, cityId) => { const ap = S.byId[id], c = S.byId[cityId] || town(S, ap);
-  return { title: 'An airshow?', who: `${c.name} city council`, at: pt(ap), text: `${c.name} asks to hold an airshow at ${short(ap.name)} this afternoon: the national display team, stalls on the apron, thousands of visitors. The runway would close to airlines for three hours.`,
+  return { title: 'An airshow request', who: `${c.name} city council`, at: pt(ap), text: `${c.name} asks to hold an airshow at ${short(ap.name)} this afternoon: the national display team, stalls on the apron, thousands of visitors. The runway would close to airlines for three hours.`,
     opts: [
       { t: 'Host it', tip: `The runway closes three hours. ₭40M in tickets; ${c.name}’s morale +6. The display team flies in.`, fx: () => { ap.closedT = Math.max(ap.closedT || 0, S.time + 3 * 3600); money(S, 40); morale(c, 6); IC.rareVisit(S, 'display', ap.id); } },
       { t: 'Decline: the runway is for the airlines', tip: `${c.name}’s morale −2.`, fx: () => { morale(c, -2); } }
@@ -169,7 +169,7 @@ EV.film = (S, id) => { const ap = S.byId[id];
   return { title: 'A film crew', who: 'A film studio', at: pt(ap), text: `A studio wants to shoot a chase on ${short(ap.name)}’s apron tonight: one stand closed from dusk to dawn, ₭15M for the trouble.`,
     opts: [
       { t: 'Let them film: ₭15M', tip: 'One free stand closes for the night (it shows on the apron).', fx: () => { money(S, 15); const s = IC.aptStands(ap).find(x => !x.occ && x.linked !== false && x.hp > 0); if (s) { s.occ = 'film'; IC.later(S, 10 * 3600, 'deckFree', S, ap.id, s.id); } } },
-      { t: 'No: the apron is for aircraft', tip: 'Nothing happens.', fx: () => {} }
+      { t: 'No: the apron is for aircraft', tip: 'They shoot it at an airfield abroad. The stand stays ours.', fx: () => {} }
     ] }; };
 IC.H.deckFree = (S, apId, sid) => () => { const ap = S.byId[apId], s = ap && IC.aptStands(ap).find(x => x.id === sid); if (s && s.occ === 'film') s.occ = null; };
 EV.medical = (S, id) => { const ap = S.byId[id];
@@ -182,7 +182,7 @@ EV.charter = (S, id, alId) => { const ap = S.byId[id], al = IC.avAirline(S, alId
   return { title: 'A charter wave', who: 'A tour operator', at: pt(ap), text: `A tour operator wants a season of charters to the sun from ${short(ap.name)}, flown by ${al.name}: two more aircraft at our stands on weekends.`,
     opts: [
       { t: 'Take them', tip: 'The offer shows at the terminal, with what it needs.', fx: () => { const P = IC.avPorts(S); IC.avRequest(S, al, ap, U.pick(P), 'narrow', 2, 'wants to fly a season of charters', IC.MO(S, 0.5)); } },
-      { t: 'Not this season', tip: 'Nothing happens.', fx: () => {} }
+      { t: 'Not this season', tip: 'The charters go from a neighbour’s airport, and their fees with them.', fx: () => {} }
     ] }; };
 EV.noise = (S, id, cityId) => { const ap = S.byId[id], c = S.byId[cityId] || town(S, ap);
   return { title: 'Noise at night', who: `${c.name} residents’ association`, at: pt(c), text: `People under the approach to ${short(ap.name)} say the night flights keep them awake, and ${c.name}’s council has taken it up.`,
@@ -207,13 +207,13 @@ EV.openday = (S, id, cityId) => { const ap = S.byId[id], c = S.byId[cityId] || t
   return { title: 'An open day', who: `${c.name} schools`, at: pt(ap), text: `Schools in ${c.name} ask whether 3,000 children can see ${short(ap.name)} on Saturday: the fire station, the tower, an airliner on its stand.`,
     opts: [
       { t: 'Open the gates: ₭3M', tip: `${c.name}’s morale +4; the Minister +2.`, fx: () => { money(S, -3); morale(c, 4); conf(S, 2); } },
-      { t: 'Not while we are this busy', tip: 'Nothing happens.', fx: () => {} }
+      { t: 'Not while we are this busy', tip: 'The teachers are disappointed. The day runs as planned.', fx: () => {} }
     ] }; };
 EV.vintage = (S, id) => { const ap = S.byId[id];
   return { title: 'A vintage airliner', who: 'The vintage aircraft society', at: pt(ap), text: `A restored four-engine airliner from the 1950s is on a tour, and its society asks to show it at ${short(ap.name)} for a day.`,
     opts: [
       { t: 'Welcome it: ₭2M for the stand and the stewards', tip: 'It lands and parks, and people come out to watch: the nearest town’s morale +3.', fx: () => { money(S, -2); morale(town(S, ap), 3); IC.rareVisit(S, 'vintage', ap.id); } },
-      { t: 'No room this week', tip: 'Nothing happens.', fx: () => {} }
+      { t: 'No room this week', tip: 'It lands somewhere else on its tour.', fx: () => {} }
     ] }; };
 EV.spotters = (S, id, cityId) => { const ap = S.byId[id], c = S.byId[cityId] || town(S, ap);
   return { title: 'Plane spotters', who: `${c.name} aviation club`, at: pt(ap), text: `Spotters have been parking on the verge by ${short(ap.name)}’s runway to watch the jets. They ask for a proper viewing area with a car park.`,

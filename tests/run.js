@@ -5354,7 +5354,7 @@ test('round 5c: every civil tutorial step advances on its real action, one at a 
       assert(IC.tutorWhen(S, id), `${id} is not wanted after ${trig}`);
     }
     S.av.requests.pop();
-    IC.tutorStart(S, 'follow'); S.sel = { kind: 'tail', ref: {} }; IC.emit(S, 'select', S.sel); at('follow', 1); ui('zin'); at('follow', 2); ui('follow'); assert(IC.tutorSeen(S, 'follow'), 'follow');
+    S.follow = { tl: 'x' }; IC.tutorStart(S, 'follow'); S.sel = { kind: 'tail', ref: {} }; IC.emit(S, 'select', S.sel); at('follow', 1); ui('zin'); at('follow', 2); ui('follow'); S.follow = null; assert(IC.tutorSeen(S, 'follow'), 'follow');
     S.sel = null;
     IC.tutorStart(S, 'deals'); ui('pmGo'); at('deals', 1); IC.emit(S, 'approve', {}); assert(IC.tutorSeen(S, 'deals'), 'deals');
     IC.tutorStart(S, 'milestone'); ui('buildPick', 'tpier'); at('milestone', 1); IC.emit(S, 'bld', { act: 'cancel' }); assert(IC.tutorSeen(S, 'milestone'), 'milestone');
@@ -5447,6 +5447,18 @@ test('round 5c: no two map labels overlap at the airport zooms', () => {
     const all = IC.LBL.boxes;
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) { const a = all[i], b = all[j]; if (i < L.length && j < L.length) continue; assert(!(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]), `z ${z}: placed words overlap`); }
   }
+});
+
+test('round 5c: textlint finds none of the banned phrases, in the source or in any tutorial step', () => {
+  const T = require('../tools/textlint.js');
+  // the rule is live: it catches what it should, and not what it should not
+  for (const bad of ["Let's build your airport!", 'The new apron joins seamlessly.', 'Great job, Director.', 'A robust terminal.', 'Simply click the map.']) { const out = []; T.check(bad, 'x', out); assert(out.some(o => /filler/.test(o)), `not caught: ${bad}`); }
+  for (const good of ['Press Build, or Enter.', 'Fog will lie over the field from 04:00 to 10:00.', 'Unlocked']) { const out = []; T.check(good, 'x', out); assert(!out.length, `caught by mistake: ${good}: ${out[0]}`); }
+  const P = T.lintSource().filter(p => /filler/.test(p));
+  assert(!P.length, `${P.length} banned phrases, first: ${P[0]}`);
+  // the tutorials' words, as the page shows them (some are made from the state)
+  const S = IC.newGame({ seed: 5, mode: 'story', preset: 'network' }); IC.S = S;
+  for (const id in IC.TUTORS) for (const st of IC.TUTORS[id].steps) { const out = []; T.check(IC.tutorText(S, st) + ' ' + st.title, id, out); assert(!out.length, out[0]); assert(!/!/.test(IC.tutorText(S, st)), `${id}: an exclamation mark`); }
 });
 
 /* ---------- run ---------- */

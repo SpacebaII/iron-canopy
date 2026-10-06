@@ -60,6 +60,8 @@ fs.mkdirSync(OUT, { recursive: true });
       if (el) { await click(el); return 'clicked the ringed button'; }
     }
     if (at) {
+      // (off the screen: the note's own button takes the camera there first)
+      const look = await page.$('#hints [data-act="tutorLook"]'); if (look) { await click(look); await page.waitForTimeout(1500); return 'pressed Show me where'; }
       if (id === 'pieces' || id === 'buildesc') {
         // beside the parallel taxiway: the first spot the plan fits, as a player tries one
         const q = await ev(`(() => { const S = IC.S, m = S.mode2; if (!m || m.kind !== 'build') return null; if (m.set && m.at) return { x: m.at.x + 0.6, y: m.at.y + 0.4 };

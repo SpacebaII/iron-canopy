@@ -636,7 +636,7 @@ IC.aviation = function (S, dt) {
       if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) {
         const truck = ap.truckWait === S.time;
         holdOn(S, tl, ap, truck ? 'truck' : 'fuel', 300, truck ? 'every fuel truck is busy' : 'the fuel tanks are empty'); IC.aptFuelWait(S, ap, 300);
-        if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', truck ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); }
+        if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', truck ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The fuel farm is empty or wrecked.`, ap); }
         continue;
       }
       tl.fuelled = true;

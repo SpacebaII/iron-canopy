@@ -1049,3 +1049,25 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .li.contract.one small{grid-column:1/-1;font-size:.8rem}
 .app.pol .prow{grid-template-columns:minmax(0,1fr)}
 .app.pol .prow>.btn{justify-self:start}
+/* (round 5c) the day board's chart at its own size: hours that read, bars that fill it */
+.app.pol .dayb .tl-svg.day{height:10.5rem}
+.app.pol .tl-svg text{font-size:9.5px;fill:var(--muted)}
+.app.pol .tl-svg text.capt{fill:var(--dim);font-size:8.5px}
+
+/* ---------- (round 5c) the menus' rules, in one place ----------
+   Spacing: 4, 6, 8, 12 and 16 px (.25, .4, .55, .8, 1.1rem). Type: 15 px base; panel text .9rem, small print .8rem,
+   row labels .7rem capitals with letter-spacing, numbers in the mono face with tabular figures, titles in the display
+   face. Weights: 600 for what can be pressed and for names, 400 for prose. Colours keep their one meaning (blue: ours
+   and pressable; green: good, civil; amber: a warning; red: hostile, bad; gold: money). Every control has the same
+   four states: rest, hover (lighter well), pressed (a pixel down), disabled (40%, not-allowed), and a visible focus
+   ring for the keyboard. Numbers carry their units: ₭M, km, min, an hour, a month. */
+.app.pol button:focus-visible,.app.pol [role=button]:focus-visible,.app.pol .tile:focus-visible{outline:2px solid var(--friend);outline-offset:2px}
+.app.pol .act:active:not(:disabled),.app.pol .btn:active:not(:disabled),.app.pol .chip:active:not(:disabled),.app.pol .howbtn:active,.app.pol .insp .more:active,.app.pol .pm-fix:active{transform:translateY(1px)}
+.app.pol .howbtn:disabled,.app.pol .ib:disabled,.app.pol .pm-fix:disabled,.app.pol .insp .more:disabled{opacity:.4;cursor:not-allowed}
+.app.pol .howbtn,.app.pol .insp .more{font-size:.8rem;font-weight:600}
+.howrow{display:flex;gap:.35rem;flex-wrap:wrap}
+/* nothing clipped: a goal's reward wraps under it instead of running off the panel; long airport names take two
+   lines at a size that fits */
+.app.pol .goalrow .gives{white-space:normal}
+.app.pol .ihead h2{font-size:1.3rem;overflow-wrap:anywhere}
+.app.pol .ihead p{line-height:1.3}
