@@ -334,10 +334,11 @@ IC.sense = function (S, dt) {
     if (t.dead) continue;
     const wasDet = t.det;
     t.fcBy.length = 0; t.vis = false; t.inView = false;
-    let nctr = 0, iff = false;
+    let nctr = 0, iff = false, civ = null, mil = false;
     for (const s of sensorsAt(G, L, t.x, t.y)) {
       if (!detects(s, t)) continue;
       t.inView = true;
+      if (s.part || (s.unit && s.unit.d.civil)) civ = civ || s; else mil = true;
       const r = U.dist(s, t);
       if (s.eo || (s.eyes && r < s.eyes)) t.vis = true;
       if (s.org) t.fcBy.push(s.unit.id);
@@ -369,7 +370,7 @@ IC.sense = function (S, dt) {
     if (t.inView || t.satOnly) identify(S, t, dt, nctr, iff);
     if (t.det) {
       t.lost = 0;
-      if (!t.tn) { t.tn = S.nextTN++; t.firstDet = S.time; t.firstIn = IC.inHome(t.x, t.y); onNewTrack(S, t); }
+      if (!t.tn) { t.tn = S.nextTN++; t.firstDet = S.time; t.firstIn = IC.inHome(t.x, t.y); onNewTrack(S, t); if (civ && !mil && !t.d.civil) civilFirst(S, t, civ); }
     } else if (t.tn) t.lost += dt;
     steady(S, t, dt);
     if (t.blip > 0) t.blip = Math.max(0, t.blip - dt * 0.6);
@@ -441,6 +442,15 @@ IC.weaponRelease = function (S, t) {
   if (first) IC.emit(S, 'weaponRelease', t);
 };
 
+/* a civil radar, built for air traffic control, saw it first and alone: said once in a while for each radar (brief 25) */
+function civilFirst(S, t, s) {
+  const key = s.part ? s.part.id : s.unit.id, C = S.civSeen || (S.civSeen = {});
+  if (C[key] != null && S.time - C[key] < 6 * 3600) return;
+  C[key] = S.time;
+  const who = s.part ? `the approach radar at ${s.ap.name}` : s.unit.name;
+  IC.log(S, 'id', 'RADAR', `TN ${t.tn} was seen first by ${who}, a civil radar built for air traffic control: no military radar covers it there. Civil radars feed the air picture, and the enemy can find them too.`, t);
+  IC.emit(S, 'civilFirst', { t, part: s.part || null, unit: s.unit || null });
+}
 function onNewTrack(S, t) {
   const c = t.d.cls;
   if (t.d.civil) return;
