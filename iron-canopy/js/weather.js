@@ -107,7 +107,10 @@ IC.weather = function (S, dt) {
     w.forecast = pickNext(k, S);
     // a new air mass: the wind picks a new strength (stronger in winter) and swings round
     if (!S.wind.hold) { const K = IC.SKY[k]; S.wind.tgt = U.rand(K.wind[0], K.wind[1]) * Z.wind; S.wind.veer = U.rand(-0.7, 0.7); }
-    IC.log(S, 'info', 'WEATHER', `${IC.WEATHER[k].name}${IC.WEATHER[k].heli ? '' : ': helicopters grounded'}. Wind ${IC.windText(S)}.`);
+    // (round 3) the civil act has no helicopters, and one weather line a day is enough unless it shuts runways
+    const civ = IC.civilAct(S), day = Math.floor(S.time / 86400);
+    if (!civ) IC.log(S, 'info', 'WEATHER', `${IC.WEATHER[k].name}${IC.WEATHER[k].heli ? '' : ': helicopters grounded'}. Wind ${IC.windText(S)}.`);
+    else if (w.logD !== day || !IC.WEATHER[k].heli) { w.logD = day; IC.log(S, 'info', 'WEATHER', `${IC.WEATHER[k].name}. Wind ${IC.windText(S)}.`); }
     IC.emit(S, 'weather', k);
   }
   const W = S.wind;

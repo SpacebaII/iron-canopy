@@ -920,3 +920,99 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 #bldgo .btn.go:hover:not(:disabled){background:#8af0a8}
 #bldgo .btn.go:disabled{background:rgba(255,91,79,.35);color:#ffd6d0;opacity:1}
 #bldgo em{flex-basis:100%;font-style:normal;font-size:.8rem;color:#ffb6ad;padding:0 .3rem .1rem}
+
+/* ---------- (round 3) the map first: the Career's compact screen (IC.FOCUS.screen) ---------- */
+.app.compact{--top:6.6rem}
+.app.compact .leftcol{width:21rem;gap:6px;max-height:calc(100% - var(--top) - 18rem)}
+.app.compact .brief.next{min-height:0;padding:.5rem .75rem .55rem;gap:.3rem}
+.app.compact .brief.next h3{font-size:.82rem;letter-spacing:.14em}
+.app.compact .brief.next h3 em{font-size:.7rem}
+.app.compact .brief.next .goalrow{padding:.2rem .3rem;font-size:.92rem}
+.app.compact .brief.next .goals{display:grid;gap:2px;max-height:16rem;overflow:auto}
+.app.compact .brief.next .hint{font-size:.84rem;margin:0}
+.app.compact .brief.next .hint.gtip{color:#cfe0ea}
+.howbtn{justify-self:start;font-size:.78rem;color:var(--friend);padding:.05rem .45rem;border-radius:6px;background:var(--well)}
+.howbtn:hover{background:var(--well-2)}
+.app.compact .comms{padding:0;gap:0}
+.cline{display:grid;grid-template-columns:auto auto 1fr;gap:.45rem;align-items:center;text-align:left;padding:.35rem .6rem;border-radius:14px;width:100%;font-size:.86rem}
+.cline:hover{background:var(--well)}
+.cline .av{width:1.6rem;height:1.6rem;font-size:.62rem}
+.cline b{font-weight:600;white-space:nowrap}
+.cline .ct{color:#c9d8e2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.app.compact .comms:has(.who){padding:.6rem .8rem;gap:.4rem}
+.app.compact .comms p{font-size:.92rem;min-height:0}
+.feed.fline{position:static;width:auto;display:grid;gap:4px;justify-items:stretch;pointer-events:auto}
+.feed.fline:empty{display:none}
+.feed.fline .toast{grid-template-columns:auto 1fr;padding:.3rem .6rem;font-size:.84rem;border-radius:12px;animation:none}
+.feed.fline .toast span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.feed.fline .fmore{justify-self:start;font-family:var(--mono);font-size:.72rem;color:var(--muted);padding:.1rem .5rem;border-radius:999px;background:var(--glass-2)}
+.app.compact .insp{width:21rem;bottom:auto;max-height:calc(100% - var(--top) - 12px)}
+.app.compact .insp .ibody{min-height:0}
+.app.compact .insp.min .ibody,.app.compact .insp.min .itabs,.app.compact .insp.min .ihead+div{display:none}
+.app.compact .insp.min .ihead{padding:.45rem .6rem}
+.app.compact .insp.min .ihead h2{font-size:1.05rem}
+.app.compact .insp.min .ihead .badge{min-width:2.4rem;height:1.8rem}
+.ihead .xs{display:flex;gap:4px;align-self:start}
+.app.compact.has-insp .feed:not(.fline){right:calc(21rem + 28px)}
+.app.compact:not(.mini-on) #mini{display:none}
+.app:not(.compact) .mapctl [data-act="miniTog"]{display:none}
+.app.compact.mini-on .mapctl [data-act="miniTog"]{color:var(--friend)}
+.cine.side,.evcard.side{left:calc(4.1rem + 24px);transform:none;width:min(24rem,36%);text-align:left;padding:.9rem 1.05rem;gap:.3rem;border-radius:14px;animation:fadeIn .25s var(--ease)}
+.cine.side h2,.evcard.side h2{font-size:1.35rem;letter-spacing:.08em;text-shadow:none}
+.cine.side p,.evcard.side p{margin:.15rem 0 0;font-size:.92rem;max-width:none}
+.cine.side .cfoot{justify-content:flex-start}
+.cine.side small,.evcard.side small{font-size:.7rem;letter-spacing:.14em}
+.evcard.side .opts{gap:4px;margin-top:.2rem}
+.app.compact .bb-opts{flex-wrap:nowrap;max-width:min(60rem,100%);padding:.3rem .7rem}
+.app.compact .bb-say.one{flex-basis:auto;max-width:40rem}
+.app.compact .bb-opts>em{white-space:nowrap;font-size:.8rem}
+.app.compact .bb-main{justify-self:start;max-width:100%}
+
+/* ---------- (round 3) problems on the map, the airport panel, the chain ---------- */
+.pmarks{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+.pmark{position:absolute;left:0;top:0;will-change:transform}
+.pmdot{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;border:2px solid var(--amber);box-shadow:0 0 0 3px rgba(0,0,0,.35),0 0 14px rgba(242,180,65,.6);animation:pmPulse 1.6s ease-in-out infinite}
+.pmark.bad .pmdot{border-color:var(--hostile);box-shadow:0 0 0 3px rgba(0,0,0,.35),0 0 14px rgba(255,91,79,.7)}
+.pmark.deal .pmdot{border-color:var(--civil);box-shadow:0 0 0 3px rgba(0,0,0,.35),0 0 14px rgba(127,232,176,.6)}
+@keyframes pmPulse{50%{transform:scale(1.25)}}
+.pmbox{position:absolute;left:0;top:0;pointer-events:auto;display:flex;align-items:stretch;border-radius:10px;background:rgba(8,14,20,.92);box-shadow:0 6px 20px rgba(0,0,0,.5);border-left:3px solid var(--amber);max-width:27rem;white-space:nowrap}
+.pmark.bad .pmbox{border-left-color:var(--hostile)}.pmark.deal .pmbox{border-left-color:var(--civil)}
+.pm-t{padding:.3rem .55rem;font-size:.82rem;text-align:left;min-width:0}
+.pm-t b{font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis}
+.pm-t:hover{background:var(--well)}
+.pm-fix{padding:.3rem .6rem;font-size:.8rem;font-weight:600;color:#9af2b4;border-left:1px solid rgba(255,255,255,.08);border-radius:0 10px 10px 0}
+.pm-fix:hover{background:rgba(111,230,140,.16)}
+.app.building .pmarks,.app.has-room .pmarks{display:none}
+.anums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.anums>div{background:var(--well);border-radius:10px;padding:.45rem .55rem;display:grid;gap:1px}
+.anums small{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.anums b{font-family:var(--mono);font-weight:500;font-size:1.15rem}
+.anums em{font-style:normal;font-size:.72rem;color:var(--dim);line-height:1.2}
+.chainline{display:grid;gap:.35rem;font-size:.84rem;color:#cfe0ea;background:rgba(127,232,176,.07);border-radius:10px;padding:.45rem .6rem}
+.chainline .btn{justify-self:start}
+.prow{display:grid;grid-template-columns:1fr auto;gap:.5rem;align-items:center;padding:.4rem .5rem;border-radius:10px;background:var(--well);border-left:3px solid var(--amber);margin-bottom:4px}
+.prow.bad{border-left-color:var(--hostile)}
+.prow b{font-size:.88rem;font-weight:600;display:block}
+.prow small{font-size:.78rem;color:var(--muted);display:block;line-height:1.3}
+.insp .more{justify-self:start;font-size:.8rem;color:var(--friend);padding:.15rem .4rem;border-radius:6px;display:block;margin:.15rem 0}
+.insp .more:hover{background:var(--well)}
+.insp p.now{margin:0 0 .35rem;font-size:.9rem;color:#d7e5ee}
+.app.compact .leftcol{overflow:clip}
+.app.compact .brief.next{flex:none;overflow:visible}
+.app.compact .brief.next .hint.gtip{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.app.compact .brief.next .hint.gtip.open{display:block}
+.app.compact .stat em{white-space:nowrap}
+.app.compact.bb-open .leftcol>.brief.next{max-height:4.8rem;overflow:hidden}
+.app.compact.bb-open .leftcol:hover>.brief.next{max-height:40rem}
+.app.compact .brief.next h3{white-space:nowrap}
+.app.compact .brief.next h3 em{overflow:hidden;text-overflow:ellipsis}
+.insp .deal{padding:.6rem .65rem;gap:.4rem;margin-bottom:6px;min-width:0}
+.insp .dl-route .code{font-size:1.05rem}
+.insp .dl-route .arrow{flex-basis:1.6rem}
+.insp .dl-terms{grid-template-columns:repeat(2,minmax(0,1fr))}
+.insp .dl-terms b{font-size:.84rem}
+.insp .dl-neg .seg{flex-wrap:wrap;border-radius:12px}
+.insp .dl-head em{margin-left:0}
+.insp .deal .acts{flex-wrap:wrap}
+.insp .li.contract .la{flex-wrap:wrap}
+.app.compact .stat:not(.role) strong{white-space:nowrap}

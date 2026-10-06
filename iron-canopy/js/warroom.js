@@ -169,6 +169,9 @@ function dealCard(q) {
     <p class="dl-small">Brings about ${brings || 'little'} a day, and raises our name when it runs its term. Each late flight costs us ${U.money(q.terms.late)}, each cancelled one ${U.money(q.terms.cancel)}.${q.terms.grudge ? ` ${esc(al.name)} remembers ${q.terms.grudge} hours on the ground under our closed airspace: it bends less on charges.` : ''}</p>
     <div class="acts"><button class="btn primary" data-act="avYes" data-id="${q.id}" ${block || !k.ok ? 'disabled' : ''} title="${esc(block ? block.text : k.ok ? 'Sign on these terms' : k.why)}">Sign</button><button class="btn" data-act="avNo" data-id="${q.id}">Turn down</button>${block ? `<span class="amber dl-why">${esc(block.text)}</span>` : !k.ok ? `<span class="hostile dl-why">They will not sign: ${esc(k.why)}.</span>` : ''}</div></div>`;
 }
+/* (round 3) the same deal card and contract line in the airport panel: a deal is signed where the airport is */
+IC.dealCardHTML = (st, q) => { S = st; return dealCard(q); };
+IC.contractHTML = (st, d) => { S = st; return contractRow(d); };
 function contractRow(d) {
   const al = IC.avAirline(S, d.al), f = U.clamp((S.time - d.t0) / Math.max(1, d.end - d.t0), 0, 1), left = Math.max(0, d.end - S.time);
   const dots = Array.from({ length: IC.DEAL.strikes }, (_, i) => `<i class="${i < d.strikes ? 'on' : ''}"></i>`).join('');
@@ -308,6 +311,13 @@ function staff() {
       ${n === st.act ? `<div class="bars one"><span>Goals</span>${bar(done / Math.max(1, st.goals.length), 'var(--amber)')}<span>${done}/${st.goals.length}</span></div>` : ''}
       ${opens.length ? `<ul class="opens">${opens.map(([k, t]) => `<li class="${k}">${n > st.act ? ui.icon('lock', 'sm') : ''}${esc(t)}</li>`).join('')}</ul>` : ''}</div>`;
   }).join('');
+  // (round 3) the civil act: the Minister's confidence and the chapters; the war's acts, tension, command points,
+  // doctrine, delegates and requests come with Act II
+  if (IC.civilAct(S)) return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3>
+      <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span></div>
+      ${kv([['Standing', esc(IC.storyDismissal(S).text)]])}<p class="hint">Finish each chapter's goals (the Next goal line, top left) to move on. The story also moves on by itself if you take too long.</p></div>
+    ${chapters ? `<div class="card wide"><h3>Act I · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
+    <div class="card wide"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
   const nextHow = st.act < 4 ? `<p class="hint">Finish this act's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
@@ -423,8 +433,14 @@ function economy() {
   const val = v => `<td class="r ${v >= 0 ? 'ok' : 'hostile'}">${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}</td>`;
   const mline = (l, sign) => `<button class="mline" data-act="why" data-v="${l.k}" aria-expanded="${ui.why === l.k}"><span>${esc(l.name)}</span><b class="${sign > 0 ? 'ok' : 'hostile'}">${sign > 0 ? '+' : '−'}${U.money(l.v)}</b></button>${ui.why === l.k ? `<p class="hint mwhy">${esc(l.why)}</p>` : ''}`;
   const warn = M.net < 0 && M.left < 24;
+  // (round 3) the Career leads with the one money line, the same as the top bar's: this month's in and out, from
+  // the statement; the hourly lines below are what runs all the time, building not counted
+  const ML = IC.FOCUS.chain && S.mode === 'story' && IC.moneyLine ? IC.moneyLine(S) : null;
+  const mtop = ML ? `<div class="mtop"><div><small>Treasury</small><strong>${U.money(S.budget)}</strong></div><div><small>This month</small><strong class="${ML.net >= 0 ? 'ok' : 'hostile'}">${ML.sign}</strong></div><p class="${ML.net >= 0 ? 'ok' : 'amber'}">${esc(ML.text)}</p></div>
+    <p class="hint">Running all the time, an hour (building and buying not counted): ${M.net >= 0 ? '+' : '−'}${U.money(Math.abs(M.net))}. ${esc(M.forecast.replace(/^Growing by about/, 'That alone would add about').replace(/^Money runs out/, 'That alone would empty the treasury'))}</p>`
+    : `<div class="mtop"><div><small>Treasury</small><strong>${U.money(S.budget)}</strong></div><div><small>An hour, now</small><strong class="${M.net >= 0 ? 'ok' : 'hostile'}">${M.net >= 0 ? '+' : '−'}${U.money(Math.abs(M.net))}</strong></div><p class="${warn ? 'hostile' : M.net < 0 ? 'amber' : 'ok'}">${esc(M.forecast)}${warn ? ' Put units back in the reserve, raise airport charges, or borrow below.' : ''}</p></div>`;
   const head = `<div class="card wide money"><h3>Money<em>click a line for the reason</em></h3>
-    <div class="mtop"><div><small>Treasury</small><strong>${U.money(S.budget)}</strong></div><div><small>An hour, now</small><strong class="${M.net >= 0 ? 'ok' : 'hostile'}">${M.net >= 0 ? '+' : '−'}${U.money(Math.abs(M.net))}</strong></div><p class="${warn ? 'hostile' : M.net < 0 ? 'amber' : 'ok'}">${esc(M.forecast)}${warn ? ' Put units back in the reserve, raise airport charges, or borrow below.' : ''}</p></div>
+    ${mtop}
     <div class="mcols"><div><h4>Coming in <em>+${U.money(M.inH)}/h</em></h4>${M.inc.map(l => mline(l, 1)).join('') || '<p class="hint">Nothing.</p>'}</div>
     <div><h4>Going out <em>−${U.money(M.outH)}/h</em></h4>${M.out.map(l => mline(l, -1)).join('') || '<p class="hint">Nothing.</p>'}</div></div>
     <p class="hint">Hourly lines are what runs all the time. Buying and building are paid when you do them${IC.storyLock(S, 'statement') ? '' : ' and show in the month below'}.</p></div>`;

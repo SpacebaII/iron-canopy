@@ -19,8 +19,17 @@ IC.WAIT = { speed: 432, step: 8 };
    time. Anything hidden here is hidden, never deleted: its code and tests stay, and false brings it back.
    pieces: the build bar opens on whole pieces (pieces.js); the parts one by one fold under Detail
    firstLanding: the Career's first arrival eases the clock to 1× and the camera follows it in (aptlife.js)
-   life: turnarounds, people and cars drawn on the map close in (render-airport.js) */
-IC.FOCUS = { pieces: true, firstLanding: true, life: true };
+   life: turnarounds, people and cars drawn on the map close in (render-airport.js)
+   (round 3, docs/focus/round-3.md; in the Career only)
+   screen: the map first: one "Next goal" line, one message line, a narrow inspector that folds to a strip, cards
+     beside what they talk about, no letterbox bands
+   calm: the civil act shows nothing military: staff, controls, rooms and words of later acts wait for their act
+   hands: the airport is the interface: one airport panel, parts with their live state and actions, problems
+     marked on the map where they happen with a one-click fix, deals signed from there (problems.js)
+   chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js) */
+IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true };
+/* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */
+IC.civilAct = S => !!(IC.FOCUS.calm && S && S.mode === 'story' && S.story && S.story.act < 2);
 
 /* Two clocks. The live clock is S.time in game seconds: aircraft, weather, day and night. The calendar counts months
    and years on top of it: a month is DAYS_PER_MONTH live days, so a Career can span ten years while every flight

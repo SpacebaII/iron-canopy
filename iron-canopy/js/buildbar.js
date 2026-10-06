@@ -336,7 +336,7 @@ IC.renderBuildBar = function (S) {
   const bb = IC.bb, sa = selAp(S);
   // selecting one of our airports brings the bar up (unless it was closed while that airport was selected)
   // (not in the Academy: its lessons are about the air defence, and the bar would cover their hints)
-  if (sa && !sa.locked && sa.id !== bb.selId && bb.closed !== sa.id && S.mode !== 'academy' && !S.range) bb.open = true;
+  if (sa && !sa.locked && sa.id !== bb.selId && bb.closed !== sa.id && S.mode !== 'academy' && !S.range && !(IC.ui.hands && IC.ui.hands())) bb.open = true;
   // (the bar keeps the airport it builds on when the selection goes: closing the panel does not empty it)
   if (sa && !sa.locked) bb.ap = sa;
   bb.selId = sa ? sa.id : null;

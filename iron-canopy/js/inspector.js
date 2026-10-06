@@ -19,7 +19,7 @@ IC.unitState = function (u) {
   if (u.emitter) return [u.radarOn ? 'Radiating' : u.emcon === 'ambush' ? 'Ambush' : 'Silent', u.radarOn ? 'ok' : 'fr'];
   return ['Ready', 'ok'];
 };
-const head = (icon, title, sub, pill, cls) => `<div class="ihead">${icon}<div><h2>${esc(title)}</h2><p>${sub}</p></div><button class="x" data-act="desel" aria-label="Close" title="Close (Esc)">✕</button></div>${pill ? `<div style="padding:0 .95rem .5rem"><span class="pill ${cls || ''}">${esc(pill)}</span></div>` : ''}`;
+const head = (icon, title, sub, pill, cls) => `<div class="ihead">${icon}<div><h2>${esc(title)}</h2><p>${sub}</p></div><span class="xs">${ui.compact() ? `<button class="x" data-act="inspMin" aria-label="${ui.inspMin ? 'Open' : 'Fold'}" title="${ui.inspMin ? 'Open the panel' : 'Fold the panel to a strip: the map behind it'}">${ui.inspMin ? '▾' : '▴'}</button>` : ''}<button class="x" data-act="desel" aria-label="Close" title="Close (Esc)">✕</button></span></div>${pill ? `<div style="padding:0 .95rem .5rem"><span class="pill ${cls || ''}">${esc(pill)}</span></div>` : ''}`;
 const seg = (act, cur, opts, big) => `<div class="seg ${big ? 'big' : ''}">${opts.map(([v, n, c, t]) => `<button class="${c || ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 
@@ -49,6 +49,7 @@ IC.renderInspector = function (st) {
   // another selection, or another airport tab, starts at the top; the same one holds its scroll
   const key = S.group.length > 1 ? 'group' : s ? `${s.kind}:${ui.oid(s.ref)}:${s.kind === 'infra' && s.ref.parts ? ui.aptTab : ''}` : '';
   ui.setHTML(el, h, key);
+  if (ui.scrollTo) { const t = document.getElementById(ui.scrollTo); if (t) { t.scrollIntoView({ block: 'start' }); ui.scrollTo = null; } }
   IC.renderAirPicture(S);
 };
 
@@ -313,7 +314,7 @@ function base(b) {
   const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, b).building ? IC.rwyState(S, b).word : 'RUNWAY CLOSED';
   const rw0 = b.parts.filter(p => p.kind === 'runway' && p.built);
   const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
-  const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), pill, locked ? '' : bs.runway ? 'ok' : 'bad');
+  const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), ui.hands() && civil && bs.runway ? '' : pill, locked ? '' : bs.runway ? 'ok' : 'bad');
   // (a site with nothing on it yet has no plan to draw: an empty dark box looks broken)
   const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div>`;
   if (locked) return H + `<div class="ibody">${schem}<p class="hint">${esc(b.name)} belongs to the Air Force. It comes under your command later in your career.</p></div>`;
@@ -362,9 +363,12 @@ function base(b) {
   }).join('');
   const fee = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
     <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="No departures 23:00–06:00. Cargo airlines hate it; the neighbours love it.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
+  // (round 3) the Career's airport panel: the few numbers that matter, its problems with their fixes, its deals,
+  // and the rest folded (the tower's rules and the airspace open on their own page from there)
+  if (ui.hands() && civil && b.owner === 'us' && ui.aptTab !== 'asp' && ui.aptTab !== 'rules') return H + handsPanel(b, st, { schem, kpis, warn, rwSec, rows, zoneSec, fee, works, reps });
   // four tabs instead of one long page, so the build tools are one click away
   const tab = ui.aptTab === 'build' ? 'info' : ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
-  const tabs = `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
+  const tabs = ui.hands() && civil ? `<div class="itabs"><button class="act" data-act="aptTab" data-v="info">◂ Back to ${esc(b.name.replace(/ (International|Airport)$/, ''))}</button></div>` : `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
     ['works', `Works${nw + nd ? ` <em>${nw + nd}</em>` : ''}`, '', 'Engineering crews, work queued and repairs'],
     ['ops', civil ? 'Charges' : 'Flights', '', civil ? 'Fees, runway use and night curfew' : 'The flights based here'], ['rules', 'Operations', '', 'The tower\'s rules: when aircraft may go onto a runway'],
     ['asp', `Airspace${S.asp && S.asp.shapes && IC.aspCheck(S, b).length ? ' <em class="amber">!</em>' : ''}`, '', 'Controlled airspace round the airport, drawn as on a chart: its shape, controllers and holding stacks']])}</div>`;
@@ -376,6 +380,39 @@ function base(b) {
     : tab === 'ops' ? `${fee}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
     : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
   return H + tabs + `<div class="ibody">${body}</div>`;
+}
+/* (round 3) one airport panel: passengers, movements and money; the chain from the city; problems with their
+   fix; deals to sign and deals at risk; works; and the details folded */
+function handsPanel(b, st, X) {
+  const O = ui.aptOpen = ui.aptOpen || {}, A = S.av, M = IC.aptMonth(S, b), C = IC.aptChain(S, b);
+  const mv = (b.mvLog || []).length, cal = S.mode === 'story';
+  const keepH = b.parts.filter(p => p.built).reduce((s2, p) => s2 + IC.partCost(b, p), 0) * 0.0012, upk = keepH * Math.max(0, S.time - M.t0) / 3600;
+  const earned = M.land + M.pax + M.cargo;
+  const nums = `<div class="anums">
+    <div title="Passengers through the terminal in the last hour, against what it can handle"><small>Passengers an hour</small><b>${Math.round(b.paxRate || 0).toLocaleString('en-US')}</b><em>${st.pax ? `of ${Math.round(st.pax).toLocaleString('en-US')} it can take` : 'no terminal yet'}</em></div>
+    <div title="Landings and take-offs in the last hour, against what the runways take"><small>Movements an hour</small><b>${mv}</b><em>of ${st.movesPerHour || 0} the runways take</em></div>
+    <div title="${esc(`What airlines paid here ${cal ? 'this month' : 'today'}: landings ${U.money(M.land)}, passengers ${U.money(M.pax)}${M.cargo ? `, cargo ${U.money(M.cargo)}` : ''}. Upkeep runs at ${U.money(keepH)} an hour.`)}"><small>${cal ? 'This month' : 'Today'}</small><b class="gold">${U.money(earned)}</b><em>${M.flights} flight${M.flights === 1 ? '' : 's'} paid · upkeep ${U.money(upk)}</em></div></div>`;
+  const chain = `<div class="chainline"><span>${esc(C.text)}</span><button class="btn sm ${IC.chainOn ? 'primary' : ''}" data-act="chainTog" title="People from the towns by road, through the terminal, out on flights, and the money back, drawn on the map">${IC.chainOn ? 'Hide' : 'Show'} on the map</button></div>`;
+  const P = IC.aptProblems(S, b).filter(p => p.kind !== 'offer');
+  const probs = P.length || st.warn.length ? `<div class="sec"><h3 class="sh">Needs you <em>${P.length + st.warn.length}</em></h3>${P.map(p => `<div class="prow ${p.lvl}"><div><b>${esc(p.title)}</b><small>${esc(p.text)}</small></div>${p.fix ? `<button class="btn sm ${p.lvl === 'bad' ? 'primary' : ''}" data-act="pmFix" data-v="${esc(p.id)}">${esc(p.fix.label)}</button>` : ''}</div>`).join('')}
+    ${st.warn.slice(0, O.warn ? 12 : 2).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}${st.warn.length > 2 ? `<button class="more" data-act="aptOpen" data-v="warn">${O.warn ? 'Fewer ▴' : `${st.warn.length - 2} more layout notes ▾`}</button>` : ''}</div>` : '<div class="now ok">Nothing needs you here now.</div>';
+  // (problems, as markers have them, keyed for the click)
+  ui.pmById = ui.pmById || new Map(); for (const p of IC.aptProblems(S, b)) ui.pmById.set(p.id, Object.assign(p, { ap: b.id }));
+  const offers = A ? A.requests.filter(q => q.a === b.id || (q.b && q.b.apt === b.id)) : [];
+  const risk = A ? A.deals.filter(d => d.st === 'active' && (d.a === b.id || d.b.apt === b.id)) : [];
+  const deals = offers.length || risk.length ? `<div class="sec" id="aptDeals"><h3 class="sh">Airlines <em>${offers.length ? `${offers.length} offer${offers.length > 1 ? 's' : ''} · ` : ''}${risk.length} deal${risk.length === 1 ? '' : 's'} running</em></h3>
+    ${offers.sort((p, q) => (q.id === ui.dealFocus) - (p.id === ui.dealFocus)).map(q => { const pr = ui.pmById.get('offer:' + q.id); return IC.dealCardHTML(S, q) + (pr && pr.fix && pr.fix.part ? `<div class="acts"><button class="act pri" data-act="pmFix" data-v="offer:${q.id}">${esc(pr.fix.label)} for it</button></div>` : ''); }).join('')}
+    ${risk.length ? `<button class="more" data-act="aptOpen" data-v="deals">${O.deals ? 'Hide the deals running ▴' : `The ${risk.length} deal${risk.length > 1 ? 's' : ''} running ▾`}</button>${O.deals || risk.some(d => d.badT) ? `<div class="list">${risk.filter(d => O.deals || d.badT).map(d => IC.contractHTML(S, d)).join('')}</div>` : ''}` : ''}</div>` : '';
+  const nw = b.works.length;
+  const works = nw ? `<div class="sec"><h3 class="sh">Building <em>${nw} job${nw > 1 ? 's' : ''} · ${b.works.filter(w => !w.wait).length}/${b.crews} crews at work</em></h3>
+    <div class="acts">${b.works.some(w => w.stages) ? `<button class="act pri" data-act="finishNow" data-v="${b.id}" title="Time runs on fast until every work here is finished; it stops for anything that needs you">⏩ Finish now</button>` : ''}<button class="act" data-act="aptOpen" data-v="works">${O.works ? 'Hide the jobs ▴' : 'The jobs ▾'}</button></div>
+    ${O.works ? `<div class="list">${X.works}</div>` : ''}</div>` : '';
+  const ex = (k, name) => `<button class="more" data-act="aptOpen" data-v="${k}">${O[k] ? '▴' : '▾'} ${name}</button>`;
+  const more = `<div class="sec">${ex('more', 'Runways, stands and services')}${O.more ? `${X.schem}${X.kpis}${X.rwSec}${kv(X.rows)}${X.zoneSec}` : ''}
+    ${X.fee ? ex('fee', 'Charges') + (O.fee ? X.fee : '') : ''}
+    ${X.reps ? ex('reps', 'Damage to repair') + (O.reps ? `<div class="list">${X.reps}</div>` : '') : ''}
+    <div class="acts"><button class="act" data-act="aptTab" data-v="rules" title="The tower's rules: when aircraft may go onto a runway">Tower rules</button>${S.asp && !IC.storyLock(S, 'airspace') ? '<button class="act" data-act="aptTab" data-v="asp" title="Controlled airspace round the airport">Airspace</button>' : ''}<button class="act" data-act="aptZoom">Zoom to it</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div></div>`;
+  return `<div class="ibody">${nums}${chain}${probs}${deals}${works}${more}</div>`;
 }
 /* ---------- the Airspace tab: the airport's shape, drawn from above like a chart; controllers and stacks ---------- */
 const lvlT = a => a <= 0.01 ? 'the ground' : IC.flText(a);
@@ -558,10 +595,32 @@ function apart(sel) {
   const now = IC.partNow ? IC.partNow(S, ap, p) : '';
   if (now) rows.unshift(['Now', esc(now)]);
   const hp = p.hp / p.max;
+  // (round 3) the part as the interface: what it is doing now, and what to do about it, from here
+  const acts = ui.hands() && ap.kind === 'airport' && p.built ? partActs(ap, p) : '';
   return head(`<span class="badge friend">${ui.icon('part')}</span>`, p.kind === 'runway' && p.name ? p.name : D.name, esc(ap.name), !p.built ? `Building ${U.pct(p.prog || 0)}` : hp <= 0.25 ? 'Destroyed' : hp < 1 ? 'Damaged' : 'Intact', !p.built ? 'busy' : hp <= 0.25 ? 'bad' : hp < 1 ? 'busy' : 'ok') +
-    `<div class="ibody"><div class="bars"><span>Condition</span>${bar(hp)}<span>${U.pct(hp)}</span></div>${kv(rows)}<p class="hint">${esc(D.desc)}</p>
-    ${partControls(ap, p, w)}
+    `<div class="ibody">${acts}<div class="bars"><span>Condition</span>${bar(hp)}<span>${U.pct(hp)}</span></div>${kv(rows)}<p class="hint">${esc(D.desc)}</p>
+    ${ui.hands() && !ui.partMore ? `<button class="more" data-act="partMore">▾ More options: pavement, zone, traffic, move</button>` : `${ui.hands() ? '<button class="more" data-act="partMore">▴ Fewer options</button>' : ''}${partControls(ap, p, w)}`}
     <div class="acts">${w ? `<span class="pill busy">${esc(w.label)} ${U.pct(w.prog)}</span>` : ''}<button class="act" data-act="aptBack">◂ ${esc(ap.name)}</button><button class="act warn" data-act="aptRemove">${p.built ? 'Bulldoze' : 'Cancel'}</button></div></div>`;
+}
+/* (round 3) a part's actions where it stands: each opens the piece that helps, already placed beside it */
+const fixBtn = (part, at, label, pri) => `<button class="act ${pri ? 'pri' : ''}" data-act="fixAt" data-v="${part}" data-x="${at.x.toFixed(2)}" data-y="${at.y.toFixed(2)}">${esc(label)}</button>`;
+function partActs(ap, p) {
+  const st = ap.st || {}, L = [], say = [];
+  if (p.kind === 'runway') {
+    const ends = [['a', 1], ['b', -1]].filter(([e, d]) => !IC.rwHasILS(ap, p, d));
+    for (const [e] of ends) L.push(fixBtn('ils', p[e], `Landing system at the ${p.ends ? p.ends[e] : e} end`, ends.length === 2));
+    const t = (st.rescueRw || {})[p.id] || 0, mid = { x: (p.a.x + p.b.x) / 2, y: (p.a.y + p.b.y) / 2 };
+    say.push(!st.fire ? 'No fire station covers it: only turboprops may land.' : `Fire trucks reach its far end in ${IC.mmss(t)}${t > IC.FIRE_STD ? `: heavy jets need ${IC.mmss(IC.FIRE_STD)}` : ', in time for heavy jets'}.`);
+    if (!st.fire || t > IC.FIRE_STD) L.push(fixBtn('fire', mid, 'Fire station nearer', true));
+    if (st.fire) L.push(`<button class="act" data-act="fireDrill" title="The fire trucks race to the far end and the panel times them">Fire drill now</button>`);
+    const mv = (ap.mvLog || []).length; say.unshift(`${mv} movement${mv === 1 ? '' : 's'} in the last hour; the runways take ${st.movesPerHour || 0}.`);
+  } else if (p.kind === 'terminal') { L.push(fixBtn('tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
+  else if (p.kind === 'apron') L.push(fixBtn('tstraight', p, 'More stands: a terminal beside it'));
+  else if (p.kind === 'fuel') L.push(fixBtn('fuel', p, 'Add a fuel tank beside it', IC.aptProblems(S, ap).some(x => x.kind === 'fuel')));
+  else if (p.kind === 'fire') { const rw = ap.parts.find(q => q.kind === 'runway' && q.built); if (rw) L.push(`<button class="act pri" data-act="fireDrill" title="The fire trucks race to the far end of ${esc(rw.name || 'the runway')} and the panel times them">Fire drill now</button>`); }
+  else if (p.kind === 'tower') L.push(`<button class="act" data-act="towerRules">Tower rules</button>`);
+  else if (p.kind === 'hangar') L.push(fixBtn('hangar', p, 'Add a hangar beside it'));
+  return say.length || L.length ? `<div class="sec">${say.map(t => `<p class="now">${esc(t)}</p>`).join('')}${L.length ? `<div class="acts">${L.join('')}</div>` : ''}</div>` : '';
 }
 /* what the player can change about one part: pavement, zone, one-way, position before work starts */
 function partControls(ap, p, w) {

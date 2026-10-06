@@ -127,6 +127,8 @@ IC.render = function (S, now) {
   IC.drawHeightLadders(ctx, S, px, view);
   // the build bar's info view over the airport being built on (render-infoview.js)
   if (IC.bb && IC.bb.view && IC.drawInfoView) IC.drawInfoView(ctx, S, px, now);
+  // (round 3) the chain from the towns to the money, while the airport panel has it on
+  if (IC.chainOn && IC.drawChain) IC.drawChain(ctx, S, px, now);
 
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
@@ -159,7 +161,7 @@ IC.render = function (S, now) {
   const vg = ctx.createRadialGradient(cam.vw / 2, cam.vh / 2, Math.min(cam.vw, cam.vh) * 0.45, cam.vw / 2, cam.vh / 2, Math.max(cam.vw, cam.vh) * 0.8);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,3,8,0.5)');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, cam.vw, cam.vh);
-  if (IC.cine && IC.cine.bars > 0) { const bh = cam.vh * 0.08 * IC.cine.bars; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cam.vw, bh); ctx.fillRect(0, cam.vh - bh, cam.vw, bh); }
+  if (IC.cine && IC.cine.bars > 0 && !(IC.ui && IC.ui.compact && IC.ui.compact())) { const bh = cam.vh * 0.08 * IC.cine.bars; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cam.vw, bh); ctx.fillRect(0, cam.vh - bh, cam.vw, bh); }
 };
 
 function label(txt, x, y, px, col, size, align, weight) {
