@@ -858,10 +858,11 @@ function loans(S, dt) {
 IC.RED = { rate: 0.025, rateLive: 0.01, mo: 24, days: 10, conf: 6, months: 3 };
 IC.inRed = S => S.budget < -0.5;
 IC.redWhy = S => `The Treasury has frozen new spending: the treasury is at ${U.money(S.budget)}. Take its emergency loan (Economy, E) or cut running costs until money comes in.`;
-/* what the emergency loan would be: enough to clear the hole and carry a few months of the present loss */
+/* what the emergency loan would be: enough to clear the hole and carry three months of the present loss, or at least
+   a month of running costs */
 IC.redLoan = S => {
   const per = S.mode === 'story' ? IC.MO(S) / 3600 : 24, net = IC.waitRate ? IC.waitRate(S) : S.income - S.upkeep;
-  const amt = Math.max(300, Math.ceil((Math.max(0, -S.budget) + Math.max(0, -net) * per * IC.RED.months) / 50) * 50);
+  const amt = Math.max(300, Math.ceil((Math.max(0, -S.budget) + Math.max(Math.max(0, -net) * per * IC.RED.months, (S.upkeep || 0) * per, 300)) / 50) * 50);
   return { amt, mo: S.mode === 'story' ? IC.RED.mo : 0, days: S.mode === 'story' ? 0 : IC.RED.days, rate: S.mode === 'story' ? IC.RED.rate : IC.RED.rateLive };
 };
 IC.takeRedLoan = function (S) {

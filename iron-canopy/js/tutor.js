@@ -42,7 +42,7 @@ IC.tutorNow = function (S) {
 };
 /* start one (the first time the player meets what it teaches, or again from the Guide) */
 IC.tutorStart = function (S, id, again) {
-  const T = st(S); if (!IC.TUTORS[id] || T.cur === id) return false;
+  const T = st(S); if (!IC.TUTORS[id] || (T.cur === id && !again)) return false;
   if (T.over[id] && !again) return false;
   if (again) { delete T.over[id]; T.done[id] = IC.TUTORS[id].steps.map(() => 0); }
   T.cur = id; IC.tutorNow(S);

@@ -22,7 +22,7 @@ const arg = k => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); re
 const URL = arg('url') || 'http://127.0.0.1:8777/iron-canopy/index.html';
 const BEFORE = process.argv.includes('--before');
 const MIN = +(arg('min') || 30);
-const OUT = path.resolve(__dirname, '../docs/focus/round-5b');
+const OUT = path.resolve(__dirname, '../docs/focus/' + (arg('out') || 'round-5b'));
 fs.mkdirSync(OUT, { recursive: true });
 
 (async () => {
@@ -152,7 +152,7 @@ fs.mkdirSync(OUT, { recursive: true });
     // the airspace chapter: a civil radar where the airways are least seen, an approach radar beside the runway
     // (round 5b: at most one radar per airway, in its middle; round 5a's rule placed one every 20 s at the first fix)
     if (s.ch === 2 && /civil radar/.test(s.goal) && Date.now() - lastBuild > 20000) { lastBuild = Date.now(); const r = await ev(`(() => { const S = IC.S; if (S.budget < 150 || S.units.some(u => u.type === 'ssr' && u.state !== 'ready')) return false;
-      for (const w of S.asp.ways) { const [a, b] = IC.aspWayEnds(S, w), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, L = IC.U.dist(a, b); if (S.units.some(u => u.type === 'ssr' && IC.U.segDist(u.x, u.y, a.x, a.y, b.x, b.y) < L / 3)) continue;
+      for (const w of S.asp.ways) { const [a, b] = IC.aspWayEnds(S, w), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, L = IC.U.dist(a, b); if (S.units.some(u => u.type === 'ssr' && IC.U.dist(u, m) < L / 4)) continue;
         const p = IC.findSpot(S, 'ssr', m.x, m.y, 0, 300); if (p && IC.deploy(S, 'ssr', p.x, p.y)) return true; } return false; })()`); if (r) log('built: a civil radar'); }
     if (s.ch === 2 && /approach radar/.test(s.goal) && !s.works && await build('atc', `(() => { const r = IC.S.byId['${capId}'].parts.find(q => q.kind === 'runway' && q.built); return { x: (r.a.x + r.b.x) / 2, y: (r.a.y + r.b.y) / 2 }; })()`, 'an approach radar')) continue;
     // the goal line: more stands when it asks for them
@@ -214,12 +214,16 @@ fs.mkdirSync(OUT, { recursive: true });
   const keep = await ev('IC.S.budget');
   await ev('IC.S.budget = -900; IC.redTick(IC.S)'); await page.waitForTimeout(800);
   for (let i = 0; i < 3; i++) { const c = await page.$('#evcard:not([hidden])'); if (!c) break; await shot('24-treasury-card'); await page.click('#evcard:not([hidden]) .opt').catch(() => {}); await page.waitForTimeout(500); }
-  await walk('treasury', ['#rail-economy', '[data-act="redLoan"]']);
-  await page.waitForTimeout(500); await key('Escape');
+  await walk('treasury', ['#rail-economy', '#warroom [data-act="redLoan"]']);
+  await page.waitForTimeout(500); await key('Escape'); await ev('IC.ui.room && IC.ui.openRoom(null)'); await page.waitForTimeout(400);
   await ev(`IC.S.budget = ${keep}`);
   // a departure held for a tug, on the map, with its fix
-  await ev(`(() => { const a = IC.S.byId['${capId}']; IC.gseAuto(IC.S, a, false); a.fleet.tug = 0; IC.S.paused = false; })()`);
-  for (let i = 0; i < 60; i++) { await page.waitForTimeout(1000); if (await ev(`IC.aptProblems(IC.S, IC.S.byId['${capId}']).some(p => p.hold === 'tug')`)) break; }
+  // the depot pad by the fuel farm, close in, with the vehicles that are free
+  const dp = await ev(`(() => { const D = IC.gseDepotAt(IC.S.byId['${capId}']); return D && { x: D.x, y: D.y }; })()`);
+  if (dp) { await look(dp.x, dp.y, 45); await page.waitForTimeout(800); await shot('26-depot'); }
+  await ev(`(() => { const a = IC.S.byId['${capId}']; IC.gseAuto(IC.S, a, false); a.fleet.tug = 0; IC.S.paused = false; IC.S.speed = 16; })()`);
+  for (let i = 0; i < 120; i++) { await page.waitForTimeout(1000); const c = await page.$('#evcard:not([hidden]) .opt'); if (c) await c.click().catch(() => {}); if (await ev(`IC.aptProblems(IC.S, IC.S.byId['${capId}']).some(p => p.hold === 'tug')`)) break; }
+  await ev(`IC.ui.aptOpen.fleet = false`);
   await ev('IC.S.paused = true'); await look(ap.x, ap.y, 6); await page.waitForTimeout(800); await shot('25-tug-hold');
   console.log('TUTORIALS', JSON.stringify(tut));
   console.log('ERRORS', JSON.stringify(errors.slice(0, 10)));

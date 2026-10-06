@@ -782,10 +782,15 @@ function tutor() {
   let N = IC.tutorNow(S);
   if (!N) for (const id in IC.TUTORS) if (!IC.tutorSeen(S, id) && IC.tutorWhen(S, id) && onScreen(anchorEl(IC.TUTORS[id].steps[0].el))) { IC.tutorStart(S, id); N = IC.tutorNow(S); break; }
   if (N && N.step.seen && onScreen(anchorEl(N.step.seen))) { IC.tutorSaw(S, N.id, N.i); N = IC.tutorNow(S); }
-  const key = N ? N.id + ':' + N.i : null;
+  // (what the last action opened was closed again: point back at what opens it, until it is open)
+  let show = N && N.step;
+  if (N && !onScreen(anchorEl(show.el))) for (let j = N.i - 1; j >= 0; j--) { const p = IC.TUTORS[N.id].steps[j]; if (onScreen(anchorEl(p.el))) { show = p; break; } }
+  const key = N ? N.id + ':' + N.i + ':' + show.el : null;
   if (ui.tutorKey === key) return;
   hints.delete('tutor'); ui.tutorKey = key;
-  if (N) hints.set('tutor', { el: N.step.el, title: N.step.title, text: N.step.text, ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] });
+  // (the target brought into view: a panel or a room may have it below the fold)
+  if (N) { const e = anchorEl(show.el); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
+  if (N) hints.set('tutor', { el: show.el, title: show.title, text: show.text, ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] });
 }
 /* the Guide's "Show me": the tutorial again from its first step, on the airport it is about */
 ui.tutorGo = function (id) {

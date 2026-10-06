@@ -458,8 +458,8 @@ function economy() {
   const offers = IC.loanOffers(S).map((o, i) => { const pay = IC.loanPay(S, { amt: o.amt, left: o.amt, mo: o.mo, days: o.days, term: IC.loanTerm(S, o) }) * per; return `<div class="li"><b>Borrow ${U.money(o.amt)}</b><small>over ${IC.loanTermText(S, o)} · about ${U.money(pay)} ${perW} at first</small><span class="la"><button class="btn sm" data-act="loan" data-v="${i}" ${owed + o.amt > lim ? 'disabled' : ''}>Borrow</button></span></div>`; }).join('');
   const mine = E.loans.map(l => `<div class="li"><b>${U.money(l.amt)} loan</b><small>${U.money(l.left)} still owed · ${U.money(IC.loanPay(S, l) * per)} ${perW}</small><span class="la"><button class="btn sm" data-act="repayLoan" data-id="${l.id}" ${S.budget < l.left ? 'disabled' : ''}>Pay off</button></span></div>`).join('');
   // (round 5b) in the red the Treasury's own loan, at its stiff rate, beside the banks'
-  const RL = IC.inRed(S) && IC.redLoan(S), red = RL ? `<div class="prow bad"><div><b>${esc(IC.redWhy(S))}</b><small>Emergency loan: ${U.money(RL.amt)} over ${RL.mo ? RL.mo + ' months' : RL.days + ' days'} at ${(RL.rate * 100).toFixed(1)}% ${RL.mo ? 'a month' : 'a day'}.</small></div><button class="btn sm primary" data-act="redLoan">Take it</button></div>` : '';
-  const loans = `<div class="card"><h3>Loans<em>${U.money(owed)} owed of ${U.money(lim)} the banks allow</em></h3>${red}${mine ? `<div class="list">${mine}</div>` : ''}<div class="list">${offers}</div>
+  const RL = IC.inRed(S) && IC.redLoan(S), red = RL ? `<div class="prow bad"><div><b>Spending is frozen: the treasury is at ${U.money(S.budget)}.</b><small>Nothing new is built or bought until it is above zero. Emergency loan: ${U.money(RL.amt)} over ${RL.mo ? RL.mo + ' months' : RL.days + ' days'} at ${(RL.rate * 100).toFixed(1)}% ${RL.mo ? 'a month' : 'a day'}, or cut the running costs below.</small></div><button class="btn sm primary" data-act="redLoan">Take it</button></div>` : '';
+  const loans = `<div class="card"><h3>Loans<em>${U.money(owed)} owed of ${U.money(lim)} the banks allow</em></h3>${mine ? `<div class="list">${mine}</div>` : ''}<div class="list">${offers}</div>
     <p class="hint">For big projects: a new runway, a motorway. Repayments and ${IC.loanRateText(S)} interest come out of the budget every hour. The limit grows with last month's income.</p></div>`;
   // passengers at each airport
   const apts = S.infra.filter(i => i.kind === 'airport' && i.svc).map(ap => { const v = ap.svc; return `<tr class="click" data-act="selInfra" data-id="${ap.id}"><td>${esc(ap.name.replace(/ (International|Airport)$/, ''))}</td><td class="r">${Math.round(v.demand).toLocaleString('en-US')}</td><td class="r">${Math.round(v.seats).toLocaleString('en-US')}</td><td class="r ${v.lf > 0.9 ? 'amber' : ''}">${U.pct(v.lf)}</td><td class="r">${Math.round(v.deps)}</td><td class="r">${v.dests.size}</td><td class="r" title="frequency · choice of places · punctuality · fares">${U.pct(v.freqF)} · ${U.pct(v.destF)} · ${U.pct(v.relF)} · ${U.pct(v.fareF)}</td></tr>`; }).join('');
@@ -489,7 +489,9 @@ function economy() {
     .concat(war ? [['war', 'War economy', '', 'Mobilization and war bonds']] : []));
   const pg = ui.sub.economy;
   const later = [noTrade, noLoans, noRoads].some(Boolean) ? `<div class="card wide"><h3>Opens later</h3><p class="hint">${[noLoans, noRoads, IC.storyLock(S, 'charges'), IC.storyLock(S, 'statement'), noTrade].filter(Boolean).map(esc).join(' ')}</p></div>` : '';
-  return top + (pg === 'growth' ? pax + growth + trade : pg === 'build' ? (noRoads ? '' : roads) + (noLoans ? '' : loans) : pg === 'war' ? warEconomy() : stmt + later);
+  // (round 5b) in the red the Treasury's loan is at the top of every page, whatever the chapter has opened
+  const redCard = IC.inRed(S) ? `<div class="card wide"><h3>The Treasury<em>spending is frozen below zero</em></h3>${red}</div>` : '';
+  return top + redCard + (pg === 'growth' ? pax + growth + trade : pg === 'build' ? (noRoads ? '' : roads) + (noLoans ? '' : loans) : pg === 'war' ? warEconomy() : stmt + later);
 }
 
 /* the year so far, month by month, and last year's review */

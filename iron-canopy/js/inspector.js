@@ -401,10 +401,12 @@ function scorecardHTML(b) {
   const rows = C.map(c => {
     const id = `score:${c.al.id}:${b.id}`; if (c.worst.fix) ui.pmById.set(id, { id, ap: b.id, fix: c.worst.fix, kind: 'score' });
     const cells = ks.map(k => c.ks.includes(k) ? `<td class="r ${cls(c.sc[k])}" title="${esc(IC.ASPECTS[k].name)}">${Math.round(c.sc[k])}</td>` : '<td class="r muted">–</td>').join('');
-    return `<tr><td><i class="livery" style="background:linear-gradient(90deg,${c.al.livery[0]} 50%,${c.al.livery[1]} 50%)"></i>${esc(c.al.name.replace(/ (Airlines|Airways|Air)$/, ''))}<small class="muted"> ${c.sat}</small></td>${cells}</tr>
-      <tr class="sub"><td colspan="${ks.length + 1}"><small>Worst: <b class="${cls(c.worst.v)}">${esc(c.worst.name.toLowerCase())} ${c.worst.v}</b>. ${esc(c.worst.text)}</small>${c.worst.fix && c.worst.v < 75 ? ` <button class="btn sm" data-act="pmFix" data-v="${esc(id)}">${esc(c.worst.fix.label)}</button>` : ''}</td></tr>`;
+    const bad = c.worst.v < 75;
+    return `<tr><td title="${esc(c.al.name)}: ${c.sat} overall"><i class="livery" style="background:linear-gradient(90deg,${c.al.livery[0]} 50%,${c.al.livery[1]} 50%)"></i>${esc(c.al.name.replace(/ (Airlines|Airways|Air|Cargo|Connect)$/, ''))}</td>${cells}</tr>
+      <tr class="sub"><td colspan="${ks.length + 1}"><small>${bad ? `Minds most: <b class="${cls(c.worst.v)}">${esc(c.worst.name.toLowerCase())} ${c.worst.v}</b>. ${esc(c.worst.text)}` : 'No complaints here.'}</small>${c.worst.fix && bad ? ` <button class="btn sm" data-act="pmFix" data-v="${esc(id)}">${esc(c.worst.fix.label)}</button>` : ''}</td></tr>`;
   }).join('');
-  return `<div class="sec"><h3 class="sh">Scorecards <em>how each airline rates this airport, 0–100</em></h3><table class="t score"><tr><th>Airline · overall</th>${ks.map(k => `<th class="r" title="${esc(IC.ASPECTS[k].name)}">${esc(IC.ASPECTS[k].name.split(' ')[0])}</th>`).join('')}</tr>${rows}</table></div>`;
+  const AB = { delay: 'Time', taxi: 'Taxi', gates: 'Gate', fuel: 'Fuel', fees: 'Fees', bags: 'Bags' };
+  return `<div class="sec"><h3 class="sh">Scorecards <em>0–100, from their recent flights here</em></h3><table class="t score"><colgroup><col class="nm">${ks.map(() => '<col>').join('')}</colgroup><tr><th>Airline</th>${ks.map(k => `<th class="r" title="${esc(IC.ASPECTS[k].name)}">${AB[k]}</th>`).join('')}</tr>${rows}</table></div>`;
 }
 /* (round 5b) the day board: each airline's departures by hour as the game plans them, arrivals below, today's
    real movements as ticks, what the runways take (the same numbers as the panel's capacity), and the three things
@@ -437,7 +439,7 @@ function dayBoardHTML(b) {
     <svg class="tl-svg day" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="The day's flights by hour">${g}</svg>
     <div class="dcap"><h3 class="sh">Cap <em>departures an hour</em></h3>${seg('dayCap', String(D.cap), [['0', 'No cap']].concat(caps.map(n => [String(n), String(n), '', `At most ${n} departures in any hour`])))}<p class="hint">${esc(D.capWords)}</p></div>
     <div class="dnight"><h3 class="sh">Night <em>23:00–06:00</em></h3>${seg('dayNight', D.night, Object.entries(IC.NIGHT_POL).map(([k, v]) => [k, v.name, k === 'open' ? 'amb' : '', `${v.brief}. ${D.nightWords[k]}`]))}<p class="hint">${esc(IC.NIGHT_POL[D.night].brief.charAt(0).toUpperCase() + IC.NIGHT_POL[D.night].brief.slice(1))}. ${esc(D.nightWords[D.night])}</p></div>
-    ${rows ? `<div class="dbanks"><h3 class="sh">Airlines <em>the game plans their day; move a bank earlier or later</em></h3><div class="list">${rows}</div></div>` : '<p class="hint">No airline flies from here yet.</p>'}</div>`;
+    ${rows ? `<div class="dbanks"><h3 class="sh">Airlines <em>move a bank an hour</em></h3><div class="list">${rows}</div></div>` : '<p class="hint">No airline flies from here yet.</p>'}</div>`;
 }
 /* (round 3) one airport panel: passengers, movements and money; the chain from the city; problems with their
    fix; deals to sign and deals at risk; works; and the details folded */
