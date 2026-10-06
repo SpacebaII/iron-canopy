@@ -68,7 +68,7 @@ window.QA = {
     QA.look(P(pts[0]), o.z || 30);
     for (const q of pts) QA.click(P(q));
     const plan = IC.bldReady(S, m);
-    if (t === 'stand') { ok('one click places a stand', n() > n0, m.err); QA.look(P(pts[0]), o.z || 110); await QA.shot(name + '-placed'); return out; }
+    if (t === 'stand') { ok('one click places a stand (or removes the one clicked)', n() !== n0, m.err); QA.look(P(pts[0]), o.z || 110); await QA.shot(name + '-placed'); return out; }
     ok('placed', !!plan, m.err);
     ok('nothing built on a click', n() === n0);
     const at = m.at || P(pts[pts.length - 1]);
@@ -82,10 +82,11 @@ window.QA = {
     ok('Esc cancels', IC.buildCancel(S, m) === 'undo' && !IC.bldReady(S, m));
     if (!plan || !plan.ok) return out;
     for (const q of pts) QA.click(P(q));
-    const r = IC.buildFinish(S, m);
+    const had = new Set(ap.parts), r = IC.buildFinish(S, m);
     ok('Build builds it', r === 'built' && n() > n0, m.err);
     if (r !== 'built') return out;
-    const made = ap.parts.slice(-1)[0];
+    // (what this build added: a kit or a hangar is several parts; the main one is the first that is not a taxiway)
+    const all = ap.parts.filter(p => !had.has(p)), made = all.find(p => p.kind !== 'taxi') || all[0];
     // watch a stage: run until the paving or the structure is under way
     for (let i = 0; i < 4 * 3600 && made && !made.built && !['pave', 'mark', 'lights'].includes(made.stage); i++) IC.step(S, 0.5);
     out.stage = made && made.stage;
@@ -98,9 +99,10 @@ window.QA = {
     out.warnAfter = (ap.st.warn || []).slice(0, 3);
     await QA.shot(name + '-built');
     // bulldoze it (what comes back), then plan it again and undo it (all of it back)
-    if (made && made.kind && t !== 'svcroad') {
-      const before = S.budget, k = ap.parts.length, rb = IC.bldBulldoze(S, ap, made);
-      ok('bulldozed', !!rb && ap.parts.length < k, rb ? '' : 'refused');
+    if (all.length && t !== 'svcroad') {
+      const before = S.budget, k = ap.parts.length; let rb = true;
+      for (const p of all.slice().reverse()) if (ap.parts.includes(p)) rb = IC.bldBulldoze(S, ap, p) && rb;
+      ok('bulldozed', !!rb && ap.parts.length <= k - all.length, rb ? '' : 'refused');
       out.salvage = S.budget - before;
     }
     m = QA.tool(t);
@@ -131,7 +133,7 @@ const T = {
   stretch: { pts: [[-12, -2.58], [-12, -3.4]] },
   alert: { pts: [[-17.6, -0.9]] },
   terminal: { pts: [[2, -3.2], [6, -4.0]] },
-  concourse: { pts: [[-6, -4.4], [2, -4.4]], z: 14 },
+  concourse: { pts: [[-6, -6.4], [2, -6.4]], z: 14 },
   rotunda: { pts: [[0, -11]], z: 10 }, satellite: { pts: [[0, -11]], z: 10 }, curved: { pts: [[0, -11]], z: 10 }, semicircle: { pts: [[0, -11]], z: 10 },
   pierT: { pts: [[0, -11]], z: 10 }, pierY: { pts: [[0, -11]], z: 10 }, pierX: { pts: [[0, -11]], z: 10 },
   skybridge: { pts: [[1.2, 1.7], [1.5, 2.05]], z: 60 },

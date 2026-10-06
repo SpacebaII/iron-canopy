@@ -1529,7 +1529,7 @@ IC.drawBuildGhost = function (g, S, px) {
   // (kept clear of the panels over the map: the goals on the left, the airport panel on the right)
   const lo = IC.cam.x + (IC.ui.mapLeft || 0) / IC.cam.z, hi = IC.cam.x + (IC.cam.vw - (IC.ui.mapRight || 0)) / IC.cam.z - W;
   // (a placed plan's card hangs under its Build button, clear of the plan; while drawing, beside the cursor)
-  const set = m.set && m.at, x0 = U.clamp(set ? cv0.x + 26 * px : left ? cv0.x - 20 * px - W : cv0.x + 20 * px, lo, Math.max(lo, hi)), y0 = set ? cv0.y + 70 * px : cv0.y - 44 * px - H / 2 + 12 * px;
+  const set = m.set && m.at, x0 = U.clamp(set ? cv0.x + 26 * px : left ? cv0.x - 20 * px - W : cv0.x + 20 * px, lo, Math.max(lo, hi)), y0 = set ? (sc.y > IC.cam.vh * 0.5 ? cv0.y - 84 * px - H : cv0.y + 70 * px) : cv0.y - 44 * px - H / 2 + 12 * px;
   g.fillStyle = 'rgba(12,18,24,0.74)'; g.fillRect(x0, y0, W, H);
   if (!ok) { g.fillStyle = IC.C.hostile; g.fillRect(x0, y0, 2 * px, H); }
   lines.forEach((l, i) => { g.font = `${l.b ? 700 : 500} ${9.5 * px}px "IBM Plex Mono", monospace`; g.fillStyle = l.c; g.fillText(l.t, x0 + 6 * px, y0 + 14 * px + i * 13 * px); });
@@ -1615,7 +1615,7 @@ function drawFoundGhost(g, S, m, hv, px) {
   g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(m.site.x + Math.cos(wa) * 20, m.site.y + Math.sin(wa) * 20); g.stroke();
   lbl(g, 'prevailing wind', wx, wy - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
   // the runway's name at each end; the full survey is in the hint below
-  const ends = sv.name.split('/');
+  const ends = sv.ends;
   lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
   lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
   if (sv.homes) lbl(g, `noise over ${sv.homes} city blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);

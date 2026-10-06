@@ -1174,7 +1174,7 @@ IC.partNow = function (S, ap, p) {
   }
   if (p.kind === 'cargo') { const n = svcNow('cargo'); return `Cargo shed: ${n} freighter${n === 1 ? '' : 's'} loading now${n ? `, ${stands.filter(s => s.occ && s.svc && s.svc.kind === 'cargo').reduce((a, s) => a + s.svc.n, 0)} lorries on the apron` : ''}; handles ${Math.round(st.cargo || 0)} t an hour.`; }
   if (p.kind === 'tower') { const g = (ap.gmLog || []).filter(x => S.time - x.t < 3600).length; const tw = IC.aptServiceLines(S, ap).tower; return `Tower: ${tw[0].toLowerCase() + tw.slice(1)} On the ground: ${g} pushback${g === 1 ? '' : 's'}, tows and service stops.`; }
-  if (p.kind === 'fire') { const R = ap.fireRun, out = R && R.from === p.id && S.time < R.home; return `Fire station: ${out ? `the trucks are out on ${R.kind === 'drill' ? 'a drill' : 'a call'}${S.time < R.t0 + R.dur ? `, ${IC.mmss(S.time - R.t0)} so far` : `, there in ${IC.mmss(R.dur)}`}. ` : ''}${IC.aptServiceLines(S, ap).fire}`; }
+  if (p.kind === 'fire') { const R = ap.fireRun, out = R && R.from === p.id && S.time < R.home; return `Fire station: ${out ? `the trucks are out on ${R.kind === 'drill' ? 'a drill' : 'a call'}${S.time < R.t0 + R.dur ? `, ${IC.mmss(S.time - R.t0)} so far` : `, there in ${IC.mmss(R.dur)}`}. ` : ''}${((f) => out ? f : f[0].toLowerCase() + f.slice(1))(IC.aptServiceLines(S, ap).fire)}`; }
   if (p.kind === 'apron') { const L = p.stands || []; return `Apron: ${L.filter(s => s.occ).length} of ${L.length} stands in use.`; }
   return '';
 };

@@ -472,7 +472,7 @@ IC.foundSurvey = function (S, x, y, a) {
   const wind = Math.round(Math.min(off, 180 - off));
   const hdg = IC.bearing(a), end = n => String(Math.round(n / 10) % 36 || 36).padStart(2, '0');
   return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, cost: IC.FOUND_COST + earth + land, obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
-    windOff: wind, name: `${end(hdg)}/${end(hdg + 180)}`, cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
+    windOff: wind, ends: [end(hdg), end(hdg + 180)], name: [end(hdg), end(hdg + 180)].sort().join('/'), cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
 };
 /* the survey in plain words, one line each */
 IC.foundLines = function (S, sv) {
@@ -1136,6 +1136,15 @@ function planOf(S, m, hv, tol, free, only) {
     const sb = !free && t !== 'ils' && IC.bldSnapBuilding(ap, t, at);
     if (sb) { out.snap = sb.snap; out.pts = [sb.snap]; out.specs.push(...sb.specs); out.text.push(sb.text); }
     else { out.snap = s; out.pts = [at]; out.specs.push({ kind: t, x: at.x, y: at.y, a: m.rot }); }
+    // a landing system serves the runway end nearest it: say which, or why not, before Build (QA pass: the plan
+    // used to look fine where an end already had one, and Build then failed)
+    if (t === 'ils') {
+      let best = null, bd = 1e9;
+      for (const rw of ap.parts.filter(q => q.kind === 'runway')) for (const e of ['a', 'b']) { const d = U.dist(rw[e], at); if (d < bd) { bd = d; best = { rw, e }; } }
+      if (!best || bd > 12) { out.ok = false; out.why = 'Place a landing system within 1.2 km of the runway end it should serve.'; }
+      else if (ap.parts.some(q => q.kind === 'ils' && q.rw === best.rw.id && q.end === best.e)) { out.ok = false; out.why = `The ${IC.rwEnd(best.rw, best.e === 'a' ? 1 : -1)} end of ${best.rw.name} already has a landing system.`; }
+      else out.text.push(`serves arrivals landing on ${IC.rwEnd(best.rw, best.e === 'a' ? 1 : -1)}`);
+    }
   }
   // cost, time, clearance and effect of everything in the plan
   let homes = 0, comp = 0, roads = 0, res = 0; const clrAll = [];

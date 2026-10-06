@@ -883,6 +883,10 @@ test('builder: every tool places a plan that a click moves and Esc cancels; only
     for (const q of pts) IC.clickWorld(P(...q), 0);
     assert(IC.buildFinish(S, m) === 'built' && n() > n0 && !m.set && !m.pts.length, `${tool}: Build did not build it: ${m.err}`);
   }
+  // a landing system where the runway end already has one is refused on the plan, not by a failed Build (QA pass)
+  const ils = IC.bldMode(S, ap, 'ils'), rw0 = ap.parts.find(q => q.kind === 'runway');
+  IC.buildInput(S, ils, rw0.b, 0, 30);
+  assert(!IC.bldReady(S, ils).ok && /already has a landing system/.test(IC.bldReady(S, ils).why), `the plan says "${IC.bldReady(S, ils).why}"`);
   // zoomed far out, a second corner 400 m from the first is a corner, not the first clicked again (QA pass)
   const r = IC.bldMode(S, ap, 'ramp');
   IC.buildInput(S, r, P(-26, 14), 0, 0.3); IC.buildInput(S, r, P(-22, 15), 0, 0.3);

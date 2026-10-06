@@ -192,7 +192,10 @@ function goFrame() {
   const sc = IC.toScreen(at.x, at.y), r = app.getBoundingClientRect(), w = goEl.offsetWidth || 200;
   goEl.hidden = false;
   goEl.style.left = `${U.clamp(sc.x + 26, (IC.ui.mapLeft || 0) + 8, r.width - (IC.ui.mapRight || 0) - w - 8)}px`;
-  goEl.style.top = `${U.clamp(sc.y + 26, 70, r.height - 140)}px`;
+  // (above the build bar and its help line: when the plan is low on the screen the button goes above it)
+  let lim = r.height - 20; for (const id of ['bbar', 'modehint']) { const e = $(id); if (e && !e.hidden && e.offsetParent) lim = Math.min(lim, e.getBoundingClientRect().top - r.top); }
+  const h = goEl.offsetHeight || 40, y = sc.y + 26 + h + 8 > lim ? sc.y - 26 - h : sc.y + 26;
+  goEl.style.top = `${U.clamp(y, 70, Math.max(70, lim - h - 8))}px`;
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 /* the airport's Airspace tab is open: its rings can be picked and their edges dragged on the map */
