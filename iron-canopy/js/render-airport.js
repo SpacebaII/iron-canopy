@@ -7,7 +7,7 @@ const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)'
 
 /* (no words in a picture for the 3D view: its labels are text on the screen, never letters lying on the ground) */
 let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
-let LIFE = false, BR = null;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges
+let LIFE = false, BR = null, ACT = 0.5;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges; ACT: how busy its terminal is, 0 → 1
 function lbl(g, txt, x, y, px, col, size, align, weight) {
   if (NOLBL) return;
   g.font = `${weight || 600} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
@@ -118,6 +118,7 @@ function zoneOf(ap, p) {
 IC.drawAirport = function (g, S, ap, px, now, light, o) {
   NOLBL = !!(o && o.pad);
   LIFE = !!(IC.FOCUS && IC.FOCUS.life && IC.drawTurns) && !NOLBL; BR = S;
+  ACT = LIFE ? U.clamp((ap.paxRate || 0) / Math.max(200, (ap.st && ap.st.pax) || 0), 0, 1) : 0.5;
   const z = IC.cam.z;
   const full = z >= 1.2, marks = z >= 4, fine = z >= 9;
   const night = light < 0.55;
@@ -975,8 +976,8 @@ function roof(g, p, w, h, px, z, night) {
       for (let x = -L / 2 + 0.1; x < L / 2 - 0.1; x += 0.16) g.fillRect(x, D / 2 - 0.012, 0.1, 0.012);
     }
   }
-  // glass on both long sides (lit at night)
-  g.fillStyle = night ? 'rgba(255,220,150,0.7)' : 'rgba(70,110,140,0.75)';
+  // glass on both long sides (lit at night, the brighter the busier the terminal is)
+  g.fillStyle = night ? (p.kind === 'terminal' ? `rgba(255,220,150,${(0.35 + 0.6 * ACT).toFixed(2)})` : 'rgba(255,220,150,0.7)') : 'rgba(70,110,140,0.75)';
   if (p.kind === 'terminal') { g.fillRect(-L / 2, -D / 2, L, Math.max(0.01, 0.9 * px)); g.fillRect(-L / 2, D / 2 - Math.max(0.01, 0.9 * px), L, Math.max(0.01, 0.9 * px)); }
   g.restore();
 }
@@ -1033,6 +1034,13 @@ function drawLights(g, ap, px, z, light, now) {
       gr.addColorStop(0, `rgba(255,214,150,${0.14 * k})`); gr.addColorStop(1, 'rgba(255,214,150,0)');
       g.fillStyle = gr; g.beginPath(); g.arc(c.x, c.y, r, 0, 7); g.fill();
     }
+  }
+  // (round 2) the aerodrome beacon on the tower: white and green flashes in turn, seen from far off
+  if (LIFE) for (const p of ap.parts) if (p.kind === 'tower' && p.built && p.hp > p.max * 0.25) {
+    const ph = now * 0.75 % 1; if (!(ph < 0.12 || (ph > 0.5 && ph < 0.62))) continue;
+    const c = ph < 0.5 ? '255,255,240' : '90,255,140';
+    g.fillStyle = `rgba(${c},0.95)`; g.beginPath(); g.arc(p.x, p.y, Math.max(0.02, 4 * px), 0, 7); g.fill();
+    g.fillStyle = `rgba(${c},0.2)`; g.beginPath(); g.arc(p.x, p.y, Math.max(0.08, 14 * px), 0, 7); g.fill();
   }
   g.globalCompositeOperation = 'source-over';
 }

@@ -154,5 +154,8 @@
  "round 1: a starter airport template places a complete working airport as one plan": 11,
  "round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself": 10,
  "round 1: a building inside a runway strip is warned about on the plan and on the airport, with the fix": 10,
- "round 1: the build bar opens on whole pieces, each with a price and what it does; the parts fold under Detail": 5
+ "round 1: the build bar opens on whole pieces, each with a price and what it does; the parts fold under Detail": 5,
+ "round 2: the first landing eases the clock to 1×, follows the airliner in, and its card gives the fees beside the airport": 29,
+ "round 2: a turnaround brings its vehicles in the real order (bags, catering, fuel, then the pushback tug) and they all leave": 16,
+ "round 2: life on the map scales with the passengers: a busy airport draws more cars and people than a quiet one": 11
 }

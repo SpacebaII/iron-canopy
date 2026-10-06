@@ -154,7 +154,7 @@ IC.tailPhase = function (S, tl) {
     if (to && to.owner === 'us') {
       const d = U.dist(t, to);
       if (t.stk || (t.holding && !t.appr)) return `Holding near ${to.name}, waiting for its landing slot`;
-      return `Approaching ${to.name}: ${U.km(d)} out, ${IC.altText(t)}`;
+      return d > 1500 ? `Flying to ${to.name}: ${U.km(d)} to go, ${IC.altText(t)}` : `Approaching ${to.name}: ${U.km(d)} out, ${IC.altText(t)}`;
     }
     if (from && U.dist(t, from) < 400) return `Climbing out from ${from.name}: ${IC.altText(t)}`;
     return `Cruising${t.plan && t.plan.b && t.plan.b.name ? ` to ${t.plan.b.name}` : ''}`;

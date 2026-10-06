@@ -39,7 +39,9 @@ function drawVeh(g, d, x, y, h, px, minPx, beacon, night, seed) {
   if (LP && !beacon) return;
   g.save(); g.translate(x, y); g.rotate(h);
   if (!LP) {
+  // a shadow, and a dark rim so a white truck still reads against a white fuselage
   g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x0 + W * 0.25, y0 + W * 0.3, L, W);
+  const e = Math.max(W * 0.12, 0.7 * px); g.fillStyle = 'rgba(20,22,26,0.85)'; g.fillRect(x0 - e, y0 - e, L + 2 * e, W + 2 * e);
   switch (d.k) {
     case 'cab': g.fillStyle = d.c; g.fillRect(x0, y0, L, W); g.fillStyle = d.c2; g.fillRect(x0, y0 + W * 0.15, L * 0.35, W * 0.7); break;
     case 'stairs': g.fillStyle = d.c; g.fillRect(x0, y0, L, W); g.fillStyle = d.c2; for (let i = 0; i < 5; i++) g.fillRect(x0 + L * (0.45 + i * 0.1), y0 + W * 0.1, L * 0.04, W * 0.8); break;
@@ -246,7 +248,7 @@ IC.drawTurnClock = function (g, S, ap, px, z, label) {
   g.strokeStyle = 'rgba(0,0,0,0.45)'; g.beginPath(); g.arc(s.x, s.y, R, 0, 7); g.stroke();
   g.strokeStyle = tl.t <= 0 ? 'rgba(127,232,176,0.95)' : 'rgba(242,180,65,0.95)'; g.beginPath(); g.arc(s.x, s.y, R, -Math.PI / 2, -Math.PI / 2 + f * 6.283); g.stroke();
   const txt = tl.t > 0 ? `${IC.turnStage(tl.T, f, sv && sv.kind)} · ${U.dur(tl.t)} left` : 'Turned round: ready to go';
-  label(g, `STAND ${IC.standName(s)}: ${txt.toUpperCase()}`, s.x, s.y - R - 7 * px, px, 'rgba(242,214,150,0.98)', 11, 'center', 700);
+  label(g, `STAND ${IC.standName(s)}: ${txt.toUpperCase()}`, s.x, s.y - R - 7 * px, px, 'rgba(242,214,150,0.98)', 12, 'center', 700);
 };
 
 })(window.IC);
