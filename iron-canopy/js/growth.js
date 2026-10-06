@@ -778,6 +778,14 @@ IC.aptCatchment = function (S, ap) {
   let n = 0; for (const c of IC.cities(S)) if (c.owner === 'us') n += c.pop * catchF(timeTo(S, E.tt[c.id], ap) / 3600);
   return Math.round(n);
 };
+/* (round 3) the same, city by city, for the chain drawn on the map: who is within reach, how long the drive is
+   (hours), and how many of them count (thousands) */
+IC.aptCatchList = function (S, ap) {
+  const E = S.econ; if (!E) return [];
+  const L = [];
+  for (const c of IC.cities(S)) { if (c.owner !== 'us') continue; const h = timeTo(S, E.tt[c.id], ap) / 3600, f = catchF(h); if (f > 0) L.push({ c, h, f, k: c.pop * f }); }
+  return L.sort((a, b) => b.k - a.k);
+};
 /* what the airport panel says about its roads */
 IC.aptRoadReport = function (S, ap) {
   const E = S.econ; if (!E || !ap.parts) return null;

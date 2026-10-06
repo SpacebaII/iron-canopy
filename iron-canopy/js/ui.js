@@ -9,6 +9,8 @@ const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, show
   sub: { aviation: 'ops', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
 let S = null;
 const esc = U.esc;
+/* (round 3) the map first: the Career's screen keeps to one goal line, one message line and a narrow inspector */
+ui.compact = () => !!(IC.FOCUS && IC.FOCUS.screen && S && S.mode === 'story');
 ui.esc = esc;
 ui.kbd = k => k ? `<kbd>${k}</kbd>` : '';
 /* a small line icon, drawn with the same stroke as the rail */
@@ -106,6 +108,16 @@ function feed() {
   const now = performance.now();
   ui.toasts = ui.toasts.filter(t => now - t.t < 9000);
   const el = $('feed');
+  // (round 3) one line, the newest, under the goal: the rest open on demand, never a stack over the map
+  if (ui.compact()) {
+    const lc = document.querySelector('.leftcol'); if (el.parentNode !== lc) lc.appendChild(el);
+    el.classList.add('fline');
+    const L = ui.feedOpen ? ui.toasts : ui.toasts.slice(0, 1);
+    setHTML(el, L.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span></button>`).join('') +
+      (ui.toasts.length > 1 ? `<button class="fmore" data-act="feedOpen" title="${ui.feedOpen ? 'Fold the messages' : 'The other messages of the last seconds (the Journal has them all)'}">${ui.feedOpen ? 'Fold ▴' : `+${ui.toasts.length - 1} more ▾`}</button>` : ''));
+    return;
+  }
+  if (el.classList.contains('fline')) { el.classList.remove('fline'); $('app').insertBefore(el, $('insp')); }
   setHTML(el, ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
   // the newest are on top: the older ones that would run into the map controls below are left out (the Journal has them all)
   const box = $('mapbox').getBoundingClientRect(), room = box.height ? box.top - el.getBoundingClientRect().top - 8 : Infinity;
@@ -147,7 +159,10 @@ function topbar() {
   const st = S.story, act = st ? st.act : 4;
   if (S.range) { const R = IC.rangeStats(S); setHTML($('stats'), `<div class="stat"><span>Shots</span><strong>${R.shots}</strong></div><div class="stat"><span>Kills</span><strong class="ok">${R.kills}</strong></div><div class="stat"><span>Leakers</span><strong class="${R.leaks ? 'hostile' : ''}">${R.leaks}</strong></div>`); }
   const left = S.moneyLeft == null ? Infinity : S.moneyLeft, short = left < 24;
-  const money = `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${Math.round(flow) >= 0 ? 'ok' : 'hostile'}">${Math.round(flow) >= 0 ? '+' : '−'}${Math.abs(Math.round(flow))}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
+  // (round 3) in the Career, one money line everywhere: this month's change in the treasury, from the statement
+  const ML = IC.FOCUS.chain && S.mode === 'story' && IC.moneyLine ? IC.moneyLine(S) : null;
+  const money = ML ? `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${esc(ML.text)} Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${ML.net >= 0 ? 'ok' : 'hostile'}">${ML.sign} this month</em></button>`
+    : `<button class="stat treasury" id="stat-money" data-act="room" data-v="economy" title="${short ? `Money runs out in about ${U.dur(left * 3600)} at this rate. ` : ''}Treasury, and how it changes an hour. Click for the Economy room."><span>Treasury</span><strong class="${short ? 'hostile' : 'gold'}">${U.money(S.budget)}</strong><em class="${Math.round(flow) >= 0 ? 'ok' : 'hostile'}">${Math.round(flow) >= 0 ? '+' : '−'}${Math.abs(Math.round(flow))}/h${short ? ` · ${U.dur(left * 3600)} left` : ''}</em></button>`;
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
@@ -167,7 +182,7 @@ function topbar() {
   setHTML($('rules'), `
     ${act >= 2 ? `<div class="rl weapons" title="National weapons status: Tight fires only on identified hostiles; Free also on suspects; Hold never without your order"><span>Weapons</span>${seg('roeAll', S.ad.roe, [['free', 'Free', '', 'Engage hostile and suspect tracks'], ['tight', 'Tight', '', 'Engage only identified hostiles'], ['hold', 'Hold', 'red', 'Do not fire without an order']])}</div>` : ''}
     ${act >= 3 ? `<div class="rl doctrine" title="Firing doctrine"><span>Doctrine</span>${seg('doctrine', S.ad.doctrine, [['sls', 'Look', '', 'Shoot-look-shoot: one missile, then another if it missed'], ['salvo', 'Salvo', '', 'Two missiles at once'], ['conserve', 'Save', 'amb', 'Only high-probability shots']])}</div>` : ''}
-    <div class="rl airspace" title="Civil airspace: who may fly over the country"><span>Airspace</span>${seg('airspace', S.airspace, [['open', 'Open', '', 'Airliners fly their normal routes'], ['restricted', 'Restricted', 'amb', 'Airliners keep to the southern corridors only'], ['closed', 'Closed', 'red', 'No civil flights at all: the airlines lose money']])}</div>
+    ${IC.civilAct(S) ? '' : `<div class="rl airspace" title="Civil airspace: who may fly over the country"><span>Airspace</span>${seg('airspace', S.airspace, [['open', 'Open', '', 'Airliners fly their normal routes'], ['restricted', 'Restricted', 'amb', 'Airliners keep to the southern corridors only'], ['closed', 'Closed', 'red', 'No civil flights at all: the airlines lose money']])}</div>`}
 `);
   setHTML($('sys'), `${S.mode !== 'range' ? `<button class="ib wide ${IC.bb && IC.bb.open ? 'on' : ''}" data-act="bbToggle" title="Build: the airport's build bar (B)">${ui.icon('aviation')}<span>Build</span></button>` : ''}<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
   alerts();
@@ -191,6 +206,7 @@ function evcard() {
   const e = S.story && S.story.events[0];
   if (!e) { el.hidden = true; ui.cache.evcard = null; return; }
   el.hidden = false;
+  placeCard(el, { at: e.at || null });
   setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
     <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}</button>`).join('')}</div>`);
 }
@@ -261,7 +277,7 @@ function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
   const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research');
   const req = S.av && S.av.requests.length;
-  const staffDot = S.story && (S.story.events.length || S.story.cp > 0);
+  const staffDot = S.story && (S.story.events.length || (S.story.cp > 0 && !IC.civilAct(S)));
   const dot = k => ui.fresh.has('room:' + k) ? '<span class="dot new">New</span>'
     : k === 'journal' && hot ? '<span class="dot"></span>' : k === 'research' && idle ? '<span class="dot amb" title="A research slot is free"></span>'
     : k === 'aviation' && req ? `<span class="dot n civ">${req}</span>` : k === 'staff' && staffDot ? '<span class="dot amb"></span>' : '';
@@ -270,7 +286,7 @@ function rail() {
   setHTML($('rail'), ui.ROOMS.map(([k, n, key]) => {
     if (ui.roomOk(k)) return `${k === 'journal' ? '<div class="sep"></div>' : ''}<button id="rail-${k}" data-act="room" data-v="${k}" aria-pressed="${ui.room === k}" title="${n}${key ? ' (' + key + ')' : ''}: ${esc(ui.ROOM_INFO[k] || '')}"><svg viewBox="0 0 24 24">${ICON[k === 'staff' ? 'staff' : k]}</svg><small>${n}</small>${key ? `<kbd>${key}</kbd>` : ''}${dot(k)}</button>`;
     const at = ui.roomAct(k);
-    return at && at === next ? `<button id="rail-${k}" class="locked" data-act="roomLocked" data-v="${k}" title="${n}: opens in ${esc(IC.ACTS[at].name)}, ${esc(IC.ACTS[at].title)}. ${esc(ui.ROOM_INFO[k] || '')}"><svg viewBox="0 0 24 24">${ICON[k]}</svg><small>${n}</small><span class="lk">${ui.icon('lock')}</span></button>` : '';
+    return at && at === next && !IC.civilAct(S) ? `<button id="rail-${k}" class="locked" data-act="roomLocked" data-v="${k}" title="${n}: opens in ${esc(IC.ACTS[at].name)}, ${esc(IC.ACTS[at].title)}. ${esc(ui.ROOM_INFO[k] || '')}"><svg viewBox="0 0 24 24">${ICON[k]}</svg><small>${n}</small><span class="lk">${ui.icon('lock')}</span></button>` : '';
   }).join(''));
 }
 
@@ -366,7 +382,8 @@ function brief() {
     // the step before, cut to two lines, and the current one whole: the current step must never scroll out of sight
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
     h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
-  } else if (S.story && S.story.act < 4) {
+  } else if (S.story && S.story.act < 4 && ui.compact()) h = nextGoal();
+  else if (S.story && S.story.act < 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
     const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
     const done = st.goals.filter(g => g.done).length, shown = IC.storyShown(S).filter(x => !x.g.done || st.act > 1 || S.time - (x.g.doneT || 0) < 2 * 3600);
@@ -383,8 +400,26 @@ function brief() {
       ${sug.length ? `<div class="sug">${sug.map((o, i) => `<button class="p${o.pri}" data-act="sug" data-v="${i}"><i></i><span>${esc(o.text)}</span></button>`).join('')}</div>` : '<p class="hint">Nothing urgent. Good time to build up: deploy reserves, order stock, research.</p>'}`;
   }
   $('brief').classList.add('glass');
-  $('brief').classList.toggle('min', !!ui.briefMin);
+  $('brief').classList.toggle('min', !!ui.briefMin && !ui.compact());
+  $('brief').classList.toggle('next', ui.compact() && !!S.story);
   setHTML($('brief'), h);
+}
+/* (round 3) the goals as one line: the next one, how far along it is, the chapter; a click opens the list. A tip
+   shows once, small, for half a minute, then folds behind "How?" */
+function nextGoal() {
+  const st = S.story, ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
+  const done = st.goals.filter(g => g.done).length, open = st.goals.map((g, i) => ({ g, i })).filter(x => !x.g.done && !x.g.failed);
+  const row = ({ g, i }) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p || '')}</small>` : ''}</span></button>`; };
+  const where = ch ? `Chapter ${ch.n + 1} · ${ch.title}` : `${A.name} · ${A.title}`;
+  const tip = (IC.storyTip(S) || {}).text, now = performance.now();
+  ui.tipSeen = ui.tipSeen || new Map();
+  if (tip && !ui.tipSeen.has(tip)) ui.tipSeen.set(tip, now);
+  const tipOn = tip && (ui.tipOpen === tip || now - ui.tipSeen.get(tip) < 30000);
+  const list = ui.briefOpen ? IC.storyShown(S).filter(x => x.g !== (open[0] || {}).g) : [];
+  return `<h3 data-act="briefMin" title="${esc(where)}: ${ui.briefOpen ? 'fold the goals' : 'all the goals of this chapter'}"><span>Next goal</span><em>${ch ? `Chapter ${ch.n + 1}` : esc(A.name)} · ${done} of ${st.goals.length} done ${ui.briefOpen ? '▴' : '▾'}</em></h3>
+    ${open[0] ? row(open[0]) : `<p class="hint">${esc(ch && ch.next ? ch.next : 'Every goal is done. Something is coming: keep the airports running.')}</p>`}
+    ${tipOn ? `<p class="hint tip ${ui.tipOpen === tip ? 'open' : ''}" data-act="tipOpen" title="Click to read it all">${esc(tip)}</p><button class="howbtn" data-act="tipFold">Got it</button>` : tip ? `<button class="howbtn" data-act="tipOpen" title="How to do it">How?</button>` : ''}
+    ${list.length ? `<div class="goals">${list.map(row).join('')}</div>${ch && ch.next ? `<p class="hint">${esc(ch.next)}</p>` : ''}` : ''}`;
 }
 /* how far along a goal is, 0–1, or null when it cannot be said. A goal can give its own (g.frac); otherwise
    it is read from its progress line: "2 of 3", or a number now against the number in the goal. */
@@ -408,6 +443,13 @@ function comms() {
     ui.lastLen = Q.length; ui.cOpen = now;
   }
   if (ui.ci >= Q.length) ui.ci = Q.length - 1;
+  // (round 3) one line: who and the start of what they say; a click opens the message, and the newest replaces it
+  if (ui.compact() && !ui.cExp) {
+    const m = Q[Q.length - 1]; ui.ci = Q.length - 1;
+    $('comms').classList.add('glass');
+    setHTML($('comms'), `<button class="cline" data-act="cexp" title="Read it"><span class="av ${m.tag}">${esc(m.tag)}</span><b>${esc(m.name)}</b><span class="ct">${esc(m.text)}</span></button>`);
+    return;
+  }
   const m = Q[ui.ci];
   const shown = Math.min(m.text.length, Math.floor((now - ui.shownAt) / 1000 * 75));
   const full = shown >= m.text.length;
@@ -415,6 +457,7 @@ function comms() {
   // once the last message has been read for a while it folds away, so an old instruction does not linger; a click
   // or the next message opens it again
   if (full && ui.ci === Q.length - 1 && now - (ui.cOpen || 0) > Math.max(30000, m.text.length * 90)) {
+    if (ui.compact()) { ui.cExp = false; return; }
     $('comms').classList.add('glass');
     setHTML($('comms'), `<button class="cfold" data-act="copen">${esc(m.name)} · ${Q.length} message${Q.length > 1 ? 's' : ''} ▸</button>`);
     return;
@@ -423,7 +466,7 @@ function comms() {
   $('comms').classList.add('glass');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
     <p>${esc(m.text.slice(0, shown))}${full ? '' : '▍'}</p>
-    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button></span></div>`);
+    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button>${ui.compact() ? '<button data-act="cexp">Fold ▴</button>' : ''}</span></div>`);
 }
 
 /* ---------- arsenal: what is in reserve, what is on order ---------- */
@@ -573,9 +616,19 @@ function followChip() {
 /* a card goes where it does not hide what it talks about: away from its point (c.at), the aircraft followed, or
    what the camera is looking at close in */
 function placeCard(el, c) {
-  el.style.top = ''; el.style.bottom = '';
+  el.style.top = ''; el.style.bottom = ''; el.style.left = ''; el.style.right = '';
   const cam = IC.cam, ft = S.follow && IC.followTail(S), fw = ft && IC.tailWhere(S, ft);
   const pt = fw || c.at || (cam.z > 1.5 ? { x: cam.x + cam.vw / cam.z / 2, y: cam.y + cam.vh / cam.z / 2 } : null);
+  // (round 3) a card is a side panel: on the left under the goal line, or on the right when what it talks
+  // about is on the left half of the map; never a box over the middle
+  el.classList.toggle('side', ui.compact());
+  if (ui.compact()) {
+    const app = $('app').getBoundingClientRect(), W = app.width || cam.vw, sx = pt ? (pt.x - cam.x) * cam.z : W;
+    const lc = document.querySelector('.leftcol').getBoundingClientRect();
+    if (pt && sx < lc.right - app.left + 60) { el.style.left = 'auto'; el.style.right = `${Math.round((ui.mapRight || 0) + 12)}px`; el.style.top = 'var(--top)'; }
+    else el.style.top = `${Math.round(Math.max(lc.bottom - app.top + 10, 90))}px`;
+    return;
+  }
   if (!pt) return;
   const sy = (pt.y - cam.y) * cam.z, H = $('app').clientHeight || cam.vh;
   if (sy > H * 0.42) el.style.top = c.kind === 'moment' ? '5.5rem' : '3%'; else { el.style.top = 'auto'; el.style.bottom = '7%'; }
@@ -757,14 +810,54 @@ ui.momentGo = () => {
   else if (x.go.cat) { if (ui.room) ui.openRoom(null); ui.cat = x.go.cat; ui.arMin = false; ui.refresh(true); }
 };
 
+/* ---------- (round 3) problems on the map, where they happen ----------
+   Each of our airports in view shows its problems (IC.aptProblems) as markers at the place: a dot on the spot and
+   a box beside it with what is wrong and the one-click fix. From afar, one chip per airport with the count. */
+ui.hands = () => !!(IC.FOCUS && IC.FOCUS.hands && S && S.mode === 'story');
+function pmarks() {
+  const el = $('pmarks'); if (!el) return;
+  if (!ui.hands() || ui.room || !$('start').hidden || (S.mode2 && S.mode2.kind === 'found')) { setHTML(el, ''); ui.pm = []; return; }
+  const cam = IC.cam, x0 = cam.x, y0 = cam.y, x1 = cam.x + cam.vw / cam.z, y1 = cam.y + cam.vh / cam.z, close = cam.z >= 1.2;
+  const L = [];
+  for (const ap of IC.bases(S)) {
+    if (ap.kind !== 'airport' || ap.owner !== 'us' || !ap.parts || ap.locked) continue;
+    if (ap.x < x0 - 80 || ap.x > x1 + 80 || ap.y < y0 - 80 || ap.y > y1 + 80) continue;
+    const P = IC.aptProblems(S, ap); if (!P.length) continue;
+    ui.pmById = ui.pmById || new Map();
+    for (const p of P) ui.pmById.set(p.id, Object.assign(p, { ap: ap.id }));
+    if (!close) { const bad = P.filter(p => p.lvl === 'bad').length; L.push({ id: 'sum:' + ap.id, x: ap.x, y: ap.y, lvl: bad ? 'bad' : P.some(p => p.lvl === 'warn') ? 'warn' : 'deal', html: `<button class="pm-t" data-act="pmZoom" data-v="${ap.id}"><b>${esc(ap.name.replace(/ (International|Airport)$/, ''))}: ${P.length} thing${P.length > 1 ? 's' : ''} need${P.length > 1 ? '' : 's'} you ▸</b></button>` }); continue; }
+    // (the worst first, at most five an airport)
+    for (const p of P.sort((a, b) => ({ bad: 0, warn: 1, deal: 2 })[a.lvl] - ({ bad: 0, warn: 1, deal: 2 })[b.lvl]).slice(0, 5))
+      L.push({ id: p.id, x: p.x, y: p.y, lvl: p.lvl, html: `<button class="pm-t" data-act="pmGo" data-v="${esc(p.id)}" title="${esc(p.text)}"><b>${esc(p.title)}</b></button>${p.fix ? `<button class="pm-fix" data-act="pmFix" data-v="${esc(p.id)}" title="${esc(p.text)}">${esc(p.fix.label)} ▸</button>` : ''}` });
+  }
+  ui.pm = L;
+  setHTML(el, L.map(m => `<div class="pmark ${m.lvl}" data-k="${esc(m.id)}" data-x="${m.x}" data-y="${m.y}"><i class="pmdot"></i><div class="pmbox">${m.html}</div></div>`).join(''));
+}
+/* every frame: each marker to its place, the boxes stacked so none hides another */
+ui.pmFrame = function () {
+  const el = $('pmarks'); if (!el || !el.firstChild) return;
+  const cam = IC.cam, placed = [];
+  const items = [...el.children].map(n => ({ n, sx: (+n.dataset.x - cam.x) * cam.z, sy: (+n.dataset.y - cam.y) * cam.z })).sort((a, b) => a.sy - b.sy);
+  for (const it of items) {
+    const b = it.n.lastChild, w = b.offsetWidth, h = b.offsetHeight;
+    let bx = it.sx + 12, by = it.sy - h - 10;
+    for (let k = 0; k < 8; k++) { const hit = placed.find(r => bx < r.x + r.w + 4 && bx + w + 4 > r.x && by < r.y + r.h + 4 && by + h + 4 > r.y); if (!hit) break; by = hit.y + hit.h + 6; }
+    placed.push({ x: bx, y: by, w, h });
+    it.n.style.transform = `translate(${it.sx.toFixed(1)}px,${it.sy.toFixed(1)}px)`;
+    b.style.transform = `translate(${(bx - it.sx).toFixed(1)}px,${(by - it.sy).toFixed(1)}px)`;
+  }
+};
+
 /* ---------- refresh ---------- */
 ui.refresh = function (force) {
   if (!S) return;
-  progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); firstRun();
+  progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); firstRun(); pmarks();
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
+  $('app').classList.toggle('compact', ui.compact()); $('app').classList.toggle('mini-on', !!ui.miniOn);
+  $('insp').classList.toggle('min', ui.compact() && !!ui.inspMin);
   // how much of the map's right side the inspector covers, for what the map draws beside the cursor
   { const lc = document.querySelector('.leftcol').getBoundingClientRect(); ui.mapLeft = lc.height > 40 ? lc.right - $('app').getBoundingClientRect().left + 8 : 0; }
   ui.mapRight = $('insp').innerHTML ? Math.max(0, $('app').getBoundingClientRect().right - $('insp').getBoundingClientRect().left) : 0;

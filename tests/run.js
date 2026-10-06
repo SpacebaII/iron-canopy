@@ -4770,6 +4770,136 @@ test('round 2: life on the map scales with the passengers: a busy airport draws 
   assert(IC.drawLandLife(g, S, ap, 1 / 60, 60, false, 1000, true) === 0, 'a lights pass by day');
 });
 
+/* ---------- round 3: hands on the airport, systems connected (docs/focus/round-3.md) ---------- */
+const r3game = () => { const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 9 }); IC.S = S; S.paused = false; return S; };
+test('round 3: a stand short of capacity shows a marker at the terminal, with a fix that places a terminal beside it', () => {
+  const S = r3game(), ap = S.byId[S.story.cap], term = ap.parts.find(p => p.kind === 'terminal' && p.built);
+  // every passenger stand taken: the next arrivals circle at the approach fix
+  const block = () => { for (const s of IC.aptStands(ap)) if (!s.occ) s.occ = 'blocked'; };
+  let P = null;
+  for (let i = 0; i < 4 * 3600 * 2 && !P; i++) { block(); IC.step(S, 0.5); if (i % 60 === 0) P = IC.aptProblems(S, ap).find(p => p.kind === 'stand'); }
+  assert(P, 'no stand problem while every stand was taken');
+  assert(/^.+: \d+ aircraft waiting for a stand$/.test(P.title) && P.lvl === 'bad', P.title);
+  assert(U.dist(P, term) < 1, `the marker is ${U.km(U.dist(P, term))} from the terminal`);
+  assert(P.fix && P.fix.part === 'tstraight' && /terminal/i.test(P.fix.label), JSON.stringify(P.fix));
+  // the fix: a terminal with stands, placed and ready to build, joined to the taxiways
+  const m = IC.fixPlan(S, ap, P.fix.part, P.fix.near);
+  assert(m && m.set && m.at, 'the fix places nothing');
+  const plan = IC.bldPlanOf(S, m, m.at, 0.12);
+  assert(plan.ok && plan.piece && plan.piece.links.length, `the placed terminal: ${plan.why} ${(plan.warn || []).join(' ')}`);
+  const n0 = IC.aptStands(ap).length + ap.parts.length;
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  assert(ap.parts.length > n0 - IC.aptStands(ap).length, 'nothing was planned');
+});
+test('round 3: fuel queues show at the fuel farm, and the tank the fix places keeps 100 m from it', () => {
+  const S = r3game(), ap = S.byId[S.story.cap], farm = ap.parts.find(p => p.kind === 'fuel' && p.built);
+  for (let i = 0; i < 1200; i++) IC.step(S, 0.5);
+  // departures on their stands, waiting for a fuel truck
+  const tl = S.av.tails.filter(t => t.at === ap.id && t.where === 'stand');
+  assert(tl.length, 'nobody on a stand');
+  for (const t of tl) { t.t = 120; t.fuelWait = 600; }
+  const P = IC.aptProblems(S, ap).find(p => p.kind === 'fuel');
+  assert(P && /^Fuel: \d+ departures? waiting \d+ min$/.test(P.title) && U.dist(P, farm) < 0.01, P && P.title);
+  const m = IC.fixPlan(S, ap, 'fuel', P.fix.near);
+  assert(m, 'no place for a tank');
+  const plan = IC.bldPlanOf(S, m, m.at, 0.12), sp = plan.ok && plan.specs.find(q => q.kind === 'fuel');
+  assert(sp, `the placed tank cannot be built: ${plan.why}`);
+  assert(ap.parts.filter(q => q.kind === 'fuel').every(q => IC.fuelGap(q, sp) >= 1), 'the new tank stands within 100 m of other fuel');
+});
+/* a Career played until airlines offer deals at our airports */
+const r3offers = () => {
+  const S = r3game();
+  for (let i = 0; i < 3600 && S.av.requests.length < 3; i++) { if (i % 200 === 0) S.av.reqT = 0; IC.step(S, 0.5); }
+  return S;
+};
+test('round 3: a deal can be signed from the airport: the offer is marked there with its card, and signing opens the route', () => {
+  const S = r3offers(), q = S.av.requests.find(x => !IC.avReqBlock(S, x) && IC.dealTerms(S, x).ok);
+  assert(q, `no offer an airport can carry: ${S.av.requests.map(x => IC.avReqBlock(S, x)).join('; ')}`);
+  const ap = S.byId[q.a], P = IC.aptProblems(S, ap).find(p => p.kind === 'offer' && p.req === q.id);
+  assert(P && P.fix && P.fix.deal === q.id && /^(Offer|Renewal): .+, \d+ × .+ to .+$/.test(P.title), P && P.title);
+  assert(/₭[\d.,]+M a day for \d+ months?\. Ready to sign\./.test(P.text), P.text);
+  const d0 = S.av.deals.length;
+  assert(IC.avDecide(S, q.id, true), 'Sign did nothing');
+  assert(S.av.deals.length === d0 + 1 && !IC.aptProblems(S, ap).some(p => p.req === q.id), 'still offered after signing');
+});
+test('round 3: an offer the airport cannot carry yet says what it lacks, and its fix builds it', () => {
+  const S = r3offers();
+  let q = null, P = null;
+  for (const x of S.av.requests) { const ap = S.byId[x.a], p = ap && IC.aptProblems(S, ap).find(y => y.req === x.id); if (p && p.fix && p.fix.part) { q = x; P = p; break; } }
+  assert(q, `no offer short of something an airport can build: ${S.av.requests.map(x => IC.avReqBlock(S, x)).join('; ')}`);
+  const ap = S.byId[q.a], why = IC.avReqBlock(S, q);
+  assert(new RegExp(`It will not sign yet: ${why.replace(/[()]/g, '.')}`).test(P.text), P.text);
+  const m = IC.fixPlan(S, ap, P.fix.part, P.fix.near, P.fix.size);
+  assert(m && IC.buildFinish(S, m) === 'built', `the fix (${P.fix.part}) was not placed and built: ${m && m.err}`);
+  S.budget = 1e5;
+  for (let i = 0; i < 12 * 3600 && ap.works.length; i++) IC.step(S, 2);
+  assert(!ap.works.length, 'the works did not finish');
+  const now = IC.avReqBlock(S, q);
+  assert(now !== why, `still lacking the same: ${now}`);
+});
+test('round 3: a deal short of a hangar is marked at the airport, with the hangar as its fix', () => {
+  // the Career as played: a new airport from the Starter, open for business, its first airlines flying
+  const { S, ap, sv } = foundFresh();
+  const m = S.mode2 = IC.bldMode(S, ap, 'starter');
+  IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0); assert(IC.buildFinish(S, m) === 'built', m.err);
+  finishWorks(S, ap); S.paused = false;
+  let P = null;
+  for (let i = 0; i < 2 * 86400 / 2 && !P; i++) { IC.step(S, 2); if (i % 150 === 0) P = IC.aptProblems(S, ap).find(p => p.kind === 'deal'); }
+  assert(P, 'no deal at risk in two days without a hangar');
+  assert(/^Deal at risk: .+ needs hangar space/.test(P.title) && P.lvl === 'bad', P.title);
+  assert(/walks out in .+ unless it is put right|deals here; they end in/.test(P.text), P.text);
+  assert(P.fix.part === 'hangar' && P.fix.label === 'Build a hangar', JSON.stringify(P.fix));
+  const h = IC.fixPlan(S, ap, 'hangar', P.fix.near);
+  assert(h && IC.bldPlanOf(S, h, h.at, 0.12).ok && IC.buildFinish(S, h) === 'built', 'the hangar was not placed');
+  finishWorks(S, ap);
+  for (let i = 0; i < 1800; i++) IC.step(S, 2);
+  assert(!IC.aptProblems(S, ap).some(p => p.id === P.id), 'still at risk with the hangar built');
+});
+test('round 3: nothing military shows in the Career before Act II', () => {
+  const S = r3game();
+  assert(IC.civilAct(S), 'the Career opening is not the civil act');
+  const n0 = S.camp.comms.length;
+  IC.emit(S, 'weather', Object.keys(IC.WEATHER).find(k => !IC.WEATHER[k].heli));
+  IC.say(S, 'AIR', 'Weather has grounded the helicopters.');
+  IC.say(S, 'ADA', 'A battery reports in.');
+  IC.say(S, 'APT', 'The terminal is busy.');
+  assert(S.camp.comms.length === n0 + 1 && S.camp.comms[S.camp.comms.length - 1].who === 'APT', `staff messages: ${S.camp.comms.slice(n0).map(c => c.who).join(', ')}`);
+  assert(S.logs.some(l => /battery reports/.test(l.msg)), 'the military word did not reach the Journal');
+  // a day of play: no helicopters in the weather, no military staff in the messages
+  for (let i = 0; i < 24 * 3600 / 4; i++) IC.step(S, 4);
+  assert(!S.logs.some(l => l.tag === 'WEATHER' && /helicopter/i.test(l.msg)), 'helicopters in the weather lines');
+  assert(!S.camp.comms.some(c => ['CDS', 'ADA', 'LOG', 'INT', 'AIR'].includes(c.who)), 'military staff speak in Act I');
+  // later acts, the Quick war and the switch: as they were
+  S.story.act = 2; assert(!IC.civilAct(S), 'Act II is still civil');
+  S.story.act = 1; IC.FOCUS.calm = false; try { assert(!IC.civilAct(S), 'the switch does not bring it back'); } finally { IC.FOCUS.calm = true; }
+  const Q = IC.newGame({ seed: 4242, mode: 'campaign' }); assert(!IC.civilAct(Q), 'the Quick war is civil');
+});
+test('round 3: the money line agrees with the monthly statement, and every fee is traced to an airport', () => {
+  const S = r3game();
+  const aps = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us' && i.parts);
+  for (const ap of aps) IC.aptMonth(S, ap);
+  const fees0 = S.av.feeTotal || 0;
+  // a month of flying, and something built (paid as it runs)
+  const ap = S.byId[S.story.cap], m = IC.fixPlan(S, ap, 'hangar', ap);
+  assert(m && IC.buildFinish(S, m) === 'built', 'nothing to build');
+  const m0 = IC.calAt(S, S.time).m;
+  for (let i = 0; i < 3600 * 4 && IC.calAt(S, S.time).m === m0; i++) IC.step(S, 4);
+  for (let i = 0; i < 3600; i++) IC.step(S, 4);
+  const L = IC.moneyLine(S), st = IC.monthStatement(S, 0);
+  assert(L && Math.abs(L.net - st.net) < 1e-6 && Math.abs(L.inn - st.income) < 1e-6 && Math.abs(L.out + st.spend) < 1e-6, `line ${JSON.stringify(L)} statement ${st.income} ${st.spend}`);
+  assert(L.text.includes(U.money(st.income)) && L.text.includes(U.money(-st.spend)), L.text);
+  assert(/^[A-Z][a-z]+ so far: ₭[\d,.]+M came in/.test(L.text), L.text);
+  // every coin of the airlines' fees this month is at one of our airports
+  const fees = st.lines.filter(l => /^fee_(land|pax|cargo)$/.test(l.k)).reduce((a, l) => a + l.v, 0);
+  const atAps = aps.reduce((a, x) => { const M = IC.aptMonth(S, x); return a + M.land + M.pax + M.cargo; }, 0);
+  assert(fees > 0 && Math.abs(fees - atAps) < 0.01 * fees + 0.01, `fees ${fees} against the airports' ${atAps}`);
+  // and the chain says it, in numbers that add up
+  const C = IC.aptChain(S, ap);
+  assert(C.people > 0 && C.cities.length && Math.abs(C.earned - (IC.aptMonth(S, ap).land + IC.aptMonth(S, ap).pax + IC.aptMonth(S, ap).cargo)) < 1e-9, C.text);
+  assert(/people within 2\.5 h by road → [\d,]+ passengers an hour → \d+ places? served → ₭[\d.,]+M this month$/.test(C.text), C.text);
+  assert((S.av.feeTotal || 0) > fees0, 'no fees');
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

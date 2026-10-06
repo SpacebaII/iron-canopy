@@ -43,7 +43,7 @@ IC.cinematic = function (S2, x, y, big) {
    (IC.combatTime in combat.js) and back up when they are gone. Down fast, up gently. A setting, on by default */
 function combatSpeed(S, speed, dtR) {
   const C = IC.cine;
-  if (S.cfg.combat === false || S.wait || S.skip) { C.ct = null; IC.combatNow = null; return speed; }
+  if (S.cfg.combat === false || S.wait || S.skip || IC.civilAct(S)) { C.ct = null; IC.combatNow = null; return speed; }
   const c = IC.cam, cap = IC.combatTime(S, { x0: c.x, y0: c.y, x1: c.x + c.vw / c.z, y1: c.y + c.vh / c.z });
   const want = Math.min(speed, cap);
   if (C.ct == null) C.ct = speed;
@@ -229,6 +229,20 @@ function goFrame() {
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 /* the airport's Airspace tab is open: its rings can be picked and their edges dragged on the map */
+/* (round 3) a fix from the map or a panel: the airport, the build bar, and the piece already placed where it helps
+   (IC.fixPlan); Build or Enter builds it, a click elsewhere moves it, Esc cancels */
+IC.fixOpen = function (S2, ap, part, near, size) {
+  const ui = IC.ui; ui.closeCine(); if (ui.room) ui.openRoom(null);
+  const lock = IC.APART[part] && IC.aptLockWhy(S2, part);
+  if (lock) { IC.toast(S2, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
+  IC.bb.ap = ap; IC.select({ kind: 'infra', ref: ap }); IC.bbToggle(true);
+  const m = IC.fixPlan(S2, ap, part, near || ap, size);
+  if (!m) { IC.bbPick(part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
+  IC.bb.last = part; IC.setMode(m);
+  const P = IC.PIECES && IC.PIECES[part];
+  IC.flyTo(m.at.x, m.at.y, U.clamp(Math.max(IC.cam.z, P ? 6 : 9), 5, P ? 9 : 16));
+  return true;
+};
 const aspEditing = () => { const ap = selAp(); return !S.mode2 && IC.ui.aptTab === 'asp' && ap && S.sel.kind === 'infra' && ap.owner === 'us' && S.asp && S.asp.vols; };
 const selUnits = () => S.group.length ? S.group : S.sel && S.sel.kind === 'unit' ? [S.sel.ref] : [];
 const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel');
@@ -490,7 +504,14 @@ function onAct(e) {
     case 'layer': S.layers[v] = !S.layers[v]; break;
     case 'cat': ui.cat = v; ui.arMin = false; break;
     case 'arMin': ui.arMin = !ui.arMin; break;
-    case 'briefMin': ui.briefMin = !ui.briefMin; break;
+    case 'briefMin': if (ui.compact()) ui.briefOpen = !ui.briefOpen; else ui.briefMin = !ui.briefMin; break;
+    // (round 3) the one-line goal, message and feed open on demand
+    case 'tipFold': ui.tipOpen = null; if (ui.tipSeen) for (const k of ui.tipSeen.keys()) ui.tipSeen.set(k, -1e9); break;
+    case 'tipOpen': { const t = S.story && IC.storyTip(S); ui.tipOpen = t ? t.text : null; break; }
+    case 'cexp': ui.cExp = !ui.cExp; ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
+    case 'feedOpen': ui.feedOpen = !ui.feedOpen; break;
+    case 'inspMin': ui.inspMin = !ui.inspMin; break;
+    case 'miniTog': ui.miniOn = !ui.miniOn; break;
     case 'deploy': {
       const d = IC.UNITS[v];
       ui.seen('unit:' + v);
@@ -517,6 +538,25 @@ function onAct(e) {
       IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 2.2)); return;
     }
 
+    // (round 3) a problem marker on the map: what it is about, or its fix in one click
+    case 'partMore': ui.partMore = !ui.partMore; break;
+    case 'fixAt': { const a = selAp(); if (a) IC.fixOpen(S, a, v, { x: +b.dataset.x, y: +b.dataset.y }); return; }
+    case 'fireDrill': { const a = selAp(), rw = a && a.parts.filter(q => q.kind === 'runway' && q.built).sort((p, q) => (a.st && a.st.rescueRw ? (a.st.rescueRw[q.id] || 0) - (a.st.rescueRw[p.id] || 0) : 0))[0];
+      if (rw) { const fs = a.parts.find(q => q.kind === 'fire' && q.built) || a, far = U.dist(rw.a, fs) > U.dist(rw.b, fs) ? rw.a : rw.b, R = IC.fireRun(S, a, far, 'drill'); if (R) IC.toast(S, 'info', 'FIRE', `Drill: the trucks race to the far end of ${rw.name || 'the runway'}. They need to be there within ${IC.mmss(IC.FIRE_STD)} for heavy jets.`); } break; }
+    case 'towerRules': { const a = selAp(); if (a) { ui.aptTab = 'rules'; IC.select({ kind: 'infra', ref: a }); } return; }
+    case 'chainTog': IC.chainOn = !IC.chainOn; break;
+    case 'aptOpen': ui.aptOpen = ui.aptOpen || {}; ui.aptOpen[v] = !ui.aptOpen[v]; break;
+    case 'pmZoom': { const a = S.byId[v]; if (a) { IC.select({ kind: 'infra', ref: a }); IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 6)); } return; }
+    case 'pmGo': case 'pmFix': {
+      const p = ui.pmById && ui.pmById.get(v), a = p && S.byId[p.ap]; if (!a) break;
+      if (a !== selAp()) { IC.bb.closed = a.id; }
+      if (b.dataset.act === 'pmFix' && p.fix && p.fix.part) { IC.fixOpen(S, a, p.fix.part, p.fix.near, p.fix.size); return; }
+      ui.aptOpen = Object.assign(ui.aptOpen || {}, { deals: true }); ui.dealFocus = p.req || p.deal || null; ui.inspMin = false; ui.aptTab = 'info';
+      if (p.req || p.deal) ui.scrollTo = 'aptDeals';
+      const part = { fuel: 'fuel', term: 'terminal', stand: 'terminal' }[p.kind], q = part && a.parts.find(x => x.kind === part && x.built);
+      if (b.dataset.act === 'pmGo' && q) IC.select({ kind: 'apart', ref: q, ap: a }); else IC.select({ kind: 'infra', ref: a });
+      return;
+    }
     case 'emcon': case 'uroe': case 'udoc': case 'move': case 'heli': case 'pri': case 'repair': case 'clearPrio': case 'reserve': case 'fireMode': case 'assignBest': case 'scramble': command(a, v); return;
     case 'emconAll': command('emcon', v); return;
     case 'dpri': { const d = id ? S.units.find(u => u.id === id) : sel; if (d) { d.pri = v; IC.log(S, 'info', 'LOGI', `${d.name}: resupply priority ${IC.DEPOT_PRI[v].name.toLowerCase()}.`); } break; }
@@ -1025,6 +1065,7 @@ function frame(now) {
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }
   IC.ui.hintFrame();
+  IC.ui.pmFrame();
   goFrame();
   requestAnimationFrame(frame);
 }

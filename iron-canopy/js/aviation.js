@@ -398,7 +398,15 @@ function pay(S, tl, ap, what) {
   // the day's takings at this airport, and what each stand earned (the Economy room's lesson on idle stands)
   const D = dayLog(S, ap), sid = tl.stand || tl.lastStand;
   D.fee += land + pf + cg; if (sid) D.stand[sid] = (D.stand[sid] || 0) + land + pf + cg;
+  // (round 3) the airport's month: what its flights paid, for the money line and the chain on the map
+  const M = IC.aptMonth(S, ap); M.land += land; M.pax += pf; M.cargo += cg; M.people += pax; M.flights++;
 }
+/* this month's takings at an airport (a day's on the live clock), started afresh when the month turns */
+IC.aptMonth = function (S, ap) {
+  const k = S.mode === 'story' && S.cal ? IC.calAt(S, S.time).m : Math.floor(S.time / 86400);
+  if (!ap.mo || ap.mo.k !== k) ap.mo = { k, land: 0, pax: 0, cargo: 0, people: 0, flights: 0, t0: S.time };
+  return ap.mo;
+};
 /* route charges from traffic crossing the country: more for a flight on our airways, where controllers give it a service */
 IC.avOverflight = function (S, net) { if (!S.av) return; const v = net ? 0.5 : 0.25; S.budget += v; S.av.led.over += v; feeLog(S, 'over', v); IC.emit(S, 'overflight', { net: !!net }); };
 /* revenue over the last hour, by kind (scaled up during the first hour of a game) */

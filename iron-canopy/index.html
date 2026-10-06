@@ -8,6 +8,7 @@
 
 <div class="app" id="app">
   <canvas id="map" aria-label="Tactical map. Drag to pan, scroll to zoom, click to select, right-click to give orders."></canvas>
+  <div class="pmarks" id="pmarks" aria-label="Problems at the airports"></div>
 
   <header class="topbar" id="topbar">
     <div class="tb-left">
@@ -39,7 +40,7 @@
     <div class="layers" id="layers"></div>
     <div class="mapctl">
       <button data-act="zin" aria-label="Zoom in" title="Zoom in (+)">+</button><button data-act="zout" aria-label="Zoom out" title="Zoom out (−)">−</button>
-      <button class="w" data-act="zhome" title="Capital (Home)">Capital</button><button class="w" data-act="zfull" title="Whole region">Region</button>
+      <button class="w" data-act="zhome" title="Capital (Home)">Capital</button><button class="w" data-act="zfull" title="Whole region">Region</button><button class="w" data-act="miniTog" title="Show or hide the minimap">Minimap</button>
     </div>
     <canvas id="mini" aria-label="Minimap. Click to move the view."></canvas>
   </div>
@@ -199,6 +200,7 @@
 <script src="js/combat.js"></script>
 <script src="js/record.js"></script>
 <script src="js/aptlife.js"></script>
+<script src="js/problems.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/save.js"></script>
 <script src="js/audio.js"></script>
@@ -211,6 +213,7 @@
 <script src="js/render-airport.js"></script>
 <script src="js/render-life.js"></script>
 <script src="js/render-infoview.js"></script>
+<script src="js/render-chain.js"></script>
 <script src="js/render-logistics.js"></script>
 <script src="js/render-airspace.js"></script>
 <script src="js/sideview.js"></script>
