@@ -1536,7 +1536,9 @@ test('airport life: a new airport gets an access road to its city, and its cost 
   const b0 = S.budget, w0 = S.econ.works.length, sv = IC.foundSurvey(S, t.p.x, t.p.y, IC.PREVAIL);
   const ap = IC.foundAirport(S, t.p.x, t.p.y, IC.PREVAIL);
   assert(ap, 'could not found the airport');
-  const paid = b0 - S.budget - sv.cost;
+  // (round 1) the survey prices the road: Found takes the site and the road it said, nothing more
+  const paid = b0 - S.budget - sv.site;
+  assert(sv.road && Math.abs(sv.cost - sv.site - sv.road.cost) < 0.01 && Math.abs(b0 - S.budget - sv.cost) < 0.01, `the survey said ${U.money(sv.cost)}, Found took ${U.money(b0 - S.budget)}`);
   const w = S.econ.works.find(x => x.apt === ap.id);
   assert(w && S.econ.works.length === w0 + 1, 'no access road works started');
   assert(ap.land && ap.land.access && ap.land.access.cost > 0 && S.logs.some(l => /access road/.test(l.text || l.msg || '') && /₭/.test(l.text || l.msg || '')), 'the access road and its cost are not reported');

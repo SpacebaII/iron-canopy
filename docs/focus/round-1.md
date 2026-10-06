@@ -11,13 +11,13 @@ Screenshots are in `docs/focus/round-1/`:
 
 | Moment | Before (playtest 1) | After: Starter blueprint | After: piece by piece |
 | --- | --- | --- | --- |
-| Airport founded | about 9 clicks, 2:00 | 11 clicks, 0:41 | 11 clicks, 0:39 |
-| First runway ordered | about 17 clicks, 2:30 | 16 clicks, 0:50 (with the whole airport) | 12 clicks, 0:41 (Build on the surveyed runway) |
-| **Complete starter airport ordered** | about 45 clicks, 7:00 (part by part) | **16 clicks, 0:50** | **19 clicks, 0:55** (runway, terminal, services) |
-| Airport open for business | 4 h 18 min of game time, 7 real minutes | 17 clicks, 1:08, with Finish now (14 s of real time) | 23 clicks, 1:13 (Finish now: 9 s) |
-| First landing | 13:00, after 3 diversions | 21 clicks, 1:28, 0 diversions | 23 clicks, 1:48, 0 diversions |
-| Chapter 2 | 14:00 | 1:28 | 1:48 |
-| Wait | stopped 10 times in a row by one incident | | 3 stops in 40 game hours, each a different event the player can act on: a deal at risk, an offer, a deal over |
+| Airport founded | about 9 clicks, 2:00 | 11 clicks, 0:37 | 11 clicks, 0:39 |
+| First runway ordered | about 17 clicks, 2:30 | 16 clicks, 0:46 (with the whole airport) | 12 clicks, 0:41 (Build on the surveyed runway) |
+| **Complete starter airport ordered** | about 45 clicks, 7:00 (part by part) | **16 clicks, 0:46** | **19 clicks, 0:55** (runway, terminal, services) |
+| Airport open for business | 4 h 18 min of game time, 7 real minutes | 17 clicks, 1:00, with Finish now (10 s of real time) | 23 clicks, 1:13 (Finish now: 9 s) |
+| First landing | 13:00, after 3 diversions | 19 clicks, 1:30, 0 diversions | 23 clicks, 1:48, 0 diversions |
+| Chapter 2 | 14:00 | 1:30 | 1:48 |
+| Wait | stopped 10 times in a row by one incident | 4 stops in 101 game hours: a deal at risk, an offer, a deal over, February begins | 3 stops in 40 game hours: a deal at risk, an offer, a deal over |
 
 How to read the counts:
 - Clicks include the 7 clicks that close the opening tips and cards. A player who skips the tips saves those.
@@ -71,7 +71,7 @@ How to read the counts:
   - a terminal with 8 gates and 1,060 passengers an hour;
   - a tower, a fire station and a fuel farm.
 
-  It costs ₭1,167M, all in one plan. On a new airport it lies on the surveyed runway. With a runway already planned it is built round that runway: it adds the parallel taxiway only if there is none, and links to it if there is.
+  It costs ₭1,077M, all in one plan. On a new airport it lies on the surveyed runway. With a runway already planned it is built round that runway: it adds the parallel taxiway only if there is none, and links to it if there is.
 - **Detail.** The single parts are folded under **▸ Detail**, with pavement, width, lights and zone still there. Pieces use sensible defaults: concrete, lit, the zone from what the piece is. Terminals keep one choice, the gate size.
 - **The switch.** `IC.FOCUS = { pieces: true }` in `core.js` is the one switch. With `false` the old bar comes back as it was.
 - **Tests:**
@@ -102,18 +102,18 @@ How to read the counts:
 
   Landing systems and radars belong there and are exempt. Test: *a building inside a runway strip is warned about on the plan and on the airport, with the fix*.
 - **Every finished piece shows what it changed.** The change rises over it on the map for six seconds, for example "+26 MOVEMENTS AN HOUR", "+8 STANDS", "+1,064 PASSENGERS AN HOUR" or "FREIGHTER CAN LAND". Shot: `10-built.jpg`. The runway and terminal "opens" cards still give before → after.
-- **The first flight is offered when the airport opens.** The "Open for business" card comes as soon as a runway, a terminal, fire cover and fuel are built. In the playthrough that was 18 s after Finish now was pressed.
-- **Finish now.** It sits on the build bar and in the Works tab. Time runs at three times Wait's speed until every work at the airport is done, then stops. It is not stopped by goals that its own works tick off, but stops for anything that needs the player, or when the works run out of money. The six hours of the Starter's works took 14 real seconds.
+- **The first flight is offered when the airport opens.** The "Open for business" card comes as soon as a runway, a terminal, fire cover and fuel are built. In the playthrough it came as Finish now ended.
+- **Finish now.** It sits on the build bar and in the Works tab. Time runs at three times Wait's speed until every work at the airport is done, then stops. It is not stopped by goals that its own works tick off, but stops for anything that needs the player, or when the works run out of money. The six hours of the Starter's works took 10–14 real seconds.
 - **Construction stays watchable.** The stages are unchanged: survey pegs, earthworks with lorries, paving, markings and lights.
 
 ## The checklist
 
 | # | Item | Met? | Evidence |
 | --- | --- | --- | --- |
-| 2 | Within 5 minutes and about 30 clicks, a working first airport that looks real: runway, taxiways, terminal with stands, tower, fire, fuel | **Met** | The Starter path ordered it in 16 clicks and 50 s; it opened in 17 clicks and 68 s. Piece by piece: 19 clicks and 55 s to order, 23 clicks and 73 s to open.
+| 2 | Within 5 minutes and about 30 clicks, a working first airport that looks real: runway, taxiways, terminal with stands, tower, fire, fuel | **Met** | The Starter path ordered it in 16 clicks and 46 s; it opened in 17 clicks and 60 s. Piece by piece: 19 clicks and 55 s to order, 23 clicks and 73 s to open.
  Shots `12-airport.jpg` and `13-terminal.jpg`: an 8-gate terminal with its apron, taxilane, kerb loop and car park, the tower, fire station and fuel farm, the runway with its taxiways. |
 | 3 | Every placement snaps where meant, shows price and build time, builds with one obvious action; Esc or right-click always cancels; nothing crooked, floating or unconnected without the game saying so | **Mostly met** | Pieces face the runway and join the nearest taxiway, with the links drawn. One Build button shows the price; the "planned" message says how long the work takes for the crews there. Esc and right-click cancel, and undo takes back a piece. A building in the strip is now said. Not yet: the piece's ghost does not show its build time before the click (only after), and terminal pieces do not snap to a set distance from the parallel taxiway (they join it from wherever they are put). |
-| 4 | Construction worth watching, skippable without minutes of real waiting | **Met** | The stages are drawn as before, queued work is now visible, and Finish now runs the Starter's 6 game hours in 14 real seconds (`09-construction.jpg`). |
+| 4 | Construction worth watching, skippable without minutes of real waiting | **Met** | The stages are drawn as before, queued work is now visible, and Finish now runs the Starter's 6 game hours in 10–14 real seconds (`09-construction.jpg`). |
 | 7 | Everything built visibly changes something | **Partly met** | Movements an hour, stands, passengers an hour and the largest aircraft rise over each finished part (`10-built.jpg`). The airport opens as soon as it can take jets. Not yet: the terminal "filling with people" and services at work (fuel, fire) are Round 2's. |
 
 ## Tests
@@ -132,7 +132,8 @@ New tests in `tests/run.js` (section "round 1"):
 ## What is left, and what needs the owner
 
 - **Feel on real hardware.** The playthrough ran in software-rendered Chromium. Wheel steps and drag placing should be tried with a real mouse and touchpad.
-- **The Starter's size is a choice.** It is a single 3 km runway with 8 gates for ₭1,167M. That is about a fifth of the Career's ₭5,500M, which leaves room for the second terminal or pier that Chapter 2's deals will ask for. A bigger "National airport" blueprint (two terminals, a cargo area) could be offered later.
+- **The Starter's size is a choice.** It is a single 3 km runway with 8 gates for ₭1,077M. That is about a fifth of the Career's ₭5,500M, which leaves room for the second terminal or pier that Chapter 2's deals will ask for. A bigger "National airport" blueprint (two terminals, a cargo area) could be offered later.
+- **A hangar in the Starter?** In both Wait runs the flag carrier's deal ended within two game days of opening, because nobody built the hangar it needs. Chapter 2 asks for one, and the deal allows a day. The Starter has no hangar. Adding one would make the first deal safe, but it would also tick one more Chapter 2 goal in advance. This is the owner's call.
 - **Snapping.** Pieces are placed freely and joined by links. A snap that puts a terminal exactly 100 m beyond the parallel taxiway would make layouts tidier. Round 3 (problems on the map) is a good place for it.
 - **More room on screen.** The message feed in the middle of the screen still covers the airport while building; the inspector now steps aside. Round 3 plans fewer panels.
 - **The old tips** still talk about "the build bar's tabs (1–0)". Round 5 rewrites the first ten minutes' words.
