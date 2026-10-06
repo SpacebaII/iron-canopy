@@ -328,7 +328,7 @@ IC.bldUpgradeCost = function (S, ap, part, o) {
   out.cost = Math.max(0, IC.partCost(ap, to) - IC.partCost(ap, part));
   out.dur = Math.max(300, IC.partBuildTime(ap, to) * (to.mat !== part.mat || to.w !== part.w ? 0.6 : 0.15));
   out.to = to;
-  if (S.budget < out.cost * 0.1) out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed now.`;
+  if (S.budget < out.cost * 0.1) out.why = out.cost > 0 && IC.inRed(S) ? IC.redWhy(S) : `Not enough money to start: ${U.money(out.cost * 0.1)} needed now.`;
   return out;
 };
 IC.bldUpgrade = function (S, ap, part, o) {
@@ -374,7 +374,7 @@ IC.bldRelocateCost = function (S, ap, p) {
 IC.bldRelocate = function (S, ap, p, x, y, a) {
   if (IC.bldCanMove(ap, p)) return IC.bldMove(S, ap, p, x, y, a);
   const q = IC.bldRelocateCost(S, ap, p); if (q.why || !p.built) return false;
-  if (S.budget < q.cost * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(q.cost * 0.1)} needed now.`); return false; }
+  if (S.budget < q.cost * 0.1) { IC.log(S, 'warn', 'BUILD', IC.inRed(S) ? IC.redWhy(S) : `Not enough money to start: ${U.money(q.cost * 0.1)} needed now.`); return false; }
   const probe = Object.assign({}, p, { x, y, a: a != null ? a : p.a });
   ap.parts = ap.parts.filter(q2 => q2 !== p);
   const ok = IC.aptCanPlace(S, ap, probe);
@@ -1093,7 +1093,7 @@ function planOf(S, m, hv, tol, free, only) {
       out.text.push(`${U.km(len)} · ${U.money(cost)} · open at once`);
       const rw = ap.parts.find(q => q.kind === 'runway' && pts.some((a, i) => i && [0, 0.25, 0.5, 0.75, 1].some(f => IC.partDist(ap, q, { x: pts[i - 1].x + (a.x - pts[i - 1].x) * f, y: pts[i - 1].y + (a.y - pts[i - 1].y) * f }) < 0.05)));
       if (rw) { out.ok = false; out.why = `It crosses ${rw.name}: a service road goes round a runway, never across it.`; }
-      else if (S.budget < cost) { out.ok = false; out.why = `Not enough money: ${U.money(cost)} needed.`; }
+      else if (S.budget < cost) { out.ok = false; out.why = IC.inRed(S) ? IC.redWhy(S) : `Not enough money: ${U.money(cost)} needed.`; }
       return out;
     }
     if (t === 'taxi') out.specs.push({ kind: 'taxi', pts: m.fillet ? IC.bldFillet(pts, pts.map(q => q.kind && q.kind !== 'free'), 0.45) : pts, mat: m.mat, zone: m.zone, w: m.twid || null, lit: m.lit === false ? false : null, oneway: m.oneway || null });
@@ -1202,7 +1202,7 @@ function planOf(S, m, hv, tol, free, only) {
   if (out.near) out.text.push(`Closes ${out.near.name} while paving next to it (or set night work in the panel)`);
   const len = LINE_TOOLS[t] && out.pts && out.pts.length > 1 ? out.pts.reduce((a, q, i) => a + (i ? U.dist(out.pts[i - 1], q) : 0), 0) : 0;
   if (out.specs.length) out.text.unshift(`${len ? U.km(len) + ' · ' : ''}${U.money(out.cost)} · about ${U.dur(out.dur)} of work`);
-  if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
+  if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = out.cost > 0 && IC.inRed(S) ? IC.redWhy(S) : `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
   const lock = out.specs.map(sp => IC.aptLockWhy(S, sp.kind, sp.mat || m.mat)).find(Boolean);
   if (lock) { out.ok = false; out.why = lock; }
   return out;

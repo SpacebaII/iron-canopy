@@ -188,7 +188,7 @@ EV.noise = (S, id, cityId) => { const ap = S.byId[id], c = S.byId[cityId] || tow
   return { title: 'Noise at night', who: `${c.name} residents’ association`, at: pt(c), text: `People under the approach to ${short(ap.name)} say the night flights keep them awake, and ${c.name}’s council has taken it up.`,
     opts: [
       { t: 'Pay for insulation: ₭30M', tip: `Double glazing for the worst-hit streets. ${c.name}’s morale +3.`, fx: () => { money(S, -30); morale(c, 3); } },
-      { t: 'A night curfew, 23:00 to 06:00', tip: `Free. Nothing lands or leaves at night, freight included. ${c.name}’s morale +6.`, fx: () => { ap.curfew = true; morale(c, 6); } },
+      { t: 'A night curfew, 23:00 to 06:00', tip: `Free. Nothing lands or leaves at night, freight included. ${c.name}’s morale +6.`, fx: () => { IC.setNight(S, ap, 'curfew'); morale(c, 6); } },
       { t: 'Do nothing', tip: `${c.name}’s morale −6; the Minister −2.`, fx: () => { morale(c, -6); conf(S, -2); } }
     ] }; };
 EV.union = (S, id) => { const ap = S.byId[id];

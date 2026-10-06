@@ -186,6 +186,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // aircraft parked
   if (z >= 0.8) drawParked(g, S, ap, px, z, light, seen);
   // (round 2) the turnarounds' vehicles and people, cars and passengers on the landside
+  if (LIFE && z > 5 && IC.drawFleetDepot) IC.drawFleetDepot(g, S, ap, px, z, night);
   if (LIFE && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen);
   if (LIFE && z > 10 && ap.land) IC.drawLandLife(g, S, ap, px, z, night, IC.lifeT || now * IC.GS);
   if (LIFE && ap.owner === 'us') IC.lifeSoundAp(S, ap, z, seen);

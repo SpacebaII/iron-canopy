@@ -455,7 +455,11 @@ function onAct(e) {
   const sel = S && S.sel && S.sel.ref;
   const ui = IC.ui;
   if (IC.savesAct(S, a, v)) { IC.sfx.ui('click'); return; }
+  // (round 5b) every click the game answers is an event: a tutorial step waiting for it moves on (tutor.js)
+  if (S) IC.emit(S, 'ui', { act: a, v, n: b.dataset.n, al: b.dataset.al });
   switch (a) {
+    case 'tutorSkip': IC.tutorSkip(S); break;
+    case 'tutorGo': ui.tutorGo(v); break;
     case 'begin': if (/^showcase:/.test(v)) IC.begin('showcase', v.slice(9)); else IC.begin(v); return;
     case 'stPage': ui.startPage(v); if (v === 'keys') $('stKeys').innerHTML = IC.keysHTML(); IC.sfx.ui('click'); return;
     case 'menu': ui.toggleMenu(); break;
@@ -551,6 +555,10 @@ function onAct(e) {
       const p = ui.pmById && ui.pmById.get(v), a = p && S.byId[p.ap]; if (!a) break;
       if (a !== selAp()) { IC.bb.closed = a.id; }
       if (b.dataset.act === 'pmFix' && p.fix && p.fix.part) { IC.fixOpen(S, a, p.fix.part, p.fix.near, p.fix.size); return; }
+      // (round 5b) a fix that is a setting: charges lowered, or a section of the panel opened
+      if (b.dataset.act === 'pmFix' && p.fix && p.fix.act === 'gse') { IC.gseBuy(S, a, p.fix.v, p.fix.n); break; }
+      if (b.dataset.act === 'pmFix' && p.fix && p.fix.act === 'fee') { IC.avSetFee(S, a, p.fix.v); IC.log(S, 'info', 'AVIATION', `${a.name}: charges set to ${Math.round(p.fix.v * 100)}%.`, a); break; }
+      if (b.dataset.act === 'pmFix' && p.fix && p.fix.act === 'open') { ui.aptOpen = Object.assign(ui.aptOpen || {}, { [p.fix.v]: true }); ui.aptTab = 'info'; ui.inspMin = false; if (a !== selAp()) IC.select({ kind: 'infra', ref: a }); break; }
       ui.aptOpen = Object.assign(ui.aptOpen || {}, { deals: true }); ui.dealFocus = p.req || p.deal || null; ui.inspMin = false; ui.aptTab = 'info';
       if (p.req || p.deal) ui.scrollTo = 'aptDeals';
       const part = { fuel: 'fuel', term: 'terminal', stand: 'terminal' }[p.kind], q = part && a.parts.find(x => x.kind === part && x.built);
@@ -608,7 +616,12 @@ function onAct(e) {
     case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
-    case 'aptCurfew': { const ap = selAp(); if (ap) { ap.curfew = !ap.curfew; if (!ap.curfew) { S.support = Math.max(0, S.support - 2); IC.log(S, 'warn', 'AVIATION', `${ap.name}: night flights allowed. Residents near the airport are not pleased.`, ap); } } break; }
+    case 'aptCurfew': { const ap = selAp(); if (ap) IC.setNight(S, ap, IC.nightPolicy(ap) === 'curfew' ? 'quota' : 'curfew'); break; }
+    case 'gseAdd': { const ap = selAp(); if (ap) IC.gseBuy(S, ap, v, +b.dataset.n); break; }
+    case 'gseAuto': { const ap = selAp(); if (ap) IC.gseAuto(S, ap); break; }
+    case 'dayNight': { const ap = selAp(); if (ap) IC.setNight(S, ap, v); break; }
+    case 'dayCap': { const ap = selAp(); if (ap) IC.setCap(S, ap, +v); break; }
+    case 'dayShift': { const ap = selAp(); if (ap) IC.shiftBank(S, ap, b.dataset.al, +v); break; }
     case 'aptRemove': if (S.sel && S.sel.kind === 'apart') { const why = IC.aptRemoveBlock(S, S.sel.ap, S.sel.ref); if (why) { IC.toast(S, 'warn', 'BULLDOZE', why); break; } IC.aptRemove(S, S.sel.ap, S.sel.ref.id); S.sel = { kind: 'infra', ref: S.sel.ap }; } break;
     case 'aptBack': if (S.sel && S.sel.kind === 'apart') S.sel = { kind: 'infra', ref: S.sel.ap }; break;
     case 'incGo': { const it = ui.incRefs && ui.incRefs[+v]; if (it) { const r = it.ref; ui.jump(r && r.tn ? r : { x: it.x, y: it.y }, r && r.tn ? 'track' : r && r.parts ? 'infra' : null); } break; }
@@ -633,6 +646,7 @@ function onAct(e) {
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
     case 'rushRepair': IC.rushRepair(S, id); break;
     case 'loan': IC.takeLoan(S, +v); break;
+    case 'redLoan': IC.takeRedLoan(S); ui.waitPick = false; break;
     case 'repayLoan': IC.repayLoan(S, id); break;
     case 'delegate': IC.storyDelegate(S, v, !S.story.del[v]); break;
     case 'cpReq': IC.storyRequest(S, v); break;

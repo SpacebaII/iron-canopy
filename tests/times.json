@@ -168,5 +168,17 @@
  "round 4: milestones open the bigger pieces because the airport needs them, and every lock says what opens it": 16,
  "round 4: the event deck has 20 or more cards, each with a choice that changes something, and each saves and loads": 17,
  "round 4: the deck paces by the player: a card every few minutes of play, weather at most one in five": 136,
- "round 4: a well-built Starter airport runs at a profit from its first month, and building shows as invested": 86
+ "round 4: a well-built Starter airport runs at a profit from its first month, and building shows as invested": 86,
+ "round 5b: a freighter that lands on the Starter's 3 km runway can take off again": 10,
+ "round 5b: Wait never offers a target it says will never be reached": 10,
+ "round 5b: the day board's capacity matches IC.aptStats, and its plan adds up": 16,
+ "round 5b: a hold names its real cause, on the map and the aircraft's panel": 36,
+ "round 5b: below zero the Treasury steps in: spending frozen, a loan offered, confidence falls, no dismissal in Act I": 50,
+ "round 5b: airline scorecards: aspects side by side, the worst named, its fix one click away": 55,
+ "round 5b: a grown airport has no departure held on its stand over three hours": 119,
+ "round 5b: too few tugs is a named hold with its fix, and buying them lets departures go": 13,
+ "round 5b: the ground fleet: an airport starts with what its stands need and keeps matched as it grows": 16,
+ "round 5b: each tutorial waits for the real action, ticks off what was done early, and saves": 14,
+ "round 5b: a cap moves flights out of the peak hour": 148,
+ "round 5b: night flights by default; a night curfew stops them and costs the cargo airline": 332
 }

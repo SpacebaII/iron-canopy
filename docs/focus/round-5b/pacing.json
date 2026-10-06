@@ -1,0 +1,213 @@
+{
+ "before": false,
+ "minutes": 33.7,
+ "openAt": 1.2,
+ "goals": 13,
+ "goalGapMax": 25.1,
+ "events": 30,
+ "eventGapMax": 3.4,
+ "distinctEvents": 15,
+ "weatherLines": 35,
+ "kinds": {
+  "storyChapter": 2,
+  "rareVisitor": 5,
+  "card: An airshow?": 1,
+  "offer": 10,
+  "card: Fog tomorrow morning": 1,
+  "milestone": 2,
+  "card: A sky with a plan": 1,
+  "card: A drone near the runway": 1,
+  "card: A diversion": 1,
+  "card: A fuel shortage": 1,
+  "card: A medical flight": 1,
+  "card: A new airline wants slots": 1,
+  "card: A charter wave": 1,
+  "card: An open day": 1,
+  "card: The Treasury steps in": 1
+ },
+ "timeline": [
+  "0.3 goal Found the national airport within 60 km of Brenenn",
+  "0.5 goal Build a runway at least 2.1 km long",
+  "0.5 goal Put a landing system (ILS) on the runway: fog and snow close it without one",
+  "0.5 goal Build an apron with a taxiway to the runway",
+  "0.5 goal Build a terminal beside the apron",
+  "0.5 goal Build a fire station near the runway, and a fuel farm",
+  "1.2 goal Welcome the first airliner",
+  "1.2 storyChapter 1",
+  "2.5 rareVisitor amphib",
+  "3.2 event An airshow?",
+  "3.2 deckCard airshow",
+  "3.2 rareVisitor display",
+  "5.5 request Sorrel Air",
+  "5.6 goal Grow to 14 stands",
+  "5.7 request Zipjet",
+  "5.7 goal Three airlines, satisfied: average 65%",
+  "5.7 goal Sign a new deal: offers show on the map at the airport",
+  "5.9 event Fog tomorrow morning",
+  "5.9 deckCard fog",
+  "6.4 goal Carry 2,000 passengers in a day",
+  "6.4 milestone 2000",
+  "8.6 request Sorrel Air",
+  "8.6 goal Sign three new deals",
+  "8.6 goal Six deals running at once",
+  "8.6 event A sky with a plan",
+  "8.6 storyChapter 2",
+  "9.2 event A drone near the runway",
+  "9.2 deckCard hobbydrone",
+  "10.8 milestone 6000",
+  "12.7 request Sorrel Air",
+  "13.7 event A diversion",
+  "13.7 deckCard divert",
+  "13.7 rareVisitor widel",
+  "14.3 request Dresh Air",
+  "15.9 request Sorrel Air",
+  "16.0 rareVisitor airship",
+  "17.0 event A fuel shortage",
+  "17.0 deckCard fuel",
+  "20.4 event A medical flight",
+  "20.4 deckCard medical",
+  "22.0 request Kestria Airways",
+  "24.7 event A new airline wants slots",
+  "24.7 deckCard newcomer",
+  "24.7 request Cirrus Low",
+  "27.6 request Sorrel Air",
+  "28.3 event A charter wave",
+  "28.3 deckCard charter",
+  "28.3 request Zipjet",
+  "30.3 rareVisitor sst",
+  "31.5 event An open day",
+  "31.5 deckCard openday",
+  "32.3 event The Treasury steps in"
+ ],
+ "money": [
+  {
+   "min": 1,
+   "budget": 4200,
+   "ml": "Running −₭14M · Invested ₭1,286M",
+   "date": "Jan Y1 · 14:50",
+   "ch": 0,
+   "goal": "Welcome the first airliner"
+  },
+  {
+   "min": 3,
+   "budget": 4197,
+   "ml": "Running −₭18M · Invested ₭1,286M",
+   "date": "Jan Y1 · 00:11",
+   "ch": 1,
+   "goal": "Sign a new deal: offers show on the map at the airport"
+  },
+  {
+   "min": 5,
+   "budget": 4227,
+   "ml": "Running +₭12M · Invested ₭1,286M",
+   "date": "Jan Y1 · 10:44",
+   "ch": 1,
+   "goal": "Sign a new deal: offers show on the map at the airport"
+  },
+  {
+   "min": 7,
+   "budget": 3794,
+   "ml": "Running +₭77M · Invested ₭1,783M",
+   "date": "Jan Y1 · 23:40",
+   "ch": 1,
+   "goal": "Sign three new deals"
+  },
+  {
+   "min": 9,
+   "budget": 3820,
+   "ml": "Running +₭163M · Invested ₭1,843M",
+   "date": "Jan Y1 · 10:08",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 11,
+   "budget": 3773,
+   "ml": "Running +₭116M · Invested ₭1,843M",
+   "date": "Jan Y1 · 20:09",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 13,
+   "budget": 3765,
+   "ml": "Running −₭11M",
+   "date": "Feb Y1 · 06:16",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 15,
+   "budget": 3771,
+   "ml": "Running −₭5.5M",
+   "date": "Feb Y1 · 16:04",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 17,
+   "budget": 3775,
+   "ml": "Running −₭0.7M",
+   "date": "Feb Y1 · 01:37",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 19,
+   "budget": 3748,
+   "ml": "Running −₭28M",
+   "date": "Feb Y1 · 11:14",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 21,
+   "budget": 3736,
+   "ml": "Running −₭41M",
+   "date": "Feb Y1 · 21:01",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 23,
+   "budget": 3733,
+   "ml": "Running −₭43M",
+   "date": "Feb Y1 · 07:11",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 25,
+   "budget": 3739,
+   "ml": "Running −₭38M",
+   "date": "Feb Y1 · 16:41",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 27,
+   "budget": 3746,
+   "ml": "Running −₭1.0M",
+   "date": "Mar Y1 · 02:02",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 29,
+   "budget": 3685,
+   "ml": "Running −₭0.9M · Invested ₭61M",
+   "date": "Mar Y1 · 12:05",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 31,
+   "budget": 3705,
+   "ml": "Running +₭19M · Invested ₭61M",
+   "date": "Mar Y1 · 21:28",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  }
+ ],
+ "errors": []
+}

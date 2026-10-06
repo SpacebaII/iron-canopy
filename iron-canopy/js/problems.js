@@ -32,10 +32,27 @@ IC.aptProblems = function (S, ap) {
     text: 'Boarding slows down and turnarounds run long. A second terminal doubles the room.', fix: { part: 'tstraight', near: term, label: 'Add a terminal' } });
   // departures waiting for fuel trucks, or no fuel at all
   const fuel = built(ap, 'fuel'), onStand = A ? A.tails.filter(t => t.at === ap.id && t.where === 'stand') : [];
-  const dry = onStand.filter(t => t.t <= 300 && t.fuelWait > 0), avg = dry.length ? dry.reduce((a, t) => a + t.fuelWait, 0) / dry.length : 0;
   if (!fuel.length) out.push({ id: ap.id + ':nofuel', kind: 'fuel', lvl: 'bad', x: hub.x, y: hub.y, title: 'No fuel farm: departures cannot refuel', text: 'Airliners leave with what they brought, and airlines will not base aircraft here.', fix: { part: 'fuel', near: hub, label: 'Build a fuel farm' } });
-  else if (dry.length && avg >= 180) out.push({ id: ap.id + ':fuel', kind: 'fuel', lvl: 'warn', x: fuel[0].x, y: fuel[0].y, title: `Fuel: ${dry.length} departure${dry.length > 1 ? 's' : ''} waiting ${Math.round(avg / 60)} min`,
-    text: `${fuel.length} fuel farm${fuel.length > 1 ? 's' : ''} with ${st.tanks * 2} trucks refuel ${st.trucks} aircraft an hour. Another tank brings two more trucks.`, fix: { part: 'fuel', near: fuel[0], label: 'Add a fuel tank' } });
+  // (round 5b) departures held on their stands, each reason on its own with its own fix (a night stop is no problem)
+  for (const h of IC.aptHolds ? IC.aptHolds(S, ap) : []) {
+    if (h.k === 'night' || h.wait < 180) continue;
+    const head = `${h.n} departure${h.n > 1 ? 's' : ''} held ${U.dur(h.wait)}`, at = h.k === 'fuel' || h.k === 'truck' ? (fuel[0] || hub) : h.k === 'rwy' || h.k === 'wind' || h.k === 'ga' ? rwMid(rws[0]) : hub;
+    const P = { id: ap.id + ':hold:' + h.k, kind: 'hold', hold: h.k, lvl: h.wait > 3600 ? 'bad' : 'warn', x: at.x, y: at.y };
+    const gse = k => { const G = IC.GSE[k], n = Math.max(1, Math.min(4, h.n)); return { act: 'gse', v: k, n, label: `Buy ${n} ${n > 1 ? G.name.toLowerCase() : G.one} (${U.money(G.cost * n)})` }; };
+    if (h.k === 'truck') Object.assign(P, { kind: 'fuel', id: ap.id + ':fuel', title: `Fuel: ${h.n} departure${h.n > 1 ? 's' : ''} waiting ${Math.round(h.wait / 60)} min for a truck`,
+      text: IC.FOCUS.gse && ap.fleet ? `${ap.fleet.fuel} fuel trucks refuel ${ap.fleet.fuel * IC.FUEL_TRUCKS / 2} aircraft an hour. Buy more, or a hydrant system ends the wait.` : `${fuel.length} fuel farm${fuel.length > 1 ? 's' : ''} with ${st.tanks * 2} trucks refuel ${st.trucks} aircraft an hour. Another tank brings two more trucks.`,
+      fix: IC.FOCUS.gse && ap.fleet ? gse('fuel') : fuel[0] && { part: 'fuel', near: fuel[0], label: 'Add a fuel tank' } });
+    else if (h.k === 'tug' || h.k === 'bus') Object.assign(P, { title: `${head}: ${h.k === 'tug' ? 'waiting for a tug' : 'waiting for an apron bus'}`, text: `${h.why.charAt(0).toUpperCase() + h.why.slice(1)}. Each ${IC.GSE[h.k].one} ${IC.GSE[h.k].does.replace(/^\w+/, w => w + (w.endsWith('h') ? 'es' : 's'))}; the airport recommends ${IC.gseNeed(S, ap)[h.k]}.`, fix: gse(h.k) });
+    else if (h.k === 'fuel') Object.assign(P, { kind: 'fuel', id: ap.id + ':fuel', title: `Fuel: ${h.n} departure${h.n > 1 ? 's' : ''} waiting ${Math.round(h.wait / 60)} min: the tanks are empty`,
+      text: `Deliveries refill each tank by ${IC.FUEL_IN} units an hour. More tanks hold more; a hydrant system pipes fuel in.`, fix: fuel[0] && { part: 'fuel', near: fuel[0], label: 'Add a fuel tank' } });
+    else if (h.k === 'rwy') Object.assign(P, { title: `${head}: cannot take off`, text: `${h.why.charAt(0).toUpperCase() + h.why.slice(1)}. After ${U.dur(IC.HOLD_CANCEL)} the airline cancels and takes the aircraft off the route. A longer runway (a new one, or this one rebuilt longer) lets them go; until then, decline offers for aircraft that need more runway.` });
+    else if (h.k === 'route') Object.assign(P, { title: `${head}: no way to a runway`, text: `No taxiway leads from the stand to a runway it can take off from. Draw a taxiway from the apron to the runway (Taxiway on the build bar). After ${U.dur(IC.HOLD_CANCEL)} the airline cancels.` });
+    else if (h.k === 'wind') Object.assign(P, { title: `${head}: wind beyond the limits`, text: `${h.why}. A runway pointing into the usual wind lets them go.` });
+    else if (h.k === 'ga') Object.assign(P, { title: `${head}: light aircraft on the runway`, text: 'Each slow light aircraft holds the runway as long as two airliners. A light-aircraft field nearby takes them away.' });
+    else if (h.k === 'release') Object.assign(P, { title: `${head} for an airway release`, text: 'Controllers space departures on the same airway. A second airway, or radar along it, lets them go closer together.' });
+    else Object.assign(P, { title: `${head}: ${(IC.HOLD[h.k] || h.k).toLowerCase()}`, text: h.why });
+    out.push(P);
+  }
   // fire cover: none, or too slow to a runway for heavy jets
   if (!st.fire) out.push({ id: ap.id + ':nofire', kind: 'fire', lvl: 'bad', ...rwMid(rws[0]), title: 'No fire cover: only turboprops may land', text: 'A fire station within 1.5 km of the runway lets jets land.', fix: { part: 'fire', near: rwMid(rws[0]), label: 'Build a fire station' } });
   else for (const rw of rws) {
@@ -48,6 +65,12 @@ IC.aptProblems = function (S, ap) {
     const e = rw.a;
     out.push({ id: ap.id + ':ils:' + rw.id, kind: 'ils', lvl: IC.needILS && IC.needILS(S) ? 'bad' : 'warn', x: e.x, y: e.y, title: `Runway ${rw.name || ''}: no landing system`.replace('  ', ' '),
       text: 'In fog, low cloud or snow every arrival diverts. A landing system (ILS) at the end they land toward costs ₭25M.', fix: { part: 'ils', near: e, label: 'Build a landing system' } });
+  }
+  // (round 5b) an airline's worst aspect here, when it is bad, with its fix
+  for (const c of IC.aptScorecards ? IC.aptScorecards(S, ap) : []) {
+    if (c.worst.v >= 45 || !c.worst.fix) continue;
+    const at = c.worst.fix.near || hub;
+    out.push({ id: `score:${c.al.id}:${ap.id}`, kind: 'score', lvl: 'warn', x: at.x, y: at.y, title: `${short(c.al.name)} rates ${c.worst.name.toLowerCase()} ${c.worst.v} of 100`, text: c.worst.text, fix: c.worst.fix });
   }
   // deals: one at risk for want of a facility, and offers waiting for an answer
   if (A) {

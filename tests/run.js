@@ -982,7 +982,7 @@ test('airport: a fuel farm is three tanks: their trucks refuel 24 aircraft an ho
   for (const p of ap.parts) if (p.kind === 'fuelpad') p.hp = 0;
   assert(!IC.aptTakeFuel(ap, 6, S), 'a 25th refuelling in the hour found a truck');
   IC.aptFuelWait(S, ap, 840);
-  assert(/Departures waited 14 min for fuel today/.test(IC.aptServiceLines(S, ap).fuel) && /trucks serve 8/.test(IC.aptServiceLines(S, ap).fuel), IC.aptServiceLines(S, ap).fuel);
+  assert(/Departures waited 14 min for fuel today/.test(IC.aptServiceLines(S, ap).fuel) && /each truck 4\)/.test(IC.aptServiceLines(S, ap).fuel), IC.aptServiceLines(S, ap).fuel);
 });
 test('airport: a runway the tower cannot see is worked as with no tower, and the tower says so', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
@@ -4800,10 +4800,13 @@ test('round 3: fuel queues show at the fuel farm, and the tank the fix places ke
   // departures on their stands, waiting for a fuel truck
   const tl = S.av.tails.filter(t => t.at === ap.id && t.where === 'stand');
   assert(tl.length, 'nobody on a stand');
-  for (const t of tl) { t.t = 120; t.fuelWait = 600; }
+  for (const t of tl) { t.t = 120; t.fuelWait = 600; t.held = { k: 'truck', t0: S.time - 600, why: 'every fuel truck is busy' }; }
   const P = IC.aptProblems(S, ap).find(p => p.kind === 'fuel');
-  assert(P && /^Fuel: \d+ departures? waiting \d+ min$/.test(P.title) && U.dist(P, farm) < 0.01, P && P.title);
-  const m = IC.fixPlan(S, ap, 'fuel', P.fix.near);
+  assert(P && /^Fuel: \d+ departures? waiting \d+ min for a truck$/.test(P.title) && U.dist(P, farm) < 0.01, P && P.title);
+  // (round 5b: with the airport's own fuel trucks counted, the fix is more trucks; a tank placed by hand still
+  // keeps its distance)
+  assert(P.fix && (P.fix.act === 'gse' ? P.fix.v === 'fuel' && /^Buy \d+ fuel trucks? \(₭/.test(P.fix.label) : P.fix.part === 'fuel'), JSON.stringify(P.fix));
+  const m = IC.fixPlan(S, ap, 'fuel', P.fix.near || farm);
   assert(m, 'no place for a tank');
   const plan = IC.bldPlanOf(S, m, m.at, 0.12), sp = plan.ok && plan.specs.find(q => q.kind === 'fuel');
   assert(sp, `the placed tank cannot be built: ${plan.why}`);
@@ -5040,6 +5043,250 @@ test('round 4: a well-built Starter airport runs at a profit from its first mont
   const ML = IC.moneyLine(S);
   assert(ML.split && /^Running \+₭/.test(ML.short) && /running the airports made ₭/.test(ML.text), ML.text);
 }, true);
+
+/* ---------- round 5b: depth (docs/focus/round-5b.md) ---------- */
+/* the Starter opened, with a freighter route added (the round-5a playthrough's stuck departures were freighters) */
+const r5open = () => {
+  const { S, ap } = r4open();
+  // (a cargo area with stands for freighters, placed as its problem's fix places it)
+  const term = ap.parts.find(p => p.kind === 'terminal'), m = IC.fixPlan(S, ap, 'cargoarea', term);
+  assert(m && IC.buildFinish(S, m) === 'built', `no cargo area: ${m && m.err}`); finishWorks(S, ap);
+  assert(IC.aptStands(ap).some(s => s.size === 'l' && s.linked !== false), `no large stand: ${IC.aptStands(ap).map(s => s.size).join('')}`);
+  const al = S.av.airlines.find(a => a.kind === 'cargo') || IC.avAddAirline(S, 'cargo', ap);
+  IC.avAddRoute(S, al, ap, IC.avPorts(S)[0], 'cargo', 2);
+  return { S, ap, al };
+};
+test('round 5b: a freighter that lands on the Starter\'s 3 km runway can take off again', () => {
+  const { S, ap, sv } = foundFresh();
+  const m = S.mode2 = IC.bldMode(S, ap, 'starter');
+  IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0); assert(IC.buildFinish(S, m) === 'built', m.err); finishWorks(S, ap);
+  const st = IC.aptStats(S, ap), s = IC.aptStands(ap).find(x => x.linked !== false && x.size === 'l') || IC.aptStands(ap)[0];
+  assert(st.maxType === 'cargo', `the Starter takes ${st.maxType}`);
+  for (const k of ['narrow', 'wide', 'cargo']) assert(IC.gopsCanDepart(S, ap, k, s.id), `a ${k} cannot take off from the runway it may land on`);
+});
+test('round 5b: a grown airport has no departure held on its stand over three hours', () => {
+  const { S, ap } = r5open();
+  let worst = 0, who = '', fr = 0;
+  IC.on((S0, type, d) => { if (S0 === S && type === 'rwMove' && d.k === 'dep' && d.type === 'cargo') fr++; });
+  // (a night stop, or waiting overnight for the morning's first slot, is the schedule, not a stuck departure)
+  let slot = 0;
+  r4play(S, 48, S0 => { for (const tl of S0.av.tails) if (tl.where === 'stand' && tl.at === ap.id && tl.held && tl.held.k !== 'night') {
+    const w = S0.time - tl.held.t0;
+    if (tl.held.k === 'slot') slot = Math.max(slot, w);
+    else if (w > worst) { worst = w; who = `${tl.cs} (${tl.type}): ${tl.held.why}`; } } });
+  assert(worst < 3 * 3600, `held ${U.dur(worst)}: ${who}`);
+  assert(slot < 9 * 3600, `waited ${U.dur(slot)} for a slot`);
+  assert(S.logs.every(l => !/cancels .* after/.test(l.msg)), 'a flight was cancelled at its stand');
+  assert(fr >= 2, `${fr} freighter take-offs in two days`);
+}, true);
+test('round 5b: a hold names its real cause, on the map and the aircraft\'s panel', () => {
+  const { S, ap } = r5open();
+  // (a freighter, with no curfew: it may leave at night, so the night does not interrupt what is tested)
+  ap.curfew = false;
+  const fr = t => t.where === 'stand' && t.at === ap.id && t.type === 'cargo' && t.t > 600;
+  for (let i = 0; i < 48 * 1800 && !S.av.tails.some(fr); i++) IC.step(S, 2);
+  // the tanks run dry: the departure waits for fuel, and says so
+  const tl = S.av.tails.find(fr);
+  assert(tl, 'nobody on a stand');
+  const tanks = ap.parts.filter(p => p.kind === 'fuel');
+  const dry = () => { for (const p of tanks) p.stock = 0; };
+  tl.t = 1; tl.fuelled = false;
+  for (let i = 0; i < 600; i++) { dry(); IC.step(S, 2); if (tl.held && S.time - tl.held.t0 > 600) break; }
+  assert(tl.held && tl.held.k === 'fuel', `held for ${tl.held && tl.held.k}`);
+  assert(/held .*: the fuel tanks are empty/.test(IC.tailPhase(S, tl)), IC.tailPhase(S, tl));
+  const P = IC.aptProblems(S, ap).find(p => p.kind === 'fuel');
+  assert(P && /tanks are empty/.test(P.title), P && P.title);
+  // the runway closes: no fuel blamed, the runway named, and after six hours the flight is cancelled
+  for (const p of tanks) p.stock = IC.fuelCap(p);
+  const rw = ap.parts.find(p => p.kind === 'runway'); rw.shut = true; ap.dirty = true;
+  for (let i = 0; i < 600 && !(tl.held && tl.held.k === 'rwy'); i++) IC.step(S, 2);
+  assert(tl.held && tl.held.k === 'rwy' && /long enough to take off/.test(tl.held.why), `held: ${tl.held && tl.held.k} ${tl.held && tl.held.why}`);
+  for (let i = 0; i < 300; i++) IC.step(S, 2);
+  const Q = IC.aptProblems(S, ap);
+  assert(Q.some(p => p.hold === 'rwy' && /cannot take off/.test(p.title)) && !Q.some(p => p.kind === 'fuel' && /waiting/.test(p.title)), Q.map(p => p.title).join(' / '));
+  for (let i = 0; i < 7 * 1800 && tl.where === 'stand'; i++) IC.step(S, 2);
+  assert(tl.where === 'lost' && S.logs.some(l => /cancels .* after .*long enough to take off/.test(l.msg)), `after seven hours: ${tl.where}`);
+  assert(!IC.aptStands(ap).some(s => s.occ === tl.id), 'its stand is still taken');
+}, true);
+
+test('round 5b: below zero the Treasury steps in: spending frozen, a loan offered, confidence falls, no dismissal in Act I', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 9, dpm: 0.5 }); IC.S = S; S.paused = false;
+  const st = S.story, ap = S.byId[st.cap];
+  S.budget = -800;
+  IC.step(S, 1);
+  assert(S.red && S.logs.some(l => /frozen new spending/.test(l.msg)), 'no word from the Treasury');
+  const card = st.events.find(e => e.kind === 'treasury');
+  assert(card && /We can lend you ₭[\d,]+M over 24 months at 2\.5% a month/.test(card.text), card && card.text);
+  // building is refused with the reason; buying too
+  const m = IC.fixPlan(S, ap, 'hangar', ap);
+  const plan = m && IC.bldPlanOf(S, m, m.at, 0.12);
+  assert(plan && !plan.ok && /Treasury has frozen/.test(plan.why), plan && plan.why);
+  assert(/frozen/.test(IC.buyBlock(S, 'ssr')), IC.buyBlock(S, 'ssr'));
+  // three months in the red: confidence falls each month, and the Career goes on
+  IC.storyChoose(S, card.id, 0);
+  const c0 = st.standing, m0 = S.cal.m;
+  for (let i = 0; i < 4 * 86400 && S.cal.m < m0 + 3; i++) { S.budget = Math.min(S.budget, -800); IC.step(S, 4); for (const e of st.events.slice()) if (e.kind !== 'treasury') IC.storyChoose(S, e.id, 0); }
+  assert(S.cal.m >= m0 + 3 && S.red.months >= 3, `${S.red.months} months in the red`);
+  assert(st.standing <= c0 - 10 || st.standing <= 5.01, `confidence ${c0.toFixed(1)} → ${st.standing.toFixed(1)}`);
+  assert(!S.over && st.act === 1, 'the Career ended in Act I');
+  // the loan: spending unfreezes
+  const q = st.events.find(e => e.kind === 'treasury') || (IC.storyEvent(S, 'treasury'), st.events.find(e => e.kind === 'treasury'));
+  IC.storyChoose(S, q.id, 1); IC.step(S, 1);
+  assert(S.budget > 0 && !S.red && S.econ.loans.some(l => l.red && l.rate === IC.RED.rate), `after the loan: ${U.money(S.budget)}`);
+});
+test('round 5b: Wait never offers a target it says will never be reached', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const r0 = IC.waitRate;
+  try {
+    S.budget = 400;
+    IC.waitRate = () => -3;
+    const L = IC.waitTargets(S);
+    assert(L.every(t => !/never/.test(IC.waitText(S, t))), L.map(t => IC.waitText(S, t)).join(' / '));
+    IC.waitRate = () => 3;
+    const K = IC.waitTargets(S);
+    assert(K.length >= 4 && K.every(t => !/never/.test(IC.waitText(S, t))), K.map(t => IC.waitText(S, t)).join(' / '));
+  } finally { IC.waitRate = r0; }
+});
+
+const r5net = () => { const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 9 }); IC.S = S; S.paused = false; return { S, ap: S.byId[S.story.cap] }; };
+const nightOf = L => { let n = 0; for (let h = 0; h < 24; h++) if (h >= 23 || h < 6) n += L.arr[h] + L.dep[h]; return n; };
+test('round 5b: the day board\'s capacity matches IC.aptStats, and its plan adds up', () => {
+  const { S, ap } = r5net();
+  run(S, 1, player);
+  const st = IC.aptStats(S, ap), D = IC.dayBoard(S, ap), P = D.plan;
+  assert(D.capDep === st.depPerHour && D.capArr === st.arrPerHour && D.capDep > 0, `board ${D.capDep}/${D.capArr}, stats ${st.depPerHour}/${st.arrPerHour}`);
+  for (let h = 0; h < 24; h++) assert(P.dep[h] === P.al.reduce((a, x) => a + x.dep[h], 0), `hour ${h} does not add up`);
+  assert(P.al.length >= 3 && P.dep.reduce((a, b) => a + b, 0) >= P.al.reduce((a, x) => a + x.tails, 0), 'fewer slots than aircraft');
+  // the game makes the day: banks in the morning and evening, freighters at night
+  const cargo = P.al.find(a => a.al.kind === 'cargo');
+  assert(cargo && [23, 0, 1, 2, 3, 4, 5].reduce((a, h) => a + cargo.dep[h], 0) > 0, 'the freighters have no night slot');
+  // a bank moved an hour later moves its busiest hour with it
+  const a = P.al.find(x => x.al.kind === 'flag'), pk = a.dep.indexOf(Math.max(...a.dep));
+  IC.shiftBank(S, ap, a.id, 1);
+  const b = IC.dayPlan(S, ap).al.find(x => x.id === a.id);
+  assert(b.dep.indexOf(Math.max(...b.dep)) === (pk + 1) % 24, `busiest ${pk} → ${b.dep.indexOf(Math.max(...b.dep))}`);
+});
+test('round 5b: a cap moves flights out of the peak hour', () => {
+  const { S, ap } = r5net();
+  run(S, 1, player);
+  const P0 = IC.dayPlan(S, ap), peak = Math.max(...P0.dep), cap = Math.max(2, peak - 4);
+  IC.setCap(S, ap, cap);
+  const P = IC.dayPlan(S, ap), D = IC.dayBoard(S, ap);
+  assert(P.movedCap > 0 && Math.max(...P.dep) <= cap, `cap ${cap}: moved ${P.movedCap}, busiest ${Math.max(...P.dep)}`);
+  assert(P.dep.reduce((a, b) => a + b, 0) === P0.dep.reduce((a, b) => a + b, 0), 'flights were lost, not moved');
+  assert(new RegExp(`cap of ${cap} departures an hour moves ${P.movedCap} flights?`).test(D.capWords), D.capWords);
+  // the day flown: no hour has more departures than the cap lets out
+  run(S, 40, player);
+  const L = IC.aptDayLog(S, ap).prev;
+  assert(L && Math.max(...L.dep) <= cap + 1, `departures by hour: ${L && L.dep.join(',')}`);
+}, true);
+test('round 5b: night flights by default; a night curfew stops them and costs the cargo airline', () => {
+  const play = night => {
+    const { S, ap } = r5net();
+    if (night) IC.setNight(S, ap, night);
+    run(S, 50, player);
+    return { S, ap, n: nightOf(IC.aptDayLog(S, ap).prev), dep: [23, 0, 1, 2, 3, 4, 5].reduce((a, h) => a + IC.aptDayLog(S, ap).prev.dep[h], 0), cargo: S.av.airlines.find(a => a.kind === 'cargo') };
+  };
+  const Q = play(null), C = play('curfew');
+  assert(IC.nightPolicy(Q.ap) === 'quota' && Q.n >= 4, `${Q.n} movements on the default night`);
+  assert(C.dep === 0 && C.n <= 2, `under the curfew: ${C.dep} departures, ${C.n} movements at night`);
+  assert(C.cargo.sat < Q.cargo.sat - 2, `cargo airline ${Q.cargo.sat.toFixed(1)} with night flights, ${C.cargo.sat.toFixed(1)} under the curfew`);
+  assert(/night fees gone/.test(IC.dayBoard(C.S, C.ap).nightWords.curfew), 'the curfew does not say what it costs');
+}, true);
+
+test('round 5b: airline scorecards: aspects side by side, the worst named, its fix one click away', () => {
+  const { S, ap } = r5net();
+  IC.avSetFee(S, ap, 1.5);
+  run(S, 10, player);
+  const C = IC.aptScorecards(S, ap);
+  assert(C.length >= 3, `${C.length} scorecards`);
+  for (const c of C) assert(c.ks.length === (c.al.kind === 'cargo' ? 4 : 6) && c.ks.every(k => c.sc[k] >= 0 && c.sc[k] <= 100), `${c.al.name}: ${JSON.stringify(c.sc)}`);
+  // charges at 150% are what the low-cost airline minds most, and the fix lowers them
+  const b = C.find(c => c.al.kind === 'budget');
+  assert(b && b.worst.k === 'fees' && b.worst.fix && b.worst.fix.act === 'fee' && b.worst.fix.v < 1.5, b && JSON.stringify(b.worst));
+  assert(/^Lower charges to \d+%$/.test(b.worst.fix.label), b.worst.fix.label);
+  const P = IC.aptProblems(S, ap).find(p => p.id === `score:${b.al.id}:${ap.id}`);
+  assert(!P || (P.fix && P.fix.act === 'fee'), 'the problem has another fix');
+  // the tanks run dry: fuel becomes someone's worst aspect, with a tank as its fix
+  IC.avSetFee(S, ap, 1);
+  run(S, 2, S0 => { for (const p of ap.parts) if (p.kind === 'fuel') p.stock = 0; player(S0); });
+  for (const p of ap.parts) if (p.kind === 'fuel') p.stock = IC.fuelCap(p);
+  const f0 = new Map(IC.aptScorecards(S, ap).map(c => [c.al.id, c.sc.fuel]));
+  run(S, 4, player);
+  const C2 = IC.aptScorecards(S, ap), drop = C2.map(c => (f0.get(c.al.id) || 95) - c.sc.fuel);
+  assert(Math.max(...drop) > 15, `fuel marks after dry tanks fell by ${drop.map(Math.round).join(', ')}`);
+  // whichever airline marks fuel worst gets a tank as its fix
+  const w = C2.find(c => c.al.kind !== 'cargo'); w.sc.fuel = 5;
+  const F = IC.aptScorecards(S, ap).find(c => c.al === w.al);
+  assert(F.worst.k === 'fuel' && F.worst.fix.part === 'fuel' && F.worst.fix.label === 'Add a fuel tank', JSON.stringify(F.worst));
+}, true);
+
+test('round 5b: the ground fleet: an airport starts with what its stands need and keeps matched as it grows', () => {
+  const { S, ap } = r4open();
+  const F = IC.fleet(S, ap), N = IC.gseNeed(S, ap);
+  assert(F.auto && F.tug >= 1 && F.tug === N.tug && F.fuel >= 2, `the Starter's fleet ${JSON.stringify(F)} against ${JSON.stringify(N)}`);
+  // a terminal more: more stands, and the fleet follows within the hour
+  const term = ap.parts.find(p => p.kind === 'terminal'), m = IC.fixPlan(S, ap, 'tstraight', term);
+  assert(m && IC.buildFinish(S, m) === 'built', m && m.err); finishWorks(S, ap);
+  r4play(S, 2);
+  const N2 = IC.gseNeed(S, ap);
+  assert(N2.stands > N.stands && F.tug >= N2.tug && F.bus >= N2.bus && F.fuel >= N2.fuel, `${JSON.stringify(F)} against ${JSON.stringify(N2)}`);
+  assert(IC.fleetUpkeep(S) > 0 && IC.avUpkeep(S) > IC.fleetUpkeep(S), 'the vehicles cost nothing to run');
+}, true);
+test('round 5b: too few tugs is a named hold with its fix, and buying them lets departures go', () => {
+  const { S, ap } = r5net();
+  run(S, 0.5, player);
+  const F = IC.fleet(S, ap); IC.gseAuto(S, ap, false); F.tug = 0;
+  let P = null;
+  for (let i = 0; i < 4 * 3600 && !P; i++) { IC.step(S, 1); if (i % 120 === 0) { player(S); P = IC.aptProblems(S, ap).find(p => p.hold === 'tug'); } }
+  assert(P && /waiting for a tug/.test(P.title) && /no tugs to push it back/i.test(P.text), P ? P.title + ' / ' + P.text : 'no tug problem in four hours');
+  assert(P.fix && P.fix.act === 'gse' && P.fix.v === 'tug' && /^Buy \d+ tugs? \(₭/.test(P.fix.label), JSON.stringify(P.fix));
+  const tl = S.av.tails.filter(t => t.where === 'stand' && t.held && t.held.k === 'tug' && t.at === ap.id).sort((a, b) => a.held.t0 - b.held.t0)[0];
+  assert(tl && /no tugs to push it back/.test(IC.tailPhase(S, tl)), tl && IC.tailPhase(S, tl));
+  IC.gseBuy(S, ap, 'tug', P.fix.n);
+  run(S, 1, player);
+  assert(!S.av.tails.some(t => t.where === 'stand' && t.at === ap.id && t.held && t.held.k === 'tug' && S.time - t.held.t0 > 1800), 'still held for a tug');
+});
+
+test('round 5b: each tutorial waits for the real action, ticks off what was done early, and saves', () => {
+  const { S, ap } = r5net();
+  const ids = Object.keys(IC.TUTORS);
+  assert(['dayboard', 'scorecards', 'fleet', 'treasury'].every(k => ids.includes(k)), ids.join(', '));
+  for (const id of ids) for (const st of IC.TUTORS[id].steps) assert(st.el && st.title && st.text && st.on && st.on.length, `${id}: a step without a target, words or an action`);
+  // (the words: plain, no filler)
+  for (const id of ids) for (const st of IC.TUTORS[id].steps) assert(!/let's|dive in|seamless|simply|easily|!/i.test(st.text), `${id}: ${st.text}`);
+  // the day board: each step moves on only when its click comes, and nothing else moves it
+  assert(IC.tutorStart(S, 'dayboard'), 'it does not start');
+  const click = (act, v, more) => IC.emit(S, 'ui', Object.assign({ act, v }, more || {}));
+  click('dayNight', 'curfew');     // the last step, done ahead of time
+  assert(IC.tutorNow(S).i === 0, 'a later action moved the first step');
+  run(S, 0.2);
+  assert(IC.tutorNow(S).i === 0, 'time alone moved it');
+  click('aptOpen', 'day'); assert(IC.tutorNow(S).i === 1, `after opening: step ${IC.tutorNow(S) && IC.tutorNow(S).i}`);
+  // it saves where it was
+  const S2 = IC.loadSave(JSON.stringify(IC.saveGame(S)));
+  assert(IC.tutorNow(S2) && IC.tutorNow(S2).id === 'dayboard' && IC.tutorNow(S2).i === 1, 'the tutorial did not save');
+  IC.S = S;
+  click('dayCap', '8'); assert(IC.tutorNow(S).i === 2, 'the cap did not move it');
+  click('dayShift', '1', { al: 'x' });
+  assert(!IC.tutorNow(S) && IC.tutorSeen(S, 'dayboard'), 'the night, done early, did not finish it');
+  assert(!IC.tutorStart(S, 'dayboard') && IC.tutorStart(S, 'dayboard', true) && IC.tutorNow(S).i === 0, 'the Guide cannot replay it');
+  IC.tutorSkip(S); assert(!IC.tutorNow(S), 'Skip');
+  // the fleet: the tug's + and the switch
+  IC.tutorStart(S, 'fleet');
+  click('aptOpen', 'fleet'); click('gseAdd', 'bus', { n: '1' });
+  assert(IC.tutorNow(S).i === 1, 'a bus counted as the tug');
+  click('gseAdd', 'tug', { n: '1' }); click('gseAuto');
+  assert(IC.tutorSeen(S, 'fleet'), 'the fleet tutorial did not finish');
+  // the scorecards: open, then a fix
+  IC.tutorStart(S, 'scorecards'); click('aptOpen', 'score'); click('pmFix', `score:x:${ap.id}`);
+  assert(IC.tutorSeen(S, 'scorecards'), 'the scorecards tutorial did not finish');
+  // the Treasury: in the red, opening the Economy room and taking the loan (a real loan, from the game)
+  S.budget = -500; IC.step(S, 1);
+  assert(IC.tutorWhen(S, 'treasury') && IC.tutorStart(S, 'treasury'), 'the treasury tutorial does not start in the red');
+  click('room', 'economy'); IC.takeRedLoan(S);
+  assert(IC.tutorSeen(S, 'treasury'), 'the loan did not finish it');
+});
 
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };

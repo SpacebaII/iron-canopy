@@ -385,6 +385,15 @@ const EV = {
         { t: 'Not yet: the airport comes first', tip: 'Minister −4. She asks again in two months.', fx: () => { st.standing -= 4; later(S, 2); } }
       ] };
   },
+  // (round 5b) below zero the Treasury steps in: a loan at a stiff rate, or carry on frozen while confidence falls
+  treasury: (S) => {
+    const st = S.story, L = IC.redLoan(S), net = IC.waitRate(S), per = IC.MO(S) / 3600;
+    return { kind: 'treasury', title: 'The Treasury steps in', who: 'The Treasury', text: `The treasury is at ${U.money(S.budget)}${net < 0 ? `, and ${U.money(-net * per)} a month more goes out than comes in` : ''}. Until it is above zero nothing new is built or bought, and each month in the red costs you the Minister's confidence (−${IC.RED.conf}), and with it part of the grant. We can lend you ${U.money(L.amt)} over ${L.mo} months at ${(L.rate * 100).toFixed(1)}% a month: more than twice what the banks charge.`,
+      opts: [
+        { t: 'Cut costs ourselves', tip: `No loan. Spending stays frozen until the treasury is above zero; the Economy room (E) shows what costs most. Minister −${IC.RED.conf} each month in the red.`, fx: () => {} },
+        { t: `Take the emergency loan: ${U.money(L.amt)}`, tip: `About ${U.money((L.amt / L.mo) + L.amt * L.rate)} a month to repay at first. Spending unfreezes at once. Minister −2.`, fx: () => { IC.takeRedLoan(S); st.standing -= 2; } }
+      ] };
+  },
   field: (S, t, grant) => {
     const st = S.story;
     return { title: `A field for ${t.name}`, who: `${t.name} town council`, text: `${t.name}’s flying club has lost its old strip to a housing estate. The council asks you to build a light-aircraft field within 15 km of the town within a month${grant ? `, and offers ${U.money(grant)} towards it` : ', though it has no money to offer'}. A field costs ${U.money(IC.ASP.FIELD_COST)}.`,
@@ -1057,7 +1066,7 @@ IC.storyTick = function (S, dt) {
     // (before the war the Career runs for years: confidence settles over a couple of months towards what the
     // airlines' satisfaction says, 60 at the old neutral 58, so it reflects how the sector is doing lately; goals
     // and decisions push it, and the push fades)
-    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
+    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
     // before the first airliner there are no airlines to judge you by: the Minister waits
     const judge = st.act > 1 || st.opened;
     // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices

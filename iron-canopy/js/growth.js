@@ -812,7 +812,7 @@ const career = S => S.mode === 'story';
 IC.loanOffers = S => career(S) ? IC.LOANS : IC.LOANS_LIVE;
 /* a loan's term in game seconds, and its interest a game second on what is left */
 IC.loanTerm = (S, o) => o.mo ? IC.MO(S, o.mo) : o.days * DAY;
-const rateS = (S, l) => l.mo ? IC.LOAN_RATE_MO / IC.MO(S) : IC.LOAN_RATE / DAY;
+const rateS = (S, l) => l.rate ? l.rate / (l.mo ? IC.MO(S) : DAY) : l.mo ? IC.LOAN_RATE_MO / IC.MO(S) : IC.LOAN_RATE / DAY;
 IC.loanRateText = S => career(S) ? `${(IC.LOAN_RATE_MO * 100).toFixed(1)}% a month` : `${(IC.LOAN_RATE * 100).toFixed(1)}% a day`;
 IC.loanTermText = (S, o) => o.mo ? (o.mo % 12 ? `${o.mo} months` : `${o.mo / 12} year${o.mo > 12 ? 's' : ''}`) : `${o.days} days`;
 /* the banks lend about four months of income in the Career (ten days of it on the live clock) */
@@ -851,6 +851,49 @@ function loans(S, dt) {
   for (const l of E.loans.filter(x => x.left <= 0.001)) IC.log(S, 'info', 'TREASURY', `Loan of ${U.money(l.amt)} repaid.`);
   E.loans = E.loans.filter(x => x.left > 0.001);
 }
+/* ---------- (round 5b) the Treasury steps in ----------
+   Below zero, spending on anything new stops (the builder and buying say why), the Treasury offers an emergency
+   loan at a stiff rate, and the Minister's confidence falls each month the books stay in the red. Before Act III
+   that cannot end the career (confidence keeps its floor of 5); it only makes the grant smaller. */
+IC.RED = { rate: 0.025, rateLive: 0.01, mo: 24, days: 10, conf: 6, months: 3 };
+IC.inRed = S => S.budget < -0.5;
+IC.redWhy = S => `The Treasury has frozen new spending: the treasury is at ${U.money(S.budget)}. Take its emergency loan (Economy, E) or cut running costs until money comes in.`;
+/* what the emergency loan would be: enough to clear the hole and carry three months of the present loss, or at least
+   a month of running costs */
+IC.redLoan = S => {
+  const per = S.mode === 'story' ? IC.MO(S) / 3600 : 24, net = IC.waitRate ? IC.waitRate(S) : S.income - S.upkeep;
+  const amt = Math.max(300, Math.ceil((Math.max(0, -S.budget) + Math.max(Math.max(0, -net) * per * IC.RED.months, (S.upkeep || 0) * per, 300)) / 50) * 50);
+  return { amt, mo: S.mode === 'story' ? IC.RED.mo : 0, days: S.mode === 'story' ? 0 : IC.RED.days, rate: S.mode === 'story' ? IC.RED.rate : IC.RED.rateLive };
+};
+IC.takeRedLoan = function (S) {
+  const E = S.econ, O = IC.redLoan(S); if (!E) return false;
+  const l = { id: 'ln' + (E.nid++), amt: O.amt, left: O.amt, mo: O.mo, days: O.days, term: IC.loanTerm(S, O), t0: S.time, rate: O.rate, red: true };
+  E.loans.push(l); S.budget += O.amt; book(S, 'loanIn', O.amt);
+  IC.log(S, 'warn', 'TREASURY', `Emergency loan: ${U.money(O.amt)} over ${IC.loanTermText(S, O)} at ${(O.rate * 100).toFixed(1)}% ${O.mo ? 'a month' : 'a day'}, more than twice the banks' rate. About ${U.money(IC.loanPay(S, l) * (O.mo ? IC.MO(S) : DAY) / 3600)} ${O.mo ? 'a month' : 'a day'} to repay at first.`);
+  IC.emit(S, 'loan', l);
+  return l;
+};
+/* each step: entering and leaving the red */
+IC.redTick = function (S) {
+  const R = S.red;
+  if (IC.inRed(S) && !R) {
+    S.red = { t0: S.time, months: 0 };
+    IC.log(S, 'leak', 'TREASURY', IC.redWhy(S));
+    if (S.story && IC.storyEvent) IC.storyEvent(S, 'treasury');
+    IC.emit(S, 'redIn', S.red);
+  } else if (R && S.budget > 0) { S.red = null; IC.log(S, 'info', 'TREASURY', 'The treasury is above zero again: spending is unfrozen.'); IC.emit(S, 'redOut'); }
+};
+/* the month turns in the red: the Minister's confidence falls, and the Treasury asks again */
+IC.onMonth(S => {
+  if (!S.red || !IC.inRed(S)) return;
+  S.red.months++;
+  const st = S.story;
+  if (st) {
+    st.standing -= IC.RED.conf;
+    IC.log(S, 'warn', 'TREASURY', `Another month in the red (${S.red.months}): the Minister's confidence −${IC.RED.conf}. The grant shrinks with it.${st.act < 3 ? '' : ' At zero for a full day you are replaced.'}`);
+    if (S.red.months % 2 === 0 && IC.storyEvent && !st.events.some(e => e.kind === 'treasury')) IC.storyEvent(S, 'treasury');
+  }
+});
 /* money booked by kind: + comes in, − goes out */
 // (each line goes into the day's book and the month's: the statement is the month's, the review sums the months)
 function book(S, k, v) { const E = S.econ; if (!E || !v) return; E.book[k] = (E.book[k] || 0) + v; const M = E.mb || (E.mb = {}); M[k] = (M[k] || 0) + v; E.booked = (E.booked || 0) + v; }

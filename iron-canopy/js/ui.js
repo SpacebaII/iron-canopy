@@ -137,6 +137,8 @@ function waitLine() {
   }
   if (!ui.waitPick) return '';
   const L = IC.waitTargets(S);
+  // (round 5b) nothing can be waited for when more goes out than comes in: say so, with what helps
+  if (!L.length) return `<div class="waitbar glass pick"><b>Nothing to wait for</b><small>${esc(IC.waitText(S, { what: 'anything', amt: Math.max(0, S.budget) + 100 }).replace(/^.*?, /, 'Waiting would not help: '))}</small><button class="btn sm" data-act="room" data-v="economy">Economy (E)</button>${IC.inRed(S) ? '<button class="btn sm primary" data-act="redLoan">Emergency loan</button>' : ''}</div>`;
   return `<div class="waitbar glass pick"><b>Wait until you can afford</b>${L.map(t => `<button class="li" data-act="wait" data-v="${esc(t.key)}"><span>${esc(t.what.charAt(0).toUpperCase() + t.what.slice(1))}</span><small>${esc(IC.waitText(S, t))}</small></button>`).join('')}<small>Time runs fast, and stops when the month turns or something needs you.</small></div>`;
 }
 
@@ -722,7 +724,7 @@ IC.hint = {
 ui.topHint = () => { let id = null; for (const [k, o] of hints) if (o.text) id = k; return id; };
 /* placed every frame (things on screen move, the map scrolls); each hint keeps its own elements */
 const hEls = new Map();
-const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button></span></div>`;
+const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
 ui.hintFrame = function () {
   const L = $('hints');
   for (const [id, h] of hEls) if (hints.get(id) !== h.o) { h.ring.remove(); if (h.note) h.note.remove(); hEls.delete(id); }
@@ -771,6 +773,33 @@ function coach() {
   if (ui.gameHint && ui.gameHint !== id) { hints.delete(ui.gameHint); ui.gameHint = null; }
   if (id && !hints.has(id) && ui.gameHint !== id) { IC.hint.show(id, Object.assign({ btn: 'OK' }, sh, { persist: false })); ui.gameHint = id; }
 }
+/* (round 5b) the tutorial step now (tutor.js): a ring on what to do and a note with Skip, no Next. A tutorial
+   starts the first time its first target is on screen and the story has reached it; a step whose result is already
+   on screen is done */
+const onScreen = e => { if (!e || e.offsetParent === null) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (!ui.room || $('warroom').contains(e)); };
+function tutor() {
+  if (!S || S.mode === 'academy' || !ui.hintsOn || !$('start').hidden) { if (hints.has('tutor')) hints.delete('tutor'); ui.tutorKey = null; return; }
+  let N = IC.tutorNow(S);
+  if (!N) for (const id in IC.TUTORS) if (!IC.tutorSeen(S, id) && IC.tutorWhen(S, id) && onScreen(anchorEl(IC.TUTORS[id].steps[0].el))) { IC.tutorStart(S, id); N = IC.tutorNow(S); break; }
+  if (N && N.step.seen && onScreen(anchorEl(N.step.seen))) { IC.tutorSaw(S, N.id, N.i); N = IC.tutorNow(S); }
+  // (what the last action opened was closed again: point back at what opens it, until it is open)
+  let show = N && N.step;
+  if (N && !onScreen(anchorEl(show.el))) for (let j = N.i - 1; j >= 0; j--) { const p = IC.TUTORS[N.id].steps[j]; if (onScreen(anchorEl(p.el))) { show = p; break; } }
+  const key = N ? N.id + ':' + N.i + ':' + show.el : null;
+  if (ui.tutorKey === key) return;
+  hints.delete('tutor'); ui.tutorKey = key;
+  // (the target brought into view: a panel or a room may have it below the fold)
+  if (N) { const e = anchorEl(show.el); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
+  if (N) hints.set('tutor', { el: show.el, title: show.title, text: show.text, ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] });
+}
+/* the Guide's "Show me": the tutorial again from its first step, on the airport it is about */
+ui.tutorGo = function (id) {
+  const T = IC.TUTORS[id]; if (!T) return;
+  if (ui.room) ui.openRoom(null);
+  const ap = (S.story && S.byId[S.story.cap]) || IC.bases(S).find(b => b.kind === 'airport' && b.owner === 'us' && b.parts);
+  if (ap && T.open) { IC.select({ kind: 'infra', ref: ap }); ui.aptTab = 'info'; ui.inspMin = false; ui.aptOpen = Object.assign(ui.aptOpen || {}, { [T.open]: false }); }
+  IC.tutorStart(S, id, true); ui.tutorKey = null;
+};
 /* the first minutes of a game: a few notes on where things are, once per browser */
 function firstRun() {
   if (ui.firstRunDone === S || S.over || !$('start').hidden || !$('cine').hidden || !$('evcard').hidden || ui.room) return;
@@ -855,7 +884,7 @@ ui.pmFrame = function () {
 /* ---------- refresh ---------- */
 ui.refresh = function (force) {
   if (!S) return;
-  progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); firstRun(); pmarks();
+  progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); tutor(); firstRun(); pmarks();
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }

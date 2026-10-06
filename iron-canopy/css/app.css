@@ -759,6 +759,10 @@ table.t th.r{text-align:right}
 .tl-key .k.ghost::before{background:rgba(255,255,255,.14)}.tl-key .k.cap::before{background:none;border-top:1px dashed var(--muted);height:0;vertical-align:.2rem}
 .tl-svg{width:100%;height:9.5rem;background:rgba(0,0,0,.25);border-radius:10px}
 .tl-svg .night{fill:rgba(0,0,20,.35)}
+.tl-svg .curfew{fill:rgba(0,0,30,.6)}.tl-svg .arrp{fill:var(--friend);opacity:.45}.tl-svg .real{stroke:#fff;stroke-width:2}.tl-svg .mycap{stroke:var(--hostile);stroke-width:1.5;stroke-dasharray:6 3}
+.tl-key .k.real::before{background:none;border-top:2px solid #fff;height:0;vertical-align:.2rem}
+.dayb .tl-svg.day{height:11rem}
+.t.score{table-layout:fixed;width:100%}.t.score th{letter-spacing:0;font-size:.7rem;text-transform:none}.t.score col.nm{width:30%}.t.score td,.t.score th{padding:.15rem .2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.t.score tr.sub td{white-space:normal}.dayb .dcap,.dayb .dnight,.dayb .dbanks{margin-top:.75rem}.t.score tr.sub td{padding-bottom:.45rem;border-bottom:1px solid rgba(255,255,255,.08)}.t.score td.ok{color:var(--ok,#7fd48a)}.t.score td.amber,.t.score b.amber{color:var(--amber)}.t.score td.hostile,.t.score b.hostile{color:var(--hostile)}.dayb .seg{margin:.2rem 0}
 .tl-svg .ghost{fill:rgba(255,255,255,.08)}
 .tl-svg .arr{fill:var(--friend);opacity:.85}.tl-svg .dep{fill:var(--amber);opacity:.85}
 .tl-svg .busy{fill:var(--hostile)}
