@@ -765,6 +765,25 @@ IC.waitStart = function (S, key) {
   IC.emit(S, 'waitStart', S.wait);
   return true;
 };
+/* Should this stop a wait (or skip)? Only what the player can act on now, and never the same thing twice: the same
+   kind of incident about the same aircraft, or the same kind more than once a game day while waiting (playtest 1:
+   one airspace incident nobody could fix in Act I stopped Wait ten times in a row) */
+IC.waitWorth = function (S, type, d) {
+  if (type !== 'incidentAdded' || !d) return true;
+  const st = S.story;
+  // in Act I the airspace is not the player's yet: no radar, no airways to give; foreign overflights never are
+  const sep = d.kind === 'separation' || d.kind === 'nearmiss';
+  if (sep && st && st.act === 1 && st.ch < 2) return false;
+  if (sep && st && st.act === 1 && d.ref && !d.ref.tail) return false;
+  const seen = S.waitSeen || (S.waitSeen = {}), ref = d.ref ? d.ref.id || d.ref.cs || d.ref.tn || '' : '';
+  const k1 = d.kind + ':' + ref, k2 = 'kind:' + d.kind;
+  if (seen[k1] != null) return false;
+  if (seen[k2] != null && S.time - seen[k2] < 86400) return false;
+  seen[k1] = seen[k2] = S.time;
+  // (forget the oldest: a long Career meets thousands of aircraft)
+  const ks = Object.keys(seen); if (ks.length > 200) for (const k of ks.slice(0, 100)) delete seen[k];
+  return true;
+};
 IC.waitStop = function (S, why) {
   if (!S.wait) return;
   const w = S.wait; S.wait = null;

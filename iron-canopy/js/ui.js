@@ -558,7 +558,8 @@ function cine() {
   if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
     const c = C.cards[ui.cineShown];
     el.className = 'cine ' + c.kind; el.hidden = false;
-    el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
+    el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
+
     if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
     ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });

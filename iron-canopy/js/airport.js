@@ -843,7 +843,7 @@ IC.aptStats = function (S, ap) {
   }
   // fog and low cloud
   st.ilsEnds = rws.reduce((n, rw) => n + (IC.rwHasILS(ap, rw, 1) ? 1 : 0) + (IC.rwHasILS(ap, rw, -1) ? 1 : 0), 0);
-  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase') st.warn.push('No landing system (ILS): in fog and low cloud every arrival diverts.');
+  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase') st.warn.push('No landing system (ILS): in fog, low cloud and snow every arrival diverts. One at the end aircraft land toward (₭25M, Navaids) lets them land.');
   // fire and rescue: how long the trucks take to reach the far end of each runway
   const fires = alive('fire');
   const fireSt = fires.filter(f => rws.some(rw => U.dist(f, rwAt(rw, 0.5)) < 15));
@@ -1645,8 +1645,10 @@ IC.foundAirport = function (S, x, y, a) {
   const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL);
   if (S.budget < sv.cost) { IC.log(S, 'warn', 'BUILD', `The site costs ${U.money(sv.cost)} with land and levelling.`); return null; }
   if (sv.river) { IC.log(S, 'warn', 'BUILD', 'A river crosses the runway line: turn the runway or pick another site.'); IC.text(S, x, y, 'A RIVER CROSSES THE RUNWAY LINE', IC.C.hostile); return null; }
-  S.budget -= sv.cost;
-  const city = IC.cities(S).slice().sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
+  // (the access road is paid as it is laid, by landside.js: the survey's total counts it)
+  S.budget -= sv.site != null ? sv.site : sv.cost;
+  const city = IC.cities(S).slice()
+.sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
   const n = S.infra.filter(i => i.kind === 'airport').length;
   const ap = { id: 'apt' + n + IC.nid(''), kind: 'airport', name: `${city ? city.name : 'New'} ${S.infra.some(i => i.name === (city ? city.name : 'New') + ' Airport') ? 'Field' : 'Airport'}`, x, y, owner: 'us', infra: true, r: 50, max: 150, hp: 150, city: city && city.id, inv: {}, inc: {} };
   ap.rwyA = sv.a;

@@ -4573,6 +4573,39 @@ test('text: ten hours of Career and four of Quick war write no "undefined", "NaN
   assert(!out.length, `${out.length} problems, first: ${out[0]}`);
 }, true);
 
+/* ---------- round 1: building something cool, fast (docs/focus/round-1.md) ---------- */
+test('round 1: an arrival diverted for lack of a landing system says why, with the fix one click away', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 5 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  sky(S, 'fog'); calm(S, 0, 3);
+  ap.parts = ap.parts.filter(p => p.kind !== 'ils'); ap.dirty = true; ap.cfg = null; IC.aptStats(S, ap);
+  assert(ap.st.warn.some(w => /ILS/.test(w) && /₭25M/.test(w)), 'the airport does not say what a landing system costs');
+  const n0 = S.camp.cards.length;
+  // the airlines' own flights, for six hours of fog
+  const d0 = ap.kpi.div || 0;
+  for (let i = 0; i < 6 * 3600 && (ap.kpi.div || 0) < d0 + 2; i++) IC.step(S, 1);
+  const c = S.camp.cards.slice(n0).filter(x => /Diverted/.test(x.title));
+  assert((ap.kpi.div || 0) > d0 && c.length === 1, `${(ap.kpi.div || 0) - d0} diversions, ${c.length} cards`);
+  assert(c[0].fix && c[0].fix.v === 'ils' && c[0].ap === ap.id && /landing system \(ILS\)/.test(c[0].text), 'the card has no fix');
+  // a fresh Career teaches it before the first winter airliner: a goal of the first chapter
+  const F = IC.newGame({ seed: 12345, mode: 'story' });
+  assert(F.story.goals.some(g => g.id === 'ils0' && /landing system/.test(g.text)), 'the first chapter does not ask for a landing system');
+});
+test('round 1: Wait is not stopped twice by the same incident, nor by one the player cannot act on yet', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ours = { id: 'tA', cs: 'ALD 395', tail: { al: 'x' }, x: 0, y: 0 }, abroad = { id: 'tB', cs: 'TRN 740', x: 0, y: 0 };
+  // Act I before the airspace chapter: no radar to give, so nothing about spacing stops it
+  S.story.ch = 1;
+  assert(!IC.waitWorth(S, 'incidentAdded', { kind: 'separation', ref: ours, text: 'x' }), 'stopped for spacing in Chapter 2');
+  S.story.ch = 2;
+  assert(!IC.waitWorth(S, 'incidentAdded', { kind: 'separation', ref: abroad, text: 'x' }), 'stopped for two foreign flights');
+  assert(IC.waitWorth(S, 'incidentAdded', { kind: 'separation', ref: ours, text: 'x' }), 'the first spacing incident it can act on did not stop it');
+  let n = 0; for (let i = 0; i < 10; i++) if (IC.waitWorth(S, 'incidentAdded', { kind: 'separation', ref: ours, text: 'x' })) n++;
+  assert(n === 0, `the same incident stopped it ${n} more times`);
+  assert(!IC.waitWorth(S, 'incidentAdded', { kind: 'separation', ref: { id: 'tC', tail: {} }, text: 'x' }), 'another spacing incident in the same day stopped it');
+  assert(IC.waitWorth(S, 'incidentAdded', { kind: 'offroute', ref: ours, text: 'x' }), 'a different kind did not stop it');
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

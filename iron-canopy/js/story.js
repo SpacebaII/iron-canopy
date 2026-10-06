@@ -107,7 +107,7 @@ IC.storyInit = function (S) {
 };
 
 function say(S, who, text) { IC.say(S, who, text); }
-function card(S, title, sub, text, kind) { IC.card(S, title, sub, text, kind); }
+function card(S, title, sub, text, kind, x) { IC.card(S, title, sub, text, kind, x); }
 const apName = (S, id) => S.byId[id].name;
 const short = n => n.replace(/ (International|Airport|Air Base)$/, '');
 
@@ -210,6 +210,9 @@ function chapterGoals(S, ch) {
       how: 'Pick Terminal and place it along the back of the apron: passengers walk from it to the stands. Stands next to it turn aircraft round faster.' });
     g({ id: 'services', text: 'Build a fire station near the runway, and a fuel farm', check: () => !!(A() && A().st.fire) && built(A(), 'fuel'), prog: () => building(A(), 'fire') || building(A(), 'fuel'),
       how: 'Airliners may not use a runway without fire cover: put the Fire station close to the middle of the runway. Put a Fuel farm near the apron but away from the terminal: burning fuel spreads to anything close.' });
+    // (round 1: no rule punishes before it is taught: the first winter's fog and snow divert every arrival without one)
+    g({ id: 'ils0', text: 'Put a landing system (ILS) on the runway: fog and snow close it without one', check: () => built(A(), 'ils'), prog: () => building(A(), 'ils'),
+      how: 'In fog, low cloud or snow a pilot cannot see the runway until the last moment: without a landing system every arrival diverts to another country, and the airline is paid back. Winter has fog most mornings. The Runway with taxiways piece comes with one at each end; on its own it is under Navaids (₭25M), placed at the end aircraft land toward.' });
     g({ id: 'first', text: 'Welcome the first airliner', check: () => st.cnt.parked > 0, prog: () => st.opened ? 'the first flights are on their way' : 'airlines come when the airport can take them',
       how: 'Building goes in stages and materials come by lorry: the Works tab shows each job and why it waits. One engineer crew works one job at a time; + Crew in the Works tab adds another. Speed time up (keys 1–6) while you wait. When the airport can take a jet, the first airlines send their flights: zoom in to watch one land and taxi to its stand.' });
   } else if (ch === 1) {
@@ -1048,7 +1051,8 @@ function actOneTick(S) {
   if (ap && !st.opened && openTo(S, ap, 'narrow')) {
     st.opened = true;
     IC.avCareerStart(S, ap);
-    card(S, 'Open for business', U.clock(S.time, S), `${ap.name} can take its first jets. ${S.av.airlines.map(a => a.name).join(' and ')} are sending their first flights: watch the Aviation room, and the runway.`, 'chapter');
+    const noIls = !ap.parts.some(p => p.kind === 'ils');
+    card(S, 'Open for business', U.clock(S.time, S), `${ap.name} can take its first jets. ${S.av.airlines.map(a => a.name).join(' and ')} are sending their first flights: watch the Aviation room, and the runway.${noIls ? ' There is no landing system (ILS) yet: in fog or snow they will divert. One costs ₭25M.' : ''}`, 'chapter', noIls ? { fix: { label: 'Build a landing system', v: 'ils' }, ap: ap.id } : null);
     say(S, 'ATC', `First arrivals inbound to ${short(ap.name)}. They fly direct and my controllers space them by time: no airways, no radar. Fine while there are few of them.`);
   }
   const c = st.contract;

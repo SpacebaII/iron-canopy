@@ -451,6 +451,7 @@ IC.noiseOver = function (S, x, y, a, len) {
   }
   return out;
 };
+const ROAD_Q = new Map();
 IC.foundSurvey = function (S, x, y, a) {
   const W = S.world, d = { x: Math.cos(a), y: Math.sin(a) };
   const h0 = W.hAt(x, y);
@@ -471,7 +472,11 @@ IC.foundSurvey = function (S, x, y, a) {
   const off = Math.abs(U.angWrap(((a - IC.PREVAIL) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2)) * 180 / Math.PI;
   const wind = Math.round(Math.min(off, 180 - off));
   const hdg = IC.bearing(a), end = n => String(Math.round(n / 10) % 36 || 36).padStart(2, '0');
-  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, cost: IC.FOUND_COST + earth + land, obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
+  // the access road it will get, priced now: Found's price is the whole price (worked out once a site and heading)
+  const rk = `${x.toFixed(1)},${y.toFixed(1)},${a.toFixed(2)}`;
+  if (!ROAD_Q.has(rk)) { const A = IC.landAccessPlan ? IC.landAccessPlan(S, x, y, a) : null; ROAD_Q.set(rk, A && (!A.P.why || /serve one of your airports/.test(A.P.why)) ? { cost: A.P.cost, km: A.P.km } : null); if (ROAD_Q.size > 64) ROAD_Q.delete(ROAD_Q.keys().next().value); }
+  const road = ROAD_Q.get(rk), site = IC.FOUND_COST + earth + land;
+  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, road, site, cost: site + (road ? road.cost : 0), obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
     windOff: wind, ends: [end(hdg), end(hdg + 180)], name: [end(hdg), end(hdg + 180)].sort().join('/'), cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
 };
 /* the survey in plain words, one line each */
@@ -482,7 +487,8 @@ IC.foundLines = function (S, sv) {
   if (sv.river) L.push('A river crosses the runway line: a runway cannot be built across it. Turn the runway or move the site');
   if (sv.obst > 20) L.push(`Hills ${sv.obstAt.toFixed(0)} km off one end rise ${sv.obst} m above the approach slope`);
   L.push(sv.homes ? `Noise over ${Object.entries(sv.noise).map(([k, v]) => `${v} city blocks of ${k}`).join(', ')}` : 'No homes under the flight paths');
-  L.push(`Total ${U.money(sv.cost)}`);
+  L.push(sv.road ? `Access road ${U.km(sv.road.km * 10)} to the nearest road: ${U.money(sv.road.cost)}` : 'Access road: none needed');
+  L.push(`${sv.city ? `${Math.round(sv.cityKm)} km from ${sv.city} · ` : ''}Total ${U.money(sv.cost)}, everything included`);
   return L;
 };
 

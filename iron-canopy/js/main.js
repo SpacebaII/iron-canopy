@@ -488,7 +488,16 @@ function onAct(e) {
     case 'research': IC.startResearch(S, v); break;
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
-    case 'desel': S.sel = null; S.group = []; break;
+    // (closing the panel keeps the build bar on the airport it was building: only Esc on the map lets go of it)
+    case 'desel': { const a = selAp(); if (a && IC.bb) IC.bb.ap = a; S.sel = null; S.group = []; break; }
+    // a card's fix: the airport, the build bar and the piece that fixes it, in one click
+    case 'buildPick': {
+      const a = (b.dataset.ap && S.byId[b.dataset.ap]) || selAp() || IC.bbAirport(S); if (!a) break;
+      ui.closeCine(); if (ui.room) ui.openRoom(null);
+      IC.bb.ap = a; IC.select({ kind: 'infra', ref: a }); IC.bbToggle(true); IC.bbPick(v);
+      IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 2.2)); return;
+    }
+
     case 'emcon': case 'uroe': case 'udoc': case 'move': case 'heli': case 'pri': case 'repair': case 'clearPrio': case 'reserve': case 'fireMode': case 'assignBest': case 'scramble': command(a, v); return;
     case 'emconAll': command('emcon', v); return;
     case 'dpri': { const d = id ? S.units.find(u => u.id === id) : sel; if (d) { d.pri = v; IC.log(S, 'info', 'LOGI', `${d.name}: resupply priority ${IC.DEPOT_PRI[v].name.toLowerCase()}.`); } break; }
@@ -628,7 +637,9 @@ IC.on((S2, type, d) => {
   else if (type === 'track' && (d.d.cls === 'air' || d.d.cls === 'cm') && !d.border) stopSkip(`New track TN ${d.tn}.`);
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
   else if (type === 'event') { if (P.event !== false) pause(d.title); else stopSkip(d.title); }
-  else if (type === 'incidentAdded' || type === 'act' || type === 'goal') stopSkip();
+  else if (type === 'incidentAdded') { if ((S.wait || S.skip) && IC.waitWorth(S, type, d)) stopSkip(d.text ? d.text.charAt(0).toUpperCase() + d.text.slice(1) + '.' : ''); }
+  else if (type === 'act' || type === 'goal') stopSkip();
+
   else if (type === 'request') stopSkip(`${IC.avAirline(S, d.al).name} offers a deal.`);
   else if (type === 'dealWarn' || type === 'dealStrike' || type === 'dealBroken') stopSkip(`${d.al.name}: its deal ${type === 'dealBroken' ? 'is over' : 'is at risk'}.`);
   else if (type === 'assault' || type === 'chapter' || type === 'war' || type === 'frontActive' || type === 'delivered' || type === 'lessonDone') stopSkip();
