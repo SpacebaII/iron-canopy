@@ -475,12 +475,16 @@ function consultants(S) {
   const ap = capApt(S); if (!ap) return;
   // (round 5c) the nearest foreign airports in turn until three entry points are on airways: two airports the same way
   // gave one fix (a second too close to it is refused), and the chapter's goal could never be met
-  const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, IC.FOCUS.tutors ? 8 : 3);
+  const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, IC.FOCUS.tutors ? 5 : 3);
   let hub = null;
   for (const p of ports) {
     if (IC.FOCUS.tutors && gatesOn(S) >= 3) break;
     let q = null;
     for (let i = 1; i <= 60; i++) { const x = ap.x + (p.x - ap.x) * i / 60, y = ap.y + (p.y - ap.y) * i / 60; if (!IC.inHome(x, y)) { q = { x, y }; break; } }
+    // (round 5c) on the border itself: a far airport's step of 50 km could leave the point too far out to be an entry
+    if (q && IC.FOCUS.tutors) { let lo = 0, hi = 1; const f = Math.hypot(q.x - ap.x, q.y - ap.y) / Math.max(1, Math.hypot(p.x - ap.x, p.y - ap.y)); hi = f; lo = Math.max(0, f - 1 / 60);
+      for (let k = 0; k < 14; k++) { const m = (lo + hi) / 2; if (IC.inHome(ap.x + (p.x - ap.x) * m, ap.y + (p.y - ap.y) * m)) lo = m; else hi = m; }
+      q = { x: ap.x + (p.x - ap.x) * (hi + 40 / Math.max(1, Math.hypot(p.x - ap.x, p.y - ap.y))), y: ap.y + (p.y - ap.y) * (hi + 40 / Math.max(1, Math.hypot(p.x - ap.x, p.y - ap.y))) }; }
     if (!q) continue;
     if (!hub) { const d = U.dist(ap, p), k = Math.min(1, 500 / d); hub = IC.aspAddFix(S, ap.x + (p.x - ap.x) * k * 0.5, ap.y + (p.y - ap.y) * k * 0.5); }
     const f = IC.aspAddFix(S, q.x, q.y);

@@ -5383,15 +5383,9 @@ test('round 5c: Chapter 3 radar: the tip names how many and where, the tag what 
   for (const seed of [7, 12345]) {
     const S = IC.newGame({ seed, mode: 'story', preset: 'network' }); IC.S = S;
     const ap = S.byId[S.story.cap];
-    // the consultants' three airways (story.js), as a player short of time picks them
-    const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, 3);
-    let hub = null;
-    for (const p of ports) {
-      let q = null; for (let i = 1; i <= 60 && !q; i++) { const x = ap.x + (p.x - ap.x) * i / 60, y = ap.y + (p.y - ap.y) * i / 60; if (!IC.inHome(x, y)) q = { x, y }; }
-      if (!q) continue;
-      if (!hub) { const d = U.dist(ap, p), k = Math.min(1, 500 / d); hub = IC.aspAddFix(S, ap.x + (p.x - ap.x) * k * 0.5, ap.y + (p.y - ap.y) * k * 0.5); }
-      const f = IC.aspAddFix(S, q.x, q.y); if (f && hub) IC.aspAddWay(S, hub.id, f.id);
-    }
+    // Chapter 3's card, answered as a player short of time answers it: the consultants draw the airways
+    S.story.ch = 1; IC.storyEvent(S, 'airspace'); IC.storyChoose(S, S.story.events[0].id, 1);
+    assert(S.story.ch === 2 && S.story.goals.find(g => g.id === 'gates').check(), 'the consultants did not leave three entry points on airways');
     IC.step(S, 1);
     const tip = IC.radarAdvice(S), plan = IC.radarPlan(S).n;
     assert(/About \d+ more beacon radars?/.test(tip) && /biggest gap is \d+ km/.test(tip), tip);

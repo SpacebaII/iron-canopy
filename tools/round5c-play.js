@@ -213,10 +213,12 @@ fs.mkdirSync(OUT, { recursive: true });
     // Chapter 3: a radar on the gap marker, through its own button, once the last one is up; never more than the tip says plus one
     if (s.ch === 2 && s.radarOpen && s.cover < 0.8 && !s.ssrBusy && s.budget > 150 && Date.now() - radarT > 15000 && s.ssr < Math.max(3, s.plan + s.ssr + 1)) {
       radarT = Date.now();
+      // (the marker sits at the gap: the camera goes there first, as Show the gaps would take it)
+      const g0 = await ev('(() => { const g = IC.radarGap(IC.S); return g && g.at; })()'); if (g0) await look(g0.x, g0.y, 0.08);
       const m = await page.$('#pmarks [data-act="gapFix"]');
       if (m) { await click(m); await page.waitForTimeout(900);
         const q = await ev(`(() => { const g = IC.radarGap(IC.S); return g && IC.findSpot(IC.S, 'ssr', g.at.x, g.at.y, 0, 300); })()`);
-        if (q) { await look(q.x, q.y, 0.08); const p = await scr(q.x, q.y); await page.mouse.move(p.x, p.y); await page.waitForTimeout(500); if (!shots.has('13-radar-tag')) await shot('13-radar-tag'); await page.mouse.click(p.x, p.y); clicks++; await page.waitForTimeout(500); await key('Escape'); log('built: a civil radar on the gap marker'); }
+        if (q) { await look(q.x, q.y, 0.08); const p = await scr(q.x, q.y); await page.mouse.move(p.x, p.y); await page.waitForTimeout(500); if (!shots.has('13-radar-tag')) await shot('13-radar-tag'); await page.mouse.click(p.x, p.y); clicks++; await page.waitForTimeout(500); await key('Escape'); log(await ev(`IC.S.units.some(u => u.type === 'ssr' && U_near(u))`.replace('U_near(u)', `Math.hypot(u.x - ${q.x}, u.y - ${q.y}) < 5`)) ? 'built: a civil radar on the gap marker' : 'the radar was not placed'); }
         await look(ap.x, ap.y, 6); await key('6');
       }
     }
