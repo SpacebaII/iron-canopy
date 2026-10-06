@@ -1,0 +1,196 @@
+{
+ "before": true,
+ "minutes": 32.1,
+ "openAt": 1.1,
+ "goals": 19,
+ "goalGapMax": 14.2,
+ "events": 27,
+ "eventGapMax": 4.2,
+ "distinctEvents": 4,
+ "weatherLines": 149,
+ "kinds": {
+  "storyChapter": 2,
+  "offer": 13,
+  "rareVisitor": 11,
+  "card: A sky with a plan": 1
+ },
+ "timeline": [
+  "0.3 goal Found the national airport within 60 km of Ardton",
+  "0.5 goal Build a runway at least 2.1 km long",
+  "0.6 goal Put a landing system (ILS) on the runway: fog and snow close it without one",
+  "0.6 goal Build an apron with a taxiway to the runway",
+  "0.6 goal Build a terminal beside the apron",
+  "0.6 goal Build a fire station near the runway, and a fuel farm",
+  "1.1 goal Welcome the first airliner",
+  "1.1 storyChapter 1",
+  "1.1 goal Build a control tower",
+  "1.1 goal Stop the backtracking: a taxiway to a runway end",
+  "1.1 goal Install a landing system (ILS) on the runway end arrivals use most",
+  "2.2 goal Hangar space for the aircraft based here",
+  "2.4 request Morvane Airways",
+  "2.4 goal Sign a deal with an airline: its offer shows on the map at the airport",
+  "2.5 rareVisitor airship",
+  "2.5 goal Grow to 10 stands joined to the runway",
+  "3.9 goal Carry 6,000 passengers in a day",
+  "5.0 request Aldis Air",
+  "5.0 goal Five deals running at once",
+  "5.3 request Jetlink",
+  "5.3 goal Three airlines, satisfied: average 70%",
+  "5.6 rareVisitor display",
+  "7.7 request Aldis Air",
+  "8.4 rareVisitor outsize",
+  "10.8 rareVisitor vintage",
+  "11.2 request Jetlink",
+  "13.1 rareVisitor sst",
+  "13.5 request Aldis Air",
+  "14.8 request Lunor Air",
+  "15.9 rareVisitor display",
+  "16.7 request Aldis Air",
+  "17.8 rareVisitor airship",
+  "18.6 request Aldis Air",
+  "19.1 rareVisitor state",
+  "19.5 event A sky with a plan",
+  "19.5 storyChapter 2",
+  "19.5 goal Place three entry points on the border, each on an airway",
+  "19.5 goal Join Ardton to the airways, with routes to two foreign airports",
+  "20.1 request Jetlink (renewal)",
+  "22.1 rareVisitor vintage",
+  "22.3 goal Twelve hours without a loss of separation",
+  "24.9 rareVisitor amphib",
+  "25.1 request Aldis Air",
+  "29.4 rareVisitor airship",
+  "30.3 request Aldis Air (renewal)",
+  "31.0 request Morvane Airways"
+ ],
+ "money": [
+  {
+   "min": 1,
+   "budget": 4269,
+   "ml": "Jan: ₭6.2M in · ₭1,237M out",
+   "date": "Jan Y1 · 13:04",
+   "ch": 0,
+   "goal": "Welcome the first airliner"
+  },
+  {
+   "min": 3.1,
+   "budget": 3972,
+   "ml": "Jan: ₭84M in · ₭1,612M out",
+   "date": "Jan Y1 · 18:34",
+   "ch": 1,
+   "goal": "Five deals running at once"
+  },
+  {
+   "min": 5.1,
+   "budget": 3992,
+   "ml": "Feb: ₭69M in · ₭62M out",
+   "date": "Feb Y1 · 23:24",
+   "ch": 1,
+   "goal": "Five deals running at once"
+  },
+  {
+   "min": 7.1,
+   "budget": 4027,
+   "ml": "Feb: ₭222M in · ₭180M out",
+   "date": "Feb Y1 · 20:17",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 9.3,
+   "budget": 3958,
+   "ml": "Mar: ₭218M in · ₭292M out",
+   "date": "Mar Y1 · 14:17",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 11.3,
+   "budget": 3958,
+   "ml": "Apr: ₭191M in · ₭156M out",
+   "date": "Apr Y1 · 06:29",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 13.3,
+   "budget": 4045,
+   "ml": "May: ₭167M in · ₭111M out",
+   "date": "May Y1 · 14:29",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 15.3,
+   "budget": 4138,
+   "ml": "Jun: ₭98M in · ₭64M out",
+   "date": "Jun Y1 · 22:19",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 17.3,
+   "budget": 4299,
+   "ml": "Jul: ₭111M in · ₭62M out",
+   "date": "Jul Y1 · 21:03",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 19.3,
+   "budget": 4494,
+   "ml": "Aug: ₭135M in · ₭74M out",
+   "date": "Aug Y1 · 01:12",
+   "ch": 1,
+   "goal": "See a deal through to its end with no bad days"
+  },
+  {
+   "min": 21.4,
+   "budget": 4315,
+   "ml": "Aug: ₭346M in · ₭463M out",
+   "date": "Aug Y1 · 13:41",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 23.4,
+   "budget": 3974,
+   "ml": "Sep: ₭75M in · ₭304M out",
+   "date": "Sep Y1 · 13:26",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 25.5,
+   "budget": 2786,
+   "ml": "Sep: ₭324M in · ₭1,741M out",
+   "date": "Sep Y1 · 10:14",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 27.5,
+   "budget": 1926,
+   "ml": "Oct: ₭5.6M in · ₭131M out",
+   "date": "Oct Y1 · 01:37",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 29.5,
+   "budget": -631,
+   "ml": "Oct: ₭226M in · ₭2,909M out",
+   "date": "Oct Y1 · 15:13",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  },
+  {
+   "min": 31.6,
+   "budget": -2429,
+   "ml": "Oct: ₭374M in · ₭4,854M out",
+   "date": "Oct Y1 · 16:29",
+   "ch": 2,
+   "goal": "Put up a civil radar that sees 80% of the airways"
+  }
+ ],
+ "errors": []
+}
