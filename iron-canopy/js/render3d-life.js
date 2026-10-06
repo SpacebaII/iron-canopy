@@ -733,21 +733,9 @@ function turnFrame(v, A, q, t, stats, near) {
     P.J.used = A.frame; bridge(v, A, P.J, q, k, t, stats);
   }
   if (!near) return;
-  const on = (key, path, ta, td, extra, lag) => drive(v, A, key, path, ta, td, t, stats, extra, lag);
-  if (q.kind === 'bus' || q.kind === 'walk') { on('stairs', P.stairsF, t0 + 25, tEnd - 90); if (q.len > 0.3) on('stairs', P.stairsR, t0 + 45, tEnd - 110); }
-  if (q.kind !== 'bridge') on('gpu', P.gpu, t0 + 40, tEnd - 60);
-  if (q.kind === 'cargo') {
-    for (let i = 0; i < Math.min(4, q.n || 2); i++) for (let c = 0; c < 3; c++) { const ta = t0 + 120 + i * 90 + c * D * 0.28; on('lorry', i % 2 ? P.holdA : P.holdF, ta, ta + D * 0.18); }
-  } else {
-    on('belt', P.beltA, t0 + 60, tEnd - 240, 'belt'); if (q.len > 0.5) on('belt', P.beltF, t0 + 70, tEnd - 250, 'belt');
-    // the baggage train: off the aircraft, then back with the departing bags
-    for (let j = 0; j < 2; j++) { const ta = j ? t0 + D * 0.55 : t0 + 90, td = j ? tEnd - 300 : t0 + D * 0.25; on('bagtractor', P.bag, ta, td); for (let i = 1; i <= 3; i++) on('bagcart', P.bag, ta, td, null, i); }
-    const ct = t0 + D * 0.3; on('catering', P.cater, ct, ct + D * 0.2, 'catering');
-    if (q.kind === 'bus') for (let i = 0; i < Math.min(3, q.n || 1); i++) { on('apbus', P.bus[i % 2], t0 + 50 + i * 25, t0 + 240 + i * 40); on('apbus', P.bus[i % 2], t0 + D * 0.62 + i * 30, tEnd - 400 + i * 60); }
-  }
-  on(q.fuel === 'hydrant' ? 'dispenser' : 'refueller', P.fuel, t0 + D * 0.45, t0 + D * 0.8);
-  // the pushback tug comes to the nose and waits there (the aircraft's own track takes it from the pushback)
-  if (q.t1 == null || t < q.t1) on('tug', P.tug, tEnd - 420, q.t1 == null ? 1e18 : q.t1);
+  // (the plan is shared with the 2D map: aptlife.js IC.turnJobs)
+  if (!q._jobs || q._jt1 !== q.t1) { q._jobs = IC.turnJobs(q); q._jt1 = q.t1; }
+  for (const j of q._jobs) if (!j.flat) drive(v, A, j.key, P[j.path], j.ta, j.td, t, stats, j.extra, j.lag);
 }
 /* a vehicle on its path: drives in to arrive at ta, stands until td, drives back out; hidden before and after */
 function drive(v, A, key, path, ta, td, t, stats, extra, lag) {
@@ -789,36 +777,9 @@ function mkPath(pts) { const cum = [0]; for (let i = 1; i < pts.length; i++) cum
    there from its depot (a terminal, the fuel farm, the cargo shed): along the service lane in front of the stands */
 function planOf(v, A, q) {
   let P = v.life.plans.get(q); if (P) return P;
-  const b = A.b, a = q.a, f = { x: Math.cos(a), y: Math.sin(a) }, r = { x: -Math.sin(a), y: Math.cos(a) }, Ln = q.len, hw = Math.max(0.018, q.span * 0.055);
-  const at = (fx, rx) => ({ x: q.x + f.x * fx + r.x * rx, y: q.y + f.y * fx + r.y * rx });
-  const lane0 = at(Ln / 2 + 0.16, 0);
-  const depot = kinds => kerb(b, kinds, lane0) || at(Ln / 2 + 0.16, 3);
-  const term = depot(['terminal', 'concourse']), fuel = depot(['fuel', 'hydrant', 'terminal']), cargo = depot(['cargo', 'terminal']);
-  // spot: where the vehicle stops, and which way it faces then (a unit vector)
-  // (a depot away from the stand, the fuel farm or the cargo shed: by the airport's service roads, svcroads.js)
-  const byRoad = {};
-  const route = (from, spot, face, back) => {
-    let way = [from];
-    if (U.dist(from, lane0) > 2 && IC.svcPath) { const k = from.x.toFixed(2) + ',' + from.y.toFixed(2); if (!(k in byRoad)) byRoad[k] = IC.svcPath(b, from, lane0); if (byRoad[k]) way = byRoad[k].slice(0, -1); }
-    const start = way[way.length - 1];
-    const lp = { x: lane0.x + r.x * ((start.x - lane0.x) * r.x + (start.y - lane0.y) * r.y), y: lane0.y + r.y * ((start.x - lane0.x) * r.x + (start.y - lane0.y) * r.y) };
-    const la = { x: lane0.x + r.x * U.clamp((spot.x - lane0.x) * r.x + (spot.y - lane0.y) * r.y, -2, 2), y: lane0.y + r.y * U.clamp((spot.x - lane0.x) * r.x + (spot.y - lane0.y) * r.y, -2, 2) };
-    const app = { x: spot.x - face.x * (back || 0.12), y: spot.y - face.y * (back || 0.12) };
-    return mkPath(way.concat([lp, la, app, spot]));
-  };
-  const toF = { x: -r.x, y: -r.y };   // from the starboard side towards the fuselage
-  P = {
-    stairsF: route(term, at(Ln * 0.33, -hw - 0.042), r), stairsR: route(term, at(-Ln * 0.36, -hw - 0.042), r),
-    gpu: route(term, at(Ln / 2 - 0.05, 0.03), { x: -f.x, y: -f.y }),
-    beltA: route(term, at(-Ln * 0.2, hw + 0.043), toF), beltF: route(term, at(Ln * 0.2, hw + 0.043), toF),
-    bag: route(term, at(-Ln * 0.08, hw + 0.075), { x: -f.x, y: -f.y }, 0.2),
-    cater: route(term, at(-Ln * 0.38, hw + 0.05), toF),
-    fuel: route(fuel, at(-0.02, q.span * 0.2), f),
-    holdA: route(cargo, at(-Ln * 0.25, hw + 0.06), toF), holdF: route(cargo, at(Ln * 0.2, hw + 0.06), toF),
-    bus: [route(term, at(Ln * 0.28, -hw - 0.13), f, 0.25), route(term, at(-Ln * 0.2, -hw - 0.13), f, 0.25)],
-    tug: route(term, at(Ln / 2 + 0.042, 0), { x: -f.x, y: -f.y }, 0.1),
-    J: A.stands.find(J => J.s.id === q.sid) || null
-  };
+  // (the vehicles' ways and spots are shared with the 2D map: aptlife.js IC.turnPaths)
+  P = IC.turnPaths(A.b, q);
+  P.J = A.stands.find(J => J.s.id === q.sid) || null;
   v.life.plans.set(q, P);
   return P;
 }

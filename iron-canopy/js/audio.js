@@ -331,6 +331,45 @@ A.buzz = function (x, y) {
   og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.05 * g, t0 + 0.6); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.5);
   o.connect(bp); bp.connect(og); o.start(t0); o.stop(t0 + 2.6);
 };
+/* (round 2) an airport's sound close in: a bed of engines idling and taxiing as loud as the traffic in view (level
+   0 → 1, eased), a jet spooling up for its take-off roll, and now and then a chime and a muffled announcement from
+   the terminal. All through the master volume */
+let aptBed = null;
+A.aptAmb = function (level) {
+  if (!ctx || !A.on) return;
+  if (!aptBed) {
+    const n = ctx.createBufferSource(); n.buffer = noiseBuf; n.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.7;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1180; const og = ctx.createGain(); og.gain.value = 0.18;
+    const g = ctx.createGain(); g.gain.value = 0;
+    n.connect(bp); bp.connect(g); o.connect(og); og.connect(g); g.connect(ambBus); n.start(); o.start();
+    aptBed = g;
+  }
+  aptBed.gain.setTargetAtTime(A.muted ? 0 : Math.min(1, level) * 0.045, ctx.currentTime, 0.6);
+};
+A.spool = function (x, y) {
+  if (!ctx || !A.on) return;
+  const { g, pan } = spatial(x, y, 1);
+  if (g < 0.05 || !throttle('spool', 2500)) return;
+  const t0 = ctx.currentTime, T = 4.5, n = noise(T);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.7; bp.frequency.setValueAtTime(260, t0); bp.frequency.exponentialRampToValueAtTime(1500, t0 + 2.2); bp.frequency.exponentialRampToValueAtTime(700, t0 + T);
+  const o = out(1, pan); o.gain.setValueAtTime(0.0001, t0); o.gain.exponentialRampToValueAtTime(0.16 * g, t0 + 2); o.gain.exponentialRampToValueAtTime(0.0001, t0 + T);
+  n.connect(bp); bp.connect(o);
+  const w = ctx.createOscillator(); w.type = 'sine'; w.frequency.setValueAtTime(420, t0); w.frequency.exponentialRampToValueAtTime(2300, t0 + 2.4);
+  const wg = out(1, pan); wg.gain.setValueAtTime(0.0001, t0); wg.gain.exponentialRampToValueAtTime(0.02 * g, t0 + 1.8); wg.gain.exponentialRampToValueAtTime(0.0001, t0 + T);
+  w.connect(wg); w.start(t0); w.stop(t0 + T + 0.1);
+};
+A.announce = function () {
+  if (!ctx || !A.on || !throttle('announce', 40000)) return;
+  // the chime, then a voice too far off to make out: noise shaped into syllables through a small loudspeaker
+  tone('sine', 659, 659, 0.55, 0.035, ambBus, 0); tone('sine', 523, 523, 0.8, 0.03, ambBus, 0.45);
+  const t0 = ctx.currentTime + 1.4, dur = 2.4 + Math.random() * 1.5, n = noise(dur + 1.5);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 2.2;
+  const g = ctx.createGain(); g.gain.value = 0;
+  for (let t = 0; t < dur; t += 0.09) g.gain.setValueAtTime(Math.random() < 0.75 ? 0.012 + Math.random() * 0.012 : 0.0005, t0 + t);
+  g.gain.setValueAtTime(0, t0 + dur);
+  n.connect(bp); bp.connect(g); g.connect(ambBus);
+};
 A.ui = function (kind) {
   if (!ctx || !A.on) return;
   if (kind === 'ok') { tone('sine', 660, 660, 0.09, 0.04); tone('sine', 990, 990, 0.12, 0.04, null, 0.09); }

@@ -7,6 +7,7 @@ const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)'
 
 /* (no words in a picture for the 3D view: its labels are text on the screen, never letters lying on the ground) */
 let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
+let LIFE = false, BR = null;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges
 function lbl(g, txt, x, y, px, col, size, align, weight) {
   if (NOLBL) return;
   g.font = `${weight || 600} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
@@ -116,6 +117,7 @@ function zoneOf(ap, p) {
 /* ---------- the airport ---------- */
 IC.drawAirport = function (g, S, ap, px, now, light, o) {
   NOLBL = !!(o && o.pad);
+  LIFE = !!(IC.FOCUS && IC.FOCUS.life && IC.drawTurns) && !NOLBL; BR = S;
   const z = IC.cam.z;
   const full = z >= 1.2, marks = z >= 4, fine = z >= 9;
   const night = light < 0.55;
@@ -182,6 +184,10 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('people')) if ((p.lv || 0) < 0) drawMover(g, p, px, z, night, now);
   // aircraft parked
   if (z >= 0.8) drawParked(g, S, ap, px, z, light, seen);
+  // (round 2) the turnarounds' vehicles and people, cars and passengers on the landside
+  if (LIFE && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen);
+  if (LIFE && z > 10 && ap.land) IC.drawLandLife(g, S, ap, px, z, night, IC.lifeT || now * IC.GS);
+  if (LIFE && ap.owner === 'us') IC.lifeSoundAp(S, ap, z, seen);
   // aircraft moving
   if (z >= 0.5) for (const m of ap.moves) {
     if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
@@ -196,6 +202,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // the airport sits under the same night as everything else; its lights do not
   if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
+  // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
+  if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);
+  if (LIFE && night && z > 10 && ap.land) IC.drawLandLife(g, S, ap, px, z, night, IC.lifeT || now * IC.GS, true);
   // stop bars at the hold-short lines: red until the tower lets the aircraft on, then green lights lead it on
   if (z > 2.5) drawStopBars(g, ap, px, z, light);
   // which way each runway is in use, and for what (above the night, it is information)
@@ -203,13 +212,16 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   const tags = [];
   if (z >= 0.5) for (const m of ap.moves) {
     if (m.dead || !seen(m.x, m.y, 1 + 80 * px)) continue;
-    if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
+    if (night && z > 3 && LIFE) IC.drawAcLights(g, m, px, z, now, U.clamp((0.55 - light) / 0.3, 0.3, 1));
+    else if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
     // why it waits, in a few words: "holding: arrival 5 km out"
     // one tag where aircraft stand nose to tail: the first one's
     const free = !tags.some(t => Math.abs(t.x - m.x) < 70 * px && Math.abs(t.y - m.y) < 14 * px);
     if (z > 5 && m.holding && (m.holding !== 'queue' || z > 24) && free && tags.push(m)) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
     if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
   }
+  // the turnaround clock on the stand of the airliner selected or followed
+  if (LIFE && z > 4) IC.drawTurnClock(g, S, ap, px, z, lbl);
   // construction: crews and machines on site, lorries on the road in
   if (z > 0.25) drawConvoys(g, S, ap, px, z);
   // the words on the airport: each building site's progress, on the site, and what each building is at the middle
@@ -480,7 +492,9 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
 function jetBridge(g, s, S0, px, z) {
   const B = s.bridge; if (!B) return;
   const c = Math.cos(-s.a), sn = Math.sin(-s.a), L = (x, y) => ({ x: (x - s.x) * c - (y - s.y) * sn, y: (x - s.x) * sn + (y - s.y) * c });
-  const Wl = L(B.wx, B.wy), R = L(B.rx, B.ry), D = L(B.dx, B.dy), len = U.dist(R, D), a = Math.atan2(D.y - R.y, D.x - R.x), w = 0.028;
+  const Wl = L(B.wx, B.wy), R = L(B.rx, B.ry), D0 = L(B.dx, B.dy), w = 0.028;
+  // (round 2) it reaches out to the door while passengers are on the move, and waits folded back between flights
+  const reach = LIFE && BR ? 0.42 + 0.58 * IC.bridgeReach(BR, s) : 1, D = { x: R.x + (D0.x - R.x) * reach, y: R.y + (D0.y - R.y) * reach }, len = U.dist(R, D), a = Math.atan2(D.y - R.y, D.x - R.x);
   // the fixed link from the wall to the rotunda, where the wall is set back from the stand
   if (B.link) {
     const la = Math.atan2(R.y - Wl.y, R.x - Wl.x), ll = U.dist(Wl, R);
@@ -1032,7 +1046,7 @@ function drawParked(g, S, ap, px, z, light, seen) {
     const al = IC.avAirline(S, t.al);
     IC.drawPlane(g, s.x, s.y, s.a, t.type, al ? al.livery : null, { shadow: 0.03, minPx: 7 });
     // turnaround: jet bridge or buses, fuel, baggage and cargo
-    if (z > 5 && t.t > 0 && s.svc && s.svc.tail === t.id) drawTurn(g, S, ap, s, t, px, z);
+    if (z > 5 && !LIFE && t.t > 0 && s.svc && s.svc.tail === t.id) drawTurn(g, S, ap, s, t, px, z);
   }
   // aircraft in the hangars, seen through the open doors
   for (const h of ap.parts) if (h.kind === 'hangar' && (h.inside || []).length) h.inside.forEach((x, i) => {
