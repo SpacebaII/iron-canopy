@@ -437,7 +437,7 @@ function dayBoardHTML(b) {
     for (const a of P.al) { const n = a.dep[h]; if (!n) continue; y -= n * kU; g += `<rect x="${x}" y="${y}" width="${w}" height="${n * kU}" style="fill:${a.al.livery[0]}" stroke="rgba(0,0,0,.35)"><title>${hh(h)} · ${esc(a.al.name)}: ${n} departure${n > 1 ? 's' : ''} planned</title></rect>`; }
     g += `<rect class="arrp" x="${x}" y="${mid}" width="${w}" height="${P.arr[h] * kD}"><title>${hh(h)} · ${P.arr[h]} arrivals expected</title></rect>`;
     if (h <= now) g += `<line class="real" x1="${x}" x2="${x + w}" y1="${mid - D.today.dep[h] * kU}" y2="${mid - D.today.dep[h] * kU}"/><line class="real" x1="${x}" x2="${x + w}" y1="${mid + D.today.arr[h] * kD}" y2="${mid + D.today.arr[h] * kD}"/>`;
-    if (h % 3 === 0) g += `<text x="${h * bw + (pol ? bw / 2 : 2)}" y="${H - (pol ? 4 : 2)}" ${pol ? 'text-anchor="middle"' : ''}>${String(h).padStart(2, '0')}${pol ? ':00' : ''}</text>`;
+    if (h % 3 === 0) g += `<text x="${h * bw + (pol ? (h ? bw / 2 : 1) : 2)}" y="${H - (pol ? 4 : 2)}" ${pol ? `text-anchor="${h ? 'middle' : 'start'}"` : ''}>${String(h).padStart(2, '0')}${pol ? ':00' : ''}</text>`;
   }
   const line = (cls, yy, t) => `<line class="${cls}" x1="0" x2="${W}" y1="${yy}" y2="${yy}"><title>${t}</title></line>`;
   // (a runway line beyond the scale sits at its edge, marked with its number)

@@ -4743,7 +4743,7 @@ test('round 2: a turnaround brings its vehicles in the real order (bags, caterin
     IC.step(S, 0.5);
     if (i % 20) continue;
     for (const o of IC.turnScene(ap, q, S.time)) { if (first[o.key] == null) first[o.key] = S.time; last[o.key] = S.time; seen.add(o.key); }
-    if (tl.where === 'stand' && tl.t > 0) { const w = IC.tailPhase(S, tl); if (/ left$/.test(w)) sawLeft = true; }
+    if (tl.where === 'stand' && tl.t > 0) { const w = IC.tailPhase(S, tl); if (/ left($| ·)/.test(w)) sawLeft = true; }
     if (left == null && tl.where !== 'stand') left = S.time;
   }
   assert(left != null, 'it never left the stand');
@@ -5294,6 +5294,7 @@ test('round 5c: every civil tutorial step advances on its real action, one at a 
   IC.setMode = m => { IC.S.mode2 = m; }; IC.cam = IC.cam || { x: 0, y: 0, z: 2, vw: 1200, vh: 800 }; IC.flyTo = IC.flyTo || (() => {}); IC.toWorld = IC.toWorld || ((x, y) => ({ x, y }));
   try {
     const S = IC.newGame({ seed: 12345, mode: 'story' }); IC.S = S;
+    IC.bb.open = false; IC.bb.tab = 'pc'; IC.bb.detail = false; IC.chainOn = false;   // (the bar's state outlives a game: start it closed)
     const ui = (act, v) => IC.emit(S, 'ui', { act, v }), now = () => IC.tutorTick(S), at = (id, i) => { const N = now(); assert(N && N.id === id && N.i === i, `expected ${id} step ${i + 1}, got ${N ? N.id + ' step ' + (N.i + 1) : 'nothing'}`); };
     const civil = ['basics', 'found', 'starter', 'pieces', 'buildesc', 'follow', 'deals', 'panel', 'problems', 'milestone', 'deck', 'chain', 'wait', 'airspace', 'radar'];
     for (const id of civil) { const T = IC.TUTORS[id]; assert(T && T.steps.length >= 2 && T.steps.length <= 5 && T.guide, `${id}: 2–5 steps and a Guide card`); assert(IC.GUIDE.some(g => g.id === T.guide), `${id}: no Guide lesson ${T.guide}`); }
