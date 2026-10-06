@@ -958,6 +958,7 @@ IC.storyTick = function (S, dt) {
   if (S.showcase) return;
   const st = S.story, C = S.camp;
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
+  if (!S.first && IC.firstLandingTick) IC.firstLandingTick(S);
   // goals
   for (const g of st.goals) {
     if (g.done || !g.check()) continue;

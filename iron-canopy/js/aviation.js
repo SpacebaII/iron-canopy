@@ -388,6 +388,7 @@ function pay(S, tl, ap, what) {
   const hold = tl.T.cargo || (tl.type === 'wide' ? 15 : 0);
   const land = tl.T.fee * 0.5 * fee, pf = pax * 0.0035 * fee, cg = hold * 0.008 * fee * IC.cargoLoad(S, ap);
   S.budget += land + pf + cg;
+  tl.paid = { land, pf, cg, pax, t: S.time };
   const L = S.av.led; L.land += land; L.pax += pf; L.cargo += cg;
   feeLog(S, 'land', land); feeLog(S, 'pax', pf); if (cg) feeLog(S, 'cargo', cg);
   S.av.day.pax += pax; S.av.paxTotal += pax; S.av.day.flights++; S.av.flightsTotal++;

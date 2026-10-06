@@ -4698,6 +4698,76 @@ test('round 1: the build bar opens on whole pieces, each with a price and what i
   IC.bb.detail = false; IC.bb.tab = 'pc';
 });
 
+/* ---------- round 2: an airport that is alive (docs/focus/round-2.md) ---------- */
+/* a Career with the three ready-made airports, at 32×, played on to its first landing (followed): what was said */
+function firstLanding(seed) {
+  const S = IC.newGame({ seed, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  S.paused = false; S.speed = 32;
+  const phases = [];
+  for (let i = 0; i < 6 * 3600 * 2 && !(S.first && S.first.done); i++) {
+    IC.step(S, 0.5);
+    if (S.follow && i % 20 === 0) { const w = IC.tailPhase(S, IC.followTail(S)); if (w && phases[phases.length - 1] !== w) phases.push(w); }
+  }
+  return { S, phases };
+}
+test('round 2: the first landing eases the clock to 1×, follows the airliner in, and its card gives the fees beside the airport', () => {
+  const { S, phases } = firstLanding(12345);
+  assert(S.first && S.first.done, 'no first landing in six hours');
+  assert(S.speed === 1 && !S.wait && !S.skip, `the clock runs at ${S.speed}×`);
+  assert(S.follow && S.follow.tl === S.first.tl && S.follow.auto, 'the camera does not follow it');
+  assert(S.logs.some(l => /the first airliner, is .* out from .*1×/.test(l.text || l.msg || '')), 'nothing says why the clock slowed');
+  // followed from the approach to the stand, in plain words
+  for (const re of [/^Approaching .* km out/, /^On final, runway/, /^Taxiing to stand/]) assert(phases.some(p => re.test(p)), `never "${re}": ${phases.join(' | ')}`);
+  const c = S.camp.cards.find(x => x.title === 'The first landing');
+  assert(c && c.kind === 'moment' && c.at && /paid ₭[\d.]+M: ₭[\d.]+M landing fee and ₭[\d.]+M for its \d+ passengers/.test(c.text), `the card: ${c && c.text}`);
+  // once a game: the next arrival is not slowed for
+  S.speed = 32; S.first.t = 0; IC.firstLandingTick(S); assert(S.speed === 32, 'slowed again');
+  // hidden behind the focus switch, it is not there at all
+  IC.FOCUS.firstLanding = false;
+  try { const F = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); F.paused = false; F.speed = 32; for (let i = 0; i < 2 * 3600 * 2; i++) IC.step(F, 0.5); assert(!F.first && F.speed === 32, 'the switch does not hide it'); }
+  finally { IC.FOCUS.firstLanding = true; }
+}, true);
+test('round 2: a turnaround brings its vehicles in the real order (bags, catering, fuel, then the pushback tug) and they all leave', () => {
+  const { S } = firstLanding(12345);
+  const tl = IC.followTail(S), ap = S.byId[S.first.ap], s = IC.aptStands(ap).find(x => x.id === tl.stand);
+  const q = S.rec.turns.find(x => x.tail === tl.id && x.t1 == null);
+  assert(q && s, 'the recorder has no turnaround for it');
+  const first = {}, last = {}, seen = new Set();
+  let left = null, sawLeft = false;
+  for (let i = 0; i < 4 * 3600 && (left == null || S.time < left + 900); i++) {
+    IC.step(S, 0.5);
+    if (i % 20) continue;
+    for (const o of IC.turnScene(ap, q, S.time)) { if (first[o.key] == null) first[o.key] = S.time; last[o.key] = S.time; seen.add(o.key); }
+    if (tl.where === 'stand' && tl.t > 0) { const w = IC.tailPhase(S, tl); if (/ left$/.test(w)) sawLeft = true; }
+    if (left == null && tl.where !== 'stand') left = S.time;
+  }
+  assert(left != null, 'it never left the stand');
+  assert(sawLeft, 'the phase never said how long is left');
+  const fuel = first.refueller != null ? 'refueller' : 'dispenser';
+  for (const k of ['bagcart', 'catering', fuel, 'tug']) assert(first[k] != null, `no ${k} came: ${[...seen].join(', ')}`);
+  assert(first.bagcart < first.catering && first.catering < first[fuel] && first[fuel] < first.tug, `out of order: bags ${first.bagcart}, catering ${first.catering}, fuel ${first[fuel]}, tug ${first.tug}`);
+  assert(q.kind === 'bridge' || first.stairs != null, 'no stairs at a stand without a jet bridge');
+  if (q.kind === 'bus') assert(first.apbus != null, 'no buses at a remote stand');
+  // a quarter of an hour after the pushback the apron is clear again
+  assert(IC.turnScene(ap, q, S.time).length === 0, 'vehicles stay after it left: ' + IC.turnScene(ap, q, S.time).map(o => o.key).join(', '));
+  // the panel's list: what came is done
+  assert(q.t1 != null, 'the recorder did not close the turnaround');
+});
+test('round 2: life on the map scales with the passengers: a busy airport draws more cars and people than a quiet one', () => {
+  require('../iron-canopy/js/render-life.js');
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  for (let i = 0; i < 600; i++) IC.step(S, 0.5);
+  assert(ap.land && ap.land.roads && ap.land.roads.some(r => r.kerb), 'no kerb road');
+  // a canvas that draws nothing (the renderer's helpers run headless)
+  const g = new Proxy({}, { get: (o, k) => k in o ? o[k] : () => ({ addColorStop() {} }), set: (o, k, v) => { o[k] = v; return true; } });
+  ap.paxRate = 20; const quiet = IC.drawLandLife(g, S, ap, 1 / 60, 60, false, 1000);
+  ap.paxRate = 1200; const busy = IC.drawLandLife(g, S, ap, 1 / 60, 60, false, 1000);
+  assert(quiet > 0 && busy > quiet * 3, `quiet ${quiet}, busy ${busy}`);
+  // at night only the lights are drawn over the dark; by day there is no second pass
+  assert(IC.drawLandLife(g, S, ap, 1 / 60, 60, false, 1000, true) === 0, 'a lights pass by day');
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

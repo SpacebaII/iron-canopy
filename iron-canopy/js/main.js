@@ -75,6 +75,15 @@ function pick(p) {
     for (const s of S.esites) if (s.pk > 0) consider('site', s, s.x, s.y, s.pk === 1 ? 180 : 0);
     if (best) return best;
   }
+  // (round 2) close in, an airliner on the ground: taxiing, or on its stand (its panel follows it and shows its turnaround)
+  if (IC.cam.z >= 2.5 && S.av) {
+    for (const ap of IC.bases(S)) {
+      if (!ap.parts || !ap.moves || U.dist(ap, p) > ap.radius + 5) continue;
+      for (const m of ap.moves) if (m.tail && !m.dead && m.tail.T) consider('tail', m.tail, m.x, m.y, m.tail.T.len * 0.55);
+      for (const s of IC.aptStands(ap)) if (s.occ && U.dist(s, p) < 1) { const tl = S.av.tails.find(t => t.id === s.occ); if (tl && tl.where === 'stand') consider('tail', tl, s.x, s.y, tl.T.len * 0.5); }
+    }
+    if (best) return best;
+  }
   // close in, airports are picked part by part
   if (IC.cam.z >= 2.5) for (const ap of IC.bases(S)) {
     if (!ap.parts || U.dist(ap, p) > ap.radius + 5) continue;
@@ -592,7 +601,14 @@ function onAct(e) {
     case 'logjump': ui.openRoom(null); ui.jump({ x: +b.dataset.x, y: +b.dataset.y }); return;
     case 'replay': ui.openRoom(null); IC.replayOpen(S, { x: +b.dataset.x, y: +b.dataset.y, t: +b.dataset.t }); return;
     case 'replayTrack': if (sel) IC.replayOpen(S, { follow: sel, x: sel.x, y: sel.y, t: S.time - 90 }); return;
-    case 'liveView': if (sel) IC.liveOpen(S, sel); return;
+    case 'liveView': { const o = S.sel && S.sel.kind === 'tail' ? (sel.mv && !sel.mv.dead ? sel.mv : sel.track) : sel; if (o) IC.liveOpen(S, o); return; }
+    case 'followOff': followOff(); return;
+    case 'follow': {
+      const tl = S.sel && S.sel.kind === 'tail' ? S.sel.ref : S.sel && S.sel.kind === 'track' && S.sel.ref.tail ? S.sel.ref.tail : null;
+      if (!tl) return;
+      if (S.follow && S.follow.tl === tl.id) { followOff(); return; }
+      IC.followStart(S, tl, false); const w = IC.tailWhere(S, tl); if (w) IC.flyTo(w.x, w.y, Math.max(IC.cam.z, w.t ? 4 : 20)); IC.sfx.ui('ok'); return;
+    }
     case 'logf': ui.logFilter = v; break;
     case 'refcat': ui.refCat = v; break;
     case 'why': ui.why = ui.why === v ? null : v; break;
@@ -711,7 +727,7 @@ cv.addEventListener('pointermove', e => {
       else if (drag.bstart) { if (!drag.bplaced && S.mode2 && S.mode2.kind === 'build') { drag.bplaced = buildIn(S.mode2, drag.bstart, 0, e.shiftKey) === 'point'; if (!drag.bplaced) drag.bstart = null; } }
       else if (drag.edge) { IC.aspResize(S, drag.edge, U.dist(drag.edge, S.hover)); IC.ui.aspVol = drag.edge.id; IC.ui.aspEdge = drag.edge.id; cv.style.cursor = 'grabbing'; }
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
-      else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); }
+      else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); if (S.follow) followOff(); }
     }
   }
 });
@@ -752,7 +768,7 @@ cv.addEventListener('pointerleave', () => { if (!ptrs.size) { S.hover = null; IC
 cv.addEventListener('contextmenu', e => e.preventDefault());
 // (round 1) one notch of the wheel is one step of about 20%, however large the browser reports it; a touchpad's
 // small deltas still zoom smoothly
-cv.addEventListener('wheel', e => { e.preventDefault(); const l = local(e, cv), d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1); IC.zoomAt(l.x, l.y, Math.exp(-U.clamp(d * 0.0018, -0.18, 0.18))); }, { passive: false });
+cv.addEventListener('wheel', e => { e.preventDefault(); if (S && S.follow) S.follow.auto = false; const l = local(e, cv), d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1); IC.zoomAt(l.x, l.y, Math.exp(-U.clamp(d * 0.0018, -0.18, 0.18))); }, { passive: false });
 
 
 function miniMove(e) { const l = local(e, mini); IC.cam.fly = null; IC.centerOn(l.x / mw * IC.WW, l.y / mh * IC.WH); }
@@ -942,12 +958,34 @@ new ResizeObserver(resize).observe(app);
 generate((Math.random() * 1e9) >>> 0, 'campaign');
 IC.ui.startPage('main');
 
+/* (round 2) following an airliner: the camera stays with it from final to the gate and back out (S.follow,
+   aptlife.js); when the game started it (the first landing) it also zooms by what the aircraft is doing, until
+   the player zooms. Dragging the map or the arrow keys let it go */
+const FOLLOW_Z = { air: 6, near: 9, final: 12, land: 16, rollout: 18, taxi: 30, parkin: 50, stand: 60, push: 45, start: 50, wait: 50, svc: 30, hold: 26, lineup: 20, roll: 14 };
+function followOff() { if (!S.follow) return; const tl = IC.followTail(S); IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', `Stopped following ${tl ? tl.cs : 'the aircraft'}.`); }
+IC.followOff = followOff;
+function followCam(dtR) {
+  if (!S.follow) return;
+  const why = IC.followEnds(S);
+  if (why) { IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', why); return; }
+  const tl = IC.followTail(S), w = IC.tailWhere(S, tl); if (!w) return;
+  const c = IC.cam, cx = c.x + c.vw / c.z / 2, cy = c.y + c.vh / c.z / 2;
+  c.fly = null;
+  if (S.follow.auto) {
+    const ph = w.t ? (w.ap && U.dist(w.t, w.ap) < 150 ? 'near' : 'air') : w.m ? w.m.phase : 'stand';
+    const want = FOLLOW_Z[ph] || 26;
+    c.z = Math.exp(Math.log(c.z) + (Math.log(want) - Math.log(c.z)) * (1 - Math.exp(-dtR * 0.9)));
+  }
+  const k = 1 - Math.exp(-dtR * 5);
+  IC.centerOn(cx + (w.x - cx) * k, cy + (w.y - cy) * k);
+}
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
   // nothing to draw until the first game is built, while the next is built, or while a save replaces it
   if (!S || loading || IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
+    if (S.follow && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].some(k => keys.has(k))) followOff();
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
     if (keys.has('arrowdown')) IC.cam.y += v;
@@ -956,6 +994,7 @@ function frame(now) {
     IC.clampCam();
   }
   IC.camStep(dtR);
+  followCam(dtR);
   const C = IC.cine;
   C.cool = Math.max(0, C.cool - dtR);
   if (C.slow > 0) C.slow -= dtR;
@@ -966,6 +1005,8 @@ function frame(now) {
   if (running) {
     let speed = combatSpeed(S, S.wait ? (S.wait.speed || IC.WAIT.speed) : S.skip ? 64 : S.speed, dtR);
     gdt = dtR * IC.GS * speed;
+    // the life on the ground (people, cars) keeps its own clock: no faster than 2× however fast the game runs
+    IC.lifeT = (IC.lifeT || 0) + dtR * IC.GS * Math.min(2, speed);
     if (S.skip && S.time - (S.skipT || S.time) > 3 * 3600) stopSkip('Three hours passed quietly.');
     // waiting for money takes long steps while the sky is calm, fine ones as soon as anything armed is about
     const calm = S.wait && IC.calmSky(S);
@@ -979,6 +1020,7 @@ function frame(now) {
   IC.autosaveTick(S);
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);
+  if (IC.lifeSoundEnd) IC.lifeSoundEnd();
   IC.renderMini(S, mini, mw, mh);
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }

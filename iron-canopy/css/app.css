@@ -454,6 +454,13 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .opt:hover{background:rgba(242,180,65,.2);transform:translateX(3px)}
 .opt b{font-size:1rem}
 .opt span{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.cine.moment{left:1.2rem;transform:none;width:min(30rem,90%);text-align:left;padding:1rem 1.2rem;gap:.3rem}
+.cine.moment h2{font-size:1.7rem;letter-spacing:.1em}
+.cine.moment p{margin:.2rem 0 0;font-size:.98rem}
+.cine.moment .cfoot{justify-content:flex-start}
+.followchip{position:absolute;z-index:6;left:50%;bottom:5.2rem;transform:translateX(-50%);display:flex;align-items:center;gap:.6rem;padding:.4rem .5rem .4rem .8rem;border-radius:999px;background:var(--glass);box-shadow:var(--shadow);font-size:.92rem;max-width:min(44rem,92%);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.followchip .fc-tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;color:var(--amber)}
+.followchip .fc-ph{color:#d4e2ea;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cine.alarm{box-shadow:0 30px 90px rgba(0,0,0,.7),inset 0 0 0 1.5px rgba(255,70,60,.7)}
 .cine.alarm h2{color:#ff8a80;text-shadow:0 0 40px rgba(255,70,60,.45)}
 
