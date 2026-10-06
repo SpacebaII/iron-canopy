@@ -3653,7 +3653,8 @@ test('deals: a broken deal costs reputation and money', () => {
   // the airport never builds the hangar its founding deal asked for: its grace (a month in the Career, said up front),
   // twelve hours' notice, then it walks out
   const rep = IC.aptRep(ap), spent = () => -(S.econ.book.penalty || 0) - S.econ.days.reduce((s, x) => s + (x.book.penalty || 0), 0);
-  for (let i = 0; i < (d.grace - S.time + 16 * 3600) / 2 && d.st === 'active' && !S.over; i++) { IC.step(S, 2); if (i % 30 === 0) for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0); }
+  const until = d.grace + 16 * 3600;
+  for (let i = 0; S.time < until && d.st === 'active' && !S.over; i++) { IC.step(S, 2); if (i % 30 === 0) for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0); }
   assert(d.st === 'broken', `the deal was not broken: ${d.st}`);
   assert(/hangar/.test(d.why), `broken for the wrong reason: ${d.why}`);
   assert(IC.aptRep(ap) < rep - 5, `reputation ${rep} → ${IC.aptRep(ap)}`);
@@ -3772,7 +3773,7 @@ test('calendar: research, city growth and a deal\'s length follow the calendar: 
   const [a, b] = out, near2 = (x, y) => x / y > 1.8 && x / y < 2.2;
   assert(near2(b.research, a.research), `research took ${a.research.toFixed(1)} and ${b.research.toFixed(1)} live days (${a.what})`);
   assert(a.grew > 0 && near2(a.grew, b.grew), `${a.city} grew ${(a.grew * 100).toFixed(2)}% and ${(b.grew * 100).toFixed(2)}% in the same live days`);
-  assert(near2(b.deal, a.deal) && a.deal >= 9 * 3, `the deal ran ${a.deal.toFixed(1)} and ${b.deal.toFixed(1)} live days`);
+  assert(near2(b.deal, a.deal) && a.deal >= (IC.FOCUS.progress ? 4 : 9) * 3, `the deal ran ${a.deal.toFixed(1)} and ${b.deal.toFixed(1)} live days`);
 });
 test('calendar: waiting for money runs until the treasury reaches the target, and says how long', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
@@ -4890,8 +4891,9 @@ test('round 3: the money line agrees with the monthly statement, and every fee i
   for (let i = 0; i < 3600; i++) IC.step(S, 4);
   const L = IC.moneyLine(S), st = IC.monthStatement(S, 0);
   assert(L && Math.abs(L.net - st.net) < 1e-6 && Math.abs(L.inn - st.income) < 1e-6 && Math.abs(L.out + st.spend) < 1e-6, `line ${JSON.stringify(L)} statement ${st.income} ${st.spend}`);
-  assert(L.text.includes(U.money(st.income)) && L.text.includes(U.money(-st.spend)), L.text);
-  assert(/^[A-Z][a-z]+ so far: ₭[\d,.]+M came in/.test(L.text), L.text);
+  // (round 4: running the airports apart from what was invested in building; the same statement underneath)
+  if (L.split) { assert(L.text.includes(U.money(st.income)) && L.text.includes(U.money(Math.abs(L.run))) && Math.abs(L.run - L.net - L.build) < 1e-6, L.text); assert(/^[A-Z][a-z]+ so far: running the airports (made|cost) ₭[\d,.]+M \(₭[\d,.]+M came in/.test(L.text), L.text); }
+  else { assert(L.text.includes(U.money(st.income)) && L.text.includes(U.money(-st.spend)), L.text); assert(/^[A-Z][a-z]+ so far: ₭[\d,.]+M came in/.test(L.text), L.text); }
   // every coin of the airlines' fees this month is at one of our airports
   const fees = st.lines.filter(l => /^fee_(land|pax|cargo)$/.test(l.k)).reduce((a, l) => a + l.v, 0);
   const atAps = aps.reduce((a, x) => { const M = IC.aptMonth(S, x); return a + M.land + M.pax + M.cargo; }, 0);

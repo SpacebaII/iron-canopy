@@ -80,11 +80,13 @@ fs.mkdirSync(OUT, { recursive: true });
     const g = st.goals.find(x => !x.done && !x.failed);
     return { budget: S.budget, paused: S.paused, wait: !!S.wait, room: !!IC.ui.room, works: a.works.length, ch: st.ch, act: st.act,
       goal: g ? g.text : '', gid: g ? g.id : '', gives: g && g.gives || '', ev: st.events.length, ml: ML ? (ML.short || ML.sign) : '', date: IC.U.clock(S.time, S), cards: S.camp.cards.length, play: st.play || 0,
-      probs: IC.aptProblems(S, a).map(p => ({ id: p.id, kind: p.kind, title: p.title, fix: p.fix && p.fix.part, req: p.req, deal: p.deal })) }; })()`);
+      probs: IC.aptProblems(S, a).map(p => ({ id: p.id, kind: p.kind, title: p.title, fix: p.fix && p.fix.part, size: p.fix && p.fix.size, req: p.req, deal: p.deal })) }; })()`);
   // a problem or a goal's fix, placed by the game where it fits, built, and run through
-  const build = async (part, near, label) => {
-    if (Date.now() - lastBuild < 8000) return false;
-    const ok = await ev(`(() => { const S = IC.S, a = S.byId['${capId}']; if (S.budget < 250) return false; IC.fixOpen(S, a, '${part}', ${near}); return !!(S.mode2 && S.mode2.kind === 'build'); })()`);
+  const tried = new Set();
+  const build = async (part, near, label, size, id) => {
+    if (Date.now() - lastBuild < 8000 || (id && tried.has(id))) return false;
+    if (id) tried.add(id);
+    const ok = await ev(`(() => { const S = IC.S, a = S.byId['${capId}']; if (S.budget < 250) return false; IC.fixOpen(S, a, '${part}', ${near}, ${size ? `'${size}'` : 'null'}); return !!(S.mode2 && S.mode2.kind === 'build'); })()`);
     if (!ok) return false;
     lastBuild = Date.now();
     await page.waitForTimeout(500);
@@ -120,7 +122,9 @@ fs.mkdirSync(OUT, { recursive: true });
       const t = await ev(`(document.querySelector('#evcard h2') || {}).textContent || ''`);
       log('decision:', t);
       if (!shots.has('03-decision')) await shot('03-decision');
-      await card.click().catch(() => {}); await page.waitForTimeout(400); await key('6'); lastAct = Date.now();
+      // (the airspace: the consultants draw the entry points and airways, as a player short of time would choose)
+      const pick = /sky with a plan/i.test(t) ? (await page.$$('#evcard:not([hidden]) .opt'))[1] : card;
+      await (pick || card).click().catch(() => {}); await page.waitForTimeout(400); await key('6'); lastAct = Date.now();
       continue;
     }
     if (s.paused) await ev('IC.S.paused = false');
@@ -130,11 +134,14 @@ fs.mkdirSync(OUT, { recursive: true });
     if (off) {
       const signed = await ev(`(() => { const S = IC.S, q = S.av.requests.find(x => x.id === '${off.req}'); if (!q || IC.avReqBlock(S, q)) return false; return IC.avDecide(S, q.id, true); })()`);
       if (signed) { log('signed:', off.title); lastAct = Date.now(); continue; }
-      if (off.fix && off.fix !== 'deal' && await build(off.fix, `(IC.aptProblems(IC.S, IC.S.byId['${capId}']).find(p => p.id === '${off.id}') || { fix: {} }).fix.near`, 'for an offer: ' + off.fix)) continue;
+      if (off.fix && off.fix !== 'deal' && await build(off.fix, `(IC.aptProblems(IC.S, IC.S.byId['${capId}']).find(p => p.id === '${off.id}') || { fix: {} }).fix.near`, 'for an offer: ' + off.fix, off.size, off.id)) continue;
     }
     // problems with a fix on the map
     const pr = s.probs.find(q => q.kind !== 'offer' && q.fix && q.fix !== 'ils');
-    if (pr && await build(pr.fix, `(IC.aptProblems(IC.S, IC.S.byId['${capId}']).find(p => p.id === '${pr.id}') || { fix: {} }).fix.near`, pr.title)) continue;
+    if (pr && await build(pr.fix, `(IC.aptProblems(IC.S, IC.S.byId['${capId}']).find(p => p.id === '${pr.id}') || { fix: {} }).fix.near`, pr.title, pr.size, pr.id)) continue;
+    // the airspace chapter: a civil radar where the airways are least seen, an approach radar beside the runway
+    if (s.ch === 2 && /civil radar/.test(s.goal) && Date.now() - lastBuild > 20000) { lastBuild = Date.now(); const r = await ev(`(() => { const S = IC.S, f = S.asp.fixes[0]; if (!f || S.budget < 150 || S.units.some(u => u.type === 'ssr' && u.state !== 'ready')) return false; const p = IC.findSpot(S, 'ssr', f.x, f.y, 0, 300); return p ? !!IC.deploy(S, 'ssr', p.x, p.y) : false; })()`); if (r) log('built: a civil radar'); }
+    if (s.ch === 2 && /approach radar/.test(s.goal) && !s.works && await build('atc', `(() => { const r = IC.S.byId['${capId}'].parts.find(q => q.kind === 'runway' && q.built); return { x: (r.a.x + r.b.x) / 2, y: (r.a.y + r.b.y) / 2 }; })()`, 'an approach radar')) continue;
     // the goal line: more stands when it asks for them
     if (/stands/.test(s.goal) && !s.works && await build('tstraight', termNear, 'stands for the goal')) continue;
     if (Date.now() - money.length * 0 && (!money.length || T() - money[money.length - 1].min >= 0.5)) money.push({ min: +T().toFixed(1), budget: Math.round(s.budget), ml: s.ml, date: s.date, ch: s.ch, goal: s.goal });
