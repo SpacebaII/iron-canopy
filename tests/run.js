@@ -4803,7 +4803,10 @@ test('round 3: fuel queues show at the fuel farm, and the tank the fix places ke
   for (const t of tl) { t.t = 120; t.fuelWait = 600; t.held = { k: 'truck', t0: S.time - 600, why: 'every fuel truck is busy' }; }
   const P = IC.aptProblems(S, ap).find(p => p.kind === 'fuel');
   assert(P && /^Fuel: \d+ departures? waiting \d+ min for a truck$/.test(P.title) && U.dist(P, farm) < 0.01, P && P.title);
-  const m = IC.fixPlan(S, ap, 'fuel', P.fix.near);
+  // (round 5b: with the airport's own fuel trucks counted, the fix is more trucks; a tank placed by hand still
+  // keeps its distance)
+  assert(P.fix && (P.fix.act === 'gse' ? P.fix.v === 'fuel' && /^Buy \d+ fuel trucks? \(₭/.test(P.fix.label) : P.fix.part === 'fuel'), JSON.stringify(P.fix));
+  const m = IC.fixPlan(S, ap, 'fuel', P.fix.near || farm);
   assert(m, 'no place for a tank');
   const plan = IC.bldPlanOf(S, m, m.at, 0.12), sp = plan.ok && plan.specs.find(q => q.kind === 'fuel');
   assert(sp, `the placed tank cannot be built: ${plan.why}`);
