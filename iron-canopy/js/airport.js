@@ -303,16 +303,19 @@ IC.partZone = function (ap, p) {
 IC.aptSetZone = function (S, ap, part, zone) { if (!IC.ZONES[zone]) return false; part.zone = zone; ap.dirty = true; IC.aptStats(S, ap); return true; };
 /* one-way (dir 1 follows the drawn order, -1 the reverse) and a preferred flow that aircraft follow when they can */
 IC.aptSetTaxiDir = function (S, ap, part, oneway, flow) { part.oneway = oneway || 0; part.flow = flow != null ? flow : part.flow || 0; ap.dirty = true; IC.aptStats(S, ap); return true; };
-IC.aptGraph = function (ap) {
-  if (!ap.dirty && ap.G) return ap.G;
+// (asked a thousand times a step at a busy airport: the check is kept apart from the build, whose closures would
+// otherwise allocate a context on every call)
+IC.aptGraph = ap => !ap.dirty && ap.G ? ap.G : buildGraph(ap);
+function buildGraph(ap) {
   const N = new Map(), adj = new Map(), radj = new Map();
-  const node = (id, x, y, kind, ref, rw) => { if (!N.has(id)) { N.set(id, { id, x, y, kind, ref, rw: rw || null }); adj.set(id, []); radj.set(id, []); } return N.get(id); };
+  // (i: the node's place in N, which route searches index their arrays by)
+  const node = (id, x, y, kind, ref, rw) => { if (!N.has(id)) { N.set(id, { id, x, y, kind, ref, rw: rw || null, i: N.size }); adj.set(id, []); radj.set(id, []); } return N.get(id); };
   // one: the edge runs only from a to b; flow: +1 a to b is preferred, -1 the reverse
   const edge = (a, b, kind, part, seg, spd, one, flow) => {
     const A = N.get(a), B = N.get(b); if (!A || !B || a === b) return;
     const len = Math.max(0.01, U.dist(A, B)), w = len * (kind === 'apron' ? 1.2 : 1), key = (a < b ? a + '|' + b : b + '|' + a);
-    const ab = { from: a, to: b, len, w: w * (flow > 0 ? 0.85 : flow < 0 ? 1.6 : 1), kind, part, seg, spd, key, d: a < b ? 1 : -1 };
-    const ba = { from: b, to: a, len, w: w * (flow < 0 ? 0.85 : flow > 0 ? 1.6 : 1), kind, part, seg, spd, key, d: b < a ? 1 : -1 };
+    const ab = { from: a, to: b, len, w: w * (flow > 0 ? 0.85 : flow < 0 ? 1.6 : 1), kind, part, seg, spd, key, d: a < b ? 1 : -1, clear: 0, fi: A.i, ti: B.i };
+    const ba = { from: b, to: a, len, w: w * (flow < 0 ? 0.85 : flow > 0 ? 1.6 : 1), kind, part, seg, spd, key, d: b < a ? 1 : -1, clear: 0, fi: B.i, ti: A.i };
     if (one >= 0) { adj.get(a).push(ab); radj.get(b).push(ab); }
     if (one <= 0) { adj.get(b).push(ba); radj.get(a).push(ba); }
   };
@@ -407,7 +410,7 @@ IC.aptGraph = function (ap) {
   ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map(), bays: new Set(parts.filter(p => p.bay && p.built).map(p => p.id)) };
   ap.dirty = false;
   return ap.G;
-};
+}
 /* ---------- route search: Dijkstra on a binary heap ---------- */
 function Heap() { this.k = []; this.v = []; }
 Heap.prototype.push = function (v, k) {
@@ -426,42 +429,65 @@ Heap.prototype.pop = function () {
   return top;
 };
 /* o: { to (stop there), rev (search backwards: cost from every node to src), avoidRwy, res: { m, t0 } (wait for taxiways
-   booked the other way) }. Runway edges cost double (they block the runway), triple for arrivals; stepping onto a runway
+   booked the other way), stop(u, cost) (true: settle nothing more, from node u on) }. Runway edges cost double (they block the runway), triple for arrivals; stepping onto a runway
    from a taxiway costs a hold. Returns { dist, prev, time }. */
+/* the graph as arrays by node index, for the searches (built once per graph; a loaded game's graph gets it again) */
+function gIndex(G) {
+  if (G._x) return G._x;
+  const n = G.N.size, ids = new Array(n), nodes = new Array(n), adj = new Array(n), radj = new Array(n), ix = new Map();
+  let i = 0;
+  for (const [id, nd] of G.N) { nd.i = i; ix.set(id, i); ids[i] = id; nodes[i] = nd; adj[i] = G.adj.get(id); radj[i] = G.radj.get(id); i++; }
+  for (const L of adj) for (const e of L) { e.fi = ix.get(e.from); e.ti = ix.get(e.to); }
+  return (G._x = { n, ids, nodes, adj, radj, ix });
+}
+/* a search's results by node id, read like the Maps they replace: dist (cost from the source), prev (the edge into
+   each node), time (when the aircraft gets there, with reservations); an array slot holding `none` was never reached */
+function ByNode(X, a, none) { this.X = X; this.a = a; this.none = none; }
+ByNode.prototype.has = function (id) { const i = this.X.ix.get(id); return i !== undefined && !Object.is(this.a[i], this.none); };
+ByNode.prototype.get = function (id) { return this.has(id) ? this.a[this.X.ix.get(id)] : undefined; };
 IC.aptSearch = function (ap, src, o) {
   o = o || {};
-  const G = IC.aptGraph(ap), A = o.rev ? G.radj : G.adj;
-  const dist = new Map(), prev = new Map(), time = o.res ? new Map() : null, done = new Set();
-  if (!G.N.has(src)) return { dist, prev, time };
-  dist.set(src, 0); if (time) time.set(src, o.res.t0);
+  const G = IC.aptGraph(ap), X = gIndex(G), A = o.rev ? X.radj : X.adj, NA = X.nodes, n = X.n;
+  // (arrays by node index: a search over a big airport's 2,500 nodes fills four arrays, not thousands of Map entries)
+  const dist = new Float64Array(n).fill(Infinity), prev = new Array(n).fill(null), time = o.res ? new Float64Array(n).fill(NaN) : null, done = new Uint8Array(n);
+  const out = { dist: new ByNode(X, dist, Infinity), prev: new ByNode(X, prev, null), time: time ? new ByNode(X, time, NaN) : null };
+  const s = X.ix.get(src);
+  if (s === undefined) return out;
+  dist[s] = 0; if (time) time[s] = o.res.t0;
   // (with a goal, A*: the heap is ordered by cost so far plus the straight-line time to the goal at the fastest
   // taxi speed, times 0.85 for a taxiway's preferred flow, which never overstates it, so a big airport's search stays
   // near the line between the two)
-  const goal = o.to && !o.rev ? G.N.get(o.to) : null;
+  const goal = o.to && !o.rev ? G.N.get(o.to) : null, to = o.to != null && X.ix.has(o.to) ? X.ix.get(o.to) : -1;
+  const avoid = o.avoid != null && X.ix.has(o.avoid) ? X.ix.get(o.avoid) : -1;
   if (goal && G.vmax == null) { G.vmax = 0.01; for (const L of G.adj.values()) for (const e of L) G.vmax = Math.max(G.vmax, e.spd || 0); }
-  const h = goal ? v => { const n = G.N.get(v); return n ? U.dxy(n.x, n.y, goal.x, goal.y) * 0.85 / G.vmax : 0; } : () => 0;
-  const H = new Heap(); H.push(src, h(src));
-  const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0;
+  const gx = goal ? goal.x : 0, gy = goal ? goal.y : 0;
+  const H = new Heap(); H.push(s, goal ? U.dxy(NA[s].x, NA[s].y, gx, gy) * 0.85 / G.vmax : 0);
+  const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0, rev = !!o.rev;
+  const cfg = ap.cfg, rm = o.res ? o.res.m : null, resWait = IC.gopsResWait;
   while (H.k.length) {
     const u = H.pop();
-    if (done.has(u)) continue; done.add(u);
-    if (u === o.to) break;
-    const du = dist.get(u);
-    for (const e of A.get(u)) {
-      const v = o.rev ? e.from : e.to;
-      if (done.has(v) || v === o.avoid) continue;
+    if (done[u]) continue;
+    const du = dist[u];
+    // (stop: the caller has what it needs once nodes this far out cannot matter; u is left unsettled)
+    if (o.stop && o.stop(X.ids[u], du)) break;
+    done[u] = 1;
+    if (u === to) break;
+    const L = A[u];
+    for (let j = 0; j < L.length; j++) {
+      const e = L[j], v = rev ? e.fi : e.ti;
+      if (done[v] || v === avoid) continue;
       // (a tail too tall for the bridge over this taxiway goes round)
       if (e.clear && ht > e.clear - 1) continue;
-      let w = e.w / e.spd * (e.kind === 'rwy' ? rwK : 1), tv;
+      let w = e.w / e.spd * (e.kind === 'rwy' ? rwK : 1), tv = 0;
       // a taxiway onto a runway means a hold at the line, a long one if the runway is in use
-      const B = G.N.get(e.to);
-      if (e.kind !== 'rwy' && B.rw) { const c = ap.cfg && ap.cfg.rw[B.rw]; w += c && c.role !== 'spare' ? 60 : 20; }
-      if (time) { const tu = time.get(u), wait = o.res.m ? IC.gopsResWait(ap, e, tu, o.res.m) : 0; w += wait * 1.5; tv = tu + wait + e.len / e.spd; }
+      const B = NA[e.ti];
+      if (e.kind !== 'rwy' && B.rw) { const c = cfg && cfg.rw[B.rw]; w += c && c.role !== 'spare' ? 60 : 20; }
+      if (time) { const tu = time[u], wait = rm ? resWait(ap, e, tu, rm) : 0; w += wait * 1.5; tv = tu + wait + e.len / e.spd; }
       const nd = du + w;
-      if (nd < (dist.has(v) ? dist.get(v) : Infinity)) { dist.set(v, nd); prev.set(v, e); if (time) time.set(v, tv); H.push(v, nd + h(v)); }
+      if (nd < dist[v]) { dist[v] = nd; prev[v] = e; if (time) time[v] = tv; H.push(v, goal ? nd + U.dxy(NA[v].x, NA[v].y, gx, gy) * 0.85 / G.vmax : nd); }
     }
   }
-  return { dist, prev, time };
+  return out;
 };
 /* the steps of the route found by a search, from src to a node */
 IC.aptSteps = function (tree, src, to) {
