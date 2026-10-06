@@ -61,9 +61,13 @@ IC.APART = {
   hangar:   { name: 'Hangar', w: 0.7, h: 0.55, cost: 60, build: 1200, hp: 40, holds: 2, desc: 'Maintenance and shelter. Aircraft inside a hit hangar are usually lost.' },
   has:      { name: 'Hardened shelter', w: 0.32, h: 0.26, cost: 120, build: 2000, hp: 140, holds: 1, mil: true, desc: 'Concrete shelter for one fighter flight. Aircraft inside usually survive.' },
   alert:    { name: 'Alert pad', w: 0.42, h: 0.3, cost: 70, build: 1200, hp: 50, holds: 1, mil: true, desc: 'Quick-reaction shelter at the runway end: fighters on alert scramble in minutes.' },
-  fuel:     { name: 'Fuel tank', r: 0.13, cost: 35, build: 900, hp: 40, cap: 100, desc: 'Fuel for departures. Burning tanks set fire to anything close: spread them out.' },
-  tower:    { name: 'Control tower', w: 0.14, h: 0.14, cost: 50, build: 1200, hp: 40, desc: 'Without a tower an airport handles only a handful of movements an hour.' },
-  fire:     { name: 'Fire station', w: 0.28, h: 0.2, cost: 35, build: 900, hp: 40, desc: 'Needed for large aircraft. It must be close to the runways.' },
+  // a fuel farm: three 30 m tanks in a bund, a loading rack and a lorry park (a single tank of the real airports keeps
+  // its own radius r: IC.fuelTanks counts it as one); cap is per tank
+  fuel:     { name: 'Fuel farm', w: 1.5, h: 1.0, tanks: 3, cost: 90, build: 1500, hp: 90, cap: 100, desc: 'Three 30 m tanks inside a bund, with a loading rack and a lorry park. Each tank\'s fuel trucks refuel 8 aircraft an hour; lorries refill the tanks by road. A burning tank sets fire to anything within 160 m.' },
+  // a tower: a 30 m base, a shaft and a cab 60 m up that must see the runways it controls (IC.towerView)
+  tower:    { name: 'Control tower', w: 0.3, h: 0.3, ht: 60, cost: 70, build: 1800, hp: 50, desc: 'Controllers in the cab clear every movement they can see: one every 2 minutes instead of one every 8. A runway hidden from the cab by distance or a tall building gets no tower.' },
+  // a crash fire station: four bays and an apron along the front, the training ground beside it
+  fire:     { name: 'Fire station', w: 1.0, h: 0.6, bays: 4, cost: 60, build: 1200, hp: 60, desc: 'Four crash tenders that must reach any point of a runway in 3 minutes. Without one jets may not use the airport; beyond 3 minutes heavy jets may not land on that runway.' },
   atc:      { name: 'Approach radar', w: 0.12, h: 0.12, cost: 110, build: 1200, hp: 30, emits: true, desc: 'Tighter arrival spacing and a radar picture out to about 45 km that sees aircraft without transponders. It shares the spectrum with other radars.' },
   ammo:     { name: 'Munitions store', w: 0.3, h: 0.22, cost: 50, build: 1200, hp: 40, mil: true, desc: 'Weapons for the air wing. A hit here blows up.' },
   ils:      { name: 'Landing system (ILS)', w: 0.3, h: 0.08, cost: 25, build: 900, hp: 20, perEnd: true, desc: 'Radio beams that guide arrivals down to 60 m above one runway end. In fog and low cloud, arrivals divert unless the end they land on has one.' },
@@ -78,6 +82,9 @@ IC.APART_ORDER = ['runway', 'taxi', 'apron', 'terminal', 'cargo', 'hangar', 'fue
 IC.ZONES = { civil: { name: 'Passenger', short: 'PAX' }, cargo: { name: 'Cargo', short: 'CGO' }, light: { name: 'Light aircraft', short: 'GA' }, mil: { name: 'Military', short: 'MIL' } };
 /* fuel trucks: refuellings an hour each tank's trucks can make where there is no hydrant system */
 IC.FUEL_TRUCKS = 8;
+/* the tanks of a fuel part (a farm holds three; a single real tank one) and the fuel it holds */
+IC.fuelTanks = p => p.r ? 1 : p.tanks || IC.APART.fuel.tanks || 1;
+IC.fuelCap = p => IC.fuelTanks(p) * IC.APART.fuel.cap;
 
 /* Airline archetypes: they fly differently and want different things from your airports. Each airline flies one of
    its kind's fleets (by its name, IC.avFleetOf) and wears one livery on all of them. */
