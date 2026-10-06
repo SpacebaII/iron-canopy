@@ -318,6 +318,9 @@ function progress() {
   const fresh = [...now.keys()].filter(k => !ui.known.has(k));
   if (!fresh.length) return;
   for (const k of fresh) { ui.known.add(k); ui.fresh.add(k); }
+  // in the Career, research and what it opens are in the monthly briefing (and marked New): a card only when an
+  // act opens rooms, controls or delegates
+  if (S.mode === 'story' && !fresh.some(k => /^(room|ctl|del|req):/.test(k))) return;
   // one card for everything that opened at once (a new act opens several things)
   ui.moments.push({ items: fresh.map(k => Object.assign({ k }, now.get(k))), act: S.story && S.story.act });
 }
@@ -682,6 +685,19 @@ function firstRun() {
   ]);
 }
 
+/* ---------- the monthly briefing (Career): the few things that need the player, at the month's turn ---------- */
+function mbrief() {
+  const el = $('mbrief'), B = S.story && S.story.brief;
+  const show = B && !B.seen && !ui.room && $('cine').hidden && $('evcard').hidden && $('start').hidden && !ui.menu && !ui.fighting() && !(ui.topHint && ui.topHint());
+  if (!show) { if (!el.hidden) el.hidden = true; return; }
+  setHTML(el, `<small>${ui.icon('journal', 'sm')} Monthly briefing · ${esc(B.name)} closed</small>
+    <ul>${B.items.map((x, i) => `<li><button class="${x.go ? 'go' : ''}" data-act="mbGo" data-v="${i}" ${x.go ? `title="Open the ${esc(ui.roomName(x.go.room))} room"` : ''}><span>${esc(x.text)}</span>${x.go ? `<em>${esc(ui.roomName(x.go.room))} ›</em>` : ''}</button></li>`).join('')}</ul>
+    <div class="mb-foot">${B.more ? `<span class="muted">${B.more} smaller thing${B.more > 1 ? 's are' : ' is'} in the Journal.</span>` : '<span></span>'}<button class="btn" data-act="mbX">Done <kbd>Esc</kbd></button></div>`, 'mb' + B.t);
+  el.hidden = false;
+}
+ui.closeBrief = () => { const B = S.story && S.story.brief; if (B) B.seen = true; $('mbrief').hidden = true; };
+ui.briefGo = i => { const B = S.story && S.story.brief, x = B && B.items[i]; ui.closeBrief(); if (x && x.go) ui.openRoom(x.go.room); };
+
 /* ---------- unlocks: a short card when something opens ---------- */
 function moment() {
   const el = $('unlock'), now = performance.now();
@@ -710,7 +726,7 @@ ui.momentGo = () => {
 /* ---------- refresh ---------- */
 ui.refresh = function (force) {
   if (!S) return;
-  progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); firstRun();
+  progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); mbrief(); moment(); coach(); firstRun();
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }

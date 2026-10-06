@@ -931,7 +931,8 @@ IC.onMonth((S, was) => {
   if (E.months.length > 36) E.months.shift();
   E.mb = {}; E.mT = S.time; E.mStart = snapshot(S);
   const st = statement(E.months[E.months.length - 1].book);
-  if (S.mode === 'story') IC.log(S, st.net >= 0 ? 'info' : 'warn', 'TREASURY', `${IC.MONTHS[was % 12]} closed: ${U.money(st.income)} came in, ${U.money(-st.spend)} went out, ${st.net >= 0 ? '+' : '−'}${U.money(Math.abs(st.net)).replace('−', '')} in all. The statement is in the Economy room.`);
+  // (the monthly briefing says it when it is worth reading: no alert)
+  if (S.mode === 'story') IC.log(S, 'info', 'TREASURY', `${IC.MONTHS[was % 12]} closed: ${U.money(st.income)} came in, ${U.money(-st.spend)} went out, ${st.net >= 0 ? '+' : '−'}${U.money(Math.abs(st.net)).replace('−', '')} in all. The statement is in the Economy room.`);
   if (S.mode === 'story' && (was + 1) % 12 === 0 && IC.card) { const R = IC.yearReview(S, Math.floor(was / 12) + 1); if (R) IC.card(S, `Year ${R.y} in review`, U.clock(S.time, S), R.text, 'report'); }
 });
 /* the statement for this month so far (ago=0) or a finished month (ago=1: last month, 2: the one before) */

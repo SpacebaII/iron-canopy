@@ -3813,6 +3813,27 @@ test('calendar: construction runs through its stages, markings and lights each t
 /* ---------- the enemy commander ---------- */
 /* one three-day Quick war with the scripted commander of qwplayer.js, shared by the tests below (a few minutes) */
 /* ---------- the alert queue (brief 26) ---------- */
+test('briefing: the month\'s turn in the Career lists the few things that need the player, once', () => {
+  // (a short calendar: a month is 72 game minutes)
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7, dpm: 0.05 }), st = S.story;
+  st.cp = 5; IC.storyDelegate(S, 'routes', true);
+  IC.step(S, 0.5);
+  const tech = IC.TECH.find(t => !S.tech.done.has(t.id));
+  S.tech.done.add(tech.id);
+  const m0 = S.cal.m;
+  for (let i = 0; i < 4 * 3600 && S.cal.m === m0; i++) IC.step(S, 0.5);
+  const B = st.brief;
+  assert(B && B.items.length >= 1 && B.items.length <= IC.BRIEF_MAX, `the briefing has ${B ? B.items.length : 'no'} items`);
+  const by = k => B.items.find(x => x.k === k);
+  assert(by('tech') && by('tech').text.includes(tech.name), `research done is not in the briefing: ${B.items.map(x => x.text).join(' | ')}`);
+  if (by('delegates')) assert(/a month/.test(by('delegates').text), 'the briefing does not say what the delegates cost a month');
+  if (S.av.requests.length) assert(by('offers') && /₭/.test(by('offers').text) && /a month/.test(by('offers').text), 'offers wait but the briefing does not say what the best is worth a month');
+  for (let i = 1; i < B.items.length; i++) assert(B.items[i - 1].pri >= B.items[i].pri, 'the briefing is not sorted by what matters most');
+  // the next month does not report the same research again
+  const m1 = S.cal.m;
+  for (let i = 0; i < 4 * 3600 && S.cal.m === m1; i++) IC.step(S, 0.5);
+  assert(!st.brief || !st.brief.items.some(x => x.k === 'tech' && x.text.includes(tech.name)), 'the same research was reported twice');
+}, true);
 test('alerts: during a big raid no more than three alerts are on screen at once, and none of them informational', () => {
   const S = IC.newGame({ seed: 777, mode: 'campaign' });
   const cs = IC.cities(S).slice().sort((a, b) => b.pop - a.pop).slice(0, 4), ob = c => ({ x: c.x, y: c.y, ref: c, name: c.name });

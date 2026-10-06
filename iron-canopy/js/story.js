@@ -22,12 +22,15 @@ IC.ACTS = {
 };
 /* delegates take routine work off your hands once your rank allows it */
 IC.DELEGATES = {
-  routes: { name: 'Route Planning Office', act: 1, cost: 0.4, cp: 1, desc: 'Signs airline deals our airports can carry and that pay their way, at list charges.' },
-  eng: { name: 'Chief Engineer', act: 1, cost: 0.3, cp: 0, desc: 'Repairs craters, cut taxiways and damaged buildings at every airport without being asked.' },
-  qra: { name: 'QRA Commander', act: 2, cost: 1, cp: 1, desc: 'Scrambles the alert fighters at unknown aircraft entering our airspace, and calls airliners that drift off their routes.' },
-  emcon: { name: 'Sector Air Defence Commander', act: 3, cost: 1, cp: 1, desc: 'Rests exhausted radar crews when another radar covers for them, and wakes them when threats come.' },
-  logi: { name: 'Logistics Office', act: 3, cost: 0.8, cp: 1, desc: 'Keeps a forward depot stocked and buys munitions when stocks run low.' }
+  // does: what the delegate takes on; short: where it falls short of the player (adequate, not optimal)
+  routes: { name: 'Route Planning Office', act: 1, cost: 0.4, cp: 1, desc: 'Signs airline deals our airports can carry and that pay their way, at list charges.', short: 'It never haggles: every deal at list charges, none exclusive, and it turns down small ones that would still pay.' },
+  eng: { name: 'Chief Engineer', act: 1, cost: 0.3, cp: 0, desc: 'Repairs craters, cut taxiways and damaged buildings at every airport without being asked.', short: 'It repairs in the order things broke, not by what matters most, and leaves worn pavement for you to resurface.' },
+  qra: { name: 'QRA Commander', act: 2, cost: 1, cp: 1, desc: 'Scrambles the alert fighters at unknown aircraft entering our airspace, and calls airliners that drift off their routes.', short: 'It sends the nearest ready fighter at every unknown, even a stray light aircraft, and keeps none back.' },
+  emcon: { name: 'Sector Air Defence Commander', act: 3, cost: 1, cp: 1, desc: 'Rests exhausted radar crews when another radar covers for them, and wakes them when threats come.', short: 'It rests a radar only where another covers it from close by; it does not plan cover across the country.' },
+  logi: { name: 'Logistics Office', act: 3, cost: 0.8, cp: 1, desc: 'Keeps the depots stocked: it buys missiles when any unit falls below half a reload (Keep stocked in Supply).', short: 'It buys by rail at list price whenever stock is low, even when the treasury is thin.' }
 };
+/* what a delegate costs a month in the Career (a day on the live clock), in words */
+IC.delegateCost = (S, k) => { const D = IC.DELEGATES[k]; return S.mode === 'story' ? `${U.money(D.cost * IC.MO(S) / 3600)} a month` : `${U.money(D.cost * 24)} a day`; };
 /* things command points can buy */
 IC.REQUESTS = [
   { id: 'wing2', name: 'A second fighter flight', act: 2, cp: 2, cost: 60, desc: 'The Air Force releases LANCE flight to your base.', fn: S => addFlight(S, 'ftr', 'LANCE 1', 'ab_fwd') },
@@ -895,6 +898,7 @@ IC.storyDelegate = function (S, k, on) {
   if (on && !st.hired.has(k)) { if (st.cp < D.cp) return false; st.cp -= D.cp; st.hired.add(k); }
   st.del[k] = on;
   if (k === 'eng') for (const b of IC.bases(S)) b.autoRepair = on;
+  if (k === 'logi' && S.supply) S.supply.auto = on;
   return true;
 };
 IC.storyRequest = function (S, id) {
@@ -906,7 +910,7 @@ IC.storyRequest = function (S, id) {
 };
 function delegates(S, dt) {
   const st = S.story;
-  if (st.del.routes) for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q) && q.value > 4) { IC.avDecide(S, q.id, true); IC.log(S, 'info', 'ROUTES', `Route Planning Office signed ${IC.avAirline(S, q.al).name}'s deal.`); }
+  if (st.del.routes) for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q) && q.value > 4) { IC.avDecide(S, q.id, true); work(st, 'routes', q.value); IC.log(S, 'info', 'ROUTES', `Route Planning Office signed ${IC.avAirline(S, q.al).name}'s deal.`); }
   if (st.del.qra) {
     for (const t of S.threats) {
       if (t.dead || !t.det || t.border || t.d.civil && !t.offFlag) continue;
@@ -914,24 +918,85 @@ function delegates(S, dt) {
       if (!(t.aff === 'U' || t.aff === 'S') || !IC.inHome(t.x, t.y) || t.d.cls === 'bal' || t.d.cls === 'cm') continue;
       if (S.air.some(a => a.mission && a.mission.track === t)) continue;
       const r = S.roster.filter(x => x.kind === 'ftr' && x.st === 'ready' && !IC.missionOk(S, x, 'intercept')).sort((p, q) => U.dist(IC.baseOf(S, p.base), t) - U.dist(IC.baseOf(S, q.base), t))[0];
-      if (r) { IC.launchAir(S, r, { type: 'intercept', track: t, x: t.x, y: t.y }); IC.log(S, 'info', 'QRA', `QRA Commander scrambled ${r.name} at TN ${t.tn}.`, t); }
+      if (r) { IC.launchAir(S, r, { type: 'intercept', track: t, x: t.x, y: t.y }); work(st, 'qra'); IC.log(S, 'info', 'QRA', `QRA Commander scrambled ${r.name} at TN ${t.tn}.`, t); }
     }
   }
   if (st.del.emcon) {
     for (const u of S.units) {
       if (!u.emitter || u.state !== 'ready' || !u.d.sensor) continue;
       const covered = S.units.some(o => o !== u && o.d.sensor && o.radarOn && o.state === 'ready' && U.dist(o, u) < (o.d.sensor.R * 0.5));
-      if (u.emcon === 'on' && u.fat > 78 && covered) { u.emcon = 'off'; u.restByDel = true; }
+      if (u.emcon === 'on' && u.fat > 78 && covered) { u.emcon = 'off'; u.restByDel = true; work(st, 'emcon'); }
       else if (u.restByDel && (u.fat < 30 || !covered)) { u.emcon = 'on'; u.restByDel = false; }
     }
   }
 }
+
+
+/* ---------- the monthly briefing (brief 26) ----------
+   At the month's turn in the Career: the few things that need the player, most pressing first, at most five
+   (offers, decisions, research done, a statement worth reading, deals and loans ending, what the delegates did).
+   It replaces a stream of pop-ups: those lines stay in the Journal. S.story.brief = { m, items: [{ k, text, go }] } */
+function work(st, k, v) { const W = st.moDel || (st.moDel = {}); const w = W[k] || (W[k] = { n: 0, v: 0 }); w.n++; w.v += v || 0; }
+IC.BRIEF_MAX = 5;
+IC.monthBriefing = function (S, was) {
+  const st = S.story; if (!st || S.mode !== 'story') return null;
+  const L = [], A = S.av, mo = IC.MO(S), dpm = IC.dpm(S), date = t => U.date(t, S);
+  const add = (pri, k, text, go) => L.push({ pri, k, text, go: go || null });
+  const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  if (st.events.length) add(9, 'decide', `${n(st.events.length, 'decision')} waiting: ${st.events[0].title}.`, null);
+  // offers: how many, the best one, and when it lapses
+  const offers = A ? A.requests.filter(q => !(q.exp < S.time)) : [];
+  if (offers.length) {
+    const q = offers.slice().sort((a, b) => (b.value || 0) - (a.value || 0))[0], al = IC.avAirline(S, q.al);
+    const len = q.terms ? ` for ${q.terms.days} months` : '';
+    add(8, 'offers', `${n(offers.length, 'airline offer')} in the Aviation room. The best: ${al ? al.name : 'an airline'}, ${n(q.n, IC.ACTYPES[q.type].name.toLowerCase())}, about ${U.money((q.value || 0) * dpm)} a month${len}${q.exp ? `; it lapses in ${date(q.exp)}` : ''}.`, { room: 'aviation' });
+  }
+  // deals that end before the next turn
+  const ending = A ? A.deals.filter(d => d.st === 'active' && d.end > S.time && d.end - S.time < mo) : [];
+  if (ending.length) add(7, 'ending', `${n(ending.length, 'deal')} end${ending.length === 1 ? 's' : ''} this month: ${ending.slice(0, 2).map(d => { const al = IC.avAirline(S, d.al); return `${al ? al.name : 'an airline'} at ${S.byId[d.a] ? S.byId[d.a].name : 'our airport'}`; }).join(', ')}. Renewal offers come to the Aviation room.`, { room: 'aviation' });
+  // research finished since the last turn, and labs left idle
+  const was0 = new Set(st.moTech || []), fresh = [...S.tech.done].filter(id => !was0.has(id)).map(id => (IC.TECH.find(t => t.id === id) || {}).name).filter(Boolean);
+  const idle = S.tech.slots.filter(x => !x).length, canR = IC.roomAllowed(S, 'research');
+  if (fresh.length) add(6, 'tech', `Research done: ${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ` and ${fresh.length - 3} more` : ''}.${idle && canR ? ` ${n(idle, 'research slot')} now idle.` : ''}`, { room: 'research' });
+  else if (idle && canR && st.act > 1) add(3, 'tech', `${n(idle, 'research slot')} idle.`, { room: 'research' });
+  // last month's statement, when it is worth reading: a loss, a fall of a third, or money for under six months
+  const M = IC.monthStatement && IC.monthStatement(S, 1), M2 = IC.monthStatement && IC.monthStatement(S, 2);
+  if (M) {
+    const big = M.lines.filter(l => l.v < 0).sort((a, b) => a.v - b.v)[0], left = S.moneyLeft == null ? Infinity : S.moneyLeft * 3600 / mo;
+    // (what the airports and taxes earned against what was spent: a loan taken is not income)
+    const op = M.income + M.spend, op2 = M2 ? M2.income + M2.spend : 0, fell = M2 && op2 > 0 && op < op2 * 0.67;
+    if (op < 0 || fell || left < 6) add(op < 0 && left < 6 ? 8 : 5, 'statement', `${M.name} closed ${op >= 0 ? '+' : '−'}${U.money(Math.abs(op))}: ${U.money(M.income)} in, ${U.money(-M.spend)} out${big ? `, most of it ${U.lc(big.name)} (${U.money(-big.v)})` : ''}.${left < 6 ? ` At this rate the treasury lasts about ${n(Math.max(1, Math.round(left)), 'month')}.` : fell ? ` That is a third less than the month before (${U.money(op2)}).` : ''}`, { room: 'economy' });
+  }
+  // loans that end soon, with what they cost a month until then
+  const E = S.econ, loans = E && E.loans ? E.loans.filter(l => l.left > 0) : [];
+  if (loans.length) {
+    const per = loans.reduce((s, l) => s + IC.loanPay(S, l), 0) * mo / 3600, last = loans.reduce((s, l) => Math.max(s, l.t0 + l.term), 0);
+    if (loans.some(l => l.t0 + l.term - S.time < 2 * mo)) add(4, 'loans', `Loans cost ${U.money(per)} a month; the last is paid off in ${date(last)}.`, { room: 'economy' });
+  }
+  // the delegates: what they did, and what they cost
+  const on = Object.keys(IC.DELEGATES).filter(k => st.del[k] && st.act >= IC.DELEGATES[k].act), W = st.moDel || {};
+  if (on.some(k => W[k])) {
+    const did = on.map(k => {
+      const w = W[k], D = IC.DELEGATES[k];
+      const what = k === 'routes' ? (w ? `signed ${n(w.n, 'deal')} worth ${U.money(w.v * dpm)} a month` : 'signed nothing') : k === 'qra' ? (w ? `scrambled ${n(w.n, 'time')}` : 'had a quiet month') : k === 'emcon' ? (w ? `rested ${n(w.n, 'radar crew')}` : 'rested no one') : 'on duty';
+      return `${D.name}: ${what}`;
+    });
+    const cost = on.reduce((s, k) => s + IC.DELEGATES[k].cost, 0) * mo / 3600;
+    add(2, 'delegates', `${did.join('. ')}. Together they cost ${U.money(cost)} a month.`, { room: 'staff' });
+  }
+  L.sort((a, b) => b.pri - a.pri);
+  st.moTech = [...S.tech.done]; st.moDel = {};
+  if (!L.length) return (st.brief = null);
+  return (st.brief = { m: was, t: S.time, name: `${IC.MONTHS[was % 12]}, Year ${Math.floor(was / 12) + 1}`, items: L.slice(0, IC.BRIEF_MAX), more: Math.max(0, L.length - IC.BRIEF_MAX) });
+};
+IC.onMonth((S, was) => { if (S.mode === 'story' && S.story && !S.showcase) IC.monthBriefing(S, was); });
 
 /* ---------- the tick ---------- */
 IC.storyTick = function (S, dt) {
   // (the airport showcase has no story: only the airport at work)
   if (S.showcase) return;
   const st = S.story, C = S.camp;
+  if (!st.moTech && S.tech) st.moTech = [...S.tech.done];
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
   // goals
   for (const g of st.goals) {

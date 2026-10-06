@@ -445,6 +445,13 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .li.goalrow{display:grid;grid-template-columns:1fr}
 .li.goalrow b{font-size:.9rem}
 .evcard{position:absolute;z-index:9;left:50%;top:18%;transform:translateX(-50%);width:min(38rem,88%);display:grid;gap:.5rem;padding:1.3rem 1.4rem 1.2rem;border-radius:18px;background:linear-gradient(170deg,rgba(26,20,8,.97),rgba(8,12,16,.97));box-shadow:0 30px 90px rgba(0,0,0,.75),inset 0 0 0 1px rgba(242,180,65,.3);animation:cineIn .5s var(--ease)}
+.mbrief{position:absolute;z-index:8;left:50%;top:16%;transform:translateX(-50%);width:min(36rem,88%);display:grid;gap:.6rem;padding:1.1rem 1.2rem 1rem;border-radius:18px;background:linear-gradient(170deg,rgba(14,24,32,.97),rgba(8,12,16,.97));box-shadow:0 30px 90px rgba(0,0,0,.7),inset 0 0 0 1px rgba(111,210,255,.22);animation:cineIn .4s var(--ease)}
+.mbrief small{font-family:var(--mono);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:var(--friend);display:flex;gap:.4rem;align-items:center}
+.mbrief ul{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.mbrief li button{width:100%;display:grid;grid-template-columns:1fr auto;gap:.8rem;align-items:center;text-align:left;padding:.55rem .75rem;border-radius:10px;background:rgba(255,255,255,.04);font-size:.95rem;line-height:1.4;color:#e2e8ec;cursor:default}
+.mbrief li button.go{cursor:pointer}.mbrief li button.go:hover{background:rgba(111,210,255,.1)}
+.mbrief li em{font-style:normal;font-family:var(--mono);font-size:.74rem;color:var(--friend);white-space:nowrap}
+.mbrief .mb-foot{display:flex;justify-content:space-between;align-items:center;gap:1rem;font-size:.85rem}
 .evcard small{font-family:var(--mono);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
 .evcard h2{margin:0;font-family:var(--display);font-weight:700;font-size:2.1rem;letter-spacing:.08em;text-transform:uppercase;line-height:1.05;text-wrap:balance}
 .evcard p{margin:0;font-size:1.02rem;line-height:1.5;color:#e2e8ec;max-width:60ch}

@@ -547,6 +547,8 @@ function onAct(e) {
     case 'incX': IC.incidentDismiss(S, v); break;
     case 'aqGo': { const it = ui.aq && ui.aq.shown[+v]; if (!it) break; const r = it.ref; if (r) ui.jump(r, r.tn ? 'track' : r.d && r.type ? 'unit' : r.parts ? 'infra' : null); else if (it.at) ui.jump(it.at); break; }
     case 'aqX': IC.alertDismiss(S, v); break;
+    case 'mbGo': ui.briefGo(+v); break;
+    case 'mbX': ui.closeBrief(); break;
     case 'evChoose': IC.storyChoose(S, id, +v); IC.sfx.ui('ok'); ui.cache.evcard = null; if (S.paused && !S.story.events.length) S.paused = false; break;
     case 'radio': if (sel && S.sel.kind === 'track') IC.callAircraft(S, sel); break;
     case 'escortFire': { const a2 = S.air.find(x => x.id === id); if (a2 && sel) { a2.roe = 'free'; if (a2.r) a2.r.roe = 'free'; a2.tgt = sel; IC.log(S, 'warn', 'ORDERS', `${a2.name}: cleared to fire on TN ${sel.tn}.`, sel); IC.emit(S, 'fireOrder', { a: a2, t: sel }); } break; }
@@ -785,6 +787,7 @@ window.addEventListener('keydown', e => {
     else if (note) IC.hint.hide(note, true);
     else if (!$('unlock').hidden) ui.closeMoment();
     else if (!$('cine').hidden) ui.closeCine();
+    else if (!$('mbrief').hidden) ui.closeBrief();
     else if (S.mode2 && buildEsc()) {}
     else if (S.mode2) IC.setMode(null);
     else if (ui.room) ui.openRoom(null);
