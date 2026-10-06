@@ -415,7 +415,7 @@ IC.onMonth((S) => {
         const P = IC.PAVE[IC.paveOf(p)], was = p.wear || 0;
         // (only a runway closes when worn out; taxiways and aprons stay in use, worn)
         p.wear = Math.min(p.kind === 'runway' ? 1 : 0.95, was + 1 / P.life);
-        if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
+        if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close${p.kind === 'runway' ? ': worn pavement also breaks up wider if it is ever bombed' : ''}.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
         if (was < 1 && p.wear >= 1) { ap.dirty = true; ap.cfg = null; IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is worn out and closed until it is resurfaced.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : ap); }
       } else if (p.max && p.hp > 0) {
         const was = p.hp / p.max;
