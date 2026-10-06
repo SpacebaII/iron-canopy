@@ -3775,6 +3775,8 @@ test('calendar: research, city growth and a deal\'s length follow the calendar: 
 test('calendar: waiting for money runs until the treasury reaches the target, and says how long', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
   run(S, 0.5, player);
+  // (the first landing is an event of its own that stops any wait: round 2; here it has been seen)
+  S.first = S.first || { done: S.time };
   S.budget = 100;
   const target = Math.ceil((S.budget + 60) / 10) * 10;
   let why = null; const off = IC.on((S2, type, d) => { if (S2 === S && type === 'waitDone') why = d.why; });
