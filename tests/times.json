@@ -162,5 +162,11 @@
  "round 3: an offer the airport cannot carry yet says what it lacks, and its fix builds it": 12,
  "round 3: a deal short of a hangar is marked at the airport, with the hangar as its fix": 37,
  "round 3: the money line agrees with the monthly statement, and every fee is traced to an airport": 34,
- "round 3: nothing military shows in the Career before Act II": 49
+ "round 3: nothing military shows in the Career before Act II": 49,
+ "round 4: no Act I chapter opens with goals already done, no goal is only waiting, and each says what it gives": 11,
+ "round 4: a deal that needs a hangar says so up front and gives a month to build it": 44,
+ "round 4: milestones open the bigger pieces because the airport needs them, and every lock says what opens it": 16,
+ "round 4: the event deck has 20 or more cards, each with a choice that changes something, and each saves and loads": 17,
+ "round 4: the deck paces by the player: a card every few minutes of play, weather at most one in five": 136,
+ "round 4: a well-built Starter airport runs at a profit from its first month, and building shows as invested": 86
 }
