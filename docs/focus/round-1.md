@@ -127,7 +127,7 @@ New tests in `tests/run.js` (section "round 1"):
 6. a building inside a runway strip is warned about on the plan and on the airport, with the fix;
 7. the build bar opens on whole pieces, each with a price and what it does; the parts fold under Detail.
 
-`npm test`: NPM_RESULT
+`npm test`: 268 passed, 0 failed (1,723 s on 4 workers), with the eight Academy lessons, the save tests and the timing tests among them. The first full run had one failure: an older test expected the access road to be paid on top of the survey's price. It now checks that Found takes exactly the price the survey showed.
 
 ## What is left, and what needs the owner
 
