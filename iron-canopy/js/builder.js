@@ -1377,6 +1377,15 @@ IC.bldReady = function (S, m) {
   if (m._readyK !== key) { m._readyK = key; m._ready = IC.bldPlanOf(S, m, m.at || m.pts[m.pts.length - 1], m.tol || 0.12, m.free, !m.set); }
   return m._ready;
 };
+/* (round 5c) how long a plan takes the airport's crews, for the button by the ghost: a part's own time, or a piece's
+   or blueprint's parts one after another, shared between the crews */
+IC.planDur = function (ap, plan) {
+  if (!plan) return 0;
+  if (plan.dur) return plan.dur;
+  const t = plan.bp && plan.bp.t; if (!t || !t.parts) return 0;
+  if (plan._dur == null) { let d = 0; for (const p of t.parts) { try { d += IC.partBuildTime(t, p) || 0; } catch (e) { /* a part the scratch layout cannot measure */ } } plan._dur = d / Math.max(1, ap.crews || 1); }
+  return plan._dur;
+};
 /* Build (the button by the plan, or Enter): build what is placed */
 IC.buildFinish = function (S, m) {
   m.err = '';
@@ -1571,4 +1580,14 @@ IC.clickWorld = IC.clickWorld || function (p, btn, shift) {
   return r;
 };
 
+/* (round 5c) what the player does with the builder is an event ('bld' { act, v }), so a tutorial can wait for it:
+   a plan placed or moved, turned, built or dropped; a site placed, turned, founded */
+const ev = (S, act, v) => IC.emit(S, 'bld', { act, v });
+const wrap = (k, f) => { const g = IC[k]; IC[k] = function () { return f(g.apply(this, arguments), arguments); }; };
+wrap('buildInput', (r, [S, m]) => { if (r === 'point' && m.set) ev(S, m._evSet ? 'moved' : 'placed', m.part); m._evSet = !!m.set; return r; });
+wrap('buildCancel', (r, [S, m]) => { if (r === 'undo') { ev(S, 'cancel', m.part); m._evSet = !!m.set; } return r; });
+wrap('buildFinish', (r, [S, m]) => { if (r === 'built') { ev(S, 'built', m.part); m._evSet = false; } return r; });
+wrap('foundInput', (r, [S]) => { if (r === 'point') ev(S, 'site'); return r; });
+wrap('foundTurn', (r, [m]) => { if (r && IC.S) ev(IC.S, 'turn'); return r; });
+wrap('foundFinish', (r, [S]) => { if (r === 'built') ev(S, 'found'); return r; });
 })(window.IC);

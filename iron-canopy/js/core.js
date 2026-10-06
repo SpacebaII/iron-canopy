@@ -29,7 +29,9 @@ IC.WAIT = { speed: 432, step: 8 };
    chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js)
    progress: (round 4) Act I's chapters move by goals, not months; each goal says what it gives; passenger
      milestones open the bigger pieces; a peacetime event deck (deck.js); money split into running and invested */
-IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true };
+IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true };
+/* (round 5c) tutors: every civil feature taught on the real screen, the old click-through tour and tips hidden;
+   polish: the trailer's and the benchmark's visual notes (vehicles, panels, labels, the build bar) */
 /* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */
 IC.civilAct = S => !!(IC.FOCUS.calm && S && S.mode === 'story' && S.story && S.story.act < 2);
 

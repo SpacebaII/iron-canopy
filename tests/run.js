@@ -5252,9 +5252,9 @@ test('round 5b: each tutorial waits for the real action, ticks off what was done
   const { S, ap } = r5net();
   const ids = Object.keys(IC.TUTORS);
   assert(['dayboard', 'scorecards', 'fleet', 'treasury'].every(k => ids.includes(k)), ids.join(', '));
-  for (const id of ids) for (const st of IC.TUTORS[id].steps) assert(st.el && st.title && st.text && st.on && st.on.length, `${id}: a step without a target, words or an action`);
+  for (const id of ids) for (const st of IC.TUTORS[id].steps) assert((st.el || st.at) && st.title && st.text && st.on && st.on.length, `${id}: a step without a target, words or an action`);
   // (the words: plain, no filler)
-  for (const id of ids) for (const st of IC.TUTORS[id].steps) assert(!/let's|dive in|seamless|simply|easily|!/i.test(st.text), `${id}: ${st.text}`);
+  for (const id of ids) for (const st of IC.TUTORS[id].steps) assert(!/let's|dive in|seamless|simply|easily|!/i.test(IC.tutorText(S, st)), `${id}: ${IC.tutorText(S, st)}`);
   // the day board: each step moves on only when its click comes, and nothing else moves it
   assert(IC.tutorStart(S, 'dayboard'), 'it does not start');
   const click = (act, v, more) => IC.emit(S, 'ui', Object.assign({ act, v }, more || {}));
@@ -5286,6 +5286,131 @@ test('round 5b: each tutorial waits for the real action, ticks off what was done
   assert(IC.tutorWhen(S, 'treasury') && IC.tutorStart(S, 'treasury'), 'the treasury tutorial does not start in the red');
   click('room', 'economy'); IC.takeRedLoan(S);
   assert(IC.tutorSeen(S, 'treasury'), 'the loan did not finish it');
+});
+
+test('round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it', () => {
+  // (the page's own pieces the builder calls: here the state is all there is)
+  const pg = { setMode: IC.setMode, cam: IC.cam, flyTo: IC.flyTo, toWorld: IC.toWorld };
+  IC.setMode = m => { IC.S.mode2 = m; }; IC.cam = IC.cam || { x: 0, y: 0, z: 2, vw: 1200, vh: 800 }; IC.flyTo = IC.flyTo || (() => {}); IC.toWorld = IC.toWorld || ((x, y) => ({ x, y }));
+  try {
+    const S = IC.newGame({ seed: 12345, mode: 'story' }); IC.S = S;
+    const ui = (act, v) => IC.emit(S, 'ui', { act, v }), now = () => IC.tutorTick(S), at = (id, i) => { const N = now(); assert(N && N.id === id && N.i === i, `expected ${id} step ${i + 1}, got ${N ? N.id + ' step ' + (N.i + 1) : 'nothing'}`); };
+    const civil = ['basics', 'found', 'starter', 'pieces', 'buildesc', 'follow', 'deals', 'panel', 'problems', 'milestone', 'deck', 'chain', 'wait', 'airspace', 'radar'];
+    for (const id of civil) { const T = IC.TUTORS[id]; assert(T && T.steps.length >= 2 && T.steps.length <= 5 && T.guide, `${id}: 2–5 steps and a Guide card`); assert(IC.GUIDE.some(g => g.id === T.guide), `${id}: no Guide lesson ${T.guide}`); }
+    // only what the story has reached can start: at the start of the Career, the goals and founding, not the deals
+    assert(IC.tutorWhen(S, 'basics') && IC.tutorWhen(S, 'found') && !IC.tutorWhen(S, 'starter') && !IC.tutorWhen(S, 'deals') && !IC.tutorWhen(S, 'airspace'), 'the wrong tutorials may start');
+    IC.tutorStart(S, 'basics'); at('basics', 0);
+    ui('speed', 4); at('basics', 0);   // (a later step's action does not move the first)
+    IC.step(S, 2); at('basics', 0);
+    ui('goal', 0); at('basics', 1); ui('speed', 4); assert(IC.tutorSeen(S, 'basics') && !now(), 'basics did not finish');
+    // founding, on the real builder: the bar, Found, the site, the button
+    IC.tutorStart(S, 'found'); at('found', 0);
+    IC.bb.open = true; at('found', 1);
+    ui('foundMode'); S.mode2 = { kind: 'found' }; at('found', 2);
+    const site = IC.foundSuggest(S); assert(site && !IC.foundCheck(S, site.x, site.y), 'no good site suggested');
+    IC.clickWorld(site, 0); at('found', 3);
+    const m0 = S.mode2; assert(IC.foundFinish(S, m0) === 'built', m0.err);
+    assert(IC.tutorSeen(S, 'found'), 'founding did not finish its tutorial');
+    const ap = S.byId[S.story.cap];
+    // the Starter: wanted once the airport is founded
+    assert(IC.tutorWhen(S, 'starter'), 'the Starter tutorial is not wanted after founding');
+    IC.tutorStart(S, 'starter'); at('starter', 0);
+    IC.bbTab('pc'); at('starter', 0);
+    IC.bbTab('bq'); at('starter', 1);
+    IC.bb.ap = ap; IC.bbPick('starter'); at('starter', 2);
+    const m = S.mode2; assert(m && m.part === 'starter', 'the Starter was not picked');
+    IC.clickWorld({ x: ap.x + 2, y: ap.y + 1 }, 0); at('starter', 3);
+    IC.clickWorld({ x: ap.x + 2.2, y: ap.y + 1 }, 0); at('starter', 3);   // (moved, not built)
+    assert(IC.buildFinish(S, m) === 'built', m.err); at('starter', 4);
+    S.mode2 = null; finishWorks(S, ap); now();
+    assert(IC.tutorSeen(S, 'starter'), 'the works done did not finish the Starter tutorial');
+    // the pieces, then Build or Esc on the plan it placed
+    IC.bb.tab = 'bq'; IC.tutorStart(S, 'pieces'); at('pieces', 0);
+    IC.bbTab('pc'); at('pieces', 1); IC.bbPick('tstraight'); at('pieces', 2);
+    let placed = false;
+    for (let k = 0; k < 60 && !placed; k++) { const a = k * 0.7, d = 4 + k * 0.5, r = IC.clickWorld({ x: ap.x + Math.cos(a) * d, y: ap.y + Math.sin(a) * d }, 0); placed = r === 'point' && S.mode2.set; }
+    assert(placed, 'no place for a terminal piece');
+    assert(IC.tutorSeen(S, 'pieces'), 'placing the piece did not finish its tutorial');
+    assert(IC.tutorWhen(S, 'buildesc'), 'a placed plan does not want Build or Esc');
+    IC.tutorStart(S, 'buildesc'); at('buildesc', 0);
+    IC.buildCancel(S, S.mode2); assert(IC.tutorSeen(S, 'buildesc'), 'Esc did not finish Build or Esc');
+    S.mode2 = null;
+    // the airport panel, the problems, the chain, wait, on clicks and selections
+    S.story.ch = 1;
+    IC.tutorStart(S, 'panel'); at('panel', 0);
+    S.sel = { kind: 'infra', ref: ap }; IC.emit(S, 'select', S.sel); at('panel', 1);
+    ui('aptOpen', 'day'); at('panel', 1); ui('aptOpen', 'more'); at('panel', 2);
+    ui('desel'); S.sel = null; assert(IC.tutorSeen(S, 'panel'), 'the panel tutorial did not finish');
+    IC.tutorStart(S, 'problems'); ui('pmGo'); at('problems', 0); ui('pmFix'); now(); assert(IC.tutorSeen(S, 'problems'), 'a fix that is a setting did not finish the problems tutorial');
+    IC.tutorStart(S, 'chain'); at('chain', 0); IC.chainOn = true; ui('chainTog'); at('chain', 1); ui('zfull'); IC.chainOn = false;
+    assert(IC.tutorSeen(S, 'chain'), 'the chain tutorial did not finish');
+    IC.tutorStart(S, 'wait'); at('wait', 0); ui('waitPick'); at('wait', 1); IC.emit(S, 'waitStart', {}); assert(IC.tutorSeen(S, 'wait'), 'Wait did not finish its tutorial');
+    // the ones a game event brings: wanted only after it
+    for (const [id, trig] of [['follow', 'firstArrival'], ['deals', 'request'], ['milestone', 'milestone'], ['deck', 'deckCard']]) {
+      S.first = S.first || { tl: 'x' };
+      if (id === 'deals') S.av.requests.push({ id: 'q0', a: ap.id });
+      assert(!IC.tutorWhen(S, id), `${id} starts before ${trig}`);
+      IC.emit(S, trig, {});
+      assert(IC.tutorWhen(S, id), `${id} is not wanted after ${trig}`);
+    }
+    S.av.requests.pop();
+    IC.tutorStart(S, 'follow'); S.sel = { kind: 'tail', ref: {} }; IC.emit(S, 'select', S.sel); at('follow', 1); ui('zin'); at('follow', 2); ui('follow'); assert(IC.tutorSeen(S, 'follow'), 'follow');
+    S.sel = null;
+    IC.tutorStart(S, 'deals'); ui('pmGo'); at('deals', 1); IC.emit(S, 'approve', {}); assert(IC.tutorSeen(S, 'deals'), 'deals');
+    IC.tutorStart(S, 'milestone'); ui('buildPick', 'tpier'); at('milestone', 1); IC.emit(S, 'bld', { act: 'cancel' }); assert(IC.tutorSeen(S, 'milestone'), 'milestone');
+    IC.tutorStart(S, 'deck'); ui('evChoose', 0); at('deck', 1); ui('room', 'journal'); assert(IC.tutorSeen(S, 'deck'), 'deck');
+    // the airspace chapter: the editor, an entry point, an airway, the gaps, the radar on the biggest gap
+    S.story.ch = 2;
+    IC.tutorStart(S, 'airspace'); at('airspace', 0); ui('aspDraw'); S.mode2 = { kind: 'airway' }; at('airspace', 1);
+    const f1 = IC.aspAddFix(S, ap.x + 400, ap.y), f2 = IC.aspAddFix(S, ap.x + 60, ap.y); at('airspace', 2);
+    IC.aspAddWay(S, f1.id, f2.id); S.mode2 = null; now(); assert(IC.tutorSeen(S, 'airspace'), 'an airway did not finish the airspace tutorial');
+    IC.tutorStart(S, 'radar'); at('radar', 0); ui('layer', 'gaps'); S.layers.gaps = true; at('radar', 1);
+    ui('deploy', 'ssr'); S.mode2 = { kind: 'deploy', type: 'ssr' }; at('radar', 2);
+    const g = IC.radarGap(S); assert(g && g.at, 'no gap to point at');
+    IC.emit(S, 'deploy', 'ssr'); assert(IC.tutorSeen(S, 'radar'), 'a radar placed did not finish the radar tutorial');
+    S.mode2 = null;
+    // skip, and the Guide's replay from the first step
+    assert(IC.tutorStart(S, 'deck', true) && now().i === 0, 'the Guide cannot replay a tutorial');
+    IC.tutorSkip(S); assert(!now() && IC.tutorSeen(S, 'deck'), 'Skip did not put it away');
+    // and it all saves
+    const S2 = IC.loadSave(JSON.stringify(IC.saveGame(S))); IC.S = S;
+    assert(civil.every(id => IC.tutorSeen(S2, id)), 'the tutorials seen did not save');
+  } finally { IC.setMode = pg.setMode; IC.cam = pg.cam; IC.flyTo = pg.flyTo; IC.toWorld = pg.toWorld; }
+});
+
+test('round 5c: Chapter 3 radar: the tip names how many and where, the tag what a spot adds, and radars on the gap marker reach 80%', () => {
+  for (const seed of [7, 12345]) {
+    const S = IC.newGame({ seed, mode: 'story', preset: 'network' }); IC.S = S;
+    const ap = S.byId[S.story.cap];
+    // the consultants' three airways (story.js), as a player short of time picks them
+    const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, 3);
+    let hub = null;
+    for (const p of ports) {
+      let q = null; for (let i = 1; i <= 60 && !q; i++) { const x = ap.x + (p.x - ap.x) * i / 60, y = ap.y + (p.y - ap.y) * i / 60; if (!IC.inHome(x, y)) q = { x, y }; }
+      if (!q) continue;
+      if (!hub) { const d = U.dist(ap, p), k = Math.min(1, 500 / d); hub = IC.aspAddFix(S, ap.x + (p.x - ap.x) * k * 0.5, ap.y + (p.y - ap.y) * k * 0.5); }
+      const f = IC.aspAddFix(S, q.x, q.y); if (f && hub) IC.aspAddWay(S, hub.id, f.id);
+    }
+    IC.step(S, 1);
+    const tip = IC.radarAdvice(S), plan = IC.radarPlan(S).n;
+    assert(/About \d+ more beacon radars?/.test(tip) && /biggest gap is \d+ km/.test(tip), tip);
+    let placed = 0;
+    // a human-like path: pick the radar, look at the marker, place it where the tag says it adds most nearby
+    while (IC.wayCoverAll(S) < 0.8 && placed < plan + 1) {
+      const g = IC.radarGap(S); assert(g && g.km > 30, 'no gap marker while the airways are not seen');
+      const p = IC.findSpot(S, 'ssr', g.at.x, g.at.y, 0, 300), G = IC.radarGain(S, 'ssr', p.x, p.y);
+      assert(G.gain > 0.05, `the marker's spot adds only ${U.pct(G.gain)}`);
+      S.budget = Math.max(S.budget, 500); assert(IC.deploy(S, 'ssr', p.x, p.y), 'could not place it');
+      placed++;
+      for (let i = 0; i < 300; i++) IC.step(S, 5);
+      assert(Math.abs(IC.wayCoverAll(S) - G.after) < 0.08 || IC.wayCoverAll(S) > G.after, `the tag said ${U.pct(G.after)}, it sees ${U.pct(IC.wayCoverAll(S))}`);
+    }
+    assert(IC.wayCoverAll(S) >= 0.8, `seed ${seed}: ${placed} radars on the gaps see only ${U.pct(IC.wayCoverAll(S))}`);
+    assert(placed <= plan + 1, `seed ${seed}: the tip said about ${plan}, it took ${placed}`);
+    // a second radar right beside the first: the tag says what crowding its band costs
+    const u = S.units.find(x => x.type === 'ssr'), G2 = IC.radarGain(S, 'ssr', u.x + 30, u.y);
+    assert(G2.near >= 1 && G2.crowd > 0 && G2.gain < 0.05, JSON.stringify(G2));
+  }
 });
 
 /* ---------- run ---------- */

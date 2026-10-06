@@ -141,6 +141,9 @@ function buildGo() {
     IC.sfx.ui('ok'); if (at) ping(at); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap);
     // a whole airport, or the surveyed runway: the tool is put down (one more click would order a second)
     if (m.part === 'starter' || m.fromSurvey) IC.setMode(null);
+    // (round 5c) and the bar steps aside so the works can be watched: B or Build opens it again. The parts one by one
+    // (Detail) keep the tool and the bar, for drawing one taxiway after another
+    if (IC.FOCUS.polish && !(IC.bb.detail && IC.bldIsLine(m.part) && !(IC.PIECES && IC.PIECES[m.part]))) { IC.setMode(null); IC.bbToggle(false); }
   }
   else { IC.sfx.ui('err'); if (m.err && at) { IC.text(S, at.x, at.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
   IC.ui.refresh(true);
@@ -166,7 +169,7 @@ function foundIn(m, p, btn) {
 function foundGo() {
   const m = S.mode2, r = IC.foundFinish(S, m);
   if (r === 'built') {
-    IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, 1.2)); IC.sfx.ui('ok');
+    IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, IC.FOCUS.polish ? 5 : 1.2)); IC.sfx.ui('ok');
     // (round 1) the surveyed runway stays on the map as a placed plan: Build (or Enter) lays it, with its taxiways
     if (m.next) { IC.bb.ap = m.ap; IC.bb.tab = 'pc'; IC.bbToggle(true); IC.setMode(m.next); }
     return r;
@@ -186,7 +189,7 @@ goEl.addEventListener('click', e => {
   if (v === 'build') buildGo();
   else if (v === 'cancel') { if (!buildEsc()) IC.setMode(null); }
   else if (v === 'turn' && m && m.kind === 'found') { IC.foundTurn(m, +b.dataset.d); IC.ui.refresh(true); }
-  else if (v === 'turn' && m) { if (!IC.pieceTurn(m, +b.dataset.d)) m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.ui.refresh(true); }
+  else if (v === 'turn' && m) { if (!IC.pieceTurn(m, +b.dataset.d)) m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.emit(S, 'bld', { act: 'turn', v: m.part }); IC.ui.refresh(true); }
 });
 function goFrame() {
   const m = S && S.mode2;
@@ -197,7 +200,9 @@ function goFrame() {
     if (plan) {
       at = m.at || m.pts[m.pts.length - 1];
       const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch'].includes(m.part);
-      const what = plan.bp ? U.money(plan.cost) : plan.specs && plan.specs.length ? `${U.money(plan.cost)}${plan.dur ? ' · ' + U.dur(plan.dur) : ''}` : '';
+      // (round 5c) the price and how long the crews take, for a piece or a blueprint too
+      const dur = IC.planDur(m.ap, plan);
+      const what = plan.bp || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
       html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? 'Build it (Enter)' : esc(plan.why || '')}">Build${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
     }
   } else if (m && m.kind === 'bmove' && m.at) {
@@ -549,6 +554,8 @@ function onAct(e) {
       if (rw) { const fs = a.parts.find(q => q.kind === 'fire' && q.built) || a, far = U.dist(rw.a, fs) > U.dist(rw.b, fs) ? rw.a : rw.b, R = IC.fireRun(S, a, far, 'drill'); if (R) IC.toast(S, 'info', 'FIRE', `Drill: the trucks race to the far end of ${rw.name || 'the runway'}. They need to be there within ${IC.mmss(IC.FIRE_STD)} for heavy jets.`); } break; }
     case 'towerRules': { const a = selAp(); if (a) { ui.aptTab = 'rules'; IC.select({ kind: 'infra', ref: a }); } return; }
     case 'chainTog': IC.chainOn = !IC.chainOn; break;
+    case 'gapGo': S.layers.gaps = true; { const g = IC.radarGap(S); if (g) IC.flyTo(g.at.x, g.at.y, Math.min(IC.cam.z, 0.06)); } break;
+    case 'gapFix': { const g = IC.radarGap(S); if (locked('radar')) return; S.layers.gaps = true; ui.openRoom(null); IC.setMode({ kind: 'deploy', type: 'ssr' }); IC.emit(S, 'ui', { act: 'deploy', v: 'ssr' }); if (g) IC.flyTo(g.at.x, g.at.y, U.clamp(IC.cam.z, 0.05, 0.12)); return; }
     case 'aptOpen': ui.aptOpen = ui.aptOpen || {}; ui.aptOpen[v] = !ui.aptOpen[v]; break;
     case 'pmZoom': { const a = S.byId[v]; if (a) { IC.select({ kind: 'infra', ref: a }); IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 6)); } return; }
     case 'pmGo': case 'pmFix': {
@@ -850,7 +857,7 @@ window.addEventListener('keydown', e => {
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') {
     if (!IC.pieceTurn(bm, 1, e.shiftKey)) bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12);
-    IC.ui.refresh(true); return;
+    IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return;
   }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
@@ -878,7 +885,7 @@ window.addEventListener('keydown', e => {
   const unitSel = selUnits().length > 0, trackSel = selKind === 'track';
   const ukeys = { e: 'emcon', w: 'uroe', q: 'udoc', m: 'move', h: 'heli', p: 'repair', x: 'reserve', f: 'fireMode' };
   if (k === ' ') { e.preventDefault(); S.paused = !S.paused; S.skip = false; IC.waitStop(S); }
-  else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; IC.waitStop(S); }
+  else if (k >= '1' && k <= '6') { S.speed = IC.SPEEDS[+k - 1]; S.paused = false; S.skip = false; IC.waitStop(S); IC.emit(S, 'ui', { act: 'speed', v: S.speed }); }
   else if (k === '7') { if (S.wait) IC.waitStop(S); else ui.waitPick = !ui.waitPick; IC.ui.refresh(true); }
   else if (lk === 's') startSkip();
   // Esc always backs out of the top thing, one at a time; with nothing open it brings up the menu
@@ -905,7 +912,7 @@ window.addEventListener('keydown', e => {
   else if (trackSel && lk === 'v') command('scramble');
   else if (trackSel && lk === 'b') command('assignBest');
   else if (lk === 'g' && IC.callInOpen(S)) { const why = IC.callInWhy(S); if (why) IC.toast(S, 'info', 'CALL-IN', why + '.'); else IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); }
-  else if (rooms[lk]) { if (ui.roomOk(rooms[lk])) ui.openRoom(rooms[lk]); return; }
+  else if (rooms[lk]) { if (ui.roomOk(rooms[lk])) { ui.openRoom(rooms[lk]); IC.emit(S, 'ui', { act: 'room', v: rooms[lk] }); } return; }
   else if (k === '+' || k === '=') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.25);
   else if (k === '-' || k === '_') IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 0.8);
   else if (k === 'Home') { const c = IC.cap(S); IC.flyTo(c.x, c.y, Math.max(IC.cam.z, 0.3)); }

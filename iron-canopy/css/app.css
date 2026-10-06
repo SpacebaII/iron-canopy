@@ -1022,3 +1022,5 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .insp .deal .acts{flex-wrap:wrap}
 .insp .li.contract .la{flex-wrap:wrap}
 .app.compact .stat:not(.role) strong{white-space:nowrap}
+/* (round 5c) the build bar's one strip: what to do now and the keys, on one line, never a caption over the Build button */
+.bb-opts>em.bb-keys{font-style:normal;font-size:.84rem;color:#cfe6f2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(52rem,100%);min-width:0}

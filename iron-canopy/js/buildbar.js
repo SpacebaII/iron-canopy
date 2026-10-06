@@ -235,6 +235,7 @@ IC.bbToggle = function (open) {
   const S = S_(); if (!S) return;
   const bb = IC.bb; bb.open = open == null ? !bb.open : !!open;
   const sa = selAp(S); bb.closed = bb.open ? null : sa ? sa.id : null;
+  IC.emit(S, 'bld', { act: bb.open ? 'open' : 'close' });
   if (bb.open && !IC.bbAirport(S)) {
     const c = IC.toWorld(IC.cam.vw / 2, IC.cam.vh / 2);
     const mine = IC.bases(S).filter(b => b.parts && !b.locked && b.owner !== 'enemy' && (b.kind === 'airport' || b.kind === 'airbase'));
@@ -245,7 +246,7 @@ IC.bbToggle = function (open) {
   IC.ui.refresh(true);
 };
 /* pick a tab (1–0) */
-IC.bbTab = function (k) { if (IC.FOCUS && IC.FOCUS.pieces && !IC.BB_PIECE_TABS.some(t => t.k === k)) IC.bb.detail = true; IC.bb.tab = k; IC.bb.open = true; if (IC.ui && IC.ui.refresh) IC.ui.refresh(true); };
+IC.bbTab = function (k) { if (IC.FOCUS && IC.FOCUS.pieces && !IC.BB_PIECE_TABS.some(t => t.k === k)) IC.bb.detail = true; IC.bb.tab = k; IC.bb.open = true; if (S_()) IC.emit(S_(), 'bld', { act: 'tab', v: k }); if (IC.ui && IC.ui.refresh) IC.ui.refresh(true); };
 /* start placing an item */
 IC.bbPick = function (k) {
   const S = S_(), ap = IC.bbAirport(S); if (!ap) return false;
@@ -258,6 +259,7 @@ IC.bbPick = function (k) {
   const m = IC.bldMode(S, ap, part);
   if (k === 'carpark') m.surf = 'asph';
   IC.setMode(m);
+  IC.emit(S, 'bld', { act: 'pick', v: k });
   // (a whole piece is placed beside the runway: close enough to see where it goes, the whole airport in view)
   if (IC.PIECES && IC.PIECES[k]) { if (IC.cam.z < 6) IC.flyTo(ap.x, ap.y, U.clamp(Math.min(IC.cam.vw, IC.cam.vh) / 70, 6, 14)); }
   else if (IC.cam.z < 1.5) IC.flyTo(ap.x, ap.y, 2.2);
@@ -286,14 +288,18 @@ function options(S, m) {
   const P = S.bldPref || {}, g = [];
   const mat = m.mat || P.mat || 'conc', t = m.kind === 'build' ? m.part : m.kind;
   // what to do, on one line at the top (the price and any problem are on the ghost's tag by the cursor)
-  const say = IC.ui.barHint ? `<div class="bb-say one" title="${esc(IC.ui.barHint(m))}">${esc(IC.ui.barHint(m))}</div>` : '';
+  // (round 5c: in the strip of keys instead, last and on one line, never a caption over the Build button)
+  const hint = IC.ui.barHint ? IC.ui.barHint(m) : '', pol = IC.FOCUS && IC.FOCUS.polish;
+  const say = !hint ? '' : pol ? `<em class="bb-keys" title="${esc(hint)}">${esc(hint)}</em>` : `<div class="bb-say one" title="${esc(hint)}">${esc(hint)}</div>`;
   // (bulldozing and moving: no chips to choose, only the line)
   if (m.kind === 'bulldoze' || m.kind === 'bpick' || m.kind === 'bmove') return say;
-  if (m.kind === 'build') g.push(say);
+  if (m.kind === 'build' && !pol) g.push(say);
   // (round 1) a whole piece is built with sensible defaults: concrete, lit, the zone from what it is; Detail has the rest
   if (IC.PIECES && IC.PIECES[t]) {
     if (/^t(straight|pier|round)$/.test(t)) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('')));
-    g.push(`<em>${IC.PIECES[t].line ? 'Click or drag from end to end · R: taxiway on the other side' : 'Click to place · R turns it'} · Enter builds · Esc cancels</em>`);
+    // (round 5c) one strip, what to do now first
+    const K = IC.PIECES[t].line ? 'R: taxiway on the other side' : 'R turns it';
+    g.push(`<em class="bb-keys">${m.set ? `Placed · Build or Enter builds it · a click elsewhere moves it · ${K} · Esc drops it` : `${IC.PIECES[t].line ? 'Click or drag from end to end' : 'Click to place it'} · ${K} · Esc cancels`}</em>`);
     return g.join('');
   }
   if (t === 'upgrade' || PAVED_TOOLS[t]) g.push(group('Pavement', IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return chip('mat', k, (lock ? '🔒 ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), mat === k, `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost ×${IC.PAVE[k].cost}, time ×${IC.PAVE[k].build}.`, !!lock); }).join('')));
@@ -307,6 +313,7 @@ function options(S, m) {
   if (IC.TERM_KITS && IC.TERM_KITS[t]) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('') + '<em>R turns it</em>'));
   if (t === 'blueprint' && IC.showcaseKeys) g.push(group('Blueprint', IC.showcaseKeys().map(k => chip('bp', k, esc(IC.REAL_APT[k].name), m.bp === k, IC.REAL_APT[k].after)).join('') + '<em>R turns it</em>'));
   if (t === 'upgrade') g.unshift(`<div class="bb-say">${ico(TOOL_ICON.upgrade)} Click a runway, taxiway or apron: it gets what is chosen here, and you pay the difference.</div>`);
+  if (m.kind === 'build' && pol && say) g.push(say);
   return g.join('');
 }
 /* a chip was pressed: the choice is kept for next time and applies to what is being placed now */
