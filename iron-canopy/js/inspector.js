@@ -139,6 +139,8 @@ function unit(u) {
   }
   if (d.fc && !d.fc.passive) rows.push(['Fire-control radar', U.km(d.fc.R)]);
   if (u.jamF < 0.97) rows.push(['Jammed', `<span class="amber">−${U.pct(1 - u.jamF)}</span>`]);
+  if (u.rec && (u.rec.fired || u.rec.kills)) rows.push(['Record', `${u.rec.kills} shot down · ${u.rec.fired} missile${u.rec.fired === 1 ? '' : 's'} fired`]);
+  if (IC.lockedOn(S, u)) rows.push(['Warning', '<span class="hostile">Locked on: an enemy weapon is homing on it</span>']);
   if (u.intf) rows.push(['Interference', `<span class="amber">${u.intf} other ${IC.BAND_NAME[IC.BAND[u.type]] || ''} radar${u.intf > 1 ? 's' : ''} within 70 km: −${U.pct(1 - u.intfF)} range</span>`]);
   else if (IC.BAND[u.type] && d.sensor && !d.sensor.passive) rows.push(['Band', `${IC.BAND_NAME[IC.BAND[u.type]]} · clear`]);
   rows.push(['Enemy knowledge', intel]);
@@ -659,6 +661,8 @@ function air(a) {
     rows.push(['Fuel', `${U.dur(Math.max(0, a.fuel))}${base && a.state !== 'rtb' ? ` · must turn home in ${U.dur(Math.max(0, a.fuel - home))}` : ''}`], ['Aircraft', `${a.hp}/${a.n}${a.dmg ? ` · <span class="amber">${a.dmg} damaged</span>` : ''}`]);
     if (a.r && a.kind !== 'isr' && a.kind !== 'ucav') rows.push(['Crews', fatWords(a.r.fat || 0)]);
   }
+  if (a.r && a.r.rec && (a.r.rec.fired || a.r.rec.kills || a.r.rec.defeated)) rows.push(['Record', `${a.r.rec.kills} shot down · ${a.r.rec.fired} missiles fired · ${a.r.rec.defeated} enemy missiles defeated`]);
+  if (a.mslIn && !a.mslIn.dead) rows.push(['Warning', `<span class="hostile">Missile inbound, ${IC.mmss ? IC.mmss(a.mslIn.tti) : Math.round(a.mslIn.tti) + ' s'} to impact${a.def ? ' · ' + (IC.DEF_WORDS[a.def] || '').toLowerCase() : ''}</span>`]);
   if (a.kind === 'ftr') rows.push(['Missiles', `${a.aam} radar · ${a.srm || 0} heat-seeking${a.gbu ? ' · ' + a.gbu + ' bombs' : ''} · radar missiles reach ${U.km(IC.aamReach('mrm', a.alt, { alt: a.alt }, null))} at its height`]);
   if (a.kind === 'tkr') rows.push(['Fuel to give', `${U.dur(a.give || 0)} of fighter flying`]);
   if (a.kind === 'aew') rows.push(['Low cover', `${U.km(IC.aewLowR(a))} against cruise missiles, over hills and across the border`]);

@@ -137,6 +137,7 @@ IC.rangeStep = function (S, dt) {
   IC.moveThreats(S, dt);
   IC.defense(S, dt);
   IC.updateMissiles(S, dt);
+  IC.combat(S, dt);
   for (const u of S.units) u.fat = 0;
 };
 

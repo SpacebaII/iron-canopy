@@ -75,7 +75,7 @@ ui.store = store;
 // a decision and a peacetime launch pause the game unless the player turned them off
 ui.pauseOnIs = (P, k) => k === 'launch' || k === 'event' ? P[k] !== false : !!P[k];
 IC.savedCfg = () => { const c = store.get('ic-cfg', {}); return c.game || {}; };
-ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
+ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
 ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty('--ui', v); };
 {
   const c = store.get('ic-cfg', {});
@@ -280,8 +280,10 @@ const TECH_WORDS = {
   c_msl: 'Call-in teams get missiles that reach further and that flares fool less.',
   a_cram: 'Fast-firing guns that shoot down rockets, shells and drones close to what they guard.',
   a_hpm: 'A microwave weapon that knocks down a whole swarm of drones at once.',
-  a_lrsam: 'A long-range missile battery that covers 100 km around it.',
+  a_lrsam: 'A long-range missile battery that covers 200 km around it against aircraft high up.',
   a_remote: 'Links every battery: any of them can fire on another radar\'s track, even with its own radar silent.',
+  a_lre: 'Rounds with a bigger motor for the long-range batteries: 250 km against aircraft high up.',
+  a_vlr: 'A battery that reaches 400 km: bombers, jammers and early-warning aircraft standing off are no longer safe.',
   a_pac3: 'Missiles that hit ballistic warheads head-on, for the long-range batteries.',
   a_hatd: 'A battery that meets ballistic missiles 35 to 150 km up, before the lower tier gets its turn.',
   a_exo: 'Interceptors that destroy ballistic missiles in space, halfway through their flight.',
@@ -553,12 +555,23 @@ function cine() {
   if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
     const c = C.cards[ui.cineShown];
     el.className = 'cine ' + c.kind; el.hidden = false;
-    el.innerHTML = `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
+    el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
+    if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
     ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
   } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
   else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
+}
+/* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
+function resultCard(c) {
+  const r = c.res, C = S.combat || {};
+  const rows = [['Came', IC.raidCameText(r)], ['Stopped', `${r.stopped} of ${r.n}${r.ac ? `, and ${r.ac} aircraft shot down` : ''}`], ['Got through', r.through ? `${r.through}${r.hits ? `, ${r.hits} hit something` : ', none hit anything'}` : 'nothing']]
+    .concat(r.why.length ? [['Why', r.why.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('. ')]] : [])
+    .concat([['Spent', `${r.rounds} interceptors, ${U.money(r.spent)}`], ['Saved', `about ${U.money(r.prevented)} of damage prevented`]]);
+  return `<small>${esc(c.sub)}</small><div class="rgrade g${r.grade}">${r.grade}</div><h2>${esc(c.title)}</h2>
+    <table class="t rtab">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
+    ${r.held && C.streak >= 2 ? `<p class="rstreak">${C.streak} raids held in a row</p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 }
 ui.closeCine = () => { const el = $('cine'); if (el.hidden) return; el.hidden = true; ui.cineShown++; ui.cineT = performance.now() + 800; };
 

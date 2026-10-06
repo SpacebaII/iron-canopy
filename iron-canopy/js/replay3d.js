@@ -30,7 +30,7 @@ const CFG = IC.REPLAY = {
 };
 const KM = 10;   // world units a kilometre of height
 // how long a missile's motor burns (s), for the plume and the thick smoke; the missile data can carry its own (burn)
-const BURN = { IR: 2.5, IR2: 3, SR: 3, MR: 6, LR: 10, TBD: 8, HAT: 10, EXO: 14, AAM: 5, MRM: 5, SRM: 3, INT: 0, GBU: 0 };
+const BURN = { IR: 2.5, IR2: 3, SR: 3, MR: 6, LR: 10, LRE: 12, VLR: 15, TBD: 8, HAT: 10, EXO: 14, AAM: 5, MRM: 5, SRM: 3, INT: 0, GBU: 0 };
 const burnOf = tr => { const M = IC.MUN[tr.meta.mun]; return M && M.burn != null ? M.burn : BURN[tr.meta.mun] != null ? BURN[tr.meta.mun] : 4; };
 const SMOKE = { LR: 0.26, TBD: 0.24, HAT: 0.3, EXO: 0.3, MR: 0.2 };   // smoke puff size, world units
 const CAMS = [
