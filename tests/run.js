@@ -5100,6 +5100,45 @@ test('round 5b: a hold names its real cause, on the map and the aircraft\'s pane
   assert(!IC.aptStands(ap).some(s => s.occ === tl.id), 'its stand is still taken');
 }, true);
 
+test('round 5b: below zero the Treasury steps in: spending frozen, a loan offered, confidence falls, no dismissal in Act I', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 9, dpm: 0.5 }); IC.S = S; S.paused = false;
+  const st = S.story, ap = S.byId[st.cap];
+  S.budget = -800;
+  IC.step(S, 1);
+  assert(S.red && S.logs.some(l => /frozen new spending/.test(l.msg)), 'no word from the Treasury');
+  const card = st.events.find(e => e.kind === 'treasury');
+  assert(card && /We can lend you ₭[\d,]+M over 24 months at 2\.5% a month/.test(card.text), card && card.text);
+  // building is refused with the reason; buying too
+  const m = IC.fixPlan(S, ap, 'hangar', ap);
+  const plan = m && IC.bldPlanOf(S, m, m.at, 0.12);
+  assert(plan && !plan.ok && /Treasury has frozen/.test(plan.why), plan && plan.why);
+  assert(/frozen/.test(IC.buyBlock(S, 'ssr')), IC.buyBlock(S, 'ssr'));
+  // three months in the red: confidence falls each month, and the Career goes on
+  IC.storyChoose(S, card.id, 0);
+  const c0 = st.standing, m0 = S.cal.m;
+  for (let i = 0; i < 4 * 86400 && S.cal.m < m0 + 3; i++) { S.budget = Math.min(S.budget, -800); IC.step(S, 4); for (const e of st.events.slice()) if (e.kind !== 'treasury') IC.storyChoose(S, e.id, 0); }
+  assert(S.cal.m >= m0 + 3 && S.red.months >= 3, `${S.red.months} months in the red`);
+  assert(st.standing <= c0 - 10 || st.standing <= 5.01, `confidence ${c0.toFixed(1)} → ${st.standing.toFixed(1)}`);
+  assert(!S.over && st.act === 1, 'the Career ended in Act I');
+  // the loan: spending unfreezes
+  const q = st.events.find(e => e.kind === 'treasury') || (IC.storyEvent(S, 'treasury'), st.events.find(e => e.kind === 'treasury'));
+  IC.storyChoose(S, q.id, 1); IC.step(S, 1);
+  assert(S.budget > 0 && !S.red && S.econ.loans.some(l => l.red && l.rate === IC.RED.rate), `after the loan: ${U.money(S.budget)}`);
+});
+test('round 5b: Wait never offers a target it says will never be reached', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const r0 = IC.waitRate;
+  try {
+    S.budget = 400;
+    IC.waitRate = () => -3;
+    const L = IC.waitTargets(S);
+    assert(L.every(t => !/never/.test(IC.waitText(S, t))), L.map(t => IC.waitText(S, t)).join(' / '));
+    IC.waitRate = () => 3;
+    const K = IC.waitTargets(S);
+    assert(K.length >= 4 && K.every(t => !/never/.test(IC.waitText(S, t))), K.map(t => IC.waitText(S, t)).join(' / '));
+  } finally { IC.waitRate = r0; }
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

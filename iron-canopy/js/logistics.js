@@ -661,6 +661,7 @@ IC.economy = function (S, dt) {
   S.income = base + tax + trade + apt + aidRate + IC.avRevenueRate(S); S.upkeep = up;
   const L = S.ledger = { base, tax, trade, apt, aid: aidRate, av: IC.avRevenueRate(S), upAD: upAD * mob.up, upAir: upAir * mob.up, upApt, upStaff, loan: upLoan, crowd: crowd * mob.up };
   moneyWatch(S);
+  if (IC.redTick) IC.redTick(S);
   S.budget += (S.income - IC.avRevenueRate(S) - S.upkeep) * dt / 3600;
   // the weekly statement books each line as it is paid (airline fees are booked where they are paid)
   for (const k of ['base', 'tax', 'trade', 'apt', 'aid']) IC.econBook(S, k, L[k] * dt / 3600);
@@ -730,8 +731,11 @@ IC.waitTargets = function (S) {
   for (const t of IC.TECH) if (!S.tech.done.has(t.id) && !IC.researching(S, t.id) && t.req.every(r => S.tech.done.has(r)) && t.cost > S.budget && (!S.story || t.cat === 'apt' || S.story.act >= 3))
     L.push({ key: 'tech:' + t.id, what: `research: ${t.name.toLowerCase()}`, amt: t.cost });
   L.sort((a, b) => (b.money ? 1 : 0) - (a.money ? 1 : 0) || a.amt - b.amt);
-  const out = L.slice(0, 6);
-  for (const v of [250, 500, 1000, 2000]) { const amt = Math.ceil((Math.max(0, S.budget) + v) / 50) * 50; out.push({ key: 'amt:' + amt, what: `${U.money(amt)} in the treasury`, amt, sum: true }); }
+  // (round 5b) never offer what will never come: with more going out than coming in, nothing above the treasury
+  // can be waited for (the picker says so instead, with the loan)
+  const reach = IC.waitRate(S) > 0.01, can = t => reach || t.amt <= Math.max(0, S.budget) || (t.work && t.amt <= 0.5);
+  const out = L.filter(can).slice(0, 6);
+  if (reach) for (const v of [250, 500, 1000, 2000]) { const amt = Math.ceil((Math.max(0, S.budget) + v) / 50) * 50; out.push({ key: 'amt:' + amt, what: `${U.money(amt)} in the treasury`, amt, sum: true }); }
   return out;
 };
 /* money coming in an hour: last month's income less its running costs (building and buying left out), or while

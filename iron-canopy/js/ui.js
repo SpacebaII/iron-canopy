@@ -137,6 +137,8 @@ function waitLine() {
   }
   if (!ui.waitPick) return '';
   const L = IC.waitTargets(S);
+  // (round 5b) nothing can be waited for when more goes out than comes in: say so, with what helps
+  if (!L.length) return `<div class="waitbar glass pick"><b>Nothing to wait for</b><small>${esc(IC.waitText(S, { what: 'anything', amt: Math.max(0, S.budget) + 100 }).replace(/^.*?, /, 'Waiting would not help: '))}</small><button class="btn sm" data-act="room" data-v="economy">Economy (E)</button>${IC.inRed(S) ? '<button class="btn sm primary" data-act="redLoan">Emergency loan</button>' : ''}</div>`;
   return `<div class="waitbar glass pick"><b>Wait until you can afford</b>${L.map(t => `<button class="li" data-act="wait" data-v="${esc(t.key)}"><span>${esc(t.what.charAt(0).toUpperCase() + t.what.slice(1))}</span><small>${esc(IC.waitText(S, t))}</small></button>`).join('')}<small>Time runs fast, and stops when the month turns or something needs you.</small></div>`;
 }
 

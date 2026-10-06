@@ -40,7 +40,7 @@ IC.buyBlock = function (S, type) {
   const d = IC.UNITS[type];
   if (!IC.hasTech(S, d.tech)) return 'Needs research';
   if (S.story && !IC.storyAllows(S, type)) return 'Not yet in your remit';
-  if (S.budget < IC.unitCost(S, type)) return `Needs ${U.money(IC.unitCost(S, type))}`;
+  if (S.budget < IC.unitCost(S, type)) return IC.inRed && IC.inRed(S) ? 'The Treasury has frozen spending' : `Needs ${U.money(IC.unitCost(S, type))}`;
   return '';
 };
 /* where equipment rolls out from: depots, garrisons, the barracks in our cities, and our airfields (new equipment

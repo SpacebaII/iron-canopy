@@ -633,6 +633,7 @@ function onAct(e) {
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
     case 'rushRepair': IC.rushRepair(S, id); break;
     case 'loan': IC.takeLoan(S, +v); break;
+    case 'redLoan': IC.takeRedLoan(S); ui.waitPick = false; break;
     case 'repayLoan': IC.repayLoan(S, id); break;
     case 'delegate': IC.storyDelegate(S, v, !S.story.del[v]); break;
     case 'cpReq': IC.storyRequest(S, v); break;
