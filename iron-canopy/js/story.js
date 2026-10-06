@@ -200,12 +200,12 @@ function chapterGoals(S, ch) {
   const g = o => { const x = Object.create(refA); Object.defineProperties(x, Object.getOwnPropertyDescriptors(o)); G.push(x); return x; };
   if (ch === 0) {
     g({ id: 'found', text: `Found the national airport within 60 km of ${cc.name}`, ref: cc,
-      how: `Open the Aviation room (V) and press “Found a new airport”. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. Move the mouse to turn the runway, into the prevailing wind if you can, and click again. The survey shows the cost before you commit.`,
+      how: `Open the Aviation room (V) and press “Found a new airport”. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. The runway starts into the prevailing wind; turn it with R or by dragging along it, and click elsewhere to move the site. The survey shows the cost; Found (or Enter) commits.`,
       check: () => !!st.cap });
     g({ id: 'runway', text: 'Build a runway at least 2.1 km long', check: () => ((A() && A().st.longest) || 0) >= IC.ACTYPES.narrow.rwy, prog: () => building(A(), 'runway'),
-      how: `Select ${nm()}: the build bar opens along the bottom of the screen (B, or Build at the top). Under Runways pick Runway, click where one end goes, then the other end, then click it again to build. 2.5–3 km of concrete takes every airliner and costs ₭15M per 100 m. Asphalt is 30% cheaper, but heavy jets break it up within days.` });
+      how: `Select ${nm()}: the build bar opens along the bottom of the screen (B, or Build at the top). Under Runways pick Runway, click where one end goes, then the other end, then press Build beside it (or Enter). 2.5–3 km of concrete takes every airliner and costs ₭15M per 100 m. Asphalt is 30% cheaper, but heavy jets break it up within days.` });
     g({ id: 'apron', text: 'Build an apron with a taxiway to the runway', check: () => stands(A(), 'm') > 0, prog: () => building(A(), 'apron') || building(A(), 'taxi'),
-      how: 'Pick Apron and click two corners beside the runway, about 400 m long and 120 m deep: deep enough for medium stands. Then pick Taxiway and click from the runway to the apron and again on the last point: an aircraft needs a way off the runway to its stand.' });
+      how: 'Pick Apron and click two corners beside the runway, about 400 m long and 120 m deep: deep enough for medium stands; press Build. Then pick Taxiway, click from the runway to the apron’s edge and press Build: an apron nothing reaches is built, but no aircraft can park on it.' });
     g({ id: 'terminal', text: 'Build a terminal beside the apron', check: () => built(A(), 'terminal'), prog: () => building(A(), 'terminal'),
       how: 'Pick Terminal and place it along the back of the apron: passengers walk from it to the stands. Stands next to it turn aircraft round faster.' });
     g({ id: 'services', text: 'Build a fire station near the runway, and a fuel farm', check: () => !!(A() && A().st.fire) && built(A(), 'fuel'), prog: () => building(A(), 'fire') || building(A(), 'fuel'),

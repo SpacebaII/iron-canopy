@@ -1423,23 +1423,28 @@ function drawConvoys(g, S, ap, px, z) {
 /* ---------- the builder: what is about to be placed ---------- */
 let ghostKey = '', ghostPlan = null;
 IC.drawBuildGhost = function (g, S, px) {
-  const m = S.mode2, hv = S.hover;
+  // (a placed plan stays drawn while the cursor is off the map, on its Build button)
+  const m = S.mode2; let hv = S.hover || (m && ((m.set && m.at) || m.site || m.at || (m.pts && m.pts[m.pts.length - 1]))) || null;
   if (!m || !hv) return;
   if (m.kind === 'found') { drawFoundGhost(g, S, m, hv, px); return; }
   if (m.kind === 'bulldoze' || m.kind === 'upgrade' || m.kind === 'bpick') { drawToolHover(g, S, m, hv, px); return; }
   if (m.kind === 'bmove') {
+    // (placed where the player clicked: it stays there for Move; until then it follows the cursor)
+    if (m.at) hv = m.at;
     const p = m.part, probe = Object.assign({}, p, { x: hv.x, y: hv.y, a: m.rot });
     m.ap.parts = m.ap.parts.filter(q => q !== p); const ok = IC.aptCanPlace(S, m.ap, probe), why = IC.aptPlaceWhy; m.ap.parts.push(p);
     const P = IC.partOutline(probe); g.beginPath(); P.forEach((c, i) => g[i ? 'lineTo' : 'moveTo'](c.x, c.y)); g.closePath(); g.fillStyle = ok ? OKF : NOF; g.fill(); g.strokeStyle = ok ? OKC : NOC; g.lineWidth = 1.5 * px; g.stroke();
     g.setLineDash([4 * px, 4 * px]); g.strokeStyle = 'rgba(236,240,244,0.5)'; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(hv.x, hv.y); g.stroke(); g.setLineDash([]);
-    pill(g, ok ? (m.cost ? `put up here: ${U.money(m.cost)}` : 'moves here: free') : (why || 'does not fit here').replace(/\.$/, ''), hv.x, hv.y - 18 * px, px, ok ? '#b4f5c6' : '#ffb0a8');
+    if (!m.at) pill(g, ok ? (m.cost ? `put up here: ${U.money(m.cost)}` : 'moves here: free') : (why || 'does not fit here').replace(/\.$/, ''), hv.x, hv.y - 18 * px, px, ok ? '#b4f5c6' : '#ffb0a8');
     return;
   }
   if (m.kind !== 'build') return;
   const ap = m.ap, tol = Math.max(0.12, 8 * px);
   // the plan is worked out again only when the cursor or the plan changes
   const free = !!IC.bldFree;
-  const key = `${m.part}|${hv.x.toFixed(2)},${hv.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
+  // (a placed plan stays put: the cursor does not move it)
+  const hk = m.set && m.at ? m.at : hv;
+  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
   if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
   const col = ok ? 'rgba(110,230,140,0.95)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(110,230,140,0.2)' : 'rgba(255,91,79,0.2)';
@@ -1479,12 +1484,12 @@ IC.drawBuildGhost = function (g, S, px) {
     g.restore();
     if (!rm && ghostPlan) IC.drawPlane(g, c.x, c.y, a, { s: 'turbo', m: 'narrow', l: 'wide', xl: 'heavy' }[st.size], null, { alpha: 0.35, minPx: 6 });
   }
-  // the points placed so far; the last one pulses: click it again to build
+  // the points placed so far; the last one pulses while the plan is still being drawn
   const pts = m.pts, now = performance.now() / 1000;
   pts.forEach((p, i) => {
     const last = i === pts.length - 1;
     g.strokeStyle = last ? IC.C.ok : 'rgba(236,236,226,0.9)'; g.lineWidth = 1.5 * px;
-    g.beginPath(); g.arc(p.x, p.y, (last ? 6 + 2 * Math.sin(now * 6) : 4) * px, 0, 7); g.stroke();
+    g.beginPath(); g.arc(p.x, p.y, (last && !m.set ? 6 + 2 * Math.sin(now * 6) : 4) * px, 0, 7); g.stroke();
   });
   // the guides the point locked onto, and the straight line from the last point
   const sn = plan.snap;
@@ -1514,18 +1519,20 @@ IC.drawBuildGhost = function (g, S, px) {
   const add = (t, c, b) => { for (const w of wrap(t, 62)) { lines.push({ t: w, c, b }); b = false; } };
   if (ok) add(plan.text[0] || '', IC.C.text, true); else add(plan.why, IC.C.hostile, true);
   if (plan.size) add(plan.size, IC.C.amber, true);
+  // what will go wrong with it (it may still be built: brief 47)
+  if (ok) for (const w of (plan.warn || []).slice(0, 2)) add(w, IC.C.amber, true);
   for (const t of plan.text.slice(ok ? 1 : 0, ok ? 3 : 1)) add(t, 'rgba(210,225,235,0.85)', false);
-  const sc = IC.toScreen(hv.x, hv.y), left = sc.x > IC.cam.vw - (IC.ui.mapRight || 0) - 480;
+  // (by the plan once it is placed, where the Build button is, else by the cursor)
+  const cv0 = m.set && m.at ? m.at : hv, sc = IC.toScreen(cv0.x, cv0.y), left = sc.x > IC.cam.vw - (IC.ui.mapRight || 0) - 480;
   g.font = `500 ${9.5 * px}px "IBM Plex Mono", monospace`;
   const W = Math.max(...lines.map(l => g.measureText(l.t).width)) + 12 * px, H = lines.length * 13 * px + 8 * px;
   // (kept clear of the panels over the map: the goals on the left, the airport panel on the right)
   const lo = IC.cam.x + (IC.ui.mapLeft || 0) / IC.cam.z, hi = IC.cam.x + (IC.cam.vw - (IC.ui.mapRight || 0)) / IC.cam.z - W;
-  const x0 = U.clamp(left ? hv.x - 20 * px - W : hv.x + 20 * px, lo, Math.max(lo, hi)), y0 = hv.y - 44 * px - H / 2 + 12 * px;
+  // (a placed plan's card hangs under its Build button, clear of the plan; while drawing, beside the cursor)
+  const set = m.set && m.at, x0 = U.clamp(set ? cv0.x + 26 * px : left ? cv0.x - 20 * px - W : cv0.x + 20 * px, lo, Math.max(lo, hi)), y0 = set ? cv0.y + 70 * px : cv0.y - 44 * px - H / 2 + 12 * px;
   g.fillStyle = 'rgba(12,18,24,0.74)'; g.fillRect(x0, y0, W, H);
   if (!ok) { g.fillStyle = IC.C.hostile; g.fillRect(x0, y0, 2 * px, H); }
   lines.forEach((l, i) => { g.font = `${l.b ? 700 : 500} ${9.5 * px}px "IBM Plex Mono", monospace`; g.fillStyle = l.c; g.fillText(l.t, x0 + 6 * px, y0 + 14 * px + i * 13 * px); });
-  const need = IC.bldIsLine(m.part) || IC.bldIsArea(m.part) ? 2 : 1;
-  if (ok && pts.length >= need && m.part !== 'stand') { const q = m.part === 'parallel' ? hv : pts[pts.length - 1]; lbl(g, 'click again to build', q.x, q.y + 28 * px, px, IC.C.ok, 8.5, 'center', 700); }
 };
 /* words broken into lines of at most n characters */
 function wrap(t, n) { const out = []; let cur = ''; for (const w of String(t).split(' ')) { if (cur && cur.length + w.length + 1 > n) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; } if (cur) out.push(cur); return out; }
@@ -1587,7 +1594,7 @@ function pill(g, t, x, y, px, col, n) {
   g.fillStyle = 'rgba(12,18,24,0.72)'; g.fillRect(x - w / 2, y - h / 2, w, h);
   g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y + 0.5 * px); g.textBaseline = 'alphabetic'; g.textAlign = 'left';
 }
-/* founding: the site, the runway turned by the cursor, the noise footprint and what the survey found */
+/* founding: the site, the runway as turned (R, or a drag along it), the noise footprint and what the survey found */
 function drawFoundGhost(g, S, m, hv, px) {
   if (!m.site) {
     const why = IC.foundCheck(S, hv.x, hv.y);
@@ -1595,7 +1602,7 @@ function drawFoundGhost(g, S, m, hv, px) {
     lbl(g, why || 'click to survey this site', hv.x, hv.y - 18 - 8 * px, px, why ? IC.C.hostile : IC.C.text, 9.5, 'center', 600);
     return;
   }
-  const a = IC.foundAngle(m.site, hv), sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
+  const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
   // the noise footprint under the approach and departure paths
   g.save(); g.translate(m.site.x, m.site.y); g.rotate(a);
   g.fillStyle = sv.homes ? 'rgba(255,150,80,0.12)' : 'rgba(111,210,255,0.08)'; g.strokeStyle = sv.homes ? 'rgba(255,150,80,0.6)' : 'rgba(111,210,255,0.5)'; g.lineWidth = 1.2 * px;

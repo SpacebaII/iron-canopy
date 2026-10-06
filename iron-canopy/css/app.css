@@ -897,3 +897,10 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .ib.wide.on{background:rgba(111,230,140,.2);color:#9af2b4}
 @media (max-width:760px){.bbar{left:12px;right:12px}.app.has-insp .bbar{right:12px}.bb-tabs span,.bb-tools span{display:none}.bb-it{flex-basis:7.6rem}}
 .app.bb-hover .modehint{visibility:hidden}
+/* the Build button beside a placed plan (brief 47): build, turn, cancel; why not, when it cannot be built */
+#bldgo{position:absolute;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;max-width:22rem;padding:.35rem;border-radius:12px;background:rgba(6,20,30,.9);box-shadow:0 0 18px rgba(111,210,255,.25)}
+#bldgo[hidden]{display:none}
+#bldgo .btn.go{background:rgba(110,230,140,.9);color:#04160b;font-weight:700}
+#bldgo .btn.go:hover:not(:disabled){background:#8af0a8}
+#bldgo .btn.go:disabled{background:rgba(255,91,79,.35);color:#ffd6d0;opacity:1}
+#bldgo em{flex-basis:100%;font-style:normal;font-size:.8rem;color:#ffb6ad;padding:0 .3rem .1rem}

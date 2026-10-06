@@ -483,7 +483,7 @@ const HINT = {
     airSite: m => `Click an enemy target for ${m.r.name}.`,
     fireAt: m => `Click an enemy target for ${m.unit.name}.`,
     build: m => buildHint(m),
-    bmove: m => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go. R turns it${m.cost ? `; it is taken down and put up again for ${U.money(m.cost)}` : ', free until its earthworks start'}. Esc to cancel.`,
+    bmove: m => `Click where the ${U.lc(IC.APART[m.part.kind].name)} should go, then Move (or Enter). R turns it${m.cost ? `; it is taken down and put up again for ${U.money(m.cost)}` : ', free until its earthworks start'}. Esc to cancel.`,
     bpick: m => 'Move: click a building to pick it up. A planned one moves free until its earthworks start; a finished one is taken down and put up again for half its price. Esc to stop.',
     bulldoze: m => 'Bulldoze: click a part of the airport to remove it. What comes back shows by the cursor before you click. Esc to stop.',
     upgrade: m => `Upgrade: click a runway, taxiway or apron to relay it in ${IC.PAVE[m.mat || 'conc'].name.toLowerCase()}${m.lit === false ? ', with no lights' : ''}, for the difference in price. It is closed while the work runs. Esc to stop.`,
@@ -491,32 +491,35 @@ const HINT = {
       : 'Airways: click the map to place a fix, then keep clicking to join fixes into an airway. Click an airway to add a fix on it; drag fixes to move them. Airports join the nearest fix within 120 km. Esc to stop.',
     field: m => `Click a flat site near a town for a light-aircraft field (${U.money(IC.ASP.FIELD_COST)}). The town's flying club moves there from the big airport.`,
     asp: m => IC.aspModeHint(m),
-    zone: m => m.c ? 'Click again to set the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
+    zone: m => m.c ? 'Now click its edge: that sets the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
     road: m => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
-    found: m => m.site ? `Turn the runway with the cursor, then click to found the airport. Right-click picks another site.\n${S.hover ? IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, IC.foundAngle(m.site, S.hover))).join(' · ') : ''}`
+    found: m => m.site ? `Turn the runway with R (Shift+R the other way) or drag along it; click elsewhere to move the site. Found (or Enter) founds the airport; Esc or right-click picks another site.\n${IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL)).join(' · ')}`
       : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
 };
 /* the builder: how to use the tool, and what the plan under the cursor will do */
 function buildHint(m, short) {
-  const t = m.part, n = m.pts.length, D = IC.APART[t], T = IC.BTOOLS[t];
-  const again = 'click the last point again (or Enter) to build';
-  const how = t === 'taxi' ? `Taxiway: click points; ends snap to runways, aprons and taxiways. ${n >= 2 ? again[0].toUpperCase() + again.slice(1) + '.' : ''} Corners are ${m.fillet ? 'rounded (F: sharp)' : 'sharp (F: rounded)'}.`
-    : t === 'runway' ? (n < 2 ? 'Runway: click one end, then the other.' : `Runway: click the far end again (or Enter) to build; click elsewhere to move it.`)
-    : t === 'concourse' ? (n < 2 ? 'Concourse: click one end of the pier, then the other.' : 'Concourse: click the far end again (or Enter) to build.')
-    : t === 'parallel' ? (n ? 'Move out from the runway to set the distance; click again to build.' : T.desc)
-    : t === 'exits' ? (n ? 'Click the same runway again to build these exits.' : T.desc)
-    : t === 'hold' ? (n ? 'Click the same runway end again to build it.' : T.desc)
+  const t = m.part, n = m.pts.length, D = IC.APART[t], T = IC.BTOOLS[t], set = m.set;
+  // (one model for every tool: place the plan, then Build or Enter; a click elsewhere moves it; Esc cancels)
+  const go = 'Build (or Enter) builds it; a click elsewhere moves it.';
+  const how = t === 'taxi' ? `Taxiway: click points; ends snap to runways, aprons and taxiways. ${n >= 2 ? 'Build (or Enter) builds the points placed. ' : ''}Corners are ${m.fillet ? 'rounded (F: sharp)' : 'sharp (F: rounded)'}.`
+    : t === 'svcroad' ? `Service road: click along the way it goes${n >= 2 ? '; Build (or Enter) opens it' : ''}.`
+    : t === 'people' ? `People mover: click the stations along its line${n >= 2 ? '; Build (or Enter) builds it' : ''}.`
+    : t === 'runway' ? (n < 2 ? 'Runway: click one end, then the other.' : `Runway placed. ${go.replace('moves it', 'moves its far end')}`)
+    : t === 'concourse' ? (n < 2 ? 'Concourse: click one end of the pier, then the other.' : `Concourse placed. ${go.replace('moves it', 'moves its far end')}`)
+    : t === 'parallel' ? (!n ? T.desc : set ? `Parallel taxiway placed. ${go.replace('moves it', 'sets another distance')}` : 'Click out from the runway at the distance you want.')
+    : t === 'exits' ? (set ? `Exits placed. ${go.replace('moves it', 'picks another runway')}` : T.desc)
+    : t === 'hold' ? (set ? `Holding bay placed. ${go.replace('moves it', 'picks another runway end')}` : T.desc)
     : t === 'stand' ? T.desc
-    : t === 'blueprint' ? 'Blueprint: move it where it should go, R turns it (Shift+R a quarter turn), click to plan the whole airport.'
-    : IC.TERM_KITS && IC.TERM_KITS[t] ? `${IC.TERM_KITS[t].name}: move it where it should go, R turns it, click to plan it. Then join its taxilanes to your taxiways.`
-    : t === 'stretch' ? (n ? 'Move out to where the new edge should be, then click again (or Enter) to build.' : T.desc)
-    : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. R turns it 15°.` : `${T ? T.name : D.name}: click the second corner again (or Enter) to build; click elsewhere to resize.`)
-    : `${D.name}: click to place, click the same spot again to build. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`;
-  if (short) return `${how} Right-click takes a point back; Esc stops.`;
+    : t === 'blueprint' ? (set ? `Blueprint placed. R turns it (Shift+R the other way). ${go}` : 'Blueprint: click where it should go; R turns it.')
+    : IC.TERM_KITS && IC.TERM_KITS[t] ? (set ? `${IC.TERM_KITS[t].name} placed. R turns it. ${go} Then join its taxilanes to your taxiways.` : `${IC.TERM_KITS[t].name}: click where it should go; R turns it.`)
+    : t === 'stretch' ? (!n ? T.desc : set ? `Stretch placed. ${go.replace('moves it', 'sets another edge')}` : 'Click where the new edge should be.')
+    : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. Started by a taxiway or apron it lines up with it. R turns it 15°.` : `${T ? T.name : D.name} placed. ${go.replace('moves it', 'moves its far corner')}`)
+    : (set ? `${D.name} placed. R turns it. ${go}` : `${D.name}: click to place it. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`);
+  if (short) return `${how} Esc or right-click cancels.`;
   const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z), !!IC.bldFree) : null;
-  const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
+  const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.warn || [], plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
   const snap = IC.bldIsLine(t) || IC.bldIsArea(t) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
-  return `${how}${snap} Right-click takes a point back; Esc stops.${info ? '\n' + info : ''}`;
+  return `${how}${snap} ${set ? 'Esc or right-click cancels.' : 'Right-click takes a point back; Esc stops.'}${info ? '\n' + info : ''}`;
 }
 const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);
 ui.covTxt = covTxt;

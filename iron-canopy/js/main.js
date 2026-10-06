@@ -3,7 +3,7 @@
 'use strict';
 const U = IC.U;
 const $ = id => document.getElementById(id);
-const cv = $('map'), mini = $('mini'), app = $('app');
+const cv = $('map'), mini = $('mini'), app = $('app'), esc = U.esc;
 let S = null, mw = 225, mh = 169;
 IC.cine = { slow: 0, barsT: 0, bars: 0, cool: 0 };
 
@@ -91,27 +91,108 @@ function airwayClick(m, p) {
   S.sel = { kind: 'fix', ref: to };
   IC.sfx.ui('click');
 }
-/* the airport builder (builder.js): left-click places a point, clicking the last point again builds, right-click
-   takes the last point back and with none left leaves the mode */
+/* the airport builder (builder.js): left-click places a point or the plan, a click elsewhere moves a placed plan;
+   Build (the button beside the plan) or Enter builds it; right-click takes a point back or cancels, and with nothing
+   placed leaves the mode. Nothing builds on a click (brief 47) */
 function buildIn(m, p, btn, shift) {
   const r = IC.buildInput(S, m, p, btn, IC.cam.z, shift);
   if (r === 'exit') { IC.setMode(null); return r; }
   if (r === 'built') { IC.sfx.ui('ok'); ping(p); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap); }
   else if (r === 'err') { IC.sfx.ui('err'); if (m.err) { IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
+  else if (r === 'same') IC.text(S, p.x, p.y, IC.bldReady(S, m) ? 'PRESS BUILD OR ENTER TO BUILD IT' : 'CLICK THE NEXT POINT', IC.C.muted);
   else IC.sfx.ui('click');
   IC.ui.refresh(true);
   return r;
+}
+/* Build or Enter: what is placed is built (the founding of an airport too) */
+function buildGo() {
+  const m = S.mode2; if (!m) return;
+  if (m.kind === 'found') return foundGo();
+  if (m.kind === 'bmove') {
+    if (!m.at) return;
+    if (IC.bldRelocate(S, m.ap, m.part, m.at.x, m.at.y, m.rot)) { IC.sfx.ui('ok'); ping(m.at); IC.setMode(null); IC.select({ kind: 'apart', ref: m.part, ap: m.ap }); }
+    else { IC.sfx.ui('err'); IC.text(S, m.at.x, m.at.y, 'DOES NOT FIT', IC.C.hostile); }
+    return;
+  }
+  if (m.kind !== 'build') return;
+  const r = IC.buildFinish(S, m), at = m.at || m.pts[m.pts.length - 1] || S.hover;
+  if (r === 'built') { IC.sfx.ui('ok'); if (at) ping(at); if (m.done) IC.toast(S, 'info', 'BUILD', m.done, m.ap); }
+  else { IC.sfx.ui('err'); if (m.err && at) { IC.text(S, at.x, at.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
+  IC.ui.refresh(true);
+}
+/* Esc: a placed plan or the points so far go; with none, the tool is put down */
+function buildEsc() {
+  const m = S.mode2;
+  if (m && m.kind === 'build' && IC.buildCancel(S, m) !== 'exit') { IC.sfx.ui('click'); IC.ui.refresh(true); return true; }
+  if (m && m.kind === 'found' && m.site) { m.site = null; IC.ui.refresh(true); return true; }
+  if (m && m.kind === 'bmove' && m.at) { m.at = null; IC.ui.refresh(true); return true; }
+  return false;
 }
 /* what the Career has not reached yet: say why, and do nothing */
 function locked(key) { const why = IC.storyLock(S, key); if (why) { IC.toast(S, 'info', 'NOT YET', why); IC.sfx.ui('err'); } return !!why; }
 function foundIn(m, p, btn) {
   const r = IC.foundInput(S, m, p, btn);
   if (r === 'exit') { IC.setMode(null); return r; }
-  if (r === 'built') { IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, 1.2)); IC.sfx.ui('ok'); return r; }
   if (r === 'err') { IC.sfx.ui('err'); IC.text(S, p.x, p.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); }
   else IC.sfx.ui('click');
   IC.ui.refresh(true);
   return r;
+}
+function foundGo() {
+  const m = S.mode2, r = IC.foundFinish(S, m);
+  if (r === 'built') { IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, 1.2)); IC.sfx.ui('ok'); return r; }
+  IC.sfx.ui('err'); if (m.err && S.hover) IC.text(S, S.hover.x, S.hover.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile);
+  IC.ui.refresh(true);
+  return r;
+}
+/* the Build button beside a placed plan: its cost and time, or why it cannot be built; Cancel beside it; turning
+   buttons for an airport's runway. Placed every frame by the plan's point on screen */
+const goEl = document.createElement('div'); goEl.id = 'bldgo'; goEl.hidden = true; app.appendChild(goEl);
+let goKey = '';
+goEl.addEventListener('pointerdown', e => e.stopPropagation());
+goEl.addEventListener('click', e => {
+  const b = e.target.closest('[data-go]'); if (!b || b.disabled) return;
+  const m = S.mode2, v = b.dataset.go;
+  if (v === 'build') buildGo();
+  else if (v === 'cancel') { if (!buildEsc()) IC.setMode(null); }
+  else if (v === 'turn' && m && m.kind === 'found') { IC.foundTurn(m, +b.dataset.d); IC.ui.refresh(true); }
+  else if (v === 'turn' && m) { m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.ui.refresh(true); }
+});
+function goFrame() {
+  const m = S && S.mode2;
+  let at = null, html = '';
+  if (m && m.kind === 'build') {
+    goEl._k = '';
+    const plan = IC.bldReady(S, m);
+    if (plan) {
+      at = m.at || m.pts[m.pts.length - 1];
+      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch'].includes(m.part);
+      const what = plan.bp ? U.money(plan.cost) : plan.specs && plan.specs.length ? `${U.money(plan.cost)}${plan.dur ? ' · ' + U.dur(plan.dur) : ''}` : '';
+      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? 'Build it (Enter)' : esc(plan.why || '')}">Build${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
+    }
+  } else if (m && m.kind === 'bmove' && m.at) {
+    at = m.at;
+    const k = `mv|${at.x}|${at.y}|${m.rot}`;
+    if (goEl._k === k) html = goKey; else {
+    goEl._k = k;
+    const p = m.part, probe = Object.assign({}, p, { x: m.at.x, y: m.at.y, a: m.rot });
+    m.ap.parts = m.ap.parts.filter(q => q !== p); const fits = IC.aptCanPlace(S, m.ap, probe), why = IC.aptPlaceWhy; m.ap.parts.push(p);
+    html = `<button class="btn go" data-go="build" ${fits ? '' : 'disabled'} title="Move it (Enter)">Move${m.cost ? ` · ${U.money(m.cost)}` : ' · free'}</button><button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button><button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${fits ? '' : `<em>${esc(why || 'It does not fit there.')}</em>`}`; }
+  } else if (m && m.kind === 'found' && m.site) {
+    at = m.site;
+    // (the survey reads the ground and the towns round it: once for each place and heading, not every frame)
+    const k = `fd|${at.x}|${at.y}|${m.hdg}|${Math.round(S.budget)}`;
+    if (goEl._k === k) html = goKey; else {
+    goEl._k = k;
+    const sv = IC.foundSurvey(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL), why = sv.river ? 'A river crosses the runway line: turn it or move the site.' : S.budget < sv.cost ? `Not enough money: ${U.money(sv.cost)} needed.` : '';
+    html = `<button class="btn go" data-go="build" ${why ? 'disabled' : ''} title="Found it (Enter)">Found · ${U.money(sv.cost)}</button><button class="btn sm" data-go="turn" data-d="-1" title="Turn the runway (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn the runway (R)">⟳</button><button class="btn sm" data-go="cancel" title="Pick another site (Esc or right-click)">✕</button>${why ? `<em>${esc(why)}</em>` : ''}`; }
+  }
+  if (!at) { if (!goEl.hidden) { goEl.hidden = true; goKey = ''; goEl._k = ''; } return; }
+  if (html !== goKey) { goEl.innerHTML = html; goKey = html; }
+  const sc = IC.toScreen(at.x, at.y), r = app.getBoundingClientRect(), w = goEl.offsetWidth || 200;
+  goEl.hidden = false;
+  goEl.style.left = `${U.clamp(sc.x + 26, (IC.ui.mapLeft || 0) + 8, r.width - (IC.ui.mapRight || 0) - w - 8)}px`;
+  goEl.style.top = `${U.clamp(sc.y + 26, 70, r.height - 140)}px`;
 }
 const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 /* the airport's Airspace tab is open: its rings can be picked and their edges dragged on the map */
@@ -124,11 +205,8 @@ function leftClick(p, shift) {
   const m = S.mode2;
   if (m) {
     if (m.kind === 'build') return buildIn(m, p, 0, shift);
-    if (m.kind === 'bmove') {
-      if (IC.bldRelocate(S, m.ap, m.part, p.x, p.y, m.rot)) { IC.sfx.ui('ok'); ping(p); IC.setMode(null); IC.select({ kind: 'apart', ref: m.part, ap: m.ap }); }
-      else { IC.sfx.ui('err'); IC.text(S, p.x, p.y, 'DOES NOT FIT', IC.C.hostile); }
-      return;
-    }
+    // moving a building: a click places where it goes, Move (or Enter) moves it (brief 47: nothing on a click)
+    if (m.kind === 'bmove') { m.at = { x: p.x, y: p.y }; IC.sfx.ui('click'); IC.ui.refresh(true); return; }
     if (m.kind === 'airway') { airwayClick(m, p); IC.ui.refresh(true); return; }
     if (m.kind === 'asp') { IC.aspMapClick(S, m, p); IC.ui.refresh(true); return; }
     if (m.kind === 'road') { IC.roadClick(S, m, p, 14 / IC.cam.z); IC.ui.refresh(true); return; }
@@ -262,7 +340,7 @@ function rightClick(p, shift) {
 /* what a right-click at this spot would do, in words, for the hover card: an order should never surprise */
 function rightWhat(hit) {
   const m = S.mode2;
-  if (m) return m.kind === 'build' ? (m.pts && m.pts.length ? 'take the last point back' : 'stop building') : m.kind === 'found' ? (m.site ? 'pick another site' : 'cancel')
+  if (m) return m.kind === 'build' ? (m.set ? 'cancel the plan' : m.pts && m.pts.length ? 'take the last point back' : 'stop building') : m.kind === 'found' ? (m.site ? 'pick another site' : 'cancel')
     : m.kind === 'airway' && m.from ? 'end this airway' : m.kind === 'road' && m.pts.length >= 2 ? 'build the road' : 'cancel';
   const air = S.sel && S.sel.kind === 'air' ? S.sel.ref : null;
   if (S.sel && S.sel.kind === 'flight' && hit && hit.kind === 'track' && S.sel.ref.kind === 'ftr') return `${S.sel.ref.name} launches to intercept TN ${hit.ref.tn}`;
@@ -557,6 +635,8 @@ cv.addEventListener('pointerdown', e => {
     drag = { sx: l.x, sy: l.y, cx: IC.cam.x, cy: IC.cam.y, moved: false, btn: e.button, box: e.shiftKey && e.button === 0 };
     // in the airway editor, fixes can be dragged
     if (e.button === 0 && S.mode2 && S.mode2.kind === 'airway') drag.fix = IC.aspFixAt(S, S.hover, 12 / IC.cam.z);
+    // a planned airport's runway turns by dragging along it
+    if (e.button === 0 && S.mode2 && S.mode2.kind === 'found' && S.mode2.site && U.dist(S.mode2.site, S.hover) < 18) drag.turn = true;
     // in the airport's Airspace tab, a ring's edge can be dragged
     if (e.button === 0 && aspEditing()) drag.edge = IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
   }
@@ -587,6 +667,7 @@ cv.addEventListener('pointermove', e => {
     if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; if (!drag.box) cv.classList.add('dragging'); }
     if (drag.moved) {
       if (drag.fix) IC.aspMoveFix(S, drag.fix, S.hover.x, S.hover.y);
+      else if (drag.turn) IC.foundTurn(S.mode2, 0, S.hover);
       else if (drag.edge) { IC.aspResize(S, drag.edge, U.dist(drag.edge, S.hover)); IC.ui.aspVol = drag.edge.id; IC.ui.aspEdge = drag.edge.id; cv.style.cursor = 'grabbing'; }
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
       else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); }
@@ -654,9 +735,13 @@ window.addEventListener('keydown', e => {
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') { bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
-  if (bm && k === 'Enter') { const r = IC.buildFinish(S, bm, IC.cam.z); IC.sfx.ui(r === 'built' ? 'ok' : 'err'); if (r === 'err' && bm.err && S.hover) IC.text(S, S.hover.x, S.hover.y, bm.err.toUpperCase(), IC.C.hostile); IC.ui.refresh(true); return; }
-  if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { bm.pts.pop(); IC.ui.refresh(true); return; }
-  if (S.mode2 && S.mode2.kind === 'bmove' && lk === 'r') { S.mode2.rot += e.shiftKey ? Math.PI / 2 : Math.PI / 12; return; }
+  if (bm && k === 'Enter') { buildGo(); return; }
+  if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
+  const fm = S.mode2 && S.mode2.kind === 'found' ? S.mode2 : null;
+  if (fm && lk === 'r') { IC.foundTurn(fm, e.shiftKey ? -1 : 1); IC.ui.refresh(true); return; }
+  if (fm && k === 'Enter' && fm.site) { foundGo(); return; }
+  if (S.mode2 && S.mode2.kind === 'bmove' && lk === 'r') { S.mode2.rot += e.shiftKey ? -Math.PI / 12 : Math.PI / 12; return; }
+  if (S.mode2 && S.mode2.kind === 'bmove' && k === 'Enter') { buildGo(); return; }
   const rm = S.mode2 && S.mode2.kind === 'road' ? S.mode2 : null;
   if (rm && k === 'Enter' && rm.pts.length >= 2) { roadDone(); return; }
   if (rm && k === 'Backspace' && rm.pts.length) { IC.roadUndo(S, rm, 14 / IC.cam.z); IC.ui.refresh(true); return; }
@@ -683,6 +768,7 @@ window.addEventListener('keydown', e => {
     else if (note) IC.hint.hide(note, true);
     else if (!$('unlock').hidden) ui.closeMoment();
     else if (!$('cine').hidden) ui.closeCine();
+    else if (S.mode2 && buildEsc()) {}
     else if (S.mode2) IC.setMode(null);
     else if (ui.room) ui.openRoom(null);
     else if (IC.bb && IC.bb.open && IC.bb.view) { IC.bb.view = null; }
@@ -848,6 +934,7 @@ function frame(now) {
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }
   IC.ui.hintFrame();
+  goFrame();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

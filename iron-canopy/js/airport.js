@@ -417,10 +417,17 @@ IC.aptGraph = function (ap) {
     // a door that opens straight onto an apron: in through the apron's taxiway joins
     else for (const a of parts) if (a.kind === 'apron' && rectDist(a, p.door) < 0.12) for (const n of onPart.get(a.id) || []) if (n.on.kind === 'apron') edge(nid, n.id, 'apron', a.id, 0, 0.05, 0, 0);
   }
+  // taxiways that end in the grass, joined to nothing at their far end (brief 47: built wrong, they are allowed):
+  // pruned leaf by leaf, they are no way off or onto a runway
+  const nb = new Map();
+  for (const [id, L] of adj) for (const e of L) if (e.kind !== 'rwy') { (nb.get(id) || nb.set(id, new Set()).get(id)).add(e.to); (nb.get(e.to) || nb.set(e.to, new Set()).get(e.to)).add(id); }
+  const anchor = n => n.kind !== 'taxi' || !!n.rw || !!(n.ref && n.ref.on), dead = new Set(), leaf = [];
+  for (const [id, s] of nb) if (s.size <= 1 && !anchor(N.get(id))) leaf.push(id);
+  while (leaf.length) { const id = leaf.pop(); if (dead.has(id)) continue; dead.add(id); for (const o of nb.get(id)) { const s = nb.get(o); s.delete(id); if (s.size <= 1 && !dead.has(o) && !anchor(N.get(o))) leaf.push(o); } }
   // each runway's nodes in order: where aircraft can get off (exit) and on (entry)
   for (const [id, on] of rwn) {
     const L = rwLen(ap.parts.find(p => p.id === id));
-    rwn.set(id, on.map(o => ({ id: o.id, t: o.t, s: o.t * L, exit: adj.get(o.id).some(e => e.kind !== 'rwy'), entry: radj.get(o.id).some(e => e.kind !== 'rwy') })));
+    rwn.set(id, on.map(o => ({ id: o.id, t: o.t, s: o.t * L, exit: adj.get(o.id).some(e => e.kind !== 'rwy' && !dead.has(e.to)), entry: radj.get(o.id).some(e => e.kind !== 'rwy' && !dead.has(e.from)) })));
   }
   // runways that depend on each other share one clearance
   const rws = parts.filter(p => p.kind === 'runway'), grp = {};
@@ -430,7 +437,7 @@ IC.aptGraph = function (ap) {
   for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) { const d = IC.rwDependent(rws[i], rws[j]); if (d && d !== 'close') { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; } }
   for (const r of rws) grp[r.id] = find(r.id);
   ap.gver = (ap.gver || 0) + 1;
-  ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map(), bays: new Set(parts.filter(p => p.bay && p.built).map(p => p.id)) };
+  ap.G = { N, adj, radj, rwn, grp, dead, ver: ap.gver, trees: new Map(), bays: new Set(parts.filter(p => p.bay && p.built).map(p => p.id)) };
   ap.dirty = false;
   return ap.G;
 };
@@ -715,8 +722,11 @@ IC.aptStats = function (S, ap) {
     if (p.lit === false && p.kind === 'runway') st.warn.push(`${p.name || 'A runway'} has no edge lights: it closes from dusk to dawn. Upgrade it on the build bar to light it.`);
   }
   const unlinked = stands.filter(s => !s.linked && s.hp > 0).length;
-  if (unlinked) st.warn.push(`${unlinked} stand${unlinked > 1 ? 's are' : ' is'} not connected to a runway.`);
-  for (const p of ap.parts) if (DOOR(p.kind) && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds || 0; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways.`); }
+  if (unlinked) st.warn.push(`${unlinked} stand${unlinked > 1 ? 's are' : ' is'} not connected to a runway: no aircraft can reach ${unlinked > 1 ? 'them' : 'it'}. Draw a taxiway from ${unlinked > 1 ? 'their' : 'its'} apron to the network.`);
+  // (brief 47) taxiways that end in the grass: built, but no aircraft goes down them
+  const deadT = G.dead ? ap.parts.filter(p => p.kind === 'taxi' && p.built && !p.cut[1] && p.nodes.some(id => G.dead.has(id))).length : 0;
+  if (deadT) st.warn.push(`${deadT} taxiway${deadT > 1 ? 's end' : ' ends'} in the grass, joined to nothing: no aircraft uses ${deadT > 1 ? 'them' : 'it'}. Join ${deadT > 1 ? 'them' : 'it'} to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway).`);
+  for (const p of ap.parts) if (DOOR(p.kind) && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds || 0; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways: no aircraft can use it. Draw a taxiway to its door.`); }
   const towers = alive('tower'), tower = towers.length > 0;
   // the cab must see each runway it works: within 8 km and over the roofs in between
   st.unseen = {};
@@ -1340,7 +1350,8 @@ IC.updateBases = function (S, dt) {
         const d = partDist(b, q, p);
         if (d > 1.6) continue;
         const was = q.hp;
-        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? 9 : 4) * (1 - d / 1.6));
+        // (by its size: a fuel farm of three tanks burns down as fast as one tank did)
+        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / 1.6));
         if (was > q.max * 0.25 && q.hp <= q.max * 0.25) {
           IC.log(S, 'leak', 'FIRE', `${b.name}: fire spreads to the ${U.lc(IC.APART[q.kind].name)}.`, q);
           if (q.kind === 'fuel') { q.burning = 5400; q.stock = 0; IC.explode(S, q.x, q.y, 1.6, 'ground'); IC.addFire(S, q.x, q.y, 1.6, 8000); }
@@ -1621,7 +1632,7 @@ IC.layoutAirport = function (ap, template, a) {
     // a remote apron for overnight parking, south of the runway
     tx([[-12, 0], [-12, -1.6]]); rect('apron', -12, -2.1, 4.6, 0.96);
     bld('fuel', -11.8, 4.9);
-    bld('tower', 3.5, 5.7); bld('fire', 0, -1.5); bld('atc', -8, -3.2);
+    bld('tower', 3.5, 5.7); bld('fire', 0, -3.2); bld('atc', -8, -3.2);
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
   } else if (template === 'regional_bad') {
@@ -1725,7 +1736,7 @@ function layoutKden(ap, L) {
   tx([[36, -23], [36, -21.6]]); zone(rect('apron', 37, -21.15, 4, 0.85), 'mil');
   tx([[-26, 23], [-26, 21.6]]); zone(rect('apron', -26, 21.3, 3, 0.6), 'light');
   // fuel farm with a hydrant system, fire stations within three minutes of every runway end, tower and radars
-  bld('fuel', -9.5, 17); bld('fuel', -12, 17); bld('fuel', -14.5, 17);
+  bld('fuel', -9.4, 17); bld('fuel', -12, 17); bld('fuel', -14.6, 17);
   bld('hydrant', 2, 17);
   bld('fire', -22.5, -18); bld('fire', 22.5, 24); bld('fire', -24, 19.5); bld('fire', 23.2, -24.6);
   bld('tower', 8, -14); bld('atc', 4, 20); bld('gradar', -9.5, 12);
