@@ -174,6 +174,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
     if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind) || !near(p)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
   }
+  // the fire trucks out on a run
+  if (full && ap.fireRun) drawFireRun(g, S, ap, px, z, now);
   // what stands on the grass: glide-path lights, windsocks, glide-slope masts, a VOR, blast fences
   if (z > 3 && !(o && o.pad)) drawFurniture(g, S, ap, px, z, now, night);
   // people movers below ground: the line on the map, faint and dashed
@@ -526,7 +528,10 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
   const w = p.w || (p.r || 0.1) * 2, h = p.h || (p.r || 0.1) * 2;
-  if (p.kind === 'fuel') {
+  if (p.kind === 'fuel' && !p.r) drawFuelFarm(g, S, ap, p, w, h, px, z, full, dead, night);
+  else if (p.kind === 'fire' && !p.poly) drawFireStation(g, S, ap, p, w, h, px, z, full, dead, now, night);
+  else if (p.kind === 'tower' && !p.poly) drawTower(g, S, ap, p, w, h, px, z, full, dead, now, night);
+  else if (p.kind === 'fuel') {
     if (full) { g.fillStyle = 'rgba(80,84,70,0.8)'; g.fillRect(-p.r * 1.35, -p.r * 1.35, p.r * 2.7, p.r * 2.7); g.fillStyle = 'rgba(120,128,104,0.9)'; g.fillRect(-p.r * 1.25, -p.r * 1.25, p.r * 2.5, p.r * 2.5); }
     g.fillStyle = fill; g.beginPath(); g.arc(0, 0, Math.max(p.r, 1.5 * px), 0, 7); g.fill();
     if (full && !dead) { g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 0.008; g.beginPath(); g.arc(0, 0, p.r * 0.7, 0, 7); g.stroke(); g.fillStyle = `rgba(90,110,130,${0.5 * (1 - (p.stock || 0) / D.cap)})`; g.beginPath(); g.arc(0, 0, p.r * 0.3, 0, 7); g.fill(); }
@@ -547,9 +552,6 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
       if (p.kind === 'deice') { g.fillStyle = 'rgb(236,120,40)'; for (const sx of [-1, 1]) g.fillRect(sx * w * 0.42 - 0.03, -0.03, 0.06, 0.06); }
       else { g.fillStyle = 'rgb(200,60,50)'; g.fillRect(w * 0.3, h * 0.25, 0.05, 0.04); }
     }
-  } else if (p.kind === 'tower') {
-    g.fillStyle = fill; g.fillRect(-w / 2, -h / 2, w, h);
-    if (full && !dead) { g.fillStyle = 'rgba(40,70,90,0.95)'; g.beginPath(); g.arc(0, 0, w * 0.34, 0, 7); g.fill(); g.fillStyle = night ? 'rgba(170,230,255,0.9)' : 'rgba(150,200,220,0.6)'; g.beginPath(); g.arc(0, 0, w * 0.22, 0, 7); g.fill(); }
   } else if (p.kind === 'ils') {
     // the localizer: a row of antennas across the centreline
     g.fillStyle = 'rgba(40,40,40,0.5)'; g.fillRect(-w / 2, -h / 2, w, h);
@@ -563,12 +565,11 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   } else {
     g.fillStyle = p.roof && ROOF_FILL[p.roof] && !dead ? ROOF_FILL[p.roof] : fill; partPath(g, p, w, h); g.fill();
     if (full && !dead && (p.roof || p.kind === 'terminal' || p.kind === 'cargo')) { g.save(); if (p.poly) { partPath(g, p, w, h); g.clip(); } (ROOFS[p.roof] || roof)(g, p, w, h, px, z, night); g.restore(); }
-    if (full && !dead && p.kind === 'fire') { g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(-w * 0.08, -h * 0.3, w * 0.16, h * 0.6); g.fillRect(-w * 0.25, -h * 0.08, w * 0.5, h * 0.16); }
     if (full && !dead && p.kind === 'ammo') { g.fillStyle = 'rgba(60,80,52,0.9)'; for (let i = -1; i <= 1; i++) g.fillRect(i * w * 0.3 - w * 0.12, -h * 0.35, w * 0.24, h * 0.7); }
     if (full && !dead && p.kind === 'alert') { g.fillStyle = 'rgba(96,98,94,0.95)'; g.fillRect(-w * 0.3, -h * 0.35, w * 0.6, h * 0.7); }
   }
   // an outline, so buildings read against pavement and grass
-  if (full && !dead && !p.r && p.kind !== 'ils') { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); partPath(g, p, w, h); g.stroke(); }
+  if (full && !dead && !p.r && p.kind !== 'ils' && !((p.kind === 'fuel' || p.kind === 'fire' || p.kind === 'tower') && !p.poly)) { g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = Math.max(0.006, 0.8 * px); partPath(g, p, w, h); g.stroke(); }
   // damage
   if (dead) {
     g.fillStyle = 'rgba(24,18,14,0.85)'; if (p.r) { g.beginPath(); g.arc(0, 0, p.r * 1.1, 0, 7); g.fill(); } else { partPath(g, p, w, h); g.fill(); }
@@ -578,10 +579,101 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   g.restore();
   if (p.linked === false && IC.aptDoor(p.kind) && z > 2) lbl(g, 'NO TAXIWAY', p.x, p.y - (h / 2) - 6 * px, px, IC.C.amber, 7.5, 'center', 700);
 }
+/* ---------- the fuel farm, the fire station and the tower (brief 47): real size, and what they are doing ---------- */
+const rr = (g, b) => g.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
+/* the tanks in their bund, each roof showing how full it is; the loading rack; the fuel trucks waiting in the
+   lorry park (the ones out at stands are drawn at the stands) and a road tanker at the rack while the stock is low */
+function drawFuelFarm(g, S, ap, p, w, h, px, z, full, dead, night) {
+  const L = IC.bldLayout(p), B = L.bund, lw = Math.max(0.004, 0.8 * px);
+  // gravel yard, the bund's earth wall, its floor
+  g.fillStyle = dead ? 'rgb(52,48,44)' : 'rgb(150,148,136)'; g.fillRect(-w / 2, -h / 2, w, h);
+  g.fillStyle = dead ? 'rgb(40,36,32)' : 'rgb(112,118,92)'; g.fillRect(B.x0, B.y0, B.x1 - B.x0, B.y1 - B.y0);
+  g.fillStyle = dead ? 'rgb(46,42,38)' : 'rgb(134,140,108)'; g.fillRect(B.x0 + 0.04, B.y0 + 0.04, B.x1 - B.x0 - 0.08, B.y1 - B.y0 - 0.08);
+  const lvl = U.clamp((p.stock || 0) / IC.fuelCap(p), 0, 1);
+  for (const t of L.tanks) {
+    g.fillStyle = dead ? 'rgb(30,26,24)' : 'rgb(226,224,212)'; g.beginPath(); g.arc(t.x, t.y, t.r, 0, 7); g.fill();
+    if (dead || !full) continue;
+    // the floating roof rides on the fuel: the larger the dark ring round it, the emptier the tank
+    g.fillStyle = 'rgba(70,80,92,0.7)'; g.beginPath(); g.arc(t.x, t.y, t.r * 0.84, 0, 7); g.fill();
+    g.fillStyle = 'rgb(206,204,192)'; g.beginPath(); g.arc(t.x, t.y, t.r * 0.84 * (0.3 + 0.7 * lvl), 0, 7); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = lw; g.beginPath(); g.arc(t.x, t.y, t.r, 0, 7); g.stroke();
+    // a level gauge beside each tank
+    if (z > 6) { const gx = t.x + t.r + 0.02, gh = t.r * 1.4; g.fillStyle = 'rgba(20,24,28,0.8)'; g.fillRect(gx, t.y - gh / 2, 0.025, gh); g.fillStyle = lvl < 0.25 ? 'rgb(230,90,60)' : 'rgb(110,200,120)'; g.fillRect(gx, t.y + gh / 2 - gh * lvl, 0.025, gh * lvl); }
+  }
+  if (dead) return;
+  // the loading rack: a canopy over the bays; a road tanker unloading while the farm is below nine tenths
+  g.fillStyle = 'rgb(176,180,184)'; rr(g, L.rack); g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = lw; g.strokeRect(L.rack.x - L.rack.w / 2, L.rack.y - L.rack.h / 2, L.rack.w, L.rack.h);
+  if (full && lvl < 0.9) { const c = IC.rectWorld(p, L.rack.x, L.rack.y); g.save(); g.rotate(-(p.a || 0)); g.translate(-p.x, -p.y); veh(g, c.x, c.y, (p.a || 0) + Math.PI / 2, 0.16, 0.03, 'rgb(222,222,216)', px, 'rgb(60,90,140)'); g.restore(); }
+  // the lorry park: the fuel trucks not out at a stand, two for each tank
+  g.fillStyle = 'rgb(118,120,118)'; rr(g, L.park);
+  if (full && z > 3) {
+    const all = ap.st && ap.st.hydrant ? 2 : IC.fuelTanks(p) * 2, out = Math.min(all, IC.aptStands(ap).filter(s => s.occ && s.svc && s.svc.fuel !== 'hydrant' && S.time - s.svc.t0 > s.svc.dur * 0.5 && S.time - s.svc.t0 < s.svc.dur * 0.85).length);
+    g.save(); g.rotate(-(p.a || 0)); g.translate(-p.x, -p.y);
+    for (let i = 0; i < all - out; i++) { const c = IC.rectWorld(p, L.park.x - L.park.w * 0.3 + (i % 3) * L.park.w * 0.3, L.park.y - L.park.h * 0.3 + Math.floor(i / 3) * 0.07); veh(g, c.x, c.y, (p.a || 0) + Math.PI / 2, 0.1, 0.03, 'rgb(236,236,236)', px, 'rgb(200,60,50)'); }
+    g.restore();
+  }
+}
+/* the crash fire station: bays along the hall, the tenders in them (or out on a run), the apron and the training
+   ground with its burnt mock-up fuselage */
+function drawFireStation(g, S, ap, p, w, h, px, z, full, dead, now, night) {
+  const L = IC.bldLayout(p), lw = Math.max(0.004, 0.8 * px);
+  g.fillStyle = dead ? 'rgb(40,36,32)' : 'rgb(150,150,146)'; rr(g, L.apron);
+  g.fillStyle = dead ? 'rgb(48,40,36)' : 'rgb(112,108,96)'; rr(g, L.ground);
+  g.fillStyle = dead ? 'rgb(30,24,20)' : 'rgb(176,70,56)'; rr(g, L.hall);
+  if (dead) return;
+  g.strokeStyle = 'rgba(16,20,24,0.55)'; g.lineWidth = lw; g.strokeRect(L.hall.x - L.hall.w / 2, L.hall.y - L.hall.h / 2, L.hall.w, L.hall.h);
+  // a ridge down the hall's roof
+  g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(L.hall.x - L.hall.w / 2, L.hall.y - 0.01, L.hall.w, 0.02);
+  if (!full) return;
+  // the bays' doors on the apron side, and a tender in each bay unless the trucks are out
+  const run = ap.fireRun && ap.fireRun.from === p.id && S.time < ap.fireRun.home, bw = L.hall.w / L.bays, fy = L.hall.y + L.f * L.hall.h / 2;
+  g.save(); g.rotate(-(p.a || 0)); g.translate(-p.x, -p.y);
+  for (let i = 0; i < L.bays; i++) {
+    const bx = L.hall.x - L.hall.w / 2 + bw * (i + 0.5), d0 = IC.rectWorld(p, bx, fy);
+    g.save(); g.translate(d0.x, d0.y); g.rotate(p.a || 0); g.fillStyle = 'rgba(236,232,224,0.95)'; g.fillRect(-bw * 0.36, -0.012, bw * 0.72, 0.024); g.restore();
+    if (!run || i >= 3) { const c = IC.rectWorld(p, bx, fy + L.f * 0.09); veh(g, c.x, c.y, (p.a || 0) + L.f * Math.PI / 2, 0.12, 0.035, 'rgb(214,48,40)', px, 'rgb(236,236,230)'); }
+  }
+  g.restore();
+  // the training ground: a ring of scorched gravel round a steel mock-up of a fuselage
+  const G = L.ground; g.strokeStyle = 'rgba(60,52,44,0.9)'; g.lineWidth = Math.max(0.01, 1.2 * px); g.beginPath(); g.arc(G.x, G.y, Math.min(G.w, G.h) * 0.4, 0, 7); g.stroke();
+  g.fillStyle = 'rgb(70,70,72)'; g.save(); g.translate(G.x, G.y); g.rotate(0.6); g.fillRect(-G.w * 0.32, -0.02, G.w * 0.64, 0.04); g.fillRect(-0.015, -G.w * 0.22, 0.03, G.w * 0.44); g.restore();
+}
+/* the tower: its base, and the cab on top, wider than the shaft it stands on; its windows lit by what it is
+   handling (brighter the busier the hour, and at night) */
+function drawTower(g, S, ap, p, w, h, px, z, full, dead, now, night) {
+  const L = IC.bldLayout(p);
+  g.fillStyle = dead ? 'rgb(40,36,32)' : 'rgb(178,180,186)'; g.fillRect(-L.base.w / 2, -L.base.h / 2, L.base.w, L.base.h);
+  if (dead) return;
+  g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.004, 0.8 * px); g.strokeRect(-L.base.w / 2, -L.base.h / 2, L.base.w, L.base.h);
+  const busy = U.clamp(((ap.mvLog || []).length) / Math.max(8, (ap.st && ap.st.movesPerHour) || 8), 0, 1);
+  // the cab: a glazed octagon, the roof over it
+  const oct = r => { g.beginPath(); for (let i = 0; i < 8; i++) { const a = (i + 0.5) * Math.PI / 4; g[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); };
+  if (night || busy > 0.05) { g.fillStyle = `rgba(150,220,255,${night ? 0.35 : 0.12 + 0.2 * busy})`; oct(L.cab * 1.5); g.fill(); }
+  g.fillStyle = 'rgb(70,76,84)'; oct(L.cab); g.fill();
+  g.fillStyle = night ? `rgba(170,232,255,${0.6 + 0.35 * busy})` : `rgba(130,190,215,${0.55 + 0.4 * busy})`; oct(L.cab * 0.86); g.fill();
+  g.fillStyle = 'rgb(58,64,72)'; oct(L.cab * 0.55); g.fill();
+  // the beacon on the roof
+  if (z > 4) { g.fillStyle = (now * 2 % 1) < 0.5 ? 'rgba(255,90,70,0.95)' : 'rgba(120,40,30,0.8)'; g.beginPath(); g.arc(0, 0, Math.max(0.006, 1.2 * px), 0, 7); g.fill(); }
+}
+/* the fire trucks out on a run: from the station, lights flashing, to the accident or the drill's runway end and
+   back; while they drive, the time they take */
+function drawFireRun(g, S, ap, px, z, now) {
+  const R = ap.fireRun; if (!R || S.time >= R.home) return;
+  const st = ap.parts.find(q => q.id === R.from); if (!st || st.poly) return;
+  const L = IC.bldLayout(st), out = IC.rectWorld(st, L.apron.x, L.apron.y + L.f * L.apron.h / 2), at = { x: R.x, y: R.y }, t = S.time - R.t0, back = R.home - S.time;
+  const f = t < R.dur ? t / R.dur : back < R.dur ? back / R.dur : 1, h0 = Math.atan2(at.y - out.y, at.x - out.x);
+  for (let i = 0; i < 3; i++) {
+    const k = U.clamp(f - i * 0.04, 0, 1); if (k <= 0) continue;
+    const q = lerpP(out, at, k), sx = f >= 1 ? (i - 1) * 0.07 : 0;
+    veh(g, q.x - Math.sin(h0) * sx, q.y + Math.cos(h0) * sx, h0, 0.12, 0.035, 'rgb(214,48,40)', px, 'rgb(236,236,230)');
+    if (z > 3) { g.fillStyle = (now * 3 + i * 0.3) % 1 < 0.5 ? 'rgba(255,60,50,0.9)' : 'rgba(80,140,255,0.9)'; g.beginPath(); g.arc(q.x - Math.sin(h0) * sx, q.y + Math.cos(h0) * sx, Math.max(0.01, 2.2 * px), 0, 7); g.fill(); }
+  }
+  if (z > 2 && t < R.dur + 180) pill(g, `${R.kind === 'drill' ? 'Fire drill' : 'Fire trucks'}: ${t >= R.dur ? `there in ${U.dur(R.dur)}` : U.dur(t)}`, at.x, at.y - 22 * px, px, t >= R.dur ? (R.dur > IC.FIRE_STD ? '#ffb0a8' : '#b4f5c6') : 'rgba(236,240,244,0.95)');
+}
 /* ---------- shadows ----------
    The sun climbs from the east to the south at noon and sets in the west; a building of height h throws a shadow
    h / tan(elevation) long, away from the sun. Two fills, the second a little longer and fainter, soften its edge. */
-const BLD_H = { terminal: 16, cargo: 14, hangar: 20, has: 9, alert: 6, support: 9, fire: 9, tower: 40, atc: 12, gradar: 14, fuel: 14, ammo: 4, hydrant: 4, ils: 3, skybridge: 18 };
+const BLD_H = { terminal: 16, cargo: 14, hangar: 20, has: 9, alert: 6, support: 9, fire: 9, tower: 60, atc: 12, gradar: 14, fuel: 14, ammo: 4, hydrant: 4, ils: 3, skybridge: 18 };
 IC.sunNow = function (S) {
   const h = (S.time % 86400) / 3600, day = U.clamp((h - 6) / 12, 0, 1);
   const el = Math.max(0.12, Math.sin(day * Math.PI) * 1.05), az = Math.PI / 2 + day * Math.PI;   // east, south, west
@@ -654,7 +746,23 @@ function drawFurniture(g, S, ap, px, z, now, night) {
     g.restore();
   }
 }
+/* the shadow of a vertical prism over an outline, from z0 up to z1 metres: the hull of the outline moved by both */
+function prismShadow(g, sun, O, z0, z1, a) {
+  const P = hull(O.map(q => ({ x: q.x + sun.dx * z0, y: q.y + sun.dy * z0 })).concat(O.map(q => ({ x: q.x + sun.dx * z1, y: q.y + sun.dy * z1 }))));
+  g.fillStyle = `rgba(8,12,18,${a})`; g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.fill();
+}
+const circleAt = (p, lx, ly, r) => { const c = IC.rectWorld(p, lx, ly), o = []; for (let i = 0; i < 12; i++) o.push({ x: c.x + Math.cos(i / 12 * 6.2832) * r, y: c.y + Math.sin(i / 12 * 6.2832) * r }); return o; };
+const rectAt = (p, b) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(p, b.x + sx * b.w / 2, b.y + sy * b.h / 2));
 function shadowOf(g, S, p) {
+  // (the tower's long thin shadow, with the cab's at its tip; each tank its own; the fire station's hall only)
+  const Lb = !p.r && !p.poly && IC.bldLayout(p);
+  if (Lb) {
+    const sun = IC.sunNow(S), a = sun.a;
+    if (p.kind === 'tower') { prismShadow(g, sun, rectAt(p, { x: 0, y: 0, w: Lb.base.w, h: Lb.base.h }), 0, 10, a); prismShadow(g, sun, circleAt(p, 0, 0, Lb.shaft), 0, Lb.ht - 6, a); prismShadow(g, sun, circleAt(p, 0, 0, Lb.cab), Lb.ht - 7, Lb.ht, a); }
+    else if (p.kind === 'fuel') { for (const t of Lb.tanks) prismShadow(g, sun, circleAt(p, t.x, t.y, t.r), 0, 14, a); prismShadow(g, sun, rectAt(p, Lb.rack), 4, 7, a * 0.7); }
+    else if (p.kind === 'fire') prismShadow(g, sun, rectAt(p, Lb.hall), 0, 9, a);
+    return;
+  }
   const H = p.lvls ? p.lvls * 4.2 : BLD_H[p.kind] || 8; if (!H) return;
   const sun = IC.sunNow(S), key = `${p.x},${p.y},${p.a},${p.w},${p.h},${Math.round(sun.dx * 400)},${Math.round(sun.dy * 400)}`;
   if (p._shdK !== key) {
@@ -1343,23 +1451,28 @@ function drawConvoys(g, S, ap, px, z) {
 /* ---------- the builder: what is about to be placed ---------- */
 let ghostKey = '', ghostPlan = null;
 IC.drawBuildGhost = function (g, S, px) {
-  const m = S.mode2, hv = S.hover;
+  // (a placed plan stays drawn while the cursor is off the map, on its Build button)
+  const m = S.mode2; let hv = S.hover || (m && ((m.set && m.at) || m.site || m.at || (m.pts && m.pts[m.pts.length - 1]))) || null;
   if (!m || !hv) return;
   if (m.kind === 'found') { drawFoundGhost(g, S, m, hv, px); return; }
   if (m.kind === 'bulldoze' || m.kind === 'upgrade' || m.kind === 'bpick') { drawToolHover(g, S, m, hv, px); return; }
   if (m.kind === 'bmove') {
+    // (placed where the player clicked: it stays there for Move; until then it follows the cursor)
+    if (m.at) hv = m.at;
     const p = m.part, probe = Object.assign({}, p, { x: hv.x, y: hv.y, a: m.rot });
     m.ap.parts = m.ap.parts.filter(q => q !== p); const ok = IC.aptCanPlace(S, m.ap, probe), why = IC.aptPlaceWhy; m.ap.parts.push(p);
     const P = IC.partOutline(probe); g.beginPath(); P.forEach((c, i) => g[i ? 'lineTo' : 'moveTo'](c.x, c.y)); g.closePath(); g.fillStyle = ok ? OKF : NOF; g.fill(); g.strokeStyle = ok ? OKC : NOC; g.lineWidth = 1.5 * px; g.stroke();
     g.setLineDash([4 * px, 4 * px]); g.strokeStyle = 'rgba(236,240,244,0.5)'; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(hv.x, hv.y); g.stroke(); g.setLineDash([]);
-    pill(g, ok ? (m.cost ? `put up here: ${U.money(m.cost)}` : 'moves here: free') : (why || 'does not fit here').replace(/\.$/, ''), hv.x, hv.y - 18 * px, px, ok ? '#b4f5c6' : '#ffb0a8');
+    if (!m.at) pill(g, ok ? (m.cost ? `put up here: ${U.money(m.cost)}` : 'moves here: free') : (why || 'does not fit here').replace(/\.$/, ''), hv.x, hv.y - 18 * px, px, ok ? '#b4f5c6' : '#ffb0a8');
     return;
   }
   if (m.kind !== 'build') return;
   const ap = m.ap, tol = Math.max(0.12, 8 * px);
   // the plan is worked out again only when the cursor or the plan changes
   const free = !!IC.bldFree;
-  const key = `${m.part}|${hv.x.toFixed(2)},${hv.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
+  // (a placed plan stays put: the cursor does not move it)
+  const hk = m.set && m.at ? m.at : hv;
+  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
   if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
   const col = ok ? 'rgba(110,230,140,0.95)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(110,230,140,0.2)' : 'rgba(255,91,79,0.2)';
@@ -1399,15 +1512,21 @@ IC.drawBuildGhost = function (g, S, px) {
     g.restore();
     if (!rm && ghostPlan) IC.drawPlane(g, c.x, c.y, a, { s: 'turbo', m: 'narrow', l: 'wide', xl: 'heavy' }[st.size], null, { alpha: 0.35, minPx: 6 });
   }
-  // the points placed so far; the last one pulses: click it again to build
+  // the points placed so far; the last one pulses while the plan is still being drawn
   const pts = m.pts, now = performance.now() / 1000;
   pts.forEach((p, i) => {
     const last = i === pts.length - 1;
     g.strokeStyle = last ? IC.C.ok : 'rgba(236,236,226,0.9)'; g.lineWidth = 1.5 * px;
-    g.beginPath(); g.arc(p.x, p.y, (last ? 6 + 2 * Math.sin(now * 6) : 4) * px, 0, 7); g.stroke();
+    g.beginPath(); g.arc(p.x, p.y, (last && !m.set ? 6 + 2 * Math.sin(now * 6) : 4) * px, 0, 7); g.stroke();
   });
   // the guides the point locked onto, and the straight line from the last point
   const sn = plan.snap;
+  // an area about to start on an edge: the square corner it will take, along the edge and out from it
+  if (sn && plan.rot != null && !pts.length) {
+    const ux = Math.cos(plan.rot), uy = Math.sin(plan.rot), r = 34 * px;
+    g.save(); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.004, 1.4 * px); g.setLineDash([5 * px, 3 * px]); g.beginPath();
+    g.moveTo(sn.x - ux * r, sn.y - uy * r); g.lineTo(sn.x + ux * r, sn.y + uy * r); g.moveTo(sn.x + uy * r, sn.y - ux * r); g.lineTo(sn.x - uy * r, sn.y + ux * r); g.stroke(); g.restore();
+  }
   if (sn) drawGuides(g, m, sn, px);
   // the snap target
   if (sn) {
@@ -1428,18 +1547,20 @@ IC.drawBuildGhost = function (g, S, px) {
   const add = (t, c, b) => { for (const w of wrap(t, 62)) { lines.push({ t: w, c, b }); b = false; } };
   if (ok) add(plan.text[0] || '', IC.C.text, true); else add(plan.why, IC.C.hostile, true);
   if (plan.size) add(plan.size, IC.C.amber, true);
+  // what will go wrong with it (it may still be built: brief 47)
+  if (ok) for (const w of (plan.warn || []).slice(0, 2)) add(w, IC.C.amber, true);
   for (const t of plan.text.slice(ok ? 1 : 0, ok ? 3 : 1)) add(t, 'rgba(210,225,235,0.85)', false);
-  const sc = IC.toScreen(hv.x, hv.y), left = sc.x > IC.cam.vw - (IC.ui.mapRight || 0) - 480;
+  // (by the plan once it is placed, where the Build button is, else by the cursor)
+  const cv0 = m.set && m.at ? m.at : hv, sc = IC.toScreen(cv0.x, cv0.y), left = sc.x > IC.cam.vw - (IC.ui.mapRight || 0) - 480;
   g.font = `500 ${9.5 * px}px "IBM Plex Mono", monospace`;
   const W = Math.max(...lines.map(l => g.measureText(l.t).width)) + 12 * px, H = lines.length * 13 * px + 8 * px;
   // (kept clear of the panels over the map: the goals on the left, the airport panel on the right)
   const lo = IC.cam.x + (IC.ui.mapLeft || 0) / IC.cam.z, hi = IC.cam.x + (IC.cam.vw - (IC.ui.mapRight || 0)) / IC.cam.z - W;
-  const x0 = U.clamp(left ? hv.x - 20 * px - W : hv.x + 20 * px, lo, Math.max(lo, hi)), y0 = hv.y - 44 * px - H / 2 + 12 * px;
+  // (a placed plan's card hangs under its Build button, clear of the plan; while drawing, beside the cursor)
+  const set = m.set && m.at, x0 = U.clamp(set ? cv0.x + 26 * px : left ? cv0.x - 20 * px - W : cv0.x + 20 * px, lo, Math.max(lo, hi)), y0 = set ? (sc.y > IC.cam.vh * 0.5 ? cv0.y - 84 * px - H : cv0.y + 70 * px) : cv0.y - 44 * px - H / 2 + 12 * px;
   g.fillStyle = 'rgba(12,18,24,0.74)'; g.fillRect(x0, y0, W, H);
   if (!ok) { g.fillStyle = IC.C.hostile; g.fillRect(x0, y0, 2 * px, H); }
   lines.forEach((l, i) => { g.font = `${l.b ? 700 : 500} ${9.5 * px}px "IBM Plex Mono", monospace`; g.fillStyle = l.c; g.fillText(l.t, x0 + 6 * px, y0 + 14 * px + i * 13 * px); });
-  const need = IC.bldIsLine(m.part) || IC.bldIsArea(m.part) ? 2 : 1;
-  if (ok && pts.length >= need && m.part !== 'stand') { const q = m.part === 'parallel' ? hv : pts[pts.length - 1]; lbl(g, 'click again to build', q.x, q.y + 28 * px, px, IC.C.ok, 8.5, 'center', 700); }
 };
 /* words broken into lines of at most n characters */
 function wrap(t, n) { const out = []; let cur = ''; for (const w of String(t).split(' ')) { if (cur && cur.length + w.length + 1 > n) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; } if (cur) out.push(cur); return out; }
@@ -1501,7 +1622,7 @@ function pill(g, t, x, y, px, col, n) {
   g.fillStyle = 'rgba(12,18,24,0.72)'; g.fillRect(x - w / 2, y - h / 2, w, h);
   g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y + 0.5 * px); g.textBaseline = 'alphabetic'; g.textAlign = 'left';
 }
-/* founding: the site, the runway turned by the cursor, the noise footprint and what the survey found */
+/* founding: the site, the runway as turned (R, or a drag along it), the noise footprint and what the survey found */
 function drawFoundGhost(g, S, m, hv, px) {
   if (!m.site) {
     const why = IC.foundCheck(S, hv.x, hv.y);
@@ -1509,7 +1630,7 @@ function drawFoundGhost(g, S, m, hv, px) {
     lbl(g, why || 'click to survey this site', hv.x, hv.y - 18 - 8 * px, px, why ? IC.C.hostile : IC.C.text, 9.5, 'center', 600);
     return;
   }
-  const a = IC.foundAngle(m.site, hv), sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
+  const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
   // the noise footprint under the approach and departure paths
   g.save(); g.translate(m.site.x, m.site.y); g.rotate(a);
   g.fillStyle = sv.homes ? 'rgba(255,150,80,0.12)' : 'rgba(111,210,255,0.08)'; g.strokeStyle = sv.homes ? 'rgba(255,150,80,0.6)' : 'rgba(111,210,255,0.5)'; g.lineWidth = 1.2 * px;
@@ -1522,7 +1643,7 @@ function drawFoundGhost(g, S, m, hv, px) {
   g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(m.site.x + Math.cos(wa) * 20, m.site.y + Math.sin(wa) * 20); g.stroke();
   lbl(g, 'prevailing wind', wx, wy - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
   // the runway's name at each end; the full survey is in the hint below
-  const ends = sv.name.split('/');
+  const ends = sv.ends;
   lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
   lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
   if (sv.homes) lbl(g, `noise over ${sv.homes} city blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);

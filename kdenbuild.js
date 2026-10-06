@@ -23,9 +23,10 @@ function buildKdenAt(S, ap) {
   const log = [];
   const tool = (part, o) => { S.mode2 = Object.assign(IC.bldMode(S, ap, part), o || {}); actions++; };
   const click = (x, y, btn) => { const r = IC.clickWorld(P(x, y), btn || 0); actions++; if (r === 'err') throw new Error(`${S.mode2.part} at ${x},${y}: ${S.mode2.err}`); return r; };
-  const again = (x, y) => { const r = click(x, y); if (r !== 'built') throw new Error(`${S.mode2.part} at ${x},${y} did not build: ${r}`); };
+  // Build (the button beside the plan, or Enter): one action, as the second click used to be
+  const build = () => { const r = IC.buildFinish(S, S.mode2); actions++; if (r !== 'built') throw new Error(`${S.mode2.part} did not build: ${S.mode2.err}`); };
   const step = (what, fn) => { const a0 = actions, n0 = ap.parts.length; fn(); log.push(`${what}: ${actions - a0} actions, ${ap.parts.length - n0} parts`); };
-  const line = (pts) => { for (const [x, y] of pts) click(x, y); again(...pts[pts.length - 1]); };
+  const line = (pts) => { for (const [x, y] of pts) click(x, y); build(); };
 
   step('six runways', () => {
     tool('runway');
@@ -33,11 +34,11 @@ function buildKdenAt(S, ap) {
   });
   step('a parallel taxiway for each, 300 m out', () => {
     tool('parallel');
-    for (const [rx, ry, ox, oy] of [[24, -26, 24, -23], [-24, 26, -24, 23], [-30, -18, -27, -18], [-20, -18, -17, -18], [20, 18, 23, 18], [30, 24, 33, 24]]) { click(rx, ry); click(ox, oy); again(ox, oy); }
+    for (const [rx, ry, ox, oy] of [[24, -26, 24, -23], [-24, 26, -24, 23], [-30, -18, -27, -18], [-20, -18, -17, -18], [20, 18, 23, 18], [30, 24, 33, 24]]) { click(rx, ry); click(ox, oy); build(); }
   });
   step('rapid exits on every runway', () => {
     tool('exits');
-    for (const [x, y] of [[24, -26], [-24, 26], [-30, -18], [-20, -18], [20, 18], [30, 24]]) { click(x, y); again(x, y); }
+    for (const [x, y] of [[24, -26], [-24, 26], [-30, -18], [-20, -18], [20, 18], [30, 24]]) { click(x, y); build(); }
   });
   step('crossings between the parallel taxiways of each pair', () => {
     tool('taxi', { fillet: false });
@@ -63,19 +64,19 @@ function buildKdenAt(S, ap) {
     tool('remote'); line([[-10.4, 9.5], [10.4, 10.8]]);
     tool('terminal'); line([[-6, -12.5], [6, -15.5]]);
   });
-  step('fuel farm with a hydrant system', () => {
-    tool('fuel'); for (const x of [-8, -6, -4, -2]) for (const y of [16, 18]) { click(x, y); again(x, y); }
-    tool('hydrant'); click(2, 17); again(2, 17);
+  step('fuel farms with a hydrant system', () => {
+    tool('fuel'); for (const [x, y] of [[-9, 15], [-9, 19.5], [-14.6, 17]]) { click(x, y); build(); }
+    tool('hydrant'); click(2, 17); build();
   });
   step('fire stations, tower, approach and ground radar', () => {
-    tool('fire'); for (const [x, y] of [[-22.5, -18], [22.5, 24], [-24, 19.5], [23.2, -24.6]]) { click(x, y); again(x, y); }
-    tool('tower'); click(8, -14); again(8, -14);
-    tool('atc'); click(4, 20); again(4, 20);
-    tool('gradar'); click(-9.5, 12); again(-9.5, 12);
+    tool('fire'); for (const [x, y] of [[-22.5, -18], [22.5, 24], [-24, 19.5], [23.2, -21.6]]) { click(x, y); build(); }
+    tool('tower'); click(8, -14); build();
+    tool('atc'); click(4, 20); build();
+    tool('gradar'); click(-9.5, 12); build();
   });
   step('landing systems on every runway end', () => {
     tool('ils');
-    for (const rw of ap.parts.filter(p => p.kind === 'runway')) for (const e of ['a', 'b']) { const q = IC.rectLocal({ x: ap.x, y: ap.y, a: 0 }, rw[e]); click(q.x, q.y); again(q.x, q.y); }
+    for (const rw of ap.parts.filter(p => p.kind === 'runway')) for (const e of ['a', 'b']) { const q = IC.rectLocal({ x: ap.x, y: ap.y, a: 0 }, rw[e]); click(q.x, q.y); build(); }
   });
   S.mode2 = null;
   return { S, ap, actions, log };

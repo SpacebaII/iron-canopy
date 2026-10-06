@@ -679,14 +679,33 @@ function aptBuildings(v, b, f) {
           break;
         }
         case 'tower': {
-          const r = Math.min(W, H) * 0.3;
-          MB.lathe(B, [[0, r * 1.3], [4, r], [36, r * 0.8], [37, r * 1.5]], '#c4c6cc', { axis: 'z', cap0: '#c4c6cc', segs: 12 });
-          B.group('win', { kind: 'win' }); MB.lathe(B, [[37, r * 1.55], [42, r * 1.75]], 'WIN', { axis: 'z', segs: 8, smooth: false }); B.group('main');
-          MB.lathe(B, [[42, r * 1.85], [43.5, r * 1.6], [44, 0.3]], '#3a4048', { axis: 'z', segs: 8, cap1: '#3a4048' });
-          MB.cyl(B, [0, 0, 47], 6, 0.2, '#e8e8e8', 'z', { segs: 4 });
+          // (brief 47) a base, the shaft and the cab 40–90 m up, wider than the shaft and glazed all round, so it
+          // reads from across the airport; a real airport's tower outline keeps its own rectangle
+          const L = IC.bldLayout(p), ht = L.ht, r = Math.max(4, L.shaft * 100), rc = Math.max(r * 1.8, L.cab * 100);
+          MB.box(B, 0, 0, 5, L.base.w * 100, L.base.h * 100, 10, '#b8bcc2');
+          MB.lathe(B, [[0, r * 1.15], [10, r], [ht - 9, r * 0.92], [ht - 7.5, rc * 0.85], [ht - 6.5, rc]], '#c4c6cc', { axis: 'z', cap0: '#c4c6cc', segs: 12 });
+          B.group('win', { kind: 'win' }); MB.lathe(B, [[ht - 6.5, rc * 1.02], [ht - 1.5, rc * 1.12]], 'WIN', { axis: 'z', segs: 8, smooth: false }); B.group('main');
+          MB.lathe(B, [[ht - 1.5, rc * 1.2], [ht, rc * 1.05], [ht + 0.6, 0.3]], '#3a4048', { axis: 'z', segs: 8, cap1: '#3a4048' });
+          MB.cyl(B, [0, 0, ht + 4], 7, 0.25, '#e8e8e8', 'z', { segs: 4 });
+          MB.box(B, rc * 0.4, 0, ht + 1.6, 3, 3, 2, '#9aa0a8');
           break;
         }
-        case 'fire': MB.box(B, 0, 0, 4.5, W, H, 9, '#b04638'); for (let i = 0; i < 3; i++) { const [px, py] = along(-Lg * 0.3 + i * Lg * 0.3, Dp / 2 + 0.2); MB.box(B, px, py, 3, long ? Lg * 0.22 : 0.4, long ? 0.4 : Lg * 0.22, 5, '#e8e4dc'); } break;
+        case 'fire': {
+          // the hall of bays, the tenders in front of their doors, the apron and the training ground's mock-up
+          const L = IC.bldLayout(p), H0 = L.hall, A0 = L.apron, G0 = L.ground, f = L.f;
+          MB.box(B, H0.x * 100, H0.y * 100, 5, H0.w * 100, H0.h * 100, 10, '#b04638');
+          MB.box(B, H0.x * 100, H0.y * 100, 10.4, H0.w * 104, H0.h * 104, 0.8, '#8a3a30');
+          MB.box(B, A0.x * 100, A0.y * 100, 0.15, A0.w * 100, A0.h * 100, 0.3, '#9a9a96');
+          const bw = H0.w * 100 / L.bays;
+          for (let i = 0; i < L.bays; i++) {
+            const bx = (H0.x - H0.w / 2) * 100 + bw * (i + 0.5), fy = (H0.y + f * H0.h / 2) * 100;
+            MB.box(B, bx, fy + f * 0.2, 3.6, bw * 0.72, 0.4, 7, '#e8e4dc');
+            MB.box(B, bx, fy + f * 7, 1.8, 3, 11, 3.4, '#d6302a');
+          }
+          MB.box(B, G0.x * 100, G0.y * 100, 0.1, G0.w * 100, G0.h * 100, 0.2, '#6e6a60');
+          B.with(q => [G0.x * 100 + q[0] * 0.82 - q[1] * 0.57, G0.y * 100 + q[0] * 0.57 + q[1] * 0.82, q[2]], () => { MB.cyl(B, [0, 0, 2.5], G0.w * 60, 2, '#4a4a4c', 'x', { segs: 8 }); MB.box(B, 0, 0, 2.3, 2, G0.w * 44, 0.5, '#4a4a4c'); });
+          break;
+        }
         case 'atc': case 'gradar': {
           const mast = p.kind === 'gradar' ? 18 : 9;
           MB.box(B, 0, 0, 2, Math.min(W, 12), Math.min(H, 12), 4, '#c8ccd0');
@@ -698,9 +717,15 @@ function aptBuildings(v, b, f) {
         }
         case 'ammo': MB.box(B, 0, 0, 2.2, W, H, 4.4, '#5f7048', { top: [0.7, 0.6] }); MB.box(B, 0, H * 0.3, 1.5, W * 0.2, 1, 3, '#3a3e42'); break;
         case 'fuel': {
-          const r = (p.r || 0.2) * 100;
-          MB.lathe(B, [[0, r], [13, r], [14.5, r * 0.8], [15.2, 0.1]], '#e2e0d4', { axis: 'z', cap0: '#e2e0d4', segs: 20 });
-          MB.box(B, 0, 0, 0.6, r * 2.7, r * 2.7, 1.2, '#7e8468', { top: [1, 1] });
+          if (p.r) { const r = p.r * 100; MB.lathe(B, [[0, r], [13, r], [14.5, r * 0.8], [15.2, 0.1]], '#e2e0d4', { axis: 'z', cap0: '#e2e0d4', segs: 20 }); MB.box(B, 0, 0, 0.6, r * 2.7, r * 2.7, 1.2, '#7e8468', { top: [1, 1] }); break; }
+          // a fuel farm: the tanks in their bund, the loading rack on its posts, tankers in the lorry park
+          const L = IC.bldLayout(p), Bd = L.bund, cx = (Bd.x0 + Bd.x1) * 50, cy = (Bd.y0 + Bd.y1) * 50, bw = (Bd.x1 - Bd.x0) * 100, bh = (Bd.y1 - Bd.y0) * 100;
+          MB.box(B, 0, 0, 0.1, W, H, 0.2, '#96948a');
+          for (const [x, y, w2, h2] of [[cx, cy - bh / 2, bw, 2], [cx, cy + bh / 2, bw, 2], [cx - bw / 2, cy, 2, bh], [cx + bw / 2, cy, 2, bh]]) MB.box(B, x, y, 0.9, w2, h2, 1.8, '#7a8060');
+          for (const t of L.tanks) { const r = t.r * 100; B.with(q => [q[0] + t.x * 100, q[1] + t.y * 100, q[2]], () => MB.lathe(B, [[0, r], [14, r], [14.6, r * 0.9], [15, 0.1]], '#e2e0d4', { axis: 'z', cap0: '#e2e0d4', segs: 20 })); }
+          const R0 = L.rack; MB.box(B, R0.x * 100, R0.y * 100, 6.5, R0.w * 100, R0.h * 100, 0.6, '#b0b4b8');
+          for (const sx of [-1, 1]) for (const sy of [-1, 1]) MB.box(B, R0.x * 100 + sx * R0.w * 42, R0.y * 100 + sy * R0.h * 42, 3.2, 0.5, 0.5, 6.4, '#70767c');
+          const K = L.park; for (let i = 0; i < 4; i++) MB.box(B, K.x * 100 - K.w * 30 + (i % 3) * K.w * 30, K.y * 100 - K.h * 30 + Math.floor(i / 3) * 7, 1.6, 2.6, 10, 3.2, '#e8e8e8');
           break;
         }
         case 'ils': for (let i = 0; i < 8; i++) { const [px, py] = along(-Lg * 0.42 + i * Lg * 0.12, 0); MB.box(B, px, py, 1.5, 0.4, 0.4, 3, '#dc823c'); } break;

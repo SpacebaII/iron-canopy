@@ -1,0 +1,329 @@
+[
+ {
+  "tool": "hold",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "warn": [],
+  "cost": 86.17272731956945,
+  "stage": "pave",
+  "built": true,
+  "now": "",
+  "warnAfter": [],
+  "salvage": 17.23454546391804
+ },
+ {
+  "tool": "stand",
+  "steps": [
+   "one click places a stand (or removes the one clicked)"
+  ]
+ },
+ {
+  "tool": "concourse",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "warn": [],
+  "cost": 389.1199999999848,
+  "stage": "pave",
+  "built": true,
+  "now": "Terminal: 708 of 7,200 passengers an hour (10% full). 6 gates with jet bridges, 27 remote stands. Now: 0 aircraft at gates, 0 served by bus.",
+  "warnAfter": [
+   "34 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network.",
+   "2 taxiways end in the grass, joined to nothing: no aircraft uses them. Join them to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway)."
+  ],
+  "salvage": 77.82399999999325
+ },
+ {
+  "tool": "rotunda",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 189.56720288359577,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 3 stands in use.",
+  "warnAfter": [
+   "11 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network."
+  ],
+  "salvage": 37.91344057672177
+ },
+ {
+  "tool": "satellite",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 114.7155903708607,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 2 stands in use.",
+  "warnAfter": [
+   "7 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network."
+  ],
+  "salvage": 22.943118074170343
+ },
+ {
+  "tool": "curved",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 237.07628768493527,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 9 stands in use.",
+  "warnAfter": [
+   "16 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network.",
+   "2 taxiways end in the grass, joined to nothing: no aircraft uses them. Join them to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway)."
+  ],
+  "salvage": 47.41525753698443
+ },
+ {
+  "tool": "semicircle",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 275.3725394603574,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 16 stands in use.",
+  "warnAfter": [
+   "16 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network.",
+   "1 taxiway ends in the grass, joined to nothing: no aircraft uses it. Join it to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway)."
+  ],
+  "salvage": 55.0745078920736
+ },
+ {
+  "tool": "pierT",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 432.1908116173925,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 5 stands in use.",
+  "warnAfter": [
+   "16 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network."
+  ],
+  "salvage": 86.43816232347672
+ },
+ {
+  "tool": "pierY",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 448.2628109680484,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 3 stands in use.",
+  "warnAfter": [
+   "16 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network."
+  ],
+  "salvage": 89.6525621936089
+ },
+ {
+  "tool": "pierX",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 556.8588223130054,
+  "stage": "pave",
+  "built": true,
+  "now": "Apron: 0 of 2 stands in use.",
+  "warnAfter": [
+   "18 stands are not connected to a runway: no aircraft can reach them. Draw a taxiway from their apron to the network."
+  ],
+  "salvage": 111.371764462594
+ },
+ {
+  "tool": "hangar",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "warn": [],
+  "cost": 61.460000000005685,
+  "stage": "pave",
+  "built": true,
+  "now": "Hangar: 0 of 2 places in use.",
+  "warnAfter": [],
+  "salvage": 12.29200000000128
+ },
+ {
+  "tool": "has",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "warn": [],
+  "cost": 121.46000000000569,
+  "stage": "pave",
+  "built": true,
+  "now": "",
+  "warnAfter": [],
+  "salvage": 24.29200000000128
+ },
+ {
+  "tool": "fuelpad",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "warn": [],
+  "cost": 13.419999999995845,
+  "stage": "pave",
+  "built": true,
+  "now": "Fuel stand: 0 aircraft refuelled in the last hour.",
+  "warnAfter": [],
+  "salvage": 2.684000000001106
+ },
+ {
+  "tool": "deice",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed",
+   "undo takes it back"
+  ],
+  "ok": true,
+  "why": "",
+  "warn": [],
+  "cost": 31.619999999999127,
+  "stage": "pave",
+  "built": true,
+  "now": "No frost now. On clear and foggy mornings departures stop here to be de-iced; without a pad it is done at the stand and takes longer.",
+  "warnAfter": [],
+  "salvage": 6.324000000000524
+ },
+ {
+  "tool": "ils",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels"
+  ],
+  "ok": false,
+  "why": "The 01 end of Runway 01/19 already has a landing system.",
+  "cost": 0
+ },
+ {
+  "tool": "blueprint",
+  "steps": [
+   "placed",
+   "nothing built on a click",
+   "last point again does not build",
+   "Esc cancels",
+   "Build builds it",
+   "bulldozed FAIL: refused",
+   "built again FAIL: It overlaps Apron 5: move it clear, or bulldoze that first."
+  ],
+  "ok": true,
+  "why": "",
+  "cost": 15094.839046996936,
+  "stage": "pave",
+  "built": true,
+  "now": "",
+  "warnAfter": [
+   "1 taxiway ends in the grass, joined to nothing: no aircraft uses it. Join it to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway).",
+   "Hangar is not connected to the taxiways: no aircraft can use it. Draw a taxiway to its door.",
+   "Fuel for about 90 departures an hour, fewer than the runways can launch (128). More tanks or a hydrant system would help."
+  ],
+  "salvage": 2901.9256309353877
+ }
+]

@@ -62,7 +62,7 @@ IC.aptFromLayout = function (ap, L, o) {
   // buildings: terminals and concourses, cargo sheds, hangars, the tower and fire stations, fuel, support
   const blds = (L.blds || []).map(B => {
     const kind = IC.APART[B.kind] ? B.kind : 'support';
-    if (IC.APART[kind].r && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r, name: B.name || undefined }); }
+    if ((IC.APART[kind].r || kind === 'fuel') && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r || 0.13, name: B.name || undefined }); }
     const part = IC.polyPart(kind, P(B.poly));
     // (a round or curved building keeps its circle, in its own frame, for the roof that follows it)
     if (B.arc) { const c = X(B.arc[0], B.arc[1]), l = IC.rectLocal(part, c); part.arc = { x: l.x, y: l.y, r0: B.arc[2], r1: B.arc[3], a0: B.arc[4] + rot - part.a, a1: B.arc[5] + rot - part.a }; }
