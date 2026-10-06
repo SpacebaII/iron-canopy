@@ -1266,7 +1266,8 @@ IC.gopsRisk = function (S, ap, m, what) {
     if (avail < need) out.push({ cause: 'overrun', p: Math.min(0.05, 0.25 * (1 - avail / need)), text: `${sky.wet ? 'a wet runway' : 'a tailwind'} and only ${U.km(avail)} of runway where ${U.km(need)} was needed` });
   }
   // birds gather over water near the runway
-  if (ap.water && ap.water.near) out.push({ cause: 'bird', p: 0.0003, text: `birds from the ${ap.water.what} ${U.km(ap.water.d)} from the runway` });
+  // (a bird-control team, deck.js, keeps three in four away)
+  if (ap.water && ap.water.near) out.push({ cause: 'bird', p: ap.birdCtl ? 0.000075 : 0.0003, text: `birds from the ${ap.water.what} ${U.km(ap.water.d)} from the runway` });
   return sum();
 };
 IC.LUAW_RISK = 0.004;

@@ -78,8 +78,8 @@ IC.avCareerStart = function (S, cap) {
   // carrier bases its aircraft here and wants a hangar)
   const add = (al, b) => {
     const r = IC.avAddRoute(S, al, cap, b, 'narrow', 1, true), q = { al: al.id, a: cap.id, b: r.b, type: 'narrow', n: 1 };
-    makeTerms(S, q); q.terms.days += career(S) ? 6 : 1;
-    signDeal(S, q, r, A.tails.filter(t => t.route === r.id && !t.deal), 24 * 3600);
+    makeTerms(S, q); q.terms.days += career(S) ? (IC.FOCUS.progress ? 2 : 6) : 1;
+    signDeal(S, q, r, A.tails.filter(t => t.route === r.id && !t.deal), career(S) && IC.FOCUS.progress ? IC.MO(S, IC.DEAL.foundGraceMo) : 24 * 3600);
   };
   add(flag, near[0]);
   if (near[1]) add(flag, near[1]);
@@ -763,6 +763,13 @@ IC.DEAL = {
   days: { flag: 3, budget: 2, regional: 3, cargo: 3, foreign: 3 },   // contract length on the live clock, game days
   months: { flag: 18, budget: 9, regional: 12, cargo: 12, foreign: 12 },   // in the Career, calendar months
   offerMo: [1, 2],  // Career: months between offers at a name of 50 (sooner with a better name)
+  // (round 4, IC.FOCUS.progress) Act I paced by goals, not months: an offer every week or two of the calendar, and
+  // shorter contracts, so a deal is signed, flown and renewed within the player's first hour
+  offerMoF: [0.25, 0.5],
+  monthsF: { flag: 8, budget: 4, regional: 6, cargo: 6, foreign: 6 },
+  // the founding deals' grace in the Career: a month to build what they need (the flag carrier's hangar), with the
+  // need said up front, before the 12 hours' warning starts
+  foundGraceMo: 1,
   hangar: { flag: 0.25, budget: 0.15, regional: 0.2, cargo: 0, foreign: 0 },   // hangar spaces per aircraft based here
   gates: { flag: 0.6, foreign: 0.5, budget: 0, regional: 0, cargo: 0 },   // share of the stands it wants at the terminal
   lateMin: 20,      // an arrival or departure later than this counts against the deal
@@ -870,7 +877,7 @@ function makeTerms(S, q) {
   const g = IC.avGrudge(S, al);
   const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25) - 0.15 * g;
   const T = IC.ACTYPES[q.type];
-  q.terms = { list, grudge: g > 0.05 ? Math.round(al.shutH) : 0, days: (career(S) ? IC.DEAL.months : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
+  q.terms = { list, grudge: g > 0.05 ? Math.round(al.shutH) : 0, days: (career(S) ? (IC.FOCUS.progress ? IC.DEAL.monthsF : IC.DEAL.months) : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
     late: +(T.fee * 0.25).toFixed(2), cancel: +(T.fee * 1.2 + (T.seats || 0) * 0.004).toFixed(2), rep: al.kind === 'flag' || al.K.foreign ? 5 : 3 };
   q.pick = { lvl: 1, excl: false };
   q.value = dealWorth(S, q, list).value;
@@ -1031,7 +1038,8 @@ function offerGap(S) {
   // the Career: an offer every month or two, by the calendar
   const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
   const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
-  return IC.MO(S, U.rand(IC.DEAL.offerMo[0], IC.DEAL.offerMo[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g);
+  const O = IC.FOCUS.progress && S.story.act === 1 ? IC.DEAL.offerMoF : IC.DEAL.offerMo;
+  return IC.MO(S, U.rand(O[0], O[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g);
 }
 
 

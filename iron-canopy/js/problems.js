@@ -53,6 +53,16 @@ IC.aptProblems = function (S, ap) {
   if (A) {
     const seen = new Map();
     for (const d of A.deals) {
+      // (round 4) a deal still in its grace that needs something the airport lacks: said up front, with the time left
+      if (IC.FOCUS.progress && d.st === 'active' && !d.badT && S.time < d.grace && d.a === ap.id && !seen.has('grace:' + d.al)) {
+        const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps'), m = miss[0], part = m && NEED_FIX[m.k];
+        if (m && part) {
+          const al = IC.avAirline(S, d.al), at = part === 'hangar' ? (aprons[0] || hub) : hub, what = m.text.replace(/^[^:]*?needs /, '').replace(/ \(\d+ of \d+\)$/, '');
+          out.push({ id: 'grace:' + d.id, kind: 'deal', lvl: 'warn', x: at.x, y: at.y, deal: d.id, title: `${short(al.name)} needs ${what}`,
+            text: `Its deal gives you ${S.mode === 'story' ? U.months(d.grace - S.time) : U.dur(d.grace - S.time)} to build it${S.mode === 'story' ? ` (by ${U.date(d.grace, S)})` : ''}; after that it warns once, then walks out.`, fix: { part, near: at, label: FIX_WORD[part] || 'Build it' } });
+          seen.set('grace:' + d.al, out[out.length - 1]);
+        }
+      }
       if (d.st !== 'active' || !d.badT || (d.a !== ap.id && d.b.apt !== ap.id)) continue;
       const al = IC.avAirline(S, d.al), miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps');
       const m = miss[0], part = m && NEED_FIX[m.k], left = Math.max(0, 12 * 3600 - (S.time - d.badT));
@@ -138,6 +148,13 @@ IC.moneyLine = function (S) {
   const build = -get('other'), top = ins[0], cal = S.mode === 'story';
   const when = cal ? `${IC.MONTHS[st.m % 12]} so far` : 'Today so far';
   const net = st.net, sign = v => `${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}`;
+  // (round 4) running (everything but building) apart from what was invested in building, and where
+  const run = net + build, E = S.econ, inv = E && E.minv ? Object.keys(E.minv).filter(k => S.byId[k]).sort((a, b) => E.minv[b] - E.minv[a]) : [];
+  const where = inv.length ? short(S.byId[inv[0]].name) + (inv.length > 1 ? ` and ${inv.length - 1} more` : '') : '';
+  if (IC.FOCUS.progress) return { inn: st.income, out: -st.spend, net, build, run, where, days: st.days, top, split: true,
+    short: `Running ${sign(run)}${build > 0.5 ? ` · Invested ${U.money(build)}` : ''}`,
+    text: `${when}: running the airports ${run >= 0 ? 'made' : 'cost'} ${U.money(Math.abs(run))} (${U.money(st.income)} came in${top ? `, most of it ${top.name.toLowerCase()}` : ''}; ${U.money(-st.spend - build)} went out on running costs)${build > 0.5 ? `, and ${U.money(build)} was invested in building${where ? ` at ${where}` : ''}` : ''}. The treasury ${net >= 0 ? 'rose' : 'fell'} ${sign(net).replace(/^[+−]/, '')}.`,
+    sign: sign(net), runSign: sign(run) };
   return { inn: st.income, out: -st.spend, net, build, days: st.days, top,
     short: `${cal ? IC.MONTHS[st.m % 12].slice(0, 3) : 'Today'}: ${U.money(st.income)} in · ${U.money(-st.spend)} out`,
     text: `${when}: ${U.money(st.income)} came in${top ? `, most of it ${top.name.toLowerCase()}` : ''}; ${U.money(-st.spend)} went out${build > 0.5 ? `, ${U.money(build)} of it building` : ''}. The treasury ${net >= 0 ? 'rose' : 'fell'} ${sign(net).replace(/^[+−]/, '')}.`,

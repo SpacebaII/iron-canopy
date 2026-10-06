@@ -61,7 +61,7 @@ IC.roomAllowed = function (S, room) {
   const need = { air: 2, intel: 2, research: 3, logi: 3, industry: 3 }[room];
   return !need || st.act >= need;
 };
-IC.staffCost = S => { const st = S.story; if (!st) return 0; let v = 0; for (const k in st.del) if (st.del[k]) v += IC.DELEGATES[k].cost; return v; };
+IC.staffCost = S => { const st = S.story; if (!st) return 0; let v = st.extraUp || 0; for (const k in st.del) if (st.del[k]) v += IC.DELEGATES[k].cost; return v; };
 
 /* ---------- start ---------- */
 IC.storyForces = function (S) {
@@ -148,6 +148,7 @@ IC.avgSat = avgSat;
    come an offer at a time, a month or two apart, and cities grow by the year, so a chapter takes seasons. */
 const H = 3600;
 const MO = (S, n) => IC.MO(S, n);
+IC.ACT1_MIN_MO_F = 12;  // (round 4) with the chapters moving on their goals: the scripted player's Act I takes at least a year
 IC.ACT1_MIN_MO = 36;  // calendar months a good player needs for Act I: three years (the tests hold the scripted player to it)
 IC.CHAPTERS = [
   { title: 'The national airport', min: 0, max: 0, need: 6 },
@@ -157,6 +158,13 @@ IC.CHAPTERS = [
   { title: 'A second city', min: 15, max: 20, need: 3, wait: 'the new airport has found its passengers' },
   { title: 'The economy', min: 14, max: 16, need: 3, wait: 'the Treasury has seen the figures' }
 ];
+/* (round 4, IC.FOCUS.progress) the chapters move on when their goals are done, not after so many months: each needs
+   its goals (fneed: all of them, or all but one where one may be out of reach for a while), the calendar still turns, and only the last chapter
+   keeps a few months before the story's turn to Act II (fmin). max stays as the safety net for a stuck player. */
+const CH_FOCUS = [{ fmin: 0, fneed: 7 }, { fmin: 0, fneed: 7 }, { fmin: 0, fneed: 4 }, { fmin: 0, fneed: 3 }, { fmin: 0, fneed: 3 }, { fmin: 6, fneed: 3 }];
+const chMin = n => IC.FOCUS.progress ? CH_FOCUS[n].fmin : IC.CHAPTERS[n].min;
+const chNeed = n => IC.FOCUS.progress ? CH_FOCUS[n].fneed : IC.CHAPTERS[n].need;
+IC.storyChMin = chMin;
 const capApt = S => S.story.cap ? S.byId[S.story.cap] : null;
 const built = (ap, k) => !!ap && ap.parts.some(p => p.kind === k && p.built && p.hp > 0);
 const stands = (ap, size) => ap ? IC.aptStands(ap).filter(s => s.linked !== false && s.hp > 0 && (!size || IC.STAND_FITS[s.size].includes(size))).length : 0;
@@ -201,20 +209,36 @@ function chapterGoals(S, ch) {
   if (ch === 0) {
     g({ id: 'found', text: `Found the national airport within 60 km of ${cc.name}`, ref: cc,
       how: `Open the Aviation room (V) and press “Found a new airport”. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. The runway starts into the prevailing wind; turn it with R or by dragging along it, and click elsewhere to move the site. The survey shows the cost; Found (or Enter) commits.`,
-      check: () => !!st.cap });
-    g({ id: 'runway', text: 'Build a runway at least 2.1 km long', check: () => ((A() && A().st.longest) || 0) >= IC.ACTYPES.narrow.rwy, prog: () => building(A(), 'runway'),
+      check: () => !!st.cap, gives: 'the survey, and its runway placed' });
+    g({ id: 'runway', text: 'Build a runway at least 2.1 km long', gives: 'room for jets', check: () => ((A() && A().st.longest) || 0) >= IC.ACTYPES.narrow.rwy, prog: () => building(A(), 'runway'),
       how: `After Found, the surveyed runway waits on the map with its taxiways and landing systems: press Build beside it (or Enter). Or open Blueprints on the build bar (B) and pick the Starter airport: runway, taxiways, a terminal with eight stands, tower, fire station and fuel, as one plan at one price. 3 km of concrete takes every airliner and costs ₭15M per 100 m.` });
-    g({ id: 'apron', text: 'Build an apron with a taxiway to the runway', check: () => stands(A(), 'm') > 0, prog: () => building(A(), 'apron') || building(A(), 'taxi'),
+    g({ id: 'apron', text: 'Build an apron with a taxiway to the runway', gives: 'stands for airliners', check: () => stands(A(), 'm') > 0, prog: () => building(A(), 'apron') || building(A(), 'taxi'),
       how: 'Under Airport pieces pick Terminal with apron and click beside the parallel taxiway: the terminal, its apron, its stands and the taxilane come as one piece, turned to face the runway and joined to the taxiway. (Detail has the apron and the taxiway one by one.)' });
-    g({ id: 'terminal', text: 'Build a terminal beside the apron', check: () => built(A(), 'terminal'), prog: () => building(A(), 'terminal'),
+    g({ id: 'terminal', text: 'Build a terminal beside the apron', gives: 'passengers', check: () => built(A(), 'terminal'), prog: () => building(A(), 'terminal'),
       how: 'The Terminal with apron piece brings it. Stands next to a terminal get a jet bridge and turn aircraft round faster.' });
-    g({ id: 'services', text: 'Build a fire station near the runway, and a fuel farm', check: () => !!(A() && A().st.fire) && built(A(), 'fuel'), prog: () => building(A(), 'fire') || building(A(), 'fuel'),
+    g({ id: 'services', text: 'Build a fire station near the runway, and a fuel farm', gives: 'jets may land and refuel', check: () => !!(A() && A().st.fire) && built(A(), 'fuel'), prog: () => building(A(), 'fire') || building(A(), 'fuel'),
       how: 'Under Airport pieces pick Services and click beside the runway: a tower, a fire station whose trucks reach the runway in under 3 minutes (airliners need one), and fuel, set outside the runway strip.' });
     // (round 1: no rule punishes before it is taught: the first winter's fog and snow divert every arrival without one)
-    g({ id: 'ils0', text: 'Put a landing system (ILS) on the runway: fog and snow close it without one', check: () => built(A(), 'ils'), prog: () => building(A(), 'ils'),
+    g({ id: 'ils0', text: 'Put a landing system (ILS) on the runway: fog and snow close it without one', gives: 'flights in fog and snow', check: () => built(A(), 'ils'), prog: () => building(A(), 'ils'),
       how: 'In fog, low cloud or snow a pilot cannot see the runway until the last moment: without a landing system every arrival diverts to another country, and the airline is paid back. Winter has fog most mornings. The Runway with taxiways piece comes with one at each end; on its own it is under Navaids (₭25M), placed at the end aircraft land toward.' });
-    g({ id: 'first', text: 'Welcome the first airliner', check: () => st.cnt.parked > 0, prog: () => st.opened ? 'the first flights are on their way' : 'airlines come when the airport can take them',
+    g({ id: 'first', text: 'Welcome the first airliner', gives: 'Chapter 2: airlines and deals', check: () => st.cnt.parked > 0, prog: () => st.opened ? 'the first flights are on their way' : 'airlines come when the airport can take them',
       how: IC.FOCUS.hands ? 'Building goes in stages and materials come by lorry: the airport\'s panel lists each job under Building, and Finish now runs time on until they are done. Speed time up' : 'Building goes in stages and materials come by lorry: the Works tab shows each job and why it waits. One engineer crew works one job at a time; + Crew in the Works tab adds another. Speed time up (keys 1–6) while you wait. When the airport can take a jet, the first airlines send their flights: zoom in to watch one land and taxi to its stand.' });
+  } else if (ch === 1 && IC.FOCUS.progress) {
+    // (round 4) one thread, each a few minutes of play, none of them a wait; the Starter ticks none of them
+    const flag = () => S.av.airlines.find(a => a.kind === 'flag'), fn = () => flag() ? flag().name : 'The flag carrier';
+    g({ id: 'hangar', get text() { return `Build a hangar for ${fn()}’s based aircraft`; }, gives: 'keeps its first deal', check: () => { const h = hangarNeed(S); return h.have > 0 && h.have >= h.need; }, prog: () => { const h = hangarNeed(S); return building(A(), 'hangar') || `${h.have} of ${Math.max(1, h.need)} spaces`; },
+      get how() { return `${fn()} bases its aircraft here and services them between flights: its first deal gives you a month to build a hangar, then warns, then walks out. The marker at the apron places one (₭60M, it holds two aircraft): beside a taxiway, away from the runway.`; } });
+    g({ id: 'approve', text: 'Sign a new deal: offers show on the map at the airport', gives: '+₭30M from the Ministry', pay: 30, check: () => st.cnt.approve >= 1,
+      how: 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign.' });
+    g({ id: 'pax1', text: 'Carry 2,000 passengers in a day', gives: 'opens the Terminal with a pier', check: () => dayPax(S) >= 2000, prog: () => `${Math.round(dayPax(S)).toLocaleString('en-US')} a day now`,
+      how: 'Every flight brings and takes its passengers through the terminal. More deals, more flights: sign what the airlines offer.' });
+    g({ id: 'stands', get text() { return `Grow to ${(st.s0 || 8) + 6} stands`; }, gives: '+₭40M from the Ministry', pay: 40, check: () => stands(A()) >= (st.s0 || 8) + 6, prog: () => `${stands(A())} of ${(st.s0 || 8) + 6}`,
+      how: 'Under Airport pieces: Terminal with apron (six stands with jet bridges) or, once it opens, the Terminal with a pier. Click beside the parallel taxiway; it joins the taxiways by itself.' });
+    g({ id: 'deals3', text: 'Sign three new deals', gives: '+₭50M from the Ministry', pay: 50, check: () => st.cnt.approve >= 3, prog: () => `${Math.min(3, st.cnt.approve)} of 3` });
+    g({ id: 'happy', text: 'Three airlines, satisfied: average 65%', gives: 'the Minister’s confidence +5', conf: 5, check: () => S.av.airlines.length >= 3 && avgSat(S) >= 65, prog: () => `${S.av.airlines.length} airlines, ${Math.round(avgSat(S))}% now`,
+      how: 'Airlines judge every visit: a short taxi, a free stand, a jet bridge, fuel on time, no delays. The airport panel lists what is wrong.' });
+    g({ id: 'pax3', text: 'Carry 6,000 passengers in a day', gives: 'opens a second runway, and +₭60M', pay: 60, check: () => dayPax(S) >= 6000, prog: () => `${Math.round(dayPax(S)).toLocaleString('en-US')} a day now` });
+    g({ id: 'deals', text: 'Six deals running at once', gives: 'Chapter 3: the airspace', check: () => dealsOn(S) >= 6, prog: () => `${dealsOn(S)} of 6` });
   } else if (ch === 1) {
     g({ id: 'approve', text: IC.FOCUS.hands ? 'Sign a deal with an airline: its offer shows on the map at the airport' : 'Sign a deal with an airline (Aviation room → Deals)', check: () => st.cnt.approve >= 1,
       how: (IC.FOCUS.hands ? 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers ' : 'Airlines offer deals in the Aviation room (V): ') + 'so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the contract is shorter; give a little and it is longer.' });
@@ -233,41 +257,45 @@ function chapterGoals(S, ch) {
     g({ id: 'pax', text: 'Carry 6,000 passengers in a day', check: () => dayPax(S) >= 6000, prog: () => `${Math.round(S.av.day.pax).toLocaleString('en-US')} today` });
     g({ id: 'happy', text: 'Three airlines, satisfied: average 70%', check: () => S.av.airlines.length >= 3 && avgSat(S) >= 70, prog: () => `${S.av.airlines.length} airlines, ${Math.round(avgSat(S))}% now` });
   } else if (ch === 2) {
-    g({ id: 'gates', text: 'Place three entry points on the border, each on an airway', check: () => gatesOn(S) >= 3, prog: () => `${gatesOn(S)} of 3`,
+    g({ id: 'gates', text: 'Place three entry points on the border, each on an airway', gives: '+₭40M from the Ministry', pay: 40, check: () => gatesOn(S) >= 3, prog: () => `${gatesOn(S)} of 3`,
       how: 'Aviation room → Draw airways. Click on the border where traffic from abroad comes in: a fix within 25 km of the border is an entry point (a ringed triangle). Click on toward the capital to lay an airway; right-click ends it. Faint dashed lines show where the traffic wants to go.' });
-    g({ id: 'link', text: `Join ${nm()} to the airways, with routes to two foreign airports`, check: () => portsOnNet(S) >= 2, prog: () => `${portsOnNet(S)} foreign airports reachable on airways`,
+    g({ id: 'link', text: `Join ${nm()} to the airways, with routes to two foreign airports`, gives: '+₭40M from the Ministry', pay: 40, check: () => portsOnNet(S) >= 2, prog: () => `${portsOnNet(S)} foreign airports reachable on airways`,
       how: 'An airport joins the airways at the nearest fix within 120 km. Lay airways from it to the entry points: airliners then fly them in and out, and controllers know where to look.' });
-    g({ id: 'radar', text: 'Put up a civil radar that sees 80% of the airways', check: () => wayCover(S) >= 0.8, prog: () => `${U.pct(wayCover(S))} of the airways seen at cruise height`,
+    g({ id: 'radar', text: 'Put up a civil radar that sees 80% of the airways', gives: 'controllers see every airliner', check: () => wayCover(S) >= 0.8, prog: () => `${U.pct(wayCover(S))} of the airways seen at cruise height`,
       how: 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 400 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.' });
-    g({ id: 'over', text: 'Bring 15 overflights a day onto our airways', check: () => recent(st.cnt.overT, 86400, S.time) >= 15, prog: () => `${recent(st.cnt.overT, 86400, S.time)} in the last day`,
+    g({ id: 'over', text: 'Bring 15 overflights a day onto our airways', gives: '₭0.5M for each of them', check: () => recent(st.cnt.overT, 86400, S.time) >= 15, prog: () => `${recent(st.cnt.overT, 86400, S.time)} in the last day`,
       how: 'Traffic crossing the country pays route charges: twice as much when it flies our airways, because controllers give it a service. Airways between entry points on opposite borders catch it.' });
-    g({ id: 'calm', text: 'Twelve hours without a loss of separation', check: () => quietFor(S, st.cnt.losT) >= 12 * H, prog: () => `${U.dur(quietFor(S, st.cnt.losT))} so far` });
+    if (IC.FOCUS.progress) g({ id: 'appr', text: `Build an approach radar at ${nm()}`, gives: '60 s between arrivals', check: () => built(A(), 'atc'), prog: () => building(A(), 'atc'),
+      how: 'Detail → Navaids → Approach radar (₭110M), beside the runway outside its strip. It sees 45 km round the airport, transponder or not, and lets the tower space arrivals a minute apart instead of two.' });
+    else g({ id: 'calm', text: 'Twelve hours without a loss of separation', check: () => quietFor(S, st.cnt.losT) >= 12 * H, prog: () => `${U.dur(quietFor(S, st.cnt.losT))} so far` });
   } else if (ch === 3) {
     const k = st.contract;
-    g({ id: 'field', get text() { const c = st.contract, t = c && S.byId[c.town]; return !c ? 'A light-aircraft field' : c.refused ? `Field at ${t.name}: declined` : c.late ? `Field at ${t.name}: too late` : `Build the light-aircraft field at ${t.name}${c.grant ? ` (grant ${U.money(c.grant)})` : ''}`; },
+    g({ id: 'field', get gives() { const c = st.contract; return c && c.grant ? 'the Minister’s confidence +3, and the grant' : 'the Minister’s confidence +3'; }, get text() { const c = st.contract, t = c && S.byId[c.town]; return !c ? 'A light-aircraft field' : c.refused ? `Field at ${t.name}: declined` : c.late ? `Field at ${t.name}: too late` : `Build the light-aircraft field at ${t.name}${c.grant ? ` (grant ${U.money(c.grant)})` : ''}`; },
       get ref() { const c = st.contract; return c ? S.byId[c.town] : cc; },
       check: () => !!(st.contract && (st.contract.done || st.contract.refused || st.contract.late)), fail: () => !!(st.contract && (st.contract.refused || st.contract.late)), prog: () => st.contract && !st.contract.done && !st.contract.refused ? `${U.dur(Math.max(0, st.contract.due - S.time))} left` : '',
       how: 'Aviation room → Light-aircraft field, then click open ground within 15 km of the town. Flying clubs fly from the nearest field; one far from town is one they drive to and grumble about.' });
-    g({ id: 'clubs', text: 'Keep the flying clubs content: average mood 65%', check: () => clubMood(S) >= 65, prog: () => `${Math.round(clubMood(S))}% now` });
-    g({ id: 'quiet', text: 'Fewer than 3 light aircraft straying into a control zone in a day', check: () => S.time - st.chT >= 12 * H && recent(st.cnt.infT, 86400, S.time) < 3, prog: () => `${recent(st.cnt.infT, 86400, S.time)} in the last day${S.time - st.chT < 12 * H ? `; judged after ${U.dur(12 * H - (S.time - st.chT))}` : ''}`,
+    g({ id: 'clubs', text: 'Keep the flying clubs content: average mood 65%', gives: '+₭30M from the Ministry', pay: 30, check: () => clubMood(S) >= 65, prog: () => `${Math.round(clubMood(S))}% now` });
+    g({ id: 'quiet', text: 'Fewer than 3 light aircraft straying into a control zone in a day', gives: 'Chapter 5: a second city', check: () => S.time - st.chT >= 12 * H && recent(st.cnt.infT, 86400, S.time) < 3, prog: () => `${recent(st.cnt.infT, 86400, S.time)} in the last day${S.time - st.chT < 12 * H ? `; judged after ${U.dur(12 * H - (S.time - st.chT))}` : ''}`,
       how: 'Careless pilots fly straight through control zones. Call them on the radio (select the track), and a field of their own away from the airport keeps them out of it.' });
   } else if (ch === 4) {
     const c2 = S.byId[st.city2], a2 = () => st.apt2 && S.byId[st.apt2];
-    g({ id: 'found2', text: `Found an airport within 60 km of ${c2.name}`, ref: c2, check: () => !!a2(),
+    g({ id: 'found2', text: `Found an airport within 60 km of ${c2.name}`, gives: 'a second airport', ref: c2, check: () => !!a2(),
       how: `Aviation room → Found a new airport, near ${c2.name}. The same rules as the first: flat ground, the runway into the wind, few homes under the approach.` });
-    g({ id: 'open2', text: `Open ${c2.name}’s airport: runway, apron, terminal and fuel`, get ref() { return a2() || c2; }, check: () => openTo(S, a2(), st.size2 === 'jets' ? 'narrow' : 'turbo'),
+    g({ id: 'open2', text: `Open ${c2.name}’s airport: runway, apron, terminal and fuel`, gives: '+₭80M from the region', pay: 80, get ref() { return a2() || c2; }, check: () => openTo(S, a2(), st.size2 === 'jets' ? 'narrow' : 'turbo'),
       prog: () => a2() ? (IC.aptCanTake(S, a2(), IC.ACTYPES.turbo) || (!built(a2(), 'terminal') ? 'no terminal yet' : !built(a2(), 'fuel') ? 'no fuel farm yet' : '')) : '',
       how: st.size2 === 'jets' ? `${c2.name} wants jets: 2.1 km of runway, fire cover and medium stands. The demand is there to fill them.` : 'A regional airport can start small: 1.5 km of runway takes turboprops, which need no fire station. Jets need 2.1 km and fire cover; build for them when the demand comes.' });
-    g({ id: 'route2', text: `A regional airline flies ${short(capApt(S).name)} – ${c2.name}`, check: () => !!st.apt2 && S.av.routes.some(r => r.st === 'active' && r.flown > 0 && ((r.a === st.cap && r.b.apt === st.apt2) || (r.a === st.apt2 && r.b.apt === st.cap))) });
+    g({ id: 'route2', text: `A regional airline flies ${short(capApt(S).name)} – ${c2.name}`, gives: 'Chapter 6: the economy', check: () => !!st.apt2 && S.av.routes.some(r => r.st === 'active' && r.flown > 0 && ((r.a === st.cap && r.b.apt === st.apt2) || (r.a === st.apt2 && r.b.apt === st.cap))) });
   } else if (ch === 5) {
-    g({ id: 'cargo', text: 'Fly freight: sign a cargo deal and see it flown', check: () => S.av.routes.some(r => r.type === 'cargo' && r.st === 'active' && r.flown > 0),
+    g({ id: 'cargo', text: 'Fly freight: sign a cargo deal and see it flown', gives: 'freight fees, at night', check: () => S.av.routes.some(r => r.type === 'cargo' && r.st === 'active' && r.flown > 0),
       prog: () => { const ap = A(), T = IC.ACTYPES.cargo; return ap ? IC.aptCanTake(S, ap, T) || (built(ap, 'cargo') ? '' : 'no cargo terminal yet') : ''; },
       how: 'A freighter needs 2.9 km of runway, a large stand in the cargo zone and a cargo terminal that can handle its tonnes: the cargo airline’s offer lists each. Freight flies at night and pays more per landing.' });
-    g({ id: 'name', text: 'Raise the national airport’s name to 70', check: () => !!A() && IC.aptRep(A()) >= 70, prog: () => A() ? `${Math.round(IC.aptRep(A()))} now` : '',
+    if (IC.FOCUS.progress) g({ id: 'pax10', text: 'Carry 15,000 passengers in a day', gives: 'opens the Round terminal', check: () => dayPax(S) >= 15000, prog: () => `${Math.round(dayPax(S)).toLocaleString('en-US')} a day now`,
+      how: 'A hub carries fifteen thousand a day: more gates (the pier), more deals, and a second runway (it opens at 6,000).' });
+    else g({ id: 'name', text: 'Raise the national airport’s name to 70', check: () => !!A() && IC.aptRep(A()) >= 70, prog: () => A() ? `${Math.round(IC.aptRep(A()))} now` : '',
       how: 'Every deal honoured to its end raises the airport’s name; a broken one costs more than a good one earns. The Aviation room shows it.' });
-    g({ id: 'fees', text: 'Earn ₭150M in airline fees in a day', check: () => feesDay(S) >= 150, prog: () => `${U.money(feesDay(S))} in the last day`,
+    g({ id: 'fees', text: 'Earn ₭150M in airline fees in a day', gives: '+₭80M from the Ministry', pay: 80, check: () => feesDay(S) >= 150, prog: () => `${U.money(feesDay(S))} in the last day`,
       how: 'Fees come per landing and per passenger. Charges are set per airport (its Operations): higher charges earn more per flight and drive airlines away if they are too high.' });
-    g({ id: 'served', text: 'Air service for 4 cities within 2½ hours’ drive', check: () => served(S) >= 4, prog: () => `${served(S)} cities now`,
+    g({ id: 'served', text: 'Air service for 4 cities within 2½ hours’ drive', gives: 'the cities grow faster', check: () => served(S) >= 4, prog: () => `${served(S)} cities now`,
       how: 'People fly from the airports they can reach by road. The Economy room shows each city’s demand; a road link to an airport (select the airport, Roads) widens its reach.' });
   }
   for (const x of G) IC.remake(x, 'storyGoal', S, 'ch', ch, x.id);
@@ -280,8 +308,11 @@ function startChapter(S, n, quiet) {
   if (st.goals.length && st.chLog.length) { st.past.push(...st.goals); st.cp += 1; }
   st.ch = n; st.chT = S.time; st.asking = false; st.waitT = 0; st.hurry = false;
   st.chLog.push({ ch: n, t: S.time });
+  if (n === 1) st.s0 = stands(capApt(S));
   st.goals = chapterGoals(S, n);
   S.camp.chapter = `Act I · ${C.title}`;
+  // (round 4) a goal already met as the chapter opens is ticked as a moment of its own, not found ticked later
+  if (IC.FOCUS.progress) for (const g of st.goals) if (n > 0 && g.check()) { g.done = g.pre = true; g.doneT = S.time; goalPaid(S, g); IC.log(S, 'kill', 'GOAL', `Already done: ${g.text.replace(/\s*\(.*\)$/, '')}.${g.gives ? ` ${goalGives(g)}.` : ''}`); }
   const sub = U.clock(S.time, S), ap = capApt(S);
   if (n === 0) card(S, `Chapter 1 · ${C.title}`, sub, `Pick a site near ${IC.cap(S).name}, lay a runway, an apron, a terminal and the services an airliner needs, and bring in the first flight. The goals panel shows what to do next and why.`, 'chapter');
   else if (n === 1) {
@@ -307,6 +338,7 @@ function startChapter(S, n, quiet) {
   IC.emit(S, 'storyChapter', n);
 }
 IC.storyStartChapter = startChapter;
+IC.storyNewAirline = (...a) => newAirline(...a);
 /* a new airline comes, and asks for its first route */
 function newAirline(S, kind, delay, hub, to) {
   const ap = hub || capApt(S); if (!ap) return null;
@@ -426,6 +458,7 @@ EV.city3 = (S, c, unserved, size) => {
     ] };
 };
 IC.REMAKE.storyEvent = (name, S, ...args) => EV[name](S, ...args);
+IC.EV = EV;   // (round 4) the peacetime deck adds its cards here (deck.js), made and saved by name like the rest
 /* what the consultants draw: an entry point where the way to each of the three nearest foreign airports crosses
    the border, a fix near the airport, and airways between them */
 function consultants(S) {
@@ -449,8 +482,8 @@ function chapterTick(S) {
   if (st.waitT && S.time < st.waitT) return;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
   // a near miss or overloaded controllers force the airspace question early
-  const forced = st.ch === 1 && st.hurry && age >= C.min * 0.75;
-  if (!forced && !((doneCount(S) >= C.need && age >= C.min) || age >= C.max)) return;
+  const forced = st.ch === 1 && st.hurry && age >= chMin(st.ch) * 0.75 && !IC.FOCUS.progress;
+  if (!forced && !((doneCount(S) >= chNeed(st.ch) && age >= chMin(st.ch)) || age >= C.max)) return;
   st.asking = true;
   OPEN[st.ch + 1](S);
 }
@@ -458,7 +491,15 @@ function chapterTick(S) {
 IC.storyChapterInfo = function (S) {
   const st = S.story; if (!st || st.act !== 1) return null;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
-  const waitCity = st.ch === 3 && doneCount(S) >= C.need && age >= C.min && !IC.cityAsks(S, 150);
+  const waitCity = st.ch === 3 && doneCount(S) >= chNeed(st.ch) && age >= chMin(st.ch) && !IC.cityAsks(S, 150);
+  if (IC.FOCUS.progress) {
+    // (round 4) what opens the next chapter, said as something to do: never "in about N months"
+    const left = chNeed(st.ch) - doneCount(S), hub = IC.NETWORK.hubPax, pax = Math.round(dayPax(S));
+    const next = st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? (left > 0 ? `${left} more goal${left > 1 ? 's' : ''} and the Act is done.` : 'Every goal of Act I is done. Keep the airports growing: the story moves on.')
+      : waitCity ? (pax < hub ? `The next chapter comes when a city beyond the capital’s reach wants to fly: carry ${hub.toLocaleString('en-US')} passengers a day through the capital (${pax.toLocaleString('en-US')} now) and the regions will ask.` : 'The next chapter comes when a city beyond the capital’s reach has enough people who want to fly: cities grow with the air service you give them.')
+      : left > 0 ? `${left} more goal${left > 1 ? 's' : ''} open${left > 1 ? '' : 's'} the next chapter.` : 'The next chapter is opening.';
+    return { n: st.ch, title: C.title, age, of: IC.CHAPTERS.length, next };
+  }
   return { n: st.ch, title: C.title, age, of: IC.CHAPTERS.length, next: st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? '' : waitCity ? `The next chapter comes when a city beyond the capital’s reach wants to fly: ${IC.NETWORK.hubPax.toLocaleString('en-US')} passengers a day through the capital show the country that flying works.` : doneCount(S) >= C.need ? (age >= C.min ? 'Something new is coming.' : `Something new comes in about ${U.months((C.min - age) * MO(S))}, when ${C.wait || 'the sector has grown into what you built'}.`) : `${C.need - doneCount(S)} more goal${C.need - doneCount(S) > 1 ? 's' : ''} open${C.need - doneCount(S) > 1 ? '' : 's'} the next chapter. It comes anyway in ${U.months(Math.max(0, C.max - age) * MO(S))}.` };
 };
 /* the goals to show: at most two open ones, in order */
@@ -478,23 +519,27 @@ IC.storyTip = function (S) {
 };
 /* what is hidden until the story reaches it: '' when open, else why not */
 const LOCKS = {
-  airways: [2, 'The airway editor opens when the Minister asks you to design the airspace (Chapter 3).'],
-  airspace: [2, 'Airspace design comes with the airspace chapter (Chapter 3).'],
-  radar: [2, 'Civil radar comes with the airspace chapter (Chapter 3).'],
-  coverage: [2, 'Radar cover comes with the airspace chapter (Chapter 3).'],
-  fields: [3, 'Light-aircraft fields come with Chapter 4.'],
+  airways: [2, 'The airway editor opens when the Minister asks you to design the airspace (Chapter 3).', 'The airway editor'],
+  airspace: [2, 'Airspace design comes with the airspace chapter (Chapter 3).', 'Airspace design'],
+  radar: [2, 'Civil radar comes with the airspace chapter (Chapter 3).', 'Civil radar'],
+  coverage: [2, 'Radar cover comes with the airspace chapter (Chapter 3).', 'Radar cover'],
+  fields: [3, 'Light-aircraft fields come with Chapter 4.', 'Light-aircraft fields'],
   zones: [9, 'Prohibited zones come with Act II, when there is something to keep airliners away from.'],
   // the economy opens a lever at a time, each with its lesson (the Economy room)
-  charges: [1, 'Airport charges open in Chapter 2, once the airlines are flying.'],
-  statement: [2, 'The weekly statement opens with Chapter 3.'],
-  loans: [4, 'The banks lend from Chapter 5, when a second airport is on the table.'],
-  roads: [4, 'Roads to your airports open with Chapter 5.'],
-  trade: [5, 'Cities, growth and trade open with the economy (Chapter 6).']
+  charges: [1, 'Airport charges open in Chapter 2, once the airlines are flying.', 'Airport charges'],
+  statement: [2, 'The weekly statement opens with Chapter 3.', 'The monthly statement'],
+  loans: [4, 'The banks lend from Chapter 5, when a second airport is on the table.', 'Loans from the banks'],
+  roads: [4, 'Roads to your airports open with Chapter 5.', 'Roads to your airports'],
+  trade: [5, 'Cities, growth and trade open with the economy (Chapter 6).', 'Cities, growth and trade']
 };
 IC.storyLock = function (S, key) {
   const st = S.story; if (!st || !st.fresh || st.act > 1) return '';
   if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) || st.contract3 ? '' : st.ch < 4 ? 'A second airport comes later, when a city far from the capital wants to fly (Chapter 5).' : '';
-  const L = LOCKS[key]; return L && st.ch < L[0] ? L[1] : '';
+  const L = LOCKS[key]; if (!L || st.ch >= L[0]) return '';
+  if (!IC.FOCUS.progress || L[0] > 5) return L[1];
+  // (round 4) what opens it, in one line: the chapter it comes with, and the goals between here and there
+  const left = Math.max(0, chNeed(st.ch) - doneCount(S)), g = st.goals.find(x => !x.done && !x.failed);
+  return `${L[2]}: opens with Chapter ${L[0] + 1} (${U.lc(IC.CHAPTERS[L[0]].title)}), ${st.ch === L[0] - 1 ? `after ${left} more goal${left === 1 ? '' : 's'} here${g ? ` (next: ${g.text.replace(/\s*\(.*\)$/, '')})` : ''}` : `${L[0] - st.ch} chapters on; each opens when the one before has its goals done`}.`;
 };
 /* ---------- the Guide: lessons the player has reached ----------
    Each lesson opens at a point in the Career (act, and in Act I the chapter). The Guide shows the ones reached, the
@@ -550,7 +595,7 @@ IC.guideFor = function (S) {
 IC.storyMeanwhile = function (S) {
   const st = S.story; if (!st || st.act !== 1 || st.ch === 0 || st.ch >= 5) return null;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
-  if (doneCount(S) < C.need || age >= C.min) return null;
+  if (IC.FOCUS.progress || doneCount(S) < C.need || age >= C.min) return null;
   const tips = [];
   const free = S.tech.slots.some(x => !x), open = IC.TECH.filter(t => t.cat === 'apt' && !S.tech.done.has(t.id) && !IC.researching(S, t.id) && t.req.every(r => S.tech.done.has(r)));
   if (free && open.length) tips.push(`Research: ${open.slice(0, 2).map(t => `${t.name.toLowerCase()} (${IC.techDur(S, t)})`).join(' or ')} in the Research room.`);
@@ -703,8 +748,9 @@ function beatsFor(S, act) {
   if (act === 1) {
     const inCh = () => S.time - st.chT;
     // new airlines arrive as the airport shows it can take them
-    B.push({ id: 'budget', need: () => st.ch >= 1, gap: [MO(S, 1), MO(S, 2)], run: () => newAirline(S, 'budget') });
-    B.push({ id: 'foreign2', need: () => st.ch >= 2 || (st.ch === 1 && inCh() > MO(S, 4)), gap: [MO(S, 1), MO(S, 3)], run: () => newAirline(S, 'foreign') });
+    const P = IC.FOCUS.progress ? 0.25 : 1;
+    B.push({ id: 'budget', need: () => st.ch >= 1, gap: [MO(S, 1 * P), MO(S, 2 * P)], run: () => newAirline(S, 'budget') });
+    B.push({ id: 'foreign2', need: () => st.ch >= 2 || (st.ch === 1 && inCh() > MO(S, 4 * P)), gap: [MO(S, 1 * P), MO(S, 3 * P)], run: () => newAirline(S, 'foreign') });
     B.push({ id: 'regional', need: () => st.ch >= 4 && st.apt2 && openTo(S, S.byId[st.apt2], 'turbo'), gap: [900, 2400], run: () => newAirline(S, 'regional', 0, S.byId[st.apt2], { apt: st.cap }) });
     B.push({ id: 'regional3', need: () => st.apt3 && openTo(S, S.byId[st.apt3], 'turbo'), gap: [900, 2400], run: () => { const al = S.av.airlines.find(a => a.kind === 'regional'); if (al) IC.avRequest(S, al, S.byId[st.apt3], { apt: st.cap }, 'turbo', 2, `wants to fly ${short(S.byId[st.apt3].name)} – ${short(capApt(S).name)}`, MO(S, 1)); else newAirline(S, 'regional', 0, S.byId[st.apt3], { apt: st.cap }); } });
     // the Minister asks after the airport while it is not open
@@ -717,13 +763,13 @@ function beatsFor(S, act) {
     // reach asks for a field of its own once enough of its people want to fly
     B.push({ id: 'jets2', need: () => st.ch >= 4 && st.apt2 && openTo(S, S.byId[st.apt2], 'turbo') && !openTo(S, S.byId[st.apt2], 'narrow') && IC.demandPull(S, S.byId[st.apt2]) > 1.05, gap: [MO(S, 0.5), MO(S, 1.5)], run: () => growAsk(S) });
     B.push({ id: 'city3', need: () => st.ch >= 5 && inCh() > MO(S, 3) && !!IC.cityAsks(S, 150), gap: [MO(S, 0.5), MO(S, 2)], run: () => cityAsk(S) });
-    B.push({ id: 'ghost', need: () => st.ch >= 5 && inCh() > MO(S, IC.CHAPTERS[5].min - 2), gap: [1800, 3600], run: () => {
+    B.push({ id: 'ghost', need: () => st.ch >= 5 && inCh() > MO(S, chMin(5) - 2), gap: [1800, 3600], run: () => {
       const ap = S.infra.filter(i => i.kind === 'airport').sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0];
       const p = border(S, ap || IC.cap(S));
       droneFrom(S, p, 120, 1800);
       say(S, 'ATC', `Odd one. A glider pilot near the ${S.world.names.A} border reports a slow grey aircraft with no lights, low, heading our way. None of our radars saw it: it carries no transponder, and civil radar only hears transponders. Probably nothing.`);
     } });
-    B.push({ id: 'collision', need: () => st.ch >= 5 && st.beats.find(b => b.id === 'ghost').done && ((doneCount(S) >= IC.CHAPTERS[5].need && inCh() > MO(S, IC.CHAPTERS[5].min)) || inCh() > MO(S, IC.CHAPTERS[5].max)), gap: [2400, 4800], run: () => collision(S) });
+    B.push({ id: 'collision', need: () => st.ch >= 5 && st.beats.find(b => b.id === 'ghost').done && ((doneCount(S) >= chNeed(5) && inCh() > MO(S, chMin(5))) || inCh() > MO(S, IC.CHAPTERS[5].max)), gap: [2400, 4800], run: () => collision(S) });
   } else if (act === 2) {
     // Act II runs over two or three years: a survey drone every month or so, and the incidents months apart
     B.push({ id: 'survey', gap: [1800, 3000], repeat: [MO(S, 0.6), MO(S, 1.4)], run: () => {
@@ -952,6 +998,16 @@ function delegates(S, dt) {
   }
 }
 
+/* (round 4) what a goal gives, paid as it is done: the Ministry's reward (booked as such), confidence, or what
+   opens (the milestones open their pieces themselves, deck.js) */
+function goalPaid(S, g) {
+  if (!IC.FOCUS.progress) return;
+  if (g.pay) { S.budget += g.pay; IC.econBook(S, 'bonus', g.pay); }
+  if (g.conf) S.story.standing = Math.min(100, S.story.standing + g.conf);
+}
+const goalGives = g => /^[+−]/.test(g.gives) ? g.gives.charAt(0).toUpperCase() + g.gives.slice(1) : `It gives ${g.gives}`;
+IC.goalGives = g => g && g.gives ? `→ ${g.gives}` : '';
+
 /* ---------- the tick ---------- */
 IC.storyTick = function (S, dt) {
   // (the airport showcase has no story: only the airport at work)
@@ -968,12 +1024,15 @@ IC.storyTick = function (S, dt) {
     // in Act I command points come with each chapter; later, with each goal
     if (st.act > 1) st.cp += 1;
     st.standing = Math.min(100, st.standing + (st.act > 1 ? 3 : 2));
-    IC.log(S, 'kill', 'GOAL', `${g.text.replace(/\s*\(.*\)$/, '')}: done.${st.act > 1 ? ' +1 command point.' : ''}`);
+    goalPaid(S, g);
+    IC.log(S, 'kill', 'GOAL', `${g.text.replace(/\s*\(.*\)$/, '')}: done.${st.act > 1 ? ' +1 command point.' : ''}${IC.FOCUS.progress && g.gives ? ` ${goalGives(g)}.` : ''}`);
     IC.sfx && IC.sfx.ui('ok');
     IC.emit(S, 'goal', g);
     if (st.act === 1 && st.ch === 0 && g.id === 'first') startChapter(S, 1);
   }
   if (st.act === 1) actOneTick(S);
+  // (round 4) the player's clock, the milestones and the peacetime deck (deck.js)
+  if (IC.deckTick) IC.deckTick(S, dt);
   // beats: each has its own clock, started when its condition is met
   st.beatT -= dt;
   if (st.beatT <= 0) {

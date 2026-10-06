@@ -3650,9 +3650,10 @@ test('deals: a broken deal costs reputation and money', () => {
   const { S, ap } = careerAirport();
   const d = S.av.deals.find(x => x.st === 'active' && IC.avAirline(S, x.al).kind === 'flag');
   assert(d, 'no founding deal with the flag carrier');
-  // the airport never builds the hangar its founding deal asked for: a day's grace, twelve hours' notice, then it walks out
+  // the airport never builds the hangar its founding deal asked for: its grace (a month in the Career, said up front),
+  // twelve hours' notice, then it walks out
   const rep = IC.aptRep(ap), spent = () => -(S.econ.book.penalty || 0) - S.econ.days.reduce((s, x) => s + (x.book.penalty || 0), 0);
-  for (let i = 0; i < 40 * 1800 && d.st === 'active' && !S.over; i++) { IC.step(S, 2); if (i % 30 === 0) for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0); }
+  for (let i = 0; i < (d.grace - S.time + 16 * 3600) / 2 && d.st === 'active' && !S.over; i++) { IC.step(S, 2); if (i % 30 === 0) for (const e of S.story.events.slice()) IC.storyChoose(S, e.id, 0); }
   assert(d.st === 'broken', `the deal was not broken: ${d.st}`);
   assert(/hangar/.test(d.why), `broken for the wrong reason: ${d.why}`);
   assert(IC.aptRep(ap) < rep - 5, `reputation ${rep} → ${IC.aptRep(ap)}`);
@@ -3713,10 +3714,11 @@ test('career: a scripted player builds the national airport and plays through Ac
   assert(st.act === 2, `still in Act I after seven years: ${L}`);
   // no chapter is rushed: each ran its minimum months (the second may open at three quarters of it when a near miss
   // or overloaded controllers force the airspace question)
-  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / IC.MO(S), min = IC.CHAPTERS[c.ch].min * (c.ch === 1 ? 0.75 : 1); if (c.ch > 0) assert(dur >= min - 0.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} months: ${L}`); }
-  // the owner asked for years: Act I is three to five of them
+  for (let i = 1; i < st.chLog.length; i++) { const c = st.chLog[i - 1], dur = (st.chLog[i].t - c.t) / IC.MO(S), min = IC.storyChMin(c.ch) * (c.ch === 1 && !IC.FOCUS.progress ? 0.75 : 1); if (c.ch > 0) assert(dur >= min - 0.01, `chapter ${c.ch + 1} lasted only ${dur.toFixed(1)} months: ${L}`); }
+  // the owner asked for years: Act I is three to five of them (round 4: the chapters move on their goals, and the
+  // calendar still turns: at least IC.ACT1_MIN_MO_F months)
   const yrs = (st.actT - t0) / IC.YR(S);
-  assert(yrs * 12 >= IC.ACT1_MIN_MO && yrs <= 6, `Act I lasted ${yrs.toFixed(1)} years: ${L}`);
+  assert(yrs * 12 >= (IC.FOCUS.progress ? IC.ACT1_MIN_MO_F : IC.ACT1_MIN_MO) && yrs <= 6, `Act I lasted ${yrs.toFixed(1)} years: ${L}`);
   assert(S.av.deals.some(d => d.honoured), 'no deal honoured');
   assert(IC.bases(S).filter(b => b.kind === 'airport').length >= 2 && S.av.airlines.length >= 4, 'no second airport, or few airlines');
 }, 'long');
@@ -4846,8 +4848,9 @@ test('round 3: a deal short of a hangar is marked at the airport, with the hanga
   let P = null;
   for (let i = 0; i < 2 * 86400 / 2 && !P; i++) { IC.step(S, 2); if (i % 150 === 0) P = IC.aptProblems(S, ap).find(p => p.kind === 'deal'); }
   assert(P, 'no deal at risk in two days without a hangar');
-  assert(/^Deal at risk: .+ needs hangar space/.test(P.title) && P.lvl === 'bad', P.title);
-  assert(/walks out in .+ unless it is put right|deals here; they end in/.test(P.text), P.text);
+  // (round 4: while the deal's month of grace runs, the need is said up front, amber, with the time left)
+  assert(/^(Deal at risk: )?.+ needs hangar space/.test(P.title) && (P.lvl === 'bad' || (IC.FOCUS.progress && P.lvl === 'warn')), P.title);
+  assert(/walks out in .+ unless it is put right|deals here; they end in|gives you .+ to build it/.test(P.text), P.text);
   assert(P.fix.part === 'hangar' && P.fix.label === 'Build a hangar', JSON.stringify(P.fix));
   const h = IC.fixPlan(S, ap, 'hangar', P.fix.near);
   assert(h && IC.bldPlanOf(S, h, h.at, 0.12).ok && IC.buildFinish(S, h) === 'built', 'the hangar was not placed');
@@ -4899,6 +4902,142 @@ test('round 3: the money line agrees with the monthly statement, and every fee i
   assert(/people within 2\.5 h by road → [\d,]+ passengers an hour → \d+ places? served → ₭[\d.,]+M this month$/.test(C.text), C.text);
   assert((S.av.feeTotal || 0) > fees0, 'no fees');
 });
+
+/* ---------- round 4: progression and events (docs/focus/round-4.md) ---------- */
+/* a fresh Career as played: founded, the Starter ordered and built (paid stage by stage when real), played on at 32×
+   to the first airliner on its stand, cards answered with their first choice */
+const r4open = real => {
+  const { S, ap, sv } = foundFresh();
+  const m = S.mode2 = IC.bldMode(S, ap, 'starter');
+  IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0); assert(IC.buildFinish(S, m) === 'built', m.err);
+  S.paused = false; S.speed = 32;
+  if (real) for (let i = 0; i < 40 * 1800 && ap.works.length; i++) IC.step(S, 2); else finishWorks(S, ap);
+  for (let i = 0; i < 24 * 1800 && !S.story.cnt.parked; i++) IC.step(S, 2);
+  assert(S.story.cnt.parked > 0, 'no airliner parked within a day of opening');
+  // (the first landing eased the clock to 1× to watch it: the player speeds up again)
+  S.speed = 32;
+  return { S, ap };
+};
+const r4play = (S, hours, each) => { for (let i = 0; i < hours * 1800 && !S.over; i++) { IC.step(S, 2); if (i % 30 === 0) { player(S); if (each) each(S); } } };
+test('round 4: no Act I chapter opens with goals already done, no goal is only waiting, and each says what it gives', () => {
+  const { S } = r4open();
+  const st = S.story;
+  assert(st.ch === 1, `chapter ${st.ch + 1} after the first landing`);
+  // the Starter (tower, taxiways to both ends, landing systems, eight stands) ticks none of Chapter 2's goals
+  assert(!st.goals.some(g => g.done || g.pre), `already done as Chapter 2 opened: ${st.goals.filter(g => g.done).map(g => g.text).join('; ')}`);
+  assert(st.goals[0].id === 'hangar' && /hangar/.test(st.goals[0].text), `the first goal: ${st.goals[0].text}`);
+  // every chapter's goals: something to do, never a wait, each with what it gives
+  st.city2 = IC.cities(S).find(c => c.owner === 'us' && !c.capital).id; st.contract = { town: st.city2, due: S.time + 1e6 };
+  for (let n = 0; n < IC.CHAPTERS.length; n++) {
+    const G = n === st.ch ? st.goals : (IC.storyStartChapter(S, n, true), st.goals);
+    for (const g of G) {
+      assert(!/\bwait\b|months?\b|through to its end|without a loss/i.test(g.text), `chapter ${n + 1}: "${g.text}" is a wait`);
+      assert(g.gives && IC.goalGives(g).startsWith('→ '), `chapter ${n + 1}: "${g.text}" does not say what it gives`);
+    }
+    const info = IC.storyChapterInfo(S);
+    assert(!/in about|comes anyway/.test(info.next), `chapter ${n + 1}: ${info.next}`);
+  }
+  // and the chapters open on goals, not on months
+  assert(IC.CHAPTERS.slice(0, 5).every((c, i) => IC.storyChMin(i) === 0), 'a chapter still waits for months');
+  // a goal already met when its chapter opens is ticked there and then, as a moment of its own
+  IC.storyStartChapter(S, 1, true);
+  st.cnt.approve = 1; IC.storyStartChapter(S, 1, true);
+  const g = st.goals.find(x => x.id === 'approve');
+  assert(g.done && g.pre && S.logs.some(l => l.tag === 'GOAL' && /^Already done: Sign a new deal/.test(l.msg)), 'a goal met at the opening was not celebrated');
+});
+test('round 4: a deal that needs a hangar says so up front and gives a month to build it', () => {
+  const { S, ap } = r4open();
+  const flag = S.av.airlines.find(a => a.kind === 'flag'), d = S.av.deals.find(x => x.al === flag.id && x.st === 'active');
+  assert(d && d.grace - S.time > IC.MO(S, 0.9), `the founding deal's grace: ${U.dur(d.grace - S.time)}`);
+  const P = IC.aptProblems(S, ap).find(p => p.kind === 'deal');
+  assert(P && P.lvl === 'warn' && /needs hangar space/.test(P.title) && /gives you .+ to build it/.test(P.text), P ? `${P.title}: ${P.text}` : 'nothing said about the hangar');
+  assert(P.fix.part === 'hangar', JSON.stringify(P.fix));
+  // two days on without a hangar, the deal still runs and the goal asks for it
+  for (let i = 0; i < 2 * 86400 / 2; i++) IC.step(S, 2);
+  assert(d.st === 'active', `the deal ${d.st} within its grace`);
+  assert(S.story.goals.find(g => !g.done).id === 'hangar', 'the next goal is not the hangar');
+});
+test('round 4: milestones open the bigger pieces because the airport needs them, and every lock says what opens it', () => {
+  const { S, ap } = r4open();
+  const st = S.story;
+  const pier = IC.pieceLock(S, 'tpier', ap), rw = IC.pieceLock(S, 'rwkit', ap);
+  assert(/^Opens at 2,000 passengers a day \([\d,]+ now\)/.test(pier), pier);
+  assert(/^A second runway opens at 6,000 passengers a day/.test(rw), rw);
+  assert(!IC.pieceLock(S, 'tstraight', ap) && !IC.pieceLock(S, 'services', ap), 'a basic piece is locked');
+  for (const k of ['airways', 'radar', 'fields', 'loans', 'roads', 'trade', 'statement']) { const w = IC.storyLock(S, k); assert(/: opens with Chapter \d \(.+\), (after \d+ more goals? here|\d chapters on)/.test(w), `${k}: ${w}`); }
+  const n0 = S.camp.cards.length;
+  S.av.day.pax = 2400; st.deckT = 0; IC.deckTick(S, 1);
+  const c = S.camp.cards.slice(n0).find(x => x.milestone === 2000);
+  assert(c && c.kind === 'moment' && c.fix && c.fix.v === 'tpier' && /stands were taken/.test(c.text), c ? c.text : 'no milestone card');
+  assert(!IC.pieceLock(S, 'tpier', ap) && IC.pieceLock(S, 'rwkit', ap), 'the pier did not open, or the runway opened with it');
+  S.av.day.pax = 6200; IC.deckTick(S, 30);
+  assert(!IC.pieceLock(S, 'rwkit', ap) && S.camp.cards.some(x => x.milestone === 6000 && /movements an hour/.test(x.text)), 'the second runway did not open at 6,000');
+  // outside the Career nothing is locked
+  const Q = IC.newGame({ seed: 4242, mode: 'campaign' }); assert(!IC.pieceLock(Q, 'tpier', null), 'locked in a Quick war');
+});
+test('round 4: the event deck has 20 or more cards, each with a choice that changes something, and each saves and loads', () => {
+  const { S, ap } = r4open();
+  const keys = Object.keys(IC.DECK);
+  assert(keys.length >= 20, `${keys.length} cards`);
+  // the consequence of a choice: money, the runway, visitors, aircraft held, offers, people's moods, a stand, the weather
+  const look = (G, a) => JSON.stringify([Math.round(G.budget * 100), a.closedT || 0, G.rare.flying, G.av.requests.length, Math.round(G.story.standing * 100), G.av.airlines.map(x => Math.round(x.sat * 100)),
+    G.av.tails.map(t => Math.round(t.t)), IC.cities(G).map(c => Math.round(c.morale * 100)), a.curfew || 0, a.birdCtl || 0, G.story.extraUp || 0, G.weather.forecast, G.weather.next, IC.aptStands(a).map(x => x.occ), a.rep || 0, G.story.deck && G.story.deck.again]);
+  S.story.events = [];
+  for (const k of keys) {
+    IC.deckDeal(S, k, IC.DECK[k].cond(S, ap) || [ap.id]);
+    const e = S.story.events[S.story.events.length - 1];
+    assert(e && e.title && e.text.length > 40 && e.opts.length >= 2 && e.opts.every(o => o.t && o.tip), `${k}: ${e ? e.title : 'no card'}`);
+  }
+  const titles = S.story.events.map(e => e.title);
+  const S2 = IC.loadSave(JSON.stringify(IC.saveGame(S))); IC.S = S2;
+  assert(JSON.stringify(S2.story.events.map(e => e.title)) === JSON.stringify(titles), 'the cards did not come back from the save');
+  // every card's first choice, on the loaded game, does something you can see
+  const ap2 = S2.byId[ap.id];
+  for (const e of S2.story.events.slice()) {
+    S2.story.standing = 50; ap2.closedT = 0;
+    const before = look(S2, ap2);
+    IC.storyChoose(S2, e.id, 0);
+    assert(look(S2, ap2) !== before, `${e.title}: its first choice changed nothing`);
+  }
+  assert(!S2.story.events.length, 'cards left over');
+}, true);
+test('round 4: the deck paces by the player: a card every few minutes of play, weather at most one in five', () => {
+  const { S } = r4open();
+  const st = S.story, cards = [];
+  IC.on((S0, type, d) => { if (type === 'deckCard' && S0 === S) cards.push({ k: d.key, play: st.play }); });
+  const p0 = st.play;
+  r4play(S, 24 * 4);
+  const mins = (st.play - p0) / 60;
+  assert(cards.length >= mins / 5 - 1, `${cards.length} cards in ${mins.toFixed(0)} minutes of play`);
+  const gaps = cards.slice(1).map((c, i) => (c.play - cards[i].play) / 60);
+  assert(Math.max(...gaps) <= 6, `a gap of ${Math.max(...gaps).toFixed(1)} minutes between cards`);
+  assert(new Set(cards.map(c => c.k)).size >= Math.min(cards.length, 10), `the same cards again: ${cards.map(c => c.k).join(' ')}`);
+  for (let i = 0; i + 5 <= cards.length; i++) assert(cards.slice(i, i + 5).filter(c => IC.DECK[c.k].weather).length <= 1, `two weather cards in five: ${cards.map(c => c.k).join(' ')}`);
+  // at Wait's 432× the same few minutes of play are months of the calendar, and the cards still come by the minute
+  const n = cards.length, q0 = st.play;
+  const W = () => ({ key: 'x', what: 'test', amt: 1e9, speed: IC.WAIT.speed, m0: S.cal.m, t0: S.time });
+  // (Wait stops when the month turns or a card comes; the player presses it again)
+  for (let i = 0; i < IC.MO(S, 1) / 8; i++) { if (!S.wait) S.wait = W(); IC.step(S, 8); if (i % 4 === 0) player(S); }
+  S.wait = null;
+  assert(Math.abs((st.play - q0) - IC.MO(S, 1) / IC.GS / IC.WAIT.speed) < 2, 'the play clock does not follow Wait');
+  assert(cards.length - n <= Math.ceil((st.play - q0) / 150) + 1, `${cards.length - n} cards in ${((st.play - q0) / 60).toFixed(1)} minutes of Wait`);
+}, true);
+test('round 4: a well-built Starter airport runs at a profit from its first month, and building shows as invested', () => {
+  const { S, ap } = r4open(true);
+  // a steady player: signs what the airport can carry, builds the hangar its first deal asks for
+  const fix = new Set();
+  const each = S0 => { for (const P of IC.aptProblems(S0, ap)) if (P.fix && P.fix.part === 'hangar' && !fix.has(P.id)) { fix.add(P.id); const h = IC.fixPlan(S0, ap, 'hangar', P.fix.near); if (h) IC.buildFinish(S0, h); } };
+  const m0 = S.cal.m;
+  while (S.cal.m === m0) r4play(S, 2, each);
+  const M = IC.monthStatement(S, 1), inv = -(M.lines.find(l => l.k === 'other') || { v: 0 }).v, run = M.net + inv;
+  assert(inv > 900 && run > 0, `the first month: running ${U.money(run)}, invested ${U.money(inv)}`);
+  assert(S.logs.some(l => l.tag === 'TREASURY' && /closed: running the airports \+₭[\d.,]+M; ₭[\d,]+M invested in building/.test(l.msg)), 'the month did not close with running and invested apart');
+  // the second month: no big building, and the treasury rises
+  const b0 = S.budget; r4play(S, 36, each);
+  assert(S.budget > b0, `the treasury fell from ${U.money(b0)} to ${U.money(S.budget)}`);
+  const ML = IC.moneyLine(S);
+  assert(ML.split && /^Running \+₭/.test(ML.short) && /running the airports made ₭/.test(ML.text), ML.text);
+}, true);
 
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };

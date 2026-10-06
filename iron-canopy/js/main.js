@@ -233,7 +233,7 @@ const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 
    (IC.fixPlan); Build or Enter builds it, a click elsewhere moves it, Esc cancels */
 IC.fixOpen = function (S2, ap, part, near, size) {
   const ui = IC.ui; ui.closeCine(); if (ui.room) ui.openRoom(null);
-  const lock = IC.APART[part] && IC.aptLockWhy(S2, part);
+  const lock = IC.APART[part] ? IC.aptLockWhy(S2, part) : IC.pieceLock ? IC.pieceLock(S2, part, ap) : '';
   if (lock) { IC.toast(S2, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   IC.bb.ap = ap; IC.select({ kind: 'infra', ref: ap }); IC.bbToggle(true);
   const m = IC.fixPlan(S2, ap, part, near || ap, size);
@@ -1055,7 +1055,7 @@ function frame(now) {
     const t0 = performance.now();
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(big, g); IC.step(S, st); g -= st; if (performance.now() - t0 > (S.wait ? 30 : 40)) break; }
     // (the rate the wait really runs at, for its line in the top bar)
-    if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; }
+    if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; S.wait.rate = IC.ui.waitRate / IC.GS; }
   }
   IC.autosaveTick(S);
   fx(S, dtR, gdt);

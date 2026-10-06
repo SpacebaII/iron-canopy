@@ -125,6 +125,8 @@ function airspace(S, ap) {
 }
 function player(S, log) {
   const st = S.story, cc = IC.cap(S);
+  // (it plays at 32×, the speed a player watches the airport at: the play clock, and so the event deck, run by it)
+  if (S.speed === 1 && !S.wait) S.speed = 32;
   for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q)) IC.avDecide(S, q.id, true);
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);

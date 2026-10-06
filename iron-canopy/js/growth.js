@@ -857,10 +857,12 @@ function book(S, k, v) { const E = S.econ; if (!E || !v) return; E.book[k] = (E.
 IC.econBook = book;
 /* pay for something now and book it by kind (the kinds are in IC.STATEMENT) */
 IC.pay = function (S, k, v) { S.budget -= v; book(S, k, -v); };
+/* (round 4) building paid stage by stage, by airport, for the month: what was invested where (IC.moneyLine) */
+IC.investBook = (S, ap, v) => { const E = S.econ; if (!E || !v || !ap) return; const M = E.minv || (E.minv = {}); M[ap.id] = (M[ap.id] || 0) + v; };
 IC.STATEMENT = {
   base: 'Grant from the Ministry', tax: 'Taxes from the cities', trade: 'Trade taxes', apt: 'Airport revenue', aid: 'Allied support',
   fee_land: 'Airline fees: landing', fee_pax: 'Airline fees: passengers', fee_cargo: 'Airline fees: cargo', fee_over: 'Overflight fees',
-  oneoff: 'Grants, aid and war bonds', refund: 'Equipment dismantled', loanIn: 'Loans taken',
+  oneoff: 'Grants, aid and war bonds', bonus: 'Ministry rewards for goals', events: 'Events: one-off income and costs', refund: 'Equipment dismantled', loanIn: 'Loans taken',
   upAD: 'Running costs: air defence', upAir: 'Running costs: air force', upApt: 'Running costs: airports', upStaff: 'Staff',
   penalty: 'Deal penalties and compensation', loan: 'Loan repayments and interest', loanOut: 'Loans paid off early',
   buyUnits: 'Equipment bought', buyMun: 'Missiles and supplies bought', buyLogi: 'Truck companies', research: 'Research', repair: 'Repairs',
@@ -935,11 +937,14 @@ IC.onMonth((S, was) => {
   closeBooks(S);
   const days = Math.max(0.01, Math.min(IC.dpm(S), (S.time - (E.mT != null ? E.mT : E.t0)) / DAY));
   E.months = E.months || [];
-  E.months.push({ m: was, days, book: E.mb || {}, end: snapshot(S), start: E.mStart || null });
+  E.months.push({ m: was, days, book: E.mb || {}, end: snapshot(S), start: E.mStart || null, inv: E.minv || {} });
   if (E.months.length > 36) E.months.shift();
-  E.mb = {}; E.mT = S.time; E.mStart = snapshot(S);
+  E.mb = {}; E.minv = {}; E.mT = S.time; E.mStart = snapshot(S);
   const st = statement(E.months[E.months.length - 1].book);
-  if (S.mode === 'story') IC.log(S, st.net >= 0 ? 'info' : 'warn', 'TREASURY', `${IC.MONTHS[was % 12]} closed: ${U.money(st.income)} came in, ${U.money(-st.spend)} went out, ${st.net >= 0 ? '+' : '−'}${U.money(Math.abs(st.net)).replace('−', '')} in all. The statement is in the Economy room.`);
+  // (round 4) building is investment, not loss: the month's line says what running the airports made, then what was built
+  const inv = -(E.months[E.months.length - 1].book.other || 0), run = st.net + inv, sg = v => `${v >= 0 ? '+' : '−'}${U.money(Math.abs(v)).replace('−', '')}`;
+  if (S.mode === 'story' && IC.FOCUS.progress) IC.log(S, run >= 0 ? 'info' : 'warn', 'TREASURY', `${IC.MONTHS[was % 12]} closed: running the airports ${sg(run)}${inv > 0.5 ? `; ${U.money(inv)} invested in building` : ''}. The treasury ${st.net >= 0 ? 'rose' : 'fell'} ${U.money(Math.abs(st.net))}. The statement is in the Economy room.`);
+  else if (S.mode === 'story') IC.log(S, st.net >= 0 ? 'info' : 'warn', 'TREASURY', `${IC.MONTHS[was % 12]} closed: ${U.money(st.income)} came in, ${U.money(-st.spend)} went out, ${st.net >= 0 ? '+' : '−'}${U.money(Math.abs(st.net)).replace('−', '')} in all. The statement is in the Economy room.`);
   if (S.mode === 'story' && (was + 1) % 12 === 0 && IC.card) { const R = IC.yearReview(S, Math.floor(was / 12) + 1); if (R) IC.card(S, `Year ${R.y} in review`, U.clock(S.time, S), R.text, 'report'); }
 });
 /* the statement for this month so far (ago=0) or a finished month (ago=1: last month, 2: the one before) */
