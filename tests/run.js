@@ -556,6 +556,8 @@ test('airport: a crash closes the runway, is investigated and costs confidence',
   let crashed = null; IC.on((S2, type, d) => { if (S2 === S && type === 'crash') crashed = d; });
   for (let i = 0; i < 400 && !crashed; i++) tick(S, 0.5);
   assert(crashed, 'no crash');
+  // (brief 47) the fire trucks race out to the wreck: the map draws them, the station times them
+  assert(ap.fireRun && ap.fireRun.kind === 'crash' && U.dist(ap.fireRun, crashed.m) < 0.01 && Math.abs(ap.fireRun.dur - crashed.rescue) < 1, 'the fire trucks did not go to the wreck');
   assert(S.story.standing < before, 'the Prime Minister did not notice');
   assert(!IC.baseStatus(S, ap).runway || IC.rwUsable(ap.parts.find(p => p.kind === 'runway')) < IC.rwLen(ap.parts.find(p => p.kind === 'runway')) - 1, 'the runway did not close');
   assert(IC.aptRepairList(ap).some(it => /wreckage/.test(it.label)), 'no wreckage to clear');
@@ -854,6 +856,62 @@ test('builder: a holding bay lies square to its runway, touching the parallel ta
   const pad = F.ap.parts.slice(k0).find(p => p.kind === 'deice'), stub = F.ap.parts.slice(k0).find(p => p.kind === 'taxi');
   assert(pad && squareTo(pad, F.ta) < 2, `the pad is ${pad ? squareTo(pad, F.ta).toFixed(1) : '?'}° off square to the taxiway`);
   assert(stub && stub.nodes.some(id => { const q = F.ap.nodes[id]; return q.on && q.on.kind === 'taxi' || F.t.nodes.includes(id); }), 'the pad\'s stub does not join the taxiway');
+});
+/* ---------- the fuel farm, the fire station and the tower matter (brief 47) ---------- */
+test('airport: a fuel farm is three tanks: their trucks refuel 24 aircraft an hour, and the panel says so', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap], farms = ap.parts.filter(p => p.kind === 'fuel');
+  assert(farms.length === 1 && IC.fuelTanks(farms[0]) === 3 && farms[0].w >= 1.2, `the capital's fuel: ${farms.length} parts, ${farms.map(p => IC.fuelTanks(p)).join('/')} tanks`);
+  const st = IC.aptStats(S, ap);
+  assert(st.trucks === 3 * IC.FUEL_TRUCKS && st.fuelCap === 3 * IC.APART.fuel.cap, `trucks ${st.trucks}, capacity ${st.fuelCap}`);
+  // every truck out: the next departure waits, and the day's waiting shows in the panel
+  ap.trucks = []; for (let i = 0; i < st.trucks; i++) ap.trucks.push(S.time);
+  for (const p of ap.parts) if (p.kind === 'fuelpad') p.hp = 0;
+  assert(!IC.aptTakeFuel(ap, 6, S), 'a 25th refuelling in the hour found a truck');
+  IC.aptFuelWait(S, ap, 840);
+  assert(/Departures waited 14 min for fuel today/.test(IC.aptServiceLines(S, ap).fuel) && /trucks serve 8/.test(IC.aptServiceLines(S, ap).fuel), IC.aptServiceLines(S, ap).fuel);
+});
+test('airport: a runway the tower cannot see is worked as with no tower, and the tower says so', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway'), tw = ap.parts.find(p => p.kind === 'tower');
+  let st = IC.aptStats(S, ap); const cap0 = st.movesPerHour;
+  assert(st.tower && !Object.keys(st.unseen).length, `the starting tower does not see ${JSON.stringify(st.unseen)}`);
+  // a hangar just short of the far runway end, on the line from the cab
+  const far = U.dist(tw, rw.a) > U.dist(tw, rw.b) ? rw.a : rw.b, q = { x: tw.x + (far.x - tw.x) * 0.9, y: tw.y + (far.y - tw.y) * 0.9 };
+  IC.aptAddPart(ap, { kind: 'hangar', x: q.x, y: q.y, a: Math.atan2(far.y - tw.y, far.x - tw.x) }, true);
+  st = IC.aptStats(S, ap);
+  assert(st.unseen[rw.id] && /hangar hides its end/.test(st.unseen[rw.id]), `the hangar does not hide the runway: ${JSON.stringify(st.unseen)}`);
+  assert(IC.aptSep(st, rw.id) === 480 && st.movesPerHour < cap0, `separation ${IC.aptSep(st, rw.id)} s, capacity ${cap0} → ${st.movesPerHour}`);
+  assert(st.warn.some(w => /tower cannot see it/.test(w)) && /cannot see/.test(IC.aptServiceLines(S, ap).tower), `no warning: ${st.warn.join(' / ')}`);
+  // a tower nobody can see from: too far
+  assert(/from the tower/.test(IC.towerSees(ap, [{ kind: 'tower', x: rw.a.x + 100, y: rw.a.y, built: true }], rw)), 'a tower 10 km away sees the runway');
+});
+test('airport: heavy jets may not land on a runway the fire trucks reach in over 3 minutes; the panel times them', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway'), fire = ap.parts.find(p => p.kind === 'fire');
+  let st = IC.aptStats(S, ap);
+  assert(st.heavyOk && IC.aptFits(ap, 'wide') && /Fire trucks reach .* in \d+ min( \d+ s)?\./.test(IC.aptServiceLines(S, ap).fire), IC.aptServiceLines(S, ap).fire);
+  // the runway stretched to 6.4 km, the station 1.4 km off its middle: over 3 min to either end
+  const d = IC.rwDir(rw), L = IC.rwLen(rw), mid = IC.rwAt(rw, 0.5), k = (64 - L) / 2;
+  rw.a = { x: rw.a.x - d.x * k, y: rw.a.y - d.y * k }; rw.b = { x: rw.b.x + d.x * k, y: rw.b.y + d.y * k };
+  fire.x = mid.x - d.y * 14; fire.y = mid.y + d.x * 14; ap.dirty = true;
+  st = IC.aptStats(S, ap);
+  assert(st.rescueRw[rw.id] > IC.FIRE_STD && !st.heavyOk, `rescue ${st.rescueRw[rw.id]} s`);
+  assert(!IC.aptFits(ap, 'wide') && IC.aptFits(ap, 'narrow') && st.maxType === 'narrow', `largest aircraft ${st.maxType}`);
+  assert(/heavy jets may not land/.test(IC.aptServiceLines(S, ap).fire) && st.warn.some(w => /heavy jets may not land/.test(w)), IC.aptServiceLines(S, ap).fire);
+  assert(!IC.gopsFaf(S, ap, 'wide') && IC.gopsFaf(S, ap, 'narrow'), 'a wide-body was still given the runway');
+  assert(/fire trucks/.test(IC.aptCanTake(S, ap, IC.ACTYPES.wide)), `a wide-body arrival is not turned away: "${IC.aptCanTake(S, ap, IC.ACTYPES.wide)}"`);
+});
+test('airport: the fire trucks drill every morning and race to an accident; the station says how long they took', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap], fire = ap.parts.find(p => p.kind === 'fire');
+  for (let i = 0; i < 2 * 3600 && !ap.fireRun; i++) IC.step(S, 0.5);
+  const R = ap.fireRun;
+  assert(R && R.kind === 'drill' && R.from === fire.id && R.dur > 60, 'no drill by 11:00');
+  while (S.time < R.t0 + R.dur / 2) IC.step(S, 0.5);
+  assert(/trucks are out on a drill/.test(IC.partNow(S, ap, fire)), IC.partNow(S, ap, fire));
+  while (S.time < R.t0 + R.dur + 1) IC.step(S, 0.5);
+  assert(new RegExp(`there in ${IC.mmss(R.dur)}`).test(IC.partNow(S, ap, fire)), IC.partNow(S, ap, fire));
 });
 test('airport: a runway under construction is not reported closed', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); S.budget = 1e5;

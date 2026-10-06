@@ -50,7 +50,7 @@ const CONVOY = 600;     // lorries leave the supplier every ten minutes
 const LORRY = 0.25;     // 90 km/h on the road
 /* what a building takes to put up, in lorry loads */
 const BLD_NEED = { terminal: { conc: 14, steel: 5, area: true }, cargo: { conc: 10, steel: 5, area: true }, hangar: { conc: 12, steel: 8 }, has: { conc: 25, steel: 6 }, alert: { conc: 10, steel: 3 },
-  fuel: { conc: 3, steel: 6 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 6, steel: 3 }, fire: { conc: 4, steel: 2 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 },
+  fuel: { conc: 8, steel: 16 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 10, steel: 5 }, fire: { conc: 8, steel: 4 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 },
   deice: { conc: 6, steel: 1 }, fuelpad: { conc: 3, steel: 2 } };
 IC.partNeed = function (ap, p) {
   const out = {};
@@ -835,7 +835,7 @@ function snapCorner(ap, m, p, tol, free, rel, first) {
 }
 /* buildings face the nearest taxiway or apron edge, set back by a gap, and get a way in: aircraft buildings a short
    taxiway to their door, the others a service road. gap: metres of apron or verge between pavement and building /100 */
-IC.SNAP_GAP = { hangar: 0.3, has: 0.3, deice: 0.25, fuelpad: 0.2, fire: 0.3, tower: 0.35, fuel: 0.45, hydrant: 0.35, atc: 0.6, gradar: 0.5, ammo: 0.8 };
+IC.SNAP_GAP = { hangar: 0.3, has: 0.3, deice: 0.25, fuelpad: 0.2, fire: 0.25, tower: 0.4, fuel: 0.3, hydrant: 0.35, atc: 0.6, gradar: 0.5, ammo: 0.8 };
 const STUB = k => k === 'hangar' || k === 'has' || !!IC.APART[k].pad;
 /* the pavement edges near a point: taxiway centrelines (with their half width) and apron edges; with all, the edges
    of terminals and other buildings too */
@@ -1106,8 +1106,9 @@ function planOf(S, m, hv, tol, free) {
     if (probe.kind === 'surface') out.text.push(`${IC.SURF[probe.surf].name}, ${(probe.w * probe.h).toFixed(1)} ha${IC.SURF[probe.surf].park ? `: parks about ${Math.round(IC.SURF[probe.surf].park * probe.w * probe.h)} cars outside the airfield` : ''}`);
     if (probe.kind === 'terminal' && t !== 'concourse') out.text.push(`${Math.round(D.pax * probe.w * probe.h).toLocaleString('en-US')} passengers an hour`);
     if (probe.kind === 'taxi' && t === 'taxi') out.text.push(taxiText(S, ap, out, probe));
-    if (probe.kind === 'fuel') { const near = ap.parts.filter(q => q.kind === 'fuel' && U.dist(q, probe) < 1.4).length; if (near) out.text.push(`${near} tank${near > 1 ? 's' : ''} within 140 m: one fire takes them all`); }
-    if (probe.kind === 'fire') { const far = ap.parts.filter(q => q.kind === 'runway').map(rw => Math.max(...[0, 0.5, 1].map(f => 60 + U.dist(probe, IC.rwAt(rw, f)) / 0.25))); if (far.length) out.text.push(`trucks reach every runway in ${U.dur(Math.max(...far))}${Math.max(...far) > 180 ? ' (over the three-minute standard)' : ''}`); }
+    if (probe.kind === 'fuel') { const near = ap.parts.filter(q => q.kind === 'fuel' && IC.fuelGap(q, probe) < 1).length; out.text.push(`${IC.fuelTanks(probe)} tanks: their trucks refuel ${IC.fuelTanks(probe) * IC.FUEL_TRUCKS} aircraft an hour${near ? `; within 100 m of ${near > 1 ? 'other fuel' : 'another fuel farm'}: one fire could take them all` : ''}`); }
+    if (probe.kind === 'tower') { const rws = ap.parts.filter(q => q.kind === 'runway'), blind = rws.map(rw => ({ rw, why: IC.towerSees(ap, [probe], rw) })).filter(x => x.why); out.text.push(!rws.length ? 'the cab will see runways within 8 km' : blind.length ? `cannot see ${blind.map(x => `${x.rw.name} (${x.why})`).join(', ')}: worked as with no tower there` : `sees every runway: one movement every ${U.dur(IC.aptSep({ tower: true, radar: ap.st && ap.st.radar }))} instead of every 8 min`); }
+    if (probe.kind === 'fire') { const rws = ap.parts.filter(q => q.kind === 'runway'), far = rws.map(rw => Math.max(...[0, 0.5, 1].map(f => IC.fireTime(probe, IC.rwAt(rw, f))))); if (far.length) out.text.push(rws.map((rw, i) => `trucks reach ${rw.name} in ${IC.mmss(far[i])}${far[i] > IC.FIRE_STD ? ': too far for heavy jets' : ''}`).join(' · ')); }
   }
   if (IC.PAVED[out.specs[0] && out.specs[0].kind] || t === 'concourse') out.text.push(IC.paveFits(m.mat || 'conc'));
   if (homes) out.text.push(`Clears ${IC.bldClearText({ blocks: clrAll, res })}: ${U.money(comp)} compensation, and the town will protest`);

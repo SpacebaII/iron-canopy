@@ -292,7 +292,7 @@ function base(b) {
   const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div>`;
   if (locked) return H + `<div class="ibody">${schem}<p class="hint">${esc(b.name)} belongs to the Air Force. It comes under your command later in your career.</p></div>`;
   const warn = st.warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${st.warn.length}</em></h3>${st.warn.slice(0, 6).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">No layout problems found.</div>';
-  const fuelF = st.fuelCap ? st.fuel / st.fuelCap : 0;
+  const fuelF = st.fuelCap ? st.fuel / st.fuelCap : 0, svc = IC.aptServiceLines(S, b);
   const kp = b.kpi || {};
   const ROLE = { arr: 'arrivals', dep: 'departures', mixed: 'arrivals and departures', spare: 'not in use' };
   const flown = { arr: 0, dep: 0 }; for (const x of b.mvLog || []) flown[x.k]++;
@@ -306,9 +306,10 @@ function base(b) {
     ['Capacity', `${st.arrPerHour} arrivals + ${st.depPerHour} departures an hour`],
     ['Last hour', `${flown.arr} arrivals, ${flown.dep} departures`],
     ['Largest aircraft', st.maxType ? esc(IC.ACTYPES[st.maxType].name) : '<span class="hostile">none</span>'],
-    ['Fuel', `${Math.round(st.fuel)}/${st.fuelCap}${fuelF < 0.25 ? ' <span class="amber">low</span>' : ''} · enough for ${st.fuelDeps || 0} departures an hour (${st.hydrant ? 'hydrant system' : 'fuel trucks'})`],
-    ['Tower · approach radar · ground radar', `${st.tower ? 'yes' : '<span class="hostile">no</span>'} · ${st.radar ? 'yes' : 'no'} · ${st.gradar ? 'yes' : st.complex ? '<span class="amber">no</span>' : 'no'}`],
-    ['Fire and rescue', !st.fire ? '<span class="amber">no station near the runway</span>' : `trucks reach every runway in ${st.rescue > 180 ? `<span class="amber">${U.dur(st.rescue)}</span>` : U.dur(st.rescue)}`],
+    ['Fuel', `${Math.round(st.fuel)}/${st.fuelCap}${fuelF < 0.25 ? ' <span class="amber">low</span>' : ''} · enough for ${st.fuelDeps || 0} departures an hour. <span class="${svc.fuel.includes('waited') || !st.tanks ? 'amber' : ''}">${esc(svc.fuel)}</span>`],
+    ['Control tower', `<span class="${!st.tower ? 'hostile' : svc.tower.includes('cannot see') ? 'amber' : ''}">${esc(svc.tower)}</span>`],
+    ['Approach radar · ground radar', `${st.radar ? 'yes' : 'no'} · ${st.gradar ? 'yes' : st.complex ? '<span class="amber">no</span>' : 'no'}`],
+    ['Fire and rescue', `<span class="${!st.fire || svc.fire.includes('heavy jets') ? 'amber' : ''}">${esc(svc.fire)}</span>`],
     ['Landing systems', `${st.ilsEnds || 0} of ${st.rwy.length * 2} runway ends`]
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);

@@ -176,7 +176,7 @@ function take(ap, k, m, cross, now) {
   (m.locks = m.locks || {})[k] = true;
 }
 /* after an arrival the next may follow once it has cleared; after a departure, wake turbulence needs a full gap */
-const sepOf = (ap, m) => IC.aptSep(ap.st || {}) * (m.kind === 'arr' ? 0.5 : 1);
+const sepOf = (ap, m) => IC.aptSep(ap.st || {}, m.plan && m.plan.rw && m.plan.rw.id) * (m.kind === 'arr' ? 0.5 : 1);
 /* sepA: the gap before the next arrival may start its final (none after a take-off where a tower watches) */
 function release(S, ap, k, m, sep, sepA) {
   const L = lockOf(ap, k);
@@ -503,10 +503,10 @@ function planArrival(S, ap, T, target, pref, mil) {
    arrival runway that will have it on the ground soonest, given the aircraft already sent there. */
 IC.gopsFaf = function (S, ap, type, who) {
   const T = IC.ACTYPES[type], cfg = cfgOf(S, ap), imc = IC.needILS(S) && !T.mil, g = G(ap);
-  const fit = runways(ap).filter(r => cfg.rw[r.id] && IC.rwUsable(r) >= T.rwy && !IC.rwWindBlock(S, r, cfg.rw[r.id].dir, T) && (!imc || IC.rwHasILS(ap, r, cfg.rw[r.id].dir)));
+  const fit = runways(ap).filter(r => cfg.rw[r.id] && IC.rwUsable(r) >= T.rwy && !IC.rwWindBlock(S, r, cfg.rw[r.id].dir, T) && (!imc || IC.rwHasILS(ap, r, cfg.rw[r.id].dir)) && IC.rwFireOk(ap, r, T));
   if (!fit.length) return null;
   const q = ap.fafQ = (ap.fafQ || []).filter(x => !x.done && S.time - x.t < 1800);
-  const occ = (rw, TT) => { const k = rw.id + '|' + cfg.rw[rw.id].dir + '|' + TT.short; let v = g.occ && g.occ.get(k); if (v == null) { const o = IC.rwOcc(S, ap, rw, cfg.rw[rw.id].dir, TT).land; v = (o < 1e8 ? o : 300) + IC.aptSep(ap.st || {}) * 0.5; (g.occ = g.occ || new Map()).set(k, v); } return v; };
+  const occ = (rw, TT) => { const k = rw.id + '|' + cfg.rw[rw.id].dir + '|' + TT.short; let v = g.occ && g.occ.get(k); if (v == null) { const o = IC.rwOcc(S, ap, rw, cfg.rw[rw.id].dir, TT).land; v = (o < 1e8 ? o : 300) + IC.aptSep(ap.st || {}, rw.id) * 0.5; (g.occ = g.occ || new Map()).set(k, v); } return v; };
   const when = rw => { const L = lockOf(ap, keyOf(ap, rw.id)); let t = Math.max(0, L.next - S.time) + (L.by ? 60 : 0); for (const x of q) if (x.rw === rw.id) t += occ(rw, IC.ACTYPES[x.type]); return t + occ(rw, T); };
   const role = r => cfg.rw[r.id].role === 'arr' || cfg.rw[r.id].role === 'mixed' ? 0 : 1e5;
   fit.sort((a, b) => (role(a) + when(a)) - (role(b) + when(b)));
@@ -872,7 +872,7 @@ function step(S, ap, m, dt) {
       m.x += Math.cos(m.h) * m.spd * dt; m.y += Math.sin(m.h) * m.spd * dt;
       if (m.rolled >= need) {
         // wake turbulence: the next may go only after the gap
-        release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m), ap.st && ap.st.tower ? 0 : sepOf(ap, m));
+        release(S, ap, keyOf(ap, m.plan.rw.id), m, sepOf(ap, m), ap.st && ap.st.tower && !(ap.st.unseen && ap.st.unseen[m.plan.rw.id]) ? 0 : sepOf(ap, m));
         m.dead = true; kill(S, ap, m);
         done(ap, m); countMove(S, ap, 'dep', m.type, m.plan.rw);
         m.onAir && m.onAir(m);
@@ -1158,10 +1158,8 @@ IC.partNow = function (S, ap, p) {
   const hourN = x => (x || []).filter(t => S.time - t < 3600).length;
   if (!p.built) return '';
   if (p.kind === 'fuel') {
-    const tanks = ap.parts.filter(q => q.kind === 'fuel' && q.built && q.hp > q.max * 0.25).length;
     const wait = onStand.filter(t => t.t <= 300 && t.fuelWait > 0), avg = wait.length ? wait.reduce((a, t) => a + t.fuelWait, 0) / wait.length : 0;
-    return st.hydrant ? `Fuel farm: ${tanks} tank${tanks > 1 ? 's' : ''} feeding the hydrant system; no trucks needed. This tank ${Math.round(p.stock || 0)} of ${IC.APART.fuel.cap}.`
-      : `Fuel farm: ${tanks * 2} trucks, ${wait.length} aircraft waiting${wait.length ? `, ${U.dur(avg)} average` : ''}. This tank ${Math.round(p.stock || 0)} of ${IC.APART.fuel.cap}.`;
+    return `${p.r ? 'Fuel tank' : `Fuel farm: ${IC.fuelTanks(p)} tanks`}, ${Math.round(p.stock || 0)} of ${IC.fuelCap(p)} (${U.pct((p.stock || 0) / IC.fuelCap(p))} full). ${IC.aptServiceLines(S, ap).fuel}${wait.length ? ` ${wait.length} aircraft waiting now, ${U.dur(avg)} on average.` : ''}`;
   }
   if (p.kind === 'fuelpad') return `Fuel stand: ${hourN(p.served)} aircraft refuelled in the last hour${p.busy ? '; one refuelling now' : ''}.`;
   if (p.kind === 'deice') return IC.aptFrost(S) ? `Frost this morning: departures stop here to be de-iced (${hourN(p.served)} in the last hour).` : `No frost now. On clear and foggy mornings departures stop here to be de-iced; without a pad it is done at the stand and takes longer.`;
@@ -1175,8 +1173,8 @@ IC.partNow = function (S, ap, p) {
     return `Terminal: ${Math.round(ap.paxRate || 0).toLocaleString('en-US')} of ${Math.round(st.pax || 0).toLocaleString('en-US')} passengers an hour (${U.pct(load)} full${load > 0.8 ? ': boarding slows down' : ''}). ${gates} gate${gates === 1 ? '' : 's'} ${IC.aptTechOk(S, 'bridge') ? 'with jet bridges' : '(passengers walk out: jet bridges need research)'}, ${remote} remote stands. Now: ${svcNow('bridge') + svcNow('walk')} aircraft at gates, ${svcNow('bus')} served by bus.`;
   }
   if (p.kind === 'cargo') { const n = svcNow('cargo'); return `Cargo shed: ${n} freighter${n === 1 ? '' : 's'} loading now${n ? `, ${stands.filter(s => s.occ && s.svc && s.svc.kind === 'cargo').reduce((a, s) => a + s.svc.n, 0)} lorries on the apron` : ''}; handles ${Math.round(st.cargo || 0)} t an hour.`; }
-  if (p.kind === 'tower') { const n = (ap.mvLog || []).length; return `Tower: ${n} runway movements in the last hour, rated ${st.movesPerHour || 0}; ${(ap.gmLog || []).filter(x => S.time - x.t < 3600).length} pushbacks, tows and service stops on the ground.`; }
-  if (p.kind === 'fire') return `Fire station: trucks reach every runway in ${U.dur(st.rescue || 0)}${st.rescue > 180 ? ' (over the three-minute standard)' : ''}.`;
+  if (p.kind === 'tower') { const g = (ap.gmLog || []).filter(x => S.time - x.t < 3600).length; const tw = IC.aptServiceLines(S, ap).tower; return `Tower: ${tw[0].toLowerCase() + tw.slice(1)} On the ground: ${g} pushback${g === 1 ? '' : 's'}, tows and service stops.`; }
+  if (p.kind === 'fire') { const R = ap.fireRun, out = R && R.from === p.id && S.time < R.home; return `Fire station: ${out ? `the trucks are out on ${R.kind === 'drill' ? 'a drill' : 'a call'}${S.time < R.t0 + R.dur ? `, ${IC.mmss(S.time - R.t0)} so far` : `, there in ${IC.mmss(R.dur)}`}. ` : ''}${IC.aptServiceLines(S, ap).fire}`; }
   if (p.kind === 'apron') { const L = p.stands || []; return `Apron: ${L.filter(s => s.occ).length} of ${L.length} stands in use.`; }
   return '';
 };
@@ -1248,9 +1246,11 @@ function incursion(S, ap, m, k) {
   m.destroyed = true; m.why = 'destroyed in a runway collision';
 }
 /* fire and rescue: seconds until the first truck reaches a point */
+/* a crash tender's time from its station to a point: a minute to turn out, then 100 km/h across the airfield */
+IC.fireTime = (f, p) => 60 + U.dist(f, p) / 0.28;
 IC.aptRescue = function (ap, p) {
   let best = 1e9;
-  for (const f of ap.parts) if (f.kind === 'fire' && f.built && f.hp > f.max * 0.25) best = Math.min(best, 60 + U.dist(f, p) / 0.25);
+  for (const f of ap.parts) if (f.kind === 'fire' && f.built && f.hp > f.max * 0.25) best = Math.min(best, IC.fireTime(f, p));
   return best;
 };
 /* the arrival lands on a departure the tower forgot on the runway */
@@ -1269,6 +1269,7 @@ function crashNow(S, ap, m) {
   const c = m.crash, T = m.T, rw = m.plan.rw;
   const on = T.mil ? (T.crew || 1) * (m.n || 1) : Math.round((T.seats || 2) * 0.82) + (T.seats ? 6 : 3);
   const rescue = IC.aptRescue(ap, m);
+  IC.fireRun(S, ap, m, 'crash');
   const base = { overrun: 0.08, gust: 0.25, tailwind: 0.2, incursion: 0.45, bird: 0.35, collision: 0.6 }[c.cause] || 0.3;
   // survival depends on how fast the fire trucks arrive: three minutes is the standard
   const late = rescue >= 1e8 ? 3 : U.clamp(rescue / 180, 0.6, 3);

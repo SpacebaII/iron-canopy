@@ -66,6 +66,26 @@ function rectGap(A, B) {
 }
 IC.rectGap = rectGap;
 IC.partAt = function (ap, p, pad) { let best = null, bd = pad || 0.05; for (const q of ap.parts) { const d = partDist(ap, q, p); if (d < bd) { bd = d; best = q; } } return best; };
+/* the fuel farm, fire station and tower inside their footprints, in the part's own frame (x along w, y along h),
+   for the map and the 3D view alike. front: the side (±1 in y) that faces the pavement, where its road leaves */
+const frontOf = p => { if (p.link && p.link[0]) { const l = toLocal({ x: p.x, y: p.y, a: p.a || 0 }, p.link[0]); if (Math.abs(l.y) > 1e-3) return Math.sign(l.y); } return -1; };
+IC.bldLayout = function (p) {
+  const w = p.w || 0.3, h = p.h || 0.3, f = frontOf(p);
+  if (p.kind === 'fuel') {
+    // the tanks in a row inside their bund, the loading rack and the lorry park at the end nearest the road
+    const n = IC.fuelTanks(p), bx1 = w / 2 - Math.min(0.4, w * 0.27), r = Math.min(0.15, (bx1 + w / 2 - 0.08) / n / 2 - 0.02, h * 0.3);
+    const tanks = []; for (let i = 0; i < n; i++) tanks.push({ x: -w / 2 + 0.04 + (bx1 + w / 2 - 0.08) * (i + 0.5) / n, y: -f * h * 0.08, r });
+    return { f, tanks, bund: { x0: -w / 2 + 0.02, y0: -h / 2 + 0.02, x1: bx1, y1: h / 2 - 0.02 },
+      rack: { x: (bx1 + w / 2) / 2, y: f * h * 0.25, w: w / 2 - bx1 - 0.06, h: h * 0.3 }, park: { x: (bx1 + w / 2) / 2, y: -f * h * 0.2, w: w / 2 - bx1 - 0.06, h: h * 0.4 } };
+  }
+  if (p.kind === 'fire') {
+    // the hall of bays at the back, its apron in front to the road, the training ground at one end
+    const gw = Math.min(0.35, w * 0.35), hw = w - gw, bays = IC.APART.fire.bays || 4;
+    return { f, bays, hall: { x: -w / 2 + hw / 2, y: -f * h * 0.22, w: hw - 0.04, h: h * 0.5 }, apron: { x: -w / 2 + hw / 2, y: f * h * 0.28, w: hw - 0.04, h: h * 0.42 }, ground: { x: w / 2 - gw / 2, y: 0, w: gw - 0.02, h: h - 0.04 } };
+  }
+  if (p.kind === 'tower') { const s = Math.min(w, h); return { f, ht: IC.bldHeight ? IC.bldHeight(p) : 60, base: { w: w * 0.9, h: h * 0.9 }, shaft: s * 0.16, cab: s * 0.36 }; }
+  return null;
+};
 
 /* ---------- the model ---------- */
 IC.initAirport = function (ap) {
@@ -111,14 +131,14 @@ function resolveFor(ap, p) {
 IC.aptAddPart = function (ap, part, built) {
   const D = IC.APART[part.kind];
   part.id = ap.id + 'p' + (ap.partN++);
-  part.w = part.w != null ? part.w : D.w;
-  if (part.kind !== 'taxi' && part.kind !== 'runway' && !D.area && D.h) part.h = part.h != null ? part.h : D.h;
-  if (D.r && part.r == null) part.r = D.r;
+  // (a round part, a real airport's fuel tank, keeps its radius and no rectangle)
+  if (part.r == null) { part.w = part.w != null ? part.w : D.w; if (part.kind !== 'taxi' && part.kind !== 'runway' && !D.area && D.h) part.h = part.h != null ? part.h : D.h; }
+  if (D.r && part.r == null && part.w == null) part.r = D.r;
   part.max = D.hp; part.hp = D.hp;
   part.built = !!built; part.prog = built ? 1 : 0;
   if (part.kind === 'runway') part.craters = part.craters || [];
   if (part.kind === 'taxi') part.cut = part.cut || {};
-  if (part.kind === 'fuel') part.stock = built ? IC.APART.fuel.cap * 0.8 : 0;
+  if (part.kind === 'fuel') part.stock = built ? IC.fuelCap(part) * 0.8 : 0;
   if (part.kind === 'ils') placeILS(ap, part);
   ap.parts.push(part);
   if (part.kind === 'runway' || part.kind === 'apron' || part.kind === 'alert') resolveFor(ap, part);
@@ -512,8 +532,74 @@ IC.rwStrips = function (rw) {
 };
 IC.rwUsable = rw => rw.built && rw.hp > 0 && !rw.shut && !(rw.wear >= 1) ? Math.max(0, ...IC.rwStrips(rw).map(x => x[1] - x[0])) : 0;
 
-/* spacing between runway movements: a tower and an approach radar let controllers pack them tighter */
-IC.aptSep = st => (!st.tower ? 480 : st.radar ? 60 : 110) * (st.lvp ? 1.6 : 1);
+/* spacing between runway movements: a tower and an approach radar let controllers pack them tighter. A runway the
+   tower cannot see (st.unseen, by its id) is worked as if there were no tower */
+IC.aptSep = (st, rwId) => (!st.tower || (rwId && st.unseen && st.unseen[rwId]) ? 480 : st.radar ? 60 : 110) * (st.lvp ? 1.6 : 1);
+
+/* ---------- what the tower sees, and how fast the fire trucks come ---------- */
+IC.TOWER_VIEW = 80;   // 8 km: beyond it controllers in the cab cannot follow aircraft on a runway
+IC.FIRE_STD = 180;    // fire trucks must reach any point of a runway within 3 minutes for heavy jets to use it
+const BLD_HT = { terminal: 16, cargo: 14, hangar: 20, has: 9, alert: 6, support: 9, fire: 9, atc: 12, gradar: 14, fuel: 14, ammo: 4, hydrant: 4, skybridge: 18 };
+IC.bldHeight = p => p.kind === 'tower' ? p.ht || IC.APART.tower.ht : p.lvls ? p.lvls * 4.2 + 2 : BLD_HT[p.kind] || 0;
+/* '' when a tower sees the whole runway (both ends and the middle), else why not, in words */
+IC.towerSees = function (ap, towers, rw) {
+  let why = '';
+  for (const t of towers) {
+    const ht = IC.bldHeight(t); let bad = '';
+    for (const f of [0, 0.5, 1]) {
+      const P = rwAt(rw, f), D = U.dist(t, P);
+      if (D > IC.TOWER_VIEW) { bad = `its ${f === 0.5 ? 'middle' : 'end'} is ${U.km(D)} from the tower`; break; }
+      for (const q of ap.parts) {
+        const hb = q.built && q !== t && q.x != null ? IC.bldHeight(q) : 0; if (!hb || U.dist(t, q) > D) continue;
+        // where the sight line passes the building: on it, and the roof stands above the line from the cab down
+        // to the runway there (by its far side: the roof hides the ground beyond it)
+        const s0 = U.clamp(((q.x - t.x) * (P.x - t.x) + (q.y - t.y) * (P.y - t.y)) / (D * D), 0, 1), c = { x: t.x + (P.x - t.x) * s0, y: t.y + (P.y - t.y) * s0 };
+        if (partDist(ap, q, c) > 0.01) continue;
+        const far = Math.min(D, s0 * D + Math.hypot(q.w || 0.2, q.h || 0.2) / 2);
+        if (hb > ht * (1 - far / D)) { bad = `the ${U.lc(IC.APART[q.kind].name)} hides its ${f === 0.5 ? 'middle' : 'end'} from the cab`; break; }
+      }
+      if (bad) break;
+    }
+    if (!bad) return '';
+    why = why || bad;
+  }
+  return why;
+};
+/* heavy jets may land on a runway only where the fire trucks reach every point of it in 3 minutes */
+IC.rwFireOk = (ap, rw, T) => T.mil || T.stand !== 'l' || !ap.st || !ap.st.rescueRw || (ap.st.rescueRw[rw.id] || 0) <= IC.FIRE_STD;
+/* the fire trucks drive out, lights on, to an accident or a drill: what the map draws and the panel says */
+IC.fireRun = function (S, ap, at, kind) {
+  const st = ap.parts.filter(f => f.kind === 'fire' && f.built && f.hp > f.max * 0.25).sort((a, b) => U.dist(a, at) - U.dist(b, at))[0];
+  if (!st) return null;
+  const dur = IC.fireTime(st, at);
+  ap.fireRun = { kind, from: st.id, x: at.x, y: at.y, t0: S.time, dur, home: S.time + dur + (kind === 'crash' ? 3600 : 600) };
+  return ap.fireRun;
+};
+/* what the tower, the fire stations and the fuel farm do for the airport, in numbers, one line each (the airport
+   panel and the buildings' own panels) */
+/* a time to the second, for the fire trucks: "2 min 40 s" */
+IC.mmss = t => { t = Math.round(t); return t < 60 ? `${t} s` : `${Math.floor(t / 60)} min${t % 60 ? ` ${t % 60} s` : ''}`; };
+IC.aptServiceLines = function (S, ap) {
+  const st = ap.st || {}, rws = (st.rwy || []), out = {};
+  const mv = (ap.mvLog || []).length, blind = rws.filter(r => st.unseen && st.unseen[r.id]);
+  out.tower = !st.tower ? `No tower: one movement every ${U.dur(IC.aptSep(Object.assign({}, st, { tower: false })))} on a runway. A tower that sees the runways clears one every ${U.dur(IC.aptSep(Object.assign({}, st, { tower: true, unseen: null })))}.`
+    : `Handling ${mv} movement${mv === 1 ? '' : 's'} in the last hour, one every ${U.dur(IC.aptSep(st))} on a runway (rated ${st.movesPerHour || 0} an hour).` + (blind.length ? ` It cannot see ${blind.map(r => r.name).join(', ')}: one movement every ${U.dur(IC.aptSep(st, blind[0].id))} there.` : '');
+  const R = ap.fireRun, drill = R && R.kind === 'drill' && S.time >= R.t0 + R.dur ? ` Last drill: there in ${IC.mmss(R.dur)}.` : '';
+  out.fire = !st.fire ? 'No fire station within 1.5 km of a runway: only turboprops may use the airport.'
+    : rws.map(r => { const t = (st.rescueRw || {})[r.id] || 0; return `Fire trucks reach ${r.name} in ${IC.mmss(t)}${t > IC.FIRE_STD ? ': heavy jets may not land on it' : ''}`; }).join('. ') + '.' + drill;
+  const fd = ap.fuelDay && ap.fuelDay.d === Math.floor(S.time / 86400) ? ap.fuelDay : null;
+  out.fuel = !st.tanks ? 'No fuel farm: departures cannot refuel here.'
+    : (st.hydrant ? `${st.tanks} tank${st.tanks > 1 ? 's' : ''} feed the hydrant system: no trucks to wait for.` : `${st.tanks} tank${st.tanks > 1 ? 's' : ''}, ${st.tanks * 2} fuel trucks: they refuel ${st.trucks} aircraft an hour (one tank's trucks serve ${IC.FUEL_TRUCKS}).`)
+      + (fd && fd.s ? ` Departures waited ${U.dur(fd.s)} for fuel today.` : '');
+  return out;
+};
+/* the gap between two fuel parts' outlines (a single tank by its circle's square) */
+IC.fuelGap = (a, b) => { const R = t => t.r ? { x: t.x, y: t.y, a: 0, w: t.r * 2, h: t.r * 2 } : { x: t.x, y: t.y, a: t.a || 0, w: t.w || IC.APART.fuel.w, h: t.h || IC.APART.fuel.h }; return rectGap(R(a), R(b)); };
+/* fuel waits today, for the panel: aircraft that waited and the minutes they lost */
+IC.aptFuelWait = function (S, ap, sec) {
+  const d = Math.floor(S.time / 86400), w = ap.fuelDay && ap.fuelDay.d === d ? ap.fuelDay : (ap.fuelDay = { d, s: 0, n: 0 });
+  w.s += sec; w.n++;
+};
 
 /* ---------- runway capacity under the tower's rules ---------- */
 /* arrivals and departures an hour that the runways can take under a set of rules (ops: the airport's by default),
@@ -523,7 +609,7 @@ IC.aptSep = st => (!st.tower ? 480 : st.radar ? 60 : 110) * (st.lvp ? 1.6 : 1);
    least the arrival gap out when it starts its take-off run. */
 IC.opsCapacity = function (S, ap, st, ops) {
   ops = ops || IC.opsOf(ap);
-  const O = IC.OPS_T, FAF = IC.GOPS.FAF, sep = IC.aptSep(st), sepA = sep * 0.5, sepD = sep;
+  const O = IC.OPS_T, FAF = IC.GOPS.FAF;
   const mix = st.mix || {}, keys = Object.keys(mix), mixN = keys.reduce((a, k) => a + mix[k], 0) || 1;
   const byId = new Map(ap.parts.map(p => [p.id, p]));
   const groups = {};
@@ -532,6 +618,9 @@ IC.opsCapacity = function (S, ap, st, ops) {
   for (const g in groups) {
     const L = groups[g], role = L[0].role;
     if (role === 'spare') continue;
+    // (a group with a runway the tower cannot see is worked without the tower)
+    const blind = L.find(r => st.unseen && st.unseen[r.id]), towered = st.tower && !blind;
+    const sep = IC.aptSep(st, blind ? blind.id : null), sepA = sep * 0.5, sepD = sep;
     // per type in the mix: the best runway of the group for landing, and for taking off, and the cycle times
     let land = 0, depC = 0, pair = 0, okL = 0, okD = 0;
     for (const k of keys.length ? keys : [st.refType]) {
@@ -550,7 +639,7 @@ IC.opsCapacity = function (S, ap, st, ops) {
       depC += (luaw ? Math.max(bd.E + lineW, O.CREW + bd.roll + sepD) : sepD + bd.E + bd.line + O.CREW + bd.roll) * w;
       // an arrival, then a departure, then the next arrival once the departure has the gap it needs
       const dv = luaw ? (sepA <= bd.E + bd.line ? bd.E + bd.line : Math.max(bd.E + lineW, sepA)) : sepA + bd.E + bd.line;
-      const after = Math.max(0, (R.gap * 10 - FAF) / O.ARR_V, bd.roll - (FAF - O.GO) / O.ARR_V, st.tower ? 0 : bd.roll + sepD);
+      const after = Math.max(0, (R.gap * 10 - FAF) / O.ARR_V, bd.roll - (FAF - O.GO) / O.ARR_V, towered ? 0 : bd.roll + sepD);
       pair += ((bl < 1e8 ? bl : 300) + dv + O.CREW + after) * w;
       okD += w;
     }
@@ -628,7 +717,10 @@ IC.aptStats = function (S, ap) {
   const unlinked = stands.filter(s => !s.linked && s.hp > 0).length;
   if (unlinked) st.warn.push(`${unlinked} stand${unlinked > 1 ? 's are' : ' is'} not connected to a runway.`);
   for (const p of ap.parts) if (DOOR(p.kind) && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds || 0; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways.`); }
-  const tower = alive('tower').length > 0;
+  const towers = alive('tower'), tower = towers.length > 0;
+  // the cab must see each runway it works: within 8 km and over the roofs in between
+  st.unseen = {};
+  if (tower) for (const rw of rws) { const why = IC.towerSees(ap, towers, rw); if (why) { st.unseen[rw.id] = why; st.warn.push(`${rw.name}: the tower cannot see it (${why}). It is worked as with no tower, one movement every 8 min. A tower with a clear view of it fixes this.`); } }
   const radar = alive('atc').length > 0 || !!(S && S.units.some(u => u.radarOn && u.d.sensor && !u.d.sensor.passive && U.dist(u, ap) < 900));
   st.tower = tower; st.radar = radar;
   // in fog, low-visibility procedures space every movement wider, unless a runway end has a CAT III landing system
@@ -712,29 +804,33 @@ IC.aptStats = function (S, ap) {
   const fires = alive('fire');
   const fireSt = fires.filter(f => rws.some(rw => U.dist(f, rwAt(rw, 0.5)) < 15));
   st.fire = fireSt.length > 0;
-  st.rescue = 0;
-  for (const rw of rws) for (const t of [0, 0.5, 1]) st.rescue = Math.max(st.rescue, IC.aptRescue(ap, rwAt(rw, t)));
-  if (!tower) st.warn.push('No control tower: only a few movements an hour.');
-  if (!st.fire) st.warn.push('No fire station near the runway: only turboprops may use it.');
-  else if (st.rescue > 180) { const far = rws.find(rw => [0, 0.5, 1].some(t => IC.aptRescue(ap, rwAt(rw, t)) > 180)); st.warn.push(`Fire trucks need ${U.dur(st.rescue)} to reach the far end of ${far ? far.name : 'a runway'}; three minutes is the standard. More people die in a crash there.`); }
+  st.rescue = 0; st.rescueRw = {};
+  for (const rw of rws) { let r = 0; for (const t of [0, 0.5, 1]) r = Math.max(r, IC.aptRescue(ap, rwAt(rw, t))); st.rescueRw[rw.id] = r; st.rescue = Math.max(st.rescue, r); }
+  // heavy jets need a runway long enough for them that the trucks reach in 3 minutes
+  st.heavyOk = rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES.wide.rwy && st.rescueRw[rw.id] <= IC.FIRE_STD);
+  if (!tower) st.warn.push('No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
+  if (!st.fire) st.warn.push('No fire station near the runway: only turboprops may use it. Build one within 1.5 km of the runway.');
+  else for (const rw of rws) if (st.rescueRw[rw.id] > IC.FIRE_STD) st.warn.push(`Fire trucks reach ${rw.name} in ${IC.mmss(st.rescueRw[rw.id])}: heavy jets may not land on it, and more people die in a crash there. A fire station closer to its far end brings it under 3 min.`);
   if (rws.length) { const w = waterNear(S, ap, rws); if (w.near && ap.kind !== 'airbase') st.warn.push(`A ${w.what} ${U.km(w.d)} from the runway attracts birds: now and then one hits an aircraft.`); }
   for (const t of alive('terminal')) st.pax += IC.APART.terminal.pax * t.w * t.h;
   for (const t of alive('cargo')) st.cargo += 60 * t.w * t.h;
   // fuel: stock in the tanks, resupply by road or pipeline, and how many aircraft the trucks can refuel an hour
   const tanks = alive('fuel');
   st.hydrant = alive('hydrant').length > 0;
-  st.fuelCap = tanks.length * IC.APART.fuel.cap;
+  const nTank = tanks.reduce((s, t) => s + IC.fuelTanks(t), 0);
+  st.tanks = nTank;
+  st.fuelCap = tanks.reduce((s, t) => s + IC.fuelCap(t), 0);
   st.fuel = tanks.reduce((s, t) => s + (t.stock || 0), 0);
-  st.fuelIn = tanks.length ? tanks.length * IC.FUEL_IN + (st.hydrant ? IC.APART.hydrant.pipe : 0) : 0;
-  st.trucks = st.hydrant ? Infinity : tanks.length * IC.FUEL_TRUCKS;
+  st.fuelIn = nTank ? nTank * IC.FUEL_IN + (st.hydrant ? IC.APART.hydrant.pipe : 0) : 0;
+  st.trucks = st.hydrant ? Infinity : nTank * IC.FUEL_TRUCKS;
   st.fuelDeps = Math.round(Math.min(st.trucks, st.fuelIn / (T.fuel || 1)));
   if (tanks.length && st.fuelDeps < st.depPerHour * 0.8 && ap.kind !== 'airbase') st.warn.push(`Fuel for about ${st.fuelDeps} departures an hour, fewer than the runways can launch (${st.depPerHour}). ${st.hydrant ? 'More tanks' : 'More tanks or a hydrant system'} would help.`);
-  for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (U.dist(tanks[i], tanks[j]) < 1.4) { st.warn.push('Fuel tanks stand within 140 m of each other: one fire could take them all.'); i = tanks.length; break; }
+  for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (IC.fuelGap(tanks[i], tanks[j]) < 1) { st.warn.push(`Fuel ${tanks[i].r ? 'tanks' : 'farms'} stand within 100 m of each other: one fire could take them all. Keep them further apart.`); i = tanks.length; break; }
   const links = rws.map(rw => (G.rwn.get(rw.id) || []).filter(n => n.exit).length).reduce((s, v) => s + v, 0);
   if (links === 1) st.warn.push('Only one taxiway connects the runway: a single hit strands every aircraft.');
   const ammo = alive('ammo');
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');
-  st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 ? 'cargo' : best >= 27 ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
+  st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 && st.heavyOk ? 'cargo' : best >= 27 && st.heavyOk ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
   ap.st = st;
   return st;
 };
@@ -747,6 +843,7 @@ IC.aptLandWhy = function (S, ap, T) {
   const wind = rws.map(rw => cfg.rw[rw.id] && IC.rwWindBlock(S, rw, cfg.rw[rw.id].dir, T));
   if (wind.every(Boolean)) return wind[0];
   if (IC.needILS(S) && !T.mil && !rws.some((rw, i) => !wind[i] && IC.rwHasILS(ap, rw, cfg.rw[rw.id].dir))) return 'fog or low cloud, and no landing system (ILS) on a runway it can use';
+  if (!rws.some((rw, i) => !wind[i] && IC.rwFireOk(ap, rw, T))) return 'the fire trucks need over 3 min to reach the runway: heavy jets may not land';
   return '';
 };
 /* can this aircraft type use the airport right now (runway, stands, fire cover) */
@@ -754,6 +851,7 @@ IC.aptFits = function (ap, type) {
   const T = IC.ACTYPES[type], st = ap.st || {};
   if (!T.vtol && (st.longest || 0) < T.rwy) return false;
   if (!T.mil && !st.fire && type !== 'turbo') return false;
+  if (!T.mil && T.stand === 'l' && st.heavyOk === false) return false;
   return true;
 };
 
@@ -1253,8 +1351,15 @@ IC.updateBases = function (S, dt) {
     // fuel arrives by road and pipeline: each tank at its own rate, and a hydrant system's pipeline shares out more
     const tanks = b.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25);
     const pipe = b.parts.some(p => p.kind === 'hydrant' && p.built && p.hp > p.max * 0.25) ? IC.APART.hydrant.pipe : 0;
-    const inflow = (IC.FUEL_IN + (tanks.length ? pipe / tanks.length : 0)) * dt / 3600;
-    for (const t of tanks) t.stock = Math.min(IC.APART.fuel.cap, (t.stock || 0) + inflow);
+    const nT = tanks.reduce((s, t) => s + IC.fuelTanks(t), 0);
+    for (const t of tanks) t.stock = Math.min(IC.fuelCap(t), (t.stock || 0) + (IC.FUEL_IN + (nT ? pipe / nT : 0)) * IC.fuelTanks(t) * dt / 3600);
+    // a fire drill each morning from 10:00: the trucks run to a runway end and back, and the panel times them
+    const day = Math.floor(S.time / 86400);
+    if (b.drillD !== day && (S.time % 86400) >= 36000 && !(b.fireRun && S.time < b.fireRun.home)) {
+      b.drillD = day;
+      const rw = b.parts.find(p => p.kind === 'runway' && p.built && p.hp > 0);
+      if (rw) IC.fireRun(S, b, rwAt(rw, U.hash(day, 7) < 0.5 ? 0 : 1), 'drill');
+    }
     if (IC.landsideTick) IC.landsideTick(S, b, dt);
     b.statT = (b.statT || 0) - dt;
     if (b.statT <= 0 || b.dirty) { b.statT = 60; IC.aptStats(S, b); }
@@ -1274,7 +1379,7 @@ IC.aptTakeFuel = function (ap, n, S) {
   const now = S && S.time;
   if (S && !(ap.st && ap.st.hydrant)) {
     const L = ap.trucks = (ap.trucks || []).filter(t => now - t < 3600);
-    const cap = ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).length * IC.FUEL_TRUCKS;
+    const cap = ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).reduce((s, t) => s + IC.fuelTanks(t), 0) * IC.FUEL_TRUCKS;
     // every truck busy: with a fuel stand the aircraft taxis there on its way out (groundops.js); without, it waits
     if (L.length >= cap) {
       if (!ap.parts.some(p => p.kind === 'fuelpad' && p.built && p.hp > p.max * 0.25 && p.linked !== false)) { ap.truckWait = now; return false; }
@@ -1501,6 +1606,8 @@ IC.layoutAirport = function (ap, template, a) {
   const tx = pts => IC.aptAddPart(ap, { kind: 'taxi', nodes: pts.map(([x, y]) => N(x, y)) }, true);
   const rect = (kind, lx, ly, w, h) => { const c = W(lx, ly); return IC.aptAddPart(ap, { kind, x: c.x, y: c.y, w, h, a }, true); };
   const bld = (kind, lx, ly, rot) => { const c = W(lx, ly); return IC.aptAddPart(ap, { kind, x: c.x, y: c.y, a: a + (rot || 0) }, true); };
+  // (an air base keeps single tanks, spread out or, on a run-down base, clustered)
+  const tank = (lx, ly) => { const c = W(lx, ly); return IC.aptAddPart(ap, { kind: 'fuel', x: c.x, y: c.y, a, r: 0.13 }, true); };
   const ils = (r, ends) => { for (const e of ends) IC.aptAddPart(ap, { kind: 'ils', rw: r.id, end: e }, true); };
   const zone = (p, z) => { p.zone = z; return p; };
   const nm = (i) => { const h = Math.round(((a * 180 / Math.PI + 360) % 180) / 10) || 18; const x = String(h).padStart(2, '0'), y = String((h + 18) % 36 || 36).padStart(2, '0'); return `Runway ${x}/${y}${i ? ' ' + 'LR'[i - 1] : ''}`; };
@@ -1513,7 +1620,7 @@ IC.layoutAirport = function (ap, template, a) {
     rect('terminal', 1, 4.7, 12, 1.0); rect('cargo', 13.5, 4.6, 3, 0.8);
     // a remote apron for overnight parking, south of the runway
     tx([[-12, 0], [-12, -1.6]]); rect('apron', -12, -2.1, 4.6, 0.96);
-    bld('fuel', -12, 4.6); bld('fuel', -11.55, 5.05); bld('fuel', -12.5, 5.15); bld('fuel', -11.1, 4.6);
+    bld('fuel', -11.8, 4.9);
     bld('tower', 3.5, 5.7); bld('fire', 0, -1.5); bld('atc', -8, -3.2);
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
@@ -1523,13 +1630,13 @@ IC.layoutAirport = function (ap, template, a) {
     tx([[2, 0], [2, 1.75]]);
     rect('apron', 2, 2.22, 1.5, 0.95);
     rect('terminal', 2, 3.05, 1.8, 0.55);
-    bld('fuel', 3.6, 2.6); bld('tower', 0.6, 2.7); bld('fire', 0, -1.2);
+    bld('fuel', 4.2, 2.8); bld('tower', 0.6, 2.7); bld('fire', 0, -1.2);
   } else if (template === 'regional_ok') {
     ils(rw(-13, 13, 0, nm()), ['a']);
     tx([[-12.8, 1.7], [-6, 1.7], [0, 1.7], [6, 1.7]]);
     tx([[-12.8, 0], [-12.8, 1.7]]); tx([[6, 0], [6, 1.7]]); tx([[0, 1.7], [0, 2.25]]); tx([[-6, 1.7], [-6, 2.25]]);
     rect('apron', 0, 2.72, 3.2, 0.95); rect('terminal', 0, 3.6, 3.2, 0.7);
-    bld('fuel', 3.8, 3.4); bld('fuel', 5.2, 3.5); bld('tower', -2.4, 3.1); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
+    bld('fuel', 4.6, 3.6); bld('tower', -2.4, 3.1); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
   } else if (template === 'mil_mothball') {
     // a half-closed base: a parallel taxiway to one end only, clustered fuel, no shelters, no alert pad
     rw(-13, 13, 0, nm());
@@ -1537,7 +1644,7 @@ IC.layoutAirport = function (ap, template, a) {
     tx([[-6, -1.6], [-6, -2.6]]); tx([[-9, -1.6], [-9, -2.12]]);
     rect('apron', -9, -2.55, 2.5, 0.86);
     bld('hangar', -6.4, -2.95); bld('hangar', -5.6, -2.95);
-    bld('fuel', -10.3, -3.8); bld('fuel', -10.0, -4.15);
+    tank(-10.3, -3.8); tank(-10.0, -4.15);
     bld('tower', -2.2, -2.8); bld('fire', 1.2, -1.3);
   } else if (template === 'mil_full') {
     rw(-15, 15, 0, nm());
@@ -1548,7 +1655,7 @@ IC.layoutAirport = function (ap, template, a) {
     bld('hangar', -2.5, -3.2); bld('hangar', 2.5, -3.2);
     tx([[-2.5, -1.7], [-2.5, -2.9]]); tx([[2.5, -1.7], [2.5, -2.9]]);
     rect('alert', -15.6, -1.0, 0.42, 0.3);
-    bld('fuel', -12, -4.5); bld('fuel', -4, -5.2); bld('fuel', 11, -4.6);
+    tank(-12, -4.5); tank(-4, -5.2); tank(11, -4.6);
     bld('ammo', 0, -7); bld('tower', 1.2, -3.8); bld('fire', -1.2, 1.3);
     tx([[-14.8, -1.7], [-15.6, -1.15]]);
   } else if (template === 'kden' || template === 'kden6') {
@@ -1618,7 +1725,7 @@ function layoutKden(ap, L) {
   tx([[36, -23], [36, -21.6]]); zone(rect('apron', 37, -21.15, 4, 0.85), 'mil');
   tx([[-26, 23], [-26, 21.6]]); zone(rect('apron', -26, 21.3, 3, 0.6), 'light');
   // fuel farm with a hydrant system, fire stations within three minutes of every runway end, tower and radars
-  for (const x of [-8, -6, -4, -2]) { bld('fuel', x, 16); bld('fuel', x, 18); }
+  bld('fuel', -9.5, 17); bld('fuel', -12, 17); bld('fuel', -14.5, 17);
   bld('hydrant', 2, 17);
   bld('fire', -22.5, -18); bld('fire', 22.5, 24); bld('fire', -24, 19.5); bld('fire', 23.2, -24.6);
   bld('tower', 8, -14); bld('atc', 4, 20); bld('gradar', -9.5, 12);
