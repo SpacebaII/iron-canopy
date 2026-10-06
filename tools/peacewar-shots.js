@@ -54,8 +54,9 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
     const ok = IC.aptPlanRunway(S, ap, P(-17, -16), P(17, -16)) && IC.aptPlanTaxi(S, ap, [P(-12, -1.6), P(-12, -16)]) && IC.aptPlanTaxi(S, ap, [P(8, 0), P(8, -16)]);
     W.note('Choice 2: a second runway at ' + ap.name + (ok ? '' : ' (could not be planned)'))`));
   // Choice 3, Year 3: a hangar at the capital
-  say(await run(`await W.until(IC.MO(S, 27)); const ap = W.cap, q = IC.aptLocal(ap, -20, 14);
-    W.hangar = IC.aptPlanPart(S, ap, 'hangar', q.x, q.y, ap.rwyA);
+  say(await run(`await W.until(IC.MO(S, 27)); const ap = W.cap;
+    // beside the two hangars by the western taxiway
+    for (const [x, y] of [[-10.1, 3.6], [-7.4, 3.6], [-11, 3.6], [-10.1, 4.4]]) { const q = IC.aptLocal(ap, x, y); W.hangar = IC.aptPlanPart(S, ap, 'hangar', q.x, q.y, ap.rwyA); if (W.hangar) break; }
     W.note('Choice 3: a hangar at ' + ap.name + (W.hangar ? '' : ' (could not be placed)'))`));
   // the quiet years
   say(await run(`await W.until(IC.MO(S, 100));
@@ -95,9 +96,9 @@ try { ({ chromium } = require('playwright')); } catch (e) { console.error('Playw
     tl.where = 'hangar'; tl.at = ap.id; h.inside = [{ tl: tl.id }];
     IC.aptHit(S, ap, h.x + 0.4, h.y, 25, { d: IC.THR.lacm });
     W.note('Moment 3: ' + (S.logs.find(l => l.tag === 'AIRPORT') || {}).msg);
-    const s = IC.aptStands(ap).filter(x => x.occ && x.hp > 0)[0];
+    const s = IC.aptStands(ap).filter(x => x.occ && x.hp > 0).sort((a, b) => IC.U.dist(a, h) - IC.U.dist(b, h))[0];
     if (s) { IC.detonate(S, s.x + 0.3, s.y, 25, { d: IC.THR.lacm }); W.note('Same blast by an open stand: ' + (S.logs.find(l => l.tag === 'AIRPORT') || {}).msg); }
-    S.sel = null; W.look({ x: h.x + 0.6, y: h.y }, 18)`));
+    S.sel = null; W.look(s ? { x: (h.x + s.x) / 2, y: (h.y + s.y) / 2 } : h, s ? Math.min(40, 900 / Math.max(1, IC.U.dist(h, s))) : 30); W.note('Hangar ' + (h === W.hangar ? 'built in Year 3' : 'from the start') + ', connected: ' + h.linked)`));
   await shot('pw-hangar');
 
   // War costs peace: closing the airspace says what it costs. (On this compressed calendar two live days are 40 months,
