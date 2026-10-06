@@ -35,7 +35,8 @@ function starter(S, ap, len) {
   if (!has(ap, 'apron') && !part(S, ap, 'apron', 0, 4, 4, 1.3, o) && !ap.cpSide) { ap.cpSide = -1; part(S, ap, 'apron', 0, 4, 4, 1.3, o); }
   if (!has(ap, 'taxi')) taxi(S, ap, [[0, 0], [0, 3.35]]);
   if (!has(ap, 'terminal')) part(S, ap, 'terminal', 0, 5.1, 3, 0.8);
-  if (!has(ap, 'fire')) part(S, ap, 'fire', 3.5, 1.5);
+  // (the fire station across the runway from the terminal: the parallel taxiway will run 180 m out on this side)
+  if (!has(ap, 'fire')) part(S, ap, 'fire', 3.5, -1.5);
   if (!has(ap, 'fuel')) part(S, ap, 'fuel', -5, 4.5);
 }
 /* what the airlines' offers and deals find missing at this airport: the first unmet line (IC.dealNeeds) */

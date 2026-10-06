@@ -79,21 +79,24 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
   if (!site) problems.push('career: no site to found an airport on');
   else {
     await ev(`IC.cam.fly = null; IC.cam.z = 0.9; IC.centerOn(${site.x}, ${site.y})`); await wait(300);
-    await clickWorld(site.x, site.y); await clickWorld(site.x + 30, site.y);
+    // the site, then Found: the button beside it (brief 47: a click never founds or builds)
+    await clickWorld(site.x, site.y); await wait(300);
+    await page.click('#bldgo button[data-go=build]');
     await wait(500); await clear();
     const ap = await ev(`(() => { const ap = IC.S.byId[IC.S.story.cap]; return ap && { x: ap.x, y: ap.y, a: ap.rwyA }; })()`);
     if (!ap) problems.push('career: founding with the mouse did not make the national airport');
     else {
       await look('career-founded');
       // the runway: the build bar (open with the airport selected), its Runways tab, Runway, one end, the other, and
-      // again to build
+      // the Build button beside it
       await ev(`IC.cam.fly = null; IC.cam.z = 4; IC.centerOn(${ap.x}, ${ap.y})`); await wait(300);
       if (!(await ev(`!document.getElementById('bbar').hidden`))) { await page.click('button[data-act=bbToggle]'); await wait(300); }
       await page.click('#bbar button[data-bb=tab][data-v=rw]'); await wait(200);
       await page.click('#bbar button[data-bb=item][data-v=runway]'); await wait(200);
       const P = (l) => ({ x: ap.x + Math.cos(ap.a) * l, y: ap.y + Math.sin(ap.a) * l });
       const a = P(-15), b = P(15);
-      await clickWorld(a.x, a.y); await clickWorld(b.x, b.y); await clickWorld(b.x, b.y);
+      await clickWorld(a.x, a.y); await clickWorld(b.x, b.y); await wait(300);
+      await page.click('#bldgo button[data-go=build]'); await wait(300);
       const rw = await ev(`IC.S.byId[IC.S.story.cap].parts.some(p => p.kind === 'runway')`);
       if (!rw) problems.push('career: the runway was not planned by clicking its two ends');
       await page.keyboard.press('Escape'); await wait(200);

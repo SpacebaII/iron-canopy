@@ -280,6 +280,7 @@ IC.aptCanTake = function (S, ap, T) {
   if (ap.owner !== 'us' || ap.offline) return 'the airport is closed';
   if ((st.longest || 0) < T.rwy) return `the runway is too short (needs ${U.km(T.rwy)})`;
   if (!T.mil && T !== IC.ACTYPES.turbo && !st.fire) return 'no fire station covers the runway';
+  if (!T.mil && T.stand === 'l' && st.heavyOk === false) return `fire trucks need over 3 min to reach every runway it could use (${U.dur(st.rescue)})`;
   if (!standsOf(ap).some(s => s.linked !== false && s.hp > 0 && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T))) return `no ${IC.STAND[T.stand].name} ${T.cargo ? 'cargo or passenger' : 'passenger'} stand connected to the runway`;
   return '';
 };
@@ -533,7 +534,7 @@ IC.aviation = function (S, dt) {
       const night = !dayOps(S);
       if (night && (ap.curfew || al.kind !== 'cargo')) { tl.t = 300; continue; }
       // fuelled once: held back below (light aircraft, spacing, no taxi route) it keeps what it took
-      if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; IC.aptFuelWait(S, ap, 300); if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
       tl.fuelled = true;
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
@@ -834,7 +835,7 @@ IC.dealNeeds = function (S, q) {
       row('pax', 'terminal room, passengers an hour', Math.round(N.pax), Math.round(P.pax || 0), 'a bigger terminal');
     }
     if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar || 0, 'hangar space for the aircraft based here');
-    row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'more fuel tanks, or a hydrant system');
+    row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'another fuel farm, or a hydrant system');
   }
   return L;
 };
