@@ -201,7 +201,7 @@ IC.newMissile = (S, o, R, v0) => {
   const m = Object.assign({ id: IC.nid('m'), mun: null, M: null, x: 0, y: 0, alt: 0, a: 0, spd: 0, target: null, life: 60, src: '', unit: null, by: null, pk: 0, trailT: 0, side: 'us', tr: null, pip: null, hoj: false,
     a0: 0, loft: 0, flown: 0, dead: false, counted: false, ir: false, end: null, t0: S.time, r0: 0,
     P: null, age: 0, v0: 0, v: 0, c: 0, vb: 0, nh: 0, closeT: 0, rPrev: null, rhPrev: null, lostLock: false, fooled: false, tti: Infinity,
-    active: false, launchSeen: false, phase: null, fx: 0, fy: 0, fvx: 0, fvy: 0, lockT: 0, semiT: 0, warned: false }, o);
+    active: false, launchSeen: false, phase: null, fx: 0, fy: 0, fvx: 0, fvy: 0, lockT: 0, semiT: 0, warned: false, stray: null }, o);
   m.r0 = m.target ? U.dxy(m.x, m.y, m.target.x, m.target.y) : 0;
   IC.mslInit(m, m.M, R, v0);
   // it flies until it is spent; the life is only a backstop
@@ -451,12 +451,14 @@ function missileEnd(S, m, t, res) {
     if (inEnv && Math.random() < pk) {
       IC.explode(S, t.x, t.y, 0.6, 'us');
       t.hp -= HIT[m.mun] || 2;
-      if (t.hp <= 0 || t.d.cls !== 'air') IC.killThreat(S, t, m.src);
+      // (an airliner is not built to take a warhead: one hit brings it down)
+      if (t.hp <= 0 || t.d.cls !== 'air' || t.d.civil) IC.killThreat(S, t, m.src);
       else { IC.text(S, t.x, t.y, 'DAMAGED', '#ffd08a'); t.spd *= 0.85; IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'DAMAGED' }); }
       return;
     }
     res = { end: 'miss', why: !inEnv ? 'OUT OF ENVELOPE' : 'MISS', d: res.d };
   }
+  if (res.why !== 'OUT OF ENERGY' && strayLock(S, m, t)) return;
   IC.text(S, m.x, m.y, res.why, '#8fa3b0');
   if (/^PASSED/.test(res.why)) IC.emit(S, 'missHeight', { t, m, dz: res.dz / 10 });
   IC.emit(S, 'mstat', { m, t, what: res.why === 'OUT OF ENERGY' ? 'spent' : 'miss', text: res.why });
@@ -464,6 +466,33 @@ function missileEnd(S, m, t, res) {
   IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
 }
 IC.missileEnd = missileEnd;
+/* a missile that misses flies on with fuel left, and its seeker looks for something else to chase: an airliner
+   ahead of it, close and near its height, is the biggest echo in the sky (brief 25: the price of an open airspace
+   where missiles fly). IC.STRAY: how far ahead it looks (world units), the height band (km), the chance close in. */
+IC.STRAY = { R: 150, dz: 4, p: 0.6 };
+function strayLock(S, m, t) {
+  if (m.v != null && m.P && m.v < (m.P.vmin || 0) * 1.6) return false;
+  const ca = Math.cos(m.a), sa = Math.sin(m.a);
+  let best = null, bd = IC.STRAY.R;
+  for (const a of S.threats) {
+    if (a.dead || !a.d.civil || a.hostileCiv || a === t || (a.alt || 0) < 0.3 || Math.abs((a.alt || 0) - (m.alt || 0)) > IC.STRAY.dz) continue;
+    const dx = a.x - m.x, dy = a.y - m.y, d = Math.hypot(dx, dy);
+    if (d < bd && (dx * ca + dy * sa) > d * 0.7) { bd = d; best = a; }
+  }
+  if (!best) return false;
+  // close calls are said once in a while: the player decides whether to keep the airspace open
+  if (Math.random() >= IC.STRAY.p * (1 - bd / IC.STRAY.R)) {
+    if (!S.strayWarnT || S.time - S.strayWarnT > 3600) { S.strayWarnT = S.time; IC.log(S, 'warn', 'CIVIL', `${best.cs} flew ${U.km(bd)} ahead of one of our missiles that had just missed. A missile that misses flies on and can lock on to an airliner. Restrict or close the airspace while raids are in the air.`, best); }
+    return false;
+  }
+  t.inbound--; m.counted = false; best.inbound = (best.inbound || 0) + 1;
+  Object.assign(m, { dead: false, end: null, target: best, lostLock: false, fooled: false, nh: 0, semiT: 0, rPrev: null, rhPrev: null, closeT: 0, stray: { from: t.tn || null, d: bd } });
+  best.strayBy = m.src; best.strayD = bd;
+  IC.text(S, m.x, m.y, 'SEEKER ON AIRLINER', '#ffb05a');
+  IC.log(S, 'leak', 'CIVIL', `A ${m.src} missile missed ${t.tn ? `TN ${t.tn}` : 'its target'} and its seeker has locked on to airliner ${best.cs}, ${U.km(bd)} ahead.`, best);
+  IC.emit(S, 'strayLock', { m, t, a: best });
+  return true;
+}
 /* an interceptor on its way to a predicted intercept point: it arrives when the warhead should, and its seeker
    does the last few hundred metres */
 function flyToPip(S, m, t, dt) {
