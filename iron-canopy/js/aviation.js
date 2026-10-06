@@ -527,6 +527,39 @@ IC.avDecide = function (S, id, yes) {
 };
 IC.avSetFee = function (S, ap, v) { ap.feeLevel = U.clamp(v, 0.5, 2); };
 
+/* ---------- (round 5b) why a departure waits on its stand ----------
+   One reason at a time, each with its own words and fix (IC.aptProblems): tl.hold = { k, t0, why }. t0 is when
+   this reason began. tl.fuelWait (its old name) still adds up every minute of delay the airline judges; a night
+   stop is not a delay. */
+IC.HOLD = { night: 'Night stop', fuel: 'No fuel', truck: 'Waiting for a fuel truck', ga: 'Light aircraft on the runway', release: 'Waiting for its airway release',
+  rwy: 'Runway too short or closed', wind: 'Wind beyond its limits', route: 'No taxi route', slot: 'Waiting for its slot', cap: 'Hourly cap reached' };
+IC.HOLD_CANCEL = 6 * 3600;
+function holdOn(S, tl, ap, k, w, why) {
+  if (!tl.hold || tl.hold.k !== k) tl.hold = { k, t0: S.time, why: why || '', ap: ap.id };
+  else if (why) tl.hold.why = why;
+  tl.t = w;
+  if (k !== 'night') tl.fuelWait = (tl.fuelWait || 0) + w;
+}
+/* a departure that cannot leave: the flight is cancelled and the aircraft goes off the route (it cannot fly out) */
+function strandTail(S, tl, ap, s, r, al, why) {
+  tl.where = 'lost'; tl.retired = true; tl.hold = null; if (s.occ === tl.id) s.occ = null;
+  r.n = Math.max(0, r.n - 1); if (r.n <= 0) r.st = 'cut';
+  judge(S, al, tl, ap, { divert: true, kind: 'dep' });
+  IC.log(S, 'warn', 'AVIATION', `${al.name} cancels ${tl.cs} at ${ap.name} after ${U.dur(IC.HOLD_CANCEL)} on the stand: ${why}. It takes the aircraft off ${routeName(S, r)}.`, ap);
+  IC.emit(S, 'holdCancel', { tl, ap, why });
+}
+/* departures held on their stands at an airport, by reason: [{ k, name, n, wait (longest, s), why, tails }] */
+IC.aptHolds = function (S, ap) {
+  const by = {};
+  if (S.av) for (const tl of S.av.tails) {
+    const h = tl.hold;
+    if (tl.where !== 'stand' || tl.at !== ap.id || !h || tl.t > 900) continue;
+    const g = by[h.k] = by[h.k] || { k: h.k, name: IC.HOLD[h.k] || h.k, n: 0, wait: 0, why: h.why, tails: [] };
+    g.n++; g.tails.push(tl); if (S.time - h.t0 >= g.wait) { g.wait = S.time - h.t0; g.why = h.why; }
+  }
+  return Object.values(by).sort((a, b) => b.wait - a.wait);
+};
+
 /* ---------- the tick ---------- */
 IC.aviation = function (S, dt) {
   const A = S.av;
@@ -547,21 +580,37 @@ IC.aviation = function (S, dt) {
       if (suspended) { tl.t = 600; continue; }
       const al = airlineOf(S, tl.al);
       const night = !dayOps(S);
-      if (night && (ap.curfew || al.kind !== 'cargo')) { tl.t = 300; continue; }
+      if (night && (ap.curfew || al.kind !== 'cargo')) { holdOn(S, tl, ap, 'night', 300, ap.curfew ? 'the night curfew: no departures 23:00–06:00' : 'airliners do not leave at night (23:00–06:00)'); continue; }
       // fuelled once: held back below (light aircraft, spacing, no taxi route) it keeps what it took
-      if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; IC.aptFuelWait(S, ap, 300); if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', ap.truckWait === S.time ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); } continue; }
+      if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) {
+        const truck = ap.truckWait === S.time;
+        holdOn(S, tl, ap, truck ? 'truck' : 'fuel', 300, truck ? 'every fuel truck is busy' : 'the fuel tanks are empty'); IC.aptFuelWait(S, ap, 300);
+        if (!ap.fuelLogT || S.time - ap.fuelLogT > 3600) { ap.fuelLogT = S.time; IC.log(S, 'warn', 'AVIATION', truck ? `${ap.name}: aircraft waiting for a fuel truck. Every truck is busy; more tanks or a hydrant system would help.` : `${ap.name}: aircraft waiting for fuel. The tank farm is empty or destroyed.`, ap); }
+        continue;
+      }
       tl.fuelled = true;
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       // light aircraft on the runway, or controllers still spacing the last departure the same way
-      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); tl.t = w; tl.fuelWait = (tl.fuelWait || 0) + w; continue; }
+      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); holdOn(S, tl, ap, 'ga', w, 'light aircraft are using the runway'); continue; }
+      // (round 5b) a departure that cannot be planned is checked before it takes an airway release, so a stuck
+      // one no longer holds the others back
+      if (!IC.gopsCanDepart(S, ap, tl.type, s.drive && IC.aptGraph(ap).N.has(s.id + 'o') ? s.id + 'o' : s.id)) {
+        const W = IC.gopsDepartWhy(S, ap, tl.type, s.id);
+        holdOn(S, tl, ap, W.k, 300, W.why);
+        // held for hours by something that will not pass by itself: the flight is cancelled and the airline takes
+        // the aircraft off the route (a wind that lasts is not that)
+        if (W.k !== 'wind' && S.time - tl.hold.t0 > IC.HOLD_CANCEL) { strandTail(S, tl, ap, s, r, al, W.why); continue; }
+        continue;
+      }
       // with a holding bay the tower lets it taxi out up to five minutes before its release and wait there
       const bay = ap.parts.some(p => p.kind === 'holdbay' && p.built);
       const rel = IC.aspRelease(S, from, toEnd, bay ? 300 : 0);
-      if (rel > 0) { tl.t = rel; tl.fuelWait = (tl.fuelWait || 0) + rel; continue; }
+      if (rel > 0) { holdOn(S, tl, ap, 'release', rel, 'controllers are spacing departures on the same airway'); continue; }
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, readyT: rel < 0 ? S.time - rel : 0, who: tl.cs, tail: tl, livery: al.livery,
         onAir: IC.hfn('avAirborne', S, tl, from, toEnd, al, ap), onDead: IC.hfn('avTaxiLost', S, tl, ap) });
-      if (!m) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; continue; }
+      if (!m) { holdOn(S, tl, ap, 'route', 300, 'no taxi route to a runway'); continue; }
+      tl.hold = null;
       tl.where = 'dep'; tl.mv = m; tl.stand = null; tl.fuelled = false;
     } else if (tl.where === 'away') {
       tl.t -= dt;

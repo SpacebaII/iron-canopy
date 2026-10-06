@@ -119,7 +119,7 @@ function fids(ap, kind) {
         // airliners stay the night (06:00–23:00 only); freighters fly on unless the airport has a curfew
         const h = (((S.time % 86400) + 86400) % 86400) / 3600, night = h < 6 || h >= 23, stays = night && (ap.curfew || IC.avAirline(S, tl.al).kind !== 'cargo');
         eta = stays ? Math.max(tl.t, ((h < 6 ? 6 : 30) - h) * 3600) : Math.max(0, tl.t);
-        stt = stays ? 'Night stop' : tl.fuelWait > 300 && tl.t < 400 ? 'Waiting' : tl.t < 900 ? 'Boarding' : 'At stand'; cls = stt === 'Waiting' ? 'amb' : stt === 'Boarding' ? 'ok' : '';
+        stt = stays ? 'Night stop' : tl.hold && tl.hold.k !== 'night' && S.time - tl.hold.t0 > 300 ? (IC.HOLD[tl.hold.k] || 'Waiting') : tl.t < 900 ? 'Boarding' : 'At stand'; cls = tl.hold && !stays && stt !== 'Boarding' && stt !== 'At stand' ? 'amb' : stt === 'Boarding' ? 'ok' : '';
       }
       else if (tl.where === 'dep' && tl.at === ap.id) { eta = 0; stt = 'Taxiing'; cls = 'ok'; }
     }

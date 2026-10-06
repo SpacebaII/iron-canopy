@@ -408,7 +408,7 @@ function planDeparture(S, ap, m, dry) {
   const C = [];
   for (const rw of runways(ap)) {
     const c = cfg.rw[rw.id]; if (!c) continue;
-    const L = IC.rwLen(rw), dir = c.dir, need = T.rwy * 1.05 + 1;
+    const L = IC.rwLen(rw), dir = c.dir, need = toNeed(T);
     if (IC.rwUsable(rw) < T.rwy || IC.rwWindBlock(S, rw, dir, T)) continue;
     // departures belong on departure runways; an arrival runway is used only when nothing else fits;
     // and they spread over the departure runways by the queue each already has
@@ -457,6 +457,10 @@ function planDeparture(S, ap, m, dry) {
   if (best) best.p = { cost: best.cost, steps: best.start.id === m.node ? [] : IC.aptSteps(tree, m.node, best.start.id) };
   return best;
 }
+/* (round 5b) the runway a take-off needs is the type's runway length, the same number every check uses (airport
+   stats, deals, founding). It was 5% and 100 m more: a 3 km runway took freighters in and never let them out */
+const toNeed = T => T.rwy;
+IC.toNeed = toNeed;
 /* the longest take-off run any point on this runway offers in this direction */
 function fullRoom(rw, g, dir, need) {
   const L = IC.rwLen(rw); let best = 0;
@@ -486,6 +490,16 @@ IC.gopsDepart = function (S, ap, o) {
   return m;
 };
 IC.gopsCanDepart = function (S, ap, type, node) { const m = { T: IC.ACTYPES[type], node, t: 0 }; return !!planDeparture(S, ap, m, true); };
+/* (round 5b) why a departure from this stand cannot be planned, in words: the runway, the wind or the taxiways */
+IC.gopsDepartWhy = function (S, ap, type, node) {
+  const T = IC.ACTYPES[type], rws = runways(ap), cfg = cfgOf(S, ap);
+  if (!rws.length) return { k: 'rwy', why: 'no runway is open' };
+  const long = rws.filter(rw => IC.rwUsable(rw) >= toNeed(T));
+  if (!long.length) return { k: 'rwy', why: `no open runway is long enough to take off: a ${T.name} needs ${U.km(toNeed(T))}, the longest open has ${U.km(Math.max(0, ...rws.map(IC.rwUsable)))}` };
+  const wind = long.map(rw => cfg.rw[rw.id] ? IC.rwWindBlock(S, rw, cfg.rw[rw.id].dir, T) : 'closed');
+  if (wind.every(Boolean)) return { k: 'wind', why: `the wind: ${wind.find(w => w !== 'closed') || 'every runway long enough is closed'}` };
+  return { k: 'route', why: 'no taxiway leads from its stand to a runway it can take off from' };
+};
 
 /* ---------- arrivals ---------- */
 /* touchdown, the point where the landing roll slows to taxi speed, and the exit taken */
@@ -515,7 +529,7 @@ IC.rwOcc = function (S, ap, rw, dir, T, R) {
   }
   R = R || IC.opsRules(ap, rw.id);
   let E = 1e9;
-  const need = T.rwy * 1.05 + 1, entries = nodes.filter(n => n.entry), full = IC.opsInterOk(R, T) ? 0 : fullRoom(rw, g, dir, need) - 3;
+  const need = toNeed(T), entries = nodes.filter(n => n.entry), full = IC.opsInterOk(R, T) ? 0 : fullRoom(rw, g, dir, need) - 3;
   for (const n of nodes) {
     const room = dir > 0 ? L - n.s : n.s;
     if (!entries.length || room < need || room < full || !clearRun(rw, n.s, n.s + dir * need)) continue;
@@ -1216,7 +1230,7 @@ IC.partNow = function (S, ap, p) {
   const hourN = x => (x || []).filter(t => S.time - t < 3600).length;
   if (!p.built) return '';
   if (p.kind === 'fuel') {
-    const wait = onStand.filter(t => t.t <= 300 && t.fuelWait > 0), avg = wait.length ? wait.reduce((a, t) => a + t.fuelWait, 0) / wait.length : 0;
+    const wait = onStand.filter(t => t.hold && (t.hold.k === 'fuel' || t.hold.k === 'truck')), avg = wait.length ? wait.reduce((a, t) => a + S.time - t.hold.t0, 0) / wait.length : 0;
     return `${p.r ? 'Fuel tank' : `Fuel farm: ${IC.fuelTanks(p)} tanks`}, ${Math.round(p.stock || 0)} of ${IC.fuelCap(p)} (${U.pct((p.stock || 0) / IC.fuelCap(p))} full). ${IC.aptServiceLines(S, ap).fuel}${wait.length ? ` ${wait.length} aircraft waiting now, ${U.dur(avg)} on average.` : ''}`;
   }
   if (p.kind === 'fuelpad') return `Fuel stand: ${hourN(p.served)} aircraft refuelled in the last hour${p.busy ? '; one refuelling now' : ''}.`;

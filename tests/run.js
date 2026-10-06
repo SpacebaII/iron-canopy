@@ -4800,9 +4800,9 @@ test('round 3: fuel queues show at the fuel farm, and the tank the fix places ke
   // departures on their stands, waiting for a fuel truck
   const tl = S.av.tails.filter(t => t.at === ap.id && t.where === 'stand');
   assert(tl.length, 'nobody on a stand');
-  for (const t of tl) { t.t = 120; t.fuelWait = 600; }
+  for (const t of tl) { t.t = 120; t.fuelWait = 600; t.hold = { k: 'truck', t0: S.time - 600, why: 'every fuel truck is busy' }; }
   const P = IC.aptProblems(S, ap).find(p => p.kind === 'fuel');
-  assert(P && /^Fuel: \d+ departures? waiting \d+ min$/.test(P.title) && U.dist(P, farm) < 0.01, P && P.title);
+  assert(P && /^Fuel: \d+ departures? waiting \d+ min for a truck$/.test(P.title) && U.dist(P, farm) < 0.01, P && P.title);
   const m = IC.fixPlan(S, ap, 'fuel', P.fix.near);
   assert(m, 'no place for a tank');
   const plan = IC.bldPlanOf(S, m, m.at, 0.12), sp = plan.ok && plan.specs.find(q => q.kind === 'fuel');
@@ -5039,6 +5039,65 @@ test('round 4: a well-built Starter airport runs at a profit from its first mont
   assert(S.budget > b0, `the treasury fell from ${U.money(b0)} to ${U.money(S.budget)}`);
   const ML = IC.moneyLine(S);
   assert(ML.split && /^Running \+₭/.test(ML.short) && /running the airports made ₭/.test(ML.text), ML.text);
+}, true);
+
+/* ---------- round 5b: depth (docs/focus/round-5b.md) ---------- */
+/* the Starter opened, with a freighter route added (the round-5a playthrough's stuck departures were freighters) */
+const r5open = () => {
+  const { S, ap } = r4open();
+  // (a cargo area with stands for freighters, placed as its problem's fix places it)
+  const term = ap.parts.find(p => p.kind === 'terminal'), m = IC.fixPlan(S, ap, 'cargoarea', term);
+  assert(m && IC.buildFinish(S, m) === 'built', `no cargo area: ${m && m.err}`); finishWorks(S, ap);
+  assert(IC.aptStands(ap).some(s => s.size === 'l' && s.linked !== false), `no large stand: ${IC.aptStands(ap).map(s => s.size).join('')}`);
+  const al = S.av.airlines.find(a => a.kind === 'cargo') || IC.avAddAirline(S, 'cargo', ap);
+  IC.avAddRoute(S, al, ap, IC.avPorts(S)[0], 'cargo', 2);
+  return { S, ap, al };
+};
+test('round 5b: a freighter that lands on the Starter\'s 3 km runway can take off again', () => {
+  const { S, ap, sv } = foundFresh();
+  const m = S.mode2 = IC.bldMode(S, ap, 'starter');
+  IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0); assert(IC.buildFinish(S, m) === 'built', m.err); finishWorks(S, ap);
+  const st = IC.aptStats(S, ap), s = IC.aptStands(ap).find(x => x.linked !== false && x.size === 'l') || IC.aptStands(ap)[0];
+  assert(st.maxType === 'cargo', `the Starter takes ${st.maxType}`);
+  for (const k of ['narrow', 'wide', 'cargo']) assert(IC.gopsCanDepart(S, ap, k, s.id), `a ${k} cannot take off from the runway it may land on`);
+});
+test('round 5b: a grown airport has no departure held on its stand over three hours', () => {
+  const { S, ap } = r5open();
+  let worst = 0, who = '', fr = 0;
+  IC.on((S0, type, d) => { if (S0 === S && type === 'rwMove' && d.k === 'dep' && d.type === 'cargo') fr++; });
+  r4play(S, 48, S0 => { for (const tl of S0.av.tails) if (tl.where === 'stand' && tl.at === ap.id && tl.hold && tl.hold.k !== 'night' && S0.time - tl.hold.t0 > worst) { worst = S0.time - tl.hold.t0; who = `${tl.cs} (${tl.type}): ${tl.hold.why}`; } });
+  assert(worst < 3 * 3600, `held ${U.dur(worst)}: ${who}`);
+  assert(S.logs.every(l => !/cancels .* after/.test(l.msg)), 'a flight was cancelled at its stand');
+  assert(fr >= 2, `${fr} freighter take-offs in two days`);
+}, true);
+test('round 5b: a hold names its real cause, on the map and the aircraft\'s panel', () => {
+  const { S, ap } = r5open();
+  // (a freighter, with no curfew: it may leave at night, so the night does not interrupt what is tested)
+  ap.curfew = false;
+  const fr = t => t.where === 'stand' && t.at === ap.id && t.type === 'cargo' && t.t > 600;
+  for (let i = 0; i < 48 * 1800 && !S.av.tails.some(fr); i++) IC.step(S, 2);
+  // the tanks run dry: the departure waits for fuel, and says so
+  const tl = S.av.tails.find(fr);
+  assert(tl, 'nobody on a stand');
+  const tanks = ap.parts.filter(p => p.kind === 'fuel');
+  const dry = () => { for (const p of tanks) p.stock = 0; };
+  tl.t = 1; tl.fuelled = false;
+  for (let i = 0; i < 600; i++) { dry(); IC.step(S, 2); if (tl.hold && S.time - tl.hold.t0 > 600) break; }
+  assert(tl.hold && tl.hold.k === 'fuel', `held for ${tl.hold && tl.hold.k}`);
+  assert(/held .*: the fuel tanks are empty/.test(IC.tailPhase(S, tl)), IC.tailPhase(S, tl));
+  const P = IC.aptProblems(S, ap).find(p => p.kind === 'fuel');
+  assert(P && /tanks are empty/.test(P.title), P && P.title);
+  // the runway closes: no fuel blamed, the runway named, and after six hours the flight is cancelled
+  for (const p of tanks) p.stock = IC.fuelCap(p);
+  const rw = ap.parts.find(p => p.kind === 'runway'); rw.shut = true; ap.dirty = true;
+  for (let i = 0; i < 600 && !(tl.hold && tl.hold.k === 'rwy'); i++) IC.step(S, 2);
+  assert(tl.hold && tl.hold.k === 'rwy' && /long enough to take off/.test(tl.hold.why), `held: ${tl.hold && tl.hold.k} ${tl.hold && tl.hold.why}`);
+  for (let i = 0; i < 300; i++) IC.step(S, 2);
+  const Q = IC.aptProblems(S, ap);
+  assert(Q.some(p => p.hold === 'rwy' && /cannot take off/.test(p.title)) && !Q.some(p => p.kind === 'fuel' && /waiting/.test(p.title)), Q.map(p => p.title).join(' / '));
+  for (let i = 0; i < 7 * 1800 && tl.where === 'stand'; i++) IC.step(S, 2);
+  assert(tl.where === 'lost' && S.logs.some(l => /cancels .* after .*long enough to take off/.test(l.msg)), `after seven hours: ${tl.where}`);
+  assert(!IC.aptStands(ap).some(s => s.occ === tl.id), 'its stand is still taken');
 }, true);
 
 /* ---------- run ---------- */

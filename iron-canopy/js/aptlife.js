@@ -180,6 +180,10 @@ IC.tailPhase = function (S, tl) {
   }
   if (w.s) {
     const sv = w.s.svc, sn = IC.standName(w.s);
+    // (round 5b) held on the stand: the real reason, and for how long
+    const h = tl.hold;
+    if (h && h.k === 'night') return `Night stop at stand ${sn}: ${h.why}`;
+    if (h && S.time - h.t0 > 60) return `Ready at stand ${sn}, held ${U.dur(S.time - h.t0)}: ${h.why}`;
     if (tl.t <= 0) return `Ready at stand ${sn}: waiting for its departure slot`;
     const f = sv && sv.tail === tl.id ? U.clamp((S.time - sv.t0) / Math.max(60, sv.dur), 0, 1) : 0.5;
     return `${turnStage(tl.T, f, sv && sv.kind)}: ${U.dur(tl.t)} left`;
