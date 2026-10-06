@@ -1230,7 +1230,7 @@ IC.partNow = function (S, ap, p) {
   const hourN = x => (x || []).filter(t => S.time - t < 3600).length;
   if (!p.built) return '';
   if (p.kind === 'fuel') {
-    const wait = onStand.filter(t => t.hold && (t.hold.k === 'fuel' || t.hold.k === 'truck')), avg = wait.length ? wait.reduce((a, t) => a + S.time - t.hold.t0, 0) / wait.length : 0;
+    const wait = onStand.filter(t => t.held && (t.held.k === 'fuel' || t.held.k === 'truck')), avg = wait.length ? wait.reduce((a, t) => a + S.time - t.held.t0, 0) / wait.length : 0;
     return `${p.r ? 'Fuel tank' : `Fuel farm: ${IC.fuelTanks(p)} tanks`}, ${Math.round(p.stock || 0)} of ${IC.fuelCap(p)} (${U.pct((p.stock || 0) / IC.fuelCap(p))} full). ${IC.aptServiceLines(S, ap).fuel}${wait.length ? ` ${wait.length} aircraft waiting now, ${U.dur(avg)} on average.` : ''}`;
   }
   if (p.kind === 'fuelpad') return `Fuel stand: ${hourN(p.served)} aircraft refuelled in the last hour${p.busy ? '; one refuelling now' : ''}.`;

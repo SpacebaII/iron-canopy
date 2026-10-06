@@ -440,6 +440,7 @@ function judge(S, al, tl, ap, o) {
   if (K.foreign || al.kind === 'flag') score -= (S.tension || 0) * (K.foreign ? 0.5 : 0.15);
   if (al.kind === 'cargo' && ap && ap.curfew) { score -= 12; why.push('the night curfew'); }
   score = U.clamp(score, 0, 100);
+  if (ap && !o.divert) scoreAspects(S, al, tl, ap, o, fee);
   al.sat = U.clamp(al.sat * 0.9 + score * 0.1, 0, 100);
   al.lastWhy = why.length ? why.join(', ') : 'smooth operations';
   if (ap) { ap.sat = (ap.sat == null ? 70 : ap.sat) * 0.92 + score * 0.08; if (why.length) ap.lastWhy = why[0]; }
@@ -448,6 +449,52 @@ function judge(S, al, tl, ap, o) {
   if (o.wait > 900) S.av.day.delays++;
 }
 
+/* ---------- (round 5b) the airline's scorecard at an airport, by aspect ----------
+   Each 0–100, a running average over its last flights here: al.sc[ap.id] = { delay, taxi, gates, fuel, fees, bags, n }.
+   The same tolerances judge() uses; the worst is named with its fix (IC.aptScorecards). */
+IC.ASPECTS = {
+  delay: { name: 'On time', word: 'delays' }, taxi: { name: 'Taxi time', word: 'taxi times' }, gates: { name: 'Gates', word: 'remote stands and buses' },
+  fuel: { name: 'Fuel', word: 'waits for fuel' }, fees: { name: 'Charges', word: 'charges' }, bags: { name: 'Bags and check-in', word: 'a crowded terminal' }
+};
+function scoreAspects(S, al, tl, ap, o, fee) {
+  const K = al.K, sc = (al.sc = al.sc || {})[ap.id] = (al.sc || {})[ap.id] || { delay: 90, taxi: 90, gates: 90, fuel: 95, fees: 90, bags: 95, n: 0 };
+  const mix = (k, v) => { sc[k] = sc[k] * 0.85 + U.clamp(v, 0, 100) * 0.15; };
+  const fuelMin = (o.fuel || 0) / 60, dl = Math.max(0, (o.wait || 0) / 60 - fuelMin), tx = (o.taxi || 0) / 60;
+  mix('delay', 100 - Math.max(0, dl - K.delayTol * 0.5) * 4);
+  mix('taxi', 100 - Math.max(0, tx - K.taxiTol * 0.6) * 6);
+  mix('fees', 100 - Math.max(0, fee - K.feeTol) * 100);
+  if (o.kind === 'dep') {
+    mix('fuel', 100 - fuelMin * 5);
+    if (!tl.T.cargo) {
+      mix('gates', tl.gate ? 100 : al.kind === 'flag' || K.foreign ? 35 : al.kind === 'budget' ? 85 : 65);
+      const st = ap.st || {}, load = st.pax ? (ap.paxRate || 0) / st.pax : 1.2;
+      mix('bags', 100 - Math.max(0, load - 0.75) * 300);
+    }
+  }
+  sc.n++;
+}
+/* the airlines at an airport, each aspect side by side, the worst named with what fixes it */
+IC.aptScorecards = function (S, ap) {
+  if (!S.av) return [];
+  const st = ap.st || {}, hub = ap.parts.find(p => p.kind === 'terminal' && p.built) || ap, fuel = ap.parts.find(p => p.kind === 'fuel' && p.built);
+  const FIX = {
+    delay: () => ({ act: 'open', v: 'day', label: 'Open the day board', text: 'Delays come from departures held on their stands (the map says why) and from the hourly cap.' }),
+    taxi: () => ({ text: 'A parallel taxiway with rapid exits, and stands nearer the runway, shorten the taxi.' }),
+    gates: () => ({ part: 'tstraight', near: hub, label: 'Build a terminal with stands', text: 'Remote stands mean buses; a terminal with more gates fixes it.' }),
+    fuel: () => ({ part: 'fuel', near: fuel || hub, label: 'Add a fuel tank', text: 'Each tank brings two fuel trucks; a hydrant system ends the wait.' }),
+    fees: () => ({ act: 'fee', v: Math.max(0.7, Math.round(((ap.feeLevel || 1) - 0.15) * 20) / 20), label: `Lower charges to ${U.pct(Math.max(0.7, Math.round(((ap.feeLevel || 1) - 0.15) * 20) / 20))}`, text: 'Its charges are above what it will pay without grumbling.' }),
+    bags: () => ({ part: 'tstraight', near: hub, label: 'Add a terminal', text: `The terminal runs ${U.pct((ap.paxRate || 0) / Math.max(1, st.pax || 1))} full: check-in and bags slow down over 75%.` })
+  };
+  const out = [];
+  for (const al of S.av.airlines) {
+    const sc = al.sc && al.sc[ap.id]; if (!sc || sc.n < 2) continue;
+    const ks = Object.keys(IC.ASPECTS).filter(k => !(al.kind === 'cargo' && (k === 'gates' || k === 'bags')));
+    const worst = ks.reduce((b, k) => sc[k] < sc[b] ? k : b, ks[0]);
+    const f = FIX[worst]();
+    out.push({ al, sc, ks, worst: { k: worst, v: Math.round(sc[worst]), name: IC.ASPECTS[worst].name, word: IC.ASPECTS[worst].word, fix: f.label ? f : null, text: f.text }, sat: Math.round(al.sat) });
+  }
+  return out.sort((a, b) => a.worst.v - b.worst.v);
+};
 /* ---------- requests: growth comes from happy airlines and a growing economy ---------- */
 function makeRequest(S) {
   const A = S.av;
@@ -528,21 +575,23 @@ IC.avDecide = function (S, id, yes) {
 IC.avSetFee = function (S, ap, v) { ap.feeLevel = U.clamp(v, 0.5, 2); };
 
 /* ---------- (round 5b) why a departure waits on its stand ----------
-   One reason at a time, each with its own words and fix (IC.aptProblems): tl.hold = { k, t0, why }. t0 is when
+   One reason at a time, each with its own words and fix (IC.aptProblems): tl.held = { k, t0, why }. t0 is when
    this reason began. tl.fuelWait (its old name) still adds up every minute of delay the airline judges; a night
    stop is not a delay. */
 IC.HOLD = { night: 'Night stop', fuel: 'No fuel', truck: 'Waiting for a fuel truck', ga: 'Light aircraft on the runway', release: 'Waiting for its airway release',
-  rwy: 'Runway too short or closed', wind: 'Wind beyond its limits', route: 'No taxi route', slot: 'Waiting for its slot', cap: 'Hourly cap reached' };
+  rwy: 'Runway too short or closed', wind: 'Wind beyond its limits', route: 'No taxi route', slot: 'Waiting for its slot', cap: 'Hourly cap reached', tug: 'Waiting for a tug', bus: 'Waiting for an apron bus' };
 IC.HOLD_CANCEL = 6 * 3600;
 function holdOn(S, tl, ap, k, w, why) {
-  if (!tl.hold || tl.hold.k !== k) tl.hold = { k, t0: S.time, why: why || '', ap: ap.id };
-  else if (why) tl.hold.why = why;
+  if (!tl.held || tl.held.k !== k) tl.held = { k, t0: S.time, why: why || '', ap: ap.id };
+  else if (why) tl.held.why = why;
   tl.t = w;
-  if (k !== 'night') tl.fuelWait = (tl.fuelWait || 0) + w;
+  // (a night stop or a scheduled slot is not a delay; a cap is: the airline wanted that hour)
+  if (k !== 'night' && k !== 'slot') tl.fuelWait = (tl.fuelWait || 0) + w;
+  if (k === 'fuel' || k === 'truck') tl.fuelW = (tl.fuelW || 0) + w;
 }
 /* a departure that cannot leave: the flight is cancelled and the aircraft goes off the route (it cannot fly out) */
 function strandTail(S, tl, ap, s, r, al, why) {
-  tl.where = 'lost'; tl.retired = true; tl.hold = null; if (s.occ === tl.id) s.occ = null;
+  tl.where = 'lost'; tl.retired = true; tl.held = null; if (s.occ === tl.id) s.occ = null;
   r.n = Math.max(0, r.n - 1); if (r.n <= 0) r.st = 'cut';
   judge(S, al, tl, ap, { divert: true, kind: 'dep' });
   IC.log(S, 'warn', 'AVIATION', `${al.name} cancels ${tl.cs} at ${ap.name} after ${U.dur(IC.HOLD_CANCEL)} on the stand: ${why}. It takes the aircraft off ${routeName(S, r)}.`, ap);
@@ -552,7 +601,7 @@ function strandTail(S, tl, ap, s, r, al, why) {
 IC.aptHolds = function (S, ap) {
   const by = {};
   if (S.av) for (const tl of S.av.tails) {
-    const h = tl.hold;
+    const h = tl.held;
     if (tl.where !== 'stand' || tl.at !== ap.id || !h || tl.t > 900) continue;
     const g = by[h.k] = by[h.k] || { k: h.k, name: IC.HOLD[h.k] || h.k, n: 0, wait: 0, why: h.why, tails: [] };
     g.n++; g.tails.push(tl); if (S.time - h.t0 >= g.wait) { g.wait = S.time - h.t0; g.why = h.why; }
@@ -579,8 +628,9 @@ IC.aviation = function (S, dt) {
       if (r.st === 'cut') { tl.where = 'lost'; tl.retired = true; if (s.occ === tl.id) s.occ = null; continue; }
       if (suspended) { tl.t = 600; continue; }
       const al = airlineOf(S, tl.al);
-      const night = !dayOps(S);
-      if (night && (ap.curfew || al.kind !== 'cargo')) { holdOn(S, tl, ap, 'night', 300, ap.curfew ? 'the night curfew: no departures 23:00–06:00' : 'airliners do not leave at night (23:00–06:00)'); continue; }
+      // (round 5b) its slot on the airport's day: the airline's bank, the cap an hour and the night policy
+      const sg = IC.slotGate(S, ap, tl, al);
+      if (sg) { holdOn(S, tl, ap, sg.k, sg.w, sg.why); continue; }
       // fuelled once: held back below (light aircraft, spacing, no taxi route) it keeps what it took
       if (!tl.fuelled && !IC.aptTakeFuel(ap, tl.T.fuel, S)) {
         const truck = ap.truckWait === S.time;
@@ -591,6 +641,9 @@ IC.aviation = function (S, dt) {
       tl.fuelled = true;
       const toEnd = tl.at === r.a ? endPt(S, r.b) : endPt(S, { apt: r.a });
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
+      // (round 5b) a flight to one of our airports that would land in its night curfew waits for the morning
+      const cwD = toEnd.apt && IC.arrCurfew(S, S.byId[toEnd.apt], U.dist(ap, toEnd) / tl.T.cruise + 300);
+      if (cwD > 0) { holdOn(S, tl, ap, 'night', Math.min(cwD, 3600), `${S.byId[toEnd.apt].name} has a night curfew`); continue; }
       // light aircraft on the runway, or controllers still spacing the last departure the same way
       if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); holdOn(S, tl, ap, 'ga', w, 'light aircraft are using the runway'); continue; }
       // (round 5b) a departure that cannot be planned is checked before it takes an airway release, so a stuck
@@ -600,9 +653,12 @@ IC.aviation = function (S, dt) {
         holdOn(S, tl, ap, W.k, 300, W.why);
         // held for hours by something that will not pass by itself: the flight is cancelled and the airline takes
         // the aircraft off the route (a wind that lasts is not that)
-        if (W.k !== 'wind' && S.time - tl.hold.t0 > IC.HOLD_CANCEL) { strandTail(S, tl, ap, s, r, al, W.why); continue; }
+        if (W.k !== 'wind' && S.time - tl.held.t0 > IC.HOLD_CANCEL) { strandTail(S, tl, ap, s, r, al, W.why); continue; }
         continue;
       }
+      // (round 5b) a tug to push it back, and a bus if its stand is remote
+      const gs = IC.gseGate(S, ap, tl, s, false);
+      if (gs) { holdOn(S, tl, ap, gs.k, gs.w, gs.why); continue; }
       // with a holding bay the tower lets it taxi out up to five minutes before its release and wait there
       const bay = ap.parts.some(p => p.kind === 'holdbay' && p.built);
       const rel = IC.aspRelease(S, from, toEnd, bay ? 300 : 0);
@@ -610,7 +666,7 @@ IC.aviation = function (S, dt) {
       const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, readyT: rel < 0 ? S.time - rel : 0, who: tl.cs, tail: tl, livery: al.livery,
         onAir: IC.hfn('avAirborne', S, tl, from, toEnd, al, ap), onDead: IC.hfn('avTaxiLost', S, tl, ap) });
       if (!m) { holdOn(S, tl, ap, 'route', 300, 'no taxi route to a runway'); continue; }
-      tl.hold = null;
+      tl.held = null; IC.slotUse(S, ap, tl); tl.gate = !!s.contact; IC.gseGate(S, ap, tl, s, true);
       tl.where = 'dep'; tl.mv = m; tl.stand = null; tl.fuelled = false;
     } else if (tl.where === 'away') {
       tl.t -= dt;
@@ -626,6 +682,9 @@ IC.aviation = function (S, dt) {
         if (s2 && Math.random() < 0.5) { s2.occ = tl.id; tl.where = 'stand'; tl.at = ap2.id; tl.stand = s2.id; tl.t = U.rand(600, tl.T.turn); continue; }
       }
       const to = { x: dest.x, y: dest.y, name: dest.name, apt: dest.id, k: 'H' };
+      // (round 5b) it would land in the airport's night curfew: it leaves later
+      const cw = !tl.progress && IC.arrCurfew(S, dest, U.dist(fromE, to) / tl.T.cruise + 300);
+      if (cw > 0) { tl.t = cw; continue; }
       const f = tl.progress || 0; tl.progress = 0;
       // controllers space arrivals entering from the same place
       if (!f) { const rel = IC.aspRelease(S, fromE, to); if (rel > 0) { tl.t = rel; continue; } }
@@ -641,6 +700,8 @@ IC.aviation = function (S, dt) {
     ap.paxRate = ap.paxLog.reduce((s, p) => s + p.n, 0);
     A.paxHour += ap.paxRate;
   }
+  if (IC.scheduleTick) IC.scheduleTick(S);
+  A.gseT = (A.gseT || 0) - dt; if (A.gseT <= 0 && IC.gseTick) { A.gseT = 300; IC.gseTick(S); }
   A.rateT = (A.rateT || 0) - dt;
   if (A.rateT <= 0) { A.rateT = 30; feeRates(S); }
   // hourly bookkeeping
@@ -747,11 +808,11 @@ IC.avUpkeep = function (S) {
     Object.defineProperty(S, '_upk', { value: { key, v, t: S.time }, enumerable: false, configurable: true, writable: true });
   }
   // and the air traffic controllers in every sector
-  return v + (S.asp && S.asp.secs ? IC.aspStaffCost(S) : 0);
+  return v + (S.asp && S.asp.secs ? IC.aspStaffCost(S) : 0) + (IC.fleetUpkeep ? IC.fleetUpkeep(S) : 0);
 };
 
 /* a departing airliner's ground move: when it lifts off, and if it is destroyed on the ground */
-IC.H.avAirborne = (S, tl, from, toEnd, al, ap) => mm => { launchLeg(S, tl, from, toEnd, mm.x, mm.y, 0.3); tl.track.h = mm.h; judge(S, al, tl, ap, { taxi: mm.taxiT, wait: mm.waitT + (tl.fuelWait || 0), kind: 'dep' }); tl.fuelWait = 0; pay(S, tl, ap, 'dep'); };
+IC.H.avAirborne = (S, tl, from, toEnd, al, ap) => mm => { launchLeg(S, tl, from, toEnd, mm.x, mm.y, 0.3); tl.track.h = mm.h; judge(S, al, tl, ap, { taxi: mm.taxiT, wait: mm.waitT + (tl.fuelWait || 0), fuel: tl.fuelW || 0, kind: 'dep' }); tl.fuelWait = 0; tl.fuelW = 0; pay(S, tl, ap, 'dep'); };
 IC.H.avTaxiLost = (S, tl, ap) => (mm, why) => tailLost(S, tl, ap, why || 'destroyed while taxiing');
 /* ---------- radio: call an aircraft that is off its route ---------- */
 IC.callAircraft = function (S, t) {
@@ -836,6 +897,7 @@ const dealOf = (S, tl) => tl && tl.deal ? S.av.deals.find(d => d.id === tl.deal)
 IC.avDealOf = dealOf;
 /* a round trip from an airport: both legs and a turnaround at each end, in seconds */
 const cycleOf = (S, a, b, T) => U.dist(a, endPt(S, b)) / T.cruise * 2 + T.turn * 2.5 + 1200;
+IC.avCycle = cycleOf;
 /* what an airport provides to airlines: IC.aptProvides(ap) from the airport session (airport.js), in its field
    names; this stand-in, used only until that lands, measures the same way: stands by size (civil, cargo and light
    zones), gates (stands at a terminal), cargoStands, pax (terminal passengers an hour), cargo (cargo shed capacity),
@@ -907,6 +969,9 @@ IC.dealNeeds = function (S, q) {
     }
     if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar || 0, 'hangar space for the aircraft based here');
     row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'another fuel farm, or a hydrant system');
+    // (round 5b) under a cap, the day must have room for its slots (a renewal already has its own)
+    const B = ap.dayb;
+    if (B && B.cap > 0 && IC.dayPlan && !q.renew) { const D = IC.dayPlan(S, ap), open = B.night === 'curfew' ? 17 : 24; row('slots', 'departure slots a day under your cap', D.dep.reduce((a, b) => a + b, 0) + Math.ceil(dealWorth(S, q, 1).perWk / 7), B.cap * open, 'a higher cap on the day board'); }
   }
   return L;
 };
@@ -916,7 +981,7 @@ function dealWorth(S, q, charge) {
   const cyc = cycleOf(S, a, q.b, T), deps = q.n * (T.cargo ? 24 : OPS_H) * 3600 / cyc;
   const ends = q.b.apt ? 2 : 1, flights = deps * 2 * ends;   // landings and departures at our airports
   const pax = T.seats ? deps * 2 * T.seats * lf : 0, cargo = (T.cargo || (q.type === 'wide' ? 15 : 0)) * deps * 2;
-  return { perWk: Math.round(deps * 7), paxDay: Math.round(pax), cargoDay: Math.round(cargo), value: (T.fee * 0.5 * flights / 2 + pax * 0.0035 * ends + cargo * 0.008 * IC.cargoLoad(S, a)) * charge };
+  return { slots: Math.ceil(deps), perWk: Math.round(deps * 7), paxDay: Math.round(pax), cargoDay: Math.round(cargo), value: (T.fee * 0.5 * flights / 2 + pax * 0.0035 * ends + cargo * 0.008 * IC.cargoLoad(S, a)) * charge };
 }
 /* the terms of an offer: what the airline proposes, and how far it will bend */
 function makeTerms(S, q) {

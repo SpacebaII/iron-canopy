@@ -97,6 +97,30 @@ IC.drawTurns = function (g, S, ap, px, z, now, night, seen, lights) {
   return n;
 };
 
+/* (round 5b) the airport's own vehicles that are free now, parked in rows on a small depot pad beside the fuel farm
+   (or the fire station): what Ground vehicles says it owns, less what is out on a job */
+IC.gseDepotAt = function (ap) {
+  const p = ap.parts.find(q => q.kind === 'fuel' && q.built) || ap.parts.find(q => q.kind === 'fire' && q.built);
+  if (!p) return null;
+  const a = p.a != null ? p.a : ap.rwyA || 0, off = (p.h || 1) / 2 + 0.3;
+  return { x: p.x - Math.sin(a) * off, y: p.y + Math.cos(a) * off, a };
+};
+IC.drawFleetDepot = function (g, S, ap, px, z, night) {
+  if (!ap.fleet || !IC.FOCUS.gse) return;
+  const D = IC.gseDepotAt(ap); if (!D) return;
+  const rows = [['tug', 'tug'], ['bus', 'apbus'], ['fuel', 'refueller']].map(([k, v]) => [Math.min(12, IC.gseFree(S, ap, k)), VEH[v]]);
+  const W = 0.62, H = 0.4;
+  g.save(); g.translate(D.x, D.y); g.rotate(D.a);
+  g.fillStyle = 'rgba(92,94,98,0.9)'; g.fillRect(-W / 2, -H / 2, W, H);
+  g.strokeStyle = 'rgba(235,235,230,0.5)'; g.lineWidth = Math.max(0.002, 0.6 * px);
+  rows.forEach(([n, d], r) => {
+    const y = -H / 2 + 0.03 + r * 0.125;
+    for (let i = 0; i < 12; i++) g.strokeRect(-W / 2 + 0.02 + i * 0.048, y, 0.044, 0.11);
+    g.restore(); g.save(); g.translate(D.x, D.y); g.rotate(D.a);
+    for (let i = 0; i < n; i++) drawVeh(g, d, -W / 2 + 0.042 + i * 0.048, y + 0.055, Math.PI / 2, px, 3, 0, night, i);
+  });
+  g.restore();
+};
 /* a jet bridge's reach for stand s now: 1 at the door, 0 folded back (the aircraft has not come, or is about to go) */
 IC.bridgeReach = function (S, s) {
   const sv = s.svc;

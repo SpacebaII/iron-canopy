@@ -38,8 +38,11 @@ IC.aptProblems = function (S, ap) {
     if (h.k === 'night' || h.wait < 180) continue;
     const head = `${h.n} departure${h.n > 1 ? 's' : ''} held ${U.dur(h.wait)}`, at = h.k === 'fuel' || h.k === 'truck' ? (fuel[0] || hub) : h.k === 'rwy' || h.k === 'wind' || h.k === 'ga' ? rwMid(rws[0]) : hub;
     const P = { id: ap.id + ':hold:' + h.k, kind: 'hold', hold: h.k, lvl: h.wait > 3600 ? 'bad' : 'warn', x: at.x, y: at.y };
+    const gse = k => { const G = IC.GSE[k], n = Math.max(1, Math.min(4, h.n)); return { act: 'gse', v: k, n, label: `Buy ${n} ${n > 1 ? G.name.toLowerCase() : G.one} (${U.money(G.cost * n)})` }; };
     if (h.k === 'truck') Object.assign(P, { kind: 'fuel', id: ap.id + ':fuel', title: `Fuel: ${h.n} departure${h.n > 1 ? 's' : ''} waiting ${Math.round(h.wait / 60)} min for a truck`,
-      text: `${fuel.length} fuel farm${fuel.length > 1 ? 's' : ''} with ${st.tanks * 2} trucks refuel ${st.trucks} aircraft an hour. Another tank brings two more trucks.`, fix: fuel[0] && { part: 'fuel', near: fuel[0], label: 'Add a fuel tank' } });
+      text: IC.FOCUS.gse && ap.fleet ? `${ap.fleet.fuel} fuel trucks refuel ${ap.fleet.fuel * IC.FUEL_TRUCKS / 2} aircraft an hour. Buy more, or a hydrant system ends the wait.` : `${fuel.length} fuel farm${fuel.length > 1 ? 's' : ''} with ${st.tanks * 2} trucks refuel ${st.trucks} aircraft an hour. Another tank brings two more trucks.`,
+      fix: IC.FOCUS.gse && ap.fleet ? gse('fuel') : fuel[0] && { part: 'fuel', near: fuel[0], label: 'Add a fuel tank' } });
+    else if (h.k === 'tug' || h.k === 'bus') Object.assign(P, { title: `${head}: ${h.k === 'tug' ? 'waiting for a tug' : 'waiting for an apron bus'}`, text: `${h.why.charAt(0).toUpperCase() + h.why.slice(1)}. Each ${IC.GSE[h.k].one} ${IC.GSE[h.k].does.replace(/^\w+/, w => w + (w.endsWith('h') ? 'es' : 's'))}; the airport recommends ${IC.gseNeed(S, ap)[h.k]}.`, fix: gse(h.k) });
     else if (h.k === 'fuel') Object.assign(P, { kind: 'fuel', id: ap.id + ':fuel', title: `Fuel: ${h.n} departure${h.n > 1 ? 's' : ''} waiting ${Math.round(h.wait / 60)} min: the tanks are empty`,
       text: `Deliveries refill each tank by ${IC.FUEL_IN} units an hour. More tanks hold more; a hydrant system pipes fuel in.`, fix: fuel[0] && { part: 'fuel', near: fuel[0], label: 'Add a fuel tank' } });
     else if (h.k === 'rwy') Object.assign(P, { title: `${head}: cannot take off`, text: `${h.why.charAt(0).toUpperCase() + h.why.slice(1)}. After ${U.dur(IC.HOLD_CANCEL)} the airline cancels and takes the aircraft off the route. A longer runway (a new one, or this one rebuilt longer) lets them go; until then, decline offers for aircraft that need more runway.` });
@@ -62,6 +65,12 @@ IC.aptProblems = function (S, ap) {
     const e = rw.a;
     out.push({ id: ap.id + ':ils:' + rw.id, kind: 'ils', lvl: IC.needILS && IC.needILS(S) ? 'bad' : 'warn', x: e.x, y: e.y, title: `Runway ${rw.name || ''}: no landing system`.replace('  ', ' '),
       text: 'In fog, low cloud or snow every arrival diverts. A landing system (ILS) at the end they land toward costs ₭25M.', fix: { part: 'ils', near: e, label: 'Build a landing system' } });
+  }
+  // (round 5b) an airline's worst aspect here, when it is bad, with its fix
+  for (const c of IC.aptScorecards ? IC.aptScorecards(S, ap) : []) {
+    if (c.worst.v >= 45 || !c.worst.fix) continue;
+    const at = c.worst.fix.near || hub;
+    out.push({ id: `score:${c.al.id}:${ap.id}`, kind: 'score', lvl: 'warn', x: at.x, y: at.y, title: `${short(c.al.name)} rates ${c.worst.name.toLowerCase()} ${c.worst.v} of 100`, text: c.worst.text, fix: c.worst.fix });
   }
   // deals: one at risk for want of a facility, and offers waiting for an answer
   if (A) {

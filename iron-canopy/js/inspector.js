@@ -20,6 +20,7 @@ IC.unitState = function (u) {
   return ['Ready', 'ok'];
 };
 const head = (icon, title, sub, pill, cls) => `<div class="ihead">${icon}<div><h2>${esc(title)}</h2><p>${sub}</p></div><span class="xs">${ui.compact() ? `<button class="x" data-act="inspMin" aria-label="${ui.inspMin ? 'Open' : 'Fold'}" title="${ui.inspMin ? 'Open the panel' : 'Fold the panel to a strip: the map behind it'}">${ui.inspMin ? '▾' : '▴'}</button>` : ''}<button class="x" data-act="desel" aria-label="Close" title="Close (Esc)">✕</button></span></div>${pill ? `<div style="padding:0 .95rem .5rem"><span class="pill ${cls || ''}">${esc(pill)}</span></div>` : ''}`;
+const hh = h => IC.hh(h);
 const seg = (act, cur, opts, big) => `<div class="seg ${big ? 'big' : ''}">${opts.map(([v, n, c, t]) => `<button class="${c || ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 
@@ -362,7 +363,7 @@ function base(b) {
     return `<div class="li"><button class="lib" data-act="selFlight" data-rid="${r.id}"><b>${esc(r.name)}</b><small>${esc(IC.AIR_KIND[r.kind].short)}×${r.n} · ${stt} ${where}${pp.stand && !pp.fac ? ' (quicker turnaround, easier to destroy)' : ''}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small></button>${park}</div>`;
   }).join('');
   const fee = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
-    <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="No departures 23:00–06:00. Cargo airlines hate it; the neighbours love it.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
+    <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="Nothing lands or leaves 23:00–06:00. Cargo airlines hate it; the neighbours love it. More choices on the day board.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
   // (round 3) the Career's airport panel: the few numbers that matter, its problems with their fixes, its deals,
   // and the rest folded (the tower's rules and the airspace open on their own page from there)
   if (ui.hands() && civil && b.owner === 'us' && ui.aptTab !== 'asp' && ui.aptTab !== 'rules') return H + handsPanel(b, st, { schem, kpis, warn, rwSec, rows, zoneSec, fee, works, reps });
@@ -377,9 +378,66 @@ function base(b) {
       <div class="acts">${(b.works || []).some(w => w.stages) ? `<button class="act" data-act="finishNow" data-v="${b.id}" title="Time runs on fast until every work here is finished; it stops for anything that needs you">⏩ Finish now</button>` : ''}<button class="act" data-act="bwork" data-v="crew" ${S.budget < 20 ? 'disabled' : ''}>+ Crew · ₭20M</button><button class="act ${b.autoRepair ? 'on' : ''}" data-act="bauto">Auto-repair: ${b.autoRepair ? 'on' : 'off'}</button></div></div>`
     : tab === 'rules' ? opsTab(b, st)
     : tab === 'asp' ? airspaceTab(b, st)
-    : tab === 'ops' ? `${fee}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
+    : tab === 'ops' ? `${fee}${civil && S.av ? `<div class="sec"><h3 class="sh">The day</h3>${dayBoardHTML(b)}</div>${scorecardHTML(b)}${IC.FOCUS.gse ? `<div class="sec"><h3 class="sh">Ground vehicles</h3>${fleetHTML(b)}</div>` : ''}` : ''}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
     : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
   return H + tabs + `<div class="ibody">${body}</div>`;
+}
+/* (round 5b) ground vehicles: a count per kind with − / +, what this traffic needs, what they cost to run */
+function fleetHTML(b) {
+  const F = IC.fleet(S, b), N = IC.gseNeed(S, b), cal = S.mode === 'story', per = cal ? IC.MO(S) / 3600 : 24, perW = cal ? 'a month' : 'a day';
+  const why = { tug: `${N.push} stand${N.push === 1 ? '' : 's'} with pushback`, bus: `${N.remote} remote stand${N.remote === 1 ? '' : 's'}`, fuel: (b.st || {}).hydrant ? 'the hydrant feeds every stand' : `${N.peak} departures in the busiest hour` };
+  const rows = Object.entries(IC.GSE).map(([k, G]) => {
+    const n = F[k] || 0, rec = N[k], free = IC.gseFree(S, b, k), off = n < rec ? 'amber' : '';
+    return `<div class="li"><b>${esc(G.name)} <span class="${off}">${n}</span></b><small>Recommended ${rec} for ${esc(why[k])} · ${n ? `${free} free now · ` : ''}${U.money(n * G.up * per)} ${perW} to run · ${U.money(G.cost)} each</small><span class="la"><button class="btn sm" data-act="gseAdd" data-v="${k}" data-n="-1" ${n ? '' : 'disabled'} title="Sell one for half its price">−</button><button class="btn sm" data-act="gseAdd" data-v="${k}" data-n="1" ${S.budget < G.cost ? 'disabled' : ''} title="Buy one for ${U.money(G.cost)}">+</button></span></div>`;
+  }).join('');
+  return `<div class="fleet"><div class="list">${rows}</div><div class="acts"><button class="act ${F.auto ? 'on' : ''}" data-act="gseAuto" title="The airport buys and sells to the recommendation as it grows">Keep it matched: ${F.auto ? 'on' : 'off'}</button></div>
+    <p class="hint">Tugs ${esc(IC.GSE.tug.does)}, buses ${esc(IC.GSE.bus.does)}, trucks ${esc(IC.GSE.fuel.does)}. Too few and departures wait on their stands; the map says which.</p></div>`;
+}
+/* (round 5b) the airlines' scorecards here: each aspect 0–100 side by side, the worst named, its fix one click away */
+function scorecardHTML(b) {
+  const C = IC.aptScorecards(S, b); if (!C.length) return '';
+  const ks = Object.keys(IC.ASPECTS), cls = v => v >= 75 ? 'ok' : v >= 50 ? 'amber' : 'hostile';
+  ui.pmById = ui.pmById || new Map();
+  const rows = C.map(c => {
+    const id = `score:${c.al.id}:${b.id}`; if (c.worst.fix) ui.pmById.set(id, { id, ap: b.id, fix: c.worst.fix, kind: 'score' });
+    const cells = ks.map(k => c.ks.includes(k) ? `<td class="r ${cls(c.sc[k])}" title="${esc(IC.ASPECTS[k].name)}">${Math.round(c.sc[k])}</td>` : '<td class="r muted">–</td>').join('');
+    return `<tr><td><i class="livery" style="background:linear-gradient(90deg,${c.al.livery[0]} 50%,${c.al.livery[1]} 50%)"></i>${esc(c.al.name.replace(/ (Airlines|Airways|Air)$/, ''))}<small class="muted"> ${c.sat}</small></td>${cells}</tr>
+      <tr class="sub"><td colspan="${ks.length + 1}"><small>Worst: <b class="${cls(c.worst.v)}">${esc(c.worst.name.toLowerCase())} ${c.worst.v}</b>. ${esc(c.worst.text)}</small>${c.worst.fix && c.worst.v < 75 ? ` <button class="btn sm" data-act="pmFix" data-v="${esc(id)}">${esc(c.worst.fix.label)}</button>` : ''}</td></tr>`;
+  }).join('');
+  return `<div class="sec"><h3 class="sh">Scorecards <em>how each airline rates this airport, 0–100</em></h3><table class="t score"><tr><th>Airline · overall</th>${ks.map(k => `<th class="r" title="${esc(IC.ASPECTS[k].name)}">${esc(IC.ASPECTS[k].name.split(' ')[0])}</th>`).join('')}</tr>${rows}</table></div>`;
+}
+/* (round 5b) the day board: each airline's departures by hour as the game plans them, arrivals below, today's
+   real movements as ticks, what the runways take (the same numbers as the panel's capacity), and the three things
+   the player sets: a cap an hour, an airline's bank earlier or later, and the night policy, each with its effect */
+function dayBoardHTML(b) {
+  const D = IC.dayBoard(S, b), P = D.plan, now = Math.floor((((S.time % 86400) + 86400) % 86400) / 3600);
+  const W = 720, H = 170, mid = 92, bw = W / 24;
+  const mx = Math.max(4, D.capDep, D.capArr, ...P.dep, ...P.arr, ...D.today.dep, ...D.today.arr), kU = (mid - 14) / mx, kD = (H - mid - 14) / mx;
+  let g = '';
+  for (let h = 0; h < 24; h++) {
+    const x = h * bw + 3, w = bw - 6;
+    if (h < 6 || h >= 23) g += `<rect class="${D.night === 'curfew' ? 'curfew' : 'night'}" x="${h * bw}" y="0" width="${bw}" height="${H}"/>`;
+    let y = mid;
+    for (const a of P.al) { const n = a.dep[h]; if (!n) continue; y -= n * kU; g += `<rect x="${x}" y="${y}" width="${w}" height="${n * kU}" style="fill:${a.al.livery[0]}" stroke="rgba(0,0,0,.35)"><title>${hh(h)} · ${esc(a.al.name)}: ${n} departure${n > 1 ? 's' : ''} planned</title></rect>`; }
+    g += `<rect class="arrp" x="${x}" y="${mid}" width="${w}" height="${P.arr[h] * kD}"><title>${hh(h)} · ${P.arr[h]} arrivals expected</title></rect>`;
+    if (h <= now) g += `<line class="real" x1="${x}" x2="${x + w}" y1="${mid - D.today.dep[h] * kU}" y2="${mid - D.today.dep[h] * kU}"/><line class="real" x1="${x}" x2="${x + w}" y1="${mid + D.today.arr[h] * kD}" y2="${mid + D.today.arr[h] * kD}"/>`;
+    if (h % 3 === 0) g += `<text x="${h * bw + 2}" y="${H - 2}">${String(h).padStart(2, '0')}</text>`;
+  }
+  const line = (cls, yy, t) => `<line class="${cls}" x1="0" x2="${W}" y1="${yy}" y2="${yy}"><title>${t}</title></line>`;
+  if (D.capDep) g += line('cap', mid - D.capDep * kU, `The runways take ${D.capDep} departures an hour`) + line('cap', mid + D.capArr * kD, `The runways take ${D.capArr} arrivals an hour`);
+  if (D.cap) g += line('mycap', mid - D.cap * kU, `Your cap: ${D.cap} departures an hour`);
+  g += `<line class="axis" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/><line class="nowl" x1="${(now + 0.5) * bw}" x2="${(now + 0.5) * bw}" y1="4" y2="${H - 12}"/>`;
+  const caps = [...new Set([0.5, 0.7, 0.85].map(f => Math.max(1, Math.round(D.capDep * f))))].filter(n => n > 0 && D.capDep > 2);
+  const rows = P.al.slice().sort((p, q) => q.tails - p.tails).map(a => {
+    const tot = a.dep.reduce((x, y) => x + y, 0), pk = a.dep.reduce((x, v, i, L) => v > L[x] ? i : x, 0);
+    const sh = a.shift ? ` · bank ${a.shift > 0 ? '+' : '−'}${Math.abs(a.shift)} h` : '';
+    return `<div class="li"><b>${`<i class="livery" style="background:linear-gradient(90deg,${a.al.livery[0]} 50%,${a.al.livery[1]} 50%)"></i>`}${esc(a.al.name)}</b><small>${tot} departure${tot === 1 ? '' : 's'} a day from ${a.tails} aircraft, busiest ${hh(pk)}${sh}</small><span class="la"><button class="btn sm" data-act="dayShift" data-al="${a.id}" data-v="-1" title="Its flights an hour earlier: the bank at ${hh(pk)} moves to ${hh(pk - 1)}">◂ 1 h</button><button class="btn sm" data-act="dayShift" data-al="${a.id}" data-v="1" title="Its flights an hour later: the bank at ${hh(pk)} moves to ${hh(pk + 1)}">1 h ▸</button></span></div>`;
+  }).join('');
+  return `<div class="dayb"><div class="tl-key"><span class="k dep">Departures planned, by airline</span><span class="k arr">Arrivals expected</span><span class="k real">Today so far</span>${D.capDep ? `<span class="k cap">The runways take ${D.capDep} departures and ${D.capArr} arrivals an hour</span>` : ''}</div>
+    <svg class="tl-svg day" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="The day's flights by hour">${g}</svg>
+    <div class="dcap"><h3 class="sh">Cap <em>departures an hour</em></h3>${seg('dayCap', String(D.cap), [['0', 'No cap']].concat(caps.map(n => [String(n), String(n), '', `At most ${n} departures in any hour`])))}<p class="hint">${esc(D.capWords)}</p></div>
+    <div class="dnight"><h3 class="sh">Night <em>23:00–06:00</em></h3>${seg('dayNight', D.night, Object.entries(IC.NIGHT_POL).map(([k, v]) => [k, v.name, k === 'open' ? 'amb' : '', `${v.brief}. ${D.nightWords[k]}`]))}<p class="hint">${esc(IC.NIGHT_POL[D.night].brief.charAt(0).toUpperCase() + IC.NIGHT_POL[D.night].brief.slice(1))}. ${esc(D.nightWords[D.night])}</p></div>
+    ${rows ? `<div class="dbanks"><h3 class="sh">Airlines <em>the game plans their day; move a bank earlier or later</em></h3><div class="list">${rows}</div></div>` : '<p class="hint">No airline flies from here yet.</p>'}</div>`;
 }
 /* (round 3) one airport panel: passengers, movements and money; the chain from the city; problems with their
    fix; deals to sign and deals at risk; works; and the details folded */
@@ -408,11 +466,14 @@ function handsPanel(b, st, X) {
     <div class="acts">${b.works.some(w => w.stages) ? `<button class="act pri" data-act="finishNow" data-v="${b.id}" title="Time runs on fast until every work here is finished; it stops for anything that needs you">⏩ Finish now</button>` : ''}<button class="act" data-act="aptOpen" data-v="works">${O.works ? 'Hide the jobs ▴' : 'The jobs ▾'}</button></div>
     ${O.works ? `<div class="list">${X.works}</div>` : ''}</div>` : '';
   const ex = (k, name) => `<button class="more" data-act="aptOpen" data-v="${k}">${O[k] ? '▴' : '▾'} ${name}</button>`;
+  const day = A && !IC.storyLock(S, 'charges') ? `<div class="sec">${ex('day', 'The day: flights by hour, cap and night')}${O.day ? dayBoardHTML(b) : ''}</div>` : '';
   const more = `<div class="sec">${ex('more', 'Runways, stands and services')}${O.more ? `${X.schem}${X.kpis}${X.rwSec}${kv(X.rows)}${X.zoneSec}` : ''}
     ${X.fee ? ex('fee', 'Charges') + (O.fee ? X.fee : '') : ''}
     ${X.reps ? ex('reps', 'Damage to repair') + (O.reps ? `<div class="list">${X.reps}</div>` : '') : ''}
     <div class="acts"><button class="act" data-act="aptTab" data-v="rules" title="The tower's rules: when aircraft may go onto a runway">Tower rules</button>${S.asp && !IC.storyLock(S, 'airspace') ? '<button class="act" data-act="aptTab" data-v="asp" title="Controlled airspace round the airport">Airspace</button>' : ''}<button class="act" data-act="aptZoom">Zoom to it</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div></div>`;
-  return `<div class="ibody">${nums}${chain}${probs}${deals}${works}${more}</div>`;
+  const cards = A ? `${ex('score', 'Airline scorecards')}${O.score ? scorecardHTML(b) : ''}` : '';
+  const gse = IC.FOCUS.gse && b.st && b.st.longest > 0 ? `<div class="sec">${ex('fleet', 'Ground vehicles')}${O.fleet ? fleetHTML(b) : ''}</div>` : '';
+  return `<div class="ibody">${nums}${chain}${probs}${deals}${works}${day}${cards ? `<div class="sec">${cards}</div>` : ''}${gse}${more}</div>`;
 }
 /* ---------- the Airspace tab: the airport's shape, drawn from above like a chart; controllers and stacks ---------- */
 const lvlT = a => a <= 0.01 ? 'the ground' : IC.flText(a);

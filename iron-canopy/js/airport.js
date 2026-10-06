@@ -90,7 +90,7 @@ IC.bldLayout = function (p) {
 /* ---------- the model ---------- */
 IC.initAirport = function (ap) {
   ap.parts = []; ap.nodes = {}; ap.nodeN = 0; ap.partN = 0; ap.works = []; ap.crews = ap.kind === 'airbase' ? 2 : 1; ap.autoRepair = true;
-  ap.moves = []; ap.st = {}; ap.dirty = true; ap.feeLevel = 1; ap.curfew = true; ap.rl = {}; ap.kpi = { taxi: 0, wait: 0, n: 0, grid: 0, div: 0, hold: 0, back: 0 };
+  ap.moves = []; ap.st = {}; ap.dirty = true; ap.feeLevel = 1; ap.curfew = false; ap.rl = {}; ap.kpi = { taxi: 0, wait: 0, n: 0, grid: 0, div: 0, hold: 0, back: 0 };
   ap.gver = 0; ap.cfg = null; ap.res = null; ap.eo = null; ap.rwMode = ap.rwMode || 'auto';
   ap.radius = 20; ap.buildR = 65;
 };
@@ -624,7 +624,7 @@ IC.aptServiceLines = function (S, ap) {
     : rws.map(r => { const t = (st.rescueRw || {})[r.id] || 0; return `Fire trucks reach ${r.name} in ${IC.mmss(t)}${t > IC.FIRE_STD ? ': heavy jets may not land on it' : ''}`; }).join('. ') + '.' + drill;
   const fd = ap.fuelDay && ap.fuelDay.d === Math.floor(S.time / 86400) ? ap.fuelDay : null;
   out.fuel = !st.tanks ? 'No fuel farm: departures cannot refuel here.'
-    : (st.hydrant ? `${st.tanks} tank${st.tanks > 1 ? 's' : ''} feed the hydrant system: no trucks to wait for.` : `${st.tanks} tank${st.tanks > 1 ? 's' : ''}, ${st.tanks * 2} fuel trucks: they refuel ${st.trucks} aircraft an hour (one tank's trucks serve ${IC.FUEL_TRUCKS}).`)
+    : (st.hydrant ? `${st.tanks} tank${st.tanks > 1 ? 's' : ''} feed the hydrant system: no trucks to wait for.` : `${st.tanks} tank${st.tanks > 1 ? 's' : ''}, ${ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel : st.tanks * 2} fuel trucks: they refuel ${ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel * IC.FUEL_TRUCKS / 2 : st.trucks} aircraft an hour (each truck ${IC.FUEL_TRUCKS / 2}).`)
       + (fd && fd.s ? ` Departures waited ${U.dur(fd.s)} for fuel today.` : '');
   return out;
 };
@@ -869,7 +869,9 @@ IC.aptStats = function (S, ap) {
   st.fuelCap = tanks.reduce((s, t) => s + IC.fuelCap(t), 0);
   st.fuel = tanks.reduce((s, t) => s + (t.stock || 0), 0);
   st.fuelIn = nTank ? nTank * IC.FUEL_IN + (st.hydrant ? IC.APART.hydrant.pipe : 0) : 0;
-  st.trucks = st.hydrant ? Infinity : nTank * IC.FUEL_TRUCKS;
+  // (round 5b) the airport's own trucks; kept matched, it buys more as traffic grows, so the tanks' share is the floor
+  const own = ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel * IC.FUEL_TRUCKS / 2 : null;
+  st.trucks = st.hydrant ? Infinity : own == null ? nTank * IC.FUEL_TRUCKS : ap.fleet.auto ? Math.max(own, nTank * IC.FUEL_TRUCKS) : own;
   st.fuelDeps = Math.round(Math.min(st.trucks, st.fuelIn / (T.fuel || 1)));
   if (tanks.length && st.fuelDeps < st.depPerHour * 0.8 && ap.kind !== 'airbase') st.warn.push(`Fuel for about ${st.fuelDeps} departures an hour, fewer than the runways can launch (${st.depPerHour}). ${st.hydrant ? 'More tanks' : 'More tanks or a hydrant system'} would help.`);
   for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (IC.fuelGap(tanks[i], tanks[j]) < 1) { st.warn.push(`Fuel ${tanks[i].r ? 'tanks' : 'farms'} stand within 100 m of each other: one fire could take them all. Keep them further apart.`); i = tanks.length; break; }
@@ -1469,7 +1471,9 @@ IC.aptTakeFuel = function (ap, n, S) {
   const now = S && S.time;
   if (S && !(ap.st && ap.st.hydrant)) {
     const L = ap.trucks = (ap.trucks || []).filter(t => now - t < 3600);
-    const cap = ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).reduce((s, t) => s + IC.fuelTanks(t), 0) * IC.FUEL_TRUCKS;
+    // (round 5b) the airport's own fuel trucks, four refuellings an hour each; before it has a fleet, two a tank
+    const own = IC.gseFuelCap ? IC.gseFuelCap(S, ap) : null;
+    const cap = own != null ? own * IC.FUEL_TRUCKS / 2 : ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).reduce((s, t) => s + IC.fuelTanks(t), 0) * IC.FUEL_TRUCKS;
     // every truck busy: with a fuel stand the aircraft taxis there on its way out (groundops.js); without, it waits
     if (L.length >= cap) {
       if (!ap.parts.some(p => p.kind === 'fuelpad' && p.built && p.hp > p.max * 0.25 && p.linked !== false)) { ap.truckWait = now; return false; }
