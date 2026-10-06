@@ -649,11 +649,33 @@ function startAct(S, n) {
     const fwd = 'ab_fwd', rear = S.byId.ab_rear ? 'ab_rear' : 'ab_fwd';
     for (const [k, nm, b] of [['heli', 'HOOK 2', rear], ['cargo', 'ATLAS 1', rear], ['ucav', 'HAWK 1', rear], ['aew', 'SENTRY 2', rear]]) if (!S.roster.some(r => r.name === nm)) addFlight(S, k, nm, b).st = 'ready';
     for (const b of IC.bases(S)) IC.assignSlots(S, b);
-    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `The ${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.`, 'chapter');
+    const led = IC.peaceLedger(S);
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `The ${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.${led.length ? ' What the quiet years left you: ' + led.join(' ') : ''}`, 'chapter');
     say(S, 'CDS', `This is war. Missiles, drones and aircraft will come in raids. You decide where the air goes and what we defend.`);
   }
 }
 IC.storyStartAct = startAct;
+/* what the quiet years built, in the words the war will judge it by (brief 25): a sentence for each link */
+IC.peaceLedger = function (S) {
+  const L = [], aps = IC.bases(S).filter(b => b.kind === 'airport' && b.owner === 'us' && b.parts && b.parts.some(p => p.kind === 'runway' && p.built));
+  const ssr = S.units.filter(u => u.d.civil && u.d.sensor && u.state === 'ready').length;
+  const appr = aps.filter(a => a.parts.some(p => p.kind === 'atc' && p.built && p.hp > p.max * 0.25)).length;
+  if (ssr || appr) L.push(`${ssr ? `${ssr} civil radar${ssr > 1 ? 's' : ''} name${ssr > 1 ? '' : 's'} every airliner by its transponder` : ''}${ssr && appr ? ', and ' : ''}${appr ? `${appr} approach radar${appr > 1 ? 's' : ''} see${appr > 1 ? '' : 's'} anything within 45 km of ${appr > 1 ? 'their airports' : 'its airport'}` : ''}: they feed the air picture, and they are targets.`);
+  const one = aps.filter(a => a.parts.filter(p => p.kind === 'runway' && p.built).length === 1), two = aps.length - one.length;
+  if (aps.length) L.push(`${two ? `${two} airport${two > 1 ? 's have' : ' has'} two runways or more and keep${two > 1 ? '' : 's'} flying after one crater` : 'No airport has a second runway'}${one.length ? `; ${one.length > 2 ? `${one.length} airports` : one.map(a => a.name).join(' and ')} ${one.length > 1 ? 'are' : 'is'} one crater from closed to jets` : ''}.`);
+  const rws = aps.flatMap(a => a.parts.filter(p => p.kind === 'runway' && p.built));
+  const rc = rws.filter(p => IC.paveOf(p) === 'rconc').length, worn = rws.filter(p => (p.wear || 0) >= 0.4);
+  if (rc) L.push(`${rc} runway${rc > 1 ? 's are' : ' is'} reinforced concrete: a bomb leaves half the crater, filled in half the time.`);
+  if (worn.length) L.push(`${worn.length} runway${worn.length > 1 ? 's are' : ' is'} worn with age (${U.pct(Math.max(...worn.map(p => p.wear)))} at worst): worn pavement breaks up wider when hit.`);
+  const hg = aps.reduce((n, a) => n + a.parts.filter(p => p.kind === 'hangar' && p.built).length * IC.APART.hangar.holds, 0);
+  if (hg) L.push(`Hangar room for ${hg} airliners: inside, they come through a near miss that burns them on an open stand.`);
+  if (S.av) {
+    const deals = S.av.deals.filter(d => d.st === 'active');
+    const rep = aps.length ? Math.round(Math.max(...aps.map(IC.aptRep))) : 0;
+    if (deals.length) L.push(`${deals.length} airline contract${deals.length > 1 ? 's' : ''} worth ${U.money(deals.reduce((s, d) => s + d.value, 0))} a day, and a name of ${rep}: close the airspace and they stay on the ground; after ${IC.SHUT.walk} hours an airline ends its deal, and remembers it for ${IC.dealLen(S, IC.SHUT.memo)}.`);
+  }
+  return L;
+};
 
 /* ---------- beats: the slow build-up ---------- */
 function border(S, near) {
@@ -1091,7 +1113,8 @@ IC.on((S, type, d) => {
       break;
     case 'overload': if (st.act === 1 && st.ch === 1) st.hurry = true; break;
     case 'infringement': st.cnt.infT.push(S.time); if (st.cnt.infT.length > 100) st.cnt.infT = st.cnt.infT.filter(t => S.time - t < 86400); break;
-    case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; break;
+    case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; if (st.act < 4) peaceHint(S, d.ap, d.part); break;
+    case 'ready': if (st.act < 4 && d.d.civil && d.d.sensor && IC.tipOnce(S, 'hintSSR')) say(S, 'ATC', `${d.name} is for the controllers. If it ever comes to war, the military will see what it sees, and so will anyone across the border looking for targets.`); break;
     case 'zone': st.cnt.zone++; break;
     // a bad evening of diversions costs at most 2.4 an hour
     case 'divert': if (S.time - (st.divT || -1e9) >= 600) { st.divT = S.time; again(-0.4); } break;
@@ -1108,6 +1131,13 @@ IC.on((S, type, d) => {
     case 'incident': break;
   }
 });
+/* Act I to III: once each, what a choice will mean if war comes (brief 25) */
+function peaceHint(S, ap, p) {
+  if (!ap || ap.kind !== 'airport') return;
+  if (p.kind === 'hangar' && IC.tipOnce(S, 'hintHangar')) say(S, 'APT', `The hangar at ${ap.name} is for maintenance. Should war come, an airliner inside it survives a blast that would burn it on an open stand.`);
+  else if (p.kind === 'runway' && IC.paveOf(p) === 'rconc' && IC.tipOnce(S, 'hintRconc')) say(S, 'APT', `${p.name || 'The runway'} at ${ap.name} is reinforced concrete: it cost 60% more than concrete. A bomb would leave a crater half the size, filled in half the time.`);
+  else if (p.kind === 'runway' && ap.parts.filter(q => q.kind === 'runway' && q.built).length === 2 && IC.tipOnce(S, 'hintTwoRw')) say(S, 'APT', `${ap.name} has two runways now. More traffic, and should it ever come to it, one crater no longer closes the airport.`);
+}
 IC.tipOnce = function (S, key, cool) {
   const c = S.camp.cool;
   if (c[key] != null && (cool == null || S.time - c[key] < cool)) return false;

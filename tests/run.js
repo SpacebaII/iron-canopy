@@ -3833,6 +3833,137 @@ test('calendar: construction runs through its stages, markings and lights each t
   assert(w0.stages.find(x => x.k === 'lights').name && w0.stages.find(x => x.k === 'mark').name, 'a stage has no name');
 });
 
+/* ---------- peace and war: what is built in peace matters in war (brief 25) ---------- */
+const lastLog = (S, tag, re) => S.logs.find(l => l.tag === tag && (!re || re.test(l.msg)));
+test('peace and war: civil radars feed the air picture: an approach radar sees a drone no military radar covers, and beacons name the airliners', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const cap = S.byId[S.story.cap], atc = cap.parts.find(p => p.kind === 'atc' && p.built);
+  assert(atc, 'the capital has no approach radar');
+  assert(!S.units.some(u => u.d.sensor && !u.d.civil), 'a military radar is up in Act I');
+  run(S, 1);
+  const named = S.threats.filter(t => t.tail && !t.dead && t.det && (t.aff === 'A' || t.aff === 'N'));
+  assert(named.length >= 2, `only ${named.length} airliners identified by the civil radars`);
+  const t = IC.spawnThreat(S, 'owa', atc.x + 150, atc.y + 40, { route: [{ x: cap.x, y: cap.y }], aim: { x: cap.x, y: cap.y }, fromHostile: true });
+  for (let i = 0; i < 4 * 60 && !t.tn; i++) IC.step(S, 0.25);
+  assert(t.tn && t.det, 'the approach radar did not see the drone');
+  const l = lastLog(S, 'RADAR', new RegExp(`TN ${t.tn} was seen first by the approach radar`));
+  assert(l && /civil radar/.test(l.msg), 'no word that a civil radar saw it first');
+  // and the enemy can find them: a civil radar on the air is a radar target like any other
+  const ssr = S.units.find(u => u.type === 'ssr');
+  IC.enemyIntel(S);
+  assert(IC.enemyTargets(S, 'ad').some(c => c.ref === ssr), 'the enemy does not count the civil radar among its targets');
+});
+test('peace and war: a hangar protects airliners from a blast that destroys them on open stands', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 });
+  const cap = S.byId[S.story.cap], hangar = cap.parts.find(p => p.kind === 'hangar' && p.built);
+  const tails = S.av.tails.filter(t => t.where !== 'lost');
+  let open = 0, inside = 0;
+  for (let k = 0; k < 8; k++) {
+    const a = tails[2 * k], b = tails[2 * k + 1];
+    a.where = 'hangar'; a.at = cap.id; hangar.inside = [{ tl: a.id }]; hangar.hp = hangar.max;
+    // the same blast beside the hangar, then beside an occupied stand (each hit lays the stands out again)
+    IC.aptHit(S, cap, hangar.x + 0.4, hangar.y, 25, { d: { code: 'TEST' } });
+    const s = IC.aptStands(cap).find(x => x.linked !== false && x.hp > 0 && !x.occ);
+    b.where = 'stand'; b.at = cap.id; s.occ = b.id; b.stand = s.id;
+    IC.aptHit(S, cap, s.x + 0.4, s.y, 25, { d: { code: 'TEST' } });
+    if (a.where === 'lost') inside++;
+    if (b.where === 'lost') open++;
+  }
+  assert(hangar.hp > hangar.max * 0.25, 'the test blast destroyed the hangar');
+  assert(inside === 0 && open >= 4, `${inside} of 8 lost in the hangar, ${open} of 8 on open stands`);
+  assert(lastLog(S, 'AIRPORT', /The hangar stood: the airliner inside came through a blast/), 'the log does not say the hangar saved the airliner');
+});
+test('peace and war: closing the airspace stops airline revenue; airlines walk out after two days of it and remember it in their charges for months', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const A = S.av;
+  run(S, 3);
+  const f0 = A.feeTotal || 0; run(S, 3); const open = (A.feeTotal || 0) - f0;
+  // a deal on one route, and the terms an offer from its airline would carry before the closure
+  const r = A.routes.find(x => x.st === 'active' && x.n > 0 && S.byId[x.a]), al = IC.avAirline(S, r.al);
+  const d = IC.avSignDeal(S, { al: r.al, a: r.a, b: r.b, type: r.type, n: r.n }, r, A.tails.filter(t => t.route === r.id), 1e9);
+  const q = { al: r.al, a: r.a, b: r.b, type: r.type, n: 1 };
+  IC.avMakeTerms(S, q); const flex0 = q.terms.flex;
+  assert(IC.airspaceSet(S, 'closed'), 'the airspace did not close');
+  assert(lastLog(S, 'AIRSPACE', /stay on the ground, about ₭[\d.,]+M? an hour in charges/), `no word of what closing costs: "${(lastLog(S, 'AIRSPACE') || {}).msg}"`);
+  run(S, 0.5);
+  const f1 = A.feeTotal || 0; run(S, 3); const shut = (A.feeTotal || 0) - f1;
+  assert(open > 0 && shut < open * 0.15, `fees over 3 hours: ${U.money(open)} open, ${U.money(shut)} closed`);
+  // two days on the ground: the airline ends the deal
+  const sat0 = al.sat;
+  for (let h = 0; h < IC.SHUT.walk + 2 && d.st === 'active'; h++) { S.time += 3600; IC.aviation(S, 3600); }
+  assert(d.st === 'broken' && /airspace/.test(d.why), `the deal is ${d.st} (${d.why || ''})`);
+  assert(al.sat < sat0 && IC.avGrudge(S, al) > 0.9, `the airline does not remember the closure (satisfaction ${sat0.toFixed(0)} → ${al.sat.toFixed(0)}, grudge ${IC.avGrudge(S, al).toFixed(2)})`);
+  IC.airspaceSet(S, 'open');
+  IC.avMakeTerms(S, q);
+  assert(q.terms.flex < flex0 - 0.1 && q.terms.grudge >= IC.SHUT.walk, `its offer bends as much as before (${flex0.toFixed(2)} → ${q.terms.flex.toFixed(2)})`);
+  // months later it has forgotten
+  S.time += IC.MO(S, IC.SHUT.memo + 1);
+  assert(IC.avGrudge(S, al) === 0, 'the airline still remembers after the memory runs out');
+}, true);
+test('peace and war: an airliner flying where our missiles fly can be lost to one that misses', () => {
+  const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'lrsam', T.x, T.y);
+  S.airspace = 'open';
+  let lost = null, n = 0, behind = 0;
+  for (let k = 0; k < 20 && !lost; k++) {
+    const t = IC.spawnThreat(S, 'isr', T.x + 600, T.y + k * 40, { area: { x: T.x + 600, y: T.y + 3000 }, phase: 'out', loiterT: 1e5, home: { x: T.x + 600, y: T.y + 9000 }, alt: 6 });
+    // an airliner 3 km beyond the drone along the missile's line, and one well behind the battery
+    const mk = (x, cs) => IC.spawnThreat(S, 'civ', x, t.y, { dest: { x: x + 3000, y: t.y }, wps: [{ x: x + 3000, y: t.y }], orig: { x, y: t.y, edge: true }, cs, sq: IC.squawk(), alt: 6, cruise: 6, pax: 180, plan: null, route: [], aim: { x: x + 3000, y: t.y } });
+    const air = mk(t.x + 30, 'TST' + k), safe = mk(T.x - 600, 'SAFE' + k);
+    const M = IC.MUN.LR, m = IC.newMissile(S, { mun: 'LR', M, x: t.x + 2, y: t.y, a: 0, spd: M.spd, target: t, src: u.name, unit: u, pk: 1, side: 'us', tr: IC.newTrail(S, 'sam'), alt: 6 }, IC.reachAt(M, 6), 0);
+    m.v = m.vb; m.age = m.P.boost; m.flown = 600;   // 60 km out from the battery at full speed when it misses
+    S.missiles.push(m); t.inbound++;
+    IC.missileEnd(S, m, t, { end: 'miss', why: 'MISS', d: 1 });
+    if (m.target === air) { n++; for (let i = 0; i < 4 * 120 && !m.dead && S.missiles.includes(m); i++) IC.step(S, 0.25); if (air.dead) lost = air; }
+    if (safe.dead || m.target === safe) behind++;
+    for (const x of [t, air, safe]) x.dead = true;
+  }
+  assert(n > 0, 'no missile that missed ever locked on to the airliner beyond its target');
+  assert(lost, `${n} missiles locked on to an airliner, none brought one down`);
+  assert(!behind, 'a missile turned round onto an airliner behind the battery');
+  const l = lastLog(S, 'CIVIL', /missed its target and locked on/);
+  assert(l && /flying an open airway through a raid/.test(l.msg), 'the loss is not explained');
+});
+test('peace and war: reinforced concrete craters half as much as asphalt, and old pavement breaks up wider', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 });
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway');
+  const hole = (mat, wear) => { rw.mat = mat; rw.wear = wear || 0; rw.craters = []; const q = IC.rwAt(rw, 0.3); IC.aptHit(S, ap, q.x, q.y, 60, { d: { code: 'TEST' } }); return rw.craters[0].r; };
+  const a = hole('asph'), r = hole('rconc'), old = hole('asph', 0.8);
+  assert(r < a * 0.6, `reinforced concrete crater ${r.toFixed(2)} against asphalt ${a.toFixed(2)}`);
+  assert(/Reinforced concrete: the crater is \d+ m across, about half what asphalt would take/.test(S.logs.find(l => l.tag === 'AIRPORT' && /Reinforced/.test(l.msg)).msg), 'the log does not say what the reinforced concrete did');
+  assert(old > a * 1.3, `80% worn asphalt crater ${old.toFixed(2)} against new ${a.toFixed(2)}`);
+  assert(lastLog(S, 'AIRPORT', /80% worn with age: it broke up wider/), 'the log does not say the old pavement broke up wider');
+  const fill = c => IC.aptRepairList(ap).find(x => x.crater)?.dur;
+  rw.mat = 'rconc'; const fr = fill(); rw.mat = 'asph'; const fa = fill();
+  assert(fr < fa * 0.7, `filling a crater in reinforced concrete takes ${fr} s, in asphalt ${fa} s`);
+});
+test('peace and war: one crater closes a single-runway airport to jets; with a second runway it keeps flying', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway'), narrow = IC.ACTYPES.narrow;
+  const crater = q => IC.aptHit(S, ap, q.x, q.y, 60, { d: { code: 'TEST' } });
+  crater(IC.rwAt(rw, 0.5));
+  assert(/runway is too short/.test(IC.aptCanTake(S, ap, narrow)), `one crater left the airport open to narrow-bodies: "${IC.aptCanTake(S, ap, narrow)}"`);
+  assert(lastLog(S, 'AIRPORT', /With one runway, one crater closes it to airliners/), 'the log does not say one runway was the reason');
+  // a second runway 1.6 km to the south, joined to the remote apron's taxiway; then the first is cratered again
+  rw.craters = []; ap.dirty = true; S.budget = 1e5;
+  const P = (x, y) => IC.aptLocal(ap, x, y);
+  assert(IC.aptPlanRunway(S, ap, P(-17, -16), P(17, -16)), 'could not plan a second runway');
+  assert(IC.aptPlanTaxi(S, ap, [P(-12, -1.6), P(-12, -16)]), 'could not plan a taxiway to it');
+  assert(IC.aptPlanTaxi(S, ap, [P(8, 0), P(8, -16)]), 'could not plan a second taxiway to it');
+  finishWorks(S, ap); IC.aptStats(S, ap);
+  assert(ap.parts.filter(p => p.kind === 'runway' && p.built).length === 2, 'the second runway did not open');
+  crater(IC.rwAt(rw, 0.5));
+  assert(!IC.aptCanTake(S, ap, narrow), `with two runways one crater closed it: "${IC.aptCanTake(S, ap, narrow)}"`);
+  assert(lastLog(S, 'AIRPORT', /is still whole: .* keeps flying/), 'the log does not say the other runway keeps it flying');
+  // and a departure gets away
+  sky(S, 'clear'); calm(S, ap.rwyA, 5); ap.cfg = null;
+  const s = IC.aptStands(ap).find(x => !x.occ && x.size !== 's' && x.linked !== false);
+  let air = false;
+  const m = IC.gopsDepart(S, ap, { type: 'narrow', node: s.id, stand: s, startT: 0, who: 'TEST 1', onAir: () => { air = true; } });
+  assert(m, 'no departure plan with the first runway cratered');
+  for (let i = 0; i < 3600 * 2 && !air; i++) IC.step(S, 0.5);
+  assert(air, `the departure never took off from the second runway; last phase ${m.phase}`);
+});
+
 /* ---------- the enemy commander ---------- */
 /* one three-day Quick war with the scripted commander of qwplayer.js, shared by the tests below (a few minutes) */
 let qw3 = null;

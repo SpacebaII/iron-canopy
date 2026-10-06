@@ -203,7 +203,7 @@ IC.on((S, type, d) => {
     // after each raid the Prime Minister weighs what got through and what it hit
     // (a small raid counts for less: a drone that gets through is not a failed defence)
     case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.35 - f) * Math.min(1, r.threats / 12) - Math.min(6, r.hits * 0.15), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
-    case 'civilKill': pmHit(S, -15); say(S, 'CDS', `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
+    case 'civilKill': pmHit(S, -15); say(S, 'CDS', d.strayBy ? `One of our missiles missed and found an airliner beyond its target. While raids are in the air, an open airspace puts airliners where our missiles fly: restrict it or close it.` : `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
     case 'weather': if (!IC.WEATHER[d].heli && once('wx', 21600)) say(S, 'AIR', 'Weather has grounded the helicopters. Jets can still fly.'); break;
     case 'delivered': if (once('delivered')) say(S, 'LOG', 'The first new equipment is in the reserve. Pick it in the arsenal and click the map to deploy it.'); break;
   }

@@ -588,6 +588,7 @@ IC.aviation = function (S, dt) {
     if (A.hist.length > 72) A.hist.shift();
     if (hourOf(S) < 3600) { A.yesterday = A.day; A.day = { pax: 0, flights: 0, delays: 0, div: 0 }; dealsDay(S); }
     dealsTick(S);
+    shutTick(S);
     // unhappy airlines cut routes
     for (const al of A.airlines) {
       if (al.sat < 28) al.lowT += 1; else al.lowT = Math.max(0, al.lowT - 1);
@@ -615,6 +616,49 @@ function cutRoute(S, al, r, why) {
   IC.news(S, `${al.name} ${r.st === 'cut' ? 'drops' : 'reduces'} ${routeName(S, r)} flights, citing ${why || 'poor service'}.`);
   IC.emit(S, 'routeCut', { al, r });
 }
+/* ---------- a closed airspace (brief 25) ----------
+   Airliners the closure grounds earn nothing. Their airlines lose patience by the hour, walk out of a deal grounded
+   for IC.SHUT.walk hours in a row, and remember it in their offers and charges for IC.SHUT.memo months (days on the
+   live clock): they bend less on charges and offer less often. */
+IC.SHUT = { walk: 48, memo: 6, sat: 0.6 };
+const grounded = (S, r) => r.st === 'active' && r.n > 0 && (S.airspace === 'closed' || (S.airspace === 'restricted' && !routeSafe(S, r)));
+IC.avGrounded = (S, r) => grounded(S, r);
+/* 0 (forgotten) to 1 (two days grounded, just now) */
+IC.avGrudge = (S, al) => !al.shutT ? 0 : U.clamp((al.shutH || 0) / IC.SHUT.walk, 0, 1) * U.clamp(1 - (S.time - al.shutT) / (IC.SHUT.memo * IC.dealUnit(S)), 0, 1);
+function shutTick(S) {
+  const A = S.av;
+  for (const al of A.airlines) if (al.shutT && !IC.avGrudge(S, al)) { al.shutT = 0; al.shutH = 0; }
+  const hit = new Set();
+  for (const r of A.routes) if (grounded(S, r)) hit.add(r.al);
+  for (const al of A.airlines) if (hit.has(al.id)) { al.shutH = (al.shutH || 0) + 1; al.shutT = S.time; al.sat = Math.max(0, al.sat - IC.SHUT.sat); }
+  for (const d of A.deals) {
+    if (d.st !== 'active') continue;
+    const r = A.routes.find(x => x.id === d.route);
+    if (!r || !grounded(S, r)) { d.shutH = 0; continue; }
+    d.shutH = (d.shutH || 0) + 1;
+    if (d.shutH === IC.SHUT.walk - 12) IC.log(S, 'warn', 'AVIATION', `${airlineOf(S, d.al).name} has been grounded by the ${S.airspace} airspace for ${d.shutH} hours. At ${IC.SHUT.walk} it ends its deal for ${routeName(S, r)}.`, S.byId[d.a]);
+    if (d.shutH >= IC.SHUT.walk) IC.avBreakDeal(S, d.id, `the ${S.airspace} airspace has kept its aircraft on the ground for ${IC.SHUT.walk} hours`);
+  }
+}
+/* the switch, said in money: what stops, and what the airlines will do about it */
+IC.airspaceSet = function (S, v) {
+  if (S.airspace === v) return false;
+  const was = S.airspace; S.airspace = v;
+  const A = S.av;
+  if (!A || v === 'open') {
+    IC.log(S, 'info', 'AIRSPACE', `Civil airspace ${v}.${A && was ? ' Airliners fly their routes again; the airlines remember how long they were kept on the ground.' : ''}`);
+  } else {
+    const rs = A.routes.filter(r => grounded(S, r)), n = rs.reduce((s, r) => s + r.n, 0);
+    const rate = A.rate ? Object.entries(A.rate).filter(([k]) => k !== 'over').reduce((s, [, x]) => s + x, 0) : 0;
+    const share = A.routes.filter(r => r.st === 'active' && r.n > 0).reduce((s, r) => s + r.n, 0);
+    const lost = share ? rate * n / share : 0;
+    const memo = IC.dealLen(S, IC.SHUT.memo);
+    IC.log(S, n ? 'warn' : 'info', 'AIRSPACE', n ? `Civil airspace ${v}: ${n} airliner${n > 1 ? 's' : ''} on ${rs.length} route${rs.length > 1 ? 's' : ''} stay on the ground, about ${U.money(lost)} an hour in charges. An airline kept down ${IC.SHUT.walk} hours ends its deal, and they remember it in their offers for ${memo}.` : `Civil airspace ${v}. No airline route is grounded by it.`);
+  }
+  IC.news(S, v === 'closed' ? 'Government closes the national airspace to all civil flights.' : v === 'restricted' ? 'Airspace restricted to southern corridors.' : 'Airspace reopens to civil traffic.');
+  IC.emit(S, 'airspace', { v, was });
+  return true;
+};
 function routeSafe(S, r) {
   if (r._safeT && S.time - r._safeT < 3600) return r._safe;
   const a = S.byId[r.a], b = endPt(S, r.b);
@@ -807,13 +851,16 @@ function dealWorth(S, q, charge) {
 function makeTerms(S, q) {
   const al = airlineOf(S, q.al), a = S.byId[q.a], list = a.feeLevel || 1, rep = a.rep == null ? IC.DEAL.rep0 : a.rep;
   // how much it wants in: seats running full, and our name
-  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25);
+  // a closed airspace is remembered: it will not pay full list for a while (brief 25)
+  const g = IC.avGrudge(S, al);
+  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25) - 0.15 * g;
   const T = IC.ACTYPES[q.type];
-  q.terms = { list, days: (career(S) ? IC.DEAL.months : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
+  q.terms = { list, grudge: g > 0.05 ? Math.round(al.shutH) : 0, days: (career(S) ? IC.DEAL.months : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
     late: +(T.fee * 0.25).toFixed(2), cancel: +(T.fee * 1.2 + (T.seats || 0) * 0.004).toFixed(2), rep: al.kind === 'flag' || al.K.foreign ? 5 : 3 };
   q.pick = { lvl: 1, excl: false };
   q.value = dealWorth(S, q, list).value;
 }
+IC.avMakeTerms = makeTerms;
 /* the terms at the level the player picked: charges, length, worth, and whether the airline accepts */
 IC.dealTerms = function (S, q, lvl, excl) {
   const t = q.terms; if (!t) return null;
@@ -963,11 +1010,13 @@ function renewOffer(S, d, al) {
 /* how long until the next offer: slower in the Career's first act, quicker the better our name */
 function offerGap(S) {
   const A = S.av;
-  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600;
+  // airlines kept on the ground by a closed airspace are slow to offer again
+  const g = Math.max(0, ...A.airlines.map(al => IC.avGrudge(S, al)));
+  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600 * (1 + g);
   // the Career: an offer every month or two, by the calendar
   const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
   const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
-  return IC.MO(S, U.rand(IC.DEAL.offerMo[0], IC.DEAL.offerMo[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8);
+  return IC.MO(S, U.rand(IC.DEAL.offerMo[0], IC.DEAL.offerMo[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g);
 }
 
 

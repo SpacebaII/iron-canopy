@@ -166,7 +166,7 @@ function dealCard(q) {
     <div class="dl-terms"><div><small>Aircraft</small><b>${q.n} × ${esc(T.name.toLowerCase())}</b></div><div><small>Flights</small><b>${S.mode === 'story' ? `${Math.round(k.perWk / 7)} a day` : `${k.perWk} a week`}</b></div><div><small>Length</small><b>${IC.dealLen(S, k.days)}</b></div><div><small>Worth to us</small><b class="gold">${U.money(k.value)} a day</b></div></div>
     ${neg}
     <ul class="dl-needs">${need}</ul>
-    <p class="dl-small">Brings about ${brings || 'little'} a day, and raises our name when it runs its term. Each late flight costs us ${U.money(q.terms.late)}, each cancelled one ${U.money(q.terms.cancel)}.</p>
+    <p class="dl-small">Brings about ${brings || 'little'} a day, and raises our name when it runs its term. Each late flight costs us ${U.money(q.terms.late)}, each cancelled one ${U.money(q.terms.cancel)}.${q.terms.grudge ? ` ${esc(al.name)} remembers ${q.terms.grudge} hours on the ground under our closed airspace: it bends less on charges.` : ''}</p>
     <div class="acts"><button class="btn primary" data-act="avYes" data-id="${q.id}" ${block || !k.ok ? 'disabled' : ''} title="${esc(block ? block.text : k.ok ? 'Sign on these terms' : k.why)}">Sign</button><button class="btn" data-act="avNo" data-id="${q.id}">Turn down</button>${block ? `<span class="amber dl-why">${esc(block.text)}</span>` : !k.ok ? `<span class="hostile dl-why">They will not sign: ${esc(k.why)}.</span>` : ''}</div></div>`;
 }
 function contractRow(d) {

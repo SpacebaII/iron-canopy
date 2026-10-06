@@ -465,7 +465,7 @@ IC.killThreat = function (S, t, by, how) {
     S.stats.civLost++;
     for (const c of IC.cities(S)) c.morale = Math.max(0, c.morale - (t.type === 'ga' ? 4 : 12));
     S.support = Math.max(0, S.support - (t.type === 'ga' ? 8 : 25));
-    IC.log(S, 'leak', 'CIVIL', `${t.type === 'ga' ? 'Civil light aircraft' : 'Airliner'} ${t.cs} shot down by ${by}. ${t.pax} people on board.`, t);
+    IC.log(S, 'leak', 'CIVIL', t.strayBy ? `Airliner ${t.cs} brought down by a ${t.strayBy} missile that missed its target and locked on to it ${U.km(t.strayD)} further on. ${t.pax} people on board. It was flying an open airway through a raid.` : `${t.type === 'ga' ? 'Civil light aircraft' : 'Airliner'} ${t.cs} shot down by ${by}. ${t.pax} people on board.`, t);
     IC.news(S, `Tragedy: ${t.type === 'ga' ? 'private plane' : 'airliner'} ${t.cs} shot down over ${S.world.names.H}. ${t.pax} dead. Allies demand answers.`);
     IC.emit(S, 'civilKill', t);
     return;

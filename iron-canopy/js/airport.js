@@ -1019,16 +1019,19 @@ IC.parkPos = function (S, b, r) {
 /* ---------- damage by location ---------- */
 IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   const rb = 0.3 + dmg * 0.006, p = { x, y };
-  const hitNames = [];
-  let acLost = 0;
+  const hitNames = [], notes = [], hitRw = [];
+  let acLost = 0, sheltered = 0;
   for (const part of ap.parts) {
     if (!part.built && part.prog <= 0) continue;
     if (part.kind === 'runway') {
       const off = Math.abs(rwOff(part, p)), t = rwT(part, p);
       if (off < part.w / 2 + rb * 0.5 && t > -0.01 && t < 1.01) {
-        part.craters.push({ t: U.clamp(t, 0, 1), r: Math.max(0.35, rb * 0.7) * paveK(part, 'crater'), id: IC.nid('cr') });
+        // pavement worn with age breaks up wider (brief 25: a runway paved in Year 2 is weaker by Year 9)
+        const r = Math.max(0.35, rb * 0.7) * paveK(part, 'crater') * (1 + 0.5 * (part.wear || 0));
+        part.craters.push({ t: U.clamp(t, 0, 1), r, id: IC.nid('cr') });
         part.hp = Math.max(1, part.hp - 5);
         hitNames.push(`${part.name || 'runway'} cratered`);
+        if (!hitRw.includes(part)) { hitRw.push(part); const w = craterWords(part, r); if (w) notes.push(w); }
         ap.dirty = true;
       }
       continue;
@@ -1048,7 +1051,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
     }
     const d = partDist(ap, part, p);
     if (d > rb) continue;
-    const was = part.hp;
+    const was = part.hp, inside = part.kind === 'hangar' ? (part.inside || []).length : 0;
     const hard = part.kind === 'has' ? 0.35 : part.kind === 'alert' ? 0.7 : 1;
     part.hp = Math.max(0, part.hp - dmg * (1 - d / rb * 0.5) * hard);
     if (was > part.max * 0.25 && part.hp <= part.max * 0.25) {
@@ -1061,7 +1064,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
       if (part.kind === 'hangar') for (const x of part.inside || []) { IC.emit(S, 'tailLost', { ap, tail: x.tl, why: 'destroyed in the hangar' }); acLost++; }
       if (part.kind === 'hangar') part.inside = [];
       ap.dirty = true;
-    }
+    } else if (inside) notes.push(`The hangar stood: the ${inside > 1 ? `${inside} airliners` : 'airliner'} inside came through a blast ${Math.round(d * 100)} m away. On an open stand that close, three in four are lost.`);
   }
   // aircraft on the ground
   for (const r of S.roster) {
@@ -1071,7 +1074,8 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
     if (d > rb + 0.25) continue;
     const shel = pp.fac;
     const chance = shel ? (shel.kind === 'has' ? (shel.hp > shel.max * 0.25 ? 0.1 : 0.6) : shel.kind === 'alert' ? 0.45 : (shel.hp > shel.max * 0.25 ? 0.4 : 0.9)) : 0.8;
-    if (Math.random() < chance) { r.st = 'lost'; r.ent = null; acLost++; S.stats.acLost++; S.wrecks.push({ x: pp.x, y: pp.y, type: 'aircraft', t: S.time, h: pp.a || 0 }); IC.addFire(S, pp.x, pp.y, 0.6, 2400); }
+    if (Math.random() >= chance) { if (shel && chance < 0.8) sheltered++; }
+    else { r.st = 'lost'; r.ent = null; acLost++; S.stats.acLost++; S.wrecks.push({ x: pp.x, y: pp.y, type: 'aircraft', t: S.time, h: pp.a || 0 }); IC.addFire(S, pp.x, pp.y, 0.6, 2400); }
   }
   for (const m of ap.moves) if (!m.dead && !m.destroyed && U.dist(m, p) < rb + m.T.span / 2) { m.destroyed = true; acLost++; S.wrecks.push({ x: m.x, y: m.y, type: m.T.mil ? 'aircraft' : 'airliner', t: S.time, h: m.h }); IC.addFire(S, m.x, m.y, 0.8, 3000); }
   // airliners parked at their stands
@@ -1083,11 +1087,32 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   IC.aptStats(S, ap);
   if (ap.kind === 'airbase') IC.assignSlots(S, ap);
   const st = IC.baseStatus(S, ap);
+  if (sheltered) notes.push(`${sheltered} aircraft in ${sheltered > 1 ? 'shelters and hangars' : 'a shelter'} came through: in the open, four in five are lost that close.`);
+  if (hitRw.length) { const w = runwayWords(ap, hitRw); if (w) notes.push(w); }
   const uniq = [...new Set(hitNames)];
-  if (uniq.length || acLost) IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${uniq.join(', ')}${acLost ? `${uniq.length ? '; ' : ''}${acLost} aircraft destroyed on the ground` : ''}${!st.runway ? '; RUNWAY CLOSED' : ''}.`, { x, y });
-  IC.emit(S, 'baseHit', { base: ap, acLost, runway: st.runway });
+  const head = [uniq.join(', '), acLost ? `${acLost} aircraft destroyed on the ground` : '', !st.runway ? 'RUNWAY CLOSED' : ''].filter(Boolean).join('; ');
+  if (uniq.length || acLost || notes.length) IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${head ? head + '.' : 'hit.'}${notes.length ? ' ' + notes.join(' ') : ''}`, { x, y });
+  IC.emit(S, 'baseHit', { base: ap, acLost, runway: st.runway, notes, sheltered });
   if (ap.autoRepair) autoQueue(S, ap);
 };
+/* what the pavement made of the hole (brief 25): reinforced concrete halves it, age widens it */
+function craterWords(rw, r) {
+  const m = Math.round(r * 200), mat = IC.paveOf(rw), K = IC.PAVE[mat], worn = rw.wear || 0;
+  const asph = Math.round(r * 200 / K.crater / (1 + 0.5 * worn));
+  if (mat === 'rconc') return `Reinforced concrete: the crater is ${m} m across, about half what asphalt would take (${asph} m), and it is filled in ${U.dur(700 * K.patch)}.`;
+  if (worn >= 0.3) return `${rw.name || 'The runway'} was ${U.pct(worn)} worn with age: it broke up wider, a crater ${m} m across where new pavement would take ${Math.round(r * 200 / (1 + 0.5 * worn))} m.`;
+  return '';
+}
+/* one runway or several: what the hit leaves for jets (a narrow-body needs IC.ACTYPES.narrow.rwy) */
+function runwayWords(ap, hit) {
+  const rws = ap.parts.filter(q => q.kind === 'runway' && q.built), need = IC.ACTYPES[ap.kind === 'airbase' ? 'fighter' : 'narrow'].rwy;
+  const ok = rws.filter(q => IC.rwUsable(q) >= need), left = Math.max(0, ...hit.map(IC.rwUsable));
+  const what = ap.kind === 'airbase' ? 'fighters' : 'airliners';
+  if (hit.every(q => IC.rwUsable(q) >= need)) return '';
+  if (ok.length && ok.some(q => !hit.includes(q))) return `${ok.filter(q => !hit.includes(q)).map(q => q.name || 'Another runway').join(' and ')} ${ok.length > 1 ? 'are' : 'is'} still whole: ${ap.name.replace(/ (International|Airport)$/, '')} keeps flying.`;
+  if (ok.length) return '';
+  return `${rws.length === 1 ? 'With one runway, one crater closes it' : 'No runway is left long enough'} to ${what}: the longest stretch left is ${U.km(left)}, and they need ${U.km(need)}. ${rws.length === 1 ? 'A second runway would have kept it open.' : ''}`.trim();
+}
 IC.H.aptSecondary = (S, ap, x, y) => () => IC.aptHit(S, ap, x, y, 90, { d: { code: 'secondary explosion' } });
 
 /* ---------- engineering: repairs and construction ---------- */
