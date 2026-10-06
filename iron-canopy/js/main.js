@@ -692,7 +692,7 @@ cv.addEventListener('pointermove', e => {
     if (edge) { IC.ui.tip(null); cv.title = `Drag to move the edge of the ${edge.name.toLowerCase()} (now ${U.km(edge.r1)} out)`; cv.style.cursor = 'grab'; return; }
     cv.title = '';
     // (the builder's own card sits by the cursor and its help line says what a right-click does: no hover card over it)
-    const ent = pick(S.hover); if (S.mode2 && S.mode2.kind === 'build') IC.ui.tip(null); else IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return;
+    const ent = pick(S.hover); if (S.mode2 && (S.mode2.kind === 'build' || S.mode2.kind === 'found')) IC.ui.tip(null); else IC.ui.tip(ent, l.x, l.y, rightWhat(ent)); cv.style.cursor = S.mode2 ? 'crosshair' : ent ? 'pointer' : 'default'; return;
   }
   IC.ui.tip(null);
   if (!ptrs.has(e.pointerId)) return;

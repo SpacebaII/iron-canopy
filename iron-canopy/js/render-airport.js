@@ -1644,8 +1644,8 @@ function drawFoundGhost(g, S, m, hv, px) {
   const at = m.site || hv, st = S.story;
   const city = st && !st.cap ? IC.cap(S) : IC.cities(S).filter(c => c.owner !== 'enemy').sort((a, b) => U.dist(a, at) - U.dist(b, at))[0];
   if (city) {
-    g.save(); g.beginPath(); g.arc(city.x, city.y, 400, 0, 7); g.arc(city.x, city.y, 150, 0, 7, true); g.fillStyle = 'rgba(111,210,255,0.07)'; g.fill('evenodd');
-    g.strokeStyle = 'rgba(111,210,255,0.55)'; g.lineWidth = 1.5 * px; g.setLineDash([8 * px, 6 * px]);
+    g.save(); g.beginPath(); g.arc(city.x, city.y, 400, 0, 7); g.arc(city.x, city.y, 150, 0, 7, true); g.fillStyle = 'rgba(111,210,255,0.1)'; g.fill('evenodd');
+    g.strokeStyle = 'rgba(140,220,255,0.85)'; g.lineWidth = 2.2 * px; g.setLineDash([10 * px, 6 * px]);
     for (const r of [150, 400]) { g.beginPath(); g.arc(city.x, city.y, r, 0, 7); g.stroke(); }
     g.setLineDash([]); g.restore();
     lbl(g, `15 km from ${city.name}`, city.x, city.y - 150 - 6 * px, px, 'rgba(160,220,255,0.9)', 9, 'center', 600);

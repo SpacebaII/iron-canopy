@@ -25,7 +25,7 @@ fs.mkdirSync(OUT, { recursive: true });
   const T = () => ((Date.now() - t0) / 1000).toFixed(0);
   const log = (...a) => console.log(`[${T()} s, ${clicks} clicks]`, ...a);
   const ev = s => page.evaluate(s);
-  const shot = async name => { await page.screenshot({ path: path.join(OUT, name + '.jpg'), type: 'jpeg', quality: 70 }); log('shot', name); };
+  const shot = async name => { await page.screenshot({ path: path.join(OUT, (PATH === 'starter' ? '' : PATH + '-') + name + '.jpg'), type: 'jpeg', quality: 70 }); log('shot', name); };
   const click = async (sel, o) => { await page.click(sel, Object.assign({ timeout: 8000 }, o)); clicks++; await page.waitForTimeout(250); };
   const clickXY = async (x, y, o) => { await page.mouse.click(x, y, o); clicks++; await page.waitForTimeout(250); };
   const key = async k => { await page.keyboard.press(k); keys++; await page.waitForTimeout(200); };
@@ -80,7 +80,7 @@ fs.mkdirSync(OUT, { recursive: true });
   if (PATH === 'starter') {
     // the Blueprints tab, the Starter airport, a click on the surveyed runway, Build
     await click('#bbar [data-bb="tab"][data-v="bq"]'); log('errors', errors.join(' / ')); log('tab', await ev('IC.bb.tab + " " + IC.bb.open + " " + document.querySelectorAll("#bbar .bb-it").length + " " + [...document.querySelectorAll("#bbar .bb-it")].map(b => b.dataset.v).join(",")'));
-    await click('#bbar [data-bb="item"][data-v="starter"]');
+    await click('#bbar [data-bb="item"][data-v="starter"]'); await page.waitForTimeout(1500);
     const ap = await ev(`(() => { const a = IC.S.byId['${capId}']; return { x: a.x, y: a.y, z: IC.cam.z }; })()`);
     p = await screenOf(ap.x, ap.y + 2);
     await page.mouse.move(p.x, p.y); await page.waitForTimeout(500);
@@ -93,7 +93,7 @@ fs.mkdirSync(OUT, { recursive: true });
     // the surveyed runway is already placed: Build it; then a terminal and the services beside it
     await click('#bldgo [data-go="build"]');
     for (const [item, off] of [['tstraight', 4.2], ['services', -3.8]]) {
-      await click(`#bbar [data-bb="item"][data-v="${item}"]`);
+      await click(`#bbar [data-bb="item"][data-v="${item}"]`); await page.waitForTimeout(1500);
       const ap = await ev(`(() => { const a = IC.S.byId['${capId}'], r = a.parts.find(q => q.kind === 'runway'), d = IC.rwDir(r), m = IC.rwAt(r, 0.5); const side = a.cityRef ? Math.sign((a.cityRef.x - m.x) * -d.y + (a.cityRef.y - m.y) * d.x) || 1 : 1; return { x: m.x - d.y * ${off} * side + d.x * ${item === 'services' ? 7 : 0}, y: m.y + d.x * ${off} * side + d.y * ${item === 'services' ? 7 : 0} }; })()`);
       p = await screenOf(ap.x, ap.y); await page.mouse.move(p.x, p.y); await page.waitForTimeout(400);
       await clickXY(p.x, p.y); await page.waitForTimeout(400);
@@ -144,6 +144,24 @@ fs.mkdirSync(OUT, { recursive: true });
   await ev(`(() => { const a = IC.S.byId['${capId}'], t = a.parts.find(q => q.kind === 'terminal'); IC.cam.fly = null; IC.cam.z = 70; IC.centerOn(t.x, t.y); })()`);
   await page.waitForTimeout(1500);
   await shot('13-terminal');
-  console.log(JSON.stringify({ path: PATH, moments, end, errors }, null, 1));
+  // Wait, as the playtest used it: the top bar's Wait, the first sum offered; count what stops it in two minutes
+  await ev(`(() => { window.__stops = []; IC.on((S, type, d) => { if (type === 'waitDone') window.__stops.push({ t: Math.round(S.time), why: d.why || '' }); }); })()`);
+  await dismiss();
+  const waits = [];
+  const tW0 = Date.now(), g1 = await ev('IC.S.time');
+  while (Date.now() - tW0 < 120000) {
+    await dismiss();
+    if (!(await ev('!!IC.S.wait'))) {
+      await click('[data-act="waitPick"]');
+      const b = await page.$('[data-act="wait"]'); if (!b) break;
+      await b.click(); clicks++; waits.push(+T());
+    }
+    await page.waitForTimeout(1500);
+  }
+  const stops = await ev('window.__stops');
+  const g2 = await ev('IC.S.time');
+  log(`Wait: ${waits.length} starts, ${stops.length} stops in ${Math.round((g2 - g1) / 3600)} game hours:`, stops.map(s => s.why.slice(0, 70)).join(' | '));
+  await shot('14-after-wait');
+  console.log(JSON.stringify({ path: PATH, moments, end, waitStops: stops.length, waitHours: Math.round((g2 - g1) / 3600), errors }, null, 1));
   await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

@@ -517,7 +517,7 @@ function buildHint(m, short) {
     : t === 'hold' ? (set ? `Holding bay placed. ${go.replace('moves it', 'picks another runway end')}` : T.desc)
     : t === 'stand' ? T.desc
     : IC.PIECES && IC.PIECES[t] ? (IC.PIECES[t].line ? (set ? `${IC.PIECES[t].name} placed. R puts its taxiway on the other side. ${go.replace('moves it', 'moves its far end')}` : n ? 'Click the other end (or drag from end to end).' : `${IC.PIECES[t].name}: click one end, then the other, or drag from end to end.`)
-      : set ? `${IC.PIECES[t].name} placed. R turns it. ${go}` : `${IC.PIECES[t].name}: click where it goes${t === 'starter' ? ' (on your runway, it is built round it)' : ', beside the runway: it faces it and joins the nearest taxiway'}. R turns it.`)
+      : set ? `${IC.PIECES[t].name} placed. R turns it. ${go}` : `${IC.PIECES[t].name}: click where it goes${t === 'starter' ? ' (on your runway, it is built round it)' : t === 'services' ? ', beside the runway: it keeps out of the runway strip' : ', beside the runway: it faces it and joins the nearest taxiway'}. R turns it.`)
     : t === 'blueprint' ? (set ? `Blueprint placed. R turns it (Shift+R the other way). ${go}` : 'Blueprint: click where it should go; R turns it.')
     : IC.TERM_KITS && IC.TERM_KITS[t] ? (set ? `${IC.TERM_KITS[t].name} placed. R turns it. ${go} Then join its taxilanes to your taxiways.` : `${IC.TERM_KITS[t].name}: click where it should go; R turns it.`)
     : t === 'stretch' ? (!n ? T.desc : set ? `Stretch placed. ${go.replace('moves it', 'sets another edge')}` : 'Click where the new edge should be.')
