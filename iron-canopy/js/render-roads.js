@@ -445,9 +445,9 @@ IC.drawRoadBridges = function (g, S, px, v) {
   }
 };
 /* traffic: far out, the flow along each road; in the middle, vehicles riding the flow; close in, vehicles making
-   their own trips (traffic.js). Every kind has its size and colours; at night headlights, tail lights and the blue
-   lights of police cars and ambulances. */
-const AGZ = 10;   // closer than this, individual vehicles
+   their own trips (traffic.js). Each hands over to the next across a range of zooms, showing the same share of the
+   vehicles (IC.trafficKeep), so none of them pops in or out. Every kind has its size and colours; at night
+   headlights, tail lights and the blue lights of police cars and ambulances. */
 const CAR_COLS = ['rgb(232,232,228)', 'rgb(236,236,232)', 'rgb(190,192,196)', 'rgb(176,178,182)', 'rgb(38,40,44)', 'rgb(60,62,66)', 'rgb(96,100,106)', 'rgb(168,38,34)', 'rgb(36,64,132)', 'rgb(60,96,150)', 'rgb(48,84,58)', 'rgb(198,184,150)', 'rgb(118,22,30)', 'rgb(222,184,52)', 'rgb(214,110,40)'];
 const TRAILER = ['rgb(232,232,228)', 'rgb(200,202,204)', 'rgb(52,92,150)', 'rgb(170,50,40)', 'rgb(64,110,70)', 'rgb(212,168,60)'];
 const CAB = ['rgb(236,236,232)', 'rgb(170,40,36)', 'rgb(40,70,140)', 'rgb(40,42,46)', 'rgb(220,190,60)'];
@@ -521,12 +521,15 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
   ctx = g; view = v;
   const z = cam.z, night = light < 0.35;
   const dtg = lastT == null || S.time < lastT || S.time - lastT > 120 ? 0 : S.time - lastT; lastT = S.time;
-  if (z < 1.3) {
-    // moving dashes along the roads; brighter and longer where the road is full, warm streaks at night
+  const D = IC.TRAFFIC_DASH, wD = U.clamp((z - D[0]) / (D[1] - D[0]), 0, 1);
+  if (wD < 1) {
+    // moving dashes along the roads; brighter and longer where the road is full, warm streaks at night (fading out
+    // as the vehicles fade in; each class of road fades in as the zoom reaches it)
     const classes = z < 0.3 ? { hw: 1 } : z < 0.6 ? { hw: 1, rd: 1, ring: 1 } : { hw: 1, rd: 1, ring: 1, art: 1, lc: 1 };
+    const fade = cls => cls === 'hw' ? 1 : cls === 'rd' || cls === 'ring' ? U.clamp((z - 0.3) / 0.1, 0, 1) : U.clamp((z - 0.6) / 0.15, 0, 1);
     ctx.lineCap = 'butt';
     IC.trafficFlows(S, view, classes, (l, load, ph, cls) => {
-      const a = (0.35 + 0.65 * Math.min(1, load)) * (night ? 0.9 : 0.8) * (cls === 'hw' ? 1 : 0.75);
+      const a = (0.35 + 0.65 * Math.min(1, load)) * (night ? 0.9 : 0.8) * (cls === 'hw' ? 1 : 0.75) * (1 - wD) * fade(cls);
       ctx.strokeStyle = night ? `rgba(255,220,160,${a})` : load > 0.95 ? `rgba(255,200,120,${a})` : `rgba(255,252,240,${a})`;
       ctx.lineWidth = (cls === 'hw' ? 1.6 : 1.1) * px;
       // dashes close up as the road fills; they crawl along with the traffic
@@ -535,22 +538,18 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
       ctx.beginPath(); const P = l.pts; ctx.moveTo(P[0].x, P[0].y); for (let i = 1; i < P.length; i++) ctx.lineTo(P[i].x, P[i].y); ctx.stroke();
     });
     ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.lineCap = 'round';
-  } else {
-    // real size is 4.5 m for a car, 16 m for an articulated lorry; never smaller than a couple of pixels
+  }
+  if (wD > 0) {
+    // real size is 4.5 m for a car, 16 m for an articulated lorry; never smaller than a couple of pixels; drawn bigger
+    // than life they would crowd the road, so only a share of them is shown (IC.trafficKeep)
     const m = Math.max(0.045, 4.4 * px), list = [];
     // the lane offset scaled to the road as drawn (wider than real far out)
     const wk = k => IC.roadWidth(k, z) / (IC.ROAD_SPEC[k] || IC.ROAD_SPEC.lc).w;
-    if (z < AGZ) {
-      IC.trafficVisible(S, view, Math.max(0.3, 7 * px), (x, y, h, k, cls, off) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); list.push({ x: x - n * o, y: y + c * o, h, k, col: (x * 7 + y * 13) & 1023 }); }, z < 2.5 ? { st: 1, ln: 1 } : null);
-    } else {
-      // drawn bigger than life they would crowd the road: show only as many as fit at the size drawn
-      const thin = Math.max(1, Math.ceil(m / 0.045 / 2.5));
-      for (const a of IC.trafficAgents(S, view, dtg)) { if (a.id % thin) continue; const p = IC.agentPos(a); if (inView(p.x, p.y, 1)) list.push({ x: p.x, y: p.y, h: p.h, k: a.k, col: a.col }); }
-    }
+    IC.trafficShown(S, view, z, dtg, (x, y, h, k, col, cls, off) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); list.push({ x: x - n * o, y: y + c * o, h, k, col }); });
     // buses and coaches on their lines
     for (const b of S.buses) {
       const p = IC.busPos(b); if (!inView(p.x, p.y, 2)) continue;
-      const lk = b.line.path[0][0], o = (IC.TRAFFIC_CLS.st.off[0]) * (z < AGZ ? wk('art') : 1);
+      const lk = b.line.path[0][0], o = IC.TRAFFIC_CLS.st.off[0] * wk('art');
       list.push({ x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h, k: b.kind, col: 0 });
       void lk;
     }

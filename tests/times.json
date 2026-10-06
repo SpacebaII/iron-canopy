@@ -13,6 +13,7 @@
  "traffic: rush hour is busier than night, and an air raid empties the roads": 7,
  "traffic: vehicles start at real places and drive the road graph like traffic": 7.2,
  "traffic: a cut road makes a visible queue, and close-in traffic turns back from it": 7.5,
+ "traffic: zooming in and out, the vehicles on the streets never jump or vanish (brief 36)": 6,
  "traffic: a busy hour stays inside the time budget": 7,
  "airport: starting layouts are connected": 6.1,
  "airport: a departure taxis out and takes off": 8.5,

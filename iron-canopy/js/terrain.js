@@ -880,14 +880,14 @@ IC.bakeBlock = function (S, b) {
 IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
   const zx = cam.z * dpr;
   if (S) keepUp(T, S);
-  ctx.drawImage(T.base, 0, 0, IC.WW, IC.WH);
-  if (!T.base || zx < 0.16) return 0;
+  if (!T.base || zx < 0.16) { ctx.drawImage(T.base, 0, 0, IC.WW, IC.WH); return 0; }
   const lodWanted = zx >= 16 ? 4 : zx >= 4 ? 3 : zx >= 1.3 ? 2 : zx >= 0.42 ? 1 : 0;
   const vx0 = cam.x, vy0 = cam.y, vx1 = cam.x + cam.vw / cam.z, vy1 = cam.y + cam.vh / cam.z;
   T.frame++;
   const t0 = performance.now();
   let made = 0;
-  const draw = (lod, only) => {
+  // the tiles of a level over the view, nearest the middle first, painted (within the budget) where missing or stale
+  const paint = lod => {
     const L = LOD(lod);
     const cx = (vx0 + vx1) / 2, cy = (vy0 + vy1) / 2;
     const list = [];
@@ -897,27 +897,37 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
     }
     list.sort((a, b) => a[2] - b[2]);
     let missing = 0;
+    const got = [];
     for (const [tx, ty] of list) {
       const key = lod + ':' + tx + ':' + ty;
       let t = T.tiles.get(key);
-      if (!only && performance.now() - t0 < budgetMs && (!t || t.dirty)) {
+      if (performance.now() - t0 < budgetMs && (!t || t.dirty)) {
         const cv = paintTile(T, lod, tx, ty, S);
         if (t) { t.cv = cv; t.dirty = false; } else { t = { cv, lod, tx, ty, used: 0 }; T.tiles.set(key, t); }
         made++;
       }
       if (!t) { missing++; continue; }
-      t.used = T.frame;
-      ctx.drawImage(t.cv, tx * L.size, ty * L.size, L.size, L.size);
+      got.push(t);
     }
+    return { L, got, missing };
+  };
+  // (a tile is drawn half a pixel over its neighbours, so no seam shows where nothing is drawn under it)
+  const ov = 0.5 / zx;
+  const draw = P => {
+    for (const t of P.got) { t.used = T.frame; ctx.drawImage(t.cv, t.tx * P.L.size - ov, t.ty * P.L.size - ov, P.L.size + 2 * ov, P.L.size + 2 * ov); }
     // evict the least recently used
-    const mine = [...T.tiles.entries()].filter(([, t]) => t.lod === lod);
-    if (mine.length > L.max) { mine.sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < mine.length - L.max; i++) T.tiles.delete(mine[i][0]); }
-    return missing;
+    const lod = P.L.k, mine = [...T.tiles.entries()].filter(([, t]) => t.lod === lod);
+    if (mine.length > P.L.max) { mine.sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < mine.length - P.L.max; i++) T.tiles.delete(mine[i][0]); }
   };
   // the level under it is painted first (ten to sixteen times fewer tiles): where a tile is still missing it shows the same
-  // tone, where the base image alone would show a darker rectangle
-  if (lodWanted) draw(lodWanted - 1, false);
-  draw(lodWanted, false);
+  // tone, where the base image alone would show a darker rectangle. Once the level wanted covers the view, it alone
+  // is drawn: the screen is filled once, not three times
+  const under = lodWanted ? paint(lodWanted - 1) : null, top = paint(lodWanted);
+  if (top.missing) {
+    if (!under || under.missing) ctx.drawImage(T.base, 0, 0, IC.WW, IC.WH);
+    if (under) draw(under);
+  }
+  draw(top);
   return made;
 };
 /* the world changed (IC.worldChanged), airports were built on, marks faded: repaint what shows it */
