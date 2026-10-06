@@ -457,7 +457,8 @@ IC.traffic = function (S, dt) {
     const g = (war ? 0.75 : 1) * (S.alertCities > 2 ? 0.55 : 1);
     for (const L of T.links) {
       // the slots have ridden at the old speed since the last reading
-      for (let d = 0; d < 2; d++) { L.ph[d] = (L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time))) % (BASE * 65536); }
+      // (the remainder only when it wraps: it is the same number, and the slow part of this loop over every link)
+      for (let d = 0; d < 2; d++) { const p = L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time)); L.ph[d] = p >= 0 && p < BASE * 65536 ? p : p % (BASE * 65536); }
       L.t0 = S.time;
       const lk = L.l, i = lk.id * 2;
       // the town a link runs through: its own streets, or national roads inside its built-up area

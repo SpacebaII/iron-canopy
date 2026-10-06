@@ -352,9 +352,23 @@ function leader(ap, m, st, e) {
   return best;
 }
 /* the live edge for a planned step (the network may have changed since) */
-function edgeNow(ap, st) { const L = G(ap).adj.get(st.from); if (!L) return null; for (const e of L) if (e.to === st.to && e.kind === st.e.kind) return e; return null; }
+// (kept on the step until the network is rebuilt: an aircraft asks every step, and an apron node has many edges)
+function edgeNow(ap, st) {
+  const g = G(ap);
+  if (st._g === g) return st._le;
+  let le = null; const L = g.adj.get(st.from);
+  if (L) for (const e of L) if (e.to === st.to && e.kind === st.e.kind) { le = e; break; }
+  st._g = g; st._le = le;
+  return le;
+}
 /* entering this edge puts the aircraft on (or across) a runway */
-function rwNeed(ap, st, e) { if (e.kind === 'rwy') return e.part; const n = G(ap).N.get(st.to); return n ? n.rw : null; }
+function rwNeed(ap, st, e) {
+  if (e.kind === 'rwy') return e.part;
+  const g = G(ap); stepNodes(g, st);
+  return st._B ? st._B.rw : null;
+}
+/* the nodes at either end of a planned step, kept on it until the network is rebuilt */
+function stepNodes(g, st) { if (st._gn !== g) { st._gn = g; st._A = g.N.get(st.from) || null; st._B = g.N.get(st.to) || null; } }
 
 /* ---------- moves ---------- */
 /* every field a move ever gets is declared when it is made (what the caller passes is then assigned onto it): the
@@ -378,7 +392,8 @@ function newMove(S, ap, o) {
 function place(ap, m) {
   const st = m.path && m.path[m.pi];
   if (!st) { const n = G(ap).N.get(m.node); if (n) { m.x = n.x; m.y = n.y; } return; }
-  const A = G(ap).N.get(st.from), B = G(ap).N.get(st.to); if (!A || !B) return;
+  stepNodes(G(ap), st);
+  const A = st._A, B = st._B; if (!A || !B) return;
   const L = st.e.len || U.dist(A, B), f = U.clamp(m.s / L, 0, 1);
   m.x = A.x + (B.x - A.x) * f; m.y = A.y + (B.y - A.y) * f;
   if (L > 0.01) m.h = Math.atan2(B.y - A.y, B.x - A.x);
@@ -826,10 +841,10 @@ IC.gops = function (S, dt) {
     // a lock without a live owner does not block anyone
     if (ap.rl) for (const k in ap.rl) {
       const L = ap.rl[k];
-      if (L.with) for (const id of L.with) if (!ap.moves.some(m => m.id === id)) L.with.delete(id);
-      if (L.by && !ap.moves.some(m => m.id === L.by)) { if (L.with && L.with.size) { const n = L.with.values().next().value; L.with.delete(n); L.by = n; } else L.by = null; }
-      if (L.fin && !ap.moves.some(m => m.id === L.fin)) L.fin = null;
-      if (L.gapFor && (S.time - L.gapT > 240 || !ap.moves.some(m => m.id === L.gapFor))) L.gapFor = null;
+      if (L.with) for (const id of L.with) if (!moveOf(ap, id)) L.with.delete(id);
+      if (L.by && !moveOf(ap, L.by)) { if (L.with && L.with.size) { const n = L.with.values().next().value; L.with.delete(n); L.by = n; } else L.by = null; }
+      if (L.fin && !moveOf(ap, L.fin)) L.fin = null;
+      if (L.gapFor && (S.time - L.gapT > 240 || !moveOf(ap, L.gapFor))) L.gapFor = null;
     }
   }
 };

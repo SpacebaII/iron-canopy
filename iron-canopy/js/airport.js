@@ -492,7 +492,7 @@ IC.aptSearch = function (ap, src, o) {
 /* the steps of the route found by a search, from src to a node */
 IC.aptSteps = function (tree, src, to) {
   const out = []; let c = to;
-  while (c !== src) { const e = tree.prev.get(c); if (!e) return null; out.push({ from: e.from, to: e.to, e }); c = e.from === c ? e.to : e.from; }
+  while (c !== src) { const e = tree.prev.get(c); if (!e) return null; out.push({ from: e.from, to: e.to, e, _g: null, _le: null, _gn: null, _A: null, _B: null }); c = e.from === c ? e.to : e.from; }
   out.reverse();
   return out;
 };
@@ -621,12 +621,18 @@ IC.aptStats = function (S, ap) {
   const stands = [];
   for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) stands.push(s);
   // which stands can actually reach a runway
-  let reachAny = null;
-  if (rws.length) { const r = reach(ap, rws[0].id + ':a'); for (const rw of rws.slice(1)) if (!r.has(rw.id + ':a')) for (const x of reach(ap, rw.id + ':a')) r.add(x); reachAny = r; }
-  // stands reached only under a passenger bridge take tails up to its clearance (less a metre to spare)
-  let tall = null, low = 0;
-  for (const L of G.adj.values()) for (const e of L) if (e.clear) low = low ? Math.min(low, e.clear) : e.clear;
-  if (low && rws.length) { tall = new Set(); for (const rw of rws) if (!tall.has(rw.id + ':a')) for (const x of reach(ap, rw.id + ':a', true)) tall.add(x); }
+  // (kept on the graph for the runways open now: a big airport's network is walked only when one of them changes)
+  const rk = rws.map(r => r.id).join('|');
+  if (!G._reach || G._reach.key !== rk) {
+    let reachAny = null;
+    if (rws.length) { const r = reach(ap, rws[0].id + ':a'); for (const rw of rws.slice(1)) if (!r.has(rw.id + ':a')) for (const x of reach(ap, rw.id + ':a')) r.add(x); reachAny = r; }
+    // stands reached only under a passenger bridge take tails up to its clearance (less a metre to spare)
+    let tall = null, low = 0;
+    for (const L of G.adj.values()) for (const e of L) if (e.clear) low = low ? Math.min(low, e.clear) : e.clear;
+    if (low && rws.length) { tall = new Set(); for (const rw of rws) if (!tall.has(rw.id + ':a')) for (const x of reach(ap, rw.id + ':a', true)) tall.add(x); }
+    G._reach = { key: rk, reachAny, tall, low };
+  }
+  const { reachAny, tall, low } = G._reach;
   for (const s of stands) {
     const ok = reachAny && reachAny.has(s.id) && s.hp > 0;
     s.linked = ok; s.maxHt = ok && tall && !tall.has(s.id) ? low - 1 : 0;
@@ -1271,17 +1277,19 @@ IC.updateBases = function (S, dt) {
       }
     }
     // fuel arrives by road and pipeline: each tank at its own rate, and a hydrant system's pipeline shares out more
-    const tanks = b.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25);
-    const pipe = b.parts.some(p => p.kind === 'hydrant' && p.built && p.hp > p.max * 0.25) ? IC.APART.hydrant.pipe : 0;
-    const inflow = (IC.FUEL_IN + (tanks.length ? pipe / tanks.length : 0)) * dt / 3600;
-    for (const t of tanks) t.stock = Math.min(IC.APART.fuel.cap, (t.stock || 0) + inflow);
+    // (one pass over the parts: a big airport has hundreds, and this runs every step)
+    let nTank = 0, pipe = 0;
+    for (const p of b.parts) { if (p.kind === 'fuel' && p.built && p.hp > p.max * 0.25) nTank++; else if (p.kind === 'hydrant' && p.built && p.hp > p.max * 0.25) pipe = IC.APART.hydrant.pipe; }
+    const inflow = (IC.FUEL_IN + (nTank ? pipe / nTank : 0)) * dt / 3600;
+    if (nTank) for (const t of b.parts) if (t.kind === 'fuel' && t.built && t.hp > t.max * 0.25) t.stock = Math.min(IC.APART.fuel.cap, (t.stock || 0) + inflow);
     if (IC.landsideTick) IC.landsideTick(S, b, dt);
     b.statT = (b.statT || 0) - dt;
     if (b.statT <= 0 || b.dirty) { b.statT = 60; IC.aptStats(S, b); }
     // engineers come back to jobs that could not be paid for at the time
     b.aqT = (b.aqT || 0) - dt;
     if (b.aqT <= 0) { b.aqT = 180; if (b.autoRepair && !b.locked) autoQueue(S, b); }
-    const tot = b.parts.reduce((s, p) => s + (p.built ? p.max : 0), 0), cur = b.parts.reduce((s, p) => s + (p.built ? p.hp : 0), 0);
+    let tot = 0, cur = 0;
+    for (const p of b.parts) { tot += p.built ? p.max : 0; cur += p.built ? p.hp : 0; }
     b.hp = b.max * (tot ? cur / tot : 1);
     b.offline = b.kind === 'airport' && !IC.baseStatus(S, b).runway;
   }
