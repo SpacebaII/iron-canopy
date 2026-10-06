@@ -597,12 +597,10 @@ test('airport: a step with 150 aircraft moving stays within budget', () => {
   for (let i = 0; i < N; i++) { const a = process.hrtime.bigint(); IC.step(S, 0.25); t += Number(process.hrtime.bigint() - a) / 1e6; }
   for (let i = 0; i < N; i++) { const a = process.hrtime.bigint(); IC.gops(S, 0.25); g += Number(process.hrtime.bigint() - a) / 1e6; }
   console.log(`        ${ap.moves.length} aircraft moving: ${(t / N).toFixed(3)} ms a step, ground operations ${(g / N).toFixed(3)} ms`);
-  // (the real Denver: 566 parts and 2,500 taxi nodes. Its ground operations cost two to three times the six-runway layout
-  // built in code, which the 0.6 ms was set for; brief 36 owns making them cheaper. The whole step: about a third more)
-  assert(g / N < 0.8, `ground operations take ${(g / N).toFixed(2)} ms a step`);
-  // (the whole step at the real Denver measures 1.8–2.0 ms on GitHub's machines from run to run, with the cost spread
-  // over ground operations, traffic, sensors and the recorder: 2.3 ms here; brief 36 brings it back under 2)
-  assert(t / N < 2.3, `a step takes ${(t / N).toFixed(2)} ms`);
+  // (the real Denver: 566 parts and 2,500 taxi nodes; brief 36 brought both back under the limits set for the six-runway
+  // layout built in code: searches on arrays, departures planned without searching the whole graph, moves of one shape)
+  assert(g / N < 0.6, `ground operations take ${(g / N).toFixed(2)} ms a step`);
+  assert(t / N < 2, `a step takes ${(t / N).toFixed(2)} ms`);
 }, false, 'alone');
 
 /* ---------- the tower's rules: when aircraft may go onto a runway (docs/tasks/15-runway-rules.md) ---------- */
