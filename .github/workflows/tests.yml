@@ -8,12 +8,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # three parts of equal length (by tests/times.json) on three machines at once, each with one worker per core
+    # four parts of equal length (by tests/times.json) on four machines at once, each with one worker per core
     # (two halves outgrew the 20 minutes once a day at each real airport joined the suite)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/3, 2/3, 3/3]
+        shard: [1/4, 2/4, 3/4, 4/4]
     name: test (${{ matrix.shard }})
     steps:
       - uses: actions/checkout@v4
