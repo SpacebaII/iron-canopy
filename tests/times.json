@@ -157,5 +157,10 @@
  "round 1: the build bar opens on whole pieces, each with a price and what it does; the parts fold under Detail": 5,
  "round 2: the first landing eases the clock to 1×, follows the airliner in, and its card gives the fees beside the airport": 29,
  "round 2: a turnaround brings its vehicles in the real order (bags, catering, fuel, then the pushback tug) and they all leave": 16,
- "round 2: life on the map scales with the passengers: a busy airport draws more cars and people than a quiet one": 11
+ "round 2: life on the map scales with the passengers: a busy airport draws more cars and people than a quiet one": 11,
+ "round 3: a stand short of capacity shows a marker at the terminal, with a fix that places a terminal beside it": 15,
+ "round 3: an offer the airport cannot carry yet says what it lacks, and its fix builds it": 12,
+ "round 3: a deal short of a hangar is marked at the airport, with the hangar as its fix": 37,
+ "round 3: the money line agrees with the monthly statement, and every fee is traced to an airport": 34,
+ "round 3: nothing military shows in the Career before Act II": 49
 }

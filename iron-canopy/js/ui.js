@@ -418,7 +418,7 @@ function nextGoal() {
   const list = ui.briefOpen ? IC.storyShown(S).filter(x => x.g !== (open[0] || {}).g) : [];
   return `<h3 data-act="briefMin" title="${esc(where)}: ${ui.briefOpen ? 'fold the goals' : 'all the goals of this chapter'}"><span>Next goal</span><em>${ch ? `Chapter ${ch.n + 1}` : esc(A.name)} · ${done} of ${st.goals.length} done ${ui.briefOpen ? '▴' : '▾'}</em></h3>
     ${open[0] ? row(open[0]) : `<p class="hint">${esc(ch && ch.next ? ch.next : 'Every goal is done. Something is coming: keep the airports running.')}</p>`}
-    ${tipOn ? `<p class="hint tip ${ui.tipOpen === tip ? 'open' : ''}" data-act="tipOpen" title="Click to read it all">${esc(tip)}</p><button class="howbtn" data-act="tipFold">Got it</button>` : tip ? `<button class="howbtn" data-act="tipOpen" title="How to do it">How?</button>` : ''}
+    ${tipOn ? `<p class="hint gtip ${ui.tipOpen === tip ? 'open' : ''}" data-act="tipOpen" title="Click to read it all">${esc(tip)}</p><button class="howbtn" data-act="tipFold">Got it</button>` : tip ? `<button class="howbtn" data-act="tipOpen" title="How to do it">How?</button>` : ''}
     ${list.length ? `<div class="goals">${list.map(row).join('')}</div>${ch && ch.next ? `<p class="hint">${esc(ch.next)}</p>` : ''}` : ''}`;
 }
 /* how far along a goal is, 0–1, or null when it cannot be said. A goal can give its own (g.frac); otherwise
@@ -840,7 +840,9 @@ ui.pmFrame = function () {
   const items = [...el.children].map(n => ({ n, sx: (+n.dataset.x - cam.x) * cam.z, sy: (+n.dataset.y - cam.y) * cam.z })).sort((a, b) => a.sy - b.sy);
   for (const it of items) {
     const b = it.n.lastChild, w = b.offsetWidth, h = b.offsetHeight;
-    let bx = it.sx + 12, by = it.sy - h - 10;
+    // (the box stays on the free map: never under the inspector)
+    const lo = 4, hi = cam.vw - (ui.mapRight || 0) - w - 8;
+    let bx = U.clamp(it.sx + 12, lo, Math.max(lo, hi)), by = it.sy - h - 10;
     for (let k = 0; k < 8; k++) { const hit = placed.find(r => bx < r.x + r.w + 4 && bx + w + 4 > r.x && by < r.y + r.h + 4 && by + h + 4 > r.y); if (!hit) break; by = hit.y + hit.h + 6; }
     placed.push({ x: bx, y: by, w, h });
     it.n.style.transform = `translate(${it.sx.toFixed(1)}px,${it.sy.toFixed(1)}px)`;

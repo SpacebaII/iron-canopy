@@ -155,6 +155,7 @@ fs.mkdirSync(OUT, { recursive: true });
       const part = prob.fix, P = { hangar: 'cg', fuel: 'fs', fire: 'fs', tstraight: 'tm', ils: 'nv', cargoarea: 'cg' }[part];
       const near = await ev(`(() => { const p = IC.aptProblems(IC.S, IC.S.byId['${capId}']).find(x => x.id === '${prob.id}'); const m = IC.fixPlan(IC.S, IC.S.byId['${capId}'], p.fix.part, p.fix.near); return m ? m.at : p.fix.near; })()`);
       await clickXY(...Object.values(await screenOf(ap.x, ap.y)));
+      if (!(await page.$('#bbar:not([hidden]) [data-bb="detail"]'))) await click('#sys [data-act="bbToggle"]');
       if (part === 'tstraight' || part === 'cargoarea') { await click(`#bbar [data-bb="tab"][data-v="pc"]`); await click(`#bbar [data-bb="item"][data-v="${part}"]`); }
       else { if (!(await page.$('#bbar [data-bb="detail"].on'))) await click('#bbar [data-bb="detail"]'); await click(`#bbar [data-bb="tab"][data-v="${P}"]`); await click(`#bbar [data-bb="item"][data-v="${part}"]`); }
       await page.waitForTimeout(800);
@@ -222,6 +223,12 @@ fs.mkdirSync(OUT, { recursive: true });
     await click('#insp [data-act="chainTog"]'); await look(ap.x, ap.y, 1.2); await page.waitForTimeout(1200); await shot('11-chain');
     await look(ap.x, ap.y, 0.25); await page.waitForTimeout(1200); await shot('12-chain-region');
     await click('#insp [data-act="chainTog"]');
+  }
+  // the parts as the interface: a runway, the terminal, the fuel farm, each with its live state and actions
+  if (!BEFORE) for (const [k, name] of [['runway', '13-runway'], ['terminal', '14-terminal'], ['fuel', '15-fuel'], ['fire', '16-fire']]) {
+    const at = await ev(`(() => { const a = IC.S.byId['${capId}'], p = a.parts.find(q => q.kind === '${k}' && q.built); if (!p) return null; IC.select({ kind: 'apart', ref: p, ap: a }); const c = p.kind === 'runway' ? { x: (p.a.x + p.b.x) / 2, y: (p.a.y + p.b.y) / 2 } : p; return { x: c.x, y: c.y }; })()`);
+    if (!at) continue;
+    await look(at.x, at.y, k === 'runway' ? 5 : 14); await page.waitForTimeout(700); await shot(name);
   }
   const econ = await ev(`(() => { const L = IC.moneyLine(IC.S), st = IC.monthStatement(IC.S, 0); return { line: L && L.text, stmtNet: st.net, lineNet: L && L.net }; })()`);
   console.log(JSON.stringify({ before: BEFORE, moments, shares, counts, econ, errors }, null, 1));

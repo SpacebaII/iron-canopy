@@ -930,7 +930,7 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.compact .brief.next .goalrow{padding:.2rem .3rem;font-size:.92rem}
 .app.compact .brief.next .goals{display:grid;gap:2px;max-height:16rem;overflow:auto}
 .app.compact .brief.next .hint{font-size:.84rem;margin:0}
-.app.compact .brief.next .hint.tip{color:#cfe0ea}
+.app.compact .brief.next .hint.gtip{color:#cfe0ea}
 .howbtn{justify-self:start;font-size:.78rem;color:var(--friend);padding:.05rem .45rem;border-radius:6px;background:var(--well)}
 .howbtn:hover{background:var(--well-2)}
 .app.compact .comms{padding:0;gap:0}
@@ -999,8 +999,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .insp p.now{margin:0 0 .35rem;font-size:.9rem;color:#d7e5ee}
 .app.compact .leftcol{overflow:clip}
 .app.compact .brief.next{flex:none;overflow:visible}
-.app.compact .brief.next .hint.tip{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
-.app.compact .brief.next .hint.tip.open{display:block}
+.app.compact .brief.next .hint.gtip{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.app.compact .brief.next .hint.gtip.open{display:block}
 .app.compact .stat em{white-space:nowrap}
 .app.compact.bb-open .leftcol>.brief.next{max-height:4.8rem;overflow:hidden}
 .app.compact.bb-open .leftcol:hover>.brief.next{max-height:40rem}
@@ -1015,3 +1015,4 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .insp .dl-head em{margin-left:0}
 .insp .deal .acts{flex-wrap:wrap}
 .insp .li.contract .la{flex-wrap:wrap}
+.app.compact .stat:not(.role) strong{white-space:nowrap}
