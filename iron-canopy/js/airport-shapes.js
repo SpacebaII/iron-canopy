@@ -308,7 +308,7 @@ IC.aptUnattached = function (S, ap) {
   const out = [], name = p => p.name || (IC.APART[p.kind] || {}).name || p.kind;
   const wallDist = (t, x, y) => { const P = IC.partOutline(t); let m = 1e9; for (let i = 0; i < P.length; i++) { const A = P[i], B = P[(i + 1) % P.length]; m = Math.min(m, U.segDist(x, y, A.x, A.y, B.x, B.y)); } return m; };
   for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
-    const sn = s.name || s.id.split('s').pop();
+    const sn = IC.standName(s);
     if (s.contact && !s.bridge) { out.push({ what: 'stand', s, text: `Gate ${sn} has no jet bridge.` }); continue; }
     if (!s.bridge) continue;
     const B = s.bridge, t = ap.parts.find(q => q.id === B.term);

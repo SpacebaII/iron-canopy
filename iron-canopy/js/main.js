@@ -54,51 +54,7 @@ function combatSpeed(S, speed, dtR) {
 }
 
 /* ---------- picking ---------- */
-function pick(p) {
-  const px = 1 / IC.cam.z;
-  let best = null, bd = 1e9;
-  const consider = (kind, ref, x, y, r) => { const d = U.dxy(p.x, p.y, x, y); if (d < Math.max(16 * px, r || 0) && d < bd) { bd = d; best = { kind, ref }; } };
-  for (const t of S.threats) if (t.held && !t.dead) consider('track', t, t.px, t.py);
-  if (best) return best;
-  for (const a of S.air) consider('air', a, a.x, a.y);
-  if (best) return best;
-  for (const u of S.units) consider('unit', u, u.x, u.y);
-  if (best) return best;
-  const aw = S.layers.airways || (S.mode2 && S.mode2.kind === 'airway');
-  if (aw) for (const f of S.asp.fixes) consider('fix', f, f.x, f.y);
-  if (IC.cam.z > 0.05) for (const f of S.asp.fields) consider('field', f, f.x, f.y);
-  if (best) return best;
-  if (S.layers.logistics) for (const v of S.vehicles) if (v.state !== 'idle') consider('veh', v, v.x, v.y);
-  if (best) return best;
-  if (S.layers.intel) {
-    for (const t of S.tels) if (t.known && !t.dead) consider('tel', t, t.kx, t.ky);
-    for (const s of S.esites) if (s.pk > 0) consider('site', s, s.x, s.y, s.pk === 1 ? 180 : 0);
-    if (best) return best;
-  }
-  // (round 2) close in, an airliner on the ground: taxiing, or on its stand (its panel follows it and shows its turnaround)
-  if (IC.cam.z >= 2.5 && S.av) {
-    for (const ap of IC.bases(S)) {
-      if (!ap.parts || !ap.moves || U.dist(ap, p) > ap.radius + 5) continue;
-      for (const m of ap.moves) if (m.tail && !m.dead && m.tail.T) consider('tail', m.tail, m.x, m.y, m.tail.T.len * 0.55);
-      for (const s of IC.aptStands(ap)) if (s.occ && U.dist(s, p) < 1) { const tl = S.av.tails.find(t => t.id === s.occ); if (tl && tl.where === 'stand') consider('tail', tl, s.x, s.y, tl.T.len * 0.5); }
-    }
-    if (best) return best;
-  }
-  // close in, airports are picked part by part
-  if (IC.cam.z >= 2.5) for (const ap of IC.bases(S)) {
-    if (!ap.parts || U.dist(ap, p) > ap.radius + 5) continue;
-    const part = IC.partAt(ap, p, 6 * px);
-    if (part && part.kind !== 'runway' && part.kind !== 'taxi' && part.kind !== 'apron') return { kind: 'apart', ref: part, ap };
-    if (part) return { kind: 'apart', ref: part, ap };
-  }
-  for (const i of S.infra) {
-    if (i.kind === 'bridge') { if (IC.cam.z > 0.2 && U.dxy(p.x, p.y, i.x, i.y) < Math.max(10, 10 * px)) return { kind: 'infra', ref: i }; continue; }
-    const r = i.kind === 'city' ? Math.max(i.r * 0.7, 10 * px) : i.parts && IC.cam.z > 0.3 ? Math.max(i.radius * 0.7, 13 * px) : 13 * px;
-    if (U.dxy(p.x, p.y, i.x, i.y) < r) return { kind: 'infra', ref: i };
-  }
-  if (aw) { const w = IC.aspWayAt(S, p, 8 * px); if (w) return { kind: 'airway', ref: w }; }
-  return null;
-}
+function pick(p) { return IC.pickAt(S, p, IC.cam.z); }
 /* the airway editor: click empty map for a new fix, click fixes to join them, click an airway to add a fix on it.
    Each click continues the chain from the last fix; right-click ends the chain */
 function airwayClick(m, p) {
@@ -554,6 +510,7 @@ function onAct(e) {
       if (rw) { const fs = a.parts.find(q => q.kind === 'fire' && q.built) || a, far = U.dist(rw.a, fs) > U.dist(rw.b, fs) ? rw.a : rw.b, R = IC.fireRun(S, a, far, 'drill'); if (R) IC.toast(S, 'info', 'FIRE', `Drill: the trucks race to the far end of ${rw.name || 'the runway'}. They need to be there within ${IC.mmss(IC.FIRE_STD)} for heavy jets.`); } break; }
     case 'towerRules': { const a = selAp(); if (a) { ui.aptTab = 'rules'; IC.select({ kind: 'infra', ref: a }); } return; }
     case 'chainTog': IC.chainOn = !IC.chainOn; break;
+    case 'tailMore': ui.tailMore = !ui.tailMore; break;
     case 'gapGo': S.layers.gaps = true; { const g = IC.radarGap(S); if (g) IC.flyTo(g.at.x, g.at.y, Math.min(IC.cam.z, 0.06)); } break;
     case 'gapFix': { const g = IC.radarGap(S); if (locked('radar')) return; S.layers.gaps = true; ui.openRoom(null); IC.setMode({ kind: 'deploy', type: 'ssr' }); IC.emit(S, 'ui', { act: 'deploy', v: 'ssr' }); if (g) IC.flyTo(g.at.x, g.at.y, U.clamp(IC.cam.z, 0.05, 0.12)); return; }
     case 'aptOpen': ui.aptOpen = ui.aptOpen || {}; ui.aptOpen[v] = !ui.aptOpen[v]; break;

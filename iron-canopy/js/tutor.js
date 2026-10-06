@@ -80,7 +80,7 @@ IC.TUTORS = {
     { el: ['#insp [data-act="avYes"]:not([disabled])', '#insp .dl-needs'], title: 'Sign, or build first', text: 'Each line is something the airline checks: stands, gates, hangar room, fuel, the terminal. A ✗ must be built before they sign, and the button under the card places it. Then Sign.', on: [['approve'], ['decline'], ['ui', 'avYes'], ['ui', 'avNo'], ['ui', 'pmFix']] }
   ] },
   panel: { title: 'The airport panel', guide: 'airport', when: S => civil(S) && S.story.ch >= 1 && !!capAp(S), steps: [
-    { at: S => capAp(S), title: 'Your airport', text: 'Click the airport for its panel: passengers, movements, this month\'s money, and what needs you.', on: [['select', 'infra']], ok: S => !!(S.sel && S.sel.kind === 'infra' && S.sel.ref.parts) },
+    { el: '#insp [data-act="aptBack"]', at: S => capAp(S), title: 'Your airport', text: 'Click the airport for its panel: passengers, movements, this month\'s money, and what needs you. Close in, a click picks one building; its panel has a button back to the airport.', on: [['select', 'infra']], ok: S => !!(S.sel && S.sel.kind === 'infra' && S.sel.ref.parts) },
     { el: '#insp [data-act="aptOpen"][data-v="more"]', title: 'The details', text: 'Runways, stands, fuel, fire cover and the tower are folded here. Open them.', on: [['ui', 'aptOpen', 'more']], seen: '#insp canvas.schem' },
     { el: '#insp [data-act="desel"]', title: 'Out of the way', text: '✕ (or Esc) closes the panel when you want the map back.', on: [['ui', 'desel']], ok: S => !S.sel }
   ] },

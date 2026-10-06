@@ -5413,6 +5413,42 @@ test('round 5c: Chapter 3 radar: the tip names how many and where, the tag what 
   }
 });
 
+test('round 5c: clicking an aircraft on its stand selects it, from the whole-airport zoom in; a click beside it picks the airport', () => {
+  const { S, ap } = r5net();
+  run(S, 6);
+  const tl = S.av.tails.find(t => t.where === 'stand' && t.at === ap.id); assert(tl, 'no aircraft on a stand');
+  const s = IC.aptStands(ap).find(q => q.occ === tl.id);
+  for (const z of [1.2, 3, 6, 25, 150]) {
+    const hit = IC.pickAt(S, { x: s.x, y: s.y }, z);
+    assert(hit && hit.kind === 'tail' && hit.ref === tl, `at z ${z} a click on the aircraft picked ${hit ? hit.kind : 'nothing'}`);
+  }
+  // (far enough from any aircraft, at the whole-airport zoom, the airport)
+  const far = { x: ap.x + (ap.radius || 20) * 0.5, y: ap.y + (ap.radius || 20) * 0.5 };
+  const busy = S.av.tails.some(t => { const w = IC.tailWhere(S, t); return w && U.dist(w, far) < 3; });
+  const h2 = IC.pickAt(S, far, 1.2);
+  assert(busy || !h2 || h2.kind !== 'tail', 'a click away from the aircraft picked one');
+  // stands count from 1 across the airport, never 0
+  const names = IC.aptStands(ap).map(q => IC.standName(q));
+  assert(!names.includes('0') && names[0] === '1' && new Set(names).size === names.length, names.join(' '));
+  assert(/^Turnaround: .+ left · now: /.test(IC.tailPhase(S, tl)) || /Ready|held|Night/.test(IC.tailPhase(S, tl)), IC.tailPhase(S, tl));
+});
+
+test('round 5c: no two map labels overlap at the airport zooms', () => {
+  const { S, ap } = r5net();
+  run(S, 1);
+  for (const z of [2, 6, 12, 25, 60]) {
+    const L = IC.aptLabels(S, ap, z, {}), B = L.map(l => l.box);
+    for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++) { const a = B[i], b = B[j]; assert(!(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]), `z ${z}: "${L[i].txt}" over "${L[j].txt}"`); }
+    // the words floating up over the works, placed after them, go round them and each other
+    IC.LBL.reset(); for (const l of L) IC.LBL.put(l.x, l.y, l.box[2] - l.box[0], (l.box[3] - l.box[1]) / 1.3, 0, 0, true);
+    const px = 1 / z, mine = [];
+    for (const t of ['+1,064 PASSENGERS AN HOUR', 'FREIGHTER CAN LAND', '+8 STANDS', 'REGIONAL TURBOPROP CAN LAND']) { const y = IC.LBL.put(ap.x, ap.y, t.length * 7.5 * px, 13 * px, -15 * px, 10); if (y != null) mine.push(IC.LBL.boxes[IC.LBL.boxes.length - 1]); }
+    assert(mine.length >= 3, `z ${z}: only ${mine.length} of the four floating words found room`);
+    const all = IC.LBL.boxes;
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) { const a = all[i], b = all[j]; if (i < L.length && j < L.length) continue; assert(!(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]), `z ${z}: placed words overlap`); }
+  }
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

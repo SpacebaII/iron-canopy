@@ -126,7 +126,8 @@ const airlineOf = (S, id) => S.av.airlines.find(a => a.id === id);
 IC.avAirline = airlineOf; IC.avRoute = routeOf;
 
 /* ---------- stands ---------- */
-function standsOf(ap) { const L = []; for (const p of ap.parts || []) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) L.push(s); return L; }
+// (round 5c) numbered from 1 across the airport, in the order the aprons were built: "Stand 7", never "Stand 0" twice
+function standsOf(ap) { const L = []; for (const p of ap.parts || []) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) { L.push(s); s.no = L.length; } return L; }
 IC.aptStands = standsOf;
 function freeStand(S, ap, T, pref) {
   IC.aptGraph(ap);

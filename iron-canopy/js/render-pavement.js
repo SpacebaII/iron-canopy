@@ -482,7 +482,7 @@ function standsPaint(g, ap, a, ppu, box) {
     g.restore();
     // the number, painted on the pavement at the lead-in: black box, yellow figures
     if (ppu >= 30) {
-      const t = String(s.name || s.id.split('s').pop()).slice(0, 4), fx = s.fx, fy = s.fy;
+      const t = String(IC.standName(s)).slice(0, 4), fx = s.fx, fy = s.fy;
       g.save(); g.translate(fx, fy); g.rotate(s.a + Math.PI / 2);
       const h = 0.05, w = h * 0.62 * t.length + 0.02;
       g.fillStyle = 'rgba(16,16,16,0.85)'; g.fillRect(-w / 2, -h * 0.6 - 0.1, w, h * 1.2);

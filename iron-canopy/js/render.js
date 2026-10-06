@@ -73,6 +73,7 @@ IC.daylight = function (t) {
 IC.render = function (S, now) {
   const z = cam.z, px = 1 / z;
   IC.frameN = (IC.frameN || 0) + 1;
+  IC.LBL.reset();
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }
@@ -136,7 +137,15 @@ IC.render = function (S, now) {
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
   let li = 0;
-  for (const x of S.fx.texts) { const L = x.life || 1.8, rise = (8 + Math.min(x.t, 1.8) * 16 + (x.life ? 18 * li++ : 0)) * px; ctx.globalAlpha = Math.max(0, Math.min(1, (L - x.t) / 0.8)); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(x.s, x.x + px, x.y - rise + px); ctx.fillStyle = x.color; ctx.fillText(x.s, x.x, x.y - rise); }
+  // (round 5c) the words that float up over the works go through the same placement as the labels: one that would
+  // cover another moves up a line, or waits its turn
+  for (const x of S.fx.texts) {
+    const L = x.life || 1.8; let y = x.y - (8 + Math.min(x.t, 1.8) * 16 + (x.life ? 18 * li++ : 0)) * px;
+    if (IC.FOCUS.polish) { const w = ctx.measureText(x.s).width + 6 * px; y = IC.LBL.put(x.x, y, w, 13 * px, -15 * px, 10); if (y == null) continue; }
+    ctx.globalAlpha = Math.max(0, Math.min(1, (L - x.t) / 0.8));
+    if (IC.FOCUS.polish) { label(x.s, x.x, y, px, x.color, 12, 'center', 600); ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; }
+    else { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(x.s, x.x + px, y + px); ctx.fillStyle = x.color; ctx.fillText(x.s, x.x, y); }
+  }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 
   if (S.layers.weather && S.clouds && wx.cloud > 0.4 && z < 0.5) {
@@ -168,6 +177,14 @@ IC.render = function (S, now) {
 };
 
 function label(txt, x, y, px, col, size, align, weight) {
+  // (round 5c) close in, in screen pixels: a tiny world-unit font is drawn squeezed (render-airport.js lbl)
+  if (px < 0.05 && IC.FOCUS.polish) {
+    const m = ctx.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = `${weight || 500} ${(size || 10) * k}px "IBM Plex Mono", monospace`; ctx.textAlign = align || 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(txt, sx + 0.9 * k, sy + 0.9 * k); ctx.fillStyle = col; ctx.fillText(txt, sx, sy);
+    ctx.restore(); return;
+  }
   ctx.font = `${weight || 500} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
   ctx.textAlign = align || 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(txt, x + 0.9 * px, y + 0.9 * px);
@@ -424,6 +441,8 @@ function drawInfra(S, px, now) {
       // far out, only the big cities are named, so the names stay readable
       if ((S.layers.labels && (cam.z > 0.035 || i.pop > 150)) || i.pop > 350) {
         label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
+        // (round 5c) the town's name holds its place: the chain's tags and the floating words go round it
+        IC.LBL.put(i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, nm.length * big * 0.64 * px, big * 1.25 * px, 0, 0, true);
         if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }

@@ -520,6 +520,11 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
   .speed button{min-width:2rem;padding:0 .42rem}
   .clock span{letter-spacing:.07em}
   .stat.role strong{max-width:9.5rem;white-space:normal;text-align:right;line-height:1.05;font-size:.95rem}
+  /* (round 5c) never wider than the screen: the role in two lines at most, the money line without what was invested
+     (its tooltip keeps it), the sky's line cut rather than pushing the speeds aside */
+  .stat.role strong{max-width:11rem;font-size:.82rem;letter-spacing:.05em}
+  .stat em .inv{display:none}
+  .clock span{max-width:18.5rem;overflow:hidden;text-overflow:ellipsis}
 }
 /* a short screen (720 px): the goals panel keeps more room above the arsenal, the staff message takes less */
 @media (max-height:800px){
@@ -1024,3 +1029,23 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.compact .stat:not(.role) strong{white-space:nowrap}
 /* (round 5c) the build bar's one strip: what to do now and the keys, on one line, never a caption over the Build button */
 .bb-opts>em.bb-keys{font-style:normal;font-size:.84rem;color:#cfe6f2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(52rem,100%);min-width:0}
+/* (round 5c) the aircraft's slim card: what it is doing, the turnaround's bar and the services at work, Follow */
+.insp.slim{bottom:auto;width:21rem;max-height:calc(100% - var(--top) - 12px)}
+.insp.slim .ibody{gap:.5rem}
+.insp.slim p.now{font-size:.95rem;font-weight:600;color:#e8f0f5;margin:0}
+.insp .turnsec{display:grid;gap:.4rem}
+.insp .tchips{display:flex;flex-wrap:wrap;gap:4px}
+.insp .tchips .chip{font-size:.78rem;padding:.12rem .5rem;border-radius:999px;background:var(--well);color:var(--muted)}
+.insp .tchips .chip.on{background:rgba(242,180,65,.18);color:#f6cf7a;box-shadow:inset 0 0 0 1px rgba(242,180,65,.45)}
+/* (round 5c) the airport panel's rows on one line: a deal reads airline · route · aircraft · charges · time left, its
+   buttons on hover; a problem's words take the width and its fix sits under them, never squeezed into a column */
+.li.contract.one{grid-template-columns:minmax(0,1fr) auto;position:relative;padding:.4rem .6rem}
+.li.contract.one .c1{display:flex;align-items:center;gap:.35rem;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.86rem}
+.li.contract.one .c1 b{font-size:.86rem;flex:none}
+.li.contract.one .c1 .muted{overflow:hidden;text-overflow:ellipsis}
+.li.contract.one .strikes{grid-column:2;grid-row:1}
+.li.contract.one .la{position:absolute;right:.4rem;top:50%;transform:translateY(-50%);grid-row:auto;padding:.2rem;border-radius:9px;background:var(--glass);box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .15s}
+.li.contract.one:hover .la,.li.contract.one:focus-within .la{opacity:1;pointer-events:auto}
+.li.contract.one small{grid-column:1/-1;font-size:.8rem}
+.app.pol .prow{grid-template-columns:minmax(0,1fr)}
+.app.pol .prow>.btn{justify-self:start}

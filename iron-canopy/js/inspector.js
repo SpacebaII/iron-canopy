@@ -47,6 +47,7 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'field') h = field(r);
   }
   el.classList.toggle('glass', !!h);
+  el.classList.toggle('slim', !!(IC.FOCUS.polish && s && S.group.length <= 1 && s.kind === 'tail'));
   // another selection, or another airport tab, starts at the top; the same one holds its scroll
   const key = S.group.length > 1 ? 'group' : s ? `${s.kind}:${ui.oid(s.ref)}:${s.kind === 'infra' && s.ref.parts ? ui.aptTab : ''}` : '';
   ui.setHTML(el, h, key);
@@ -73,6 +74,14 @@ function tailPanel(tl) {
   }
   const mv = tl.mv && !tl.mv.dead ? tl.mv : tl.track && !tl.track.dead ? tl.track : null;
   const acts = [followBtn(tl)]; if (mv && liveBtn(mv)) acts.push(liveBtn(mv));
+  // (round 5c) a slim card: what it is doing and the time left, the services at work, Follow; the rest on demand
+  if (IC.FOCUS.polish) {
+    let tr = '';
+    if (w && w.s && ap) { const n = IC.turnNow(S, ap, w.s); if (n) tr = `<div class="turnsec">${bar(n.f, 'var(--amber)')}<div class="tchips">${n.now.map(x => `<span class="chip on">${esc(x)}</span>`).join('')}${n.next.slice(0, 3).map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div></div>`; }
+    const more = ui.tailMore ? `${kv(rows.filter(r => r[0] !== 'Doing now'))}${turn.replace('<div class="sec">', '<div class="sec turnmore">')}` : '';
+    acts.push(`<button class="act" data-act="tailMore" aria-expanded="${!!ui.tailMore}">${ui.tailMore ? 'Less ▴' : 'More ▾'}</button>`);
+    return head(`<span class="badge civil">${ui.icon('air')}</span>`, tl.cs, `${esc(al ? al.name : 'Airliner')} · ${esc(T.short || '')}${ap ? ` · ${esc(ap.name.replace(/ (International|Airport)$/, ''))}` : ''}`) + `<div class="ibody"><p class="now">${esc(IC.tailPhase(S, tl))}</p>${tr}<div class="acts">${acts.join('')}</div>${more}</div>`;
+  }
   return head(`<span class="badge civil">${ui.icon('air')}</span>`, tl.cs, `${esc(al ? al.name : 'Airliner')} · ${esc(T.short || '')}`) + `<div class="ibody">${kv(rows)}${turn}<div class="acts">${acts.join('')}</div></div>`;
 }
 
@@ -617,7 +626,7 @@ function apronStands(ap, p) {
   const gates = (p.stands || []).filter(s => s.contact).length, drive = (p.stands || []).filter(s => s.drive).length;
   const what = Object.entries(by).map(([k, n]) => `${n} ${IC.RAMP_SIZE[k]}`).join(', ') || 'none';
   // (next to a terminal but too far from its wall for a jet bridge: remote, with stairs, and the panel says so)
-  const far = (p.stands || []).filter(s => s.noBridge).map(s => s.name || s.id.split('s').pop());
+  const far = (p.stands || []).filter(s => s.noBridge).map(s => IC.standName(s));
   const farTxt = far.length ? ` · <span class="amber">${far.length > 1 ? `stands ${far.join(', ')} are` : `stand ${far[0]} is`} remote, with stairs: a jet bridge reaches ${Math.round(IC.BRIDGE_REACH.tunnel * 100)} m from a terminal wall in front of the nose, and ${far.length > 1 ? 'they are' : 'it is'} further</span>` : '';
   return [['Stands', `${what}${gates ? ` · ${gates} at gates` : ''}${drive ? ` · ${drive} drive-through` : ''}${farTxt}<div class="acts"><button class="act ${p.ramp ? '' : 'on'}" data-act="apl" data-op="stands" data-v="auto" title="Stands in a row along the back edge; the apron's depth decides their size">Laid out automatically</button><button class="act ${p.ramp ? 'on' : ''}" data-act="apl" data-op="stands" data-v="hand" title="Place, turn and remove stands yourself with the Stand tool">Placed by hand</button></div>`]];
 }

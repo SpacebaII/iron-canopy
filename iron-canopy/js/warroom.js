@@ -176,6 +176,14 @@ function contractRow(d) {
   const al = IC.avAirline(S, d.al), f = U.clamp((S.time - d.t0) / Math.max(1, d.end - d.t0), 0, 1), left = Math.max(0, d.end - S.time);
   const dots = Array.from({ length: IC.DEAL.strikes }, (_, i) => `<i class="${i < d.strikes ? 'on' : ''}"></i>`).join('');
   const cost = d.value * left / 86400 * 0.3 + 5;
+  // (round 5c) one line: airline · route · aircraft · charges · time left · bad days; the buttons show on hover, the
+  // details in the tooltip; a deal at risk keeps its warning line
+  if (IC.FOCUS.polish && IC.ui.hands && IC.ui.hands()) {
+    const tip = `${d.flown} flown, ${d.late} late, ${d.cancel} cancelled · penalties ${U.money(d.paid)}${d.excl ? ' · exclusive' : ''}`;
+    return `<div class="li contract one" title="${esc(tip)}"><span class="c1">${livery(al)}<b>${esc(al.name)}</b><span class="muted"> · ${esc(routeLbl(d))} · ${d.n} × ${esc(IC.ACTYPES[d.type].short)} · ${U.pct(d.charge)} · ${S.mode === 'story' ? U.months(left) : U.dur(left)} left</span></span><span class="strikes" title="Bad days: ${IC.DEAL.strikes} end the deal">${dots}</span>
+      <span class="la"><button class="btn sm" data-act="av" data-v="al" data-id="${al.id}">Airline</button><button class="btn sm" data-act="av" data-v="break" data-id="${d.id}" title="End the deal now: we pay ${U.money(cost)} and our name suffers">End · ${U.money(cost)}</button></span>
+      ${d.badT ? `<small class="hostile">A facility it needs is missing: it walks out in ${U.dur(Math.max(0, 12 * 3600 - (S.time - d.badT)))}</small>` : ''}</div>`;
+  }
   return `<div class="li contract"><b>${livery(al)}${esc(al.name)} · ${esc(routeLbl(d))} <span class="muted">· ${d.n} × ${esc(IC.ACTYPES[d.type].short)} · ${U.pct(d.charge)} charges${d.excl ? ' · exclusive' : ''}</span></b>
     <small>${bar(f, d.badT ? 'var(--hostile)' : 'var(--friend)')} ${S.mode === 'story' ? U.months(left) : U.dur(left)} left · ${d.flown} flown, ${d.late} late, ${d.cancel} cancelled · penalties ${U.money(d.paid)} · <span class="strikes" title="Bad days: ${IC.DEAL.strikes} end the deal">${dots}</span>${d.badT ? ` · <span class="hostile">a facility it needs is missing: it walks out in ${U.dur(Math.max(0, 12 * 3600 - (S.time - d.badT)))}</span>` : ''}</small>
     <span class="la"><button class="btn sm" data-act="av" data-v="al" data-id="${al.id}">Airline</button><button class="btn sm" data-act="av" data-v="break" data-id="${d.id}" title="End the deal now: we pay ${U.money(cost)} and our name suffers">End · ${U.money(cost)}</button></span></div>`;

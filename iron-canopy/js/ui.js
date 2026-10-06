@@ -789,7 +789,10 @@ function coach() {
    on screen is done. (round 5c) one at a time, a breath apart; a step can point at the map (at), and one whose target
    has gone for a while (a card closed) is put aside until it can be shown again */
 const onScreen = e => { if (!e || e.offsetParent === null) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (!ui.room || $('warroom').contains(e)); };
-const stepShown = st => !!(st && (st.at ? (() => { try { return !!st.at(S); } catch (e) { return false; } })() : onScreen(anchorEl(st.el))));
+// (a step may have both: the element when it is on screen, else the place on the map)
+const atOf = st => { try { return st.at ? st.at(S) : null; } catch (e) { return null; } };
+const useEl = st => !!(st && st.el && onScreen(anchorEl(st.el)));
+const stepShown = st => !!(st && (useEl(st) || atOf(st)));
 /* the step to point at for tutorial id: its first undone one, or (when that is not on screen) the latest before it
    that is, so a closed panel is opened again */
 const tutShow = id => {
@@ -812,13 +815,14 @@ function tutor() {
   // (nothing of it on screen for a while: put it aside; it comes back when it can be shown)
   if (N && !show) { if (!ui.tutLost) ui.tutLost = now; else if (now - ui.tutLost > 12000) { IC.tutorPause(S); ui.tutLost = 0; } }
   else ui.tutLost = 0;
-  const key = N ? N.id + ':' + N.i + ':' + (show ? IC.TUTORS[N.id].steps.indexOf(show) : 'x') : 'none';
+  const key = N ? N.id + ':' + N.i + ':' + (show ? IC.TUTORS[N.id].steps.indexOf(show) + (useEl(show) ? 'e' : 'a') : 'x') : 'none';
   if (ui.tutorKey === key) return;
   hints.delete('tutor'); ui.tutorKey = key;
   if (!N || !show) return;
   // (the target brought into view: a panel or a room may have it below the fold)
-  if (!show.at) { const e = anchorEl(show.el); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
-  hints.set('tutor', Object.assign(show.at ? { at: show.at, r: 30 } : { el: show.el }, { title: show.title, text: IC.tutorText(S, show), ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] }));
+  const byEl = useEl(show);
+  if (byEl) { const e = anchorEl(show.el); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
+  hints.set('tutor', Object.assign(byEl ? { el: show.el } : { at: show.at, r: 30 }, { title: show.title, text: IC.tutorText(S, show), ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] }));
 }
 /* the Guide's "Show me": the tutorial again from its first step, on the airport it is about */
 ui.tutorGo = function (id) {
@@ -921,6 +925,7 @@ ui.refresh = function (force) {
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
+  $('app').classList.toggle('pol', !!IC.FOCUS.polish);
   $('app').classList.toggle('compact', ui.compact()); $('app').classList.toggle('mini-on', !!ui.miniOn);
   $('insp').classList.toggle('min', ui.compact() && !!ui.inspMin);
   // how much of the map's right side the inspector covers, for what the map draws beside the cursor
@@ -1024,5 +1029,14 @@ ui.lessonList = function () {
   const next = IC.LESSONS.findIndex(l => !p[l.id]);
   $('lessons').innerHTML = IC.LESSONS.map((l, i) => `<button class="lesson ${p[l.id] ? 'done' : ''} ${i === next ? 'next' : ''}" data-act="lesson" data-v="${l.id}"><i>${p[l.id] ? '✓' : i + 1}</i><b>${esc(l.title)}</b><span>${esc(l.sub)}</span><em>${p[l.id] ? '★'.repeat(p[l.id]) + '☆'.repeat(3 - p[l.id]) : i === next ? 'Start here' : ''}</em></button>`).join('');
 };
+
+/* (round 5c) a milestone's card frames the airport it is about: the camera stops following an aircraft in cruise and
+   comes home, so the card is not read over empty fields */
+IC.on((S2, type, d) => {
+  if (type !== 'milestone' || S2 !== IC.S || !IC.FOCUS.polish || typeof document === 'undefined') return;
+  const ap = d && S2.byId[d.ap]; if (!ap) return;
+  if (S2.follow) IC.followStop(S2);
+  IC.flyTo(ap.x, ap.y, U.clamp(IC.cam.z, 3, 8));
+});
 
 })(window.IC);

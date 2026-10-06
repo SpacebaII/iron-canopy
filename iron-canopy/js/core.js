@@ -223,4 +223,22 @@ IC.on = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i 
 IC.emit = function (S, type, data) { for (const fn of subs) fn(S, type, data); };
 IC.campaignEvent = IC.emit;
 
+/* (round 5c) one placement pass for the words on the map. Each frame the renderer claims a box for each label, the
+   most important first (the airport's names and building sites, the town names, then what floats up over the works,
+   then the chain's tags); one that would overlap a box already placed moves a step (dy, world units) at a time, at
+   most n steps, or is left out. x, y: the label's baseline middle; w, h its size, all in world units. force places it
+   wherever it is (it was placed by its own pass). Headless, so the tests can check it. */
+IC.LBL = {
+  boxes: [],
+  reset() { this.boxes.length = 0; },
+  hit(b) { for (const q of this.boxes) if (q[0] < b[2] && b[0] < q[2] && q[1] < b[3] && b[1] < q[3]) return true; return false; },
+  put(x, y, w, h, dy, n, force) {
+    for (let k = 0; k <= (n || 0); k++) {
+      const yy = y + k * (dy || 0), b = [x - w / 2, yy - h, x + w / 2, yy + h * 0.3];
+      if (force || !this.hit(b)) { this.boxes.push(b); return yy; }
+    }
+    return null;
+  }
+};
+
 })(window.IC);
