@@ -512,6 +512,7 @@ function onAct(e) {
     case 'towerRules': { const a = selAp(); if (a) { ui.aptTab = 'rules'; IC.select({ kind: 'infra', ref: a }); } return; }
     case 'chainTog': IC.chainOn = !IC.chainOn; break;
     case 'tailMore': ui.tailMore = !ui.tailMore; break;
+    case 'followSel': { const tl = IC.followTail(S); if (tl) IC.select({ kind: 'tail', ref: tl }); break; }
     case 'gapGo': S.layers.gaps = true; { const g = IC.radarGap(S); if (g) IC.flyTo(g.at.x, g.at.y, Math.min(IC.cam.z, 0.06)); } break;
     case 'gapFix': { const g = IC.radarGap(S); if (locked('radar')) return; S.layers.gaps = true; ui.openRoom(null); IC.setMode({ kind: 'deploy', type: 'ssr' }); IC.emit(S, 'ui', { act: 'deploy', v: 'ssr' }); if (g) IC.flyTo(g.at.x, g.at.y, U.clamp(IC.cam.z, 0.05, 0.12)); return; }
     case 'aptOpen': ui.aptOpen = ui.aptOpen || {}; ui.aptOpen[v] = !ui.aptOpen[v]; break;

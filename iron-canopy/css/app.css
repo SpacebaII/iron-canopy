@@ -1071,3 +1071,7 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.pol .goalrow .gives{white-space:normal}
 .app.pol .ihead h2{font-size:1.3rem;overflow-wrap:anywhere}
 .app.pol .ihead p{line-height:1.3}
+/* (round 5c) with the build bar up the goal panel folds to its first goal, whole: three lines and its reward */
+.app.pol.compact.bb-open .leftcol>.brief.next{max-height:6.4rem}
+.followchip .fc-cs{font-weight:700;color:var(--text);padding:.05rem .35rem;border-radius:6px;background:var(--well)}
+.followchip .fc-cs:hover{background:rgba(111,210,255,.2)}

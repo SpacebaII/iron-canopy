@@ -617,7 +617,7 @@ function followChip() {
   const el = $('followchip'); if (!el) return;
   const tl = S.follow && IC.followTail(S);
   if (!tl) { if (!el.hidden) { el.hidden = true; ui.cache.follow = null; } return; }
-  const h = `<span class="fc-tag">FOLLOWING</span><b>${esc(tl.cs)}</b><span class="fc-ph">${esc(IC.tailPhase(S, tl))}</span><button class="btn sm" data-act="followOff" title="Let the camera go (or drag the map)">Stop</button>`;
+  const h = `<span class="fc-tag">FOLLOWING</span>${IC.FOCUS.tutors ? `<button class="fc-cs" data-act="followSel" title="Its panel: what it is doing and its turnaround">${esc(tl.cs)}</button>` : `<b>${esc(tl.cs)}</b>`}<span class="fc-ph">${esc(IC.tailPhase(S, tl))}</span><button class="btn sm" data-act="followOff" title="Let the camera go (or drag the map)">Stop</button>`;
   if (ui.cache.follow !== h) { el.innerHTML = h; ui.cache.follow = h; }
   el.hidden = false;
   // above the build bar when it is open
@@ -795,7 +795,14 @@ function coach() {
    starts the first time its first target is on screen and the story has reached it; a step whose result is already
    on screen is done. (round 5c) one at a time, a breath apart; a step can point at the map (at), and one whose target
    has gone for a while (a card closed) is put aside until it can be shown again */
-const onScreen = e => { if (!e || e.offsetParent === null) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (!ui.room || $('warroom').contains(e)); };
+const onScreen = e => {
+  if (!e || e.offsetParent === null) return false;
+  const r = e.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0) || (ui.room && !$('warroom').contains(e))) return false;
+  // (round 5c) inside the window, and not in the selection panel while it is slid away for building
+  if (r.right < 0 || r.left > innerWidth || r.bottom < 0 || r.top > innerHeight) return false;
+  return !($('app').classList.contains('building') && $('insp').contains(e));
+};
 // (a step may have both: the element when it is on screen, else the place on the map)
 const atOf = st => { try { return st.at ? st.at(S) : null; } catch (e) { return null; } };
 const useEl = st => !!(st && st.el && onScreen(anchorEl(st.el)));
@@ -808,12 +815,15 @@ const tutShow = id => {
   for (let j = i - 1; j >= 0; j--) if (stepShown(L[j])) return L[j];
   return null;
 };
+const BUILD_TUTS = { found: 1, starter: 1, pieces: 1, buildesc: 1, problems: 1, milestone: 1 };
 function tutor() {
   if (!S || S.mode === 'academy' || !ui.hintsOn || !$('start').hidden || S.showcase) { if (hints.has('tutor')) hints.delete('tutor'); ui.tutorKey = null; return; }
   let N = IC.tutorTick(S);
   const now = performance.now();
   if (!N && !(S.tutor && S.tutor.cur) && now - (ui.tutEnd || 0) > 2500 && !ui.menu) {
-    for (const id in IC.TUTORS) if (!IC.tutorSeen(S, id) && IC.tutorWhen(S, id) && tutShow(id)) { IC.tutorStart(S, id); N = IC.tutorTick(S); ui.tutLost = 0; break; }
+    // (round 5c) while a plan is being placed only the builder's own lessons start: nothing else cuts in mid-build
+    const placing = S.mode2 && (S.mode2.kind === 'build' || S.mode2.kind === 'found');
+    for (const id in IC.TUTORS) if (!IC.tutorSeen(S, id) && (!placing || BUILD_TUTS[id]) && IC.tutorWhen(S, id) && tutShow(id)) { IC.tutorStart(S, id); N = IC.tutorTick(S); ui.tutLost = 0; break; }
   }
   if (N && N.step.seen && onScreen(anchorEl(N.step.seen))) { IC.tutorSaw(S, N.id, N.i); N = IC.tutorTick(S); }
   if (!N && ui.tutorKey && ui.tutorKey.split(':')[0] !== 'none') ui.tutEnd = now;

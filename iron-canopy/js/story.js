@@ -182,6 +182,8 @@ function portsOnNet(S) {
   return IC.avPorts(S).filter(p => IC.aspRoute(S, { x: ap.x, y: ap.y, apt: ap.id }, { x: p.x, y: p.y })).length;
 }
 function wayCover(S) {
+  // (round 5c) the same measure as the tag by the cursor, the tip's count and the gap marker (IC.wayPoints)
+  if (IC.FOCUS.tutors && IC.wayCoverAll) return IC.wayCoverAll(S);
   let L = 0, c = 0;
   for (const w of S.asp.ways) { const [a, b] = IC.aspWayEnds(S, w), l = U.dist(a, b); L += l; c += l * IC.aspWayCover(S, w, 9); }
   return L ? c / L : 0;

@@ -64,7 +64,7 @@ fs.mkdirSync(OUT, { recursive: true });
     }
     if (at) {
       // (off the screen: the note's own button takes the camera there first)
-      const look = await page.$('#hints [data-act="tutorLook"]'); if (look) { await click(look); await page.waitForTimeout(1500); return 'pressed Show me where'; }
+      const lookBtn = await page.$('#hints [data-act="tutorLook"]'); if (lookBtn) { await click(lookBtn); await page.waitForTimeout(1500); return 'pressed Show me where'; }
       if (id === 'pieces' || id === 'buildesc') {
         // beside the parallel taxiway: the first spot the plan fits, as a player tries one
         const q = await ev(`(() => { const S = IC.S, m = S.mode2; if (!m || m.kind !== 'build') return null; if (m.set && m.at) return { x: m.at.x + 0.6, y: m.at.y + 0.4 };
@@ -173,6 +173,8 @@ fs.mkdirSync(OUT, { recursive: true });
   while (T() < MIN) {
     await page.waitForTimeout(900);
     await dismissHints();
+    // (the menu open by a stray Esc: closed, as a player would)
+    if (await page.$('#menu:not([hidden])')) await click('#menu [data-act="menu"]');
     if (await tutorials()) { lastAct = Date.now(); continue; }
     const s = await state();
     floor = Math.min(floor, s.budget);
@@ -218,11 +220,15 @@ fs.mkdirSync(OUT, { recursive: true });
       const m = await page.$('#pmarks [data-act="gapFix"]');
       if (m) { await click(m); await page.waitForTimeout(900);
         const q = await ev(`(() => { const g = IC.radarGap(IC.S); return g && IC.findSpot(IC.S, 'ssr', g.at.x, g.at.y, 0, 300); })()`);
-        if (q) { await look(q.x, q.y, 0.08); const p = await scr(q.x, q.y); await page.mouse.move(p.x, p.y); await page.waitForTimeout(500); if (!shots.has('13-radar-tag')) await shot('13-radar-tag'); await page.mouse.click(p.x, p.y); clicks++; await page.waitForTimeout(500); await key('Escape'); log(await ev(`IC.S.units.some(u => u.type === 'ssr' && U_near(u))`.replace('U_near(u)', `Math.hypot(u.x - ${q.x}, u.y - ${q.y}) < 5`)) ? 'built: a civil radar on the gap marker' : 'the radar was not placed'); }
+        if (q) { await look(q.x, q.y, 0.08); const p = await scr(q.x, q.y); await page.mouse.move(p.x, p.y); await page.waitForTimeout(500); if (!shots.has('13-radar-tag')) await shot('13-radar-tag'); await page.mouse.click(p.x, p.y); clicks++; await page.waitForTimeout(500); await ev('IC.S.mode2 && IC.setMode(null)'); log(await ev(`IC.S.units.some(u => u.type === 'ssr' && U_near(u))`.replace('U_near(u)', `Math.hypot(u.x - ${q.x}, u.y - ${q.y}) < 5`)) ? 'built: a civil radar on the gap marker' : 'the radar was not placed'); }
         await look(ap.x, ap.y, 6); await key('6');
       }
     }
     if (s.ch === 2 && Date.now() - lastRadarLog > 60000) { lastRadarLog = Date.now(); log(`chapter 3: ${Math.round(s.cover * 100)}% of the airways seen, ${s.ssr} radars, the tip says about ${s.plan} more`); }
+    // Chapter 4: the light-aircraft field the How asks for (Aviation room → Light-aircraft field), near the town, as a
+    // player places it; the clubs' other goals follow from it
+    if (s.ch === 3 && /light-aircraft field/.test(s.goal) && Date.now() - lastBuild > 15000) { lastBuild = Date.now(); const f = await ev(`(() => { const S = IC.S, c = S.story.contract && S.byId[S.story.contract.town]; if (!c || S.asp.fields.some(f => IC.U.dist(f, c) < 160)) return null;
+        for (let k = 0; k < 48; k++) { const a = k * 0.83, d = 40 + k * 2.2, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.aspFieldWhy(S, x, y)) { IC.aspFoundField(S, x, y); return c.name; } } return null; })()`); if (f) log('built: the light-aircraft field near', f); }
     if (s.ch === 2 && /approach radar/.test(s.goal) && !s.works && await build('atc', `(() => { const r = IC.S.byId['${capId}'].parts.find(q => q.kind === 'runway' && q.built); return { x: (r.a.x + r.b.x) / 2, y: (r.a.y + r.b.y) / 2 }; })()`, 'an approach radar')) continue;
     if (/stands/.test(s.goal) && !s.works && await build('tstraight', termNear, 'stands for the goal')) continue;
     if (!money.length || T() - money[money.length - 1].min >= 0.5) money.push({ min: +T().toFixed(1), budget: Math.round(s.budget), ch: s.ch, goal: s.goal });

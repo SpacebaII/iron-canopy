@@ -78,7 +78,7 @@ IC.TUTORS = {
     { el: '#bldgo [data-go="build"]', title: 'Build, or Esc', text: 'Build (or Enter) orders it and puts the bar away. Esc or right-click drops the plan; a plan costs nothing.', on: [['bld', 'built'], ['bld', 'cancel']] }
   ] },
   follow: { title: 'Following an aircraft', guide: 'follow', trig: [['firstArrival']], when: S => civil(S) && !!S.first, steps: [
-    { at: S => tailAt(S), title: 'Your first airliner', text: 'The camera is following it in. Click the aircraft for its panel.', on: [['select', 'tail'], ['select', 'track']], ok: S => !!(S.sel && (S.sel.kind === 'tail' || (S.sel.kind === 'track' && S.sel.ref.tail))) },
+    { el: '#followchip [data-act="followSel"]', at: S => tailAt(S), title: 'Your first airliner', text: 'The camera is following it in. Click the aircraft, or its call sign on the strip below, for its panel.', on: [['select', 'tail'], ['select', 'track']], ok: S => !!(S.sel && (S.sel.kind === 'tail' || (S.sel.kind === 'track' && S.sel.ref.tail))) },
     { el: '#insp .turnsec', title: 'The turnaround', text: 'On the stand the panel lists each service as it works: stairs or bridge, bags, catering, the fuel truck, then the tug. Roll the wheel in to watch them.', on: [['ui', 'zin']], ok: () => !!(IC.cam && IC.cam.z >= 40) },
     { el: '#insp [data-act="follow"]', title: 'Let it go', text: 'Stop following hands the camera back. Follow, on any airliner, picks one up again.', on: [['ui', 'follow'], ['ui', 'followOff']], ok: S => !S.follow }
   ] },
