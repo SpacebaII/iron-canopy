@@ -1202,9 +1202,10 @@ test('builder: readouts give each leg, the distance from the runway, and an apro
   IC.buildInput(S, m, P(4, 0), 0, 20);
   const plan = IC.bldPlanOf(S, m, P(4.23, -2.2), 0.4), t = plan.marks.map(k => k.t);
   assert(t.includes('220 m') && t.some(x => /^220 m from the Runway .* centreline$/.test(x)), `the readouts are ${t.join(' | ')}`);
+  // (600 m from the runway: clear of the fire station, whose edge would take the first corner within 60 m)
   const a = IC.bldMode(S, ap, 'apron');
-  IC.buildInput(S, a, P(0, -4), 0, 20);
-  const ta = IC.bldPlanOf(S, a, P(4.62, -5.02), 0.4).marks.map(k => k.t);
+  IC.buildInput(S, a, P(0, -4.6), 0, 20);
+  const ta = IC.bldPlanOf(S, a, P(4.62, -5.62), 0.4).marks.map(k => k.t);
   assert(ta.includes('460 m') && ta.some(x => /^100 m deep · medium stands$/.test(x)), `the apron readouts are ${ta.join(' | ')}`);
 });
 test('builder: an area snaps to corners and flush to edges, and turns to line up with a part at an angle', () => {
@@ -1236,10 +1237,10 @@ test('builder: a taxiway through an apron is refused, drawn red, naming the apro
 });
 test('builder: a part far bigger than needed says so before the click, with its price', () => {
   const { S, ap, P } = snapAp(), m = IC.bldMode(S, ap, 'apron');
-  IC.buildInput(S, m, P(0, -4), 0, 20);
-  const big = IC.bldPlanOf(S, m, P(14, -9.5), 0.4);
+  IC.buildInput(S, m, P(0, -4.6), 0, 20);
+  const big = IC.bldPlanOf(S, m, P(14, -10.1), 0.4);
   assert(big.ok && /times what one airliner needs: ₭/.test(big.size) && /paving no aircraft uses/.test(big.size), `a 1.4 km apron says "${big.size}"`);
-  const small = IC.bldPlanOf(S, m, P(2, -4.8), 0.4);
+  const small = IC.bldPlanOf(S, m, P(2, -5.4), 0.4);
   assert(small.ok && !small.size, `a 200 m apron says "${small.size}"`);
   const r = IC.bldMode(S, ap, 'runway');
   IC.buildInput(S, r, P(-25, -15), 0, 20);

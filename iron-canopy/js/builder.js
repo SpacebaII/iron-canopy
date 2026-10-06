@@ -828,7 +828,8 @@ function snapCorner(ap, m, p, tol, free, rel, first) {
       const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = (p.x - e.a.x) * ux + (p.y - e.a.y) * uy;
       if (t < -0.05 || t > L + 0.05) continue;
       const off = (p.x - e.a.x) * -uy + (p.y - e.a.y) * ux, side = Math.sign(off) || 1, d = Math.abs(Math.abs(off) - e.half);
-      if (d < bd) { bd = d; e0 = { kind: 'edge', x: e.a.x + ux * t - uy * side * e.half, y: e.a.y + uy * t + ux * side * e.half, what: e.what, a: Math.atan2(uy, ux), u: { x: ux, y: uy } }; }
+      // (the long reach is for pavement: a building's wall takes a corner only within the usual few metres)
+      if (d < bd && (d < tol || e.what === 'taxiway' || e.what === 'apron')) { bd = d; e0 = { kind: 'edge', x: e.a.x + ux * t - uy * side * e.half, y: e.a.y + uy * t + ux * side * e.half, what: e.what, a: Math.atan2(uy, ux), u: { x: ux, y: uy } }; }
     }
     if (e0) {
       // slid along the edge to where a guide crosses it: flush and lined up at once
