@@ -33,6 +33,7 @@ IC.renderInspector = function (st) {
     const r = s.ref;
     if (s.kind === 'unit') h = unit(r);
     else if (s.kind === 'track') h = track(r);
+    else if (s.kind === 'tail') h = tailPanel(r);
     else if (s.kind === 'site') h = site(r);
     else if (s.kind === 'tel') h = tel(r);
     else if (s.kind === 'infra') h = r.parts ? base(r) : r.kind === 'city' ? city(r) : r.kind === 'factory' ? factory(r) : infra(r);
@@ -50,6 +51,28 @@ IC.renderInspector = function (st) {
   ui.setHTML(el, h, key);
   IC.renderAirPicture(S);
 };
+
+/* ---------- an airliner of ours, wherever it is: what it is doing, its turnaround, and Follow (round 2) ---------- */
+const followBtn = tl => { const on = S.follow && S.follow.tl === tl.id; return `<button class="act ${on ? '' : 'pri'}" data-act="follow" title="${on ? 'Let the camera go' : 'The camera stays with it from the approach to the gate and back out. Drag the map to stop.'}">${on ? 'Stop following' : 'Follow'}</button>`; };
+function tailPanel(tl) {
+  const al = IC.avAirline(S, tl.al), w = IC.tailWhere(S, tl), ap = w && w.ap, T = tl.T;
+  const rows = [['Airline', esc(al ? al.name : '')], ['Aircraft', `${esc(T.name)}${T.seats ? `, ${T.seats} seats` : ''}`], ['Doing now', `<b>${esc(IC.tailPhase(S, tl))}</b>`]];
+  if (ap) rows.push(['At', esc(ap.name)]);
+  const P = tl.paid; if (P && S.time - P.t < 6 * 3600) rows.push(['Paid on landing', `${U.money(P.land + P.pf + P.cg)}${P.pax ? ` (${P.pax} passengers)` : ''}`]);
+  let turn = '';
+  if (w && w.s && ap) {
+    const n = IC.turnNow(S, ap, w.s);
+    if (n) {
+      const li = (k, L) => L.length ? `<dt>${k}</dt><dd>${esc(L.join(', '))}</dd>` : '';
+      turn = `<div class="sec"><h3 class="sh">Turnaround at stand ${esc(IC.standName(w.s))}</h3>${bar(n.f, 'var(--amber)')} <span class="muted">${tl.t > 0 ? `${U.dur(tl.t)} left` : 'turned round'}</span>
+        <dl class="kv">${li('At work', n.now)}${li('Done', n.done)}${li('To come', n.next)}</dl>
+        <p class="hint">${n.q.kind === 'bridge' ? 'Passengers walk through the jet bridge.' : n.q.kind === 'bus' ? 'A remote stand: buses carry the passengers to and from the terminal, which takes longer.' : n.q.kind === 'walk' ? 'Passengers walk across the apron and up the steps.' : 'Lorries from the cargo shed load the freight.'} ${n.q.fuel === 'hydrant' ? 'Fuel comes from the hydrant under the stand.' : 'A fuel truck drives over from the fuel farm.'}</p></div>`;
+    }
+  }
+  const mv = tl.mv && !tl.mv.dead ? tl.mv : tl.track && !tl.track.dead ? tl.track : null;
+  const acts = [followBtn(tl)]; if (mv && liveBtn(mv)) acts.push(liveBtn(mv));
+  return head(`<span class="badge civil">${ui.icon('air')}</span>`, tl.cs, `${esc(al ? al.name : 'Airliner')} · ${esc(T.short || '')}`) + `<div class="ibody">${kv(rows)}${turn}<div class="acts">${acts.join('')}</div></div>`;
+}
 
 /* ---------- the airspace: fixes, airways, light-aircraft fields ---------- */
 const covTxt = a => ui.covTxt(a);
@@ -224,6 +247,7 @@ function track(t) {
   if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
   if (IC.replayOpen && S.rec && S.rec.of.has(t)) acts.push(`<button class="act" data-act="replayTrack" title="The last minutes of this track in 3D, following it">Replay</button>`);
   acts.push(liveBtn(t));
+  if (t.tail) acts.push(followBtn(t.tail));
   const warn = (aff === 'A' || aff === 'N') ? `<div class="warnbox">This track squawks a civil code on a filed route. Batteries will not fire at it unless you assign one by hand.</div>` : aff === 'S' && S.ad.roe === 'tight' ? `<p class="hint">Weapons are Tight: batteries hold fire on suspects. Identify it (fighter or type recognition) or assign a battery by hand.</p>` : '';
   const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
   // a known hostile shows its symbol; anything else the aircraft sign in the colour of what we think it is

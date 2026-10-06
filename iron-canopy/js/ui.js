@@ -173,6 +173,7 @@ function topbar() {
   alerts();
   incidents();
   evcard();
+  followChip();
   // the incidents hang under the alert pills, however many there are (both are centred under the top bar); with a
   // room open they sit at the bottom (CSS)
   const ab = $('alerts').getBoundingClientRect(), top = ab.height && !ui.room ? `${Math.round(ab.bottom + 6)}px` : '';
@@ -540,6 +541,7 @@ ui.tip = function (ent, sx, sy, rc) {
   let t = '', s = '';
   if (ent.kind === 'track') { t = `TN ${r.tn} · ${IC.AFF[r.aff || 'U'].name}${r.klass ? ' · ' + (IC.KLASS[r.klass] || r.klass) : ''}`; s = `${r.sq ? 'Squawk ' + r.sq + ' · ' : ''}${r.altKnown ? U.alt(r.alt) : 'altitude unknown'} · ${U.kmh(Math.hypot(r.vx, r.vy))}`; }
   else if (ent.kind === 'unit') { t = `${r.name} · ${IC.fullName(r.d)}`; s = r.why || IC.unitState(r)[0]; }
+  else if (ent.kind === 'tail') { const al = IC.avAirline(S, r.al); t = `${r.cs} · ${al ? al.name : 'Airliner'} · ${r.T.short || ''}`; s = `${IC.tailPhase(S, r)} · click to see its turnaround and follow it`; }
   else if (ent.kind === 'veh') { t = r.name; s = r.job ? r.job.label : 'Parked'; }
   else if (ent.kind === 'air') { t = r.name; s = (IC.AIR_KIND[r.kind] || {}).name || 'Airlift'; }
   else if (ent.kind === 'site') { t = r.name; s = `${r.destroyed ? 'Destroyed' : r.pk >= 2 ? 'Located' : 'Suspected'}`; }
@@ -555,6 +557,31 @@ ui.tip = function (ent, sx, sy, rc) {
 };
 function place(el, sx, sy) { const W = $('app').clientWidth; el.style.left = Math.min(W - 300, sx + 16) + 'px'; el.style.top = (sy + 16) + 'px'; }
 
+/* (round 2) the airliner the camera follows: who, what it is doing in plain words, and the way to let it go */
+function followChip() {
+  const el = $('followchip'); if (!el) return;
+  const tl = S.follow && IC.followTail(S);
+  if (!tl) { if (!el.hidden) { el.hidden = true; ui.cache.follow = null; } return; }
+  const h = `<span class="fc-tag">FOLLOWING</span><b>${esc(tl.cs)}</b><span class="fc-ph">${esc(IC.tailPhase(S, tl))}</span><button class="btn sm" data-act="followOff" title="Let the camera go (or drag the map)">Stop</button>`;
+  if (ui.cache.follow !== h) { el.innerHTML = h; ui.cache.follow = h; }
+  el.hidden = false;
+  // above the build bar when it is open
+  const bb = $('bbar'), r = bb && !bb.hidden && bb.offsetHeight ? bb.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
+  const bot = r && r.height ? `${Math.round(app.bottom - r.top + 10)}px` : '';
+  if (el.style.bottom !== bot) el.style.bottom = bot;
+}
+/* a card goes where it does not hide what it talks about: away from its point (c.at), the aircraft followed, or
+   what the camera is looking at close in */
+function placeCard(el, c) {
+  el.style.top = ''; el.style.bottom = '';
+  const cam = IC.cam, ft = S.follow && IC.followTail(S), fw = ft && IC.tailWhere(S, ft);
+  const pt = fw || c.at || (cam.z > 1.5 ? { x: cam.x + cam.vw / cam.z / 2, y: cam.y + cam.vh / cam.z / 2 } : null);
+  if (!pt) return;
+  const sy = (pt.y - cam.y) * cam.z, H = $('app').clientHeight || cam.vh;
+  if (sy > H * 0.42) el.style.top = c.kind === 'moment' ? '5.5rem' : '3%'; else { el.style.top = 'auto'; el.style.bottom = '7%'; }
+}
+ui.placeCard = placeCard;
+
 /* ---------- cinematic cards ---------- */
 function cine() {
   const C = S.camp, el = $('cine');
@@ -567,7 +594,8 @@ function cine() {
     el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 
     if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
-    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : 12000);
+    placeCard(el, c);
+    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' ? 16000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
   } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)

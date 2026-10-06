@@ -348,7 +348,8 @@ function turnOf(S, R, b, st, sv) {
   for (const q of R.turns) if (q.ap === b.id && q.sid === st.id && q.t1 == null) q.t1 = sv.t0;
   const T = tl ? tl.T : null;
   const q = { ap: b.id, sid: st.id, x: st.x, y: st.y, a: st.a, size: st.size, contact: !!st.contact, drive: !!st.drive, type: tl ? tl.type : 'narrow', liv: al ? al.livery : null,
-    len: T ? T.len : 0.38, span: T ? T.span : 0.36, kind: sv.kind, fuel: sv.fuel, n: sv.n, t0: sv.t0, dur: sv.dur, t1: null, tail: sv.tail, cs: tl ? tl.cs : '' };
+    len: T ? T.len : 0.38, span: T ? T.span : 0.36, kind: sv.kind, fuel: sv.fuel, n: sv.n, t0: sv.t0, dur: sv.dur, t1: null, tail: sv.tail, cs: tl ? tl.cs : '',
+    _jobs: null, _jt1: null, _paths: null };   // (the 2D map's plan of its vehicles, render-life.js)
   R.turns.push(q);
   return q;
 }
