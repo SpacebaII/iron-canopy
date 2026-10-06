@@ -1380,6 +1380,12 @@ IC.drawBuildGhost = function (g, S, px) {
   });
   // the guides the point locked onto, and the straight line from the last point
   const sn = plan.snap;
+  // an area about to start on an edge: the square corner it will take, along the edge and out from it
+  if (sn && plan.rot != null && !pts.length) {
+    const ux = Math.cos(plan.rot), uy = Math.sin(plan.rot), r = 34 * px;
+    g.save(); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.004, 1.4 * px); g.setLineDash([5 * px, 3 * px]); g.beginPath();
+    g.moveTo(sn.x - ux * r, sn.y - uy * r); g.lineTo(sn.x + ux * r, sn.y + uy * r); g.moveTo(sn.x + uy * r, sn.y - ux * r); g.lineTo(sn.x - uy * r, sn.y + ux * r); g.stroke(); g.restore();
+  }
   if (sn) drawGuides(g, m, sn, px);
   // the snap target
   if (sn) {

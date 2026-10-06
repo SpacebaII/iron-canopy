@@ -788,6 +788,73 @@ test('builder: an apron lays out stands no larger than the size picked, and says
   const apr = ap.parts[ap.parts.length - 1];
   assert(apr.kind === 'apron' && apr.smax === 'm', 'the apron did not keep the size picked');
 });
+/* ---------- ramps start flush and square with the taxiway (brief 47) ---------- */
+/* the Career capital with a taxiway out in the open at a world angle (0 east–west, 90 north–south) */
+const flushSite = (deg, seed) => {
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap], o = IC.aptLocal(ap, -26, -16), ta = deg * Math.PI / 180, L = 8;
+  const a = { x: o.x, y: o.y }, b = { x: o.x + Math.cos(ta) * L, y: o.y + Math.sin(ta) * L };
+  const t = IC.aptPlanTaxi(S, ap, [a, b], 0.05, {}); finishWorks(S, ap);
+  return { S, ap, t, a, b, ta, n: { x: -Math.sin(ta), y: Math.cos(ta) }, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+};
+/* how far a rectangle's sides are from square to an angle (degrees), and the gap from it to the taxiway's pavement */
+const squareTo = (r, ta) => Math.abs(U.angWrap((r.a - ta) * 4)) / 4 * 180 / Math.PI;
+const gapTo = (F, r) => IC.rectGap(r, { x: F.mid.x, y: F.mid.y, a: F.ta, w: 8, h: F.t.w || IC.APART.taxi.w });
+/* the player starts the area 40 m off the taxiway's centre, zoomed right in (where the snap is narrowest), drags the
+   far corner out and builds */
+const drawOff = (F, tool, zone, along, side) => {
+  const { S, ap, ta } = F, m = IC.bldMode(S, ap, tool), sd = side || 1, n = { x: F.n.x * sd, y: F.n.y * sd }, mid = { x: F.mid.x + Math.cos(ta) * (along || 0), y: F.mid.y + Math.sin(ta) * (along || 0) };
+  if (zone) m.zone = zone; S.mode2 = m;
+  const c1 = { x: mid.x + n.x * 0.4, y: mid.y + n.y * 0.4 }, c2 = { x: c1.x + Math.cos(ta) * 3 + n.x * 2.2, y: c1.y + Math.sin(ta) * 3 + n.y * 2.2 };
+  IC.buildInput(S, m, c1, 0, 160); IC.buildInput(S, m, c2, 0, 160);
+  const n0 = ap.parts.length, r = IC.buildFinish(S, m, 160);
+  assert(r === 'built', `${tool} at ${Math.round(ta * 180 / Math.PI)}°: not built (${m.err})`);
+  return ap.parts.slice(n0);
+};
+for (const deg of [0, 90, 45, 121])
+  test(`builder: an apron, ramp, remote apron or cargo shed started off a taxiway at ${deg}° starts on its edge, square to it`, () => {
+    const F = flushSite(deg);
+    // (one each side of the taxiway, at each end of it)
+    for (const [tool, zone, along, side] of [['apron', null, -3.8, 1], ['ramp', 'light', -3.8, -1], ['remote', null, 0.6, 1], ['cargo', null, 0.6, -1]]) {
+      const made = drawOff(F, tool, zone, along, side), r = made.find(p => p.kind !== 'taxi');
+      assert(squareTo(r, F.ta) < 2, `${tool}: ${squareTo(r, F.ta).toFixed(1)}° off square to the taxiway`);
+      assert(gapTo(F, r) < 0.02, `${tool}: ${(gapTo(F, r) * 100).toFixed(0)} m from the taxiway's edge`);
+      // (a remote apron flush along a taxiway takes it as its front: no lane of its own stopping short of it)
+      assert(!made.some(p => p.kind === 'taxi'), `${tool}: laid a taxilane of its own beside the taxiway`);
+      if (tool !== 'cargo') { finishWorks(F.S, F.ap); assert(F.t.nodes.some(id => { const q = F.ap.nodes[id]; return q.on && (q.on.part === r.id || (q.also || []).includes(r.id)); }), `${tool}: the taxiway does not join it`); }
+    }
+  });
+test('builder: an apron stretched from an apron edge off an angled taxiway keeps its line', () => {
+  const F = flushSite(45), r = drawOff(F, 'apron')[0];
+  const { S, ap } = F, m = IC.bldMode(S, ap, 'stretch'); S.mode2 = m;
+  // (along the taxiway: the side of the apron at the end of its edge on the taxiway)
+  const ax = Math.abs(Math.cos(r.a - F.ta)) > 0.7, e = ax ? IC.rectWorld(r, r.w / 2, 0) : IC.rectWorld(r, 0, r.h / 2), out = ax ? IC.rectWorld(r, r.w / 2 + 1.5, 0.3) : IC.rectWorld(r, 0.3, r.h / 2 + 1.5);
+  IC.buildInput(S, m, e, 0, 160); IC.buildInput(S, m, out, 0, 160);
+  const n0 = ap.parts.length; assert(IC.buildFinish(S, m, 160) === 'built', m.err);
+  const q = ap.parts.slice(n0).find(p => p.kind === 'apron');
+  assert(squareTo(q, F.ta) < 2 && IC.rectGap(q, r) < 0.01, `the stretch is ${squareTo(q, F.ta).toFixed(1)}° off and ${(IC.rectGap(q, r) * 100).toFixed(0)} m from its apron`);
+  assert(gapTo(F, q) < 0.02, `the stretch has left the taxiway's edge (${(gapTo(F, q) * 100).toFixed(0)} m)`);
+});
+test('builder: a holding bay lies square to its runway, touching the parallel taxiway; a de-icing pad faces an angled taxiway', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const bad = S.byId[S.story.bad], rw = bad.parts.find(p => p.kind === 'runway'), P = (x, y) => IC.aptLocal(bad, x, y);
+  let m = IC.bldMode(S, bad, 'parallel'); S.mode2 = m;
+  IC.buildInput(S, m, P(0, 0), 0, 20); IC.buildInput(S, m, P(0, 1.8), 0, 20); assert(IC.buildFinish(S, m, 20) === 'built', m.err);
+  finishWorks(S, bad);
+  m = IC.bldMode(S, bad, 'hold'); S.mode2 = m; IC.buildInput(S, m, P(-11.8, 0), 0, 20);
+  const n0 = bad.parts.length; assert(IC.buildFinish(S, m, 20) === 'built', m.err);
+  const bay = bad.parts.slice(n0).find(p => p.kind === 'holdbay'), d = IC.rwDir(rw), ra = Math.atan2(d.y, d.x);
+  assert(bay && squareTo(bay, ra) < 2, `the holding bay is ${bay ? squareTo(bay, ra).toFixed(1) : '?'}° off square to the runway`);
+  const par = bad.parts.find(p => p.kind === 'taxi' && p.nodes.length > 4);
+  assert(IC.partDist(bad, par, IC.rectWorld(bay, 0, (IC.rectLocal(bay, bad.nodes[par.nodes[2]]).y > 0 ? 1 : -1) * bay.h / 2)) < 0.02, 'the holding bay does not reach the parallel taxiway');
+  // a de-icing pad by a taxiway at 30° to the world: faces it, its stub joining it
+  const F = flushSite(30), dm = IC.bldMode(F.S, F.ap, 'deice'); F.S.mode2 = dm;
+  IC.buildInput(F.S, dm, { x: F.mid.x + F.n.x * 0.9, y: F.mid.y + F.n.y * 0.9 }, 0, 160);
+  const k0 = F.ap.parts.length; assert(IC.buildFinish(F.S, dm, 160) === 'built', dm.err);
+  const pad = F.ap.parts.slice(k0).find(p => p.kind === 'deice'), stub = F.ap.parts.slice(k0).find(p => p.kind === 'taxi');
+  assert(pad && squareTo(pad, F.ta) < 2, `the pad is ${pad ? squareTo(pad, F.ta).toFixed(1) : '?'}° off square to the taxiway`);
+  assert(stub && stub.nodes.some(id => { const q = F.ap.nodes[id]; return q.on && q.on.kind === 'taxi' || F.t.nodes.includes(id); }), 'the pad\'s stub does not join the taxiway');
+});
 test('airport: a runway under construction is not reported closed', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); S.budget = 1e5;
   const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));

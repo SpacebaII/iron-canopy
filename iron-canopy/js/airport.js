@@ -80,10 +80,14 @@ function resolveNode(ap, n) {
   for (const p of ap.parts) {
     if (p.kind === 'runway') { const t = rwT(p, n), off = Math.abs(rwOff(p, n)); if (t >= -0.01 && t <= 1.01 && off < SNAP_RWY) { n.on = { kind: 'rwy', part: p.id, t: U.clamp(t, 0, 1) }; return; } }
   }
+  // (a node on the edges of two aprons facing each other across a taxiway joins both: also lists the others)
+  n.also = null;
   for (const p of ap.parts) {
-    if ((p.kind === 'apron' || p.kind === 'alert') && onApron(p, n)) { n.on = { kind: 'apron', part: p.id }; return; }
+    if ((p.kind === 'apron' || p.kind === 'alert') && onApron(p, n)) { if (!n.on) n.on = { kind: 'apron', part: p.id }; else (n.also = n.also || []).push(p.id); }
   }
 }
+/* a node joins this apron: it is on it, or on its edge as well as another's */
+const onAp = (n, id) => !!n.on && (n.on.part === id || (!!n.also && n.also.includes(id)));
 IC.resolveNodes = ap => { for (const n of Object.values(ap.nodes)) resolveNode(ap, n); };
 /* a new runway or apron only changes the nodes it touches (a runway wins over an apron) */
 function onRunway(p, n) { const t = rwT(p, n), off = Math.abs(rwOff(p, n)); return t >= -0.01 && t <= 1.01 && off < SNAP_RWY ? { kind: 'rwy', part: p.id, t: U.clamp(t, 0, 1) } : null; }
@@ -101,6 +105,7 @@ function resolveFor(ap, p) {
   for (const n of Object.values(ap.nodes)) {
     if (p.kind === 'runway') { if (n.on && n.on.kind === 'rwy') continue; const o = onRunway(p, n); if (o) n.on = o; }
     else if (!n.on) n.on = onApron(p, n);
+    else if (n.on.kind === 'apron' && n.on.part !== p.id && !(n.also && n.also.includes(p.id)) && onApron(p, n)) (n.also = n.also || []).push(p.id);
   }
 }
 IC.aptAddPart = function (ap, part, built) {
@@ -163,7 +168,7 @@ function standsFor(ap, p) {
   let back = 1;
   const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && rectGap(q, p) < 0.3);
   if (term) back = toLocal(p, term).y >= 0 ? 1 : -1;
-  else { const at = Object.values(ap.nodes).filter(nd => nd.on && nd.on.part === p.id); if (at.length) back = at.reduce((s, nd) => s + toLocal(p, nd).y, 0) > 0 ? -1 : 1; }
+  else { const at = Object.values(ap.nodes).filter(nd => onAp(nd, p.id)); if (at.length) back = at.reduce((s, nd) => s + toLocal(p, nd).y, 0) > 0 ? -1 : 1; }
   const out = [];
   for (let i = 0; i < n; i++) {
     const lx = -p.w / 2 + S.w * (i + 0.5), ly = back * (p.h / 2 - S.d / 2);
@@ -321,6 +326,7 @@ IC.aptGraph = function (ap) {
   for (const n of Object.values(ap.nodes)) {
     node(n.id, n.x, n.y, 'taxi', n, n.on && n.on.kind === 'rwy' ? n.on.part : null);
     if (n.on) { if (!onPart.has(n.on.part)) onPart.set(n.on.part, []); onPart.get(n.on.part).push(n); }
+    if (n.also) for (const id of n.also) { if (!onPart.has(id)) onPart.set(id, []); onPart.get(id).push(n); }
   }
   const parts = ap.parts.filter(p => p.built && !(p.shut && p.kind !== 'runway'));
   const rwn = new Map();
@@ -1360,7 +1366,7 @@ IC.aptAutoJoin = function (ap, part) {
       const K = Math.max(4, Math.ceil(L / 0.25)), run = [];
       for (let k = 0; k <= K; k++) { const f = 0.03 + 0.94 * k / K, p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }; if (rectDist(part, p) < 0.14) run.push(f); }
       if (!run.length) continue;
-      if (a.on && a.on.part === part.id || b.on && b.on.part === part.id) continue;
+      if (onAp(a, part.id) || onAp(b, part.id)) continue;
       const fs = run.length * (L / K) > 3 ? [run[0], run[run.length - 1]] : [run[Math.floor(run.length / 2)]];
       for (const f of fs) splits.push({ seg: i, f, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
     }

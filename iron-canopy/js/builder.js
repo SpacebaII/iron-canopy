@@ -615,10 +615,26 @@ function concourseSpec(ap, a, b, size) {
 /* an apron block with its taxilane along the side facing the airfield */
 function remoteSpec(ap, rc) {
   const specs = [Object.assign({ kind: 'apron' }, rc)];
+  // drawn flush along a taxiway, that taxiway is its front: a lane of its own would stop short of it (brief 47)
+  if (alongTaxi(ap, rc)) return specs;
   const toC = IC.rectLocal(rc, ap), s = Math.abs(toC.y) > 0.01 ? Math.sign(toC.y) : 1, ly = s * (rc.h / 2 + 0.05);
   specs.push({ kind: 'taxi', pts: [IC.rectWorld(rc, -rc.w / 2 - 0.6, ly), IC.rectWorld(rc, 0, ly), IC.rectWorld(rc, rc.w / 2 + 0.6, ly)], lane: true });
   return specs;
 }
+/* a taxiway running along one side of a rectangle, flush with it: that side and the taxiway, or null */
+function alongTaxi(ap, rc) {
+  const c = cornersOf(rc);
+  for (let i = 0; i < 4; i++) {
+    const a = c[i], b = c[(i + 1) % 4], mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ea = Math.atan2(b.y - a.y, b.x - a.x);
+    for (const q of ap.parts) if (q.kind === 'taxi') for (let k = 1; k < q.nodes.length; k++) {
+      const p0 = ap.nodes[q.nodes[k - 1]], p1 = ap.nodes[q.nodes[k]]; if (!p0 || !p1 || U.dist(p0, p1) < 0.2) continue;
+      if (Math.abs(Math.sin(Math.atan2(p1.y - p0.y, p1.x - p0.x) - ea)) > 0.05) continue;
+      if (Math.abs(U.segDist(mid.x, mid.y, p0.x, p0.y, p1.x, p1.y) - (q.w || IC.APART.taxi.w) / 2) < 0.06) return { side: i, taxi: q };
+    }
+  }
+  return null;
+}
+IC.bldAlongTaxi = alongTaxi;
 /* round a taxiway's corners: each bend where it is not joining something becomes an arc */
 IC.bldFillet = function (pts, joins, R) {
   R = R || 0.45;
@@ -647,6 +663,7 @@ IC.bldFillet = function (pts, joins, R) {
    A snap says what it locked to (lock, guides), so the ghost can draw it. */
 IC.SNAP_ANG = 8 * Math.PI / 180;   // how near 0°, 45° or 90° a line must be to lock
 const GRID = 0.1, REACH = 40;      // lengths in 10 m steps; guides reach 4 km beyond what they come from
+const FLUSH = 0.6;                 // an area started within 60 m of a pavement edge starts on it, square to it
 const rnd = (v, g) => Math.round(v / g) * g;
 /* a length in words, metres up to a kilometre */
 IC.bldLen = L => L < 9.995 ? `${Math.round(L * 100).toLocaleString('en-US')} m` : `${(L / 10).toFixed(2)} km`;
@@ -780,17 +797,21 @@ function snapLine(ap, m, p, tol, free) {
   const Lr = Math.max(GRID, rnd(t0, GRID));
   return { kind: 'free', x: prev.x + u.x * Lr, y: prev.y + u.y * Lr, lock: lock.tag, lockRef: lock.ref, lockK: lock.k };
 }
+/* an area square to an edge at angle a: of its four quarter turns, the one nearest the airport's axis */
+function areaRot(m, a) { for (let k = 0; k < 4 && Math.abs(U.angWrap(a - m.rot0)) > Math.PI / 4 + 1e-6; k++) a += Math.PI / 2; return U.angWrap(a); }
 /* a corner for an area or a building: corners of other parts, flush against their edges (and where a guide crosses
    that edge), on a guide, then 10 m steps from the first corner along the rotation */
-function snapCorner(ap, m, p, tol, free, rel) {
+function snapCorner(ap, m, p, tol, free, rel, first) {
   tol = Math.min(tol, 0.35);
   if (!free) {
     let best = null, bd = tol;
     for (const q of ap.parts) { const r = q.kind !== 'taxi' && rectOf(q); if (!r) continue; for (const c of cornersOf(r)) { const d = U.dist(c, p); if (d < bd) { bd = d; best = { kind: 'corner', x: c.x, y: c.y, a: r.a, what: U.lc(IC.APART[q.kind].name) }; } } }
     if (best) return best;
-    // flush against the edge of a taxiway (beyond its half width), an apron or a building
-    let e0 = null; bd = tol;
-    for (const e of edgesNear(ap, p, tol + 0.3, true)) {
+    // flush against the edge of a taxiway (beyond its half width), an apron or a building. An area's first corner
+    // reaches further (FLUSH): close in, the snap was a few metres wide, so a ramp started a little off the taxiway
+    // kept the runway's angle and stood askew to it (brief 47)
+    let e0 = null; bd = first ? Math.max(tol, FLUSH) : tol;
+    for (const e of edgesNear(ap, p, bd + 0.3, true)) {
       const L = U.dist(e.a, e.b); if (L < 0.1) continue;
       const ux = (e.b.x - e.a.x) / L, uy = (e.b.y - e.a.y) / L, t = (p.x - e.a.x) * ux + (p.y - e.a.y) * uy;
       if (t < -0.05 || t > L + 0.05) continue;
@@ -1010,8 +1031,8 @@ function planOf(S, m, hv, tol, free) {
     }
     else { const c = concourseSpec(ap, pts[0], pts[1], m.size === 'l' ? 'l' : 'm'); out.specs = c.specs; out.text.push(...c.text); }
   } else if (AREA_TOOLS[t]) {
-    const s = snapCorner(ap, m, hv, tol, free, true); out.snap = s;
-    if (!pts.length) return out;
+    const s = snapCorner(ap, m, hv, tol, free, true, !pts.length); out.snap = s;
+    if (!pts.length) { if (s.a != null) out.rot = areaRot(m, s.a); return out; }
     const c2 = pts.length >= 2 && U.dist(pts[1], s) < 0.02 ? pts[1] : s;
     const r0 = { x: pts[0].x, y: pts[0].y, a: m.rot }, l = IC.rectLocal(r0, c2), c = IC.rectWorld(r0, l.x / 2, l.y / 2);
     const rc = { x: c.x, y: c.y, a: m.rot, w: Math.abs(l.x), h: Math.abs(l.y) };
@@ -1239,11 +1260,9 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   if (m.part === 'stretch' && !plan.snap) { m.err = plan.why; return 'err'; }
   if (again && m.pts.length >= need) return finish(S, m, plan);
   if (again) return 'point';
-  // an area started flush against a part turns to line up with it, unless the player has turned it by hand
-  if (AREA_TOOLS[m.part] && !m.pts.length && s.a != null && (m.rot === m.rot0 || m.rot === m.rotAuto)) {
-    let a = s.a; for (let k = 0; k < 4 && Math.abs(U.angWrap(a - m.rot0)) > Math.PI / 4 + 1e-6; k++) a += Math.PI / 2;
-    m.rot = m.rotAuto = U.angWrap(a);
-  }
+  // an area started flush against a part turns square to it, even if the player had turned it by hand: it starts on
+  // the taxiway's line, never across it at an angle (Shift places it freely)
+  if (AREA_TOOLS[m.part] && !m.pts.length && s.a != null) m.rot = m.rotAuto = areaRot(m, s.a);
   if ((m.part === 'runway' || m.part === 'concourse' || AREA_TOOLS[m.part]) && m.pts.length === 2) m.pts[1] = s;
   else if (need === 1) m.pts = [s];
   else m.pts.push(s);
