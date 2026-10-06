@@ -3812,6 +3812,27 @@ test('calendar: construction runs through its stages, markings and lights each t
 
 /* ---------- the enemy commander ---------- */
 /* one three-day Quick war with the scripted commander of qwplayer.js, shared by the tests below (a few minutes) */
+/* ---------- the alert queue (brief 26) ---------- */
+test('alerts: during a big raid no more than three alerts are on screen at once, and none of them informational', () => {
+  const S = IC.newGame({ seed: 777, mode: 'campaign' });
+  const cs = IC.cities(S).slice().sort((a, b) => b.pop - a.pop).slice(0, 4), ob = c => ({ x: c.x, y: c.y, ref: c, name: c.name });
+  // a shock's worth: 12 ballistic missiles, 20 cruise missiles and 16 drones at the four largest cities
+  for (const c of cs) { IC.enemyForceOp(S, 'bal', ob(c), { n: 3, T: 1800 }); IC.enemyForceOp(S, 'cm', ob(c), { n: 5, T: 2400 }); IC.enemyForceOp(S, 'drones', ob(c), { n: 4 }); }
+  let most = 0, waiting = 0, dismissed = null;
+  for (let i = 0; i < 2 * 3600; i++) {
+    IC.step(S, 1);
+    if (i === 1200) IC.log(S, 'info', 'NEWS', 'Something to read, not to answer.', cs[0]);
+    if (i % 5) continue;
+    const A = IC.alertQueue(S), n = A.shown.length + (A.card ? 1 : 0);
+    most = Math.max(most, n); waiting = Math.max(waiting, A.shown.length + A.more);
+    assert(n <= IC.ALERT_MAX, `${n} alerts on screen at ${U.clock(S.time)}: ${A.shown.map(x => x.tag).join(', ')}`);
+    for (const x of A.shown) assert(x.pri >= 2 && x.tag !== 'NEWS', `an informational line is on screen: ${x.tag} ${x.msg}`);
+    if (!dismissed && A.shown.length) { dismissed = A.shown[0].key; IC.alertDismiss(S, dismissed); assert(!IC.alertQueue(S).shown.some(x => x.key === dismissed), 'a dismissed alert stayed on screen'); }
+  }
+  assert(most >= 2, `the raid raised only ${most} alerts`);
+  assert(waiting > IC.ALERT_MAX, `only ${waiting} things needed the player at once: the cap was never tested`);
+}, true);
+
 let qw3 = null;
 const threeDays = () => {
   if (qw3) return qw3;

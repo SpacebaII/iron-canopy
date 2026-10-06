@@ -198,7 +198,8 @@ IC.ok = (u, c) => u.comp[c] == null ? 1 : u.comp[c];
 IC.log = function (S, kind, tag, msg, at) {
   S.logs.unshift({ t: S.time, kind, tag, msg, at: at ? { x: at.x, y: at.y } : null });
   if (S.logs.length > 400) S.logs.length = 400;
-  if (kind === 'leak' || kind === 'warn' || at) IC.toast && IC.toast(S, kind, tag, msg, at);
+  // a line that may need the player joins the alert queue (alerts.js); the rest is only in the Journal
+  if (kind === 'leak' || kind === 'warn') IC.alertPush && IC.alertPush(S, kind, tag, msg, at);
 };
 IC.news = function (S, text) {
   S.news.unshift({ t: S.time, text });

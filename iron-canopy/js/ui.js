@@ -100,11 +100,12 @@ IC.toast = function (st, kind, tag, msg, at) {
   if (st !== S) return;
   if (ui.toasts.length && ui.toasts[0].msg === msg) return;
   ui.toasts.unshift({ id: IC.nid('toast'), kind, tag, msg, at, t: performance.now(), time: st.time });
-  if (ui.toasts.length > 5) ui.toasts.length = 5;
+  // the feed only answers what the player just did (built, not built, saved): alerts go to the queue
+  if (ui.toasts.length > 2) ui.toasts.length = 2;
 };
 function feed() {
   const now = performance.now();
-  ui.toasts = ui.toasts.filter(t => now - t.t < 9000);
+  ui.toasts = ui.toasts.filter(t => now - t.t < 6000);
   const el = $('feed');
   setHTML(el, ui.toasts.map((t, i) => `<button class="toast ${t.kind}" data-k="${t.id}" data-act="toast" data-v="${i}"><b>${esc(t.tag)}</b><span>${esc(t.msg)}</span><time>${U.hhmm(t.time)}</time></button>`).join(''));
   // the newest are on top: the older ones that would run into the map controls below are left out (the Journal has them all)
@@ -166,19 +167,20 @@ function topbar() {
     <div class="rl airspace" title="Civil airspace: who may fly over the country"><span>Airspace</span>${seg('airspace', S.airspace, [['open', 'Open', '', 'Airliners fly their normal routes'], ['restricted', 'Restricted', 'amb', 'Airliners keep to the southern corridors only'], ['closed', 'Closed', 'red', 'No civil flights at all: the airlines lose money']])}</div>
 `);
   setHTML($('sys'), `${S.mode !== 'range' ? `<button class="ib wide ${IC.bb && IC.bb.open ? 'on' : ''}" data-act="bbToggle" title="Build: the airport's build bar (B)">${ui.icon('aviation')}<span>Build</span></button>` : ''}<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
-  alerts();
   incidents();
+  alerts();
   evcard();
   // the incidents hang under the alert pills, however many there are (both are centred under the top bar); with a
   // room open they sit at the bottom (CSS)
   const ab = $('alerts').getBoundingClientRect(), top = ab.height && !ui.room ? `${Math.round(ab.bottom + 6)}px` : '';
   if ($('incidents').style.top !== top) $('incidents').style.top = top;
 }
-/* incidents: the short list of things that must not be missed */
+/* the alert queue (alerts.js): what needs the player, most urgent first, at most IC.ALERT_MAX on screen with a
+   decision card counting as one; how many more wait is one quiet line, not another pop-up */
 function incidents() {
-  const L = IC.activeIncidents(S).slice(0, 4);
-  ui.incRefs = L;
-  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}" data-k="${it.id}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY', separation: 'SEPARATION LOST', nearmiss: 'NEAR MISS', infringe: 'INFRINGEMENT' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button></div>`).join(''));
+  const A = ui.aq = IC.alertQueue(S);
+  setHTML($('incidents'), A.shown.map((it, i) => `<div class="inc ${it.pri >= 3 ? 'alarm' : ''}" data-k="${esc(it.key)}"><button class="go" data-act="aqGo" data-v="${i}"><b>${esc(it.tag)}${it.n > 1 ? ` ×${it.n}` : ''}</b><span>${esc(it.msg)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="aqX" data-v="${esc(it.key)}" aria-label="Dismiss" title="Dismiss for ten minutes, unless it gets worse">✕</button></div>`).join('') +
+    (A.more > 0 ? `<button class="inc-more" data-act="room" data-v="journal">${A.more} more waiting · the Journal has them all</button>` : ''));
 }
 /* decisions: one card at a time */
 function evcard() {
@@ -189,30 +191,10 @@ function evcard() {
   setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
     <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}</button>`).join('')}</div>`);
 }
+/* the status line under the top bar: what is going on, never something to answer (that is the queue below it) */
 function alerts() {
-  const w = [];
-  const bal = S.threats.filter(t => t.det && !t.dead && (t.d.cls === 'bal' || t.d.cls === 'hgv') && t.aff === 'H' && !t.decoyKnown);
-  if (bal.length) { const t = bal.slice().sort((a, b) => IC.timeToImpact(a) - IC.timeToImpact(b))[0]; w.push(['flash', `${bal.some(t => t.d.cls === 'hgv') ? 'Hypersonic' : 'Ballistic'} ×${bal.length} · impact ${U.dur(IC.timeToImpact(t))} · ${IC.nearestPlace(S, t.x1 || t.aim.x, t.y1 || t.aim.y)}`, t.x1 != null ? { x: t.x1, y: t.y1 } : t]); }
-  const arms = {};
-  for (const t of S.threats) if (t.det && !t.dead && t.type === 'arm' && !t.blind && t.target) arms[t.target.name] = arms[t.target.name] || { t: IC.timeToImpact(t), u: t.target };
-  for (const n in arms) w.push(['flash', `ARM → ${n} · ${U.dur(arms[n].t)} · go silent`, arms[n].u]);
-  const raid = S.threats.filter(t => t.det && !t.dead && t.aff === 'H' && !t.border && (t.d.cls === 'cm' || t.d.cls === 'drone' || t.d.cls === 'air') && IC.inHome(t.px, t.py));
-  if (raid.length >= 4) w.push(['amber', `Raid in progress · ${raid.length} hostile tracks`, raid[0]]);
-  const sus = S.threats.filter(t => t.det && !t.dead && t.aff === 'S' && IC.inHome(t.px, t.py) && t.d.cls === 'air');
-  if (sus.length) w.push(['amber', `${sus.length} suspect aircraft in our airspace · send a fighter to look`, sus[0]]);
-  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && IC.rwyState(S, b).closed) w.push(['amber', `${b.name}: runway closed`, b]);
-  if (S.av) for (const b of S.infra.filter(i => i.kind === 'airport' && i.owner === 'us')) {
-    const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id);
-    if (hold.length >= 2 || hold.some(t => t.holdT > 600)) w.push(['amber', `${b.name}: ${hold.length} holding${hold.some(t => t.standShort) ? ' · stands full' : ''}`, b]);
-  }
-  if (S.asp && S.asp.work > 1.05) w.push(['amber', `Controllers overloaded · ${Math.round(S.asp.load)} flights’ work for ${S.asp.cap}`, null]);
-  const jam = S.units.filter(u => u.jamF < 0.97 && u.radarOn);
-  if (jam.length) w.push(['info', `Jamming · ${jam.slice(0, 2).map(u => `${u.name} −${U.pct(1 - u.jamF)}`).join(' · ')}`, jam[0]]);
-  const dry = S.units.filter(u => u.state === 'ready' && u.d.weapon === 'sam' && IC.activeMags(S, u).every(m => m.mag + m.store === 0));
-  if (dry.length) w.push(['amber', `Out of missiles: ${dry.slice(0, 3).map(u => u.name).join(', ')}`, dry[0]]);
-  if (raid.length && S.airspace === 'open' && S.threats.some(t => t.d.civil && !t.dead && !t.hostileCiv)) w.push(['info', 'Airliners aloft during a raid', null]);
-  ui.alertRefs = w.map(x => x[2]);
-  setHTML($('alerts'), w.slice(0, 4).map(([c, s], i) => `<div class="alert ${c}" data-act="alert" data-v="${i}">${esc(s)}</div>`).join(''));
+  const st = (ui.aq || IC.alertQueue(S)).status;
+  setHTML($('alerts'), st.length ? `<div class="alert info quiet" data-act="room" data-v="journal" title="Status, not an alert: the Journal has the details">${esc(st.join(' · '))}</div>` : '');
 }
 
 /* ---------- rail ---------- */
@@ -555,7 +537,8 @@ function cine() {
   if (!C || !C.cards) return;
   const now = performance.now();
   // a chapter card waits until the player closes the room they are reading
-  if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
+  // ... and while weapons are in the air (nothing informational interrupts a fight); a raid's result card comes after it
+  if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT && (C.cards[ui.cineShown].res || !ui.fighting())) {
     const c = C.cards[ui.cineShown];
     el.className = 'cine ' + c.kind; el.hidden = false;
     el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p><div class="cfoot"><span>click to continue</span></div>`;
@@ -703,7 +686,7 @@ function firstRun() {
 function moment() {
   const el = $('unlock'), now = performance.now();
   if (!el.hidden) { if (now > ui.momentUntil) ui.closeMoment(); return; }
-  if (!ui.moments.length || now < ui.momentT || !$('cine').hidden || !$('evcard').hidden || !$('start').hidden || ui.menu) return;
+  if (!ui.moments.length || now < ui.momentT || ui.fighting() || !$('cine').hidden || !$('evcard').hidden || !$('start').hidden || ui.menu) return;
   const mo = ui.moment = ui.moments.shift(), it = mo.items, one = it.length === 1, go = it.find(x => x.go) || null;
   const research = it.every(x => x.k.startsWith('tech:'));
   const kick = research ? 'Research complete' : mo.act && it.some(x => x.k.startsWith('room:')) ? `${IC.ACTS[mo.act].name} · new orders` : 'Unlocked';
@@ -715,6 +698,8 @@ function moment() {
   el.hidden = false; ui.momentUntil = now + (one ? 7000 : 11000);
   IC.sfx && IC.sfx.ui('chapter');
 }
+/* weapons we track are in the air: unlock and chapter cards wait */
+ui.fighting = () => !!(IC.inbound && IC.inbound(S).length);
 ui.closeMoment = () => { $('unlock').hidden = true; ui.momentT = performance.now() + 900; };
 ui.momentGo = () => {
   const mo = ui.moment, x = mo && mo.items.find(i => i.go); ui.closeMoment(); if (!x) return;

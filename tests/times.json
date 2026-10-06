@@ -1,4 +1,5 @@
 {
+ "alerts: during a big raid no more than three alerts are on screen at once, and none of them informational": 17,
  "world generation is deterministic for a seed": 9.1,
  "world: every city, village and airfield is reachable by road": 30.1,
  "world: motorways join the capital to the four largest cities": 0,
