@@ -30,3 +30,7 @@ Wave 9. After 34 (both touch drawing).
 
 - `npm test` is green, with frame-time checks in `tools/world-perf.js` for the airport and the capital.
 - The pull request has before and after frame times at each zoom, and a short capture of zooming from the whole map into a gate with traffic that never pops.
+
+## Added after brief 39 (the real Denver)
+
+The step-budget test (`airport: a step with 150 aircraft moving stays within budget`) now runs on the real Denver from map data: 566 parts, about 2,500 taxi nodes. On GitHub's machines a step there measures 1.8–2.0 ms and ground operations 0.6–0.66 ms, so the test allows 2.3 ms and 0.8 ms for now. Bring them back under 2 ms and 0.6 ms, then restore those limits. The cost is spread (ground operations' per-aircraft checks in `stepTaxi`, `mayEnter`, `holdShort`; traffic; sensors; the recorder; 12% garbage collection); departure planning searches the whole taxi graph for each departure (`planDeparture` in `groundops.js`), where a search that stops once every candidate runway node is settled would do.

@@ -148,7 +148,16 @@ const keyOf = (ap, rwId) => G(ap).grp[rwId] || rwId;
 const lockOf = (ap, k) => (ap.rl = ap.rl || {})[k] || (ap.rl[k] = { by: null, next: 0, nextA: 0, fin: null });
 /* who goes first when several want the same runways: scrambles, then arrivals (military first), then departures */
 const prioOf = m => m.scramble ? 4 : m.kind === 'arr' ? (m.mil ? 3 : 2) : m.mil ? 1 : 0;
-const moveOf = (ap, id) => { for (const x of ap.moves) if (x.id === id) return x; return null; };
+// (by id, through a map rebuilt when the list changes: ap.moves only ever grows by push or is replaced by a filter,
+// so the list and its length say when; a scan here ran for every aircraft against every other, every step)
+const moveOf = (ap, id) => {
+  if (ap._mvA !== ap.moves || ap._mvN !== ap.moves.length) {
+    const M = ap._mv || (ap._mv = new Map()); M.clear();
+    for (const x of ap.moves) if (!M.has(x.id)) M.set(x.id, x);
+    ap._mvA = ap.moves; ap._mvN = ap.moves.length;
+  }
+  return ap._mv.get(id) || null;
+};
 /* cross: the hold line an aircraft crossing the runway waits at. Aircraft at the same line cross together, and a
    crossing needs no wake-turbulence gap (the next take-off still waits for it). luaw: a departure may go on behind
    one that is rolling, and before the wake gap has passed. */
