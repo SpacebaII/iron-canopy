@@ -473,9 +473,12 @@ IC.EV = EV;   // (round 4) the peacetime deck adds its cards here (deck.js), mad
    the border, a fix near the airport, and airways between them */
 function consultants(S) {
   const ap = capApt(S); if (!ap) return;
-  const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, 3);
+  // (round 5c) the nearest foreign airports in turn until three entry points are on airways: two airports the same way
+  // gave one fix (a second too close to it is refused), and the chapter's goal could never be met
+  const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, IC.FOCUS.tutors ? 8 : 3);
   let hub = null;
   for (const p of ports) {
+    if (IC.FOCUS.tutors && gatesOn(S) >= 3) break;
     let q = null;
     for (let i = 1; i <= 60; i++) { const x = ap.x + (p.x - ap.x) * i / 60, y = ap.y + (p.y - ap.y) * i / 60; if (!IC.inHome(x, y)) { q = { x, y }; break; } }
     if (!q) continue;

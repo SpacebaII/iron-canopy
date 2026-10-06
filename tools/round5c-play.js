@@ -57,6 +57,9 @@ fs.mkdirSync(OUT, { recursive: true });
     if (sel) {
       const el = await page.$('[data-tut-target="1"]');
       await ev(`document.querySelectorAll('[data-tut-target]').forEach(e => e.removeAttribute('data-tut-target'))`);
+      // (a ring round a row of buttons: the player presses one of them, one not already on)
+      const inner = el && await el.evaluate(e => e.tagName !== 'BUTTON' && !!e.querySelector('button')) ? await el.$('button:not([aria-pressed="true"]):not([disabled]):not(.on)') : null;
+      if (inner) { await click(inner); return 'pressed a button in the ringed row'; }
       if (el) { await click(el); return 'clicked the ringed button'; }
     }
     if (at) {
@@ -146,7 +149,7 @@ fs.mkdirSync(OUT, { recursive: true });
     const g = st.goals.find(x => !x.done && !x.failed);
     return { budget: S.budget, paused: S.paused, wait: !!S.wait, room: !!IC.ui.room, works: a.works.length, ch: st.ch, act: st.act, mode: S.mode2 ? S.mode2.kind : '',
       goal: g ? g.text : '', gid: g ? g.id : '', play: st.play || 0, ssr: S.units.filter(u => u.type === 'ssr').length, ssrBusy: S.units.some(u => u.type === 'ssr' && u.state !== 'ready'),
-      cover: IC.wayCoverAll ? IC.wayCoverAll(S) : 0, plan: IC.radarPlan && S.asp.ways.length ? IC.radarPlan(S).n : 0,
+      cover: IC.wayCoverAll ? IC.wayCoverAll(S) : 0, radarOpen: st.goals.some(g => g.id === 'radar' && !g.done && !g.failed), plan: IC.radarPlan && S.asp.ways.length ? IC.radarPlan(S).n : 0,
       probs: IC.aptProblems(S, a).map(p => ({ id: p.id, kind: p.kind, title: p.title, fix: p.fix && p.fix.part, size: p.fix && p.fix.size, req: p.req, deal: p.deal })) }; })()`);
   const tried = new Set();
   // a fix from the map: its marker's button (the game places the piece), then Build beside it
@@ -166,7 +169,7 @@ fs.mkdirSync(OUT, { recursive: true });
     return true;
   };
   const termNear = `(() => { const a = IC.S.byId['${capId}'], t = a.parts.find(q => q.kind === 'terminal' && q.built) || a; return { x: t.x, y: t.y }; })()`;
-  let lastRadarLog = 0;
+  let lastRadarLog = 0, dealLook = 0;
   while (T() < MIN) {
     await page.waitForTimeout(900);
     await dismissHints();
@@ -198,6 +201,8 @@ fs.mkdirSync(OUT, { recursive: true });
     if (s.paused) await ev('IC.S.paused = false');
     if (!shots.has('01-next-goal') && s.gid) { await page.waitForTimeout(500); await shot('01-next-goal'); }
     const off = s.probs.find(q => q.kind === 'offer');
+    // (a new player reads the first offer through its tutorial: the airport on screen, the marker in view)
+    if (off && !BEFORE && dealLook < 3 && !(await ev(`IC.tutorSeen(IC.S, 'deals')`))) { dealLook++; await look(ap.x, ap.y, 6); continue; }
     if (off) {
       const signed = await ev(`(() => { const S = IC.S, q = S.av.requests.find(x => x.id === '${off.req}'); if (!q || IC.avReqBlock(S, q)) return false; return IC.avDecide(S, q.id, true); })()`);
       if (signed) { log('signed:', off.title); lastAct = Date.now(); continue; }
@@ -206,7 +211,7 @@ fs.mkdirSync(OUT, { recursive: true });
     const pr = s.probs.find(q => q.kind !== 'offer' && q.fix && q.fix !== 'ils');
     if (pr && await build(pr.fix, `(IC.aptProblems(IC.S, IC.S.byId['${capId}']).find(p => p.id === '${pr.id}') || { fix: {} }).fix.near`, pr.title, pr.size, pr.id)) continue;
     // Chapter 3: a radar on the gap marker, through its own button, once the last one is up; never more than the tip says plus one
-    if (s.ch === 2 && /civil radar/.test(s.goal) && s.cover < 0.8 && !s.ssrBusy && s.budget > 150 && Date.now() - radarT > 15000 && s.ssr < Math.max(3, s.plan + s.ssr + 1)) {
+    if (s.ch === 2 && s.radarOpen && s.cover < 0.8 && !s.ssrBusy && s.budget > 150 && Date.now() - radarT > 15000 && s.ssr < Math.max(3, s.plan + s.ssr + 1)) {
       radarT = Date.now();
       const m = await page.$('#pmarks [data-act="gapFix"]');
       if (m) { await click(m); await page.waitForTimeout(900);
@@ -232,6 +237,8 @@ fs.mkdirSync(OUT, { recursive: true });
       lastWait = Date.now();
       await click('#speed [data-act="waitPick"]');
       const w = await page.$('.waitbar [data-act="wait"]'); if (w) { await click(w); log('Wait'); } else await key('6');
+      // (nothing worth waiting for: the picker is closed again, as a player would)
+      if (await page.$('.waitbar.pick')) await click('#speed [data-act="waitPick"]');
     }
   }
   await key('1');

@@ -735,7 +735,10 @@ IC.waitTargets = function (S) {
   // can be waited for (the picker says so instead, with the loan)
   const reach = IC.waitRate(S) > 0.01, can = t => reach || t.amt <= Math.max(0, S.budget) || (t.work && t.amt <= 0.5);
   const out = L.filter(can).slice(0, 6);
-  if (reach) for (const v of [250, 500, 1000, 2000]) { const amt = Math.ceil((Math.max(0, S.budget) + v) / 50) * 50; out.push({ key: 'amt:' + amt, what: `${U.money(amt)} in the treasury`, amt, sum: true }); }
+  // (round 5c) the round sums only while they come within a year (the Career) or three days (the live clock): "about
+  // 28 years at this rate" is not a thing to wait for
+  const r = IC.waitRate(S), far = (S.mode === 'story' ? IC.MO(S, 12) : 3 * 86400) / 3600;
+  if (reach) for (const v of [250, 500, 1000, 2000]) { const amt = Math.ceil((Math.max(0, S.budget) + v) / 50) * 50; if (IC.FOCUS.polish && (amt - S.budget) / r > far) break; out.push({ key: 'amt:' + amt, what: `${U.money(amt)} in the treasury`, amt, sum: true }); }
   return out;
 };
 /* money coming in an hour: last month's income less its running costs (building and buying left out), or while

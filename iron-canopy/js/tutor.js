@@ -19,6 +19,7 @@ const capAp = S => (S.story && S.story.cap && S.byId[S.story.cap]) || null;
 const builtRw = ap => !!(ap && ap.parts.some(p => p.kind === 'runway' && p.built));
 const capName = S => (IC.cap(S) || { name: 'the capital' }).name;
 const ways = S => (S.asp && S.asp.ways ? S.asp.ways.length : 0);
+const goalDone = (S, id) => !!(S.story && S.story.goals.some(g => g.id === id && g.done));
 const tailAt = S => { const tl = S.first && S.av ? S.av.tails.find(t => t.id === S.first.tl) : null, w = tl && IC.tailWhere(S, tl); return w ? { x: w.x, y: w.y } : null; };
 /* a good site for the first airport, as the tutorial suggests it: open, flat ground 20–30 km from the capital */
 IC.foundSuggest = function (S) {
@@ -32,11 +33,17 @@ IC.foundSuggest = function (S) {
 /* a spot on our border where traffic comes in, for the first entry point: where the way from the capital's airport
    to the nearest foreign airport leaves the country (as the consultants would draw it) */
 const borderSpot = S => {
-  if (S._tutBorder !== undefined) return S._tutBorder;
-  const ap = capAp(S), P = ap && IC.avPorts ? IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0] : null;
+  const k = S.asp ? S.asp.fixes.length : 0;
+  if (S._tutBorder && S._tutBorder.k === k) return S._tutBorder.q;
+  const ap = capAp(S), P = ap && IC.avPorts ? IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)) : [];
   let q = null;
-  if (P) for (let i = 1; i <= 80 && !q; i++) { const x = ap.x + (P.x - ap.x) * i / 80, y = ap.y + (P.y - ap.y) * i / 80; if (!IC.inHome(x, y)) q = { x, y }; }
-  return (S._tutBorder = q);
+  // (the first one that is not already an entry point: one more fix there would be refused, too close to it)
+  for (const p of P) {
+    let c = null; for (let i = 1; i <= 80 && !c; i++) { const x = ap.x + (p.x - ap.x) * i / 80, y = ap.y + (p.y - ap.y) * i / 80; if (!IC.inHome(x, y)) c = { x, y }; }
+    if (c && !(S.asp && S.asp.fixes.some(f => U.dist(f, c) < 300))) { q = c; break; }
+  }
+  S._tutBorder = { k, q };
+  return q;
 };
 IC.TUTORS = {
   // ---------- (round 5c) the civil act: each one the first time the player comes to it ----------
@@ -76,7 +83,7 @@ IC.TUTORS = {
     { el: '#insp [data-act="follow"]', title: 'Let it go', text: 'Stop following hands the camera back. Follow, on any airliner, picks one up again.', on: [['ui', 'follow'], ['ui', 'followOff']], ok: S => !S.follow }
   ] },
   deals: { title: 'Airline offers', guide: 'deals', trig: [['request']], when: S => civil(S) && !!(S.av && S.av.requests.length), steps: [
-    { el: '#pmarks .pmark.deal [data-act="pmGo"]', title: 'An offer', text: 'Offers show as green markers at the airport. Click this one to read it.', on: [['ui', 'pmGo'], ['ui', 'pmFix']], seen: '#insp .dl-needs' },
+    { el: ['#pmarks .pmark.deal [data-act="pmGo"]', '#pmarks [data-act="pmZoom"]'], title: 'An offer', text: 'Offers show as green markers at the airport. Click this one to read it.', on: [['ui', 'pmGo'], ['ui', 'pmFix']], seen: '#insp .dl-needs' },
     { el: ['#insp [data-act="avYes"]:not([disabled])', '#insp .dl-needs'], title: 'Sign, or build first', text: 'Each line is something the airline checks: stands, gates, hangar room, fuel, the terminal. A ✗ must be built before they sign, and the button under the card places it. Then Sign.', on: [['approve'], ['decline'], ['ui', 'avYes'], ['ui', 'avNo'], ['ui', 'pmFix']] }
   ] },
   panel: { title: 'The airport panel', guide: 'airport', when: S => civil(S) && S.story.ch >= 1 && !!capAp(S), steps: [
@@ -102,8 +109,8 @@ IC.TUTORS = {
   ] },
   airspace: { title: 'Airways', guide: 'airspace', when: S => civil(S) && S.story.ch === 2, steps: [
     { el: ['#warroom [data-act="aspDraw"]', 'rail-aviation'], title: 'The airway editor', text: 'Airways are drawn from the Aviation room (V), on its Airspace page. Open it and press Draw airways.', on: [['ui', 'aspDraw']], ok: S => !!(S.mode2 && S.mode2.kind === 'airway') || ways(S) > 0 },
-    { at: S => borderSpot(S), title: 'An entry point', text: 'Click on the border where traffic from abroad comes in: a fix within 25 km of it is an entry point. The ring is one.', on: [['fixAdded']], ok: S => ways(S) > 0 },
-    { at: S => capAp(S), title: 'Lay the airway', text: 'Click on toward the capital, a fix every 100–200 km; the airport joins the nearest fix within 120 km. Right-click ends the airway.', on: [['airwayAdded']], ok: S => ways(S) > 0 }
+    { at: S => borderSpot(S), title: 'An entry point', text: 'Click on the border where traffic from abroad comes in: a fix within 25 km of it is an entry point. The ring is one.', on: [['fixAdded']], ok: S => goalDone(S, 'gates') },
+    { at: S => capAp(S), title: 'Lay the airway', text: 'Click on toward the capital, a fix every 100–200 km; the airport joins the nearest fix within 120 km. Right-click ends the airway.', on: [['airwayAdded']], ok: S => goalDone(S, 'link') || goalDone(S, 'gates') }
   ] },
   radar: { title: 'Civil radar', guide: 'airspace', when: S => civil(S) && S.story.ch === 2 && ways(S) > 0, steps: [
     { el: '#layers [data-act="layer"][data-v="gaps"]', title: 'Where radar is missing', text: 'Show the gaps marks every stretch of airway no radar sees, in amber. Press it.', on: [['ui', 'layer', 'gaps']], ok: S => !!(S.layers && S.layers.gaps) },
