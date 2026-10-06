@@ -115,6 +115,10 @@ function feed() {
 
 /* ---------- waiting for money: the chooser, and the line that says what is still to come ---------- */
 function waitLine() {
+  if (S.wait && S.wait.works) {
+    const ap = S.byId[S.wait.works], left = ap ? ap.works.filter(w => w.stages) : [];
+    return `<div class="waitbar glass" role="status"><b>Finishing</b> the works at ${esc(ap ? ap.name : 'the airport')}: ${left.length} job${left.length === 1 ? '' : 's'} left<small>Time runs fast until they are done; it stops for anything that needs you.</small><button class="btn sm" data-act="waitPick">Stop</button></div>`;
+  }
   if (S.wait) {
     const r = ui.waitRate ? ` · ${S.mode === 'story' ? `a month in about ${Math.max(1, Math.round(IC.MO(S) / ui.waitRate))} s` : `${Math.round(ui.waitRate / IC.GS)}×`}` : '';
     return `<div class="waitbar glass" role="status"><b>Waiting</b> ${esc(IC.waitText(S))}<small>Stops when it is there, when the month turns, or when something needs you${r}.</small><button class="btn sm" data-act="waitPick">Stop</button></div>`;
@@ -512,6 +516,8 @@ function buildHint(m, short) {
     : t === 'exits' ? (set ? `Exits placed. ${go.replace('moves it', 'picks another runway')}` : T.desc)
     : t === 'hold' ? (set ? `Holding bay placed. ${go.replace('moves it', 'picks another runway end')}` : T.desc)
     : t === 'stand' ? T.desc
+    : IC.PIECES && IC.PIECES[t] ? (IC.PIECES[t].line ? (set ? `${IC.PIECES[t].name} placed. R puts its taxiway on the other side. ${go.replace('moves it', 'moves its far end')}` : n ? 'Click the other end (or drag from end to end).' : `${IC.PIECES[t].name}: click one end, then the other, or drag from end to end.`)
+      : set ? `${IC.PIECES[t].name} placed. R turns it. ${go}` : `${IC.PIECES[t].name}: click where it goes${t === 'starter' ? ' (on your runway, it is built round it)' : ', beside the runway: it faces it and joins the nearest taxiway'}. R turns it.`)
     : t === 'blueprint' ? (set ? `Blueprint placed. R turns it (Shift+R the other way). ${go}` : 'Blueprint: click where it should go; R turns it.')
     : IC.TERM_KITS && IC.TERM_KITS[t] ? (set ? `${IC.TERM_KITS[t].name} placed. R turns it. ${go} Then join its taxilanes to your taxiways.` : `${IC.TERM_KITS[t].name}: click where it should go; R turns it.`)
     : t === 'stretch' ? (!n ? T.desc : set ? `Stretch placed. ${go.replace('moves it', 'sets another edge')}` : 'Click where the new edge should be.')
@@ -767,7 +773,9 @@ IC.select = function (sel, add) {
   IC.sfx && IC.sfx.ui('click');
   ui.refresh(true);
 };
-IC.setMode = function (m) { S.mode2 = m; document.getElementById('map').classList.toggle('placing', !!m); ui.refresh(true); };
+// (round 1) while placing, the selection panel steps aside: the map is what the player is looking at
+IC.setMode = function (m) { S.mode2 = m; document.getElementById('map').classList.toggle('placing', !!m); $('app').classList.toggle('building', !!(m && (m.kind === 'build' || m.kind === 'found'))); ui.refresh(true); };
+
 ui.openRoom = function (k) {
   const was = ui.room;
   if (was && ui.seenOnClose === was) { ui.seen({ research: 'tech:', staff: 'del:' }[was] || '-'); if (was === 'staff') ui.seen('req:'); }

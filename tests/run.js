@@ -4606,6 +4606,96 @@ test('round 1: Wait is not stopped twice by the same incident, nor by one the pl
   assert(IC.waitWorth(S, 'incidentAdded', { kind: 'offroute', ref: ours, text: 'x' }), 'a different kind did not stop it');
 });
 
+/* a fresh Career with the national airport founded 15–40 km from the capital the way the page does it: a click on
+   the site, then Found. Returns the game, the airport, the survey and the placed plan Found leaves behind */
+const foundFresh = seed => {
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story' }); IC.S = S;
+  const c = IC.cap(S); let p = null;
+  for (const d of [250, 220, 280, 200, 300]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.foundCheck(S, x, y) && !IC.foundSurvey(S, x, y, IC.PREVAIL).river) p = { x, y }; } if (p) break; }
+  S.mode2 = { kind: 'found' }; IC.clickWorld(p, 0);
+  const sv = IC.foundSurvey(S, p.x, p.y, IC.PREVAIL), b0 = S.budget, m = S.mode2;
+  const r = IC.foundFinish(S, m);
+  return { S, ap: m.ap, sv, paid: b0 - S.budget, next: m.next, r, p };
+};
+test('round 1: founding keeps the surveyed runway as a plan, and Found\'s price is the whole price', () => {
+  const { S, ap, sv, paid, next, r } = foundFresh();
+  assert(r === 'built' && ap, 'not founded');
+  assert(IC.foundLines(S, sv).some(l => /Access road/.test(l)) && Math.abs(paid - sv.cost) < 1, `the survey said ${U.money(sv.cost)}, Found took ${U.money(paid)}`);
+  assert(next && next.part === 'rwkit' && next.set, 'Found left no placed runway');
+  const plan = IC.bldReady(S, next);
+  assert(plan && plan.ok && /3\.00 km/.test(plan.text[0]), `the placed runway: ${plan && (plan.why || plan.text[0])}`);
+  S.mode2 = next;
+  assert(IC.buildFinish(S, next) === 'built', next.err);
+  const rw = ap.parts.find(p => p.kind === 'runway');
+  assert(rw && Math.abs(Math.sin(Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) - sv.a)) < 1e-6 && U.dist(IC.rwAt(rw, 0.5), sv) < 0.05, 'the runway is not where the survey put it');
+  assert(ap.parts.filter(p => p.kind === 'ils').length === 2 && ap.parts.filter(p => p.kind === 'taxi').length >= 5, 'no landing systems or taxiways with it');
+  assert(ap.undo.length === 1 && Array.isArray(ap.undo[0]), 'not one step to undo');
+});
+test('round 1: a starter airport template places a complete working airport as one plan', () => {
+  const { S, ap, sv } = foundFresh();
+  const m = S.mode2 = IC.bldMode(S, ap, 'starter');
+  assert(IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0) === 'point', m.err);
+  const plan = IC.bldReady(S, m), b0 = S.budget;
+  assert(plan.ok && /on the surveyed runway/.test(plan.text[0]), plan.why || plan.text[0]);
+  // one step back takes it all, refunded
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  const n = ap.parts.length;
+  assert(n >= 15 && ap.undo.length === 1, `${n} parts, ${ap.undo.length} steps to undo`);
+  IC.bldUndo(S, ap);
+  assert(!ap.parts.length && Math.abs(S.budget - b0) < 1, `undo left ${ap.parts.length} parts, ${U.money(b0 - S.budget)} unrefunded`);
+  IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0);
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  finishWorks(S, ap);
+  const st = IC.aptStats(S, ap), stands = IC.aptStands(ap);
+  for (const k of ['runway', 'terminal', 'tower', 'fire', 'fuel', 'ils']) assert(ap.parts.some(p => p.kind === k && p.built), `no ${k}`);
+  assert(stands.length >= 8 && stands.every(s => s.linked), `${stands.filter(s => s.linked).length} of ${stands.length} stands joined to the runway`);
+  assert(st.maxType === 'cargo' || st.maxType === 'wide', `the largest aircraft is ${st.maxType}`);
+  assert(!st.warn.some(w => /strip|not connected|in the grass|No fire|No landing/.test(w)), st.warn.join(' / '));
+  assert(IC.storyOpenTo(S, ap, 'narrow'), 'not open to airliners');
+  const goals = S.story.goals.filter(g => g.id !== 'first');
+  assert(goals.every(g => g.check()), `goals not met: ${goals.filter(g => !g.check()).map(g => g.id)}`);
+});
+test('round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself', () => {
+  const { S, ap, next } = foundFresh();
+  S.mode2 = next; IC.buildFinish(S, next); finishWorks(S, ap);
+  const rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), mid = IC.rwAt(rw, 0.5);
+  // (the parallel's side)
+  const par = ap.parts.find(p => p.kind === 'taxi' && p.nodes.length > 4), n0 = ap.nodes[par.nodes[1]], sg = Math.sign((n0.x - mid.x) * -d.y + (n0.y - mid.y) * d.x);
+  const at = off => ({ x: mid.x - d.y * off * sg, y: mid.y + d.x * off * sg });
+  const m = S.mode2 = IC.bldMode(S, ap, 'tstraight');
+  IC.clickWorld(at(4.4), 0);
+  const plan = IC.bldReady(S, m);
+  assert(plan.ok && plan.piece.links.length === 2, `${plan.why} ${plan.piece && plan.piece.links.length} links`);
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  // services clicked on the runway's own edge stand outside its strip
+  const sm = S.mode2 = IC.bldMode(S, ap, 'services');
+  IC.clickWorld(at(-0.5), 0);
+  assert(IC.bldReady(S, sm).ok, IC.bldReady(S, sm).why);
+  IC.buildFinish(S, sm);
+  finishWorks(S, ap);
+  const st = IC.aptStats(S, ap), stands = IC.aptStands(ap);
+  assert(stands.length >= 6 && stands.every(s => s.linked), `${stands.filter(s => s.linked).length} of ${stands.length} stands joined`);
+  assert(st.fire && ap.parts.some(p => p.kind === 'tower' && p.built) && !st.warn.some(w => /strip/.test(w)), st.warn.join(' / '));
+});
+test('round 1: a building inside a runway strip is warned about on the plan and on the airport, with the fix', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), q = IC.rwAt(rw, 0.3);
+  const m = S.mode2 = IC.bldMode(S, ap, 'fire'), at = { x: q.x - d.y * 1.1, y: q.y + d.x * 1.1 };
+  const plan = IC.bldPlanOf(S, m, at, 0.12, true);
+  assert(plan.warn && plan.warn.some(w => /inside its 150 m strip/.test(w) && /further out/.test(w)), `the plan says: ${plan.why} ${plan.warn}`);
+  const p = IC.aptPlanPart(S, ap, 'fire', at.x, at.y, ap.rwyA);
+  assert(p, 'could not plan it'); finishWorks(S, ap);
+  assert(IC.aptStats(S, ap).warn.some(w => /Fire station stands \d+ m from the .* centreline, inside its 150 m strip.*Move it/.test(w)), IC.aptStats(S, ap).warn.join(' / '));
+});
+test('round 1: the build bar opens on whole pieces, each with a price and what it does; the parts fold under Detail', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story' }); IC.S = S;
+  assert(IC.FOCUS.pieces && IC.bbTabs(S)[0].items.includes('rwkit') && IC.bbTabs(S).length === 2, 'the bar does not open on pieces');
+  for (const t of IC.BB_PIECE_TABS) for (const k of t.items.filter(k => IC.PIECES[k])) { const w = IC.BB_ITEM(S, k); assert(w.name && /₭/.test(w.price) && w.desc && w.use, `${k} has no name, price or description`); }
+  IC.bbTab('tw');
+  assert(IC.bb.detail && IC.bbTabs(S).some(t => t.k === 'tw'), 'Detail does not open on a part\'s tab');
+  IC.bb.detail = false; IC.bb.tab = 'pc';
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

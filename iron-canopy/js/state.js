@@ -241,7 +241,7 @@ IC.addPlume = (S, x, y, size, life) => {
   if (S.fx.plumes.length > 70) S.fx.plumes.shift();
   S.fx.plumes.push({ x, y, size, life, t: 0, seed: Math.random() * 100 });
 };
-IC.text = (S, x, y, s, color) => S.fx.texts.push({ x, y, s, color, t: 0 });
+IC.text = (S, x, y, s, color, life) => S.fx.texts.push(life ? { x, y, s, color, t: 0, life } : { x, y, s, color, t: 0 });
 /* smoke trails live in game time so they linger and drift with the wind */
 IC.newTrail = (S, kind) => { const tr = { pts: [], kind }; if (S.fx.trails.length > 240) S.fx.trails.shift(); S.fx.trails.push(tr); return tr; };
 IC.shake = function (S, amount, x, y) {

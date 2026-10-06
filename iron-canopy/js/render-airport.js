@@ -780,8 +780,9 @@ function shadowOf(g, S, p) {
 function drawBlueprint(g, t, col, fill, px) {
   g.save(); g.lineCap = 'round';
   for (const p of t.parts) {
-    if (p.kind === 'runway') { g.strokeStyle = fill; g.lineWidth = Math.max(p.w, 2 * px); g.beginPath(); g.moveTo(p.a.x, p.a.y); g.lineTo(p.b.x, p.b.y); g.stroke(); g.strokeStyle = col; g.lineWidth = Math.max(0.01, px); g.stroke(); }
-    else if (p.kind === 'taxi') { g.strokeStyle = col; g.globalAlpha = 0.6; g.lineWidth = Math.max(p.w * 0.5, px); g.beginPath(); p.nodes.forEach((id, i) => { const n = t.nodes[id]; g[i ? 'lineTo' : 'moveTo'](n.x, n.y); }); g.stroke(); g.globalAlpha = 1; }
+    // (round 1: readable at every zoom: a runway is never thinner than 7 px, a taxiway 3 px)
+    if (p.kind === 'runway') { g.lineCap = 'butt'; g.strokeStyle = 'rgba(12,18,24,0.55)'; g.lineWidth = Math.max(p.w + 0.1, 9 * px); g.beginPath(); g.moveTo(p.a.x, p.a.y); g.lineTo(p.b.x, p.b.y); g.stroke(); g.strokeStyle = fill.replace(/[\d.]+\)$/, '0.55)'); g.lineWidth = Math.max(p.w, 7 * px); g.stroke(); g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1.2 * px); g.setLineDash([8 * px, 6 * px]); g.stroke(); g.setLineDash([]); g.lineCap = 'round'; }
+    else if (p.kind === 'taxi') { g.strokeStyle = col; g.globalAlpha = 0.7; g.lineWidth = Math.max(p.w * 0.6, 3 * px); g.beginPath(); p.nodes.forEach((id, i) => { const n = t.nodes[id]; g[i ? 'lineTo' : 'moveTo'](n.x, n.y); }); g.stroke(); g.globalAlpha = 1; }
     else if (p.kind === 'people') { g.setLineDash([4 * px, 4 * px]); g.strokeStyle = col; g.lineWidth = px; g.beginPath(); p.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.stroke(); g.setLineDash([]); }
     else if (p.x != null && p.kind !== 'ils') { const P = IC.partOutline(p); g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.fillStyle = fill; g.fill(); g.strokeStyle = col; g.lineWidth = Math.max(0.005, px); g.stroke(); }
   }
@@ -1378,7 +1379,8 @@ function stageLine(g, pts, w, part, px) {
   // the yellow centreline, painted along; then its green lights come on
   if (k >= 4) { g.strokeStyle = YEL; g.lineWidth = Math.max(0.006, 0.8 * px); path(k === 4 ? f : 1); g.stroke(); }
   if (k >= 5) { g.strokeStyle = TLAMP; g.lineWidth = Math.max(0.01, (k === 6 ? 2 : 1.4) * px); g.setLineDash([1 * px, 7 * px]); path(k === 5 ? f : 1); g.stroke(); g.setLineDash([]); }
-  if (k <= 1 || k >= 4) { g.strokeStyle = STAKE; g.setLineDash([5 * px, 4 * px]); g.lineWidth = Math.max(k <= 1 ? w : 0.01, 1.5 * px); g.globalAlpha = k <= 1 ? 0.6 : 0.8; path(k === 1 ? Math.max(0.05, f) : 1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1; }
+  // (round 1: a queued or surveyed line is staked out end to end, never a few pixels: the player sees the plan)
+  if (k <= 1 || k >= 4) { g.strokeStyle = STAKE; g.setLineDash([5 * px, 4 * px]); g.lineWidth = Math.max(k <= 1 ? w : 0.01, (k <= 1 ? 3 : 1.5) * px); g.globalAlpha = k <= 1 ? 0.6 : 0.8; path(1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1; }
 }
 /* where on a part the work is happening now: the front of the paving, or somewhere along it */
 function workAt(ap, p, f) {
@@ -1472,7 +1474,7 @@ IC.drawBuildGhost = function (g, S, px) {
   const free = !!IC.bldFree;
   // (a placed plan stays put: the cursor does not move it)
   const hk = m.set && m.at ? m.at : hv;
-  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
+  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.flip}|${m.rotHand}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
   if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
   const col = ok ? 'rgba(110,230,140,0.95)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(110,230,140,0.2)' : 'rgba(255,91,79,0.2)';
@@ -1482,6 +1484,15 @@ IC.drawBuildGhost = function (g, S, px) {
   if (!ok && plan.hit) drawHit(g, m.ap, plan.hit, px);
   // a blueprint: the whole airport where it would go
   if (plan.bp && plan.bp.t) drawBlueprint(g, plan.bp.t, col, fill, px);
+  // a piece's links to the taxiways it joins, and the stands it brings (round 1)
+  if (plan.piece) {
+    g.save(); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.05, 2.5 * px); g.setLineDash([6 * px, 4 * px]);
+    for (const l of plan.piece.links) { g.beginPath(); g.moveTo(l.from.x, l.from.y); g.lineTo(l.to.x, l.to.y); g.stroke(); g.beginPath(); g.arc(l.to.x, l.to.y, 4 * px, 0, 7); g.stroke(); }
+    g.setLineDash([]); g.restore();
+    const t = plan.bp && plan.bp.t;
+    if (t) for (const p of t.parts) if (p.kind === 'apron' && p.free) for (const f of p.free) { const c = IC.rectWorld(p, f.lx, f.ly); IC.drawPlane(g, c.x, c.y, p.a + f.rot, f.size === 'l' ? 'wide' : 'narrow', null, { alpha: 0.4, minPx: 5 }); }
+  }
+
   // a runway that paving next to would close
   if (plan.near) { const rw = plan.near, c = IC.rwAt(rw, 0.5), d = IC.rwDir(rw); g.save(); g.translate(c.x, c.y); g.rotate(Math.atan2(d.y, d.x)); g.fillStyle = 'rgba(242,180,65,0.25)'; g.fillRect(-IC.rwLen(rw) / 2, -rw.w, IC.rwLen(rw), rw.w * 2); g.restore(); }
   for (const sp of plan.specs) {
@@ -1557,7 +1568,11 @@ IC.drawBuildGhost = function (g, S, px) {
   // (kept clear of the panels over the map: the goals on the left, the airport panel on the right)
   const lo = IC.cam.x + (IC.ui.mapLeft || 0) / IC.cam.z, hi = IC.cam.x + (IC.cam.vw - (IC.ui.mapRight || 0)) / IC.cam.z - W;
   // (a placed plan's card hangs under its Build button, clear of the plan; while drawing, beside the cursor)
-  const set = m.set && m.at, x0 = U.clamp(set ? cv0.x + 26 * px : left ? cv0.x - 20 * px - W : cv0.x + 20 * px, lo, Math.max(lo, hi)), y0 = set ? (sc.y > IC.cam.vh * 0.5 ? cv0.y - 84 * px - H : cv0.y + 70 * px) : cv0.y - 44 * px - H / 2 + 12 * px;
+  const set = m.set && m.at;
+  let x0 = U.clamp(set ? cv0.x + 26 * px : left ? cv0.x - 20 * px - W : cv0.x + 20 * px, lo, Math.max(lo, hi)), y0 = set ? (sc.y > IC.cam.vh * 0.5 ? cv0.y - 84 * px - H : cv0.y + 70 * px) : cv0.y - 44 * px - H / 2 + 12 * px;
+  // (round 1) while a line is being drawn the card goes on ahead of the cursor, never over the line behind it
+  const prev = !set && m.pts.length ? m.pts[m.pts.length - 1] : null;
+  if (prev && U.dist(prev, cv0) > 1e-6) { const L = U.dist(prev, cv0), ux = (cv0.x - prev.x) / L, uy = (cv0.y - prev.y) / L, r = 34 * px + Math.abs(ux) * W / 2 + Math.abs(uy) * H / 2; x0 = U.clamp(cv0.x + ux * r - W / 2, lo, Math.max(lo, hi)); y0 = cv0.y + uy * r - H / 2; }
   g.fillStyle = 'rgba(12,18,24,0.74)'; g.fillRect(x0, y0, W, H);
   if (!ok) { g.fillStyle = IC.C.hostile; g.fillRect(x0, y0, 2 * px, H); }
   lines.forEach((l, i) => { g.font = `${l.b ? 700 : 500} ${9.5 * px}px "IBM Plex Mono", monospace`; g.fillStyle = l.c; g.fillText(l.t, x0 + 6 * px, y0 + 14 * px + i * 13 * px); });
@@ -1624,10 +1639,26 @@ function pill(g, t, x, y, px, col, n) {
 }
 /* founding: the site, the runway as turned (R, or a drag along it), the noise footprint and what the survey found */
 function drawFoundGhost(g, S, m, hv, px) {
+  // (round 1) the band where an airport serves its city: 15–40 km out, drawn round the capital while the Career
+  // asks for the national airport, else round the town nearest the cursor
+  const at = m.site || hv, st = S.story;
+  const city = st && !st.cap ? IC.cap(S) : IC.cities(S).filter(c => c.owner !== 'enemy').sort((a, b) => U.dist(a, at) - U.dist(b, at))[0];
+  if (city) {
+    g.save(); g.beginPath(); g.arc(city.x, city.y, 400, 0, 7); g.arc(city.x, city.y, 150, 0, 7, true); g.fillStyle = 'rgba(111,210,255,0.07)'; g.fill('evenodd');
+    g.strokeStyle = 'rgba(111,210,255,0.55)'; g.lineWidth = 1.5 * px; g.setLineDash([8 * px, 6 * px]);
+    for (const r of [150, 400]) { g.beginPath(); g.arc(city.x, city.y, r, 0, 7); g.stroke(); }
+    g.setLineDash([]); g.restore();
+    lbl(g, `15 km from ${city.name}`, city.x, city.y - 150 - 6 * px, px, 'rgba(160,220,255,0.9)', 9, 'center', 600);
+    lbl(g, `40 km: an airport here serves ${city.name}`, city.x, city.y - 400 - 6 * px, px, 'rgba(160,220,255,0.9)', 9, 'center', 600);
+    if (!m.site) { const d = U.dist(city, hv) / 10, ok = d >= 15 && d <= 40; lbl(g, `${Math.round(d)} km from ${city.name}${ok ? '' : d < 15 ? ': close to homes' : ': far for passengers'}`, hv.x, hv.y + 18 + 14 * px, px, ok ? 'rgba(127,232,176,0.95)' : 'rgba(255,190,120,0.95)', 9.5, 'center', 600); }
+  }
   if (!m.site) {
     const why = IC.foundCheck(S, hv.x, hv.y);
     g.strokeStyle = why ? IC.C.hostile : 'rgba(111,210,255,0.9)'; g.lineWidth = 1.5 * px; g.beginPath(); g.arc(hv.x, hv.y, 15, 0, 7); g.stroke();
     lbl(g, why || 'click to survey this site', hv.x, hv.y - 18 - 8 * px, px, why ? IC.C.hostile : IC.C.text, 9.5, 'center', 600);
+    // the prevailing wind, so the first site is chosen with it in mind
+    const wa = IC.PREVAIL; g.strokeStyle = 'rgba(127,232,176,0.8)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(hv.x + Math.cos(wa) * 32, hv.y + Math.sin(wa) * 32); g.lineTo(hv.x + Math.cos(wa) * 18, hv.y + Math.sin(wa) * 18); g.stroke();
+    lbl(g, 'wind', hv.x + Math.cos(wa) * 36, hv.y + Math.sin(wa) * 36 - 4 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
     return;
   }
   const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };

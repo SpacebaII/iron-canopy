@@ -761,6 +761,9 @@ IC.aptStats = function (S, ap) {
   const deadT = G.dead ? ap.parts.filter(p => p.kind === 'taxi' && p.built && !p.cut[1] && p.nodes.some(id => G.dead.has(id))).length : 0;
   if (deadT) st.warn.push(`${deadT} taxiway${deadT > 1 ? 's end' : ' ends'} in the grass, joined to nothing: no aircraft uses ${deadT > 1 ? 'them' : 'it'}. Join ${deadT > 1 ? 'them' : 'it'} to a taxiway, an apron or a runway (rapid exits lead onto a parallel taxiway).`);
   for (const p of ap.parts) if (DOOR(p.kind) && p.built) { p.linked = !!(reachAny && reachAny.has(p.id + ':d')); if (p.hp > p.max * 0.25 && p.linked) st.shelters += IC.APART[p.kind].holds || 0; else if (!p.linked && p.hp > 0) st.warn.push(`${IC.APART[p.kind].name} is not connected to the taxiways: no aircraft can use it. Draw a taxiway to its door.`); }
+  // (round 1) buildings inside a runway's strip: accepted, but said, with the fix (playtest 1: a fire station 110 m
+  // from the centreline went unremarked)
+  for (const p of ap.parts) { const why = IC.aptStripWhy(ap, p); if (why) st.warn.push(why); }
   const towers = alive('tower'), tower = towers.length > 0;
   // the cab must see each runway it works: within 8 km and over the roofs in between
   st.unseen = {};
@@ -880,6 +883,21 @@ IC.aptStats = function (S, ap) {
 };
 const FAF_T = () => IC.GOPS.FAF / 0.95 + IC.GOPS.CLEAR / IC.GOPS.TAXI + 30;
 IC.FUEL_IN = 45;
+/* A building inside a runway's strip (150 m either side of the centreline, 60 m beyond its ends), in plain words
+   with the fix, or ''. Navaids that belong there (the landing system, radars) and paving are not buildings */
+IC.STRIP = 1.5;
+const STRIP_OK = { runway: 1, taxi: 1, apron: 1, alert: 1, holdbay: 1, ils: 1, atc: 1, gradar: 1, surface: 1, people: 1, skybridge: 1, svcroad: 1 };
+IC.aptStripWhy = function (ap, p, rws) {
+  if (!p || STRIP_OK[p.kind] || p.x == null || !IC.APART[p.kind] || IC.APART[p.kind].pad) return '';
+  const P = IC.partOutline(p);
+  for (const rw of rws || ap.parts.filter(q => q.kind === 'runway')) {
+    const L = IC.rwLen(rw), d = IC.rwDir(rw);
+    let off = Infinity;
+    for (const q of P.concat([{ x: p.x, y: p.y }])) { const s = (q.x - rw.a.x) * d.x + (q.y - rw.a.y) * d.y; if (s < -0.6 || s > L + 0.6) continue; off = Math.min(off, Math.abs((q.x - rw.a.x) * -d.y + (q.y - rw.a.y) * d.x)); }
+    if (off < IC.STRIP) return `${p.name || IC.APART[p.kind].name} stands ${Math.round(off * 100)} m from the ${rw.name || 'runway'} centreline, inside its 150 m strip: an aircraft that runs off the side would hit it. Move it at least ${Math.ceil((IC.STRIP - off) * 100 / 10) * 10} m further out (Move on the build bar).`;
+  }
+  return '';
+};
 /* why an arrival of this type cannot land here right now (wind, fog), or '' */
 IC.aptLandWhy = function (S, ap, T) {
   const cfg = IC.aptConfig(S, ap), rws = ap.parts.filter(p => p.kind === 'runway' && p.built && p.hp > p.max * 0.25 && IC.rwUsable(p) >= T.rwy);

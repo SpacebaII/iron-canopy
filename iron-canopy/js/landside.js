@@ -240,7 +240,7 @@ function railNear(S, ap) {
 /* from the landside of the site (the side towards the nearest city) to the nearest road, or straight into town */
 /* the access road a site at x, y with its runway at a would get: { P (the road plan), pts, snaps, city, end }, or
    null. The site survey prices it before Found (playtest 1: a 20 km road was a hidden ₭48M) */
-IC.landAccessPlan = function (S, x, y, a) {
+IC.landAccessPlan = function (S, x, y, a, probe) {
   const W = S.world;
   if (!IC.roadPlan || !IC.roadFinish || !W.edges) return null;
   const at = { x, y };
@@ -255,8 +255,10 @@ IC.landAccessPlan = function (S, x, y, a) {
   if (!end && W.nodes[city.id]) end = { x: city.x, y: city.y, node: city.id };
   if (!end) return null;
   const pts = [start, { x: end.x, y: end.y }], snaps = [{ x: start.x, y: start.y }, end];
-  let P = IC.roadPlan(S, 'lc', pts, snaps);
-  if (P.why && W.nodes[city.id] && !end.node) { const e2 = { x: city.x, y: city.y, node: city.id }; const P2 = IC.roadPlan(S, 'lc', [start, e2], [snaps[0], e2]); if (!P2.why) { P = P2; pts[1] = e2; snaps[1] = e2; end = e2; } }
+  // (a probe for a site not yet founded: the road will serve the airport once it is there)
+  const plan = (p, s) => { const P = IC.roadPlan(S, 'lc', p, s); if (probe && /serve one of your airports/.test(P.why)) P.why = ''; return P; };
+  let P = plan(pts, snaps);
+  if (P.why && W.nodes[city.id] && !end.node) { const e2 = { x: city.x, y: city.y, node: city.id }; const P2 = plan([start, e2], [snaps[0], e2]); if (!P2.why) { P = P2; pts[1] = e2; snaps[1] = e2; end = e2; } }
   return { P, pts, snaps, city, end };
 };
 IC.landAccessRoad = function (S, ap) {

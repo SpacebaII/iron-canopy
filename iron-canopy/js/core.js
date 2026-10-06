@@ -15,6 +15,10 @@ IC.SPEEDS = [1, 2, 4, 8, 16, 32];
    (the simulation gives the same flights, fees and delays at 8 s as at 1 s; main.js drops to fine steps as soon
    as anything hostile or armed is in the air) */
 IC.WAIT = { speed: 432, step: 8 };
+/* The focus switch (docs/focus/plan.md): what the Career's opening shows while the game is reworked one thing at a
+   time. Anything hidden here is hidden, never deleted: its code and tests stay, and false brings it back.
+   pieces: the build bar opens on whole pieces (pieces.js); the parts one by one fold under Detail */
+IC.FOCUS = { pieces: true };
 
 /* Two clocks. The live clock is S.time in game seconds: aircraft, weather, day and night. The calendar counts months
    and years on top of it: a month is DAYS_PER_MONTH live days, so a Career can span ten years while every flight

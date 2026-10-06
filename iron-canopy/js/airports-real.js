@@ -202,7 +202,7 @@ IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
   const mine = ap.parts.filter(p => p.kind !== 'ils').map(p => IC.aptElementOf(ap, p)).filter(Boolean);
   for (const p of t.parts) {
     const e = IC.aptElementOf(t, p); if (!e) continue;
-    for (const q of mine) if (IC.shapeDepth(e.sh, q.sh) > 0.01) return no(`It overlaps ${q.name}: move it clear, or bulldoze that first.`, q.p);
+    for (const q of mine) { if (L.join && e.cat === 'twy' && (q.cat === 'rwy' || q.cat === 'twy')) continue; if (IC.shapeDepth(e.sh, q.sh) > 0.01) return no(`It overlaps ${q.name}: move it clear, or bulldoze that first.`, q.p); }
   }
   for (const p of t.parts) out.cost += IC.partCost(t, p);
   out.start = out.cost * 0.1;
@@ -247,8 +247,8 @@ IC.bldBlueprint = function (S, ap, key, x, y, rot) {
   ap.dirty = true; IC.aptExtent(ap); ap.buildR = Math.max(ap.buildR || 0, ap.radius + 5);
   ap._seatKey = null; IC.aptReseat(S, ap);
   IC.aptStats(S, ap);
-  if (L.kit) IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(L.name)} planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now. Join its taxilanes to your taxiways.`, ap);
-  else IC.log(S, 'info', 'BUILD', `${ap.name}: the ${L.name} blueprint (${L.after}) is planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now. More crews build it sooner (the Works tab).`, ap);
+  if (L.kit && !L.join) IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(L.name)} planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now.${L.join ? '' : ' Join its taxilanes to your taxiways.'}`, ap);
+  else if (!L.join) IC.log(S, 'info', 'BUILD', `${ap.name}: the ${L.name} blueprint (${L.after}) is planned: ${made.length} parts, ${U.money(C.cost)} paid as the work runs, ${U.money(C.start)} of it now. More crews build it sooner (the Works tab).`, ap);
   IC.emit(S, 'aptPlan', { ap, part: made[0], blueprint: key });
   return made;
 };
