@@ -6,7 +6,8 @@
 'use strict';
 const U = IC.U, $ = id => document.getElementById(id), esc = U.esc;
 
-IC.AUTOSAVE = { every: 600, realGap: 60, keep: 3 };   // game seconds between autosaves, real seconds at least, slots kept
+// game seconds between autosaves, real seconds at least; real seconds at most while anything changes, paused or not; slots kept
+IC.AUTOSAVE = { every: 600, realGap: 60, realEvery: 300, keep: 5 };
 const AUTO_MODES = { story: 1, campaign: 1, sandbox: 1 };
 
 /* ---------- storage: meta (what the list shows) and data (the save, gzipped where the browser can) ---------- */
@@ -104,14 +105,17 @@ IC.saveNow = async function (S, name, id) {
   IC.toast && IC.toast(S, 'info', 'SAVED', `${meta.name}. It is kept in this browser.`);
   return true;
 };
-/* the autosave: its own slots, the oldest of the last three replaced */
-let lastAuto = 0;
+/* the autosave: its own slots, the oldest of the last five replaced */
+let lastAuto = 0, touched = false;
+// (anything the player does counts as a change, so a game built while paused is saved too)
+addEventListener('pointerdown', () => { touched = true; }, true);
+addEventListener('keydown', () => { touched = true; }, true);
 const autoAt = new WeakMap();
 IC.autosave = function (S) {
   if (!S || !AUTO_MODES[S.mode] || S.over) return Promise.resolve(false);
   let made;
   try { made = make(S, 'Autosave'); } catch (e) { return Promise.resolve(false); }
-  lastAuto = performance.now(); autoAt.set(S, S.time);
+  lastAuto = performance.now(); autoAt.set(S, S.time); touched = false;
   const autos = saves.list.filter(m => m.auto);
   let id = 'auto1';
   if (autos.length < IC.AUTOSAVE.keep) { for (let i = 1; i <= IC.AUTOSAVE.keep; i++) if (!autos.some(m => m.id === 'auto' + i)) { id = 'auto' + i; break; } }
@@ -119,12 +123,20 @@ IC.autosave = function (S) {
   const meta = Object.assign({}, made.data.meta, { id, auto: true, name: 'Autosave', size: made.text.length, seed: made.data.seed, v: made.data.v });
   return saves.put(meta, made.text).then(() => true, e => { say('The autosave failed: ' + why(e), true); return false; });
 };
-/* every 10 game minutes, and not more than once a minute in real time (at 32× that is every 32 game minutes) */
+/* every 10 game minutes, and not more than once a minute in real time (at 32× that is every 32 game minutes); and
+   every 5 real minutes whatever the speed, paused too, when the clock has moved or the player has done anything */
+const moved = S => touched || S.time !== autoAt.get(S);
 IC.autosaveTick = function (S) {
-  if (!S || !AUTO_MODES[S.mode] || S.over || S.paused || !$('start').hidden || IC.loading) return;
-  if (!autoAt.has(S)) { autoAt.set(S, S.time); return; }
-  if (S.time - autoAt.get(S) >= IC.AUTOSAVE.every && performance.now() - lastAuto > IC.AUTOSAVE.realGap * 1000) IC.autosave(S);
+  if (!S || !AUTO_MODES[S.mode] || S.over || !$('start').hidden || IC.loading) return;
+  if (!autoAt.has(S)) { autoAt.set(S, S.time); lastAuto = lastAuto || performance.now(); return; }
+  const since = performance.now() - lastAuto;
+  if (!S.paused && S.time - autoAt.get(S) >= IC.AUTOSAVE.every && since > IC.AUTOSAVE.realGap * 1000) IC.autosave(S);
+  else if (since > IC.AUTOSAVE.realEvery * 1000 && moved(S)) IC.autosave(S);
 };
+/* leaving the page (closing the tab, reloading, switching away) saves what changed since the last autosave */
+const leaving = () => { const S = IC.S; if (S && autoAt.has(S) && moved(S) && $('start').hidden && !IC.loading) IC.autosave(S); };
+addEventListener('pagehide', leaving);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leaving(); });
 
 /* ---------- loading, with a loading screen while the world regenerates ---------- */
 IC.loading = false;
@@ -206,7 +218,7 @@ let delAsk = null;
 const line = m => [m.name !== m.what && m.what, m.cal ? `${m.cal}, ${m.clock}` : `Day ${m.day}, ${m.clock}`, m.budget != null && `${U.money(m.budget)} in hand`].filter(Boolean).join(' · ');
 function rows(inGame) {
   if (!saves.loaded) return '<p class="hint">Reading the saved games…</p>';
-  if (!saves.list.length) return `<p class="hint">No saved games yet. ${inGame ? 'Save this one with the button above, or wait for the autosave (every 10 game minutes).' : 'Games save themselves every 10 game minutes and when you quit to the menu.'}</p>`;
+  if (!saves.list.length) return `<p class="hint">No saved games yet. ${inGame ? 'Save this one with the button above, or wait for the autosave (every 10 game minutes or 5 minutes of play, and when you leave the page).' : 'Games save themselves every 10 game minutes, every 5 minutes of play, when you leave the page and when you quit to the menu.'}</p>`;
   return `<div class="saves">${saves.list.map(m => `<div class="saverow${m.auto ? ' auto' : ''}">
     <div class="sv-txt"><b>${esc(m.name)}</b><span>${esc(line(m))}</span><small>Saved ${ago(m.date)} · ${kb(m.stored || m.size)}${m.imported ? ' · imported' : ''}</small></div>
     <div class="sv-acts"><button class="btn" data-act="saveLoad" data-v="${esc(m.id)}">Load</button><button class="btn sm" data-act="saveExport" data-v="${esc(m.id)}" title="Download this save as a file">Export</button><button class="btn sm ${delAsk === m.id ? 'warn' : 'ghost'}" data-act="saveDel" data-v="${esc(m.id)}">${delAsk === m.id ? 'Delete it?' : 'Delete'}</button></div>
@@ -217,7 +229,7 @@ const noteHTML = () => saves.note && Date.now() - saves.noteT < 20000 ? `<p clas
 IC.savesPage = function () {
   const el = $('stSaves'); if (!el) return;
   el.innerHTML = `<div class="card wide">${noteHTML()}${rows(false)}<div class="acts"><button class="btn" data-act="saveImport">Import a save file</button></div>
-    <p class="hint">Saves are kept in this browser only. Export one to keep a copy or to play it on another computer (in the same browser). The last three autosaves are kept.</p></div>`;
+    <p class="hint">Saves are kept in this browser only. Export one to keep a copy or to play it on another computer (in the same browser). The last five autosaves are kept.</p></div>`;
 };
 /* the Settings room's Game card */
 IC.savesCardHTML = function (S) {
@@ -225,7 +237,7 @@ IC.savesCardHTML = function (S) {
   return `<div class="card"><h3>Saved games<em>kept in this browser</em></h3>${noteHTML()}
     <div class="acts">${can ? `<button class="act" data-act="saveNow">Save the game</button>` : ''}<button class="btn" data-act="saveImport">Import a save file</button></div>
     ${rows(true)}
-    <p class="hint">The game saves itself every 10 game minutes, in the last three autosave slots, and when you quit to the menu.</p>
+    <p class="hint">The game saves itself every 10 game minutes and every 5 minutes of play (paused too, if anything changed), when you leave the page and when you quit to the menu. The last five autosaves are kept.</p>
     <div class="acts"><button class="act warn" data-act="restart">Quit to the main menu</button></div></div>`;
 };
 /* Continue: the newest save, on the start screen */

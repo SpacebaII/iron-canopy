@@ -137,5 +137,8 @@
  "airport: a parked airliner held on the ground is fuelled once, not again at every try": 14.6,
  "airport: an apron with airliners parked on it cannot be bulldozed, and says why": 8.3,
  "aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands": 13.9,
- "air defence: a laser stops burning its target when weapons are set to Hold": 3.8
+ "air defence: a laser stops burning its target when weapons are set to Hold": 3.8,
+ "showcase: a day at the small test layout at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 39.7,
+ "showcase: a day at KDEN at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 446.2,
+ "showcase: a day at KLAX at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 477.7
 }

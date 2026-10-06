@@ -539,9 +539,11 @@ IC.aviation = function (S, dt) {
       const from = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id, k: 'H' };
       // light aircraft on the runway, or controllers still spacing the last departure the same way
       if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); tl.t = w; tl.fuelWait = (tl.fuelWait || 0) + w; continue; }
-      const rel = IC.aspRelease(S, from, toEnd);
+      // with a holding bay the tower lets it taxi out up to five minutes before its release and wait there
+      const bay = ap.parts.some(p => p.kind === 'holdbay' && p.built);
+      const rel = IC.aspRelease(S, from, toEnd, bay ? 300 : 0);
       if (rel > 0) { tl.t = rel; tl.fuelWait = (tl.fuelWait || 0) + rel; continue; }
-      const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, who: tl.cs, tail: tl, livery: al.livery,
+      const m = IC.gopsDepart(S, ap, { type: tl.type, node: s.id, stand: s, startT: 0, readyT: rel < 0 ? S.time - rel : 0, who: tl.cs, tail: tl, livery: al.livery,
         onAir: IC.hfn('avAirborne', S, tl, from, toEnd, al, ap), onDead: IC.hfn('avTaxiLost', S, tl, ap) });
       if (!m) { tl.t = 300; tl.fuelWait = (tl.fuelWait || 0) + 300; continue; }
       tl.where = 'dep'; tl.mv = m; tl.stand = null; tl.fuelled = false;

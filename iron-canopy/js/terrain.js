@@ -202,13 +202,18 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
     // the graded strip: 150 m either side of the runway and 60 m beyond its ends, kept short
     for (const p of paved) if (p.kind === 'runway') {
       const a = IC.rwAt(p, 0), c = IC.rwAt(p, 1), L = Math.hypot(c.x - a.x, c.y - a.y) || 1, ux = (c.x - a.x) / L, uy = (c.y - a.y) / L, h = p.w / 2 + 1.5, e = 0.6;
-      g.fillStyle = 'rgba(106,126,74,0.75)';
-      poly([{ x: a.x - ux * e - uy * h, y: a.y - uy * e + ux * h }, { x: c.x + ux * e - uy * h, y: c.y + uy * e + ux * h }, { x: c.x + ux * e + uy * h, y: c.y + uy * e - ux * h }, { x: a.x - ux * e + uy * h, y: a.y - uy * e - ux * h }]); g.fill();
-      if (lod >= 3) {
-        // the mowers' passes along it, 15 m wide
-        g.save(); g.clip(); g.fillStyle = 'rgba(150,170,104,0.14)';
-        for (let o = -h; o < h; o += 0.3) poly([{ x: a.x - ux * e - uy * o, y: a.y - uy * e + ux * o }, { x: c.x + ux * e - uy * o, y: c.y + uy * e + ux * o }, { x: c.x + ux * e - uy * (o + 0.15), y: c.y + uy * e + ux * (o + 0.15) }, { x: a.x - ux * e - uy * (o + 0.15), y: a.y - uy * e + ux * (o + 0.15) }]), g.fill();
+      const strip = () => poly([{ x: a.x - ux * e - uy * h, y: a.y - uy * e + ux * h }, { x: c.x + ux * e - uy * h, y: c.y + uy * e + ux * h }, { x: c.x + ux * e + uy * h, y: c.y + uy * e - ux * h }, { x: a.x - ux * e + uy * h, y: a.y - uy * e - ux * h }]);
+      g.fillStyle = 'rgba(116,138,80,0.9)'; strip(); g.fill();
+      if (lod >= 2) {
+        // the mowers' passes along it, 15 m wide, lighter and darker by the way the grass lies
+        g.save(); g.clip();
+        for (let o = -h, i = 0; o < h; o += 0.15, i++) {
+          g.fillStyle = i & 1 ? 'rgba(150,172,104,0.2)' : 'rgba(78,98,56,0.1)';
+          poly([{ x: a.x - ux * e - uy * o, y: a.y - uy * e + ux * o }, { x: c.x + ux * e - uy * o, y: c.y + uy * e + ux * o }, { x: c.x + ux * e - uy * (o + 0.15), y: c.y + uy * e + ux * (o + 0.15) }, { x: a.x - ux * e - uy * (o + 0.15), y: a.y - uy * e + ux * (o + 0.15) }]); g.fill();
+        }
         g.restore();
+        // a clean edge where the short grass meets the longer
+        g.strokeStyle = 'rgba(62,80,44,0.45)'; g.lineWidth = Math.max(0.04, 1.2 / LOD(lod).ppu); strip(); g.stroke();
       }
     }
   }
@@ -909,11 +914,10 @@ IC.drawTerrain = function (ctx, T, cam, dpr, budgetMs, S) {
     if (mine.length > L.max) { mine.sort((a, b) => a[1].used - b[1].used); for (let i = 0; i < mine.length - L.max; i++) T.tiles.delete(mine[i][0]); }
     return missing;
   };
-  if (lodWanted === 4) { draw(3, true); draw(4, false); }
-  else if (lodWanted === 3) { draw(2, true); draw(3, false); }
-  else if (lodWanted === 2) { draw(1, true); draw(2, false); }
-  else if (lodWanted === 1) { draw(0, true); draw(1, false); }
-  else draw(0, false);
+  // the level under it is painted first (ten to sixteen times fewer tiles): where a tile is still missing it shows the same
+  // tone, where the base image alone would show a darker rectangle
+  if (lodWanted) draw(lodWanted - 1, false);
+  draw(lodWanted, false);
   return made;
 };
 /* the world changed (IC.worldChanged), airports were built on, marks faded: repaint what shows it */

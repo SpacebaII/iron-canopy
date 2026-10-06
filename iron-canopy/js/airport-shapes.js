@@ -17,7 +17,8 @@ IC.polyArea = P => Math.abs(area(P));
 const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
 const isConvex = P => { let sg = 0; for (let i = 0; i < P.length; i++) { const c = cross(P[i], P[(i + 1) % P.length], P[(i + 2) % P.length]); if (Math.abs(c) < 1e-12) continue; if (sg && Math.sign(c) !== sg) return false; sg = Math.sign(c); } return true; };
 IC.polyConvex = isConvex;
-/* counter-clockwise, without repeated or collinear points */
+/* counter-clockwise, without repeated or collinear points (area() is the signed area, positive counter-clockwise:
+   the ears below are the vertices that turn left) */
 function clean(P) {
   let Q = P.filter((p, i) => U.dist(p, P[(i + 1) % P.length]) > 1e-6);
   if (area(Q) < 0) Q = Q.slice().reverse();
@@ -31,7 +32,8 @@ function convexPieces(P0) {
   if (P.length < 3) return [];
   if (isConvex(P)) return [P];
   const idx = P.map((_, i) => i), tris = [];
-  const inTri = (p, a, b, c) => cross(a, b, p) > 0 && cross(b, c, p) > 0 && cross(c, a, p) > 0;
+  // (a vertex on the ear's edge counts as inside: an L's inner corner lies on the diagonal across it)
+  const inTri = (p, a, b, c) => cross(a, b, p) >= -1e-12 && cross(b, c, p) >= -1e-12 && cross(c, a, p) >= -1e-12 && U.dist(p, a) > 1e-9 && U.dist(p, b) > 1e-9 && U.dist(p, c) > 1e-9;
   let guard = 0;
   while (idx.length > 3 && guard++ < 5000) {
     let cut = false;
@@ -200,7 +202,7 @@ IC.aptElementOf = function (ap, p, o) {
   const sh = IC.partShape(ap, p), name = IC.partName(ap, p);
   if (p.kind === 'runway') return { cat: 'rwy', p, sh, strip: IC.shapeLine([p.a, p.b], RWY_STRIP), name };
   if (p.kind === 'taxi') return { cat: 'twy', p, sh, name: p.name ? `taxiway ${p.name}` : 'a taxiway', lv: p.lv || 0 };
-  if (p.kind === 'apron' || (IC.APART[p.kind] && IC.APART[p.kind].pad) || p.kind === 'alert') return { cat: 'apron', p, sh, name };
+  if (p.kind === 'apron' || (IC.APART[p.kind] && IC.APART[p.kind].pad) || p.kind === 'alert' || p.kind === 'holdbay') return { cat: 'apron', p, sh, name };
   if (p.kind === 'surface') return IC.SURF[p.surf] && IC.SURF[p.surf].park && !(o && o.noSurface) ? { cat: 'park', p, sh, name: 'the car park', surf: true } : null;
   if (p.kind === 'people') return { cat: 'mover', p, sh: IC.shapeLine(p.pts || [], 0.04), name: p.name || 'the people mover', lv: p.lv != null ? p.lv : 1 };
   if (p.kind === 'skybridge') return { cat: 'span', p, sh, name: p.name || 'the passenger bridge', lv: 1, clear: p.clear || 0 };
@@ -261,6 +263,73 @@ function meetAt(A, B) {
   for (const p of pts) { const d = IC.shapeDist(S2 === A ? B : A, p); if (d < bd) { bd = d; best = p; } }
   return best || pts[0];
 }
+/* The words the map puts on an airport at zoom z (brief 45): what each building is (at the middle zoom, the most
+   important first, none overlapping another: one that would is left out), and each building site's progress, small,
+   on the site, only close enough to see the site, gone when it is built. Each label keeps the thing it names (of)
+   and its box in world units; the renderer draws them, the tests check none hangs loose. */
+const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
+const LBL_RANK = { terminal: 0, cargo: 1, hangar: 2, tower: 3, fire: 4, fuel: 5, deice: 6, fuelpad: 7, atc: 8, gradar: 9, hydrant: 10, has: 11, ammo: 12, support: 13 };
+IC.BLD_TAG = BLD_TAG;
+IC.aptLabels = function (S, ap, z, o) {
+  o = o || {};
+  const px = 1 / z, out = [], boxes = [];
+  const fits = (x, y, w, h) => { const b = [x - w / 2, y - h, x + w / 2, y + h * 0.3]; if (boxes.some(q => q[0] < b[2] && b[0] < q[2] && q[1] < b[3] && b[1] < q[3])) return false; boxes.push(b); return true; };
+  const put = (txt, x, y, size, of, kind) => { const w = txt.length * size * 0.62 * px + 2 * px, h = size * px; if (!fits(x, y, w, h)) return false; out.push({ txt, x, y, size, of, kind, box: boxes[boxes.length - 1] }); return true; };
+  // building sites: on the part itself, only when it is big enough on screen to see (more than 20 px)
+  if (z > 1.5) for (const w of ap.works || []) {
+    if (!w.stages || !w.part || w.part.built) continue;
+    const p = w.part, size = p.kind === 'runway' ? IC.rwLen(p) : p.kind === 'taxi' ? IC.partMeasure(ap, p) : Math.max(p.w || 0, p.h || 0, (p.r || 0) * 2);
+    if (size * z < 20) continue;
+    const c = p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.kind === 'taxi' ? (() => { const a = ap.nodes[p.nodes[p.nodes.length >> 1]], b = ap.nodes[p.nodes[Math.max(0, (p.nodes.length >> 1) - 1)]]; return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a; })() : p;
+    if (!c || c.x == null) continue;
+    const q = w.wait === 'queued: every crew is busy';
+    put(q ? 'QUEUED' : w.wait ? 'WAITING: ' + w.wait.replace(/^waiting for /, '').split(':')[0].toUpperCase() : `BUILDING ${U.pct(w.prog || 0)}`, c.x, c.y, 7, p, q || w.wait ? 'wait' : 'work');
+  }
+  // what each building is, at the middle zoom; one label for a fuel farm
+  if (z > 9 && z < 90 && !o.noNames) {
+    const done = [], list = ap.parts.filter(p => p.built && p.x != null && (p.name || BLD_TAG[p.kind])).sort((a, b) => (LBL_RANK[a.kind] != null ? LBL_RANK[a.kind] : 20) - (LBL_RANK[b.kind] != null ? LBL_RANK[b.kind] : 20) || (IC.partArea ? IC.partArea(b) - IC.partArea(a) : 0));
+    for (const p of list) {
+      const t = p.name ? p.name.replace(/^the /i, '').toUpperCase() : BLD_TAG[p.kind];
+      if (done.some(q => q.t === t && U.dist(q, p) < (p.kind === 'fuel' ? 6 : 2))) continue;
+      const hh = Math.max(p.h || 0, (p.r || 0) * 2, p.poly ? Math.max(p.w || 0, p.h || 0) * 0.5 : 0) / 2;
+      // (a big building has its name on it, a small one just above it)
+      const on = (p.w || 0) * z > t.length * 7.5 * 0.7 && (p.h || 0) * z > 14, y = on ? p.y + 3 * px : p.y - hh - 5 * px;
+      if (put(t, p.x, y, 7.5, p, 'name')) done.push({ t, x: p.x, y: p.y });
+    }
+  }
+  return out;
+};
+
+/* Everything on an airport that should be attached to something and is not (brief 45), in words: a gate whose jet
+   bridge does not start at a terminal wall or does not reach the door, a passenger bridge over a taxiway that does
+   not join two buildings, a people mover without a station at each end, a kerb road away from its building, a
+   service road that ends in the grass. The tests assert none on every preset and blueprint. */
+IC.aptUnattached = function (S, ap) {
+  const out = [], name = p => p.name || (IC.APART[p.kind] || {}).name || p.kind;
+  const wallDist = (t, x, y) => { const P = IC.partOutline(t); let m = 1e9; for (let i = 0; i < P.length; i++) { const A = P[i], B = P[(i + 1) % P.length]; m = Math.min(m, U.segDist(x, y, A.x, A.y, B.x, B.y)); } return m; };
+  for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
+    const sn = s.name || s.id.split('s').pop();
+    if (s.contact && !s.bridge) { out.push({ what: 'stand', s, text: `Gate ${sn} has no jet bridge.` }); continue; }
+    if (!s.bridge) continue;
+    const B = s.bridge, t = ap.parts.find(q => q.id === B.term);
+    if (!t || !t.built || wallDist(t, B.wx, B.wy) > 0.01) out.push({ what: 'bridge', s, text: `The jet bridge at gate ${sn} starts off the terminal wall.` });
+    else if (U.dxy(B.rx, B.ry, B.dx, B.dy) > IC.BRIDGE_REACH.tunnel + 1e-6 || U.dxy(B.wx, B.wy, B.rx, B.ry) > IC.BRIDGE_REACH.link + 0.05) out.push({ what: 'bridge', s, text: `The jet bridge at gate ${sn} does not reach the door.` });
+  }
+  for (const p of ap.parts) {
+    if (!p.built) continue;
+    if (p.kind === 'skybridge' && (p.joins || []).filter(id => { const q = ap.parts.find(x => x.id === id); return q && q.built; }).length < 2) out.push({ what: 'skybridge', p, text: `${name(p)} does not join two buildings.` });
+    if (p.kind === 'people' && (p.stops || []).length < 2) out.push({ what: 'people', p, text: `${name(p)} has no station at ${(p.stops || []).length ? 'one end' : 'either end'}.` });
+  }
+  const L = ap.land;
+  if (L && L.roads) for (const r of L.roads) if (r.kind === 'kerb' && r.by) {
+    const t = ap.parts.find(q => q.id === r.by); if (!t) { out.push({ what: 'kerb', r, text: 'A kerb road serves a building that is gone.' }); continue; }
+    const mid = { x: (r.pts[0].x + r.pts[r.pts.length - 1].x) / 2, y: (r.pts[0].y + r.pts[r.pts.length - 1].y) / 2 };
+    if (IC.partDist(ap, t, mid) > 0.35) out.push({ what: 'kerb', r, text: `The kerb road of ${name(t)} is ${Math.round(IC.partDist(ap, t, mid) * 100)} m from its front.` });
+  }
+  if (IC.svcRoadEnds) for (const e of IC.svcRoadEnds(S, ap)) if (!e.ok) out.push({ what: 'service', e, text: `A service road ends in the grass at ${Math.round((e.x - ap.x) * 100)} m, ${Math.round((e.y - ap.y) * 100)} m from the middle of the airport.` });
+  return out;
+};
+
 /* rules: which pairs of categories may not overlap, how deep before it counts, and the words */
 const HIT = 0.015;
 IC.aptOverlaps = function (S, ap, o) {

@@ -21,6 +21,9 @@ IC.aptLockWhy = function (S, kind, mat) {
 /* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
 IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
 IC.APART.fuelpad = { name: 'Fuel stand', w: 0.5, h: 0.4, cost: 12, build: 500, hp: 20, pad: true, desc: 'A paved stand by the fuel farm: small aircraft and those on remote stands taxi here to refuel instead of waiting for a truck.' };
+/* a holding bay: a slab beside a runway end, on which departures wait on separate painted tracks, each with its own
+   holding position, so one that is ready passes one still waiting for its release (builder.js lays it out) */
+IC.APART.holdbay = { name: 'Holding bay', area: true, cost: 12, build: 150, hp: 60, over: true, desc: 'A slab of concrete beside a runway end with two to four painted tracks onto the runway, each with its own holding position. A departure still waiting for its release waits on one; one that is ready taxis past it on another.' };
 /* ground surfaces the player paints: for looks, and for cheap areas like car parks; aircraft never use them */
 IC.APART.surface = { name: 'Surface', area: true, cost: 1, build: 60, hp: 30, desc: 'Paint the ground: grass, gravel, concrete, asphalt or landscaping. Asphalt outside the airfield is a car park. Aircraft do not use it.' };
 IC.SURF = { grass: { name: 'Grass', k: 0.5 }, gravel: { name: 'Gravel', k: 1.5 }, green: { name: 'Landscaping', k: 3 }, asph: { name: 'Asphalt', k: 4, park: 350 }, conc: { name: 'Concrete', k: 6 } };
@@ -201,6 +204,34 @@ function polyStands(ap, p) {
   return out;
 }
 
+/* A stand's jet bridge, in world points: from the wall of a terminal or pier (w), by a fixed link where the wall is
+   set back, to the rotunda (r) on its column, and the telescopic tunnel to the cab at the front door (d). null when
+   no wall is near enough in front of the aircraft's nose: that stand is remote, with stairs, whatever it touches. */
+IC.BRIDGE_REACH = { link: 0.3, tunnel: 0.42 };
+IC.standBridge = function (ap, s) {
+  const S0 = IC.STAND[s.size] || IC.STAND.m, c = Math.cos(s.a), sn = Math.sin(s.a);
+  const W = (lx, ly) => ({ x: s.x + lx * c - ly * sn, y: s.y + lx * sn + ly * c });
+  const door = W(S0.d * 0.26, -0.034), Q = W(S0.d / 2 + 0.05, -S0.w * 0.16);
+  let best = null, bd = 1e9;
+  for (const q of ap.parts) {
+    if (q.kind !== 'terminal' || !q.built || q.x == null) continue;
+    if (U.dist(q, Q) > Math.max(q.w || 0, q.h || 0, (q.r || 0) * 2) + 2) continue;
+    const P = IC.partOutline(q);
+    for (let i = 0; i < P.length; i++) {
+      const A = P[i], B = P[(i + 1) % P.length], L = U.dist(A, B) || 1e-9, t = U.clamp(((Q.x - A.x) * (B.x - A.x) + (Q.y - A.y) * (B.y - A.y)) / (L * L), 0, 1);
+      const x = A.x + (B.x - A.x) * t, y = A.y + (B.y - A.y) * t, d = U.dxy(x, y, Q.x, Q.y);
+      if (d < bd) { bd = d; best = { x, y, q }; }
+    }
+  }
+  if (!best || bd > IC.BRIDGE_REACH.link + 0.05) return null;
+  // (the wall must be ahead of the nose, not beside the wing)
+  if ((best.x - s.x) * c + (best.y - s.y) * sn < S0.d * 0.3) return null;
+  const out = bd > 1e-4 ? { x: (Q.x - best.x) / bd, y: (Q.y - best.y) / bd } : { x: -c, y: -sn };
+  const r = bd < 0.08 ? { x: best.x + out.x * 0.025, y: best.y + out.y * 0.025 } : Q;
+  if (U.dist(r, door) > IC.BRIDGE_REACH.tunnel) return null;
+  return { wx: best.x, wy: best.y, rx: r.x, ry: r.y, dx: door.x, dy: door.y, link: bd >= 0.08, term: best.q.id };
+};
+
 /* ---------- runway names and groups ---------- */
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
 IC.rwEnd = (rw, dir) => (rw.ends ? rw.ends[dir > 0 ? 'a' : 'b'] : '') || (dir > 0 ? 'A' : 'B');
@@ -325,6 +356,8 @@ IC.aptGraph = function (ap) {
   for (const p of aprons) { const r = root(gi.get(p)); if (!groupAt.has(r)) groupAt.set(r, []); for (const n of onPart.get(p.id) || []) if (n.on.kind === 'apron') groupAt.get(r).push(n); }
   for (const p of aprons) {
     p.stands = standsFor(ap, p);
+    // a gate only where its bridge reaches a wall: the rest are remote stands with stairs, and say why
+    for (const s of p.stands) { const want = s.contact; s.bridge = want ? IC.standBridge(ap, s) : null; s.contact = !!s.bridge; s.noBridge = want && !s.bridge; }
     const z = IC.partZone(ap, p);
     const hyd = parts.some(h => h.kind === 'hydrant' && h.hp > h.max * 0.25 && U.dist(h, p) < IC.APART.hydrant.reach);
     const at = groupAt.get(root(gi.get(p)));
@@ -371,7 +404,7 @@ IC.aptGraph = function (ap) {
   for (let i = 0; i < rws.length; i++) for (let j = i + 1; j < rws.length; j++) { const d = IC.rwDependent(rws[i], rws[j]); if (d && d !== 'close') { const a = find(rws[i].id), b = find(rws[j].id); if (a !== b) grp[a < b ? b : a] = a < b ? a : b; } }
   for (const r of rws) grp[r.id] = find(r.id);
   ap.gver = (ap.gver || 0) + 1;
-  ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map() };
+  ap.G = { N, adj, radj, rwn, grp, ver: ap.gver, trees: new Map(), bays: new Set(parts.filter(p => p.bay && p.built).map(p => p.id)) };
   ap.dirty = false;
   return ap.G;
 };
@@ -1030,7 +1063,9 @@ IC.aptFence = function (ap) {
   const key = ap.parts.length + ':' + ap.nodeN + ':' + (ap.land ? ap.land.ver : 0) + ':' + ap.parts.reduce((s, p) => s + (p.x || 0), 0).toFixed(2);
   if (ap._box && ap._boxKey === key) return ap._box;
   // (a landside laid out from data: the fence follows the airside closely, round the landside, IC.aptTraceFence)
-  if (ap.land && ap.land.fixed && IC.aptTraceFence) { ap._box = IC.aptTraceFence(ap); ap._boxKey = key; if (ap._box) return ap._box; }
+  // (and any airport with a landside and a runway: traced, the fence runs round the landside cleanly instead of
+  // cutting a rectangle out of a hull)
+  if (IC.aptTraceFence && ((ap.land && ap.land.fixed) || (ap.kind === 'airport' && ap.parts.some(p => p.kind === 'runway' && p.built)))) { ap._box = IC.aptTraceFence(ap); ap._boxKey = key; if (ap._box) return ap._box; }
   const pts = [], sq = (q, m) => { pts.push({ x: q.x - m, y: q.y - m }, { x: q.x + m, y: q.y - m }, { x: q.x + m, y: q.y + m }, { x: q.x - m, y: q.y + m }); };
   const fronts = ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.w && IC.landEnvelope);
   const carve = [];
