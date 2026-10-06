@@ -89,16 +89,27 @@ IC.aspCov = function (S) {
   const key = L.map(s => `${Math.round(s.x)},${Math.round(s.y)},${Math.round(s.R / 20)}`).join(';');
   if (N.cov && N.cov.key === key) return N.cov;
   const CS = A.CS, gw = Math.ceil(IC.WW / CS), gh = Math.ceil(IC.WH / CS), g = new Float32Array(gw * gh).fill(Infinity);
-  const gnd = N.gnd || (N.gnd = (() => { const e = new Float32Array(gw * gh); for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) e[j * gw + i] = IC.elevKm((i + 0.5) * CS, (j + 0.5) * CS); return e; })());
+  // (the ground's height per cell, filled in only where a radar reaches: the whole map is a million cells)
+  const gnd = N.gnd || (N.gnd = new Float32Array(gw * gh).fill(NaN));
   for (const s of L) {
     const P = profOf(s);
     const i0 = Math.max(0, Math.floor((s.x - s.R) / CS)), i1 = Math.min(gw - 1, Math.floor((s.x + s.R) / CS));
     const j0 = Math.max(0, Math.floor((s.y - s.R) / CS)), j1 = Math.min(gh - 1, Math.floor((s.y + s.R) / CS));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const x = (i + 0.5) * CS, y = (j + 0.5) * CS;
-      if (U.dxy(x, y, s.x, s.y) > s.R) continue;
-      const k = j * gw + i, a = Math.max(0, profAlt(P, x, y) - gnd[k]);
-      if (a < g[k]) g[k] = a;
+    for (let j = j0; j <= j1; j++) {
+      // (the cells of this row inside the reach, with a cell to spare: the exact test is below)
+      const y = (j + 0.5) * CS, dy = y - s.y, hw = Math.sqrt(Math.max(0, s.R * s.R - dy * dy)) + CS;
+      const a0 = Math.max(i0, Math.floor((s.x - hw) / CS)), a1 = Math.min(i1, Math.floor((s.x + hw) / CS));
+      for (let i = a0; i <= a1; i++) {
+        const x = (i + 0.5) * CS, dx = x - s.x, d = Math.hypot(dx, dy);
+        if (d > s.R) continue;
+        const k = j * gw + i;
+        if (gnd[k] !== gnd[k]) gnd[k] = IC.elevKm(x, y);
+        // (profAlt, with the distance already in hand)
+        const q = Math.ceil(d / P.ST) - 1;
+        const pa = q < 0 ? 0 : q >= P.NS ? Infinity : P.m[U.mod(Math.round(Math.atan2(dy, dx) / (Math.PI * 2) * A.NB), A.NB) * P.NS + q];
+        const a = Math.max(0, pa - gnd[k]);
+        if (a < g[k]) g[k] = a;
+      }
     }
   }
   return (N.cov = { key, g, gw, gh, v: (N.cov ? N.cov.v : 0) + 1 });

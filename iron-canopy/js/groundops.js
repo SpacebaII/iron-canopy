@@ -204,26 +204,23 @@ IC.rwBusy = (S, ap, rwId) => { const L = lockOf(ap, keyOf(ap, rwId)); return !!L
 /* ---------- the next arrivals, as the tower sees them ---------- */
 /* every arrival coming to these runways: its distance from touchdown now (world units), and whether it is waiting
    at the approach fix (it then starts its final when the tower clears it) */
-function arrivals(S, ap, k) {
-  const out = [];
-  for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) out.push({ d: Math.max(0, FAF * (1 - m.t / (FAF / ARR_V))), m });
-  const q = ap.fafQ; if (!q) return out;
+/* the closest any arrival will be in t seconds (holders counted as starting their final now, unless held).
+   (Asked for every aircraft waiting for a runway, every step: it allocates nothing) */
+function arrNear(S, ap, k, t, heldToo) {
+  let best = 1e9;
+  const vt = ARR_V * t;
+  for (const m of ap.moves) if (m.kind === 'arr' && m.phase === 'final' && m.finK === k) best = Math.min(best, Math.max(0, FAF * (1 - m.t / (FAF / ARR_V))) - vt);
+  const q = ap.fafQ; if (!q) return best;
   for (const x of q) {
     if (x.done || S.time - x.t > 1800 || keyOf(ap, x.rw) !== k) continue;
-    if (x.backT > S.time) out.push({ d: FAF + (x.backT - S.time) * ARR_V, x });
-    else if (x.askT && S.time - x.askT < 12) { if (!(x.jamT && S.time - x.jamT < 12)) out.push({ d: FAF, wait: true, x }); }
+    if (x.backT > S.time) best = Math.min(best, FAF + (x.backT - S.time) * ARR_V - vt);
+    else if (x.askT && S.time - x.askT < 12) { if (heldToo && !(x.jamT && S.time - x.jamT < 12)) best = Math.min(best, FAF - vt); }
     else if (x.o && !x.o.dead && x.fx != null) {
       // one circling at the fix without asking (no stand for it yet) is not coming in
       const d = U.dxy(x.o.x, x.o.y, x.fx, x.fy);
-      if (d > 20 || !x.askT) out.push({ d: FAF + d, x });
+      if (d > 20 || !x.askT) best = Math.min(best, FAF + d - vt);
     }
   }
-  return out;
-}
-/* the closest any arrival will be in t seconds (holders counted as starting their final now, unless held) */
-function arrNear(S, ap, k, t, heldToo) {
-  let best = 1e9;
-  for (const a of arrivals(S, ap, k)) { if (a.wait && !heldToo) continue; best = Math.min(best, a.d - ARR_V * t); }
   return best;
 }
 /* the closest an arrival already on its final will be in t seconds */
@@ -355,13 +352,39 @@ function leader(ap, m, st, e) {
   return best;
 }
 /* the live edge for a planned step (the network may have changed since) */
-function edgeNow(ap, st) { const L = G(ap).adj.get(st.from); if (!L) return null; for (const e of L) if (e.to === st.to && e.kind === st.e.kind) return e; return null; }
+// (kept on the step until the network is rebuilt: an aircraft asks every step, and an apron node has many edges)
+function edgeNow(ap, st) {
+  const g = G(ap);
+  if (st._g === g) return st._le;
+  let le = null; const L = g.adj.get(st.from);
+  if (L) for (const e of L) if (e.to === st.to && e.kind === st.e.kind) { le = e; break; }
+  st._g = g; st._le = le;
+  return le;
+}
 /* entering this edge puts the aircraft on (or across) a runway */
-function rwNeed(ap, st, e) { if (e.kind === 'rwy') return e.part; const n = G(ap).N.get(st.to); return n ? n.rw : null; }
+function rwNeed(ap, st, e) {
+  if (e.kind === 'rwy') return e.part;
+  const g = G(ap); stepNodes(g, st);
+  return st._B ? st._B.rw : null;
+}
+/* the nodes at either end of a planned step, kept on it until the network is rebuilt */
+function stepNodes(g, st) { if (st._gn !== g) { st._gn = g; st._A = g.N.get(st.from) || null; st._B = g.N.get(st.to) || null; } }
 
 /* ---------- moves ---------- */
+/* every field a move ever gets is declared when it is made (what the caller passes is then assigned onto it): the
+   checks each step read moves of every kind side by side, and objects of one shape keep that fast */
 function newMove(S, ap, o) {
-  const m = Object.assign({ id: IC.nid('mv'), ap: ap.id, phase: 'start', t: 0, x: ap.x, y: ap.y, h: ap.rwyA || 0, spd: 0, path: null, pi: 0, s: 0, waitT: 0, taxiT: 0, blockT: 0, rwT: 0, born: S.time }, o);
+  const u = undefined;
+  const m = Object.assign({ id: IC.nid('mv'), ap: ap.id, phase: 'start', t: 0, x: ap.x, y: ap.y, h: ap.rwyA || 0, spd: 0, path: null, pi: 0, s: 0, waitT: 0, taxiT: 0, blockT: 0, rwT: 0, born: S.time,
+    // what the caller says
+    kind: u, type: u, node: u, target: u, stand: u, startT: u, readyT: u, faf: u, door: u, who: u, tail: u, livery: u, mil: u, scramble: u, flight: u, n: u, spdK: u, contact: u,
+    onAir: u, onDead: u, onPark: u, onGoAround: u, onLeave: u,
+    // the plan, taxiing and holding
+    T: u, plan: u, via: u, svcIn: u, gm: u, gmLog: u, onEdge: u, edgeKey: u, preKey: u, claimKey: u, resv: u, resT: u, oppT: u, holding: u, holdWhy: u, holdLog: u, advT: u, bayPick: u,
+    // the runway
+    luawOk: u, luaw: u, locks: u, crossBlk: u, xing: u, rolled: u, delay: u, finK: u, fx: u, fy: u, tx: u, ty: u, alt: u, inPath: u, onRw: u, s0: u, pos: u, goals: u, turned: u, backLog: u, crossed: u,
+    // trouble
+    stuck: u, noRouteLog: u, left: u, dead: u, destroyed: u, why: u, crash: u, hitOn: u, forgot: u }, o);
   m.T = IC.ACTYPES[m.type];
   ap.moves.push(m);
   return m;
@@ -369,7 +392,8 @@ function newMove(S, ap, o) {
 function place(ap, m) {
   const st = m.path && m.path[m.pi];
   if (!st) { const n = G(ap).N.get(m.node); if (n) { m.x = n.x; m.y = n.y; } return; }
-  const A = G(ap).N.get(st.from), B = G(ap).N.get(st.to); if (!A || !B) return;
+  stepNodes(G(ap), st);
+  const A = st._A, B = st._B; if (!A || !B) return;
   const L = st.e.len || U.dist(A, B), f = U.clamp(m.s / L, 0, 1);
   m.x = A.x + (B.x - A.x) * f; m.y = A.y + (B.y - A.y) * f;
   if (L > 0.01) m.h = Math.atan2(B.y - A.y, B.x - A.x);
@@ -380,8 +404,8 @@ function finishPath(m) { m.path = null; m.pi = 0; m.s = 0; }
 /* the best runway entry for this aircraft: into the wind, on a departure runway, with enough runway ahead */
 function planDeparture(S, ap, m, dry) {
   const g = G(ap), cfg = cfgOf(S, ap), T = m.T;
-  const tree = dry ? IC.aptTree(ap, m.node, false, T.ht) : IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) } });
-  let best = null;
+  // every place the take-off could start, with what it costs besides the taxi there
+  const C = [];
   for (const rw of runways(ap)) {
     const c = cfg.rw[rw.id]; if (!c) continue;
     const L = IC.rwLen(rw), dir = c.dir, need = T.rwy * 1.05 + 1;
@@ -395,15 +419,40 @@ function planDeparture(S, ap, m, dry) {
     for (const n of g.rwn.get(rw.id) || []) {
       const room = dir > 0 ? L - n.s : n.s;
       if (room < need || room < full || !clearRun(rw, n.s, n.s + dir * need)) continue;
-      const cost = n.id === m.node ? 0 : tree.dist.get(n.id);
-      if (cost == null) continue;
       // (an entry where a departure is waiting for its release is taken only if there is no other: a holding bay's
       // other tracks let a ready aircraft pass it)
       const waiting = ap.moves.some(x => x !== m && x.kind === 'dep' && !x.dead && x.readyT > S.time && x.plan && x.plan.start && x.plan.start.id === n.id && x.phase !== 'start' && x.phase !== 'push');
-      // the tower balances the departure runways: a longer taxi is worth it to skip a queue
-      const total = cost * 0.5 + role + (room < L * 0.6 ? 25 : 0) + (waiting ? 900 : 0);
-      if (!best || total < best.cost) best = { cost: total, rw, dir, start: n };
+      C.push({ rw, dir, n, role, pen: (room < L * 0.6 ? 25 : 0), wait: waiting ? 900 : 0 });
     }
+  }
+  let tree;
+  if (dry) tree = IC.aptTree(ap, m.node, false, T.ht);
+  else {
+    // the search with reservations heads for the runways (A*: the straight-line taxi time to each runway plus twice
+    // what a start there costs besides the taxi, which never overstates a start's doubled total, less a margin for
+    // nodes a little off the centre line), and stops once no start still unreached could beat the best one reached:
+    // a big airport's whole taxi graph is not searched for each departure
+    const ext = new Map(), rwX = new Map(); let top = Infinity;
+    for (const c of C) {
+      const x = c.role + c.pen + c.wait, v = ext.get(c.n.id); if (v == null || x < v) ext.set(c.n.id, x);
+      const r = rwX.get(c.rw); if (r == null || x < r) rwX.set(c.rw, x);
+    }
+    if (g.vmax == null) { g.vmax = 0.01; for (const L of g.adj.values()) for (const e of L) g.vmax = Math.max(g.vmax, e.spd || 0); }
+    const R = [...rwX].map(([rw, x]) => [rw.a.x, rw.a.y, rw.b.x, rw.b.y, 2 * x]), hk = 0.85 / g.vmax;
+    const h = n => { let b = Infinity; for (const r of R) { const v = U.segDist(n.x, n.y, r[0], r[1], r[2], r[3]) * hk + r[4]; if (v < b) b = v; } return b < Infinity ? Math.max(0, b - 2) : 0; };
+    tree = IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) }, h, stop: (u, du, f) => {
+      if (f > 2 * top + 1e-6) return true;
+      const x = ext.get(u); if (x != null && du * 0.5 + x < top) top = du * 0.5 + x;
+      return false;
+    } });
+  }
+  let best = null;
+  for (const c of C) {
+    const n = c.n, cost = n.id === m.node ? 0 : tree.dist.get(n.id);
+    if (cost == null) continue;
+    // the tower balances the departure runways: a longer taxi is worth it to skip a queue
+    const total = cost * 0.5 + c.role + c.pen + c.wait;
+    if (!best || total < best.cost) best = { cost: total, rw: c.rw, dir: c.dir, start: n };
   }
   if (best) best.p = { cost: best.cost, steps: best.start.id === m.node ? [] : IC.aptSteps(tree, m.node, best.start.id) };
   return best;
@@ -800,10 +849,10 @@ IC.gops = function (S, dt) {
     // a lock without a live owner does not block anyone
     if (ap.rl) for (const k in ap.rl) {
       const L = ap.rl[k];
-      if (L.with) for (const id of L.with) if (!ap.moves.some(m => m.id === id)) L.with.delete(id);
-      if (L.by && !ap.moves.some(m => m.id === L.by)) { if (L.with && L.with.size) { const n = L.with.values().next().value; L.with.delete(n); L.by = n; } else L.by = null; }
-      if (L.fin && !ap.moves.some(m => m.id === L.fin)) L.fin = null;
-      if (L.gapFor && (S.time - L.gapT > 240 || !ap.moves.some(m => m.id === L.gapFor))) L.gapFor = null;
+      if (L.with) for (const id of L.with) if (!moveOf(ap, id)) L.with.delete(id);
+      if (L.by && !moveOf(ap, L.by)) { if (L.with && L.with.size) { const n = L.with.values().next().value; L.with.delete(n); L.by = n; } else L.by = null; }
+      if (L.fin && !moveOf(ap, L.fin)) L.fin = null;
+      if (L.gapFor && (S.time - L.gapT > 240 || !moveOf(ap, L.gapFor))) L.gapFor = null;
     }
   }
 };

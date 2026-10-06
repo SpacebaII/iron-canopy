@@ -151,7 +151,8 @@ const U = IC.U = {
   },
   money(v) {
     const a = Math.abs(v);
-    const s = a < 10 && a % 1 ? a.toFixed(1) : Math.round(a).toLocaleString('en-US');
+    // (thousands by hand: toLocaleString is slow, and its first call loads the locale data mid-step)
+    const s = a < 10 && a % 1 ? a.toFixed(1) : isFinite(a) ? String(Math.round(a)).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : Math.round(a).toLocaleString('en-US');
     return (v < 0 ? '−' : '') + '₭' + s + 'M';
   },
   km: u => (u / 10 < 10 ? (u / 10).toFixed(1) : Math.round(u / 10)) + ' km',

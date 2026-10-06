@@ -799,7 +799,8 @@ function carsMesh(F, n) {
 function cars(v, dtR) {
   const F = v.fxs, M = F.cars; if (!M) return;
   const S = v.S, cp = v.camera.position, look = v.lookAt || cp, gnd = R.hT(v, look.x + v.cx, look.z + v.cy) * v.hk;
-  const on = IC.trafficAgents && S.traffic && !(IC.cam && IC.cam.z >= 10) && cp.y - gnd < 4;
+  // (the map's own vehicles on their own trips are the 2D view's from its hand-over zoom on: they share one set)
+  const on = IC.trafficAgents && S.traffic && !(IC.cam && IC.cam.z >= IC.TRAFFIC_AGZ[0]) && cp.y - gnd < 4;
   M.visible = !!on; if (!on) return;
   const b = F.carBox, r = 14, fx = look.x + v.cx, fy = look.z + v.cy;
   b.x0 = fx - r; b.x1 = fx + r; b.y0 = fy - r; b.y1 = fy + r;

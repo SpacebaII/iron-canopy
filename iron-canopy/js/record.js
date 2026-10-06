@@ -429,6 +429,10 @@ function sampleSimple(R, o, now, kind, model, name, side, alt, meta, key, code) 
     if (tr) R.of.set(o, tr); else tr = newTrack(R, o, kind, model, name, side, meta);
     if (key) R.link.set(key, tr);
   }
+  sampleOn(R, tr, o, now, kind, side, alt, code);
+}
+/* a sample on a track that exists (the callers below go straight here, without making a new track's name and meta) */
+function sampleOn(R, tr, o, now, kind, side, alt, code) {
   // on the ground the speed is how far it went since the last sample (a move keeps no speed on final)
   const spd = kind === 'veh' || kind === 'unit' || kind === 'gnd' ? (tr.n && now > tr.t1 ? U.dxy(o.x, o.y, at(tr, tr.n - 1, 1), at(tr, tr.n - 1, 2)) / (now - tr.t1) : 0) : spdOf(o);
   if (code != null) markPhase(tr, now, code, alt);
@@ -461,10 +465,12 @@ function sampleFine(S, R, now) {
 }
 
 /* one of our flights in the air, joined to its take-off and landing */
-const sampleAir = (R, a, now) => sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n }, a, a.faf && (a.alt || 0) < 1.5 ? GPH.appr : GPH.air);
+const sampleAir = (R, a, now) => { const tr = R.of.get(a), code = a.faf && (a.alt || 0) < 1.5 ? GPH.appr : GPH.air; if (tr) sampleOn(R, tr, a, now, 'air', 'us', a.alt || 0, code); else sampleSimple(R, a, now, 'air', IC.modelOfAir(a), a.name, 'us', a.alt || 0, { kind: a.kind, n: a.n }, a, code); };
 /* an aircraft moving on one of our airports (or on final to it) */
 function sampleMove(R, m, b, now) {
-  sampleSimple(R, m, now, 'gnd', IC.modelOfType(m.type), m.who || m.T.name, m.mil ? 'us' : 'civil', m.alt || 0, { type: m.type, livery: m.livery || null, ap: b.id, civil: !m.mil }, m.tail || m.flight || null, GOPS_PH[m.phase] || GPH.taxi);
+  const tr = R.of.get(m), code = GOPS_PH[m.phase] || GPH.taxi;
+  if (tr) sampleOn(R, tr, m, now, 'gnd', m.mil ? 'us' : 'civil', m.alt || 0, code);
+  else sampleSimple(R, m, now, 'gnd', IC.modelOfType(m.type), m.who || m.T.name, m.mil ? 'us' : 'civil', m.alt || 0, { type: m.type, livery: m.livery || null, ap: b.id, civil: !m.mil }, m.tail || m.flight || null, code);
   // pushed back: the turnaround at that stand is over
   if (m.phase === 'push' && m.stand) for (const q of R.turns) if (q.t1 == null && q.ap === b.id && q.sid === m.stand.id) q.t1 = now;
   // cleared across a hold-short line: on a taxiway edge with a runway's clearance in hand
@@ -491,8 +497,8 @@ IC.record = function (S, dt) {
   for (const b of S.infra) if (b.parts && b.moves) for (const m of b.moves) if (!m.dead && m.phase !== 'start') sampleMove(R, m, b, now);
   if (now - R.turnT >= 2) { R.turnT = now; turnsTick(S, R, now); }
   if (now - R.windT >= 30 && S.wind) { R.windT = now; R.wind.push({ t: now, dir: S.wind.dir, kt: S.wind.kt, gust: S.wind.gust || 0 }); }
-  for (const v of S.vehicles) if (!v.dead) sampleSimple(R, v, now, 'veh', v.kind === 'truck' ? 'truck' : 'truck', v.name, 'us', 0, { trucks: v.trucks });
-  for (const u of S.units) if (!u.dead) sampleSimple(R, u, now, 'unit', IC.modelOfUnit(u.type), u.name, 'us', 0, { type: u.type, n: IC.unitVehicles(u.d) });
+  for (const v of S.vehicles) if (!v.dead) { const tr = R.of.get(v); if (tr) sampleOn(R, tr, v, now, 'veh', 'us', 0); else sampleSimple(R, v, now, 'veh', v.kind === 'truck' ? 'truck' : 'truck', v.name, 'us', 0, { trucks: v.trucks }); }
+  for (const u of S.units) if (!u.dead) { const tr = R.of.get(u); if (tr) sampleOn(R, tr, u, now, 'unit', 'us', 0); else sampleSimple(R, u, now, 'unit', IC.modelOfUnit(u.type), u.name, 'us', 0, { type: u.type, n: IC.unitVehicles(u.d) }); }
   // what is gone stays in the record until its last sample ages out
   if (now - R.purgeT > REC.purgeEvery) {
     R.purgeT = now;

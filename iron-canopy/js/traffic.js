@@ -457,7 +457,8 @@ IC.traffic = function (S, dt) {
     const g = (war ? 0.75 : 1) * (S.alertCities > 2 ? 0.55 : 1);
     for (const L of T.links) {
       // the slots have ridden at the old speed since the last reading
-      for (let d = 0; d < 2; d++) { L.ph[d] = (L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time))) % (BASE * 65536); }
+      // (the remainder only when it wraps: it is the same number, and the slow part of this loop over every link)
+      for (let d = 0; d < 2; d++) { const p = L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time)); L.ph[d] = p >= 0 && p < BASE * 65536 ? p : p % (BASE * 65536); }
       L.t0 = S.time;
       const lk = L.l, i = lk.id * 2;
       // the town a link runs through: its own streets, or national roads inside its built-up area
@@ -569,10 +570,25 @@ IC.along = along;
 IC.trainPos = t => along(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
 IC.busPos = b => { const p = along(b.line.pts, b.line.cum, U.clamp(b.s, 0, b.line.len)); if (b.dir < 0) p.h += Math.PI; return p; };
 
+/* ---------- how many vehicles are drawn ----------
+   Every way of drawing road traffic (the slots of the middle zoom, the vehicles on their own trips close in, the 3D
+   view) shows the same share of the vehicles the flows put on a road at a zoom: all of them once they are drawn at
+   their real size, fewer farther out, where each is drawn a few pixels long and they would crowd the road. The share
+   changes smoothly with the zoom, and a smaller share is always part of a larger one, so as the player zooms
+   vehicles come and go one at a time and the count on a street never jumps. Two hand-overs blend over a range of
+   zooms: the moving dashes of the far view into the slots (TRAFFIC_DASH), and the slots into the vehicles on their
+   own trips (TRAFFIC_AGZ). */
+IC.trafficKeep = z => Math.min(1, 2.5 * KINDS.car.L / Math.max(KINDS.car.L, 4.4 / z));
+IC.TRAFFIC_DASH = [1.1, 1.6];
+IC.TRAFFIC_AGZ = [20, 30];
+/* a slot's rank: slots at multiples of 2^n come first, so a share of keep needs only every 2^n-th slot looked at */
+function slotRank(j, key) { const tz = j ? 31 - Math.clz32(j & -j) : 16; return (1 + U.hash(key + 7919, j)) / (2 << Math.min(16, tz)); }
+IC.trafficSlotRank = slotRank;
+
 /* ---------- vehicles in slots, for the middle zoom ----------
-   fn(x, y, heading, kind, cls, lane) for each vehicle in a view rectangle. gap: the smallest spacing to show
-   (the renderer asks for a few screen pixels); skip: classes to leave out. Near a junction with lights or a give
-   way the slots bunch up: traffic slows and queues there. */
+   fn(x, y, heading, kind, cls, lane) for each vehicle in a view rectangle. gap: the smallest spacing to show, or
+   { keep (the share shown), cls: { class: weight of its share } }; skip: classes to leave out. Near a junction with
+   lights or a give way the slots bunch up: traffic slows and queues there. */
 const KIND_LIST = Object.keys(KINDS);
 function pickKind(mix, h) {
   // h in [0, 1): which purpose, then which vehicle of that purpose
@@ -585,11 +601,13 @@ function pickKind(mix, h) {
 }
 IC.trafficVisible = function (S, view, gap, fn, skip) {
   const T = S.traffic; if (!T) return 0;
-  const G = T.G, k = Math.max(0, Math.ceil(Math.log2(Math.max(BASE, gap) / BASE))), step = 1 << k;
+  const G = T.G, o = typeof gap === 'object' ? gap : null, keep0 = o ? o.keep : Math.min(1, BASE / Math.max(BASE, gap)), W = o && o.cls;
   let n = 0;
   for (const L of T.links) {
     const l = L.l, bb = l.bb;
     if (L.load <= 0.01 || (skip && skip[L.cls]) || bb[2] < view.x0 || bb[0] > view.x1 || bb[3] < view.y0 || bb[1] > view.y1) continue;
+    const keep = keep0 * (W && W[L.cls] != null ? W[L.cls] : 1); if (keep <= 0) continue;
+    const step = keep >= 1 ? 1 : 1 << Math.min(16, Math.floor(Math.log2(1 / keep)));
     const P = l.pts, cum = l.cum, len = l.len;
     let s0 = 1e9, s1 = -1;
     for (let i = 1; i < P.length; i++) {
@@ -615,7 +633,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
       let j = Math.ceil((ua - ph) / BASE); j += (step - (j % step + step) % step) % step;
       for (; j * BASE + ph <= Math.min(ub, span); j += step) {
         const u = j * BASE + ph, h = U.hash(L.key + d, j & 65535);
-        if (h > p) continue;
+        if (h > p || (keep < 1 && slotRank(j & 65535, L.key + d) >= keep)) continue;
         const s = toS(u), q = along(P, cum, d ? len - s : s);
         if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
@@ -627,6 +645,28 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
   return n;
 };
 
+/* the vehicles the map shows in a view at zoom z, dt game seconds after the last frame: the slots riding the flows,
+   handing over to the vehicles on their own trips (IC.TRAFFIC_AGZ), the share of both by IC.trafficKeep, faded in
+   from the far view's dashes (IC.TRAFFIC_DASH); city streets and lanes join in as the zoom comes to them.
+   fn(x, y, heading, kind, colour, cls, lane offset): a slot is on the road's centre line with its lane's offset to
+   lay off (the renderer widens it with the road), a vehicle on its own trip already in its lane (offset 0) */
+IC.trafficShown = function (S, view, z, dt, fn) {
+  const D = IC.TRAFFIC_DASH, AZ = IC.TRAFFIC_AGZ, wD = U.clamp((z - D[0]) / (D[1] - D[0]), 0, 1), wA = U.clamp((z - AZ[0]) / (AZ[1] - AZ[0]), 0, 1);
+  const keep = IC.trafficKeep(z) * wD;
+  let n = 0;
+  if (keep <= 0) return 0;
+  if (wA < 1) {
+    const sw = U.clamp(z - 2, 0, 1);
+    n += IC.trafficVisible(S, view, { keep: keep * (1 - wA), cls: { st: sw, ln: sw } }, (x, y, h, k, cls, off) => fn(x, y, h, k, (x * 7 + y * 13) & 1023, cls, off));
+  }
+  // the vehicles on their own trips carry the whole share, and show the part of it handed over to them
+  if (wA > 0) for (const a of IC.trafficAgents(S, view, dt, keep)) {
+    if (a.u >= keep * wA) continue;
+    const p = IC.agentPos(a); if (p.x < view.x0 - 1 || p.x > view.x1 + 1 || p.y < view.y0 - 1 || p.y > view.y1 + 1) continue;
+    fn(p.x, p.y, p.h, a.k, a.col, a.route[a.ri][0].cls, 0); n++;
+  }
+  return n;
+};
 /* flow along the roads for the far view: fn(link, load, phase, cls) for roads in view */
 IC.trafficFlows = function (S, view, classes, fn) {
   const T = S.traffic; if (!T) return;
@@ -648,7 +688,7 @@ IC.trafficFlows = function (S, view, classes, fn) {
 const AG = new WeakMap();
 // how many of the vehicles the flows imply are drawn: half, which reads as busy and costs half the frame
 IC.TRAFFIC_SHOW = 0.5;
-const AG_MAX = 700;
+const AG_MAX = 900;
 // how far a vehicle drives before it parks (world units), by purpose
 const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
@@ -671,45 +711,65 @@ function pickNext(G, T, n, lk, R, back) {
   for (let i = 0; i < c.length; i += 3) if ((r -= c[i + 2]) <= 0) return [c[i], c[i + 1]];
   return [c[c.length - 3], c[c.length - 2]];
 }
-function newAgent(S, A, route, s0, kind, purpose, org) {
+/* u: the vehicle's rank, from 0 up to the share of the flows the agents carry (IC.trafficKeep): shown while it is
+   below the share the renderer draws */
+function newAgent(S, A, route, s0, kind, purpose, org, u) {
   const K = KINDS[kind], lk = route[0][0], L = LIFE[purpose] || LIFE.gen, R = A.R;
-  const a = { k: kind, K, route, ri: 0, s: s0, v: lk.C.v * 0.5, lane: 0, org, pur: purpose, life: L[0] + R() * (L[1] - L[0]), wait: 0, col: Math.floor(R() * 1000), t0: S.time, id: A.nid++ };
+  const a = { k: kind, K, route, ri: 0, s: s0, v: lk.C.v * 0.5, lane: 0, org, pur: purpose, life: L[0] + R() * (L[1] - L[0]), wait: 0, col: Math.floor(R() * 1000), t0: S.time, id: A.nid++, u: u == null ? R() * A.k : u };
   laneFor(a);
   A.list.push(a);
   return a;
 }
 function laneFor(a) { const lk = a.route[a.ri][0], n = lk.C.lanes; a.lane = n > 1 ? (a.K.L > 0.1 || (a.col % 10) < 6 ? 0 : 1) : 0; }
 const endOf = (lk, d) => d ? lk.a : lk.b;
-IC.trafficAgents = function (S, view, dt) {
+/* keep: the share of the flows to carry (IC.trafficKeep; all of them by default, as the 3D view wants) */
+IC.trafficAgents = function (S, view, dt, keep) {
   const T = S.traffic; if (!T) return [];
   let A = AG.get(S);
   const G = T.G, cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2, r = Math.max(view.x1 - view.x0, view.y1 - view.y0) * 0.65 + 4;
-  if (!A || A.reset || A.G !== G) { A = { list: [], nid: 1, R: IC.makeRng(((S.seed * 7 + 3) >>> 0) + (A ? A.nid : 0)), G, box: null, trips: [], zt: new Map() }; AG.set(S, A); }
+  if (!A || A.reset || A.G !== G) { A = { list: [], nid: 1, R: IC.makeRng(((S.seed * 7 + 3) >>> 0) + (A ? A.nid : 0)), G, box: null, trips: [], zt: new Map(), k: 1 }; AG.set(S, A); }
+  keep = keep == null ? 1 : U.clamp(keep, 0.01, 1);
   const box = { x0: cx - r, y0: cy - r, x1: cx + r, y1: cy + r }, R = A.R;
   A.r = r; A.stats = A.stats || { spawnZone: 0, spawnEdge: 0, arrived: 0, turned: 0 };
   const inBox = (x, y, b) => x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1;
   const posOf = a => { const [lk, d] = a.route[a.ri], s = d ? lk.len - a.s : a.s; return along(lk.pts, lk.cum, U.clamp(s, 0, lk.len)); };
-  // the view moved on: vehicles far outside go, links newly in view are filled at their flow
-  const moved = !A.box || !inBox(cx, cy, { x0: A.box.x0 + r * 0.4, y0: A.box.y0 + r * 0.4, x1: A.box.x1 - r * 0.4, y1: A.box.y1 - r * 0.4 }) || Math.abs((A.box.x1 - A.box.x0) - 2 * r) > r * 0.3;
-  if (moved) {
-    const old = A.box;
-    A.list = A.list.filter(a => { const p = posOf(a); return inBox(p.x, p.y, box); });
+  // links filled at their flow, for the share of it from k0 to k1: as many vehicles a length as the slots show (fewer
+  // everywhere alike where that would pass AG_MAX). Returns the share reached
+  const fill = (k0, k1, old) => {
+    const want = []; let E = 0;
     for (const L of T.links) {
       const lk = L.l, bb = lk.bb;
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
       for (let d = 0; d < 2; d++) {
         if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
-        const n = L.ld[d] * lk.C.dens * lk.len * lk.C.lanes * 0.5 * IC.TRAFFIC_SHOW;
-        for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
-          if (R() > n - q) break;
-          const a = newAgent(S, A, [[lk, d]], R() * lk.len, pickKind(mixOf(L, d), R()), 'through', null);
-          a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
-        }
+        const n = L.ld[d] * lk.C.dens * lk.len * IC.TRAFFIC_SHOW * (k1 - k0);
+        if (n > 0) { want.push(L, d, n); E += n; }
       }
     }
+    const f = E > 0 ? U.clamp((AG_MAX - A.list.length) / E, 0, 1) : 1, k2 = k0 + (k1 - k0) * f;
+    for (let i = 0; i < want.length; i += 3) {
+      const L = want[i], lk = L.l, d = want[i + 1], n = want[i + 2] * f;
+      for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
+        if (R() > n - q) break;
+        const a = newAgent(S, A, [[lk, d]], R() * lk.len, pickKind(mixOf(L, d), R()), 'through', null, k0 + R() * (k2 - k0));
+        a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
+      }
+    }
+    return k2;
+  };
+  // a smaller share: the vehicles ranked above it go at once
+  if (keep < A.k) { A.list = A.list.filter(a => a.u < keep); A.k = keep; }
+  // the view moved on: vehicles far outside go, links newly in view are filled at their flow
+  const moved = !A.box || !inBox(cx, cy, { x0: A.box.x0 + r * 0.4, y0: A.box.y0 + r * 0.4, x1: A.box.x1 - r * 0.4, y1: A.box.y1 - r * 0.4 }) || Math.abs((A.box.x1 - A.box.x0) - 2 * r) > r * 0.3;
+  if (moved) {
+    const old = A.box;
+    A.list = A.list.filter(a => { const p = posOf(a); return inBox(p.x, p.y, box); });
+    fill(0, A.k, old);
     A.box = box;
   }
+  // a larger share: more join on every link in the box
+  if (keep > A.k * 1.02 && A.list.length < AG_MAX * 0.95) A.k = fill(A.k, keep, null);
   if (!dt || dt <= 0) return A.list;
   // new vehicles: from the zones in view, and in from the edge of the box on busy links
   const h = (S.time % 86400) / 3600, fi = hr(H_IN, h), fo = hr(H_OUT, h), ff = hr(H_FRT, h), fa = hr(H_APT, h), fg = hr(H_GEN, h);
@@ -718,7 +778,7 @@ IC.trafficAgents = function (S, view, dt) {
     if (!inBox(z.x, z.y, box) || !room()) continue;
     // departures a game second: people and lorries leaving this zone
     const pc = (z.homes * fi + z.jobs * fo) * 0.004, pf = z.frt * ff * 0.002, pa = z.homes * fa * 0.0006, rate = pc + pf + pa + z.homes * fg * 0.0015;
-    let acc = (A.zt.get(z) || 0) + rate * dt * IC.TRAFFIC_SHOW;
+    let acc = (A.zt.get(z) || 0) + rate * dt * IC.TRAFFIC_SHOW * A.k;
     while (acc >= 1 && room()) {
       acc -= 1;
       const u = R() * rate, pur = u < pc ? 'com' : u < pc + pf ? 'frt' : u < pc + pf + pa ? 'apt' : 'gen';
@@ -740,7 +800,7 @@ IC.trafficAgents = function (S, view, dt) {
       if (ia === ib) continue;
       const d = ia ? 1 : 0;   // the direction that runs into the box
       if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
-      const n = L.ld[d] * lk.C.dens * lk.C.lanes * L.v[d] * et * IC.TRAFFIC_SHOW;
+      const n = L.ld[d] * lk.C.dens * L.v[d] * et * IC.TRAFFIC_SHOW * A.k;
       for (let q = 0; q < n && room(); q++) {
         if (R() > n - q) break;
         const a = newAgent(S, A, [[lk, d]], 0, pickKind(mixOf(L, d), R()), 'through', null);
