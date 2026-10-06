@@ -429,7 +429,7 @@ Heap.prototype.pop = function () {
   return top;
 };
 /* o: { to (stop there), rev (search backwards: cost from every node to src), avoidRwy, res: { m, t0 } (wait for taxiways
-   booked the other way), stop(u, cost) (true: settle nothing more, from node u on) }. Runway edges cost double (they block the runway), triple for arrivals; stepping onto a runway
+   booked the other way), h(node) (a heuristic for A*), stop(u, cost, key) (true: settle nothing more, from node u on) }. Runway edges cost double (they block the runway), triple for arrivals; stepping onto a runway
    from a taxiway costs a hold. Returns { dist, prev, time }. */
 /* the graph as arrays by node index, for the searches (built once per graph; a loaded game's graph gets it again) */
 function gIndex(G) {
@@ -461,7 +461,9 @@ IC.aptSearch = function (ap, src, o) {
   const avoid = o.avoid != null && X.ix.has(o.avoid) ? X.ix.get(o.avoid) : -1;
   if (goal && G.vmax == null) { G.vmax = 0.01; for (const L of G.adj.values()) for (const e of L) G.vmax = Math.max(G.vmax, e.spd || 0); }
   const gx = goal ? goal.x : 0, gy = goal ? goal.y : 0;
-  const H = new Heap(); H.push(s, goal ? U.dxy(NA[s].x, NA[s].y, gx, gy) * 0.85 / G.vmax : 0);
+  // (o.h: a heuristic of the caller's own, by node)
+  const hf = o.h || null;
+  const H = new Heap(); H.push(s, goal ? U.dxy(NA[s].x, NA[s].y, gx, gy) * 0.85 / G.vmax : hf ? hf(NA[s]) : 0);
   const rwK = o.avoidRwy ? 6 : 2, ht = o.ht || (o.res && o.res.m && o.res.m.T && o.res.m.T.ht) || 0, rev = !!o.rev;
   const cfg = ap.cfg, rm = o.res ? o.res.m : null, resWait = IC.gopsResWait;
   while (H.k.length) {
@@ -469,7 +471,7 @@ IC.aptSearch = function (ap, src, o) {
     if (done[u]) continue;
     const du = dist[u];
     // (stop: the caller has what it needs once nodes this far out cannot matter; u is left unsettled)
-    if (o.stop && o.stop(X.ids[u], du)) break;
+    if (o.stop && o.stop(X.ids[u], du, H.top)) break;
     done[u] = 1;
     if (u === to) break;
     const L = A[u];
@@ -484,7 +486,7 @@ IC.aptSearch = function (ap, src, o) {
       if (e.kind !== 'rwy' && B.rw) { const c = cfg && cfg.rw[B.rw]; w += c && c.role !== 'spare' ? 60 : 20; }
       if (time) { const tu = time[u], wait = rm ? resWait(ap, e, tu, rm) : 0; w += wait * 1.5; tv = tu + wait + e.len / e.spd; }
       const nd = du + w;
-      if (nd < dist[v]) { dist[v] = nd; prev[v] = e; if (time) time[v] = tv; H.push(v, goal ? nd + U.dxy(NA[v].x, NA[v].y, gx, gy) * 0.85 / G.vmax : nd); }
+      if (nd < dist[v]) { dist[v] = nd; prev[v] = e; if (time) time[v] = tv; H.push(v, goal ? nd + U.dxy(NA[v].x, NA[v].y, gx, gy) * 0.85 / G.vmax : hf ? nd + hf(NA[v]) : nd); }
     }
   }
   return out;

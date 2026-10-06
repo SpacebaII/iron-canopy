@@ -428,12 +428,20 @@ function planDeparture(S, ap, m, dry) {
   let tree;
   if (dry) tree = IC.aptTree(ap, m.node, false, T.ht);
   else {
-    // the search with reservations stops once no start still unreached could beat the best one reached (a taxi
-    // costs half its time in the total below): a big airport's whole taxi graph is not searched for each departure
-    const ext = new Map(); let lo = Infinity, top = Infinity;
-    for (const c of C) { const x = c.role + c.pen + c.wait, v = ext.get(c.n.id); if (v == null || x < v) ext.set(c.n.id, x); if (x < lo) lo = x; }
-    tree = IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) }, stop: (u, du) => {
-      if (du * 0.5 + lo > top + 1e-6) return true;
+    // the search with reservations heads for the runways (A*: the straight-line taxi time to each runway plus twice
+    // what a start there costs besides the taxi, which never overstates a start's doubled total, less a margin for
+    // nodes a little off the centre line), and stops once no start still unreached could beat the best one reached:
+    // a big airport's whole taxi graph is not searched for each departure
+    const ext = new Map(), rwX = new Map(); let top = Infinity;
+    for (const c of C) {
+      const x = c.role + c.pen + c.wait, v = ext.get(c.n.id); if (v == null || x < v) ext.set(c.n.id, x);
+      const r = rwX.get(c.rw); if (r == null || x < r) rwX.set(c.rw, x);
+    }
+    if (g.vmax == null) { g.vmax = 0.01; for (const L of g.adj.values()) for (const e of L) g.vmax = Math.max(g.vmax, e.spd || 0); }
+    const R = [...rwX].map(([rw, x]) => [rw.a.x, rw.a.y, rw.b.x, rw.b.y, 2 * x]), hk = 0.85 / g.vmax;
+    const h = n => { let b = Infinity; for (const r of R) { const v = U.segDist(n.x, n.y, r[0], r[1], r[2], r[3]) * hk + r[4]; if (v < b) b = v; } return b < Infinity ? Math.max(0, b - 2) : 0; };
+    tree = IC.aptSearch(ap, m.node, { res: { m, t0: S.time + (m.t > 0 ? m.t : 0) }, h, stop: (u, du, f) => {
+      if (f > 2 * top + 1e-6) return true;
       const x = ext.get(u); if (x != null && du * 0.5 + x < top) top = du * 0.5 + x;
       return false;
     } });
