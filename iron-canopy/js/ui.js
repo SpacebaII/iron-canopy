@@ -616,9 +616,13 @@ function place(el, sx, sy) { const W = $('app').clientWidth; el.style.left = Mat
 function followChip() {
   const el = $('followchip'); if (!el) return;
   const tl = S.follow && IC.followTail(S);
-  if (!tl) { if (!el.hidden) { el.hidden = true; ui.cache.follow = null; } return; }
+  if (!tl) { if (!el.hidden) { el.hidden = true; ui.cache.follow = null; ui.cache.followTl = null; } return; }
   const h = `<span class="fc-tag">FOLLOWING</span>${IC.FOCUS.tutors ? `<button class="fc-cs" data-act="followSel" title="Its panel: what it is doing and its turnaround">${esc(tl.cs)}</button>` : `<b>${esc(tl.cs)}</b>`}<span class="fc-ph">${esc(IC.tailPhase(S, tl))}</span><button class="btn sm" data-act="followOff" title="Let the camera go (or drag the map)">Stop</button>`;
-  if (ui.cache.follow !== h) { el.innerHTML = h; ui.cache.follow = h; }
+  // (round 5c) the phase changes every few seconds: only its words are replaced, so the call sign under the mouse
+  // stays the same button
+  const ph = el.querySelector('.fc-ph');
+  if (ui.cache.followTl === tl.id && ph && el.querySelector('.fc-cs, b')) { const t = IC.tailPhase(S, tl); if (ph.textContent !== t) ph.textContent = t; }
+  else if (ui.cache.follow !== h) { el.innerHTML = h; ui.cache.follow = h; ui.cache.followTl = tl.id; }
   el.hidden = false;
   // above the build bar when it is open
   const bb = $('bbar'), r = bb && !bb.hidden && bb.offsetHeight ? bb.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
