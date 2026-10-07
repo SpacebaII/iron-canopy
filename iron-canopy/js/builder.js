@@ -517,7 +517,7 @@ IC.BTOOLS = {
   concourse: { name: 'Concourse', desc: 'Click the two ends of a pier: a terminal with gates (jet bridges) on both sides and a taxilane along each apron.' },
   remote: { name: 'Remote apron', desc: 'Two corners: an apron with a taxilane along its front. Stands served by bus.' },
   ramp: { name: 'Open ramp', desc: 'Two corners: a paved ramp where you place stands yourself, any size, for any aircraft that may park in the open.' },
-  stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go, then Build (or Enter): the new paving joins it seamlessly. Aprons that touch are one paved area.' },
+  stretch: { name: 'Stretch apron', desc: 'Click the edge of an apron, then click how far out it should go, then Build (or Enter): the new paving joins it as one slab. Aprons that touch are one paved area.' },
   blueprint: { name: 'Blueprint', desc: 'A whole real airport, laid out from map data: pick one below, turn it with R, click where it goes. It is planned part by part and paid for as it is built, like anything else; it must fit the site: in the country, off lakes and rivers, clear of other airfields and of what is already here.', avail: () => !!(IC.showcaseKeys && IC.showcaseKeys().length) },
   svcroad: { name: 'Service road', desc: 'Click along the way it goes, then Build (or Enter): an airside road for tugs, buses, fuel trucks and fire tenders. It may cross taxiways (painted with a zebra or a stop line), never a runway. The airport lays most of its own; draw more where you want them.' },
   stand: { name: 'Stand', desc: 'Click on any apron to place a stand of the chosen size; next to a terminal it noses in to a gate. R turns it. Nose-in stands need a tug to push back; drive-through stands take more room but no tug. Click a stand to remove it.' }
@@ -1377,6 +1377,15 @@ IC.bldReady = function (S, m) {
   if (m._readyK !== key) { m._readyK = key; m._ready = IC.bldPlanOf(S, m, m.at || m.pts[m.pts.length - 1], m.tol || 0.12, m.free, !m.set); }
   return m._ready;
 };
+/* (round 5c) how long a plan takes the airport's crews, for the button by the ghost: a part's own time, or a piece's
+   or blueprint's parts one after another, shared between the crews */
+IC.planDur = function (ap, plan) {
+  if (!plan) return 0;
+  if (plan.dur) return plan.dur;
+  const t = plan.bp && plan.bp.t; if (!t || !t.parts) return 0;
+  if (plan._dur == null) { let d = 0; for (const p of t.parts) { try { d += IC.partBuildTime(t, p) || 0; } catch (e) { /* a part the scratch layout cannot measure */ } } plan._dur = d / Math.max(1, ap.crews || 1); }
+  return plan._dur;
+};
 /* Build (the button by the plan, or Enter): build what is placed */
 IC.buildFinish = function (S, m) {
   m.err = '';
@@ -1571,4 +1580,14 @@ IC.clickWorld = IC.clickWorld || function (p, btn, shift) {
   return r;
 };
 
+/* (round 5c) what the player does with the builder is an event ('bld' { act, v }), so a tutorial can wait for it:
+   a plan placed or moved, turned, built or dropped; a site placed, turned, founded */
+const ev = (S, act, v) => IC.emit(S, 'bld', { act, v });
+const wrap = (k, f) => { const g = IC[k]; IC[k] = function () { return f(g.apply(this, arguments), arguments); }; };
+wrap('buildInput', (r, [S, m]) => { if (r === 'point' && m.set) ev(S, m._evSet ? 'moved' : 'placed', m.part); m._evSet = !!m.set; return r; });
+wrap('buildCancel', (r, [S, m]) => { if (r === 'undo') { ev(S, 'cancel', m.part); m._evSet = !!m.set; } return r; });
+wrap('buildFinish', (r, [S, m]) => { if (r === 'built') { ev(S, 'built', m.part); m._evSet = false; } return r; });
+wrap('foundInput', (r, [S]) => { if (r === 'point') ev(S, 'site'); return r; });
+wrap('foundTurn', (r, [m]) => { if (r && IC.S) ev(IC.S, 'turn'); return r; });
+wrap('foundFinish', (r, [S]) => { if (r === 'built') ev(S, 'found'); return r; });
 })(window.IC);

@@ -11,7 +11,9 @@ function say(S, who, text) {
   const a = IC.ADVISORS[who] || { name: who, role: 'Front commander', tag: 'CMD' };
   // (round 3) in the civil act the military staff are not the player's: their words go to the Journal only
   if (IC.civilAct(S) && (MIL_STAFF[who] || !IC.ADVISORS[who])) { IC.log(S, 'info', a.tag, text); return; }
-  S.camp.comms.push({ who, name: a.name, role: a.role, tag: a.tag, text, t: S.time });
+  // (round 5c) the message line shows who speaks: "Lena Okafor, airports." at its start would say it twice
+  const intro = text.startsWith(a.name + ', ') ? text.indexOf('. ') : -1, said = intro > 0 ? text.slice(intro + 2) : text;
+  S.camp.comms.push({ who, name: a.name, role: a.role, tag: a.tag, text: said, t: S.time });
   IC.log(S, 'info', a.tag, text);
   IC.sfx && IC.sfx.radio();
 }

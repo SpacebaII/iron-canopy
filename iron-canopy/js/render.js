@@ -73,6 +73,7 @@ IC.daylight = function (t) {
 IC.render = function (S, now) {
   const z = cam.z, px = 1 / z;
   IC.frameN = (IC.frameN || 0) + 1;
+  IC.LBL.reset();
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }
@@ -109,7 +110,10 @@ IC.render = function (S, now) {
   if (golden > 0) { ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = `rgba(255,140,60,${0.35 * golden})`; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalCompositeOperation = 'source-over'; }
   if (light < 0.9) drawLights(S, px, now, light);
 
-  if (S.layers.coverage) drawCoverage(S);
+  // (round 5c) radar cover belongs to the moment in the civil act: while placing a civil radar, in the Airspace tab, or
+  // with the gaps shown; not over the whole Career from Chapter 3 on
+  const covNow = S.layers.coverage || (IC.FOCUS.polish && IC.civilAct(S) && ((S.mode2 && S.mode2.kind === 'deploy' && IC.UNITS[S.mode2.type] && IC.UNITS[S.mode2.type].sensor && IC.UNITS[S.mode2.type].sensor.ssr) || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra')));
+  if (covNow) drawCoverage(S);
   drawAirways(S, px, now);
   drawFronts(S, px);
   IC.drawRoadBridges(ctx, S, px, view);
@@ -133,7 +137,15 @@ IC.render = function (S, now) {
 
   ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
   let li = 0;
-  for (const x of S.fx.texts) { const L = x.life || 1.8, rise = (8 + Math.min(x.t, 1.8) * 16 + (x.life ? 18 * li++ : 0)) * px; ctx.globalAlpha = Math.max(0, Math.min(1, (L - x.t) / 0.8)); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(x.s, x.x + px, x.y - rise + px); ctx.fillStyle = x.color; ctx.fillText(x.s, x.x, x.y - rise); }
+  // (round 5c) the words that float up over the works go through the same placement as the labels: one that would
+  // cover another moves up a line, or waits its turn
+  for (const x of S.fx.texts) {
+    const L = x.life || 1.8; let y = x.y - (8 + Math.min(x.t, 1.8) * 16 + (x.life ? 18 * li++ : 0)) * px;
+    if (IC.FOCUS.polish) { const w = ctx.measureText(x.s).width + 6 * px; y = IC.LBL.put(x.x, y, w, 13 * px, -15 * px, 10); if (y == null) continue; }
+    ctx.globalAlpha = Math.max(0, Math.min(1, (L - x.t) / 0.8));
+    if (IC.FOCUS.polish) { label(x.s, x.x, y, px, x.color, 12, 'center', 600); ctx.font = `600 ${12 * px}px "IBM Plex Mono", monospace`; }
+    else { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(x.s, x.x + px, y + px); ctx.fillStyle = x.color; ctx.fillText(x.s, x.x, y); }
+  }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 
   if (S.layers.weather && S.clouds && wx.cloud > 0.4 && z < 0.5) {
@@ -165,6 +177,14 @@ IC.render = function (S, now) {
 };
 
 function label(txt, x, y, px, col, size, align, weight) {
+  // (round 5c) close in, in screen pixels: a tiny world-unit font is drawn squeezed (render-airport.js lbl)
+  if (px < 0.05 && IC.FOCUS.polish) {
+    const m = ctx.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = `${weight || 500} ${(size || 10) * k}px "IBM Plex Mono", monospace`; ctx.textAlign = align || 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(txt, sx + 0.9 * k, sy + 0.9 * k); ctx.fillStyle = col; ctx.fillText(txt, sx, sy);
+    ctx.restore(); return;
+  }
   ctx.font = `${weight || 500} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
   ctx.textAlign = align || 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(txt, x + 0.9 * px, y + 0.9 * px);
@@ -281,7 +301,7 @@ function drawCoverage(S) {
 /* the airspace: control zones, the player's fixes and airways (teal where radar sees cruising traffic, amber
    where it does not), where airways cross, each airport's way onto the network, and the selected flight's route */
 function drawAirways(S, px, now) {
-  const N = S.asp, m = S.mode2, edit = m && m.kind === 'airway', show = S.layers.airways || edit || (m && m.kind === 'asp') || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra');
+  const N = S.asp, m = S.mode2, edit = m && m.kind === 'airway', ssrNow = m && m.kind === 'deploy' && IC.UNITS[m.type] && IC.UNITS[m.type].sensor && IC.UNITS[m.type].sensor.ssr, show = S.layers.airways || S.layers.gaps || edit || ssrNow || (m && m.kind === 'asp') || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra');
   const sel = S.sel, z = cam.z;
   if (N) IC.drawAirspace(ctx, S, px, view, S.layers.labels, show);
   if (N && show) {
@@ -307,6 +327,15 @@ function drawAirways(S, px, now) {
         if (!seen) ctx.setLineDash([6 * px, 4 * px]);
         ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.setLineDash([]);
       }
+    }
+    // (round 5c) the gaps: every stretch no radar sees, bold, and the biggest one ringed where a radar would close it
+    if ((S.layers.gaps || ssrNow) && N.ways.length) {
+      ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(242,180,65,0.35)'; ctx.lineWidth = Math.max(6 * px, 14);
+      for (const p of IC.wayPoints(S)) if (!p.seen) { const w = IC.aspWay(S, p.w); if (!w) continue; const [a, b] = IC.aspWayEnds(S, w), L = U.dist(a, b) || 1, dx = (b.x - a.x) / L * p.l / 2, dy = (b.y - a.y) / L * p.l / 2; ctx.beginPath(); ctx.moveTo(p.x - dx, p.y - dy); ctx.lineTo(p.x + dx, p.y + dy); ctx.stroke(); }
+      ctx.lineCap = 'butt';
+      const g = IC.radarGap(S);
+      if (g) { const k = (now * 0.7) % 1; ctx.strokeStyle = `rgba(242,180,65,${0.9 * (1 - k)})`; ctx.lineWidth = 2.5 * px; ctx.beginPath(); ctx.arc(g.at.x, g.at.y, (14 + k * 30) * px, 0, 7); ctx.stroke();
+        ctx.strokeStyle = 'rgba(242,180,65,0.95)'; ctx.lineWidth = 2 * px; ctx.beginPath(); ctx.arc(g.at.x, g.at.y, 10 * px, 0, 7); ctx.stroke(); }
     }
     for (const c of IC.aspCrossings(S)) {
       if (!inView(c.x, c.y, 20)) continue;
@@ -412,6 +441,8 @@ function drawInfra(S, px, now) {
       // far out, only the big cities are named, so the names stay readable
       if ((S.layers.labels && (cam.z > 0.035 || i.pop > 150)) || i.pop > 350) {
         label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
+        // (round 5c) the town's name holds its place: the chain's tags and the floating words go round it
+        IC.LBL.put(i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, nm.length * big * 0.64 * px, big * 1.25 * px, 0, 0, true);
         if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }
@@ -464,7 +495,14 @@ function drawGhost(S, px) {
     if (d.logi && d.logi.reach) { ctx.strokeStyle = 'rgba(224,180,88,0.5)'; ctx.beginPath(); ctx.arc(h.x, h.y, d.logi.reach, 0, 7); ctx.stroke(); }
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.85; IC.drawUnitSymbol(ctx, m.type, h.x, h.y, px, ok ? C.friend : C.hostile, { tint: ok ? null : 'rgba(255,91,79,0.4)' }); ctx.globalAlpha = 1;
-    if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
+    if (d.sensor && d.sensor.ssr && S.asp && S.asp.ways.length) {
+      // (round 5c) what it adds where the cursor is, and what crowding its band costs
+      const G = IC.radarGain(S, m.type, h.x, h.y);
+      if (G) {
+        label(`+${Math.round(G.gain * 100)}% of the airways seen · ${Math.round(G.now * 100)}% now, ${Math.round(G.after * 100)}% with it`, h.x, h.y - 42 * px, px, G.gain > 0.05 ? C.friend : C.amber, 11, 'center', 700);
+        label(G.near ? `${G.near} radar${G.near > 1 ? 's' : ''} on this band within 70 km: +${U.money(G.crowd * (S.mode === 'story' ? IC.MO(S) / 3600 : 24))} ${S.mode === 'story' ? 'a month' : 'a day'} to keep` : 'No other radar on this band within 70 km', h.x, h.y - 27 * px, px, G.near ? C.amber : C.muted, 10, 'center', 600);
+      }
+    } else if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
     if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
   } else if (m.kind === 'airPoint') {
     const R = m.mission === 'aew' ? 3200 : m.mission === 'isr' ? 450 : 550;

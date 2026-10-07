@@ -29,7 +29,9 @@ IC.WAIT = { speed: 432, step: 8 };
    chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js)
    progress: (round 4) Act I's chapters move by goals, not months; each goal says what it gives; passenger
      milestones open the bigger pieces; a peacetime event deck (deck.js); money split into running and invested */
-IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true };
+IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true };
+/* (round 5c) tutors: every civil feature taught on the real screen, the old click-through tour and tips hidden;
+   polish: the trailer's and the benchmark's visual notes (vehicles, panels, labels, the build bar) */
 /* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */
 IC.civilAct = S => !!(IC.FOCUS.calm && S && S.mode === 'story' && S.story && S.story.act < 2);
 
@@ -220,5 +222,23 @@ const subs = [];
 IC.on = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; };
 IC.emit = function (S, type, data) { for (const fn of subs) fn(S, type, data); };
 IC.campaignEvent = IC.emit;
+
+/* (round 5c) one placement pass for the words on the map. Each frame the renderer claims a box for each label, the
+   most important first (the airport's names and building sites, the town names, then what floats up over the works,
+   then the chain's tags); one that would overlap a box already placed moves a step (dy, world units) at a time, at
+   most n steps, or is left out. x, y: the label's baseline middle; w, h its size, all in world units. force places it
+   wherever it is (it was placed by its own pass). Headless, so the tests can check it. */
+IC.LBL = {
+  boxes: [],
+  reset() { this.boxes.length = 0; },
+  hit(b) { for (const q of this.boxes) if (q[0] < b[2] && b[0] < q[2] && q[1] < b[3] && b[1] < q[3]) return true; return false; },
+  put(x, y, w, h, dy, n, force) {
+    for (let k = 0; k <= (n || 0); k++) {
+      const yy = y + k * (dy || 0), b = [x - w / 2, yy - h, x + w / 2, yy + h * 0.3];
+      if (force || !this.hit(b)) { this.boxes.push(b); return yy; }
+    }
+    return null;
+  }
+};
 
 })(window.IC);

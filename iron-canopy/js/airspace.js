@@ -252,6 +252,80 @@ IC.aspWayCover = function (S, w, alt) {
   return n / 11;
 };
 
+/* ---------- (round 5c) where a civil radar helps: the airways sampled, the gaps, and what one radar more adds ----------
+   Chapter 3 asks for radar that sees 80% of the airways at cruise height (9 km). The airways are sampled every 10 km;
+   a sample is seen when the controllers' cover there reaches down to 9 km. */
+const CRUISE = 9;
+IC.wayPoints = function (S) {
+  const N = S.asp, key = N.ver + ':' + (IC.aspCov(S).v || 0);
+  if (N._wp && N._wp.key === key) return N._wp.L;
+  const L = [];
+  for (const w of N.ways) {
+    const [a, b] = IC.aspWayEnds(S, w), d = U.dist(a, b), n = Math.max(2, Math.ceil(d / 100));
+    for (let i = 0; i < n; i++) { const f = (i + 0.5) / n, x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f; L.push({ x, y, l: d / n, w: w.id, i, seen: IC.aspCovAlt(S, x, y) <= CRUISE }); }
+  }
+  N._wp = { key, L };
+  return L;
+};
+/* share of the airways seen at cruise height (by length), the number Chapter 3's goal reads */
+IC.wayCoverAll = function (S) { let L = 0, c = 0; for (const p of IC.wayPoints(S)) { L += p.l; if (p.seen) c += p.l; } return L ? c / L : 0; };
+/* the longest stretch of airway no radar sees: { at (its middle), km, way } or null */
+IC.radarGap = function (S) {
+  let best = null;
+  const P = IC.wayPoints(S);
+  for (let i = 0; i < P.length;) {
+    if (P[i].seen) { i++; continue; }
+    let j = i, km = 0; while (j < P.length && !P[j].seen && P[j].w === P[i].w) { km += P[j].l / 10; j++; }
+    if (!best || km > best.km) { const m = P[(i + j - 1) >> 1]; best = { at: { x: m.x, y: m.y }, km, way: P[i].w, from: P[i], to: P[j - 1] }; }
+    i = j;
+  }
+  return best;
+};
+/* what one radar of a type placed at x, y would add: the airways it would see that nothing sees now, the cover after,
+   and the crowding: other radars on its band within 70 km, each making every one of them 15% dearer to keep */
+IC.radarGain = function (S, type, x, y) {
+  const d = IC.UNITS[type], sd = d && (d.sensor || d.fc); if (!sd) return null;
+  const k = `${type}:${Math.round(x / 25)}:${Math.round(y / 25)}:${S.asp.ver}:${IC.aspCov(S).v || 0}`;
+  if (S.asp._gain && S.asp._gain.k === k) return S.asp._gain.r;
+  const probe = { x, y, R: sd.R, mast: sd.mast || 15 };
+  let L = 0, c = 0, add = 0;
+  for (const p of IC.wayPoints(S)) { L += p.l; if (p.seen) c += p.l; else if (U.dist(p, probe) <= sd.R && IC.radarFloor(probe, p.x, p.y) <= CRUISE) add += p.l; }
+  const band = IC.BAND[type], near = band ? S.units.filter(u => !u.dead && IC.BAND[u.type] === band && U.dist(u, probe) < 700).length : 0;
+  // (the new one costs 15% more for each of them, and each of them 15% more for the new one)
+  const up = d.up || 0, r = { now: L ? c / L : 0, after: L ? (c + add) / L : 0, gain: L ? add / L : 0, near, up, crowd: up * 0.3 * near };
+  S.asp._gain = { k, r };
+  return r;
+};
+/* the plan behind the tip: beacon radars on the middle of the biggest gap, one after another, until 80% of the airways
+   would be seen. { n: how many, spots: [{ x, y }] }. Planned on the coverage the game already knows (headless) */
+IC.radarPlan = function (S) {
+  const N = S.asp, P = IC.wayPoints(S), key = N.ver + ':' + (IC.aspCov(S).v || 0);
+  if (N._plan && N._plan.key === key) return N._plan.r;
+  const sd = IC.UNITS.ssr.sensor, seen = P.map(p => p.seen), tot = P.reduce((s, p) => s + p.l, 0), spots = [];
+  const cov = () => P.reduce((s, p, i) => s + (seen[i] ? p.l : 0), 0) / Math.max(1, tot);
+  while (spots.length < 8 && cov() < 0.8) {
+    let best = null;
+    for (let i = 0; i < P.length;) { if (seen[i]) { i++; continue; } let j = i, l = 0; while (j < P.length && !seen[j] && P[j].w === P[i].w) { l += P[j].l; j++; } if (!best || l > best.l) best = { l, m: P[(i + j - 1) >> 1] }; i = j; }
+    if (!best) break;
+    const at = (IC.findSpot && IC.findSpot(S, 'ssr', best.m.x, best.m.y, 0, 300)) || best.m, probe = { x: at.x, y: at.y, R: sd.R, mast: sd.mast || 15 };
+    let add = 0;
+    P.forEach((p, i) => { if (!seen[i] && U.dist(p, probe) <= sd.R && IC.radarFloor(probe, p.x, p.y) <= CRUISE) { seen[i] = true; add++; } });
+    // (a spot that would add nothing, behind hills: mark the gap's middle seen so the next try goes elsewhere)
+    if (!add) { P.forEach((p, i) => { if (U.dist(p, best.m) < 300) seen[i] = true; }); continue; }
+    spots.push({ x: at.x, y: at.y });
+  }
+  const r = { n: spots.length, spots };
+  N._plan = { key, r };
+  return r;
+};
+/* the Chapter 3 tip: how many beacon radars, and where */
+IC.radarAdvice = function (S) {
+  if (!S.asp.ways.length) return '';
+  if (IC.wayCoverAll(S) >= 0.8) return 'The airways are seen.';
+  const n = Math.max(1, IC.radarPlan(S).n), gap = IC.radarGap(S);
+  return `About ${n} more beacon radar${n > 1 ? 's' : ''}, each on the middle of a gap and at least 150 km from the next: one sees about 400 km of airway at cruise height. The biggest gap is ${Math.round(gap ? gap.km : 0)} km; the marker on the map shows its middle.`;
+};
+
 /* ---------- routing over the network ---------- */
 /* how long it is to fly from an outside end to a fix, counting the part over our country three times:
    foreign traffic should join the airways where it enters our airspace, not cut across it */

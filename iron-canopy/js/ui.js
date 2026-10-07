@@ -408,6 +408,8 @@ function brief() {
 }
 /* (round 3) the goals as one line: the next one, how far along it is, the chapter; a click opens the list. A tip
    shows once, small, for half a minute, then folds behind "How?" */
+/* (round 5c) which tutorial teaches a goal (its Show me) */
+const GOAL_TUT = { found: 'found', runway: 'starter', apron: 'pieces', terminal: 'pieces', services: 'pieces', stands: 'pieces', gates: 'airspace', first: 'follow', approve: 'deals', deals: 'deals', deals3: 'deals', link: 'airspace', radar: 'radar' };
 function nextGoal() {
   const st = S.story, ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
   const done = st.goals.filter(g => g.done).length, open = st.goals.map((g, i) => ({ g, i })).filter(x => !x.g.done && !x.g.failed);
@@ -418,11 +420,14 @@ function nextGoal() {
   const tip = (IC.storyTip(S) || {}).text, now = performance.now();
   ui.tipSeen = ui.tipSeen || new Map();
   if (tip && !ui.tipSeen.has(tip)) ui.tipSeen.set(tip, now);
-  const tipOn = tip && (ui.tipOpen === tip || now - ui.tipSeen.get(tip) < 30000);
+  // (round 5c) a goal a tutorial teaches gets Show me, and its tip no longer opens by itself: the tutorial shows it on
+  // the real screen
+  const g0 = open[0] && open[0].g, tut = IC.FOCUS.tutors && g0 && GOAL_TUT[g0.id] && IC.TUTORS[GOAL_TUT[g0.id]] ? GOAL_TUT[g0.id] : null;
+  const tipOn = tip && (ui.tipOpen === tip || (!IC.FOCUS.tutors && now - ui.tipSeen.get(tip) < 30000));
   const list = ui.briefOpen ? IC.storyShown(S).filter(x => x.g !== (open[0] || {}).g) : [];
   return `<h3 data-act="briefMin" title="${esc(where)}: ${ui.briefOpen ? 'fold the goals' : 'all the goals of this chapter'}"><span>Next goal</span><em>${ch ? `Chapter ${ch.n + 1}` : esc(A.name)} · ${done} of ${st.goals.length} done ${ui.briefOpen ? '▴' : '▾'}</em></h3>
     ${open[0] ? row(open[0]) : `<p class="hint">${esc(ch && ch.next ? ch.next : 'Every goal is done. Something is coming: keep the airports running.')}</p>`}
-    ${tipOn ? `<p class="hint gtip ${ui.tipOpen === tip ? 'open' : ''}" data-act="tipOpen" title="Click to read it all">${esc(tip)}</p><button class="howbtn" data-act="tipFold">Got it</button>` : tip ? `<button class="howbtn" data-act="tipOpen" title="How to do it">How?</button>` : ''}
+    ${tipOn ? `<p class="hint gtip ${ui.tipOpen === tip ? 'open' : ''}" data-act="tipOpen" title="Click to read it all">${esc(tip)}</p><button class="howbtn" data-act="tipFold">${IC.FOCUS.tutors ? 'Fold ▴' : 'Got it'}</button>` : tip ? `<span class="howrow">${tut && !(S.tutor && S.tutor.cur === tut) ? `<button class="howbtn" data-act="tutorGo" data-v="${tut}" title="${esc(IC.TUTORS[tut].title)}: a few steps on the real screen">Show me</button>` : ''}<button class="howbtn" data-act="tipOpen" title="How to do it, in words">How?</button></span>` : ''}
     ${list.length ? `<div class="goals">${list.map(row).join('')}</div>${ch && ch.next ? `<p class="hint">${esc(ch.next)}</p>` : ''}` : ''}`;
 }
 /* how far along a goal is, 0–1, or null when it cannot be said. A goal can give its own (g.frac); otherwise
@@ -502,12 +507,15 @@ function arsenal() {
     </div>`;
   }).join('');
   $('arsenal').classList.add('glass');
-  $('arsenal').classList.toggle('min', ui.arMin);
-  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick one, then click the map</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
+  // (round 5c) in the civil act the equipment card stays folded to its tab unless a goal needs it (Chapter 3's radar),
+  // something is being placed from it, or the player opened it: it is not pinned over the map for the rest of the act
+  const civMin = IC.FOCUS.polish && IC.civilAct(S) && !ui.arOpen && !(S.mode2 && S.mode2.kind === 'deploy') && !(S.story && S.story.goals.some(g => g.id === 'radar' && !g.done));
+  $('arsenal').classList.toggle('min', ui.arMin || civMin);
+  setHTML($('arsenal'), `<div class="ar-head"><div class="tabs">${tabs}<button data-act="arMin" title="${ui.arMin || civMin ? 'Show' : 'Hide'} the arsenal">${ui.arMin || civMin ? '▴' : '▾'}</button></div><div class="slots" title="Pick one, then click the map. Bought equipment is paid when you place it, loaded at the nearest depot or airfield and driven there at once."><span>Pick one, then click the map</span></div></div><div class="tiles">${tiles}</div>`, ui.cat);
 }
 
 function layers() {
-  const L = [['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
+  const L = [['gaps', 'Show the gaps'], ['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
   // with coverage on, a key to its colours: the lowest height controllers see
   const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
   setHTML($('layers'), L.filter(([k]) => IC.layerAllowed(S, k)).map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
@@ -608,9 +616,13 @@ function place(el, sx, sy) { const W = $('app').clientWidth; el.style.left = Mat
 function followChip() {
   const el = $('followchip'); if (!el) return;
   const tl = S.follow && IC.followTail(S);
-  if (!tl) { if (!el.hidden) { el.hidden = true; ui.cache.follow = null; } return; }
-  const h = `<span class="fc-tag">FOLLOWING</span><b>${esc(tl.cs)}</b><span class="fc-ph">${esc(IC.tailPhase(S, tl))}</span><button class="btn sm" data-act="followOff" title="Let the camera go (or drag the map)">Stop</button>`;
-  if (ui.cache.follow !== h) { el.innerHTML = h; ui.cache.follow = h; }
+  if (!tl) { if (!el.hidden) { el.hidden = true; ui.cache.follow = null; ui.cache.followTl = null; } return; }
+  const h = `<span class="fc-tag">FOLLOWING</span>${IC.FOCUS.tutors ? `<button class="fc-cs" data-act="followSel" title="Its panel: what it is doing and its turnaround">${esc(tl.cs)}</button>` : `<b>${esc(tl.cs)}</b>`}<span class="fc-ph">${esc(IC.tailPhase(S, tl))}</span><button class="btn sm" data-act="followOff" title="Let the camera go (or drag the map)">Stop</button>`;
+  // (round 5c) the phase changes every few seconds: only its words are replaced, so the call sign under the mouse
+  // stays the same button
+  const ph = el.querySelector('.fc-ph');
+  if (ui.cache.followTl === tl.id && ph && el.querySelector('.fc-cs, b')) { const t = IC.tailPhase(S, tl); if (ph.textContent !== t) ph.textContent = t; }
+  else if (ui.cache.follow !== h) { el.innerHTML = h; ui.cache.follow = h; ui.cache.followTl = tl.id; }
   el.hidden = false;
   // above the build bar when it is open
   const bb = $('bbar'), r = bb && !bb.hidden && bb.offsetHeight ? bb.getBoundingClientRect() : null, app = $('app').getBoundingClientRect();
@@ -688,6 +700,8 @@ const anchorEl = a => {
   if (!a) return null;
   if (a.nodeType === 1) return a;
   if (typeof a === 'function') return anchorEl(a(S));
+  // (a list: the first one on screen, else the first that exists)
+  if (Array.isArray(a)) { const L = a.map(anchorEl).filter(Boolean); return L.find(e => e.offsetParent !== null) || L[0] || null; }
   if (ANCHORS[a]) return document.querySelector(ANCHORS[a]);
   let m;
   if ((m = /^rail-(\w+)$/.exec(a))) return $('rail-' + m[1]);
@@ -724,7 +738,7 @@ IC.hint = {
 ui.topHint = () => { let id = null; for (const [k, o] of hints) if (o.text) id = k; return id; };
 /* placed every frame (things on screen move, the map scrolls); each hint keeps its own elements */
 const hEls = new Map();
-const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
+const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor && o.look ? '<button class="btn sm primary" data-act="tutorLook" title="The place is off the screen: the camera goes there">Show me where</button>' : ''}${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
 ui.hintFrame = function () {
   const L = $('hints');
   for (const [id, h] of hEls) if (hints.get(id) !== h.o) { h.ring.remove(); if (h.note) h.note.remove(); hEls.delete(id); }
@@ -740,11 +754,19 @@ ui.hintFrame = function () {
       hEls.set(id, h);
     }
     let r = null;
-    if (o.at) { const p = typeof o.at === 'function' ? o.at(S) : o.at; if (p) { const q = IC.toScreen(p.x, p.y), R = o.r || 26; r = { left: q.x - R, top: q.y - R, width: 2 * R, height: 2 * R }; } }
-    else { const e = anchorEl(o.el); if (e && e.offsetParent !== null && !(covered && !$('warroom').contains(e))) { const b = e.getBoundingClientRect(); if (b.width) r = { left: b.left - W.left, top: b.top - W.top, width: b.width, height: b.height }; } }
-    // a note waits while a card, the menu or a room covers the screen (unless it points into the room)
-    if (r && o.text && blocked) r = null;
-    h.ring.hidden = !r || !o.ring; if (h.note) h.note.hidden = !r;
+    if (o.at) { const p = typeof o.at === 'function' ? o.at(S) : o.at; if (p) { const q = IC.toScreen(p.x, p.y), R = o.r || 26;
+      // (off the screen: the ring waits at the edge, on the side it is)
+      const qx = U.clamp(q.x, (ui.mapLeft || 0) + 40, W.width - (ui.mapRight || 0) - 40), qy = U.clamp(q.y, 90, W.height - 60);
+      r = { left: qx - R, top: qy - R, width: 2 * R, height: 2 * R };
+      // (round 5c) off the screen, the note offers to take the camera there instead of a ring on the wrong thing
+      const off = qx !== q.x || qy !== q.y;
+      if (h.note && h.off !== off && o.tutor) { h.off = off; h.note.innerHTML = noteHTML(id, Object.assign({}, o, { look: off })); }
+      if (off && o.tutor) r = { left: W.width / 2 - 30, top: W.height * 0.42, width: 60, height: 1, offRing: true }; } }
+    let inCard = false;
+    if (!o.at) { const e = anchorEl(o.el); if (e && e.offsetParent !== null && !(covered && !$('warroom').contains(e))) { const b = e.getBoundingClientRect(); if (b.width) r = { left: b.left - W.left, top: b.top - W.top, width: b.width, height: b.height }; inCard = !!e.closest('#evcard, #cine, #unlock'); } }
+    // a note waits while a card, the menu or a room covers the screen (unless it points into the room, or the card)
+    if (r && o.text && blocked && !inCard) r = null;
+    h.ring.hidden = !r || !o.ring || !!r.offRing; if (h.note) h.note.hidden = !r;
     if (!r) continue;
     h.ring.classList.toggle('round', !!o.at);
     h.ring.style.cssText = `left:${r.left - 5}px;top:${r.top - 5}px;width:${r.width + 10}px;height:${r.height + 10}px`;
@@ -775,22 +797,53 @@ function coach() {
 }
 /* (round 5b) the tutorial step now (tutor.js): a ring on what to do and a note with Skip, no Next. A tutorial
    starts the first time its first target is on screen and the story has reached it; a step whose result is already
-   on screen is done */
-const onScreen = e => { if (!e || e.offsetParent === null) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (!ui.room || $('warroom').contains(e)); };
+   on screen is done. (round 5c) one at a time, a breath apart; a step can point at the map (at), and one whose target
+   has gone for a while (a card closed) is put aside until it can be shown again */
+const onScreen = e => {
+  if (!e || e.offsetParent === null) return false;
+  const r = e.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0) || (ui.room && !$('warroom').contains(e))) return false;
+  // (round 5c) inside the window, and not in the selection panel while it is slid away for building
+  if (r.right < 0 || r.left > innerWidth || r.bottom < 0 || r.top > innerHeight) return false;
+  return !($('app').classList.contains('building') && $('insp').contains(e));
+};
+// (a step may have both: the element when it is on screen, else the place on the map)
+const atOf = st => { try { return st.at ? st.at(S) : null; } catch (e) { return null; } };
+const useEl = st => !!(st && st.el && onScreen(anchorEl(st.el)));
+const stepShown = st => !!(st && (useEl(st) || atOf(st)));
+/* the step to point at for tutorial id: its first undone one, or (when that is not on screen) the latest before it
+   that is, so a closed panel is opened again */
+const tutShow = id => {
+  const L = IC.TUTORS[id].steps, F = (S.tutor && S.tutor.done[id]) || L.map(() => 0), i = Math.max(0, F.indexOf(0));
+  if (stepShown(L[i])) return L[i];
+  for (let j = i - 1; j >= 0; j--) if (stepShown(L[j])) return L[j];
+  return null;
+};
+const BUILD_TUTS = { found: 1, starter: 1, pieces: 1, buildesc: 1, problems: 1, milestone: 1 };
 function tutor() {
-  if (!S || S.mode === 'academy' || !ui.hintsOn || !$('start').hidden) { if (hints.has('tutor')) hints.delete('tutor'); ui.tutorKey = null; return; }
-  let N = IC.tutorNow(S);
-  if (!N) for (const id in IC.TUTORS) if (!IC.tutorSeen(S, id) && IC.tutorWhen(S, id) && onScreen(anchorEl(IC.TUTORS[id].steps[0].el))) { IC.tutorStart(S, id); N = IC.tutorNow(S); break; }
-  if (N && N.step.seen && onScreen(anchorEl(N.step.seen))) { IC.tutorSaw(S, N.id, N.i); N = IC.tutorNow(S); }
+  if (!S || S.mode === 'academy' || !ui.hintsOn || !$('start').hidden || S.showcase) { if (hints.has('tutor')) hints.delete('tutor'); ui.tutorKey = null; return; }
+  let N = IC.tutorTick(S);
+  const now = performance.now();
+  if (!N && !(S.tutor && S.tutor.cur) && now - (ui.tutEnd || 0) > 2500 && !ui.menu) {
+    // (round 5c) while a plan is being placed only the builder's own lessons start: nothing else cuts in mid-build
+    const placing = S.mode2 && (S.mode2.kind === 'build' || S.mode2.kind === 'found');
+    for (const id in IC.TUTORS) if (!IC.tutorSeen(S, id) && (!placing || BUILD_TUTS[id]) && IC.tutorWhen(S, id) && tutShow(id)) { IC.tutorStart(S, id); N = IC.tutorTick(S); ui.tutLost = 0; break; }
+  }
+  if (N && N.step.seen && onScreen(anchorEl(N.step.seen))) { IC.tutorSaw(S, N.id, N.i); N = IC.tutorTick(S); }
+  if (!N && ui.tutorKey && ui.tutorKey.split(':')[0] !== 'none') ui.tutEnd = now;
   // (what the last action opened was closed again: point back at what opens it, until it is open)
-  let show = N && N.step;
-  if (N && !onScreen(anchorEl(show.el))) for (let j = N.i - 1; j >= 0; j--) { const p = IC.TUTORS[N.id].steps[j]; if (onScreen(anchorEl(p.el))) { show = p; break; } }
-  const key = N ? N.id + ':' + N.i + ':' + show.el : null;
+  const show = N ? tutShow(N.id) : null;
+  // (nothing of it on screen for a while: put it aside; it comes back when it can be shown)
+  if (N && !show) { if (!ui.tutLost) ui.tutLost = now; else if (now - ui.tutLost > 12000) { IC.tutorPause(S); ui.tutLost = 0; } }
+  else ui.tutLost = 0;
+  const key = N ? N.id + ':' + N.i + ':' + (show ? IC.TUTORS[N.id].steps.indexOf(show) + (useEl(show) ? 'e' : 'a') : 'x') : 'none';
   if (ui.tutorKey === key) return;
   hints.delete('tutor'); ui.tutorKey = key;
+  if (!N || !show) return;
   // (the target brought into view: a panel or a room may have it below the fold)
-  if (N) { const e = anchorEl(show.el); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
-  if (N) hints.set('tutor', { el: show.el, title: show.title, text: show.text, ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] });
+  const byEl = useEl(show);
+  if (byEl) { const e = anchorEl(show.el); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
+  hints.set('tutor', Object.assign(byEl ? { el: show.el } : { at: show.at, r: 30 }, { title: show.title, text: IC.tutorText(S, show), ring: true, side: 'auto', btn: '', persist: false, tutor: N.id, of: [N.i + 1, N.n] }));
 }
 /* the Guide's "Show me": the tutorial again from its first step, on the airport it is about */
 ui.tutorGo = function (id) {
@@ -805,7 +858,8 @@ function firstRun() {
   if (ui.firstRunDone === S || S.over || !$('start').hidden || !$('cine').hidden || !$('evcard').hidden || ui.room) return;
   ui.firstRunDone = S;
   if (S.showcase) return;
-  if (S.story) IC.hint.tour('career1', [
+  // (round 5c: the Career's first minutes are taught by the tutorials that wait for the player, tutor.js)
+  if (S.story && !IC.FOCUS.tutors) IC.hint.tour('career1', [
     { el: 'goals', title: 'Your goals', text: 'This act\'s goals, with how far along each one is. Click a goal to see where it is on the map.' },
     { el: 'rail-aviation', title: 'The rooms', text: 'Rooms for everything that does not fit on the map. Aviation holds the airlines\' deals. Keys are on each button.' },
     { el: 'speed', title: 'Time', text: 'The game runs at 1×: ten game seconds a second. Space pauses, 1–6 set the speed, S skips ahead until something needs you.' },
@@ -861,6 +915,9 @@ function pmarks() {
     for (const p of P.sort((a, b) => ({ bad: 0, warn: 1, deal: 2 })[a.lvl] - ({ bad: 0, warn: 1, deal: 2 })[b.lvl]).slice(0, 5))
       L.push({ id: p.id, x: p.x, y: p.y, lvl: p.lvl, html: `<button class="pm-t" data-act="pmGo" data-v="${esc(p.id)}" title="${esc(p.text)}"><b>${esc(p.title)}</b></button>${p.fix ? `<button class="pm-fix" data-act="pmFix" data-v="${esc(p.id)}" title="${esc(p.text)}">${esc(p.fix.label)} ▸</button>` : ''}` });
   }
+  // (round 5c) Chapter 3's radar goal: the biggest stretch of airway no radar sees, with its fix
+  const rg = S.story && S.story.act === 1 && S.story.ch === 2 && S.story.goals.find(g => g.id === 'radar' && !g.done) && IC.radarGap(S);
+  if (rg && rg.km > 30) L.push({ id: 'gap', x: rg.at.x, y: rg.at.y, lvl: 'warn', html: `<button class="pm-t" data-act="gapGo" title="Show the gaps: every stretch of airway no radar sees"><b>${Math.round(rg.km)} km of airway no radar sees</b></button><button class="pm-fix" data-act="gapFix" title="Pick the beacon radar and look here">Place a radar here ▸</button>` });
   ui.pm = L;
   setHTML(el, L.map(m => `<div class="pmark ${m.lvl}" data-k="${esc(m.id)}" data-x="${m.x}" data-y="${m.y}"><i class="pmdot"></i><div class="pmbox">${m.html}</div></div>`).join(''));
 }
@@ -889,6 +946,7 @@ ui.refresh = function (force) {
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
   if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
+  $('app').classList.toggle('pol', !!IC.FOCUS.polish);
   $('app').classList.toggle('compact', ui.compact()); $('app').classList.toggle('mini-on', !!ui.miniOn);
   $('insp').classList.toggle('min', ui.compact() && !!ui.inspMin);
   // how much of the map's right side the inspector covers, for what the map draws beside the cursor
@@ -992,5 +1050,14 @@ ui.lessonList = function () {
   const next = IC.LESSONS.findIndex(l => !p[l.id]);
   $('lessons').innerHTML = IC.LESSONS.map((l, i) => `<button class="lesson ${p[l.id] ? 'done' : ''} ${i === next ? 'next' : ''}" data-act="lesson" data-v="${l.id}"><i>${p[l.id] ? '✓' : i + 1}</i><b>${esc(l.title)}</b><span>${esc(l.sub)}</span><em>${p[l.id] ? '★'.repeat(p[l.id]) + '☆'.repeat(3 - p[l.id]) : i === next ? 'Start here' : ''}</em></button>`).join('');
 };
+
+/* (round 5c) a milestone's card frames the airport it is about: the camera stops following an aircraft in cruise and
+   comes home, so the card is not read over empty fields */
+IC.on((S2, type, d) => {
+  if (type !== 'milestone' || S2 !== IC.S || !IC.FOCUS.polish || typeof document === 'undefined') return;
+  const ap = d && S2.byId[d.ap]; if (!ap) return;
+  if (S2.follow) IC.followStop(S2);
+  IC.flyTo(ap.x, ap.y, U.clamp(IC.cam.z, 3, 8));
+});
 
 })(window.IC);

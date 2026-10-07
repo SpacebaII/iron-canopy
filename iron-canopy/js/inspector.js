@@ -47,6 +47,7 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'field') h = field(r);
   }
   el.classList.toggle('glass', !!h);
+  el.classList.toggle('slim', !!(IC.FOCUS.polish && s && S.group.length <= 1 && s.kind === 'tail'));
   // another selection, or another airport tab, starts at the top; the same one holds its scroll
   const key = S.group.length > 1 ? 'group' : s ? `${s.kind}:${ui.oid(s.ref)}:${s.kind === 'infra' && s.ref.parts ? ui.aptTab : ''}` : '';
   ui.setHTML(el, h, key);
@@ -73,6 +74,14 @@ function tailPanel(tl) {
   }
   const mv = tl.mv && !tl.mv.dead ? tl.mv : tl.track && !tl.track.dead ? tl.track : null;
   const acts = [followBtn(tl)]; if (mv && liveBtn(mv)) acts.push(liveBtn(mv));
+  // (round 5c) a slim card: what it is doing and the time left, the services at work, Follow; the rest on demand
+  if (IC.FOCUS.polish) {
+    let tr = '';
+    if (w && w.s && ap) { const n = IC.turnNow(S, ap, w.s); if (n) tr = `<div class="turnsec">${bar(n.f, 'var(--amber)')}<div class="tchips">${n.now.map(x => `<span class="chip on">${esc(x)}</span>`).join('')}${n.next.slice(0, 3).map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div></div>`; }
+    const more = ui.tailMore ? `${kv(rows.filter(r => r[0] !== 'Doing now'))}${turn.replace('<div class="sec">', '<div class="sec turnmore">')}` : '';
+    acts.push(`<button class="act" data-act="tailMore" aria-expanded="${!!ui.tailMore}">${ui.tailMore ? 'Less ▴' : 'More ▾'}</button>`);
+    return head(`<span class="badge civil">${ui.icon('air')}</span>`, tl.cs, `${esc(al ? al.name : 'Airliner')} · ${esc(T.short || '')}${ap ? ` · ${esc(ap.name.replace(/ (International|Airport)$/, ''))}` : ''}`) + `<div class="ibody"><p class="now">${esc(IC.tailPhase(S, tl))}</p>${tr}<div class="acts">${acts.join('')}</div>${more}</div>`;
+  }
   return head(`<span class="badge civil">${ui.icon('air')}</span>`, tl.cs, `${esc(al ? al.name : 'Airliner')} · ${esc(T.short || '')}`) + `<div class="ibody">${kv(rows)}${turn}<div class="acts">${acts.join('')}</div></div>`;
 }
 
@@ -388,6 +397,8 @@ function fleetHTML(b) {
   const why = { tug: `${N.push} stand${N.push === 1 ? '' : 's'} with pushback`, bus: `${N.remote} remote stand${N.remote === 1 ? '' : 's'}`, fuel: (b.st || {}).hydrant ? 'the hydrant feeds every stand' : `${N.peak} departures in the busiest hour` };
   const rows = Object.entries(IC.GSE).map(([k, G]) => {
     const n = F[k] || 0, rec = N[k], free = IC.gseFree(S, b, k), off = n < rec ? 'amber' : '';
+    // (round 5c) less to read in a row: what it has against what it needs; the money in the tooltip
+    if (IC.FOCUS.polish) return `<div class="li" title="${esc(`${U.money(n * G.up * per)} ${perW} to run · ${U.money(G.cost)} each`)}"><b>${esc(G.name)} <span class="${off}">${n}</span><span class="muted"> of ${rec}</span></b><small>${esc(why[k])}${n ? ` · ${free} free now` : ''}</small><span class="la"><button class="btn sm" data-act="gseAdd" data-v="${k}" data-n="-1" ${n ? '' : 'disabled'} title="Sell one for half its price">−</button><button class="btn sm" data-act="gseAdd" data-v="${k}" data-n="1" ${S.budget < G.cost ? 'disabled' : ''} title="Buy one for ${U.money(G.cost)}">+</button></span></div>`;
     return `<div class="li"><b>${esc(G.name)} <span class="${off}">${n}</span></b><small>Recommended ${rec} for ${esc(why[k])} · ${n ? `${free} free now · ` : ''}${U.money(n * G.up * per)} ${perW} to run · ${U.money(G.cost)} each</small><span class="la"><button class="btn sm" data-act="gseAdd" data-v="${k}" data-n="-1" ${n ? '' : 'disabled'} title="Sell one for half its price">−</button><button class="btn sm" data-act="gseAdd" data-v="${k}" data-n="1" ${S.budget < G.cost ? 'disabled' : ''} title="Buy one for ${U.money(G.cost)}">+</button></span></div>`;
   }).join('');
   return `<div class="fleet"><div class="list">${rows}</div><div class="acts"><button class="act ${F.auto ? 'on' : ''}" data-act="gseAuto" title="The airport buys and sells to the recommendation as it grows">Keep it matched: ${F.auto ? 'on' : 'off'}</button></div>
@@ -413,8 +424,11 @@ function scorecardHTML(b) {
    the player sets: a cap an hour, an airline's bank earlier or later, and the night policy, each with its effect */
 function dayBoardHTML(b) {
   const D = IC.dayBoard(S, b), P = D.plan, now = Math.floor((((S.time % 86400) + 86400) % 86400) / 3600);
-  const W = 720, H = 170, mid = 92, bw = W / 24;
-  const mx = Math.max(4, D.capDep, D.capArr, ...P.dep, ...P.arr, ...D.today.dep, ...D.today.arr), kU = (mid - 14) / mx, kD = (H - mid - 14) / mx;
+  // (round 5c) drawn at the panel's own size, so the hours read and nothing is squeezed; scaled to the flights, not to
+  // runways that take five times more (that line then waits at the top with its number)
+  const pol = IC.FOCUS.polish, W = pol ? 300 : 720, H = pol ? 168 : 170, mid = pol ? 92 : 92, bw = W / 24;
+  const peak = Math.max(4, ...P.dep, ...P.arr, ...D.today.dep, ...D.today.arr);
+  const mx = pol ? Math.max(peak * 1.3, Math.min(Math.max(D.capDep, D.capArr), peak * 2.2)) : Math.max(4, D.capDep, D.capArr, ...P.dep, ...P.arr, ...D.today.dep, ...D.today.arr), kU = (mid - 14) / mx, kD = (H - mid - (pol ? 20 : 14)) / mx;
   let g = '';
   for (let h = 0; h < 24; h++) {
     const x = h * bw + 3, w = bw - 6;
@@ -423,10 +437,13 @@ function dayBoardHTML(b) {
     for (const a of P.al) { const n = a.dep[h]; if (!n) continue; y -= n * kU; g += `<rect x="${x}" y="${y}" width="${w}" height="${n * kU}" style="fill:${a.al.livery[0]}" stroke="rgba(0,0,0,.35)"><title>${hh(h)} · ${esc(a.al.name)}: ${n} departure${n > 1 ? 's' : ''} planned</title></rect>`; }
     g += `<rect class="arrp" x="${x}" y="${mid}" width="${w}" height="${P.arr[h] * kD}"><title>${hh(h)} · ${P.arr[h]} arrivals expected</title></rect>`;
     if (h <= now) g += `<line class="real" x1="${x}" x2="${x + w}" y1="${mid - D.today.dep[h] * kU}" y2="${mid - D.today.dep[h] * kU}"/><line class="real" x1="${x}" x2="${x + w}" y1="${mid + D.today.arr[h] * kD}" y2="${mid + D.today.arr[h] * kD}"/>`;
-    if (h % 3 === 0) g += `<text x="${h * bw + 2}" y="${H - 2}">${String(h).padStart(2, '0')}</text>`;
+    if (h % 3 === 0) g += `<text x="${h * bw + (pol ? (h ? bw / 2 : 1) : 2)}" y="${H - (pol ? 4 : 2)}" ${pol ? `text-anchor="${h ? 'middle' : 'start'}"` : ''}>${String(h).padStart(2, '0')}${pol && h % 6 === 0 ? ':00' : ''}</text>`;
   }
   const line = (cls, yy, t) => `<line class="${cls}" x1="0" x2="${W}" y1="${yy}" y2="${yy}"><title>${t}</title></line>`;
-  if (D.capDep) g += line('cap', mid - D.capDep * kU, `The runways take ${D.capDep} departures an hour`) + line('cap', mid + D.capArr * kD, `The runways take ${D.capArr} arrivals an hour`);
+  // (a runway line beyond the scale sits at its edge, marked with its number)
+  const capU = Math.max(4, mid - D.capDep * kU), capD = Math.min(H - (pol ? 18 : 2), mid + D.capArr * kD);
+  if (D.capDep) g += line('cap', capU, `The runways take ${D.capDep} departures an hour`) + line('cap', capD, `The runways take ${D.capArr} arrivals an hour`);
+  if (D.capDep && pol) g += `<text class="capt" x="${W - 3}" y="${capU + 10}" text-anchor="end">runways ${D.capDep}/h${mid - D.capDep * kU < 4 ? ' ↑' : ''}</text>`;
   if (D.cap) g += line('mycap', mid - D.cap * kU, `Your cap: ${D.cap} departures an hour`);
   g += `<line class="axis" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/><line class="nowl" x1="${(now + 0.5) * bw}" x2="${(now + 0.5) * bw}" y1="4" y2="${H - 12}"/>`;
   const caps = [...new Set([0.5, 0.7, 0.85].map(f => Math.max(1, Math.round(D.capDep * f))))].filter(n => n > 0 && D.capDep > 2);
@@ -617,7 +634,7 @@ function apronStands(ap, p) {
   const gates = (p.stands || []).filter(s => s.contact).length, drive = (p.stands || []).filter(s => s.drive).length;
   const what = Object.entries(by).map(([k, n]) => `${n} ${IC.RAMP_SIZE[k]}`).join(', ') || 'none';
   // (next to a terminal but too far from its wall for a jet bridge: remote, with stairs, and the panel says so)
-  const far = (p.stands || []).filter(s => s.noBridge).map(s => s.name || s.id.split('s').pop());
+  const far = (p.stands || []).filter(s => s.noBridge).map(s => IC.standName(s));
   const farTxt = far.length ? ` · <span class="amber">${far.length > 1 ? `stands ${far.join(', ')} are` : `stand ${far[0]} is`} remote, with stairs: a jet bridge reaches ${Math.round(IC.BRIDGE_REACH.tunnel * 100)} m from a terminal wall in front of the nose, and ${far.length > 1 ? 'they are' : 'it is'} further</span>` : '';
   return [['Stands', `${what}${gates ? ` · ${gates} at gates` : ''}${drive ? ` · ${drive} drive-through` : ''}${farTxt}<div class="acts"><button class="act ${p.ramp ? '' : 'on'}" data-act="apl" data-op="stands" data-v="auto" title="Stands in a row along the back edge; the apron's depth decides their size">Laid out automatically</button><button class="act ${p.ramp ? 'on' : ''}" data-act="apl" data-op="stands" data-v="hand" title="Place, turn and remove stands yourself with the Stand tool">Placed by hand</button></div>`]];
 }

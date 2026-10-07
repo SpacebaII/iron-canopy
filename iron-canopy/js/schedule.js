@@ -181,8 +181,8 @@ IC.dayBoard = function (S, ap) {
   IC.dayPlan(S, ap);
   const fee = n => U.money(n * perFlight * 0.5 * mo);
   const nightWords = {
-    open: `About ${N.open} movements a night, about ${fee(N.open)} ${moW} in fees. The nearest town loses morale with every night movement.`,
-    quota: `About ${N.quota} movements a night, about ${fee(N.quota)} ${moW} in fees; the town hears less.`,
+    open: `About ${N.open} movement${N.open === 1 ? '' : 's'} a night, about ${fee(N.open)} ${moW} in fees. The nearest town loses morale with every night movement.`,
+    quota: `About ${N.quota} movement${N.quota === 1 ? '' : 's'} a night, about ${fee(N.quota)} ${moW} in fees; the town hears less.`,
     curfew: `No night movements: about ${fee(N.open)} ${moW} of night fees gone, and cargo airlines like it less with every flight. The town sleeps.`
   };
   return { plan: P, cap: B.cap, night: B.night, nightWords, capWords, peak, capDep: st.depPerHour || 0, capArr: st.arrPerHour || 0, today: { arr: L.arr, dep: L.dep }, perFlight };

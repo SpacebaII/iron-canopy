@@ -121,7 +121,7 @@ IC.turnScene = function (b, q, t) {
 const VEH_WORD = { stairs: 'stairs', gpu: 'ground power', belt: 'belt loader', bagtractor: 'baggage carts', bagcart: 'baggage carts', clean: 'cleaners', catering: 'catering', refueller: 'fuel truck', dispenser: 'hydrant cart', apbus: 'buses', lorry: 'lorries', tug: 'pushback tug' };
 IC.LIFE_WORDS = VEH_WORD;
 const standOf = (ap, id) => ap && id ? IC.aptStands(ap).find(s => s.id === id) : null;
-IC.standName = s => s ? (s.name || s.id.split('s').pop()) : '';
+IC.standName = s => s ? (s.name || (IC.FOCUS.polish && s.no ? String(s.no) : s.id.split('s').pop())) : '';
 /* what stage a turnaround is at (f: the share of it done) */
 function turnStage(T, f, kind) {
   if (T.cargo || kind === 'cargo') return f < 0.45 ? 'Unloading freight' : 'Loading freight';
@@ -131,6 +131,8 @@ function turnStage(T, f, kind) {
   return f < 0.8 ? 'Boarding and refuelling' : 'Boarding';
 }
 IC.turnStage = turnStage;
+/* where the stage now ends, as a share of the turnaround */
+const turnStageEnd = (T, f, kind) => (T.cargo || kind === 'cargo') ? (f < 0.45 ? 0.45 : 1) : [0.2, 0.45, 0.62, 0.8, 1].find(e => f < e) || 1;
 /* where it is now: { x, y, h, alt, ap, m, t, s } */
 IC.tailWhere = function (S, tl) {
   if (!tl) return null;
@@ -186,6 +188,9 @@ IC.tailPhase = function (S, tl) {
     if (h && S.time - h.t0 > 60) return `Ready at stand ${sn}, held ${U.dur(S.time - h.t0)}: ${h.why}`;
     if (tl.t <= 0) return `Ready at stand ${sn}: waiting for its departure slot`;
     const f = sv && sv.tail === tl.id ? U.clamp((S.time - sv.t0) / Math.max(60, sv.dur), 0, 1) : 0.5;
+    // (round 5c) the whole turnaround's time, then the stage now with its own: "Turnaround: 40 min left · now:
+    // passengers getting off (8 min)"
+    if (IC.FOCUS.polish && sv && sv.tail === tl.id) { const end = sv.t0 + turnStageEnd(tl.T, f, sv.kind) * Math.max(60, sv.dur); return `Turnaround: ${U.dur(tl.t)} left · now: ${U.lc(turnStage(tl.T, f, sv.kind))} (${U.dur(Math.max(60, end - S.time))})`; }
     return `${turnStage(tl.T, f, sv && sv.kind)}: ${U.dur(tl.t)} left`;
   }
   return '';

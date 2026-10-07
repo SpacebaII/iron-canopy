@@ -40,7 +40,7 @@ IC.drawInfoView = function (g, S, px, now) {
       const f = (H.s.get(s.id) || 0) / max; n++; if (s.occ) used++;
       const S0 = IC.STAND[s.size] || IC.STAND.m;
       g.save(); g.translate(s.x, s.y); g.rotate(s.a); g.fillStyle = s.linked === false ? 'rgba(255,91,79,0.6)' : heat(f, 0.75); g.fillRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore();
-      if (IC.cam.z > 26) label(g, `${s.name || s.id.split('s').pop()} ${IC.RAMP_SIZE[s.size] ? IC.RAMP_SIZE[s.size][0].toUpperCase() : ''}`, s.x, s.y, px);
+      if (IC.cam.z > 26) label(g, `${IC.standName(s)} ${IC.RAMP_SIZE[s.size] ? IC.RAMP_SIZE[s.size][0].toUpperCase() : ''}`, s.x, s.y, px);
     }
     legend.push(['Stand use', `${used} of ${n} stands in use now · shaded by use while this view is open`], [heat(0), 'hardly used'], [heat(0.5), 'half the time'], [heat(1), 'always full'], ['rgba(255,91,79,0.8)', 'no taxiway reaches it']);
   } else if (v === 'walk') {

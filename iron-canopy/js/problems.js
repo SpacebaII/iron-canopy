@@ -149,12 +149,14 @@ IC.aptChain = function (S, ap) {
   const people = L.reduce((s, x) => s + x.k, 0);
   const deps = (ap.mvLog || []).filter(x => x.k === 'dep').length;
   const dests = new Map();
-  if (S.av) for (const r of S.av.routes) if (r.st === 'active' && r.n > 0 && (r.a === ap.id || r.b.apt === ap.id)) { const far = r.a === ap.id ? IC.avEnd(S, r.b) : S.byId[r.a]; if (far) dests.set(far.name, far); }
+  // (round 5c) with the aircraft flying each, so the chain can name the busiest route
+  const per = new Map();
+  if (S.av) for (const r of S.av.routes) if (r.st === 'active' && r.n > 0 && (r.a === ap.id || r.b.apt === ap.id)) { const far = r.a === ap.id ? IC.avEnd(S, r.b) : S.byId[r.a]; if (far) { dests.set(far.name, far); per.set(far.name, (per.get(far.name) || 0) + r.n); } }
   const earned = M ? M.land + M.pax + M.cargo : 0;
   const near = L[0];
   const cal = S.mode === 'story';
   const text = `${near ? `${short(near.c.name)}${L.length > 1 ? ` and ${L.length - 1} more` : ''}: ${fmtK(people)} people within ${IC.GROWTH.catch[1]} h by road` : 'No town within reach by road'} → ${Math.round(ap.paxRate || 0).toLocaleString('en-US')} passengers an hour → ${dests.size} place${dests.size === 1 ? '' : 's'} served → ${U.money(earned)} ${cal ? 'this month' : 'today'}`;
-  return { cities: L.slice(0, 6), people, paxHour: ap.paxRate || 0, cap: st.pax || 0, deps, dests: [...dests.values()], earned, month: M, text };
+  return { cities: L.slice(0, 6), people, paxHour: ap.paxRate || 0, cap: st.pax || 0, deps, dests: [...dests.values()].sort((p, q) => (per.get(q.name) || 0) - (per.get(p.name) || 0)), perDay: per, earned, month: M, text };
 };
 const fmtK = k => k >= 1000 ? `${(k / 1000).toFixed(1)} million` : `${Math.round(k)}k`;
 IC.fmtPeople = fmtK;

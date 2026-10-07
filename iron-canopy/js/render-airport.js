@@ -10,6 +10,15 @@ let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, 
 let LIFE = false, BR = null, ACT = 0.5;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges; ACT: how busy its terminal is, 0 → 1
 function lbl(g, txt, x, y, px, col, size, align, weight) {
   if (NOLBL) return;
+  // (round 5c) close in, a font of a fraction of a world unit is drawn at the wrong size by the canvas: the words come
+  // out squeezed. There they are drawn in screen pixels at the same place
+  if (px < 0.05 && IC.FOCUS.polish && g.getTransform) {
+    const m = g.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0);
+    g.font = `${weight || 600} ${(size || 10) * k}px "IBM Plex Mono", monospace`; g.textAlign = align || 'center';
+    g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillText(txt, sx + 0.9 * k, sy + 0.9 * k); g.fillStyle = col; g.fillText(txt, sx, sy);
+    g.restore(); return;
+  }
   g.font = `${weight || 600} ${(size || 10) * px}px "IBM Plex Mono", monospace`;
   g.textAlign = align || 'center';
   g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillText(txt, x + 0.9 * px, y + 0.9 * px);
@@ -194,9 +203,21 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (z >= 0.5) for (const m of ap.moves) {
     if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
     const air = m.phase === 'final';
+    // (round 5c) from the middle zoom a taxiing aircraft leaves a short fading trail, so a busy apron reads as busy
+    if (IC.FOCUS.polish && !air && z > 2 && z < 40 && !m.holding && !['push', 'start', 'wait', 'parkin', 'land'].includes(m.phase) && m.T) {
+      const L = Math.max(m.T.len * 2.2, 26 * px), bx = m.x - Math.cos(m.h) * L, by = m.y - Math.sin(m.h) * L, gr = g.createLinearGradient(m.x, m.y, bx, by);
+      gr.addColorStop(0, 'rgba(255,255,255,0.32)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.strokeStyle = gr; g.lineWidth = Math.max(m.T.len * 0.12, 2 * px); g.lineCap = 'round'; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(bx, by); g.stroke(); g.lineCap = 'butt';
+    }
     IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8 });
     // a tug at the nose: pushing back, or towing to and from the hangar
-    if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) { const L = m.T.len * 0.5 + 0.03; veh(g, m.x + Math.cos(m.h) * L, m.y + Math.sin(m.h) * L, m.h, 0.06, 0.03, 'rgb(236,196,60)', px); }
+    if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) {
+      // (round 5c) the same tug as at the stand, nose to nose with the aircraft on its tow bar
+      if (IC.FOCUS.polish && IC.drawLifeVeh && IC.LIFE_VEH) { const d = IC.LIFE_VEH.tug, k = U.clamp(15 * px / 0.05, 1, 3.4), L = m.T.len * 0.5 + 0.012 + d.L * k * 0.5 + 0.012 * k, nx = m.x + Math.cos(m.h) * (m.T.len * 0.5), ny = m.y + Math.sin(m.h) * (m.T.len * 0.5), tx = m.x + Math.cos(m.h) * L, ty = m.y + Math.sin(m.h) * L;
+        g.strokeStyle = 'rgba(30,30,32,0.9)'; g.lineWidth = Math.max(0.004, 1.2 * px); g.beginPath(); g.moveTo(nx, ny); g.lineTo(tx, ty); g.stroke();
+        IC.drawLifeVeh(g, d, tx, ty, m.h + Math.PI, px, 15, (now * 1.6) % 1 < 0.5 ? 1 : 0.4, night, 3); }
+      else { const L = m.T.len * 0.5 + 0.03; veh(g, m.x + Math.cos(m.h) * L, m.y + Math.sin(m.h) * L, m.h, 0.06, 0.03, 'rgb(236,196,60)', px); }
+    }
   }
   // above the aircraft that taxi under them: passenger bridges, and people movers on their viaducts
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
@@ -228,7 +249,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (z > 0.25) drawConvoys(g, S, ap, px, z);
   // the words on the airport: each building site's progress, on the site, and what each building is at the middle
   // zoom, the most important first and none over another (IC.aptLabels)
-  for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700);
+  for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) if (IC.LBL.put(L.x, L.y, L.box[2] - L.box[0], (L.box[3] - L.box[1]) / 1.3, 0, 0, true) != null) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700);
   // only jobs a crew is on: the rest of the queue is just its outline
   for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
   // repairs
@@ -487,7 +508,7 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
   g.fillStyle = YEL; g.fillRect(S0.d * 0.35, -0.04, 0.012, 0.08);
   if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
   g.restore();
-  if (z > 22) lbl(g, s.name || s.id.split('s').pop(), s.fx, s.fy, px, 'rgba(236,196,60,0.8)', 7, 'center', 700);
+  if (z > 22) lbl(g, IC.standName(s), s.fx, s.fy, px, 'rgba(236,196,60,0.8)', 7, 'center', 700);
 }
 /* a jet bridge in the stand's frame (x along the aircraft, nose ahead): the rotunda at the terminal, the telescopic
    tunnel on its drive wheels, the cab turned to the front door; a shadow on the pavement below */

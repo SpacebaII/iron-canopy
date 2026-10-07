@@ -31,11 +31,12 @@ const BAGS = ['rgb(200,60,50)', 'rgb(40,44,60)', 'rgb(60,120,190)', 'rgb(230,180
 const CLOTHES = ['rgb(230,226,214)', 'rgb(40,44,52)', 'rgb(170,50,50)', 'rgb(60,100,170)', 'rgb(200,160,60)', 'rgb(110,130,90)', 'rgb(150,90,140)'];
 const CARS = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230,230,226)', 'rgb(60,80,120)', 'rgb(120,124,128)', 'rgb(180,160,120)'];
 
-let LP = false;   // the lights' pass: after the airport's night falls, only the lights (render-airport.js draws twice)
+let LP = false;
+let POL = false;   // (round 5c) readable at stand zoom (IC.FOCUS.polish)   // the lights' pass: after the airport's night falls, only the lights (render-airport.js draws twice)
 /* one vehicle; minPx: a 5 m vehicle is drawn at least this many pixels long (all of them scaled alike, at most 3
    times their size), so the apron reads at the middle zoom */
 function drawVeh(g, d, x, y, h, px, minPx, beacon, night, seed) {
-  const k = U.clamp(minPx * px / 0.05, 1, 3), L = d.L * k, W = d.W * k, x0 = -L / 2, y0 = -W / 2;
+  const k = U.clamp(minPx * px / 0.05, 1, POL ? 3.4 : 3), L = d.L * k, W = d.W * k, x0 = -L / 2, y0 = -W / 2;
   if (LP && !beacon) return;
   g.save(); g.translate(x, y); g.rotate(h);
   if (!LP) {
@@ -53,6 +54,15 @@ function drawVeh(g, d, x, y, h, px, minPx, beacon, night, seed) {
     case 'bus': g.fillStyle = d.c; g.fillRect(x0, y0, L, W); g.fillStyle = d.c2; g.fillRect(x0 + L * 0.05, y0 + W * 0.3, L * 0.9, W * 0.4); break;
     default: g.fillStyle = d.c; g.fillRect(x0, y0, L, W);
   }
+  // (round 5c) big enough to read: wheels at the corners, a windscreen at the front, a light edge, so a tug reads as a
+  // tug and a belt loader as a belt loader next to the aircraft
+  if (POL && L / px > 13) {
+    const tw = W * 0.16, tl = Math.min(L * 0.16, W * 0.5);
+    g.fillStyle = 'rgba(16,16,18,0.95)';
+    for (const fx of [0.12, d.k === 'bus' || d.k === 'tank' || d.k === 'truck' ? 0.72 : 0.7]) for (const sy of [-1, 1]) g.fillRect(x0 + L * fx, sy < 0 ? y0 - tw * 0.55 : y0 + W - tw * 0.45, tl, tw);
+    if (d.k !== 'bags' && d.k !== 'belt') { g.fillStyle = 'rgba(150,200,230,0.85)'; g.fillRect(x0 + L * (d.k === 'cab' ? 0.06 : 0.86), y0 + W * 0.14, L * 0.07, W * 0.72); }
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = Math.max(px * 0.8, W * 0.04); g.strokeRect(x0, y0, L, W);
+  }
   }
   // headlights at night while it drives; the amber beacon that every apron vehicle turns on while it moves
   if (beacon && night && LP) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,240,200,0.18)'; g.beginPath(); g.moveTo(L / 2, -W / 2); g.lineTo(L / 2 + L * 1.4, -W * 1.4); g.lineTo(L / 2 + L * 1.4, W * 1.4); g.lineTo(L / 2, W / 2); g.fill(); g.globalCompositeOperation = 'source-over'; }
@@ -65,7 +75,9 @@ IC.drawLifeVeh = drawVeh;
 IC.drawTurns = function (g, S, ap, px, z, now, night, seen, lights) {
   const R = S.rec; if (!R) return 0;
   LP = !!lights;
-  const T = S.time, minPx = 9, people = z > 22;
+  POL = !!(IC.FOCUS && IC.FOCUS.polish);
+  // (round 5c) a tug or a belt loader at least 15 px long from the middle zoom in: next to a 40 m airliner they read
+  const T = S.time, minPx = POL ? 15 : 9, people = z > 22;
   let n = 0;
   for (const q of R.turns) {
     if (q.ap !== ap.id || q.t0 > T + 1 || (q.t1 != null && q.t1 < T - 900)) continue;
@@ -78,10 +90,14 @@ IC.drawTurns = function (g, S, ap, px, z, now, night, seen, lights) {
       const off = T - q.t0 > 30 && T - q.t0 < D * 0.2, on = T > q.t0 + D * 0.62 && T < tEnd - 120;
       if (off || on) {
         const a = Pa.door, b = q.kind === 'bus' ? Pa.bus0.pts[Pa.bus0.pts.length - 1] : Pa.term, len = Math.max(0.05, U.dist(a, b)), N = q.kind === 'bus' ? 6 : 12;
-        const r = Math.max(0.004, 1.6 * px);
+        const r = Math.max(0.004, (POL ? 2.6 : 1.6) * px);
         for (let i = 0; i < N; i++) {
           const f = ((T * 0.013 / len) + i / N + U.hash(i, q.t0 | 0) * 0.05) % 1, k = on ? f : 1 - f, wob = (U.hash(i, 7) - 0.5) * 0.02;
-          g.fillStyle = CLOTHES[i % CLOTHES.length]; g.beginPath(); g.arc(b.x + (a.x - b.x) * k - Math.sin(q.a) * wob, b.y + (a.y - b.y) * k + Math.cos(q.a) * wob, r, 0, 7); g.fill();
+          const px0 = b.x + (a.x - b.x) * k - Math.sin(q.a) * wob, py0 = b.y + (a.y - b.y) * k + Math.cos(q.a) * wob;
+          // (round 5c) a person from above: shoulders in their clothes with a dark rim, and a head
+          if (POL) { g.fillStyle = 'rgba(12,14,18,0.85)'; g.beginPath(); g.arc(px0, py0, r * 1.25, 0, 7); g.fill(); }
+          g.fillStyle = CLOTHES[i % CLOTHES.length]; g.beginPath(); g.arc(px0, py0, r, 0, 7); g.fill();
+          if (POL) { g.fillStyle = 'rgb(214,176,140)'; g.beginPath(); g.arc(px0, py0, r * 0.5, 0, 7); g.fill(); }
         }
       }
     }
@@ -271,8 +287,10 @@ IC.drawTurnClock = function (g, S, ap, px, z, label) {
   g.lineWidth = Math.max(0.006, 2.4 * px);
   g.strokeStyle = 'rgba(0,0,0,0.45)'; g.beginPath(); g.arc(s.x, s.y, R, 0, 7); g.stroke();
   g.strokeStyle = tl.t <= 0 ? 'rgba(127,232,176,0.95)' : 'rgba(242,180,65,0.95)'; g.beginPath(); g.arc(s.x, s.y, R, -Math.PI / 2, -Math.PI / 2 + f * 6.283); g.stroke();
-  const txt = tl.t > 0 ? `${IC.turnStage(tl.T, f, sv && sv.kind)} · ${U.dur(tl.t)} left` : 'Turned round: ready to go';
-  label(g, `STAND ${IC.standName(s)}: ${txt.toUpperCase()}`, s.x, s.y - R - 7 * px, px, 'rgba(242,214,150,0.98)', 12, 'center', 700);
+  // (round 5c) the turnaround's time, then the stage now: "Stand 1 · 43 min left · now: passengers getting off"
+  const txt = tl.t > 0 ? (IC.FOCUS.polish ? `${U.dur(tl.t)} left · now: ${U.lc(IC.turnStage(tl.T, f, sv && sv.kind))}` : `${IC.turnStage(tl.T, f, sv && sv.kind)} · ${U.dur(tl.t)} left`) : 'Turned round: ready to go';
+  if (IC.FOCUS.polish) IC.LBL.put(s.x, s.y - R - 7 * px, (txt.length + 10) * 12 * 0.62 * px, 12 * px, 0, 0, true);
+  label(g, `STAND ${IC.standName(s)}${IC.FOCUS.polish ? " ·" : ":"} ${txt.toUpperCase()}`, s.x, s.y - R - 7 * px, px, 'rgba(242,214,150,0.98)', 12, 'center', 700);
 };
 
 })(window.IC);

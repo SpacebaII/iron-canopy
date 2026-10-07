@@ -180,5 +180,10 @@
  "round 5b: the ground fleet: an airport starts with what its stands need and keeps matched as it grows": 16,
  "round 5b: each tutorial waits for the real action, ticks off what was done early, and saves": 14,
  "round 5b: a cap moves flights out of the peak hour": 148,
- "round 5b: night flights by default; a night curfew stops them and costs the cargo airline": 332
+ "round 5b: night flights by default; a night curfew stops them and costs the cargo airline": 332,
+ "round 5c: no two map labels overlap at the airport zooms": 13.3,
+ "round 5c: Chapter 3 radar: the tip names how many and where, the tag what a spot adds, and radars on the gap marker reach 80%": 22.4,
+ "round 5c: textlint finds none of the banned phrases, in the source or in any tutorial step": 7.8,
+ "round 5c: clicking an aircraft on its stand selects it, from the whole-airport zoom in; a click beside it picks the airport": 40.8,
+ "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1
 }

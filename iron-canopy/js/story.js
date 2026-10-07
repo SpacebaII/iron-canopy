@@ -182,6 +182,8 @@ function portsOnNet(S) {
   return IC.avPorts(S).filter(p => IC.aspRoute(S, { x: ap.x, y: ap.y, apt: ap.id }, { x: p.x, y: p.y })).length;
 }
 function wayCover(S) {
+  // (round 5c) the same measure as the tag by the cursor, the tip's count and the gap marker (IC.wayPoints)
+  if (IC.FOCUS.tutors && IC.wayCoverAll) return IC.wayCoverAll(S);
   let L = 0, c = 0;
   for (const w of S.asp.ways) { const [a, b] = IC.aspWayEnds(S, w), l = U.dist(a, b); L += l; c += l * IC.aspWayCover(S, w, 9); }
   return L ? c / L : 0;
@@ -208,7 +210,7 @@ function chapterGoals(S, ch) {
   const g = o => { const x = Object.create(refA); Object.defineProperties(x, Object.getOwnPropertyDescriptors(o)); G.push(x); return x; };
   if (ch === 0) {
     g({ id: 'found', text: `Found the national airport within 60 km of ${cc.name}`, ref: cc,
-      how: `Open the Aviation room (V) and press “Found a new airport”. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. The runway starts into the prevailing wind; turn it with R or by dragging along it, and click elsewhere to move the site. The survey shows the cost; Found (or Enter) commits.`,
+      how: `Press Build (B), then Found an airport. Click flat, open ground 15–40 km from ${cc.name}: close enough for passengers, far enough that jets do not fly low over homes. The runway starts into the prevailing wind; turn it with R or by dragging along it, and click elsewhere to move the site. The survey shows the cost; Found (or Enter) commits.`,
       check: () => !!st.cap, gives: 'the survey, and its runway placed' });
     g({ id: 'runway', text: 'Build a runway at least 2.1 km long', gives: 'room for jets', check: () => ((A() && A().st.longest) || 0) >= IC.ACTYPES.narrow.rwy, prog: () => building(A(), 'runway'),
       how: `After Found, the surveyed runway waits on the map with its taxiways and landing systems: press Build beside it (or Enter). Or open Blueprints on the build bar (B) and pick the Starter airport: runway, taxiways, a terminal with eight stands, tower, fire station and fuel, as one plan at one price. 3 km of concrete takes every airliner and costs ₭15M per 100 m.` });
@@ -241,7 +243,7 @@ function chapterGoals(S, ch) {
     g({ id: 'deals', text: 'Six deals running at once', gives: 'Chapter 3: the airspace', check: () => dealsOn(S) >= 6, prog: () => `${dealsOn(S)} of 6` });
   } else if (ch === 1) {
     g({ id: 'approve', text: IC.FOCUS.hands ? 'Sign a deal with an airline: its offer shows on the map at the airport' : 'Sign a deal with an airline (Aviation room → Deals)', check: () => st.cnt.approve >= 1,
-      how: (IC.FOCUS.hands ? 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers ' : 'Airlines offer deals in the Aviation room (V): ') + 'so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the contract is shorter; give a little and it is longer.' });
+      how: (IC.FOCUS.hands ? 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers ' : 'Airlines offer deals in the Aviation room (V): ') + 'so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the deal is shorter; give a little and it runs longer.' });
     g({ id: 'hangar', text: 'Hangar space for the aircraft based here', check: () => { const h = hangarNeed(S); return h.have > 0 && h.have >= h.need; }, prog: () => { const h = hangarNeed(S); return building(A(), 'hangar') || `${h.have} of ${Math.max(1, h.need)} spaces`; },
       how: `${S.av.airlines[0] ? S.av.airlines[0].name : 'The flag carrier'} bases its aircraft here and must service them: its deal gives you a day to build a hangar. A hangar holds two aircraft; put it beside a taxiway, away from the runway.` });
     g({ id: 'tower', text: 'Build a control tower', check: () => built(A(), 'tower'), prog: () => building(A(), 'tower'),
@@ -261,8 +263,8 @@ function chapterGoals(S, ch) {
       how: 'Aviation room → Draw airways. Click on the border where traffic from abroad comes in: a fix within 25 km of the border is an entry point (a ringed triangle). Click on toward the capital to lay an airway; right-click ends it. Faint dashed lines show where the traffic wants to go.' });
     g({ id: 'link', text: `Join ${nm()} to the airways, with routes to two foreign airports`, gives: '+₭40M from the Ministry', pay: 40, check: () => portsOnNet(S) >= 2, prog: () => `${portsOnNet(S)} foreign airports reachable on airways`,
       how: 'An airport joins the airways at the nearest fix within 120 km. Lay airways from it to the entry points: airliners then fly them in and out, and controllers know where to look.' });
-    g({ id: 'radar', text: 'Put up a civil radar that sees 80% of the airways', gives: 'controllers see every airliner', check: () => wayCover(S) >= 0.8, prog: () => `${U.pct(wayCover(S))} of the airways seen at cruise height`,
-      how: 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 400 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.' });
+    g({ id: 'radar', text: 'Put up civil radar that sees 80% of the airways', gives: 'controllers see every airliner', check: () => wayCover(S) >= 0.8, prog: () => `${U.pct(wayCover(S))} of the airways seen at cruise height${IC.FOCUS.tutors && wayCover(S) < 0.8 && S.asp.ways.length ? ` · about ${Math.max(1, IC.radarPlan(S).n)} more radar${IC.radarPlan(S).n > 1 ? 's' : ''}` : ''}`,
+      get how() { return IC.FOCUS.tutors && S.asp.ways.length ? `Pick the Secondary Surveillance Radar (bottom left). ${IC.radarAdvice(S)} The tag by the cursor says what each spot adds.` : 'Pick the Secondary Surveillance Radar (bottom left) and place it between the airways, on open high ground if you can: it sees 400 km at cruise height, less behind hills. Amber stretches of airway are ones it cannot see.'; } });
     g({ id: 'over', text: 'Bring 15 overflights a day onto our airways', gives: '₭0.5M for each of them', check: () => recent(st.cnt.overT, 86400, S.time) >= 15, prog: () => `${recent(st.cnt.overT, 86400, S.time)} in the last day`,
       how: 'Traffic crossing the country pays route charges: twice as much when it flies our airways, because controllers give it a service. Airways between entry points on opposite borders catch it.' });
     if (IC.FOCUS.progress) g({ id: 'appr', text: `Build an approach radar at ${nm()}`, gives: '60 s between arrivals', check: () => built(A(), 'atc'), prog: () => building(A(), 'atc'),
@@ -280,7 +282,7 @@ function chapterGoals(S, ch) {
   } else if (ch === 4) {
     const c2 = S.byId[st.city2], a2 = () => st.apt2 && S.byId[st.apt2];
     g({ id: 'found2', text: `Found an airport within 60 km of ${c2.name}`, gives: 'a second airport', ref: c2, check: () => !!a2(),
-      how: `Aviation room → Found a new airport, near ${c2.name}. The same rules as the first: flat ground, the runway into the wind, few homes under the approach.` });
+      how: `Build bar (B) → Found an airport, near ${c2.name}. The same rules as the first: flat ground, the runway into the wind, few homes under the approach.` });
     g({ id: 'open2', text: `Open ${c2.name}’s airport: runway, apron, terminal and fuel`, gives: '+₭80M from the region', pay: 80, get ref() { return a2() || c2; }, check: () => openTo(S, a2(), st.size2 === 'jets' ? 'narrow' : 'turbo'),
       prog: () => a2() ? (IC.aptCanTake(S, a2(), IC.ACTYPES.turbo) || (!built(a2(), 'terminal') ? 'no terminal yet' : !built(a2(), 'fuel') ? 'no fuel farm yet' : '')) : '',
       how: st.size2 === 'jets' ? `${c2.name} wants jets: 2.1 km of runway, fire cover and medium stands. The demand is there to fill them.` : 'A regional airport can start small: 1.5 km of runway takes turboprops, which need no fire station. Jets need 2.1 km and fire cover; build for them when the demand comes.' });
@@ -320,7 +322,8 @@ function startChapter(S, n, quiet) {
     say(S, 'APT', `Every minute an aircraft spends on the runway is a minute nobody else can use it. A control tower lets flights follow each other in two minutes instead of eight; a taxiway to the runway end stops departures backtracking along it.`);
     say(S, 'ATC', `Ivo Marsh, air traffic control. For now my people work the old way: every flight direct, kept apart by time. It holds while the sky is quiet. Tell me when it is not.`);
   } else if (n === 2) {
-    Object.assign(S.layers, { coverage: true, airways: true, rings: true });
+    // (round 5c) the airways only: the radar cover shows while a radar is placed, or with Show the gaps
+    Object.assign(S.layers, IC.FOCUS.polish ? { airways: true } : { coverage: true, airways: true, rings: true });
     card(S, `Chapter 3 · ${C.title}`, sub, `Airliners cross ${W.names.H} wherever they like and controllers keep them apart by timing alone. The Minister wants a proper airspace: entry points on the border, airways between them and the airport, and radar that sees it all.`, 'chapter');
     say(S, 'ATC', `The airway editor is yours now (Aviation room → Draw airways). Entry points first: fixes on the border where traffic from abroad comes in. Then airways from them to ${ap ? short(ap.name) : 'the airport'}. Flights on airways need half the attention, and I can release them a minute apart.`);
     say(S, 'ATC', `Civil radar is in the build list too. My controllers keep apart what they can see; the rest they space by the clock, and the clock is slow.`);
@@ -348,7 +351,7 @@ function newAirline(S, kind, delay, hub, to) {
   const al = IC.avAddAirline(S, kind, ap, extra), T = { cargo: 'cargo', regional: 'turbo' }[kind] || 'narrow';
   const dest = to || (kind === 'foreign' ? ports.find(p => p.k === al.country) : U.pick(ports));
   IC.avRequest(S, al, ap, dest.apt ? dest : dest, T, kind === 'cargo' ? 1 : 2, kind === 'cargo' ? 'wants to start freight flights' : `wants to start flying to ${ap.name.replace(/ (International|Airport)$/, '')}`, MO(S, 1));
-  say(S, 'APT', `${al.name}, ${al.K.style.toLowerCase()}, ${kind === 'cargo' ? 'wants to fly freight from' : 'wants to fly to'} ${short(ap.name)}. Their offer is in the Aviation room, with what they need from us.${kind === 'cargo' && IC.aptCanTake(S, ap, IC.ACTYPES.cargo) ? ` ${short(ap.name)} cannot take a freighter yet: ${IC.aptCanTake(S, ap, IC.ACTYPES.cargo)}.` : ''}`);
+  say(S, 'APT', `${al.name}, ${al.K.style.toLowerCase()}, ${kind === 'cargo' ? 'wants to fly freight from' : 'wants to fly to'} ${short(ap.name)}. Their offer is on the map at the airport, with what they need from us.${kind === 'cargo' && IC.aptCanTake(S, ap, IC.ACTYPES.cargo) ? ` ${short(ap.name)} cannot take a freighter yet: ${IC.aptCanTake(S, ap, IC.ACTYPES.cargo)}.` : ''}`);
   return al;
 }
 // (the opener asks again after so many months)
@@ -472,11 +475,18 @@ IC.EV = EV;   // (round 4) the peacetime deck adds its cards here (deck.js), mad
    the border, a fix near the airport, and airways between them */
 function consultants(S) {
   const ap = capApt(S); if (!ap) return;
-  const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, 3);
+  // (round 5c) the nearest foreign airports in turn until three entry points are on airways: two airports the same way
+  // gave one fix (a second too close to it is refused), and the chapter's goal could never be met
+  const ports = IC.avPorts(S).slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap)).slice(0, IC.FOCUS.tutors ? 5 : 3);
   let hub = null;
   for (const p of ports) {
+    if (IC.FOCUS.tutors && gatesOn(S) >= 3) break;
     let q = null;
     for (let i = 1; i <= 60; i++) { const x = ap.x + (p.x - ap.x) * i / 60, y = ap.y + (p.y - ap.y) * i / 60; if (!IC.inHome(x, y)) { q = { x, y }; break; } }
+    // (round 5c) on the border itself: a far airport's step of 50 km could leave the point too far out to be an entry
+    if (q && IC.FOCUS.tutors) { let lo = 0, hi = 1; const f = Math.hypot(q.x - ap.x, q.y - ap.y) / Math.max(1, Math.hypot(p.x - ap.x, p.y - ap.y)); hi = f; lo = Math.max(0, f - 1 / 60);
+      for (let k = 0; k < 14; k++) { const m = (lo + hi) / 2; if (IC.inHome(ap.x + (p.x - ap.x) * m, ap.y + (p.y - ap.y) * m)) lo = m; else hi = m; }
+      q = { x: ap.x + (p.x - ap.x) * (hi + 40 / Math.max(1, Math.hypot(p.x - ap.x, p.y - ap.y))), y: ap.y + (p.y - ap.y) * (hi + 40 / Math.max(1, Math.hypot(p.x - ap.x, p.y - ap.y))) }; }
     if (!q) continue;
     if (!hub) { const d = U.dist(ap, p), k = Math.min(1, 500 / d); hub = IC.aspAddFix(S, ap.x + (p.x - ap.x) * k * 0.5, ap.y + (p.y - ap.y) * k * 0.5); }
     const f = IC.aspAddFix(S, q.x, q.y);
@@ -560,8 +570,11 @@ IC.GUIDE = [
   { id: 'pavement', act: 1, ch: 0, t: 'Pavement', d: 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.' },
   { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (7) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
   { id: 'money1', act: 1, ch: 0, t: 'Money in, money out', d: 'At first the money comes from the Treasury: a large sum to build the national airport, and a small grant an hour. Once airlines fly, they pay a landing fee for every aircraft and a charge for every passenger. What you build costs a little every hour to keep (0.12% of its price), so build what the airlines will use. The Economy room (E) shows both sides.' },
-  { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the contract is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
+  { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the deal is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
   { id: 'runway', act: 1, ch: 1, t: 'Runway capacity', d: 'Without a tower, arrivals and departures are kept 8 minutes apart; with one, 2 minutes; an approach radar tightens it further. A taxiway to each runway end stops departures backtracking, and exits where landing aircraft slow down free the runway sooner.' },
+  { id: 'follow', act: 1, ch: 1, t: 'Watching an aircraft', d: 'Click an airliner and press Follow: the camera stays with it from the approach to the stand and back out. On the stand its panel lists each service as it works (stairs or jet bridge, bags, catering, the fuel truck, the tug) with the time left; roll the wheel in to watch them. Drag the map or press Stop following to let it go.' },
+  { id: 'growth1', act: 1, ch: 1, t: 'Milestones', d: 'At 2,000, 6,000, 15,000 and 50,000 passengers a day the airport reaches a milestone, and each opens a bigger piece: a terminal with a pier, a second runway, a round terminal. The card says why the airport needs it; the piece waits on the build bar until you place it.' },
+  { id: 'events', act: 1, ch: 1, t: 'Decisions', d: 'Things happen at an airport: a strike, fog season, a state visit, a diverted wide-body. Each comes as a card with two or three answers, and each answer says what it costs and what it brings. Time stops until you answer. The Journal (J) keeps every card and what came of it.' },
   { id: 'weather', act: 1, ch: 1, t: 'Wind and fog', d: 'Aircraft take off and land into the wind; each type has a crosswind limit, so a runway across the prevailing wind closes in a gale. In fog and low cloud arrivals need a landing system (ILS) on the end they land on, or they divert.' },
   { id: 'charges', act: 1, ch: 1, t: 'Charges and stands', d: 'Each airport has list charges (its panel, or the Economy room). Higher charges earn more per flight and make new deals harder to sign; low-cost airlines leave first. A stand earns its keep by turning aircraft round: the Economy room shows what each earned in the last day, and a stand that earned nothing was built too early.' },
   { id: 'airspace', act: 1, ch: 2, t: 'Airspace', d: 'Entry points are fixes within 25 km of the border: once there are any, traffic from abroad joins the airways only there. Controllers keep apart the flights they see on radar. Off the airways, or where radar does not reach, they space flights by time alone: fewer flights an hour, longer delays, and crossings that can go wrong. Radar sees less the lower an aircraft flies: hills and the curve of the earth hide it.' },
@@ -622,6 +635,7 @@ IC.aptGuard = (S, ap) => S.units.filter(u => !u.dead && u.state === 'ready' && (
 IC.layerAllowed = function (S, k) {
   const st = S.story; if (!st) return true;
   if (k === 'coverage' || k === 'airways' || k === 'rings') return !IC.storyLock(S, k === 'airways' ? 'airways' : 'coverage');
+  if (k === 'gaps') return !IC.storyLock(S, 'radar') && !!(S.asp && S.asp.ways.length) && st.act === 1;
   if (k === 'intel') return st.act >= 2;
   if (k === 'logistics') return st.act >= 3;
   return true;
@@ -658,7 +672,7 @@ function startAct(S, n) {
     if (st.fresh) {
       card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of the ${W.full.H}. The country has no airport worth the name: airliners cross its sky and nobody lands. The Treasury has set aside the money for a national airport near ${cc.name}. Next door, the ${W.full.A} has been quiet for years.`, 'chapter');
       say(S, 'MIN', `Welcome, Director. Aviation is how a country earns its living and talks to the world, and we have none. Build the national airport near ${cc.name}, get the airlines in, and grow it. The Treasury has given you ${U.money(IC.CAREER_START)}: build big enough that the airlines want to come, because that airport will pay for everything else. I judge you on the airlines and the passengers.`);
-      say(S, 'APT', `Lena Okafor, airports. I will walk you through the first one: the steps are in the goals panel, top left. Nothing waits for you to follow them, and you can hide the tips.`);
+      say(S, 'APT', IC.FOCUS.tutors ? `Lena Okafor, airports. I will be at your elbow for the first one: each step shows where it happens, and Skip puts any of them away.` : `Lena Okafor, airports. I will walk you through the first one: the steps are in the goals panel, top left. Nothing waits for you to follow them, and you can hide the tips.`);
     } else {
       card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `You have just been appointed ${A.role} of the ${W.full.H}. Three airports, a handful of airlines, and a Minister who wants the sector to grow. Next door, the ${W.full.A} has been quiet for years.`, 'chapter');
       say(S, 'MIN', `Welcome, Director. Aviation is how this country earns its living and how it talks to the world. Grow it: more routes, more passengers, airlines that want to be here. I judge you on that.`);
@@ -766,7 +780,7 @@ function beatsFor(S, act) {
     B.push({ id: 'nudge', need: () => !st.opened && inAct(S) > MO(S, 1), gap: [0, 1800], repeat: [MO(S, 1), MO(S, 1.5)], run: () => {
       if (st.opened) return;
       st.standing -= 3;
-      say(S, 'MIN', st.cap ? `The Treasury asks when ${short(apName(S, st.cap))} opens. Every day it stands empty is money spent and nothing earned. What is it waiting for? (The goals panel says what is missing.)` : `Director, the cabinet asks where the national airport is. There is not even a site yet. Aviation room, Found a new airport.`);
+      say(S, 'MIN', st.cap ? `The Treasury asks when ${short(apName(S, st.cap))} opens. Every day it stands empty is money spent and nothing earned. The goals panel says what it still lacks.` : `Director, the cabinet asks where the national airport is. There is not even a site yet. Build bar (B), Found an airport.`);
     } });
     // the network grows by demand: a regional airport whose turboprops fly full asks for jets; another city beyond
     // reach asks for a field of its own once enough of its people want to fly
@@ -1142,7 +1156,7 @@ function actOneTick(S) {
   if (g2 && !g2.done && a2 && openTo(S, a2, 'narrow')) { g2.done = true; st.standing += 3; say(S, 'MIN', `${short(a2.name)} takes jets now. The region is pleased, and so am I.`); }
   else if (g2 && !g2.done && !g2.late && S.time > g2.due) { g2.late = true; st.standing -= 4; say(S, 'MIN', `${short(a2 ? a2.name : 'The regional airport')} still cannot take jets. The Governor has stopped asking me politely.`); }
   const c3 = st.contract3, a3 = st.apt3 && S.byId[st.apt3];
-  if (c3 && !c3.done && a3 && openTo(S, a3, c3.size === 'jets' ? 'narrow' : 'turbo')) { c3.done = true; st.standing += 3; say(S, 'MIN', `${short(a3.name)} is open. A country with more than one airport worth the name: well done.`); }
+  if (c3 && !c3.done && a3 && openTo(S, a3, c3.size === 'jets' ? 'narrow' : 'turbo')) { c3.done = true; st.standing += 3; say(S, 'MIN', `${short(a3.name)} is open. A country with two airports worth the name. The regions noticed.`); }
   else if (c3 && !c3.done && !c3.late && S.time > c3.due) { c3.late = true; st.standing -= 4; }
   if (!st.feeHist.length || S.time - st.feeHist[st.feeHist.length - 1].t >= H) {
     st.feeHist.push({ t: S.time, v: S.av.feeTotal || 0 });
@@ -1155,7 +1169,7 @@ function foundedHere(S, ap) {
   if (!st.cap) {
     if (U.dist(ap, cc) <= 600) {
       st.cap = ap.id; ap.template = 'intl'; S.asp.zs = null;
-      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself. The airport is selected, and its build bar is open along the bottom of the screen: pick Runway under Runways.`);
+      say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself: the surveyed one is placed on the map, and Build lays it. Blueprints has the whole Starter airport at one price.`);
     } else say(S, 'MIN', `${ap.name} is ${U.km(U.dist(ap, cc))} from ${cc.name}. The national airport has to be within 60 km of the capital, where the passengers are. Found it closer in; that one can wait.`);
   } else if (st.city2 && !st.apt2 && U.dist(ap, S.byId[st.city2]) <= 600) st.apt2 = ap.id;
   else if (st.city3 && !st.apt3 && U.dist(ap, S.byId[st.city3]) <= 600) st.apt3 = ap.id;

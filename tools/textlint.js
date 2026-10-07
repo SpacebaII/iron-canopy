@@ -11,6 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 
+// (round 5c) phrases nobody running an airport says to a colleague: cheerleading, brochure words, padding
+const BANNED = /\b(let['’]s|seamless(ly)?|dive in|great job|well done|good job|congratulations|awesome|amazing|robust|leverag(e|es|ing)|delve|game[- ]changer|cutting[- ]edge|state[- ]of[- ]the[- ]art|don['’]t worry|feel free|simply|unlock the|embark|journey awaits|exciting)\b/i;
+
 // what is wrong in any text the player reads
 const RULES = [
   [/\bundefined\b/, '"undefined"'],
@@ -22,7 +25,9 @@ const RULES = [
   [/\baircrafts\b/i, '"aircrafts"'],
   [/\b1 (seconds|minutes|hours|days|weeks|months|years|flights|aircraft\w+|units|blocks|stands|controllers|lorries|trucks|deals|routes|airlines|goals|points|messages|lessons|systems|missiles|kills)\b/, 'a plural after 1'],
   [/\b(defense|offense|color|center|meter|kilometer|airplane)s?\b/i, 'American spelling (the game writes defence, colour, centre, metre, aeroplane or aircraft)'],
-  [/\w ,|[a-z] \.(?!\d)/, 'a space before a comma or full stop']
+  [/\w ,|[a-z] \.(?!\d)/, 'a space before a comma or full stop'],
+  // (round 5c) words that sound like a brochure or a chatbot, not an airport manager talking to a colleague
+  [BANNED, 'filler or generic phrasing (round 5c list)']
 ];
 const check = (text, where, out) => {
   for (const [re, what] of RULES) if (re.test(text)) out.push(`${where}: ${what}: ${JSON.stringify(text.length > 160 ? text.slice(0, 160) + '…' : text)}`);
@@ -143,4 +148,4 @@ if (require.main === module) {
   console.log(P.length ? `\n${P.length} problem${P.length > 1 ? 's' : ''} in the words on screen` : `The words on screen read clean (${((Date.now() - t0) / 1000).toFixed(0)} s).`);
   process.exit(P.length ? 1 : 0);
 }
-module.exports = { lintSource, lintPlay, check, RULES };
+module.exports = { lintSource, lintPlay, check, RULES, BANNED };
