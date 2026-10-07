@@ -1069,7 +1069,7 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 /* nothing clipped: a goal's reward wraps under it instead of running off the panel; long airport names take two
    lines at a size that fits */
 .app.pol .goalrow .gives{white-space:normal}
-.app.pol .ihead h2{font-size:1.3rem;overflow-wrap:anywhere}
+.app.pol .ihead h2{font-size:1.2rem;overflow-wrap:break-word;hyphens:manual}
 .app.pol .ihead p{line-height:1.3}
 /* (round 5c) with the build bar up the goal panel folds to its first goal, whole: three lines and its reward */
 .app.pol.compact.bb-open .leftcol>.brief.next{max-height:6.4rem}

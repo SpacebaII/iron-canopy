@@ -499,8 +499,8 @@ function drawGhost(S, px) {
       // (round 5c) what it adds where the cursor is, and what crowding its band costs
       const G = IC.radarGain(S, m.type, h.x, h.y);
       if (G) {
-        label(`+${Math.round(G.gain * 100)}% of the airways seen · ${Math.round(G.now * 100)}% now, ${Math.round(G.after * 100)}% with it`, h.x, h.y + 28 * px, px, G.gain > 0.05 ? C.friend : C.amber, 11, 'center', 700);
-        label(G.near ? `${G.near} radar${G.near > 1 ? 's' : ''} on this band within 70 km: +${U.money(G.crowd * (S.mode === 'story' ? IC.MO(S) / 3600 : 24))} ${S.mode === 'story' ? 'a month' : 'a day'} to keep` : 'No other radar on this band within 70 km', h.x, h.y + 44 * px, px, G.near ? C.amber : C.muted, 10, 'center', 600);
+        label(`+${Math.round(G.gain * 100)}% of the airways seen · ${Math.round(G.now * 100)}% now, ${Math.round(G.after * 100)}% with it`, h.x, h.y - 42 * px, px, G.gain > 0.05 ? C.friend : C.amber, 11, 'center', 700);
+        label(G.near ? `${G.near} radar${G.near > 1 ? 's' : ''} on this band within 70 km: +${U.money(G.crowd * (S.mode === 'story' ? IC.MO(S) / 3600 : 24))} ${S.mode === 'story' ? 'a month' : 'a day'} to keep` : 'No other radar on this band within 70 km', h.x, h.y - 27 * px, px, G.near ? C.amber : C.muted, 10, 'center', 600);
       }
     } else if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
     if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
