@@ -98,8 +98,11 @@ function buildGo() {
     // a whole airport, or the surveyed runway: the tool is put down (one more click would order a second)
     if (m.part === 'starter' || m.fromSurvey) IC.setMode(null);
     // (round 5c) and the bar steps aside so the works can be watched: B or Build opens it again. The parts one by one
-    // (Detail) keep the tool and the bar, for drawing one taxiway after another
-    if (IC.FOCUS.polish && !(IC.bb.detail && IC.bldIsLine(m.part) && !(IC.PIECES && IC.PIECES[m.part]))) { IC.setMode(null); IC.bbToggle(false); }
+    // (Detail, and the whole bar in wave 12) keep the bar, and a line tool stays picked, for drawing one taxiway
+    // after another; a whole piece or a single building puts the tool down
+    const part1 = (IC.bb.detail || IC.bbParts()) && !(IC.PIECES && IC.PIECES[m.part]);
+    if (IC.FOCUS.polish && !part1) { IC.setMode(null); IC.bbToggle(false); }
+    else if (part1 && !(IC.bldIsLine(m.part) || m.part === 'stand')) IC.setMode(null);
   }
   else { IC.sfx.ui('err'); if (m.err && at) { IC.text(S, at.x, at.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
   IC.ui.refresh(true);
@@ -127,7 +130,7 @@ function foundGo() {
   if (r === 'built') {
     IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, IC.FOCUS.polish ? 5 : 1.2)); IC.sfx.ui('ok');
     // (round 1) the surveyed runway stays on the map as a placed plan: Build (or Enter) lays it, with its taxiways
-    if (m.next) { IC.bb.ap = m.ap; IC.bb.tab = 'pc'; IC.bbToggle(true); IC.setMode(m.next); }
+    if (m.next) { IC.bb.ap = m.ap; IC.bb.tab = IC.bbParts() ? 'rw' : 'pc'; IC.bbToggle(true); IC.setMode(m.next); }
     return r;
   }
   IC.sfx.ui('err'); if (m.err && S.hover) IC.text(S, S.hover.x, S.hover.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile);
@@ -194,7 +197,7 @@ const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 
    (IC.fixPlan); Build or Enter builds it, a click elsewhere moves it, Esc cancels */
 IC.fixOpen = function (S2, ap, part, near, size) {
   const ui = IC.ui; ui.closeCine(); if (ui.room) ui.openRoom(null);
-  const lock = IC.APART[part] ? IC.aptLockWhy(S2, part) : IC.pieceLock ? IC.pieceLock(S2, part, ap) : '';
+  const lock = (IC.APART[part] ? IC.aptLockWhy(S2, part) : '') || (IC.pieceLock ? IC.pieceLock(S2, part, ap) : '');
   if (lock) { IC.toast(S2, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   IC.bb.ap = ap; IC.select({ kind: 'infra', ref: ap }); IC.bbToggle(true);
   const m = IC.fixPlan(S2, ap, part, near || ap, size);

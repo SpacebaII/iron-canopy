@@ -278,23 +278,25 @@ IC.deckDeal = function (S, k, args) {
 
 /* ---------- milestones: passengers a day, and the piece each opens because the airport needs it ---------- */
 IC.MILESTONES = [
-  { n: 2000, piece: 'tpier', name: 'Terminal with a pier' },
-  { n: 6000, piece: 'rwkit', name: 'a second runway', second: true },
-  { n: 15000, piece: 'tround', name: 'Round terminal' },
+  { n: 2000, piece: 'tpier', name: 'Terminal with a pier', parts: ['concourse', 'curved', 'pierT', 'pierY', 'pierX'], open: 'concourse' },
+  { n: 6000, piece: 'rwkit', name: 'a second runway', second: true, parts: ['runway'], open: 'runway' },
+  { n: 15000, piece: 'tround', name: 'Round terminal', parts: ['rotunda', 'satellite', 'semicircle'], open: 'rotunda' },
   { n: 50000, pay: 200, name: 'a hub' }
 ];
+/* the milestone that opens a piece, or (wave 12, the bar of parts) a part */
+const msOf = k => IC.MILESTONES.findIndex(m => m.piece === k || (IC.FOCUS.parts && m.parts && m.parts.includes(k)));
 /* why a piece is not open yet ('' when it is), in one line: what opens it */
 IC.pieceLock = function (S, k, ap) {
   if (!S || !on(S)) return '';
-  const i = IC.MILESTONES.findIndex(m => m.piece === k); if (i < 0) return '';
+  const i = msOf(k); if (i < 0) return '';
   const M = IC.MILESTONES[i];
   if ((S.story.ms || 0) > i) return '';
   if (M.second && !(ap && ap.parts && ap.parts.some(p => p.kind === 'runway'))) return '';
   const now = Math.round(dayPax(S)).toLocaleString('en-US');
   return M.second ? `A second runway opens at ${M.n.toLocaleString('en-US')} passengers a day (${now} now): until then one runway carries every flight.`
-    : `Opens at ${M.n.toLocaleString('en-US')} passengers a day (${now} now), when one ${k === 'tpier' ? 'row of gates' : 'terminal'} is no longer enough.`;
+    : `Opens at ${M.n.toLocaleString('en-US')} passengers a day (${now} now), when one ${M.piece === 'tpier' ? 'row of gates' : 'terminal'} is no longer enough.`;
 };
-IC.pieceLockShort = (S, k) => { const M = IC.MILESTONES.find(m => m.piece === k); return M ? `${(M.n / 1000)}k passengers a day` : ''; };
+IC.pieceLockShort = (S, k) => { const M = IC.MILESTONES[msOf(k)]; return M ? `${(M.n / 1000)}k passengers a day` : ''; };
 /* the airport's busiest moments today and yesterday: stands taken, passengers an hour, at what hour */
 function peaks(S) {
   const st = S.story, day = Math.floor(S.time / 86400), h = Math.floor((S.time % 86400) / 3600);
@@ -314,17 +316,17 @@ function milestone(S, i) {
   const P = (st.peak || {})[ap.id] || {}, B = P.y && P.y.occ > (P.occ || 0) ? P.y : P, pv = IC.aptProvides(ap), stt = ap.st || {};
   const gates = pv.gates, stands = IC.aptStands(ap).filter(s => s.linked !== false && s.zone !== 'cargo' && s.zone !== 'mil').length;
   const title = `${M.n.toLocaleString('en-US')} passengers a day`;
-  let text, fix = null;
+  let text, fix = null; const P_ = IC.FOCUS.parts;
   if (M.piece === 'tpier') {
-    text = `At ${hh(B.h || 9)}, its busiest hour, ${B.occ || 0} of ${short(ap.name)}’s ${stands} stands were taken and ${gates} of them have a gate. A pier reaches out from the terminal with gates on both sides: more gates without a second building. The Terminal with a pier is open under Airport pieces.`;
-    fix = { label: 'Place a pier', v: 'tpier' };
+    text = `At ${hh(B.h || 9)}, its busiest hour, ${B.occ || 0} of ${short(ap.name)}’s ${stands} stands were taken and ${gates} of them have a gate. A pier reaches out from the terminal with gates on both sides: more gates without a second building. ${P_ ? 'The Concourse, the Curved pier, the T and Y piers and the X airside are open under Terminals & piers.' : 'The Terminal with a pier is open under Airport pieces.'}`;
+    fix = { label: 'Place a pier', v: P_ ? M.open : 'tpier' };
   } else if (M.piece === 'rwkit') {
     const mv = Math.round(stt.movesPerHour || 0);
-    text = `${short(ap.name)}’s runway takes about ${mv} movements an hour, and at its busy hours arrivals now wait for departures. A second runway, 1.1 km or more from the first, lets one land while the other sends them off. It is open under Airport pieces.`;
-    fix = { label: 'Place a second runway', v: 'rwkit' };
+    text = `${short(ap.name)}’s runway takes about ${mv} movements an hour, and at its busy hours arrivals now wait for departures. A second runway, 1.1 km or more from the first, lets one land while the other sends them off. ${P_ ? 'It is open under Runways; give it a parallel taxiway and links to the first.' : 'It is open under Airport pieces.'}`;
+    fix = { label: 'Place a second runway', v: P_ ? M.open : 'rwkit' };
   } else if (M.piece === 'tround') {
-    text = `${short(ap.name)}’s terminals took ${Math.round(B.pax || P.pax || ap.paxRate || 0).toLocaleString('en-US')} passengers in their busiest hour, against ${Math.round(stt.pax || 0).toLocaleString('en-US')} they are built for. A round terminal fans its gates around one building, so passengers walk less. It is open under Airport pieces.`;
-    fix = { label: 'Place a round terminal', v: 'tround' };
+    text = `${short(ap.name)}’s terminals took ${Math.round(B.pax || P.pax || ap.paxRate || 0).toLocaleString('en-US')} passengers in their busiest hour, against ${Math.round(stt.pax || 0).toLocaleString('en-US')} they are built for. A round terminal fans its gates around one building, so passengers walk less. ${P_ ? 'The Round terminal, the Satellite and the Semicircular terminal are open under Terminals & piers.' : 'It is open under Airport pieces.'}`;
+    fix = { label: 'Place a round terminal', v: P_ ? M.open : 'tround' };
   } else {
     S.budget += M.pay; IC.econBook(S, 'bonus', M.pay); st.standing = Math.min(100, st.standing + 5);
     text = `${short(ap.name)} is a hub now: more people fly through it in a day than live in most of our towns. The Ministry adds ${U.money(M.pay)} and the Minister’s confidence rises.`;
