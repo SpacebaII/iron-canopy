@@ -35,7 +35,7 @@ IC.infoGather = gather;
 
 /* the tabs and what is in each (part kinds from IC.APART, tools from IC.BTOOLS, roads from IC.ROADS) */
 IC.BB_TABS = [
-  { k: 'rw', key: '1', name: 'Runways', items: ['runway', 'exits'] },
+  { k: 'rw', key: '1', name: 'Runways', items: ['runway', 'extend', 'exits'] },
   { k: 'tw', key: '2', name: 'Taxiways', items: ['taxi', 'parallel', 'hold'] },
   { k: 'ap', key: '3', name: 'Aprons & stands', items: ['apron', 'remote', 'ramp', 'stand', 'stretch', 'alert'] },
   { k: 'tm', key: '4', name: 'Terminals & piers', items: ['terminal', 'concourse', 'rotunda', 'satellite', 'curved', 'semicircle', 'pierT', 'pierY', 'pierX', 'skybridge', 'people'] },
@@ -97,7 +97,7 @@ const USE = {
   fuel: 'fuel for departures, by truck', hydrant: 'fuel piped under the stands', fuelpad: 'a stand to refuel at', deice: 'de-icing on frosty mornings',
   fire: 'crash rescue: needed for large aircraft', ils: 'landings in fog, at one runway end', tower: 'clearances: many more movements an hour',
   atc: 'closer spacing of arrivals', gradar: 'the tower sees aircraft on the ground in fog', surface: 'grass, gravel, paving or planting', blueprint: 'a whole real airport',
-  mylayout: 'what you built once, placed again', savelay: 'keep part of this airport as a layout',
+  mylayout: 'what you built once, placed again', extend: 'a runway made longer at one end, kept open', savelay: 'keep part of this airport as a layout',
   svcroad: 'an airside road for the ground vehicles', 'road:lc': 'a two-lane road to the nearest road', 'road:rd': 'a main road to a town', 'road:hw': 'a motorway spur and interchange', carpark: 'parking outside the airfield: income'
 };
 const NEEDS = {
@@ -111,7 +111,7 @@ const NEEDS = {
   hydrant: 'Fuel tanks; stands within reach of its pipes.', fuelpad: 'A taxiway, near the fuel farm.', deice: 'A taxiway near the runway ends.',
   fire: 'A place from which trucks reach every point of every runway in 3 minutes; heavy jets land only there.', ils: 'A runway end, and research for the best category.', tower: 'A clear view of every runway, within 8 km and over the roofs.',
   atc: 'Nothing: it covers about 110 km.', gradar: 'Research (Career).', surface: 'Nothing. Aircraft never use it.', blueprint: 'A flat site big enough for it.',
-  mylayout: 'A layout saved with Save layout; room for it, clear of what is built.', savelay: 'Parts of this airport inside the box.',
+  mylayout: 'A layout saved with Save layout; room for it, clear of what is built.', extend: 'A built runway, and clear ground beyond its end.', savelay: 'Parts of this airport inside the box.',
   svcroad: 'Nothing: it may cross taxiways, not runways.', 'road:lc': 'An airport.', 'road:rd': 'An airport.', 'road:hw': 'An airport, and a motorway within reach.', carpark: 'Ground outside the fence, near the terminal.'
 };
 /* a piece's price, measured once on a scratch airport at its usual size */
@@ -138,6 +138,7 @@ function itemOf(k) {
   }
   if (T && T.kit) return { k, name: T.name, price: U.money(IC.kitCost(k, 'm')), use: USE[k] || '', desc: T.desc, upkeep: `${U.money(IC.kitCost(k, 'm') * 0.0012 * 24)} a day`, avail: true, lock: ms, lockShort: msShort };
   if (k === 'mylayout') { const n = (S.layouts || []).length; return { k, name: T.name, price: n ? `${n} saved` : 'none saved yet', use: USE[k], desc: T.desc, upkeep: '', avail: true }; }
+  if (k === 'extend') return { k, name: T.name, lock: ms, lockShort: msShort, price: `${U.money(IC.APART.runway.cost)} / 100 m`, use: USE[k], desc: T.desc, upkeep: '', avail: true };
   if (k === 'savelay') return { k, name: T.name, price: 'free', use: USE[k], desc: T.desc, upkeep: '', avail: true };
   if (T) return { k, name: T.name, lock: ms, lockShort: msShort, price: k === 'stand' ? '₭0.5M each' : k === 'svcroad' ? `${U.money(IC.SVC_ROAD_COST)} / 100 m` : k === 'blueprint' ? 'a whole airport' : 'several parts', use: USE[k] || '', desc: T.desc, upkeep: '', avail: !T.avail || T.avail() };
   return { k, name: k, price: '', use: '', desc: '' };
@@ -166,6 +167,7 @@ function thumb(k) {
   if (IC.PIECES && IC.PIECES[k]) { pieceThumb(g, IC.PIECES[k].make({ len: 30, size: 'm' }), conc, asph); return (THUMB[k] = c.toDataURL()); }
   switch (k) {
     case 'runway': runway(38, 6, 126); g.fillStyle = W; g.font = '700 7px monospace'; g.fillText('09', 16, 41); break;
+    case 'extend': runway(38, 6, 86); g.fillStyle = 'rgba(111,230,140,0.35)'; g.fillRect(86, 31, 40, 14); g.strokeStyle = '#6fe68c'; lw(1.2); g.setLineDash([3, 3]); g.strokeRect(86, 31, 40, 14); g.setLineDash([]); g.beginPath(); g.moveTo(92, 38); g.lineTo(118, 38); g.lineTo(112, 33); g.moveTo(118, 38); g.lineTo(112, 43); g.stroke(); break;
     case 'exits': runway(24, 0, 132); taxi([[16, 58], [120, 58]]); taxi([[40, 24], [70, 58]]); taxi([[80, 24], [110, 58]]); break;
     case 'taxi': taxi([[10, 66], [10, 44], [16, 30], [34, 22], [124, 22]], 8); break;
     case 'parallel': runway(22, 0, 132); taxi([[8, 22], [8, 56], [124, 56], [124, 22]]); taxi([[66, 22], [66, 56]]); break;

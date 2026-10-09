@@ -344,6 +344,50 @@ IC.bldUpgrade = function (S, ap, part, o) {
   IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)} (${U.money(cost)}, the difference in price). It is closed until the work is done, about ${U.dur(dur)}.`, part.x != null ? part : ap);
   return true;
 };
+/* (wave 13) Extend: a built runway made longer at one end by n hundred metres. The new length is paved beside the
+   runway, which stays open; it joins at the end when the work is done (IC.rwExtend moves the end, its landing
+   system and whatever stands on it). A spec of the new piece for the ghost, its price, time and why not */
+IC.EXT_MAX = 30;   // 3 km at most at a time
+IC.bldExtendPlan = function (S, ap, rw, e, n) {
+  const d = IC.rwDir(rw), s = e === 'a' ? -1 : 1, E = rw[e], L = U.clamp(Math.round(n), 0, IC.EXT_MAX);
+  const to = { x: E.x + d.x * s * L, y: E.y + d.y * s * L };
+  const seg = { kind: 'runway', a: { x: E.x, y: E.y }, b: to, mat: IC.paveOf(rw), w: rw.w, lit: rw.lit };
+  const out = { rw, e, n: L, to, seg, ok: true, why: '', cost: 0, dur: 0, warn: [] };
+  if (!rw.built) { out.ok = false; out.why = `${rw.name || 'The runway'} is still being built.`; return out; }
+  if (ap.works.some(w => w.part === rw)) { out.ok = false; out.why = 'Work is already under way on it.'; return out; }
+  if (L < 1) { out.ok = false; out.why = 'Move out past the end: at least 100 m.'; return out; }
+  const pv = IC.bldPreview(S, ap, seg);
+  out.cost = pv.cost; out.dur = pv.dur; out.pv = pv;
+  if (!IC.aptCanPlace(S, ap, seg)) { out.ok = false; out.why = IC.aptPlaceWhy || 'It leaves the airport site.'; out.hit = IC.aptPlaceHit; }
+  // a taxiway the new length would cut across, except where it already meets the end
+  for (const q of ap.parts) if (q.kind === 'taxi' && out.ok) {
+    const ns = q.nodes.map(id => ap.nodes[id]).filter(Boolean);
+    for (let i = 1; i < ns.length; i++) {
+      const x = segCross(seg.a, to, ns[i - 1], ns[i]);
+      if (x && U.dist(ns[i - 1], E) > 0.1 && U.dist(ns[i], E) > 0.1) { out.ok = false; out.why = `It would cut across ${q.name ? 'taxiway ' + q.name : 'a taxiway'}: move that first, or extend it less.`; out.hit = q; break; }
+    }
+  }
+  const other = ap.parts.find(q => q.kind === 'runway' && q !== rw && IC.rwDependent(q, seg) === 'cross');
+  if (other) out.warn.push(`It will cross ${other.name}: the two then share one clearance, and capacity drops.`);
+  const fires = ap.parts.filter(q => q.kind === 'fire'), reach = p => fires.length ? Math.min(...fires.map(f => IC.fireTime(f, p))) : 1e9;
+  if (fires.length && reach(E) <= IC.FIRE_STD && reach(to) > IC.FIRE_STD) out.warn.push(`Fire trucks would need ${IC.mmss(reach(to))} to reach the new end: heavy jets may not land on it. A fire station nearer that end brings it under 3 min.`);
+  if (!ap.parts.some(q => q.kind === 'taxi' && q.nodes.some(id => { const k = ap.nodes[id]; return k && U.dist(k, to) < 0.6; })))
+    out.warn.push('No taxiway reaches the new end: departures still start from the old one until one does.');
+  if (out.ok && S.budget < out.cost * 0.1) { out.ok = false; out.why = out.cost > 0 && IC.inRed(S) ? IC.redWhy(S) : `Not enough money to start: ${U.money(out.cost * 0.1)} needed.`; }
+  return out;
+};
+const segCross = (a, b, c, d) => { const o = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x); return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0; };
+IC.bldExtend = function (S, ap, rw, e, n) {
+  const P = IC.bldExtendPlan(S, ap, rw, e, n);
+  if (!P.ok) { IC.log(S, 'warn', 'BUILD', P.why); return null; }
+  const pv = P.pv, w = { id: IC.nid('w'), key: 'ext:' + rw.id, kind: 'upgrade', label: `Extend ${rw.name} by ${P.n * 100} m`, prog: 0, dur: pv.dur, part: rw, cost: pv.cost,
+    stages: pv.stages, si: 0, t: 0, spent: 0, t0: S.time, ext: { end: e, x: P.to.x, y: P.to.y }, seg: P.seg, demo: pv.clr.blocks.length ? pv.clr.blocks : null, demoRes: pv.clr.res, clrBox: pv.clr.box };
+  ap.works.push(w);
+  (ap.undo = ap.undo || []).push({ ext: w.id });
+  protest(S, ap, rw, pv.clr);
+  IC.log(S, 'info', 'BUILD', `${ap.name}: ${U.lc(w.label)}, to ${U.km(IC.rwLen(rw) + P.n)} (${U.money(pv.cost)} paid as the work runs, about ${U.dur(pv.dur)}). It stays open while the new length is paved.`, P.to);
+  return w;
+};
 /* Bulldoze: what comes back. Planned work not yet begun is refunded in full, work under way half of what was spent;
    a finished part is worth a fifth of its price as salvage, less for damage */
 IC.bldRefund = function (S, ap, part) {
@@ -513,6 +557,7 @@ const wld = (ap, lx, ly) => IC.rectWorld({ x: ap.x, y: ap.y, a: axis(ap) }, lx, 
 IC.BTOOLS = {
   mylayout: { name: 'My layouts', desc: 'A layout you saved with Save layout: pick it above, turn it with R, mirror it with F, click where it goes, then Build. Its parts are planned and paid for like any others. Join its taxiways to yours.' },
   savelay: { name: 'Save layout', desc: 'Click two corners of a box round part of this airport (a pier and its aprons, a cargo area, a whole runway with its taxiways), then Save. It is kept as a layout for any of our airports, in this game and the next.' },
+  extend: { name: 'Extend runway', desc: 'Click near the end of a built runway, then move out along it: 100 m at a time. The new length is paved beside it while it stays open, and joins it when the work is done; its landing system moves out with the end. Give the new end a taxiway so departures use the whole length.' },
   parallel: { name: 'Parallel taxiway', desc: 'Click a runway, then click out at the distance you want: a full-length taxiway with links to both runway ends. Build (or Enter) builds it.' },
   exits: { name: 'Rapid exits', desc: 'Click a runway with a parallel taxiway: exits angled at 30° where the aircraft using it slow down, in both directions.' },
   hold: { name: 'Holding bay', desc: 'Click near a runway end with a parallel taxiway: a second entry beside the first, so an aircraft that is ready can pass one that is waiting.' },
@@ -1020,7 +1065,7 @@ IC.bldPlanOf = function (S, m, hv, tol, free, only) {
   if (m.set && m.at) { hv = m.at; tol = m.tol || tol; free = m.free; }
   const out = planOf(S, m, hv, tol, free, only);
   if (hv && m.part !== 'stand') { measure(S, m, out, hv); sizeHint(S, m.ap, m.part, out); }
-  if (out.ok && out.specs.length) consequences(S, m, out);
+  if (out.ok && out.specs.length && !out.ext) consequences(S, m, out);
   return out;
 };
 /* what goes wrong with a plan that can be built (brief 47: the player may build it wrong, and sees why at once),
@@ -1096,6 +1141,25 @@ function planOf(S, m, hv, tol, free, only) {
     if (!P.parts.length) { out.ok = false; out.why = 'Nothing of this airport in the box.'; return out; }
     const L = { parts: P.parts, stands: P.parts.reduce((s, p) => s + (p.kind === 'apron' ? (p.stands || []).length : 0), 0) };
     out.text.push(`Save ${IC.layoutWords(L)} as a layout · ${Math.round(P.box.w * 100)} × ${Math.round(P.box.h * 100)} m · it is kept for any airport, in this game and the next`);
+    return out;
+  }
+  // (wave 13) Extend: a runway end, then how far out along its centreline, in 100 m steps
+  if (t === 'extend') {
+    const rw = pts.length ? ap.parts.find(q => q.id === m.rw) : runwayAt(ap, hv, tol);
+    if (!rw) { out.ok = false; out.why = 'Click near the end of a runway.'; return out; }
+    const e = pts.length ? m.end : U.dist(hv, rw.a) < U.dist(hv, rw.b) ? 'a' : 'b', d = IC.rwDir(rw), s = e === 'a' ? -1 : 1;
+    out.rw = rw; out.end = e; out.snap = { x: rw[e].x, y: rw[e].y, kind: 'end' };
+    const name = `${rw.name} (the ${IC.rwEnd(rw, e === 'a' ? 1 : -1)} end)`;
+    if (!pts.length) { out.text.push(`${name}: ${U.km(IC.rwLen(rw))} now. Click, then move out to set how far`); return out; }
+    const P = IC.bldExtendPlan(S, ap, rw, e, ((hv.x - rw[e].x) * d.x + (hv.y - rw[e].y) * d.y) * s);
+    out.pts = [rw[e], P.to]; out.ext = P; out.ok = P.ok; out.why = P.why; out.hit = P.hit; out.cost = P.cost; out.dur = P.dur; out.warn = P.warn.slice();
+    if (P.n >= 1) {
+      out.specs.push(P.seg);
+      const len = IC.rwLen(rw) + P.n, fly = Object.values(IC.ACTYPES).filter(T => !T.mil && T.rwy > IC.rwLen(rw) && T.rwy <= len).map(T => T.short);
+      out.text.push(`${P.n * 100} m longer: ${U.km(len)} · ${U.money(P.cost)} · about ${U.dur(P.dur)} of work · it stays open while the new length is paved`);
+      if (fly.length) out.text.push(`Long enough now for ${fly.slice(0, 6).join(', ')}${fly.length > 6 ? ` and ${fly.length - 6} more` : ''}`);
+      if (P.pv && P.pv.clr.blocks.length) out.text.push(`Clears ${IC.bldClearText(P.pv.clr)}: ${U.money(P.pv.clr.comp)} compensation, and the town will protest`);
+    }
     return out;
   }
   if (t === 'blueprint') {
@@ -1370,6 +1434,10 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     if (m.set) { m.pts[1] = { x: p.x, y: p.y }; m.at = { x: p.x, y: p.y }; return 'point'; }
     m.pts = [{ x: p.x, y: p.y }]; return 'point';
   }
+  if (m.part === 'extend') {
+    if (!m.pts.length) { if (!plan.rw) { m.err = plan.why; return 'err'; } m.rw = plan.rw.id; m.end = plan.end; m.pts = [{ x: plan.rw[plan.end].x, y: plan.rw[plan.end].y }]; return 'point'; }
+    m.pts[1] = { x: p.x, y: p.y }; return placed(m, p, tol, free);
+  }
   if (m.part === 'parallel' || m.part === 'stretch') {
     if (!m.pts.length) {
       if (m.part === 'parallel' ? !plan.rw : !plan.snap) { m.err = plan.why; return 'err'; }
@@ -1444,6 +1512,13 @@ function finish(S, m, plan) {
     const L = IC.layoutSave(S, ap, m.pts[0], m.pts[1], m.rot || 0);
     if (!L) { m.err = 'Nothing of this airport in the box.'; return 'err'; }
     m.done = `Saved ${L.name}: ${IC.layoutWords(L)}. Blueprints → My layouts places it at any of our airports.`;
+    return done();
+  }
+  if (plan.ext) {
+    if (!plan.ok) { m.err = plan.why; IC.log(S, 'warn', 'BUILD', plan.why); return 'err'; }
+    const w = IC.bldExtend(S, ap, plan.ext.rw, plan.ext.e, plan.ext.n);
+    if (!w) { m.err = 'Could not plan it.'; return 'err'; }
+    m.done = `${w.label} planned: ${U.money(w.cost)}, about ${U.dur(w.dur)} of work. It stays open meanwhile.` + (plan.warn && plan.warn.length ? ` ${plan.warn[0]}` : '');
     return done();
   }
   if (plan.bp) {
@@ -1532,6 +1607,7 @@ IC.bldUndo = function (S, ap) {
   while (L.length) {
     const top = L.pop(), ids = Array.isArray(top) ? top : [top];
     if (top && top.svc != null) { const r = (ap.svcRoads || [])[top.svc]; if (r) { ap.svcRoads.splice(top.svc, 1); S.budget += r.cost || 0; return 'part'; } continue; }
+    if (top && top.ext) { const w = ap.works.find(x => x.id === top.ext); if (!w) continue; const back = w.si === 0 && !(w.stages[0].k === 'demo' && w.t > 0) ? w.spent || 0 : 0; ap.works = ap.works.filter(x => x !== w); S.budget += back; IC.log(S, 'info', 'BUILD', `${ap.name}: extension of ${w.part.name} undone${back ? `, ${U.money(back)} refunded` : ''}.`); return 'part'; }
     if (top && top.stand) { const r = ap.parts.find(p => p.id === top.stand), i = r && r.free ? r.free.findIndex(f => f.k === top.k) : -1; if (i >= 0 && !(r.stands || []).some(s => s.id === r.id + 's' + top.k && s.occ)) { r.free.splice(i, 1); S.budget += 0.5; ap.dirty = true; IC.aptStats(S, ap); return 'stand'; } continue; }
     const parts = ids.map(id => ap.parts.find(p => p.id === id)).filter(p => p && !p.built);
     if (!parts.length) continue;

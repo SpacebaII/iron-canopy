@@ -569,6 +569,7 @@ function buildHint(m, short) {
     : t === 'runway' ? (n < 2 ? 'Runway: click one end, then the other.' : `Runway placed. ${go.replace('moves it', 'moves its far end')}`)
     : t === 'concourse' ? (n < 2 ? 'Concourse: click one end of the pier, then the other.' : `Concourse placed. ${go.replace('moves it', 'moves its far end')}`)
     : t === 'parallel' ? (!n ? T.desc : set ? `Parallel taxiway placed. ${go.replace('moves it', 'sets another distance')}` : 'Click out from the runway at the distance you want.')
+    : t === 'extend' ? (!n ? 'Extend runway: click near the end to make longer.' : set ? `Extension placed. ${go.replace('moves it', 'sets another length')}` : 'Move out along the runway and click: 100 m at a time.')
     : t === 'exits' ? (set ? `Exits placed. ${go.replace('moves it', 'picks another runway')}` : T.desc)
     : t === 'hold' ? (set ? `Holding bay placed. ${go.replace('moves it', 'picks another runway end')}` : T.desc)
     : t === 'stand' ? T.desc
