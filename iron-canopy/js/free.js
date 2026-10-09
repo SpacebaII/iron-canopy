@@ -7,7 +7,7 @@
 const U = IC.U;
 
 /* the switches: instant building, airlines that come by themselves, general aviation; the treasury it tops up to */
-IC.FREE = { budget: 1e6, every: 120, share: 0.8, perRoute: 2, most: 3, gap: 600 };
+IC.FREE = { budget: 1e6, every: 120, share: 0.8, perRoute: 2, most: 3, gap: 900, busy: 0.6 };
 
 /* a free game is made like the Career (mode 'story', no airports), then stripped of the story */
 IC.freeInit = function (S) {
@@ -36,7 +36,7 @@ IC.freeTick = function (S, dt) {
 };
 
 /* Airlines come until the airport is full: every couple of minutes each kind of stand (large, medium, small, cargo)
-   whose stands stood more than a third empty lately gets one more aircraft, once the last has reached its stand,, of the largest type the airport can take
+   whose stands stood less than 60% used by day lately gets more aircraft, of the largest type the airport can take
    there, while nothing is holding for it; so a new apron fills within the hour or two its aircraft take to come,
    and the first thing to run out (stands, runway, terminal) shows. Returns '' or why none come. */
 const CLASS = { l: ['widel', 'wide', 'jumbo', 'narrow'], m: ['narrow'], s: ['rj', 'turbo'], cargo: ['cargo', 'cargoprop'] };
@@ -51,20 +51,23 @@ IC.freeTraffic = function (S, ap) {
   const n = { l: 0, m: 0, s: 0, cargo: 0 }, busy = { l: 0, m: 0, s: 0, cargo: 0 }, have = { l: 0, m: 0, s: 0, cargo: 0 };
   for (const s of stands) { const c = standClass(s); n[c]++; if (s.occ) busy[c]++; }
   const A = S.av, routes = new Map(A.routes.map(r => [r.id, r]));
-  // (one still on its way to its first stand here: the stands' use does not show it yet, so wait for it)
   const coming = { l: 0, m: 0, s: 0, cargo: 0 };
   for (const t of A.tails) { const r = routes.get(t.route); if (r && r.a === ap.id && t.where !== 'lost') { have[classOf(t.T)]++; if (!t.lastStand) coming[classOf(t.T)]++; } }
-  // (anything holding for this airport, or diverted from it in the last hour, says it is full: wait)
-  const full = S.threats.some(t => t.tail && t.toApt === ap.id && t.holding && !t.dead) || S.time - (ap.divLogT || -1e9) < 3600;
+  // (anything holding for this airport, or diverted from it in the last six hours, says it is full: wait)
+  const full = S.threats.some(t => t.tail && t.toApt === ap.id && t.holding && !t.dead) || S.time - (ap.divLogT || -1e9) < 6 * 3600;
   const F = ap.freeFill = ap.freeFill || { occ: {}, addT: {} };
   let why = '';
   for (const c of ['l', 'm', 's', 'cargo']) {
     if (!n[c]) continue;
-    const occ = F.occ[c] = F.occ[c] == null ? busy[c] / n[c] : F.occ[c] * 0.85 + busy[c] / n[c] * 0.15;
+    // (the stands' use by day: at night every aircraft is parked and the gates look full)
+    const h = ((S.time % 86400) + 86400) % 86400 / 3600, dayT = h >= 7 && h < 22;
+    if (dayT) F.occ[c] = F.occ[c] == null ? busy[c] / n[c] : F.occ[c] * 0.9 + busy[c] / n[c] * 0.1;
+    // (one on its way to its first stand here counts for half a stand: the stands' use does not show it yet)
+    const occ = (F.occ[c] || 0) + coming[c] * 0.5 / n[c];
     // (a fresh apron gets four in five of its stands' worth at once; after that a few at a time, fewer as it fills)
     const first = Math.round(n[c] * IC.FREE.share) - have[c];
-    const more = !full && !coming[c] && occ < 0.66 && have[c] < n[c] * IC.FREE.most && S.time - (F.addT[c] || -1e9) >= IC.FREE.gap;
-    const need = first > 0 ? first : more ? Math.max(1, Math.round(n[c] * (0.75 - occ) * 0.5)) : 0;
+    const more = dayT && !full && occ < IC.FREE.busy && have[c] < n[c] * IC.FREE.most && S.time - (F.addT[c] || -1e9) >= IC.FREE.gap;
+    const need = first > 0 ? first : more ? Math.max(1, Math.round(n[c] * (IC.FREE.busy - occ) * 0.5)) : 0;
     if (need <= 0) continue;
     const types = CLASS[c].filter(k => !IC.aptCanTake(S, ap, IC.ACTYPES[k]));
     if (!types.length) { why = why || `No airliners for the ${c === 'cargo' ? 'cargo' : IC.STAND[c].name} stands: ${IC.aptCanTake(S, ap, IC.ACTYPES[CLASS[c][CLASS[c].length - 1]])}.`; continue; }
@@ -72,6 +75,8 @@ IC.freeTraffic = function (S, ap) {
     for (let left = need, i = 0; left > 0 && i < 40; i++) {
       const k = types[(A.routes.length + i) % Math.min(types.length, c === 'l' ? 3 : 2)], m = Math.min(left, IC.FREE.perRoute);
       IC.avAddRoute(S, airline(S, U.pick(KIND[c]), ap), ap, dests[(A.routes.length + i) % dests.length], k, m, true);
+      // (spread over a whole cycle of the route, so they do not all come and go in one bank and leave the gates empty)
+      for (const tl of A.tails.slice(-m)) tl.t = U.rand(300, 4 * tl.T.turn);
       left -= m;
     }
     F.addT[c] = S.time;
