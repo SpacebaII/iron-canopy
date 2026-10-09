@@ -4755,6 +4755,86 @@ test('wave 12: milestones open the parts that answer them, and the card picks th
   assert(!IC.pieceLock(S, 'runway', { parts: [] }), 'the first runway is locked');
 });
 
+/* ---------- wave 13: more building tools ---------- */
+const w13game = () => { const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S; S.budget = 1e6; return S; };
+const w13done = (S, ap) => { for (let i = 0; i < 60 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 1); } };
+test('wave 13: part of an airport saved as a layout is planned again at another airport, mirrored if asked, and kept through a save', () => {
+  const S = w13game(), ap = S.byId[S.story.cap], ap2 = IC.bases(S).find(b => b.parts && b.owner === 'us' && b !== ap);
+  const term = ap.parts.find(p => p.kind === 'terminal');
+  const m = S.mode2 = IC.bldMode(S, ap, 'savelay');
+  IC.buildInput(S, m, { x: term.x - 3, y: term.y - 3 }, 0, 4); IC.buildInput(S, m, { x: term.x + 3, y: term.y + 3 }, 0, 4);
+  const plan = IC.bldReady(S, m);
+  assert(plan && plan.ok && plan.sel && plan.sel.parts.includes(term), `the box: ${plan && plan.why}`);
+  assert(IC.buildFinish(S, m) === 'built' && S.layouts.length === 1, m.err);
+  const L = S.layouts[0];
+  assert(L.parts.some(p => p.kind === 'terminal') && L.parts.every(p => p.x == null || Math.hypot(p.x, p.y) < 5), 'the layout is not in its own frame');
+  // placed at the other airport: its parts are planned there, as works
+  const mm = S.mode2 = IC.bldMode(S, ap2, 'mylayout');
+  assert(mm.lay === L.key, 'My layouts does not pick the saved layout');
+  let placed = false;
+  for (let k = 0; k < 60 && !placed; k++) { const a = k * 0.9, r = 6 + k; placed = IC.buildInput(S, mm, { x: ap2.x + Math.cos(a) * r, y: ap2.y + Math.sin(a) * r }, 0, 4) !== 'err' && IC.bldReady(S, mm) && IC.bldReady(S, mm).ok; }
+  assert(placed, `no room for it at ${ap2.name}: ${mm.err}`);
+  const n0 = ap2.parts.length, t0 = ap2.parts.filter(p => p.kind === 'terminal').length;
+  assert(IC.buildFinish(S, mm) === 'built', mm.err);
+  assert(ap2.parts.length - n0 === L.parts.length && ap2.parts.filter(p => p.kind === 'terminal').length === t0 + 1, `${ap2.parts.length - n0} parts planned, ${L.parts.length} saved`);
+  assert(ap2.parts.slice(n0).every(p => !p.built && ap2.works.some(w => w.part === p)), 'the parts are not planned as works');
+  assert(IC.bldUndo(S, ap2) && ap2.parts.length === n0, 'Undo does not take the whole layout back');
+  // mirrored: the same parts on the other side of its long axis
+  const at = (mir, k) => { const t = { id: 'x', kind: 'airport', x: 0, y: 0, name: '' }; IC.layoutBuild(t, Object.assign({}, L, { mirror: mir }), { x: 0, y: 0, rot: 0 }); return t.parts.find(p => p.kind === k); };
+  const a = at(false, 'terminal'), b = at(true, 'terminal');
+  assert(Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y + b.y) < 1e-6, `mirrored terminal at ${b.x}, ${b.y} against ${a.x}, ${a.y}`);
+  const S2 = IC.loadSave(JSON.stringify(IC.saveGame(S)));
+  assert(S2.layouts && S2.layouts.length === 1 && S2.layouts[0].key === L.key && S2.layouts[0].parts.length === L.parts.length, 'the layout did not come through a save');
+  IC.layoutDelete(S, L.key);
+  assert(!S.layouts.length, 'Delete left it');
+});
+test('wave 13: a runway extended in place stays open while the new length is paved, then is longer, its landing system and taxiway links moved with it', () => {
+  const S = w13game(), ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway' && p.built), L0 = IC.rwLen(rw), d = IC.rwDir(rw);
+  const ils = ap.parts.find(p => p.kind === 'ils' && p.rw === rw.id && p.end === 'a');
+  const m = S.mode2 = IC.bldMode(S, ap, 'extend');
+  assert(IC.buildInput(S, m, { x: rw.b.x - d.x * 0.5, y: rw.b.y - d.y * 0.5 }, 0, 4) === 'point' && m.end === 'b', `the end: ${m.err}`);
+  IC.buildInput(S, m, { x: rw.b.x + d.x * 5.2, y: rw.b.y + d.y * 5.2 }, 0, 4);
+  const plan = IC.bldReady(S, m);
+  assert(plan && plan.ok && plan.ext.n === 5 && /500 m longer/.test(plan.text[0]), plan && (plan.why || plan.text[0]));
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  const w = ap.works.find(x => x.ext);
+  assert(w && !rw.shut, 'the runway closed for its extension');
+  for (let i = 0; i < 600 && ap.works.includes(w); i++) { IC.step(S, 2); assert(!rw.shut || rw.shut !== w.id, 'the runway closed while the new length was paved'); }
+  w13done(S, ap);
+  assert(Math.abs(IC.rwLen(rw) - (L0 + 5)) < 1e-6, `${IC.rwLen(rw)} long, not ${L0 + 5}`);
+  if (ils) assert(Math.abs(U.dist(ils, rw.b) - 3) < 1e-6, 'its landing system stayed where it was');
+  const on = Object.values(ap.nodes).filter(n => n.on && n.on.kind === 'rwy' && n.on.part === rw.id);
+  assert(on.length && on.every(n => U.dist(IC.rwAt(rw, n.on.t), n) < 0.2), 'the taxiway links no longer sit on the runway');
+  for (let i = 0; i < 400; i++) IC.step(S, 0.5);
+});
+test('wave 13: with the parts one by one, a fix places the one part that is missing: an apron for stands, a terminal for passengers', () => {
+  const S = r3game(), ap = S.byId[S.story.cap], term = ap.parts.find(p => p.kind === 'terminal' && p.built);
+  assert(IC.fixPart('stands') === 'apron' && IC.fixPart('pax') === 'terminal' && IC.fixPart('cargoT') === 'cargo', 'the fixes are still whole pieces');
+  for (const [k, size] of [['apron', null], ['terminal', null], ['apron', 'l']]) {
+    const m = IC.fixPlan(S, ap, k, term, size);
+    assert(m && m.set, `no place for ${k}`);
+    const plan = IC.bldPlanOf(S, m, m.at, 0.12);
+    assert(plan.ok && plan.specs.length === 1 && plan.specs[0].kind === k, `${k}: ${plan.why} ${plan.specs.map(q => q.kind)}`);
+    if (k === 'apron') assert(IC.apronStandSize(plan.specs[0]) === (size || 'm'), `the apron takes ${IC.apronStandSize(plan.specs[0])} stands`);
+    assert(IC.buildFinish(S, m) === 'built', m.err);
+  }
+});
+test('wave 13: the guides offer standard distances: a parallel taxiway 190 m from a runway and a second runway 760 m out', () => {
+  const { S, ap, next } = foundFresh(); S.budget = 1e6;
+  assert(IC.buildFinish(S, next) === 'built', next.err); w13done(S, ap);
+  const rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), n = { x: -d.y, y: d.x }, mid = IC.rwAt(rw, 0.5);
+  const off = q => (q.x - rw.a.x) * n.x + (q.y - rw.a.y) * n.y;
+  const G = IC.bldGuides(ap);
+  for (const k of [IC.GUIDE_D.ptaxi, -IC.GUIDE_D.ptaxi, IC.RWY_INDEP + 0.05]) assert(G.some(g => Math.abs(off(g) - k) < 1e-6 && Math.abs(g.ux * d.y - g.uy * d.x) < 1e-9), `no guide ${Math.round(k * 100)} m out`);
+  // a taxiway started near the line snaps onto it
+  const m = S.mode2 = IC.bldMode(S, ap, 'taxi');
+  const plan = IC.bldPlanOf(S, m, { x: mid.x + n.x * 1.96, y: mid.y + n.y * 1.96 }, 0.15, false);
+  assert(plan.snap && Math.abs(off(plan.snap) - IC.GUIDE_D.ptaxi) < 1e-6, `snapped ${plan.snap && Math.round(off(plan.snap) * 100)} m out`);
+  // and a second runway placed on the far guide is worked independently
+  const r2 = { a: { x: rw.a.x + n.x * (IC.RWY_INDEP + 0.05), y: rw.a.y + n.y * (IC.RWY_INDEP + 0.05) }, b: { x: rw.b.x + n.x * (IC.RWY_INDEP + 0.05), y: rw.b.y + n.y * (IC.RWY_INDEP + 0.05) } };
+  assert(IC.rwDependent(rw, r2) === '', 'a runway on the guide depends on the first');
+});
+
 /* ---------- round 2: an airport that is alive (docs/focus/round-2.md) ---------- */
 /* a Career with the three ready-made airports, at 32×, played on to its first landing (followed): what was said */
 function firstLanding(seed) {
@@ -4836,12 +4916,12 @@ test('round 3: a stand short of capacity shows a marker at the terminal, with a 
   assert(P, 'no stand problem while every stand was taken');
   assert(/^.+: \d+ aircraft waiting for a stand$/.test(P.title) && P.lvl === 'bad', P.title);
   assert(U.dist(P, term) < 1, `the marker is ${U.km(U.dist(P, term))} from the terminal`);
-  assert(P.fix && P.fix.part === 'tstraight' && /terminal/i.test(P.fix.label), JSON.stringify(P.fix));
-  // the fix: a terminal with stands, placed and ready to build, joined to the taxiways
+  assert(P.fix && P.fix.part === IC.fixPart('stands') && (P.fix.part === 'apron' ? /apron/i : /terminal/i).test(P.fix.label), JSON.stringify(P.fix));
+  // the fix: a terminal with stands (with the parts one by one, an apron), placed and ready to build
   const m = IC.fixPlan(S, ap, P.fix.part, P.fix.near);
   assert(m && m.set && m.at, 'the fix places nothing');
   const plan = IC.bldPlanOf(S, m, m.at, 0.12);
-  assert(plan.ok && plan.piece && plan.piece.links.length, `the placed terminal: ${plan.why} ${(plan.warn || []).join(' ')}`);
+  assert(plan.ok && (P.fix.part === 'apron' ? plan.specs[0].kind === 'apron' : plan.piece && plan.piece.links.length), `the placed ${P.fix.part}: ${plan.why} ${(plan.warn || []).join(' ')}`);
   const n0 = IC.aptStands(ap).length + ap.parts.length;
   assert(IC.buildFinish(S, m) === 'built', m.err);
   assert(ap.parts.length > n0 - IC.aptStands(ap).length, 'nothing was planned');

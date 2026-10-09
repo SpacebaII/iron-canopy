@@ -188,5 +188,9 @@
  "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1,
  "wave 12: the build bar is the parts one by one; of the whole pieces only the Starter airport is on it": 5,
  "wave 12: Found leaves the surveyed runway alone; taxiways, apron, terminal and services built one by one make a working airport": 10,
- "wave 12: milestones open the parts that answer them, and the card picks the part": 12
+ "wave 12: milestones open the parts that answer them, and the card picks the part": 12,
+ "wave 13: part of an airport saved as a layout is planned again at another airport, mirrored if asked, and kept through a save": 20,
+ "wave 13: a runway extended in place stays open while the new length is paved, then is longer, its landing system and taxiway links moved with it": 16,
+ "wave 13: with the parts one by one, a fix places the one part that is missing: an apron for stands, a terminal for passengers": 14,
+ "wave 13: the guides offer standard distances: a parallel taxiway 190 m from a runway and a second runway 760 m out": 12
 }

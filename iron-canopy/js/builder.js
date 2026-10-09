@@ -749,6 +749,10 @@ IC.bldLen = L => L < 9.995 ? `${Math.round(L * 100).toLocaleString('en-US')} m` 
 const rectOf = q => { const D = IC.APART[q.kind]; if (q.x == null || !D || q.kind === 'ils' || q.kind === 'runway') return null; const w = q.w || D.w, h = q.h || D.h; return w && h ? { x: q.x, y: q.y, a: q.a || 0, w, h } : null; };
 const cornersOf = r => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(r, sx * r.w / 2, sy * r.h / 2));
 /* every guide: a line through (x, y) along (ux, uy), the stretch a–b it comes from, and what it is */
+/* (wave 13) standard distances the guides offer, in 100 m units: a parallel taxiway from a runway's centreline
+   (190 m, for the largest aircraft), two taxiways side by side (80 m), and an apron or building edge from a
+   taxiway's centreline (50 m, its wingtip clearance) */
+IC.GUIDE_D = { ptaxi: 1.9, twin: 0.8, clear: 0.5 };
 function guidesOf(ap) {
   let key = ap.parts.length * 131 + ap.nodeN * 7;
   for (const q of ap.parts) if (q.x != null) key += q.x * 3.1 + q.y * 1.7 + (q.a || 0) * 11 + (q.w || 0) * 5 + (q.h || 0) * 2;
@@ -764,14 +768,28 @@ function guidesOf(ap) {
     out.push({ x: a.x, y: a.y, ux, uy, a, b, L, what });
   };
   const square = (e, d, what) => add(e, { x: e.x - d.y, y: e.y + d.x }, what);
+  const off = (a, b, d, k, what) => add({ x: a.x - d.y * k, y: a.y + d.x * k }, { x: b.x - d.y * k, y: b.y + d.x * k }, what);
   for (const q of ap.parts) {
     if (q.kind === 'runway') {
       const d = IC.rwDir(q), nm = q.name || 'the runway';
       add(q.a, q.b, `${nm} centreline`);
       square(q.a, d, `line across the end of ${nm}`); square(q.b, d, `line across the end of ${nm}`);
+      // (wave 13) the standard distances out from it: a parallel taxiway, and a second runway flown independently
+      for (const s of [1, -1]) {
+        off(q.a, q.b, d, s * IC.GUIDE_D.ptaxi, `parallel taxiway, ${IC.GUIDE_D.ptaxi * 100} m from ${nm}`);
+        off(q.a, q.b, d, s * (IC.RWY_INDEP + 0.05), `a second runway ${Math.round(IC.RWY_INDEP * 100)} m out: worked independently of ${nm}`);
+      }
     } else if (q.kind === 'taxi') {
       const ns = q.nodes.map(id => ap.nodes[id]).filter(Boolean);
       for (let i = 1; i < ns.length; i++) if (U.dist(ns[i - 1], ns[i]) >= 0.3) add(ns[i - 1], ns[i], 'taxiway line');
+      // along a long straight taxiway: a second one beside it, and the edge of an apron or building clear of it
+      for (let i = 1; i < ns.length; i++) if (U.dist(ns[i - 1], ns[i]) >= 3) {
+        const d = { x: (ns[i].x - ns[i - 1].x) / U.dist(ns[i - 1], ns[i]), y: (ns[i].y - ns[i - 1].y) / U.dist(ns[i - 1], ns[i]) };
+        for (const s of [1, -1]) {
+          off(ns[i - 1], ns[i], d, s * IC.GUIDE_D.twin, `a second taxiway, ${IC.GUIDE_D.twin * 100} m apart`);
+          off(ns[i - 1], ns[i], d, s * IC.GUIDE_D.clear, `apron or building edge, ${IC.GUIDE_D.clear * 100} m clear of the taxiway`);
+        }
+      }
     } else {
       const r = rectOf(q); if (!r) continue;
       const c = cornersOf(r), nm = U.lc(IC.APART[q.kind].name);
