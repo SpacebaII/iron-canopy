@@ -753,22 +753,31 @@ const cornersOf = r => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC
    (190 m, for the largest aircraft), two taxiways side by side (80 m), and an apron or building edge from a
    taxiway's centreline (50 m, its wingtip clearance) */
 IC.GUIDE_D = { ptaxi: 1.9, twin: 0.8, clear: 0.5 };
+/* (the tool being planned: a guide at a standard distance is offered only to the parts it is the standard for) */
+let TOOL = null;
+const forTool = g => !g.use || (g.use === 'area' ? !LINE_TOOLS[TOOL] : g.use === TOOL);
 function guidesOf(ap) {
+  const all = guidesAll(ap);
+  if (ap._gdT === TOOL && ap._gdF && ap._gdA === all) return ap._gdF;
+  ap._gdT = TOOL; ap._gdA = all; ap._gdF = all.filter(forTool);
+  return ap._gdF;
+}
+function guidesAll(ap) {
   let key = ap.parts.length * 131 + ap.nodeN * 7;
   for (const q of ap.parts) if (q.x != null) key += q.x * 3.1 + q.y * 1.7 + (q.a || 0) * 11 + (q.w || 0) * 5 + (q.h || 0) * 2;
   if (ap._gd && ap._gdKey === key) return ap._gd;
   const out = [], seen = new Set();
-  const add = (a, b, what) => {
+  const add = (a, b, what, use) => {
     const L = U.dist(a, b); if (L < 0.05) return;
     let ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
     if (uy < -1e-9 || (Math.abs(uy) <= 1e-9 && ux < 0)) { ux = -ux; uy = -uy; }
     // one guide per line: the same line from two parts is drawn once
-    const k = Math.round(Math.atan2(uy, ux) * 300) + ':' + Math.round(((a.x - ap.x) * -uy + (a.y - ap.y) * ux) * 50);
+    const k = Math.round(Math.atan2(uy, ux) * 300) + ':' + Math.round(((a.x - ap.x) * -uy + (a.y - ap.y) * ux) * 50) + (use || '');
     if (seen.has(k)) return; seen.add(k);
-    out.push({ x: a.x, y: a.y, ux, uy, a, b, L, what });
+    out.push({ x: a.x, y: a.y, ux, uy, a, b, L, what, use: use || null });
   };
   const square = (e, d, what) => add(e, { x: e.x - d.y, y: e.y + d.x }, what);
-  const off = (a, b, d, k, what) => add({ x: a.x - d.y * k, y: a.y + d.x * k }, { x: b.x - d.y * k, y: b.y + d.x * k }, what);
+  const off = (a, b, d, k, what, use) => add({ x: a.x - d.y * k, y: a.y + d.x * k }, { x: b.x - d.y * k, y: b.y + d.x * k }, what, use);
   for (const q of ap.parts) {
     if (q.kind === 'runway') {
       const d = IC.rwDir(q), nm = q.name || 'the runway';
@@ -776,8 +785,8 @@ function guidesOf(ap) {
       square(q.a, d, `line across the end of ${nm}`); square(q.b, d, `line across the end of ${nm}`);
       // (wave 13) the standard distances out from it: a parallel taxiway, and a second runway flown independently
       for (const s of [1, -1]) {
-        off(q.a, q.b, d, s * IC.GUIDE_D.ptaxi, `parallel taxiway, ${IC.GUIDE_D.ptaxi * 100} m from ${nm}`);
-        off(q.a, q.b, d, s * (IC.RWY_INDEP + 0.05), `a second runway ${Math.round(IC.RWY_INDEP * 100)} m out: worked independently of ${nm}`);
+        off(q.a, q.b, d, s * IC.GUIDE_D.ptaxi, `parallel taxiway, ${IC.GUIDE_D.ptaxi * 100} m from ${nm}`, 'taxi');
+        off(q.a, q.b, d, s * (IC.RWY_INDEP + 0.05), `a second runway ${Math.round(IC.RWY_INDEP * 100)} m out: worked independently of ${nm}`, 'runway');
       }
     } else if (q.kind === 'taxi') {
       const ns = q.nodes.map(id => ap.nodes[id]).filter(Boolean);
@@ -786,8 +795,8 @@ function guidesOf(ap) {
       for (let i = 1; i < ns.length; i++) if (U.dist(ns[i - 1], ns[i]) >= 3) {
         const d = { x: (ns[i].x - ns[i - 1].x) / U.dist(ns[i - 1], ns[i]), y: (ns[i].y - ns[i - 1].y) / U.dist(ns[i - 1], ns[i]) };
         for (const s of [1, -1]) {
-          off(ns[i - 1], ns[i], d, s * IC.GUIDE_D.twin, `a second taxiway, ${IC.GUIDE_D.twin * 100} m apart`);
-          off(ns[i - 1], ns[i], d, s * IC.GUIDE_D.clear, `apron or building edge, ${IC.GUIDE_D.clear * 100} m clear of the taxiway`);
+          off(ns[i - 1], ns[i], d, s * IC.GUIDE_D.twin, `a second taxiway, ${IC.GUIDE_D.twin * 100} m apart`, 'taxi');
+          off(ns[i - 1], ns[i], d, s * IC.GUIDE_D.clear, `apron or building edge, ${IC.GUIDE_D.clear * 100} m clear of the taxiway`, 'area');
         }
       }
     } else {
@@ -799,7 +808,7 @@ function guidesOf(ap) {
   ap._gd = out; ap._gdKey = key;
   return out;
 }
-IC.bldGuides = guidesOf;
+IC.bldGuides = guidesOf; IC.bldGuidesAll = guidesAll;
 /* where a line from a along u meets guide g (null when they run within about 11° of parallel) */
 function lineX(a, u, g) {
   const den = u.x * g.uy - u.y * g.ux; if (Math.abs(den) < 0.2) return null;
@@ -1120,6 +1129,7 @@ function consequences(S, m, out) {
   if (m.part === 'fuel' && out.text.some(t => /one fire could take them all/.test(t))) say('Within 100 m of other fuel: one fire could take them all. Further apart is safer.');
 }
 function planOf(S, m, hv, tol, free, only) {
+  TOOL = m.part;
   const ap = m.ap, t = m.part, out = { specs: [], text: [], ok: true, why: '', cost: 0, dur: 0, snap: null };
   if (!hv) return out;
   const pts = m.pts.slice();

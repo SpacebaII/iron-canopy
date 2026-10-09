@@ -4824,12 +4824,14 @@ test('wave 13: the guides offer standard distances: a parallel taxiway 190 m fro
   assert(IC.buildFinish(S, next) === 'built', next.err); w13done(S, ap);
   const rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), n = { x: -d.y, y: d.x }, mid = IC.rwAt(rw, 0.5);
   const off = q => (q.x - rw.a.x) * n.x + (q.y - rw.a.y) * n.y;
-  const G = IC.bldGuides(ap);
+  const G = IC.bldGuidesAll(ap);
   for (const k of [IC.GUIDE_D.ptaxi, -IC.GUIDE_D.ptaxi, IC.RWY_INDEP + 0.05]) assert(G.some(g => Math.abs(off(g) - k) < 1e-6 && Math.abs(g.ux * d.y - g.uy * d.x) < 1e-9), `no guide ${Math.round(k * 100)} m out`);
   // a taxiway started near the line snaps onto it
   const m = S.mode2 = IC.bldMode(S, ap, 'taxi');
   const plan = IC.bldPlanOf(S, m, { x: mid.x + n.x * 1.96, y: mid.y + n.y * 1.96 }, 0.15, false);
   assert(plan.snap && Math.abs(off(plan.snap) - IC.GUIDE_D.ptaxi) < 1e-6, `snapped ${plan.snap && Math.round(off(plan.snap) * 100)} m out`);
+  // (the runway's guides are offered only to runways: the taxiway tool never sees the 760 m one)
+  assert(!IC.bldGuides(ap).some(g => Math.abs(off(g) - IC.RWY_INDEP - 0.05) < 1e-6), 'the taxiway tool snaps to the second-runway guide');
   // and a second runway placed on the far guide is worked independently
   const r2 = { a: { x: rw.a.x + n.x * (IC.RWY_INDEP + 0.05), y: rw.a.y + n.y * (IC.RWY_INDEP + 0.05) }, b: { x: rw.b.x + n.x * (IC.RWY_INDEP + 0.05), y: rw.b.y + n.y * (IC.RWY_INDEP + 0.05) } };
   assert(IC.rwDependent(rw, r2) === '', 'a runway on the guide depends on the first');

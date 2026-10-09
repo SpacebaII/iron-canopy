@@ -201,8 +201,8 @@ IC.fixOpen = function (S2, ap, part, near, size) {
   if (lock) { IC.toast(S2, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   IC.bb.ap = ap; IC.select({ kind: 'infra', ref: ap }); IC.bbToggle(true);
   const m = IC.fixPlan(S2, ap, part, near || ap, size);
-  if (!m) { IC.bbPick(part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
-  IC.bb.last = part; IC.setMode(m);
+  if (!m) { IC.bbPick(part === 'gates' ? 'apron' : part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
+  IC.bb.last = m.part; IC.setMode(m);
   const P = IC.PIECES && IC.PIECES[part];
   IC.flyTo(m.at.x, m.at.y, U.clamp(Math.max(IC.cam.z, P ? 6 : 9), 5, P ? 9 : 16));
   return true;
