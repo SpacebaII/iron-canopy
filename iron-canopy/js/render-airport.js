@@ -181,7 +181,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // service roads from buildings to the pavement they face
   if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
   // buildings: every shadow first, so none falls across a roof
-  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind) && near(p)) shadowOf(g, S, p);
+  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad', 'helipad'].includes(p.kind) && near(p)) shadowOf(g, S, p);
   for (const p of parts) {
     if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind) || !near(p)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
@@ -567,7 +567,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.restore();
     return;
   }
-  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
+  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150], gaterm: [196, 186, 168], helipad: [150, 152, 148] }[p.kind] || [150, 150, 150];
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
@@ -595,6 +595,16 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
       g.beginPath(); g.moveTo(0, -h / 2); g.lineTo(0, h * 0.2); g.stroke();
       if (p.kind === 'deice') { g.fillStyle = 'rgb(236,120,40)'; for (const sx of [-1, 1]) g.fillRect(sx * w * 0.42 - 0.03, -0.03, 0.06, 0.06); }
       else { g.fillStyle = 'rgb(200,60,50)'; g.fillRect(w * 0.3, h * 0.25, 0.05, 0.04); }
+    }
+  } else if (p.kind === 'helipad') {
+    // (wave 14) a square of concrete, the touchdown circle and the H, the lights round its edge at night
+    g.fillStyle = CONC2; g.fillRect(-w / 2, -h / 2, w, h);
+    if (full && !dead) {
+      const r = w * 0.38, lw = Math.max(0.006, 0.6 * px);
+      g.strokeStyle = 'rgba(250,250,245,0.92)'; g.lineWidth = lw * 1.6; g.beginPath(); g.arc(0, 0, r, 0, 7); g.stroke();
+      g.fillStyle = 'rgba(250,250,245,0.92)'; const a = r * 0.55, b = r * 0.12; g.fillRect(-a, -a, b, a * 2); g.fillRect(a - b, -a, b, a * 2); g.fillRect(-a, -b / 2, a * 2, b);
+      g.strokeStyle = YEL; g.lineWidth = lw; g.strokeRect(-w / 2 + 0.01, -h / 2 + 0.01, w - 0.02, h - 0.02);
+      if (night) { g.fillStyle = 'rgba(120,255,140,0.95)'; for (let i = 0; i < 8; i++) { const q = i / 8 * 6.283; g.fillRect(Math.cos(q) * r * 1.15 - 0.006, Math.sin(q) * r * 1.15 - 0.006, 0.012, 0.012); } }
     }
   } else if (p.kind === 'ils') {
     // the localizer: a row of antennas across the centreline

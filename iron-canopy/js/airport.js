@@ -1402,8 +1402,11 @@ IC.updateBases = function (S, dt) {
     IC.bldTick(S, b, dt);
     // each crew takes the next job it can work on: builds wait for money, materials or night without holding a crew
     let n = 0;
+    // (wave 14) Free build can finish every job at once: what is left of its stages runs in this step
+    const now = S.free && S.free.instant;
     for (const w of b.works) {
-      if (n >= b.crews) { if (w.stages) w.wait = 'queued: every crew is busy'; continue; }
+      if (now && w.prog < 1) w.prog = 1;
+      else if (n >= b.crews) { if (w.stages) w.wait = 'queued: every crew is busy'; continue; }
       if (w.stages) { if (!IC.bldAdvance(S, b, w, dt)) continue; }
       else w.prog += dt / w.dur;
       n++;

@@ -267,8 +267,8 @@ function meetAt(A, B) {
    important first, none overlapping another: one that would is left out), and each building site's progress, small,
    on the site, only close enough to see the site, gone when it is built. Each label keeps the thing it names (of)
    and its box in world units; the renderer draws them, the tests check none hangs loose. */
-const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
-const LBL_RANK = { terminal: 0, cargo: 1, hangar: 2, tower: 3, fire: 4, fuel: 5, deice: 6, fuelpad: 7, atc: 8, gradar: 9, hydrant: 10, has: 11, ammo: 12, support: 13 };
+const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', helipad: 'HELIPAD', gaterm: 'GA TERMINAL', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
+const LBL_RANK = { terminal: 0, cargo: 1, hangar: 2, tower: 3, fire: 4, fuel: 5, deice: 6, fuelpad: 7, atc: 8, gradar: 9, hydrant: 10, has: 11, ammo: 12, support: 13, gaterm: 6, helipad: 9 };
 IC.BLD_TAG = BLD_TAG;
 IC.aptLabels = function (S, ap, z, o) {
   o = o || {};

@@ -555,7 +555,7 @@ const LOCKS = {
   trade: [5, 'Cities, growth and trade open with the economy (Chapter 6).', 'Cities, growth and trade']
 };
 IC.storyLock = function (S, key) {
-  const st = S.story; if (!st || !st.fresh || st.act > 1) return '';
+  const st = S.story; if (!st || !st.fresh || st.act > 1 || S.free) return '';
   if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) || st.contract3 ? '' : st.ch < 4 ? 'A second airport comes later, when a city far from the capital wants to fly (Chapter 5).' : '';
   const L = LOCKS[key]; if (!L || st.ch >= L[0]) return '';
   if (!IC.FOCUS.progress || L[0] > 5) return L[1];
@@ -921,7 +921,7 @@ IC.H.storySpyTurns = (S, t, fb) => () => {
 };
 IC.H.storySpyHome = (S, cs, fb) => () => { const st = S.story; if (!st.dilemmaDone) { st.dilemmaDone = true; if (!st.fired) say(S, 'INT', `${cs} has gone home. They have photographed ${short(fb.name)} from end to end, and we let them. Some will call that restraint.`); } };
 IC.on((S, type, d) => {
-  if (!S.story) return;
+  if (!S.story || S.free) return;
   const st = S.story;
   if (type === 'kill' && d.spy) {
     st.fired = true; st.dilemmaDone = true;
@@ -1038,6 +1038,7 @@ IC.goalGives = g => g && g.gives ? `→ ${g.gives}` : '';
 IC.storyTick = function (S, dt) {
   // (the airport showcase has no story: only the airport at work)
   if (S.showcase) return;
+  if (S.free) return IC.freeTick(S, dt);
   const st = S.story, C = S.camp;
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
   if (!S.first && IC.firstLandingTick) IC.firstLandingTick(S);
@@ -1180,7 +1181,7 @@ function foundedHere(S, ap) {
 
 /* reactions: the staff and the Minister notice what happens */
 IC.on((S, type, d) => {
-  if (!S.story) return;
+  if (!S.story || S.free) return;
   const st = S.story;
   // (things that happen again and again on the live clock push confidence at the Career's pace before the war:
   // over a month of live days the old pushes ran it to the floor; one-off disasters keep their full weight)

@@ -691,7 +691,7 @@ const boxOf = pts => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const 
 function works(S, dt) {
   const E = S.econ;
   for (const w of E.works) {
-    w.prog = Math.min(1, w.prog + dt / (w.hours * 3600));
+    w.prog = S.free && S.free.instant ? 1 : Math.min(1, w.prog + dt / (w.hours * 3600));
     w.stage = w.prog < 0.1 ? 'Surveying' : w.prog < 0.6 ? (w.bridges.length ? 'Earthworks and bridges' : 'Earthworks') : w.prog < 1 ? 'Paving' : 'Open';
     if (w.prog >= 1) openRoad(S, w);
   }

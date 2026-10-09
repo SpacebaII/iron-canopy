@@ -609,6 +609,8 @@ function onAct(e) {
     case 'selFix': { const f = IC.aspFix(S, id); if (f) { S.layers.airways = true; ui.openRoom(null); ui.jump(f, 'fix'); } return; }
     case 'selField': { const f = S.asp.fields.find(x => x.id === id); if (f) { ui.openRoom(null); ui.jump(f, 'field'); } return; }
     case 'zoneDel': IC.avRemoveZone(S, id); break;
+    case 'watch': { const ap = S.sel && S.sel.ref && S.sel.ref.parts ? S.sel.ref : S.story && S.byId[S.story.cap]; if (IC.ui.watch) IC.watchStop(); else IC.watchStart(ap); IC.sfx.ui('click'); break; }
+    case 'freeSet': if (S.free) { S.free[v] = !S.free[v]; if (v === 'traffic') S.free.t = 0; } break;
     case 'foundMode': if (locked('found')) return; ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
     case 'tutOff': if (S.story) S.story.tut = false; break;
     case 'bbToggle': IC.bbToggle(); return;
@@ -750,7 +752,7 @@ cv.addEventListener('pointermove', e => {
       else if (drag.bstart) { if (!drag.bplaced && S.mode2 && S.mode2.kind === 'build') { drag.bplaced = buildIn(S.mode2, drag.bstart, 0, e.shiftKey) === 'point'; if (!drag.bplaced) drag.bstart = null; } }
       else if (drag.edge) { IC.aspResize(S, drag.edge, U.dist(drag.edge, S.hover)); IC.ui.aspVol = drag.edge.id; IC.ui.aspEdge = drag.edge.id; cv.style.cursor = 'grabbing'; }
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
-      else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); if (S.follow) followOff(); }
+      else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); if (S.follow || IC.ui.watch) followOff(); }
     }
   }
 });
@@ -916,7 +918,7 @@ async function build(seed, mode, lesson) {
   loading++;
   let S2;
   // (the airport showcase is the Career's ready-made network with a real airport in place of the capital's)
-  const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
+  const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : mode === 'build' ? { seed, mode: 'story', free: true, hour: 8 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
   try { S2 = await IC.newGameAsync(o, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
   finally { loading--; }
   if (me !== nth) return null;
@@ -986,12 +988,12 @@ IC.ui.startPage('main');
    aptlife.js); when the game started it (the first landing) it also zooms by what the aircraft is doing, until
    the player zooms. Dragging the map or the arrow keys let it go */
 const FOLLOW_Z = { air: 6, near: 9, final: 12, land: 16, rollout: 18, taxi: 30, parkin: 50, stand: 60, push: 45, start: 50, wait: 50, svc: 30, hold: 26, lineup: 20, roll: 14 };
-function followOff() { if (!S.follow) return; const tl = IC.followTail(S); IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', `Stopped following ${tl ? tl.cs : 'the aircraft'}.`); }
+function followOff() { if (IC.ui.watch) { IC.watchStop(); IC.followStop(S); return; } if (!S.follow) return; const tl = IC.followTail(S); IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', `Stopped following ${tl ? tl.cs : 'the aircraft'}.`); }
 IC.followOff = followOff;
 function followCam(dtR) {
   if (!S.follow) return;
   const why = IC.followEnds(S);
-  if (why) { IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', why); return; }
+  if (why) { IC.followStop(S); if (!IC.ui.watch) IC.toast(S, 'info', 'FOLLOW', why); return; }
   const tl = IC.followTail(S), w = IC.tailWhere(S, tl); if (!w) return;
   const c = IC.cam, cx = c.x + c.vw / c.z / 2, cy = c.y + c.vh / c.z / 2;
   c.fly = null;
@@ -1003,13 +1005,26 @@ function followCam(dtR) {
   const k = 1 - Math.exp(-dtR * 5);
   IC.centerOn(cx + (w.x - cx) * k, cy + (w.y - cy) * k);
 }
+/* (wave 14) Watch: the camera goes from one aircraft at the airport to the next on its own (IC.watchPick), about
+   half a minute on each; dragging the map or the arrow keys stop it like Follow */
+IC.watchStart = function (ap) { if (!S || !ap) return; IC.ui.watch = { ap: ap.id, t: 0, last: null }; IC.toast(S, 'info', 'WATCH', `Watching ${ap.name}. Drag the map to stop.`); };
+IC.watchStop = function () { if (IC.ui.watch) { IC.ui.watch = null; IC.toast(S, 'info', 'WATCH', 'Stopped watching.'); } };
+function watchCam(dtR) {
+  const W = IC.ui.watch; if (!W) return;
+  const ap = S.byId[W.ap]; if (!ap || ap.owner !== 'us') { IC.ui.watch = null; return; }
+  W.t -= dtR;
+  if (W.t > 0 && (S.follow || !W.cur)) return;
+  const tl = IC.watchPick(S, ap, W.last);
+  if (tl) { IC.followStart(S, tl, true); W.last = W.cur = tl.id; W.t = 25 + Math.random() * 15; }
+  else { if (S.follow) IC.followStop(S); W.cur = null; W.t = 10; IC.flyTo(ap.x, ap.y, 6); }
+}
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
   // nothing to draw until the first game is built, while the next is built, or while a save replaces it
   if (!S || loading || IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
-    if (S.follow && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].some(k => keys.has(k))) followOff();
+    if ((S.follow || IC.ui.watch) && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].some(k => keys.has(k))) followOff();
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
     if (keys.has('arrowdown')) IC.cam.y += v;
@@ -1019,6 +1034,7 @@ function frame(now) {
   }
   IC.camStep(dtR);
   followCam(dtR);
+  if (S.follow || IC.ui.watch) watchCam(dtR);
   const C = IC.cine;
   C.cool = Math.max(0, C.cool - dtR);
   if (C.slow > 0) C.slow -= dtR;

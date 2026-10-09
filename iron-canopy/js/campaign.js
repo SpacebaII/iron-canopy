@@ -18,7 +18,10 @@ function say(S, who, text) {
   IC.sfx && IC.sfx.radio();
 }
 IC.say = say;
-function card(S, title, sub, text, kind, x) { S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
+function card(S, title, sub, text, kind, x) {
+  // (wave 14) Free build stops only for accidents and alarms; the rest goes to the Journal
+  if (S.free && kind !== 'alarm') { IC.log(S, 'info', 'NOTE', `${title}: ${text}`); return; }
+  S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
 IC.card = card;
 function chapter(S, name, text) { if (S.camp.chapter === name) return; S.camp.chapter = name; card(S, name, `Day ${U.day(S.time)} · ${U.hhmm(S.time)}`, text, 'chapter'); IC.emit(S, 'chapter', name); }
 
