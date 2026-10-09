@@ -7,7 +7,7 @@
 const U = IC.U;
 
 /* the switches: instant building, airlines that come by themselves, general aviation; the treasury it tops up to */
-IC.FREE = { budget: 1e6, every: 120, share: 0.8, perRoute: 2, most: 3, gap: 900, busy: 0.6 };
+IC.FREE = { budget: 1e6, every: 120, share: 0.8, perRoute: 2, most: 1.5, gap: 900, busy: 0.6 };
 
 /* a free game is made like the Career (mode 'story', no airports), then stripped of the story */
 IC.freeInit = function (S) {
