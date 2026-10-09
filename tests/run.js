@@ -1306,7 +1306,7 @@ test('build bar: every tab has items, and each one can be placed on an airport',
       const n = placed.length, c = P(-20 + (n % 6) * 7, 14 + Math.floor(n / 6) * 6);
       const m = IC.bldMode(S, ap, part);
       if (k === 'carpark') m.surf = 'asph';
-      if (part === 'starter' || part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to, or a whole site: their own tests cover them)
+      if (part === 'starter' || part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert' || part === 'extend' || part === 'mylayout' || part === 'savelay') { skipped.push(k); continue; }   // (these need something to attach to, or a whole site: their own tests cover them)
       S.mode2 = m; S.hover = c;
       const cnt = () => ap.parts.length + (ap.svcRoads || []).length, n0 = cnt(), two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
       IC.clickWorld(c, 0);
