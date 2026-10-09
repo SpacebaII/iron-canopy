@@ -1528,6 +1528,14 @@ IC.drawBuildGhost = function (g, S, px) {
   if (!ok && plan.hit) drawHit(g, m.ap, plan.hit, px);
   // a blueprint: the whole airport where it would go
   if (plan.bp && plan.bp.t) drawBlueprint(g, plan.bp.t, col, fill, px);
+  // (wave 13) Save layout: the box, and what it would keep outlined
+  if (plan.sel) {
+    const B = plan.sel.box, c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(B, sx * B.w / 2, sy * B.h / 2));
+    g.save(); g.strokeStyle = '#f2c94c'; g.lineWidth = 1.6 * px; g.setLineDash([7 * px, 4 * px]); g.beginPath(); c.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); g.setLineDash([]);
+    g.fillStyle = 'rgba(242,201,76,0.08)'; g.fill();
+    for (const p of plan.sel.parts) if (p.kind !== 'ils') drawHit(g, m.ap, p, px, '#f2c94c', 'rgba(242,201,76,0.18)');
+    g.restore();
+  }
   // a piece's links to the taxiways it joins, and the stands it brings (round 1)
   if (plan.piece) {
     g.save(); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.05, 2.5 * px); g.setLineDash([6 * px, 4 * px]);

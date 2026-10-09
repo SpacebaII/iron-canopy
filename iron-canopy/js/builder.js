@@ -511,6 +511,8 @@ const axis = ap => ap.rwyA || 0;
 const loc = (ap, p) => IC.rectLocal({ x: ap.x, y: ap.y, a: axis(ap) }, p);
 const wld = (ap, lx, ly) => IC.rectWorld({ x: ap.x, y: ap.y, a: axis(ap) }, lx, ly);
 IC.BTOOLS = {
+  mylayout: { name: 'My layouts', desc: 'A layout you saved with Save layout: pick it above, turn it with R, mirror it with F, click where it goes, then Build. Its parts are planned and paid for like any others. Join its taxiways to yours.' },
+  savelay: { name: 'Save layout', desc: 'Click two corners of a box round part of this airport (a pier and its aprons, a cargo area, a whole runway with its taxiways), then Save. It is kept as a layout for any of our airports, in this game and the next.' },
   parallel: { name: 'Parallel taxiway', desc: 'Click a runway, then click out at the distance you want: a full-length taxiway with links to both runway ends. Build (or Enter) builds it.' },
   exits: { name: 'Rapid exits', desc: 'Click a runway with a parallel taxiway: exits angled at 30° where the aircraft using it slow down, in both directions.' },
   hold: { name: 'Holding bay', desc: 'Click near a runway end with a parallel taxiway: a second entry beside the first, so an aircraft that is ready can pass one that is waiting.' },
@@ -1072,6 +1074,30 @@ function planOf(S, m, hv, tol, free, only) {
     out.text.push(`${IC.TERM_KITS[t].name}: ${st} ${IC.STAND[sz].name} gates with jet bridges · ${U.money(C.cost || 0)} paid as the work runs · R turns it`);
     return out;
   }
+  // (wave 13) a layout the player saved, placed like a blueprint; F mirrors it
+  if (t === 'mylayout') {
+    const L0 = IC.layoutGet(S, m.lay);
+    if (!L0) { out.ok = false; out.why = 'No layout saved yet: box part of an airport with Save layout first.'; return out; }
+    const lk = L0.key + (m.mirror ? '|m' : '');
+    if (!m._layL || m._layK !== lk) { m._layK = lk; m._layL = Object.assign({}, L0, { mirror: !!m.mirror }); }
+    const key = lk + '|' + hv.x.toFixed(1) + ',' + hv.y.toFixed(1) + '|' + (m.rot || 0).toFixed(3) + '|' + ap.parts.length + '|' + Math.round(S.budget);
+    if (m._bpKey !== key) { m._bpKey = key; m._bpC = IC.bldBlueprintCheck(S, ap, m._layL, hv.x, hv.y, m.rot || 0); }
+    const C = m._bpC;
+    out.bp = { x: hv.x, y: hv.y, rot: m.rot || 0, t: C.t }; out.ok = C.ok; out.why = C.why; out.hit = C.hit; out.cost = C.cost || 0;
+    out.text.push(`${L0.name}: ${IC.layoutWords(L0)} · ${U.money(C.cost || 0)} paid as the work runs · R turns it, F mirrors it`);
+    return out;
+  }
+  // (wave 13) Save layout: a box round the parts to keep
+  if (t === 'savelay') {
+    const a = pts[0] || hv, b = pts.length >= 2 ? pts[1] : hv;
+    const P = IC.layoutPick(ap, a, b, m.rot || 0);
+    out.sel = P;
+    if (!pts.length) { out.ok = false; out.why = 'Click one corner of the box, then the other.'; return out; }
+    if (!P.parts.length) { out.ok = false; out.why = 'Nothing of this airport in the box.'; return out; }
+    const L = { parts: P.parts, stands: P.parts.reduce((s, p) => s + (p.kind === 'apron' ? (p.stands || []).length : 0), 0) };
+    out.text.push(`Save ${IC.layoutWords(L)} as a layout · ${Math.round(P.box.w * 100)} × ${Math.round(P.box.h * 100)} m · it is kept for any airport, in this game and the next`);
+    return out;
+  }
   if (t === 'blueprint') {
     if (!m.bp || !IC.REAL_APT[m.bp]) { out.ok = false; out.why = 'No blueprint to place.'; return out; }
     const key = m.bp + '|' + hv.x.toFixed(1) + ',' + hv.y.toFixed(1) + '|' + (m.rot || 0).toFixed(3) + '|' + ap.parts.length + '|' + Math.round(S.budget);
@@ -1300,7 +1326,8 @@ IC.bldMode = function (S, ap, part) {
   // (a blueprint starts the way the real airport lies: north up)
   const r0 = part === 'blueprint' ? 0 : ap.rwyA || 0, keys = IC.showcaseKeys ? IC.showcaseKeys() : [];
   return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass',
-    rwid: P.rwid || null, twid: P.twid || null, lit: P.lit === false ? false : true, oneway: P.oneway || 0, bp: keys.includes(P.bp) ? P.bp : keys[0] };
+    rwid: P.rwid || null, twid: P.twid || null, lit: P.lit === false ? false : true, oneway: P.oneway || 0, bp: keys.includes(P.bp) ? P.bp : keys[0],
+    lay: S.layouts && S.layouts.length ? (S.layouts.some(L => L.key === P.lay) ? P.lay : S.layouts[0].key) : null, mirror: false };
 };
 /* One click in build mode (brief 47: no tool builds on a click). btn 0 places a point or the whole plan; once the
    plan is complete it stays on the map (m.set, at m.at) with its cost and a Build button beside it, and a click
@@ -1325,7 +1352,7 @@ IC.buildInput = function (S, m, p, btn, z, free) {
     m.pts[1] = { x: p.x, y: p.y }; return placed(m, p, tol, free);
   }
   if (PC) { if (!plan.bp) { m.err = plan.why; return 'err'; } m.pts = [{ x: p.x, y: p.y }]; return placed(m, p, tol, free); }
-  if (T || m.part === 'blueprint') {
+  if (T || m.part === 'blueprint' || m.part === 'mylayout') {
     if (!plan.bp) { m.err = plan.why; return 'err'; }
     m.pts = [{ x: p.x, y: p.y }]; return placed(m, p, tol, free);
   }
@@ -1337,6 +1364,11 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   if (m.part === 'exits' || m.part === 'hold') {
     if (!plan.rw) { m.err = plan.why; return 'err'; }
     m.pts = [{ x: p.x, y: p.y }]; m.rw = plan.rw.id; m.exitKey = null; return placed(m, p, tol, free);
+  }
+  if (m.part === 'savelay') {
+    if (m.pts.length >= 1 && !m.set) { m.pts[1] = { x: p.x, y: p.y }; return placed(m, p, tol, free); }
+    if (m.set) { m.pts[1] = { x: p.x, y: p.y }; m.at = { x: p.x, y: p.y }; return 'point'; }
+    m.pts = [{ x: p.x, y: p.y }]; return 'point';
   }
   if (m.part === 'parallel' || m.part === 'stretch') {
     if (!m.pts.length) {
@@ -1373,7 +1405,7 @@ IC.bldReady = function (S, m) {
   if (!m || m.kind !== 'build' || m.part === 'stand') return null;
   const line = LINE_TOOLS[m.part] && m.part !== 'runway' && m.part !== 'concourse';
   if (!(m.set || (line && m.pts.length >= 2))) return null;
-  const ap = m.ap, key = [m.part, m.set, m.at && m.at.x, m.at && m.at.y, m.pts.map(q => q.x.toFixed(3) + ',' + q.y.toFixed(3)).join(';'), m.rot, m.flip, m.rotHand, m.mat, m.size, m.zone, m.fillet, m.bp, m.rwid, m.twid, m.lit, m.oneway, m.drive, m.surf, ap.parts.length, ap.nodeN, Math.round(S.budget)].join('|');
+  const ap = m.ap, key = [m.part, m.set, m.at && m.at.x, m.at && m.at.y, m.pts.map(q => q.x.toFixed(3) + ',' + q.y.toFixed(3)).join(';'), m.rot, m.flip, m.rotHand, m.mat, m.size, m.zone, m.fillet, m.bp, m.lay, m.mirror, m.rwid, m.twid, m.lit, m.oneway, m.drive, m.surf, ap.parts.length, ap.nodeN, Math.round(S.budget)].join('|');
   if (m._readyK !== key) { m._readyK = key; m._ready = IC.bldPlanOf(S, m, m.at || m.pts[m.pts.length - 1], m.tol || 0.12, m.free, !m.set); }
   return m._ready;
 };
@@ -1407,11 +1439,18 @@ function finish(S, m, plan) {
     return done();
   }
 
+  if (plan.sel) {
+    if (!plan.ok) { m.err = plan.why; return 'err'; }
+    const L = IC.layoutSave(S, ap, m.pts[0], m.pts[1], m.rot || 0);
+    if (!L) { m.err = 'Nothing of this airport in the box.'; return 'err'; }
+    m.done = `Saved ${L.name}: ${IC.layoutWords(L)}. Blueprints → My layouts places it at any of our airports.`;
+    return done();
+  }
   if (plan.bp) {
     if (!plan.ok) { m.err = plan.why; IC.log(S, 'warn', 'BUILD', plan.why); return 'err'; }
-    const kit = IC.TERM_KITS && IC.TERM_KITS[m.part], made = IC.bldBlueprint(S, ap, kit ? m._kitL : m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);
+    const kit = IC.TERM_KITS && IC.TERM_KITS[m.part], mine = m.part === 'mylayout', made = IC.bldBlueprint(S, ap, kit ? m._kitL : mine ? m._layL : m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);
     if (!made) { m.err = 'Could not plan it.'; return 'err'; }
-    m.done = kit ? `${kit.name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs. Join its taxilanes to your taxiways.` : `${IC.REAL_APT[m.bp].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs.`;
+    m.done = mine ? `${m._layL.name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs. Join its taxiways to yours.` : kit ? `${kit.name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs. Join its taxilanes to your taxiways.` : `${IC.REAL_APT[m.bp].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs.`;
     return done();
   }
   if (!plan.specs.length) { m.err = plan.why || 'Nothing to build yet.'; return 'err'; }

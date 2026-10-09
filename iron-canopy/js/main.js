@@ -158,11 +158,11 @@ function goFrame() {
     const plan = IC.bldReady(S, m);
     if (plan) {
       at = m.at || m.pts[m.pts.length - 1];
-      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch'].includes(m.part);
+      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch', 'savelay', 'extend'].includes(m.part);
       // (round 5c) the price and how long the crews take, for a piece or a blueprint too
       const dur = IC.planDur(m.ap, plan);
       const what = plan.bp || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
-      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? 'Build it (Enter)' : esc(plan.why || '')}">Build${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
+      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? (plan.sel ? 'Save it (Enter)' : 'Build it (Enter)') : esc(plan.why || '')}">${plan.sel ? 'Save layout' : 'Build'}${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
     }
   } else if (m && m.kind === 'bmove' && m.at) {
     at = m.at;
@@ -821,6 +821,7 @@ window.addEventListener('keydown', e => {
     if (!IC.pieceTurn(bm, 1, e.shiftKey)) bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12);
     IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return;
   }
+  if (bm && lk === 'f' && bm.part === 'mylayout') { bm.mirror = !bm.mirror; IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
