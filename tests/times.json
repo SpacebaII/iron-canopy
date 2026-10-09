@@ -192,5 +192,12 @@
  "wave 13: part of an airport saved as a layout is planned again at another airport, mirrored if asked, and kept through a save": 20,
  "wave 13: a runway extended in place stays open while the new length is paved, then is longer, its landing system and taxiway links moved with it": 16,
  "wave 13: with the parts one by one, a fix places the one part that is missing: an apron for stands, a terminal for passengers": 14,
- "wave 13: the guides offer standard distances: a parallel taxiway 190 m from a runway and a second runway 760 m out": 12
+ "wave 13: the guides offer standard distances: a parallel taxiway 190 m from a runway and a second runway 760 m out": 12,
+ "wave 14: Free build opens everything, builds at once and never runs out of money": 18,
+ "wave 14: in Free build airlines bring aircraft until the stands are full, and say why when none can come": 46,
+ "wave 14: light aircraft land, taxi to a light-aircraft stand, park and fly again; based ones are home by dusk": 25,
+ "wave 14: a helicopter comes down on its helipad, never on the runway, and a general aviation terminal earns handling": 41,
+ "wave 14: an airport with no light-aircraft stand keeps the old way, and says how to fix it": 20,
+ "wave 14: general aviation saves mid-flight and on the stands, and plays on like the unsaved game": 21,
+ "wave 14: Watch picks the aircraft worth a look, a landing before one parked, and never the same twice running": 20
 }

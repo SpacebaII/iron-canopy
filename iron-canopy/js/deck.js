@@ -15,7 +15,7 @@
 const U = IC.U;
 const short = n => n.replace(/ (International|Airport|Field)$/, '');
 const EV = IC.EV;
-const on = S => IC.FOCUS.progress && S.mode === 'story' && S.story && S.story.fresh && S.story.act === 1;
+const on = S => IC.FOCUS.progress && S.mode === 'story' && !S.free && S.story && S.story.fresh && S.story.act === 1;
 const capAp = S => S.story.cap ? S.byId[S.story.cap] : null;
 const dayPax = S => Math.max(S.av.day.pax, S.av.yesterday ? S.av.yesterday.pax : 0);
 const hh = h => `${String(h).padStart(2, '0')}:00`;

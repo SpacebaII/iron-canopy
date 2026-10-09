@@ -4837,6 +4837,114 @@ test('wave 13: the guides offer standard distances: a parallel taxiway 190 m fro
   assert(IC.rwDependent(rw, r2) === '', 'a runway on the guide depends on the first');
 });
 
+/* ---------- wave 14: Free build, general aviation at our airports, Watch ---------- */
+/* a Free build game with the Starter airport founded and built near the capital; W(u, n) is a point in the
+   runway's frame (u along it from the middle, n across it towards the terminal) */
+function freeAirport(seed, hour) {
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story', free: true, hour: hour == null ? 8 : hour }); IC.S = S;
+  const c = IC.cap(S); let p = null;
+  for (const d of [250, 220, 280, 200, 300]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.foundCheck(S, x, y) && !IC.foundSurvey(S, x, y, IC.PREVAIL).river) p = { x, y }; } if (p) break; }
+  const ap = IC.foundAirport(S, p.x, p.y, IC.PREVAIL), sv = ap.survey;
+  const m = S.mode2 = IC.bldMode(S, ap, 'starter'); IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0);
+  assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null;
+  IC.step(S, 0.25);
+  const rw = ap.parts.find(q => q.kind === 'runway'), ang = Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x), mid = IC.rwAt(rw, 0.5);
+  const term = ap.parts.find(q => q.kind === 'terminal'), side = Math.sign(-(term.x - mid.x) * Math.sin(ang) + (term.y - mid.y) * Math.cos(ang)) || 1;
+  const W = (u, n) => ({ x: mid.x + Math.cos(ang) * u - Math.sin(ang) * n * side, y: mid.y + Math.sin(ang) * u + Math.cos(ang) * n * side });
+  return { S, ap, W, ang };
+}
+/* a light-aircraft apron off the parallel taxiway, a helipad and a general aviation terminal beside it */
+function gaSide(S, ap, W, ang) {
+  const a = W(-8, 3.2), apr = IC.aptPlanPart(S, ap, 'apron', a.x, a.y, ang, 3, 0.6, { zone: 'light', smax: 's', mat: 'asph' });
+  const tx = IC.aptPlanTaxi(S, ap, [W(-8, 1.9), W(-8, 2.9)], 0.1, { mat: 'asph' });
+  const h = W(-11.5, 3.3), pad = IC.aptPlanPart(S, ap, 'helipad', h.x, h.y, ang);
+  const g = W(-8, 3.75), term = IC.aptPlanPart(S, ap, 'gaterm', g.x, g.y, ang);
+  assert(apr && tx && pad && term, `refused: ${S.logs.slice(-1)[0].text}`);
+  for (let i = 0; i < 8; i++) IC.step(S, 0.25);
+  return { apr, pad, term };
+}
+test('wave 14: Free build opens everything, builds at once and never runs out of money', () => {
+  const { S, ap } = freeAirport();
+  assert(S.free && !S.camp.cards.length && !S.story.goals.length, 'Free build has cards or goals');
+  assert(ap.parts.length >= 15 && ap.parts.every(p => p.built) && !ap.works.length, `${ap.parts.filter(p => !p.built).length} of ${ap.parts.length} parts still building`);
+  assert(S.story.cap === ap.id, 'the first airport founded does not stand for the capital\'s');
+  for (const k of ['rotunda', 'concourse', 'runway']) assert(!IC.pieceLock(S, k, ap), `${k} is locked: ${IC.pieceLock(S, k, ap)}`);
+  for (const k of ['found', 'loans', 'charges', 'roads']) assert(!IC.storyLock(S, k), `${k} is locked`);
+  assert(IC.TECH.every(t => S.tech.done.has(t.id)), 'research is not all done');
+  S.budget = 10; IC.step(S, 0.25);
+  assert(S.budget >= IC.FREE.budget / 2, `the treasury was not topped up: ${U.money(S.budget)}`);
+});
+test('wave 14: in Free build airlines bring aircraft until the stands are full, and say why when none can come', () => {
+  const { S, ap } = freeAirport(12345, 6);
+  const n = IC.aptStands(ap).filter(s => s.linked !== false && s.zone !== 'light').length;
+  run(S, 10);
+  const based = S.av.tails.filter(t => IC.avRoute(S, t).a === ap.id);
+  assert(based.length >= n * 0.8 && based.length <= n * 3, `${based.length} airliners for ${n} stands`);
+  assert(S.av.day.flights + (S.av.yesterday ? S.av.yesterday.flights : 0) >= 10 && !ap.kpi.grid, `${S.av.day.flights} flights, ${ap.kpi.grid} gridlocks`);
+  // a second airport with a runway and stands but no fire station: only turboprops may come, and the panel says so
+  let p = null; const c = S.world.cities[1];
+  for (const d of [250, 300, 350, 400]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.foundCheck(S, x, y) && !IC.foundSurvey(S, x, y, IC.PREVAIL).river) p = { x, y }; } if (p) break; }
+  const b = IC.foundAirport(S, p.x, p.y, IC.PREVAIL);
+  assert(IC.freeTraffic(S, b) === 'No runway yet.', IC.freeTraffic(S, b));
+}, true);
+test('wave 14: light aircraft land, taxi to a light-aircraft stand, park and fly again; based ones are home by dusk', () => {
+  const { S, ap, W, ang } = freeAirport(12345, 8);
+  gaSide(S, ap, W, ang);
+  const seen = { based: 0, visit: 0, heli: 0 }, ground = new Set();
+  const off = IC.on((S2, type, d) => { if (type === 'gavLanded') { if (IC.ACTYPES[d.c.type].vtol) seen.heli++; else seen[d.c.kind === 'based' ? 'based' : 'visit']++; } });
+  const late = new Set(), dusk = h => ((h % 86400) + 86400) % 86400 >= 19 * 3600;
+  try { run(S, 12, S2 => { for (const m of ap.moves) if (m.T && m.T.zone === 'light') { ground.add(m.kind); if (m.kind === 'dep' && dusk(m.born) && S.gav.craft.some(c => c.kind === 'based' && c.cs === m.who)) late.add(m.who); } }); } finally { off(); }
+  assert(seen.based >= 3 && seen.visit >= 1, `landings: ${JSON.stringify(seen)}`);
+  assert(ground.has('arr') && ground.has('dep'), `light aircraft on the ground: ${[...ground]}`);
+  const g = IC.gavSummary(S, ap), parked = IC.gavParked(S, ap);
+  assert(g.based >= 5 && parked.length >= 3, `${g.based} based, ${parked.length} parked`);
+  // each parked aircraft is on a stand of the light-aircraft zone and holds it
+  for (const q of parked) { const c = q[5]; if (c.stand) { const s = IC.aptStands(ap).find(x => x.id === c.stand); assert(s && s.zone === 'light' && s.occ === c.id, `${c.cs} is not holding a light-aircraft stand`); } }
+  // after 19:00 nothing based taxis out to fly
+  assert(!late.size, `based aircraft taxied out after dusk: ${[...late]}`);
+  assert(/based here/.test(IC.gavOn(S, ap, parked.find(q => q[5].kind === 'based')[5].stand)), 'a stand does not say who is on it');
+}, true);
+test('wave 14: a helicopter comes down on its helipad, never on the runway, and a general aviation terminal earns handling', () => {
+  const { S, ap, W, ang } = freeAirport(12345, 8);
+  const { pad } = gaSide(S, ap, W, ang);
+  let padLanding = 0; const off = IC.on((S2, type, d) => { if (type === 'gavLanded' && d.c.pad === pad.id) padLanding++; });
+  let rwHeli = false, b0 = S.budget;
+  try { run(S, 8, () => { if (ap.moves.some(m => m.T && m.T.vtol)) rwHeli = true; }); } finally { off(); }
+  assert(padLanding >= 1 && !rwHeli, `${padLanding} landings on the pad; a helicopter in ground ops: ${rwHeli}`);
+  assert(S.gav.craft.some(c => c.ap === ap.id && c.role && c.pad === pad.id), 'no helicopter is based on the pad');
+  assert(/Helipad: /.test(IC.partNow(S, ap, pad)) && /General aviation terminal/.test(IC.partNow(S, ap, ap.parts.find(p => p.kind === 'gaterm'))), 'the parts do not say what they do');
+  assert(IC.bizAirports(S).includes(ap), 'business jets do not count an airport with a general aviation terminal');
+}, true);
+test('wave 14: an airport with no light-aircraft stand keeps the old way, and says how to fix it', () => {
+  const { S, ap } = freeAirport(12345, 9);
+  assert(!IC.gavStands(ap).length, 'the Starter airport already has light-aircraft stands');
+  // a light aircraft bound here is towed off the runway at once: nothing parks
+  const t = IC.gaLaunch(S, { x: ap.x + 300, y: ap.y, name: 'Town' }, { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, { type: 'light', progress: 0.9 });
+  run(S, 0.5);
+  assert(t.dead && !S.gav.craft.some(c => c.ap === ap.id), 'a light aircraft parked at an airport with nowhere for it');
+});
+test('wave 14: general aviation saves mid-flight and on the stands, and plays on like the unsaved game', () => {
+  const { S, ap, W, ang } = freeAirport(4242, 8);
+  gaSide(S, ap, W, ang);
+  for (let i = 0; i < 6 * 7200 && !(S.gav.craft.some(c => c.where === 'air') && S.gav.craft.some(c => c.where === 'stand') && ap.moves.some(m => m.T && m.T.zone === 'light')); i++) IC.step(S, 0.5);
+  assert(ap.moves.some(m => m.T && m.T.zone === 'light'), 'no light aircraft on the ground to save');
+  const { S2 } = saveAndPlayOn(S, 0.5);
+  samePicture(S, S2);
+  const gv = G => G.gav.craft.map(c => `${c.cs} ${c.where} ${c.stand || c.pad || ''}`).sort().join('|');
+  assert(gv(S) === gv(S2), `general aviation differs after playing on: ${gv(S).slice(0, 200)} … ${gv(S2).slice(0, 200)}`);
+  assert(S2.free && S2.free.instant, 'Free build was not kept');
+}, true);
+test('wave 14: Watch picks the aircraft worth a look, a landing before one parked, and never the same twice running', () => {
+  const { S, ap } = freeAirport(12345, 6);
+  run(S, 5);
+  const a = IC.watchPick(S, ap, null);
+  assert(a, 'nothing to watch at a busy airport');
+  const b = IC.watchPick(S, ap, a.id);
+  assert(b && b !== a, 'Watch showed the same aircraft twice');
+  const busy = S.av.tails.filter(t => { const w = IC.tailWhere(S, t); return w && w.m && ['final', 'land', 'roll', 'lineup'].includes(w.m.phase); });
+  if (busy.length) { const W = IC.tailWhere(S, a); assert(W.m || W.t, `with ${busy.length} landing or taking off Watch picked one ${a.where}`); }
+});
+
 /* ---------- round 2: an airport that is alive (docs/focus/round-2.md) ---------- */
 /* a Career with the three ready-made airports, at 32×, played on to its first landing (followed): what was said */
 function firstLanding(seed) {

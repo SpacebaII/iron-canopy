@@ -1402,8 +1402,13 @@ IC.updateBases = function (S, dt) {
     IC.bldTick(S, b, dt);
     // each crew takes the next job it can work on: builds wait for money, materials or night without holding a crew
     let n = 0;
+    // (wave 14) Free build can finish every job at once: what is left of its stages runs in this step
+    const now = S.free && S.free.instant;
+    // (finished at once, a whole blueprint opens in one step: what is done once per part elsewhere is done once here)
+    let batch = null;
     for (const w of b.works) {
-      if (n >= b.crews) { if (w.stages) w.wait = 'queued: every crew is busy'; continue; }
+      if (now && w.prog < 1) w.prog = 1;
+      else if (n >= b.crews) { if (w.stages) w.wait = 'queued: every crew is busy'; continue; }
       if (w.stages) { if (!IC.bldAdvance(S, b, w, dt)) continue; }
       else w.prog += dt / w.dur;
       n++;
@@ -1412,6 +1417,11 @@ IC.updateBases = function (S, dt) {
       IC.bldRelease(b, w);
       if (w.kind === 'upgrade' && w.ext) { IC.rwExtend(b, w.part, w.ext.end, w.ext); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.name} extended, now ${U.km(IC.rwLen(w.part))} long.`, IC.rwAt(w.part, w.ext.end === 'a' ? 0 : 1)); IC.emit(S, 'aptBuilt', { ap: b, part: w.part }); }
       else if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
+      else if (w.kind === 'build' && now) {
+        batch = batch || { before: IC.bldSnapStats(b), parts: [], w };
+        w.part.built = true; w.part.prog = 1; w.part.stage = null; batch.parts.push(w.part); batch.w = w;
+        if (w.part.kind === 'runway' || w.part.kind === 'apron' || w.part.kind === 'alert') resolveFor(b, w.part);
+        IC.emit(S, 'aptBuilt', { ap: b, part: w.part }); b.dirty = true; }
       else if (w.kind === 'build') {
         const before = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
@@ -1430,6 +1440,14 @@ IC.updateBases = function (S, dt) {
         IC.emit(S, 'baseWorkDone', { b, w });
       }
       b.dirty = true;
+    }
+    if (batch) {
+      const P = batch.parts, joins = P.some(p => p.kind === 'taxi') ? b.parts.filter(q => q.built && (q.kind === 'apron' || DOOR(q.kind))) : P.filter(q => q.kind === 'apron' || DOOR(q.kind));
+      for (const q of joins) IC.aptAutoJoin(b, q, true);
+      IC.resolveNodes(b); IC.aptExtent(b);
+      const p = batch.w.part;
+      IC.log(S, 'info', 'BUILD', P.length > 1 ? `${b.name}: ${P.length} parts complete.` : `${b.name}: ${p.kind === 'runway' ? p.name || 'runway' : U.lc(IC.APART[p.kind].name)} complete.`, p.x != null ? p : b);
+      IC.bldOpened(S, b, batch.w, batch.before);
     }
     for (const w of b.works) if (w.kind === 'build' && !w.done) w.part.prog = w.prog;
     if (b.works.some(w => w.done)) { b.works = b.works.filter(w => !w.done); b.dirty = true; IC.aptStats(S, b); if (b.kind === 'airbase') IC.assignSlots(S, b); }
@@ -1555,9 +1573,11 @@ function nodeFor(ap, s) {
   return id;
 }
 /* an apron or shelter built beside an existing taxiway joins it where they touch */
-IC.aptAutoJoin = function (ap, part) {
+IC.aptAutoJoin = function (ap, part, later) {
   const shelter = part.kind === 'hangar' || part.kind === 'has' || !!IC.APART[part.kind].pad;
   const door = shelter ? [toWorld(part, 0, -part.h / 2 - 0.05), toWorld(part, 0, part.h / 2 + 0.05)] : null;
+  // a door already reachable from a node needs nothing (asked once, not for every taxiway segment)
+  if (shelter) { const N = Object.values(ap.nodes); if (door.some(d => N.some(n => U.dist(n, d) < 0.5))) return; }
   for (const q of ap.parts) {
     if (q.kind !== 'taxi' || q === part) continue;
     const splits = [];
@@ -1565,8 +1585,6 @@ IC.aptAutoJoin = function (ap, part) {
       const a = ap.nodes[q.nodes[i - 1]], b = ap.nodes[q.nodes[i]], L = U.dist(a, b);
       if (L < 0.2) continue;
       if (shelter) {
-        // already reachable from an existing node?
-        if (door.some(d => Object.values(ap.nodes).some(n => U.dist(n, d) < 0.5))) return;
         for (const d of door) {
           const f = U.clamp(((d.x - a.x) * (b.x - a.x) + (d.y - a.y) * (b.y - a.y)) / (L * L), 0.03, 0.97);
           const p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
@@ -1574,7 +1592,8 @@ IC.aptAutoJoin = function (ap, part) {
         }
         continue;
       }
-      // aprons: find stretches of the segment that run along the apron edge
+      // aprons: find stretches of the segment that run along the apron edge (none on a segment nowhere near it)
+      if (U.segDist(part.x, part.y, a.x, a.y, b.x, b.y) > Math.hypot(part.w, part.h) / 2 + 0.3) continue;
       const K = Math.max(4, Math.ceil(L / 0.25)), run = [];
       for (let k = 0; k <= K; k++) { const f = 0.03 + 0.94 * k / K, p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }; if (rectDist(part, p) < 0.14) run.push(f); }
       if (!run.length) continue;
@@ -1586,7 +1605,8 @@ IC.aptAutoJoin = function (ap, part) {
     splits.sort((p, r) => r.seg - p.seg || r.f - p.f);
     for (const s of splits) nodeFor(ap, { kind: 'taxi', part: q.id, seg: s.seg, x: s.x, y: s.y });
   }
-  IC.resolveNodes(ap);
+  // (later: the caller joins many parts and resolves the nodes once after)
+  if (!later) IC.resolveNodes(ap);
   ap.dirty = true;
 };
 /* plan a taxiway through a list of world points (each is snapped) */

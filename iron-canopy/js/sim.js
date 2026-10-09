@@ -24,6 +24,7 @@ IC.step = function (S, dt) {
   IC.waitTick(S, dt);
   IC.growth(S, dt);
   IC.civil(S, dt);
+  IC.genav(S, dt);
   IC.traffic(S, dt);
   IC.aviation(S, dt);
   IC.fatigue(S, dt);

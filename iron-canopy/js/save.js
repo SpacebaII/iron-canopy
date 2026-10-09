@@ -261,7 +261,7 @@ IC.saveGame = function (S, meta) {
 /* what the slot list shows */
 IC.saveMeta = function (S) {
   const act = S.story ? S.story.act : 0;
-  const what = S.mode === 'story' ? `Career · Act ${['', 'I', 'II', 'III', 'IV'][act] || act}` + (act === 1 && IC.CHAPTERS[S.story.ch] ? ` · ${IC.CHAPTERS[S.story.ch].title}` : '')
+  const what = S.free ? 'Free build' : S.mode === 'story' ? `Career · Act ${['', 'I', 'II', 'III', 'IV'][act] || act}` + (act === 1 && IC.CHAPTERS[S.story.ch] ? ` · ${IC.CHAPTERS[S.story.ch].title}` : '')
     : S.mode === 'campaign' ? 'Quick war' : S.mode === 'sandbox' ? 'Sandbox' : S.mode === 'academy' ? 'Academy' : S.mode === 'range' ? 'Test range' : S.mode;
   return { mode: S.mode, act, what, day: IC.U.day(S.time), cal: S.mode === 'story' ? IC.U.date(S.time) : null, clock: IC.U.hhmm(S.time), time: S.time, budget: Math.round(S.budget), date: Date.now() };
 };

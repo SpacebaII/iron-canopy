@@ -372,12 +372,31 @@ function showcaseBrief() {
     <p class="hint">Runways ${esc(rw)}. ${pv.gates} gates and ${pv.remote} remote stands; rated ${st.movesPerHour || 0} movements an hour.</p>
     <p class="hint">Today: ${(k.arr || 0) + (k.dep || 0)} movements, ${Math.round(ap.paxRate || 0).toLocaleString('en-US')} passengers an hour now. Scroll in to the gates; click a part to read what it does.</p>`;
 }
+/* Free build (wave 14): the switches, and how the airport on screen is doing */
+const onOff = (v, on, name, t) => `<button class="act tog ${on ? 'on' : ''}" data-act="freeSet" data-v="${v}" aria-pressed="${!!on}" title="${esc(t)}"><i></i>${name}</button>`;
+function freeBrief() {
+  const F = S.free, sel = S.sel && S.sel.ref, mine = b => b && b.kind === 'airport' && b.owner === 'us' && b.parts;
+  const ap = mine(sel) ? sel : S.byId[S.story.cap];
+  let h = `<h3 data-act="briefMin" title="Collapse or expand">Free build<em>no story, no limits</em></h3>`;
+  if (!ap) h += `<p class="hint">Found an airport anywhere in the country, then build it part by part from the build bar (B). Money does not run out and every part is open.</p><button class="btn" data-act="foundMode">Found an airport</button>`;
+  else {
+    const st = IC.aptStands(ap).filter(s => s.linked !== false), k = ap.kpi || {};
+    const based = S.av.tails.filter(t => { const r = IC.avRoute(S, t); return r && r.a === ap.id; }).length;
+    h += `<p class="hint">${esc(ap.name)}: ${based} airliner${based === 1 ? '' : 's'} based, ${st.filter(s => s.occ).length} of ${st.length} stands taken, ${(k.arr || 0) + (k.dep || 0)} movements today.</p>`;
+    if (F.why[ap.id]) h += `<p class="hint warn">${esc(F.why[ap.id])}</p>`;
+  }
+  if (ap) h += `<div class="acts"><button class="act ${ui.watch ? 'on' : ''}" data-act="watch" title="The camera goes from one aircraft to the next on its own. Drag the map to stop.">${ui.watch ? 'Stop watching' : `Watch ${esc(ap.name.replace(/ (International|Airport)$/, ''))}`}</button></div>`;
+  h += onOff('instant', F.instant, 'Instant building', 'Every part opens as soon as it is planned: no crews, materials or waiting.');
+  h += onOff('traffic', F.traffic, 'Airlines come by themselves', 'Airlines bring aircraft until the stands are full and the first holds start: build more and more come.');
+  return h;
+}
 /* ---------- situation: suggestions in the campaign, the lesson in the Academy ---------- */
 function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
   if (S.range) h = IC.rangePanel(S);
   else if (S.showcase) h = showcaseBrief();
+  else if (S.free) h = freeBrief();
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;

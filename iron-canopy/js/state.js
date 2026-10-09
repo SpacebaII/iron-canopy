@@ -102,6 +102,8 @@ function* gameSteps(opts) {
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
+  // (wave 14) Free build: the Career's country with no story (free.js)
+  if (story && opts.free) IC.freeInit(S);
   // (the showcase is the airport at work: no chapter cards, no goals, no guide)
   if (S.showcase) { S.budget = 1e6; S.camp.cards = []; S.camp.comms = []; S.camp.sched = []; S.story.goals = []; S.story.tut = false; S.camp.focus = { x: S.byId[S.story.cap].x, y: S.byId[S.story.cap].y, z: 0.5 }; }
   return S;

@@ -227,6 +227,26 @@ IC.followEnds = function (S) {
   return '';
 };
 
+/* (wave 14) Watch: the camera as a television director at one airport, from one aircraft to the next. What is
+   worth a look, best first: a landing, a take-off, a pushback, an aircraft taxiing, one being turned round with its
+   vehicles at work, one coming in from 30 km. Never the one just shown when there is another. */
+const WATCH = { final: 9, land: 9, rollout: 8, roll: 8, lineup: 7, push: 6, start: 5, taxi: 4, parkin: 5, hold: 3, wait: 2 };
+IC.watchPick = function (S, ap, last) {
+  if (!S.av || !ap) return null;
+  let best = null, bs = 0;
+  for (const tl of S.av.tails) {
+    if (tl.where === 'lost' || tl.where === 'away' || tl.where === 'hangar' || tl.id === last) continue;
+    const w = IC.tailWhere(S, tl); if (!w) continue;
+    let s = 0;
+    if (w.m && w.ap === ap) s = WATCH[w.m.phase] || 2;
+    else if (w.t && w.t.toApt === ap.id && U.dist(w.t, ap) < 300) s = 4 - U.dist(w.t, ap) / 150;
+    else if (w.s && w.ap === ap) s = tl.t > 0 && tl.t < 900 ? 3 : 1;
+    s += Math.random() * 0.8;
+    if (s > bs) { bs = s; best = tl; }
+  }
+  return best;
+};
+
 /* ---------- the first landing is an event ---------- */
 /* in the Career, the first airliner bound for one of our airports and 30 km out: the clock eases to 1× (Wait and
    skip stop), the camera follows it in; once parked, a card with its fees. Once a game. */

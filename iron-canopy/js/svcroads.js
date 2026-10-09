@@ -14,7 +14,7 @@
 const U = IC.U;
 const W = 0.075;   // a service road is 7.5 m wide: two lanes of airside vehicles
 IC.SVC_ROAD_W = W;
-const SPUR = { fuel: 1, cargo: 1, fire: 1, hangar: 1, tower: 1, atc: 1, gradar: 1, hydrant: 1, deice: 1, ammo: 1, has: 1 };
+const SPUR = { fuel: 1, cargo: 1, fire: 1, hangar: 1, tower: 1, atc: 1, gradar: 1, hydrant: 1, deice: 1, ammo: 1, has: 1, gaterm: 1 };
 
 /* what the network depends on: the pavement, the buildings it serves, the fence and the roads drawn by hand */
 function sig(ap) {
