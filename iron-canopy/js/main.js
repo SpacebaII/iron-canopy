@@ -158,11 +158,11 @@ function goFrame() {
     const plan = IC.bldReady(S, m);
     if (plan) {
       at = m.at || m.pts[m.pts.length - 1];
-      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch'].includes(m.part);
+      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch', 'savelay', 'extend'].includes(m.part);
       // (round 5c) the price and how long the crews take, for a piece or a blueprint too
       const dur = IC.planDur(m.ap, plan);
       const what = plan.bp || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
-      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? 'Build it (Enter)' : esc(plan.why || '')}">Build${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
+      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? (plan.sel ? 'Save it (Enter)' : 'Build it (Enter)') : esc(plan.why || '')}">${plan.sel ? 'Save layout' : 'Build'}${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
     }
   } else if (m && m.kind === 'bmove' && m.at) {
     at = m.at;
@@ -201,8 +201,8 @@ IC.fixOpen = function (S2, ap, part, near, size) {
   if (lock) { IC.toast(S2, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   IC.bb.ap = ap; IC.select({ kind: 'infra', ref: ap }); IC.bbToggle(true);
   const m = IC.fixPlan(S2, ap, part, near || ap, size);
-  if (!m) { IC.bbPick(part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
-  IC.bb.last = part; IC.setMode(m);
+  if (!m) { IC.bbPick(part === 'gates' ? 'apron' : part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
+  IC.bb.last = m.part; IC.setMode(m);
   const P = IC.PIECES && IC.PIECES[part];
   IC.flyTo(m.at.x, m.at.y, U.clamp(Math.max(IC.cam.z, P ? 6 : 9), 5, P ? 9 : 16));
   return true;
@@ -821,6 +821,7 @@ window.addEventListener('keydown', e => {
     if (!IC.pieceTurn(bm, 1, e.shiftKey)) bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12);
     IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return;
   }
+  if (bm && lk === 'f' && bm.part === 'mylayout') { bm.mirror = !bm.mirror; IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }

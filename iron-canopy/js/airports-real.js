@@ -179,7 +179,8 @@ IC.showcaseSetup = function (S, key) {
 /* the layout at x, y turned by rot, built into a scratch airport so it can be measured and checked */
 function scratch(ap, L, x, y, rot) {
   const t = { id: ap.id + 'bp', kind: 'airport', x, y, name: ap.name };
-  IC.aptFromLayout(t, L, { x, y, rot });
+  // (wave 13: a layout the player saved is its parts as they were, not map data)
+  if (L.snap) IC.layoutBuild(t, L, { x, y, rot }); else IC.aptFromLayout(t, L, { x, y, rot });
   return t;
 }
 /* can the blueprint go here: in the country, on dry land, clear of other airfields and of what the airport already

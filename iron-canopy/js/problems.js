@@ -9,8 +9,16 @@ const U = IC.U;
 const short = n => n.replace(/ (International|Airport|Field)$/, '');
 const rwMid = rw => ({ x: (rw.a.x + rw.b.x) / 2, y: (rw.a.y + rw.b.y) / 2 });
 const built = (ap, k) => ap.parts.filter(p => p.kind === k && p.built && p.hp > p.max * 0.25);
-const NEED_FIX = { hangar: 'hangar', stands: 'tstraight', gates: 'tstraight', pax: 'tstraight', cargoStands: 'cargoarea', cargoT: 'cargoarea', fuelDeps: 'fuel' };
-const FIX_WORD = { hangar: 'Build a hangar', tstraight: 'Build a terminal with stands', cargoarea: 'Build a cargo area', fuel: 'Build a fuel tank', fire: 'Build a fire station', ils: 'Build a landing system' };
+const PIECE_FIX = { hangar: 'hangar', stands: 'tstraight', gates: 'tstraight', pax: 'tstraight', cargoStands: 'cargoarea', cargoT: 'cargoarea', fuelDeps: 'fuel' };
+/* (wave 13) with the parts one by one (IC.FOCUS.parts), a fix places the one part that is missing: an apron for
+   stands (beside the terminal, for gates), a terminal for passengers, a cargo shed for cargo */
+const PART_FIX = { hangar: 'hangar', stands: 'apron', gates: 'gates', pax: 'terminal', cargoStands: 'apron', cargoT: 'cargo', fuelDeps: 'fuel' };
+const FIX_WORD = { hangar: 'Build a hangar', tstraight: 'Build a terminal with stands', cargoarea: 'Build a cargo area', fuel: 'Build a fuel tank', fire: 'Build a fire station', ils: 'Build a landing system',
+  apron: 'Build an apron', terminal: 'Build a terminal', cargo: 'Build a cargo shed', gates: 'Add gates beside the terminal' };
+/* the part a fix places for what is missing ('stands', 'pax', ...) */
+IC.fixPart = k => (IC.FOCUS && IC.FOCUS.parts ? PART_FIX : PIECE_FIX)[k];
+/* the size an area part is placed at by a fix, long side along the runway (w × h, 100 m units) */
+const FIX_AREA = { apron: { m: [3, 0.8], l: [3.2, 1.3] }, terminal: { m: [2, 0.8] }, cargo: { m: [1.6, 0.8] } };
 
 /* ---------- problems ----------
    Each: { id, kind, lvl ('bad' | 'warn' | 'deal'), x, y (where it happens), title, text, fix }. A fix is
@@ -26,10 +34,10 @@ IC.aptProblems = function (S, ap) {
   // arrivals circling because every stand that fits them is taken
   const wait = S.threats.filter(t => t.tail && !t.dead && t.toApt === ap.id && t.holding && t.standShort);
   if (wait.length) out.push({ id: ap.id + ':stand', kind: 'stand', lvl: 'bad', x: hub.x, y: hub.y, title: `${term ? term.name || 'Terminal' : 'Stands'}: ${wait.length} aircraft waiting for a stand`,
-    text: `${wait.map(t => t.tail.cs).slice(0, 3).join(', ')} ${wait.length > 1 ? 'are' : 'is'} circling: every stand that fits is taken. They divert after 25 minutes.`, fix: { part: 'tstraight', near: hub, label: 'Add a terminal with stands' } });
+    text: `${wait.map(t => t.tail.cs).slice(0, 3).join(', ')} ${wait.length > 1 ? 'are' : 'is'} circling: every stand that fits is taken. They divert after 25 minutes.`, fix: { part: IC.fixPart('stands'), near: hub, label: IC.fixPart('stands') === 'apron' ? 'Add an apron with stands' : 'Add a terminal with stands' } });
   // the terminal running full
   if (term && st.pax > 0 && (ap.paxRate || 0) > st.pax * 0.9) out.push({ id: ap.id + ':term', kind: 'term', lvl: 'warn', x: term.x, y: term.y, title: `Terminal full: ${Math.round(ap.paxRate).toLocaleString('en-US')} of ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`,
-    text: 'Boarding slows down and turnarounds run long. A second terminal doubles the room.', fix: { part: 'tstraight', near: term, label: 'Add a terminal' } });
+    text: 'Boarding slows down and turnarounds run long. A second terminal doubles the room.', fix: { part: IC.fixPart('pax'), near: term, label: 'Add a terminal' } });
   // departures waiting for fuel trucks, or no fuel at all
   const fuel = built(ap, 'fuel'), onStand = A ? A.tails.filter(t => t.at === ap.id && t.where === 'stand') : [];
   if (!fuel.length) out.push({ id: ap.id + ':nofuel', kind: 'fuel', lvl: 'bad', x: hub.x, y: hub.y, title: 'No fuel farm: departures cannot refuel', text: 'Airliners leave with what they brought, and airlines will not base aircraft here.', fix: { part: 'fuel', near: hub, label: 'Build a fuel farm' } });
@@ -78,7 +86,7 @@ IC.aptProblems = function (S, ap) {
     for (const d of A.deals) {
       // (round 4) a deal still in its grace that needs something the airport lacks: said up front, with the time left
       if (IC.FOCUS.progress && d.st === 'active' && !d.badT && S.time < d.grace && d.a === ap.id && !seen.has('grace:' + d.al)) {
-        const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps'), m = miss[0], part = m && NEED_FIX[m.k];
+        const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps'), m = miss[0], part = m && IC.fixPart(m.k);
         if (m && part) {
           const al = IC.avAirline(S, d.al), at = part === 'hangar' ? (aprons[0] || hub) : hub, what = m.text.replace(/^[^:]*?needs /, '').replace(/ \(\d+ of \d+\)$/, '');
           out.push({ id: 'grace:' + d.id, kind: 'deal', lvl: 'warn', x: at.x, y: at.y, deal: d.id, title: `${short(al.name)} needs ${what}`,
@@ -88,7 +96,7 @@ IC.aptProblems = function (S, ap) {
       }
       if (d.st !== 'active' || !d.badT || (d.a !== ap.id && d.b.apt !== ap.id)) continue;
       const al = IC.avAirline(S, d.al), miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps');
-      const m = miss[0], part = m && NEED_FIX[m.k], left = Math.max(0, 12 * 3600 - (S.time - d.badT));
+      const m = miss[0], part = m && IC.fixPart(m.k), left = Math.max(0, 12 * 3600 - (S.time - d.badT));
       const what = m ? m.text.replace(/^[^:]*?needs /, '').replace(/ \(\d+ of \d+\)$/, '') : 'what it signed for';
       const at = part === 'hangar' ? (aprons[0] || hub) : hub;
       // (two deals of one airline short of the same thing are one problem)
@@ -102,10 +110,10 @@ IC.aptProblems = function (S, ap) {
     for (const q of A.requests) {
       if (q.a !== ap.id && !(q.b && q.b.apt === ap.id)) continue;
       const al = IC.avAirline(S, q.al), T = IC.ACTYPES[q.type], k = q.terms && IC.dealTerms(S, q), b = IC.avEnd(S, q.b);
-      const block = IC.avReqBlock(S, q), miss = block && IC.dealNeeds(S, q).find(x => !x.ok), need = miss && (miss.k === 'take' ? (/stand/.test(miss.text) ? 'tstraight' : /fire/.test(miss.text) ? 'fire' : null) : NEED_FIX[miss.k]);
+      const block = IC.avReqBlock(S, q), miss = block && IC.dealNeeds(S, q).find(x => !x.ok), need = miss && (miss.k === 'take' ? (/stand/.test(miss.text) ? IC.fixPart(/terminal|gate/.test(miss.text) ? 'gates' : 'stands') : /fire/.test(miss.text) ? 'fire' : null) : IC.fixPart(miss.k));
       out.push({ id: 'offer:' + q.id, kind: 'offer', lvl: 'deal', x: hub.x, y: hub.y, req: q.id, title: `${q.renew ? 'Renewal' : 'Offer'}: ${short(al.name)}, ${q.n} × ${T.short || T.name} to ${short(b.name)}`,
         text: `${k ? `${U.money(k.value)} a day for ${IC.dealLen(S, k.days)}. ` : ''}${block ? `It will not sign yet: ${block}.` : 'Ready to sign.'} Decide within ${U.dur(Math.max(0, q.exp - S.time))}.`,
-        fix: need ? { part: need, near: need === 'hangar' ? (aprons[0] || hub) : need === 'fire' ? rwMid(rws[0]) : hub, label: need === 'tstraight' && T.stand === 'l' ? 'Build wide-body gates' : FIX_WORD[need] || 'Build it', size: T.stand === 'l' ? 'l' : null }
+        fix: need ? { part: need, near: need === 'hangar' ? (aprons[0] || hub) : need === 'fire' ? rwMid(rws[0]) : hub, label: (need === 'tstraight' || need === 'apron' || need === 'gates') && T.stand === 'l' ? (need === 'apron' ? 'Build an apron for wide-bodies' : 'Build wide-body gates') : FIX_WORD[need] || 'Build it', size: T.stand === 'l' ? 'l' : null }
           : { deal: q.id, label: block ? 'See what it needs' : 'Read and sign' } });
     }
   }
@@ -115,30 +123,43 @@ IC.aptProblems = function (S, ap) {
 /* ---------- the fix: a build piece placed where it helps ----------
    Tries places round the point, nearest first, in the frame of the runway, and keeps the first the builder
    accepts (the same check as the Build button). Returns the build mode (S.mode2) ready to Build, or null. */
-IC.fixPlan = function (S, ap, part, near, size) {
+IC.fixPlan = function (S, ap, part, near, size, flush) {
+  // (wave 13) gates: an apron flush against a terminal, or failing that a terminal along an apron's edge
+  if (part === 'gates') return IC.fixPlan(S, ap, 'apron', near, size, true) || IC.fixPlan(S, ap, 'terminal', near, null, true);
   if (!ap || !IC.APART[part] && !(IC.PIECES && IC.PIECES[part])) return null;
   const m = IC.bldMode(S, ap, part), a = ap.rwyA || 0, ca = Math.cos(a), sa = Math.sin(a);
   if (size) m.size = size;
   // a landing system goes on the runway end itself
   if (part === 'ils') { m.set = true; m.at = { x: near.x, y: near.y }; m.tol = 0.12; return m; }
+  // an area part: its two corners round each place tried, square to the runway
+  const A = FIX_AREA[part], dim = A && (A[size] || A.m);
+  const put = A ? (m, c) => { const r = c.rot != null ? c.rot : a, cr = Math.cos(r), sr = Math.sin(r); m.rot = r; m.pts = [{ x: c.x - (dim[0] / 2) * cr + (dim[1] / 2) * sr, y: c.y - (dim[0] / 2) * sr - (dim[1] / 2) * cr }]; m.at = { x: c.x + (dim[0] / 2) * cr - (dim[1] / 2) * sr, y: c.y + (dim[0] / 2) * sr + (dim[1] / 2) * cr }; }
+    : (m, c) => { m.at = { x: c.x, y: c.y }; };
   // (fuel keeps 100 m from other fuel: one fire must not take them all)
-  const P = IC.PIECES && IC.PIECES[part], step = P ? 4 : part === 'hangar' ? 1.6 : part === 'fuel' ? 1.8 : 1.1;
+  const P = IC.PIECES && IC.PIECES[part], step = P ? 4 : A ? Math.max(1.1, dim[1] + 0.2) : part === 'hangar' ? 1.6 : part === 'fuel' ? 1.8 : 1.1;
   // (the treasury is not the question here: the Build button says if it cannot be paid)
   const budget = S.budget; S.budget = Math.max(S.budget, 1e9);
   try {
     const cand = [];
-    for (let r = 1; r <= 7; r++) for (let k = 0; k < 8 * r; k++) { const t = k / (8 * r) * Math.PI * 2, u = Math.cos(t) * r * step, v = Math.sin(t) * r * step; cand.push({ x: near.x + u * ca - v * sa, y: near.y + u * sa + v * ca, d: r }); }
+    // an apron goes flush against a terminal's side first, so its stands get gates (and a terminal along an apron)
+    if (part === 'terminal' && flush) for (const q of ap.parts.filter(q => q.kind === 'apron' && q.x != null).sort((p, q) => U.dist(p, near) - U.dist(q, near)))
+      for (const sd of [1, -1]) for (const u of [0, 0.25, -0.25, 0.5, -0.5]) cand.push(Object.assign(IC.rectWorld(q, u * (q.w - dim[0]), sd * (q.h / 2 + dim[1] / 2 + 0.01)), { rot: q.a || 0 }));
+    if (part === 'apron') for (const tm of ap.parts.filter(q => q.kind === 'terminal' && q.x != null).sort((p, q) => U.dist(p, near) - U.dist(q, near))) {
+      for (const sd of [1, -1]) for (const u of [0, 0.5, -0.5, 1, -1, 1.5, -1.5]) cand.push(Object.assign(IC.rectWorld(tm, u * dim[0], sd * (tm.h / 2 + dim[1] / 2 + 0.01)), { rot: tm.a || 0 }));
+      for (const sd of [1, -1]) cand.push(Object.assign(IC.rectWorld(tm, sd * (tm.w / 2 + dim[1] / 2 + 0.01), 0), { rot: (tm.a || 0) + Math.PI / 2 }));
+    }
+    if (!flush) for (let r = 1; r <= 7; r++) for (let k = 0; k < 8 * r; k++) { const t = k / (8 * r) * Math.PI * 2, u = Math.cos(t) * r * step, v = Math.sin(t) * r * step; cand.push({ x: near.x + u * ca - v * sa, y: near.y + u * sa + v * ca, d: r }); }
     // the nearest place the builder accepts with nothing to warn about; failing that, the nearest it accepts
     let fall = null;
     for (const c of cand) {
-      m.set = true; m.at = { x: c.x, y: c.y }; m.tol = 0.12; m.free = false; m._readyK = null; m._ppK = null; m._pcK = null;
+      m.set = true; put(m, c); m.tol = 0.12; m.free = false; m._readyK = null; m._ppK = null; m._pcK = null;
       const out = IC.bldPlanOf(S, m, m.at, 0.12, false);
       if (!out.ok) continue;
       const bad = (out.warn || []).concat(out.text || []).some(w => /within 100 m|strip|not connected|No taxiway near/.test(w));
       if (!bad && !(out.warn || []).length) { m.fix = true; return m; }
-      if (!fall && !bad) fall = { x: c.x, y: c.y };
+      if (!fall && !bad && !flush) fall = c;
     }
-    if (fall) { m.at = fall; m._readyK = null; m._ppK = null; m._pcK = null; m.fix = true; return m; }
+    if (fall) { put(m, fall); m._readyK = null; m._ppK = null; m._pcK = null; m.fix = true; return m; }
   } finally { S.budget = budget; }
   return null;
 };

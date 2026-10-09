@@ -251,6 +251,13 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // zoom, the most important first and none over another (IC.aptLabels)
   for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) if (IC.LBL.put(L.x, L.y, L.box[2] - L.box[0], (L.box[3] - L.box[1]) / 1.3, 0, 0, true) != null) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700);
   // only jobs a crew is on: the rest of the queue is just its outline
+  // (wave 13) a runway's new length: bare earth, then pavement once the paving has started
+  for (const w of ap.works) if (w.seg) {
+    const s = w.seg, k = w.stages[Math.min(w.si, w.stages.length - 1)].k, paved = k !== 'demo' && k !== 'survey' && k !== 'earth';
+    g.save(); g.lineCap = 'butt'; g.strokeStyle = paved ? 'rgba(112,112,108,0.95)' : w.si > 0 || w.t > 0 ? 'rgba(150,118,82,0.75)' : 'rgba(242,201,76,0.35)';
+    g.lineWidth = s.w || IC.APART.runway.w; if (!paved && !(w.si > 0 || w.t > 0)) g.setLineDash([6 * px, 4 * px]);
+    g.beginPath(); g.moveTo(s.a.x, s.a.y); g.lineTo(s.b.x, s.b.y); g.stroke(); g.restore();
+  }
   for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
   // repairs
   for (const w of ap.works) {
@@ -1446,12 +1453,12 @@ const MACHINE = {
 /* an engineer crew: machines at the working front, moving while they work, parked while they wait; dump and
    concrete lorries shuttle between the front and the site gate */
 function drawCrew(g, S, ap, w, px, now) {
-  const p = w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
+  const p = w.seg || w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
   const busy = !w.wait, cols = MACHINE[st.k] || MACHINE.fit;
   // a stalled site: the machines stand idle at the front, marked amber
   if (!busy && !(w.si > 0 || w.t > 0)) return;
   // the front: where the grading, paving, painting or wiring has got to; the inspection drives up and down
-  const front = st.k === 'open' ? 0.5 + 0.4 * Math.sin(now * 0.3 + p.x) : f;
+  const front = st.k === 'open' ? 0.5 + 0.4 * Math.sin(now * 0.3 + (p.x || 0)) : f;
   const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
   const mw = Math.max(0.1, 7 * px), mh = mw * 0.55;
   const box = (x, y, hd, c, L) => { g.save(); g.translate(x, y); g.rotate(hd); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw * L / 2 + 0.01, -mh / 2 + 0.01, mw * L, mh); g.fillStyle = c; g.fillRect(-mw * L / 2, -mh / 2, mw * L, mh); g.restore(); };
@@ -1528,6 +1535,14 @@ IC.drawBuildGhost = function (g, S, px) {
   if (!ok && plan.hit) drawHit(g, m.ap, plan.hit, px);
   // a blueprint: the whole airport where it would go
   if (plan.bp && plan.bp.t) drawBlueprint(g, plan.bp.t, col, fill, px);
+  // (wave 13) Save layout: the box, and what it would keep outlined
+  if (plan.sel) {
+    const B = plan.sel.box, c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(B, sx * B.w / 2, sy * B.h / 2));
+    g.save(); g.strokeStyle = '#f2c94c'; g.lineWidth = 1.6 * px; g.setLineDash([7 * px, 4 * px]); g.beginPath(); c.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); g.setLineDash([]);
+    g.fillStyle = 'rgba(242,201,76,0.08)'; g.fill();
+    for (const p of plan.sel.parts) if (p.kind !== 'ils') drawHit(g, m.ap, p, px, '#f2c94c', 'rgba(242,201,76,0.18)');
+    g.restore();
+  }
   // a piece's links to the taxiways it joins, and the stands it brings (round 1)
   if (plan.piece) {
     g.save(); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.05, 2.5 * px); g.setLineDash([6 * px, 4 * px]);

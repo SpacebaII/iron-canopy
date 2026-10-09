@@ -886,12 +886,14 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .bb-top{display:flex;align-items:center;gap:.5rem;min-width:0}
 .bb-apt{font-family:var(--display);font-weight:600;font-size:.95rem;letter-spacing:.04em;white-space:nowrap;max-width:11rem;overflow:hidden;text-overflow:ellipsis;padding-left:.2rem}
 .bb-apt.amber{color:var(--amber)}
-.bb-tabs{display:flex;flex-wrap:wrap;gap:2px;flex:1;min-width:0}
+.bb-tabs{display:flex;flex-wrap:nowrap;gap:1px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.bb-tabs::-webkit-scrollbar{display:none}
 .bb-row{display:flex;gap:.5rem;min-width:0}
 .bb-tabs button,.bb-tools button{display:flex;align-items:center;gap:.3rem;padding:.3rem .5rem;border-radius:10px;color:var(--muted);font-size:.82rem;font-weight:600;white-space:nowrap;transition:background .15s,color .15s}
 .bb-tabs button:hover,.bb-tools button:hover{background:var(--well-2);color:var(--text)}
 .bb-tabs button.on{background:rgba(111,210,255,.2);color:var(--friend)}
-.bb-tabs kbd{font-family:var(--mono);font-size:.62rem;color:var(--dim)}
+.bb-tabs kbd{display:none}
+.bb-tabs button{padding:.3rem .42rem;flex:none}
 .bbar .ico{width:1.15rem;height:1.15rem;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .bb-tools{display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:2px;border-right:1px solid rgba(255,255,255,.08);padding-right:.45rem;flex:none}
 .bb-tools button.on{background:rgba(242,180,65,.2);color:var(--amber)}

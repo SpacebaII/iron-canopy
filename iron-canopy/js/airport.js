@@ -151,6 +151,18 @@ function placeILS(ap, part) {
   const d = rwDir(rw), far = part.end === 'a' ? rw.b : rw.a, s = part.end === 'a' ? 1 : -1;
   part.x = far.x + d.x * s * 3; part.y = far.y + d.y * s * 3; part.a = Math.atan2(d.y, d.x) + Math.PI / 2;
 }
+/* (wave 13) a runway's end moved out to a new place: the nodes on it, its craters and its landing systems follow,
+   and any taxiway end now on its centreline joins it */
+IC.rwExtend = function (ap, rw, e, to) {
+  const cr = rw.craters.map(c => ({ c, p: rwAt(rw, c.t) }));
+  rw[e] = { x: to.x, y: to.y };
+  for (const x of cr) x.c.t = U.clamp(rwT(rw, x.p), 0, 1);
+  for (const n of Object.values(ap.nodes)) if (n.on && n.on.kind === 'rwy' && n.on.part === rw.id) n.on.t = U.clamp(rwT(rw, n), 0, 1);
+  resolveFor(ap, rw);
+  for (const p of ap.parts) if (p.kind === 'ils' && p.rw === rw.id) placeILS(ap, p);
+  ap.dirty = true; ap.cfg = null;
+  IC.aptExtent(ap);
+};
 /* how big a part is, for costs and build time */
 IC.partMeasure = function (ap, p) {
   const D = IC.APART[p.kind];
@@ -1398,7 +1410,8 @@ IC.updateBases = function (S, dt) {
       if (w.prog < 1) continue;
       w.done = true;
       IC.bldRelease(b, w);
-      if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
+      if (w.kind === 'upgrade' && w.ext) { IC.rwExtend(b, w.part, w.ext.end, w.ext); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.name} extended, now ${U.km(IC.rwLen(w.part))} long.`, IC.rwAt(w.part, w.ext.end === 'a' ? 0 : 1)); IC.emit(S, 'aptBuilt', { ap: b, part: w.part }); }
+      else if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
       else if (w.kind === 'build') {
         const before = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
