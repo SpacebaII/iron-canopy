@@ -1,5 +1,5 @@
 /* The Career's balance run: a scripted player (careerplayer.js) through all four acts. Prints the date each
-   chapter and act starts, a line a month (treasury, income and costs, airlines, passengers), and at the end the
+   chapter and act starts, each policy on the Ministry's agenda as it passes, a line a month (treasury, income and costs, airlines, passengers), and at the end the
    timeline with real playing times at normal and fast speeds.
    node storytest.js [seed] [max years] [act to stop at]      QUIET=1 hides the log lines, SAVE=file.json saves the
    game at the end (tools/calendar-shots.js takes its pictures from such a save)
@@ -17,7 +17,7 @@ if (process.env.LOAD) S.story.grant = S.story.grant0 = IC.ACTS[S.story.act].gran
 const st = S.story, t0 = 7 * 3600, MO = IC.MO(S);
 const logs = [];
 const origLog = IC.log;
-IC.log = function (S2, kind, tag, msg, at) { if (['GOAL', 'MAYDAY', 'DECISION', 'AIRSPACE', 'MIN', 'PM', 'INT', 'GOV'].includes(tag) && !quiet) logs.push(`${U.clock(S2.time)} [${tag}] ${msg}`); return origLog(S2, kind, tag, msg, at); };
+IC.log = function (S2, kind, tag, msg, at) { if (['GOAL', 'AGENDA', 'MAYDAY', 'DECISION', 'AIRSPACE', 'MIN', 'PM', 'INT', 'GOV'].includes(tag) && !quiet) logs.push(`${U.clock(S2.time)} [${tag}] ${msg}`); return origLog(S2, kind, tag, msg, at); };
 const mo = t => (t - t0) / MO;
 const stamp = t => `${U.date(t)} (+${mo(t).toFixed(1)} months)`;
 const marks = [];   // { what, t }

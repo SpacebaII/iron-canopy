@@ -279,7 +279,7 @@ function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
   const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research');
   const req = S.av && S.av.requests.length;
-  const staffDot = S.story && (S.story.events.length || (S.story.cp > 0 && !IC.civilAct(S)));
+  const staffDot = S.story && (S.story.events.length || (S.story.cp > 0 && !IC.civilAct(S)) || (IC.agendaIdle && IC.agendaIdle(S)));
   const dot = k => ui.fresh.has('room:' + k) ? '<span class="dot new">New</span>'
     : k === 'journal' && hot ? '<span class="dot"></span>' : k === 'research' && idle ? '<span class="dot amb" title="A research slot is free"></span>'
     : k === 'aviation' && req ? `<span class="dot n civ">${req}</span>` : k === 'staff' && staffDot ? '<span class="dot amb"></span>' : '';

@@ -5472,6 +5472,135 @@ test('research: modifiers add up from their sources, are capped, and say where t
   } finally { IC.MOD_SRC.splice(IC.MOD_SRC.indexOf(src), 1); }
 });
 
+/* ---------- brief 49: the Ministry's agenda ---------- */
+/* play a policy through: m minutes of play at speed sp (the play clock) */
+const agPlay = (S, m, sp) => { S.speed = sp || 4; const n = Math.ceil(m * 60 * IC.GS * S.speed / 8); for (let i = 0; i < n && !S.over; i++) IC.step(S, 8); };
+test('agenda: a new Career shows the agenda on day one, and a policy passes in a few minutes of play and changes what the numbers say', () => {
+  const S = IC.newGame({ seed: 4901, mode: 'story', hour: 7 }); IC.S = S;
+  assert(IC.agendaIdle(S), 'nothing to put forward on day one');
+  assert(IC.agendaWhy(S, 'authority') === '' && /first/.test(IC.agendaWhy(S, 'openSkies')), 'the first policy is not open, or the second does not need it');
+  assert(IC.agendaStart(S, 'authority') === '', 'the first policy did not start');
+  assert(!IC.agendaIdle(S), 'the rail still says the agenda is idle');
+  agPlay(S, 4);
+  assert(!IC.agendaDone(S, 'authority'), 'passed in 4 minutes of a 5-minute policy');
+  agPlay(S, 1.2);
+  assert(IC.agendaDone(S, 'authority') && !S.story.agenda.cur, 'not passed after 5 minutes of play');
+  assert(Math.abs(IC.mod(S, 'grant') - 1.1) < 1e-9, `the grant share is ${IC.mod(S, 'grant')}`);
+  assert(/\+10% from the Ministry/.test(IC.modNote(S, 'grant')) && IC.modWhy(S, 'grant')[0].why === 'A civil aviation authority', `the note says "${IC.modNote(S, 'grant')}"`);
+  assert(S.logs.some(l => l.tag === 'AGENDA' && /passed/.test(l.msg)) && S.camp.cards.some(c => c.kind === 'policy' && c.title === 'A civil aviation authority'), 'no log line or card when it passed');
+  // its words in the Guide, from Chapter 1
+  assert(IC.guideFor(S).now.concat(IC.guideFor(S).past).some(g => g.id === 'agenda'), 'no Guide lesson on the agenda in Chapter 1');
+}, true);
+test('agenda: an exclusive pair rules the other out, and starting another drops the one in progress', () => {
+  const S = IC.newGame({ seed: 4902, mode: 'story', hour: 7 }); IC.S = S;
+  IC.agendaPass(S, 'authority');
+  const b0 = S.budget;
+  assert(IC.agendaStart(S, 'flag') === '' && Math.abs(S.budget - (b0 - 20)) < 1e-6, 'starting it did not cost ₭20M');
+  agPlay(S, 3);
+  assert(IC.agendaStart(S, 'openSkies') === '', 'could not swap');
+  assert(S.story.agenda.cur.id === 'openSkies' && S.story.agenda.cur.p === 0 && !IC.agendaDone(S, 'flag'), 'the swap kept the old policy or its progress');
+  agPlay(S, 8.2);
+  assert(IC.agendaDone(S, 'openSkies'), 'Open skies did not pass');
+  assert(/Ruled out/.test(IC.agendaWhy(S, 'flag')) && IC.agendaStart(S, 'flag') !== '' && !S.story.agenda.cur, 'the flag carrier could still be started');
+  assert(IC.agendaWhy(S, 'hub') === '' && IC.agendaWhy(S, 'regional') === '', 'what needs either side of the pair did not open');
+}, true);
+test('agenda: passed policies and the one in progress survive save and load', () => {
+  const S = IC.newGame({ seed: 4903, mode: 'story', hour: 7 }); IC.S = S;
+  for (const id of ['authority', 'fast', 'safety']) IC.agendaPass(S, id);
+  IC.agendaStart(S, 'handling'); agPlay(S, 2);
+  const { S2 } = saveAndPlayOn(S, 0.02);
+  const A = S2.story.agenda;
+  assert(['authority', 'fast', 'safety'].every(id => A.done.has(id)) && A.closed.has('toLast'), 'passed or ruled-out policies were lost');
+  assert(A.cur && A.cur.id === 'handling' && A.cur.p > 1.5, 'the policy in progress was lost');
+  assert(Math.abs(IC.mod(S2, 'buildSpeed') - 1.2) < 1e-9 && Math.abs(IC.mod(S2, 'fireTime') - 0.9) < 1e-9, 'the shares did not come back with the save');
+}, true);
+test('agenda: Wait does not pass a policy faster than play', () => {
+  const S = IC.newGame({ seed: 4904, mode: 'story', hour: 7 }); IC.S = S;
+  IC.agendaStart(S, 'authority');
+  const W = () => ({ key: 'x', what: 'test', amt: 1e9, speed: IC.WAIT.speed, m0: S.cal.m, t0: S.time });
+  for (let i = 0; i < IC.MO(S, 1) / 8; i++) { if (!S.wait) S.wait = W(); IC.step(S, 8); }
+  S.wait = null;
+  const p = S.story.agenda.cur ? S.story.agenda.cur.p : 99;
+  assert(!IC.agendaDone(S, 'authority') && Math.abs(p - IC.MO(S, 1) / IC.GS / IC.WAIT.speed / 60) < 0.05, `a month of Wait gave ${p.toFixed(2)} min of play`);
+}, true);
+test('agenda: every policy has words, a pace of 5 to 12 minutes, keys that exist and pairs that point at each other', () => {
+  const K = ['offerKind', 'dealLen', 'flagFlex', 'flagDrift', 'cityAsk', 'adCost', 'handover', 'warDrift', 'tension'];
+  assert(IC.AGENDA.length >= 28 && IC.AGENDA.length <= 34, `${IC.AGENDA.length} policies`);
+  for (const a of [1, 2, 3]) assert(IC.AGENDA.filter(p => p.act === a).length >= 8, `few policies in Act ${a}`);
+  for (const p of IC.AGENDA) {
+    assert(p.min >= 5 && p.min <= 12 && p.d.length > 30 && !/!/.test(p.d), `${p.id}: pace or words`);
+    for (const k in p.fx || {}) assert(IC.MOD_WORDS[k], `${p.id}: ${k} is not a modifier key`);
+    for (const k in p.k || {}) assert(K.includes(k), `${p.id}: ${k} is read nowhere`);
+    if (p.excl) assert(IC.agendaById(p.excl).excl === p.id, `${p.id}: its pair does not point back`);
+    for (const r of p.req) assert(IC.agendaById(r) && IC.agendaById(r).act <= p.act, `${p.id}: needs ${r}`);
+  }
+  assert(IC.AGENDA.filter(p => p.excl).length / 2 >= 3, 'fewer than three pairs');
+});
+test('agenda: each named change does what its policy says', () => {
+  const S = IC.newGame({ seed: 4905, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const al = k => S.av.airlines.find(a => k === 'foreign' ? a.K.foreign : a.kind === k);
+  const flag = al('flag'), A = IC.agendaState(S);
+  // flag carrier: longer deals and more over list
+  const q = { id: 'rqT', al: flag.id, a: S.byId[flag.hub].id, b: { name: 'Abroad', x: 0, y: 0 }, type: IC.avFleetOf(flag)[0], n: 1, t: S.time };
+  const rnd = Math.random; Math.random = () => 0.5;
+  try {
+    IC.avMakeTerms(S, q); const d0 = q.terms.days, f0 = q.terms.flex;
+    A.done.add('flag'); IC.modDirty(S);
+    IC.avMakeTerms(S, q);
+    assert(q.terms.days === Math.round(d0 * 1.5) && Math.abs(q.terms.flex - f0 - 0.08) < 1e-9, `flag terms ${d0}→${q.terms.days} months, flex ${f0}→${q.terms.flex}`);
+  } finally { Math.random = rnd; }
+  assert(IC.agendaMul(S, 'offerKind', al('foreign') || { K: { foreign: true } }) === 0.5, 'foreign airlines offer as often');
+  A.done.delete('flag'); A.done.add('openSkies');
+  assert(IC.agendaMul(S, 'offerKind', { K: {}, kind: 'budget' }) === 1.8 && IC.agendaMul(S, 'offerKind', flag) === 1, 'Open skies does not favour low-cost airlines');
+  // a city asks for an airport with fewer people waiting under A regional network
+  A.done.add('regional');
+  assert(Math.abs(IC.agendaMul(S, 'cityAsk') - 0.7) < 1e-9, 'cityAsk');
+  // Act III: the air defence costs less under dual use, and the military hands over one more battery
+  A.done.add('dual');
+  IC.storyStartAct(S, 3);
+  assert(S.reserve.shorad === 3, `${S.reserve.shorad} short-range batteries handed over`);
+  IC.economy(S, 1); const up1 = S.ledger.upAD;
+  A.done.delete('dual'); IC.economy(S, 1); const up0 = S.ledger.upAD;
+  assert(up0 > 0 && Math.abs(up1 - up0 * 0.8) < 1e-6, `air defence ${up0.toFixed(2)} → ${up1.toFixed(2)} an hour`);
+  // tension builds slower with the skies closed early; the war's fall softer while the airlines fly
+  const t0 = S.tension; IC.storyRaise(S, 10); const plain = S.tension - t0;
+  A.done.add('closeSkies'); const t1 = S.tension; IC.storyRaise(S, 10);
+  assert(Math.abs(S.tension - t1 - plain * 0.75) < 1e-9, 'tension rose as fast');
+  A.done.add('keepFlying'); S.airspace = 'open';
+  assert(IC.agendaMul(S, 'warDrift') === 0.7, 'warDrift open'); S.airspace = 'closed'; assert(IC.agendaMul(S, 'warDrift') === 1, 'warDrift closed');
+});
+test('agenda: Access to the banks opens loans before Chapter 5, and the lock says so before it passes', () => {
+  const S = IC.newGame({ seed: 4906, mode: 'story', hour: 7 }); IC.S = S;
+  assert(/Access to the banks/.test(IC.storyLock(S, 'loans')), `the lock does not name the policy: ${IC.storyLock(S, 'loans')}`);
+  IC.agendaPass(S, 'authority'); IC.agendaPass(S, 'banks');
+  assert(IC.storyLock(S, 'loans') === '' && IC.storyLock(S, 'roads') !== '', 'loans still locked, or roads opened too');
+  // Open skies: the flag carrier's satisfaction slips a month at a time
+  const S2 = IC.newGame({ seed: 4906, mode: 'story', preset: 'network', hour: 7, dpm: 0.25 }); IC.S = S2;
+  const flag = S2.av.airlines.find(a => a.kind === 'flag');
+  IC.agendaPass(S2, 'authority'); IC.agendaPass(S2, 'openSkies');
+  const m0 = S2.cal.m; let drop = 0;
+  for (let i = 0; S2.cal.m === m0 && i < 1e5; i++) { const s = flag.sat; IC.step(S2, 8); if (S2.cal.m !== m0) drop = s - flag.sat; }
+  assert(drop >= 0.99, `the flag carrier lost ${drop.toFixed(2)} at the month's turn`);
+}, true);
+test('agenda: the scripted player finishes Act I on either side of each pair', () => {
+  const CP = require('../careerplayer.js');
+  const out = [];
+  try {
+    for (const side of [0, 1]) {
+      CP.AGENDA.side = side;
+      const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7, dpm: 0.25 }); IC.S = S;
+      const st = S.story, t0 = S.time;
+      for (let i = 0; S.time - t0 < IC.MO(S, 84) && st.act === 1 && !S.over; i++) { IC.step(S, 4); if (i % 16 === 0) CP.player(S); }
+      const done = [...st.agenda.done];
+      out.push(`side ${side}: ${done.join(' ')}`);
+      assert(!S.over && st.act === 2, `side ${side}: still in Act I after seven years (${out.join('; ')})`);
+      for (const p of IC.AGENDA.filter(x => x.act === 1 && x.excl)) assert(done.includes(p.id) === (CP.AGENDA.side === (IC.AGENDA.indexOf(p) < IC.AGENDA.indexOf(IC.agendaById(p.excl)) ? 0 : 1)), `side ${side}: ${p.id} (${out.join('; ')})`);
+      const yrs = (st.actT - t0) / IC.YR(S);
+      assert(yrs * 12 >= (IC.FOCUS.progress ? IC.ACT1_MIN_MO_F : IC.ACT1_MIN_MO), `side ${side}: Act I lasted ${yrs.toFixed(1)} years`);
+    }
+  } finally { CP.AGENDA.side = 0; }
+}, 'long');
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */
