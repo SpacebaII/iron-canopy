@@ -19,6 +19,10 @@ const logs = [];
 const origLog = IC.log;
 IC.log = function (S2, kind, tag, msg, at) { if (['GOAL', 'MAYDAY', 'DECISION', 'AIRSPACE', 'MIN', 'PM', 'INT', 'GOV'].includes(tag) && !quiet) logs.push(`${U.clock(S2.time)} [${tag}] ${msg}`); return origLog(S2, kind, tag, msg, at); };
 const mo = t => (t - t0) / MO;
+// (brief 48) research started and finished, as they happen, and idle slot time a month
+const rlog = [];
+IC.on((S2, type, id) => { if (S2 === S && (type === 'research' || type === 'researchStart')) { const t = IC.techById(id); rlog.push(`${U.date(S2.time)} research ${type === 'research' ? 'done' : 'started'}: ${t.name} (${U.money(t.cost)}, ${t.pm || '?'} min)`); } });
+let idleS = 0, slotS = 0;
 const stamp = t => `${U.date(t)} (+${mo(t).toFixed(1)} months)`;
 const marks = [];   // { what, t }
 let chSeen = process.env.LOAD ? st.ch : -1, actSeen = st.act, wall = Date.now(), lastM = S.cal.m;
@@ -33,14 +37,17 @@ while (mo(S.time) < years * 12 && !S.over && st.act < stopAct) {
   IC.step(S, dt);
   const us = Number(process.hrtime.bigint() - c0) / 1000, T = dt === 8 ? tm.w : tm.f; T.n++; T.us += us; tm.mw.n += dt === 8 ? 1 : 0; tm.mw.us += dt === 8 ? us : 0;
   if (S.time >= nextP) { player(S); nextP = S.time + 64; }
+  slotS += S.tech.slots.length * dt; idleS += S.tech.slots.filter(x => !x).length * dt;
   if (st.act === 1 && st.ch !== chSeen) { chSeen = st.ch; marks.push({ what: `Chapter ${st.ch + 1} ${IC.CHAPTERS[st.ch].title}`, t: S.time, ch: st.ch }); console.log(`\n=== ${stamp(S.time)} Chapter ${st.ch + 1}: ${IC.CHAPTERS[st.ch].title}`); }
-  if (st.act !== actSeen) { actSeen = st.act; if (process.env.SAVE) require('fs').writeFileSync(process.env.SAVE.replace(/\.json$/, `-act${st.act}.json`), JSON.stringify(IC.saveGame(S))); marks.push({ what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title}`, t: S.time, act: st.act }); console.log(`\n=== ${stamp(S.time)} ${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`); }
+  if (st.act !== actSeen) { actSeen = st.act; if (process.env.SAVE) require('fs').writeFileSync(process.env.SAVE.replace(/\.json$/, `-act${st.act}.json`), JSON.stringify(IC.saveGame(S))); marks.push({ what: `${IC.ACTS[st.act].name} ${IC.ACTS[st.act].title}`, t: S.time, act: st.act, research: IC.TECH.filter(t => IC.techCivil(t) && S.tech.done.has(t.id)).length }); console.log(`\n=== ${stamp(S.time)} ${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`); }
   if (S.cal.m !== lastM) {
     lastM = S.cal.m;
     if (tm.mw.n) { const ms = tm.mw.us / tm.mw.n / 1000; if (ms > tm.worst.ms) tm.worst = { ms, when: U.date(S.time - 1), flights: S.threats.filter(t => t.tail && !t.dead).length }; } tm.mw = { n: 0, us: 0 };
     const A = S.av, aps = IC.bases(S).filter(b => b.kind === 'airport' && b.owner === 'us'), m1 = IC.monthStatement(S, 1);
-    console.log(`${U.date(S.time).padEnd(20)} ${U.money(S.budget).padStart(9)}  month ${m1 ? (m1.net >= 0 ? '+' : '') + Math.round(m1.net) : '?'} (in ${m1 ? Math.round(m1.income) : '?'})  grant ${st.grant.toFixed(1)}/h fees ${IC.avRevenueRate(S).toFixed(1)}/h up ${S.upkeep.toFixed(1)}/h (apt ${(S.ledger.upApt || 0).toFixed(1)}, radars ${(S.ledger.upAD || 0).toFixed(1)}, ${S.units.filter(u => !u.dead && u.type === 'ssr').length} SSR) · conf ${st.standing.toFixed(0)} · ${A.airlines.length} airlines, ${A.routes.filter(r => r.st === 'active').length} routes, ${A.deals.filter(d => d.st === 'active').length} deals, pax/day ${Math.round(Math.max(A.day.pax, A.yesterday ? A.yesterday.pax : 0))} · ${aps.length} airports ${aps.map(a => IC.aptStands(a).length).join('/')} stands · goals ${st.goals.filter(g => g.done).length}/${st.goals.length}${st.act >= 4 ? ` · will ${Math.round(S.enemy.will)}` : ''} · ${((Date.now() - wall) / 60000).toFixed(1)} min`);
+    const civ = IC.TECH.filter(IC.techCivil), nd = civ.filter(t => S.tech.done.has(t.id)).length;
+    console.log(`${U.date(S.time).padEnd(20)} ${U.money(S.budget).padStart(9)}  month ${m1 ? (m1.net >= 0 ? '+' : '') + Math.round(m1.net) : '?'} (in ${m1 ? Math.round(m1.income) : '?'})  grant ${st.grant.toFixed(1)}/h fees ${IC.avRevenueRate(S).toFixed(1)}/h up ${S.upkeep.toFixed(1)}/h (apt ${(S.ledger.upApt || 0).toFixed(1)}, radars ${(S.ledger.upAD || 0).toFixed(1)}, ${S.units.filter(u => !u.dead && u.type === 'ssr').length} SSR) · conf ${st.standing.toFixed(0)} · ${A.airlines.length} airlines, ${A.routes.filter(r => r.st === 'active').length} routes, ${A.deals.filter(d => d.st === 'active').length} deals, pax/day ${Math.round(Math.max(A.day.pax, A.yesterday ? A.yesterday.pax : 0))} · ${aps.length} airports ${aps.map(a => IC.aptStands(a).length).join('/')} stands · goals ${st.goals.filter(g => g.done).length}/${st.goals.length} · research ${nd}/${civ.length} civil, slots idle ${slotS ? Math.round(idleS / slotS * 100) : 0}%${st.act >= 4 ? ` · will ${Math.round(S.enemy.will)}` : ''} · ${((Date.now() - wall) / 60000).toFixed(1)} min`);
   }
+  while (rlog.length && !quiet) console.log('      ' + rlog.shift());
   while (logs.length) console.log('      ' + logs.shift());
 }
 while (logs.length) console.log('      ' + logs.shift());
@@ -58,6 +65,7 @@ marks.forEach((c, i) => {
 });
 const act = n => marks.find(m => m.act === n), a2 = act(2);
 if (a2) console.log(`Act I: ${((a2.t - t0) / IC.YR(S)).toFixed(1)} years`);
+console.log(`Research: ${IC.TECH.filter(t => IC.techCivil(t) && S.tech.done.has(t.id)).length} of ${IC.TECH.filter(IC.techCivil).length} civil projects done${a2 ? ` (${IC.TECH.filter(t => IC.techCivil(t) && S.tech.done.has(t.id)).length} now; Act I ended with ${a2.research})` : ''}, slots idle ${slotS ? Math.round(idleS / slotS * 100) : 0}% of the time`);
 console.log(`Career so far: ${((S.time - t0) / IC.YR(S)).toFixed(1)} years`);
 const aps = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
 console.log(`Airports: ${aps.map(a => `${a.name} (${IC.aptStands(a).length} stands, longest runway ${U.km(a.st.longest || 0)}, name ${Math.round(IC.aptRep(a))})`).join('; ')}`);

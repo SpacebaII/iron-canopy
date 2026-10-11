@@ -203,7 +203,7 @@ IC.startResearch = function (S, id) {
   if (!t || slot < 0 || S.budget < t.cost || !IC.techOpenNow(S, t)) return false;
   IC.pay(S, 'research', t.cost);
   S.tech.slots[slot] = { id, prog: 0 };
-  IC.log(S, 'info', 'RESEARCH', `Started ${t.name}: ready in ${IC.techDur(S, t)}${IC.techWhen(S, t) ? `, about ${IC.techWhen(S, t)} at this speed` : ''}.`);
+  IC.log(S, 'info', 'RESEARCH', `Started ${t.name}: ready in ${IC.techDur(S, t)}${IC.techWhen(S, t) ? ` (${IC.techWhen(S, t)} at this speed)` : ''}.`);
   IC.emit(S, 'researchStart', id);
   return true;
 };

@@ -604,7 +604,7 @@ function research() {
   const slots = T.slots.map((s, i) => {
     if (!s) return `<div class="slot idle"><small>Slot ${i + 1}</small><b>Free</b><span>${esc(IC.techIdleText(S) ? 'Pick a project below: an idle slot is time lost.' : 'Nothing open to start.')}</span></div>`;
     const t = IC.techById(s.id);
-    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left${story ? ` · about ${IC.techWhen(S, t, 1 - s.prog)}` : ''}</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
+    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left${story ? ` · lands in ${IC.techWhen(S, t, 1 - s.prog)} at this speed` : ''}</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
   }).join('') + (IC.techNextSlot(S) ? `<div class="slot next"><small>Slot ${T.slots.length + 1}</small><b>Not yet</b><span>${esc(IC.techNextSlot(S))}</span></div>` : '');
   const memo = {}, maxD = Math.max(...IC.TECH.map(t => depthOf(t, memo)));
   const node = t => {
@@ -614,9 +614,9 @@ function research() {
     const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Done</span>` : cur ? `<span class="amber">${U.pct(cur.prog)} · ${IC.techDur(S, t, 1 - cur.prog)} left</span>`
       : shut ? `<span class="need">${ui.icon('lock', 'sm')} ${esc(shut)}</span>`
       : !reqOk ? `<span class="need">${ui.icon('lock', 'sm')} After ${t.req.filter(r => !T.done.has(r)).map(r => esc(IC.techById(r).name)).join(' and ')}</span>`
-      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Every slot is busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}${story ? `, about ${IC.techWhen(S, t)} at this speed` : ''}${x ? `. It rules out ${x.name} for good` : ''}`}">Research</button>`;
+      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Every slot is busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}${story ? `, in ${IC.techWhen(S, t)} at this speed` : ''}${x ? `. It rules out ${x.name} for good` : ''}`}">Research</button>`;
     return `<div class="tnode ${cls}" data-tech="${t.id}" data-req="${t.req.join(' ')}"><b>${esc(t.name)}${ui.newTag('tech:' + t.id)}</b><p>${esc(ui.techWords(t))}</p>${opens.length ? `<p class="opens">Opens: ${esc(opens.join(', '))}</p>` : ''}${x && !done ? `<p class="excl">${T.done.has(x.id) ? 'Ruled out' : 'Rules out'}: ${esc(x.name)}</p>` : ''}
-      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
+      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}${story && !cur ? ` · ${IC.techWhen(S, t).replace(/, Year /, ' Y')}` : ''}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
   };
   // the Career shows its own lanes first; a military lane it has not reached is one line
   const cats = story ? IC.TECH_CATS.slice().sort((a, b) => (b.civil ? 1 : 0) - (a.civil ? 1 : 0)) : IC.TECH_CATS;
