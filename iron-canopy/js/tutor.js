@@ -58,7 +58,7 @@ IC.TUTORS = {
     { el: '#bldgo [data-go="build"]', title: 'Found it', text: 'The runway lies into the prevailing wind; R turns it. The button gives the price of the survey and the land. Press Found, or Enter.', on: [['bld', 'found']] }
   ] },
   starter: { title: 'The Starter airport', guide: 'buildbar', trig: [['bld', 'found']], when: S => civil(S) && !!capAp(S) && !builtRw(capAp(S)) && !capAp(S).works.some(w => w.stages && w.part && w.part.kind === 'terminal'), steps: [
-    { el: '#bbar [data-bb="tab"][data-v="bq"]', title: 'A whole airport in one go', text: 'The surveyed runway is placed, ready to build. For runway, terminal, tower, fire station and fuel at one price, open Blueprints.', on: [['bld', 'tab', 'bq']], ok: () => !!(IC.bb && IC.bb.open && IC.bb.tab === 'bq') },
+    { get el() { return `#bbar [data-bb="tab"][data-v="${IC.bbStarterTab()}"]`; }, get on() { return [['bld', 'tab', IC.bbStarterTab()]]; }, title: 'A whole airport in one go', text: IC.FOCUS.parts ? 'The surveyed runway is placed, ready to build; the tabs hold every part to build round it one by one. For runway, taxiways, terminal, tower, fire station and fuel at one price, open Blueprints.' : 'The surveyed runway is placed, ready to build. For runway, terminal, tower, fire station and fuel at one price, open Blueprints.', ok: () => !!(IC.bb && IC.bb.open && IC.bb.tab === IC.bbStarterTab()) },
     { el: '#bbar [data-bb="item"][data-v="starter"]', title: 'The Starter airport', text: 'Eight stands at a terminal, a tower, a fire station and a fuel farm, laid on the surveyed runway. Pick it.', on: [['bld', 'pick', 'starter']], ok: S => !!(S.mode2 && S.mode2.part === 'starter') },
     { at: S => capAp(S), title: 'Place it', text: 'Click on the airport: the Starter lines up with the surveyed runway.', on: [['bld', 'placed', 'starter']], ok: S => !!(S.mode2 && S.mode2.part === 'starter' && S.mode2.set) },
     { el: '#bldgo [data-go="build"]', title: 'Build it', text: 'Green fits; red says why. The button gives the price and how long the crews take. Nothing is paid until you press Build, or Enter.', on: [['bld', 'built']] },
@@ -68,7 +68,11 @@ IC.TUTORS = {
     { el: '#pmarks .pmark:not(.deal) [data-act="pmFix"]', title: 'Where it hurts', text: 'A marker says what is wrong, and where. The button beside it is the fix: press it.', on: [['ui', 'pmFix']] },
     { el: '#bldgo [data-go="build"]', title: 'The fix, placed', text: 'It is placed where it helps. Build it, click elsewhere to move it, or Esc.', on: [['bld', 'built'], ['bld', 'cancel']], ok: S => !(S.mode2 && S.mode2.kind === 'build') }
   ] },
-  pieces: { title: 'Airport pieces', guide: 'buildbar', when: S => civil(S) && builtRw(capAp(S)) && (S.story.ch >= 1 || !!S.first), steps: [
+  pieces: IC.FOCUS.parts ? { title: 'Building part by part', guide: 'buildbar', when: S => civil(S) && builtRw(capAp(S)) && (S.story.ch >= 1 || !!S.first), steps: [
+    { el: '#bbar [data-bb="tab"][data-v="tw"]', title: 'Part by part', text: 'Each tab holds single parts at real size: runways, taxiways, aprons and stands, terminals and piers, hangars, fuel, fire and the tower. Open Taxiways.', on: [['bld', 'tab', 'tw']], ok: () => !!(IC.bb && IC.bb.open && IC.bb.tab === 'tw') },
+    { el: '#bbar .bb-items .bb-it:not([data-lock])', title: 'Pick one', text: 'Hover a part for its price, its building time and what it needs. Click one to pick it up; the chips above set its pavement, width and lights.', on: [['bld', 'pick']], ok: S => !!(S.mode2 && S.mode2.kind === 'build') },
+    { at: S => capAp(S), title: 'Place it', text: 'A taxiway: click point by point; its ends snap to the runway, aprons and other taxiways. An apron: two corners. Anything joined to nothing is said on the plan.', on: [['bld', 'placed']], ok: S => !!(S.mode2 && S.mode2.kind === 'build' && (S.mode2.set || S.mode2.pts.length >= 2)) }
+  ] } : { title: 'Airport pieces', guide: 'buildbar', when: S => civil(S) && builtRw(capAp(S)) && (S.story.ch >= 1 || !!S.first), steps: [
     { el: '#bbar [data-bb="tab"][data-v="pc"]', title: 'Airport pieces', text: 'Whole pieces, each with what it needs: a runway with its taxiways, terminals with apron and stands, services, cargo. Open Airport pieces.', on: [['bld', 'tab', 'pc']], ok: () => !!(IC.bb && IC.bb.open && IC.bb.tab === 'pc') },
     { el: '#bbar .bb-items .bb-it:not([data-lock])', title: 'Pick one', text: 'Hover a piece for its price, its building time and what it adds. Click one to pick it up.', on: [['bld', 'pick']], ok: S => !!(S.mode2 && S.mode2.kind === 'build') },
     { at: S => capAp(S), title: 'Place it', text: 'Click beside the parallel taxiway. A terminal turns to face the runway and joins the taxiway by itself.', on: [['bld', 'placed']], ok: S => !!(S.mode2 && S.mode2.kind === 'build' && S.mode2.set) }
@@ -92,7 +96,7 @@ IC.TUTORS = {
     { el: '#insp [data-act="desel"]', title: 'Out of the way', text: '✕ (or Esc) closes the panel when you want the map back.', on: [['ui', 'desel']], ok: S => !S.sel }
   ] },
   milestone: { title: 'Milestones', guide: 'growth1', trig: [['milestone']], when: S => civil(S), steps: [
-    { el: '#cine [data-act="buildPick"]', title: 'A bigger piece', text: 'Each milestone opens a bigger piece. Press it to place one now, or leave it on the build bar for later.', on: [['ui', 'buildPick'], ['bld', 'pick']] },
+    { el: '#cine [data-act="buildPick"]', title: IC.FOCUS.parts ? 'Bigger parts' : 'A bigger piece', text: IC.FOCUS.parts ? 'Each milestone opens bigger parts: piers, a second runway, round terminals. Press it to place one now, or find them on the build bar later.' : 'Each milestone opens a bigger piece. Press it to place one now, or leave it on the build bar for later.', on: [['ui', 'buildPick'], ['bld', 'pick']] },
     { el: '#bldgo [data-go="build"]', title: 'Place and build', text: 'Click where it should go, then Build. Esc if not now.', on: [['bld', 'built'], ['bld', 'cancel']] }
   ] },
   deck: { title: 'Decisions', guide: 'events', trig: [['deckCard']], when: S => civil(S), steps: [

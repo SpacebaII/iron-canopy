@@ -1306,7 +1306,7 @@ test('build bar: every tab has items, and each one can be placed on an airport',
       const n = placed.length, c = P(-20 + (n % 6) * 7, 14 + Math.floor(n / 6) * 6);
       const m = IC.bldMode(S, ap, part);
       if (k === 'carpark') m.surf = 'asph';
-      if (part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to: their own tests cover them)
+      if (part === 'starter' || part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to, or a whole site: their own tests cover them)
       S.mode2 = m; S.hover = c;
       const cnt = () => ap.parts.length + (ap.svcRoads || []).length, n0 = cnt(), two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
       IC.clickWorld(c, 0);
@@ -4625,10 +4625,12 @@ const foundFresh = seed => {
   return { S, ap: m.ap, sv, paid: b0 - S.budget, next: m.next, r, p };
 };
 test('round 1: founding keeps the surveyed runway as a plan, and Found\'s price is the whole price', () => {
-  const { S, ap, sv, paid, next, r } = foundFresh();
+  const { S, ap, sv, paid, next: placed, r } = foundFresh();
   assert(r === 'built' && ap, 'not founded');
   assert(IC.foundLines(S, sv).some(l => /Access road/.test(l)) && Math.abs(paid - sv.cost) < 1, `the survey said ${U.money(sv.cost)}, Found took ${U.money(paid)}`);
-  assert(next && next.part === 'rwkit' && next.set, 'Found left no placed runway');
+  // (wave 12) Found leaves the runway alone; the Runway with taxiways piece is still there for a fix to place
+  assert(placed && placed.part === 'runway' && placed.set, 'Found left no placed runway');
+  const next = IC.pieceFromSurvey(S, ap, 'rwkit');
   const plan = IC.bldReady(S, next);
   assert(plan && plan.ok && /3\.00 km/.test(plan.text[0]), `the placed runway: ${plan && (plan.why || plan.text[0])}`);
   S.mode2 = next;
@@ -4663,7 +4665,7 @@ test('round 1: a starter airport template places a complete working airport as o
   assert(goals.every(g => g.check()), `goals not met: ${goals.filter(g => !g.check()).map(g => g.id)}`);
 });
 test('round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself', () => {
-  const { S, ap, next } = foundFresh();
+  const { S, ap } = foundFresh(), next = IC.pieceFromSurvey(S, ap, 'rwkit');
   S.mode2 = next; IC.buildFinish(S, next); finishWorks(S, ap);
   const rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), mid = IC.rwAt(rw, 0.5);
   // (the parallel's side)
@@ -4696,11 +4698,61 @@ test('round 1: a building inside a runway strip is warned about on the plan and 
 });
 test('round 1: the build bar opens on whole pieces, each with a price and what it does; the parts fold under Detail', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story' }); IC.S = S;
-  assert(IC.FOCUS.pieces && IC.bbTabs(S)[0].items.includes('rwkit') && IC.bbTabs(S).length === 2, 'the bar does not open on pieces');
-  for (const t of IC.BB_PIECE_TABS) for (const k of t.items.filter(k => IC.PIECES[k])) { const w = IC.BB_ITEM(S, k); assert(w.name && /₭/.test(w.price) && w.desc && w.use, `${k} has no name, price or description`); }
-  IC.bbTab('tw');
-  assert(IC.bb.detail && IC.bbTabs(S).some(t => t.k === 'tw'), 'Detail does not open on a part\'s tab');
-  IC.bb.detail = false; IC.bb.tab = 'pc';
+  IC.FOCUS.parts = false;
+  try {
+    assert(IC.FOCUS.pieces && IC.bbTabs(S)[0].items.includes('rwkit') && IC.bbTabs(S).length === 2, 'the bar does not open on pieces');
+    for (const t of IC.BB_PIECE_TABS) for (const k of t.items.filter(k => IC.PIECES[k])) { const w = IC.BB_ITEM(S, k); assert(w.name && /₭/.test(w.price) && w.desc && w.use, `${k} has no name, price or description`); }
+    IC.bbTab('tw');
+    assert(IC.bb.detail && IC.bbTabs(S).some(t => t.k === 'tw'), 'Detail does not open on a part\'s tab');
+  } finally { IC.FOCUS.parts = true; IC.bb.detail = false; IC.bb.tab = 'rw'; }
+});
+/* ---------- wave 12: building part by part ---------- */
+test('wave 12: the build bar is the parts one by one; of the whole pieces only the Starter airport is on it', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story' }); IC.S = S;
+  const tabs = IC.bbTabs(S), items = tabs.flatMap(t => t.items);
+  assert(tabs[0].k === 'rw' && tabs.length === 10, `the tabs: ${tabs.map(t => t.name)}`);
+  for (const k of ['runway', 'taxi', 'parallel', 'apron', 'stand', 'terminal', 'concourse', 'hangar', 'fuel', 'fire', 'tower', 'ils']) assert(items.includes(k), `no ${k} on the bar`);
+  const big = Object.keys(IC.PIECES).filter(k => items.includes(k));
+  assert(big.length === 1 && big[0] === 'starter' && tabs.find(t => t.k === IC.bbStarterTab()).items[0] === 'starter', `whole pieces on the bar: ${big}`);
+  for (const k of items) { const w = IC.BB_ITEM(S, k); assert(w.name && w.price && w.desc, `${k} has no name, price or description`); }
+  // a part's tab never opens the old Detail fold
+  IC.bbTab('tw'); assert(!IC.bb.detail && IC.bbTabs(S).some(t => t.k === 'tw'), 'a part\'s tab is folded away');
+  IC.bb.tab = 'rw';
+});
+test('wave 12: Found leaves the surveyed runway alone; taxiways, apron, terminal and services built one by one make a working airport', () => {
+  const { S, ap, next } = foundFresh();
+  S.mode2 = next; assert(IC.buildFinish(S, next) === 'built', next.err);
+  assert(ap.parts.length === 1 && ap.parts[0].kind === 'runway', `Found's plan built ${ap.parts.map(p => p.kind)}`);
+  const rw = ap.parts[0], d = IC.rwDir(rw), n = { x: -d.y, y: d.x }, mid = IC.rwAt(rw, 0.5);
+  const at = (u, v) => ({ x: mid.x + d.x * u + n.x * v, y: mid.y + d.y * u + n.y * v });
+  const go = (part, pts, o) => { const m = S.mode2 = IC.bldMode(S, ap, part); Object.assign(m, o || {}); for (const p of pts) IC.clickWorld(p, 0); const r = IC.buildFinish(S, m); assert(r === 'built', `${part}: ${m.err}`); return m; };
+  // the parallel taxiway, 190 m out, with its links to both ends
+  go('parallel', [mid, at(0, 1.9)]);
+  // an apron beyond it, a taxiway from the parallel to its edge, a terminal behind it
+  go('apron', [at(-3, 3.0), at(3, 5.2)]);
+  go('taxi', [at(0, 1.9), at(0, 3.0)]);
+  go('terminal', [at(-3, 5.3), at(3, 6.2)]);
+  // each service building on its own, out of the strip
+  go('fire', [at(-7, 3.4)]); go('fuel', [at(8, 4.2)]); go('tower', [at(5, 7.4)]);
+  go('ils', [rw.a]); go('ils', [rw.b]);
+  finishWorks(S, ap);
+  const st = IC.aptStats(S, ap), stands = IC.aptStands(ap);
+  for (const k of ['runway', 'taxi', 'apron', 'terminal', 'fire', 'fuel', 'tower', 'ils']) assert(ap.parts.some(p => p.kind === k && p.built), `no ${k}`);
+  assert(stands.length >= 4 && stands.every(s => s.linked), `${stands.filter(s => s.linked).length} of ${stands.length} stands reach the runway`);
+  assert(st.fire && IC.storyOpenTo(S, ap, 'narrow'), `not open to airliners: ${st.warn.join(' / ')}`);
+});
+test('wave 12: milestones open the parts that answer them, and the card picks the part', () => {
+  const { S, ap } = r4open();
+  for (const k of ['concourse', 'pierT', 'rotunda', 'satellite']) assert(/^Opens at/.test(IC.pieceLock(S, k, ap)), `${k} is open before its milestone`);
+  assert(/^A second runway opens/.test(IC.pieceLock(S, 'runway', ap)), 'a second runway is open at once');
+  assert(/^🔒 2k/.test(IC.BB_ITEM(S, 'concourse').lockShort) && /^Opens at/.test(IC.BB_ITEM(S, 'concourse').lock) && !IC.pieceLock(S, 'taxi', ap) && !IC.pieceLock(S, 'terminal', ap), 'the wrong parts are locked');
+  const n0 = S.camp.cards.length;
+  S.av.day.pax = 2400; S.story.deckT = 0; IC.deckTick(S, 1);
+  const c = S.camp.cards.slice(n0).find(x => x.milestone === 2000);
+  assert(c && c.fix && c.fix.v === 'concourse' && /Terminals & piers/.test(c.text), c ? c.text : 'no milestone card');
+  assert(!IC.pieceLock(S, 'concourse', ap) && !IC.pieceLock(S, 'pierX', ap) && IC.pieceLock(S, 'rotunda', ap), 'the piers did not open, or the round terminals opened with them');
+  // (an airport with no runway yet may lay its first)
+  assert(!IC.pieceLock(S, 'runway', { parts: [] }), 'the first runway is locked');
 });
 
 /* ---------- round 2: an airport that is alive (docs/focus/round-2.md) ---------- */
@@ -4973,7 +5025,7 @@ test('round 4: milestones open the bigger pieces because the airport needs them,
   const n0 = S.camp.cards.length;
   S.av.day.pax = 2400; st.deckT = 0; IC.deckTick(S, 1);
   const c = S.camp.cards.slice(n0).find(x => x.milestone === 2000);
-  assert(c && c.kind === 'moment' && c.fix && c.fix.v === 'tpier' && /stands were taken/.test(c.text), c ? c.text : 'no milestone card');
+  assert(c && c.kind === 'moment' && c.fix && c.fix.v === (IC.FOCUS.parts ? 'concourse' : 'tpier') && /stands were taken/.test(c.text), c ? c.text : 'no milestone card');
   assert(!IC.pieceLock(S, 'tpier', ap) && IC.pieceLock(S, 'rwkit', ap), 'the pier did not open, or the runway opened with it');
   S.av.day.pax = 6200; IC.deckTick(S, 30);
   assert(!IC.pieceLock(S, 'rwkit', ap) && S.camp.cards.some(x => x.milestone === 6000 && /movements an hour/.test(x.text)), 'the second runway did not open at 6,000');
@@ -5294,7 +5346,7 @@ test('round 5c: every civil tutorial step advances on its real action, one at a 
   IC.setMode = m => { IC.S.mode2 = m; }; IC.cam = IC.cam || { x: 0, y: 0, z: 2, vw: 1200, vh: 800 }; IC.flyTo = IC.flyTo || (() => {}); IC.toWorld = IC.toWorld || ((x, y) => ({ x, y }));
   try {
     const S = IC.newGame({ seed: 12345, mode: 'story' }); IC.S = S;
-    IC.bb.open = false; IC.bb.tab = 'pc'; IC.bb.detail = false; IC.chainOn = false;   // (the bar's state outlives a game: start it closed)
+    IC.bb.open = false; IC.bb.tab = 'rw'; IC.bb.detail = false; IC.chainOn = false;   // (the bar's state outlives a game: start it closed)
     const ui = (act, v) => IC.emit(S, 'ui', { act, v }), now = () => IC.tutorTick(S), at = (id, i) => { const N = now(); assert(N && N.id === id && N.i === i, `expected ${id} step ${i + 1}, got ${N ? N.id + ' step ' + (N.i + 1) : 'nothing'}`); };
     const civil = ['basics', 'found', 'starter', 'pieces', 'buildesc', 'follow', 'deals', 'panel', 'problems', 'milestone', 'deck', 'chain', 'wait', 'airspace', 'radar'];
     for (const id of civil) { const T = IC.TUTORS[id]; assert(T && T.steps.length >= 2 && T.steps.length <= 5 && T.guide, `${id}: 2–5 steps and a Guide card`); assert(IC.GUIDE.some(g => g.id === T.guide), `${id}: no Guide lesson ${T.guide}`); }
@@ -5316,8 +5368,8 @@ test('round 5c: every civil tutorial step advances on its real action, one at a 
     // the Starter: wanted once the airport is founded
     assert(IC.tutorWhen(S, 'starter'), 'the Starter tutorial is not wanted after founding');
     IC.tutorStart(S, 'starter'); at('starter', 0);
-    IC.bbTab('pc'); at('starter', 0);
-    IC.bbTab('bq'); at('starter', 1);
+    IC.bbTab('rw'); at('starter', 0);
+    IC.bbTab('bp'); at('starter', 1);
     IC.bb.ap = ap; IC.bbPick('starter'); at('starter', 2);
     const m = S.mode2; assert(m && m.part === 'starter', 'the Starter was not picked');
     IC.clickWorld({ x: ap.x + 2, y: ap.y + 1 }, 0); at('starter', 3);
@@ -5325,13 +5377,13 @@ test('round 5c: every civil tutorial step advances on its real action, one at a 
     assert(IC.buildFinish(S, m) === 'built', m.err); at('starter', 4);
     S.mode2 = null; finishWorks(S, ap); now();
     assert(IC.tutorSeen(S, 'starter'), 'the works done did not finish the Starter tutorial');
-    // the pieces, then Build or Esc on the plan it placed
-    IC.bb.tab = 'bq'; IC.tutorStart(S, 'pieces'); at('pieces', 0);
-    IC.bbTab('pc'); at('pieces', 1); IC.bbPick('tstraight'); at('pieces', 2);
+    // part by part, then Build or Esc on the plan it placed
+    IC.bb.tab = 'bp'; IC.tutorStart(S, 'pieces'); at('pieces', 0);
+    IC.bbTab('tw'); at('pieces', 1); IC.bbPick('hangar'); at('pieces', 2);
     let placed = false;
     for (let k = 0; k < 60 && !placed; k++) { const a = k * 0.7, d = 4 + k * 0.5, r = IC.clickWorld({ x: ap.x + Math.cos(a) * d, y: ap.y + Math.sin(a) * d }, 0); placed = r === 'point' && S.mode2.set; }
-    assert(placed, 'no place for a terminal piece');
-    assert(IC.tutorSeen(S, 'pieces'), 'placing the piece did not finish its tutorial');
+    assert(placed, 'no place for a hangar');
+    assert(IC.tutorSeen(S, 'pieces'), 'placing the part did not finish its tutorial');
     assert(IC.tutorWhen(S, 'buildesc'), 'a placed plan does not want Build or Esc');
     IC.tutorStart(S, 'buildesc'); at('buildesc', 0);
     IC.buildCancel(S, S.mode2); assert(IC.tutorSeen(S, 'buildesc'), 'Esc did not finish Build or Esc');
@@ -5358,7 +5410,7 @@ test('round 5c: every civil tutorial step advances on its real action, one at a 
     S.follow = { tl: 'x' }; IC.tutorStart(S, 'follow'); S.sel = { kind: 'tail', ref: {} }; IC.emit(S, 'select', S.sel); at('follow', 1); ui('zin'); at('follow', 2); ui('follow'); S.follow = null; assert(IC.tutorSeen(S, 'follow'), 'follow');
     S.sel = null;
     IC.tutorStart(S, 'deals'); ui('pmGo'); at('deals', 1); IC.emit(S, 'approve', {}); assert(IC.tutorSeen(S, 'deals'), 'deals');
-    IC.tutorStart(S, 'milestone'); ui('buildPick', 'tpier'); at('milestone', 1); IC.emit(S, 'bld', { act: 'cancel' }); assert(IC.tutorSeen(S, 'milestone'), 'milestone');
+    IC.tutorStart(S, 'milestone'); ui('buildPick', 'concourse'); at('milestone', 1); IC.emit(S, 'bld', { act: 'cancel' }); assert(IC.tutorSeen(S, 'milestone'), 'milestone');
     IC.tutorStart(S, 'deck'); ui('evChoose', 0); at('deck', 1); ui('room', 'journal'); assert(IC.tutorSeen(S, 'deck'), 'deck');
     // the airspace chapter: the editor, an entry point, an airway, the gaps, the radar on the biggest gap
     S.story.ch = 2;

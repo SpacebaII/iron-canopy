@@ -8,7 +8,9 @@
    - Starter airport (Blueprints): all of it, on the surveyed runway or on one already planned.
    A piece is a layout (airport-kits.js's builder) planned through the blueprint path (IC.bldBlueprint); a piece that
    attaches to the airport (a terminal, the cargo area) is joined to the nearest taxiway by short links planned with
-   it. Placing is builder.js (planOf asks IC.piecePlan); the ghost is render-airport.js's blueprint drawing. Headless. */
+   it. Placing is builder.js (planOf asks IC.piecePlan); the ghost is render-airport.js's blueprint drawing. Headless.
+   (wave 12, IC.FOCUS.parts) The bar is the parts one by one again; of these only the Starter airport is on it, and
+   the others are what a problem's fix places. */
 (function (IC) {
 'use strict';
 const U = IC.U;
@@ -236,11 +238,11 @@ IC.pieceTurn = function (m, dir, fine) {
   else { m.rot = (m._pp && !m.rotHand ? m._pp.P.rot : m.rot || 0) + (dir || 1) * (fine ? Math.PI / 12 : Math.PI / 2); m.rotHand = true; }
   return true;
 };
-/* after Found, the surveyed runway as a placed plan
-: the Runway with taxiways along the survey line, ready to Build */
-IC.pieceFromSurvey = function (S, ap) {
+/* after Found, the surveyed runway as a placed plan, ready to Build: the runway alone when the bar is the parts
+   (wave 12) and the player lays its taxiways; else the Runway with taxiways piece */
+IC.pieceFromSurvey = function (S, ap, k) {
   const sv = ap.survey; if (!sv) return null;
-  const m = IC.bldMode(S, ap, 'rwkit'), d = { x: Math.cos(sv.a), y: Math.sin(sv.a) }, h = 15;
+  const m = IC.bldMode(S, ap, k || (IC.FOCUS.parts ? 'runway' : 'rwkit')), d = { x: Math.cos(sv.a), y: Math.sin(sv.a) }, h = 15;
   m.pts = [{ x: sv.x - d.x * h, y: sv.y - d.y * h }, { x: sv.x + d.x * h, y: sv.y + d.y * h }];
   m.set = true; m.at = m.pts[1]; m.tol = 0.12; m.fromSurvey = true;
   return m;

@@ -44,17 +44,20 @@ IC.BB_TABS = [
   { k: 'ls', key: '7', name: 'Landside & roads', items: ['svcroad', 'road:lc', 'road:rd', 'road:hw', 'carpark'] },
   { k: 'nv', key: '8', name: 'Navaids & radar', items: ['ils', 'tower', 'atc', 'gradar'] },
   { k: 'lk', key: '9', name: 'Looks & paint', items: ['surface'] },
-  { k: 'bp', key: '0', name: 'Blueprints', items: ['blueprint'] }
+  { k: 'bp', key: '0', name: 'Blueprints', items: ['starter', 'blueprint'] }
 ];
 /* (round 1) the bar opens on whole pieces; the parts one by one are folded under Detail (IC.FOCUS.pieces) */
 IC.BB_PIECE_TABS = [
   { k: 'pc', key: '1', name: 'Airport pieces', items: ['rwkit', 'tstraight', 'tpier', 'tround', 'services', 'cargoarea'] },
   { k: 'bq', key: '2', name: 'Blueprints', items: ['starter', 'blueprint'] }
 ];
+/* (wave 12) the bar is the parts one by one; the Starter airport is under Blueprints */
+IC.bbParts = () => !!(IC.FOCUS && IC.FOCUS.parts);
+IC.bbStarterTab = () => (IC.bbParts() || !(IC.FOCUS && IC.FOCUS.pieces) ? 'bp' : 'bq');
 /* the tabs on show: the pieces and blueprints, then the parts one by one when Detail is open (or always, without
    the focus switch) */
 IC.bbTabs = function () {
-  if (!(IC.FOCUS && IC.FOCUS.pieces)) return IC.BB_TABS;
+  if (!(IC.FOCUS && IC.FOCUS.pieces) || IC.bbParts()) return IC.BB_TABS;
   if (!IC.bb.detail) return IC.BB_PIECE_TABS;
   return IC.BB_PIECE_TABS.concat(IC.BB_TABS.filter(t => t.k !== 'bp').map((t, i) => Object.assign({}, t, { key: String((i + 3) % 10) })));
 };
@@ -125,12 +128,14 @@ function itemOf(k) {
   if (R) return { k, name: R.name, price: `${U.money(R.perKm)} a km`, use: USE[k], desc: `${R.what[0].toUpperCase() + R.what.slice(1)}. It is built at ${R.kmh} km a game hour; bridges cost ${U.money(R.bridge)} each.`, upkeep: '' };
   if (k === 'carpark') return { k, name: 'Car park', price: `${U.money(IC.APART.surface.cost * IC.SURF.asph.k)} a ha`, use: USE[k], desc: `Asphalt outside the airfield parks about ${IC.SURF.asph.park} cars a hectare, and travellers pay to park.`, upkeep: '' };
   const D = IC.APART[k], T = IC.BTOOLS[k];
+  // (wave 12) a part a milestone opens says so, like a piece did
+  const ms = IC.pieceLock ? IC.pieceLock(S, k, IC.bbAirport(S)) : '', msShort = ms ? `🔒 ${IC.pieceLockShort(S, k)}` : '';
   if (D) {
     const per = D.line ? ' / 100 m' : D.area ? ' / ha' : '';
-    return { k, name: D.name, price: U.money(D.cost) + per, use: USE[k] || '', desc: D.desc, upkeep: `${U.money(D.cost * 0.0012 * 24)}${per} a day`, time: U.dur(D.build), lock: IC.aptLockWhy(S, k), mil: D.mil };
+    return { k, name: D.name, price: U.money(D.cost) + per, use: USE[k] || '', desc: D.desc, upkeep: `${U.money(D.cost * 0.0012 * 24)}${per} a day`, time: U.dur(D.build), lock: IC.aptLockWhy(S, k) || ms, lockShort: msShort, mil: D.mil };
   }
-  if (T && T.kit) return { k, name: T.name, price: U.money(IC.kitCost(k, 'm')), use: USE[k] || '', desc: T.desc, upkeep: `${U.money(IC.kitCost(k, 'm') * 0.0012 * 24)} a day`, avail: true };
-  if (T) return { k, name: T.name, price: k === 'stand' ? '₭0.5M each' : k === 'svcroad' ? `${U.money(IC.SVC_ROAD_COST)} / 100 m` : k === 'blueprint' ? 'a whole airport' : 'several parts', use: USE[k] || '', desc: T.desc, upkeep: '', avail: !T.avail || T.avail() };
+  if (T && T.kit) return { k, name: T.name, price: U.money(IC.kitCost(k, 'm')), use: USE[k] || '', desc: T.desc, upkeep: `${U.money(IC.kitCost(k, 'm') * 0.0012 * 24)} a day`, avail: true, lock: ms, lockShort: msShort };
+  if (T) return { k, name: T.name, lock: ms, lockShort: msShort, price: k === 'stand' ? '₭0.5M each' : k === 'svcroad' ? `${U.money(IC.SVC_ROAD_COST)} / 100 m` : k === 'blueprint' ? 'a whole airport' : 'several parts', use: USE[k] || '', desc: T.desc, upkeep: '', avail: !T.avail || T.avail() };
   return { k, name: k, price: '', use: '', desc: '' };
 }
 
@@ -221,7 +226,7 @@ function pieceThumb(g, L, conc, asph) {
 IC.BB_ITEM = (S, k) => itemOf(k);
 
 /* ---------- state ---------- */
-IC.bb = { open: false, tab: IC.FOCUS && IC.FOCUS.pieces ? 'pc' : 'rw', view: null, hover: null, detail: false };
+IC.bb = { open: false, tab: IC.FOCUS && IC.FOCUS.pieces && !IC.bbParts() ? 'pc' : 'rw', view: null, hover: null, detail: false };
 
 const selAp = S => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 'infra' && S.sel.ref.parts ? S.sel.ref : null) : null;
 /* the airport the bar builds on: the one being built on, the one selected, or the nearest of ours on screen */
@@ -246,7 +251,7 @@ IC.bbToggle = function (open) {
   IC.ui.refresh(true);
 };
 /* pick a tab (1–0) */
-IC.bbTab = function (k) { if (IC.FOCUS && IC.FOCUS.pieces && !IC.BB_PIECE_TABS.some(t => t.k === k)) IC.bb.detail = true; IC.bb.tab = k; IC.bb.open = true; if (S_()) IC.emit(S_(), 'bld', { act: 'tab', v: k }); if (IC.ui && IC.ui.refresh) IC.ui.refresh(true); };
+IC.bbTab = function (k) { if (IC.FOCUS && IC.FOCUS.pieces && !IC.bbParts() && !IC.BB_PIECE_TABS.some(t => t.k === k)) IC.bb.detail = true; IC.bb.tab = k; IC.bb.open = true; if (S_()) IC.emit(S_(), 'bld', { act: 'tab', v: k }); if (IC.ui && IC.ui.refresh) IC.ui.refresh(true); };
 /* start placing an item */
 IC.bbPick = function (k) {
   const S = S_(), ap = IC.bbAirport(S); if (!ap) return false;
@@ -254,7 +259,7 @@ IC.bbPick = function (k) {
   if (k.startsWith('road:')) { IC.setMode(cur && cur.kind === 'road' && cur.cls === k.slice(5) ? null : { kind: 'road', cls: k.slice(5), pts: [], snaps: [] }); return true; }
   const part = k === 'carpark' ? 'surface' : k;
   if (cur && cur.kind === 'build' && cur.part === part && cur.ap === ap && (k !== 'carpark' || cur.surf === 'asph')) { IC.setMode(null); return true; }
-  const lock = IC.APART[part] ? IC.aptLockWhy(S, part) : IC.PIECES && IC.PIECES[part] && IC.pieceLock ? IC.pieceLock(S, part, ap) : '';
+  const lock = (IC.APART[part] ? IC.aptLockWhy(S, part) : '') || (IC.pieceLock ? IC.pieceLock(S, part, ap) : '');
   if (lock) { IC.toast(S, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   const m = IC.bldMode(S, ap, part);
   if (k === 'carpark') m.surf = 'asph';
@@ -368,7 +373,7 @@ IC.renderBuildBar = function (S) {
     : `<div class="bb-empty">${tab.k === 'bp' ? 'No blueprints yet: the real airports come with their map data.' : 'Nothing here for this airport.'}</div>`;
   const html = `${opts ? `<div class="bb-opts">${opts}</div>` : ''}
     <div class="bb-main">
-      <div class="bb-top">${head}<nav class="bb-tabs">${TABS.map(t => `<button class="${t.k === tab.k ? 'on' : ''}" data-bb="tab" data-v="${t.k}" title="${esc(t.name)} (Shift+${t.key})">${ico(TAB_ICON[t.k])}<span>${esc(t.name)}</span><kbd>⇧${t.key}</kbd></button>`).join('')}${IC.FOCUS && IC.FOCUS.pieces ? `<button class="${bb.detail ? 'on' : ''}" data-bb="detail" title="The parts one by one: runways, taxiways, aprons, terminals, services, roads, navaids, with pavement, width, lights and zone">${bb.detail ? '▾' : '▸'} <span>Detail</span></button>` : ''}</nav>${ap && ap.works && ap.works.some(w => w.stages) ? `<button class="btn" data-act="finishNow" data-v="${esc(ap.id)}" title="Run time on until every planned work here is finished (it stops for anything that needs you)">⏩ Finish now</button>` : ''}<button class="x" data-bb="close" title="Close (B)" aria-label="Close the build bar">✕</button></div>
+      <div class="bb-top">${head}<nav class="bb-tabs">${TABS.map(t => `<button class="${t.k === tab.k ? 'on' : ''}" data-bb="tab" data-v="${t.k}" title="${esc(t.name)} (Shift+${t.key})">${ico(TAB_ICON[t.k])}<span>${esc(t.name)}</span><kbd>⇧${t.key}</kbd></button>`).join('')}${IC.FOCUS && IC.FOCUS.pieces && !IC.bbParts() ? `<button class="${bb.detail ? 'on' : ''}" data-bb="detail" title="The parts one by one: runways, taxiways, aprons, terminals, services, roads, navaids, with pavement, width, lights and zone">${bb.detail ? '▾' : '▸'} <span>Detail</span></button>` : ''}</nav>${ap && ap.works && ap.works.some(w => w.stages) ? `<button class="btn" data-act="finishNow" data-v="${esc(ap.id)}" title="Run time on until every planned work here is finished (it stops for anything that needs you)">⏩ Finish now</button>` : ''}<button class="x" data-bb="close" title="Close (B)" aria-label="Close the build bar">✕</button></div>
       <div class="bb-row"><div class="bb-tools">${tools.map(([k, n, key]) => `<button class="${toolOn(k) ? 'on' : ''}" data-bb="tool" data-v="${k}" title="${n} (${key})" ${ap ? '' : 'disabled'}>${ico(TOOL_ICON[k])}<span>${n}</span></button>`).join('')}</div>
       <div class="bb-items">${body}</div></div>
     </div>
