@@ -5585,6 +5585,9 @@ test('agenda: Access to the banks opens loans before Chapter 5, and the lock say
 test('agenda: the scripted player finishes Act I on either side of each pair', () => {
   const CP = require('../careerplayer.js');
   const out = [];
+  // (a quarter-day month makes Act I some 27 minutes of play at 32×, against hours in a real Career: the policies
+  // are shortened with it, so Act I's policies pass as they would there)
+  IC.AGENDA_PACE = 0.25;
   try {
     for (const side of [0, 1]) {
       CP.AGENDA.side = side;
@@ -5598,7 +5601,7 @@ test('agenda: the scripted player finishes Act I on either side of each pair', (
       const yrs = (st.actT - t0) / IC.YR(S);
       assert(yrs * 12 >= (IC.FOCUS.progress ? IC.ACT1_MIN_MO_F : IC.ACT1_MIN_MO), `side ${side}: Act I lasted ${yrs.toFixed(1)} years`);
     }
-  } finally { CP.AGENDA.side = 0; }
+  } finally { CP.AGENDA.side = 0; IC.AGENDA_PACE = 1; }
 }, 'long');
 
 /* ---------- run ---------- */

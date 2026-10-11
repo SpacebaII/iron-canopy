@@ -345,18 +345,18 @@ const minsOf = m => `about ${Math.max(1, Math.round(m))} min of play`;
 function agenda() {
   const A = IC.agendaState(S), st = S.story; if (!A) return '';
   const cur = A.cur && IC.agendaById(A.cur.id), boss = st.act === 1 ? 'Minister' : 'cabinet';
-  const slot = cur ? `<div class="slot"><small>Before the ${boss}</small><b>${esc(cur.name)}</b><span>${minsOf(cur.min - A.cur.p)} left · passes about ${esc(U.date(S.time + IC.agendaLeft(S, cur.id), S))} at this speed</span><div class="prog"><i style="width:${Math.min(100, A.cur.p / cur.min * 100)}%"></i></div></div>`
+  const slot = cur ? `<div class="slot"><small>Before the ${boss}</small><b>${esc(cur.name)}</b><span>${minsOf(IC.agendaMin(cur) - A.cur.p)} left · passes about ${esc(U.date(S.time + IC.agendaLeft(S, cur.id), S))} at this speed</span><div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(cur) * 100)}%"></i></div></div>`
     : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
   const words = p => {
     const done = A.done.has(p.id), now = cur === p, why = IC.agendaWhy(S, p.id), shut = A.closed.has(p.id);
     const cls = done ? 'done' : now ? 'cur' : shut ? 'locked shut' : !why ? 'open' : 'locked';
     const gives = [p.pay ? `${U.money(p.pay)} when passed` : '', p.opens ? `opens ${p.opens.map(k => ({ loans: 'loans from the banks', roads: 'roads to your airports' })[k] || k).join(', ')} now` : ''].filter(Boolean);
-    const cost = [p.cost ? U.money(p.cost) : 'free', p.conf ? `${p.conf > 0 ? '+' : '−'}${Math.abs(p.conf)} confidence` : '', minsOf(p.min)].filter(Boolean).join(' · ');
-    const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Passed</span>` : now ? `<span class="amber">${U.pct(A.cur.p / p.min)}</span>`
+    const cost = [p.cost ? U.money(p.cost) : 'free', p.conf ? `${p.conf > 0 ? '+' : '−'}${Math.abs(p.conf)} confidence` : '', minsOf(IC.agendaMin(p))].filter(Boolean).join(' · ');
+    const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Passed</span>` : now ? `<span class="amber">${U.pct(A.cur.p / IC.agendaMin(p))}</span>`
       : why ? `<span class="need">${ui.icon('lock', 'sm')} ${esc(why)}</span>`
-      : `<button class="btn sm primary" data-act="agenda" data-v="${p.id}" title="${esc(cur ? `Drops “${cur.name}” and the ${Math.round(A.cur.p)} min of work on it` : `Put it to the ${boss}: ${p.cost ? U.money(p.cost) + ' now, ' : ''}${minsOf(p.min)}`)}">${cur ? 'Swap for this' : 'Put forward'}</button>`;
+      : `<button class="btn sm primary" data-act="agenda" data-v="${p.id}" title="${esc(cur ? `Drops “${cur.name}” and the ${Math.round(A.cur.p)} min of work on it` : `Put it to the ${boss}: ${p.cost ? U.money(p.cost) + ' now, ' : ''}${minsOf(IC.agendaMin(p))}`)}">${cur ? 'Swap for this' : 'Put forward'}</button>`;
     return `<div class="tnode ${cls}" data-ag="${p.id}" data-req="${p.req.join(' ')}"${p.any ? ' data-any="1"' : ''}><b>${esc(p.name)}</b><p>${esc(p.d)}</p>${gives.length ? `<p class="opens">${esc(gives.join('; '))}</p>` : ''}${p.excl && !done && !shut ? `<p class="excl">Rules out “${esc(IC.agendaById(p.excl).name)}” for good.</p>` : ''}
-      <div class="meta"><span>${done ? '' : esc(cost)}</span>${act}</div>${now ? `<div class="prog"><i style="width:${Math.min(100, A.cur.p / p.min * 100)}%"></i></div>` : ''}</div>`;
+      <div class="meta"><span>${done ? '' : esc(cost)}</span>${act}</div>${now ? `<div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(p) * 100)}%"></i></div>` : ''}</div>`;
   };
   const memo = {}, cols = Math.max(...IC.AGENDA.map(p => agDepth(p, memo))) + 1;
   const lanes = [1, 2, 3].map(n => {

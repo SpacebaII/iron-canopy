@@ -91,6 +91,9 @@ IC.AGENDA = [
 ];
 IC.AGENDA.forEach(p => { p.req = p.req || []; p.need = p.need || {}; });
 IC.agendaById = id => IC.AGENDA.find(p => p.id === id);
+/* minutes of play a policy takes (IC.AGENDA_PACE scales them all: a test on a short calendar shortens them too) */
+IC.AGENDA_PACE = 1;
+IC.agendaMin = p => p.min * IC.AGENDA_PACE;
 function satAll(S, v) { for (const a of S.av ? S.av.airlines : []) a.sat = U.clamp(a.sat + v, 0, 100); }
 IC.STATEMENT && (IC.STATEMENT.agenda = 'The Ministry’s agenda');
 
@@ -146,11 +149,11 @@ IC.agendaStart = function (S, id) {
   if (p.cost) IC.pay(S, 'agenda', p.cost);
   if (p.conf) st.standing = U.clamp(st.standing + p.conf, st.act < 3 ? 5 : 0, 100);
   A.cur = { id, p: 0 };
-  IC.log(S, 'info', 'AGENDA', `“${p.name}” is before the ${st.act === 1 ? 'Minister' : 'cabinet'}: about ${p.min} min of play.${p.cost ? ` ${U.money(p.cost)} paid.` : ''}`);
+  IC.log(S, 'info', 'AGENDA', `“${p.name}” is before the ${st.act === 1 ? 'Minister' : 'cabinet'}: about ${Math.round(IC.agendaMin(p))} min of play.${p.cost ? ` ${U.money(p.cost)} paid.` : ''}`);
   return '';
 };
 /* game seconds a policy needs from now at the current speed (for the date it will pass) */
-IC.agendaLeft = (S, id) => { const A = IC.agendaState(S), p = IC.agendaById(id), left = p.min - (A && A.cur && A.cur.id === id ? A.cur.p : 0); return Math.max(0, left) * 60 * IC.GS * IC.playRate(S); };
+IC.agendaLeft = (S, id) => { const A = IC.agendaState(S), p = IC.agendaById(id), left = IC.agendaMin(p) - (A && A.cur && A.cur.id === id ? A.cur.p : 0); return Math.max(0, left) * 60 * IC.GS * IC.playRate(S); };
 function pass(S, p) {
   const A = IC.agendaState(S), st = S.story, boss = st.act === 1 ? 'MIN' : 'PM';
   A.done.add(p.id); A.cur = null;
@@ -168,7 +171,7 @@ IC.agendaTick = function (S, dt) {
   const A = IC.agendaState(S); if (!A || !A.cur) return;
   A.cur.p += dt / (IC.GS * IC.playRate(S)) / 60;
   const p = IC.agendaById(A.cur.id);
-  if (A.cur.p >= p.min) pass(S, p);
+  if (A.cur.p >= IC.agendaMin(p)) pass(S, p);
 };
 /* what the open agenda says on the rail: true when nothing is before the Minister and something could be */
 IC.agendaIdle = S => { const A = IC.agendaState(S); return !!A && !A.cur && S.story.act < 4 && IC.AGENDA.some(p => !IC.agendaWhy(S, p.id)); };
