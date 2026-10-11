@@ -492,6 +492,7 @@ function onAct(e) {
     case 'floor': S.supply.floor = +v; break;
     case 'callin': { ui.seen('unit:callin'); const why = IC.callInWhy(S); if (why) { IC.toast(S, 'info', 'CALL-IN', why + '.'); break; } IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); return; }
     case 'research': IC.startResearch(S, v); break;
+    case 'agenda': { const why = IC.agendaStart(S, v); if (why) IC.toast(S, 'info', 'AGENDA', why); break; }
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
     // (closing the panel keeps the build bar on the airport it was building: only Esc on the map lets go of it)

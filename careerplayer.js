@@ -1,7 +1,7 @@
 /* A scripted Career player, for the balance run (storytest.js) and the tests. It plays Act I the way a steady
    player would: builds the national airport, grows it, draws the airspace, takes the contracts, founds a second
-   airport and a freight operation, approves what the airports can take and answers every card with its first
-   choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
+   airport and a freight operation, approves what the airports can take, keeps a policy before the Minister and answers every card with
+   its first choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
    forward base in Act II, and from Act III defends like the Quick war commander (qwplayer.js). It uses the same
    functions as the interface. Call it every game minute or so: player(S). */
 const IC = require('./headless.js');
@@ -147,6 +147,7 @@ function player(S, log) {
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
+  agenda(S);
   research(S, st.act === 1 ? (st.ch >= 4 && st.city2 && !st.apt2 ? IC.FOUND_COST + 400 : 400) : 600);
   if (st.act !== 1) { later(S, st); return; }
   // the national airport
@@ -177,6 +178,17 @@ function player(S, log) {
   // a third city's field, when its contract is taken
   if (st.contract3 && st.city3 && !st.apt3 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city3], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
   if (st.apt3) { starter(S, S.byId[st.apt3], st.contract3 && st.contract3.size === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt3]); }
+}
+/* (brief 49) the Ministry's agenda: always something before the Minister, in the order the tree lists them, with
+   money to spare for building. Of each pair that rules the other out it takes one side: AGENDA.side 0 the first
+   listed, 1 the second (a test can set it, or AGENDA.pick to choose by its own rule). */
+const AGENDA = { side: 0, pick: null };
+const pairSide = p => IC.AGENDA.indexOf(p) < IC.AGENDA.indexOf(IC.agendaById(p.excl)) ? 0 : 1;
+function agenda(S) {
+  const A = IC.agendaState(S); if (!A || A.cur || S.story.act >= 4) return;
+  const open = IC.AGENDA.filter(p => !IC.agendaWhy(S, p.id) && S.budget > p.cost + 150 && (!p.excl || pairSide(p) === AGENDA.side));
+  const p = AGENDA.pick ? AGENDA.pick(S, open) : open[0];
+  if (p) IC.agendaStart(S, p.id);
 }
 /* after Act I: the airports keep growing with the airlines, and the defence is built as the acts allow */
 function later(S, st) {
@@ -212,4 +224,4 @@ function later(S, st) {
     }
   }
 }
-module.exports = { player, site, starter, grow, research };
+module.exports = { player, site, starter, grow, research, AGENDA };

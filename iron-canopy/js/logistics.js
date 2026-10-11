@@ -655,6 +655,8 @@ IC.economy = function (S, dt) {
     const b = u.radarOn && IC.BAND[u.type], n = b ? on.filter(o => o !== u && IC.BAND[o.type] === b && U.dist(o, u) < 700).length : 0, k = 0.15 * n;
     upAD += u.d.up * (1 + k); crowd += u.d.up * k;
   }
+  // (brief 49) dual use: in the Career the air defence shares the airports' radars, fuel and runways
+  if (S.story && S.story.act >= 3 && IC.agendaMul) { const k = IC.agendaMul(S, 'adCost'); upAD *= k; crowd *= k; }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;
   const upApt = S.av ? IC.avUpkeep(S) : 0, upStaff = S.story ? IC.staffCost(S) : 0, upLoan = IC.loanRate(S);
   const up = (upAD + upAir) * mob.up + upApt + upStaff + upLoan;

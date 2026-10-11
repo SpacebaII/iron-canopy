@@ -1034,7 +1034,7 @@ IC.cityAsks = function (S, minKm) {
   const hubPax = A ? Math.max(A.day.pax, A.yesterday ? A.yesterday.pax : 0) : 0;
   if (hubPax < N.hubPax) return null;
   const aps = ourAirports(S);
-  const L = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.air && IC.cityUnserved(c) >= N.ask && !aps.some(ap => U.dist(ap, c) < (minKm || 150) * 10));
+  const L = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.air && IC.cityUnserved(c) >= N.ask * (IC.agendaMul ? IC.agendaMul(S, 'cityAsk') : 1) && !aps.some(ap => U.dist(ap, c) < (minKm || 150) * 10));
   L.sort((a, b) => IC.cityUnserved(b) - IC.cityUnserved(a));
   const c = L[0];
   return c ? { city: c, unserved: IC.cityUnserved(c), size: IC.cityUnserved(c) >= N.jets ? 'jets' : 'turbo' } : null;

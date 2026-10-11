@@ -21,6 +21,7 @@ IC.renderRoom = function (st, tab) {
   ui.setHTML($('wrBody'), f ? f() : '', key);
   if (fresh) $('wrBody').scrollTop = ui.roomScroll[key] || 0;
   if (tab === 'research') treeLinks();
+  if (tab === 'staff') agendaLinks();
 };
 /* the pages of a long room, as tabs across the top */
 const pages = (room, opts) => {
@@ -324,16 +325,69 @@ function staff() {
   if (IC.civilAct(S)) return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3>
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)]])}<p class="hint">Finish each chapter's goals (the Next goal line, top left) to move on. The story also moves on by itself if you take too long.</p></div>
+    ${agenda()}
     ${chapters ? `<div class="card wide"><h3>Act I · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card wide"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
   const nextHow = st.act < 4 ? `<p class="hint">Finish this act's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)], ['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from ${st.act === 1 ? 'chapters' : 'goals'} and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
+    ${agenda()}
     ${chapters ? `<div class="card"><h3>Act I<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card"><h3>Delegates<em>${U.money(IC.staffCost(S))}/h</em></h3><div class="list">${dels}</div><p class="hint">Delegates do routine work for you, for a running cost.</p></div>
     <div class="card"><h3>Requests<em>spend command points</em></h3><div class="list">${reqs}</div></div>
     <div class="card"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
+}
+
+/* ---------- (brief 49) the Ministry's agenda: one policy at a time, a tree by act, pairs that rule each other out ---------- */
+const agDepth = (p, memo = {}) => memo[p.id] != null ? memo[p.id] : (memo[p.id] = Math.max(0, ...p.req.map(r => IC.agendaById(r)).filter(q => q.act === p.act).map(q => 1 + agDepth(q, memo))));
+const minsOf = m => `about ${Math.max(1, Math.round(m))} min of play`;
+function agenda() {
+  const A = IC.agendaState(S), st = S.story; if (!A) return '';
+  const cur = A.cur && IC.agendaById(A.cur.id), boss = st.act === 1 ? 'Minister' : 'cabinet';
+  const slot = cur ? `<div class="slot"><small>Before the ${boss}</small><b>${esc(cur.name)}</b><span>${minsOf(IC.agendaMin(cur) - A.cur.p)} left · passes about ${esc(U.date(S.time + IC.agendaLeft(S, cur.id), S))} at this speed</span><div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(cur) * 100)}%"></i></div></div>`
+    : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
+  const words = p => {
+    const done = A.done.has(p.id), now = cur === p, why = IC.agendaWhy(S, p.id), shut = A.closed.has(p.id);
+    const cls = done ? 'done' : now ? 'cur' : shut ? 'locked shut' : !why ? 'open' : 'locked';
+    const gives = [p.pay ? `${U.money(p.pay)} when passed` : '', p.opens ? `opens ${p.opens.map(k => ({ loans: 'loans from the banks', roads: 'roads to your airports' })[k] || k).join(', ')} now` : ''].filter(Boolean);
+    const cost = [p.cost ? U.money(p.cost) : 'free', p.conf ? `${p.conf > 0 ? '+' : '−'}${Math.abs(p.conf)} confidence` : '', minsOf(IC.agendaMin(p))].filter(Boolean).join(' · ');
+    const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Passed</span>` : now ? `<span class="amber">${U.pct(A.cur.p / IC.agendaMin(p))}</span>`
+      : why ? `<span class="need">${ui.icon('lock', 'sm')} ${esc(why)}</span>`
+      : `<button class="btn sm primary" data-act="agenda" data-v="${p.id}" title="${esc(cur ? `Drops “${cur.name}” and the ${Math.round(A.cur.p)} min of work on it` : `Put it to the ${boss}: ${p.cost ? U.money(p.cost) + ' now, ' : ''}${minsOf(IC.agendaMin(p))}`)}">${cur ? 'Swap for this' : 'Put forward'}</button>`;
+    return `<div class="tnode ${cls}" data-ag="${p.id}" data-req="${p.req.join(' ')}"${p.any ? ' data-any="1"' : ''}><b>${esc(p.name)}</b><p>${esc(p.d)}</p>${gives.length ? `<p class="opens">${esc(gives.join('; '))}</p>` : ''}${p.excl && !done && !shut ? `<p class="excl">Rules out “${esc(IC.agendaById(p.excl).name)}” for good.</p>` : ''}
+      <div class="meta"><span>${done ? '' : esc(cost)}</span>${act}</div>${now ? `<div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(p) * 100)}%"></i></div>` : ''}</div>`;
+  };
+  const memo = {}, cols = Math.max(...IC.AGENDA.map(p => agDepth(p, memo))) + 1;
+  const lanes = [1, 2, 3].map(n => {
+    const ps = IC.AGENDA.filter(p => p.act === n), passed = ps.filter(p => A.done.has(p.id)).length;
+    const col = d => {
+      const L = ps.filter(p => agDepth(p, memo) === d);
+      // a pair that rules each other out sits together, joined by a dashed "or"
+      return `<div class="tcol">${L.map((p, i) => (i && L[i - 1].excl === p.id ? '<div class="aor"><span>or</span></div>' : '') + words(p)).join('')}</div>`;
+    };
+    return `<div class="lane ${n > st.act ? 'later' : ''}"><div class="lname"><b>${IC.ACTS[n].name}</b><small>${esc(IC.ACTS[n].title)} · ${passed} of ${ps.length}</small></div>${Array.from({ length: cols }, (_, d) => col(d)).join('')}</div>`;
+  }).join('');
+  return `<div class="card wide"><h3>The Ministry’s agenda<em>one policy at a time · it passes in minutes of play, whatever the speed</em></h3><div class="slots2">${slot}</div>
+      <p class="hint">Passed policies stay for the rest of the Career. Some come in pairs: passing one rules the other out for good. Starting another drops the one before the ${boss} and its work.</p></div>
+    <div class="card wide tree"><h3>Policies<em>left to right: each step needs the one it is joined to</em></h3><div class="lanes agenda" style="--cols:${cols}">${lanes}<svg class="links" aria-hidden="true"></svg></div></div>`;
+}
+/* the lines between a policy and what it needs (dashed from another act), drawn once the nodes are laid out */
+function agendaLinks() {
+  const box = $('wrBody').querySelector('.lanes.agenda'), svg = box && box.querySelector('svg.links');
+  if (!svg) return;
+  const B = box.getBoundingClientRect(), at = {};
+  for (const n of box.querySelectorAll('.tnode')) { const r = n.getBoundingClientRect(); at[n.dataset.ag] = { l: r.left - B.left, r: r.right - B.left, t: r.top - B.top, y: r.top - B.top + Math.min(26, r.height / 2), done: n.classList.contains('done'), lane: n.closest('.lane') }; }
+  let d = '', dd = '', dx = '';
+  for (const n of box.querySelectorAll('.tnode[data-req]')) for (const id of n.dataset.req.split(' ').filter(Boolean)) {
+    const a = at[id], b = at[n.dataset.ag]; if (!a || !b) continue;
+    // from an earlier act: down from the bottom of that act's policy to the top of this one
+    if (a.lane !== b.lane) { const x0 = (a.l + a.r) / 2, x1 = Math.min(b.r - 14, Math.max(b.l + 14, x0)); dx += `M${x0} ${a.y}C${x0} ${(a.y + b.t) / 2} ${x1} ${(a.y + b.t) / 2} ${x1} ${b.t}`; continue; }
+    const mx = (a.r + b.l) / 2, p = `M${a.r} ${a.y}C${mx} ${a.y} ${mx} ${b.y} ${b.l} ${b.y}`;
+    if (a.done) dd += p; else d += p;
+  }
+  const html = `<path class="l" d="${d}"/><path class="l done" d="${dd}"/><path class="l x" d="${dx}"/>`;
+  if (svg.innerHTML !== html) { svg.setAttribute('width', B.width); svg.setAttribute('height', B.height); svg.innerHTML = html; }
 }
 
 /* ---------- air ---------- */

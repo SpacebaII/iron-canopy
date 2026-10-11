@@ -554,12 +554,14 @@ const LOCKS = {
 };
 IC.storyLock = function (S, key) {
   const st = S.story; if (!st || !st.fresh || st.act > 1) return '';
+  // (brief 49) a policy on the Ministry's agenda can open a lever before its chapter
+  if (IC.agendaOpens && IC.agendaOpens(S, key)) return '';
   if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) || st.contract3 ? '' : st.ch < 4 ? 'A second airport comes later, when a city far from the capital wants to fly (Chapter 5).' : '';
   const L = LOCKS[key]; if (!L || st.ch >= L[0]) return '';
-  if (!IC.FOCUS.progress || L[0] > 5) return L[1];
+  if (!IC.FOCUS.progress || L[0] > 5) return L[1] + (IC.agendaLockNote ? IC.agendaLockNote(S, key) : '');
   // (round 4) what opens it, in one line: the chapter it comes with, and the goals between here and there
   const left = Math.max(0, chNeed(st.ch) - doneCount(S)), g = st.goals.find(x => !x.done && !x.failed);
-  return `${L[2]}: opens with Chapter ${L[0] + 1} (${U.lc(IC.CHAPTERS[L[0]].title)}), ${st.ch === L[0] - 1 ? `after ${left} more goal${left === 1 ? '' : 's'} here${g ? ` (next: ${g.text.replace(/\s*\(.*\)$/, '')})` : ''}` : `${L[0] - st.ch} chapters on; each opens when the one before has its goals done`}.`;
+  return `${L[2]}: opens with Chapter ${L[0] + 1} (${U.lc(IC.CHAPTERS[L[0]].title)}), ${st.ch === L[0] - 1 ? `after ${left} more goal${left === 1 ? '' : 's'} here${g ? ` (next: ${g.text.replace(/\s*\(.*\)$/, '')})` : ''}` : `${L[0] - st.ch} chapters on; each opens when the one before has its goals done`}.${IC.agendaLockNote ? IC.agendaLockNote(S, key) : ''}`;
 };
 /* ---------- the Guide: lessons the player has reached ----------
    Each lesson opens at a point in the Career (act, and in Act I the chapter). The Guide shows the ones reached, the
@@ -726,6 +728,7 @@ function startAct(S, n) {
     card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `The ${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.${led.length ? ' What the quiet years left you: ' + led.join(' ') : ''}`, 'chapter');
     say(S, 'CDS', `This is war. Missiles, drones and aircraft will come in raids. You decide where the air goes and what we defend.`);
   }
+  if (IC.agendaAct) IC.agendaAct(S, n);
 }
 IC.storyStartAct = startAct;
 /* what the quiet years built, in the words the war will judge it by (brief 25): a sentence for each link */
@@ -828,7 +831,7 @@ IC.REMAKE.storyBeat = (S, act, id) => beatsFor(S, act).find(b => b.id === id);
 const doneCount = S => S.story.goals.filter(g => g.done).length;
 const goalDone = (S, id) => { const g = S.story.goals.find(x => x.id === id); return !!(g && g.done); };
 const inAct = S => S.time - S.story.actT;
-function raise(S, v) { S.tension = U.clamp((S.tension || 0) + v, 0, 100); }
+function raise(S, v) { if (v > 0 && IC.agendaMul) v *= IC.agendaMul(S, 'tension'); S.tension = U.clamp((S.tension || 0) + v, 0, 100); }
 IC.storyRaise = raise;
 function nearTown(S) {
   const c = IC.cities(S).filter(x => !x.capital).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0] || IC.cap(S);
@@ -1058,6 +1061,8 @@ IC.storyTick = function (S, dt) {
   if (st.act === 1) actOneTick(S);
   // (round 4) the player's clock, the milestones and the peacetime deck (deck.js)
   if (IC.deckTick) IC.deckTick(S, dt);
+  // (brief 49) the Ministry's agenda: the policy before the Minister runs on the play clock (agenda.js)
+  if (IC.agendaTick) IC.agendaTick(S, dt);
   // beats: each has its own clock, started when its condition is met
   st.beatT -= dt;
   if (st.beatT <= 0) {
@@ -1082,7 +1087,9 @@ IC.storyTick = function (S, dt) {
     // (before the war the Career runs for years: confidence settles over a couple of months towards what the
     // airlines' satisfaction says, 60 at the old neutral 58, so it reflects how the sector is doing lately; goals
     // and decisions push it, and the push fades)
-    const drift = st.act >= 4 ? (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
+    // (brief 49: Keep the airlines flying softens the war's fall while the airspace is open)
+    const war = (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0);
+    const drift = st.act >= 4 ? (war < 0 && IC.agendaMul ? war * IC.agendaMul(S, 'warDrift') : war) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
     // before the first airliner there are no airlines to judge you by: the Minister waits
     const judge = st.act > 1 || st.opened;
     // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices
