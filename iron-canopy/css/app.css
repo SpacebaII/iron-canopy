@@ -665,6 +665,9 @@ table.t th.r{text-align:right}
 .tnode .need{display:inline-flex;gap:.3rem;align-items:center;text-align:right}
 .tnode .meta{flex-wrap:wrap}
 .lanes svg .l.x{stroke-dasharray:4 5}
+.slot.next{background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);opacity:.75}
+.lane.shut{grid-template-columns:7.5rem 1fr;align-items:center;opacity:.6}.lane.shut .hint{margin:0}
+.tnode.shut{opacity:.4}.tnode .excl{font-size:.85em;color:var(--amber,#f2b441);margin:.2rem 0 0}
 
 /* ---------- the start screen ---------- */
 .app.at-start>:not(#map):not(#start):not(.modal){visibility:hidden}

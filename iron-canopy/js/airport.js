@@ -16,7 +16,10 @@ IC.aptLockWhy = function (S, kind, mat) {
   const k = mat === 'rconc' && IC.PAVED && IC.PAVED[kind] ? 'rconc' : kind;
   if (IC.aptTechOk(S, k)) return '';
   const t = IC.TECH && IC.TECH.find(x => x.id === IC.APT_TECH[k]);
-  return `Needs research: ${t ? t.name.toLowerCase() : k} (Research room).`;
+  if (!t) return `Needs research: ${k} (Research room).`;
+  // (brief 48) where it is in the tree, and what must come first
+  const lane = IC.TECH_CATS.find(c => c.id === t.cat), cur = IC.researching && IC.researching(S, t.id), before = t.req.filter(r => !S.tech.done.has(r)).map(r => IC.TECH.find(x => x.id === r).name);
+  return `Needs research: ${t.name.toLowerCase()} (Research room${lane ? `, ${lane.name}` : ''}${cur ? `: under way, ${U.pct(cur.prog)} done` : before.length ? `; first ${before.join(' and ')}` : ''}).`;
 };
 /* service pads: aircraft taxi onto them to be de-iced or refuelled, like into a hangar (airport-life parts) */
 IC.APART.deice = { name: 'De-icing pad', w: 0.9, h: 0.7, cost: 30, build: 900, hp: 30, pad: true, desc: 'A pad by the runway where aircraft are sprayed before take-off on frosty mornings. Without one they are de-iced at the stand, which takes longer.' };
@@ -569,7 +572,8 @@ IC.rwUsable = rw => rw.built && rw.hp > 0 && !rw.shut && !(rw.wear >= 1) ? Math.
 
 /* spacing between runway movements: a tower and an approach radar let controllers pack them tighter. A runway the
    tower cannot see (st.unseen, by its id) is worked as if there were no tower */
-IC.aptSep = (st, rwId) => (!st.tower || (rwId && st.unseen && st.unseen[rwId]) ? 480 : st.radar ? 60 : 110) * (st.lvp ? 1.6 : 1);
+/* (brief 48) st.occK: research that has the tower clear the next movement sooner (IC.mod 'rwOcc'), set by IC.aptStats */
+IC.aptSep = (st, rwId) => (!st.tower || (rwId && st.unseen && st.unseen[rwId]) ? 480 : st.radar ? 60 : 110) * (st.lvp ? 1.6 : 1) * (st.occK || 1);
 
 /* ---------- what the tower sees, and how fast the fire trucks come ---------- */
 IC.TOWER_VIEW = 80;   // 8 km: beyond it controllers in the cab cannot follow aircraft on a runway
@@ -606,7 +610,7 @@ IC.rwFireOk = (ap, rw, T) => T.mil || T.stand !== 'l' || !ap.st || !ap.st.rescue
 IC.fireRun = function (S, ap, at, kind) {
   const st = ap.parts.filter(f => f.kind === 'fire' && f.built && f.hp > f.max * 0.25).sort((a, b) => U.dist(a, at) - U.dist(b, at))[0];
   if (!st) return null;
-  const dur = IC.fireTime(st, at);
+  const dur = IC.fireTime(st, at, S);
   ap.fireRun = { kind, from: st.id, x: at.x, y: at.y, t0: S.time, dur, home: S.time + dur + (kind === 'crash' ? 3600 : 600) };
   return ap.fireRun;
 };
@@ -618,13 +622,13 @@ IC.aptServiceLines = function (S, ap) {
   const st = ap.st || {}, rws = (st.rwy || []), out = {};
   const mv = (ap.mvLog || []).length, blind = rws.filter(r => st.unseen && st.unseen[r.id]);
   out.tower = !st.tower ? `No tower: one movement every ${U.dur(IC.aptSep(Object.assign({}, st, { tower: false })))} on a runway. A tower that sees the runways clears one every ${U.dur(IC.aptSep(Object.assign({}, st, { tower: true, unseen: null })))}.`
-    : `Handling ${mv} movement${mv === 1 ? '' : 's'} in the last hour, one every ${U.dur(IC.aptSep(st))} on a runway (rated ${st.movesPerHour || 0} an hour).` + (blind.length ? ` It cannot see ${blind.map(r => r.name).join(', ')}: one movement every ${U.dur(IC.aptSep(st, blind[0].id))} there.` : '');
+    : `Handling ${mv} movement${mv === 1 ? '' : 's'} in the last hour, one every ${U.dur(IC.aptSep(st))} on a runway${IC.modNote(S, 'rwOcc') ? ' ' + IC.modNote(S, 'rwOcc') : ''} (rated ${st.movesPerHour || 0} an hour).` + (blind.length ? ` It cannot see ${blind.map(r => r.name).join(', ')}: one movement every ${U.dur(IC.aptSep(st, blind[0].id))} there.` : '');
   const R = ap.fireRun, drill = R && R.kind === 'drill' && S.time >= R.t0 + R.dur ? ` Last drill: there in ${IC.mmss(R.dur)}.` : '';
   out.fire = !st.fire ? 'No fire station within 1.5 km of a runway: only turboprops may use the airport.'
-    : rws.map(r => { const t = (st.rescueRw || {})[r.id] || 0; return `Fire trucks reach ${r.name} in ${IC.mmss(t)}${t > IC.FIRE_STD ? ': heavy jets may not land on it' : ''}`; }).join('. ') + '.' + drill;
+    : rws.map(r => { const t = (st.rescueRw || {})[r.id] || 0; return `Fire trucks reach ${r.name} in ${IC.mmss(t)}${t > IC.FIRE_STD ? ': heavy jets may not land on it' : ''}`; }).join('. ') + '.' + (IC.modNote(S, 'fireTime') ? ` ${IC.modNote(S, 'fireTime').replace(/^\(|\)$/g, '').replace(/^./, c => c.toUpperCase())}.` : '') + drill;
   const fd = ap.fuelDay && ap.fuelDay.d === Math.floor(S.time / 86400) ? ap.fuelDay : null;
   out.fuel = !st.tanks ? 'No fuel farm: departures cannot refuel here.'
-    : (st.hydrant ? `${st.tanks} tank${st.tanks > 1 ? 's' : ''} feed the hydrant system: no trucks to wait for.` : `${st.tanks} tank${st.tanks > 1 ? 's' : ''}, ${ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel : st.tanks * 2} fuel trucks: they refuel ${ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel * IC.FUEL_TRUCKS / 2 : st.trucks} aircraft an hour (each truck ${IC.FUEL_TRUCKS / 2}).`)
+    : (st.hydrant ? `${st.tanks} tank${st.tanks > 1 ? 's' : ''} feed the hydrant system: no trucks to wait for.` : `${st.tanks} tank${st.tanks > 1 ? 's' : ''}, ${ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel : st.tanks * 2} fuel trucks: they refuel ${Math.round(ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel * IC.fuelRate(S) / 2 : st.trucks)} aircraft an hour (each truck ${Math.round(IC.fuelRate(S) / 2 * 10) / 10})${IC.modNote(S, 'refuel') ? ' ' + IC.modNote(S, 'refuel') : ''}.`)
       + (fd && fd.s ? ` Departures waited ${U.dur(fd.s)} for fuel today.` : '');
   return out;
 };
@@ -774,6 +778,7 @@ IC.aptStats = function (S, ap) {
   // (landing systems built before that research are CAT I; those in the starting layouts are CAT III)
   st.cat3 = ap.parts.some(p => p.kind === 'ils' && p.built && p.hp > p.max * 0.25 && (p.cat || 3) >= 3);
   st.lvp = !!(S && S.weather && IC.needILS(S) && !st.cat3 && ap.kind !== 'airbase');
+  st.occK = S ? IC.mod(S, 'rwOcc') : 1;
   if (st.lvp) st.warn.push('Fog: low-visibility procedures space every movement 60% wider. A CAT III landing system (research) keeps them tight.');
   const sep = IC.aptSep(st);
   ap.st = st;
@@ -840,7 +845,7 @@ IC.aptStats = function (S, ap) {
     const out = st.windOut.filter(w => w.type !== 'light');
     if (out.length && ap.kind !== 'airbase') st.warn.push(`Wind ${IC.windText(S)}: ${out.map(w => IC.ACTYPES[w.type].name.toLowerCase() + 's').join(' and ')} cannot use any runway (${out[0].why}). A runway pointing into this wind would keep them flying.`);
     // gusts across the runways in use, beyond what some crews may land in: those landings are risky
-    const gusty = ['turbo', 'narrow', 'wide'].filter(k => !out.some(w => w.type === k) && rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES[k].rwy) && rws.every(rw => !cfg.rw[rw.id] || IC.rwWindBlock(S, rw, cfg.rw[rw.id].dir, IC.ACTYPES[k]) || IC.windOn(S, IC.rwHdg(rw, cfg.rw[rw.id].dir)).gCross > IC.ACTYPES[k].xw));
+    const gusty = ['turbo', 'narrow', 'wide'].filter(k => !out.some(w => w.type === k) && rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES[k].rwy) && rws.every(rw => !cfg.rw[rw.id] || IC.rwWindBlock(S, rw, cfg.rw[rw.id].dir, IC.ACTYPES[k]) || IC.windOn(S, IC.rwHdg(rw, cfg.rw[rw.id].dir)).gCross > IC.xwLimit(S, IC.ACTYPES[k])));
     st.gusty = gusty;
     if (gusty.length && ap.kind !== 'airbase') st.warn.push(`Gusts up to ${Math.round(S.wind.gust)} kt across the runways: ${gusty.map(k => IC.ACTYPES[k].name.toLowerCase() + 's').join(' and ')} are landing beyond their limits. A crash is possible.`);
   }
@@ -852,7 +857,7 @@ IC.aptStats = function (S, ap) {
   const fireSt = fires.filter(f => rws.some(rw => U.dist(f, rwAt(rw, 0.5)) < 15));
   st.fire = fireSt.length > 0;
   st.rescue = 0; st.rescueRw = {};
-  for (const rw of rws) { let r = 0; for (const t of [0, 0.5, 1]) r = Math.max(r, IC.aptRescue(ap, rwAt(rw, t))); st.rescueRw[rw.id] = r; st.rescue = Math.max(st.rescue, r); }
+  for (const rw of rws) { let r = 0; for (const t of [0, 0.5, 1]) r = Math.max(r, IC.aptRescue(ap, rwAt(rw, t), S)); st.rescueRw[rw.id] = r; st.rescue = Math.max(st.rescue, r); }
   // heavy jets need a runway long enough for them that the trucks reach in 3 minutes
   st.heavyOk = rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES.wide.rwy && st.rescueRw[rw.id] <= IC.FIRE_STD);
   if (!tower) st.warn.push('No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
@@ -860,7 +865,7 @@ IC.aptStats = function (S, ap) {
   else for (const rw of rws) if (st.rescueRw[rw.id] > IC.FIRE_STD) st.warn.push(`Fire trucks reach ${rw.name} in ${IC.mmss(st.rescueRw[rw.id])}: heavy jets may not land on it, and more people die in a crash there. A fire station closer to its far end brings it under 3 min.`);
   if (rws.length) { const w = waterNear(S, ap, rws); if (w.near && ap.kind !== 'airbase') st.warn.push(`A ${w.what} ${U.km(w.d)} from the runway attracts birds: now and then one hits an aircraft.`); }
   for (const t of alive('terminal')) st.pax += IC.APART.terminal.pax * t.w * t.h;
-  for (const t of alive('cargo')) st.cargo += 60 * t.w * t.h;
+  for (const t of alive('cargo')) st.cargo += 60 * t.w * t.h * (S ? IC.mod(S, 'cargoRate') : 1);
   // fuel: stock in the tanks, resupply by road or pipeline, and how many aircraft the trucks can refuel an hour
   const tanks = alive('fuel');
   st.hydrant = alive('hydrant').length > 0;
@@ -870,8 +875,8 @@ IC.aptStats = function (S, ap) {
   st.fuel = tanks.reduce((s, t) => s + (t.stock || 0), 0);
   st.fuelIn = nTank ? nTank * IC.FUEL_IN + (st.hydrant ? IC.APART.hydrant.pipe : 0) : 0;
   // (round 5b) the airport's own trucks; kept matched, it buys more as traffic grows, so the tanks' share is the floor
-  const own = ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel * IC.FUEL_TRUCKS / 2 : null;
-  st.trucks = st.hydrant ? Infinity : own == null ? nTank * IC.FUEL_TRUCKS : ap.fleet.auto ? Math.max(own, nTank * IC.FUEL_TRUCKS) : own;
+  const fr = IC.fuelRate(S), own = ap.fleet && IC.FOCUS.gse ? ap.fleet.fuel * fr / 2 : null;
+  st.trucks = st.hydrant ? Infinity : own == null ? nTank * fr : ap.fleet.auto ? Math.max(own, nTank * fr) : own;
   st.fuelDeps = Math.round(Math.min(st.trucks, st.fuelIn / (T.fuel || 1)));
   if (tanks.length && st.fuelDeps < st.depPerHour * 0.8 && ap.kind !== 'airbase') st.warn.push(`Fuel for about ${st.fuelDeps} departures an hour, fewer than the runways can launch (${st.depPerHour}). ${st.hydrant ? 'More tanks' : 'More tanks or a hydrant system'} would help.`);
   for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (IC.fuelGap(tanks[i], tanks[j]) < 1) { st.warn.push(`Fuel ${tanks[i].r ? 'tanks' : 'farms'} stand within 100 m of each other: one fire could take them all. Keep them further apart.`); i = tanks.length; break; }
@@ -1157,7 +1162,7 @@ IC.aptQueue = function (S, ap, key) {
   if (!it || workFor(ap, key) || S.budget < it.cost) return false;
   IC.pay(S, 'repair', it.cost);
   const rrr = IC.hasTech(S, 'l_rrr') && (key.startsWith('cr:') || key.startsWith('tx:')) ? 0.5 : 1;
-  const w = { id: IC.nid('w'), key, kind: 'repair', label: it.label, prog: 0, dur: it.dur * rrr, it };
+  const w = { id: IC.nid('w'), key, kind: 'repair', label: it.label, prog: 0, dur: it.dur * rrr / (it.wear ? 1 : IC.mod(S, 'repair')), it };
   ap.works.push(w);
   // resurfacing closes the part while it runs
   if (it.wear) { it.part.shut = w.id; ap.dirty = true; ap.cfg = null; }
@@ -1430,7 +1435,7 @@ IC.updateBases = function (S, dt) {
         if (d > 1.6) continue;
         const was = q.hp;
         // (by its size: a fuel farm of three tanks burns down as fast as one tank did)
-        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / 1.6));
+        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / 1.6) * IC.mod(S, 'fuelSpread'));
         if (was > q.max * 0.25 && q.hp <= q.max * 0.25) {
           IC.log(S, 'leak', 'FIRE', `${b.name}: fire spreads to the ${U.lc(IC.APART[q.kind].name)}.`, q);
           if (q.kind === 'fuel') { q.burning = 5400; q.stock = 0; IC.explode(S, q.x, q.y, 1.6, 'ground'); IC.addFire(S, q.x, q.y, 1.6, 8000); }
@@ -1473,7 +1478,7 @@ IC.aptTakeFuel = function (ap, n, S) {
     const L = ap.trucks = (ap.trucks || []).filter(t => now - t < 3600);
     // (round 5b) the airport's own fuel trucks, four refuellings an hour each; before it has a fleet, two a tank
     const own = IC.gseFuelCap ? IC.gseFuelCap(S, ap) : null;
-    const cap = own != null ? own * IC.FUEL_TRUCKS / 2 : ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).reduce((s, t) => s + IC.fuelTanks(t), 0) * IC.FUEL_TRUCKS;
+    const cap = own != null ? own * IC.fuelRate(S) / 2 : ap.parts.filter(p => p.kind === 'fuel' && p.built && p.hp > p.max * 0.25).reduce((s, t) => s + IC.fuelTanks(t), 0) * IC.fuelRate(S);
     // every truck busy: with a fuel stand the aircraft taxis there on its way out (groundops.js); without, it waits
     if (L.length >= cap) {
       if (!ap.parts.some(p => p.kind === 'fuelpad' && p.built && p.hp > p.max * 0.25 && p.linked !== false)) { ap.truckWait = now; return false; }

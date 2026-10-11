@@ -58,7 +58,8 @@ IC.storyAllows = function (S, type) {
 };
 IC.roomAllowed = function (S, room) {
   const st = S.story; if (!st) return room !== 'aviation' || !!S.av;
-  const need = { air: 2, intel: 2, research: 3, logi: 3, industry: 3 }[room];
+  // (brief 48) research from day one: the civil lanes; the military ones open in Act III (IC.techLaneOpen)
+  const need = { air: 2, intel: 2, logi: 3, industry: 3 }[room];
   return !need || st.act >= need;
 };
 IC.staffCost = S => { const st = S.story; if (!st) return 0; let v = st.extraUp || 0; for (const k in st.del) if (st.del[k]) v += IC.DELEGATES[k].cost; return v; };
@@ -569,6 +570,7 @@ IC.GUIDE = [
   { id: 'building', act: 1, ch: 0, t: 'Building takes time, money and materials', d: 'Engineers build in stages: survey, earthworks, paving, markings and lights, then the opening. Each stage is paid as it runs, and paving uses concrete, asphalt and steel that lorries bring from the nearest town with industry: when the site runs out, work stops and the panel says why. Paving next to a runway closes it, unless you set the job to night work. Homes in the way are bought and cleared; their town will not thank you.' },
   { id: 'pavement', act: 1, ch: 0, t: 'Pavement', d: 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.' },
   { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (7) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
+  { id: 'research', act: 1, ch: 0, t: 'Research', d: 'The Research room (R) runs projects in slots: two at the start, a third from the Research office in the Airlines and cargo lane, a fourth when Act II begins. Most projects are small shares, refuelling 5% faster or works 5% cheaper, ranked I, II and III; at the end of each lane is something bigger, like jet bridges or hydrant fuel. A few pairs rule each other out: pick Quick turns and Premium handling is closed for good, so two airports built by two players end up different. A project takes minutes of play, not months: Wait and skip do not finish it sooner, so start one whenever a slot is free (the rail shows a dot when one is idle). Where a panel shows a number research changed, it says so: “24 aircraft an hour (+10% from research)”.' },
   { id: 'money1', act: 1, ch: 0, t: 'Money in, money out', d: 'At first the money comes from the Treasury: a large sum to build the national airport, and a small grant an hour. Once airlines fly, they pay a landing fee for every aircraft and a charge for every passenger. What you build costs a little every hour to keep (0.12% of its price), so build what the airlines will use. The Economy room (E) shows both sides.' },
   { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the deal is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
   { id: 'runway', act: 1, ch: 1, t: 'Runway capacity', d: 'Without a tower, arrivals and departures are kept 8 minutes apart; with one, 2 minutes; an approach radar tightens it further. A taxiway to each runway end stops departures backtracking, and exits where landing aircraft slow down free the runway sooner.' },
@@ -619,7 +621,7 @@ IC.storyMeanwhile = function (S) {
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
   if (IC.FOCUS.progress || doneCount(S) < C.need || age >= C.min) return null;
   const tips = [];
-  const free = S.tech.slots.some(x => !x), open = IC.TECH.filter(t => t.cat === 'apt' && !S.tech.done.has(t.id) && !IC.researching(S, t.id) && t.req.every(r => S.tech.done.has(r)));
+  const free = S.tech.slots.some(x => !x), open = IC.TECH.filter(t => IC.techCivil(t) && IC.techOpenNow(S, t));
   if (free && open.length) tips.push(`Research: ${open.slice(0, 2).map(t => `${t.name.toLowerCase()} (${IC.techDur(S, t)})`).join(' or ')} in the Research room.`);
   if (S.av.requests.length) tips.push(`An airline offer is waiting in the Aviation room.`);
   const ap = capApt(S), warn = ap && ap.st && ap.st.warn && ap.st.warn[0];

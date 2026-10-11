@@ -643,7 +643,7 @@ IC.economy = function (S, dt) {
   let trade = IC.tradeTax(S) * mob.tax;
   let aidRate = S.support * 0.12, base = 25;
   // in the story the budget grows with the job: a civil aviation authority, then a defence command
-  if (S.story) { const k = IC.STORY_TAX[S.story.act] || 0; base = S.story.grant; tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
+  if (S.story) { const k = IC.STORY_TAX[S.story.act] || 0; base = S.story.grant * IC.mod(S, 'grant'); tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
   // Quick war: the air defence gets its share of the cities' taxes; the rest runs the country
   else if (S.mode === 'campaign') { base = IC.QW_GRANT; tax *= IC.QW_TAX_SHARE; trade *= IC.QW_TAX_SHARE; }
   let upAD = 0;
@@ -689,20 +689,7 @@ IC.economy = function (S, dt) {
     IC.log(S, 'kill', 'AID', `Allied aid package received: ${U.money(v)}.`);
     IC.news(S, `${S.world.names.C} and ${S.world.names.D} announce ${U.money(v)} in aid to ${S.world.names.H}.`);
   }
-  const T = S.tech;
-  T.slots.forEach((sl, i) => {
-    if (!sl) return;
-    const tech = IC.TECH.find(x => x.id === sl.id);
-    sl.prog += dt / IC.techTime(S, tech);
-    if (sl.prog >= 1) {
-      T.done.add(tech.id); T.slots[i] = null; IC.modDirty(S);
-      IC.log(S, 'kill', 'RESEARCH', `${tech.name} complete.`);
-      IC.news(S, `Defence ministry fields new capability: ${tech.name.toLowerCase()}.`);
-      IC.techAir(S, tech.id);
-      IC.sfx && IC.sfx.ui('ok');
-      IC.emit(S, 'research', tech.id);
-    }
-  });
+  IC.researchTick(S, dt);
 };
 /* warn before the money runs out, not after: at a day, six hours and one hour left */
 function moneyWatch(S) {
@@ -728,7 +715,7 @@ IC.waitTargets = function (S) {
     const left = Math.max(0, (w.cost || 0) - (w.spent || 0));
     if (left > 1) L.push({ key: 'work:' + w.id, what: `${w.part && w.part.kind === 'runway' && w.kind === 'build' ? w.part.name : U.lc(w.label.replace(/^Build /, 'the '))} at ${ap.name.replace(/ (International|Airport|Air Base)$/, '')}`, amt: left, work: w.id, money: /money/.test(w.wait || '') });
   }
-  for (const t of IC.TECH) if (!S.tech.done.has(t.id) && !IC.researching(S, t.id) && t.req.every(r => S.tech.done.has(r)) && t.cost > S.budget && (!S.story || t.cat === 'apt' || S.story.act >= 3))
+  for (const t of IC.TECH) if (IC.techOpenNow(S, t) && t.cost > S.budget)
     L.push({ key: 'tech:' + t.id, what: `research: ${t.name.toLowerCase()}`, amt: t.cost });
   L.sort((a, b) => (b.money ? 1 : 0) - (a.money ? 1 : 0) || a.amt - b.amt);
   // (round 5b) never offer what will never come: with more going out than coming in, nothing above the treasury
@@ -818,33 +805,5 @@ IC.waitTick = function (S, dt) {
 };
 const cap1 = t => t.charAt(0).toUpperCase() + t.slice(1);
 
-/* research for airports: in the Career these open airport items (IC.APT_TECH in airport.js); each says what it opens */
-if (!IC.TECH_CATS.some(c => c.id === 'apt')) {
-  IC.TECH_CATS.push({ id: 'apt', name: 'Airports' });
-  IC.TECH.push(
-    { id: 'p_bridge', cat: 'apt', name: 'Jet bridges', cost: 60, time: 1800, req: [], desc: 'Opens: jet bridges at gates. Passengers board through a covered bridge instead of walking out across the apron: turnarounds at gates about 8% quicker.' },
-    { id: 'p_rconc', cat: 'apt', name: 'Reinforced concrete', cost: 90, time: 2700, req: [], desc: 'Opens: reinforced concrete pavement. It carries 600 t, and a bomb leaves a crater about half the size.' },
-    { id: 'p_hydrant', cat: 'apt', name: 'Hydrant fuel systems', cost: 120, time: 3600, req: ['p_bridge'], desc: 'Opens: the hydrant fuel system. Fuel piped under the aprons: no waiting for a fuel truck.' },
-    { id: 'p_gradar', cat: 'apt', name: 'Ground movement radar', cost: 100, time: 2700, req: [], desc: 'Opens: the ground radar. The tower sees every aircraft on the ground, at night and in fog.' },
-    { id: 'p_ils3', cat: 'apt', name: 'CAT III landing systems', cost: 150, time: 3600, req: ['p_gradar'], desc: 'Opens: CAT III landing systems. Landing systems built after it keep movements closely spaced in fog; earlier ones are CAT I, and fog then spaces every movement 60% wider.' }
-  );
-}
-/* how long a project takes: in the Career by the calendar (about a month for every 12½ live minutes it used to take,
-   so a big one takes a year), on the live clock in a Quick war */
-IC.techMonths = t => t.mo || Math.max(1, Math.round(t.time / 750));
-IC.techTime = (S, t) => S.mode === 'story' ? IC.MO(S, IC.techMonths(t)) : t.time;
-IC.techDur = (S, t, f) => { const g = (f == null ? 1 : f) * IC.techTime(S, t); return S.mode === 'story' ? U.months(g) : U.dur(g); };
-IC.researching = (S, id) => S.tech.slots.find(s => s && s.id === id);
-IC.startResearch = function (S, id) {
-  const t = IC.TECH.find(x => x.id === id);
-  const slot = S.tech.slots.findIndex(s => !s);
-  if (!t || S.tech.done.has(id) || IC.researching(S, id) || slot < 0 || S.budget < t.cost) return false;
-  if (!t.req.every(r => S.tech.done.has(r))) return false;
-  IC.pay(S, 'research', t.cost);
-  S.tech.slots[slot] = { id, prog: 0 };
-  IC.log(S, 'info', 'RESEARCH', `Started ${t.name}: ready in ${IC.techDur(S, t)}.`);
-  IC.emit(S, 'researchStart', id);
-  return true;
-};
-
+/* research itself (the tree, slots, pace, starting a project) is in research.js */
 })(window.IC);
