@@ -321,6 +321,14 @@ IC.radioGoAround = function (S, ap, m, o, why) {
   IC.sfx && IC.sfx.radio && IC.sfx.radio();
   IC.log(S, 'info', 'RADIO', `${ap.name} tower: ${m.who || 'an arrival'}, going around at 1 km on ${IC.rwEnd(m.plan.rw, m.plan.dir)}: ${why}. It flies a circuit and lands in about ${Math.round(CIRCUIT / 60)} minutes.`, m);
 };
+/* a turnaround in parts: boarding and deplaning are about 45% of it, catering and cleaning 20% (freighters have
+   neither); 'turn' shortens the whole. What multiplies the type's turnaround time (aviation.js) */
+IC.TURN_SHARE = { board: 0.45, catering: 0.2 };
+IC.turnK = function (S, T) {
+  if (!S) return 1;
+  const b = T && !T.seats ? 0 : IC.TURN_SHARE.board, c = T && !T.seats ? 0 : IC.TURN_SHARE.catering;
+  return IC.mod(S, 'turn') * (1 - b - c + b * IC.mod(S, 'board') + c * IC.mod(S, 'catering'));
+};
 function parked(S, tl, ap, s, m) {
   tl.where = 'stand'; tl.mv = null; tl.at = ap.id; tl.lastStand = s.id;
   s.occ = tl.id;
@@ -331,6 +339,8 @@ function parked(S, tl, ap, s, m) {
   const load = termLoad(S, ap);
   if (tl.T.seats) turn *= 1 + Math.max(0, load - 0.8) * 2.5;
   if (tl.T.cargo && !st.cargo) turn *= 2;
+  // (brief 48) quicker boarding, catering and handling from research
+  turn *= IC.turnK(S, tl.T);
   tl.t = turn; tl.turn0 = turn;
   judge(S, al, tl, ap, { taxi: m.taxiT, wait: m.waitT + (tl.hold || 0), kind: 'arr' });
   IC.emit(S, 'tailParked', { tl, ap });
@@ -962,14 +972,14 @@ IC.dealNeeds = function (S, q) {
     if (T.cargo) {
       // freighters park in the cargo zone, or on large passenger stands the wide-bodies leave free
       row('cargoStands', 'large stands for freighters', N.cargoStands, (P.cargoStands || 0) + Math.max(0, paxStands - fitting(N.stands, 'l')), 'more large stands, best in the cargo zone');
-      row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
+      row('cargoT', `cargo handling, t a day${IC.modNote(S, 'cargoRate') ? ' ' + IC.modNote(S, 'cargoRate') : ''}`, Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
     } else {
       row('stands', `${IC.STAND[T.stand].name}${T.stand === 'l' ? '' : ' or larger'} stands`, fitting(N.stands, T.stand), paxStands, `more ${IC.STAND[T.stand].name} stands`);
       if ((IC.DEAL.gates[al.kind] || 0) > 0) row('gates', 'stands at the terminal (gates)', N.gates, P.gates || 0, 'more stands beside a terminal');
       row('pax', 'terminal room, passengers an hour', Math.round(N.pax), Math.round(P.pax || 0), 'a bigger terminal');
     }
     if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar || 0, 'hangar space for the aircraft based here');
-    row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'another fuel farm, or a hydrant system');
+    row('fuelDeps', `refuellings an hour${IC.modNote(S, 'refuel') ? ' ' + IC.modNote(S, 'refuel') : ''}`, Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'another fuel farm, or a hydrant system');
     // (round 5b) under a cap, the day must have room for its slots (a renewal already has its own)
     const B = ap.dayb;
     if (B && B.cap > 0 && IC.dayPlan && !q.renew) { const D = IC.dayPlan(S, ap), open = B.night === 'curfew' ? 17 : 24; row('slots', 'departure slots a day under your cap', D.dep.reduce((a, b) => a + b, 0) + Math.ceil(dealWorth(S, q, 1).perWk / 7), B.cap * open, 'a higher cap on the day board'); }
@@ -1007,8 +1017,10 @@ IC.dealTerms = function (S, q, lvl, excl) {
   const charge = t.list * (1 + d) * (x ? 1.08 : 1);
   const days = Math.max(1, Math.round(t.days * (1 - 2.5 * d) * (x ? 1.25 : 1)));
   const w = dealWorth(S, q, charge);
-  const over = d + (x ? 0.08 : 0) - t.flex - (x ? 0.08 : 0) * (t.excl ? 1 : 0);
-  const why = x && !t.excl ? 'it has not asked for the route to itself' : over > 0.001 ? `it will not pay more than ${U.pct(1 + t.flex)} of your list charges` : '';
+  // (brief 48) research and policy that make airlines accept more over list ('overList', a share of list)
+  const flex = t.flex + IC.modAdd(S, 'overList');
+  const over = d + (x ? 0.08 : 0) - flex - (x ? 0.08 : 0) * (t.excl ? 1 : 0);
+  const why = x && !t.excl ? 'it has not asked for the route to itself' : over > 0.001 ? `it will not pay more than ${U.pct(1 + flex)} of your list charges` : '';
   return Object.assign(w, { charge, days, ok: !why, why, lvl: i, excl: x });
 };
 IC.avNegotiate = function (S, id, lvl, excl) {
@@ -1122,7 +1134,7 @@ function dealsDay(S) {
     const D = d.day, bad = D.late + D.cancel * 2, al = airlineOf(S, d.al);
     d.day = { late: 0, cancel: 0, n: 0 };
     // (a deal that runs for years forgives a bad day after a month of good ones)
-    if (!D.n || bad < Math.max(3, D.n * 0.25)) { if (career(S) && d.strikes && ++d.good >= IC.dpm(S)) { d.strikes--; d.good = 0; } continue; }
+    if (!D.n || bad < Math.max(3, D.n * 0.25)) { if (career(S) && d.strikes && ++d.good >= IC.dpm(S) / IC.mod(S, 'forgive')) { d.strikes--; d.good = 0; } continue; }
     d.good = 0;
     d.strikes++;
     repAdd(S, S.byId[d.a], -2);
@@ -1151,12 +1163,12 @@ function offerGap(S) {
   const A = S.av;
   // airlines kept on the ground by a closed airspace are slow to offer again
   const g = Math.max(0, ...A.airlines.map(al => IC.avGrudge(S, al)));
-  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600 * (1 + g);
+  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600 * (1 + g) / IC.mod(S, 'offerRate');
   // the Career: an offer every month or two, by the calendar
   const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
   const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
   const O = IC.FOCUS.progress && S.story.act === 1 ? IC.DEAL.offerMoF : IC.DEAL.offerMo;
-  return IC.MO(S, U.rand(O[0], O[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g);
+  return IC.MO(S, U.rand(O[0], O[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g) / IC.mod(S, 'offerRate');
 }
 
 

@@ -268,7 +268,7 @@ function airspace() {
   const fields = N.fields.map(f => `<div class="li click" data-act="selField" data-id="${f.id}"><b>${esc(f.name)}</b><small>${esc(f.club)} · mood ${Math.round(f.mood)}% · ${f.today} movements today</small></div>`).join('');
   const d = N.day;
   // the controllers' load is shown from the start: the struggle comes before the tools to fix it
-  const work = `<span class="${N.work > 1 ? 'hostile' : N.work > 0.8 ? 'amber' : ''}">${U.pct(N.work || 0)}</span> · ${Math.round(N.load || 0)} flights’ worth of work for a team that handles ${N.cap}`;
+  const work = `<span class="${N.work > 1 ? 'hostile' : N.work > 0.8 ? 'amber' : ''}">${U.pct(N.work || 0)}</span> · ${Math.round(N.load || 0)} flights’ worth of work for a team that handles ${Math.round(N.cap)}${IC.modNote(S, 'ctlLoad') ? ' ' + IC.modNote(S, 'ctlLoad') : ''}`;
   if (IC.storyLock(S, 'airways')) return `<div class="card"><h3>Airspace<em>controllers work the old way</em></h3>
       ${kv([['Controllers’ workload', work], ['Airliners over us now', airOn.length], ['Separation lost today', `<span class="${d.los ? 'amber' : ''}">${d.los}</span>`], ['Near misses today', `<span class="${d.near ? 'hostile' : ''}">${d.near}</span>`], ['Departures held for spacing', N.stats.held]])}
       <p class="hint">Every flight flies direct and controllers keep them apart by the clock: slow, and it fails as the sky fills. ${esc(IC.storyLock(S, 'airways'))}</p></div>`;
@@ -654,31 +654,37 @@ function intel() {
 /* ---------- research: a tree of choices, one lane per field, each step to the right needs the one before ---------- */
 const depthOf = (t, memo = {}) => memo[t.id] != null ? memo[t.id] : (memo[t.id] = t.req.length ? 1 + Math.max(...t.req.map(r => depthOf(IC.TECH.find(x => x.id === r), memo))) : 0);
 function research() {
-  const T = S.tech, free = T.slots.some(s => !s);
+  const T = S.tech, free = T.slots.some(s => !s), story = S.mode === 'story' && S.story;
   const slots = T.slots.map((s, i) => {
-    if (!s) return `<div class="slot idle"><small>Slot ${i + 1}</small><b>Free</b><span>Pick a project below.</span></div>`;
-    const t = IC.TECH.find(x => x.id === s.id);
-    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
-  }).join('');
+    if (!s) return `<div class="slot idle"><small>Slot ${i + 1}</small><b>Free</b><span>${esc(IC.techIdleText(S) ? 'Pick a project below: an idle slot is time lost.' : 'Nothing open to start.')}</span></div>`;
+    const t = IC.techById(s.id);
+    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left${story ? ` · lands in ${IC.techWhen(S, t, 1 - s.prog)} at this speed` : ''}</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
+  }).join('') + (IC.techNextSlot(S) ? `<div class="slot next"><small>Slot ${T.slots.length + 1}</small><b>Not yet</b><span>${esc(IC.techNextSlot(S))}</span></div>` : '');
   const memo = {}, maxD = Math.max(...IC.TECH.map(t => depthOf(t, memo)));
   const node = t => {
-    const done = T.done.has(t.id), cur = IC.researching(S, t.id), reqOk = t.req.every(r => T.done.has(r));
-    const cls = done ? 'done' : cur ? 'cur' : reqOk ? 'open' : 'locked';
-    const opens = ui.techOpens(t);
+    const done = T.done.has(t.id), cur = IC.researching(S, t.id), reqOk = t.req.every(r => T.done.has(r)), shut = !done && !cur && IC.techClosed(S, t);
+    const cls = done ? 'done' : cur ? 'cur' : shut ? 'locked shut' : reqOk ? 'open' : 'locked';
+    const opens = ui.techOpens(t), x = t.excl && IC.techById(t.excl);
     const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Done</span>` : cur ? `<span class="amber">${U.pct(cur.prog)} · ${IC.techDur(S, t, 1 - cur.prog)} left</span>`
-      : !reqOk ? `<span class="need">${ui.icon('lock', 'sm')} After ${t.req.filter(r => !T.done.has(r)).map(r => esc(IC.TECH.find(x => x.id === r).name)).join(' and ')}</span>`
-      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Both slots are busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}`}">Research</button>`;
-    return `<div class="tnode ${cls}" data-tech="${t.id}" data-req="${t.req.join(' ')}"><b>${esc(t.name)}${ui.newTag('tech:' + t.id)}</b><p>${esc(ui.techWords(t))}</p>${opens.length ? `<p class="opens">Opens: ${esc(opens.join(', '))}</p>` : ''}
-      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
+      : shut ? `<span class="need">${ui.icon('lock', 'sm')} ${esc(shut)}</span>`
+      : !reqOk ? `<span class="need">${ui.icon('lock', 'sm')} After ${t.req.filter(r => !T.done.has(r)).map(r => esc(IC.techById(r).name)).join(' and ')}</span>`
+      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Every slot is busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}${story ? `, in ${IC.techWhen(S, t)} at this speed` : ''}${x ? `. It rules out ${x.name} for good` : ''}`}">Research</button>`;
+    return `<div class="tnode ${cls}" data-tech="${t.id}" data-req="${t.req.join(' ')}"><b>${esc(t.name)}${ui.newTag('tech:' + t.id)}</b><p>${esc(ui.techWords(t))}</p>${opens.length ? `<p class="opens">Opens: ${esc(opens.join(', '))}</p>` : ''}${x && !done ? `<p class="excl">${T.done.has(x.id) ? 'Ruled out' : 'Rules out'}: ${esc(x.name)}</p>` : ''}
+      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}${story && !cur ? ` · ${IC.techWhen(S, t).replace(/, Year /, ' Y')}` : ''}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
   };
-  const lanes = IC.TECH_CATS.map(c => {
+  // the Career shows its own lanes first; a military lane it has not reached is one line
+  const cats = story ? IC.TECH_CATS.slice().sort((a, b) => (b.civil ? 1 : 0) - (a.civil ? 1 : 0)) : IC.TECH_CATS;
+  const lanes = cats.map(c => {
     const ts = IC.TECH.filter(t => t.cat === c.id);
+    if (!ts.length) return '';
+    if (!IC.techLaneOpen(S, c.id)) return `<div class="lane shut"><div class="lname"><b>${esc(c.name)}</b><small>${ts.length} projects</small></div><p class="hint">Opens with Act III.</p></div>`;
     const n = ts.filter(t => T.done.has(t.id)).length;
     const cols = Array.from({ length: maxD + 1 }, (_, d) => `<div class="tcol">${ts.filter(t => depthOf(t, memo) === d).map(node).join('')}</div>`).join('');
     return `<div class="lane"><div class="lname"><b>${esc(c.name)}</b><small>${n} of ${ts.length}</small></div>${cols}</div>`;
   }).join('');
-  return `<div class="card wide"><h3>Research<em>two projects at a time · each is paid when it starts</em></h3><div class="slots2">${slots}</div></div>
-    <div class="card wide tree"><h3>What to research<em>left to right: each step needs the one it is joined to</em></h3><div class="lanes" style="--cols:${maxD + 1}">${lanes}<svg class="links" aria-hidden="true"></svg></div></div>`;
+  const head = story ? 'each slot runs one project · paid when it starts · time is minutes of play: Wait does not finish it sooner' : `${T.slots.length} projects at a time · each is paid when it starts`;
+  return `<div class="card wide"><h3>Research<em>${head}</em></h3><div class="slots2">${slots}</div></div>
+    <div class="card wide tree"><h3>What to research<em>left to right: each step needs the one it is joined to · a lock with “Rules out” closes the other for good</em></h3><div class="lanes" style="--cols:${maxD + 1}">${lanes}<svg class="links" aria-hidden="true"></svg></div></div>`;
 }
 /* the lines between a project and what it needs, drawn once the nodes are laid out */
 function treeLinks() {

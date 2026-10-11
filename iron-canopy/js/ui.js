@@ -277,11 +277,11 @@ ui.roomOk = k => (!S.range || k === 'reference' || k === 'settings') && (k !== '
 ui.roomAct = k => { const st = S.story; if (!st || S.range) return 0; for (let n = st.act + 1; n <= 4; n++) if (IC.roomAllowed({ story: { act: n, doc: st.doc }, av: S.av }, k)) return n; return 0; };
 function rail() {
   const hot = S.logs.length && S.logs[0].kind === 'leak' && S.time - S.logs[0].t < 120;
-  const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research');
+  const idle = S.tech.slots.some(s => !s) && IC.roomAllowed(S, 'research') && IC.TECH.some(t => IC.techOpenNow(S, t)), idleW = idle ? IC.techIdleText(S) : '';
   const req = S.av && S.av.requests.length;
   const staffDot = S.story && (S.story.events.length || (S.story.cp > 0 && !IC.civilAct(S)) || (IC.agendaIdle && IC.agendaIdle(S)));
   const dot = k => ui.fresh.has('room:' + k) ? '<span class="dot new">New</span>'
-    : k === 'journal' && hot ? '<span class="dot"></span>' : k === 'research' && idle ? '<span class="dot amb" title="A research slot is free"></span>'
+    : k === 'journal' && hot ? '<span class="dot"></span>' : k === 'research' && idle ? `<span class="dot amb" title="${esc(idleW)}"></span>`
     : k === 'aviation' && req ? `<span class="dot n civ">${req}</span>` : k === 'staff' && staffDot ? '<span class="dot amb"></span>' : '';
   // the next act's rooms show, shut, so the player knows what is coming
   const next = S.story ? S.story.act + 1 : 0;
@@ -330,7 +330,7 @@ ui.ROOM_INFO = {
   air: 'The air wing: flights at each base, standing patrols and new aircraft.',
   logi: 'Missile stock, depots, convoys and the arms plants that sell to them.',
   intel: 'What the enemy is doing, what they know about us, and their launchers and bases.',
-  research: 'New equipment and upgrades. Two projects run at once.',
+  research: 'Upgrades for the airports and the airlines, and later new equipment. Each slot runs one project.',
   journal: 'Everything that happened, newest first. Click a line to see where.',
   reference: 'How every system works, and every piece of equipment.',
   settings: 'Display, sound, auto-pause and hints.'

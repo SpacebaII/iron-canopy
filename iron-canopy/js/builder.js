@@ -193,7 +193,9 @@ function nearRunway(ap, p) {
 IC.bldPreview = function (S, ap, p) {
   const D = IC.APART[p.kind];
   if (IC.PAVED[p.kind] && !p.mat) p.mat = 'conc';
-  const cost = IC.partCost(ap, p), dur = IC.partBuildTime(ap, p), need = IC.partNeed(ap, p);
+  // (brief 48) research makes works cheaper, quicker and lighter on lorries: one place for the plan and the site
+  const cost = IC.partCost(ap, p) * IC.mod(S, 'buildCost'), dur = IC.partBuildTime(ap, p) / IC.mod(S, 'buildSpeed'), need = IC.partNeed(ap, p);
+  if (need) { const k = IC.mod(S, 'matLoads'); for (const m in need) need[m] *= k; }
   const clr = IC.bldClearance(S, ap, p), bld = !IC.PAVED[p.kind];
   const stages = [];
   if (clr.blocks.length) stages.push({ k: 'demo', name: 'Clearing buildings', dur: Math.max(300, 900 * clr.weight), cost: clr.comp });
@@ -426,12 +428,12 @@ IC.onMonth((S) => {
       if (IC.PAVED[p.kind]) {
         const P = IC.PAVE[IC.paveOf(p)], was = p.wear || 0;
         // (only a runway closes when worn out; taxiways and aprons stay in use, worn)
-        p.wear = Math.min(p.kind === 'runway' ? 1 : 0.95, was + 1 / P.life);
+        p.wear = Math.min(p.kind === 'runway' ? 1 : 0.95, was + 1 / (P.life * IC.mod(S, 'paveLife')));
         if (was < 0.5 && p.wear >= 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is ${U.pct(p.wear)} worn with age and weather. Resurface it before it has to close${p.kind === 'runway' ? ': worn pavement also breaks up wider if it is ever bombed' : ''}.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.x != null ? p : ap);
         if (was < 1 && p.wear >= 1) { ap.dirty = true; ap.cfg = null; IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${p.name || U.lc(IC.APART[p.kind].name)} is worn out and closed until it is resurfaced.`, p.kind === 'runway' ? IC.rwAt(p, 0.5) : ap); }
       } else if (p.max && p.hp > 0) {
         const was = p.hp / p.max;
-        p.hp = Math.max(p.max * 0.05, p.hp - p.max / IC.BUILDING_LIFE); p.aged = true;
+        p.hp = Math.max(p.max * 0.05, p.hp - p.max / (IC.BUILDING_LIFE * IC.mod(S, 'bldLife'))); p.aged = true;
         if (was >= 0.5 && p.hp / p.max < 0.5) IC.log(S, 'warn', 'AIRPORT', `${ap.name}: the ${U.lc(IC.APART[p.kind].name)} is showing its age (${U.pct(p.hp / p.max)} condition). Renew it in the airport's Works tab.`, p.x != null ? p : ap);
       }
     }
@@ -1040,7 +1042,7 @@ function consequences(S, m, out) {
     if (sp.kind === 'runway') {
       const rw = { a: sp.a, b: sp.b, w: sp.w || IC.APART.runway.w }, mid = { x: (sp.a.x + sp.b.x) / 2, y: (sp.a.y + sp.b.y) / 2 }, L = U.dist(sp.a, sp.b);
       const fires = ap.parts.filter(q => q.kind === 'fire'), near = fires.filter(f => U.dist(f, mid) < 15);
-      const resc = fires.length ? Math.max(...[0, 0.5, 1].map(t => Math.min(...fires.map(f => IC.fireTime(f, IC.rwAt(rw, t)))))) : 1e9;
+      const resc = fires.length ? Math.max(...[0, 0.5, 1].map(t => Math.min(...fires.map(f => IC.fireTime(f, IC.rwAt(rw, t), S))))) : 1e9;
       if (!near.length) say('No fire station covers it: only turboprops may use it until one stands within 1.5 km of its middle.');
       else if (resc > IC.FIRE_STD && L >= IC.ACTYPES.wide.rwy) say(`Fire trucks would need ${IC.mmss(resc)} to reach its far end: heavy jets may not land on it. A fire station nearer that end brings it under 3 min.`);
       const towers = ap.parts.filter(q => q.kind === 'tower');
@@ -1192,9 +1194,9 @@ function planOf(S, m, hv, tol, free, only) {
     if (probe.kind === 'surface') out.text.push(`${IC.SURF[probe.surf].name}, ${(probe.w * probe.h).toFixed(1)} ha${IC.SURF[probe.surf].park ? `: parks about ${Math.round(IC.SURF[probe.surf].park * probe.w * probe.h)} cars outside the airfield` : ''}`);
     if (probe.kind === 'terminal' && t !== 'concourse') out.text.push(`${Math.round(D.pax * probe.w * probe.h).toLocaleString('en-US')} passengers an hour`);
     if (probe.kind === 'taxi' && t === 'taxi') out.text.push(taxiText(S, ap, out, probe));
-    if (probe.kind === 'fuel') { const near = ap.parts.filter(q => q.kind === 'fuel' && IC.fuelGap(q, probe) < 1).length; out.text.push(`${IC.fuelTanks(probe)} tanks: their trucks refuel ${IC.fuelTanks(probe) * IC.FUEL_TRUCKS} aircraft an hour${near ? `; within 100 m of ${near > 1 ? 'other fuel' : 'another fuel farm'}: one fire could take them all` : ''}`); }
+    if (probe.kind === 'fuel') { const near = ap.parts.filter(q => q.kind === 'fuel' && IC.fuelGap(q, probe) < 1).length; out.text.push(`${IC.fuelTanks(probe)} tanks: their trucks refuel ${Math.round(IC.fuelTanks(probe) * IC.fuelRate(S))} aircraft an hour${near ? `; within 100 m of ${near > 1 ? 'other fuel' : 'another fuel farm'}: one fire could take them all` : ''}`); }
     if (probe.kind === 'tower') { const rws = ap.parts.filter(q => q.kind === 'runway'), blind = rws.map(rw => ({ rw, why: IC.towerSees(ap, [probe], rw) })).filter(x => x.why); out.text.push(!rws.length ? 'the cab will see runways within 8 km' : blind.length ? `cannot see ${blind.map(x => `${x.rw.name} (${x.why})`).join(', ')}: worked as with no tower there` : `sees every runway: one movement every ${U.dur(IC.aptSep({ tower: true, radar: ap.st && ap.st.radar }))} instead of every 8 min`); }
-    if (probe.kind === 'fire') { const rws = ap.parts.filter(q => q.kind === 'runway'), far = rws.map(rw => Math.max(...[0, 0.5, 1].map(f => IC.fireTime(probe, IC.rwAt(rw, f))))); if (far.length) out.text.push(rws.map((rw, i) => `trucks reach ${rw.name} in ${IC.mmss(far[i])}${far[i] > IC.FIRE_STD ? ': too far for heavy jets' : ''}`).join(' · ')); }
+    if (probe.kind === 'fire') { const rws = ap.parts.filter(q => q.kind === 'runway'), far = rws.map(rw => Math.max(...[0, 0.5, 1].map(f => IC.fireTime(probe, IC.rwAt(rw, f), S)))); if (far.length) out.text.push(rws.map((rw, i) => `trucks reach ${rw.name} in ${IC.mmss(far[i])}${far[i] > IC.FIRE_STD ? ': too far for heavy jets' : ''}`).join(' · ')); }
   }
   if (IC.PAVED[out.specs[0] && out.specs[0].kind] || t === 'concourse') out.text.push(IC.paveFits(m.mat || 'conc'));
   if (homes) out.text.push(`Clears ${IC.bldClearText({ blocks: clrAll, res })}: ${U.money(comp)} compensation, and the town will protest`);
