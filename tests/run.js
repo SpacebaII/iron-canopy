@@ -5456,6 +5456,22 @@ test('round 5c: textlint finds none of the banned phrases, in the source or in a
   for (const id in IC.TUTORS) for (const st of IC.TUTORS[id].steps) { const out = []; T.check(IC.tutorText(S, st) + ' ' + st.title, id, out); assert(!out.length, out[0]); assert(!/!/.test(IC.tutorText(S, st)), `${id}: an exclamation mark`); }
 });
 
+/* ---------- brief 48: research from day one ---------- */
+test('research: modifiers add up from their sources, are capped, and say where they came from', () => {
+  const S = { tech: { done: new Set(), slots: [] } };
+  assert(IC.mod(S, 'refuel') === 1 && IC.modNote(S, 'refuel') === '', 'a key nothing changes is not 1');
+  const src = S2 => S2.extra ? [{ fx: { refuel: 0.05, rwOcc: -0.4 }, why: 'Test policy', src: 'the Ministry' }] : [];
+  IC.MOD_SRC.push(src);
+  try {
+    assert(IC.mod(S, 'refuel') === 1, 'the cache did not hold');
+    S.extra = true; IC.modDirty(S);
+    assert(Math.abs(IC.mod(S, 'refuel') - 1.05) < 1e-9, `refuel is ${IC.mod(S, 'refuel')}, not 1.05`);
+    assert(Math.abs(IC.mod(S, 'rwOcc') - 0.7) < 1e-9, 'a share past the cap was not capped at 30%');
+    assert(/\+5% from the Ministry/.test(IC.modNote(S, 'refuel')), `the note says "${IC.modNote(S, 'refuel')}"`);
+    assert(IC.modWhy(S, 'refuel')[0].why === 'Test policy', 'the share does not name its source');
+  } finally { IC.MOD_SRC.splice(IC.MOD_SRC.indexOf(src), 1); }
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

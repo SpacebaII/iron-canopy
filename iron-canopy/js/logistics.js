@@ -695,7 +695,7 @@ IC.economy = function (S, dt) {
     const tech = IC.TECH.find(x => x.id === sl.id);
     sl.prog += dt / IC.techTime(S, tech);
     if (sl.prog >= 1) {
-      T.done.add(tech.id); T.slots[i] = null;
+      T.done.add(tech.id); T.slots[i] = null; IC.modDirty(S);
       IC.log(S, 'kill', 'RESEARCH', `${tech.name} complete.`);
       IC.news(S, `Defence ministry fields new capability: ${tech.name.toLowerCase()}.`);
       IC.techAir(S, tech.id);
