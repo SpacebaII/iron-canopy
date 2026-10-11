@@ -65,7 +65,7 @@ marks.forEach((c, i) => {
 });
 const act = n => marks.find(m => m.act === n), a2 = act(2);
 if (a2) console.log(`Act I: ${((a2.t - t0) / IC.YR(S)).toFixed(1)} years`);
-console.log(`Research: ${IC.TECH.filter(t => IC.techCivil(t) && S.tech.done.has(t.id)).length} of ${IC.TECH.filter(IC.techCivil).length} civil projects done${a2 ? ` (${IC.TECH.filter(t => IC.techCivil(t) && S.tech.done.has(t.id)).length} now; Act I ended with ${a2.research})` : ''}, slots idle ${slotS ? Math.round(idleS / slotS * 100) : 0}% of the time`);
+{ const civ = IC.TECH.filter(IC.techCivil), nd = civ.filter(t => S.tech.done.has(t.id)).length; console.log(`Research: ${a2 ? `${a2.research} of ${civ.length} civil projects by the end of Act I, ${nd} now` : `${nd} of ${civ.length} civil projects`}; slots idle ${slotS ? Math.round(idleS / slotS * 100) : 0}% of the time`); }
 console.log(`Career so far: ${((S.time - t0) / IC.YR(S)).toFixed(1)} years`);
 const aps = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
 console.log(`Airports: ${aps.map(a => `${a.name} (${IC.aptStands(a).length} stands, longest runway ${U.km(a.st.longest || 0)}, name ${Math.round(IC.aptRep(a))})`).join('; ')}`);
