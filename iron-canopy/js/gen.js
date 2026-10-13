@@ -848,10 +848,10 @@ const FC = 8;
 // (amp, wave), slope and crossing prices, a noise on the ground's price, how hard the line is held to its wandering
 // centre, rounds of smoothing
 const FINE = {
-  hw: { half: 18, amp: 14, wave: 120, slope: 2.4, bridge: 5, noise: 0.1, pull: 0.3, rounds: 2, lead: 16 },
-  rd: { half: 16, amp: 14, wave: 60, slope: 1.2, bridge: 4, noise: 0.2, pull: 0.3, rounds: 2, lead: 12 },
-  lc: { half: 14, amp: 12, wave: 40, slope: 0.8, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1, lead: 10 },
-  sp: { half: 9, amp: 5, wave: 25, slope: 0.6, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1, lead: 6 }
+  hw: { half: 14, amp: 14, wave: 120, slope: 2.4, bridge: 5, noise: 0.1, pull: 0.3, rounds: 2, lead: 16 },
+  rd: { half: 12, amp: 14, wave: 60, slope: 1.2, bridge: 4, noise: 0.2, pull: 0.3, rounds: 2, lead: 12 },
+  lc: { half: 10, amp: 12, wave: 40, slope: 0.8, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1, lead: 10 },
+  sp: { half: 7, amp: 5, wave: 25, slope: 0.6, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1, lead: 6 }
 };
 const F8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], F8L = F8.map(([x, y]) => Math.hypot(x, y) * FC);
 // one set of working arrays for every road's corridor, grown to the largest (a thousand roads would otherwise each
@@ -1000,7 +1000,7 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
       const ng = g[a] + c;
       if (ng >= g[b]) continue;
       g[b] = ng; par[b] = a;
-      push(ng + Math.hypot(bi - qti, bj - qt) * FC * 0.65, b);
+      push(ng + Math.hypot(bi - qti, bj - qt) * FC * 0.8, b);
     }
   }
   if (!found) return null;
@@ -1020,14 +1020,13 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
 }
 function refineRoads(W) {
   const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
-  const occ = new Map();   // fine cell → the road laid on it
+  const own = new Map();   // fine cell → the road laid on it, or the node whose cell it is
   const cellOf = p => U.clamp(Math.floor(p.y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(p.x / FC), 0, FW - 1);
   const fields = W.infra.filter(b => b.kind === 'airport' || b.kind === 'airbase').map(f => ({ id: f.id, x: f.x, y: f.y, r: 45 }));
   const vils = W.villages.filter(v => v.home).map(v => ({ x: v.x, y: v.y, r: 9 }));
   // every node's cell, and the eight round it, are for the roads that end there (a motorway may not run through a
   // village's, and a road passing a junction leaves room for the lanes that join it)
-  const nodeCell = new Map();
-  for (const k in W.nodes) { const c = cellOf(W.nodes[k]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) nodeCell.set(c + dy * FW + dx, k); }
+  for (const k in W.nodes) { const c = cellOf(W.nodes[k]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) own.set(c + dy * FW + dx, k); }
   // a road through a junction keeps its line: the two roads of the highest class there (the pairs most nearly
   // opposite at a crossroads) leave it along one direction, between their grid routes' own
   const leads = new Map(), at = {};
@@ -1051,13 +1050,13 @@ function refineRoads(W) {
   const t0 = Date.now();
   order.forEach((e, ei) => {
     if (!FINE[e.cls]) return;
-    const taken = k => { const by = occ.get(k), nd = nodeCell.get(k); return (by && by !== e) || (nd && nd !== e.a && nd !== e.b); };
+    const taken = k => { const v = own.get(k); return v !== undefined && v !== e && v !== e.a && v !== e.b; };
     const keepOff = fields.filter(f => f.id !== e.a && f.id !== e.b).concat(e.cls === 'hw' ? vils : []);
     // (a corridor the other roads shut: once more, twice as wide and without the sway, before the grid line stays)
     const ld = leads.get(e);
     const r = fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 0, ld) || fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 2, ld);
     if (!r) return;
-    for (const k of r.cells) occ.set(k, e);
+    for (const k of r.cells) if (!own.has(k)) own.set(k, e);
     e.pts = r.pts;
     e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
   });

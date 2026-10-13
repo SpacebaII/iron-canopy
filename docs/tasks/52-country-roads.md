@@ -12,8 +12,8 @@ The country's roads were routed by A* on a 6 km grid and that grid's path was th
 
 ## What this brief does
 
-1. **Every road's line is drawn again on the ground.** The grid still decides which places a road joins and where roads meet. Then `refineRoads` takes each road, most important and longest first, and finds its own line between its two nodes with `fineLine`: an A* on an 800 m grid (`FC`), inside a corridor round the grid route (`FINE[cls].half`: 1.8 km for a motorway, 0.9 km for an access road). The corridor's centre line sways with a slow noise by class (`amp`, `wave`: a motorway 1.4 km over 12 km, a lane 1.2 km over 4 km), so a road on a plain bends as roads do. The ground prices each step: slopes (`slope`, squared), forest, a river crossing (`bridge`, dearer on the diagonal, so a road crosses squarely), the corridor's edge (`pull`). The first and last stretch out of each node is a straight lead (`lead`: 1.6 km for a motorway, 600 m for an access road), along one direction shared by the two roads of the highest class at the node (the pairs most nearly opposite at a crossroads), so a main road keeps its line where a lane joins it and the junction shapes (brief 46) lie on straights. The path is smoothed by class (`rounds`), given a second, smaller sway for the lattice's straights, and thinned to the points that matter (Douglas–Peucker, 40 m).
-2. **Roads still meet only at their nodes.** The cells a road takes are marked; a later road may not enter them (nor slip between two of them on a diagonal), except in the cells of the two nodes it ends at. Every node's cell is kept for the roads that end there. Airfields and, for a motorway, villages are kept off. A road whose corridor is shut tries once more, twice as wide and without the sway, and failing that keeps its grid line (5 roads on seed 4242).
+1. **Every road's line is drawn again on the ground.** The grid still decides which places a road joins and where roads meet. Then `refineRoads` takes each road, most important and longest first, and finds its own line between its two nodes with `fineLine`: an A* on an 800 m grid (`FC`), inside a corridor round the grid route (`FINE[cls].half`: 1.4 km for a motorway, 700 m for an access road). The corridor's centre line sways with a slow noise by class (`amp`, `wave`: a motorway 1.4 km over 12 km, a lane 1.2 km over 4 km), so a road on a plain bends as roads do. The ground prices each step: slopes (`slope`, squared), forest, a river crossing (`bridge`, dearer on the diagonal, so a road crosses squarely), the corridor's edge (`pull`). The first and last stretch out of each node is a straight lead (`lead`: 1.6 km for a motorway, 600 m for an access road), along one direction shared by the two roads of the highest class at the node (the pairs most nearly opposite at a crossroads), so a main road keeps its line where a lane joins it and the junction shapes (brief 46) lie on straights. The path is smoothed by class (`rounds`), given a second, smaller sway for the lattice's straights, and thinned to the points that matter (Douglas–Peucker, 40 m).
+2. **Roads still meet only at their nodes.** The cells a road takes are marked; a later road may not enter them (nor slip between two of them on a diagonal), except in the cells of the two nodes it ends at. Every node's cell is kept for the roads that end there. Airfields and, for a motorway, villages are kept off. A road whose corridor is shut tries once more, twice as wide and without the sway, and failing that keeps its grid line (none on seed 4242).
 3. **Village lanes join the roads clear of junctions.** A village's `spur` ends on a plain stretch of road with no junction in the eight cells round it when one is in reach, so lanes do not fan out of one node.
 4. **Roads built in play take the same kind of line.** `IC.roadLine(W, cls, pts, apt)` bends the line between the points a road is planned through, keeping off the roads already there and the other airports; `roadFinish` uses it for an airport's access road (`IC.landAccessRoad`) and the player's roads, and prices the bent line.
 5. **Rural lanes** are laid every 12 km or so of road rather than every third point, so their number did not change with the points.
@@ -22,12 +22,12 @@ The country's roads were routed by A* on a 6 km grid and that grid's path was th
 
 | | before | after |
 | --- | --- | --- |
-| straight stretches over 5 km | 3,788 | 121 |
-| straight stretches over 8 km | 498 | 20 |
-| longest straight | 24 km | 16 km (a road no corridor could take) |
-| roads over 3 km that are one straight line | 121 | 5 |
+| straight stretches over 5 km | 3,788 | 91 |
+| straight stretches over 8 km | 498 | 14 |
+| longest straight | 24 km | 15 km |
+| roads over 3 km that are one straight line | 121 | 0 |
 | pairs of roads crossing away from a node | 5 (a city's motorway pieces over lanes, audit B5) | 4 (of the same) |
-| generation (`IC.generate`, on a loaded machine) | 4.3 s | 4.9 s, of which the lines 0.4–0.7 s |
+| generation (`IC.generate`, alone) | 3.7 s | 4.5 s, of which the lines about 0.5 s (under the 5 s budget with routing) |
 
 Pictures from the same seed in `52-screens/`, before on the left and after on the right: the country at z 2 (`13`) and z 6 (`14`), Halenn from the region zoom (`15`), the capital's diamond interchange with its lanes (`16`), a village on its river (`17`), an airport's access road (`18`).
 
