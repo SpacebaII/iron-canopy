@@ -122,14 +122,22 @@ IC.buildFringe = function (W, c, R, segs, vils) {
   }
 
   /* 3. a retail park beside the busiest road out of a big city, past the ribbon: sheds round a car park */
+  // (further out along the road, then the other roads out, until there is room)
   if (big && best) {
-    const { P, L } = best; let d = 0; for (let i = 1; i < P.length; i++) d += U.dist(P[i - 1], P[i]);
-    for (let t = 0; t < 6; t++) {
-      const s = Math.min(d - 2, L + R.range(1, 4)), p = (() => { let q = s; for (let i = 1; i < P.length; i++) { const a = P[i - 1], b = P[i], l = U.dist(a, b); if (q <= l) { const k = l ? q / l : 0; return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, a: Math.atan2(b.y - a.y, b.x - a.x) }; } q -= l; } return null; })();
-      if (!p) break;
-      const w = R.range(2.6, 3.4), h = R.range(1.8, 2.4), side = R() < 0.5 ? 1 : -1, q = rotXY(p.x, p.y, p.a, 0, side * (0.3 + h / 2));
-      if (!ground(q.x, q.y, w, h, p.a, 0.3, h / 2)) continue;
-      mk(q.x, q.y, w, h, p.a, 'biz', 'retail'); F.retail = true; break;
+    const rank = e => IC.ROAD_RANK ? (IC.ROAD_RANK[e.cls] || 0) : 0;
+    const roads = [best].concat(outs.filter(e => e !== best.e).sort((p, q) => rank(q) - rank(p)).map(e => ({ e, P: fromA(e) ? e.pts : e.pts.slice().reverse(), L: ribbonL.get(e) || 0 })));
+    retail: for (const { P, L } of roads) {
+      let d = 0; for (let i = 1; i < P.length; i++) d += U.dist(P[i - 1], P[i]);
+      for (let t = 0; t < 8; t++) {
+        const s = L + 1 + t * 1.5 + R.range(0, 1); if (s > d - 2) break;
+        const p = alongP(P, s); if (!p) break;
+        const w = R.range(2.6, 3.4), h = R.range(1.8, 2.4), side0 = R() < 0.5 ? 1 : -1;
+        for (const side of [side0, -side0]) {
+          const q = rotXY(p.x, p.y, p.a, 0, side * (0.3 + h / 2));
+          if (!ground(q.x, q.y, w, h, p.a, 0.3, h / 2)) continue;
+          mk(q.x, q.y, w, h, p.a, 'biz', 'retail'); F.retail = true; break retail;
+        }
+      }
     }
   }
 
