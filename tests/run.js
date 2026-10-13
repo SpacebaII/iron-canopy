@@ -1310,7 +1310,8 @@ test('build bar: every tab has items, and each one can be placed on an airport',
       S.mode2 = m; S.hover = c;
       const cnt = () => ap.parts.length + (ap.svcRoads || []).length, n0 = cnt(), two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
       IC.clickWorld(c, 0);
-      if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
+      if (IC.SHAPE_TOOLS[part]) for (const q of [c2, { x: c.x + 1, y: c.y + 4 }]) { S.hover = q; IC.clickWorld(q, 0); }
+      else if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
       // (nothing is built on a click: Build or Enter builds it)
       assert(cnt() === n0, `${k} was built on a click`);
       IC.buildFinish(S, S.mode2);
