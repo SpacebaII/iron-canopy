@@ -1064,6 +1064,8 @@ IC.drawCombat = function (S, px, now, light) {
     const k = 1 - f.t / 0.35; if (k <= 0) continue;
     const r = Math.max(f.r * px, (f.wr || 0) * (1 - WF * 0.9)) * (0.6 + f.t * 2);
     ctx.globalAlpha = 0.7 * k; ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
+    // at night a blast lights the ground well beyond its fireball, for a moment
+    if (light < 0.6) { const R = r * 5; ctx.globalAlpha = 0.3 * k * (1 - light / 0.6); ctx.drawImage(SPR[GLOW], f.x - R, f.y - R, R * 2, R * 2); }
   }
   ctx.globalAlpha = 1;
   for (const u of S.units) if (u.beam && !u.beam.dead) {

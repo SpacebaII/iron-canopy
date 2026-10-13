@@ -2,8 +2,8 @@
    attenuated by where the camera is looking. Audio starts only after the player clicks. */
 (function (IC) {
 'use strict';
-const A = IC.sfx = { on: false, muted: false, vol: 0.65 };
-let ctx = null, master, sfxBus, ambBus, noiseBuf, chatterTimer = null, rumbleTimer = null;
+const A = IC.sfx = { on: false, muted: false, vol: 0.65, musicVol: 0.5, ambVol: 0.8 };
+let ctx = null, master, sfxBus, ambBus, noiseBuf, windNodes = null, chatterTimer = null, rumbleTimer = null;
 const last = {};
 
 function throttle(key, ms) { const n = performance.now(); if (last[key] && n - last[key] < ms) return false; last[key] = n; return true; }
@@ -49,14 +49,28 @@ A.init = function () {
   master = ctx.createGain(); master.gain.value = A.muted ? 0 : A.vol; master.connect(ctx.destination);
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4; comp.connect(master);
   sfxBus = ctx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(comp);
-  ambBus = ctx.createGain(); ambBus.gain.value = 0.8; ambBus.connect(master);
+  ambBus = ctx.createGain(); ambBus.gain.value = A.ambVol; ambBus.connect(master);
+  // a sense of space: every effect sends a little into a long, dark echo, as if heard across open country
+  const verb = ctx.createConvolver(); verb.buffer = impulse(2.6); const wet = ctx.createGain(); wet.gain.value = 0.28;
+  const vlp = ctx.createBiquadFilter(); vlp.type = 'lowpass'; vlp.frequency.value = 2400;
+  sfxBus.connect(vlp); vlp.connect(verb); verb.connect(wet); wet.connect(comp);
   const len = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0); let b = 0;
   for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; b = (b + 0.02 * w) / 1.02; d[i] = w * 0.5 + b * 3.5; }
   ambience();
   A.on = true;
+  // the score and the living ambience (audio-score.js) build on the same graph
+  A.graph = { ctx, master, comp, sfxBus, ambBus, noiseBuf, wind: windNodes, impulse };
+  if (A.onInit) A.onInit();
 };
+/* a reverb's impulse: noise that dies away, darker as it goes */
+function impulse(sec) {
+  const n = Math.round(ctx.sampleRate * sec), b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); let lp = 0; for (let i = 0; i < n; i++) { const k = i / n; lp += (Math.random() * 2 - 1 - lp) * (0.9 - 0.75 * k); d[i] = lp * Math.pow(1 - k, 2.4); } }
+  return b;
+}
 A.setVol = function (v) { A.vol = v; if (master) master.gain.setTargetAtTime(A.muted ? 0 : v, ctx.currentTime, 0.1); };
+A.setAmb = function (v) { A.ambVol = v; if (ambBus) ambBus.gain.setTargetAtTime(v, ctx.currentTime, 0.1); };
 A.toggle = function () {
   A.muted = !A.muted;
   if (master) master.gain.setTargetAtTime(A.muted ? 0 : A.vol, ctx.currentTime, 0.1);
@@ -71,8 +85,9 @@ function ambience() {
   const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 180;
   lfo.connect(lg); lg.connect(lp.frequency); lfo.start();
   w.connect(lp); lp.connect(wg); wg.connect(ambBus); w.start();
+  windNodes = { gain: wg, lp, lfo: lg };
   // operations room hum
-  for (const [f, g0] of [[55, 0.012], [110, 0.005], [165, 0.002]]) {
+  for (const [f, g0] of [[55, 0.005], [110, 0.003], [165, 0.0015]]) {
     const o = ctx.createOscillator(); o.frequency.value = f; const g = ctx.createGain(); g.gain.value = g0;
     o.connect(g); g.connect(ambBus); o.start();
   }

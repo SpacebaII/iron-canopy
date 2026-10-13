@@ -653,6 +653,8 @@ function onInput(e) {
   const el = e.target;
   if (el.dataset.act === 'rangeForm' && S.range) { IC.rangeForm(S, el.name, el.value); IC.ui.busyUntil = performance.now() + 1500; return; }
   if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'music') { IC.sfx.setMusic(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'ambVol') { IC.sfx.setAmb(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
 }
 document.addEventListener('click', onAct);
 document.addEventListener('input', onInput);
@@ -1041,6 +1043,7 @@ function frame(now) {
   fx(S, dtR, gdt);
   IC.render(S, now / 1000);
   if (IC.lifeSoundEnd) IC.lifeSoundEnd();
+  if (IC.sfx.score) IC.sfx.score(S, dtR);
   IC.renderMini(S, mini, mw, mh);
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }
