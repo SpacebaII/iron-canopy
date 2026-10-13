@@ -205,6 +205,7 @@ const HIDDEN = { ab: 1, flap: 1, spoil: 1, slat: 1, rev: 1, revc: 1 };
 /* the life of the scene (render3d-life.js): aircraft that move like real ones, the airports' lights, jet bridges and
    vehicles, launches. When it is loaded it takes the hooks below; without it the view is as it was */
 const LIFE = () => IC.life3d;
+const WAR = () => IC.war3d && IC.war3d.scene ? IC.war3d : null;   // brief 59: smoke, fire, wreckage and the film cameras
 const LIGHT_COL = { red: '#ff3a2a', green: '#3aff6a', white: '#ffffff', strobe: '#ffffff', beacon: '#ff2a1a', land: '#fff4d8' };
 /* a model as the view uses it, built once per model, livery and detail:
    solid (everything that does not move), win (windows, lit at night), anim (each moving part with its pivot and axis),
@@ -1010,7 +1011,7 @@ function updMover(v, m, t) {
   }
   // the trail, smoothed between the samples, at the heights shown (not along the ground)
   // (v.trails false: aircraft draw none, as in a film; a missile keeps its smoke)
-  const tl = m.tr.kind === 'missile' ? 900 : m.tr.kind === 'veh' || m.tr.kind === 'unit' || v.trails === false ? 0 : (v.lod > 0 ? 30 : CFG.trail);
+  const tl = v.film ? 0 : m.tr.kind === 'missile' ? 900 : m.tr.kind === 'veh' || m.tr.kind === 'unit' || v.trails === false ? 0 : (v.lod > 0 ? 30 : CFG.trail);
   if (tl && !st.gnd) trail(v, m, t - tl, t, st, y); else m.line.visible = false;
   if (m.smoke) missileFx(v, m, t, st, hide);
   // a touchdown leaves a puff of tyre smoke
@@ -1076,7 +1077,7 @@ function missileFx(v, m, t, st, hide) {
   if (burning) { const f = 0.85 + 0.3 * Math.abs(Math.sin(t * 61 + m.tL)); m.plume.scale.set(m.size * 1.6 * f, m.size * 0.22, m.size * 0.22); }
   m.line.material.opacity = age < m.burn ? 0.35 : 0.75;
   // the thick smoke the motor leaves while it burns, fading over the next minute
-  const smokeOn = m.burn > 0 && v.lod < 2 && age > 0 && age < m.burn + 60;
+  const smokeOn = !v.war && m.burn > 0 && v.lod < 2 && age > 0 && age < m.burn + 60;
   m.smoke.visible = smokeOn;
   if (smokeOn) {
     const P = m.tmp; P.length = 0; IC.recPath(m.tr, m.tL, Math.min(t, m.tL + m.burn), P);
@@ -1170,6 +1171,8 @@ function makeEvent(v, e) {
   v.events.push(ev); v.made.event++;
   return ev;
 }
+/* an explosion the war effects draw instead (render3d-war.js) */
+function hideEvent(ev) { ev.flash.visible = false; if (ev.fire) ev.fire.visible = false; if (ev.frag) ev.frag.visible = false; for (const p of ev.puffs) p.m.visible = false; }
 function updateEvent(ev, t, wind) {
   const age = t - ev.e.t, s = ev.sz;
   if (ev.td) {
@@ -1281,6 +1284,7 @@ IC.replayOpen = function (S, o) {
     orbit: { yaw: -0.8, pitch: 0.55, dist: Math.max(6, R * 0.9), tx: 0, ty: hRaw(S, o.x, o.y), tz: 0 } });
   S.paused = true;
   bindWindow(v);
+  if (IC.film && IC.film.on) IC.replayFilm(v, true);
   loadThree().then(() => { if (V === v) buildReplay(v); }).catch(e => { msg(v, 'The 3D library could not be loaded from cdnjs.cloudflare.com. Check the connection and open the replay again.'); console.warn(e); });
   return v;
 };
@@ -1296,6 +1300,36 @@ IC.replayClose = function () {
   IC.ui && IC.ui.refresh && IC.ui.refresh(true);
 };
 IC.replayOpenFor = ref => V && IC.replayOpen(V.S, { follow: ref, x: ref.x, y: ref.y, t: V.t });
+/* film mode (brief 58): the window full screen with nothing over the picture but the film's bars and captions
+   (IC.film.overlay on a canvas of its own, also in the video); F in the window, or with the map in film mode */
+IC.replayFilm = function (v, on) {
+  v = v || V || L; if (!v) return false;
+  on = !!on; if (!!v.film === on) return on;
+  if (on) { v.preFilm = { labels: v.labels, locks: v.locks, cone: v.cone, trails: v.trails }; Object.assign(v, { labels: false, locks: false, cone: false, trails: false }); for (const m of v.movers) lblOff(m); }
+  else if (v.preFilm) { Object.assign(v, v.preFilm); v.fshot = null; }
+  v.film = on;
+  if (IC.film && IC.film.css) IC.film.css();
+  v.el.classList.toggle('film', on);
+  let cv = v.$('film');
+  if (on && !cv) { cv = document.createElement('canvas'); cv.className = 'rp-film'; cv.dataset.el = 'film'; v.$('view').appendChild(cv); v.els.film = cv; }
+  if (cv) cv.hidden = !on;
+  if (v.onResize) setTimeout(v.onResize, 0);
+  return on;
+};
+/* a film camera's shot (render3d-war.js says what each does); null goes back to the window's own cameras */
+IC.replayShot = function (v, spec) {
+  v = v || V || L; if (!v) return null;
+  v.fshot = spec ? Object.assign({ t0: v.t, dur: 6 }, spec) : null; v.fsnap = true; v.snap = true;
+  if (!spec && v.camera) { v.camera.fov = 50; v.camera.updateProjectionMatrix(); if (v.onResize) v.onResize(); }
+  return v.fshot;
+};
+/* the film's bars and captions over the picture */
+function filmOverlay(v) {
+  const cv = v.$('film'); if (!cv || !IC.film || !IC.film.overlay) return;
+  const view = v.$('view'), w = view.clientWidth, h = view.clientHeight;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext('2d'); g.clearRect(0, 0, w, h); IC.film.overlay(g, w, h);
+}
 function disposeView(v) {
   v.closed = true;
   cancelAnimationFrame(v.raf);
@@ -1352,7 +1386,8 @@ function bindWindow(v) {
     if (k === ' ') { togglePlay(v); e.preventDefault(); }
     else if (e.key === 'ArrowLeft') v.t = Math.max(v.t0, v.t - 5);
     else if (e.key === 'ArrowRight') v.t = Math.min(v.t1, v.t + 5);
-    else if (k >= '1' && k <= '7') setCam(v, CAMS[+k - 1][0]);
+    else if (k >= '1' && k <= '7') { if (v.fshot) IC.replayShot(v, null); setCam(v, CAMS[+k - 1][0]); }
+    else if (k === 'f') IC.replayFilm(v, !v.film);
     else if ('wasdqe'.includes(k)) { v.keys.add(k); if (v.cam !== 'free') setCam(v, 'free'); }
     else return;
     e.stopImmediatePropagation();
@@ -1438,6 +1473,7 @@ function sceneBase(v) {
   if (!FX()) winMat().color.set(v.night ? '#ffd890' : light < 0.8 ? '#8a7a5a' : '#303a44');
   else FX().scene(v);
   if (LIFE()) LIFE().scene(v);
+  if (WAR()) WAR().scene(v);
   return scene;
 }
 function buildReplay(v) {
@@ -1612,6 +1648,7 @@ function dirOf(m, out) { const h = m.st.h, p = m.st.pitch || 0; return out.set(M
 const camDist = m => Math.max(m.size * 3.2, m.tr.kind === 'missile' ? 0.12 : 0.25);
 function camera(v, t, dtR) {
   const cam = v.camera, O = v.orbit;
+  if (v.fshot && WAR() && WAR().cam(v, t, dtR)) { v.shot = { mode: 'film', subj: null, key: 'film' }; return; }
   const shot = v.cam === 'auto' ? director(v, t) : { mode: v.cam, subj: v.follow, key: v.cam + (v.follow ? v.follow.tr.id : '') };
   shot.key += shot.subj && shot.subj.vis ? '' : '-';   // a cut when what it films comes into the picture
   if (shot.key !== v.shotKey) { v.snap = true; v.shotKey = shot.key; }
@@ -1727,11 +1764,12 @@ function step(v, now) {
   const ch = Math.max(0, cp.y - hT(v, cp.x + v.cx, cp.z + v.cy) * v.hk), far = U.clamp(450 + ch * 9, 450, 1800);
   v.scene.fog.far = far; v.scene.fog.near = far * 0.3;
   dots(v);
-  for (const ev of v.events) updateEvent(ev, t, wind);
+  for (const ev of v.events) if (v.war && WAR().owns(ev.e)) hideEvent(ev); else updateEvent(ev, t, wind);
   for (const fx of v.fx) updateCm(v, fx, t);
   for (const m of v.dmgMeshes) applyDamage(m, t);
   for (const L of v.nightLights) L.visible = v.night;
   if (LIFE() && v.life) LIFE().frame(v, t, dtR);
+  if (WAR() && v.war) WAR().frame(v, t, dtR);
   // the finest ring of ground shows only from low down: from higher up the next ring is fine enough, and the two
   // are painted the same way (the finest adds the fields the map shows close in)
   const low = ch < (v.lowGnd ? 30 : 20); if (low !== v.lowGnd) { v.lowGnd = low; for (const [k, T] of v.tiles) if (T.userData.li === 0) T.visible = low; if (low && v.sfx != null) groundSync(v, v.sfx, v.sfy); }
@@ -1746,6 +1784,7 @@ function step(v, now) {
   v.upMs = v.upMs == null ? t1 - now : v.upMs * 0.95 + (t1 - now) * 0.05; v.drawMs = v.drawMs == null ? t2 - t1 : v.drawMs * 0.95 + (t2 - t1) * 0.05;
   // detail goes before frame rate: shorter trails and no smoke when the scene gets expensive
   v.cost = v.upMs + v.drawMs; if (v.kind === 'live') v.lod = v.cost > 7 ? 2 : v.cost > 4 ? 1 : 0;
+  if (v.film) filmOverlay(v);
   if (v.rec) capture(v);
 }
 IC.replayStep = (v, now) => step(v, now == null ? performance.now() : now);
@@ -1889,6 +1928,7 @@ IC.replayVideoStop = () => V && V.rec ? stopVideo(V) : Promise.resolve();
 function capture(v) {
   const R = v.rec, g = R.g, W = R.o.w, H = R.o.h;
   g.drawImage(v.renderer.domElement, 0, 0, W, H);
+  if (v.film && v.$('film')) { g.drawImage(v.$('film'), 0, 0, W, H); return; }
   if (!R.o.labels) return;
   const view = v.$('view'), sx = W / Math.max(1, view.clientWidth), sy = H / Math.max(1, view.clientHeight), fs = Math.max(11, Math.round(13 * sy));
   g.textAlign = 'center'; g.textBaseline = 'bottom'; g.shadowColor = '#000'; g.shadowBlur = 4;
@@ -2156,6 +2196,6 @@ function galleryFrame(v) {
 IC.replayState = () => V;
 /* what the other files of the 3D view build on: its picture (render3d-fx.js) and its life (render3d-life.js) */
 IC.R3D = { THREE: () => THREE, three: () => THREE, CFG, KM, LIFT, share, geom, toScene, colorOf, lineGeom, puffTex, sphereG, discG, coneG, quadG, texSRGB, seeded,
-  glow, hT, hRaw, solidMat, basicMat, winMat, modelParts, isShared, views: () => [V, L].filter(Boolean) };
+  glow, hT, hRaw, solidMat, basicMat, winMat, modelParts, isShared, scenePos, trackOf, moverOfRef, views: () => [V, L].filter(Boolean) };
 
 })(window.IC);

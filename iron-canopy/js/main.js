@@ -1048,7 +1048,9 @@ function frame(now) {
   }
   IC.autosaveTick(S);
   fx(S, dtR, gdt);
-  IC.render(S, now / 1000);
+  // (the map is not drawn while a film covers it: the 3D view full screen, or a title card)
+  const RV = IC.replayState && IC.replayState();
+  if (!(RV && RV.film) && !(IC.film && IC.film.cover)) IC.render(S, now / 1000);
   if (IC.lifeSoundEnd) IC.lifeSoundEnd();
   if (IC.sfx.score) IC.sfx.score(S, dtR);
   IC.renderMini(S, mini, mw, mh);

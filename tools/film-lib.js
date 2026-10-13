@@ -61,7 +61,11 @@ async function open(o) {
     /* let the clock run freely again (between shots, so the game and the tiles catch up) */
     async free(ms) { await page.evaluate(() => IC.film.hold(false)); if (ms) await page.waitForTimeout(ms); },
     /* a still on the held clock: one frame on, the map's tiles all painted in it */
-    async still(file) { await page.evaluate(() => { IC.film.hold(true); IC.film.tick(16); IC.film.tick(16); }); await page.screenshot({ path: file }); },
+    async still(file) {
+      await page.evaluate(() => { IC.film.hold(true); IC.film.tick(16); IC.film.tick(16); });
+      const r = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
+    },
     async close() { await browser.close(); }
   };
   if (cam.dir) fs.mkdirSync(cam.dir, { recursive: true });

@@ -96,7 +96,7 @@ class PerspectiveCamera extends Object3D {
     this._f = f; this._r = new Vector3().crossVectors(f, new Vector3(0, 1, 0)).normalize(); if (this._r.lengthSq() < 1e-9) this._r.set(0, 0, 1); this._u = new Vector3().crossVectors(this._r, f);
   }
   getWorldDirection(o) { return o.copy(this._f); }
-  updateProjectionMatrix() {} setViewOffset() {}
+  updateProjectionMatrix() {} setViewOffset() {} rotateX() { return this; } rotateY() { return this; } rotateZ() { return this; }
   get projectionMatrix() { return this._pm || (this._pm = new Matrix4()); } get projectionMatrixInverse() { return this._pmi || (this._pmi = new Matrix4()); }
   get matrixWorld() { return this._mw || (this._mw = new Matrix4()); } get matrixWorldInverse() { return this._mwi || (this._mwi = new Matrix4()); }
 }
@@ -151,6 +151,7 @@ IC.drawTerrain = () => 0;   // the map's painters need a canvas: the ground is l
 IC.daylight = t => { const h = (t % 86400) / 3600; return h < 5 || h > 20.5 ? 0 : h < 7.5 ? (h - 5) / 2.5 : h > 18 ? 1 - (h - 18) / 2.5 : 1; };
 require('../iron-canopy/js/replay3d.js');
 require('../iron-canopy/js/render3d-life.js');
+require('../iron-canopy/js/render3d-war.js');
 IC.replayUseThree(THREE);
 require('../iron-canopy/js/render3d-fx.js');   // the picture (brief 40): its passes, sky and weather run here too
 
@@ -220,6 +221,29 @@ function facing(v) {
   const f = W.moverOf.get(tr);
   out.turn = { bank, roll: f.grp.rotation.x, poseRoll: f.st.roll, faced: facing(W) };
   IC.replayClose();
+  // brief 59: cruise missiles at a battery on the Test range, replayed in film mode from a camera on the ground with
+  // a long lens: the smoke and fire of each blast are particles filled again every frame, nothing made
+  {
+    const G3 = IC.newGame({ seed: 7, mode: 'range' }), T3 = G3.range.target;
+    IC.rangeAddUnit(G3, 'mrsam', T3.x - 20, T3.y + 6); IC.rangeAddUnit(G3, 'lr3d', T3.x - 30, T3.y - 10);
+    IC.rangeSpawn(G3, { what: 'lacm', n: 6, brg: 90, km: 45, alt: '' });
+    for (let i = 0; i < 4 * 420; i++) IC.step(G3, 0.25);
+    const evs = G3.rec.ev.filter(e => IC.war3d.owns(e)), p = evs.find(e => e.kind !== 'impact') || evs[0];
+    if (!p) throw new Error('nothing blew up on the range');
+    const V3 = IC.replayOpen(G3, { x: p.x, y: p.y, r: 150, t: p.t - 1 }); await tick(); await tick();
+    IC.replayFilm(V3, true); V3.playing = false; V3.t = p.t - 1;
+    const from = { x: p.x + 25, y: p.y + 5, h: 2 };
+    IC.replayShot(V3, { mode: 'fixed', at: { x: p.x, y: p.y, alt: p.alt || 0 }, from, lens: 135 });
+    for (let i = 0; i < 10; i++) IC.replayStep(V3, now += 33);
+    const w0 = snap(), wv0 = Object.assign({}, V3.made);
+    let smoke = 0, fire = 0, before = null;
+    for (let i = 0; i < 160; i++) { V3.t = p.t - 1 + i * 0.1; IC.replayStep(V3, now += 33); if (i === 5) before = V3.war.stats.fire; smoke = Math.max(smoke, V3.war.stats.smoke); fire = Math.max(fire, V3.war.stats.fire); }
+    const cp = V3.camera.position, gnd = IC.R3D.hT(V3, from.x, from.y) * V3.hk, d = V3.camera.getWorldDirection(new THREE.Vector3()), to = new THREE.Vector3(p.x - V3.cx - cp.x, IC.R3D.hT(V3, p.x, p.y) * V3.hk + (p.alt || 0) * 10 * V3.hk - cp.y, p.y - V3.cy - cp.z).normalize();
+    out.war = { made: diff(w0, snap()), view: diff(wv0, V3.made), smoke, fire, before, kind: p.kind, evs: evs.length, fov: V3.camera.fov, camH: (cp.y - gnd) * 100, camAt: Math.hypot(cp.x + V3.cx - from.x, cp.z + V3.cy - from.y), aim: d.dot(to), film: V3.film, labels: V3.labels, locks: V3.locks };
+    IC.replayShot(V3, null); IC.replayFilm(V3, false);
+    out.war.back = { fov: V3.camera.fov, labels: V3.labels, film: V3.film };
+    IC.replayClose();
+  }
   // brief 41: a jet at a gate gets its jet bridge and its vehicles, nothing is made from frame to frame, and each
   // aircraft's lights burn as its pose says (the strobes on the runway and in the air, the beacon with the engines)
   {

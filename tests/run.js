@@ -4376,6 +4376,13 @@ test('3D view: 300 frames of the live view and of a replay make nothing again, a
   assert(W['fog@7'].fog > 50 * W['clear@12'].fog && W['fog@7'].fogH < W['clear@12'].fogH / 4, `fog is a thick layer on the ground: ${W['fog@7'].fog} against ${W['clear@12'].fog}`);
   assert(W['storm@15'].flashes > 0 && W['clear@12'].flashes === 0, 'a storm flashes with lightning, a clear day does not');
   assert(W['overcast@12'].cover > 0.8 && !W['overcast@12'].shadows && W['scattered@12'].clouds >= 2, 'overcast covers the sun');
+  // brief 59: a blast replayed in film mode smokes and burns from particles, makes nothing per frame, and the film
+  // camera stands where it was put, aimed where it was told, with the lens it was given; leaving puts it all back
+  const X = out.war;
+  none(X.made, 'the war effects'); none(X.view, 'the war effects (scene parts)');
+  assert(X.smoke > 200 && X.fire > X.before, `a ${X.kind} made ${X.smoke} smoke and ${X.fire} fire particles (${X.before} before it)`);
+  assert(Math.abs(X.fov - 2 * Math.atan(12 / 135) * 180 / Math.PI) < 0.01 && Math.abs(X.camH - 2) < 0.5 && X.camAt < 0.01 && X.aim > 0.99, `film camera: fov ${X.fov.toFixed(1)}°, ${X.camH.toFixed(1)} m up, ${X.camAt.toFixed(2)} off its place, aim ${X.aim.toFixed(3)}`);
+  assert(X.film && !X.labels && !X.locks && !X.back.film && X.back.labels && X.back.fov === 50, 'film mode hides the labels and lock lines and gives them back');
 }, true);
 test('3D life: a jet at a gate gets its jet bridge and vehicles, nothing is made from frame to frame, and the lights follow the phase', () => {
   const cp = require('child_process'), path = require('path');
@@ -5535,6 +5542,56 @@ test('atmosphere: the mood is calm in a peacetime Career, tense before a war and
   const r = IC.mood(S);
   assert(r.battle > 0.9 && r.hostile === 6, `six hostile drones in the air are a battle: ${JSON.stringify(r)}`);
   assert(Math.abs(r.calm + r.tension + r.battle - 1) < 1e-9, 'the weights sum to 1');
+});
+/* ---------- film mode (brief 58): the overhead camera's shots and the director ---------- */
+test('film: a pan ends where it was planned, and a push zooms in log steps from its first zoom to its last', () => {
+  const S = null;   // (scripted moves need no game)
+  const pan = { kind: 'pan', at: { x: 100, y: 200 }, to: { x: 900, y: 600 }, z: 0.5, z1: 2, t0: 10, dur: 4 };
+  const a = IC.filmWant(S, pan, 10, 1600, 900), b = IC.filmWant(S, pan, 14, 1600, 900), m = IC.filmWant(S, pan, 12, 1600, 900);
+  assert(a.x === 100 && a.y === 200 && Math.abs(a.z - 0.5) < 1e-9, `the pan starts at ${a.x}, ${a.y} z ${a.z}`);
+  assert(Math.abs(b.x - 900) < 1e-6 && Math.abs(b.y - 600) < 1e-6 && Math.abs(b.z - 2) < 1e-9, `the pan ends at ${b.x}, ${b.y} z ${b.z}`);
+  assert(Math.abs(m.z - 1) < 1e-6, `half way in time, the zoom is ${m.z.toFixed(3)} (the middle in log is 1)`);
+  const push = { kind: 'push', at: { x: 0, y: 0 }, z: 1, z1: 4, t0: 0, dur: 2 };
+  assert(Math.abs(IC.filmWant(S, push, 2, 1600, 900).z - 4) < 1e-9 && Math.abs(IC.filmWant(S, push, 99, 1600, 900).z - 4) < 1e-9, 'a push stops at its last zoom');
+});
+test('film: a tracking shot keeps a cruise missile on screen, a little behind the middle, all the way in', () => {
+  IC.seedRandom(58);
+  const S = IC.newGame({ seed: 4242, mode: 'test' }), c = IC.cap(S);
+  IC.sandboxTarget(S, c); IC.sandboxLaunch(S, { what: 'lacm', n: 1, from: 'close' });
+  let t = null;
+  for (let i = 0; i < 4 * 120 && !t; i++) { IC.step(S, 0.25); t = S.threats.find(q => q.d.cls === 'cm' && !q.dead); }
+  assert(t, 'no cruise missile took off');
+  const sh = { kind: 'track', ref: t, z: 2.5, t0: 0, dur: 999 }, vw = 1600, vh = 900;
+  let worst = 0, n = 0;
+  for (let i = 0; i < 4 * 600 && !t.dead; i++) {
+    IC.step(S, 0.25);
+    if (i % 20 || t.age <= 0) continue;
+    const w = IC.filmWant(S, sh, 0, vw, vh), sx = (t.x - w.x) * w.z, sy = (t.y - w.y) * w.z;
+    worst = Math.max(worst, Math.abs(sx) / (vw / 2), Math.abs(sy) / (vh / 2)); n++;
+    const v = IC.filmVel(t); assert((t.x - w.x) * v.x + (t.y - w.y) * v.y <= 0, 'the camera looks behind the missile, not ahead of it');
+  }
+  assert(n > 20, `followed for only ${n} looks`);
+  assert(worst < 0.5, `the missile drifted ${Math.round(worst * 100)}% of the way to the edge`);
+  assert(IC.filmWant(S, sh, 0, vw, vh) === null || !t.dead, 'a shot of something gone wants nothing');
+});
+test('film: the director films what is about to happen, and does not cut away in the last seconds before it', () => {
+  IC.seedRandom(59);
+  const S = IC.newGame({ seed: 4242, mode: 'test' }), c = IC.cap(S);
+  S.ad.roe = 'free'; for (const u of S.units) { u.roe = 'free'; if (u.emitter) { u.emcon = 'on'; u.radarOn = true; } }
+  IC.sandboxTarget(S, c); IC.sandboxLaunch(S, { what: 'lacm', n: 6, from: 'close' });
+  const D = {}, gs = IC.GS;
+  let t = 0, cuts = 0, bad = 0, near = 0, raid = 0;
+  for (let i = 0; i < 4 * 900; i++) {
+    IC.step(S, 0.25); t += 0.25 / gs;
+    if (i % 20) continue;
+    const prev = D.cur, before = prev && IC.filmMoments(S, gs).find(m => m.key === prev.key);
+    const sh = IC.filmDirect(S, D, t, gs);
+    if (sh) { cuts++; if (before && before.when < 2) bad++; if (sh.kind === 'raid') raid++; }
+    if (D.cur && D.cur.when < 25 && D.cur.kind !== 'raid') near++;
+  }
+  assert(cuts >= 3 && raid >= 1, `the director cut ${cuts} times (${raid} to the raid as a whole)`);
+  assert(near > 0, 'the director never filmed an intercept or an impact about to happen');
+  assert(bad === 0, `${bad} cuts away from something under two seconds from happening`);
 });
 test('atmosphere: night is darker and bluer than noon, dusk in between, and a storm greyer and darker than a clear day', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });

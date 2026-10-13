@@ -28,6 +28,7 @@ performance.now = () => held ? vt : rNow() - off;
 window.requestAnimationFrame = cb => { if (held) { const id = -(++qid); q.set(id, cb); return id; } return rRAF(() => cb(rNow() - off)); };
 window.cancelAnimationFrame = id => { if (id < 0) q.delete(id); else rCAF(id); };
 F.hold = function (on) {
+  document.body.classList.toggle('filmheld', !!on);
   if (on && !held) { vt = rNow() - off; held = true; }
   else if (!on && held) { off = rNow() - vt; held = false; const Q = [...q.values()]; q.clear(); for (const cb of Q) rRAF(() => cb(rNow() - off)); }
 };
@@ -44,11 +45,13 @@ F.tick = function (ms) {
 const CSS = `
 body.film #app > *:not(#map):not(#replay):not(.live):not(#filmRec){opacity:0!important;pointer-events:none!important;transition:opacity .45s}
 body.film #map{cursor:default}
+body.filmheld #app > *{transition:none!important}
 #filmRec{position:absolute;right:14px;top:12px;z-index:30;font:600 13px var(--mono,monospace);color:#ff5b4f;text-shadow:0 1px 3px #000;pointer-events:none}
 .replay.film,.live.film{inset:0!important;border-radius:0!important;box-shadow:none!important;width:auto!important;height:auto!important;resize:none!important;z-index:11}
 .replay.film .rp-head,.replay.film .rp-bar,.live.film .rp-head,.film .rp-panel,.film .rp-labels,.film .rp-side,.film .rp-fps{display:none!important}
 .rp-film{position:absolute;inset:0;pointer-events:none;z-index:2}`;
 function style() { if (document.getElementById('filmStyle')) return; const st = document.createElement('style'); st.id = 'filmStyle'; st.textContent = CSS; document.head.appendChild(st); }
+F.css = style;
 F.set = function (on) {
   style();
   F.on = !!on;
@@ -120,9 +123,22 @@ F.step = function (S, dtR) {
   F.sx = a * nz(F.t, 1); F.sy = a * nz(F.t, 7);
   F.flashA = Math.max(0, F.flashA - dtR * 2.2);
   if (F.fadeK) { const d = F.fadeTo - F.fadeA, s = dtR / F.fadeK; F.fadeA += Math.sign(d) * Math.min(Math.abs(d), s); if (Math.abs(F.fadeTo - F.fadeA) < 1e-4) F.fadeK = 0; }
+  if (F.cover) blankDraw();
   if (F.rec) F.rec.el.textContent = `● REC ${U.hhmm ? Math.floor((performance.now() - F.rec.t0) / 60000) + ':' + String(Math.floor((performance.now() - F.rec.t0) / 1000) % 60).padStart(2, '0') : ''}`;
 };
 
+/* a black screen over everything for title cards between shots (the map stops drawing under it) */
+F.blank = function (on) {
+  let cv = document.getElementById('filmCard');
+  if (on && !cv) { cv = document.createElement('canvas'); cv.id = 'filmCard'; cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:60;background:#000;pointer-events:none'; document.body.appendChild(cv); }
+  if (cv) cv.hidden = !on;
+  F.cover = !!on;
+};
+function blankDraw() {
+  const cv = document.getElementById('filmCard'); if (!cv || cv.hidden) return;
+  const w = innerWidth, h = innerHeight; if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); overlay(g, w, h);
+}
 /* ---------- captions, cards, fades ---------- */
 F.caption = (title, line, sec) => { F.cap = title ? { title, line: line || '', t0: F.t, dur: sec || 4 } : null; };
 F.card = (title, line, sec, o) => { F.cd = title ? Object.assign({ title, line: line || '', t0: F.t, dur: sec || 3 }, o || {}) : null; };
@@ -146,7 +162,8 @@ function grade(g, W, H, light, S) {
   const golden = light > 0.15 && light < 0.75 ? 1 - Math.abs(light - 0.45) / 0.3 : 0;
   g.globalCompositeOperation = 'soft-light';
   if (light < 0.35) { g.globalAlpha = 0.4 * (1 - light / 0.35); g.fillStyle = 'rgb(70,120,170)'; g.fillRect(0, 0, W, H); }
-  if (golden > 0) { g.globalAlpha = 0.45 * golden; g.fillStyle = 'rgb(255,150,70)'; g.fillRect(0, 0, W, H); }
+  // golden hour: teal in the shadows, warm in the light, gently (the map is already warm at dusk)
+  if (golden > 0) { g.globalAlpha = 0.22 * golden; g.fillStyle = 'rgb(30,90,120)'; g.fillRect(0, 0, W, H); g.globalAlpha = 0.16 * golden; g.fillStyle = 'rgb(255,160,90)'; g.fillRect(0, 0, W, H); }
   if (light >= 0.75) { g.globalAlpha = 0.25; g.fillStyle = 'rgb(120,150,170)'; g.fillRect(0, 0, W, H); }
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
 }

@@ -30,7 +30,6 @@ IC.filmEase = ease;
 /* the velocity of anything that moves, world units per game second */
 IC.filmVel = function (o) {
   if (!o) return { x: 0, y: 0 };
-  if (o.pvx != null && o.d && o.d.move !== 'bal') return { x: o.pvx, y: o.pvy };
   if (o.vx != null && (o.vx || o.vy)) return { x: o.vx, y: o.vy };
   const sp = o.spd || 0, a = o.a != null ? o.a : o.h != null ? o.h : 0;
   return { x: Math.cos(a) * sp, y: Math.sin(a) * sp };
@@ -77,8 +76,9 @@ IC.filmWant = function (S, sh, t, vw, vh) {
       const v = IC.filmVel(o), sp = Math.hypot(v.x, v.y);
       // the zoom: given, or what makes it cross the screen in FILM.cross seconds at the game's speed
       const z = sh.z || U.clamp(vw / Math.max(1e-3, sp * (sh.gs || IC.GS) * IC.FILM.cross), IC.FILM.zMin, IC.FILM.zMax);
-      const lead = (sh.lead == null ? IC.FILM.lead : sh.lead) * vw / 2 / z;
       const ux = sp > 1e-6 ? v.x / sp : 0, uy = sp > 1e-6 ? v.y / sp : 0;
+      // (the half screen the way it moves: wider across than up and down)
+      const lead = (sh.lead == null ? IC.FILM.lead : sh.lead) * (Math.abs(ux) * vw + Math.abs(uy) * vh) / 2 / z;
       return { x: o.x + ux * lead, y: o.y + uy * lead, z: sh.z1 ? lz(z, sh.z1, e) : z };
     }
     case 'pair': {
