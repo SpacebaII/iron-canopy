@@ -52,6 +52,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 16 | [52 Country roads that follow the ground (the audit: 52-roads-and-towns-audit.md)](52-country-roads.md) | — | `refineRoads`, `fineLine` and `IC.roadLine` in `gen.js`, `roadFinish` in `growth.js` |
 | 16 | [53 The city fabric: streets on a direction field](53-city-fabric.md) | — | `cityfabric.js` (new), `IC.buildCity`, `joinRoads`, `IC.cityGrowCell` in `cities.js`, streets' heads and bridges in `terrain.js` |
 | 16 | [54 The fringe, the suburbs and the villages](54-fringe-and-villages.md) | — | `village.js`, `fringe.js` (new), `IC.culPlan` and `IC.closeStreets` in `cities.js`, the closes and fringe items in `terrain.js`, closes and in-view filling in `traffic.js`, `IC.aptOuter` in `landside.js` |
+| 16 | [55 Buildings with depth](55-buildings-with-depth.md) | — | `buildings.js` (new): `IC.blockPlan`, `IC.cityTones`, `IC.placeLandmarks`; `paintPlan`, kerbs and hedges in `terrain.js`, `IC.blockBoxes` from the plan in `models.js`, river parks in `cities.js`, `IC.parkedSpots` in `traffic.js` drawn by `render-roads.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.

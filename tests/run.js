@@ -231,6 +231,88 @@ test('world: suburb closes are streets of the city: a loop or a single close in 
     assert(loose === 0, `seed ${seed}: ${loose} of ${heads} closes start on no street`);
   }
 }, false, 'world');
+test('world: every block has a plan: its buildings inside it, roofs in the town\'s own tones, perimeter blocks with corner buildings and parcels of different widths, a church or a school here and there (brief 55)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed);
+    let blocks = 0, out = 0, perim = 0, corners = 0, varied = 0, roofs = 0, odd = 0, churches = 0, schools = 0, empty = 0;
+    for (const c of W.cities) {
+      const T = IC.cityTones(c), all = IC.ROOF_TONES[c.style] || IC.ROOF_TONES.eu;
+      assert(T.roof.length === 4 && T.roof.every(t => all.includes(t)), `${c.name} has no four roof tones of its style`);
+      for (const b of c.blocks) {
+        if (b.fr || !(IC.BLOCK_FORMS[b.f] || (b.land && IC.LANDMARKS[b.land]))) continue;
+        const P = IC.blockPlan(b, c); blocks++;
+        if (!P.bld.length) empty++;
+        for (const q of P.bld) {
+          if (!q.a && (Math.abs(q.x) + q.w / 2 > b.w / 2 + 1e-6 || Math.abs(q.y) + q.h / 2 > b.h / 2 + 1e-6)) out++;
+          if (q.k === 'flats' || q.k === 'house' || q.k === 'corner') { roofs++; if (!all.some(t => Math.abs(t[0] - q.c[0]) <= 30 && Math.abs(t[1] - q.c[1]) <= 30 && Math.abs(t[2] - q.c[2]) <= 30)) odd++; }
+          if (q.k === 'church') churches++; if (q.k === 'school') schools++;
+        }
+        if ((b.f === 'old' || b.f === 'court') && !b.land && !P.bld.some(q => q.k === 'church' || q.k === 'school')) {
+          perim++;
+          if (P.bld.filter(q => q.k === 'corner').length >= 4) corners++;
+          const ws = new Set(P.bld.filter(q => q.k === 'flats').map(q => Math.round(Math.max(q.w, q.h) * 200)));
+          if (ws.size >= 3) varied++;
+        }
+      }
+    }
+    assert(blocks > 1000 && out === 0, `seed ${seed}: ${out} of the buildings in ${blocks} blocks stick out of their block`);
+    assert(empty === 0, `seed ${seed}: ${empty} blocks have no building`);
+    assert(corners >= perim * 0.95, `seed ${seed}: only ${corners} of ${perim} perimeter blocks have their four corner buildings`);
+    assert(varied >= perim * 0.9, `seed ${seed}: only ${varied} of ${perim} perimeter blocks have parcels of three different widths`);
+    assert(odd <= roofs * 0.02, `seed ${seed}: ${odd} of ${roofs} roofs are in no tone of their town's style`);
+    assert(churches >= 10 && schools >= 10, `seed ${seed}: ${churches} churches and ${schools} schools in the old towns and the housing`);
+  }
+}, false, 'world');
+test('world: landmarks: a station with platforms along the railway and a forecourt towards the centre in every town on the line, sidings into the factories beside it, a cathedral, a hospital, a stadium, the Ministry in the capital, and parks on the river banks (brief 55)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed);
+    const railTowns = W.cities.filter(c => W.rails.some(r => r.a === c || r.b === c));
+    let sidings = 0, river = 0; const kinds = {};
+    for (const c of W.cities) {
+      for (const b of c.blocks) { if (b.land) kinds[b.land] = (kinds[b.land] || 0) + 1; if (b.sid && IC.blockPlan(b, c).lanes.some(l => l[5] === 'rail')) sidings++; }
+      if ((c.parks || []).some(p => p.river)) river++;
+      if (b_land_count(c, 'station') > 1) assert(false, `${c.name} has two stations`);
+    }
+    function b_land_count(c, k) { return c.blocks.filter(b => b.land === k).length; }
+    for (const c of railTowns) {
+      const st = c.blocks.find(b => b.land === 'station');
+      assert(st, `seed ${seed}: ${c.name} is on the railway and has no station`);
+      const P = IC.blockPlan(st, c), plat = P.lots.filter(l => l.k === 'platform'), fore = P.lots.find(l => l.k === 'plaza');
+      assert(plat.length >= 2 && plat.every(l => Math.abs(U.angWrap(l.a - st.ra)) < 0.01), `${c.name}'s platforms do not run along the line`);
+      assert(fore && P.bld.some(q => q.k === 'station'), `${c.name}'s station has no forecourt or no building`);
+      // the forecourt is nearer the centre than the tracks
+      const wp = (x, y) => ({ x: st.x + x * Math.cos(st.a) - y * Math.sin(st.a), y: st.y + x * Math.sin(st.a) + y * Math.cos(st.a) });
+      const tr = P.lanes.filter(l => l[5] === 'rail'), tm = wp(tr.reduce((s, l) => s + (l[0] + l[2]) / 2, 0) / tr.length, tr.reduce((s, l) => s + (l[1] + l[3]) / 2, 0) / tr.length), fp = wp(fore.x, fore.y);
+      assert(U.dist(fp, c) < U.dist(tm, c), `${c.name}'s forecourt is on the far side of the tracks`);
+    }
+    assert(sidings >= 10, `seed ${seed}: only ${sidings} factories by the line have a siding`);
+    assert((kinds.cathedral || 0) >= 3 && (kinds.hospital || 0) >= 8 && (kinds.stadium || 0) >= 4 && (kinds.university || 0) >= 2, `seed ${seed}: landmarks ${JSON.stringify(kinds)}`);
+    assert(W.cities.find(c => c.capital).blocks.some(b => b.land === 'ministry'), `seed ${seed}: the capital has no Ministry`);
+    assert(river >= 3, `seed ${seed}: only ${river} towns keep a park on their river banks`);
+    for (const c of W.cities) for (const b of c.blocks) if (b.land) assert(IC.blockPlan(b, c).bld.length >= 2, `${c.name}'s ${b.land} is empty`);
+  }
+}, false, 'world');
+test('traffic: parked cars line the side streets\' kerbs, beside the driving lane, none at a crossing or a street end (brief 55)', () => {
+  const W = world(4242), c = W.cities.find(c => c.name === 'Halenn') || W.cities[1], J = IC.streetJoins(W, c);
+  let n = 0, atJ = 0, offLane = 0, left = 0, right = 0, atEnd = 0;
+  for (const l of c.streets) {
+    if (l.cls !== 'st') continue;
+    const sp = IC.parkedSpots(W, c, l), e0 = l.pts[0], e1 = l.pts[l.pts.length - 1];
+    for (let i = 0; i < sp.length; i += 4) {
+      n++;
+      const x = sp[i], y = sp[i + 1];
+      let d = 1e9, side = 0; for (let q = 1; q < l.pts.length; q++) { const a = l.pts[q - 1], b = l.pts[q], dd = U.segDist(x, y, a.x, a.y, b.x, b.y); if (dd < d) { d = dd; side = Math.sign((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)); } }
+      if (Math.abs(d - IC.PARKED.off) > 0.015) offLane++;
+      if (side > 0) left++; else right++;
+      if (J.some(j => Math.hypot(j.x - x, j.y - y) < 0.2)) atJ++;
+      if (U.dxy(x, y, e0.x, e0.y) < 0.2 || U.dxy(x, y, e1.x, e1.y) < 0.2) atEnd++;
+    }
+  }
+  assert(n > 5000, `only ${n} parked cars in ${c.name}`);
+  assert(offLane === 0, `${offLane} of ${n} parked cars are not in the parking lane`);
+  assert(atJ === 0 && atEnd === 0, `${atJ} parked cars at a crossing, ${atEnd} at a street's end`);
+  assert(left > n * 0.3 && right > n * 0.3, `the cars park on one side only: ${left} left, ${right} right`);
+}, false, 'world');
 test('world: no road inside a city runs over a block', () => {
   for (const seed of [4242, 7]) {
     const W = world(seed);
