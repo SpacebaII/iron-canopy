@@ -50,7 +50,8 @@ IC.buildFringe = function (W, c, R, segs, vils) {
   const wet = (x, y, pad) => W.inLake(x, y) || rs.some(s => U.segDist(x, y, s[0], s[1], s[2], s[3]) < s[4] + (pad || 0));
   const onRoad = (x, y, d, skip) => segs.some(s => s !== skip && U.segDist(x, y, s[0], s[1], s[2], s[3]) < d + (s[4] === 'hw' ? 1.2 : s[4] === 'rail' ? 0.4 : 0));
   // (rd: how close a road may come to the centre; a plot beside its road is checked by its depth, not its frontage)
-  const ground = (x, y, w, h, a, pad, rd) => W.inHome(x, y) && !wet(x, y, pad) && !W.forestAt(x, y) && W.hAt(x, y) < 0.75 && !onRoad(x, y, (rd != null ? rd : Math.max(w, h) / 2) + 0.1) && !IC.blockOnRoad({ x, y, w, h, a }, segsAt(x, y), 0.02) && free(x, y, w, h, a, pad);
+  // (an interchange keeps its footprint: brief 56)
+  const ground = (x, y, w, h, a, pad, rd) => W.inHome(x, y) && !wet(x, y, pad) && !W.forestAt(x, y) && W.hAt(x, y) < 0.75 && !(IC.ixClear && IC.ixClear(W, x, y, Math.max(w, h) / 2)) && !onRoad(x, y, (rd != null ? rd : Math.max(w, h) / 2) + 0.1) && !IC.blockOnRoad({ x, y, w, h, a }, segsAt(x, y), 0.02) && free(x, y, w, h, a, pad);
   // (the road pieces near a point, from 16-unit buckets, for the footprint test)
   const SG = 16, sgm = new Map(); for (const s of segs) for (let j = Math.floor(Math.min(s[1], s[3]) / SG); j <= Math.floor(Math.max(s[1], s[3]) / SG); j++) for (let i = Math.floor(Math.min(s[0], s[2]) / SG); i <= Math.floor(Math.max(s[0], s[2]) / SG); i++) { const k = i * 65536 + j; let l = sgm.get(k); if (!l) sgm.set(k, l = []); l.push(s); }
   const segsAt = (x, y) => { const out = []; for (let j = Math.floor(y / SG) - 1; j <= Math.floor(y / SG) + 1; j++) for (let i = Math.floor(x / SG) - 1; i <= Math.floor(x / SG) + 1; i++) { const l = sgm.get(i * 65536 + j); if (l) for (const s of l) out.push(s); } return out; };
@@ -76,7 +77,7 @@ IC.buildFringe = function (W, c, R, segs, vils) {
       const fw = R.range(0.3, 0.5), p = along(s + fw / 2); if (!p) break;
       const far = s / L, dens = 0.9 - 0.6 * far;
       // (clear of the town itself, of a junction, of another road)
-      if (U.dist(p, c) < extAt(Math.atan2(p.y - c.y, p.x - c.x)) + 0.5) { s += fw; continue; }
+      if (U.dist(p, c) < extAt(Math.atan2(p.y - c.y, p.x - c.x)) + 0.5 || (IC.ixClear && IC.ixClear(W, p.x, p.y, 0.6))) { s += fw; continue; }
       for (const side of [side0, -side0]) {
         if (R() > dens) continue;
         // among the houses, now and then, a petrol station, a car dealer or a garden centre
@@ -141,8 +142,11 @@ IC.buildFringe = function (W, c, R, segs, vils) {
     if (!p) continue;
     const w = R.range(2.4, 3.2), h = R.range(2.2, 3.0), side = R() < 0.5 ? 1 : -1, o = rotXY(p.x, p.y, p.a, 0, side * (0.4 + h / 2));
     if (!ground(o.x, o.y, w, h, p.a, 0.4, h / 2 + 0.1)) continue;
-    const b = mk(o.x, o.y, w, h, p.a, 'sub', 'cul'); F.estates++; k++;
+    const b = mk(o.x, o.y, w, h, p.a, 'sub', 'cul');
     b.a = p.a - side * Math.PI / 2 - IC.culPlan(b).inA;   // (turned so its way in faces the road)
+    // (turned, a long block can reach the road: then not here)
+    if (IC.blockOnRoad(b, segsAt(b.x, b.y), 0.02)) { blocks.pop(); continue; }
+    F.estates++; k++;
   }
   if (F.estates) IC.closeStreets(c, blocks.filter(b => b.fr && b.f === 'cul'), segs.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   // the town reaches further now
