@@ -83,7 +83,7 @@ IC.buildVillage = function (W, v, R, segs) {
     }
     return true;
   };
-  const house = (x, y, w, h, a, kind) => { const b = { x, y, w, h, a, seed: R() * 1000, hp: 1 }; if (kind) b.kind = kind; v.blocks.push(b); return b; };
+  const house = (x, y, w, h, a, kind) => { if (onRoad(x, y, Math.max(w, h) / 2 + 0.02)) return null; const b = { x, y, w, h, a, seed: R() * 1000, hp: 1 }; if (kind) b.kind = kind; v.blocks.push(b); return b; };
   const rotXY = (x, y, a, u, w) => ({ x: x + Math.cos(a) * u - Math.sin(a) * w, y: y + Math.sin(a) * u + Math.cos(a) * w });
   // the street: 300 m for a hamlet, up to 1.4 km for the biggest (pop is in hundreds), the centre in the middle
   const len = U.clamp(2.5 + v.pop * 0.3, 3, 14);
@@ -93,7 +93,9 @@ IC.buildVillage = function (W, v, R, segs) {
   const form = v.pop < 9 ? 'hamlet' : v.pop >= 14 && R() < 0.55 ? 'green' : 'street';
   const plan = v.plan = { form, street, lanes: [], plots: [], green: null, church: null, yards: [] };
   // (the street beyond the road's end, or all of it where no road reaches the village, is a lane the traffic drives)
-  for (const ext of so ? so.exts : [street]) plan.lanes.push({ cls: 'ln', pts: ext, village: v.id });
+  // (a village no road reaches keeps its lanes for the picture, marked loose: the traffic cannot get to them)
+  for (const ext of so ? so.exts : [street]) plan.lanes.push({ cls: 'ln', pts: ext, village: v.id, loose: !so || undefined });
+  plan.loose = !so;
   // a farm: a yard with two or three sheds round it
   const farm = (x, y, a) => {
     if (wet(x, y) || onRoad(x, y, 0.5) || !free(x, y, 1.4, 1.1, a)) return false;
@@ -161,7 +163,7 @@ IC.buildVillage = function (W, v, R, segs) {
       pts.push({ x, y }); a += R.range(-0.12, 0.12);
     }
     if (plLen(pts) < 0.8) return false;
-    plan.lanes.push({ cls: 'ln', pts, village: v.id });
+    plan.lanes.push({ cls: 'ln', pts, village: v.id, loose: plan.loose || undefined });
     const LL = plLen(pts), ls = R() < 0.5 ? 1 : -1;
     // (built up near the street, thinning to the odd house further out)
     for (let s = 0.45; s < LL - 0.4; s += R.range(0.3, 0.5)) { const near = 1 - s / LL; if (R() < 0.5 + 0.45 * near) plot(pts, s, ls, R.range(0.5, 0.8), false); if (R() < 0.3 + 0.4 * near) plot(pts, s + 0.15, -ls, R.range(0.5, 0.8), false); }
