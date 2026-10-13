@@ -848,10 +848,10 @@ const FC = 8;
 // (amp, wave), slope and crossing prices, a noise on the ground's price, how hard the line is held to its wandering
 // centre, rounds of smoothing
 const FINE = {
-  hw: { half: 18, amp: 14, wave: 120, slope: 2.4, bridge: 5, noise: 0.1, pull: 0.3, rounds: 2 },
-  rd: { half: 16, amp: 14, wave: 60, slope: 1.2, bridge: 4, noise: 0.2, pull: 0.3, rounds: 2 },
-  lc: { half: 14, amp: 12, wave: 40, slope: 0.8, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1 },
-  sp: { half: 9, amp: 5, wave: 25, slope: 0.6, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1 }
+  hw: { half: 18, amp: 14, wave: 120, slope: 2.4, bridge: 5, noise: 0.1, pull: 0.3, rounds: 2, lead: 16 },
+  rd: { half: 16, amp: 14, wave: 60, slope: 1.2, bridge: 4, noise: 0.2, pull: 0.3, rounds: 2, lead: 12 },
+  lc: { half: 14, amp: 12, wave: 40, slope: 0.8, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1, lead: 10 },
+  sp: { half: 9, amp: 5, wave: 25, slope: 0.6, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1, lead: 6 }
 };
 const F8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], F8L = F8.map(([x, y]) => Math.hypot(x, y) * FC);
 // one set of working arrays for every road's corridor, grown to the largest (a thousand roads would otherwise each
@@ -909,12 +909,28 @@ function wander(C, o, fbm, k, step, lead) {
 }
 /* one road's line between its two ends A and B (points), round the centre line C, for class cls: taken(k) says a
    fine cell k is another road's, fields are the airfields to keep off (not one the road serves), kn seeds its sway,
-   wide (a factor) opens the corridor and drops the sway. The line, or null when the corridor is shut */
-function fineLine(W, cls, C, A, B, taken, fields, kn, wide) {
+   wide (a factor) opens the corridor and drops the sway, leads ({ a, b }: unit vectors out of each end) the
+   directions the road leaves its nodes in. The line, or null when the corridor is shut */
+function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
   const o0 = FINE[cls] || FINE.lc, o = wide ? Object.assign({}, o0, { half: o0.half * wide, amp: 0 }) : o0, fbm = W.fbm, half = o.half;
   const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
   const cellOf = p => U.clamp(Math.floor(p.y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(p.x / FC), 0, FW - 1);
-  C = wander(C, o, fbm, kn, FC * 2);
+  C = wander(C, o, fbm, kn, FC * 2, o.lead * 1.5);
+  // the first and last stretch are straight (a junction's shape is laid along them, and a road through a junction
+  // keeps its line): out of the node along the direction given, else the grid route's own, as far as the ground
+  // and the other roads allow
+  const lead = (P, v, next) => {
+    const dx = v ? v.x : next.x - P.x, dy = v ? v.y : next.y - P.y, d = Math.hypot(dx, dy) || 1, own = cellOf(P);
+    let s = 0;
+    for (let t = FC * 0.5; t <= Math.min(o.lead, U.dist(A, B) / 3); t += FC * 0.5) {
+      const x = P.x + dx / d * t, y = P.y + dy / d * t, k = cellOf({ x, y });
+      if ((k !== own && taken(k)) || W.inLake(x, y) || W.depthOut(x, y) > 0) break;
+      s = t;
+    }
+    return s < FC ? P : { x: P.x + dx / d * s, y: P.y + dy / d * s };
+  };
+  const A1 = lead(A, leads && leads.a, C[1]), B1 = lead(B, leads && leads.b, C[C.length - 2]);
+  C = [A, A1].concat(C.slice(1, -1), [B1, B]);
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   for (const p of C) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const i0 = Math.max(0, Math.floor((x0 - half) / FC)), j0 = Math.max(0, Math.floor((y0 - half) / FC));
@@ -937,7 +953,7 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide) {
   }
   // (kept squared until here)
   const h2 = half * half;
-  const sK = cellOf(A), tK = cellOf(B), qs = ((sK / FW) | 0) - j0, qsi = sK % FW - i0, qt = ((tK / FW) | 0) - j0, qti = tK % FW - i0;
+  const sK = cellOf(A1), tK = cellOf(B1), qs = ((sK / FW) | 0) - j0, qsi = sK % FW - i0, qt = ((tK / FW) | 0) - j0, qti = tK % FW - i0;
   const QS = qs * cw + qsi, QT = qt * cw + qti;
   // the ground under the corridor's cells, and what a cell may not be: water, abroad, another road's (but the two
   // ends' own cells, where roads meet), an airfield's
@@ -991,12 +1007,16 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide) {
   const cells = []; for (let q = QT; q >= 0; q = par[q]) cells.push((((q / cw) | 0) + j0) * FW + (q % cw + i0));
   cells.reverse();
   let P = cells.map(k => ({ x: (k % FW + 0.5) * FC, y: (((k / FW) | 0) + 0.5) * FC }));
-  P[0] = { x: A.x, y: A.y }; P[P.length - 1] = { x: B.x, y: B.y };
-  // (the first and last legs stay straight: a junction's shape is laid along them)
+  P[0] = { x: A1.x, y: A1.y }; P[P.length - 1] = { x: B1.x, y: B1.y };
+  // (the leads' cells are the road's too)
+  for (const [P0, P1] of [[A, A1], [B, B1]]) for (let t = 0, L = U.dist(P0, P1); t < L; t += FC * 0.5) cells.push(cellOf({ x: P0.x + (P1.x - P0.x) * t / L, y: P0.y + (P1.y - P0.y) * t / L }));
+  if (A1 !== A) P.unshift({ x: A.x, y: A.y });
+  if (B1 !== B) P.push({ x: B.x, y: B.y });
+  // (the first and last legs stay straight: the leads, or the first cells)
   if (P.length > 3) P = [P[0]].concat(chaikin(P.slice(1, -1), o.rounds), [P[P.length - 1]]);
   // a lattice path runs straight between its turns: a second, smaller sway (under half a cell, so it meets nothing
   // new) bends those stretches too, with the junction leads left alone
-  return { pts: simplify(wander(P, { amp: Math.min(o.amp * 0.4, 3.5), wave: o.wave * 0.6 }, fbm, kn + 0.5, FC * 0.75, 12), 0.4), cells };
+  return { pts: simplify(wander(P, { amp: Math.min(o.amp * 0.4, 3.5), wave: o.wave * 0.6 }, fbm, kn + 0.5, FC * 0.75, o.lead * 1.5), 0.4), cells };
 }
 function refineRoads(W) {
   const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
@@ -1008,6 +1028,24 @@ function refineRoads(W) {
   // village's, and a road passing a junction leaves room for the lanes that join it)
   const nodeCell = new Map();
   for (const k in W.nodes) { const c = cellOf(W.nodes[k]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) nodeCell.set(c + dy * FW + dx, k); }
+  // a road through a junction keeps its line: the two roads of the highest class there (the pairs most nearly
+  // opposite at a crossroads) leave it along one direction, between their grid routes' own
+  const leads = new Map(), at = {};
+  for (const e of W.edges) if (FINE[e.cls]) for (const end of [0, 1]) { const k = end ? e.b : e.a; (at[k] = at[k] || []).push({ e, end }); }
+  const dirOf = a => { const P = a.e.pts, p = a.end ? P[P.length - 1] : P[0], q = a.end ? P[P.length - 2] : P[1], d = U.dist(p, q) || 1; return { x: (q.x - p.x) / d, y: (q.y - p.y) / d }; };
+  for (const k in at) {
+    const top = Math.max(...at[k].map(a => RANK[a.e.cls])), T = at[k].filter(a => RANK[a.e.cls] === top), used = new Set();
+    for (const a of T) {
+      if (used.has(a)) continue;
+      const da = dirOf(a); let best = null, bo = 0.3;
+      for (const b of T) { if (b === a || used.has(b)) continue; const db = dirOf(b), opp = -(da.x * db.x + da.y * db.y); if (opp > bo) { bo = opp; best = b; } }
+      if (!best) continue;
+      used.add(a); used.add(best);
+      const db = dirOf(best), vx = da.x - db.x, vy = da.y - db.y, L = Math.hypot(vx, vy) || 1;
+      (leads.get(a.e) || leads.set(a.e, {}).get(a.e))[a.end ? 'b' : 'a'] = { x: vx / L, y: vy / L };
+      (leads.get(best.e) || leads.set(best.e, {}).get(best.e))[best.end ? 'b' : 'a'] = { x: -vx / L, y: -vy / L };
+    }
+  }
   // the most important and the longest first: a lane keeps off the main road, not the reverse
   const order = W.edges.slice().sort((a, b) => (RANK[b.cls] - RANK[a.cls]) || (b.len - a.len));
   const t0 = Date.now();
@@ -1016,7 +1054,8 @@ function refineRoads(W) {
     const taken = k => { const by = occ.get(k), nd = nodeCell.get(k); return (by && by !== e) || (nd && nd !== e.a && nd !== e.b); };
     const keepOff = fields.filter(f => f.id !== e.a && f.id !== e.b).concat(e.cls === 'hw' ? vils : []);
     // (a corridor the other roads shut: once more, twice as wide and without the sway, before the grid line stays)
-    const r = fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei) || fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 2);
+    const ld = leads.get(e);
+    const r = fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 0, ld) || fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 2, ld);
     if (!r) return;
     for (const k of r.cells) occ.set(k, e);
     e.pts = r.pts;
