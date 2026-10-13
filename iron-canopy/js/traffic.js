@@ -76,9 +76,11 @@ function buildGraph(W) {
   // a national road inside a city is one of its avenues, and carries the city's traffic as they do
   const cityOf = {}; for (const c of W.cities) cityOf[c.id] = c;
   for (const e of W.edges) add(e.pts, e.city ? e.ccls || 'art' : e.cls, e.city ? { edge: e, city: cityOf[e.city] } : { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
-  for (const c of W.cities) for (const s of c.streets) add(s.pts, s.cls, { city: c });
+  for (const c of W.cities) for (const s of c.streets) if (!s.cul) add(s.pts, s.cls, { city: c });
   for (const r of W.ramps || []) add(r.pts, 'ramp', { ramp: r });
-  for (const l of W.lanes) add(l.pts, 'ln', {});
+  for (const l of W.lanes) if (!l.loose) add(l.pts, 'ln', {});   // (not the lanes of a village no road reaches)
+  // a suburb's closes last (brief 54): their links come after every other, so a loop that may skip them stops short
+  for (const c of W.cities) for (const s of c.streets) if (s.cul) add(s.pts, s.cls, { city: c, cul: true });
   // crossings at grade: every pair of pieces that cross (motorways and slip roads never do)
   const B = 4, bk = new Map(), key2 = (i, j) => (i + 100) * 32768 + j + 100;
   // the cells a piece passes through (not its whole box: long country roads would fill millions)
@@ -114,8 +116,8 @@ function buildGraph(W) {
     if (l.cls === 'ramp') return;
     for (let i = 1; i < l.pts.length; i++) cover(l.pts[i - 1], l.pts[i], (x, y) => { const k = key2(x, y); let M = segB.get(k); if (!M) segB.set(k, M = []); M.push(li, i); });
   });
-  const tie = (P, lineOk) => {
-    let best = null, bd = 0.7;
+  const tie = (P, lineOk, within) => {
+    let best = null, bd = within || 0.7;
     const gx = Math.floor(P.x / B), gy = Math.floor(P.y / B);
     for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) {
       const M = segB.get(key2(x, y)); if (!M) continue;
@@ -136,6 +138,15 @@ function buildGraph(W) {
     if (!t) continue;
     t.l.ins.push({ i: t.i, t: t.t, x: t.x, y: t.y });
     P.x = t.x; P.y = t.y; l.tied = l.tied || []; l.tied[end] = t.l;
+  }
+  // a street's end that stops a hair short of the street it meets (the crossing test above is exact to a ten-thousandth
+  // of a piece) is tied onto it within 3 m; a close's ends sit on its estate's loop and the loop's way in on the
+  // street, drawn on the ellipse rather than on the loop's chords, so those are tied within 150 m (brief 54)
+  for (const l of lines) if (l.ref.city && !l.ref.edge) for (const end of [0, 1]) {
+    const P = end ? l.pts[l.pts.length - 1] : l.pts[0], t = tie(P, q => q !== l && q.cls !== 'hw', l.ref.cul ? 0.15 : 0.03);
+    if (!t) continue;
+    t.l.ins.push({ i: t.i, t: t.t, x: t.x, y: t.y });
+    P.x = t.x; P.y = t.y;
   }
   // put the crossing points into the lines
   const kq = (x, y) => Math.round(x * 256) * 16777216 + Math.round(y * 256);
@@ -167,7 +178,7 @@ function buildGraph(W) {
       const cum = cumOf(pts), len = cum[cum.length - 1];
       if (len < 1e-3) continue;
       const a = nodeOf(k0, p0), b = nodeOf(k, l.pts[i]);
-      const lk = { id: G.links.length, a, b, pts, cum, len, cls: l.cls, C: CLS[l.cls], one: 0, ref: l.ref, city: l.ref.city || null };
+      const lk = { id: G.links.length, a, b, pts, cum, len, cls: l.cls, C: CLS[l.cls], one: 0, ref: l.ref, city: l.ref.city || null, cul: !!l.ref.cul };
       G.links.push(lk); G.nodes[a].out.push(lk.id); G.nodes[b].out.push(lk.id);
     }
   }
@@ -421,7 +432,8 @@ function assign(S) {
     const lk = G.links[i], k = kc[ck(lk)] || 0, top = TOP[lk.cls], sz = lk.city ? sizeK(lk.city) : 1;
     for (let d = 0; d < 2; d++) {
       const j = i * 2 + d, raw = F.com[j] + F.frt[j] + F.apt[j] + F.gen[j], v = raw * k;
-      const want = Math.max(lk.city ? (FLOOR[lk.cls] || 0) * sz : 0, (v <= 0 ? 0 : v < top ? top * Math.pow(v / top, gamma) : v) * sz);
+      // (a suburb's close carries its own few residents: a quarter of a street's floor, brief 54)
+      const want = Math.max(lk.city ? (FLOOR[lk.cls] || 0) * sz * (lk.cul ? 0.25 : 1) : 0, (v <= 0 ? 0 : v < top ? top * Math.pow(v / top, gamma) : v) * sz);
       // (the flows are in load units from here on)
       if (raw > 0) { const f = want / raw; for (const p of PURP) F[p][j] *= f; }
       else { F.gen[j] = want * 0.6; F.com[j] = want * 0.4; }
@@ -435,9 +447,11 @@ function assign(S) {
 // each link's traffic: load, speed and purpose mix by direction, and where its slots ride
 const linkState = lk => ({ l: lk, cls: lk.cls, C: lk.C, len: lk.len, ld: [0, 0], load: 0, v: [0, 0], ph: [U.hash(lk.id, 1) * 1000, U.hash(lk.id, 2) * 1000], key: lk.id * 7919 + 1, mix: [[0, 0, 0], [0, 0, 0]], mixOk: [0, 0] });
 const mixOf = (L, d) => L.mixOk[d] ? L.mix[d] : null;
+// the links before the suburbs' closes, which the drive graph puts last (brief 54): the town zoom stops there
+const nMainOf = G => { const fc = G.links.findIndex(lk => lk.cul); return fc < 0 ? G.links.length : fc; };
 IC.trafficInit = function (S) {
   const W = S.world, G = IC.driveGraph(W);
-  S.traffic = { links: G.links.map(linkState), hour: 0, stepT: 0, G };
+  S.traffic = { links: G.links.map(linkState), hour: 0, stepT: 0, G, nMain: nMainOf(G) };
   assign(S);
   // buses on routed lines with stops, coaches between cities, trains on the railways
   S.buses = []; busLines(S);
@@ -452,7 +466,7 @@ IC.trafficRebuild = function (S) {
   const W = S.world; W._dg = null;
   const T = S.traffic, G = IC.driveGraph(W);
   for (const e of W.edges) if (e.cut) for (const lk of G.links) if (lk.ref.edge === e) lk.cut = true;
-  T.G = G; T.links = G.links.map(linkState);
+  T.G = G; T.links = G.links.map(linkState); T.nMain = nMainOf(G);
   assign(S); T.dirty = false; T.stepT = 0;
   const A = AG.get(S); if (A) A.reset = true;
   busLines(S);
@@ -624,8 +638,10 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
   const T = S.traffic; if (!T) return 0;
   const G = T.G, o = typeof gap === 'object' ? gap : null, keep0 = o ? o.keep : Math.min(1, BASE / Math.max(BASE, gap)), W = o && o.cls;
   let n = 0;
-  // the links in view come from a coarse grid of them (a hundred thousand links, a few thousand in a city view)
-  const N = T.links.length, LG = linkGrid(T), stamp = ++LG.stamp;
+  // the links in view come from a coarse grid of them (a hundred thousand links, a few thousand in a city view);
+  // a suburb's closes carry a car or two each and are drawn only close in: at the town zoom they are skipped,
+  // since a city has thousands of them (their links come last: T.nMain)
+  const N = view.x1 - view.x0 > 150 && T.nMain != null ? T.nMain : T.links.length, LG = linkGrid(T), stamp = ++LG.stamp;
   const ci0 = Math.floor(view.x0 / LG.C), ci1 = Math.floor(view.x1 / LG.C), cj0 = Math.floor(view.y0 / LG.C), cj1 = Math.floor(view.y1 / LG.C);
   for (let cj = cj0; cj <= cj1; cj++) for (let ci = ci0; ci <= ci1; ci++) {
     const cell = LG.m.get(ci * 65536 + cj); if (!cell) continue;
@@ -679,6 +695,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
   }
   return n;
 };
+/* the links on a grid of 64-unit cells, by their boxes, made once for a set of links (again when the roads change) */
 function linkGrid(T) {
   if (T._lg && T._lg.links === T.links) return T._lg;
   const C = 64, m = new Map();
@@ -732,7 +749,7 @@ const AG = new WeakMap();
 IC.TRAFFIC_SHOW = 1;
 // (3,600 since brief 53: the streets traced on the field are denser, and the capital's centre close in implies about
 // a thousand vehicles in a 3 × 2 km window)
-const AG_MAX = 3600;
+const AG_MAX = 3000;
 // how far a vehicle drives before it parks (world units), by purpose
 const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
@@ -780,24 +797,40 @@ IC.trafficAgents = function (S, view, dt, keep) {
   const posOf = a => { const [lk, d] = a.route[a.ri], s = d ? lk.len - a.s : a.s; return along(lk.pts, lk.cum, U.clamp(s, 0, lk.len)); };
   // links filled at their flow, for the share of it from k0 to k1: as many vehicles a length as the slots show (fewer
   // everywhere alike where that would pass AG_MAX). Returns the share reached
+  // (only the part of a link inside the box counts and is filled: a motorway running through the box and far beyond
+  // would otherwise take most of the room for vehicles nobody sees, and lose them all when the view moves)
+  const inside = lk => {
+    const pts = lk.pts, cum = lk.cum, runs = []; let len = 0, s0 = -1;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], on = inBox(p.x, p.y, box);
+      if (on && s0 < 0) s0 = cum[i]; else if (!on && s0 >= 0) { runs.push(s0, cum[i]); len += cum[i] - s0; s0 = -1; }
+    }
+    if (s0 >= 0) { runs.push(s0, lk.len); len += lk.len - s0; }
+    return { len, runs };
+  };
   const fill = (k0, k1, old) => {
     const want = []; let E = 0;
     for (const L of T.links) {
       const lk = L.l, bb = lk.bb;
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
+      const part = bb[0] > box.x0 && bb[2] < box.x1 && bb[1] > box.y0 && bb[3] < box.y1 ? null : inside(lk);
+      const len = part ? part.len : lk.len; if (len <= 0) continue;
       for (let d = 0; d < 2; d++) {
         if (!canGo(lk, d) || L.ld[d] < 0.02 || L.cut) continue;
-        const n = L.ld[d] * lk.C.dens * lk.len * IC.TRAFFIC_SHOW * (k1 - k0);
-        if (n > 0) { want.push(L, d, n); E += n; }
+        const n = L.ld[d] * lk.C.dens * len * IC.TRAFFIC_SHOW * (k1 - k0);
+        if (n > 0) { want.push(L, d, n, part); E += n; }
       }
     }
     const f = E > 0 ? U.clamp((AG_MAX - A.list.length) / E, 0, 1) : 1, k2 = k0 + (k1 - k0) * f;
-    for (let i = 0; i < want.length; i += 3) {
-      const L = want[i], lk = L.l, d = want[i + 1], n = want[i + 2] * f;
+    for (let i = 0; i < want.length; i += 4) {
+      const L = want[i], lk = L.l, d = want[i + 1], n = want[i + 2] * f, part = want[i + 3];
       for (let q = 0; q < n && A.list.length < AG_MAX; q++) {
         if (R() > n - q) break;
-        const a = newAgent(S, A, [[lk, d]], R() * lk.len, pickKind(mixOf(L, d), R()), 'through', null, k0 + R() * (k2 - k0));
+        // (a place along the part inside the box; s counts from the end the vehicle comes from)
+        let s = R() * lk.len;
+        if (part) { let r = R() * part.len; for (let j = 0; j < part.runs.length; j += 2) { const l = part.runs[j + 1] - part.runs[j]; if (r <= l) { s = part.runs[j] + r; break; } r -= l; } if (d) s = lk.len - s; }
+        const a = newAgent(S, A, [[lk, d]], s, pickKind(mixOf(L, d), R()), 'through', null, k0 + R() * (k2 - k0));
         a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
       }
     }

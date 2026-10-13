@@ -401,7 +401,8 @@ IC.railCrossings = function (W) {
    every street ending on another, is a join with curb returns, the pavements following them round. Worked out once
    for the city and again when its streets change. Arms reach half way to the next join along the same street. */
 IC.streetJoins = function (W, c) {
-  const lines = c.streets.concat(W.edges.filter(e => e.city === c.id).map(e => ({ cls: 'art', pts: e.pts, ave: true })));
+  // (a suburb's closes are drawn as their own thin layer, brief 54: no kerbed corners where they meet)
+  const lines = c.streets.filter(l => !l.cul).concat(W.edges.filter(e => e.city === c.id).map(e => ({ cls: 'art', pts: e.pts, ave: true })));
   const sig = lines.length + ':' + lines.reduce((s, l) => s + l.pts.length, 0);
   if (c._sj && c._sj.sig === sig) return c._sj.joins;
   c._sj = { sig, joins: lineJoins(lines, c.blocks, 3) };

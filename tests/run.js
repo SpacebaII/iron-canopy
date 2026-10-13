@@ -113,8 +113,9 @@ test('world: city streets follow a direction field, end on a street, a head, a b
       // every street runs with one family of the field or the other (within 20°), by length
       const segs = [];   // (with the street each piece belongs to, so an end is judged against the others only)
       c.streets.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) {
-        const a = l.pts[i - 1], b = l.pts[i], L = U.dist(a, b); if (L < 0.2) continue;
+        const a = l.pts[i - 1], b = l.pts[i], L = U.dist(a, b); if (L < 0.2 && !l.ring) continue;
         segs.push([a.x, a.y, b.x, b.y, li]);
+        if (l.cul) continue;   // (a suburb's closes follow their estate, not the field: brief 54)
         const t = F.exact((a.x + b.x) / 2, (a.y + b.y) / 2), d = Math.abs(U.angWrap(2 * (Math.atan2(b.y - a.y, b.x - a.x) - t))) / 2;
         total += L; if (Math.min(d, Math.PI / 2 - d) < 0.35) along += L;
       } });
@@ -138,11 +139,96 @@ test('world: city streets follow a direction field, end on a street, a head, a b
       assert(!wet, `seed ${seed}: ${wet} street pieces in ${c.name} cross the river without a bridge`);
       // blocks by district: the old town's are smaller than the suburbs', the housing blocks smaller than industry's
       if (c.blocks.length < 300) continue;
-      const side = (...ds) => med(c.blocks.filter(b => ds.includes(b.d)).map(b => Math.max(b.w, b.h)));
+      const side = (...ds) => med(c.blocks.filter(b => !b.fr && ds.includes(b.d)).map(b => Math.max(b.w, b.h)));   // (the fringe's plots are the fringe's, not the suburbs': brief 54)
       if (c.blocks.filter(b => b.d === 'old').length > 20) assert(side('old') < side('sub') * 0.6, `seed ${seed}: ${c.name}'s old town blocks (${side('old').toFixed(1)}) are as big as its suburbs' (${side('sub').toFixed(1)})`);
       if (c.blocks.filter(b => b.d === 'ind' || b.d === 'log').length > 30) assert(side('ind', 'log') > side('dense') * 1.3, `seed ${seed}: ${c.name}'s factory and warehouse blocks (${side('ind', 'log').toFixed(1)}) are no bigger than its housing blocks (${side('dense').toFixed(1)})`);
     }
     assert(along > total * 0.85, `seed ${seed}: only ${U.pct(along / total)} of the streets run with the field`);
+  }
+}, false, 'world');
+test('world: villages have a plan: a street with houses fronting it on both sides, a lane off it, a church in the bigger ones, and no house in the water or on a road (brief 54)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed);
+    let n = 0, oneSided = 0, noLane = 0, greens = 0, churches = 0, wet = 0, onRoad = 0, few = 0;
+    for (const v of W.villages) {
+      if (!v.home || !v.plan) continue;
+      const P = v.plan; n++;
+      const roads = []; for (const e of W.edges) { if (e.bb && (e.bb[0] > v.x + 40 || e.bb[2] < v.x - 40 || e.bb[1] > v.y + 40 || e.bb[3] < v.y - 40)) continue; for (let i = 1; i < e.pts.length; i++) { const a = e.pts[i - 1], b = e.pts[i]; if (U.segDist(v.x, v.y, a.x, a.y, b.x, b.y) < 40) roads.push([a.x, a.y, b.x, b.y]); } }
+      const rivers = []; for (const r of W.rivers || []) for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i]; if (U.segDist(v.x, v.y, a.x, a.y, b.x, b.y) < 60) rivers.push([a.x, a.y, b.x, b.y, (r.w || 2) * 0.15 + 0.3]); }
+      // which side of the street each house is on (by the nearest piece of it)
+      const sides = new Set();
+      for (const b of v.blocks) {
+        if (b.kind) continue;
+        let nd = 1e9, sg = 0;
+        for (let i = 1; i < P.street.length; i++) { const a = P.street[i - 1], q = P.street[i], d = U.segDist(b.x, b.y, a.x, a.y, q.x, q.y); if (d < nd) { nd = d; sg = Math.sign((q.x - a.x) * (b.y - a.y) - (q.y - a.y) * (b.x - a.x)); } }
+        if (nd < 1.2) sides.add(sg);
+        if (W.inLake(b.x, b.y) || rivers.some(r => U.segDist(b.x, b.y, r[0], r[1], r[2], r[3]) < r[4])) wet++;
+        if (roads.some(r => U.segDist(b.x, b.y, r[0], r[1], r[2], r[3]) < 0.08)) onRoad++;
+      }
+      if (P.form !== 'hamlet') { if (sides.size < 2) oneSided++; if (!P.lanes.length) noLane++; }
+      if (P.form === 'green') { greens++; if (P.church) churches++; }
+      if (v.blocks.length < Math.max(4, v.pop * 2)) few++;
+    }
+    assert(n > 250, `seed ${seed}: only ${n} villages have a plan`);
+    assert(oneSided <= n * 0.1, `seed ${seed}: ${oneSided} villages have houses on one side of their street only`);
+    assert(noLane <= n * 0.05, `seed ${seed}: ${noLane} villages have no lane off their street`);
+    assert(greens > 20 && churches >= greens * 0.7, `seed ${seed}: ${churches} of ${greens} green villages have a church`);
+    assert(wet === 0 && onRoad === 0, `seed ${seed}: ${wet} village houses in the water, ${onRoad} on a road`);
+    assert(few <= n * 0.15, `seed ${seed}: ${few} villages have fewer than two houses a hundred people`);
+  }
+}, false, 'world');
+test('world: a city has a fringe: ribbon houses along its roads out, the outer ring in open ground, an estate or two, none on water, a road or another block (brief 54)', () => {
+  const inRect = (x, y, b, pad) => { const ca = Math.cos(b.a), sa = Math.sin(b.a), dx = x - b.x, dy = y - b.y, u = dx * ca + dy * sa, v = -dx * sa + dy * ca; return Math.abs(u) < b.w / 2 + pad && Math.abs(v) < b.h / 2 + pad; };
+  for (const seed of [4242, 7]) {
+    const W = world(seed);
+    let cities = 0, ribbon = 0, ringed = 0, estates = 0, retail = 0, bad = [];
+    for (const c of W.cities) {
+      if (c.pop < 150) continue;
+      cities++;
+      const F = c.fringe; assert(F, `seed ${seed}: ${c.name} has no fringe`);
+      const plots = c.blocks.filter(b => b.fr && b.f === 'plot');
+      if (plots.length >= 10) ribbon++;
+      if (F.items.length >= 3) ringed++;
+      if (F.estates) estates++;
+      if (F.retail) retail++;
+      const roads = []; for (const e of W.edges) { if (e.bb && (e.bb[0] > c.x + c.ext + 30 || e.bb[2] < c.x - c.ext - 30 || e.bb[1] > c.y + c.ext + 30 || e.bb[3] < c.y - c.ext - 30)) continue; for (let i = 1; i < e.pts.length; i++) roads.push([e.pts[i - 1].x, e.pts[i - 1].y, e.pts[i].x, e.pts[i].y, e.cls]); }
+      const own = c.blocks.filter(b => !b.fr);
+      const check = (q, what) => {
+        if (W.inLake(q.x, q.y)) bad.push(`${c.name}: ${what} in the water`);
+        else if (roads.some(r => U.segDist(q.x, q.y, r[0], r[1], r[2], r[3]) < Math.min(q.w, q.h) / 2 - 0.1)) bad.push(`${c.name}: ${what} on a road`);
+        else if (own.some(b => inRect(q.x, q.y, b, 0))) bad.push(`${c.name}: ${what} on a block of the town`);
+      };
+      for (const b of c.blocks) if (b.fr) check(b, b.f === 'plot' ? 'a ribbon house' : b.f === 'cul' ? 'an estate' : `a ${b.f}`);
+      for (const it of F.items) check(it, `the ${it.kind}`);
+      for (const it of F.items) if (c.blocks.some(b => inRect(it.x, it.y, b, 0.2))) bad.push(`${c.name}: the ${it.kind} stands on a block`);
+    }
+    assert(bad.length === 0, `seed ${seed}: ${bad.slice(0, 4).join('; ')}${bad.length > 4 ? ` and ${bad.length - 4} more` : ''}`);
+    assert(ribbon >= cities * 0.6, `seed ${seed}: only ${ribbon} of ${cities} towns have ribbon houses along a road out`);
+    assert(ringed >= cities * 0.8, `seed ${seed}: only ${ringed} of ${cities} towns have an outer ring`);
+    assert(estates >= cities * 0.4 && retail >= 3, `seed ${seed}: ${estates} of ${cities} towns have an outlying estate, ${retail} a retail park`);
+  }
+}, false, 'world');
+test('world: suburb closes are streets of the city: a loop or a single close in from the block\'s street, each close ending in a turning head inside its block (brief 54)', () => {
+  const inRect = (x, y, b, pad) => { const ca = Math.cos(b.a), sa = Math.sin(b.a), dx = x - b.x, dy = y - b.y, u = dx * ca + dy * sa, v = -dx * sa + dy * ca; return Math.abs(u) < b.w / 2 + pad && Math.abs(v) < b.h / 2 + pad; };
+  for (const seed of [4242, 7]) {
+    const W = world(seed);
+    let estates = 0, closed = 0, heads = 0, loose = 0, outside = 0;
+    for (const c of W.cities) {
+      const culs = c.blocks.filter(b => b.f === 'cul' && Math.min(b.w, b.h) >= 1.1); if (!culs.length) continue;
+      estates += culs.length; closed += culs.filter(b => b.close).length;
+      const segs = []; c.streets.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) segs.push([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]); });
+      for (const e of W.edges) { if (e.bb && (e.bb[0] > c.x + c.ext + 10 || e.bb[2] < c.x - c.ext - 10 || e.bb[1] > c.y + c.ext + 10 || e.bb[3] < c.y - c.ext - 10)) continue; for (let i = 1; i < e.pts.length; i++) segs.push([e.pts[i - 1].x, e.pts[i - 1].y, e.pts[i].x, e.pts[i].y, -1]); }
+      c.streets.forEach((l, li) => {
+        if (!l.cul || !l.head) return;
+        heads++;
+        const e = l.pts[l.pts.length - 1], s0 = l.pts[0];
+        if (!culs.some(b => inRect(e.x, e.y, b, 0.05))) outside++;
+        if (!segs.some(s => s[4] !== li && U.segDist(s0.x, s0.y, s[0], s[1], s[2], s[3]) < 0.05)) loose++;
+      });
+    }
+    assert(closed >= estates * 0.6, `seed ${seed}: only ${closed} of ${estates} estates have their closes as streets`);
+    assert(heads > 200 && outside === 0, `seed ${seed}: ${outside} of ${heads} closes end outside their block`);
+    assert(loose === 0, `seed ${seed}: ${loose} of ${heads} closes start on no street`);
   }
 }, false, 'world');
 test('world: no road inside a city runs over a block', () => {
@@ -170,7 +256,7 @@ test('world: a national road entering a city goes on as one of its streets, or r
       const gate = k => k.startsWith(c.id + ':');
       for (const e of W.edges) if (e.city !== c.id) e.pts.forEach((p, i) => {
         if ((i === 0 && gate(e.a)) || (i === e.pts.length - 1 && gate(e.b)) || U.dist(p, c) > c.ext * 0.5) return;
-        assert(!c.blocks.some(b => U.dist(b, p) < 3.5), `seed ${seed}: road ${e.id} (${e.cls}) runs through the middle of ${c.name}`);
+        assert(!c.blocks.some(b => !b.fr && U.dist(b, p) < 3.5), `seed ${seed}: road ${e.id} (${e.cls}) runs through the middle of ${c.name}`);   // (the fringe lies along the roads: brief 54)
       });
       // in a grid city the avenues run with the grid's streets: along the direction field (brief 53), which is the
       // grid where the grid is strong (a few diagonal avenues aside)
@@ -316,8 +402,9 @@ test('world: generation stays under the time budget', () => {
   // the map is ten times larger than wave 4's, with three to four times the towns and roads; it was 1,500 ms for the
   // smaller map, about 1.3 s on the machine that measured both (3.5 s before brief 53; the city fabric, streets traced
   // on a direction field and blocks fitted to their faces, costs about 3 s more: 7 s now, up to 8 s with other runs
-  // beside it)
-  assert(worst < 9000, `generation took ${worst} ms`);
+  // beside it; brief 54's villages planned house by house, the fringe of every town and the suburbs' closes cost
+  // about 0.6 s more on that machine, a second on a slow one: 11 s)
+  assert(worst < 11000, `generation took ${worst} ms`);
 }, true, 'alone');
 test('world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map', () => {
   assert(Math.abs(IC.WW / 10 - 5700) < 200 && Math.abs(IC.WH / 10 - 4300) < 200, `the map is ${IC.WW / 10} × ${IC.WH / 10} km`);
@@ -378,7 +465,7 @@ test('traffic: a big city reads busy at rush hour, every street carries somethin
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), T = S.traffic;
   S.traffic.stepT = 0; IC.traffic(S, 0.25);
-  const loads = (c, cls) => T.links.filter(L => L.l.city === c && L.cls === cls && L.l.len > 0.3).map(L => L.load).sort((a, b) => a - b);
+  const loads = (c, cls) => T.links.filter(L => L.l.city === c && L.cls === cls && !L.l.cul && L.l.len > 0.3).map(L => L.load).sort((a, b) => a - b);   // (a suburb's closes carry only their residents: brief 54)
   const med = a => a[a.length >> 1];
   const st = loads(cap, 'st'), art = loads(cap, 'art');
   assert(st.length > 100 && art.length > 30, `${cap.name} has ${st.length} streets and ${art.length} avenues`);
@@ -1649,6 +1736,31 @@ test('airport life: a new airport gets an access road to its city, and its cost 
   assert(!S.econ.works.some(x => x.id === w.id), 'the access road never opened');
   assert(S.world.edges.some(e => e.player && U.dist(e.pts[0], ap) < 8 || e.player && U.dist(e.pts[e.pts.length - 1], ap) < 8), 'no road reaches the airport');
   assert(Math.abs(paid - ap.land.access.cost) < 0.01, `the road cost ${U.money(ap.land.access.cost)} but ${U.money(paid)} was paid`);
+});
+test('airport life: the access road gathers a petrol station and a hotel, a logistics park and a business park as the passengers grow (brief 54)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  S.budget = 5000;
+  const t = townWithSite(S); assert(t, 'no site near any town');
+  const ap = IC.foundAirport(S, t.p.x, t.p.y, IC.PREVAIL);
+  assert(ap && ap.land && ap.land.access, 'no airport with an access road');
+  const L = ap.land, pts = L.access.pts, near = it => { let d = 1e9; for (let i = 1; i < pts.length; i++) d = Math.min(d, U.segDist(it.x, it.y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y)); return d; };
+  // nothing at 1,000 passengers a day
+  L.pax = 1000 / 24; assert(!IC.aptOuter(S, ap, L), 'something grew on the access road at 1,000 passengers a day');
+  // at 2,000 the petrol station and the hotel, one at a time, then the logistics park at 6,000 and the business park at 15,000
+  L.pax = 2000 / 24; const a = IC.aptOuter(S, ap, L), b = IC.aptOuter(S, ap, L);
+  assert(a && b && new Set([a.kind, b.kind]).size === 2 && [a, b].every(x => x.kind === 'petrol' || x.kind === 'hotel'), `at 2,000 passengers a day: ${a && a.kind}, ${b && b.kind}`);
+  assert(!IC.aptOuter(S, ap, L), 'a third thing grew at 2,000 passengers a day');
+  L.pax = 6000 / 24; const c = IC.aptOuter(S, ap, L); assert(c && c.kind === 'logistics', `at 6,000 passengers a day: ${c && c.kind}`);
+  L.pax = 15000 / 24; const d = IC.aptOuter(S, ap, L); assert(d && d.kind === 'bizpark', `at 15,000 passengers a day: ${d && d.kind}`);
+  for (const it of [a, b, c, d]) {
+    assert(it.outer && near(it) < Math.max(it.w, it.h) / 2 + 0.5, `the ${it.kind} is ${near(it).toFixed(1)} from the access road`);
+    assert(!IC.aptOnPart(ap, it, 0.05) && !ap.parts.some(p => p.kind === 'runway' && IC.partDist(ap, p, it) < 1.5), `the ${it.kind} stands on the airfield`);
+  }
+  assert(L.items.filter(x => x.outer).length === 4 && L.items.every(x => !x.outer || !L.items.some(o => o !== x && U.dxy(o.x, o.y, x.x, x.y) < 0.3)), 'the outer items stand on one another');
+  // and the tick places them the same way, one at a time, as the airport grows
+  L.items = L.items.filter(x => !x.outer); L.pax = 3000 / 24; L.t = 0;
+  IC.landsideTick(S, ap, 1); L.t = 0; IC.landsideTick(S, ap, 1); L.t = 0; IC.landsideTick(S, ap, 1);
+  assert(L.items.some(x => x.outer), 'the landside tick never placed anything on the access road');
 });
 test('airport life: the landside grows with passengers and pays a small income', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;

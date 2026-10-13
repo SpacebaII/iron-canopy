@@ -15,7 +15,11 @@ IC.LAND = {
   stop:      { name: 'Bus and coach stop', w: 0.6, h: 0.3, cap: 1, earn: 0.02, what: '' },
   hotel:     { name: 'Hotel', w: 0.5, h: 0.4, cap: 250, earn: 0.15, what: 'rooms' },
   office:    { name: 'Offices', w: 0.6, h: 0.5, cap: 800, earn: 0.1, what: 'desks' },
-  warehouse: { name: 'Cargo warehouse', w: 1.0, h: 0.6, cap: 40, earn: 0.1, what: 't an hour' }
+  warehouse: { name: 'Cargo warehouse', w: 1.0, h: 0.6, cap: 40, earn: 0.1, what: 't an hour' },
+  // along the access road, outside the fence (brief 54, IC.aptOuter)
+  petrol:    { name: 'Petrol station', w: 0.7, h: 0.5, cap: 1, earn: 0.03, what: '', outer: true },
+  logistics: { name: 'Logistics park', w: 1.8, h: 1.1, cap: 120, earn: 0.2, what: 't an hour', outer: true },
+  bizpark:   { name: 'Business park', w: 2.0, h: 1.3, cap: 2000, earn: 0.25, what: 'desks', outer: true }
 };
 IC.STATEMENT.landside = 'Airport car parks, hotels and rents';
 
@@ -66,8 +70,8 @@ function plots(t, side, kind) {
   return out;
 }
 /* what the landside must keep off: the airfield, other buildings, the country's roads and other buildings' landside */
-function blockers(S, ap, by) {
-  const E = IC.aptElements(S, ap), L = ap.land, out = [];
+function blockers(S, ap, by, E) {
+  E = E || IC.aptElements(S, ap); const L = ap.land, out = [];
   for (const e of E) {
     if (e.cat === 'rwy') out.push(e.strip);
     else if (e.cat === 'twy') out.push(IC.shapeLine(e.sh.line, e.sh.r + 0.12));
@@ -87,10 +91,10 @@ function free(S, ap, r, B) {
   for (const c of IC.cities(S)) { if (U.dist(c, r) > (c.r || 20) * 1.6 + 5) continue; for (const b of c.blocks || []) if (b.hp > 0 && U.dxy(b.x, b.y, r.x, r.y) < Math.max(r.w, r.h) / 2 + Math.max(b.w, b.h) * 0.4) return false; }
   return true;
 }
-function place(S, ap, kind, near) {
+function place(S, ap, kind, near, E) {
   const D = IC.LAND[kind];
   for (const t of near) {
-    const side = landSide(ap, t), B = blockers(S, ap, t.id);
+    const side = landSide(ap, t), B = blockers(S, ap, t.id, E);
     // (a building whose loop road cannot be laid gets no landside)
     if (!loopFits(S, ap, t, side, B)) continue;
     for (const c of plots(t, side, kind)) {
@@ -125,23 +129,57 @@ IC.landsideTick = function (S, ap, dt) {
   const sheds = ap.parts.filter(p => p.kind === 'cargo' && p.built && p.hp > p.max * 0.25);
   const want = IC.landWant(L, terms.length, sheds.length, railNear(S, ap));
   const have = k => L.items.filter(x => x.kind === k).length;
-  let added = null;
+  let added = null, E = null;
+  const elements = () => E || (E = IC.aptElements(S, ap));   // (the airfield and the country round it, once a tick)
   // (a landside laid out from real data is kept as it is: it only earns)
   if (!L.fixed) for (const [k, n] of want) {
     if (have(k) >= n) continue;
-    const it = place(S, ap, k, k === 'warehouse' ? sheds : terms);
+    const it = place(S, ap, k, k === 'warehouse' ? sheds : terms, elements());
     if (!it) continue;
     it.t0 = S.time; if (k === 'stop' && L.pax > 2500 && railNear(S, ap)) { it.rail = true; it.name = 'Rail station'; }
     L.items.push(it); L.ver++; added = it;
     break;   // one at a time: the landside grows over hours, not in a moment
   }
+  if (!L.fixed && !added) added = IC.aptOuter(S, ap, L, elements);
   if (!L.fixed && (added || L.kerbN !== terms.length + sheds.length)) kerbs(S, ap, terms.concat(sheds));
-  if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
+  if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} ${added.outer ? 'on the access road' : `by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}`}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo
   let v = 0;
   for (const it of L.items) { it.use = IC.landUse(L, it); v += IC.LAND[it.kind].earn * it.use; }
   L.earn = v;
   if (v > 0) { S.budget += v * 600 / 3600; IC.econBook(S, 'landside', v * 600 / 3600); }
+};
+/* what grows along the access road as the airport grows (brief 54): a petrol station and a hotel at 2,000
+   passengers a day, a logistics park at 6,000, a business park at 15,000, each placed beside the road at its own
+   distance from the fence (the petrol station nearest, the business park out by the main road); one at a time */
+IC.OUTER = [['petrol', 2000, 0.2, 1], ['hotel', 2000, 0.3, -1], ['logistics', 6000, 0.55, 1], ['bizpark', 15000, 0.85, -1]];
+IC.aptOuter = function (S, ap, L, elements) {
+  const A = L.access; if (!A || !A.pts || A.pts.length < 2) return null;
+  const day = L.pax * 24, have = k => L.items.some(x => x.outer && x.kind === k);
+  // (a road with no room found is tried again when the landside changes or six hours on, not every ten minutes)
+  if (L.outerFail && L.outerFail.ver === L.ver && S.time - L.outerFail.t < 6 * 3600 && day < L.outerFail.day * 1.5) return null;
+  const pts = A.pts, cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + U.dist(pts[i - 1], pts[i]));
+  const len = cum[cum.length - 1]; if (len < 4) return null;
+  const at = s => { for (let i = 1; i < pts.length; i++) if (s <= cum[i]) { const a = pts[i - 1], b = pts[i], k = (s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]); return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, a: Math.atan2(b.y - a.y, b.x - a.x) }; } return null; };
+  for (const [kind, need, where, side] of IC.OUTER) {
+    if (day < need || have(kind)) continue;
+    const D = IC.LAND[kind], B = blockers(S, ap, null, elements ? elements() : null);
+    // (from its own place along the road outwards, either side, the whole road if need be: a road that runs through
+    // the town has its free ground elsewhere)
+    const fs = []; for (let f = 0.05; f < 0.96; f += 0.025) fs.push(f); fs.sort((p, q) => Math.abs(p - where) - Math.abs(q - where));
+    for (const f of fs) {
+      const p = at(U.clamp(len * f, 2, len - 2)); if (!p) break;
+      for (const sd of [side, -side]) {
+        const off = 0.12 + D.h / 2 + 0.08;
+        const r = { kind, x: p.x - Math.sin(p.a) * sd * off, y: p.y + Math.cos(p.a) * sd * off, a: p.a, w: D.w, h: D.h, cap: D.cap, t0: null, by: null, outer: true };
+        if (!free(S, ap, r, B)) continue;
+        if (L.items.some(o => U.dxy(o.x, o.y, r.x, r.y) < (Math.max(o.w, o.h) + Math.max(r.w, r.h)) / 2 + 0.2)) continue;
+        r.t0 = S.time; L.items.push(r); L.ver++; return r;
+      }
+    }
+    L.outerFail = { ver: L.ver, t: S.time, day };
+  }
+  return null;
 };
 /* what the landside should have for its traffic: [kind, how many] in the order they appear */
 IC.landWant = function (L, terms, sheds, rail) {

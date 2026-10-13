@@ -344,6 +344,19 @@ function* worldSteps(seed) {
     W.villages.push({ id: 'v' + W.villages.length, kind: 'village', name: W.placeName(), x, y, pop: R.int(4, 40), home, k: W.countryAt(x, y), r: R.range(14, 26), grid: R.range(0, Math.PI / 2) });
     if (home) nHome++; else nAbroad++;
   }
+  // a clearing round every village (brief 54): its people felled the forest to its hedges, so a village in the woods
+  // stands in a field of its own and the trees are not painted over its houses
+  // (the forest is asked about millions of times while the cities grow: a flat grid of flags says at once whether any
+  // village is near, and only then are the few villages of that cell looked up)
+  { const base = W.forestD, VG = 64, NX = Math.ceil(IC.WW / VG) + 1, NY = Math.ceil(IC.WH / VG) + 1, flag = new Uint8Array(NX * NY), vg = new Map(), vk = (i, j) => j * NX + i;
+    for (const v of W.villages) { const rr = v.r * 1.5; for (let j = Math.max(0, Math.floor((v.y - rr) / VG)); j <= Math.min(NY - 1, Math.floor((v.y + rr) / VG)); j++) for (let i = Math.max(0, Math.floor((v.x - rr) / VG)); i <= Math.min(NX - 1, Math.floor((v.x + rr) / VG)); i++) { const k = vk(i, j); flag[k] = 1; let l = vg.get(k); if (!l) vg.set(k, l = []); l.push(v); } }
+    W.forestD = (x, y) => {
+      let d = base(x, y); if (d <= 0) return d;
+      const i = Math.floor(x / VG), j = Math.floor(y / VG); if (i < 0 || j < 0 || i >= NX || j >= NY || !flag[vk(i, j)]) return d;
+      for (const v of vg.get(vk(i, j))) { const t = 1 - U.dxy(x, y, v.x, v.y) / (v.r * 1.5); if (t > 0) d -= 0.5 * Math.min(1, t * 2.5); }
+      return d;
+    };
+    W.forestAt = (x, y) => W.forestD(x, y) > IC.FOREST_T; }
 
   /* ---------- infrastructure ---------- */
   W.infra = [];
@@ -581,6 +594,15 @@ function* worldSteps(seed) {
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
+  // a gate laid on a junction leaves a road piece of no length between the two nodes: the gate becomes that
+  // junction (its other roads move over), or the junction stage would make a roundabout out of a point
+  for (const e of W.edges.slice()) {
+    if (e.pts.length >= 2 && e.pts.some(p => U.dist(p, e.pts[0]) > 1e-6)) continue;
+    const from = e.a, to = e.b; if (from === to) { W.edges.splice(W.edges.indexOf(e), 1); continue; }
+    W.edges.splice(W.edges.indexOf(e), 1);
+    for (const o of W.edges) { if (o.a === from) o.a = to; if (o.b === from) o.b = to; }
+    delete W.nodes[from];
+  }
   // the roads into the cities have become their avenues (cities.js): number the roads again, measure them
   W.edges.forEach((e, i) => { e.id = 'e' + i; e.len = 0; for (let k = 1; k < e.pts.length; k++) e.len += U.dist(e.pts[k - 1], e.pts[k]); });
   for (const k in W.nodes) W.nodes[k].deg = 0;
@@ -590,13 +612,17 @@ function* worldSteps(seed) {
   yield 'junctions';
   // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);
   // abroad the fields run up to the towns' blocks
-  for (const t of W.cities) for (const b of t.blocks) {
-    const e = Math.max(b.w, b.h) / 2 + 0.8;
+  const markBuilt = (b, pad) => {
+    const e = Math.max(b.w, b.h) / 2 + pad;
     for (let i = Math.floor((b.x - e) / BC); i <= Math.floor((b.x + e) / BC); i++) for (let j = Math.floor((b.y - e) / BC); j <= Math.floor((b.y + e) / BC); j++) {
       built.add(bkey(i, j));
       const ci = Math.floor(i / BCK), cj = Math.floor(j / BCK); if (ci >= 0 && cj >= 0 && ci < FGW && cj < FGH) builtC[cj * FGW + ci] = 1;
     }
-  }
+  };
+  for (const t of W.cities) for (const b of t.blocks) markBuilt(b, 0.8);
+  // a village's gardens, yards and green are not fields either (brief 54)
+  for (const v of W.villages) if (v.plan && v.home) { for (const q of v.plan.plots) markBuilt(q, 0.2); for (const q of v.plan.yards) markBuilt(q, 0.2); if (v.plan.green) markBuilt({ x: v.plan.green.x, y: v.plan.green.y, w: v.plan.green.rx * 2, h: v.plan.green.ry * 2 }, 0.2); }
+  for (const c of W.cities) if (c.fringe) for (const it of c.fringe.items) markBuilt(it, 0.3);
   junctions(W);
   // bounding boxes, so drawing and traffic can skip lines out of view
   const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
@@ -1243,11 +1269,15 @@ function buildNetwork(W, R, fbm) {
    Each block is one entry in town.blocks (damage and night lights work on blocks). */
 function buildTowns(W, R, fbm) {
   // road pieces in 50-unit buckets, for "which roads run near this town"
-  const SB = 50, sbk = new Map();
-  for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) {
-    const a = e.pts[i - 1], b = e.pts[i], s = [a.x, a.y, b.x, b.y, e.cls];
-    for (let bi = Math.floor(Math.min(a.x, b.x) / SB); bi <= Math.floor(Math.max(a.x, b.x) / SB); bi++) for (let bj = Math.floor(Math.min(a.y, b.y) / SB); bj <= Math.floor(Math.max(a.y, b.y) / SB); bj++) { const k = bi * 4096 + bj; if (!sbk.has(k)) sbk.set(k, []); sbk.get(k).push(s); }
-  }
+  const SB = 50; let sbk;
+  const indexSegs = () => {
+    sbk = new Map();
+    for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1], b = e.pts[i], s = [a.x, a.y, b.x, b.y, e.cls];
+      for (let bi = Math.floor(Math.min(a.x, b.x) / SB); bi <= Math.floor(Math.max(a.x, b.x) / SB); bi++) for (let bj = Math.floor(Math.min(a.y, b.y) / SB); bj <= Math.floor(Math.max(a.y, b.y) / SB); bj++) { const k = bi * 4096 + bj; if (!sbk.has(k)) sbk.set(k, []); sbk.get(k).push(s); }
+    }
+  };
+  indexSegs();
   const segsNear = (x, y, rad) => {
     const out = new Set();
     for (let bi = Math.floor((x - rad) / SB); bi <= Math.floor((x + rad) / SB); bi++) for (let bj = Math.floor((y - rad) / SB); bj <= Math.floor((y + rad) / SB); bj++)
@@ -1271,30 +1301,20 @@ function buildTowns(W, R, fbm) {
     IC.buildCity(W, c, R, fbm, segs, fieldR, W.villages.filter(v => v.home));
   }
   // villages: houses along the roads through them
+  // (the roads as they are now: the cities have cut them at their gates and laid new pieces round their edge)
+  indexSegs();
   for (const v of W.villages) {
     // a village the city has grown over is part of it now
     // (the box test first: a block further than the reach along either axis is further than it in all)
     const vr = v.r * 0.8;
     if (!v.swallowed) for (const c of W.cities) if (U.dist(c, v) < c.r * 1.7 && c.blocks.some(b => Math.abs(b.x - v.x) < vr && Math.abs(b.y - v.y) < vr && U.dist(b, v) < vr)) v.swallowed = c.id;
     if (v.swallowed) { v.blocks = []; continue; }
-    const segs = v.home ? segsNear(v.x, v.y, v.r * 1.3).filter(s => s[4] !== 'hw') : [];
-    const n = Math.round(24 + v.pop * 2.2);
-    v.blocks = [];
-    for (let k = 0, g = 0; k < n && g < n * 6; g++) {
-      let x, y, a;
-      if (segs.length && R() < 0.85) {
-        const s = R.pick(segs), t = R(), L = U.dxy(s[0], s[1], s[2], s[3]);
-        a = Math.atan2(s[3] - s[1], s[2] - s[0]);
-        const side = R() < 0.5 ? 1 : -1, off = R.range(0.7, 1.4) + (R() < 0.25 ? 1.2 : 0);
-        x = s[0] + (s[2] - s[0]) * t - Math.sin(a) * off * side; y = s[1] + (s[3] - s[1]) * t + Math.cos(a) * off * side;
-        if (U.dxy(x, y, v.x, v.y) > v.r * (0.5 + 0.7 * R()) || L < 1 || !clear(segs, x, y, 0.5)) continue;
-      } else { x = v.x + R.gauss() * v.r * 0.3; y = v.y + R.gauss() * v.r * 0.3; a = v.grid + R.range(-0.2, 0.2); }
-      if (W.inLake(x, y)) continue;
-      const farmYard = R() < 0.1;
-      v.blocks.push({ x, y, w: farmYard ? R.range(1.2, 2) : R.range(0.45, 0.9), h: farmYard ? R.range(0.8, 1.4) : R.range(0.4, 0.7), a, seed: R() * 1000, hp: 1 });
-      k++;
-    }
+    // (brief 54: a plan, village.js; abroad the same plan on whatever roads there are)
+    const segs = segsNear(v.x, v.y, v.r * 1.3 + 8);   // (room for the street of the biggest, 1.4 km)
+    IC.buildVillage(W, v, R, segs);
   }
+  // the fringe of every city (brief 54, fringe.js): ribbon houses along the roads out, the outer ring, a retail park
+  for (const c of W.cities) IC.buildFringe(W, c, R, segsNear(c.x, c.y, c.r * 2.6 + 20).concat(railSegs.filter(s => U.segDist(c.x, c.y, s[0], s[1], s[2], s[3]) < c.r * 2.6 + 20)), W.villages.filter(v => v.home && !v.swallowed));
   // abroad: the enemy's towns are built to their own plan; the neutral neighbours' look like ours
   for (const f of W.foreign) {
     f.style = W.side[f.k] === 'hostile' ? 'east' : W.style === 'us' ? 'us' : 'eu';
@@ -1308,6 +1328,8 @@ function buildTowns(W, R, fbm) {
   const mark = (x, y) => occ.add(Math.floor(x / OC) + ',' + Math.floor(y / OC));
   for (const e of W.edges) for (const p of e.pts) mark(p.x, p.y);
   for (const c of W.cities) for (const b of c.blocks) mark(b.x, b.y);
+  // the villages' own lanes first (village.js)
+  for (const v of W.villages) if (v.plan) for (const l of v.plan.lanes) { W.lanes.push(l); for (const p of l.pts) mark(p.x, p.y); }
   for (const e of W.edges) {
     if (e.cls !== 'lc' && e.cls !== 'rd') continue;
     // (a chance of a lane every 12 km or so of road, however many points the road has)
