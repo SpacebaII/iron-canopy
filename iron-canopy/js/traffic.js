@@ -12,14 +12,14 @@
 'use strict';
 const U = IC.U;
 
-// per class: vehicles per unit (100 m) of lane at full flow, free speed (units per game second), lanes each way,
+// per class: vehicles per unit (100 m) of lane at full flow (an avenue at full: one every 25 m a lane, a street one every 50 m), free speed (units per game second), lanes each way,
 // lane offsets from the centre line (world units), and rank at junctions
 const CLS = {
-  hw: { dens: 3, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 2.6, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
-  rd: { dens: 1.4, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 2.4, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
-  lc: { dens: 0.5, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.4, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
-  st: { dens: 1.2, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.05, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
-  ramp: { dens: 1.6, v: 0.16, lanes: 1, off: [0], rank: 2 }
+  hw: { dens: 4, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 4, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
+  rd: { dens: 2, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 4, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
+  lc: { dens: 0.7, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.5, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
+  st: { dens: 2, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.06, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
+  ramp: { dens: 2.4, v: 0.16, lanes: 1, off: [0], rank: 2 }
 };
 IC.TRAFFIC_CLS = CLS;
 /* the kinds of vehicle: length and width (units), top speed (units per game s), colours */
@@ -707,8 +707,8 @@ IC.trafficFlows = function (S, view, classes, fn) {
 const AG = new WeakMap();
 // how many of the vehicles the flows imply are drawn (brief 30 halved it when they piled onto the through roads;
 // with the loads spread over the streets most of them are shown)
-IC.TRAFFIC_SHOW = 0.8;
-const AG_MAX = 1600;
+IC.TRAFFIC_SHOW = 1;
+const AG_MAX = 2400;
 // how far a vehicle drives before it parks (world units), by purpose
 const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
