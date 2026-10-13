@@ -15,11 +15,11 @@ const U = IC.U;
 // per class: vehicles per unit (100 m) of lane at full flow, free speed (units per game second), lanes each way,
 // lane offsets from the centre line (world units), and rank at junctions
 const CLS = {
-  hw: { dens: 2.4, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 2, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
-  rd: { dens: 0.9, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 1.5, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
-  lc: { dens: 0.3, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.3, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
-  st: { dens: 0.7, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.05, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
-  ramp: { dens: 1.2, v: 0.16, lanes: 1, off: [0], rank: 2 }
+  hw: { dens: 3, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 2.6, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
+  rd: { dens: 1.4, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 2.4, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
+  lc: { dens: 0.5, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.4, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
+  st: { dens: 1.2, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.05, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
+  ramp: { dens: 1.6, v: 0.16, lanes: 1, off: [0], rank: 2 }
 };
 IC.TRAFFIC_CLS = CLS;
 /* the kinds of vehicle: length and width (units), top speed (units per game s), colours */
@@ -48,6 +48,10 @@ const hr = (T, h) => { const i = Math.floor(h) % 24, f = h - Math.floor(h); retu
 // overall busyness by hour, kept for others to read (rush hours at 8 and 17–18, quiet from midnight to five)
 IC.trafficHour = S => { const h = (S.time % 86400) / 3600; return Math.max(hr(H_IN, h), hr(H_OUT, h), hr(H_GEN, h)); };
 
+/* how full the roads are: the busiest links of each class at rush hour (TOP in assign), the floor every city street
+   keeps for its own residents (loads, by class), gamma (how far the quiet links are pulled up towards the busy ones:
+   1 is the raw flows), and the city size whose streets are at full density (smaller towns scale down to minSize) */
+IC.TRAFFIC_LOAD = { floor: { st: 0.12, art: 0.25, ring: 0.3 }, gamma: 0.4, fullPop: 500, minSize: 0.4 };
 const BASE = 0.3;   // spacing of the finest vehicle slots, in world units (30 m)
 // where a link's slots are now: they ride at the link's speed from the last reading (wrapping after 65,536 slots
 // leaves every slot's identity unchanged)
@@ -399,15 +403,30 @@ function assign(S) {
   // carries at its busiest in real cities (motorways at capacity, side streets far from it). City streets are
   // measured city by city: the many small towns of a big map would otherwise make every capital street a jam
   const ck = lk => lk.city && (lk.cls === 'st' || lk.cls === 'art' || lk.cls === 'ring') ? lk.cls + '|' + (lk.city.id || lk.city) : lk.cls;
-  const TOP = { hw: 1.05, ring: 0.85, rd: 0.8, art: 0.75, lc: 0.45, sp: 0.5, st: 0.4, ln: 0.12, ramp: 0.8 }, byCls = {};
+  const TOP = { hw: 1.05, ring: 0.75, rd: 0.8, art: 0.65, lc: 0.45, sp: 0.5, st: 0.4, ln: 0.12, ramp: 0.8 }, byCls = {};
   for (let i = 0; i < nL; i++) {
     const lk = G.links[i];
     for (let d = 0; d < 2; d++) { const v = F.com[i * 2 + d] + F.frt[i * 2 + d] + F.apt[i * 2 + d] + F.gen[i * 2 + d]; if (v > 0) (byCls[ck(lk)] = byCls[ck(lk)] || []).push(v); }
   }
   const kc = {};
   for (const c in byCls) { const a = byCls[c].sort((x, y) => x - y); kc[c] = TOP[c.split('|')[0]] / Math.max(1e-9, a[Math.floor(a.length * 0.95)]); }
-  const kl = G.links.map(lk => kc[ck(lk)] || 0);
-  for (const p of PURP) for (let i = 0; i < F[p].length; i++) F[p][i] *= kl[i >> 1];
+  // Trips follow shortest paths, so the flows pile onto a few links and leave most streets with a hundredth of the
+  // busiest one: scaled by the busiest alone, a city of two million read as empty (one car to the kilometre at
+  // rush hour). The square root pulls the many quiet links up towards the busy ones while the ranking stays, every
+  // street in town carries at least its residents and deliveries (the floor), and a small town's streets are
+  // quieter than the capital's at the same rank (sizeK)
+  const sizeK = c => c ? U.clamp(Math.pow(((c.pop || 50)) / IC.TRAFFIC_LOAD.fullPop, 0.35), IC.TRAFFIC_LOAD.minSize, 1) : 1;
+  const FLOOR = IC.TRAFFIC_LOAD.floor, gamma = IC.TRAFFIC_LOAD.gamma;
+  for (let i = 0; i < nL; i++) {
+    const lk = G.links[i], k = kc[ck(lk)] || 0, top = TOP[lk.cls], sz = lk.city ? sizeK(lk.city) : 1;
+    for (let d = 0; d < 2; d++) {
+      const j = i * 2 + d, raw = F.com[j] + F.frt[j] + F.apt[j] + F.gen[j], v = raw * k;
+      const want = Math.max(lk.city ? (FLOOR[lk.cls] || 0) * sz : 0, (v <= 0 ? 0 : v < top ? top * Math.pow(v / top, gamma) : v) * sz);
+      // (the flows are in load units from here on)
+      if (raw > 0) { const f = want / raw; for (const p of PURP) F[p][j] *= f; }
+      else { F.gen[j] = want * 0.6; F.com[j] = want * 0.4; }
+    }
+  }
   T.F = F; T.zones = Z; T.places = P; T.G = G;
   T.nApt = S.infra.filter(a => a.kind === 'airport' && a.owner === 'us' && a.parts).length;
 }
@@ -686,9 +705,10 @@ IC.trafficFlows = function (S, view, classes, fn) {
    one; it queues in front of a cut road and turns back after a while. Nothing here touches the simulation state:
    the renderer calls it with the game time that has passed. */
 const AG = new WeakMap();
-// how many of the vehicles the flows imply are drawn: half, which reads as busy and costs half the frame
-IC.TRAFFIC_SHOW = 0.5;
-const AG_MAX = 900;
+// how many of the vehicles the flows imply are drawn (brief 30 halved it when they piled onto the through roads;
+// with the loads spread over the streets most of them are shown)
+IC.TRAFFIC_SHOW = 0.8;
+const AG_MAX = 1600;
 // how far a vehicle drives before it parks (world units), by purpose
 const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
@@ -702,7 +722,8 @@ function pickNext(G, T, n, lk, R, back) {
     if (q === (lk && lk[0]) && !back) continue;
     // drivers find a cut road when they get there, so they head for it as they would have; turning back, they avoid it
     const dd = q.a === n ? 0 : 1, Lq = T.links[q.id]; if (!canGo(q, dd) || (back && (q.cut || (Lq && Lq.cut)))) continue;
-    let w = (Lq ? (Lq.cut ? Lq.raw[dd] : Lq.ld[dd]) : 0) + 0.03;
+    // (more than in proportion: an avenue at half load takes most of the turning traffic from a side street at a tenth)
+    let w = Math.pow(Lq ? (Lq.cut ? Lq.raw[dd] : Lq.ld[dd]) : 0, 1.5) + 0.02;
     if (hd != null && q !== lk[0]) w *= 0.3 + Math.max(0, Math.cos(headOut(q, dd) - hd));
     tot += w; c.push(q, dd, w);
   }
