@@ -107,10 +107,10 @@ const PICK = () => {
   // what gets through: a cruise missile into the airport, then a ballistic one
   const ics = ev.filter(e => e.kind === 'impact' && e.cls === 'cm'), ic = ics[0], ib = ev.filter(e => e.kind === 'impact' && e.cls === 'bal')[0] || ics[ics.length - 1];
   if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 45 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 12 }, lens: [60, 80], lag: 0.1, shake: 0.12 } }; }
-  if (ib) { const o = perp(R.A + 1.2, 22); out.hit2 = { x: ib.x, y: ib.y, r: 120, t: ib.t - 1.0, speed: 1, cam: { mode: 'fixed', at: { x: ib.x, y: ib.y, h: 120 }, from: { x: ib.x + o.x, y: ib.y + o.y, h: 25 }, lens: 32, shake: 0.12 } }; }
+  if (ib) { const o = perp(R.A + 1.2, 10); out.hit2 = { x: ib.x, y: ib.y, r: 120, t: ib.t - 1.0, speed: 1, cam: { mode: 'fixed', at: { x: ib.x, y: ib.y, h: 70 }, from: { x: ib.x + o.x, y: ib.y + o.y, h: 40 }, lens: [40, 50], shake: 0.12 } }; }
   // after: the burning airport from the air, turning slowly, the game running at four times
   const last = ev.filter(e => e.kind === 'impact').slice(-1)[0], c0 = ic || ib || R.fuel;
-  out.after = { x: R.ap.x, y: R.ap.y, r: 160, t: (last ? last.t : 840) + 6, speed: 4, cam: { mode: 'orbit', at: { x: c0.x, y: c0.y, h: 150 }, dist: 26, up: 7, rate: 0.045, yaw0: R.A - 0.8, lens: 26, shake: 0.06 } };
+  out.after = { x: R.ap.x, y: R.ap.y, r: 160, t: (last ? last.t : 840) + 6, speed: 5, cam: { mode: 'orbit', at: { x: (R.ap.x + c0.x) / 2, y: (R.ap.y + c0.y) / 2, h: 80 }, dist: 20, up: 4.5, rate: 0.05, yaw0: R.A - 0.8, lens: [30, 26], shake: 0.06 } };
   return out;
 };
 
