@@ -188,5 +188,9 @@
  "round 5c: clicking an aircraft on its stand selects it, from the whole-airport zoom in; a click beside it picks the airport": 40.8,
  "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1,
  "world: country roads bend with the ground, village lanes are not ruler lines, and roads still meet only at their nodes (brief 52)": 3,
- "world: city streets follow a direction field, end on a street, a head, a bank or a square, cross the river on a few bridges, and blocks are sized by district (brief 53)": 12
+ "world: city streets follow a direction field, end on a street, a head, a bank or a square, cross the river on a few bridges, and blocks are sized by district (brief 53)": 12,
+ "world: villages have a plan: a street with houses fronting it on both sides, a lane off it, a church in the bigger ones, and no house in the water or on a road (brief 54)": 10,
+ "world: a city has a fringe: ribbon houses along its roads out, the outer ring in open ground, an estate or two, none on water, a road or another block (brief 54)": 10,
+ "world: suburb closes are streets of the city: a loop or a single close in from the block's street, each close ending in a turning head inside its block (brief 54)": 10,
+ "airport life: the access road gathers a petrol station and a hotel, a logistics park and a business park as the passengers grow (brief 54)": 18
 }
