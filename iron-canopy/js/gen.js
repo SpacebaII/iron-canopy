@@ -1064,8 +1064,8 @@ function refineRoads(W) {
   W._refineMs = Date.now() - t0;
 }
 /* the line a road built later takes (growth.js: an airport's access road, the player's roads) between the points
-   given, bending like the country's roads and keeping off them; apt is the airport it serves. The points come
-   back as they were where no line could be found */
+   given, bending like the country's roads and keeping off them; apt is the airport it serves (or where one is to
+   be founded: { x, y }). The points come back as they were where no line could be found */
 IC.roadLine = function (W, cls, pts, apt) {
   if (!W.fbm || pts.length < 2) return pts;
   const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC), half = (FINE[cls] || FINE.lc).half;
@@ -1080,7 +1080,7 @@ IC.roadLine = function (W, cls, pts, apt) {
     const L = U.dist(a, b), n = Math.max(1, Math.ceil(L / (FC * 0.5)));
     for (let k = 0; k <= n; k++) { const x = a.x + (b.x - a.x) * k / n, y = a.y + (b.y - a.y) * k / n; occ.add(U.clamp(Math.floor(y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(x / FC), 0, FW - 1)); }
   }
-  const fields = W.infra.filter(b => (b.kind === 'airport' || b.kind === 'airbase') && b !== apt && (!apt || b.id !== apt.id)).map(f => ({ id: f.id, x: f.x, y: f.y, r: (f.radius || 50) * 0.8 }));
+  const fields = W.infra.filter(b => (b.kind === 'airport' || b.kind === 'airbase') && b !== apt && (!apt || (b.id !== apt.id && U.dist(b, apt) > 1))).map(f => ({ id: f.id, x: f.x, y: f.y, r: (f.radius || 50) * 0.8 }));
   const out = [pts[0]];
   for (let i = 1; i < pts.length; i++) {
     const r = fineLine(W, cls, [pts[i - 1], pts[i]], pts[i - 1], pts[i], k => occ.has(k), fields, 1000 + i + pts[0].x * 0.001);

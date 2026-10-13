@@ -677,7 +677,7 @@ IC.roadFinish = function (S, m) {
   let P = IC.roadPlan(S, m.cls, m.pts, ends);
   if (P.why) { IC.log(S, 'warn', 'ROADS', P.why); return false; }
   // the line it takes between the points clicked: bending with the ground like the country's roads (gen.js)
-  const line = IC.roadLine ? IC.roadLine(S.world, m.cls, m.pts, P.apt) : m.pts;
+  const line = IC.roadLine && !m.bent ? IC.roadLine(S.world, m.cls, m.pts, P.apt) : m.pts;
   if (line !== m.pts) { const P2 = IC.roadPlan(S, m.cls, line, ends); if (!P2.why) { P = P2; m = Object.assign({}, m, { pts: line }); } }
   S.budget -= P.cost;
   const E = S.econ, K = IC.ROADS[m.cls];

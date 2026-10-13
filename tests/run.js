@@ -1640,7 +1640,8 @@ test('overlaps: the builder refuses a building on a taxiway, a road or the lands
   // (a building small enough to sit on the road alone: the fuel farm, at its real size, reaches the terminal too)
   assert(!IC.aptCanPlace(S, cap, { kind: 'gradar', x: mid.x, y: mid.y, a: 0 }) && /road/.test(IC.aptPlaceWhy), `a ground radar on the kerb road: "${IC.aptPlaceWhy}"`);
   // on a country road outside the airfield (within the site)
-  const e = S.world.edges.find(e => e.pts.some(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p) && !IC.aptInFence(cap, p)));
+  // (not the airport's own access road, which the landside may move: the builder lets a building over it)
+  const e = S.world.edges.find(e => e.a !== cap.id && e.b !== cap.id && e.apt !== cap.id && e.pts.some(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p) && !IC.aptInFence(cap, p)));
   if (e) { const p = e.pts.find(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p)); assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: p.x, y: p.y, a: 0 }) && /road|street|lane/.test(IC.aptPlaceWhy), `a hangar on a road: "${IC.aptPlaceWhy}"`); }
   // clear ground is fine
   assert(IC.aptOverlaps(S, cap).length === 0, 'the test airport overlaps before anything is built');
