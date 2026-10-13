@@ -959,4 +959,38 @@ IC.agentPos = function (a) {
 };
 IC.trafficAgentsOf = S => AG.get(S) || null;
 
+/* parked cars (brief 55): the spaces along a side street's kerbs that have a car in them, as a flat list of
+   x, y, heading, colour. A fifth of the spaces on a street, an eighth on a close; none within 25 m of a crossing or an
+   end. Kept on the street (not saved), the same cars every time the view comes back. */
+IC.PARKED = { st: 0.22, cl: 0.12, off: 0.125, step: 0.058, clear: 0.25 };
+IC.parkedSpots = function (W, c, l) {
+  if (l._pk) return l._pk;
+  const out = [], K = IC.PARKED, share = l.cul ? K.cl : K.st, bb = l.bb;
+  const J = IC.streetJoins ? IC.streetJoins(W, c).filter(j => !bb || (j.x > bb[0] - 1 && j.x < bb[2] + 1 && j.y > bb[1] - 1 && j.y < bb[3] + 1)) : [];
+  const sd = Math.round((l.pts[0].x + l.pts[0].y) * 37);
+  let n = 0, cum = 0, total = 0;
+  for (let i = 1; i < l.pts.length; i++) total += Math.hypot(l.pts[i].x - l.pts[i - 1].x, l.pts[i].y - l.pts[i - 1].y);
+  for (let i = 1; i < l.pts.length; i++) {
+    const a = l.pts[i - 1], b = l.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y), c0 = cum; cum += L;
+    if (L < K.step * 2) continue;
+    const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L, h = Math.atan2(uy, ux);
+    // (clear of the ends, and of the bends, where a car across the corner would sit in the road)
+    for (let t = K.step; t < L - K.step; t += K.step, n++) {
+      if (c0 + t < K.clear || total - c0 - t < K.clear) continue;
+      const x = a.x + ux * t, y = a.y + uy * t;
+      for (const sd2 of [1, -1]) {
+        if (U.hash(sd + n, sd2 + 5) > share) continue;
+        const cx = x - uy * K.off * sd2, cy = y + ux * K.off * sd2, e0 = l.pts[0], e1 = l.pts[l.pts.length - 1];
+        if (U.dxy(cx, cy, e0.x, e0.y) < K.clear || U.dxy(cx, cy, e1.x, e1.y) < K.clear) continue;   // (a street that bends back to its end)
+        // (inside a sharp bend the next piece of the street runs through the space)
+        let inRoad = false; for (let q = 1; q < l.pts.length && !inRoad; q++) if (q !== i && U.segDist(cx, cy, l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y) < K.off - 0.01) inRoad = true;
+        if (inRoad) continue;
+        if (J.some(j => Math.abs(j.x - cx) < K.clear && Math.abs(j.y - cy) < K.clear && Math.hypot(j.x - cx, j.y - cy) < K.clear)) continue;
+        out.push(cx, cy, sd2 > 0 ? h : h + Math.PI, Math.floor(U.hash(n, sd + sd2) * 97));
+      }
+    }
+  }
+  return l._pk = out;
+};
+
 })(window.IC);
