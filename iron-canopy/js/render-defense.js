@@ -100,22 +100,25 @@ IC.drawFlat = function (c, S, view, px) {
     ctx.stroke();
   }
 };
-function rangeTarget(S, px) {
-  const T = S.range.target, r = 14 * px;
+/* the target ⊕ and the dashed line from where the next launch comes (the test range and the sandbox) */
+function target(T, P, words, px) {
+  const r = 14 * px;
   ctx.strokeStyle = '#ff9a3c'; ctx.lineWidth = 2 * px;
   ctx.beginPath(); ctx.arc(T.x, T.y, r, 0, 7); ctx.moveTo(T.x - r * 1.6, T.y); ctx.lineTo(T.x + r * 1.6, T.y); ctx.moveTo(T.x, T.y - r * 1.6); ctx.lineTo(T.x, T.y + r * 1.6); ctx.stroke();
   label('TARGET', T.x, T.y - r * 1.9, px, '#ff9a3c', 9, 'center', 700);
-  // where the next launch comes from
-  const F = S.range.form, a = (+F.brg - 90) * Math.PI / 180, d = Math.max(20, (+F.km || 150) * 10);
-  const P = { x: T.x + Math.cos(a) * d, y: T.y + Math.sin(a) * d };
   ctx.setLineDash([6 * px, 6 * px]); ctx.strokeStyle = 'rgba(255,91,79,0.45)'; ctx.lineWidth = 1.2 * px;
   ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(T.x, T.y); ctx.stroke(); ctx.setLineDash([]);
-  label(`launch point · ${F.brg}° · ${F.km} km`, P.x, P.y - 8 * px, px, '#ffb0a6', 9, 'center', 600);
+  label(`launch point · ${words}`, P.x, P.y - 8 * px, px, '#ffb0a6', 9, 'center', 600);
+}
+function rangeTarget(S, px) {
+  const T = S.range.target, F = S.range.form, a = (+F.brg - 90) * Math.PI / 180, d = Math.max(20, (+F.km || 150) * 10);
+  target(T, { x: T.x + Math.cos(a) * d, y: T.y + Math.sin(a) * d }, `${F.brg}° · ${F.km} km`, px);
 }
 
 IC.drawDefense = function (c, S, px, now) {
   ctx = c;
   if (S.range) rangeTarget(S, px);
+  else if (S.sbx) { const P = IC.sandboxFrom(S); target(S.sbx.target, P, P.words, px); }
   strobes(S, px, now);
   pips(S, px, now);
   holding(S, px);
