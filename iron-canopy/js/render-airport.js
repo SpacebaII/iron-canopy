@@ -223,7 +223,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
-  if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
+  if (box) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptFencePath(g2, box));
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
   if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);

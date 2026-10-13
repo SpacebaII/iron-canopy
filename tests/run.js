@@ -5456,6 +5456,33 @@ test('round 5c: textlint finds none of the banned phrases, in the source or in a
   for (const id in IC.TUTORS) for (const st of IC.TUTORS[id].steps) { const out = []; T.check(IC.tutorText(S, st) + ' ' + st.title, id, out); assert(!out.length, out[0]); assert(!/!/.test(IC.tutorText(S, st)), `${id}: an exclamation mark`); }
 });
 
+/* ---------- atmosphere: the mood and the light ---------- */
+test('atmosphere: the mood is calm in a peacetime Career, tense before a war and battle when hostile weapons fly', () => {
+  const P = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const p = IC.mood(P);
+  assert(p.calm > 0.9 && p.battle === 0, `a peacetime Career is calm: ${JSON.stringify(p)}`);
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  S.threats = S.threats.filter(t => t.d.civil);
+  const q = IC.mood(S);
+  assert(q.tension > q.calm && q.battle === 0, `a war about to start is tense: ${JSON.stringify(q)}`);
+  const c = IC.cap(S);
+  for (let i = 0; i < 6; i++) { const t = IC.spawnThreat(S, 'owa', c.x + 400 + i * 20, c.y, { route: [{ x: c.x, y: c.y }], aim: { x: c.x, y: c.y }, target: c, fromHostile: true }); t.det = true; t.aff = 'H'; }
+  const r = IC.mood(S);
+  assert(r.battle > 0.9 && r.hostile === 6, `six hostile drones in the air are a battle: ${JSON.stringify(r)}`);
+  assert(Math.abs(r.calm + r.tension + r.battle - 1) < 1e-9, 'the weights sum to 1');
+});
+test('atmosphere: night is darker and bluer than noon, dusk in between, and a storm greyer and darker than a clear day', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const at = (h, kind) => { S.time = Math.floor(S.time / 86400) * 86400 + h * 3600; S.weather.kind = S.weather.prev = kind; S.weather.fade = 1; return IC.skyGrade(S); };
+  const lum = G => G.mul[0] * 0.3 + G.mul[1] * 0.59 + G.mul[2] * 0.11;
+  const noon = at(12, 'clear'), dusk = at(19.5, 'clear'), night = at(23, 'clear'), storm = at(12, 'storm');
+  assert(lum(noon) > 250 && noon.sat < 0.01, `noon is untouched: ${JSON.stringify(noon)}`);
+  assert(lum(night) < 90 && night.mul[2] > night.mul[0] + 30 && night.sat > 0.4, `night is dark, blue and drained: ${JSON.stringify(night)}`);
+  assert(lum(dusk) < lum(noon) && lum(dusk) > lum(night), `dusk sits between: ${lum(dusk)}`);
+  assert(lum(storm) < lum(noon) - 40 && storm.sat > 0.2, `a storm darkens and greys the day: ${JSON.stringify(storm)}`);
+  assert(at(18.8, 'clear').golden > 0.8 && at(18.8, 'storm').golden < 0.1, 'the golden hour is warm, but not under a storm');
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

@@ -62,12 +62,19 @@ IC.camStep = function (dt) {
 };
 IC.toWorld = (sx, sy) => ({ x: cam.x + sx / cam.z, y: cam.y + sy / cam.z });
 IC.toScreen = (x, y) => ({ x: (x - cam.x) * cam.z, y: (y - cam.y) * cam.z });
-IC.daylight = function (t) {
-  const h = (t % 86400) / 3600;
-  if (h < 5 || h > 20.5) return 0;
-  if (h < 7.5) return (h - 5) / 2.5;
-  if (h > 18) return 1 - (h - 18) / 2.5;
-  return 1;
+/* The light over a part of the map (IC.skyGrade): drain the colour, multiply by the light's colour, warm the golden
+   hour. `clip` traces the part (even-odd) in world units; the view is filled inside it */
+IC.drawGrade = function (g, G, clip) {
+  const plain = G.sat < 0.01 && G.mul[0] > 252 && G.mul[1] > 252 && G.mul[2] > 252 && G.golden < 0.01;
+  if (plain) return;
+  const V = view, x = V.x0, y = V.y0, w = V.x1 - V.x0, h = V.y1 - V.y0;
+  g.save(); g.beginPath(); clip(g); g.clip('evenodd');
+  // drain the colour by laying a neutral grey over it (a plain blend: the 'saturation' mode costs several ms a frame
+  // without a graphics card)
+  if (G.sat > 0.01) { g.globalAlpha = G.sat * 0.6; g.fillStyle = 'rgb(118,122,130)'; g.fillRect(x, y, w, h); }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgb(${G.mul[0]},${G.mul[1]},${G.mul[2]})`; g.fillRect(x, y, w, h);
+  if (G.golden > 0.01) { g.globalCompositeOperation = 'soft-light'; g.fillStyle = `rgba(255,140,60,${0.35 * G.golden})`; g.fillRect(x, y, w, h); }
+  g.restore();
 };
 /* ---------- main draw ---------- */
 IC.render = function (S, now) {
@@ -95,19 +102,13 @@ IC.render = function (S, now) {
     pat.setTransform(new DOMMatrix().translate(ox, oy).scale(k));
     ctx.globalAlpha = (0.12 + 0.5 * wx.cloud) * (0.4 + 0.6 * light); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
   }
-  // night, dusk and dawn
-  if (light < 1) {
-    // airports darken their own field (render-airport.js), so the night here leaves those boxes out
-    ctx.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; ctx.beginPath(); ctx.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-    if (z >= 0.3) for (const b of IC.bases(S)) {
-      const k = b._box; if (!k || !k.poly || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
-      IC.aptFencePath(ctx, k);
-    }
-    ctx.fill('evenodd');
-  }
-  const h = (S.time % 86400) / 3600;
-  const golden = h > 5 && h < 8.5 ? 1 - Math.abs(h - 6.8) / 1.7 : h > 17 && h < 20.5 ? 1 - Math.abs(h - 18.8) / 1.7 : 0;
-  if (golden > 0) { ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = `rgba(255,140,60,${0.35 * golden})`; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalCompositeOperation = 'source-over'; }
+  // night, dusk, dawn and the weather's gloom (atmos.js); airports grade their own field (render-airport.js), so
+  // this leaves their fences out
+  const G = IC.skyGrade(S, wx);
+  IC.drawGrade(ctx, G, g => {
+    g.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+    if (z >= 0.3) for (const b of IC.bases(S)) { const k = b._box; if (k && k.poly && b.parts && inView(b.x, b.y, b.radius + 20)) IC.aptFencePath(g, k); }
+  });
   if (light < 0.9) drawLights(S, px, now, light);
 
   // (round 5c) radar cover belongs to the moment in the civil act: while placing a civil radar, in the Airspace tab, or
@@ -216,7 +217,7 @@ function drawLights(S, px, now, light) {
     const a = (1 - light) * 0.95 * (c.hp / c.max) * pf * black * (c.owner === 'us' ? 1 : 0.35) * (c.alert > 0 && Math.sin(now * 0.7) > 0.6 ? 0.75 : 1);
     // far out the city is one glow; close in, lit streets and windows take over
     const near = U.clamp((cam.z - 1.5) / 2.5, 0, 1);
-    ctx.globalAlpha = a * (1 - near * 0.85);
+    ctx.globalAlpha = a * (1 - near * 0.75);
     ctx.drawImage(c.light.cv, c.x - c.light.size / 2, c.y - c.light.size / 2, c.light.size, c.light.size);
     if (near > 0 && c.streets) {
       ctx.globalAlpha = a * near;
