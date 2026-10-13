@@ -579,6 +579,8 @@ function moveBus(S, b, dt) {
     b.next = nextStop(b);
   }
 }
+// the heading of each piece of a line, worked out once (a link's is kept in l.hd)
+const headings = pts => { const h = new Float32Array(pts.length - 1); for (let i = 1; i < pts.length; i++) h[i - 1] = Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x); return h; };
 const along = (pts, cum, s) => {
   let lo = 1, hi = cum.length - 1;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < s) lo = mid + 1; else hi = mid; }
@@ -622,14 +624,22 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
   const T = S.traffic; if (!T) return 0;
   const G = T.G, o = typeof gap === 'object' ? gap : null, keep0 = o ? o.keep : Math.min(1, BASE / Math.max(BASE, gap)), W = o && o.cls;
   let n = 0;
-  for (const L of T.links) {
-    const l = L.l, bb = l.bb;
+  // the links in view come from a coarse grid of them (a hundred thousand links, a few thousand in a city view)
+  const N = T.links.length, LG = linkGrid(T), stamp = ++LG.stamp;
+  const ci0 = Math.floor(view.x0 / LG.C), ci1 = Math.floor(view.x1 / LG.C), cj0 = Math.floor(view.y0 / LG.C), cj1 = Math.floor(view.y1 / LG.C);
+  for (let cj = cj0; cj <= cj1; cj++) for (let ci = ci0; ci <= ci1; ci++) {
+    const cell = LG.m.get(ci * 65536 + cj); if (!cell) continue;
+    for (let q = 0; q < cell.length; q++) {
+    const li = cell[q]; if (li >= N || LG.seen[li] === stamp) continue;
+    LG.seen[li] = stamp;
+    const L = T.links[li], l = L.l, bb = l.bb;
     if (L.load <= 0.01 || (skip && skip[L.cls]) || bb[2] < view.x0 || bb[0] > view.x1 || bb[3] < view.y0 || bb[1] > view.y1) continue;
     const keep = keep0 * (W && W[L.cls] != null ? W[L.cls] : 1); if (keep <= 0) continue;
     const step = keep >= 1 ? 1 : 1 << Math.min(16, Math.floor(Math.log2(1 / keep)));
     const P = l.pts, cum = l.cum, len = l.len;
     let s0 = 1e9, s1 = -1;
-    for (let i = 1; i < P.length; i++) {
+    if (bb[0] >= view.x0 && bb[2] <= view.x1 && bb[1] >= view.y0 && bb[3] <= view.y1) { s0 = 0; s1 = len; }   // (wholly in view)
+    else for (let i = 1; i < P.length; i++) {
       const a = P[i - 1], b = P[i];
       if (Math.max(a.x, b.x) < view.x0 || Math.min(a.x, b.x) > view.x1 || Math.max(a.y, b.y) < view.y0 || Math.min(a.y, b.y) > view.y1) continue;
       if (cum[i - 1] < s0) s0 = cum[i - 1]; if (cum[i] > s1) s1 = cum[i];
@@ -653,16 +663,28 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
       for (; j * BASE + ph <= Math.min(ub, span); j += step) {
         const u = j * BASE + ph, h = U.hash(L.key + d, j & 65535);
         if (h > p || (keep < 1 && slotRank(j & 65535, L.key + d) >= keep)) continue;
-        const s = toS(u), q = along(P, cum, d ? len - s : s);
-        if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
+        // (the place along the link without an object or an arc tangent a vehicle: the heading is the piece's, kept)
+        const s = toS(u), sv = d ? len - s : s;
+        let lo = 1, hi = cum.length - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < sv) lo = mid + 1; else hi = mid; }
+        const pa = P[lo - 1], pb = P[lo], t = (sv - cum[lo - 1]) / ((cum[lo] - cum[lo - 1]) || 1), qx = pa.x + (pb.x - pa.x) * t, qy = pa.y + (pb.y - pa.y) * t;
+        if (qx < view.x0 || qx > view.x1 || qy < view.y0 || qy > view.y1) continue;
+        const hd = l.hd || (l.hd = headings(P)), qh = hd[lo - 1];
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
-        fn(q.x, q.y, d ? q.h + Math.PI : q.h, kind, L.cls, L.C.off[lane]);
+        fn(qx, qy, d ? qh + Math.PI : qh, kind, L.cls, L.C.off[lane]);
         n++;
       }
+    }
     }
   }
   return n;
 };
+function linkGrid(T) {
+  if (T._lg && T._lg.links === T.links) return T._lg;
+  const C = 64, m = new Map();
+  T.links.forEach((L, li) => { const bb = L.l.bb; for (let j = Math.floor(bb[1] / C); j <= Math.floor(bb[3] / C); j++) for (let i = Math.floor(bb[0] / C); i <= Math.floor(bb[2] / C); i++) { const k = i * 65536 + j; let a = m.get(k); if (!a) m.set(k, a = []); a.push(li); } });
+  return T._lg = { links: T.links, C, m, seen: new Uint32Array(T.links.length), stamp: 0 };
+}
 
 /* the vehicles the map shows in a view at zoom z, dt game seconds after the last frame: the slots riding the flows,
    handing over to the vehicles on their own trips (IC.TRAFFIC_AGZ), the share of both by IC.trafficKeep, faded in
