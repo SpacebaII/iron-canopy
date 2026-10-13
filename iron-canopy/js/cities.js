@@ -582,7 +582,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   if (IC.ixClear) {
     const out = [];
     for (const l of c.streets) {
-      if (l.cls === 'art' || !l.pts.some(p => IC.ixClear(W, p.x, p.y, 0.3))) { out.push(l); continue; }
+      if (l.cls === 'art' || l.cul || !l.pts.some(p => IC.ixClear(W, p.x, p.y, 0.3))) { out.push(l); continue; }   // (a close stays whole: its estate keeps out by itself)
       const headP = l.head ? l.pts[l.head & 1 ? 0 : l.pts.length - 1] : null;
       let run = [];
       const flush = () => { if (run.length >= 2) { const m = Object.assign({}, l, { pts: run, cut: true }); if (headP && !run.includes(headP)) delete m.head; out.push(m); } run = []; };
