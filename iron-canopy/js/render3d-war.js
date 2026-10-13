@@ -234,7 +234,7 @@ function weapon(v, w, m, t) {
         for (let i = 0; i < 46; i++) {
           const a = i * 2.39996, u = 0.35 + 0.65 * ((i * 0.618) % 1), r = (0.06 + 1.6 * sp * u), up = 0.04 + 0.5 * sp * ((i * 0.377) % 1) * (1.2 - u) + age * 0.004;
           const c = 0.42 + 0.12 * ((i * 0.31) % 1);
-          emit(w.smoke, gx + Math.cos(a) * r + w.wx * age, gy + up, gz + Math.sin(a) * r + w.wy * age, 0.18 + 0.5 * sp, c * 0.6 + 0.35 * lit, c * 0.57 + 0.15 * lit, c * 0.53 + 0.03 * lit, 0.7 * fade, i);
+          emit(w.smoke, gx + Math.cos(a) * r + w.wx * age, gy + up, gz + Math.sin(a) * r + w.wy * age, 0.18 + 0.5 * sp, c * 0.42 + 0.3 * lit, c * 0.4 + 0.12 * lit, c * 0.37 + 0.02 * lit, 0.65 * fade, i);
         }
         if (age < 4) emit(w.fire, gx, gy + 0.3, gz, 0.7, 1, 0.55, 0.25, 0.3 * lit, 0);
       }

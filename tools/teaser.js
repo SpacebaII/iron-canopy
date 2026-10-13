@@ -93,20 +93,20 @@ const PICK = () => {
     const u = S.units.find(q => q.id === lm.uid), ms = u && tracks.filter(tr => tr.kind === 'missile' && tr.meta.uref === u && Math.abs(first(tr) - (lm.t + T0)) < 3)[0];
     const a = R.A + 0.9;
     if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: 1, cam: { mode: 'fixed', ref: ms ? ms.ref : null, at: { x: u.x, y: u.y, h: 4 }, from: { x: u.x + Math.cos(a) * 2.5, y: u.y + Math.sin(a) * 2.5, h: 1.7 }, lens: [35, 60], lag: 0.22, shake: 0.2 } };
-    if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, lookAt: ms.meta.tref || null, back: 0.35, side: 0.08, up: 0.1, lens: 30, ease: 0.15, lag: 0.15, shake: 0.1 } };
+    if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, lookAt: ms.meta.tref || null, back: 0.35, side: 0.08, up: 0.1, lens: 30, lag: 0.1, shake: 0.1 } };
   }
   // a cruise missile shot down: from the ground 1.2 km off with a long lens, slowing as it is hit
   const kcs = ev.filter(e => e.kind === 'kill' && e.cls === 'cm').sort((a, b) => U.dxy(a.x, a.y, R.fuel.x, R.fuel.y) - U.dxy(b.x, b.y, R.fuel.x, R.fuel.y)), kc = kcs[2] || kcs[0];
   if (kc) {
     // the cruise missile it was: the track that ends there and then
     const kt = cms.slice().sort((a, b) => (Math.abs(a.t1 - T0 - kc.t) + U.dxy(pos(a, a.t1).x, pos(a, a.t1).y, kc.x, kc.y)) - (Math.abs(b.t1 - T0 - kc.t) + U.dxy(pos(b, b.t1).x, pos(b, b.t1).y, kc.x, kc.y)))[0];
-    const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 2.4, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', ref: kt ? kt.ref : null, at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, lag: 0.3, shake: 0.06 } }; }
+    const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 1.9, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', ref: kt ? kt.ref : null, at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, lag: 0.3, shake: 0.06 } }; }
   // a ballistic missile met high up, seen from the ground 5 km off, looking up
   const kb = ev.find(e => e.kind === 'intercept' && e.cls === 'bal');
-  if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.5, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: kb.x + Math.cos(R.A + 1.2) * 50, y: kb.y + Math.sin(R.A + 1.2) * 50, h: 2 }, lens: [200, 320], shake: 0.1 } };
+  if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.1, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: kb.x + Math.cos(R.A + 1.2) * 50, y: kb.y + Math.sin(R.A + 1.2) * 50, h: 2 }, lens: [200, 320], shake: 0.1 } };
   // what gets through: a cruise missile into the airport, then a ballistic one
   const ics = ev.filter(e => e.kind === 'impact' && e.cls === 'cm'), ic = ics[0], ib = ev.filter(e => e.kind === 'impact' && e.cls === 'bal')[0] || ics[ics.length - 1];
-  if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 60 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 3 }, lens: 45, lag: 0.1, shake: 0.12 } }; }
+  if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 60 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 12 }, lens: 45, lag: 0.1, shake: 0.12 } }; }
   if (ib) { const o = perp(R.A + 1.2, 22); out.hit2 = { x: ib.x, y: ib.y, r: 120, t: ib.t - 1.0, speed: 1, cam: { mode: 'fixed', at: { x: ib.x, y: ib.y, h: 120 }, from: { x: ib.x + o.x, y: ib.y + o.y, h: 25 }, lens: 32, shake: 0.12 } }; }
   // after: the burning airport from the air, turning slowly, the game running at four times
   const last = ev.filter(e => e.kind === 'impact').slice(-1)[0], c0 = ic || ib || R.fuel;
