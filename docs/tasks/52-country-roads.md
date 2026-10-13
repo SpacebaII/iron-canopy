@@ -29,7 +29,7 @@ The country's roads were routed by A* on a 6 km grid and that grid's path was th
 | pairs of roads crossing away from a node | 5 (a city's motorway pieces over lanes, audit B5) | 5 (the same ones) |
 | generation (`IC.generate`, on a loaded machine) | 4.3 s | 4.9 s, of which the lines 0.4–0.7 s |
 
-Pictures from the same seed in `52-screens/`: the country at z 2 and z 6, Halenn from the region zoom, the capital's diamond interchange with its lanes, a village on its river, an airport's access road.
+Pictures from the same seed in `52-screens/`, before on the left and after on the right: the country at z 2 (`13`) and z 6 (`14`), Halenn from the region zoom (`15`), the capital's diamond interchange with its lanes (`16`), a village on its river (`17`), an airport's access road (`18`).
 
 ## What it does not do
 
