@@ -231,7 +231,16 @@ IC.roadJoins = function (W) {
     const n = W.nodes[J.id], all = byNode[J.id] || [], arms = all.filter(a => !a.e.city);
     if (!n) continue;
     if (J.kind === 'tj' && arms.length >= 3) R.joins.push({ id: J.id, x: n.x, y: n.y, arms, kind: 'tj' });
-    else if (J.kind === 'rb' && all.length >= 2) R.rbs.push({ id: J.id, x: n.x, y: n.y, r: J.r, arms: all, J });
+    else if (J.kind === 'rb' && all.length >= 2) R.rbs.push({ id: J.id, x: n.x, y: n.y, r: J.r, lanes: J.lanes, isle: J.isle, arms: all, J });
+    // a dumbbell's two roundabouts, on the road across either side of the bridge: the road runs through each, and
+    // the slip roads that end there join below
+    if (J.kind === 'mx' && J.rbs) for (const q of J.rbs) {
+      const d = J.dirs.find(o => o.a === q.a); if (!d || !d.e) continue;
+      const e = d.e, nr = PL.near(e.pts, q), EL = e.len || PL.len(e.pts);
+      if (!nr) continue;
+      const cls = e.city ? 'art' : e.cls;
+      R.rbs.push({ id: J.id + ':' + q.a.toFixed(2), x: nr.x, y: nr.y, r: q.r, lanes: 1, isle: 'grass', dumb: true, arms: [{ ux: nr.ux, uy: nr.uy, len: Math.max(0.3, EL - nr.s), cls }, { ux: -nr.ux, uy: -nr.uy, len: Math.max(0.3, nr.s), cls }], J });
+    }
   }
   // villages and other places where three or more roads meet (not the cities: their roads become avenues)
   for (const k in byNode) {
@@ -255,6 +264,9 @@ IC.roadJoins = function (W) {
     if (!best) continue;
     const { e, nr } = best, par = Math.abs(rx * nr.ux + ry * nr.uy);
     if (e.cls === 'hw' && par > 0.8) { R.ends.push({ kind: 'merge', r, end, e, q, dir: { x: rx, y: ry }, J }); continue; }
+    // a slip road ending on a dumbbell's roundabout is one of its arms
+    const rb = J.rbs && R.rbs.find(o => o.dumb && o.J === J && Math.hypot(o.x - q.x, o.y - q.y) < 0.3);
+    if (rb) { const l = Math.hypot(q2.x - rb.x, q2.y - rb.y) || 1; rb.arms.push({ ux: (q2.x - rb.x) / l, uy: (q2.y - rb.y) / l, len: 1.2, cls: 'ramp' }); continue; }
     const key = e.id + ':' + Math.round(nr.s / 0.15);
     let T = terms.get(key);
     if (!T) {
@@ -304,7 +316,9 @@ IC.rbGeom = function (site, h) {
   const hs = site.arms.map(a => h(a.cls)), key = hs.map(v => v.toFixed(4)).join();
   if (site._g && site._k === key) return site._g;
   // the ring is as wide as the busiest road coming in needs (an avenue's roundabout is a big city place)
-  const hm = Math.min(Math.max(...hs), h('rd') * 1.2), cw = Math.max(0.075, hm * 1.4), r = Math.max(site.r, cw * 1.6, Math.max(...hs) * 1.9), Ro = r + cw / 2, Ri = r - cw / 2;
+  // (two lanes round a bigger one; a mini roundabout is a painted disc the lorries drive over)
+  const lanes = site.lanes || 1, mini = site.isle === 'mini';
+  const hm = Math.min(Math.max(...hs), h('rd') * 1.2), cw = Math.max(0.075, hm * 1.4) * (lanes > 1 ? 1.7 : 1), r = mini ? Math.max(site.r, cw * 1.05) : Math.max(site.r, cw * 1.6, Math.max(...hs) * 1.9), Ro = r + cw / 2, Ri = r - cw / 2;
   const C = { x: site.x, y: site.y }, arms = [];
   for (const a of site.arms) {
     const ha = h(a.cls), he = ha * 1.45, Rf = Math.max(0.05, (SPEC[a.cls] || SPEC.lc).R * 0.7);
@@ -330,7 +344,7 @@ IC.rbGeom = function (site, h) {
     const gy = [P(Ro + 0.006, -wI - 0.004), P(Ro + 0.006, -he)];
     arms.push({ a, ha, he, surf, isl, gy, fl, s0, s1, P, side });
   }
-  const G = { C, r, Ro, Ri, cw, arms, apron: Math.max(0.01, cw * 0.25) };
+  const G = { C, r, Ro, Ri, cw, arms, lanes, isle: site.isle || 'planting', apron: Math.max(0.01, cw * 0.25) };
   site._g = G; site._k = key;
   return G;
 };
