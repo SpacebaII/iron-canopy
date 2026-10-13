@@ -400,9 +400,9 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && !L.l.ref.edge.city && !L.l.city && L.l.len > 20 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
   assert(L, 'no busy main road');
   const n0 = L.l.a, p = G.nodes[n0];
-  // vehicles within 600 m of that junction on the roads that lead into it, as the middle zoom shows them
-  // (the queue in front of a cut road is up to 700 m long: a shorter window counted a handful either way)
-  const near = () => { let n = 0; IC.trafficVisible(S, { x0: p.x - 7, y0: p.y - 7, x1: p.x + 7, y1: p.y + 7 }, 0.05, (x, y) => { if (U.dist({ x, y }, p) < 6) n++; }); return n; };
+  // vehicles within 150 m of that junction on the roads that lead into it, as the middle zoom shows them
+  // (the head of the queue, where vehicles stand nine times closer than on the open road)
+  const near = () => { let n = 0; IC.trafficVisible(S, { x0: p.x - 2, y0: p.y - 2, x1: p.x + 2, y1: p.y + 2 }, 0.05, (x, y) => { if (U.dist({ x, y }, p) < 1.5) n++; }); return n; };
   const before = near();
   L.l.cut = true; T.stepT = 0; IC.traffic(S, 0.25);
   const after = near();
