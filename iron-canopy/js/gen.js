@@ -888,6 +888,7 @@ function simplify(P, tol) {
   }
   return P.filter((p, i) => keep[i]);
 }
+IC.simplifyLine = simplify;
 /* a line resampled every step units and swung from side to side by a slow noise; lead: a straight length kept at
    each end */
 function wander(C, o, fbm, k, step, lead) {
