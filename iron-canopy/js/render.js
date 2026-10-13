@@ -69,7 +69,9 @@ IC.drawGrade = function (g, G, clip) {
   if (plain) return;
   const V = view, x = V.x0, y = V.y0, w = V.x1 - V.x0, h = V.y1 - V.y0;
   g.save(); g.beginPath(); clip(g); g.clip('evenodd');
-  if (G.sat > 0.01) { g.globalCompositeOperation = 'saturation'; g.globalAlpha = G.sat; g.fillStyle = '#808080'; g.fillRect(x, y, w, h); }
+  // drain the colour by laying a neutral grey over it (a plain blend: the 'saturation' mode costs several ms a frame
+  // without a graphics card)
+  if (G.sat > 0.01) { g.globalAlpha = G.sat * 0.6; g.fillStyle = 'rgb(118,122,130)'; g.fillRect(x, y, w, h); }
   g.globalAlpha = 1; g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgb(${G.mul[0]},${G.mul[1]},${G.mul[2]})`; g.fillRect(x, y, w, h);
   if (G.golden > 0.01) { g.globalCompositeOperation = 'soft-light'; g.fillStyle = `rgba(255,140,60,${0.35 * G.golden})`; g.fillRect(x, y, w, h); }
   g.restore();
