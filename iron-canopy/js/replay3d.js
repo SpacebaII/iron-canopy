@@ -445,12 +445,12 @@ function buildings(v, reg, maxBoxes) {
   const dmgT = new Map();
   for (const e of evs) for (const d of e.dmg || []) if (d.kind === 'block') dmgT.set(d.b, Math.min(dmgT.get(d.b) || 1e18, e.t));
   let boxes = 0;
-  const add = (b, town) => {
+  const add = (b, town, c) => {
     if (!inSq(b.x, b.y, reg) || boxes > maxBoxes) return;
     if (b.hp <= 0 && !dmgT.has(b)) return;   // rubble already: the map shows it
-    const bx = IC.blockBoxes(b, town); boxes += bx.length; list.push([b, bx]);
+    const bx = IC.blockBoxes(b, town, c); boxes += bx.length; list.push([b, bx]);
   };
-  for (const c of S.world.cities) if (inSq(c.x, c.y, reg, (c.r || 80) + 40)) for (const b of c.blocks) add(b, true);
+  for (const c of S.world.cities) if (inSq(c.x, c.y, reg, (c.r || 80) + 40)) for (const b of c.blocks) add(b, true, c);
   for (const vl of S.world.villages) if (inSq(vl.x, vl.y, reg, 40)) for (const b of vl.blocks || []) add(b, false);
   if (!boxes) return null;
   const pos = new Float32Array(boxes * 30 * 3), nor = new Float32Array(boxes * 30 * 3), col = new Float32Array(boxes * 30 * 3), items = [];
@@ -461,7 +461,8 @@ function buildings(v, reg, maxBoxes) {
     for (const q of bx) {
       const cx = b.x + q.x * cs - q.y * sn - v.cx, cz = b.y + q.x * sn + q.y * cs - v.cy, ht = q.ht * hk;
       const c = colorOf(`rgb(${q.col[0]},${q.col[1]},${q.col[2]})`), C = [c.r, c.g, c.b];
-      const hx = q.w / 2, hz = q.h / 2, P = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([a, d]) => [cx + a * cs - d * sn, cz + a * sn + d * cs]);
+      const bc = q.a ? Math.cos(b.a + q.a) : cs, bs = q.a ? Math.sin(b.a + q.a) : sn;   // (a station's buildings turn with the railway)
+      const hx = q.w / 2, hz = q.h / 2, P = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([a, d]) => [cx + a * bc - d * bs, cz + a * bs + d * bc]);
       // roof, then the four walls a little darker (no floor: nobody sees it)
       for (const [a, b2, c2] of [[0, 3, 2], [0, 2, 1]]) for (const k of [a, b2, c2]) put(P[k][0], y0 + ht, P[k][1], 0, 1, 0, C, 1);
       for (let e = 0; e < 4; e++) {
