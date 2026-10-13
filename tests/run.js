@@ -4240,6 +4240,23 @@ test('aircraft variety: every aircraft type has a model at its real size, low en
   assert(ga.BODY === ga.BELLY && ga.STRIPE !== ga.BODY && ga.FIN === ga.STRIPE, 'a light aircraft is not white with stripes');
   assert(IC.modelMesh('vintage', 1).slots.every(c => c[0] === '#' || c === 'WIN' || c === 'GLASS'), 'the vintage airliner takes an airline livery');
 });
+test('launchers (brief 61): every launcher, radar and missile is built at its size, with its moving parts, low enough in triangles', () => {
+  // the parts each must have to move as brief 62 has them: a turntable, a frame that lifts, a cover and a round per canister
+  const want = { lrsam: ['slew', 'launch', 'cap', 'rnd'], mrsam: ['slew', 'launch', 'cap', 'rnd'], shorad: ['slew', 'radar', 'launch', 'cap', 'rnd'], spaag: ['slew', 'radar', 'gun'],
+    etel: ['erect', 'rnd'], ecml: ['launch', 'cap', 'rnd'], lr3d: ['aim'], sam: [], bm: [], cm: [] };
+  for (const k in want) {
+    const d = IC.MODELS[k], me = IC.modelMesh(k, 1), far = IC.modelMesh(k, 0);
+    assert(d, `no model ${k}`);
+    const kinds = new Set(Object.values(me.groups).map(G => G.kind));
+    for (const w of want[k]) assert(kinds.has(w), `${k} has no ${w} part`);
+    const caps = Object.values(me.groups).filter(G => G.kind === 'cap').length, rnds = Object.values(me.groups).filter(G => G.kind === 'rnd').length;
+    assert(caps === 0 || caps === rnds, `${k}: ${caps} covers for ${rnds} rounds`);
+    // its length: the bounding box of the parts that do not move against the model's own figure
+    let x0 = 1e9, x1 = -1e9; for (const G of Object.values(me.groups)) if (G.kind === 'main') for (let i = 0; i < G.pos.length; i += 3) { x0 = Math.min(x0, G.pos[i]); x1 = Math.max(x1, G.pos[i]); }
+    assert(Math.abs((x1 - x0) - d.len) / d.len < 0.2, `${k}: built ${(x1 - x0).toFixed(1)} m long, meant to be ${d.len} m`);
+    assert(me.tris < 6000 && far.tris < me.tris * 0.7, `${k}: ${me.tris} triangles close, ${far.tris} far`);
+  }
+});
 test('aircraft variety: general aviation fills a light-aircraft field over a day', () => {
   // (in the Career's first act: no war to ground the clubs)
   const S = IC.newGame({ seed: 4242, mode: 'story' });

@@ -228,7 +228,7 @@ function facing(v) {
     IC.rangeAddUnit(G3, 'mrsam', T3.x - 20, T3.y + 6); IC.rangeAddUnit(G3, 'lr3d', T3.x - 30, T3.y - 10);
     IC.rangeSpawn(G3, { what: 'lacm', n: 6, brg: 90, km: 45, alt: '' });
     for (let i = 0; i < 4 * 420; i++) IC.step(G3, 0.25);
-    const evs = G3.rec.ev.filter(e => IC.war3d.owns(e)), p = evs.find(e => e.kind !== 'impact') || evs[0];
+    const evs = G3.rec.ev.filter(e => IC.war3d.owns(e)), p = evs.find(e => e.kind === 'kill' || e.kind === 'intercept') || evs.find(e => e.kind === 'impact');
     if (!p) throw new Error('nothing blew up on the range');
     const V3 = IC.replayOpen(G3, { x: p.x, y: p.y, r: 150, t: p.t - 1 }); await tick(); await tick();
     IC.replayFilm(V3, true); V3.playing = false; V3.t = p.t - 1;

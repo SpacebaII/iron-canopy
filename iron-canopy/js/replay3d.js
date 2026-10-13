@@ -956,6 +956,7 @@ function makeMover(v, tr) {
   v.movers.push(m); v.moverOf.set(tr, m); v.made.mover++;
   if (LIFE()) LIFE().mover(v, m);
   if (ARMS() && v.arms) ARMS().mover(v, m);
+  if (WAR() && v.war && WAR().mover) WAR().mover(v, m);
   return m;
 }
 function dropMover(v, m) {
@@ -967,6 +968,7 @@ function dropMover(v, m) {
   if (m.smoke) m.smoke.children[0].material.dispose();
   m.label.remove();
   if (LIFE()) LIFE().dropMover(v, m);
+  if (m.wp) { v.scene.remove(m.wp); m.wp.material.dispose(); }
   v.movers.splice(v.movers.indexOf(m), 1); v.moverOf.delete(m.tr);
   if (v.follow === m) v.follow = null;
 }
@@ -982,6 +984,7 @@ const P1 = {}, P2 = {}, P3 = {};
 function ease(cur, want, dt, secs) { return cur == null || dt > 2 ? want : cur + U.clamp(want - cur, -dt / secs, dt / secs); }
 function updMover(v, m, t) {
   const S = v.S, hk = v.hk, st = IC.recPose(m.tr, t, m.st, S.wind);
+  if (st && v.war && WAR().pose) WAR().pose(v, m, st, t);
   const hide = !st || (v.radar && m.tr.kind === 'threat' && !st.det && !m.tr.meta.civil && st.aff !== 1);
   m.vis = !!st && !hide;
   if (!m.vis) { m.grp.visible = false; m.line.visible = false; if (m.lblOn) { m.label.hidden = true; m.lblOn = false; } if (m.smoke) { m.smoke.visible = false; m.locks.visible = false; m.cone.visible = false; } if (LIFE()) LIFE().hide(v, m); return; }
@@ -1077,8 +1080,9 @@ const lockCol = new Map();
 /* a missile: motor and smoke while it burns, lock lines by guidance, the seeker's cone */
 function missileFx(v, m, t, st, hide) {
   const hk = v.hk, age = t - m.tL, burning = !hide && age >= 0 && age < m.burn;
-  m.plume.visible = burning; m.glow.visible = burning;
-  if (burning) { const f = 0.85 + 0.3 * Math.abs(Math.sin(t * 61 + m.tL)); m.plume.scale.set(m.size * 1.6 * f, m.size * 0.22, m.size * 0.22); }
+  // (with the war effects on, they draw the motor at the nozzle themselves)
+  m.plume.visible = m.glow.visible = burning && !v.war;
+  if (burning && !v.war) { const f = 0.85 + 0.3 * Math.abs(Math.sin(t * 61 + m.tL)); m.plume.scale.set(m.size * 1.6 * f, m.size * 0.22, m.size * 0.22); }
   m.line.material.opacity = age < m.burn ? 0.35 : 0.75;
   // the thick smoke the motor leaves while it burns, fading over the next minute
   const smokeOn = !v.war && m.burn > 0 && v.lod < 2 && age > 0 && age < m.burn + 60;

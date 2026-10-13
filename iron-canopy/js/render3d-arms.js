@@ -98,7 +98,10 @@ function frameUnit(v, m, st, t, dt) {
   X.psi = wrap(X.az - rest - X.face);
   const elW = X.elW != null ? X.elW + 0.05 : 0.3; X.el = X.el == null || dt > 2 ? elW : X.el + U.clamp(elW - X.el, -0.4 * dt, 0.4 * dt);
   // the launcher frame: up when emplaced, a kick back as each round goes
-  const upK = m.launchK != null ? m.launchK : 1, up = X.launch ? (IC.modelMesh(m.tr.model, 1).groups[X.launch.a.name].up || 0) : 0;
+  // up when emplaced, and always for a launch (a shot opened at the launch sees it already up)
+  let upK = m.launchK != null ? m.launchK : 1;
+  for (const l of L) upK = Math.max(upK, ease((t - l.t + 30) / 8) * (1 - ease((t - l.t - 40) / 8)));
+  const up = X.launch ? (IC.modelMesh(m.tr.model, 1).groups[X.launch.a.name].up || 0) : 0;
   let kick = 0;
   X.can = X.can || []; for (let i = 0; i < X.n; i++) X.can[i] = 0;
   for (let j = 0; j < L.length; j++) {
@@ -111,24 +114,30 @@ function frameUnit(v, m, st, t, dt) {
   }
   X.up = up * upK; X.kick = kick;
 }
+/* the mouth a round leaves from: the canister's cover pivot at rest and the way the canister points, in the scene
+   (P, D); false when its launcher is not drawn */
+A3.mouth = function (v, m, P, D) {
+  if (m.tr.kind !== 'missile' || !m.tr.meta.uref) return false;
+  const u = H.moverOfRef(v, m.tr.meta.uref); if (!u || !u.arms || !u.vis || !u.grp.visible) return false;
+  const L = launches(v, u), l = L.find(q => q.tr === m.tr); if (!l) return false;
+  const cap = u.arms.caps.find(A => (A.a.i != null ? A.a.i : +A.a.name.slice(3)) === l.i) || u.arms.rnds.find(A => A.a.i === l.i);
+  if (!cap) return false;
+  u.grp.updateMatrixWorld(true);
+  const par = cap.node.parent; P.copy(cap.base); par.localToWorld(P);
+  par.getWorldQuaternion(v.arms.Q); D.set(u.arms.dir, 0, 0).applyQuaternion(v.arms.Q);
+  return true;
+};
 /* a round in its first second and a half: out of its canister's mouth along the launcher, then onto its recorded path */
 A3.fix = function (v, m, st, t) {
-  if (m.tr.kind !== 'missile' || !m.tr.meta.uref) return;
-  const u = H.moverOfRef(v, m.tr.meta.uref); if (!u || !u.arms || !u.vis) return;
   const age = t - (m.tL != null ? m.tL : IC.recFirstT(m.tr)); if (age < 0 || age > 1.6) return;
-  const L = launches(v, u), l = L.find(q => q.tr === m.tr); if (!l) return;
-  const cap = u.arms.caps.find(A => (A.a.i != null ? A.a.i : +A.a.name.slice(3)) === l.i) || u.arms.rnds.find(A => A.a.i === l.i);
-  if (!cap) return;
   const W = v.arms, P = W.V, D = W.V2;
-  u.grp.updateMatrixWorld(true);
-  // the mouth (the cover's pivot at rest) and the way the canister points, in the scene
-  const par = cap.node.parent; P.copy(cap.base); par.localToWorld(P);
-  par.getWorldQuaternion(W.Q); D.set(u.arms.dir, 0, 0).applyQuaternion(W.Q);
+  if (!A3.mouth(v, m, P, D)) return;
   // 300 m/s² out of the tube, eased onto the recorded path
   const s = 1.5 * age * age, k = ease(age / 1.6);
   m.grp.position.set(P.x + D.x * s + (m.grp.position.x - P.x - D.x * s) * k, P.y + D.y * s + (m.grp.position.y - P.y - D.y * s) * k, P.z + D.z * s + (m.grp.position.z - P.z - D.z * s) * k);
   if (k < 0.6) { const h = Math.atan2(D.z, D.x), pt = Math.asin(U.clamp(D.y, -1, 1)); m.grp.rotation.set(0, -h, pt, 'YZX'); }
 };
+A3.ease = ease;
 
 /* ---------- the enemy's launchers ---------- */
 /* every hostile weapon that starts on the ground gets a launcher there; weapons from one place share it */
