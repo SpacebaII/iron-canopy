@@ -517,7 +517,9 @@ function aptPad(v, b, f) {
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
   const y = f.e * v.hk + LIFT.pad, x0 = b.x - R - v.cx, z0 = b.y - R - v.cy, x1 = x0 + 2 * R, z1 = z0 + 2 * R;
   const pos = new Float32Array([x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1]), nor = new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), uv = new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]);
-  return paveMat({ map: tex, alphaTest: 0.5 }, 'pad', new THREE.Mesh(geom(pos, nor, null, uv, new Uint16Array([0, 3, 2, 0, 2, 1]))));
+  // (cut out by its alpha, the edge spread over the samples where the picture has them: a hard cut-out crawled at
+  // the edge of every apron as the camera moved)
+  return paveMat({ map: tex, alphaTest: 0.5, alphaToCoverage: true }, 'pad', new THREE.Mesh(geom(pos, nor, null, uv, new Uint16Array([0, 3, 2, 0, 2, 1]))));
 }
 /* a runway's surface at 128 × 2048 pixels, end a at the bottom: pavement, shoulders, markings, craters */
 function runwayTex(v, rw) {
@@ -660,7 +662,9 @@ function aptBuildings(v, b, f) {
           B.group('win', { kind: 'win' });
           for (const s of [-1, 1]) { const [px, py] = along(0, s * (Dp / 2 + 0.15)); MB.box(B, px, py, 8.5, long ? W * 0.97 : 0.3, long ? 0.3 : H * 0.97, 10, 'WIN'); }
           B.group('main');
-          for (const s of [-1, 1]) for (let q = -Lg / 2 + 4; q < Lg / 2; q += 8) { const [px, py] = along(q, s * (Dp / 2 + 0.35)); MB.box(B, px, py, 8.5, long ? 0.35 : 0.3, long ? 0.3 : 0.35, 10, '#8c949c'); }
+          // (the mullions a shade off the glass: pale bars a fraction of a pixel wide on dark glass blinked from frame
+          // to frame as the camera moved)
+          for (const s of [-1, 1]) for (let q = -Lg / 2 + 4; q < Lg / 2; q += 8) { const [px, py] = along(q, s * (Dp / 2 + 0.35)); MB.box(B, px, py, 8.5, long ? 0.35 : 0.3, long ? 0.3 : 0.35, 10, '#363e46'); }
           for (let i = 0; i < Math.floor(Lg / 60); i++) { const [px, py] = along(-Lg / 2 + 40 + i * 60, (U.hash(i, 3) - 0.5) * Dp * 0.5); MB.box(B, px, py, 18.2, 8, 6, 3, '#8a9096'); }
           break;
         }

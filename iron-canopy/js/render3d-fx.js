@@ -84,7 +84,12 @@ float fxHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.3
 float fxNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(fxHash(i), fxHash(i + vec2(1.0, 0.0)), f.x), mix(fxHash(i + vec2(0.0, 1.0)), fxHash(i + vec2(1.0, 1.0)), f.x), f.y); }
 float fxFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * fxNoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
-float fxFbm3(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s += a * fxNoise(p); p = p * 2.07 + 11.3; a *= 0.5; } return s; }`;
+float fxFbm3(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s += a * fxNoise(p); p = p * 2.07 + 11.3; a *= 0.5; } return s; }
+// the same, band-limited: fw is a pixel's footprint in cells of p (fwidth). Detail finer than about two pixels a cell
+// would shimmer as the camera moves (it lands on a different value every frame), so it fades to its mean instead
+float fxAA(float fw) { return 1.0 - smoothstep(0.2, 0.5, fw); }
+float fxNoiseAA(vec2 p, float fw) { return mix(0.5, fxNoise(p), fxAA(fw)); }
+float fxFbm3AA(vec2 p, float fw) { float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s += a * mix(0.5, fxNoise(p), fxAA(fw)); p = p * 2.07 + 11.3; fw *= 2.07; a *= 0.5; } return s; }`;
 // the vertex and fragment chunks my own materials need to sit in the log depth buffer with everything else
 const VHEAD = '#include <common>\n#include <logdepthbuf_pars_vertex>\n';
 const FHEAD = '#include <common>\n#include <logdepthbuf_pars_fragment>\n';
@@ -95,13 +100,18 @@ const GRASS = `
 uniform vec4 fxApt[4];
 float fxGrassOf(vec3 c) { return smoothstep(0.02, 0.07, c.g - max(c.r, c.b) * 0.9); }
 // warmer and a little less saturated than the map's, in patches a few hundred metres across (mowing, wear, soil)
-vec3 fxGrade(vec3 c, float g, vec2 w) { return mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, 1.0 - g * 0.12) * mix(vec3(1.03, 1.0, 0.94), vec3(1.08, 1.0, 0.8), g) * (1.0 + g * (fxFbm3(w * 0.45) - 0.5) * 0.22); }
-float fxStripe(vec2 w) {
-  float k = 0.0;
+// (px: a pixel's footprint on the ground in world units, from fwidth where the derivatives are still defined)
+vec3 fxGrade(vec3 c, float g, vec2 w, float px) { return mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, 1.0 - g * 0.12) * mix(vec3(1.03, 1.0, 0.94), vec3(1.08, 1.0, 0.8), g) * (1.0 + g * (fxFbm3AA(w * 0.45, px * 0.45) - 0.5) * 0.22); }
+// stripes 16 m wide, averaged over the pixel (a box filter of the square wave), so far off they turn an even grey
+// green instead of a moire that crawls as the camera moves
+float fxSq(float t) { return floor(t) * 0.5 + max(fract(t) - 0.5, 0.0); }
+float fxStripe(vec2 w, float px) {
+  float k = 0.0, fw = max(px / 0.16, 1e-4);
   for (int i = 0; i < 4; i++) {
     vec4 a = fxApt[i]; if (a.z <= 0.0) continue;
     vec2 r = w - a.xy; float in_ = 1.0 - smoothstep(a.z * 0.85, a.z, length(r));
-    k += in_ * (step(0.5, fract(dot(r, vec2(-sin(a.w), cos(a.w))) / 0.16)) * 0.11 - 0.055);
+    float t = dot(r, vec2(-sin(a.w), cos(a.w))) / 0.16;
+    k += in_ * ((fxSq(t + fw * 0.5) - fxSq(t - fw * 0.5)) / fw * 0.11 - 0.055);
   }
   return k;
 }`;
@@ -247,20 +257,20 @@ function groundMaterial(o) {
       // the map's own marks (white airport and town glyphs far out) are not brighter than concrete
       diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.45));
       vec3 c = diffuseColor.rgb;
-      float d = length(vFxW - cameraPosition);
+      float d = length(vFxW - cameraPosition), px = length(fwidth(vFxW.xz));
       vec2 q = mod(vFxW.xz, 400.0);
       float grass = fxGrassOf(c); fxGrass = grass;
-      diffuseColor.rgb = fxGrade(c, grass, vFxW.xz);
+      diffuseColor.rgb = fxGrade(c, grass, vFxW.xz, px);
       if (fxDetail > 0.0) {
-        // grain close in, at two scales, fading out by a few km
+        // grain close in, at two scales, fading out by a few km (and wherever it is finer than the pixels)
         float near = 1.0 - smoothstep(4.0, 40.0, d);
-        float n1 = fxFbm3(q * 9.0), n2 = fxNoise(q * 70.0);
+        float n1 = fxFbm3AA(q * 9.0, px * 9.0), n2 = fxNoiseAA(q * 70.0, px * 70.0);
         diffuseColor.rgb *= mix(1.0, 0.82 + 0.36 * n1, near * 0.9) * mix(1.0, 0.9 + 0.2 * n2, near * (1.0 - smoothstep(0.5, 4.0, d)));
         // mowing stripes on the airfield grass, along its main runway
-        diffuseColor.rgb *= 1.0 + grass * fxStripe(vFxW.xz) * (1.0 - smoothstep(10.0, 60.0, d));
+        diffuseColor.rgb *= 1.0 + grass * fxStripe(vFxW.xz, px) * (1.0 - smoothstep(10.0, 60.0, d));
       }
       // snow lying on open ground; thinner on slopes and where the map shows dark forest
-      float lie = fxSnow * smoothstep(0.55, 0.85, vFxN.y) * (0.75 + 0.25 * fxFbm3(q * 3.0));
+      float lie = fxSnow * smoothstep(0.55, 0.85, vFxN.y) * (0.75 + 0.25 * fxFbm3AA(q * 3.0, px * 3.0));
       lie *= mix(0.55, 1.0, smoothstep(0.06, 0.16, dot(c, vec3(0.33))));
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.93), clamp(lie, 0.0, 1.0));
       diffuseColor.rgb *= 1.0 - fxWet * 0.25 * (1.0 - lie);
@@ -281,9 +291,10 @@ function paveMaterial(o) {
     grassIBL(sh);
     sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', 'float fxGrass = 0.0;', `
       fxGrass = fxGrassOf(diffuseColor.rgb);
+      float fxPx = length(fwidth(vFxW.xz));
       // the airport's picture is a square: its grass gives way to the country's in a ragged ring, not a straight edge
       if (fxPad > 0.0 && fxGrass > 0.3) { vec2 pu = (vFxW.xz - fxLmBox.xy) / fxLmBox.z - 0.5; if (length(pu) * 2.0 > 0.72 + 0.22 * fxFbm3(vFxW.xz * 0.35)) discard; }
-      if (fxGrass > 0.0) diffuseColor.rgb = fxGrade(diffuseColor.rgb, fxGrass, vFxW.xz) * (1.0 + fxGrass * fxStripe(vFxW.xz) * (1.0 - smoothstep(10.0, 60.0, length(vFxW - cameraPosition))));
+      if (fxGrass > 0.0) diffuseColor.rgb = fxGrade(diffuseColor.rgb, fxGrass, vFxW.xz, fxPx) * (1.0 + fxGrass * fxStripe(vFxW.xz, fxPx) * (1.0 - smoothstep(10.0, 60.0, length(vFxW - cameraPosition))));
       vec2 fxQ = mod(vFxW.xz, 400.0);
       float fxD = length(vFxW - cameraPosition);
       #ifdef USE_MAP
@@ -302,10 +313,10 @@ function paveMaterial(o) {
         diffuseColor.rgb *= 1.0 + fxNk * conc * ((fxNoise(floor(ro) * 0.37) - 0.5) * 0.07 - jn * 0.16);
       }
       #endif
-      float fxPud = smoothstep(0.52, 0.68, fxFbm3(fxQ * 4.0)) * fxWet * (1.0 - fxGrass);
-      if (fxDetail > 0.0) diffuseColor.rgb *= mix(1.0, 0.9 + 0.2 * fxNoise(fxQ * 60.0), 1.0 - smoothstep(0.5, 6.0, fxD));
+      float fxPud = smoothstep(0.52, 0.68, fxFbm3AA(fxQ * 4.0, fxPx * 4.0)) * fxWet * (1.0 - fxGrass);
+      if (fxDetail > 0.0) diffuseColor.rgb *= mix(1.0, 0.9 + 0.2 * fxNoiseAA(fxQ * 60.0, fxPx * 60.0), 1.0 - smoothstep(0.5, 6.0, fxD));
       diffuseColor.rgb *= 1.0 - fxWet * mix(0.35 + 0.25 * fxPud, 0.2, fxGrass);
-      float fxSn = fxSnow * mix(smoothstep(0.62, 0.8, fxFbm3(fxQ * 2.5)) * 0.8, 0.8 + 0.15 * fxFbm3(fxQ * 3.0), fxGrass);
+      float fxSn = fxSnow * mix(smoothstep(0.62, 0.8, fxFbm3AA(fxQ * 2.5, fxPx * 2.5)) * 0.8, 0.8 + 0.15 * fxFbm3AA(fxQ * 3.0, fxPx * 3.0), fxGrass);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.87, 0.9), fxSn);`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(mix(roughness, mix(0.3, 0.06, fxPud), fxWet) + fxSn * 0.1, 0.95, fxGrass);');
     sh.fragmentShader = inc(sh.fragmentShader, 'emissivemap_fragment', '', `if (fxLmBox.w > 0.0 && fxNight > 0.01) { vec2 u = (vFxW.xz - fxLmBox.xy) / fxLmBox.z; if (u.x > 0.0 && u.x < 1.0 && u.y > 0.0 && u.y < 1.0) totalEmissiveRadiance += diffuseColor.rgb * texture2D(fxLm, vec2(u.x, 1.0 - u.y)).rgb * fxNight * 1.5; }`);
@@ -679,7 +690,7 @@ function starMesh() {
    the airport's own picture (its pad, where the pavement is) keeps them off runways and aprons; the wind bends them */
 const GRASS_V = VHEAD + NOISE + `
 attribute vec4 seed; uniform vec3 camAt; uniform float area; uniform float gy; uniform vec4 apt; uniform sampler2D pad; uniform vec4 padBox;
-uniform vec2 wind; uniform float time; uniform float hk; uniform vec3 sunDir;
+uniform vec2 wind; uniform float time; uniform float hk; uniform vec3 sunDir; uniform float scrH;
 varying vec3 vC; varying float vK; varying vec2 vU; varying float vB;
 void main() {
   vec2 c = camAt.xz + (fract(seed.xy - camAt.xz / area) - 0.5) * area;
@@ -695,7 +706,12 @@ void main() {
   p.xz = mat2(ca, -sa, sa, ca) * p.xz;
   float bend = p.y / 0.006;
   p.xz += wind * bend * bend * (0.6 + 0.4 * sin(time * 2.1 + seed.x * 40.0 + c.x * 3.0));
-  vec3 w = vec3(c.x, gy, c.y) + p;
+  // a blade a pixel or two wide (about 40% of its height) lands on different pixels every frame and sparkles: tufts
+  // shrink away before that
+  vec3 root = vec3(c.x, gy, c.y);
+  float tall = 0.006 * s * hk / max(length(root - cameraPosition), 1e-4) * projectionMatrix[1][1] * 0.5 * scrH;
+  p *= smoothstep(7.0, 16.0, tall);
+  vec3 w = root + p;
   vec3 base = mix(vec3(0.16, 0.22, 0.08), vec3(0.3, 0.33, 0.14), seed.z) * (0.8 + 0.4 * fxNoise(c * 6.0));
   vC = base * (0.45 + 0.55 * bend); vK = ok; vU = vec2(u.x, 1.0 - u.y); vB = (0.3 + 0.5 * bend) * (0.75 + 0.4 * fxNoise(c * 6.0));
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
@@ -733,7 +749,7 @@ function grassMesh(F, n) {
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
   F.grassU = { camAt: { value: new THREE.Vector3() }, area: { value: 1.2 }, gy: { value: 0 }, apt: { value: new THREE.Vector4(0, 0, -1, 0) }, pad: { value: null }, padBox: { value: new THREE.Vector4(0, 0, 1, 0) },
-    wind: { value: new THREE.Vector2() }, time: G.time, hk: { value: 1 }, sunDir: G.sunDir, sunCol: G.sunCol, ambCol: G.ambCol, snow: G.snow };
+    wind: { value: new THREE.Vector2() }, time: G.time, hk: { value: 1 }, scrH: { value: 800 }, sunDir: G.sunDir, sunCol: G.sunCol, ambCol: G.ambCol, snow: G.snow };
   const o = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: F.grassU, vertexShader: GRASS_V, fragmentShader: GRASS_F, side: THREE.DoubleSide, fog: false }));
   o.visible = false;
   return o;
@@ -893,7 +909,10 @@ float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.545
 void main() {
   float d = texture2D(tDepth, vUv).x; if (d > 0.9999) { gl_FragColor = vec4(1.0); return; }
   vec3 P = vpos(vUv), N = normalize(cross(dFdx(P), dFdy(P)));
-  float rad = clamp(-P.z * 0.025, 0.004, 2.0), occ = 0.0, a0 = hash(vUv * res) * 6.2832;
+  // the kernel turns by a 4 × 4 pattern fixed to the pixels (not a random one): the blur's 4 × 4 window then holds
+  // every turn once and the pattern cancels, where random turns left a grain that crawled as the camera moved
+  vec2 cell = mod(floor(gl_FragCoord.xy), 4.0);
+  float rad = clamp(-P.z * 0.025, 0.004, 2.0), occ = 0.0, a0 = (dot(cell, vec2(1.0, 4.0)) * 0.4375 + 0.5 / 16.0) * 6.2832;
   for (int i = 0; i < 10; i++) {
     float fi = float(i), a = a0 + fi * 2.3999, r = sqrt((fi + 0.5) / 10.0);
     vec3 dir = normalize(vec3(cos(a) * r, sin(a) * r, sqrt(max(0.0, 1.0 - r * r))));
@@ -907,7 +926,7 @@ void main() {
   gl_FragColor = vec4(vec3(1.0 - occ / 10.0), 1.0);
 }`;
 const AOBLUR_F = `uniform sampler2D tAO; uniform vec2 px; varying vec2 vUv;
-void main() { float s = 0.0; for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) s += texture2D(tAO, vUv + vec2(float(i), float(j)) * px).r; gl_FragColor = vec4(vec3(s / 25.0), 1.0); }`;
+void main() { float s = 0.0; for (int i = -2; i <= 1; i++) for (int j = -2; j <= 1; j++) s += texture2D(tAO, vUv + vec2(float(i), float(j)) * px).r; gl_FragColor = vec4(vec3(s / 16.0), 1.0); }`;
 const RES_F = LOGD + NOISE + `
 uniform sampler2D tCol; uniform sampler2D tDepth; uniform sampler2D tAO; uniform vec2 px; uniform float useAO; uniform float aoK;
 uniform mat4 invProj; uniform mat4 camWorld; uniform mat4 prevVP; uniform float mblur; uniform float focus; uniform float coc; uniform float shimmer; uniform float time; uniform float groundY;
@@ -946,12 +965,15 @@ void main() {
 }`;
 const DOWN_F = `uniform sampler2D t; uniform vec2 px; uniform float first; uniform float thr; varying vec2 vUv;
 // a glint off glass or a puddle can pass what a half float holds: every sample is kept finite first
-vec3 s(vec2 o) { vec3 c = texture2D(t, vUv + o * px).rgb; if (!(c.r == c.r && c.g == c.g && c.b == c.b)) return vec3(0.0); return clamp(c, 0.0, first > 0.0 ? 30.0 : 1e4); }
+// in the first pass each sample counts less the brighter it is (a Karis average): a glint a pixel wide, a runway
+// light or the sun off a windscreen, then blooms as much as its neighbours do, not on one frame and off the next
+vec3 s(vec2 o) { vec3 c = texture2D(t, vUv + o * px).rgb; if (!(c.r == c.r && c.g == c.g && c.b == c.b)) return vec3(0.0); c = clamp(c, 0.0, first > 0.0 ? 30.0 : 1e4); return first > 0.0 ? c / (1.0 + max(c.r, max(c.g, c.b))) : c; }
 void main() {
   vec3 c = s(vec2(0.0)) * 0.125 + (s(vec2(-1.0, -1.0)) + s(vec2(1.0, -1.0)) + s(vec2(-1.0, 1.0)) + s(vec2(1.0, 1.0))) * 0.125
     + (s(vec2(-2.0, 0.0)) + s(vec2(2.0, 0.0)) + s(vec2(0.0, -2.0)) + s(vec2(0.0, 2.0))) * 0.0625
     + (s(vec2(-2.0, -2.0)) + s(vec2(2.0, -2.0)) + s(vec2(-2.0, 2.0)) + s(vec2(2.0, 2.0))) * 0.03125;
   if (!(c.r == c.r && c.g == c.g && c.b == c.b)) c = vec3(0.0);
+  if (first > 0.0) c /= max(1.0 - max(c.r, max(c.g, c.b)), 0.02);   // back from the weighted average
   if (first > 0.0) { float l = max(c.r, max(c.g, c.b)); float k = clamp(l - thr, 0.0, 2.0 * 0.5); k = k * k / (4.0 * 0.5 + 1e-4); c *= max(k, l - thr) / max(l, 1e-4); c = min(c, vec3(40.0)); }
   gl_FragColor = vec4(c, 1.0);
 }`;
@@ -1197,7 +1219,7 @@ function airportsNear(v, cp) {
       // the tufts gather where the camera looks, a little in front of it
       u.camAt.value.set(cp.x + (look.x - cp.x) * 0.5, 0, cp.z + (look.z - cp.z) * 0.5);
       u.area.value = U.clamp(camH * 5 + 0.4, 0.4, 2.5); u.gy.value = A.f.e * v.hk + 0.003; u.apt.value.set(A.b.x - v.cx, A.b.y - v.cy, A.f.r0, 0);
-      u.pad.value = A.pad; u.padBox.value.set(A.box[0], A.box[1], A.box[2], 1); u.hk.value = v.hk * 3;
+      u.pad.value = A.pad; u.padBox.value.set(A.box[0], A.box[1], A.box[2], 1); u.hk.value = v.hk * 3; u.scrH.value = v.renderer.domElement.height || 800;
       const w = v.S.wind || { x: 0, y: 0 }; u.wind.value.set(w.x * 0.02, w.y * 0.02);
     }
   }
