@@ -344,6 +344,17 @@ function* worldSteps(seed) {
     W.villages.push({ id: 'v' + W.villages.length, kind: 'village', name: W.placeName(), x, y, pop: R.int(4, 40), home, k: W.countryAt(x, y), r: R.range(14, 26), grid: R.range(0, Math.PI / 2) });
     if (home) nHome++; else nAbroad++;
   }
+  // a clearing round every village (brief 54): its people felled the forest to its hedges, so a village in the woods
+  // stands in a field of its own and the trees are not painted over its houses
+  { const base = W.forestD, VG = 64, vg = new Map(), vk = (i, j) => j * 4096 + i;
+    for (const v of W.villages) { const rr = v.r * 1.5; for (let j = Math.floor((v.y - rr) / VG); j <= Math.floor((v.y + rr) / VG); j++) for (let i = Math.floor((v.x - rr) / VG); i <= Math.floor((v.x + rr) / VG); i++) { const k = vk(i, j); let l = vg.get(k); if (!l) vg.set(k, l = []); l.push(v); } }
+    W.forestD = (x, y) => {
+      let d = base(x, y); if (d <= 0) return d;
+      const l = vg.get(vk(Math.floor(x / VG), Math.floor(y / VG)));
+      if (l) for (const v of l) { const t = 1 - U.dxy(x, y, v.x, v.y) / (v.r * 1.5); if (t > 0) d -= 0.5 * Math.min(1, t * 2.5); }
+      return d;
+    };
+    W.forestAt = (x, y) => W.forestD(x, y) > IC.FOREST_T; }
 
   /* ---------- infrastructure ---------- */
   W.infra = [];
@@ -590,13 +601,16 @@ function* worldSteps(seed) {
   yield 'junctions';
   // the built-up ground: every block with its yard, in 200 m cells (no fields there, and it counts as town);
   // abroad the fields run up to the towns' blocks
-  for (const t of W.cities) for (const b of t.blocks) {
-    const e = Math.max(b.w, b.h) / 2 + 0.8;
+  const markBuilt = (b, pad) => {
+    const e = Math.max(b.w, b.h) / 2 + pad;
     for (let i = Math.floor((b.x - e) / BC); i <= Math.floor((b.x + e) / BC); i++) for (let j = Math.floor((b.y - e) / BC); j <= Math.floor((b.y + e) / BC); j++) {
       built.add(bkey(i, j));
       const ci = Math.floor(i / BCK), cj = Math.floor(j / BCK); if (ci >= 0 && cj >= 0 && ci < FGW && cj < FGH) builtC[cj * FGW + ci] = 1;
     }
-  }
+  };
+  for (const t of W.cities) for (const b of t.blocks) markBuilt(b, 0.8);
+  // a village's gardens, yards and green are not fields either (brief 54)
+  for (const v of W.villages) if (v.plan && v.home) { for (const q of v.plan.plots) markBuilt(q, 0.2); for (const q of v.plan.yards) markBuilt(q, 0.2); if (v.plan.green) markBuilt({ x: v.plan.green.x, y: v.plan.green.y, w: v.plan.green.rx * 2, h: v.plan.green.ry * 2 }, 0.2); }
   junctions(W);
   // bounding boxes, so drawing and traffic can skip lines out of view
   const bbox = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; } l.bb = [x0, y0, x1, y1]; };
@@ -1278,7 +1292,7 @@ function buildTowns(W, R, fbm) {
     if (!v.swallowed) for (const c of W.cities) if (U.dist(c, v) < c.r * 1.7 && c.blocks.some(b => Math.abs(b.x - v.x) < vr && Math.abs(b.y - v.y) < vr && U.dist(b, v) < vr)) v.swallowed = c.id;
     if (v.swallowed) { v.blocks = []; continue; }
     // (brief 54: a plan, village.js; abroad the same plan on whatever roads there are)
-    const segs = segsNear(v.x, v.y, v.r * 1.3);
+    const segs = segsNear(v.x, v.y, v.r * 1.3 + 8);   // (room for the street of the biggest, 1.4 km)
     IC.buildVillage(W, v, R, segs);
   }
   // abroad: the enemy's towns are built to their own plan; the neutral neighbours' look like ours

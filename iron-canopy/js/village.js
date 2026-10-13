@@ -7,7 +7,7 @@
 const U = IC.U;
 
 /* the road through the village: the chain of road pieces nearest its centre, up to `len` long, as a polyline */
-function streetOf(v, segs, len) {
+function streetOf(v, segs, len, W, R) {
   const road = segs.filter(s => s[4] !== 'hw' && s[4] !== 'rail');
   if (!road.length) return null;
   let best = null, bd = 1e9;
@@ -36,11 +36,23 @@ function streetOf(v, segs, len) {
       if (!next || bt < 0) break;
       used.add(next.s); nx = next.b;
     }
+    // where the road ends short (a village at the end of its road), the street runs on as a lane of the village's own
+    if (left > 0.6 && out.length) {
+      const o = out.length > 1 ? out[out.length - 2] : from, e = out[out.length - 1]; let a = Math.atan2(e.y - o.y, e.x - o.x), x = e.x, y = e.y;
+      const ext = [{ x, y }];
+      for (let d = 0; d < left; d += 0.5) {
+        x += Math.cos(a) * 0.5; y += Math.sin(a) * 0.5;
+        if (W.inLake(x, y) || W.forestAt(x, y) || !W.inHome(x, y) === !!v.home) break;
+        ext.push({ x, y }); out.push({ x, y }); a += R.range(-0.1, 0.1);
+      }
+      if (ext.length > 1) exts.push(ext);
+    }
     return out;
   };
+  const exts = [];
   const back = walk(foot, { x: best[0], y: best[1] }, len / 2), fwd = walk(foot, { x: best[2], y: best[3] }, len / 2);
   const pts = back.reverse().concat([foot], fwd);
-  return pts.length >= 2 ? pts : null;
+  return pts.length >= 2 ? { pts, exts } : null;
 }
 /* along a polyline: the point and heading at distance s */
 function at(pts, s) {
@@ -73,14 +85,15 @@ IC.buildVillage = function (W, v, R, segs) {
   };
   const house = (x, y, w, h, a, kind) => { const b = { x, y, w, h, a, seed: R() * 1000, hp: 1 }; if (kind) b.kind = kind; v.blocks.push(b); return b; };
   const rotXY = (x, y, a, u, w) => ({ x: x + Math.cos(a) * u - Math.sin(a) * w, y: y + Math.sin(a) * u + Math.cos(a) * w });
-  // the street: 300 m for a hamlet, up to 700 m for the biggest, with the centre in the middle
-  const len = U.clamp(2.5 + v.pop * 0.16, 3, 9);
-  let street = streetOf(v, segs, len);
-  const ga = v.grid;
-  if (!street) street = [{ x: v.x - Math.cos(ga) * len / 2, y: v.y - Math.sin(ga) * len / 2 }, { x: v.x + Math.cos(ga) * len / 2, y: v.y + Math.sin(ga) * len / 2 }];
+  // the street: 300 m for a hamlet, up to 1.4 km for the biggest (pop is in hundreds), the centre in the middle
+  const len = U.clamp(2.5 + v.pop * 0.3, 3, 14);
+  const so = streetOf(v, segs, len, W, R), ga = v.grid;
+  const street = so ? so.pts : [{ x: v.x - Math.cos(ga) * len / 2, y: v.y - Math.sin(ga) * len / 2 }, { x: v.x + Math.cos(ga) * len / 2, y: v.y + Math.sin(ga) * len / 2 }];
   const SL = plLen(street);
   const form = v.pop < 9 ? 'hamlet' : v.pop >= 14 && R() < 0.55 ? 'green' : 'street';
   const plan = v.plan = { form, street, lanes: [], plots: [], green: null, church: null, yards: [] };
+  // (the street beyond the road's end, or all of it where no road reaches the village, is a lane the traffic drives)
+  for (const ext of so ? so.exts : [street]) plan.lanes.push({ cls: 'ln', pts: ext, village: v.id });
   // a farm: a yard with two or three sheds round it
   const farm = (x, y, a) => {
     if (wet(x, y) || onRoad(x, y, 0.5) || !free(x, y, 1.4, 1.1, a)) return false;
@@ -95,7 +108,7 @@ IC.buildVillage = function (W, v, R, segs) {
   // a plot fronting a line at s along it, on `side`: a garden with the house at its front
   const plot = (pts, s, side, depth, big) => {
     const p = at(pts, s); if (!p) return false;
-    const fw = R.range(0.35, big ? 0.7 : 0.55);   // frontage 35–70 m, the house 10 m back from the road edge
+    const fw = R.range(0.24, big ? 0.55 : 0.42);   // frontage 24–55 m, the house 10 m back from the road edge
     const c = rotXY(p.x, p.y, p.a, 0, side * (0.1 + depth / 2)), q = { x: c.x, y: c.y, w: fw * 0.92, h: depth, a: p.a };
     if (wet(c.x, c.y) || !free(c.x, c.y, fw, depth, p.a) || onRoad(c.x, c.y, depth / 2 - 0.08)) return false;
     plan.plots.push(q); taken.push(q);
@@ -123,7 +136,7 @@ IC.buildVillage = function (W, v, R, segs) {
   for (const side of [1, -1]) {
     let s = 0.2;
     while (s < SL - 0.3) {
-      const w = R.range(0.38, 0.72), mid = Math.abs(s + w / 2 - SL / 2) / (SL / 2);
+      const w = R.range(0.26, 0.55), mid = Math.abs(s + w / 2 - SL / 2) / (SL / 2);
       const overGreen = plan.green && side === gside && Math.abs(s + w / 2 - SL / 2) < plan.green.rx + 0.1;
       if (!overGreen && R() < dense + 0.35 * (1 - mid)) plot(street, s + w / 2, side, R.range(0.55, 0.95), mid < 0.4);
       s += w + (R() < 0.15 ? R.range(0.3, 0.8) : 0.04);
@@ -135,23 +148,32 @@ IC.buildVillage = function (W, v, R, segs) {
     const q = rotXY(p.x, p.y, p.a, e ? 0.3 : -0.3, (R() < 0.5 ? 1 : -1) * R.range(0.9, 1.3));
     farm(q.x, q.y, p.a + R.range(-0.3, 0.3));
   }
-  // lanes off the street: one to three, out across the fields, with a few plots and maybe a farm at the end
-  const nl = form === 'hamlet' ? R.int(1, 2) : v.pop > 20 ? R.int(2, 4) : R.int(1, 3);
-  for (let k = 0; k < nl; k++) {
-    const s0 = SL * (0.2 + 0.6 * (k + R()) / nl), p = at(street, s0); if (!p) continue;
-    const side = plan.green && Math.abs(s0 - SL / 2) < plan.green.rx + 0.3 ? -gside : (R() < 0.5 ? 1 : -1);
+  // lanes off the street, out across the fields, with plots along them and maybe a farm at the end: a hamlet has one
+  // or two, a village as many as its people need (pop is in hundreds: about five houses a hundred), and a lane may
+  // fork into a back lane, so a big village is a small net of lanes rather than one long street
+  const want = form === 'hamlet' ? 0 : v.pop * 5, maxL = form === 'hamlet' ? R.int(1, 2) : 14;
+  const lane = (p, side, L0, depth) => {
     let a = p.a + side * Math.PI / 2 + R.range(-0.25, 0.25), x = p.x, y = p.y;
-    const pts = [{ x, y }], L = R.range(1.2, v.pop > 20 ? 4 : 3);
+    const pts = [{ x, y }], L = L0;
     for (let d = 0; d < L; d += 0.25) {
       x += Math.cos(a) * 0.25; y += Math.sin(a) * 0.25;
       if (wet(x, y) || W.forestAt(x, y) || (d > 0.4 && onRoad(x, y, 0.3)) || !W.inHome(x, y) === !!v.home) break;
       pts.push({ x, y }); a += R.range(-0.12, 0.12);
     }
-    if (plLen(pts) < 0.8) continue;
+    if (plLen(pts) < 0.8) return false;
     plan.lanes.push({ cls: 'ln', pts, village: v.id });
     const LL = plLen(pts), ls = R() < 0.5 ? 1 : -1;
-    for (let s = 0.45; s < LL - 0.4; s += R.range(0.42, 0.8)) { if (R() < 0.65) plot(pts, s, ls, R.range(0.5, 0.8), false); if (R() < 0.3) plot(pts, s + 0.2, -ls, R.range(0.5, 0.8), false); }
-    if (R() < 0.35) { const e = pts[pts.length - 1], q = at(pts, LL - 0.01); farm(e.x + Math.cos(q.a) * 0.6, e.y + Math.sin(q.a) * 0.6, q.a); }
+    // (built up near the street, thinning to the odd house further out)
+    for (let s = 0.45; s < LL - 0.4; s += R.range(0.3, 0.5)) { const near = 1 - s / LL; if (R() < 0.5 + 0.45 * near) plot(pts, s, ls, R.range(0.5, 0.8), false); if (R() < 0.3 + 0.4 * near) plot(pts, s + 0.15, -ls, R.range(0.5, 0.8), false); }
+    if (depth < 2 && LL > 2 && R() < 0.7) { const q = at(pts, LL * R.range(0.4, 0.75)); if (q) lane(q, R() < 0.5 ? 1 : -1, L0 * R.range(0.5, 0.8), depth + 1); }
+    else if (R() < 0.35) { const e = pts[pts.length - 1], q = at(pts, LL - 0.01); farm(e.x + Math.cos(q.a) * 0.6, e.y + Math.sin(q.a) * 0.6, q.a); }
+    return true;
+  };
+  for (let k = 0, tries = 0; (k < 2 || v.blocks.length < want) && k < maxL && tries < 40; tries++) {
+    const s0 = SL * (0.12 + 0.76 * R()), p = at(street, s0); if (!p) continue;
+    const side = plan.green && Math.abs(s0 - SL / 2) < plan.green.rx + 0.3 ? -gside : (R() < 0.5 ? 1 : -1);
+    if (plan.lanes.some(l => U.dxy(l.pts[0].x, l.pts[0].y, p.x, p.y) < 0.7)) continue;   // not two lanes from one spot
+    if (lane(p, side, R.range(1.5, U.clamp(1.5 + v.pop * 0.1, 2.5, 5)), 0)) k++;
   }
   // (a village with nothing built, in the water or the forest, keeps a few houses so it is still a place)
   if (v.blocks.length < 4) for (let k = 0; k < 6; k++) { const x = v.x + R.gauss() * v.r * 0.3, y = v.y + R.gauss() * v.r * 0.3; if (!wet(x, y) && !onRoad(x, y, 0.3)) house(x, y, R.range(0.12, 0.2), R.range(0.08, 0.11), v.grid); }

@@ -514,7 +514,8 @@ function villageGround(g, plan, lod) {
   const rect = (q, inset) => { g.save(); g.translate(q.x, q.y); g.rotate(q.a); g.fillRect(-q.w / 2 + inset, -q.h / 2 + inset, q.w - 2 * inset, q.h - 2 * inset); g.restore(); };
   for (const q of plan.plots) {
     g.fillStyle = 'rgba(78,104,58,0.55)'; rect(q, 0);   // the hedge round the garden
-    g.fillStyle = lod >= 3 ? 'rgba(112,138,80,0.9)' : 'rgba(104,128,76,0.85)'; rect(q, 0.03);
+    // (from the town zoom the gardens are the warm built ground a village reads as; close in they are green)
+    g.fillStyle = lod >= 3 ? 'rgba(112,138,80,0.9)' : 'rgba(134,134,104,0.9)'; rect(q, 0.03);
     if (lod >= 3) { g.fillStyle = 'rgba(150,140,110,0.5)'; g.save(); g.translate(q.x, q.y); g.rotate(q.a); g.fillRect(-q.w / 2 + 0.06, -q.h / 2 + 0.03, 0.04, q.h * 0.5); g.restore(); }   // a drive
   }
   for (const y of plan.yards) { g.fillStyle = 'rgb(150,136,108)'; rect(y, 0); if (lod >= 3) { g.fillStyle = 'rgba(120,108,84,0.5)'; rect(y, 0.08); } }
@@ -540,6 +541,7 @@ function block(g, b, lod, foreign, town) {
   if (!town) {
     // village houses and farmyards
     if (lod < 2) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-b.w / 2 + (lod ? 0.5 : 1.5), -b.h / 2 + (lod ? 0.5 : 1.5), b.w, b.h); }
+    else { g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-b.w / 2 + 0.025, -b.h / 2 + 0.025, b.w, b.h); }   // a shadow, so a house reads on the green
     const c = b.kind === 'church' ? [128, 118, 104] : b.kind === 'farm' || b.kind === 'shed' ? [132, 124, 110] : foreign ? [150, 146, 136] : ROOFS[sd % 3];
     g.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.9)`; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
     if (lod >= 2) { g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h * 0.45); }
