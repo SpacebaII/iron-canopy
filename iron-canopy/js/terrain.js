@@ -505,8 +505,24 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   for (const v of W.villages) {
     if (!inb(v.x - 90, v.y - 90, v.x + 90, v.y + 90)) continue;
     const foreign = v.kind === 'ftown' || !v.home;
+    if (v.plan && lod >= 1) villageGround(g, v.plan, lod);
     for (const b of v.blocks) if (inT(b.x - 2, b.y - 2, b.x + 2, b.y + 2)) block(g, b, lod, foreign);
   }
+}
+/* a village's ground (brief 54): hedged gardens behind the houses, farmyards, the green and the churchyard */
+function villageGround(g, plan, lod) {
+  const rect = (q, inset) => { g.save(); g.translate(q.x, q.y); g.rotate(q.a); g.fillRect(-q.w / 2 + inset, -q.h / 2 + inset, q.w - 2 * inset, q.h - 2 * inset); g.restore(); };
+  for (const q of plan.plots) {
+    g.fillStyle = 'rgba(78,104,58,0.55)'; rect(q, 0);   // the hedge round the garden
+    g.fillStyle = lod >= 3 ? 'rgba(112,138,80,0.9)' : 'rgba(104,128,76,0.85)'; rect(q, 0.03);
+    if (lod >= 3) { g.fillStyle = 'rgba(150,140,110,0.5)'; g.save(); g.translate(q.x, q.y); g.rotate(q.a); g.fillRect(-q.w / 2 + 0.06, -q.h / 2 + 0.03, 0.04, q.h * 0.5); g.restore(); }   // a drive
+  }
+  for (const y of plan.yards) { g.fillStyle = 'rgb(150,136,108)'; rect(y, 0); if (lod >= 3) { g.fillStyle = 'rgba(120,108,84,0.5)'; rect(y, 0.08); } }
+  if (plan.green) {
+    const G = plan.green; g.fillStyle = 'rgb(92,132,68)'; g.beginPath(); g.ellipse(G.x, G.y, G.rx, G.ry, G.a, 0, 7); g.fill();
+    if (lod >= 3) trees(g, [G.x + G.rx * 0.4, G.y, G.x - G.rx * 0.35, G.y + G.ry * 0.2, G.x, G.y - G.ry * 0.4], 0.12, 0.06);
+  }
+  if (plan.church) { const c = plan.church; g.fillStyle = 'rgba(140,150,120,0.8)'; rect({ x: c.x, y: c.y, w: 0.5, h: 0.4, a: c.a }, 0); }
 }
 const ROOFS = [[178, 110, 86], [164, 98, 78], [196, 190, 176], [140, 136, 128], [120, 118, 116]];
 // roofs by district and style: tiles in the old town, shingles and flat roofs further out, glass downtown
@@ -524,9 +540,10 @@ function block(g, b, lod, foreign, town) {
   if (!town) {
     // village houses and farmyards
     if (lod < 2) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-b.w / 2 + (lod ? 0.5 : 1.5), -b.h / 2 + (lod ? 0.5 : 1.5), b.w, b.h); }
-    const c = foreign ? [150, 146, 136] : ROOFS[sd % 3];
+    const c = b.kind === 'church' ? [128, 118, 104] : b.kind === 'farm' || b.kind === 'shed' ? [132, 124, 110] : foreign ? [150, 146, 136] : ROOFS[sd % 3];
     g.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.9)`; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
     if (lod >= 2) { g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h * 0.45); }
+    if (b.kind === 'church' && lod >= 2) { g.fillStyle = 'rgb(118,110,100)'; g.fillRect(b.w / 2 - 0.08, -0.05, 0.08, 0.1); }   // the tower
   } else if (lod < 2) {
     const c = FAR[d], v = (sd % 16) - 8;
     g.fillStyle = `rgba(${c[0] + v},${c[1] + v},${c[2] + v},${d === 'sub' ? 0.55 : 0.85})`;

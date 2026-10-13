@@ -1277,23 +1277,9 @@ function buildTowns(W, R, fbm) {
     const vr = v.r * 0.8;
     if (!v.swallowed) for (const c of W.cities) if (U.dist(c, v) < c.r * 1.7 && c.blocks.some(b => Math.abs(b.x - v.x) < vr && Math.abs(b.y - v.y) < vr && U.dist(b, v) < vr)) v.swallowed = c.id;
     if (v.swallowed) { v.blocks = []; continue; }
-    const segs = v.home ? segsNear(v.x, v.y, v.r * 1.3).filter(s => s[4] !== 'hw') : [];
-    const n = Math.round(24 + v.pop * 2.2);
-    v.blocks = [];
-    for (let k = 0, g = 0; k < n && g < n * 6; g++) {
-      let x, y, a;
-      if (segs.length && R() < 0.85) {
-        const s = R.pick(segs), t = R(), L = U.dxy(s[0], s[1], s[2], s[3]);
-        a = Math.atan2(s[3] - s[1], s[2] - s[0]);
-        const side = R() < 0.5 ? 1 : -1, off = R.range(0.7, 1.4) + (R() < 0.25 ? 1.2 : 0);
-        x = s[0] + (s[2] - s[0]) * t - Math.sin(a) * off * side; y = s[1] + (s[3] - s[1]) * t + Math.cos(a) * off * side;
-        if (U.dxy(x, y, v.x, v.y) > v.r * (0.5 + 0.7 * R()) || L < 1 || !clear(segs, x, y, 0.5)) continue;
-      } else { x = v.x + R.gauss() * v.r * 0.3; y = v.y + R.gauss() * v.r * 0.3; a = v.grid + R.range(-0.2, 0.2); }
-      if (W.inLake(x, y)) continue;
-      const farmYard = R() < 0.1;
-      v.blocks.push({ x, y, w: farmYard ? R.range(1.2, 2) : R.range(0.45, 0.9), h: farmYard ? R.range(0.8, 1.4) : R.range(0.4, 0.7), a, seed: R() * 1000, hp: 1 });
-      k++;
-    }
+    // (brief 54: a plan, village.js; abroad the same plan on whatever roads there are)
+    const segs = segsNear(v.x, v.y, v.r * 1.3);
+    IC.buildVillage(W, v, R, segs);
   }
   // abroad: the enemy's towns are built to their own plan; the neutral neighbours' look like ours
   for (const f of W.foreign) {
@@ -1308,6 +1294,8 @@ function buildTowns(W, R, fbm) {
   const mark = (x, y) => occ.add(Math.floor(x / OC) + ',' + Math.floor(y / OC));
   for (const e of W.edges) for (const p of e.pts) mark(p.x, p.y);
   for (const c of W.cities) for (const b of c.blocks) mark(b.x, b.y);
+  // the villages' own lanes first (village.js)
+  for (const v of W.villages) if (v.plan) for (const l of v.plan.lanes) { W.lanes.push(l); for (const p of l.pts) mark(p.x, p.y); }
   for (const e of W.edges) {
     if (e.cls !== 'lc' && e.cls !== 'rd') continue;
     // (a chance of a lane every 12 km or so of road, however many points the road has)
