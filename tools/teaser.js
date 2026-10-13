@@ -1,11 +1,13 @@
 /* The teaser (brief 60): "First Strike", a raid on the capital at dusk told in shots on the map and in the 3D view,
    filmed frame by frame on the game's held clock, scored by tools/teaser-score.js and cut together with ffmpeg.
      node tools/teaser.js [--out=docs/trailer/iron-canopy-first-strike.mp4] [--fps=30] [--w=1920 --h=1080]
-                          [--hour=19.6] [--stills] [--only=name,name]
+                          [--hour=19.6] [--q=high] [--stills] [--only=name,name] [--cut] [--probe]
    The raid is played once, live: the map's shots are filmed as it happens, then the 3D shots replay the record
    (the last 15 game minutes, which hold the whole raid). --stills saves one picture from the middle of each shot
    (shots/teaser/still-<name>.png) instead of filming, to look at the cut quickly; --only films just those shots
-   (the others' clips stay in shots/teaser/clips for the next full cut). Needs Playwright, three.js on disk and
+   (the others' clips stay in shots/teaser/clips); --cut only cuts the clips already filmed and scores them. --q is
+   the 3D view's quality; --probe times the first frames of each 3D shot. On a machine with no graphics card,
+   --q=medium --w=1280 --h=720 --fps=24 films the whole teaser in about 1½ hours. Needs Playwright, three.js on disk and
    ffmpeg (tools/film-lib.js). */
 const path = require('path');
 const fs = require('fs');
@@ -87,26 +89,24 @@ const PICK = () => {
   const cms = tracks.filter(tr => tr.kind === 'threat' && cls(tr) === 'cm');
   const tf = T0 + 560, cm = cms.find(tr => first(tr) < tf - 5 && tr.t1 > tf + 10) || cms[0];
   if (cm) { const p = pos(cm, tf + 2); out.flyby = { x: p.x, y: p.y, r: 80, t: 560, speed: [[0, 1], [1.7, 1], [2.2, 0.25], [3.2, 0.25], [4, 1]], cam: { mode: 'plant', ref: cm.ref, lead: 2.1, side: 0.45, up: 0.06, lens: 24, lag: 0.08, shake: 0.08 } }; }
-  // the medium-range battery fires
+  // the medium-range battery fires: the camera stays on the launcher, the missile leaves the frame in slow motion and its smoke stays
   const lm = ev.find(e => e.kind === 'launch' && e.u === 'mrsam');
   if (lm) {
     const u = S.units.find(q => q.id === lm.uid), ms = u && tracks.filter(tr => tr.kind === 'missile' && tr.meta.uref === u && Math.abs(first(tr) - (lm.t + T0)) < 3)[0];
     const a = R.A + 0.9;
-    if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: 1, cam: { mode: 'fixed', ref: ms ? ms.ref : null, at: { x: u.x, y: u.y, h: 4 }, from: { x: u.x + Math.cos(a) * 2.5, y: u.y + Math.sin(a) * 2.5, h: 1.7 }, lens: [35, 60], lag: 0.22, shake: 0.2 } };
+    if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: [[0, 1], [0.8, 1], [1.2, 0.25], [3.6, 0.3]], cam: { mode: 'fixed', at: { x: u.x, y: u.y, h: 45 }, from: { x: u.x + Math.cos(a) * 2.5, y: u.y + Math.sin(a) * 2.5, h: 1.7 }, lens: [32, 28], shake: 0.2 } };
     if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, lookAt: ms.meta.tref || null, back: 0.35, side: 0.08, up: 0.1, lens: 30, lag: 0.1, shake: 0.1 } };
   }
   // a cruise missile shot down: from the ground 1.2 km off with a long lens, slowing as it is hit
   const kcs = ev.filter(e => e.kind === 'kill' && e.cls === 'cm').sort((a, b) => U.dxy(a.x, a.y, R.fuel.x, R.fuel.y) - U.dxy(b.x, b.y, R.fuel.x, R.fuel.y)), kc = kcs[2] || kcs[0];
   if (kc) {
-    // the cruise missile it was: the track that ends there and then
-    const kt = cms.slice().sort((a, b) => (Math.abs(a.t1 - T0 - kc.t) + U.dxy(pos(a, a.t1).x, pos(a, a.t1).y, kc.x, kc.y)) - (Math.abs(b.t1 - T0 - kc.t) + U.dxy(pos(b, b.t1).x, pos(b, b.t1).y, kc.x, kc.y)))[0];
-    const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 1.9, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', ref: kt ? kt.ref : null, at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, lag: 0.3, shake: 0.06 } }; }
+    const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 1.9, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, lag: 0.3, shake: 0.06 } }; }
   // a ballistic missile met high up, seen from the ground 5 km off, looking up
   const kb = ev.find(e => e.kind === 'intercept' && e.cls === 'bal');
   if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.1, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: kb.x + Math.cos(R.A + 1.2) * 50, y: kb.y + Math.sin(R.A + 1.2) * 50, h: 2 }, lens: [200, 320], shake: 0.1 } };
   // what gets through: a cruise missile into the airport, then a ballistic one
   const ics = ev.filter(e => e.kind === 'impact' && e.cls === 'cm'), ic = ics[0], ib = ev.filter(e => e.kind === 'impact' && e.cls === 'bal')[0] || ics[ics.length - 1];
-  if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 60 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 12 }, lens: 45, lag: 0.1, shake: 0.12 } }; }
+  if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 45 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 12 }, lens: [60, 80], lag: 0.1, shake: 0.12 } }; }
   if (ib) { const o = perp(R.A + 1.2, 22); out.hit2 = { x: ib.x, y: ib.y, r: 120, t: ib.t - 1.0, speed: 1, cam: { mode: 'fixed', at: { x: ib.x, y: ib.y, h: 120 }, from: { x: ib.x + o.x, y: ib.y + o.y, h: 25 }, lens: 32, shake: 0.12 } }; }
   // after: the burning airport from the air, turning slowly, the game running at four times
   const last = ev.filter(e => e.kind === 'impact').slice(-1)[0], c0 = ic || ib || R.fuel;
@@ -128,7 +128,6 @@ const CUT = [
   { name: 'track', kind: '2d', dur: 3.6, at: 600, g: 10, cam: `({ kind: 'track', ref: nearest(C.ap, 'cm'), z: 6, lead: 0.3 })` },
   { name: 'wakes', kind: 'card', dur: 2, card: ['THE DEFENCE WAKES'], big: 84, rule: false },
   { name: 'sam', kind: '3d', dur: 3.6 },
-  { name: 'chase', kind: '3d', dur: 3.2 },
   { name: 'kill', kind: '3d', still: 0.75, dur: 4.4 },
   { name: 'raid', kind: '2d', dur: 4.4, at: 690, g: 14, cam: `({ kind: 'raid', ref: nearest(C.ap, 'cm'), with: [C.ap], pad: 200, zMax: 2.5 })` },
   { name: 'high', kind: '3d', still: 0.75, dur: 4 },
@@ -154,6 +153,13 @@ function speedAt(sp, f) {
   fs.mkdirSync(WORK, { recursive: true });
   const clips = path.join(WORK, 'clips'); fs.mkdirSync(clips, { recursive: true });
   const T = Date.now(), el = () => ((Date.now() - T) / 1000).toFixed(0) + ' s';
+  if (!flag('cut')) await film(clips, el);
+  if (STILLS || ONLY) return;
+  cut(clips, el);
+})();
+
+/* every shot (or those --only names), as clips in shots/teaser/clips */
+async function film(clips, el) {
   const cam = await open({ w: W, h: H, fps: FPS });
   console.log('setup', await cam.ev(SETUP(HOUR)), el());
   await cam.ev(q => { window.Q3D = q; }, Q3D);
@@ -163,7 +169,8 @@ function speedAt(sp, f) {
   const enc = (name, dir) => { execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%06d.jpg'), '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-pix_fmt', 'yuv420p', path.join(clips, name + '.mp4')]); fs.rmSync(dir, { recursive: true, force: true }); };
   const frames = s => Math.round(s.dur * FPS);
   const caption = s => cam.ev(c => IC.film.caption(c ? c[0] : null, c ? c[1] : '', 3.6), s.cap || null);
-  const log = { fps: FPS };
+  // what each 3D shot showed, kept from earlier runs for the shots this one does not film (--only)
+  let log = { fps: FPS }; try { log = Object.assign(JSON.parse(fs.readFileSync(path.join(WORK, 'shots.json'), 'utf8')), log); } catch (e) { /* the first run */ }
 
   // the map's shots, in the order the raid plays them
   for (const s of CUT.filter(s => s.kind === '2d')) {
@@ -232,9 +239,10 @@ function speedAt(sp, f) {
   if (cam.errors.length) console.log('page errors:\n  ' + cam.errors.slice(0, 8).join('\n  '));
   fs.writeFileSync(path.join(WORK, 'shots.json'), JSON.stringify(log));
   await cam.close();
-  if (STILLS || ONLY) return;
+}
 
-  // the cut: the clips end to end, the score under them
+/* the cut: the clips end to end, the score under them (--cut does only this, from the clips already filmed) */
+function cut(clips, el) {
   const list = path.join(WORK, 'list.txt');
   fs.writeFileSync(list, CUT.filter(s => fs.existsSync(path.join(clips, s.name + '.mp4'))).map(s => `file '${path.join(clips, s.name + '.mp4')}'`).join('\n'));
   const silent = path.join(WORK, 'picture.mp4');
@@ -244,4 +252,4 @@ function speedAt(sp, f) {
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-i', wav, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', OUT]);
   console.log('saved', OUT, el());
-})();
+}
