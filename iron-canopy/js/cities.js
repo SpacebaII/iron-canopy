@@ -495,7 +495,10 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     for (let d = 0.5; d < 14; d += 0.5) { const px = x + dx * d, py = y + dy * d; pts.push({ x: px, y: py }); L = d; if (wetBy(px, py) <= -1.0 && !W.inLake(px, py)) { if (blocked(px, py)) return null; bridges.n++; return pts; } }
     return null;
   };
+  // (seeds at the centre and in a ring round it, so a town whose centre is a square, with no road or ring to seed
+  // from, is still traced)
   const seeds0 = [{ x: c.x, y: c.y, fam: 0 }, { x: c.x, y: c.y, fam: 1 }];
+  for (let k = 0; k < 8; k++) for (const rr of [SP * 2.5, c.r * 0.5]) { const a = k / 8 * Math.PI * 2 + c.grid; seeds0.push({ x: c.x + Math.cos(a) * rr, y: c.y + Math.sin(a) * rr, fam: 0 }, { x: c.x + Math.cos(a) * rr, y: c.y + Math.sin(a) * rr, fam: 1 }); }
   for (const l of streets) if (l.ring || l.radial) { const m = l.pts[l.pts.length >> 1]; seeds0.push({ x: m.x, y: m.y, fam: 0 }, { x: m.x, y: m.y, fam: 1 }); }
   const base = { fld: FLD, blocked, cross, box: [rx0, ry0, rx0 + rn * RES, ry0 + rn * RES] };
   const arts = IC.fabricTrace(Object.assign({}, base, { lines: streets.map(l => ({ pts: l.pts, seed: true })).concat(roadLines), seeds: seeds0, dsep: (x, y, fam) => sizeAt(x, y, fam) * IC.FABRIC.art, maxLen: 200, cell: 4, step: 0.6 }));
@@ -503,9 +506,10 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const locals = IC.fabricTrace(Object.assign({}, base, { lines: streets.map(l => ({ pts: l.pts, seed: true })).concat(roadLines), seeds: seeds0, dsep: sizeAt, maxLen: 60, cross: null, cell: 1 }));
   for (const l of locals) streets.push({ cls: 'st', pts: l.pts, ends: l.ends });
   // a street that met nothing ends in a turning head; one run across the water carries a bridge
+  // (a bridge is kept as the two banks it joins, so the street's points may change under it)
   for (const l of streets) {
-    if (l.ends) { const hd = l.ends.map(e => e.to !== 'line' && e.to !== 'loop' ? 1 : 0); if (hd[0] || hd[1]) l.head = hd[0] + hd[1] * 2; l.ring = l.ends[1].to === 'loop' || l.ring; }
-    if (l.br && !l.br.length) delete l.br;
+    if (l.ends) { const hd = l.ends.map(e => HEAD_AT[e.to] ? 1 : 0), sp = l.ends.map(e => STOP_AT[e.to] ? 1 : 0); if (hd[0] || hd[1]) l.head = hd[0] + hd[1] * 2; if (sp[0] || sp[1]) l.stop = sp[0] + sp[1] * 2; l.ring = l.ends[1].to === 'loop' || l.ring; }
+    if (l.br) { l.br = l.br.map(([a, b]) => [l.pts[a].x, l.pts[a].y, l.pts[b].x, l.pts[b].y]); if (!l.br.length) delete l.br; }
   }
   /* the blocks: the faces of the net (streets, avenues, roads, and the city's edge, the banks and the shores as
      lines nothing draws), each with the rectangle that fits it, set back from the kerbs */
@@ -549,7 +553,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     if (squaresAt.some(q => inRect(q, fc.x, fc.y, 0)) || parkRects.some(q => inRect(q, fc.x, fc.y, 0))) continue;
     if (W.inLake(fc.x, fc.y) || wetBy(fc.x, fc.y) > -0.5) continue;
     const old = x.d === 'old', sz = (SZ[x.d] || SZ.sub) * sizeK;
-    const rc = IC.fabricRect(fc, old || x.d === 'biz' || x.d === 'dense' ? 0.55 : 0.75);
+    const rc = IC.fabricRect(fc, old ? 0.4 : x.d === 'biz' || x.d === 'dense' ? 0.5 : 0.65);
     if (!rc) continue;
     if (parkCells.has(x.k)) { parksL.push({ x: rc.x, y: rc.y, rx: rc.w * 0.48, ry: rc.h * 0.46, a: rc.a }); continue; }
     // a face the streets left too large is several blocks with lanes between
@@ -561,13 +565,17 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     }
   }
   c.streets = streets; c.blocks = blocks; c.parks = parksL; c.squares = squares;
-  if (IC.DBG) console.log('DBG', c.name, 'arts', arts.length, 'locals', locals.length, 'streets', streets.length, 'faces', faces.length, 'blocks', blocks.length, 'heads', streets.filter(l => l.head).length);
-  tieStreets(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'), SP);
-  if (IC.DBG) console.log('DBG dead', c.streets.filter(l => l.deadEnd && !l.ring && !l.head).length);
-  // what could not be tied, and has no head of its own, is a stub: take it away
-  c.streets = c.streets.filter(l => !l.deadEnd || l.ring || l.head);
+  // what could not be tied, and has no head of its own, is a stub: take it away, and tie again, since an end that
+  // stood on it is loose now (a few rounds settle it)
+  const tieSegs = roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'), hwSegs = roads.filter(s => s[4] === 'hw');
+  for (let round = 0; round < 4; round++) {
+    const n = c.streets.length;
+    for (const l of c.streets) delete l.deadEnd;
+    tieStreets(c, tieSegs, SP, hwSegs);
+    c.streets = c.streets.filter(l => !l.deadEnd || l.ring || l.head || l.stop);
+    if (c.streets.length === n) break;
+  }
   for (const l of c.streets) { if (l.deadEnd) delete l.deadEnd; delete l.ends; }
-  if (IC.DBG) { const b4 = c.streets.length; dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail')); console.log('DBG drop', b4, '->', c.streets.length); } else
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
   c.mix = IC.cityMix(c);
@@ -806,7 +814,7 @@ IC.cityGrowCell = function (c, i, j, d, q, R, open) {
   const inside = (x, y) => { if (inRect(x, y, 0)) return true; const [u, v] = F.toG(x, y), di = Math.floor(u / SP) - i, dj = Math.floor(v / SP) - j; return inRect(x, y, sz * 0.6) && (di || dj) && !open(Math.sign(di), Math.sign(dj)); };
   const blocked = (x, y) => !inside(x, y) ? 2 : W.inLake(x, y) ? 'water' : W.riverDist(x, y) < 2 ? 'water' : hwNear(x, y) ? 'hw' : 0;
   const lines = IC.fabricTrace({ fld: FLD, blocked, lines: near, seeds: [{ x: rc.x, y: rc.y, fam: 0 }, { x: rc.x, y: rc.y, fam: 1 }], dsep: () => sz, maxLen: SP * 3 });
-  const streets = lines.map(l => { const hd = l.ends.map(e => e.to !== 'line' && e.to !== 'loop' ? 1 : 0); const s = { cls: 'st', pts: l.pts, grown: true }; if (hd[0] || hd[1]) s.head = hd[0] + hd[1] * 2; return s; });
+  const streets = lines.map(l => { const hd = l.ends.map(e => HEAD_AT[e.to] ? 1 : 0), sp = l.ends.map(e => STOP_AT[e.to] ? 1 : 0); const s = { cls: 'st', pts: l.pts, grown: true }; if (hd[0] || hd[1]) s.head = hd[0] + hd[1] * 2; if (sp[0] || sp[1]) s.stop = sp[0] + sp[1] * 2; return s; });
   // the faces of the cell: its new streets, the ones near by, and its own edges
   const faceLines = near.map(l => ({ pts: l.pts, w: l.w })).concat(lines.map(l => ({ pts: l.pts, w: HALF.st + 0.15 })), [{ pts: P.concat([P[0]]), w: 0.25, virt: true }]);
   const blocks = [], D2 = IC.DISTRICTS[d];
@@ -818,16 +826,22 @@ IC.cityGrowCell = function (c, i, j, d, q, R, open) {
   return { blocks, streets };
 };
 
+/* where a street that met nothing ends in a turning head: at the city's edge, short of a motorway or an airfield (at a
+   bank or a square it simply ends) */
+const HEAD_AT = { edge: 1, hw: 1, field: 1, turn: 1, long: 1 }, STOP_AT = { water: 1, sq: 1 };
 /* city streets end on another street or road: a loose end runs on to the next street it meets ahead, or turns to
    the nearest one close by; only a street with nothing near stays a cul-de-sac */
-function tieStreets(c, roadSegs, SP) {
-  const Bk = buckets(3);
+function tieStreets(c, roadSegs, SP, hwSegs) {
+  const Bk = buckets(3), HB = buckets(4); for (const s of hwSegs || []) HB.add(s);
+  // (a street is never run on across a motorway)
+  const overHw = (a, b) => { let x = false; HB.near((a.x + b.x) / 2, (a.y + b.y) / 2, U.dist(a, b) / 2 + 1, s => { if (!x && U.segX(a.x, a.y, b.x, b.y, s[0], s[1], s[2], s[3]) >= 0) x = true; }); return x; };
   c.streets.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) Bk.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]); });
   for (const r of roadSegs) Bk.add([r[0], r[1], r[2], r[3], -1]);
   c.streets.forEach((l, li) => {
     if (l.ring || l.pts.length < 2) return;
     for (const end of [0, 1]) {
-      if (l.head & (end + 1)) continue;   // (a turning head: it ends where it is)
+      if (l.stop & (end + 1)) continue;   // (it ends at a bank or a square)
+      const hd = l.head & (end + 1);   // (a turning head: it ends where it is, unless a street is right there after all)
       const P = l.pts, e = end ? P[P.length - 1] : P[0], q = end ? P[P.length - 2] : P[1];
       // (an end that stops just short of a street or road is run on to meet it)
       // (a corner where two streets end together counts as tied, but still meets a road or street that passes by it)
@@ -838,6 +852,7 @@ function tieStreets(c, roadSegs, SP) {
         const d = U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]); if (d < nd) { nd = d; near = sg; }
       });
       if (near || cor) {
+        if (hd) l.head -= hd;
         if (near && nd > 1e-3) { const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy, t = LL ? U.clamp(((e.x - near[0]) * vx + (e.y - near[1]) * vy) / LL, 0, 1) : 0, p = { x: near[0] + vx * t, y: near[1] + vy * t }; if (end) P.push(p); else P.unshift(p); }
         continue;
       }
@@ -848,17 +863,18 @@ function tieStreets(c, roadSegs, SP) {
         const t = U.segX(e.x, e.y, e.x + dx * reach, e.y + dy * reach, sg[0], sg[1], sg[2], sg[3]);
         if (t > 0 && t < bt) { bt = t; hit = { x: e.x + dx * reach * t, y: e.y + dy * reach * t }; }
       });
-      if (!hit) {
+      if (hit && overHw(e, hit)) hit = null;
+      if (!hit && !hd) {   // (a head is kept rather than bent sideways to a neighbour)
         let bd = SP * 1.1;
         Bk.near(e.x, e.y, bd, sg => {
           if (sg[4] === li) return;
           const vx = sg[2] - sg[0], vy = sg[3] - sg[1], LL = vx * vx + vy * vy, t = LL ? U.clamp(((e.x - sg[0]) * vx + (e.y - sg[1]) * vy) / LL, 0, 1) : 0;
           const x = sg[0] + vx * t, y = sg[1] + vy * t, d = Math.hypot(x - e.x, y - e.y);
-          if (d < bd) { bd = d; hit = { x, y }; }
+          if (d < bd && !overHw(e, { x, y })) { bd = d; hit = { x, y }; }
         });
       }
-      if (hit) { if (end) P.push(hit); else P.unshift(hit); }
-      else l.deadEnd = (l.deadEnd || 0) + 1;
+      if (hit) { if (end) P.push(hit); else P.unshift(hit); if (hd) l.head -= hd; }
+      else if (!hd) l.deadEnd = (l.deadEnd || 0) + 1;
     }
   });
 }
@@ -876,7 +892,7 @@ function dropIslands(c, roadSegs) {
   for (const r of roadSegs) Bk.add([r[0], r[1], r[2], r[3], -1]);
   const rooted = new Set();
   L.forEach((l, li) => {
-    for (const e of [l.pts[0], l.pts[l.pts.length - 1]]) Bk.near(e.x, e.y, 0.5, sg => { if (sg[4] !== li && U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) < 0.4) { if (sg[4] < 0) rooted.add(li); else join(li, sg[4]); } });
+    for (const e of [l.pts[0], l.pts[l.pts.length - 1]]) Bk.near(e.x, e.y, 0.5, sg => { if (sg[4] !== li && U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) < 0.02) { if (sg[4] < 0) rooted.add(li); else join(li, sg[4]); } });
     for (let i = 1; i < l.pts.length; i++) {
       const a = l.pts[i - 1], b = l.pts[i];
       Bk.near((a.x + b.x) / 2, (a.y + b.y) / 2, U.dist(a, b) / 2 + 0.5, sg => { if (sg[4] < 0 && U.segX(a.x, a.y, b.x, b.y, sg[0], sg[1], sg[2], sg[3]) >= 0) rooted.add(li); });

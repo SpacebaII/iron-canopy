@@ -708,7 +708,9 @@ const AG = new WeakMap();
 // how many of the vehicles the flows imply are drawn (brief 30 halved it when they piled onto the through roads;
 // with the loads spread over the streets most of them are shown)
 IC.TRAFFIC_SHOW = 1;
-const AG_MAX = 2400;
+// (3,600 since brief 53: the streets traced on the field are denser, and the capital's centre close in implies about
+// a thousand vehicles in a 3 × 2 km window)
+const AG_MAX = 3600;
 // how far a vehicle drives before it parks (world units), by purpose
 const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], through: [30, 150] };
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
@@ -747,7 +749,7 @@ const endOf = (lk, d) => d ? lk.a : lk.b;
 IC.trafficAgents = function (S, view, dt, keep) {
   const T = S.traffic; if (!T) return [];
   let A = AG.get(S);
-  const G = T.G, cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2, r = Math.max(view.x1 - view.x0, view.y1 - view.y0) * 0.65 + 4;
+  const G = T.G, cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2, r = Math.max(view.x1 - view.x0, view.y1 - view.y0) * 0.6 + 4;
   if (!A || A.reset || A.G !== G) { A = { list: [], nid: 1, R: IC.makeRng(((S.seed * 7 + 3) >>> 0) + (A ? A.nid : 0)), G, box: null, trips: [], zt: new Map(), k: 1 }; AG.set(S, A); }
   keep = keep == null ? 1 : U.clamp(keep, 0.01, 1);
   const box = { x0: cx - r, y0: cy - r, x1: cx + r, y1: cy + r }, R = A.R;

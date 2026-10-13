@@ -12,7 +12,7 @@ const U = IC.U;
 
 IC.FABRIC = {
   // block spacing by district (units of 100 m): the old town's lanes, the centre, dense housing, suburbs, industry
-  size: { old: 1.3, biz: 1.6, dense: 2.1, sub: 3.1, ind: 4.2, log: 4.6, rail: 4.0, park: 2.6 },
+  size: { old: 1.3, biz: 1.6, dense: 2.1, sub: 3.1, ind: 5.5, log: 6.0, rail: 4.8, park: 2.6 },
   art: 3.5,                                                   // an arterial every so many blocks
   styleK: { eu: 1, us: 1.17, new: 1.1, ind: 1, east: 1.2 },   // American blocks a sixth wider
   step: 0.3,                                                  // tracing step (30 m)
@@ -140,12 +140,12 @@ const STEP = () => IC.FABRIC.step;
    one), 'head' (met nothing: a turning head), 'hw', 'water', 'field', 'sq', 'edge' (the city's edge, with the point
    just beyond it) or 'loop' (closed on itself). */
 IC.fabricTrace = function (o) {
-  const F = o.fld, h = o.step || STEP(), S = Samples(o.cell || 2, o.box), out = [], dsep = (x, y, fam) => o.dsep(x, y, fam);
+  const F = o.fld, h0 = o.step || STEP(), S = Samples(o.cell || 2, o.box), out = [], dsep = (x, y, fam) => o.dsep(x, y, fam);
   let nid = 0;
   // existing lines first, each sample with the family its direction belongs to here
   const sample = (pts, id) => {
     for (let i = 1; i < pts.length; i++) {
-      const a = pts[i - 1], b = pts[i], L = U.dist(a, b), n = Math.max(1, Math.ceil(L / Math.max(h, dsep(a.x, a.y, 0) / 6)));
+      const a = pts[i - 1], b = pts[i], L = U.dist(a, b), n = Math.max(1, Math.ceil(L / Math.max(h0, dsep(a.x, a.y, 0) / 6)));
       const ux = (b.x - a.x) / (L || 1), uy = (b.y - a.y) / (L || 1);
       for (let q = 0; q < n; q++) { const t = q / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t; S.add(x, y, F.famOf(x, y, ux, uy), id, ux, uy); }
     }
@@ -176,7 +176,9 @@ IC.fabricTrace = function (o) {
     const rot = fam ? Math.PI / 2 : 0;
     for (let k = 0; k < 4000 && !end; k++) {
       if (IC.FABRIC.stats) IC.FABRIC.stats.steps++;
-      // a step along the field (midpoint rule), keeping the sense of travel
+      // a step along the field (midpoint rule), keeping the sense of travel; a fifth of the spacing here, so wide
+      // suburban streets are traced in a third of the steps the old town's lanes take
+      const h = o.step || U.clamp(dsep(x, y, fam) * 0.2, STEP(), 1);
       let t = F.ang(x, y) + rot, vx = Math.cos(t), vy = Math.sin(t);
       if (vx * dx + vy * dy < 0) { vx = -vx; vy = -vy; }
       t = F.ang(x + vx * h / 2, y + vy * h / 2) + rot;
@@ -402,6 +404,7 @@ function segBox(x0, y0, x1, y1, W, H) {
 }
 IC.fabricRect = function (face, min, ang) {
   const P = face.poly, n = P.length;
+  if (face.area < min * min * 1.2) return null;   // (a sliver: nothing of that size can be in it)
   let a = ang;
   if (a == null) { let bl = -1; for (let i = 0; i < n; i++) { const p = P[i], q = P[(i + 1) % n], L = U.dist(p, q); if (L > bl) { bl = L; a = Math.atan2(q.y - p.y, q.x - p.x); } } }
   const ca = Math.cos(a), sa = Math.sin(a);
@@ -418,28 +421,43 @@ IC.fabricRect = function (face, min, ang) {
   const pad = Math.max(...face.pads, 0);
   x0 += pad; y0 += pad; x1 -= pad; y1 -= pad;
   if (x1 - x0 < min || y1 - y0 < min) return null;
-  // start from the square in the circle round the centroid that touches the nearest edge, then shrink about the
-  // centroid until it fits
-  let md = 1e9;
-  for (let i = 0; i < n; i++) { const p = L[i], q = L[(i + 1) % n], ex = q.x - p.x, ey = q.y - p.y, el = Math.hypot(ex, ey) || 1, d = (ex * -p.y - ey * -p.x) / el - (face.pads[i] || 0); if (d < md) md = d; }
-  if (md * 2 < min) return null;   // (the nearest edge is too close for anything to fit)
-  let w = Math.min(x1, -x0) * 2, h = Math.min(y1, -y0) * 2, r = null;
-  if (md > min / 2) { const sq = md * 0.7; if (fits(-sq, -sq, sq, sq)) r = [-sq, -sq, sq, sq]; }
+  // the point inside with the most room round it (the centroid of a wedge or an L sits by an edge, or outside):
+  // a coarse grid over the box, then a finer one round the best
+  const room = (x, y) => {
+    if (!pip(L, x, y)) return -1;
+    let md = 1e9;
+    for (let i = 0; i < n; i++) { const p = L[i], q = L[(i + 1) % n], d = U.segDist(x, y, p.x, p.y, q.x, q.y) - (face.pads[i] || 0); if (d < md) md = d; }
+    return md;
+  };
+  let bx = 0, by = 0, md = room(0, 0);
+  if (md < min * 0.75)   // (the centroid has little room: look round the box, a 7 × 7 grid then a 5 × 5 round the best)
+  for (let pass = 0, step = Math.max(x1 - x0, y1 - y0) / 6; pass < 2; pass++, step /= 3) {
+    const sx = pass ? bx : (x0 + x1) / 2, sy = pass ? by : (y0 + y1) / 2, k = pass ? 2 : 3;
+    for (let i = -k; i <= k; i++) for (let j = -k; j <= k; j++) {
+      const x = sx + i * step, y = sy + j * step;
+      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      const d = room(x, y); if (d > md) { md = d; bx = x; by = y; }
+    }
+  }
+  if (md * 2 < min) return null;   // (no room for anything)
+  // start from the square in the circle round that point, else shrink a box about it until it fits
+  let w = Math.min(x1 - bx, bx - x0) * 2, h = Math.min(y1 - by, by - y0) * 2, r = null;
+  { const sq = md * 0.7; if (fits(bx - sq, by - sq, bx + sq, by + sq)) r = [bx - sq, by - sq, bx + sq, by + sq]; }
   if (!r && (w < min || h < min)) { w = x1 - x0; h = y1 - y0; }
   if (!r)
   for (let k = 0; k < 40; k++) {
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    for (const [ox, oy] of [[0, 0], [cx, cy], [cx / 2, cy / 2]]) if (fits(ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2)) { r = [ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2]; break; }
+    for (const [ox, oy] of [[bx, by], [cx, cy], [(bx + cx) / 2, (by + cy) / 2]]) if (fits(ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2)) { r = [ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2]; break; }
     if (r) break;
     if (w >= h) w *= 0.86; else h *= 0.86;
     if (w < min || h < min) return null;
   }
   if (!r) return null;
   // push each side out while it still fits
-  for (let round = 0; round < 10; round++) {
+  for (let round = 0; round < 8; round++) {
     let grew = false;
     for (const side of [0, 1, 2, 3]) {
-      const d = (side & 1 ? r[3] - r[1] : r[2] - r[0]) * 0.08, v = r[side] + (side < 2 ? -d : d);
+      const d = (side & 1 ? r[3] - r[1] : r[2] - r[0]) * 0.1, v = r[side] + (side < 2 ? -d : d);
       if (fits(side === 0 ? v : r[0], side === 1 ? v : r[1], side === 2 ? v : r[2], side === 3 ? v : r[3])) { r[side] = v; grew = true; }
     }
     if (!grew) break;

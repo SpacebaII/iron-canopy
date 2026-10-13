@@ -448,6 +448,33 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
       else { g.strokeStyle = FILL[cls]; g.lineWidth = w; }
       g.stroke();
     }
+    // a street that met nothing ends in a turning head; one that crosses the river rides a bridge (a deck between
+    // parapets, like the roads' in render-roads.js)
+    if (lod >= 2) for (const c of towns) {
+      if (!c.streets || !tIn(c)) continue;
+      for (const l of c.streets) {
+        if (!l.head || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
+        const w = RW[l.cls] * K0, r = w * 1.15;
+        for (const end of [0, 1]) {
+          if (!(l.head & (end + 1))) continue;
+          const e = l.pts[end ? l.pts.length - 1 : 0];
+          g.fillStyle = lod >= 3 ? 'rgb(152,150,142)' : 'rgba(20,18,14,0.45)'; g.beginPath(); g.arc(e.x, e.y, r + (lod >= 3 ? 0.05 : 0.03), 0, 7); g.fill();
+          g.fillStyle = FILL[l.cls]; g.beginPath(); g.arc(e.x, e.y, r, 0, 7); g.fill();
+        }
+      }
+      for (const l of c.streets) {
+        if (!l.br || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
+        const w = RW[l.cls] * K0;
+        for (const [x0b, y0b, x1b, y1b] of l.br) {
+          g.lineCap = 'butt';
+          g.beginPath(); g.moveTo(x0b, y0b); g.lineTo(x1b, y1b);
+          g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = w + 0.12; g.save(); g.translate(0.05, 0.07); g.stroke(); g.restore();
+          g.strokeStyle = 'rgb(168,166,160)'; g.lineWidth = w + 0.1; g.stroke();
+          g.strokeStyle = 'rgb(74,75,76)'; g.lineWidth = w; g.stroke();
+          g.lineCap = 'round';
+        }
+      }
+    }
     if (lod >= 4) for (const c of towns) {
       if (!c.streets || !tIn(c)) continue;
       g.beginPath();
