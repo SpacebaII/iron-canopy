@@ -384,7 +384,8 @@ IC.taperGeom = function (end, hw, hr) {
     const nx = -p.uy, ny = p.ux, sd = Math.sign((m.x - p.x) * nx + (m.y - p.y) * ny) || 1;
     gore.push({ x: p.x + nx * sd * hr, y: p.y + ny * sd * hr });
     base.push({ x: m.x + (p.x - m.x) / (m.d || 1) * edge, y: m.y + (p.y - m.y) / (m.d || 1) * edge });
-    if (gap > Math.max(0.06, hr * 1.6)) { nose = { x: p.x, y: p.y, s }; break; }
+    // (a slip road leaving at a steep angle, a trumpet's sweep or a short diamond ramp, parts within 10 m: its gore is a short one)
+    if (gap > Math.max(0.06, hr * 1.6) && s >= 0.1) { nose = { x: p.x, y: p.y, s }; break; }
   }
   const G = { aux, gore: gore.length > 2 && nose ? gore.concat(base.reverse()) : null, nose, side, along, lane, edge, len: La + Lt };
   end._g = G; end._k = key;
