@@ -327,6 +327,27 @@ test('traffic: at rush hour the side streets carry some traffic and the avenues 
   for (let i = 0; i < 400; i++) { S.time += 0.5; IC.traffic(S, 0.5); const A = IC.trafficAgents(S, view, 0.5); if (i % 40 === 39) onSide += A.filter(a => a.route[a.ri][0].cls === 'st').length; }
   assert(onSide > 10, `close in, hardly any vehicles on the side streets (${onSide})`);
 });
+test('traffic: a big city reads busy at rush hour, every street carries something, and a small town stays quieter (brief 51)', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S), T = S.traffic;
+  S.traffic.stepT = 0; IC.traffic(S, 0.25);
+  const loads = (c, cls) => T.links.filter(L => L.l.city === c && L.cls === cls && L.l.len > 0.3).map(L => L.load).sort((a, b) => a - b);
+  const med = a => a[a.length >> 1];
+  const st = loads(cap, 'st'), art = loads(cap, 'art');
+  assert(st.length > 100 && art.length > 30, `${cap.name} has ${st.length} streets and ${art.length} avenues`);
+  // (a street at load 1 carries one car to the 80 m; a tenth of that is a car every 800 m, the least a city street shows)
+  assert(st[0] > 0.05, `a street in ${cap.name} carries nothing at 08:00 (${st[0].toFixed(3)})`);
+  assert(med(st) > 0.12, `the median street in ${cap.name} is at ${med(st).toFixed(3)} of full at 08:00`);
+  assert(med(art) > 0.2, `the median avenue in ${cap.name} is at ${med(art).toFixed(3)} of full at 08:00`);
+  // busy, not jammed everywhere: at most one avenue in eight is at a standstill
+  const jam = art.filter(v => v >= 1.29).length;
+  assert(jam < art.length / 8, `${jam} of ${art.length} avenues in ${cap.name} are jammed at 08:00`);
+  // a small town is quieter than the capital, street for street
+  const small = S.world.cities.filter(c => c.pop < 150 && c.streets.length > 10).sort((a, b) => a.pop - b.pop)[0];
+  assert(small, 'no small town with streets');
+  const sst = loads(small, 'st');
+  assert(sst.length > 10 && med(sst) < med(st) * 0.8, `${small.name} (${small.pop}k) is as busy as ${cap.name} (${cap.pop}k): ${med(sst).toFixed(3)} against ${med(st).toFixed(3)}`);
+});
 test('traffic: vehicles start at real places and drive the road graph like traffic', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), T = S.traffic, G = T.G;
@@ -360,9 +381,11 @@ test('traffic: vehicles start at real places and drive the road graph like traff
   assert(A.list.some(a => a.pur === 'com') && A.list.some(a => a.pur === 'frt' || ['artic', 'box', 'tanker'].includes(a.k)), 'no commuters or lorries');
   // busy roads carry more of them than quiet ones
   const inView = T.links.filter(L => { const b = L.l.bb; return !(b[2] < view.x0 || b[0] > view.x1 || b[3] < view.y0 || b[1] > view.y1) && L.l.len > 0.5; });
-  const per = L => (onLink.get(L.l.id) || 0) / L.l.len, busy = inView.filter(L => L.load > 0.5), quiet = inView.filter(L => L.load < 0.1);
+  // (every street in town carries something now, brief 51: the busiest quarter against the quietest quarter)
+  const per = L => (onLink.get(L.l.id) || 0) / L.l.len, byLoad = inView.slice().sort((a, b) => a.load - b.load), q4 = Math.floor(byLoad.length / 4);
+  const busy = byLoad.slice(-q4), quiet = byLoad.slice(0, q4);
   const avg = a => a.reduce((t, L) => t + per(L), 0) / Math.max(1, a.length);
-  assert(busy.length && quiet.length && avg(busy) > avg(quiet) * 3, `busy roads (${avg(busy).toFixed(2)}) are not much busier close in than quiet ones (${avg(quiet).toFixed(2)})`);
+  assert(busy.length && quiet.length && avg(busy) > avg(quiet) * 2, `busy roads (${avg(busy).toFixed(2)}) are not much busier close in than quiet ones (${avg(quiet).toFixed(2)})`);
   // buses run lines along the road graph, with stops
   assert(T.lines.some(l => l.kind === 'bus') && T.lines.some(l => l.kind === 'coach'), 'no bus or coach lines');
   for (const l of T.lines) { assert(connected(l.path), `${l.name} is not a connected route`); if (l.kind === 'bus') assert(l.stops.length >= 3, `${l.name} has no stops`); }

@@ -48,6 +48,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 15 | [48 A research tree from day one: small upgrades, real choices, a HOI4 pace](48-research-tree.md) | — | new `research.js`, `IC.TECH`, the Research room, `IC.mod` reads across the airport files, `careerplayer.js` |
 | 15 | [49 The Ministry's agenda: a national focus track for the Career](49-ministry-agenda.md) | 48's `IC.mod` (stacked on 48) | new `agenda.js`, the Career room, agenda hooks in `story.js` |
 | 15 | [50 A story that branches: choices that shape the Career, different every time](50-branching-story.md) | 48, 49 merged | `story.js`, `deck.js`, new `chains.js`, the Journal, the enemy's opening aim and allied aid |
+| 16 | [51 Traffic you can see: streets that carry what a city of that size would](51-traffic-you-can-see.md) | — | loads in `traffic.js` (`assign`, `IC.TRAFFIC_LOAD`), the vehicles close in, the traffic tests |
 | 16 | [52 Country roads that follow the ground (the audit: 52-roads-and-towns-audit.md)](52-country-roads.md) | — | `refineRoads`, `fineLine` and `IC.roadLine` in `gen.js`, `roadFinish` in `growth.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 

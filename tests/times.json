@@ -12,6 +12,7 @@
  "world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map": 0,
  "traffic: rush hour is busier than night, and an air raid empties the roads": 7,
  "traffic: vehicles start at real places and drive the road graph like traffic": 7.2,
+ "traffic: a big city reads busy at rush hour, every street carries something, and a small town stays quieter (brief 51)": 7,
  "traffic: a cut road makes a visible queue, and close-in traffic turns back from it": 7.5,
  "traffic: zooming in and out, the vehicles on the streets never jump or vanish (brief 36)": 6,
  "traffic: a busy hour stays inside the time budget": 7,
