@@ -228,16 +228,19 @@ IC.aptElements = function (S, ap, o) {
     if (bb) {
       bb = [bb[0] - 30, bb[1] - 30, bb[2] + 30, bb[3] + 30];
       const lbb = l => l.bb || (l.bb = bbOf(l.pts));
+      // (the name is worked out only for what is near: naming the place of every road in the country was most of
+      // the landside's time)
       const add = (l, cat, word, extra) => {
         if (!l.pts || l.pts.length < 2 || !bbHit(lbb(l), bb, 0)) return;
-        for (const run of IC.openRuns(W, l.pts)) out.push(Object.assign({ cat, l, sh: IC.shapeLine(run, (IC.ROAD_W[l.cls] || 0.1) / 2), name: word, world: true, lv: 0 }, extra || {}));
+        const nm = typeof word === 'function' ? word() : word;
+        for (const run of IC.openRuns(W, l.pts)) out.push(Object.assign({ cat, l, sh: IC.shapeLine(run, (IC.ROAD_W[l.cls] || 0.1) / 2), name: nm, world: true, lv: 0 }, extra || {}));
       };
       const place = l => { const m = l.pts[l.pts.length >> 1]; return S.infra ? IC.nearPlace(S, m.x, m.y) : ''; };
-      for (const e of W.edges || []) add(e, 'road', `the ${CLS_WORD[e.cls] || 'road'} ${place(e)}`, { edge: e, ownRoad: e.a === ap.id || e.b === ap.id || e.apt === ap.id });
-      for (const r of W.ramps || []) add(r, 'road', `a slip road ${place(r)}`, { ramp: true });
-      for (const l of W.lanes || []) add(l, 'road', `a farm lane ${place(l)}`, { lane: true });
+      for (const e of W.edges || []) add(e, 'road', () => `the ${CLS_WORD[e.cls] || 'road'} ${place(e)}`, { edge: e, ownRoad: e.a === ap.id || e.b === ap.id || e.apt === ap.id });
+      for (const r of W.ramps || []) add(r, 'road', () => `a slip road ${place(r)}`, { ramp: true });
+      for (const l of W.lanes || []) add(l, 'road', () => `a farm lane ${place(l)}`, { lane: true });
       for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dxy(c.x, c.y, (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2) < (c.r || 20) * 2 + (bb[2] - bb[0])) for (const l of c.streets) add(l, 'road', `a street of ${c.name}`, { street: c });
-      for (const r of W.rails || []) add(Object.assign(r, { cls: r.cls || 'rail' }), 'rail', `the railway ${place(r)}`);
+      for (const r of W.rails || []) add(Object.assign(r, { cls: r.cls || 'rail' }), 'rail', () => `the railway ${place(r)}`);
     }
   }
   return out;
