@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     # six parts of equal length (by tests/times.json) on six machines at once, each with one worker per core
     # (two halves outgrew the 20 minutes once a day at each real airport joined the suite; four parts once the
     # cities' streets were traced on a direction field, brief 53)
