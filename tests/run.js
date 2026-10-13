@@ -4101,6 +4101,71 @@ test('sandbox: runs four hours', () => {
   assert(S.threats.length >= 0 && S.time > 9 * 3600, 'did not advance');
 }, true);
 
+/* the sandbox (mode 'test'): free money, instant building, attacks on demand */
+const sbxGame = () => IC.newGame({ seed: 4242, mode: 'test', hour: 10 });
+const hostiles = S => S.threats.filter(t => !t.dead && t.fromHostile && t.op).length;
+test('sandbox: money never runs out, and airport parts and units are ready at once', () => {
+  const S = sbxGame();
+  const ap = IC.bases(S).find(b => b.kind === 'airport' && b.parts), P = (x, y) => IC.aptLocal(ap, x, y);
+  const rws = () => ap.parts.filter(p => p.kind === 'runway' && p.built).length, n0 = rws();
+  S.budget = 10; IC.step(S, 0.5);
+  assert(S.budget > 1e5, `the treasury was not topped up: ${U.money(S.budget)}`);
+  assert(IC.aptPlanRunway(S, ap, P(-16, -9), P(-16, 9)), 'could not plan a second runway');
+  IC.step(S, 0.5); IC.step(S, 0.5);
+  assert(rws() === n0 + 1 && !ap.works.length, `the runway is not open two steps later (${ap.works.map(w => w.label + ' ' + w.wait).join(', ')})`);
+  const c = IC.cities(S).sort((a, b) => U.dist(b, IC.cap(S)) - U.dist(a, IC.cap(S)))[0];
+  const spot = IC.findSpot(S, 'shorad', c.x, c.y, 20, 60), u = IC.deploy(S, 'shorad', spot.x, spot.y);
+  IC.step(S, 0.5); IC.step(S, 0.5);
+  assert(u.state === 'ready' && U.dist(u, spot) < 1, `a unit placed far from any depot is ${u.state}, ${U.km(U.dist(u, spot) * 100)} from its spot`);
+});
+test('sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored', () => {
+  const S = sbxGame();
+  run(S, 3);
+  assert(!S.enemy.war && hostiles(S) === 0, `the enemy attacked by itself: war ${S.enemy.war}, ${hostiles(S)} in the air`);
+  const base = IC.mainBase(S);
+  IC.sandboxTarget(S, base);
+  assert(S.sbx.target.name === base.name, 'the target is not the air base');
+  assert(IC.sandboxLaunch(S, { what: 'owa', n: 6 }) === 6, 'six drones were not sent');
+  const fr = IC.sandboxFrom(S);
+  assert(U.dist(fr, base) > 900 && U.dist(fr, base) < 1100, `the launch point is ${U.km(U.dist(fr, base))} away, not 100 km`);
+  run(S, 1.5);
+  const st = S.sbx.st;
+  assert(st.launched === 6 && st.kills + st.leaks >= 5, `sent ${st.launched}, shot down ${st.kills}, got through ${st.leaks}`);
+  assert(!S.enemy.war, 'a launch from the panel started the war');
+}, true);
+test('sandbox: a raid the enemy plans flies, ends with a report, and no other follows', () => {
+  const S = sbxGame();
+  IC.sandboxTarget(S, IC.mainBase(S));
+  IC.sandboxRaid(S, 'pressure');
+  assert(S.enemy.war, 'a planned raid did not put the country at war');
+  let most = 0;
+  for (let i = 0; i < 4 * 3600 / 0.5; i++) { IC.step(S, 0.5); most = Math.max(most, hostiles(S)); }
+  assert(most >= 5, `only ${most} enemy weapons were in the air at once`);
+  assert(S.logs.some(l => l.tag === 'AFTER-ACTION'), 'no after-action report');
+  run(S, 4);
+  assert(S.enemy.raidN === 1 && hostiles(S) === 0, `the enemy flew ${S.enemy.raidN} raids by itself`);
+}, true);
+test('sandbox: repair, clear the sky, and a save that loads and keeps its rules', () => {
+  const S = sbxGame();
+  IC.sandboxLaunch(S, { what: 'srbm', n: 4 });
+  run(S, 0.3);
+  assert(hostiles(S) > 0 || S.sbx.st.kills + S.sbx.st.leaks > 0, 'the missiles never flew');
+  IC.sandboxLaunch(S, { what: 'owa', n: 5 });
+  run(S, 0.05);
+  IC.sandboxClear(S);
+  IC.step(S, 0.5);
+  assert(hostiles(S) === 0 && !S.enemy.pending.length, 'enemy weapons are left in the sky');
+  const c = IC.cap(S); c.hp = 1; c.blocks[0].hp = 0;
+  const ap = IC.bases(S).find(b => b.kind === 'airport' && b.parts), rw = ap.parts.find(p => p.kind === 'runway');
+  rw.craters.push({ t: 0.5, r: 1, id: 'cr1' });
+  IC.sandboxRepair(S);
+  assert(c.hp === c.max && c.blocks[0].hp === 1 && !rw.craters.length, 'something was not repaired');
+  S.sbx.ammo = true; S.sbx.free = false;
+  const S2 = IC.loadSave(IC.saveGame(S));
+  assert(S2.sbx && S2.sbx.ammo && !S2.sbx.free && S2.mode === 'test', 'the sandbox rules were not saved');
+  IC.step(S2, 0.5);
+});
+
 /* ---------- Academy ---------- */
 for (const L of IC.LESSONS) test(`academy: ${L.id} lesson can be completed`, () => {
   const r = playLesson(L.id, true);

@@ -187,5 +187,9 @@
  "round 5c: clicking an aircraft on its stand selects it, from the whole-airport zoom in; a click beside it picks the airport": 40.8,
  "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1,
  "atmosphere: the mood is calm in a peacetime Career, tense before a war and battle when hostile weapons fly": 12.5,
- "atmosphere: night is darker and bluer than noon, dusk in between, and a storm greyer and darker than a clear day": 6.9
+ "atmosphere: night is darker and bluer than noon, dusk in between, and a storm greyer and darker than a clear day": 6.9,
+ "sandbox: money never runs out, and airport parts and units are ready at once": 7.7,
+ "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
+ "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
+ "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2
 }

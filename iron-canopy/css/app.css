@@ -253,6 +253,10 @@ kbd{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:500
 .btn.primary kbd{color:#0b3446;background:rgba(255,255,255,.35);box-shadow:none}
 .btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{color:var(--text);background:var(--well)}
 .btn.sm{min-height:1.6rem;padding:.12rem .6rem;font-size:.8rem;border-radius:8px}
+/* the sandbox: its panel keeps its height in the left column, and the staff messages scroll instead */
+.app.is-sbx .brief{flex:none}.app.is-sbx .comms{flex:0 1 auto;min-height:0;overflow:auto}
+/* the sandbox's rules: a switch reads on or off at a glance */
+.sbx-rule{color:var(--dim)}.sbx-rule[aria-pressed="true"]{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(88,211,154,.45)}
 .btn.amber{color:var(--amber)}
 .btn.on{background:rgba(111,210,255,.3);box-shadow:inset 0 0 0 1px rgba(111,210,255,.6)}
 .hint{margin:0;font-size:.85rem;color:var(--muted);line-height:1.4}

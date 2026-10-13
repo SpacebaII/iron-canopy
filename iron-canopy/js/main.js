@@ -258,6 +258,7 @@ function leftClick(p, shift) {
       if (!shift || IC.callInState(S).charges < 1) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
+    if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p); IC.setMode(null); ping(p); return; }
     if (m.kind === 'rangeTarget') { S.range.target = { x: p.x, y: p.y }; S.range.scen.target = { x: Math.round(p.x), y: Math.round(p.y) }; IC.setMode(null); ping(p); return; }
     if (m.kind === 'deploy' && S.range) {
       if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUR SIDE ONLY', IC.C.hostile); IC.sfx.ui('err'); return; }
@@ -410,6 +411,7 @@ function onAct(e) {
   if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
   if (a && a.startsWith('range') && a !== 'rangeForm' && S && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
+  if (a && a.startsWith('sbx') && a !== 'sbxForm' && S && S.sbx) { IC.sandboxAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   IC.sfx && IC.sfx.init();
   // before the first region is built only the start screen answers (IC.begin waits for the region)
   if (!S && a !== 'begin' && a !== 'lesson' && a !== 'stPage') return;
@@ -652,6 +654,8 @@ function onAct(e) {
 function onInput(e) {
   const el = e.target;
   if (el.dataset.act === 'rangeForm' && S.range) { IC.rangeForm(S, el.name, el.value); IC.ui.busyUntil = performance.now() + 1500; return; }
+  // (a choice in a list redraws the panel at once: the bearing fields come and go with "from")
+  if (el.dataset.act === 'sbxForm' && S.sbx) { IC.sandboxForm(S, el.name, el.value); if (el.tagName === 'SELECT') IC.ui.refresh(true); else IC.ui.busyUntil = performance.now() + 1500; return; }
   if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
   if (el.dataset.act === 'music') { IC.sfx.setMusic(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
   if (el.dataset.act === 'ambVol') { IC.sfx.setAmb(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
