@@ -593,6 +593,8 @@ function moveBus(S, b, dt) {
     b.next = nextStop(b);
   }
 }
+// the heading of each piece of a line, worked out once (a link's is kept in l.hd)
+const headings = pts => { const h = new Float32Array(pts.length - 1); for (let i = 1; i < pts.length; i++) h[i - 1] = Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x); return h; };
 const along = (pts, cum, s) => {
   let lo = 1, hi = cum.length - 1;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < s) lo = mid + 1; else hi = mid; }
@@ -652,7 +654,8 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
     const step = keep >= 1 ? 1 : 1 << Math.min(16, Math.floor(Math.log2(1 / keep)));
     const P = l.pts, cum = l.cum, len = l.len;
     let s0 = 1e9, s1 = -1;
-    for (let i = 1; i < P.length; i++) {
+    if (bb[0] >= view.x0 && bb[2] <= view.x1 && bb[1] >= view.y0 && bb[3] <= view.y1) { s0 = 0; s1 = len; }   // (wholly in view)
+    else for (let i = 1; i < P.length; i++) {
       const a = P[i - 1], b = P[i];
       if (Math.max(a.x, b.x) < view.x0 || Math.min(a.x, b.x) > view.x1 || Math.max(a.y, b.y) < view.y0 || Math.min(a.y, b.y) > view.y1) continue;
       if (cum[i - 1] < s0) s0 = cum[i - 1]; if (cum[i] > s1) s1 = cum[i];
@@ -676,10 +679,15 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
       for (; j * BASE + ph <= Math.min(ub, span); j += step) {
         const u = j * BASE + ph, h = U.hash(L.key + d, j & 65535);
         if (h > p || (keep < 1 && slotRank(j & 65535, L.key + d) >= keep)) continue;
-        const s = toS(u), q = along(P, cum, d ? len - s : s);
-        if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
+        // (the place along the link without an object or an arc tangent a vehicle: the heading is the piece's, kept)
+        const s = toS(u), sv = d ? len - s : s;
+        let lo = 1, hi = cum.length - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < sv) lo = mid + 1; else hi = mid; }
+        const pa = P[lo - 1], pb = P[lo], t = (sv - cum[lo - 1]) / ((cum[lo] - cum[lo - 1]) || 1), qx = pa.x + (pb.x - pa.x) * t, qy = pa.y + (pb.y - pa.y) * t;
+        if (qx < view.x0 || qx > view.x1 || qy < view.y0 || qy > view.y1) continue;
+        const hd = l.hd || (l.hd = headings(P)), qh = hd[lo - 1];
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
-        fn(q.x, q.y, d ? q.h + Math.PI : q.h, kind, L.cls, L.C.off[lane]);
+        fn(qx, qy, d ? qh + Math.PI : qh, kind, L.cls, L.C.off[lane]);
         n++;
       }
     }
