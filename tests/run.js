@@ -371,9 +371,9 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const T = S.traffic, G = T.G;
   for (let i = 0; i < 4; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
-  // the busiest main road link, and the junction at its start
-  // (busy, but not already jammed: a jam cannot grow any longer)
-  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && L.l.len > 6 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
+  // the busiest stretch of main road out in the country (over 2 km long, not a town's piece), and the junction at
+  // its start (busy, but not already jammed: a jam cannot grow any longer)
+  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && !L.l.ref.edge.city && !L.l.city && L.l.len > 20 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
   assert(L, 'no busy main road');
   const n0 = L.l.a, p = G.nodes[n0];
   // vehicles within 600 m of that junction on the roads that lead into it, as the middle zoom shows them
