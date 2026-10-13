@@ -259,7 +259,10 @@ IC.landAccessPlan = function (S, x, y, a, probe) {
   const plan = (p, s) => { const P = IC.roadPlan(S, 'lc', p, s); if (probe && /serve one of your airports/.test(P.why)) P.why = ''; return P; };
   let P = plan(pts, snaps);
   if (P.why && W.nodes[city.id] && !end.node) { const e2 = { x: city.x, y: city.y, node: city.id }; const P2 = plan([start, e2], [snaps[0], e2]); if (!P2.why) { P = P2; pts[1] = e2; snaps[1] = e2; end = e2; } }
-  return { P, pts, snaps, city, end };
+  // the line it takes, bending with the ground (gen.js), priced here so the survey's price is Found's price
+  let line = pts;
+  if (!P.why && IC.roadLine) { line = IC.roadLine(W, 'lc', pts, at); if (line !== pts) { const P3 = plan(line, snaps); if (!P3.why) P = P3; else line = pts; } }
+  return { P, pts: line, snaps, city, end };
 };
 IC.landAccessRoad = function (S, ap) {
   const W = S.world;
@@ -268,7 +271,7 @@ IC.landAccessRoad = function (S, ap) {
   ap.cityRef = { x: city.x, y: city.y };
   if (P.why) { IC.log(S, 'warn', 'ROADS', `${ap.name}: no access road could be laid automatically (${P.why.replace(/\.$/, '').toLowerCase()}). Build one with the road tool in the airport panel.`, ap); return null; }
 
-  const w = IC.roadFinish(S, { cls: 'lc', pts, snaps });
+  const w = IC.roadFinish(S, { cls: 'lc', pts, snaps, bent: true });
   if (!w) return null;
   const L = IC.landInit(ap); L.road = true; L.access = { pts: pts.map(p => ({ x: p.x, y: p.y })), cost: P.cost, km: P.km, work: w.id };
   // (the road works log their own line; a card says the rest, so the line is only for games without cards)

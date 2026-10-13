@@ -638,8 +638,9 @@ function joinRoads(W, c, F, st, bnd, ext, fields, radial, nearCell, R2) {
     // a run that reaches the middle of town, or ends at the city itself
     const dr = runs.filter(([i, j]) => (i === 0 && e.a === c.id) || (j === n - 1 && e.b === c.id) || P.slice(i, j + 1).some(deep));
     if (!dr.length) continue;
-    // an outer piece that would be a stub: its outside node joins the city directly
-    for (const r of dr) { if (r[0] > 0 && r[0] < 3) r[0] = 0; if (r[1] < n - 1 && r[1] > n - 4) r[1] = n - 1; }
+    // an outer piece that would be a stub (under 800 m): its outside node joins the city directly
+    const cum = [0]; for (let i = 1; i < n; i++) cum.push(cum[i - 1] + U.dist(P[i - 1], P[i]));
+    for (const r of dr) { if (r[0] > 0 && cum[r[0]] < 8) r[0] = 0; if (r[1] < n - 1 && cum[n - 1] - cum[r[1]] < 8) r[1] = n - 1; }
     gone.add(e);
     let s = 0, from = e.a;
     const gate = (p, q) => { const id = newNode(p); gates.push({ id, x: p.x, y: p.y, a: ang(p), hw, rank: RANK[e.cls] || 1, dir: Math.atan2(p.y - q.y, p.x - q.x) }); return id; };
