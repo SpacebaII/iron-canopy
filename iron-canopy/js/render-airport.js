@@ -9,6 +9,7 @@ const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)'
 let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
 let LIFE = false, BR = null, ACT = 0.5;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges; ACT: how busy its terminal is, 0 → 1
 function lbl(g, txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.on) return;
   if (NOLBL) return;
   // (round 5c) close in, a font of a fraction of a world unit is drawn at the wrong size by the canvas: the words come
   // out squeezed. There they are drawn in screen pixels at the same place

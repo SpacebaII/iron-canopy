@@ -817,6 +817,8 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
+  // film mode (film.js): Shift+H anywhere, and its own keys while it is on
+  if (IC.film && IC.film.key(e, S)) { e.preventDefault(); return; }
   // the keys shown on the rail (and the old ones, N K T, still work)
   const rooms = { a: 'air', l: 'logi', i: 'intel', n: 'intel', r: 'research', k: 'research', j: 'journal', v: 'aviation', c: 'staff', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
@@ -1021,6 +1023,7 @@ function frame(now) {
   }
   IC.camStep(dtR);
   followCam(dtR);
+  if (IC.film) IC.film.step(S, dtR);
   const C = IC.cine;
   C.cool = Math.max(0, C.cool - dtR);
   if (C.slow > 0) C.slow -= dtR;

@@ -83,7 +83,10 @@ IC.render = function (S, now) {
   IC.LBL.reset();
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
+  // film mode (film.js): the world without its data, a camera that shakes for blasts, the film look at the end
+  const FM = IC.film && IC.film.on;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }
+  if (FM) { sx += IC.film.sx; sy += IC.film.sy; }
   S.shake *= 0.88;
   view = { x0: cam.x, y0: cam.y, x1: cam.x + cam.vw / z, y1: cam.y + cam.vh / z };
   RS.ctx = ctx; RS.view = view; RS.WF = WF;
@@ -105,27 +108,28 @@ IC.render = function (S, now) {
   // night, dusk, dawn and the weather's gloom (atmos.js); airports grade their own field (render-airport.js), so
   // this leaves their fences out
   const G = IC.skyGrade(S, wx);
+  // film mode lifts the moonlight a little, so the land reads under the city lights and the fire
+  if (FM && G.dark > 0) { const k = IC.film.opt.moon == null ? 0.38 : IC.film.opt.moon; G.mul = G.mul.map(c => Math.round(c + (255 - c) * k * G.dark)); G.sat *= 0.6; }
   IC.drawGrade(ctx, G, g => {
     g.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
     if (z >= 0.3) for (const b of IC.bases(S)) { const k = b._box; if (k && k.poly && b.parts && inView(b.x, b.y, b.radius + 20)) IC.aptFencePath(g, k); }
   });
-  if (light < 0.9) drawLights(S, px, now, light);
+  if (light < 0.9) drawLights(S, px, now, light, FM ? 1.5 : 1);
 
   // (round 5c) radar cover belongs to the moment in the civil act: while placing a civil radar, in the Airspace tab, or
   // with the gaps shown; not over the whole Career from Chapter 3 on
   const covNow = S.layers.coverage || (IC.FOCUS.polish && IC.civilAct(S) && ((S.mode2 && S.mode2.kind === 'deploy' && IC.UNITS[S.mode2.type] && IC.UNITS[S.mode2.type].sensor && IC.UNITS[S.mode2.type].sensor.ssr) || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra')));
-  if (covNow) drawCoverage(S);
-  drawAirways(S, px, now);
-  drawFronts(S, px);
+  if (covNow && !FM) drawCoverage(S);
+  if (!FM) { drawAirways(S, px, now); drawFronts(S, px); }
   IC.drawRoadBridges(ctx, S, px, view);
   if (S.layers.civil && z > 0.12) IC.drawTraffic(ctx, S, px, view, light, now);
   drawBases(S, px, now, light);
-  drawZones(S, px, now);
-  drawFields(S, px);
-  drawInfra(S, px, now);
+  if (!FM) drawZones(S, px, now);
+  if (!FM) { drawFields(S, px); drawInfra(S, px, now); }
   IC.drawForces(S, px, now);
-  if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
+  if (S.layers.logistics && !FM) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
+  if (FM) { finish(S, z, px, now, light, wx); return; }
   if (IC.drawWarnings) IC.drawWarnings(ctx, S, px, now);
   // (round 2) the airliner the camera follows: a ring, and the aircraft itself while it flies
   if (S.follow && IC.drawFollowMark) IC.drawFollowMark(ctx, S, px, now);
@@ -177,7 +181,20 @@ IC.render = function (S, now) {
   if (IC.cine && IC.cine.bars > 0 && !(IC.ui && IC.ui.compact && IC.ui.compact())) { const bh = cam.vh * 0.08 * IC.cine.bars; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cam.vw, bh); ctx.fillRect(0, cam.vh - bh, cam.vw, bh); }
 };
 
+/* the end of a film-mode frame: the weather and clouds over the world, then the film look (film.js) */
+function finish(S, z, px, now, light, wx) {
+  if (S.layers.weather && S.clouds && wx.cloud > 0.4 && z < 0.5) {
+    const k = 30, ox = (S.time * S.wind.x * 1.2) % (256 * k), oy = (S.time * S.wind.y * 1.2) % (256 * k);
+    const pat = ctx.createPattern(S.clouds.white, 'repeat');
+    pat.setTransform(new DOMMatrix().translate(ox + 900, oy + 400).scale(k));
+    ctx.globalAlpha = (wx.cloud - 0.4) * 0.32 * (0.3 + 0.7 * light) * U.clamp((0.5 - z) / 0.3, 0, 1); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawWeather(S, wx, now, light);
+  IC.film.post(ctx, cv, cam.vw, cam.vh, S, light);
+}
 function label(txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.on && !IC.film.opt.labels) return;
   // (round 5c) close in, in screen pixels: a tiny world-unit font is drawn squeezed (render-airport.js lbl)
   if (px < 0.05 && IC.FOCUS.polish) {
     const m = ctx.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
@@ -192,6 +209,7 @@ function label(txt, x, y, px, col, size, align, weight) {
   ctx.fillStyle = col; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
 }
 function brackets(x, y, r, px, col) {
+  if (IC.film && IC.film.on) return;
   const l = Math.min(r * 0.5, 7 * px);
   ctx.strokeStyle = col || C.amber; ctx.lineWidth = 1.8 * px; ctx.beginPath();
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { ctx.moveTo(x + a * r, y + b * (r - l)); ctx.lineTo(x + a * r, y + b * r); ctx.lineTo(x + a * (r - l), y + b * r); }
@@ -207,7 +225,7 @@ function shadow(x, y, alt, px, r) {
   return { x: sx, y: sy };
 }
 
-function drawLights(S, px, now, light) {
+function drawLights(S, px, now, light, gain) {
   ctx.globalCompositeOperation = 'lighter';
   const pf = IC.powerFactor(S);
   for (const c of IC.cities(S)) {
@@ -217,7 +235,7 @@ function drawLights(S, px, now, light) {
     const a = (1 - light) * 0.95 * (c.hp / c.max) * pf * black * (c.owner === 'us' ? 1 : 0.35) * (c.alert > 0 && Math.sin(now * 0.7) > 0.6 ? 0.75 : 1);
     // far out the city is one glow; close in, lit streets and windows take over
     const near = U.clamp((cam.z - 1.5) / 2.5, 0, 1);
-    ctx.globalAlpha = a * (1 - near * 0.75);
+    ctx.globalAlpha = Math.min(1, a * (1 - near * 0.75) * (gain || 1));
     ctx.drawImage(c.light.cv, c.x - c.light.size / 2, c.y - c.light.size / 2, c.light.size, c.light.size);
     if (near > 0 && c.streets) {
       ctx.globalAlpha = a * near;
