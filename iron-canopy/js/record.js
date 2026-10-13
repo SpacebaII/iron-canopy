@@ -516,7 +516,8 @@ IC.record = function (S, dt) {
   if (t0) { R.ms += performance.now() - t0; R.n++; }
 };
 
-/* ---------- events ---------- */
+/* ---------- events ----------
+   An explosion keeps what blew up (tref) and what hit it (mref), so the 3D view draws it where their models meet. */
 function damaged(S, x, y) {
   const out = [];
   const g = IC.groundAt ? IC.groundAt(S, x, y) : null;
@@ -541,9 +542,9 @@ IC.on(function (S, type, d) {
   const R = S.rec, ev = { t: S.time, kind: type };
   if (type === 'tailParked') { const st = d.ap && d.ap.parts && IC.aptStands(d.ap).find(x => x.id === d.tl.stand); if (st && st.svc) turnOf(S, R, d.ap, st, st.svc); return; }
   switch (type) {
-    case 'impact': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: d.src && d.src.d ? Math.min(2, 0.6 + d.src.d.dmg / 100) : 1, name: d.hit ? d.hit.name : 'open ground', text: `${d.hit ? d.hit.name : 'Open ground'} hit by ${d.src && d.src.d ? IC.fullName(d.src.d) : 'a weapon'}`, dmg: damaged(S, d.x, d.y) }); break;
-    case 'kill': Object.assign(ev, { x: d.x, y: d.y, alt: d.alt || 0, sz: 0.6, name: d.tn ? `TN ${d.tn}` : IC.fullName(d.d), text: `${d.tn ? 'TN ' + d.tn + ' (' + IC.fullName(d.d) + ')' : IC.fullName(d.d)} shot down` }); break;
-    case 'intercept': Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.alt || d.t.alt || 0, sz: 0.8, name: d.t.tn ? `TN ${d.t.tn}` : 'warhead', text: `Intercept ${d.alt ? U.alt(d.alt) + ' up' : ''}` }); break;
+    case 'impact': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: d.src && d.src.d ? Math.min(2, 0.6 + d.src.d.dmg / 100) : 1, name: d.hit ? d.hit.name : 'open ground', text: `${d.hit ? d.hit.name : 'Open ground'} hit by ${d.src && d.src.d ? IC.fullName(d.src.d) : 'a weapon'}`, dmg: damaged(S, d.x, d.y), tref: d.src || null }); break;
+    case 'kill': Object.assign(ev, { x: d.x, y: d.y, alt: d.alt || 0, sz: 0.6, name: d.tn ? `TN ${d.tn}` : IC.fullName(d.d), text: `${d.tn ? 'TN ' + d.tn + ' (' + IC.fullName(d.d) + ')' : IC.fullName(d.d)} shot down`, tref: d }); break;
+    case 'intercept': Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.alt || d.t.alt || 0, sz: 0.8, name: d.t.tn ? `TN ${d.t.tn}` : 'warhead', text: `Intercept ${d.alt ? U.alt(d.alt) + ' up' : ''}`, tref: d.t, mref: d.m }); break;
     case 'launch': Object.assign(ev, { x: d.u.x, y: d.u.y, alt: 0, sz: 0.3, name: d.u.name, text: `${d.u.name} fires at TN ${d.t.tn || '?'}`, quiet: true }); break;
     case 'fire': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: 0.3, name: d.name, text: `${d.name} fires`, quiet: true }); break;
     case 'crash': Object.assign(ev, { x: d.m.x, y: d.m.y, alt: 0, sz: 1, name: d.m.who || 'aircraft', text: `Crash at ${d.ap.name}: ${d.cause || ''}`, dmg: [] }); break;

@@ -199,13 +199,14 @@ function toScene(me, names, cols, o, k, shade) {
   if (pbr) g.setAttribute('pbr', new THREE.BufferAttribute(pbr, 3));
   return g;
 }
-const ANIM = { gear: 1, flap: 1, prop: 1, rotor: 1, radar: 1, turret: 1, launch: 1, ab: 1, flex: 1, ail: 1, elev: 1, rud: 1, spoil: 1, slat: 1, fan: 1, rev: 1, revc: 1, lift: 1, scissor: 1, sock: 1 };
+const ANIM = { gear: 1, flap: 1, prop: 1, rotor: 1, radar: 1, turret: 1, launch: 1, slew: 1, gun: 1, aim: 1, cap: 1, rnd: 1, erect: 1, ab: 1, flex: 1, ail: 1, elev: 1, rud: 1, spoil: 1, slat: 1, fan: 1, rev: 1, revc: 1, lift: 1, scissor: 1, sock: 1 };
 /* what is out of sight at rest (and so left out of the model in one piece): flaps, spoilers, slats, reversers */
 const HIDDEN = { ab: 1, flap: 1, spoil: 1, slat: 1, rev: 1, revc: 1 };
 /* the life of the scene (render3d-life.js): aircraft that move like real ones, the airports' lights, jet bridges and
    vehicles, launches. When it is loaded it takes the hooks below; without it the view is as it was */
 const LIFE = () => IC.life3d;
 const WAR = () => IC.war3d && IC.war3d.scene ? IC.war3d : null;   // brief 59: smoke, fire, wreckage and the film cameras
+const ARMS = () => IC.arms3d && IC.arms3d.scene ? IC.arms3d : null;   // brief 62: launchers that slew, fire and reload; the enemy's launchers
 const LIGHT_COL = { red: '#ff3a2a', green: '#3aff6a', white: '#ffffff', strobe: '#ffffff', beacon: '#ff2a1a', land: '#fff4d8' };
 /* a model as the view uses it, built once per model, livery and detail:
    solid (everything that does not move), win (windows, lit at night), anim (each moving part with its pivot and axis),
@@ -954,6 +955,7 @@ function makeMover(v, tr) {
   }
   v.movers.push(m); v.moverOf.set(tr, m); v.made.mover++;
   if (LIFE()) LIFE().mover(v, m);
+  if (ARMS() && v.arms) ARMS().mover(v, m);
   return m;
 }
 function dropMover(v, m) {
@@ -988,6 +990,7 @@ function updMover(v, m, t) {
   const pitch = hk > 1 ? Math.atan(Math.tan(st.pitch) * hk) : st.pitch;
   m.grp.position.set(st.x - v.cx, y + (onGnd && pitch > 0 && m.MP.xm ? -m.MP.xm * Math.sin(pitch) : 0), st.y - v.cy);
   m.grp.rotation.set(st.roll, -(st.h + st.crab), pitch, 'YZX');
+  if (m.tr.kind === 'missile' && v.arms) ARMS().fix(v, m, st, t);
   // how big it is on screen: the model close in, the whole of it in one piece further out, a dot beyond that
   const d = m.grp.position.distanceTo(v.camera.position), px = m.size / Math.max(1e-3, d) * v.focalPx;
   m.px = px;
@@ -1023,6 +1026,7 @@ function animate(v, m, st, t, dt) {
   m.launchK = ease(m.launchK, st.spd < 0.002 ? 1 : 0, dt, 6);
   const life = LIFE();
   for (const A of m.anims) {
+    if (m.arms && ARMS().anim(v, m, A, st, t, dt)) continue;
     if (life && life.anim(v, m, A, st, t, dt)) continue;
     const k = A.a.kind;
     let ang = 0;
@@ -1474,6 +1478,7 @@ function sceneBase(v) {
   else FX().scene(v);
   if (LIFE()) LIFE().scene(v);
   if (WAR()) WAR().scene(v);
+  if (ARMS()) ARMS().scene(v);
   return scene;
 }
 function buildReplay(v) {
@@ -1769,6 +1774,7 @@ function step(v, now) {
   for (const m of v.dmgMeshes) applyDamage(m, t);
   for (const L of v.nightLights) L.visible = v.night;
   if (LIFE() && v.life) LIFE().frame(v, t, dtR);
+  if (ARMS() && v.arms) ARMS().frame(v, t, dtR);
   if (WAR() && v.war) WAR().frame(v, t, dtR);
   // the finest ring of ground shows only from low down: from higher up the next ring is fine enough, and the two
   // are painted the same way (the finest adds the fields the map shows close in)
@@ -2195,7 +2201,7 @@ function galleryFrame(v) {
 
 IC.replayState = () => V;
 /* what the other files of the 3D view build on: its picture (render3d-fx.js) and its life (render3d-life.js) */
-IC.R3D = { THREE: () => THREE, three: () => THREE, CFG, KM, LIFT, share, geom, toScene, colorOf, lineGeom, puffTex, sphereG, discG, coneG, quadG, texSRGB, seeded,
+IC.R3D = { clearParts: () => partsCache.clear(), THREE: () => THREE, three: () => THREE, CFG, KM, LIFT, share, geom, toScene, colorOf, lineGeom, puffTex, sphereG, discG, coneG, quadG, texSRGB, seeded,
   glow, hT, hRaw, solidMat, basicMat, winMat, modelParts, isShared, scenePos, trackOf, moverOfRef, views: () => [V, L].filter(Boolean) };
 
 })(window.IC);
