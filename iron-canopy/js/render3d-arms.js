@@ -179,12 +179,24 @@ A3.frame = function (v, t) {
     const first = Math.min(...p.t0), last = Math.max(...p.t0);
     const on = t > first - CFG.raise[0] - 30 && t < last + CFG.leave + 60;
     if (!on) { if (p.obj) p.obj.grp.visible = false; continue; }
-    if (!p.obj) p.obj = standalone(v, p.key);
+    const h = p.key === 'etel' ? p.az + Math.PI : p.az;
+    if (!p.obj) {
+      p.obj = standalone(v, p.key);
+      // where the vehicle stands: its round, erected, over the point the weapon leaves from (measured on the model once)
+      const R = p.obj.anims.get('rnd0'), E = p.obj.anims.get('erect'), q = v.arms.V;
+      p.ox = p.oy = 0;
+      if (R) {
+        p.obj.grp.position.set(0, 0, 0); p.obj.grp.rotation.set(0, -h, 0, 'YZX');
+        if (E) E.node.quaternion.setFromAxisAngle(E.axis, -E.a.up);
+        p.obj.grp.updateMatrixWorld(true); q.set(0, 0, 0); R.node.localToWorld(q);
+        p.ox = -q.x; p.oy = -q.z;
+        if (E) E.node.quaternion.identity();
+      }
+    }
     const O = p.obj, g = O.grp; g.visible = true;
     // it drives off a while after its last round, along its heading
-    const h = p.key === 'etel' ? p.az + Math.PI : p.az, off = p.key === 'etel' ? 0.0685 : -0.011;
     const go = Math.max(0, t - last - CFG.leave), dist = go < 0 ? 0 : 0.083 * go * Math.min(1, go / 10) / 2;   // 30 km/h, pulling away
-    const x = p.x + Math.cos(h) * (off + dist), y = p.y + Math.sin(h) * (off + dist);
+    const x = p.x + p.ox + Math.cos(h) * dist, y = p.y + p.oy + Math.sin(h) * dist;
     g.position.set(x - v.cx, H.hT(v, x, y) * v.hk, y - v.cy); g.rotation.set(0, -h, 0, 'YZX');
     for (const A of O.anims.values()) {
       const k = A.a.kind;

@@ -488,7 +488,7 @@ function launchBlast(v, w, m, mo, age, big) {
     streak(w.spark, rx + dx / l * d1, ry + dy / l * d1, rz + dz / l * d1, rx + dx / l * d0, ry + dy / l * d0, rz + dz / l * d0, 1, 0.8, 0.45, 1 - a / 0.4);
   }
   // the cloud: most of it out of the back, some round the mouth; it rolls out, slows, rises a little and drifts
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 26; i++) {
     const h1 = hash(seed + i * 5 + 11), h2 = hash(seed + i * 5 + 12), h3 = hash(seed + i * 5 + 13), back = i % 4 !== 0;
     const a = age - h3 * 0.15; if (a <= 0) continue;
     const life = 35 + 25 * h1, kk = a / life; if (kk >= 1) continue;
@@ -498,13 +498,13 @@ function launchBlast(v, w, m, mo, age, big) {
     else { dx = D.x * 0.4 + Math.cos(an) * 0.5; dz = D.z * 0.4 + Math.sin(an) * 0.5; dy = D.y * 0.3 + 0.2; }
     const ox = back ? rx : P.x, oy = back ? ry : P.y, oz = back ? rz : P.z, sz = len * (0.15 + 0.4 * h2) * big + 0.04 * Math.sqrt(a) * big;
     let y = oy + dy * out + 0.0025 * a * KM * v.hk; if (y < gY + sz * 0.35) y = gY + sz * 0.35;
-    const c = (0.48 + 0.12 * h3) * L, warm = lit * 0.9;
-    emit(w.smoke, ox + dx * out + w.wx * a, y, oz + dz * out + w.wy * a, sz, c + (1 - c) * warm, c + (0.62 - c) * warm, c + (0.3 - c) * warm, 0.42 * Math.pow(1 - kk, 1.6) * U.clamp(a / 0.1, 0.3, 1), h1 * 6.28);
+    const c = (0.34 + 0.1 * h3) * L, warm = lit * 0.9;
+    emit(w.smoke, ox + dx * out + w.wx * a, y, oz + dz * out + w.wy * a, sz, c + (1 - c) * warm, c + (0.62 - c) * warm, c + (0.3 - c) * warm, 0.34 * Math.pow(1 - kk, 1.6) * U.clamp(a / 0.1, 0.3, 1), h1 * 6.28);
   }
   // dust off the ground round the launcher
-  if (age < 16) for (let i = 0; i < 22; i++) {
-    const an = hash(seed + i + 290) * 6.283, R = len * (0.4 + 2.6 * (1 - Math.exp(-age * 1.8))) * (0.5 + 0.7 * hash(seed + i + 310)), kk = age / 16, c = 0.5 * L, sz = len * (0.25 + 0.06 * age) * (0.7 + 0.6 * hash(seed + i + 320));
-    emit(w.smoke, P.x + Math.cos(an) * R + w.wx * age, gY + sz * 0.55, P.z + Math.sin(an) * R + w.wy * age, sz, c, c * 0.92, c * 0.8, 0.4 * Math.pow(1 - kk, 1.5), i);
+  if (age < 16) for (let i = 0; i < 14; i++) {
+    const an = hash(seed + i + 290) * 6.283, R = len * (0.4 + 2.2 * (1 - Math.exp(-age * 1.8))) * (0.5 + 0.7 * hash(seed + i + 310)), kk = age / 16, c = 0.36 * L, sz = len * (0.18 + 0.04 * age) * (0.7 + 0.6 * hash(seed + i + 320));
+    emit(w.smoke, P.x + Math.cos(an) * R + w.wx * age, gY + sz * 0.55, P.z + Math.sin(an) * R + w.wy * age, sz, c, c * 0.92, c * 0.8, 0.25 * Math.pow(1 - kk, 1.5), i);
   }
 }
 /* the enemy's weapons: a ballistic missile's boost and re-entry, a cruise missile's engine */
