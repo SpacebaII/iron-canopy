@@ -556,8 +556,8 @@ const HINT = {
     asp: m => IC.aspModeHint(m),
     zone: m => m.c ? 'Now click its edge: that sets the radius of the prohibited zone.' : 'Click the centre of a prohibited zone. Civil routes will fly around it.',
     road: m => `${IC.ROADS[m.cls].name}, ${IC.ROADS[m.cls].what}: start at one of your airports and click points to the road it joins. ${m.plan && m.pts.length >= 2 ? `${m.plan.km.toFixed(1)} km, ${U.money(m.plan.cost)}, open in about ${U.dur(m.plan.hours * 3600)}${m.plan.why ? ` · ${m.plan.why.replace(/\.$/, '')}` : ' · right-click or Enter to build'}. ` : ''}Backspace undoes a point, Esc cancels.`,
-    found: m => m.site ? `Turn the runway with R (Shift+R the other way) or drag along it; click elsewhere to move the site. Found (or Enter) founds the airport; Esc or right-click picks another site.\n${IC.foundLines(S, IC.foundSurvey(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL)).join(' · ')}`
-      : `Click a flat site in ${S.world.names.H} for a new airport (from ${U.money(IC.FOUND_COST)} with land). At the edge of a town is fine; at least 12 km from another airport.`
+    found: m => m.site ? `Pick what it is for by the site (C cycles): its runway, site and price follow. Turn the runway with R (Shift+R the other way) or drag along it; click elsewhere to move the site. Found (or Enter) founds the airport; Esc or right-click picks another site.\n${IC.foundLines(S, IC.foundSurveyOf(S, m)).join(' · ')}`
+      : `Click a flat site in ${S.world.names.H} for a new airport (an airfield from ${U.money(Math.round(IC.FOUND_COST * IC.APT_CLASS.field.cost))}, a national airport from ${U.money(IC.FOUND_COST)}, with land). At the edge of a town is fine; at least 12 km from another airport.`
 };
 /* the builder: how to use the tool, and what the plan under the cursor will do */
 function buildHint(m, short) {

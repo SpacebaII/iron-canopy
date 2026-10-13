@@ -931,6 +931,7 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 /* the Build button beside a placed plan (brief 47): build, turn, cancel; why not, when it cannot be built */
 #bldgo{position:absolute;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;max-width:22rem;padding:.35rem;border-radius:12px;background:rgba(6,20,30,.9);box-shadow:0 0 18px rgba(111,210,255,.25)}
 #bldgo[hidden]{display:none}
+#bldgo .fcls{flex-basis:100%;display:flex;flex-wrap:wrap;gap:.25rem}
 #bldgo .btn.go{background:rgba(110,230,140,.9);color:#04160b;font-weight:700}
 #bldgo .btn.go:hover:not(:disabled){background:#8af0a8}
 #bldgo .btn.go:disabled{background:rgba(255,91,79,.35);color:#ffd6d0;opacity:1}

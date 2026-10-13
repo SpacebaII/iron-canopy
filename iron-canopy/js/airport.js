@@ -261,6 +261,8 @@ IC.standBridge = function (ap, s) {
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
 IC.rwEnd = (rw, dir) => (rw.ends ? rw.ends[dir > 0 ? 'a' : 'b'] : '') || (dir > 0 ? 'A' : 'B');
 // (as on a chart: the lower number first, "Runway 08/26")
+/* a runway's name as a title: 'Runway 09/27', whether or not its name says Runway */
+IC.rwTitle = rw => /^runway\b/i.test(rw && rw.name || '') ? rw.name : `Runway ${(rw && rw.name) || ''}`.trim();
 const rwName = rw => `Runway ${parseInt(rw.ends.a) <= parseInt(rw.ends.b) ? `${rw.ends.a}/${rw.ends.b}` : `${rw.ends.b}/${rw.ends.a}`}`;
 function nameRunways(ap) {
   // (runways laid out from real data keep their real names: airports-real.js)
@@ -846,7 +848,9 @@ IC.aptStats = function (S, ap) {
   }
   // fog and low cloud
   st.ilsEnds = rws.reduce((n, rw) => n + (IC.rwHasILS(ap, rw, 1) ? 1 : 0) + (IC.rwHasILS(ap, rw, -1) ? 1 : 0), 0);
-  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase') st.warn.push('No landing system (ILS): in fog, low cloud and snow every arrival diverts. One at the end aircraft land toward (₭25M, Navaids) lets them land.');
+  // (an airfield's light aircraft fly by sight and keep their own spacing: no landing system or tower expected)
+  const field = IC.aptClass && IC.aptClass(ap) === 'field';
+  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase' && !field) st.warn.push('No landing system (ILS): in fog, low cloud and snow every arrival diverts. One at the end aircraft land toward (₭25M, Navaids) lets them land.');
   // fire and rescue: how long the trucks take to reach the far end of each runway
   const fires = alive('fire');
   const fireSt = fires.filter(f => rws.some(rw => U.dist(f, rwAt(rw, 0.5)) < 15));
@@ -855,7 +859,7 @@ IC.aptStats = function (S, ap) {
   for (const rw of rws) { let r = 0; for (const t of [0, 0.5, 1]) r = Math.max(r, IC.aptRescue(ap, rwAt(rw, t))); st.rescueRw[rw.id] = r; st.rescue = Math.max(st.rescue, r); }
   // heavy jets need a runway long enough for them that the trucks reach in 3 minutes
   st.heavyOk = rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES.wide.rwy && st.rescueRw[rw.id] <= IC.FIRE_STD);
-  if (!tower) st.warn.push('No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
+  if (!tower && !field) st.warn.push('No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
   if (!st.fire) st.warn.push('No fire station near the runway: only turboprops may use it. Build one within 1.5 km of the runway.');
   else for (const rw of rws) if (st.rescueRw[rw.id] > IC.FIRE_STD) st.warn.push(`Fire trucks reach ${rw.name} in ${IC.mmss(st.rescueRw[rw.id])}: heavy jets may not land on it, and more people die in a crash there. A fire station closer to its far end brings it under 3 min.`);
   if (rws.length) { const w = waterNear(S, ap, rws); if (w.near && ap.kind !== 'airbase') st.warn.push(`A ${w.what} ${U.km(w.d)} from the runway attracts birds: now and then one hits an aircraft.`); }
@@ -881,6 +885,8 @@ IC.aptStats = function (S, ap) {
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');
   st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 && st.heavyOk ? 'cargo' : best >= 27 && st.heavyOk ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
   ap.st = st;
+  // what the airport's purpose still lacks (aptclass.js), after everything else is measured
+  if (IC.aptPurposeLacks && ap.kind === 'airport') for (const w of IC.aptPurposeLacks(S, ap)) st.warn.push(w);
   return st;
 };
 const FAF_T = () => IC.GOPS.FAF / 0.95 + IC.GOPS.CLEAR / IC.GOPS.TAXI + 30;
@@ -1646,7 +1652,7 @@ IC.aptRemove = function (S, ap, id) {
 
 /* ---------- new airports ---------- */
 IC.FOUND_COST = 80;
-IC.foundCheck = function (S, x, y) {
+IC.foundCheck = function (S, x, y, cls) {
   if (!IC.inHome(x, y) || IC.inLake(x, y)) return 'Outside the country.';
   if (S.world.slopeAt && S.world.slopeAt(x, y) > 0.08) return 'Too hilly for a runway.';
   const near = IC.bases(S).find(b => U.dist(b, { x, y }) < 120);
@@ -1657,14 +1663,18 @@ IC.foundCheck = function (S, x, y) {
   // not under another airport's approach and departure paths, nor under its busy airways (growth.js)
   const clash = IC.siteConflict && IC.siteConflict(S, x, y);
   if (clash) return clash;
-  if (S.budget < IC.FOUND_COST) return `Needs ${U.money(IC.FOUND_COST)}.`;
+  const fc = Math.round(IC.FOUND_COST * ((IC.APT_CLASS && IC.APT_CLASS[cls || 'national'] || {}).cost || 1));
+  if (S.budget < fc) return `Needs ${U.money(fc)}.`;
   return '';
 };
-/* a new airport at x, y with its main runway at heading a (world radians), after a site survey */
-IC.foundAirport = function (S, x, y, a) {
-  const why = IC.foundCheck(S, x, y);
+/* a new airport at x, y with its main runway at heading a (world radians), after a site survey; cls is what it is
+   for (IC.APT_CLASS: its runway, site and price), a national airport when not given */
+IC.foundAirport = function (S, x, y, a, cls) {
+  cls = IC.APT_CLASS && IC.APT_CLASS[cls] ? cls : 'national';
+  const K = IC.APT_CLASS ? IC.APT_CLASS[cls] : { rw: 30, site: 65, sfx: 'Airport' };
+  const why = IC.foundCheck(S, x, y, cls);
   if (why) { IC.log(S, 'warn', 'BUILD', why); IC.text(S, x, y, why.toUpperCase().replace(/\.$/, ''), IC.C.hostile); return null; }
-  const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL);
+  const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL, K.rw, cls);
   if (S.budget < sv.cost) { IC.log(S, 'warn', 'BUILD', `The site costs ${U.money(sv.cost)} with land and levelling.`); return null; }
   if (sv.river) { IC.log(S, 'warn', 'BUILD', 'A river crosses the runway line: turn the runway or pick another site.'); IC.text(S, x, y, 'A RIVER CROSSES THE RUNWAY LINE', IC.C.hostile); return null; }
   // (the access road is paid as it is laid, by landside.js: the survey's total counts it)
@@ -1672,9 +1682,12 @@ IC.foundAirport = function (S, x, y, a) {
   const city = IC.cities(S).slice()
 .sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
   const n = S.infra.filter(i => i.kind === 'airport').length;
-  const ap = { id: 'apt' + n + IC.nid(''), kind: 'airport', name: `${city ? city.name : 'New'} ${S.infra.some(i => i.name === (city ? city.name : 'New') + ' Airport') ? 'Field' : 'Airport'}`, x, y, owner: 'us', infra: true, r: 50, max: 150, hp: 150, city: city && city.id, inv: {}, inc: {} };
+  const town = city ? city.name : 'New', taken = nm => S.infra.some(i => i.name === nm);
+  const name = [`${town} ${K.sfx}`, `${town} Airport`, `${town} Field`, `${town} ${K.sfx} 2`].find(nm => !taken(nm)) || `${town} ${K.sfx} ${n + 1}`;
+  const ap = { id: 'apt' + n + IC.nid(''), kind: 'airport', name, cls, x, y, owner: 'us', infra: true, r: 50, max: 150, hp: 150, city: city && city.id, inv: {}, inc: {} };
   ap.rwyA = sv.a;
   IC.initAirport(ap);
+  ap.buildR = K.site;
   ap.template = 'new'; ap.crews = 1; ap.works = []; ap.autoRepair = true; ap.survey = sv; ap.mat = { asph: 0, conc: 0, steel: 0 };
   S.infra.push(ap); S.byId[ap.id] = ap;
   IC.aptStats(S, ap);
@@ -1687,7 +1700,7 @@ IC.foundAirport = function (S, x, y, a) {
     if (c) c.morale = Math.max(0, c.morale - Math.min(8, 1 + n * 0.05));
     IC.log(S, 'warn', 'AVIATION', `Residents of ${name} protest: ${n} blocks lie under the flight paths of runway ${sv.name}.`, c || ap);
   }
-  IC.log(S, 'info', 'AVIATION', `${ap.name} founded (${U.money(sv.cost)} with land and levelling), runway heading ${sv.name}. Lay a runway, a taxiway, an apron and a terminal before airlines will come.`, ap);
+  IC.log(S, 'info', 'AVIATION', `${ap.name} founded as ${IC.aWord ? IC.aWord(K.name.toLowerCase()) : 'a national airport'} (${U.money(sv.cost)} with land and levelling), runway heading ${sv.name}. ${cls === 'field' ? 'Lay the runway and a ramp with small stands for light aircraft.' : 'Lay a runway, a taxiway, an apron and a terminal before airlines will come.'}`, ap);
   IC.emit(S, 'founded', ap);
   return ap;
 };

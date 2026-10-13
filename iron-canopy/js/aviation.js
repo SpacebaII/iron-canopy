@@ -507,12 +507,15 @@ function makeRequest(S) {
   const fleet = IC.avFleetOf(al);
   let type = U.pick(fleet);
   // airlines go where passengers are waiting for seats
-  const busy = L => U.wpick(L.map(x => [x, 0.3 + Math.min(3, IC.demandPull(S, x))])) || U.pick(L);
+  // (and where the airport is for them: a regional airline to a regional airport, a freighter to a cargo one; an
+  // airfield takes none of them, IC.aptWant)
+  const want = x => IC.aptWant ? IC.aptWant(x, al.kind) : 1;
+  const busy = L => { L = L.filter(x => want(x) > 0); return U.wpick(L.map(x => [x, (0.3 + Math.min(3, IC.demandPull(S, x))) * want(x)])) || U.pick(L); };
   let a = S.byId[al.hub], b;
   if (al.kind === 'regional') { a = busy(apts); const o = apts.filter(x => x !== a); if (!o.length) return; b = { apt: busy(o).id }; }
   else if (al.kind === 'budget') { a = busy(apts); const o = apts.filter(x => x !== a); b = Math.random() < 0.6 || !o.length ? U.pick(ports) : { apt: busy(o).id }; }
-  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.pick(apts.filter(x => x.template === 'intl')) || a; }
-  else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc).map(x => [x, 0.2 + Math.min(3, IC.cargoPull(S, x))])) || a; b = U.pick(ports); }
+  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.wpick(apts.filter(x => x.template === 'intl' || IC.aptClass(x) === 'hub' || (x.cls === 'national' && want(x) > 0)).map(x => [x, want(x)])) || a; }
+  else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc && want(x) > 0).map(x => [x, (0.2 + Math.min(3, IC.cargoPull(S, x))) * want(x)])) || a; b = U.pick(ports); }
   else b = U.pick(ports);
   if (!a || !b) return;
   // no airline adds flights where the seats already fly more than half empty; cargo airlines look at the cargo

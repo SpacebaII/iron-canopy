@@ -1697,7 +1697,7 @@ function drawFoundGhost(g, S, m, hv, px) {
     if (!m.site) { const d = U.dist(city, hv) / 10, ok = d >= 15 && d <= 40; lbl(g, `${Math.round(d)} km from ${city.name}${ok ? '' : d < 15 ? ': close to homes' : ': far for passengers'}`, hv.x, hv.y + 18 + 14 * px, px, ok ? 'rgba(127,232,176,0.95)' : 'rgba(255,190,120,0.95)', 9.5, 'center', 600); }
   }
   if (!m.site) {
-    const why = IC.foundCheck(S, hv.x, hv.y);
+    const why = IC.foundCheck(S, hv.x, hv.y, m.cls || IC.foundDefault(S));
     g.strokeStyle = why ? IC.C.hostile : 'rgba(111,210,255,0.9)'; g.lineWidth = 1.5 * px; g.beginPath(); g.arc(hv.x, hv.y, 15, 0, 7); g.stroke();
     lbl(g, why || 'click to survey this site', hv.x, hv.y - 18 - 8 * px, px, why ? IC.C.hostile : IC.C.text, 9.5, 'center', 600);
     // the prevailing wind, so the first site is chosen with it in mind
@@ -1705,22 +1705,28 @@ function drawFoundGhost(g, S, m, hv, px) {
     lbl(g, 'wind', hv.x + Math.cos(wa) * 36, hv.y + Math.sin(wa) * 36 - 4 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
     return;
   }
-  const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
-  // the noise footprint under the approach and departure paths
+  const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurveyOf(S, m), d = { x: Math.cos(a), y: Math.sin(a) }, h = (sv.len || 30) / 2;
+  const K = IC.APT_CLASS[sv.cls] || IC.APT_CLASS.national;
+  // the site the class buys: the airport may be built out to it (and on, 4 km beyond what is built)
+  g.strokeStyle = 'rgba(127,232,176,0.55)'; g.lineWidth = 1.2 * px; g.setLineDash([6 * px, 5 * px]); g.beginPath(); g.arc(m.site.x, m.site.y, K.site, 0, 7); g.stroke(); g.setLineDash([]);
+  lbl(g, `${K.name} · site ${U.km(K.site * 2)} across`, m.site.x, m.site.y - K.site - 6 * px, px, 'rgba(127,232,176,0.95)', 9.5, 'center', 700);
+  // the noise footprint under the approach and departure paths (as IC.noiseOver measures it)
   g.save(); g.translate(m.site.x, m.site.y); g.rotate(a);
   g.fillStyle = sv.homes ? 'rgba(255,150,80,0.12)' : 'rgba(111,210,255,0.08)'; g.strokeStyle = sv.homes ? 'rgba(255,150,80,0.6)' : 'rgba(111,210,255,0.5)'; g.lineWidth = 1.2 * px;
-  g.beginPath(); const E = 15 + 80;
-  g.moveTo(-E, -15); g.lineTo(-60, -6); g.lineTo(60, -6); g.lineTo(E, -15); g.lineTo(E, 15); g.lineTo(60, 6); g.lineTo(-60, 6); g.lineTo(-E, 15); g.closePath(); g.fill(); g.stroke();
-  g.fillStyle = 'rgba(210,215,220,0.95)'; g.fillRect(-15, -0.6, 30, 1.2);
+  // (6 km wide at the middle, widening to 15 km wide 6 km out, to 8 km beyond the ends; scaled by the class)
+  const nk = K.noise || 1, E = h + 80 * nk, I = Math.min(60, E), wI = 15 * nk * (0.4 + 0.6 * I / 60), w0 = 6 * nk;
+  g.beginPath(); g.moveTo(-E, -wI); g.lineTo(-I, -wI); g.lineTo(0, -w0); g.lineTo(I, -wI); g.lineTo(E, -wI); g.lineTo(E, wI); g.lineTo(I, wI); g.lineTo(0, w0); g.lineTo(-I, wI); g.lineTo(-E, wI); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = 'rgba(210,215,220,0.95)'; g.fillRect(-h, -0.6, h * 2, 1.2);
   g.restore();
-  // the prevailing wind
-  const wa = IC.PREVAIL, wx = m.site.x + Math.cos(wa) * 40, wy = m.site.y + Math.sin(wa) * 40;
-  g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(m.site.x + Math.cos(wa) * 20, m.site.y + Math.sin(wa) * 20); g.stroke();
+  // the prevailing wind, off to one side of the runway so it never covers the runway's end names
+  const wa = IC.PREVAIL, nx = -Math.sin(a), ny = Math.cos(a), off = 18 + 10 * nk;
+  const bx = m.site.x + nx * off, by = m.site.y + ny * off, wx = bx + Math.cos(wa) * 20, wy = by + Math.sin(wa) * 20;
+  g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(bx + Math.cos(wa) * 4, by + Math.sin(wa) * 4); g.stroke();
   lbl(g, 'prevailing wind', wx, wy - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
   // the runway's name at each end; the full survey is in the hint below
   const ends = sv.ends;
-  lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
-  lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
+  lbl(g, ends[0], m.site.x - d.x * (h + 4), m.site.y - d.y * (h + 4) + 4 * px, px, IC.C.text, 11, 'center', 700);
+  lbl(g, ends[1], m.site.x + d.x * (h + 4), m.site.y + d.y * (h + 4) + 4 * px, px, IC.C.text, 11, 'center', 700);
   if (sv.homes) lbl(g, `noise over ${sv.homes} city blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);
 }
 

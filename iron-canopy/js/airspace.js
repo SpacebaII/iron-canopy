@@ -527,7 +527,7 @@ IC.ASP_SHAPES = {
 };
 const OLD = { field: 'D', regional: 'C', hub: 'B', base: 'M' };   // the names of the presets before shapes
 const AREA_OF = { R: 'R', Q: 'T', X: 'X' };
-IC.aspPresetFor = ap => ap.kind === 'airbase' ? 'M' : ap.template === 'intl' || ap.template === 'kden' ? 'C' : 'D';
+IC.aspPresetFor = ap => ap.kind === 'airbase' ? 'M' : ap.template === 'intl' || ap.template === 'kden' ? 'C' : (IC.aptClassOf && IC.aptClassOf(ap) || {}).asp || 'D';
 const volsChanged = S => { S.asp.volVer = (S.asp.volVer || 0) + 1; S.asp.vi = null; S.asp.zs = null; };
 /* the airspace chapter: before it, the game says nothing about airspace design */
 IC.aspTaught = S => !(IC.storyLock && IC.storyLock(S, 'airspace'));
@@ -1261,6 +1261,8 @@ IC.aspFoundField = function (S, x, y) {
 IC.gaBase = function (S, town) {
   let best = null, bd = 400;
   for (const f of S.asp.fields) { const d = U.dist(f, town); if (d < bd) { bd = d; best = { x: f.x, y: f.y, name: f.name, field: f.id }; } }
+  // (an airfield of ours is a field too: the nearer wins)
+  for (const ap of IC.bases(S)) if (ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && IC.aptClass(ap) === 'field') { const d = U.dist(ap, town); if (d < bd) { bd = d; best = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }; } }
   if (best) return best;
   for (const ap of IC.bases(S)) if (ap.kind === 'airport' && ap.owner === 'us' && !ap.offline) { const d = U.dist(ap, town); if (d < bd) { bd = d; best = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }; } }
   return best;

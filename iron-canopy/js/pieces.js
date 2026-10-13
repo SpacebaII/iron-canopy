@@ -41,10 +41,23 @@ function straightTerm(B, y0, n, size) {
   return { ends: P.lanes[0].ends, lane: y0 - P.off, Lt };
 }
 /* the services beside a runway, on the +y side at y (centre line of the row), from x: fire station, tower, fuel */
-function services(B, x, y) {
+function services(B, x, y, noTower) {
   B.box('fire', pt(x - 1.5, y), 0, 1.0, 0.6, { name: 'Fire station' });
-  B.box('tower', pt(x, y + 0.15), 0, 0.3, 0.3, { name: 'Control tower' });
+  if (!noTower) B.box('tower', pt(x, y + 0.15), 0, 0.3, 0.3, { name: 'Control tower' });
   B.box('fuel', pt(x + 2.1, y + 0.35), 0, 1.5, 1.0, { name: 'Fuel farm' });
+}
+
+/* a cargo shed with four freighter stands, its taxilane along y = ly from cends[0] to cends[1] (the terminal lane's
+   link to the parallel, so it is no dead end), the shed beyond it on the +y side, linked to the parallel at its west
+   end too (when there is one) */
+function cargoSet(B, cx, ly, cends, link) {
+  const S0 = IC.STAND.l, WALL = 0.06, sd = ly + 0.12 + S0.d / 2, face = sd + S0.d / 2 + WALL;
+  const ai = B.apron([pt(cx - 1.8, ly - 0.14), pt(cx + 1.8, ly - 0.14), pt(cx + 1.8, face - 0.04), pt(cx - 1.8, face - 0.04)], { zone: 'cargo', name: 'Cargo apron' });
+  B.box('cargo', pt(cx, face + 0.4), 0, 3.2, 0.8, { name: 'Cargo terminal' });
+  const xs = [-1.2, -0.4, 0.4, 1.2].map(x => cx + x);
+  B.lane([pt(cends[0], ly)].concat(xs.map(x => pt(x, ly)), [pt(cends[1], ly)]), { w: 0.23 });
+  for (const x of xs) B.stand(ai, pt(x, sd), Math.PI / 2, 'l', B.node(pt(x, ly)));
+  if (link) B.taxi([pt(cends[0], ly), pt(cends[0], PAR)]);
 }
 
 IC.PIECES = {
@@ -76,16 +89,24 @@ IC.PIECES = {
       for (const x of xs) B.stand(ai, pt(x, sd), Math.PI / 2, 'l', B.node(pt(x, ld)));
       B.L.joins = [pt(-2.3, ld), pt(2.3, ld)]; return B.L; } },
   starter: { name: 'Starter airport', bp: true, use: 'a whole small airport, ready for jets',
-    desc: 'A complete airport as one plan: a 3 km runway with its taxiways and a landing system at each end, a terminal with eight stands, a control tower, a fire station and a fuel farm. On a new airport it lies on the surveyed runway; with a runway already planned it is built round it. One price, paid as the work runs; Undo takes all of it back before work starts.',
+    desc: 'A complete airport as one plan, sized for what the airport is for: the surveyed runway (1.2 km for an airfield, 2.2 km regional, 3 km national, 4 km for a hub) with its taxiways and a landing system at each end, a terminal with stands (small stands for light aircraft at an airfield, large ones at a hub, a cargo area at a cargo airport), a control tower, a fire station and a fuel farm. On a new airport it lies on the surveyed runway; with a runway already planned it is built round it. One price, paid as the work runs; Undo takes all of it back before work starts.',
     make: o => {
-      const B = IC.layoutBuilder(), L = o.len || 30, n = 8;
-      const S0 = IC.STAND.m, Lt = n * (S0.w + 0.02) + 0.1, ld = 0.3 + 0.06 + S0.d + 0.12, y0 = PAR + LANE_GAP + ld;
+      // (its size follows the airport's class, IC.APT_CLASS: stands, their size, a cargo area, the stands' zone)
+      const C = o.st || {}, B = IC.layoutBuilder(), L = o.len || 30, n = C.n || 8, size = C.size || 'm';
+      const S0 = IC.STAND[size], Lt = n * (S0.w + 0.02) + 0.1, ld = 0.3 + 0.06 + S0.d + 0.12, y0 = PAR + LANE_GAP + ld;
       const ends = [-Lt / 2 - 0.6, Lt / 2 + 0.6];
-      runwaySet(B, L, { runway: o.runway, parallel: o.parallel, joins: ends });
-      straightTerm(B, y0, n, 'm');
+      // (a cargo area west of the terminal, on the same taxilane line: its own link to the parallel)
+      const cw = 3.6, cx = C.cargo ? ends[0] - 0.6 - cw / 2 - 0.2 : 0, cends = C.cargo ? [cx - cw / 2 - 0.5, ends[0]] : [];
+      runwaySet(B, L, { runway: o.runway, parallel: o.parallel, joins: ends.concat(cends.slice(0, 1)) });
+      straightTerm(B, y0, n, size);
+      if (C.zone) for (const a of B.L.aprons) a.zone = C.zone;
       for (const x of ends) if (o.parallel !== false) B.taxi([pt(x, y0 - ld), pt(x, PAR)]);
-      if (o.parallel === false) B.L.joins = ends.map(x => pt(x, y0 - ld));
-      services(B, Lt / 2 + 3.4, PAR + 1.4);
+      if (C.cargo) cargoSet(B, cx, y0 - ld, cends, o.parallel !== false);
+      if (o.parallel === false) B.L.joins = ends.map(x => pt(x, y0 - ld)).concat(C.cargo ? [pt(cends[0], y0 - ld)] : []);
+      services(B, Lt / 2 + 3.4, PAR + 1.4, C.tower === false);
+      // (an airfield's is asphalt with no landing system: light aircraft fly by sight)
+      if (C.ils === false) for (const r of B.L.runways) r.ils = [];
+      if (C.mat) for (const q of [].concat(B.L.runways, B.L.taxi, B.L.aprons)) q.mat = C.mat;
       return B.L;
     } }
 };
@@ -156,14 +177,16 @@ function placeOf(S, m, hv) {
   }
   // the starter airport: on the surveyed runway, or round the nearest runway already there
   if (m.part === 'starter') {
+    const cls = IC.aptClass(ap) || 'national', st = (IC.APT_CLASS[cls] || IC.APT_CLASS.national).starter;
     const nr = nearRunway(ap, hv);
     if (nr && nr.dist < 40) {
       const sg = nr.off >= 0 ? 1 : -1, rot = nr.a + (sg > 0 ? 0 : Math.PI), par = hasParallel(ap, nr.rw, sg);
-      return { L: lay(m, `st${nr.L.toFixed(1)}${par}`, () => K.make({ len: nr.L, runway: false, parallel: !par })), x: nr.mid.x, y: nr.mid.y, rot, around: nr.rw, par };
+      return { L: lay(m, `st${nr.L.toFixed(1)}${par}${cls}`, () => K.make({ len: nr.L, runway: false, parallel: !par, st })), x: nr.mid.x, y: nr.mid.y, rot, around: nr.rw, par };
     }
     const sv = ap.survey && U.dist(ap.survey, hv) < 40 ? ap.survey : null, at = sv || hv;
     let rot = sv ? sv.a : (m.rot || 0); if (!toCity(at.x, at.y, rot) !== !!m.flip) rot += Math.PI;
-    return { L: lay(m, 'st30', () => K.make({ len: 30 })), x: at.x, y: at.y, rot, onSurvey: !!sv };
+    const len = sv && sv.len || (IC.APT_CLASS[cls] || {}).rw || 30;
+    return { L: lay(m, `st${len}${cls}`, () => K.make({ len, st })), x: at.x, y: at.y, rot, onSurvey: !!sv };
   }
   // everything else at the cursor, its face to the nearest runway (R turns it by hand)
   const L = lay(m, m.part + size, () => K.make({ size }));
@@ -240,7 +263,7 @@ IC.pieceTurn = function (m, dir, fine) {
 : the Runway with taxiways along the survey line, ready to Build */
 IC.pieceFromSurvey = function (S, ap) {
   const sv = ap.survey; if (!sv) return null;
-  const m = IC.bldMode(S, ap, 'rwkit'), d = { x: Math.cos(sv.a), y: Math.sin(sv.a) }, h = 15;
+  const m = IC.bldMode(S, ap, 'rwkit'), d = { x: Math.cos(sv.a), y: Math.sin(sv.a) }, h = (sv.len || 30) / 2;
   m.pts = [{ x: sv.x - d.x * h, y: sv.y - d.y * h }, { x: sv.x + d.x * h, y: sv.y + d.y * h }];
   m.set = true; m.at = m.pts[1]; m.tol = 0.12; m.fromSurvey = true;
   return m;

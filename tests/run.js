@@ -4727,6 +4727,74 @@ test('round 1: a starter airport template places a complete working airport as o
   const goals = S.story.goals.filter(g => g.id !== 'first');
   assert(goals.every(g => g.check()), `goals not met: ${goals.filter(g => !g.check()).map(g => g.id)}`);
 });
+/* an airport founded near the capital as a class (aptclass.js), with its Starter airport built on the survey */
+const foundAs = (cls, seed, starter) => {
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story' }); IC.S = S; S.budget = 20000;
+  const c = IC.cap(S); let p = null;
+  for (const d of [250, 220, 280, 200, 300]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.foundCheck(S, x, y, cls) && !IC.foundSurvey(S, x, y, IC.PREVAIL, IC.foundLen(cls), cls).river) p = { x, y }; } if (p) break; }
+  S.mode2 = { kind: 'found' }; IC.clickWorld(p, 0); IC.foundClass(S.mode2, cls);
+  const sv = IC.foundSurveyOf(S, S.mode2), b0 = S.budget, m = S.mode2;
+  const r = IC.foundFinish(S, m), ap = m.ap, paid = b0 - S.budget;
+  if (starter !== false && ap) { const sm = S.mode2 = IC.bldMode(S, ap, 'starter'); IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0); assert(IC.buildFinish(S, sm) === 'built', `${cls}: the Starter airport: ${sm.err}`); S.mode2 = null; finishWorks(S, ap); IC.aptStats(S, ap); }
+  return { S, ap, sv, paid, r };
+};
+test('airport classes: each purpose founds its own runway, site and price, and its Starter airport fits it', () => {
+  const got = {};
+  for (const cls of IC.APT_CLASSES) {
+    const K = IC.APT_CLASS[cls], { S, ap, sv, paid, r } = foundAs(cls);
+    assert(r === 'built' && ap && IC.aptClass(ap) === cls, `${cls}: not founded as one`);
+    assert(sv.len === K.rw && ap.buildR === K.site && Math.abs(paid - sv.cost) < 1, `${cls}: survey ${sv.len}, site ${ap.buildR}, paid ${U.money(paid)} of ${U.money(sv.cost)}`);
+    const rw = ap.parts.find(p => p.kind === 'runway'), st = ap.st, stands = IC.aptStands(ap);
+    assert(Math.abs(IC.rwLen(rw) - K.rw) < 0.2, `${cls}: the Starter runway is ${U.km(IC.rwLen(rw))}, the survey ${U.km(K.rw)}`);
+    assert(stands.length >= K.starter.n && stands.every(s => s.linked), `${cls}: ${stands.filter(s => s.linked).length} of ${stands.length} stands joined`);
+    assert(!st.warn.length, `${cls}: ${st.warn.join(' / ')}`);
+    assert(!IC.aptUnattached(S, ap).length, `${cls}: ${IC.aptUnattached(S, ap).map(x => x.text).join(' / ')}`);
+    got[cls] = { paid: sv.site, sizes: stands.map(s => s.size), zones: stands.map(s => s.zone || 'civil'), kinds: ap.parts.map(p => p.kind), maxType: st.maxType };
+  }
+  // an airfield is light aircraft on small stands, flown by sight; a hub has large stands; a cargo airport a cargo terminal
+  assert(got.field.zones.every(z => z === 'light') && got.field.sizes.every(z => z === 's') && !got.field.kinds.includes('ils') && !got.field.kinds.includes('tower'), 'the airfield is not a light-aircraft field');
+  assert(got.hub.sizes.every(z => z === 'l') && got.hub.maxType === 'cargo', 'the hub does not take wide-bodies');
+  assert(got.cargo.kinds.includes('cargo') && got.cargo.zones.filter(z => z === 'cargo').length >= 4, 'the cargo airport has no cargo terminal with its stands');
+  // the site's price follows its size
+  const P = IC.APT_CLASSES.map(k => got[k].paid);
+  assert(got.field.paid < got.regional.paid && got.regional.paid < got.national.paid && got.national.paid < got.hub.paid, `site prices: ${P.map(v => U.money(v)).join(', ')}`);
+});
+test('airport classes: airlines want the airports built for them, and light aircraft use our airfields', () => {
+  const { S, ap } = foundAs('field', 12345);
+  assert(IC.aptWant(ap, 'flag') === 0 && IC.aptWant(ap, 'foreign') === 0, 'airlines want an airfield');
+  // the town's light aircraft fly from our airfield rather than an airport or a club field farther off
+  const town = { x: ap.x + 30, y: ap.y };
+  const b = IC.gaBase(S, town);
+  assert(b && b.apt === ap.id, `light aircraft fly from ${b && b.name}`);
+  // freighters weigh a cargo airport four times a national one, regional airlines a regional airport three times
+  const cargo = { kind: 'airport', cls: 'cargo' }, reg = { kind: 'airport', cls: 'regional' }, nat = { kind: 'airport', cls: 'national' };
+  assert(IC.aptWant(cargo, 'cargo') > IC.aptWant(nat, 'cargo') * 3 && IC.aptWant(reg, 'regional') > IC.aptWant(nat, 'regional') * 2, 'the purposes do not steer the airlines');
+});
+test('airport classes: a new purpose buys the land for the bigger site and says what the airport still lacks', () => {
+  const { S, ap } = foundAs('field', 12345);
+  const b0 = S.budget, cost = IC.aptReclassCost(S, ap, 'hub');
+  assert(cost > 0 && !IC.aptReclass(S, ap, 'hub') && Math.abs(b0 - S.budget - cost) < 0.01, `paid ${U.money(b0 - S.budget)} of ${U.money(cost)}`);
+  assert(IC.aptClass(ap) === 'hub' && ap.buildR === IC.APT_CLASS.hub.site, 'the site did not grow');
+  const st = IC.aptStats(S, ap);
+  assert(st.warn.some(w => /^An international hub needs a runway of 3\.0 km/.test(w)) && st.warn.some(w => /large stands/.test(w)), st.warn.join(' / '));
+  // back to an airfield costs nothing and keeps the site
+  const b1 = S.budget; assert(!IC.aptReclass(S, ap, 'field') && S.budget === b1 && ap.buildR === IC.APT_CLASS.hub.site, 'going smaller cost money or shrank the site');
+  assert(IC.aspPresetFor(ap) === 'D', 'the airspace does not follow the purpose');
+});
+test('airport classes: the Career\'s national airport is a national airport or a hub', () => {
+  const { S, ap } = foundAs('regional', 12345, false);
+  assert(!S.story.cap && !/International/.test(ap.name) && /Regional$/.test(ap.name), `a regional airport was taken as the national airport: ${ap.name}`);
+  const { S: S2, ap: ap2 } = foundAs('hub', 12345, false);
+  assert(S2.story.cap === ap2.id && /International$/.test(ap2.name), 'a hub is not taken as the national airport');
+});
+test('building: parts that open together rise as one line of what they changed', () => {
+  const { S, ap } = foundAs('national', 12345);
+  const near = S.fx.texts.filter(t => U.dist(t, ap) < 40 && /CAN LAND|STANDS|PASSENGERS/.test(t.s));
+  assert(near.length === 1 && /FREIGHTER CAN LAND/.test(near[0].s) && !/TURBOPROP/.test(near[0].s), near.map(t => t.s).join(' / '));
+  // and a runway's name is never "Runway Runway"
+  const T = IC.aptProblems(S, ap).map(p => p.title).concat([IC.rwTitle({ name: 'Runway 09/27' }), IC.rwTitle({ name: '09/27' })]);
+  assert(!T.some(t => /Runway Runway/.test(t)) && IC.rwTitle({ name: '09/27' }) === 'Runway 09/27', T.join(' / '));
+});
 test('round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself', () => {
   const { S, ap, next } = foundFresh();
   S.mode2 = next; IC.buildFinish(S, next); finishWorks(S, ap);

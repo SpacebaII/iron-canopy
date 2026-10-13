@@ -189,5 +189,10 @@
  "sandbox: money never runs out, and airport parts and units are ready at once": 7.7,
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
- "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2
+ "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
+ "airport classes: each purpose founds its own runway, site and price, and its Starter airport fits it": 31.7,
+ "airport classes: airlines want the airports built for them, and light aircraft use our airfields": 10.3,
+ "airport classes: a new purpose buys the land for the bigger site and says what the airport still lacks": 10.8,
+ "airport classes: the Career's national airport is a national airport or a hub": 16.3,
+ "building: parts that open together rise as one line of what they changed": 5.7
 }

@@ -145,6 +145,7 @@ goEl.addEventListener('click', e => {
   if (v === 'build') buildGo();
   else if (v === 'cancel') { if (!buildEsc()) IC.setMode(null); }
   else if (v === 'turn' && m && m.kind === 'found') { IC.foundTurn(m, +b.dataset.d); IC.ui.refresh(true); }
+  else if (v === 'cls' && m && m.kind === 'found') { IC.foundClass(m, b.dataset.v); IC.sfx.ui('click'); IC.ui.refresh(true); }
   else if (v === 'turn' && m) { if (!IC.pieceTurn(m, +b.dataset.d)) m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.emit(S, 'bld', { act: 'turn', v: m.part }); IC.ui.refresh(true); }
 });
 function goFrame() {
@@ -172,11 +173,13 @@ function goFrame() {
   } else if (m && m.kind === 'found' && m.site) {
     at = m.site;
     // (the survey reads the ground and the towns round it: once for each place and heading, not every frame)
-    const k = `fd|${at.x}|${at.y}|${m.hdg}|${Math.round(S.budget)}`;
+    const k = `fd|${at.x}|${at.y}|${m.hdg}|${m.cls}|${Math.round(S.budget)}`;
     if (goEl._k === k) html = goKey; else {
     goEl._k = k;
-    const sv = IC.foundSurvey(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL), why = sv.river ? 'A river crosses the runway line: turn it or move the site.' : S.budget < sv.cost ? `Not enough money: ${U.money(sv.cost)} needed.` : '';
-    html = `<button class="btn go" data-go="build" ${why ? 'disabled' : ''} title="Found it (Enter)">Found · ${U.money(sv.cost)}</button><button class="btn sm" data-go="turn" data-d="-1" title="Turn the runway (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn the runway (R)">⟳</button><button class="btn sm" data-go="cancel" title="Pick another site (Esc or right-click)">✕</button>${why ? `<em>${esc(why)}</em>` : ''}`; }
+    const sv = IC.foundSurveyOf(S, m), why = sv.river ? 'A river crosses the runway line: turn it or move the site.' : S.budget < sv.cost ? `Not enough money: ${U.money(sv.cost)} needed.` : '';
+    // (what the airport is for: its runway, site and price follow; C cycles through them)
+    const cls = IC.APT_CLASSES.map(k => `<button class="btn sm${k === sv.cls ? ' on' : ''}" data-go="cls" data-v="${k}" title="${esc(IC.APT_CLASS[k].name + ': ' + IC.APT_CLASS[k].use)}">${IC.APT_CLASS[k].short}</button>`).join('');
+    html = `<div class="fcls">${cls}</div><button class="btn go" data-go="build" ${why ? 'disabled' : ''} title="Found it (Enter)">Found ${esc(IC.APT_CLASS[sv.cls].name.toLowerCase())} · ${U.money(sv.cost)}</button><button class="btn sm" data-go="turn" data-d="-1" title="Turn the runway (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn the runway (R)">⟳</button><button class="btn sm" data-go="cancel" title="Pick another site (Esc or right-click)">✕</button>${why ? `<em>${esc(why)}</em>` : ''}`; }
   }
   if (!at) { if (!goEl.hidden) { goEl.hidden = true; goKey = ''; goEl._k = ''; } return; }
   if (html !== goKey) { goEl.innerHTML = html; goKey = html; }
@@ -584,6 +587,7 @@ function onAct(e) {
     case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
+    case 'aptClass': { const ap = selAp(); if (ap) { const why = IC.aptReclass(S, ap, v); if (why) IC.toast(S, 'warn', 'PURPOSE', why); else IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) IC.setNight(S, ap, IC.nightPolicy(ap) === 'curfew' ? 'quota' : 'curfew'); break; }
     case 'gseAdd': { const ap = selAp(); if (ap) IC.gseBuy(S, ap, v, +b.dataset.n); break; }
     case 'gseAuto': { const ap = selAp(); if (ap) IC.gseAuto(S, ap); break; }
@@ -827,6 +831,7 @@ window.addEventListener('keydown', e => {
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
   const fm = S.mode2 && S.mode2.kind === 'found' ? S.mode2 : null;
   if (fm && lk === 'r') { IC.foundTurn(fm, e.shiftKey ? -1 : 1); IC.ui.refresh(true); return; }
+  if (fm && lk === 'c') { const L = IC.APT_CLASSES, i = L.indexOf(fm.cls || IC.foundDefault(S)); IC.foundClass(fm, L[(i + (e.shiftKey ? L.length - 1 : 1)) % L.length]); IC.ui.refresh(true); return; }
   if (fm && k === 'Enter' && fm.site) { foundGo(); return; }
   if (S.mode2 && S.mode2.kind === 'bmove' && lk === 'r') { S.mode2.rot += e.shiftKey ? -Math.PI / 12 : Math.PI / 12; return; }
   if (S.mode2 && S.mode2.kind === 'bmove' && k === 'Enter') { buildGo(); return; }

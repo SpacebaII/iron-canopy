@@ -278,7 +278,11 @@ IC.bldOpened = function (S, ap, w, before) {
   const txt = [line('Movements an hour', before.movesPerHour || 0, st.movesPerHour), line('Largest aircraft', T(before.maxType), T(st.maxType)),
     line('Stands', before.nst, IC.aptStands(ap).filter(s => s.linked !== false).length), line('Passengers an hour', Math.round(before.pax || 0), Math.round(st.pax))].filter(Boolean).join(' ');
   IC.sfx && IC.sfx.ui && IC.sfx.ui('ok');
-  // (round 1) what the finished piece changed, risen over it on the map: the number the player cares about
+  // (round 1) what the finished piece changed, risen over it on the map: the number the player cares about. Parts that
+  // open together (a blueprint, instant building) rise as one line measured from before the first of them, not a
+  // stack of lines where "turboprops can land" sits over "freighters can land"
+  const G0 = ap._gain && ap._gain.t > S.time - 2 && S.fx.texts.includes(ap._gain.fx) ? ap._gain : null;
+  if (G0) { before = G0.before; S.fx.texts.splice(S.fx.texts.indexOf(G0.fx), 1); if (ap.gains && ap.gains[ap.gains.length - 1] === G0.g) ap.gains.pop(); }
   const nst = IC.aptStands(ap).filter(s => s.linked !== false).length, gain = [];
   if ((st.movesPerHour || 0) > (before.movesPerHour || 0)) gain.push(`+${st.movesPerHour - (before.movesPerHour || 0)} movements an hour`);
   if (nst > (before.nst || 0)) gain.push(`+${nst - (before.nst || 0)} stand${nst - (before.nst || 0) > 1 ? 's' : ''}`);
@@ -286,8 +290,11 @@ IC.bldOpened = function (S, ap, w, before) {
   if (st.maxType !== before.maxType && st.maxType) gain.push(`${T(st.maxType)} can land`);
   if (gain.length) {
     const at = p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.nodes ? ap.nodes[p.nodes[Math.floor(p.nodes.length / 2)]] || ap : p.x != null ? p : ap;
-    IC.text(S, at.x, at.y, gain.join(' · ').toUpperCase(), '#7fe8b0', 6);
-    (ap.gains = ap.gains || []).push({ t: S.time, text: gain.join(', ') }); if (ap.gains.length > 8) ap.gains.shift();
+    const A = G0 ? G0.at : at;
+    IC.text(S, A.x, A.y, gain.join(' · ').toUpperCase(), '#7fe8b0', 6);
+    const g = { t: S.time, text: gain.join(', ') };
+    (ap.gains = ap.gains || []).push(g); if (ap.gains.length > 8) ap.gains.shift();
+    ap._gain = { t: G0 ? G0.t : S.time, before, fx: S.fx.texts[S.fx.texts.length - 1], g, at: { x: A.x, y: A.y } };
   }
   if (!['runway', 'terminal', 'cargo'].includes(p.kind) || !S.camp) return;
   const name = p.kind === 'runway' ? p.name : IC.APART[p.kind].name;
@@ -450,22 +457,25 @@ IC.onMonth((S) => {
 
 /* ---------- the site: survey for a new airport ---------- */
 IC.PREVAIL = Math.PI - 0.2;   // the prevailing wind blows from the west-north-west (weather.js)
-const RW0 = 30;               // survey a 3 km runway
-/* noise under the approach and departure paths: 8 km beyond each end, 1.5 km either side */
-function noiseHit(x, y, a, b, len) { const d = { x: Math.cos(a), y: Math.sin(a) }, dx = b.x - x, dy = b.y - y, lx = dx * d.x + dy * d.y, ly = -dx * d.y + dy * d.x; return Math.abs(lx) < (len || RW0) / 2 + 80 && Math.abs(ly) < 15 * (0.4 + 0.6 * Math.min(1, Math.abs(lx) / 60)); }
+const RW0_ = 30;              // survey a 3 km runway, unless the airport's class says otherwise
+/* noise under the approach and departure paths: 8 km beyond each end, 1.5 km either side, for airliners; k scales it
+   for the airport's class (IC.APT_CLASS[..].noise: light aircraft are heard a third as far) */
+function noiseHit(x, y, a, b, len, k) { k = k || 1; const d = { x: Math.cos(a), y: Math.sin(a) }, dx = b.x - x, dy = b.y - y, lx = dx * d.x + dy * d.y, ly = -dx * d.y + dy * d.x; return Math.abs(lx) < (len || RW0_) / 2 + 80 * k && Math.abs(ly) < 15 * k * (0.4 + 0.6 * Math.min(1, Math.abs(lx) / 60)); }
 /* city blocks (village houses count a fifth) under a runway's flight paths, by town */
-IC.noiseOver = function (S, x, y, a, len) {
+IC.noiseOver = function (S, x, y, a, len, k) {
   const W = S.world, out = {};
   for (const c of IC.cities(S).concat((W.villages || []).filter(v => v.home))) {
-    if (U.dist(c, { x, y }) > (len || RW0) / 2 + 100 + (c.r || 10)) continue;
-    let n = 0; for (const b of c.blocks || []) if (b.hp > 0 && noiseHit(x, y, a, b, len)) n += c.kind === 'city' ? 1 : 0.2;
+    if (U.dist(c, { x, y }) > (len || RW0_) / 2 + 100 + (c.r || 10)) continue;
+    let n = 0; for (const b of c.blocks || []) if (b.hp > 0 && noiseHit(x, y, a, b, len, k)) n += c.kind === 'city' ? 1 : 0.2;
     if (n >= 1) out[c.name] = Math.round(n);
   }
   return out;
 };
 const ROAD_Q = new Map();
-IC.foundSurvey = function (S, x, y, a) {
-  const W = S.world, d = { x: Math.cos(a), y: Math.sin(a) };
+/* the survey of a site for a runway of len units (the class's: IC.foundLen), RW0 when not given */
+IC.foundSurvey = function (S, x, y, a, len, cls) {
+  const W = S.world, d = { x: Math.cos(a), y: Math.sin(a) }, RW0 = len || RW0_;
+  const K = IC.APT_CLASS && IC.APT_CLASS[cls || 'national'] || { cost: 1, land: 1, noise: 1 };
   const h0 = W.hAt(x, y);
   let hmin = h0, hmax = h0, obst = 0, obstAt = 0, river = false;
   for (let s = -RW0 / 2; s <= RW0 / 2; s += 3) { const h = W.hAt(x + d.x * s, y + d.y * s); hmin = Math.min(hmin, h); hmax = Math.max(hmax, h); }
@@ -476,11 +486,11 @@ IC.foundSurvey = function (S, x, y, a) {
     const h = W.hAt(x + d.x * s * e, y + d.y * s * e), rise = (h - hmax) * 2000 - (s - RW0 / 2) * 100 * 0.052;
     if (rise > obst) { obst = rise; obstAt = (s - RW0 / 2) / 10; }
   }
-  const noise = IC.noiseOver(S, x, y, a), homes = Object.values(noise).reduce((s, n) => s + n, 0);
+  const noise = IC.noiseOver(S, x, y, a, RW0, K.noise), homes = Object.values(noise).reduce((s, n) => s + n, 0);
   const city = IC.cities(S).slice().sort((p, q) => U.dist(p, { x, y }) - U.dist(q, { x, y }))[0];
   const cd = city ? U.dist(city, { x, y }) : 1e9;
   const earth = Math.round((hmax - hmin) * 2000 * 0.4);   // levelling: ₭0.4M a metre of height difference
-  const land = Math.round(10 + (city && cd < city.r * 2.5 ? 40 * (1 - cd / (city.r * 2.5)) : 0));
+  const land = Math.round((10 + (city && cd < city.r * 2.5 ? 40 * (1 - cd / (city.r * 2.5)) : 0)) * K.land);
   const off = Math.abs(U.angWrap(((a - IC.PREVAIL) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2)) * 180 / Math.PI;
   const wind = Math.round(Math.min(off, 180 - off));
   const hdg = IC.bearing(a), end = n => String(Math.round(n / 10) % 36 || 36).padStart(2, '0');
@@ -488,14 +498,16 @@ IC.foundSurvey = function (S, x, y, a) {
   const rk = `${x.toFixed(1)},${y.toFixed(1)},${a.toFixed(2)}`;
   if (!ROAD_Q.has(rk)) { const A = IC.landAccessPlan ? IC.landAccessPlan(S, x, y, a, true) : null; ROAD_Q.set(rk, A && !A.P.why ? { cost: A.P.cost, km: A.P.km } : null);
  if (ROAD_Q.size > 64) ROAD_Q.delete(ROAD_Q.keys().next().value); }
-  const road = ROAD_Q.get(rk), site = IC.FOUND_COST + earth + land;
-  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, road, site, cost: site + (road ? road.cost : 0), obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
+  const road = ROAD_Q.get(rk), site = Math.round(IC.FOUND_COST * K.cost) + earth + land;
+  return { x, y, a, len: RW0, cls: cls || 'national', river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, road, site, cost: site + (road ? road.cost : 0), obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
     windOff: wind, ends: [end(hdg), end(hdg + 180)], name: [end(hdg), end(hdg + 180)].sort().join('/'), cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
 };
 /* the survey in plain words, one line each */
 IC.foundLines = function (S, sv) {
   const L = [];
-  L.push(`Runway ${sv.name} · ${sv.windOff <= 15 ? 'into the prevailing wind' : `${sv.windOff}° off the prevailing wind (${sv.cross} kt across in a typical 15 kt breeze)`}`);
+  const K = IC.APT_CLASS[sv.cls || 'national'];
+  if (K) L.push(`${K.name}: ${K.use}`);
+  L.push(`Runway ${sv.name}, ${U.km(sv.len || 30)} · ${sv.windOff <= 15 ? 'into the prevailing wind' : `${sv.windOff}° off the prevailing wind (${sv.cross} kt across in a typical 15 kt breeze)`}`);
   L.push(`Ground: ${sv.hdiff < 3 ? 'flat' : `${Math.round(sv.hdiff)} m to level (${U.money(sv.earth)})`} · land ${U.money(sv.land)}`);
   if (sv.river) L.push('A river crosses the runway line: a runway cannot be built across it. Turn the runway or move the site');
   if (sv.obst > 20) L.push(`Hills ${sv.obstAt.toFixed(0)} km off one end rise ${sv.obst} m above the approach slope`);
@@ -1549,11 +1561,16 @@ IC.foundAngle = (site, p) => { const a = Math.atan2(p.y - site.y, p.x - site.x),
 IC.foundInput = function (S, m, p, btn) {
   m.err = '';
   if (btn === 2) { if (m.site) { m.site = null; return 'undo'; } return 'exit'; }
-  const why = IC.foundCheck(S, p.x, p.y); if (why) { m.err = why; return 'err'; }
+  if (!m.cls) m.cls = IC.foundDefault(S);
+  const why = IC.foundCheck(S, p.x, p.y, m.cls); if (why) { m.err = why; return 'err'; }
   m.site = { x: p.x, y: p.y };
   if (m.hdg == null) m.hdg = IC.foundAngle(m.site, m.site);
   return 'point';
 };
+/* what the airport is for (IC.APT_CLASS): its runway, site and price follow; the site stays where it is */
+IC.foundClass = function (m, cls) { if (!IC.APT_CLASS[cls] || !m) return false; m.cls = cls; return true; };
+/* the survey for the found mode's site, heading and class */
+IC.foundSurveyOf = (S, m) => { const c = m.cls || IC.foundDefault(S); return IC.foundSurvey(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL, IC.foundLen(c), c); };
 /* turn the planned runway by 10° steps (dir ±1), or towards a point (a drag from its end) */
 IC.foundTurn = function (m, dir, p) {
   if (!m.site) return false;
@@ -1564,7 +1581,7 @@ IC.foundTurn = function (m, dir, p) {
 IC.foundFinish = function (S, m) {
   m.err = '';
   if (!m.site) { m.err = 'Click a flat site first.'; return 'err'; }
-  const ap = IC.foundAirport(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL);
+  const ap = IC.foundAirport(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL, m.cls || IC.foundDefault(S));
   if (!ap) { m.err = 'Cannot found it here.'; return 'err'; }
   m.site = null; m.ap = ap;
   // (round 1) the surveyed runway stays as a placed plan, ready to Build: nobody redraws it by eye
