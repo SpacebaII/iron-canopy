@@ -66,6 +66,8 @@ async function open(o) {
       const r = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
     },
+    /* the picture as it is, the clock not moved */
+    async shot(file) { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(file, Buffer.from(r.data, 'base64')); },
     async close() { await browser.close(); }
   };
   if (cam.dir) fs.mkdirSync(cam.dir, { recursive: true });

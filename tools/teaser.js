@@ -92,15 +92,18 @@ const PICK = () => {
   if (lm) {
     const u = S.units.find(q => q.id === lm.uid), ms = u && tracks.filter(tr => tr.kind === 'missile' && tr.meta.uref === u && Math.abs(first(tr) - (lm.t + T0)) < 3)[0];
     const a = R.A + 0.9;
-    if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: 1, cam: { mode: 'fixed', ref: ms ? ms.ref : null, at: { x: u.x, y: u.y, h: 4 }, from: { x: u.x + Math.cos(a) * 6, y: u.y + Math.sin(a) * 6, h: 1.7 }, lens: 30, lag: 0.25, shake: 0.2 } };
-    if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, back: 0.3, side: 0.08, up: 0.05, ahead: 1.5, lens: 28, ease: 0.15, shake: 0.1 } };
+    if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: 1, cam: { mode: 'fixed', ref: ms ? ms.ref : null, at: { x: u.x, y: u.y, h: 4 }, from: { x: u.x + Math.cos(a) * 2.5, y: u.y + Math.sin(a) * 2.5, h: 1.7 }, lens: [35, 60], lag: 0.22, shake: 0.2 } };
+    if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, lookAt: ms.meta.tref || null, back: 0.35, side: 0.08, up: 0.1, lens: 30, ease: 0.15, lag: 0.15, shake: 0.1 } };
   }
   // a cruise missile shot down: from the ground 1.2 km off with a long lens, slowing as it is hit
   const kcs = ev.filter(e => e.kind === 'kill' && e.cls === 'cm').sort((a, b) => U.dxy(a.x, a.y, R.fuel.x, R.fuel.y) - U.dxy(b.x, b.y, R.fuel.x, R.fuel.y)), kc = kcs[2] || kcs[0];
-  if (kc) { const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 2.4, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, shake: 0.06 } }; }
-  // a ballistic missile met high up, seen from the airport looking up
+  if (kc) {
+    // the cruise missile it was: the track that ends there and then
+    const kt = cms.slice().sort((a, b) => (Math.abs(a.t1 - T0 - kc.t) + U.dxy(pos(a, a.t1).x, pos(a, a.t1).y, kc.x, kc.y)) - (Math.abs(b.t1 - T0 - kc.t) + U.dxy(pos(b, b.t1).x, pos(b, b.t1).y, kc.x, kc.y)))[0];
+    const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 2.4, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', ref: kt ? kt.ref : null, at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, lag: 0.3, shake: 0.06 } }; }
+  // a ballistic missile met high up, seen from the ground 5 km off, looking up
   const kb = ev.find(e => e.kind === 'intercept' && e.cls === 'bal');
-  if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.5, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: R.ap.x + 6, y: R.ap.y + 4, h: 2 }, lens: [200, 320], shake: 0.1 } };
+  if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.5, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: kb.x + Math.cos(R.A + 1.2) * 50, y: kb.y + Math.sin(R.A + 1.2) * 50, h: 2 }, lens: [200, 320], shake: 0.1 } };
   // what gets through: a cruise missile into the airport, then a ballistic one
   const ics = ev.filter(e => e.kind === 'impact' && e.cls === 'cm'), ic = ics[0], ib = ev.filter(e => e.kind === 'impact' && e.cls === 'bal')[0] || ics[ics.length - 1];
   if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 60 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 3 }, lens: 45, lag: 0.1, shake: 0.12 } }; }
@@ -126,12 +129,12 @@ const CUT = [
   { name: 'wakes', kind: 'card', dur: 2, card: ['THE DEFENCE WAKES'], big: 84, rule: false },
   { name: 'sam', kind: '3d', dur: 3.6 },
   { name: 'chase', kind: '3d', dur: 3.2 },
-  { name: 'kill', kind: '3d', dur: 4.4 },
+  { name: 'kill', kind: '3d', still: 0.75, dur: 4.4 },
   { name: 'raid', kind: '2d', dur: 4.4, at: 690, g: 14, cam: `({ kind: 'raid', ref: nearest(C.ap, 'cm'), with: [C.ap], pad: 200, zMax: 2.5 })` },
-  { name: 'high', kind: '3d', dur: 4 },
+  { name: 'high', kind: '3d', still: 0.75, dur: 4 },
   { name: 'through', kind: 'card', dur: 1.8, card: ['NOT ALL OF THEM'], big: 84, rule: false },
-  { name: 'hit', kind: '3d', dur: 4.6 },
-  { name: 'hit2', kind: '3d', dur: 3.4 },
+  { name: 'hit', kind: '3d', still: 0.75, dur: 4.6 },
+  { name: 'hit2', kind: '3d', still: 0.75, dur: 3.4 },
   { name: 'after', kind: '3d', dur: 5.5 },
   { name: 'out', kind: '2d', dur: 4.8, at: 852, g: 6, cam: `({ kind: 'push', at: { x: C.ap.x, y: C.ap.y }, z: 16, z1: 0.12 })` },
   { name: 'title', kind: 'card', dur: 6.5, card: ['IRON CANOPY', 'Build the airports. Run the skies. Then defend them.'], big: 150, fade: 1.2 }
@@ -201,8 +204,14 @@ function speedAt(sp, f) {
       console.log(s.name, 'frame ms', ms.join(' '), el()); continue;
     }
     if (STILLS) {
-      await cam.ev(([k, g]) => { V3.t = RAID.t0 + PK[k].t + g; V3.fsnap = true; IC.film.tick(1000 / 30); }, [s.name, times[Math.floor(times.length / 2)]]);
-      await cam.still(path.join(WORK, 'still-' + s.name + '.png')); console.log(s.name, el()); continue;
+      // the last few frames before the middle, so the camera's lag and the motion blur are as the film has them
+      const mid = Math.floor(times.length * (s.still || 0.5));
+      await cam.ev(([k, g]) => { V3.t = RAID.t0 + PK[k].t + g; V3.fsnap = true; IC.film.tick(1000 / 30); }, [s.name, times[Math.max(0, mid - 8)]]);
+      for (let i = Math.max(0, mid - 7); i <= mid; i++) {
+        await cam.ev(([k, g]) => { V3.t = RAID.t0 + PK[k].t + g; IC.film.tick(1000 / 30); }, [s.name, times[i]]);
+        await cam.shot(path.join(WORK, 'still-' + s.name + '.png'));
+      }
+      console.log(s.name, el()); continue;
     }
     cam.dir = frameDir(s.name); cam.n = 0;
     let i = 0;
@@ -215,7 +224,7 @@ function speedAt(sp, f) {
   for (const s of CUT.filter(s => s.kind === 'card')) {
     if (!want(s)) continue;
     await cam.ev(s => { IC.film.blank(true); IC.film.caption(null); IC.film.card(s.card[0], s.card[1] || '', s.dur - 0.1, { big: s.big, rule: s.rule, fade: s.fade || 0.5 }); }, s);
-    if (STILLS) { await cam.ev(k => { IC.film.hold(true); IC.film.tick(k * 1000); }, s.dur / 2); await cam.still(path.join(WORK, 'still-' + s.name + '.png')); continue; }
+    if (STILLS) { await cam.ev(k => { IC.film.hold(true); for (let i = 0; i < k * 30; i++) IC.film.tick(1000 / 30); }, s.dur / 2); await cam.still(path.join(WORK, 'still-' + s.name + '.png')); continue; }
     cam.dir = frameDir(s.name); cam.n = 0;
     await cam.film(s.dur);
     enc(s.name, cam.dir); console.log(s.name, 'filmed', el());

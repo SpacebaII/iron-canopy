@@ -216,7 +216,7 @@ function motor(v, w, m, t) {
     emit(w.fire, nx - dx * d, ny - dy * d, nz - dz * d, sz * (1.5 - k * 0.8) * fl, HC[0], HC[1], HC[2], (1 - k) * 0.95, i);
   }
   // the glow that carries far, more at night
-  emit(w.fire, nx, ny, nz, sz * (6 + 8 * w.night), 1, 0.7, 0.4, 0.25 + 0.3 * w.night, 0);
+  emit(w.fire, nx, ny, nz, sz * (4 + 10 * w.night), 1, 0.65, 0.35, 0.1 + 0.4 * w.night, 0);
 }
 /* the enemy's weapons: a ballistic missile's boost and re-entry, a cruise missile's engine heat */
 function weapon(v, w, m, t) {
@@ -234,12 +234,12 @@ function weapon(v, w, m, t) {
         for (let i = 0; i < 46; i++) {
           const a = i * 2.39996, u = 0.35 + 0.65 * ((i * 0.618) % 1), r = (0.06 + 1.6 * sp * u), up = 0.04 + 0.5 * sp * ((i * 0.377) % 1) * (1.2 - u) + age * 0.004;
           const c = 0.42 + 0.12 * ((i * 0.31) % 1);
-          emit(w.smoke, gx + Math.cos(a) * r + w.wx * age, gy + up, gz + Math.sin(a) * r + w.wy * age, 0.18 + 0.5 * sp, c * 0.8 + 0.3 * lit, c * 0.76 + 0.16 * lit, c * 0.7 + 0.04 * lit, 0.7 * fade, i);
+          emit(w.smoke, gx + Math.cos(a) * r + w.wx * age, gy + up, gz + Math.sin(a) * r + w.wy * age, 0.18 + 0.5 * sp, c * 0.6 + 0.35 * lit, c * 0.57 + 0.15 * lit, c * 0.53 + 0.03 * lit, 0.7 * fade, i);
         }
-        if (age < 4) { emit(w.fire, gx, gy + 0.05, gz, 1.2 * lit, 1, 0.6, 0.3, 0.5 * lit, 0); }
+        if (age < 4) emit(w.fire, gx, gy + 0.3, gz, 0.7, 1, 0.55, 0.25, 0.3 * lit, 0);
       }
     }
-    if (age < boost && st.alt < 40) for (let i = 0; i < 10; i++) { const k = i / 9; heat(k, HC); emit(w.fire, p.x, p.y - 0.06 - k * 0.6, p.z, 0.12 * (1.4 - k), HC[0], HC[1], HC[2], 0.9 * (1 - k), i); }
+    if (age < boost && st.alt < 40) for (let i = 0; i < 26; i++) { const k = i / 25; heat(k, HC); emit(w.fire, p.x, p.y - 0.05 - k * 0.45, p.z, 0.1 * (1.5 - k), HC[0], HC[1], HC[2], 0.75 * Math.pow(1 - k, 1.3), i); }
     // coming down: the air ahead of it glows, and a short incandescent streak follows
     const falling = age > boost && st.alt < 55 && (st.pitch || 0) < -0.2;
     if (falling) {
@@ -388,7 +388,7 @@ function debris(v, w, e, t, age, x0, y0, z0, s, n, air) {
 /* ---------- film cameras ----------
    A shot: { mode, ref, at, from, lens, ... }, its time t0 (the view's time when it started) and dur.
    - fixed:  the camera at from { x, y, h (m above the ground) or alt (km) }, looking at ref or at
-   - plant:  a flyby: the camera set down beside where ref will be lead s later, side units to its right (negative:
+   - plant:  a flyby: the camera set down beside where ref will be lead s after the shot starts, side units to its right (negative:
              left) and up units above its path; it stays there as ref goes by
    - chase:  behind ref, back units, a little up and to the side (side, up), eased
    - along:  alongside ref, side units out, looking at it (a wingman)
@@ -437,7 +437,7 @@ W3.cam = function (v, t, dtR) {
     case 'fixed': spot(v, sh.from, want); break;
     case 'plant': {
       if (!sh._at) {
-        const tr = H.trackOf(v, sh.ref), q = tr && IC.recPose(tr, Math.min(tr.t1, t + (sh.lead || 4)), PB);
+        const tr = H.trackOf(v, sh.ref), q = tr && IC.recPose(tr, Math.min(tr.t1, (sh.t0 != null ? sh.t0 : t) + (sh.lead || 4)), PB);
         const p = q ? tv(5).set(q.x - v.cx, yOf(v, q.x, q.y, q.alt), q.y - v.cy) : subj.clone();
         const hh = q ? q.h : h, rx = -Math.sin(hh), rz = Math.cos(hh), side = sh.side == null ? 0.6 : sh.side;
         sh._at = new T.Vector3(p.x + rx * side + Math.cos(hh) * (sh.ahead || 0), p.y + (sh.up == null ? 0.1 : sh.up), p.z + rz * side + Math.sin(hh) * (sh.ahead || 0));
