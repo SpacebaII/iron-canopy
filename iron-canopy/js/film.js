@@ -46,6 +46,8 @@ const CSS = `
 body.film #app > *:not(#map):not(#replay):not(.live):not(#filmRec){opacity:0!important;pointer-events:none!important;transition:opacity .45s}
 body.film #map{cursor:default}
 body.filmheld #app > *{transition:none!important}
+body.film{padding:0!important}
+body.film .app{border-radius:0!important}
 #filmRec{position:absolute;right:14px;top:12px;z-index:30;font:600 13px var(--mono,monospace);color:#ff5b4f;text-shadow:0 1px 3px #000;pointer-events:none}
 .replay.film,.live.film{inset:0!important;border-radius:0!important;box-shadow:none!important;width:auto!important;height:auto!important;resize:none!important;z-index:11}
 .replay.film .rp-head,.replay.film .rp-bar,.live.film .rp-head,.film .rp-panel,.film .rp-labels,.film .rp-side,.film .rp-fps{display:none!important}

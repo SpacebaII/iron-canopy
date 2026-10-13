@@ -16,10 +16,10 @@ const flag = k => process.argv.includes('--' + k);
 const W = +arg('w', 1920), H = +arg('h', 1080), FPS = +arg('fps', 30), HOUR = +arg('hour', 19.6);
 const OUT = path.resolve(ROOT, arg('out', 'docs/trailer/iron-canopy-first-strike.mp4'));
 const WORK = path.resolve(ROOT, 'shots/teaser');
-const STILLS = flag('stills'), ONLY = arg('only', '') ? arg('only', '').split(',') : null;
+const STILLS = flag('stills'), PROBE = flag('probe'), Q3D = arg('q', 'high'), ONLY = arg('only', '') ? arg('only', '').split(',') : null;
 
 /* ---------- the raid ----------
-   Dusk over the capital. Six ballistic missiles from across the border at the capital's airport, then ten cruise
+   Dusk over the capital. Six ballistic missiles from across the border at the capital's airport, then sixteen cruise
    missiles low from 100 km out, timed to arrive with them; the fuel farm is the aim. The long-range battery meets
    the ballistic missiles, a medium-range battery and the point defence the cruise missiles. There are not enough
    missiles in the launchers for all of them: some get through. Times below are game seconds from the first launch. */
@@ -35,22 +35,28 @@ const SETUP = hour => `(async () => {
   const E = S.enemy; E.allow = null; E.war = true; E.warT = E.actT = E.aimT = S.time; E.act = 1; S.sbx.war = true; E.cycle = { phase: 'calm', next: S.time + 36000, since: S.time };
   const fr = IC.sandboxFrom(S, { from: 'close' }), A = Math.atan2(fr.y - f.y, fr.x - f.x);
   const put = (type, d, side) => IC.makeUnit(S, type, f.x + Math.cos(A) * d - Math.sin(A) * side, f.y + Math.sin(A) * d + Math.cos(A) * side, { instant: true, full: true });
-  put('shorad', 30, 6); put('spaag', 10, -3); put('spaag', 4, 4); put('mrsam', 60, -10);
+  put('shorad', 30, 6); put('spaag', 10, -3); put('mrsam', 60, -10);
   S.ad.roe = 'free'; for (const u of S.units) { u.roe = 'free'; if (u.emitter) { u.emcon = 'on'; u.radarOn = true; } }
-  for (const u of S.units) if (u.type === 'lrsam' || u.type === 'mrsam') for (const m of u.mags) { m.mag = Math.min(m.mag, 6); m.store = 0; }
+  for (const u of S.units) (u.mags || []).forEach((m, i) => { m.mag = Math.min(m.mag, u.type === 'lrsam' ? (i ? 0 : 6) : u.type === 'mrsam' ? 4 : 3); m.store = 0; });
+  // the long-range battery keeps its rounds for the ballistic missiles
+  const lr = S.units.filter(u => u.type === 'lrsam'); for (const u of lr) u.roe = 'hold';
   const t0 = S.time + 120, ev = [];
   IC.on((S2, type, d) => { if (['impact', 'kill', 'intercept', 'launch'].includes(type)) ev.push({ t: S.time - t0, kind: type, x: d.x != null ? d.x : d.u ? d.u.x : d.t ? d.t.x : 0, y: d.y != null ? d.y : d.u ? d.u.y : d.t ? d.t.y : 0, alt: d.alt || (d.t && d.t.alt) || 0, u: d.u ? d.u.type : '', uid: d.u ? d.u.id : null, cls: d.t && d.t.d ? d.t.d.cls : d.d ? d.d.cls : d.src && d.src.d ? d.src.d.cls : '', hit: d.hit ? d.hit.name : '' }); });
   window.RAID = { t0, ev, cap: { x: c.x, y: c.y }, ap: { x: ap.x, y: ap.y }, fuel: { x: f.x, y: f.y }, A };
   // the game moves on only when the camera asks: g game seconds more, launching the waves on time
+  // with dice of its own, so the raid plays the same however many frames the map and the 3D view draw between steps
   let acc = 0, srbm = false, cm = false;
+  const dice = seeded(11), own = Math.random;
   window.adv = g => {
-    acc += g;
+    acc += g; Math.random = dice;
     while (acc >= 0.25) {
       const r = S.time - t0;
       if (!srbm && r >= 0) { srbm = true; IC.sandboxLaunch(S, { what: 'srbm', n: 6, from: 'border' }); }
-      if (!cm && r >= 330) { cm = true; IC.sandboxLaunch(S, { what: 'lacm', n: 10, from: 'close' }); }
+      if (!cm && r >= 330) { cm = true; IC.sandboxLaunch(S, { what: 'lacm', n: 16, from: 'close' }); }
+      if (r >= 700) for (const u of lr) u.roe = 'free';
       IC.step(S, 0.25); acc -= 0.25;
     }
+    Math.random = own;
   };
   window.advTo = r => adv(Math.max(0, t0 + r - S.time));
   // a hostile weapon in the air, the one nearest to a place
@@ -70,16 +76,17 @@ const PICK = () => {
   const out = {};
   // calm: the airport at dusk, its lights coming on, a slow orbit
   out.calm = { x: R.ap.x, y: R.ap.y, r: 120, t: -40, speed: 1, cam: { mode: 'orbit', at: { x: R.ap.x, y: R.ap.y, h: 0 }, dist: 22, up: 3.2, rate: 0.035, yaw0: R.A + 2.2, lens: 32, shake: 0.05 } };
-  // the launch: the first ballistic missile off its launcher, seen from 3 km away on the ground
+  // the launch: the first ballistic missile off its launcher, seen from the ground 800 m away
   const bal = tracks.filter(tr => tr.kind === 'threat' && cls(tr) === 'bal').sort((a, b) => first(a) - first(b));
   if (bal.length) {
-    const b = bal[0], L = pos(b, first(b)), L2 = pos(b, first(b) + 30), a = Math.atan2(L2.y - L.y, L2.x - L.x), o = perp(a, 32);
-    out.launch = { x: L.x, y: L.y, r: 120, t: first(b) - T0 - 1.2, speed: 1, cam: { mode: 'fixed', ref: b.ref, at: { x: L.x, y: L.y, h: 20 }, from: { x: L.x + o.x - Math.cos(a) * 6, y: L.y + o.y - Math.sin(a) * 6, h: 2 }, lens: [45, 30], lag: 0.35, shake: 0.18 } };
+    // its flight is fast from the first second: 800 m off at a seventh of real time, the camera tilting up after it
+    const b = bal[0], L = pos(b, first(b)), L2 = pos(b, first(b) + 30), a = Math.atan2(L2.y - L.y, L2.x - L.x), o = perp(a, 8);
+    out.launch = { x: L.x, y: L.y, r: 120, t: first(b) - T0 - 0.2, speed: [[0, 0.14], [3.2, 0.14], [4.2, 0.5]], cam: { mode: 'fixed', ref: b.ref, lookOff: { y: -0.3 }, from: { x: L.x + o.x - Math.cos(a) * 2, y: L.y + o.y - Math.sin(a) * 2, h: 2 }, lens: [70, 45], lag: 0.3, shake: 0.12 } };
   }
   // a cruise missile low over the fields: the camera set down beside its path as it comes
   const cms = tracks.filter(tr => tr.kind === 'threat' && cls(tr) === 'cm');
   const tf = T0 + 560, cm = cms.find(tr => first(tr) < tf - 5 && tr.t1 > tf + 10) || cms[0];
-  if (cm) { const p = pos(cm, tf + 2); out.flyby = { x: p.x, y: p.y, r: 80, t: 560, speed: 1, cam: { mode: 'plant', ref: cm.ref, lead: 2.2, side: 0.45, up: 0.06, lens: 24, lag: 0.08, shake: 0.08 } }; }
+  if (cm) { const p = pos(cm, tf + 2); out.flyby = { x: p.x, y: p.y, r: 80, t: 560, speed: [[0, 1], [1.7, 1], [2.2, 0.25], [3.2, 0.25], [4, 1]], cam: { mode: 'plant', ref: cm.ref, lead: 2.1, side: 0.45, up: 0.06, lens: 24, lag: 0.08, shake: 0.08 } }; }
   // the medium-range battery fires
   const lm = ev.find(e => e.kind === 'launch' && e.u === 'mrsam');
   if (lm) {
@@ -88,15 +95,15 @@ const PICK = () => {
     if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: 1, cam: { mode: 'fixed', ref: ms ? ms.ref : null, at: { x: u.x, y: u.y, h: 4 }, from: { x: u.x + Math.cos(a) * 6, y: u.y + Math.sin(a) * 6, h: 1.7 }, lens: 30, lag: 0.25, shake: 0.2 } };
     if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, back: 0.3, side: 0.08, up: 0.05, ahead: 1.5, lens: 28, ease: 0.15, shake: 0.1 } };
   }
-  // a cruise missile shot down: from the ground 3 km off with a long lens, slowing as it is hit
+  // a cruise missile shot down: from the ground 1.2 km off with a long lens, slowing as it is hit
   const kcs = ev.filter(e => e.kind === 'kill' && e.cls === 'cm').sort((a, b) => U.dxy(a.x, a.y, R.fuel.x, R.fuel.y) - U.dxy(b.x, b.y, R.fuel.x, R.fuel.y)), kc = kcs[2] || kcs[0];
-  if (kc) { const o = perp(R.A, 28); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 2.4, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, shake: 0.06 } }; }
+  if (kc) { const o = perp(R.A, 12); out.kill = { x: kc.x, y: kc.y, r: 120, t: kc.t - 2.4, speed: [[0, 1], [1.6, 1], [2.1, 0.22], [3.6, 0.22], [4.2, 0.6]], cam: { mode: 'fixed', at: { x: kc.x, y: kc.y, alt: kc.alt || 0.04 }, from: { x: kc.x + o.x, y: kc.y + o.y, h: 2 }, lens: 135, shake: 0.06 } }; }
   // a ballistic missile met high up, seen from the airport looking up
   const kb = ev.find(e => e.kind === 'intercept' && e.cls === 'bal');
-  if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.5, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: R.ap.x + 6, y: R.ap.y + 4, h: 2 }, lens: 70, shake: 0.1 } };
+  if (kb) out.high = { x: R.ap.x, y: R.ap.y, r: 400, t: kb.t - 2.5, speed: [[0, 1], [1.8, 1], [2.4, 0.3], [4, 0.3]], cam: { mode: 'fixed', at: { x: kb.x, y: kb.y, alt: kb.alt || 20 }, from: { x: R.ap.x + 6, y: R.ap.y + 4, h: 2 }, lens: [200, 320], shake: 0.1 } };
   // what gets through: a cruise missile into the airport, then a ballistic one
-  const ic = ev.filter(e => e.kind === 'impact' && e.cls === 'cm')[0], ib = ev.filter(e => e.kind === 'impact' && e.cls === 'bal')[0];
-  if (ic) { const o = perp(R.A, -11); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 40 }, from: { x: ic.x + o.x + Math.cos(R.A) * 4, y: ic.y + o.y + Math.sin(R.A) * 4, h: 2 }, lens: 40, lag: 0.1, shake: 0.12 } }; }
+  const ics = ev.filter(e => e.kind === 'impact' && e.cls === 'cm'), ic = ics[0], ib = ev.filter(e => e.kind === 'impact' && e.cls === 'bal')[0] || ics[ics.length - 1];
+  if (ic) { const o = perp(R.A, -6); out.hit = { x: ic.x, y: ic.y, r: 120, t: ic.t - 2.2, speed: [[0, 1], [1.9, 1], [2.3, 0.4], [3.6, 0.4], [4.4, 1]], cam: { mode: 'fixed', at: { x: ic.x, y: ic.y, h: 60 }, from: { x: ic.x + o.x + Math.cos(R.A) * 2, y: ic.y + o.y + Math.sin(R.A) * 2, h: 3 }, lens: 45, lag: 0.1, shake: 0.12 } }; }
   if (ib) { const o = perp(R.A + 1.2, 22); out.hit2 = { x: ib.x, y: ib.y, r: 120, t: ib.t - 1.0, speed: 1, cam: { mode: 'fixed', at: { x: ib.x, y: ib.y, h: 120 }, from: { x: ib.x + o.x, y: ib.y + o.y, h: 25 }, lens: 32, shake: 0.12 } }; }
   // after: the burning airport from the air, turning slowly, the game running at four times
   const last = ev.filter(e => e.kind === 'impact').slice(-1)[0], c0 = ic || ib || R.fuel;
@@ -114,7 +121,7 @@ const CUT = [
   { name: 'calm', kind: '3d', dur: 4.5, cap: ['Holitz International', 'The country\'s busiest airport'] },
   { name: 'launch', kind: '3d', dur: 4.2, cap: ['East of the border', 'A ballistic missile leaves its launcher'] },
   { name: 'arcs', kind: '2d', dur: 4.5, at: 120, g: 70, cam: `({ kind: 'raid', ref: nearest(C.ap, 'bal'), with: [C.ap], pad: 900, zMax: 0.12 })`, cap: ['Six ballistic missiles', '900 km. Twelve minutes.'] },
-  { name: 'flyby', kind: '3d', dur: 4, cap: ['Ten cruise missiles', '30 m over the fields'] },
+  { name: 'flyby', kind: '3d', dur: 4, cap: ['Sixteen cruise missiles', '30 m over the fields'] },
   { name: 'track', kind: '2d', dur: 3.6, at: 600, g: 10, cam: `({ kind: 'track', ref: nearest(C.ap, 'cm'), z: 6, lead: 0.3 })` },
   { name: 'wakes', kind: 'card', dur: 2, card: ['THE DEFENCE WAKES'], big: 84, rule: false },
   { name: 'sam', kind: '3d', dur: 3.6 },
@@ -146,7 +153,8 @@ function speedAt(sp, f) {
   const T = Date.now(), el = () => ((Date.now() - T) / 1000).toFixed(0) + ' s';
   const cam = await open({ w: W, h: H, fps: FPS });
   console.log('setup', await cam.ev(SETUP(HOUR)), el());
-  await cam.ev(() => { IC.film.set(true); IC.film.opt.bars = true; IC.q3d.set('high'); window.C = RAID; });
+  await cam.ev(q => { window.Q3D = q; }, Q3D);
+  await cam.ev(() => { IC.film.set(true); IC.film.opt.bars = true; IC.q3d.set(window.Q3D); window.C = RAID; });
   const want = s => !ONLY || ONLY.includes(s.name);
   const frameDir = name => { const d = path.join(WORK, 'f-' + name); fs.rmSync(d, { recursive: true, force: true }); fs.mkdirSync(d, { recursive: true }); return d; };
   const enc = (name, dir) => { execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%06d.jpg'), '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-pix_fmt', 'yuv420p', path.join(clips, name + '.mp4')]); fs.rmSync(dir, { recursive: true, force: true }); };
@@ -188,8 +196,12 @@ function speedAt(sp, f) {
     await caption(s);
     let gt = 0; const times = []; for (let i = 0; i < frames(s); i++) { times.push(gt); gt += speedAt(sp, i / FPS) / FPS; }
     log[s.name] = { t: await cam.ev(k => PK[k].t, s.name), times };
+    if (PROBE) {
+      const ms = []; for (let i = 0; i < 6; i++) { const a = Date.now(); await cam.ev(([k, g]) => { V3.t = RAID.t0 + PK[k].t + g; IC.film.tick(1000 / 30); }, [s.name, times[i]]); await cam.still(path.join(WORK, 'probe-' + s.name + '.png')); ms.push(Date.now() - a); }
+      console.log(s.name, 'frame ms', ms.join(' '), el()); continue;
+    }
     if (STILLS) {
-      await cam.ev(([k, g]) => { V3.t = RAID.t0 + PK[k].t + g; IC.film.tick(1000 / 30); }, [s.name, times[Math.floor(times.length / 2)]]);
+      await cam.ev(([k, g]) => { V3.t = RAID.t0 + PK[k].t + g; V3.fsnap = true; IC.film.tick(1000 / 30); }, [s.name, times[Math.floor(times.length / 2)]]);
       await cam.still(path.join(WORK, 'still-' + s.name + '.png')); console.log(s.name, el()); continue;
     }
     cam.dir = frameDir(s.name); cam.n = 0;

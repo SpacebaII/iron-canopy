@@ -41,6 +41,8 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float d = max(1e-4, -mv.z), px = psz * uFocal / d;
   vCol = pcol; vCol.a *= clamp(px / 2.0, 0.12, 1.0);
+  // a puff the camera is inside, or nearly, fades out rather than filling the frame
+  vCol.a *= smoothstep(0.7, 3.0, d / max(psz, 1e-4));
   vFog = clamp(d / uFar, 0.0, 1.0); vRot = prot;
   gl_PointSize = clamp(px, 1.0, uMaxPx);
   gl_Position = projectionMatrix * mv;
@@ -224,6 +226,19 @@ function weapon(v, w, m, t) {
     // the boost: a long flame and a fat column of smoke where it climbed
     const boost = Math.min(70, (d.boost || 70));
     if (age < boost + CFG.trailLife) laySmoke(v, w, tr, tr.t0, Math.min(t, tr.t0 + boost), t, { s0: 0.12, grow: 0.12, life: CFG.trailLife * 1.5, a0: 0.55, col: 0.9, warm: 1.2, rise: 0.002 });
+    // the launch: exhaust thrown out along the ground round the launcher, lit by the flame as it leaves
+    if (age < 120) {
+      const q = m._pad || (m._pad = IC.recPose(tr, IC.recFirstT(tr), {}));
+      if (q) {
+        const gx = q.x - v.cx, gz = q.y - v.cy, gy = H.hT(v, q.x, q.y) * v.hk, sp = 1 - Math.exp(-age * 2.5), fade = Math.exp(-age / 45), lit = Math.exp(-age / 1.5);
+        for (let i = 0; i < 46; i++) {
+          const a = i * 2.39996, u = 0.35 + 0.65 * ((i * 0.618) % 1), r = (0.06 + 1.6 * sp * u), up = 0.04 + 0.5 * sp * ((i * 0.377) % 1) * (1.2 - u) + age * 0.004;
+          const c = 0.42 + 0.12 * ((i * 0.31) % 1);
+          emit(w.smoke, gx + Math.cos(a) * r + w.wx * age, gy + up, gz + Math.sin(a) * r + w.wy * age, 0.18 + 0.5 * sp, c * 0.8 + 0.3 * lit, c * 0.76 + 0.16 * lit, c * 0.7 + 0.04 * lit, 0.7 * fade, i);
+        }
+        if (age < 4) { emit(w.fire, gx, gy + 0.05, gz, 1.2 * lit, 1, 0.6, 0.3, 0.5 * lit, 0); }
+      }
+    }
     if (age < boost && st.alt < 40) for (let i = 0; i < 10; i++) { const k = i / 9; heat(k, HC); emit(w.fire, p.x, p.y - 0.06 - k * 0.6, p.z, 0.12 * (1.4 - k), HC[0], HC[1], HC[2], 0.9 * (1 - k), i); }
     // coming down: the air ahead of it glows, and a short incandescent streak follows
     const falling = age > boost && st.alt < 55 && (st.pitch || 0) < -0.2;
@@ -265,7 +280,8 @@ function boom(v, w, e, t) {
   const x0 = e.x - v.cx, z0 = e.y - v.cy, y0 = yOf(v, e.x, e.y, e.alt || 0), seed = e.id * 977, L = w.lit;
   const H1 = i => hash(seed + i);
   if (air) {
-    const s = e.kind === 'mstat' ? 0.5 : e.sz || 0.7;
+    // high up the air is thin and a blast spreads wider: a ballistic intercept at 20 km is a bloom you see from the ground
+    const s = (e.kind === 'mstat' ? 0.5 : e.sz || 0.7) * (1 + U.clamp(((e.alt || 0) - 3) / 6, 0, 3));
     if (age < 0.18) emit(w.fire, x0, y0, z0, s * 2.2, 1, 0.95, 0.85, 1 - age / 0.18, 0);
     // the fireball
     for (let i = 0; i < 26; i++) {
@@ -287,7 +303,7 @@ function boom(v, w, e, t) {
   }
   const hk = hitKind(e), k = hk.k * 0.8, gY = H.hT(v, e.x, e.y) * v.hk;
   // the flash, and the light it throws on the ground
-  if (age < 0.25) { emit(w.fire, x0, y0 + 0.05, z0, k * 3, 1, 0.92, 0.75, 1 - age / 0.25, 0); emit(w.fire, x0, gY + 0.01, z0, k * 6, 1, 0.7, 0.4, 0.5 * (1 - age / 0.25), 0); }
+  if (age < 0.25) { emit(w.fire, x0, y0 + 0.05, z0, k * 3, 1, 0.92, 0.75, 1 - age / 0.25, 0); emit(w.fire, x0, gY + k * 2.6, z0, k * 6, 1, 0.7, 0.4, 0.5 * (1 - age / 0.25), 0); }
   // the fireball rising, bigger and slower for fuel
   const fbLife = hk.fuel ? 6 : 2.6;
   if (age < fbLife * 1.4) for (let i = 0; i < 60; i++) {
@@ -327,7 +343,7 @@ function boom(v, w, e, t) {
       }
     }
     // the glow on the ground and on what stands round it
-    emit(w.fire, x0, gY + 0.02, z0, k * (hk.fuel ? 5 : 2.5), 1, 0.45, 0.12, (0.12 + 0.25 * w.night) * fade, 0);
+    emit(w.fire, x0, gY + k * (hk.fuel ? 2.2 : 1.1), z0, k * (hk.fuel ? 5 : 2.5), 1, 0.45, 0.12, (0.12 + 0.25 * w.night) * fade, 0);
   }
   const pl = CFG.colPuff, every = hk.fuel ? 0.35 : 0.7, last = Math.min(age, burn);
   const j0 = Math.max(0, Math.ceil((age - pl) / every)), j1 = Math.floor(last / every);

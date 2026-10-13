@@ -413,6 +413,8 @@ function sampleThreat(S, R, t, now) {
     if (tr) R.of.set(t, tr);
     else tr = newTrack(R, t, 'threat', IC.modelOfThreat(t, true), name, civ ? 'civil' : 'enemy', { type: t.type, klass: t.d.klass, cs: t.cs, livery: t.livery || null, civil: civ });
     if (t.tail) R.link.set(t.tail, tr);
+    // a weapon fired since the last step starts on its launcher, not where the step left it
+    if (t.x0 != null && t.age > 0 && t.age < 2) push(tr, now - t.age, t.x0, t.y0, 0, Math.atan2(t.y1 - t.y0, t.x1 - t.x0), spdOf(t), 0, AFF[t.aff || 'U'] || 0, 2 * GPH.air);
   }
   if (t.tn && !tr.meta.tn) { tr.meta.tn = t.tn; tr.name = `TN ${t.tn}${t.cs ? ' · ' + t.cs : ''}`; }
   tr.meta.klass = t.klass || tr.meta.klass;
