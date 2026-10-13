@@ -594,6 +594,15 @@ function* worldSteps(seed) {
   /* ---------- streets, districts and buildings; lanes across the farmland ---------- */
   fieldGrid(W, fbm);
   buildTowns(W, IC.makeRng((seed * 131 + 7) >>> 0), fbm);
+  // a gate laid on a junction leaves a road piece of no length between the two nodes: the gate becomes that
+  // junction (its other roads move over), or the junction stage would make a roundabout out of a point
+  for (const e of W.edges.slice()) {
+    if (e.pts.length >= 2 && e.pts.some(p => U.dist(p, e.pts[0]) > 1e-6)) continue;
+    const from = e.a, to = e.b; if (from === to) { W.edges.splice(W.edges.indexOf(e), 1); continue; }
+    W.edges.splice(W.edges.indexOf(e), 1);
+    for (const o of W.edges) { if (o.a === from) o.a = to; if (o.b === from) o.b = to; }
+    delete W.nodes[from];
+  }
   // the roads into the cities have become their avenues (cities.js): number the roads again, measure them
   W.edges.forEach((e, i) => { e.id = 'e' + i; e.len = 0; for (let k = 1; k < e.pts.length; k++) e.len += U.dist(e.pts[k - 1], e.pts[k]); });
   for (const k in W.nodes) W.nodes[k].deg = 0;
@@ -630,12 +639,6 @@ function* worldSteps(seed) {
       const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
       if (!W.railX.some(o => U.dxy(o.x, o.y, x, y) < 2)) W.railX.push({ x, y, a: Math.atan2(b.y - a.y, b.x - a.x), cls: e.cls });
     }
-  }
-  // the junctions trimmed the roads' ends: a street that only met a trimmed piece would be left hanging
-  for (const c of W.cities) {
-    const B = c.ext + 12, segs = [];
-    for (const e of W.edges) { if (e.bb[0] > c.x + B || e.bb[2] < c.x - B || e.bb[1] > c.y + B || e.bb[3] < c.y - B) continue; for (let i = 1; i < e.pts.length; i++) segs.push([e.pts[i - 1].x, e.pts[i - 1].y, e.pts[i].x, e.pts[i].y, e.cls]); }
-    IC.cityDropIslands(c, segs.filter(s => s[4] !== 'hw'), true);
   }
   for (const c of W.cities.concat(W.foreign)) for (const l of c.streets) bbox(l);
 

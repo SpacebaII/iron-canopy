@@ -826,7 +826,6 @@ function closeStreets(c, blocks, roads) {
   }
 }
 IC.closeStreets = closeStreets;
-IC.cityDropIslands = dropIslands;
 function formFor(c, st, x) {
   const h = U.hash(x.i * 7 + 3, x.j * 13 + 5), d = x.d, s = c.style;
   // a cell at the crossing of two avenues
@@ -931,9 +930,8 @@ function tieStreets(c, roadSegs, SP, hwSegs) {
 
 /* streets that ended up tied only to each other, off the rest of the city (a stub or two between a river and a
    motorway): keep the pieces that reach a road or belong to the city's main network */
-function dropIslands(c, roadSegs, keepCul) {
-  // (the suburbs' closes hang off their own street and are thousands of short pieces: the last pass leaves them be)
-  const cul = keepCul ? c.streets.filter(l => l.cul) : null, L = keepCul ? c.streets.filter(l => !l.cul) : c.streets, n = L.length; if (n < 2) return;
+function dropIslands(c, roadSegs) {
+  const L = c.streets, n = L.length; if (n < 2) return;
   const up = L.map((_, i) => i), find = i => { while (up[i] !== i) i = up[i] = up[up[i]]; return i; }, join = (a, b) => { a = find(a); b = find(b); if (a !== b) up[a] = b; };
   const Bk = buckets(3), at = new Map();
   L.forEach((l, li) => {
@@ -953,7 +951,6 @@ function dropIslands(c, roadSegs, keepCul) {
   let main = -1, mx = 0; for (const [r, k] of size) if (k > mx) { mx = k; main = r; }
   const keep = new Set([main]); for (const i of rooted) keep.add(find(i));
   c.streets = L.filter((l, i) => keep.has(find(i)));
-  if (cul) for (const l of cul) c.streets.push(l);
 }
 
 /* ---------- what a city is: its districts, and the flights they want ---------- */

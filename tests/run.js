@@ -256,7 +256,7 @@ test('world: a national road entering a city goes on as one of its streets, or r
       const gate = k => k.startsWith(c.id + ':');
       for (const e of W.edges) if (e.city !== c.id) e.pts.forEach((p, i) => {
         if ((i === 0 && gate(e.a)) || (i === e.pts.length - 1 && gate(e.b)) || U.dist(p, c) > c.ext * 0.5) return;
-        assert(!c.blocks.some(b => U.dist(b, p) < 3.5), `seed ${seed}: road ${e.id} (${e.cls}) runs through the middle of ${c.name}`);
+        assert(!c.blocks.some(b => !b.fr && U.dist(b, p) < 3.5), `seed ${seed}: road ${e.id} (${e.cls}) runs through the middle of ${c.name}`);   // (the fringe lies along the roads: brief 54)
       });
       // in a grid city the avenues run with the grid's streets: along the direction field (brief 53), which is the
       // grid where the grid is strong (a few diagonal avenues aside)
@@ -465,7 +465,7 @@ test('traffic: a big city reads busy at rush hour, every street carries somethin
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), T = S.traffic;
   S.traffic.stepT = 0; IC.traffic(S, 0.25);
-  const loads = (c, cls) => T.links.filter(L => L.l.city === c && L.cls === cls && L.l.len > 0.3).map(L => L.load).sort((a, b) => a - b);
+  const loads = (c, cls) => T.links.filter(L => L.l.city === c && L.cls === cls && !L.l.cul && L.l.len > 0.3).map(L => L.load).sort((a, b) => a - b);   // (a suburb's closes carry only their residents: brief 54)
   const med = a => a[a.length >> 1];
   const st = loads(cap, 'st'), art = loads(cap, 'art');
   assert(st.length > 100 && art.length > 30, `${cap.name} has ${st.length} streets and ${art.length} avenues`);
