@@ -185,7 +185,7 @@ const slowOf = s => clamp(Math.pow(s, 0.3), 0.55, 1);
 /* each 3D shot is built round one moment (PICK in teaser.js): the game seconds after the shot's start it happens at,
    the event it is, and how far the camera is from it, km */
 const FOCUS = {
-  ignite: { g: 0.6, km: 0.045 }, launch: { g: 0.2, km: 0.85 }, flyby: { g: 2.1, km: 0.045 }, flyby2: { g: 1.9, km: 0.03 },
+  ignite: { g: 0.5, km: 0.045 }, launch: { g: 0, km: 0.85 }, flyby: { g: 2.1, km: 0.045 }, flyby2: { g: 1.9, km: 0.03 },
   sam: { g: 4.6, kind: 'launch', km: 0.03 },
   kill: { g: 1.9, kind: 'kill', km: 1.2 }, high: { g: 2.1, kind: 'intercept', km: 16 },
   hit: { g: 2.2, kind: 'impact', km: 0.65 }, hit2: { g: 1, kind: 'impact', km: 1 }

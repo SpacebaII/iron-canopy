@@ -83,14 +83,14 @@ const PICK = () => {
   if (bal.length) {
     // its flight is fast from the first second: 800 m off at a seventh of real time, the camera tilting up after it
     const b = bal[0], L = pos(b, first(b)), L2 = pos(b, first(b) + 30), a = Math.atan2(L2.y - L.y, L2.x - L.x), o = perp(a, 8);
-    out.launch = { x: L.x, y: L.y, r: 120, t: first(b) - T0 - 0.2, speed: [[0, 0.14], [3.2, 0.14], [4.2, 0.5]], cam: { mode: 'fixed', ref: b.ref, lookOff: { y: -0.3 }, from: { x: L.x + o.x - Math.cos(a) * 2, y: L.y + o.y - Math.sin(a) * 2, h: 2 }, lens: [70, 45], lag: 0.3, shake: 0.12 } };
+    out.launch = { x: L.x, y: L.y, r: 120, t: first(b) - T0 + 1.5, speed: [[0, 1.2], [3.6, 3]], cam: { mode: 'fixed', ref: b.ref, lookOff: { y: -0.3 }, from: { x: L.x + o.x - Math.cos(a) * 2, y: L.y + o.y - Math.sin(a) * 2, h: 2 }, lens: [70, 45], lag: 0.3, shake: 0.12 } };
   }
   // the launcher at its pad, close and low: the erector lifting the round (fast), then the ignition (slow)
   if (bal.length) {
     const b = bal[0], L = pos(b, first(b)), L2 = pos(b, first(b) + 30), a = Math.atan2(L2.y - L.y, L2.x - L.x), o = perp(a + 0.5, 0.42);
     const from = { x: L.x + o.x - Math.cos(a) * 0.12, y: L.y + o.y - Math.sin(a) * 0.12, h: 1.6 };
     out.erect = { x: L.x, y: L.y, r: 80, t: first(b) - T0 - 178, speed: 26, cam: { mode: 'fixed', at: { x: L.x, y: L.y, h: 7 }, from, lens: 32, shake: 0.04 } };
-    out.ignite = { x: L.x, y: L.y, r: 80, t: first(b) - T0 - 0.6, speed: [[0, 0.25], [2.4, 0.25], [3.4, 0.6]], cam: { mode: 'fixed', at: { x: L.x, y: L.y, h: 14 }, from, lens: [30, 26], shake: 0.25 } };
+    out.ignite = { x: L.x, y: L.y, r: 80, t: first(b) - T0 - 0.5, speed: [[0, 0.45], [2, 0.5], [3.4, 1]], cam: { mode: 'fixed', at: { x: L.x, y: L.y, h: 14 }, from, lens: [30, 26], shake: 0.25 } };
   }
   // a cruise missile low over the fields: the camera set down beside its path as it comes
   const cms = tracks.filter(tr => tr.kind === 'threat' && cls(tr) === 'cm');
