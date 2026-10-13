@@ -674,8 +674,11 @@ IC.roadUndo = function (S, m, r) {
 /* start the works: paid now, open when finished */
 IC.roadFinish = function (S, m) {
   const ends = [m.snaps[0], m.snaps[m.snaps.length - 1]];
-  const P = IC.roadPlan(S, m.cls, m.pts, ends);
+  let P = IC.roadPlan(S, m.cls, m.pts, ends);
   if (P.why) { IC.log(S, 'warn', 'ROADS', P.why); return false; }
+  // the line it takes between the points clicked: bending with the ground like the country's roads (gen.js)
+  const line = IC.roadLine ? IC.roadLine(S.world, m.cls, m.pts, P.apt) : m.pts;
+  if (line !== m.pts) { const P2 = IC.roadPlan(S, m.cls, line, ends); if (!P2.why) { P = P2; m = Object.assign({}, m, { pts: line }); } }
   S.budget -= P.cost;
   const E = S.econ, K = IC.ROADS[m.cls];
   const w = { id: 'rw' + (E.nid++), cls: m.cls, pts: m.pts.map(p => ({ x: p.x, y: p.y })), ends, cost: P.cost, km: P.km, bridges: P.bridges, hours: P.hours, prog: 0, stage: 'Surveying', t0: S.time, apt: P.apt.id };

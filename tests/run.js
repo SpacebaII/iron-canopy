@@ -143,6 +143,36 @@ test('world: a national road entering a city goes on as one of its streets, or r
     assert(W.edges.some(e => e.bypass), `seed ${seed}: no city has a motorway bypass`);
   }
 }, false, 'world');
+test('world: country roads bend with the ground, village lanes are not ruler lines, and roads still meet only at their nodes (brief 52)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed), E = W.edges.filter(e => !e.city);
+    // the grid routes were chains of 6–13 km straights (3,800 stretches over 5 km on seed 4242, 500 over 8 km)
+    let over5 = 0, over8 = 0, two = 0;
+    for (const e of E) {
+      if (e.pts.length === 2 && e.len > 30) two++;
+      for (let i = 1; i < e.pts.length; i++) { const l = U.dist(e.pts[i - 1], e.pts[i]); if (l > 50) over5++; if (l > 80) over8++; }
+    }
+    assert(over5 < 300 && over8 < 60, `seed ${seed}: ${over5} straight stretches over 5 km and ${over8} over 8 km`);
+    assert(two <= 8, `seed ${seed}: ${two} roads over 3 km are still one straight line`);
+    // a lane turns as it goes: the direction changes along it add up to more than a bee-line's
+    const lanes = E.filter(e => e.cls === 'lc' && e.len > 60);
+    let bent = 0;
+    for (const e of lanes) { let turn = 0; for (let i = 2; i < e.pts.length; i++) turn += Math.abs(U.angWrap(Math.atan2(e.pts[i].y - e.pts[i - 1].y, e.pts[i].x - e.pts[i - 1].x) - Math.atan2(e.pts[i - 1].y - e.pts[i - 2].y, e.pts[i - 1].x - e.pts[i - 2].x))); if (turn > 0.5) bent++; }
+    assert(bent > lanes.length * 0.8, `seed ${seed}: only ${bent} of ${lanes.length} lanes over 6 km bend at all`);
+    // roads cross each other only at nodes, but for the motorway pieces a city lays over nearby lanes when it takes
+    // its roads in (an older flaw, 5 pairs on each of these seeds before this brief: audit B5)
+    const bb = l => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of l.pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); } return [x0, y0, x1, y1]; };
+    let cross = 0;
+    for (let a = 0; a < E.length; a++) for (let b = a + 1; b < E.length; b++) {
+      const p = E[a], q = E[b]; if (p.a === q.a || p.a === q.b || p.b === q.a || p.b === q.b) continue;
+      const A = p._tb || (p._tb = bb(p)), B = q._tb || (q._tb = bb(q)); if (A[0] > B[2] || A[2] < B[0] || A[1] > B[3] || A[3] < B[1]) continue;
+      let hit = false;
+      for (let i = 1; i < p.pts.length && !hit; i++) for (let j = 1; j < q.pts.length; j++) { const t = U.segX(p.pts[i - 1].x, p.pts[i - 1].y, p.pts[i].x, p.pts[i].y, q.pts[j - 1].x, q.pts[j - 1].y, q.pts[j].x, q.pts[j].y); if (t > 1e-6 && t < 1 - 1e-6) { hit = true; break; } }
+      if (hit) cross++;
+    }
+    assert(cross <= 5, `seed ${seed}: ${cross} pairs of roads cross away from a junction`);
+  }
+}, false, 'world');
 test('world: every map has cities laid out like each of the five plans, and no two alike', () => {
   for (const seed of [4242, 7, 99]) {
     const W = world(seed), by = {};

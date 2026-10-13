@@ -835,6 +835,222 @@ function smoothLine(pts, rounds) {
   return Q;
 }
 
+/* ---------- the roads' lines on the ground (brief 52) ----------
+   The grid above decides which places a road joins and where roads meet; on a 6 km grid that left every road a
+   chain of 6–13 km straights, and a village road one straight line to the main road. So each road's own line is
+   drawn again between its two nodes, on a fine grid (FC units a cell) inside a corridor round its grid route: it
+   follows the ground (slopes, forest, a noise that makes it wander), keeps off the roads already drawn (so roads
+   still meet only at their nodes), pays for every river crossing and crosses squarely, keeps off airfields and, a
+   motorway, off villages, and leaves each node straight for its junction. Then it is smoothed by class: a motorway
+   bends over kilometres, a lane over a few hundred metres. A road the corridor cannot take keeps its grid line. */
+const FC = 8;
+// by class: the corridor's half-width (units), how far the line wanders from the grid route and over what length
+// (amp, wave), slope and crossing prices, a noise on the ground's price, how hard the line is held to its wandering
+// centre, rounds of smoothing
+const FINE = {
+  hw: { half: 18, amp: 14, wave: 120, slope: 2.4, bridge: 5, noise: 0.1, pull: 0.3, rounds: 2 },
+  rd: { half: 16, amp: 14, wave: 60, slope: 1.2, bridge: 4, noise: 0.2, pull: 0.3, rounds: 2 },
+  lc: { half: 14, amp: 12, wave: 40, slope: 0.8, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1 },
+  sp: { half: 9, amp: 5, wave: 25, slope: 0.6, bridge: 3, noise: 0.3, pull: 0.3, rounds: 1 }
+};
+const F8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], F8L = F8.map(([x, y]) => Math.hypot(x, y) * FC);
+// one set of working arrays for every road's corridor, grown to the largest (a thousand roads would otherwise each
+// allocate their own, and the collector would take longer than the search)
+let FB = null;
+function fineBuffers(n) {
+  if (!FB || FB.n < n) FB = { n, dc: new Float32Array(n), shut: new Uint8Array(n), hgt: new Float32Array(n), base: new Float32Array(n), wet: new Uint8Array(n), nz: new Float32Array(n), g: new Float64Array(n), par: new Int32Array(n), closed: new Uint8Array(n) };
+  const B = FB;
+  B.dc.fill(1e9, 0, n); B.shut.fill(0, 0, n); B.base.fill(0, 0, n); B.g.fill(Infinity, 0, n); B.par.fill(-1, 0, n); B.closed.fill(0, 0, n);
+  return B;
+}
+/* corner cutting (Chaikin), the ends kept */
+function chaikin(P, rounds) {
+  for (let r = 0; r < rounds && P.length > 2; r++) {
+    const Q = [P[0]];
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1];
+      if (i > 0) Q.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      if (i < P.length - 2) Q.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    Q.push(P[P.length - 1]); P = Q;
+  }
+  return P;
+}
+/* fewer points: drop any within tol of the line between the kept ones round it (Douglas–Peucker) */
+function simplify(P, tol) {
+  if (P.length < 3) return P;
+  const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1;
+  const stack = [[0, P.length - 1]];
+  while (stack.length) {
+    const [s, t] = stack.pop(); let far = 0, fi = -1;
+    for (let i = s + 1; i < t; i++) { const d = U.segDist(P[i].x, P[i].y, P[s].x, P[s].y, P[t].x, P[t].y); if (d > far) { far = d; fi = i; } }
+    if (far > tol) { keep[fi] = 1; stack.push([s, fi], [fi, t]); }
+  }
+  return P.filter((p, i) => keep[i]);
+}
+/* a line resampled every step units and swung from side to side by a slow noise; lead: a straight length kept at
+   each end */
+function wander(C, o, fbm, k, step, lead) {
+  const out = [], ld = lead || 0;
+  let L = 0; for (let i = 1; i < C.length; i++) L += U.dist(C[i - 1], C[i]);
+  if (L < Math.max(ld * 3, step * 2)) return C;
+  // (one walk along the line, the cursor carried from sample to sample)
+  let i = 1, acc = 0, a = C[0], b = C[1], sl = U.dist(a, b);
+  for (let s = 0; s < L; s += step) {
+    while (acc + sl < s && i < C.length - 1) { acc += sl; i++; a = C[i - 1]; b = C[i]; sl = U.dist(a, b); }
+    const ux = sl > 1e-9 ? (b.x - a.x) / sl : 1, uy = sl > 1e-9 ? (b.y - a.y) / sl : 0, d = Math.min(s - acc, sl);
+    // (nothing at the ends, which are the nodes, and the sway comes in over most of a wave)
+    const env = U.clamp(Math.min(s, L - s) / (0.75 * o.wave), 0, 1) * (ld ? U.clamp(Math.min(s, L - s) / ld - 1, 0, 1) : 1);
+    const w = env * o.amp * U.clamp((fbm(s / o.wave, k * 7.13, 2) - 0.35) * 6, -1, 1);   // (the noise runs 0 to 0.7, mostly 0.25 to 0.5)
+    out.push({ x: a.x + ux * d - uy * w, y: a.y + uy * d + ux * w });
+  }
+  out.push(C[C.length - 1]);
+  return out;
+}
+/* one road's line between its two ends A and B (points), round the centre line C, for class cls: taken(k) says a
+   fine cell k is another road's, fields are the airfields to keep off (not one the road serves), kn seeds its sway,
+   wide (a factor) opens the corridor and drops the sway. The line, or null when the corridor is shut */
+function fineLine(W, cls, C, A, B, taken, fields, kn, wide) {
+  const o0 = FINE[cls] || FINE.lc, o = wide ? Object.assign({}, o0, { half: o0.half * wide, amp: 0 }) : o0, fbm = W.fbm, half = o.half;
+  const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
+  const cellOf = p => U.clamp(Math.floor(p.y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(p.x / FC), 0, FW - 1);
+  C = wander(C, o, fbm, kn, FC * 2);
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of C) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const i0 = Math.max(0, Math.floor((x0 - half) / FC)), j0 = Math.max(0, Math.floor((y0 - half) / FC));
+  const i1 = Math.min(FW - 1, Math.floor((x1 + half) / FC)), j1 = Math.min(FH - 1, Math.floor((y1 + half) / FC));
+  const cw = i1 - i0 + 1, ch = j1 - j0 + 1, n = cw * ch;
+  if (n > 600000) return null;
+  const { dc, shut, hgt, base, wet, nz, g, par, closed } = fineBuffers(n);
+  // the corridor: how far each cell is from the centre line (cells beyond half are out)
+  for (let s = 1; s < C.length; s++) {
+    const a = C[s - 1], b = C[s], ex = b.x - a.x, ey = b.y - a.y, L2 = ex * ex + ey * ey || 1;
+    const u0 = Math.max(i0, Math.floor((Math.min(a.x, b.x) - half) / FC)), u1 = Math.min(i1, Math.floor((Math.max(a.x, b.x) + half) / FC));
+    const v0 = Math.max(j0, Math.floor((Math.min(a.y, b.y) - half) / FC)), v1 = Math.min(j1, Math.floor((Math.max(a.y, b.y) + half) / FC));
+    for (let v = v0; v <= v1; v++) {
+      const y = (v + 0.5) * FC; let q = (v - j0) * cw + (u0 - i0);
+      for (let u = u0; u <= u1; u++, q++) {
+        const x = (u + 0.5) * FC, t = U.clamp(((x - a.x) * ex + (y - a.y) * ey) / L2, 0, 1), dx = x - a.x - ex * t, dy = y - a.y - ey * t, d = dx * dx + dy * dy;
+        if (d < dc[q]) dc[q] = d;
+      }
+    }
+  }
+  // (kept squared until here)
+  const h2 = half * half;
+  const sK = cellOf(A), tK = cellOf(B), qs = ((sK / FW) | 0) - j0, qsi = sK % FW - i0, qt = ((tK / FW) | 0) - j0, qti = tK % FW - i0;
+  const QS = qs * cw + qsi, QT = qt * cw + qti;
+  // the ground under the corridor's cells, and what a cell may not be: water, abroad, another road's (but the two
+  // ends' own cells, where roads meet), an airfield's
+  for (let q = 0; q < n; q++) {
+    if (dc[q] > h2) { shut[q] = 1; continue; }
+    dc[q] = Math.sqrt(dc[q]);
+    if (q !== QS && q !== QT && taken((((q / cw) | 0) + j0) * FW + q % cw + i0)) shut[q] = 1;
+  }
+  // (the ground is read when the search first reaches a cell: it visits a part of the corridor)
+  const read = q => {
+    if (base[q]) return base[q] > 0;
+    const i = q % cw + i0, j = ((q / cw) | 0) + j0, x = (i + 0.5) * FC, y = (j + 0.5) * FC, out = W.depthOut(x, y);
+    if (out > FC * 2 || W.inLake(x, y)) { base[q] = -1; shut[q] = 1; return false; }
+    const f = fbm(x / 120, y / 120, 2);   // (0 to 0.7)
+    hgt[q] = W.hAt(x, y); wet[q] = W.riverDist(x, y) < FC * 0.8 ? 1 : 0; nz[q] = f * 1.4;
+    base[q] = 1 + (W.forestAt(x, y) ? 0.4 : 0) + (out > -FC * 2 ? 1.5 : 0) + 0.3 * f;
+    return true;
+  };
+  const stamp = (p, r) => { for (let j = Math.max(j0, Math.floor((p.y - r) / FC)); j <= Math.min(j1, Math.floor((p.y + r) / FC)); j++) for (let i = Math.max(i0, Math.floor((p.x - r) / FC)); i <= Math.min(i1, Math.floor((p.x + r) / FC)); i++) { const q = (j - j0) * cw + (i - i0); if (q !== QS && q !== QT && U.dxy((i + 0.5) * FC, (j + 0.5) * FC, p.x, p.y) < r) shut[q] = 1; } };
+  for (const f of fields) if (f.x > x0 - half - f.r && f.x < x1 + half + f.r && f.y > y0 - half - f.r && f.y < y1 + half + f.r) stamp(f, f.r);
+  if (shut[QS] || shut[QT] || !read(QS) || !read(QT)) return null;
+  const hf = [], hv = [];
+  let hn = 0;
+  const push = (f, v) => { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hf[p] <= f) break; hf[i] = hf[p]; hv[i] = hv[p]; i = p; } hf[i] = f; hv[i] = v; };
+  const pop = () => { const v = hv[0], lf = hf[--hn], lv = hv[hn]; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hf[c + 1] < hf[c]) c++; if (hf[c] >= lf) break; hf[i] = hf[c]; hv[i] = hv[c]; i = c; } hf[i] = lf; hv[i] = lv; return v; };
+  g[QS] = 0; push(0, QS);
+  let found = false;
+  while (hn) {
+    const a = pop();
+    if (closed[a]) continue;
+    closed[a] = 1;
+    if (a === QT) { found = true; break; }
+    const ai = a % cw, aj = (a / cw) | 0;
+    for (let m = 0; m < 8; m++) {
+      const bi = ai + F8[m][0], bj = aj + F8[m][1];
+      if (bi < 0 || bj < 0 || bi >= cw || bj >= ch) continue;
+      const b = bj * cw + bi;
+      if (shut[b] || closed[b] || !read(b)) continue;
+      // (no slipping between two shut cells on the diagonal: that would cross another road)
+      if (m >= 4 && shut[aj * cw + bi] && shut[bj * cw + ai]) continue;
+      const L = F8L[m], gr = Math.abs(hgt[b] - hgt[a]) / L / 0.0012;
+      let c = L * (base[a] + base[b]) * 0.5 * (1 + o.slope * Math.min(gr * gr, 40)) * (1 + o.noise * nz[b]) + L * o.pull * 3 * Math.pow(dc[b] / half, 2);
+      if (wet[b] !== wet[a]) c += o.bridge * FC * (m >= 4 ? 2.2 : 1.5);
+      const ng = g[a] + c;
+      if (ng >= g[b]) continue;
+      g[b] = ng; par[b] = a;
+      push(ng + Math.hypot(bi - qti, bj - qt) * FC * 0.65, b);
+    }
+  }
+  if (!found) return null;
+  const cells = []; for (let q = QT; q >= 0; q = par[q]) cells.push((((q / cw) | 0) + j0) * FW + (q % cw + i0));
+  cells.reverse();
+  let P = cells.map(k => ({ x: (k % FW + 0.5) * FC, y: (((k / FW) | 0) + 0.5) * FC }));
+  P[0] = { x: A.x, y: A.y }; P[P.length - 1] = { x: B.x, y: B.y };
+  // (the first and last legs stay straight: a junction's shape is laid along them)
+  if (P.length > 3) P = [P[0]].concat(chaikin(P.slice(1, -1), o.rounds), [P[P.length - 1]]);
+  // a lattice path runs straight between its turns: a second, smaller sway (under half a cell, so it meets nothing
+  // new) bends those stretches too, with the junction leads left alone
+  return { pts: simplify(wander(P, { amp: Math.min(o.amp * 0.4, 3.5), wave: o.wave * 0.6 }, fbm, kn + 0.5, FC * 0.75, 12), 0.4), cells };
+}
+function refineRoads(W) {
+  const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
+  const occ = new Map();   // fine cell → the road laid on it
+  const cellOf = p => U.clamp(Math.floor(p.y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(p.x / FC), 0, FW - 1);
+  const fields = W.infra.filter(b => b.kind === 'airport' || b.kind === 'airbase').map(f => ({ id: f.id, x: f.x, y: f.y, r: 45 }));
+  const vils = W.villages.filter(v => v.home).map(v => ({ x: v.x, y: v.y, r: 9 }));
+  // every node's cell, and the eight round it, are for the roads that end there (a motorway may not run through a
+  // village's, and a road passing a junction leaves room for the lanes that join it)
+  const nodeCell = new Map();
+  for (const k in W.nodes) { const c = cellOf(W.nodes[k]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) nodeCell.set(c + dy * FW + dx, k); }
+  // the most important and the longest first: a lane keeps off the main road, not the reverse
+  const order = W.edges.slice().sort((a, b) => (RANK[b.cls] - RANK[a.cls]) || (b.len - a.len));
+  const t0 = Date.now();
+  order.forEach((e, ei) => {
+    if (!FINE[e.cls]) return;
+    const taken = k => { const by = occ.get(k), nd = nodeCell.get(k); return (by && by !== e) || (nd && nd !== e.a && nd !== e.b); };
+    const keepOff = fields.filter(f => f.id !== e.a && f.id !== e.b).concat(e.cls === 'hw' ? vils : []);
+    // (a corridor the other roads shut: once more, twice as wide and without the sway, before the grid line stays)
+    const r = fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei) || fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 2);
+    if (!r) return;
+    for (const k of r.cells) occ.set(k, e);
+    e.pts = r.pts;
+    e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
+  });
+  W._refineMs = Date.now() - t0;
+}
+/* the line a road built later takes (growth.js: an airport's access road, the player's roads) between the points
+   given, bending like the country's roads and keeping off them; apt is the airport it serves. The points come
+   back as they were where no line could be found */
+IC.roadLine = function (W, cls, pts, apt) {
+  if (!W.fbm || pts.length < 2) return pts;
+  const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC), half = (FINE[cls] || FINE.lc).half;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  x0 -= half * 2; y0 -= half * 2; x1 += half * 2; y1 += half * 2;
+  // the roads already there, as the fine cells they pass through
+  const occ = new Set();
+  for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) {
+    const a = e.pts[i - 1], b = e.pts[i];
+    if (Math.max(a.x, b.x) < x0 || Math.min(a.x, b.x) > x1 || Math.max(a.y, b.y) < y0 || Math.min(a.y, b.y) > y1) continue;
+    const L = U.dist(a, b), n = Math.max(1, Math.ceil(L / (FC * 0.5)));
+    for (let k = 0; k <= n; k++) { const x = a.x + (b.x - a.x) * k / n, y = a.y + (b.y - a.y) * k / n; occ.add(U.clamp(Math.floor(y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(x / FC), 0, FW - 1)); }
+  }
+  const fields = W.infra.filter(b => (b.kind === 'airport' || b.kind === 'airbase') && b !== apt && (!apt || b.id !== apt.id)).map(f => ({ id: f.id, x: f.x, y: f.y, r: (f.radius || 50) * 0.8 }));
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const r = fineLine(W, cls, [pts[i - 1], pts[i]], pts[i - 1], pts[i], k => occ.has(k), fields, 1000 + i + pts[0].x * 0.001);
+    const P = r ? r.pts : [pts[i - 1], pts[i]];
+    for (let k = 1; k < P.length; k++) out.push(P[k]);
+  }
+  return out;
+};
+
 function buildNetwork(W, R, fbm) {
   const G = costGrid(W, fbm), GW = G.GW, N = G.N;
   const T = layer(G);
@@ -863,7 +1079,11 @@ function buildNetwork(W, R, fbm) {
   const spur = (id, cls, alt) => {
     const s = cellP(id); if (T.use[s]) return;
     // (onto a lesser road: nothing joins a motorway but at an interchange)
-    const p = search(T, s, -1, HOW[cls], c => T.use[c] > 0 && T.use[c] < RANK.hw, 4000 * SP);
+    // (onto a plain stretch of road where it can, clear of any junction, so the lanes of several villages do not
+    // all meet at one)
+    const onto = c => T.use[c] > 0 && T.use[c] < RANK.hw;
+    const plain = c => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = c + dy * GW + dx; if (q >= 0 && q < N && (T.adj.get(q) || []).length > 2) return false; } return true; };
+    const p = search(T, s, -1, HOW[cls], c => onto(c) && plain(c), 4000 * SP) || search(T, s, -1, HOW[cls], onto, 4000 * SP);
     if (p) lay(T, p, RANK[cls]); else if (alt) road(id, alt, cls);
   };
   const cities = W.cities, cap = cities[0];
@@ -956,6 +1176,8 @@ function buildNetwork(W, R, fbm) {
   for (const e of edges) for (const k of [e.a, e.b]) { const n = nodes[k]; n.cls = n.cls || {}; n.cls[e.cls] = (n.cls[e.cls] || 0) + 1; }
   for (const k in nodes) { const n = nodes[k], c = n.cls || {}; n.deg = (c.hw || 0) + (c.rd || 0) + (c.lc || 0) + (c.sp || 0); delete n.cls; }
   W.nodes = nodes; W.edges = edges;
+  W.fbm = fbm;
+  refineRoads(W);
 
   /* ---------- railways: the big cities and the factories, on gentle grades ---------- */
   const RT = layer(G); RT.shut = T.shut;
@@ -1049,8 +1271,12 @@ function buildTowns(W, R, fbm) {
   for (const c of W.cities) for (const b of c.blocks) mark(b.x, b.y);
   for (const e of W.edges) {
     if (e.cls !== 'lc' && e.cls !== 'rd') continue;
-    for (let i = 2; i < e.pts.length - 2; i += 3) {
+    // (a chance of a lane every 12 km or so of road, however many points the road has)
+    let run = 45;
+    for (let i = 1; i < e.pts.length - 2; i++) {
       const p = e.pts[i], q = e.pts[i + 1];
+      run += U.dist(e.pts[i - 1], p); if (run < 120) continue;
+      run = 0;
       if (W.farmAt(p.x, p.y) < 0.3 || R() > 0.4) continue;
       if (W.cities.some(c => U.dist(c, p) < c.r * 1.2)) continue;
       const fa = W.fieldAng(p.x, p.y), ra = Math.atan2(q.y - p.y, q.x - p.x);
