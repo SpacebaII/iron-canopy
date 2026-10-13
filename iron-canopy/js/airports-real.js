@@ -28,6 +28,7 @@ function endName(real, trueDeg, rot) {
   const off = +m[1] * 10 - trueDeg, h = trueDeg + rot * 180 / Math.PI + off, n = ((Math.round(h / 10) % 36) + 36) % 36 || 36;
   return String(n).padStart(2, '0') + m[2];
 }
+const RECT_BLD = { fuel: 1, fire: 1, tower: 1 };
 /* build the layout into the airport; returns the airport */
 IC.aptFromLayout = function (ap, L, o) {
   o = Object.assign({ x: ap.x, y: ap.y, rot: 0 }, o || {});
@@ -63,6 +64,8 @@ IC.aptFromLayout = function (ap, L, o) {
   const blds = (L.blds || []).map(B => {
     const kind = IC.APART[B.kind] ? B.kind : 'support';
     if ((IC.APART[kind].r || kind === 'fuel') && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r || 0.13, name: B.name || undefined }); }
+    // (a fuel farm, fire station or tower laid out as a box keeps its frame, so it is drawn as itself, IC.bldLayout)
+    if (B.rect && RECT_BLD[kind]) { const c = X(B.rect[0], B.rect[1]); return add({ kind, x: c.x, y: c.y, a: B.rect[2] + rot, w: B.rect[3], h: B.rect[4], name: B.name || undefined, tanks: B.tanks || undefined, link: B.link ? pairs(B.link).map(q => X(q.x, q.y)) : undefined }); }
     const part = IC.polyPart(kind, P(B.poly));
     // (a round or curved building keeps its circle, in its own frame, for the roof that follows it)
     if (B.arc) { const c = X(B.arc[0], B.arc[1]), l = IC.rectLocal(part, c); part.arc = { x: l.x, y: l.y, r0: B.arc[2], r1: B.arc[3], a0: B.arc[4] + rot - part.a, a1: B.arc[5] + rot - part.a }; }

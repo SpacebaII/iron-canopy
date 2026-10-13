@@ -577,13 +577,14 @@ function buildHint(m, short) {
       : set ? `${IC.PIECES[t].name} placed. R turns it. ${go}` : `${IC.PIECES[t].name}: click where it goes${t === 'starter' ? ' (on your runway, it is built round it)' : t === 'services' ? ', beside the runway: it keeps out of the runway strip' : ', beside the runway: it faces it and joins the nearest taxiway'}. R turns it.`)
     : t === 'blueprint' ? (set ? `Blueprint placed. R turns it (Shift+R the other way). ${go}` : 'Blueprint: click where it should go; R turns it.')
     : IC.TERM_KITS && IC.TERM_KITS[t] ? (set ? `${IC.TERM_KITS[t].name} placed. R turns it. ${go} Then join its taxilanes to your taxiways.` : `${IC.TERM_KITS[t].name}: click where it should go; R turns it.`)
+    : IC.SHAPE_TOOLS && IC.SHAPE_TOOLS[t] ? (m.pick != null ? 'Click where this corner goes.' : set ? `${T.name} closed. Click a corner to move it, a side to add a corner, elsewhere to move it all; F: ${IC.SHAPE_EDGES[IC.shapeEdge(m)]}; R turns it. Build (or Enter) builds it.` : n < 3 ? `${T.name}: click its corners one by one (${n ? `${n} so far` : 'any shape'}).` : `${n} corners: click the first one again, or Build (or Enter), to close it; F: ${IC.SHAPE_EDGES[IC.shapeEdge(m)]}.`)
     : t === 'stretch' ? (!n ? T.desc : set ? `Stretch placed. ${go.replace('moves it', 'sets another edge')}` : 'Click where the new edge should be.')
     : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. Started by a taxiway or apron it lines up with it. R turns it 15°.` : `${T ? T.name : D.name} placed. ${go.replace('moves it', 'moves its far corner')}`)
     : (set ? `${D.name} placed. R turns it. ${go}` : `${D.name}: click to place it. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`);
   if (short) return `${how} Esc or right-click cancels.`;
   const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z), !!IC.bldFree) : null;
   const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.warn || [], plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
-  const snap = IC.bldIsLine(t) || IC.bldIsArea(t) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
+  const snap = IC.bldIsLine(t) || IC.bldIsArea(t) || (IC.SHAPE_TOOLS && IC.SHAPE_TOOLS[t]) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
   return `${how}${snap} ${set ? 'Esc or right-click cancels.' : 'Right-click takes a point back; Esc stops.'}${info ? '\n' + info : ''}`;
 }
 const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);

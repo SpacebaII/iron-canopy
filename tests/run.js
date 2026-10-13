@@ -4795,6 +4795,63 @@ test('building: parts that open together rise as one line of what they changed',
   const T = IC.aptProblems(S, ap).map(p => p.title).concat([IC.rwTitle({ name: 'Runway 09/27' }), IC.rwTitle({ name: '09/27' })]);
   assert(!T.some(t => /Runway Runway/.test(t)) && IC.rwTitle({ name: '09/27' }) === 'Runway 09/27', T.join(' / '));
 });
+test('building: the Starter airport\'s services stand where real airports put them, each with its road', () => {
+  for (const cls of ['field', 'national', 'hub']) {
+    const { S, ap } = foundAs(cls), one = k => ap.parts.find(p => p.kind === k), fire = one('fire'), fuel = one('fuel'), term = one('terminal');
+    // (drawn as themselves: a fire station with its bays and apron, a tower with its cab, a fuel farm's tanks)
+    assert(fire && !fire.poly && IC.bldLayout(fire) && !fuel.poly && IC.bldLayout(fuel), `${cls}: services drawn as boxes`);
+    // the fire station's trucks leave by its front, onto the parallel taxiway, and reach both runway ends in time
+    const N = IC.svcNet(ap), out = N.roads.find(r => (r.kind === 'door' || r.kind === 'crash') && r.by === fire.id);
+    const tw = ap.parts.filter(p => p.kind === 'taxi'), onTw = q => tw.some(t => IC.partDist(ap, t, q) < t.w / 2 + 0.02);
+    assert(out && onTw(out.pts[out.pts.length - 1]), `${cls}: no road from the fire station onto the taxiway`);
+    const rw = one('runway'); assert([0, 1].every(f => IC.fireTime(fire, IC.rwAt(rw, f)) < IC.FIRE_STD), `${cls}: the fire trucks are too slow`);
+    // the fuel farm is clear of anything a fuel fire would take with it, and the airport says nothing is wrong
+    assert(!IC.fuelNear(ap, fuel), `${cls}: ${IC.fuelNear(ap, fuel) && IC.fuelNearText(IC.fuelNear(ap, fuel))}`);
+    if (cls !== 'field') { const tower = one('tower'); assert(tower && !IC.towerSees(ap, [tower], rw) && IC.partDist(ap, term, tower) < 1.2, `${cls}: the tower is not by the terminal, seeing the runway`); }
+    assert(!ap.st.warn.length && IC.svcRoadEnds(S, ap).every(e => e.ok), `${cls}: ${ap.st.warn.join(' / ')}`);
+    if (cls === 'field') assert(fire.w < 0.6 && IC.fuelTanks(fuel) === 1, 'an airfield got a big airport\'s services');
+  }
+});
+test('building: a fire station with no taxiway beside it gets a crash road to the runway, and a fuel farm by the terminal is warned of', () => {
+  const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), term = ap.parts.find(p => p.kind === 'terminal');
+  const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, term).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
+  // the Services piece on the far side, where no parallel taxiway runs
+  let m = S.mode2 = IC.bldMode(S, ap, 'services'); IC.clickWorld(W(-8, -3.2), 0); assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null; finishWorks(S, ap);
+  const fire = ap.parts.filter(p => p.kind === 'fire').pop(), crash = IC.svcNet(ap).roads.find(r => r.kind === 'crash' && r.by === fire.id);
+  assert(crash && IC.partDist(ap, rw, crash.pts[1]) < rw.w / 2 + 0.3 && IC.svcRoadEnds(S, ap).every(e => e.ok), 'no crash road from the far fire station to the runway');
+  assert(!ap.parts.filter(p => p.kind === 'fuel').some(f => IC.fuelNear(ap, f)), 'the Services piece put its fuel by its own buildings');
+  // a fuel farm planned against the terminal: the plan says the fire would spread, and the airport keeps saying it
+  m = S.mode2 = IC.bldMode(S, ap, 'fuel'); const at = IC.rectWorld({ x: term.x, y: term.y, a: term.a }, 0, (term.h / 2 + 0.75) * (IC.rectLocal(term, IC.rwAt(rw, 0.5)).y > 0 ? -1 : 1));
+  IC.bldFree = true; IC.clickWorld(at, 0, true); const plan = IC.bldReady(S, m); IC.bldFree = false;
+  assert(plan && (plan.warn || []).some(t => /fire spreads to it/.test(t)), `no warning on the plan: ${plan && (plan.warn || []).join(' / ')} ${plan && plan.why}`);
+  assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null; finishWorks(S, ap); IC.aptStats(S, ap);
+  assert(ap.st.warn.some(t => /fuel farm stands \d+ m from the terminal/.test(t)), ap.st.warn.join(' / '));
+  // and the simulation does it: the tanks burn, the terminal burns with them
+  const f = ap.parts.filter(p => p.kind === 'fuel').pop(), hp = term.hp; f.burning = 3000; run(S, 0.3);
+  assert(term.hp < hp, 'the fire did not reach the terminal');
+});
+test('building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall', () => {
+  const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), T0 = ap.parts.find(p => p.kind === 'terminal');
+  const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, T0).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
+  const draw = (tool, P, edge) => { const m = S.mode2 = IC.bldMode(S, ap, tool); m.edge = edge; IC.bldFree = true; for (const q of P) IC.clickWorld(W(q[0], q[1]), 0, true); IC.clickWorld(W(P[0][0], P[0][1]), 0, true); IC.bldFree = false; assert(m.set, `${tool}: not closed`); const r = IC.buildFinish(S, m); S.mode2 = null; assert(r === 'built', `${tool}: ${m.err}`); return ap.parts[ap.parts.length - 1]; };
+  // a chevron terminal, and an apron with a rounded outer corner against its wall
+  const T = draw('tmdraw', [[-3.4, 3.8], [-6.5, 4.15], [-9.6, 3.8], [-9.9, 4.25], [-6.5, 4.75], [-3.1, 4.3]], 'sharp');
+  const A = draw('apdraw', [[-3.3, 1.915], [-9.6, 1.915], [-10.6, 2.8], [-9.6, 3.8], [-6.5, 4.15], [-3.4, 3.8]], 'round');
+  assert(T.kind === 'terminal' && T.poly.length === 6 && A.kind === 'apron' && A.poly.length > 12, `outlines: terminal ${T.poly && T.poly.length}, apron ${A.poly && A.poly.length}`);
+  assert(Math.abs(IC.partArea(A) - IC.polyArea(IC.shapeOutline([[-3.3, 1.915], [-9.6, 1.915], [-10.6, 2.8], [-9.6, 3.8], [-6.5, 4.15], [-3.4, 3.8]].map(([x, y]) => ({ x, y })), 'round'))) < 0.05, 'the apron is not the outline drawn');
+  finishWorks(S, ap);
+  const sm = S.mode2 = IC.bldMode(S, ap, 'stand'); sm.size = 'm'; IC.bldFree = true;
+  for (const x of [-4.2, -5.0, -5.8, -7.2, -8.0, -8.8]) { IC.clickWorld(W(x, 3.6), 0, true); }
+  IC.bldFree = false; S.mode2 = null; ap.dirty = true; IC.aptStats(S, ap);
+  assert(A.stands.length === 6 && A.stands.every(s => s.linked && s.contact), A.stands.map(s => `${s.linked ? '' : 'unlinked '}${s.contact ? 'gate' : 'remote'}`).join(', '));
+  assert(!ap.st.warn.length, ap.st.warn.join(' / '));
+  // an outline whose sides cross is refused, and says why
+  const m = S.mode2 = IC.bldMode(S, ap, 'apdraw'); m.edge = 'sharp'; IC.bldFree = true;
+  for (const q of [[12, 3], [16, 5], [16, 3], [12, 5]]) IC.clickWorld(W(q[0], q[1]), 0, true);
+  IC.bldFree = false; const r = IC.bldReady(S, m);
+  assert(r && !r.ok && /sides cross/.test(r.why), r && r.why);
+  S.mode2 = null;
+});
 test('round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself', () => {
   const { S, ap, next } = foundFresh();
   S.mode2 = next; IC.buildFinish(S, next); finishWorks(S, ap);

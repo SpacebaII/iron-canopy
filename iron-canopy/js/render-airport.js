@@ -178,8 +178,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = zoneOf(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
   if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (!seen(s.x, s.y, 1 + 40 * px)) continue; if (!tiles && marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine, tiles); }
-  // service roads from buildings to the pavement they face
-  if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
+  // (the roads from buildings to the pavement they face are service roads now, painted with the rest: IC.svcNet)
   // buildings: every shadow first, so none falls across a roof
   if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind) && near(p)) shadowOf(g, S, p);
   for (const p of parts) {
@@ -1518,7 +1517,7 @@ IC.drawBuildGhost = function (g, S, px) {
   const free = !!IC.bldFree;
   // (a placed plan stays put: the cursor does not move it)
   const hk = m.set && m.at ? m.at : hv;
-  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.flip}|${m.rotHand}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
+  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.flip}|${m.rotHand}|${m.fillet}|${m.edge}|${m.pick}|${m.zone}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
   if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
   const col = ok ? 'rgba(110,230,140,0.95)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(110,230,140,0.2)' : 'rgba(255,91,79,0.2)';
@@ -1548,6 +1547,9 @@ IC.drawBuildGhost = function (g, S, px) {
       g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(190,240,200,0.9)' : 'rgba(110,230,140,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(sp.w || (D ? D.w : IC.SVC_ROAD_W), 2 * px);
       g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
       g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1 * px); g.setLineDash([5 * px, 4 * px]); g.stroke(); g.setLineDash([]);
+    } else if (sp.poly) {
+      // (an outline drawn by hand, or a piece's: the shape itself)
+      const P = IC.partOutline(sp); g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.fill(); g.stroke();
     } else {
       const w = sp.w || D.w || (D.r || 0.1) * 2, h = sp.h || D.h || (D.r || 0.1) * 2;
       g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0);
@@ -1556,6 +1558,15 @@ IC.drawBuildGhost = function (g, S, px) {
       if (sp.kind === 'apron' && !sp.ramp) { const dep = h * 0.64, sz = dep >= IC.STAND.l.d ? 'l' : dep >= IC.STAND.m.d ? 'm' : dep >= IC.STAND.s.d ? 's' : null; if (sz) { const S0 = IC.STAND[sz]; g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.005, 0.6 * px); for (let i = 0; i < Math.floor(w / S0.w); i++) { const x = -w / 2 + S0.w * i; g.strokeRect(x, -h / 2, S0.w, S0.d); g.strokeRect(x, h / 2 - S0.d, S0.w, S0.d); } } }
       g.restore();
     }
+  }
+  // an outline being drawn: the corners as clicked joined by a dashed line, and the curve it makes when it cannot
+  // be built yet (its sides cross, or it is too small)
+  if (plan.shape && plan.pts && plan.pts.length > 1) {
+    g.save(); g.lineJoin = 'round'; g.setLineDash([4 * px, 4 * px]); g.strokeStyle = 'rgba(236,236,226,0.7)'; g.lineWidth = Math.max(0.004, 1.2 * px);
+    g.beginPath(); plan.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); if (plan.pts.length > 2) g.closePath(); g.stroke(); g.setLineDash([]);
+    if (!plan.specs.length && plan.shape.O) { g.strokeStyle = col; g.lineWidth = 1.5 * px; g.beginPath(); plan.shape.O.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); }
+    if (m.pick != null && plan.pts[m.pick]) { const q = plan.pts[m.pick]; g.strokeStyle = IC.C.ok; g.lineWidth = 2 * px; g.beginPath(); g.arc(q.x, q.y, 7 * px, 0, 7); g.stroke(); }
+    g.restore();
   }
   // a ramp stand
   if (plan.stand) {

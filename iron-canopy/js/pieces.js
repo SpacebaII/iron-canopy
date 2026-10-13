@@ -40,12 +40,47 @@ function straightTerm(B, y0, n, size) {
   const P = IC.kitPier(B, { p0: pt(-Lt / 2, y0), p1: pt(Lt / 2, y0), bw: 0.3, size: size || 'm', sides: [-1], tip: 0.6, name: 'Terminal' });
   return { ends: P.lanes[0].ends, lane: y0 - P.off, Lt };
 }
-/* the services beside a runway, on the +y side at y (centre line of the row), from x: fire station, tower, fuel */
+/* the services as a piece, placed beside a runway (its −y side faces it): the fire station in front, its apron to
+   the airfield, the tower to one side, the fuel farm set back to the other, 170 m clear of the fire station (fire
+   spreads 160 m from burning fuel), where its lorries come in from the road */
 function services(B, x, y, noTower) {
-  B.box('fire', pt(x - 1.5, y), 0, 1.0, 0.6, { name: 'Fire station' });
-  if (!noTower) B.box('tower', pt(x, y + 0.15), 0, 0.3, 0.3, { name: 'Control tower' });
-  B.box('fuel', pt(x + 2.1, y + 0.35), 0, 1.5, 1.0, { name: 'Fuel farm' });
+  B.box('fire', pt(x, y), 0, 1.0, 0.6, { name: 'Fire station' });
+  if (!noTower) B.box('tower', pt(x - 1.1, y + 0.45), 0, 0.3, 0.3, { name: 'Control tower' });
+  B.box('fuel', pt(x + 2.95, y + 1.0), 0, 1.5, 1.0, { name: 'Fuel farm' });
 }
+/* the services of a whole airport, where real airports put them (QA: they stood in a row beside the terminal, the
+   fire station with no way to the runway and the fuel farm against the tower): the fire station beside the terminal
+   apron near the runway's middle, its apron facing the parallel taxiway and its own road onto it; the tower beside
+   the terminal's end, where its cab sees the whole runway; the fuel farm set back behind the fire
+   station, 200 m from the terminal, where its lorries come in from outside. xE: the apron's far end; y0: the
+   terminal's line. The fuel farm keeps 170 m from everything: fire spreads 160 m from burning fuel */
+function siteServices(B, xE, y0, noTower, small) {
+  // (an airfield's are small: a two-bay fire station and a single tank, as at a flying club's field)
+  const fw = small ? 0.5 : 1.0, fh = small ? 0.35 : 0.6, uw = small ? 0.6 : 1.5, uh = small ? 0.45 : 1.0;
+  const fx = xE + 0.4 + fw / 2 + (small ? 0.2 : 0.1), fy = PAR + 0.115 + 0.4 + fh / 2, ax = fx - fw / 2 + fw * 0.325;
+  B.box('fire', pt(fx, fy), 0, fw, fh, { name: 'Fire station', link: [pt(ax, fy - fh / 2), pt(ax, PAR + 0.115)] });
+  if (!noTower) B.box('tower', pt(xE + 0.32, y0 + 0.05), 0, 0.3, 0.3, { name: 'Control tower' });
+  // (170 m clear of the fire station: burning fuel reaches anything within 160 m, IC.FIRE_SPREAD)
+  B.box('fuel', pt(fx + fw / 2 + 1.7 + uw / 2, fy + fh / 2 + 0.3 + uh / 2), 0, uw, uh, Object.assign({ name: 'Fuel farm' }, small ? { tanks: 1 } : null));
+}
+/* the paving's outer corners rounded off, as real aprons are laid (QA: every apron was a sharp-cornered box): a
+   corner at the far ends of the slab is curved back 40 m along both sides, unless a building stands at it; corners
+   inside the slab, where aprons meet, stay as they are so the paving is one piece */
+function softAprons(B, from) {
+  const A = B.L.aprons.slice(from || 0); if (!A.length || !IC.shapeOutline) return;
+  const pts = a => { const o = []; for (let i = 0; i < a.poly.length; i += 2) o.push({ x: a.poly[i], y: a.poly[i + 1] }); return o; };
+  const all = [].concat(...A.map(pts)), x0 = Math.min(...all.map(q => q.x)), x1 = Math.max(...all.map(q => q.x)), y0 = Math.min(...all.map(q => q.y)), y1 = Math.max(...all.map(q => q.y));
+  const blds = B.L.blds.map(b => pts(b));
+  const nearBld = q => blds.some(P => P.some((v, i) => { const w = P[(i + 1) % P.length]; return U.segDist(q.x, q.y, v.x, v.y, w.x, w.y) < 0.08; }));
+  for (const a of A) {
+    const P = pts(a).map(q => Object.assign(q, { k: (Math.abs(q.x - x0) < 0.02 || Math.abs(q.x - x1) < 0.02) && (Math.abs(q.y - y0) < 0.02 || Math.abs(q.y - y1) < 0.02) && !nearBld(q) ? 0 : 1 }));
+    if (P.every(q => q.k)) continue;
+    const O = IC.shapeOutline(P, 'round', 0.4), o = []; for (const q of O) o.push(Math.round(q.x * 1000) / 1000, Math.round(q.y * 1000) / 1000);
+    a.poly = o;
+  }
+}
+/* the far ends of the layout's aprons along x, so far */
+const apronX = B => { let lo = 1e9, hi = -1e9; for (const A of B.L.aprons) for (let i = 0; i < A.poly.length; i += 2) { lo = Math.min(lo, A.poly[i]); hi = Math.max(hi, A.poly[i]); } return [lo, hi]; };
 
 /* a cargo shed with four freighter stands, its taxilane along y = ly from cends[0] to cends[1] (the terminal lane's
    link to the parallel, so it is no dead end), the shed beyond it on the +y side, linked to the parallel at its west
@@ -77,7 +112,7 @@ IC.PIECES = {
     make: o => { const B = IC.layoutBuilder(), K = IC.kitRound(B, { c: pt(0, 0), R: 0.8, size: o.size || 'm', name: 'Round terminal' });
       const j = K.ring.reduce((b, r) => (!b || r.q.y < b.y ? r.q : b), null); B.L.joins = [j]; return B.L; } },
   services: { name: 'Services', use: 'tower, fire station and fuel farm',
-    desc: 'A control tower (one movement every 2 min instead of every 8), a fire station whose trucks reach the runway in under 3 minutes (airliners need it) and a fuel farm, in a row beside the runway, outside its 150 m strip. Click beside the runway.',
+    desc: 'A fire station whose trucks reach the runway in under 3 minutes (airliners need it), its apron facing the airfield; a control tower beside it (one movement every 2 min instead of every 8); and a fuel farm set back behind them, where tankers come in from the road. Click beside the runway, outside its 150 m strip: each gets its road by itself.',
     make: () => { const B = IC.layoutBuilder(); services(B, 0, 0); return B.L; } },
   cargoarea: { name: 'Cargo area', use: 'freighters load and unload',
     desc: 'A cargo shed with four freighter stands on its own apron and a taxilane, joined to the nearest taxiway by itself. Freighters fly at night and pay for their cargo.',
@@ -98,12 +133,12 @@ IC.PIECES = {
       // (a cargo area west of the terminal, on the same taxilane line: its own link to the parallel)
       const cw = 3.6, cx = C.cargo ? ends[0] - 0.6 - cw / 2 - 0.2 : 0, cends = C.cargo ? [cx - cw / 2 - 0.5, ends[0]] : [];
       runwaySet(B, L, { runway: o.runway, parallel: o.parallel, joins: ends.concat(cends.slice(0, 1)) });
-      straightTerm(B, y0, n, size);
+      straightTerm(B, y0, n, size); softAprons(B);
       if (C.zone) for (const a of B.L.aprons) a.zone = C.zone;
       for (const x of ends) if (o.parallel !== false) B.taxi([pt(x, y0 - ld), pt(x, PAR)]);
-      if (C.cargo) cargoSet(B, cx, y0 - ld, cends, o.parallel !== false);
+      if (C.cargo) { const k = B.L.aprons.length; cargoSet(B, cx, y0 - ld, cends, o.parallel !== false); softAprons(B, k); }
       if (o.parallel === false) B.L.joins = ends.map(x => pt(x, y0 - ld)).concat(C.cargo ? [pt(cends[0], y0 - ld)] : []);
-      services(B, Lt / 2 + 3.4, PAR + 1.4, C.tower === false);
+      siteServices(B, Math.max(apronX(B)[1], ends[1] + 0.12), y0, C.tower === false, C.zone === 'light');
       // (an airfield's is asphalt with no landing system: light aircraft fly by sight)
       if (C.ils === false) for (const r of B.L.runways) r.ils = [];
       if (C.mat) for (const q of [].concat(B.L.runways, B.L.taxi, B.L.aprons)) q.mat = C.mat;

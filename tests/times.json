@@ -194,5 +194,8 @@
  "airport classes: airlines want the airports built for them, and light aircraft use our airfields": 10.3,
  "airport classes: a new purpose buys the land for the bigger site and says what the airport still lacks": 10.8,
  "airport classes: the Career's national airport is a national airport or a hub": 16.3,
- "building: parts that open together rise as one line of what they changed": 5.7
+ "building: parts that open together rise as one line of what they changed": 5.7,
+ "building: the Starter airport's services stand where real airports put them, each with its road": 22.6,
+ "building: a fire station with no taxiway beside it gets a crash road to the runway, and a fuel farm by the terminal is warned of": 10.1,
+ "building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall": 7.8
 }

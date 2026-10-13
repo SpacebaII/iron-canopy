@@ -631,6 +631,22 @@ IC.aptServiceLines = function (S, ap) {
   return out;
 };
 /* the gap between two fuel parts' outlines (a single tank by its circle's square) */
+/* how far fire spreads from burning fuel (units): to anything standing that close */
+IC.FIRE_SPREAD = 1.6;
+// (the buildings people work in that a fuel fire must not reach; hangars and cargo sheds stand by fuel at real airports)
+const FIRE_KEEP = { terminal: 1, tower: 1, fire: 1 };
+/* the building nearest a fuel farm within reach of its fire: { q, d } or null (the gap between their outlines) */
+IC.fuelNear = function (ap, f) {
+  const F = IC.partOutline(f); let best = null;
+  for (const q of ap.parts) {
+    if (q === f || !FIRE_KEEP[q.kind] || q.x == null || q.hp <= 0) continue;
+    const Q = IC.partOutline(q); let d = IC.shapeDepth && IC.shapeDepth(IC.partShape(ap, q), IC.partShape(ap, f)) > 0 ? 0 : 1e9;
+    for (const c of F) d = Math.min(d, partDist(ap, q, c)); for (const c of Q) d = Math.min(d, partDist(ap, f, c));
+    if (d < IC.FIRE_SPREAD && (!best || d < best.d)) best = { q, d };
+  }
+  return best;
+};
+IC.fuelNearText = n => `A fuel farm stands ${Math.round(n.d * 100)} m from the ${U.lc(IC.APART[n.q.kind].name)}: if its tanks burn, the fire spreads to it. ${Math.round(IC.FIRE_SPREAD * 100)} m or more keeps them apart.`;
 IC.fuelGap = (a, b) => { const R = t => t.r ? { x: t.x, y: t.y, a: 0, w: t.r * 2, h: t.r * 2 } : { x: t.x, y: t.y, a: t.a || 0, w: t.w || IC.APART.fuel.w, h: t.h || IC.APART.fuel.h }; return rectGap(R(a), R(b)); };
 /* fuel waits today, for the panel: aircraft that waited and the minutes they lost */
 IC.aptFuelWait = function (S, ap, sec) {
@@ -878,6 +894,8 @@ IC.aptStats = function (S, ap) {
   st.trucks = st.hydrant ? Infinity : own == null ? nTank * IC.FUEL_TRUCKS : ap.fleet.auto ? Math.max(own, nTank * IC.FUEL_TRUCKS) : own;
   st.fuelDeps = Math.round(Math.min(st.trucks, st.fuelIn / (T.fuel || 1)));
   if (tanks.length && st.fuelDeps < st.depPerHour * 0.8 && ap.kind !== 'airbase') st.warn.push(`Fuel for about ${st.fuelDeps} departures an hour, fewer than the runways can launch (${st.depPerHour}). ${st.hydrant ? 'More tanks' : 'More tanks or a hydrant system'} would help.`);
+  // (burning fuel spreads 160 m, IC.FIRE_SPREAD: a terminal, tower or fire station that close burns with it)
+  for (const t of tanks) { const q = IC.fuelNear(ap, t); if (q) { st.warn.push(IC.fuelNearText(q)); break; } }
   for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (IC.fuelGap(tanks[i], tanks[j]) < 1) { st.warn.push(`Fuel ${tanks[i].r ? 'tanks' : 'farms'} stand within 100 m of each other: one fire could take them all. Keep them further apart.`); i = tanks.length; break; }
   const links = rws.map(rw => (G.rwn.get(rw.id) || []).filter(n => n.exit).length).reduce((s, v) => s + v, 0);
   if (links === 1) st.warn.push('Only one taxiway connects the runway: a single hit strands every aircraft.');
@@ -1433,10 +1451,10 @@ IC.updateBases = function (S, dt) {
       for (const q of b.parts) {
         if (q === p || !q.built || q.kind === 'runway' || q.kind === 'taxi' || q.kind === 'apron') continue;
         const d = partDist(b, q, p);
-        if (d > 1.6) continue;
+        if (d > IC.FIRE_SPREAD) continue;
         const was = q.hp;
         // (by its size: a fuel farm of three tanks burns down as fast as one tank did)
-        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / 1.6));
+        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / IC.FIRE_SPREAD));
         if (was > q.max * 0.25 && q.hp <= q.max * 0.25) {
           IC.log(S, 'leak', 'FIRE', `${b.name}: fire spreads to the ${U.lc(IC.APART[q.kind].name)}.`, q);
           if (q.kind === 'fuel') { q.burning = 5400; q.stock = 0; IC.explode(S, q.x, q.y, 1.6, 'ground'); IC.addFire(S, q.x, q.y, 1.6, 8000); }
@@ -1615,6 +1633,8 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   const D = IC.APART[kind];
   const part = { kind, x, y, a: a != null ? a : ap.rwyA || 0 };
   if (D.area) { part.w = w; part.h = h; }
+  // (an outline drawn by hand, in the part's own frame: checked and priced as that shape, not its box)
+  if (o && o.poly && D.area) part.poly = o.poly;
   // a landing system serves the runway end nearest the click
   if (kind === 'ils') {
     let bd = 1e9;
