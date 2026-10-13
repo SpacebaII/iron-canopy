@@ -21,6 +21,7 @@ const ITEMS = {
 IC.FRINGE_ITEMS = ITEMS;
 
 IC.buildFringe = function (W, c, R, segs, vils) {
+  segs = segs.map(s => s[5] ? [s[0], s[1], s[2], s[3], 'art'] : s);   // (an avenue is wider than the road it carries on)
   const F = c.fringe = { plots: 0, items: [], estates: 0 };
   const blocks = c.blocks;
   // the town's reach by direction (36 bins): a block's distance plus half its size, so the fringe starts past it

@@ -1274,7 +1274,7 @@ function buildTowns(W, R, fbm) {
   const indexSegs = () => {
     sbk = new Map();
     for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) {
-      const a = e.pts[i - 1], b = e.pts[i], s = [a.x, a.y, b.x, b.y, e.city ? 'art' : e.cls];   // (an avenue is wider than the road it carries on)
+      const a = e.pts[i - 1], b = e.pts[i], s = [a.x, a.y, b.x, b.y, e.cls, !!e.city];   // (the sixth: an avenue, wider than the road it carries on, for the fringe)
       for (let bi = Math.floor(Math.min(a.x, b.x) / SB); bi <= Math.floor(Math.max(a.x, b.x) / SB); bi++) for (let bj = Math.floor(Math.min(a.y, b.y) / SB); bj <= Math.floor(Math.max(a.y, b.y) / SB); bj++) { const k = bi * 4096 + bj; if (!sbk.has(k)) sbk.set(k, []); sbk.get(k).push(s); }
     }
   };

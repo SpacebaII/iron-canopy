@@ -324,7 +324,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   take(free().map(x => ({ x, d: railD(x) })).filter(o => o.d < SP * 0.8 && o.x.q > 0.12 && o.x.q < 0.7 && hwD(o.x) > SP).sort((a, b) => a.x.q - b.x.q).map(o => o.x), st.yard, 'rail');
   // industry in a sector towards the railway or the busiest road out, logistics by the motorway
   const ia = c.indA;
-  take(free().filter(x => x.q > 0.1).map(x => { const a = Math.atan2(x.p.y - c.y, x.p.x - c.x); return { x, s: Math.cos(U.angWrap(a - ia)) * 1.2 - x.q * 0.4 + (railD(x) < SP * 2 ? 0.5 : 0) + R() * 0.3 }; }).sort((a, b) => b.s - a.s).map(o => o.x), sh('ind') * T * vary(), 'ind');
+  take(free().filter(x => x.q > 0.1).map(x => { const a = Math.atan2(x.p.y - c.y, x.p.x - c.x); return { x, s: Math.cos(U.angWrap(a - ia)) * 1.2 - x.q * 0.4 + (railD(x) < SP * 2 ? 0.5 : 0) + R() * 0.3 }; }).sort((a, b) => b.s - a.s).map(o => o.x), Math.max(3, sh('ind') * T * vary()), 'ind');   // (every town has a works or two)
   take(free().filter(x => x.q > 0.3).map(x => ({ x, s: -hwD(x) / SP + x.q + R() * 0.8 })).sort((a, b) => b.s - a.s).map(o => o.x), sh('log') * T * vary(), 'log');
   const byQ = () => free().sort((a, b) => a.q - b.q);
   // offices along the diagonal (New York), by the highway (Dubai), else in the middle

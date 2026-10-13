@@ -427,7 +427,7 @@ test('world: a national road entering a city goes on as one of its streets, or r
       for (const e of W.edges) if (e.a === c.id || e.b === c.id) assert(e.city === c.id, `seed ${seed}: road ${e.id} (${e.cls}) runs into the middle of ${c.name} without becoming a street`);
       // (among the blocks of the inner half of the town; its gates are where the roads meet its edge)
       const gate = k => k.startsWith(c.id + ':');
-      for (const e of W.edges) if (e.city !== c.id) e.pts.forEach((p, i) => {
+      for (const e of W.edges) if (e.city !== c.id && e.spine !== c.id) e.pts.forEach((p, i) => {   // (the linear city's motorway spine runs along it: brief 56)
         if ((i === 0 && gate(e.a)) || (i === e.pts.length - 1 && gate(e.b)) || U.dist(p, c) > c.ext * 0.5) return;
         assert(!c.blocks.some(b => !b.fr && U.dist(b, p) < 3.5), `seed ${seed}: road ${e.id} (${e.cls}) runs through the middle of ${c.name}`);   // (the fringe lies along the roads: brief 54)
       });
