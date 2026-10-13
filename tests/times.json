@@ -192,5 +192,8 @@
  "world: villages have a plan: a street with houses fronting it on both sides, a lane off it, a church in the bigger ones, and no house in the water or on a road (brief 54)": 10,
  "world: a city has a fringe: ribbon houses along its roads out, the outer ring in open ground, an estate or two, none on water, a road or another block (brief 54)": 10,
  "world: suburb closes are streets of the city: a loop or a single close in from the block's street, each close ending in a turning head inside its block (brief 54)": 10,
- "airport life: the access road gathers a petrol station and a hotel, a logistics park and a business park as the passengers grow (brief 54)": 18
+ "airport life: the access road gathers a petrol station and a hotel, a logistics park and a business park as the passengers grow (brief 54)": 18,
+ "world: every block has a plan: its buildings inside it, roofs in the town's own tones, perimeter blocks with corner buildings and parcels of different widths, a church or a school here and there (brief 55)": 12,
+ "world: landmarks: a station with platforms along the railway and a forecourt towards the centre in every town on the line, sidings into the factories beside it, a cathedral, a hospital, a stadium, the Ministry in the capital, and parks on the river banks (brief 55)": 10,
+ "traffic: parked cars line the side streets' kerbs, beside the driving lane, none at a crossing or a street end (brief 55)": 8
 }

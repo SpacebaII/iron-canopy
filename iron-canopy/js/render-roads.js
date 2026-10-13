@@ -470,7 +470,7 @@ function parts(k, col) {
   }
 }
 /* draw a list of vehicles {x, y, h, k, col}; m: at least this many world units long (so they stay visible) */
-function vehicles(list, px, night, now, m, detail) {
+function vehicles(list, px, night, now, m, detail, parked) {
   const calm = cam.z < 10;
   const groups = new Map();
   const quad = (col, x, y, c, s, f, b, w) => { let L = groups.get(col); if (!L) groups.set(col, L = []); L.push(x, y, c, s, f, b, w); };
@@ -482,7 +482,7 @@ function vehicles(list, px, night, now, m, detail) {
     // further out a calm palette: pale cars, buff lorries, red buses; colours and details close in
     const P = detail ? parts(v.k, v.col) : calm ? [[v.k === 'bus' ? 'rgb(206,58,46)' : K.L > 0.07 ? 'rgb(214,204,180)' : 'rgb(234,236,240)', 1, -1, 1]] : [parts(v.k, v.col)[0]];
     for (const [col, fr, bk, hw] of P) quad(col, v.x, v.y, c, s, fr * L, bk * L, hw * W);
-    if (night) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
+    if (night && !parked) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
     if ((v.k === 'police' || v.k === 'amb') && Math.sin(now * 12 + v.col) > 0) blues.push(v.x, v.y, W);
   }
   const fillQ = (L, col) => {
@@ -564,6 +564,20 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
         const a = d > 1e-6 ? Math.atan2(dy, dx) : v.h;
         v.x = G.C.x + Math.cos(a) * rr; v.y = G.C.y + Math.sin(a) * rr; v.h = a - Math.PI / 2;
       }
+    }
+    // parked cars along the side streets' kerbs (brief 55, traffic.js IC.parkedSpots), under the moving ones, once a
+    // car is a few pixels long
+    if (z > 36) {
+      const P = [];
+      for (const c of S.world.cities) {
+        if (c.x + c.ext < view.x0 || c.x - c.ext > view.x1 || c.y + c.ext < view.y0 || c.y - c.ext > view.y1) continue;
+        for (const l of c.streets) {
+          if (l.cls !== 'st' || !l.bb || l.bb[2] < view.x0 || l.bb[0] > view.x1 || l.bb[3] < view.y0 || l.bb[1] > view.y1) continue;
+          const sp = IC.parkedSpots(S.world, c, l);
+          for (let i = 0; i < sp.length; i += 4) if (inView(sp[i], sp[i + 1], 0.1)) P.push({ x: sp[i], y: sp[i + 1], h: sp[i + 2], k: 'car', col: sp[i + 3] });
+        }
+      }
+      if (P.length) vehicles(P, px, night, now, m, z > 18, true);
     }
     vehicles(list, px, night, now, m, z > 18);
   }

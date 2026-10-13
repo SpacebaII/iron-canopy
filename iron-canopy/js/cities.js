@@ -579,6 +579,13 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   for (const l of c.streets) { if (l.deadEnd) delete l.deadEnd; delete l.ends; }
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
+  // river parks (brief 55): the housing blocks on the banks of a bigger town stay green, a park along the water
+  if (c.pop >= 250) {
+    let left = 10;
+    c.blocks = c.blocks.filter(b => { if (left <= 0 || b.fr || (b.d !== 'dense' && b.d !== 'sub') || b.land || wetBy(b.x, b.y) < -(Math.max(b.w, b.h) / 2 + 0.4)) return true; parksL.push({ x: b.x, y: b.y, rx: b.w * 0.48, ry: b.h * 0.46, a: b.a, river: true }); left--; return false; });
+  }
+  // landmarks (brief 55, buildings.js): the station on the railway, the cathedral, the hospital, the stadium...
+  IC.placeLandmarks(W, c, roads);
   c.mix = IC.cityMix(c);
   return c;
 };

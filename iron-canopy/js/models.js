@@ -1460,57 +1460,22 @@ IC.modelSize = function (key) {
 /* ---------- city blocks as buildings ----------
    The boxes a block is built of, in the block's own frame (world units, x along the block, y across, ht up):
    the same forms terrain.js draws from above, so the 3D view and the map agree on where the tall buildings are. */
-IC.blockBoxes = function (b, town) {
+IC.blockBoxes = function (b, town, c) {
   const sd = Math.floor(b.seed || 0), h = (i, j) => U.hash(sd * 3 + i, j * 7 + 1), W2 = b.w / 2, H2 = b.h / 2, out = [];
   const box = (x, y, w, hh, ht, col) => out.push({ x: x + w / 2, y: y + hh / 2, w, h: hh, ht, col });
+  // brief 55: the forms with a plan (buildings.js) are built from it, the same buildings the map paints
+  if (town && ((b.land && IC.LANDMARKS[b.land]) || IC.BLOCK_FORMS[b.f])) {
+    for (const q of IC.blockPlan(b, c).bld) out.push({ x: q.x, y: q.y, w: q.w, h: q.h, ht: q.ht, col: q.c, a: q.a || 0, r: q.r });
+    return out;
+  }
   const grid = (S, st, fn) => {
     const n = Math.max(1, Math.round(b.w / S)), m = Math.max(1, Math.round(b.h / S)), cw = b.w / n, ch = b.h / m;
     for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) fn(-W2 + i * cw + st / 2, -H2 + j * ch + st / 2, cw - st, ch - st, i, j);
   };
   if (!town) { box(-W2 + b.w * 0.1, -H2 + b.h * 0.1, b.w * 0.8, b.h * 0.8, 0.06 + h(1, 1) * 0.03, [150, 140, 126]); return out; }
   switch (b.f) {
-    case 'old': case 'court': {
-      const old = b.f === 'old';
-      grid(old ? 0.75 : 1.25, old ? 0.07 : 0.11, (x, y, w, hh, i, j) => {
-        const k = h(i, j);
-        if (!old && k < 0.06) return;
-        if (old && k > 0.93) { box(x + w * 0.2, y + hh * 0.38, w * 0.62, hh * 0.24, 0.12, [120, 104, 92]); box(x + w * 0.74, y + hh * 0.36, w * 0.14, hh * 0.28, 0.3, [140, 132, 120]); return; }
-        const t = Math.min(w, hh) * (old ? 0.36 : 0.27), ht = (old ? 0.05 : 0.08) + h(i + 3, j) * 0.05, c = old ? [176, 120, 96] : [168, 160, 148];
-        box(x, y, w, t, ht, c); box(x, y + hh - t, w, t, ht, c); box(x, y + t, t, hh - 2 * t, ht, c); box(x + w - t, y + t, t, hh - 2 * t, ht, c);
-      });
-      break;
-    }
-    case 'tower':
-      grid(1.3, 0.14, (x, y, w, hh, i, j) => {
-        const k = h(i, j); if (k < 0.12) return;
-        const nT = k > 0.7 ? 1 : 2;
-        for (let q = 0; q < nT; q++) {
-          const tw = w * (nT === 1 ? 0.55 + h(q, i) * 0.3 : 0.4), th = hh * (nT === 1 ? 0.5 + h(j, q) * 0.35 : 0.42), tx = x + (nT === 1 ? (w - tw) / 2 : q * w * 0.52 + w * 0.04), ty = y + (hh - th) * h(q + 3, j + i);
-          const glass = h(q, j + 2) < 0.6;
-          box(tx, ty, tw, th, 0.25 + h(q + 7, i * 3 + j) * 0.9, glass ? [110, 140, 170] : [178, 176, 168]);
-        }
-      });
-      break;
-    case 'office':
-      grid(1.4, 0.16, (x, y, w, hh, i, j) => { const k = h(i, j); if (k < 0.3) return; box(x + w * 0.15, y + hh * 0.15, w * 0.6, hh * 0.5, 0.1 + h(i, j + 4) * 0.08, [190, 190, 184]); });
-      break;
-    case 'slab':
-      grid(1.2, 0.12, (x, y, w, hh, i, j) => { const along = h(i, j) < 0.5; if (along) box(x + w * 0.1, y + hh * 0.3, w * 0.8, hh * 0.22, 0.2 + h(i + 2, j) * 0.15, [182, 178, 170]); else box(x + w * 0.3, y + hh * 0.1, w * 0.22, hh * 0.8, 0.2 + h(i + 2, j) * 0.15, [182, 178, 170]); });
-      break;
-    case 'row':
-      grid(0.9, 0.09, (x, y, w, hh, i, j) => { for (let q = 0; q < 3; q++) box(x + q * w / 3 + w * 0.02, y + hh * 0.15, w / 3 - w * 0.06, hh * 0.3, 0.07 + h(q, i + j) * 0.02, [172, 132, 108]); for (let q = 0; q < 3; q++) box(x + q * w / 3 + w * 0.02, y + hh * 0.55, w / 3 - w * 0.06, hh * 0.3, 0.07 + h(q + 4, i + j) * 0.02, [172, 132, 108]); });
-      break;
     case 'cul':
       grid(0.6, 0.06, (x, y, w, hh, i, j) => { if (h(i, j) < 0.25) return; box(x + w * 0.25, y + hh * 0.25, w * 0.45, hh * 0.45, 0.05 + h(i, j + 1) * 0.02, [190, 160, 140]); });
-      break;
-    case 'mall':
-      box(-W2 + b.w * 0.3, -H2 + b.h * 0.15, b.w * 0.6, b.h * 0.7, 0.1, [200, 196, 188]);
-      break;
-    case 'shed': case 'ware':
-      grid(1.6, 0.18, (x, y, w, hh, i, j) => { if (h(i, j) < 0.15) return; box(x + w * 0.05, y + hh * 0.1, w * 0.9, hh * 0.7, b.f === 'ware' ? 0.12 : 0.09, b.f === 'ware' ? [150, 150, 158] : [160, 158, 150]); });
-      break;
-    case 'yard':
-      grid(1.5, 0.15, (x, y, w, hh, i, j) => { if (h(i, j) < 0.5) return; box(x + w * 0.1, y + hh * 0.2, w * 0.5, hh * 0.5, 0.08, [140, 136, 130]); });
       break;
     default:
       box(-W2 + b.w * 0.15, -H2 + b.h * 0.15, b.w * 0.7, b.h * 0.7, 0.08, [170, 166, 158]);
