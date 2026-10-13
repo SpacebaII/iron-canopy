@@ -29,6 +29,7 @@ IC.campaignInit = function (S) {
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: snap(S) };
   S.pm = 70;
   const E = S.enemy, W = S.world;
+  if (S.mode === 'test') return IC.sandboxInit(S);
   if (S.mode === 'sandbox') {
     S.camp.sched = [{ t: 7 * 3600, fn: IC.hfn('qwSandboxWar', S) }, { t: 30 * 3600, fn: IC.hfn('qwWake', S) }];
     S.camp.chapter = 'Open War';

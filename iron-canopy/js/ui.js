@@ -377,6 +377,7 @@ function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
   if (S.range) h = IC.rangePanel(S);
+  else if (S.sbx) h = IC.sandboxPanel(S);
   else if (S.showcase) h = showcaseBrief();
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
@@ -954,7 +955,8 @@ ui.refresh = function (force) {
   ui.mapRight = $('insp').innerHTML ? Math.max(0, $('app').getBoundingClientRect().right - $('insp').getBoundingClientRect().left) : 0;
   $('app').classList.toggle('at-start', !$('start').hidden);
   $('app').classList.toggle('has-room', !!ui.room);
-  $('app').classList.toggle('is-range', !!S.range);   // (the test range is an empty plane: no minimap to show)
+  $('app').classList.toggle('is-range', !!S.range);
+  $('app').classList.toggle('is-sbx', !!S.sbx);   // (the sandbox's panel keeps its height: the staff messages give way)   // (the test range is an empty plane: no minimap to show)
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
 };
 function showOver() {
@@ -1022,7 +1024,7 @@ ui.toggleMenu = function (on) {
   ui.menu = on; $('menu').hidden = !on;
   if (on) { ui.pausedByMenu = !S.paused; S.paused = true; }
   else if (ui.pausedByMenu) { S.paused = false; ui.pausedByMenu = false; }
-  $('menuTime').textContent = `${U.clock(S.time)} · ${S.story ? `${IC.ACTS[S.story.act].name}, ${S.story.role}` : { campaign: 'Quick war', sandbox: 'Sandbox', academy: 'Academy', range: 'Test range' }[S.mode] || ''}`;
+  $('menuTime').textContent = `${U.clock(S.time)} · ${S.story ? `${IC.ACTS[S.story.act].name}, ${S.story.role}` : { campaign: 'Quick war', sandbox: 'War at dawn', test: 'Sandbox', academy: 'Academy', range: 'Test range' }[S.mode] || ''}`;
 };
 
 /* ---------- start screen: the title, the modes, and pages for the Academy, settings and controls ---------- */

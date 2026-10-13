@@ -185,5 +185,9 @@
  "round 5c: Chapter 3 radar: the tip names how many and where, the tag what a spot adds, and radars on the gap marker reach 80%": 22.4,
  "round 5c: textlint finds none of the banned phrases, in the source or in any tutorial step": 7.8,
  "round 5c: clicking an aircraft on its stand selects it, from the whole-airport zoom in; a click beside it picks the airport": 40.8,
- "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1
+ "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1,
+ "sandbox: money never runs out, and airport parts and units are ready at once": 7.7,
+ "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
+ "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
+ "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2
 }
