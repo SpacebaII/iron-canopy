@@ -185,7 +185,8 @@ const slowOf = s => clamp(Math.pow(s, 0.3), 0.55, 1);
 /* each 3D shot is built round one moment (PICK in teaser.js): the game seconds after the shot's start it happens at,
    the event it is, and how far the camera is from it, km */
 const FOCUS = {
-  launch: { g: 0.2, km: 0.85 }, flyby: { g: 2.1, km: 0.045 }, sam: { g: 1, kind: 'launch', km: 0.25 },
+  ignite: { g: 0.6, km: 0.045 }, launch: { g: 0.2, km: 0.85 }, flyby: { g: 2.1, km: 0.045 }, flyby2: { g: 1.9, km: 0.03 },
+  sam: { g: 4.6, kind: 'launch', km: 0.03 },
   kill: { g: 1.9, kind: 'kill', km: 1.2 }, high: { g: 2.1, kind: 'intercept', km: 16 },
   hit: { g: 2.2, kind: 'impact', km: 0.65 }, hit2: { g: 1, kind: 'impact', km: 1 }
 };
@@ -378,15 +379,25 @@ if (focusAt('launch') != null) {
   rocket(t0, { k: 0.9, d0: 850, dur: 8, sl: t => slowOf(ck.sp(t0 + t)) * (1 - 0.25 * Math.min(1, t / 4)),
     d: t => 850 * (1 + t * t * 0.45), pan: t => clamp(t * 0.06, 0, 0.3), lvl: t => t0 + t < end ? 1 : 0.35 * Math.exp(-(t0 + t - end) / 1.2), crackle: 900, bright: 3800, ck: 1.2 });
 }
+// the same missile's ignition 45 m from the camera, slowed to a quarter: the blast, then the roar climbing away
+if (focusAt('ignite') != null) {
+  const t0 = focusAt('ignite'), ck = clockOf('ignite'), end = T('ignite') + CUT.find(s => s.name === 'ignite').dur;
+  rocket(t0, { k: 1.25, d0: 45, dur: 5, sl: t => slowOf(ck.sp(t0 + t)), d: t => 45 + 120 * t * t, pan: () => 0.1, lvl: t => t0 + t < end ? 1 : 0.2 * Math.exp(-(t0 + t - end) / 0.3), crackle: 900, bright: 4200, ck: 1.4 });
+}
+// a second cruise missile right over the camera, 30 m off
+if (focusAt('flyby2') != null) {
+  const ck = clockOf('flyby2'), gc = FOCUS.flyby2.g, st = T('flyby2'), dur = CUT.find(s => s.name === 'flyby2').dur;
+  jet(st, dur + 0.3, { x: t => 250 * (ck.g(st + t) - gc), dmin: 30, k: 0.85, whine: 3300, sl: t => slowOf(ck.sp(st + t)), dir: -1 });
+}
 // a cruise missile low past the camera: 250 m/s, 45 m off, its pass slowed down
 if (focusAt('flyby') != null) {
   const ck = clockOf('flyby'), gc = FOCUS.flyby.g, st = T('flyby'), dur = CUT.find(s => s.name === 'flyby').dur;
   jet(st, dur + 0.4, { x: t => 250 * (ck.g(st + t) - gc), dmin: 45, k: 0.75, whine: 3100, sl: t => slowOf(ck.sp(st + t)), dir: 1 });
 }
-// the medium-range battery fires 250 m from the camera
+// the medium-range battery fires 30 m from the camera
 if (focusAt('sam') != null) {
   const t0 = focusAt('sam'), ck = clockOf('sam'), end = T('sam') + CUT.find(s => s.name === 'sam').dur;
-  samLaunch(t0, { k: 1.2, d0: 250, sl: t => slowOf(ck.sp(t0 + t)), lvl: t => t0 + t < end ? 1 : 0.3 * Math.exp(-(t0 + t - end) / 0.8) });
+  samLaunch(t0, { k: 1.3, d0: 30, sl: t => slowOf(ck.sp(t0 + t)), lvl: t => t0 + t < end ? 1 : 0.3 * Math.exp(-(t0 + t - end) / 0.8) });
 }
 // a cruise missile coming at the camera 1.2 km off and shot down
 if (focusAt('kill') != null) {

@@ -85,16 +85,29 @@ const PICK = () => {
     const b = bal[0], L = pos(b, first(b)), L2 = pos(b, first(b) + 30), a = Math.atan2(L2.y - L.y, L2.x - L.x), o = perp(a, 8);
     out.launch = { x: L.x, y: L.y, r: 120, t: first(b) - T0 - 0.2, speed: [[0, 0.14], [3.2, 0.14], [4.2, 0.5]], cam: { mode: 'fixed', ref: b.ref, lookOff: { y: -0.3 }, from: { x: L.x + o.x - Math.cos(a) * 2, y: L.y + o.y - Math.sin(a) * 2, h: 2 }, lens: [70, 45], lag: 0.3, shake: 0.12 } };
   }
+  // the launcher at its pad, close and low: the erector lifting the round (fast), then the ignition (slow)
+  if (bal.length) {
+    const b = bal[0], L = pos(b, first(b)), L2 = pos(b, first(b) + 30), a = Math.atan2(L2.y - L.y, L2.x - L.x), o = perp(a + 0.5, 0.42);
+    const from = { x: L.x + o.x - Math.cos(a) * 0.12, y: L.y + o.y - Math.sin(a) * 0.12, h: 1.6 };
+    out.erect = { x: L.x, y: L.y, r: 80, t: first(b) - T0 - 178, speed: 26, cam: { mode: 'fixed', at: { x: L.x, y: L.y, h: 7 }, from, lens: 32, shake: 0.04 } };
+    out.ignite = { x: L.x, y: L.y, r: 80, t: first(b) - T0 - 0.6, speed: [[0, 0.25], [2.4, 0.25], [3.4, 0.6]], cam: { mode: 'fixed', at: { x: L.x, y: L.y, h: 14 }, from, lens: [30, 26], shake: 0.25 } };
+  }
   // a cruise missile low over the fields: the camera set down beside its path as it comes
   const cms = tracks.filter(tr => tr.kind === 'threat' && cls(tr) === 'cm');
   const tf = T0 + 560, cm = cms.find(tr => first(tr) < tf - 5 && tr.t1 > tf + 10) || cms[0];
+  // a second one, the camera planted 30 m from its path, looking up as it passes
+  const tf2 = T0 + 590, cm2 = cms.find(tr => tr !== cm && first(tr) < tf2 - 5 && tr.t1 > tf2 + 10);
+  if (cm2) { const p = pos(cm2, tf2 + 2); out.flyby2 = { x: p.x, y: p.y, r: 80, t: 590, speed: [[0, 1], [1.4, 1], [1.9, 0.2], [3.2, 0.2], [3.8, 1]], cam: { mode: 'plant', ref: cm2.ref, lead: 1.9, side: -0.3, up: -0.015, lens: 20, lag: 0.05, shake: 0.1 } }; }
   if (cm) { const p = pos(cm, tf + 2); out.flyby = { x: p.x, y: p.y, r: 80, t: 560, speed: [[0, 1], [1.7, 1], [2.2, 0.25], [3.2, 0.25], [4, 1]], cam: { mode: 'plant', ref: cm.ref, lead: 2.1, side: 0.45, up: 0.06, lens: 24, lag: 0.08, shake: 0.08 } }; }
   // the medium-range battery fires: the camera stays on the launcher, the missile leaves the frame in slow motion and its smoke stays
   const lm = ev.find(e => e.kind === 'launch' && e.u === 'mrsam');
   if (lm) {
     const u = S.units.find(q => q.id === lm.uid), ms = u && tracks.filter(tr => tr.kind === 'missile' && tr.meta.uref === u && Math.abs(first(tr) - (lm.t + T0)) < 3)[0];
     const a = R.A + 0.9;
-    if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 1.0, speed: [[0, 1], [0.8, 1], [1.2, 0.25], [3.6, 0.3]], cam: { mode: 'fixed', at: { x: u.x, y: u.y, h: 45 }, from: { x: u.x + Math.cos(a) * 2.5, y: u.y + Math.sin(a) * 2.5, h: 1.7 }, lens: [32, 28], shake: 0.2 } };
+    // close: 30 m off the launcher, its frame up and turning to the threat, the cover blowing off, the round leaving
+    if (u) out.sam = { x: u.x, y: u.y, r: 120, t: lm.t - 4.6, speed: [[0, 1.2], [3.6, 1.2], [4.1, 0.25], [6.5, 0.3]], cam: { mode: 'fixed', at: { x: u.x, y: u.y, h: 6 }, from: { x: u.x + Math.cos(a) * 0.3, y: u.y + Math.sin(a) * 0.3, h: 2.5 }, lens: [30, 26], shake: 0.15 } };
+    // and from further off, low, as the next rounds go
+    if (u) out.sam2 = { x: u.x, y: u.y, r: 120, t: lm.t + 6, speed: 1, cam: { mode: 'fixed', at: { x: u.x, y: u.y, h: 30 }, from: { x: u.x + Math.cos(a - 1.4) * 1.6, y: u.y + Math.sin(a - 1.4) * 1.6, h: 1.4 }, lens: 40, shake: 0.12 } };
     if (ms) out.chase = { x: u.x, y: u.y, r: 400, t: lm.t + 1.2, speed: 1, cam: { mode: 'chase', ref: ms.ref, lookAt: ms.meta.tref || null, back: 0.35, side: 0.08, up: 0.1, lens: 30, lag: 0.1, shake: 0.1 } };
   }
   // a cruise missile shot down: from the ground 1.2 km off with a long lens, slowing as it is hit
@@ -122,12 +135,16 @@ const CUT = [
   { name: 'open', kind: 'card', dur: 3.2, card: ['HOLITZ', '19:36 · the capital'], big: 92 },
   { name: 'city', kind: '2d', dur: 5, at: -110, g: 10, cam: `({ kind: 'pan', at: { x: C.cap.x, y: C.cap.y }, to: { x: C.ap.x, y: C.ap.y }, z: 4, z1: 16 })`, cap: ['Holitz', 'The capital, 19:36'] },
   { name: 'calm', kind: '3d', dur: 4.5, cap: ['Holitz International', 'The country\'s busiest airport'] },
-  { name: 'launch', kind: '3d', dur: 4.2, cap: ['East of the border', 'A ballistic missile leaves its launcher'] },
+  { name: 'erect', kind: '3d', dur: 2.6, cap: ['East of the border', 'A launcher raises its missile'] },
+  { name: 'ignite', kind: '3d', dur: 3.4 },
+  { name: 'launch', kind: '3d', dur: 3.6 },
   { name: 'arcs', kind: '2d', dur: 4.5, at: 120, g: 70, cam: `({ kind: 'raid', ref: nearest(C.ap, 'bal'), with: [C.ap], pad: 900, zMax: 0.12 })`, cap: ['Six ballistic missiles', '900 km. Twelve minutes.'] },
   { name: 'flyby', kind: '3d', dur: 4, cap: ['Sixteen cruise missiles', '30 m over the fields'] },
+  { name: 'flyby2', kind: '3d', dur: 3.8 },
   { name: 'track', kind: '2d', dur: 3.6, at: 600, g: 10, cam: `({ kind: 'track', ref: nearest(C.ap, 'cm'), z: 6, lead: 0.3 })` },
   { name: 'wakes', kind: 'card', dur: 2, card: ['THE DEFENCE WAKES'], big: 84, rule: false },
-  { name: 'sam', kind: '3d', dur: 3.6 },
+  { name: 'sam', kind: '3d', dur: 6.5 },
+  { name: 'sam2', kind: '3d', dur: 3.2 },
   { name: 'kill', kind: '3d', still: 0.75, dur: 4.4 },
   { name: 'raid', kind: '2d', dur: 4.4, at: 690, g: 14, cam: `({ kind: 'raid', ref: nearest(C.ap, 'cm'), with: [C.ap], pad: 200, zMax: 2.5 })` },
   { name: 'high', kind: '3d', still: 0.75, dur: 4 },
