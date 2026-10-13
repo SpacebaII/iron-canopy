@@ -293,7 +293,8 @@ test('traffic: rush hour is busier than night, and an air raid empties the roads
   const count = () => { S.traffic.stepT = 0; IC.traffic(S, 0.25); return IC.trafficVisible(S, view, 0.3, () => {}); };
   const rush = count();
   const hw = S.traffic.links.filter(L => L.cls === 'hw' && U.dist(L.l.pts[0], cap) < 300).sort((a, b) => b.load - a.load)[0];
-  assert(hw && hw.load > 0.8, `the busiest motorway by the capital is not busy at rush hour (${hw ? hw.load.toFixed(2) : 'none'})`);
+  // (0.98 before brief 52; since then the motorway past the capital has a gate into it and a bypass, which share its traffic)
+  assert(hw && hw.load > 0.75, `the busiest motorway by the capital is not busy at rush hour (${hw ? hw.load.toFixed(2) : 'none'})`);
   S.time = 3 * 3600; const night = count();
   S.time = 8 * 3600; cap.alert = 600; const raid = count(); cap.alert = 0; count();
   assert(rush > 400, `too little traffic round the capital at 08:00: ${rush}`);

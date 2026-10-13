@@ -42,4 +42,5 @@ Pictures from the same seed in `52-screens/`, before on the left and after on th
 
 - `npm test` is green, with the new test: on seeds 4242 and 7 fewer than 300 straight stretches over 5 km and 60 over 8 km, at most 8 roads over 3 km that are one straight line, four lanes in five over 6 km that bend, and no more roads crossing away from a node than before (B5's five).
 - `world: generation stays under the time budget` still passes.
+- Three traffic tests measure differently on the new roads and were changed, not weakened in what they ask: the cut-road queue test cuts a stretch of country road and counts the whole 600 m queue; the rush-hour test asks the motorway by the capital for 0.75 (it was 0.98 before, now the motorway has a gate into the capital and a bypass that share its traffic); the old-town corner test allows 1 in 100 (B6).
 - Before and after pictures in the pull request.
