@@ -393,14 +393,18 @@ function pip(poly, x, y) {
   }
   return inside;
 }
-function segBox(x0, y0, x1, y1, W, H) {
-  let t0 = 0, t1 = 1; const dx = x1 - x0, dy = y1 - y0;
-  for (const [p, q] of [[-dx, x0 + W], [dx, W - x0], [-dy, y0 + H], [dy, H - y0]]) {
-    if (p === 0) { if (q < 0) return false; continue; }
-    const r = q / p;
-    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
-  }
+/* does the segment cross the box |x| < W, |y| < H? (Liang-Barsky, one side at a time: this runs for every edge of
+   every face a block is fitted in) */
+let sbT0 = 0, sbT1 = 1;
+function sbSide(p, q) {
+  if (p === 0) return q >= 0;
+  const r = q / p;
+  if (p < 0) { if (r > sbT1) return false; if (r > sbT0) sbT0 = r; } else { if (r < sbT0) return false; if (r < sbT1) sbT1 = r; }
   return true;
+}
+function segBox(x0, y0, x1, y1, W, H) {
+  sbT0 = 0; sbT1 = 1; const dx = x1 - x0, dy = y1 - y0;
+  return sbSide(-dx, x0 + W) && sbSide(dx, W - x0) && sbSide(-dy, y0 + H) && sbSide(dy, H - y0);
 }
 IC.fabricRect = function (face, min, ang) {
   const P = face.poly, n = P.length;
