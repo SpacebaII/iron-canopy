@@ -243,6 +243,8 @@ const bldMat = () => share('bld', () => FX() ? FX().mat('bld') : solidMat());
 const basicMat = () => share('basic', () => new THREE.MeshBasicMaterial({ vertexColors: true }));
 /* windows: dark glass by day, warm light at night (the colour follows the time of day each frame) */
 const winMat = () => share('win', () => FX() ? FX().mat('win') : new THREE.MeshBasicMaterial({ vertexColors: false, color: '#303a44' }));
+// (an airport building's glass walls: the sky in them, not the aircraft windows' dark glass)
+const glassMat = () => share('glass', () => FX() ? FX().mat('glass') : new THREE.MeshBasicMaterial({ vertexColors: false, color: '#56687a' }));
 /* what gives light (flames, flashes, lights): drawn brighter than white in the picture, so it glows (render3d-fx.js) */
 const glow = (m, k) => { m.userData.glow = k || 1; return FX() ? FX().glow(m) : m; };
 const abMat = () => share('ab', () => glow(new THREE.MeshBasicMaterial({ color: '#ffb070', transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }), 3));
@@ -411,7 +413,14 @@ function groundSync(v, fx, fy) {
   CFG.levels.forEach((L, li) => {
     if (li === 0 && v.lowGnd === false) return;   // the finest ring only while the camera is low
     const i0 = Math.floor(fx / L.T), j0 = Math.floor(fy / L.T);
-    for (let i = i0 - L.ring; i <= i0 + L.ring; i++) for (let j = j0 - L.ring; j <= j0 + L.ring; j++) { const k = li + ':' + i + ':' + j; if (!v.tiles.has(k)) need.push([k, li, i, j, (2 - li) * 1e4 + Math.hypot(i - i0, j - j0)]); }
+    // (the coarsest tiles round the focus first, so there is no hole; then by how far each is from the focus, a
+    // coarser one before a finer one as far: a fast flight otherwise outran a queue that painted every coarse
+    // tile before the first fine one under it)
+    for (let i = i0 - L.ring; i <= i0 + L.ring; i++) for (let j = j0 - L.ring; j <= j0 + L.ring; j++) {
+      const k = li + ':' + i + ':' + j; if (v.tiles.has(k)) continue;
+      const d = Math.hypot(Math.max(0, Math.abs((i + 0.5) * L.T - fx) - L.T / 2), Math.max(0, Math.abs((j + 0.5) * L.T - fy) - L.T / 2));
+      need.push([k, li, i, j, li === 2 && Math.abs(i - i0) <= 1 && Math.abs(j - j0) <= 1 ? -1e9 + d : d + (2 - li) * 0.5]);
+    }
     for (const k of [...v.tiles.keys()]) { const [l, i, j] = k.split(':').map(Number); if (l === li && (Math.abs(i - i0) > L.ring + 1 || Math.abs(j - j0) > L.ring + 1)) dropTile(v, k); }
   });
   need.sort((a, b) => a[4] - b[4]); v.tileQ = need;
@@ -433,7 +442,11 @@ function groundWork(v, ms) {
 }
 /* the time a live view spends on the ground: a tile at a time when the browser is idle */
 function groundIdle(v) {
-  if (!(v.tileQ.length || v.job) || v.tileBusy) return;
+  if (!(v.tileQ.length || v.job)) return;
+  // the ground under the focus not painted at the detail the camera's height wants (a fast flight, a busy page that
+  // leaves no idle time): some of each frame goes on it until it is
+  if (v.sfx != null) { const li = v.lowGnd ? 0 : 1, T = CFG.levels[li].T; if (!v.tiles.has(li + ':' + Math.floor(v.sfx / T) + ':' + Math.floor(v.sfy / T))) groundWork(v, 8); }
+  if (v.tileBusy) return;
   v.tileBusy = true;
   const go = () => { v.tileBusy = false; if (v.closed || !(v.tileQ.length || v.job)) return; groundWork(v, 6); };
   if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 300 }); else setTimeout(go, 20);
@@ -501,46 +514,81 @@ const PAVE = { runway: 1, taxi: 1, apron: 1, surface: 1, deice: 0, fuelpad: 0 };
 const LIFT = { pad: 0.003, rw: 0.004 };
 const PAVE_ORDER = { pad: 1, apron: 2, joint: 3, taxi: 4, runway: 5 };
 function paveMat(o, order, mesh) { const m = FX() ? FX().mat('pave', o) : new THREE.MeshLambertMaterial(o); m.depthWrite = false; mesh.material = m; mesh.renderOrder = PAVE_ORDER[order]; return mesh; }
-function aptPad(v, b, f) {
-  const S = v.S, R = f.r0, T = Math.min(4096, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 60)))));
-  const cv = document.createElement('canvas'); cv.width = cv.height = T;
-  const g = cv.getContext('2d'), z = T / (2 * R), px = 1 / z;
+/* the airport as the map paints it, a square of T pixels from (x0, y0) size units across, without what the 3D
+   scene shows itself: moving and parked aircraft, lights (and the arrows the map shows for which way each runway is
+   in use) */
+function padPaint(v, b, x0, y0, size, T, into) {
+  const S = v.S, cv = into || document.createElement('canvas'); if (!into) cv.width = cv.height = T;
+  const g = cv.getContext('2d'), z = T / size, px = 1 / z;
+  if (into) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, T, T); }
   const cam = IC.cam, saved = { x: cam.x, y: cam.y, z: cam.z, vw: cam.vw, vh: cam.vh }, rs = IC.rs, savedView = rs && rs.view;
-  // the airport as the map paints it, without what the 3D scene shows itself: moving and parked aircraft, lights
-  // (and the arrows the map shows for which way each runway is in use)
   const hide = { moves: b.moves, roster: S.roster, tb: S.av && S.av.tailById, tt: S.av && S.av.tailMapT, cfg: b.cfg };
-  Object.assign(cam, { x: b.x - R, y: b.y - R, z, vw: T, vh: T }); if (rs) rs.view = { x0: b.x - R, y0: b.y - R, x1: b.x + R, y1: b.y + R };
+  Object.assign(cam, { x: x0, y: y0, z, vw: T, vh: T }); if (rs) rs.view = { x0, y0, x1: x0 + size, y1: y0 + size };
   b.moves = []; S.roster = []; b.cfg = null; if (S.av) { S.av.tailById = new Map(); S.av.tailMapT = S.time; }
   try { g.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); IC.drawAirport(g, S, b, px, 0, 1, { pad: true }); } catch (e) { console.warn('3D airport', e); }
   b.moves = hide.moves; S.roster = hide.roster; b.cfg = hide.cfg; if (S.av) { S.av.tailById = hide.tb; S.av.tailMapT = hide.tt; }
   Object.assign(cam, saved); if (rs) rs.view = savedView;
-  const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
-  const y = f.e * v.hk + LIFT.pad, x0 = b.x - R - v.cx, z0 = b.y - R - v.cy, x1 = x0 + 2 * R, z1 = z0 + 2 * R;
-  const pos = new Float32Array([x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1]), nor = new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), uv = new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]);
-  return paveMat({ map: tex, alphaTest: 0.5 }, 'pad', new THREE.Mesh(geom(pos, nor, null, uv, new Uint16Array([0, 3, 2, 0, 2, 1]))));
+  return cv;
 }
-/* a runway's surface at 128 × 2048 pixels, end a at the bottom: pavement, shoulders, markings, craters */
+const padQuad = (v, f, x0, z0, size) => {
+  const y = f.e * v.hk + LIFT.pad, x1 = x0 + size, z1 = z0 + size;
+  const pos = new Float32Array([x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1]), nor = new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), uv = new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]);
+  return geom(pos, nor, null, uv, new Uint16Array([0, 3, 2, 0, 2, 1]));
+};
+function aptPad(v, b, f) {
+  const R = f.r0, T = Math.min(4096, Math.pow(2, Math.ceil(Math.log2(Math.max(256, R * 2 * 60)))));
+  const tex = texSRGB(new THREE.CanvasTexture(padPaint(v, b, b.x - R, b.y - R, 2 * R, T))); tex.anisotropy = v.aniso || 4;
+  return paveMat({ map: tex, alphaTest: 0.5 }, 'pad', new THREE.Mesh(padQuad(v, f, b.x - R - v.cx, b.y - R - v.cy, 2 * R)));
+}
+/* the picture again close to the camera, finer: the airport-wide one is a metre or two a pixel, which smears every
+   line on the pavement at the gate. 2048 px over 600 m round where the camera looks, painted again into the same
+   canvas (at most twice a second) when that moves 150 m away, the quad moved under it; the wide picture is cut out
+   under it (the pave material's cut box) */
+const NEAR_PAD = { size: 6, T: 2048, move: 1.5, every: 500 };
+function nearPad(v, b, f, at) {
+  const N = NEAR_PAD, now = performance.now();
+  let P = v.nearPad;
+  if (P && P.b !== b) { dropNearPad(v); P = null; }
+  if (P && (Math.hypot(P.x - at.x, P.y - at.y) < N.move || now - P.t < N.every)) return P;
+  const x0 = Math.round((at.x - N.size / 2) * 4) / 4, y0 = Math.round((at.y - N.size / 2) * 4) / 4;
+  if (!P) {
+    const tex = texSRGB(new THREE.CanvasTexture(padPaint(v, b, x0, y0, N.size, N.T))); tex.anisotropy = v.aniso || 4;
+    const mesh = paveMat({ map: tex, alphaTest: 0.5 }, 'pad', new THREE.Mesh(padQuad(v, f, 0, 0, N.size))); mesh.renderOrder = 1.5;
+    P = v.nearPad = { b, mesh };
+  } else { padPaint(v, b, x0, y0, N.size, N.T, P.mesh.material.map.image); P.mesh.material.map.needsUpdate = true; }
+  P.mesh.position.set(x0 - v.cx, 0, y0 - v.cy);
+  Object.assign(P, { x: at.x, y: at.y, x0, y0, t: now });
+  return P;
+}
+function dropNearPad(v) {
+  const P = v.nearPad; if (!P) return;
+  if (P.mesh.parent) P.mesh.parent.remove(P.mesh);
+  P.mesh.geometry.dispose(); P.mesh.material.map.dispose(); P.mesh.material.dispose(); v.nearPad = null;
+}
+/* a runway's surface at 128 × 2048 pixels, end a at the bottom: pavement, shoulders, markings, craters (twice that
+   each way with the finer pictures: at 128 px across, the edge and centre lines smeared when the camera was close) */
 function runwayTex(v, rw) {
-  const L = IC.rwLen(rw) * 100, W = rw.w * 100 + 16, cv = document.createElement('canvas'); cv.width = 128; cv.height = 2048;
-  const g = cv.getContext('2d'), sx = 128 / W, sy = 2048 / L, mat = IC.paveOf(rw);
+  const k = FX() && v.fxs && v.fxs.Q && v.fxs.Q.detail ? 2 : 1, TW = 128 * k, TH = 2048 * k;
+  const L = IC.rwLen(rw) * 100, W = rw.w * 100 + 16, cv = document.createElement('canvas'); cv.width = TW; cv.height = TH;
+  const g = cv.getContext('2d'), sx = TW / W, sy = TH / L, mat = IC.paveOf(rw);
   const base = mat === 'asph' ? '#3a3c3e' : mat === 'grass' ? '#5e7440' : mat === 'rconc' ? '#8a8c8a' : '#7c7e7a';
-  g.fillStyle = mat === 'grass' ? '#5e7440' : '#55585a'; g.fillRect(0, 0, 128, 2048);          // shoulders
-  const x0 = 8 * sx, x1 = 128 - 8 * sx, cx = 64; g.fillStyle = base; g.fillRect(x0, 0, x1 - x0, 2048);
+  g.fillStyle = mat === 'grass' ? '#5e7440' : '#55585a'; g.fillRect(0, 0, TW, TH);          // shoulders
+  const x0 = 8 * sx, x1 = TW - 8 * sx, cx = TW / 2; g.fillStyle = base; g.fillRect(x0, 0, x1 - x0, TH);
   // slabs and rubber: panel joints, dark tyre marks where aircraft touch down
   if (mat !== 'grass') {
-    g.fillStyle = 'rgba(0,0,0,0.06)'; for (let y = 0; y < 2048; y += 7.5 * sy) g.fillRect(x0, y, x1 - x0, Math.max(0.6, 0.3 * sy));
-    for (const e of [0, 1]) for (let i = 0; i < 40; i++) { const d = (300 + U.hash(i, e + 3) * 700) * sy, y = e ? 2048 - d : d; g.fillStyle = `rgba(20,20,20,${0.06 + U.hash(i, 9) * 0.12})`; g.fillRect(cx - (4 + U.hash(e, i) * 6) * sx, y, (8 + U.hash(i, 5) * 4) * sx, (20 + U.hash(i, 1) * 60) * sy); }
+    g.fillStyle = 'rgba(0,0,0,0.06)'; for (let y = 0; y < TH; y += 7.5 * sy) g.fillRect(x0, y, x1 - x0, Math.max(0.6, 0.3 * sy));
+    for (const e of [0, 1]) for (let i = 0; i < 40; i++) { const d = (300 + U.hash(i, e + 3) * 700) * sy, y = e ? TH - d : d; g.fillStyle = `rgba(20,20,20,${0.06 + U.hash(i, 9) * 0.12})`; g.fillRect(cx - (4 + U.hash(e, i) * 6) * sx, y, (8 + U.hash(i, 5) * 4) * sx, (20 + U.hash(i, 1) * 60) * sy); }
   }
   const P = 'rgba(236,238,232,0.95)', m = y => (y * sy);
   if (mat !== 'grass') {
     // edge stripes and the centreline: 30 m dashes with 20 m gaps
-    g.fillStyle = P; g.fillRect(x0 + 0.5, 0, 0.9 * sx, 2048); g.fillRect(x1 - 0.5 - 0.9 * sx, 0, 0.9 * sx, 2048);
+    g.fillStyle = P; g.fillRect(x0 + 0.5, 0, 0.9 * sx, TH); g.fillRect(x1 - 0.5 - 0.9 * sx, 0, 0.9 * sx, TH);
     for (let y = 400; y < L - 400; y += 50) g.fillRect(cx - 0.45 * sx * 2, m(y), 0.9 * sx * 2, m(30));
     const names = (rw.name || '').match(/(\d\d[LCR]?)\/(\d\d[LCR]?)/);
     for (const e of [0, 1]) {
-      const at = d => e ? 2048 - m(d) : m(d);
+      const at = d => e ? TH - m(d) : m(d);
       // threshold: eight bars each side, 30 m long, 6 m from the end
-      for (let k = 0; k < 8; k++) { const w = 1.8 * sx; const xa = x0 + 3 * sx + k * ((x1 - x0) / 2 - 5 * sx) / 8; g.fillRect(xa, Math.min(at(6), at(36)), w, m(30)); g.fillRect(128 - xa - w, Math.min(at(6), at(36)), w, m(30)); }
+      for (let k = 0; k < 8; k++) { const w = 1.8 * sx; const xa = x0 + 3 * sx + k * ((x1 - x0) / 2 - 5 * sx) / 8; g.fillRect(xa, Math.min(at(6), at(36)), w, m(30)); g.fillRect(TW - xa - w, Math.min(at(6), at(36)), w, m(30)); }
       // the designator, upright for the crew landing on this end
       // (the top of the picture is end b: its number reads from b, turned round)
       if (names) { const fs = Math.max(6, m(18)); g.save(); g.translate(cx, at(62)); if (!e) g.rotate(Math.PI); g.scale(7 * sx * 1.7 / (0.6 * fs), 1); g.font = `700 ${Math.round(fs)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(names[e ? 1 : 2], 0, 0); g.restore(); }
@@ -549,8 +597,8 @@ function runwayTex(v, rw) {
       for (const d of [150, 300, 600, 750, 900]) for (const s of [-1, 1]) { const n = d < 450 ? 3 : d < 700 ? 2 : 1; for (let k = 0; k < n; k++) g.fillRect(cx + s * (6 + k * 2.2) * sx - (s < 0 ? 1.4 * sx : 0), Math.min(at(d), at(d + 22)), 1.4 * sx, m(22)); }
     }
   }
-  if (rw.shut || rw.wear >= 1) { g.strokeStyle = 'rgba(242,200,60,0.95)'; g.lineWidth = 3 * sx; for (const f of [0.1, 0.5, 0.9]) { const y = f * 2048; g.beginPath(); g.moveTo(x0, y - 20); g.lineTo(x1, y + 20); g.moveTo(x1, y - 20); g.lineTo(x0, y + 20); g.stroke(); } }
-  for (const c of rw.craters || []) { const y = c.t * 2048; g.fillStyle = 'rgba(70,56,44,0.95)'; g.beginPath(); g.ellipse(cx, y, c.r * 125 * sx, c.r * 125 * sy, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(22,16,12,0.95)'; g.beginPath(); g.ellipse(cx, y, c.r * 80 * sx, c.r * 80 * sy, 0, 0, 7); g.fill(); }
+  if (rw.shut || rw.wear >= 1) { g.strokeStyle = 'rgba(242,200,60,0.95)'; g.lineWidth = 3 * sx; for (const f of [0.1, 0.5, 0.9]) { const y = f * TH; g.beginPath(); g.moveTo(x0, y - 20 * k); g.lineTo(x1, y + 20 * k); g.moveTo(x1, y - 20 * k); g.lineTo(x0, y + 20 * k); g.stroke(); } }
+  for (const c of rw.craters || []) { const y = c.t * TH; g.fillStyle = 'rgba(70,56,44,0.95)'; g.beginPath(); g.ellipse(cx, y, c.r * 125 * sx, c.r * 125 * sy, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(22,16,12,0.95)'; g.beginPath(); g.ellipse(cx, y, c.r * 80 * sx, c.r * 80 * sy, 0, 0, 7); g.fill(); }
   const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.anisotropy = v.aniso || 4;
   return tex;
 }
@@ -754,7 +802,7 @@ function aptBuildings(v, b, f) {
     v.dmgMeshes.push(mesh);
     G.add(mesh);
   }
-  if (me.groups.win) G.add(new THREE.Mesh(toScene(me, ['win'], cols, o, 0.01), winMat()));
+  if (me.groups.win) G.add(new THREE.Mesh(toScene(me, ['win'], cols, o, 0.01), glassMat()));
   for (const k in me.groups) if (me.groups[k].kind === 'radar') {
     const gp = me.groups[k], pv = gp.pivot, node = new THREE.Group();
     node.position.set((pv[0] - o[0]) * 0.01, (pv[2] - o[2]) * 0.01, (pv[1] - o[1]) * 0.01);
@@ -1436,6 +1484,7 @@ function sceneBase(v) {
   v.dots.frustumCulled = false; v.dots.renderOrder = 2; scene.add(v.dots);
   // windows lit at dusk
   if (!FX()) winMat().color.set(v.night ? '#ffd890' : light < 0.8 ? '#8a7a5a' : '#303a44');
+  if (!FX()) glassMat().color.set(v.night ? '#ffd890' : light < 0.8 ? '#8a7a5a' : '#56687a');
   else FX().scene(v);
   if (LIFE()) LIFE().scene(v);
   return scene;
@@ -2094,7 +2143,7 @@ function buildGallery(v, side) {
     sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04; sun.shadow.radius = 3;
   }
   v.dmgMeshes = []; v.nightLights = []; v.dotList = []; v.static = new THREE.Group(); scene.add(v.static);
-  winMat().color.set('#303a44');
+  winMat().color.set('#303a44'); if (!FX()) glassMat().color.set('#56687a');
   v.light = 1; v.night = false;
   if (LIFE()) LIFE().scene(v);
   // a light floor with a 10 m grid
@@ -2177,6 +2226,6 @@ function galleryFrame(v) {
 IC.replayState = () => V;
 /* what the other files of the 3D view build on: its picture (render3d-fx.js) and its life (render3d-life.js) */
 IC.R3D = { THREE: () => THREE, three: () => THREE, CFG, KM, LIFT, share, geom, toScene, colorOf, lineGeom, puffTex, sphereG, discG, coneG, quadG, texSRGB, seeded,
-  glow, hT, hRaw, solidMat, basicMat, winMat, modelParts, isShared, views: () => [V, L].filter(Boolean) };
+  glow, hT, hRaw, solidMat, basicMat, winMat, glassMat, modelParts, isShared, nearPad, dropNearPad, NEAR_PAD, groundWork, views: () => [V, L].filter(Boolean) };
 
 })(window.IC);
