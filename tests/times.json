@@ -194,5 +194,6 @@
  "sandbox: a glide bomb comes down from its height and can be shot at": 6.8,
  "story: before Act III the Minister's confidence never shows below 5, even months in the red": 39.6,
  "airport: a taxiway laid again over one already there is refused, and not paid for twice": 6.6,
- "airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of \"closed\"": 6.0
+ "airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of \"closed\"": 6.0,
+ "polish: a runway warning on the map names the runway once": 9
 }

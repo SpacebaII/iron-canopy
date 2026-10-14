@@ -91,8 +91,8 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
       // the Build button beside it
       await ev(`IC.cam.fly = null; IC.cam.z = 4; IC.centerOn(${ap.x}, ${ap.y})`); await wait(300);
       if (!(await ev(`!document.getElementById('bbar').hidden`))) { await page.click('button[data-act=bbToggle]'); await wait(300); }
-      // (the bar opens on whole pieces: the parts one by one are under Detail)
-      if (!(await page.$('#bbar button[data-bb=tab][data-v=rw]'))) { await page.click('#bbar button[data-bb=detail]'); await wait(200); }
+      // the bar opens on whole pieces (IC.FOCUS.pieces): the runway alone is under Detail
+      if (await page.$('#bbar button[data-bb=detail]:not(.on)')) { await page.click('#bbar button[data-bb=detail]'); await wait(200); }
       await page.click('#bbar button[data-bb=tab][data-v=rw]'); await wait(200);
       await page.click('#bbar button[data-bb=item][data-v=runway]'); await wait(200);
       const P = (l) => ({ x: ap.x + Math.cos(ap.a) * l, y: ap.y + Math.sin(ap.a) * l });
@@ -104,7 +104,7 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
       await page.keyboard.press('Escape'); await wait(200);
       await look('career-runway');
       // the rest of the build bar: a tab by its key, an item, the tools and an info view
-      await page.keyboard.press('Shift+' + await ev(`IC.bbTabs(IC.S).find(t => t.k === 'tw').key`)); await wait(200);
+      await page.keyboard.press('Shift+4'); await wait(200);
       await page.click('#bbar button[data-bb=item][data-v=taxi]'); await wait(200); await look('career-bar-taxiway');
       await page.keyboard.press('Escape'); await wait(200);
       for (const t of ['upgrade', 'move', 'bulldoze']) { await page.click(`#bbar button[data-bb=tool][data-v=${t}]`); await wait(200); await look(`career-bar-${t}`); await page.keyboard.press('Escape'); await wait(150); }
