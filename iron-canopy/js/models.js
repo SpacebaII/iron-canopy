@@ -1363,9 +1363,11 @@ function finish(B, key) {
   }
   return { key, groups, slots: B.slots, lights: B.lights, tris: B.tris, box };
 }
+// (a tool that reloads the model files forgets what was built)
+IC.modelMesh.clear = () => { meshCache.clear(); for (const k in M) delete M[k]._size; };
 /* the builder, for other meshes made the same way (the 3D view's airport buildings): IC.MB.Builder(q), its shapes,
    and IC.MB.finish(B) for the arrays */
-IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, P };
+IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, sweep, missileBody, FOIL, ANG, P };
 /* what a model has that moves: its gear, flaps, rotors, propellers, radar, launcher, afterburner */
 IC.modelMoves = key => { const m = IC.modelMesh(key, 1), out = {}; for (const k in m.groups) out[m.groups[k].kind] = true; return out; };
 

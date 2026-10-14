@@ -77,7 +77,7 @@ ui.store = store;
 // a decision and a peacetime launch pause the game unless the player turned them off
 ui.pauseOnIs = (P, k) => k === 'launch' || k === 'event' ? P[k] !== false : !!P[k];
 IC.savedCfg = () => { const c = store.get('ic-cfg', {}); return c.game || {}; };
-ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
+ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, music: IC.sfx.musicVol, amb: IC.sfx.ambVol, pauseRoom: ui.pauseRoom }); };
 ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty('--ui', v); };
 {
   const c = store.get('ic-cfg', {});
@@ -85,6 +85,8 @@ ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty(
   ui.applyScale(c.ui || auto);
   ui.pauseRoom = !!c.pauseRoom;
   if (c.vol != null) IC.sfx.vol = c.vol;
+  if (c.music != null) IC.sfx.musicVol = c.music;
+  if (c.amb != null) IC.sfx.ambVol = c.amb;
 }
 
 ui.bind = function (state) {

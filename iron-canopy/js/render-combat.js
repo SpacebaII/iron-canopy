@@ -241,6 +241,8 @@ function silhouette(g, kind, x, y, h, s, fill, stroke) {
 /* our units, the enemy we know about, and their ranges: drawn under the air picture */
 IC.drawForces = function (S, px, now) {
   ctx = RS.ctx; WF = RS.WF;
+  // film mode: our batteries as their vehicles close in, nothing else of the plan
+  if (IC.film && IC.film.on) { if (cam.z > 1.1) for (const u of S.units) if (inView(u.x, u.y, 60)) vehicles(S, u, px, now); return; }
   if (S.layers.intel) drawEnemy(S, px, now);
   drawRanges(S, px, now);
   for (const u of S.units) if (inView(u.x, u.y, 200)) drawUnit(S, u, px, now);
@@ -609,6 +611,68 @@ function drawChaff(S, px) {
   }
 }
 
+/* ---------- film mode (brief 58): what flies, as it is ----------
+   No tags or frames: an enemy weapon is its model close in and a dark speck with a hot glow far out, with a faint
+   trail of its exhaust behind it; an airliner is its lights at night; our aircraft the same. Everything at its real
+   place, seen by our radars or not */
+const fhist = new WeakMap();
+function filmTrail(S, o, x, y, px, col, w, life) {
+  let H = fhist.get(o);
+  if (!H) { H = { p: [], first: S.time }; fhist.set(o, H); }
+  const P2 = H.p, n = P2.length;
+  if (!n || Math.abs(P2[n - 3] - x) + Math.abs(P2[n - 2] - y) > Math.max(0.6, 2.5 * px)) { P2.push(x, y, S.time); if (P2.length > 3 * 90) P2.splice(0, 3); }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // a few segments to a stroke, each stroke as faint as its age
+  for (let i = 3; i < P2.length; i += 15) {
+    const age = S.time - P2[i + 2]; if (age > life) continue;
+    const k = 1 - age / life, j = Math.min(P2.length, i + 15);
+    ctx.beginPath(); ctx.moveTo(P2[i - 3], P2[i - 2]);
+    for (let q = i; q < j; q += 3) ctx.lineTo(P2[q], P2[q + 1]);
+    if (j >= P2.length) ctx.lineTo(x, y);
+    ctx.strokeStyle = `rgba(${col},${0.5 * k * k})`; ctx.lineWidth = Math.max(w * px * (1 + (1 - k)), w * 0.15);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  return H;
+}
+function filmThreat(S, t, px, now, light) {
+  if (t.dead || t.age <= 0 || t.d.move === 'bal' || t.d.cls === 'hgv' || t.x == null) return;
+  if (!inView(t.x, t.y, 300)) return;
+  const v = IC.filmVel(t), sp = Math.hypot(v.x, v.y), h = sp > 1e-6 ? Math.atan2(v.y, v.x) : t.h || 0, night = light < 0.5, x = t.x, y = t.y;
+  const close = cam.z >= 0.6, civil = t.d.civil;
+  if (civil) {
+    if (close) IC.modelTop(ctx, IC.modelOfThreat(t, true), x, y, h, { livery: t.livery, shadow: Math.min(3, (t.alt || 0) * 0.25), minPx: 9, now });
+    // the lights: a strobe that blinks, red and green at the wing tips, a warm landing light low down
+    const r = (night ? 7 : 4) * px, blink = (now + (t.seed || 0)) % 1.2 < 0.08;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = night ? 0.8 : 0.35; ctx.drawImage(SPR[HOT], x - r, y - r, r * 2, r * 2);
+    if (blink) { const R = r * 2.2; ctx.globalAlpha = night ? 0.9 : 0.5; ctx.drawImage(SPR[BLUE], x - R, y - R, R * 2, R * 2); }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    return;
+  }
+  const H = filmTrail(S, t, x, y, px, night ? '255,170,110' : '225,228,232', t.d.cls === 'air' ? 1.6 : 1.1, t.d.cls === 'drone' ? 30 : 60);
+  // the launch: a flash and a cloud where a weapon we had not seen before leaves the ground
+  if (!H.launched) { H.launched = true; if (t.age < 20 && t.d.cls !== 'air' && t.d.cls !== 'drone') launch(S, { cls: 'sr' }, x, y); }
+  if (close) IC.modelTop(ctx, IC.modelOfThreat(t, true), x, y, h, { shadow: Math.min(3, (t.alt || 0) * 0.25), minPx: 8, now });
+  else { ctx.fillStyle = 'rgba(20,18,16,0.9)'; ctx.beginPath(); ctx.arc(x, y, 1.6 * px, 0, 7); ctx.fill(); }
+  // the engine's heat, behind it
+  const ex = x - Math.cos(h) * 2 * px, ey = y - Math.sin(h) * 2 * px, fl = 0.85 + 0.3 * Math.random(), r = (night ? 7 : 4) * px * fl * (t.d.cls === 'air' ? 1.4 : 1);
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = night ? 0.9 : 0.55;
+  ctx.drawImage(SPR[t.d.cls === 'drone' ? GLOW : HOT], ex - r, ey - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function filmAir(S, a, px, now, light) {
+  if (a.dead || a.gnd || !inView(a.x, a.y, 300)) return;
+  const night = light < 0.5, h = a.h || 0;
+  if (a.kind === 'ftr') filmTrail(S, a, a.x, a.y, px, night ? '180,200,230' : '240,244,248', 1.2, 40);
+  if (cam.z >= 0.6) IC.modelTop(ctx, IC.modelOfAir(a), a.x, a.y, h, { minPx: 9, shadow: Math.min(3, (a.alt || 0) * 0.25), now });
+  else { ctx.fillStyle = 'rgba(30,34,40,0.9)'; ctx.beginPath(); ctx.arc(a.x, a.y, 1.6 * px, 0, 7); ctx.fill(); }
+  const r = (night ? 6 : 3.5) * px, ex = a.x - Math.cos(h) * 2.5 * px, ey = a.y - Math.sin(h) * 2.5 * px;
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = night ? 0.85 : 0.4;
+  ctx.drawImage(SPR[a.kind === 'ftr' ? HOT : BLUE], ex - r, ey - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+
 /* ---------- combat effects ----------
    Drawing only: the simulation owns missiles, threats and damage; this watches them from frame to frame and adds the
    flash, the dust, the booster, the smoke that lingers and drifts, the loft, the staging, the hit or the miss.
@@ -819,7 +883,7 @@ function track(S) {
     if (t.d.move !== 'bal' && t.d.cls !== 'hgv') continue;
     let B = balV.get(t);
     if (!B) { B = { seen: false }; balV.set(t, B); }
-    if (!t.det || t.dead) continue;
+    if ((!t.det && !(IC.film && IC.film.on)) || t.dead) continue;
     if (!B.seen) {
       B.seen = true;
       if (t.x0 != null && t.age < 60) launch(S, { cls: t.d.cls === 'rkt' ? 'sr' : 'hat' }, t.x0, t.y0);
@@ -968,10 +1032,12 @@ function drawMissiles(S, px, light) {
 
 /* ballistic missiles and glide vehicles: a flame on the way up, a white-hot streak coming down */
 function drawBallistic(S, px, now, light) {
-  const nk = light < 0.5 ? 1.6 : 1;
+  const nk = light < 0.5 ? 1.6 : 1, FM = IC.film && IC.film.on;
   for (const t of S.threats) {
-    if (t.dead || !t.det || (t.d.move !== 'bal' && t.d.cls !== 'hgv') || !inView(t.px, t.py, 200)) continue;
-    const x = t.px, y = t.py, sp = Math.hypot(t.pvx || t.vx, t.pvy || t.vy) || 1, ux = (t.pvx || t.vx) / sp, uy = (t.pvy || t.vy) / sp;
+    // (film mode shows the truth: where the warhead really is, seen or not)
+    const x = FM ? t.x : t.px, y = FM ? t.y : t.py;
+    if (t.dead || (!t.det && !FM) || (t.d.move !== 'bal' && t.d.cls !== 'hgv') || !inView(x, y, 200)) continue;
+    const vx = FM ? t.vx : t.pvx || t.vx, vy = FM ? t.vy : t.pvy || t.vy, sp = Math.hypot(vx, vy) || 1, ux = vx / sp, uy = vy / sp;
     const f = t.T ? U.clamp(t.age / t.T, 0, 1) : 0.5;
     const hgv = t.d.cls === 'hgv', rkt = t.d.cls === 'rkt';
     // hot on the way up, dark in space, heating again as it falls back into the air
@@ -1050,12 +1116,15 @@ IC.drawCombat = function (S, px, now, light) {
   if (!FX.no || !FX.no.trails) drawTrails2(S, px, light);
   if (!FX.no || !FX.no.low) drawSprites(false, px, light);
   if (!FX.no || !FX.no.sim) drawSimParts(S, px, false);
-  drawImpacts(S, px, now);
-  for (const t of S.threats) drawTrack(S, t, px, now);
-  if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
-  if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
-  for (const a of S.air) drawAir(S, a, px, now);
-  for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
+  if (IC.film && IC.film.on) { for (const t of S.threats) filmThreat(S, t, px, now, light); for (const a of S.air) filmAir(S, a, px, now, light); }
+  else {
+    drawImpacts(S, px, now);
+    for (const t of S.threats) drawTrack(S, t, px, now);
+    if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
+    if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
+    for (const a of S.air) drawAir(S, a, px, now);
+    for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
+  }
   drawChaff(S, px);
 
   ctx.globalCompositeOperation = 'lighter';
@@ -1064,6 +1133,8 @@ IC.drawCombat = function (S, px, now, light) {
     const k = 1 - f.t / 0.35; if (k <= 0) continue;
     const r = Math.max(f.r * px, (f.wr || 0) * (1 - WF * 0.9)) * (0.6 + f.t * 2);
     ctx.globalAlpha = 0.7 * k; ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
+    // at night a blast lights the ground well beyond its fireball, for a moment
+    if (light < 0.6) { const R = r * 5; ctx.globalAlpha = 0.3 * k * (1 - light / 0.6); ctx.drawImage(SPR[GLOW], f.x - R, f.y - R, R * 2, R * 2); }
   }
   ctx.globalAlpha = 1;
   for (const u of S.units) if (u.beam && !u.beam.dead) {

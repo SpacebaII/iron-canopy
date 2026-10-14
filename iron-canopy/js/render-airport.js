@@ -9,6 +9,7 @@ const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)'
 let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
 let LIFE = false, BR = null, ACT = 0.5;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges; ACT: how busy its terminal is, 0 → 1
 function lbl(g, txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.on) return;
   if (NOLBL) return;
   // (round 5c) close in, a font of a fraction of a world unit is drawn at the wrong size by the canvas: the words come
   // out squeezed. There they are drawn in screen pixels at the same place
@@ -223,7 +224,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
-  if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
+  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptFencePath(g2, box));   // (not in the 3D view's picture: it has its own sky)
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
   if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);
