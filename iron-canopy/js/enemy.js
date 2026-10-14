@@ -700,8 +700,9 @@ function mixFor(S, E, kind, obj) {
   } else if (kind === 'shock') {
     // the saved missiles, shared over the main target and two or three others of different kinds, all at once
     const bal = Math.min(12, Math.floor(spareOf(S, 'bm', ['srbm', 'marv']) * 0.85)), cms = Math.min(20, Math.floor(spareOf(S, 'cm', ['lacm', 'scm', 'mcm']) * 0.85));
-    const more = E.shock.more, k = more.length + 1, share = n => Math.max(1, Math.round(n / k));
-    const how = E.shock.how, via = how === 'axis' ? { via: 1 } : {};
+    // (a shock the sandbox asks for has no plan of the commander's behind it: all of it goes at the one target)
+    const sh = E.shock || { more: [], how: 'soak' }, more = sh.more, k = more.length + 1, share = n => Math.max(1, Math.round(n / k));
+    const how = sh.how, via = how === 'axis' ? { via: 1 } : {};
     if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 3, -600); }
     else add('dcy', 4, -300);
     // the other targets first: launchers and a site's missiles run out, and the main target should not take them all.
@@ -1082,8 +1083,8 @@ function learn(S, E, R, ops) {
   const news = R.obj.ref && R.obj.ref.d ? `air defences near ${place(S, R.obj)}` : R.obj.name;
   if (success) IC.news(S, `${S.world.names.A} claims its strike on ${news} was a success.`);
   else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defences blunt a ${R.name} on ${news}.`); }
-  // the shock: then a lull while the commander reassesses
-  if (R.kind === 'shock') {
+  // the shock: then a lull while the commander reassesses (not after one the sandbox asked for)
+  if (R.kind === 'shock' && E.shock && !E.shock.done) {
     const f = strong(E);
     E.act = 3; E.actT = S.time; E.lullEnd = S.time + lerp(IC.EPACE.lull[0], IC.EPACE.lull[1], f) * H; E.shock.done = S.time; E.shock.res = { launched, lost, hits: R.hits || 0 };
     note(S, E, `Act 3: the shock is spent (${launched} launched, ${R.hits || 0} hits). Reassesses until ${U.hhmm(E.lullEnd)}: no raids, reconnaissance only.`);
@@ -1095,7 +1096,7 @@ function learn(S, E, R, ops) {
 }
 /* the calm after a raid: shorter as the war goes on; the lull after the shock is longer */
 function calmFor(S, E, R) {
-  if (R.kind === 'shock') return E.lullEnd - S.time;
+  if (R.kind === 'shock' && E.lullEnd > S.time) return E.lullEnd - S.time;
   const h = E.act >= 4 ? U.rand(3, 4) : E.act >= 2 ? U.rand(2.6, 3.8) : U.rand(2.5, 4);
   return h * H;
 }

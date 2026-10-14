@@ -4165,6 +4165,25 @@ test('sandbox: repair, clear the sky, and a save that loads and keeps its rules'
   assert(S2.sbx && S2.sbx.ammo && !S2.sbx.free && S2.mode === 'test', 'the sandbox rules were not saved');
   IC.step(S2, 0.5);
 });
+test('sandbox: a major strike the enemy plans on request flies, and the war goes on after it', () => {
+  const S = sbxGame();
+  IC.sandboxTarget(S, IC.cap(S));
+  assert(IC.sandboxRaid(S, 'shock'), 'no major strike was planned');
+  let most = 0;
+  for (let i = 0; i < 3 * 3600 / 0.5; i++) { IC.step(S, 0.5); most = Math.max(most, hostiles(S)); }
+  assert(most >= 10, `only ${most} enemy weapons were in the air at once`);
+  const C = S.enemy.cycle;
+  assert(S.enemy.act < 3 && C && Number.isFinite(C.next), `the strike moved the commander on: act ${S.enemy.act}, next ${C && C.next}`);
+}, true);
+test('sandbox: a glide bomb comes down from its height and can be shot at', () => {
+  const S = sbxGame();
+  IC.sandboxTarget(S, IC.mainBase(S));
+  IC.sandboxLaunch(S, { what: 'glb', n: 3, from: 'close' });
+  const seen = [];
+  for (let i = 0; i < 1200; i++) { IC.step(S, 0.5); for (const t of S.threats) if (t.type === 'glb' && !t.dead) seen.push(t.alt); }
+  assert(seen.length && seen.every(Number.isFinite), `a glide bomb's height is ${seen.find(a => !Number.isFinite(a))}`);
+  assert(Math.max(...seen) > 5 && Math.min(...seen) < 4, `glide bombs flew between ${Math.min(...seen)} and ${Math.max(...seen)} km`);
+});
 
 /* ---------- Academy ---------- */
 for (const L of IC.LESSONS) test(`academy: ${L.id} lesson can be completed`, () => {
