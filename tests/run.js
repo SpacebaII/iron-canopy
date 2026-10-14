@@ -4890,6 +4890,12 @@ test('round 3: fuel queues show at the fuel farm, and the tank the fix places ke
   assert(sp, `the placed tank cannot be built: ${plan.why}`);
   assert(ap.parts.filter(q => q.kind === 'fuel').every(q => IC.fuelGap(q, sp) >= 1), 'the new tank stands within 100 m of other fuel');
 });
+test('polish: a runway warning on the map names the runway once', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network' }), ap = S.byId[S.story.cap];
+  ap.parts = ap.parts.filter(p => p.kind !== 'ils');
+  const P = IC.aptProblems(S, ap).find(p => p.kind === 'ils');
+  assert(P && /^Runway \d\d[LCR]?\/\d\d[LCR]?: no landing system$/.test(P.title), P && P.title);
+});
 /* a Career played until airlines offer deals at our airports */
 const r3offers = () => {
   const S = r3game();

@@ -84,7 +84,7 @@ const CSS = `
 .rp-view > canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
 .rp-view > canvas:active{cursor:grabbing}
 .rp-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-.rp-lbl{position:absolute;left:0;top:0;will-change:transform;font-family:var(--mono);font-size:.72rem;line-height:1.15;color:var(--text);text-shadow:0 1px 2px #000,0 0 6px #000;white-space:nowrap;pointer-events:none}
+.rp-lbl{position:absolute;left:0;top:0;will-change:transform;font-family:var(--mono);font-size:.72rem;line-height:1.15;color:var(--text);text-shadow:0 0 2px #000,0 0 2px #000,0 1px 3px #000,0 0 8px rgba(0,0,0,.7);font-weight:600;white-space:nowrap;pointer-events:none}
 .rp-lbl small{display:block;color:var(--muted);font-size:.66rem}
 .rp-lbl.enemy{color:#ffb0a8}.rp-lbl.civil{color:#b8f0d0}.rp-lbl.us{color:#c0e8ff}.rp-lbl.sel{color:var(--amber)}
 .rp-tag{position:absolute;left:0;top:0;font-family:var(--display);font-weight:700;letter-spacing:.08em;font-size:.85rem;text-shadow:0 1px 3px #000,0 0 8px #000;white-space:nowrap;pointer-events:none}
@@ -2150,8 +2150,9 @@ function buildGallery(v, side) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d');
   g.fillStyle = '#6f756c'; g.fillRect(0, 0, 512, 512);
   g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 1; g.beginPath(); for (let i = 0; i <= 512; i += 32) { g.moveTo(i + 0.5, 0); g.lineTo(i + 0.5, 512); g.moveTo(0, i + 0.5); g.lineTo(512, i + 0.5); } g.stroke();
-  const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(12, 12); tex.anisotropy = v.aniso || 4;
-  const slab = new THREE.Mesh(discG(), new THREE.MeshLambertMaterial({ map: tex })); slab.scale.set(960, 1, 960); slab.receiveShadow = true; scene.add(slab);
+  // (wide, and fading into the sky far out: a smaller floor showed its edge in the corners when looking across)
+  const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(50, 50); tex.anisotropy = v.aniso || 4;
+  const slab = new THREE.Mesh(discG(), new THREE.MeshLambertMaterial({ map: tex })); slab.scale.set(4000, 1, 4000); slab.receiveShadow = true; scene.add(slab);
   // in metres here (the models are scaled up a hundredfold), one row a group, spaced by size
   let z = -140;
   for (const grp of IC.MODEL_GROUPS) {

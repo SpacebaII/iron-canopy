@@ -150,7 +150,9 @@ function topbar() {
   const ck = $('hClock');
   ck.textContent = cal ? `${U.hhmm(S.time)} · ${U.date(S.time)}` : U.clock(S.time);
   ck.parentNode.title = cal ? `The calendar counts months and years; each month is ${cal.dpm} days and nights of live time. Aircraft, weather and building run on the live clock.` : '';
-  $('hSky').textContent = cal ? `Day ${cal.d} of ${cal.dpm} · ${IC.SEASON ? IC.SEASON[cal.mo].name + ' · ' : ''}${sky}` : sky;
+  // (the season is in the month's name and the tooltip: with it the line was cut off before the weather)
+  const hs = cal ? `Day ${cal.d} of ${cal.dpm} · ${sky}` : sky, hst = cal && IC.SEASON ? `${hs} · ${IC.SEASON[cal.mo].name}` : hs;
+  if ($('hSky').textContent !== hs) { $('hSky').textContent = hs; $('hSky').title = hst; }
   setHTML($('speed'), `<button class="pz" data-act="pause" aria-pressed="${S.paused}" title="Pause and resume (Space)">❚❚<kbd>Space</kbd></button>` +
     IC.SPEEDS.map((v, i) => `<button data-act="speed" data-v="${v}" aria-pressed="${!S.paused && !S.skip && S.speed === v}" title="${v}× speed: ${v * IC.GS} game seconds a second (key ${i + 1})">${v}×<kbd>${i + 1}</kbd></button>`).join('') +
     `<button class="skip" data-act="skip" aria-pressed="${!!S.skip && !S.paused}" title="Skip ahead fast until something needs you (S)">⏭<kbd>S</kbd></button>` +
