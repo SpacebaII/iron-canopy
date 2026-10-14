@@ -772,7 +772,7 @@ function lorry(B, len, w, axles, col, o) {
   if (o.bed) {
     const bl = len - cabL - 0.6, bx = -cabL / 2 - 0.2, bz = h + o.bed / 2 + 0.2;
     // a tilt is canvas over hoops: rounded over the top; a box body has square edges
-    box(B, bx, 0, bz, bl, w, o.bed, o.bedCol || col, o.tilt ? { top: [0.98, 0.84], c: Math.min(0.42, o.bed * 0.22) } : { c: 0.07 });
+    box(B, bx, 0, bz, bl, w, o.bed, o.bedCol || col, o.tilt ? { top: [0.98, 0.84], c: Math.min(0.24, o.bed * 0.12) } : { c: 0.07 });
     if (o.tilt && B.q) for (let i = 1; i < 4; i++) box(B, bx - bl / 2 + bl * i / 4, 0, bz + o.bed / 2 - 0.02, 0.07, w * 0.86, 0.06, '#4e553c', { hard: true });
   }
 }
