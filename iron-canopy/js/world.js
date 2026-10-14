@@ -118,7 +118,7 @@ let adjW = null, adjN = -1, adj = null;
 function adjacency(W) {
   if (adjW === W && adjN === W.edges.length) return adj;
   adjW = W; adjN = W.edges.length; adj = {};
-  for (const e of W.edges) { (adj[e.a] = adj[e.a] || []).push([e.b, e]); (adj[e.b] = adj[e.b] || []).push([e.a, e]); }
+  for (const e of W.edges) { if (e.abroad) continue; (adj[e.a] = adj[e.a] || []).push([e.b, e]); (adj[e.b] = adj[e.b] || []).push([e.a, e]); }   // (the roads abroad are not ours to drive, brief 57)
   return adj;
 }
 /* Dijkstra from one node. cut(e) says whether an edge is cut; with intact=true every road counts as open.

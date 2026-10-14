@@ -549,6 +549,9 @@ function* worldSteps(seed) {
     }
   }
 
+  // the neighbours' own roads (brief 57), from a stream of their own so the home dice stay as they were
+  foreignNetwork(W, IC.makeRng((seed * 104729 + 17) >>> 0), fbm);
+
   /* ---------- terrain for ground combat ---------- */
   W.townAt = (x, y) => {
     if (W.builtAt(x, y)) for (const c of W.cities) if (U.dxy(x, y, c.x, c.y) < c.r * 1.6) return c;
@@ -666,7 +669,7 @@ function riverBridges(W) {
           const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
           // (in town every avenue over the river has its own bridge)
           if (W.bridges.some(o => U.dxy(o.x, o.y, x, y) < (e.city ? 6 : 40))) continue;
-          W.bridges.push({ id: 'br' + W.bridges.length, kind: 'bridge', x, y, edge: e.id, cls: e.cls, a: Math.atan2(b.y - a.y, b.x - a.x), river: r.name, name: `${r.name.replace(' River', '')} Bridge` });
+          W.bridges.push({ id: 'br' + W.bridges.length, kind: 'bridge', x, y, edge: e.id, cls: e.cls, a: Math.atan2(b.y - a.y, b.x - a.x), river: r.name, name: `${r.name.replace(' River', '')} Bridge`, abroad: e.abroad || undefined });
         }
       }
     }
@@ -751,15 +754,16 @@ const HOW = {
   rdOwn: { slope: 1.2, bridge: 4, near: 0.6, reuse: [1, 0.55, 0.45, 0.4, 6], hk: 0 }
 };
 
-function costGrid(W, fbm) {
+function costGrid(W, fbm, soil) {
   const GW = Math.ceil(IC.WW / RC), GH = Math.ceil(IC.WH / RC), N = GW * GH;
   const h = new Float32Array(N), base = new Float32Array(N), wet = new Uint8Array(N);
   for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
     const k = j * GW + i, x = (i + 0.5) * RC, y = (j + 0.5) * RC;
     const out = W.depthOut(x, y);
-    if (out > RC * 1.5 || W.inLake(x, y)) { base[k] = -1; continue; }
+    // (our soil, a cell and a half short of the border; or the soil a neighbour's roads are laid on, brief 57)
+    if ((soil ? !soil(x, y) : out > RC * 1.5) || W.inLake(x, y)) { base[k] = -1; continue; }
     h[k] = W.hAt(x, y);
-    base[k] = 1 + (W.forestAt(x, y) ? 0.4 : 0) + (out > -RC ? 1.5 : 0) + 0.3 * fbm(x / 260, y / 260, 2);
+    base[k] = 1 + (W.forestAt(x, y) ? 0.4 : 0) + (Math.abs(out) < RC ? 1.5 : 0) + 0.3 * fbm(x / 260, y / 260, 2);
     wet[k] = W.riverDist(x, y) < RC * 0.55 ? 1 : 0;
   }
   return { GW, GH, N, h, base, wet };
@@ -939,6 +943,10 @@ function wander(C, o, fbm, k, step, lead) {
    fine cell k is another road's, fields are the airfields to keep off (not one the road serves), kn seeds its sway,
    wide (a factor) opens the corridor and drops the sway, leads ({ a, b }: unit vectors out of each end) the
    directions the road leaves its nodes in. The line, or null when the corridor is shut */
+// the country whose soil the line being traced may use (null: ours), set by refineRoads for a road abroad (brief 57);
+// outAt is how far a point is off that soil (at or below 0: on it), as W.depthOut says it for ours
+let fineSoil = null;
+const outAt = (W, x, y) => { const d = W.depthOut(x, y); if (!fineSoil) return d; return d <= 0 ? -d : W.countryAt(x, y) === fineSoil ? -d : 1e9; };
 function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
   const o0 = FINE[cls] || FINE.lc, o = wide ? Object.assign({}, o0, { half: o0.half * wide, amp: 0 }) : o0, fbm = W.fbm, half = o.half;
   const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
@@ -952,7 +960,7 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
     let s = 0;
     for (let t = FC * 0.5; t <= Math.min(o.lead, U.dist(A, B) / 3); t += FC * 0.5) {
       const x = P.x + dx / d * t, y = P.y + dy / d * t, k = cellOf({ x, y });
-      if ((k !== own && taken(k)) || W.inLake(x, y) || W.depthOut(x, y) > 0) break;
+      if ((k !== own && taken(k)) || W.inLake(x, y) || outAt(W, x, y) > 0) break;
       s = t;
     }
     return s < FC ? P : { x: P.x + dx / d * s, y: P.y + dy / d * s };
@@ -993,7 +1001,7 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
   // (the ground is read when the search first reaches a cell: it visits a part of the corridor)
   const read = q => {
     if (base[q]) return base[q] > 0;
-    const i = q % cw + i0, j = ((q / cw) | 0) + j0, x = (i + 0.5) * FC, y = (j + 0.5) * FC, out = W.depthOut(x, y);
+    const i = q % cw + i0, j = ((q / cw) | 0) + j0, x = (i + 0.5) * FC, y = (j + 0.5) * FC, out = outAt(W, x, y);
     if (out > FC * 2 || W.inLake(x, y)) { base[q] = -1; shut[q] = 1; return false; }
     const f = fbm(x / 120, y / 120, 2);   // (0 to 0.7)
     hgt[q] = W.hAt(x, y); wet[q] = W.riverDist(x, y) < FC * 0.8 ? 1 : 0; nz[q] = f * 1.4;
@@ -1046,12 +1054,14 @@ function fineLine(W, cls, C, A, B, taken, fields, kn, wide, leads) {
   // new) bends those stretches too, with the junction leads left alone
   return { pts: simplify(wander(P, { amp: Math.min(o.amp * 0.4, 3.5), wave: o.wave * 0.6 }, fbm, kn + 0.5, FC * 0.75, o.lead * 1.5), 0.4), cells };
 }
-function refineRoads(W) {
+function refineRoads(W, only) {
   const FW = Math.ceil(IC.WW / FC), FH = Math.ceil(IC.WH / FC);
   const own = new Map();   // fine cell → the road laid on it, or the node whose cell it is
+  // (only: the roads to trace now; the others keep their line and only take their cells, brief 57)
+  if (only) for (const e of W.edges) if (!only.has(e)) for (let i = 1; i < e.pts.length; i++) { const a = e.pts[i - 1], b = e.pts[i], L = U.dist(a, b), m = Math.max(1, Math.ceil(L / (FC * 0.5))); for (let q = 0; q <= m; q++) { const x = a.x + (b.x - a.x) * q / m, y = a.y + (b.y - a.y) * q / m; own.set(U.clamp(Math.floor(y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(x / FC), 0, FW - 1), e); } }
   const cellOf = p => U.clamp(Math.floor(p.y / FC), 0, FH - 1) * FW + U.clamp(Math.floor(p.x / FC), 0, FW - 1);
   const fields = W.infra.filter(b => b.kind === 'airport' || b.kind === 'airbase').map(f => ({ id: f.id, x: f.x, y: f.y, r: 45 }));
-  const vils = W.villages.filter(v => v.home).map(v => ({ x: v.x, y: v.y, r: 9 }));
+  const vils = W.villages.map(v => ({ x: v.x, y: v.y, r: 9 }));
   // every node's cell, and the eight round it, are for the roads that end there (a motorway may not run through a
   // village's, and a road passing a junction leaves room for the lanes that join it)
   for (const k in W.nodes) { const c = cellOf(W.nodes[k]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) own.set(c + dy * FW + dx, k); }
@@ -1077,12 +1087,14 @@ function refineRoads(W) {
   const order = W.edges.slice().sort((a, b) => (RANK[b.cls] - RANK[a.cls]) || (b.len - a.len));
   const t0 = Date.now();
   order.forEach((e, ei) => {
-    if (!FINE[e.cls]) return;
+    if (!FINE[e.cls] || (only && !only.has(e))) return;
     const taken = k => { const v = own.get(k); return v !== undefined && v !== e && v !== e.a && v !== e.b; };
     const keepOff = fields.filter(f => f.id !== e.a && f.id !== e.b).concat(e.cls === 'hw' ? vils : []);
     // (a corridor the other roads shut: once more, twice as wide and without the sway, before the grid line stays)
     const ld = leads.get(e);
+    fineSoil = e.abroad || null;
     const r = fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 0, ld) || fineLine(W, e.cls, e.pts, W.nodes[e.a], W.nodes[e.b], taken, keepOff, ei, 2, ld);
+    fineSoil = null;
     if (!r) return;
     for (const k of r.cells) if (!own.has(k)) own.set(k, e);
     e.pts = r.pts;
@@ -1117,6 +1129,129 @@ IC.roadLine = function (W, cls, pts, apt) {
   return out;
 };
 
+/* the links a layer laid, as a graph: places, and cells where three or more links meet, are nodes (jp prefixes a
+   junction's id), the runs between them edges; two runs between one pair of nodes get a junction in the middle */
+function graphOf(T, places, at, twins, ctr, N, jp) {
+  const nodes = {}, nodeAt = new Map();
+  for (const pl of places) if (at.get(pl.cell) === pl) { nodes[pl.id] = { id: pl.id, x: pl.x, y: pl.y }; nodeAt.set(pl.cell, pl.id); }
+  let nj = 0;
+  const junction = c => { const id = jp + nj++, p = ctr(c); nodes[id] = { id, x: p.x, y: p.y, jct: true }; nodeAt.set(c, id); return id; };
+  for (const [c, nb] of T.adj) if (!nodeAt.has(c) && nb.length !== 2) junction(c);
+  const done = new Set(), chains = [];
+  for (const [c, id] of nodeAt) for (const d of T.adj.get(c) || []) {
+    if (done.has(lkey(c, d, N))) continue;
+    const cells = [c]; let prev = c, cur = d, rank = 0;
+    for (;;) {
+      const k = lkey(prev, cur, N); done.add(k); rank = Math.max(rank, T.link.get(k)); cells.push(cur);
+      if (nodeAt.has(cur)) break;
+      const nb = T.adj.get(cur), nx = nb[0] === prev ? nb[1] : nb[0];
+      prev = cur; cur = nx;
+    }
+    chains.push({ cells, rank });
+  }
+  // two runs between the same pair of nodes (or a loop) get a junction in the middle so every edge is unique
+  chains.sort((p, q) => p.cells.length - q.cells.length);
+  const pairSeen = new Set(), runs = [];
+  const cut = (ch, at) => { const cells = ch.cells; junction(cells[at]); return [{ cells: cells.slice(0, at + 1), rank: ch.rank }, { cells: cells.slice(at), rank: ch.rank }]; };
+  for (const ch of chains) {
+    const a = nodeAt.get(ch.cells[0]), b = nodeAt.get(ch.cells[ch.cells.length - 1]), L = ch.cells.length;
+    if (a === b) { if (L < 4) continue; const [p, q] = cut(ch, Math.floor(L / 3)); runs.push(p, ...cut(q, Math.floor(q.cells.length / 2))); }
+    else if (pairSeen.has(a < b ? a + '|' + b : b + '|' + a)) { if (L >= 3) runs.push(...cut(ch, Math.floor(L / 2))); }
+    else { pairSeen.add(a < b ? a + '|' + b : b + '|' + a); runs.push(ch); }
+  }
+  const edges = [];
+  const ROUNDS = { hw: 6, rd: 4, lc: 3, sp: 2 };
+  for (const ch of runs) {
+    const a = nodeAt.get(ch.cells[0]), b = nodeAt.get(ch.cells[ch.cells.length - 1]), cls = CLS[ch.rank];
+    const pts = ch.cells.map(ctr); pts[0] = { x: nodes[a].x, y: nodes[a].y }; pts[pts.length - 1] = { x: nodes[b].x, y: nodes[b].y };
+    edges.push({ a, b, cls, pts: smoothLine(pts, ROUNDS[cls]) });
+  }
+  for (const [p, q] of twins) edges.push({ a: p, b: q, cls: 'sp', pts: [{ x: nodes[q].x, y: nodes[q].y }] });
+  for (const [p, q] of twins) { const pl = places.find(x => x.id === p); nodes[p] = { id: p, x: pl.x, y: pl.y }; }
+  for (const e of edges) {
+    if (e.pts.length === 1) e.pts.unshift({ x: nodes[e.a].x, y: nodes[e.a].y });
+    e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
+  }
+  return { nodes, edges };
+}
+/* the roads abroad (brief 57): each neighbour's towns joined by main roads (a Gabriel graph, as ours), a motorway
+   between its two biggest towns, its villages on local roads, and the roads from the border crossings carried on
+   to the nearest town; laid on that country's soil only, and flagged abroad, so our routing, the travel times, the
+   bridges we hold and the enemy's target lists never count them */
+function foreignNetwork(W, R, fbm) {
+  const nodes = W.nodes, edges = W.edges, n0 = edges.length;
+  // one grid of the soil over the border; each country shuts the others' cells in its own layer
+  const G = costGrid(W, fbm, (x, y) => W.depthOut(x, y) > RC * 1.5), GW = G.GW, N = G.N;
+  const KS = ['A', 'B', 'C', 'D'], soil = new Uint8Array(N);
+  for (let c = 0; c < N; c++) if (G.base[c] >= 0) soil[c] = KS.indexOf(W.countryAt((c % GW + 0.5) * RC, (((c / GW) | 0) + 0.5) * RC)) + 1;
+  for (const k of KS) {
+    const towns = W.foreign.filter(f => f.k === k), vils = W.villages.filter(v => !v.home && v.k === k);
+    if (!towns.length) continue;
+    const T = layer(G), kn = KS.indexOf(k) + 1;
+    for (let c = 0; c < N; c++) if (G.base[c] >= 0 && soil[c] !== kn) T.shut[c] = 1;
+    const cellOf = p => U.clamp(Math.floor(p.y / RC), 0, G.GH - 1) * GW + U.clamp(Math.floor(p.x / RC), 0, GW - 1);
+    const ctr = c => ({ x: (c % GW + 0.5) * RC, y: (((c / GW) | 0) + 0.5) * RC });
+    const places = [], at = new Map(), twins = [];
+    const place = (id, p) => { const c = cellOf(p), pl = { id, x: p.x, y: p.y, cell: c }; if (at.has(c)) twins.push([id, at.get(c).id]); else at.set(c, pl); places.push(pl); return pl; };
+    for (const t of towns) place(t.id, t);
+    for (const v of vils) place(v.id, v);
+    // a border crossing's road carries on from a point just over the border, where this soil is open
+    const xs = [];
+    for (const x of W.crossings) {
+      if (x.k !== k) continue;
+      const d = Math.hypot(x.x - W.cx, x.y - W.cy), ux = (x.x - W.cx) / d, uy = (x.y - W.cy) / d;
+      let m = 2; while (m < 30 && !(W.depthOut(x.x + ux * RC * m, x.y + uy * RC * m) > RC * 1.5 && W.countryAt(x.x + ux * RC * m, x.y + uy * RC * m) === k)) m++;
+      if (m >= 30) continue;
+      xs.push(place(x.id + 'o', { x: x.x + ux * RC * m, y: x.y + uy * RC * m }));
+    }
+    for (const pl of places) if (G.base[pl.cell] < 0) G.base[pl.cell] = 2;
+    T.vil = new Uint8Array(N); for (const v of vils) T.vil[cellOf(v)] = 1;
+    const cellP = id => places.find(p => p.id === id).cell;
+    const road = (a, b, cls) => { const p = search(T, cellP(a), cellP(b), HOW[cls]); if (p) lay(T, p, RANK[cls]); return !!p; };
+    const spur = (id, cls, alt) => {
+      const s = cellP(id); if (T.use[s]) return;
+      const onto = c => T.use[c] > 0 && T.use[c] < RANK.hw;
+      const plain = c => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = c + dy * GW + dx; if (q >= 0 && q < N && (T.adj.get(q) || []).length > 2) return false; } return true; };
+      const p = search(T, s, -1, HOW[cls], c => onto(c) && plain(c), 4000 * SP) || search(T, s, -1, HOW[cls], onto, 4000 * SP);
+      if (p) lay(T, p, RANK[cls]); else if (alt) road(id, alt, cls);
+    };
+    const nearestTown = p => towns.slice().sort((a, b) => U.dist(a, p) - U.dist(b, p))[0];
+    // a motorway between the two biggest towns, and on to the third, when they are not too far apart
+    const big = towns.slice().sort((a, b) => b.pop - a.pop);
+    if (big.length >= 2 && U.dist(big[0], big[1]) < 5000) road(big[0].id, big[1].id, 'hw');
+    if (big.length >= 3 && U.dist(big[0], big[2]) < 4000 && U.dist(big[1], big[2]) > 1500) road(big[0].id, big[2].id, 'hw');
+    // main roads: neighbouring towns, and each crossing to the nearest town
+    const pairs = [];
+    for (let i = 0; i < towns.length; i++) for (let j = i + 1; j < towns.length; j++) {
+      const a = towns[i], b = towns[j], d = U.dist(a, b), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (d > 6000 || towns.some(c => c !== a && c !== b && U.dxy(c.x, c.y, mx, my) < d / 2)) continue;
+      pairs.push([a, b, d]);
+    }
+    pairs.sort((p, q) => p[2] - q[2]);
+    for (const [a, b] of pairs) road(a.id, b.id, 'rd');
+    for (const x of xs) road(x.id, nearestTown(x).id, 'rd');
+    // villages: a local road to the nearest road, and some on to a neighbour
+    const vs = vils.slice().sort((a, b) => U.dist(a, big[0]) - U.dist(b, big[0]));
+    for (const v of vs) spur(v.id, 'lc', nearestTown(v).id);
+    for (const v of vs) {
+      const o = vs.filter(w => w !== v && U.dist(w, v) < 700 * SP).sort((p, q) => U.dist(p, v) - U.dist(q, v))[0];
+      if (o && R() < 0.5 && T.use[cellP(v.id)] < RANK.hw && T.use[cellP(o.id)] < RANK.hw) road(v.id, o.id, 'lc');
+    }
+    const g = graphOf(T, places, at, twins, ctr, N, 'fj' + k);
+    for (const id in g.nodes) nodes[id] = g.nodes[id];
+    for (const e of g.edges) { e.abroad = k; edges.push(e); }
+    // the crossing itself: the road over the border, from our last node to theirs
+    for (const x of xs) {
+      const h = x.id.slice(0, -1); if (!nodes[h] || !nodes[x.id]) continue;
+      const pts = [{ x: nodes[h].x, y: nodes[h].y }, { x: nodes[x.id].x, y: nodes[x.id].y }];
+      edges.push({ a: h, b: x.id, cls: 'rd', pts, len: U.dist(pts[0], pts[1]), abroad: k, crossing: true });
+    }
+  }
+  const fresh = new Set(edges.slice(n0));
+  // (ids and degrees as buildNetwork gives them; the home end of a crossing counts its new road too)
+  for (const e of fresh) { e.id = 'e' + edges.indexOf(e); for (const k of [e.a, e.b]) { const n = nodes[k]; if (n) n.deg = (n.deg || 0) + 1; } }
+  refineRoads(W, fresh);
+}
 function buildNetwork(W, R, fbm) {
   const G = costGrid(W, fbm), GW = G.GW, N = G.N;
   const T = layer(G);
@@ -1197,46 +1332,7 @@ function buildNetwork(W, R, fbm) {
   W.garrisons.forEach((g, i) => spur('g' + i, 'sp'));
 
   /* ---------- the graph ---------- */
-  const nodes = {}, nodeAt = new Map();
-  for (const pl of places) if (at.get(pl.cell) === pl) { nodes[pl.id] = { id: pl.id, x: pl.x, y: pl.y }; nodeAt.set(pl.cell, pl.id); }
-  let nj = 0;
-  const junction = c => { const id = 'j' + nj++, p = ctr(c); nodes[id] = { id, x: p.x, y: p.y, jct: true }; nodeAt.set(c, id); return id; };
-  for (const [c, nb] of T.adj) if (!nodeAt.has(c) && nb.length !== 2) junction(c);
-  const done = new Set(), chains = [];
-  for (const [c, id] of nodeAt) for (const d of T.adj.get(c) || []) {
-    if (done.has(lkey(c, d, N))) continue;
-    const cells = [c]; let prev = c, cur = d, rank = 0;
-    for (;;) {
-      const k = lkey(prev, cur, N); done.add(k); rank = Math.max(rank, T.link.get(k)); cells.push(cur);
-      if (nodeAt.has(cur)) break;
-      const nb = T.adj.get(cur), nx = nb[0] === prev ? nb[1] : nb[0];
-      prev = cur; cur = nx;
-    }
-    chains.push({ cells, rank });
-  }
-  // two runs between the same pair of nodes (or a loop) get a junction in the middle so every edge is unique
-  chains.sort((p, q) => p.cells.length - q.cells.length);
-  const pairSeen = new Set(), runs = [];
-  const cut = (ch, at) => { const cells = ch.cells; junction(cells[at]); return [{ cells: cells.slice(0, at + 1), rank: ch.rank }, { cells: cells.slice(at), rank: ch.rank }]; };
-  for (const ch of chains) {
-    const a = nodeAt.get(ch.cells[0]), b = nodeAt.get(ch.cells[ch.cells.length - 1]), L = ch.cells.length;
-    if (a === b) { if (L < 4) continue; const [p, q] = cut(ch, Math.floor(L / 3)); runs.push(p, ...cut(q, Math.floor(q.cells.length / 2))); }
-    else if (pairSeen.has(a < b ? a + '|' + b : b + '|' + a)) { if (L >= 3) runs.push(...cut(ch, Math.floor(L / 2))); }
-    else { pairSeen.add(a < b ? a + '|' + b : b + '|' + a); runs.push(ch); }
-  }
-  const edges = [];
-  const ROUNDS = { hw: 6, rd: 4, lc: 3, sp: 2 };
-  for (const ch of runs) {
-    const a = nodeAt.get(ch.cells[0]), b = nodeAt.get(ch.cells[ch.cells.length - 1]), cls = CLS[ch.rank];
-    const pts = ch.cells.map(ctr); pts[0] = { x: nodes[a].x, y: nodes[a].y }; pts[pts.length - 1] = { x: nodes[b].x, y: nodes[b].y };
-    edges.push({ a, b, cls, pts: smoothLine(pts, ROUNDS[cls]) });
-  }
-  for (const [p, q] of twins) edges.push({ a: p, b: q, cls: 'sp', pts: [{ x: nodes[q].x, y: nodes[q].y }] });
-  for (const [p, q] of twins) { const pl = places.find(x => x.id === p); nodes[p] = { id: p, x: pl.x, y: pl.y }; }
-  for (const e of edges) {
-    if (e.pts.length === 1) e.pts.unshift({ x: nodes[e.a].x, y: nodes[e.a].y });
-    e.len = 0; for (let i = 1; i < e.pts.length; i++) e.len += U.dist(e.pts[i - 1], e.pts[i]);
-  }
+  const { nodes, edges } = graphOf(T, places, at, twins, ctr, N, 'j');
   edges.forEach((e, i) => e.id = 'e' + i);
   // how many roads meet at each node (junction shapes are worked out once the towns are built: junctions())
   for (const e of edges) for (const k of [e.a, e.b]) { const n = nodes[k]; n.cls = n.cls || {}; n.cls[e.cls] = (n.cls[e.cls] || 0) + 1; }
@@ -1317,12 +1413,18 @@ function buildTowns(W, R, fbm) {
   // the fringe of every city (brief 54, fringe.js): ribbon houses along the roads out, the outer ring, a retail park
   for (const c of W.cities) IC.buildFringe(W, c, R, segsNear(c.x, c.y, c.r * 2.6 + 20).concat(railSegs.filter(s => U.segDist(c.x, c.y, s[0], s[1], s[2], s[3]) < c.r * 2.6 + 20)), W.villages.filter(v => v.home && !v.swallowed));
   // abroad: the enemy's towns are built to their own plan; the neutral neighbours' look like ours
+  // (brief 57: on their own roads, which they take in as ours do, with a fringe)
+  const abroadVils = W.villages.filter(v => !v.home && !v.swallowed);
   for (const f of W.foreign) {
     f.style = W.side[f.k] === 'hostile' ? 'east' : W.style === 'us' ? 'us' : 'eu';
     f.tpl = f.style === 'east' ? 'east' : f.style === 'us' ? 'chi' : 'lon';
     f.home = false; f.grid = R.range(0, Math.PI / 2); f.indA = R.range(0, 7);
-    IC.buildCity(W, f, R, fbm, [], [], []);
+    IC.buildCity(W, f, R, fbm, segsNear(f.x, f.y, f.r * 1.7), fieldR, abroadVils);
   }
+  indexSegs();
+  for (const f of W.foreign) IC.buildFringe(W, f, R, segsNear(f.x, f.y, f.r * 2.6 + 20), abroadVils);
+  // every road piece abroad, the towns' own included, is flagged: not ours to drive or to hold
+  for (const e of W.edges) if (!e.abroad) { const m = e.pts[e.pts.length >> 1]; if (!W.inHome(m.x, m.y)) e.abroad = W.countryAt(m.x, m.y); }
   /* rural lanes: from local and main roads out into the fields, along the lie of the field boundaries */
   W.lanes = [];
   const occ = new Set(), OC = 8, ok = (x, y) => occ.has(Math.floor(x / OC) + ',' + Math.floor(y / OC));
@@ -1373,6 +1475,8 @@ function buildTowns(W, R, fbm) {
       W.lanes.push({ cls: 'ln', pts });
     }
   }
+  // (a lane abroad, a village's or one off a neighbour's road, is flagged like the roads there: drawn, not driven)
+  for (const l of W.lanes) if (!l.abroad) { const m = l.pts[l.pts.length >> 1]; if (!W.inHome(m.x, m.y)) l.abroad = W.countryAt(m.x, m.y); }
 }
 
 /* ---------- junctions ----------
@@ -1528,9 +1632,11 @@ IC.buildJunctions = W => junctions(W);
    city being built sees the ones its own bypass made before the junctions are shaped */
 IC.ixFoot = { mx: 2.4, mm: 5, along: 6, beside: 1.5 };
 IC.ixList = function (W) {
-  // (a cheap signature: this is asked for every cell a town rasters, and counting the nodes' keys each time cost
-  // 20 s a world; a road added or split adds an edge, and a road replaced changes the last one)
-  const E = W.edges, last = E[E.length - 1], sig = E.length + ':' + (last ? last.a + '-' + last.b : '');
+  // (a cheap signature over the motorways alone: this is asked for by every town, which adds streets and avenues
+  // but no motorway unless it lays a spine; counting the nodes' keys each time cost 20 s a world. A motorway
+  // added or split adds an edge, and one replaced changes the last one)
+  let nh = 0, last = null; for (const e of W.edges) if (e.cls === 'hw') { nh++; last = e; }
+  const sig = nh + ':' + (last ? last.a + '-' + last.b : '');
   if (W._ixs && W._ixs.sig === sig) return W._ixs.list;
   const hwN = {}, degN = {}, dirs = {};
   for (const e of W.edges) for (const [k, end] of [[e.a, 0], [e.b, 1]]) {
@@ -1547,11 +1653,13 @@ IC.ixList = function (W) {
   W._ixs = { sig, list };
   return list;
 };
+/* the interchanges within reach of a point, for a town's many asks (IC.ixClear's list) */
+IC.ixNear = function (W, x, y, r) { const R = r + IC.ixFoot.along + 2; return IC.ixList(W).filter(q => Math.abs(q.x - x) < R && Math.abs(q.y - y) < R); };
 /* is x, y (grown by pad) inside an interchange's footprint: the circle round the node and, at a diamond, the
    strips along the motorway where the slip roads run? */
-IC.ixClear = function (W, x, y, pad) {
+IC.ixClear = function (W, x, y, pad, list) {
   pad = pad || 0;
-  for (const q of IC.ixList(W)) {
+  for (const q of list || IC.ixList(W)) {
     const dx = x - q.x, dy = y - q.y, d = Math.hypot(dx, dy);
     if (d < q.r + pad) return q;
     if (d > IC.ixFoot.along + pad) continue;
@@ -1568,6 +1676,7 @@ IC.buildRouting = function (W, blocked) {
   const ids = Object.keys(W.nodes), idx = {}; ids.forEach((k, i) => idx[k] = i);
   const adj = ids.map(() => []);
   for (const e of W.edges) {
+    if (e.abroad) continue;   // (a neighbour's roads are not ours to drive, brief 57)
     const i = idx[e.a], j = idx[e.b]; if (i == null || j == null) continue;
     const cost = e.len * (e.cls === 'hw' ? 0.85 : e.cls === 'lc' ? 1.15 : 1) * (blocked && blocked.has(e.id) ? 8 : 1);
     adj[i].push(j, cost, e); adj[j].push(i, cost, e);
