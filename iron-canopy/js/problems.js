@@ -57,13 +57,14 @@ IC.aptProblems = function (S, ap) {
   if (!st.fire) out.push({ id: ap.id + ':nofire', kind: 'fire', lvl: 'bad', ...rwMid(rws[0]), title: 'No fire cover: only turboprops may land', text: 'A fire station within 1.5 km of the runway lets jets land.', fix: { part: 'fire', near: rwMid(rws[0]), label: 'Build a fire station' } });
   else for (const rw of rws) {
     const t = (st.rescueRw || {})[rw.id] || 0;
-    if (t > IC.FIRE_STD) out.push({ id: ap.id + ':fire:' + rw.id, kind: 'fire', lvl: 'warn', ...rwMid(rw), title: `Runway ${rw.name || ''}: no fire cover for heavy jets`.replace('  ', ' '),
+    if (t > IC.FIRE_STD) out.push({ id: ap.id + ':fire:' + rw.id, kind: 'fire', lvl: 'warn', ...rwMid(rw), title: `${IC.rwTitle(rw)}: no fire cover for heavy jets`,
       text: `Fire trucks need ${IC.mmss(t)} to reach its far end; heavy jets need them there within ${IC.mmss(IC.FIRE_STD)}. A fire station nearer the runway's middle fixes it.`, fix: { part: 'fire', near: rwMid(rw), label: 'Build a fire station nearer' } });
   }
   // a runway with no landing system at either end: in fog or snow every arrival diverts
-  for (const rw of rws) if (!['a', 'b'].some(e => ap.parts.some(q => q.kind === 'ils' && q.rw === rw.id && q.end === e))) {
+  // (not at an airfield: its light aircraft fly by sight)
+  if (IC.aptClass(ap) !== 'field') for (const rw of rws) if (!['a', 'b'].some(e => ap.parts.some(q => q.kind === 'ils' && q.rw === rw.id && q.end === e))) {
     const e = rw.a;
-    out.push({ id: ap.id + ':ils:' + rw.id, kind: 'ils', lvl: IC.needILS && IC.needILS(S) ? 'bad' : 'warn', x: e.x, y: e.y, title: `Runway ${rw.name || ''}: no landing system`.replace('  ', ' '),
+    out.push({ id: ap.id + ':ils:' + rw.id, kind: 'ils', lvl: IC.needILS && IC.needILS(S) ? 'bad' : 'warn', x: e.x, y: e.y, title: `${IC.rwTitle(rw)}: no landing system`,
       text: 'In fog, low cloud or snow every arrival diverts. A landing system (ILS) at the end they land toward costs ₭25M.', fix: { part: 'ils', near: e, label: 'Build a landing system' } });
   }
   // (round 5b) an airline's worst aspect here, when it is bad, with its fix

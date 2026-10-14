@@ -24,8 +24,11 @@ function landSide(ap, t) {
   let s = 0;
   for (const q of ap.parts) if (q.kind === 'apron' && q.w && IC.rectGap(q, t) < 0.6) s += IC.rectLocal(t, q).y > 0 ? -1 : 1;
   if (s) return Math.sign(s);
-  const c = ap.cityRef;
-  return c ? (IC.rectLocal(t, c).y >= 0 ? 1 : -1) : 1;
+  const c = ap.cityRef, pref = c ? (IC.rectLocal(t, c).y >= 0 ? 1 : -1) : 1;
+  // (a terminal with no apron of its own, its gates out on concourses: the side its landside fits on, the town's if both)
+  const own = ap.parts.some(q => q.kind === 'apron' && IC.partDist(ap, q, t) < Math.hypot(t.w || 0, t.h || 0) / 2 + 0.6);
+  if (!own && !IC.landClear(ap, t, IC.landEnvelope(ap, t, pref)) && IC.landClear(ap, t, IC.landEnvelope(ap, t, -pref))) return -pref;
+  return pref;
 }
 IC.landSide = landSide;
 /* The landside of a building is laid out in rows, like a real terminal front: the kerb road along the building, then
