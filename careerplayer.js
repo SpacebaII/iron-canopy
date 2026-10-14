@@ -48,7 +48,14 @@ function missing(S, ap) {
 const APRON_X = [0, 4.3, 8.6, 12.9, -12.9, 17.2];
 // fuel tanks between the first apron and the fifth, 140 m and more apart
 const FUEL_AT = [[-5, 4.5], [-8, 4.5], [-6.5, 6.2], [-9.5, 6.2]];
-const nextSlot = ap => APRON_X.find(x => !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
+// (a slot something else already stands in is passed over: _cpBad, not saved)
+const nextSlot = ap => APRON_X.find(x => !(ap._cpBad && ap._cpBad.has(x)) && !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
+/* an apron in a slot with its stub taxiway and its building behind; a slot where the apron cannot go is skipped after */
+function slot(S, ap, x, o, bld) {
+  if (!part(S, ap, 'apron', x, 4, 4, 1.3, o)) { (ap._cpBad || (ap._cpBad = new Set())).add(x); return null; }
+  taxi(S, ap, [[x, 1.8], [x, 3.35]]);
+  return part(S, ap, bld, x, 5.1, 3, 0.8);
+}
 const noTerminal = ap => ap.parts.find(p => p.kind === 'apron' && p.zone !== 'cargo' && p.slotX != null && !ap.parts.some(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.slotX === p.slotX));
 const count = (ap, k, f) => ap.parts.filter(p => p.kind === k && (!f || f(p))).length;
 /* what a steady player does next at the capital: tower, a hangar for the based fleet, taxiways to both ends, and
@@ -71,14 +78,14 @@ function grow(S, ap, st) {
   if (need === 'fuelDeps' && S.budget > 150) { const n = count(ap, 'fuel'); return n < FUEL_AT.length ? part(S, ap, 'fuel', ...FUEL_AT[n]) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -3.5, 6.4); }
   if (need === 'hangar' && hangars < 6 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
   // freight: a cargo apron in the next slot along the terminal side, with a cargo terminal behind it
-  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc', zone: 'cargo' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'cargo', x, 5.1, 3, 0.8); }
+  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) return slot(S, ap, nextSlot(ap), { mat: 'conc', zone: 'cargo' }, 'cargo');
   if (need === 'cargoT' && count(ap, 'cargo') < 3 && S.budget > 150) { const c = ap.parts.find(p => p.kind === 'cargo'); return part(S, ap, 'cargo', (c ? c.slotX : 0) + (count(ap, 'cargo') % 2 ? 1 : -1) * 0.6, 5.1 + 0.9 * count(ap, 'cargo'), 3, 0.8); }
   // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
-  if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) return slot(S, ap, nextSlot(ap), { mat: 'conc' }, 'terminal');
   // the overbuilder (OVERBUILD=1, for the balance run): builds every slot and a second runway before anyone asks
   if (OVER && S.budget > 50) {
-    if (nextSlot(ap) != null) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+    if (nextSlot(ap) != null) return slot(S, ap, nextSlot(ap), { mat: 'conc' }, 'terminal');
     if (count(ap, 'runway') < 2) { const r = IC.aptPlanRunway(S, ap, L(ap, -15, -3.2), L(ap, 15, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, ap, [[-15, -3.2], [-15, 0]]); taxi(S, ap, [[15, -3.2], [15, 0]]); return r; }
     if (count(ap, 'hangar') < 8) return part(S, ap, 'hangar', -10 - count(ap, 'hangar') * 0.9, 2.32);
   }

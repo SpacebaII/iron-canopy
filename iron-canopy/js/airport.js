@@ -979,6 +979,12 @@ IC.rwyState = function (S, b) {
   if (IC.baseStatus(S, b).runway) return { open: true, word: 'Runway open' };
   const w = !b.parts.some(p => p.kind === 'runway' && p.built) && (b.works || []).find(x => x.part && x.part.kind === 'runway');
   if (w) return { building: true, word: `Runway being built · ${U.pct(w.prog || 0)}`, prog: w.prog || 0 };
+  // a whole runway nothing reaches yet is not closed: it is waiting for its taxiway
+  const st = IC.baseStatus(S, b).st;
+  if (st && st.longest >= 10 && st.rwy.length && st.rwy.every(r => !r.exits) && !b.parts.some(p => p.kind === 'taxi' && p.cut && Object.keys(p.cut).length)) return { noway: true, word: 'No taxiway to the runway yet' };
+  // (closed by our own works, it says so: the player knows when it reopens)
+  const rws = b.parts.filter(p => p.kind === 'runway' && p.built);
+  if (rws.length && rws.every(p => p.shut)) return { closed: true, works: true, word: 'Runway closed for works' };
   return { closed: true, word: 'Runway closed' };
 };
 IC.canLaunch = function (S, r) {
@@ -1587,6 +1593,10 @@ IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   const ids = snaps.map(s => nodeFor(ap, s));
   const clean = ids.filter((id, i) => i === 0 || id !== ids[i - 1]);
   if (clean.length < 2) return null;
+  // (a taxiway laid again over one that is there, built or planned, would only be paid for twice)
+  const have = new Set();
+  for (const q of ap.parts) if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) { have.add(q.nodes[i - 1] + '|' + q.nodes[i]); have.add(q.nodes[i] + '|' + q.nodes[i - 1]); }
+  if (clean.every((id, i) => i === 0 || have.has(clean[i - 1] + '|' + id))) { IC.log(S, 'warn', 'BUILD', 'That taxiway is already there.'); return null; }
   return IC.aptPlan(S, ap, { kind: 'taxi', nodes: clean }, o);
 };
 /* plan a runway from a to b */

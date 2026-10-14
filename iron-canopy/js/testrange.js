@@ -108,7 +108,7 @@ IC.sendThreat = function (S, type, from, aim, alt, op) {
   let t;
   if (d.move === 'bal') { t = IC.launchBallistic(S, type, from.x, from.y, aim, { op }); t.tr = IC.newTrail(S, 'bal'); }
   else if (d.move === 'hgv') { const L = U.dist(from, aim); t = IC.spawnThreat(S, 'hgv', from.x, from.y, { x0: from.x, y0: from.y, x1: aim.x, y1: aim.y, T: L / 12, apex: 90, aim, op, vx: (aim.x - from.x) / (L / 12), vy: (aim.y - from.y) / (L / 12) }); }
-  else if (d.move === 'wp') { const low = d.cls === 'cm' || d.cls === 'drone'; const route = low && type !== 'scm' ? IC.enemyPlanRoute(S, from, aim, true) : [aim]; t = IC.spawnThreat(S, type, from.x, from.y, { route, aim, op, jamming: !!d.jam, altHold: alt }); }
+  else if (d.move === 'wp') { const low = d.cls === 'cm' || d.cls === 'drone'; const route = low && type !== 'scm' ? IC.enemyPlanRoute(S, from, aim, true) : [aim]; t = IC.spawnThreat(S, type, from.x, from.y, { route, aim, op, jamming: !!d.jam, altHold: alt, alt0: d.glide ? (alt != null ? alt : d.alt) : undefined, dist0: d.glide ? U.dist(from, aim) : undefined }); }
   else if (d.move === 'lm') t = IC.spawnThreat(S, type, from.x, from.y, { route: [aim], aim, op });
   else if (d.move === 'isr') t = IC.spawnThreat(S, type, from.x, from.y, { area: aim, phase: 'out', loiterT: 1800, home });
   else if (d.move === 'arm') { const u = S.units.filter(x => x.radarOn).sort((p, q) => U.dist(p, from) - U.dist(q, from))[0]; if (!u) return null; t = IC.spawnThreat(S, 'arm', from.x, from.y, { target: u, aim: { x: u.x, y: u.y }, op }); }
