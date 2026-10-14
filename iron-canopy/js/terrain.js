@@ -33,10 +33,7 @@ const BASE_WK = 0.2 / IC.TS;
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const LIGHT = [-0.55, -0.62, 0.56];   // sun from the north-west, fairly high
 
-/* farm blocks: a jittered grid of plots between hedges and tracks (neighbours share corners), each cut into fields
-   lying the way the land and the nearest road run (W.fieldAng) */
-const FB = 16;
-const fbCorner = (i, j) => [i * FB + (U.hash(i * 3 + 1, j * 5 + 7) - 0.5) * FB * 0.32, j * FB + (U.hash(j * 7 + 2, i * 11 + 5) - 0.5) * FB * 0.32];
+/* farm blocks: planned in countryside.js (IC.farmBlock), painted by fields() below */
 
 IC.buildTerrain = function (W) {
   const TS = IC.TS, CW = Math.round(IC.WW * TS), CH = Math.round(IC.WH * TS);
@@ -97,7 +94,7 @@ IC.buildTerrain = function (W) {
       const rd = W.riverDist(wx, wy); if (rd < 40) c = mix(c, [70, 98, 60], 0.35 * (1 - rd / 40));
       const fw = W.farmAt(wx, wy) * 0.8;
       if (fw > 0.02) {
-        const i = Math.floor(wx / FB), j = Math.floor(wy / FB);
+        const i = Math.floor(wx / IC.FB), j = Math.floor(wy / IC.FB);
         c = mix(c, FIELDS[crop(U.hash(i * 31 + 7, j * 17 + 3))], fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
       }
       const fo = forestOf(x, y) - IC.FOREST_T;
@@ -220,59 +217,117 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
 }
 IC.aptSig = S => IC.bases(S).map(b => b.parts ? b.parts.filter(p => p.built).length + ':' + b.parts.length : '').join('|');
 
-/* fields: each farm block cut into strips and plots of different crops, margins between them, hedges round the block */
+/* fields (brief 57; countryside.js plans them): each farm block's holdings cut into plots of crops, pasture or
+   rough grazing, the boundaries by the kind of country (hedges, ditches, fences, walls, farm tracks), and across
+   the pattern the farmsteads, copses, orchards and ponds */
+const PASTURE = [[104, 128, 70], [116, 136, 76]], ROUGH = [[142, 140, 96], [130, 132, 90]], ORCH = [96, 120, 66];
+const FARMB = { house: [172, 108, 84], barn: [118, 100, 84], shed: [142, 140, 132], silo: [180, 182, 180] };
 function fields(g, T, lod, x0, y0, x1, y1) {
-  const W = T.W, i0 = Math.floor(x0 / FB) - 1, i1 = Math.ceil(x1 / FB), j0 = Math.floor(y0 / FB) - 1, j1 = Math.ceil(y1 / FB);
-  const byCol = FIELDS.map(() => []), furrows = [], hedges = [], tracks = [], htrees = [];
+  const W = T.W, blocks = IC.farmBlocks(W, x0, y0, x1, y1);
+  const byCol = FIELDS.map(() => []), pasture = [[], []], rough = [[], []], orch = [], furrows = [], lines4 = { track: [], hedge: [], ditch: [], fence: [], wall: [] }, htrees = [], ptrees = [], feats = [];
   const inset = [0.35, 0.12, 0.06, 0.05][lod - 1];
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    const c00 = fbCorner(i, j), c10 = fbCorner(i + 1, j), c11 = fbCorner(i + 1, j + 1), c01 = fbCorner(i, j + 1);
-    const cx = (c00[0] + c10[0] + c11[0] + c01[0]) / 4, cy = (c00[1] + c10[1] + c11[1] + c01[1]) / 4;
-    const fw = W.farmAt(cx, cy);
-    if (fw < 0.12) continue;
-    const hb = U.hash(i * 13 + 5, j * 29 + 1);
-    const th = W.fieldAng(cx, cy) + (hb - 0.5) * 0.14, ca = Math.cos(th), sa = Math.sin(th);
-    const sw = 2.2 + U.hash(i, j + 77) * 2.6, R = FB * 0.9;
+  const rect = (path, c, u, v, w, h) => {
+    const ax = c.cx + u * c.ca - v * c.sa, ay = c.cy + u * c.sa + v * c.ca;
+    path.push(ax, ay, ax + w * c.ca, ay + w * c.sa, ax + w * c.ca - h * c.sa, ay + w * c.sa + h * c.ca, ax - h * c.sa, ay + h * c.ca);
+  };
+  const bucket = f => f[6] === 'pasture' ? pasture[f[5] < 0.5 ? 0 : 1] : f[6] === 'rough' ? rough[f[5] < 0.5 ? 0 : 1] : f[6] === 'orchard' ? orch : byCol[crop(f[4])];
+  for (const P of blocks) {
     const list = [];
-    for (let u = -R + (hb * sw) % sw; u < R; u += sw) {
-      const sl = lod === 1 ? 3.5 + U.hash(Math.round(u * 10) + i, j) * 14 : 3.5 + U.hash(Math.round(u * 10) + i, j) * 6, vo = U.hash(i + 3, Math.round(u * 10) + j) * sl;
-      for (let v = -R - vo; v < R; v += sl) {
-        const mx = cx + (u + sw / 2) * ca - (v + sl / 2) * sa, my = cy + (u + sw / 2) * sa + (v + sl / 2) * ca;
-        const hf = U.hash(Math.round(mx * 7), Math.round(my * 7));
+    for (const c of P.cells) {
+      if (c.ca === undefined) { c.ca = Math.cos(c.th); c.sa = Math.sin(c.th); }
+      for (const f of c.plots) {
+        const mx = c.cx + (f[0] + f[2] / 2) * c.ca - (f[1] + f[3] / 2) * c.sa, my = c.cy + (f[0] + f[2] / 2) * c.sa + (f[1] + f[3] / 2) * c.ca;
         const w = W.farmAt(mx, my);
-        if (w < 0.1 || hf > w * 2.4 + 0.3 || (lod > 1 ? T.fd(mx, my) > IC.FOREST_T - 0.02 || W.riverDist(mx, my) < 4 : T.fdc(mx, my) > IC.FOREST_T + 0.04)) continue;
-        list.push([u + inset, v + inset, sw - 2 * inset, sl - 2 * inset, crop(hf), hf]);
+        // fewer plots where the farmland thins out, none in the forest or the river
+        if (w < 0.1 || f[5] > w * 2.4 + 0.3 || (lod > 1 ? T.fd(mx, my) > IC.FOREST_T - 0.02 || W.riverDist(mx, my) < 4 : T.fdc(mx, my) > IC.FOREST_T + 0.04)) continue;
+        list.push([f, c]);
       }
     }
-    if (list.length < 3) continue;
+    if (list.length < (P.one ? 1 : 3)) continue;
+    const [c00, c10, c11, c01] = P.corners;
     const quad = () => { g.beginPath(); g.moveTo(c00[0], c00[1]); g.lineTo(c10[0], c10[1]); g.lineTo(c11[0], c11[1]); g.lineTo(c01[0], c01[1]); g.closePath(); };
-    const rect = (path, u, v, w, h) => {
-      const ax = cx + u * ca - v * sa, ay = cy + u * sa + v * ca;
-      path.push(ax, ay, ax + w * ca, ay + w * sa, ax + w * ca - h * sa, ay + w * sa + h * ca, ax - h * sa, ay + h * ca);
-    };
     if (lod >= 2) {
-      // each block is clipped to its own outline so plots end at the hedge
+      // each holding is clipped to its own outline so plots end at the hedge
+      for (const c of P.cells) {
+        g.save(); g.beginPath(); c.q.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.clip();
+        const cols = FIELDS.map(() => []), pa = [[], []], ro = [[], []], or = [];
+        for (const [f, cc] of list) if (cc === c) rect(f[6] === 'pasture' ? pa[f[5] < 0.5 ? 0 : 1] : f[6] === 'rough' ? ro[f[5] < 0.5 ? 0 : 1] : f[6] === 'orchard' ? or : cols[crop(f[4])], c, f[0] + inset, f[1] + inset, f[2] - 2 * inset, f[3] - 2 * inset);
+        cols.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.9)); });
+        pa.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(PASTURE[k], 0.9)); });
+        ro.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(ROUGH[k], 0.85)); });
+        if (or.length) polyFill(g, or, colour(ORCH, 0.9));
+        g.restore();
+      }
       g.save(); quad(); g.clip();
-      const cols = FIELDS.map(() => []);
-      for (const f of list) rect(cols[f[4]], f[0], f[1], f[2], f[3]);
-      cols.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.9)); });
-      if (lod >= 3) for (const f of list) if (f[4] === 0 || f[4] === 2 || f[4] === 3 || f[4] === 7) for (let q = 0.18; q < f[2]; q += 0.24) { const u = f[0] + q; furrows.push(cx + u * ca - f[1] * sa, cy + u * sa + f[1] * ca, cx + u * ca - (f[1] + f[3]) * sa, cy + u * sa + (f[1] + f[3]) * ca); }
+      for (const [f, c] of list) {
+        const k = crop(f[4]);
+        if (lod >= 3 && f[6] === 'crop' && (k === 0 || k === 2 || k === 3 || k === 7)) for (let q = 0.18; q < f[2]; q += 0.24) { const u = f[0] + q; furrows.push(c.cx + u * c.ca - f[1] * c.sa, c.cy + u * c.sa + f[1] * c.ca, c.cx + u * c.ca - (f[1] + f[3]) * c.sa, c.cy + u * c.sa + (f[1] + f[3]) * c.ca); }
+        // pasture: a tree or two standing in the field
+        if (lod >= 3 && f[6] === 'pasture') for (let t = 0; t < 3; t++) { const hu = U.hash(Math.round((c.cx + f[0]) * 9) + t, Math.round((c.cy + f[1]) * 9)); if (hu > 0.5) continue; const u = f[0] + 0.3 + hu * (f[2] - 0.6), v = f[1] + 0.3 + U.hash(t + 7, Math.round((c.cx + f[1]) * 9)) * (f[3] - 0.6); ptrees.push(c.cx + u * c.ca - v * c.sa, c.cy + u * c.sa + v * c.ca); }
+        // an orchard: rows of small trees
+        if (f[6] === 'orchard' && lod >= 2) { const sp = lod >= 3 ? 0.09 : 0.2; for (let u = f[0] + inset + 0.06; u < f[0] + f[2] - inset; u += sp) for (let v = f[1] + inset + 0.06; v < f[1] + f[3] - inset; v += sp) ptrees.push(c.cx + u * c.ca - v * c.sa, c.cy + u * c.sa + v * c.ca); }
+      }
       g.restore();
-    } else for (const f of list) rect(byCol[f[4]], f[0], f[1], f[2], f[3]);
-    // hedges on most block edges, a farm track on some
-    const edges = [[c00, c10, i * 7 + 1, j], [c10, c11, i + 1, j * 5 + 3], [c11, c01, i * 7 + 1, j + 1], [c01, c00, i, j * 5 + 3]];
-    for (const [p, q, a, b] of edges) {
-      const e = U.hash(a * 3 + 11, b * 5 + 17);
-      (e < 0.22 ? tracks : e < 0.9 ? hedges : []).push(p[0], p[1], q[0], q[1]);
-      if (lod >= 3 && e >= 0.22 && e < 0.9) for (let t = 0.05; t < 1; t += 0.07 + U.hash(a + Math.round(t * 99), b) * 0.08) if (U.hash(a * 5 + Math.round(t * 100), b * 3) < 0.55) htrees.push(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t);
+    } else {
+      for (const c of P.cells) { const base = P.kind === 'meadow' ? pasture[0] : P.kind === 'upland' ? rough[0] : byCol[crop(c.base)]; base.push(c.q[0][0], c.q[0][1], c.q[1][0], c.q[1][1], c.q[2][0], c.q[2][1], c.q[3][0], c.q[3][1]); }
+      for (const [f, c] of list) if (f[2] * f[3] > 24 || f[6] === 'orchard') rect(bucket(f), c, f[0] + inset, f[1] + inset, f[2] - 2 * inset, f[3] - 2 * inset);
     }
+    // what runs along the edges
+    for (const e of P.edges) {
+      if (lod < 2 && e.t !== 'track') continue;
+      lines4[e.t].push(e.a[0], e.a[1], e.b[0], e.b[1]);
+      if (lod >= 3 && e.trees) for (let t = 0.05; t < 1; t += 0.07 + U.hash(e.ha + Math.round(t * 99), e.hb) * 0.08) if (U.hash(e.ha * 5 + Math.round(t * 100), e.hb * 3) < 0.55) htrees.push(e.a[0] + (e.b[0] - e.a[0]) * t, e.a[1] + (e.b[1] - e.a[1]) * t);
+    }
+    for (const f of P.feats) { if (f.k === 'farm') lines4.track.push(f.track[0][0], f.track[0][1], f.track[1][0], f.track[1][1]); if (f.k !== 'orchard') feats.push(f); }
   }
-  if (lod === 1) byCol.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.6)); });
+  if (lod === 1) {
+    // (muted from far out: the quilt should read as country, not as camouflage)
+    byCol.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.42)); });
+    pasture.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(PASTURE[k], 0.5)); });
+    rough.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(ROUGH[k], 0.5)); });
+    if (orch.length) polyFill(g, orch, colour(ORCH, 0.5));
+  }
   if (lod >= 2) {
-    lines(g, tracks, 'rgba(176,160,122,0.7)', lod >= 3 ? 0.07 : 0.14);
-    lines(g, hedges, 'rgba(46,64,36,0.75)', lod >= 3 ? 0.1 : 0.16);
+    lines(g, lines4.ditch, 'rgba(70,84,60,0.6)', lod >= 3 ? 0.05 : 0.1);
+    lines(g, lines4.fence, 'rgba(120,112,90,0.5)', lod >= 3 ? 0.035 : 0.08);
+    lines(g, lines4.wall, 'rgba(156,152,140,0.85)', lod >= 3 ? 0.06 : 0.12);
+    lines(g, lines4.track, 'rgba(176,160,122,0.7)', lod >= 3 ? 0.07 : 0.14);
+    lines(g, lines4.hedge, 'rgba(46,64,36,0.75)', lod >= 3 ? 0.1 : 0.16);
     lines(g, furrows, 'rgba(60,50,30,0.14)', 0.04);
-    if (htrees.length) trees(g, htrees, lod >= 4 ? 0.09 : 0.11, 0.05);
+  }
+  features(g, feats, lod);
+  if (lod >= 2 && ptrees.length) trees(g, ptrees, lod >= 4 ? 0.06 : 0.08, 0.04);
+  if (lod >= 2 && htrees.length) trees(g, htrees, lod >= 4 ? 0.09 : 0.11, 0.05);
+}
+/* the countryside's features: farmsteads, copses and ponds */
+function features(g, feats, lod) {
+  for (const f of feats) {
+    if (f.k === 'copse') {
+      g.beginPath(); f.pts.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath();
+      g.fillStyle = 'rgba(12,20,10,0.4)'; g.save(); g.translate(0.12, 0.1); g.fill(); g.restore();
+      g.fillStyle = lod >= 2 ? 'rgb(44,68,40)' : 'rgb(50,74,44)'; g.fill();
+      if (lod >= 3) { const P = []; const n = Math.round(f.r * f.r * 40); for (let k = 0; k < n; k++) { const a = U.hash(Math.round(f.x * 3) + k, Math.round(f.y * 3)) * Math.PI * 2, rr = Math.sqrt(U.hash(k, Math.round(f.x * 5))) * f.r * 0.8; P.push(f.x + Math.cos(a) * rr, f.y + Math.sin(a) * rr); } trees(g, P, lod >= 4 ? 0.1 : 0.13, 0.08); }
+    } else if (f.k === 'pond') {
+      if (lod < 2) continue;
+      g.save(); g.translate(f.x, f.y); g.rotate(f.a);
+      g.fillStyle = 'rgba(96,120,80,0.7)'; g.beginPath(); g.ellipse(0, 0, f.rx + 0.08, f.ry + 0.08, 0, 0, 7); g.fill();   // the wet margin
+      g.fillStyle = 'rgb(72,98,112)'; g.beginPath(); g.ellipse(0, 0, f.rx, f.ry, 0, 0, 7); g.fill();
+      g.restore();
+    } else if (f.k === 'farm') {
+      g.save(); g.translate(f.x, f.y); g.rotate(f.a);
+      if (lod < 2) { g.fillStyle = 'rgba(150,130,100,0.9)'; g.fillRect(-0.25, -0.25, 0.5, 0.5); g.restore(); continue; }
+      g.fillStyle = 'rgba(166,150,118,0.8)'; g.fillRect(-f.yard.w / 2, -f.yard.h / 2, f.yard.w, f.yard.h);   // the yard
+      g.restore();
+      for (const b of f.bld) {
+        g.save(); g.translate(b.x, b.y); g.rotate(b.a);
+        g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-b.w / 2 + 0.03, -b.h / 2 + 0.03, b.w, b.h);
+        const c = FARMB[b.k]; g.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+        if (b.k === 'silo') { g.beginPath(); g.arc(0, 0, b.w / 2, 0, 7); g.fill(); }
+        else { g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); if (lod >= 3) { g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h * 0.45); } }
+        g.restore();
+      }
+      if (lod >= 3) { const P = []; for (let k = 0; k < 4; k++) { const a = U.hash(Math.round(f.x * 7) + k, Math.round(f.y * 7)) * Math.PI * 2; P.push(f.x + Math.cos(a) * 0.55, f.y + Math.sin(a) * 0.55); } trees(g, P, 0.1, 0.05); }
+    }
   }
 }
 const colour = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
