@@ -271,8 +271,8 @@ function protest(S, ap, p, clr) {
   IC.emit(S, 'aptClear', { ap, part: p, n });
 }
 /* a major opening: a card with the before and after numbers */
-IC.bldOpened = function (S, ap, w, before) {
-  const p = w.part, st = IC.aptStats(S, ap);
+IC.bldOpened = function (S, ap, w, before, st0) {
+  const p = w.part, st = st0 || IC.aptStats(S, ap);
   const line = (k, a, b) => a !== b ? `${k}: ${a} → ${b}.` : '';
   const T = t => t ? IC.ACTYPES[t].name.toLowerCase() : 'none';
   const txt = [line('Movements an hour', before.movesPerHour || 0, st.movesPerHour), line('Largest aircraft', T(before.maxType), T(st.maxType)),

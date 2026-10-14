@@ -26,11 +26,14 @@ IC.APT_CLASS = {
   hub: { name: 'International hub', short: 'Hub', sfx: 'International', rw: 40, site: 100, cost: 1.8, land: 2.2, noise: 1.2, asp: 'C',
     use: 'Long-haul wide-bodies and foreign carriers on a 4 km runway, with room for more runways and terminals.',
     want: { flag: 2, budget: 0.8, regional: 0.6, cargo: 1, foreign: 3 }, starter: { n: 10, size: 'l' } },
+  mega: { name: 'Mega hub', short: 'Mega', sfx: 'International', rw: 40, site: 160, cost: 3, land: 4, noise: 1.6, asp: 'C',
+    use: 'A country\'s main gateway: two 4 km runways 2.2 km apart that work at once, concourses between them with 88 gates, and room for more.',
+    want: { flag: 2.5, budget: 1.2, regional: 0.5, cargo: 1.5, foreign: 4 }, starter: { n: 80, size: 'l', mega: true } },
   cargo: { name: 'Cargo airport', short: 'Cargo', sfx: 'Cargo', rw: 32, site: 70, cost: 1.1, land: 1.1, noise: 1.1, asp: 'D',
     use: 'Freighters day and night on a 3.2 km runway, with a cargo terminal and large stands.',
     want: { flag: 0.3, budget: 0.3, regional: 0.3, cargo: 4, foreign: 0.3 }, starter: { n: 3, size: 'm', cargo: true } }
 };
-IC.APT_CLASSES = ['field', 'regional', 'national', 'hub', 'cargo'];
+IC.APT_CLASSES = ['field', 'regional', 'national', 'hub', 'mega', 'cargo'];
 /* 'an airfield', 'a regional airport' */
 IC.aWord = w => (/^[aeiou]/i.test(w) ? 'an ' : 'a ') + w;
 /* an airport's class: picked when founded, or read from the layout it started with */
@@ -74,14 +77,15 @@ IC.aptPurposeLacks = function (S, ap) {
   if (!K || !ap.parts || !ap.parts.some(p => p.kind === 'runway' && p.built)) return out;
   const st = ap.st || {}, built = k => ap.parts.some(p => p.kind === k && p.built);
   const longest = Math.max(0, ...ap.parts.filter(p => p.kind === 'runway' && p.built).map(p => IC.rwLen(p)));
-  const need = { regional: 21, national: 27, hub: 30, cargo: 29 }[cls];
+  const need = { regional: 21, national: 27, hub: 30, mega: 30, cargo: 29 }[cls];
   if (need && longest < need - 0.05) out.push(`${up(IC.aWord(K.name.toLowerCase()))} needs a runway of ${U.km(need)} for its airliners: the longest here is ${U.km(longest)}.`);
   if (cls === 'cargo' && !built('cargo')) out.push('A cargo airport without a cargo terminal: freighters will not come. Build the Cargo area beside the taxiway.');
-  if ((cls === 'regional' || cls === 'national' || cls === 'hub') && !built('terminal')) out.push(`${up(IC.aWord(K.name.toLowerCase()))} without a terminal: no airline will come. Build a terminal with its apron.`);
-  if (cls === 'hub') {
+  if ((cls === 'regional' || cls === 'national' || cls === 'hub' || cls === 'mega') && !built('terminal')) out.push(`${up(IC.aWord(K.name.toLowerCase()))} without a terminal: no airline will come. Build a terminal with its apron.`);
+  if (cls === 'hub' || cls === 'mega') {
     const P = IC.aptProvides ? IC.aptProvides(ap) : null;
-    if (P && !(P.stands.l > 0)) out.push('An international hub without large stands: wide-bodies cannot park. Build a terminal with large stands.');
+    if (P && !(P.stands.l > 0)) out.push(`${up(IC.aWord(K.name.toLowerCase()))} without large stands: wide-bodies cannot park. Build a terminal with large stands.`);
   }
+  if (cls === 'mega' && ap.parts.filter(p => p.kind === 'runway' && p.built && IC.rwLen(p) >= 27).length < 2) out.push('A mega hub with one long runway: its airlines expect two that work at once. Build a second runway at least 1.1 km beside the first.');
   if (cls === 'field' && longest > 20) out.push(`An airfield with a ${U.km(longest)} runway: airliners could land here, but airlines will not come to an airfield. Change its purpose to fly them.`);
   return out;
 };

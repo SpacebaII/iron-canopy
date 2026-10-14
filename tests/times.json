@@ -197,5 +197,7 @@
  "building: parts that open together rise as one line of what they changed": 5.7,
  "building: the Starter airport's services stand where real airports put them, each with its road": 22.6,
  "building: a fire station with no taxiway beside it gets a crash road to the runway, and a fuel farm by the terminal is warned of": 10.1,
- "building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall": 7.8
+ "building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall": 7.8,
+ "building: a taxiway drawn straight across another taxiway and a runway joins them there, with a runway crossing": 6.5,
+ "airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why": 8.0
 }

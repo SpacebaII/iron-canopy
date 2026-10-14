@@ -467,7 +467,7 @@ const { drive, tick, kdenGame, relayout } = require('./traffic.js');
 const calm = (S, dir, kt, gust) => IC.setWind(S, { dir: dir || 0, kt: kt == null ? 6 : kt, gust, hold: true });
 const sky = (S, kind) => { S.weather.kind = S.weather.prev = kind; S.weather.fade = 1; S.weather.hold = true; };
 /* finish every planned part at once */
-const finishWorks = (S, ap) => { for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); } };
+const finishWorks = (S, ap) => { const c0 = ap.crews; ap.crews = Math.max(c0 || 1, ap.works.length); for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); } ap.crews = c0; };
 test('airport: the KDEN-scale layout handles its rated movements for two hours', () => {
   // (the six-runway layout built in code: on the real Denver, arrivals on the outer runways cross the inner ones through
   // the same exits, which the panel's rating does not count, so demand set to the rating queues)
@@ -930,7 +930,8 @@ test('builder: exits before a parallel taxiway are built, end in the grass and s
   assert(IC.buildFinish(S, m) === 'built', m.err);
   finishWorks(S, bad);
   const st = IC.aptStats(S, bad);
-  assert(exitsOf() === e0 && st.warn.some(w => /in the grass/.test(w)), `dead-end exits count as ways off the runway (${e0} → ${exitsOf()}), or no warning: ${st.warn.join(' / ')}`);
+  // (the exit crosses the bad airport's stub to its apron and joins it there, as pavement that crosses does; past the stub it ends in the grass)
+  assert(exitsOf() === e0 + 1 && st.warn.some(w => /in the grass/.test(w)), `dead-end exits count as ways off the runway (${e0} → ${exitsOf()}), or no warning: ${st.warn.join(' / ')}`);
   // a parallel taxiway 180 m out on that side passes through their ends and joins them
   const pm = IC.bldMode(S, bad, 'parallel'); S.mode2 = pm;
   IC.clickWorld(P(0, 0), 0); IC.clickWorld(P(0, 1.8), 0); assert(IC.buildFinish(S, pm) === 'built', pm.err);
@@ -4522,6 +4523,20 @@ test('airport: an apron with airliners parked on it cannot be bulldozed, and say
   run(S, 0.1);
   assert(lost() === l0, 'aircraft were lost');
 }, true);
+test('airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  let ap = null, m = null, p = null;
+  for (let i = 0; i < 40 && !p; i++) {
+    run(S, 0.05);
+    for (const b of IC.bases(S)) for (const x of b.moves || []) if (x.phase === 'taxi') {
+      const q = b.parts.find(q => q.kind === 'taxi' && q.built && IC.partDist(b, q, x) < 0.05);
+      if (q) { ap = b; m = x; p = q; break; }
+    }
+  }
+  assert(p, 'no aircraft taxiing');
+  assert(/on it now/.test(IC.aptRemoveBlock(S, ap, p)), 'no reason given for keeping the taxiway');
+  assert(!IC.aptRemove(S, ap, p.id) && ap.parts.includes(p), 'the taxiway was bulldozed under an aircraft');
+}, true);
 test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 1 / 3);
@@ -4750,15 +4765,21 @@ test('airport classes: each purpose founds its own runway, site and price, and i
     assert(stands.length >= K.starter.n && stands.every(s => s.linked), `${cls}: ${stands.filter(s => s.linked).length} of ${stands.length} stands joined`);
     assert(!st.warn.length, `${cls}: ${st.warn.join(' / ')}`);
     assert(!IC.aptUnattached(S, ap).length, `${cls}: ${IC.aptUnattached(S, ap).map(x => x.text).join(' / ')}`);
-    got[cls] = { paid: sv.site, sizes: stands.map(s => s.size), zones: stands.map(s => s.zone || 'civil'), kinds: ap.parts.map(p => p.kind), maxType: st.maxType };
+    const R = ap.parts.filter(p => p.kind === 'runway'), cf = IC.aptConfig(S, ap);
+    got[cls] = { paid: sv.site, sizes: stands.map(s => s.size), zones: stands.map(s => s.zone || 'civil'), kinds: ap.parts.map(p => p.kind), maxType: st.maxType,
+      rws: R.map(r => IC.rwLen(r)), gap: R.length > 1 ? U.segDist(R[1].a.x, R[1].a.y, R[0].a.x - (R[0].b.x - R[0].a.x) * 9, R[0].a.y - (R[0].b.y - R[0].a.y) * 9, R[0].b.x + (R[0].b.x - R[0].a.x) * 9, R[0].b.y + (R[0].b.y - R[0].a.y) * 9) : 0,
+      indep: !!(cf && cf.arr && cf.dep && cf.arr.length && cf.dep.length && !cf.arr.some(id => cf.dep.includes(id))), contact: stands.filter(s => s.contact).length };
   }
   // an airfield is light aircraft on small stands, flown by sight; a hub has large stands; a cargo airport a cargo terminal
   assert(got.field.zones.every(z => z === 'light') && got.field.sizes.every(z => z === 's') && !got.field.kinds.includes('ils') && !got.field.kinds.includes('tower'), 'the airfield is not a light-aircraft field');
   assert(got.hub.sizes.every(z => z === 'l') && got.hub.maxType === 'cargo', 'the hub does not take wide-bodies');
   assert(got.cargo.kinds.includes('cargo') && got.cargo.zones.filter(z => z === 'cargo').length >= 4, 'the cargo airport has no cargo terminal with its stands');
+  // a mega hub: two 4 km runways that work at once, concourses of large and medium gates
+  assert(got.mega.rws.length === 2 && got.mega.rws.every(L => L > 39.5) && got.mega.gap > 20 && got.mega.indep, `mega hub runways: ${got.mega.rws.join(', ')}, ${got.mega.gap} apart, ${got.mega.indep ? '' : 'not '}independent`);
+  assert(got.mega.sizes.length >= 80 && got.mega.sizes.filter(z => z === 'l').length >= 30 && got.mega.contact === got.mega.sizes.length, `mega hub stands: ${got.mega.sizes.length}, ${got.mega.sizes.filter(z => z === 'l').length} large, ${got.mega.contact} at gates`);
   // the site's price follows its size
   const P = IC.APT_CLASSES.map(k => got[k].paid);
-  assert(got.field.paid < got.regional.paid && got.regional.paid < got.national.paid && got.national.paid < got.hub.paid, `site prices: ${P.map(v => U.money(v)).join(', ')}`);
+  assert(got.field.paid < got.regional.paid && got.regional.paid < got.national.paid && got.national.paid < got.hub.paid && got.hub.paid < got.mega.paid, `site prices: ${P.map(v => U.money(v)).join(', ')}`);
 });
 test('airport classes: airlines want the airports built for them, and light aircraft use our airfields', () => {
   const { S, ap } = foundAs('field', 12345);
@@ -4822,8 +4843,14 @@ test('building: a fire station with no taxiway beside it gets a crash road to th
   assert(crash && IC.partDist(ap, rw, crash.pts[1]) < rw.w / 2 + 0.3 && IC.svcRoadEnds(S, ap).every(e => e.ok), 'no crash road from the far fire station to the runway');
   assert(!ap.parts.filter(p => p.kind === 'fuel').some(f => IC.fuelNear(ap, f)), 'the Services piece put its fuel by its own buildings');
   // a fuel farm planned against the terminal: the plan says the fire would spread, and the airport keeps saying it
-  m = S.mode2 = IC.bldMode(S, ap, 'fuel'); const at = IC.rectWorld({ x: term.x, y: term.y, a: term.a }, 0, (term.h / 2 + 0.75) * (IC.rectLocal(term, IC.rwAt(rw, 0.5)).y > 0 ? -1 : 1));
-  IC.bldFree = true; IC.clickWorld(at, 0, true); const plan = IC.bldReady(S, m); IC.bldFree = false;
+  // (the first free spot by the terminal: the landside's kerb road and car parks fill its town side)
+  m = S.mode2 = IC.bldMode(S, ap, 'fuel'); let plan = null; IC.bldFree = true;
+  const nearTerm = q => q && q.ok && (q.warn || []).some(t => /from the terminal: .*fire spreads to it/.test(t));
+  for (let d = 0.75; d < 2.1 && !nearTerm(plan); d += 0.25) for (const [x, y] of [[0, 1], [0, -1], [-1, 0], [1, 0], [-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    IC.buildCancel(S, m); IC.clickWorld(IC.rectWorld({ x: term.x, y: term.y, a: term.a }, x * (term.w / 2 + d), y * (term.h / 2 + d)), 0, true);
+    plan = IC.bldReady(S, m); if (nearTerm(plan)) break;
+  }
+  IC.bldFree = false;
   assert(plan && (plan.warn || []).some(t => /fire spreads to it/.test(t)), `no warning on the plan: ${plan && (plan.warn || []).join(' / ')} ${plan && plan.why}`);
   assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null; finishWorks(S, ap); IC.aptStats(S, ap);
   assert(ap.st.warn.some(t => /fuel farm stands \d+ m from the terminal/.test(t)), ap.st.warn.join(' / '));
@@ -4852,6 +4879,24 @@ test('building: an apron and a terminal of any shape, drawn corner by corner, ta
   IC.bldFree = false; const r = IC.bldReady(S, m);
   assert(r && !r.ok && /sides cross/.test(r.why), r && r.why);
   S.mode2 = null;
+});
+test('building: a taxiway drawn straight across another taxiway and a runway joins them there, with a runway crossing', () => {
+  const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), T0 = ap.parts.find(p => p.kind === 'terminal');
+  const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, T0).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
+  const par = ap.parts.find(p => p.kind === 'taxi' && p.nodes.length > 4), py = IC.rectLocal(fr, ap.nodes[par.nodes[1]]).y * sg;
+  // two clicks, from the grass beyond the runway to the parallel taxiway's far side: nothing clicked on either
+  const m = S.mode2 = IC.bldMode(S, ap, 'taxi'); IC.bldFree = true;
+  IC.clickWorld(W(6.3, -3), 0, true); IC.clickWorld(W(6.3, py + 0.8), 0, true);
+  IC.bldFree = false; assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null;
+  finishWorks(S, ap);
+  const t = ap.parts[ap.parts.length - 1], ns = t.nodes.map(id => ap.nodes[id]);
+  assert(t.kind === 'taxi' && ns.some(n => n.on && n.on.kind === 'rwy' && n.on.part === rw.id), 'no node where it crosses the runway');
+  assert(par.nodes.some(id => t.nodes.includes(id)), 'it does not join the parallel taxiway it crosses');
+  // an aircraft on the runway turns off there and taxis to the terminal's apron
+  const apr = ap.parts.find(p => p.kind === 'apron'); IC.aptGraph(ap);
+  const to = Object.values(ap.nodes).find(n => n.on && n.on.kind === 'apron' && n.on.part === apr.id);
+  const cr = t.nodes.find(id => ap.nodes[id].on && ap.nodes[id].on.kind === 'rwy');
+  assert(to && IC.aptPath(ap, cr, to.id), 'no way from the runway crossing to the apron');
 });
 test('round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself', () => {
   const { S, ap, next } = foundFresh();

@@ -514,7 +514,7 @@ function makeRequest(S) {
   let a = S.byId[al.hub], b;
   if (al.kind === 'regional') { a = busy(apts); const o = apts.filter(x => x !== a); if (!o.length) return; b = { apt: busy(o).id }; }
   else if (al.kind === 'budget') { a = busy(apts); const o = apts.filter(x => x !== a); b = Math.random() < 0.6 || !o.length ? U.pick(ports) : { apt: busy(o).id }; }
-  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.wpick(apts.filter(x => x.template === 'intl' || IC.aptClass(x) === 'hub' || (x.cls === 'national' && want(x) > 0)).map(x => [x, want(x)])) || a; }
+  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.wpick(apts.filter(x => x.template === 'intl' || IC.aptClass(x) === 'hub' || IC.aptClass(x) === 'mega' || (x.cls === 'national' && want(x) > 0)).map(x => [x, want(x)])) || a; }
   else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc && want(x) > 0).map(x => [x, (0.2 + Math.min(3, IC.cargoPull(S, x))) * want(x)])) || a; b = U.pick(ports); }
   else b = U.pick(ports);
   if (!a || !b) return;

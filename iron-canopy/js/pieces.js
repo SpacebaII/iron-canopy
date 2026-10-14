@@ -21,16 +21,17 @@ const STRIP = 1.5;        // the runway strip: 150 m either side of the centreli
    taxiways join the parallel (a terminal's lane ends) */
 function runwaySet(B, L, o) {
   o = o || {};
-  const h = L / 2, hold = Math.min(1.2, L * 0.05), ex = Math.min(L * 0.55, 17), dx = PAR / Math.tan(Math.PI / 6);
+  // (y0: the runway's line, sg: the parallel's side; a second runway of a pair lies at y0 with its parallel toward the first)
+  const y0 = o.y0 || 0, P = y0 + (o.sg || 1) * PAR, h = L / 2, hold = Math.min(1.2, L * 0.05), ex = Math.min(L * 0.55, 17), dx = PAR / Math.tan(Math.PI / 6);
   const stations = new Set([-h, h, -(h - hold), h - hold].concat(o.joins || []));
   // (rapid exits from the far side of the middle, angled 30° toward the way the landing rolls)
   const exA = h - ex, exB = -h + ex;
   if (L >= 18) { stations.add(exA - dx); stations.add(exB + dx); }
-  if (o.runway !== false) B.runway(pt(-h, 0), pt(h, 0), 0.45, { ils: ['a', 'b'] });
+  if (o.runway !== false) B.runway(pt(-h, y0), pt(h, y0), 0.45, { ils: ['a', 'b'], sfx: o.sfx });
   if (o.parallel !== false) {
-    B.taxi([...stations].filter(x => x >= -h - 1e-6 && x <= h + 1e-6).sort((a, b) => a - b).map(x => pt(x, PAR)), { name: 'A' });
-    for (const x of [-h, h, -(h - hold), h - hold]) B.taxi([pt(x, 0), pt(x, PAR)]);
-    if (L >= 18) { B.taxi([pt(exA, 0), pt(exA - dx, PAR)]); B.taxi([pt(exB, 0), pt(exB + dx, PAR)]); }
+    B.taxi([...stations].filter(x => x >= -h - 1e-6 && x <= h + 1e-6).sort((a, b) => a - b).map(x => pt(x, P)), { name: o.name || 'A' });
+    for (const x of [-h, h, -(h - hold), h - hold]) B.taxi([pt(x, y0), pt(x, P)]);
+    if (L >= 18) { B.taxi([pt(exA, y0), pt(exA - dx, P)]); B.taxi([pt(exB, y0), pt(exB + dx, P)]); }
   }
 }
 /* a straight terminal along x, centred at (0, y0), its stands on the −y face (toward the runway), its taxilane
@@ -95,6 +96,37 @@ function cargoSet(B, cx, ly, cends, link) {
   if (link) B.taxi([pt(cends[0], ly), pt(cends[0], PAR)]);
 }
 
+/* a mega hub's Starter (QA: the biggest a player could found was one 4 km runway and ten stands): two independent
+   runways 2.2 km apart, each with its parallel taxiway on the inside, three concourses side by side between them (two
+   of large stands, one of medium), and the terminal outside, beyond runway 1's strip, where the roads reach it,
+   joined to the concourses by a train in a tunnel (a terminal in the middle of the airfield has no way in by road);
+   the services east of the concourses, a second fire station on the far runway's side so trucks reach both runways
+   end to end within 3 minutes. Runway 1 on the surveyed line (y 0), runway 2 at y 22 */
+const MEGA_Y = 22;
+function megaStarter(B, L, o) {
+  const h = L / 2, P1 = PAR, P2 = MEGA_Y - PAR, xs = [-2.6, 2.0, 6.6], sz = ['l', 'l', 'm'], y0 = 6.2, y1 = 15.8, con = [];
+  const off = k => 0.26 + 0.06 + IC.STAND[sz[k]].d + 0.12;
+  const joins = [].concat(...xs.map((x, k) => [x - off(k), x + off(k)]));
+  if (o.runway !== false) runwaySet(B, L, { joins, sfx: ['R', 'L'], name: 'A' });
+  runwaySet(B, L, { y0: MEGA_Y, sg: -1, joins, sfx: ['L', 'R'], name: 'B' });
+  const tx = (xs[0] + xs[1]) / 2 + 0.2, ty = -(STRIP + 0.4 + 1.1), T = B.box('terminal', pt(tx, ty), 0, 7, 2.2, { name: 'Terminal', lvls: 3 });
+  xs.forEach((x, k) => {
+    const C = IC.kitPier(B, { p0: pt(x, y0), p1: pt(x, y1), bw: 0.26, size: sz[k], cap0: true, name: `Concourse ${'ABC'[k]}` }); con.push(C);
+    // the concourse's taxilanes onto both parallels, round its two ends
+    for (const dx of [-off(k), off(k)]) { B.taxi([pt(x + dx, y0 - 0.6), pt(x + dx, P1)]); B.taxi([pt(x + dx, y1 + 0.6), pt(x + dx, P2)]); }
+  });
+  // (the train: from the terminal north under runway 1 to the concourses' middle, then along them both ways)
+  const ym = (y0 + y1) / 2;
+  B.mover([pt(tx, ty + 1.1), pt(tx, ym), pt(xs[2], ym)], [T, con[1].term, con[2].term], -1, 'Plane train');
+  B.mover([pt(tx, ym), pt(xs[0], ym)], [con[0].term], -1, 'Plane train');
+  softAprons(B);
+  // services: east of the concourses beside runway 1's parallel; a second fire station west, beside runway 2's
+  siteServices(B, xs[2] + off(2) + 0.6, (y0 + y1) / 2, false, false);
+  const fw = 1.0, fh = 0.6, fx = -5.6, fy = P2 - 0.115 - 0.4 - fh / 2, ax = fx - fw / 2 + fw * 0.325;
+  B.box('fire', pt(fx, fy), Math.PI, fw, fh, { name: 'Fire station 2', link: [pt(ax, fy + fh / 2), pt(ax, P2 - 0.115)] });
+  return B.L;
+}
+
 IC.PIECES = {
   rwkit: { name: 'Runway with taxiways', line: true, use: 'land, take off and taxi: all of it',
     desc: 'Click one end, then the other (or drag): a concrete runway with a parallel taxiway 190 m beside it, links at both ends, a holding entry at each end, two rapid exits, edge lights and a landing system (ILS) at each end, so fog does not close it. R puts the taxiway on the other side. Build (or Enter) plans it all.',
@@ -124,10 +156,11 @@ IC.PIECES = {
       for (const x of xs) B.stand(ai, pt(x, sd), Math.PI / 2, 'l', B.node(pt(x, ld)));
       B.L.joins = [pt(-2.3, ld), pt(2.3, ld)]; return B.L; } },
   starter: { name: 'Starter airport', bp: true, use: 'a whole small airport, ready for jets',
-    desc: 'A complete airport as one plan, sized for what the airport is for: the surveyed runway (1.2 km for an airfield, 2.2 km regional, 3 km national, 4 km for a hub) with its taxiways and a landing system at each end, a terminal with stands (small stands for light aircraft at an airfield, large ones at a hub, a cargo area at a cargo airport), a control tower, a fire station and a fuel farm. On a new airport it lies on the surveyed runway; with a runway already planned it is built round it. One price, paid as the work runs; Undo takes all of it back before work starts.',
+    desc: 'A complete airport as one plan, sized for what the airport is for: the surveyed runway (1.2 km for an airfield, 2.2 km regional, 3 km national, 4 km for a hub) with its taxiways and a landing system at each end, a terminal with stands (small stands for light aircraft at an airfield, large ones at a hub, a cargo area at a cargo airport; at a mega hub a second 4 km runway 2.2 km away, three concourses of 88 gates between them and the terminal joined to them by a train), a control tower, a fire station and a fuel farm. On a new airport it lies on the surveyed runway; with a runway already planned it is built round it. One price, paid as the work runs; Undo takes all of it back before work starts.',
     make: o => {
       // (its size follows the airport's class, IC.APT_CLASS: stands, their size, a cargo area, the stands' zone)
       const C = o.st || {}, B = IC.layoutBuilder(), L = o.len || 30, n = C.n || 8, size = C.size || 'm';
+      if (C.mega) return megaStarter(B, L, o);
       const S0 = IC.STAND[size], Lt = n * (S0.w + 0.02) + 0.1, ld = 0.3 + 0.06 + S0.d + 0.12, y0 = PAR + LANE_GAP + ld;
       const ends = [-Lt / 2 - 0.6, Lt / 2 + 0.6];
       // (a cargo area west of the terminal, on the same taxilane line: its own link to the parallel)
