@@ -324,7 +324,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   take(free().map(x => ({ x, d: railD(x) })).filter(o => o.d < SP * 0.8 && o.x.q > 0.12 && o.x.q < 0.7 && hwD(o.x) > SP).sort((a, b) => a.x.q - b.x.q).map(o => o.x), st.yard, 'rail');
   // industry in a sector towards the railway or the busiest road out, logistics by the motorway
   const ia = c.indA;
-  take(free().filter(x => x.q > 0.1).map(x => { const a = Math.atan2(x.p.y - c.y, x.p.x - c.x); return { x, s: Math.cos(U.angWrap(a - ia)) * 1.2 - x.q * 0.4 + (railD(x) < SP * 2 ? 0.5 : 0) + R() * 0.3 }; }).sort((a, b) => b.s - a.s).map(o => o.x), sh('ind') * T * vary(), 'ind');
+  take(free().filter(x => x.q > 0.1).map(x => { const a = Math.atan2(x.p.y - c.y, x.p.x - c.x); return { x, s: Math.cos(U.angWrap(a - ia)) * 1.2 - x.q * 0.4 + (railD(x) < SP * 2 ? 0.5 : 0) + R() * 0.3 }; }).sort((a, b) => b.s - a.s).map(o => o.x), Math.max(3, sh('ind') * T * vary()), 'ind');   // (every town has a works or two)
   take(free().filter(x => x.q > 0.3).map(x => ({ x, s: -hwD(x) / SP + x.q + R() * 0.8 })).sort((a, b) => b.s - a.s).map(o => o.x), sh('log') * T * vary(), 'log');
   const byQ = () => free().sort((a, b) => a.q - b.q);
   // offices along the diagonal (New York), by the highway (Dubai), else in the middle
@@ -354,7 +354,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const hwAt = (x, y) => { let hit = false; HB.near(x, y, 1, s => { if (!hit && U.segDist(x, y, s[0], s[1], s[2], s[3]) < 0.9) hit = true; }); return hit; };
   const blockedRaw = (x, y) => {
     if (!inTown(x, y)) return 2;
-    if (hwAt(x, y)) return 4;
+    if (hwAt(x, y) || (IC.ixClear && IC.ixClear(W, x, y, 1.0))) return 4;
     if (W.inLake(x, y) || wetBy(x, y) > -1.0) return 3;
     for (const f of fields) if (U.dxy(f.x, f.y, x, y) < f.r) return 5;
     for (const q of squaresAt) if (inRect(q, x, y, 0.25)) return 6;
@@ -545,6 +545,8 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const mkBlock = (x, rc, form, extraP) => {
     const D2 = IC.DISTRICTS[x.d];
     const b = Object.assign({ x: rc.x, y: rc.y, w: rc.w, h: rc.h, a: rc.a, d: x.d, f: form, core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i: x.i, j: x.j }, extraP || {});
+    // (an interchange keeps its footprint: brief 56)
+    if (c.home !== false && IC.ixClear && IC.ixClear(W, rc.x, rc.y, Math.max(rc.w, rc.h) * 0.35)) return null;
     blocks.push(b); return b;
   };
   for (const fc of faces) {
@@ -576,13 +578,26 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     c.streets = c.streets.filter(l => !l.deadEnd || l.ring || l.head || l.stop);
     if (c.streets.length === n) break;
   }
+  // a street that strays into an interchange's footprint (a ring street laid across it) is cut at its edge (brief 56)
+  if (IC.ixClear) {
+    const out = [];
+    for (const l of c.streets) {
+      if (l.cls === 'art' || l.cul || !l.pts.some(p => IC.ixClear(W, p.x, p.y, 0.3))) { out.push(l); continue; }   // (a close stays whole: its estate keeps out by itself)
+      const headP = l.head ? l.pts[l.head & 1 ? 0 : l.pts.length - 1] : null;
+      let run = [];
+      const flush = () => { if (run.length >= 2) { const m = Object.assign({}, l, { pts: run, cut: true }); if (headP && !run.includes(headP)) delete m.head; out.push(m); } run = []; };
+      for (const p of l.pts) { if (IC.ixClear(W, p.x, p.y, 0.3)) flush(); else run.push(p); }
+      flush();
+    }
+    c.streets = out;
+  }
   for (const l of c.streets) { if (l.deadEnd) delete l.deadEnd; delete l.ends; }
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
   // river parks (brief 55): the housing blocks on the banks of a bigger town stay green, a park along the water
   if (c.pop >= 250) {
     let left = 10;
-    c.blocks = c.blocks.filter(b => { if (left <= 0 || b.fr || (b.d !== 'dense' && b.d !== 'sub') || b.land || wetBy(b.x, b.y) < -(Math.max(b.w, b.h) / 2 + 0.4)) return true; parksL.push({ x: b.x, y: b.y, rx: b.w * 0.48, ry: b.h * 0.46, a: b.a, river: true }); left--; return false; });
+    c.blocks = c.blocks.filter(b => { if (left <= 0 || b.fr || (b.d !== 'dense' && b.d !== 'sub') || b.land || b.close || wetBy(b.x, b.y) < -(Math.max(b.w, b.h) / 2 + 0.4)) return true; parksL.push({ x: b.x, y: b.y, rx: b.w * 0.48, ry: b.h * 0.46, a: b.a, river: true }); left--; return false; });
   }
   // landmarks (brief 55, buildings.js): the station on the railway, the cathedral, the hospital, the stadium...
   IC.placeLandmarks(W, c, roads);
@@ -776,6 +791,81 @@ function joinRoads(W, c, F, st, bnd, ext, fields, radial, nearCell, R2, FL) {
       W.edges.push(e); mine.push(e);
     }
   }
+  /* the linear city's spine (brief 56): a motorway along its axis from one side of town to the other, ending on
+     the national roads it meets out there (a roundabout each), with an interchange where an avenue crosses it
+     every 2 km or so; the other avenues go over it on bridges (W.roadX) */
+  if (st.linear) {
+    // (beside the centre line, not through the centre: the great road along the axis runs next to it as its
+    // frontage road, and the avenues meet the centre at grade as before)
+    const o = F.toW(0, SP * 0.6), q1 = F.toW(1, SP * 0.6), dl = Math.hypot(q1.x - o.x, q1.y - o.y) || 1, ux = (q1.x - o.x) / dl, uy = (q1.y - o.y) / dl;
+    const ray = t => ({ x: o.x + ux * t, y: o.y + uy * t });
+    const split = (e, i, P) => { const id = newNode(P); W.edges.push(Object.assign({}, e, { a: id, b: e.b, pts: [P].concat(e.pts.slice(i)) })); e.pts = e.pts.slice(0, i).concat([P]); e.b = id; return id; };
+    // each end: on the national road nearest the end of the axis out there (the road out along the axis, usually),
+    // reached by a last leg bending to it
+    const endOf = (sg, not) => {
+      const t0 = ext(Math.atan2(uy * sg, ux * sg)) + SP * 1.5, A = ray(t0 * sg);
+      // a gate on the axis: the road out there carries on as the spine
+      const axA = Math.atan2(uy * sg, ux * sg);
+      const g = plain.filter(g => !g.hw && Math.abs(U.angWrap(g.a - axA)) < 0.6 && W.nodes[g.id] && !(not && g.id === not.id)).sort((p, q) => Math.abs(U.angWrap(p.a - axA)) - Math.abs(U.angWrap(q.a - axA)))[0];
+      // (800 m out along the road, past a gate, so the avenue in from the gate keeps its own line)
+      const outAlong = gid => {
+        const e = W.edges.find(q => !q.city && q.cls !== 'hw' && !q.spine && (q.a === gid || q.b === gid));
+        if (!e) return null;
+        const P = e.a === gid ? e.pts : e.pts.slice().reverse(); let s = 0;
+        for (let i = 1; i < P.length; i++) {
+          s += U.dist(P[i - 1], P[i]);
+          if (s >= 8) { const Q = { x: P[i].x, y: P[i].y }, t = (Q.x - o.x) * ux + (Q.y - o.y) * uy; if (i === P.length - 1) return { id: e.a === gid ? e.b : e.a, t, P: Q }; return { id: split(e, e.a === gid ? i : P.length - i, Q), t, P: Q }; }
+        }
+        const far = e.a === gid ? e.b : e.a, Q = W.nodes[far]; return Q ? { id: far, t: (Q.x - o.x) * ux + (Q.y - o.y) * uy, P: { x: Q.x, y: Q.y } } : null;
+      };
+      const isGate = id => W.edges.some(q => q.city && (q.a === id || q.b === id));
+      if (g) return outAlong(g.id) || { id: g.id, t: ((g.x - o.x) * ux + (g.y - o.y) * uy), P: { x: g.x, y: g.y } };
+      // else a national road passing within 3 km of the axis's end: the last leg bends off the axis to it; else
+      // the spine ends out there at a roundabout and a link road runs from it to the nearest national road
+      const nearest = (Q, lim) => {
+        let best = null;
+        for (const e of W.edges) {
+          if (e.city || e.cls === 'hw' || e.spine || (not && (e.a === not.id || e.b === not.id || e.a === not.linkTo || e.b === not.linkTo))) continue;
+          for (let i = 1; i < e.pts.length; i++) {
+            const a = e.pts[i - 1], b = e.pts[i], d = U.segDist(Q.x, Q.y, a.x, a.y, b.x, b.y);
+            if (d < lim && (!best || d < best.d)) { const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2, k = L2 ? U.clamp(((Q.x - a.x) * (b.x - a.x) + (Q.y - a.y) * (b.y - a.y)) / L2, 0, 1) : 0; best = { d, e, i, P: { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k } }; }
+          }
+        }
+        return best;
+      };
+      const nodeAt = b => { for (const k of [b.e.a, b.e.b]) if (U.dist(b.P, W.nodes[k]) < 2) return (isGate(k) && outAlong(k)) || { id: k, P: { x: W.nodes[k].x, y: W.nodes[k].y } }; return { id: split(b.e, b.i, b.P), P: b.P }; };
+      const near = nearest(A, 30);
+      if (near) { const n = nodeAt(near); return { id: n.id, t: t0 * sg, P: n.P }; }
+      const endId = newNode(A), far = nearest(A, 120);
+      // (the other end does not link to the same road: it finds another, or runs out and stops)
+      if (far) { const n = nodeAt(far); W.edges.push({ a: endId, b: n.id, cls: 'rd', pts: [{ x: A.x, y: A.y }, n.P], link: c.id }); return { id: endId, t: t0 * sg, P: A, linkTo: n.id }; }
+      return { id: endId, t: t0 * sg, P: A };
+    };
+    // (a town with one road in: the other end runs out into the country and stops)
+    const E0 = endOf(-1), E1 = endOf(1, E0);
+    // the avenues across it: an interchange at one in every two kilometres, the rest on bridges
+    const cuts = [];
+    for (const e of mine) for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1], b = e.pts[i], t = U.segX(ray(E0.t).x, ray(E0.t).y, ray(E1.t).x, ray(E1.t).y, a.x, a.y, b.x, b.y);
+      if (t >= 0) cuts.push({ t: E0.t + (E1.t - E0.t) * t, e, i });
+    }
+    cuts.sort((p, q) => p.t - q.t);
+    const nodes = [{ id: E0.id, t: E0.t }];
+    // (not where the avenue runs from the spine's own end node: that would lay two roads between the same places)
+    for (const k of cuts) { if (k.t - nodes[nodes.length - 1].t < 16 || E1.t - k.t < 8 || nodes.some(q => q.id === k.e.a || q.id === k.e.b) || k.e.a === E1.id || k.e.b === E1.id) continue; const P = ray(k.t); nodes.push({ id: split(k.e, k.i, P), t: k.t }); }
+    nodes.push({ id: E1.id, t: E1.t });
+    for (let i = 1; i < nodes.length; i++) {
+      const A = nodes[i - 1], B = nodes[i], pts = [], n = Math.max(1, Math.ceil((B.t - A.t) / SP));
+      for (let k = 0; k <= n; k++) pts.push(ray(A.t + (B.t - A.t) * k / n));
+      // (the ends bend off the axis to the road they end on)
+      if (i === 1 && E0.P) pts[0] = { x: E0.P.x, y: E0.P.y };
+      if (i === nodes.length - 1 && E1.P) pts[n] = { x: E1.P.x, y: E1.P.y };
+      // (a short town whose far end lands on the road its link road reached: the spine takes the link road's place)
+      const dup = W.edges.findIndex(e => (e.a === A.id && e.b === B.id) || (e.a === B.id && e.b === A.id));
+      if (dup >= 0) { if (W.edges[dup].link !== c.id) continue; W.edges.splice(dup, 1); }
+      W.edges.push({ a: A.id, b: B.id, cls: 'hw', pts, spine: c.id });
+    }
+  }
   // junctions inside the city that nothing uses any more
   const usedN = new Set(); for (const e of W.edges) { usedN.add(e.a); usedN.add(e.b); }
   for (const k in W.nodes) if (k !== c.id && W.nodes[k].jct && !usedN.has(k) && U.dist(W.nodes[k], c) < far) delete W.nodes[k];
@@ -877,7 +967,7 @@ IC.cityGrowCell = function (c, i, j, d, q, R, open) {
   for (const fc of IC.fabricFaces(faceLines)) {
     if (!inRect(fc.x, fc.y, 0) || fc.area < 0.4 || blocked(fc.x, fc.y)) continue;   // (outside the cell counts as blocked)
     const r = IC.fabricRect(fc, 0.75); if (!r) continue;
-    for (const p of (r.w > sz * 1.8 || r.h > sz * 1.8 ? IC.fabricSplit(r, sz, 0.3) : [r])) blocks.push({ x: p.x, y: p.y, w: p.w, h: p.h, a: p.a, d, f: formFor(c, st, { i, j, d, q }), core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i, j });
+    for (const p of (r.w > sz * 1.8 || r.h > sz * 1.8 ? IC.fabricSplit(r, sz, 0.3) : [r])) if (!(IC.ixClear && IC.ixClear(W, p.x, p.y, Math.max(p.w, p.h) * 0.35))) blocks.push({ x: p.x, y: p.y, w: p.w, h: p.h, a: p.a, d, f: formFor(c, st, { i, j, d, q }), core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i, j });
   }
   return { blocks, streets };
 };

@@ -161,8 +161,17 @@ function buildGraph(W) {
     }
     l.pts = out;
   }
+  // two points a hair apart on one line (a close's end tied beside the crossing it makes with its loop) are one node,
+  // or the piece between them is dropped and the loop falls in two
+  const alias = new Map(), root = k => { while (alias.has(k)) k = alias.get(k); return k; };
+  for (const l of lines) for (let i = 1; i < l.pts.length; i++) {
+    const p = l.pts[i - 1], q = l.pts[i];
+    if (Math.abs(p.x - q.x) >= 1e-3 || Math.abs(p.y - q.y) >= 1e-3) continue;
+    const a = root(kq(p.x, p.y)), b = root(kq(q.x, q.y)); if (a !== b) alias.set(b, a);
+  }
+  for (const k of [...forced]) forced.add(root(k));
   // nodes where lines share a point, and at every end
-  const cnt = new Map(), keyOf = (l, i) => kq(l.pts[i].x, l.pts[i].y) * 4 + (i === 0 ? l.lv[0] : i === l.pts.length - 1 ? l.lv[1] : 0);
+  const cnt = new Map(), keyOf = (l, i) => root(kq(l.pts[i].x, l.pts[i].y)) * 4 + (i === 0 ? l.lv[0] : i === l.pts.length - 1 ? l.lv[1] : 0);
   for (const l of lines) for (let i = 0; i < l.pts.length; i++) { const k = keyOf(l, i); cnt.set(k, (cnt.get(k) || 0) + 1); }
   const G = { nodes: [], links: [], at: new Map() };
   const nodeOf = (k, p) => { let n = G.at.get(k); if (n == null) { n = G.nodes.length; G.nodes.push({ x: p.x, y: p.y, out: [], rank: 0 }); G.at.set(k, n); } return n; };
