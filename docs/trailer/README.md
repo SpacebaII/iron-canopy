@@ -46,3 +46,17 @@ The default settings are 1920 × 1080, 30 fps and High quality, for a machine wi
 - `still-launch.jpg`: the ballistic missile leaves its launcher.
 - `still-flyby.jpg`: a cruise missile passes the camera.
 - `still-hit.jpg`: a cruise missile hits the airport.
+
+# Second Cut
+
+`iron-canopy-second-cut.mp4` (89 seconds, 12 MB, plays on a phone) is the same raid filmed again after briefs 61–64:
+
+- **Models with moving parts:** the enemy's launchers, our batteries and radars. A launcher raises its missile, a battery swings round to its target, and each round leaves from its own tube.
+- **Effects at the source:**
+  - a flame on the nozzle;
+  - a launch cloud and dust at the launcher;
+  - fireballs strung along the path of the missile that was hit, with pieces that fall;
+  - ground hits with a shock ring, debris, scorch and a smoke column.
+- **Sound designed per shot:** the score.
+
+It was made with `node tools/teaser.js --q=medium --w=1280 --h=720 --fps=24 --out=docs/trailer/iron-canopy-second-cut.mp4`, about 1¾ hours on a machine with no graphics card. It was then compressed for phones: H.264 at CRF 23, AAC sound, with `+faststart`.
