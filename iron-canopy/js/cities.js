@@ -167,6 +167,8 @@ IC.cityStyles = function (W, R) {
    fields: airfields and plants the city must keep off. villages: villages it may swallow. */
 IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const st = styleOf(c), SP = st.SP, r = c.r, RMAX = r * 1.55, artU = st.artU || st.art, artV = st.artV || st.art;
+  let ixs = null;   // (the interchanges this town must keep out of, listed once the roads in, and a linear city's spine, are laid)
+  fields = fields.filter(f => U.dxy(f.x, f.y, c.x, c.y) < RMAX * 2.5 + f.r);   // (only the airfields and plants this town can reach)
   const target = Math.round(U.clamp(c.pop / 2.4, 30, 850));
   // the lattice turns with the main road in (a grid lines up with it)
   if (!st.radial && c.tpl !== 'east') {
@@ -282,10 +284,11 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const ext = a => { const f = U.mod(a, Math.PI * 2) / (Math.PI * 2) * NS, s = Math.floor(f) % NS, t = f - Math.floor(f); return sect[s] * (1 - t) + sect[(s + 1) % NS] * t; };
   /* the country's roads join the street plan: from here on the pieces near the city are the new ones */
   let ave = null;
-  if (c.home !== false && W.edges) {
+  if (W.edges) {
     const nearCell = (p, m) => { const [u, v] = F.toG(p.x, p.y), i = Math.floor(u / SP), j = Math.floor(v / SP); for (let a = i - m; a <= i + m; a++) for (let b = j - m; b <= j + m; b++) if (a >= -n && b >= -n && a < n && b < n && isCell.has(idx(a, b))) return true; return false; };
     // (the avenues in are traced on the field of the roads as they stand; the field is made again once they are in)
     const mine = ave = joinRoads(W, c, F, st, a => ext(a) + SP * 0.8, ext, fields, st.radial || null, nearCell, R2, fieldOf(W, c, roads, RMAX));
+    if (IC.ixNear) ixs = IC.ixNear(W, c.x, c.y, RMAX * 2.2);
     // the highway of a linear city is its great road, drawn and driven as one
     if (mine && st.linear) for (const e of mine) if (e.pts.filter(p => Math.abs(F.toG(p.x, p.y)[1]) < SP * 0.3).length >= e.pts.length * 0.8) e.ccls = 'ring';
     if (mine) {
@@ -354,7 +357,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const hwAt = (x, y) => { let hit = false; HB.near(x, y, 1, s => { if (!hit && U.segDist(x, y, s[0], s[1], s[2], s[3]) < 0.9) hit = true; }); return hit; };
   const blockedRaw = (x, y) => {
     if (!inTown(x, y)) return 2;
-    if (hwAt(x, y) || (IC.ixClear && IC.ixClear(W, x, y, 1.0))) return 4;
+    if (hwAt(x, y) || (IC.ixClear && IC.ixClear(W, x, y, 1.0, ixs))) return 4;
     if (W.inLake(x, y) || wetBy(x, y) > -1.0) return 3;
     for (const f of fields) if (U.dxy(f.x, f.y, x, y) < f.r) return 5;
     for (const q of squaresAt) if (inRect(q, x, y, 0.25)) return 6;
@@ -546,7 +549,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     const D2 = IC.DISTRICTS[x.d];
     const b = Object.assign({ x: rc.x, y: rc.y, w: rc.w, h: rc.h, a: rc.a, d: x.d, f: form, core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i: x.i, j: x.j }, extraP || {});
     // (an interchange keeps its footprint: brief 56)
-    if (c.home !== false && IC.ixClear && IC.ixClear(W, rc.x, rc.y, Math.max(rc.w, rc.h) * 0.35)) return null;
+    if (IC.ixClear && IC.ixClear(W, rc.x, rc.y, Math.max(rc.w, rc.h) * 0.35, ixs)) return null;
     blocks.push(b); return b;
   };
   for (const fc of faces) {
@@ -582,12 +585,12 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   if (IC.ixClear) {
     const out = [];
     for (const l of c.streets) {
-      if (l.cls === 'art' || l.cul || !l.pts.some(p => IC.ixClear(W, p.x, p.y, 0.3))) { out.push(l); continue; }   // (a close stays whole: its estate keeps out by itself)
+      if (l.cls === 'art' || l.cul || !l.pts.some(p => IC.ixClear(W, p.x, p.y, 0.3, ixs))) { out.push(l); continue; }   // (a close stays whole: its estate keeps out by itself)
       const headP = l.head ? l.pts[l.head & 1 ? 0 : l.pts.length - 1] : null;
-      let run = [];
-      const flush = () => { if (run.length >= 2) { const m = Object.assign({}, l, { pts: run, cut: true }); if (headP && !run.includes(headP)) delete m.head; out.push(m); } run = []; };
-      for (const p of l.pts) { if (IC.ixClear(W, p.x, p.y, 0.3)) flush(); else run.push(p); }
-      flush();
+      let run = [], cutA = false;   // (the end a cut makes stops at the interchange's edge, like one at a bank)
+      const flush = cutB => { if (run.length >= 2) { const m = Object.assign({}, l, { pts: run, cut: true }); if (headP && !run.includes(headP)) delete m.head; const sp = (cutA ? 1 : 0) + (cutB ? 2 : 0); if (sp) m.stop = (m.stop || 0) | sp; out.push(m); } run = []; cutA = true; };
+      for (const p of l.pts) { if (IC.ixClear(W, p.x, p.y, 0.3, ixs)) flush(true); else run.push(p); }
+      flush(false);
     }
     c.streets = out;
   }
@@ -708,7 +711,7 @@ function joinRoads(W, c, F, st, bnd, ext, fields, radial, nearCell, R2, FL) {
       for (let q = 0; q <= N; q++) {
         const t = q / N, a = x.g.a + x.gap * t, r = ringR(a) + (1 - t) * (d0 - ringR(x.g.a)) + t * (d1 - ringR(x.h.a));
         const p = q === 0 ? { x: x.g.x, y: x.g.y } : q === N ? { x: x.h.x, y: x.h.y } : { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r };
-        if (W.inLake(p.x, p.y) || !W.inHome(p.x, p.y) || fields.some(f => U.dist(f, p) < f.r + 4)) { ok = false; break; }
+        if (W.inLake(p.x, p.y) || W.inHome(p.x, p.y) !== (c.home !== false) || fields.some(f => U.dist(f, p) < f.r + 4)) { ok = false; break; }
         pts.push(p);
       }
       if (ok) { const e = { a: x.g.id, b: x.h.id, cls: 'hw', pts, bypass: c.id }; W.edges.push(e); arcs.push(e); }
@@ -947,6 +950,7 @@ function rectOf(A, B, C2, Dd, gap) {
    that way is unbuilt) */
 IC.cityGrowCell = function (c, i, j, d, q, R, open) {
   const st = styleOf(c), F = IC.cityFrame(c), SP = F.SP, W = IC.W, FLD = IC.cityField(c);
+  const ixs = IC.ixNear ? IC.ixNear(W, c.x, c.y, c.r * 3.5) : null;
   const P = [F.toW(i * SP, j * SP), F.toW((i + 1) * SP, j * SP), F.toW((i + 1) * SP, (j + 1) * SP), F.toW(i * SP, (j + 1) * SP)];
   const rc = rectOf(P[0], P[1], P[3], P[2], 0), sz = (IC.FABRIC.size[d] || IC.FABRIC.size.sub) * (IC.FABRIC.styleK[c.style] || 1);
   const inRect = (x, y, m) => { const ca = Math.cos(rc.a), sa = Math.sin(rc.a), lx = (x - rc.x) * ca + (y - rc.y) * sa, ly = -(x - rc.x) * sa + (y - rc.y) * ca; return Math.abs(lx) < rc.w / 2 + m && Math.abs(ly) < rc.h / 2 + m; };
@@ -967,7 +971,7 @@ IC.cityGrowCell = function (c, i, j, d, q, R, open) {
   for (const fc of IC.fabricFaces(faceLines)) {
     if (!inRect(fc.x, fc.y, 0) || fc.area < 0.4 || blocked(fc.x, fc.y)) continue;   // (outside the cell counts as blocked)
     const r = IC.fabricRect(fc, 0.75); if (!r) continue;
-    for (const p of (r.w > sz * 1.8 || r.h > sz * 1.8 ? IC.fabricSplit(r, sz, 0.3) : [r])) if (!(IC.ixClear && IC.ixClear(W, p.x, p.y, Math.max(p.w, p.h) * 0.35))) blocks.push({ x: p.x, y: p.y, w: p.w, h: p.h, a: p.a, d, f: formFor(c, st, { i, j, d, q }), core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i, j });
+    for (const p of (r.w > sz * 1.8 || r.h > sz * 1.8 ? IC.fabricSplit(r, sz, 0.3) : [r])) if (!(IC.ixClear && IC.ixClear(W, p.x, p.y, Math.max(p.w, p.h) * 0.35, ixs))) blocks.push({ x: p.x, y: p.y, w: p.w, h: p.h, a: p.a, d, f: formFor(c, st, { i, j, d, q }), core: !!D2.core, ind: !!D2.ind, sub: !!D2.sub, seed: R() * 1000, hp: 1, i, j });
   }
   return { blocks, streets };
 };

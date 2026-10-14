@@ -119,7 +119,8 @@ test('world: city streets follow a direction field, end on a street, a head, a b
         const t = F.exact((a.x + b.x) / 2, (a.y + b.y) / 2), d = Math.abs(U.angWrap(2 * (Math.atan2(b.y - a.y, b.x - a.x) - t))) / 2;
         total += L; if (Math.min(d, Math.PI / 2 - d) < 0.35) along += L;
       } });
-      for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) { const a = e.pts[i - 1], b = e.pts[i]; if (U.segDist(c.x, c.y, a.x, a.y, b.x, b.y) < Math.max(c.r * 1.5, c.ext + 5)) segs.push([a.x, a.y, b.x, b.y, -1]); }
+      // (the roads as far out as the fringe reaches: an outlying estate hangs off a road out, brief 54)
+      for (const e of W.edges) for (let i = 1; i < e.pts.length; i++) { const a = e.pts[i - 1], b = e.pts[i]; if (U.segDist(c.x, c.y, a.x, a.y, b.x, b.y) < Math.max(c.r * 2.6 + 20, c.ext + 5)) segs.push([a.x, a.y, b.x, b.y, -1]); }
       // every end is on another street or avenue, or is a turning head, or stops at a bank or a square
       let loose = 0;
       c.streets.forEach((l, li) => { for (const end of [0, 1]) {
@@ -236,6 +237,97 @@ test('world: a lane stops short of a motorway, a road a motorway crosses without
     }
   }
   assert(spines >= 2 && bridges >= 3 && ix >= 2, `too little to test: ${spines} spines, ${bridges} bridges, ${ix} interchanges on them`);
+}, false, 'world');
+test('world: the countryside has a plan by its ground: hedged fields on the plain, small fields and copses in the hills, walls on the uplands, farms on tracks off the road, ponds in the meadows, and nothing on a road, a town or the water (brief 57)', () => {
+  const W = world(4242), FB = IC.FB;
+  // every farm block on a grid over the home country's lowlands
+  const by = {}, slope = {}, feats = {}, plans = [];
+  let blocks = 0;
+  for (let j = Math.floor((W.cy - 1800) / FB); j < Math.ceil((W.cy + 1800) / FB); j += 2) for (let i = Math.floor((W.cx - 2400) / FB); i < Math.ceil((W.cx + 2400) / FB); i += 2) {
+    const x = (i + 0.5) * FB, y = (j + 0.5) * FB;
+    if (!W.inHome(x, y) || W.farmAt(x, y) < 0.3) continue;
+    const P = IC.farmBlock(W, i, j); if (!P) continue;
+    blocks++; plans.push(P);
+    by[P.kind] = (by[P.kind] || 0) + 1; slope[P.kind] = (slope[P.kind] || 0) + W.slopeAt(x, y);
+    for (const f of P.feats) feats[f.k] = (feats[f.k] || 0) + 1;
+    assert(IC.farmBlock(W, i, j) === P && JSON.stringify(IC.farmBlock(W, i, j)) === JSON.stringify(P), 'a block is planned the same way twice');
+  }
+  assert(blocks > 400, `only ${blocks} farm blocks sampled`);
+  // the kinds by the ground: the plain is most of it, hills and enclosed country a good share, each on its own slope
+  assert(by.plain > blocks * 0.3 && by.hill > blocks * 0.08 && by.enc > blocks * 0.08, `kinds: ${JSON.stringify(by)}`);
+  assert(slope.hill / by.hill > slope.plain / by.plain * 1.5, `hill blocks are not on steeper ground than the plain (${(slope.hill / by.hill).toFixed(4)} against ${(slope.plain / by.plain).toFixed(4)})`);
+  // what each kind is made of
+  const edgeT = kind => { const t = {}; for (const P of plans) if (P.kind === kind) for (const e of P.edges) t[e.t] = (t[e.t] || 0) + 1; return t; };
+  const pt = edgeT('plain'), ht = edgeT('hill');
+  assert((pt.hedge || 0) + (pt.ditch || 0) > (pt.wall || 0) * 10, `the plain's field edges: ${JSON.stringify(pt)}`);
+  assert((ht.hedge || 0) + (ht.wall || 0) > 0, `the hills' field edges: ${JSON.stringify(ht)}`);
+  for (const P of plans.filter(P => P.kind === 'upland')) for (const e of P.edges) assert(e.t !== 'ditch', 'a ditch on the uplands');
+  const area = kind => { let n = 0, a = 0; for (const P of plans) if (P.kind === kind && !P.one) for (const c of P.cells) for (const pl of c.plots) { n++; a += pl[2] * pl[3]; } return a / (n || 1); };
+  assert(area('hill') * 2.5 < area('plain') && area('enc') * 1.4 < area('plain'), `fields are not smaller in the hills (${area('hill').toFixed(0)} ha) and the enclosed country (${area('enc').toFixed(0)} ha) than on the plain (${area('plain').toFixed(0)} ha)`);
+  // features: farms on a fifth of the blocks or so, copses and ponds here and there, each in open ground
+  assert(feats.farm > blocks * 0.1 && feats.farm < blocks * 0.5, `${feats.farm} farms on ${blocks} blocks`);
+  assert(feats.copse > blocks * 0.02 && feats.pond > blocks * 0.01, `features: ${JSON.stringify(feats)}`);
+  const segs = []; for (const e of W.edges) for (let q = 1; q < e.pts.length; q++) segs.push([e.pts[q - 1].x, e.pts[q - 1].y, e.pts[q].x, e.pts[q].y]);
+  const roadD = (x, y) => { let m = 1e9; for (const s of segs) { if (Math.min(s[0], s[2]) > x + 3 || Math.max(s[0], s[2]) < x - 3 || Math.min(s[1], s[3]) > y + 3 || Math.max(s[1], s[3]) < y - 3) continue; m = Math.min(m, U.segDist(x, y, s[0], s[1], s[2], s[3])); } return m; };
+  let farms = 0, tracks = 0;
+  for (const P of plans) for (const f of P.feats) {
+    if (f.x === undefined) continue;
+    assert(!W.builtAt(f.x, f.y), `a ${f.k} on built ground at ${f.x.toFixed(0)},${f.y.toFixed(0)}`);
+    assert(!W.inLake(f.x, f.y), `a ${f.k} in the water at ${f.x.toFixed(0)},${f.y.toFixed(0)}`);
+    assert(roadD(f.x, f.y) > (f.r || 0.6), `a ${f.k} on a road at ${f.x.toFixed(0)},${f.y.toFixed(0)}`);
+    if (f.k !== 'farm') continue;
+    farms++; if (f.track && U.dxy(f.track[0][0], f.track[0][1], f.track[1][0], f.track[1][1]) > 0.5) tracks++;
+    assert(f.bld && f.bld.length >= 2, 'a farm with fewer than two buildings');
+  }
+  assert(tracks > farms * 0.8, `${tracks} of ${farms} farms have a track to the road`);
+  // nothing is planned on a town: the capital's centre has no block, and a plot the painter keeps (farmland under
+  // its centre, as the painter asks) is never on built ground
+  const cap = W.cities[0]; let onTown = 0, kept = 0;
+  assert(!IC.farmBlock(W, Math.floor(cap.x / FB), Math.floor(cap.y / FB)), 'a farm block over the capital\'s centre');
+  for (const P of IC.farmBlocks(W, cap.x - cap.r * 1.5, cap.y - cap.r * 1.5, cap.x + cap.r * 1.5, cap.y + cap.r * 1.5)) for (const c of P.cells) for (const pl of c.plots) {
+    const u = pl[0] + pl[2] / 2, v = pl[1] + pl[3] / 2, x = c.cx + Math.cos(c.th) * u - Math.sin(c.th) * v, y = c.cy + Math.sin(c.th) * u + Math.cos(c.th) * v;
+    if (W.farmAt(x, y) < 0.1) continue;
+    kept++; if (W.builtAt(x, y)) onTown++;
+  }
+  assert(kept > 50 && onTown === 0, `${onTown} of ${kept} field plots round the capital are on its blocks`);
+}, false, 'world');
+test('world: roads abroad: every foreign town stands on a road of its own country with a fringe, the border crossings carry on over the border, none of those roads is ours to drive or to hold, and a route between our cities stays at home (brief 57)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed);
+    const abroad = W.edges.filter(e => e.abroad), home = W.edges.filter(e => !e.abroad);
+    assert(abroad.length > 150, `seed ${seed}: only ${abroad.length} road pieces abroad`);
+    assert(['A', 'B', 'C', 'D'].every(k => abroad.some(e => e.abroad === k)), `seed ${seed}: a neighbour has no roads`);
+    // each flagged with the country it runs in, and no home road abroad
+    for (const e of abroad) { const m = e.pts[e.pts.length >> 1]; if (!e.crossing) assert(!W.inHome(m.x, m.y) && W.countryAt(m.x, m.y) === e.abroad, `seed ${seed}: road ${e.id} is flagged ${e.abroad} but runs in ${W.countryAt(m.x, m.y)}`); }
+    for (const e of home) { const m = e.pts[e.pts.length >> 1]; assert(W.inHome(m.x, m.y), `seed ${seed}: a home road ${e.id} (${e.cls}) runs abroad at ${m.x.toFixed(0)},${m.y.toFixed(0)}`); }
+    // every foreign town is on its roads, has blocks and a fringe
+    for (const f of W.foreign) {
+      const mine = abroad.filter(e => e.a === f.id || e.b === f.id || e.city === f.id);
+      assert(mine.length >= 1, `seed ${seed}: ${f.name} (${f.k}) has no road`);
+      assert(f.blocks && f.blocks.length > 20 && f.streets && f.streets.length > 5, `seed ${seed}: ${f.name} has ${f.blocks && f.blocks.length} blocks`);
+      assert(f.fringe, `seed ${seed}: ${f.name} has no fringe`);
+    }
+    // the neutral crossings carry on over the border to a town
+    const xs = W.crossings.filter(x => x.k === 'C' || x.k === 'D');
+    assert(xs.length >= 2, `seed ${seed}: ${xs.length} neutral crossings`);
+    for (const x of xs) {
+      const e = abroad.find(e => e.crossing && (e.a === x.id || e.b === x.id)); if (!e) continue;
+      const over = e.a === x.id ? e.b : e.a, seen = reach(W, over, q => q.abroad === x.k);
+      assert(W.foreign.some(f => f.k === x.k && seen.has(f.id)), `seed ${seed}: the crossing at ${x.name || x.id} leads to no town of ${x.k}`);
+    }
+    assert(xs.some(x => abroad.some(e => e.crossing && (e.a === x.id || e.b === x.id))), `seed ${seed}: no crossing carries on over the border`);
+    // not ours: routing and travel times skip them, their bridges are not ours
+    IC.buildRouting(W);
+    const adjIds = new Set(); W.roadAdj.forEach((l, i) => { if (l.length) adjIds.add(W.roadIds[i]); });
+    for (const f of W.foreign) assert(!adjIds.has(f.id), `seed ${seed}: ${f.name} is in our routing`);
+    const tt = IC.travelFrom(W, W.cities[0].id, true);
+    for (const f of W.foreign) assert(tt.t[f.id] === undefined, `seed ${seed}: a travel time to ${f.name} abroad`);
+    for (const b of W.bridges) { const ab = !W.inHome(b.x, b.y); assert(!!b.abroad === ab, `seed ${seed}: a bridge at ${b.x.toFixed(0)},${b.y.toFixed(0)} is ${b.abroad ? 'abroad' : 'ours'} but stands ${ab ? 'abroad' : 'at home'}`); }
+    assert(W.bridges.some(b => b.abroad), `seed ${seed}: no bridge abroad`);
+    // a route between two of our cities uses no road abroad
+    const big = W.cities.slice().sort((a, b) => b.pop - a.pop).slice(0, 6);
+    for (const a of big) for (const b of big) if (a !== b) { const seen = reach(W, a.id, e => !e.abroad); assert(seen.has(b.id), `seed ${seed}: no home road from ${a.name} to ${b.name}`); }
+  }
 }, false, 'world');
 test('world: villages have a plan: a street with houses fronting it on both sides, a lane off it, a church in the bigger ones, and no house in the water or on a road (brief 54)', () => {
   for (const seed of [4242, 7]) {

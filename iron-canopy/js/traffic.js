@@ -75,10 +75,11 @@ function buildGraph(W) {
   };
   // a national road inside a city is one of its avenues, and carries the city's traffic as they do
   const cityOf = {}; for (const c of W.cities) cityOf[c.id] = c;
-  for (const e of W.edges) add(e.pts, e.city ? e.ccls || 'art' : e.cls, e.city ? { edge: e, city: cityOf[e.city] } : { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
+  // (a neighbour's roads are drawn, not driven: no trips are assigned over the border, brief 57)
+  for (const e of W.edges) if (!e.abroad) add(e.pts, e.city ? e.ccls || 'art' : e.cls, e.city ? { edge: e, city: cityOf[e.city] } : { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
   for (const c of W.cities) for (const s of c.streets) if (!s.cul) add(s.pts, s.cls, { city: c });
   for (const r of W.ramps || []) add(r.pts, 'ramp', { ramp: r });
-  for (const l of W.lanes) if (!l.loose) add(l.pts, 'ln', {});   // (not the lanes of a village no road reaches)
+  for (const l of W.lanes) if (!l.loose && !l.abroad) add(l.pts, 'ln', {});   // (not the lanes of a village no road reaches, nor those abroad)
   // a suburb's closes last (brief 54): their links come after every other, so a loop that may skip them stops short
   for (const c of W.cities) for (const s of c.streets) if (s.cul) add(s.pts, s.cls, { city: c, cul: true });
   // crossings at grade: every pair of pieces that cross (motorways and slip roads never do)
