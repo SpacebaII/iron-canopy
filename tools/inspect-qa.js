@@ -2,7 +2,9 @@
    for a while by the scripted commander (qwplayer.js), in the Sandbox and in a Career that has grown for a few
    years (careerplayer.js is Node-only, so the Career is the network preset); each panel and each of its tabs is
    opened and read. Fails like the smoke run: page errors, and "undefined", "NaN" or "[object Object]" on screen.
-     node tools/inspect-qa.js [--shots]
+     node tools/inspect-qa.js [--shots] [--save=file.json]
+   --save loads a saved game (IC.saveGame, written headless: a Career the scripted player has grown for years) and
+   reads the panels of its airports, their parts, aircraft, deals and the rooms instead.
    (the rest of this comment is the smoke run's, whose page helpers this shares)
    Smoke run: the real game in headless Chromium, every mode played for a little while as a player would, with real
    clicks and keys. Fails on any page error, and on "undefined", "NaN" or "[object Object]" anywhere on screen.
@@ -79,6 +81,29 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
   await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
   await ready(); await wait(500);
   await page.addScriptTag({ path: path.resolve(__dirname, '../qwplayer.js') });
+
+  const saveArg = (process.argv.find(a => a.startsWith('--save=')) || '').slice(7);
+  if (saveArg) {
+    console.log(`Saved game ${saveArg}`);
+    await page.click('#st-main button[data-v=campaign]'); await wait(500); await ready();
+    await ev(`(() => { const S2 = IC.loadSave(${JSON.stringify(fs.readFileSync(saveArg, 'utf8'))}); IC.adopt(S2); })()`); await wait(1500); await clear();
+    await run(0.5, 1); await clear(); await look('save');
+    const aps = await ev(`IC.bases(IC.S).filter(b => b.parts && b.parts.length).map(b => b.id)`);
+    for (const id of aps) {
+      await ev(`(() => { const b = IC.S.byId['${id}']; IC.cam.z = 3; IC.centerOn(b.x, b.y); })()`);
+      await panel(`apt-${id}`, `{ kind: 'infra', ref: IC.S.byId['${id}'] }`);
+      for (const k of await ev(`[...new Set(IC.S.byId['${id}'].parts.map(p => p.kind))]`)) await panel(`apt-${id}-${k}`, `(() => { const ap = IC.S.byId['${id}']; return { kind: 'apart', ref: ap.parts.find(p => p.kind === '${k}'), ap }; })()`);
+    }
+    for (let i = 0; i < 4; i++) await panel(`tail-${i}`, `IC.S.av && IC.S.av.tails[${i * 5}] && { kind: 'tail', ref: IC.S.av.tails[${i * 5}] }`);
+    await panel('flight', `(() => { const t = IC.S.threats.find(t => !t.dead && t.d.civil); return t && { kind: 'flight', ref: t }; })()`);
+    await panel('fix', `IC.S.asp && IC.S.asp.fixes && IC.S.asp.fixes[0] && { kind: 'fix', ref: IC.S.asp.fixes[0] }`);
+    await panel('city', `{ kind: 'infra', ref: IC.cap(IC.S) }`);
+    await panel('factory', `(() => { const r = IC.S.infra.find(i => i.kind === 'factory'); return r && { kind: 'infra', ref: r }; })()`);
+    for (const k of ['v', 'c', 'e', 'j', 'r', '?']) { await page.keyboard.press('Escape'); await page.keyboard.press(k); await wait(400); await look(`save-room-${k === '?' ? 'guide' : k}`); }
+    await browser.close();
+    console.log(problems.length ? `\n${problems.length} problem${problems.length > 1 ? 's' : ''}:\n  ${problems.join('\n  ')}` : `\nInspector run clean in ${Math.round((Date.now() - t0) / 1000)} s.`);
+    process.exit(problems.length ? 1 : 0);
+  }
 
   console.log('Quick war, after a day of war');
   await page.click('#st-main button[data-v=campaign]'); await wait(500); await ready(); await wait(1000); await clear();
