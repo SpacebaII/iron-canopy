@@ -470,8 +470,8 @@ function launchBlast(v, w, m, mo, age, big) {
   const lit = Math.exp(-age / 0.5);
   if (age < 0.15) {
     const k = 1 - age / 0.15;
-    emit(w.star, P.x, P.y, P.z, len * 1.8 * big * k, 1, 0.92, 0.8, k, seed);
-    emit(w.star, rx, ry, rz, len * 2.6 * big * k, 1, 0.85, 0.65, k, seed + 1);
+    emit(w.star, P.x, P.y, P.z, len * 0.8 * big * k, 1, 0.92, 0.8, k, seed);
+    emit(w.star, rx, ry, rz, len * 1.2 * big * k, 1, 0.85, 0.65, k, seed + 1);
   }
   // the gas out of the back of the canister, bending along the ground
   if (age < 1.2) for (let i = 0; i < 16; i++) {
@@ -498,12 +498,12 @@ function launchBlast(v, w, m, mo, age, big) {
     else { dx = D.x * 0.4 + Math.cos(an) * 0.5; dz = D.z * 0.4 + Math.sin(an) * 0.5; dy = D.y * 0.3 + 0.2; }
     const ox = back ? rx : P.x, oy = back ? ry : P.y, oz = back ? rz : P.z, sz = len * (0.15 + 0.4 * h2) * big + 0.04 * Math.sqrt(a) * big;
     let y = oy + dy * out + 0.0025 * a * KM * v.hk; if (y < gY + sz * 0.35) y = gY + sz * 0.35;
-    const c = (0.34 + 0.1 * h3) * L, warm = lit * 0.9;
+    const c = (0.2 + 0.08 * h3) * L, warm = lit * 0.9;
     emit(w.smoke, ox + dx * out + w.wx * a, y, oz + dz * out + w.wy * a, sz, c + (1 - c) * warm, c + (0.62 - c) * warm, c + (0.3 - c) * warm, 0.34 * Math.pow(1 - kk, 1.6) * U.clamp(a / 0.1, 0.3, 1), h1 * 6.28);
   }
   // dust off the ground round the launcher
   if (age < 16) for (let i = 0; i < 14; i++) {
-    const an = hash(seed + i + 290) * 6.283, R = len * (0.4 + 2.2 * (1 - Math.exp(-age * 1.8))) * (0.5 + 0.7 * hash(seed + i + 310)), kk = age / 16, c = 0.36 * L, sz = len * (0.18 + 0.04 * age) * (0.7 + 0.6 * hash(seed + i + 320));
+    const an = hash(seed + i + 290) * 6.283, R = len * (0.4 + 2.2 * (1 - Math.exp(-age * 1.8))) * (0.5 + 0.7 * hash(seed + i + 310)), kk = age / 16, c = 0.22 * L, sz = len * (0.18 + 0.04 * age) * (0.7 + 0.6 * hash(seed + i + 320));
     emit(w.smoke, P.x + Math.cos(an) * R + w.wx * age, gY + sz * 0.55, P.z + Math.sin(an) * R + w.wy * age, sz, c, c * 0.92, c * 0.8, 0.25 * Math.pow(1 - kk, 1.5), i);
   }
 }

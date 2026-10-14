@@ -152,7 +152,8 @@ function pads(v) {
     const t0 = IC.recFirstT(tr), a = IC.recAt(tr, t0, {}), b = IC.recAt(tr, Math.min(tr.t1, t0 + 20), {});
     if (!a || !b || a.alt > 0.05) continue;
     const az = Math.atan2(b.y - a.y, b.x - a.x);
-    let p = out.find(q => q.key === key && Math.hypot(q.x - a.x, q.y - a.y) < 1);
+    // a launcher for each place a weapon leaves from (a ballistic battery's launchers stand metres apart)
+    let p = out.find(q => q.key === key && Math.hypot(q.x - a.x, q.y - a.y) < (key === 'etel' ? 0.01 : 0.05));
     if (!p) out.push(p = { key, x: a.x, y: a.y, az, trs: [], t0: [], obj: null });
     p.trs.push(tr); p.t0.push(t0);
   }
@@ -188,7 +189,8 @@ A3.frame = function (v, t) {
       if (R) {
         p.obj.grp.position.set(0, 0, 0); p.obj.grp.rotation.set(0, -h, 0, 'YZX');
         if (E) E.node.quaternion.setFromAxisAngle(E.axis, -E.a.up);
-        p.obj.grp.updateMatrixWorld(true); q.set(0, 0, 0); R.node.localToWorld(q);
+        // (a point on the round's axis: its pivot is the erector's hinge, 0.95 m below the axis)
+        p.obj.grp.updateMatrixWorld(true); q.set(0, 0.0095, 0); R.node.localToWorld(q);
         p.ox = -q.x; p.oy = -q.z;
         if (E) E.node.quaternion.identity();
       }
