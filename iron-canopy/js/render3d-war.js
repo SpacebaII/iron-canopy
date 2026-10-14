@@ -142,7 +142,7 @@ void main() {
   vec3 col = mix(uEdge, uCore, clamp(core * (1.3 - u * 1.9) + dia * 0.5, 0.0, 1.0));
   float a = uA * pow(1.0 - u, 1.6) * (0.2 + 0.8 * core) * fl * (1.0 + 0.5 * dia);
   if (a < 0.003) discard;
-  gl_FragColor = vec4(col * uHot * (1.0 + dia), a);
+  gl_FragColor = vec4(col * uHot * (1.0 + dia) * min(a, 1.0), 1.0);
   #include <tonemapping_fragment>
   #include <OUT_CS>
 }`;
@@ -313,7 +313,9 @@ W3.mover = function (v, m) {
   const F = FLAME[kind];
   const mat = new T.ShaderMaterial({ vertexShader: PVS, fragmentShader: fsrc(PFS), transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide,
     uniforms: { uTime: { value: 0 }, uHot: { value: 1 }, uDia: { value: F.dia }, uA: { value: 1 }, uCore: { value: new T.Color(F.core) }, uEdge: { value: new T.Color(F.edge) } } });
-  bloom(mat, 5);
+  bloom(mat, 2.5);
+  // added light that leaves the frame's alpha alone: the passes after read it, and a flame's alpha over 1 turned them black
+  Object.assign(mat, { blending: T.CustomBlending, blendSrc: T.OneFactor, blendDst: T.OneFactor, blendSrcAlpha: T.ZeroFactor, blendDstAlpha: T.OneFactor });
   const wp = new T.Mesh(plumeGeom(), mat); wp.visible = false; wp.frustumCulled = false; wp.renderOrder = 11; wp.userData.F = F;
   if (wp.layers && IC.LIFE3D) wp.layers.enable(IC.LIFE3D.bloomLayer);
   v.scene.add(wp); m.wp = wp;
@@ -429,7 +431,8 @@ W3.pose = function (v, m, st, t) {
   const age = t - m.tr.t0, a = liftAlt(age); if (age > 80 || st.alt <= a) return;
   // straight up off the pad until it has the height the record gives it
   const q = m._pad || (m._pad = IC.recPose(m.tr, IC.recFirstT(m.tr), {}));
-  if (q) { const k = U.clamp(a / Math.max(1e-3, st.alt), 0, 1); st.x = q.x + (st.x - q.x) * k; st.y = q.y + (st.y - q.y) * k; }
+  // (it leaves the pad's vertical late, as it nears the recorded path: on the pad a few metres' drift shows)
+  if (q) { const k = Math.pow(U.clamp(a / Math.max(1e-3, st.alt), 0, 1), 3); st.x = q.x + (st.x - q.x) * k; st.y = q.y + (st.y - q.y) * k; }
   st.alt = a; st.pitch = Math.PI / 2 - 0.3 * U.clamp(a / 20, 0, 1);
 };
 /* where a round leaves from: its canister's mouth when its launcher is drawn (render3d-arms.js), else the first
