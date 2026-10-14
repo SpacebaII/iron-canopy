@@ -2075,20 +2075,34 @@ IC.replayGallery = function (S) {
 };
 function buildGallery(v, side) {
   if (!makeRenderer(v)) return;
-  const scene = v.scene = new THREE.Scene(); scene.background = new THREE.Color('#0a1420');
+  // a studio: a pale sky over a light floor that fades into it, a warm sun from the side casting soft shadows, a cool
+  // fill from the sky, so every model shows its shape the way it would on the apron at noon
+  const scene = v.scene = new THREE.Scene();
+  const bg = document.createElement('canvas'); bg.width = 4; bg.height = 256;
+  const bgg = bg.getContext('2d'), grd = bgg.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#6f8fae'); grd.addColorStop(0.55, '#b9cad6'); grd.addColorStop(1, '#dde2dc');
+  bgg.fillStyle = grd; bgg.fillRect(0, 0, 4, 256);
+  scene.background = texSRGB(new THREE.CanvasTexture(bg));
+  scene.fog = new THREE.Fog('#d6ddda', 420, 1150);
   v.camera = new THREE.PerspectiveCamera(45, 1.6, 0.5, 6000);   // the gallery is laid out in metres
   const lk = (+THREE.REVISION || 128) >= 155 ? Math.PI : 1;
-  scene.add(new THREE.HemisphereLight(0xcfe0f4, 0x40382c, 1.05 * lk));
-  const sun = new THREE.DirectionalLight(0xfff0dc, 1.25 * lk); sun.position.set(-300, 400, 200); scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xd4e2f2, 0x5a5246, 0.55 * lk));
+  const sun = v.gsun = new THREE.DirectionalLight(0xffeedd, 1.7 * lk); sun.position.set(-260, 330, 200); scene.add(sun); scene.add(sun.target);
+  const rim = new THREE.DirectionalLight(0xa8c4ff, 0.35 * lk); rim.position.set(300, 160, -260); scene.add(rim);
+  if (v.renderer.shadowMap) {
+    v.renderer.shadowMap.enabled = true; v.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04; sun.shadow.radius = 3;
+  }
   v.dmgMeshes = []; v.nightLights = []; v.dotList = []; v.static = new THREE.Group(); scene.add(v.static);
   winMat().color.set('#303a44');
   v.light = 1; v.night = false;
   if (LIFE()) LIFE().scene(v);
-  // a grey slab with a 10 m grid
+  // a light floor with a 10 m grid
   const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d');
-  g.fillStyle = '#3a4038'; g.fillRect(0, 0, 512, 512); g.strokeStyle = 'rgba(255,255,255,0.1)'; g.beginPath(); for (let i = 0; i <= 512; i += 32) { g.moveTo(i, 0); g.lineTo(i, 512); g.moveTo(0, i); g.lineTo(512, i); } g.stroke();
-  const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(12, 12);
-  const slab = new THREE.Mesh(discG(), new THREE.MeshLambertMaterial({ map: tex })); slab.scale.set(960, 1, 960); scene.add(slab);
+  g.fillStyle = '#6f756c'; g.fillRect(0, 0, 512, 512);
+  g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 1; g.beginPath(); for (let i = 0; i <= 512; i += 32) { g.moveTo(i + 0.5, 0); g.lineTo(i + 0.5, 512); g.moveTo(0, i + 0.5); g.lineTo(512, i + 0.5); } g.stroke();
+  const tex = texSRGB(new THREE.CanvasTexture(cv)); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(12, 12); tex.anisotropy = v.aniso || 4;
+  const slab = new THREE.Mesh(discG(), new THREE.MeshLambertMaterial({ map: tex })); slab.scale.set(960, 1, 960); slab.receiveShadow = true; scene.add(slab);
   // in metres here (the models are scaled up a hundredfold), one row a group, spaced by size
   let z = -140;
   for (const grp of IC.MODEL_GROUPS) {
@@ -2114,6 +2128,13 @@ function buildGallery(v, side) {
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
   for (const m of v.movers) { x0 = Math.min(x0, m.grp.position.x); x1 = Math.max(x1, m.grp.position.x); z0 = Math.min(z0, m.grp.position.z); z1 = Math.max(z1, m.grp.position.z); }
   Object.assign(v.orbit, { tx: (x0 + x1) / 2, tz: (z0 + z1) / 2, dist: Math.max(x1 - x0, z1 - z0) * 0.85 });
+  // the sun's shadow covers the whole grid; every model casts one and takes the others'
+  if (sun.castShadow) {
+    const C = sun.shadow.camera, hw = Math.max(x1 - x0, z1 - z0) / 2 + 60;
+    sun.target.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2); sun.position.set(sun.target.position.x - 260, 330, sun.target.position.z + 200);
+    Object.assign(C, { left: -hw, right: hw, top: hw, bottom: -hw, near: 50, far: 1400 }); C.updateProjectionMatrix();
+    for (const m of v.movers) m.grp.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  }
   bindPointer(v);
   resize(v);
   msg(v, '');
