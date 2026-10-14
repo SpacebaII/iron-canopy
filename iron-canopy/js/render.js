@@ -121,10 +121,12 @@ IC.render = function (S, now) {
   drawBases(S, px, now, light);
   drawZones(S, px, now);
   drawFields(S, px);
-  drawInfra(S, px, now);
+  const townNames = drawInfra(S, px, now);
   IC.drawForces(S, px, now);
   if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
+  // the towns' names over every symbol: a battery or an airport at the centre never hides whose city it is
+  for (const f of townNames) f();
   if (IC.drawWarnings) IC.drawWarnings(ctx, S, px, now);
   // (round 2) the airliner the camera follows: a ring, and the aircraft itself while it flies
   if (S.follow && IC.drawFollowMark) IC.drawFollowMark(ctx, S, px, now);
@@ -173,7 +175,11 @@ IC.render = function (S, now) {
   const vg = ctx.createRadialGradient(cam.vw / 2, cam.vh / 2, Math.min(cam.vw, cam.vh) * 0.45, cam.vw / 2, cam.vh / 2, Math.max(cam.vw, cam.vh) * 0.8);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,3,8,0.5)');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, cam.vw, cam.vh);
-  if (IC.cine && IC.cine.bars > 0 && !(IC.ui && IC.ui.compact && IC.ui.compact())) { const bh = cam.vh * 0.08 * IC.cine.bars; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cam.vw, bh); ctx.fillRect(0, cam.vh - bh, cam.vw, bh); }
+  // the cinema bars shade in from the edges: hard black strips read as map that failed to draw between the panels
+  if (IC.cine && IC.cine.bars > 0 && !(IC.ui && IC.ui.compact && IC.ui.compact())) {
+    const bh = cam.vh * 0.12 * IC.cine.bars, a = 0.85 * IC.cine.bars;
+    for (const [y0, y1] of [[0, bh], [cam.vh, cam.vh - bh]]) { const gr = ctx.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(0.55, `rgba(0,0,0,${a * 0.6})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(0, Math.min(y0, y1), cam.vw, bh); }
+  }
 };
 
 function label(txt, x, y, px, col, size, align, weight) {
@@ -264,7 +270,7 @@ function covCanvas(S) {
   if (!C) return null;
   // our military radars go into the same image: blue, deeper where they see lower, with holes behind hills
   const M = IC.milCov(S);
-  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C && covImg.M === M) return covImg.cv;
+  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C && covImg.M === M) return covImg.sm;
   const cv2 = covImg && covImg.cv && covImg.cv.width === C.gw ? covImg.cv : Object.assign(document.createElement('canvas'), { width: C.gw, height: C.gh });
   const g2 = cv2.getContext('2d'), img = g2.createImageData(C.gw, C.gh), d = img.data;
   const home = covImg && covImg.seed === S.seed && covImg.home ? covImg.home : (() => { const h = new Uint8Array(C.gw * C.gh); for (let j = 0; j < C.gh; j++) for (let i = 0; i < C.gw; i++) h[j * C.gw + i] = IC.inHome((i + 0.5) * IC.ASP.CS, (j + 0.5) * IC.ASP.CS) ? 1 : 0; return h; })();
@@ -281,12 +287,16 @@ function covCanvas(S) {
     d[o] = (92 * ma + d[o] * da * (1 - ma)) / oa; d[o + 1] = (200 * ma + d[o + 1] * da * (1 - ma)) / oa; d[o + 2] = (255 * ma + d[o + 2] * da * (1 - ma)) / oa; d[o + 3] = oa * 255;
   }
   g2.putImageData(img, 0, 0);
-  covImg = { v: C.v, seed: S.seed, C, M, cv: cv2, home };
-  return cv2;
+  // drawn as it is, each 5 km cell showed as a square and the edges of the cover as staircases: twice as fine and
+  // blurred by a cell and a half, once when the cover changes, the edges are curves like the hills that make them
+  const sm = covImg && covImg.sm && covImg.sm.width === C.gw * 2 ? covImg.sm : Object.assign(document.createElement('canvas'), { width: C.gw * 2, height: C.gh * 2 });
+  const g3 = sm.getContext('2d'); g3.clearRect(0, 0, sm.width, sm.height); g3.imageSmoothingEnabled = true; g3.filter = 'blur(3px)'; g3.drawImage(cv2, 0, 0, sm.width, sm.height); g3.filter = 'none';
+  covImg = { v: C.v, seed: S.seed, C, M, cv: cv2, sm, home };
+  return sm;
 }
 function drawCoverage(S) {
   const cc = covCanvas(S);
-  if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
+  if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width / 2 * IC.ASP.CS, cc.height / 2 * IC.ASP.CS); ctx.globalAlpha = 1; }
   // airborne early warning looks down from above the hills: a plain disc
   cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, cov.width, cov.height); cx2.setTransform(COVK, 0, 0, COVK, 0, 0);
   let any = false;
@@ -431,6 +441,7 @@ function drawIncidents(S, px, now) {
 }
 
 function drawInfra(S, px, now) {
+  const names = [];
   for (const i of S.infra) {
     if (i.kind === 'bridge' || !inView(i.x, i.y, 300)) continue;
     const sel = S.sel && S.sel.ref === i;
@@ -440,10 +451,13 @@ function drawInfra(S, px, now) {
       const big = i.capital ? 14 : i.pop > 350 ? 12 : 10.5;
       // far out, only the big cities are named, so the names stay readable
       if ((S.layers.labels && (cam.z > 0.035 || i.pop > 150)) || i.pop > 350) {
-        label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
         // (round 5c) the town's name holds its place: the chain's tags and the floating words go round it
         IC.LBL.put(i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, nm.length * big * 0.64 * px, big * 1.25 * px, 0, 0, true);
-        if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
+        // the words go on after every symbol (drawn by the frame), so nothing at the centre covers the name
+        names.push(() => {
+          label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
+          if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
+        });
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }
     } else {
@@ -480,6 +494,7 @@ function drawInfra(S, px, now) {
       label(W.full[k].toUpperCase(), x, y, px, W.side[k] === 'hostile' ? 'rgba(255,150,130,0.4)' : 'rgba(200,210,220,0.3)', 18, 'center', 600);
     }
   }
+  return names;
 }
 
 function drawGhost(S, px) {

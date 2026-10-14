@@ -116,7 +116,7 @@ EV.inspect = (S, id) => { const ap = S.byId[id];
 function inspect(S, ap) {
   const st = ap.st || {}, bad = [];
   if (!st.fire) bad.push('no fire cover');
-  else for (const rw of rwOf(ap)) if (((st.rescueRw || {})[rw.id] || 0) > IC.FIRE_STD) bad.push(`fire trucks slow to the far end of runway ${rw.name || ''}`.trim());
+  else for (const rw of rwOf(ap)) if (((st.rescueRw || {})[rw.id] || 0) > IC.FIRE_STD) bad.push(`fire trucks slow to the far end of ${(rw.name || 'the runway').replace(/^Runway/, 'runway')}`);
   if (!hasIls(ap)) bad.push('no landing system');
   if (rwOf(ap).some(p => (p.wear || 0) > 0.6)) bad.push('a worn runway');
   if (!ap.parts.some(p => p.kind === 'fuel' && p.built)) bad.push('no fuel farm');
