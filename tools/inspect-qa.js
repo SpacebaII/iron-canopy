@@ -3,7 +3,8 @@
    years (careerplayer.js is Node-only, so the Career is the network preset); each panel and each of its tabs is
    opened and read. Fails like the smoke run: page errors, and "undefined", "NaN" or "[object Object]" on screen.
      node tools/inspect-qa.js [--shots] [--save=file.json]
-   --save loads a saved game (IC.saveGame, written headless: a Career the scripted player has grown for years) and
+   --save loads a saved game exported from the page (Saved games, Export: a save written in Node is refused, its map
+   built a hair differently) and
    reads the panels of its airports, their parts, aircraft, deals and the rooms instead.
    (the rest of this comment is the smoke run's, whose page helpers this shares)
    Smoke run: the real game in headless Chromium, every mode played for a little while as a player would, with real

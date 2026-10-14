@@ -4551,6 +4551,19 @@ test('story: before Act III the Minister\'s confidence never shows below 5, even
   S.story.standing = 7; IC.emit(S, 'tailDestroyed', {}); IC.step(S, 0.5);
   assert(S.story.standing >= 5, `after an airliner was lost the Minister's confidence shows ${S.story.standing.toFixed(1)}`);
 });
+test('airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of "closed"', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = IC.bases(S).find(b => b.parts && b.parts.some(p => p.kind === 'runway' && p.built));
+  assert(IC.rwyState(S, ap).open, `the airport starts ${IC.rwyState(S, ap).word}`);
+  const rws = ap.parts.filter(p => p.kind === 'runway');
+  for (const r of rws) r.shut = 'w1';
+  ap.dirty = true; ap.st = null;
+  assert(/works/.test(IC.rwyState(S, ap).word), `runways shut for works read "${IC.rwyState(S, ap).word}"`);
+  for (const r of rws) r.shut = null;
+  ap.parts = ap.parts.filter(p => p.kind !== 'taxi'); ap.dirty = true; ap.st = null;
+  const w = IC.rwyState(S, ap);
+  assert(!w.closed && /taxiway/.test(w.word), `a runway with no taxiway reads "${w.word}"`);
+});
 test('airport: a taxiway laid again over one already there is refused, and not paid for twice', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = IC.bases(S).find(b => b.parts && b.parts.some(p => p.kind === 'taxi')), tw = ap.parts.find(p => p.kind === 'taxi');

@@ -223,7 +223,7 @@ function alerts() {
   if (raid.length >= 4) w.push(['amber', `Raid in progress · ${raid.length} hostile tracks`, raid[0]]);
   const sus = S.threats.filter(t => t.det && !t.dead && t.aff === 'S' && IC.inHome(t.px, t.py) && t.d.cls === 'air');
   if (sus.length) w.push(['amber', `${sus.length} suspect aircraft in our airspace · send a fighter to look`, sus[0]]);
-  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && IC.rwyState(S, b).closed) w.push(['amber', `${b.name}: runway closed`, b]);
+  for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !b.locked && b.parts.some(p => p.kind === 'runway') && IC.rwyState(S, b).closed) w.push(['amber', `${b.name}: ${U.lc(IC.rwyState(S, b).word)}`, b]);
   if (S.av) for (const b of S.infra.filter(i => i.kind === 'airport' && i.owner === 'us')) {
     const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id);
     if (hold.length >= 2 || hold.some(t => t.holdT > 600)) w.push(['amber', `${b.name}: ${hold.length} holding${hold.some(t => t.standShort) ? ' · stands full' : ''}`, b]);
