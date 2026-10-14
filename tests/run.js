@@ -4540,6 +4540,27 @@ test('airport: an apron with airliners parked on it cannot be bulldozed, and say
   run(S, 0.1);
   assert(lost() === l0, 'aircraft were lost');
 }, true);
+test('story: before Act III the Minister\'s confidence never shows below 5, even months in the red', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10, dpm: 0.25 });
+  S.story.standing = 7;
+  let low = 100;
+  for (let i = 0; i < IC.MO(S, 3) / 2; i++) { if (S.budget > -900) S.budget = -1000; IC.step(S, 2); low = Math.min(low, S.story.standing); }
+  assert(S.red && S.red.months >= 2, `the treasury was not in the red for months (${S.red && S.red.months})`);
+  assert(low >= 5, `the Minister's confidence fell to ${low.toFixed(1)}`);
+  // an airliner lost at once (−10) shows the floor too, not a number under it until the next reassessment
+  S.story.standing = 7; IC.emit(S, 'tailDestroyed', {}); IC.step(S, 0.5);
+  assert(S.story.standing >= 5, `after an airliner was lost the Minister's confidence shows ${S.story.standing.toFixed(1)}`);
+});
+test('airport: a taxiway laid again over one already there is refused, and not paid for twice', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = IC.bases(S).find(b => b.parts && b.parts.some(p => p.kind === 'taxi')), tw = ap.parts.find(p => p.kind === 'taxi');
+  const pts = tw.nodes.slice(0, 2).map(id => ap.nodes[id]), n0 = ap.parts.length, b0 = S.budget;
+  assert(!IC.aptPlanTaxi(S, ap, pts, 0.3), 'the same taxiway was planned again');
+  assert(ap.parts.length === n0 && S.budget === b0, `${ap.parts.length - n0} parts added, ${U.money(b0 - S.budget)} spent`);
+  assert(S.logs.some(l => /already there/.test(l.msg)), 'no word on why');
+  const far = pts.map(q => ({ x: q.x + 3, y: q.y + 3 }));
+  assert(IC.aptPlanTaxi(S, ap, [pts[0], far[0]], 0.3), 'a new taxiway from an existing node was refused');
+});
 test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 1 / 3);

@@ -978,7 +978,7 @@ IC.storyChoose = function (S, id, i) {
   st.log.push({ t: S.time, title: e.title, choice: o.t });
   IC.log(S, 'info', 'DECISION', `${e.title}: ${o.t}.`);
   e.after && e.after();
-  st.standing = U.clamp(st.standing, 0, 100);
+  st.standing = U.clamp(st.standing, IC.confFloor(S), 100);
 };
 
 /* ---------- delegates and requests ---------- */
@@ -1071,7 +1071,8 @@ IC.storyTick = function (S, dt) {
       b.run();
     }
   }
-  // the minister's confidence drifts with how the sector is doing
+  // the minister's confidence drifts with how the sector is doing (and never shows below its floor, whatever lowered it)
+  if (st.standing < IC.confFloor(S)) st.standing = IC.confFloor(S);
   st.standT = (st.standT || 0) - dt;
   if (st.standT <= 0) {
     st.standT = 600;
@@ -1110,10 +1111,11 @@ IC.storyTick = function (S, dt) {
 };
 
 /* confidence: before Act III it cannot fall below 5 and costs money instead (the grant); from Act III a full day
-   at zero and you are replaced */
+   at zero and you are replaced. IC.confFloor is the floor, for everything that lowers it */
+IC.confFloor = S => S.story && S.story.act < 3 ? 5 : 0;
 function confidence(S) {
   const st = S.story;
-  st.standing = U.clamp(st.standing, st.act < 3 ? 5 : 0, 100);
+  st.standing = U.clamp(st.standing, IC.confFloor(S), 100);
   if (st.act < 3) {
     const cut = st.grantCut && (!st.grantCutT || S.time > st.grantCutT) && st.act === 1 ? st.grantCut : 1;
     st.grant = st.grant0 * grantK(st) * cut;

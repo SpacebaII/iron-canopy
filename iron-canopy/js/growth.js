@@ -889,7 +889,7 @@ IC.onMonth(S => {
   S.red.months++;
   const st = S.story;
   if (st) {
-    st.standing -= IC.RED.conf;
+    st.standing = Math.max(IC.confFloor(S), st.standing - IC.RED.conf);
     IC.log(S, 'warn', 'TREASURY', `Another month in the red (${S.red.months}): the Minister's confidence −${IC.RED.conf}. The grant shrinks with it.${st.act < 3 ? '' : ' At zero for a full day you are replaced.'}`);
     if (S.red.months % 2 === 0 && IC.storyEvent && !st.events.some(e => e.kind === 'treasury')) IC.storyEvent(S, 'treasury');
   }

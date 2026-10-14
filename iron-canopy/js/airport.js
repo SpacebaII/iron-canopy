@@ -1587,6 +1587,10 @@ IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   const ids = snaps.map(s => nodeFor(ap, s));
   const clean = ids.filter((id, i) => i === 0 || id !== ids[i - 1]);
   if (clean.length < 2) return null;
+  // (a taxiway laid again over one that is there, built or planned, would only be paid for twice)
+  const have = new Set();
+  for (const q of ap.parts) if (q.kind === 'taxi') for (let i = 1; i < q.nodes.length; i++) { have.add(q.nodes[i - 1] + '|' + q.nodes[i]); have.add(q.nodes[i] + '|' + q.nodes[i - 1]); }
+  if (clean.every((id, i) => i === 0 || have.has(clean[i - 1] + '|' + id))) { IC.log(S, 'warn', 'BUILD', 'That taxiway is already there.'); return null; }
   return IC.aptPlan(S, ap, { kind: 'taxi', nodes: clean }, o);
 };
 /* plan a runway from a to b */
