@@ -1528,7 +1528,9 @@ IC.buildJunctions = W => junctions(W);
    city being built sees the ones its own bypass made before the junctions are shaped */
 IC.ixFoot = { mx: 2.4, mm: 5, along: 6, beside: 1.5 };
 IC.ixList = function (W) {
-  const sig = W.edges.length + ':' + Object.keys(W.nodes).length;
+  // (a cheap signature: this is asked for every cell a town rasters, and counting the nodes' keys each time cost
+  // 20 s a world; a road added or split adds an edge, and a road replaced changes the last one)
+  const E = W.edges, last = E[E.length - 1], sig = E.length + ':' + (last ? last.a + '-' + last.b : '');
   if (W._ixs && W._ixs.sig === sig) return W._ixs.list;
   const hwN = {}, degN = {}, dirs = {};
   for (const e of W.edges) for (const [k, end] of [[e.a, 0], [e.b, 1]]) {
