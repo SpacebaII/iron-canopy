@@ -10,7 +10,8 @@ const HIT = { INT: 1, IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, LRE: 2.5, VLR:
 
 IC.maxRange = function (S, u) {
   const d = u.d;
-  if (d.weapon === 'sam' || d.weapon === 'strike') { let r = 0; for (const m of IC.activeMags(S, u)) r = Math.max(r, IC.MUN[m.mun].range); return r; }
+  // (the magazines researched, read in place: every battery asks every step)
+  if (d.weapon === 'sam' || d.weapon === 'strike') { let r = 0; for (const m of u.mags) if (IC.hasTech(S, m.tech)) r = Math.max(r, IC.MUN[m.mun].range); return r; }
   if (d.gun) return d.gun.range;
   if (d.laser) return d.laser.range;
   if (d.hpm) return d.hpm.range;
@@ -245,6 +246,8 @@ function fire(S, u, t, m, r, P, hoj) {
 
 IC.defense = function (S, dt) {
   const wx = IC.wx(S);
+  // (the tracks that wake a battery in ambush, listed once for all of them: each still checks them as it goes)
+  let hot = null;
   for (const u of S.units) {
     if (u.state !== 'ready') { u.beam = null; u.why = u.state === 'transit' ? 'On the move' : 'Setting up'; continue; }
     const d = u.d;
@@ -252,7 +255,10 @@ IC.defense = function (S, dt) {
     if (d.link) { u.why = u.radarOn ? linkWhy(S, u) : 'Datalink off: batteries nearby fire only on their own radar'; continue; }
     if (!d.weapon || d.weapon === 'strike' || d.weapon === 'decoy') continue;
     const range = IC.maxRange(S, u);
-    if (u.emcon === 'ambush') for (const t of S.threats) if (t.det && (t.aff === 'H' || t.aff === 'S') && U.dist(u, t) < range * 1.15) { u.ambushT = 120; break; }
+    if (u.emcon === 'ambush') {
+      hot = hot || S.threats.filter(t => t.det && (t.aff === 'H' || t.aff === 'S'));
+      for (const t of hot) if (t.det && (t.aff === 'H' || t.aff === 'S') && U.dist(u, t) < range * 1.15) { u.ambushT = 120; break; }
+    }
     if (IC.ok(u, 'launch') < 0.25 && d.weapon !== 'ecm') { u.why = 'Launchers knocked out: needs repair'; continue; }
 
     if (d.weapon === 'sam') {
@@ -316,9 +322,10 @@ IC.defense = function (S, dt) {
       const G = d.gun;
       let best = null, bd = 1e9;
       for (const t of S.threats) {
+        // (the cheap test first: most tracks are out of a gun's reach)
+        const r = U.dist(u, t); if (r > G.range || t.alt > 4) continue;
         if (!eligible(S, u, t, u.prio === t)) continue;
         if (!G.vs[IC.classOf(t)]) continue;
-        const r = U.dist(u, t); if (r > G.range || t.alt > 4) continue;
         if (!canSee(S, u, t) && !t.vis) continue;
         if (r < bd) { bd = r; best = t; }
       }

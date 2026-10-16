@@ -2,7 +2,7 @@
    probing (act 2 or later) with a raid in the air, then a few thousand steps of 0.25 game s timed one by one.
      node tools/war-perf.js [--seed=777] [--steps=4000] [--min=40] [--phases] [--snap=file] [--root=dir]
    --min: hostile tracks in the air before timing starts; --phases: time each part of the step (IC.weather, IC.sense…);
-   --snap=file: save the game where the timing starts (the warm-up takes minutes) and start from it when it is there;
+   --snap=file: keep the warmed-up game (the warm-up takes minutes) and start from it when it is there;
    --root=dir: time another checkout's game with this script (comparing two checkouts).
    Times are CPU time (process.cpuUsage), so a busy machine slows the run but not the numbers much.
    Prints the median, the 95th percentile and the worst, and a hash of the state after the run: the same seed must give
@@ -17,15 +17,23 @@ const fs = require('fs'), SNAP = opt('snap', '');
 IC.seedRandom(seed);
 const w0 = Date.now(), fromSnap = SNAP && fs.existsSync(SNAP);
 let S = fromSnap ? IC.loadSave(fs.readFileSync(SNAP, 'utf8')) : IC.newGame({ seed, mode: 'campaign' }); IC.S = S;
-const E = S.enemy, hostile = () => S.threats.filter(t => !t.dead && !t.d.civil).length;
+let E = S.enemy;
+const hostile = () => S.threats.filter(t => !t.dead && !t.d.civil).length;
 // warm up a second at a time, as tools/enemy-timeline.js plays, until a raid of act 2 or later is in the air
+// (keeping the game as it was 15–20 minutes before, for --snap: a loaded game is played that long untimed, below)
 let i = 0;
-if (!fromSnap) for (; !S.over && !(E.act >= 2 && hostile() >= MIN) && S.time < 80 * 3600; i++) { IC.step(S, 1); if (i % 60 === 0) Q.commander(S); }
-if (SNAP && !fromSnap) fs.writeFileSync(SNAP, JSON.stringify(IC.saveGame(S)));
-// the same dice from here whether the game was played or loaded
-if (SNAP) IC.seedRandom(seed + 1);
-// a game minute untimed: a loaded game rebuilds its caches in its first steps, a live one has them already
-for (let k = 0; k < 240 && !S.over; k++) IC.step(S, 0.25);
+const ring = [];
+if (!fromSnap) for (; !S.over && !(E.act >= 2 && hostile() >= MIN) && S.time < 80 * 3600; i++) {
+  IC.step(S, 1); if (i % 60 === 0) Q.commander(S);
+  if (SNAP && E.act >= 2 && i % 300 === 0) { ring.push(JSON.stringify(IC.saveGame(S))); if (ring.length > 4) ring.shift(); }
+}
+if (SNAP) {
+  if (!fromSnap) { fs.writeFileSync(SNAP, ring[0] || JSON.stringify(IC.saveGame(S))); S = IC.loadSave(fs.readFileSync(SNAP, 'utf8')); IC.S = S; E = S.enemy; }
+  // the same dice from here, and a quarter of an hour untimed: a loaded game rebuilds its caches in its first steps
+  // and minutes (the landside's ten-minute tick seats the airports' roads again), a live one has them already
+  IC.seedRandom(seed + 1);
+  for (let k = 0; k < 900 && !S.over; k++) { IC.step(S, 1); if (k % 60 === 0) Q.commander(S); }
+}
 const warm = (Date.now() - w0) / 1000;
 // the parts of the step (or the functions named by --fns=a,b), timed when asked: in all, and in calls over 1 ms (the hitches)
 const PH = {}, SP = {}, NC = {};
@@ -56,7 +64,7 @@ const sum = {
   missiles: S.missiles.map(m => [m.mun, r(m.x), r(m.y), r(m.alt)]), vehicles: (S.vehicles || []).map(v => [r(v.x), r(v.y)]), raids: (S.raids || []).length
 };
 const hash = crypto.createHash('sha1').update(JSON.stringify(sum)).digest('hex').slice(0, 16);
-console.log(`seed ${seed} · ${fromSnap ? 'loaded from ' + SNAP + ' in' : `warm-up ${i} s of game in`} ${warm.toFixed(1)} s · ${busy}`);
+console.log(`${path.relative(process.cwd(), ROOT) || '.'} · seed ${seed} · ${fromSnap ? 'loaded from ' + SNAP + ' in' : `warm-up ${i} s of game in`} ${warm.toFixed(1)} s · ${busy}`);
 console.log(`${T.length} steps of 0.25 s: median ${q(0.5)} ms, 95th percentile ${q(0.95)} ms, worst ${T[T.length - 1].toFixed(2)} ms, mean ${(T.reduce((s, v) => s + v, 0) / T.length).toFixed(3)} ms`);
 if (Object.keys(PH).length) {
   const tot = Object.values(PH).reduce((s, v) => s + v, 0);
