@@ -261,19 +261,24 @@ function leftClick(p, shift) {
     if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p); IC.setMode(null); ping(p); return; }
     if (m.kind === 'rangeTarget') { S.range.target = { x: p.x, y: p.y }; S.range.scen.target = { x: Math.round(p.x), y: Math.round(p.y) }; IC.setMode(null); ping(p); return; }
     if (m.kind === 'deploy' && S.range) {
-      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUR SIDE ONLY', IC.C.hostile); IC.sfx.ui('err'); return; }
+      const why = IC.placeWhy(S, m.type, p.x, p.y); if (why) return placeRefused(p, why);
       IC.rangeAddUnit(S, m.type, p.x, p.y); IC.sfx.ui('ok'); ping(p);
       if (!shift) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
     if (m.kind === 'deploy') {
-      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
+      const why = IC.placeWhy(S, m.type, p.x, p.y); if (why) return placeRefused(p, why);
       const u = IC.deploy(S, m.type, p.x, p.y);
       if (u) { IC.sfx.ui('ok'); ping(p); }
+      else return placeRefused(p, `${IC.UNITS[m.type].name} not placed: ${IC.buyBlock(S, m.type) || 'it cannot go here'}.`);
       if (!shift || (!(S.reserve[m.type] > 0) && IC.buyBlock(S, m.type))) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
-    if (m.kind === 'move') { if (IC.relocate(S, m.unit, p.x, p.y)) { IC.setMode(null); ping(p); } else IC.text(S, p.x, p.y, 'NOT HERE', IC.C.hostile); return; }
+    if (m.kind === 'move') {
+      if (IC.relocate(S, m.unit, p.x, p.y)) { IC.setMode(null); ping(p); }
+      else { const why = IC.placeWhy(S, m.unit.type, p.x, p.y, m.unit); if (why) placeRefused(p, why); else IC.text(S, p.x, p.y, 'NOT HERE', IC.C.hostile); }
+      return;
+    }
     if (m.kind === 'airPoint') {
       if (m.task) IC.addTask(S, m.task, { x: p.x, y: p.y });
       else IC.launchAir(S, m.r, { type: m.mission === 'aew' ? 'orbit' : m.mission, x: p.x, y: p.y });
@@ -297,6 +302,12 @@ function leftClick(p, shift) {
     if (v) { IC.ui.aspVol = IC.ui.aspVol === v.id ? null : v.id; IC.ui.refresh(true); return; }
   }
   IC.select(hit, shift);
+}
+
+/* a unit that cannot go where the player clicked: the reason in the messages, its first words on the map */
+function placeRefused(p, why) {
+  IC.toast(S, 'warn', 'NOT PLACED', why, { x: p.x, y: p.y });
+  IC.text(S, p.x, p.y, why.split(/[:.]/)[0].toUpperCase(), IC.C.hostile); IC.sfx.ui('err');
 }
 
 function roadDone() { if (IC.roadFinish(S, S.mode2)) { IC.sfx.ui('ok'); IC.setMode(null); } else IC.sfx.ui('err'); IC.ui.refresh(true); }
@@ -461,7 +472,9 @@ function onAct(e) {
     case 'goal': { const g = S.story && S.story.goals[+v]; if (g && g.ref) { if (ui.room) ui.openRoom(null); ui.jump(g.ref, g.ref.parts || g.ref.kind === 'city' ? 'infra' : null); } break; }
     case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.setAlert(S, r, IC.alertOf(r) === 5 ? 30 : 5); break; }
     case 'air': IC.airAct(S, b.dataset); break;
-    case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { IC.airspaceSet(S, 'restricted'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
+    case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; }
+      // the reserve: its most valuable system is picked to place, on its tab, and the message says what to do next
+      if (o.kind === 'reserve' && o.type && S.reserve[o.type] > 0) { const d = IC.UNITS[o.type]; ui.arMin = false; ui.cat = d.cat; IC.setMode({ kind: 'deploy', type: o.type }); IC.toast(S, 'info', 'RESERVE', `${d.name} picked from the reserve (${S.reserve[o.type]} waiting). Click the map where it should stand: the dashed rings show its reach. Right-click or Esc to put it back.`); return; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { IC.airspaceSet(S, 'restricted'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
     case 'copen': ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
     case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.shownAt = performance.now() - 1e5; break;
     case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;

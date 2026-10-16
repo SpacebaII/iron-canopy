@@ -633,6 +633,8 @@ IC.aptGuardOk = S => !S.story || S.story.act >= 2;
 IC.aptGuard = (S, ap) => S.units.filter(u => !u.dead && u.state === 'ready' && (u.d.weapon === 'sam' || u.d.weapon === 'gun') && U.dist(u, ap) < (ap.radius || 50) + 60);
 /* map layers the story has reached: radar cover and airways with the airspace, supply and intelligence later */
 IC.layerAllowed = function (S, k) {
+  // the gaps are stretches of civil airway no radar sees: with no airways (a Quick war) there is nothing to show
+  if (k === 'gaps' && !(S.asp && S.asp.ways.length)) return false;
   const st = S.story; if (!st) return true;
   if (k === 'coverage' || k === 'airways' || k === 'rings') return !IC.storyLock(S, k === 'airways' ? 'airways' : 'coverage');
   if (k === 'gaps') return !IC.storyLock(S, 'radar') && !!(S.asp && S.asp.ways.length) && st.act === 1;
