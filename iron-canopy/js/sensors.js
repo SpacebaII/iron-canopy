@@ -48,10 +48,11 @@ function buildSensors(S) {
   // radars on the same band close together interfere unless the spectrum is planned
   const plan = S.flags && S.flags.spectrum ? 0.4 : 1;
   for (const u of S.units) { u.intf = 0; u.intfF = 1; }
-  for (const s of L) {
-    if (!s.band || s.passive) continue;
+  // (only radars that radiate on a band are compared: the pairs grow with the square of the list)
+  const B = L.filter(s => s.band && !s.passive);
+  for (const s of B) {
     let n = 0;
-    for (const o of L) if (o !== s && o.band === s.band && !o.passive && U.dist(o, s) < 700) n++;
+    for (const o of B) if (o !== s && o.band === s.band && U.dist(o, s) < 700) n++;
     if (!n) continue;
     const f = Math.max(0.6, 1 - 0.1 * n * plan);
     s.R *= f; s.err = (s.err || 0) * (1 + 0.4 * n * plan);
