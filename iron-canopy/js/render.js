@@ -461,7 +461,8 @@ function drawInfra(S, px, now) {
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }
     } else {
-      if (i.parts && cam.z > 0.3) { /* drawn part by part */ }
+      // (drawn part by part from the zoom drawBases starts at: at exactly 0.3 both drew the name, a little apart)
+      if (i.parts && cam.z >= 0.3) { /* drawn part by part */ }
       else {
         const s = px, col = i.offline ? '#6a7880' : C.friend;
         ctx.fillStyle = 'rgba(6,14,20,0.85)'; ctx.strokeStyle = col; ctx.lineWidth = 1.5 * s;
@@ -472,10 +473,10 @@ function drawInfra(S, px, now) {
       }
       if (i.parts) {
         const st = IC.baseStatus(S, i);
-        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
-        else if (cam.z <= 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
+        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z >= 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
+        else if (cam.z < 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
         const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === i.id).length;
-        if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z > 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
+        if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z >= 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
       }
     }
     if (i.hp < i.max && !i.offline && i.owner === 'us' && i.kind !== 'city' && !(i.parts && cam.z > 0.3)) {
@@ -528,6 +529,13 @@ function drawGhost(S, px) {
 function drawHints(S, px, now) {
   const hint = IC.stepHint && IC.stepHint(S);
   if (!hint) return;
+  // a limit the step names ("within 15 km of the base"): a dashed ring with its distance on top
+  const zn = hint.zone && hint.zone(S);
+  if (zn) {
+    ctx.strokeStyle = 'rgba(242,180,65,0.85)'; ctx.lineWidth = 2 * px; ctx.setLineDash([10 * px, 7 * px]);
+    ctx.beginPath(); ctx.arc(zn.x, zn.y, zn.r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    label(zn.label, zn.x, zn.y - zn.r - 6 * px, px, 'rgba(242,180,65,0.95)', 12, 'center', 600);
+  }
   let p = null;
   if (hint.at) p = hint.at(S);
   if (hint.track) { const t = hint.track(S); if (t && t.det) p = { x: t.px, y: t.py }; }
