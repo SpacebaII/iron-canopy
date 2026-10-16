@@ -1026,6 +1026,7 @@ function frame(now) {
   C.bars = U.clamp(C.bars + (C.barsT > 0 ? 1 : -1) * dtR * 2.5, 0, 1);
   let gdt = 0;
   const running = !S.paused && (!S.over || IC.ui.overDismissed) && $('start').hidden;
+  if (!running) IC.runRate = IC.runShare = null;
   if (running) {
     let speed = combatSpeed(S, S.wait ? (S.wait.speed || IC.WAIT.speed) : S.skip ? 64 : S.speed, dtR);
     gdt = dtR * IC.GS * speed;
@@ -1039,6 +1040,8 @@ function frame(now) {
     const t0 = performance.now();
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(big, g); IC.step(S, st); g -= st; if (performance.now() - t0 > (S.wait ? 30 : 40)) break; }
     // (the rate the wait really runs at, for its line in the top bar)
+    // (and the speed the game really runs at, when the steps take longer than the frame allows: the map says so)
+    if (!S.wait && !S.skip && gdt > 0) { const r = (gdt - g) / gdt, k = Math.min(1, dtR * 2); IC.runShare = IC.runShare == null ? r : IC.runShare + (r - IC.runShare) * k; IC.runWant = speed; IC.runRate = speed * IC.runShare; } else IC.runRate = IC.runShare = null;
     if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; S.wait.rate = IC.ui.waitRate / IC.GS; }
   }
   IC.autosaveTick(S);

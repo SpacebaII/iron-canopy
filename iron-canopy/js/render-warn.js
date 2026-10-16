@@ -133,14 +133,18 @@ IC.drawWarnHud = function (c, S, now) {
   ctx = c;
   edgeArrows(S, now);
   tally(S);
-  const ct = IC.combatNow;
-  if (ct && ct.active) {
-    const x = cam.vw / 2, y = cam.vh - 118;
-    ctx.font = '700 12px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
-    const txt = `COMBAT TIME · ${ct.speed < 1 ? ct.speed.toFixed(1) : Math.round(ct.speed)}×`;
+  const ct = IC.combatNow, run = IC.runRate, want = IC.runWant;
+  // the speed button says what was asked for; this says when the game runs slower: combat time, or a computer that cannot keep up
+  const slow = run != null && want > 1 && run < want * 0.8;
+  if ((ct && ct.active) || slow) {
+    // just under the speed buttons, where the player looks to see the speed (panels cover the bottom of the map)
+    const sp = typeof document !== 'undefined' && document.getElementById('speed'), r = sp && sp.getBoundingClientRect();
+    const x = r && r.width ? r.left + 6 : 16, y = r && r.width ? r.bottom + 20 : 70, f = v => v < 1 ? v.toFixed(1) : v < 10 ? (Math.round(v * 2) / 2).toString() : Math.round(v);
+    ctx.font = '700 12px "IBM Plex Mono", monospace'; ctx.textAlign = 'left';
+    const txt = !slow ? `COMBAT TIME · ${f(ct.speed)}×` : `${ct && ct.active ? 'COMBAT TIME · ' : ''}RUNNING AT ${f(run)}× · this computer cannot keep up with ${f(want)}×`;
     const w = ctx.measureText(txt).width + 18;
-    ctx.fillStyle = 'rgba(40,10,8,0.75)'; ctx.fillRect(x - w / 2, y - 15, w, 22);
-    ctx.fillStyle = '#ffb0a6'; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(40,10,8,0.75)'; ctx.fillRect(x, y - 15, w, 22);
+    ctx.fillStyle = '#ffb0a6'; ctx.fillText(txt, x + 9, y);
   }
 };
 /* weapons off the screen: an arrow on the edge pointing at each, soonest first, with its countdown */
