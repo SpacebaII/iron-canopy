@@ -79,7 +79,7 @@ IC.followRoute = function (e, dt, vRoad, vOff) {
   let left = dt;
   while (left > 0 && e.route && e.route.length) {
     const p = e.route[0], v = p.road ? vRoad : vOff;
-    const dx = p.x - e.x, dy = p.y - e.y, L = Math.hypot(dx, dy);
+    const dx = p.x - e.x, dy = p.y - e.y, L = U.hyp(dx, dy);
     if (L < 1e-6) { e.route.shift(); continue; }
     e.h = Math.atan2(dy, dx);
     const step = v * left;

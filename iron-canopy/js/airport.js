@@ -44,7 +44,7 @@ IC.rwLen = rwLen; IC.rwAt = rwAt; IC.rwT = rwT; IC.rwDir = rwDir;
 function toLocal(r, p) { const c = Math.cos(-r.a), s = Math.sin(-r.a), dx = p.x - r.x, dy = p.y - r.y; return { x: dx * c - dy * s, y: dx * s + dy * c }; }
 function toWorld(r, lx, ly) { const c = Math.cos(r.a), s = Math.sin(r.a); return { x: r.x + lx * c - ly * s, y: r.y + lx * s + ly * c }; }
 IC.rectLocal = toLocal; IC.rectWorld = toWorld;
-function rectDist(r, p) { const l = toLocal(r, p), dx = Math.max(0, Math.abs(l.x) - r.w / 2), dy = Math.max(0, Math.abs(l.y) - r.h / 2); return Math.hypot(dx, dy); }
+function rectDist(r, p) { const l = toLocal(r, p), dx = Math.max(0, Math.abs(l.x) - r.w / 2), dy = Math.max(0, Math.abs(l.y) - r.h / 2); return U.hyp(dx, dy); }
 function partDist(ap, part, p) {
   if (part.kind === 'runway') { const t = U.clamp(rwT(part, p), 0, 1); return Math.max(0, U.dist(rwAt(part, t), p) - part.w / 2); }
   if (part.kind === 'taxi') { let m = 1e9; for (let i = 1; i < part.nodes.length; i++) { const a = ap.nodes[part.nodes[i - 1]], b = ap.nodes[part.nodes[i]]; m = Math.min(m, U.segDist(p.x, p.y, a.x, a.y, b.x, b.y)); } return Math.max(0, m - part.w / 2); }
@@ -590,7 +590,7 @@ IC.towerSees = function (ap, towers, rw) {
         // to the runway there (by its far side: the roof hides the ground beyond it)
         const s0 = U.clamp(((q.x - t.x) * (P.x - t.x) + (q.y - t.y) * (P.y - t.y)) / (D * D), 0, 1), c = { x: t.x + (P.x - t.x) * s0, y: t.y + (P.y - t.y) * s0 };
         if (partDist(ap, q, c) > 0.01) continue;
-        const far = Math.min(D, s0 * D + Math.hypot(q.w || 0.2, q.h || 0.2) / 2);
+        const far = Math.min(D, s0 * D + U.hyp(q.w || 0.2, q.h || 0.2) / 2);
         if (hb > ht * (1 - far / D)) { bad = `the ${U.lc(IC.APART[q.kind].name)} hides its ${f === 0.5 ? 'middle' : 'end'} from the cab`; break; }
       }
       if (bad) break;
@@ -1350,7 +1350,7 @@ IC.aptCanPlace = function (S, ap, part) {
 };
 /* a taxiway line runs more than 8 m inside a part (a round tank by its radius) */
 function taxiThrough(pts, q) {
-  const D = IC.APART[q.kind] || {}, r = q.r || D.r, w = q.w || D.w, h = q.h || D.h, R = r || Math.hypot(w || 0, h || 0) / 2;
+  const D = IC.APART[q.kind] || {}, r = q.r || D.r, w = q.w || D.w, h = q.h || D.h, R = r || U.hyp(w || 0, h || 0) / 2;
   if (!R) return false;
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];

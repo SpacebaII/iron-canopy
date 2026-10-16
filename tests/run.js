@@ -5527,6 +5527,19 @@ test('round 5c: textlint finds none of the banned phrases, in the source or in a
   for (const id in IC.TUTORS) for (const st of IC.TUTORS[id].steps) { const out = []; T.check(IC.tutorText(S, st) + ' ' + st.title, id, out); assert(!out.length, out[0]); assert(!/!/.test(IC.tutorText(S, st)), `${id}: an exclamation mark`); }
 });
 
+/* ---------- war perf (wave 17) ---------- */
+test('war perf: U.hyp and U.hyp3 give Math.hypot to the bit, so the faster distances play the same game', () => {
+  const sp = [0, -0, 1, -1, 3, 4, Infinity, -Infinity, NaN, 5e-324, 1e-310, 1e-200, 1e200, 1e308];
+  const same = (a, b, what) => assert(Object.is(a, b), `${what}: ${a} against Math.hypot's ${b}`);
+  for (const a of sp) for (const b of sp) { same(U.hyp(a, b), Math.hypot(a, b), `hyp(${a}, ${b})`); for (const c of sp) same(U.hyp3(a, b, c), Math.hypot(a, b, c), `hyp3(${a}, ${b}, ${c})`); }
+  // numbers of every size the game meets, from metres to the map's width, and some far beyond
+  const R = IC.makeRng(17), r = () => (R() - 0.5) * Math.pow(10, Math.floor(R() * 14) - 5);
+  for (let i = 0; i < 300000; i++) {
+    const a = r(), b = i % 7 ? r() : Math.round(r()), c = i % 3 ? r() : 0;
+    same(U.hyp(a, b), Math.hypot(a, b), `hyp(${a}, ${b})`); same(U.hyp3(a, b, c), Math.hypot(a, b, c), `hyp3(${a}, ${b}, ${c})`);
+  }
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

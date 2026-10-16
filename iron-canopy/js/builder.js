@@ -672,13 +672,13 @@ IC.bldFillet = function (pts, joins, R) {
   const out = [pts[0]];
   for (let i = 1; i < pts.length - 1; i++) {
     const a = pts[i - 1], b = pts[i], c = pts[i + 1];
-    const u = { x: a.x - b.x, y: a.y - b.y }, v = { x: c.x - b.x, y: c.y - b.y }, lu = Math.hypot(u.x, u.y), lv = Math.hypot(v.x, v.y);
+    const u = { x: a.x - b.x, y: a.y - b.y }, v = { x: c.x - b.x, y: c.y - b.y }, lu = U.hyp(u.x, u.y), lv = U.hyp(v.x, v.y);
     const turn = Math.PI - Math.acos(U.clamp((u.x * v.x + u.y * v.y) / (lu * lv || 1), -1, 1));
     if (joins[i] || turn < 0.25 || lu < 0.1 || lv < 0.1) { out.push(b); continue; }
     // the tangent points, no further than half of either leg
     const t = Math.min(R * Math.tan(turn / 2), lu * 0.45, lv * 0.45), r = t / Math.tan(turn / 2);
     const p1 = { x: b.x + u.x / lu * t, y: b.y + u.y / lu * t }, p2 = { x: b.x + v.x / lv * t, y: b.y + v.y / lv * t };
-    const bis = { x: u.x / lu + v.x / lv, y: u.y / lu + v.y / lv }, bl = Math.hypot(bis.x, bis.y) || 1, h = Math.hypot(r, t);
+    const bis = { x: u.x / lu + v.x / lv, y: u.y / lu + v.y / lv }, bl = U.hyp(bis.x, bis.y) || 1, h = U.hyp(r, t);
     const o = { x: b.x + bis.x / bl * h, y: b.y + bis.y / bl * h };
     const a1 = Math.atan2(p1.y - o.y, p1.x - o.x), a2 = Math.atan2(p2.y - o.y, p2.x - o.x), da = U.angWrap(a2 - a1), k = Math.max(2, Math.ceil(Math.abs(da) / 0.3));
     for (let j = 0; j <= k; j++) out.push({ x: o.x + Math.cos(a1 + da * j / k) * r, y: o.y + Math.sin(a1 + da * j / k) * r });
@@ -1036,7 +1036,7 @@ function consequences(S, m, out) {
     if (sp.x != null && IC.aptStripWhy) { const w = IC.aptStripWhy(ap, Object.assign({ kind: sp.kind, x: sp.x, y: sp.y, a: sp.a || 0, w: sp.w || IC.APART[sp.kind].w, h: sp.h || IC.APART[sp.kind].h }, sp.poly ? { poly: sp.poly } : null)); if (w) say(w.replace(/Move it at least (\d+) m further out \(Move on the build bar\)\./, 'Place it at least $1 m further out.')); }
     if (sp.kind === 'apron' && !reached(sp)) say(
 'Nothing reaches this apron yet: no aircraft can park on it until a taxiway joins its edge.');
-    if (IC.aptDoor(sp.kind) && sp.kind !== 'alert' && !out.specs.some(q => q.stub) && !taxis.some(q => seg(q, (a, b) => U.segDist(sp.x, sp.y, a.x, a.y, b.x, b.y) < Math.hypot(IC.APART[sp.kind].w || 0.3, IC.APART[sp.kind].h || 0.3) / 2 + 0.55))) say(`No taxiway reaches its door: no aircraft can use the ${U.lc(IC.APART[sp.kind].name)} until one does.`);
+    if (IC.aptDoor(sp.kind) && sp.kind !== 'alert' && !out.specs.some(q => q.stub) && !taxis.some(q => seg(q, (a, b) => U.segDist(sp.x, sp.y, a.x, a.y, b.x, b.y) < U.hyp(IC.APART[sp.kind].w || 0.3, IC.APART[sp.kind].h || 0.3) / 2 + 0.55))) say(`No taxiway reaches its door: no aircraft can use the ${U.lc(IC.APART[sp.kind].name)} until one does.`);
     if (sp.kind === 'runway') {
       const rw = { a: sp.a, b: sp.b, w: sp.w || IC.APART.runway.w }, mid = { x: (sp.a.x + sp.b.x) / 2, y: (sp.a.y + sp.b.y) / 2 }, L = U.dist(sp.a, sp.b);
       const fires = ap.parts.filter(q => q.kind === 'fire'), near = fires.filter(f => U.dist(f, mid) < 15);

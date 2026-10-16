@@ -141,7 +141,7 @@ IC.recAttitude = function (tr, t, out) {
   const gam = (p, q) => Math.atan2((q.alt - p.alt) * 1000, Math.max(1, U.dxy(p.x, p.y, q.x, q.y) * 100));
   const g1 = gam(a, c), g2 = gam(c, b), vert = v * (g2 - g1) / Math.max(0.1, (b.t - a.t) / 2);
   o.pitch = (g1 + g2) / 2; o.turn = w;
-  o.g = Math.min(60, Math.hypot(lat, G0 * Math.cos(o.pitch) + vert) / G0);
+  o.g = Math.min(60, U.hyp(lat, G0 * Math.cos(o.pitch) + vert) / G0);
   if (tr.kind !== 'missile') o.roll = U.clamp(Math.atan2(lat, G0), -1.45, 1.45);
   return o;
 };
@@ -260,7 +260,7 @@ IC.recPose = function (tr, t, out, wind) {
   const w = b.t - a.t > 0.15 ? dh / dt : 0, lat = v * w;
   const va = visAlt(tr, a.t, a, cls), vb = visAlt(tr, b.t, b, cls), vc = o.alt, run = Math.max(1, U.dxy(a.x, a.y, b.x, b.y) * 100);
   const gam = b.t - a.t > 0.15 ? Math.atan2((vb - va) * 1000, run) : 0;
-  o.g = Math.min(60, Math.hypot(lat, G0) / G0);
+  o.g = Math.min(60, U.hyp(lat, G0) / G0);
   // near the ground nothing banks hard
   const bank = Math.min(BANK[cls], 12 * RD + o.alt * 60 * RD);
   o.roll = U.clamp(Math.atan2(lat, G0), -bank, bank);
@@ -376,7 +376,7 @@ IC.recWind = function (S, t) {
 };
 
 /* ---------- sampling ---------- */
-const spdOf = (o, tr) => o.spd != null && o.vx == null ? o.spd : Math.hypot(o.vx || 0, o.vy || 0);
+const spdOf = (o, tr) => o.spd != null && o.vx == null ? o.spd : U.hyp(o.vx || 0, o.vy || 0);
 const hdgOf = (o, tr, fb) => o.h != null ? o.h : o.a != null ? o.a : (o.vx || o.vy) ? Math.atan2(o.vy, o.vx) : fb;
 const lastH = tr => tr.n ? at(tr, tr.n - 1, 4) : 0;
 /* a missile flying at an aircraft climbs to it as it closes (the state keeps no height for those) */
@@ -521,7 +521,7 @@ function damaged(S, x, y) {
   if (g && g.kind === 'block' && g.b) out.push({ kind: 'block', b: g.b });
   for (const b of S.infra) if (b.parts && U.dxy(x, y, b.x, b.y) < (b.radius || 60)) for (const p of b.parts) {
     if (!p.built || p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron') continue;
-    const d = p.w != null && p.a != null ? Math.hypot(Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).x) - p.w / 2), Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).y) - (p.h || p.w) / 2)) : U.dxy(x, y, p.x, p.y) - (p.r || 0.1);
+    const d = p.w != null && p.a != null ? U.hyp(Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).x) - p.w / 2), Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).y) - (p.h || p.w) / 2)) : U.dxy(x, y, p.x, p.y) - (p.r || 0.1);
     if (d < 1.2) out.push({ kind: 'part', p, ap: b });
   }
   return out;

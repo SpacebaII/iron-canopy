@@ -126,7 +126,7 @@ function drive(S, v, dt) {
   let left = dt;
   while (left > 0 && v.route.length) {
     const p = v.route[0], sp = segSpeed(S, p);
-    const dx = p.x - v.x, dy = p.y - v.y, L = Math.hypot(dx, dy);
+    const dx = p.x - v.x, dy = p.y - v.y, L = U.hyp(dx, dy);
     if (L < 1e-6) { v.route.shift(); continue; }
     v.h = Math.atan2(dy, dx);
     if (sp * left >= L) { v.x = p.x; v.y = p.y; left -= L / sp; v.route.shift(); }

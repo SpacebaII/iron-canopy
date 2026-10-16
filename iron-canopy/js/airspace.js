@@ -49,7 +49,7 @@ function profile(x, y, mastM, R) {
   return { m, NS, ST, x, y, mast: mastM, R };
 }
 function profAlt(P, x, y) {
-  const dx = x - P.x, dy = y - P.y, k = Math.ceil(Math.hypot(dx, dy) / P.ST) - 1;
+  const dx = x - P.x, dy = y - P.y, k = Math.ceil(U.hyp(dx, dy) / P.ST) - 1;
   if (k < 0) return 0;
   if (k >= P.NS) return Infinity;
   const b = U.mod(Math.round(Math.atan2(dy, dx) / (Math.PI * 2) * A.NB), A.NB);
@@ -100,7 +100,7 @@ IC.aspCov = function (S) {
       const y = (j + 0.5) * CS, dy = y - s.y, hw = Math.sqrt(Math.max(0, s.R * s.R - dy * dy)) + CS;
       const a0 = Math.max(i0, Math.floor((s.x - hw) / CS)), a1 = Math.min(i1, Math.floor((s.x + hw) / CS));
       for (let i = a0; i <= a1; i++) {
-        const x = (i + 0.5) * CS, dx = x - s.x, d = Math.hypot(dx, dy);
+        const x = (i + 0.5) * CS, dx = x - s.x, d = U.hyp(dx, dy);
         if (d > s.R) continue;
         const k = j * gw + i;
         if (gnd[k] !== gnd[k]) gnd[k] = IC.elevKm(x, y);
@@ -380,7 +380,7 @@ IC.bendPath = function (pts, circles, passes) {
     }
     if (!hit) break;
     const P = pts[hit.i - 1], Q = pts[hit.i], z = hit.z;
-    const dx = Q.x - P.x, dy = Q.y - P.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+    const dx = Q.x - P.x, dy = Q.y - P.y, L = U.hyp(dx, dy) || 1, nx = -dy / L, ny = dx / L;
     const side = ((z.x - P.x) * nx + (z.y - P.y) * ny) > 0 ? -1 : 1;
     const R = z.r * 1.3, c = { x: z.x + nx * side * R, y: z.y + ny * side * R };
     pts.splice(hit.i, 0, { x: c.x - dx / L * R * 0.8, y: c.y - dy / L * R * 0.8 }, { x: c.x + dx / L * R * 0.8, y: c.y + dy / L * R * 0.8 });
@@ -781,7 +781,7 @@ IC.aspAddMil = function (S, x, y, r, lo, hi, cls, name) {
 IC.aspDelArea = function (S, sh) { if (sh && !sh.ap) dropShape(S, sh); };
 /* is a point in a volume (and at a height, when alt is given)? The notch raises the floor inside its slice */
 function inVol(v, x, y, alt) {
-  const dx = x - v.x, dy = y - v.y, d = Math.hypot(dx, dy);
+  const dx = x - v.x, dy = y - v.y, d = U.hyp(dx, dy);
   if (v.kind === 'ext') {
     if (d < v.r1) return false;
     const c = Math.cos(v.rot), s = Math.sin(v.rot), al = dx * c + dy * s, cr = -dx * s + dy * c;
@@ -962,7 +962,7 @@ function pair(S, a, b) {
   // look 2½ min ahead: controllers act on conflicts they can see
   if (!P || S.time - P.t > 300) {
     const rx = b.x - a.x, ry = b.y - a.y, vx = (b.vx || 0) - (a.vx || 0), vy = (b.vy || 0) - (a.vy || 0), v2 = vx * vx + vy * vy;
-    const tc = U.clamp(v2 ? -(rx * vx + ry * vy) / v2 : 0, 0, 150), miss = Math.hypot(rx + vx * tc, ry + vy * tc);
+    const tc = U.clamp(v2 ? -(rx * vx + ry * vy) / v2 : 0, 0, 150), miss = U.hyp(rx + vx * tc, ry + vy * tc);
     const need = ga ? A.gaNear * 2 : A.sep, vneed = ga ? A.gaVsep * 2 : A.vsep;
     if (miss < need && dz < vneed + 0.3) {
       const sa = seen(S, a), sb = seen(S, b), mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, alt = Math.min(a.alt, b.alt);
