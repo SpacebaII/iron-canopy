@@ -4166,6 +4166,75 @@ test('sandbox: repair, clear the sky, and a save that loads and keeps its rules'
   IC.step(S2, 0.5);
 });
 
+/* wave 17: the play-test's Sandbox, replay and pause findings */
+test('sandbox fixes: the SEAD aircraft can be picked, the panel says what a raid sends, and a click on a unit targets it', () => {
+  const S = sbxGame();
+  S.sbx.form.what = 'sead';
+  let html = IC.sandboxPanel(S);
+  const what = html.split('name="what"')[1].split('</select>')[0];
+  assert((what.match(/value="sead"/g) || []).length === 1 && /value="sead" selected/.test(what), 'the SEAD aircraft is not one choice of its own, picked');
+  assert(IC.sandboxList({ what: 'sead', n: 3 }).every(k => k === 'sead') && IC.sandboxList({ what: 'seadjam', n: 3 }).includes('ewj'), 'the SEAD aircraft and the SEAD raid send the same thing');
+  S.sbx.form.what = 'drones'; S.sbx.form.n = 8;
+  html = IC.sandboxPanel(S);
+  const all = IC.sandboxList(S.sbx.form).length;
+  assert(all > 8 && html.includes(`Sends ${all} in all`), `a drone swarm of 8 sends ${all}, and the panel does not say so`);
+  assert(IC.sandboxLaunch(S) === all, 'the launch did not send what the panel said');
+  const u = S.units.find(u => u.state === 'ready'), z = 1;
+  IC.sandboxTarget(S, { x: u.x + 3, y: u.y }, z);
+  assert(S.sbx.target.name === u.name && S.sbx.target.x === u.x, `a click on ${u.name} named "${S.sbx.target.name}"`);
+  IC.sandboxTarget(S, { x: u.x + 60, y: u.y }, z);
+  assert(S.sbx.target.name !== u.name && S.sbx.target.x === u.x + 60, 'a click beside the unit snapped to it');
+  IC.sandboxTarget(S, u);
+  assert(S.sbx.target.name === u.name && S.sbx.target.ref === u.id, 'the selected unit is not the target');
+});
+test('sandbox fixes: a raid the enemy plans counts in the tally, and Clear and Repair say what they did', () => {
+  const S = sbxGame();
+  IC.sandboxTarget(S, IC.mainBase(S));
+  IC.sandboxRaid(S, 'limited');
+  run(S, 1.5);
+  const st = S.sbx.st, sent = IC.sandboxSent(S);
+  assert(st.launched === 0 && sent > 0 && st.kills + st.leaks > 0, `the panel's tally left the raid out: sent ${sent}, shot down ${st.kills}, got through ${st.leaks}`);
+  IC.sandboxLaunch(S, { what: 'owa', n: 3 });
+  run(S, 0.05);
+  IC.sandboxClear(S);
+  assert(S.logs[0].tag === 'SANDBOX' && /^Sky cleared: [1-9]/.test(S.logs[0].msg), `Clear the sky said: ${S.logs[0].msg}`);
+  const c = IC.cap(S); c.hp = 1;
+  IC.sandboxRepair(S);
+  assert(S.logs[0].tag === 'SANDBOX' && /^Repaired: [1-9]/.test(S.logs[0].msg), `Repair everything said: ${S.logs[0].msg}`);
+  const S2 = IC.loadSave(IC.saveGame(S));
+  assert(IC.sandboxSent(S2) === IC.sandboxSent(S), 'the tally changed in the save');
+}, true);
+test('sandbox fixes: a guided bomb is recorded at its real speed, and a miss in open ground can be replayed', () => {
+  const S = sbxGame();
+  const site = S.esites[0], a = { x: site.x - 300, y: site.y };
+  S.strikes.push({ id: IC.nid('s'), mun: 'GBU', M: IC.GBU, x: a.x, y: a.y, aim: { x: site.x, y: site.y }, target: site, src: 'TEST 1', age: 0, side: 'us', rep: null, tr: null, spd: 0 });
+  for (let i = 0; i < 40; i++) IC.step(S, 0.5);
+  const tr = IC.recTracks(S).find(t => t.model === 'gbu');
+  assert(tr, 'the bomb was not recorded');
+  const st = IC.recAt(tr, IC.recFirstT(tr) + 10);
+  assert(st && Math.abs(st.spd - IC.GBU.spd) < 0.2, `the bomb was recorded at ${st ? U.kmh(st.spd) : 'nothing'}, not ${U.kmh(IC.GBU.spd)}`);
+  const p = IC.cap(S), far = { x: p.x, y: p.y };
+  for (let d = 200; d < 3000; d += 50) { const q = { x: p.x + d, y: p.y + d * 0.3 }; if (IC.inHome(q.x, q.y) && !IC.groundAt(S, q.x, q.y).town) { far.x = q.x; far.y = q.y; break; } }
+  IC.detonate(S, far.x, far.y, 10, { d: IC.THR.owa });
+  const l = S.logs.find(l => l.tag === 'IMPACT');
+  assert(l && /open ground/.test(l.msg) && l.rp && !l.at, `a miss in open ground has no place to replay: ${l && l.msg}`);
+});
+test('sandbox fixes: a salvo pauses the game once, and a ready depot stops saying it is setting up', () => {
+  const S = sbxGame();
+  const first = [];
+  for (let i = 0; i < 6; i++) { first.push(IC.burstFirst(S, 'bal')); IC.step(S, 4); }
+  assert(first[0] && first.slice(1).every(f => !f), `a salvo of six would pause ${first.filter(Boolean).length} times`);
+  run(S, 0.2);
+  assert(IC.burstFirst(S, 'bal'), 'the next salvo, minutes later, would not pause');
+  const p = IC.findSpot(S, 'depot', IC.cap(S).x, IC.cap(S).y, 30, 80), u = IC.makeUnit(S, 'depot', p.x, p.y);
+  S.sbx.instant = false;
+  IC.step(S, 0.5);
+  assert(u.state !== 'ready' && u.why === 'Setting up', `the depot starts ${u.state}, ${u.why}`);
+  for (let i = 0; i < 7200 && u.state !== 'ready'; i++) IC.step(S, 0.5);
+  IC.step(S, 0.5);
+  assert(u.state === 'ready' && u.why !== 'Setting up', `the depot is ${u.state} and says "${u.why}"`);
+});
+
 /* ---------- Academy ---------- */
 for (const L of IC.LESSONS) test(`academy: ${L.id} lesson can be completed`, () => {
   const r = playLesson(L.id, true);

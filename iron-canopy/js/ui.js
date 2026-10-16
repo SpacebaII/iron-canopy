@@ -238,6 +238,8 @@ function alerts() {
   if (raid.length && S.airspace === 'open' && S.threats.some(t => t.d.civil && !t.dead && !t.hostileCiv)) w.push(['info', 'Airliners aloft during a raid', null]);
   ui.alertRefs = w.map(x => x[2]);
   setHTML($('alerts'), w.slice(0, 4).map(([c, s], i) => `<div class="alert ${c}" data-act="alert" data-v="${i}">${esc(s)}</div>`).join(''));
+  // where the alerts end on the map, so the raid's tally is drawn below them and not over them (render-warn.js)
+  ui.alertsBottom = w.length ? $('alerts').getBoundingClientRect().bottom - $('map').getBoundingClientRect().top : 0;
 }
 
 /* ---------- rail ---------- */
@@ -947,6 +949,7 @@ ui.refresh = function (force) {
   progress(); topbar(); rail(); brief(); comms(); feed(); layers(); modeHint(); cine(); moment(); coach(); tutor(); firstRun(); pmarks();
   const busy = performance.now() < ui.busyUntil;
   if (!busy || force) { arsenal(); IC.renderInspector(S); if (ui.room) IC.renderRoom(S, ui.room); }
+  { const ah = $('arsenal') ? $('arsenal').offsetHeight : 0; if (ah) $('app').style.setProperty('--arsh', (ah + 24) + 'px'); }
   if (IC.renderBuildBar) { IC.renderBuildBar(S); const bh = $('bbar').offsetHeight; if (bh) $('app').style.setProperty('--bbh', bh + 'px'); }
   $('app').classList.toggle('has-insp', !!$('insp').innerHTML);
   $('app').classList.toggle('pol', !!IC.FOCUS.polish);

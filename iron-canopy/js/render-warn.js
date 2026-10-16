@@ -180,7 +180,7 @@ function edgeArrows(S, now) {
 function tally(S) {
   const T = IC.raidTally(S);
   if (!T || !(T.n || T.R.aborted)) return;
-  const x = cam.vw / 2, y = 134;
+  const x = cam.vw / 2, y = Math.max(134, (IC.ui && IC.ui.alertsBottom || 0) + 22);
   const txt = `${T.R.name.toUpperCase()} · ${T.stopped} of ${T.n} stopped${T.air ? ` · ${T.air} in the air` : ''}${T.ac ? ` · ${T.ac} aircraft down` : ''}${T.through ? ` · ${T.through} through` : ''}${T.R.aborted ? ' · RAID ABORTED' : ''}`;
   ctx.font = '700 12.5px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
   const w = ctx.measureText(txt).width + 22;

@@ -190,5 +190,9 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
+ "sandbox fixes: the SEAD aircraft can be picked, the panel says what a raid sends, and a click on a unit targets it": 5.4,
+ "sandbox fixes: a raid the enemy plans counts in the tally, and Clear and Repair say what they did": 28.2,
+ "sandbox fixes: a guided bomb is recorded at its real speed, and a miss in open ground can be replayed": 10.6,
+ "sandbox fixes: a salvo pauses the game once, and a ready depot stops saying it is setting up": 15.3,
  "polish: a runway warning on the map names the runway once": 9
 }
