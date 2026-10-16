@@ -3379,14 +3379,86 @@ test('combat: a raid ends with a result card whose numbers add up', () => {
   for (let i = 0; i < 4 * 3600 * 4 && !res; i++) IC.step(S, 0.25);
   assert(res, 'the raid did not end with a result');
   const ops = S.enemy.ops.filter(o => o.raid === R);
-  assert(res.n >= ops.reduce((s, o) => s + o.launched, 0) && res.n === Math.max(ops.reduce((s, o) => s + o.launched, 0), Object.entries(res.came).reduce((s, [c, k]) => s + (c === 'air' || c === 'heli' ? 0 : k), 0)), `came ${res.n}, launched ${ops.reduce((s, o) => s + o.launched, 0)}`);
+  assert(res.n >= ops.reduce((s, o) => s + o.launched, 0) && res.n === Math.max(ops.reduce((s, o) => s + o.launched, 0), Object.entries(res.came).reduce((s, [c, k]) => s + (c === 'air' || c === 'heli' ? 0 : k), 0), res.stopped + res.through + res.air), `came ${res.n}, launched ${ops.reduce((s, o) => s + o.launched, 0)}`);
   const lost = ops.reduce((s, o) => s + o.lost, 0);
-  assert(res.stopped === Math.min(res.n, lost - res.ac) && res.stopped <= killed, `stopped ${res.stopped}, lost ${lost} (${res.ac} aircraft), killed ${killed}`);
+  assert(res.stopped === Math.min(res.n, lost - res.ac + res.jammed) && res.stopped <= killed + res.jammed, `stopped ${res.stopped}, lost ${lost} (${res.ac} aircraft), killed ${killed}, jammed ${res.jammed}`);
+  assert(res.stopped + res.through + res.air + res.harmless === res.n, `stopped ${res.stopped} + through ${res.through} + flying ${res.air} + harmless ${res.harmless} is not ${res.n}`);
   assert(res.through === R.leaks.length && res.hits === (R.hits || 0), 'what got through does not match the leaks');
   assert(Object.values(res.came).reduce((s, n) => s + n, 0) >= res.through, 'what came leaves out what got through');
-  assert(/^[ABCDF]$/.test(res.grade) && res.rounds >= 0 && res.spent >= 0, `no grade or cost (${res.grade}, ${res.spent})`);
+  assert(/^[ABCDF?]$/.test(res.grade) && res.rounds >= 0 && res.spent >= 0, `no grade or cost (${res.grade}, ${res.spent})`);
   assert(S.camp.cards.some(c => c.res === res), 'no result card');
 }, true);
+// a raid forced on the capital with weapons free (or held), stepped until its result card
+function warRaid(seed, roe, each) {
+  const S = IC.newGame({ seed, mode: 'campaign' });
+  S.ad.roe = roe;
+  const cap = IC.cap(S);
+  let res = null, R = null;
+  const off = IC.on((S2, type, d) => { if (S2 === S && type === 'raidResult') { res = d.res; R = d.R; } });
+  for (const s of S.esites) s.dormant = false;
+  S.camp.sched = []; S.enemy.war = true; S.enemy.warT = S.time; S.enemy.allow = null;
+  IC.enemyForceOp(S, 'strike', { x: cap.x, y: cap.y, ref: cap, name: cap.name }, { kind: 'limited', T: 2400 });
+  const Rf = S.enemy.raid;
+  for (let i = 0; i < 4 * 3600 * 4 && !res; i++) { IC.step(S, 0.25); if (each) each(S, Rf); }
+  off();
+  // (no next raid: the test watches this one)
+  S.enemy.cycle = { phase: 'calm', next: 1e12 };
+  return { S, res, R };
+}
+test('war reports: weapons our jammers send off course count as stopped, and a raid nothing got through is held', () => {
+  // every weapon of the raid that reaches our airspace is spoofed and crashes; nothing is shot at
+  let spoofed = 0;
+  const { S, res, R } = warRaid(4242, 'hold', (S2, Rf) => { for (const t of S2.threats) if (!t.dead && !t.spoofed && t.op && t.op.raid === Rf && t.d.dmg && t.d.cls !== 'air' && t.d.cls !== 'heli' && IC.inHome(t.x, t.y)) { t.spoofed = true; t.spoofT = 5; t.sd = 1; spoofed++; } });
+  assert(res, 'the raid did not end with a result');
+  assert(spoofed > 0 && res.jammed > 0, `nothing was jammed (${spoofed} spoofed, ${res.jammed} counted)`);
+  assert(res.stopped >= res.jammed && res.through === R.leaks.length, `stopped ${res.stopped}, jammed ${res.jammed}`);
+  if (!res.through && !res.air && !res.success) assert(res.held && /^[AB]$/.test(res.grade), `nothing got through, yet ${res.grade} and ${res.held ? 'held' : 'not held'}`);
+  assert(!(res.held && res.grade === 'F'), 'held with an F');
+  assert(S.camp.cards.some(c => c.res === res) && /jammed off course/.test(R.text), `no result card, or the report leaves out the jamming: ${R.text}`);
+}, true);
+test('war reports: a raid reported while its weapons still fly says so, and a late hit is reported after it', () => {
+  // the raid's time runs out the moment its first weapons are in the air: the report is written with them flying
+  let cut = false;
+  const { S, res, R } = warRaid(4242, 'hold', (S2, Rf) => { if (!cut && S2.threats.some(t => !t.dead && t.op && t.op.raid === Rf && t.d.dmg && t.d.cls !== 'air')) { cut = true; S2.enemy.cycle.next = S2.time - 1; } });
+  assert(res && res.air > 0, `the report did not see weapons in the air (${res && res.air})`);
+  assert(!res.held, 'held while weapons still fly');
+  const card = S.camp.cards.find(c => c.res === res);
+  assert(card && /still flying/.test(card.title), `card: ${card && card.title}`);
+  assert(!S.logs.some(l => l.tag === 'PM' && /thanks/.test(l.msg)), 'the Prime Minister thanked the air defence with weapons in the air');
+  for (let i = 0; i < 4 * 3600 * 3 && S.threats.some(t => !t.dead && t.op && t.op.raid === R && t.d.dmg && t.d.cls !== 'air'); i++) IC.step(S, 0.25);
+  assert(res.through === R.leaks.length && res.hits === (R.hits || 0), `the card did not follow the late arrivals (${res.through} of ${R.leaks.length}, ${res.hits} hits of ${R.hits})`);
+  assert(res.air === 0 || res.air === S.threats.filter(t => !t.dead && t.op && t.op.raid === R && t.d.dmg && t.d.cls !== 'air').length, `still flying ${res.air}`);
+  if (R.hits) assert(S.logs.some(l => l.tag === 'LATE HIT'), 'a late hit was not reported');
+}, true);
+test('war reports: a battery with only known decoys in reach says so, not that they are unidentified', () => {
+  const S = range(), T = S.range.target;
+  const u = IC.rangeAddUnit(S, 'mrsam', T.x, T.y, { emcon: 'on' });
+  S.ad.roe = 'free';
+  const t = IC.spawnThreat(S, 'dcy', T.x + 300, T.y, { route: [{ x: T.x - 3000, y: T.y }], aim: { x: T.x - 3000, y: T.y }, fromHostile: true });
+  for (let i = 0; i < 4 * 120 && !t.held; i++) IC.step(S, 0.25);
+  t.decoyKnown = true; IC.setAff(S, t, 'H', 'test');
+  for (let i = 0; i < 4 * 10; i++) IC.step(S, 0.25);
+  assert(/decoys/.test(u.why) && !S.missiles.some(m => m.unit === u), `the battery says: ${u.why}`);
+});
+test('war reports: an intruder alert closes once the track is identified', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'campaign' }), cap = IC.cap(S);
+  const t = IC.spawnThreat(S, 'owa', cap.x + 300, cap.y, { route: [{ x: cap.x, y: cap.y }], aim: { x: cap.x, y: cap.y }, fromHostile: true });
+  t.det = true; t.held = true; t.tn = t.tn || 4321; t.aff = 'U'; t.intrudeFlag = true;
+  IC.incidentAdd(S, 'intrusion', t, `TN ${t.tn}: unidentified aircraft in our airspace`, 'warn');
+  for (let i = 0; i < 8; i++) IC.step(S, 0.25);
+  assert(IC.activeIncidents(S).some(x => x.ref === t && x.kind === 'intrusion'), 'the intruder alert closed while the track was unknown');
+  IC.setAff(S, t, 'H', 'test');
+  for (let i = 0; i < 4 * 6; i++) IC.step(S, 0.25);
+  assert(!IC.activeIncidents(S).some(x => x.ref === t), 'the intruder alert stayed up once the track was known');
+});
+test('war reports: one strike on a lorry park writes one line, not one per truck', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'campaign' }), cap = IC.cap(S);
+  const vs = [0, 1, 2].map(i => ({ name: `Convoy T-0${i + 1}`, x: cap.x + i, y: cap.y, trucks: 3, dead: false }));
+  const n0 = S.logs.length;
+  for (let k = 0; k < 3; k++) for (const v of vs) IC.hitConvoy(S, v, 'SRBM');
+  const lines = S.logs.slice(0, S.logs.length - n0).filter(l => l.tag === 'CONVOY');
+  assert(lines.length === 1 && /T-01 destroyed/.test(lines[0].msg) && /T-03 destroyed/.test(lines[0].msg), lines.map(l => l.msg).join(' | '));
+});
 test('combat: a battery fires on another radar\'s track beyond its own radar, over the network', () => {
   const S = range(), T = S.range.target;
   const bat = IC.rangeAddUnit(S, 'mrsam', T.x, T.y, { emcon: 'off' });

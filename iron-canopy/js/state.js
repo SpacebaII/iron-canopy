@@ -487,10 +487,25 @@ IC.hitConvoy = function (S, v, what) {
     v.dead = true;
     S.stats.convoysLost++;
     if (v.job) IC.failJob(S, v.job);
-    IC.log(S, 'leak', 'CONVOY', `${v.name} destroyed${what ? ' by ' + what : ''} ${IC.nearPlace(S, v.x, v.y)}.`, v);
-    IC.emit(S, 'convoyLost', v);
-  } else IC.log(S, 'warn', 'CONVOY', `${v.name} hit${what ? ' by ' + what : ''}; ${v.trucks} truck${v.trucks === 1 ? "" : "s"} left.`, v);
+    convoyLine(S, v, what);
+    v.lostBy = what; IC.emit(S, 'convoyLost', v);
+  } else convoyLine(S, v, what);
 };
+/* one line in the Journal for one strike, however many convoys and trucks it hit: a salvo or a cluster warhead on a
+   depot's lorry park would otherwise write a line per truck */
+function convoyLine(S, v, what) {
+  const st = v.trucks <= 0 ? 'destroyed' : `${v.trucks} truck${v.trucks === 1 ? '' : 's'} left`, H = S._cvHit;
+  if (H && S.time - H.t < 20 && U.dxy(H.x, H.y, v.x, v.y) < 60 && S.logs.includes(H.e)) {
+    H.m.set(v.name, st); H.t = S.time;
+    const L = [...H.m].map(([n, s]) => `${n} ${s}`);
+    H.e.msg = `Convoys hit${H.what ? ' by ' + H.what : ''} ${H.where}: ${L.join(', ')}.`;
+    if ([...H.m.values()].includes('destroyed')) H.e.kind = 'leak';
+    return;
+  }
+  const where = IC.nearPlace(S, v.x, v.y);
+  IC.log(S, v.trucks <= 0 ? 'leak' : 'warn', 'CONVOY', v.trucks <= 0 ? `${v.name} destroyed${what ? ' by ' + what : ''} ${where}.` : `${v.name} hit${what ? ' by ' + what : ''}; ${st}.`, v);
+  S._cvHit = { t: S.time, x: v.x, y: v.y, e: S.logs[0], m: new Map([[v.name, st]]), what, where };
+}
 
 /* crews tire while their radars radiate and threats are near, and recover when stood down */
 IC.fatigue = function (S, dt) {

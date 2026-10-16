@@ -261,7 +261,7 @@ IC.defense = function (S, dt) {
       let best = null, bm = null, bs = 1e12, br = 0;
       const p = u.prio;
       const why = { r: '' };
-      let sawAny = false, blockedRoe = false, blockedSee = false, engaged = false;
+      let sawAny = false, blockedRoe = false, blockedSee = false, engaged = false, decoys = false;
       let bpip = null;
       if (p && !p.dead && p.det && canSee(S, u, p) && eligible(S, u, p, true)) {
         const r = U.dist(u, p), m = chooseMun(S, u, p, r, why);
@@ -272,6 +272,7 @@ IC.defense = function (S, dt) {
         const r = U.dist(u, t); if (r > range * 1.05) continue;
         if (t.d.civil && (t.aff === 'N' || t.aff === 'A')) continue;
         sawAny = true;
+        if (t.decoyKnown || t.spoofed) { decoys = true; continue; }
         if (!eligible(S, u, t)) { blockedRoe = true; continue; }
         if (t.inbound >= need(S, u, t)) { engaged = true; continue; }
         if (!canSee(S, u, t)) { if (!blockedSee) blockedSee = t; continue; }
@@ -308,7 +309,8 @@ IC.defense = function (S, dt) {
         u.why = empty ? 'Out of missiles: waiting for resupply' : reloading ? reloadWhy(S, u)
           : blockedSee ? IC.fcWhy(S, u, blockedSee) : why.r ? cap1(why.r)
           : blockedRoe ? (IC.effRoe(S, u) === 'hold' ? 'Weapons hold' : 'Holding: targets not identified hostile')
-          : engaged ? 'Holding: interceptors already on their way to every target in reach' : hojWhy ? hojWhy : sawAny ? 'Tracking' : 'No targets';
+          : engaged ? 'Holding: interceptors already on their way to every target in reach' : hojWhy ? hojWhy
+          : decoys ? 'Holding: what is in reach is decoys or weapons our jammers sent off course' : sawAny ? 'Tracking' : 'No targets';
         u.cool = 0.5;
       }
     } else if (d.weapon === 'gun') {

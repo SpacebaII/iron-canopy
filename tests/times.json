@@ -190,5 +190,10 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "war reports: weapons our jammers send off course count as stopped, and a raid nothing got through is held": 45,
+ "war reports: a raid reported while its weapons still fly says so, and a late hit is reported after it": 50,
+ "war reports: a battery with only known decoys in reach says so, not that they are unidentified": 6,
+ "war reports: an intruder alert closes once the track is identified": 4,
+ "war reports: one strike on a lorry park writes one line, not one per truck": 4
 }
