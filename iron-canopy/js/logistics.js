@@ -303,9 +303,11 @@ IC.heliPlan = function (S, u) {
   const mags = IC.activeMags(S, u).filter(m => heliRoom(m) > 0).sort((a, b) => (a.mag + a.store) / (a.max + a.storeMax) - (b.mag + b.store) / (b.max + b.storeMax));
   if (!mags.length) return { why: IC.activeMags(S, u).some(m => m.inc > 0) ? 'Everything it has room for is already on its way.' : 'Full: nothing to fly in.' };
   const ds = IC.depots(S);
-  const src = ds.filter(d => mags.some(m => (d.inv[m.mun] || 0) >= 1)).sort((a, b) => U.dist(a, u) - U.dist(b, u))[0];
-  if (!src) return { why: `No depot holds ${IC.munWords(mags[0].mun)}. ${S.supply && S.supply.auto ? 'The Ministry buys more within two minutes (Keep stocked).' : 'Buy more in Supply (L), or turn on Keep stocked.'}` };
-  const r = heliFor(S, src, H.reach);
+  const srcs = ds.filter(d => mags.some(m => (d.inv[m.mun] || 0) >= 1)).sort((a, b) => U.dist(a, u) - U.dist(b, u));
+  if (!srcs.length) return { why: `No depot holds ${IC.munWords(mags[0].mun)}. ${S.supply && S.supply.auto ? 'The Ministry buys more within two minutes (Keep stocked).' : 'Buy more in Supply (L), or turn on Keep stocked.'}` };
+  // the nearest depot a helicopter can reach: one out of every helicopter's reach does not hide another that is not
+  let src = srcs[0], r = null;
+  for (const d of srcs) { r = heliFor(S, d, H.reach); if (r) { src = d; break; } }
   if (!r) {
     const all = S.roster.filter(x => x.kind === 'heli' && x.st !== 'lost');
     if (!all.length) return { why: 'No transport helicopter. A Forward Heliport (Supply tab) comes with one.' };
