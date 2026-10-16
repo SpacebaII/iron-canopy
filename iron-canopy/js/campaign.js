@@ -20,6 +20,9 @@ function say(S, who, text) {
 IC.say = say;
 function card(S, title, sub, text, kind, x) { S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
 IC.card = card;
+/* a card that would cover the map while a raid is in the air waits for it to end: the morning briefing, reports
+   (a raid's result among them) and anything made over ten minutes ago; what is happening now still shows */
+IC.cardWaits = (S, c) => !!(IC.raidPhase && IC.raidPhase(S) === 'raid' && (c.kind === 'briefing' || c.kind === 'report' || S.time - (c.t || 0) > 600));
 function chapter(S, name, text) { if (S.camp.chapter === name) return; S.camp.chapter = name; card(S, name, `Day ${U.day(S.time)} · ${U.hhmm(S.time)}`, text, 'chapter'); IC.emit(S, 'chapter', name); }
 
 /* Quick war is won by holding: this many days of war with the country still working and the Prime Minister still
@@ -40,7 +43,7 @@ IC.campaignInit = function (S) {
   for (const s of S.esites) if (s.nat === 'B') s.dormant = true;
   const war = S.time + U.rand(3, 4.5) * 3600, second = war + U.rand(20, 30) * 3600;
   S.camp.sched = ['qwRecon', 'qwRockets', 'qwSigint', 'qwWar', 'qwSecond'].map((h, i) => ({ t: [S.time + U.rand(0.6, 1) * 3600, S.time + U.rand(1.6, 2.2) * 3600, war - 1500, war, second][i], fn: IC.hfn(h, S) }));
-  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `The ${W.full.A} has closed the border and its forces are massing. Our layers are up over the capital, the main air base and the two largest cities, but more equipment waits in the reserve and the spare missiles at each site are only half stocked. Use the time.`, 'chapter');
+  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `The ${W.full.A} has closed the border and its forces are massing. Its ally the ${W.full.B} has not moved yet, but expect it to join about a day after the first strike. Our layers are up over the capital, the main air base and the two largest cities, but more equipment waits in the reserve and the spare missiles at each site are only half stocked. Use the time.`, 'chapter');
   S.camp.chapter = 'Tension';
   say(S, 'CDS', `The ${W.full.A} is massing on the border. We have hours, not days. Deploy what is still in the reserve, top up the stores, and decide what else we protect.`);
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
@@ -102,7 +105,7 @@ IC.campaignTick = function (S, dt) {
   C.sugT = (C.sugT || 0) - dt;
   if (C.sugT <= 0) { C.sugT = 10; C.objs = suggestions(S); }
   const h = (S.time % 86400) / 3600, day = U.day(S.time);
-  if (day > 1 && h >= 6 && C.briefDay !== day) { C.briefDay = day; briefing(S); }
+  if (day > 1 && h >= 6 && C.briefDay !== day && IC.raidPhase(S) !== 'raid') { C.briefDay = day; briefing(S); }   // (after the raid in the air, if one is)
   if (h >= 21 && C.reportDay !== day && S.enemy.war) { C.reportDay = day; report(S); }
   if (S.pm != null && S.pm < 25 && tip(S, 'pmLow', 7200)) say(S, 'CDS', `The Prime Minister's confidence is down to ${Math.round(S.pm)}. Protect what keeps the country working: power, the cities, the airports.`);
   // the Prime Minister's confidence: it drains while the country is failing, and recovers in the calm

@@ -19,6 +19,18 @@ IC.unitState = function (u) {
   if (u.emitter) return [u.radarOn ? 'Radiating' : u.emcon === 'ambush' ? 'Ambush' : 'Silent', u.radarOn ? 'ok' : 'fr'];
   return ['Ready', 'ok'];
 };
+/* the line under the pill: what a unit that is not ready is doing, in more words than the pill (not the same words) */
+function unitDoing(u, st) {
+  const there = u.dest ? IC.nearPlace(S, u.dest.x, u.dest.y) : '', left = u.eta ? U.dur(Math.max(0, u.eta - S.time)) : '';
+  const set = u.deliver && u.d.build ? `, then ${U.dur(u.d.build)} to set up` : '';
+  if (u.state === 'transit' && u.toReserve) return 'Driving back to the reserve.';
+  if (u.state === 'transit') return `${u.airlift ? 'Flying' : 'Driving'} to its position ${there}: there in ${left}${set}.`;
+  if (u.state === 'packing' && u.deliver) return `Loading ${u.airlift ? 'onto heavy-lift helicopters' : 'its vehicles'}, then ${u.airlift ? 'flies' : 'drives'} to its position ${there}.`;
+  if (u.state === 'packing') return 'Packing up to move.';
+  if (u.state === 'building') return `Being built on site: in service in ${U.dur(u.stT)}.`;
+  if (u.state === 'setup') return `In position and setting up: in service in ${U.dur(u.stT)}.`;
+  return st;
+}
 const head = (icon, title, sub, pill, cls) => `<div class="ihead">${icon}<div><h2>${esc(title)}</h2><p>${sub}</p></div><span class="xs">${ui.compact() ? `<button class="x" data-act="inspMin" aria-label="${ui.inspMin ? 'Open' : 'Fold'}" title="${ui.inspMin ? 'Open the panel' : 'Fold the panel to a strip: the map behind it'}">${ui.inspMin ? '▾' : '▴'}</button>` : ''}<button class="x" data-act="desel" aria-label="Close" title="Close (Esc)">✕</button></span></div>${pill ? `<div style="padding:0 .95rem .5rem"><span class="pill ${cls || ''}">${esc(pill)}</span></div>` : ''}`;
 const hh = h => IC.hh(h);
 const seg = (act, cur, opts, big) => `<div class="seg ${big ? 'big' : ''}">${opts.map(([v, n, c, t]) => `<button class="${c || ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
@@ -121,7 +133,7 @@ function unit(u) {
   const d = u.d, [st, cls] = IC.unitState(u);
   const k = S.enemy.known.get(u.id);
   const intel = !k ? '<span class="ok">not located</span>' : U.dxy(k.x, k.y, u.x, u.y) > 30 ? `<span class="amber">stale fix</span>` : `<span class="hostile">located (${esc(k.how)})</span>`;
-  const why = u.state !== 'ready' ? st : u.why || (d.sensor ? (u.radarOn || d.sensor.passive ? 'Watching the sky' : 'Silent: not transmitting, not seen') : d.logi ? 'Running deliveries' : 'Standing by');
+  const why = u.state !== 'ready' ? unitDoing(u, st) : u.why || (d.sensor ? (u.radarOn || d.sensor.passive ? 'Watching the sky' : 'Silent: not transmitting, not seen') : d.logi ? 'Running deliveries' : 'Standing by');
   const whyCls = /Engaging|Firing|Burning/.test(why) ? 'fr' : /Out of|knocked|Holding|silent|Silent|exhausted/.test(why) ? 'busy' : 'ok';
   const parts = [];
   // orders
@@ -148,7 +160,7 @@ function unit(u) {
       const rl = left != null ? `<span class="amber">launcher ${m.li + 1} reloading, ready in ${U.dur(left)}</span>`
         : m.mag >= m.max ? 'every launcher full' : m.store > 0 ? 'the part-empty launcher reloads once it has been quiet for a minute' : '<span class="hostile">nothing on site to reload from</span>';
       return `<div class="mag" title="${esc(IC.fullName(M))}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${sh}</b><span class="rounds">${lns}</span><small>${m.mag}/${m.max}</small></div>
-        <p class="hint" style="margin:0 0 .15rem">${m.ln > 1 ? `${m.ln} launchers of ${m.per}. ` : ''}Stock on site: <b>${m.store}</b> of ${m.storeMax}${m.inc ? ` · ${m.inc} coming` : ''} · ${rl}.</p>`;
+        <p class="hint" style="margin:0 0 .15rem">${m.ln > 1 ? `${m.ln} launchers, ${m.per} rounds each. ` : ''}Stock on site: <b>${m.store}</b> of ${m.storeMax}${m.inc ? ` · ${m.inc} coming` : ''} · ${rl}.</p>`;
     }).join('');
     const next = IC.activeMags(S, u).map(m => { const n = IC.nextLoad(S, u, m); return `<p class="hint ${n.cls === 'ok' ? '' : n.cls}" style="margin:.25rem 0"><b>${esc(IC.MUN[m.mun].short || m.mun)}:</b> ${esc(n.text)}</p>`; }).join('');
     const P = IC.heliPlan(S, u);
@@ -807,7 +819,7 @@ function planBox(who, t) {
   if (P.x == null) return `<div class="sec plan"><h3 class="sh">Intercept ${esc(tn)}</h3><div class="warnbox">${esc(P.why || 'No intercept possible.')}</div><div class="acts"><button class="act" data-act="air" data-op="cancel">Cancel</button></div></div>`;
   const rows = [
     ['Meets it', `in ${U.dur(P.T)}${P.delay > 30 ? ` <span class="muted">(${U.dur(P.delay)} of it on the ground)</span>` : ''} ${esc(IC.nearPlace(S, P.x, P.y))}`],
-    ['Fuel after', P.fuelBack > 0 ? `${U.dur(P.fuelBack)} once home` : `<span class="hostile">not enough to come back</span>${S.air.some(k => k.kind === 'tkr' && k.state === 'station') ? ' · a tanker is up' : ''}`],
+    ['Fuel there', P.fuelBack > 0 ? `${U.dur(P.fuelBack)} to spare before it must turn home` : `<span class="hostile">it must turn home before it gets there: the meeting point is too far from ${esc(P.home || 'its base')}</span>${S.air.some(k => k.kind === 'tkr' && k.state === 'station') ? ' · a tanker is up and can top it up on the way' : ''}`],
     ['Weapons', `${P.aam} radar missiles, ${P.srm} heat-seeking · reach ${esc(P.reachWords)}`],
     ['Kill chance', P.idFirst ? '<span class="unknown">identify first: nobody fires at it until a pilot has seen it</span>' : `${U.pct(P.pk)} a target with two missiles${P.n > 1 ? ` · ${P.enough ? `enough for all ${P.n}` : `<span class="amber">missiles for ${Math.floor((P.aam + P.srm) / 2)} of ${P.n}</span>`}` : ''}${P.weapons === 'hold' ? ' · <span class="amber">weapons on Hold: it will only escort</span>' : ''}`]
   ];
@@ -864,7 +876,7 @@ function fighterOptions(t) {
   if (!L.length) return '';
   return `<div class="sec"><h3 class="sh">Fighters <em>quickest first</em></h3><div class="list">${L.map(({ w, P }) => {
     const on = w.mission && w.mission.track === t;
-    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (w.gnd ? 'taxiing' : (STATE_WORDS[w.state] || 'Airborne').toLowerCase()) : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · fuel after ${P.fuelBack > 0 ? U.dur(P.fuelBack) : '<span class="hostile">none</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
+    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (w.gnd ? 'taxiing' : (STATE_WORDS[w.state] || 'Airborne').toLowerCase()) : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · ${P.fuelBack > 0 ? `${U.dur(P.fuelBack)} of fuel to spare there` : '<span class="hostile">too far: turns home first</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
   }).join('')}</div></div>`;
 }
 /* ---------- the air picture: everything not known friendly, most dangerous first ---------- */

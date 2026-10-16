@@ -200,8 +200,10 @@ IC.interceptPlan = function (S, who, t) {
   if (tau == null) { P.why = 'It is faster than our fighters and flying away: they cannot catch it'; return P; }
   P.x = q0.x + v.vx * tau; P.y = q0.y + v.vy * tau; P.delay = delay; P.tau = tau; P.T = delay + tau;
   P.fuelAt = fuel - tau * IC.DASH_BURN;
-  P.fuelBack = base ? P.fuelAt - 400 - U.dxy(P.x, P.y, base.x, base.y) / K.spd * 1.1 : P.fuelAt;
-  P.aam = aam; P.srm = srm;
+  // what it has to spare at the meeting point before it must turn home (its bingo there, as the step flies it):
+  // below zero it turns home before it gets there, unless a tanker tops it up on the way
+  P.fuelBack = base ? P.fuelAt - bingo({ x: P.x, y: P.y }, base, K) : P.fuelAt;
+  P.aam = aam; P.srm = srm; P.home = base ? base.name : '';
   P.reach = IC.aamReach('mrm', alt, { alt: t.alt || 0, vx: v.vx, vy: v.vy, x: P.x, y: P.y }, from);
   const R = IC.aamReach('mrm', alt, { alt: t.alt || 0, vx: 0, vy: 0 }, null);
   P.reachWords = R > 0 ? `${U.km(R)} at its height${t.altKnown ? '' : ' (height guessed)'}` : 'out of reach at its height';
