@@ -190,5 +190,9 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "war journal: a Quick war logs no airline offers or civil advice the player cannot act on; the Career still does": 192,
+ "war journal: the morning briefing and stale cards wait while a raid is in the air": 48,
+ "war journal: the helicopter resupply line names the distance to the depot, not a closed base": 53,
+ "war journal: an intercept that says it turns home first does turn home, short of the meeting point, with fuel left": 100
 }
