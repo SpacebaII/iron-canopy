@@ -151,7 +151,7 @@ function unit(u) {
         <p class="hint" style="margin:0 0 .15rem">${m.ln > 1 ? `${m.ln} launchers of ${m.per}. ` : ''}Stock on site: <b>${m.store}</b> of ${m.storeMax}${m.inc ? ` · ${m.inc} coming` : ''} · ${rl}.</p>`;
     }).join('');
     const next = IC.activeMags(S, u).map(m => { const n = IC.nextLoad(S, u, m); return `<p class="hint ${n.cls === 'ok' ? '' : n.cls}" style="margin:.25rem 0"><b>${esc(IC.MUN[m.mun].short || m.mun)}:</b> ${esc(n.text)}</p>`; }).join('');
-    const P = IC.heliPlan(S, u);
+    const P = IC.heliPlan(S, u, true);
     const heli = P.why ? `<p class="hint amber" style="margin:.25rem 0">${esc(P.why)}</p>`
       : `<p class="hint" style="margin:.25rem 0">${esc(P.r.name)} from ${esc(P.src.name)}: ${esc(P.loads.filter(l => l.u === u).map(l => IC.munWords(l.m.mun, l.qty)).join(' and '))}, here in about ${U.dur(P.eta)}. The sortie costs ${U.money(P.cost)}.${P.stops.length > 1 ? ` On the way it also brings loads to ${esc(P.stops.filter(x => x !== u).map(x => x.name).join(', '))}.` : ''}</p>`;
     parts.push(`<div class="sec"><h3 class="sh">Launchers <em>ready · stock on site · coming</em></h3><div class="mags">${mags}</div>${next}
