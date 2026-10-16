@@ -676,7 +676,9 @@ function cine() {
 /* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
 function resultCard(c) {
   const r = c.res, C = S.combat || {};
-  const rows = [['Came', IC.raidCameText(r)], ['Stopped', `${r.stopped} of ${r.n}${r.ac ? `, and ${r.ac} aircraft shot down` : ''}`], ['Got through', r.through ? `${r.through}${r.hits ? `, ${r.hits} hit something` : ', none hit anything'}` : 'nothing']]
+  const rows = [['Came', IC.raidCameText(r)], ['Stopped', `${r.stopped} of ${r.n}${r.jammed ? `, ${r.jammed} of them sent off course by our jammers` : ''}${r.ac ? `, and ${r.ac} aircraft shot down` : ''}`], ['Got through', r.through ? `${r.through}${r.hits ? `, ${r.hits} hit something` : ', none hit anything'}` : r.air ? 'nothing yet' : 'nothing']]
+    .concat(r.air ? [['Still flying', `${r.air}: the Journal will say where they come down`]] : [])
+    .concat(r.harmless ? [['No harm', `${r.harmless} decoy${r.harmless > 1 ? 's' : ''} or weapon${r.harmless > 1 ? 's' : ''} that ran out of fuel`]] : [])
     .concat(r.why.length ? [['Why', r.why.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('. ')]] : [])
     .concat([['Spent', `${r.rounds} interceptors, ${U.money(r.spent)}`], ['Saved', `about ${U.money(r.prevented)} of damage prevented`]]);
   return `<small>${esc(c.sub)}</small><div class="rgrade g${r.grade}">${r.grade}</div><h2>${esc(c.title)}</h2>

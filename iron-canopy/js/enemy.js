@@ -1008,7 +1008,9 @@ function leakWhy(S, t) {
   if (!t.shots) {
     let best = null, bd = 1e9;
     for (const u of S.units) if (u.d.weapon === 'sam' || u.d.weapon === 'gun') { const d = U.dist(u, t); if (d < bd && d < IC.maxRange(S, u) * 1.5) { bd = d; best = u; } }
-    return best ? `seen, never engaged: ${best.name} ${IC.engageWhy(S, best, t).charAt(0).toLowerCase() + IC.engageWhy(S, best, t).slice(1)}` : 'seen, never engaged: no battery covers it';
+    // (lower-case the reason's first word, not a code such as "SR missiles")
+    const w = best && IC.engageWhy(S, best, t);
+    return best ? `seen, never engaged: ${best.name} ${/^[A-Z][a-z]/.test(w) ? w.charAt(0).toLowerCase() + w.slice(1) : w}` : 'seen, never engaged: no battery covers it';
   }
   return `survived ${t.shots} interceptor${t.shots > 1 ? 's' : ''}`;
 }
@@ -1024,18 +1026,18 @@ function report(S, E, R) {
   const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${they(e.why, e.n)}.`);
   const res = { id: R.id, kind: R.kind, name: R.name, obj: R.obj.name, t: S.time, day: U.day(R.T), threats: launched, kills: lost, leaks, hits: R.hits || 0, fired: S.stats.fired - (R.fired0 || 0) };
   (S.raids = S.raids || []).push(res);
-  const head = `${launched} threats, ${lost} shot down, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}. ${res.fired} interceptors fired.`;
+  const result = IC.raidResult(S, R, ops, achieved(S, R));
+  const head = `${launched} threats, ${lost} shot down${result.jammed ? `, ${result.jammed} jammed off course` : ''}, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}${result.air ? `, ${result.air} still flying` : ''}. ${res.fired} interceptors fired.`;
   let text = `${head}${lines.length ? ' ' + lines.join(' ') : ''}`;
   // a unit's code means little to a player: say what it is
   const r = R.obj.ref, what = r && r.d && r.d.role ? `${R.obj.name}, ${/^[aeiou]/i.test(r.d.role) ? 'an' : 'a'} ${r.d.role}` : R.obj.name;
   text += ` Their main target was ${what}${R.set ? `, in their push on ${IC.ESETS[R.set].name}` : ''}.`;
   // the result card: what came, what we stopped, what got through and why, what it cost, and a grade
-  const result = IC.raidResult(S, R, ops, achieved(S, R));
-  res.held = result.held; res.grade = result.grade;
+  res.held = result.held; res.grade = result.grade; res.air = result.air;
   if (R.aborted) text += ` They turned back: ${R.aborted.why}.`;
   R.text = text; R.res = res; R.result = result;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
-  if (S.camp && IC.card) IC.card(S, `${result.held ? 'Raid held' : result.success ? 'Raid got through' : 'Raid over'} · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report', { res: result, name: R.name });
+  if (S.camp && IC.card) IC.card(S, `${result.held ? 'Raid held' : result.success ? 'Raid got through' : result.air ? 'Raid report, some still flying' : 'Raid over'} · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report', { res: result, name: R.name });
   IC.emit(S, 'raidResult', { R, res: result });
   IC.emit(S, 'raidOver', R);
   // the commander learns what worked
@@ -1599,6 +1601,13 @@ IC.on((S, type, d) => {
     t.dead = false; const why = leakWhy(S, t); t.dead = true;
     R.leaks.push({ cls: t.d.cls, type: t.type, why, place: d.hit && d.hit.name ? d.hit.name : IC.nearestPlace(S, t.x, t.y), hit: !!d.hit });
     if (d.hit) R.hits = (R.hits || 0) + 1;
+    // after the report: it was still flying then, so the report said so; now say where it came down
+    const r = R.result;
+    if (r) {
+      if (r.air > 0) r.air--;
+      r.through = R.leaks.length; r.hits = R.hits || 0; if (R.res) { R.res.leaks = r.through; R.res.hits = r.hits; }
+      if (d.hit) IC.log(S, 'leak', 'LATE HIT', `A ${WORD[t.d.cls] ? WORD[t.d.cls][0] : 'weapon'} from the ${R.name} on ${R.obj.name} hit ${d.hit.name || IC.nearestPlace(S, t.x, t.y)}, after the report: it was one of those still flying.`, t);
+    }
   }
 });
 

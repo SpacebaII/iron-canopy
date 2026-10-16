@@ -276,7 +276,9 @@ const SPEC_LANE = a => (SP[a.cls] || SP.lc).lane * ((SP[a.cls] || SP.lc).lanes |
 function roundabout(j, G, fill, lw, D, z, px) {
   const C = G.C, asp = fill('rd');
   ctx.fillStyle = asp; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro, 0, 7); ctx.fill();
-  if (z > 5) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro - Math.max(0.006, lw * 2), 0, 7); ctx.stroke(); }
+  // (the edge line only where it fits inside the ring: a wide line far out, as in the 3D view's ground, has no room)
+  const er = G.Ro - Math.max(0.006, lw * 2);
+  if (z > 5 && er > 0) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, er, 0, 7); ctx.stroke(); }
   for (const a of G.arms) { ctx.fillStyle = fill(a.a.cls === 'hw' ? 'rd' : a.a.cls); ppoly(a.surf); ctx.fill(); }
   // the island
   // (far out the kerb and apron shrink with the island, so nothing turns inside out)
