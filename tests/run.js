@@ -5539,6 +5539,21 @@ test('war perf: U.hyp and U.hyp3 give Math.hypot to the bit, so the faster dista
     same(U.hyp(a, b), Math.hypot(a, b), `hyp(${a}, ${b})`); same(U.hyp3(a, b, c), Math.hypot(a, b, c), `hyp3(${a}, ${b}, ${c})`);
   }
 });
+test('war perf: the kept lists of cities and airports are copies, and follow the list of infrastructure', () => {
+  const S = IC.newGame({ seed: 23, mode: 'campaign' }); IC.S = S;
+  const want = () => [S.infra.filter(i => i.kind === 'city'), S.infra.filter(i => i.kind === 'airbase' || i.kind === 'airport')];
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const check = why => { const [c, b] = want(); assert(same(IC.cities(S), c), `cities ${why}`); assert(same(IC.bases(S), b), `bases ${why}`); };
+  check('at the start');
+  // a caller that changes the list it was given changes nothing for the next
+  const b0 = IC.bases(S), c0 = IC.cities(S); b0.length = 0; c0.reverse(); c0.pop();
+  check('after a caller changed its copy');
+  // a new airport (founded: pushed on the list), then a new list (as a loaded game has)
+  S.infra.push({ id: 'aptT', kind: 'airport', name: 'Test Airport', x: 100, y: 100, owner: 'us', infra: true });
+  check('after an airport was founded');
+  S.infra = S.infra.filter(i => i.kind !== 'airbase');
+  check('after the list was replaced');
+});
 test('war perf: the travel times with every road open are kept through a cut, and worked out again when a road changes', () => {
   const S = IC.newGame({ seed: 21, mode: 'campaign' }); IC.S = S;
   const E = S.econ, W = S.world, cap = IC.cap(S);

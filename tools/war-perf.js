@@ -36,11 +36,12 @@ if (SNAP) {
 }
 const warm = (Date.now() - w0) / 1000;
 // the parts of the step (or the functions named by --fns=a,b), timed when asked: in all, and in calls over 1 ms (the hitches)
-const PH = {}, SP = {}, NC = {};
+const PH = {}, SP = {}, NC = {}, cur = {};
+let worst = { ms: 0 };
 const wrap = name => {
   const f = IC[name]; if (typeof f !== 'function') return;
   PH[name] = SP[name] = NC[name] = 0;
-  IC[name] = function () { const c0 = process.cpuUsage(); const r = f.apply(this, arguments); const c = process.cpuUsage(c0), ms = (c.user + c.system) / 1000; PH[name] += ms; if (ms > 1) { SP[name] += ms; NC[name]++; } return r; };
+  IC[name] = function () { const c0 = process.cpuUsage(); const r = f.apply(this, arguments); const c = process.cpuUsage(c0), ms = (c.user + c.system) / 1000; PH[name] += ms; cur[name] = (cur[name] || 0) + ms; if (ms > 1) { SP[name] += ms; NC[name]++; } return r; };
 };
 if (args.includes('--phases')) {
   const src = fs.readFileSync(path.join(ROOT, 'iron-canopy/js/sim.js'), 'utf8');
@@ -51,6 +52,9 @@ const busy = `act ${E.act}, ${S.units.filter(u => !u.dead).length} units, ${host
 const T = [];
 for (let k = 0; k < N && !S.over; k++) {
   const c0 = process.cpuUsage(); IC.step(S, 0.25); const c = process.cpuUsage(c0), ms = (c.user + c.system) / 1000; T.push(ms);
+  // (the worst step, part by part)
+  if (ms > worst.ms) worst = { ms, k, at: S.time, parts: Object.entries(cur).filter(e => e[1] > 0.5).sort((a, b) => b[1] - a[1]) };
+  for (const n in cur) cur[n] = 0;
   if (k % 240 === 0) Q.commander(S);
 }
 T.sort((a, b) => a - b);
@@ -68,7 +72,9 @@ console.log(`${path.relative(process.cwd(), ROOT) || '.'} · seed ${seed} · ${f
 console.log(`${T.length} steps of 0.25 s: median ${q(0.5)} ms, 95th percentile ${q(0.95)} ms, worst ${T[T.length - 1].toFixed(2)} ms, mean ${(T.reduce((s, v) => s + v, 0) / T.length).toFixed(3)} ms`);
 if (Object.keys(PH).length) {
   const tot = Object.values(PH).reduce((s, v) => s + v, 0);
+  console.log(`the worst step, ${worst.ms.toFixed(1)} ms (step ${worst.k}): ${worst.parts.map(([n, v]) => `${n} ${v.toFixed(1)}`).join(', ') || 'no part over 0.5 ms (collecting garbage?)'}`);
   console.log('ms per step (of which in calls over 1 ms) and the calls over 1 ms:');
-  for (const [k, v] of Object.entries(PH).sort((a, b) => b[1] - a[1]).filter(e => e[1] / tot > 0.01)) console.log(`  ${k.padEnd(18)} ${(v / T.length).toFixed(3)} (${(SP[k] / T.length).toFixed(3)}) ${NC[k]}`);
+  const asked = opt('fns', '').split(',');
+  for (const [k, v] of Object.entries(PH).sort((a, b) => b[1] - a[1]).filter(e => e[1] / tot > 0.01 || asked.includes(e[0]))) console.log(`  ${k.padEnd(18)} ${(v / T.length).toFixed(3)} (${(SP[k] / T.length).toFixed(3)}) ${NC[k]}`);
 }
 console.log(`state hash ${hash}`);

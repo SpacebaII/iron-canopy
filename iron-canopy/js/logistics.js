@@ -663,10 +663,10 @@ IC.economy = function (S, dt) {
   // every other radar on the same band close by (where they would blind each other, sensors.js) makes a radar
   // cost more to keep deconflicted and maintained
   // (each pair counted once, for both, without a list made for every radar: this runs every step)
-  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]), nb = new Map();
+  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]), band = on.map(u => IC.BAND[u.type]), nb = new Map();
   for (let i = 0; i < on.length; i++) for (let j = i + 1; j < on.length; j++) {
     const a = on[i], o = on[j];
-    if (IC.BAND[a.type] === IC.BAND[o.type] && U.dist(o, a) < 700) { nb.set(a, (nb.get(a) || 0) + 1); nb.set(o, (nb.get(o) || 0) + 1); }
+    if (band[i] === band[j] && U.dist(o, a) < 700) { nb.set(a, (nb.get(a) || 0) + 1); nb.set(o, (nb.get(o) || 0) + 1); }
   }
   let crowd = 0;
   for (const u of S.units) {
