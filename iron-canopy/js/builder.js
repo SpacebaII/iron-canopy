@@ -489,7 +489,8 @@ IC.foundSurvey = function (S, x, y, a) {
   if (!ROAD_Q.has(rk)) { const A = IC.landAccessPlan ? IC.landAccessPlan(S, x, y, a, true) : null; ROAD_Q.set(rk, A && !A.P.why ? { cost: A.P.cost, km: A.P.km } : null);
  if (ROAD_Q.size > 64) ROAD_Q.delete(ROAD_Q.keys().next().value); }
   const road = ROAD_Q.get(rk), site = IC.FOUND_COST + earth + land;
-  return { x, y, a, river, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, road, site, cost: site + (road ? road.cost : 0), obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
+  const birds = IC.aptWaterNear(S, [{ id: 'survey', a: { x: x - d.x * RW0 / 2, y: y - d.y * RW0 / 2 }, b: { x: x + d.x * RW0 / 2, y: y + d.y * RW0 / 2 } }]).near;
+  return { x, y, a, river, birds, slope: W.slopeAt(x, y), hdiff: (hmax - hmin) * 2000, earth, land, road, site, cost: site + (road ? road.cost : 0), obst: Math.round(obst), obstAt, noise, homes, city: city && city.name, cityKm: cd / 10,
     windOff: wind, ends: [end(hdg), end(hdg + 180)], name: [end(hdg), end(hdg + 180)].sort().join('/'), cross: Math.round(Math.sin(wind * Math.PI / 180) * 15) };
 };
 /* the survey in plain words, one line each */
@@ -1187,6 +1188,7 @@ function planOf(S, m, hv, tol, free, only) {
     (out.blocks = out.blocks || []).push(...pv.clr.blocks.map(x => x.b));
     if (!out.near && pv.near) out.near = pv.near;
     if (!IC.aptCanPlace(S, ap, probe.kind === 'taxi' ? { kind: 'taxi', pts: probe.pts } : probe)) { out.ok = false; out.hit = IC.aptPlaceHit; out.why = IC.aptPlaceWhy || (probe.kind === 'taxi' || probe.kind === 'runway' ? 'Leaves the airport site, or crosses a river or lake.' : `The ${U.lc(D.name)} overlaps another part, stands in water or leaves the site.`); }
+    if (probe.kind === 'runway' && out.ok && IC.partMeasure(ap, probe) > IC.RWY_MAX) { out.ok = false; out.why = IC.rwyTooLong(IC.partMeasure(ap, probe)); }
     if (probe.kind === 'runway' && !out.text.length) out.text.push(runwayText(S, ap, probe));
     if (probe.kind === 'apron' && t !== 'concourse') out.text.push(probe.ramp ? `Open ramp ${(probe.w * probe.h).toFixed(1)} ha: place stands of any size on it` : apronText(ap, probe));
     if (probe.kind === 'surface') out.text.push(`${IC.SURF[probe.surf].name}, ${(probe.w * probe.h).toFixed(1)} ha${IC.SURF[probe.surf].park ? `: parks about ${Math.round(IC.SURF[probe.surf].park * probe.w * probe.h)} cars outside the airfield` : ''}`);
@@ -1308,6 +1310,9 @@ IC.bldMode = function (S, ap, part) {
    distance. Build (IC.buildFinish, the button or Enter) builds it; btn 2 takes a point back or cancels a placed plan.
    Returns 'point', 'same' (the last point again: nothing happens), 'undo', 'exit', 'built' (a stand only: one
    click places it) or 'err' (m.err says why) */
+/* the longest runways in service are about 5.5 km: anything longer is a slip of the mouse, not a plan */
+IC.RWY_MAX = 56;
+IC.rwyTooLong = len => `Too long: ${U.km(len)}. The longest runways in service are about 5.5 km; 4 km takes every airliner.`;
 const placed = (m, p, tol, free) => { m.set = true; m.at = { x: p.x, y: p.y }; m.tol = tol; m.free = !!free; return 'point'; };
 IC.buildInput = function (S, m, p, btn, z, free) {
   const ap = m.ap, tol = Math.max(0.12, 8 / (z || 4));
@@ -1321,7 +1326,9 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   // a piece: the runway piece by its two ends (a click after both moves the far one), the rest by one click
   if (PC && PC.line) {
     if (!m.pts.length) { m.pts = [{ x: p.x, y: p.y }]; return 'point'; }
-    if (!plan.bp) { m.err = plan.why || 'Too short.'; return 'err'; }
+    // (the far end moved here, checked before it moves: a stray click must not stretch the runway out of reach)
+    const to = m.pts.length > 1 ? IC.bldPlanOf(S, Object.assign({}, m, { pts: [m.pts[0]], set: false }), p, tol, free) : plan;
+    if (!to.bp) { m.err = to.why || 'Too short.'; return 'err'; }
     m.pts[1] = { x: p.x, y: p.y }; return placed(m, p, tol, free);
   }
   if (PC) { if (!plan.bp) { m.err = plan.why; return 'err'; } m.pts = [{ x: p.x, y: p.y }]; return placed(m, p, tol, free); }

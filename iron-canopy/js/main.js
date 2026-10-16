@@ -210,6 +210,8 @@ const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel');
 
 function leftClick(p, shift) {
   if (!p || S.over && !IC.ui.overDismissed) return;
+  // (a card that closed by itself just now: the click was meant for it, not for the map)
+  if (performance.now() - (IC.ui.cineGone || -1e9) < 600) return;
   const m = S.mode2;
   if (m) {
     if (m.kind === 'build') return buildIn(m, p, 0, shift);

@@ -730,7 +730,7 @@ function city(c) {
     <p class="hint">Cities grow with good air service (frequent flights to many places, few delays, fair fees within ${IC.GROWTH.catch[1]} h by road) and good roads. Growth raises taxes and passengers.</p></div>` : '';
   return head(`<span class="badge friend">${ui.icon('city')}</span>`, c.name, c.capital ? 'Capital' : 'City', c.alert > 0 ? 'Sirens' : 'Calm', false || c.alert > 0 ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Morale</span>${bar(c.morale / 100, 'var(--friend)')}<span>${Math.round(c.morale)}%</span><span>Buildings</span>${bar(alive)}<span>${U.pct(alive)}</span><span>Prosperity</span>${bar(Math.min(1, c.prosp), 'var(--supply)')}<span>${U.pct(c.prosp)}</span></div>
-    ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${tax.toFixed(1)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
+    ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${U.money(tax)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
     ${what}${growth}
     </div>`;
 }

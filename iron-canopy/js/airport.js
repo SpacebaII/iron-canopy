@@ -717,6 +717,10 @@ function waterNear(S, ap, rws) {
   ap.water = out;
   return out;
 }
+/* water near these runways draws birds (a fresh object holds the answer, not an airport) */
+IC.aptWaterNear = (S, rws) => waterNear(S, {}, rws);
+/* a part of this kind is being built (its works have started), so a warning that there is none says so and asks for nothing */
+IC.aptBuilding = (ap, kind) => !!(ap.works && ap.works.some(w => w.kind === 'build' && w.part && w.part.kind === kind));
 IC.aptStats = function (S, ap) {
   const G = IC.aptGraph(ap);
   const alive = k => ap.parts.filter(p => p.kind === k && p.built && p.hp > p.max * 0.25);
@@ -855,8 +859,8 @@ IC.aptStats = function (S, ap) {
   for (const rw of rws) { let r = 0; for (const t of [0, 0.5, 1]) r = Math.max(r, IC.aptRescue(ap, rwAt(rw, t))); st.rescueRw[rw.id] = r; st.rescue = Math.max(st.rescue, r); }
   // heavy jets need a runway long enough for them that the trucks reach in 3 minutes
   st.heavyOk = rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES.wide.rwy && st.rescueRw[rw.id] <= IC.FIRE_STD);
-  if (!tower) st.warn.push('No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
-  if (!st.fire) st.warn.push('No fire station near the runway: only turboprops may use it. Build one within 1.5 km of the runway.');
+  if (!tower) st.warn.push(IC.aptBuilding(ap, 'tower') ? 'The control tower is being built: one movement every 8 min until it opens.' : 'No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
+  if (!st.fire) st.warn.push(IC.aptBuilding(ap, 'fire') ? 'The fire station is being built: only turboprops may use the runway until it opens.' : 'No fire station near the runway: only turboprops may use it. Build one within 1.5 km of the runway.');
   else for (const rw of rws) if (st.rescueRw[rw.id] > IC.FIRE_STD) st.warn.push(`Fire trucks reach ${rw.name} in ${IC.mmss(st.rescueRw[rw.id])}: heavy jets may not land on it, and more people die in a crash there. A fire station closer to its far end brings it under 3 min.`);
   if (rws.length) { const w = waterNear(S, ap, rws); if (w.near && ap.kind !== 'airbase') st.warn.push(`A ${w.what} ${U.km(w.d)} from the runway attracts birds: now and then one hits an aircraft.`); }
   for (const t of alive('terminal')) st.pax += IC.APART.terminal.pax * t.w * t.h;

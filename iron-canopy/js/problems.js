@@ -10,6 +10,8 @@ const short = n => n.replace(/ (International|Airport|Field)$/, '');
 const rwMid = rw => ({ x: (rw.a.x + rw.b.x) / 2, y: (rw.a.y + rw.b.y) / 2 });
 const built = (ap, k) => ap.parts.filter(p => p.kind === k && p.built && p.hp > p.max * 0.25);
 const NEED_FIX = { hangar: 'hangar', stands: 'tstraight', gates: 'tstraight', pax: 'tstraight', cargoStands: 'cargoarea', cargoT: 'cargoarea', fuelDeps: 'fuel' };
+// the part a fix piece adds, to tell when one is already being built
+const PART_KIND = { tstraight: 'terminal', cargoarea: 'cargo' };
 const FIX_WORD = { hangar: 'Build a hangar', tstraight: 'Build a terminal with stands', cargoarea: 'Build a cargo area', fuel: 'Build a fuel tank', fire: 'Build a fire station', ils: 'Build a landing system' };
 
 /* ---------- problems ----------
@@ -32,7 +34,8 @@ IC.aptProblems = function (S, ap) {
     text: 'Boarding slows down and turnarounds run long. A second terminal doubles the room.', fix: { part: 'tstraight', near: term, label: 'Add a terminal' } });
   // departures waiting for fuel trucks, or no fuel at all
   const fuel = built(ap, 'fuel'), onStand = A ? A.tails.filter(t => t.at === ap.id && t.where === 'stand') : [];
-  if (!fuel.length) out.push({ id: ap.id + ':nofuel', kind: 'fuel', lvl: 'bad', x: hub.x, y: hub.y, title: 'No fuel farm: departures cannot refuel', text: 'Airliners leave with what they brought, and airlines will not base aircraft here.', fix: { part: 'fuel', near: hub, label: 'Build a fuel farm' } });
+  // (one already being built is no problem the player can do anything more about)
+  if (!fuel.length && !IC.aptBuilding(ap, 'fuel')) out.push({ id: ap.id + ':nofuel', kind: 'fuel', lvl: 'bad', x: hub.x, y: hub.y, title: 'No fuel farm: departures cannot refuel', text: 'Airliners leave with what they brought, and airlines will not base aircraft here.', fix: { part: 'fuel', near: hub, label: 'Build a fuel farm' } });
   // (round 5b) departures held on their stands, each reason on its own with its own fix (a night stop is no problem)
   for (const h of IC.aptHolds ? IC.aptHolds(S, ap) : []) {
     if (h.k === 'night' || h.wait < 180) continue;
@@ -54,7 +57,7 @@ IC.aptProblems = function (S, ap) {
     out.push(P);
   }
   // fire cover: none, or too slow to a runway for heavy jets
-  if (!st.fire) out.push({ id: ap.id + ':nofire', kind: 'fire', lvl: 'bad', ...rwMid(rws[0]), title: 'No fire cover: only turboprops may land', text: 'A fire station within 1.5 km of the runway lets jets land.', fix: { part: 'fire', near: rwMid(rws[0]), label: 'Build a fire station' } });
+  if (!st.fire) { if (!IC.aptBuilding(ap, 'fire')) out.push({ id: ap.id + ':nofire', kind: 'fire', lvl: 'bad', ...rwMid(rws[0]), title: 'No fire cover: only turboprops may land', text: 'A fire station within 1.5 km of the runway lets jets land.', fix: { part: 'fire', near: rwMid(rws[0]), label: 'Build a fire station' } }); }
   else for (const rw of rws) {
     const t = (st.rescueRw || {})[rw.id] || 0;
     if (t > IC.FIRE_STD) out.push({ id: ap.id + ':fire:' + rw.id, kind: 'fire', lvl: 'warn', ...rwMid(rw), title: `${rw.name || 'Runway'}: no fire cover for heavy jets`,
@@ -79,7 +82,7 @@ IC.aptProblems = function (S, ap) {
       // (round 4) a deal still in its grace that needs something the airport lacks: said up front, with the time left
       if (IC.FOCUS.progress && d.st === 'active' && !d.badT && S.time < d.grace && d.a === ap.id && !seen.has('grace:' + d.al)) {
         const miss = IC.dealNeeds(S, Object.assign({ renew: d.id }, d)).filter(x => !x.ok && x.k !== 'pax' && x.k !== 'fuelDeps'), m = miss[0], part = m && NEED_FIX[m.k];
-        if (m && part) {
+        if (m && part && !IC.aptBuilding(ap, PART_KIND[part] || part)) {
           const al = IC.avAirline(S, d.al), at = part === 'hangar' ? (aprons[0] || hub) : hub, what = m.text.replace(/^[^:]*?needs /, '').replace(/ \(\d+ of \d+\)$/, '');
           out.push({ id: 'grace:' + d.id, kind: 'deal', lvl: 'warn', x: at.x, y: at.y, deal: d.id, title: `${short(al.name)} needs ${what}`,
             text: `Its deal gives you ${S.mode === 'story' ? U.months(d.grace - S.time) : U.dur(d.grace - S.time)} to build it${S.mode === 'story' ? ` (by ${U.date(d.grace, S)})` : ''}; after that it warns once, then walks out.`, fix: { part, near: at, label: FIX_WORD[part] || 'Build it' } });

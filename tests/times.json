@@ -190,5 +190,9 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "first hour: a stray click far away does not stretch the surveyed runway past 5.6 km": 6,
+ "first hour: a fuel farm, fire station or tower being built is no longer asked for": 8,
+ "first hour: the site the tutorial suggests is clear of water that draws birds": 8,
+ "first hour: a goal's How? is its own, and an offer names what is missing": 6
 }

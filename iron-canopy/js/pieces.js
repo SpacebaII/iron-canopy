@@ -149,6 +149,7 @@ function placeOf(S, m, hv) {
     if (pts.length < 2) return { why: '' };
     const a0 = pts[0], b0 = pts[1], len = Math.round(U.dist(a0, b0) * 10) / 10;
     if (len < 12) return { why: `Too short: ${IC.bldLen(len)}. Airliners need at least 2.1 km; 3 km takes every one.`, len };
+    if (len > IC.RWY_MAX) return { why: IC.rwyTooLong(len), len };
     const a = Math.atan2(b0.y - a0.y, b0.x - a0.x), cx = (a0.x + b0.x) / 2, cy = (a0.y + b0.y) / 2;
     let rot = a; if (toCity(cx, cy, rot) === !!m.flip) rot += Math.PI;
     const key = 'rw' + len;
