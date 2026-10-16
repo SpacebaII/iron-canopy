@@ -34,6 +34,9 @@ IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: t
    polish: the trailer's and the benchmark's visual notes (vehicles, panels, labels, the build bar) */
 /* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */
 IC.civilAct = S => !!(IC.FOCUS.calm && S && S.mode === 'story' && S.story && S.story.act < 2);
+/* civil-aviation business the player runs: not in a Quick war, where airlines, controllers and the landside run
+   themselves and their offers and advice would only bury the war in the Journal */
+IC.civilAdvice = S => !S || S.mode !== 'campaign';
 
 /* Two clocks. The live clock is S.time in game seconds: aircraft, weather, day and night. The calendar counts months
    and years on top of it: a month is DAYS_PER_MONTH live days, so a Career can span ten years while every flight

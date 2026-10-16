@@ -732,7 +732,7 @@ IC.aviation = function (S, dt) {
   if (A.pullT <= 0) { A.pullT = 600; A.pull = Math.max(0, ...IC.bases(S).filter(x => x.owner === 'us').map(x => IC.demandPull(S, x))); }
   // (in the Career's first act, offers come at the pace of the airport's name, not of every empty seat)
   A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, S.story && S.story.act === 1 ? 0.4 : 1.5));
-  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
+  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (IC.civilAdvice(S) && A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
 };
 function cutRoute(S, al, r, why) {
   const tl = S.av.tails.filter(t => t.route === r.id && t.where !== 'lost');
