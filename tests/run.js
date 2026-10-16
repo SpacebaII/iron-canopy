@@ -342,8 +342,8 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   const T = S.traffic, G = T.G;
   for (let i = 0; i < 4; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
   // the busiest main road link, and the junction at its start
-  // (busy, but not already jammed: a jam cannot grow any longer)
-  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && L.l.len > 6 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
+  // (busy, but not already jammed: a jam cannot grow any longer; and over 2 km, so a queue has room to form)
+  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && L.l.len > 20 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
   assert(L, 'no busy main road');
   const n0 = L.l.a, p = G.nodes[n0];
   // vehicles within 150 m of that junction on the roads that lead into it, as the middle zoom shows them
