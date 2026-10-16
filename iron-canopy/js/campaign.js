@@ -149,7 +149,7 @@ function report(S) {
 /* what could be done right now, most urgent first */
 function suggestions(S) {
   const L = [];
-  const add = (pri, text, ref, kind) => L.push({ pri, text, ref, kind });
+  const add = (pri, text, ref, kind, type) => L.push({ pri, text, ref, kind, type });
   for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !IC.baseStatus(S, b).runway && !b.works.some(w => w.key && w.key.startsWith('cr:'))) add(9, `Repair the runway at ${b.name}`, b, 'infra');
   for (const b of IC.bases(S)) if (b.kind === 'airbase' && b.owner === 'us' && b.parts && S.roster.filter(r => r.base === b.id && r.st !== 'lost' && !r.slot).length && !b.works.some(w => w.kind === 'build')) add(4, `Aircraft at ${b.name} are parked in the open: build hangars or shelters`, b, 'infra');
   for (const u of S.units) if (u.state === 'ready' && u.d.weapon === 'sam' && IC.activeMags(S, u).every(m => m.mag + m.store + m.inc === 0)) add(8, `${u.name} is out of missiles`, u, 'unit');
@@ -157,7 +157,8 @@ function suggestions(S) {
   for (const t of S.tels) if (t.known && !t.dead && S.time - t.kt < 900) add(7, `${t.name} located: strike it before it moves`, t, 'tel');
   for (const t of S.threats) if (t.det && !t.dead && t.aff === 'S' && t.d.cls === 'air' && IC.inHome(t.x, t.y)) { add(7, `TN ${t.tn} is suspect: send a fighter to look`, t, 'track'); break; }
   const res = Object.entries(S.reserve).filter(([, n]) => n > 0);
-  if (res.length) add(4, `${res.reduce((s, [, n]) => s + n, 0)} systems waiting in the reserve: deploy them`, null, 'arsenal');
+  // (the most expensive first: clicking the line picks it to place)
+  if (res.length) { const first = res.map(([t]) => t).sort((a, b) => IC.UNITS[b].cost - IC.UNITS[a].cost)[0]; add(4, `${res.reduce((s, [, n]) => s + n, 0)} systems waiting in the reserve: deploy them`, null, 'reserve', first); }
   if (S.enemy.war && S.airspace === 'open') add(5, 'Civil airliners are still flying through a war zone: restrict the airspace', null, 'airspace');
   const freeSlots = S.tech.slots.filter(x => !x).length;
   if (freeSlots && S.budget > 150) add(2, `${freeSlots} research slot${freeSlots > 1 ? 's' : ''} idle`, null, 'tech');

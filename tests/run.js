@@ -5527,6 +5527,71 @@ test('round 5c: textlint finds none of the banned phrases, in the source or in a
   for (const id in IC.TUTORS) for (const st of IC.TUTORS[id].steps) { const out = []; T.check(IC.tutorText(S, st) + ' ' + st.title, id, out); assert(!out.length, out[0]); assert(!/!/.test(IC.tutorText(S, st)), `${id}: an exclamation mark`); }
 });
 
+/* ---------- war controls: a new player's Quick war (wave 17) ---------- */
+/* one Quick war at its start, shared by the tests that only read it (group 'warctl') */
+let qwStart = null;
+const quickStart = () => qwStart || (qwStart = IC.newGame({ seed: 12345, mode: 'campaign' }));
+test('war controls: a refused placement says why: the border, another unit, water or outside the country', () => {
+  const S = quickStart();
+  let p = null;
+  for (let x = 0; x < IC.WW && !p; x += 20) for (let y = 0; y < IC.WH && !p; y += 20) { const b = IC.borderDist(x, y); if (IC.inHome(x, y) && b > 5 && b < IC.PLACE_BORDER - 5 && !IC.inLake(x, y)) p = { x, y }; }
+  assert(p, 'no spot just inside the border');
+  const near = IC.placeWhy(S, 'mrsam', p.x, p.y);
+  assert(/border/.test(near) && /4 km inside/.test(near) && !IC.canPlace(S, 'mrsam', p.x, p.y), `next to the border it says: "${near}"`);
+  const u = S.units.find(x => x.d.weapon === 'sam');
+  const close = IC.placeWhy(S, 'mrsam', u.x + 5, u.y);
+  assert(close.includes(u.name) && /km/.test(close), `next to ${u.name} it says: "${close}"`);
+  assert(/Outside the country/.test(IC.placeWhy(S, 'mrsam', -100, -100)), 'outside the map is not called outside the country');
+  const ok = IC.findSpot(S, 'mrsam', IC.cap(S).x + 300, IC.cap(S).y, 10, 90);
+  assert(ok && IC.placeWhy(S, 'mrsam', ok.x, ok.y) === '' && IC.canPlace(S, 'mrsam', ok.x, ok.y), 'a good spot has a reason against it');
+}, false, 'warctl');
+test('war controls: Assign best battery says why no battery can take a track', () => {
+  const S = quickStart(), sam = S.units.find(u => u.d.weapon === 'sam' && u.state === 'ready');
+  const far = { x: sam.x + 3000, y: sam.y, d: { move: 'cruise' } }, over = { x: sam.x + 10, y: sam.y, d: { move: 'cruise' } };
+  assert(IC.assignWhy(S, over).bats.includes(sam) && !IC.assignWhy(S, over).why, 'a track over a ready battery has no battery for it');
+  const w = IC.assignWhy(S, far);
+  assert(!w.bats.length && /Out of reach/.test(w.why) && /km away and reaches \d+ km/.test(w.why), `a far track says: "${w.why}"`);
+  const was = S.units.map(u => [u, u.state, u.stT]);
+  for (const u of S.units) if (u.d.weapon === 'sam') { u.state = 'setup'; u.stT = 300; }
+  const s2 = IC.assignWhy(S, over);
+  for (const [u, st, t] of was) { u.state = st; u.stT = t; }
+  assert(!s2.bats.length && /No missile battery is ready yet/.test(s2.why) && /setting up, ready in/.test(s2.why), `with every battery setting up it says: "${s2.why}"`);
+}, false, 'warctl');
+test('war controls: Show the gaps is offered only when there are airways to check', () => {
+  const S = quickStart();
+  assert(!S.asp.ways.length, 'a Quick war has civil airways now: this test needs another way to have none');
+  assert(!IC.layerAllowed(S, 'gaps'), 'Show the gaps is offered with no airways to check');
+  S.asp.ways.push({ id: 'test' });
+  const on = IC.layerAllowed(S, 'gaps'); S.asp.ways.pop();
+  assert(on, 'Show the gaps is hidden even with an airway');
+}, false, 'warctl');
+test('war controls: the reserve line in the situation picks a system to place', () => {
+  const S = quickStart(), o = IC.suggestions(S).find(x => x.kind === 'reserve');
+  assert(o, 'no reserve line at the start of a Quick war');
+  assert(o.type && S.reserve[o.type] > 0 && IC.UNITS[o.type], `the reserve line names ${o.type}, which is not in the reserve`);
+}, false, 'warctl');
+test('war controls: SPLASH marks fade out within a minute and a half of game time', () => {
+  const S = { time: 1000, fx: {} };
+  IC.splash(S, { x: 1, y: 1, tn: 101 });
+  S.time += IC.SPLASH_T - 1; IC.splash(S, { x: 2, y: 2, tn: 102 });
+  assert(S.fx.splash.length === 2, 'a mark went before its time');
+  S.time += 2; IC.splash(S, { x: 3, y: 3, tn: 103 });
+  assert(IC.SPLASH_T <= 120 && S.fx.splash.length === 2 && !S.fx.splash.some(s => s.tn === 101), `an old mark stayed: ${S.fx.splash.map(s => s.tn)}`);
+});
+test('war controls: Keep stocked says once what it bought, for how much, and where to turn it off', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' });
+  assert(S.supply.auto, 'Keep stocked is off at the start of a Quick war');
+  const rounds = [];
+  IC.on((S2, type, d) => { if (type === 'keepStocked') rounds.push(d); });
+  for (let i = 0; i < 300; i++) IC.step(S, 0.5);
+  assert(rounds.length, 'Keep stocked bought nothing in the first minutes');
+  const L = S.logs.filter(l => l.tag === 'KEEP STOCKED');
+  assert(L.length === rounds.length, `${rounds.length} rounds of buying but ${L.length} messages`);
+  assert(!S.logs.some(l => l.tag === 'MINISTRY'), 'Keep stocked still logs every item on its own');
+  const m = L[L.length - 1].msg, R = rounds[rounds.length - 1];
+  assert(m.includes(U.money(R.cost)) && /Keep stocked bought/.test(m) && /Supply \(L\)/.test(m), `the message does not say what, how much and where: "${m}"`);
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

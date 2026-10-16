@@ -519,9 +519,13 @@ function arsenal() {
 
 function layers() {
   const L = [['gaps', 'Show the gaps'], ['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
+  const TIP = { gaps: 'Civil airways no radar sees: each unseen stretch drawn bold, the biggest ringed where a radar would close it. Not air defence cover (that is Coverage).',
+    coverage: 'Radar cover: the lowest height our radars see, civil and military, with the holes behind hills.', rings: 'How far each of our units reaches.',
+    logistics: 'Depots, their delivery rings and the convoys on the road.', civil: 'Road traffic and civil flights.', airways: 'The airways and their fixes.',
+    intel: 'What we know of the enemy: its sites and launchers.', weather: 'Cloud, rain and wind.', labels: 'Place names and unit names.' };
   // with coverage on, a key to its colours: the lowest height controllers see
   const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
-  setHTML($('layers'), L.filter(([k]) => IC.layerAllowed(S, k)).map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);
+  setHTML($('layers'), L.filter(([k]) => IC.layerAllowed(S, k)).map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}" title="${TIP[k] || ''}">${n}</button>`).join('') + key);
 }
 function modeHint() {
   const m = S.mode2, el = $('modehint');
@@ -990,7 +994,9 @@ IC.select = function (sel, add) {
   ui.refresh(true);
 };
 // (round 1) while placing, the selection panel steps aside: the map is what the player is looking at
-IC.setMode = function (m) { S.mode2 = m; document.getElementById('map').classList.toggle('placing', !!m); $('app').classList.toggle('building', !!(m && (m.kind === 'build' || m.kind === 'found'))); ui.refresh(true); };
+// the hover card said what a right-click does in the old mode ("Right-click: cancel"): it goes with the mode and comes back
+// on the next mouse move with the new one
+IC.setMode = function (m) { if (S.mode2 !== m) ui.tip(null); S.mode2 = m; document.getElementById('map').classList.toggle('placing', !!m); $('app').classList.toggle('building', !!(m && (m.kind === 'build' || m.kind === 'found'))); ui.refresh(true); };
 
 ui.openRoom = function (k) {
   const was = ui.room;

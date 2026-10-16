@@ -242,7 +242,7 @@ function track(t) {
   }
   if (t.d.civil && aff === 'N') rows.push(['Aboard', `${t.pax}`]);
   const hostile = !(aff === 'N' || aff === 'A' || aff === 'D');
-  const bats = S.units.filter(u => u.d.weapon === 'sam' && u.state === 'ready' && (U.dist(u, t) <= IC.maxRange(S, u) * 1.05 || IC.predictable(t) && U.dxy(u.x, u.y, t.x1 != null ? t.x1 : t.aim.x, t.y1 != null ? t.y1 : t.aim.y) <= IC.maxRange(S, u))).slice(0, 5);
+  const AW = IC.assignWhy(S, t), bats = AW.bats;
   const acts = [];
   if ((t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm') && !t.border) acts.push(`<button class="act ${aff === 'S' || aff === 'U' ? 'pri' : ''}" data-act="scramble" ${S.roster.some(r => r.kind === 'ftr' && r.st === 'ready' && IC.canLaunch(S, r)) || S.air.some(a => a.kind === 'ftr' && a.state !== 'rtb') ? '' : 'disabled'}>${kbd('V')}${aff === 'H' ? 'Intercept' : 'Intercept & identify'}</button>`);
   if (t.d.civil && (aff === 'N' || aff === 'A') && !t.appr && S.asp) {
@@ -255,7 +255,7 @@ function track(t) {
   const escort = S.air.find(a => !a.dead && !a.gnd && a.kind === 'ftr' && a.mission && a.mission.track === t);
   const ftrs = (t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm' || t.d.cls === 'heli') && !t.border ? fighterOptions(t) : '';
   if (escort && hostile && (escort.roe || S.ad.roe) === 'hold') acts.push(`<button class="act danger" data-act="escortFire" data-id="${escort.id}" title="${esc(escort.name)} is escorting it with weapons held. This order lets it fire.">Order ${esc(escort.name)} to fire</button>`);
-  if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
+  if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? 'title="The nearest battery that can engage it makes it its priority target"' : `disabled title="${esc(AW.why)}"`}>${kbd('B')}Assign best battery</button>`);
   if (IC.replayOpen && S.rec && S.rec.of.has(t)) acts.push(`<button class="act" data-act="replayTrack" title="The last minutes of this track in 3D, following it">Replay</button>`);
   acts.push(liveBtn(t));
   if (t.tail) acts.push(followBtn(t.tail));
@@ -263,7 +263,7 @@ function track(t) {
   const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
   // a known hostile shows its symbol; anything else the aircraft sign in the colour of what we think it is
   const badge = aff === 'H' && IC.THR[t.type] ? `<span class="badge hostile"><canvas data-thr="${t.type}" width="68" height="52"></canvas></span>` : `<span class="badge ${colCls}">${ui.icon('air')}</span>`;
-  return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${ftrs}${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
+  return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${AW.why && hostile && S.units.some(u => u.d.weapon) ? `<p class="hint">No battery to assign: ${esc(AW.why.charAt(0).toLowerCase() + AW.why.slice(1))}</p>` : ''}${ftrs}${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
 }
 
 /* ---------- airports and air bases: the layout, what it can do, what is wrong with it ---------- */
