@@ -1766,7 +1766,7 @@ function labels(v, t) {
     placed.push([lx, ly]); shown++;
     const st = m.st, tr = m.tr, gnd = st.gnd;
     let sub;
-    if (tr.kind === 'missile') { const G = IC.GUIDANCE[st.ph | 0]; sub = `${G ? G.name : ''} · ${U.kmh(st.spd)}${st.g > 2 ? ` · ${Math.round(st.g)} g` : ''}`; }
+    if (tr.kind === 'missile') { const G = IC.GUIDANCE[st.ph | 0]; sub = `${G ? G.name + ' · ' : ''}${U.kmh(st.spd)}${st.g > 2 ? ` · ${Math.round(st.g)} g` : ''}`; }
     else if (gnd) sub = m.ac ? `${GND_WORDS[st.phase] || 'on the ground'}${st.spd > 0.02 ? ' · ' + U.kmh(st.spd) : ''}` : st.spd > 0.02 ? U.kmh(st.spd) : tr.kind === 'unit' ? (st.det ? 'radar on' : 'radar silent') : 'stopped';
     else sub = `${m.ac ? IC.flText(st.alt) : IC.kmText(st.alt)} · ${st.spd > 0.02 ? U.kmh(st.spd) : 'stopped'}${st.g > 1.4 ? ` · ${st.g.toFixed(1)} g` : ''}${st.ph & 1 ? ' · notching' : ''}`;
     const txt = `${esc(tr.name)}<small>${esc(sub)}</small>`;
@@ -1810,7 +1810,7 @@ function panelRows(v, t) {
     rows.push(['HDG', `${String(compass(st.h)).padStart(3, '0')}° · ${a.g.toFixed(1)} g${tr.kind !== 'missile' ? ` · bank ${Math.round(Math.abs(a.roll) * 180 / Math.PI)}°${a.roll > 0.05 ? ' R' : a.roll < -0.05 ? ' L' : ''}` : ''}`]);
   } else rows.push(['', `${st.spd > 0.02 ? U.kmh(st.spd) : tr.kind === 'unit' ? (st.det ? 'radar on' : 'radar silent') : 'stopped'}${F.ac ? ' · ' + GND_WORDS[st.phase] : ''}`]);
   if (air && F.ac && (st.gear > 0 || st.phase === IC.REC_PHASE.appr)) rows.push(['', `${st.phase === IC.REC_PHASE.final ? 'on final' : st.phase === IC.REC_PHASE.appr ? 'approach' : 'climbing out'} · gear ${st.gear ? 'down' : 'up'} · flaps ${st.flap ? Math.round(st.flap * 30) + '°' : 'up'}`]);
-  if (tr.kind === 'missile') { const age = t - F.tL; rows.push(['MTR', F.burn && age < F.burn ? `burning · ${Math.ceil(F.burn - age)} s left` : `coasting · ${Math.round(age)} s flown`]); }
+  if (tr.kind === 'missile') { const age = t - F.tL; rows.push(['MTR', F.burn && age < F.burn ? `burning · ${Math.ceil(F.burn - age)} s left` : `${tr.model === 'gbu' ? 'gliding' : 'coasting'} · ${Math.round(age)} s flown`]); }
   else if (st.ph & 1) rows.push(['', '<span style="color:#ff9ab8">NOTCHING: side-on to the missile</span>']);
   const E = v.eng && (v.eng.m === F || v.eng.tg === F) ? v.eng : engagement(v, F, t);
   if (E) {

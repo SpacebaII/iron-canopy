@@ -583,7 +583,7 @@ IC.updateAir = function (S, dt) {
       tx = rp.x; ty = rp.y;
       if (U.dxy(a.x, a.y, rp.x, rp.y) < spd * dt + 10) {
         const rep = { id: IC.nid('bda'), target: s, what: 'guided bombs', by: a.name, n: a.gbu, hits: 0, dmg: 0, t: S.time, open: true };
-        for (let i = 0; i < a.gbu; i++) S.strikes.push({ id: IC.nid('s'), mun: 'GBU', M: IC.GBU, x: a.x, y: a.y, aim: { x: aim.x + U.rand(-6, 6), y: aim.y + U.rand(-6, 6) }, target: s, src: a.name, age: -i * 6, side: 'us', rep, tr: null });
+        for (let i = 0; i < a.gbu; i++) S.strikes.push({ id: IC.nid('s'), mun: 'GBU', M: IC.GBU, x: a.x, y: a.y, aim: { x: aim.x + U.rand(-6, 6), y: aim.y + U.rand(-6, 6) }, target: s, src: a.name, age: -i * 6, side: 'us', rep, tr: null, spd: 0 });
         IC.log(S, 'warn', 'STRIKE', `${a.name} released ${a.gbu} bombs on ${s.name}.`);
         a.gbu = 0;
         S.enemy.retaliate = Math.max(S.enemy.retaliate, 0.5);
