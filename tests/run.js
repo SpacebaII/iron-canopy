@@ -4617,6 +4617,60 @@ test('save: lessons, the Test range and the Sandbox save without dropping anythi
     for (let i = 0; i < 600; i++) IC.step(S2, 0.5);
   }
 });
+/* another browser, as far as world generation can tell: its sin, cos, pow… round differently in the last bit for
+   some inputs, and its sort asks the comparator in another order (a stable merge sort, not V8's TimSort) */
+function asAnotherBrowser(fn) {
+  const nat = Object.assign({}, IC.NATIVE_MATH), sort = Array.prototype.sort;
+  const nudge = f => function (a) { const r = f.apply(Math, arguments); return r && isFinite(r) && (Math.floor(Math.abs(a) * 4096) & 1) ? r * (1 + 2 ** -52) : r; };
+  function merge(cmp) {
+    if (typeof cmp !== 'function') return sort.call(this, cmp);
+    const a = Array.from(this), go = (lo, hi) => {
+      if (hi - lo < 2) return a.slice(lo, hi);
+      const m = (lo + hi) >> 1, L = go(lo, m), R = go(m, hi), out = [];
+      let i = 0, j = 0;
+      while (i < L.length && j < R.length) out.push(cmp(R[j], L[i]) < 0 ? R[j++] : L[i++]);
+      return out.concat(L.slice(i), R.slice(j));
+    };
+    const r = go(0, a.length); for (let i = 0; i < r.length; i++) this[i] = r[i];
+    return this;
+  }
+  try {
+    for (const k in nat) IC.NATIVE_MATH[k] = Math[k] = nudge(nat[k]);
+    Array.prototype.sort = merge;   // eslint-disable-line no-extend-native
+    return fn();
+  } finally { for (const k in nat) IC.NATIVE_MATH[k] = Math[k] = nat[k]; Array.prototype.sort = sort; }   // eslint-disable-line no-extend-native
+}
+test('save: a save loads in another browser, whose sin, cos, pow and sort differ from this one', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'story' });
+  for (let i = 0; i < 1200; i++) IC.step(S, 0.5);
+  const d = IC.saveGame(S), json = JSON.stringify(d);
+  assert(d.fm === 1, 'the save does not say its world was made with the fixed sums');
+  const S2 = asAnotherBrowser(() => IC.loadSave(json));
+  // (it loaded, so its world was rebuilt to the same fingerprint; numbers worked out later may differ in the last bit)
+  assert(S2.time === S.time && S2.budget === S.budget && S2.world.cities.every((c, i) => c.x === S.world.cities[i].x && c.blocks.length === S.world.cities[i].blocks.length), 'the save loaded differently in the other browser');
+  samePicture(S, S2);
+  // a save from before (the world made with the browser's own sums) is refused there, as it was: the stand-in is a real difference
+  const old = JSON.parse(json); delete old.fm;
+  let why = '';
+  try { asAnotherBrowser(() => IC.loadSave(old)); } catch (e) { why = e.message; }
+  assert(/different version of the map generator.*browser it was made in/.test(why), `an old save was not refused in the other browser (${why || 'it loaded'})`);
+}, true);
+test('fixed sums: sin, cos, atan2, exp, log, pow and hypot are fdlibm\'s, to the last bit where it counts', () => {
+  const F = IC.FIXED_MATH, N = IC.NATIVE_MATH, R = IC.makeRng(5);
+  // Node's V8 uses fdlibm for these too, so they agree; hypot and pow may differ by a unit in the last place
+  const ulps = (a, b) => { if (Object.is(a, b) || (a !== a && b !== b)) return 0; const f = new Float64Array([a, b]), i = new BigInt64Array(f.buffer); const d = i[0] - i[1]; return Number(d < 0n ? -d : d); };
+  for (let n = 0; n < 20000; n++) {
+    const x = (R() - 0.5) * 10 ** (R() * 12 - 4), y = (R() - 0.5) * 2000, p = R() * 60;
+    for (const [k, args, tol] of [['sin', [x], 1], ['cos', [x], 1], ['atan2', [y, x], 1], ['exp', [y % 700], 1], ['log', [Math.abs(x)], 1], ['pow', [p, y / 100], 1], ['hypot', [x, y], 2]]) {
+      const u = ulps(F[k](...args), N[k](...args));
+      assert(u <= tol, `${k}(${args.join(', ')}) = ${F[k](...args)}, the engine says ${N[k](...args)}`);
+    }
+  }
+  for (const [k, args, want] of [['sin', [Math.PI], 1.2246467991473532e-16], ['cos', [0], 1], ['atan2', [0, -1], Math.PI], ['atan2', [-0, 1], -0], ['pow', [-8, 1 / 3], NaN], ['pow', [-2, 3], -8], ['pow', [1, Infinity], NaN], ['exp', [-Infinity], 0], ['log', [0], -Infinity], ['hypot', [Infinity, NaN], Infinity], ['sin', [1e300], N.sin(1e300)]])
+    assert(Object.is(F[k](...args), want), `${k}(${args.join(', ')}) = ${F[k](...args)}, not ${want}`);
+  // and they are only in Math while the world is made
+  assert(Math.sin === N.sin && IC.fixedMath(() => Math.sin === F.sin) && Math.sin === N.sin, 'the fixed sums stayed in Math after generation');
+});
 test('save: a save from another version of the map generator, or of the game, is refused with a reason', () => {
   const S = IC.newGame({ seed: 7, mode: 'campaign' });
   const d = IC.saveGame(S);
