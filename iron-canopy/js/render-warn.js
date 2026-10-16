@@ -57,7 +57,7 @@ IC.drawWarnings = function (c, S, px, now) {
   ourMissiles(S, px);
   defending(S, px, now);
   droneGroups(S, px);
-  splashes(S, px, now);
+  splashes(S, px);
 };
 /* what an enemy radar holds: a line from it and a LOCKED tag; a missile on its way: MISSILE and its time to impact */
 function locks(S, px, now) {
@@ -111,19 +111,22 @@ function droneGroups(S, px) {
     pill(`${g.n} drone${g.n > 1 ? 's' : ''} · ${g.tti >= 60 ? Math.round(g.tti / 60) + ' min' : Math.round(g.tti) + ' s'} out`, p.x, p.y - 26 * px, px, '#ffe1dc', 'rgba(60,12,10,0.8)', 9);
   }
 }
-/* kill confirmation: a burst, the track struck through and SPLASH, for a few real seconds */
-const seen = new Map();
-function splashes(S, px, now) {
-  for (const s of S.fx.splash || []) if (!seen.has(s)) seen.set(s, now);
-  for (const [s, t0] of seen) {
-    const k = (now - t0) / 3.5;
-    if (k > 1 || !(S.fx.splash || []).includes(s)) { seen.delete(s); continue; }
+/* kill confirmation: a burst, the track struck through and SPLASH, fading over IC.SPLASH_T game seconds (aged by the
+   game clock, so it neither flashes again nor stays up while the map is left open) */
+function splashes(S, px) {
+  for (const s of S.fx.splash || []) {
+    const k = (S.time - s.t) / IC.SPLASH_T;
+    if (k > 1 || k < 0) continue;
     if (!RS.inView(s.x, s.y, 100)) continue;
-    const r = (10 + 30 * Math.sqrt(k)) * px;
-    ctx.strokeStyle = `rgba(255,210,122,${(1 - k) * 0.9})`; ctx.lineWidth = 2.2 * px;
-    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 7); ctx.stroke();
-    const q = 9 * px; ctx.strokeStyle = `rgba(255,236,190,${1 - k})`; ctx.lineWidth = 2.4 * px;
-    ctx.beginPath(); ctx.moveTo(s.x - q, s.y - q); ctx.lineTo(s.x + q, s.y + q); ctx.moveTo(s.x + q, s.y - q); ctx.lineTo(s.x - q, s.y + q); ctx.stroke();
+    // the burst and the cross in the first third, the words fading over the whole
+    const kb = Math.min(1, k * 3);
+    if (kb < 1) {
+      const r = (10 + 30 * Math.sqrt(kb)) * px;
+      ctx.strokeStyle = `rgba(255,210,122,${(1 - kb) * 0.9})`; ctx.lineWidth = 2.2 * px;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 7); ctx.stroke();
+      const q = 9 * px; ctx.strokeStyle = `rgba(255,236,190,${1 - kb})`; ctx.lineWidth = 2.4 * px;
+      ctx.beginPath(); ctx.moveTo(s.x - q, s.y - q); ctx.lineTo(s.x + q, s.y + q); ctx.moveTo(s.x + q, s.y - q); ctx.lineTo(s.x - q, s.y + q); ctx.stroke();
+    }
     ctx.globalAlpha = 1 - k; label(`SPLASH${s.tn ? ' · TN ' + s.tn : ''}`, s.x, s.y - 16 * px, px, '#ffd27a', 10, 'center', 700); ctx.globalAlpha = 1;
   }
 }
