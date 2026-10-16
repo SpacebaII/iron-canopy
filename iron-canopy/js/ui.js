@@ -5,7 +5,7 @@
 'use strict';
 const U = IC.U;
 const $ = id => document.getElementById(id);
-const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, shownAt: 0, lastLen: 0, toasts: [], cineShown: 0, cineT: 0, roomScroll: {}, aptTab: 'info', arMin: false, logFilter: 'all', refCat: 'units',
+const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, shownAt: 0, lastLen: 0, toasts: [], cineShown: 0, cineDone: new Set(), cineCur: null, cineT: 0, roomScroll: {}, aptTab: 'info', arMin: false, logFilter: 'all', refCat: 'units',
   sub: { aviation: 'ops', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
 let S = null;
 const esc = U.esc;
@@ -90,7 +90,7 @@ ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty(
 ui.bind = function (state) {
   // (the showcase is the airport alone: no treasury, act or arsenal on screen, css/app.css)
   document.body.classList.toggle('showcase', !!(state && state.showcase));
-  S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.room = null; ui.overDismissed = false;
+  S = state; ui.cache = {}; ui.keys = {}; ui.roomScroll = {}; ui.ci = 0; ui.cNew = -1; ui.lastLen = 0; ui.shownAt = performance.now(); ui.toasts = []; ui.cineShown = 0; ui.cineDone = new Set(); ui.cineCur = null; ui.room = null; ui.overDismissed = false;
   // nothing from the previous game stays on screen: its chapter card, its unlocks, its hints
   ui.fresh = new Set(); ui.known = null; ui.moments = []; ui.moment = null; ui.menu = false; IC.hint.clear();
   for (const id of ['warroom', 'cine', 'unlock', 'menu', 'tip']) $(id).hidden = true;
@@ -451,7 +451,9 @@ function comms() {
   const now = performance.now();
   if (Q.length !== ui.lastLen) {
     if (!ui.lastLen) { ui.ci = 0; ui.shownAt = now; }
-    else if (ui.ci >= ui.lastLen - 1) { ui.ci = ui.lastLen; ui.shownAt = now; }
+    else if (ui.ci >= ui.lastLen - 1) { ui.ci = ui.lastLen; ui.shownAt = now; if (!(ui.cNew >= 0)) ui.cNew = ui.lastLen; }
+    // (ui.cNew: the first of the messages that came while the player was not paging them; they play through by
+    // themselves, so the footer and the folded line say how many there were until the player pages them)
     ui.lastLen = Q.length; ui.cOpen = now;
   }
   if (ui.ci >= Q.length) ui.ci = Q.length - 1;
@@ -471,14 +473,15 @@ function comms() {
   if (full && ui.ci === Q.length - 1 && now - (ui.cOpen || 0) > Math.max(30000, m.text.length * 90)) {
     if (ui.compact()) { ui.cExp = false; return; }
     $('comms').classList.add('glass');
-    setHTML($('comms'), `<button class="cfold" data-act="copen">${esc(m.name)} · ${Q.length} message${Q.length > 1 ? 's' : ''} ▸</button>`);
+    const fresh = ui.cNew >= 0 && ui.cNew < Q.length - 1 ? Q.length - ui.cNew : 0;
+    setHTML($('comms'), `<button class="cfold" data-act="copen" ${fresh ? 'data-v="new"' : ''}>${fresh ? `${fresh} new messages: read from the first` : `${esc(m.name)} · ${Q.length} message${Q.length > 1 ? 's' : ''}`} ▸</button>`);
     return;
   }
   const init = m.tag === 'CMD' ? m.name.replace('Gen. ', '').split(' ').map(x => x[0]).join('') : m.tag;
   $('comms').classList.add('glass');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
     <p>${esc(m.text.slice(0, shown))}${full ? '' : '▍'}</p>
-    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button>${ui.compact() ? '<button data-act="cexp">Fold ▴</button>' : ''}</span></div>`);
+    <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span>${ui.cNew >= 0 && ui.cNew < ui.ci ? `<button data-act="cfirst" title="Go back to the first message that came in this burst">◂ ${ui.ci - ui.cNew} new before this</button>` : ''}<button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button>${ui.compact() ? '<button data-act="cexp">Fold ▴</button>' : ''}</span></div>`);
 }
 
 /* ---------- arsenal: what is in reserve, what is on order ---------- */
@@ -660,8 +663,12 @@ function cine() {
   if (!C || !C.cards) return;
   const now = performance.now();
   // a chapter card waits until the player closes the room they are reading
-  if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
-    const c = C.cards[ui.cineShown];
+  // (a card that would cover the map while a raid is in the air waits: IC.cardWaits; later ones may go first)
+  let j = -1;
+  if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT)
+    for (let k = ui.cineShown; k < C.cards.length; k++) if (!ui.cineDone.has(C.cards[k]) && !IC.cardWaits(S, C.cards[k])) { j = k; break; }
+  if (j >= 0) {
+    const c = ui.cineCur = C.cards[j];
     el.className = 'cine ' + c.kind; el.hidden = false;
     el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 
@@ -683,7 +690,12 @@ function resultCard(c) {
     <table class="t rtab">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
     ${r.held && C.streak >= 2 ? `<p class="rstreak">${C.streak} raids held in a row</p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 }
-ui.closeCine = () => { const el = $('cine'); if (el.hidden) return; el.hidden = true; ui.cineShown++; ui.cineT = performance.now() + 800; };
+ui.closeCine = () => {
+  const el = $('cine'); if (el.hidden) return; el.hidden = true; ui.cineT = performance.now() + 800;
+  const L = S && S.camp ? S.camp.cards : [];
+  if (ui.cineCur) ui.cineDone.add(ui.cineCur); ui.cineCur = null;
+  while (ui.cineShown < L.length && ui.cineDone.has(L[ui.cineShown])) ui.cineDone.delete(L[ui.cineShown++]);
+};
 
 
 /* ---------- hints: a ring on something on screen and a short note next to it ----------
