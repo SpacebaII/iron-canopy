@@ -4,7 +4,8 @@
    --min: hostile tracks in the air before timing starts; --phases: time each part of the step (IC.weather, IC.sense…);
    --snap=file: keep the warmed-up game (the warm-up takes minutes) and start from it when it is there;
    --root=dir: time another checkout's game with this script (comparing two checkouts).
-   Times are CPU time (process.cpuUsage), so a busy machine slows the run but not the numbers much.
+   Times are wall-clock (the process's CPU time would count V8's own threads, compiling and marking, in the step):
+   run it on a quiet machine, and compare two checkouts one after the other, more than once.
    Prints the median, the 95th percentile and the worst, and a hash of the state after the run: the same seed must give
    the same hash on two checkouts, or a change altered the game. Profile with: node --cpu-prof tools/war-perf.js */
 const path = require('path'), crypto = require('crypto');
@@ -41,7 +42,7 @@ let worst = { ms: 0 };
 const wrap = name => {
   const f = IC[name]; if (typeof f !== 'function') return;
   PH[name] = SP[name] = NC[name] = 0;
-  IC[name] = function () { const c0 = process.cpuUsage(); const r = f.apply(this, arguments); const c = process.cpuUsage(c0), ms = (c.user + c.system) / 1000; PH[name] += ms; cur[name] = (cur[name] || 0) + ms; if (ms > 1) { SP[name] += ms; NC[name]++; } return r; };
+  IC[name] = function () { const t0 = process.hrtime.bigint(); const r = f.apply(this, arguments); const ms = Number(process.hrtime.bigint() - t0) / 1e6; PH[name] += ms; cur[name] = (cur[name] || 0) + ms; if (ms > 1) { SP[name] += ms; NC[name]++; } return r; };
 };
 if (args.includes('--phases')) {
   const src = fs.readFileSync(path.join(ROOT, 'iron-canopy/js/sim.js'), 'utf8');
@@ -51,7 +52,7 @@ for (const name of opt('fns', '').split(',').filter(Boolean)) wrap(name);
 const busy = `act ${E.act}, ${S.units.filter(u => !u.dead).length} units, ${hostile()} hostile, ${S.threats.length} tracks, ${S.missiles.length} interceptors, ${(S.vehicles || []).length} vehicles`;
 const T = [];
 for (let k = 0; k < N && !S.over; k++) {
-  const c0 = process.cpuUsage(); IC.step(S, 0.25); const c = process.cpuUsage(c0), ms = (c.user + c.system) / 1000; T.push(ms);
+  const t0 = process.hrtime.bigint(); IC.step(S, 0.25); const ms = Number(process.hrtime.bigint() - t0) / 1e6; T.push(ms);
   // (the worst step, part by part)
   if (ms > worst.ms) worst = { ms, k, at: S.time, parts: Object.entries(cur).filter(e => e[1] > 0.5).sort((a, b) => b[1] - a[1]) };
   for (const n in cur) cur[n] = 0;
