@@ -293,7 +293,7 @@ function heliBack(S, r) {
 const heliRoom = (m) => m.storeMax + m.max - m.store - m.mag - m.inc;
 /* what a helicopter sortie to this unit would be: from which depot, which helicopter, what it carries, to whom,
    when it lands and what it costs. { why } in one sentence when it cannot fly. */
-IC.heliPlan = function (S, u) {
+IC.heliPlan = function (S, u, manual) {
   const wx = IC.wx(S), K = IC.AIR_KIND.heli, H = IC.HELI;
   if (!wx.heli) {
     const w = S.weather, fc = w && w.forecast && IC.WEATHER[w.forecast];
@@ -305,9 +305,10 @@ IC.heliPlan = function (S, u) {
   const ds = IC.depots(S);
   const srcs = ds.filter(d => mags.some(m => (d.inv[m.mun] || 0) >= 1)).sort((a, b) => U.dist(a, u) - U.dist(b, u));
   if (!srcs.length) return { why: `No depot holds ${IC.munWords(mags[0].mun)}. ${S.supply && S.supply.auto ? 'The Ministry buys more within two minutes (Keep stocked).' : 'Buy more in Supply (L), or turn on Keep stocked.'}` };
-  // the nearest depot a helicopter can reach: one out of every helicopter's reach does not hide another that is not
-  let src = srcs[0], r = null;
-  for (const d of srcs) { r = heliFor(S, d, H.reach); if (r) { src = d; break; } }
+  // the nearest depot; called by the player, the nearest a helicopter can reach (one out of every helicopter's reach
+  // does not hide another that is not). Keep stocked flies only from the nearest: lorries may do better from further
+  let src = srcs[0], r = heliFor(S, src, H.reach);
+  if (manual) for (const d of srcs) { r = heliFor(S, d, H.reach); if (r) { src = d; break; } }
   if (!r) {
     const all = S.roster.filter(x => x.kind === 'heli' && x.st !== 'lost');
     if (!all.length) return { why: 'No transport helicopter. A Forward Heliport (Supply tab) comes with one.' };
@@ -338,7 +339,7 @@ IC.heliPlan = function (S, u) {
   return { src, r, loads, stops, eta: eta.get(u), etas: eta, cost: IC.SORTIE_COST.heli };
 };
 IC.heliResupply = function (S, u, manual) {
-  const P = IC.heliPlan(S, u);
+  const P = IC.heliPlan(S, u, manual);
   if (P.why) { if (manual) IC.log(S, 'warn', 'HELI', `${u.name}: ${P.why}`, u); return false; }
   const jobs = [];
   for (const x of P.stops) for (const l of P.loads.filter(l => l.u === x)) {

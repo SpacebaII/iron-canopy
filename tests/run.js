@@ -4203,7 +4203,7 @@ test('academy fixes: Keep Them Fed lets the player call the helicopter at its st
     if (S.camp.step === 3) S.over = 'stop';
   });
   assert(S.camp.step === 3, `never reached the helicopter step (step ${S.camp.step})`);
-  const P = IC.heliPlan(S, S.camp.bat);
+  const P = IC.heliPlan(S, S.camp.bat, true);
   assert(!P.why, `the helicopter is refused: ${P.why}`);
   assert(IC.heliResupply(S, S.camp.bat, true), 'Resupply by helicopter did not launch');
   S.over = null; acaRun(S, 2);
