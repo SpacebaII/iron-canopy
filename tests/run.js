@@ -5539,6 +5539,26 @@ test('war perf: U.hyp and U.hyp3 give Math.hypot to the bit, so the faster dista
     same(U.hyp(a, b), Math.hypot(a, b), `hyp(${a}, ${b})`); same(U.hyp3(a, b, c), Math.hypot(a, b, c), `hyp3(${a}, ${b}, ${c})`);
   }
 });
+test('war perf: the travel times with every road open are kept through a cut, and worked out again when a road changes', () => {
+  const S = IC.newGame({ seed: 21, mode: 'campaign' }); IC.S = S;
+  const E = S.econ, W = S.world, cap = IC.cap(S);
+  const same = (A, B) => { const k = Object.keys(A.t); return k.join() === Object.keys(B.t).join() && k.every(n => A.t[n] === B.t[n] && A.via[n] === B.via[n]); };
+  const root = W.nodes[cap.id] ? cap.id : IC.nodeNear(W, cap.x, cap.y).id, fresh = intact => IC.travelFrom(W, root, intact);
+  IC.econTrees(S);
+  const ti = E.ti[cap.id], tt = E.tt[cap.id];
+  // a road out of the capital is cut: the trees with cuts change, the open-road ones are the same objects, still right
+  const e = W.edges.filter(x => x.a === cap.id || x.b === cap.id || W.nodes[x.a] && U.dist(W.nodes[x.a], cap) < 300).sort((a, b) => a.len - b.len)[0];
+  assert(e, 'no road near the capital');
+  e.cut = 1; IC.roadsChanged(S); IC.econTrees(S);
+  assert(E.ti[cap.id] === ti, 'the open-road tree was worked out again for a cut');
+  assert(E.tt[cap.id] !== tt && !same(E.tt[cap.id], tt), 'the cut did not change the travel times');
+  assert(same(E.ti[cap.id], fresh(true)), 'the kept tree is not what a fresh one says');
+  assert(same(E.tt[cap.id], fresh(false)), 'the tree with the cut is not what a fresh one says');
+  // the road is laid again a little longer (as round a growing airport): the open-road trees are made again
+  e.cut = 0; e.len += 7; IC.roadsChanged(S); IC.econTrees(S);
+  assert(E.ti[cap.id] !== ti, 'a changed road kept the old open-road tree');
+  assert(same(E.ti[cap.id], fresh(true)) && !same(E.ti[cap.id], ti), 'the open-road tree did not follow the longer road');
+});
 
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };

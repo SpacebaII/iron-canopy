@@ -114,30 +114,55 @@ IC.CUT_SLOW = 6;     // a cut road or a fallen bridge: a detour on farm tracks a
 IC.OFFROAD_KMH = 25; // from the nearest road to a place off the network
 // seconds to drive an edge (1 unit = 100 m)
 IC.edgeTime = (e, cut) => e.len * 360 / IC.ROAD_KMH[e.cls] * (cut ? IC.CUT_SLOW : 1);
+// the road graph by numbers: nodes in the order the edges first name them, each with its neighbours and edges in the
+// order of W.edges (kept until the edges change; lengths are read live)
 let adjW = null, adjN = -1, adj = null;
 function adjacency(W) {
   if (adjW === W && adjN === W.edges.length) return adj;
-  adjW = W; adjN = W.edges.length; adj = {};
-  for (const e of W.edges) { (adj[e.a] = adj[e.a] || []).push([e.b, e]); (adj[e.b] = adj[e.b] || []).push([e.a, e]); }
-  return adj;
+  adjW = W; adjN = W.edges.length;
+  const id = new Map(), keys = [], nb = [];
+  const num = k => { let i = id.get(k); if (i === undefined) { i = keys.length; id.set(k, i); keys.push(k); nb.push([]); } return i; };
+  for (const e of W.edges) { const a = num(e.a), b = num(e.b); nb[a].push(b, e); nb[b].push(a, e); }
+  return (adj = { id, keys, nb });
+}
+/* a tree from one node: t {node: seconds} and via {node: edge used to arrive}, as objects made only when asked (in
+   the order the nodes were first reached); time(node) reads one node without them */
+class Tree {
+  constructor(from, A, d, seen, ve, order, n) { this._from = from; this._id = A.id; this._keys = A.keys; this._d = d; this._seen = seen; this._ve = ve; this._order = order; this._n = n; this._t = null; this._via = null; }
+  fill() { const t = this._t = {}, via = this._via = {}; t[this._from] = 0; for (let i = 1; i < this._n; i++) { const q = this._order[i], k = this._keys[q]; t[k] = this._d[q]; via[k] = this._ve[q]; } }
+  get t() { if (!this._t) this.fill(); return this._t; }
+  get via() { if (!this._via) this.fill(); return this._via; }
+  time(k) { const q = this._id.get(k); return q !== undefined && this._seen[q] ? this._d[q] : undefined; }
 }
 /* Dijkstra from one node. cut(e) says whether an edge is cut; with intact=true every road counts as open.
-   Returns { t: {node: seconds}, via: {node: edge used to arrive} } */
+   Returns a tree: { t: {node: seconds}, via: {node: edge used to arrive}, time(node) }
+   (worked on numbered nodes: a cut road makes a hundred and fifty trees at once. The heap pushes, pops and sifts as it
+   always has, so ties come out in the same order) */
 IC.travelFrom = function (W, from, intact) {
-  const A = adjacency(W), t = {}, via = {}, done = new Set();
-  const heap = [[0, from]]; t[from] = 0;
-  const push = (d, k) => { heap.push([d, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
-  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-  while (heap.length) {
-    const [d, k] = pop();
-    if (done.has(k)) continue;
-    done.add(k);
-    for (const [n, e] of A[k] || []) {
-      const v = d + IC.edgeTime(e, !intact && (e.cut || (W.blocked && W.blocked.has(e.id))));
-      if (v < (t[n] == null ? Infinity : t[n])) { t[n] = v; via[n] = e; push(v, n); }
+  const A = adjacency(W), s = A.id.get(from), bl = !intact && W.blocked;
+  if (s === undefined) { const t = { [from]: 0 }; return { t, via: {}, time: k => t[k] }; }
+  const n = A.keys.length, dist = new Float64Array(n), seen = new Uint8Array(n), done = new Uint8Array(n), ve = new Array(n), order = new Int32Array(n);
+  let cnt = 1; order[0] = s; seen[s] = 1;
+  const hd = [0], hk = [s];
+  const swap = (i, j) => { const d = hd[i], k = hk[i]; hd[i] = hd[j]; hk[i] = hk[j]; hd[j] = d; hk[j] = k; };
+  const push = (d, k) => { hd.push(d); hk.push(k); let i = hd.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (hd[p] <= hd[i]) break; swap(p, i); i = p; } };
+  while (hd.length) {
+    const d = hd[0], k = hk[0], ld = hd.pop(), lk = hk.pop();
+    if (hd.length) {
+      hd[0] = ld; hk[0] = lk;
+      let i = 0;
+      for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < hd.length && hd[l] < hd[m]) m = l; if (r < hd.length && hd[r] < hd[m]) m = r; if (m === i) break; swap(m, i); i = m; }
+    }
+    if (done[k]) continue;
+    done[k] = 1;
+    const L = A.nb[k];
+    for (let j = 0; j < L.length; j += 2) {
+      const q = L[j], e = L[j + 1];
+      const v = d + IC.edgeTime(e, !intact && (e.cut || (bl && bl.has(e.id))));
+      if (v < (seen[q] ? dist[q] : Infinity)) { if (!seen[q]) { seen[q] = 1; order[cnt++] = q; } dist[q] = v; ve[q] = e; push(v, q); }
     }
   }
-  return { t, via };
+  return new Tree(from, A, dist, seen, ve, order, cnt);
 };
 /* the nearest road node to a point, and the off-road time to reach it */
 IC.nodeNear = function (W, x, y) {

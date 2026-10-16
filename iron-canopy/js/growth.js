@@ -108,16 +108,26 @@ const nodeOf = (S, p) => {
   return n;
 };
 /* seconds by road from a source (a city or an industry, with its Dijkstra tree) to any place */
-function timeTo(S, T, p) { if (!T) return Infinity; const n = nodeOf(S, p), v = T.t[n.id]; return v == null ? Infinity : v + n.t; }
+function timeTo(S, T, p) { if (!T) return Infinity; const n = nodeOf(S, p), v = T.time(n.id); return v == null ? Infinity : v + n.t; }
 IC.econTime = (S, from, to, intact) => timeTo(S, (intact ? S.econ.ti : S.econ.tt)[from.id], to);
 /* a place's trade reach: the people it can trade with, the nearer (in time) the more */
 const reachOf = (S, T, self) => { let s = 0; for (const d of IC.cities(S)) if (d !== self && d.owner === 'us') s += d.pop * Math.exp(-timeTo(S, T, d) / 7200); return s; };
 
-/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them) */
+/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them). The trees with
+   every road open change only when the roads do (built, split, or laid again round an airport): a cut or a repair,
+   which in a war comes every few minutes, makes only the others again */
+const roadKey = W => ({ W, e: W.edges.slice(), a: W.edges.map(e => e.a), b: W.edges.map(e => e.b), len: W.edges.map(e => e.len), cls: W.edges.map(e => e.cls) });
+const sameRoads = (K, W) => !!K && K.W === W && K.e.length === W.edges.length && W.edges.every((e, i) => e === K.e[i] && e.a === K.a[i] && e.b === K.b[i] && e.len === K.len[i] && e.cls === K.cls[i]);
 IC.econTrees = function (S) {
-  const E = S.econ, W = S.world;
+  const E = S.econ, W = S.world, keep = sameRoads(E._tiK, W), old = keep ? E.ti : null, from = {};
   E.tt = {}; E.ti = {};
-  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+  for (const p of IC.cities(S).concat(E.inds)) {
+    const n = nodeOf(S, p).id; from[p.id] = n;
+    E.tt[p.id] = IC.travelFrom(W, n, false);
+    E.ti[p.id] = old && old[p.id] && E._tiFrom[p.id] === n ? old[p.id] : IC.travelFrom(W, n, true);
+  }
+  if (!keep) E._tiK = roadKey(W);
+  E._tiFrom = from;
 };
 function refreshRoads(S) {
   const E = S.econ, W = S.world;
