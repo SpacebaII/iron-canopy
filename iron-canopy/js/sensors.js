@@ -9,7 +9,7 @@ const U = IC.U;
 const TAU = Math.PI * 2;
 
 IC.classOf = t => t.d.cls === 'bal' ? (t.alt >= 90 ? 'mid' : 'bal') : t.d.cls;
-IC.powerFactor = S => 1 - 0.08 * S.infra.filter(i => i.kind === 'power' && i.offline).length;
+IC.powerFactor = S => { let n = 0; for (const i of S.infra) if (i.kind === 'power' && i.offline) n++; return 1 - 0.08 * n; };
 IC.isIded = t => t.aff === 'H' || t.aff === 'N';
 
 function buildSensors(S) {
@@ -48,11 +48,11 @@ function buildSensors(S) {
   // radars on the same band close together interfere unless the spectrum is planned
   const plan = S.flags && S.flags.spectrum ? 0.4 : 1;
   for (const u of S.units) { u.intf = 0; u.intfF = 1; }
-  // (only radars that radiate on a band are compared: the pairs grow with the square of the list)
-  const B = L.filter(s => s.band && !s.passive);
-  for (const s of B) {
-    let n = 0;
-    for (const o of B) if (o !== s && o.band === s.band && U.dist(o, s) < 700) n++;
+  // (only radars that radiate on the same band are compared, each pair once: the pairs grow with the square of the list)
+  const B = L.filter(s => s.band && !s.passive), N = new Array(B.length).fill(0);
+  for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++) if (B[i].band === B[j].band && U.dist(B[i], B[j]) < 700) { N[i]++; N[j]++; }
+  for (let i = 0; i < B.length; i++) {
+    const s = B[i], n = N[i];
     if (!n) continue;
     const f = Math.max(0.6, 1 - 0.1 * n * plan);
     s.R *= f; s.err = (s.err || 0) * (1 + 0.4 * n * plan);
