@@ -91,7 +91,7 @@ function plan(S, px, now) {
   // the missiles' reach at the target's height, round the meeting point
   if (P.reach > 0) { ctx.strokeStyle = CYA(0.25); ctx.setLineDash([2 * px, 5 * px]); ctx.beginPath(); ctx.arc(P.x, P.y, P.reach, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
   const lines = [`INTERCEPT ${clock(P.T)}${P.delay > 30 ? ` (${clock(P.delay)} to get airborne)` : ''}`,
-    P.fuelBack > 0 ? `FUEL AFTER ${U.dur(P.fuelBack)}` : 'NOT ENOUGH FUEL TO COME BACK',
+    P.fuelBack > 0 ? `${U.dur(P.fuelBack).toUpperCase()} OF FUEL TO SPARE THERE` : 'TOO FAR: TURNS HOME BEFORE IT MEETS IT',
     P.idFirst ? 'IDENTIFY FIRST · WEAPONS COLD' : `KILL ${Math.round(P.pk * 100)}%${P.n > 1 ? ` · ${P.enough ? 'ALL ' + P.n : 'MISSILES FOR ' + Math.floor((P.aam + P.srm) / 2) + ' OF ' + P.n}` : ''}`];
   if (P.late) lines.push(`REACHES ${P.late.toUpperCase()} FIRST`);
   // on a dark card beside the point, on the side towards the middle of the screen (clear of the panels at the edges)
