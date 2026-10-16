@@ -108,7 +108,20 @@ function routeInfo(S, from, r) {
   }
   return { t, cut: cut ? edgeName(S, cut) : '', lost };
 }
-function markTowns(S, r) { const cs = IC.cities(S); for (const p of r) p.town = p.road && cs.some(c => U.dxy(c.x, c.y, p.x, p.y) < c.r); }
+/* which points of a route run through a town (convoys slow there at rush hour). Every convoy's route is marked again
+   each game minute: a point keeps its answer until a city grows (S._towns.v), and a city more than its radius away on
+   either axis is passed over before the distance is taken */
+function inTown(cs, p) {
+  for (const c of cs) { const dx = c.x - p.x, dy = c.y - p.y; if (dx >= c.r || -dx >= c.r || dy >= c.r || -dy >= c.r) continue; if (U.dxy(c.x, c.y, p.x, p.y) < c.r) return true; }
+  return false;
+}
+function townVer(S, cs) {
+  const C = S._towns;
+  if (C && C.cs.length === cs.length && cs.every((c, i) => c === C.cs[i] && c.r === C.r[i] && c.x === C.x[i] && c.y === C.y[i])) return C.v;
+  S._towns = { v: (C ? C.v : 0) + 1, cs, r: cs.map(c => c.r), x: cs.map(c => c.x), y: cs.map(c => c.y) };
+  return S._towns.v;
+}
+function markTowns(S, r) { const cs = IC.cities(S), v = townVer(S, cs); for (const p of r) if (p._tv !== v) { p.town = p.road && inTown(cs, p); p._tv = v; } }
 /* drive time between two places, as a convoy would go now */
 IC.driveTime = function (S, a, b) { const r = IC.route(a.x, a.y, b.x, b.y, true); markTowns(S, r); return routeInfo(S, a, r); };
 function plan(S, v, to) {
@@ -126,7 +139,7 @@ function drive(S, v, dt) {
   let left = dt;
   while (left > 0 && v.route.length) {
     const p = v.route[0], sp = segSpeed(S, p);
-    const dx = p.x - v.x, dy = p.y - v.y, L = Math.hypot(dx, dy);
+    const dx = p.x - v.x, dy = p.y - v.y, L = U.hyp(dx, dy);
     if (L < 1e-6) { v.route.shift(); continue; }
     v.h = Math.atan2(dy, dx);
     if (sp * left >= L) { v.x = p.x; v.y = p.y; left -= L / sp; v.route.shift(); }
@@ -649,10 +662,15 @@ IC.economy = function (S, dt) {
   let upAD = 0;
   // every other radar on the same band close by (where they would blind each other, sensors.js) makes a radar
   // cost more to keep deconflicted and maintained
-  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]);
+  // (each pair counted once, for both, without a list made for every radar: this runs every step)
+  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]), band = on.map(u => IC.BAND[u.type]), nb = new Map();
+  for (let i = 0; i < on.length; i++) for (let j = i + 1; j < on.length; j++) {
+    const a = on[i], o = on[j];
+    if (band[i] === band[j] && U.dist(o, a) < 700) { nb.set(a, (nb.get(a) || 0) + 1); nb.set(o, (nb.get(o) || 0) + 1); }
+  }
   let crowd = 0;
   for (const u of S.units) {
-    const b = u.radarOn && IC.BAND[u.type], n = b ? on.filter(o => o !== u && IC.BAND[o.type] === b && U.dist(o, u) < 700).length : 0, k = 0.15 * n;
+    const n = u.radarOn && IC.BAND[u.type] ? nb.get(u) || 0 : 0, k = 0.15 * n;
     upAD += u.d.up * (1 + k); crowd += u.d.up * k;
   }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;

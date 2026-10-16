@@ -118,7 +118,7 @@ function buildGraph(W) {
       for (let q = 0; q < M.length; q += 2) {
         const l = lines[M[q]]; if (lineOk && !lineOk(l)) continue;
         const a = l.pts[M[q + 1] - 1], b = l.pts[M[q + 1]], vx = b.x - a.x, vy = b.y - a.y, LL = vx * vx + vy * vy, t = LL ? U.clamp(((P.x - a.x) * vx + (P.y - a.y) * vy) / LL, 0, 1) : 0;
-        const d = Math.hypot(a.x + vx * t - P.x, a.y + vy * t - P.y);
+        const d = U.hyp(a.x + vx * t - P.x, a.y + vy * t - P.y);
         if (d < bd) { bd = d; best = { l, i: M[q + 1], t, x: a.x + vx * t, y: a.y + vy * t }; }
       }
     }
@@ -176,7 +176,7 @@ function buildGraph(W) {
       const hw = n.out.map(i => G.links[i]).find(q => q.cls === 'hw'); if (!hw) continue;
       // the motorway's direction at this node, and which side of its centre line the slip road meets
       const atA = hw.a === (end ? lk.b : lk.a), P = hw.pts, p0 = atA ? P[0] : P[P.length - 1], p1 = atA ? P[1] : P[P.length - 2];
-      let tx = p1.x - p0.x, ty = p1.y - p0.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      let tx = p1.x - p0.x, ty = p1.y - p0.y; const tl = U.hyp(tx, ty) || 1; tx /= tl; ty /= tl;
       if (!atA) { tx = -tx; ty = -ty; }   // now pointing along the motorway from a to b
       const R = lk.pts, q0 = end ? R[R.length - 1] : R[0], q1 = end ? R[R.length - 2] : R[1];
       const side = (q1.x - q0.x) * -ty + (q1.y - q0.y) * tx;   // > 0: the slip road lies to the right of a→b

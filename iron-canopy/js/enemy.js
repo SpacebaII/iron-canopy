@@ -218,7 +218,7 @@ function planRoute(S, from, to, low, spread) {
   const hit = C.get(key);
   if (hit && S.time - hit.t < 900) return hit.r.map(p => ({ x: p.x, y: p.y }));
   const sites = threatSites(S, low);
-  const nx = -(to.y - from.y), ny = to.x - from.x, NL = Math.hypot(nx, ny) || 1, sp = spread || 2100;
+  const nx = -(to.y - from.y), ny = to.x - from.x, NL = U.hyp(nx, ny) || 1, sp = spread || 2100;
   const via = (f, off) => ({ x: U.clamp(from.x + (to.x - from.x) * f + nx / NL * off, 90, IC.WW - 90), y: U.clamp(from.y + (to.y - from.y) * f + ny / NL * off, 90, IC.WH - 90) });
   const cands = [[]];
   // one turn: a fan of lanes through the defended belt
@@ -1381,7 +1381,7 @@ IC.moveEnemyAir = function (S, t, dt) {
     else if (!chase) {
       const h = Math.atan2(L.vy || 0, L.vx || 1), side = (t.slot || 1) % 2 ? 1 : -1;
       tx = L.x - Math.cos(h) * 10 - Math.sin(h) * 25 * side; ty = L.y - Math.sin(h) * 10 + Math.cos(h) * 25 * side;
-      spd = U.dxy(t.x, t.y, tx, ty) > 10 ? t.spd * 1.2 : Math.max(0.5, Math.hypot(L.vx || 0, L.vy || 0));
+      spd = U.dxy(t.x, t.y, tx, ty) > 10 ? t.spd * 1.2 : Math.max(0.5, U.hyp(L.vx || 0, L.vy || 0));
     }
   }
   if (chase) { tx = chase.x; ty = chase.y; spd = t.spd * 1.25; }
@@ -1402,7 +1402,7 @@ IC.moveEnemyAir = function (S, t, dt) {
     if (t.disguise && t.route.length === 1 && !t.offRoute) t.offRoute = true;
   } else if (t.mission === 'patrol' || t.mission === 'jam') {
     // a racetrack along the border: two turn points 30 km either side of the station
-    const hx = t.home ? t.st.x - t.home.x : 1, hy = t.home ? t.st.y - t.home.y : 0, hl = Math.hypot(hx, hy) || 1, ux = -hy / hl, uy = hx / hl;
+    const hx = t.home ? t.st.x - t.home.x : 1, hy = t.home ? t.st.y - t.home.y : 0, hl = U.hyp(hx, hy) || 1, ux = -hy / hl, uy = hx / hl;
     t.leg = t.leg || 1;
     tx = t.st.x + ux * 300 * t.leg; ty = t.st.y + uy * 300 * t.leg;
     if (U.dxy(t.x, t.y, tx, ty) < 40) t.leg = -t.leg;
