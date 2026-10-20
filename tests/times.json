@@ -199,5 +199,8 @@
  "world: junctions by the roads meeting: a trumpet or a partial cloverleaf where a motorway ends on another, dumbbells and half diamonds among the diamonds, roundabouts sized by their roads with two lanes by a town and an island of their own, and every interchange keeps its footprint clear of the town (brief 56)": 65,
  "world: a lane stops short of a motorway, a road a motorway crosses without meeting it rides a bridge over it, and the linear city has a motorway spine with interchanges every 2 km that ends on the roads out (brief 56)": 30,
  "world: the countryside has a plan by its ground: hedged fields on the plain, small fields and copses in the hills, walls on the uplands, farms on tracks off the road, ponds in the meadows, and nothing on a road, a town or the water (brief 57)": 10,
- "world: roads abroad: every foreign town stands on a road of its own country with a fringe, the border crossings carry on over the border, none of those roads is ours to drive or to hold, and a route between our cities stays at home (brief 57)": 20
+ "world: roads abroad: every foreign town stands on a road of its own country with a fringe, the border crossings carry on over the border, none of those roads is ours to drive or to hold, and a route between our cities stays at home (brief 57)": 20,
+ "world: towns are measured from real ones: street widths, floors, density and old towns (brief 65)": 11.1,
+ "buildings: a town stands up on the map, towers taller than houses (brief 65)": 0.2,
+ "traffic: lights at the avenues' crossings; vehicles stop on red and go on green (brief 65)": 18
 }

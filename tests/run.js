@@ -141,7 +141,10 @@ test('world: city streets follow a direction field, end on a street, a head, a b
       // blocks by district: the old town's are smaller than the suburbs', the housing blocks smaller than industry's
       if (c.blocks.length < 300) continue;
       const side = (...ds) => med(c.blocks.filter(b => !b.fr && ds.includes(b.d)).map(b => Math.max(b.w, b.h)));   // (the fringe's plots are the fringe's, not the suburbs': brief 54)
-      if (c.blocks.filter(b => b.d === 'old').length > 20) assert(side('old') < side('sub') * 0.6, `seed ${seed}: ${c.name}'s old town blocks (${side('old').toFixed(1)}) are as big as its suburbs' (${side('sub').toFixed(1)})`);
+      // (an old town laid on a real one, brief 65, keeps the real one's blocks: irregular, their boxes bigger than they
+      // are; its own test checks them)
+      const sideOld = () => med(c.blocks.filter(b => b.d === 'old' && b.f !== 'real').map(b => Math.max(b.w, b.h)));
+      if (c.blocks.filter(b => b.d === 'old' && b.f !== 'real').length > 20) assert(sideOld() < side('sub') * 0.6, `seed ${seed}: ${c.name}'s old town blocks (${sideOld().toFixed(1)}) are as big as its suburbs' (${side('sub').toFixed(1)})`);
       if (c.blocks.filter(b => b.d === 'ind' || b.d === 'log').length > 30) assert(side('ind', 'log') > side('dense') * 1.3, `seed ${seed}: ${c.name}'s factory and warehouse blocks (${side('ind', 'log').toFixed(1)}) are no bigger than its housing blocks (${side('dense').toFixed(1)})`);
     }
     assert(along > total * 0.85, `seed ${seed}: only ${U.pct(along / total)} of the streets run with the field`);
@@ -671,6 +674,53 @@ test('world: generation stays under the time budget', () => {
   // about 0.6 s more on that machine, a second on a slow one: 11 s)
   assert(worst < 11000, `generation took ${worst} ms`);
 }, true, 'alone');
+test('world: towns are measured from real ones: street widths, floors, density and old towns (brief 65)', () => {
+  // the samples are in the game, baked in: ten forms of real urban fabric, four transects, five old towns
+  const RS = IC.CITY_SAMPLES, f = RS.forms;
+  for (const k of ['old', 'court', 'tower', 'row', 'house', 'slab', 'office']) assert(f[k] && f[k].fl && f[k].fl.length === 5, `no real floors for the ${k} form`);
+  assert(Object.keys(IC.CITY_CORES).length === 5, `${Object.keys(IC.CITY_CORES).length} real old towns, not 5`);
+  // real widths: a street 11 m, an avenue 20 m, and the building line set back from them as in real towns (23-24 m)
+  assert(Math.abs(IC.ROAD_SPEC.st.w - 0.11) < 0.005 && Math.abs(IC.ROAD_SPEC.art.w - 0.2) < 0.005, `streets ${IC.ROAD_SPEC.st.w * 100} m, avenues ${IC.ROAD_SPEC.art.w * 100} m`);
+  assert(IC.REAL_FABRIC.corSt > 0.18 && IC.REAL_FABRIC.corSt < 0.3, `a street's building line to building line is ${IC.REAL_FABRIC.corSt * 100} m`);
+  // a downtown's median tower is taller than an old town's median house, and towns thin out away from the centre
+  assert(IC.realFloors('tower', 0.5) > 2.5 * IC.realFloors('old', 0.5), 'towers are not much taller than the old town');
+  assert(IC.realGrad(0) === 1 && IC.realGrad(10) < 0.3, `density 10 km out is ${IC.realGrad(10)} of the centre's`);
+  // the old towns: every European city of some size is laid out on one, building by building, and as built-up as one
+  const W = world(4242), olds = W.cities.filter(c => c.blocks.some(b => b.f === 'real'));
+  assert(olds.length >= 8, `only ${olds.length} towns have a real old town`);
+  for (const c of olds) {
+    const rb = c.blocks.filter(b => b.f === 'real');
+    let A = 0, lot = 0;
+    const area = F => { let a = 0; for (let i = 0; i < F.length; i += 2) { const j = (i + 2) % F.length; a += F[i] * F[j + 1] - F[j] * F[i + 1]; } return Math.abs(a) / 2; };
+    for (const b of rb) {
+      assert(b.rb.length > 0 && b.pg.length >= 6, `an old-town block in ${c.name} has no buildings or no outline`);
+      for (const F of b.rb) A += area(F);
+      lot += area(b.pg);
+    }
+    assert(A / lot > 0.2 && A / lot < 0.95, `${c.name}'s old town is ${(A / lot * 100).toFixed(0)}% built over`);
+    assert(c.streets.some(l => l.core), `${c.name}'s old town has no streets of its own`);
+  }
+  // the four transects agree with the generated gradient: a city 8 km out is at most half as dense as its centre
+  assert(IC.realGrad(8) < 0.5, 'the density gradient does not fall off');
+}, false, 'world');
+test('buildings: a town stands up on the map, towers taller than houses (brief 65)', () => {
+  const W = world(4242), cap = W.cities.slice().sort((a, b) => b.pop - a.pop)[0];
+  const top = c => { let m = 0; for (const b of c.blocks) for (const p of IC.blockPrisms(b, c)) m = Math.max(m, p.ht); return m; };
+  const tall = top(cap), house = cap.blocks.filter(b => b.f === 'house').flatMap(b => IC.blockPrisms(b, cap));
+  assert(tall > 1, `the capital's tallest building is ${(tall * 100).toFixed(0)} m`);
+  assert(house.length && house.every(p => p.ht < 0.2), 'a suburb has houses over 20 m tall');
+  // every building stands inside its block, and a destroyed block has none standing
+  for (const b of cap.blocks.slice(0, 400)) {
+    const r = Math.hypot(b.w, b.h) / 2 + 0.05;
+    for (const p of IC.blockPrisms(b, cap)) assert(p.x0 > b.x - r && p.x1 < b.x + r && p.y0 > b.y - r && p.y1 < b.y + r, `a building stands outside its block in ${cap.name}`);
+  }
+  const b = cap.blocks.find(q => IC.blockPrisms(q, cap).length), hp = b.hp; b.hp = 0;
+  assert(IC.blockPrisms(b, cap).length === 0, 'a destroyed block still has buildings standing');
+  b.hp = hp;
+  // the old town's buildings keep their real outlines
+  const old = W.cities.find(c => c.blocks.some(q => q.f === 'real')), rb = old.blocks.find(q => q.f === 'real');
+  assert(IC.blockPrisms(rb, old).some(p => p.p.length !== 8), 'the old town is all rectangles');
+}, false, 'world');
 test('world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map', () => {
   assert(Math.abs(IC.WW / 10 - 5700) < 200 && Math.abs(IC.WH / 10 - 4300) < 200, `the map is ${IC.WW / 10} × ${IC.WH / 10} km`);
   for (const seed of [4242, 7, 99]) {
@@ -725,6 +775,43 @@ test('traffic: at rush hour the side streets carry some traffic and the avenues 
   let onSide = 0;
   for (let i = 0; i < 400; i++) { S.time += 0.5; IC.traffic(S, 0.5); const A = IC.trafficAgents(S, view, 0.5); if (i % 40 === 39) onSide += A.filter(a => a.route[a.ri][0].cls === 'st').length; }
   assert(onSide > 10, `close in, hardly any vehicles on the side streets (${onSide})`);
+});
+test('traffic: lights at the avenues\' crossings; vehicles stop on red and go on green (brief 65)', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S), T = S.traffic, G = T.G;
+  const sig = G.nodes.map((n, i) => i).filter(i => G.nodes[i].sig && U.dist(G.nodes[i], cap) < 30);
+  assert(sig.length > 20, `only ${sig.length} junctions with lights in ${cap.name}`);
+  // the roads across each other are never green at once, and each gets green within a cycle
+  for (const ni of sig.slice(0, 40)) {
+    const n = G.nodes[ni], ins = [...new Set(n.out)].map(i => G.links[i]).filter(q => q.a !== q.b).map(q => [q, q.b === ni ? 0 : 1]).filter(([q, d]) => IC.driveCanGo(q, d));
+    const greens = new Set();
+    for (let t = 0; t < IC.SIGNAL.cycle; t += 1) {
+      const g = ins.filter(([q, d]) => IC.signalFor(G, ni, q, d, t) === 'g');
+      for (const [q] of g) greens.add(q.id);
+      for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+        const h = (q, d) => { const P = q.pts, a = d ? P[1] : P[P.length - 2], b = d ? P[0] : P[P.length - 1]; return Math.atan2(b.y - a.y, b.x - a.x); };
+        assert(Math.abs(Math.cos(h(...g[i]) - h(...g[j]))) > 0.6, 'two roads that cross have green at once');
+      }
+    }
+    assert(greens.size === ins.length, 'a road into a junction with lights never gets green');
+  }
+  // close in, vehicles wait at the line on red, and none waits there on green for long
+  const view = { x0: cap.x - 15, y0: cap.y - 10, x1: cap.x + 15, y1: cap.y + 10 };
+  IC.trafficAgents(S, view, 0);
+  let red = 0, ran = 0;
+  for (let i = 0; i < 600; i++) {
+    S.time += 0.5; IC.traffic(S, 0.5);
+    for (const a of IC.trafficAgents(S, view, 0.5)) {
+      const [lk, d] = a.route[a.ri], end = d ? lk.a : lk.b, toEnd = lk.len - a.s;
+      if (!G.nodes[end].sig || a.ri + 1 >= a.route.length) continue;
+      const st = IC.signalFor(G, end, lk, d, S.time), line = toEnd - IC.SIGNAL.stop;
+      if (st === 'r' && a.v < 0.005 && line > -0.01 && line < 0.3) red++;
+      // (over the line on red at speed: it should have stopped, unless it was already past when the light changed)
+      if (st === 'r' && line < -0.03 && line > -0.06 && a.v > 0.05 && IC.signalFor(G, end, lk, d, S.time - 8) === 'r') ran++;
+    }
+  }
+  assert(red > 50, `hardly any vehicles wait at a red light (${red})`);
+  assert(ran < red * 0.02, `${ran} vehicles drove through a red light (${red} waited)`);
 });
 test('traffic: a big city reads busy at rush hour, every street carries something, and a small town stays quieter (brief 51)', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
@@ -2189,7 +2276,14 @@ test('roads: no road surface crosses another at grade: over the deck, on a bridg
 test('roads: city streets cross at kerbed corners that meet the blocks\' lots, never cutting into a building', () => {
   const W = roadWorld(), c = W.cities[0], J = IC.streetJoins(W, c);
   assert(J.length > 300, `only ${J.length} street crossings in the capital`);
-  const inRect = (b, x, y, m) => { const ca = Math.cos(b.a), sa = Math.sin(b.a), lx = (x - b.x) * ca + (y - b.y) * sa, ly = -(x - b.x) * sa + (y - b.y) * ca; return Math.abs(lx) < b.w / 2 + m && Math.abs(ly) < b.h / 2 + m; };
+  const inRect = (b, x, y, m) => {
+    const ca = Math.cos(b.a), sa = Math.sin(b.a), lx = (x - b.x) * ca + (y - b.y) * sa, ly = -(x - b.x) * sa + (y - b.y) * ca;
+    if (!b.pg) return Math.abs(lx) < b.w / 2 + m && Math.abs(ly) < b.h / 2 + m;
+    // (a real old town's block is its own outline, brief 65: inside it, m in from its edge, or out to m beyond it)
+    const F = b.pg, n = F.length / 2; let ins = false, d = 1e9;
+    for (let i = 0, j = n - 1; i < n; j = i++) { const ax = F[i * 2], ay = F[i * 2 + 1], bx = F[j * 2], by = F[j * 2 + 1]; if ((ay > ly) !== (by > ly) && lx < (bx - ax) * (ly - ay) / (by - ay) + ax) ins = !ins; d = Math.min(d, U.segDist(lx, ly, ax, ay, bx, by)); }
+    return m < 0 ? ins && d > -m : ins || d < m;
+  };
   let arcs = 0, cut = 0, meet = 0;
   for (const j of J) {
     const G = IC.joinGeom(j, k => IC.ROAD_SPEC[k].w / 2);

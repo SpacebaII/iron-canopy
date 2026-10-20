@@ -420,7 +420,7 @@ IC.BLOCK_FORMS = FORMS; IC.LANDMARKS = LAND;
 /* ---------- landmarks placed (cities.js, after the blocks) ----------
    roads: [x0, y0, x1, y1, cls] pieces near the city, 'rail' among them. One landmark a block, none on the fringe. */
 IC.placeLandmarks = function (W, c, roads) {
-  const B = c.blocks.filter(b => !b.fr && b.hp > 0), small = b => Math.min(b.w, b.h), far = b => U.dist(b, c), ext = c.ext || c.r || 20;
+  const B = c.blocks.filter(b => !b.fr && b.hp > 0 && b.f !== 'real'), small = b => Math.min(b.w, b.h), far = b => U.dist(b, c), ext = c.ext || c.r || 20;
   const frame = (b, x, y) => { const dx = x - b.x, dy = y - b.y; return Math.atan2(dy, dx) - b.a; };
   const rails = (roads || []).filter(s => s[4] === 'rail');
   const railNear = b => { let bd = 1e9, bs = null; for (const s of rails) { const d = U.segDist(b.x, b.y, s[0], s[1], s[2], s[3]); if (d < bd) { bd = d; bs = s; } } return { d: bd, s: bs }; };

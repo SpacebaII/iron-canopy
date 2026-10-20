@@ -105,12 +105,26 @@ function segBox(x0, y0, x1, y1, W, H) {
   return true;
 }
 /* does any road (not a side street) run over block b, with pad to spare beyond its half width? */
+/* does the segment come within p of the polygon F (flat x, y pairs), or run inside it? */
+function polyNear(F, x0, y0, x1, y1, p) {
+  const n = F.length / 2;
+  let ins = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const ax = F[i * 2], ay = F[i * 2 + 1], bx = F[j * 2], by = F[j * 2 + 1];
+    if ((ay > y0) !== (by > y0) && x0 < (bx - ax) * (y0 - ay) / (by - ay) + ax) ins = !ins;
+    if (U.segDist(ax, ay, x0, y0, x1, y1) < p || U.segX(ax, ay, bx, by, x0, y0, x1, y1) > 0) return true;
+  }
+  return ins;
+}
 function rectHit(Bk, b, pad, skip) {
   const ca = Math.cos(b.a), sa = Math.sin(b.a); let hit = false;
   Bk.near(b.x, b.y, Math.hypot(b.w, b.h) / 2 + 1, s => {
     if (hit || s[4] === 'st' || s[4] === skip) return;
     const p = (HALF[s[4]] || 0.2) + pad, ax = s[0] - b.x, ay = s[1] - b.y, bx = s[2] - b.x, by = s[3] - b.y;
-    if (segBox(ax * ca + ay * sa, -ax * sa + ay * ca, bx * ca + by * sa, -bx * sa + by * ca, b.w / 2 + p, b.h / 2 + p)) hit = true;
+    const x0 = ax * ca + ay * sa, y0 = -ax * sa + ay * ca, x1 = bx * ca + by * sa, y1 = -bx * sa + by * ca;
+    if (!segBox(x0, y0, x1, y1, b.w / 2 + p, b.h / 2 + p)) return;
+    // (a real old town's block is its own outline, b.pg, not its box: brief 65)
+    if (!b.pg || polyNear(b.pg, x0, y0, x1, y1, p)) hit = true;
   });
   return hit;
 }
@@ -611,7 +625,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
       mkBlock(x, p, old ? 'old' : formFor(c, st, { i: x.i, j: x.j, d: x.d, q: x.q, park: x.park, art }), old ? { fine: true } : null);
     }
   }
-  if (core) realBlocks(c, core, realFaces, cellXY, mkBlock, parksL, squares);
+  if (core) realBlocks(c, core, realFaces, cellXY, mkBlock, parksL, squares, roads);
   c.streets = streets; c.blocks = blocks; c.parks = parksL; c.squares = squares;
   if (core) c.walks = core.walks; else delete c.walks;
   closeStreets(c, blocks);
@@ -655,8 +669,9 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
 /* the blocks of a real old town (brief 65): every face of its streets that has buildings in it is a block of its
    own shape (b.pg, the face set back from its streets, in the block's frame) holding those buildings (b.rb, their
    footprints in the block's frame); a small face with none is a square, a larger one a garden */
-function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares) {
-  const B = 2, cellsF = new Map(), key = (i, j) => i * 100000 + j;
+function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares, roads) {
+  const B = 2, cellsF = new Map(), key = (i, j) => i * 100000 + j, RB = buckets(2);
+  for (const r of roads) if (r[4] !== 'st' && r[4] !== 'rail') RB.add(r);
   faces.forEach((f, k) => {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of f.poly) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
     f.bl = [];
@@ -697,6 +712,27 @@ function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares) {
     // the block's frame: along the face's longest edge, its box round the face
     let a = 0, bl = -1; for (let i = 0; i < f.poly.length; i++) { const p = f.poly[i], q = f.poly[(i + 1) % f.poly.length], d = U.dist(p, q); if (d > bl) { bl = d; a = Math.atan2(q.y - p.y, q.x - p.x); } }
     const G = inset(f.poly, f.pads), ca = Math.cos(a), sa = Math.sin(a), loc = p => [(p.x - f.x) * ca + (p.y - f.y) * sa, -(p.x - f.x) * sa + (p.y - f.y) * ca];
+    // (where one of the real town's streets runs close beside a road of ours, the block stands back from the road too)
+    for (const q of G) RB.near(q.x, q.y, 0.4, r => {
+      const w = Math.max(HALF[r[4]] || 0.2, 0.15) + 0.01, vx = r[2] - r[0], vy = r[3] - r[1], L = vx * vx + vy * vy, t = L ? U.clamp(((q.x - r[0]) * vx + (q.y - r[1]) * vy) / L, 0, 1) : 0;
+      const px = r[0] + vx * t, py = r[1] + vy * t, d = Math.hypot(q.x - px, q.y - py);
+      if (d >= w) return;
+      // (out from the road's line, on the block's side of it: a corner on the line itself goes towards the face's middle)
+      let nx = q.x - px, ny = q.y - py;
+      if (d < 1e-4) { const l = Math.sqrt(L) || 1; nx = -vy / l; ny = vx / l; if (nx * (f.x - px) + ny * (f.y - py) < 0) { nx = -nx; ny = -ny; } } else { nx /= d; ny /= d; }
+      q.x = px + nx * w; q.y = py + ny * w;
+    });
+    // (a face a road runs right through, where the real town's streets did not close round it, is left empty)
+    let cross = false;
+    for (let i = 0; i < G.length && !cross; i++) { const p = G[i], q = G[(i + 1) % G.length]; RB.near((p.x + q.x) / 2, (p.y + q.y) / 2, U.dist(p, q) / 2 + 0.3, r => {
+      if (cross) return;
+      const w = Math.max(HALF[r[4]] || 0.2, 0.15) - 0.02;
+      if (U.segX(p.x, p.y, q.x, q.y, r[0], r[1], r[2], r[3]) > 0 || U.segDist(r[0], r[1], p.x, p.y, q.x, q.y) < w || U.segDist(r[2], r[3], p.x, p.y, q.x, q.y) < w || U.segDist(p.x, p.y, r[0], r[1], r[2], r[3]) < w || pip(G, r[0], r[1])) cross = true;
+    }); }
+    if (cross) continue;
+    // (a building the face's own streets run through is left out: the real town's street was where this one is not)
+    f.bl = f.bl.filter(P => P.filter(q => pip(G, q.x, q.y)).length >= P.length * 0.5);
+    if (!f.bl.length) continue;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const p of G.concat(...f.bl)) { const [u, v] = loc(p); x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); }
     const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, X = f.x + mx * ca - my * sa, Y = f.y + mx * sa + my * ca;
