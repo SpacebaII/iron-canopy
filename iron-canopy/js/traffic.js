@@ -215,7 +215,8 @@ function buildGraph(W) {
   // signals where two busy streets or roads cross; the national junctions keep their shape
   for (const n of G.nodes) {
     const big = n.out.filter(i => CLS[G.links[i].cls].rank >= 3 && G.links[i].cls !== 'hw' && G.links[i].cls !== 'ramp').length;
-    n.sig = big >= 3 && n.out.length >= 3 && n.out.every(i => G.links[i].cls !== 'hw');
+    // (brief 65: and where a town's avenue crosses a street, as at most crossroads of a real town's avenues)
+    n.sig = (big >= 3 || (big >= 2 && n.out.length >= 4 && n.out.some(i => G.links[i].city))) && n.out.length >= 3 && n.out.every(i => G.links[i].cls !== 'hw');
     n.ph = U.hash(Math.round(n.x * 10), Math.round(n.y * 10)) * 90;
   }
   for (const j of W.junctions || []) {
@@ -930,6 +931,11 @@ function stepOnce(S, A, G, dt, now, box, check) {
         // a cut road ahead: queue at the line, then turn back after a while
         gap = Math.min(gap, toEnd - 0.03);
         if (a.v < 0.02 && (a.wait += dt) > 60 + (a.col % 60)) { a.route.length = a.ri + 1; const back = pickNext(G, T, end, [lk, d], R, true); if (back) a.route.push(back); a.wait = 0; A.stats.turned++; }
+      } else if (nd.sig) {
+        // traffic lights: stop at the line on red, and on amber if there is room to stop; through on green
+        const st = IC.signalFor(G, end, lk, d, now), line = toEnd - IC.SIGNAL.stop;
+        speed = Math.min(speed, Math.max(0.03, lk.C.v * 0.7));
+        if (line > -0.01 && (st === 'r' || (st === 'a' && line > 0.08))) gap = Math.min(gap, line);
       } else if (nd.out.length >= 3) {
         // a junction: slow through it, and give way to whoever is already in it
         speed = Math.min(speed, Math.max(0.03, lk.C.v * 0.55));
@@ -961,6 +967,29 @@ function stepOnce(S, A, G, dt, now, box, check) {
   }
   if (gone.size) A.list = A.list.filter(a => !gone.has(a));
 }
+/* ---------- traffic lights (brief 65) ----------
+   A signalled junction (n.sig) turns its roads green by axis: the axis of its biggest road, then the one across it,
+   in a cycle of IC.SIGNAL.cycle game seconds (the bigger road's share longer when a street crosses an avenue),
+   amber for 3 s and red both ways for 1 s between. Vehicles stop at the line IC.SIGNAL.stop short of the
+   junction's middle on red, and on amber unless they are too close to stop. Each junction starts its cycle at its
+   own time. */
+IC.SIGNAL = { cycle: 64, amber: 3, clear: 1, stop: 0.11 };
+function sigAxis(G, ni) {
+  const n = G.nodes[ni]; if (n.ax != null) return n.ax;
+  let best = -1, ax = 0;
+  for (const i of n.out) { const q = G.links[i], r = CLS[q.cls].rank + Math.min(1, q.len) * 0.01; if (r > best) { best = r; ax = headOut(q, q.a === ni ? 0 : 1); } }
+  n.mn = n.out.some(i => CLS[G.links[i].cls].rank < 3);   // (a street across an avenue gets the shorter green)
+  return n.ax = ax;
+}
+/* 'g', 'a' or 'r' for the road coming in on link lk in direction d (towards its end) at junction node n */
+IC.signalFor = function (G, n, lk, d, now) {
+  const N = G.nodes[n]; if (!N.sig) return 'g';
+  sigAxis(G, n);
+  const K = IC.SIGNAL, hin = headIn(lk, d), grp = Math.abs(Math.cos(hin - N.ax)) > 0.7071 ? 0 : 1;
+  const g0 = N.mn ? 0.6 : 0.5, half = K.cycle * (grp ? 1 - g0 : g0), start = grp ? K.cycle * g0 : 0;
+  const t = ((now + N.ph) % K.cycle + K.cycle - start) % K.cycle;
+  return t < half - K.amber - K.clear ? 'g' : t < half - K.clear ? 'a' : 'r';
+};
 /* where an agent is and which way it faces, with its lane offset */
 IC.agentPos = function (a) {
   const [lk, d] = a.route[a.ri], s = d ? lk.len - a.s : a.s, p = along(lk.pts, lk.cum, U.clamp(s, 0, lk.len));
