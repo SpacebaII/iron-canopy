@@ -21,6 +21,45 @@ IC.FABRIC = {
   weight: { hw: 0.5, rd: 1.4, art: 1.0, ring: 1.4, lc: 0.8, sp: 0.4, rail: 0.6, river: 1.2, diag: 0.25, wall: 1.2, st: 0.8 }
 };
 
+/* ---------- the real fabric (brief 65) ----------
+   What city-samples.js measured from real neighbourhoods, as the game uses it (units of 100 m, floors):
+   - the old town's and the downtown's street spacing (the downtown's two families apart: long blocks one way, short
+     the other, as in Midtown, the Loop or Frankfurt);
+   - the corridor from building line to building line across a street and an avenue (the dense districts' median),
+     from which the blocks are set back;
+   - floors by block form, as quantiles: realFloors(form, u) is the floor count at quantile u;
+   - the density gradient: realGrad(km) is the floor area at km from the centre over the centre's (the median of four
+     transects: Paris, Chicago, Warsaw, Madrid), so towers and flats are tallest in the middle. */
+{
+  const CS = IC.CITY_SAMPLES || { forms: {}, transects: [] }, F = CS.forms;
+  const med = v => { v = v.filter(x => x != null).sort((a, b) => a - b); return v.length ? v[(v.length - 1) >> 1] * 0.5 + v[v.length >> 1] * 0.5 : null; };
+  const sp = (k, i, fb) => F[k] && F[k].sp[i] ? F[k].sp[i] / 100 : fb;
+  // (the families' spacing as [along, across]; a pair keeps its ratio to the old single value's area)
+  if (F.old) IC.FABRIC.size.old = (sp('old', 0, 1.3) + sp('old', 1, 1.3)) / 2;
+  if (F.tower) IC.FABRIC.size.biz = [sp('tower', 0, 1.6), sp('tower', 1, 1.6)];
+  const cor = (i, forms, fb) => { const m = med(forms.map(k => F[k] && F[k].cor[i])); return m ? m / 100 : fb; };
+  IC.REAL_FABRIC = {
+    corSt: cor(1, ['court', 'tower', 'row'], 0.24), corArt: cor(0, ['court', 'tower', 'row'], 0.3),
+    fl: k => F[k] && F[k].fl[1] != null ? F[k].fl : null
+  };
+  // the gradient: each transect's floor area (coverage × floors) over its centre's, the median at each distance
+  const T = CS.transects.filter(t => t.pts[0] && t.pts[0].far), G = [];
+  if (T.length) for (let i = 0; i < T[0].km.length; i++) { const r = med(T.map(t => t.pts[i] && t.pts[i].far != null ? t.pts[i].far / t.pts[0].far : null)); if (r != null) G.push([T[0].km[i], r]); }
+  IC.REAL_FABRIC.grad = G.length ? G : [[0, 1], [20, 1]];
+}
+IC.realGrad = function (km) {
+  const G = IC.REAL_FABRIC.grad; if (km <= G[0][0]) return G[0][1];
+  for (let i = 1; i < G.length; i++) if (km <= G[i][0]) return G[i - 1][1] + (G[i][1] - G[i - 1][1]) * (km - G[i - 1][0]) / (G[i][0] - G[i - 1][0]);
+  return G[G.length - 1][1];
+};
+/* floors at quantile u of a block form's real distribution (between p25, p50, p75, p90 and the tallest; below p25 a
+   floor less), or of fb ([p25, p50, p75, p90, max]) where the samples did not say */
+IC.realFloors = function (form, u, fb) {
+  const f = IC.REAL_FABRIC.fl(form) || fb, Q = [[0, Math.max(1, f[0] - 1)], [0.25, f[0]], [0.5, f[1]], [0.75, f[2]], [0.9, f[3]], [1, f[4] != null ? f[4] : f[3]]];
+  for (let i = 1; i < Q.length; i++) if (u <= Q[i][0]) return Q[i - 1][1] + (Q[i][1] - Q[i - 1][1]) * (u - Q[i - 1][0]) / (Q[i][0] - Q[i - 1][0]);
+  return Q[Q.length - 1][1];
+};
+
 /* ---------- the field ----------
    c.fld = { x, y: the centre; a: the grid's angle; wg: the grid's weight; wr, wr1: the radial's weight at the centre
    and at the edge; ext: the city's reach; warp: the bend in radians; wl: its wavelength; s: the noise's seed;

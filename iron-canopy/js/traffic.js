@@ -16,9 +16,9 @@ const U = IC.U;
 // lane offsets from the centre line (world units), and rank at junctions
 const CLS = {
   hw: { dens: 4, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 4, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
-  rd: { dens: 2, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 4, v: 0.13, lanes: 2, off: [0.06, 0.145], rank: 3 },
+  rd: { dens: 2, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 4, v: 0.13, lanes: 2, off: [0.0175, 0.0525], rank: 3 },
   lc: { dens: 0.7, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.5, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
-  st: { dens: 2, v: 0.08, lanes: 1, off: [0.075], rank: 1 }, ln: { dens: 0.06, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
+  st: { dens: 2, v: 0.08, lanes: 1, off: [0.0175], rank: 1 }, ln: { dens: 0.06, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
   ramp: { dens: 2.4, v: 0.16, lanes: 1, off: [0], rank: 2 }
 };
 IC.TRAFFIC_CLS = CLS;
@@ -119,8 +119,8 @@ function buildGraph(W) {
   });
   const tie = (P, lineOk, within) => {
     let best = null, bd = within || 0.7;
-    const gx = Math.floor(P.x / B), gy = Math.floor(P.y / B);
-    for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) {
+    // (only the cells within reach: a piece near P passes through one of them, and a street's end looks 3 m round)
+    for (let x = Math.floor((P.x - bd) / B); x <= Math.floor((P.x + bd) / B); x++) for (let y = Math.floor((P.y - bd) / B); y <= Math.floor((P.y + bd) / B); y++) {
       const M = segB.get(key2(x, y)); if (!M) continue;
       for (let q = 0; q < M.length; q += 2) {
         const l = lines[M[q]]; if (lineOk && !lineOk(l)) continue;
@@ -972,7 +972,7 @@ IC.trafficAgentsOf = S => AG.get(S) || null;
 /* parked cars (brief 55): the spaces along a side street's kerbs that have a car in them, as a flat list of
    x, y, heading, colour. A fifth of the spaces on a street, an eighth on a close; none within 25 m of a crossing or an
    end. Kept on the street (not saved), the same cars every time the view comes back. */
-IC.PARKED = { st: 0.22, cl: 0.12, off: 0.125, step: 0.058, clear: 0.25 };
+IC.PARKED = { st: 0.22, cl: 0.12, off: 0.045, step: 0.058, clear: 0.25 };
 IC.parkedSpots = function (W, c, l) {
   if (l._pk) return l._pk;
   const out = [], K = IC.PARKED, share = l.cul ? K.cl : K.st, bb = l.bb;

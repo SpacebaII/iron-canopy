@@ -76,7 +76,6 @@ module.exports = {
   // European town's old town is laid out on one of them, turned and clipped to its own size (cities.js)
   cores: [
     { key: 'bologna', name: 'Bologna, centro storico', at: [44.4938, 11.3430], r: 1.0 },
-    { key: 'siena', name: 'Siena, centro', at: [43.3186, 11.3307], r: 0.9 },
     { key: 'nuremberg', name: 'Nuremberg, Altstadt', at: [49.4539, 11.0775], r: 1.0 },
     { key: 'bruges', name: 'Bruges, binnenstad', at: [51.2089, 3.2243], r: 1.0 },
     { key: 'krakow', name: 'Kraków, Stare Miasto', at: [50.0617, 19.9373], r: 0.9 },

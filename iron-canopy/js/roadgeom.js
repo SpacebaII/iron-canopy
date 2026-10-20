@@ -27,8 +27,11 @@ const SPEC = {
   lc: { w: 0.07, lane: 0.03, lanes: 1, sh: 0.005, R: 0.12, px: 2.2, centre: 'dash' },
   sp: { w: 0.055, lane: 0.0275, lanes: 1, sh: 0, R: 0.1, px: 1.9 },
   ramp: { w: 0.075, lane: 0.04, lanes: 1, sh: 0.025, strip: 0.01, R: 0.22, px: 1.8 },
-  art: { w: 0.4, lane: 0.035, lanes: 2, sh: 0.03, R: 0.1, px: 2.2, centre: 'solid' },
-  st: { w: 0.34, lane: 0.035, lanes: 1, sh: 0.1, R: 0.08, px: 1.4 },
+  // (brief 65: a city's avenue and street at their real width, kerb to kerb: two lanes each way and a solid centre,
+  // or a lane each way and a parking strip on both sides; the pavements are the blocks' own, as measured from the
+  // building line in city-samples.js)
+  art: { w: 0.2, lane: 0.035, lanes: 2, sh: 0.015, R: 0.08, px: 2.2, centre: 'solid' },
+  st: { w: 0.11, lane: 0.035, lanes: 1, sh: 0.02, R: 0.06, px: 1.4 },
   ln: { w: 0.05, lane: 0.025, lanes: 1, sh: 0, R: 0.06, px: 1.1 },
   land: { w: 0.12, lane: 0.035, lanes: 1, sh: 0.01, R: 0.07, px: 1.4 }
 };

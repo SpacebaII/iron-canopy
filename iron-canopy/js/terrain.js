@@ -483,7 +483,7 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     // (cl: a suburb's closes, brief 54, thinner than a side street until the street zoom, so an estate's loop is a line
     // and not a ring from the town zoom)
     const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, cl: 0.3, ring: 2.4, ramp: 1 },
-      { ln: 0.3, art: 0.7, st: 0.5, cl: 0.3, ring: 0.9 }, { ln: 0.12, art: 0.4, st: 0.34, cl: 0.22, ring: 0.36 }, { ln: 0.07, art: 0.4, st: 0.34, cl: 0.34, ring: 0.36 }][lod];
+      { ln: 0.3, art: 0.7, st: 0.5, cl: 0.3, ring: 0.9 }, { ln: 0.12, art: 0.2, st: 0.11, cl: 0.11, ring: 0.36 }, { ln: 0.07, art: 0.2, st: 0.11, cl: 0.11, ring: 0.36 }][lod];
     // (the same tones as the live drawing far out: roadgeom.js IC.ROAD_TONE)
     const T = IC.ROAD_TONE, tc = (k, a) => `rgba(${T[k][0]},${T[k][1]},${T[k][2]},${a})`;
     const FILL = { ramp: tc('ramp', 0.85), hw: tc('hw', 0.92), rd: tc('rd', 0.8), lc: tc('lc', 0.6), sp: tc('sp', 0.6), ln: tc('ln', 0.55), art: tc('art', 0.75), st: tc('st', 0.6), ring: tc('ring', 0.85) };
@@ -547,7 +547,7 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
         if ((l.cls !== 'art' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
         for (let i = 1; i < l.pts.length; i++) {
           const a = l.pts[i - 1], b = l.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 0.01) continue;
-          const nx = -(b.y - a.y) / L * 0.25, ny = (b.x - a.x) / L * 0.25;
+          const nx = -(b.y - a.y) / L * 0.13, ny = (b.x - a.x) / L * 0.13;   // (in the pavement beside the avenue)
           for (let t = 0.1; t < L; t += 0.16) { const x = a.x + (b.x - a.x) * t / L, y = a.y + (b.y - a.y) * t / L; if (inb(x - 1, y - 1, x + 1, y + 1)) P.push(x + nx, y + ny, x - nx, y - ny); }
         }
       }
@@ -559,6 +559,12 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   g.strokeStyle = 'rgba(170,140,120,0.35)'; g.lineWidth = lod ? 2 : 6 * K0;
   for (const r of W.eroads) { g.beginPath(); r.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); }
   if (lod) for (const c of towns) if (c.fringe && tIn(c)) for (const it of c.fringe.items) if (inT(it.x - 3, it.y - 3, it.x + 3, it.y + 3)) fringeItem(g, it, lod);
+  // a real old town's footpaths and passages (brief 65), paved, under its blocks
+  if (lod >= 2) for (const c of towns) if (c.walks && tIn(c)) {
+    g.beginPath();
+    for (const r of c.walks) r.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
+    g.strokeStyle = 'rgb(168,160,146)'; g.lineWidth = 0.05; g.lineCap = 'round'; g.lineJoin = 'round'; g.stroke(); g.lineCap = 'butt';
+  }
   for (const c of towns) if (tIn(c)) for (const b of c.blocks) if (inT(b.x - 5, b.y - 5, b.x + 5, b.y + 5)) block(g, b, lod, c.kind === 'ftown', true, c);
   // close in, the streets cross at kerbed corners (render-roads.js; the same code draws them live over the avenues)
   if (lod >= 3 && IC.paintStreetJoins) for (const c of towns) if (tIn(c)) IC.paintStreetJoins(g, W, c, x0 + p, y0 + p, x1 - p, y1 - p, lod, 1 / LOD(lod).ppu);
@@ -693,12 +699,17 @@ function block(g, b, lod, foreign, town, c) {
       // a suburb from far out (brief 54): roofs and gardens as one warm built ground, so the outer town reads as
       // houses and not as fields with lines on them (the town zoom, lod 2, adds the rows of roofs: formBlock)
       g.fillStyle = `rgba(${c[0] + v - 6},${c[1] + v - 10},${c[2] + v - 16},0.92)`; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
-    } else { g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-b.w / 2 + 0.4, -b.h / 2 + 0.4, b.w, b.h); g.fillStyle = `rgba(${c[0] + v},${c[1] + v},${c[2] + v},0.9)`; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); }
+    } else if (b.pg) { g.beginPath(); poly(g, b.pg); g.fillStyle = `rgba(${c[0] + v},${c[1] + v},${c[2] + v},0.9)`; g.fill(); }
+    else { g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-b.w / 2 + 0.4, -b.h / 2 + 0.4, b.w, b.h); g.fillStyle = `rgba(${c[0] + v},${c[1] + v},${c[2] + v},0.9)`; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); }
   } else {
     // the lot: pavements, yards, car parks, gardens
     // (brief 55: pavements with a kerb in the centre, verges in the suburbs and the estates)
-    g.fillStyle = LOT[d]; g.fillRect(-b.w / 2 - 0.15, -b.h / 2 - 0.15, b.w + 0.3, b.h + 0.3);
-    if (lod >= 3 && (d === 'old' || d === 'biz' || d === 'dense')) { g.strokeStyle = 'rgba(190,186,176,0.7)'; g.lineWidth = lod >= 4 ? 0.012 : 0.03; g.strokeRect(-b.w / 2 - 0.15, -b.h / 2 - 0.15, b.w + 0.3, b.h + 0.3); }
+    // (a real old town's block, brief 65, is its own outline between its lanes, b.pg; the rest a rectangle and its pavement)
+    if (b.pg) { g.beginPath(); poly(g, b.pg); g.fillStyle = LOT[d]; g.fill(); if (lod >= 3) { g.strokeStyle = 'rgba(190,186,176,0.7)'; g.lineWidth = lod >= 4 ? 0.01 : 0.025; g.stroke(); } }
+    else {
+      g.fillStyle = LOT[d]; g.fillRect(-b.w / 2 - 0.15, -b.h / 2 - 0.15, b.w + 0.3, b.h + 0.3);
+      if (lod >= 3 && (d === 'old' || d === 'biz' || d === 'dense')) { g.strokeStyle = 'rgba(190,186,176,0.7)'; g.lineWidth = lod >= 4 ? 0.012 : 0.03; g.strokeRect(-b.w / 2 - 0.15, -b.h / 2 - 0.15, b.w + 0.3, b.h + 0.3); }
+    }
     formBlock(g, b, sd, lod, c);
   }
   if (b.hp < 1) scorchBlock(g, b);
@@ -714,6 +725,7 @@ function hull(P) {
 }
 /* a block as it really is, by its form. lod 2 draws the big masses, lod 3 buildings, lod 4 their details.
    Shadows fall to the south-east whatever way the block turns, longer for taller buildings */
+const poly = (g, F, dx, dy) => { dx = dx || 0; dy = dy || 0; for (let i = 0; i < F.length; i += 2) i ? g.lineTo(F[i] + dx, F[i + 1] + dy) : g.moveTo(F[i] + dx, F[i + 1] + dy); g.closePath(); };
 function formBlock(g, b, sd, lod, c) {
   const W2 = b.w / 2, H2 = b.h / 2, h = (i, j) => U.hash(sd * 3 + i, j * 7 + 1), fine = lod >= 4, mid = lod >= 3;
   const ca = Math.cos(-b.a), sa = Math.sin(-b.a), shx = ca - sa * 0.8, shy = sa + ca * 0.8;
@@ -848,6 +860,13 @@ function paintPlan(g, b, P, lod, H) {
   const B = P.bld.slice().sort((p, q) => p.ht - q.ht);
   for (const q of B) {
     const col = rgb(q.c);
+    if (q.pg) {
+      // a real town's building keeps its own outline: its shadow, its roof, the line where it meets its neighbour
+      if (mid) { g.fillStyle = 'rgba(0,0,0,0.36)'; g.beginPath(); poly(g, q.pg, H.shx * q.ht, H.shy * q.ht); g.fill(); }
+      g.fillStyle = col; g.beginPath(); poly(g, q.pg); g.fill();
+      if (mid) { g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = fine ? 0.004 : 0.01; g.stroke(); }
+      continue;
+    }
     if (!mid) { if (q.ht >= 0.05 || b.f === 'old') { g.fillStyle = col; at(q, (x, y) => g.fillRect(x, y, q.w, q.h)); } continue; }
     at(q, (x, y) => {
       const w = q.w, hh = q.h, ht = q.ht;

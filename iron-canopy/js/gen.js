@@ -8,7 +8,7 @@ const M = 1.5 * X;   // distances across the country, relative to wave 3's map (
 const K = 1.5 * M;   // map scale relative to the original 800 km layout
 const SP = 1.45;     // spacing between towns: with ten times the land and three to four times the towns
 /* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
-IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
+IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.2, st: 0.11, ln: 0.07 };
 IC.FOREST_T = 0.56;
 
 /* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between

@@ -114,6 +114,19 @@ function rectHit(Bk, b, pad, skip) {
   });
   return hit;
 }
+/* a real old town (city-cores.js, brief 65) read from its packed text: streets [{ c: class, p: [x, y, ...] }] and
+   building footprints [[x, y, ...]], in metres round its centre, x east and y south */
+IC.unpackCore = function (core) {
+  if (core._u) return core._u;
+  const AB = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', V = new Int8Array(128);
+  for (let i = 0; i < 64; i++) V[AB.charCodeAt(i)] = i;
+  const read = s => { const out = []; let z = 0, m = 1; for (let i = 0; i < s.length; i++) { const v = V[s.charCodeAt(i)]; if (v >= 32) { z += (v - 32) * m; m *= 32; } else { z += v * m; out.push(z & 1 ? -(z + 1) / 2 : z / 2); z = 0; m = 1; } } return out; };
+  const pts = (N, i, k) => { const n = N[i], p = []; let x = 0, y = 0; for (let q = 0; q < n; q++) { x += N[i + 1 + q * 2]; y += N[i + 2 + q * 2]; p.push(x / k, y / k); } return p; };
+  const S = read(core.streets), B = read(core.bld), streets = [], bld = [];
+  for (let i = 0; i < S.length;) { const c = S[i], n = S[i + 1]; streets.push({ c, p: pts(S, i + 1, 1) }); i += 2 + n * 2; }
+  for (let i = 0; i < B.length;) { const n = B[i]; bld.push(pts(B, i, 2)); i += 1 + n * 2; }
+  return core._u = { streets, bld };
+};
 IC.blockOnRoad = (b, segs, pad) => { const Bk = buckets(4); for (const s of segs) Bk.add(s); return rectHit(Bk, b, pad || 0); };
 /* nearest segment to x, y within r: { d, x, y, s } (d is to the centreline) */
 function nearest(Bk, x, y, r, skip) {
@@ -126,7 +139,7 @@ function nearest(Bk, x, y, r, skip) {
   });
   return best;
 }
-const HALF = { hw: 0.35, rd: 0.14, lc: 0.1, sp: 0.08, rail: 0.35, art: 0.24, ring: 0.3, st: 0.2, sq: 0.8 };
+const HALF = { hw: 0.35, rd: 0.14, lc: 0.1, sp: 0.08, rail: 0.35, art: 0.15, ring: 0.3, st: 0.1, sq: 0.8 };
 
 /* ---------- styles for the country's cities ---------- */
 IC.cityStyles = function (W, R) {
@@ -359,6 +372,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     if (!inTown(x, y)) return 2;
     if (hwAt(x, y) || (IC.ixClear && IC.ixClear(W, x, y, 1.0, ixs))) return 4;
     if (W.inLake(x, y) || wetBy(x, y) > -1.0) return 3;
+    if (core && core.inCore(x, y)) return 6;   // (a real old town has its own streets: brief 65)
     for (const f of fields) if (U.dxy(f.x, f.y, x, y) < f.r) return 5;
     for (const q of squaresAt) if (inRect(q, x, y, 0.25)) return 6;
     for (const q of parkRects) if (inRect(q, x, y, 0.25)) return 6;
@@ -373,7 +387,9 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   };
   const blocked = (x, y) => { const k = rasAt(x, y); return k < 0 ? 2 : WHY[ras[k]]; };
   const rasClear = q => { const m = Math.max(q.w, q.h) / 2 + 0.5, i0 = Math.max(0, Math.floor((q.x - m - rx0) / RES)), i1 = Math.min(rn - 1, Math.ceil((q.x + m - rx0) / RES)), j0 = Math.max(0, Math.floor((q.y - m - ry0) / RES)), j1 = Math.min(rn - 1, Math.ceil((q.y + m - ry0) / RES)); for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) ras[j * rn + i] = 0; };
-  const sizeAt = (x, y, fam) => { const k = rasAt(x, y); return SZ[k < 0 ? 'sub' : DK[rasD[k]]] * sizeK * (fam ? (st.ax || 1) : (st.ay || 1)); };
+  // (a district may space its two families apart: the downtown's long blocks and short ones, brief 65)
+  const szOf = (d, fam) => { const s = SZ[d] || SZ.sub; return typeof s === 'number' ? s : s[fam ? 1 : 0]; };
+  const sizeAt = (x, y, fam) => { const k = rasAt(x, y); return szOf(k < 0 ? 'sub' : DK[rasD[k]], fam) * sizeK * (fam ? (st.ax || 1) : (st.ay || 1)); };
   const square = (x, y, w, h, a, round) => { const q = { x, y, w, h, a, round }; squares.push(q); squaresAt.push(q); rasClear(q); Bk.add([x, y, x, y, 'sq']); };
   /* the template's own lines: the old town's boulevard on the wall line, a grid's old diagonal, diagonal avenues,
      the stars' boulevards; each a line of the field too, so the blocks beside it front it */
@@ -384,6 +400,28 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     const pts = [];
     for (let q = 0; q <= 64; q++) { const a = q / 64 * Math.PI * 2, rr = F.rho(a); pts.push(F.toW(F.ou + Math.cos(a) * rr, F.ov + Math.sin(a) * rr)); }
     addSt({ cls: 'art', pts, ring: true, boul: true }, 'wall');
+  }
+  /* a European town's old town is a real one (brief 65, city-cores.js): one of five, picked, turned and mirrored by
+     the town, at its real scale, inside where its walls were. Its streets are laid now, so the field follows them
+     and the traced streets outside run on to meet them; its lanes on foot are drawn and not driven; its buildings
+     go to the blocks between its streets once the faces are found (below) */
+  let core = null;
+  if (c.lat.rho && (c.style === 'eu' || c.style === 'ind') && IC.CITY_CORES && IC.CITY_CORES.length) {
+    const hn = [...(c.name || "")].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) % 100003, 7), hc = k => U.hash(hn, k * 13 + 1), CR = IC.CITY_CORES[Math.floor(hc(1) * IC.CITY_CORES.length)], u = IC.unpackCore(CR);
+    const o = F.toW(F.ou, F.ov), wall = [];
+    for (let q = 0; q < 48; q++) { const a = q / 48 * Math.PI * 2, rr = F.rho(a); wall.push(F.toW(F.ou + Math.cos(a) * rr, F.ov + Math.sin(a) * rr)); }
+    // (the real one's own edge, a little inside it, where its data thins out)
+    const rr = CR.r * 10 * 0.96, th = hc(2) * Math.PI * 2, mir = hc(3) < 0.5 ? -1 : 1, ct = Math.cos(th), sn = Math.sin(th);
+    const tf = (x, y) => { const X = x * mir / 100, Y = y / 100; return { x: o.x + X * ct - Y * sn, y: o.y + X * sn + Y * ct }; };
+    const pip = (P, x, y) => { let ins = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) ins = !ins; } return ins; };
+    const inCore = (x, y) => U.dxy(x, y, o.x, o.y) < rr && pip(wall, x, y);
+    core = { CR, u, o, rr, tf, inCore, walks: [] };
+    for (const s of u.streets) {
+      let run = [];
+      const flush = () => { if (run.length >= 2) { if (s.c === 0) core.walks.push(run); else addSt({ cls: 'st', pts: run, core: true, stop: 3, pad: 0.05 }, 'st'); } run = []; };
+      for (let i = 0; i < s.p.length; i += 2) { const p = tf(s.p[i], s.p[i + 1]); if (inCore(p.x, p.y) && !W.inLake(p.x, p.y)) run.push(p); else flush(); }
+      flush();
+    }
   }
   const clearAt = (x, y) => !blocked(x, y);   // (in town and nothing in the way)
   if (bw) {
@@ -451,7 +489,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     }
   }
   if (st.square) openCells(-1, -1, 2, 2, rc => square(rc.x, rc.y, rc.w, rc.h, rc.a));
-  if (c.lat.rho) { const o = F.toW(F.ou, F.ov); if (inTown(o.x, o.y) && !blocked(o.x, o.y)) square(o.x, o.y, 1.3, 1.0, FL.ang(o.x, o.y)); }
+  if (c.lat.rho && !core) { const o = F.toW(F.ou, F.ov); if (inTown(o.x, o.y) && !blocked(o.x, o.y)) square(o.x, o.y, 1.3, 1.0, FL.ang(o.x, o.y)); }
   FL.n = -1;   // (the field's lines changed)
   const FLD = IC.cityField(c);
   /* the ring road, a grid's downtown loop and a boulevard city's ring boulevard, traced on the field: a loop of
@@ -517,7 +555,9 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   /* the blocks: the faces of the net (streets, avenues, roads, and the city's edge, the banks and the shores as
      lines nothing draws), each with the rectangle that fits it, set back from the kerbs */
   const faceLines = [], SW = IC.ROAD_SPEC;
-  const hw2 = { hw: 1.25, rd: SW.rd.w / 2 + 0.2, lc: SW.lc.w / 2 + 0.2, sp: SW.sp.w / 2 + 0.15, art: SW.art.w / 2 + 0.08, rail: 0.6, ring: SW.ring.w / 2 + 0.3 };
+  // (streets and avenues set back to the real corridor from building line to building line, brief 65)
+  const RFab = IC.REAL_FABRIC, stPad = Math.max(SW.st.w / 2 + 0.03, RFab.corSt / 2), artPad = Math.max(SW.art.w / 2 + 0.03, RFab.corArt / 2);
+  const hw2 = { hw: 1.25, rd: SW.rd.w / 2 + 0.2, lc: SW.lc.w / 2 + 0.2, sp: SW.sp.w / 2 + 0.15, art: artPad, rail: 0.6, ring: SW.ring.w / 2 + 0.3 };
   for (const l of streets) {
     const pts = l.pts.slice();
     // the virtual tail of a street to what stopped it, so the face closes
@@ -529,7 +569,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
       if (e.to === 'edge' || e.to === 'turn' || e.to === 'long') { const [u0, v0] = F.toG(p.x, p.y), i0 = Math.floor(u0 / SP), j0 = Math.floor(v0 / SP); ex = 0.3; for (let d = 0.1; d <= 2.5; d += 0.1) { const [u, v] = F.toG(p.x + ux * d, p.y + uy * d); if (Math.floor(u / SP) !== i0 || Math.floor(v / SP) !== j0) { ex = d + 0.08; break; } } }
       const t = { x: p.x + ux * ex, y: p.y + uy * ex }; if (end) pts.push(t); else pts.unshift(t);
     }
-    faceLines.push({ pts, w: hw2[l.cls] || SW.st.w / 2 + 0.08, l });
+    faceLines.push({ pts, w: l.pad || hw2[l.cls] || stPad, l });
   }
   for (const s of roads) faceLines.push({ pts: [{ x: s[0], y: s[1] }, { x: s[2], y: s[3] }], w: hw2[s[4]] || 0.4, road: s[4] });
   for (const s of rivSegs) faceLines.push({ pts: [{ x: s[0], y: s[1] }, { x: s[2], y: s[3] }], w: s[4] + 1.2, virt: true });
@@ -552,12 +592,14 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     if (IC.ixClear && IC.ixClear(W, rc.x, rc.y, Math.max(rc.w, rc.h) * 0.35, ixs)) return null;
     blocks.push(b); return b;
   };
+  const realFaces = [];
   for (const fc of faces) {
+    if (core && core.inCore(fc.x, fc.y)) { realFaces.push(fc); continue; }
     const x = cellXY(fc.x, fc.y);
     if (!x || fc.area < 0.4) continue;
     if (squaresAt.some(q => inRect(q, fc.x, fc.y, 0)) || parkRects.some(q => inRect(q, fc.x, fc.y, 0))) continue;
     if (W.inLake(fc.x, fc.y) || wetBy(fc.x, fc.y) > -0.5) continue;
-    const old = x.d === 'old', sz = (SZ[x.d] || SZ.sub) * sizeK;
+    const old = x.d === 'old', sz = Math.max(szOf(x.d, 0), szOf(x.d, 1)) * sizeK;
     const rc = IC.fabricRect(fc, old ? 0.4 : x.d === 'biz' || x.d === 'dense' ? 0.5 : 0.65);
     if (!rc) continue;
     if (parkCells.has(x.k)) { parksL.push({ x: rc.x, y: rc.y, rx: rc.w * 0.48, ry: rc.h * 0.46, a: rc.a }); continue; }
@@ -569,7 +611,9 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
       mkBlock(x, p, old ? 'old' : formFor(c, st, { i: x.i, j: x.j, d: x.d, q: x.q, park: x.park, art }), old ? { fine: true } : null);
     }
   }
+  if (core) realBlocks(c, core, realFaces, cellXY, mkBlock, parksL, squares);
   c.streets = streets; c.blocks = blocks; c.parks = parksL; c.squares = squares;
+  if (core) c.walks = core.walks; else delete c.walks;
   closeStreets(c, blocks);
   // what could not be tied, and has no head of its own, is a stub: take it away, and tie again, since an end that
   // stood on it is loose now (a few rounds settle it)
@@ -607,6 +651,60 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   c.mix = IC.cityMix(c);
   return c;
 };
+
+/* the blocks of a real old town (brief 65): every face of its streets that has buildings in it is a block of its
+   own shape (b.pg, the face set back from its streets, in the block's frame) holding those buildings (b.rb, their
+   footprints in the block's frame); a small face with none is a square, a larger one a garden */
+function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares) {
+  const B = 2, cellsF = new Map(), key = (i, j) => i * 100000 + j;
+  faces.forEach((f, k) => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of f.poly) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    f.bl = [];
+    for (let i = Math.floor(x0 / B); i <= Math.floor(x1 / B); i++) for (let j = Math.floor(y0 / B); j <= Math.floor(y1 / B); j++) { const q = key(i, j); let L = cellsF.get(q); if (!L) cellsF.set(q, L = []); L.push(k); }
+  });
+  const pip = (P, x, y) => { let ins = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) ins = !ins; } return ins; };
+  for (const fp of core.u.bld) {
+    // (the middle first: most of a sample's buildings lie outside the town's old town and are never turned)
+    let mx = 0, my = 0; const n = fp.length / 2;
+    for (let i = 0; i < fp.length; i += 2) { mx += fp[i]; my += fp[i + 1]; }
+    const m = core.tf(mx / n, my / n), cx = m.x, cy = m.y;
+    if (!core.inCore(cx, cy)) continue;
+    const L = cellsF.get(key(Math.floor(cx / B), Math.floor(cy / B))); if (!L) continue;
+    for (const k of L) if (pip(faces[k].poly, cx, cy)) { const P = []; for (let i = 0; i < fp.length; i += 2) P.push(core.tf(fp[i], fp[i + 1])); faces[k].bl.push(P); break; }
+  }
+  // a polygon set back from each edge by its own distance (the street's half width and pavement)
+  const inset = (P, pads) => {
+    let A = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; A += p.x * q.y - q.x * p.y; }
+    const s = A > 0 ? 1 : -1, n = P.length, L = [];
+    for (let i = 0; i < n; i++) { const p = P[i], q = P[(i + 1) % n], d = U.dist(p, q) || 1e-6, nx = -(q.y - p.y) / d * s, ny = (q.x - p.x) / d * s, w = Math.min(pads[i] || 0, 0.12); L.push([p.x + nx * w, p.y + ny * w, (q.x - p.x) / d, (q.y - p.y) / d]); }
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = L[(i + n - 1) % n], b = L[i], den = a[2] * b[3] - a[3] * b[2];
+      if (Math.abs(den) < 0.05) { out.push({ x: b[0], y: b[1] }); continue; }
+      const t = ((b[0] - a[0]) * b[3] - (b[1] - a[1]) * b[2]) / den;
+      out.push(Math.abs(t) > 0.6 ? { x: b[0], y: b[1] } : { x: a[0] + a[2] * t, y: a[1] + a[3] * t });
+    }
+    return out;
+  };
+  for (const f of faces) {
+    if (!f.bl.length) {
+      // (an open face: a paved square if it is small, a garden if not)
+      if (f.area < 0.03) continue;
+      const rc = IC.fabricRect(f, 0.1); if (!rc) continue;
+      if (f.area < 0.3) squares.push({ x: rc.x, y: rc.y, w: rc.w, h: rc.h, a: rc.a }); else parksL.push({ x: rc.x, y: rc.y, rx: rc.w * 0.48, ry: rc.h * 0.46, a: rc.a });
+      continue;
+    }
+    // the block's frame: along the face's longest edge, its box round the face
+    let a = 0, bl = -1; for (let i = 0; i < f.poly.length; i++) { const p = f.poly[i], q = f.poly[(i + 1) % f.poly.length], d = U.dist(p, q); if (d > bl) { bl = d; a = Math.atan2(q.y - p.y, q.x - p.x); } }
+    const G = inset(f.poly, f.pads), ca = Math.cos(a), sa = Math.sin(a), loc = p => [(p.x - f.x) * ca + (p.y - f.y) * sa, -(p.x - f.x) * sa + (p.y - f.y) * ca];
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of G.concat(...f.bl)) { const [u, v] = loc(p); x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); }
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, X = f.x + mx * ca - my * sa, Y = f.y + mx * sa + my * ca;
+    const fr = p => { const [u, v] = loc(p); return [Math.round((u - mx) * 1000) / 1000, Math.round((v - my) * 1000) / 1000]; };
+    const x = cellXY(f.x, f.y) || { d: 'old', i: 0, j: 0 };
+    mkBlock(Object.assign({}, x, { d: 'old' }), { x: X, y: Y, w: x1 - x0, h: y1 - y0, a }, 'real', { fine: true, pg: [].concat(...G.map(fr)), rb: f.bl.map(P => [].concat(...P.map(fr))) });
+  }
+}
 
 /* the field of a city (cityfabric.js): its grid and radial by style, bent by the style's warp, following the roads,
    avenues and railways near it and its river's banks. c.fld is plain data, so a save keeps it. */

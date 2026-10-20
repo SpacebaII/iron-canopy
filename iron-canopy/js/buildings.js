@@ -62,7 +62,8 @@ function parcels(len, lo, hi, h, salt) {
    own the corners. o: { lo, hi } parcel widths, { d0, d1 } depths, { f0, f1 } floors, pitched share, pass share */
 function perimeter(P, cx, cy, W2, H2, h, salt, T, o) {
   const dep = (s, i) => Math.min(o.d0 + h(salt + s * 50 + i, 5) * (o.d1 - o.d0), Math.min(W2, H2) * 0.8);
-  const floors = (s, i) => o.f0 + Math.floor(h(salt + s * 70 + i, 9) * (o.f1 - o.f0 + 1));
+  // (brief 65: floors from the real samples of the form, lower away from the centre by the density gradient)
+  const floors = (s, i) => o.real ? U.clamp(Math.round(IC.realFloors(o.real, h(salt + s * 70 + i, 9), [o.f0, o.f0, o.f1, o.f1, o.f1]) * (P.g || 1)), 2, o.f1) : o.f0 + Math.floor(h(salt + s * 70 + i, 9) * (o.f1 - o.f0 + 1));
   const put = (x, y, w, hh, s, i, corner) => {
     const fl = floors(s, i) + (corner ? 1 : 0), pitched = !corner && h(salt + s * 90 + i, 11) < o.pitched;
     const c = roofOf(T, h(salt + s * 110 + i, 13), h(salt + s * 130 + i, 17));
@@ -108,7 +109,7 @@ FORMS.old = (P, b, h, T) => {
   const W2 = b.w / 2, H2 = b.h / 2, small = Math.min(b.w, b.h);
   if (small > 0.45 && small < 1.0 && h(1, 41) < 0.07) return FORMS.church(P, b, h, T);
   P.ground = 'pave';
-  const o = { lo: 0.07, hi: 0.17, d0: 0.08, d1: 0.14, f0: 3, f1: 4, pitched: 0.9, pass: 0.08, court: 'court' };
+  const o = { lo: 0.07, hi: 0.17, d0: 0.08, d1: 0.14, f0: 3, f1: 7, real: 'old', pitched: 0.9, pass: 0.08, court: 'court' };
   if (small < 0.5) { perimeter(P, 0, 0, W2, H2, h, 1, T, o); return; }
   const G = cells(b, 0.6, 0.05, (cx, cy, w2, h2, i, j) => perimeter(P, cx, cy, w2, h2, h, 1 + i * 13 + j * 101, T, o));
   laneGrid(P, b, G, 0.05);
@@ -118,7 +119,7 @@ FORMS.court = (P, b, h, T) => {
   const W2 = b.w / 2, H2 = b.h / 2, small = Math.min(b.w, b.h);
   if (small > 0.8 && h(1, 43) < 0.04) return FORMS.school(P, b, h, T);
   P.ground = 'pave';
-  const o = { lo: 0.12, hi: 0.3, d0: 0.11, d1: 0.17, f0: 4, f1: 6, pitched: 0.65, pass: 0.06, court: 'green' };
+  const o = { lo: 0.12, hi: 0.3, d0: 0.11, d1: 0.17, f0: 4, f1: 8, real: 'court', pitched: 0.65, pass: 0.06, court: 'green' };
   if (small < 1.0) { perimeter(P, 0, 0, W2, H2, h, 2, T, o); return; }
   const G = cells(b, 0.9, 0.08, (cx, cy, w2, h2, i, j) => perimeter(P, cx, cy, w2, h2, h, 2 + i * 13 + j * 101, T, o));
   laneGrid(P, b, G, 0.08);
@@ -150,14 +151,16 @@ FORMS.tower = (P, b, h, T) => {
     const k = one || (i === 0 && j === 0) ? 0.16 + h(i, j) * 0.84 : h(i, j);
     if (k < 0.08) { lot(P, cx, cy, w2 * 2, h2 * 2, 'park'); return; }
     if (k < 0.16) { lot(P, cx, cy, w2 * 2, h2 * 2, 'plaza'); for (let q = 0; q < 5; q++) P.trees.push(cx + (h(q, i + 3) - 0.5) * w2 * 1.6, cy + (h(q + 9, j) - 0.5) * h2 * 1.6); return; }
-    if (k < 0.36) { box(P, cx, cy, w2 * 1.7, h2 * 1.7, 0.16 + h(i, j + 2) * 0.14, tint(FLAT[(i + j) % 4], 4), 'flat', 'office'); return; }
+    if (k < 0.36) { box(P, cx, cy, w2 * 1.7, h2 * 1.7, Math.max(5, IC.realFloors('tower', h(i, j + 2) * 0.5, [7, 14, 30, 43, 67]) * (P.gt || 1)) * 0.034, tint(FLAT[(i + j) % 4], 4), 'flat', 'office'); return; }
     // the podium, the whole plot but a pavement
     box(P, cx, cy, w2 * 1.9, h2 * 1.9, 0.06 + h(j, i) * 0.04, [150, 150, 144], 'flat', 'podium');
     const nT = k > 0.72 ? 1 : 2;
     for (let q = 0; q < nT; q++) {
       const tw = w2 * 2 * (nT === 1 ? 0.5 + h(q, i) * 0.3 : 0.38), th = h2 * 2 * (nT === 1 ? 0.45 + h(j, q) * 0.35 : 0.4), tx = cx + (nT === 1 ? 0 : (q - 0.5) * w2 * 1.0), ty = cy + (h(q + 3, j + i) - 0.5) * (h2 * 2 - th) * 0.8;
       const glass = h(q, j + 2) < 0.6;
-      box(P, tx, ty, tw, th, 0.25 + h(q + 7, i * 3 + j) * 0.9, glass ? tint(GLASS, h(q, i + 4) * 30) : tint(FLAT[q % FLAT.length], 0), glass ? 'glass' : 'flat', 'tower');
+      // (floors from the real downtowns' towers, 3.4 m each, the tallest in the middle of town: brief 65)
+      const fl = Math.max(8, IC.realFloors('tower', h(q + 7, i * 3 + j), [7, 14, 30, 43, 67]) * (P.gt || 1));
+      box(P, tx, ty, tw, th, fl * 0.034, glass ? tint(GLASS, h(q, i + 4) * 30) : tint(FLAT[q % FLAT.length], 0), glass ? 'glass' : 'flat', 'tower');
     }
   });
   laneGrid(P, b, G, 0.14);
@@ -167,7 +170,7 @@ FORMS.office = (P, b, h, T) => {
   P.ground = 'lawn';
   cells(b, 1.6, 0.3, (cx, cy, w2, h2, i, j) => {
     lot(P, cx, cy + h2 * 0.55, w2 * 2, h2 * 0.9, 'park');
-    box(P, cx, cy - h2 * 0.5, w2 * 1.6, h2 * 0.7, 0.08 + h(i, j) * 0.06, tint(FLAT[(i + j) % 4], 0), 'flat', 'office');
+    box(P, cx, cy - h2 * 0.5, w2 * 1.6, h2 * 0.7, Math.max(2, IC.realFloors('office', h(i, j), [1, 2, 3, 5, 7])) * 0.034, tint(FLAT[(i + j) % 4], 0), 'flat', 'office');
     P.trees.push(cx - w2 * 0.9, cy, cx + w2 * 0.9, cy, cx, cy - h2 * 0.95);
   });
   void T;
@@ -177,8 +180,10 @@ FORMS.slab = (P, b, h, T) => {
   P.ground = 'grass';
   const G = cells(b, 1.9, 0.1, (cx, cy, w2, h2, i, j) => {
     const k = h(i, j), c = tint(FLAT[Math.floor(k * 4)], 6);
-    if (k < 0.5) for (let q = 0; q < 3; q++) box(P, cx, cy - h2 + h2 * 2 * (0.2 + q * 0.3), w2 * 1.5, 0.16, 0.14 + h(q, i) * 0.06, c, 'flat', 'flats');
-    else { box(P, cx - w2 * 0.6, cy, 0.16, h2 * 1.6, 0.14, c, 'flat', 'flats'); box(P, cx + w2 * 0.1, cy, 0.16, h2 * 1.6, 0.14, c, 'flat', 'flats'); if (k > 0.8) box(P, cx + w2 * 0.65, cy - h2 * 0.2, 0.3, 0.3, 0.35, c, 'flat', 'tower'); }
+    // (floors from the real estates, Marzahn to Petrzalka: slabs of five to eleven, a point block of twelve to eighteen)
+    const fl = u => Math.round(IC.realFloors('slab', u, [2, 6, 10, 13, 18])) * 0.029;
+    if (k < 0.5) for (let q = 0; q < 3; q++) box(P, cx, cy - h2 + h2 * 2 * (0.2 + q * 0.3), w2 * 1.5, 0.16, fl(0.4 + h(q, i) * 0.4), c, 'flat', 'flats');
+    else { const f0 = fl(0.4 + h(i, j + 5) * 0.4); box(P, cx - w2 * 0.6, cy, 0.16, h2 * 1.6, f0, c, 'flat', 'flats'); box(P, cx + w2 * 0.1, cy, 0.16, h2 * 1.6, f0, c, 'flat', 'flats'); if (k > 0.8) box(P, cx + w2 * 0.65, cy - h2 * 0.2, 0.3, 0.3, fl(0.85 + h(j, i + 3) * 0.15), c, 'flat', 'tower'); }
     for (let q = 0; q < 4; q++) P.trees.push(cx - w2 + w2 * 2 * h(q, i + 9), cy - h2 + h2 * 2 * h(j + 9, q));
     P.lanes.push([cx - w2, cy + h2 * 0.95, cx + w2, cy + h2 * 0.95, 0.03, 'path']);
   });
@@ -365,17 +370,48 @@ LAND.ministry = (P, b, h) => {
   void W2;
 };
 
+/* a real old town's block (brief 65, cities.js realBlocks): its own buildings, footprints from the map of a real
+   town (b.rb, in the block's frame). Each keeps its outline (q.pg) for the map and stands as its smallest enclosing
+   rectangle in the 3D view; floors from the real old towns' (three to seven, lower away from the middle), roofs
+   mostly pitched; a footprint over 1,500 m² is a church or a hall, taller, with a hipped roof */
+FORMS.real = (P, b, h, T) => {
+  P.ground = 'pave';
+  (b.rb || []).forEach((F, k) => {
+    const n = F.length / 2; if (n < 3) return;
+    let A = 0, cx = 0, cy = 0;
+    for (let i = 0; i < n; i++) { const x0 = F[i * 2], y0 = F[i * 2 + 1], x1 = F[(i + 1) % n * 2], y1 = F[(i + 1) % n * 2 + 1], k2 = x0 * y1 - x1 * y0; A += k2; cx += (x0 + x1) * k2; cy += (y0 + y1) * k2; }
+    if (Math.abs(A) < 1e-7) return;
+    cx /= 3 * A; cy /= 3 * A; A = Math.abs(A) / 2;
+    // the smallest rectangle round it, along one of its edges
+    let best = null;
+    for (let i = 0; i < n; i++) {
+      const ex = F[(i + 1) % n * 2] - F[i * 2], ey = F[(i + 1) % n * 2 + 1] - F[i * 2 + 1], L = Math.hypot(ex, ey); if (L < 1e-4) continue;
+      const ux = ex / L, uy = ey / L; let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+      for (let j = 0; j < n; j++) { const dx = F[j * 2] - cx, dy = F[j * 2 + 1] - cy, u = dx * ux + dy * uy, v = -dx * uy + dy * ux; u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+      const ar = (u1 - u0) * (v1 - v0);
+      if (!best || ar < best.ar) best = { ar, a: Math.atan2(uy, ux), w: u1 - u0, h: v1 - v0, x: cx + ux * (u0 + u1) / 2 - uy * (v0 + v1) / 2, y: cy + uy * (u0 + u1) / 2 + ux * (v0 + v1) / 2 };
+    }
+    if (!best) return;
+    const big = A > 0.15, u = h(k, 41);
+    const fl = big ? 0 : U.clamp(Math.round(IC.realFloors('old', u, [3, 5, 6, 6, 8]) * (P.g || 1)), 2, 7), pitched = !big && h(k, 43) < 0.85;
+    const c = big ? tint([120, 104, 92], (h(k, 45) - 0.5) * 20) : roofOf(T, h(k, 47), h(k, 49));
+    P.bld.push({ x: best.x, y: best.y, w: Math.max(0.01, best.w), h: Math.max(0.01, best.h), a: best.a || 1e-6, pg: F, ht: big ? 0.16 + h(k, 51) * 0.1 : fl * 0.03 + (pitched ? 0.015 : 0.006), c, r: big ? 'hip' : pitched ? 'pitch' : 'flat', k: big ? 'church' : 'flats' });
+  });
+};
+
 /* ---------- the plan ---------- */
 IC.blockPlan = function (b, c) {
   if (b._plan) return b._plan;
   const sd = Math.floor(b.seed || 0), h = (i, j) => U.hash(sd * 3 + i, j * 7 + 1), T = IC.cityTones(c);
   const P = { ground: 'grass', lots: [], lanes: [], bld: [], trees: [] };
+  // the density gradient (brief 65): flats a little lower and towers much lower away from the middle of town
+  if (c) { const gr = IC.realGrad(U.dist(b, c) / 10); P.g = U.clamp(Math.sqrt(gr), 0.6, 1); P.gt = U.clamp(Math.pow(gr, 0.8), 0.35, 1); }
   const fn = (b.land && LAND[b.land]) || FORMS[b.f];
   if (fn) fn(P, b, h, T);
   else box(P, 0, 0, b.w * 0.7, b.h * 0.7, 0.08, [170, 166, 158], 'flat', 'bld');
   // nothing past the block's edge: a building that would stick out is pulled in
   const W2 = b.w / 2, H2 = b.h / 2;
-  for (const q of P.bld) { if (q.a) continue; if (q.w > b.w) q.w = b.w; if (q.h > b.h) q.h = b.h; q.x = U.clamp(q.x, -W2 + q.w / 2, W2 - q.w / 2); q.y = U.clamp(q.y, -H2 + q.h / 2, H2 - q.h / 2); }
+  for (const q of P.bld) { if (q.a || q.pg) continue; if (q.w > b.w) q.w = b.w; if (q.h > b.h) q.h = b.h; q.x = U.clamp(q.x, -W2 + q.w / 2, W2 - q.w / 2); q.y = U.clamp(q.y, -H2 + q.h / 2, H2 - q.h / 2); }
   P.trees = P.trees.filter((v, i, A) => i % 2 ? Math.abs(A[i - 1]) <= W2 && Math.abs(v) <= H2 : Math.abs(v) <= W2 && Math.abs(A[i + 1]) <= H2);
   return b._plan = P;
 };
