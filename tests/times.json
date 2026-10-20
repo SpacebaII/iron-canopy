@@ -190,5 +190,8 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "front side: a terminal gets a curved forecourt, an airport road and car parks shaped to the ground, as many spaces as travellers bring": 11.1,
+ "front side: with no room to park, travellers choose other airports, and with the developers turned off nothing is built": 8.9,
+ "builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area": 7.8
 }

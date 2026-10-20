@@ -1604,7 +1604,7 @@ test('overlaps: the builder refuses a building on a taxiway, a road or the lands
   assert(!IC.aptCanPlace(S, cap, { kind: 'fire', x: n.x, y: n.y, a: 0 }) && /taxiway/.test(IC.aptPlaceWhy), `a fire station on a taxiway: "${IC.aptPlaceWhy}"`);
   // on the landside: a car park and its road
   const park = cap.land.items.find(it => it.kind === 'park');
-  assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: park.x, y: park.y, a: park.a }) && /car park/i.test(IC.aptPlaceWhy), `a hangar on the car park: "${IC.aptPlaceWhy}"`);
+  assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: park.x, y: park.y, a: park.a }) && /car park|parking garage/i.test(IC.aptPlaceWhy), `a hangar on the car park: "${IC.aptPlaceWhy}"`);
   const kerb = cap.land.roads.find(r => r.kerb), mid = { x: (kerb.pts[0].x + kerb.pts[1].x) / 2, y: (kerb.pts[0].y + kerb.pts[1].y) / 2 };
   // (a building small enough to sit on the road alone: the fuel farm, at its real size, reaches the terminal too)
   assert(!IC.aptCanPlace(S, cap, { kind: 'gradar', x: mid.x, y: mid.y, a: 0 }) && /road/.test(IC.aptPlaceWhy), `a ground radar on the kerb road: "${IC.aptPlaceWhy}"`);
@@ -1613,6 +1613,64 @@ test('overlaps: the builder refuses a building on a taxiway, a road or the lands
   if (e) { const p = e.pts.find(p => U.dist(p, cap) < 50 && U.dist(p, cap) > 25 && IC.aptInSite(S, cap, p)); assert(!IC.aptCanPlace(S, cap, { kind: 'hangar', x: p.x, y: p.y, a: 0 }) && /road|street|lane/.test(IC.aptPlaceWhy), `a hangar on a road: "${IC.aptPlaceWhy}"`); }
   // clear ground is fine
   assert(IC.aptOverlaps(S, cap).length === 0, 'the test airport overlaps before anything is built');
+});
+
+/* ---------- the front side and outlines (brief 61) ---------- */
+/* the landside at a given number of passengers an hour, ticked until nothing more is added */
+const growFront = (S, ap, pax) => { const L = IC.landInit(ap); for (let i = 0, n = -1; i < 80 && L.items.length !== n; i++) { n = i < 3 ? -1 : L.items.length; ap.paxRate = pax; L.pax = pax; L.t = 0; IC.landsideTick(S, ap, 1); } };
+const square = P => P.length === 4 && P.every((p, i) => { const a = P[(i + 3) % 4], b = P[(i + 1) % 4]; return Math.abs((p.x - a.x) * (b.x - p.x) + (p.y - a.y) * (b.y - p.y)) < 1e-3 * U.dist(p, a) * U.dist(p, b) + 1e-6; });
+test('front side: a terminal gets a curved forecourt, an airport road and car parks shaped to the ground, as many spaces as travellers bring', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap];
+  growFront(S, cap, 3000);
+  const L = cap.land, A = IC.landAccess(S, cap), parks = L.items.filter(it => it.kind === 'park');
+  assert(A.need > 5000 && A.have >= A.need * 0.8, `${A.have} spaces for ${A.need} cars`);
+  assert(L.items.some(it => it.kind === 'garage'), 'a busy terminal has no parking garage');
+  assert(parks.filter(it => it.poly && !square(IC.partOutline(it))).length >= parks.length / 2, 'the car parks are all rectangles');
+  const loop = L.roads.find(r => r.kind === 'loop' && r.by), road = L.roads.find(r => r.kind === 'approach');
+  assert(loop && loop.pts.length > 6, 'the forecourt loop is not curved');
+  assert(road && road.name === 'Airport road' && !IC.aptInFence(cap, road.pts[road.pts.length - 1]), 'no airport road out past the fence');
+  assert(IC.aptOverlaps(S, cap).length === 0, IC.aptOverlaps(S, cap).map(o => o.text).join('; '));
+  // (the country's road ends at the airport road's gate)
+  const n = S.world.nodes[cap.id];
+  assert(n && n.gate && U.dist(n, road.pts[road.pts.length - 1]) < 2, 'the country road does not meet the airport road');
+});
+test('front side: with no room to park, travellers choose other airports, and with the developers turned off nothing is built', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap];
+  IC.landAct(S, cap, { op: 'auto', v: '0' });
+  growFront(S, cap, 3000);
+  const L = cap.land; for (let i = 0; i < 20; i++) { L.t = 0; IC.landsideTick(S, cap, 1); }
+  const A = IC.landAccess(S, cap);
+  assert(!L.items.some(it => it.kind === 'park' || it.kind === 'garage' || it.kind === 'hotel'), `developers built ${L.items.map(it => it.kind).join(', ')}`);
+  assert(A.short > 0.9 && L.accF < 0.8, `short ${A.short.toFixed(2)}, draw ${L.accF.toFixed(2)}`);
+  assert(IC.aptStats(S, cap).warn.some(w => /car parks hold/.test(w)), 'the airport panel does not say the car parks are short');
+  // a car park the player draws counts, and pays
+  const t = cap.parts.find(p => p.kind === 'terminal'), sd = Math.sign(IC.rectLocal(t, IC.landFront(S, cap, t).loop[3]).y) || 1;
+  const c = IC.rectWorld(t, 0, sd * (t.h / 2 + 6)), m = IC.bldMode(S, cap, 'surface'); m.surf = 'asph'; m.shape = 'poly'; S.budget = 1e5;
+  for (const p of [{ x: c.x - 3, y: c.y - 2 }, { x: c.x + 3, y: c.y - 2 }, { x: c.x + 2, y: c.y + 2 }, { x: c.x - 3, y: c.y + 2 }, { x: c.x - 3, y: c.y - 2 }]) IC.buildInput(S, m, p, 0, 20, true);
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  const sf = cap.parts[cap.parts.length - 1]; sf.built = true;
+  assert(IC.landAccess(S, cap).own > 7000, `the drawn car park holds ${IC.landAccess(S, cap).own} cars`);
+});
+test('builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S; S.budget = 1e5;
+  const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
+  const m = IC.bldMode(S, ap, 'apron'), c = { x: ap.x + 30, y: ap.y + 30 }; m.shape = 'poly';
+  assert(IC.bldOutline(m), 'the apron tool does not draw outlines');
+  const P = [c, { x: c.x + 4, y: c.y }, { x: c.x + 5, y: c.y + 2 }, { x: c.x + 1, y: c.y + 3 }];
+  for (const p of P) assert(IC.buildInput(S, m, p, 0, 20, true) === 'point', m.err);
+  const plan = IC.bldPlanOf(S, m, c, 0.2, true);
+  assert(plan.ok && plan.text.some(t => /Apron 10\.5 ha: about \d+ stands/.test(t)), plan.why || plan.text.join(' · '));
+  IC.buildInput(S, m, c, 0, 20, true);
+  assert(m.set && IC.buildFinish(S, m) === 'built', m.err);
+  const apr = ap.parts[ap.parts.length - 1];
+  assert(apr.kind === 'apron' && apr.poly && apr.poly.length === 4 && Math.abs(IC.partArea(apr) - 10.5) < 0.1, 'the apron did not keep its outline');
+  assert(Math.abs(plan.cost - IC.APART.apron.cost * 10.5) < 1, `${U.money(plan.cost)} for 10.5 ha`);
+  // an outline that crosses itself is refused, and says so
+  const m2 = IC.bldMode(S, ap, 'apron'), d = { x: ap.x - 30, y: ap.y + 30 }; m2.shape = 'poly';
+  for (const p of [d, { x: d.x + 4, y: d.y + 3 }, { x: d.x + 4, y: d.y }, { x: d.x, y: d.y + 3 }]) IC.buildInput(S, m2, p, 0, 20, true);
+  assert(/crosses itself/.test(IC.bldPlanOf(S, m2, d, 0.2, true).why), 'a crossed outline is not refused');
 });
 
 /* ---------- roads where they meet (brief 46) ---------- */

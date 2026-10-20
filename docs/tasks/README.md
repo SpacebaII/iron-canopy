@@ -48,6 +48,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 15 | [48 A research tree from day one: small upgrades, real choices, a HOI4 pace](48-research-tree.md) | — | new `research.js`, `IC.TECH`, the Research room, `IC.mod` reads across the airport files, `careerplayer.js` |
 | 15 | [49 The Ministry's agenda: a national focus track for the Career](49-ministry-agenda.md) | 48's `IC.mod` (stacked on 48) | new `agenda.js`, the Career room, agenda hooks in `story.js` |
 | 15 | [50 A story that branches: choices that shape the Career, different every time](50-branching-story.md) | 48, 49 merged | `story.js`, `deck.js`, new `chains.js`, the Journal, the enemy's opening aim and allied aid |
+| 16 | [61 The front side and outlines: airports that are not a collection of rectangles](61-front-side.md) | — | `landside.js`, the outline tool in `builder.js`, `buildbar.js`, `inspector.js`'s landside rows, the gate in `growth.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.
