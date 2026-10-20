@@ -582,6 +582,7 @@ function onAct(e) {
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
     case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
     case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
+    case 'land': { const ap = selAp(); if (ap && IC.landAct) IC.landAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) IC.setNight(S, ap, IC.nightPolicy(ap) === 'curfew' ? 'quota' : 'curfew'); break; }
@@ -716,7 +717,7 @@ cv.addEventListener('pointerdown', e => {
     if (e.button === 0 && S.mode2 && S.mode2.kind === 'found' && S.mode2.site && U.dist(S.mode2.site, S.hover) < 18) drag.turn = true;
     // (round 1) a two-point piece or area drags out from where the button went down: drag to stretch
     const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
-    if (e.button === 0 && bm && !bm.set && !bm.pts.length && IC.bldDragPart(bm.part)) drag.bstart = { x: S.hover.x, y: S.hover.y };
+    if (e.button === 0 && bm && !bm.set && !bm.pts.length && IC.bldDragPart(bm.part, bm)) drag.bstart = { x: S.hover.x, y: S.hover.y };
     // in the airport's Airspace tab, a ring's edge can be dragged
     if (e.button === 0 && aspEditing()) drag.edge = IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
   }
@@ -823,6 +824,7 @@ window.addEventListener('keydown', e => {
     IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return;
   }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
+  if (bm && lk === 'o' && IC.bldCanOutline(bm.part)) { IC.bbPref('shape', bm.shape === 'poly' ? 'rect' : 'poly'); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
   const fm = S.mode2 && S.mode2.kind === 'found' ? S.mode2 : null;

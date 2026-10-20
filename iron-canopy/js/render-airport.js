@@ -1219,12 +1219,19 @@ function drawLandside(g, S, ap, px, z, night) {
     else if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
     g.restore();
     // (a name once: a lot the map draws in pieces is one lot; on a mapped landside the unnamed lots say nothing)
-    if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) { named.push({ t, x: it.x, y: it.y }); lbl(g, t.toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700); } }
+    if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) named.push({ t, x: it.x, y: it.y, lot: k === 'park' }); }
   }
   // the upper decks: their shadow on the road below, concrete parapets, then the road on top
   g.lineCap = 'round'; g.lineJoin = 'round';
   for (const r of L.roads || []) if ((r.lv || 0) > 0) landRoad(g, r, px, z);
   g.lineCap = 'butt'; g.lineJoin = 'miter';
+  // the names last, over everything, buildings before car parks and none over another
+  const boxes = [];
+  for (const q of named.sort((a, b) => a.lot - b.lot)) {
+    const w = q.t.length * 7 * 0.62 * px + 4 * px, b = [q.x - w / 2, q.y - 6 * px, q.x + w / 2, q.y + 5 * px];
+    if (boxes.some(o => o[0] < b[2] && b[0] < o[2] && o[1] < b[3] && b[1] < o[3])) continue;
+    boxes.push(b); lbl(g, q.t.toUpperCase(), q.x, q.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700);
+  }
 }
 /* one landside road at its level: a tunnel as a faint dashed line, the ground as asphalt with a pale kerb, an upper
    deck with its shadow and parapets; lanes and arrows close in */
@@ -1550,6 +1557,13 @@ IC.drawBuildGhost = function (g, S, px) {
       g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1 * px); g.setLineDash([5 * px, 4 * px]); g.stroke(); g.setLineDash([]);
     } else {
       const w = sp.w || D.w || (D.r || 0.1) * 2, h = sp.h || D.h || (D.r || 0.1) * 2;
+      // (an outline drawn corner by corner, brief 61: its own shape, and the stands its edges will get)
+      if (sp.poly) {
+        g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0); g.beginPath(); sp.poly.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); g.stroke(); g.restore();
+        g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.005, 0.6 * px);
+        for (const st of sp._st || []) { const S0 = IC.STAND[st.size]; g.save(); g.translate(st.x, st.y); g.rotate(st.a); g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore(); }
+        continue;
+      }
       g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0);
       if (D.r) { g.beginPath(); g.arc(0, 0, D.r, 0, 7); g.fill(); g.stroke(); } else { g.fillRect(-w / 2, -h / 2, w, h); g.strokeRect(-w / 2, -h / 2, w, h); }
       // the stands the apron will get
@@ -1566,6 +1580,11 @@ IC.drawBuildGhost = function (g, S, px) {
     if (!rm) { g.beginPath(); g.moveTo(S0.d / 2, 0); g.lineTo(S0.d / 2 - 0.08, -0.05); g.lineTo(S0.d / 2 - 0.08, 0.05); g.closePath(); g.fillStyle = col; g.fill(); g.setLineDash([3 * px, 3 * px]); g.beginPath(); g.moveTo(-S0.d / 2 - 0.1, 0); g.lineTo(st.drive ? S0.d / 2 + 0.1 : S0.d * 0.3, 0); g.stroke(); g.setLineDash([]); }
     g.restore();
     if (!rm && ghostPlan) IC.drawPlane(g, c.x, c.y, a, { s: 'turbo', m: 'narrow', l: 'wide', xl: 'heavy' }[st.size], null, { alpha: 0.35, minPx: 6 });
+  }
+  // an outline being drawn: its sides so far, the one to the cursor, and (faint) the side that would close it
+  if (IC.bldOutline(m) && plan.pts && plan.pts.length >= 2 && !plan.specs.length) {
+    const P = plan.pts; g.save(); g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1.5 * px); g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.stroke();
+    g.setLineDash([4 * px, 4 * px]); g.globalAlpha = 0.5; g.beginPath(); g.moveTo(P[P.length - 1].x, P[P.length - 1].y); g.lineTo(P[0].x, P[0].y); g.stroke(); g.restore();
   }
   // the points placed so far; the last one pulses while the plan is still being drawn
   const pts = m.pts, now = performance.now() / 1000;

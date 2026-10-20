@@ -309,6 +309,7 @@ function options(S, m) {
   if (t === 'taxi') g.push(group('Traffic', chip('oneway', 0, 'Both ways', !m.oneway, 'Aircraft use it either way') + chip('oneway', 1, 'One way', !!m.oneway, 'Only the way it is drawn: arrows on the pavement') + chip('fillet', 1, 'Round corners (F)', !!m.fillet, 'Bends drawn as curves an aircraft can follow')));
   if (STAND_TOOLS[t]) g.push(group('Stands', Object.entries(IC.RAMP_SIZE).map(([k, n]) => chip('size', k, n, (m.size || 'm') === k, `${IC.STAND[k].name} stand, ${Math.round(IC.STAND[k].w * 100)} m wide`)).join('') + chip('drive', '', 'Nose-in', !m.drive, 'Pushed back by a tug to leave') + chip('drive', 1, 'Drive-through', !!m.drive, 'Taxis in and out forwards: no tug, more room')));
   if (ZONE_TOOLS[t]) g.push(group('Zone', [chip('zone', 'auto', 'Auto', !m.zone, 'From what is next to it')].concat(Object.keys(IC.ZONES).map(k => chip('zone', k, ({ civil: 'Passenger', cargo: 'Cargo', light: 'Light', mil: 'Military' })[k] || IC.ZONES[k].name, m.zone === k, `Only ${IC.ZONES[k].name.toLowerCase()} aircraft park here`))).join('')));
+  if (IC.bldCanOutline && IC.bldCanOutline(t)) g.push(group('Shape', chip('shape', 'rect', 'Rectangle', m.shape !== 'poly', 'Drag, or click two opposite corners') + chip('shape', 'poly', 'Outline (O)', m.shape === 'poly', 'Click corner after corner, any shape: round a taxiway, along a road, into a corner of the site')));
   if (t === 'surface') g.push(group('Surface', Object.entries(IC.SURF).map(([k, v]) => chip('surf', k, v.name, (m.surf || 'grass') === k, `${U.money(IC.APART.surface.cost * v.k)} a hectare${v.park ? '; outside the airfield a car park' : ''}`)).join('')));
   if (IC.TERM_KITS && IC.TERM_KITS[t]) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('') + '<em>R turns it</em>'));
   if (t === 'blueprint' && IC.showcaseKeys) g.push(group('Blueprint', IC.showcaseKeys().map(k => chip('bp', k, esc(IC.REAL_APT[k].name), m.bp === k, IC.REAL_APT[k].after)).join('') + '<em>R turns it</em>'));
@@ -327,6 +328,8 @@ IC.bbPref = function (k, v) {
   if (k === 'fillet') val = !(m ? m.fillet : P.fillet);
   if (k === 'drive') val = !!v;
   if (k === 'zone' && v === 'auto') val = null;
+  // (a new shape starts the plan again: corners clicked for one do not make the other)
+  if (k === 'shape' && m && m.kind === 'build' && m.shape !== v) { m.pts = []; m.set = false; m.at = null; }
   P[k] = val;
   if (m && (m.kind === 'build' || m.kind === 'upgrade')) { m[k] = val; m.exitKey = null; }
   IC.ui.refresh(true);
