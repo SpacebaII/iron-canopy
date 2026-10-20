@@ -174,6 +174,14 @@ function dirtyBox(T, x0, y0, x1, y1) {
     if (x1 < tx0 || x0 > tx0 + L.size || y1 < ty0 || y0 > ty0 + L.size) continue;
     t.dirty = true;
   }
+  dirtyUp(x0, y0, x1, y1);
+}
+// the buildings standing up (render-buildings.js) are in tiles of their own, and a roof leans up to 2 km north
+function dirtyUp(x0, y0, x1, y1) {
+  if (IC.bldTiles) for (const t of IC.bldTiles.tiles.values()) {
+    const L = LOD(t.lod), tx0 = t.tx * L.size, ty0 = t.ty * L.size;
+    if (!(x1 < tx0 || x0 > tx0 + L.size || y1 < ty0 || y0 - 2 > ty0 + L.size)) t.dirty = true;
+  }
 }
 
 /* the ground of an airfield: meadow round the fence, mown grass inside it (no crops or trees on an airfield), the
@@ -1039,6 +1047,7 @@ IC.bakeBlock = function (S, b) {
   const fo = W.foreign.some(f => f.blocks.includes(b)), city = W.cities.find(c => c.blocks.includes(b)), town = fo || !!city, foreign = fo;
   const g = T.base.getContext('2d');
   g.save(); g.scale(IC.TS, IC.TS); block(g, b, 0, foreign, town, city); g.restore();
+  dirtyUp(b.x - r, b.y - r, b.x + r, b.y + r);
   for (const t of T.tiles.values()) {
     const L = LOD(t.lod), x0 = t.tx * L.size, y0 = t.ty * L.size;
     if (b.x + r < x0 || b.x - r > x0 + L.size || b.y + r < y0 || b.y - r > y0 + L.size) continue;

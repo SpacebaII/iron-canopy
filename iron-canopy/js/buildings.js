@@ -456,4 +456,50 @@ IC.placeLandmarks = function (W, c, roads) {
   return [...taken];
 };
 
+/* ---------- buildings standing up (brief 65) ----------
+   A block's buildings as prisms in world units, for the map's buildings with height (render-buildings.js): each its
+   outline (x, y pairs), its height, its roof's colour and its walls'. The map is drawn from straight above but the
+   buildings lean back: a roof is drawn IC.LEAN of its height to the north, so a street's south side shows its walls
+   and the buildings in front hide what is behind them. Headless, cached on the block until its plan changes. */
+IC.LEAN = 0.6;
+const WALLS = [[214, 196, 166], [200, 182, 150], [222, 210, 186], [196, 168, 140], [206, 192, 176], [184, 170, 150]];
+IC.blockPrisms = function (b, c) {
+  // (only the forms with a plan: the map paints the fringe's and the estates' own pictures, flat)
+  if (b.hp <= 0 || !((b.land && LAND[b.land]) || FORMS[b.f])) return [];
+  const P = IC.blockPlan(b, c);
+  if (b._pr && b._pr.plan === P) return b._pr.list;
+  const ca = Math.cos(b.a || 0), sa = Math.sin(b.a || 0), sd = Math.floor(b.seed || 0), list = [];
+  const wx = (u, v) => b.x + u * ca - v * sa, wy = (u, v) => b.y + u * sa + v * ca;
+  P.bld.forEach((q, k) => {
+    if (!(q.ht > 0.012)) return;
+    let F;
+    if (q.pg) F = q.pg;
+    else {
+      // a rectangle (turned in the block by q.a), or a round or oval building as a dozen sides
+      const qa = q.a || 0, qc = Math.cos(qa), qs = Math.sin(qa), L = [];
+      if (q.r === 'round' || q.r === 'dome' || q.r === 'oval') for (let i = 0; i < 12; i++) { const t = i / 12 * Math.PI * 2, u = Math.cos(t) * q.w / 2, v = Math.sin(t) * q.h / 2; L.push(q.x + u * qc - v * qs, q.y + u * qs + v * qc); }
+      else for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const x = u * q.w / 2, y = v * q.h / 2; L.push(q.x + x * qc - y * qs, q.y + x * qs + y * qc); }
+      F = L;
+    }
+    const p = new Array(F.length); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (let i = 0; i < F.length; i += 2) { const x = wx(F[i], F[i + 1]), y = wy(F[i], F[i + 1]); p[i] = x; p[i + 1] = y; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const h = U.hash(sd * 5 + k, 77), tiled = q.r === 'pitch' || q.r === 'hip';
+    const w = q.r === 'glass' ? [112, 140, 162] : q.r === 'spire' || q.k === 'church' ? [178, 168, 150] : tiled ? WALLS[Math.floor(h * WALLS.length)] : tint(q.c, 6);
+    const pr = { p, z0: 0, ht: q.ht, c: tiled ? q.c : tint(q.c, (h - 0.5) * 18), w, r: q.r, x0, y0, x1, y1, fl: q.k === 'tower' || q.r === 'glass' || q.ht > 0.15 };
+    list.push(pr);
+    if (q.pg || F.length !== 8) return;
+    // on a rectangle's roof: the shaded slope of a pitched roof, a plant room on a tall flat one
+    const at = (u, v) => [wx(q.x + u * Math.cos(q.a || 0) - v * Math.sin(q.a || 0), q.y + u * Math.sin(q.a || 0) + v * Math.cos(q.a || 0)), wy(q.x + u * Math.cos(q.a || 0) - v * Math.sin(q.a || 0), q.y + u * Math.sin(q.a || 0) + v * Math.cos(q.a || 0))];
+    const W2 = q.w / 2, H2 = q.h / 2;
+    if (q.r === 'pitch') pr.half = [].concat(...(q.w > q.h ? [at(-W2, 0), at(W2, 0), at(W2, H2), at(-W2, H2)] : [at(0, -H2), at(W2, -H2), at(W2, H2), at(0, H2)]));
+    else if (q.r === 'flat' && q.ht > 0.12 && q.w > 0.12 && q.h > 0.12) {
+      const u = (h - 0.5) * W2 * 0.6, v = (U.hash(sd * 5 + k, 79) - 0.5) * H2 * 0.6, rw = q.w * 0.18, rh = q.h * 0.18, P2 = [].concat(at(u - rw, v - rh), at(u + rw, v - rh), at(u + rw, v + rh), at(u - rw, v + rh));
+      let a0 = 1e9, b0 = 1e9, a1 = -1e9, b1 = -1e9; for (let i = 0; i < 8; i += 2) { a0 = Math.min(a0, P2[i]); a1 = Math.max(a1, P2[i]); b0 = Math.min(b0, P2[i + 1]); b1 = Math.max(b1, P2[i + 1]); }
+      pr.kid = { p: P2, z0: q.ht, ht: q.ht + 0.03, c: tint(q.c, -22), w: tint(q.c, -10), r: 'flat', x0: a0, y0: b0, x1: a1, y1: b1 };
+    }
+  });
+  b._pr = { plan: P, list };
+  return list;
+};
+
 })(window.IC);
