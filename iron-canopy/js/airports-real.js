@@ -332,32 +332,11 @@ IC.aptTraceFence = function (ap) {
   // the landside is outside, and so is anything it cuts off from the airside
   for (let k = 0; k < F.length; k++) if (Lr.bad[k] && !A.bad[k]) F[k] = 0;
   // the largest piece only
-  const lab = new Int32Array(F.length).fill(-1); let best = -1, bn = 0;
-  for (let k0 = 0, id = 0; k0 < F.length; k0++) { if (!F[k0] || lab[k0] >= 0) continue; let n = 0; const Q = [k0]; lab[k0] = id; while (Q.length) { const k = Q.pop(); n++; const i = k % nx, j = (k / nx) | 0; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const q = jj * nx + ii; if (F[q] && lab[q] < 0) { lab[q] = id; Q.push(q); } } } if (n > bn) { bn = n; best = id; } id++; }
-  for (let k = 0; k < F.length; k++) F[k] = lab[k] === best ? 1 : 0;
-  // trace the outline: walk the boundary edges of the filled cells, then straighten it (Douglas–Peucker, 15 m)
-  const at = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny && F[j * nx + i] === 1;
-  let si = -1, sj = -1; for (let k = 0; k < F.length && si < 0; k++) if (F[k]) { si = k % nx; sj = (k / nx) | 0; }
-  if (si < 0) return null;
-  // follow the boundary along the cell corners, the filled cells on the right, from the top-left corner of the first
-  const pts = []; let x = si, y = sj, d = 0; const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
-  for (let n = 0; n < 4 * (nx + ny) * 8; n++) {
-    pts.push({ x: box[0] + x * c, y: box[1] + y * c });
-    // try turning left, straight, right, back: the first move with a filled cell on the right and an empty one on the left
-    let moved = false;
-    for (const t of [3, 0, 1, 2]) {
-      const nd = (d + t) % 4, ahead = { x: x + DX[nd], y: y + DY[nd] };
-      // the cell to the right of the step from (x, y) heading nd, and the one to its left
-      const rc = nd === 0 ? [x, y] : nd === 1 ? [x - 1, y] : nd === 2 ? [x - 1, y - 1] : [x, y - 1];
-      const lc = nd === 0 ? [x, y - 1] : nd === 1 ? [x, y] : nd === 2 ? [x - 1, y] : [x - 1, y - 1];
-      if (at(rc[0], rc[1]) && !at(lc[0], lc[1])) { x = ahead.x; y = ahead.y; d = nd; moved = true; break; }
-    }
-    if (!moved || (x === si && y === sj)) break;
-  }
-  const simp = (P, tol) => { if (P.length < 4) return P; const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1; const st = [[0, P.length - 1]]; while (st.length) { const [a, b] = st.pop(); let m = -1, mi = -1; for (let i = a + 1; i < b; i++) { const dd = U.segDist(P[i].x, P[i].y, P[a].x, P[a].y, P[b].x, P[b].y); if (dd > m) { m = dd; mi = i; } } if (m > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); } } return P.filter((_, i) => keep[i]); };
-  // (the grid's steps straightened out: the fence runs in straight lengths between posts)
-  const poly = simp(pts, Math.max(0.3, c * 1.5));
-  if (poly.length < 3) return null;
+  IC.cellLargest(F, nx, ny);
+  // trace the outline round the filled cells, then straighten it (the grid's steps: the fence runs in straight
+  // lengths between posts)
+  const poly = IC.cellOutline(F, nx, ny, box, c, Math.max(0.3, c * 1.5));
+  if (!poly) return null;
   const a = ap.rwyA || 0, cs = Math.cos(-a), sn = Math.sin(-a);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (const q of poly) { const dx = q.x - ap.x, dy = q.y - ap.y, lx = dx * cs - dy * sn, ly = dx * sn + dy * cs; x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); y0 = Math.min(y0, ly); y1 = Math.max(y1, ly); }

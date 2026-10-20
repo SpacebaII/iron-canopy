@@ -624,7 +624,18 @@ function lifeRows(b) {
   if (L) {
     const n = {}; for (const it of L.items) n[it.kind] = (n[it.kind] || 0) + 1;
     const what = Object.entries(n).map(([k, c]) => `${c} ${IC.LAND[k].name.toLowerCase()}${c > 1 && !/s$/.test(IC.LAND[k].name) ? 's' : ''}`).join(', ');
-    rows.push(['Landside', `${L.road ? '' : '<span class="amber">no road reaches it</span> · '}${what || 'nothing yet: it grows with passengers'}${pv.parking ? ` · ${pv.parking.toLocaleString('en-US')} parking spaces` : ''}${L.earn ? ` · earns ${U.money(L.earn)} an hour` : ''}`]);
+    rows.push(['Front side', `${L.road ? '' : '<span class="amber">no road reaches it</span> · '}${what || 'nothing yet: it grows with passengers'}${L.earn ? ` · earns ${U.money(L.earn)} an hour` : ''}`]);
+    // (brief 61) parking and the kerb against what the travellers bring, and who builds it
+    if (!L.fixed && IC.landAccess) {
+      const A = IC.landAccess(S, b), num = v => Math.round(v).toLocaleString('en-US'), f = IC.landAccessF(b);
+      const park = !A.need ? `${num(A.have)} spaces: hardly anyone drives here yet` : A.short > 0.1
+        ? `<span class="amber">${num(A.have)} spaces for about ${num(A.need)} cars: the car parks are full, and ${Math.round((1 - f) * 100)}% fewer travellers choose this airport</span>`
+        : `${num(A.have)} spaces for about ${num(A.need)} cars${A.own ? ` (${num(A.own)} in car parks you built)` : ''}`;
+      rows.push(['Parking', park]);
+      if (A.kerb > 0.05) rows.push(['Kerb', A.kerbShort > 0.1 ? `<span class="amber">${Math.round(A.kerbHave * 100)} m of kerb where ${Math.round(A.kerb * 100)} m is needed: cars queue on the airport road to drop off</span>` : `${Math.round(A.kerbHave * 100)} m of kerb at the terminal doors; cars dropping off need about ${Math.round(A.kerb * 100)} m`]);
+      const on = L.auto !== false;
+      rows.push(['Who builds it', `<div class="acts"><button class="act ${on ? 'on' : ''}" data-act="land" data-op="auto" data-v="1" title="Developers add car parks, garages, hotels and offices as passengers grow, and pay the airport rent">Developers</button><button class="act ${on ? '' : 'on'}" data-act="land" data-op="auto" data-v="0" title="Nothing new is built for you: keep the ground free, and draw car parks yourself with the Car park tool (Landside and roads)">Only what you build</button></div>`]);
+    }
   }
   return rows;
 }
