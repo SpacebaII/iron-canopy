@@ -182,17 +182,19 @@ function placeFront(S, ap, t, kind, L) {
   const fr = front(S, ap, t), mine = L.items.filter(it => it.by === t.id), B = frontBlocks(S, ap, t);
   const a = t.a || 0, W = (s, d) => fr.L(s, d);
   // on the forecourt: the bus stop and the taxi rank at the kerb's two ends, short-stay parking filling the loop
-  if (kind === 'stop' || kind === 'taxi') {
-    const D = IC.LAND[kind], s = (kind === 'stop' ? -1 : 1) * (fr.X - 0.16 - D.w / 2), r = boxOf(kind, W(s, KERB_D + 0.17 + D.h / 2), a, t.id, 'fore');
-    return bldFree(S, ap, r, B) ? r : null;
-  }
+  const end = k => { const D = IC.LAND[k], s = (k === 'stop' ? -1 : 1) * (fr.X - 0.16 - D.w / 2); return boxOf(k, W(s, KERB_D + 0.17 + D.h / 2), a, t.id, 'fore'); };
+  if (kind === 'stop' || kind === 'taxi') { const r = end(kind); return bldFree(S, ap, r, B) ? r : null; }
   // short stay inside the loop: at a busy airport a row of garages across the kerb from the doors, from the middle
   // out; and a car park in the ground left over (the whole loop, at a quieter one)
   if (kind === 'garage' && !mine.some(it => it.zone === 'in' && it.kind === 'park')) {
     const D = IC.LAND.garage, n = Math.max(1, Math.floor((2 * fr.X - 1.9) / (D.w + 0.14)));
     for (let i = 0; i < n; i++) { const k = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2), s = (k + (n % 2 ? 0 : 0.5)) * (D.w + 0.14); if (Math.abs(s) + D.w / 2 > fr.X - 0.9) continue; const r = boxOf('garage', W(s, KERB_D + 0.24 + D.h / 2), a, t.id, 'in'); if (bldFree(S, ap, r, B)) return r; }
   }
-  if (kind === 'park' && !mine.some(it => it.zone === 'in' && it.kind === 'park')) { const P = fitLot(S, fr.loop.concat([fr.kerb[0]]), B, 0.3); if (P) return lotOf('park', P, t.id, 'in'); }
+  if (kind === 'park' && !mine.some(it => it.zone === 'in' && it.kind === 'park')) {
+    // (the kerb's ends kept for the bus stop and the taxi rank, built or not)
+    const keep = ['stop', 'taxi'].map(end).map(r => ({ sh: IC.shapeLine([IC.rectWorld(r, -r.w / 2, 0), IC.rectWorld(r, r.w / 2, 0)], r.h / 2), pad: 0.05 }));
+    const P = fitLot(S, fr.loop.concat([fr.kerb[0]]), B.concat(keep), 0.3); if (P) return lotOf('park', P, t.id, 'in');
+  }
   if ((kind === 'hotel' || kind === 'office') && !mine.some(it => it.zone === 'corner' && it.kind === kind)) {
     // the forecourt's corners, beside its legs: the hotel by the terminal
     for (const k of kind === 'hotel' ? [-fr.sg || 1, fr.sg || -1] : [fr.sg || 1]) { const D = IC.LAND[kind], r = boxOf(kind, W(k * (fr.X + 0.14 + D.w / 2), KERB_D + 0.1 + D.h / 2), a, t.id, 'corner'); if (bldFree(S, ap, r, B)) return r; }
