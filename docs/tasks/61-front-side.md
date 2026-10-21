@@ -26,16 +26,31 @@ He turned down a landside economy (staff, baggage, retail, power) on 2026-10-09,
 
 **4. Outlines.** Aprons, open ramps, terminals, cargo sheds and surfaces (car parks among them) can be drawn corner by corner (the Shape chips in the build bar, or O): each side keeps to 15° steps from the first and to 10 m lengths (Shift draws freely), corners snap like a rectangle's, a click on the first corner closes it and Build builds it. An outline that crosses itself or is under 30 m across is refused with a reason. The part keeps its outline (`part.poly`); cost and time follow its area; an outlined apron gets rows of stands along its edges, noses to a terminal or shed behind them (`IC.aptPolyStands`), shown on the ghost before it is built.
 
+**5. Terminals that are not boxes** (the owner, after the first round: "you really only changed the parking lot you didn't help with the actual terminal shape or structure of the airport"). `IC.kitComplex` in `airport-kits.js` lays out a terminal from a seed:
+- a head house whose airside face is in sections at different depths, parted by piers or by steps in the wall, its ends cut back at an angle, and a hall standing forward to the kerb on the landside;
+- zero to three piers of different lengths, fanned outward, the longest where the weights put most of the gates; each pier's root runs deeper than the face beside it, so it joins the building along its whole width;
+- gates along every face, nose to the wall, each with its jet bridge; a taxilane along each section and round each pier's tip, trimmed to the last gate so none ends in the grass;
+- one apron poured round all of it (a 2.5 m raster traced to an outline), not a set of rectangles.
+
+Where it is used: the build bar's Terminal with apron (no piers, a stepped face) and Terminal with piers (renamed from "with a pier"), with an "Another layout" chip that tries the next seed; the Starter airport (it measures the terminal first and joins each end or pier tip to the parallel taxiway); and the starting capital and regional airports in `IC.layoutAirport` (`kit`), seeded by the airport's position, so no two worlds have the same terminal. The starting capital now has a head house with two fanned piers and 28 gates.
+
+**6. Piers on a terminal that is there.** "Pier on a terminal" in the pieces (and "Add a pier to it" on a terminal's panel): point out from a terminal wall and a pier grows from the wall nearest the cursor, square to it (R turns it 15° at a time), as far as the cursor and never past the next taxiway or runway. The apron in its way is cut round it (`attachCut`): the stands under it are taken up and the plan says how many, the rest stay where they were, and what is left of the apron becomes outlined aprons. A taxilane across its root is split and each end joined to the pier's own lanes; its tip joins the nearest taxiway. It is refused, with the reason, when an aircraft stands where it goes or there is no room, and it warns when it takes up as many stands as it gives. Undo before work starts puts the apron, its stands and the taxilane back (`IC.attachRestore`).
+
 ## Tests
 
 - front side: a terminal gets a curved forecourt, an airport road and car parks shaped to the ground, as many spaces as travellers bring
 - front side: with no room to park, travellers choose other airports, and with the developers turned off nothing is built
 - builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area
+- kits: a terminal complex steps in and out, its piers differ, and every stand has a bridge and a way out (six seeds, no two alike)
+- kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways
+- pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back
 
 ## Not done
 
 - Garages and hotels are still boxes: their 3D heights belong with the city thread's buildings.
 - A drawn outline cannot be edited corner by corner once built (bulldoze and draw again).
 - The kerb is one length per terminal: no separate arrivals and departures kerbs at ground level.
+- A pier needs room in front of the wall: on a tight airport (the Starter's terminal is 100 m from the parallel taxiway) there is none, which is why the pieces now lay out piers from the start.
+- Terminals can be stretched only by adding a pier; a head house cannot be lengthened in place.
 
-Screens: `61-screens/` (before and after at the capital, the outline tool).
+Screens: `61-screens/` (before and after at the capital, the outline tool, the terminal kit at three seeds, the Starter airport and the Quick war capital, a pier being placed and built).
