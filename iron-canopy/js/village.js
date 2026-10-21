@@ -18,6 +18,9 @@ function streetOf(v, segs, len, W, R) {
   const foot = { x: best[0] + vx * t, y: best[1] + vy * t };
   const walk = (from, to, left) => {
     const out = []; let cur = { x: from.x, y: from.y }, nx = to, used = new Set([best]);
+    // (the heading of the piece it is on: the foot may sit at the very end of its road)
+    const oth = to.x === best[0] && to.y === best[1] ? { x: best[2], y: best[3] } : { x: best[0], y: best[1] };
+    let hd = Math.atan2(to.y - oth.y, to.x - oth.x);
     while (left > 0 && nx) {
       const d = U.dxy(cur.x, cur.y, nx.x, nx.y);
       if (d >= left) { const k = left / d; out.push({ x: cur.x + (nx.x - cur.x) * k, y: cur.y + (nx.y - cur.y) * k }); break; }
@@ -34,11 +37,11 @@ function streetOf(v, segs, len, W, R) {
         }
       }
       if (!next || bt < 0) break;
-      used.add(next.s); nx = next.b;
+      used.add(next.s); nx = next.b; hd = Math.atan2(nx.y - cur.y, nx.x - cur.x);
     }
     // where the road ends short (a village at the end of its road), the street runs on as a lane of the village's own
     if (left > 0.6 && out.length) {
-      const o = out.length > 1 ? out[out.length - 2] : from, e = out[out.length - 1]; let a = Math.atan2(e.y - o.y, e.x - o.x), x = e.x, y = e.y;
+      const e = out[out.length - 1]; let a = hd, x = e.x, y = e.y;
       const ext = [{ x, y }];
       for (let d = 0; d < left; d += 0.5) {
         x += Math.cos(a) * 0.5; y += Math.sin(a) * 0.5;

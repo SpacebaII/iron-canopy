@@ -103,6 +103,19 @@ test('world: city streets end on another street or road', () => {
     for (const c of W.cities) for (const l of c.streets) assert(!l.deadEnd, `seed ${seed}: a street in ${c.name} ends in the middle of nowhere`);
   }
 }, false, 'world');
+test('roads: a car can follow every street in its lane: ends meet a road or turn round, a junction is one place, bends are curves (brief 67)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed), G = IC.driveGraph(W), R = IC.roadAudit(W, G), n = G.links.length, c = R.count;
+    const say = k => `seed ${seed}: ${c[k]} ${R.words[k]} (${R.list[k].slice(0, 3).map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join('; ')})`;
+    assert(c.trap === 0, say('trap'));
+    assert(c.open <= 40, say('open'));
+    assert(c.gap <= 200, say('gap'));
+    assert(c.stub <= 80, say('stub'));
+    // (before brief 67: 11% of the links were such pieces and 4% had such a bend)
+    assert(c.jog < n * 0.025, say('jog') + ` of ${n} links`);
+    assert(c.kink < n * 0.012, say('kink') + ` of ${n} links`);
+  }
+}, false, 'world');
 test('world: city streets follow a direction field, end on a street, a head, a bank or a square, cross the river on a few bridges, and blocks are sized by district (brief 53)', () => {
   const med = a => { const s = a.slice().sort((p, q) => p - q); return s.length ? s[s.length >> 1] : 0; };
   for (const seed of [4242, 7]) {

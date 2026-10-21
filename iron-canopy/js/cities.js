@@ -663,6 +663,8 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     c.streets = out;
   }
   for (const l of c.streets) { if (l.deadEnd) delete l.deadEnd; delete l.ends; }
+  tidyStreets(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
+  roundCorners(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
   // river parks (brief 55): the housing blocks on the banks of a bigger town stay green, a park along the water
@@ -1035,7 +1037,8 @@ IC.culPlan = function (b) {
   for (let q = 0; q < nC; q++) {
     const a = q / nC * Math.PI * 2 + h(q, 3) * 0.5, out = h(q, 5) < 0.55, L = out ? 0.45 + h(q, 6) * 0.4 : Math.min(rx, ry) * 0.55;
     const x0 = ox + Math.cos(a) * rx, y0 = oy + Math.sin(a) * ry, x1 = x0 + Math.cos(a) * L * (out ? 1 : -1), y1 = y0 + Math.sin(a) * L * (out ? 1 : -1);
-    if (Math.abs(x1) > W2 - 0.2 || Math.abs(y1) > H2 - 0.2 || Math.abs(U.angWrap(a - inA)) < 0.4) continue;
+    // (a close is long enough to turn a car round in and to have houses along it: 35 m at least, brief 67)
+    if (L < 0.35 || Math.abs(x1) > W2 - 0.2 || Math.abs(y1) > H2 - 0.2 || Math.abs(U.angWrap(a - inA)) < 0.4) continue;
     P.closes.push([x0, y0, x1, y1, a, out]);
     for (let t = 0.35; t <= 1.01; t += 0.3) for (const s of [-1, 1]) P.houses.push(x0 + (x1 - x0) * t - Math.sin(a) * 0.14 * s, y0 + (y1 - y0) * t + Math.cos(a) * 0.14 * s, a);
   }
@@ -1065,10 +1068,17 @@ function closeStreets(c, blocks, roads) {
     const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy || 1, t = U.clamp(((E.x - near[0]) * vx + (E.y - near[1]) * vy) / LL, 0, 1), M = { x: near[0] + vx * t, y: near[1] + vy * t };
     b.close = true;
     if (P.small) { c.streets.push({ cls: 'st', pts: [M, wp(0, 0)], head: 2, cul: true }); continue; }
-    c.streets.push({ cls: 'st', pts: [M, wp(P.entry[0], P.entry[1])], cul: true });
     const ring = []; for (let q = 0; q <= 16; q++) { const a = q / 16 * Math.PI * 2; ring.push(wp(P.ox + Math.cos(a) * P.rx, P.oy + Math.sin(a) * P.ry)); }
+    // the way in and the closes start on the loop as it is drawn (its chords), each a point of it, so a car meets one
+    // junction there and not a crossing a few metres on (brief 67)
+    const onRing = p => { let bi = 1, bd = 1e9, bq = p; for (let i = 1; i < ring.length; i++) { const a = ring[i - 1], b2 = ring[i], vx = b2.x - a.x, vy = b2.y - a.y, LL = vx * vx + vy * vy || 1, t = U.clamp(((p.x - a.x) * vx + (p.y - a.y) * vy) / LL, 0, 1), q = { x: a.x + vx * t, y: a.y + vy * t }, d = U.dist(p, q); if (d < bd) { bd = d; bi = i; bq = q; } }
+      if (U.dist(bq, ring[bi - 1]) < 0.02) return ring[bi - 1]; if (U.dist(bq, ring[bi]) < 0.02) return ring[bi];
+      ring.splice(bi, 0, bq); return bq; };
+    const ent = onRing(wp(P.entry[0], P.entry[1]));
+    c.streets.push({ cls: 'st', pts: [M, { x: ent.x, y: ent.y }], cul: true });
+    const cl = P.closes.map(([x0, y0, x1, y1]) => [onRing(wp(x0, y0)), wp(x1, y1)]);
     c.streets.push({ cls: 'st', pts: ring, ring: true, cul: true });
-    for (const [x0, y0, x1, y1] of P.closes) c.streets.push({ cls: 'st', pts: [wp(x0, y0), wp(x1, y1)], head: 2, cul: true });
+    for (const [p0, p1] of cl) c.streets.push({ cls: 'st', pts: [{ x: p0.x, y: p0.y }, p1], head: 2, cul: true });
   }
 }
 IC.closeStreets = closeStreets;
@@ -1142,12 +1152,19 @@ function tieStreets(c, roadSegs, SP, hwSegs) {
       const P = l.pts, e = end ? P[P.length - 1] : P[0], q = end ? P[P.length - 2] : P[1];
       // (an end that stops just short of a street or road is run on to meet it)
       // (a corner where two streets end together counts as tied, but still meets a road or street that passes by it)
-      let near = null, nd = 0.4, cor = false;
+      let near = null, nd = 0.4, cor = false, onT = false;
       Bk.near(e.x, e.y, 0.5, sg => {
         if (sg[4] === li) return;
-        if ((Math.abs(sg[0] - e.x) < 1e-6 && Math.abs(sg[1] - e.y) < 1e-6) || (Math.abs(sg[2] - e.x) < 1e-6 && Math.abs(sg[3] - e.y) < 1e-6)) { cor = true; return; }
+        if ((Math.abs(sg[0] - e.x) < 1e-6 && Math.abs(sg[1] - e.y) < 1e-6) || (Math.abs(sg[2] - e.x) < 1e-6 && Math.abs(sg[3] - e.y) < 1e-6)) {
+          cor = true;
+          // (on a point in the middle of another street it is a T, tied for good: brief 67)
+          const o = sg[4] >= 0 && c.streets[sg[4]], f = o && o.pts[0], g = o && o.pts[o.pts.length - 1];
+          if (o && !(Math.abs(f.x - e.x) < 1e-6 && Math.abs(f.y - e.y) < 1e-6) && !(Math.abs(g.x - e.x) < 1e-6 && Math.abs(g.y - e.y) < 1e-6)) onT = true;
+          return;
+        }
         const d = U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]); if (d < nd) { nd = d; near = sg; }
       });
+      if (onT) { if (hd) l.head -= hd; continue; }
       if (near || cor) {
         if (hd) l.head -= hd;
         if (near && nd > 1e-3) { const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy, t = LL ? U.clamp(((e.x - near[0]) * vx + (e.y - near[1]) * vy) / LL, 0, 1) : 0, p = { x: near[0] + vx * t, y: near[1] + vy * t }; if (end) P.push(p); else P.unshift(p); }
@@ -1199,6 +1216,229 @@ function dropIslands(c, roadSegs) {
   let main = -1, mx = 0; for (const [r, k] of size) if (k > mx) { mx = k; main = r; }
   const keep = new Set([main]); for (const i of rooted) keep.add(find(i));
   c.streets = L.filter((l, i) => keep.has(find(i)));
+}
+
+/* the streets as a car drives them (brief 67): every end either meets a street or a road, or is a turning head long
+   enough to turn in. Ends that meet a street a few metres from another junction on it are moved onto that junction,
+   so two T junctions side by side become one crossroads; an end that stops just short of a street runs on to it; a
+   piece left dangling past the last junction (an old town's street cut at its wall, a stub between two blocks) is
+   taken back to that junction. A close (cul) is the estate's own and keeps its shape. */
+const WELD = 0.12, REACH = 0.12, HEAD_MIN = 0.3;
+function tidyStreets(c, roadSegs) {
+  for (let round = 0; round < 3; round++) {
+    const L = c.streets, Bk = buckets(2);
+    L.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) Bk.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li, i]); });
+    for (const r of roadSegs) Bk.add([r[0], r[1], r[2], r[3], -1, 0]);
+    const cum = L.map(l => { const a = [0]; for (let i = 1; i < l.pts.length; i++) a.push(a[i - 1] + U.dist(l.pts[i - 1], l.pts[i])); return a; });
+    const onLine = (p, li, tol) => { let hit = null; Bk.near(p.x, p.y, tol + 0.01, sg => { if (hit || sg[4] === li) return; if (U.segDist(p.x, p.y, sg[0], sg[1], sg[2], sg[3]) < tol) hit = sg; }); return hit; };
+    // the junction points on each line: where others cross it or end on it (arc length along it, and the point)
+    const touch = L.map(() => []);
+    const posOn = (li, i, p) => cum[li][i - 1] + U.dist(L[li].pts[i - 1], p);
+    L.forEach((l, li) => {
+      for (let i = 1; i < l.pts.length; i++) {
+        const a = l.pts[i - 1], b = l.pts[i];
+        Bk.near((a.x + b.x) / 2, (a.y + b.y) / 2, U.dist(a, b) / 2 + 0.01, sg => {
+          if (sg[4] === li) return;
+          const t = U.segX(a.x, a.y, b.x, b.y, sg[0], sg[1], sg[2], sg[3]); if (t < 0) return;
+          const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; touch[li].push({ s: cum[li][i - 1] + t * U.dist(a, b), p: q, by: sg[4] });
+        });
+      }
+      for (const end of [0, 1]) {
+        const e = end ? l.pts[l.pts.length - 1] : l.pts[0];
+        Bk.near(e.x, e.y, 0.02, sg => {
+          if (sg[4] === li) return;
+          if (U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) >= 0.004) return;
+          touch[li].push({ s: end ? cum[li][cum[li].length - 1] : 0, p: e, by: sg[4] });
+          if (sg[4] >= 0) touch[sg[4]].push({ s: posOn(sg[4], sg[5], e), p: e, end: [li, end], by: li });
+        });
+      }
+    });
+    let changed = 0;
+    const kill = new Set();
+    L.forEach((l, li) => {
+      if (kill.has(li) || l.ring) return;
+      for (const end of [0, 1]) {
+        const P = l.pts, e = end ? P[P.length - 1] : P[0], len = cum[li][cum[li].length - 1], sEnd = end ? len : 0;
+        const host = onLine(e, li, 0.004);
+        if (host) {
+          // a T: onto the nearest other junction on the street it meets, if there is one within a few metres
+          if (host[4] < 0 || l.cul) continue;
+          let best = null, bd = WELD;
+          for (const t of touch[host[4]]) { if (t.end && t.end[0] === li) continue; const d = U.dist(t.p, e); if (d > 0.004 && d < bd) { bd = d; best = t; } }
+          if (!best) continue;
+          if (best.by === li) {
+            // it crosses the street it ends on just before: it ends at the crossing
+            const own = touch[li].find(t => t.by === host[4] && U.dist(t.p, best.p) < 1e-6); if (!own) continue;
+            l.pts = end ? cutAt(P, cum[li], 0, own.s) : cutAt(P, cum[li], own.s, len); changed++; break;
+          }
+          if (len > bd + 0.05) { const q = { x: best.p.x, y: best.p.y }; if (end) P[P.length - 1] = q; else P[0] = q; changed++; }
+          continue;
+        }
+        if (l.cul) continue;
+        // the junctions along this street, nearest this end first
+        const inner = touch[li].filter(t => Math.abs(t.s - sEnd) > 0.004).map(t => Math.abs(t.s - sEnd));
+        const dangle = inner.length ? Math.min(...inner) : len;
+        const designed = (l.head | l.stop) & (end + 1) && !l.core;
+        if (designed && dangle >= HEAD_MIN) continue;
+        // just short of a street or road: run on to it
+        let near = null, nd = REACH;
+        Bk.near(e.x, e.y, REACH, sg => { if (sg[4] === li) return; const d = U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]); if (d < nd) { nd = d; near = sg; } });
+        if (near && !designed) {
+          const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy || 1, t = U.clamp(((e.x - near[0]) * vx + (e.y - near[1]) * vy) / LL, 0, 1), q = { x: near[0] + vx * t, y: near[1] + vy * t };
+          if (end) P.push(q); else P.unshift(q);
+          changed++; continue;
+        }
+        // left dangling: back to the last junction, or gone if it meets nothing at all
+        if (!inner.length) { kill.add(li); changed++; break; }
+        const sCut = end ? len - dangle : dangle;
+        l.pts = cutAt(P, cum[li], end ? 0 : sCut, end ? sCut : len);
+        if (designed) { l.head &= ~(end + 1); l.stop &= ~(end + 1); }
+        changed++; break;   // (its arc lengths are stale now: the other end next round)
+      }
+    });
+    c.streets = L.filter((l, i) => !kill.has(i) && l.pts.length >= 2 && U.dist(l.pts[0], l.pts[l.pts.length - 1]) + (l.pts.length > 2 ? 1 : 0) > 0.02);
+    if (!changed) break;
+  }
+}
+/* a street's bends as a car drives them: a corner that is not a junction becomes an arc of about 15 m radius (less
+   where the pieces either side are short), a street folding back on itself loses the fold. A corner another street
+   ends on, or a bridge's end, keeps its point. */
+const ROUND_R = 0.15;
+function roundCorners(c, roadSegs) {
+  weldEnds(c, roadSegs);
+  unOverlap(c);
+  joinEnds(c, roadSegs);
+  const ends = buckets(1), segs = buckets(2);
+  c.streets.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) segs.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]); });
+  for (const r of roadSegs) segs.add([r[0], r[1], r[2], r[3], -1]);
+  const meets = (p, li) => { let hit = false; segs.near(p.x, p.y, 0.01, g => { if (!hit && g[4] !== li && U.segDist(p.x, p.y, g[0], g[1], g[2], g[3]) < 0.004) hit = true; }); return hit; };
+  c.streets.forEach((l, li) => { for (const p of [l.pts[0], l.pts[l.pts.length - 1]]) ends.add([p.x, p.y, p.x, p.y, li]); });
+  const ang = (a, b, q) => U.angWrap(Math.atan2(q.y - b.y, q.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x));
+  c.streets.forEach((l, li) => {
+    const P = l.pts, n = P.length; if (n < 3) return;
+    const fixed = p => (l.br || []).some(r => (Math.abs(r[0] - p.x) < 1e-6 && Math.abs(r[1] - p.y) < 1e-6) || (Math.abs(r[2] - p.x) < 1e-6 && Math.abs(r[3] - p.y) < 1e-6));
+    const out = [P[0]];
+    for (let i = 1; i < n - 1; i++) {
+      const a = out[out.length - 1], b = P[i], q = P[i + 1], t = ang(a, b, q), at = Math.abs(t);
+      if (at < 0.45 || fixed(b)) { out.push(b); continue; }
+      if (at > 2.7) {   // folds back on itself: it runs straight past, or at an end where only the tip meets a street, it ends there
+        // (unless another street ends on the fold where the straight line past it would leave it)
+        let held = false;
+        ends.near(b.x, b.y, U.dist(a, b) + U.dist(b, q), g => { if (!held && g[4] !== li && Math.min(U.segDist(g[0], g[1], a.x, a.y, b.x, b.y), U.segDist(g[0], g[1], b.x, b.y, q.x, q.y)) < 0.004 && U.segDist(g[0], g[1], a.x, a.y, q.x, q.y) > 0.004) held = true; });
+        if (held) { out.push(b); continue; }
+        const e = i === 1 ? P[0] : i === n - 2 ? P[n - 1] : null;
+        if (e && meets(b, li)) { if (meets(e, li)) { out.push(b); continue; } if (i === 1) { out[0] = b; continue; } out.push(b); l.pts = out; return; }
+        continue;
+      }
+      const la = U.dist(a, b), lq = U.dist(b, q);
+      const d = Math.min(ROUND_R * Math.tan(at / 2), la * (i === 1 ? 0.85 : 0.45), lq * (i === n - 2 ? 0.85 : 0.45));
+      let busy = false;
+      ends.near(b.x, b.y, d + 0.02, e => { if (!busy && e[4] !== li && Math.hypot(e[0] - b.x, e[1] - b.y) < d + 0.02) busy = true; });
+      if (busy || d < 0.01) { out.push(b); continue; }
+      const p1 = { x: b.x + (a.x - b.x) * d / la, y: b.y + (a.y - b.y) * d / la }, p2 = { x: b.x + (q.x - b.x) * d / lq, y: b.y + (q.y - b.y) * d / lq };
+      const k = Math.ceil(at / 0.35);
+      for (let j = 0; j <= k; j++) { const s = j / k, u = 1 - s; out.push({ x: u * u * p1.x + 2 * u * s * b.x + s * s * p2.x, y: u * u * p1.y + 2 * u * s * b.y + s * s * p2.y }); }
+    }
+    out.push(P[n - 1]);
+    l.pts = out;
+  });
+  c.streets = c.streets.filter(l => l.pts.some(p => U.dist(p, l.pts[0]) > 0.01));   // (an out-and-back with nothing at its tip is gone)
+}
+/* street ends a few metres apart are one junction (an old town's mapped ways stop a metre or two short of each
+   other): they all move to one point, on the street or road they meet if one of them sits on one */
+const WELD_ENDS = 0.06;
+function weldEnds(c, roadSegs) {
+  const L = c.streets, E = [], pb = buckets(1), segs = buckets(2);
+  L.forEach((l, li) => { if (l.ring) return; for (const end of [0, 1]) { const p = end ? l.pts[l.pts.length - 1] : l.pts[0]; E.push({ li, end, p }); pb.add([p.x, p.y, p.x, p.y, E.length - 1]); } });
+  L.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) segs.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]); });
+  for (const r of roadSegs) segs.add([r[0], r[1], r[2], r[3], -1]);
+  const up = E.map((_, i) => i), find = i => { while (up[i] !== i) i = up[i] = up[up[i]]; return i; };
+  E.forEach((e, i) => pb.near(e.p.x, e.p.y, WELD_ENDS, g => { if (g[4] !== i && Math.hypot(g[0] - e.p.x, g[1] - e.p.y) < WELD_ENDS) up[find(g[4])] = find(i); }));
+  const groups = new Map(); E.forEach((e, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(e); });
+  for (const G of groups.values()) {
+    if (G.length < 2) continue;
+    const mine = new Set(G.map(e => e.li));
+    // (the point to meet at: an end that rests on a line that is not one of these streets, else the middle)
+    let to = null;
+    for (const e of G) { segs.near(e.p.x, e.p.y, 0.01, g => { if (!to && !mine.has(g[4]) && U.segDist(e.p.x, e.p.y, g[0], g[1], g[2], g[3]) < 0.004) to = e.p; }); if (to) break; }
+    if (!to) { const x = G.reduce((s, e) => s + e.p.x, 0) / G.length, y = G.reduce((s, e) => s + e.p.y, 0) / G.length; to = { x, y }; }
+    for (const e of G) { const P = L[e.li].pts; if (L[e.li].cul && P.length < 3) continue; if (e.end) P[P.length - 1] = { x: to.x, y: to.y }; else P[0] = { x: to.x, y: to.y }; }
+  }
+  c.streets = L.filter(l => l.pts.some(p => U.dist(p, l.pts[0]) > 0.01));
+}
+/* a street whose last piece runs on top of another street (two mapped ways sharing a few metres) ends where it meets
+   it instead, so the two do not make two junctions a car's length apart */
+function unOverlap(c) {
+  const L = c.streets, segs = buckets(1), gone = L.map(() => new Set());
+  L.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) segs.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li, l.pts[i - 1], l.pts[i]]); });
+  const onOther = (p, li) => { const on = new Set(); segs.near(p.x, p.y, 0.01, g => { if (g[4] !== li && !gone[g[4]].has(g[5]) && !gone[g[4]].has(g[6]) && U.segDist(p.x, p.y, g[0], g[1], g[2], g[3]) < 0.004) on.add(g[4]); }); return on; };
+  L.forEach((l, li) => {
+    if (l.ring) return;
+    for (const end of [0, 1]) {
+      const P = l.pts;
+      while (P.length > 2) {
+        const e = end ? P[P.length - 1] : P[0], q = end ? P[P.length - 2] : P[1];
+        const A = onOther(e, li), B = onOther(q, li), M = onOther({ x: (e.x + q.x) / 2, y: (e.y + q.y) / 2 }, li);
+        if (![...A].some(k => B.has(k) && M.has(k))) break;   // (the whole piece on one other street)
+        gone[li].add(e); if (end) P.pop(); else P.shift();
+      }
+    }
+  });
+}
+/* two streets of a kind that meet end to end with nothing else there are one street round the corner (an old town's
+   streets come as the pieces they were mapped in) */
+function joinEnds(c, roadSegs) {
+  const key = p => Math.round(p.x * 500) + ':' + Math.round(p.y * 500), at = new Map(), segs = buckets(2);
+  const L = c.streets;
+  L.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) segs.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li]); });
+  for (const r of roadSegs) segs.add([r[0], r[1], r[2], r[3], -1]);
+  L.forEach((l, li) => { if (l.ring || l.cul || l.br || U.dist(l.pts[0], l.pts[l.pts.length - 1]) < 0.01) return; for (const end of [0, 1]) { const k = key(end ? l.pts[l.pts.length - 1] : l.pts[0]); if (!at.has(k)) at.set(k, []); at.get(k).push([li, end]); } });
+  const gone = new Set();
+  for (const [, E] of at) {
+    if (E.length !== 2) continue;
+    let [[i, ei], [j, ej]] = E;
+    if (i === j || gone.has(i) || gone.has(j)) continue;
+    const A = L[i], B = L[j];
+    const p = ei ? A.pts[A.pts.length - 1] : A.pts[0];
+    let other = false; segs.near(p.x, p.y, 0.01, g => { if (!other && g[4] !== i && g[4] !== j && U.segDist(p.x, p.y, g[0], g[1], g[2], g[3]) < 0.004) other = true; });
+    if (other) continue;
+    if (A.cls !== B.cls || !!A.core !== !!B.core) {
+      // a street that changes class at the corner stays two streets, the corner rounded between them
+      const a = ei ? A.pts[A.pts.length - 2] : A.pts[1], q = ej ? B.pts[B.pts.length - 2] : B.pts[1];
+      const t = Math.abs(U.angWrap(Math.atan2(q.y - p.y, q.x - p.x) - Math.atan2(p.y - a.y, p.x - a.x)));
+      if (t < 0.45 || t > 2.7) continue;
+      const la = U.dist(a, p), lq = U.dist(p, q), d = Math.min(ROUND_R * Math.tan(t / 2), la * (A.pts.length > 2 ? 0.45 : 0.85), lq * (B.pts.length > 2 ? 0.45 : 0.85));
+      if (d < 0.01) continue;
+      const p1 = { x: p.x + (a.x - p.x) * d / la, y: p.y + (a.y - p.y) * d / la }, p2 = { x: p.x + (q.x - p.x) * d / lq, y: p.y + (q.y - p.y) * d / lq };
+      const k = Math.ceil(t / 0.35), arc = [];
+      for (let m = 0; m <= k; m++) { const s = m / k, u = 1 - s; arc.push({ x: u * u * p1.x + 2 * u * s * p.x + s * s * p2.x, y: u * u * p1.y + 2 * u * s * p.y + s * s * p2.y }); }
+      if (ei) A.pts.splice(A.pts.length - 1, 1, ...arc); else A.pts.splice(0, 1, ...arc.reverse());
+      if (ej) B.pts[B.pts.length - 1] = p2; else B.pts[0] = p2;
+      continue;
+    }
+    const pa = ei ? A.pts : A.pts.slice().reverse(), pb = ej ? B.pts.slice().reverse() : B.pts;
+    // (the flags of the ends kept: A's far end is the new start, B's far end the new end)
+    const fa = ei ? 0 : 1, fb = ej ? 0 : 1;
+    const head = (A.head & (fa + 1) ? 1 : 0) | (B.head & (fb + 1) ? 2 : 0), stop = (A.stop & (fa + 1) ? 1 : 0) | (B.stop & (fb + 1) ? 2 : 0);
+    A.pts = pa.concat(pb.slice(1));
+    if (head) A.head = head; else delete A.head;
+    if (stop) A.stop = stop; else delete A.stop;
+    gone.add(j);
+    // B's far end now belongs to A
+    const kb = key(fb ? B.pts[B.pts.length - 1] : B.pts[0]), eb = at.get(kb);
+    if (eb) for (const e of eb) if (e[0] === j) { e[0] = i; e[1] = 1; }
+    const ea = at.get(key(pa[0]));
+    if (ea) for (const e of ea) if (e[0] === i) e[1] = 0;
+  }
+  if (gone.size) c.streets = L.filter((l, k) => !gone.has(k));
+}
+/* the piece of a polyline from arc length s0 to s1 */
+function cutAt(P, cum, s0, s1) {
+  const at = s => { let i = 1; while (i < P.length - 1 && cum[i] < s) i++; const a = P[i - 1], b = P[i], t = (s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1); return { i, p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t } }; };
+  const A = at(s0), B = at(s1), out = [A.p];
+  for (let i = A.i; i < B.i; i++) if (cum[i] > s0 + 1e-6 && cum[i] < s1 - 1e-6) out.push(P[i]);
+  out.push(B.p);
+  return out;
 }
 
 /* ---------- what a city is: its districts, and the flights they want ---------- */
