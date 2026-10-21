@@ -217,7 +217,7 @@ const SCENES = {
     await page.exposeFunction('__snap', async n => { const out = path.resolve(__dirname, `../shots/replay-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.exposeFunction('__save', async (n, b64) => { const out = path.resolve(__dirname, `../shots/${n}`); fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('saved', out, fs.statSync(out).size, 'bytes'); });
     await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
-    await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
+    await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 300000 });
     await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`);
     if (process.env.DBG) console.log(JSON.stringify(await page.evaluate(() => window.__dbg)));
     if (name === 'perf' || name === 'live' || name === 'engagement') console.log('perf', JSON.stringify(await page.evaluate(() => window.__perf)));

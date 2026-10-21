@@ -127,15 +127,62 @@ A3.mouth = function (v, m, P, D) {
   par.getWorldQuaternion(v.arms.Q); D.set(u.arms.dir, 0, 0).applyQuaternion(v.arms.Q);
   return true;
 };
-/* a round in its first second and a half: out of its canister's mouth along the launcher, then onto its recorded path */
+/* a round's first seconds (brief 67). The simulation starts a round at full speed on its launcher; drawn, it leaves
+   from rest: its recorded path is flown on a clock (tau) that starts still and runs up to the real one, a third
+   faster than real two thirds of the way and then exactly on time at the recorded speed when the window ends, so
+   nothing jumps. For the first part it goes along its canister, nose first out of the mouth, and bends onto that
+   path (the pitch-over); the model points the way it is drawn moving, so the nose never snaps round. The smoke
+   (render3d-war.js) is laid from the same places. */
+const LA = { win: 2.6, min: 0.6 };
+const tau = (a, A) => { const u = a / A; return a - a * (1 - u) * (1 - u); };
+// a short flight (a point-defence round) gets a shorter run-up: the hit stays where and when it was
+// (one still flying, in the live view, gets the longest)
+const winOf = m => m.tr.live ? LA.win : U.clamp(Math.min(LA.win, (m.tr.t1 - m.tL) * 0.35), LA.min, LA.win);
+const LP = {}, LQ = {};
+/* where a round is drawn at time tp of its launch window (into out, in the scene); false outside it */
+A3.launchAt = function (v, m, tp, out) {
+  const tr = m.tr; if (tr.kind !== 'missile' || !v.arms || m.tL == null) return false;
+  const a = tp - m.tL, A = m._lw && !m._lwLive ? m._lw : (m._lw = winOf(m));
+  m._lwLive = m.tr.live;
+  if (a < 0 || a >= A) return false;
+  // the mouth and the canister's axis, once a frame (they move with the launcher's kick); without a launcher drawn,
+  // the first recorded point and the way it went
+  const mo = m._mo || (m._mo = { P: new T.Vector3(), D: new T.Vector3(), at: NaN, ok: false });
+  if (mo.at !== v.t) {
+    mo.at = v.t;
+    if (A3.mouth(v, m, mo.P, mo.D)) { mo.ok = true; mo.P.addScaledVector(mo.D, -(m.MP ? m.MP.len : 0.05) * 0.45); }   // its nose at the mouth
+    else {
+      const p = IC.recAt(tr, m.tL, LP), q = IC.recAt(tr, Math.min(tr.t1, m.tL + 0.5), LQ);
+      mo.ok = !!(p && q);
+      if (mo.ok) {
+        mo.P.set(p.x - v.cx, H.hT(v, p.x, p.y) * v.hk + p.alt * H.KM * v.hk, p.y - v.cy);
+        mo.D.set(q.x - p.x, (q.alt - p.alt) * H.KM * v.hk, q.y - p.y); if (mo.D.lengthSq() < 1e-12) mo.D.set(0, 1, 0); mo.D.normalize();
+      }
+    }
+  }
+  if (!mo.ok) return false;
+  const r = IC.recAt(tr, m.tL + tau(a, A), LP); if (!r) return false;
+  const r0 = IC.recAt(tr, m.tL, LQ);
+  const rx = r.x - v.cx, ry = H.hT(v, r.x, r.y) * v.hk + r.alt * H.KM * v.hk, rz = r.y - v.cy;
+  const d = Math.hypot(r.x - r0.x, r.y - r0.y, (r.alt - r0.alt) * H.KM * v.hk), k = ease(a / (A * 0.8));
+  // along the canister as far as it has come along its path, bending onto the path
+  out.x = mo.P.x + mo.D.x * d; out.y = mo.P.y + mo.D.y * d; out.z = mo.P.z + mo.D.z * d;
+  out.x += (rx - out.x) * k; out.y += (ry - out.y) * k; out.z += (rz - out.z) * k;
+  return true;
+};
+const FP = { x: 0, y: 0, z: 0 }, FQ = { x: 0, y: 0, z: 0 };
 A3.fix = function (v, m, st, t) {
-  const age = t - (m.tL != null ? m.tL : IC.recFirstT(m.tr)); if (age < 0 || age > 1.6) return;
-  const W = v.arms, P = W.V, D = W.V2;
-  if (!A3.mouth(v, m, P, D)) return;
-  // 300 m/s² out of the tube, eased onto the recorded path
-  const s = 1.5 * age * age, k = ease(age / 1.6);
-  m.grp.position.set(P.x + D.x * s + (m.grp.position.x - P.x - D.x * s) * k, P.y + D.y * s + (m.grp.position.y - P.y - D.y * s) * k, P.z + D.z * s + (m.grp.position.z - P.z - D.z * s) * k);
-  if (k < 0.6) { const h = Math.atan2(D.z, D.x), pt = Math.asin(U.clamp(D.y, -1, 1)); m.grp.rotation.set(0, -h, pt, 'YZX'); }
+  if (!A3.launchAt(v, m, t, FP)) return;
+  const A = m._lw, a = t - m.tL, mo = m._mo, rh = -m.grp.rotation.y, rp = m.grp.rotation.z;   // (the recorded attitude, as shown)
+  m.grp.position.set(FP.x, FP.y, FP.z);
+  // the nose the way it moves (looking a moment ahead, so the start is not a standstill), turning onto the recorded
+  // attitude over the last quarter of the window
+  let dx = mo.D.x, dy = mo.D.y, dz = mo.D.z;
+  if (A3.launchAt(v, m, Math.min(t + 0.05, m.tL + A - 1e-3), FQ)) { const ex = FQ.x - FP.x, ey = FQ.y - FP.y, ez = FQ.z - FP.z; if (ex * ex + ey * ey + ez * ez > 1e-14) { dx = ex; dy = ey; dz = ez; } }
+  let h = Math.atan2(dz, dx), p = Math.atan2(dy, Math.hypot(dx, dz));
+  const e = ease((a - A * 0.75) / (A * 0.25));
+  if (e > 0) { h += wrap(rh - h) * e; p += (rp - p) * e; }
+  m.grp.rotation.set(0, -h, p, 'YZX');
 };
 A3.ease = ease;
 
