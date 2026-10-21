@@ -145,7 +145,7 @@ IC.landsideTick = function (S, ap, dt) {
   if (added) { ap._box = null; IC.worldChanged && IC.worldChanged(S, { x0: added.x - 2, y0: added.y - 2, x1: added.x + 2, y1: added.y + 2 }); if (added.kind !== 'park' || have('park') === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} ${added.outer ? 'on the access road' : `by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}`}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo
   let v = 0;
-  for (const it of L.items) { it.use = IC.landUse(L, it); v += IC.LAND[it.kind].earn * it.use; }
+  for (const it of L.items) { it.use = IC.landUse(L, it, S.time); v += IC.LAND[it.kind].earn * it.use; }
   L.earn = v;
   if (v > 0) { S.budget += v * 600 / 3600; IC.econBook(S, 'landside', v * 600 / 3600); }
 };
@@ -196,11 +196,18 @@ IC.landWant = function (L, terms, sheds, rail) {
   if (sheds && L.cargo > 5) out.push(['warehouse', Math.min(6, Math.ceil(L.cargo / 40))]);
   return out;
 };
-/* how full an item is, 0..1 */
-IC.landUse = function (L, it) {
+/* how full the car parks are over the day (brief 66): the long-stay cars stay the night, the morning's travellers
+   fill them by midday and the evening's arrivals drive them home, at the hours of the airport's road traffic */
+IC.PARK_DAY = [0.62, 0.6, 0.58, 0.57, 0.58, 0.64, 0.74, 0.84, 0.92, 0.97, 1, 1, 1, 0.99, 0.98, 0.97, 0.95, 0.92, 0.88, 0.83, 0.77, 0.72, 0.68, 0.65];
+/* how full an item is, 0..1 (t: the time of day, for the car parks) */
+IC.landUse = function (L, it, t) {
   const p = L.pax;
   if (it.kind === 'warehouse') return U.clamp(L.cargo / 40 / Math.max(1, L.items.filter(x => x.kind === 'warehouse').length), 0.2, 1);
-  if (it.kind === 'park' || it.kind === 'garage') { const cap = L.items.filter(x => x.kind === 'park' || x.kind === 'garage').reduce((a, x) => a + x.cap, 0); return U.clamp(p * 2.2 / Math.max(1, cap), 0.1, 1); }
+  if (it.kind === 'park' || it.kind === 'garage') {
+    const cap = L.items.filter(x => x.kind === 'park' || x.kind === 'garage').reduce((a, x) => a + x.cap, 0), h = t == null ? 12 : (t % 86400) / 3600;
+    const D = IC.PARK_DAY, i = Math.floor(h), day = D[i % 24] + (D[(i + 1) % 24] - D[i % 24]) * (h - i);
+    return Math.round(U.clamp(p * 2.2 / Math.max(1, cap) * day, 0.06, 1) * 50) / 50;
+  }
   return U.clamp(p / 1500, 0.3, 1);
 };
 /* the roads of each building's landside: the kerb, a road beyond each band in use, the two ends joining them into a

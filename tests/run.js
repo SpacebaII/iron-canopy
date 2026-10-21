@@ -927,6 +927,30 @@ test('traffic: zooming in and out, the vehicles on the streets never jump or van
   const full = IC.trafficVisible(S, W, 0.3, () => {}), near = shown(45);
   assert(near > full * 0.5 && near < full * 2, `close in ${near} vehicles in the window, the flows put ${full} there`);
 });
+test('traffic: no trips planned, every road alive by what is round it; the airport road and car parks follow its passengers (brief 66)', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const T = S.traffic, G = T.G, W = S.world;
+  S.traffic.stepT = 0; IC.traffic(S, 0.25);
+  // every national road carries something, more near the towns than far out in the country
+  const nat = T.links.filter(L => !L.l.city && L.l.ref.edge && L.l.len > 2);
+  const near = L => Math.min(...W.cities.filter(c => c.home !== false).map(c => U.dist(c, L.l.pts[L.l.pts.length >> 1]))), avg = a => a.reduce((t, L) => t + L.load, 0) / Math.max(1, a.length);
+  assert(nat.every(L => L.load > 0.01), `${nat.filter(L => L.load <= 0.01).length} of ${nat.length} national roads carry nothing at 08:00`);
+  const lc = nat.filter(L => L.cls === 'lc' || L.cls === 'rd'), byTown = lc.filter(L => near(L) < 150), far = lc.filter(L => near(L) > 800);
+  assert(byTown.length > 10 && far.length > 10 && avg(byTown) > avg(far) * 1.3, `roads by the towns (${avg(byTown).toFixed(2)}) are no busier than far out (${avg(far).toFixed(2)})`);
+  // one street keeps one character from block to block: its links' loads differ little along it
+  const byRef = new Map(); for (const L of T.links) if (L.l.city && L.cls === 'art') { let a = byRef.get(L.l.ref); if (!a) byRef.set(L.l.ref, a = []); a.push(L.load); }
+  let jumps = 0, pairs = 0; for (const a of byRef.values()) for (let i = 1; i < a.length; i++) { pairs++; if (Math.max(a[i], a[i - 1]) > 2.5 * Math.min(a[i], a[i - 1])) jumps++; }
+  assert(pairs > 100 && jumps < pairs * 0.05, `${jumps} of ${pairs} neighbouring pieces of the same avenue jump in traffic`);
+  // the airport's road carries its travellers, taxis and shuttles: the airport share is high on the way in
+  const pl = T.places.find(p => p.kind === 'apt' && p.ref.parts && p.ref.parts.length), ap = pl && pl.ref;
+  assert(pl, 'no airport is a place on the roads');
+  const into = G.nodes[pl.node].out.map(li => T.links[li]).filter(L => L.ld[0] + L.ld[1] > 0);
+  assert(into.length && into.some(L => L.mix[0][2] > 0.3 || L.mix[1][2] > 0.3), `the roads at ${ap.name} carry few airport travellers (${into.map(L => Math.max(L.mix[0][2], L.mix[1][2]).toFixed(2)).join(', ')})`);
+  // its car parks fill over the morning and empty in the evening, never full to empty
+  const L0 = IC.landInit(ap); L0.pax = 170; const it = { kind: 'park', cap: 400 }; L0.items = [it];
+  const at = h => IC.landUse(L0, it, h * 3600);
+  assert(at(4) < at(12) * 0.75 && at(22) < at(12) && at(4) > 0.3, `car park ${(at(4) * 100) | 0}% at 04:00, ${(at(12) * 100) | 0}% at noon, ${(at(22) * 100) | 0}% at 22:00`);
+});
 test('traffic: a busy hour stays inside the time budget', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S);

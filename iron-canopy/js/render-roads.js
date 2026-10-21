@@ -547,42 +547,6 @@ function vehicles(list, px, night, now, m, detail, parked) {
     ctx.fill(); ctx.globalCompositeOperation = 'source-over';
   }
 }
-/* traffic lights close in (traffic.js IC.signalFor): a head at the kerb by each stop line, red, amber or green for the
-   road coming in, glowing at night */
-const SIG_COL = { g: 'rgb(70,230,120)', a: 'rgb(255,186,40)', r: 'rgb(255,52,40)' };
-function drawSignals(S, px, night) {
-  const T = S.traffic, G = T && T.G; if (!G || !G.nb) return;
-  const by = { g: [], a: [], r: [] }, heads = [], K = IC.SIGNAL, z = cam.z;
-  for (let gx = Math.floor(view.x0 / G.NB); gx <= Math.floor(view.x1 / G.NB); gx++) for (let gy = Math.floor(view.y0 / G.NB); gy <= Math.floor(view.y1 / G.NB); gy++) {
-    for (const ni of G.nb.get((gx + 100) * 32768 + gy + 100) || []) {
-      const n = G.nodes[ni]; if (!n.sig || !inView(n.x, n.y, 0.3)) continue;
-      for (const li of n.out) {
-        const q = G.links[li], d = q.b === ni ? 0 : 1; if (!IC.driveCanGo(q, d)) continue;
-        // (back from the middle along the road coming in, to the stop line, and out to its right-hand kerb)
-        const P = q.pts, p0 = d ? P[0] : P[P.length - 1], p1 = d ? P[1] : P[P.length - 2], l = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
-        if (l < K.stop) continue;
-        const ux = (p1.x - p0.x) / l, uy = (p1.y - p0.y) / l, o = IC.roadWidth(q.cls === 'ring' ? 'art' : q.cls, z) / 2 + 0.012;
-        // facing the junction (-u), the right-hand side is (u.y, -u.x)
-        const x = p0.x + ux * K.stop + uy * o, y = p0.y + uy * K.stop - ux * o;
-        heads.push(x, y); by[IC.signalFor(G, ni, q, d, S.time)].push(x, y);
-      }
-    }
-  }
-  if (!heads.length) return;
-  const r = Math.max(0.006, 1.6 * px);
-  ctx.fillStyle = 'rgb(30,32,34)'; ctx.beginPath();
-  for (let i = 0; i < heads.length; i += 2) ctx.rect(heads[i] - r * 1.5, heads[i + 1] - r * 1.5, r * 3, r * 3);
-  ctx.fill();
-  if (night) ctx.globalCompositeOperation = 'lighter';
-  for (const k in by) {
-    const L = by[k]; if (!L.length) continue;
-    ctx.fillStyle = SIG_COL[k]; ctx.beginPath();
-    for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r, L[i + 1]); ctx.arc(L[i], L[i + 1], r, 0, 7); }
-    ctx.fill();
-    if (night) { ctx.globalAlpha = 0.25; ctx.beginPath(); for (let i = 0; i < L.length; i += 2) { ctx.moveTo(L[i] + r * 4, L[i + 1]); ctx.arc(L[i], L[i + 1], r * 4, 0, 7); } ctx.fill(); ctx.globalAlpha = 1; }
-  }
-  ctx.globalCompositeOperation = 'source-over';
-}
 let lastT = null;
 IC.drawTraffic = function (g, S, px, v, light, now) {
   ctx = g; view = v;
@@ -647,7 +611,6 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
       if (P.length) vehicles(P, px, night, now, m, z > 18, true);
     }
     vehicles(list, px, night, now, m, z > 18);
-    if (z > 25) drawSignals(S, px, night);
   }
   // trains: real length is about 25 m a carriage
   const tl = Math.max(0.25, 5 * px);
