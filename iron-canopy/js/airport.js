@@ -770,6 +770,8 @@ IC.aptStats = function (S, ap) {
   // (round 1) buildings inside a runway's strip: accepted, but said, with the fix (playtest 1: a fire station 110 m
   // from the centreline went unremarked)
   for (const p of ap.parts) { const why = IC.aptStripWhy(ap, p); if (why) st.warn.push(why); }
+  // (brief 62) a GA ramp joined at one end only
+  if (IC.gaRampWarn) for (const w of IC.gaRampWarn(ap)) st.warn.push(w);
   const towers = alive('tower'), tower = towers.length > 0;
   // the cab must see each runway it works: within 8 km and over the roofs in between
   st.unseen = {};
@@ -1760,7 +1762,7 @@ IC.layoutAirport = function (ap, template, a) {
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
     // the GA ramp, south of the runway's east end: light aircraft and business jets away from the airliners
-    ga({ n: 18, biz: 3, x: 15.6, y: -3.2, rot: Math.PI, to: [[16.8, 0], [16.8, -3.2]], to2: [[11.6, -3.2], [11.6, 0]] });
+    ga({ n: 20, biz: 3, x: 15.6, y: -3.2, rot: Math.PI, to: [[16.8, 0], [16.8, -3.2]], to2: [[11.6, -3.2], [11.6, 0]] });
   } else if (template === 'regional_bad') {
     // one stub in the middle of the runway: every departure backtracks, every landing blocks the runway for minutes
     rw(-12, 12, 0, nm());
@@ -1775,7 +1777,7 @@ IC.layoutAirport = function (ap, template, a) {
     tx([[-6, 1.7], [-6, 2.25]]);
     const T = kit({ n: 6, piers: 0, x: 0, lane: 2.3, par: 1.7, x0: -4.4, x1: 3.6 });
     bld('fuel', 4.6, 3.6); bld('tower', T.x0 - 0.4, T.y + 0.3); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
-    ga({ n: 10, biz: 1, x: 6.6, y: 2.45, rot: 0, to: [[6, 1.7], [6, 2.45]], to2: [[9.2, 2.45], [9.2, 0]] });
+    ga({ n: 12, biz: 1, x: 6.6, y: 2.45, rot: 0, to: [[6, 1.7], [6, 2.45]], to2: [[9.2, 2.45], [9.2, 0]] });
   } else if (template === 'mil_mothball') {
     // a half-closed base: a parallel taxiway to one end only, clustered fuel, no shelters, no alert pad
     rw(-13, 13, 0, nm());

@@ -42,10 +42,25 @@ Wave 16, after brief 61 on the same branch. Owns the light-aircraft and business
 - The save tests pass with aircraft on the ground at fields and on the ramp.
 - Found by the full run: a GA ramp's spots counted as stands for the airlines' offers (now they do not), and light aircraft counted on the airlines' timetable, against a cap or a night curfew (now they do not). Three tests leaned on the old dice and now look for what they need: an offer short of something buildable, a gate at a busy airport for the 3D lights, and a far drone still on its way after a sandbox raid.
 
+## The second round: eight steps
+
+Preston, after the first round: "any thoughts to make this better functionally and visually without gold plating", then "let's do a total of 8 steps".
+
+1. **A GA ramp the player builds.** "GA ramp" is the first piece on the build bar's Aprons and stands (Small: 10 tie-downs and 2 business-jet stands; Large: 18 and 6), placed and turned like the terminal kits (`IC.TERM_KITS.garamp`, `IC.kitGA`). Its based aircraft move in once its lane reaches the taxiways.
+2. **The ramp in the airport panel.** Spots taken against spots, based, out flying, visiting and on their way in; today's light aircraft in and out, and how many were turned away with the ramp full since yesterday, with what to do about it (`IC.gaStatus`, kept in `ap.lightLog`). An airport with a runway and no ramp says what one would give.
+3. **One aircraft on a club strip at a time.** A departure holds short 45 m off the strip while another is lined up, rolling, landing or taxiing along it; an arrival with the strip taken flies round again (`stripBusy`, `IC.fieldStripBusy` in `civil.js`).
+4. **The business terminal on the ramp's edge.** The FBO sits on the ramp's own edge in place of two tie-downs (`part.fbo`), and the walks and the car go to its door.
+5. **Propellers spin and stop.** A propeller turns from the last 30 s of the pre-flight to the take-off, and for 12 s after it parks, and is still otherwise; field traffic on the grass throws dust behind it, more the faster it runs.
+6. **Weather keeps them tied down, and says why.** Light aircraft fly from 07:00 to 19:00, not in fog, rain or snow, low cloud, or gusts over 25 kt (`IC.gaGrounded` gives the reason, shown on the panel and on each parked aircraft). Business jets still leave.
+7. **Click a light aircraft.** On the ramp, taxiing or at a club field: its registration, type, based or visiting (and from where), and what it is doing in words, from "The pilot is walking out to it" and "The walk-round before the flight" to "Engine run-up at the holding point" (`IC.gaWhat`, the `'ga'` pick).
+8. **A ramp joined at one end is built, and said.** A ramp whose lane meets the taxiways at one end only is told so when it is built and listed in the airport's problems: an arrival taxiing in meets a departure nose to nose there (`IC.gaRampWarn`).
+
+Tests: the build bar places a ramp, warned at one end and not at both, and based aircraft move in; with every spot taken a visitor is turned away and counted; three aircraft at a field never share the strip and one holds short or goes round; in the dark nobody sets off and the panel says why, and gusts of 34 kt ground them; a click on a tie-down picks the aircraft, and its words follow the walk-out, the walk-round, the taxi, the run-up and the take-off. The tests found the day log reusing the go-around log's key (`ap.gaLog`); it is `ap.lightLog` now.
+
+Pictures in `docs/tasks/62-screens/`: `built-ramp-panel.jpg`, `built-ramp-one-end.jpg`, `light-aircraft-panel.jpg`, `field-dust.jpg`.
+
 ## Not done
 
 - The 3D view shows the ramp's parked aircraft but not its people and vehicles (the airliners' turnaround vehicles there come from the recorder; these do not yet).
-- The propeller is not drawn stopping; aircraft on the grass have no ground tracks or dust.
-- Two departures from a field can line up at the same end one behind the other, and a field arrival does not wait for one taxiing down the strip (they are a few a day).
 - Visitors to a field vanish at the end of its row (a field keeps no records).
 - An airport with no GA ramp keeps the old way: light aircraft come and go over its middle.

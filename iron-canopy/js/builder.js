@@ -1117,7 +1117,9 @@ function planOf(S, m, hv, tol, free, only) {
     if (m._bpKey !== key) { m._bpKey = key; m._bpC = IC.bldBlueprintCheck(S, ap, m._kitL, hv.x, hv.y, m.rot || 0); }
     const C = m._bpC, st = (m._kitL.stands || []).length;
     out.bp = { x: hv.x, y: hv.y, rot: m.rot || 0, t: C.t }; out.ok = C.ok; out.why = C.why; out.hit = C.hit; out.cost = C.cost || 0;
-    out.text.push(`${IC.TERM_KITS[t].name}: ${st} ${IC.STAND[sz].name} gates with jet bridges · ${U.money(C.cost || 0)} paid as the work runs · R turns it`);
+    const st2 = m._kitL.stands || [], nx = st2.filter(q => q.size === 'xs').length;
+    out.text.push(IC.TERM_KITS[t].ga ? `${IC.TERM_KITS[t].name}: ${nx} tie-downs, ${st2.length - nx} business-jet stands and the business terminal · ${U.money(C.cost || 0)} paid as the work runs · R turns it`
+      : `${IC.TERM_KITS[t].name}: ${st} ${IC.STAND[sz].name} gates with jet bridges · ${U.money(C.cost || 0)} paid as the work runs · R turns it`);
     return out;
   }
   if (t === 'blueprint') {
@@ -1478,7 +1480,7 @@ function finish(S, m, plan) {
     if (!plan.ok) { m.err = plan.why; IC.log(S, 'warn', 'BUILD', plan.why); return 'err'; }
     const kit = IC.TERM_KITS && IC.TERM_KITS[m.part], made = IC.bldBlueprint(S, ap, kit ? m._kitL : m.bp, plan.bp.x, plan.bp.y, plan.bp.rot);
     if (!made) { m.err = 'Could not plan it.'; return 'err'; }
-    m.done = kit ? `${kit.name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs. Join its taxilanes to your taxiways.` : `${IC.REAL_APT[m.bp].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs.`;
+    m.done = kit ? `${kit.name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs. Join its ${kit.ga ? 'lane to your taxiways at both ends' : 'taxilanes to your taxiways'}.` : `${IC.REAL_APT[m.bp].name} planned: ${made.length} parts, ${U.money(plan.cost)} paid as the work runs.`;
     return done();
   }
   if (!plan.specs.length) { m.err = plan.why || 'Nothing to build yet.'; return 'err'; }

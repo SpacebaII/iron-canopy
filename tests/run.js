@@ -1711,6 +1711,88 @@ test('club field: a light aircraft taxis to the end of the strip and takes off i
   assert(/^taxi line roll air app fin land roll air .*app fin land in$/.test(s), s);
   assert(fr(t).n > 0.5, 'it did not end on the row');
 });
+test('GA ramp: the build bar places one; joined to the taxiways at one end it is built and warned about, at both ends not, and based aircraft move in', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S; S.budget = 1e5;
+  const ap = IC.bases(S).find(a => a.kind === 'airport' && a.parts.some(p => p.kind === 'runway') && !IC.gaRamp(a));
+  assert(ap, 'every airport already has a ramp');
+  const m = IC.bldMode(S, ap, 'garamp'), p = IC.aptLocal(ap, 0, -9); S.mode2 = m; S.hover = p;
+  const plan = IC.bldPlanOf(S, m, p, 0.2, true);
+  assert(plan.ok && plan.text.some(t => /GA ramp: \d+ tie-downs, \d+ business-jet stands/.test(t)), plan.why || plan.text.join(' · '));
+  const n0 = ap.parts.length; IC.clickWorld(p, 0);
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  const made = ap.parts.slice(n0), apr = made.find(q => q.kind === 'apron'), lane = made.find(q => q.lane);
+  assert(apr && apr.zone === 'light' && apr.fbo && lane, 'no light-aircraft apron with its business terminal and lane');
+  for (const q of made) { q.built = true; q.prog = 1; } ap.dirty = true;
+  assert(!IC.gaRamp(ap), 'stands that nothing reaches count as a ramp');
+  const own = ap.parts.filter(q => q.kind === 'taxi' && q.built && !made.includes(q));
+  const join = id => { const n = ap.nodes[id]; let k = null, bd = 1e9; for (const q of own) for (const j of q.nodes) { const d = U.dist(n, ap.nodes[j]); if (d < bd) { bd = d; k = j; } }
+    IC.aptAddPart(ap, { kind: 'taxi', nodes: [id, k] }, true); const q = ap.parts[ap.parts.length - 1]; q.built = true; q.prog = 1; ap.dirty = true; };
+  join(lane.nodes[0]);
+  assert(IC.aptStats(S, ap).warn.some(w => /joins the taxiways at one end only/.test(w)), 'a lane joined at one end is not warned about');
+  join(lane.nodes[lane.nodes.length - 1]);
+  assert(!IC.aptStats(S, ap).warn.some(w => /one end only/.test(w)), 'still warned with both ends joined');
+  for (let i = 0; i < 4 * 60; i++) IC.step(S, 0.25);
+  const G = IC.gaStatus(S, ap);
+  assert(G && G.ties >= 10 && G.jets >= 2 && G.based >= 4 && G.based === S.ga.parked.filter(r => r.ap === ap.id && r.home).length, JSON.stringify(G));
+});
+test('GA ramp: with every spot taken a visitor is turned away to another field, and the airport\'s status counts it', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const cap = S.byId[S.story.cap], F = S.asp.fields.slice().sort((a, b) => U.dist(a, cap) - U.dist(b, cap))[0];
+  for (const s of IC.gaRamp(cap)) if (!s.occ) IC.gaPark(S, cap, s, { type: s.size === 'xs' ? 'light' : 'bizjet', biz: s.size !== 'xs', until: S.time + 86400 });
+  assert(IC.gaStatus(S, cap).free === 0 && IC.gaStatus(S, cap).turned === 0, 'the ramp is not full, or already turned someone away');
+  const t = IC.gaLaunch(S, { x: F.x, y: F.y, name: F.name, field: F.id }, { x: cap.x, y: cap.y, name: cap.name, apt: cap.id }, { type: 'tourer', progress: 0.6 });
+  for (let i = 0; i < 4 * 3600 && !t.gaNo && !t.dead; i++) IC.step(S, 0.25);
+  assert(t.gaNo, 'it was not turned away');
+  assert(IC.gaStatus(S, cap).turned >= 1, `turned away: ${IC.gaStatus(S, cap).turned}`);
+});
+test('club field: one aircraft on the strip at a time; the next holds short, or flies round again on final', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const F = S.asp.fields[0], a = { x: F.x, y: F.y, name: F.name, field: F.id };
+  const ts = [IC.gaLaunch(S, a, a, { type: 'light', circuit: 3 }), IC.gaLaunch(S, a, a, { type: 'tourer', circuit: 2 }), IC.gaLaunch(S, a, a, { type: 'light', circuit: 2 })];
+  let most = 0, held = 0;
+  for (let i = 0; i < 4 * 3600 && !ts.every(t => t.dead); i++) {
+    IC.step(S, 0.25);
+    let on = 0;
+    for (const t of S.threats) {
+      const G = t.fld; if (t.dead || !G || G.f !== F.id) continue;
+      if (G.hold) held++;
+      // (past the holding point, lined up, rolling, landing, or turning off the strip)
+      if (G.ph === 'line' || G.ph === 'roll' || G.ph === 'land' || (G.ph === 'taxi' && G.i >= 3 && U.dxy(t.x, t.y, G.pts[2].x, G.pts[2].y) > 0.01)) on++;
+    }
+    most = Math.max(most, on);
+  }
+  assert(most === 1, `${most} aircraft on the strip at once`);
+  assert(held > 0 || ts.some(t => t.fld && t.fld.around), 'nobody waited for the strip');
+  assert(ts.every(t => t.dead), 'not all of them came home');
+});
+test('GA ramp: light aircraft stay tied down in the dark and in strong gusts, and say why', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 21 }); IC.S = S;
+  const cap = S.byId[S.story.cap], s = IC.gaRamp(cap).find(x => x.size === 'xs' && !x.occ);
+  assert(/dark/.test(IC.gaGrounded(S)), `grounded: ${IC.gaGrounded(S)}`);
+  const v = IC.gaPark(S, cap, s, { type: 'tourer', until: S.time });
+  for (let i = 0; i < 4 * 900; i++) IC.step(S, 0.25);
+  assert(S.ga.parked.includes(v) && !v.mv, 'a visitor set off in the dark');
+  const b = S.ga.parked.find(r => r.ap === cap.id && r.home && !r.biz && !r.away);
+  assert(/nobody flies now \(it is dark/.test(IC.gaWhat(S, b).doing), IC.gaWhat(S, b).doing);
+  S.time += 12 * 3600; S.wind.kt = 18; S.wind.gust = 34;
+  assert(/gusting 34 kt/.test(IC.gaGrounded(S) || ''), `grounded: ${IC.gaGrounded(S)}`);
+  S.wind.gust = 12; S.wind.kt = 8;
+  assert(IC.gaWeatherOk(S) || !/gust/.test(IC.gaGrounded(S)), 'still grounded by a light wind');
+});
+test('GA ramp: a click on a light aircraft picks it, and its panel says who it is and what it is doing, from the walk-out to the run-up', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 9 }); IC.S = S;
+  const cap = S.byId[S.story.cap], r = IC.gaIdle(S, cap).find(x => x.type === 'light' || x.type === 'tourer'), s = IC.aptStands(cap).find(x => x.id === r.sid);
+  const k = IC.pickAt(S, { x: s.x, y: s.y }, 40);
+  assert(k && k.kind === 'ga' && k.ref.sid, `picked ${k && k.kind}`);
+  const w = IC.gaWhat(S, k.ref);
+  assert(w.cs && w.type && /Based here|Visiting/.test(w.who) && /Tied down|Parked/.test(w.doing), JSON.stringify(w));
+  const F = S.asp.fields[0];
+  assert(IC.gaDepart(S, r, { x: F.x, y: F.y, name: F.name, field: F.id }), 'it could not set off');
+  const said = new Set();
+  for (let i = 0; i < 4 * 1800 && !r.away; i++) { IC.step(S, 0.25); if (i % 8 === 0) { const x = IC.gaWhat(S, r); if (x) said.add(x.doing.replace(/ · .*/, '')); } }
+  const all = [...said].join(' | ');
+  assert(/walking out/.test(all) && /walk-round/.test(all) && /Taxiing out/.test(all) && /run-up/.test(all) && /Taking off/.test(all), all);
+});
 test('builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S; S.budget = 1e5;
   const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
@@ -2639,7 +2721,8 @@ test('airport: service roads are laid out by themselves, reach the fuel farm, ca
 test('kits: every terminal kit has its stands fanned or lined along its walls, each with a bridge, and nothing overlaps', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   const ap = S.byId[S.story.cap];
-  for (const k of Object.keys(IC.TERM_KITS)) for (const size of ['m', 'l']) {
+  // (not the GA ramp: tie-downs have no jet bridges)
+  for (const k of Object.keys(IC.TERM_KITS).filter(k => !IC.TERM_KITS[k].ga)) for (const size of ['m', 'l']) {
     IC.aptFromLayout(ap, IC.kitLayout(k, { size }), { x: ap.x, y: ap.y, rot: 0.7 }); ap.dirty = true;
     const G = IC.aptGraph(ap), st = IC.aptStands(ap);
     assert(st.length >= 4, `${k} (${size}): only ${st.length} stands`);

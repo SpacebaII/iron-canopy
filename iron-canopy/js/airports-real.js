@@ -82,6 +82,8 @@ IC.aptAddLayout = function (ap, L, o) {
   // aprons, as outlines; stands where the data has them
   const aprons = (L.aprons || []).map(A => {
     const part = add(Object.assign(IC.polyPart('apron', P(A.poly)), { zone: A.zone || undefined, ramp: true, free: [], mat: A.mat || 'conc', name: A.name || undefined }));
+    // (a GA ramp's business terminal: where it stands and which way it faces)
+    if (A.fbo) { const w = X(A.fbo[0], A.fbo[1]); part.fbo = { x: w.x, y: w.y, a: U.angWrap(A.fbo[2] + rot) }; }
     return part;
   });
   // taxiway nodes: every point shared by two ways is one node

@@ -42,6 +42,14 @@ IC.pickAt = function (S, p, z) {
       for (const s of IC.aptStands(ap)) if (s.occ && U.dist(s, p) < Math.max(1, 7 * px)) { const tl = S.av.tails.find(t => t.id === s.occ); if (tl && tl.where === 'stand') near('tail', tl, s.x, s.y, tl.T.len * 0.5); }
     }
     if (best) return best;
+    // (brief 62) a light aircraft or business jet: on the GA ramp, moving on the airport, or on a club field
+    if (S.ga) for (const ap of IC.bases(S)) {
+      if (!ap.parts || U.dist(ap, p) > ap.radius + 5) continue;
+      for (const m of ap.moves) if (m.ga && !m.dead && m.T && !(m.kind !== 'arr' && m.phase === 'start')) near('ga', m, m.x, m.y, m.T.len * 0.6);
+      for (const r of S.ga.parked) if (r.ap === ap.id && !r.away) { const s = IC.aptStands(ap).find(x => x.id === r.sid); if (s && U.dist(s, p) < 1) near('ga', r, s.x, s.y, IC.ACTYPES[r.type].len * 0.6); }
+    }
+    for (const t of S.threats) if (t.fld && !t.dead && !t.held) near('ga', t, t.x, t.y, 0.06);
+    if (best) return best;
   }
   // close in, airports are picked part by part
   if (z >= 2.5) for (const ap of IC.bases(S)) {

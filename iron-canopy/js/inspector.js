@@ -45,6 +45,7 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'fix') h = fix(r);
     else if (s.kind === 'airway') h = airway(r);
     else if (s.kind === 'field') h = field(r);
+    else if (s.kind === 'ga') h = gaPanel(r);
   }
   el.classList.toggle('glass', !!h);
   el.classList.toggle('slim', !!(IC.FOCUS.polish && s && S.group.length <= 1 && s.kind === 'tail'));
@@ -108,6 +109,13 @@ function airway(w) {
   if (over.length) tips.push('Airliners over bases and cities are a risk in a crisis. Move the fixes, or publish a prohibited zone.');
   return head(`<span class="badge friend">${ui.icon('airway')}</span>`, `${a.name} – ${b.name}`, 'Airway') + `<div class="ibody">${kv(rows)}${tips.map(x => `<p class="hint">${x}</p>`).join('')}
     <div class="acts"><button class="act warn" data-act="wayDel" data-id="${w.id}">Delete airway</button></div></div>`;
+}
+/* (brief 62) a light aircraft or business jet on the ground: who it is and what it is doing */
+function gaPanel(r) {
+  const w = IC.gaWhat(S, r); if (!w) return '';
+  const rows = [['Doing', esc(w.doing)], ['Type', `${esc(w.type)} (${esc(w.short)})`], ['Who', esc(w.who)]];
+  if (w.where) rows.push(['Where', esc(w.where)]);
+  return head(`<span class="badge friend">${ui.icon('field')}</span>`, w.cs || 'Light aircraft', esc(w.type)) + `<div class="ibody">${kv(rows)}</div>`;
 }
 function field(f) {
   const n = S.threats.filter(t => !t.dead && t.type === 'ga' && t.gaTo && t.gaTo.field === f.id).length;
@@ -621,6 +629,14 @@ function lifeRows(b) {
   const rows = [['Gates · remote · cargo stands', `${pv.gates} · ${pv.remote} (by bus) · ${pv.cargoStands}${pv.gates && !IC.aptTechOk(S, 'bridge') ? ' <span class="amber">· no jet bridges yet (research)</span>' : ''}`],
     ['On the ground, last hour', gm.length ? Object.entries(by).map(([k, n]) => `${n} ${k === 'push' ? 'pushbacks' : k === 'tow' ? 'tows' : k === 'fuel' ? 'stops to refuel' : k === 'de-icing' ? 'de-icings' : k}`).join(', ') : 'no pushbacks, tows or service stops'],
     ['Hangars', pv.hangar ? `${inH} of ${pv.hangar} places in use for maintenance` : '<span class="amber">none: airliners due for maintenance fly elsewhere</span>']];
+  // (brief 62) the GA ramp: its spots, who is on them, today's comings and goings, and why nobody flies
+  const G = IC.gaStatus && IC.gaStatus(S, b);
+  if (G) {
+    const full = G.free === 0, T = G.today;
+    rows.push(['GA ramp', `${G.taken} of ${G.spots} spots taken (${G.ties} tie-downs, ${G.jets} for business jets): ${G.based} aircraft based here${G.out ? `, ${G.out} out flying` : ''}, ${G.visitors} visiting${G.coming ? `, ${G.coming} on ${G.coming > 1 ? 'their' : 'its'} way in` : ''}`
+      + `${full ? ' · <span class="amber">full</span>' : ''}`]);
+    rows.push(['Light aircraft today', `${T.in} in, ${T.out} out${G.turned ? ` · <span class="amber">${G.turned} turned away since yesterday with the ramp full: they flew to other fields (make the ramp bigger, or build another)</span>` : ''}${G.grounded ? ` · nobody flying now: ${G.grounded}` : ''}`]);
+  } else if (b.owner === 'us' && b.parts.some(p => p.kind === 'runway' && p.built)) rows.push(['GA ramp', 'none: light aircraft land and leave in a slot on the runway, with nowhere to park. A GA ramp (Aprons and stands) gives them tie-downs, and business jets stands of their own']);
   if (L) {
     const n = {}; for (const it of L.items) n[it.kind] = (n[it.kind] || 0) + 1;
     const what = Object.entries(n).map(([k, c]) => `${c} ${IC.LAND[k].name.toLowerCase()}${c > 1 && !/s$/.test(IC.LAND[k].name) ? 's' : ''}`).join(', ');

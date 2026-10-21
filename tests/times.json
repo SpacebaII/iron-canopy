@@ -198,6 +198,11 @@
  "club field: a light aircraft taxis to the end of the strip and takes off into the wind on the grass; a circuit touches and goes, then lands and taxis back to the row": 8,
  "builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area": 7.8,
  "kits: a terminal complex steps in and out, its piers differ, and every stand has a bridge and a way out": 8.7,
- "kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways": 8.0,
- "pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back": 7.5
+ "kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways": 8,
+ "pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back": 7.5,
+ "GA ramp: the build bar places one; joined to the taxiways at one end it is built and warned about, at both ends not, and based aircraft move in": 12,
+ "GA ramp: with every spot taken a visitor is turned away to another field, and the airport's status counts it": 15,
+ "club field: one aircraft on the strip at a time; the next holds short, or flies round again on final": 8,
+ "GA ramp: light aircraft stay tied down in the dark and in strong gusts, and say why": 10,
+ "GA ramp: a click on a light aircraft picks it, and its panel says who it is and what it is doing, from the walk-out to the run-up": 9
 }

@@ -1266,9 +1266,17 @@ IC.gaBase = function (S, town) {
   return best;
 };
 /* light aircraft fly by sight: daylight, and cloud and visibility good enough */
-IC.gaWeatherOk = function (S) {
-  const h = ((S.time % 86400) + 86400) % 86400 / 3600, wx = IC.wx(S);
-  return h >= 7 && h < 19 && wx.eo >= 0.7 && !(wx.fog > 0.08) && !(wx.precip > 0.1);
+IC.gaWeatherOk = S => !IC.gaGrounded(S);
+/* why the light aircraft stay on the ground now, in a few words, or null when they fly: they fly by day, by sight,
+   and not in gusts beyond what a light single takes across a grass strip (brief 62) */
+IC.gaGrounded = function (S) {
+  const h = ((S.time % 86400) + 86400) % 86400 / 3600, wx = IC.wx(S), gust = S.wind ? Math.max(S.wind.kt, S.wind.gust || 0) : 0;
+  if (h < 7 || h >= 19) return 'it is dark: light aircraft fly from 07:00 to 19:00';
+  if (wx.fog > 0.08) return 'fog: pilots flying by sight need to see the ground';
+  if (wx.precip > 0.1) return 'rain or snow';
+  if (wx.eo < 0.7) return 'low cloud and poor visibility: too little to fly by sight';
+  if (gust > 25) return `wind gusting ${Math.round(gust)} kt: too strong for light aircraft`;
+  return null;
 };
 /* airspace a light aircraft may not enter without a clearance: controlled volumes of airports it is not cleared
    into, and military bands */

@@ -123,10 +123,13 @@ IC.kitGA = function (B, o) {
   const c = o.c || pt(0, 0), ca = Math.cos(o.rot || 0), sa = Math.sin(o.rot || 0), W = (x, y) => pt(c.x + x * ca - y * sa, c.y + x * sa + y * ca);
   const T = IC.STAND.xs, Sb = IC.STAND.s, half = LANE_W / 2 + 0.04, nb = o.biz || 0, per = Math.ceil((o.n || 10) / 2);
   const xb = nb ? nb * (Sb.w + 0.02) : 0, x1 = 0.25 + xb + per * (T.w + 0.02) + 0.12, deep = half + (nb ? Sb.d : T.d) + 0.08;
-  const ai = B.apron([W(0, -deep), W(x1, -deep), W(x1, deep), W(0, deep)], { zone: 'light', name: o.name || 'GA ramp' });
+  // (the business terminal stands on the ramp's edge at the far end, where the last two tie-downs of one row would
+  // be, its door on the lane: pilots, passengers and the bowser never cross grass or a road)
+  const xf = 0.25 + xb + (per - 1) * (T.w + 0.02), fbo = per >= 4 ? W(xf, -(half + T.d / 2)) : null;
+  const ai = B.apron([W(0, -deep), W(x1, -deep), W(x1, deep), W(0, deep)], { zone: 'light', name: o.name || 'GA ramp', fbo: fbo ? [fbo.x, fbo.y, (o.rot || 0) + Math.PI / 2] : undefined });
   const lane = [W(0, 0)];
   const row = (x0, k, S0, size) => { for (let i = 0; i < k; i++) { const x = x0 + (S0.w + 0.02) * (i + 0.5), via = W(x, 0); lane.push(via);
-    for (const sg of [1, -1]) { const v = B.node(via); B.stand(ai, W(x, sg * (half + S0.d / 2)), (o.rot || 0) - sg * Math.PI / 2, size, v); B.L.stands[B.L.stands.length - 1].drive = 1; } } };
+    for (const sg of [1, -1]) { if (fbo && size === 'xs' && sg < 0 && i >= k - 2) continue; const v = B.node(via); B.stand(ai, W(x, sg * (half + S0.d / 2)), (o.rot || 0) - sg * Math.PI / 2, size, v); B.L.stands[B.L.stands.length - 1].drive = 1; } } };
   row(0.25, nb, Sb, 's'); row(0.25 + xb, per, T, 'xs');
   lane.push(W(x1 - 0.06, 0)); B.lane(lane);
   return { join: W(0, 0), end: W(x1 - 0.06, 0), x1, deep };
@@ -312,6 +315,7 @@ IC.kitStar = function (B, o) {
 
 /* ---------- the build bar's kits: what each is, and its layout at the origin, facing east ---------- */
 IC.TERM_KITS = {
+  garamp: { name: 'GA ramp', ga: true, desc: 'Tie-downs for light aircraft in two rows along a taxilane, stands for business jets at its entry, and the business terminal (FBO) at its far end. Aircraft based here move in once it is joined to your taxiways; join the lane at both ends so arrivals and departures do not meet.', make: (B, o) => IC.kitGA(B, { c: pt(0, 0), n: o.size === 'l' ? 20 : 12, biz: o.size === 'l' ? 3 : 1 }) },
   rotunda: { name: 'Round terminal', desc: 'A round building with stands fanned all round it, each with a jet bridge to its wall, on an apron that follows the curve and a taxilane ring round it. Join the ring to your taxiways.', make: (B, o) => IC.kitRound(B, { c: pt(0, 0), R: o.size === 'l' ? 1.1 : 0.8, size: o.size }) },
   satellite: { name: 'Satellite', desc: 'A round pod of gates on its own apron, reached from a terminal by a people mover under the apron. Place it, then draw the people mover to it from the terminal (Terminals tab).', make: (B, o) => IC.kitRound(B, { c: pt(0, 0), R: o.size === 'l' ? 0.7 : 0.5, size: o.size, name: 'Satellite' }) },
   curved: { name: 'Curved pier', desc: 'A pier on an arc with gates on both faces, the aprons and taxilanes following it.', make: (B, o) => IC.kitCurve(B, { c: pt(0, 4), Rc: 4, a0: -Math.PI / 2 - 0.55, a1: -Math.PI / 2 + 0.55, size: o.size, inner: true, name: 'Curved pier' }) },

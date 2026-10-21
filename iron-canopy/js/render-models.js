@@ -157,15 +157,21 @@ IC.drawFieldLife = function (g, S, f, px) {
   // landing runs, and the circuit low over the field
   if (z > 2.5) for (const t of S.threats) {
     if (t.dead || t.type !== 'ga' || t.held || t.alt > 0.4 || Math.abs(t.x - f.x) > 20 || Math.abs(t.y - f.y) > 20) continue;
-    const h = Math.atan2(t.vy, t.vx), T = IC.ACTYPES[t.acType];
-    IC.drawPlane(g, t.x, t.y, h, t.acType || 'light', t.livery || null, { shadow: t.alt * 6 + 0.01, minPx: 8 });
+    const h = Math.atan2(t.vy, t.vx), T = IC.ACTYPES[t.acType], v = Math.hypot(t.vx, t.vy), G = t.fld;
+    // (dust off the grass behind it, more the faster it runs)
+    if (G && t.alt < 0.01 && v > 0.03 && z > 6) {
+      const k = Math.min(1, v / 0.3), L = T ? T.len : 0.08;
+      for (let i = 1; i <= 4; i++) { const d = L * (0.4 + i * 0.45 * (0.6 + k)), r = L * (0.18 + i * 0.12) * (0.5 + k); g.fillStyle = `rgba(196,182,140,${(0.32 - i * 0.06) * k + 0.05})`; g.beginPath(); g.arc(t.x - Math.cos(h) * d + Math.sin(S.time * 3 + i) * r * 0.2, t.y - Math.sin(h) * d, r, 0, 7); g.fill(); }
+    }
+    IC.drawPlane(g, t.x, t.y, h, t.acType || 'light', t.livery || null, { shadow: t.alt * 6 + 0.01, minPx: 8, now: S.time / IC.GS });
     if (z > 7 && t.cs) { g.fillStyle = 'rgba(230,240,245,0.8)'; g.font = `500 ${8 * px}px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.fillText(t.cs, t.x, t.y + ((T ? T.len : 0.08) + 14 * px)); }
   }
 };
 IC.drawApronLife = function (g, S, ap, px) {
   const z = IC.cam ? IC.cam.z : 1;
   if (z < 2) return;
-  for (const [key, liv, x, y, h] of IC.apronLife(S, ap)) IC.modelTop(g, key, x, y, h, { livery: liv, minPx: 3, shadow: 0.03 });
+  const now = IC.lifeT != null ? IC.lifeT / IC.GS : S.time / IC.GS;
+  for (const [key, liv, x, y, h, run] of IC.apronLife(S, ap)) IC.modelTop(g, key, x, y, h, { livery: liv, minPx: 3, shadow: 0.03, now: run ? now : undefined });
   if (z > 12 && IC.gaScene) drawGaScene(g, S, ap, px, z);
 };
 /* (brief 62) the GA ramp close in: chocks and tie-down ropes, the fuel bowser and the business jets' vehicles, the

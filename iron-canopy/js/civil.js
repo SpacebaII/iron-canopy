@@ -250,7 +250,9 @@ IC.apronLife = function (S, ap) {
       // (tied down and covered for the night; by day a based aircraft not flown since yesterday keeps its cover; the
       // pilot pulls it off a minute after walking out)
       const cover = pre ? covered(S, r, r.dep) && S.time - r.dep < walkT(ap, r, s) + 60 : covered(S, r, S.time);
-      out.push([r.type, IC.gaLivery(r.n, cover), s.x, s.y, s.a]);
+      // (the engine running: started up a little before it moves off, and winding down just after it stops)
+      const run = (pre && S.time - r.dep > (r.pre || 0) - 30) || (!r.mv && r.arr && S.time - r.arr < 12);
+      out.push([r.type, IC.gaLivery(r.n, cover), s.x, s.y, s.a, run ? 1 : 0]);
     }
   }
   if (ramp) {
@@ -292,10 +294,14 @@ function gaPre(ap, r) {
   return !!m && m.kind !== 'arr' && m.phase === 'start';
 }
 IC.gaPre = gaPre;
+IC.gaWalkT = (ap, r, s) => walkT(ap, r, s);
 /* the FBO's door, and the way a vehicle drives from it to a spot: out onto the ramp, down its middle lane, across */
 function fboDoor(ap) {
   const ramp = IC.gaRamp(ap), f = ramp && fboSpot(ap, ramp); if (!f) return null;
-  const p = ap.parts.find(q => q.id === ramp[0].apron), c = { x: f[2], y: f[3] }, d = U.dist(c, p) || 1;
+  const p = ap.parts.find(q => q.fbo && q.built) || ap.parts.find(q => q.id === ramp[0].apron), c = { x: f[2], y: f[3] };
+  // (the door: on the lane side of a terminal on the ramp, else towards the ramp)
+  if (p.fbo) { const ux = Math.cos(p.a), uy = Math.sin(p.a), k = (c.x - p.x) * ux + (c.y - p.y) * uy, ax = p.x + ux * k, ay = p.y + uy * k, d = U.dxy(c.x, c.y, ax, ay) || 1; return { x: c.x + (ax - c.x) / d * 0.11, y: c.y + (ay - c.y) / d * 0.11, p, h: Math.atan2(ay - c.y, ax - c.x) }; }
+  const d = U.dist(c, p) || 1;
   return { x: c.x + (p.x - c.x) / d * 0.12, y: c.y + (p.y - c.y) / d * 0.12, p, h: Math.atan2(p.y - c.y, p.x - c.x) };
 }
 const walkT = (ap, r, s) => { const D = fboDoor(ap); return D ? U.clamp(U.dist(D, s) / IC.GA.walk, 40, (r.pre || 400) * 0.45) : 60; };
@@ -356,7 +362,11 @@ IC.gaScene = function (S, ap) {
    open ground for it */
 const segDist = (x, y, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, t = U.clamp(((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1); return U.dxy(x, y, a.x + dx * t, a.y + dy * t); };
 function fboSpot(ap, stands) {
-  const p = ap.parts.find(q => q.id === stands[0].apron); if (!p || p.w == null || (p.stands || []).length < 3) return null;
+  const p = ap.parts.find(q => q.id === stands[0].apron); if (!p) return null;
+  // (a GA ramp laid out with its business terminal on its edge: brief 62)
+  const fp = ap.parts.find(q => q.fbo && q.built && (q.zone === 'light' || q === p));
+  if (fp) return ['fbo', null, fp.fbo.x, fp.fbo.y, fp.fbo.a];
+  if (p.w == null || (p.stands || []).length < 3) return null;
   const ux = Math.cos(p.a), uy = Math.sin(p.a), nx = -uy, ny = ux, sg = Math.sign((stands[0].x - p.x) * nx + (stands[0].y - p.y) * ny) || 1;
   const d = p.h / 2 + 0.2, x = p.x + nx * sg * d + ux * (p.w / 2 - 0.35), y = p.y + ny * sg * d + uy * (p.w / 2 - 0.35);
   for (const q of ap.parts) {
@@ -445,6 +455,15 @@ function fieldIn(S, t, d) {
   t.fld = { f: F.id, ph: 'app', pts, i: 0, e, v: t.spd, w: 0, tg: !!(t.wps && t.wps.length > 1) };
   return fieldMove(S, t, 0);
 }
+/* one aircraft on the strip at a time: lined up, rolling, on final, landing, or taxiing along it */
+function stripBusy(S, F, me) {
+  for (const x of S.threats) {
+    const G = x.fld; if (x === me || x.dead || !G || G.f !== F.id) continue;
+    if (G.ph === 'line' || G.ph === 'roll' || G.ph === 'fin' || G.ph === 'land' || (G.ph === 'taxi' && G.i >= 3 && !G.hold) || (G.ph === 'in' && G.i === 0 && G.pts.length === 4)) return true;
+  }
+  return false;
+}
+IC.fieldStripBusy = (S, F) => stripBusy(S, F, null);
 function fieldMove(S, t, dt) {
   const G = t.fld, F = fieldOf(S, G.f), K = IC.FIELD; if (!F) { t.fld = null; return false; }
   const T = IC.ACTYPES[t.acType] || IC.ACTYPES.light, h0 = F.a + (G.e < 0 ? Math.PI : 0), vl = vLiftOf(T);
@@ -453,6 +472,9 @@ function fieldMove(S, t, dt) {
   switch (G.ph) {
     case 'taxi': case 'in': {
       t.alt = 0;
+      // (holding short of the strip, 45 m off it, until it is clear)
+      if (G.ph === 'taxi' && G.i === 3 && U.dxy(t.x, t.y, G.pts[2].x, G.pts[2].y) < 1e-3 && stripBusy(S, F, t)) { t.vx = Math.cos(h0) * 1e-3; t.vy = Math.sin(h0) * 1e-3; G.hold = true; return true; }
+      G.hold = false;
       if (toward(G.pts[G.i], K.taxi) && ++G.i >= G.pts.length) {
         if (G.ph === 'in') { IC.gaArrive(S, t, false); if (t.biz || t.visit) landed(S, t); t.dead = true; return true; }
         // lined up at the end of the strip: a run-up for a piston engine, then the take-off run
@@ -468,7 +490,11 @@ function fieldMove(S, t, dt) {
       return true;
     case 'app': {
       t.alt += U.clamp(K.glide - t.alt, -0.006 * dt, 0.003 * dt);
-      if (toward(G.pts[G.i], t.spd) && ++G.i >= G.pts.length) { G.ph = 'fin'; G.v = t.spd; }
+      if (toward(G.pts[G.i], t.spd) && ++G.i >= G.pts.length) {
+        // the strip taken: round again on a wide circuit, and ask again at the final fix
+        if (stripBusy(S, F, t)) { const sd = G.side || (G.side = 1); G.pts = [fAt(F, -G.e * (K.fin + 4), sd * 7), fAt(F, G.e * 4, sd * 9), fAt(F, -G.e * (K.fin + 4), sd * 7), fAt(F, -G.e * K.fin, 0)]; G.i = 0; G.around = (G.around || 0) + 1; }
+        else { G.ph = 'fin'; G.v = t.spd; }
+      }
       return true;
     }
     case 'fin': {

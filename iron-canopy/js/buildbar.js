@@ -37,7 +37,7 @@ IC.infoGather = gather;
 IC.BB_TABS = [
   { k: 'rw', key: '1', name: 'Runways', items: ['runway', 'exits'] },
   { k: 'tw', key: '2', name: 'Taxiways', items: ['taxi', 'parallel', 'hold'] },
-  { k: 'ap', key: '3', name: 'Aprons & stands', items: ['apron', 'remote', 'ramp', 'stand', 'stretch', 'alert'] },
+  { k: 'ap', key: '3', name: 'Aprons & stands', items: ['apron', 'remote', 'ramp', 'garamp', 'stand', 'stretch', 'alert'] },
   { k: 'tm', key: '4', name: 'Terminals & piers', items: ['terminal', 'concourse', 'rotunda', 'satellite', 'curved', 'semicircle', 'pierT', 'pierY', 'pierX', 'skybridge', 'people'] },
   { k: 'cg', key: '5', name: 'Cargo & hangars', items: ['cargo', 'hangar', 'has', 'ammo'] },
   { k: 'fs', key: '6', name: 'Fuel & services', items: ['fuel', 'hydrant', 'fuelpad', 'deice', 'fire'] },
@@ -48,7 +48,7 @@ IC.BB_TABS = [
 ];
 /* (round 1) the bar opens on whole pieces; the parts one by one are folded under Detail (IC.FOCUS.pieces) */
 IC.BB_PIECE_TABS = [
-  { k: 'pc', key: '1', name: 'Airport pieces', items: ['rwkit', 'tstraight', 'tpier', 'tattach', 'tround', 'services', 'cargoarea'] },
+  { k: 'pc', key: '1', name: 'Airport pieces', items: ['rwkit', 'tstraight', 'tpier', 'tattach', 'tround', 'garamp', 'services', 'cargoarea'] },
   { k: 'bq', key: '2', name: 'Blueprints', items: ['starter', 'blueprint'] }
 ];
 /* the tabs on show: the pieces and blueprints, then the parts one by one when Detail is open (or always, without
@@ -85,7 +85,7 @@ const ico = p => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${p}</
 const USE = {
   runway: 'where aircraft land and take off', exits: 'angled exits: landings clear the runway sooner', taxi: 'joins runways, aprons and buildings',
   parallel: 'a full-length taxiway beside a runway', hold: 'a second entry, so one aircraft can pass another', apron: 'stands along its back edge',
-  remote: 'stands served by bus, with its own taxilane', ramp: 'paving where you place stands yourself', stand: 'one parking place, any size',
+  remote: 'stands served by bus, with its own taxilane', ramp: 'paving where you place stands yourself', garamp: 'tie-downs for light aircraft, stands for business jets', stand: 'one parking place, any size',
   stretch: 'makes an apron bigger', alert: 'fighters on alert at the runway end', terminal: 'passengers an hour; gates for the stands beside it',
   concourse: 'a pier with gates on both sides', rotunda: 'gates fanned round a round building', satellite: 'a round pod of gates on a people mover',
   curved: 'a pier on an arc, gates both sides', semicircle: 'gates outside, parking inside the curve', pierT: 'a pier that splits at its end',
@@ -100,7 +100,7 @@ const NEEDS = {
   runway: 'Room in line with the wind, clear of towns under the approach. Paving it needs lorry loads of concrete or asphalt.',
   exits: 'A runway with a parallel taxiway.', hold: 'A runway end with a parallel taxiway.', parallel: 'A runway.',
   taxi: 'Something to join: a runway, an apron or another taxiway.', apron: 'A taxiway to reach it.', remote: 'Buses from the terminal (automatic).',
-  stand: 'An apron or open ramp.', stretch: 'An apron to stretch.', alert: 'A runway end.', terminal: 'An apron beside it for gates; a road from the town.',
+  stand: 'An apron or open ramp.', garamp: 'A taxiway to each end of its lane.', stretch: 'An apron to stretch.', alert: 'A runway end.', terminal: 'An apron beside it for gates; a road from the town.',
   concourse: 'Room for aprons on both sides.', rotunda: 'Room round it; a taxiway to its ring.', satellite: 'A terminal, and a people mover to it.',
   curved: 'Room for its aprons.', semicircle: 'A road from the town to its kerb.', pierT: 'A terminal at its root.', pierY: 'A terminal at its root.', pierX: 'A people mover from the terminal.', skybridge: 'A taxiway to bridge, between two terminal buildings.', people: 'A terminal and a concourse to join.',
   cargo: 'An apron beside it.', hangar: 'A taxiway to its door.', has: 'A taxiway to its door.', fuel: 'Room for its tanks, 100 m from other fuel: one fire takes all that is close.',
@@ -163,6 +163,7 @@ function thumb(k) {
     case 'hold': runway(14, 0, 132); g.fillStyle = conc; g.beginPath(); g.moveTo(10, 23); g.lineTo(96, 23); g.lineTo(122, 62); g.lineTo(10, 62); g.closePath(); g.fill(); taxi([[0, 66], [132, 66]]); g.strokeStyle = Y; lw(0.9); for (const x of [22, 50, 78]) { g.beginPath(); g.moveTo(x + 24, 64); g.quadraticCurveTo(x, 58, x, 40); g.lineTo(x, 14); g.stroke(); g.fillStyle = Y; g.fillRect(x - 4, 32, 8, 1.2); g.fillRect(x - 4, 34, 8, 1.2); } plane(50, 44, -Math.PI / 2, 0.9); break;
     case 'apron': taxi([[0, 66], [132, 66]]); apron(10, 10, 112, 48); stands(28, 14, 4, 26, false); break;
     case 'remote': taxi([[0, 10], [132, 10]]); apron(8, 16, 116, 50); stands(24, 62, 5, 22, true); break;
+    case 'garamp': { taxi([[0, 38], [132, 38]], 5); apron(14, 8, 110, 60); g.strokeStyle = Y; lw(0.8); g.beginPath(); g.moveTo(14, 38); g.lineTo(124, 38); g.stroke(); for (let i = 0; i < 6; i++) { plane(40 + i * 14, 20, Math.PI / 2, 0.45); if (i < 4) plane(40 + i * 14, 56, -Math.PI / 2, 0.45); } bld(96, 50, 24, 14, '#b8bcc2'); plane(24, 22, Math.PI / 2, 0.7); break; }
     case 'ramp': apron(8, 8, 116, 60); plane(40, 34, 0.4, 1.1); plane(92, 40, -0.3, 1.4); break;
     case 'stand': apron(14, 8, 104, 60); stands(66, 14, 1, 0, false); g.strokeStyle = 'rgba(196,52,44,0.9)'; lw(0.8); g.strokeRect(50, 12, 32, 34); break;
     case 'stretch': apron(10, 14, 60, 48); g.fillStyle = 'rgba(111,230,140,0.35)'; g.fillRect(70, 14, 44, 48); g.strokeStyle = '#6fe68c'; lw(1.2); g.setLineDash([3, 3]); g.strokeRect(70, 14, 44, 48); g.setLineDash([]); g.beginPath(); g.moveTo(78, 38); g.lineTo(104, 38); g.lineTo(98, 33); g.moveTo(104, 38); g.lineTo(98, 43); g.stroke(); break;
@@ -312,7 +313,8 @@ function options(S, m) {
   if (ZONE_TOOLS[t]) g.push(group('Zone', [chip('zone', 'auto', 'Auto', !m.zone, 'From what is next to it')].concat(Object.keys(IC.ZONES).map(k => chip('zone', k, ({ civil: 'Passenger', cargo: 'Cargo', light: 'Light', mil: 'Military' })[k] || IC.ZONES[k].name, m.zone === k, `Only ${IC.ZONES[k].name.toLowerCase()} aircraft park here`))).join('')));
   if (IC.bldCanOutline && IC.bldCanOutline(t)) g.push(group('Shape', chip('shape', 'rect', 'Rectangle', m.shape !== 'poly', 'Drag, or click two opposite corners') + chip('shape', 'poly', 'Outline (O)', m.shape === 'poly', 'Click corner after corner, any shape: round a taxiway, along a road, into a corner of the site')));
   if (t === 'surface') g.push(group('Surface', Object.entries(IC.SURF).map(([k, v]) => chip('surf', k, v.name, (m.surf || 'grass') === k, `${U.money(IC.APART.surface.cost * v.k)} a hectare${v.park ? '; outside the airfield a car park' : ''}`)).join('')));
-  if (IC.TERM_KITS && IC.TERM_KITS[t]) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('') + '<em>R turns it</em>'));
+  if (IC.TERM_KITS && IC.TERM_KITS[t] && IC.TERM_KITS[t].ga) g.push(group('Size', chip('size', 'm', 'Small', m.size !== 'l', '10 tie-downs and 2 business-jet stands') + chip('size', 'l', 'Large', m.size === 'l', '18 tie-downs and 6 business-jet stands') + '<em>R turns it</em>'));
+  else if (IC.TERM_KITS && IC.TERM_KITS[t]) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('') + '<em>R turns it</em>'));
   if (t === 'blueprint' && IC.showcaseKeys) g.push(group('Blueprint', IC.showcaseKeys().map(k => chip('bp', k, esc(IC.REAL_APT[k].name), m.bp === k, IC.REAL_APT[k].after)).join('') + '<em>R turns it</em>'));
   if (t === 'upgrade') g.unshift(`<div class="bb-say">${ico(TOOL_ICON.upgrade)} Click a runway, taxiway or apron: it gets what is chosen here, and you pay the difference.</div>`);
   if (m.kind === 'build' && pol && say) g.push(say);

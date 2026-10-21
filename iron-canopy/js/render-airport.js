@@ -52,7 +52,7 @@ IC.drawPlane = function (g, x, y, h, type, livery, o) {
   const k = Math.max(1, (o.minPx || 7) / (L * z));
   L *= k; Sp *= k;
   // the model catalogue draws the real shape; the old outline stays as the fallback
-  if (IC.modelTop && IC.modelTop(g, IC.modelOfType(type), x, y, h, { livery, body: o.body, minPx: o.minPx || 7, alpha: o.alpha, shadow: o.shadow })) return;
+  if (IC.modelTop && IC.modelTop(g, IC.modelOfType(type), x, y, h, { livery, body: o.body, minPx: o.minPx || 7, alpha: o.alpha, shadow: o.shadow, now: o.now })) return;
   const body = o.body || (T.mil ? 'rgb(150,160,168)' : 'rgb(238,240,242)');
   const c1 = livery ? livery[0] : T.mil ? 'rgb(110,120,128)' : 'rgb(80,110,150)', c2 = livery ? livery[1] : 'rgb(60,66,72)';
   g.save(); g.translate(x, y); g.rotate(h);
@@ -211,7 +211,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
       gr.addColorStop(0, 'rgba(255,255,255,0.32)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.strokeStyle = gr; g.lineWidth = Math.max(m.T.len * 0.12, 2 * px); g.lineCap = 'round'; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(bx, by); g.stroke(); g.lineCap = 'butt';
     }
-    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8 });
+    // (brief 62: propellers turn once the engines are running, from pushback or start-up to the stand)
+    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8, now: m.phase !== 'start' ? now : undefined });
     // a tug at the nose: pushing back, or towing to and from the hangar
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) {
       // (round 5c) the same tug as at the stand, nose to nose with the aircraft on its tow bar
