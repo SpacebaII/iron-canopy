@@ -567,8 +567,23 @@ const along = (pts, cum, s) => {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: Math.atan2(b.y - a.y, b.x - a.x) };
 };
 IC.along = along;
-IC.trainPos = t => along(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
-IC.busPos = b => { const p = along(b.line.pts, b.line.cum, U.clamp(b.s, 0, b.line.len)); if (b.dir < 0) p.h += Math.PI; return p; };
+/* (brief 67) the same, drawn: within a few tens of metres of each bend of the line the point follows a curve tangent to
+   both pieces, so what drives or rolls along it turns smoothly instead of snapping round at every point of the road */
+const alongR = (pts, cum, s) => {
+  const p = along(pts, cum, s), n = cum.length;
+  let lo = 1, hi = n - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < s) lo = mid + 1; else hi = mid; }
+  const j = s - cum[lo - 1] < cum[lo] - s ? lo - 1 : lo;
+  if (j <= 0 || j >= n - 1) return p;
+  const L0 = cum[j] - cum[j - 1], L1 = cum[j + 1] - cum[j], r = Math.min(0.3, L0 * 0.45, L1 * 0.45), e = s - cum[j];
+  if (r < 0.003 || e <= -r || e >= r) return p;
+  const V = pts[j], P = pts[j - 1], N = pts[j + 1], ix = (V.x - P.x) / (L0 || 1), iy = (V.y - P.y) / (L0 || 1), ox = (N.x - V.x) / (L1 || 1), oy = (N.y - V.y) / (L1 || 1);
+  const u = (e + r) / (2 * r), w = 1 - u;
+  return { x: w * w * (V.x - ix * r) + 2 * u * w * V.x + u * u * (V.x + ox * r), y: w * w * (V.y - iy * r) + 2 * u * w * V.y + u * u * (V.y + oy * r), h: Math.atan2(w * iy + u * oy, w * ix + u * ox) };
+};
+IC.alongR = alongR;
+IC.trainPos = t => alongR(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
+IC.busPos = b => { const p = alongR(b.line.pts, b.line.cum, U.clamp(b.s, 0, b.line.len)); if (b.dir < 0) p.h += Math.PI; return p; };
 
 /* ---------- how many vehicles are drawn ----------
    Every way of drawing road traffic (the slots of the middle zoom, the vehicles on their own trips close in, the 3D
@@ -634,7 +649,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
       for (; j * BASE + ph <= Math.min(ub, span); j += step) {
         const u = j * BASE + ph, h = U.hash(L.key + d, j & 65535);
         if (h > p || (keep < 1 && slotRank(j & 65535, L.key + d) >= keep)) continue;
-        const s = toS(u), q = along(P, cum, d ? len - s : s);
+        const s = toS(u), q = alongR(P, cum, d ? len - s : s);
         if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
         fn(q.x, q.y, d ? q.h + Math.PI : q.h, kind, L.cls, L.C.off[lane]);
@@ -874,10 +889,32 @@ function stepOnce(S, A, G, dt, now, box, check) {
   if (gone.size) A.list = A.list.filter(a => !gone.has(a));
 }
 /* where an agent is and which way it faces, with its lane offset */
+/* (brief 67) drawn, a vehicle steers round bends and through junctions on a curve tangent to the road it leaves and
+   the one it takes (within 4–15 m of the corner), and changes lane offset along it, instead of turning in one frame */
+const laneOff = (lk, a) => lk.C.off[Math.min(a.lane, lk.C.off.length - 1)];
+// where on link lk (direction d) distance s along the way it is driven: x, y, heading and lane offset
+function drivePt(a, lk, d, s) { const p = alongR(lk.pts, lk.cum, U.clamp(d ? lk.len - s : s, 0, lk.len)); if (d) p.h += Math.PI; p.o = laneOff(lk, a); return p; }
+function curve(P, Q, hIn, hOut, oIn, oOut, u, r) {
+  // P: the corner seen from the road coming in, Q from the road going out (the same node); u 0 → 1 across the curve
+  const ix = Math.cos(hIn), iy = Math.sin(hIn), ox = Math.cos(hOut), oy = Math.sin(hOut), Vx = (P.x + Q.x) / 2, Vy = (P.y + Q.y) / 2;
+  const Ex = Vx - ix * r, Ey = Vy - iy * r, Xx = Vx + ox * r, Xy = Vy + oy * r, w = 1 - u;
+  const x = w * w * Ex + 2 * u * w * Vx + u * u * Xx, y = w * w * Ey + 2 * u * w * Vy + u * u * Xy, h = Math.atan2(w * iy + u * oy, w * ix + u * ox), o = oIn + (oOut - oIn) * u * u * (3 - 2 * u);
+  return { x: x - Math.sin(h) * o, y: y + Math.cos(h) * o, h };
+}
 IC.agentPos = function (a) {
-  const [lk, d] = a.route[a.ri], s = d ? lk.len - a.s : a.s, p = along(lk.pts, lk.cum, U.clamp(s, 0, lk.len));
-  const h = d ? p.h + Math.PI : p.h, o = lk.C.off[Math.min(a.lane, lk.C.off.length - 1)];
-  return { x: p.x - Math.sin(h) * o, y: p.y + Math.cos(h) * o, h };
+  const [lk, d] = a.route[a.ri], s = a.s;
+  const p = drivePt(a, lk, d, s), o = p.o;
+  // across the junction at either end of this link: the link before (just through it) or the next (coming up)
+  const R0 = 0.15;
+  if (lk.len - s < R0 && a.ri + 1 < a.route.length) {
+    const [nl, nd] = a.route[a.ri + 1], r = Math.min(R0, lk.len * 0.45, nl.len * 0.45), e = lk.len - s;
+    if (e < r) { const P = drivePt(a, lk, d, lk.len - r), Q = drivePt(a, nl, nd, r), A = drivePt(a, lk, d, lk.len), B = drivePt(a, nl, nd, 0); return curve(A, B, Math.atan2(A.y - P.y, A.x - P.x), Math.atan2(Q.y - B.y, Q.x - B.x), o, Q.o, (r - e) / (2 * r), r); }
+  }
+  if (s < R0 && a.ri > 0) {
+    const [pl, pd] = a.route[a.ri - 1], r = Math.min(R0, lk.len * 0.45, pl.len * 0.45);
+    if (s < r) { const P = drivePt(a, pl, pd, pl.len - r), Q = drivePt(a, lk, d, r), A = drivePt(a, pl, pd, pl.len), B = drivePt(a, lk, d, 0); return curve(A, B, Math.atan2(A.y - P.y, A.x - P.x), Math.atan2(Q.y - B.y, Q.x - B.x), P.o, o, (r + s) / (2 * r), r); }
+  }
+  return { x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h };
 };
 IC.trafficAgentsOf = S => AG.get(S) || null;
 

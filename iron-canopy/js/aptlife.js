@@ -88,11 +88,23 @@ IC.turnPaths = function (b, q) {
   };
 };
 /* where along a path (distance d): x, y and heading into out */
+/* (brief 67) the corners are rounded: within a few metres of a bend the vehicle follows a curve tangent to both
+   pieces, so it steers round instead of turning on the spot in one frame */
 function along(path, d, out) {
   const pts = path.pts, cum = path.cum;
   let i = 1; while (i < pts.length - 1 && cum[i] < d) i++;
   const a = pts[i - 1], b = pts[i], seg = cum[i] - cum[i - 1] || 1e-6, k = U.clamp((d - cum[i - 1]) / seg, 0, 1);
   out.x = a.x + (b.x - a.x) * k; out.y = a.y + (b.y - a.y) * k; out.h = Math.atan2(b.y - a.y, b.x - a.x);
+  // the bend nearest: at the end of this piece, or at its start
+  const j = d > cum[i - 1] + seg / 2 ? i : i - 1;
+  if (j <= 0 || j >= pts.length - 1) return out;
+  const L0 = cum[j] - cum[j - 1], L1 = cum[j + 1] - cum[j], r = Math.min(0.05, L0 * 0.45, L1 * 0.45), e = d - cum[j];
+  if (r < 0.002 || e < -r || e > r) return out;
+  const V = pts[j], P = pts[j - 1], N = pts[j + 1];
+  const ix = (V.x - P.x) / (L0 || 1), iy = (V.y - P.y) / (L0 || 1), ox = (N.x - V.x) / (L1 || 1), oy = (N.y - V.y) / (L1 || 1);
+  const u = (e + r) / (2 * r), Ex = V.x - ix * r, Ey = V.y - iy * r, Xx = V.x + ox * r, Xy = V.y + oy * r;
+  out.x = (1 - u) * (1 - u) * Ex + 2 * u * (1 - u) * V.x + u * u * Xx; out.y = (1 - u) * (1 - u) * Ey + 2 * u * (1 - u) * V.y + u * u * Xy;
+  out.h = Math.atan2((1 - u) * iy + u * oy, (1 - u) * ix + u * ox);
   return out;
 }
 IC.lifeAlong = along;
@@ -105,7 +117,8 @@ IC.turnVehAt = function (job, path, t, out) {
   let d, rev = false;
   if (t < job.ta) d = (t - (job.ta - dT)) * IC.LIFE.drive; else if (t <= job.td) d = Lg; else { d = Lg - (t - job.td) * IC.LIFE.drive; rev = true; }
   along(path, Math.max(0, d - off), out);
-  if (rev) out.h += Math.PI;
+  // leaving, it turns round as it pulls away (a U-turn over its first 8 m), not on the spot
+  if (rev) { const f = U.clamp((t - job.td) * IC.LIFE.drive / 0.08, 0, 1); out.h += Math.PI * f * f * (3 - 2 * f); }
   out.moving = t < job.ta || t > job.td;
   out.work = out.moving ? 0 : U.clamp((t - job.ta) / Math.max(1, job.td - job.ta), 0, 1);
   return true;

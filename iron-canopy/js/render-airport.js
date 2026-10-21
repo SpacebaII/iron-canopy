@@ -62,6 +62,39 @@ IC.drawPlane = function (g, x, y, h, type, livery, o) {
   drawShape(g, T, type, L, Sp, body, c1, c2);
   g.restore();
 };
+/* (brief 67) an aircraft on the ground as it is drawn: the simulation moves it along straight taxiway pieces and turns
+   it at each node in one step, swings it round at the end of a runway, and slides it onto a stand facing the stand.
+   Drawn, the nose follows the way it really moves (backwards in a pushback), turning no faster than a real aircraft,
+   and the corners of its route are rounded by a short lag (about 28 m, an airliner's turning radius), so it sweeps round a turn instead of
+   snapping. Kept per movement beside it (the step never sees it); a jump of more than a few hundred metres snaps */
+const POSE = new WeakMap();
+IC.movePose = function (m, S) {
+  const t = S ? S.time : 0;
+  let p = POSE.get(m);
+  if (!p) { p = { x: m.x, y: m.y, h: m.h, t, mx: m.x, my: m.y }; POSE.set(m, p); return p; }
+  const dt = t - p.t;
+  if (dt <= 0) return p;
+  p.t = t;
+  const mv = Math.hypot(m.x - p.mx, m.y - p.my), spd = mv / dt;
+  p.mx = m.x; p.my = m.y;
+  let jx = m.x - p.x, jy = m.y - p.y;
+  const J = Math.hypot(jx, jy);
+  if (J > 3 + mv * 2 || dt > 120) { p.x = m.x; p.y = m.y; p.h = m.h; return p; }
+  // (on the runway and the approach the way is straight: almost no lag, so it hands over to the airborne track where it is)
+  const R = m.phase === 'roll' || m.phase === 'final' || m.phase === 'land' ? 0.01 : 0.28;
+  const tau = spd > 1e-4 ? Math.min(4, R / spd) : 1.2, k = 1 - Math.exp(-dt / tau);
+  p.x += jx * k; p.y += jy * k;
+  // the nose: along the way the drawn aircraft goes while it moves, else the simulation's heading
+  let want = m.h;
+  if (J > 0.004 && spd > 0.004) {
+    const mvH = Math.atan2(jy, jx);
+    want = Math.abs(U.angWrap(mvH - m.h)) > 1.75 ? mvH + Math.PI : mvH;
+  }
+  // a turn rate: brisk on the ground (about 23° a second), a slow pivot in place
+  const w = (spd > 0.004 ? 0.4 : 0.2) * dt, d = U.angWrap(want - p.h);
+  p.h += U.clamp(d, -w, w);
+  return p;
+};
 function drawShape(g, T, type, L, Sp, body, c1, c2) {
   const f = L * (type === 'fighter' ? 0.14 : type === 'turbo' ? 0.09 : 0.1);
   if (type === 'fighter') {
@@ -201,8 +234,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (LIFE && z > 10 && ap.land) IC.drawLandLife(g, S, ap, px, z, night, IC.lifeT || now * IC.GS);
   if (LIFE && ap.owner === 'us') IC.lifeSoundAp(S, ap, z, seen);
   // aircraft moving
-  if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
+  if (z >= 0.5) for (const m0 of ap.moves) {
+    if (m0.dead || !seen(m0.x, m0.y, 1 + (m0.alt || 0) * 6)) continue;
+    const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, phase: m0.phase, kind: m0.kind, holding: m0.holding, alt: m0.alt, type: m0.type, livery: m0.livery, mil: m0.mil };
     const air = m.phase === 'final';
     // (round 5c) from the middle zoom a taxiing aircraft leaves a short fading trail, so a busy apron reads as busy
     if (IC.FOCUS.polish && !air && z > 2 && z < 40 && !m.holding && !['push', 'start', 'wait', 'parkin', 'land'].includes(m.phase) && m.T) {
@@ -210,7 +244,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
       gr.addColorStop(0, 'rgba(255,255,255,0.32)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.strokeStyle = gr; g.lineWidth = Math.max(m.T.len * 0.12, 2 * px); g.lineCap = 'round'; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(bx, by); g.stroke(); g.lineCap = 'butt';
     }
-    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8 });
+    // the shadow as the airborne tracks draw it (render-combat.js), so it does not jump at the final approach fix
+    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? Math.min(3, (m.alt || 0) * 0.25) + 0.04 : 0.04, minPx: m.mil ? 6 : 8 });
     // a tug at the nose: pushing back, or towing to and from the hangar
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) {
       // (round 5c) the same tug as at the stand, nose to nose with the aircraft on its tow bar
@@ -224,7 +259,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
-  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptFencePath(g2, box));   // (not in the 3D view's picture: it has its own sky)
+  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptHullPath(g2, box));   // (not in the 3D view's picture: it has its own sky)
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
   if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);
@@ -234,15 +269,18 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // which way each runway is in use, and for what (above the night, it is information)
   if (z > 0.35) drawConfig(g, S, ap, px, z);
   const tags = [];
-  if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead || !seen(m.x, m.y, 1 + 80 * px)) continue;
+  if (z >= 0.5) for (const m0 of ap.moves) {
+    if (m0.dead || !seen(m0.x, m0.y, 1 + 80 * px)) continue;
+    const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, type: m0.type, spd: m0.spd, phase: m0.phase, born: m0.born, holding: m0.holding, holdWhy: m0.holdWhy, who: m0.who };
     if (night && z > 3 && LIFE) IC.drawAcLights(g, m, px, z, now, U.clamp((0.55 - light) / 0.3, 0.3, 1));
     else if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
     // why it waits, in a few words: "holding: arrival 5 km out"
     // one tag where aircraft stand nose to tail: the first one's
     const free = !tags.some(t => Math.abs(t.x - m.x) < 70 * px && Math.abs(t.y - m.y) < 14 * px);
     if (z > 5 && m.holding && (m.holding !== 'queue' || z > 24) && free && tags.push(m)) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
-    if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
+    // (brief 67) the call signs take their turn with the other words: where aircraft bunch up they no longer pile into
+    // one unreadable smear (one moves a line down, else it waits)
+    if (z > 7 && m.who) { const y = IC.LBL.put(m.x, m.y + 14 * px, m.who.length * 8 * 0.62 * px, 9 * px, 10 * px, 1); if (y != null) lbl(g, m.who, m.x, y, px, 'rgba(230,240,245,0.8)', 8, 'center', 500); }
   }
   // the turnaround clock on the stand of the airliner selected or followed
   if (LIFE && z > 4) IC.drawTurnClock(g, S, ap, px, z, lbl);
