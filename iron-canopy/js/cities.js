@@ -639,6 +639,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   c.streets = streets; c.blocks = blocks; c.parks = parksL; c.squares = squares;
   if (core) c.walks = core.walks; else delete c.walks;
   closeStreets(c, blocks);
+  houseStreets(c, blocks);
   // what could not be tied, and has no head of its own, is a stub: take it away, and tie again, since an end that
   // stood on it is loose now (a few rounds settle it)
   const tieSegs = roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'), hwSegs = roads.filter(s => s[4] === 'hw');
@@ -666,11 +667,22 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   tidyStreets(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   roundCorners(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
+  // an end the passes left meeting nothing turns round in a head of its own, so a car is never left in the grass
+  {
+    const Bk = buckets(3); c.streets.forEach((l, li) => { for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, li]); });
+    for (const r of roads) Bk.add([r[0], r[1], r[2], r[3], -1]);
+    c.streets.forEach((l, li) => { if (l.ring) return; for (const end of [0, 1]) {
+      if ((l.head & (end + 1)) || (l.stop & (end + 1))) continue;
+      const e = l.pts[end ? l.pts.length - 1 : 0]; let hit = false;
+      Bk.near(e.x, e.y, 0.3, s => { if (!hit && s[4] !== li && U.segDist(e.x, e.y, s[0], s[1], s[2], s[3]) < 0.3) hit = true; });
+      if (!hit) l.head = (l.head || 0) | (end + 1);
+    } });
+  }
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);
   // river parks (brief 55): the housing blocks on the banks of a bigger town stay green, a park along the water
   if (c.pop >= 250) {
     let left = 10;
-    c.blocks = c.blocks.filter(b => { if (left <= 0 || b.fr || (b.d !== 'dense' && b.d !== 'sub') || b.land || b.close || wetBy(b.x, b.y) < -(Math.max(b.w, b.h) / 2 + 0.4)) return true; parksL.push({ x: b.x, y: b.y, rx: b.w * 0.48, ry: b.h * 0.46, a: b.a, river: true }); left--; return false; });
+    c.blocks = c.blocks.filter(b => { if (left <= 0 || b.fr || (b.d !== 'dense' && b.d !== 'sub') || b.land || b.close || b.res || wetBy(b.x, b.y) < -(Math.max(b.w, b.h) / 2 + 0.4)) return true; parksL.push({ x: b.x, y: b.y, rx: b.w * 0.48, ry: b.h * 0.46, a: b.a, river: true }); left--; return false; });
   }
   // landmarks (brief 55, buildings.js): the station on the railway, the cathedral, the hospital, the stadium...
   IC.placeLandmarks(W, c, roads);
@@ -734,25 +746,35 @@ function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares, roads) {
       if (d < 1e-4) { const l = Math.sqrt(L) || 1; nx = -vy / l; ny = vx / l; if (nx * (f.x - px) + ny * (f.y - py) < 0) { nx = -nx; ny = -ny; } } else { nx /= d; ny /= d; }
       q.x = px + nx * w; q.y = py + ny * w;
     });
-    // (a face a road runs right through, where the real town's streets did not close round it, is left empty)
-    let cross = false;
-    for (let i = 0; i < G.length && !cross; i++) { const p = G[i], q = G[(i + 1) % G.length]; RB.near((p.x + q.x) / 2, (p.y + q.y) / 2, U.dist(p, q) / 2 + 0.3, r => {
-      if (cross) return;
-      const w = Math.max(HALF[r[4]] || 0.2, 0.15) - 0.02;
-      if (U.segX(p.x, p.y, q.x, q.y, r[0], r[1], r[2], r[3]) > 0 || U.segDist(r[0], r[1], p.x, p.y, q.x, q.y) < w || U.segDist(r[2], r[3], p.x, p.y, q.x, q.y) < w || U.segDist(p.x, p.y, r[0], r[1], r[2], r[3]) < w || pip(G, r[0], r[1])) cross = true;
-    }); }
-    if (cross) continue;
-    // (a building the face's own streets run through is left out: the real town's street was where this one is not)
+    // (a face a road runs right through, where the real town's streets did not close round it, is left empty; one a
+    // road only runs close beside keeps its buildings clear of the road, brief 68)
+    let cross = false; const near = [];
+    const edgeD = (x, y) => { let m = 1e9; for (let i = 0; i < G.length; i++) { const p = G[i], q = G[(i + 1) % G.length]; m = Math.min(m, U.segDist(x, y, p.x, p.y, q.x, q.y)); } return m; };
     let gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9; for (const p of G) { gx0 = Math.min(gx0, p.x); gy0 = Math.min(gy0, p.y); gx1 = Math.max(gx1, p.x); gy1 = Math.max(gy1, p.y); }
+    RB.near((gx0 + gx1) / 2, (gy0 + gy1) / 2, Math.max(gx1 - gx0, gy1 - gy0) / 2 + 0.3, r => {
+      if (cross || near.includes(r)) return;
+      const w = Math.max(HALF[r[4]] || 0.2, 0.15);
+      if (U.segDist((gx0 + gx1) / 2, (gy0 + gy1) / 2, r[0], r[1], r[2], r[3]) > Math.max(gx1 - gx0, gy1 - gy0) * 0.75 + w) return;
+      near.push(r);
+      for (const t of [0, 0.5, 1]) { const x = r[0] + (r[2] - r[0]) * t, y = r[1] + (r[3] - r[1]) * t; if (pip(G, x, y) && edgeD(x, y) > w + 0.05) { cross = true; return; } }
+    });
+    if (cross) continue;
+    // (a building the face's own streets run through is left out: the real town's street was where this one is not;
+    // so is one on a road of ours beside it)
     const inG = q => q.x >= gx0 && q.x <= gx1 && q.y >= gy0 && q.y <= gy1 && pip(G, q.x, q.y);
-    f.bl = f.bl.filter(P => { const need = Math.ceil(P.length * 0.5 - 1e-9); let k = 0; for (let i = 0; i < P.length && k < need && k + P.length - i >= need; i++) if (inG(P[i])) k++; return k >= need; });
+    const onRoad = q => near.some(r => U.segDist(q.x, q.y, r[0], r[1], r[2], r[3]) < Math.max(HALF[r[4]] || 0.2, 0.15) + 0.01);
+    f.bl = f.bl.filter(P => { const need = Math.ceil(P.length * 0.5 - 1e-9); let k = 0; for (let i = 0; i < P.length && k < need && k + P.length - i >= need; i++) if (inG(P[i])) k++; return k >= need && !P.some(onRoad); });
     if (!f.bl.length) continue;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const p of G.concat(...f.bl)) { const [u, v] = loc(p); x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); }
     const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, X = f.x + mx * ca - my * sa, Y = f.y + mx * sa + my * ca;
     const fr = p => { const [u, v] = loc(p); return [Math.round((u - mx) * 1000) / 1000, Math.round((v - my) * 1000) / 1000]; };
     const x = cellXY(f.x, f.y) || { d: 'old', i: 0, j: 0 };
-    mkBlock(Object.assign({}, x, { d: 'old' }), { x: X, y: Y, w: x1 - x0, h: y1 - y0, a }, 'real', { fine: true, pg: [].concat(...G.map(fr)), rb: f.bl.map(P => [].concat(...P.map(fr))) });
+    const ex = { fine: true, pg: [].concat(...G.map(fr)), rb: f.bl.map(P => [].concat(...P.map(fr))) };
+    // (the outline still reaching onto a road beside it: left empty, as before brief 68)
+    if (near.length) { const Bk = buckets(4); for (const r of near) Bk.add(r); if (rectHit(Bk, Object.assign({ x: X, y: Y, w: x1 - x0, h: y1 - y0, a }, ex), -0.05)) continue; }
+    if (near.length) ex.rd = near.map(r => [...fr({ x: r[0], y: r[1] }), ...fr({ x: r[2], y: r[3] }), Math.round((Math.max(HALF[r[4]] || 0.2, 0.15) + 0.01) * 1000) / 1000]);
+    mkBlock(Object.assign({}, x, { d: 'old' }), { x: X, y: Y, w: x1 - x0, h: y1 - y0, a }, 'real', ex);
   }
 }
 
@@ -1030,28 +1052,60 @@ const RANK = { sp: 1, lc: 2, rd: 3, hw: 4 };
    loop road, the way in, the closes off the loop (each ending in a turning head) and the houses round them; the
    same plan makes the close's streets (closeStreets) and paints its houses (terrain.js), so they agree */
 IC.culPlan = function (b) {
+  if (b._cp && b._cp.w === b.w && b._cp.h === b.h) return b._cp.P;
   const sd = Math.floor(b.seed), h = (i, j) => U.hash(sd * 3 + i, j * 7 + 1), W2 = b.w / 2, H2 = b.h / 2;
-  const rx = W2 * (0.45 + h(1, 2) * 0.25), ry = H2 * (0.45 + h(2, 1) * 0.25), ox = (h(3, 3) - 0.5) * (W2 - rx) * 0.8, oy = (h(4, 4) - 0.5) * (H2 - ry) * 0.8, nC = 5 + Math.floor(h(5, 5) * 5);
+  // (the loop runs a plot and a half in from the block's edge, so the houses outside it back onto the streets round
+  // the block and nothing is left as an empty lawn: brief 68)
+  const rx = Math.max(W2 * 0.45, W2 - 0.34 - h(1, 2) * 0.08), ry = Math.max(H2 * 0.45, H2 - 0.34 - h(2, 1) * 0.08), ox = (h(3, 3) - 0.5) * (W2 - rx) * 0.6, oy = (h(4, 4) - 0.5) * (H2 - ry) * 0.6, nC = 5 + Math.floor(h(5, 5) * 5);
   const inA = Math.floor(h(6, 6) * 4) * Math.PI / 2, ci = Math.cos(inA), si = Math.sin(inA);
-  const P = { ox, oy, rx, ry, inA, entry: [ox + ci * rx, oy + si * ry, ox + ci * (W2 + 0.3), oy + si * (H2 + 0.3)], closes: [], houses: [] };
+  // (brief 68) the loop is no oval: a rounded box the shape of its block, squarer or rounder by the estate, with a
+  // slow wobble, so no two estates are drawn with the same compass
+  const sq = 2.2 + h(7, 7) * 2.4, w1 = h(8, 8) * 6.3, w2 = h(9, 9) * 6.3, ring = [];
+  const at = t => { const c = Math.cos(t), sn = Math.sin(t), k = 1 + 0.05 * Math.sin(2 * t + w1) + 0.035 * Math.sin(3 * t + w2); return [ox + Math.sign(c) * Math.pow(Math.abs(c), 2 / sq) * rx * k, oy + Math.sign(sn) * Math.pow(Math.abs(sn), 2 / sq) * ry * k]; };
+  for (let q = 0; q < 32; q++) ring.push(at(q / 32 * Math.PI * 2));
+  ring.push(ring[0].slice());
+  const P = { ox, oy, rx, ry, inA, ring, entry: [...at(inA), ox + ci * (W2 + 0.3), oy + si * (H2 + 0.3)], closes: [], houses: null };
   for (let q = 0; q < nC; q++) {
     const a = q / nC * Math.PI * 2 + h(q, 3) * 0.5, out = h(q, 5) < 0.55, L = out ? 0.45 + h(q, 6) * 0.4 : Math.min(rx, ry) * 0.55;
-    const x0 = ox + Math.cos(a) * rx, y0 = oy + Math.sin(a) * ry, x1 = x0 + Math.cos(a) * L * (out ? 1 : -1), y1 = y0 + Math.sin(a) * L * (out ? 1 : -1);
+    const [x0, y0] = at(a), x1 = x0 + Math.cos(a) * L * (out ? 1 : -1), y1 = y0 + Math.sin(a) * L * (out ? 1 : -1);
     // (a close is long enough to turn a car round in and to have houses along it: 35 m at least, brief 67)
     if (L < 0.35 || Math.abs(x1) > W2 - 0.2 || Math.abs(y1) > H2 - 0.2 || Math.abs(U.angWrap(a - inA)) < 0.4) continue;
+    if (P.closes.some(c => U.segDist(x1, y1, c[0], c[1], c[2], c[3]) < 0.3 || U.segDist(c[2], c[3], x0, y0, x1, y1) < 0.3)) continue;
     P.closes.push([x0, y0, x1, y1, a, out]);
-    for (let t = 0.35; t <= 1.01; t += 0.3) for (const s of [-1, 1]) P.houses.push(x0 + (x1 - x0) * t - Math.sin(a) * 0.14 * s, y0 + (y1 - y0) * t + Math.cos(a) * 0.14 * s, a);
   }
-  for (let q = 0; q < 26; q++) { const a = q / 26 * Math.PI * 2; for (const k of [0.8, 1.22]) P.houses.push(ox + Math.cos(a) * rx * k, oy + Math.sin(a) * ry * k, a + Math.PI / 2); }
   P.heads = P.closes.map(c => [c[2], c[3]]);
-  // a small block has no room for a loop: one close in from the street to a head at its middle, houses either side
-  if (Math.min(b.w, b.h) < 1.7) {
-    const ex = ci * (W2 + 0.3), ey = si * (H2 + 0.3);
-    P.small = true; P.closes = []; P.entry = [0, 0, ex, ey]; P.heads = [[0, 0]]; P.houses = [];
-    for (let t = 0.3; t < 0.95; t += 0.2) for (const s of [-1, 1]) P.houses.push(ex * t - si * 0.2 * s, ey * t + ci * 0.2 * s, inA);
-    for (let q = 0; q < 7; q++) { const a = inA + Math.PI * 0.6 + q / 6 * Math.PI * 0.8; P.houses.push(Math.cos(a) * 0.3, Math.sin(a) * 0.3, a + Math.PI / 2); }
-  }
+  // a small block has no room for a loop: one close in from the street to a head at its middle
+  if (Math.min(b.w, b.h) < 1.7) { P.small = true; P.closes = []; P.ring = null; P.entry = [0, 0, ci * (W2 + 0.3), si * (H2 + 0.3)]; P.heads = [[0, 0]]; }
+  b._cp = { w: b.w, h: b.h, P };
   return P;
+};
+/* the houses of an estate (brief 68): one every 20 m along each street, either side, facing it, none on another
+   street, over another house or past the block's edge; five round each turning head. Only the map and the 3D view
+   need them, so they are laid out when first drawn */
+IC.culHouses = function (b) {
+  const P = IC.culPlan(b); if (P.houses) return P.houses;
+  const sd = Math.floor(b.seed), h = (i, j) => U.hash(sd * 3 + i, j * 7 + 1), W2 = b.w / 2, H2 = b.h / 2;
+  P.houses = [];
+  const segs = [], HO = 0.17;
+  const lineSegs = L => { for (let q = 1; q < L.length; q++) segs.push([L[q - 1][0], L[q - 1][1], L[q][0], L[q][1]]); };
+  if (P.ring) lineSegs(P.ring);
+  lineSegs([[P.entry[0], P.entry[1]], [P.entry[2], P.entry[3]]]);
+  for (const c of P.closes) lineSegs([[c[0], c[1]], [c[2], c[3]]]);
+  const clear = (x, y, r) => Math.abs(x) < W2 - 0.08 && Math.abs(y) < H2 - 0.08 && segs.every(g => U.segDist(x, y, g[0], g[1], g[2], g[3]) > r) && P.heads.every(([hx, hy]) => Math.hypot(x - hx, y - hy) > 0.13) && !P.houses.some(o => Math.hypot(o.x - x, o.y - y) < 0.13);
+  const put = (x, y, a, k) => { if (clear(x, y, HO - 0.03)) P.houses.push({ x, y, a, k }); };
+  const along = (L, skip) => {
+    let carry = 0.1;
+    for (let q = 1; q < L.length; q++) {
+      const [x0, y0] = L[q - 1], [x1, y1] = L[q], len = Math.hypot(x1 - x0, y1 - y0), a = Math.atan2(y1 - y0, x1 - x0), nx = -Math.sin(a), ny = Math.cos(a);
+      for (let t = carry; t < len; t += 0.2) { const x = x0 + (x1 - x0) * t / len, y = y0 + (y1 - y0) * t / len; if (t / len > skip || q > 1) for (const sg of [-1, 1]) put(x + nx * HO * sg, y + ny * HO * sg, a + (sg > 0 ? 0 : Math.PI), P.houses.length); }
+      carry = (carry - len) % 0.2; if (carry < 0) carry += 0.2;
+    }
+  };
+  for (const [hx, hy] of P.heads) for (let q = 0; q < 5; q++) { const a = q / 5 * Math.PI * 2 + h(q, 21); put(hx + Math.cos(a) * 0.2, hy + Math.sin(a) * 0.2, a - Math.PI / 2, P.houses.length); }
+  if (P.ring) along(P.ring, 0);
+  for (const c of P.closes) along([[c[0], c[1]], [c[2], c[3]]], 0.25);
+  along([[P.entry[2], P.entry[3]], [P.entry[0], P.entry[1]]], 0.3);
+  return P.houses;
 };
 /* a suburb's closes as streets of the city (brief 54): the loop, its way in from the block's street and each close
    with its turning head, so the traffic drives them and the junctions are drawn like any other */
@@ -1068,7 +1122,7 @@ function closeStreets(c, blocks, roads) {
     const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy || 1, t = U.clamp(((E.x - near[0]) * vx + (E.y - near[1]) * vy) / LL, 0, 1), M = { x: near[0] + vx * t, y: near[1] + vy * t };
     b.close = true;
     if (P.small) { c.streets.push({ cls: 'st', pts: [M, wp(0, 0)], head: 2, cul: true }); continue; }
-    const ring = []; for (let q = 0; q <= 16; q++) { const a = q / 16 * Math.PI * 2; ring.push(wp(P.ox + Math.cos(a) * P.rx, P.oy + Math.sin(a) * P.ry)); }
+    const ring = P.ring.map(([x, y]) => wp(x, y));
     // the way in and the closes start on the loop as it is drawn (its chords), each a point of it, so a car meets one
     // junction there and not a crossing a few metres on (brief 67)
     const onRing = p => { let bi = 1, bd = 1e9, bq = p; for (let i = 1; i < ring.length; i++) { const a = ring[i - 1], b2 = ring[i], vx = b2.x - a.x, vy = b2.y - a.y, LL = vx * vx + vy * vy || 1, t = U.clamp(((p.x - a.x) * vx + (p.y - a.y) * vy) / LL, 0, 1), q = { x: a.x + vx * t, y: a.y + vy * t }, d = U.dist(p, q); if (d < bd) { bd = d; bi = i; bq = q; } }
@@ -1082,6 +1136,31 @@ function closeStreets(c, blocks, roads) {
   }
 }
 IC.closeStreets = closeStreets;
+/* a housing block's streets as streets of the city (brief 68, IC.resLanes): each runs on from the block's edge to the
+   street round it, so the traffic drives to every front door and the junctions are drawn like any other; an end with
+   no street ahead of it within 80 m ends in a turning head */
+function houseStreets(c, blocks) {
+  const Bk = buckets(3); for (const l of c.streets) for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, l.cls]);
+  for (const b of blocks) {
+    if (b.f !== 'house' && b.f !== 'row') continue;
+    const R = IC.resLanes(b); if (!R.nl) continue;
+    const ca = Math.cos(b.a), sa = Math.sin(b.a), wp = (x, y) => ({ x: b.x + x * ca - y * sa, y: b.y + x * sa + y * ca });
+    for (const L of R.lanes) {
+      const A = wp(L[0], L[1]), B = wp(L[2], L[3]), len = U.dist(A, B), ux = (B.x - A.x) / len, uy = (B.y - A.y) / len;
+      // ahead of each end, the nearest street it would meet
+      const reach = (P, sx, sy) => { const E = { x: P.x + sx * 0.8, y: P.y + sy * 0.8 }; let bt = 2, bq = null;
+        Bk.near(P.x, P.y, 1, sg => { if (sg[4] === 'hw' || sg[4] === 'rail' || sg[4] === 'sq') return; const t = U.segX(P.x, P.y, E.x, E.y, sg[0], sg[1], sg[2], sg[3]); if (t >= 0 && t < bt) { bt = t; bq = { x: P.x + sx * 0.8 * t, y: P.y + sy * 0.8 * t }; } });
+        return bq; };
+      const a = reach(A, -ux, -uy), z = reach(B, ux, uy);
+      if (!a && !z) continue;
+      const l = { cls: 'st', pts: [a || A, b2(A, B, 0.33), b2(A, B, 0.67), z || B], res: true }, hd = (a ? 0 : 1) | (z ? 0 : 2);
+      if (hd) l.head = hd;
+      c.streets.push(l);
+      b.res = true;
+    }
+  }
+}
+const b2 = (A, B, t) => ({ x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t });
 function formFor(c, st, x) {
   const h = U.hash(x.i * 7 + 3, x.j * 13 + 5), d = x.d, s = c.style;
   // a cell at the crossing of two avenues

@@ -258,6 +258,14 @@ IC.driveGraph = W => W._dg || (W._dg = buildGraph(W));
 function rings(W, G, kq) {
   const RJ = IC.roadJoins && IC.roadJoins(W); if (!RJ) return;
   const half = k => ((IC.ROAD_SPEC[k] || IC.ROAD_SPEC.lc).w) / 2, gone = new Set();
+  // (the links near a roundabout by the 2-unit cells their points touch, so each ring looks only at the links near it;
+  // a long piece's points may skip a cell, so the cells between its points count too)
+  const LG = new Map(), lkey = (i, j) => i * 65536 + j;
+  for (const r of RJ.rbs) for (let i = Math.floor(r.x / 2) - 2; i <= Math.floor(r.x / 2) + 2; i++) for (let j = Math.floor(r.y / 2) - 2; j <= Math.floor(r.y / 2) + 2; j++) LG.set(lkey(i, j), []);
+  const put = (id, x, y) => { const L = LG.get(lkey(Math.floor(x / 2), Math.floor(y / 2))); if (L && L[L.length - 1] !== id) L.push(id); };
+  const index = (id, P) => { for (let i = 0; i < P.length; i++) { if (i) { const a = P[i - 1], b = P[i], n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 1.5); for (let t = 1; t < n; t++) put(id, a.x + (b.x - a.x) * t / n, a.y + (b.y - a.y) * t / n); } put(id, P[i].x, P[i].y); } };
+  for (const lk of G.links) index(lk.id, lk.pts);
+  const linksNear = (x, y, r) => { const out = new Set(); for (let i = Math.floor((x - r) / 2); i <= Math.floor((x + r) / 2); i++) for (let j = Math.floor((y - r) / 2); j <= Math.floor((y + r) / 2); j++) for (const id of LG.get(lkey(i, j)) || []) out.add(id); return out; };
   for (const site of RJ.rbs) {
     const g = IC.rbGeom(site, half), R = g.r, C = g.C, inR = Q => Math.hypot(Q.x - C.x, Q.y - C.y) < R;
     // the node in the middle, where the roads meet (a dumbbell's ring sits where its slip roads were tied on)
@@ -265,8 +273,8 @@ function rings(W, G, kq) {
     if (n < 0) { let bd = R * 0.6; for (let i = 0; i < G.nodes.length; i++) { const Q = G.nodes[i]; if (Math.abs(Q.x - C.x) < bd && Math.abs(Q.y - C.y) < bd && Q.out.length >= 3) { const d = Math.hypot(Q.x - C.x, Q.y - C.y); if (d < bd) { bd = d; n = i; } } } }
     if (n < 0 || G.nodes[n].out.length < 2) continue;
     // everything inside the ring (an avenue's crossings a few metres from the middle, a street's loop) is the ring's
-    const inside = new Set([n]);
-    G.nodes.forEach((Q, i) => { if (Math.abs(Q.x - C.x) < R && Math.abs(Q.y - C.y) < R && inR(Q) && Q.out.length) inside.add(i); });
+    const inside = new Set([n]), nearL = linksNear(C.x, C.y, R + 1.5);
+    for (const id of nearL) for (const m of [G.links[id].a, G.links[id].b]) if (inR(G.nodes[m]) && G.nodes[m].out.length) inside.add(m);
     // a road from the ring outwards, from its last point inside: where it leaves the circle (the far root of
     // |a + t (b − a) − C| = R), then on; null if it comes back in
     const outOf = P => {
@@ -287,9 +295,9 @@ function rings(W, G, kq) {
       cut(lk, ia ? 'a' : 'b', rest);
     }
     // a street that runs across the circle without a junction inside it is cut in two, both halves ending on the ring
-    if (ok) for (const lk of G.links) {
-      if (gone.has(lk.id) || inside.has(lk.a) || inside.has(lk.b) || lk.ref.ring) continue;
-      if (Math.min(Math.hypot(G.nodes[lk.a].x - C.x, G.nodes[lk.a].y - C.y), Math.hypot(G.nodes[lk.b].x - C.x, G.nodes[lk.b].y - C.y)) > R + lk.len) continue;
+    if (ok) for (const id of nearL) {
+      const lk = G.links[id];
+      if (gone.has(lk.id) || inside.has(lk.a) || inside.has(lk.b) || lk.ref.ring || cuts.some(c => c.lk === lk || c.lk.half === lk)) continue;
       const i0 = lk.pts.findIndex(inR); if (i0 < 0) continue;
       let i1 = lk.pts.length - 1; while (!inR(lk.pts[i1])) i1--;
       const head = outOf(lk.pts.slice(0, i0 + 1).reverse()), tail = outOf(lk.pts.slice(i1));
@@ -311,7 +319,7 @@ function rings(W, G, kq) {
       G.at.set(kq(p.q.x, p.q.y) * 4, p.id);
     });
     for (const c of cuts) {
-      if (c.lk.half) { const h = c.lk.half, ob = G.nodes[c.lk.b].out; c.lk = Object.assign({}, h, { id: G.links.length, b: c.lk.b }); G.links.push(c.lk); ob[ob.indexOf(h.id)] = c.lk.id; }
+      if (c.lk.half) { const h = c.lk.half, ob = G.nodes[c.lk.b].out; c.lk = Object.assign({}, h, { id: G.links.length, b: c.lk.b }); G.links.push(c.lk); ob[ob.indexOf(h.id)] = c.lk.id; index(c.lk.id, c.rest); }
       const lk = c.lk, id = c.node.id, P = c.rest.slice(); P[0] = { x: c.node.q.x, y: c.node.q.y };
       if (c.out === 'a') { lk.a = id; lk.pts = P; } else { lk.b = id; lk.pts = P.reverse(); }
       lk.cum = cumOf(lk.pts); lk.len = lk.cum[lk.cum.length - 1];

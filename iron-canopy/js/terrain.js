@@ -768,35 +768,13 @@ function formBlock(g, b, sd, lod, c) {
   // brief 55: the forms with a plan (buildings.js) are painted from it, so the 3D view agrees; the fringe's and
   // the estates' pictures stay their own
   if ((b.land && IC.LANDMARKS[b.land]) || IC.BLOCK_FORMS[b.f]) {
-    if (!mid && (b.f === 'row' || b.f === 'house') && !b.land) { grass(-W2, -H2, b.w, b.h, 'rgb(100,116,78)'); roofRows(g, b, h, b.f === 'row' ? 1.1 : 1.2); return; }
+    if (!mid && (b.f === 'row' || b.f === 'house') && !b.land) { grass(-W2, -H2, b.w, b.h, 'rgb(100,116,78)'); resRoofs(g, b, h); return; }
+    if (!mid && b.f === 'cul') { const P = IC.blockPlan(b, c); grass(-W2, -H2, b.w, b.h, 'rgb(104,120,80)'); paintPlan(g, b, { ground: null, lots: [], lanes: P.lanes, heads: P.heads, bld: P.bld, trees: [] }, lod, { box, park, grass, tp, shx, shy, h }); return; }
     paintPlan(g, b, IC.blockPlan(b, c), lod, { box, park, grass, tp, shx, shy, h });
     if (tp.length && fine) trees(g, tp, 0.035, 0.03);
     return;
   }
   switch (b.f) {
-    case 'cul': {
-      // cul-de-sacs: a loop road with short dead ends, houses round the turning circles
-      grass(-W2, -H2, b.w, b.h, 'rgb(104,120,80)');
-      if (!mid) { roofRows(g, b, h, 1.1); break; }
-      // every estate is laid out a little differently: the loop's size and place, how many closes, which way in
-      // (IC.culPlan; where the closes are streets of the city, b.close, the tiles draw them with the streets)
-      // (the block's own picture of its roads: where they are streets of the city, the same ones over its grass, as
-      // the tiles paint the blocks after the streets; the real streets are what the traffic drives)
-      const P = IC.culPlan(b), houses = P.houses, real = b.close, w = real ? (fine ? IC.ROAD_SPEC.st.w : 0.22) : 0.08;
-      const roads = () => { g.beginPath(); if (!P.small) g.ellipse(P.ox, P.oy, P.rx, P.ry, 0, 0, 7); g.moveTo(P.entry[0], P.entry[1]); g.lineTo(P.entry[2], P.entry[3]); for (const [x0, y0, x1, y1] of P.closes) { g.moveTo(x0, y0); g.lineTo(x1, y1); } g.stroke(); };
-      g.lineCap = 'butt';
-      if (real && fine) { g.strokeStyle = 'rgb(152,150,142)'; g.lineWidth = w + 0.1; roads(); }   // the pavements
-      g.strokeStyle = real ? (IC.STREET_ASP ? IC.STREET_ASP.st : 'rgb(80,81,82)') : 'rgb(118,118,114)'; g.lineWidth = w; roads();
-      const hr = real ? w * 0.65 : 0.1;   // (a close's turning head is a small one, 20 m across)
-      if (real && fine) { g.fillStyle = 'rgb(152,150,142)'; g.beginPath(); for (const [x1, y1] of P.heads) { g.moveTo(x1 + hr + 0.05, y1); g.arc(x1, y1, hr + 0.05, 0, 7); } g.fill(); }
-      g.fillStyle = g.strokeStyle; g.beginPath(); for (const [x1, y1] of P.heads) { g.moveTo(x1 + hr, y1); g.arc(x1, y1, hr, 0, 7); } g.fill();
-      for (let q = 0; q < houses.length; q += 3) {
-        const x = houses[q], y = houses[q + 1], k = h(q, 11); if (k < 0.12 || Math.abs(x) > W2 - 0.1 || Math.abs(y) > H2 - 0.1) continue;
-        box(x - 0.055, y - 0.055, 0.11, 0.11, rgb(ROOF_SUB[Math.floor(k * 5)]), 0.025, true);
-        if (k > 0.6) tp.push(x + (x - P.ox) * 0.1, y + (y - P.oy) * 0.1);
-      }
-      break;
-    }
     case 'plot': {   // a house on its plot by the road out (brief 54): a hedged garden, the house at the front, a drive
       g.fillStyle = 'rgba(78,104,58,0.6)'; g.fillRect(-W2, -H2, b.w, b.h);
       g.fillStyle = mid ? 'rgb(112,138,80)' : 'rgb(134,134,104)'; g.fillRect(-W2 + 0.03, -H2 + 0.03, b.w - 0.06, b.h - 0.06);
@@ -843,8 +821,8 @@ function formBlock(g, b, sd, lod, c) {
 /* a block painted from its plan (brief 55, buildings.js): the ground, the lots, the lanes and sidings, then the
    buildings from the lowest up, each with its shadow and its roof, and the trees */
 const GROUND = { grass: 'rgb(98,116,76)', lawn: 'rgb(104,122,80)', yard: 'rgb(116,116,112)', ballast: 'rgb(104,98,90)' };
-const LOTC = { court: 'rgb(118,112,100)', green: 'rgb(96,118,70)', plaza: 'rgb(150,148,142)', garden: 'rgb(104,124,78)', yard: 'rgb(116,116,112)', pitch: 'rgb(88,128,66)', platform: 'rgb(172,168,158)', play: 'rgb(140,136,126)', heli: 'rgb(130,130,128)' };
-const LANEC = { lane: 'rgb(96,96,94)', path: 'rgba(176,164,132,0.8)', loop: 'rgb(90,91,92)', rail: 'rgb(126,118,104)' };
+const LOTC = { court: 'rgb(118,112,100)', green: 'rgb(96,118,70)', plaza: 'rgb(150,148,142)', garden: 'rgb(104,124,78)', yard: 'rgb(116,116,112)', pitch: 'rgb(88,128,66)', platform: 'rgb(172,168,158)', play: 'rgb(140,136,126)', heli: 'rgb(130,130,128)', drive: 'rgb(150,146,136)', pool: 'rgb(96,170,200)' };
+const LANEC = { lane: 'rgb(96,96,94)', path: 'rgba(176,164,132,0.8)', loop: 'rgb(90,91,92)', rail: 'rgb(126,118,104)', fence: 'rgba(70,64,52,0.55)' };
 function paintPlan(g, b, P, lod, H) {
   const W2 = b.w / 2, H2 = b.h / 2, fine = lod >= 4, mid = lod >= 3, h = H.h;
   const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
@@ -859,7 +837,19 @@ function paintPlan(g, b, P, lod, H) {
     else if (q.k === 'platform') { g.fillStyle = 'rgba(230,200,60,0.6)'; g.fillRect(x, y, q.w, 0.004); g.fillRect(x, y + q.h - 0.004, q.w, 0.004); }
     else if (q.k === 'plaza') { g.strokeStyle = 'rgba(0,0,0,0.06)'; g.lineWidth = 0.004; g.beginPath(); for (let u = x + 0.06; u < x + q.w; u += 0.06) { g.moveTo(u, y); g.lineTo(u, y + q.h); } for (let v = y + 0.06; v < y + q.h; v += 0.06) { g.moveTo(x, v); g.lineTo(x + q.w, v); } g.stroke(); }
   });
+  // a housing block's own streets (brief 68): asphalt between pavements, over its ground, as the tiles paint blocks
+  // after the streets (the junctions are painted after the blocks); a close's turning heads
+  for (const pass of [0, 1]) {
+    if (!mid && !pass) continue;
+    const ex = mid ? (pass ? 0 : 0.05) : 0, sw = mid ? IC.ROAD_SPEC.st.w : 0.2;
+    g.strokeStyle = g.fillStyle = !mid ? 'rgb(128,127,122)' : pass ? (IC.STREET_ASP ? IC.STREET_ASP.st : 'rgb(80,81,82)') : 'rgb(152,150,142)';
+    g.beginPath(); g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const l of P.lanes) if (l[5] === 'street') { g.moveTo(l[0], l[1]); g.lineTo(l[2], l[3]); }
+    g.lineWidth = sw + ex; g.stroke();
+    if (P.heads) { g.beginPath(); for (const [x, y, r] of P.heads) { const R = (mid ? r : 0.12) + ex / 2; g.moveTo(x + R, y); g.arc(x, y, R, 0, 7); } g.fill(); }
+  }
   if (mid) for (const l of P.lanes) {
+    if (l[5] === 'street' || (l[5] === 'fence' && !fine)) continue;
     g.lineCap = 'butt';
     // a siding gets the main line's dark edge, so its bed reads against the yard
     if (l[5] === 'rail') { g.strokeStyle = 'rgba(40,36,30,0.5)'; g.lineWidth = l[4] + 0.02; g.beginPath(); g.moveTo(l[0], l[1]); g.lineTo(l[2], l[3]); g.stroke(); }
@@ -907,14 +897,15 @@ function paintPlan(g, b, P, lod, H) {
   if (fine) for (let i = 0; i < P.trees.length; i += 2) H.tp.push(P.trees[i], P.trees[i + 1]);
   void h;
 }
-/* a suburb block at the town zoom (brief 54): a 300 m block is seven pixels across there, so its houses are rows of
-   roofs along its lanes, broken here and there, over a warm ground of gardens; it reads as housing from 10 km up */
-function roofRows(g, b, h, lane) {
-  const W2 = b.w / 2, H2 = b.h / 2, nl = Math.max(1, Math.round(b.h / lane)), lh = b.h / nl;
-  g.fillStyle = 'rgba(132,126,100,0.75)'; g.fillRect(-W2, -H2, b.w, b.h);
-  for (let r = 0; r < nl; r++) {
-    const y = -H2 + (r + 0.5) * lh, c = ROOF_SUB[r % 5];
-    for (let x = -W2 + 0.1, k = 0; x < W2 - 0.3; k++) { const L = 0.6 + h(k, r) * 0.9; if (h(r * 5 + k, 7) > 0.2) { g.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`; g.fillRect(x, y - 0.42, Math.min(L, W2 - 0.1 - x), 0.36); g.fillRect(x + 0.2, y + 0.08, Math.min(L * 0.8, W2 - 0.3 - x), 0.36); } x += L + 0.15; }
+/* a housing block from the town zoom (brief 68): its streets, and a broken band of roofs along each row of plots */
+function resRoofs(g, b, h) {
+  const R = IC.resLanes(b), sw = R.sw, rect = (u, v, wu, wv) => sw ? g.fillRect(v, u, wv, wu) : g.fillRect(u, v, wu, wv);
+  g.fillStyle = 'rgba(132,126,100,0.5)'; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+  g.fillStyle = 'rgb(128,127,122)'; for (const L of R.lanes) sw ? g.fillRect(L[0] - 0.1, L[1] - 0.16, 0.2, R.Lw + 0.32) : g.fillRect(L[0] - 0.16, L[1] - 0.1, R.Lw + 0.32, 0.2);
+  for (const w of R.rows) {
+    const c = ROOF_SUB[w.r % 5], v = w.s > 0 ? w.v0 + 0.04 : w.v0 - 0.04 - 0.12;
+    g.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+    for (let u = -R.Lw / 2 + 0.05, k = 0; u < R.Lw / 2 - 0.1; k++) { const L = 0.3 + h(k, w.r) * 0.6; if (h(w.r * 5 + k, 7) > 0.15) rect(u, v, Math.min(L, R.Lw / 2 - 0.05 - u), 0.12); u += L + 0.08; }
   }
 }
 /* a destroyed block: burnt-out shells round heaps of rubble on ash-dark ground */

@@ -287,7 +287,10 @@ const W = {
       const aim = aimOn(obj);
       const route = routeBy(S, s, aim, true, harass ? 3000 : 2100, op.via);
       const T = routeLen(s, route) / IC.THR[type].spd;
-      later(S, arriveAt ? arriveAt - S.time - T + U.rand(-120, 120) : i * U.rand(40, 140), 'eSpawn', S, type, s.x, s.y, { route, aim: route[route.length - 1], target: obj.ref, op, origin: s }, 30, 1);
+      // (a site farther than the nearest, or a route longer than the plan guessed, still keeps the first 90 minutes
+      // of the calm: those drones arrive a little after the rest)
+      const calm = arriveAt && op && op.raid && op.raid.t0 != null ? op.raid.t0 + 5700 - S.time : 0;
+      later(S, arriveAt ? Math.max(calm, arriveAt - S.time - T + U.rand(-120, 120)) : i * U.rand(40, 140), 'eSpawn', S, type, s.x, s.y, { route, aim: route[route.length - 1], target: obj.ref, op, origin: s }, 30, 1);
     }
     return n + nj;
   },

@@ -66,8 +66,8 @@ function perimeter(P, cx, cy, W2, H2, h, salt, T, o) {
   const floors = (s, i) => o.real ? U.clamp(Math.round(IC.realFloors(o.real, h(salt + s * 70 + i, 9), [o.f0, o.f0, o.f1, o.f1, o.f1]) * (P.g || 1)), 2, o.f1) : o.f0 + Math.floor(h(salt + s * 70 + i, 9) * (o.f1 - o.f0 + 1));
   const put = (x, y, w, hh, s, i, corner) => {
     const fl = floors(s, i) + (corner ? 1 : 0), pitched = !corner && h(salt + s * 90 + i, 11) < o.pitched;
-    const c = roofOf(T, h(salt + s * 110 + i, 13), h(salt + s * 130 + i, 17));
-    P.bld.push({ x: cx + x, y: cy + y, w, h: hh, ht: fl * 0.03 + (pitched ? 0.015 : 0.006), c: corner ? tint(c, -14) : c, r: pitched ? 'pitch' : corner && h(salt + i, 19) < 0.5 ? 'hip' : 'flat', k: corner ? 'corner' : 'flats' });
+    const c = o.cols ? tint(o.cols[Math.floor(h(salt + s * 110 + i, 13) * o.cols.length)], (h(salt + s * 130 + i, 17) - 0.5) * 20) : roofOf(T, h(salt + s * 110 + i, 13), h(salt + s * 130 + i, 17));
+    P.bld.push({ x: cx + x, y: cy + y, w, h: hh, ht: fl * (o.fh || 0.03) + (pitched ? 0.015 : 0.006), c: corner ? tint(c, -14) : c, r: pitched ? 'pitch' : corner && !o.cols && h(salt + i, 19) < 0.5 ? 'hip' : o.cols && h(salt + s * 150 + i, 21) < o.glass ? 'glass' : 'flat', k: o.cols ? 'office' : corner ? 'corner' : 'flats' });
   };
   const dT = dep(0, 0), dB = dep(1, 0), dL = dep(2, 0), dR = dep(3, 0);
   // along x: the top and bottom sides, corners included
@@ -143,25 +143,48 @@ FORMS.school = (P, b, h, T) => {
   if (b.w > 0.9) lot(P, W2 - 0.3, 0, 0.5, Math.min(0.8, b.h - 0.1), 'pitch');
   P.trees.push(-W2 + 0.05, 0, W2 - 0.05, -H2 + 0.1);
 };
+/* office stone, brick, concrete and dark glass for a downtown street (brief 68) */
+const OFFICE = [[196, 188, 172], [178, 170, 158], [160, 104, 84], [206, 204, 198], [120, 128, 136], [150, 146, 138], [188, 176, 150], [96, 106, 118]];
+/* a tower in tiers (brief 68): a base, one or two set-back storeys of it, a crown; each tier stands on the one below
+   (q.on, its index), so the map draws it on that roof and the 3D view builds it */
+function tiers(P, x, y, w, hh, fl, c, glass, h, salt) {
+  const n = fl > 30 ? 3 : fl > 14 ? 2 : 1;
+  let base = -1, z = 0, k = 1;
+  for (let t = 0; t < n; t++) {
+    const top = fl * (t === n - 1 ? 1 : 0.45 + t * 0.3 + h(salt + t, 5) * 0.1), ht = top * 0.034;
+    if (t) k *= 0.72 + h(salt + t, 6) * 0.14;
+    const q = { x, y, w: w * k, h: hh * k, ht, c: t ? tint(c, 8 * t) : c, r: glass ? 'glass' : 'flat', k: 'tower' };
+    if (base >= 0) { q.on = base; q.z0 = z; }
+    base = P.bld.length; P.bld.push(q); z = ht;
+  }
+  // the crown: a plant storey, a spire on the tallest
+  const top = P.bld[base], cr = { x, y, w: top.w * 0.4, h: top.h * 0.4, ht: z + 0.035, c: tint(c, -20), r: 'flat', k: 'tower', on: base, z0: z };
+  P.bld.push(cr);
+  if (fl > 40 && h(salt, 9) < 0.5) P.bld.push({ x, y, w: 0.012, h: 0.012, ht: z + 0.035 + 0.12, c: [200, 200, 200], r: 'flat', k: 'mast', on: P.bld.length - 1, z0: z + 0.035 });
+}
 FORMS.tower = (P, b, h, T) => {
-  // downtown: a podium with one or two towers on it, a mid-rise block, a plaza or a car park now and then
+  // downtown (brief 68): each plot is a street wall of offices of six to fourteen floors round a court, the corners
+  // a floor or two taller, and in most a tower rising out of the court in tiers; now and then a plaza, a
+  // multi-storey car park or a tower standing on its own plaza
   P.ground = 'pave';
   const one = Math.round(b.w / 1.3) <= 1 && Math.round(b.h / 1.3) <= 1;   // (a block of one plot always builds on it)
+  const gt = P.gt || 1, f1 = Math.round(8 + 8 * gt);
   const G = cells(b, 1.3, 0.14, (cx, cy, w2, h2, i, j) => {
-    const k = one || (i === 0 && j === 0) ? 0.16 + h(i, j) * 0.84 : h(i, j);
-    if (k < 0.08) { lot(P, cx, cy, w2 * 2, h2 * 2, 'park'); return; }
+    const k = one || (i === 0 && j === 0) ? 0.16 + h(i, j) * 0.84 : h(i, j), salt = 3 + i * 17 + j * 131;
+    if (k < 0.08) { box(P, cx, cy, w2 * 1.8, h2 * 1.8, 0.12, [138, 138, 134], 'flat', 'carpark'); lot(P, cx, cy, w2 * 2, h2 * 2, 'plaza'); return; }
     if (k < 0.16) { lot(P, cx, cy, w2 * 2, h2 * 2, 'plaza'); for (let q = 0; q < 5; q++) P.trees.push(cx + (h(q, i + 3) - 0.5) * w2 * 1.6, cy + (h(q + 9, j) - 0.5) * h2 * 1.6); return; }
-    if (k < 0.36) { box(P, cx, cy, w2 * 1.7, h2 * 1.7, Math.max(5, IC.realFloors('tower', h(i, j + 2) * 0.5, [7, 14, 30, 43, 67]) * (P.gt || 1)) * 0.034, tint(FLAT[(i + j) % 4], 4), 'flat', 'office'); return; }
-    // the podium, the whole plot but a pavement
-    box(P, cx, cy, w2 * 1.9, h2 * 1.9, 0.06 + h(j, i) * 0.04, [150, 150, 144], 'flat', 'podium');
-    const nT = k > 0.72 ? 1 : 2;
-    for (let q = 0; q < nT; q++) {
-      const tw = w2 * 2 * (nT === 1 ? 0.5 + h(q, i) * 0.3 : 0.38), th = h2 * 2 * (nT === 1 ? 0.45 + h(j, q) * 0.35 : 0.4), tx = cx + (nT === 1 ? 0 : (q - 0.5) * w2 * 1.0), ty = cy + (h(q + 3, j + i) - 0.5) * (h2 * 2 - th) * 0.8;
-      const glass = h(q, j + 2) < 0.6;
-      // (floors from the real downtowns' towers, 3.4 m each, the tallest in the middle of town: brief 65)
-      const fl = Math.max(8, IC.realFloors('tower', h(q + 7, i * 3 + j), [7, 14, 30, 43, 67]) * (P.gt || 1));
-      box(P, tx, ty, tw, th, fl * 0.034, glass ? tint(GLASS, h(q, i + 4) * 30) : tint(FLAT[q % FLAT.length], 0), glass ? 'glass' : 'flat', 'tower');
+    const fl = Math.max(10, IC.realFloors('tower', h(salt, 7), [7, 14, 30, 43, 67]) * gt), glass = h(salt, 8) < 0.6;
+    const col = glass ? tint(GLASS, h(salt, 10) * 30 - 10) : tint(OFFICE[Math.floor(h(salt, 11) * OFFICE.length)], 0);
+    if (k > 0.86) {
+      // a tower on its own plaza, set back from the street
+      lot(P, cx, cy, w2 * 2, h2 * 2, 'plaza');
+      tiers(P, cx, cy, w2 * (1.1 + h(salt, 12) * 0.4), h2 * (1.1 + h(salt, 13) * 0.4), fl * 1.2, col, glass, h, salt);
+      for (let q = 0; q < 6; q++) P.trees.push(cx + (q % 2 ? -1 : 1) * w2 * 0.85, cy + (q / 6 - 0.4) * h2 * 1.8);
+      return;
     }
+    perimeter(P, cx, cy, w2, h2, h, salt, T, { lo: 0.18, hi: 0.42, d0: 0.16, d1: 0.26, f0: 6, f1, fh: 0.034, pitched: 0, pass: 0.04, court: 'court', cols: OFFICE, glass: 0.2 });
+    // the tower out of the court, when the court is big enough to hold one
+    if (k > 0.3 && w2 > 0.32 && h2 > 0.32) tiers(P, cx + (h(salt, 14) - 0.5) * w2 * 0.3, cy + (h(salt, 15) - 0.5) * h2 * 0.3, (w2 - 0.24) * 1.6, (h2 - 0.24) * 1.6, fl, col, glass, h, salt);
   });
   laneGrid(P, b, G, 0.14);
 };
@@ -190,46 +213,117 @@ FORMS.slab = (P, b, h, T) => {
   laneGrid(P, b, G, 0.1, 'path');
   void T;
 };
-FORMS.row = (P, b, h, T) => {
-  // terraces: rows of houses along the lanes, a few to a run in one tone, narrow gardens behind
-  const W2 = b.w / 2, H2 = b.h / 2, nl = Math.max(1, Math.round(b.h / 0.62)), lh = b.h / nl;
-  P.ground = 'grass';
+/* the streets of a housing block (brief 68), in its own frame: along its longer side, one every 100 m between
+   houses or 62 m between terraces, each from edge to edge (cities.js makes them streets of the city, run on to the
+   street round the block, so every front door is on a street a car can drive); a block too narrow for one faces
+   its houses out to the streets round it. rows: the lines of plots, each a front line v0 along the street, the way
+   into the plot s (±1) and the plot's depth */
+IC.resLanes = function (b) {
+  const sw = b.h > b.w * 1.15, Lw = sw ? b.h : b.w, Lh = sw ? b.w : b.h, step = b.f === 'row' ? 0.62 : 1.0, F0 = IC.ROAD_SPEC.st.w / 2 + 0.02;
+  const nl = Lh < step * 0.9 ? 0 : Math.max(1, Math.round(Lh / step)), lh = nl ? Lh / nl : Lh, lanes = [], rows = [];
   for (let r = 0; r < nl; r++) {
-    const yl = -H2 + r * lh + lh / 2;
-    P.lanes.push([-W2, yl, W2, yl, 0.06, 'lane']);
-    for (const side of [-1, 1]) {
-      const y = yl + side * (0.03 + 0.05), ws = parcels(b.w - 0.1, 0.055, 0.09, h, r * 9 + side);
-      let x = -W2 + 0.05, run = 0, c = roofOf(T, h(r, side + 5), 0.5);
-      ws.forEach((w, i) => {
-        if (run <= 0) { run = 3 + Math.floor(h(r + i, side + 7) * 6); c = roofOf(T, h(r * 3 + i, side + 5), h(i, r)); }
-        if (h(r * 7 + i, side + 11) > 0.08) box(P, x + w / 2, y, w - 0.006, 0.1, 0.075 + h(i, r) * 0.015, c, 'pitch', 'house');
-        run--; x += w;
-      });
-      lot(P, 0, y + side * (0.05 + (lh / 2 - 0.13) / 2), b.w - 0.1, Math.max(0.02, lh / 2 - 0.13), 'garden');
-    }
+    const v = -Lh / 2 + (r + 0.5) * lh;
+    lanes.push(sw ? [v, -Lw / 2, v, Lw / 2] : [-Lw / 2, v, Lw / 2, v]);
+    rows.push({ v0: v - F0, s: -1, d: lh / 2 - F0, r: r * 2 }, { v0: v + F0, s: 1, d: lh / 2 - F0, r: r * 2 + 1 });
+  }
+  if (!nl) rows.push({ v0: -Lh / 2, s: 1, d: Lh / 2, r: 0 }, { v0: Lh / 2, s: -1, d: Lh / 2, r: 1 });
+  return { sw, Lw, Lh, nl, lh, lanes, rows };
+};
+/* a housing form's plots along its rows, in (u along the street, v across) turned into the block's frame */
+function resFrame(P, b) {
+  const R = IC.resLanes(b), sw = R.sw;
+  R.box = (u, v, wu, wv, ht, c, r, k) => box(P, sw ? v : u, sw ? u : v, sw ? wv : wu, sw ? wu : wv, ht, c, r, k);
+  R.lot = (u, v, wu, wv, k) => lot(P, sw ? v : u, sw ? u : v, sw ? wv : wu, sw ? wu : wv, k);
+  R.line = (u0, v0, u1, v1, w, k) => P.lanes.push(sw ? [v0, u0, v1, u1, w, k] : [u0, v0, u1, v1, w, k]);
+  R.tree = (u, v) => P.trees.push(sw ? v : u, sw ? u : v);
+  // the streets themselves, run on past the block's edge to the street round it (the tiles paint blocks over streets)
+  for (const L of R.lanes) P.lanes.push(sw ? [L[0], L[1] - 0.16, L[2], L[3] + 0.16, IC.ROAD_SPEC.st.w, 'street'] : [L[0] - 0.16, L[1], L[2] + 0.16, L[3], IC.ROAD_SPEC.st.w, 'street']);
+  return R;
+}
+FORMS.row = (P, b, h, T) => {
+  // terraces: runs of four to nine houses in one tone along the street, small front yards, a back extension on
+  // some, long narrow gardens behind with a fence between each
+  P.ground = 'grass';
+  const R = resFrame(P, b), L2 = R.Lw / 2;
+  for (const w of R.rows) {
+    const ws = parcels(R.Lw - 0.06, 0.05, 0.075, h, w.r * 9 + 1), fy = 0.012 + h(w.r, 3) * 0.02, dep = 0.085 + h(w.r, 4) * 0.025;
+    let u = -L2 + 0.03, run = 0, c = null, gap = false;
+    ws.forEach((pw, i) => {
+      if (run <= 0) { run = 4 + Math.floor(h(w.r + i, 7) * 6); c = roofOf(T, h(w.r * 3 + i, 5), h(i, w.r)); gap = i > 0 && h(w.r * 5 + i, 13) < 0.5; }
+      const uc = u + pw / 2, vh = w.v0 + w.s * (fy + dep / 2), back = w.d - fy - dep;
+      if (gap) { R.line(u, w.v0, u, w.v0 + w.s * w.d, 0.012, 'path'); gap = false; }   // (a path between runs to the backs)
+      else if (back > -0.01) {
+        R.box(uc, vh, pw - 0.003, back > 0 ? dep : dep + back, 0.078 + h(i, w.r) * 0.012, c, 'pitch', 'house');
+        if (back > 0.08 && h(i + w.r * 31, 17) < 0.55) R.box(u + pw * 0.3, w.v0 + w.s * (fy + dep + 0.025), pw * 0.45, 0.05, 0.05, tint(c, -8), 'pitch', 'house');
+        if (back > 0.01) R.lot(uc, w.v0 + w.s * (w.d - back / 2), pw - 0.004, back - 0.004, 'garden');
+        R.line(u, w.v0 + w.s * (fy + dep), u, w.v0 + w.s * w.d, 0.004, 'fence');
+        if (h(i, w.r + 21) < 0.2) R.tree(uc, w.v0 + w.s * (w.d - back * 0.4));
+      }
+      run--; u += pw;
+    });
+    R.line(-L2 + 0.03, w.v0 + w.s * w.d, L2 - 0.03, w.v0 + w.s * w.d, 0.004, 'fence');
   }
 };
 FORMS.house = (P, b, h, T) => {
-  // detached houses on their plots along the lanes, gardens behind, a garage beside some, trees between
-  const W2 = b.w / 2, H2 = b.h / 2, nl = Math.max(1, Math.round(b.h / 1.2)), lh = b.h / nl;
+  // detached houses on their plots: a front garden, a drive to the garage beside the house, a back garden with a
+  // shed, a tree or a pool (in the bigger suburbs), fences between the plots
   P.ground = 'grass';
-  for (let r = 0; r < nl; r++) {
-    const yl = -H2 + (r + 0.5) * lh;
-    P.lanes.push([-W2, yl, W2, yl, 0.07, 'lane']);
-    for (const side of [-1, 1]) {
-      const ws = parcels(b.w - 0.08, 0.16, 0.26, h, r * 9 + side); let x = -W2 + 0.04;
-      ws.forEach((w, i) => {
-        const s2 = h(i + r * 50, side + 3);
-        if (s2 >= (b.sub ? 0.22 : 0.06)) {
-          const hw = 0.09 + s2 * 0.05, hh = 0.08 + h(i, side) * 0.04, y = yl + side * (0.06 + hh / 2 + h(i, r) * 0.03), c = roofOf(T, h(r * 3 + i, side + 5), h(i, r + 1));
-          box(P, x + w / 2 + (h(i, side + 2) - 0.5) * (w - hw) * 0.5, y, hw, hh, 0.055 + h(i, side) * 0.025, c, h(i + r, 3) < 0.7 ? 'pitch' : 'hip', 'house');
-          if (h(i, side + 4) < 0.5) box(P, x + w - 0.04, yl + side * 0.08, 0.05, 0.05, 0.03, tint(c, -20), 'flat', 'garage');
-          lot(P, x + w / 2, yl + side * (lh / 2 * 0.55 + 0.06), w - 0.01, Math.max(0.03, lh / 2 - 0.25), 'garden');
-          if (s2 > 0.55) P.trees.push(x + w / 2 + (h(i, 9) - 0.5) * 0.1, yl + side * (lh / 2 - 0.12));
-        }
-        x += w;
-      });
-    }
+  const R = resFrame(P, b), L2 = R.Lw / 2, big = b.sub, lo = big ? 0.16 : 0.12, hi = big ? 0.26 : 0.2;
+  for (const w of R.rows) {
+    const ws = parcels(R.Lw - 0.04, lo, hi, h, w.r * 9 + 2);
+    let u = -L2 + 0.02;
+    ws.forEach((pw, i) => {
+      const k = h(i + w.r * 50, 3), uc = u + pw / 2, fg = 0.035 + h(i, w.r + 1) * 0.04, D = Math.min(w.d, 0.6);
+      const hw = Math.min(pw - 0.06, 0.09 + h(i, w.r + 2) * 0.06), hd = 0.08 + h(i, w.r + 3) * 0.04, side = h(i, w.r + 4) < 0.5 ? -1 : 1;
+      R.line(u, w.v0, u, w.v0 + w.s * D, 0.004, 'fence');
+      if (k < (big ? 0.12 : 0.04) || D < fg + hd + 0.04) { R.lot(uc, w.v0 + w.s * D / 2, pw - 0.004, D - 0.004, 'garden'); u += pw; return; }   // (a garden with no house yet)
+      const c = roofOf(T, h(w.r * 3 + i, 5), h(i, w.r + 6)), hu = uc - side * (pw - hw) * 0.22, vh = w.v0 + w.s * (fg + hd / 2), back = D - fg - hd;
+      R.box(hu, vh, hw, hd, 0.055 + h(i, w.r + 7) * 0.025, c, h(i + w.r, 8) < 0.65 ? 'pitch' : 'hip', 'house');
+      // a wing at the back now and then (an L), lower than the house
+      if (h(i, w.r + 9) < 0.3) R.box(hu + side * hw * 0.2, vh + w.s * (hd / 2 + 0.025), hw * 0.5, 0.05, 0.045, tint(c, -6), 'hip', 'house');
+      // the garage beside the house, its drive from the street; or a drive to a pad at the side
+      const gu = hu + side * (hw / 2 + 0.03);
+      if (Math.abs(gu - uc) + 0.03 < pw / 2) {
+        if (h(i, w.r + 10) < 0.6) R.box(gu, w.v0 + w.s * (fg + 0.03), 0.05, 0.06, 0.03, tint(c, -16), 'flat', 'garage');
+        R.lot(gu, w.v0 + w.s * fg / 2, 0.04, fg, 'drive');
+      }
+      if (back > 0.06) {
+        R.lot(uc, w.v0 + w.s * (D - back / 2), pw - 0.004, back - 0.004, 'garden');
+        if (big && h(i, w.r + 11) < 0.2 && back > 0.16) R.lot(uc + side * 0.02, w.v0 + w.s * (fg + hd + 0.06), 0.06, 0.035, 'pool');
+        else if (h(i, w.r + 12) < 0.35 && back > 0.12) R.box(uc - side * (pw / 2 - 0.035), w.v0 + w.s * (D - 0.04), 0.03, 0.03, 0.025, [140, 128, 110], 'pitch', 'shed');
+        R.tree(uc + (h(i, 13) - 0.5) * pw * 0.6, w.v0 + w.s * (D - back * (0.3 + h(i, 14) * 0.3)));
+        if (h(i, w.r + 15) < 0.4) R.tree(uc + (h(i, 16) - 0.5) * pw * 0.7, w.v0 + w.s * (D - 0.025));
+      }
+      if (h(i, w.r + 17) < 0.25) R.tree(uc - side * pw * 0.3, w.v0 + w.s * fg * 0.5);
+      u += pw;
+    });
+    R.line(-L2 + 0.02, w.v0 + w.s * Math.min(w.d, 0.6), L2 - 0.02, w.v0 + w.s * Math.min(w.d, 0.6), 0.004, 'fence');
+  }
+};
+FORMS.cul = (P, b, h, T) => {
+  // an estate of closes (brief 54, IC.culPlan): the loop, the way in and the closes with their turning heads, and
+  // the houses facing them on their plots (brief 68), each turned to its street, a garden behind, a drive in front
+  P.ground = 'grass';
+  const C = IC.culPlan(b), sw = IC.ROAD_SPEC.st.w, rd = (L) => { for (let q = 1; q < L.length; q++) P.lanes.push([L[q - 1][0], L[q - 1][1], L[q][0], L[q][1], sw, 'street']); };
+  if (C.ring) rd(C.ring);
+  rd([[C.entry[0], C.entry[1]], [C.entry[2], C.entry[3]]]);
+  for (const c of C.closes) rd([[c[0], c[1]], [c[2], c[3]]]);
+  P.heads = C.heads.map(([x, y]) => [x, y, sw * 0.9]);
+  // a big loop has a green in the middle: a path round it, a playground, trees
+  if (C.ring && C.rx > 0.6 && C.ry > 0.6) {
+    const gw = (C.rx - 0.38) * 2, gh = (C.ry - 0.38) * 2;
+    lot(P, C.ox, C.oy, gw, gh, 'green'); lot(P, C.ox + gw * 0.25, C.oy - gh * 0.2, 0.08, 0.06, 'play');
+    P.lanes.push([C.ox - gw / 2 + 0.03, C.oy, C.ox + gw / 2 - 0.03, C.oy, 0.012, 'path'], [C.ox, C.oy - gh / 2 + 0.03, C.ox, C.oy + gh / 2 - 0.03, 0.012, 'path']);
+    for (let q = 0; q < Math.min(14, gw * gh * 10); q++) P.trees.push(C.ox + (h(q, 31) - 0.5) * gw * 0.9, C.oy + (h(q, 33) - 0.5) * gh * 0.9);
+  }
+  for (const o of IC.culHouses(b)) {
+    const k = h(o.k, 11); if (k < 0.08) continue;
+    const ca = Math.cos(o.a), sa = Math.sin(o.a), off = (d, u) => [o.x - sa * d + ca * (u || 0), o.y + ca * d + sa * (u || 0)];   // (d: away from the street)
+    const c = roofOf(T, h(o.k, 5), h(o.k, 6)), hw = 0.1 + h(o.k, 7) * 0.04, hd = 0.08 + h(o.k, 8) * 0.03;
+    const [gx, gy] = off(0.08); P.lots.push({ x: gx, y: gy, w: 0.19, h: 0.16, a: o.a, k: 'garden' });
+    const [dx, dy] = off(-0.075, hw / 2 + 0.01); P.lots.push({ x: dx, y: dy, w: 0.035, h: 0.05, a: o.a, k: 'drive' });
+    P.bld.push({ x: o.x, y: o.y, w: hw, h: hd, a: o.a, ht: 0.055 + h(o.k, 9) * 0.025, c, r: h(o.k, 10) < 0.6 ? 'pitch' : 'hip', k: 'house' });
+    if (k > 0.55) { const [tx, ty] = off(0.14, (h(o.k, 12) - 0.5) * 0.12); P.trees.push(tx, ty); }
   }
 };
 FORMS.shed = (P, b, h) => {
@@ -397,7 +491,39 @@ FORMS.real = (P, b, h, T) => {
     const c = big ? tint([120, 104, 92], (h(k, 45) - 0.5) * 20) : roofOf(T, h(k, 47), h(k, 49));
     P.bld.push({ x: best.x, y: best.y, w: Math.max(0.01, best.w), h: Math.max(0.01, best.h), a: best.a || 1e-6, pg: F, ht: big ? 0.16 + h(k, 51) * 0.1 : fl * 0.03 + (pitched ? 0.015 : 0.006), c, r: big ? 'hip' : pitched ? 'pitch' : 'flat', k: big ? 'church' : 'flats' });
   });
+  infill(P, b, h, T);
 };
+/* an old town's street fronts the real map left open (brief 68): where no mapped building stands along the block's
+   edge, narrow houses of three to five floors fill the frontage, as a town of that age would have them, so the
+   old town reads as built up and not as paving with houses on it */
+function infill(P, b, h, T) {
+  const G = b.pg; if (!G || G.length < 6) return;
+  const n = G.length / 2, C = 0.02, occ = new Set(), key = (x, y) => Math.floor(x / C) * 4096 + Math.floor(y / C);
+  const pip = (F, x, y) => { let ins = false; for (let i = 0, j = F.length / 2 - 1; i < F.length / 2; j = i++) { const ax = F[i * 2], ay = F[i * 2 + 1], bx = F[j * 2], by = F[j * 2 + 1]; if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) ins = !ins; } return ins; };
+  const mark = F => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (let i = 0; i < F.length; i += 2) { x0 = Math.min(x0, F[i]); x1 = Math.max(x1, F[i]); y0 = Math.min(y0, F[i + 1]); y1 = Math.max(y1, F[i + 1]); }
+    for (let x = Math.floor(x0 / C) * C; x <= x1 + C; x += C) for (let y = Math.floor(y0 / C) * C; y <= y1 + C; y += C) if (pip(F, x + C / 2, y + C / 2) || pip(F, x, y)) occ.add(key(x + C / 2, y + C / 2)); };
+  for (const F of b.rb || []) mark(F);
+  let A = 0; for (let i = 0; i < n; i++) { const j = (i + 1) % n; A += G[i * 2] * G[j * 2 + 1] - G[j * 2] * G[i * 2 + 1]; }
+  const sg = A > 0 ? 1 : -1;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, ax = G[i * 2], ay = G[i * 2 + 1], ex = G[j * 2] - ax, ey = G[j * 2 + 1] - ay, L = Math.hypot(ex, ey);
+    if (L < 0.12) continue;
+    const ux = ex / L, uy = ey / L, nx = -uy * sg, ny = ux * sg, a = Math.atan2(uy, ux);
+    let t = 0.015;
+    for (const w of parcels(L - 0.03, 0.06, 0.13, h, 300 + i * 17)) {
+      const d = 0.08 + h(i * 31 + Math.round(t * 100), 61) * 0.06, cx = ax + ux * (t + w / 2) + nx * (d / 2 + 0.004), cy = ay + uy * (t + w / 2) + ny * (d / 2 + 0.004);
+      const R = []; for (const [p, q] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) R.push(cx + ux * p * w / 2 + nx * q * d / 2, cy + uy * p * w / 2 + ny * q * d / 2);
+      let ok = true;
+      for (let p = -0.4; p <= 0.41 && ok; p += 0.2) for (let q = -0.4; q <= 0.41 && ok; q += 0.4) { const x = cx + ux * p * w + nx * q * d, y = cy + uy * p * w + ny * q * d; if (!pip(G, x, y) || occ.has(key(x, y)) || (b.rd && b.rd.some(r => U.segDist(x, y, r[0], r[1], r[2], r[3]) < r[4]))) ok = false; }
+      if (ok) {
+        const k = 900 + i * 50 + Math.round(t * 100), fl = U.clamp(Math.round(IC.realFloors('old', h(k, 41), [3, 4, 5, 5, 6]) * (P.g || 1)), 2, 6), pitched = h(k, 43) < 0.85;
+        P.bld.push({ x: cx, y: cy, w: w - 0.004, h: d, a: a || 1e-6, ht: fl * 0.03 + (pitched ? 0.015 : 0.006), c: roofOf(T, h(k, 47), h(k, 49)), r: pitched ? 'pitch' : 'flat', k: 'flats' });
+        mark(R);
+      }
+      t += w;
+    }
+  }
+}
 
 /* ---------- the plan ---------- */
 IC.blockPlan = function (b, c) {
@@ -469,7 +595,7 @@ IC.blockPrisms = function (b, c) {
   const P = IC.blockPlan(b, c);
   if (b._pr && b._pr.plan === P) return b._pr.list;
   const ca = Math.cos(b.a || 0), sa = Math.sin(b.a || 0), sd = Math.floor(b.seed || 0), list = [];
-  const wx = (u, v) => b.x + u * ca - v * sa, wy = (u, v) => b.y + u * sa + v * ca;
+  const wx = (u, v) => b.x + u * ca - v * sa, wy = (u, v) => b.y + u * sa + v * ca, byIdx = [];
   P.bld.forEach((q, k) => {
     if (!(q.ht > 0.012)) return;
     let F;
@@ -485,14 +611,17 @@ IC.blockPrisms = function (b, c) {
     for (let i = 0; i < F.length; i += 2) { const x = wx(F[i], F[i + 1]), y = wy(F[i], F[i + 1]); p[i] = x; p[i + 1] = y; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     const h = U.hash(sd * 5 + k, 77), tiled = q.r === 'pitch' || q.r === 'hip';
     const w = q.r === 'glass' ? [112, 140, 162] : q.r === 'spire' || q.k === 'church' ? [178, 168, 150] : tiled ? WALLS[Math.floor(h * WALLS.length)] : tint(q.c, 6);
-    const pr = { p, z0: 0, ht: q.ht, c: tiled ? q.c : tint(q.c, (h - 0.5) * 18), w, r: q.r, x0, y0, x1, y1, fl: q.k === 'tower' || q.r === 'glass' || q.ht > 0.15 };
+    const pr = { p, z0: q.z0 || 0, ht: q.ht, c: tiled ? q.c : tint(q.c, (h - 0.5) * 18), w, r: q.r, x0, y0, x1, y1, fl: q.k === 'tower' || q.r === 'glass' || q.ht > 0.15 };
+    // (a tier stands on the building below it: drawn after it, on its roof, brief 68)
+    if (q.on != null && byIdx[q.on]) { const R = byIdx[q.on].root; let t = R; while (t.kid) t = t.kid; t.kid = pr; R.top = Math.max(R.top, q.ht); byIdx[k] = { root: R }; return; }
+    byIdx[k] = { root: pr }; pr.top = q.ht;
     list.push(pr);
     if (q.pg || F.length !== 8) return;
     // on a rectangle's roof: the shaded slope of a pitched roof, a plant room on a tall flat one
     const at = (u, v) => [wx(q.x + u * Math.cos(q.a || 0) - v * Math.sin(q.a || 0), q.y + u * Math.sin(q.a || 0) + v * Math.cos(q.a || 0)), wy(q.x + u * Math.cos(q.a || 0) - v * Math.sin(q.a || 0), q.y + u * Math.sin(q.a || 0) + v * Math.cos(q.a || 0))];
     const W2 = q.w / 2, H2 = q.h / 2;
     if (q.r === 'pitch') pr.half = [].concat(...(q.w > q.h ? [at(-W2, 0), at(W2, 0), at(W2, H2), at(-W2, H2)] : [at(0, -H2), at(W2, -H2), at(W2, H2), at(0, H2)]));
-    else if (q.r === 'flat' && q.ht > 0.12 && q.w > 0.12 && q.h > 0.12) {
+    else if (q.r === 'flat' && q.ht > 0.12 && q.w > 0.12 && q.h > 0.12 && !P.bld.some(o => o.on === k)) {
       const u = (h - 0.5) * W2 * 0.6, v = (U.hash(sd * 5 + k, 79) - 0.5) * H2 * 0.6, rw = q.w * 0.18, rh = q.h * 0.18, P2 = [].concat(at(u - rw, v - rh), at(u + rw, v - rh), at(u + rw, v + rh), at(u - rw, v + rh));
       let a0 = 1e9, b0 = 1e9, a1 = -1e9, b1 = -1e9; for (let i = 0; i < 8; i += 2) { a0 = Math.min(a0, P2[i]); a1 = Math.max(a1, P2[i]); b0 = Math.min(b0, P2[i + 1]); b1 = Math.max(b1, P2[i + 1]); }
       pr.kid = { p: P2, z0: q.ht, ht: q.ht + 0.03, c: tint(q.c, -22), w: tint(q.c, -10), r: 'flat', x0: a0, y0: b0, x1: a1, y1: b1 };

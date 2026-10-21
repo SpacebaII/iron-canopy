@@ -42,7 +42,7 @@ function paint(S, lod, tx, ty, night) {
     const Lb = idx.get(i * 65536 + j); if (!Lb) continue;
     for (let q = 0; q < Lb.length; q += 2) {
       const b = Lb[q]; if (seen.has(b)) continue; seen.add(b);
-      for (const p of IC.blockPrisms(b, Lb[q + 1])) if (p.ht >= L.min && p.x1 > x0 && p.x0 < x1 && p.y1 > y0 && p.y0 - p.ht * K < y1) P.push(p);
+      for (const p of IC.blockPrisms(b, Lb[q + 1])) if (p.ht >= L.min && p.x1 > x0 && p.x0 < x1 && p.y1 > y0 && p.y0 - (p.top || p.ht) * K < y1) P.push(p);
     }
   }
   if (!P.length) return null;
@@ -53,7 +53,7 @@ function paint(S, lod, tx, ty, night) {
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
   g.lineJoin = 'round';
   const fine = lod >= 4, d = 0.62 * night, lit = night > 0.3;
-  for (const p0 of P) for (let p = p0; p; p = p === p0 ? p0.kid : null) {
+  for (const p0 of P) for (let p = p0; p; p = p.kid) {
     const F = p.p, n = F.length / 2, dy = -p.ht * K, dz = -p.z0 * K;
     let A = 0; for (let i = 0; i < n; i++) { const j = (i + 1) % n; A += F[i * 2] * F[j * 2 + 1] - F[j * 2] * F[i * 2 + 1]; }
     const s = A > 0 ? 1 : -1;   // (the outward normal of an edge is its direction turned a quarter, by the winding)
@@ -65,18 +65,18 @@ function paint(S, lod, tx, ty, night) {
       // the sun is in the north-west: walls facing south are in the building's own shade, east-facing the darkest
       g.fillStyle = mix(p.w, 0.6 - 0.14 * nx, d, fine ? 0 : 0.16 * night);
       g.beginPath(); g.moveTo(ax, ay + dz); g.lineTo(bx, by + dz); g.lineTo(bx, by + dy); g.lineTo(ax, ay + dy); g.closePath(); g.fill();
-      if (p.fl && !p.z0 && (fine || p.ht > 0.3)) {
+      if (p.fl && (fine || p.ht > 0.3)) {
         // a band of windows on every floor (every other one at the middle level, where a floor is a pixel high)
         const st = fine ? FLOOR : FLOOR * 2;
         g.strokeStyle = `rgba(30,40,52,${0.3 * (1 - night)})`; g.lineWidth = st * K * 0.45; g.beginPath();
-        for (let h = st * 0.6; h < p.ht - st * 0.4; h += st) { g.moveTo(ax, ay - h * K); g.lineTo(bx, by - h * K); }
+        for (let h = p.z0 + st * 0.6; h < p.ht - st * 0.4; h += st) { g.moveTo(ax, ay - h * K); g.lineTo(bx, by - h * K); }
         g.stroke();
       }
-      if (lit && fine && p.ht > 0.05 && !p.z0) {
+      if (lit && fine && p.ht > 0.05 && (!p.z0 || p.fl)) {
         // windows lit at night: a few on each floor, more in the evening than late at night (the hash keeps them still)
         g.fillStyle = `rgba(255,212,140,${0.45 + 0.4 * night})`;
         const ws = 0.045, wn = Math.floor(l / ws), seed = Math.round(ax * 97 + ay * 31);
-        for (let h = FLOOR * 0.5; h < p.ht - FLOOR * 0.5; h += FLOOR) for (let k = 0; k < wn; k++) {
+        for (let h = p.z0 + FLOOR * 0.5; h < p.ht - FLOOR * 0.5; h += FLOOR) for (let k = 0; k < wn; k++) {
           if (U.hash(seed + k, Math.round(h * 300)) > 0.32) continue;
           const t = (k + 0.5) / wn; g.fillRect(ax + ex * t - 0.008, ay + ey * t - h * K - 0.006, 0.016, 0.012);
         }

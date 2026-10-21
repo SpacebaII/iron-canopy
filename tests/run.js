@@ -142,6 +142,35 @@ test('roads: a roundabout is driven round its ring, one way and anticlockwise, a
   // (one at home stays a single node: an avenue that leaves the ring and comes back into it)
   assert(home > 50 && built >= home * 0.95, `only ${built} of ${home} roundabouts are driven round their ring`);
 }, false, 'world');
+test('towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)', () => {
+  const W = world(4242), area = F => { let A = 0; for (let i = 0; i < F.length / 2; i++) { const j = (i + 1) % (F.length / 2); A += F[i * 2] * F[j * 2 + 1] - F[j * 2] * F[i * 2 + 1]; } return Math.abs(A) / 2; };
+  let hb = 0, resB = 0, houses = 0, far = 0, culB = 0, culH = 0, twB = 0, twN = 0, tiers = 0, rA = 0, rB = 0;
+  for (const c of W.cities) {
+    // (the city's streets by 2-unit cells)
+    const grid = new Map(), key = (i, j) => i * 65536 + j;
+    for (const l of c.streets) for (let i = 1; i < l.pts.length; i++) { const a = l.pts[i - 1], b = l.pts[i], k = key(Math.floor((a.x + b.x) / 4), Math.floor((a.y + b.y) / 4)); if (!grid.has(k)) grid.set(k, []); grid.get(k).push([a.x, a.y, b.x, b.y]); }
+    const nearD = (x, y) => { let m = 1e9; for (let i = Math.floor(x / 2) - 1; i <= Math.floor(x / 2) + 1; i++) for (let j = Math.floor(y / 2) - 1; j <= Math.floor(y / 2) + 1; j++) for (const s of grid.get(key(i, j)) || []) m = Math.min(m, U.segDist(x, y, s[0], s[1], s[2], s[3])); return m; };
+    for (const b of c.blocks) {
+      if (!IC.BLOCK_FORMS[b.f]) continue;
+      const P = IC.blockPlan(b, c), ca = Math.cos(b.a), sa = Math.sin(b.a);
+      if (b.f === 'house' || b.f === 'row') { hb++; if (b.res || !IC.resLanes(b).nl) resB++; }   // (a narrow block faces the streets round it)
+      if (b.f === 'cul') culB++;
+      if (b.f === 'house' || b.f === 'row' || b.f === 'cul') for (const q of P.bld) if (q.k === 'house' && q.ht > 0.05) { houses++; if (b.f === 'cul') culH++; if (nearD(b.x + q.x * ca - q.y * sa, b.y + q.x * sa + q.y * ca) > 0.3) far++; }
+      if (b.f === 'tower' && c.capital) {
+        twB++; twN += P.bld.length;
+        for (const q of P.bld) if (q.on != null) { tiers++; const B = P.bld[q.on]; assert(B && q.w <= B.w + 1e-6 && q.h <= B.h + 1e-6 && q.z0 >= B.ht - 1e-6, 'a tier of a tower overhangs the one below it or floats over it'); }
+      }
+      if (b.f === 'real') { rA += area(b.pg); for (const q of P.bld) rB += q.pg ? area(q.pg) : q.w * q.h; }
+    }
+  }
+  // (before brief 68 the houses stood along lanes inside the block that no car could reach, 99% of them over 30 m from a street)
+  assert(resB >= hb * 0.9, `only ${resB} of ${hb} housing blocks have streets of their own or face the streets round them`);
+  assert(far < houses * 0.12, `${far} of ${houses} houses stand over 30 m from a street`);
+  assert(culH / culB >= 20, `estates have ${(culH / culB).toFixed(1)} houses each`);
+  // (before: two or three buildings to a downtown block, no tower in tiers)
+  assert(twN / twB >= 6 && tiers > twB * 0.5, `the capital's downtown blocks have ${(twN / twB).toFixed(1)} buildings each and ${tiers} tiers over ${twB} blocks`);
+  assert(rB / rA >= 0.52, `the old towns' blocks are ${(rB / rA * 100).toFixed(0)}% built over`);
+}, false, 'world');
 test('world: city streets follow a direction field, end on a street, a head, a bank or a square, cross the river on a few bridges, and blocks are sized by district (brief 53)', () => {
   const med = a => { const s = a.slice().sort((p, q) => p - q); return s.length ? s[s.length >> 1] : 0; };
   for (const seed of [4242, 7]) {
