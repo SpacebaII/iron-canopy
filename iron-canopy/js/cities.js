@@ -139,7 +139,10 @@ IC.unpackCore = function (core) {
   const S = read(core.streets), B = read(core.bld), streets = [], bld = [];
   for (let i = 0; i < S.length;) { const c = S[i], n = S[i + 1]; streets.push({ c, p: pts(S, i + 1, 1) }); i += 2 + n * 2; }
   for (let i = 0; i < B.length;) { const n = B[i]; bld.push(pts(B, i, 2)); i += 1 + n * 2; }
-  return core._u = { streets, bld };
+  // each footprint's middle, so a town laid on the sample skips what lies outside its old town unturned
+  const mid = new Float64Array(bld.length * 2);
+  bld.forEach((fp, k) => { let mx = 0, my = 0; for (let i = 0; i < fp.length; i += 2) { mx += fp[i]; my += fp[i + 1]; } mid[k * 2] = mx * 2 / fp.length; mid[k * 2 + 1] = my * 2 / fp.length; });
+  return core._u = { streets, bld, mid };
 };
 IC.blockOnRoad = (b, segs, pad) => { const Bk = buckets(4); for (const s of segs) Bk.add(s); return rectHit(Bk, b, pad || 0); };
 /* nearest segment to x, y within r: { d, x, y, s } (d is to the centreline) */
@@ -429,11 +432,14 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     const tf = (x, y) => { const X = x * mir / 100, Y = y / 100; return { x: o.x + X * ct - Y * sn, y: o.y + X * sn + Y * ct }; };
     const pip = (P, x, y) => { let ins = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) ins = !ins; } return ins; };
     const inCore = (x, y) => U.dxy(x, y, o.x, o.y) < rr && pip(wall, x, y);
-    core = { CR, u, o, rr, tf, inCore, walks: [] };
+    core = { CR, u, o, rr, tf, inCore, walks: [], m: [mir / 100, ct, sn] };
     for (const s of u.streets) {
       let run = [];
       const flush = () => { if (run.length >= 2) { if (s.c === 0) core.walks.push(run); else addSt({ cls: 'st', pts: run, core: true, stop: 3, pad: 0.05 }, 'st'); } run = []; };
-      for (let i = 0; i < s.p.length; i += 2) { const p = tf(s.p[i], s.p[i + 1]); if (inCore(p.x, p.y) && !W.inLake(p.x, p.y)) run.push(p); else flush(); }
+      for (let i = 0; i < s.p.length; i += 2) {
+        if (Math.hypot(s.p[i], s.p[i + 1]) >= rr * 100) { flush(); continue; }   // (tf keeps distances from the middle, in 1/100)
+        const p = tf(s.p[i], s.p[i + 1]); if (inCore(p.x, p.y) && !W.inLake(p.x, p.y)) run.push(p); else flush();
+      }
       flush();
     }
   }
@@ -678,18 +684,18 @@ function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares, roads) {
   for (const r of roads) if (r[4] !== 'st' && r[4] !== 'col' && r[4] !== 'rail') RB.add(r);
   faces.forEach((f, k) => {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of f.poly) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-    f.bl = [];
+    f.bl = []; f.bb = [x0, y0, x1, y1];
     for (let i = Math.floor(x0 / B); i <= Math.floor(x1 / B); i++) for (let j = Math.floor(y0 / B); j <= Math.floor(y1 / B); j++) { const q = key(i, j); let L = cellsF.get(q); if (!L) cellsF.set(q, L = []); L.push(k); }
   });
   const pip = (P, x, y) => { let ins = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) ins = !ins; } return ins; };
-  for (const fp of core.u.bld) {
+  const bld = core.u.bld, mid = core.u.mid, R2 = (core.rr * 100) ** 2, TM = core.m;
+  for (let q = 0; q < bld.length; q++) {
     // (the middle first: most of a sample's buildings lie outside the town's old town and are never turned)
-    let mx = 0, my = 0; const n = fp.length / 2;
-    for (let i = 0; i < fp.length; i += 2) { mx += fp[i]; my += fp[i + 1]; }
-    const m = core.tf(mx / n, my / n), cx = m.x, cy = m.y;
-    if (!core.inCore(cx, cy)) continue;
-    const L = cellsF.get(key(Math.floor(cx / B), Math.floor(cy / B))); if (!L) continue;
-    for (const k of L) if (pip(faces[k].poly, cx, cy)) { const P = []; for (let i = 0; i < fp.length; i += 2) P.push(core.tf(fp[i], fp[i + 1])); faces[k].bl.push(P); break; }
+    const fp = bld[q], mx = mid[q * 2], my = mid[q * 2 + 1];
+    if (mx * mx + my * my >= R2) continue;
+    const X = mx * TM[0], Y = my / 100, cx = core.o.x + X * TM[1] - Y * TM[2], cy = core.o.y + X * TM[2] + Y * TM[1];
+    const L = cellsF.get(key(Math.floor(cx / B), Math.floor(cy / B))); if (!L || !core.inCore(cx, cy)) continue;
+    for (const k of L) if (cx >= faces[k].bb[0] && cx <= faces[k].bb[2] && cy >= faces[k].bb[1] && cy <= faces[k].bb[3] && pip(faces[k].poly, cx, cy)) { const P = []; for (let i = 0; i < fp.length; i += 2) P.push(core.tf(fp[i], fp[i + 1])); faces[k].bl.push(P); break; }
   }
   // a polygon set back from each edge by its own distance (the street's half width and pavement)
   const inset = (P, pads) => {
@@ -735,7 +741,9 @@ function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares, roads) {
     }); }
     if (cross) continue;
     // (a building the face's own streets run through is left out: the real town's street was where this one is not)
-    f.bl = f.bl.filter(P => P.filter(q => pip(G, q.x, q.y)).length >= P.length * 0.5);
+    let gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9; for (const p of G) { gx0 = Math.min(gx0, p.x); gy0 = Math.min(gy0, p.y); gx1 = Math.max(gx1, p.x); gy1 = Math.max(gy1, p.y); }
+    const inG = q => q.x >= gx0 && q.x <= gx1 && q.y >= gy0 && q.y <= gy1 && pip(G, q.x, q.y);
+    f.bl = f.bl.filter(P => { const need = Math.ceil(P.length * 0.5 - 1e-9); let k = 0; for (let i = 0; i < P.length && k < need && k + P.length - i >= need; i++) if (inG(P[i])) k++; return k >= need; });
     if (!f.bl.length) continue;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const p of G.concat(...f.bl)) { const [u, v] = loc(p); x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); }

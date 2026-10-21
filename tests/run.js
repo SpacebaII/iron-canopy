@@ -710,8 +710,10 @@ test('world: generation stays under the time budget', () => {
   // smaller map, about 1.3 s on the machine that measured both (3.5 s before brief 53; the city fabric, streets traced
   // on a direction field and blocks fitted to their faces, costs about 3 s more: 7 s now, up to 8 s with other runs
   // beside it; brief 54's villages planned house by house, the fringe of every town and the suburbs' closes cost
-  // about 0.6 s more on that machine, a second on a slow one: 11 s)
-  assert(worst < 11000, `generation took ${worst} ms`);
+  // about 0.6 s more on that machine, a second on a slow one: 11 s; brief 65's real old towns lay some 95,000 real
+  // buildings into their blocks and brief 66 traces collectors, about 1.1 s more here and 2 s on GitHub's machines,
+  // which measured 13 s: 14 s)
+  assert(worst < 14000, `generation took ${worst} ms`);
 }, true, 'alone');
 test('world: towns are measured from real ones: street widths, floors, density and old towns (brief 65)', () => {
   // the samples are in the game, baked in: ten forms of real urban fabric, four transects, five old towns
