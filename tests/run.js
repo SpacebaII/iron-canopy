@@ -4257,6 +4257,19 @@ test('launchers (brief 61): every launcher, radar and missile is built at its si
     assert(me.tris < 6000 && far.tris < me.tris * 0.7, `${k}: ${me.tris} triangles close, ${far.tris} far`);
   }
 });
+test('models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light', () => {
+  // a chamfer is a face whose normal leans between two axes: a lorry has them close in and none at the far level
+  const leaning = me => { let n = 0; for (const k in me.groups) { const N = me.groups[k].nor; for (let i = 0; i < N.length; i += 9) { const a = [Math.abs(N[i]), Math.abs(N[i + 1]), Math.abs(N[i + 2])].sort((x, y) => y - x); if (a[1] > 0.6 && a[0] < 0.8) n++; } } return n; };
+  for (const k of ['truck', 'mr3d', 'tug', 'car', 'ssr']) {
+    const me = IC.modelMesh(k, 1), far = IC.modelMesh(k, 0);
+    assert(IC.MODELS[k].soft, `${k} is not built with chamfered boxes`);
+    assert(leaning(me) > 20, `${k}: no chamfered edges close in (${leaning(me)} leaning faces)`);
+    assert(far.tris < me.tris * 0.6, `${k}: the far level is not lighter (${far.tris} against ${me.tris} triangles)`);
+  }
+  for (const k in IC.MODELS) if (IC.MODELS[k].soft) assert(IC.modelMesh(k, 1).tris < 4000, `${k}: ${IC.modelMesh(k, 1).tris} triangles close in`);
+  // aircraft keep their own shapes: nothing in them is chamfered as a box
+  assert(!IC.MODELS.narrow.soft && !IC.MODELS.fighter.soft, 'aircraft are built as boxes with chamfers');
+});
 test('aircraft variety: general aviation fills a light-aircraft field over a day', () => {
   // (in the Career's first act: no war to ground the clubs)
   const S = IC.newGame({ seed: 4242, mode: 'story' });

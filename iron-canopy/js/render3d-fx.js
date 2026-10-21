@@ -213,6 +213,21 @@ function winMaterial() {
   m.userData.fxWin = true;
   return m;
 }
+/* an airport building's glass walls: they show the sky, a cool grey blue by day and brighter looking along the wall
+   than straight at it (more so than the bit of sky the light probe gives), and glow warm from inside at night.
+   Aircraft windows keep the dark glass: on a terminal it read as a black hole */
+function glassMaterial() {
+  const m = std({ color: '#4c6070', roughness: 0.1, metalness: 0.35, emissive: '#ffcf86', emissiveIntensity: 0 });
+  m.userData.fxWin = true;
+  return patch(m, 'fx-glass', sh => {
+    useG(sh, 'night', 'ambCol'); WPOS_V(sh);
+    sh.fragmentShader = 'uniform float fxNight; uniform vec3 fxAmbCol;\n' + sh.fragmentShader;
+    sh.fragmentShader = inc(sh.fragmentShader, 'emissivemap_fragment', '', `{
+      float fr = 1.0 - abs(dot(normalize(cameraPosition - vFxW), normalize(vFxN)));
+      totalEmissiveRadiance += fxAmbCol * (0.35 + 0.9 * fr * fr * fr) * (1.0 - fxNight * 0.8);
+    }`);
+  });
+}
 /* city blocks: windows by floor and bay on the walls, a share of them lit at night */
 function bldMaterial() {
   const m = std({ vertexColors: true, roughness: 0.85, metalness: 0.02 });
@@ -283,13 +298,15 @@ function groundMaterial(o) {
 function paveMaterial(o) {
   const m = std(Object.assign({ roughness: 0.82, metalness: 0 }, o));
   m.userData.fxPave = true;
-  m.userData.lm = { value: null }; m.userData.lmBox = { value: new THREE.Vector4(0, 0, 1, 0) }; m.userData.pad = { value: 0 }; m.userData.padT = { value: 2048 };
+  m.userData.lm = { value: null }; m.userData.lmBox = { value: new THREE.Vector4(0, 0, 1, 0) }; m.userData.pad = { value: 0 }; m.userData.padT = { value: 2048 }; m.userData.cut = { value: new THREE.Vector4(0, 0, 0, 0) };
   return patch(m, 'fx-pave', sh => {
     useG(sh, 'snow', 'wet', 'night', 'detail', 'apt'); WPOS_V(sh);
-    sh.uniforms.fxLm = m.userData.lm; sh.uniforms.fxLmBox = m.userData.lmBox; sh.uniforms.fxPad = m.userData.pad; sh.uniforms.fxPadT = m.userData.padT;
-    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxNight; uniform float fxDetail; uniform sampler2D fxLm; uniform vec4 fxLmBox; uniform float fxPad; uniform float fxPadT;\n' + NOISE + GRASS + sh.fragmentShader;
+    sh.uniforms.fxLm = m.userData.lm; sh.uniforms.fxLmBox = m.userData.lmBox; sh.uniforms.fxPad = m.userData.pad; sh.uniforms.fxPadT = m.userData.padT; sh.uniforms.fxCut = m.userData.cut;
+    sh.fragmentShader = 'uniform float fxSnow; uniform float fxWet; uniform float fxNight; uniform float fxDetail; uniform sampler2D fxLm; uniform vec4 fxLmBox; uniform float fxPad; uniform float fxPadT; uniform vec4 fxCut;\n' + NOISE + GRASS + sh.fragmentShader;
     grassIBL(sh);
     sh.fragmentShader = inc(sh.fragmentShader, 'map_fragment', 'float fxGrass = 0.0;', `
+      // (under the finer picture close to the camera)
+      if (fxCut.w > 0.0 && all(greaterThan(vFxW.xz, fxCut.xy)) && all(lessThan(vFxW.xz, fxCut.xy + fxCut.zz))) discard;
       fxGrass = fxGrassOf(diffuseColor.rgb);
       float fxPx = length(fwidth(vFxW.xz));
       // the airport's picture is a square: its grass gives way to the country's in a ragged ring, not a straight edge
@@ -690,6 +707,7 @@ function starMesh() {
    the airport's own picture (its pad, where the pavement is) keeps them off runways and aprons; the wind bends them */
 const GRASS_V = VHEAD + NOISE + `
 attribute vec4 seed; uniform vec3 camAt; uniform float area; uniform float gy; uniform vec4 apt; uniform sampler2D pad; uniform vec4 padBox;
+uniform sampler2D pad2; uniform vec4 padBox2;   // the finer picture close to the camera, where there is one (w 1)
 uniform vec2 wind; uniform float time; uniform float hk; uniform vec3 sunDir; uniform float scrH;
 varying vec3 vC; varying float vK; varying vec2 vU; varying float vB;
 void main() {
@@ -698,6 +716,8 @@ void main() {
   vec2 u = (c - padBox.xy) / padBox.z;
   // pavement is what the airport's picture paints and is not grass (brief 44 paints the airfield's grass on it too)
   vec4 pc = (u.x > 0.0 && u.x < 1.0 && u.y > 0.0 && u.y < 1.0) ? texture2D(pad, vec2(u.x, 1.0 - u.y)) : vec4(0.0);
+  vec2 u2 = (c - padBox2.xy) / padBox2.z;
+  if (padBox2.w > 0.0 && u2.x > 0.0 && u2.x < 1.0 && u2.y > 0.0 && u2.y < 1.0) pc = texture2D(pad2, vec2(u2.x, 1.0 - u2.y));
   float onPad = pc.a * (1.0 - smoothstep(0.02, 0.07, pc.g - max(pc.r, pc.b) * 0.9));
   float ok = step(length(c - apt.xy), apt.z * 0.92) * step(onPad, 0.2) * (1.0 - smoothstep(area * 0.3, area * 0.5, d));
   float s = (0.6 + 0.8 * seed.z) * ok;
@@ -748,7 +768,7 @@ function grassMesh(F, n) {
     for (let j = 0; j < 9; j++) seed.set(sd, (i * 9 + j) * 4);
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
-  F.grassU = { camAt: { value: new THREE.Vector3() }, area: { value: 1.2 }, gy: { value: 0 }, apt: { value: new THREE.Vector4(0, 0, -1, 0) }, pad: { value: null }, padBox: { value: new THREE.Vector4(0, 0, 1, 0) },
+  F.grassU = { camAt: { value: new THREE.Vector3() }, area: { value: 1.2 }, gy: { value: 0 }, apt: { value: new THREE.Vector4(0, 0, -1, 0) }, pad: { value: null }, padBox: { value: new THREE.Vector4(0, 0, 1, 0) }, pad2: { value: null }, padBox2: { value: new THREE.Vector4(0, 0, 1, 0) },
     wind: { value: new THREE.Vector2() }, time: G.time, hk: { value: 1 }, scrH: { value: 800 }, sunDir: G.sunDir, sunCol: G.sunCol, ambCol: G.ambCol, snow: G.snow };
   const o = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: F.grassU, vertexShader: GRASS_V, fragmentShader: GRASS_F, side: THREE.DoubleSide, fog: false }));
   o.visible = false;
@@ -884,7 +904,7 @@ function airport(v, b, grp, f) {
   const lm = R.texSRGB(new THREE.CanvasTexture(cv));
   grp.traverse(o => { const m = o.material; if (m && m.userData && m.userData.fxPave) { m.userData.lm.value = lm; m.userData.lmBox.value.set(b.x - Rr - v.cx, b.y - Rr - v.cy, 2 * Rr, 1); } });
   if (pad) { pad.userData.lm = lm; pad.material.userData.pad.value = 1; if (pad.material.map && pad.material.map.image) pad.material.userData.padT.value = pad.material.map.image.width || 2048; }   // dropped with the airport (its material's map is disposed; this one too)
-  const A = { b, f, pad: pad && pad.material.map, box: [b.x - Rr - v.cx, b.y - Rr - v.cy, 2 * Rr], ang: 0, lm };
+  const A = { b, f, grp, padMesh: pad, pad: pad && pad.material.map, box: [b.x - Rr - v.cx, b.y - Rr - v.cy, 2 * Rr], ang: 0, lm };
   let best = 0; for (const p of b.parts) if (p.kind === 'runway' && p.built && IC.rwLen(p) > best) { best = IC.rwLen(p); const d = IC.rwDir(p); A.ang = Math.atan2(d.y, d.x); }
   // the lights, mirrored in wet pavement: a streak below each
   if (lights) {
@@ -1186,7 +1206,7 @@ function frame(v, t, dtR) {
   if (F.snowP.visible) { F.snowU.amt.value = 0.85 * W.snow; F.snowU.fall.value.set(wind.x * 0.002, -0.012, wind.y * 0.002); F.snowU.px.value = (v.focalPx || 500) * 0.0016; F.snowU.col.value.setRGB(amb.r * 2 + sunI * sc.r * 0.3 + 0.04, amb.g * 2 + sunI * sc.g * 0.3 + 0.04, amb.b * 2 + sunI * sc.b * 0.3 + 0.05); }
   F.stars.position.copy(cp);
   // windows lit from inside as the light goes; glass the rest of the time
-  const wm = R.winMat(); if (wm.userData.fxWin) { wm.emissiveIntensity = 1.4 * sstep(0.2, 0.8, night + overcast * 0.2); }
+  for (const wm of [R.winMat(), R.glassMat()]) if (wm.userData.fxWin) wm.emissiveIntensity = 1.4 * sstep(0.2, 0.8, night + overcast * 0.2);
   G.winGlow.value = 1;
   // the nearest airports: stripes on their grass, tufts on the nearest one's
   airportsNear(v, cp);
@@ -1210,6 +1230,7 @@ function airportsNear(v, cp) {
   for (let i = 0; i < 4; i++) { const A = list[i]; if (A) arr[i].set(A.b.x - v.cx, A.b.y - v.cy, A.f.r0, A.ang); else arr[i].set(0, 0, -1, 0); }
   const A0 = list[0]; if (A0) { G.lm.value = A0.lm; G.lmBox.value.set(A0.box[0], A0.box[1], A0.box[2], 1); } else G.lmBox.value.w = 0;
   F.gY = list[0] && Math.hypot(list[0].b.x - v.cx - cp.x, list[0].b.y - v.cy - cp.z) < list[0].f.r1 * 3 ? list[0].f.e * v.hk : null;
+  nearPadSync(v, list[0], cp);
   const G2 = F.grass;
   if (G2) {
     const A = list[0], camH = A ? cp.y - A.f.e * v.hk : 1e9, near = A && Math.hypot(A.b.x - v.cx - cp.x, A.b.y - v.cy - cp.z) < A.f.r0 + 1;
@@ -1219,12 +1240,27 @@ function airportsNear(v, cp) {
       // the tufts gather where the camera looks, a little in front of it
       u.camAt.value.set(cp.x + (look.x - cp.x) * 0.5, 0, cp.z + (look.z - cp.z) * 0.5);
       u.area.value = U.clamp(camH * 5 + 0.4, 0.4, 2.5); u.gy.value = A.f.e * v.hk + 0.003; u.apt.value.set(A.b.x - v.cx, A.b.y - v.cy, A.f.r0, 0);
-      u.pad.value = A.pad; u.padBox.value.set(A.box[0], A.box[1], A.box[2], 1); u.hk.value = v.hk * 3; u.scrH.value = v.renderer.domElement.height || 800;
+      u.pad.value = A.pad; u.padBox.value.set(A.box[0], A.box[1], A.box[2], 1);
+      const P = v.nearPad; u.pad2.value = P ? P.mesh.material.map : A.pad; u.padBox2.value.set(P ? P.x0 - v.cx : 0, P ? P.y0 - v.cy : 0, R.NEAR_PAD.size, P ? 1 : 0); u.hk.value = v.hk * 3; u.scrH.value = v.renderer.domElement.height || 800;
       const w = v.S.wind || { x: 0, y: 0 }; u.wind.value.set(w.x * 0.02, w.y * 0.02);
     }
   }
   const wetK = F.wet * F.night;
   for (const A of list) if (A.refl) A.refl.visible = wetK > 0.05;
+}
+/* the finer picture of the pavement where the camera looks low over an airport (replay3d.js nearPad), and the wide
+   one cut out under it */
+function nearPadSync(v, A, cp) {
+  const F = v.fxs, N = R.NEAR_PAD, look = v.lookAt || cp;
+  const at = A && { x: cp.x + (look.x - cp.x) * 0.6 + v.cx, y: cp.z + (look.z - cp.z) * 0.6 + v.cy };
+  const on = !!(F.Q.detail && A && A.padMesh && cp.y - A.f.e * v.hk < 3 && Math.abs(at.x - A.b.x) < A.f.r0 && Math.abs(at.y - A.b.y) < A.f.r0);
+  const cut = A && A.padMesh && A.padMesh.material.userData.cut;
+  if (F.cutPad && F.cutPad !== cut) F.cutPad.value.w = 0;
+  if (!on) { if (v.nearPad) R.dropNearPad(v); if (cut) cut.value.w = 0; F.cutPad = null; return; }
+  const P = R.nearPad(v, A.b, A.f, at), m = P.mesh.material.userData, pm = A.padMesh.material.userData;
+  if (P.mesh.parent !== A.grp) { A.grp.add(P.mesh); m.lm.value = pm.lm.value; const lb = pm.lmBox.value; m.lmBox.value.set(lb.x, lb.y, lb.z, lb.w); m.pad.value = 1; m.padT.value = N.T; }
+  // (inset a texel: the fine picture's own edge is not drawn twice)
+  const e = N.size / N.T; cut.value.set(P.x0 - v.cx + e, P.y0 - v.cy + e, N.size - 2 * e, 1); F.cutPad = cut;
 }
 function shadows(v, ld, I) {
   const F = v.fxs, L = v.sun, Q = F.Q;
@@ -1317,6 +1353,7 @@ function setQuality(v, q, fromProbe) {
 }
 function dropAirport(v, id) {
   const F = v.fxs, A = F && F.apts && F.apts.get(id); if (!A) return;
+  if (v.nearPad && v.nearPad.b === A.b) R.dropNearPad(v);
   if (A.lm) A.lm.dispose();
   F.apts.delete(id);
 }
@@ -1339,6 +1376,7 @@ IC.fx3d = {
     if (kind === 'solid') return solidMaterial();
     if (kind === 'bld') return bldMaterial();
     if (kind === 'win') return winMaterial();
+    if (kind === 'glass') return glassMaterial();
     if (kind === 'ground') return groundMaterial(o);
     if (kind === 'pave') return paveMaterial(o);
     return std(o);

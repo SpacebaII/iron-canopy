@@ -196,5 +196,6 @@
  "film: a pan ends where it was planned, and a push zooms in log steps from its first zoom to its last": 0.1,
  "film: a tracking shot keeps a cruise missile on screen, a little behind the middle, all the way in": 14.6,
  "film: the director films what is about to happen, and does not cut away in the last seconds before it": 28.6,
- "launchers (brief 61): every launcher, radar and missile is built at its size, with its moving parts, low enough in triangles": 0.4
+ "launchers (brief 61): every launcher, radar and missile is built at its size, with its moving parts, low enough in triangles": 0.4,
+ "models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light": 0.4
 }
