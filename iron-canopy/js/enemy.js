@@ -708,6 +708,8 @@ function mixFor(S, E, kind, obj) {
     // Each target's set gets what keeps it near a quarter of all that will have been fired by the end of the shock.
     const N = E.tallyN + bal + cms + 4 * k, left = {};
     for (const t of more.concat([obj])) left[t.set] = Math.max(3, Math.floor(0.25 * N - (E.tally[t.set] || 0)));
+    // (the main target's set also takes the medium-range missile and the drones that follow up, below)
+    left[obj.set] = Math.max(3, left[obj.set] - 5);
     for (const t of more.concat([null])) {
       const tt = t || obj, x = t ? { obj: t, set: t.set } : {}, dm = droneHours(S, tt) <= 5;
       const nb = Math.min(share(bal), left[tt.set]), nc = Math.min(share(cms), left[tt.set] - nb), nd = dm ? Math.min(4, left[tt.set] - nb - nc) : 0;
