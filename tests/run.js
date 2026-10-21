@@ -781,8 +781,10 @@ test('world: generation stays under the time budget', () => {
   // about 0.6 s more on that machine, a second on a slow one: 11 s; brief 65's real old towns lay some 95,000 real
   // buildings into their blocks and brief 66 traces collectors, about 1.1 s more here and 2 s on GitHub's machines,
   // which measured 13 s: 14 s; brief 67 takes every town's streets through the passes that make them meet, turn
-  // round and bend as a car can drive them, about 1.5 s more here, and GitHub's machines measured 15.6 s: 17 s)
-  assert(worst < 17000, `generation took ${worst} ms`);
+  // round and bend as a car can drive them, about 1.5 s more here, and GitHub's machines measured 15.6 s: 17 s;
+  // brief 68 gives the housing blocks some 9,000 streets of their own, about 10% more, which the owner takes for
+  // better towns, and GitHub's machines measured 17.4 s: 19 s)
+  assert(worst < 19000, `generation took ${worst} ms`);
 }, true, 'alone');
 test('world: towns are measured from real ones: street widths, floors, density and old towns (brief 65)', () => {
   // the samples are in the game, baked in: ten forms of real urban fabric, four transects, five old towns

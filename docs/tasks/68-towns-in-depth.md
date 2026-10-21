@@ -32,7 +32,7 @@ On the 4242 map, before and after:
 ## Worth knowing
 
 - About 9,000 new streets on the 4242 map. The road audit still passes its thresholds: pieces too short for two cars are 1.8% of the links (2.5% allowed), bends a car cannot follow 0.7% (1.2%).
-- Generation takes about 10% longer than before, and the drive graph a little longer; the roundabout pass looks only at the links near each roundabout. The estates' houses are laid out when first drawn, not at generation.
+- Generation takes about 10% longer than before (the owner said a longer load is fine for better towns; the budget test allows 19 s, GitHub measured 17.4 s), and the drive graph a little longer; the roundabout pass looks only at the links near each roundabout. The estates' houses are laid out when first drawn, not at generation.
 - Blocks grown in play (`IC.cityGrowCell`) get no streets of their own: their plan still draws the street their houses face, but no car drives it.
 - The changes move streets and buildings, so the world's fingerprints change and saves from before are refused, as with any change to world generation.
 
