@@ -12,7 +12,7 @@
 const U = IC.U;
 
 const F = IC.film = {
-  on: false, auto: false,
+  on: false, auto: false, bd: false, clean: false,
   opt: { bars: false, grade: true, bloom: true, grain: true, shake: true, vignette: true },
   sh: null, D: { cur: null, since: 0 }, t: 0, dirT: 0,
   sx: 0, sy: 0, trauma: 0, flashA: 0, fadeA: 0, fadeTo: 0, fadeK: 0,
@@ -56,13 +56,16 @@ function style() { if (document.getElementById('filmStyle')) return; const st = 
 F.css = style;
 F.set = function (on) {
   style();
-  F.on = !!on;
+  F.on = !!on; F.clean = F.on || F.bd;
   document.body.classList.toggle('film', F.on);
   if (!F.on) { F.sh = null; F.auto = false; F.cap = null; F.cd = null; F.fadeA = F.fadeTo = 0; if (F.rec) F.record(false); }
   if (IC.S && IC.S.speed < 1 && !F.on) IC.S.speed = 1;
   return F.on;
 };
 F.toggle = () => F.set(!F.on);
+/* the start screen's backdrop: the map drawn as film (no data, the look) behind the title, the interface left as it is.
+   clean says the map draws without its data, for either */
+F.backdrop = function (on) { F.bd = !!on; F.clean = F.on || F.bd; };
 
 /* ---------- shots ----------
    F.shot(spec): spec as in film-cam.js, t0 and dur in film seconds from now ({ dur } defaults to 6). The camera
@@ -170,7 +173,7 @@ function grade(g, W, H, light, S) {
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
 }
 F.post = function (g, cv, W, H, S, light) {
-  if (!F.on) return;
+  if (!F.clean) return;
   canvases(W, H);
   g.save(); g.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
   // bloom: the bright parts, small and soft, laid back over the picture as light
