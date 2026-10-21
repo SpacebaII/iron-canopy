@@ -71,28 +71,41 @@ const POSE = new WeakMap();
 IC.movePose = function (m, S) {
   const t = S ? S.time : 0;
   let p = POSE.get(m);
-  if (!p) { p = { x: m.x, y: m.y, h: m.h, t, mx: m.x, my: m.y }; POSE.set(m, p); return p; }
+  if (!p) { p = { x: m.x, y: m.y, h: m.h, t, mx: m.x, my: m.y, f: 0.33, lf: 0 }; POSE.set(m, p); return p; }
   const dt = t - p.t;
   if (dt <= 0) return p;
   p.t = t;
+  // (a frame's game time, smoothed: at 8× or 32× a frame is seconds of taxiing, so the easing below is
+  // floored at a few frames, or a corner the simulation turns in one step is a snap on screen)
+  p.f += (Math.min(dt, 30) - p.f) * 0.2;
   const mv = Math.hypot(m.x - p.mx, m.y - p.my), spd = mv / dt;
   p.mx = m.x; p.my = m.y;
   let jx = m.x - p.x, jy = m.y - p.y;
   const J = Math.hypot(jx, jy);
-  if (J > 3 + mv * 2 || dt > 120) { p.x = m.x; p.y = m.y; p.h = m.h; return p; }
-  // (on the runway and the approach the way is straight: almost no lag, so it hands over to the airborne track where it is)
-  const R = m.phase === 'roll' || m.phase === 'final' || m.phase === 'land' ? 0.01 : 0.28;
-  const tau = spd > 1e-4 ? Math.min(4, R / spd) : 1.2, k = 1 - Math.exp(-dt / tau);
-  p.x += jx * k; p.y += jy * k;
-  // the nose: along the way the drawn aircraft goes while it moves, else the simulation's heading
+  if (J > 3 + mv * 5 || dt > 120) { p.x = m.x; p.y = m.y; p.h = m.h; return p; }
+  // (on the runway and the approach the way is straight: almost no lag, so it hands over to the airborne track
+  // where it is; the floor of a few frames eases in and out over a few frames, so lining up does not jump)
+  const run = m.phase === 'roll' || m.phase === 'final' || m.phase === 'land', R = run ? 0.01 : 0.28;
+  p.lf += ((run ? 0 : 3) - p.lf) * (1 - Math.exp(-dt / (2 * p.f)));
+  const tau = Math.max(spd > 1e-4 ? Math.min(4, R / spd) : 1.2, p.lf * p.f, 1e-3), k = 1 - Math.exp(-dt / tau);
+  // the nose: pursuing where the simulation has the aircraft while it moves, else the simulation's heading
   let want = m.h;
-  if (J > 0.004 && spd > 0.004) {
+  const ds = J * k / dt, moving = ds > 0.004 || spd > 0.004;
+  if (J > 0.004 && moving) {
     const mvH = Math.atan2(jy, jx);
-    want = Math.abs(U.angWrap(mvH - m.h)) > 1.75 ? mvH + Math.PI : mvH;
+    // (backwards only when both the simulation's heading and the drawn one say so: at 32× the simulation's
+    // turns a corner a whole frame before the drawn aircraft reaches it)
+    want = Math.abs(U.angWrap(mvH - m.h)) > 1.75 && Math.abs(U.angWrap(mvH - p.h)) > 1.75 ? mvH + Math.PI : mvH;
   }
-  // a turn rate: brisk on the ground (about 23° a second), a slow pivot in place
-  const w = (spd > 0.004 ? 0.4 : 0.2) * dt, d = U.angWrap(want - p.h);
+  // a turn rate: brisk on the ground (about 23° a second), a slow pivot in place, and never more than
+  // some 17° a frame however fast the game runs
+  const w = Math.min((moving ? 0.4 : 0.2) * dt, run ? 0.6 : 0.3), d = U.angWrap(want - p.h);
   p.h += U.clamp(d, -w, w);
+  // and it goes where its nose points (or its tail, pushed back): only a little of the way sideways, so a
+  // corner taken in one simulation step is driven round rather than slid
+  const c = Math.cos(p.h), sn = Math.sin(p.h), sx = jx * k, sy = jy * k, al = sx * c + sy * sn, la = -sx * sn + sy * c;
+  const lq = run ? la : U.clamp(la * 0.3, -Math.abs(al) * 0.2 - 0.001 * dt, Math.abs(al) * 0.2 + 0.001 * dt);
+  p.x += c * al - sn * lq; p.y += sn * al + c * lq;
   return p;
 };
 function drawShape(g, T, type, L, Sp, body, c1, c2) {

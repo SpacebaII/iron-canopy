@@ -63,7 +63,8 @@ IC.flyTo = function (x, y, z) { cam.fly = { x, y, z: z || cam.z, t: 0 }; };
    not in pixels a unit, which raced through the far zooms and crawled close in), and the pan is worked out so the
    place the camera leaves (zooming out) or the one it goes to (zooming in) glides steadily across the screen instead of
    sweeping past at many screens a frame. The old flight eased out only: its first frame was its fastest */
-const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+// (a sine ease: it starts and stops still, and its fastest frame is only some 1.6 times its average)
+const ease = t => 0.5 - 0.5 * Math.cos(Math.PI * t);
 IC.camStep = function (dt) {
   const q = cam.zq;
   if (q && q.lz) {
