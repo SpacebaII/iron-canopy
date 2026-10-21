@@ -32,6 +32,43 @@ function endName(real, trueDeg, rot) {
 IC.aptFromLayout = function (ap, L, o) {
   o = Object.assign({ x: ap.x, y: ap.y, rot: 0 }, o || {});
   IC.initAirport(ap);
+  const { blds } = IC.aptAddLayout(ap, L, o);
+  const X = IC.layoutXf(o), P = F => pairs(F).map(q => X(q.x, q.y)), rot = o.rot || 0;
+  // the landside, fixed as mapped: roads on their levels, car parks and garages
+  const land = IC.landInit(ap);
+  land.fixed = true; land.items = []; land.roads = []; land.jn = []; land.road = true;
+  // (a road under a terminal is its kerb road: the building may stand over it)
+  for (const R of L.roads || []) land.roads.push({ pts: P(R.pts), w: R.w || 0.1, lv: R.lv || 0, oneway: R.oneway || 0, lanes: R.lanes || 0, name: R.name || undefined, kind: R.kind || 'loop', cls: R.cls || 'service', kerb: R.kerb != null || undefined, by: R.kerb != null && blds[R.kerb] ? blds[R.kerb].id : undefined, out: R.out || undefined });
+  for (const K of L.parks || []) {
+    const kind = K.kind === 'garage' ? 'garage' : K.kind === 'taxi' ? 'taxi' : 'park', D = IC.LAND[kind], it = IC.polyPart(kind, P(K.poly));
+    const ha = IC.partArea(it);
+    land.items.push(Object.assign(it, { cap: Math.round(kind === 'garage' ? ha * 400 * (K.lvls || 4) : ha * 350), t0: 0, name: K.name || undefined, lvls: K.lvls || undefined, by: null, fixed: true, use: 0.5 }));
+  }
+  for (const J of L.junctions || []) land.jn.push(X(J[0], J[1]));
+  // where the country's roads come in: the layout's road ends at the edge of the map it came from, else any road end
+  // no other road meets
+  if (L.exits && L.exits.length) ap.exits = L.exits.map(e => X(e[0], e[1]));
+  else {
+    const ends = []; for (const r of land.roads) if ((r.lv || 0) === 0) ends.push(r.pts[0], r.pts[r.pts.length - 1]);
+    const touches = e => land.roads.filter(r => r.pts.some((q, i) => U.dist(q, e) < 0.05 || (i && U.segDist(e.x, e.y, r.pts[i - 1].x, r.pts[i - 1].y, q.x, q.y) < 0.03))).length;
+    ap.exits = ends.filter(e => touches(e) === 1);
+  }
+  land.ver++;
+  IC.resolveNodes(ap);
+  ap.dirty = true; ap.template = L.key || 'real'; ap.real = L.key || null;
+  ap.rwyA = (() => { const r = ap.parts.find(p => p.kind === 'runway'); return r ? Math.atan2(r.b.y - r.a.y, r.b.x - r.a.x) : rot; })();
+  const r0 = ap.parts.filter(p => p.kind === 'runway').sort((a, b) => IC.rwLen(b) - IC.rwLen(a))[0];
+  ap.rwyL = r0 ? IC.rwLen(r0) : 20;
+  // service roads airside, as mapped (the builder's automatic links are for buildings placed by hand)
+  ap.svcRoads = (L.service || []).map(R => ({ pts: P(R.pts), w: R.w || 0.06 }));
+  IC.aptExtent(ap);
+  ap.buildR = Math.max(ap.buildR || 0, ap.radius + 5);
+  return ap;
+};
+/* a layout's airfield (runways, aprons and their stands, taxiways, buildings, bridges, movers) added to an airport as
+   built parts, beside what it has: the starting layouts put a terminal kit in this way */
+IC.aptAddLayout = function (ap, L, o) {
+  o = Object.assign({ x: ap.x, y: ap.y, rot: 0 }, o || {});
   const X = IC.layoutXf(o), P = F => pairs(F).map(q => X(q.x, q.y)), rot = o.rot || 0;
   const add = (part, built) => IC.aptAddPart(ap, part, built !== false);
   // runways first: nodes on their centrelines join them
@@ -75,36 +112,7 @@ IC.aptFromLayout = function (ap, L, o) {
   for (const B of L.bridges || []) add(Object.assign(IC.polyPart('skybridge', P(B.poly)), { clear: B.clear, name: B.name || undefined, joins: (B.joins || []).map(i => blds[i] && blds[i].id).filter(Boolean) }));
   // people movers between the terminals, on a viaduct (lv 1) or underground (lv -1)
   for (const M of L.movers || []) add({ kind: 'people', pts: P(M.pts), lv: M.lv != null ? M.lv : 1, name: M.name || undefined, stops: (M.stops || []).map(i => blds[i] && blds[i].id).filter(Boolean), w: M.w || IC.APART.people.w });
-  // the landside, fixed as mapped: roads on their levels, car parks and garages
-  const land = IC.landInit(ap);
-  land.fixed = true; land.items = []; land.roads = []; land.jn = []; land.road = true;
-  // (a road under a terminal is its kerb road: the building may stand over it)
-  for (const R of L.roads || []) land.roads.push({ pts: P(R.pts), w: R.w || 0.1, lv: R.lv || 0, oneway: R.oneway || 0, lanes: R.lanes || 0, name: R.name || undefined, kind: R.kind || 'loop', cls: R.cls || 'service', kerb: R.kerb != null || undefined, by: R.kerb != null && blds[R.kerb] ? blds[R.kerb].id : undefined, out: R.out || undefined });
-  for (const K of L.parks || []) {
-    const kind = K.kind === 'garage' ? 'garage' : K.kind === 'taxi' ? 'taxi' : 'park', D = IC.LAND[kind], it = IC.polyPart(kind, P(K.poly));
-    const ha = IC.partArea(it);
-    land.items.push(Object.assign(it, { cap: Math.round(kind === 'garage' ? ha * 400 * (K.lvls || 4) : ha * 350), t0: 0, name: K.name || undefined, lvls: K.lvls || undefined, by: null, fixed: true, use: 0.5 }));
-  }
-  for (const J of L.junctions || []) land.jn.push(X(J[0], J[1]));
-  // where the country's roads come in: the layout's road ends at the edge of the map it came from, else any road end
-  // no other road meets
-  if (L.exits && L.exits.length) ap.exits = L.exits.map(e => X(e[0], e[1]));
-  else {
-    const ends = []; for (const r of land.roads) if ((r.lv || 0) === 0) ends.push(r.pts[0], r.pts[r.pts.length - 1]);
-    const touches = e => land.roads.filter(r => r.pts.some((q, i) => U.dist(q, e) < 0.05 || (i && U.segDist(e.x, e.y, r.pts[i - 1].x, r.pts[i - 1].y, q.x, q.y) < 0.03))).length;
-    ap.exits = ends.filter(e => touches(e) === 1);
-  }
-  land.ver++;
-  IC.resolveNodes(ap);
-  ap.dirty = true; ap.template = L.key || 'real'; ap.real = L.key || null;
-  ap.rwyA = (() => { const r = ap.parts.find(p => p.kind === 'runway'); return r ? Math.atan2(r.b.y - r.a.y, r.b.x - r.a.x) : rot; })();
-  const r0 = ap.parts.filter(p => p.kind === 'runway').sort((a, b) => IC.rwLen(b) - IC.rwLen(a))[0];
-  ap.rwyL = r0 ? IC.rwLen(r0) : 20;
-  // service roads airside, as mapped (the builder's automatic links are for buildings placed by hand)
-  ap.svcRoads = (L.service || []).map(R => ({ pts: P(R.pts), w: R.w || 0.06 }));
-  IC.aptExtent(ap);
-  ap.buildR = Math.max(ap.buildR || 0, ap.radius + 5);
-  return ap;
+  return { aprons, blds };
 };
 
 /* how far a layout reaches from its reference point (units) */
@@ -184,7 +192,7 @@ function scratch(ap, L, x, y, rot) {
 }
 /* can the blueprint go here: in the country, on dry land, clear of other airfields and of what the airport already
    has; what it costs and what must be in hand to start */
-IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
+IC.bldBlueprintCheck = function (S, ap, key, x, y, rot, skip) {
   // (key: a blueprint's name, or a layout itself: a terminal kit from the build bar)
   const L = typeof key === 'string' ? IC.REAL_APT[key] : key; if (!L) return { ok: false, why: 'No such blueprint.' };
   const t = scratch(ap, L, x, y, rot), out = { ok: true, why: '', t, cost: 0, hit: null, parts: t.parts.length };
@@ -199,7 +207,8 @@ IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
   // other airfields: their circuits
   for (const b of IC.bases(S)) if (b !== ap && b.parts && b.parts.length && U.dist(b, { x, y }) < (b.radius || 20) + t.radius + 30) return no(`Too close to ${b.name}: their circuits would overlap.`, b);
   // what this airport already has
-  const mine = ap.parts.filter(p => p.kind !== 'ils').map(p => IC.aptElementOf(ap, p)).filter(Boolean);
+  // (skip: parts the caller will cut round it, a pier's apron and the taxilane across its root)
+  const mine = ap.parts.filter(p => p.kind !== 'ils' && !(skip && skip.has(p.id))).map(p => IC.aptElementOf(ap, p)).filter(Boolean);
   for (const p of t.parts) {
     const e = IC.aptElementOf(t, p); if (!e) continue;
     for (const q of mine) { if (L.join && e.cat === 'twy' && (q.cat === 'rwy' || q.cat === 'twy')) continue; if (IC.shapeDepth(e.sh, q.sh) > 0.01) return no(`It overlaps ${q.name}: move it clear, or bulldoze that first.`, q.p); }
@@ -210,8 +219,8 @@ IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
   return out;
 };
 /* plan it: every part the layout has, planned as works like any other (paid for as they run), the landside as mapped */
-IC.bldBlueprint = function (S, ap, key, x, y, rot) {
-  const C = IC.bldBlueprintCheck(S, ap, key, x, y, rot);
+IC.bldBlueprint = function (S, ap, key, x, y, rot, skip) {
+  const C = IC.bldBlueprintCheck(S, ap, key, x, y, rot, skip);
   if (!C.ok) { IC.log(S, 'warn', 'BUILD', C.why); return null; }
   const t = C.t, L = typeof key === 'string' ? IC.REAL_APT[key] : key, nid = {}, pid = {};
   for (const n of Object.values(t.nodes)) { const id = ap.id + 'n' + (ap.nodeN++); nid[n.id] = id; ap.nodes[id] = { id, x: n.x, y: n.y, on: null }; }

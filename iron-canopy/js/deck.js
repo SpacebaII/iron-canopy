@@ -278,7 +278,7 @@ IC.deckDeal = function (S, k, args) {
 
 /* ---------- milestones: passengers a day, and the piece each opens because the airport needs it ---------- */
 IC.MILESTONES = [
-  { n: 2000, piece: 'tpier', name: 'Terminal with a pier' },
+  { n: 2000, piece: 'tpier', name: 'Terminal with piers' },
   { n: 6000, piece: 'rwkit', name: 'a second runway', second: true },
   { n: 15000, piece: 'tround', name: 'Round terminal' },
   { n: 50000, pay: 200, name: 'a hub' }
@@ -286,6 +286,7 @@ IC.MILESTONES = [
 /* why a piece is not open yet ('' when it is), in one line: what opens it */
 IC.pieceLock = function (S, k, ap) {
   if (!S || !on(S)) return '';
+  if (k === 'tattach') k = 'tpier';
   const i = IC.MILESTONES.findIndex(m => m.piece === k); if (i < 0) return '';
   const M = IC.MILESTONES[i];
   if ((S.story.ms || 0) > i) return '';
@@ -294,7 +295,7 @@ IC.pieceLock = function (S, k, ap) {
   return M.second ? `A second runway opens at ${M.n.toLocaleString('en-US')} passengers a day (${now} now): until then one runway carries every flight.`
     : `Opens at ${M.n.toLocaleString('en-US')} passengers a day (${now} now), when one ${k === 'tpier' ? 'row of gates' : 'terminal'} is no longer enough.`;
 };
-IC.pieceLockShort = (S, k) => { const M = IC.MILESTONES.find(m => m.piece === k); return M ? `${(M.n / 1000)}k passengers a day` : ''; };
+IC.pieceLockShort = (S, k) => { if (k === 'tattach') k = 'tpier'; const M = IC.MILESTONES.find(m => m.piece === k); return M ? `${(M.n / 1000)}k passengers a day` : ''; };
 /* the airport's busiest moments today and yesterday: stands taken, passengers an hour, at what hour */
 function peaks(S) {
   const st = S.story, day = Math.floor(S.time / 86400), h = Math.floor((S.time % 86400) / 3600);
@@ -316,7 +317,7 @@ function milestone(S, i) {
   const title = `${M.n.toLocaleString('en-US')} passengers a day`;
   let text, fix = null;
   if (M.piece === 'tpier') {
-    text = `At ${hh(B.h || 9)}, its busiest hour, ${B.occ || 0} of ${short(ap.name)}’s ${stands} stands were taken and ${gates} of them have a gate. A pier reaches out from the terminal with gates on both sides: more gates without a second building. The Terminal with a pier is open under Airport pieces.`;
+    text = `At ${hh(B.h || 9)}, its busiest hour, ${B.occ || 0} of ${short(ap.name)}’s ${stands} stands were taken and ${gates} of them have a gate. A pier reaches out from the terminal with gates on both sides: more gates without a second building. The Terminal with piers is open under Airport pieces.`;
     fix = { label: 'Place a pier', v: 'tpier' };
   } else if (M.piece === 'rwkit') {
     const mv = Math.round(stt.movesPerHour || 0);

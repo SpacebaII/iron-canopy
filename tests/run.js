@@ -1456,10 +1456,9 @@ test('airport life: an arrival at a remote stand gets buses; one at a gate a jet
   const look = () => { for (const s of IC.aptStands(cap)) if (s.svc && s.occ === s.svc.tail) seen[(s.contact ? 'gate:' : 'remote:') + s.svc.kind] = (seen[(s.contact ? 'gate:' : 'remote:') + s.svc.kind] || 0) + 1; };
   // keep one kind of stand taken at a time, so the arrivals must use the other
   const only = gate => { for (const s of IC.aptStands(cap)) { if (s.occ === 'x') s.occ = null; if (!s.occ && !!s.contact !== gate) s.occ = 'x'; } };
-  only(false);
-  for (let i = 0; i < 3600 * 3 && !seen['remote:bus']; i++) { IC.step(S, 0.5); if (i % 60 === 0) look(); }
-  only(true);
-  for (let i = 0; i < 3600 * 3 && !seen['gate:walk']; i++) { IC.step(S, 0.5); if (i % 60 === 0) look(); }
+  // (again as aircraft leave: a stand they free is taken at once)
+  for (let i = 0; i < 3600 * 3 && !seen['remote:bus']; i++) { if (i % 60 === 0) only(false); IC.step(S, 0.5); if (i % 60 === 0) look(); }
+  for (let i = 0; i < 3600 * 3 && !seen['gate:walk']; i++) { if (i % 60 === 0) only(true); IC.step(S, 0.5); if (i % 60 === 0) look(); }
   assert(seen['remote:bus'], `no remote stand was served by bus: ${JSON.stringify(seen)}`);
   assert(seen['gate:walk'] && !seen['gate:bridge'], `before the research, gates should have passengers walking: ${JSON.stringify(seen)}`);
   const bus = IC.aptStands(cap).find(s => s.svc && s.svc.kind === 'bus');
@@ -2597,10 +2596,69 @@ test('kits: every terminal kit has its stands fanned or lined along its walls, e
   }
   // and the build bar places one on an airport, planned like any other work
   const S2 = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S2; S2.budget = 1e5;
-  const ap2 = S2.byId[S2.story.cap], m = IC.bldMode(S2, ap2, 'rotunda'), p = IC.aptLocal(ap2, 0, 9);
+  const ap2 = S2.byId[S2.story.cap], m = IC.bldMode(S2, ap2, 'rotunda'), p = IC.aptLocal(ap2, 0, -9);
   S2.mode2 = m; S2.hover = p;
   const n0 = ap2.parts.length; IC.clickWorld(p, 0); assert(ap2.parts.length === n0 && IC.buildFinish(S2, m) === 'built' && ap2.parts.length > n0, `the round terminal was not placed: ${m.err}`);
   assert(ap2.parts.some(q => q.kind === 'terminal' && q.roof === 'dome' && !q.built) && ap2.works.length, 'no round terminal being built');
+});
+/* ---------- terminals that are not boxes (brief 61) ---------- */
+test('kits: a terminal complex steps in and out, its piers differ, and every stand has a bridge and a way out', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }), ap = S.byId[S.story.cap], shapes = new Set();
+  for (const piers of [0, 2]) for (const seed of [1, 2, 3]) {
+    const B = IC.layoutBuilder(), T = IC.kitComplex(B, { n: piers ? 14 : 6, piers, size: 'm', seed });
+    const L = B.L, head = L.blds.find(b => b.kind === 'terminal'), pts = IC.layoutPairs(head.poly), what = `${piers} piers, seed ${seed}`;
+    // the airside face: more than one depth, and the ends cut back
+    assert(new Set(pts.filter(q => q.y < 0).map(q => q.y.toFixed(2))).size >= 2 && pts.length >= 10, `${what}: the head house is a box (${pts.length} corners)`);
+    if (piers) { const lens = L.blds.filter(b => b.name === 'Pier').map(b => { const q = IC.layoutPairs(b.poly); return U.dist(q[0], q[1]); });
+      assert(lens.length === piers && Math.abs(lens[0] - lens[1]) > 0.05, `${what}: piers ${lens.map(l => l.toFixed(2))}`); }
+    shapes.add(pts.map(q => q.x.toFixed(1) + q.y.toFixed(1)).join());
+    IC.aptFromLayout(ap, L, { x: ap.x, y: ap.y, rot: 0.4 }); ap.dirty = true;
+    const G = IC.aptGraph(ap), st = IC.aptStands(ap);
+    assert(st.length >= (piers ? 12 : 5), `${what}: only ${st.length} stands`);
+    assert(st.every(s => s.contact && s.bridge), `${what}: ${st.filter(s => !s.bridge).length} stands without a jet bridge`);
+    assert(st.every(s => (G.adj.get(s.id) || []).length), `${what}: a stand with no way to it`);
+    assert(!(G.dead && G.dead.size), `${what}: ${G.dead.size} taxilanes end in the grass`);
+    const ov = IC.aptOverlaps(S, ap).filter(o => o.kind !== 'world' && o.kind !== 'fence');
+    assert(!ov.length, `${what}: ${ov.slice(0, 3).map(x => x.text).join(' ')}`);
+    assert(T.joins.length >= (piers || 2), `${what}: ${T.joins.length} joins`);
+  }
+  assert(shapes.size === 6, 'two seeds laid the terminal out the same way');
+});
+test('kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways', () => {
+  const S = IC.newGame({ seed: 777, mode: 'quick', hour: 8 }), ap = IC.bases(S).filter(a => a.kind === 'airport').sort((a, b) => IC.aptStands(b).length - IC.aptStands(a).length)[0];
+  IC.aptGraph(ap); const st = IC.aptStats(S, ap), sts = IC.aptStands(ap);
+  assert(ap.parts.filter(p => p.kind === 'terminal' && p.name === 'Pier').length >= 2, 'no piers');
+  assert(sts.length >= 30 && sts.every(s => s.linked), `${sts.filter(s => s.linked).length} of ${sts.length} stands joined`);
+  assert(!IC.aptOverlaps(S, ap).filter(o => o.kind !== 'world' && o.kind !== 'fence').length && !IC.aptUnattached(S, ap).length, 'overlaps or loose parts');
+  assert(!st.warn.some(w => /grass|not connected/.test(w)), st.warn.join(' / '));
+});
+test('pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
+  const ap = S.byId[S.story.cap]; IC.aptStats(S, ap);
+  // the first wall with room in front of it
+  let m = null, hv = null, plan = null;
+  for (const t of ap.parts.filter(p => p.kind === 'terminal' && p.built && !p.r)) { const O = IC.partOutline(t), OA = O.map(q => [q.x, q.y]);
+    for (let i = 0; i < O.length && !plan; i++) { const A = O[i], B = O[(i + 1) % O.length], L = U.dist(A, B); if (L < 1.2) continue;
+      const c = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }; let n = { x: -(B.y - A.y) / L, y: (B.x - A.x) / L }; if (U.inPoly(c.x + n.x * 0.03, c.y + n.y * 0.03, OA)) n = { x: -n.x, y: -n.y };
+      const h = { x: c.x + n.x * 3, y: c.y + n.y * 3 }, mm = IC.bldMode(S, ap, 'tattach'), out = { text: [] }; IC.piecePlan(S, mm, h, out);
+      if (out.ok) { m = mm; hv = h; plan = out; } } }
+  assert(plan && plan.piece.P.cuts.length && plan.piece.P.gone > 0, 'no wall with room for a pier');
+  const n0 = ap.parts.length, before = JSON.stringify(ap.parts.map(p => [p.id, p.kind, p.x, p.y, p.poly && p.poly.length, p.nodes && p.nodes.join()])), st0 = IC.aptStands(ap).length, b0 = S.budget;
+  S.mode2 = m; S.hover = hv; IC.clickWorld(hv, 0);
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  assert(ap.parts.some(p => p.kind === 'terminal' && p.name === 'Pier' && !p.built), 'no pier planned');
+  const top = ap.undo[ap.undo.length - 1]; assert(top && top.restore, 'not one step to undo');
+  // Undo before the works start: as it was, money back
+  IC.bldUndo(S, ap);
+  assert(ap.parts.length === n0 && JSON.stringify(ap.parts.map(p => [p.id, p.kind, p.x, p.y, p.poly && p.poly.length, p.nodes && p.nodes.join()])) === before, 'undo did not put the apron and taxilane back');
+  ap.dirty = true; IC.aptGraph(ap); assert(IC.aptStands(ap).length === st0 && Math.abs(S.budget - b0) < 1, `stands ${IC.aptStands(ap).length} of ${st0}, ${U.money(b0 - S.budget)} not refunded`);
+  // built: the stands left are clear of the pier, every stand has a way out, nothing overlaps
+  IC.clickWorld(hv, 0); assert(IC.buildFinish(S, m) === 'built', m.err); finishWorks(S, ap);
+  const G = IC.aptGraph(ap), sts = IC.aptStands(ap), pier = ap.parts.filter(p => p.kind === 'terminal' && p.name === 'Pier').pop();
+  assert(pier.built && sts.some(s => s.contact && IC.partDist(ap, pier, { x: s.x, y: s.y }) < 0.6), 'no gates on the new pier');
+  assert(sts.every(s => s.linked), `${sts.filter(s => !s.linked).length} stands cut off`);
+  assert(!IC.aptOverlaps(S, ap).filter(o => o.kind !== 'world' && o.kind !== 'fence').length, IC.aptOverlaps(S, ap).map(o => o.text).slice(0, 3).join(' '));
+  assert(!(G.dead && G.dead.size), 'a taxilane ends in the grass');
 });
 for (const key of ['ring', 'hub', 'spine', 'midfield', 'long']) test(`blueprints: ${key} passes every check and runs six hours of traffic without gridlock`, () => {
   IC.seedRandom(7);

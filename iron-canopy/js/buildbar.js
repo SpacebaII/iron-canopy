@@ -48,7 +48,7 @@ IC.BB_TABS = [
 ];
 /* (round 1) the bar opens on whole pieces; the parts one by one are folded under Detail (IC.FOCUS.pieces) */
 IC.BB_PIECE_TABS = [
-  { k: 'pc', key: '1', name: 'Airport pieces', items: ['rwkit', 'tstraight', 'tpier', 'tround', 'services', 'cargoarea'] },
+  { k: 'pc', key: '1', name: 'Airport pieces', items: ['rwkit', 'tstraight', 'tpier', 'tattach', 'tround', 'services', 'cargoarea'] },
   { k: 'bq', key: '2', name: 'Blueprints', items: ['starter', 'blueprint'] }
 ];
 /* the tabs on show: the pieces and blueprints, then the parts one by one when Detail is open (or always, without
@@ -296,10 +296,11 @@ function options(S, m) {
   if (m.kind === 'build' && !pol) g.push(say);
   // (round 1) a whole piece is built with sensible defaults: concrete, lit, the zone from what it is; Detail has the rest
   if (IC.PIECES && IC.PIECES[t]) {
+    if (/^(tstraight|tpier|starter)$/.test(t)) g.push(group('Layout', chip('seed', 'next', 'Another layout', false, 'The same piece laid out another way: other depths, pier lengths and angles')));
     if (/^t(straight|pier|round)$/.test(t)) g.push(group('Gates', ['m', 'l'].map(k => chip('size', k, IC.RAMP_SIZE[k], (m.size === 'l' ? 'l' : 'm') === k, k === 'l' ? 'Wide-body gates: fewer, larger stands' : 'Narrow-body gates')).join('')));
     // (round 5c) one strip, what to do now first
-    const K = IC.PIECES[t].line ? 'R: taxiway on the other side' : 'R turns it';
-    g.push(`<em class="bb-keys">${m.set ? `Placed · Build or Enter builds it · a click elsewhere moves it · ${K} · Esc drops it` : `${IC.PIECES[t].line ? 'Click or drag from end to end' : 'Click to place it'} · ${K} · Esc cancels`}</em>`);
+    const K = IC.PIECES[t].line ? 'R: taxiway on the other side' : IC.PIECES[t].attach ? 'R turns it 15°' : 'R turns it';
+    g.push(`<em class="bb-keys">${m.set ? `Placed · Build or Enter builds it · a click elsewhere moves it · ${K} · Esc drops it` : `${IC.PIECES[t].line ? 'Click or drag from end to end' : IC.PIECES[t].attach ? 'Point out from a terminal wall, as far as the pier should reach' : 'Click to place it'} · ${K} · Esc cancels`}</em>`);
     return g.join('');
   }
   if (t === 'upgrade' || PAVED_TOOLS[t]) g.push(group('Pavement', IC.PAVE_ORDER.map(k => { const lock = IC.aptLockWhy(S, 'runway', k); return chip('mat', k, (lock ? '🔒 ' : '') + IC.PAVE[k].name.replace('Reinforced concrete', 'Reinforced'), mat === k, `${lock ? lock + ' ' : ''}${IC.paveFits(k)}. ${IC.PAVE[k].desc}. Cost ×${IC.PAVE[k].cost}, time ×${IC.PAVE[k].build}.`, !!lock); }).join('')));
@@ -327,6 +328,7 @@ IC.bbPref = function (k, v) {
   if (k === 'oneway') val = v === '1' ? 1 : 0;
   if (k === 'fillet') val = !(m ? m.fillet : P.fillet);
   if (k === 'drive') val = !!v;
+  if (k === 'seed') { val = ((m && m.seed) || 0) + 1; }
   if (k === 'zone' && v === 'auto') val = null;
   // (a new shape starts the plan again: corners clicked for one do not make the other)
   if (k === 'shape' && m && m.kind === 'build' && m.shape !== v) { m.pts = []; m.set = false; m.at = null; }

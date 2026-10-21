@@ -125,7 +125,8 @@ IC.kitPier = function (B, o) {
     const wall = sg * bw, sd = sg * (bw + WALL + S0.d / 2), ld = sg * (bw + WALL + S0.d + LANE_OFF), od = sg * (bw + WALL + S0.d + LANE_OFF + MARGIN);
     const s0 = (o.s0 && o.s0[sg]) || 0, sEnd = L + ext, sStart = o.lane0 && o.lane0[sg] != null ? o.lane0[sg] : -ext;
     out.aprons = out.aprons || {};
-    const ai = out.aprons[sg] = B.apron([W(Math.max(-ext - 0.14, sStart - 0.14), wall - sg * 0.04), W(sEnd + 0.14, wall - sg * 0.04), W(sEnd + 0.14, od), W(Math.max(-ext - 0.14, sStart - 0.14), od)], { name: o.apName });
+    // (o.ai: the stands go on an apron the caller pours itself, round the whole complex)
+    const ai = out.aprons[sg] = o.ai != null ? o.ai : B.apron([W(Math.max(-ext - 0.14, sStart - 0.14), wall - sg * 0.04), W(sEnd + 0.14, wall - sg * 0.04), W(sEnd + 0.14, od), W(Math.max(-ext - 0.14, sStart - 0.14), od)], { name: o.apName });
     const n = Math.max(0, Math.floor((L - s0 - (o.s1 || 0)) / (S0.w + 0.02))), gap = (L - s0 - (o.s1 || 0) - n * (S0.w + 0.02)) / 2;
     const ss = []; for (let i = 0; i < n; i++) ss.push(s0 + gap + (S0.w + 0.02) * (i + 0.5));
     const lp = [W(sStart, ld)]; for (const s of ss) lp.push(W(s, ld)); lp.push(W(L, ld), W(sEnd, ld));
@@ -137,9 +138,116 @@ IC.kitPier = function (B, o) {
   if (sides.length === 2 && o.cap0) { const a = W(-ext, bw + WALL + S0.d + LANE_OFF), b = W(-ext, -(bw + WALL + S0.d + LANE_OFF)); out.cap0 = B.lane([a, W(-ext, 0), b]); }
   // (paved across the tip, where the lanes join round it)
   const od = bw + WALL + S0.d + LANE_OFF + MARGIN;
-  if (out.tip && out.tip.length) B.apron([W(L - 0.02, -od), W(L + ext + MARGIN, -od), W(L + ext + MARGIN, od), W(L - 0.02, od)]);
+  if (out.tip && out.tip.length && o.ai == null) B.apron([W(L - 0.02, -od), W(L + ext + MARGIN, -od), W(L + ext + MARGIN, od), W(L - 0.02, od)]);
   if (out.cap0) B.apron([W(-ext - MARGIN, -od), W(0.02, -od), W(0.02, od), W(-ext - MARGIN, od)]);
   out.W = W; out.off = bw + WALL + S0.d + LANE_OFF;
+  return out;
+};
+/* (brief 61) a terminal that is not a box: a head house whose airside face steps in and out, its ends cut back and a
+   hall standing forward on its landside, with piers of different lengths fanned from it; gates along every face, one
+   apron poured round all of it, a taxilane along each face and round each pier's tip. Laid out from a seed, so no
+   two airports get the same one. Local frame: the head house along x, its landside face at y = D (the kerb goes
+   there), the airside toward −y. o: { n: gates wanted, piers (0–3, else by n), size, seed, c: where the origin
+   goes, name }. Returns { joins: where taxiways should join (the pier tips, or the face lane's ends), x0, x1, D,
+   ymin: how far it reaches airside } */
+IC.kitComplex = function (B, o) {
+  const S0 = IC.STAND[o.size || 'm'], sz = o.size || 'm', seed = o.seed || 1, h = k => U.hash(k * 13 + 7, seed);
+  const C = o.c || pt(0, 0), P0 = (x, y) => pt(C.x + x, C.y + y);
+  const bw = 0.2, step = S0.w + 0.02, off = bw + WALL + S0.d + LANE_OFF, offF = WALL + S0.d + LANE_OFF, ext = 0.6, dS = 0.35;
+  const n = Math.max(3, o.n || 10), K = o.piers != null ? o.piers : n <= 7 ? 1 : n <= 18 ? 2 : 3;
+  // the piers: lengths that differ, fanned outward a little, with most of the gates
+  const per = K ? n * 0.85 / K : 0, piers = [];
+  const wt = []; for (let i = 0; i < K; i++) wt.push(0.6 + 0.8 * h(i + 1));
+  const wsum = wt.reduce((a, v) => a + v, 0) || 1;
+  for (let i = 0; i < K; i++) {
+    // (its gates on both sides, beyond where its lanes leave the face's)
+    const len = U.clamp(0.75 + Math.ceil(per * K * wt[i] / wsum / 2) * step + 0.06, 1.3, 7);
+    const fan = K === 1 ? (h(9) - 0.5) * 0.6 : ((i - (K - 1) / 2) / ((K - 1) / 2)) * (0.15 + 0.35 * h(10)) + (h(i + 20) - 0.5) * 0.12;
+    piers.push({ len, fan, u: pt(Math.sin(fan), -Math.cos(fan)), q: pt(Math.cos(fan), Math.sin(fan)) });
+  }
+  // the face in sections, each at its own depth, parted by a pier or (with no pier) by a step in the wall
+  const faceG = Math.max(0, n - Math.round(per) * K), seps = [], g = [];
+  if (K) {
+    const gl = Math.round(faceG * (0.3 + 0.4 * h(40)) / 2), gr = Math.round(faceG / 2) - gl, mid = faceG - gl - gr;
+    g.push(gl); for (let i = 0; i < K - 1; i++) g.push(Math.max(0, Math.round(mid / (K - 1))) + (h(41 + i) < 0.5 ? 0 : 1)); g.push(gr);
+    for (const p of piers) seps.push({ p });
+  } else {
+    const ns = n >= 6 && h(42) < 0.6 ? 3 : 2; let left = n;
+    for (let k = 0; k < ns; k++) { const v = k === ns - 1 ? left : Math.max(1, Math.round(n / ns + (h(43 + k) - 0.5) * 2)); g.push(Math.min(left, v)); left -= g[k]; seps.push({}); }
+    seps.pop();
+  }
+  const NS = g.length, secY = []; for (let k = 0; k < NS; k++) secY.push(-0.5 * h(60 + k));
+  const cwL = 0.15 + 0.4 * h(50), cwR = 0.15 + 0.4 * h(51), D = 0.9 + 0.6 * h(52);
+  // along x: each section as long as its gates, then its separator (a pier takes 2 × its lane offset, a step 2 × dS)
+  const span = []; let x = cwL + 0.1;
+  for (let k = 0; k < NS; k++) {
+    const len = g[k] * step + 0.2, s0 = x; x += len; span.push([s0, x]);
+    if (k < NS - 1) { const sp = seps[k]; if (sp.p) { sp.x = x + off; x += 2 * off; } else { sp.x = x + dS; x += 2 * dS; } }
+  }
+  const W0 = x + cwR + 0.1, sh = -W0 / 2, x0 = sh, x1 = sh + W0;
+  for (const sp of seps) { sp.x += sh; if (sp.p) sp.p.x = sp.x; }
+  for (const s of span) { s[0] += sh; s[1] += sh; }
+  // a pier's root: deeper than the sections either side, so it meets the head house along its whole root edge;
+  // where its side lanes meet the lanes along the sections beside it (sg −1: toward −x)
+  const meet = (p, sg, Y) => (Y - p.R.y - p.q.y * sg * off) / p.u.y;
+  seps.forEach((sp, k) => { const p = sp.p; if (!p) return;
+    p.R = pt(p.x, Math.min(secY[k], secY[k + 1]) - 0.05); p.cl = pt(p.R.x - p.q.x * bw, p.R.y - p.q.y * bw); p.cr = pt(p.R.x + p.q.x * bw, p.R.y + p.q.y * bw);
+    p.s = { [-1]: meet(p, -1, secY[k] - offF), 1: meet(p, 1, secY[k + 1] - offF) }; });
+  // the head house: the airside face section by section, round the pier roots and down each step
+  const F = [pt(x0 + cwL, secY[0])];
+  seps.forEach((sp, k) => { if (sp.p) F.push(pt(sp.p.cl.x, secY[k]), sp.p.cl, sp.p.cr, pt(sp.p.cr.x, secY[k + 1])); else F.push(pt(sp.x, secY[k]), pt(sp.x, secY[k + 1])); });
+  F.push(pt(x1 - cwR, secY[NS - 1]));
+  // (the landside face: a hall standing forward in the middle, the wings set back behind the kerb)
+  const hw = W0 * (0.3 + 0.25 * h(53)), hx = sh + W0 * (0.35 + 0.3 * h(54)), back = 0.25 + 0.35 * h(55), ha = U.clamp(hx - hw / 2, x0 + 0.3, x1 - 0.6), hb = U.clamp(hx + hw / 2, ha + 0.3, x1 - 0.3);
+  const hh = [pt(x0, D - back), pt(ha, D - back), pt(ha + 0.1, D), pt(hb - 0.1, D), pt(hb, D - back), pt(x1, D - back), pt(x1, secY[NS - 1] + cwR)].concat(F.slice().reverse(), [pt(x0, secY[0] + cwL)]);
+  B.bld('terminal', hh.map(q => P0(q.x, q.y)), { name: o.name || 'Terminal', lvls: 2 });
+  // one apron round all of it, poured into a raster and traced (below); the stands go on it as they are laid out
+  const ai = B.apron([P0(0, 0), P0(0.1, 0), P0(0.1, 0.1)], { name: o.apName });
+  const out = { joins: [], x0, x1, D, ymin: Math.min(...secY) - offF };
+  const Wp = p => (s, t) => P0(p.R.x + p.u.x * s + p.q.x * t, p.R.y + p.u.y * s + p.q.y * t);
+  for (const p of piers) {
+    const K0 = IC.kitPier(B, { p0: P0(p.R.x, p.R.y), p1: P0(p.R.x + p.u.x * p.len, p.R.y + p.u.y * p.len), bw, size: sz, tip: ext, ai,
+      lane0: { 1: p.s[1], [-1]: p.s[-1] }, s0: { 1: p.s[1] + 0.05, [-1]: p.s[-1] + 0.05 }, name: 'Pier' });
+    p.c = { [-1]: K0.lanes.find(l => l.sg === -1).ends[0], 1: K0.lanes.find(l => l.sg === 1).ends[0] };
+    const tip = Wp(p)(p.len + ext, 0); out.joins.push(tip); out.ymin = Math.min(out.ymin, tip.y - C.y);
+  }
+  // the gates along each section, nose to the wall, pushing back onto the section's lane; a step's lanes joined
+  let prevEnd = null;
+  for (let k = 0; k < NS; k++) {
+    const Y = secY[k] - offF, L0 = seps[k - 1], R0 = seps[k];
+    const a = L0 && L0.p ? L0.p.c[1] : null, b = R0 && R0.p ? R0.p.c[-1] : null;
+    const xa = a ? a.x - C.x : L0 ? L0.x + dS : x0 + cwL + 0.05, xb = b ? b.x - C.x : R0 ? R0.x - dS : x1 - cwR - 0.05;
+    const m = Math.max(0, Math.floor((xb - xa - 0.1) / step)), g0 = (xb - xa - m * step) / 2, lp = [a || P0(xa, Y)];
+    for (let j = 0; j < m; j++) { const sx = xa + g0 + step * (j + 0.5), via = P0(sx, Y); lp.push(via); B.stand(ai, P0(sx, secY[k] - WALL - S0.d / 2), Math.PI / 2, sz, B.node(via)); }
+    lp.push(b || P0(xb, Y));
+    // (a wing's lane ends at its last gate, not in the grass beyond, unless a taxiway joins it there)
+    if (K && !a && lp.length > 2) lp.shift();
+    if (K && !b && lp.length > 2) lp.pop();
+    if (U.dist(lp[0], lp[lp.length - 1]) > 0.05 && !(K && (!a || !b) && !m)) B.lane(lp);
+    if (L0 && !L0.p && prevEnd) B.lane([prevEnd, lp[0]]);
+    if (!K && (k === 0 || k === NS - 1)) out.joins.push(k === 0 ? lp[0] : lp[lp.length - 1]);
+    prevEnd = lp[lp.length - 1];
+  }
+  // the apron: every section's band out past its lane, each pier's sides and tip, less the buildings; 2.5 m cells
+  const c = 0.025, local = (p, X, Y) => { const dx = X - p.R.x, dy = Y - p.R.y; return { s: dx * p.u.x + dy * p.u.y, t: dx * p.q.x + dy * p.q.y }; };
+  const bb = [x0 - 0.3, out.ymin - MARGIN - 0.3, x1 + 0.3, D];
+  for (const p of piers) for (const e of [-1, 1]) { const q = Wp(p)(p.len + ext + MARGIN, e * (off + MARGIN)); bb[0] = Math.min(bb[0], q.x - C.x - 0.1); bb[1] = Math.min(bb[1], q.y - C.y - 0.1); bb[2] = Math.max(bb[2], q.x - C.x + 0.1); }
+  const nx = Math.ceil((bb[2] - bb[0]) / c), ny = Math.ceil((bb[3] - bb[1]) / c), Fm = new Uint8Array(nx * ny), HA = hh.map(q => [q.x, q.y]);
+  const secOf = X => { let k = 0; seps.forEach((sp, i) => { if (X > sp.x) k = i + 1; }); return k; };
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const X = bb[0] + (i + 0.5) * c, Y = bb[1] + (j + 0.5) * c;
+    if (U.inPoly(X, Y, HA)) continue;
+    let on = false, body = false;
+    for (const p of piers) { const r = local(p, X, Y); if (r.s > -0.05 && r.s < p.len && Math.abs(r.t) < bw) { body = true; break; } if (r.s > Math.min(p.s[1], p.s[-1]) - 0.05 && r.s < p.len + ext + MARGIN && Math.abs(r.t) < off + MARGIN) on = true; }
+    if (body) continue;
+    // (by a step, deep enough for the lane that joins the two sections' lanes)
+    if (!on && X > x0 + 0.02 && X < x1 - 0.02) { const k = secOf(X), y0 = secY[k], lo = seps[k - 1] && !seps[k - 1].p && X < seps[k - 1].x + dS ? Math.min(y0, secY[k - 1]) : seps[k] && !seps[k].p && X > seps[k].x - dS ? Math.min(y0, secY[k + 1]) : y0;
+      if (Y < y0 + 0.01 && Y > lo - offF - MARGIN) on = true; }
+    if (on) Fm[j * nx + i] = 1;
+  }
+  IC.cellLargest(Fm, nx, ny);
+  const AP = IC.cellOutline(Fm, nx, ny, bb, c, 0.035);
+  if (AP) B.L.aprons[ai].poly = flat(AP.map(q => P0(q.x, q.y)));
   return out;
 };
 /* piers from a round hub at c: arms at the given angles (T, Y, X and the rest), each from the hub's wall to len.

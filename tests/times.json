@@ -193,5 +193,8 @@
  "polish: a runway warning on the map names the runway once": 9,
  "front side: a terminal gets a curved forecourt, an airport road and car parks shaped to the ground, as many spaces as travellers bring": 11.1,
  "front side: with no room to park, travellers choose other airports, and with the developers turned off nothing is built": 8.9,
- "builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area": 7.8
+ "builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area": 7.8,
+ "kits: a terminal complex steps in and out, its piers differ, and every stand has a bridge and a way out": 8.7,
+ "kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways": 8.0,
+ "pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back": 10.4
 }

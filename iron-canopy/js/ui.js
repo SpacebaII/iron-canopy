@@ -416,7 +416,7 @@ const GOAL_TUT = { found: 'found', runway: 'starter', apron: 'pieces', terminal:
 function nextGoal() {
   const st = S.story, ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
   const done = st.goals.filter(g => g.done).length, open = st.goals.map((g, i) => ({ g, i })).filter(x => !x.g.done && !x.g.failed);
-  // (round 4) each goal with what it gives: "→ opens the Terminal with a pier", "→ +₭40M from the Ministry"
+  // (round 4) each goal with what it gives: "→ opens the Terminal with piers", "→ +₭40M from the Ministry"
   const gv = g => IC.FOCUS.progress && g.gives && !g.done ? ` <b class="gives">${esc(IC.goalGives(g))}</b>` : '';
   const row = ({ g, i }) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${gv(g)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p || '')}</small>` : ''}</span></button>`; };
   const where = ch ? `Chapter ${ch.n + 1} · ${ch.title}` : `${A.name} · ${A.title}`;

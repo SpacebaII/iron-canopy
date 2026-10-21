@@ -1352,7 +1352,7 @@ IC.bldMode = function (S, ap, part) {
   const P = S.bldPref = S.bldPref || { mat: 'conc', size: 'm', zone: null, fillet: true };
   // (a blueprint starts the way the real airport lies: north up)
   const r0 = part === 'blueprint' ? 0 : ap.rwyA || 0, keys = IC.showcaseKeys ? IC.showcaseKeys() : [];
-  return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass', shape: P.shape || 'rect',
+  return { kind: 'build', ap, part, pts: [], rot: r0, rot0: r0, mat: P.mat, size: P.size, zone: P.zone, fillet: P.fillet, drive: !!P.drive, surf: P.surf || 'grass', shape: P.shape || 'rect', seed: P.seed || 0,
     rwid: P.rwid || null, twid: P.twid || null, lit: P.lit === false ? false : true, oneway: P.oneway || 0, bp: keys.includes(P.bp) ? P.bp : keys[0] };
 };
 /* One click in build mode (brief 47: no tool builds on a click). btn 0 places a point or the whole plan; once the
@@ -1555,7 +1555,7 @@ IC.bldAddStand = function (S, ap, o) {
 IC.bldUndo = function (S, ap) {
   const L = ap.undo || [];
   while (L.length) {
-    const top = L.pop(), ids = Array.isArray(top) ? top : [top];
+    const top = L.pop(), ids = Array.isArray(top) ? top : top && top.restore ? top.ids : [top];
     if (top && top.svc != null) { const r = (ap.svcRoads || [])[top.svc]; if (r) { ap.svcRoads.splice(top.svc, 1); S.budget += r.cost || 0; return 'part'; } continue; }
     if (top && top.stand) { const r = ap.parts.find(p => p.id === top.stand), i = r && r.free ? r.free.findIndex(f => f.k === top.k) : -1; if (i >= 0 && !(r.stands || []).some(s => s.id === r.id + 's' + top.k && s.occ)) { r.free.splice(i, 1); S.budget += 0.5; ap.dirty = true; IC.aptStats(S, ap); return 'stand'; } continue; }
     const parts = ids.map(id => ap.parts.find(p => p.id === id)).filter(p => p && !p.built);
@@ -1563,6 +1563,8 @@ IC.bldUndo = function (S, ap) {
     let back = 0;
     for (const p of parts) { const w = ap.works.find(x => x.part === p); if (w && w.si === 0 && !(w.stages[0].k === 'demo' && w.t > 0)) back += w.spent || 0; IC.aptRemove(S, ap, p.id); }
     S.budget += back;
+    // (a pier: the apron it cut and the taxilane it split, as they were)
+    if (top && top.restore) IC.attachRestore(S, ap, top.restore);
     IC.log(S, 'info', 'BUILD', `${ap.name}: undone${back ? `, ${U.money(back)} refunded` : ''}.`);
     return 'part';
   }

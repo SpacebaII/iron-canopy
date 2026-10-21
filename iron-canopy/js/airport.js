@@ -1720,18 +1720,30 @@ IC.layoutAirport = function (ap, template, a) {
   const tank = (lx, ly) => { const c = W(lx, ly); return IC.aptAddPart(ap, { kind: 'fuel', x: c.x, y: c.y, a, r: 0.13 }, true); };
   const ils = (r, ends) => { for (const e of ends) IC.aptAddPart(ap, { kind: 'ils', rw: r.id, end: e }, true); };
   const zone = (p, z) => { p.zone = z; return p; };
+  // a terminal kit (airport-kits.js) beside the parallel taxiway: its airside edge at y = lane, its taxilane ends
+  // joined to the parallel; within x0..x1 if given (the parts beside it stay clear)
+  const kit = k => {
+    const seed = 1 + Math.round(U.hash(Math.round(ap.x) * 7 + Math.round(ap.y) * 13, 29) * 9973);
+    let o = { n: k.n, piers: k.piers, seed }, T = IC.kitComplex(IC.layoutBuilder(), o);
+    // (a layout too long for its room tries the next seeds)
+    for (let i = 1; i < 12 && ((k.x1 != null && k.x + T.x1 > k.x1) || (k.x0 != null && k.x + T.x0 < k.x0)); i++) { o = { n: k.n, piers: k.piers, seed: seed + i }; T = IC.kitComplex(IC.layoutBuilder(), o); }
+    const B = IC.layoutBuilder(), K = IC.kitComplex(B, Object.assign(o, { c: { x: k.x, y: k.lane - T.ymin } }));
+    const c = W(0, 0); IC.aptAddLayout(ap, B.L, { x: c.x, y: c.y, rot: a });
+    for (const j of K.joins) tx([[j.x, j.y], [j.x, k.par]]);
+    return { x0: k.x + K.x0, x1: k.x + K.x1, y: k.lane - T.ymin, D: K.D };
+  };
   const nm = (i) => { const h = Math.round(((a * 180 / Math.PI + 360) % 180) / 10) || 18; const x = String(h).padStart(2, '0'), y = String((h + 18) % 36 || 36).padStart(2, '0'); return `Runway ${x}/${y}${i ? ' ' + 'LR'[i - 1] : ''}`; };
   if (template === 'intl') {
     ils(rw(-17, 17, 0, nm()), ['a', 'b']);
     tx([[-16.8, 1.8], [-12, 1.8], [-8, 1.8], [-4, 1.8], [0, 1.8], [4, 1.8], [8, 1.8], [12, 1.8], [16.8, 1.8]]);
     for (const x of [-16.8, -8, 0, 8, 16.8]) tx([[x, 0], [x, 1.8]]);
-    tx([[-4, 1.8], [-4, 2.75]]); tx([[4, 1.8], [4, 2.8]]); tx([[12, 1.8], [12, 2.75]]);
-    rect('apron', -3.5, 3.4, 6, 1.3); rect('apron', 5, 3.28, 8, 0.96); rect('apron', 13.5, 3.4, 3, 1.3);
-    rect('terminal', 1, 4.7, 12, 1.0); rect('cargo', 13.5, 4.6, 3, 0.8);
+    // the terminal: a head house with piers, from the kit, different at every airport (brief 61)
+    const T = kit({ n: 26, piers: 2, x: 1, lane: 2.5, par: 1.8, x0: -7.5, x1: 10.2 });
+    tx([[12, 1.8], [12, 2.75]]); rect('apron', 13.5, 3.4, 3, 1.3); rect('cargo', 13.5, 4.6, 3, 0.8);
     // a remote apron for overnight parking, south of the runway
     tx([[-12, 0], [-12, -1.6]]); rect('apron', -12, -2.1, 4.6, 0.96);
     bld('fuel', -11.8, 4.9);
-    bld('tower', 3.5, 5.7); bld('fire', 0, -3.2); bld('atc', -8, -3.2);
+    bld('tower', T.x1 + 0.45, T.y + T.D - 0.4); bld('fire', 0, -3.2); bld('atc', -8, -3.2);
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
   } else if (template === 'regional_bad') {
@@ -1744,9 +1756,10 @@ IC.layoutAirport = function (ap, template, a) {
   } else if (template === 'regional_ok') {
     ils(rw(-13, 13, 0, nm()), ['a']);
     tx([[-12.8, 1.7], [-6, 1.7], [0, 1.7], [6, 1.7]]);
-    tx([[-12.8, 0], [-12.8, 1.7]]); tx([[6, 0], [6, 1.7]]); tx([[0, 1.7], [0, 2.25]]); tx([[-6, 1.7], [-6, 2.25]]);
-    rect('apron', 0, 2.72, 3.2, 0.95); rect('terminal', 0, 3.6, 3.2, 0.7);
-    bld('fuel', 4.6, 3.6); bld('tower', -2.4, 3.1); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
+    tx([[-12.8, 0], [-12.8, 1.7]]); tx([[6, 0], [6, 1.7]]);
+    tx([[-6, 1.7], [-6, 2.25]]);
+    const T = kit({ n: 6, piers: 0, x: 0, lane: 2.3, par: 1.7, x0: -4.4, x1: 3.6 });
+    bld('fuel', 4.6, 3.6); bld('tower', T.x0 - 0.4, T.y + 0.3); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
   } else if (template === 'mil_mothball') {
     // a half-closed base: a parallel taxiway to one end only, clustered fuel, no shelters, no alert pad
     rw(-13, 13, 0, nm());

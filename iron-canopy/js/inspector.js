@@ -705,7 +705,7 @@ function partActs(ap, p) {
     if (!st.fire || t > IC.FIRE_STD) L.push(fixBtn('fire', mid, 'Fire station nearer', true));
     if (st.fire) L.push(`<button class="act" data-act="fireDrill" title="The fire trucks race to the far end and the panel times them">Fire drill now</button>`);
     const mv = (ap.mvLog || []).length; say.unshift(`${mv} movement${mv === 1 ? '' : 's'} in the last hour; the runways take ${st.movesPerHour || 0}.`);
-  } else if (p.kind === 'terminal') { L.push(fixBtn('tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
+  } else if (p.kind === 'terminal') { L.push(fixBtn('tattach', p, 'Add a pier to it')); L.push(fixBtn('tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
   else if (p.kind === 'apron') L.push(fixBtn('tstraight', p, 'More stands: a terminal beside it'));
   else if (p.kind === 'fuel') L.push(fixBtn('fuel', p, 'Add a fuel tank beside it', IC.aptProblems(S, ap).some(x => x.kind === 'fuel')));
   else if (p.kind === 'fire') { const rw = ap.parts.find(q => q.kind === 'runway' && q.built); if (rw) L.push(`<button class="act pri" data-act="fireDrill" title="The fire trucks race to the far end of ${esc(rw.name || 'the runway')} and the panel times them">Fire drill now</button>`); }
