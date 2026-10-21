@@ -142,7 +142,7 @@ IC.render = function (S, now) {
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
   // film mode (film.js): the world without its data, a camera that shakes for blasts, the film look at the end
-  const FM = IC.film && IC.film.on;
+  const FM = IC.film && IC.film.clean;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }
   if (FM) { sx += IC.film.sx; sy += IC.film.sy; }
   S.shake *= 0.88;
@@ -261,7 +261,7 @@ function finish(S, z, px, now, light, wx) {
   IC.film.post(ctx, cv, cam.vw, cam.vh, S, light);
 }
 function label(txt, x, y, px, col, size, align, weight) {
-  if (IC.film && IC.film.on && !IC.film.opt.labels) return;
+  if (IC.film && IC.film.clean && !IC.film.opt.labels) return;
   // (round 5c) close in, in screen pixels: a tiny world-unit font is drawn squeezed (render-airport.js lbl)
   if (px < 0.05 && IC.FOCUS.polish) {
     const m = ctx.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
@@ -276,7 +276,7 @@ function label(txt, x, y, px, col, size, align, weight) {
   ctx.fillStyle = col; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
 }
 function brackets(x, y, r, px, col) {
-  if (IC.film && IC.film.on) return;
+  if (IC.film && IC.film.clean) return;
   const l = Math.min(r * 0.5, 7 * px);
   ctx.strokeStyle = col || C.amber; ctx.lineWidth = 1.8 * px; ctx.beginPath();
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { ctx.moveTo(x + a * r, y + b * (r - l)); ctx.lineTo(x + a * r, y + b * r); ctx.lineTo(x + a * (r - l), y + b * r); }

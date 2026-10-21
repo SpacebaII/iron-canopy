@@ -1007,6 +1007,20 @@ function followCam(dtR) {
   const k = 1 - Math.exp(-dtR * 5);
   IC.centerOn(cx + (w.x - cx) * k, cy + (w.y - cy) * k);
 }
+/* the start screen's backdrop: the region's capital as a film shot, no symbols, the camera drifting slowly over it
+   to the right of the title, pushing in a little and easing back, so the first and last frame of the game move */
+let stT = 0, stOn = false;
+function startDrift(dtR) {
+  const on = !$('start').hidden && !!S && !!S.world && !S.range;
+  if (on !== stOn) { stOn = on; if (IC.film) IC.film.backdrop(on); if (on) stT = 0; }
+  if (!on) return;
+  stT += dtR;
+  const c = IC.cap(S); if (!c) return;
+  const k = 0.5 - 0.5 * Math.cos(stT * 2 * Math.PI / 90), cm = IC.cam;
+  cm.fly = null; cm.z = Math.exp(Math.log(0.34) + (Math.log(0.5) - Math.log(0.34)) * k);
+  // the capital sits two thirds of the way across, clear of the menu, and the view slides past it
+  IC.centerOn(c.x - cm.vw / cm.z * (0.16 + 0.05 * Math.sin(stT * 2 * Math.PI / 130)), c.y - cm.vh / cm.z * 0.03 * Math.cos(stT * 2 * Math.PI / 110));
+}
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
@@ -1023,6 +1037,7 @@ function frame(now) {
   }
   IC.camStep(dtR);
   followCam(dtR);
+  startDrift(dtR);
   if (IC.film) IC.film.step(S, dtR);
   const C = IC.cine;
   C.cool = Math.max(0, C.cool - dtR);

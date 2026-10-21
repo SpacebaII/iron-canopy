@@ -1114,6 +1114,7 @@ function trail(v, m, ta, tb, st, y) {
   for (let i = 0; i < n4 && n < m.maxPts - 1; i += step) {
     const j = i * 4;
     if (P[j + 2] < 0.002 && m.tr.kind !== 'missile') { n = 0; continue; }   // only the part in the air
+    if (m._lw && tb - m.tL < m._lw && P[j + 3] > m.tL + 1e-3) break;   // a round leaving its launcher is drawn behind its record (render3d-arms.js)
     put(P[j], P[j + 1], P[j + 2]);
     if (sub > 1 && i + 1 < n4 && P[j + 7] - P[j + 3] < 3) {
       const a = i > 0 ? j - 4 : j, b = j + 4, c = i + 2 < n4 ? j + 8 : b, ta0 = a === j ? P[j + 3] - (P[b + 3] - P[j + 3]) : P[a + 3], tc = c === b ? P[b + 3] + (P[b + 3] - P[j + 3]) : P[c + 3];

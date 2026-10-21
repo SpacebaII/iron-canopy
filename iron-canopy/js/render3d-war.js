@@ -319,7 +319,7 @@ W3.mover = function (v, m) {
   const wp = new T.Mesh(plumeGeom(), mat); wp.visible = false; wp.frustumCulled = false; wp.renderOrder = 11; wp.userData.F = F;
   if (wp.layers && IC.LIFE3D) wp.layers.enable(IC.LIFE3D.bloomLayer);
   v.scene.add(wp); m.wp = wp;
-  if (kind === 'motor') m.mo = { P: new T.Vector3(), D: new T.Vector3(), ok: false, at: -1, t0: 0 };
+  if (kind === 'motor') m.mo = { P: new T.Vector3(), D: new T.Vector3(), ok: false, at: -1, t0: 0, m };
 };
 /* the flame on a mover's nozzle: k scales its length (a motor tailing off), hot its brightness */
 const FW = { x: 0, y: 0, z: 0 };
@@ -413,9 +413,12 @@ function laySmoke(v, w, tr, ta, tb, t, o) {
       const h1 = hash(seed + n * 3 + 1) - 0.5, h2 = hash(seed + n * 3 + 2) - 0.5, h3 = hash(seed + n * 3 + 3);
       // never narrower than the spacing, or a fast round's trail is a string of beads
       const r = Math.max(o.s0 + o.grow * Math.sqrt(age), step * 1.4), spread = r * 0.35;
-      const bx = xa + (xb - xa) * f, by = ya + (yb - ya) * f, balt = o.lift != null ? Math.min(aa + (ab - aa) * f, liftAlt(tp - o.lift)) : aa + (ab - aa) * f;
+      let bx = xa + (xb - xa) * f, by = ya + (yb - ya) * f, balt = aa + (ab - aa) * f;
+      if (o.lift != null && balPos(tr, tp, BS)) { bx = BS.x; by = BS.y; balt = BS.alt; }   // (a ballistic missile's lift-off, as drawn)
       let X = bx - v.cx, Y = yOf(v, bx, by, balt), Z = by - v.cy;
-      if (mo && tp - mo.t0 < 1.6) { const a = tp - mo.t0, d = 1.5 * a * a, e = ease(a / 1.6); X = (mo.P.x + mo.D.x * d) * (1 - e) + X * e; Y = (mo.P.y + mo.D.y * d) * (1 - e) + Y * e; Z = (mo.P.z + mo.D.z * d) * (1 - e) + Z * e; }
+      // (the round's first seconds are drawn by render3d-arms.js: the smoke is laid where it was drawn)
+      if (mo && mo.m && IC.arms3d && IC.arms3d.launchAt && IC.arms3d.launchAt(v, mo.m, tp, LV)) { X = LV.x; Y = LV.y; Z = LV.z; }
+      else if (mo && tp - mo.t0 < 1.6) { const a = tp - mo.t0, d = 1.5 * a * a, e = ease(a / 1.6); X = (mo.P.x + mo.D.x * d) * (1 - e) + X * e; Y = (mo.P.y + mo.D.y * d) * (1 - e) + Y * e; Z = (mo.P.z + mo.D.z * d) * (1 - e) + Z * e; }
       const a = o.a0 * Math.pow(1 - kk, 1.6) * (0.75 + 0.5 * h3) * U.clamp(age / 0.15, 0.35, 1);
       const warm = o.warm && age < o.warm ? 1 - age / o.warm : 0, c = col * L;
       emit(w.smoke, X + w.wx * age + h1 * spread, Y + (o.rise || 0.0012) * age * KM * v.hk, Z + w.wy * age + h2 * spread, r * (0.8 + 0.4 * h3), c + (1 - c) * warm * 0.8, c + (0.75 - c) * warm * 0.7, c + (0.5 - c) * warm * 0.6, a, h3 * 6.28);
@@ -423,17 +426,50 @@ function laySmoke(v, w, tr, ta, tb, t, o) {
     }
   }
 }
-/* a ballistic missile's lift-off: the simulation flies its boost at its mean climb from the first second; drawn, it
-   climbs off the pad at 2.5 g and meets that path within its boost (km above the pad, s after launch) */
-const liftAlt = a => a <= 0 ? 0 : 0.0125 * a * a;
+/* a ballistic missile's lift-off (brief 67): the simulation flies its boost at full speed on a straight slant from the
+   pad. Drawn, it rises from rest straight up off the pad and pitches over onto that path: the recorded path is flown
+   on a clock that starts still and runs up to the real one (as a round leaving its canister, render3d-arms.js), a
+   third faster than real two thirds of the way and on time, at the recorded speed, when the window ends; until then
+   it climbs the distance it has come straight up, bending onto the path. The model points the way it moves and
+   the boost's smoke is laid where it was drawn, so nothing jumps. A window: the first 50 s, or less of a short boost */
+// A cruise missile's booster throws it up out of its canister at the canister's 35° (models-arms.js, ecml) and it
+// levels onto its path in seconds
+const BAL = { win: 50, min: 8, cmWin: 7, cmEl: 0.62 }, CM_BOOST = 2.5;
+const balTau = (a, A) => { const u = a / A; return a - a * (1 - u) * (1 - u); };
+const balWin = new WeakMap(), BQ = {}, BR = {}, BH = {};
+function balPos(tr, tp, out) {
+  const t0 = IC.recFirstT(tr), a = tp - t0, d0 = tr.ref && tr.ref.d, cm = d0 && d0.cls === 'cm';
+  let W = balWin.get(tr);
+  if (!W) balWin.set(tr, W = { A: 0, az: 0, n: -1 });
+  if (W.n !== tr.n || W.t0 !== t0) {   // (again while it is still being recorded)
+    W.n = tr.n; W.t0 = t0;
+    // a short flight gets a shorter window (it must still be where it was when it is hit); one still flying the longest
+    const fl = tr.live ? 1e9 : tr.t1 - t0;
+    W.A = cm ? U.clamp(fl * 0.3, 2, BAL.cmWin) : U.clamp(Math.min(BAL.win, (d0 && d0.boost) || 70, fl * 0.3), BAL.min, BAL.win);
+    const h = cm && IC.recAt(tr, Math.min(tr.t1, t0 + 5), BH), q = IC.recAt(tr, t0, BQ);
+    W.az = h && q ? Math.atan2(h.y - q.y, h.x - q.x) : 0;
+  }
+  const A = W.A;
+  if (a < 0 || a >= A) return false;
+  const q = IC.recAt(tr, t0, BQ), r = IC.recAt(tr, t0 + balTau(a, A), BR); if (!q || !r || q.alt > 0.05) return false;
+  const d = Math.hypot((r.x - q.x) * 0.1, (r.y - q.y) * 0.1, r.alt - q.alt), k = ease(a / (A * 0.8));   // km along it; how far onto the path
+  // straight up (or up its canister's slope) as far as it has come, bending onto the path
+  const ce = cm ? Math.cos(BAL.cmEl) : 0, se = cm ? Math.sin(BAL.cmEl) : 1;
+  const ux = q.x + Math.cos(W.az) * d * ce * 10, uy = q.y + Math.sin(W.az) * d * ce * 10, ua = q.alt + (cm ? 0.002 : 0.007) + d * se;   // (from where it stood on its launcher)
+  out.x = ux + (r.x - ux) * k; out.y = uy + (r.y - uy) * k; out.alt = ua + (r.alt - ua) * k;
+  return true;
+}
+const LV = { x: 0, y: 0, z: 0 }, BP = { x: 0, y: 0, alt: 0 }, BN = { x: 0, y: 0, alt: 0 }, BS = { x: 0, y: 0, alt: 0 };
 W3.pose = function (v, m, st, t) {
-  const d = m.tr.kind === 'threat' && m.tr.ref && m.tr.ref.d; if (!d || (d.cls !== 'bal' && d.cls !== 'hgv')) return;
-  const age = t - m.tr.t0, a = liftAlt(age); if (age > 80 || st.alt <= a) return;
-  // straight up off the pad until it has the height the record gives it
-  const q = m._pad || (m._pad = IC.recPose(m.tr, IC.recFirstT(m.tr), {}));
-  // (it leaves the pad's vertical late, as it nears the recorded path: on the pad a few metres' drift shows)
-  if (q) { const k = Math.pow(U.clamp(a / Math.max(1e-3, st.alt), 0, 1), 3); st.x = q.x + (st.x - q.x) * k; st.y = q.y + (st.y - q.y) * k; }
-  st.alt = a; st.pitch = Math.PI / 2 - 0.3 * U.clamp(a / 20, 0, 1);
+  const d = m.tr.kind === 'threat' && m.tr.ref && m.tr.ref.d; if (!d || (d.cls !== 'bal' && d.cls !== 'hgv' && d.cls !== 'cm')) return;
+  if (!balPos(m.tr, t, BP)) return;
+  st.x = BP.x; st.y = BP.y; st.alt = BP.alt;
+  // the nose along the way it moves, a moment ahead (straight up on the pad)
+  if (balPos(m.tr, t + 0.4, BN)) {
+    const hz = Math.hypot(BN.x - BP.x, BN.y - BP.y) * 100, vt = (BN.alt - BP.alt) * 1000;
+    st.pitch = hz + vt > 1e-3 ? Math.atan2(vt, hz) : Math.PI / 2;
+    if (hz > 0.5) st.h = Math.atan2(BN.y - BP.y, BN.x - BP.x);
+  } else st.pitch = Math.min(st.pitch || 0, Math.PI / 2);
 };
 /* where a round leaves from: its canister's mouth when its launcher is drawn (render3d-arms.js), else the first
    recorded point, pointing along its first second */
@@ -555,8 +591,12 @@ function weapon(v, w, m, t) {
     return;
   }
   if (d.cls === 'cm') {
+    // off the ground, a booster for its first seconds: a long bright flame and a trail of white smoke that hangs
+    const q = age < 60 ? (m._pad || (m._pad = IC.recPose(tr, IC.recFirstT(tr), {}))) : null, boost = q && q.alt <= 0.05 ? CM_BOOST : 0;
+    if (boost && age < boost + 40) laySmoke(v, w, tr, tr.t0, Math.min(t, tr.t0 + boost), t, { s0: 0.02, grow: 0.07, life: 40, a0: 0.55, col: 0.92, warm: 0.6, st, lift: tr.t0 });
     // the turbojet: a short faint flame, plainer at night, and a haze where it passed
-    flame(v, w, m, 1, 0.25 + 0.6 * w.night);
+    if (age < boost) flame(v, w, m, 4 * U.clamp(age / 0.15, 0.2, 1) * (age > boost - 0.4 ? U.clamp((boost - age) / 0.4, 0.25, 1) : 1), 1.2);
+    else flame(v, w, m, 1, 0.25 + 0.6 * w.night);
     laySmoke(v, w, tr, Math.max(tr.t0, t - 4), t, t, { s0: 0.012, grow: 0.03, life: 4, a0: 0.08, col: 0.8, rise: 0, st });
   } else if (d.cls === 'drone' && w.night > 0.3) {
     const h = st.h, len = m.MP ? m.MP.len : 0.06;
