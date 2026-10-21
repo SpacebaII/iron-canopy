@@ -62,12 +62,19 @@ IC.camStep = function (dt) {
 };
 IC.toWorld = (sx, sy) => ({ x: cam.x + sx / cam.z, y: cam.y + sy / cam.z });
 IC.toScreen = (x, y) => ({ x: (x - cam.x) * cam.z, y: (y - cam.y) * cam.z });
-IC.daylight = function (t) {
-  const h = (t % 86400) / 3600;
-  if (h < 5 || h > 20.5) return 0;
-  if (h < 7.5) return (h - 5) / 2.5;
-  if (h > 18) return 1 - (h - 18) / 2.5;
-  return 1;
+/* The light over a part of the map (IC.skyGrade): drain the colour, multiply by the light's colour, warm the golden
+   hour. `clip` traces the part (even-odd) in world units; the view is filled inside it */
+IC.drawGrade = function (g, G, clip) {
+  const plain = G.sat < 0.01 && G.mul[0] > 252 && G.mul[1] > 252 && G.mul[2] > 252 && G.golden < 0.01;
+  if (plain) return;
+  const V = view, x = V.x0, y = V.y0, w = V.x1 - V.x0, h = V.y1 - V.y0;
+  g.save(); g.beginPath(); clip(g); g.clip('evenodd');
+  // drain the colour by laying a neutral grey over it (a plain blend: the 'saturation' mode costs several ms a frame
+  // without a graphics card)
+  if (G.sat > 0.01) { g.globalAlpha = G.sat * 0.6; g.fillStyle = 'rgb(118,122,130)'; g.fillRect(x, y, w, h); }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgb(${G.mul[0]},${G.mul[1]},${G.mul[2]})`; g.fillRect(x, y, w, h);
+  if (G.golden > 0.01) { g.globalCompositeOperation = 'soft-light'; g.fillStyle = `rgba(255,140,60,${0.35 * G.golden})`; g.fillRect(x, y, w, h); }
+  g.restore();
 };
 /* ---------- main draw ---------- */
 IC.render = function (S, now) {
@@ -76,7 +83,10 @@ IC.render = function (S, now) {
   IC.LBL.reset();
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
+  // film mode (film.js): the world without its data, a camera that shakes for blasts, the film look at the end
+  const FM = IC.film && IC.film.on;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }
+  if (FM) { sx += IC.film.sx; sy += IC.film.sy; }
   S.shake *= 0.88;
   view = { x0: cam.x, y0: cam.y, x1: cam.x + cam.vw / z, y1: cam.y + cam.vh / z };
   RS.ctx = ctx; RS.view = view; RS.WF = WF;
@@ -95,36 +105,32 @@ IC.render = function (S, now) {
     pat.setTransform(new DOMMatrix().translate(ox, oy).scale(k));
     ctx.globalAlpha = (0.12 + 0.5 * wx.cloud) * (0.4 + 0.6 * light); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
   }
-  // night, dusk and dawn
-  if (light < 1) {
-    // airports darken their own field (render-airport.js), so the night here leaves those boxes out
-    ctx.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; ctx.beginPath(); ctx.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-    if (z >= 0.3) for (const b of IC.bases(S)) {
-      const k = b._box; if (!k || !k.poly || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
-      IC.aptFencePath(ctx, k);
-    }
-    ctx.fill('evenodd');
-  }
-  const h = (S.time % 86400) / 3600;
-  const golden = h > 5 && h < 8.5 ? 1 - Math.abs(h - 6.8) / 1.7 : h > 17 && h < 20.5 ? 1 - Math.abs(h - 18.8) / 1.7 : 0;
-  if (golden > 0) { ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = `rgba(255,140,60,${0.35 * golden})`; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalCompositeOperation = 'source-over'; }
-  if (light < 0.9) drawLights(S, px, now, light);
+  // night, dusk, dawn and the weather's gloom (atmos.js); airports grade their own field (render-airport.js), so
+  // this leaves their fences out
+  const G = IC.skyGrade(S, wx);
+  // film mode lifts the moonlight a little, so the land reads under the city lights and the fire
+  if (FM && G.dark > 0) { const k = IC.film.opt.moon == null ? 0.38 : IC.film.opt.moon; G.mul = G.mul.map(c => Math.round(c + (255 - c) * k * G.dark)); G.sat *= 0.6; }
+  IC.drawGrade(ctx, G, g => {
+    g.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+    if (z >= 0.3) for (const b of IC.bases(S)) { const k = b._box; if (k && k.poly && b.parts && inView(b.x, b.y, b.radius + 20)) IC.aptFencePath(g, k); }
+  });
+  if (light < 0.9) drawLights(S, px, now, light, FM ? 1.5 : 1);
 
   // (round 5c) radar cover belongs to the moment in the civil act: while placing a civil radar, in the Airspace tab, or
   // with the gaps shown; not over the whole Career from Chapter 3 on
   const covNow = S.layers.coverage || (IC.FOCUS.polish && IC.civilAct(S) && ((S.mode2 && S.mode2.kind === 'deploy' && IC.UNITS[S.mode2.type] && IC.UNITS[S.mode2.type].sensor && IC.UNITS[S.mode2.type].sensor.ssr) || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra')));
-  if (covNow) drawCoverage(S);
-  drawAirways(S, px, now);
-  drawFronts(S, px);
+  if (covNow && !FM) drawCoverage(S);
+  if (!FM) { drawAirways(S, px, now); drawFronts(S, px); }
   IC.drawRoadBridges(ctx, S, px, view);
   if (S.layers.civil && z > 0.12) IC.drawTraffic(ctx, S, px, view, light, now);
   drawBases(S, px, now, light);
-  drawZones(S, px, now);
-  drawFields(S, px);
-  const townNames = drawInfra(S, px, now);
+  if (!FM) drawZones(S, px, now);
+  if (!FM) drawFields(S, px);
+  const townNames = FM ? [] : drawInfra(S, px, now);
   IC.drawForces(S, px, now);
-  if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
+  if (S.layers.logistics && !FM) IC.drawConvoys(ctx, S, px);
   IC.drawCombat(S, px, now, light);
+  if (FM) { finish(S, z, px, now, light, wx); return; }
   // the towns' names over every symbol: a battery or an airport at the centre never hides whose city it is
   for (const f of townNames) f();
   if (IC.drawWarnings) IC.drawWarnings(ctx, S, px, now);
@@ -182,7 +188,20 @@ IC.render = function (S, now) {
   }
 };
 
+/* the end of a film-mode frame: the weather and clouds over the world, then the film look (film.js) */
+function finish(S, z, px, now, light, wx) {
+  if (S.layers.weather && S.clouds && wx.cloud > 0.4 && z < 0.5) {
+    const k = 30, ox = (S.time * S.wind.x * 1.2) % (256 * k), oy = (S.time * S.wind.y * 1.2) % (256 * k);
+    const pat = ctx.createPattern(S.clouds.white, 'repeat');
+    pat.setTransform(new DOMMatrix().translate(ox + 900, oy + 400).scale(k));
+    ctx.globalAlpha = (wx.cloud - 0.4) * 0.32 * (0.3 + 0.7 * light) * U.clamp((0.5 - z) / 0.3, 0, 1); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawWeather(S, wx, now, light);
+  IC.film.post(ctx, cv, cam.vw, cam.vh, S, light);
+}
 function label(txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.on && !IC.film.opt.labels) return;
   // (round 5c) close in, in screen pixels: a tiny world-unit font is drawn squeezed (render-airport.js lbl)
   if (px < 0.05 && IC.FOCUS.polish) {
     const m = ctx.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
@@ -197,6 +216,7 @@ function label(txt, x, y, px, col, size, align, weight) {
   ctx.fillStyle = col; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
 }
 function brackets(x, y, r, px, col) {
+  if (IC.film && IC.film.on) return;
   const l = Math.min(r * 0.5, 7 * px);
   ctx.strokeStyle = col || C.amber; ctx.lineWidth = 1.8 * px; ctx.beginPath();
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { ctx.moveTo(x + a * r, y + b * (r - l)); ctx.lineTo(x + a * r, y + b * r); ctx.lineTo(x + a * (r - l), y + b * r); }
@@ -212,7 +232,7 @@ function shadow(x, y, alt, px, r) {
   return { x: sx, y: sy };
 }
 
-function drawLights(S, px, now, light) {
+function drawLights(S, px, now, light, gain) {
   ctx.globalCompositeOperation = 'lighter';
   const pf = IC.powerFactor(S);
   for (const c of IC.cities(S)) {
@@ -222,7 +242,7 @@ function drawLights(S, px, now, light) {
     const a = (1 - light) * 0.95 * (c.hp / c.max) * pf * black * (c.owner === 'us' ? 1 : 0.35) * (c.alert > 0 && Math.sin(now * 0.7) > 0.6 ? 0.75 : 1);
     // far out the city is one glow; close in, lit streets and windows take over
     const near = U.clamp((cam.z - 1.5) / 2.5, 0, 1);
-    ctx.globalAlpha = a * (1 - near * 0.85);
+    ctx.globalAlpha = Math.min(1, a * (1 - near * 0.75) * (gain || 1));
     ctx.drawImage(c.light.cv, c.x - c.light.size / 2, c.y - c.light.size / 2, c.light.size, c.light.size);
     if (near > 0 && c.streets) {
       ctx.globalAlpha = a * near;

@@ -657,6 +657,8 @@ function onInput(e) {
   // (a choice in a list redraws the panel at once: the bearing fields come and go with "from")
   if (el.dataset.act === 'sbxForm' && S.sbx) { IC.sandboxForm(S, el.name, el.value); if (el.tagName === 'SELECT') IC.ui.refresh(true); else IC.ui.busyUntil = performance.now() + 1500; return; }
   if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'music') { IC.sfx.setMusic(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'ambVol') { IC.sfx.setAmb(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
 }
 document.addEventListener('click', onAct);
 document.addEventListener('input', onInput);
@@ -815,6 +817,8 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
+  // film mode (film.js): Shift+H anywhere, and its own keys while it is on
+  if (IC.film && IC.film.key(e, S)) { e.preventDefault(); return; }
   // the keys shown on the rail (and the old ones, N K T, still work)
   const rooms = { a: 'air', l: 'logi', i: 'intel', n: 'intel', r: 'research', k: 'research', j: 'journal', v: 'aviation', c: 'staff', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
@@ -1019,6 +1023,7 @@ function frame(now) {
   }
   IC.camStep(dtR);
   followCam(dtR);
+  if (IC.film) IC.film.step(S, dtR);
   const C = IC.cine;
   C.cool = Math.max(0, C.cool - dtR);
   if (C.slow > 0) C.slow -= dtR;
@@ -1043,8 +1048,11 @@ function frame(now) {
   }
   IC.autosaveTick(S);
   fx(S, dtR, gdt);
-  IC.render(S, now / 1000);
+  // (the map is not drawn while a film covers it: the 3D view full screen, or a title card)
+  const RV = IC.replayState && IC.replayState();
+  if (!(RV && RV.film) && !(IC.film && IC.film.cover)) IC.render(S, now / 1000);
   if (IC.lifeSoundEnd) IC.lifeSoundEnd();
+  if (IC.sfx.score) IC.sfx.score(S, dtR);
   IC.renderMini(S, mini, mw, mh);
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }
