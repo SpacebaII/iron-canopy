@@ -78,11 +78,11 @@ function buildGraph(W) {
   const cityOf = {}; for (const c of W.cities) cityOf[c.id] = c;
   // (a neighbour's roads are drawn, not driven: no trips are assigned over the border, brief 57)
   for (const e of W.edges) if (!e.abroad) add(e.pts, e.city ? e.ccls || 'art' : e.cls, e.city ? { edge: e, city: cityOf[e.city] } : { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
-  for (const c of W.cities) for (const s of c.streets) if (!s.cul) add(s.pts, s.cls, { city: c });
+  for (const c of W.cities) for (const s of c.streets) if (!s.cul) add(s.pts, s.cls, { city: c, st: s });
   for (const r of W.ramps || []) add(r.pts, 'ramp', { ramp: r });
-  for (const l of W.lanes) if (!l.loose && !l.abroad) add(l.pts, 'ln', {});   // (not the lanes of a village no road reaches, nor those abroad)
+  for (const l of W.lanes) if (!l.loose && !l.abroad) add(l.pts, 'ln', { lane: l });   // (not the lanes of a village no road reaches, nor those abroad)
   // a suburb's closes last (brief 54): their links come after every other, so a loop that may skip them stops short
-  for (const c of W.cities) for (const s of c.streets) if (s.cul) add(s.pts, s.cls, { city: c, cul: true });
+  for (const c of W.cities) for (const s of c.streets) if (s.cul) add(s.pts, s.cls, { city: c, cul: true, st: s });
   // crossings at grade: every pair of pieces that cross (motorways and slip roads never do)
   const B = 4, bk = new Map(), key2 = (i, j) => (i + 100) * 32768 + j + 100;
   // the cells a piece passes through (not its whole box: long country roads would fill millions)
@@ -163,12 +163,15 @@ function buildGraph(W) {
     }
     l.pts = out;
   }
-  // two points a hair apart on one line (a close's end tied beside the crossing it makes with its loop) are one node,
-  // or the piece between them is dropped and the loop falls in two
+  // two points under a metre apart on one line (a close's end tied beside the crossing it makes with its loop, a street
+  // ending a hair from where another crosses) are one node, or the piece between them is dropped and the loop falls in two
   const alias = new Map(), root = k => { while (alias.has(k)) k = alias.get(k); return k; };
+  const raw = new Map(); for (const l of lines) l.pts.forEach((p, i) => { const k = kq(p.x, p.y); raw.set(k, (raw.get(k) || 0) + (i === 0 || i === l.pts.length - 1 ? 2 : 1)); });
+  const joint = p => { const k = kq(p.x, p.y); return forced.has(k) || raw.get(k) > 1; };   // (a curve's own points stay apart)
   for (const l of lines) for (let i = 1; i < l.pts.length; i++) {
     const p = l.pts[i - 1], q = l.pts[i];
-    if (Math.abs(p.x - q.x) >= 1e-3 || Math.abs(p.y - q.y) >= 1e-3) continue;
+    const d = Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y));
+    if (d >= 0.01 || (d >= 1e-3 && !(joint(p) && joint(q)))) continue;
     const a = root(kq(p.x, p.y)), b = root(kq(q.x, q.y)); if (a !== b) alias.set(b, a);
   }
   for (const k of [...forced]) forced.add(root(k));
@@ -176,6 +179,7 @@ function buildGraph(W) {
   const cnt = new Map(), keyOf = (l, i) => root(kq(l.pts[i].x, l.pts[i].y)) * 4 + (i === 0 ? l.lv[0] : i === l.pts.length - 1 ? l.lv[1] : 0);
   for (const l of lines) for (let i = 0; i < l.pts.length; i++) { const k = keyOf(l, i); cnt.set(k, (cnt.get(k) || 0) + 1); }
   const G = { nodes: [], links: [], at: new Map() };
+  const posOf = (k, p) => { const n = G.at.get(k); return n == null ? { x: p.x, y: p.y } : { x: G.nodes[n].x, y: G.nodes[n].y }; };
   const nodeOf = (k, p) => { let n = G.at.get(k); if (n == null) { n = G.nodes.length; G.nodes.push({ x: p.x, y: p.y, out: [], rank: 0 }); G.at.set(k, n); } return n; };
   for (const l of lines) {
     // nodes are made only for pieces that become links: a zero-length piece must not leave a node with no roads
@@ -183,9 +187,13 @@ function buildGraph(W) {
     for (let i = 1; i < l.pts.length; i++) {
       const k = keyOf(l, i), last = i === l.pts.length - 1;
       if (!last && cnt.get(k) < 2 && !forced.has(Math.floor(k / 4))) continue;
-      const pts = l.pts.slice(s, i + 1), k0 = ka, p0 = pa;
+      let pts = l.pts.slice(s, i + 1);
+      const k0 = ka, p0 = pa;
       s = i; ka = k; pa = l.pts[i];
       if (k0 === k && pts.length < 3) continue;
+      // (the piece runs from node to node: a point merged into a node within a metre is the node's)
+      const pa0 = posOf(k0, p0), pb0 = posOf(k, l.pts[i]);
+      pts = [pa0].concat(pts.slice(1, -1).filter(p => U.dist(p, pa0) > 0.01 && U.dist(p, pb0) > 0.01), [pb0]);
       const cum = cumOf(pts), len = cum[cum.length - 1];
       if (len < 1e-3) continue;
       const a = nodeOf(k0, p0), b = nodeOf(k, l.pts[i]);
@@ -243,6 +251,95 @@ function buildGraph(W) {
   return G;
 }
 IC.driveGraph = W => W._dg || (W._dg = buildGraph(W));
+/* ---------- driving it as a car would (tools/road-audit.js, the tests) ----------
+   Where a car following its lane cannot go on: an end that leads nowhere (not a turning head, a bank, a square, a
+   farm, a place or the border), an end a few metres short of a road it should meet, a piece between two junctions
+   too short for two cars, a bend sharper than a car in its lane can follow, and links a car can reach but not leave
+   or leave but not reach (one-way slip roads that lead the wrong way). Lists of points, by kind. */
+IC.roadAudit = function (W, G) {
+  G = G || IC.driveGraph(W);
+  const list = { open: [], gap: [], stub: [], jog: [], kink: [], trap: [] };
+  const deg = n => G.nodes[n].out.length;
+  const at = (p, q) => Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
+  const place = new Set(); for (const k in W.nodes) { const n = W.nodes[k]; if (!n.jct) place.add(Math.round(n.x * 10) + ':' + Math.round(n.y * 10)); }
+  // what a dead end is meant to be
+  const meant = (lk, n) => {
+    const N = G.nodes[n], r = lk.ref;
+    if (lk.cls === 'hw' || lk.cls === 'ramp') return false;
+    if (place.has(Math.round(N.x * 10) + ':' + Math.round(N.y * 10))) return true;
+    if (r.edge) return !!(r.edge.abroad || r.edge.border || W.nodes[r.edge.a] && W.nodes[r.edge.b]) && !r.city;
+    if (r.lane) return true;
+    const st = r.st; if (!st) return false;
+    const P = st.pts, e0 = at(P[0], N), e1 = at(P[P.length - 1], N);
+    return !!((e0 && ((st.head | st.stop) & 1)) || (e1 && ((st.head | st.stop) & 2)) || st.cul && (e0 || e1));
+  };
+  // segments of everything drivable, for the near misses
+  const B = 2, grid = new Map(), K = (i, j) => (i + 100) * 65536 + j + 100;
+  for (const lk of G.links) for (let i = 1; i < lk.pts.length; i++) {
+    const a = lk.pts[i - 1], b = lk.pts[i];
+    for (let x = Math.floor(Math.min(a.x, b.x) / B); x <= Math.floor(Math.max(a.x, b.x) / B); x++) for (let y = Math.floor(Math.min(a.y, b.y) / B); y <= Math.floor(Math.max(a.y, b.y) / B); y++) {
+      const k = K(x, y); let L = grid.get(k); if (!L) grid.set(k, L = []); L.push(lk, i);
+    }
+  }
+  const nearest = (p, skip, r) => {
+    let bd = r, best = null;
+    for (let x = Math.floor((p.x - r) / B); x <= Math.floor((p.x + r) / B); x++) for (let y = Math.floor((p.y - r) / B); y <= Math.floor((p.y + r) / B); y++) {
+      const L = grid.get(K(x, y)); if (!L) continue;
+      for (let q = 0; q < L.length; q += 2) { const lk = L[q]; if (skip(lk)) continue; const a = lk.pts[L[q + 1] - 1], b = lk.pts[L[q + 1]], d = U.segDist(p.x, p.y, a.x, a.y, b.x, b.y); if (d < bd) { bd = d; best = lk; } }
+    }
+    return best ? { lk: best, d: bd } : null;
+  };
+  G.nodes.forEach((N, n) => {
+    if (deg(n) !== 1) return;
+    const lk = G.links[N.out[0]];
+    if (lk.cls === 'hw') return;
+    // (a short dead end is nonsense whatever it was meant to be)
+    if (lk.len < 0.3 && lk.cls !== 'ln' && !lk.ref.edge) { list.stub.push({ x: N.x, y: N.y, cls: lk.cls, len: lk.len }); return; }
+    const m = nearest(N, q => q === lk || q.cls === 'hw' || q.a === n || q.b === n, meant(lk, n) ? 0.15 : 0.4);
+    if (m && lk.cls !== 'ln') { list.gap.push({ x: N.x, y: N.y, cls: lk.cls, why: `${Math.round(m.d * 100)} m from a ${m.lk.cls}` }); return; }
+    if (!meant(lk, n)) list.open.push({ x: N.x, y: N.y, cls: lk.cls });
+  });
+  // pieces between two junctions too short for two cars (12 m), drawn as a jog in the street
+  for (const lk of G.links) if (lk.len < 0.12 && lk.cls !== 'ramp' && lk.cls !== 'hw' && deg(lk.a) >= 3 && deg(lk.b) >= 3) { const p = lk.pts[0]; list.jog.push({ x: p.x, y: p.y, cls: lk.cls, len: lk.len }); }
+  // bends a car in its lane cannot follow: more than 60° within 15 m, on a link or through a node with two roads
+  const turnAt = (p0, p1, p2) => Math.abs(U.angWrap(Math.atan2(p2.y - p1.y, p2.x - p1.x) - Math.atan2(p1.y - p0.y, p1.x - p0.x)));
+  for (const lk of G.links) {
+    if (lk.cls === 'ramp' || lk.cls === 'ln') continue;
+    const P = lk.pts;
+    for (let i = 1; i < P.length - 1; i++) if (turnAt(P[i - 1], P[i], P[i + 1]) > 1.05 && Math.min(U.dist(P[i - 1], P[i]), U.dist(P[i], P[i + 1])) > 0.02) { list.kink.push({ x: P[i].x, y: P[i].y, cls: lk.cls }); break; }
+  }
+  G.nodes.forEach((N, n) => {
+    if (deg(n) !== 2) return;
+    const [l1, l2] = N.out.map(i => G.links[i]); if (l1.cls === 'ramp' || l2.cls === 'ramp' || l1 === l2) return;
+    const q1 = l1.a === n ? l1.pts[1] : l1.pts[l1.pts.length - 2], q2 = l2.a === n ? l2.pts[1] : l2.pts[l2.pts.length - 2];
+    if (turnAt(q1, N, q2) > 1.05) list.kink.push({ x: N.x, y: N.y, cls: l1.cls + '/' + l2.cls });
+  });
+  // links a car can get onto but not off, or off but not onto: strongly connected parts over the one-way slip roads
+  const NN = G.nodes.length, idx = new Int32Array(NN).fill(-1), low = new Int32Array(NN), on = new Uint8Array(NN), comp = new Int32Array(NN).fill(-1);
+  const nxt = n => { const r = []; for (const i of G.nodes[n].out) { const q = G.links[i], d = q.a === n ? 0 : 1; if (canGo(q, d)) r.push(d ? q.a : q.b); } return r; };
+  let ix = 0, nc = 0; const st = [];
+  for (let s0 = 0; s0 < NN; s0++) {
+    if (idx[s0] >= 0) continue;
+    const work = [[s0, nxt(s0), 0]]; idx[s0] = low[s0] = ix++; st.push(s0); on[s0] = 1;
+    while (work.length) {
+      const top = work[work.length - 1], [v, ns] = top;
+      if (top[2] < ns.length) {
+        const w = ns[top[2]++];
+        if (idx[w] < 0) { idx[w] = low[w] = ix++; st.push(w); on[w] = 1; work.push([w, nxt(w), 0]); }
+        else if (on[w]) low[v] = Math.min(low[v], idx[w]);
+      } else {
+        work.pop(); if (work.length) { const u = work[work.length - 1][0]; low[u] = Math.min(low[u], low[v]); }
+        if (low[v] === idx[v]) { let w; do { w = st.pop(); on[w] = 0; comp[w] = nc; } while (w !== v); nc++; }
+      }
+    }
+  }
+  const size = new Int32Array(nc); for (let n = 0; n < NN; n++) size[comp[n]]++;
+  // (a part with no one-way link in it is a road off on its own, which is fine: a village lane, an island's road)
+  for (const lk of G.links) if (comp[lk.a] !== comp[lk.b] && lk.one) { const p = lk.pts[Math.floor(lk.pts.length / 2)]; list.trap.push({ x: p.x, y: p.y, cls: lk.cls }); }
+  const count = {}; for (const k in list) count[k] = list[k].length;
+  return { list, count, words: { open: 'ends that lead nowhere', gap: 'ends that stop short of a road (within 40 m, a turning head within 15 m)', stub: 'dead ends under 30 m', jog: 'pieces under 12 m between two junctions', kink: 'bends over 60° a car cannot follow', trap: 'one-way links that lead into or out of a dead part' } };
+};
+
 const canGo = (lk, d) => lk.one === 0 || (d === 0 ? lk.one > 0 : lk.one < 0);
 const other = (lk, n) => lk.a === n ? lk.b : lk.a;
 IC.driveCanGo = canGo;
