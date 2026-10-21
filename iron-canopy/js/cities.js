@@ -1225,34 +1225,58 @@ function dropIslands(c, roadSegs) {
    taken back to that junction. A close (cul) is the estate's own and keeps its shape. */
 const WELD = 0.12, REACH = 0.12, HEAD_MIN = 0.3;
 function tidyStreets(c, roadSegs) {
+  // (the roads in pieces of 200 m at most: a long diagonal piece would sit in every cell of its box)
+  const rs = [];
+  for (const r of roadSegs) { const n = Math.ceil(Math.hypot(r[2] - r[0], r[3] - r[1]) / 2) || 1; for (let k = 0; k < n; k++) rs.push([r[0] + (r[2] - r[0]) * k / n, r[1] + (r[3] - r[1]) * k / n, r[0] + (r[2] - r[0]) * (k + 1) / n, r[1] + (r[3] - r[1]) * (k + 1) / n]); }
+  roadSegs = rs;
   for (let round = 0; round < 3; round++) {
     const L = c.streets, Bk = buckets(2);
     L.forEach((l, li) => { for (let i = 1; i < l.pts.length; i++) Bk.add([l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y, li, i]); });
     for (const r of roadSegs) Bk.add([r[0], r[1], r[2], r[3], -1, 0]);
     const cum = L.map(l => { const a = [0]; for (let i = 1; i < l.pts.length; i++) a.push(a[i - 1] + U.dist(l.pts[i - 1], l.pts[i])); return a; });
     const onLine = (p, li, tol) => { let hit = null; Bk.near(p.x, p.y, tol + 0.01, sg => { if (hit || sg[4] === li) return; if (U.segDist(p.x, p.y, sg[0], sg[1], sg[2], sg[3]) < tol) hit = sg; }); return hit; };
-    // the junction points on each line: where others cross it or end on it (arc length along it, and the point)
-    const touch = L.map(() => []);
-    const posOn = (li, i, p) => cum[li][i - 1] + U.dist(L[li].pts[i - 1], p);
-    L.forEach((l, li) => {
-      for (let i = 1; i < l.pts.length; i++) {
-        const a = l.pts[i - 1], b = l.pts[i];
-        Bk.near((a.x + b.x) / 2, (a.y + b.y) / 2, U.dist(a, b) / 2 + 0.01, sg => {
-          if (sg[4] === li) return;
+    // the junction points on a line: where others cross it or end on it, and where it ends on another (arc length along
+    // it, and the point), on the lines as they stood when the round began; near a point only, or all of them
+    const P0 = L.map(l => l.pts.slice()), Ek = buckets(1);
+    L.forEach((l, li) => { for (const end of [0, 1]) { const p = end ? l.pts[l.pts.length - 1] : l.pts[0]; Ek.add([p.x, p.y, p.x, p.y, li, end]); } });
+    let stamp = 0;
+    const junctions = (hi, at, s0 = 0, s1 = Infinity) => {
+      const Q = P0[hi], cu = cum[hi], T = [], r = at ? WELD + 0.01 : 0;
+      if (at) {
+        // (near a point: the pieces round it, the line's own against the others)
+        const own = [], other = []; stamp++;
+        Bk.near(at.x, at.y, r, sg => { if (sg[6] === stamp) return; sg[6] = stamp; if (U.segDist(at.x, at.y, sg[0], sg[1], sg[2], sg[3]) > r) return; (sg[4] === hi ? own : other).push(sg); });
+        for (const a of own) for (const sg of other) {
+          const t = U.segX(a[0], a[1], a[2], a[3], sg[0], sg[1], sg[2], sg[3]); if (t < 0) continue;
+          const p = { x: a[0] + (a[2] - a[0]) * t, y: a[1] + (a[3] - a[1]) * t }; T.push({ s: cu[a[5] - 1] + U.dist(Q[a[5] - 1], p), p, by: sg[4] });
+        }
+        Ek.near(at.x, at.y, r, en => { if (en[4] !== hi && own.some(a => U.segDist(en[0], en[1], a[0], a[1], a[2], a[3]) < 0.004)) { const p = { x: en[0], y: en[1] }; T.push({ s: 0, p, end: [en[4], en[5]], by: en[4] }); } });
+        for (const end of [0, 1]) { const e = end ? Q[Q.length - 1] : Q[0]; if (U.dist(e, at) > r) continue; for (const sg of other) if (U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) < 0.004) T.push({ s: end ? cu[cu.length - 1] : 0, p: e, by: sg[4] }); }
+        return T;
+      }
+      for (let i = 1; i < Q.length; i++) {
+        if (cu[i] < s0 || cu[i - 1] > s1) continue;
+        const a = Q[i - 1], b = Q[i], h = U.dist(a, b) / 2 + 0.01, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+        stamp++;
+        Bk.near(mx, my, h, sg => {
+          if (sg[6] === stamp || sg[4] === hi) return; sg[6] = stamp;   // (a piece in several cells is looked at once)
+          if (Math.max(sg[0], sg[2]) < x0 || Math.min(sg[0], sg[2]) > x1 || Math.max(sg[1], sg[3]) < y0 || Math.min(sg[1], sg[3]) > y1) return;
           const t = U.segX(a.x, a.y, b.x, b.y, sg[0], sg[1], sg[2], sg[3]); if (t < 0) return;
-          const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; touch[li].push({ s: cum[li][i - 1] + t * U.dist(a, b), p: q, by: sg[4] });
+          T.push({ s: cu[i - 1] + t * 2 * (h - 0.01), p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, by: sg[4] });
+        });
+        Ek.near(mx, my, h, en => {
+          if (en[4] === hi || U.segDist(en[0], en[1], a.x, a.y, b.x, b.y) >= 0.004) return;
+          const p = { x: en[0], y: en[1] }; T.push({ s: cu[i - 1] + U.dist(a, p), p, end: [en[4], en[5]], by: en[4] });
         });
       }
       for (const end of [0, 1]) {
-        const e = end ? l.pts[l.pts.length - 1] : l.pts[0];
-        Bk.near(e.x, e.y, 0.02, sg => {
-          if (sg[4] === li) return;
-          if (U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) >= 0.004) return;
-          touch[li].push({ s: end ? cum[li][cum[li].length - 1] : 0, p: e, by: sg[4] });
-          if (sg[4] >= 0) touch[sg[4]].push({ s: posOn(sg[4], sg[5], e), p: e, end: [li, end], by: li });
-        });
+        const e = end ? Q[Q.length - 1] : Q[0];
+        Bk.near(e.x, e.y, 0.02, sg => { if (sg[4] !== hi && U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]) < 0.004) T.push({ s: end ? cu[cu.length - 1] : 0, p: e, by: sg[4] }); });
       }
-    });
+      return T;
+    };
+    const all = new Map(), touchOf = li => all.get(li) || (all.set(li, junctions(li)), all.get(li));
     let changed = 0;
     const kill = new Set();
     L.forEach((l, li) => {
@@ -1264,11 +1288,11 @@ function tidyStreets(c, roadSegs) {
           // a T: onto the nearest other junction on the street it meets, if there is one within a few metres
           if (host[4] < 0 || l.cul) continue;
           let best = null, bd = WELD;
-          for (const t of touch[host[4]]) { if (t.end && t.end[0] === li) continue; const d = U.dist(t.p, e); if (d > 0.004 && d < bd) { bd = d; best = t; } }
+          for (const t of junctions(host[4], e)) { if (t.end && t.end[0] === li) continue; const d = U.dist(t.p, e); if (d > 0.004 && d < bd) { bd = d; best = t; } }
           if (!best) continue;
           if (best.by === li) {
             // it crosses the street it ends on just before: it ends at the crossing
-            const own = touch[li].find(t => t.by === host[4] && U.dist(t.p, best.p) < 1e-6); if (!own) continue;
+            const own = touchOf(li).find(t => t.by === host[4] && U.dist(t.p, best.p) < 1e-6); if (!own) continue;
             l.pts = end ? cutAt(P, cum[li], 0, own.s) : cutAt(P, cum[li], own.s, len); changed++; break;
           }
           if (len > bd + 0.05) { const q = { x: best.p.x, y: best.p.y }; if (end) P[P.length - 1] = q; else P[0] = q; changed++; }
@@ -1276,10 +1300,11 @@ function tidyStreets(c, roadSegs) {
         }
         if (l.cul) continue;
         // the junctions along this street, nearest this end first
-        const inner = touch[li].filter(t => Math.abs(t.s - sEnd) > 0.004).map(t => Math.abs(t.s - sEnd));
-        const dangle = inner.length ? Math.min(...inner) : len;
         const designed = (l.head | l.stop) & (end + 1) && !l.core;
-        if (designed && dangle >= HEAD_MIN) continue;
+        // (a turning head long enough to turn in: only the junctions that near its end matter)
+        if (designed && !junctions(li, null, sEnd - HEAD_MIN, sEnd + HEAD_MIN).some(t => Math.abs(t.s - sEnd) > 0.004 && Math.abs(t.s - sEnd) < HEAD_MIN)) continue;
+        const inner = touchOf(li).filter(t => Math.abs(t.s - sEnd) > 0.004).map(t => Math.abs(t.s - sEnd));
+        const dangle = inner.length ? Math.min(...inner) : len;
         // just short of a street or road: run on to it
         let near = null, nd = REACH;
         Bk.near(e.x, e.y, REACH, sg => { if (sg[4] === li) return; const d = U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]); if (d < nd) { nd = d; near = sg; } });
