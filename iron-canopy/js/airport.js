@@ -1724,9 +1724,9 @@ IC.layoutAirport = function (ap, template, a) {
   // joined to the parallel; within x0..x1 if given (the parts beside it stay clear)
   const kit = k => {
     const seed = 1 + Math.round(U.hash(Math.round(ap.x) * 7 + Math.round(ap.y) * 13, 29) * 9973);
-    let o = { n: k.n, piers: k.piers, seed }, T = IC.kitComplex(IC.layoutBuilder(), o);
+    let o = { n: k.n, piers: k.piers, big: k.big, seed }, T = IC.kitComplex(IC.layoutBuilder(), o);
     // (a layout too long for its room tries the next seeds)
-    for (let i = 1; i < 12 && ((k.x1 != null && k.x + T.x1 > k.x1) || (k.x0 != null && k.x + T.x0 < k.x0)); i++) { o = { n: k.n, piers: k.piers, seed: seed + i }; T = IC.kitComplex(IC.layoutBuilder(), o); }
+    for (let i = 1; i < 12 && ((k.x1 != null && k.x + T.x1 > k.x1) || (k.x0 != null && k.x + T.x0 < k.x0)); i++) { o = { n: k.n, piers: k.piers, big: k.big, seed: seed + i }; T = IC.kitComplex(IC.layoutBuilder(), o); }
     const B = IC.layoutBuilder(), K = IC.kitComplex(B, Object.assign(o, { c: { x: k.x, y: k.lane - T.ymin } }));
     const c = W(0, 0); IC.aptAddLayout(ap, B.L, { x: c.x, y: c.y, rot: a });
     for (const j of K.joins) tx([[j.x, j.y], [j.x, k.par]]);
@@ -1738,7 +1738,7 @@ IC.layoutAirport = function (ap, template, a) {
     tx([[-16.8, 1.8], [-12, 1.8], [-8, 1.8], [-4, 1.8], [0, 1.8], [4, 1.8], [8, 1.8], [12, 1.8], [16.8, 1.8]]);
     for (const x of [-16.8, -8, 0, 8, 16.8]) tx([[x, 0], [x, 1.8]]);
     // the terminal: a head house with piers, from the kit, different at every airport (brief 61)
-    const T = kit({ n: 26, piers: 2, x: 1, lane: 2.5, par: 1.8, x0: -7.5, x1: 10.2 });
+    const T = kit({ n: 26, piers: 2, big: 1, x: 1, lane: 2.5, par: 1.8, x0: -7.5, x1: 10.2 });
     tx([[12, 1.8], [12, 2.75]]); rect('apron', 13.5, 3.4, 3, 1.3); rect('cargo', 13.5, 4.6, 3, 0.8);
     // a remote apron for overnight parking, south of the runway
     tx([[-12, 0], [-12, -1.6]]); rect('apron', -12, -2.1, 4.6, 0.96);

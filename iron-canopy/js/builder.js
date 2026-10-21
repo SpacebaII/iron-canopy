@@ -878,6 +878,8 @@ function edgesNear(ap, p, R, all) {
       const a = ap.nodes[q.nodes[i - 1]], b = ap.nodes[q.nodes[i]];
       if (a && b && U.segDist(p.x, p.y, a.x, a.y, b.x, b.y) < R) out.push({ a, b, half: q.w / 2, part: q, what: 'taxiway' });
     } else if (q.kind === 'apron' && IC.partDist(ap, q, p) < R) {
+      // (an outlined apron by its own sides, not its bounding box: the outside of each is where the outline is not)
+      if (q.poly) { const c = IC.partOutline(q), inP = c.map(v => [v.x, v.y]); for (let i = 0; i < c.length; i++) out.push({ a: c[i], b: c[(i + 1) % c.length], half: 0, part: q, what: 'apron', inP }); continue; }
       const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(q, sx * q.w / 2, sy * q.h / 2));
       for (let i = 0; i < 4; i++) out.push({ a: c[i], b: c[(i + 1) % 4], half: 0, part: q, what: 'apron', outN: IC.rectWorld(q, 0, 0) });
     } else if (all && q.kind !== 'runway') {
@@ -904,6 +906,7 @@ IC.bldSnapBuilding = function (ap, kind, p) {
     let side = Math.sign(off) || 1;
     // an apron's building stands outside it
     if (e.outN) { const o = (e.outN.x - fx) * -uy + (e.outN.y - fy) * ux; side = -Math.sign(o) || side; }
+    else if (e.inP) side = U.inPoly(fx - uy * 0.03, fy + ux * 0.03, e.inP) ? -1 : 1;
     // the edge whose building would stand nearest the cursor (so the placed plan, worked out again, is the same)
     const nx = -uy * side, ny = ux * side, dist = e.half + gap + h / 2, d = U.dxy(p.x, p.y, fx + nx * dist, fy + ny * dist);
     if (best && d >= best.d) continue;

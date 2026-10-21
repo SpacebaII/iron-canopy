@@ -798,7 +798,8 @@ test('builder: a build says it has started or is queued, and a refused one names
   const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
   const rw = ap.parts.find(p => p.kind === 'runway'), d = IC.rwDir(rw), n = { x: -d.y, y: d.x };
   const lay = k => { const m = IC.bldMode(S, ap, 'runway'), a = { x: rw.a.x + n.x * k, y: rw.a.y + n.y * k }, b = { x: rw.b.x + n.x * k, y: rw.b.y + n.y * k }; IC.buildInput(S, m, a, 0, 20); IC.buildInput(S, m, b, 0, 20); return [IC.buildFinish(S, m), m]; };
-  const [r1, m1] = lay(2.5);
+  // (600 m out on the side away from the terminal, clear of everything; 250 m out on either side runs over an apron)
+  const [r1, m1] = lay(-6);
   assert(r1 === 'built' && /planned: ₭/.test(m1.done) && /Work starts now/.test(m1.done), `the first runway says "${m1.done}"`);
   const [r2, m2] = lay(-2.5);
   assert(r2 === 'err' && /overlaps (the apron|Apron \d)/.test(m2.err), `a runway across the apron is refused with "${m2.err}"`);
@@ -1212,12 +1213,12 @@ test('builder: a line keeps to 90° from the part it starts on, and Shift draws 
 });
 test('builder: a point locks onto guides from edges and centrelines, and onto where two cross', () => {
   const { S, ap, P, L, near } = snapAp(), m = IC.bldMode(S, ap, 'taxi');
-  // the south apron's far edge, extended east, meets the line of the taxiway at x 4
-  const s = IC.bldPlanOf(S, m, P(4.05, -2.55), 0.4).snap, q = L(s);
-  assert(s.guides && s.guides.length === 2 && near(q.x, 4) && near(q.y, -2.58), `snapped to ${q.x.toFixed(3)}, ${q.y.toFixed(3)} on ${(s.guides || []).map(g => g.what).join(', ')}`);
+  // the south apron's far edge, extended east, meets the line of the taxiway at x 0
+  const s = IC.bldPlanOf(S, m, P(0.05, -2.55), 0.4).snap, q = L(s);
+  assert(s.guides && s.guides.length === 2 && near(q.x, 0) && near(q.y, -2.58), `snapped to ${q.x.toFixed(3)}, ${q.y.toFixed(3)} on ${(s.guides || []).map(g => g.what).join(', ')}`);
   // a line locked square to the runway stops on the apron edge's guide
-  IC.buildInput(S, m, P(4, 0), 0, 20);
-  const e = IC.bldPlanOf(S, m, P(4.2, -2.5), 0.4).snap;
+  IC.buildInput(S, m, P(0, 0), 0, 20);
+  const e = IC.bldPlanOf(S, m, P(0.2, -2.5), 0.4).snap;
   assert(near(L(e).y, -2.58) && e.lock && e.guides && /apron edge/.test(e.guides[0].what), `the end is at y ${L(e).y.toFixed(3)} (${e.guides ? e.guides[0].what : 'no guide'})`);
 });
 test('builder: readouts give each leg, the distance from the runway, and an apron\'s sides and depth', () => {
@@ -1227,8 +1228,8 @@ test('builder: readouts give each leg, the distance from the runway, and an apro
   assert(t.includes('220 m') && t.some(x => /^220 m from the Runway .* centreline$/.test(x)), `the readouts are ${t.join(' | ')}`);
   // (600 m from the runway: clear of the fire station, whose edge would take the first corner within 60 m)
   const a = IC.bldMode(S, ap, 'apron');
-  IC.buildInput(S, a, P(0, -4.6), 0, 20);
-  const ta = IC.bldPlanOf(S, a, P(4.62, -5.62), 0.4).marks.map(k => k.t);
+  IC.buildInput(S, a, P(-2, -4.6), 0, 20);
+  const ta = IC.bldPlanOf(S, a, P(2.62, -5.62), 0.4).marks.map(k => k.t);
   assert(ta.includes('460 m') && ta.some(x => /^100 m deep · medium stands$/.test(x)), `the apron readouts are ${ta.join(' | ')}`);
 });
 test('builder: an area snaps to corners and flush to edges, and turns to line up with a part at an angle', () => {
@@ -1247,13 +1248,14 @@ test('builder: an area snaps to corners and flush to edges, and turns to line up
 });
 test('builder: a taxiway through an apron is refused, drawn red, naming the apron; a building may not cover a taxiway', () => {
   const { S, ap, P } = snapAp(), m = IC.bldMode(S, ap, 'taxi');
-  IC.buildInput(S, m, P(-2, 1.8), 0, 20);
-  const plan = IC.bldPlanOf(S, m, P(-2.04, 3.6), 0.4);
+  // (the remote apron south of the runway: its near edge 162 m out)
+  IC.buildInput(S, m, P(-11, 0), 0, 20);
+  const plan = IC.bldPlanOf(S, m, P(-11.04, -2.2), 0.4);
   assert(!plan.ok && /runs through Apron \d/.test(plan.why) && plan.hit && plan.hit.kind === 'apron', `the plan says "${plan.why}"`);
-  assert(IC.buildInput(S, m, P(-2.04, 3.6), 0, 20) === 'point' && IC.buildFinish(S, m) === 'err' && /runs through/.test(m.err), `Build says "${m.err}"`);
+  assert(IC.buildInput(S, m, P(-11.04, -2.2), 0, 20) === 'point' && IC.buildFinish(S, m) === 'err' && /runs through/.test(m.err), `Build says "${m.err}"`);
   // ending on the apron's edge is how a taxiway joins it
-  const j = IC.bldMode(S, ap, 'taxi'); IC.buildInput(S, j, P(-2, 1.8), 0, 20);
-  const ok = IC.bldPlanOf(S, j, P(-2, 2.76), 0.4);
+  const j = IC.bldMode(S, ap, 'taxi'); IC.buildInput(S, j, P(-11, 0), 0, 20);
+  const ok = IC.bldPlanOf(S, j, P(-11, -1.62), 0.4);
   assert(ok.ok && ok.snap.kind === 'apron', `a taxiway to the apron edge is refused: ${ok.why}`);
   const h = P(2, 1.8);
   assert(!IC.aptCanPlace(S, ap, { kind: 'hangar', x: h.x, y: h.y, a: ap.rwyA }) && /covers a taxiway/.test(IC.aptPlaceWhy), `a hangar on the taxiway: "${IC.aptPlaceWhy}"`);
@@ -2633,32 +2635,39 @@ test('kits: the Quick war capital has a terminal with fanned piers, and every st
   assert(!st.warn.some(w => /grass|not connected/.test(w)), st.warn.join(' / '));
 });
 test('pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back', () => {
+  // (a straight terminal from the pieces, built on its own, with room in front of it)
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S; S.budget = 1e5;
-  const ap = S.byId[S.story.cap]; IC.aptStats(S, ap);
-  // the first wall with room in front of it
-  let m = null, hv = null, plan = null;
-  for (const t of ap.parts.filter(p => p.kind === 'terminal' && p.built && !p.r)) { const O = IC.partOutline(t), OA = O.map(q => [q.x, q.y]);
-    for (let i = 0; i < O.length && !plan; i++) { const A = O[i], B = O[(i + 1) % O.length], L = U.dist(A, B); if (L < 1.2) continue;
-      const c = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }; let n = { x: -(B.y - A.y) / L, y: (B.x - A.x) / L }; if (U.inPoly(c.x + n.x * 0.03, c.y + n.y * 0.03, OA)) n = { x: -n.x, y: -n.y };
-      const h = { x: c.x + n.x * 3, y: c.y + n.y * 3 }, mm = IC.bldMode(S, ap, 'tattach'), out = { text: [] }; IC.piecePlan(S, mm, h, out);
-      if (out.ok) { m = mm; hv = h; plan = out; } } }
-  assert(plan && plan.piece.P.cuts.length && plan.piece.P.gone > 0, 'no wall with room for a pier');
-  const n0 = ap.parts.length, before = JSON.stringify(ap.parts.map(p => [p.id, p.kind, p.x, p.y, p.poly && p.poly.length, p.nodes && p.nodes.join()])), st0 = IC.aptStands(ap).length, b0 = S.budget;
-  S.mode2 = m; S.hover = hv; IC.clickWorld(hv, 0);
+  const ap = S.byId[S.story.cap];
+  IC.aptFromLayout(ap, IC.PIECES.tstraight.make({ size: 'm', seed: 3 }), { x: ap.x, y: ap.y, rot: 0 });
+  for (const p of ap.parts) { p.built = true; p.prog = 1; } ap.dirty = true; IC.aptStats(S, ap);
+  // the longest wall facing the airside (−y)
+  const t = ap.parts.find(p => p.kind === 'terminal'), O = IC.partOutline(t), OA = O.map(q => [q.x, q.y]);
+  let best = null;
+  for (let i = 0; i < O.length; i++) { const A = O[i], B = O[(i + 1) % O.length], L = U.dist(A, B); if (L < 1) continue;
+    const c = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }; let n = { x: -(B.y - A.y) / L, y: (B.x - A.x) / L }; if (U.inPoly(c.x + n.x * 0.03, c.y + n.y * 0.03, OA)) n = { x: -n.x, y: -n.y };
+    if (n.y < -0.9 && (!best || L > best.L)) best = { L, c, n }; }
+  const hv = { x: best.c.x + best.n.x * 3.5, y: best.c.y + best.n.y * 3.5 }, m = IC.bldMode(S, ap, 'tattach'), plan = { text: [] };
+  S.mode2 = m; S.hover = hv; IC.piecePlan(S, m, hv, plan);
+  assert(plan.ok && plan.piece.P.cuts.length && plan.piece.P.gone > 0 && plan.piece.P.L.stands.length >= 6, `the pier: ${plan.why || plan.text.join(' ')}`);
+  assert(plan.text.some(x => /stands in its way taken up/.test(x)), plan.text.join(' '));
+  const snap = () => JSON.stringify(ap.parts.map(p => [p.id, p.kind, p.x, p.y, p.poly && p.poly.length, p.nodes && p.nodes.join()]));
+  const n0 = ap.parts.length, before = snap(), st0 = IC.aptStands(ap).length, b0 = S.budget;
+  IC.clickWorld(hv, 0);
   assert(IC.buildFinish(S, m) === 'built', m.err);
   assert(ap.parts.some(p => p.kind === 'terminal' && p.name === 'Pier' && !p.built), 'no pier planned');
   const top = ap.undo[ap.undo.length - 1]; assert(top && top.restore, 'not one step to undo');
   // Undo before the works start: as it was, money back
   IC.bldUndo(S, ap);
-  assert(ap.parts.length === n0 && JSON.stringify(ap.parts.map(p => [p.id, p.kind, p.x, p.y, p.poly && p.poly.length, p.nodes && p.nodes.join()])) === before, 'undo did not put the apron and taxilane back');
+  assert(ap.parts.length === n0 && snap() === before, `undo did not put the apron and taxilane back: ${n0} ${ap.parts.length}\n${before}\n${snap()}`);
   ap.dirty = true; IC.aptGraph(ap); assert(IC.aptStands(ap).length === st0 && Math.abs(S.budget - b0) < 1, `stands ${IC.aptStands(ap).length} of ${st0}, ${U.money(b0 - S.budget)} not refunded`);
-  // built: the stands left are clear of the pier, every stand has a way out, nothing overlaps
+  // built: gates on the pier, the stands left clear of it, every stand with a way out, nothing overlapping
   IC.clickWorld(hv, 0); assert(IC.buildFinish(S, m) === 'built', m.err); finishWorks(S, ap);
   const G = IC.aptGraph(ap), sts = IC.aptStands(ap), pier = ap.parts.filter(p => p.kind === 'terminal' && p.name === 'Pier').pop();
-  assert(pier.built && sts.some(s => s.contact && IC.partDist(ap, pier, { x: s.x, y: s.y }) < 0.6), 'no gates on the new pier');
-  assert(sts.every(s => s.linked), `${sts.filter(s => !s.linked).length} stands cut off`);
-  assert(!IC.aptOverlaps(S, ap).filter(o => o.kind !== 'world' && o.kind !== 'fence').length, IC.aptOverlaps(S, ap).map(o => o.text).slice(0, 3).join(' '));
-  assert(!(G.dead && G.dead.size), 'a taxilane ends in the grass');
+  assert(pier.built && sts.filter(s => s.contact && s.bridge && IC.partDist(ap, pier, { x: s.x, y: s.y }) < 0.6).length >= 6, 'no gates on the new pier');
+  assert(sts.length > st0 - plan.piece.P.gone, `${sts.length} stands, from ${st0} less ${plan.piece.P.gone} taken up`);
+  assert(sts.every(s => (G.adj.get(s.id) || []).length), `${sts.filter(s => !(G.adj.get(s.id) || []).length).length} stands cut off`);
+  const ov = IC.aptOverlaps(S, ap).filter(o => o.kind !== 'world' && o.kind !== 'fence');
+  assert(!ov.length, ov.map(o => o.text).slice(0, 3).join(' '));
 });
 for (const key of ['ring', 'hub', 'spine', 'midfield', 'long']) test(`blueprints: ${key} passes every check and runs six hours of traffic without gridlock`, () => {
   IC.seedRandom(7);

@@ -165,6 +165,8 @@ IC.kitComplex = function (B, o) {
     const fan = K === 1 ? (h(9) - 0.5) * 0.6 : ((i - (K - 1) / 2) / ((K - 1) / 2)) * (0.15 + 0.35 * h(10)) + (h(i + 20) - 0.5) * 0.12;
     piers.push({ len, fan, u: pt(Math.sin(fan), -Math.cos(fan)), q: pt(Math.cos(fan), Math.sin(fan)) });
   }
+  // (o.big: the longest piers take wide-bodies, their lanes farther out)
+  piers.slice().sort((a, b) => b.len - a.len).forEach((p, i) => { p.sz = i < (o.big || 0) ? 'l' : sz; p.off = bw + WALL + IC.STAND[p.sz].d + LANE_OFF; });
   // the face in sections, each at its own depth, parted by a pier or (with no pier) by a step in the wall
   const faceG = Math.max(0, n - Math.round(per) * K), seps = [], g = [];
   if (K) {
@@ -182,14 +184,14 @@ IC.kitComplex = function (B, o) {
   const span = []; let x = cwL + 0.1;
   for (let k = 0; k < NS; k++) {
     const len = g[k] * step + 0.2, s0 = x; x += len; span.push([s0, x]);
-    if (k < NS - 1) { const sp = seps[k]; if (sp.p) { sp.x = x + off; x += 2 * off; } else { sp.x = x + dS; x += 2 * dS; } }
+    if (k < NS - 1) { const sp = seps[k]; if (sp.p) { sp.x = x + sp.p.off; x += 2 * sp.p.off; } else { sp.x = x + dS; x += 2 * dS; } }
   }
   const W0 = x + cwR + 0.1, sh = -W0 / 2, x0 = sh, x1 = sh + W0;
   for (const sp of seps) { sp.x += sh; if (sp.p) sp.p.x = sp.x; }
   for (const s of span) { s[0] += sh; s[1] += sh; }
   // a pier's root: deeper than the sections either side, so it meets the head house along its whole root edge;
   // where its side lanes meet the lanes along the sections beside it (sg −1: toward −x)
-  const meet = (p, sg, Y) => (Y - p.R.y - p.q.y * sg * off) / p.u.y;
+  const meet = (p, sg, Y) => (Y - p.R.y - p.q.y * sg * p.off) / p.u.y;
   seps.forEach((sp, k) => { const p = sp.p; if (!p) return;
     p.R = pt(p.x, Math.min(secY[k], secY[k + 1]) - 0.05); p.cl = pt(p.R.x - p.q.x * bw, p.R.y - p.q.y * bw); p.cr = pt(p.R.x + p.q.x * bw, p.R.y + p.q.y * bw);
     p.s = { [-1]: meet(p, -1, secY[k] - offF), 1: meet(p, 1, secY[k + 1] - offF) }; });
@@ -206,7 +208,7 @@ IC.kitComplex = function (B, o) {
   const out = { joins: [], x0, x1, D, ymin: Math.min(...secY) - offF };
   const Wp = p => (s, t) => P0(p.R.x + p.u.x * s + p.q.x * t, p.R.y + p.u.y * s + p.q.y * t);
   for (const p of piers) {
-    const K0 = IC.kitPier(B, { p0: P0(p.R.x, p.R.y), p1: P0(p.R.x + p.u.x * p.len, p.R.y + p.u.y * p.len), bw, size: sz, tip: ext, ai,
+    const K0 = IC.kitPier(B, { p0: P0(p.R.x, p.R.y), p1: P0(p.R.x + p.u.x * p.len, p.R.y + p.u.y * p.len), bw, size: p.sz, tip: ext, ai,
       lane0: { 1: p.s[1], [-1]: p.s[-1] }, s0: { 1: p.s[1] + 0.05, [-1]: p.s[-1] + 0.05 }, name: 'Pier' });
     p.c = { [-1]: K0.lanes.find(l => l.sg === -1).ends[0], 1: K0.lanes.find(l => l.sg === 1).ends[0] };
     const tip = Wp(p)(p.len + ext, 0); out.joins.push(tip); out.ymin = Math.min(out.ymin, tip.y - C.y);
@@ -231,14 +233,14 @@ IC.kitComplex = function (B, o) {
   // the apron: every section's band out past its lane, each pier's sides and tip, less the buildings; 2.5 m cells
   const c = 0.025, local = (p, X, Y) => { const dx = X - p.R.x, dy = Y - p.R.y; return { s: dx * p.u.x + dy * p.u.y, t: dx * p.q.x + dy * p.q.y }; };
   const bb = [x0 - 0.3, out.ymin - MARGIN - 0.3, x1 + 0.3, D];
-  for (const p of piers) for (const e of [-1, 1]) { const q = Wp(p)(p.len + ext + MARGIN, e * (off + MARGIN)); bb[0] = Math.min(bb[0], q.x - C.x - 0.1); bb[1] = Math.min(bb[1], q.y - C.y - 0.1); bb[2] = Math.max(bb[2], q.x - C.x + 0.1); }
+  for (const p of piers) for (const e of [-1, 1]) { const q = Wp(p)(p.len + ext + MARGIN, e * (p.off + MARGIN)); bb[0] = Math.min(bb[0], q.x - C.x - 0.1); bb[1] = Math.min(bb[1], q.y - C.y - 0.1); bb[2] = Math.max(bb[2], q.x - C.x + 0.1); }
   const nx = Math.ceil((bb[2] - bb[0]) / c), ny = Math.ceil((bb[3] - bb[1]) / c), Fm = new Uint8Array(nx * ny), HA = hh.map(q => [q.x, q.y]);
   const secOf = X => { let k = 0; seps.forEach((sp, i) => { if (X > sp.x) k = i + 1; }); return k; };
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const X = bb[0] + (i + 0.5) * c, Y = bb[1] + (j + 0.5) * c;
     if (U.inPoly(X, Y, HA)) continue;
     let on = false, body = false;
-    for (const p of piers) { const r = local(p, X, Y); if (r.s > -0.05 && r.s < p.len && Math.abs(r.t) < bw) { body = true; break; } if (r.s > Math.min(p.s[1], p.s[-1]) - 0.05 && r.s < p.len + ext + MARGIN && Math.abs(r.t) < off + MARGIN) on = true; }
+    for (const p of piers) { const r = local(p, X, Y); if (r.s > -0.05 && r.s < p.len && Math.abs(r.t) < bw) { body = true; break; } if (r.s > Math.min(p.s[1], p.s[-1]) - 0.05 && r.s < p.len + ext + MARGIN && Math.abs(r.t) < p.off + MARGIN) on = true; }
     if (body) continue;
     // (by a step, deep enough for the lane that joins the two sections' lanes)
     if (!on && X > x0 + 0.02 && X < x1 - 0.02) { const k = secOf(X), y0 = secY[k], lo = seps[k - 1] && !seps[k - 1].p && X < seps[k - 1].x + dS ? Math.min(y0, secY[k - 1]) : seps[k] && !seps[k].p && X > seps[k].x - dS ? Math.min(y0, secY[k + 1]) : y0;

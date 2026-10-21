@@ -109,7 +109,7 @@ function hasParallel(ap, rw, sg) {
 }
 /* the nearest point on the airport's taxiways (built or planned) to a join, by a straight link that crosses no runway
    and no building, within 2.5 km: { from, to, len } or null */
-function joinOf(S, ap, J, skip) {
+function joinOf(S, ap, J, skip, avoid) {
   let best = null;
   for (const q of ap.parts) {
     if (q.kind !== 'taxi' || (skip && skip.has(q.id))) continue;
@@ -120,6 +120,8 @@ function joinOf(S, ap, J, skip) {
       if (len < 0.05 || len > 25 || (best && len >= best.len)) continue;
       // (never across a runway: a link that would cross one is no link)
       if (ap.parts.some(r => r.kind === 'runway' && segX(J, p, r.a, r.b))) continue;
+      // (nor back across the piece itself: a pier's tip does not join the lane at its own root)
+      if (avoid && avoid.some(P => { const PA = P.map(c => [c.x, c.y]); for (let k = 0; k <= 12; k++) { const x = J.x + (p.x - J.x) * k / 12, y = J.y + (p.y - J.y) * k / 12; if (U.inPoly(x, y, PA) || P.some((c, i) => { const d = P[(i + 1) % P.length]; return U.segDist(x, y, c.x, c.y, d.x, d.y) < 0.2; })) return true; } return false; })) continue;
       best = { from: { x: J.x, y: J.y }, to: p, len };
     }
   }
@@ -228,6 +230,11 @@ function pierLayout(len, size, s0) {
   B.L.roots = K.lanes.map(l => ({ sg: l.sg, first: B.at(l.n[0]) }));
   return B.L;
 }
+/* the taxiways that cross the pier's band (|t| < off) between the wall and smax out */
+function lanesAcross(ap, p, u, q, off, smax) {
+  const R = [[-off, -0.05], [off, -0.05], [off, smax], [-off, smax]].map(([t, s]) => ({ x: p.x + q.x * t + u.x * s, y: p.y + q.y * t + u.y * s }));
+  return ap.parts.filter(t => t.kind === 'taxi' && polyHitLine(R, t.nodes.map(id => ap.nodes[id]).filter(Boolean)));
+}
 /* where the pier goes, what it cuts: the aprons under it and the taxilane across its root */
 function attachPlace(S, m, hv) {
   const ap = m.ap, size = m.size === 'l' ? 'l' : 'm', T = wallAt(ap, hv);
@@ -236,21 +243,30 @@ function attachPlace(S, m, hv) {
   let len = U.clamp(Math.round(((hv.x - T.p.x) * u.x + (hv.y - T.p.y) * u.y) * 10) / 10, 1.3, 7); const off = pierOff(size), q = { x: -u.y, y: u.x };
   // a taxilane across the root: both side lanes meet it near the wall
   const side = sg => lineMeets(ap, { x: T.p.x + q.x * sg * off, y: T.p.y + q.y * sg * off }, u, Math.min(len, 1.6));
-  const mL = side(-1), mR = side(1), cross = mL && mR && mL.q === mR.q ? { q: mL.q, at: { [-1]: mL.at, 1: mR.at } } : null;
+  // (the taxilanes across it there, one or several: a face lane may be in sections joined at a step)
+  const mL = side(-1), mR = side(1), smax = mL && mR ? Math.max(mL.s, mR.s) + 0.15 : 0, cross = mL && mR ? { qs: lanesAcross(ap, T.p, u, q, off, smax), at: { [-1]: mL.at, 1: mR.at }, u, q, p: T.p, off, smax } : null;
   const s0 = { [-1]: cross ? mL.s : 0.1, 1: cross ? mR.s : 0.1 };
   // (no further than the next taxiway or runway out: the tip's taxilane stops short of it and is joined to it)
   let far = 1e9;
   for (const t of [0, -1, 1]) { const o = t * (off + 0.14), a0 = { x: T.p.x + q.x * o, y: T.p.y + q.y * o }; let s = Math.max(s0[1], s0[-1]) + 0.3;
-    for (let k = 0; k < 4; k++) { const h = lineMeets(ap, { x: a0.x + u.x * s, y: a0.y + u.y * s }, u, 9); if (!h) break; if (cross && h.q === cross.q) { s += h.s + 0.05; continue; } far = Math.min(far, s + h.s - (h.q.kind === 'runway' ? 1.4 : 0.12 + (h.q.w || 0.23) / 2)); break; } }
+    for (let k = 0; k < 4; k++) { const h = lineMeets(ap, { x: a0.x + u.x * s, y: a0.y + u.y * s }, u, 9); if (!h) break; if (cross && cross.qs.includes(h.q)) { s += h.s + 0.05; continue; } far = Math.min(far, s + h.s - (h.q.kind === 'runway' ? 1.4 : 0.12 + (h.q.w || 0.23) / 2)); break; } }
   len = Math.min(len, Math.floor((far - PIER_EXT - 0.14) * 10) / 10);
   if (len < 1.3) return { why: 'No room for a pier there: a taxiway or runway is under 250 m from that wall. Try another wall, or turn it (R).' };
   const L = lay(m, `pa${len}${size}${s0[1].toFixed(2)}${s0[-1].toFixed(2)}`, () => pierLayout(len, size, s0));
+  if (!L.stands.length) return { why: `Too short for a gate past the taxilane at its root: point farther out (room for ${Math.round(len * 100)} m before the next taxiway).` };
   const rot = Math.atan2(u.x, -u.y), X = IC.layoutXf({ x: T.p.x, y: T.p.y, rot });
   // the aprons it overlaps: cut round it once it is built
   const polys = L.aprons.map(A => IC.layoutPairs(A.poly).map(p => X(p.x, p.y))).concat(L.blds.map(b => IC.layoutPairs(b.poly).map(p => X(p.x, p.y))));
   const cuts = ap.parts.filter(p => p.kind === 'apron' && p.x != null && polys.some(P => polyHit(IC.partOutline(p), P)));
-  const skip = new Set(cuts.map(p => p.id)); if (cross) skip.add(cross.q.id);
-  return { L, x: T.p.x, y: T.p.y, rot, len, term: T.t, cuts, cross, skip, polys };
+  const skip = new Set(cuts.map(p => p.id)); if (cross) for (const c of cross.qs) skip.add(c.id);
+  return { L, x: T.p.x, y: T.p.y, rot, len, term: T.t, cuts, cross, skip, polys, u };
+}
+/* does a line run into an outline */
+function polyHitLine(A, L) {
+  const AA = A.map(q => [q.x, q.y]);
+  if (L.some(q => U.inPoly(q.x, q.y, AA))) return true;
+  for (let i = 1; i < L.length; i++) for (let j = 0; j < A.length; j++) { const a = L[i - 1], b = L[i], c = A[j], d = A[(j + 1) % A.length]; if (U.segX(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y) >= 0) return true; }
+  return false;
 }
 /* do two outlines overlap (a corner inside the other, or sides that cross) */
 function polyHit(A, B) {
@@ -268,9 +284,11 @@ function attachGone(ap, P) { const ids = new Set(P.cuts.map(p => p.id)); return 
 function attachCut(S, ap, P) {
   const keep = { parts: [], added: [], at: {} }, cl = o => JSON.parse(JSON.stringify(o, (k, v) => k[0] === '_' || k === 'stands' ? undefined : v));
   const near = (x, y) => underPier(P, x, y);
+  // (where each was in the list, before any is taken out)
+  for (const p of P.cuts.concat(P.cross ? P.cross.qs : [])) keep.at[p.id] = ap.parts.indexOf(p);
   const st = IC.aptStands(ap);
   for (const A of P.cuts) {
-    keep.parts.push(cl(A)); keep.at[A.id] = ap.parts.indexOf(A);
+    keep.parts.push(cl(A));
     const O = IC.partOutline(A), OA = O.map(q => [q.x, q.y]), c = 0.025;
     const bb = O.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]);
     const nx = Math.ceil((bb[2] - bb[0]) / c) + 1, ny = Math.ceil((bb[3] - bb[1]) / c) + 1, F = new Uint8Array(nx * ny);
@@ -291,14 +309,24 @@ function attachCut(S, ap, P) {
   }
   // the taxilane across the root: split in two at the pier's side lanes, the stretch between taken up
   if (P.cross) {
-    const q = P.cross.q; keep.parts.push(cl(q)); keep.at[q.id] = ap.parts.indexOf(q);
-    const pts = q.nodes.map(id => ap.nodes[id]), at = sg => { const c = P.cross.at[sg]; let best = null; for (let i = 1; i < pts.length; i++) { const d = U.segDist(c.x, c.y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); if (!best || d < best.d) best = { i, d }; } const t = U.dist(pts[best.i - 1], c) / Math.max(1e-6, U.dist(pts[best.i - 1], pts[best.i])); return best.i - 1 + t; };
-    const fa = at(-1), fb = at(1), lo = Math.min(fa, fb), hi = Math.max(fa, fb), cLo = fa < fb ? P.cross.at[-1] : P.cross.at[1], cHi = fa < fb ? P.cross.at[1] : P.cross.at[-1];
-    const nLo = IC.aptNode(ap, cLo.x, cLo.y), nHi = IC.aptNode(ap, cHi.x, cHi.y);
-    const A = q.nodes.slice(0, Math.floor(lo) + 1).concat([nLo]), Bn = [nHi].concat(q.nodes.slice(Math.ceil(hi)));
-    ap.parts = ap.parts.filter(p => p !== q);
-    for (const ns of [A, Bn]) if (ns.length >= 2) { const part = Object.assign(cl(q), { nodes: ns, cut: {}, craters: [] }); delete part.id; IC.aptAddPart(ap, part, q.built); keep.added.push(part.id); }
-    keep.ends = { [-1]: fa < fb ? nLo : nHi, 1: fa < fb ? nHi : nLo };
+    const C = P.cross, tOf = n => (n.x - C.p.x) * C.q.x + (n.y - C.p.y) * C.q.y, sOf = n => (n.x - C.p.x) * C.u.x + (n.y - C.p.y) * C.u.y;
+    const ends = { [-1]: null, 1: null }, end = (id, sg) => { const n = ap.nodes[id]; if (!ends[sg] || sOf(n) < sOf(ap.nodes[ends[sg]])) ends[sg] = id; };
+    for (const q of C.qs) {
+      keep.parts.push(cl(q));
+      // walk it, keeping what lies outside the pier's band, a node where it crosses the band's edge
+      const runs = []; let cur = [];
+      for (let i = 0; i < q.nodes.length; i++) {
+        const id = q.nodes[i], n = ap.nodes[id], t = tOf(n), inB = Math.abs(t) < C.off && sOf(n) < C.smax;
+        if (i > 0) { const a = ap.nodes[q.nodes[i - 1]], ta = tOf(a), aIn = Math.abs(ta) < C.off && sOf(a) < C.smax;
+          if (aIn !== inB) { const e = (aIn ? t : ta) > 0 ? 1 : -1, f = (e * C.off - ta) / (t - ta), x = IC.aptNode(ap, a.x + (n.x - a.x) * f, a.y + (n.y - a.y) * f);
+            if (aIn) cur = [x]; else { cur.push(x); runs.push(cur); cur = []; } end(x, e); } }
+        if (!inB) cur.push(id);
+      }
+      if (cur.length) runs.push(cur);
+      ap.parts = ap.parts.filter(p => p !== q);
+      for (const ns of runs) if (ns.length >= 2) { const part = Object.assign(cl(q), { nodes: ns, cut: {}, craters: [] }); delete part.id; IC.aptAddPart(ap, part, q.built); keep.added.push(part.id); }
+    }
+    keep.ends = ends;
   }
   // (and the nodes they use: taking up the pier's own taxilanes on undo would drop them)
   keep.nodes = {}; for (const o of keep.parts) for (const id of (o.nodes || []).concat((o.free || []).map(f => f.via).filter(Boolean))) if (ap.nodes[id]) keep.nodes[id] = { x: ap.nodes[id].x, y: ap.nodes[id].y };
@@ -310,7 +338,7 @@ IC.attachRestore = function (S, ap, keep) {
   ap.parts = ap.parts.filter(p => !keep.added.includes(p.id));
   for (const id in keep.nodes || {}) if (!ap.nodes[id]) ap.nodes[id] = { id, x: keep.nodes[id].x, y: keep.nodes[id].y, on: null };
   // (in their old places in the list, with only the fields they had)
-  for (const o of keep.parts) { const i = ap.parts.findIndex(p => p.id === o.id);
+  for (const o of keep.parts.slice().sort((a, b) => (keep.at[a.id] || 0) - (keep.at[b.id] || 0))) { const i = ap.parts.findIndex(p => p.id === o.id);
     if (i >= 0) { const p = ap.parts[i]; for (const k of Object.keys(p)) if (!(k in o) && k !== 'stands') delete p[k]; Object.assign(p, o, { _sh: null, _shk: null }); }
     else ap.parts.splice(Math.min(keep.at[o.id] != null ? keep.at[o.id] : ap.parts.length, ap.parts.length), 0, o); }
   ap.dirty = true; IC.resolveNodes(ap);
@@ -326,7 +354,9 @@ IC.piecePlan = function (S, m, hv, out) {
     const C = IC.bldBlueprintCheck(S, ap, P.L, P.x, P.y, P.rot, P.skip), X = IC.layoutXf(P);
     // links from the piece's lane ends to the nearest taxiway
     const links = [];
-    for (const j of P.L.joins || []) { const J = X(j.x, j.y), l = joinOf(S, ap, J); if (l) links.push(l); }
+    for (const j of P.L.joins || []) { const J = X(j.x, j.y), l = joinOf(S, ap, J, P.skip, P.polys && P.polys.slice(P.L.aprons.length));
+      // (a pier's tip joins a taxiway out ahead of it, never one back beside the terminal)
+      if (l && (!P.u || (l.to.x - l.from.x) * P.u.x + (l.to.y - l.from.y) * P.u.y > 0.3 * l.len)) links.push(l); }
     const linkCost = links.reduce((a, l) => a + IC.partCost(ap, { kind: 'taxi', pts: [l.from, l.to] }), 0);
     // a runway planned without one gets a landing system at each end it lacks
     const ils = P.around ? ['a', 'b'].filter(e => !ap.parts.some(q => q.kind === 'ils' && q.rw === P.around.id && q.end === e)) : [];

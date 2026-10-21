@@ -196,5 +196,5 @@
  "builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area": 7.8,
  "kits: a terminal complex steps in and out, its piers differ, and every stand has a bridge and a way out": 8.7,
  "kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways": 8.0,
- "pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back": 10.4
+ "pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back": 7.5
 }

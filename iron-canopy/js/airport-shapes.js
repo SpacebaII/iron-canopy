@@ -294,7 +294,9 @@ IC.aptLabels = function (S, ap, z, o) {
       if (done.some(q => q.t === t && U.dist(q, p) < (p.kind === 'fuel' ? 6 : 2))) continue;
       const hh = Math.max(p.h || 0, (p.r || 0) * 2, p.poly ? Math.max(p.w || 0, p.h || 0) * 0.5 : 0) / 2;
       // (a big building has its name on it, a small one just above it)
-      const on = (p.w || 0) * z > t.length * 7.5 * 0.7 && (p.h || 0) * z > 14, y = on ? p.y + 3 * px : p.y - hh - 5 * px;
+      // (above its highest corner on screen: a pier fanned at an angle has its top at its tip, not half its length up)
+      const top = p.poly || p.a ? Math.min(...IC.partOutline(p).map(q => q.y)) : p.y - hh;
+      const on = (p.w || 0) * z > t.length * 7.5 * 0.7 && (p.h || 0) * z > 14, y = on ? p.y + 3 * px : top - 5 * px;
       if (put(t, p.x, y, 7.5, p, 'name')) done.push({ t, x: p.x, y: p.y });
     }
   }

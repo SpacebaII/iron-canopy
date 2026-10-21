@@ -8,6 +8,11 @@ IC.pickAt = function (S, p, z) {
   const px = 1 / z;
   let best = null, bd = 1e9;
   const consider = (kind, ref, x, y, r) => { const d = U.dxy(p.x, p.y, x, y); if (d < Math.max(16 * px, r || 0) && d < bd) { bd = d; best = { kind, ref }; } };
+  // (an airliner parked right under the cursor wins over a track passing a kilometre off)
+  if (S.av && z >= (IC.FOCUS.polish ? 0.9 : 2.5)) for (const ap of IC.bases(S)) {
+    if (!ap.parts || U.dist(ap, p) > (ap.radius || 20) + 5) continue;
+    for (const s of IC.aptStands(ap)) if (s.occ && U.dist(s, p) < 0.4) { const tl = S.av.tails.find(t => t.id === s.occ); if (tl && tl.where === 'stand' && tl.T && U.dist(s, p) < tl.T.len * 0.5) return { kind: 'tail', ref: tl }; }
+  }
   for (const t of S.threats) if (t.held && !t.dead) consider('track', t, t.px, t.py);
   if (best) return best;
   for (const a of S.air) consider('air', a, a.x, a.y);
