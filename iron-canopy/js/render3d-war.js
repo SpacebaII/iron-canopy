@@ -455,7 +455,7 @@ function balPos(tr, tp, out) {
   const d = Math.hypot((r.x - q.x) * 0.1, (r.y - q.y) * 0.1, r.alt - q.alt), k = ease(a / (A * 0.8));   // km along it; how far onto the path
   // straight up (or up its canister's slope) as far as it has come, bending onto the path
   const ce = cm ? Math.cos(BAL.cmEl) : 0, se = cm ? Math.sin(BAL.cmEl) : 1;
-  const ux = q.x + Math.cos(W.az) * d * ce * 10, uy = q.y + Math.sin(W.az) * d * ce * 10, ua = q.alt + (cm ? 0.002 : 0.007) + d * se;   // (from where it stood on its launcher)
+  const ux = q.x + Math.cos(W.az) * d * ce * 10, uy = q.y + Math.sin(W.az) * d * ce * 10, ua = (cm ? 0.003 : q.alt + 0.007) + d * se;   // (from where it stood on its launcher: a cruise missile is recorded at its cruising height from the start)
   out.x = ux + (r.x - ux) * k; out.y = uy + (r.y - uy) * k; out.alt = ua + (r.alt - ua) * k;
   return true;
 }

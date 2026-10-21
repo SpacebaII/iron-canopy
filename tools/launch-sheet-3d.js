@@ -50,7 +50,8 @@ const SETUP = what => `(async () => { ${LIB}
     else { window.T0 = IC.recFirstT(tr); window.REF = tr.ref; }
   } else {
     // from the ground some way off, at the capital
-    const t = hostile(S, '${what}', x + 500, y + 100, { x: c.x, y: c.y });
+    // (a ballistic missile is launched as the enemy launches one: a flight to its aim, from the pad)
+    const t = '${what}' === 'srbm' ? IC.launchBallistic(S, 'srbm', x + 500, y + 100, { x: c.x, y: c.y }) : hostile(S, '${what}', x + 500, y + 100, { x: c.x, y: c.y });
     if (!t) throw new Error('no ${what}');
     t.alt = 0; ux = t.x; uy = t.y;
     steps(S, 3);

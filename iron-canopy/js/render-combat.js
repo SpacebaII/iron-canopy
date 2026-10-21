@@ -1216,14 +1216,18 @@ function drawSimParts(S, px, add) {
   ctx.globalAlpha = 1;
 }
 function drawFires(S, px, now, light) {
+  // light is added, so a burning district of many fires would add up to a white disc: the more fires on screen, the
+  // less each one lights (a crowd of fires still reads brighter than one, never blown out)
+  let nv = 0; for (const f of S.fx.fires) if (inView(f.x, f.y, 100)) nv++;
+  const crowd = 1 / Math.sqrt(Math.max(1, nv / 3));
   for (const f of S.fx.fires) {
     if (!inView(f.x, f.y, 100)) continue;
     const fl = 0.75 + 0.25 * Math.sin(now * 9 + f.seed) * Math.sin(now * 5.3 + f.seed * 2);
     const k = Math.min(1, (f.life - f.t) / 300) * fl * (1.4 - light * 0.6);
     const r = Math.max(5 * px, f.size * U.lerp(16, 1.1, WF));
     // at night it lights the ground round it, warm and wide, the way a fire seen from the air does
-    if (light < 0.6) { const R2 = r * (5 + 1.5 * fl), n = 1 - light / 0.6; ctx.globalAlpha = Math.min(1, 0.32 * k * n); ctx.drawImage(SPR[GLOW], f.x - R2, f.y - R2 * 0.9, R2 * 2, R2 * 2); }
-    ctx.globalAlpha = Math.min(1, 0.7 * k); ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
+    if (light < 0.6) { const R2 = r * (3.5 + 1.5 * fl), n = 1 - light / 0.6; ctx.globalAlpha = Math.min(1, 0.3 * k * n * crowd); ctx.drawImage(SPR[GLOW], f.x - R2, f.y - R2 * 0.9, R2 * 2, R2 * 2); }
+    ctx.globalAlpha = Math.min(1, 0.7 * k * (0.4 + 0.6 * crowd)); ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
     // tongues of flame that lick up from the bed and shrink as they rise, each its own shape
     for (let j = 0; j < 4; j++) {
       const ph = (now * (0.7 + j * 0.13) + j / 4 + f.seed) % 1, s2 = r * (0.62 - ph * 0.38);
