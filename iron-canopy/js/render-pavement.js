@@ -488,6 +488,7 @@ function standsPaint(g, ap, a, ppu, box) {
   for (const s of a.p.stands || []) {
     if (s.x < box.x0 - 1.2 || s.x > box.x1 + 1.2 || s.y < box.y0 - 1.2 || s.y > box.y1 + 1.2) continue;
     const S0 = IC.STAND[s.size] || IC.STAND.m;
+    if (s.size === 'xs') { tieDown(g, s, S0, ppu); continue; }
     // the lead-in from the taxilane node, joining the stand's own line behind it
     const n = s.via && ap.nodes[s.via];
     g.strokeStyle = YEL; g.lineWidth = Math.max(0.003, 0.9 * px); g.lineCap = 'butt';
@@ -516,6 +517,25 @@ function standsPaint(g, ap, a, ppu, box) {
       g.restore();
     }
   }
+}
+/* (brief 62) a tie-down on a GA ramp: a yellow T where the nose wheel and the main wheels stop, the three rings the
+   ropes go through (under each wing and at the tail), the spot's number small at its head */
+function tieDown(g, s, S0, ppu) {
+  const px = 1 / ppu, d = S0.d, w = S0.w;
+  g.save(); g.translate(s.x, s.y); g.rotate(s.a);
+  g.strokeStyle = YEL; g.lineWidth = Math.max(0.003, 0.8 * px); g.lineCap = 'butt';
+  g.beginPath(); g.moveTo(-d * 0.34, 0); g.lineTo(d * 0.3, 0); g.moveTo(d * 0.3, -0.03); g.lineTo(d * 0.3, 0.03); g.moveTo(-d * 0.02, -0.025); g.lineTo(-d * 0.02, 0.025); g.stroke();
+  if (ppu >= 40) {
+    g.fillStyle = 'rgba(30,30,30,0.7)';
+    for (const [x, y] of [[-0.01, -w * 0.33], [-0.01, w * 0.33], [-d * 0.4, 0]]) { g.beginPath(); g.arc(x, y, Math.max(0.004, 1.2 * px), 0, 7); g.fill(); }
+    g.strokeStyle = 'rgba(236,236,226,0.4)'; g.setLineDash([0.015, 0.015]); g.strokeRect(-d / 2 + 0.01, -w / 2 + 0.01, d - 0.02, w - 0.02); g.setLineDash([]);
+  }
+  if (ppu >= 60) {
+    const t = String(IC.standName(s)).slice(0, 3), h = 0.028;
+    g.translate(d / 2 - 0.03, 0); g.rotate(Math.PI / 2);
+    g.font = `700 ${h}px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(236,236,226,0.75)'; g.fillText(t, 0, 0);
+  }
+  g.restore();
 }
 /* the service road along a terminal or shed, on its forecourt: a white line at the head of the stands, a dashed
    centreline, and zebra crossings where people walk out to aircraft on stands without a bridge */

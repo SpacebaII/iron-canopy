@@ -7,7 +7,7 @@
    fuel = fuel units per departure; fee = landing fee in ₭M; xw, tw = the largest crosswind and tailwind (knots) the
    crew may land or take off in; zone = where it parks */
 IC.ACTYPES = {
-  light:   { name: 'Light aircraft', short: 'C172', ht: 2.7, span: 0.11, len: 0.08, rwy: 6, seats: 3, turn: 900, fuel: 0.2, stand: 's', cruise: 0.6, alt: 2, fee: 0.05, xw: 15, tw: 5, zone: 'light', ga: 1 },
+  light:   { name: 'Light aircraft', short: 'C172', ht: 2.7, span: 0.11, len: 0.08, rwy: 6, seats: 3, turn: 900, fuel: 0.2, stand: 'xs', cruise: 0.6, alt: 2, fee: 0.05, xw: 15, tw: 5, zone: 'light', ga: 1 },
   turbo:   { name: 'Regional turboprop', short: 'ATR', ht: 7.6, span: 0.27, len: 0.27, rwy: 13, seats: 70, turn: 1500, fuel: 2, stand: 's', cruise: 1.6, alt: 7, fee: 0.5, xw: 25, tw: 10, zone: 'civil' },
   narrow:  { name: 'Narrow-body jet', short: 'A32', ht: 11.8, span: 0.36, len: 0.38, rwy: 21, seats: 180, turn: 2400, fuel: 6, stand: 'm', cruise: 2.3, alt: 11, fee: 1.1, xw: 33, tw: 10, zone: 'civil' },
   wide:    { name: 'Wide-body jet', short: 'B77', ht: 18.5, span: 0.62, len: 0.64, rwy: 27, seats: 330, turn: 3900, fuel: 16, stand: 'l', cruise: 2.5, alt: 11.5, fee: 2.4, xw: 38, tw: 15, zone: 'civil' },
@@ -24,15 +24,15 @@ IC.ACTYPES = {
 };
 /* general aviation, business aviation and the rare visitors (civil.js flies them; ga, biz, rare say which) */
 Object.assign(IC.ACTYPES, {
-  tourer:   { name: 'Low-wing tourer', short: 'P28', ht: 2.2, span: 0.107, len: 0.073, rwy: 6, seats: 3, turn: 900, fuel: 0.2, stand: 's', cruise: 0.62, alt: 2, fee: 0.05, xw: 17, tw: 5, zone: 'light', ga: 1 },
-  retract:  { name: 'Retractable single', short: 'BE36', ht: 2.6, span: 0.102, len: 0.084, rwy: 7, seats: 5, turn: 900, fuel: 0.3, stand: 's', cruise: 0.85, alt: 3, fee: 0.06, xw: 17, tw: 10, zone: 'light', ga: 1 },
-  twin:     { name: 'Light twin', short: 'BE58', ht: 3.0, span: 0.115, len: 0.091, rwy: 8, seats: 5, turn: 1200, fuel: 0.5, stand: 's', cruise: 0.95, alt: 3.5, fee: 0.08, xw: 22, tw: 10, zone: 'light', ga: 1 },
-  taildrag: { name: 'Aerobatic taildragger', short: 'EXTR', ht: 2.6, span: 0.08, len: 0.071, rwy: 5, seats: 1, turn: 600, fuel: 0.15, stand: 's', cruise: 0.75, alt: 2, fee: 0.04, xw: 12, tw: 5, zone: 'light', ga: 1 },
-  utility:  { name: 'Utility turboprop', short: 'C208', ht: 4.5, span: 0.159, len: 0.127, rwy: 7, seats: 12, turn: 1200, fuel: 0.6, stand: 's', cruise: 0.85, alt: 3, fee: 0.12, xw: 20, tw: 10, zone: 'light', ga: 1 },
-  helil:    { name: 'Light helicopter', short: 'R44', ht: 3.3, span: 0.1, len: 0.117, rwy: 0, seats: 3, turn: 600, fuel: 0.2, stand: 's', cruise: 0.5, alt: 0.8, fee: 0.04, xw: 17, tw: 17, zone: 'light', ga: 1, vtol: true },
-  helim:    { name: 'Medium helicopter', short: 'A139', ht: 3.9, span: 0.138, len: 0.167, rwy: 0, seats: 12, turn: 900, fuel: 0.8, stand: 's', cruise: 0.75, alt: 1.2, fee: 0.15, xw: 45, tw: 45, zone: 'light', ga: 1, vtol: true },
-  glider:   { name: 'Glider', short: 'GLID', ht: 1.5, span: 0.17, len: 0.084, rwy: 5, seats: 2, turn: 900, fuel: 0, stand: 's', cruise: 0.3, alt: 1.5, fee: 0.02, xw: 12, tw: 5, zone: 'light', ga: 1 },
-  micro:    { name: 'Microlight', short: 'ULM', ht: 2.5, span: 0.1, len: 0.042, rwy: 3, seats: 2, turn: 600, fuel: 0.05, stand: 's', cruise: 0.3, alt: 0.8, fee: 0.02, xw: 10, tw: 5, zone: 'light', ga: 1 },
+  tourer:   { name: 'Low-wing tourer', short: 'P28', ht: 2.2, span: 0.107, len: 0.073, rwy: 6, seats: 3, turn: 900, fuel: 0.2, stand: 'xs', cruise: 0.62, alt: 2, fee: 0.05, xw: 17, tw: 5, zone: 'light', ga: 1 },
+  retract:  { name: 'Retractable single', short: 'BE36', ht: 2.6, span: 0.102, len: 0.084, rwy: 7, seats: 5, turn: 900, fuel: 0.3, stand: 'xs', cruise: 0.85, alt: 3, fee: 0.06, xw: 17, tw: 10, zone: 'light', ga: 1 },
+  twin:     { name: 'Light twin', short: 'BE58', ht: 3.0, span: 0.115, len: 0.091, rwy: 8, seats: 5, turn: 1200, fuel: 0.5, stand: 'xs', cruise: 0.95, alt: 3.5, fee: 0.08, xw: 22, tw: 10, zone: 'light', ga: 1 },
+  taildrag: { name: 'Aerobatic taildragger', short: 'EXTR', ht: 2.6, span: 0.08, len: 0.071, rwy: 5, seats: 1, turn: 600, fuel: 0.15, stand: 'xs', cruise: 0.75, alt: 2, fee: 0.04, xw: 12, tw: 5, zone: 'light', ga: 1 },
+  utility:  { name: 'Utility turboprop', short: 'C208', ht: 4.5, span: 0.159, len: 0.127, rwy: 7, seats: 12, turn: 1200, fuel: 0.6, stand: 'xs', cruise: 0.85, alt: 3, fee: 0.12, xw: 20, tw: 10, zone: 'light', ga: 1 },
+  helil:    { name: 'Light helicopter', short: 'R44', ht: 3.3, span: 0.1, len: 0.117, rwy: 0, seats: 3, turn: 600, fuel: 0.2, stand: 'xs', cruise: 0.5, alt: 0.8, fee: 0.04, xw: 17, tw: 17, zone: 'light', ga: 1, vtol: true },
+  helim:    { name: 'Medium helicopter', short: 'A139', ht: 3.9, span: 0.138, len: 0.167, rwy: 0, seats: 12, turn: 900, fuel: 0.8, stand: 'xs', cruise: 0.75, alt: 1.2, fee: 0.15, xw: 45, tw: 45, zone: 'light', ga: 1, vtol: true },
+  glider:   { name: 'Glider', short: 'GLID', ht: 1.5, span: 0.17, len: 0.084, rwy: 5, seats: 2, turn: 900, fuel: 0, stand: 'xs', cruise: 0.3, alt: 1.5, fee: 0.02, xw: 12, tw: 5, zone: 'light', ga: 1 },
+  micro:    { name: 'Microlight', short: 'ULM', ht: 2.5, span: 0.1, len: 0.042, rwy: 3, seats: 2, turn: 600, fuel: 0.05, stand: 'xs', cruise: 0.3, alt: 0.8, fee: 0.02, xw: 10, tw: 5, zone: 'light', ga: 1 },
   vlj:      { name: 'Very light jet', short: 'E50P', ht: 4.4, span: 0.123, len: 0.128, rwy: 10, seats: 4, turn: 1200, fuel: 0.8, stand: 's', cruise: 2.0, alt: 12, fee: 0.15, xw: 20, tw: 10, zone: 'light', biz: 1 },
   bizjet:   { name: 'Mid-size business jet', short: 'CL35', ht: 6.1, span: 0.21, len: 0.209, rwy: 15, seats: 9, turn: 1500, fuel: 2, stand: 's', cruise: 2.3, alt: 13, fee: 0.3, xw: 24, tw: 10, zone: 'light', biz: 1 },
   bizlong:  { name: 'Long-range business jet', short: 'GLF6', ht: 7.9, span: 0.304, len: 0.304, rwy: 18, seats: 14, turn: 1800, fuel: 4, stand: 's', cruise: 2.6, alt: 14, fee: 0.5, xw: 26, tw: 10, zone: 'light', biz: 1 },
@@ -45,8 +45,9 @@ Object.assign(IC.ACTYPES, {
   display:  { name: 'Display team jet', short: 'HAWK', ht: 4.0, span: 0.094, len: 0.112, rwy: 10, seats: 2, turn: 1800, fuel: 1, stand: 's', cruise: 2.0, alt: 1.5, fee: 0.1, xw: 25, tw: 10, zone: 'civil', rare: 1 },
   state:    { name: 'State aircraft', short: 'VC25', ht: 19.3, span: 0.596, len: 0.707, rwy: 28, seats: 70, turn: 5400, fuel: 20, stand: 'l', cruise: 2.5, alt: 12, fee: 0, xw: 38, tw: 15, zone: 'civil', rare: 1 }
 });
-IC.STAND = { s: { w: 0.32, d: 0.36, name: 'small' }, m: { w: 0.46, d: 0.5, name: 'medium' }, l: { w: 0.76, d: 0.8, name: 'large' } };
-IC.STAND_FITS = { s: ['s'], m: ['s', 'm'], l: ['s', 'm', 'l'] };
+/* (brief 62) xs: a tie-down on a GA ramp, for light aircraft and helicopters */
+IC.STAND = { xs: { w: 0.18, d: 0.18, name: 'tie-down' }, s: { w: 0.32, d: 0.36, name: 'small' }, m: { w: 0.46, d: 0.5, name: 'medium' }, l: { w: 0.76, d: 0.8, name: 'large' } };
+IC.STAND_FITS = { xs: ['xs'], s: ['xs', 's'], m: ['xs', 's', 'm'], l: ['xs', 's', 'm', 'l'] };
 /* which aircraft type each air wing flight uses on the ground */
 IC.AIRKIND_TYPE = { ftr: 'fighter', atk: 'heli', ucav: 'drone', aew: 'heavy', isr: 'drone', heli: 'heli', cargo: 'heavy', tkr: 'heavy' };
 

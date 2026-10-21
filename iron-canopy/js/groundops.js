@@ -11,6 +11,9 @@ const U = IC.U;
 /* speeds in world units (100 m) a second, times in seconds */
 const RWTAXI = 0.12, TOUCH = 0.75, LIFT = 0.8, SPACING = 0.55, FAF = 40, FORCE = 240, HOLD = 0.75, CLEAR = 0.9, TAXI = 0.09, MARGIN = 8;
 IC.GOPS = { RWTAXI, TOUCH, LIFT, FAF, HOLD, CLEAR, TAXI };
+/* (brief 62) light aircraft and business jets fly the final, touch down and lift off slower than airliners */
+const vFin = T => T.ga ? 0.4 : T.biz ? 0.75 : ARR_V0, vTouch = T => T.ga ? 0.3 : T.biz ? 0.6 : TOUCH, vLift = T => T.ga ? 0.32 : T.biz ? 0.65 : LIFT;
+const ARR_V0 = 0.95, RUNUP = new Set(['light', 'tourer', 'retract', 'twin', 'taildrag', 'micro']);
 
 const G = ap => IC.aptGraph(ap);
 const runways = ap => ap.parts.filter(p => p.kind === 'runway' && p.built && p.hp > p.max * 0.25);
@@ -234,7 +237,7 @@ function clearIn(S, ap, o, k) {
   const line = o.phase === 'lineup' ? Math.max(0, o.t) : o.phase === 'wait' ? 0 : ROLLING + 8;
   return Math.max(line, L.next - S.time) + CREW + R;
 }
-const rollT = T => 2 * T.rwy * 0.6 / LIFT;
+const rollT = T => 2 * T.rwy * 0.6 / vLift(T);
 /* what a set of rules will cost at this airport, in plain sentences (the Operations tab shows them before applying) */
 IC.opsNotes = function (S, ap, st, ops) {
   const out = [];
@@ -384,7 +387,7 @@ function newMove(S, ap, o) {
     // the runway
     luawOk: u, luaw: u, locks: u, crossBlk: u, xing: u, rolled: u, delay: u, finK: u, fx: u, fy: u, tx: u, ty: u, alt: u, inPath: u, onRw: u, s0: u, pos: u, goals: u, turned: u, backLog: u, crossed: u,
     // trouble
-    stuck: u, noRouteLog: u, left: u, dead: u, destroyed: u, why: u, crash: u, hitOn: u, forgot: u }, o);
+    stuck: u, noRouteLog: u, left: u, dead: u, destroyed: u, why: u, crash: u, hitOn: u, forgot: u, h0: u, runupT: u, ga: u }, o);
   m.T = IC.ACTYPES[m.type];
   ap.moves.push(m);
   return m;
@@ -511,7 +514,7 @@ function landPlan(ap, rw, dir, T, strip, exits) {
   const behind = inStrip.filter(n => (n.s - stop) * dir < 0).sort((a, b) => (b.s - a.s) * dir);
   return { touch, stop, cands: ahead.slice(0, 3).concat(behind.slice(0, 2)) };
 }
-const rollTime = (T) => 2 * T.rwy * 0.5 / (TOUCH + RWTAXI);
+const rollTime = (T) => 2 * T.rwy * 0.5 / (vTouch(T) + RWTAXI);
 /* how long an arrival or a departure holds its runways, for this type, in seconds (the panel shows the same).
    R: the rules to judge by (the runway's own by default). dep: from the hold-short line to lift-off, cleared for
    take-off; E: the part of it spent getting to the start of the take-off (with any backtracking); roll: the run. */
@@ -892,6 +895,9 @@ function step(S, ap, m, dt) {
         finishPath(m);
         if (m.kind === 'dep' && m.via && m.via.length && m.node === m.via[0].node) { m.phase = 'svc'; m.t = m.via[0].t; m.svcIn = 0; return; }
         if (m.kind === 'dep') {
+          // (a piston engine is run up at the holding point first: magnetos, carburettor heat, the controls)
+          if (m.runupT == null && RUNUP.has(m.type)) m.runupT = S.time + U.rand(45, 100);
+          if (m.runupT > S.time) { m.path = []; m.pi = 0; m.phase = 'hold'; m.holding = 'runup'; m.holdWhy = 'its engine run-up before take-off'; return; }
           // at the runway: line up once we hold it
           const k = keyOf(ap, m.plan.rw.id);
           if (!(m.locks && m.locks[k])) { const why = m.readyT > S.time ? 'release' : mayEnter(S, ap, m, k, null); if (why) { if (why !== 'release') wantIt(S, ap, k, m); m.waitT += dt; m.path = []; m.pi = 0; m.phase = 'hold'; m.holding = 'runway'; m.holdWhy = why; return; } take(ap, k, m, null, S.time); }
@@ -917,6 +923,7 @@ function step(S, ap, m, dt) {
       return;
     }
     case 'hold': {
+      if (m.runupT > S.time) { m.holding = 'runup'; m.holdWhy = 'its engine run-up before take-off'; return; }
       if (m.readyT > S.time) { m.waitT += dt; m.holding = 'release'; m.holdWhy = `waiting for its release, ${Math.ceil(m.readyT - S.time)} s`; return; }
       const k = keyOf(ap, m.plan.rw.id), why = mayEnter(S, ap, m, k, null);
       if (why) { wantIt(S, ap, k, m); m.waitT += dt; ap.depWait = (ap.depWait || 0) + 1; m.holding = 'runway'; m.holdWhy = why; return; }
@@ -938,8 +945,8 @@ function step(S, ap, m, dt) {
     }
     case 'roll': {
       if (m.delay > 0) { m.delay -= dt; return; }
-      const need = m.T.rwy * 0.6, acc = LIFT * LIFT / (2 * need);
-      m.spd = Math.min(LIFT * 1.1, m.spd + acc * dt);
+      const need = m.T.rwy * 0.6, Vl = vLift(m.T), acc = Vl * Vl / (2 * need);
+      m.spd = Math.min(Vl * 1.1, m.spd + acc * dt);
       m.rolled += m.spd * dt; m.rwT += dt;
       m.x += Math.cos(m.h) * m.spd * dt; m.y += Math.sin(m.h) * m.spd * dt;
       if (m.rolled >= need) {
@@ -953,20 +960,21 @@ function step(S, ap, m, dt) {
     }
     case 'final': {
       const tot = FAF / ARR_V;
-      m.t += dt;
+      // (m.t runs as an airliner's would: a slower one is further out than the tower's sums say, never nearer)
+      m.t += dt * vFin(m.T) / ARR_V;
       const f = U.clamp(m.t / tot, 0, 1);
       m.x = U.lerp(m.fx, m.tx, f); m.y = U.lerp(m.fy, m.ty, f); m.alt = 0.6 * (1 - f);
       // 1 km out: the runway must be empty, or the arrival goes around
       if (!m.onRw && m.t >= (FAF - GO) / ARR_V && !landCheck(S, ap, m)) return;
       if (f >= 1) {
-        m.phase = 'land'; m.spd = TOUCH; m.s0 = m.plan.touch; m.pos = m.plan.touch; m.alt = 0;
+        m.phase = 'land'; m.spd = vTouch(m.T); m.s0 = m.plan.touch; m.pos = m.plan.touch; m.alt = 0;
         if (m.hitOn) { collide(S, ap, m); return; }
         risky(S, ap, m, 'arr');
       }
       return;
     }
     case 'land': {
-      const P = m.plan, dist = Math.abs(P.stop - P.touch), dec = (TOUCH * TOUCH - RWTAXI * RWTAXI) / (2 * Math.max(1, dist));
+      const P = m.plan, dist = Math.abs(P.stop - P.touch), Vt = vTouch(m.T), dec = (Vt * Vt - RWTAXI * RWTAXI) / (2 * Math.max(1, dist));
       m.spd = Math.max(RWTAXI, m.spd - dec * dt);
       m.pos += P.dir * m.spd * dt; m.rwT += dt;
       setRwPos(ap, m);
@@ -1015,7 +1023,9 @@ function step(S, ap, m, dt) {
       if (m.stand && !parkOk(S, ap, m)) { m.waitT += dt; return; }
       m.t -= dt;
       const f = 1 - U.clamp(m.t / 20, 0, 1);
-      if (m.stand) { m.x = U.lerp(m.stand.fx, m.stand.x, f); m.y = U.lerp(m.stand.fy, m.stand.y, f); m.h = m.stand.a; }
+      // (a drive-through spot: it is turned round on the spot, nose back out to the lane, as a line crew pushes a light aircraft)
+      if (m.stand && m.stand.drive) { if (m.h0 == null) m.h0 = m.h; m.x = U.lerp(m.stand.fx, m.stand.x, f); m.y = U.lerp(m.stand.fy, m.stand.y, f); m.h = m.h0 + U.angWrap(m.stand.a - m.h0) * f; }
+      else if (m.stand) { m.x = U.lerp(m.stand.fx, m.stand.x, f); m.y = U.lerp(m.stand.fy, m.stand.y, f); m.h = m.stand.a; }
       if (m.t <= 0) {
         m.dead = true; kill(S, ap, m);
         if (m.kind !== 'tow') done(ap, m);

@@ -94,7 +94,7 @@ IC.aptAddLayout = function (ap, L, o) {
   for (const s of L.stands || []) {
     const A = aprons[s.ap]; if (!A) continue;
     const c = X(s.x, s.y), l = IC.rectLocal(A, c);
-    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, gate: s.gate ? 1 : undefined, k: A.free.length });
+    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, gate: s.gate ? 1 : undefined, drive: s.drive ? 1 : undefined, k: A.free.length });
   }
   // buildings: terminals and concourses, cargo sheds, hangars, the tower and fire stations, fuel, support
   const blds = (L.blds || []).map(B => {

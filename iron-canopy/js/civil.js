@@ -9,13 +9,19 @@ IC.squawk = octal;
 
 IC.civilInit = function (S) {
   S.civT = 60; S.gaT = 120;
+  // the GA ramps' based aircraft, tied down (garamp.js)
+  IC.gaInit(S);
   // the sky is already busy when the game starts
   for (let i = 0; i < 20; i++) scheduleFlight(S, Math.random());
   for (let i = 0; i < 7; i++) scheduleGA(S, Math.random());
   // business jets already parked at the big airports; the first rare visitor comes within a day or two
   S.biz = { parked: [], t: 1800 };
   S.rare = { next: S.time + U.rand(0.4, 1.4) * 86400, seen: [] };
-  for (const ap of bizAirports(S)) for (let i = 0, n = U.randi(2, 4); i < n; i++) S.biz.parked.push(bizStay(S, ap, IC.BIZ_MIX[U.randi(0, IC.BIZ_MIX.length - 1)][0]));
+  for (const ap of bizAirports(S)) for (let i = 0, n = U.randi(2, 4); i < n; i++) {
+    const type = IC.BIZ_MIX[U.randi(0, IC.BIZ_MIX.length - 1)][0], s = IC.gaFreeSpot(ap, IC.ACTYPES[type]);
+    // (on the GA ramp's small stands where there is one)
+    if (s) IC.gaPark(S, ap, s, { type, biz: 1, until: S.time + U.rand(3, 30) * 3600 }); else S.biz.parked.push(bizStay(S, ap, type));
+  }
 };
 /* ---------- airliners ---------- */
 function minBorderDist(a, b) {
@@ -63,6 +69,9 @@ function scheduleGA(S, progress) {
   const a = U.wpick(towns.map(t => [IC.gaBase(S, t), Math.sqrt(t.pop || 20)]).filter(p => p[0]));
   if (!a) return;
   const type = gaType(a);
+  // from an airport with a GA ramp: one of its based aircraft, taxiing out (garamp.js); none free, nobody flies
+  const ap0 = a.apt && !progress && S.byId[a.apt];
+  if (ap0 && IC.gaRamp(ap0)) return groundGA(S, ap0, a);
   // from a field, some local flights fly circuits round it; a glider goes up behind a tug
   if (a.field && type === 'glider') { const tug = IC.gaLaunch(S, a, a, { progress, type: 'taildrag', alt: 0.7 }); return tug && IC.gaLaunch(S, a, a, { progress, type, tow: tug.id, alt: 1.1, xpdr: false }); }
   if (a.field && Math.random() < 0.3) return IC.gaLaunch(S, a, a, { progress, type: T_CIRCUIT.includes(type) ? type : 'light', circuit: 2 + U.randi(0, 2) });
@@ -75,6 +84,17 @@ function scheduleGA(S, progress) {
   }
   return IC.gaLaunch(S, a, b, { progress, type, careless: Math.random() < 0.12 });
 }
+/* a based aircraft at an airport sets off: a local flight out and back, or to a field or airport 25–180 km away */
+function groundGA(S, ap, a) {
+  const r = U.pick(IC.gaIdle(S, ap)); if (!r) return null;
+  let b = a;
+  if (Math.random() >= 0.4) {
+    const ends = S.asp.fields.map(f => ({ x: f.x, y: f.y, name: f.name, field: f.id })).concat(IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us' && !x.offline && x !== ap).map(x => ({ x: x.x, y: x.y, name: x.name, apt: x.id })));
+    const near = ends.filter(e => U.dist(e, a) > 250 && U.dist(e, a) < 1800);
+    if (near.length) b = U.pick(near);
+  }
+  return IC.gaDepart(S, r, b, { careless: Math.random() < 0.12 });
+}
 /* which light aircraft: clubs fly trainers and tourers most, then private singles and twins, helicopters, working
    aircraft, aerobatics; gliders and microlights only from grass fields */
 const GA_MIX = [['light', 30], ['tourer', 22], ['retract', 9], ['twin', 7], ['taildrag', 5], ['utility', 5], ['helil', 7], ['helim', 3], ['micro', 5], ['glider', 6]];
@@ -85,7 +105,7 @@ IC.GA_MIX = GA_MIX;
 const csHash = cs => { let h = 7; for (const c of cs || '') h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
 /* a circuit round a field: up the runway, across, back along the downwind leg, base and final, `laps` times */
 function circuit(S, a, laps) {
-  const f = a.field && S.asp.fields.find(x => x.id === a.field), ang = f ? f.a : 0, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+  const f = a.field && S.asp.fields.find(x => x.id === a.field), ang = f ? f.a + (IC.fieldDir(S, f) < 0 ? Math.PI : 0) : 0, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
   const P = (u, n) => ({ x: a.x + ux * u + nx * n, y: a.y + uy * u + ny * n }), out = [{ x: a.x, y: a.y }];
   for (let i = 0; i < laps; i++) out.push(P(14, 0), P(20, -8), P(8, -12), P(-12, -12), P(-20, -6), P(-14, 0), { x: a.x, y: a.y });
   return out;
@@ -113,7 +133,8 @@ IC.gaLaunch = function (S, a, b, o) {
   if (T.alt > 4) { t.climbK = 5; t.glide = 19; }   // jets climb and come down faster, on a 3° slope
   for (const k of ['circuit', 'tow', 'form', 'biz', 'visit']) if (o[k]) t[k] = o[k];
   if (f) t.alt = Math.min(t.alt, IC.gaCeiling(S, t));
-  if (!f && a.apt) IC.gaRunway(S, S.byId[a.apt]);
+  if (!f && a.apt && !o.ground) IC.gaRunway(S, S.byId[a.apt]);
+  if (!f && a.field && !o.tow && !T.vtol) fieldOut(S, t, fieldOf(S, a.field));
   return t;
 };
 IC.moveCivil = function (S, t, dt) {
@@ -126,8 +147,13 @@ IC.moveCivil = function (S, t, dt) {
   if (t.vector != null && (t.vectorT -= dt) <= 0) t.vector = null;
   t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);
   if (t.type === 'ga') {
+    // coming in to an airport with a GA ramp: its approach, or handed to the ground (garamp.js)
+    if (t.gaTo && t.gaTo.apt && IC.gaInbound(S, t, dt)) return;
     // a glider behind its tug until it lets go; a display team's wingmen in their places off the leader
     if ((t.tow || t.form) && follow(S, t)) return;
+    // (brief 62) on the ground at a club field, or on its approach and landing run (a touch-and-go on a circuit)
+    if (t.fld && fieldMove(S, t, dt)) return;
+    if (t.gaTo && t.gaTo.field && !t.form && fieldIn(S, t, d)) return;
     // climb gently to its height, stay under terminal areas it is not cleared into, come down near the end
     const fin = t.wps ? t.wps[t.wps.length - 1] : d, left = U.dxy(t.x, t.y, fin.x, fin.y) + (t.wps && t.wps.length > 1 ? 50 : 0), k = t.climbK || 1;
     const want = Math.min(t.gaAlt || 1.2, IC.gaCeiling(S, t), 0.15 + left / (t.glide || 60));
@@ -146,7 +172,7 @@ IC.moveCivil = function (S, t, dt) {
     const hd = t.vector != null ? t.vector : Math.atan2(dy, dx) + (t.drift || 0);
     t.vx = Math.cos(hd) * t.spd; t.vy = Math.sin(hd) * t.spd;
   }
-  if (L <= t.spd * dt + 2 || t.x < -900 || t.y < -900 || t.x > IC.WW + 900 || t.y > IC.WH + 900) { if (t.type === 'ga' && L <= t.spd * dt + 2) { IC.gaArrive(S, t); if (t.biz || t.visit) landed(S, t); } t.dead = true; return; }
+  if (L <= t.spd * dt + 2 || t.x < -900 || t.y < -900 || t.x > IC.WW + 900 || t.y > IC.WH + 900) { if (t.type === 'ga' && L <= t.spd * dt + 2) { const heli = IC.gaHeliDown(S, t); IC.gaArrive(S, t, heli); if (!heli && (t.biz || t.visit)) landed(S, t); } t.dead = true; return; }
   t.x += t.vx * dt; t.y += t.vy * dt;
 };
 /* a towed glider or a wingman keeps its place off the aircraft it follows; a glider lets go after about seven
@@ -212,6 +238,28 @@ IC.bizStands = function (S, ap) {
    light aircraft of the towns that fly from here (two to a small stand) */
 IC.apronLife = function (S, ap) {
   const out = []; if (!S.biz || !ap.parts) return out;
+  // (brief 62) a GA ramp: what is really parked there, and the business terminal behind it
+  const ramp = IC.gaRamp && IC.gaRamp(ap);
+  if (ramp) {
+    const fbo = fboSpot(ap, ramp); if (fbo) out.push(fbo);
+    const by = new Map(ramp.map(s => [s.id, s]));
+    for (const r of S.ga.parked) {
+      if (r.ap !== ap.id || r.away) continue;
+      const pre = gaPre(ap, r); if (r.mv && !pre) continue;
+      const s = by.get(r.sid) || IC.aptStands(ap).find(x => x.id === r.sid); if (!s) continue;
+      // (tied down and covered for the night; by day a based aircraft not flown since yesterday keeps its cover; the
+      // pilot pulls it off a minute after walking out)
+      const cover = pre ? covered(S, r, r.dep) && S.time - r.dep < walkT(ap, r, s) + 60 : covered(S, r, S.time);
+      out.push([r.type, IC.gaLivery(r.n, cover), s.x, s.y, s.a]);
+    }
+  }
+  if (ramp) {
+    // (a rare visitor on a remote stand, as big as it needs)
+    const H = S.rare && S.rare.here;
+    if (H && H.ap === ap.id) { const T = IC.ACTYPES[H.type], L = IC.aptStands(ap).filter(x => (x.zone || 'civil') === 'civil' && !x.contact && !x.cargo && !x.occ && x.hp > 0), s = L.find(x => IC.STAND_FITS[x.size].includes(T.stand)) || L[0];
+      if (s) for (let k = 0; k < (H.n || 1); k++) out.push([H.type, null, s.x + Math.cos(s.a + Math.PI / 2) * (H.n > 1 ? (k - 3) * 0.12 : 0), s.y + Math.sin(s.a + Math.PI / 2) * (H.n > 1 ? (k - 3) * 0.12 : 0), s.a]); }
+    return out;
+  }
   const stands = IC.bizStands(S, ap); if (!stands.length) return out;
   const fbo = fboSpot(ap, stands); if (fbo) out.push(fbo);
   const used = new Set(), H = S.rare && S.rare.here;
@@ -230,6 +278,76 @@ IC.apronLife = function (S, ap) {
   for (let k = 0; k < nGA && i < free.length; k += 2) {
     const s = free[i++];
     for (const sd of [-1, 1]) { const n = ih(idNum(ap.id), k * 2 + sd + 9), type = PARK_TYPES[n % PARK_TYPES.length], off = sd * 0.075; out.push([type, IC.gaLivery(n, !day || n % 3 === 0), s.x + Math.cos(s.a + Math.PI / 2) * off, s.y + Math.sin(s.a + Math.PI / 2) * off, s.a]); }
+  }
+  return out;
+};
+
+/* ---------- (brief 62) the GA ramp's people and vehicles, from what each aircraft on it did and when ---------- */
+const covered = (S, r, t) => !r.biz && !IC.ACTYPES[r.type].vtol && (!gaDay(S, t) || (r.home && t - (r.arr || r.t0) > 14 * 3600 && r.n % 3 === 0));
+/* in its preflight: the pilot is out, the engine not yet started (its move waits at the spot) */
+function gaPre(ap, r) {
+  if (r.mv === 'heli') return true;
+  if (!r.mv) return false;
+  const m = ap.moves.find(x => x.id === r.mv);
+  return !!m && m.kind !== 'arr' && m.phase === 'start';
+}
+IC.gaPre = gaPre;
+/* the FBO's door, and the way a vehicle drives from it to a spot: out onto the ramp, down its middle lane, across */
+function fboDoor(ap) {
+  const ramp = IC.gaRamp(ap), f = ramp && fboSpot(ap, ramp); if (!f) return null;
+  const p = ap.parts.find(q => q.id === ramp[0].apron), c = { x: f[2], y: f[3] }, d = U.dist(c, p) || 1;
+  return { x: c.x + (p.x - c.x) / d * 0.12, y: c.y + (p.y - c.y) / d * 0.12, p, h: Math.atan2(p.y - c.y, p.x - c.x) };
+}
+const walkT = (ap, r, s) => { const D = fboDoor(ap); return D ? U.clamp(U.dist(D, s) / IC.GA.walk, 40, (r.pre || 400) * 0.45) : 60; };
+function rampWay(D, s, spot) {
+  const p = D.p, ux = Math.cos(p.a), uy = Math.sin(p.a), on = q => { const k = (q.x - p.x) * ux + (q.y - p.y) * uy; return { x: p.x + ux * k, y: p.y + uy * k }; };
+  return IC.lifePath([D, on(D), on(s), spot]);
+}
+/* what is out on the ramp now: { key, liv, x, y, h, kind ('veh' | 'person' | 'marshal' | 'chock' | 'tie') } */
+IC.gaScene = function (S, ap) {
+  const out = [], ramp = S.ga && IC.gaRamp(ap); if (!ramp) return out;
+  const D = fboDoor(ap); if (!D) return out;
+  const now = S.time, by = new Map(ramp.map(s => [s.id, s])), V = {};
+  const veh = (key, s, spot, h, ta, td) => { const path = rampWay(D, s, spot); if (IC.turnVehAt({ ta, td, lag: 0 }, path, now, V)) out.push({ key, x: V.x, y: V.y, h: V.moving ? V.h : h, kind: 'veh' }); };
+  const walk = (s, from, to, k, n, liv) => { for (let i = 0; i < n; i++) { const w = U.clamp(k - i * 0.06, 0, 1); if (w <= 0 || w >= 1) continue; out.push({ key: 'person', liv, x: from.x + (to.x - from.x) * w + Math.cos(s.a) * i * 0.012, y: from.y + (to.y - from.y) * w + Math.sin(s.a) * i * 0.012, h: Math.atan2(to.y - from.y, to.x - from.x), kind: 'person' }); } };
+  // a marshaller waves a visitor in to its spot
+  for (const m of ap.moves) if (m.ga && m.kind === 'arr' && m.stand && (m.phase === 'taxi' || m.phase === 'parkin') && U.dist(m, m.stand) < 1.2) {
+    const s = m.stand, T = IC.ACTYPES[m.type]; out.push({ key: 'person', liv: 'marshal', x: s.x + Math.cos(s.a) * (T.len * 0.5 + 0.08), y: s.y + Math.sin(s.a) * (T.len * 0.5 + 0.08), h: s.a + Math.PI, kind: 'marshal' });
+  }
+  for (const r of S.ga.parked) {
+    if (r.ap !== ap.id || r.away) continue;
+    const s = by.get(r.sid); if (!s) continue;
+    const T = IC.ACTYPES[r.type], fx = Math.cos(s.a), fy = Math.sin(s.a), rx = -fy, ry = fx, L = T.len, W = T.span;
+    const at = (f, q) => ({ x: s.x + fx * f + rx * q, y: s.y + fy * f + ry * q });
+    const pre = gaPre(ap, r), e = now - (r.arr || -1e9), door = at(L * (r.biz ? 0.3 : 0.05), -(W * (r.biz ? 0.1 : 0.12) + 0.02)), np = 1 + r.n % 3 + (r.biz ? 1 + r.n % 4 : 0);
+    if (r.mv && !pre) continue;
+    // chocks at the main wheels until the pilot starts up, and the tie-down ropes once it is staying
+    if (!T.vtol && !(pre && now - r.dep > r.pre - 40)) { out.push({ key: 'chock', x: at(-L * 0.05, 0).x, y: at(-L * 0.05, 0).y, h: s.a, w: W * (r.biz ? 0.16 : 0.13), kind: 'chock' }); }
+    if (!T.vtol && !r.biz && !pre && e > 300) out.push({ key: 'tie', x: s.x, y: s.y, h: s.a, len: L, span: W, kind: 'tie' });
+    const wk = walkT(ap, r, s);
+    if (!pre && r.arr) {
+      // in: a visitor's marshaller stays a moment; the pilot and passengers walk in to the FBO; the bowser comes
+      if (!r.home && e < 45) out.push({ key: 'person', liv: 'marshal', x: at(L * 0.5 + 0.08, 0).x, y: at(L * 0.5 + 0.08, 0).y, h: s.a + Math.PI, kind: 'marshal' });
+      if (e > 40 && e < 40 + wk + 30) walk(s, door, D, (e - 40) / wk, np, 'pax');
+      const turbine = r.biz || r.type === 'helim' || r.type === 'utility';
+      if (r.biz) {
+        veh('car', s, at(L * 0.3, -W * 0.5 - 0.06), s.a, r.arr + 20, r.arr + 240);
+        veh('gpu', s, at(L * 0.42, W * 0.12 + 0.04), s.a + Math.PI, r.arr + 30, r.arr + 900);
+        veh('refueller', s, at(-L * 0.05, W * 0.45 + 0.08), s.a, r.arr + 900, r.arr + 1800);
+      } else if (!r.home || r.n % 2) veh(turbine ? 'refueller' : 'bowser', s, at(-L * 0.02, W * 0.5 + 0.07), s.a + Math.PI, r.arr + 420, r.arr + 1020);
+    }
+    if (pre) {
+      // out: the pilot (and passengers) walk out, the cover comes off, the walk round, then in and start-up
+      const d = now - r.dep, P = r.pre;
+      if (d < wk) walk(s, D, door, d / wk, r.biz ? 2 : 1, 'pilot');
+      else if (!r.biz && d < P - 50) { const k = (d - wk) / Math.max(1, P - 50 - wk), a = -Math.PI / 2 - k * Math.PI * 2, rr = Math.max(L, W) * 0.62; out.push({ key: 'person', liv: 'pilot', x: s.x + (fx * Math.cos(a) * L * 0.6 + rx * Math.sin(a) * rr), y: s.y + (fy * Math.cos(a) * L * 0.6 + ry * Math.sin(a) * rr), h: a, kind: 'person' }); }
+      if (!r.biz && np > 1 && d > P * 0.4 && d < P * 0.4 + wk) walk(s, D, door, (d - P * 0.4) / wk, np - 1, 'pax');
+      if (r.biz) {
+        veh('catering', s, at(-L * 0.15, W * 0.1 + 0.05), s.a + Math.PI / 2, r.dep - 60, r.dep + P * 0.5);
+        veh('gpu', s, at(L * 0.42, W * 0.12 + 0.04), s.a + Math.PI, r.dep - 60, r.dep + P - 30);
+        veh('car', s, at(L * 0.3, -W * 0.5 - 0.06), s.a, r.dep + P * 0.55, r.dep + P - 60);
+      }
+    }
   }
   return out;
 };
@@ -253,7 +371,7 @@ function fboSpot(ap, stands) {
    flying; the clubhouse, hangar and pump; a helicopter on its pad; the fuel bowser going from one to the next and
    pilots walking out. All from the field and the clock, nothing kept ---------- */
 const PARK_TYPES = ['light', 'light', 'tourer', 'tourer', 'light', 'retract', 'twin', 'taildrag', 'tourer', 'utility', 'micro', 'glider', 'light', 'retract'];
-const gaDay = S => { const h = ((S.time % 86400) + 86400) % 86400 / 3600; return h >= 7 && h < 19; };
+const gaDay = (S, t) => { const h = (((t == null ? S.time : t) % 86400) + 86400) % 86400 / 3600; return h >= 7 && h < 19; };
 /* items: { key, liv, x, y, h, cover, kind ('plane' | 'kit' | 'veh' | 'person'), tie } */
 IC.fieldLife = function (S, f) {
   const out = [], seed = idNum(f.id), ux = Math.cos(f.a), uy = Math.sin(f.a), nx = -uy, ny = ux, day = gaDay(S);
@@ -261,10 +379,9 @@ IC.fieldLife = function (S, f) {
   const kit = at(1.1, 0.62);
   out.push({ key: 'fieldkit', x: kit.x, y: kit.y, h: f.a, kind: 'kit' });
   // the club's aircraft: a row facing the strip, a second row behind for a big club; the ones out flying are gone
-  const n = 6 + ih(seed, 1) % 8;
+  const n = fieldSlots(f).length;
   let away = 0; for (const t of S.threats) if (!t.dead && t.type === 'ga' && t.gaFrom && t.gaFrom.field === f.id && !t.tow) away++;
-  const hd = Math.atan2(-ny, -nx), slots = [];
-  for (let i = 0; i < n; i++) { const r = i < 8 ? 0 : 1, c = i < 8 ? i : i - 8; slots.push(at(-1.25 + c * 0.16 + r * 0.08, 0.6 + r * 0.2)); }
+  const hd = Math.atan2(-ny, -nx), slots = fieldSlots(f).map(q => at(q.u, q.n));
   for (let i = 0; i < n; i++) {
     if (i >= n - Math.min(away, n - 2)) break;
     const k = ih(seed, i + 3), type = PARK_TYPES[k % PARK_TYPES.length], cover = !day || k % 5 < 2, p = slots[i];
@@ -288,6 +405,99 @@ IC.fieldLife = function (S, f) {
   }
   return out;
 };
+
+/* the club's parking row: where each of its aircraft stands, along the strip ({ u, n } in the field's frame) */
+function fieldSlots(f) {
+  const n = 6 + ih(idNum(f.id), 1) % 8, out = [];
+  for (let i = 0; i < n; i++) { const r = i < 8 ? 0 : 1, c = i < 8 ? i : i - 8; out.push({ u: -1.25 + c * 0.16 + r * 0.08, n: 0.6 + r * 0.2 }); }
+  return out;
+}
+
+/* ---------- (brief 62) a club field's take-offs and landings: from the row along the grass to the strip, back down
+   it to the end, a run-up, the take-off run; in, a final from 1.2 km out, the landing run, and back to the row.
+   On a circuit each pass but the last is a touch-and-go. Into the wind, both ways ---------- */
+IC.FIELD = { taxi: 0.06, accel: 0.018, decel: 0.03, fin: 12, td: 3.8, line: 4.2, glide: 0.15 };
+const fieldOf = (S, id) => S.asp && S.asp.fields.find(x => x.id === id);
+IC.fieldDir = (S, f) => (S.wind && S.wind.kt > 2 ? Math.cos(S.wind.dir - f.a) : 1) >= 0 ? 1 : -1;
+const fAt = (f, u, n) => ({ x: f.x + Math.cos(f.a) * u - Math.sin(f.a) * n, y: f.y + Math.sin(f.a) * u + Math.cos(f.a) * n });
+const vLiftOf = T => U.clamp(T.cruise * 0.5, 0.18, 0.34);
+/* the slot in the row that the aircraft taking off (or coming back) leaves (or takes) */
+function rowSlot(S, F, t) {
+  const sl = fieldSlots(F); let away = 0;
+  for (const x of S.threats) if (!x.dead && x.type === 'ga' && x.gaFrom && x.gaFrom.field === F.id && !x.tow) away++;
+  const home = t.gaFrom && t.gaFrom.field === F.id;
+  return home ? sl[U.clamp(sl.length - away, 0, sl.length - 1)] : { u: sl[0].u - 0.18, n: sl[0].n };
+}
+function fieldOut(S, t, F) {
+  if (!F) return;
+  const e = IC.fieldDir(S, F), q = rowSlot(S, F, t), K = IC.FIELD;
+  const pts = [fAt(F, q.u, q.n), fAt(F, q.u, 0.45), fAt(F, 0, 0.45), fAt(F, 0, 0), fAt(F, -e * K.line, 0)];
+  Object.assign(t, { x: pts[0].x, y: pts[0].y, alt: 0 });
+  t.fld = { f: F.id, ph: 'taxi', pts, i: 1, e, v: 0, w: 0, tg: false };
+}
+/* coming in: once the field is the next point and within 4 km, the approach (true while it is being flown here) */
+function fieldIn(S, t, d) {
+  const F = fieldOf(S, t.gaTo.field), T = IC.ACTYPES[t.acType] || IC.ACTYPES.light; if (!F || T.vtol || t.tow) return false;
+  if (U.dxy(d.x, d.y, F.x, F.y) > 0.5 || U.dxy(t.x, t.y, F.x, F.y) > 40) return false;
+  const e = IC.fieldDir(S, F), K = IC.FIELD, u = (t.x - F.x) * Math.cos(F.a) + (t.y - F.y) * Math.sin(F.a), n = -(t.x - F.x) * Math.sin(F.a) + (t.y - F.y) * Math.cos(F.a);
+  // (from the far side, a wide base leg first, so it does not turn onto final over the field)
+  const pts = (u * e > -K.fin + 2 ? [fAt(F, -e * (K.fin + 4), (n >= 0 ? 1 : -1) * 7)] : []).concat([fAt(F, -e * K.fin, 0)]);
+  t.fld = { f: F.id, ph: 'app', pts, i: 0, e, v: t.spd, w: 0, tg: !!(t.wps && t.wps.length > 1) };
+  return fieldMove(S, t, 0);
+}
+function fieldMove(S, t, dt) {
+  const G = t.fld, F = fieldOf(S, G.f), K = IC.FIELD; if (!F) { t.fld = null; return false; }
+  const T = IC.ACTYPES[t.acType] || IC.ACTYPES.light, h0 = F.a + (G.e < 0 ? Math.PI : 0), vl = vLiftOf(T);
+  const go = (hd, v) => { t.vx = Math.cos(hd) * v; t.vy = Math.sin(hd) * v; t.x += t.vx * dt; t.y += t.vy * dt; };
+  const toward = (q, v) => { const L = U.dxy(t.x, t.y, q.x, q.y); if (L <= v * dt + 1e-4) { t.x = q.x; t.y = q.y; return true; } go(Math.atan2(q.y - t.y, q.x - t.x), v); return false; };
+  switch (G.ph) {
+    case 'taxi': case 'in': {
+      t.alt = 0;
+      if (toward(G.pts[G.i], K.taxi) && ++G.i >= G.pts.length) {
+        if (G.ph === 'in') { IC.gaArrive(S, t, false); if (t.biz || t.visit) landed(S, t); t.dead = true; return true; }
+        // lined up at the end of the strip: a run-up for a piston engine, then the take-off run
+        G.ph = 'line'; G.w = T.vtol || t.acType === 'glider' ? 3 : 25;
+      }
+      return true;
+    }
+    case 'line': t.alt = 0; t.vx = Math.cos(h0) * 1e-3; t.vy = Math.sin(h0) * 1e-3; if ((G.w -= dt) <= 0) { G.ph = 'roll'; G.v = 0; } return true;
+    case 'roll':
+      // the take-off run, and off at its lift-off speed (it climbs out as before)
+      G.v += K.accel * dt; t.alt = 0; go(h0, G.v);
+      if (G.v >= vl) { t.fld = null; t.alt = 0.002; }
+      return true;
+    case 'app': {
+      t.alt += U.clamp(K.glide - t.alt, -0.006 * dt, 0.003 * dt);
+      if (toward(G.pts[G.i], t.spd) && ++G.i >= G.pts.length) { G.ph = 'fin'; G.v = t.spd; }
+      return true;
+    }
+    case 'fin': {
+      // down the final at about 5°, slowing to its approach speed, to touch down past the threshold
+      const Th = fAt(F, -G.e * K.td, 0), Lf = U.dxy(t.x, t.y, Th.x, Th.y), va = vl * 1.15;
+      G.v += U.clamp(va - G.v, -0.03 * dt, 0.03 * dt);
+      t.alt += U.clamp(K.glide * U.clamp(Lf / (K.fin - K.td), 0, 1) - t.alt, -0.012 * dt, 0);
+      if (toward(Th, G.v)) { G.ph = 'land'; t.alt = 0; }
+      return true;
+    }
+    case 'land': {
+      t.alt = 0;
+      if (G.tg) {
+        // a touch-and-go: a few seconds on the wheels, power on, and away on the next lap
+        G.w += dt; go(h0, G.v);
+        if (G.w > 4) { G.ph = 'roll'; G.v = Math.max(G.v * 0.8, vl * 0.7); if (t.wps && t.wps.length > 1) { t.wps.shift(); t.dest = t.wps[0]; } }
+        return true;
+      }
+      G.v = Math.max(K.taxi, G.v - K.decel * dt); go(h0, G.v);
+      if (G.v <= K.taxi) {
+        // off the strip at the middle, and back to the row
+        const q = rowSlot(S, F, t), u = (t.x - F.x) * Math.cos(F.a) + (t.y - F.y) * Math.sin(F.a);
+        G.pts = (u * G.e < 0 ? [fAt(F, 0, 0)] : []).concat([fAt(F, 0, 0.45), fAt(F, q.u, 0.45), fAt(F, q.u, q.n)]); G.i = 0; G.ph = 'in';
+      }
+      return true;
+    }
+  }
+  return false;
+}
 
 /* ---------- rare visitors: now and then something one of a kind comes to one of our airports for a few hours ---------- */
 IC.RARE = {
@@ -381,6 +591,7 @@ IC.civil = function (S, dt) {
   const gaWant = war ? 2 : Math.min(20, 8 + Math.round(S.asp.fields.length * 0.5));
   if (S.gaT <= 0) { S.gaT = ga < gaWant ? U.rand(120, 320) : U.rand(600, 1200); scheduleGA(S); }
   if (S.biz) bizTraffic(S, dt, war);
+  IC.gaTick(S, dt);
   if (S.rare) rareVisitors(S, war);
   // airspace closure: flights in our airspace divert out of it, by the nearest border crossing
   if (S.airspace === 'closed') for (const t of S.threats) if (t.d.civil && !t.dead && !t.hostileCiv && !t.diverted && IC.inHome(t.x, t.y)) { t.diverted = true; const xo = S.world.crossings.slice().sort((p, q) => U.dist(p, t) - U.dist(q, t))[0], out = xo ? xo.far : { x: 0, y: 0 }; t.dest = { x: out.x, y: out.y, name: 'diversion', edge: true }; t.route = [t.dest]; t.wps = [t.dest]; t.toApt = null; t.appr = false; t.plan = { a: { x: t.x, y: t.y }, b: t.dest, cs: t.cs, pts: [{ x: t.x, y: t.y }, t.dest] }; }

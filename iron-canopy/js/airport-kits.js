@@ -116,6 +116,21 @@ IC.kitCurve = function (B, o) {
 /* a straight pier from p0 to p1, bw either side of its spine, with stands along both faces (or one) from s0 along
    it, bridges to its walls, aprons, and a taxilane along each face run on past its tip and round it. Returns the
    lanes (their ends are where taxiways join) */
+/* (brief 62) A GA ramp: a taxilane down its middle from its entry at c along heading o.rot, small stands for
+   business jets nearest the entry (o.biz either side), then rows of tie-downs (o.n), every nose to the lane so the
+   aircraft pull out forward. Returns { join (the lane's open end), end (its far end), x1 (its length) } */
+IC.kitGA = function (B, o) {
+  const c = o.c || pt(0, 0), ca = Math.cos(o.rot || 0), sa = Math.sin(o.rot || 0), W = (x, y) => pt(c.x + x * ca - y * sa, c.y + x * sa + y * ca);
+  const T = IC.STAND.xs, Sb = IC.STAND.s, half = LANE_W / 2 + 0.04, nb = o.biz || 0, per = Math.ceil((o.n || 10) / 2);
+  const xb = nb ? nb * (Sb.w + 0.02) : 0, x1 = 0.25 + xb + per * (T.w + 0.02) + 0.12, deep = half + (nb ? Sb.d : T.d) + 0.08;
+  const ai = B.apron([W(0, -deep), W(x1, -deep), W(x1, deep), W(0, deep)], { zone: 'light', name: o.name || 'GA ramp' });
+  const lane = [W(0, 0)];
+  const row = (x0, k, S0, size) => { for (let i = 0; i < k; i++) { const x = x0 + (S0.w + 0.02) * (i + 0.5), via = W(x, 0); lane.push(via);
+    for (const sg of [1, -1]) { const v = B.node(via); B.stand(ai, W(x, sg * (half + S0.d / 2)), (o.rot || 0) - sg * Math.PI / 2, size, v); B.L.stands[B.L.stands.length - 1].drive = 1; } } };
+  row(0.25, nb, Sb, 's'); row(0.25 + xb, per, T, 'xs');
+  lane.push(W(x1 - 0.06, 0)); B.lane(lane);
+  return { join: W(0, 0), end: W(x1 - 0.06, 0), x1, deep };
+};
 IC.kitPier = function (B, o) {
   const p0 = o.p0, p1 = o.p1, L = U.dist(p0, p1), ux = (p1.x - p0.x) / L, uy = (p1.y - p0.y) / L, nx = -uy, ny = ux, bw = o.bw || 0.22, S0 = IC.STAND[o.size || 'm'];
   const W = (s, t) => pt(p0.x + ux * s + nx * t, p0.y + uy * s + ny * t), out = { lanes: [], tip: [] };

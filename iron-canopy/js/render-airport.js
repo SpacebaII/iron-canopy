@@ -202,6 +202,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // aircraft moving
   if (z >= 0.5) for (const m of ap.moves) {
     if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
+    // (brief 62) a light aircraft in its preflight is still drawn as parked, with its cover (IC.apronLife)
+    if (m.ga && m.kind !== 'arr' && m.phase === 'start') continue;
     const air = m.phase === 'final';
     // (round 5c) from the middle zoom a taxiing aircraft leaves a short fading trail, so a busy apron reads as busy
     if (IC.FOCUS.polish && !air && z > 2 && z < 40 && !m.holding && !['push', 'start', 'wait', 'parkin', 'land'].includes(m.phase) && m.T) {
@@ -494,6 +496,13 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
   if (tiles) {
     if (s.contact && !NOLBL) jetBridge(g, s, S0, px, z);
     if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
+    g.restore(); return;
+  }
+  // a tie-down: a yellow T where the nose wheel stops and the wing rings, no stand box
+  if (s.size === 'xs') {
+    g.strokeStyle = YEL; g.lineWidth = Math.max(0.004, 0.6 * px);
+    g.beginPath(); g.moveTo(-0.05, 0); g.lineTo(0.03, 0); g.moveTo(0.03, -0.02); g.lineTo(0.03, 0.02); g.stroke();
+    if (fine) { g.fillStyle = 'rgba(236,236,226,0.6)'; for (const y of [-0.045, 0.045]) { g.beginPath(); g.arc(0, y, 0.004, 0, 7); g.fill(); } }
     g.restore(); return;
   }
   g.strokeStyle = 'rgba(236,236,226,0.35)'; g.lineWidth = Math.max(0.006, 0.6 * px);

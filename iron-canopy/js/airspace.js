@@ -1318,9 +1318,10 @@ IC.gaDelayNote = function (S, ap, wait) {
   ap.gaNoteT = S.time; ap.gaWait = 0;
   IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
 };
-IC.gaArrive = function (S, t) {
+IC.gaArrive = function (S, t, ground) {
   const b = t.gaTo; if (!b) return;
-  if (b.apt && S.byId[b.apt]) IC.gaRunway(S, S.byId[b.apt]);
+  // (one that lands through the ground movements holds the runway there, not by the timer: garamp.js)
+  if (b.apt && S.byId[b.apt]) { if (ground) S.budget += 0.02; else IC.gaRunway(S, S.byId[b.apt]); }
   const f = b.field && S.asp.fields.find(x => x.id === b.field);
   if (f) { f.moves++; f.today++; S.budget += 0.01; }
 };

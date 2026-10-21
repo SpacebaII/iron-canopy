@@ -1038,7 +1038,8 @@ function dayLog(S, ap) {
 }
 IC.aptDayLog = dayLog;
 IC.on((S, type, d) => {
-  if (type !== 'rwMove' || !d.ap || d.ap.kind !== 'airport' || !d.type || IC.ACTYPES[d.type].mil) return;
+  // (the airlines' movements: light aircraft and business jets from the GA ramp are not on the timetable, brief 62)
+  if (type !== 'rwMove' || !d.ap || d.ap.kind !== 'airport' || !d.type || IC.ACTYPES[d.type].mil || IC.ACTYPES[d.type].ga || IC.ACTYPES[d.type].biz) return;
   const L = dayLog(S, d.ap), h = Math.floor(hourOf(S) / 3600);
   if (d.k === 'arr' || d.k === 'dep') L[d.k][h]++;
 });

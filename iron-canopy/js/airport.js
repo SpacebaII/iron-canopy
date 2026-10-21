@@ -727,7 +727,7 @@ IC.aptStats = function (S, ap) {
   const G = IC.aptGraph(ap);
   const alive = k => ap.parts.filter(p => p.kind === k && p.built && p.hp > p.max * 0.25);
   const rws = alive('runway');
-  const st = { rwy: [], stands: { s: 0, m: 0, l: 0, xl: 0 }, standsFree: { s: 0, m: 0, l: 0, xl: 0 }, warn: [], pax: 0, cargo: 0, fuelCap: 0, shelters: 0, zones: {}, arrPerHour: 0, depPerHour: 0 };
+  const st = { rwy: [], stands: { xs: 0, s: 0, m: 0, l: 0, xl: 0 }, standsFree: { xs: 0, s: 0, m: 0, l: 0, xl: 0 }, warn: [], pax: 0, cargo: 0, fuelCap: 0, shelters: 0, zones: {}, arrPerHour: 0, depPerHour: 0 };
   const stands = [];
   for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) stands.push(s);
   // which stands can actually reach a runway
@@ -749,7 +749,7 @@ IC.aptStats = function (S, ap) {
     if (!ok) continue;
     st.stands[s.size]++;
     if (!s.occ) st.standsFree[s.size]++;
-    const z = st.zones[s.zone || 'civil'] = st.zones[s.zone || 'civil'] || { s: 0, m: 0, l: 0, xl: 0, contact: 0, remote: 0, free: 0 };
+    const z = st.zones[s.zone || 'civil'] = st.zones[s.zone || 'civil'] || { xs: 0, s: 0, m: 0, l: 0, xl: 0, contact: 0, remote: 0, free: 0 };
     z[s.size]++; z[s.contact ? 'contact' : 'remote']++; if (!s.occ) z.free++;
   }
   // runways and taxiways closed for works, and pavement breaking up under aircraft too heavy for it
@@ -942,12 +942,14 @@ IC.aptFits = function (ap, type) {
 IC.aptProvides = function (ap) {
   const st = ap.st || {}, ok = p => p.built && p.hp > p.max * 0.25;
   const out = { rwy: st.longest || 0, maxType: st.maxType || null, tower: !!st.tower, fire: !!st.fire, gradar: !!st.gradar, ils: st.ilsEnds || 0,
-    stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0),
+    stands: { xs: 0, s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0),
     hangar: 0, hangarFree: 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none', fuelDeps: st.fuelDeps || 0, deice: 0,
-    road: !!(ap.land && ap.land.road), parking: 0, transit: false, hotel: 0, moves: st.movesPerHour || 0 };
+    road: !!(ap.land && ap.land.road), parking: 0, transit: false, hotel: 0, moves: st.movesPerHour || 0, light: 0 };
   for (const p of ap.parts) {
     if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
       if (s.hp <= 0 || s.linked === false || s.zone === 'mil') continue;
+      // (a GA ramp's spots are not the airlines': brief 62)
+      if (s.zone === 'light') { out.light++; continue; }
       out.stands[s.size]++;
       if (s.zone === 'cargo' || s.cargo) out.cargoStands++;
       else if (s.contact) out.gates++; else out.remote++;
@@ -1113,6 +1115,8 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   // airliners parked at their stands
   for (const a of ap.parts) if (a.stands) for (const s of a.stands) {
     if (!s.occ || U.dxy(s.x, s.y, x, y) > rb + 0.3) continue;
+    // (a light aircraft or business jet on the GA ramp: garamp.js)
+    if (String(s.occ).startsWith('ga')) { if (Math.random() < 0.8) { IC.gaLost && IC.gaLost(S, s.occ); S.wrecks.push({ x: s.x, y: s.y, type: 'aircraft', t: S.time, h: s.a }); IC.addFire(S, s.x, s.y, 0.3, 1500); s.occ = null; } continue; }
     if (Math.random() < 0.75) { IC.emit(S, 'tailLost', { ap, tail: s.occ, why: 'destroyed at the gate' }); S.wrecks.push({ x: s.x, y: s.y, type: 'airliner', t: S.time, h: s.a }); IC.addFire(S, s.x, s.y, 0.8, 3000); s.occ = null; acLost++; }
   }
   ap.dirty = true;
@@ -1732,6 +1736,15 @@ IC.layoutAirport = function (ap, template, a) {
     for (const j of K.joins) tx([[j.x, j.y], [j.x, k.par]]);
     return { x0: k.x + K.x0, x1: k.x + K.x1, y: k.lane - T.ymin, D: K.D };
   };
+  // (brief 62) a GA ramp from the kit, its lane's open end joined to the taxiway at `to`
+  const ga = g => {
+    const B = IC.layoutBuilder(), K = IC.kitGA(B, { n: g.n, biz: g.biz, c: { x: g.x, y: g.y }, rot: g.rot || 0 });
+    const c = W(0, 0); IC.aptAddLayout(ap, B.L, { x: c.x, y: c.y, rot: a });
+    tx(g.to.concat([[K.join.x, K.join.y]]));
+    // (a second way in and out at the far end, so an arrival turning in never meets a departure nose to nose)
+    if (g.to2) tx([[K.end.x, K.end.y]].concat(g.to2));
+    return K;
+  };
   const nm = (i) => { const h = Math.round(((a * 180 / Math.PI + 360) % 180) / 10) || 18; const x = String(h).padStart(2, '0'), y = String((h + 18) % 36 || 36).padStart(2, '0'); return `Runway ${x}/${y}${i ? ' ' + 'LR'[i - 1] : ''}`; };
   if (template === 'intl') {
     ils(rw(-17, 17, 0, nm()), ['a', 'b']);
@@ -1746,6 +1759,8 @@ IC.layoutAirport = function (ap, template, a) {
     bld('tower', T.x1 + 0.45, T.y + T.D - 0.4); bld('fire', 0, -3.2); bld('atc', -8, -3.2);
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
+    // the GA ramp, south of the runway's east end: light aircraft and business jets away from the airliners
+    ga({ n: 18, biz: 3, x: 15.6, y: -3.2, rot: Math.PI, to: [[16.8, 0], [16.8, -3.2]], to2: [[11.6, -3.2], [11.6, 0]] });
   } else if (template === 'regional_bad') {
     // one stub in the middle of the runway: every departure backtracks, every landing blocks the runway for minutes
     rw(-12, 12, 0, nm());
@@ -1760,6 +1775,7 @@ IC.layoutAirport = function (ap, template, a) {
     tx([[-6, 1.7], [-6, 2.25]]);
     const T = kit({ n: 6, piers: 0, x: 0, lane: 2.3, par: 1.7, x0: -4.4, x1: 3.6 });
     bld('fuel', 4.6, 3.6); bld('tower', T.x0 - 0.4, T.y + 0.3); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
+    ga({ n: 10, biz: 1, x: 6.6, y: 2.45, rot: 0, to: [[6, 1.7], [6, 2.45]], to2: [[9.2, 2.45], [9.2, 0]] });
   } else if (template === 'mil_mothball') {
     // a half-closed base: a parallel taxiway to one end only, clustered fuel, no shelters, no alert pad
     rw(-13, 13, 0, nm());
