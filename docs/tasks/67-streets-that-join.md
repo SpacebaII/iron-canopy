@@ -30,6 +30,7 @@ On the 4242 map, before and after:
 
 - What is left is mostly in the real old towns, whose mapped streets meet at staggered junctions a few metres apart (real ones do too), and in the village lanes, which cross each other a few metres from where one leaves a road.
 - The roundabouts are still one node in the drive graph: the vehicles drawn there go round the ring, but a line drawn along the graph crosses the island.
+- The passes cost about 1.5 s of generation (10.0 s against 8.3 s here); the generation budget is 17 s, since GitHub's machines measured 15.6 s.
 - The changes move streets, so the world's fingerprints change and saves from before are refused, as with any change to world generation.
 
 ## Done when
