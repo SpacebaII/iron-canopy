@@ -238,6 +238,7 @@ function buildGraph(W) {
     if (j.kind === 'rb') G.nodes[n].sig = false;
     if (j.kind === 'tj' && G.nodes[n].out.length >= 4) G.nodes[n].sig = true;
   }
+  rings(W, G, kq);
   // a spatial index of nodes
   G.nb = new Map(); G.NB = 6;
   G.nodes.forEach((n, i) => { const k = key2(Math.floor(n.x / G.NB), Math.floor(n.y / G.NB)); let L = G.nb.get(k); if (!L) G.nb.set(k, L = []); L.push(i); });
@@ -251,6 +252,92 @@ function buildGraph(W) {
   return G;
 }
 IC.driveGraph = W => W._dg || (W._dg = buildGraph(W));
+/* a roundabout is driven round its ring (brief 67): every road into it is cut where it meets the ring, and the pieces of
+   ring between are one-way links, anticlockwise as seen from above for right-hand traffic, so a car follows its lane
+   round the island instead of through it */
+function rings(W, G, kq) {
+  const RJ = IC.roadJoins && IC.roadJoins(W); if (!RJ) return;
+  const half = k => ((IC.ROAD_SPEC[k] || IC.ROAD_SPEC.lc).w) / 2, gone = new Set();
+  for (const site of RJ.rbs) {
+    const g = IC.rbGeom(site, half), R = g.r, C = g.C, inR = Q => Math.hypot(Q.x - C.x, Q.y - C.y) < R;
+    // the node in the middle, where the roads meet (a dumbbell's ring sits where its slip roads were tied on)
+    let n = G.at.get(kq(C.x, C.y) * 4) ?? -1;
+    if (n < 0) { let bd = R * 0.6; for (let i = 0; i < G.nodes.length; i++) { const Q = G.nodes[i]; if (Math.abs(Q.x - C.x) < bd && Math.abs(Q.y - C.y) < bd && Q.out.length >= 3) { const d = Math.hypot(Q.x - C.x, Q.y - C.y); if (d < bd) { bd = d; n = i; } } } }
+    if (n < 0 || G.nodes[n].out.length < 2) continue;
+    // everything inside the ring (an avenue's crossings a few metres from the middle, a street's loop) is the ring's
+    const inside = new Set([n]);
+    G.nodes.forEach((Q, i) => { if (Math.abs(Q.x - C.x) < R && Math.abs(Q.y - C.y) < R && inR(Q) && Q.out.length) inside.add(i); });
+    // a road from the ring outwards, from its last point inside: where it leaves the circle (the far root of
+    // |a + t (b − a) − C| = R), then on; null if it comes back in
+    const outOf = P => {
+      let j = 1; while (j < P.length && inR(P[j])) j++;
+      if (j >= P.length || P.slice(j).some(inR)) return null;
+      const a = P[j - 1], b = P[j], dx = b.x - a.x, dy = b.y - a.y, ex = a.x - C.x, ey = a.y - C.y;
+      const A2 = dx * dx + dy * dy || 1e-9, B2 = ex * dx + ey * dy, t = (-B2 + Math.sqrt(Math.max(0, B2 * B2 - A2 * (ex * ex + ey * ey - R * R)))) / A2;
+      return [{ x: a.x + dx * t, y: a.y + dy * t }].concat(P.slice(j));
+    };
+    const cuts = [], drop = [], cut = (lk, out, rest) => cuts.push({ lk, out, q: rest[0], rest, ang: Math.atan2(rest[0].y - C.y, rest[0].x - C.x) });
+    let ok = true;
+    for (const m of inside) for (const li of G.nodes[m].out) {
+      const lk = G.links[li]; if (gone.has(li) || cuts.some(c => c.lk === lk)) continue;
+      const ia = inside.has(lk.a), ib = inside.has(lk.b);
+      if (ia && ib) { if (!drop.includes(li)) drop.push(li); continue; }
+      const rest = outOf(ia ? lk.pts : lk.pts.slice().reverse());
+      if (!rest) { ok = false; break; }   // (in and out again: left as it is)
+      cut(lk, ia ? 'a' : 'b', rest);
+    }
+    // a street that runs across the circle without a junction inside it is cut in two, both halves ending on the ring
+    if (ok) for (const lk of G.links) {
+      if (gone.has(lk.id) || inside.has(lk.a) || inside.has(lk.b) || lk.ref.ring) continue;
+      if (Math.min(Math.hypot(G.nodes[lk.a].x - C.x, G.nodes[lk.a].y - C.y), Math.hypot(G.nodes[lk.b].x - C.x, G.nodes[lk.b].y - C.y)) > R + lk.len) continue;
+      const i0 = lk.pts.findIndex(inR); if (i0 < 0) continue;
+      let i1 = lk.pts.length - 1; while (!inR(lk.pts[i1])) i1--;
+      const head = outOf(lk.pts.slice(0, i0 + 1).reverse()), tail = outOf(lk.pts.slice(i1));
+      if (!head || !tail) { ok = false; break; }
+      cut(lk, 'b', head); cut({ half: lk, b: lk.b }, 'a', tail);   // (the second half is made once the ring is)
+    }
+    if (!ok || cuts.length < 2) continue;
+    // ring points: one per road in (roads in a car's length apart share one)
+    cuts.sort((p, q) => p.ang - q.ang);
+    const pts = [];
+    for (const c of cuts) { const last = pts[pts.length - 1]; if (last && Math.hypot(last.q.x - c.q.x, last.q.y - c.q.y) < 0.03) { c.node = last; continue; } c.node = c; pts.push(c); }
+    if (pts.length > 1 && Math.hypot(pts[0].q.x - pts[pts.length - 1].q.x, pts[0].q.y - pts[pts.length - 1].q.y) < 0.03) { const l = pts.pop(); for (const c of cuts) if (c.node === l) c.node = pts[0]; }
+    if (pts.length < 2) continue;
+    for (const li of drop) gone.add(li);
+    const rank = G.nodes[n].rank;
+    for (const m of inside) G.nodes[m].out = [];
+    pts.forEach(p => {
+      p.id = G.nodes.length; G.nodes.push({ x: p.q.x, y: p.q.y, out: [], rank, jk: 'rb', sig: false, ring: site });
+      G.at.set(kq(p.q.x, p.q.y) * 4, p.id);
+    });
+    for (const c of cuts) {
+      if (c.lk.half) { const h = c.lk.half, ob = G.nodes[c.lk.b].out; c.lk = Object.assign({}, h, { id: G.links.length, b: c.lk.b }); G.links.push(c.lk); ob[ob.indexOf(h.id)] = c.lk.id; }
+      const lk = c.lk, id = c.node.id, P = c.rest.slice(); P[0] = { x: c.node.q.x, y: c.node.q.y };
+      if (c.out === 'a') { lk.a = id; lk.pts = P; } else { lk.b = id; lk.pts = P.reverse(); }
+      lk.cum = cumOf(lk.pts); lk.len = lk.cum[lk.cum.length - 1];
+      G.nodes[id].out.push(lk.id);
+    }
+    // the ring, from each point to the next one round (angles falling: anticlockwise on the map)
+    for (let i = 0; i < pts.length; i++) {
+      const A = pts[i], B = pts[(i - 1 + pts.length) % pts.length];
+      const a0 = Math.atan2(A.q.y - C.y, A.q.x - C.x); let a1 = Math.atan2(B.q.y - C.y, B.q.x - C.x);
+      while (a1 >= a0) a1 -= Math.PI * 2;
+      const m = Math.max(2, Math.ceil((a0 - a1) / 0.15)), arc = [];
+      for (let k = 0; k <= m; k++) { const a = a0 + (a1 - a0) * k / m; arc.push({ x: C.x + Math.cos(a) * R, y: C.y + Math.sin(a) * R }); }
+      arc[0] = { x: A.q.x, y: A.q.y }; arc[m] = { x: B.q.x, y: B.q.y };
+      const cum = cumOf(arc), lk = { id: G.links.length, a: A.id, b: B.id, pts: arc, cum, len: cum[cum.length - 1], cls: 'ramp', C: CLS.ramp, one: 1, ref: { ring: site }, city: null, cul: false };
+      G.links.push(lk); G.nodes[A.id].out.push(lk.id); G.nodes[B.id].out.push(lk.id);
+    }
+  }
+  // what the rings swallowed goes: links inside them and the nodes left with no road
+  const L = G.links.filter(lk => !gone.has(lk.id)), lid = new Map(L.map((lk, i) => [lk.id, i]));
+  const keep = G.nodes.map(N => N.out.some(i => !gone.has(i))), nid = new Int32Array(G.nodes.length).fill(-1), NN = [];
+  G.nodes.forEach((N, i) => { if (keep[i]) { nid[i] = NN.length; NN.push(N); } });
+  for (const N of NN) N.out = N.out.filter(i => !gone.has(i)).map(i => lid.get(i));
+  L.forEach((lk, i) => { lk.id = i; lk.a = nid[lk.a]; lk.b = nid[lk.b]; });
+  for (const [k, i] of G.at) { if (nid[i] < 0) G.at.delete(k); else G.at.set(k, nid[i]); }
+  G.links = L; G.nodes = NN;
+}
 /* ---------- driving it as a car would (tools/road-audit.js, the tests) ----------
    Where a car following its lane cannot go on: an end that leads nowhere (not a turning head, a bank, a square, a
    farm, a place or the border), an end a few metres short of a road it should meet, a piece between two junctions

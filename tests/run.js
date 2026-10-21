@@ -116,6 +116,32 @@ test('roads: a car can follow every street in its lane: ends meet a road or turn
     assert(c.kink < n * 0.012, say('kink') + ` of ${n} links`);
   }
 }, false, 'world');
+test('roads: a roundabout is driven round its ring, one way and anticlockwise, and no road runs through its island (brief 67)', () => {
+  const W = world(4242), G = IC.driveGraph(W), RJ = IC.roadJoins(W);
+  let home = 0, built = 0;
+  for (const site of RJ.rbs) {
+    const C = { x: site.x, y: site.y }, R = IC.rbGeom(site, k => IC.ROAD_SPEC[k].w / 2).r, d = Q => Math.hypot(Q.x - C.x, Q.y - C.y);
+    if (!G.nodes.some(N => d(N) < R * 1.5)) continue;   // (abroad: no drive graph there)
+    home++;
+    const ring = G.nodes.map((N, i) => N.ring === site ? i : -1).filter(i => i >= 0);
+    if (!ring.length) continue;
+    built++;
+    // the ring links go one way from each point to the next, all the way round once
+    const arcs = G.links.filter(lk => lk.ref.ring === site);
+    assert(arcs.length === ring.length && arcs.every(lk => lk.one === 1), `${ring.length} points but ${arcs.length} ring links, or one runs both ways`);
+    let turn = 0;
+    for (const lk of arcs) for (let i = 1; i < lk.pts.length; i++) { let da = Math.atan2(lk.pts[i].y - C.y, lk.pts[i].x - C.x) - Math.atan2(lk.pts[i - 1].y - C.y, lk.pts[i - 1].x - C.x); while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; turn += da; }
+    assert(Math.abs(turn + 2 * Math.PI) < 0.01, `a ring turns ${(turn * 180 / Math.PI).toFixed(0)}° round its island, not once anticlockwise`);
+    let n = ring[0], seen = 0;
+    do { const lk = arcs.find(l => l.a === n); assert(lk, 'a ring point has no way on round the ring'); n = lk.b; seen++; } while (n !== ring[0] && seen <= ring.length);
+    assert(seen === ring.length, 'the ring is not one loop through all its points');
+    // every road into it ends on the ring, and none crosses the island
+    for (const i of ring) assert(G.nodes[i].out.some(li => !G.links[li].ref.ring), 'a ring point with no road on it');
+    for (const lk of G.links) if (!lk.ref.ring) for (const P of lk.pts) assert(d(P) > R * 0.95, `a ${lk.cls} runs through a roundabout's island`);
+  }
+  // (one at home stays a single node: an avenue that leaves the ring and comes back into it)
+  assert(home > 50 && built >= home * 0.95, `only ${built} of ${home} roundabouts are driven round their ring`);
+}, false, 'world');
 test('world: city streets follow a direction field, end on a street, a head, a bank or a square, cross the river on a few bridges, and blocks are sized by district (brief 53)', () => {
   const med = a => { const s = a.slice().sort((p, q) => p - q); return s.length ? s[s.length >> 1] : 0; };
   for (const seed of [4242, 7]) {
@@ -936,8 +962,9 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   const T = S.traffic, G = T.G;
   for (let i = 0; i < 4; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
   // the busiest stretch of main road out in the country (over 2 km long, not a town's piece), and the junction at
-  // its start (busy, but not already jammed: a jam cannot grow any longer)
-  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && !L.l.ref.edge.city && !L.l.city && L.l.len > 20 && L.ld[0] > 0.3 && L.ld[0] < 0.95).sort((a, b) => b.ld[0] - a.ld[0])[0];
+  // its start (busy, but not already jammed: a jam cannot grow any longer; not on a roundabout, whose traffic
+  // goes on round the ring to another exit rather than queue)
+  const L = T.links.filter(L => L.l.ref.edge && L.l.ref.edge.cls === 'rd' && !L.l.ref.edge.city && !L.l.city && L.l.len > 20 && L.ld[0] > 0.3 && L.ld[0] < 0.95 && !G.nodes[L.l.a].ring).sort((a, b) => b.ld[0] - a.ld[0])[0];
   assert(L, 'no busy main road');
   const n0 = L.l.a, p = G.nodes[n0];
   // vehicles within 150 m of that junction on the roads that lead into it, as the middle zoom shows them

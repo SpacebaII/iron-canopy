@@ -425,7 +425,10 @@ IC.streetJoins = function (W, c) {
   const lines = c.streets.filter(l => !l.cul).concat(W.edges.filter(e => e.city === c.id).map(e => ({ cls: 'art', pts: e.pts, ave: true })));
   const sig = lines.length + ':' + lines.reduce((s, l) => s + l.pts.length, 0);
   if (c._sj && c._sj.sig === sig) return c._sj.joins;
-  c._sj = { sig, joins: lineJoins(lines, c.blocks, 3) };
+  // (none inside a roundabout: its ring and island are drawn there, and the streets meet the ring)
+  const rbs = IC.roadJoins(W).rbs.filter(r => Math.hypot(r.x - c.x, r.y - c.y) < (c.ext || 20) + 2), h = k => (SPEC[k] || SPEC.lc).w / 2;
+  const inRing = J => rbs.some(r => { const g = IC.rbGeom(r, h); return Math.hypot(J.x - r.x, J.y - r.y) < g.r + g.cw / 2; });
+  c._sj = { sig, joins: lineJoins(lines, c.blocks, 3).filter(J => !inRing(J)) };
   return c._sj.joins;
 };
 /* an airport's landside roads (landside.js), at ground level: their corners and T junctions */
