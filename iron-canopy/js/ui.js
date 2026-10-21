@@ -77,7 +77,7 @@ ui.store = store;
 // a decision and a peacetime launch pause the game unless the player turned them off
 ui.pauseOnIs = (P, k) => k === 'launch' || k === 'event' ? P[k] !== false : !!P[k];
 IC.savedCfg = () => { const c = store.get('ic-cfg', {}); return c.game || {}; };
-ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
+ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx, seen: S.cfg.seen }, ui: ui.scale, vol: IC.sfx.vol, pauseRoom: ui.pauseRoom }); };
 ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty('--ui', v); };
 {
   const c = store.get('ic-cfg', {});
@@ -518,7 +518,7 @@ function arsenal() {
 }
 
 function layers() {
-  const L = [['gaps', 'Show the gaps'], ['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
+  const L = [['gaps', 'Show the gaps'], ['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['all', 'See everything'], ['weather', 'Weather'], ['labels', 'Labels']];
   // with coverage on, a key to its colours: the lowest height controllers see
   const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
   setHTML($('layers'), L.filter(([k]) => IC.layerAllowed(S, k)).map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}">${n}</button>`).join('') + key);

@@ -150,6 +150,35 @@ function steady(S, t, dt) {
   const sp = Math.hypot(t.svx, t.svy);
   t.unc = (t.perr || 0) + sp * Math.max(0, age - (t.pper || 1) * 1.2) * 0.35;
 }
+/* what the map shows of a threat (drawing and clicks only; the defence still fires on t.det and t.held).
+   Radar alone makes an identified raid blink in and out as it dips under cover, so once we know what a track is it
+   stays on the map where it really is for a while after the last plot (S.cfg.seen: 'radar', 'short', 'long'),
+   then fades. The See everything layer (S.layers.all) shows every threat as it is, seen or not.
+   Returns null or { x, y, vx, vy, k: opacity, aff, klass, steady: drawn solid, with no uncertainty }. */
+IC.SEEN = { hold: { radar: 0, short: 600, long: 1800 }, fade: 2 };
+IC.trackView = function (S, t, o) {
+  if (t.dead) return null;
+  o = o || {};
+  if (S.layers.all) {
+    o.x = t.x; o.y = t.y; o.vx = t.vx; o.vy = t.vy; o.k = 1; o.steady = true;
+    o.aff = t.d.decoy ? 'D' : t.d.civil ? 'N' : 'H'; o.klass = t.d.decoy ? 'decoy' : t.d.klass;
+    return o;
+  }
+  const hold = IC.SEEN.hold[S.cfg.seen || 'short'] || 0;
+  const ided = !t.d.civil && (t.aff === 'H' || t.decoyKnown) && t.pt;
+  if (hold && ided) {
+    const age = S.time - t.pt, fade = hold * IC.SEEN.fade;
+    if (age < hold + fade) {
+      o.x = t.x; o.y = t.y; o.vx = t.vx; o.vy = t.vy; o.k = age < hold ? 1 : 1 - (age - hold) / fade; o.steady = true;
+      o.aff = t.decoyKnown ? 'D' : 'H'; o.klass = t.klass || (t.decoyKnown ? 'decoy' : t.d.klass);
+      return o;
+    }
+  }
+  if (!t.held) return null;
+  o.x = t.px; o.y = t.py; o.vx = t.pvx || t.vx; o.vy = t.pvy || t.vy; o.k = 1; o.steady = false;
+  o.aff = t.decoyKnown ? 'D' : t.aff || 'U'; o.klass = t.klass;
+  return o;
+};
 IC.trackUnc = t => ({ along: (t.unc || 0) * 1.5, across: t.unc || 0, a: Math.atan2(t.svy || t.vy || 0, t.svx || t.vx || 1) });
 
 /* raids fly together: tracks close to each other on the same heading and speed are one group. Groups are rebuilt

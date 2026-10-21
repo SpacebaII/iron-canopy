@@ -2940,6 +2940,41 @@ test('air war: a track stays steady and selectable across radar sweeps, and for 
   runRange(S, 20);
   assert(!t.held && S.time - lostAt >= IC.coastT(t), 'the track was not dropped after its coast time');
 });
+test('air war: an identified enemy stays on the map where it is after radar loses it, then fades; See everything shows the rest', () => {
+  const S = range(), T = S.range.target;
+  const rad = IC.makeUnit(S, 'vhf', T.x, T.y, { instant: true, full: true }); rad.emcon = 'on';
+  const fly = (dx) => IC.spawnThreat(S, 'str', T.x + 1500, T.y + dx, { route: [{ x: T.x - 30000, y: T.y + dx }], mission: 'strike', home: { x: T.x + 6000, y: T.y }, fromHostile: true });
+  const a = fly(-400), b = fly(400);
+  runRange(S, 200, () => a.held && b.held);
+  assert(a.tn && b.tn, 'the radar never picked the aircraft up');
+  IC.setAff(S, a, 'H', 'test');
+  b.aff = 'U';
+  a.rcs = b.rcs = 0;
+  const lost = Math.max(a.pt, b.pt);
+  runRange(S, IC.coastT(a) + 30 - (S.time - lost));
+  assert(!a.held && !b.held, 'radar should have lost both');
+  const v = IC.trackView(S, a);
+  assert(v && v.steady && v.k === 1, 'the identified enemy is not drawn solid after radar lost it');
+  assert(U.dxy(v.x, v.y, a.x, a.y) < 1, 'the identified enemy is not drawn where it is');
+  assert(!IC.trackView(S, b), 'an unidentified track stays on the map after radar lost it');
+  const hit = IC.pickAt(S, { x: a.x, y: a.y }, 1);
+  assert(hit && hit.ref === a, 'the identified enemy cannot be clicked where it is drawn');
+  S.cfg.seen = 'radar';
+  assert(!IC.trackView(S, a), 'Radar only still shows the enemy after contact is lost');
+  S.cfg.seen = 'short';
+  const hold = IC.SEEN.hold.short, fade = hold * IC.SEEN.fade;
+  S.time = a.pt + hold + fade / 2;
+  const f = IC.trackView(S, a);
+  assert(f && f.k > 0.3 && f.k < 0.7, `half way through the fade it should be half drawn (${f && f.k})`);
+  S.time = a.pt + hold + fade + 1;
+  assert(!IC.trackView(S, a), 'the enemy never faded off the map');
+  // See everything: every threat, seen or not, as what it is
+  S.layers.all = true;
+  const c = IC.spawnThreat(S, 'owa', T.x + 20000, T.y, { route: [{ x: T.x, y: T.y }], mission: 'strike', fromHostile: true });
+  const w = IC.trackView(S, c);
+  assert(w && w.steady && w.aff === 'H' && !c.tn, 'See everything does not show a threat no radar has seen');
+  assert(IC.trackView(S, b) && IC.trackView(S, a), 'See everything does not show the lost tracks');
+});
 test('air war: tracks flying together are one raid, and split when they split', () => {
   const S = range(), T = S.range.target;
   IC.makeUnit(S, 'lr3d', T.x, T.y, { instant: true, full: true }).emcon = 'on';
