@@ -81,7 +81,8 @@ test('world: every motorway-to-motorway junction has an interchange shape, with 
       if (h >= 3) { assert(J && J.kind === 'mm', `seed ${seed}: motorways meet at ${k} without an interchange`); mm++; }
       else if (h === 2 && n.deg > 2) { assert(J && J.kind === 'mx', `seed ${seed}: a road meets the motorway at ${k} without an interchange`); mx++; }
       if (!J || !J.ramps.length) continue;
-      if (J.kind === 'mm') assert(J.ramps.some(r => r.kind === 'loop') && J.ramps.some(r => r.kind === 'outer') && J.over.length, `seed ${seed}: interchange ${k} has no loops, slip roads or bridge`);
+      // (the left turns on loops, or on flyovers by a big city: brief 66)
+      if (J.kind === 'mm') assert(J.ramps.some(r => r.kind === 'loop' || r.kind === 'fly') && J.ramps.some(r => r.kind === 'outer') && J.over.length, `seed ${seed}: interchange ${k} has no loops, slip roads or bridge`);
       for (const r of J.ramps) {
         // no kinks: consecutive pieces of a slip road turn by less than 30°; a loop turns three quarters round
         let turn = 0;
@@ -150,6 +151,42 @@ test('world: city streets follow a direction field, end on a street, a head, a b
     assert(along > total * 0.85, `seed ${seed}: only ${U.pct(along / total)} of the streets run with the field`);
   }
 }, false, 'world');
+test('world: interchanges by their setting: directional T junctions with flyovers by the big cities, single-point interchanges in town, folded cloverleaves in the country (brief 66)', () => {
+  const n = { dirT: 0, spui: 0, parclo: 0 };
+  for (const seed of [4242, 7]) {
+    const S = IC.newGame({ seed, mode: 'sandbox', hour: 8 }), W = S.world, G = S.traffic.G;
+    const big = J => W.cities.some(c => c.pop >= 300 && U.dist(c, J) < (c.ext || c.r * 1.5) + 40);
+    for (const J of W.junctions) {
+      const kinds = J.ramps.map(r => r.kind).sort().join(',');
+      if (J.shape === 'dirT') {
+        n.dirT++;
+        assert(big(J), `seed ${seed}: a directional T at ${J.id} out in the country`);
+        assert(kinds === 'fly,fly,outer,outer', `seed ${seed}: directional T ${J.id} has ${kinds}`);
+        // the two flyovers cross each other, over the stem
+        const [f, g] = J.ramps.filter(r => r.kind === 'fly');
+        let x = false; for (let i = 1; i < f.pts.length && !x; i++) for (let k = 1; k < g.pts.length && !x; k++) if (U.segX(f.pts[i - 1].x, f.pts[i - 1].y, f.pts[i].x, f.pts[i].y, g.pts[k - 1].x, g.pts[k - 1].y, g.pts[k].x, g.pts[k].y) >= 0) x = true;
+        assert(x, `seed ${seed}: the flyovers of ${J.id} do not cross`);
+      }
+      if (J.shape === 'spui') {
+        n.spui++;
+        assert(big(J) && kinds === 'slip,slip,slip,slip', `seed ${seed}: single-point interchange ${J.id}: ${kinds}`);
+        // the four slip roads meet the road at one junction, on the bridge over the motorway
+        for (const r of J.ramps) assert(U.dist(r.pts[r.pts.length - 1], J) < 0.45, `seed ${seed}: a slip road of ${J.id} meets the road ${U.dist(r.pts[r.pts.length - 1], J).toFixed(2)} from the middle`);
+      }
+      if (J.shape === 'parclo') {
+        n.parclo++;
+        assert(kinds === 'loop,loop,slip,slip', `seed ${seed}: partial cloverleaf ${J.id} has ${kinds}`);
+        // folded: every slip road and loop on one side of the road it serves, all towards one end of the motorway
+        const d = J.dirs.find(q => q.cls === 'hw'), side = p => Math.sign((p.x - J.x) * d.x + (p.y - J.y) * d.y);
+        const s0 = J.ramps.map(r => side(r.pts[r.pts.length >> 1]));
+        assert(s0.every(v => v === s0[0]), `seed ${seed}: partial cloverleaf ${J.id} spreads to both sides of its road`);
+      }
+      // every slip road of these runs one way, so traffic uses it the right way round
+      if (n[J.shape] != null) for (const lk of G.links.filter(l => l.cls === 'ramp' && J.ramps.includes(l.ref.ramp))) assert(lk.one, `seed ${seed}: a ${J.shape} slip road at ${J.id} runs both ways`);
+    }
+  }
+  assert(n.dirT >= 3 && n.spui >= 1 && n.parclo >= 3, `too few to test: ${JSON.stringify(n)}`);
+});
 test('world: junctions by the roads meeting: a trumpet or a partial cloverleaf where a motorway ends on another, dumbbells and half diamonds among the diamonds, roundabouts sized by their roads with two lanes by a town and an island of their own, and every interchange keeps its footprint clear of the town (brief 56)', () => {
   let trumpets = 0, clovers = 0, dumbbells = 0, halves = 0, diamonds = 0, big = 0, small = 0, minis = 0;
   for (const seed of [4242, 7, 99]) {
@@ -157,9 +194,10 @@ test('world: junctions by the roads meeting: a trumpet or a partial cloverleaf w
     for (const J of W.junctions) {
       const hw = J.dirs.filter(d => d.cls === 'hw').length;
       if (J.kind === 'mm' && hw === 3) {
-        assert(J.shape === 'trumpet' || J.shape === 'clover', `seed ${seed}: a three-way motorway junction ${J.id} has no shape`);
+        assert(J.shape === 'trumpet' || J.shape === 'clover' || J.shape === 'dirT', `seed ${seed}: a three-way motorway junction ${J.id} has no shape`);
         const loops = J.ramps.filter(r => r.kind === 'loop').length, outers = J.ramps.filter(r => r.kind === 'outer').length;
         if (J.shape === 'trumpet') { trumpets++; assert(loops === 1 && outers >= 3, `seed ${seed}: trumpet ${J.id} has ${loops} loops and ${outers} slip roads (one loop, two sweeping round the other quarter)`); }
+        else if (J.shape === 'dirT') { const fly = J.ramps.filter(r => r.kind === 'fly').length; assert(!loops && fly === 2, `seed ${seed}: directional T ${J.id} has ${loops} loops and ${fly} flyovers`); }
         else { clovers++; assert(loops === 2, `seed ${seed}: partial cloverleaf ${J.id} has ${loops} loops`); }
       }
       if (J.kind === 'mx') {
@@ -171,7 +209,8 @@ test('world: junctions by the roads meeting: a trumpet or a partial cloverleaf w
           const sites = R.rbs.filter(o => o.dumb && o.J === J);
           assert(sites.length === J.rbs.length && sites.every(o => o.arms.length >= 3), `seed ${seed}: dumbbell ${J.id}'s roundabouts are not drawn with the road through and the slip roads in`);
         } else if (J.shape === 'half') { halves++; assert(J.ramps.length === minor.length, `seed ${seed}: half diamond ${J.id} has ${J.ramps.length} slip roads`); }
-        else { diamonds++; assert(J.shape === 'diamond' && J.ramps.length === 2 * minor.length, `seed ${seed}: diamond ${J.id} has ${J.ramps.length} slip roads`); }
+        else if (J.shape === 'diamond') { diamonds++; assert(J.ramps.length === 2 * minor.length, `seed ${seed}: diamond ${J.id} has ${J.ramps.length} slip roads`); }
+        else assert(J.shape === 'spui' || J.shape === 'parclo', `seed ${seed}: interchange ${J.id} has no shape (${J.shape})`);
       }
       if (J.kind === 'rb') {
         const rd = J.dirs.some(d => d.cls === 'rd'), town = W.cities.some(c => U.dist(c, J) < (c.ext || c.r * 1.5) + 4);

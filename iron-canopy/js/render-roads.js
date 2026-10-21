@@ -173,6 +173,18 @@ IC.drawRoads = function (g, S, px, v) {
   // junctions: one surface over the roads' markings, then its own
   for (const j of joins) junction(j, geo(j), fill(top(j)), lw, D, z, t, px);
   for (const j of rbs) roundabout(j, IC.rbGeom(j, half), fill, lw, D, z, px);
+  // flyovers (brief 66: a stack's or a directional T's left turns) ride over everything at the interchange: drawn
+  // again on top with their shadow on the roads below and a parapet either side
+  if (z > 1.5) {
+    const fly = groups.ramp.filter(r => r.kind === 'fly');
+    if (fly.length) {
+      const w = width('ramp');
+      ctx.save(); ctx.translate(0.07, 0.1); path(fly); ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = w + 0.04; ctx.stroke(); ctx.restore();
+      path(fly); ctx.strokeStyle = 'rgb(176,176,170)'; ctx.lineWidth = w + Math.max(0.025, px * 2); ctx.stroke();
+      ctx.strokeStyle = fill('ramp'); ctx.lineWidth = w; ctx.stroke();
+      if (pw('ramp') > 8) { const fr = w / SP.ramp.w; ctx.strokeStyle = PAINT; ctx.lineWidth = SP.ramp.lane * fr + lw; ctx.stroke(); ctx.strokeStyle = fill('ramp'); ctx.lineWidth = SP.ramp.lane * fr - lw; ctx.stroke(); }
+    }
+  }
   // city crossings on the avenues drawn here (the side streets' are in the tiles, painted by the same code)
   if (z > 4) for (const c of W.cities) {
     if (c.x + c.r * 1.8 < view.x0 || c.x - c.r * 1.8 > view.x1 || c.y + c.r * 1.8 < view.y0 || c.y - c.r * 1.8 > view.y1) continue;
@@ -396,7 +408,7 @@ function levelCrossing(x, w, lw, px, S) {
    pavement follows each curb return round the corner, the crossing is one surface of asphalt over the streets' own
    lines, and on the busier crossings there are zebra crossings across each arm, a stop line before them on the lane
    coming in, and close in arrows on the avenues' lanes. lod: the tile level (5 live), px: a pixel in world units */
-const STREET_ASP = { st: 'rgb(80,81,82)', art: 'rgb(72,73,74)', ring: 'rgb(68,69,70)' };
+const STREET_ASP = { st: 'rgb(80,81,82)', col: 'rgb(76,77,78)', art: 'rgb(72,73,74)', ring: 'rgb(68,69,70)' };
 IC.STREET_ASP = STREET_ASP;
 const streetHalf = k => (IC.ROAD_SPEC[k] || IC.ROAD_SPEC.st).w / 2;
 IC.paintStreetJoin = function (g, j, lod, px) {
@@ -414,6 +426,13 @@ IC.paintStreetJoin = function (g, j, lod, px) {
   A.forEach((a, q) => {
     if (a.len < 0.5) return;
     const m = G.mouth[q], hL = Math.min(a.hl != null ? a.hl : a.h, a.h) - 0.015, hR = Math.min(a.hr != null ? a.hr : a.h, a.h) - 0.015, h = (hL + hR) / 2, zw = 0.035;
+    if (!busy && (IC.ROAD_RANK[a.cls] || 0) < (IC.ROAD_RANK[top] || 0)) {
+      // a side street meeting a bigger one gives way: a row of white triangles across the lane coming in (brief 66)
+      const s0 = m + 0.012, n = Math.max(2, Math.round(hR / 0.011)), st = hR / n;
+      g.fillStyle = 'rgba(236,236,228,0.85)'; g.beginPath();
+      for (let i = 0; i < n; i++) { const o0 = -i * st, o1 = o0 - st * 0.8, b0 = at(a, s0 + 0.016, o0), b1 = at(a, s0 + 0.016, o1), tp = at(a, s0, (o0 + o1) / 2); g.moveTo(b0.x, b0.y); g.lineTo(b1.x, b1.y); g.lineTo(tp.x, tp.y); }
+      g.fill();
+    }
     if (busy) {
       // a zebra across the arm just beyond the corner: its stripes run along the street
       const s0 = m + 0.008, n = Math.max(3, Math.round((hL + hR) / 0.012)), st = (hL + hR) / n;
@@ -426,12 +445,30 @@ IC.paintStreetJoin = function (g, j, lod, px) {
       // arrows in the lanes coming in, close in
       if (lod >= 5 && 1 / px > 60 && (a.cls === 'art' || a.cls === 'ring')) {
         g.fillStyle = 'rgba(236,236,228,0.8)';
+        // (brief 66: where two avenues or an avenue and a collector cross, the inner lane is for turning left, with a
+        // hatched median ahead of it where the centre line opens into the turn)
+        const pocket = j.big && A.filter(o => o.cls === 'art' || o.cls === 'ring' || o.cls === 'col').length >= 3;
         for (const o of [-hR * 0.3, -hR * 0.72]) {
-          const b = at(a, s0 + zw + 0.07, o), tip = at(a, s0 + zw + 0.03, o), w = 0.006, L2 = 0.03;
+          const s1 = s0 + zw + 0.03, w = 0.006, L2 = 0.03;
+          if (pocket && o === -hR * 0.3) {
+            // a left turn: the shaft up the lane, bending across towards the median, the head pointing left
+            g.strokeStyle = 'rgba(236,236,228,0.8)'; g.lineWidth = w * 1.2;
+            pl([at(a, s1 + 0.015 + L2, o), at(a, s1 + 0.02, o), at(a, s1 + 0.012, o + 0.008)]); g.stroke();
+            const t = at(a, s1 + 0.004, o + 0.016), u1 = at(a, s1 + 0.004, o + 0.004), u2 = at(a, s1 + 0.02, o + 0.012);
+            g.beginPath(); g.moveTo(t.x, t.y); g.lineTo(u1.x, u1.y); g.lineTo(u2.x, u2.y); g.closePath(); g.fill();
+            continue;
+          }
+          const tip = at(a, s1, o);
           g.beginPath(); g.moveTo(tip.x, tip.y);
           const p1 = at(a, s0 + zw + 0.045, o - w * 1.8), p2 = at(a, s0 + zw + 0.045, o + w * 1.8), q1 = at(a, s0 + zw + 0.045, o - w * 0.6), q2 = at(a, s0 + zw + 0.045, o + w * 0.6), r1 = at(a, s0 + zw + 0.045 + L2, o - w * 0.6), r2 = at(a, s0 + zw + 0.045 + L2, o + w * 0.6);
           g.lineTo(p1.x, p1.y); g.lineTo(q1.x, q1.y); g.lineTo(r1.x, r1.y); g.lineTo(r2.x, r2.y); g.lineTo(q2.x, q2.y); g.lineTo(p2.x, p2.y); g.closePath(); g.fill();
-          void b;
+        }
+        if (pocket && a.len > 0.6) {
+          // the hatched median: a long thin diamond on the centre line behind the stop line, striped across
+          const m0 = s0 + zw + 0.02, m1 = m0 + Math.min(0.3, a.len * 0.4), mw = 0.009;
+          g.strokeStyle = 'rgba(236,236,228,0.8)'; g.lineWidth = Math.max(0.003, px);
+          pl([at(a, m0, 0), at(a, m0 + 0.04, mw), at(a, m1 - 0.06, mw), at(a, m1, 0), at(a, m1 - 0.06, -mw), at(a, m0 + 0.04, -mw)]); g.closePath(); g.stroke();
+          g.beginPath(); for (let q = m0 + 0.03; q < m1 - 0.03; q += 0.025) { const p = at(a, q, -mw), r = at(a, q + 0.012, mw); g.moveTo(p.x, p.y); g.lineTo(r.x, r.y); } g.stroke();
         }
       }
     }

@@ -18,7 +18,7 @@ const CLS = {
   hw: { dens: 4, v: 0.31, lanes: 2, off: [0.054, 0.091], rank: 5 }, ring: { dens: 4, v: 0.22, lanes: 2, off: [0.048, 0.083], rank: 4 },
   rd: { dens: 2, v: 0.22, lanes: 1, off: [0.0163], rank: 4 }, art: { dens: 4, v: 0.13, lanes: 2, off: [0.0175, 0.0525], rank: 3 },
   lc: { dens: 0.7, v: 0.17, lanes: 1, off: [0.015], rank: 2 }, sp: { dens: 0.5, v: 0.12, lanes: 1, off: [0.014], rank: 1 },
-  st: { dens: 2, v: 0.08, lanes: 1, off: [0.0175], rank: 1 }, ln: { dens: 0.06, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
+  col: { dens: 2.6, v: 0.1, lanes: 1, off: [0.0175], rank: 2 }, st: { dens: 2, v: 0.08, lanes: 1, off: [0.0175], rank: 1 }, ln: { dens: 0.06, v: 0.1, lanes: 1, off: [0.0125], rank: 0 },
   ramp: { dens: 2.4, v: 0.16, lanes: 1, off: [0], rank: 2 }
 };
 IC.TRAFFIC_CLS = CLS;
@@ -52,7 +52,7 @@ IC.trafficHour = S => { const h = (S.time % 86400) / 3600; return Math.max(hr(H_
    keeps for its own residents and every road for the country it runs through (loads, by class), gamma (how far the
    quiet links are pulled up towards the busy ones: 1 is the raw flows; gammaRoad on the national roads, which may be
    quiet far from the towns), and the city size whose streets are at full density (smaller towns scale down to minSize) */
-IC.TRAFFIC_LOAD = { floor: { st: 0.12, art: 0.25, ring: 0.3, hw: 0.08, rd: 0.05, lc: 0.03, sp: 0.03 }, gamma: 0.4, gammaRoad: 0.8, fullPop: 500, minSize: 0.4 };
+IC.TRAFFIC_LOAD = { floor: { st: 0.12, col: 0.18, art: 0.25, ring: 0.3, hw: 0.08, rd: 0.05, lc: 0.03, sp: 0.03 }, gamma: 0.4, gammaRoad: 0.8, fullPop: 500, minSize: 0.4 };
 const BASE = 0.3;   // spacing of the finest vehicle slots, in world units (30 m)
 // where a link's slots are now: they ride at the link's speed from the last reading (wrapping after 65,536 slots
 // leaves every slot's identity unchanged)
@@ -204,7 +204,11 @@ function buildGraph(W) {
       const atA = hw.a === (end ? lk.b : lk.a), P = hw.pts, p0 = atA ? P[0] : P[P.length - 1], p1 = atA ? P[1] : P[P.length - 2];
       let tx = p1.x - p0.x, ty = p1.y - p0.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
       if (!atA) { tx = -tx; ty = -ty; }   // now pointing along the motorway from a to b
-      const R = lk.pts, q0 = end ? R[R.length - 1] : R[0], q1 = end ? R[R.length - 2] : R[1];
+      // (read over the slip road's first 400 m, not its first piece: a short piece from where its end was tied onto
+      // the carriageway can point almost straight across it)
+      const R = lk.pts, q0 = end ? R[R.length - 1] : R[0];
+      let q1 = end ? R[R.length - 2] : R[1];
+      for (let k = 1; k < R.length && U.dist(q1, q0) < 0.4; k++) q1 = end ? R[R.length - 1 - k] : R[k];
       const side = (q1.x - q0.x) * -ty + (q1.y - q0.y) * tx;   // > 0: the slip road lies to the right of a→b
       const flow = side > 0 ? 1 : -1;                          // right of a→b flows a→b
       const into = (q0.x - q1.x) * tx * flow + (q0.y - q1.y) * ty * flow > 0;   // the slip road runs with the flow into its end
@@ -349,7 +353,7 @@ function placesOf(S, G) {
    one flow with somewhere to go is the airports': travellers, taxis and shuttles on the roads between each airport
    and the towns it serves, as many as its passengers, filling and emptying its car parks (IC.landUse). */
 // how much through traffic each class gathers from what is round it
-const GATHER = { hw: 2.5, ring: 2.2, art: 2, rd: 1.6, ramp: 1.2, lc: 1, sp: 0.6, st: 0.45, ln: 0.1 };
+const GATHER = { hw: 2.5, ring: 2.2, art: 2, rd: 1.6, ramp: 1.2, lc: 1, col: 1, sp: 0.6, st: 0.45, ln: 0.1 };
 function assign(S) {
   const W = S.world, G = IC.driveGraph(W), T = S.traffic;
   const Z = zonesOf(S, G), P = placesOf(S, G);
@@ -428,8 +432,8 @@ function assign(S) {
   // flows into loads, class by class: the busiest links of each class at a full rush hour run at what that class
   // carries at its busiest in real cities (motorways at capacity, side streets far from it). City streets are
   // measured city by city: the many small towns of a big map would otherwise make every capital street a jam
-  const ck = lk => lk.city && (lk.cls === 'st' || lk.cls === 'art' || lk.cls === 'ring') ? lk.cls + '|' + (lk.city.id || lk.city) : lk.cls;
-  const TOP = { hw: 1.05, ring: 0.75, rd: 0.8, art: 0.65, lc: 0.45, sp: 0.5, st: 0.4, ln: 0.12, ramp: 0.8 }, byCls = {};
+  const ck = lk => lk.city && (lk.cls === 'st' || lk.cls === 'col' || lk.cls === 'art' || lk.cls === 'ring') ? lk.cls + '|' + (lk.city.id || lk.city) : lk.cls;
+  const TOP = { hw: 1.05, ring: 0.75, rd: 0.8, art: 0.65, lc: 0.45, sp: 0.5, col: 0.5, st: 0.4, ln: 0.12, ramp: 0.8 }, byCls = {};
   for (let i = 0; i < nL; i++) {
     const lk = G.links[i];
     for (let d = 0; d < 2; d++) { const v = F.com[i * 2 + d] + F.frt[i * 2 + d] + F.apt[i * 2 + d] + F.gen[i * 2 + d]; if (v > 0) (byCls[ck(lk)] = byCls[ck(lk)] || []).push(v); }

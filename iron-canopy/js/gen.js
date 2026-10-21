@@ -8,7 +8,7 @@ const M = 1.5 * X;   // distances across the country, relative to wave 3's map (
 const K = 1.5 * M;   // map scale relative to the original 800 km layout
 const SP = 1.45;     // spacing between towns: with ten times the land and three to four times the towns
 /* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
-IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.2, st: 0.11, ln: 0.07 };
+IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.2, col: 0.14, st: 0.11, ln: 0.07 };
 IC.FOREST_T = 0.56;
 
 /* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between
@@ -1517,11 +1517,35 @@ function junctions(W) {
     }
     return out;
   };
+  // a flyover's curve eased where it bends hard (roads meeting at odd angles), its leads kept
+  const ease = P => {
+    const tight = () => P.some((p, i) => i > 1 && Math.abs(U.angWrap(Math.atan2(p.y - P[i - 1].y, p.x - P[i - 1].x) - Math.atan2(P[i - 1].y - P[i - 2].y, P[i - 1].x - P[i - 2].x))) > 0.4);
+    for (let k = 0; k < 40 && tight(); k++) for (let i = 3; i < P.length - 3; i++) P[i] = { x: P[i].x * 0.5 + (P[i - 1].x + P[i + 1].x) * 0.25, y: P[i].y * 0.5 + (P[i - 1].y + P[i + 1].y) * 0.25 };
+    return P;
+  };
   const at = (n, d, k, p, o) => ({ x: n.x + d.x * k + (p ? p.x * o : 0), y: n.y + d.y * k + (p ? p.y * o : 0) });
   // the unit vector across d that points into the quarter towards q
   const toward = (d, q) => { const px = -d.y, py = d.x; return px * q.x + py * q.y >= 0 ? { x: px, y: py } : { x: -px, y: -py }; };
   W.junctions = []; W.ramps = [];
   const townNear = (x, y) => W.cities.some(c => U.dxy(c.x, c.y, x, y) < (c.ext || c.r * 1.5) + 4);
+  // (a big town within 4 km of its edge: the interchanges round a city are the big ones, brief 66)
+  const cityNear = (x, y) => W.cities.some(c => c.pop >= 300 && U.dxy(c.x, c.y, x, y) < (c.ext || c.r * 1.5) + 40);
+  // a loop in the quarter from arm a round to arm b: traffic leaves heading out along a, goes three quarters of the
+  // way round a circle of radius R touching both and joins b heading in (l0, l1: where its straight leads start and
+  // end, as shares of the way to the circle)
+  const loopOf = (n, a, b, R, off, l0 = 0.2, l1 = 0.6) => {
+    const gap = U.mod(b.a - a.a, Math.PI * 2), na = toward(a, b), nb = toward(b, a), bis = { x: a.x + b.x, y: a.y + b.y }, bl = Math.hypot(bis.x, bis.y) || 1;
+    bis.x /= bl; bis.y /= bl;
+    const dc = R / Math.sin(gap / 2), C = at(n, bis, dc), fa = dc * Math.cos(gap / 2);
+    const Fa = at(n, a, fa, na, off), Fb = at(n, b, fa, nb, off), r = R - off;
+    const ta = Math.atan2(Fa.y - C.y, Fa.x - C.x), tb = Math.atan2(Fb.y - C.y, Fb.x - C.x);
+    const dir = (-Math.sin(ta) * a.x + Math.cos(ta) * a.y) > 0 ? 1 : -1;   // turning so that it starts heading out
+    const sweep = dir * U.mod(dir * (tb - ta), Math.PI * 2);
+    const loop = [at(n, a, fa * l0, na, off), at(n, a, fa * l1, na, off)];
+    for (let q = 0; q <= 40; q++) { const t = ta + sweep * q / 40; loop.push({ x: C.x + Math.cos(t) * r, y: C.y + Math.sin(t) * r }); }
+    loop.push(at(n, b, fa * l1, nb, off), at(n, b, fa * l0, nb, off));
+    return { pts: loop, dc, fa };
+  };
   for (const k in byNode) {
     const n = N[k], L = byNode[k], deg = L.length;
     if (deg < 3 && !(deg === 2 && L.some(x => x.e.cls === 'hw') && L.some(x => x.e.cls !== 'hw'))) continue;
@@ -1544,12 +1568,34 @@ function junctions(W) {
       const gapOf = i => U.mod(ring[(i + 1) % ring.length].a - ring[i].a, Math.PI * 2);
       const qs = ending ? ring.map((a, i) => i).filter(i => ring[i] === ending || ring[(i + 1) % ring.length] === ending) : [];
       J.shape = ending && hz < 0.7 && qs.length === 2 && qs.every(i => gapOf(i) > 0.9 && gapOf(i) < 2.3) ? 'trumpet' : 'clover';
+      // (brief 66: two motorways crossing by a big city are a stack, every left turn on a flyover over the middle, or
+      // a turbine, the left turns sweeping round it; a cloverleaf's weaving loops are for the open country)
+      if (hw.length === 4 && !ending && ring.every((a, i) => gapOf(i) > 0.9 && gapOf(i) < 2.3) && cityNear(n.x, n.y)) J.shape = hz < 0.55 ? 'stack' : 'turbine';
+      // (and a motorway ending on another by a big city is a directional T: the two left turns cross each other on
+      // flyovers over the through road, no loop)
+      if (J.shape === 'trumpet' && cityNear(n.x, n.y) && !hw.some(d => d.e.city)) J.shape = 'dirT';   // (not where it is a town's avenue)
+      const fly = J.shape === 'stack' || J.shape === 'turbine';
+      if (J.shape === 'dirT') {
+        // (which way each slip road runs the drive graph reads from the carriageway side it joins, traffic.js)
+        const [t1, t2] = best, e = ending, La = 3.2, side = (d, q, k) => { const t = toward(d, q); return { x: t.x * k, y: t.y * k }; };
+        const f1 = side(t1, e, -1), f2 = side(t2, e, -1), s1 = toward(e, t1), s2 = toward(e, t2), tn1 = toward(t1, e), tn2 = toward(t2, e);
+        // the right turns sweep round the two quarters beside the stem
+        for (const [a, b, na, nb] of [[e, t1, s1, tn1], [e, t2, s2, tn2]]) {
+          const bis = { x: a.x + b.x, y: a.y + b.y }, bl = Math.hypot(bis.x, bis.y) || 1, gap = U.mod(b.a - a.a, Math.PI * 2), g2 = Math.min(gap, Math.PI * 2 - gap);
+          ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.55), at(n, { x: bis.x / bl, y: bis.y / bl }, 1.05 / Math.sin(g2 / 2) + 1.6), at(n, b, La, nb, 0.55), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
+        }
+        // the left turns: from the far side of one through arm over the road into the stem, and from the stem over
+        // the road to the far side of the other, crossing each other above the stem
+        const mid = (t, k) => ({ x: n.x + t.x * 1.5 + e.x * k, y: n.y + t.y * 1.5 + e.y * k });
+        ramp(ease(spline([at(n, t1, La + 1.2, f1, 0.22), at(n, t1, La, f1, 0.55), mid(t1, -0.35), mid(t1, 1.4), at(n, e, La + 0.6, s2, 0.55), at(n, e, La + 1.8, s2, 0.22)], 10)), 'fly');
+        ramp(ease(spline([at(n, e, La + 1.8, s1, 0.22), at(n, e, La + 0.6, s1, 0.55), mid(t2, 1.4), mid(t2, -0.35), at(n, t2, La, f2, 0.55), at(n, t2, La + 1.2, f2, 0.22)], 10)), 'fly');
+      }
       let loopQ = -1, sweepQ = -1;
       if (J.shape === 'trumpet') { loopQ = qs[hz < 0.35 ? 0 : 1]; sweepQ = qs[hz < 0.35 ? 1 : 0]; }
       // quarters wide enough for a loop; where motorways merge at a shallow angle, the narrowest of the rest has one
       const gaps = ring.map((a, i) => U.mod(ring[(i + 1) % ring.length].a - a.a, Math.PI * 2)).filter(g => g >= 0.5 && g <= 2.9);
       const loopMax = gaps.some(g => g < 2.4) ? 2.4 : Math.min(...gaps) + 1e-9;
-      for (let i = 0; i < ring.length; i++) {
+      for (let i = 0; J.shape !== 'dirT' && i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length], gap = U.mod(b.a - a.a, Math.PI * 2);
         if (gap > 2.9 || gap < 0.5) continue;   // no quarter here (the far side of a T)
         const na = toward(a, b), nb = toward(b, a), bis = { x: (a.x + b.x), y: (a.y + b.y) }, bl = Math.hypot(bis.x, bis.y) || 1;
@@ -1565,12 +1611,22 @@ function junctions(W) {
         const loop = [at(n, a, fa * 0.2, na, 0.15), at(n, a, fa * 0.6, na, 0.15)];
         for (let q = 0; q <= 40; q++) { const t = ta + sweep * q / 40; loop.push({ x: C.x + Math.cos(t) * r, y: C.y + Math.sin(t) * r }); }
         loop.push(at(n, b, fa * 0.6, nb, 0.15), at(n, b, fa * 0.2, nb, 0.15));
-        if ((gap < loopMax || trumpetLoop) && !trumpetSweep) ramp(loop, 'loop');   // a wide quarter needs only the outer slip road
+        if ((gap < loopMax || trumpetLoop) && !trumpetSweep && !fly) ramp(loop, 'loop');   // a wide quarter needs only the outer slip road
         // the outer slip road: leaves the carriageway at a shallow angle and swings round outside the loop (a narrow
         // quarter has room only for the loop); a trumpet's other quarter has two, one sweeping round the other
         const La = 3.2, far = dc + R + 0.55;
         if (gap > 1 || trumpetSweep) ramp(spline([at(n, a, La + 1.2, na, 0.22), at(n, a, La, na, 0.55), at(n, bis, far), at(n, b, La, nb, 0.55), at(n, b, La + 1.2, nb, 0.22)], 8), 'outer');
         if (trumpetSweep) ramp(spline([at(n, a, La + 3.4, na, 0.22), at(n, a, La + 2.2, na, 0.7), at(n, bis, far + 1.3), at(n, b, La + 2.2, nb, 0.7), at(n, b, La + 3.4, nb, 0.22)], 8), 'outer');
+        if (fly) {
+          // the left turn this quarter's loop would carry, on a flyover: traffic coming in along the arm opposite a
+          // (heading the way a points) leaves on its right before the middle and joins the arm opposite b heading out
+          const ao = ring[(i + 2) % 4], bo = ring[(i + 3) % 4], sa = toward(a, b), sb = toward(b, a);
+          const S0 = at(n, ao, La + 1.2, sa, 0.22), S1 = at(n, ao, La, sa, 0.5), E1 = at(n, bo, La, sb, 0.5), E0 = at(n, bo, La + 1.2, sb, 0.22);
+          // a stack's crosses near the middle, high over the rest; a turbine's sweeps round through the quarter beyond
+          const mid = J.shape === 'stack' ? [{ x: n.x + (a.x - b.x) * 0.35 + (sa.x + sb.x) * 0.25, y: n.y + (a.y - b.y) * 0.35 + (sa.y + sb.y) * 0.25 }]
+            : (() => { const qx = ao.x + bo.x, qy = ao.y + bo.y, ql = Math.hypot(qx, qy) || 1; return [{ x: n.x + qx / ql * 2.1, y: n.y + qy / ql * 2.1 }]; })();
+          ramp(ease(spline([S0, S1].concat(mid, [E1, E0]), 10)), 'fly');
+        }
       }
     } else if (hw.length === 2 && minor.length) {
       // diamond: the lesser road crosses on a bridge; a slip road in each quarter meets it 130 m from the motorway.
@@ -1580,12 +1636,31 @@ function junctions(W) {
       const m = hw[0], mo = hw[1], main = minor.some(d => d.cls === 'rd');
       J.over = minor.map(d => d.a);
       J.shape = minor.length === 2 && main && hz < 0.5 ? 'dumbbell' : minor.length <= 2 && !main && hz < 0.33 ? 'half' : 'diamond';
+      // (brief 66: by a big town a main road's diamond is a single-point interchange, its four slip roads meeting at
+      // one junction on the bridge; out in the country some are partial cloverleaves, folded to one side of the road)
+      if (minor.length === 2 && main && hz >= 0.25 && cityNear(n.x, n.y)) J.shape = 'spui';
+      else if (minor.length === 2 && hz >= 0.72) {
+        // (only where the road crosses near square: a loop in a wide quarter would hardly turn)
+        const sq = md => Math.max(...minor.map(d => { const g = U.mod(d.a - md.a, Math.PI * 2); return Math.abs(Math.min(g, Math.PI * 2 - g) - Math.PI / 2); }));
+        if (Math.max(sq(m), sq(mo)) < 0.7) J.shape = 'parclo';
+      }
       // (the roundabouts sit on the road itself, where it bends)
       if (J.shape === 'dumbbell') J.rbs = minor.map(d => { const q = IC.PL.near(d.e.pts, at(n, d, 1.3)); return { x: q ? q.x : n.x + d.x * 1.3, y: q ? q.y : n.y + d.y * 1.3, a: d.a, r: 0.2 }; });
       const sides = J.shape === 'half' ? [hz < 0.16 ? m : mo] : [m, mo];
-      for (const d of minor) for (const md of sides) {
+      if (J.shape === 'parclo') {
+        // both quarters on one side of the road, one either side of the motorway: a loop and a slip road in each, so
+        // nothing stands on the road's other side
+        const md = sides[hz < 0.86 ? 0 : 1];
+        for (const d of minor) {
+          const nm = toward(md, d), gap = U.mod(d.a - md.a, Math.PI * 2);
+          // (the leads start 750 m out, clear of the bridge and of the motorway's own junction)
+          ramp(loopOf(n, gap < Math.PI ? md : d, gap < Math.PI ? d : md, 1, 0.15, 0.75, 0.9).pts, 'loop');
+          ramp(bez(at(n, md, 5.5, nm, 0.22), at(n, md, 2.9, nm, 0.55), at(n, d, 2.2, md, 1.1), at(n, d, 2.2, md, 0.18), 20), 'slip');
+        }
+      } else for (const d of minor) for (const md of sides) {
         const nm = toward(md, d);
         if (J.shape === 'dumbbell') { const q = J.rbs[minor.indexOf(d)]; ramp(bez(at(n, md, 5.5, nm, 0.22), at(n, md, 2.6, nm, 0.55), { x: q.x + md.x * 0.8, y: q.y + md.y * 0.8 }, { x: q.x, y: q.y }, 20), 'slip'); }
+        else if (J.shape === 'spui') ramp(bez(at(n, md, 5.5, nm, 0.22), at(n, md, 2.6, nm, 0.5), at(n, d, 0.9, md, 0.7), at(n, d, 0.32, md, 0.05), 20), 'slip');
         else ramp(bez(at(n, md, 5.5, nm, 0.22), at(n, md, 2.6, nm, 0.55), at(n, d, 1.3, md, 1.2), at(n, d, 1.3, md, 0.18), 20), 'slip');
       }
     } else if (hw.length === 1 || deg >= 4 || (minor.filter(d => d.cls === 'rd').length >= 3)) {

@@ -203,5 +203,6 @@
  "world: towns are measured from real ones: street widths, floors, density and old towns (brief 65)": 11.1,
  "buildings: a town stands up on the map, towers taller than houses (brief 65)": 0.2,
  "traffic: lights at the avenues' crossings; vehicles stop on red and go on green (brief 65)": 18,
- "traffic: no trips planned, every road alive by what is round it; the airport road and car parks follow its passengers (brief 66)": 14
+ "traffic: no trips planned, every road alive by what is round it; the airport road and car parks follow its passengers (brief 66)": 14,
+ "world: interchanges by their setting: directional T junctions with flyovers by the big cities, single-point interchanges in town, folded cloverleaves in the country (brief 66)": 15
 }
