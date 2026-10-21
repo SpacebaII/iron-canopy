@@ -123,7 +123,8 @@ const SHOTS = {
 };
 
 function clip(dir, file) {
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%06d.jpg'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', file]);
+  // (high profile at level 4.2 with the index first: plays on phones as well as in an editor)
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%06d.jpg'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart', file]);
 }
 
 (async () => {
