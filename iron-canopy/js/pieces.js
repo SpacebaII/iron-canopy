@@ -188,7 +188,8 @@ const PIER_BW = 0.2, PIER_EXT = 0.6;
 const pierOff = size => { const S0 = IC.STAND[size || 'm']; return PIER_BW + 0.06 + S0.d + 0.12; };
 /* the terminal wall the cursor stands in front of: { t, p (the root, on the wall), n (outward), ahead } */
 function wallAt(ap, hv) {
-  let best = null;
+  let best = null, land = false;
+  const aprons = ap.parts.filter(p => p.kind === 'apron' && p.x != null).map(p => IC.partOutline(p).map(q => [q.x, q.y]));
   for (const t of ap.parts) {
     if (t.kind !== 'terminal' || t.x == null || t.r) continue;
     const P = IC.partOutline(t), PA = P.map(q => [q.x, q.y]);
@@ -198,12 +199,14 @@ function wallAt(ap, hv) {
       if (s < -0.5 || s > L + 0.5) continue;
       const ss = U.clamp(s, PIER_BW + 0.03, L - PIER_BW - 0.03), p = { x: A.x + ux * ss, y: A.y + uy * ss };
       let n = { x: -uy, y: ux }; if (U.inPoly(p.x + n.x * 0.03, p.y + n.y * 0.03, PA)) n = { x: uy, y: -ux };
-      const ahead = (hv.x - p.x) * n.x + (hv.y - p.y) * n.y; if (ahead < 0.2) continue;
+      const ahead = (hv.x - p.x) * n.x + (hv.y - p.y) * n.y; if (ahead < 0.2 || ahead > 9) continue;
+      // (only a wall with apron in front of it: the others face the kerb or the grass)
+      if (!aprons.some(A => U.inPoly(p.x + n.x * 0.25, p.y + n.y * 0.25, A))) { land = true; continue; }
       const side = Math.abs(s - ss), d = side * 3 + ahead * 0.2;
-      if (!best || d < best.d) best = { t, p, n, ahead, d };
+      if (!best || d < best.d) best = { t, p, n, ahead, d, A, w: { x: ux, y: uy }, lo: PIER_BW + 0.03, hi: L - PIER_BW - 0.03, ss };
     }
   }
-  return best && best.ahead < 9 ? best : null;
+  return best || (land ? { land } : null);
 }
 /* where a line from a along u first meets one of the airport's taxiways within reach: { q, s, seg } */
 function lineMeets(ap, a, u, reach) {
@@ -222,8 +225,11 @@ function lineMeets(ap, a, u, reach) {
 }
 /* the pier's layout in its own frame (from the origin toward −y), its side lanes from s0 (or their first gate) */
 function pierLayout(len, size, s0) {
-  const B = IC.layoutBuilder(), sz = size || 'm';
-  const K = IC.kitPier(B, { p0: pt(0, 0), p1: pt(0, -len), bw: PIER_BW, size: sz, tip: PIER_EXT, lane0: { 1: s0[1], [-1]: s0[-1] }, s0: { 1: s0[1] + 0.05, [-1]: s0[-1] + 0.05 }, name: 'Pier' });
+  const B = IC.layoutBuilder(), sz = size || 'm', od = pierOff(sz) + 0.14, a0 = Math.max(0, Math.min(s0[1], s0[-1]) - 0.14);
+  // (one apron round the pier and its tip, not one a side: no seam down the middle)
+  const e = -(len + PIER_EXT + 0.14), w = PIER_BW - 0.04;
+  const ai = B.apron([pt(-od, -a0), pt(-od, e), pt(od, e), pt(od, -a0), pt(w, -a0), pt(w, -len), pt(-w, -len), pt(-w, -a0)]);
+  const K = IC.kitPier(B, { p0: pt(0, 0), p1: pt(0, -len), bw: PIER_BW, size: sz, tip: PIER_EXT, ai, lane0: { 1: s0[1], [-1]: s0[-1] }, s0: { 1: s0[1] + 0.05, [-1]: s0[-1] + 0.05 }, name: 'Pier' });
   // (a lane starts at its first gate: its root end is joined to the split taxilane once built, or to nothing)
   for (const l of K.lanes) if (l.n.length > 2) l.n.shift();
   B.L.joins = [pt(0, -(len + PIER_EXT))];
@@ -239,12 +245,19 @@ function lanesAcross(ap, p, u, q, off, smax) {
 function attachPlace(S, m, hv) {
   const ap = m.ap, size = m.size === 'l' ? 'l' : 'm', T = wallAt(ap, hv);
   if (!T) return { why: 'Point in front of a terminal wall: the pier starts there and reaches out to the cursor.' };
+  if (T.land) return { why: 'A pier goes on a wall that faces the apron, not the kerb or the grass: point out from the airside.' };
   const a = Math.atan2(T.n.y, T.n.x) + (m.turn || 0) * Math.PI / 12, u = { x: Math.cos(a), y: Math.sin(a) };
   let len = U.clamp(Math.round(((hv.x - T.p.x) * u.x + (hv.y - T.p.y) * u.y) * 10) / 10, 1.3, 7); const off = pierOff(size), q = { x: -u.y, y: u.x };
   // a taxilane across the root: both side lanes meet it near the wall
   const side = sg => lineMeets(ap, { x: T.p.x + q.x * sg * off, y: T.p.y + q.y * sg * off }, u, Math.min(len, 1.6));
   // (the taxilanes across it there, one or several: a face lane may be in sections joined at a step)
-  const mL = side(-1), mR = side(1), smax = mL && mR ? Math.max(mL.s, mR.s) + 0.15 : 0, cross = mL && mR ? { qs: lanesAcross(ap, T.p, u, q, off, smax), at: { [-1]: mL.at, 1: mR.at }, u, q, p: T.p, off, smax } : null;
+  let mL = side(-1), mR = side(1);
+  // (one side lane misses the taxilane, past its last gate: slide the root along the wall, toward the middle, until both meet it)
+  if (!!mL !== !!mR && !m.turn) for (let k = 1; k <= 12 && !(mL && mR); k++) {
+    const s1 = T.ss + (mL ? -1 : 1) * k * 0.05; if (s1 < T.lo || s1 > T.hi) break;
+    T.p = { x: T.A.x + T.w.x * s1, y: T.A.y + T.w.y * s1 }; mL = side(-1); mR = side(1);
+  }
+  const smax = mL && mR ? Math.max(mL.s, mR.s) + 0.15 : 0, cross = mL && mR ? { qs: lanesAcross(ap, T.p, u, q, off, smax), at: { [-1]: mL.at, 1: mR.at }, u, q, p: T.p, off, smax } : null;
   const s0 = { [-1]: cross ? mL.s : 0.1, 1: cross ? mR.s : 0.1 };
   // (no further than the next taxiway or runway out: the tip's taxilane stops short of it and is joined to it)
   let far = 1e9;
@@ -259,6 +272,10 @@ function attachPlace(S, m, hv) {
   const polys = L.aprons.map(A => IC.layoutPairs(A.poly).map(p => X(p.x, p.y))).concat(L.blds.map(b => IC.layoutPairs(b.poly).map(p => X(p.x, p.y))));
   const cuts = ap.parts.filter(p => p.kind === 'apron' && p.x != null && polys.some(P => polyHit(IC.partOutline(p), P)));
   const skip = new Set(cuts.map(p => p.id)); if (cross) for (const c of cross.qs) skip.add(c.id);
+  // (a taxilane its apron only reaches over at the edge: it runs on the pavement, as on any apron, so long as it misses the pier)
+  const nA = L.aprons.length;
+  for (const t of ap.parts) if (t.kind === 'taxi' && t.lane && !skip.has(t.id)) { const P = t.nodes.map(id => ap.nodes[id]).filter(Boolean);
+    if (polys.slice(0, nA).some(A => polyHitLine(A, P)) && !polys.slice(nA).some(A => polyHitLine(A, P))) skip.add(t.id); }
   return { L, x: T.p.x, y: T.p.y, rot, len, term: T.t, cuts, cross, skip, polys, u };
 }
 /* does a line run into an outline */
@@ -283,7 +300,10 @@ function attachGone(ap, P) { const ids = new Set(P.cuts.map(p => p.id)); return 
 /* cut the aprons round the pier and split the taxilane across its root; returns what undo needs to put back */
 function attachCut(S, ap, P) {
   const keep = { parts: [], added: [], at: {} }, cl = o => JSON.parse(JSON.stringify(o, (k, v) => k[0] === '_' || k === 'stands' ? undefined : v));
-  const near = (x, y) => underPier(P, x, y);
+  // (the apron left round it runs on under the edge of the pier's own apron and up to the pier's walls, with no strip
+  // of grass between)
+  const nA = P.L.aprons.length, PA = P.polys.slice(0, nA), deep = (Q, x, y) => U.inPoly(x, y, Q.map(q => [q.x, q.y])) && Q.every((q, i) => { const r = Q[(i + 1) % Q.length]; return U.segDist(x, y, q.x, q.y, r.x, r.y) > 0.04; });
+  const near = (x, y) => PA.some(Q => deep(Q, x, y)) || P.polys.slice(nA).some(Q => U.inPoly(x, y, Q.map(q => [q.x, q.y])));
   // (where each was in the list, before any is taken out)
   for (const p of P.cuts.concat(P.cross ? P.cross.qs : [])) keep.at[p.id] = ap.parts.indexOf(p);
   const st = IC.aptStands(ap);

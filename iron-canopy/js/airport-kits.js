@@ -125,8 +125,10 @@ IC.kitPier = function (B, o) {
     const wall = sg * bw, sd = sg * (bw + WALL + S0.d / 2), ld = sg * (bw + WALL + S0.d + LANE_OFF), od = sg * (bw + WALL + S0.d + LANE_OFF + MARGIN);
     const s0 = (o.s0 && o.s0[sg]) || 0, sEnd = L + ext, sStart = o.lane0 && o.lane0[sg] != null ? o.lane0[sg] : -ext;
     out.aprons = out.aprons || {};
+    // (a pier whose lanes start at its root: its apron starts at the wall, not behind it)
+    const a0 = Math.max(o.lane0 ? 0 : -ext - 0.14, sStart - 0.14);
     // (o.ai: the stands go on an apron the caller pours itself, round the whole complex)
-    const ai = out.aprons[sg] = o.ai != null ? o.ai : B.apron([W(Math.max(-ext - 0.14, sStart - 0.14), wall - sg * 0.04), W(sEnd + 0.14, wall - sg * 0.04), W(sEnd + 0.14, od), W(Math.max(-ext - 0.14, sStart - 0.14), od)], { name: o.apName });
+    const ai = out.aprons[sg] = o.ai != null ? o.ai : B.apron([W(a0, wall - sg * 0.04), W(sEnd + 0.14, wall - sg * 0.04), W(sEnd + 0.14, od), W(a0, od)], { name: o.apName });
     const n = Math.max(0, Math.floor((L - s0 - (o.s1 || 0)) / (S0.w + 0.02))), gap = (L - s0 - (o.s1 || 0) - n * (S0.w + 0.02)) / 2;
     const ss = []; for (let i = 0; i < n; i++) ss.push(s0 + gap + (S0.w + 0.02) * (i + 0.5));
     const lp = [W(sStart, ld)]; for (const s of ss) lp.push(W(s, ld)); lp.push(W(L, ld), W(sEnd, ld));
@@ -189,11 +191,12 @@ IC.kitComplex = function (B, o) {
   const W0 = x + cwR + 0.1, sh = -W0 / 2, x0 = sh, x1 = sh + W0;
   for (const sp of seps) { sp.x += sh; if (sp.p) sp.p.x = sp.x; }
   for (const s of span) { s[0] += sh; s[1] += sh; }
-  // a pier's root: deeper than the sections either side, so it meets the head house along its whole root edge;
+  // a pier's root: deeper than the sections either side (both corners, however it fans), so it meets the head house
+  // along its whole root edge;
   // where its side lanes meet the lanes along the sections beside it (sg −1: toward −x)
   const meet = (p, sg, Y) => (Y - p.R.y - p.q.y * sg * p.off) / p.u.y;
   seps.forEach((sp, k) => { const p = sp.p; if (!p) return;
-    p.R = pt(p.x, Math.min(secY[k], secY[k + 1]) - 0.05); p.cl = pt(p.R.x - p.q.x * bw, p.R.y - p.q.y * bw); p.cr = pt(p.R.x + p.q.x * bw, p.R.y + p.q.y * bw);
+    p.R = pt(p.x, Math.min(secY[k], secY[k + 1]) - 0.05 - Math.abs(p.q.y) * bw); p.cl = pt(p.R.x - p.q.x * bw, p.R.y - p.q.y * bw); p.cr = pt(p.R.x + p.q.x * bw, p.R.y + p.q.y * bw);
     p.s = { [-1]: meet(p, -1, secY[k] - offF), 1: meet(p, 1, secY[k + 1] - offF) }; });
   // the head house: the airside face section by section, round the pier roots and down each step
   const F = [pt(x0 + cwL, secY[0])];

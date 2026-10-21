@@ -2646,10 +2646,13 @@ test('pieces: a pier on a terminal cuts the apron round it, keeps the stands cle
   for (let i = 0; i < O.length; i++) { const A = O[i], B = O[(i + 1) % O.length], L = U.dist(A, B); if (L < 1) continue;
     const c = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }; let n = { x: -(B.y - A.y) / L, y: (B.x - A.x) / L }; if (U.inPoly(c.x + n.x * 0.03, c.y + n.y * 0.03, OA)) n = { x: -n.x, y: -n.y };
     if (n.y < -0.9 && (!best || L > best.L)) best = { L, c, n }; }
-  const hv = { x: best.c.x + best.n.x * 3.5, y: best.c.y + best.n.y * 3.5 }, m = IC.bldMode(S, ap, 'tattach'), plan = { text: [] };
+  const hv = { x: best.c.x + best.n.x * 3.5, y: best.c.y + best.n.y * 3.5 }, m = IC.bldMode(S, ap, 'tattach'); let plan = { text: [] };
   S.mode2 = m; S.hover = hv; IC.piecePlan(S, m, hv, plan);
   assert(plan.ok && plan.piece.P.cuts.length && plan.piece.P.gone > 0 && plan.piece.P.L.stands.length >= 6, `the pier: ${plan.why || plan.text.join(' ')}`);
   assert(plan.text.some(x => /stands in its way taken up/.test(x)), plan.text.join(' '));
+  // (not from the kerb side: it says why)
+  const land = { text: [] }; IC.piecePlan(S, m, { x: ap.x, y: ap.y + 3 }, land);
+  assert(!land.ok && /faces the apron/.test(land.why), `landside: ${land.why || land.text.join(' ')}`); IC.piecePlan(S, m, hv, plan = { text: [] });
   const snap = () => JSON.stringify(ap.parts.map(p => [p.id, p.kind, p.x, p.y, p.poly && p.poly.length, p.nodes && p.nodes.join()]));
   const n0 = ap.parts.length, before = snap(), st0 = IC.aptStands(ap).length, b0 = S.budget;
   IC.clickWorld(hv, 0);
