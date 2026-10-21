@@ -31,6 +31,8 @@ const SPEC = {
   // or a lane each way and a parking strip on both sides; the pavements are the blocks' own, as measured from the
   // building line in city-samples.js)
   art: { w: 0.2, lane: 0.035, lanes: 2, sh: 0.015, R: 0.08, px: 2.2, centre: 'solid' },
+  // (brief 66: a collector, 14 m: a lane each way either side of a dashed centre line, parking on one side)
+  col: { w: 0.14, lane: 0.035, lanes: 1, sh: 0.035, R: 0.07, px: 1.8, centre: 'dash' },
   st: { w: 0.11, lane: 0.035, lanes: 1, sh: 0.02, R: 0.06, px: 1.4 },
   ln: { w: 0.05, lane: 0.025, lanes: 1, sh: 0, R: 0.06, px: 1.1 },
   land: { w: 0.12, lane: 0.035, lanes: 1, sh: 0.01, R: 0.07, px: 1.4 }
@@ -38,8 +40,8 @@ const SPEC = {
 IC.ROAD_SPEC = SPEC;
 /* how each class looks far out, where a road is a line on the map (the tiles' far levels, and the live drawing as it
    zooms in, which blends these into the asphalt): pale concrete and asphalt greys, the busier the lighter */
-IC.ROAD_TONE = { hw: [206, 196, 174], ring: [200, 192, 172], rd: [190, 184, 166], art: [178, 174, 164], lc: [172, 166, 148], sp: [172, 166, 148], st: [148, 146, 140], ln: [160, 140, 100], ramp: [200, 192, 172] };
-const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, land: 2, st: 1, sp: 1, ln: 0 };
+IC.ROAD_TONE = { hw: [206, 196, 174], ring: [200, 192, 172], rd: [190, 184, 166], art: [178, 174, 164], col: [162, 160, 152], lc: [172, 166, 148], sp: [172, 166, 148], st: [148, 146, 140], ln: [160, 140, 100], ramp: [200, 192, 172] };
+const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, land: 2, col: 2, st: 1, sp: 1, ln: 0 };
 IC.ROAD_RANK = RANK;
 /* the width a road is drawn at zoom z: its real width close in, wider far out so it reads */
 IC.roadWidth = (k, z) => { const s = SPEC[k] || SPEC.lc; return Math.max(s.w, s.px / z * (1 - U.clamp((z - 3) / 6, 0, 1) * 0.5)); };

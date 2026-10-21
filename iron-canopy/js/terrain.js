@@ -490,26 +490,26 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   {
     // (cl: a suburb's closes, brief 54, thinner than a side street until the street zoom, so an estate's loop is a line
     // and not a ring from the town zoom)
-    const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, st: 0.5, cl: 0.3, ring: 2.4, ramp: 1 },
-      { ln: 0.3, art: 0.7, st: 0.5, cl: 0.3, ring: 0.9 }, { ln: 0.12, art: 0.2, st: 0.11, cl: 0.11, ring: 0.36 }, { ln: 0.07, art: 0.2, st: 0.11, cl: 0.11, ring: 0.36 }][lod];
+    const RW = [{ hw: 11, rd: 6.5, lc: 3.4, sp: 3 }, { hw: 3.6, rd: 2.2, lc: 1.3, sp: 1.1, ln: 0.6, art: 0.9, col: 0.6, st: 0.5, cl: 0.3, ring: 2.4, ramp: 1 },
+      { ln: 0.3, art: 0.7, col: 0.6, st: 0.5, cl: 0.3, ring: 0.9 }, { ln: 0.12, art: 0.2, col: 0.14, st: 0.11, cl: 0.11, ring: 0.36 }, { ln: 0.07, art: 0.2, col: 0.14, st: 0.11, cl: 0.11, ring: 0.36 }][lod];
     // (the same tones as the live drawing far out: roadgeom.js IC.ROAD_TONE)
     const T = IC.ROAD_TONE, tc = (k, a) => `rgba(${T[k][0]},${T[k][1]},${T[k][2]},${a})`;
-    const FILL = { ramp: tc('ramp', 0.85), hw: tc('hw', 0.92), rd: tc('rd', 0.8), lc: tc('lc', 0.6), sp: tc('sp', 0.6), ln: tc('ln', 0.55), art: tc('art', 0.75), st: tc('st', 0.6), ring: tc('ring', 0.85) };
-    if (lod >= 2) { FILL.art = 'rgb(150,148,142)'; FILL.st = 'rgb(128,127,122)'; FILL.ring = 'rgb(128,127,122)'; FILL.ln = 'rgba(140,122,90,0.8)'; }
+    const FILL = { ramp: tc('ramp', 0.85), hw: tc('hw', 0.92), rd: tc('rd', 0.8), lc: tc('lc', 0.6), sp: tc('sp', 0.6), ln: tc('ln', 0.55), art: tc('art', 0.75), col: tc('col', 0.68), st: tc('st', 0.6), ring: tc('ring', 0.85) };
+    if (lod >= 2) { FILL.art = 'rgb(150,148,142)'; FILL.col = 'rgb(140,139,133)'; FILL.st = 'rgb(128,127,122)'; FILL.ring = 'rgb(128,127,122)'; FILL.ln = 'rgba(140,122,90,0.8)'; }
     // close in, city streets are asphalt between pavements
-    if (lod >= 3 && IC.STREET_ASP) { FILL.art = IC.STREET_ASP.art; FILL.st = IC.STREET_ASP.st; FILL.ring = IC.STREET_ASP.ring; }
+    if (lod >= 3 && IC.STREET_ASP) { FILL.art = IC.STREET_ASP.art; FILL.col = IC.STREET_ASP.col; FILL.st = IC.STREET_ASP.st; FILL.ring = IC.STREET_ASP.ring; }
     FILL.cl = FILL.st;
     const layers = [];
     // (the national roads through a city are its avenues: far out drawn as the roads they are, close in as avenues)
     const aves = lod >= 2 ? W.edges.filter(e => e.city) : [];
-    if (lod) { layers.push(['ln', W.lanes]); for (const c of towns) if (c.streets && tIn(c)) { layers.push(['cl', c.streets.filter(l => l.cul)]); for (const cls of ['st', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls && !l.cul)]); } layers.push(['art', aves.filter(e => e.ccls !== 'ring')], ['ring', aves.filter(e => e.ccls === 'ring')]); }
+    if (lod) { layers.push(['ln', W.lanes]); for (const c of towns) if (c.streets && tIn(c)) { layers.push(['cl', c.streets.filter(l => l.cul)]); for (const cls of ['st', 'col', 'art', 'ring']) layers.push([cls, c.streets.filter(l => l.cls === cls && !l.cul)]); } layers.push(['art', aves.filter(e => e.ccls !== 'ring')], ['ring', aves.filter(e => e.ccls === 'ring')]); }
     if (lod < 2) { for (const cls of ['sp', 'lc', 'rd']) layers.push([cls, W.edges.filter(e => e.cls === cls)]); if (lod) layers.push(['ramp', W.ramps]); layers.push(['hw', W.edges.filter(e => e.cls === 'hw')]); }
     for (const pass of [0, 1]) for (const [cls, list] of layers) {
       const w = RW[cls] * K0; if (!w) continue;
       g.beginPath();
       for (const l of list) { if (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3])) continue; for (const P of IC.roadRuns ? IC.roadRuns(W, l) : [l.pts]) P.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
       // close in, streets have pavements either side; far out, roads a dark edge
-      const pave = (lod >= 3 && (cls === 'st' || cls === 'art' || cls === 'ring')) || (lod >= 4 && cls === 'cl');
+      const pave = (lod >= 3 && (cls === 'st' || cls === 'col' || cls === 'art' || cls === 'ring')) || (lod >= 4 && cls === 'cl');
       if (pass === 0) { g.strokeStyle = pave ? 'rgb(152,150,142)' : cls === 'ln' ? 'rgba(40,34,24,0.2)' : 'rgba(20,18,14,0.45)'; g.lineWidth = w + (pave ? 0.1 : [3 * K0, 1.2, 0.3, 0.1, 0.06][lod]); }
       else { g.strokeStyle = FILL[cls]; g.lineWidth = w; }
       g.stroke();
@@ -545,18 +545,20 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     if (lod >= 4) for (const c of towns) {
       if (!c.streets || !tIn(c)) continue;
       g.beginPath();
-      for (const l of c.streets.concat(aves.filter(e => e.city === c.id))) { if ((l.cls !== 'art' && l.cls !== 'ring' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
+      for (const l of c.streets.concat(aves.filter(e => e.city === c.id))) { if ((l.cls !== 'art' && l.cls !== 'ring' && l.cls !== 'col' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue; l.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); }
       g.strokeStyle = 'rgba(236,236,226,0.7)'; g.lineWidth = 0.012; g.setLineDash([0.06, 0.09]); g.stroke(); g.setLineDash([]);
     }
     if (lod >= 3) for (const c of towns) {
       if (!c.streets || !tIn(c)) continue;
       const P = [];
       for (const l of c.streets.concat(aves.filter(e => e.city === c.id))) {
-        if ((l.cls !== 'art' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
+        if ((l.cls !== 'art' && l.cls !== 'col' && !l.city) || (l.bb && !inb(l.bb[0], l.bb[1], l.bb[2], l.bb[3]))) continue;
+        // (a collector's trees in the verge, closer in and farther apart than an avenue's)
+        const off = l.cls === 'col' ? 0.1 : 0.13, gap = l.cls === 'col' ? 0.22 : 0.16;
         for (let i = 1; i < l.pts.length; i++) {
           const a = l.pts[i - 1], b = l.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 0.01) continue;
-          const nx = -(b.y - a.y) / L * 0.13, ny = (b.x - a.x) / L * 0.13;   // (in the pavement beside the avenue)
-          for (let t = 0.1; t < L; t += 0.16) { const x = a.x + (b.x - a.x) * t / L, y = a.y + (b.y - a.y) * t / L; if (inb(x - 1, y - 1, x + 1, y + 1)) P.push(x + nx, y + ny, x - nx, y - ny); }
+          const nx = -(b.y - a.y) / L * off, ny = (b.x - a.x) / L * off;   // (in the pavement beside the avenue)
+          for (let t = 0.1; t < L; t += gap) { const x = a.x + (b.x - a.x) * t / L, y = a.y + (b.y - a.y) * t / L; if (inb(x - 1, y - 1, x + 1, y + 1)) P.push(x + nx, y + ny, x - nx, y - ny); }
         }
       }
       if (P.length) trees(g, P, 0.05, 0.03);

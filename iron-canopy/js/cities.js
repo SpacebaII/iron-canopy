@@ -119,7 +119,7 @@ function polyNear(F, x0, y0, x1, y1, p) {
 function rectHit(Bk, b, pad, skip) {
   const ca = Math.cos(b.a), sa = Math.sin(b.a); let hit = false;
   Bk.near(b.x, b.y, Math.hypot(b.w, b.h) / 2 + 1, s => {
-    if (hit || s[4] === 'st' || s[4] === skip) return;
+    if (hit || s[4] === 'st' || s[4] === 'col' || s[4] === skip) return;
     const p = (HALF[s[4]] || 0.2) + pad, ax = s[0] - b.x, ay = s[1] - b.y, bx = s[2] - b.x, by = s[3] - b.y;
     const x0 = ax * ca + ay * sa, y0 = -ax * sa + ay * ca, x1 = bx * ca + by * sa, y1 = -bx * sa + by * ca;
     if (!segBox(x0, y0, x1, y1, b.w / 2 + p, b.h / 2 + p)) return;
@@ -153,7 +153,7 @@ function nearest(Bk, x, y, r, skip) {
   });
   return best;
 }
-const HALF = { hw: 0.35, rd: 0.14, lc: 0.1, sp: 0.08, rail: 0.35, art: 0.15, ring: 0.3, st: 0.1, sq: 0.8 };
+const HALF = { hw: 0.35, rd: 0.14, lc: 0.1, sp: 0.08, rail: 0.35, art: 0.15, ring: 0.3, col: 0.11, st: 0.1, sq: 0.8 };
 
 /* ---------- styles for the country's cities ---------- */
 IC.cityStyles = function (W, R) {
@@ -558,6 +558,10 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const base = { fld: FLD, blocked, cross, box: [rx0, ry0, rx0 + rn * RES, ry0 + rn * RES] };
   const arts = IC.fabricTrace(Object.assign({}, base, { lines: streets.map(l => ({ pts: l.pts, seed: true })).concat(roadLines), seeds: seeds0, dsep: (x, y, fam) => sizeAt(x, y, fam) * IC.FABRIC.art, maxLen: 200, cell: 4, step: 0.6 }));
   for (const l of arts) streets.push({ cls: 'art', pts: l.pts, ends: l.ends, br: l.br });
+  // the collectors (brief 66): a wider street with a centre line midway between two arterials, gathering the side
+  // streets' traffic for them, as in a real town's hierarchy (arterial, collector, local street)
+  const cols = IC.fabricTrace(Object.assign({}, base, { lines: streets.map(l => ({ pts: l.pts, seed: true })).concat(roadLines), seeds: seeds0, dsep: (x, y, fam) => sizeAt(x, y, fam) * IC.FABRIC.col, maxLen: 120, cell: 2, cross: null }));
+  for (const l of cols) if (U.dist(l.pts[0], l.pts[l.pts.length - 1]) > sizeAt(l.pts[0].x, l.pts[0].y, 0) * 2.5) streets.push({ cls: 'col', pts: l.pts, ends: l.ends });
   const locals = IC.fabricTrace(Object.assign({}, base, { lines: streets.map(l => ({ pts: l.pts, seed: true })).concat(roadLines), seeds: seeds0, dsep: sizeAt, maxLen: 60, cross: null, cell: 1 }));
   for (const l of locals) streets.push({ cls: 'st', pts: l.pts, ends: l.ends });
   // a street that met nothing ends in a turning head; one run across the water carries a bridge
@@ -571,7 +575,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const faceLines = [], SW = IC.ROAD_SPEC;
   // (streets and avenues set back to the real corridor from building line to building line, brief 65)
   const RFab = IC.REAL_FABRIC, stPad = Math.max(SW.st.w / 2 + 0.03, RFab.corSt / 2), artPad = Math.max(SW.art.w / 2 + 0.03, RFab.corArt / 2);
-  const hw2 = { hw: 1.25, rd: SW.rd.w / 2 + 0.2, lc: SW.lc.w / 2 + 0.2, sp: SW.sp.w / 2 + 0.15, art: artPad, rail: 0.6, ring: SW.ring.w / 2 + 0.3 };
+  const hw2 = { hw: 1.25, rd: SW.rd.w / 2 + 0.2, lc: SW.lc.w / 2 + 0.2, sp: SW.sp.w / 2 + 0.15, art: artPad, col: stPad + (SW.col.w - SW.st.w) / 2, rail: 0.6, ring: SW.ring.w / 2 + 0.3 };
   for (const l of streets) {
     const pts = l.pts.slice();
     // the virtual tail of a street to what stopped it, so the face closes
@@ -671,7 +675,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
    footprints in the block's frame); a small face with none is a square, a larger one a garden */
 function realBlocks(c, core, faces, cellXY, mkBlock, parksL, squares, roads) {
   const B = 2, cellsF = new Map(), key = (i, j) => i * 100000 + j, RB = buckets(2);
-  for (const r of roads) if (r[4] !== 'st' && r[4] !== 'rail') RB.add(r);
+  for (const r of roads) if (r[4] !== 'st' && r[4] !== 'col' && r[4] !== 'rail') RB.add(r);
   faces.forEach((f, k) => {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of f.poly) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
     f.bl = [];
@@ -1126,6 +1130,7 @@ function tieStreets(c, roadSegs, SP, hwSegs) {
     for (const end of [0, 1]) {
       if (l.stop & (end + 1)) continue;   // (it ends at a bank or a square)
       const hd = l.head & (end + 1);   // (a turning head: it ends where it is, unless a street is right there after all)
+      if (hd && l.cul) continue;   // (an estate's close ends at its head, however near the loop runs: brief 66)
       const P = l.pts, e = end ? P[P.length - 1] : P[0], q = end ? P[P.length - 2] : P[1];
       // (an end that stops just short of a street or road is run on to meet it)
       // (a corner where two streets end together counts as tied, but still meets a road or street that passes by it)

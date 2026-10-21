@@ -14,11 +14,12 @@ IC.FABRIC = {
   // block spacing by district (units of 100 m): the old town's lanes, the centre, dense housing, suburbs, industry
   size: { old: 1.3, biz: 1.6, dense: 2.1, sub: 3.1, ind: 5.5, log: 6.0, rail: 4.8, park: 2.6 },
   art: 3.5,                                                   // an arterial every so many blocks
+  col: 1.75,                                                  // a collector street between two arterials (brief 66)
   styleK: { eu: 1, us: 1.17, new: 1.1, ind: 1, east: 1.2 },   // American blocks a sixth wider
   step: 0.3,                                                  // tracing step (30 m)
   // how far a line turns the field round it, and how strongly
-  reach: { hw: 5, rd: 7, art: 5, ring: 7, lc: 4, sp: 2.5, rail: 4, river: 9, diag: 3, wall: 5, st: 2 },
-  weight: { hw: 0.5, rd: 1.4, art: 1.0, ring: 1.4, lc: 0.8, sp: 0.4, rail: 0.6, river: 1.2, diag: 0.25, wall: 1.2, st: 0.8 }
+  reach: { hw: 5, rd: 7, art: 5, ring: 7, lc: 4, sp: 2.5, rail: 4, river: 9, diag: 3, wall: 5, col: 2, st: 2 },
+  weight: { hw: 0.5, rd: 1.4, art: 1.0, ring: 1.4, lc: 0.8, sp: 0.4, rail: 0.6, river: 1.2, diag: 0.25, wall: 1.2, col: 0.8, st: 0.8 }
 };
 
 /* ---------- the real fabric (brief 65) ----------
