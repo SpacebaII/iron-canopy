@@ -97,7 +97,8 @@ IC.drawGrade = function (g, G, clip) {
   const plain = G.sat < 0.01 && G.mul[0] > 252 && G.mul[1] > 252 && G.mul[2] > 252 && G.golden < 0.01;
   if (plain) return;
   const V = view, x = V.x0, y = V.y0, w = V.x1 - V.x0, h = V.y1 - V.y0;
-  g.save(); g.beginPath(); clip(g); g.clip('evenodd');
+  // (a clip that does its own clipping says so by returning true)
+  g.save(); g.beginPath(); if (clip(g) !== true) g.clip('evenodd');
   // drain the colour by laying a neutral grey over it (a plain blend: the 'saturation' mode costs several ms a frame
   // without a graphics card)
   if (G.sat > 0.01) { g.globalAlpha = G.sat * 0.6; g.fillStyle = 'rgb(118,122,130)'; g.fillRect(x, y, w, h); }
@@ -105,10 +106,33 @@ IC.drawGrade = function (g, G, clip) {
   if (G.golden > 0.01) { g.globalCompositeOperation = 'soft-light'; g.fillStyle = `rgba(255,140,60,${0.35 * G.golden})`; g.fillRect(x, y, w, h); }
   g.restore();
 };
-/* (brief 67) the whole airport's outline, landside included: the night over the map leaves it out and the airport
-   lays its own over it after drawing everything inside (render-airport.js). With the landside cut out of both, the
-   terminal and its car parks were drawn after the night and never under one: a white slab in the dark */
-IC.aptHullPath = (g, b) => { b.poly.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
+/* (brief 67) where the airport lays its own night (render-airport.js) and the map's leaves off: the fence's hull, and
+   every building's outline, as buildings on the fence line (a terminal facing its landside) reach out of the hull and
+   were drawn after the map's night and never under one, a white slab in the dark. Kept per airport until it changes */
+const NIGHT_SKIP = { runway: 1, taxi: 1, apron: 1, holdbay: 1, surface: 1, people: 1, skybridge: 1, alert: 1 };
+IC.aptNightPolys = function (ap, box) {
+  if (ap._np && ap._npB === box && ap._npN === ap.parts.length) return ap._np;
+  const L = [box.poly.slice()];
+  for (const p of ap.parts) if (p.x != null && !NIGHT_SKIP[p.kind] && IC.partOutline) L.push(IC.partOutline(p));
+  // all wound the same way, so their union fills with the non-zero rule
+  for (const P of L) { let A = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; A += a.x * b.y - b.x * a.y; } if (A < 0) P.reverse(); }
+  ap._np = L; ap._npB = box; ap._npN = ap.parts.length;
+  return L;
+};
+const polyTo = (g, P) => { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
+// the airport's own: inside the union
+IC.aptNightClip = (g, ap, box) => { g.beginPath(); for (const P of IC.aptNightPolys(ap, box)) polyTo(g, P); g.clip(); return true; };
+// the map's: outside every one of them (each clip narrows the last)
+function outsideAirports(g, z) {
+  g.beginPath(); g.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); g.clip();
+  if (z < 0.3) return true;
+  for (const b of IC.bases(S0)) {
+    const k = b._box; if (!k || !k.poly || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
+    for (const P of IC.aptNightPolys(b, k)) { g.beginPath(); g.rect(view.x0 - 1, view.y0 - 1, view.x1 - view.x0 + 2, view.y1 - view.y0 + 2); polyTo(g, P); g.clip('evenodd'); }
+  }
+  return true;
+}
+let S0 = null;
 /* ---------- main draw ---------- */
 IC.render = function (S, now) {
   const z = cam.z, px = 1 / z;
@@ -143,12 +167,11 @@ IC.render = function (S, now) {
   // night, dusk, dawn and the weather's gloom (atmos.js); airports grade their own field (render-airport.js), so
   // this leaves their fences out
   const G = IC.skyGrade(S, wx);
+  if (z >= 0.3 && IC.drawLandsideEarly && G.dark > 0) for (const b of IC.bases(S)) if (b.land && inView(b.x, b.y, b.radius + 20)) IC.drawLandsideEarly(ctx, S, b, px, light);
   // film mode lifts the moonlight a little, so the land reads under the city lights and the fire
   if (FM && G.dark > 0) { const k = IC.film.opt.moon == null ? 0.38 : IC.film.opt.moon; G.mul = G.mul.map(c => Math.round(c + (255 - c) * k * G.dark)); G.sat *= 0.6; }
-  IC.drawGrade(ctx, G, g => {
-    g.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-    if (z >= 0.3) for (const b of IC.bases(S)) { const k = b._box; if (k && k.poly && b.parts && inView(b.x, b.y, b.radius + 20)) IC.aptHullPath(g, k); }
-  });
+  S0 = S;
+  IC.drawGrade(ctx, G, g => outsideAirports(g, z));
   if (light < 0.9) drawLights(S, px, now, light, FM ? 1.5 : 1);
 
   // (round 5c) radar cover belongs to the moment in the civil act: while placing a civil radar, in the Airspace tab, or

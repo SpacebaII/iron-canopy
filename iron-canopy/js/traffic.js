@@ -570,16 +570,22 @@ IC.along = along;
 /* (brief 67) the same, drawn: within a few tens of metres of each bend of the line the point follows a curve tangent to
    both pieces, so what drives or rolls along it turns smoothly instead of snapping round at every point of the road */
 const alongR = (pts, cum, s) => {
-  const p = along(pts, cum, s), n = cum.length;
+  const n = cum.length;
   let lo = 1, hi = n - 1;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < s) lo = mid + 1; else hi = mid; }
-  const j = s - cum[lo - 1] < cum[lo] - s ? lo - 1 : lo;
-  if (j <= 0 || j >= n - 1) return p;
-  const L0 = cum[j] - cum[j - 1], L1 = cum[j + 1] - cum[j], r = Math.min(0.3, L0 * 0.45, L1 * 0.45), e = s - cum[j];
-  if (r < 0.003 || e <= -r || e >= r) return p;
-  const V = pts[j], P = pts[j - 1], N = pts[j + 1], ix = (V.x - P.x) / (L0 || 1), iy = (V.y - P.y) / (L0 || 1), ox = (N.x - V.x) / (L1 || 1), oy = (N.y - V.y) / (L1 || 1);
-  const u = (e + r) / (2 * r), w = 1 - u;
-  return { x: w * w * (V.x - ix * r) + 2 * u * w * V.x + u * u * (V.x + ox * r), y: w * w * (V.y - iy * r) + 2 * u * w * V.y + u * u * (V.y + oy * r), h: Math.atan2(w * iy + u * oy, w * ix + u * ox) };
+  const L = cum[lo] - cum[lo - 1], e0 = s - cum[lo - 1], e1 = cum[lo] - s;
+  // the bend nearest, if within reach of its curve
+  const j = e0 < e1 ? lo - 1 : lo, e = e0 < e1 ? e0 : -e1;
+  if (j > 0 && j < n - 1 && (e0 < 0.3 || e1 < 0.3)) {
+    const L0 = cum[j] - cum[j - 1], L1 = cum[j + 1] - cum[j], r = Math.min(0.3, L0 * 0.45, L1 * 0.45);
+    if (r >= 0.003 && e > -r && e < r) {
+      const V = pts[j], P = pts[j - 1], N = pts[j + 1], ix = (V.x - P.x) / (L0 || 1), iy = (V.y - P.y) / (L0 || 1), ox = (N.x - V.x) / (L1 || 1), oy = (N.y - V.y) / (L1 || 1);
+      const u = (e + r) / (2 * r), w = 1 - u;
+      return { x: w * w * (V.x - ix * r) + 2 * u * w * V.x + u * u * (V.x + ox * r), y: w * w * (V.y - iy * r) + 2 * u * w * V.y + u * u * (V.y + oy * r), h: Math.atan2(w * iy + u * oy, w * ix + u * ox) };
+    }
+  }
+  const a = pts[lo - 1], b = pts[lo], t = e0 / (L || 1);
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: Math.atan2(b.y - a.y, b.x - a.x) };
 };
 IC.alongR = alongR;
 IC.trainPos = t => alongR(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));

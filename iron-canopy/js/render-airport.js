@@ -181,7 +181,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
-  if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
+  // (drawn already this frame under the map's night when it lies outside the fence: IC.drawLandsideEarly)
+  if (ap.land && ap.land.items && z > 1.2 && ap._landF !== IC.frameN) drawLandside(g, S, ap, px, z, night);
   // the pavement: close in, one painted surface from the airport's tiles (render-pavement.js); far out, flat shapes
   const tiles = z * IC.dpr() >= 1;
   if (tiles && o && o.pad) IC.pavePaint(g, S, ap, z, IC.rs.view);
@@ -259,7 +260,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
-  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptHullPath(g2, box));   // (not in the 3D view's picture: it has its own sky)
+  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptNightClip(g2, ap, box));   // (not in the 3D view's picture: it has its own sky)
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
   if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);
@@ -1197,6 +1198,13 @@ function lotPaths(it, w, h, k, use) {
   }
   return (it._lot = out);
 }
+/* (brief 67) the landside reaches outside the fence, where the airport's own night does not fall, and it was drawn after
+   the map's: car parks, kerbs and the terminal's front stood white in the dark. render.js draws it before the night */
+IC.drawLandsideEarly = function (g, S, ap, px, light) {
+  const z = IC.cam.z;
+  if (!ap.land || !ap.land.items || z <= 1.2 || !ap.parts) return;
+  drawLandside(g, S, ap, px, z, light < 0.55); ap._landF = IC.frameN;
+};
 function drawLandside(g, S, ap, px, z, night) {
   const L = ap.land, V = IC.rs && IC.rs.view;
   const vis = it => !V || (it.x > V.x0 - 2 && it.x < V.x1 + 2 && it.y > V.y0 - 2 && it.y < V.y1 + 2);
