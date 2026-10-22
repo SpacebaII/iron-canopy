@@ -150,7 +150,9 @@ function topbar() {
   const ck = $('hClock');
   ck.textContent = cal ? `${U.hhmm(S.time)} · ${U.date(S.time)}` : U.clock(S.time);
   ck.parentNode.title = cal ? `The calendar counts months and years; each month is ${cal.dpm} days and nights of live time. Aircraft, weather and building run on the live clock.` : '';
-  $('hSky').textContent = cal ? `Day ${cal.d} of ${cal.dpm} · ${IC.SEASON ? IC.SEASON[cal.mo].name + ' · ' : ''}${sky}` : sky;
+  // (the season is in the month's name and the tooltip: with it the line was cut off before the weather)
+  const hs = cal ? `Day ${cal.d} of ${cal.dpm} · ${sky}` : sky, hst = cal && IC.SEASON ? `${hs} · ${IC.SEASON[cal.mo].name}` : hs;
+  if ($('hSky').textContent !== hs) { $('hSky').textContent = hs; $('hSky').title = hst; }
   setHTML($('speed'), `<button class="pz" data-act="pause" aria-pressed="${S.paused}" title="Pause and resume (Space)">❚❚<kbd>Space</kbd></button>` +
     IC.SPEEDS.map((v, i) => `<button data-act="speed" data-v="${v}" aria-pressed="${!S.paused && !S.skip && S.speed === v}" title="${v}× speed: ${v * IC.GS} game seconds a second (key ${i + 1})">${v}×<kbd>${i + 1}</kbd></button>`).join('') +
     `<button class="skip" data-act="skip" aria-pressed="${!!S.skip && !S.paused}" title="Skip ahead fast until something needs you (S)">⏭<kbd>S</kbd></button>` +
@@ -377,6 +379,7 @@ function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
   if (S.range) h = IC.rangePanel(S);
+  else if (S.sbx) h = IC.sandboxPanel(S);
   else if (S.showcase) h = showcaseBrief();
   else if (S.mode === 'academy' && C.lesson) {
     const steps = IC.stepText(S);
@@ -954,7 +957,8 @@ ui.refresh = function (force) {
   ui.mapRight = $('insp').innerHTML ? Math.max(0, $('app').getBoundingClientRect().right - $('insp').getBoundingClientRect().left) : 0;
   $('app').classList.toggle('at-start', !$('start').hidden);
   $('app').classList.toggle('has-room', !!ui.room);
-  $('app').classList.toggle('is-range', !!S.range);   // (the test range is an empty plane: no minimap to show)
+  $('app').classList.toggle('is-range', !!S.range);
+  $('app').classList.toggle('is-sbx', !!S.sbx);   // (the sandbox's panel keeps its height: the staff messages give way)   // (the test range is an empty plane: no minimap to show)
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
 };
 function showOver() {
@@ -1022,7 +1026,7 @@ ui.toggleMenu = function (on) {
   ui.menu = on; $('menu').hidden = !on;
   if (on) { ui.pausedByMenu = !S.paused; S.paused = true; }
   else if (ui.pausedByMenu) { S.paused = false; ui.pausedByMenu = false; }
-  $('menuTime').textContent = `${U.clock(S.time)} · ${S.story ? `${IC.ACTS[S.story.act].name}, ${S.story.role}` : { campaign: 'Quick war', sandbox: 'Sandbox', academy: 'Academy', range: 'Test range' }[S.mode] || ''}`;
+  $('menuTime').textContent = `${U.clock(S.time)} · ${S.story ? `${IC.ACTS[S.story.act].name}, ${S.story.role}` : { campaign: 'Quick war', sandbox: 'War at dawn', test: 'Sandbox', academy: 'Academy', range: 'Test range' }[S.mode] || ''}`;
 };
 
 /* ---------- start screen: the title, the modes, and pages for the Academy, settings and controls ---------- */

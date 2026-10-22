@@ -405,7 +405,7 @@ IC.civil = function (S, dt) {
       else if (c.hp > c.max * 0.6) c.morale = Math.min(88, c.morale + 0.006);
     }
     S.alertCities = nA;
-    if (S.mode !== 'academy' && IC.nationalMorale(S) < 12) IC.gameOver(S, 'National morale has collapsed. The government has asked for terms.');
+    if (S.mode !== 'academy' && !S.sbx && IC.nationalMorale(S) < 12) IC.gameOver(S, 'National morale has collapsed. The government has asked for terms.');
   }
 };
 

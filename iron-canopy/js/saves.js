@@ -8,7 +8,7 @@ const U = IC.U, $ = id => document.getElementById(id), esc = U.esc;
 
 // game seconds between autosaves, real seconds at least; real seconds at most while anything changes, paused or not; slots kept
 IC.AUTOSAVE = { every: 600, realGap: 60, realEvery: 300, keep: 5 };
-const AUTO_MODES = { story: 1, campaign: 1, sandbox: 1 };
+const AUTO_MODES = { story: 1, campaign: 1, sandbox: 1, test: 1 };
 
 /* ---------- storage: meta (what the list shows) and data (the save, gzipped where the browser can) ---------- */
 let dbP = null;

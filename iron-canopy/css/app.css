@@ -253,6 +253,10 @@ kbd{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:500
 .btn.primary kbd{color:#0b3446;background:rgba(255,255,255,.35);box-shadow:none}
 .btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{color:var(--text);background:var(--well)}
 .btn.sm{min-height:1.6rem;padding:.12rem .6rem;font-size:.8rem;border-radius:8px}
+/* the sandbox: its panel keeps its height in the left column, and the staff messages scroll instead */
+.app.is-sbx .brief{flex:none}.app.is-sbx .comms{flex:0 1 auto;min-height:0;overflow:auto}
+/* the sandbox's rules: a switch reads on or off at a glance */
+.sbx-rule{color:var(--dim)}.sbx-rule[aria-pressed="true"]{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(88,211,154,.45)}
 .btn.amber{color:var(--amber)}
 .btn.on{background:rgba(111,210,255,.3);box-shadow:inset 0 0 0 1px rgba(111,210,255,.6)}
 .hint{margin:0;font-size:.85rem;color:var(--muted);line-height:1.4}
@@ -379,6 +383,10 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .ref:has(>span:empty){grid-template-columns:1fr}.ref>span:empty{display:none}
 /* with a room open, incidents drop to the bottom so they never cover its tabs */
 .app.has-room .incidents{top:auto;bottom:24px}
+/* the camera's chip says what the map shows: behind a room it only covered the room's last lines */
+.app.has-room .followchip{display:none}
+/* over a room the unlock card steps down to the corner: at the top it hid the room's tabs and first lines */
+.app.has-room .unlock{left:auto;right:28px;top:auto;bottom:28px;transform:none;width:min(26rem,60%);animation:none}
 
 /* ---------- overlays ---------- */
 .tip{position:absolute;z-index:8;pointer-events:none;max-width:20rem;padding:.45rem .65rem;border-radius:10px;background:rgba(4,10,15,.95);box-shadow:var(--shadow);font-size:.88rem;line-height:1.35}
@@ -656,11 +664,14 @@ table.t th.r{text-align:right}
 .lanes svg.links{position:absolute;left:0;top:0;pointer-events:none;z-index:0;overflow:visible}
 .lanes svg .l{fill:none;stroke:rgba(255,255,255,.16);stroke-width:1.6}
 .lanes svg .l.done{stroke:rgba(88,211,154,.55)}
-.tnode{position:relative}
+/* the links run behind the nodes: each node is laid on an opaque underlay, so a line never shows through a card */
+.tnode{position:relative;z-index:0}
+.tnode::before{content:'';position:absolute;inset:0;border-radius:inherit;background:#121920;z-index:-1}
 .tnode.open{background:rgba(111,210,255,.07);box-shadow:inset 0 0 0 1px rgba(111,210,255,.35)}
 .tnode.done{box-shadow:inset 0 0 0 1px rgba(88,211,154,.35)}
 .tnode.cur{box-shadow:inset 0 0 0 1px rgba(242,180,65,.5)}
-.tnode.locked{opacity:.55}
+.tnode.locked{opacity:1}
+.tnode.locked>*{opacity:.55}
 .tnode p.opens{color:var(--ok);font-size:.8rem}
 .tnode .need{display:inline-flex;gap:.3rem;align-items:center;text-align:right}
 .tnode .meta{flex-wrap:wrap}
@@ -682,7 +693,7 @@ table.t th.r{text-align:right}
 .st-main{display:grid;gap:1rem;align-content:start}
 .tagline{margin:-.3rem 0 .6rem;font-size:1.15rem;color:var(--muted)}
 .start .modes{grid-template-columns:1fr 1fr;gap:8px}
-.start .mode{position:relative;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);border-radius:var(--r)}
+.start .mode{position:relative;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);border-radius:var(--r);align-content:start}
 .start .mode:hover{background:rgba(111,210,255,.12);box-shadow:inset 0 0 0 1px rgba(111,210,255,.45)}
 .start .mode b{font-size:1.45rem}
 .start .mode small{font-family:var(--mono);font-size:.75rem;color:var(--amber)}
@@ -911,6 +922,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.bb-open .leftcol{width:auto;max-width:22rem}
 .app.bb-open .leftcol>*{max-height:2.6rem;overflow:hidden;opacity:.82;transition:max-height .25s var(--ease),opacity .2s}
 .app.bb-open .leftcol:hover>*{max-height:40rem;opacity:1}
+/* folded to one line, the messages' "+N more" would show cut in half: it comes back on hover */
+.app.bb-open .leftcol:not(:hover) .feed.fline .fmore{display:none}
 .app.bb-open .insp{width:19rem;bottom:calc(var(--bbh,14rem) + 24px)}
 .app.has-insp.bb-open .bbar{right:12px}
 .bb-items{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;min-width:0;flex:1}
@@ -966,6 +979,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .feed.fline .toast span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .feed.fline .fmore{justify-self:start;font-family:var(--mono);font-size:.72rem;color:var(--muted);padding:.1rem .5rem;border-radius:999px;background:var(--glass-2)}
 .app.compact .insp{width:21rem;bottom:auto;max-height:calc(100% - var(--top) - 12px)}
+/* with the build bar open the panel ends above it, as it does outside the Career */
+.app.compact.bb-open .insp{max-height:calc(100% - var(--top) - var(--bbh,14rem) - 36px)}
 .app.compact .insp .ibody{min-height:0}
 .app.compact .insp.min .ibody,.app.compact .insp.min .itabs,.app.compact .insp.min .ihead+div{display:none}
 .app.compact .insp.min .ihead{padding:.45rem .6rem}
@@ -1037,6 +1052,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.compact .stat:not(.role) strong{white-space:nowrap}
 /* (round 5c) the build bar's one strip: what to do now and the keys, on one line, never a caption over the Build button */
 .bb-opts>em.bb-keys{font-style:normal;font-size:.84rem;color:#cfe6f2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(52rem,100%);min-width:0}
+/* beside the option chips the strip is short of room: the line wraps to a second one rather than losing its end ("Esc or right-c…") */
+.bb-opts:has(.chip)>em.bb-keys,.app.compact .bb-opts:has(.chip)>em{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;max-width:26rem;line-height:1.3}
 /* (round 5c) the aircraft's slim card: what it is doing, the turnaround's bar and the services at work, Follow */
 .insp.slim{bottom:auto;width:21rem;max-height:calc(100% - var(--top) - 12px)}
 .insp.slim .ibody{gap:.5rem}

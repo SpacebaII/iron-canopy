@@ -201,5 +201,10 @@
  "research: a new Career opens the Research room on day one with the civil lanes; every \"Needs research\" leads to a project that can be started": 16.0,
  "research: every modifier a project carries is read by the simulation, has words and shows in a panel": 0.0,
  "research: Wait does not finish research faster than play": 8.6,
- "research: slots grow from two to four": 8.4
+ "research: slots grow from two to four": 8.4,
+ "sandbox: money never runs out, and airport parts and units are ready at once": 7.7,
+ "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
+ "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
+ "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
+ "polish: a runway warning on the map names the runway once": 9
 }
