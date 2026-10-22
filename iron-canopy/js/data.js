@@ -202,6 +202,7 @@ IC.ADVISORS = {
   DORN: { name: 'Marshal Anton Dorn', role: 'Head of state, across the border', tag: 'DORN' },
   VARENNE: { name: 'President Ilka Varenne', role: 'President, across the border', tag: 'VARENNE' },
   ORAN: { name: 'Chair Sefa Oran', role: 'Chair of the Revolutionary Council, across the border', tag: 'ORAN' },
+  YOU: { name: 'You, years later', role: 'Looking back', tag: 'YOU' },
   VOLKAN: { name: 'Gen. Taras Volkan', role: 'Commander of their air force', tag: 'VOLKAN' },
   MOREVA: { name: 'Capt. Ilya Moreva', role: 'Fighter pilot, their air force', tag: 'MOREVA' },
   KOLAR: { name: 'Vesna Kolar', role: 'Newsreader, their state television', tag: 'TV' }

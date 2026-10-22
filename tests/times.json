@@ -206,5 +206,11 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "story: every chain card offers choices with a plain tip and a risk, and no chain asks more than twice": 8,
+ "story: what the player chose sets the road to the war": 12,
+ "story: escalation brings the war sooner and harder, restraint later and lighter, and never stops it": 12,
+ "story: a chain card saved half-way loads with its choices, and the choice moves the chain on": 10,
+ "story: every cast member has a portrait, and every cutscene panel has its words filled": 5,
+ "story: a fresh Career opens on the Director's own story, and each ending has its closing and its epilogue": 5
 }

@@ -6,7 +6,8 @@
    The step is 8 game seconds while the sky is calm (the "wait for money" speed takes the same steps: the flights,
    fees and delays come out the same as at 1 s), 1 s while anything hostile or armed is in the air. */
 const IC = require('./headless.js');
-const { player } = require('./careerplayer.js');
+const { player, STORY } = require('./careerplayer.js');
+if (process.env.PICK != null) STORY.pick = +process.env.PICK;   // (brief 70) which choice the player takes on the story's cards
 const U = IC.U;
 const seed = +process.argv[2] || 12345, years = +process.argv[3] || 14, stopAct = +process.argv[4] || 5;
 const quiet = process.env.QUIET;

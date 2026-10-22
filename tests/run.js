@@ -3739,6 +3739,80 @@ test('career: every act can be reached', () => {
   const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
   for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
+/* ---------- (brief 70) the story: chains, roads to the war, escalation, cutscenes, the cast ---------- */
+test('story: every chain card offers choices with a plain tip and a risk, and no chain asks more than twice', () => {
+  const S = IC.newGame({ seed: 7001, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const bad = [];
+  for (const k in IC.CHAINS) {
+    const C = IC.CHAINS[k], cards = Object.keys(C.steps).filter(id => !C.steps[id].say);
+    if (cards.length > 2) bad.push(`${k} asks ${cards.length} times`);
+    for (const id of cards) {
+      S.story.chains[k] = S.story.chains[k] || { step: id, at: null, seen: [], end: null };
+      const e = IC.EV[`ch_${k}_${id}`](S);
+      if (!e.title || !e.text || e.opts.length < 2) bad.push(`${k}.${id}: no title, text or choice`);
+      for (const o of e.opts) if (!o.t || !o.tip || !o.risk) bad.push(`${k}.${id} "${o.t}": no tip or risk`);
+      if (/undefined|NaN|\{[a-z]+\}/.test(JSON.stringify([e.title, e.text, e.opts.map(o => [o.t, o.tip, o.risk])]))) bad.push(`${k}.${id}: unfilled words`);
+    }
+  }
+  assert(!bad.length, bad.join('; '));
+});
+test('story: what the player chose sets the road to the war', () => {
+  const road = set => { const S = IC.newGame({ seed: 7002, mode: 'story', preset: 'network', hour: 7 }); set(S); return IC.storyRoad(S); };
+  const base = road(S => IC.flag(S, 'alliance', 'base'));
+  const incident = road(S => { S.story.fired = true; IC.flag(S, 'defector', 'took'); });
+  const election = road(S => { IC.flag(S, 'night', 'closed'); IC.flag(S, 'corridor', 'arrested'); IC.flag(S, 'lenzRate', 'full'); });
+  assert(base === 'base' && incident === 'incident' && election === 'election', `roads: base ${base}, incident ${incident}, election ${election}`);
+});
+test('story: escalation brings the war sooner and harder, restraint later and lighter, and never stops it', () => {
+  const at = (heat, tension) => {
+    const S = IC.newGame({ seed: 7003, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+    S.story.road = 'election'; S.story.heat = heat; S.tension = tension;
+    const sum = () => S.esites.reduce((a, s) => a + Object.values(s.inv || {}).reduce((x, y) => x + y, 0), 0), s0 = sum();
+    const eve = IC.roadEve(S); IC.roadOpen(S, {});
+    return { eve, k: sum() / s0 };
+  };
+  const hot = at(8, 100), calm = at(-8, 0), mid = at(0, 40);
+  assert(hot.eve < mid.eve && mid.eve < calm.eve, `the war's eve: hot ${hot.eve} months, middle ${mid.eve}, calm ${calm.eve}`);
+  assert(hot.eve >= Math.floor(mid.eve * 2 / 3), `escalation brought the war more than a third sooner: ${hot.eve} of ${mid.eve} months`);
+  assert(hot.k > 1.2 && hot.k <= 1.26 && calm.k < 0.82 && calm.k >= 0.79 && Math.abs(mid.k - 1) < 0.02, `enemy stock: hot ×${hot.k.toFixed(2)}, calm ×${calm.k.toFixed(2)}, middle ×${mid.k.toFixed(2)}`);
+});
+test('story: a chain card saved half-way loads with its choices, and the choice moves the chain on', () => {
+  const S = IC.newGame({ seed: 7004, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  IC.storyEvent(S, 'ch_tower_claim');
+  assert(S.story.events.length === 1, 'the tower card did not come');
+  const S2 = IC.loadSave(IC.saveGame(S)); IC.S = S2;
+  const e = S2.story.events[0];
+  assert(e && e.chain === 'tower' && e.opts.length >= 2, 'the card lost its choices in the save');
+  IC.storyChoose(S2, e.id, 1);
+  const c = S2.story.chains.tower;
+  assert(c.seen.length === 1 && (c.end || c.step !== 'claim'), `the chain did not move on: ${JSON.stringify(c).slice(0, 200)}`);
+});
+test('story: every cast member has a portrait, and every cutscene panel has its words filled', () => {
+  const S = IC.newGame({ seed: 7005, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const bad = [];
+  for (const k in IC.CAST) { const svg = IC.portrait(k, 64); if (!/^<svg/.test(svg)) bad.push(`no portrait for ${k}`); if (!IC.ADVISORS[k]) bad.push(`${k} has no name`); }
+  const d = { ap: 'Talyn', cause: 'gusts beyond the crew\'s limits', late: false };
+  for (const id in IC.CUTSCENES) {
+    const C = IC.CUTSCENES[id], vs = [''].concat(C.panels.map(p => p.only).filter(Boolean));
+    for (const v of new Set(vs)) for (const p of IC.cutPanels(S, { id, v, d })) {
+      const words = [p.cap, p.say && p.say[1]].join(' ');
+      if (/undefined|NaN|\{[A-Za-z]+\}/.test(words)) bad.push(`${id}/${p.art}: ${words.slice(0, 80)}`);
+      if (!p.art || !/^(ai|3d)$/.test(p.src) || !p.shot) bad.push(`${id}: a panel with no art, source or shot`);
+      if (p.say && !IC.ADVISORS[IC.castWho(S, p.say[0])]) bad.push(`${id}/${p.art}: nobody called ${p.say[0]}`);
+    }
+  }
+  assert(!bad.length, bad.slice(0, 8).join('; '));
+});
+test('story: a fresh Career opens on the Director\'s own story, and each ending has its closing and its epilogue', () => {
+  const S = IC.newGame({ seed: 7006, mode: 'story', hour: 7 }); IC.S = S;
+  assert(S.story.cutQ && S.story.cutQ[0] && S.story.cutQ[0].id === 'prologue', 'no prologue queued');
+  S.won = true; assert(IC.endingOf(S) === 'endOpen' || IC.endingOf(S) === 'endFortress', `a clean win ends as ${IC.endingOf(S)}`);
+  IC.flag(S, 'corridor', 'friend'); assert(IC.endingOf(S) === 'endLenz', 'a friend across the border does not end through Lenz');
+  S.won = false; S.over = 'The Prime Minister has replaced you: confidence ran out.'; assert(IC.endingOf(S) === 'sacked', 'a dismissal does not end as sacked');
+  for (const id of ['sacked', 'endLost', 'endLenz', 'endPrice', 'endOpen', 'endFortress']) assert(IC.CUTSCENES[id], `no closing cutscene ${id}`);
+  const ep = IC.epilogue(S);
+  assert(ep.title && ep.paras && ep.paras.length >= 1 && !/undefined|NaN/.test(JSON.stringify(ep)), 'the epilogue is empty or unfilled');
+});
 /* ---------- the calendar: months over the live clock ---------- */
 test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the top bar says so', () => {
   for (const dpm of [3, 5]) {

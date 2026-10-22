@@ -10,10 +10,16 @@ const shade = (hex, k) => {
   return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(f).map(v => v.toString(16).padStart(2, '0')).join('');
 };
 const cache = new Map();
+/* a painted portrait (art/faces/face-<KEY>.jpg), when there is one, lies over the drawn face; one that fails to load
+   is not asked for again. Headless, the drawn face alone */
+const noArt = new Set();
+IC.noFaceArt = k => { noArt.add(k); };
+const art = (key, size, svg) => typeof document === 'undefined' || noArt.has(key) ? svg
+  : `<span class="facewrap" style="width:${size}px;height:${size}px">${svg}<img class="faceart" src="art/faces/face-${key}.jpg" alt="" onerror="IC.noFaceArt('${key}');this.remove()"></span>`;
 /* the face of a cast key, size in px (the drawing is on a 100-unit grid) */
 IC.portrait = function (key, size) {
   size = size || 72;
-  const ck = key + ':' + size; if (cache.has(ck)) return cache.get(ck);
+  const ck = key + ':' + size; if (cache.has(ck)) return art(key, size, cache.get(ck));
   const C = IC.CAST[key] || { face: {} }, F = Object.assign({ skin: 2, hairC: '#3a2a20', hair: 'crop', coat: 'suit', coatC: '#2c3e63', age: 1 }, C.face);
   const skin = SKIN[F.skin] || SKIN[2], skinD = shade(skin, 0.86), hair = F.hairC, hairD = shade(hair, 0.8), coat = F.coatC, coatD = shade(coat, 0.75);
   const side = C.foe ? 'foe' : C.ally ? 'ally' : 'home', bg = BG[side], id = 'p' + key;
@@ -61,6 +67,6 @@ IC.portrait = function (key, size) {
   s.push(`</g><circle cx="50" cy="50" r="49" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>`);
   const out = `<svg class="face" width="${size}" height="${size}" viewBox="0 0 100 100" role="img" aria-label="${(IC.ADVISORS[key] || {}).name || key}">${s.join('')}</svg>`;
   cache.set(ck, out);
-  return out;
+  return art(key, size, out);
 };
 })(window.IC);

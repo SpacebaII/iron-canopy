@@ -463,7 +463,7 @@ function comms() {
   // (round 3) one line: who and the start of what they say; a click opens the message, and the newest replaces it
   if (ui.compact() && !ui.cExp) {
     const m = Q[Q.length - 1]; ui.ci = Q.length - 1;
-    $('comms').classList.add('glass');
+    $('comms').classList.add('glass'); $('comms').classList.toggle('retro', m.tag === 'YOU');
     setHTML($('comms'), `<button class="cline" data-act="cexp" title="Read it"><span class="av ${m.tag}">${esc(m.tag)}</span><b>${esc(m.name)}</b><span class="ct">${esc(m.text)}</span></button>`);
     return;
   }
@@ -480,7 +480,7 @@ function comms() {
     return;
   }
   const init = m.tag === 'CMD' ? m.name.replace('Gen. ', '').split(' ').map(x => x[0]).join('') : m.tag;
-  $('comms').classList.add('glass');
+  $('comms').classList.add('glass'); $('comms').classList.toggle('retro', m.tag === 'YOU');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
     <p>${esc(m.text.slice(0, shown))}${full ? '' : '▍'}</p>
     <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span><button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button>${ui.compact() ? '<button data-act="cexp">Fold ▴</button>' : ''}</span></div>`);

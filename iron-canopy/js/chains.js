@@ -540,6 +540,53 @@ IC.on((S, type, d) => {
   }
 });
 
+/* ---------- voices between the cutscenes ----------
+   Mira calls from the border town; you, years later, remember a line; their side speaks too: General Volkan in
+   intercepted orders before a raid, Vesna Kolar on their television after one. Messages, never cards. */
+const later = (S, dt, w, t) => IC.later(S, dt, 'castSay', S, w, t);
+IC.VOICES = {
+  first: S => [[3600, 'SISTER', `Mira. I watched it on the television in the shop. Everyone cheered when the wheels touched. Mum would have liked that.`],
+    [7200, 'YOU', `I thought an airport was concrete and lights. It took me years to see it was a promise, made to every town it could reach.`]],
+  act2: S => [[3 * 3600, 'SISTER', `Mira. The drones were over the fields again last night. People here say the capital does not care what flies over ${townName(S)}.`],
+    [6 * 3600, 'YOU', `Looking back, the drone was the first word of a sentence. I did not want to hear the end of it.`]],
+  act3: S => [[2 * 3600, 'KOLAR', `${S.world.names.H} has shown its true face. Our people ask how long we must stand still while they shoot. Good evening.`],
+    [5 * 3600, 'SISTER', `Mira. The army has put a checkpoint on the road out of town. The children think it is exciting. I have packed a bag. Just in case.`],
+    [8 * 3600, 'YOU', `Everyone remembers where the war began. I remember it as a slope, not a cliff. We were on it for a long time.`]],
+  act4: S => [[2 * 3600, 'SISTER', IC.storyNorthOut(S) === 'air' ? `Mira. We are out. The last flight from your airport up north, the children asleep on my lap. I could see the fires from the window.` : `Mira. We are out. Fourteen hours on the road, the children in the back. Somebody should have built an airport up there.`],
+    [5 * 3600, 'YOU', `I slept in the operations room for weeks. I do not remember the nights apart. I remember the mornings, and counting.`]]
+};
+const VOLKAN = [
+  o => `Intercepted, their air force headquarters: "All batteries, the window opens on my order. Target: ${o}. No changes, no questions."`,
+  o => `Intercepted: "Volkan to all units. ${o}. Their radars are tired. Make them use what they have left."`,
+  o => `Intercepted: "Decoys first, then the real ones. ${o}. I want their missiles spent before ours arrive."`,
+  o => `Intercepted: "Volkan. ${o} again. If it is still standing tomorrow, I want to know why."`
+];
+const KOLAR = {
+  held: [H => `Our forces struck military targets in ${H} last night with complete precision. Every aircraft returned home. Good evening.`, H => `${H} claims to have stopped our strikes. Their own people know better. They hear the sirens.`],
+  hit: [H => `Last night ${H}'s so-called shield failed again. Their leaders shelter in bunkers while our forces do what must be done.`, H => `The strikes on ${H} were a reply, not a choice. We did not want this. They did. Good evening.`]
+};
+function townName(S) { const t = borderTown(S); return t ? t.name : 'the border town'; }
+IC.on((S, type, d) => {
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story') return;
+  const run = k => { for (const [dt, w, t] of IC.VOICES[k](S)) later(S, dt, w, t); };
+  if (type === 'goal' && d && d.id === 'first') run('first');
+  if (type === 'act' && d >= 2 && d <= 4) run('act' + d);
+  if (st.act < 4) return;
+  const v = st.voices = st.voices || { warn: 0, tv: 0, n: 0 };
+  // their commander's orders, intercepted before a raid (every eight hours at most)
+  if (type === 'raidWarning' && d && d.R && S.time - v.warn > 8 * 3600) {
+    v.warn = S.time;
+    IC.say(S, 'VOLKAN', VOLKAN[v.n++ % VOLKAN.length](d.sharp && d.R.obj ? d.R.obj.name : 'The targets as briefed'));
+  }
+  // their television's answer to a raid, half a day apart
+  if (type === 'raidResult' && d && d.res && S.time - v.tv > 10 * 3600) {
+    v.tv = S.time;
+    const L = KOLAR[d.res.held ? 'held' : 'hit'];
+    later(S, 1800, 'KOLAR', L[v.n % L.length](S.world.names.H));
+  }
+  if (type === 'raidResult' && d && d.res && d.res.held && !v.held) { v.held = true; later(S, 2400, 'YOU', `The first time they held, nobody cheered. We just sat there. Somebody started crying, and then everybody laughed.`); }
+});
+
 /* 69's problems tell the story how they ended */
 IC.on((S, type, d) => { if (type === 'pressure' && S.story && S.story.flags && d && d.id) IC.flag(S, 'p:' + d.id, d.outcome); });
 
@@ -587,16 +634,30 @@ IC.roadBeats = function (S) {
     { id: 'r3', mo: 20, run: () => { IC.say(S, 'ENVOY', `My government has told theirs that an attack on the base is an attack on us. I wish I could tell you that will stop them.`); raise(S, 8); } }
   ];
 };
-/* when Act III's embassy beat comes on each road (months into the act): sooner on the incident, later on the base */
-IC.roadEve = S => ({ election: 24, incident: 18, base: 27 })[S.story.road] || 24;
-/* the war opens with the road's aim; the base road saves longer for a bigger shock */
+/* escalation, −1 (restraint) to 1 (every step answered): the story's heat and the tension at the border. It cannot
+   stop the war; it moves when it comes and how hard it hits */
+IC.ESCALATE = { sooner: 1 / 3, later: 0.2, more: 0.25, less: 0.2 };
+IC.storyEscalation = S => U.clamp(((S.story.heat || 0) / 6 + ((S.tension || 0) - 40) / 60) / 2, -1, 1);
+/* when Act III's embassy beat comes on each road (months into the act): sooner on the incident, later on the base,
+   and up to a third sooner (a fifth later) by escalation */
+IC.roadEve = function (S) {
+  const k = IC.storyEscalation(S), mo = ({ election: 24, incident: 18, base: 27 })[S.story.road] || 24;
+  return Math.round(mo * (k > 0 ? 1 - k * IC.ESCALATE.sooner : 1 - k * IC.ESCALATE.later));
+};
+/* the war opens with the road's aim, and the enemy's stock and production scaled by escalation (+25% to −20%) */
 IC.roadOpen = function (S, o) {
-  const R = IC.ROADS_TO_WAR[S.story.road];
+  const R = IC.ROADS_TO_WAR[S.story.road], k = IC.storyEscalation(S);
   if (R && IC.EAIMS[R.aim]) S.enemy.aim = R.aim;
+  const m = 1 + (k > 0 ? k * IC.ESCALATE.more : k * IC.ESCALATE.less);
+  for (const s of S.esites || []) {
+    for (const r in s.inv || {}) s.inv[r] = Math.round(s.inv[r] * m);
+    for (const r in s.regen || {}) s.regen[r] *= m;
+  }
+  S.story.warScale = +m.toFixed(2);
   return o;
 };
-/* a friend across the border makes a ceasefire a little easier */
-IC.ceaseAt = S => S.story && S.story.flags && S.story.flags.get('corridor') === 'friend' ? 25 : 20;
+/* a friend across the border makes a ceasefire easier; a foreign base on our soil makes it harder */
+IC.ceaseAt = S => !S.story || !S.story.flags ? 20 : S.story.flags.get('corridor') === 'friend' ? 25 : S.story.road === 'base' ? 15 : 20;
 
 /* how the north got out in Act III: by the airport we built up there, or by the road */
 IC.storyNorthOut = S => { const t = borderTown(S); return t && airportNear(S, t, 1000) ? 'air' : 'road'; };

@@ -1176,3 +1176,9 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .cutv .dots i{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18)}
 .cutv .dots i.on{background:var(--amber)}
 .cutv .dots i.past{background:rgba(255,255,255,.5)}
+/* (brief 70) the Director looking back: in italics, quieter */
+#comms.retro p, #comms.retro .ct { font-style: italic; color: var(--muted); }
+#comms .av.YOU { background: #3a3530; color: #e8dcc8; }
+/* (brief 70) a painted portrait over the drawn face, in the same round frame */
+.facewrap{position:relative;display:block;flex:none}
+.facewrap .faceart{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
