@@ -5,18 +5,79 @@
 'use strict';
 const U = IC.U;
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-/* bare ground by height: lowland meadow, drier grass up the slopes, heath and rock, pale rock on the tops */
+/* bare ground by height: lowland meadow, drier grass up the slopes, heath, then thin alpine grass */
 function ramp(h) {
   if (h < 0.3) return mix([82, 104, 64], [92, 110, 68], Math.max(0, h) / 0.3);
-  if (h < 0.55) return mix([92, 110, 68], [112, 114, 78], (h - 0.3) / 0.25);
-  if (h < 0.8) return mix([112, 114, 78], [128, 120, 96], (h - 0.55) / 0.25);
-  return mix([128, 120, 96], [184, 180, 172], Math.min(1, (h - 0.8) / 0.3));
+  if (h < 0.55) return mix([92, 110, 68], [108, 114, 74], (h - 0.3) / 0.25);
+  if (h < 0.85) return mix([108, 114, 74], [122, 118, 86], (h - 0.55) / 0.3);
+  return mix([122, 118, 86], [126, 122, 112], Math.min(1, (h - 0.85) / 0.3));
+}
+/* (brief 71) rock and snow over it: rock where the ground is steep (sl is the true gradient, rise over run) or high,
+   snow above the snowline but not on the steepest faces, where it does not lie. Returns the colour and how much of
+   it is rock or snow, so a tile can lay the sharp version over the base's soft one */
+const ROCK = [[108, 108, 106], [130, 128, 124]], SCREE = [150, 146, 136], SNOW = [234, 238, 242];
+const SNOWLINE = 1.46;
+function bare(h, sl, x, y, out, e) {
+  let c = ramp(h);
+  // a mottle down to the scale drawn (e world units a sample): finer octaves would only flicker
+  e = e || 40;
+  let n = U.vnoise(x / 9, y / 9) * 0.5 + 0.25, w = 0.25;
+  for (let sc = 3; sc > e * 1.5 && sc > 0.1; sc /= 2.6) { n += (U.vnoise(x / sc + 3, y / sc - 5) - 0.5) * w; w *= 0.6; }
+  const up = U.clamp((h - 0.5) / 0.25, 0, 1);
+  const rk = up * U.clamp((sl - 0.34) / 0.2 + (h - 1.12) / 0.25 + (n - 0.5) * 0.6, 0, 1);
+  // scree: the paler broken rock at the foot of the crags
+  const sc = up * U.clamp((sl - 0.22) / 0.12, 0, 1) * (1 - rk) * U.clamp((n - 0.5) * 4, 0, 0.6);
+  if (sc > 0) c = mix(c, SCREE, sc);
+  if (rk > 0) c = mix(c, n > 0.5 ? ROCK[1] : ROCK[0], rk);
+  // snow: a sharp edge broken by the mottle, lying in the hollows but not on the steepest faces
+  const sn = U.clamp((h - SNOWLINE + (n - 0.5) * 0.14) / 0.02, 0, 1) * (1 - U.clamp((sl - 0.7) / 0.4, 0, 1) * 0.8);
+  if (sn > 0) c = mix(c, SNOW, sn);
+  if (out) out.a = Math.max(rk, sc, sn);
+  return c;
 }
 /* crops and grass, with how common each is: cereal, young crop, ripe wheat, ploughed, pasture, hay, rapeseed, maize, stubble */
-const FIELDS = [[106, 124, 72], [120, 134, 80], [158, 148, 98], [122, 108, 80], [98, 118, 72], [138, 138, 94], [170, 164, 90], [90, 110, 64], [148, 140, 106]];
-const FIELD_W = [3, 2, 2.5, 2, 3, 1.5, 0.35, 1.2, 1.4];
+/* (brief 71) and by region: red-earth ploughland and cotton in the south, golden wheat on the rolling plains, the
+   green of an irrigation circle on the dry high plains */
+const FIELDS = [[106, 124, 72], [120, 134, 80], [158, 148, 98], [122, 108, 80], [98, 118, 72], [138, 138, 94], [170, 164, 90], [90, 110, 64], [148, 140, 106],
+  [146, 98, 70], [166, 162, 140], [186, 166, 106], [88, 122, 60]];
+const FIELD_W = [3, 2, 2.5, 2, 3, 1.5, 0.35, 1.2, 1.4, 0, 0, 0, 0];
 const FIELD_CUM = FIELD_W.map((w, i) => FIELD_W.slice(0, i + 1).reduce((s, v) => s + v, 0) / FIELD_W.reduce((s, v) => s + v, 0));
 const crop = h => { for (let i = 0; i < FIELD_CUM.length; i++) if (h < FIELD_CUM[i]) return i; return 0; };
+/* (brief 71) farming by region (W.biome, IC.BIOMES): high plains, rolling wheat, wet green country, valleys,
+   the south. Each farm block grows two crops of its region over most of its plots, so the land reads as farms and
+   regions instead of confetti */
+const BIOME_W = [
+  [0, 0.5, 3, 1.5, 0.3, 0.5, 0, 1, 3, 0, 0, 2, 1.5],          // high plains: stubble, wheat, ploughland, irrigated green
+  [0.5, 2, 2, 1.5, 0.3, 0.6, 0.5, 0.3, 1.5, 0, 0, 4, 0],        // rolling wheat
+  [0.5, 1, 0, 0.2, 5, 3, 0, 0.3, 0, 0, 0, 0, 0],                // wet green country: pasture and hay
+  [1.5, 1, 0.6, 0.6, 4, 3, 0.2, 1.5, 0.4, 0, 0, 0, 0],          // valleys
+  [0.3, 1.5, 0.3, 0, 2, 0.6, 0, 1.5, 0.3, 2.5, 2, 0, 0]          // the south: red earth, cotton, maize
+];
+const BIOME_CUM = BIOME_W.map(W => W.map((w, i) => W.slice(0, i + 1).reduce((s, v) => s + v, 0) / W.reduce((s, v) => s + v, 0)));
+/* each region's own grass and the colour of its woods, for the base and the canopy */
+const BIOME_GROUND = [[146, 138, 98], [128, 132, 84], [66, 98, 60], [84, 112, 62], [98, 112, 66]];
+const BIOME_WOOD = [[42, 62, 40], [44, 64, 42], [28, 50, 36], [50, 78, 44], [46, 68, 40]];
+const BIOME_CROWN = [
+  ['rgb(40,64,38)', 'rgb(48,74,42)', 'rgb(36,58,36)', 'rgb(56,80,46)'],
+  ['rgb(40,64,38)', 'rgb(48,74,42)', 'rgb(36,58,36)', 'rgb(56,80,46)'],
+  ['rgb(26,46,34)', 'rgb(32,54,38)', 'rgb(22,40,30)', 'rgb(38,60,42)'],     // firs and cedars
+  ['rgb(50,78,40)', 'rgb(60,90,46)', 'rgb(44,70,38)', 'rgb(72,98,50)'],     // oak and hickory
+  ['rgb(44,64,36)', 'rgb(52,72,40)', 'rgb(40,58,34)', 'rgb(62,80,44)']      // pine
+];
+const biomeAt = (W, x, y) => W.biome ? W.biome(x, y) : 3;
+function cropIn(b, h) {
+  const C = BIOME_CUM[b];
+  for (let i = 0; i < C.length; i++) if (h < C[i]) return i;
+  return 0;
+}
+/* the farm block's two crops, then a plot's: mostly the first, some the second, a few anything */
+/* (a farm is two by two blocks, laid like bricks, so the main crop runs across hedges and the blocks' grid does not
+   show as a chequerboard) */
+const blockCrops = (W, i, j, x, y) => {
+  const b = biomeAt(W, x, y), fj = Math.floor(j / 2), fi = Math.floor((i + (fj & 1)) / 2);
+  return [cropIn(b, U.hash(fi * 31 + 7, fj * 17 + 3)), cropIn(b, U.hash(i * 5 + 13, j * 11 + 29)), b];
+};
+const plotCrop = (bc, hf) => hf < 0.6 ? bc[0] : hf < 0.9 ? bc[1] : cropIn(bc[2], (hf - 0.9) / 0.1);
 // small tiles, so painting one never stalls a frame for long. Level 0 covers the regional zoom between the base
 // image (too coarse there on a map this size) and level 1: the base's picture with roads and towns drawn sharp
 const LOD0 = { k: 0, ppu: 0.2, size: 1600, max: 130 };
@@ -32,6 +93,9 @@ const LOD = lod => lod ? LODS[lod - 1] : LOD0;
 const BASE_WK = 0.2 / IC.TS;
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const LIGHT = [-0.55, -0.62, 0.56];   // sun from the north-west, fairly high
+/* light on ground of gradient gx, gy (height per world unit) drawn k times steeper than it is, less the light on the
+   flat: 0 on level ground, below it facing away from the sun */
+const shadeOf = (gx, gy, k) => { gx *= 20 * k; gy *= 20 * k; return (LIGHT[0] * -gx + LIGHT[1] * -gy + LIGHT[2]) / Math.sqrt(gx * gx + gy * gy + 1) - LIGHT[2]; };
 
 /* farm blocks: a jittered grid of plots between hedges and tracks (neighbours share corners), each cut into fields
    lying the way the land and the nearest road run (W.fieldAng) */
@@ -54,7 +118,9 @@ IC.buildTerrain = function (W) {
     const c = chunk(ci, cj), lx = fx - ci * FC, ly = fy - cj * FC, i = lx | 0, j = ly | 0, u = lx - i, v = ly - j, k = j * (FC + 1) + i;
     return c[k] * (1 - u) * (1 - v) + c[k + 1] * u * (1 - v) + c[k + FC + 1] * (1 - u) * v + c[k + FC + 2] * u * v;
   };
-  const fd = (x, y) => fdAt(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
+  // (brief 71) and a tree line on the mountains as drawn, which stand higher than the height grid the forest knows
+  const tl = W.hDrawn ? (x, y) => { const h = W.hDrawn(x, y); return h > 1.05 ? 0.5 * U.clamp((h - 1.05) / 0.15, 0, 1) : 0; } : () => 0;
+  const fd = (x, y) => fdAt(x, y) - tl(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
   const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), frame: 0 };
   // the same region again (the start screen's, now played): its images are the same, only the base is copied, as
   // the game draws airfields and marks on it
@@ -83,33 +149,37 @@ IC.buildTerrain = function (W) {
   // woods showed as staircases of 8 km squares at the regional zoom
   const forestOf = (x, y) => { const fx = (x - 0.5) / 2, fy = (y - 0.5) / 2, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j; return (fb(i, j) * (1 - u) + fb(i + 1, j) * u) * (1 - v) + (fb(i, j + 1) * (1 - u) + fb(i + 1, j + 1) * u) * v; };
   const countryOf = (x, y, wx, wy) => { if (W.inHome(wx, wy)) return 'H'; const q = (y >> 1) * KW + (x >> 1); return KB[q] || (KB[q] = W.countryAt(((x & ~1) + 1) * cellX, ((y & ~1) + 1) * cellY)); };
+  // (brief 71) the drawn heights (W.hFine) at every pixel, and one pixel round, for the slope and the light
+  const HB = new Float32Array((BW + 2) * (BH + 2)), BO = { a: 0 };
+  for (let y = 0; y < BH + 2; y++) for (let x = 0; x < BW + 2; x++) HB[y * (BW + 2) + x] = W.hFine((x - 0.5) * cellX, (y - 0.5) * cellY, cellX);
   for (let y = 0; y < BH; y++) {
     const wy = (y + 0.5) * cellY;
     for (let x = 0; x < BW; x++) {
-      const wx = (x + 0.5) * cellX;
-      const h = W.hAt(wx, wy);
-      // soft light from the fine slope, and a broader one so ridges still read on the whole-country map
-      // hill country gets folds and gullies of its own, too small for the height grid (shading only)
-      const hill = U.clamp((h - 0.3) / 0.35, 0, 1);
-      const fx = hill ? (U.fbm((wx + 8) / 150 + 3, wy / 150, 3) - U.fbm((wx - 8) / 150 + 3, wy / 150, 3)) / 16 : 0, fy = hill ? (U.fbm(wx / 150 + 3, (wy + 8) / 150, 3) - U.fbm(wx / 150 + 3, (wy - 8) / 150, 3)) / 16 : 0;
-      const shade = U.clamp(1 + hs(wx, wy, 40, 110) * 1.3 + hs(wx, wy, 200, 220) * 0.6 - (LIGHT[0] * fx + LIGHT[1] * fy) * 90 * hill, 0.45, 1.5);
+      const wx = (x + 0.5) * cellX, q = (y + 1) * (BW + 2) + x + 1;
+      const h = HB[q], gx = (HB[q + 1] - HB[q - 1]) / (2 * cellX), gy = (HB[q + BW + 2] - HB[q - BW - 2]) / (2 * cellY);
+      // the fine light from the drawn heights, and a broader one so the ranges still read on the whole-country map
+      const shade = U.clamp(1 + shadeOf(gx, gy, 9) * 1.25 + hs(wx, wy, 200, 220) * 0.6, 0.4, 1.5);
       let k = countryOf(x, y, wx, wy); if (k === 'H' && !W.inHome(wx, wy)) k = W.countryAt(wx, wy);
-      let c = ramp(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.08);
+      const bi = biomeAt(W, wx, wy);
+      let c = bare(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.06, Math.hypot(gx, gy) * 20, wx, wy, BO, cellX);
+      const rock = BO.a;
+      c = mix(c, BIOME_GROUND[bi], U.clamp((0.75 - h) / 0.3, 0, 1) * (1 - rock) * 0.7);
       const hsh = U.hash(x, y);
       // damp ground along the rivers is greener
       const rd = W.riverDist(wx, wy); if (rd < 40) c = mix(c, [70, 98, 60], 0.35 * (1 - rd / 40));
       const fw = W.farmAt(wx, wy) * 0.8;
       if (fw > 0.02) {
-        const i = Math.floor(wx / FB), j = Math.floor(wy / FB);
-        c = mix(c, FIELDS[crop(U.hash(i * 31 + 7, j * 17 + 3))], fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
+        const i = Math.floor(wx / FB), j = Math.floor(wy / FB), bc = blockCrops(W, i, j, wx, wy);
+        c = mix(c, mix(FIELDS[bc[0]], FIELDS[bc[1]], 0.3), fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
       }
-      const fo = forestOf(x, y) - IC.FOREST_T;
-      if (fo > -0.03) c = mix(c, U.vnoise(wx / 7, wy / 7) > 0.5 ? [40, 62, 40] : [50, 74, 46], U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
+      const fo = forestOf(x, y) - tl(wx, wy) - IC.FOREST_T;
+      if (fo > -0.03) c = mix(c, mix(BIOME_WOOD[bi], [50, 74, 46], U.vnoise(wx / 7, wy / 7) > 0.5 ? 0 : 0.3), U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
       let r = c[0], g = c[1], b = c[2];
       if (k !== 'H') {
-        const lum = 0.3 * r + 0.59 * g + 0.11 * b;
-        r = (r + (lum - r) * 0.5) * 0.74; g = (g + (lum - g) * 0.5) * 0.74; b = (b + (lum - b) * 0.5) * 0.74;
-        if (W.side[k] === 'hostile') { r *= 1.12; g *= 0.92; b *= 0.9; }
+        // (rock and snow keep most of their colour over the border: the mountains run on across it)
+        const lum = 0.3 * r + 0.59 * g + 0.11 * b, f = 0.5 - 0.2 * rock, dk = 0.74 + 0.12 * rock, ht = 1 - rock;
+        r = (r + (lum - r) * f) * dk; g = (g + (lum - g) * f) * dk; b = (b + (lum - b) * f) * dk;
+        if (W.side[k] === 'hostile') { r *= 1 + 0.12 * ht; g *= 1 - 0.08 * ht; b *= 1 - 0.1 * ht; }
       }
       const n = (hsh - 0.5) * 5, i4 = (y * BW + x) * 4;
       ad[i4] = r + n; ad[i4 + 1] = g + n; ad[i4 + 2] = b + n; ad[i4 + 3] = 255;
@@ -226,25 +296,27 @@ IC.aptSig = S => IC.bases(S).map(b => b.parts ? b.parts.filter(p => p.built).len
 /* fields: each farm block cut into strips and plots of different crops, margins between them, hedges round the block */
 function fields(g, T, lod, x0, y0, x1, y1) {
   const W = T.W, i0 = Math.floor(x0 / FB) - 1, i1 = Math.ceil(x1 / FB), j0 = Math.floor(y0 / FB) - 1, j1 = Math.ceil(y1 / FB);
-  const byCol = FIELDS.map(() => []), furrows = [], hedges = [], tracks = [], htrees = [];
+  const byCol = FIELDS.map(() => []), furrows = [], hedges = [], tracks = [], htrees = [], pivots = [];
   const inset = [0.35, 0.12, 0.06, 0.05][lod - 1];
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const c00 = fbCorner(i, j), c10 = fbCorner(i + 1, j), c11 = fbCorner(i + 1, j + 1), c01 = fbCorner(i, j + 1);
     const cx = (c00[0] + c10[0] + c11[0] + c01[0]) / 4, cy = (c00[1] + c10[1] + c11[1] + c01[1]) / 4;
     const fw = W.farmAt(cx, cy);
     if (fw < 0.12) continue;
-    const hb = U.hash(i * 13 + 5, j * 29 + 1);
+    const hb = U.hash(i * 13 + 5, j * 29 + 1), bc = blockCrops(W, i, j, cx, cy);
+    // on the high plains many blocks are one irrigation circle, a disc of green in the dry corners of its square
+    if (bc[2] === 0 && hb < 0.32 && fw > 0.4 && W.slopeAt(cx, cy) < 0.03 && !(T.fdc(cx, cy) > IC.FOREST_T)) { pivots.push(cx, cy, FB * (0.38 + 0.08 * U.hash(i, j + 3)), hb); continue; }
     const th = W.fieldAng(cx, cy) + (hb - 0.5) * 0.14, ca = Math.cos(th), sa = Math.sin(th);
-    const sw = 2.2 + U.hash(i, j + 77) * 2.6, R = FB * 0.9;
+    const big = bc[2] < 2 ? 2 : 1, sw = (2.2 + U.hash(i, j + 77) * 2.6) * big, R = FB * 0.9;   // (bigger fields on the plains)
     const list = [];
     for (let u = -R + (hb * sw) % sw; u < R; u += sw) {
-      const sl = lod === 1 ? 3.5 + U.hash(Math.round(u * 10) + i, j) * 14 : 3.5 + U.hash(Math.round(u * 10) + i, j) * 6, vo = U.hash(i + 3, Math.round(u * 10) + j) * sl;
+      const sl = (lod === 1 ? 3.5 + U.hash(Math.round(u * 10) + i, j) * 14 : 3.5 + U.hash(Math.round(u * 10) + i, j) * 6) * big, vo = U.hash(i + 3, Math.round(u * 10) + j) * sl;
       for (let v = -R - vo; v < R; v += sl) {
         const mx = cx + (u + sw / 2) * ca - (v + sl / 2) * sa, my = cy + (u + sw / 2) * sa + (v + sl / 2) * ca;
         const hf = U.hash(Math.round(mx * 7), Math.round(my * 7));
         const w = W.farmAt(mx, my);
         if (w < 0.1 || hf > w * 2.4 + 0.3 || (lod > 1 ? T.fd(mx, my) > IC.FOREST_T - 0.02 || W.riverDist(mx, my) < 4 : T.fdc(mx, my) > IC.FOREST_T + 0.04)) continue;
-        list.push([u + inset, v + inset, sw - 2 * inset, sl - 2 * inset, crop(hf), hf]);
+        list.push([u + inset, v + inset, sw - 2 * inset, sl - 2 * inset, plotCrop(bc, hf), hf]);
       }
     }
     if (list.length < 3) continue;
@@ -266,11 +338,24 @@ function fields(g, T, lod, x0, y0, x1, y1) {
     const edges = [[c00, c10, i * 7 + 1, j], [c10, c11, i + 1, j * 5 + 3], [c11, c01, i * 7 + 1, j + 1], [c01, c00, i, j * 5 + 3]];
     for (const [p, q, a, b] of edges) {
       const e = U.hash(a * 3 + 11, b * 5 + 17);
-      (e < 0.22 ? tracks : e < 0.9 ? hedges : []).push(p[0], p[1], q[0], q[1]);
-      if (lod >= 3 && e >= 0.22 && e < 0.9) for (let t = 0.05; t < 1; t += 0.07 + U.hash(a + Math.round(t * 99), b) * 0.08) if (U.hash(a * 5 + Math.round(t * 100), b * 3) < 0.55) htrees.push(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t);
+      (e < 0.2 ? tracks : e < 0.68 ? hedges : []).push(p[0], p[1], q[0], q[1]);
+      if (lod >= 3 && e >= 0.2 && e < 0.68) for (let t = 0.05; t < 1; t += 0.07 + U.hash(a + Math.round(t * 99), b) * 0.08) if (U.hash(a * 5 + Math.round(t * 100), b * 3) < 0.55) htrees.push(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t);
     }
   }
   if (lod === 1) byCol.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.6)); });
+  for (let k = 0; k < pivots.length; k += 4) {
+    const x = pivots[k], y = pivots[k + 1], r = pivots[k + 2], hb = pivots[k + 3];
+    // the circle's crop (a few lie fallow or are cut, in a sector), the arm's track, the pivot at the middle
+    g.fillStyle = colour(FIELDS[hb < 0.24 ? 12 : hb < 0.28 ? 7 : 8], lod === 1 ? 0.7 : 0.95);
+    g.beginPath(); g.moveTo(x + r, y); g.arc(x, y, r, 0, 7); g.fill();
+    if (hb > 0.15 && hb < 0.24) { const a = hb * 40; g.fillStyle = colour(FIELDS[11], 0.9); g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, a, a + 1.6 + hb * 3); g.closePath(); g.fill(); }
+    if (lod >= 2) {
+      g.strokeStyle = 'rgba(70,90,50,0.35)'; g.lineWidth = lod >= 3 ? 0.03 : 0.06;
+      for (let q = r * 0.2; q < r; q += r * 0.2) { g.beginPath(); g.moveTo(x + q, y); g.arc(x, y, q, 0, 7); g.stroke(); }
+      g.strokeStyle = 'rgba(200,196,170,0.5)'; g.lineWidth = lod >= 3 ? 0.05 : 0.1; const a = hb * 97;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); g.stroke();
+    }
+  }
   if (lod >= 2) {
     lines(g, tracks, 'rgba(176,160,122,0.7)', lod >= 3 ? 0.07 : 0.14);
     lines(g, hedges, 'rgba(46,64,36,0.75)', lod >= 3 ? 0.1 : 0.16);
@@ -342,7 +427,7 @@ function forest(g, T, lod, x0, y0, x1, y1) {
   };
   const all = home.concat(away);
   pass(all, 0.45, 0.4, 1, 'rgba(8,14,8,0.5)');
-  const CROWN = ['rgb(40,64,38)', 'rgb(48,74,42)', 'rgb(36,58,36)', 'rgb(56,80,46)'];
+  const CROWN = BIOME_CROWN[biomeAt(W, (x0 + x1) / 2, (y0 + y1) / 2)];
   cols.forEach((P, k) => pass(P, 0, 0, 1, CROWN[k]));
   if (away.length) pass(away, 0, 0, 1.01, 'rgba(70,70,64,0.55)');
   pass(all, -0.28, -0.3, 0.55, 'rgba(120,152,86,0.28)');
@@ -780,6 +865,36 @@ function scorchBlock(g, b) {
 }
 
 /* ---------- detail tiles ---------- */
+/* (brief 71) the relief of one tile at its own scale, so a mountain close in has its crests and gullies where the
+   base (4 km a pixel) had a smear: the drawn heights on a grid a few pixels apart, the light on them as the base's
+   two shade images, and the rock, scree and snow, sharp, to lay over the base's ground */
+const RLX = [5, 4, 3, 1.8, 1.3];   // (level 0 first)   // how much steeper the relief is drawn than it is, by level: more far out
+function relief(T, lod, x0, y0, size, px) {
+  // samples one beyond the tile all round, so the images can be drawn from their inner part and tiles meet seamlessly
+  const W = T.W, N = Math.min(128, Math.ceil(px / 2)), e = size / N, M = N + 2, Q = N + 4, H = new Float32Array(Q * Q);
+  for (let j = 0; j < Q; j++) for (let i = 0; i < Q; i++) H[j * Q + i] = W.hFine(x0 + (i - 1.5) * e, y0 + (j - 1.5) * e, e);
+  const im = () => { const c = mk(M, M), g = c.getContext('2d'); return { c, g, d: g.createImageData(M, M) }; };
+  const D = im(), L = im(), R = im(), K = lod ? null : im(), o = { a: 0 }, k = RLX[lod];
+  let rocky = false;
+  for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+    const q = (j + 1) * Q + i + 1, h = H[q], gx = (H[q + 1] - H[q - 1]) / (2 * e), gy = (H[q + Q] - H[q - Q]) / (2 * e), p = (j * M + i) * 4;
+    const sh = U.clamp(1 + shadeOf(gx, gy, k) * 1.3, 0.35, 1.5);
+    D.d.data[p] = D.d.data[p + 1] = D.d.data[p + 2] = U.clamp(sh, 0, 1) * 255; D.d.data[p + 3] = 255;
+    L.d.data[p] = L.d.data[p + 1] = L.d.data[p + 2] = U.clamp((sh - 1) * 0.7, 0, 1) * 255; L.d.data[p + 3] = 255;
+    if (K) K.d.data[p + 3] = U.clamp((h - 0.42) / 0.15, 0, 1) * 255;
+    if (h < 0.5) continue;
+    // up in the hills this replaces the base's ground (smeared over 4 km a pixel) outright, rock, scree and snow sharp
+    const wx = x0 + (i - 0.5) * e, wy = y0 + (j - 0.5) * e, c = bare(h, Math.hypot(gx, gy) * 20, wx, wy, o, e);
+    const a = lod ? Math.max(o.a, U.clamp((h - 0.5) / 0.15, 0, 1)) : o.a;   // (level 0 keeps the far picture's woods and grass)
+    if (a <= 0.02) continue;
+    rocky = true; R.d.data[p] = c[0]; R.d.data[p + 1] = c[1]; R.d.data[p + 2] = c[2]; R.d.data[p + 3] = a * 255;
+  }
+  D.g.putImageData(D.d, 0, 0); L.g.putImageData(L.d, 0, 0);
+  if (rocky) R.g.putImageData(R.d, 0, 0);
+  if (K) K.g.putImageData(K.d, 0, 0);
+  const draw = (g, c) => g.drawImage(c, 1, 1, N, N, 0, 0, px, px);
+  return { draw, shadeD: D.c, shadeL: L.c, rock: rocky ? R.c : null, hills: K && K.c };
+}
 function paintTile(T, lod, tx, ty, S) {
   const L = LOD(lod), W = T.W;
   const px = Math.round(L.size * L.ppu), x0 = tx * L.size, y0 = ty * L.size, x1 = x0 + L.size, y1 = y0 + L.size;
@@ -789,6 +904,16 @@ function paintTile(T, lod, tx, ty, S) {
   if (!lod) {
     // the far view's picture, with airfields, water, roads and towns drawn at this scale
     g.drawImage(T.far, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
+    // (brief 71) the mountains at this tile's own scale over the far picture (a pixel of which is 4 km): their rock,
+    // snow and light, the light only up in the hills, as the far picture has its own light on the plains
+    const rl = relief(T, 0, x0, y0, L.size, px);
+    if (rl.rock) {
+      rl.draw(g, rl.rock);
+      for (const [c, op, a] of [[rl.shadeD, 'multiply', 0.8], [rl.shadeL, 'screen', 0.6]]) {
+        const m = mk(px, px), mg = m.getContext('2d'); rl.draw(mg, c); mg.globalCompositeOperation = 'destination-in'; rl.draw(mg, rl.hills);
+        g.globalCompositeOperation = op; g.globalAlpha = a; g.drawImage(m, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+      }
+    }
     g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu); g.lineCap = 'round'; g.lineJoin = 'round';
     if (S) airfields(g, S, x0 - 20, y0 - 20, x1 + 20, y1 + 20, 0);
     vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, 0, 60);
@@ -796,11 +921,13 @@ function paintTile(T, lod, tx, ty, S) {
     return cv;
   }
   g.drawImage(T.ground, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
-  // fine grain so the upscaled ground does not look smeared, offset per tile so it never lines up
+  // fine grain so the upscaled ground does not look smeared
   g.globalAlpha = 0.28; g.globalCompositeOperation = 'overlay';
-  const pat = g.createPattern(T.grain, 'repeat'); pat.setTransform(new DOMMatrix().translate(-U.hash(tx, ty + lod) * 256, -U.hash(ty, tx + lod) * 256));
+  const pat = g.createPattern(T.grain, 'repeat'); pat.setTransform(new DOMMatrix().translate(-((tx * px) % 256), -((ty * px) % 256)));   // (brief 71) lined up across tiles: offset per tile, it showed their seams on smooth ground
   g.fillStyle = pat; g.fillRect(0, 0, px, px);
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  const rl = relief(T, lod, x0, y0, L.size, px);
+  if (rl.rock) rl.draw(g, rl.rock);
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
   g.lineCap = 'round'; g.lineJoin = 'round';
   const m = [6, 2, 1, 0.5][lod - 1];
@@ -810,9 +937,9 @@ function paintTile(T, lod, tx, ty, S) {
   // hills: the hillshade laid over everything on the ground
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalCompositeOperation = 'multiply';
-  g.drawImage(T.shadeD, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
+  rl.draw(g, rl.shadeD);
   g.globalCompositeOperation = 'screen'; g.globalAlpha = 0.7;
-  g.drawImage(T.shadeL, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
+  rl.draw(g, rl.shadeL);
   g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
   vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, lod, 60);

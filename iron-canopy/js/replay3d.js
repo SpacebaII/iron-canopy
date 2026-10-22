@@ -286,8 +286,11 @@ const texSRGB = tex => { if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBCo
 
 /* ---------- the ground's height ----------
    The terrain's real heights, in world units (KM a kilometre), except under our airports, which are graded level
-   at the height of their middle out to beyond their furthest part, blending into the hills round them */
-const hRaw = (S, x, y) => S.flat ? 0 : IC.elevKm(x, y) * KM;
+   at the height of their middle out to beyond their furthest part, blending into the hills round them. (brief 71)
+   The heights as the map draws them (W.hFine: the crests and gullies the height grid is too coarse for); everything
+   in the air is placed by its height above this ground, so nothing flies through a ridge the simulation does not have */
+let hRes = 3;   // the finest detail asked of the heights (the finest ring's grid): a coarser ring asks no finer than its own
+const hRaw = (S, x, y) => S.flat ? 0 : IC.W.hFine ? Math.max(0, IC.W.hFine(x, y, hRes) - 0.25) * 2 * KM : IC.elevKm(x, y) * KM;
 function flatOf(v) {
   const S = v.S;
   v.flat = [];
@@ -368,7 +371,9 @@ function paintTex(v, cv) {
 function terrainGeom(v, reg, n, hk) {
   const N = n + 1, pos = new Float32Array(N * N * 3), nor = new Float32Array(N * N * 3), uv = new Float32Array(N * N * 2), idx = new Uint32Array(n * n * 6);
   const x0 = reg.x - reg.R, y0 = reg.y - reg.R, d = 2 * reg.R / n, H = new Float32Array((N + 2) * (N + 2));
+  hRes = Math.max(3, d);
   for (let j = -1; j <= N; j++) for (let i = -1; i <= N; i++) H[(j + 1) * (N + 2) + i + 1] = hT(v, x0 + i * d, y0 + j * d) * hk;
+  hRes = 3;
   const h = (i, j) => H[(j + 1) * (N + 2) + i + 1];
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const k = j * N + i;

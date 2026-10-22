@@ -10,6 +10,7 @@ const SP = 1.45;     // spacing between towns: with ten times the land and three
 /* real width of each class of road (world units): motorway, main, local, access, city ring, avenue, street, lane */
 IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.4, st: 0.34, ln: 0.07 };
 IC.FOREST_T = 0.56;
+IC.BIOMES = ['plains', 'palouse', 'wet', 'valley', 'south'];
 
 /* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between
    them and show how far it has got (IC.generateSteps). IC.generate runs them all at once */
@@ -140,7 +141,7 @@ function* worldSteps(seed) {
     let a = R.range(0, TAU), rr = R.range(0.2, 0.6), px = cx + Math.cos(a) * RX * rr, py = cy + Math.sin(a) * RY * rr, h = R.range(0, TAU);
     const pts = [];
     for (let i = 0; i < 10; i++) { pts.push([px, py]); h += R.range(-0.5, 0.5); px += Math.cos(h) * 170 * M; py += Math.sin(h) * 170 * M; }
-    ridges.push({ pts, a: R.range(0.28, 0.42), w: R.range(420, 640) });
+    ridges.push({ pts, a: R.range(0.28, 0.42), w: R.range(420, 640), inner: true });
   }
   for (const r of ridges) {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -174,6 +175,140 @@ function* worldSteps(seed) {
     return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
   };
   W.slopeAt = (x, y) => Math.hypot(W.hAt(x + 20, y) - W.hAt(x - 20, y), W.hAt(x, y + 20) - W.hAt(x, y - 20));
+
+  /* (brief 71) the relief as it is drawn: the height grid above is what the simulation knows (radar, building,
+     routing, where towns grow); the map and the 3D view add to it what makes the ranges read as mountains, kept on a
+     grid of its own made the first time it is asked for (after generation, so nothing in the world moves for it):
+     - each range's look, r.style: 'rocky' (young and sharp: a high core of peaks and saddles along a winding crest,
+       rock and snow, like the Rockies), 'old' (worn down and wooded, folded into long parallel ridges and valleys,
+       like the Appalachians) or 'volcano' (one cone with a crater and a snow cap, like the Cascades' peaks: pts is
+       its one point, w its radius, a its height); r.core how strong a rocky crest is. A map gives its own; here the
+       main hostile border, the deep hostile range and one inner range in two are rocky, the rest old, and two
+       volcanoes stand in front of the main border range where the ground is already high and no town is near;
+     - W.hFine(x, y, s): the drawn height down to about s world units: the grid, what the ranges add, then crests,
+       spurs, gullies and screes in the mountains and a gentle swell on the plains;
+     - W.roughAt(x, y): how rugged the ground is drawn, 0.35 old hills to 1 young mountains */
+  let inner = 0;
+  ridges.forEach((r, i) => {
+    if (!r.style) r.style = i === 0 || r.inner && inner++ % 2 === 0 ? 'rocky' : i === ridges.length - (ridges.some(q => q.inner) ? 4 : 1) && !r.inner ? 'rocky' : 'old';
+    if (r.core == null) r.core = r.style !== 'rocky' ? 0 : i === 0 ? 0.85 : r.inner ? 1.1 : 0.55;
+  });
+  const DG = 40, DGW = Math.floor(WW / DG) + 1, DGH = Math.floor(WH / DG) + 1;
+  let rel = null;
+  const bil = (G, x, y) => {
+    const fx = U.clamp(x / DG, 0, DGW - 1.001), fy = U.clamp(y / DG, 0, DGH - 1.001), i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, k = j * DGW + i;
+    return G[k] + (G[k + 1] - G[k]) * u + (G[k + DGW] - G[k]) * v + (G[k] - G[k + 1] - G[k + DGW] + G[k + DGW + 1]) * u * v;
+  };
+  const drawnRelief = () => {
+    if (rel) return rel;
+    // volcanoes, unless the map has its own: from the main crest in towards the middle, past the border, onto ground
+    // already high, with no town within reach of the cone (kept out of W.ridges: the world is saved by what changed
+    // after generation, and this is made later; W._volcanoes for tools)
+    const vols = W._volcanoes = ridges.filter(r => r.style === 'volcano');
+    if (!vols.length && ridges[0].pts.length > 6) {
+      const P = ridges[0].pts, towns = (W.cities || []).concat(W.villages || []);
+      for (let f = 0.15; f < 0.9 && vols.length < 2; f += 0.05) {
+        const k = Math.floor((P.length - 1) * f), [x, y] = P[k], d = Math.hypot(cx - x, cy - y), ux = (cx - x) / d, uy = (cy - y) / d;
+        let o = 0; while (o < d * 0.5 && !W.inHome(x + ux * o, y + uy * o)) o += 20;
+        o += 150 + 100 * U.hash(seed, k);
+        const vx = x + ux * o, vy = y + uy * o, w = 260 + 60 * U.hash(seed + k, 3);
+        if (W.hAt(vx, vy) < 0.5 || towns.some(t => Math.hypot(t.x - vx, t.y - vy) < w * 1.1)) continue;
+        if (vols.some(r => Math.hypot(r.pts[0][0] - vx, r.pts[0][1] - vy) < 1500)) continue;
+        const nm = 'Mount ' + IC.NAMES.pre[Math.floor(U.hash(vx | 0, vy | 0) * IC.NAMES.pre.length)] + IC.NAMES.suf[Math.floor(U.hash(vy | 0, 7) * IC.NAMES.suf.length)];
+        vols.push({ pts: [[vx, vy]], a: 1.3 + 0.2 * U.hash(k, seed), w, core: 0, style: 'volcano', name: nm });
+      }
+    }
+    // each crest as drawn: rounded at its points (two passes of corner cutting), so a range bends instead of zigzagging
+    const D = ridges.filter(r => r.style !== 'volcano').concat(vols).map(r => {
+      let P = r.pts.map(p => p.slice());
+      if (P.length === 1) P.push(P[0].slice());
+      else for (let k = 0; k < 2; k++) {
+        const Q = [P[0]];
+        for (let i = 0; i + 1 < P.length; i++) { const [ax, ay] = P[i], [bx, by] = P[i + 1]; Q.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]); }
+        Q.push(P[P.length - 1]); P = Q;
+      }
+      const segs = [];
+      for (let i = 0; i + 1 < P.length; i++) { const [ax, ay] = P[i], [bx, by] = P[i + 1]; segs.push([ax, ay, bx, by, Math.min(ax, bx) - r.w, Math.min(ay, by) - r.w, Math.max(ax, bx) + r.w, Math.max(ay, by) + r.w]); }
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (const [x, y] of P) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      return { r, segs, bb: [x0 - r.w - 160, y0 - r.w - 160, x1 + r.w + 160, y1 + r.w + 160] };
+    });
+    const N = DGW * DGH, eg = new Float32Array(N), rg = new Float32Array(N).fill(0.6), fg = new Float32Array(N), pg = new Float32Array(N);
+    for (let j = 0; j < DGH; j++) for (let i = 0; i < DGW; i++) {
+      const x = i * DG, y = j * DG, k = j * DGW + i;
+      // the crests are measured from a warped point, so they wind and throw out spurs
+      let px = NaN, py = 0;
+      for (const q of D) {
+        const r = q.r;
+        if (x < q.bb[0] || y < q.bb[1] || x > q.bb[2] || y > q.bb[3]) continue;
+        if (px !== px) { px = x + (fbm(x / 260 + 3, y / 260 + 9, 3) - 0.5) * 300; py = y + (fbm(x / 260 + 23, y / 260 + 51, 3) - 0.5) * 300; }
+        if (r.style === 'volcano') {
+          // a cone (not warped: it stands where it is), steeper towards the top, with a crater; old lava round its foot
+          const dv = Math.hypot(x - r.pts[0][0], y - r.pts[0][1]), tv = 1 - dv / r.w;
+          if (tv <= 0) continue;
+          eg[k] += r.a * (Math.pow(tv, 2.2) - 0.12 * Math.max(0, (tv - 0.94) / 0.06) + 0.1 * tv * fbm(x / 120 + 7, y / 120 + 3, 2));
+          rg[k] = Math.max(rg[k], 0.8 * tv);
+          continue;
+        }
+        let d = r.w;
+        for (const g of q.segs) if (px >= g[4] && py >= g[5] && px <= g[6] && py <= g[7]) d = Math.min(d, U.segDist(px, py, g[0], g[1], g[2], g[3]));
+        if (d >= r.w) continue;
+        const t = 1 - d / r.w;
+        if (r.style === 'old') {
+          // the folds, a ridge every 7 km or so, from the distance to the crest
+          rg[k] = Math.min(rg[k], 1 - 0.65 * t);
+          if (t > fg[k]) { fg[k] = t; pg[k] = d / 70; }
+        } else {
+          if (r.core && t > 0.3) { const u = (t - 0.3) / 0.7; eg[k] += r.a * r.core * u * u * Math.sqrt(u) * (0.35 + 1.1 * fbm(x / 160 + 41, y / 160 + 17, 2)); }
+          rg[k] = Math.max(rg[k], t);
+        }
+      }
+    }
+    return (rel = { eg, rg, fg, pg });
+  };
+  W.roughAt = (x, y) => bil(drawnRelief().rg, x, y);
+  W.hDrawn = (x, y) => W.hAt(x, y) + bil(drawnRelief().eg, x, y);   // (the drawn height without its fine detail)
+  W.hFine = (x, y, s) => {
+    const G = drawnRelief(), x0 = x, y0 = y, h = W.hAt(x, y) + bil(G.eg, x, y), m = U.clamp((h - 0.32) / 0.55, 0, 1), rk = bil(G.rg, x, y);
+    x += NOX * 40; y += NOY * 40;
+    // warped a little, so the crests and gullies flow instead of sitting on the noise's lattice
+    const wx = U.vnoise(x / 90 + 5, y / 90) - 0.5, wy = U.vnoise(x / 90, y / 90 + 7) - 0.5;
+    x += wx * 50; y += wy * 50;
+    let n = 0, wt = 1, a = 1, f = 1 / 70, fine = 0;
+    // the crests: ridged noise, each octave weighted by the last, so the gullies cut the big slopes and not the
+    // valley floors; below about 400 m plain noise, for the broken ground. Each octave is turned against the last,
+    // so the value noise's grid never lines up into blocks, and is taken about its mean, so the ground asked for
+    // coarser (fewer octaves) lies at the same height on average as the ground asked for finer
+    for (let o = 0; o < 10 && 1 / f > (s || 1) * 1.5; o++) {
+      const v0 = U.vnoise(x * f + o * 17.3, y * f - o * 9.1);
+      if (o < 4) { let v = 1 - Math.abs(2 * v0 - 1); v *= v * wt; n += (v - 0.3) * a; wt = U.clamp(v * 1.6, 0, 1); }
+      else fine += (v0 - 0.5) * a * (0.4 + wt);
+      a *= 0.5; f *= 2.07;
+      const t = x * 0.8 - y * 0.6; y = x * 0.6 + y * 0.8; x = t;
+    }
+    n /= 1.875;
+    const fo = bil(G.fg, x0, y0), folds = fo > 0.02 ? fo * 0.09 * Math.cos(bil(G.pg, x0, y0) * TAU) : 0;
+    return h + folds + m * m * (0.08 + 0.55 * rk * rk) * (n + fine * 0.6) + (1 - m) * 0.02 * (U.vnoise(x / 60, y / 60) - 0.5);
+  };
+
+  /* (brief 71) the country's regions as they look, for the drawing only: 0 high plains (dry grass, big square fields
+     and irrigation circles, like eastern Colorado), 1 rolling wheat country (like the Palouse), 2 wet evergreen
+     country (like western Washington), 3 green valleys of pasture and broadleaf woods (like Tennessee), 4 the warm
+     south (red clay, pine, cotton; like Alabama). A map gives its own as W.biomeRegions = [{ poly, biome }] (biome by
+     name, IC.BIOMES); elsewhere wet in the west, warm in the south, dry in the east, with a wandering noise between.
+     Kept on a 10 km grid, looked up at a jittered point so the edges are ragged */
+  const BG = 100, BGW = Math.ceil(WW / BG) + 1, BGH = Math.ceil(WH / BG) + 1;
+  let bgrid = null;
+  const biomeOf = (x, y) => {
+    for (const r of W.biomeRegions || []) if (U.inPoly(x, y, r.poly)) return Math.max(0, IC.BIOMES.indexOf(r.biome));
+    const warm = (y - cy) / RY + (fbm(x / 7000 + 31, y / 7000 + 2, 3) - 0.5) * 1.1, wet = (cx - x) / RX + (fbm(x / 7000 + 5, y / 7000 + 44, 3) - 0.5) * 1.1;
+    return warm > 0.4 ? 4 : wet > 0.4 ? 2 : wet < -0.3 ? (warm < -0.05 ? 1 : 0) : 3;
+  };
+  W.biome = (x, y) => {
+    if (!bgrid) { bgrid = new Uint8Array(BGW * BGH); for (let j = 0; j < BGH; j++) for (let i = 0; i < BGW; i++) bgrid[j * BGW + i] = biomeOf(i * BG, j * BG); }
+    x += (U.vnoise(x / 260 + 13, y / 260) - 0.5) * 420; y += (U.vnoise(x / 260, y / 260 + 29) - 0.5) * 420;
+    return bgrid[U.clamp(Math.round(y / BG), 0, BGH - 1) * BGW + U.clamp(Math.round(x / BG), 0, BGW - 1)];
+  };
 
   yield 'rivers';
   /* ---------- rivers and lakes ---------- */
