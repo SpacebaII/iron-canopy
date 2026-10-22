@@ -779,7 +779,7 @@ test('map: the Career plays on the hand-drawn map, and everything drawn is there
   // the sea: beyond the coast, never on the land, and the rivers drawn to it reach it
   assert(W.seas.length && W.coast.length && W.inSea(2000, 40000) && !W.inSea(cap.x, cap.y), 'the sea is not where it was drawn');
   let dryCoast = 0; for (const p of W.coast[0]) { let sea = 0; for (let k = 0; k < 8; k++) sea += W.inSea(p[0] + Math.cos(k * Math.PI / 4) * 60, p[1] + Math.sin(k * Math.PI / 4) * 60) ? 1 : 0; if (!(sea > 0 && sea < 8)) dryCoast++; } assert(dryCoast <= 3, `${dryCoast} coast points are not on a shore`);
-  const port = byName('Westhaven'); let shore = 1e9; for (const p of W.coast[0]) shore = Math.min(shore, U.dxy(p[0], p[1], port.x, port.y)); assert(shore < 200, `Westhaven, the port, is ${U.km(shore)} from the sea`);
+  const port = W.cities.find(c => c.name === 'Westhaven'); let shore = 1e9; for (const p of W.coast[0]) shore = Math.min(shore, U.dxy(p[0], p[1], port.x, port.y)); assert(shore < 200, `Westhaven, the port, is ${U.km(shore)} from the sea`);
   assert(W.inLake(2000, 40000) && W.hAt(2000, 40000) < 0, 'the sea is not water with a bed below the land');
   const carrow = W.rivers.find(r => r.name === 'Carrow River'); assert(carrow && carrow.end === 'sea' && carrow.pts.length > 300, 'the Carrow River does not run from the mountains to the sea');
   assert(W.rivers.filter(r => r.end === 'join').length >= 5, 'the tributaries do not join their rivers');
