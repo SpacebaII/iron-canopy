@@ -92,12 +92,15 @@ IC.buildTerrain = function (W) {
       const hsh = U.hash(x, y);
       // damp ground along the rivers is greener
       const rd = W.riverDist(wx, wy); if (rd < 40) c = mix(c, [70, 98, 60], 0.35 * (1 - rd / 40));
-      const fw = W.farmAt(wx, wy) * 0.8;
+      // the sea (an authored map): deep water, paler over the shelf
+      const sea = W.inSea && W.inSea(wx, wy);
+      if (sea) { const sh = U.clamp((h + 0.38) / 0.3, 0, 1); c = mix([30, 58, 76], [48, 84, 98], sh); k = 'H'; }
+      const fw = sea ? 0 : W.farmAt(wx, wy) * 0.8;
       if (fw > 0.02) {
         const i = Math.floor(wx / IC.FB), j = Math.floor(wy / IC.FB);
         c = mix(c, FIELDS[crop(U.hash(i * 31 + 7, j * 17 + 3))], fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
       }
-      const fo = forestOf(x, y) - IC.FOREST_T;
+      const fo = sea ? -1 : forestOf(x, y) - IC.FOREST_T;
       if (fo > -0.03) c = mix(c, U.vnoise(wx / 7, wy / 7) > 0.5 ? [40, 62, 40] : [50, 74, 46], U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
       let r = c[0], g = c[1], b = c[2];
       if (k !== 'H') {
@@ -123,6 +126,7 @@ IC.buildTerrain = function (W) {
   for (const [w, a] of [[70, 0.04], [34, 0.07], [12, 0.16]]) { tg.strokeStyle = `rgba(140,215,255,${a})`; tg.lineWidth = w; outline(); tg.stroke(); }
   tg.strokeStyle = 'rgba(210,215,220,0.2)'; tg.lineWidth = 7; tg.setLineDash([27, 36]);
   W.secs.forEach((s, i) => {
+    if (s.k === 'S' || W.secs[(i + 1) % W.secs.length].k === 'S') return;   // (no line out into the sea)
     tg.beginPath(); let first = true;
     for (let dd = 0; dd < IC.WW; dd += 60) {
       const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;
@@ -431,6 +435,13 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     g.strokeStyle = 'rgba(92,100,78,0.9)'; g.lineWidth = w + (lod ? 0.6 : 3 * K0); smooth(pts); g.stroke();
     g.strokeStyle = 'rgb(46,78,90)'; g.lineWidth = w; smooth(pts); g.stroke();
     g.strokeStyle = 'rgba(96,136,150,0.4)'; g.lineWidth = w * 0.4; smooth(pts); g.stroke();
+  }
+  for (const s of W.seas || []) {
+    if (!inb(s.bb[0], s.bb[1], s.bb[2], s.bb[3])) continue;
+    const P = s.poly; g.beginPath(); for (let i = 0; i < P.length; i++) g[i ? 'lineTo' : 'moveTo'](P[i][0], P[i][1]); g.closePath();
+    g.fillStyle = 'rgb(40,72,86)'; g.fill();
+    g.lineWidth = 2.4 * K0; g.strokeStyle = 'rgb(92,100,78)'; g.stroke();
+    g.lineWidth = 1.2 * K0; g.strokeStyle = 'rgba(120,150,160,0.5)'; g.stroke();
   }
   for (const l of W.lakes) {
     if (!inb(l.x - l.rx, l.y - l.rx, l.x + l.rx, l.y + l.rx)) continue;

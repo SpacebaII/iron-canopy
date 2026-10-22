@@ -92,7 +92,8 @@ function buildGraph(W) {
     const tdx = dx ? Math.abs(B / dx) : Infinity, tdy = dy ? Math.abs(B / dy) : Infinity;
     let tx = dx ? (sx > 0 ? (x + 1) * B - a.x : a.x - x * B) / Math.abs(dx) : Infinity, ty = dy ? (sy > 0 ? (y + 1) * B - a.y : a.y - y * B) / Math.abs(dy) : Infinity;
     fn(x, y);
-    for (let n = 0; n < 100000 && (x !== X1 || y !== Y1); n++) { if (tx < ty) { tx += tdx; x += sx; } else { ty += tdy; y += sy; } fn(x, y); }
+    // (until both are past the end, not equal to it: an end on a cell's edge, as a drawn map's round numbers are, can be stepped over)
+    for (let n = 0; n < 100000 && ((sx > 0 ? x < X1 : x > X1) || (sy > 0 ? y < Y1 : y > Y1)); n++) { if (tx < ty) { tx += tdx; x += sx; } else { ty += tdy; y += sy; } fn(x, y); }
   };
   lines.forEach((l, li) => {
     if (l.cls === 'hw' || l.cls === 'ramp') return;

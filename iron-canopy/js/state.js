@@ -22,8 +22,8 @@ IC.newGameAsync = (opts, progress) => new Promise((ok, fail) => {
   on();
 });
 function* gameSteps(opts) {
-  const seed = opts.seed >>> 0;
-  const W = IC.W = yield* IC.generateSteps(seed);
+  const W = IC.W = yield* IC.generateSteps(opts.seed >>> 0, opts.map);
+  const seed = W.seed;   // (on an authored map the seed is the map's: W.map says which)
   yield 'routing';
   IC.buildRouting(W);
   if (IC.worldBase) IC.worldBase(W);   // fingerprints of the fresh world, so a save stores only what changed (save.js)

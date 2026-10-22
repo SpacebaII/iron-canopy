@@ -254,7 +254,7 @@ IC.saveGame = function (S, meta) {
   skipSets = skipFor(S, S.world);
   try {
     const { root, jobs, lost } = new Writer(S, BASE).run();
-    return { game: 'iron-canopy', v: IC.SAVE_VERSION, seed: S.world.seed, wsig: BASE.sig, nid: IC.nidPeek(), meta: Object.assign(IC.saveMeta(S), meta || {}),
+    return { game: 'iron-canopy', v: IC.SAVE_VERSION, seed: S.world.seed, map: S.world.map || undefined, wsig: BASE.sig, nid: IC.nidPeek(), meta: Object.assign(IC.saveMeta(S), meta || {}),
       ms: Date.now() - t0, rebuild: ['terrain', 'clouds', 'traffic'].filter(k => S[k] != null), lost, root, jobs };
   } finally { skipSets = new Map(); }
 };
@@ -359,8 +359,8 @@ IC.loadSteps = function* (data) {
   const prevW = IC.W;
   try {
     let W;
-    if (IC.generateSteps) { const g = IC.generateSteps(data.seed); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
-    else W = IC.generate(data.seed);
+    if (IC.generateSteps) { const g = IC.generateSteps(data.seed, data.map); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
+    else W = IC.generate(data.seed, data.map);
     IC.W = W;
     IC.buildRouting(W);
     yield [0.64, 'Checking the map'];

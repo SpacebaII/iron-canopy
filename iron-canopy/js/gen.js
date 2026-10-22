@@ -13,24 +13,67 @@ IC.FOREST_T = 0.56;
 
 /* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between
    them and show how far it has got (IC.generateSteps). IC.generate runs them all at once */
-IC.generate = seed => { const g = worldSteps(seed); for (;;) { const r = g.next(); if (r.done) return r.value; } };
-IC.generateSteps = seed => worldSteps(seed);
-function* worldSteps(seed) {
+IC.generate = (seed, map) => { const g = worldSteps(seed, map); for (;;) { const r = g.next(); if (r.done) return r.value; } };
+IC.generateSteps = (seed, map) => worldSteps(seed, map);
+/* Authored maps (brief 71): a map file registers a spec in IC.MAPS (js/map-homeland.js). With one, the generator takes
+   what the spec gives at each stage (the border, the ridges, the rivers' sources, every city, the motorways...) and
+   generates only what it leaves open (villages, fields, forest, streets, lanes, junctions). The seed is the map's name
+   and version, so saves regenerate the same world. IC.mapAuthored(W) says whether a world came from a map */
+IC.MAPS = IC.MAPS || {};
+IC.CAREER_MAP = 'homeland';
+IC.mapSeed = A => { let h = 2166136261; for (const ch of `${A.name}@${A.version}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+IC.mapAuthored = W => !!(W && W.map);
+// point in polygon ([[x, y], ...]), with a box test first
+const inPoly = (x, y, P, bb) => {
+  if (bb && (x < bb[0] || y < bb[1] || x > bb[2] || y > bb[3])) return false;
+  let c = false;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; }
+  return c;
+};
+const polyBox = P => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x, y] of P) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; };
+IC.inPoly = inPoly; IC.polyBox = polyBox;
+/* a polygon as a grid of flags (cell units): 1 inside, 0 outside, 2 on the edge (ask the polygon itself there), so the
+   terrain and the height grid can ask about a big shape millions of times */
+function polyMask(P, cell) {
+  const bb = polyBox(P), i0 = Math.max(0, Math.floor(bb[0] / cell) - 1), j0 = Math.max(0, Math.floor(bb[1] / cell) - 1);
+  const nx = Math.ceil(bb[2] / cell) + 2 - i0, ny = Math.ceil(bb[3] / cell) + 2 - j0, m = new Uint8Array(nx * ny);
+  for (let j = 0; j < ny; j++) {
+    const y = (j0 + j + 0.5) * cell, xs = [];
+    for (let i = 0, k = P.length - 1; i < P.length; k = i++) { const [xi, yi] = P[i], [xk, yk] = P[k]; if ((yi > y) !== (yk > y)) xs.push((xk - xi) * (y - yi) / (yk - yi) + xi); }
+    xs.sort((a, b) => a - b);
+    for (let q = 0; q + 1 < xs.length; q += 2) for (let i = Math.floor(xs[q] / cell) - i0; i <= Math.floor(xs[q + 1] / cell) - i0; i++) if (i >= 0 && i < nx) m[j * nx + i] = 1;
+  }
+  // cells the outline passes through are asked exactly
+  for (let i = 0, k = P.length - 1; i < P.length; k = i++) {
+    const [ax, ay] = P[i], [bx, by] = P[k], n = Math.ceil(Math.hypot(bx - ax, by - ay) / cell * 2) + 1;
+    for (let t = 0; t <= n; t++) { const x = ax + (bx - ax) * t / n, y = ay + (by - ay) * t / n, ci = Math.floor(x / cell) - i0, cj = Math.floor(y / cell) - j0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ii = ci + di, jj = cj + dj; if (ii >= 0 && jj >= 0 && ii < nx && jj < ny) m[jj * nx + ii] = 2; } }
+  }
+  return (x, y) => { if (x < bb[0] || y < bb[1] || x > bb[2] || y > bb[3]) return false; const i = Math.floor(x / cell) - i0, j = Math.floor(y / cell) - j0; if (i < 0 || j < 0 || i >= nx || j >= ny) return false; const v = m[j * nx + i]; return v === 2 ? inPoly(x, y, P, bb) : v === 1; };
+}
+IC.polyMask = polyMask;
+// distance from a point inside a polygon to its edge (0 outside)
+const polyIn = (x, y, P, bb) => inPoly(x, y, P, bb) ? U.polyDist(x, y, P.concat([P[0]])) : 0;
+function* worldSteps(seed, map) {
+  const A = typeof map === 'string' ? IC.MAPS[map] : map || null;
+  if (map && !A) throw new Error(`No map called ${map}`);
+  if (A) seed = IC.mapSeed(A);
   let R = IC.makeRng(seed);
   const WW = IC.WW, WH = IC.WH;
   const NOX = R() * 900, NOY = R() * 900;
   const fbm = (x, y, o) => U.fbm(x + NOX, y + NOY, o);
-  const W = { seed };
+  const W = { seed, map: A ? A.name : null, mapVersion: A ? A.version : 0 };
+  const byName = (list, n) => list.find(o => o.name === n);
+  W.warnings = [];   // what the map asked for that could not be done as asked (the editor shows them)
 
   /* ---------- names ---------- */
   const used = new Set();
   const uniq = list => { let n, g = 0; do { n = R.pick(list); g++; } while (used.has(n) && g < 50); used.add(n); return n; };
-  W.names = { H: uniq(IC.NAMES.home), A: uniq(IC.NAMES.hostileA), B: uniq(IC.NAMES.hostileB), C: uniq(IC.NAMES.neutral), D: uniq(IC.NAMES.neutral) };
-  W.full = {
+  W.names = A && A.names ? Object.assign({}, A.names) : { H: uniq(IC.NAMES.home), A: uniq(IC.NAMES.hostileA), B: uniq(IC.NAMES.hostileB), C: uniq(IC.NAMES.neutral), D: uniq(IC.NAMES.neutral) };
+  W.full = A && A.full ? Object.assign({}, A.full) : {
     H: `Republic of ${W.names.H}`, A: `${W.names.A} ${R.pick(IC.NAMES.suffixA)}`, B: `${W.names.B} ${R.pick(IC.NAMES.suffixB)}`,
     C: `${W.names.C} ${R.pick(IC.NAMES.suffixN)}`, D: `${W.names.D} ${R.pick(IC.NAMES.suffixN)}`
   };
-  W.side = { H: 'us', A: 'hostile', B: 'hostile', C: 'neutral', D: 'neutral' };
+  W.side = { H: 'us', A: 'hostile', B: 'hostile', C: 'neutral', D: 'neutral', S: 'sea' };   // (S: the sea, on an authored map with a coast)
   const placeNames = new Set();
   W.placeName = () => {
     for (let i = 0; i < 120; i++) {
@@ -41,16 +84,27 @@ function* worldSteps(seed) {
   };
 
   /* ---------- nation outline (star-shaped, so inside = radius test) ---------- */
-  const cx = (5925 + R.range(-330, 330)) * M, cy = (4870 + R.range(-220, 220)) * M;
+  const cx = A && A.centre ? A.centre[0] : (5925 + R.range(-330, 330)) * M, cy = A && A.centre ? A.centre[1] : (4870 + R.range(-220, 220)) * M;
   W.cx = cx; W.cy = cy;
   const ph = [R.range(0, TAU), R.range(0, TAU), R.range(0, TAU), R.range(0, TAU)];
   const amp = [R.range(0.07, 0.13), R.range(0.04, 0.09), R.range(0.03, 0.06), R.range(0.015, 0.03)];
   const shapeR = a => 1 + amp[0] * Math.sin(2 * a + ph[0]) + amp[1] * Math.sin(3 * a + ph[1]) + amp[2] * Math.sin(5 * a + ph[2]) + amp[3] * Math.sin(11 * a + ph[3]);
   const RX = 2250 * K, RY = 1650 * K;
-  W.borderPt = a => { const r = shapeR(a); return { x: cx + Math.cos(a) * RX * r, y: cy + Math.sin(a) * RY * r }; };
-  // the border's distance from the centre by angle, from a table (asked millions of times while generating)
+  // the border's distance from the centre by angle, from a table (asked millions of times while generating). An
+  // authored border is a polygon, star-shaped round the centre: a ray from the centre meets it once
   const NRB = 8192, RB = new Float64Array(NRB + 1);
-  for (let i = 0; i <= NRB; i++) { const a = i / NRB * TAU - Math.PI, r = shapeR(a); RB[i] = Math.hypot(Math.cos(a) * RX * r, Math.sin(a) * RY * r); }
+  const rayPoly = (P, a) => {
+    const dx = Math.cos(a), dy = Math.sin(a); let best = 0;
+    for (let i = 0, k = P.length - 1; i < P.length; k = i++) {
+      const [ax, ay] = P[k], [bx, by] = P[i], ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex; if (Math.abs(den) < 1e-9) continue;
+      const t = ((ax - cx) * ey - (ay - cy) * ex) / den, u = ((ax - cx) * dy - (ay - cy) * dx) / den;
+      if (t > best && u >= 0 && u <= 1) best = t;
+    }
+    return best;
+  };
+  if (A && A.border) { for (let i = 0; i <= NRB; i++) RB[i] = rayPoly(A.border, i / NRB * TAU - Math.PI); }
+  else for (let i = 0; i <= NRB; i++) { const a = i / NRB * TAU - Math.PI, r = shapeR(a); RB[i] = Math.hypot(Math.cos(a) * RX * r, Math.sin(a) * RY * r); }
+  W.borderPt = a => { if (A && A.border) { const r = W.radialB(a); return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; } const r = shapeR(a); return { x: cx + Math.cos(a) * RX * r, y: cy + Math.sin(a) * RY * r }; };
   W.radialB = a => { const f = (U.mod(a + Math.PI, TAU)) / TAU * NRB, i = Math.min(NRB - 1, f | 0), u = f - i; return RB[i] + (RB[i + 1] - RB[i]) * u; };
   W.inHome = (x, y) => Math.hypot(x - cx, y - cy) < W.radialB(Math.atan2(y - cy, x - cx));
   W.depthOut = (x, y) => Math.hypot(x - cx, y - cy) - W.radialB(Math.atan2(y - cy, x - cx));
@@ -59,9 +113,10 @@ function* worldSteps(seed) {
 
   /* ---------- neighbours ---------- */
   const aA = -Math.PI / 2 + R.range(-0.2, 0.2), wA = R.range(1.9, 2.3);
-  const east = R() < 0.5, wB = R.range(1.25, 1.6), wC = R.range(1.4, 1.9);
+  const east = A && A.secs ? !!A.east : R() < 0.5, wB = R.range(1.25, 1.6), wC = R.range(1.4, 1.9);
   let secs;
-  if (east) { const b0 = aA - wA / 2, b1 = aA + wA / 2, b2 = b1 + wB, b3 = b2 + wC; secs = [{ k: 'A', a0: b0 }, { k: 'B', a0: b1 }, { k: 'C', a0: b2 }, { k: 'D', a0: b3 }]; }
+  if (A && A.secs) secs = A.secs.map(s => ({ k: s.k, a0: s.deg * Math.PI / 180 }));
+  else if (east) { const b0 = aA - wA / 2, b1 = aA + wA / 2, b2 = b1 + wB, b3 = b2 + wC; secs = [{ k: 'A', a0: b0 }, { k: 'B', a0: b1 }, { k: 'C', a0: b2 }, { k: 'D', a0: b3 }]; }
   else { const b0 = aA - wA / 2, b1 = aA + wA / 2, b2 = b1 + wC, bB = b0 - wB; secs = [{ k: 'B', a0: bB }, { k: 'A', a0: b0 }, { k: 'C', a0: b1 }, { k: 'D', a0: b2 }]; }
   W.secs = secs; W.eastB = east;
   const jph = secs.map(() => [R.range(0, TAU), R.range(0, TAU)]);
@@ -118,6 +173,13 @@ function* worldSteps(seed) {
   for (const f of W.fronts) for (let i = 0; i + 1 < f.pts.length; i++) hsegs.push([f.pts[i].x, f.pts[i].y, f.pts[i + 1].x, f.pts[i + 1].y]);
   W.hostileBorderDist = (x, y) => { let m = 1e9; for (const s of hsegs) m = Math.min(m, U.segDist(x, y, s[0], s[1], s[2], s[3])); return m; };
 
+  // the seas (authored maps): polygons of water beyond the coast, and the coast itself is the border there
+  W.seas = []; W.coast = [];
+  if (A && A.seas) for (const sp of A.seas) { const P = sp.poly.map(p => [p[0], p[1]]); W.seas.push({ name: sp.name || 'the sea', poly: P, bb: polyBox(P), mask: polyMask(P, 20) }); }
+  W.inSea = (x, y) => { for (const s of W.seas) if (s.mask(x, y)) return true; return false; };
+  if (A && A.coast) for (const [d0, d1] of A.coast) { const pts = []; for (let d = d0; d <= d1; d += 0.25) { const p = W.borderPt(d * Math.PI / 180); pts.push([p.x, p.y]); } W.coast.push(pts); }
+  W.plateaus = (A && A.plateaus || []).map(p => { const P = p.poly.map(q => [q[0], q[1]]); return { name: p.name, h: p.h, edge: p.edge || 250, poly: P, bb: polyBox(P) }; });
+  W.biomeRegions = (A && A.biomes || []).map(b => { const P = b.poly.map(q => [q[0], q[1]]); return { biome: b.biome, poly: P, bb: polyBox(P) }; });
   yield 'relief';
   /* ---------- relief ---------- */
   const ridges = [];
@@ -130,6 +192,11 @@ function* worldSteps(seed) {
     return { pts, a: am, w };
   };
   const [A0, A1] = W.secSpan('A'), [B0, B1] = W.secSpan('B'), [C0, C1] = W.secSpan('C'), [D0, D1] = W.secSpan('D');
+  if (A && A.ridges) {
+    // authored: the crest as points, its height a, its width w, a style for the terrain's painter (rocky, old,
+    // volcano: one point, w its radius), and gaps where a pass cuts the crest down
+    for (const r of A.ridges) ridges.push({ pts: r.pts.map(p => [p[0], p[1]]), a: r.a, w: r.w, name: r.name, style: r.style || 'old', core: r.core, gaps: (r.gaps || []).map(g => [g[0], g[1], g[2] || 120]) });
+  } else {
   ridges.push(arc(A0 + 0.12, A1 - 0.12, R.range(180, 480), R.range(0.55, 0.8), R.range(450, 630)));
   if (R() < 0.8) ridges.push(arc(B0 + 0.1, B1 - 0.1, R.range(90, 390), R.range(0.4, 0.6), 420));
   ridges.push(arc(C0 + 0.2, C1 - 0.2, R.range(600, 1350), R.range(0.3, 0.5), 450));
@@ -142,6 +209,7 @@ function* worldSteps(seed) {
     for (let i = 0; i < 10; i++) { pts.push([px, py]); h += R.range(-0.5, 0.5); px += Math.cos(h) * 170 * M; py += Math.sin(h) * 170 * M; }
     ridges.push({ pts, a: R.range(0.28, 0.42), w: R.range(420, 640) });
   }
+  }
   for (const r of ridges) {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const [x, y] of r.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -149,17 +217,34 @@ function* worldSteps(seed) {
     // each piece of the crest with its own box, so the height grid skips the pieces far away
     r.segs = [];
     for (let i = 0; i + 1 < r.pts.length; i++) { const [ax, ay] = r.pts[i], [bx, by] = r.pts[i + 1]; r.segs.push([ax, ay, bx, by, Math.min(ax, bx) - r.w, Math.min(ay, by) - r.w, Math.max(ax, bx) + r.w, Math.max(ay, by) + r.w]); }
-    r.name = IC.NAMES.ridge[R.int(0, IC.NAMES.ridge.length - 1)];
+    // (a single point: a lone peak)
+    if (r.pts.length === 1) { const [ax, ay] = r.pts[0]; r.segs.push([ax, ay, ax, ay, ax - r.w, ay - r.w, ax + r.w, ay + r.w]); }
+    if (!r.name) r.name = IC.NAMES.ridge[R.int(0, IC.NAMES.ridge.length - 1)];
   }
   W.ridges = ridges;
   const tx = R.range(-1, 1) * 0.00002 / X, ty = R.range(-1, 1) * 0.00002 / X;
+  const plateaus = W.plateaus, seas = W.seas;
   W.height = (x, y) => {
     let h = fbm(x / 2400, y / 2400) * 0.55 + (x - cx) * tx + (y - cy) * ty;
     for (const r of ridges) {
       if (x < r.bb[0] || y < r.bb[1] || x > r.bb[2] || y > r.bb[3]) continue;
       let d = r.w;
       for (const q of r.segs) if (x >= q[4] && y >= q[5] && x <= q[6] && y <= q[7]) d = Math.min(d, U.segDist(x, y, q[0], q[1], q[2], q[3]));
-      if (d < r.w) h += r.a * Math.pow(1 - d / r.w, 2) * (0.55 + 0.9 * fbm(x / 390 + 11, y / 390 + 5, 3));
+      if (d < r.w) {
+        let k = 1;
+        // a pass: the crest drops to a third of its height over the gap's radius
+        if (r.gaps) for (const g of r.gaps) { const e = U.dxy(x, y, g[0], g[1]); if (e < g[2]) k = Math.min(k, 0.33 + 0.67 * (e / g[2]) * (e / g[2])); }
+        h += r.a * k * Math.pow(1 - d / r.w, 2) * (0.55 + 0.9 * fbm(x / 390 + 11, y / 390 + 5, 3));
+      }
+    }
+    // high ground as a whole (authored): a plateau rises over its edge and stays up
+    for (const p of plateaus) { const d = polyIn(x, y, p.poly, p.bb); if (d > 0) h += p.h * Math.min(1, d / p.edge); }
+    // the sea bed, falling away from the shore
+    if (seas.length && W.inSea(x, y)) {
+      // (the shore is where the distance matters; 200 units out every neighbour is sea and the bed is at its depth)
+      let near = false; for (let q = 0; q < 8 && !near; q++) near = !W.inSea(x + Math.cos(q * TAU / 8) * 200, y + Math.sin(q * TAU / 8) * 200);
+      let d = 200; if (near) { d = 1e9; for (const s of seas) if (s.mask(x, y)) d = Math.min(d, U.polyDist(x, y, s.poly.concat([s.poly[0]]))); }
+      h = -0.08 - 0.3 * Math.min(1, d / 200);
     }
     return h;
   };
@@ -180,7 +265,9 @@ function* worldSteps(seed) {
   let bl = Float32Array.from(hg);
   for (let pass = 0; pass < 3; pass++) bl = blur5(bl, GW, GH);
   // water drains outward towards the neighbours: a gentle bowl-to-rim tilt
-  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) bl[j * GW + i] -= U.dxy(i * GC, j * GC, cx, cy) * 0.000022 / X;
+  // (an authored map drains towards its sea instead: W.drain is a point in it)
+  const drain = A && A.drain ? { x: A.drain[0], y: A.drain[1] } : null;
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) bl[j * GW + i] -= drain ? U.dxy(i * GC, j * GC, drain.x, drain.y) * 0.000014 / X : U.dxy(i * GC, j * GC, cx, cy) * 0.000022 / X;
   const owner = new Int16Array(GW * GH).fill(-1);
   W.rivers = []; W.lakes = [];
   const srcs = [];
@@ -189,12 +276,66 @@ function* worldSteps(seed) {
   for (let j = 4; j < GH - 4; j += 3) for (let i = 4; i < GW - 4; i += 3) if (W.depthOut(i * GC, j * GC) < 1050) inl.push(bl[j * GW + i]);
   inl.sort((a, b) => b - a);
   const hiT = inl[Math.floor(inl.length * 0.18)] || 0.5;
-  for (let k = 0; k < 30000 && srcs.length < 60; k++) {
+  // authored rivers: each rises where the map says and runs downhill from there like any other, under its own name;
+  // one given as points runs where it is drawn
+  /* an authored river drawn as a run of points (via): between each pair it finds its own way over the ground, downhill
+     where it can and along the low ground where it must, so it bends with the valleys the ridges make; the last point
+     may lie in the sea or on another river. The rest of a river's dice (its width, a lake at a sink) are the same */
+  const riverWay = (a, b) => {
+    const ca = [U.clamp(Math.round(a[0] / GC), 1, GW - 2), U.clamp(Math.round(a[1] / GC), 1, GH - 2)], cb = [U.clamp(Math.round(b[0] / GC), 1, GW - 2), U.clamp(Math.round(b[1] / GC), 1, GH - 2)];
+    const t = cb[1] * GW + cb[0], s0 = ca[1] * GW + ca[0], g = new Map(), par = new Map(), hf = [], hv = [];
+    const push = (f, v) => { let i = hf.length; hf.push(f); hv.push(v); while (i > 0) { const q = (i - 1) >> 1; if (hf[q] <= hf[i]) break; [hf[q], hf[i]] = [hf[i], hf[q]]; [hv[q], hv[i]] = [hv[i], hv[q]]; i = q; } };
+    const pop = () => { const v = hv[0], lf = hf.pop(), lv = hv.pop(); if (hf.length) { hf[0] = lf; hv[0] = lv; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hf.length) break; if (c + 1 < hf.length && hf[c + 1] < hf[c]) c++; if (hf[c] >= hf[i]) break; [hf[c], hf[i]] = [hf[i], hf[c]]; [hv[c], hv[i]] = [hv[i], hv[c]]; i = c; } } return v; };
+    const hx = c => Math.hypot((c % GW) - cb[0], ((c / GW) | 0) - cb[1]) * GC;
+    g.set(s0, 0); push(hx(s0), s0);
+    const done = new Set();
+    for (let n = 0; hf.length && n < 400000; n++) {
+      const c = pop(); if (c === t) break; if (done.has(c)) continue; done.add(c);
+      const ci = c % GW, cj = (c / GW) | 0, hc = bl[c];
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue; const ii = ci + di, jj = cj + dj; if (ii < 1 || jj < 1 || ii >= GW - 1 || jj >= GH - 1) continue;
+        const d = jj * GW + ii, L = Math.hypot(di, dj) * GC, dh = bl[d] - hc;
+        // flat and low is cheap, climbing dear: the way keeps to the valley floor
+        const v = g.get(c) + L * (1 + 2.5 * Math.max(0, bl[d])) + 3000 * Math.max(0, dh) + 150 * Math.max(0, -dh);
+        if (v < (g.has(d) ? g.get(d) : Infinity)) { g.set(d, v); par.set(d, c); push(v + hx(d), d); }
+      }
+    }
+    if (!par.has(t) && t !== s0) return null;
+    const cells = []; for (let c = t; c !== undefined; c = par.get(c)) { cells.push(c); if (c === s0) break; }
+    return cells.reverse();
+  };
+  if (A && A.rivers) for (const r of A.rivers) {
+    if (r.via) {
+      const id = W.rivers.length, pts = []; let end = 'end';
+      for (let q = 0; q + 1 < r.via.length && end === 'end'; q++) {
+        const cells = riverWay(r.via[q], r.via[q + 1]);
+        if (!cells) { W.warnings.push(`${r.name}: no way from point ${q + 1} to point ${q + 2}`); break; }
+        for (let k = q ? 1 : 0; k < cells.length; k++) {
+          const c = cells[k], x = (c % GW) * GC, y = ((c / GW) | 0) * GC, o = owner[c];
+          pts.push([x, y]);
+          if (o >= 0 && o !== id) { end = 'join'; break; }
+          if (seas.length && W.inSea(x, y)) { end = 'sea'; break; }
+          owner[c] = id;
+        }
+      }
+      if (pts.length < 4) continue;
+      // drawn to end beside another river: it joins it there
+      if (end === 'end') { const [ex, ey] = pts[pts.length - 1]; let best = null, bd = GC * 3.5; for (const o of W.rivers) for (const p of o.pts) { const d = U.dxy(p[0], p[1], ex, ey); if (d < bd) { bd = d; best = p; } } if (best) { pts.push([best[0], best[1]]); end = 'join'; } }
+      let L = 0; for (let q = 1; q < pts.length; q++) L += U.dxy(pts[q - 1][0], pts[q - 1][1], pts[q][0], pts[q][1]);
+      W.rivers.push({ pts, w: r.w || U.clamp(3 + L * 0.0009, 3, 13), name: r.name, end });
+      continue;
+    }
+    if (r.pts) { const pts = r.pts.map(p => [p[0], p[1]]); let L = 0; for (let q = 1; q < pts.length; q++) L += U.dist({ x: pts[q - 1][0], y: pts[q - 1][1] }, { x: pts[q][0], y: pts[q][1] }); W.rivers.push({ pts, w: r.w || U.clamp(3 + L * 0.0009, 3, 13), name: r.name, fixed: true }); continue; }
+    const i = U.clamp(Math.round(r.src[0] / GC), 4, GW - 5), j = U.clamp(Math.round(r.src[1] / GC), 4, GH - 5);
+    srcs.push({ i, j, x: i * GC, y: j * GC, name: r.name });
+  }
+  else for (let k = 0; k < 30000 && srcs.length < 60; k++) {
     const i = R.int(4, GW - 5), j = R.int(4, GH - 5), x = i * GC, y = j * GC;
     if (bl[j * GW + i] < hiT || W.depthOut(x, y) > 1050) continue;
     if (srcs.some(s => U.dxy(s.x, s.y, x, y) < 1400)) continue;
     srcs.push({ i, j, x, y });
   }
+  for (const r of W.rivers) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x, y] of r.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } r.bb = [x0, y0, x1, y1]; }
   for (const s of srcs) {
     const id = W.rivers.length, pts = [];
     let i = s.i, j = s.j, end = 'none', climb = 0;
@@ -221,16 +362,19 @@ function* worldSteps(seed) {
       [i, j] = best;
       const o = owner[j * GW + i];
       if (o >= 0 && o !== id) { pts.push([i * GC, j * GC]); end = 'join'; break; }
+      // the sea: the river ends a little way into it
+      if (seas.length && W.inSea(i * GC, j * GC)) { pts.push([i * GC, j * GC]); end = 'sea'; break; }
     }
-    if (pts.length < 20) continue;
-    const r = { pts, w: U.clamp(3 + pts.length * GC * 0.0009, 3, 13), name: W.placeName() + ' River' };
+    if (pts.length < (s.name ? 6 : 20)) { if (s.name) W.warnings.push(`${s.name} runs only ${(pts.length * GC / 10).toFixed(0)} km from its source and was dropped`); continue; }
+    const r = { pts, w: U.clamp(3 + pts.length * GC * 0.0009, 3, 13), name: s.name || W.placeName() + ' River', end };
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     r.bb = [x0, y0, x1, y1];
     W.rivers.push(r);
-    if (end === 'sink' && W.lakes.length < 16) { const [x, y] = pts[pts.length - 1]; if (!W.lakes.some(l => U.dxy(l.x, l.y, x, y) < 1200)) W.lakes.push({ x, y, rx: R.range(100, 220), ry: R.range(60, 130), rot: R.range(0, 3) }); }
+    if (end === 'sink' && W.lakes.length < 16 && !(A && A.lakes)) { const [x, y] = pts[pts.length - 1]; if (!W.lakes.some(l => U.dxy(l.x, l.y, x, y) < 1200)) W.lakes.push({ x, y, rx: R.range(100, 220), ry: R.range(60, 130), rot: R.range(0, 3) }); }
   }
-  for (let k = 0; k < 2000 && W.lakes.length < 14; k++) {
+  if (A && A.lakes) for (const l of A.lakes) W.lakes.push({ x: l.x, y: l.y, rx: l.rx, ry: l.ry, rot: l.rot || 0, name: l.name });
+  else for (let k = 0; k < 2000 && W.lakes.length < 14; k++) {
     const x = R.range(cx - 2700 * M, cx + 2700 * M), y = R.range(cy - 1950 * M, cy + 1950 * M);
     if (!W.inHome(x, y) || W.hAt(x, y) > 0.35 || W.depthOut(x, y) > -375) continue;
     W.lakes.push({ x, y, rx: R.range(110, 240), ry: R.range(60, 120), rot: R.range(0, 3) });
@@ -241,6 +385,7 @@ function* worldSteps(seed) {
   const NL = W.lakes.length, LK = new Float64Array(NL * 7);
   W.lakes.forEach((l, i) => LK.set([l.x, l.y, Math.cos(-l.rot), Math.sin(-l.rot), Math.max(l.rx, l.ry), l.rx, l.ry], i * 7));
   W.inLake = (x, y) => {
+    if (seas.length && W.inSea(x, y)) return true;
     for (let i = 0; i < NL * 7; i += 7) {
       const dx = x - LK[i], dy = y - LK[i + 1], R = LK[i + 4];
       if (dx > R || dx < -R || dy > R || dy < -R) continue;
@@ -288,6 +433,24 @@ function* worldSteps(seed) {
   }
   cand.sort((a, b) => b.score - a.score);
   const cities = [];
+  // dry, low ground near a point: the map's cities and places are moved there when they were drawn in the water or on a peak
+  const dryNear = (x, y, reach) => {
+    const ok = (px, py) => W.inHome(px, py) && !W.inLake(px, py) && W.hAt(px, py) < 0.72 && W.depthOut(px, py) < -60;
+    if (ok(x, y)) return null;
+    for (let d = 20; d <= (reach || 400); d += 20) for (let q = 0; q < 16; q++) { const a = q / 16 * TAU, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d; if (ok(px, py)) return { x: px, y: py }; }
+    return null;
+  };
+  W.dryNear = dryNear;
+  if (A && A.cities) {
+    for (const c of A.cities) {
+      let x = c.x, y = c.y;
+      // a city drawn on a river sits on its bank: the nearest point of that river (or of any)
+      if (c.onRiver) { let best = null, bd = 900; for (const r of W.rivers) { if (typeof c.onRiver === 'string' && r.name !== c.onRiver) continue; for (const p of r.pts) { const d = U.dxy(p[0], p[1], x, y); if (d < bd) { bd = d; best = p; } } } if (best) { x = best[0]; y = best[1]; } else W.warnings.push(`${c.name}: no river within 90 km to stand on`); }
+      const m = dryNear(x, y, 600); if (m) { W.warnings.push(`${c.name} was moved ${(U.dxy(m.x, m.y, x, y) / 10).toFixed(0)} km onto dry ground`); x = m.x; y = m.y; }
+      cities.push({ x, y, score: 1, hb: W.hostileBorderDist(x, y), spec: c });
+    }
+    if (!cities.length) throw new Error('The map has no cities');
+  } else {
   const capC = cand.filter(c => U.dxy(c.x, c.y, cx, cy) < 1275 * M).sort((a, b) => b.score - a.score)[0] || cand[0];
   cities.push(capC);
   // the rest by the lie of the land, but spread out: a candidate far from every city picked so far scores higher, so
@@ -311,10 +474,16 @@ function* worldSteps(seed) {
       if (b) { if (cities.length >= NCITY) cities.pop(); cities.push(b); } else break;
     }
   }
+  }
   W.cities = cities.map((c, i) => {
-    const pop = i === 0 ? R.int(1600, 2200) : i <= 3 ? R.int(400, 760) : i <= 10 ? R.int(260, 560) : R.int(90, 340);
-    return { id: 'c' + i, kind: 'city', name: W.placeName(), x: c.x, y: c.y, pop, capital: i === 0, grid: R.range(0, Math.PI / 2), r: 45 + Math.sqrt(pop) * 1.7 };
+    const sp = c.spec;
+    const pop = sp && sp.pop ? sp.pop : i === 0 ? R.int(1600, 2200) : i <= 3 ? R.int(400, 760) : i <= 10 ? R.int(260, 560) : R.int(90, 340);
+    const name = sp ? sp.name : W.placeName(), grid = R.range(0, Math.PI / 2);
+    if (sp) placeNames.add(name);
+    return { id: 'c' + i, kind: 'city', name, x: c.x, y: c.y, pop, capital: i === 0, grid: sp && sp.grid != null ? sp.grid : grid, r: 45 + Math.sqrt(pop) * 1.7, region: sp ? sp.region : undefined, role: sp ? sp.role : undefined };
   });
+  // the story's places (authored): landmarks by id with a role, where events and cutscenes can point
+  W.places = (A && A.places || []).map(p => { const m = p.dry === false ? null : dryNear(p.x, p.y, 300); return { id: p.id, name: p.name, x: m ? m.x : p.x, y: m ? m.y : p.y, role: p.role, desc: p.desc, region: p.region }; });
 
   /* ---------- villages (home and abroad) ---------- */
   W.villages = [];
@@ -329,6 +498,12 @@ function* worldSteps(seed) {
       W.villages.push({ id: 'v' + W.villages.length, kind: 'village', name: W.placeName(), x, y, pop: R.int(4, 25), home: true, k: 'H', r: R.range(14, 22), grid: R.range(0, Math.PI / 2), near: c.id });
       got++;
     }
+  }
+  // villages the map names (the story's), then the rest
+  if (A && A.villages) for (const v of A.villages) {
+    const m = dryNear(v.x, v.y, 300), x = m ? m.x : v.x, y = m ? m.y : v.y;
+    placeNames.add(v.name);
+    W.villages.push({ id: 'v' + W.villages.length, kind: 'village', name: v.name, x, y, pop: v.pop || R.int(10, 40), home: true, k: 'H', r: v.r || R.range(16, 26), grid: R.range(0, Math.PI / 2), role: v.role });
   }
   let nHome = W.villages.length, nAbroad = 0;
   const NV = 300, NA = 160;
@@ -373,13 +548,28 @@ function* worldSteps(seed) {
   };
   const byPop = W.cities.slice().sort((a, b) => b.pop - a.pop);
   const addInfra = (o) => { if (o.x == null) return null; o.id = o.id || ('i' + W.infra.length); W.infra.push(o); return o; };
-  for (const c of byPop.slice(0, 3)) {
+  // the map's own sites (airports, air bases, plants, power stations, the dam), by kind: a kind it gives is not placed
+  // by the dice as well
+  const AI = A && A.infra || [], given = kind => AI.some(i => i.kind === kind);
+  for (const i of AI) {
+    const city = i.city ? byName(W.cities, i.city) : null;
+    if (i.city && !city) { W.warnings.push(`${i.name || i.kind}: no city called ${i.city}`); }
+    const m = dryNear(i.x, i.y, 300), x = m ? m.x : i.x, y = m ? m.y : i.y;
+    if (m) W.warnings.push(`${i.name || i.kind} was moved ${(U.dxy(m.x, m.y, i.x, i.y) / 10).toFixed(0)} km onto dry ground`);
+    const o = { id: i.id, kind: i.kind, name: i.name || (city ? `${city.name} ${i.kind === 'airport' ? (city.capital ? 'International' : 'Airport') : i.kind === 'factory' ? 'Works' : i.kind === 'power' ? 'Power Station' : 'Air Base'}` : W.placeName()), x, y };
+    if (city) o.city = city.id;
+    if (i.kind === 'airport') o.rev = city && city.capital ? 10 : 5;
+    if (i.kind === 'factory') o.lines = i.lines || 1;
+    if (i.kind === 'airbase' && i.ac) o.ac = i.ac;
+    addInfra(o);
+  }
+  if (!given('airport')) for (const c of byPop.slice(0, 3)) {
     // flat ground, with room for a big airport (some 10 km) clear of rivers and lakes
     const p = spot(c, c.r + 90, c.r + 260, (x, y) => W.slopeAt(x, y) < 0.05 && W.riverDist(x, y) > 70 && ![0, 1, 2, 3, 4, 5].some(k => W.inLake(x + Math.cos(k) * 60, y + Math.sin(k) * 60))); if (!p) continue;
     addInfra({ kind: 'airport', name: `${c.name} ${c.capital ? 'International' : 'Airport'}`, x: p.x, y: p.y, rev: c.capital ? 10 : 5, city: c.id });
   }
   const cap = W.cities[0];
-  {
+  if (!W.infra.some(i => i.id === 'ab_fwd')) {
     let best = null, bs = 1e9;
     for (const c of cand) {
       const hb = c.hb;
@@ -389,7 +579,7 @@ function* worldSteps(seed) {
     }
     if (best) addInfra({ id: 'ab_fwd', kind: 'airbase', name: `${W.placeName()} Air Base`, x: best.x, y: best.y });
   }
-  {
+  if (!W.infra.some(i => i.id === 'ab_rear')) {
     let best = null, bs = -1e9;
     for (const c of cand) {
       const hb = c.hb, dc = U.dxy(c.x, c.y, cap.x, cap.y);
@@ -400,11 +590,11 @@ function* worldSteps(seed) {
   }
   const rearCities = W.cities.slice(1).sort((a, b) => W.hostileBorderDist(b.x, b.y) - W.hostileBorderDist(a.x, a.y));
   const facNames = ['Arms Works', 'Munitions', 'Motor Works'];
-  for (let i = 0; i < 3 && i < rearCities.length; i++) {
+  if (!given('factory')) for (let i = 0; i < 3 && i < rearCities.length; i++) {
     const p = spot(rearCities[i], rearCities[i].r + 60, rearCities[i].r + 200); if (!p) continue;
     addInfra({ kind: 'factory', name: `${rearCities[i].name} ${facNames[i]}`, x: p.x, y: p.y, lines: i === 0 ? 2 : 1, city: rearCities[i].id });
   }
-  {
+  if (!given('power')) {
     let dam = null;
     for (const r of W.rivers) for (const [x, y] of r.pts) {
       if (!W.inHome(x, y) || W.hAt(x, y) < 0.42 || W.depthOut(x, y) > -375 || W.hostileBorderDist(x, y) < 750) continue;
@@ -421,11 +611,13 @@ function* worldSteps(seed) {
       const p = spot(pc, pc.r + 80, pc.r + 240); if (p) addInfra({ kind: 'power', name: `${pc.name} Power Station`, x: p.x, y: p.y });
     }
   }
-  const dp = spot(cap, cap.r + 120, cap.r + 320); W.depotPos = dp || { x: cap.x + 300, y: cap.y + 225 };
+  const dp = A && A.depot ? { x: A.depot[0], y: A.depot[1] } : spot(cap, cap.r + 120, cap.r + 320); W.depotPos = dp || { x: cap.x + 300, y: cap.y + 225 };
   W.garrisons = [];
   for (const c of [cap].concat(W.cities.slice(1, 11))) { const p = spot(c, c.r + 60, c.r + 240); if (p) W.garrisons.push({ x: p.x, y: p.y, name: `${c.name} Garrison` }); }
 
   IC.cityStyles(W, IC.makeRng((seed * 613 + 29) >>> 0));
+  // the map's own word on a city's look: its style (eu, us, new, ind) and its plan (par, lon, ny, chi, dxb)
+  if (A && A.cities) for (const c of W.cities) { const sp = byName(A.cities, c.name); if (!sp) continue; if (sp.style) c.style = sp.style; if (sp.tpl) c.tpl = sp.tpl; if (sp.core) c.core = sp.core; }
 
   /* ---------- runway headings; the layouts themselves are built per game (airport.js) ---------- */
   for (const b of W.infra) if (b.kind === 'airbase' || b.kind === 'airport') b.rwyA = R.range(0, Math.PI);
@@ -433,17 +625,19 @@ function* worldSteps(seed) {
   yield 'roads';
   /* ---------- roads and railways (see buildNetwork below) ---------- */
   W.crossings = [];
-  for (const k of ['C', 'D']) {
+  const crossingAt = (k, i, a) => {
+    // on the border as W.inHome draws it (borderPt's angle is not quite the point's own)
+    const q = W.borderPt(a), qa = Math.atan2(q.y - cy, q.x - cx), qr = W.radialB(qa), p = { x: cx + Math.cos(qa) * qr, y: cy + Math.sin(qa) * qr };
+    const r = Math.hypot(p.x - cx, p.y - cy), far = { x: U.clamp(cx + (p.x - cx) * (r + 1350 * SP) / r, 100, WW - 100), y: U.clamp(cy + (p.y - cy) * (r + 1350 * SP) / r, 100, WH - 100) };
+    W.crossings.push({ id: 'x' + k + i, x: p.x, y: p.y, k, far });
+  };
+  if (A && A.crossings) A.crossings.forEach((x, i) => { const c = crossingAt(x.k, i, x.deg * Math.PI / 180); W.crossings[W.crossings.length - 1].name = x.name; });
+  else for (const k of ['C', 'D']) {
     const [a0, a1] = W.secSpan(k);
     const n = R.int(2, 3);
-    for (let i = 0; i < n; i++) {
-      // on the border as W.inHome draws it (borderPt's angle is not quite the point's own)
-      const a = U.lerp(a0, a1, (i + 1) / (n + 1)) + R.range(-0.08, 0.08), q = W.borderPt(a), qa = Math.atan2(q.y - cy, q.x - cx), qr = W.radialB(qa), p = { x: cx + Math.cos(qa) * qr, y: cy + Math.sin(qa) * qr };
-      const r = Math.hypot(p.x - cx, p.y - cy), far = { x: U.clamp(cx + (p.x - cx) * (r + 1350 * SP) / r, 100, WW - 100), y: U.clamp(cy + (p.y - cy) * (r + 1350 * SP) / r, 100, WH - 100) };
-      W.crossings.push({ id: 'x' + k + i, x: p.x, y: p.y, k, far });
-    }
+    for (let i = 0; i < n; i++) crossingAt(k, i, U.lerp(a0, a1, (i + 1) / (n + 1)) + R.range(-0.08, 0.08));
   }
-  buildNetwork(W, IC.makeRng((seed * 7919 + 13) >>> 0), fbm);
+  buildNetwork(W, IC.makeRng((seed * 7919 + 13) >>> 0), fbm, A);
   // what follows (foreign places, airways, enemy sites) draws from its own stream, so changes to the roads and
   // towns above never move them
   R = IC.makeRng((seed * 2654435761 + 97) >>> 0);
@@ -469,7 +663,7 @@ function* worldSteps(seed) {
       const a = R.range(a0 + 0.1, a1 - 0.1), dep = R.range(dmin, dmax) * shrink, p = W.borderPt(a), r = Math.hypot(p.x - cx, p.y - cy);
       const x = cx + (p.x - cx) * (r + dep) / r, y = cy + (p.y - cy) * (r + dep) / r;
       if (x < 120 || x > WW - 120 || y < 90 || y > WH - 120) continue;
-      if (W.countryAt(x, y) !== k) continue;
+      if (W.countryAt(x, y) !== k || W.inLake(x, y)) continue;
       if (others && others.some(o => U.dxy(o.x, o.y, x, y) < spacing)) continue;
       return { x, y };
     }
@@ -1252,7 +1446,7 @@ function foreignNetwork(W, R, fbm) {
   for (const e of fresh) { e.id = 'e' + edges.indexOf(e); for (const k of [e.a, e.b]) { const n = nodes[k]; if (n) n.deg = (n.deg || 0) + 1; } }
   refineRoads(W, fresh);
 }
-function buildNetwork(W, R, fbm) {
+function buildNetwork(W, R, fbm, A) {
   const G = costGrid(W, fbm), GW = G.GW, N = G.N;
   const T = layer(G);
   const cellOf = p => U.clamp(Math.floor(p.y / RC), 0, G.GH - 1) * GW + U.clamp(Math.floor(p.x / RC), 0, GW - 1);
@@ -1277,6 +1471,26 @@ function buildNetwork(W, R, fbm) {
   // motorways pass villages by (a village on one would meet its local roads at grade)
   T.vil = new Uint8Array(N); for (const v of W.villages) if (v.home) T.vil[cellOf(v)] = 1;
   const road = (a, b, cls) => { const p = search(T, cellP(a), cellP(b), HOW[cls]); if (p) lay(T, p, RANK[cls]); return !!p; };
+  /* the map's roads (authored): each a run of places by name, or points, in order; between each pair the road is
+     found over the ground like any other, so it bends with the hills and crosses the rivers where that is cheap.
+     A place named that is not on the map is a warning, and the road goes on without it */
+  const viaCell = v => {
+    if (Array.isArray(v)) { const c = cellOf({ x: v[0], y: v[1] }); if (G.base[c] < 0) G.base[c] = 2; return c; }
+    const o = W.cities.find(c => c.name === v) || W.infra.find(i => i.name === v || i.id === v) || W.villages.find(x => x.name === v) || W.crossings.find(x => x.name === v || x.id === v) || (W.places || []).find(p => p.id === v || p.name === v);
+    if (!o) { W.warnings.push(`Road via "${v}": no such place`); return -1; }
+    const pl = places.find(p => p.id === o.id); if (pl) return pl.cell;
+    const c = cellOf(o); if (G.base[c] < 0) G.base[c] = 2; return c;
+  };
+  const authoredLine = (T2, via, how, rank, name) => {
+    const cells = via.map(viaCell).filter(c => c >= 0), out = [];
+    for (let i = 0; i + 1 < cells.length; i++) {
+      const p = search(T2, cells[i], cells[i + 1], how);
+      if (p) { lay(T2, p, rank); out.push(p); } else W.warnings.push(`${name || 'A road'}: no way from stop ${i + 1} to stop ${i + 2}`);
+    }
+    return out;
+  };
+  const AR = A && A.roads || [];
+  for (const r of AR) if (r.cls === 'hw') authoredLine(T, r.via, HOW.hw, RANK.hw, r.name);
   const spur = (id, cls, alt) => {
     const s = cellP(id); if (T.use[s]) return;
     // (onto a lesser road: nothing joins a motorway but at an interchange)
@@ -1292,6 +1506,7 @@ function buildNetwork(W, R, fbm) {
   // four largest straight to the capital), then between big cities when the way round is long
   const big = cities.filter(c => !c.capital).sort((a, b) => b.pop - a.pop).slice(0, 10);
   const onHw = [cap];
+  if (!AR.some(r => r.cls === 'hw')) {
   for (const c of big.slice(0, 4).sort((a, b) => U.dist(a, cap) - U.dist(b, cap))) { road(cap.id, c.id, 'hw'); onHw.push(c); }
   for (let rest = big.slice(4); rest.length;) {
     let best = null, bd = 1e12;
@@ -1302,6 +1517,9 @@ function buildNetwork(W, R, fbm) {
     const a = onHw[i], b = onHw[j], d = U.dist(a, b);
     if (d < 5000 && d * 1.6 < U.dist(a, cap) + U.dist(cap, b)) road(a.id, b.id, 'hw');
   }
+  }
+  // the map's main roads come before the mesh, so the mesh runs along them
+  for (const r of AR) if (r.cls === 'rd') authoredLine(T, r.via, HOW.rd, RANK.rd, r.name);
   // main roads: every pair of neighbouring cities (a Gabriel graph, so no long road runs past a nearer town)
   const pairs = [];
   for (let i = 0; i < cities.length; i++) for (let j = i + 1; j < cities.length; j++) {
@@ -1346,7 +1564,19 @@ function buildNetwork(W, R, fbm) {
   const stops = cities.slice().sort((a, b) => b.pop - a.pop).slice(0, 12).concat(W.infra.filter(i => i.kind === 'factory'));
   const inT = [stops[0]], rest = stops.slice(1);
   W.rails = [];
-  while (rest.length) {
+  // the map's railways: a line from stop to stop, each stop a city, a plant or a point
+  if (A && A.rails) for (const line of A.rails) {
+    const objs = line.via.map(v => Array.isArray(v) ? { x: v[0], y: v[1] } : W.cities.find(c => c.name === v) || W.infra.find(i => i.name === v || i.id === v) || W.villages.find(x => x.name === v) || null);
+    for (let i = 0; i + 1 < objs.length; i++) {
+      const a = objs[i], b = objs[i + 1]; if (!a || !b) { W.warnings.push(`${line.name || 'A railway'}: a stop is not on the map`); continue; }
+      const p = search(RT, cellOf(a), cellOf(b), HOW.rail);
+      if (!p) { W.warnings.push(`${line.name || 'A railway'}: no way between two of its stops`); continue; }
+      lay(RT, p, 1);
+      const pts = p.map(ctr); pts[0] = { x: a.x, y: a.y }; pts[pts.length - 1] = { x: b.x, y: b.y };
+      W.rails.push({ a, b, pts: smoothLine(pts, 6), line: line.name });
+    }
+  }
+  if (!(A && A.rails)) while (rest.length) {
     let best = null, bd = 1e12;
     for (const a of inT) for (const b of rest) { const d = U.dist(a, b); if (d < bd) { bd = d; best = [a, b]; } }
     const [a, b] = best;
