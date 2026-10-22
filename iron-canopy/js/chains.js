@@ -44,10 +44,11 @@ IC.castLast = (S, key) => { const L = S.camp ? S.camp.comms : []; for (let i = L
 /* a short line for a card option: who will remember it */
 function trustLine(S, T) {
   if (!T) return '';
-  const L = [];
-  for (const k in T) {
-    const who = IC.ADVISORS[IC.castWho(S, k)]; if (!who || !T[k]) continue;
-    const n = who.name.replace(/^(Min\.|Gov\.|Gen\.|Col\.|Maj\.|Capt\.|Prime Minister|Ambassador) /, '').split(' ').pop();
+  const L = [], full = k => IC.ADVISORS[IC.castWho(S, k)].name.replace(/^(Min\.|Gov\.|Gen\.|Col\.|Maj\.|Capt\.|Prime Minister|Ambassador) /, '');
+  const last = k => full(k).split(' ').pop(), keys = Object.keys(T).filter(k => IC.ADVISORS[IC.castWho(S, k)] && T[k]);
+  for (const k of keys) {
+    // two of a name (Ivo and Lise Marsh) are told apart by their whole name
+    const n = keys.some(j => j !== k && last(j) === last(k)) ? full(k) : last(k);
     L.push(T[k] >= 10 ? `${n} will be grateful.` : T[k] > 0 ? `${n} approves.` : T[k] <= -10 ? `${n} will not forget it.` : `${n} is not pleased.`);
   }
   return L.join(' ');
@@ -161,7 +162,7 @@ function register(k) {
       const m = S.story.cast[IC.castWho(S, e.cast)]; if (m) m.met = true;
       e.who = e.who || IC.ADVISORS[IC.castWho(S, e.cast)].name;
       e.opts = e.opts.map(o => Object.assign({}, o, {
-        tip: [o.tip, trustLine(S, o.trust)].filter(Boolean).join(' '),
+        tip: [o.tip, trustLine(S, o.trust).split(/(?<=\.) /).filter(x => !(o.tip || '').includes(x)).join(' ')].filter(Boolean).join(' '),
         fx: () => {
           c.seen.push({ step: sid, t: S.time, choice: o.t, title: e.title });
           for (const p in o.trust || {}) IC.castTrust(S, p, o.trust[p], e.title);
@@ -420,7 +421,7 @@ IC.CHAINS = {
             opts: [
               { t: 'Ration it: the airlines fly less', tip: 'Every airline’s satisfaction −10.', risk: 'Little, but the airlines will remember the winter.', trust: { FLAG: -6 }, fx: S => { for (const a of S.av.airlines) IC.storyAirSat(S, a, -10); }, end: 'ration' },
               { t: 'Buy at any price: ₭250M', tip: '₭250M. Nobody notices.', risk: 'None, but the money.', trust: { FIN: -8, FLAG: 6 }, fx: S => money(S, -250), end: 'paid' },
-              { t: 'Take the neighbour’s fuel', tip: 'No cost. Tension −4. Lenz approves.', risk: 'What comes through a pipeline can be turned off.', trust: { LENZ: 10, CDS: -8 }, heat: -1, fx: S => raise(S, -4), next: 'cut', mo: 10 }
+              { t: 'Take the neighbour’s fuel', tip: 'No cost. Tension −4.', risk: 'What comes through a pipeline can be turned off.', trust: { LENZ: 10, CDS: -8 }, heat: -1, fx: S => raise(S, -4), next: 'cut', mo: 10 }
             ] }) },
       cut: { act: [3, 3], say: (S, c) => {
         IC.say(S, 'FIN', `The ${N(S).A} has closed the fuel pipeline "for maintenance". The airlines have three weeks of stock. You were warned.`);
