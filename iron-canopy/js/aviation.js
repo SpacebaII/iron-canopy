@@ -645,8 +645,6 @@ IC.aviation = function (S, dt) {
       // (round 5b) a flight to one of our airports that would land in its night curfew waits for the morning
       const cwD = toEnd.apt && IC.arrCurfew(S, S.byId[toEnd.apt], U.dist(ap, toEnd) / tl.T.cruise + 300);
       if (cwD > 0) { holdOn(S, tl, ap, 'night', Math.min(cwD, 3600), `${S.byId[toEnd.apt].name} has a night curfew`); continue; }
-      // light aircraft on the runway, or controllers still spacing the last departure the same way
-      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); holdOn(S, tl, ap, 'ga', w, 'light aircraft are using the runway'); continue; }
       // (round 5b) a departure that cannot be planned is checked before it takes an airway release, so a stuck
       // one no longer holds the others back
       if (!IC.gopsCanDepart(S, ap, tl.type, s.drive && IC.aptGraph(ap).N.has(s.id + 'o') ? s.id + 'o' : s.id)) {
@@ -657,6 +655,9 @@ IC.aviation = function (S, dt) {
         if (W.k !== 'wind' && S.time - tl.held.t0 > IC.HOLD_CANCEL) { strandTail(S, tl, ap, s, r, al, W.why); continue; }
         continue;
       }
+      // light aircraft on the runway, or controllers still spacing the last departure the same way (after the checks
+      // above, so a runway that cannot be used is named as the cause rather than the light aircraft)
+      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); holdOn(S, tl, ap, 'ga', w, 'light aircraft are using the runway'); continue; }
       // (round 5b) a tug to push it back, and a bus if its stand is remote
       const gs = IC.gseGate(S, ap, tl, s, false);
       if (gs) { holdOn(S, tl, ap, gs.k, gs.w, gs.why); continue; }
