@@ -812,7 +812,7 @@ test('map: the Career plays on the hand-drawn map, and everything drawn is there
   // the same map every time
   const sig = IC.worldBase(W).sig, again = IC.worldBase(IC.generate(0, IC.CAREER_MAP)).sig;
   assert(sig === again, 'the map is not the same world twice');
-}, true, 'world');
+}, true);   // its own worker: the map world beside the world group's cached worlds is too much heap
 test('map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed\'s region is as it was', () => {
   const S = IC.newGame({ seed: 1, mode: 'story', map: IC.CAREER_MAP, hour: 7 });
   assert(S.world.map === IC.CAREER_MAP && IC.cap(S).name === 'Ashford' && S.byId.ab_fwd.name === 'Fort Ashby Air Base', 'the Career is not on the map');
@@ -823,7 +823,7 @@ test('map: a Career on the map starts with the capital named, runs, saves, loads
   assert(JSON.stringify(IC.saveGame(S2).root) === JSON.stringify(save.root), 'saving the loaded game gives a different save');
   const Q = IC.newGame({ seed: 4242, mode: 'campaign', hour: 6 });
   assert(!Q.world.map && Q.world.cities.length === 60 && Q.world.cities[0].name === world(4242).cities[0].name, 'a seed\'s region changed');
-}, true, 'world');
+}, true);   // its own worker: a Career, its save and the loaded copy do not fit beside the world group
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test
