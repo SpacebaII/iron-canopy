@@ -708,8 +708,30 @@ function journal() {
   const F = { all: () => true, alerts: l => l.kind === 'leak' || l.kind === 'warn', combat: l => ['SPLASH', 'IMPACT', 'LAUNCH', 'FIRE', 'BDA', 'HIT', 'DESTROYED', 'BURN', 'FRIED', 'HPM', 'LOST', 'MISS'].includes(l.tag), id: l => l.kind === 'id' || l.tag === 'VID' || l.tag === 'SUSPECT' || l.tag === 'DECEPTION', logistics: l => ['CONVOY', 'LOGI', 'HELI', 'LIFT', 'ORDER', 'DELIVERED', 'IMPORT', 'ENG', 'REPAIR'].includes(l.tag), staff: l => ['CDS', 'AD', 'LOG', 'INT', 'AIR', 'ENG', 'INS', 'CMD'].includes(l.tag) };
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
-  return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
+  // (brief 70) in the Career the Journal has the story's pages too: what you chose and what came of it, the people
+  const st = S.story, tabs = st && st.cast ? pages('journal', [['log', 'Log'], ['story', 'Your story', '', 'The choices you made, what came of them, and what the story remembers'], ['people', 'People', '', 'Who you work with, and how they feel about you']]) : '';
+  if (tabs && ui.sub.journal === 'story') return tabs + storyPage();
+  if (tabs && ui.sub.journal === 'people') return tabs + peoplePage();
+  return `${tabs}<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
     <ol class="log${S.mode === 'story' ? ' cal' : ''}">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
+}
+
+/* (brief 70) Your story: each thread met so far, the choices with their dates, how it ended; then the flags in words */
+function storyPage() {
+  const st = S.story, T = IC.storyThreads(S), F = IC.foeOf(S), over = S.over ? IC.epilogue(S) : null;
+  const flags = [...st.flags].map(([k, v]) => IC.FLAG_WORDS[k] ? IC.FLAG_WORDS[k](v) : '').filter(Boolean);
+  const thread = t => `<div class="card story-t"><h3>${esc(t.name)}<em>${t.open ? 'still open' : 'ended'}</em></h3><div class="who">${IC.portrait(IC.castWho(S, t.who), 40)}<span>${esc(IC.ADVISORS[IC.castWho(S, t.who)].name)}</span></div>
+    <ol class="choices">${t.seen.map(x => `<li><time>${esc(U.date(x.t))}</time><b>${esc(x.title)}</b><span>${esc(x.choice)}</span></li>`).join('')}</ol>${t.did ? `<p>${esc(t.did)} ${esc(t.came)}</p>` : ''}</div>`;
+  return `${over ? `<div class="card wide epi"><h3>${esc(over.title)}<em>the end</em></h3><p class="lead">${esc(over.text)}</p>${over.paras.map(p => `<p><b>${esc(p.head)}.</b> ${esc(p.text)}</p>`).join('')}<p class="by">${esc(over.by)}</p></div>` : ''}
+    <div class="card wide"><h3>Across the border<em>what we know</em></h3><p>${st.act >= 2 ? `${esc(F.name)} ${esc(F.how)}. ${esc(IC.GRIEVANCES[st.grievance].words(S))}` : `The ${esc(S.world.full.A)} has been quiet for years.`}${st.road ? ` ${esc(IC.ROADS_TO_WAR[st.road].words(S))}` : ''}</p></div>
+    ${T.length ? T.map(thread).join('') : '<div class="card wide"><p class="hint">Nothing yet. The people you work with will come to you with what they want, and what you choose is remembered here.</p></div>'}
+    ${flags.length ? `<div class="card wide"><h3>What the story remembers</h3><ul class="flags">${flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}`;
+}
+/* the people: their face, role, how they feel about you, and the last thing they said */
+function peoplePage() {
+  const st = S.story, keys = Object.keys(IC.CAST).filter(k => IC.CAST[k].bio && (k !== 'FINCH' || IC.castWho(S, 'MIN') === 'FINCH') && (k !== 'MIN' || IC.castWho(S, 'MIN') === 'MIN') && (st.act >= 2 || !['CDS', 'ENVOY'].includes(k)));
+  return keys.map(k => { const c = st.cast[k], A = IC.ADVISORS[k], w = IC.trustWord(c.trust), L = IC.castLast(S, k);
+    return `<div class="card person"><div class="ph">${IC.portrait(k, 64)}<div><b>${esc(A.name)}</b><span>${esc(A.role)}</span><em class="tw ${w}">${w}</em></div></div><p>${esc(IC.CAST[k].bio)}</p>${L ? `<p class="said">“${esc(L.text.length > 180 ? L.text.slice(0, 177) + '…' : L.text)}”</p>` : ''}</div>`; }).join('');
 }
 
 /* ---------- reference ---------- */

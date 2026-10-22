@@ -211,8 +211,12 @@ function evcard() {
   if (!e) { el.hidden = true; ui.cache.evcard = null; return; }
   el.hidden = false;
   placeCard(el, { at: e.at || null });
-  setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
-    <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}</button>`).join('')}</div>`);
+  // (brief 70) a card from one of the cast shows their face and role; a letter looks like one; each option says
+  // what it costs now and, for the story's chains, what it risks later
+  const who = e.cast && IC.ADVISORS[IC.castWho(S, e.cast)], face = who && IC.portrait ? IC.portrait(IC.castWho(S, e.cast), 64) : '';
+  el.classList.toggle('letter', !!e.letter); el.classList.toggle('person', !!face);
+  setHTML(el, `${face ? `<div class="evwho">${face}<div><b>${esc(who.name)}</b><span>${esc(who.role)}</span></div><small>${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small></div>` : `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small>`}<h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
+    <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}${o.risk ? `<span class="risk">Later: ${esc(o.risk)}</span>` : ''}</button>`).join('')}</div>`);
 }
 function alerts() {
   const w = [];
@@ -663,15 +667,21 @@ function cine() {
   if (el.hidden && !ui.room && $('start').hidden && ui.cineShown < C.cards.length && now > ui.cineT) {
     const c = C.cards[ui.cineShown];
     el.className = 'cine ' + c.kind; el.hidden = false;
-    el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
+    el.innerHTML = c.res ? resultCard(c) : c.kind === 'paper' ? paperCard(c) : `${c.cast && IC.portrait ? `<div class="cface">${IC.portrait(IC.castWho(S, c.cast), 72)}</div>` : ''}<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 
     if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
     placeCard(el, c);
-    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' ? 16000 : 12000);
+    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' || c.kind === 'paper' ? 16000 : 12000);
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
   } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
   else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
+}
+/* (brief 70) the Courier's front page: masthead, date, a headline and two short paragraphs */
+function paperCard(c) {
+  const P = c.paper || {};
+  return `<div class="mast"><span>${esc(P.price || 'Morning edition')}</span><b>The ${esc(S.world.names.H)} Courier</b><span>${esc(c.sub)}</span></div>
+    <h2>${esc(c.title)}</h2>${P.deck ? `<h3>${esc(P.deck)}</h3>` : ''}<div class="cols"><p>${esc(c.text)}</p>${P.more ? `<p>${esc(P.more)}</p>` : ''}</div>${P.by ? `<p class="by">${esc(P.by)}</p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 }
 /* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
 function resultCard(c) {
@@ -968,6 +978,10 @@ function showOver() {
   $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defence has failed';
   $('overTitle').style.color = S.won ? 'var(--friend)' : 'var(--hostile)';
   $('overText').textContent = S.over;
+  // (brief 70) the Career ends with its epilogue: a paragraph per thread of the story
+  const ep = story && IC.epilogue ? IC.epilogue(S) : null;
+  $('overEpi').hidden = !ep;
+  if (ep) $('overEpi').innerHTML = `<h3>${esc(ep.title)}</h3><p class="lead">${esc(ep.text)}</p>${ep.paras.map(p => `<p><b>${esc(p.head)}.</b> ${esc(p.text)}</p>`).join('')}<p class="by">${esc(ep.by)}</p>`;
   $('overStars').textContent = aca && S.won ? '★'.repeat(S.stars || 1) + '☆'.repeat(3 - (S.stars || 1)) : '';
   const L = aca && S.camp.lesson ? IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id) : -1;
   $('overNext').hidden = !(aca && S.won && L >= 0 && L < IC.LESSONS.length - 1);

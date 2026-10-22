@@ -139,12 +139,20 @@ function research(S, reserve) {
     if (!IC.startResearch(S, pick.id)) return;
   }
 }
+/* (brief 70) how the scripted player answers the story's cards: the first (careful) option, unless a test sets
+   STORY.pick: an option's index for every chain card, or a function (card) → index */
+const STORY = { pick: null };
+function storyPick(e) {
+  const P = STORY.pick; if (P == null || !e.chain) return 0;
+  const i = typeof P === 'function' ? P(e) : P;
+  return Math.min(e.opts.length - 1, Math.max(0, i | 0));
+}
 function player(S, log) {
   const st = S.story, cc = IC.cap(S);
   // (it plays at 32×, the speed a player watches the airport at: the play clock, and so the event deck, run by it)
   if (S.speed === 1 && !S.wait) S.speed = 32;
   for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q)) IC.avDecide(S, q.id, true);
-  for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
+  for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, storyPick(e));
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
   agenda(S);
@@ -224,4 +232,4 @@ function later(S, st) {
     }
   }
 }
-module.exports = { player, site, starter, grow, research, AGENDA };
+module.exports = { player, site, starter, grow, research, AGENDA, STORY };

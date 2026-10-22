@@ -85,6 +85,8 @@ IC.storyInit = function (S) {
   const st = S.story = { act: 1, standing: 62, cp: 0, grant: IC.ACTS[1].grant, goals: [], done: new Set(), events: [], doc: {}, del: { routes: false, eng: true, qra: false, emcon: false, logi: false }, bought: new Set(),
     beats: [], beatT: S.time + 900, cnt: { approve: 0, apron: 0, vid: 0, quickest: 1e9, zone: 0, calls: 0, taxi: 0, parked: 0, overT: [], losT: 0, infT: [] }, actT: S.time, log: [], growth: 0, fired: false,
     ch: 0, chT: S.time, chLog: [], past: [], tut: true, grant0: IC.ACTS[1].grant, feeHist: [] };
+  // (brief 70) the cast, the flags, the chains and the neighbour (chains.js)
+  if (IC.chainsInit) IC.chainsInit(S);
   const E = S.enemy;
   E.allow = new Set();
   for (const s of S.esites) s.dormant = true;
@@ -695,6 +697,8 @@ function startAct(S, n) {
     say(S, 'INT', `Our civil radars only hear transponders. A drone with its transponder off is invisible to them. A military radar near the border would change that.`);
   } else if (n === 3) {
     st.killBase = S.stats.kills;
+    // (brief 70) the road the war comes by, from what the peace did (chains.js)
+    if (IC.storyRoad && st.flags) { st.road = IC.storyRoad(S); IC.flag(S, 'road', st.road); }
     S.ad.roe = 'tight';
     for (const b of S.infra.filter(i => i.kind === 'airbase')) b.locked = false;
     for (const s of S.esites) if (s.nat === 'A') s.dormant = false;
@@ -815,12 +819,16 @@ function beatsFor(S, act) {
     const rise = () => U.clamp(1 - inAct(S) / MO(S, 24), 0.3, 1);
     B.push({ id: 'probe', gap: [3600, 5400], repeat: [MO(S, 1), MO(S, 1.8)], rise, run: () => grayStrike(S) });
     B.push({ id: 'rkt', gap: [MO(S, 1), MO(S, 2)], repeat: [MO(S, 1.5), MO(S, 3)], rise, run: () => { const t = nearTown(S); IC.enemyForceOp(S, 'rkt', t); say(S, 'INT', `Rocket fire on ${t.name} from across the border. They deny it, of course.`); raise(S, 4); } });
-    B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, 24)) || inAct(S) > MO(S, 28), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
+    // (brief 70) the road's own beats, months into the act
+    if (st.road && IC.roadBeats) for (const r of IC.roadBeats(S)) B.push({ id: r.id, need: () => inAct(S) > MO(S, r.mo), gap: [1800, 5400], run: r.run });
+    const eve = IC.roadEve ? IC.roadEve(S) : 24;
+    B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, eve)) || inAct(S) > MO(S, eve + 4), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
     B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time, S), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
     B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
       // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
       const done = doneCount(S);
-      IC.enemyOpening(S, done >= 4 ? { act: 2, winH: 4 } : { head: done * 1.5 });
+      const o = done >= 4 ? { act: 2, winH: 4 } : { head: done * 1.5 };
+      IC.enemyOpening(S, IC.roadOpen ? IC.roadOpen(S, o) : o);
       startAct(S, 4);
     } });
   }
@@ -1063,6 +1071,8 @@ IC.storyTick = function (S, dt) {
   if (IC.deckTick) IC.deckTick(S, dt);
   // (brief 49) the Ministry's agenda: the policy before the Minister runs on the play clock (agenda.js)
   if (IC.agendaTick) IC.agendaTick(S, dt);
+  // (brief 70) the story's chains of cards, on the same play clock (chains.js)
+  if (IC.chainsTick) IC.chainsTick(S, dt);
   // beats: each has its own clock, started when its condition is met
   st.beatT -= dt;
   if (st.beatT <= 0) {
@@ -1113,7 +1123,7 @@ IC.storyTick = function (S, dt) {
   if (st.act >= 4) {
     C.sugT = (C.sugT || 0) - dt;
     if (C.sugT <= 0) { C.sugT = 10; C.objs = IC.suggestions(S); }
-    if (S.enemy.will < 20 && !S.over) IC.victory(S, `The ${S.world.full.A} has asked for a ceasefire. You held.`);
+    if (S.enemy.will < (IC.ceaseAt ? IC.ceaseAt(S) : 20) && !S.over) IC.victory(S, `The ${S.world.full.A} has asked for a ceasefire. You held.`);
   }
   S.camp.goal = `${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`;
 };

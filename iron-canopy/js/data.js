@@ -189,7 +189,38 @@ IC.ADVISORS = {
   APT: { name: 'Lena Okafor', role: 'Head of Airports', tag: 'APT' },
   PM:  { name: 'Prime Minister Oren Valk', role: 'Prime Minister', tag: 'PM' },
   GOV: { name: 'Gov. Anja Tessel', role: 'Regional Governor', tag: 'GOV' },
-  FIN: { name: 'Min. Karl Ostrow', role: 'Minister of Finance', tag: 'FIN' }
+  FIN: { name: 'Min. Karl Ostrow', role: 'Minister of Finance', tag: 'FIN' },
+  // (brief 70) the story's people beyond the staff
+  FLAG: { name: 'Ruth Amberly', role: 'Chief executive, the flag carrier', tag: 'AIRWAYS' },
+  PRESS: { name: 'Sol Varga', role: 'Aviation correspondent, the Courier', tag: 'PRESS' },
+  LENZ: { name: 'Kasimir Lenz', role: 'Director of Civil Aviation, across the border', tag: 'LENZ' },
+  LISE: { name: 'Lise Marsh', role: 'First officer, regional airline', tag: 'CREW' },
+  FINCH: { name: 'Min. Aurel Finch', role: 'Minister of Transport', tag: 'MIN' },
+  ENVOY: { name: 'Ambassador Clare Whitlow', role: 'Envoy of our allies', tag: 'ALLY' }
+};
+/* (brief 70) the cast: who each person is, how they start out with you, and their face (render-portrait.js draws it).
+   trust is 0-100 (st.cast); words for it in IC.trustWord. face: skin, hair colour, hair (short, long, bun, bald,
+   swept, crop), glasses, beard, coat (suit, uniform, open shirt, blouse, pilot), age (lines), bg the side's tone */
+IC.CAST = {
+  MIN: { trust: 55, home: true, bio: 'Your patron. She staked her career on the national airport before you were hired. Ambitious, quick, loyal to people who make her look good.', face: { skin: 2, hairC: '#3b2a20', hair: 'bob', coat: 'suit', coatC: '#2c3e63', age: 2, ear: 1 } },
+  PM: { trust: 50, home: true, bio: 'Careful, decent and tired. He wants a peace he can win an election on.', face: { skin: 1, hairC: '#9a9a9a', hair: 'swept', coat: 'suit', coatC: '#23262d', age: 3, glasses: 1 } },
+  APT: { trust: 60, home: true, bio: 'Your deputy. Practical and dry, she knows how every airport works and says so plainly.', face: { skin: 5, hairC: '#1b1512', hair: 'bun', coat: 'blouse', coatC: '#2f6f6a', age: 1 } },
+  ATC: { trust: 50, home: true, bio: 'Thirty years in the tower. Gruff, and protective of his controllers.', face: { skin: 1, hairC: '#b8b2a8', hair: 'crop', coat: 'shirt', coatC: '#4b5a6b', age: 3, beard: 1 } },
+  GOV: { trust: 50, home: true, bio: 'Speaks for the towns nearest the border, and never lets you forget them.', face: { skin: 3, hairC: '#5a3b26', hair: 'long', coat: 'suit', coatC: '#5b2f3b', age: 2 } },
+  FIN: { trust: 45, home: true, bio: 'The Treasury. He reads the figures, not the speeches.', face: { skin: 1, hairC: '#2a2a2a', hair: 'bald', coat: 'suit', coatC: '#202833', age: 2, glasses: 2 } },
+  FLAG: { trust: 50, home: true, bio: 'Runs the flag carrier: proud, in debt, and sure the country owes it a future.', face: { skin: 2, hairC: '#c9a26b', hair: 'swept', coat: 'suit', coatC: '#7a1f2b', age: 2, ear: 1 } },
+  PRESS: { trust: 45, home: true, bio: 'The Courier\u2019s aviation correspondent. Sceptical, fair and persistent; he writes the front pages.', face: { skin: 4, hairC: '#24180f', hair: 'crop', coat: 'shirt', coatC: '#6b6152', age: 1, glasses: 1, beard: 2 } },
+  LISE: { trust: 50, home: true, bio: 'A first officer on the regional airline, and Ivo Marsh\u2019s niece.', face: { skin: 2, hairC: '#7a4a24', hair: 'long', coat: 'pilot', coatC: '#1e2a3a', age: 0 } },
+  FINCH: { trust: 40, home: true, bio: 'A Treasury man who judges a director by the books and nothing else.', face: { skin: 1, hairC: '#4a3a2a', hair: 'swept', coat: 'suit', coatC: '#3a3f47', age: 1, glasses: 2 } },
+  CDS: { trust: 40, home: true, bio: 'Chief of Defence. Thinks a civil servant has no business running air defence, until you prove otherwise.', face: { skin: 3, hairC: '#3a3530', hair: 'bun', coat: 'uniform', coatC: '#3f4a32', age: 2 } },
+  ADA: { trust: 55, home: true, face: { skin: 1, hairC: '#5b4a3a', hair: 'crop', coat: 'uniform', coatC: '#3f4a32', age: 2 } },
+  LOG: { trust: 55, home: true, face: { skin: 2, hairC: '#d2b48c', hair: 'bun', coat: 'uniform', coatC: '#3f4a32', age: 1 } },
+  INT: { trust: 55, home: true, face: { skin: 4, hairC: '#1b1512', hair: 'crop', coat: 'uniform', coatC: '#3f4a32', age: 0, glasses: 1 } },
+  AIR: { trust: 55, home: true, face: { skin: 3, hairC: '#2b1d14', hair: 'crop', coat: 'pilot', coatC: '#4a5340', age: 1 } },
+  ENG: { trust: 55, home: true, face: { skin: 5, hairC: '#111', hair: 'bald', coat: 'uniform', coatC: '#3f4a32', age: 2, beard: 2 } },
+  INS: { trust: 55, home: true, face: { skin: 2, hairC: '#6b4b30', hair: 'bob', coat: 'uniform', coatC: '#3f4a32', age: 1 } },
+  LENZ: { trust: 50, foe: true, bio: 'Your opposite number across the border: an engineer, cultured, proud of his country, who wants his airline to reach the world through our sky.', face: { skin: 1, hairC: '#6a6460', hair: 'swept', coat: 'suit', coatC: '#4a3a52', age: 2, glasses: 1 } },
+  ENVOY: { trust: 50, ally: true, bio: 'Our allies\u2019 envoy. Friendly, and always counting.', face: { skin: 2, hairC: '#a8a39a', hair: 'bob', coat: 'suit', coatC: '#24405e', age: 3 } }
 };
 
 /* ---------- Hostile and civil air objects ----------

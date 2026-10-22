@@ -17,8 +17,10 @@ if (process.env.LOAD) S.story.grant = S.story.grant0 = IC.ACTS[S.story.act].gran
 const st = S.story, t0 = 7 * 3600, MO = IC.MO(S);
 const logs = [];
 const origLog = IC.log;
-IC.log = function (S2, kind, tag, msg, at) { if (['GOAL', 'AGENDA', 'MAYDAY', 'DECISION', 'AIRSPACE', 'MIN', 'PM', 'INT', 'GOV'].includes(tag) && !quiet) logs.push(`${U.clock(S2.time)} [${tag}] ${msg}`); return origLog(S2, kind, tag, msg, at); };
+IC.log = function (S2, kind, tag, msg, at) { if (['GOAL', 'AGENDA', 'MAYDAY', 'DECISION', 'AIRSPACE', 'MIN', 'PM', 'INT', 'GOV', 'LENZ', 'AIRWAYS', 'PRESS', 'ALLY'].includes(tag) && !quiet) logs.push(`${U.clock(S2.time)} [${tag}] ${msg}`); return origLog(S2, kind, tag, msg, at); };
 const mo = t => (t - t0) / MO;
+// (brief 70) what the story remembers, as it is set, and the cards each chain deals
+IC.on((S2, type, d) => { if (S2 !== S || quiet) return; if (type === 'flag') logs.push(`${U.clock(S2.time)} [FLAG] ${d.k} = ${d.v}`); if (type === 'event' && d.chain) logs.push(`${U.clock(S2.time)} [CHAIN] ${IC.CHAINS[d.chain].name}: ${d.title}`); });
 // (brief 48) research started and finished, as they happen, and idle slot time a month
 const rlog = [];
 IC.on((S2, type, id) => { if (S2 === S && (type === 'research' || type === 'researchStart')) { const t = IC.techById(id); rlog.push(`${U.date(S2.time)} research ${type === 'research' ? 'done' : 'started'}: ${t.name} (${U.money(t.cost)}, ${t.pm || '?'} min)`); } });
@@ -52,6 +54,13 @@ while (mo(S.time) < years * 12 && !S.over && st.act < stopAct) {
 }
 while (logs.length) console.log('      ' + logs.shift());
 marks.push({ what: S.over ? `End: ${S.over}` : 'Stopped', t: S.time });
+// (brief 70) the story at the end: the neighbour, the road to war, the flags, trust and the chains
+if (st.flags) {
+  console.log(`\nThe neighbour: ${IC.foeOf(S).name}, over ${IC.GRIEVANCES[st.grievance].name}. Road to war: ${st.road ? IC.ROADS_TO_WAR[st.road].name : 'not yet'}. Heat ${st.heat}.`);
+  console.log(`Flags: ${[...st.flags].map(([k, v]) => `${k}=${v}`).join(', ')}`);
+  console.log(`Trust: ${Object.keys(st.cast).filter(k => IC.CAST[k].bio).map(k => `${k} ${Math.round(st.cast[k].trust)}`).join(', ')}`);
+  for (const t of IC.storyThreads(S)) console.log(`  ${t.name}: ${t.seen.map(x => `${U.date(x.t)} "${x.title}" → ${x.choice}`).join('; ')}${t.end ? ` [${t.end}]` : ''}`);
+}
 console.log(`\n${S.over ? 'Over: ' + S.over : `Act ${st.act} after ${mo(S.time).toFixed(1)} months`} (${((Date.now() - wall) / 60000).toFixed(0)} min to run)`);
 const perS = T => T.n ? (T.us / T.n / 1000).toFixed(3) : '–';
 console.log(`Step times: ${perS(tm.w)} ms a step of 8 s (${tm.w.n} steps), ${perS(tm.f)} ms a step of 1 s (${tm.f.n}); the busiest month for 8 s steps: ${tm.worst.ms.toFixed(3)} ms in ${tm.worst.when}. Waiting needs ${Math.round(IC.GS * IC.WAIT.speed / 8)} steps of 8 s a real second: ${(IC.GS * IC.WAIT.speed / 8 * tm.worst.ms).toFixed(0)} ms of simulation a real second in that month`);
