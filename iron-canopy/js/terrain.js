@@ -64,6 +64,7 @@ const BIOME_CROWN = [
   ['rgb(50,78,40)', 'rgb(60,90,46)', 'rgb(44,70,38)', 'rgb(72,98,50)'],     // oak and hickory
   ['rgb(44,64,36)', 'rgb(52,72,40)', 'rgb(40,58,34)', 'rgb(62,80,44)']      // pine
 ];
+const BIOME_FIELD = BIOME_W.map(W => { const t = W.reduce((a, b) => a + b, 0); return [0, 1, 2].map(k => W.reduce((a, w, i) => a + w * FIELDS[i][k], 0) / t); });
 const biomeAt = (W, x, y) => W.biome ? W.biome(x, y) : 3;
 function cropIn(b, h) {
   const C = BIOME_CUM[b];
@@ -169,8 +170,9 @@ IC.buildTerrain = function (W) {
       const rd = W.riverDist(wx, wy); if (rd < 40) c = mix(c, [70, 98, 60], 0.35 * (1 - rd / 40));
       const fw = W.farmAt(wx, wy) * 0.8;
       if (fw > 0.02) {
+        // (a pixel here is 4 km, some six farm blocks: their region's crops on average, a little of one block's)
         const i = Math.floor(wx / FB), j = Math.floor(wy / FB), bc = blockCrops(W, i, j, wx, wy);
-        c = mix(c, mix(FIELDS[bc[0]], FIELDS[bc[1]], 0.3), fw * (0.55 + 0.45 * U.hash(i + 5, j * 3)));
+        c = mix(c, mix(BIOME_FIELD[bi], FIELDS[bc[0]], 0.25), fw * (0.6 + 0.2 * U.hash(i + 5, j * 3)));
       }
       const fo = forestOf(x, y) - tl(wx, wy) - IC.FOREST_T;
       if (fo > -0.03) c = mix(c, mix(BIOME_WOOD[bi], [50, 74, 46], U.vnoise(wx / 7, wy / 7) > 0.5 ? 0 : 0.3), U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
