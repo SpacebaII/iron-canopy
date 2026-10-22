@@ -5041,7 +5041,7 @@ test('round 4: milestones open the bigger pieces because the airport needs them,
   assert(/^Opens at 2,000 passengers a day \([\d,]+ now\)/.test(pier), pier);
   assert(/^A second runway opens at 6,000 passengers a day/.test(rw), rw);
   assert(!IC.pieceLock(S, 'tstraight', ap) && !IC.pieceLock(S, 'services', ap), 'a basic piece is locked');
-  for (const k of ['airways', 'radar', 'fields', 'loans', 'roads', 'trade', 'statement']) { const w = IC.storyLock(S, k); assert(/: opens with Chapter \d \(.+\), (after \d+ more goals? here|\d chapters on)/.test(w), `${k}: ${w}`); }
+  for (const k of ['airways', 'radar', 'fields', 'loans', 'roads', 'trade', 'statement']) { const w = IC.storyLock(S, k); assert(/: opens with Chapter \d \(.+\), (after \d+ more goals? here|once this chapter’s mandate is met|\d chapters on)/.test(w), `${k}: ${w}`); }
   const n0 = S.camp.cards.length;
   S.av.day.pax = 2400; st.deckT = 0; IC.deckTick(S, 1);
   const c = S.camp.cards.slice(n0).find(x => x.milestone === 2000);

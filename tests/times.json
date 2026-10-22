@@ -206,5 +206,12 @@
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "desk: a new Career shows the Minister’s mandate with a date, and the goals under it are steps that do not pay": 52.4,
+ "desk: a pressure comes as a card with a date and a stake, shows on the desk, and is solved by fixing it": 10.2,
+ "desk: a pressure left past its date carries out its stake; paying, more time and refusing do what they say": 31.6,
+ "desk: Wait stops when a pressure’s date is close": 10.5,
+ "desk: the quarterly review grades a smooth quarter better than a late and unsafe one, and says why": 26.0,
+ "desk: a Director who builds nothing misses the mandate, is warned, and is replaced within the first year": 42.3,
+ "desk: pressures, the mandate and the record survive save and load": 32.9
 }
