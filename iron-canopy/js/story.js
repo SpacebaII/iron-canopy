@@ -822,8 +822,8 @@ function beatsFor(S, act) {
     // (brief 70) the road's own beats, months into the act
     if (st.road && IC.roadBeats) for (const r of IC.roadBeats(S)) B.push({ id: r.id, need: () => inAct(S) > MO(S, r.mo), gap: [1800, 5400], run: r.run });
     const eve = IC.roadEve ? IC.roadEve(S) : 24;
-    B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, eve)) || inAct(S) > MO(S, eve + 4), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
-    B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time, S), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
+    B.push({ id: 'embassy', need: () => (doneCount(S) >= 3 && inAct(S) > MO(S, eve)) || inAct(S) > MO(S, eve + 4), gap: [MO(S, 0.3), MO(S, 0.6)], run: () => { IC.cutscene && IC.cutscene(S, 'north'); say(S, 'INT', `${W.names.A}'s embassy is burning documents. Their airline has cancelled every flight to us from tomorrow.`); raise(S, 8); for (const al of S.av.airlines) if (al.K.foreign) al.sat -= 10; } });
+    B.push({ id: 'massing', need: () => st.beats.find(b => b.id === 'embassy').done, gap: [3600, 7200], run: () => { IC.cutscene && IC.cutscene(S, 'eve'); say(S, 'INT', `Satellite pictures: launchers leaving their garrisons, aircraft dispersed to forward fields. This is it. Hours, not days.`); card(S, 'The Eve', U.clock(S.time, S), `Everything points one way. Whatever is not ready now will not be ready.`, 'chapter'); raise(S, 15); } });
     B.push({ id: 'war', need: () => st.beats.find(b => b.id === 'massing').done, gap: [3600, 5400], run: () => {
       // a strong Act III was their probing: the war starts at their limited strikes, with some of the winning done
       const done = doneCount(S);
@@ -877,6 +877,7 @@ function collision(S) {
   IC.log(S, 'leak', 'MAYDAY', `${t.cs} reports a mid-air collision ${place} and is squawking 7700. Diverting to ${ap ? ap.name : 'the nearest airport'}.`, t);
   IC.news(S, `Airliner ${t.cs} collides with an unidentified drone ${place}; emergency landing under way.`);
   IC.sfx && IC.sfx.klaxon();
+  IC.cutscene && IC.later(S, 600, 'storyCut', S, 'collision');
   card(S, 'Mayday', U.clock(S.time, S), `${t.cs}, ${t.pax} people on board, has hit something ${place} at ${Math.round(t.alt * 1000).toLocaleString('en-US')} m. The crew report a drone. None of our radars saw it.`, 'alarm');
   IC.later(S, 900, 'storyEvent', S, 'drone', t);
 }
@@ -896,6 +897,7 @@ function shadow(S) {
   const b = S.esites.find(s => s.kind === 'airbase' && s.nat === 'A');
   if (!t || !b) return;
   for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'ftr', b.x + i * 20, b.y, { home: b, mission: 'shadow', shadow: t, route: [{ x: t.x, y: t.y }], gray: true, noFire: true });
+  IC.cutscene && IC.later(S, 1800, 'storyCut', S, 'shadow');
   say(S, 'INT', `Two ${W.names.A} fighters have taken off and are heading for ${t.cs}. They will probably fly alongside it to make a point. If they cross the border, we should meet them.`);
   st.shadowT = S.time;
 }
@@ -982,6 +984,7 @@ function event(S, name, ...args) {
 IC.storyEvent = event;
 IC.H.storyEvent = (S, name, ...args) => () => event(S, name, ...args);
 IC.H.storyAct = (S, n) => () => startAct(S, n);
+IC.H.storyCut = (S, id, d) => () => IC.cutscene && IC.cutscene(S, id, d);
 IC.storyChoose = function (S, id, i) {
   const st = S.story, e = st.events.find(x => x.id === id);
   if (!e) return;

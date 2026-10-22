@@ -25,13 +25,14 @@ IC.castInit = function (S) {
 IC.castWho = function (S, key) {
   const st = S && S.story;
   if (key === 'MIN' && st && st.flags && st.flags.get('minister') === 'finch') return 'FINCH';
+  if (key === 'LEADER') return ({ dorn: 'DORN', varenne: 'VARENNE', council: 'ORAN' })[st && st.foe] || 'DORN';
   return key;
 };
 IC.castTrust = function (S, key, dv, why) {
   const st = S.story; if (!st || !st.cast) return;
   key = IC.castWho(S, key);
   const c = st.cast[key]; if (!c || !dv) return;
-  c.trust = U.clamp(c.trust + dv, 0, 100);
+  c.trust = U.clamp(c.trust + dv, 0, 100); c.met = true;
   c.log.push({ t: S.time, dv, why: why || '' });
   if (c.log.length > 12) c.log.shift();
   IC.emit(S, 'trust', { key, dv, trust: c.trust });
@@ -77,9 +78,9 @@ function measure(S) {
 
 /* ---------- the neighbour ---------- */
 IC.FOES = {
-  dorn: { name: 'Marshal Dorn', title: 'the Marshal', how: 'took power in a coup three years ago and keeps the officers loyal with promises', wants: 'a victory to show the army', road: 'incident' },
+  dorn: { name: 'Marshal Anton Dorn', title: 'the Marshal', how: 'took power in a coup three years ago and keeps the officers loyal with promises', wants: 'a victory to show the army', road: 'incident' },
   varenne: { name: 'President Ilka Varenne', title: 'the President', how: 'won the last election by a few thousand votes and faces another', wants: 'an enemy on the evening news', road: 'election' },
-  council: { name: 'the Revolutionary Council', title: 'the Council', how: 'shares power uneasily between hard-liners and moderates', wants: 'whatever the stronger faction wants that month', road: 'base' }
+  council: { name: 'Chair Sefa Oran of the Revolutionary Council', title: 'the Council', how: 'shares power uneasily between hard-liners and moderates', wants: 'whatever the stronger faction wants that month', road: 'base' }
 };
 IC.GRIEVANCES = {
   corridor: { name: 'the corridor', words: (S) => `Their airline must cross ${S.world.names.H} to reach the world, and pays us for every flight.`, cry: 'our sky is a toll road' },
@@ -106,6 +107,8 @@ IC.chainsInit = function (S) {
   for (const k of core.concat(rest.slice(0, IC.CHAIN_POOL))) st.chains[k] = { step: IC.CHAINS[k].first, at: null, seen: [], end: null };
   st.chainNext = 0;
   st.road = null;
+  // the story starts with the Director's own: the night of the blind spot (a fresh Career only)
+  if (S.infra && !S.infra.some(i => i.kind === 'airport') && IC.cutscene) IC.cutscene(S, 'prologue');
 };
 IC.CHAIN_POOL = 4;
 /* play seconds between chain cards, and the least game time between two (a chain never crowds the deck) */
@@ -155,6 +158,7 @@ function register(k) {
     EV[`ch_${k}_${sid}`] = S => {
       const c = S.story.chains[k], e = step.card(S, c);
       e.cast = e.cast || C.who; e.chain = k; e.step = sid;
+      const m = S.story.cast[IC.castWho(S, e.cast)]; if (m) m.met = true;
       e.who = e.who || IC.ADVISORS[IC.castWho(S, e.cast)].name;
       e.opts = e.opts.map(o => Object.assign({}, o, {
         tip: [o.tip, trustLine(S, o.trust)].filter(Boolean).join(' '),
@@ -462,6 +466,7 @@ IC.on((S, type, d) => {
   if (type === 'collision' && d) st.collPlace = d.place;
   if (type === 'goal' && d && d.id === 'first' && cap) {
     const mo = (S.time - 7 * 3600) / MO(S, 1), late = mo > 9;
+    IC.cutscene(S, 'firstLanding', { late });
     paper(S, late ? `${short(cap.name).toUpperCase()}: LATE, BUT IT FLIES` : `“HALLORAN’S FOLLY” OPENS`, late ? 'The airport the opposition loved to mock welcomes its first airliner' : 'The national airport the opposition called a folly takes its first airliner, on time',
       `The first airliner landed at ${short(cap.name)} this week to applause from the fence. Minister Petra Halloran, who staked her name on the airport, called it "the day ${W.names.H} joined the world".`,
       late ? 'Critics point out that it opened months after the date she gave Parliament, and over budget.' : 'Her critics were quiet for once. The question now is whether the airlines will stay.');
@@ -469,6 +474,9 @@ IC.on((S, type, d) => {
   if (type === 'act' && d === 2) paper(S, 'DRONE HIT AIRLINER, INQUIRY TOLD', `“Nobody saw it coming,” say controllers`,
     `An unidentified drone struck a regional airliner ${st.collPlace || 'over the north'} last month. The crew, led by first officer Lise Marsh, landed safely with one engine.`,
     'The government has put civil and military air traffic under one director. Questions remain about who was flying the drone, and why our radars could not see it.');
+  if (type === 'act' && d === 3) IC.cutscene(S, 'firstBlood');
+  if (type === 'act' && d === 4) IC.cutscene(S, 'firstNight');
+  if (type === 'chainEnd' && d && d.k === 'defector') IC.cutscene(S, 'defector', { end: d.end });
   if (type === 'act' && d === 3) paper(S, st.fired ? 'WE FIRED FIRST' : 'THEY OPENED FIRE', st.fired ? `A ${W.names.A} spy jet disguised as an airliner was shot down; their missiles answered` : `Missiles and drones struck ${short((S.byId.ab_fwd || {}).name || 'our air base')} without warning`,
     `The cabinet has handed the country's air defences to the Director, with missiles, radars and depots. ${W.names.A} has not declared war.`,
     `"It does not need to," a senior officer told the Courier. Along the border, families are packing cars.`);
@@ -477,6 +485,59 @@ IC.on((S, type, d) => {
     `Everything built in the quiet years must now hold: the airports, the radars, the people who run them.`);
   if (type === 'chainEnd' && d && d.k === 'alliance' && d.end === 'base') paper(S, 'ALLIED BASE AT THE NATIONAL AIRPORT', 'Missiles and radars in exchange for a corner of the airfield',
     `Our allies will station radars, missiles and aircraft at ${cap ? short(cap.name) : 'the national airport'} under an agreement signed this week.`, `The ${W.full.A} called it "an act of aggression".`);
+});
+
+/* ---------- the war: the people react to what holds and what is hit ----------
+   Short messages in their own voices, never a card that pauses a raid. What they say follows the chains. */
+function warOpen(S) {
+  const st = S.story, f = k => st.flags.get(k), W = S.world;
+  const L = [];
+  if (f('flag') === 'state') L.push(['FLAG', `Ruth Amberly. ${W.names.H} Airways is the government's now, and so are its aircraft. Tell me where you need them: we will fly people south from the border towns tonight.`]);
+  if (f('flag') === 'partner') L.push(['FLAG', `Ruth Amberly. I am sorry, Director. Our new owners have ordered the fleet out of the country until it is over. I argued. I lost.`]);
+  if (f('tower') === 'loyal') L.push(['ATC', `Ivo Marsh. Every controller has reported for duty. Nobody asked them to.`]);
+  if (f('tower') === 'auto') L.push(['ATC', `The duty supervisor. The automated sectors are running. If the jamming takes their picture, we do not have the people to work it by hand.`]);
+  if (f('alliance') === 'base') L.push(['ENVOY', `Ambassador Whitlow. Our batteries at the base are yours to direct, and more are on the way.`]);
+  if (f('alliance') === 'alone') L.push(['CDS', `We are on our own. Nobody is coming. Use what we have.`]);
+  if (f('border') === 'built' || f('border') === 'field') L.push(['GOV', `Anja Tessel. ${borderTown(S) ? borderTown(S).name : 'The border town'} is under fire. The airport you built is getting people out.`]);
+  if (f('corridor') === 'arrested') L.push(['INT', `There is nobody left across the border who will talk to us. Every channel Lenz had is closed.`]);
+  L.forEach(([w, t], i) => IC.later(S, 900 + i * 1500, 'castSay', S, w, t));
+}
+IC.H.castSay = (S, w, t) => () => IC.say(S, w, t);
+IC.on((S, type, d) => {
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act < 4) return;
+  const W = S.world;
+  if (type === 'act' && d === 4) warOpen(S);
+  // an airport hit: Okafor, and whether the fire crews were there (only what the player built can hurt her)
+  if (type === 'impact' && d && d.hit && d.hit.kind === 'airport' && d.hit.owner === 'us') {
+    const ap = d.hit, w = st.war = st.war || { apt: {}, t: 0 };
+    if (w.apt[ap.id] && S.time - w.apt[ap.id] < 12 * 3600) return;
+    w.apt[ap.id] = S.time;
+    const fire = ap.parts && ap.parts.some(p => p.kind === 'fire' && p.built && p.hp > 0);
+    const hurt = ap.id === st.cap && !fire && !st.flags.has('okafor');
+    if ((hurt || d.hit.hp < d.hit.max * 0.6 || ap.id === st.cap) && IC.cutscene) IC.cutscene(S, 'burn', { ap, fire, hurt });
+    if (hurt) {
+      IC.flag(S, 'okafor', 'hurt');
+      IC.say(S, 'ATC', `Lena Okafor was on the apron at ${short(ap.name)} when it was hit. There was no fire crew to reach her for a long time. She is alive, in hospital. She will not be back for a while.`);
+      IC.storyPaper(S, `${short(ap.name).toUpperCase()} HIT; HEAD OF AIRPORTS INJURED`, 'No fire crew on the airfield, staff say', `Lena Okafor, who has run the country's airports since the national airport opened, was hurt when missiles struck ${short(ap.name)}.`, 'Staff say the airport had no fire station of its own.');
+    } else if (!IC.flagOf(S, 'okafor')) IC.say(S, 'APT', fire ? `${short(ap.name)} is hit. The fire crews were there in a minute; we are counting the damage, not the dead. Get me the engineers.` : `${short(ap.name)} is hit, and there is no fire crew there. We are fighting it with hoses from the hangars.`);
+  }
+  // the first big raid stopped whole; the first of their fighters down over our country
+  if (type === 'raidResult' && d && d.res && d.res.held && d.R && (d.R.ops || []).length >= 3) IC.cutscene(S, 'held');
+  if (type === 'kill' && d && d.d && d.d.cls === 'air' && d.home && IC.inHome(d.x, d.y) && !st.flags.has('moreva')) { IC.flag(S, 'moreva', 'down'); IC.cutscene(S, 'letter'); }
+  // Sol Varga's dispatches move the country a little, if the country believes him
+  if (type === 'raidResult' && d && d.res) {
+    const w = st.war = st.war || { apt: {}, t: 0 };
+    if (S.time - (w.t || 0) < 12 * 3600) return;
+    w.t = S.time;
+    const honest = st.flags.get('press') === 'honest', held = d.res.held;
+    if (held) { if (honest) st.standing = U.clamp(st.standing + 2, 0, 100); IC.news(S, `“THEY HELD”: ${honest ? 'the night the north stayed lit' : 'officials claim a raid was stopped'}. — Sol Varga`); }
+    else { if (!honest) st.standing = U.clamp(st.standing - 2, 0, 100); IC.news(S, `${honest ? 'A hard night in the north. The Director says what got through, and why.' : 'What are they not telling us? Missiles got through again.'} — Sol Varga`); }
+  }
+  // Lenz's back channel, once the war has turned
+  if (type === 'raidResult' && st.flags.get('corridor') === 'friend' && S.enemy.will < 55 && !st.lenzCall) {
+    st.lenzCall = true;
+    IC.say(S, 'LENZ', `A call through a third country. "They are losing more than they say, Director. There are people here who want it to stop. Hold, and I can carry a message when it is time." Their will to fight need only fall to 25 for a ceasefire now.`);
+  }
 });
 
 /* 69's problems tell the story how they ended */
@@ -509,18 +570,19 @@ IC.storyRoad = function (S) {
 IC.roadBeats = function (S) {
   const st = S.story, W = S.world, F = IC.foeOf(S), G = IC.GRIEVANCES[st.grievance];
   const town = borderTown(S) || IC.cap(S);
+  const cut = () => IC.cutscene(S, 'road');
   if (st.road === 'election') return [
-    { id: 'r1', mo: 4, run: () => { IC.say(S, 'INT', `${F.name} told a rally last night that "${G.cry}". Their news repeats it every hour. ${F.how[0].toUpperCase() + F.how.slice(1)}; an election is due in a year.`); raise(S, 5); } },
+    { id: 'r1', mo: 4, run: () => { cut(); IC.say(S, 'INT', `${F.name} told a rally last night that "${G.cry}". Their news repeats it every hour. ${F.how[0].toUpperCase() + F.how.slice(1)}; an election is due in a year.`); raise(S, 5); } },
     { id: 'r2', mo: 11, run: () => { IC.say(S, 'INT', `The ${W.full.A} has banned our airlines from its airspace "until ${W.names.H} pays what it owes". Their own still fly over us.`); for (const a of S.av.airlines) if (!a.K || !a.K.foreign) IC.storyAirSat(S, a, -6); raise(S, 6); } },
     { id: 'r3', mo: 19, run: () => { IC.news(S, `${F.name} wins the ${W.names.A} election. "The time for talking is over."`); IC.say(S, 'PM', `They have their result. Director, I want the country ready by spring. Whatever you need, ask now.`); raise(S, 8); } }
   ];
   if (st.road === 'incident') return [
-    { id: 'r1', mo: 3, run: () => { IC.enemyForceOp(S, 'rkt', { x: town.x, y: town.y, ref: town, name: town.name }); IC.say(S, 'GOV', `Shells on ${town.name}'s outskirts last night. Two farms burned. People are asking who will protect them.`); raise(S, 6); } },
+    { id: 'r1', mo: 3, run: () => { cut(); IC.enemyForceOp(S, 'rkt', { x: town.x, y: town.y, ref: town, name: town.name }); IC.say(S, 'GOV', `Shells on ${town.name}'s outskirts last night. Two farms burned. People are asking who will protect them.`); raise(S, 6); } },
     { id: 'r2', mo: 8, run: () => { IC.say(S, 'AIR', `One of our patrols was locked up by a ${W.names.A} battery and broke off. They say we crossed the line. We did not.`); IC.castTrust(S, 'CDS', -4, 'the patrol'); raise(S, 8); } },
     { id: 'r3', mo: 13, run: () => { IC.news(S, `Border crossing at ${town.name} closed after an exchange of fire. Both sides blame the other.`); IC.say(S, 'CDS', `It has a life of its own now. Every incident answers the last one. We have months, not years.`); raise(S, 10); } }
   ];
   return [
-    { id: 'r1', mo: 4, run: () => { IC.say(S, 'INT', `The ${W.full.A} has given us a year to "remove foreign forces from ${W.names.H}". It is printed on the front of every paper over there.`); raise(S, 6); } },
+    { id: 'r1', mo: 4, run: () => { cut(); IC.say(S, 'INT', `The ${W.full.A} has given us a year to "remove foreign forces from ${W.names.H}". It is printed on the front of every paper over there.`); raise(S, 6); } },
     { id: 'r2', mo: 12, run: () => { IC.say(S, 'ATC', `They have closed the corridor. No ${W.names.A} airways to the east, no overflights of their territory. Airlines are routing round the long way.`); for (const a of S.av.airlines) IC.storyAirSat(S, a, -5); raise(S, 6); } },
     { id: 'r3', mo: 20, run: () => { IC.say(S, 'ENVOY', `My government has told theirs that an attack on the base is an attack on us. I wish I could tell you that will stop them.`); raise(S, 8); } }
   ];
@@ -535,6 +597,19 @@ IC.roadOpen = function (S, o) {
 };
 /* a friend across the border makes a ceasefire a little easier */
 IC.ceaseAt = S => S.story && S.story.flags && S.story.flags.get('corridor') === 'friend' ? 25 : 20;
+
+/* how the north got out in Act III: by the airport we built up there, or by the road */
+IC.storyNorthOut = S => { const t = borderTown(S); return t && airportNear(S, t, 1000) ? 'air' : 'road'; };
+/* the end: which closing, from the war's result and what it cost */
+IC.endingOf = function (S) {
+  const st = S.story, f = k => st.flags.get(k), t = borderTown(S);
+  if (!S.won) return /replaced|confidence/i.test(S.over || '') ? 'sacked' : 'endLost';
+  if (f('corridor') === 'friend') return 'endLenz';
+  const town = t && (t.morale < 25 || (t.blocks && t.blocks.filter(b => b.hp != null && b.hp < 0.5).length > t.blocks.length * 0.15));
+  if (town || f('okafor') === 'hurt') return 'endPrice';
+  return open(S) ? 'endOpen' : 'endFortress';
+};
+IC.on((S, type) => { if (type === 'over' && S.story && S.story.flags && S.mode === 'story' && IC.cutscene) IC.cutscene(S, IC.endingOf(S), { again: true }); });
 
 /* ---------- the reckoning ---------- */
 IC.storyThreads = function (S) {

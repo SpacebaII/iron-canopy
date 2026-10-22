@@ -20,114 +20,113 @@ Earlier (brief 50): "a much better story too, to have that Frostpunk / HOI4 type
 - The neighbour is a name on the map. Nobody across the border has a face, a reason or a choice.
 - The war comes because Act III's timer runs out. It ends with one line ("You held"), or with dismissal.
 
+## What the owner said next (2026-10-22, answering the first draft's questions)
+
+> "The tone should be grounded political drama but you are not a politician you are kinda just witnessing it and you'll have some choices but that's not your main job at all your choices matter occasionally and at varying amount but has to make sense and appear to make sense … You are just a regular director with a backstory and it's likely help to add some cut scenes to the story like maybe ai generated comic style framing action shots … the war cannot be avoided but there can be a ton of different ways this war cannot happen and look and escalate and de escalate that would effect timing and intensity etc. The enemy should have a cast … the intense and complex story is done through those cut scene action shots and likely told in past tense narrated by the main character, then the non cut scene pieces will likely be live commentary from characters for the most part might have some retrospective lines from the main character. I think multiple endings would be good … our characters need a lot of emotion … think of almost even Cry of Fear sort of commentary all the way towards being super positive we just need it to be shown how actually important this is"
+
+So: the Director is a witness to a political drama, not a player in it. The job (airports, airspace, defence) is the play; the story happens around the player and through people, and the player's choices land now and then, sometimes small, sometimes huge, always for a reason the player can see.
+
 ## The story
 
 ### Premise and theme
 
 You are the new Director of Civil Aviation of the Republic of {H}: a young, growing country whose sky airliners cross without landing. The neighbour, the {A}, is poorer, prouder, and depends on that same sky. Over about ten years you build the country's aviation, and then you have to defend it.
 
-The theme in one line: **everything you build for people becomes something you must defend.** The airport that brings a town its jobs is the one that is shelled. The airway you open to the neighbour is the corridor their drones fly up. The friend you make across the border is the one who is arrested. The story never says this outright; the cards and their consequences make it plain.
+The theme in one line: **everything you build for people becomes something you must defend.** The airport that brings your home town its jobs is the one that is shelled. The airway you open to the neighbour is the corridor their drones fly up. The friend you made across the border is the one who is arrested. The story never says this outright; it shows it.
 
-Tone: grounded political drama, closer to Frostpunk and This War of Mine than to Ace Combat. People are reasonable and want different things. There are no villains in the peace, only interests. The war is terrible, and the game says what it costs in people as well as in ₭M.
+Tone: grounded political drama, seen from below. Ministers, generals and presidents decide; you hear about it in the corridor, on the phone at night, on the news. The emotional range is wide on purpose: dread and grief when the war comes (the bleakest lines should land like Cry of Fear's), warmth and pride in the peace and when something holds (a town at the fence for the first flight, controllers who stay at their scopes). References the owner named: Frostpunk, Banished, The Precinct, police stories.
 
-### Who you are
+### The narrator: you
 
-You stay "you", the Director, named by nobody, but people know you and you have a history with them. The story is told by what they say to you, how they say it, and how that changes.
+You stay "you" on screen, but you have a past, and in the cutscenes you tell the story yourself, **in the first person and the past tense**, as someone looking back after the war ("I didn't know then that it was the last quiet summer").
 
-### The cast
-
-Each person has a **trust** in you (0–100, `st.cast[key].trust`, starting from their own nature), a **portrait**, a **voice** (how they write), and an **arc** that bends with trust and flags. Trust shows on the Journal's People page as a word (cold, wary, neutral, warm, loyal), never as a number in the cards.
-
-**At home**
-
-- **Petra Halloran, Minister of Transport** (`MIN`). Your patron. She bet her career on the national airport before you were hired; the opposition calls it "Halloran's Folly" until it opens. Ambitious, quick, impatient with excuses, loyal to people who make her look good. Arc: she wants to be Prime Minister. Help her and she rises to Deputy Prime Minister by Act III and argues your case in cabinet (confidence losses softened). Cross her, or expose the favour she asks for (the airport in her home region, chain *Home soil*), and she falls in a scandal and is replaced by Treasury man **Aurel Finch**, who judges you only by the books.
-- **Oren Valk, Prime Minister** (`PM`). Careful, decent, tired; he wants a peace he can win an election on. Arc: in Act III he must decide whether to prepare for war in the open; you advise him. If he trusts you he listens; if not, he waits until it is too late, or he prepares too loudly and gives the neighbour its excuse.
-- **Lena Okafor, Head of Airports** (`APT`). Your deputy and the voice of the Guide: practical, dry, on your side. She explains how things work in her own words. Arc: in the war she runs the civil airports under fire. If an airport she is at is hit hard, she can be hurt; she comes back, or she does not, depending on the fire cover you built. The only character the game may kill, and only through what the player built.
-- **Ivo Marsh, Chief Air Traffic Controller** (`ATC`). Thirty years in the tower, gruff, protects his people. His niece **Lise Marsh** is first officer on the regional airliner that hits the drone at the end of Act I. Arc: the union (chain *The tower*) and the inquiry (chain *The inquiry*); whether he trusts you decides how the controllers work in the war (sectors hold or crack under load).
-- **Anja Tessel, Governor of the border region** (`GOV`). Speaks for the towns nearest {A}. Arc: chain *The border town*. Her town gets an airport and becomes a forward base and a target, or it does not and empties, and the neighbour's broadcasts use it.
-- **Ruth Amberly, chief executive of {H} Airways** (`FLAG`, new). The flag carrier, proud and in debt. Arc: chain *The flag carrier*: protection, a bail-out, and in the war either its aircraft fly the government's evacuation or they have gone abroad with a foreign partner.
-- **Sol Varga, aviation correspondent of The {H} Courier** (`PRESS`, new). Sceptical, fair, persistent. He writes the front pages between chapters (the newspaper card). Arc: chain *The press*. Give him access and he tells your side; stonewall him and he digs. His book about the war is the epilogue.
-- **Gen. Mara Voss, Chief of Defence** (`CDS`). Thinks a civil servant has no business running air defence. Arc: from Act II, a rival who becomes an ally if you take the threat seriously early, or who goes over your head to the Prime Minister if you do not.
-- The military staff (`ADA`, `INT`, `AIR`, `LOG`, `ENG`) stay as they are, with portraits, and speak in the war as now.
-
-**Across the border**
-
-- **Kasimir Lenz, Director of Civil Aviation of the {A}** (`LENZ`, new). Your opposite number: a career engineer, cultured, proud of his country, wants his airline to reach the world through your sky. The heart of the story. Act I: he proposes a shared airway and entry points on the border (Chapter 3, *The airspace*, now has a reason and a person). Act II: he writes privately that the drones are "not his people's doing" and asks you to keep the corridor open. Act III: depending on what you did, he is purged, he warns you of the attack, or he tries to get his family out (the defector chain). Act IV: if he is free and trusts you, he is the back channel for the ceasefire.
-- **The neighbour's leadership**, drawn from the seed (`st.foe`), never shown as a menu:
-  - **Marshal Dorn**, the army's man, who took power after a coup: wants a victory to keep the officers loyal.
-  - **President Ilka Varenne**, a populist with an election to win: needs an enemy on the news every night.
-  - **The Council**, hard-liners who share power uneasily with the moderates: decide by faction, and the player's choices tip the faction.
-- **Their grievance** (`st.grievance`), also from the seed, and fed by what the player does:
-  - **The corridor**: the {A}'s airline needs our sky to reach the world; our overflight charges and closed airways strangle it.
-  - **The river**: the dam upstream and a drought; the {A} says our new towns take its water.
-  - **The lost province**: an old map, a border drawn by others; the {A} claims the border region.
+- **Where you are from.** You grew up in {border town}, the town nearest the {A} border. Your sister **Mira** still lives there with her two children and runs the bakery on the square. She calls you when things happen up north, and her calls are the war coming closer.
+- **What you carry.** You trained as an air traffic controller under **Ivo Marsh** at the old capital airfield. Fourteen years ago, on your night shift, a training jet and a light aircraft collided in the dark: the radar could not see the light aircraft. Two people died. Nobody blamed you, and you left the tower anyway. You became an engineer, then a planner. Halloran picked you because "you are the one who knows what a blind spot costs".
+- **Who you knew.** Years ago, at an aviation conference abroad, you spent a night on a hotel roof talking about the future of flying with a young engineer from across the border: **Kasimir Lenz**. He is now their Director of Civil Aviation.
+- The prologue cutscene tells this before the first card, so the Act I collision (a drone nobody's radar could see) is your old nightmare coming back.
 
 ### How the story is told
 
-- **Event cards with a face.** Every card shows who is speaking: portrait, name, role, and a line of trust when it changes ("Halloran will remember this"). Choices say what they cost now and what they risk later, in plain words (the "never a hidden trap" rule from brief 50).
-- **Letters.** Some cards are letters: Lenz's private notes, a widow's letter after the war, Varga's questions. Same card, a paper look.
-- **The front page.** At each chapter, at each act, and after the big beats, The {H} Courier's front page: masthead, date, a headline and two short paragraphs that reflect what the player did ("HALLORAN'S FOLLY OPENS ON TIME", or "THE AIRPORT THAT ISN'T: A YEAR LATE"). Headlines are written per outcome, not generic.
-- **Voices in the feed.** The messages in the feed come from the cast in their own voice, so a goal explained by Okafor sounds like Okafor.
-- **The People page** in the Journal: each person, their portrait, how they feel about you and the last thing they said.
-- **The epilogue**: Varga's book, a paragraph per thread, at the end.
+1. **Cutscenes, the story's spine.** Full-screen comic pages between stretches of play: four to eight framed panels, each with a narration caption in your voice (past tense), and sometimes a line of dialogue in a balloon. About fifteen in a Career (see the list below), several with variants that follow what happened. The game pauses; a click turns the panel; Esc skips the whole cutscene, and the Journal keeps every cutscene seen so it can be watched again.
+2. **Live commentary.** Between cutscenes the characters talk in the feed as things happen, in their own voices: Okafor on the airports, Marsh on the tower, Varga's headlines, Mira's calls from up north, the enemy's broadcasts and intercepted orders. This is where most of the story is, line by line.
+3. **Your own lines, now and then.** A short retrospective line in italics in the feed at the right moment ("I remember that morning. The fog lifted at ten, and the first one came in at ten past.").
+4. **Choices, occasionally.** A decision card comes when the story genuinely asks something of you, roughly once every year of the calendar in the peace and a handful of times in the war, never as filler. Each says what it costs now and what it risks later. Some are small (an interview), some change the war (a defector, a foreign base). The deck's small peacetime cards stay as they are (they are the job).
+5. **The Courier's front pages** at the turning points, headlines that follow what happened.
+6. **The People page** and **Your story** in the Journal; the **epilogue** at the end.
 
-### The acts
+### The cast at home
 
-**Act I — The Director (about 4–5 years).** Building something for people.
-- Halloran has staked her name on the national airport; the Courier calls it her folly. Opening it is the first front page.
-- The capital's airport: Amberly wants protection from foreign airlines (*The flag carrier* begins).
-- The airspace: Lenz proposes the shared airway and the entry points on the border (*The corridor* begins). His charges against yours are a real choice: overflight income against his goodwill.
-- Light aircraft: the clubs, small, warm; Okafor's chapter.
-- A second city: Halloran asks you to pick her home region over the city that needs it (*Home soil*).
-- The economy: Finch and the Treasury; Marsh's controllers ask for pay (*The tower* begins).
-- The end of Act I: the collision. Lise Marsh's airliner hits a drone nobody saw. She lands it. The inquiry (*The inquiry*) asks who knew.
+Each has a portrait, a voice, a trust in you that moves with what happens (shown as a word on the People page, never as a number in a card), and an arc.
 
-**Act II — Quiet Skies (2–3 years).** The sky is contested.
-- Survey drones, jamming, shadowing: as now, but each one has a voice and a reaction. Lenz writes after each incident; Voss presses for the forward base; Varga asks questions.
-- The defector (*Across the wire*): an aircraft from across the border asks to land.
-- The dilemma (as now: the spy aircraft disguised as an airliner), with the cast's reactions to whatever you do.
-- First blood, as now.
+- **Petra Halloran, Minister of Transport.** Your patron, who staked her career on the national airport ("Halloran's Folly"). Ambitious and warm with people who make her look good. She wants to be Prime Minister. If she trusts you she rises and shields you in cabinet; if she falls (the *Home soil* chain), Treasury man **Aurel Finch** takes her place.
+- **Oren Valk, Prime Minister.** Careful, decent, tired. In Act III he must decide how openly to prepare for war; you are in the room, not at the table.
+- **Lena Okafor, Head of Airports.** Your deputy and friend; dry humour; the voice of the Guide. In the war she runs the airports under fire. If a missile hits an airport she is at and there is no fire crew to reach her, she is hurt; her absence is felt in the feed. The only one of your people the game may hurt, and only through what you built.
+- **Ivo Marsh, Chief Air Traffic Controller.** Your old mentor. Calls you "kid" in private. Thirty years in the tower; protective of his people. His niece **Lise Marsh** is the first officer on the airliner the drone hits at the end of Act I.
+- **Mira**, your sister, in {border town}. The story's heart at home: phone calls about the drones she hears at night, the shelling, whether to leave. Her fate in the war depends on what was built up north (an airport that can fly people out, air defence over the town) and on luck the player can see coming.
+- **Anja Tessel, Governor of the border region.** Speaks for the north.
+- **Ruth Amberly, chief executive of {H} Airways.** The flag carrier: proud, in debt.
+- **Sol Varga, the Courier's aviation correspondent.** Writes the front pages; his book about the war is the epilogue.
+- **Gen. Mara Voss, Chief of Defence.** Thinks a civil servant has no business near air defence, until you prove otherwise.
+- **Karl Ostrow** at the Treasury, **Ambassador Clare Whitlow** for our allies, and the military staff as now.
 
-**Act III — The Shield (2 years).** The road to the war, one of three (see below), with its own beats. Valk asks whether to prepare in the open. The ally's offer (*The alliance*). Evacuations from the border region (Tessel). The eve.
+### The cast across the border
 
-**Act IV — The Storm.** The war, on the live clock, as now. The story keeps going in it: the cast reacts to what is hit and what holds (Okafor at a hit airport, Marsh's tower, Amberly's evacuation flights, Varga's dispatches, Lenz's back channel), in short cards and feed messages that never pause a raid. The end: an epilogue.
+The enemy has faces. The player meets them through letters, intercepts, broadcasts and the news, and in cutscenes.
 
-### The chains
+- **Kasimir Lenz, their Director of Civil Aviation.** Your old acquaintance from the rooftop. Cultured, proud, wants his airline to reach the world. Writes to you through the peace. Purged, silent, or the back channel for the ceasefire, depending on how he came to see you.
+- **The leader**, drawn from the seed: **Marshal Dorn** (the army's man, after a coup), **President Ilka Varenne** (a populist with an election to win), or **Chair Sefa Oran of the Council** (hard-liners and moderates in an uneasy coalition). Heard in speeches and broadcasts.
+- **Gen. Taras Volkan, their air force commander.** Cold and professional. His orders, intercepted, are the voice of the raids ("Second wave holds until their batteries have fired"). The enemy commander's aims and acts (`enemy.js`) are his.
+- **Capt. Ilya Moreva, a fighter pilot.** He shadows our airliners in Act II, close enough that passengers photograph him waving. In the war he flies the raids. If he is shot down over our country, the letter to his daughter found in the wreck is one of the war's cutscenes.
+- **Vesna Kolar, state television.** Their news, in her voice, between acts and in the war: the propaganda the player hears through Intelligence.
 
-Ten chains in the peace, each three to five cards paced by the play clock (as `deck.js` paces cards), opened by the seed and by flags, so a Career meets most of them but not all, and not in the same order. Each has two or three endings that set flags and trust, and most come back in the war.
+### The cutscenes
 
-1. **The flag carrier** (Amberly; Acts I–IV). Protection from foreign airlines (longer deals, fewer foreign offers) or open competition. Then fuel prices rise and she asks for a bail-out. Endings: *nationalised* (the Treasury pays; its aircraft fly the evacuation and the government's transport in the war), *partnered* (it merges with a foreign airline; its aircraft leave when the war comes, but fees and satisfaction are better in the peace), *bankrupt* (refused twice: its routes go to others; Amberly is cold).
-2. **The corridor** (Lenz; Acts I–III). The shared airway: low charges and Lenz's goodwill, or full charges and income. Later he asks for night routes for his cargo airline ("medical supplies"), which is how the survey drones learn our airways. Endings: *friends* (Lenz trusts you, the grievance *corridor* cools), *business* (no favours either way), *closed* (you close the airway after the drones: income lost, the corridor grievance flares, Lenz is purged sooner).
-3. **Home soil** (Halloran; Act I). She asks for the second city's airport in her home region rather than the city that needs it. Endings: *her region* (she owes you; the right city waits and its morale drops), *the right city* (she is cool, then forgets), *the press* (you tell Varga: she falls, Finch replaces her).
-4. **The tower** (Marsh; Acts I–IV). The controllers' pay claim. Settle generously (costly; controllers loyal), settle hard (cheaper; a slowdown in Act II), or automate (research cost; fewer controllers, and in the war a jammed sector fails worse). In the war, a loyal tower works through raids; a bitter one walks out of a hit tower for a few hours.
-5. **The inquiry** (Marsh, Lise Marsh, Varga; end of Act I into Act II). Who knew about the drones? Publish the radar gaps (embarrassing; the public backs the military radar budget, Act II grant up), bury it (Halloran is grateful; Varga digs it up a year later), or blame the airline (Amberly never forgives you).
-6. **The border town** (Tessel; Acts I–IV). A town near the border wants an airport. Build it (it grows, then in Act III it is a forward base and a target), refuse (it empties; the neighbour's broadcasts use it), or build it small and civil only (it stays out of the war if you never put military aircraft there, and the enemy knows it).
-7. **Across the wire** (Lenz, Voss, Valk; Act II). An aircraft from the {A} asks to land: a pilot with intelligence, and Lenz's cousin aboard. Take it in (intelligence on the enemy's sites in Act III, the war comes sooner and the grievance hardens), turn it back (the peace lasts longer; Voss is furious), or land it quietly and send the pilot home after (half of each, and Lenz knows what you did).
-8. **The alliance** (Valk, Voss, an allied envoy; Act III). An ally offers radars and long-range missiles for a base at one of your airports. Accept (aid in the war through `S.support`, a foreign base the enemy names as its reason; the airport loses civil stands), refuse (no aid; the neighbour's moderates hold on longer), or ask for aid without a base (less aid, later).
-9. **The press** (Varga; Acts I–IV). Interviews, leaks, an exposé. Access or stonewalling; whether you answer his questions about the drones, the inquiry, the base. In the war his dispatches move the Prime Minister's confidence by a few points either way.
-10. **Winter fuel** (Finch or Halloran, Amberly; Act II or III). A fuel crisis: ration airline fuel (airlines suffer), buy at any price (money), or take the neighbour's offer of cheap fuel through the corridor (cheaper, and dependence that is cut off on the eve of war).
+Each is a short page sequence; the ones marked with a variant change with what happened. Panels are described here as shots, for the art.
 
-Optional, if time allows: a rival director from the Defence Ministry, an air show that goes wrong, the neighbour's election night.
+| When | Cutscene | Variants |
+| --- | --- | --- |
+| Before the first card | **The blind spot.** The tower at night fourteen years ago, the radar showing nothing, the fireball; you at the window; the empty chair after; Halloran's call years later. | — |
+| The first airliner lands | **First light.** Dawn, the terminal, the crowd at the fence; Halloran beside you; Okafor's grin; the wheels touching. | on time or late |
+| End of Act I | **Nothing on the scope.** Lise's airliner, the drone's shape in the cloud, the bang; the cockpit; the ops room; Marsh's face; your hands; "it was the same blank screen". | — |
+| Act II, the shadowing | **Close enough to wave.** Moreva's fighter off an airliner's wing; a child at the window; the photo in the next day's paper. | — |
+| Act II, the defector (if the chain runs) | **Across the wire.** Night, a transport low over the border, the runway lights coming on for it, or going off. | land, turn back, half |
+| End of Act II | **First blood.** | we fired first, or they did |
+| Act III, the road | **The road to war**, one of three: Varenne's rally, the shelling of {border town}, or the ultimatum over the base. | three roads |
+| Act III, Mira's call | **The north empties.** Cars on the road south, or a queue at the little airport for the last flights; Mira's voice. | airport up north or not |
+| The eve | **The last quiet night.** Satellite photos, the cabinet room, Valk alone, you on the roof of the ministry looking north. | — |
+| Act IV begins | **The first night.** Sirens, the first launches, the sky over the capital. | by the road |
+| In the war | **A letter in the wreck** (Moreva shot down), **The airport burns** (an airport you built hit hard), **They held** (the first raid fully stopped). | — |
+| The end | One of the endings below. | — |
 
-### The roads to the war
+The gameplay thread (69) may also call: `firstLanding`, `crash` (a fatal accident, with its cause), `sacked`, `review`.
 
-The war always comes. What the player did decides **why** it comes, **when**, **how it opens**, and **who stands with you**. Three roads, picked from flags and the seed at the start of Act III (`st.road`):
+### The chains (fewer choices, more to witness)
 
-- **The election** (likely with President Varenne, or the corridor grievance hot, or *closed*): the neighbour's leader needs a war to win. Act III beats: rallies on their news, our airline banned, a deadline, the vote. The war opens with **break morale** against cities (`E.aim`), at the usual pace.
-- **The border incident** (likely if the player fired first, took the defector, or built the border town as a base): an incident escalates. Act III beats: shelling of the border town, a shot-down patrol, a hostage crisis at the border crossing. The war comes **sooner** (the act's timer shorter) and opens with **ground our air power** against air bases and radars.
-- **The base** (likely if the player accepted the ally's base): the neighbour says it is defending itself. Act III beats: an ultimatum to remove the base, a blockade of the corridor, the envoy's visit. The war opens with **coerce the government** and a **slower** start (the commander saves longer for a bigger shock).
-- If no road is clearly favoured, the seed's leader decides (Dorn: the incident, Varenne: the election, the Council: the base).
+The ten chains of the first draft stay, but each now has at most two decision cards; the rest of each chain is witnessed in commentary and cutscenes. Act I: the flag carrier, the corridor (Lenz's letter), home soil, the tower. Act II: the inquiry, the border town, the defector, winter fuel, the press. Act III: the alliance. Which ones a Career meets comes from the seed (the core four always) and what has happened.
 
-The road sets only the enemy's opening aim and pace (`E.aim`, `IC.enemyOpening`), never its strength: the war is still the player's to win. Friends follow the alliance: aid through `S.support` if accepted, less and later if aid without a base, none if refused; *nationalised* gives evacuation flights; Lenz's back channel (if he is free and trusts you) lowers the threshold for a ceasefire a little (`S.enemy.will` at 25 instead of 20), the one way a good peace shortens the war.
+### The war: unavoidable, but never the same
+
+The war always comes. How it comes, when, how hard and how it turns follow what happened, through four levers:
+
+- **The road** (why it comes): the election, the border incident, or the base, picked from flags at the start of Act III. Each has its own Act III beats and cutscene, and sets the enemy's opening aim.
+- **Escalation** (`S.tension` and the story's heat): fired first, defectors taken, airways closed, a base accepted push it up; restraint, low charges, kept promises push it down. High escalation brings the war sooner (Act III's timer shorter, by up to a third) and harder (the enemy's stock at the start larger, up to +25%); low, later and lighter (down to −20%).
+- **De-escalation in the war**: a friend across the border (Lenz) opens a back channel, so a ceasefire comes at a higher enemy will (25 instead of 20); the base road ends harder (a ceasefire needs 15).
+- **Friends**: allied aid follows the alliance.
+
+The war is still the player's to win: the levers change timing and intensity within bounds, never the outcome.
 
 ### The endings
 
-At the end, Varga's book: a title page and a paragraph per thread (the airports, the airlines, the people, the neighbour, the war), each saying what the player chose, when, and what came of it. Then one of these closing pages:
+Varga's book closes the Career: the paragraph per thread as before, then one of these, each with its own cutscene and an emotional register from devastating to hopeful.
 
-- **The canopy held** (the enemy asks for a ceasefire): two variants, by whether the country stayed open (corridor *friends*, flag carrier alive, no foreign base) or became a fortress.
-- **A ceasefire through Lenz** (the back channel brought it sooner).
-- **Replaced** (dismissed, in peace or war): what you left behind, and who came after you.
-- **The capital fell silent** (if the war is lost by the game's existing rules): what was lost.
+- **Through the back channel**: Lenz carries the first message; a ceasefire comes early; the last panel is a handshake on a runway at the border.
+- **The canopy held, open**: we won and stayed the country we were; the first airliner back, the crowd at the fence again.
+- **The canopy held, at a price**: we won, but {border town} burned, or Okafor or Mira was lost; the last panel is a quiet one.
+- **A fortress**: we won by becoming harder, with foreign soldiers at our airports and nobody across the border to call.
+- **Replaced**: the Prime Minister lost faith; someone else finishes it; you watch from home.
+- **The sky fell silent**: the war is lost; what was built is what the country will rebuild from.
+
+Which closing, and its tone, comes from the war's result, Mira's and Okafor's fate, the flags, and who still trusts you.
 
 ## Goal
 
@@ -138,6 +137,12 @@ At the end, Varga's book: a title page and a paragraph per thread (the airports,
 **3. Chains.** `IC.CHAINS` in `chains.js`: the ten chains above, each a list of steps (`when(S)`, a card made by name like `EV`, options with `t`, `tip` (now) and `risk` (later), `fx`, and the next step), paced by the play clock and never two cards at once with the deck. Which chains are in a Career's pool comes from the seed and flags. A chain survives save and load mid-way.
 
 **4. The neighbour.** `st.foe` (leader) and `st.grievance` drawn from the seed at the start of a Career. They show only through the story: Lenz's letters, the Courier, intelligence, the enemy's broadcasts.
+
+**4b. Cutscenes.** `IC.CUTSCENES` (headless data: panels with a shot description for the art, a narration caption, an optional line of dialogue, variants by flag), `IC.cutscene(S, id, data)` queues one, a full-screen comic viewer pauses the game and shows it, the Journal lists those seen. Art per panel from `iron-canopy/art/cut/` when it exists, else a stand-in drawn in code.
+
+**4c. The narrator and the enemy's cast.** Your backstory, Mira, and retrospective lines in the feed; Lenz, the leader, Volkan, Moreva and Kolar, each with a portrait and a voice in intercepts and broadcasts.
+
+**4d. Escalation.** The war's timing and intensity from tension and heat, within the bounds above.
 
 **5. Faces and paper.** `render-portrait.js`: each cast member's portrait drawn in code (a bust in flat colours, with a consistent house style: head, hair, glasses, collar or uniform, a background tone per side), cached as an image per person and size. The event card shows the portrait; the newspaper card (`paper` kind) shows the Courier's front page. The People page. All of it readable at 15 px base and in both themes.
 

@@ -729,7 +729,7 @@ function storyPage() {
 }
 /* the people: their face, role, how they feel about you, and the last thing they said */
 function peoplePage() {
-  const st = S.story, keys = Object.keys(IC.CAST).filter(k => IC.CAST[k].bio && (k !== 'FINCH' || IC.castWho(S, 'MIN') === 'FINCH') && (k !== 'MIN' || IC.castWho(S, 'MIN') === 'MIN') && (st.act >= 2 || !['CDS', 'ENVOY'].includes(k)));
+  const st = S.story, keys = Object.keys(IC.CAST).filter(k => IC.CAST[k].bio && (k !== 'FINCH' || IC.castWho(S, 'MIN') === 'FINCH') && (k !== 'MIN' || IC.castWho(S, 'MIN') === 'MIN') && (st.cast[k].met || ['MIN', 'APT'].includes(k)));
   return keys.map(k => { const c = st.cast[k], A = IC.ADVISORS[k], w = IC.trustWord(c.trust), L = IC.castLast(S, k);
     return `<div class="card person"><div class="ph">${IC.portrait(k, 64)}<div><b>${esc(A.name)}</b><span>${esc(A.role)}</span><em class="tw ${w}">${w}</em></div></div><p>${esc(IC.CAST[k].bio)}</p>${L ? `<p class="said">“${esc(L.text.length > 180 ? L.text.slice(0, 177) + '…' : L.text)}”</p>` : ''}</div>`; }).join('');
 }

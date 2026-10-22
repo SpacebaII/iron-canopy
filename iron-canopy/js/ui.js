@@ -192,6 +192,7 @@ function topbar() {
   alerts();
   incidents();
   evcard();
+  if (IC.cutView) IC.cutView.tick(S);
   followChip();
   // the incidents hang under the alert pills, however many there are (both are centred under the top bar); with a
   // room open they sit at the bottom (CSS)
