@@ -13,6 +13,7 @@ IC.step = function (S, dt) {
   IC.updateEmcon(S, dt);
   IC.updateBases(S, dt);
   IC.gops(S, dt);
+  IC.opsTick(S, dt);
   IC.updateAir(S, dt);
   IC.sense(S, dt);
   IC.enemyTick(S, dt);

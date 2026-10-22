@@ -284,7 +284,9 @@ IC.aptLabels = function (S, ap, z, o) {
     const c = p.kind === 'runway' ? IC.rwAt(p, 0.5) : p.kind === 'taxi' ? (() => { const a = ap.nodes[p.nodes[p.nodes.length >> 1]], b = ap.nodes[p.nodes[Math.max(0, (p.nodes.length >> 1) - 1)]]; return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a; })() : p;
     if (!c || c.x == null) continue;
     const q = w.wait === 'queued: every crew is busy';
-    put(q ? 'QUEUED' : w.wait ? 'WAITING: ' + w.wait.replace(/^waiting for /, '').split(':')[0].toUpperCase() : `BUILDING ${U.pct(w.prog || 0)}`, c.x, c.y, 7, p, q || w.wait ? 'wait' : 'work');
+    // (brief 71) the stage at work and the time left; the bar of stages goes under it (render-ops.js)
+    const sg = w.stages[Math.min(w.si, w.stages.length - 1)];
+    put(q ? 'QUEUED' : w.wait ? 'WAITING: ' + w.wait.replace(/^waiting for /, '').split(':')[0].toUpperCase() : `${sg.name.toUpperCase()}${w.rush ? ' (RUSHED)' : ''} · ${U.dur(IC.workLeft ? IC.workLeft(w) : 0).toUpperCase()} LEFT`, c.x, c.y, 7, p, q || w.wait ? 'wait' : 'work');
   }
   // what each building is, at the middle zoom; one label for a fuel farm
   if (z > 9 && z < 90 && !o.noNames) {

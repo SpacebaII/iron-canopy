@@ -486,6 +486,12 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .inc.alarm .go{background:rgba(90,14,10,.95);animation:alarmPulse 1s ease-in-out infinite}
 .inc.alarm .go b{color:#ff8a80}.inc.alarm .x{background:rgba(60,10,8,.95)}
 @keyframes alarmPulse{50%{background:rgba(140,20,14,.97)}}
+.inc .opsrow{grid-column:1/-1;display:grid;gap:.35rem;padding:0 .8rem .5rem;background:rgba(58,40,6,.94)}
+.inc.alarm .opsrow{background:rgba(90,14,10,.95)}
+.inc .opsbar{height:5px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden}
+.inc .opsbar i{display:block;height:100%;background:var(--amber);transition:width .4s linear}
+.inc .opsacts{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
+.inc .opsacts small{color:var(--dim);font-family:var(--mono);font-size:.72rem}
 @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}}
 
 /* ---------- airports in the inspector ---------- */

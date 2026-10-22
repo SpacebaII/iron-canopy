@@ -248,11 +248,13 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   }
   // the turnaround clock on the stand of the airliner selected or followed
   if (LIFE && z > 4) IC.drawTurnClock(g, S, ap, px, z, lbl);
+  // (brief 71) every stand's turnaround, the runway queues and the incidents with their crews
+  if (IC.drawOps) IC.drawOps(g, S, ap, px, z, now, lbl, night, seen);
   // construction: crews and machines on site, lorries on the road in
   if (z > 0.25) drawConvoys(g, S, ap, px, z);
   // the words on the airport: each building site's progress, on the site, and what each building is at the middle
   // zoom, the most important first and none over another (IC.aptLabels)
-  for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) if (IC.LBL.put(L.x, L.y, L.box[2] - L.box[0], (L.box[3] - L.box[1]) / 1.3, 0, 0, true) != null) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700);
+  for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) if (IC.LBL.put(L.x, L.y, L.box[2] - L.box[0], (L.box[3] - L.box[1]) / 1.3, 0, 0, true) != null) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700) || ((L.kind === 'work' || L.kind === 'wait') && IC.drawWorkBar && IC.drawWorkBar(g, S, ap, L, px));
   // only jobs a crew is on: the rest of the queue is just its outline
   for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
   // repairs
@@ -570,7 +572,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.restore();
     return;
   }
-  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
+  const col = { opsbase: [196, 170, 92], deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
@@ -578,6 +580,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
   if (p.kind === 'fuel' && !p.r) drawFuelFarm(g, S, ap, p, w, h, px, z, full, dead, night);
   else if (p.kind === 'fire' && !p.poly) drawFireStation(g, S, ap, p, w, h, px, z, full, dead, now, night);
   else if (p.kind === 'tower' && !p.poly) drawTower(g, S, ap, p, w, h, px, z, full, dead, now, night);
+  else if (p.kind === 'opsbase' && !p.poly && IC.drawOpsBase) IC.drawOpsBase(g, S, ap, p, w, h, px, z, full, dead, now, night);
   else if (p.kind === 'fuel') {
     if (full) { g.fillStyle = 'rgba(80,84,70,0.8)'; g.fillRect(-p.r * 1.35, -p.r * 1.35, p.r * 2.7, p.r * 2.7); g.fillStyle = 'rgba(120,128,104,0.9)'; g.fillRect(-p.r * 1.25, -p.r * 1.25, p.r * 2.5, p.r * 2.5); }
     g.fillStyle = fill; g.beginPath(); g.arc(0, 0, Math.max(p.r, 1.5 * px), 0, 7); g.fill();
@@ -1491,7 +1494,7 @@ function drawCrew(g, S, ap, w, px, now) {
   // the electricians' test: a light blinks at the front
   if (busy && st.k === 'lights' && Math.sin(now * 6) > 0) { g.fillStyle = LAMP; g.beginPath(); g.arc(at.x, at.y, 2.5 * px, 0, 7); g.fill(); }
   if (w.wait) { g.fillStyle = IC.C.amber; g.beginPath(); g.arc(at.x, at.y - 9 * px, 3 * px, 0, 7); g.fill(); if (IC.cam.z > 30) lbl(g, w.wait.split(':')[0].toUpperCase(), at.x, at.y - 15 * px, px, IC.C.amber, 7.5, 'center', 700); }
-  else if (IC.cam.z > 14) lbl(g, st.name.toUpperCase(), at.x, at.y - 10 * px, px, 'rgba(236,236,226,0.8)', 7.5, 'center', 700);
+  else if (IC.cam.z > 14 && !IC.FOCUS.ops) lbl(g, st.name.toUpperCase(), at.x, at.y - 10 * px, px, 'rgba(236,236,226,0.8)', 7.5, 'center', 700);
 }
 /* material lorries on their way in from the supplier, on the last stretch of road */
 function drawConvoys(g, S, ap, px, z) {

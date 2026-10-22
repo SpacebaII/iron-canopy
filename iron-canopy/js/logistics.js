@@ -785,6 +785,8 @@ IC.waitWorth = function (S, type, d) {
   const sep = d.kind === 'separation' || d.kind === 'nearmiss';
   if (sep && st && st.act === 1 && st.ch < 2) return false;
   if (sep && st && st.act === 1 && d.ref && !d.ref.tail) return false;
+  // (brief 71) a crew's report that waits for the player's call always stops the clock
+  if (d.kind === 'ops' && d.ref && d.ref.ask) return true;
   const seen = S.waitSeen || (S.waitSeen = {}), ref = d.ref ? d.ref.id || d.ref.cs || d.ref.tn || '' : '';
   const k1 = d.kind + ':' + ref, k2 = 'kind:' + d.kind;
   if (seen[k1] != null) return false;
