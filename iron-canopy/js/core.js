@@ -29,7 +29,8 @@ IC.WAIT = { speed: 432, step: 8 };
    chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js)
    progress: (round 4) Act I's chapters move by goals, not months; each goal says what it gives; passenger
      milestones open the bigger pieces; a peacetime event deck (deck.js); money split into running and invested */
-IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true };
+IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true, desk: true };
+/* (brief 69) desk: the Career's Act I judged by the Minister's mandate, live pressures and a quarterly review (desk.js) */
 /* (round 5c) tutors: every civil feature taught on the real screen, the old click-through tour and tips hidden;
    polish: the trailer's and the benchmark's visual notes (vehicles, panels, labels, the build bar) */
 /* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */

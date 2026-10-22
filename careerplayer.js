@@ -145,6 +145,8 @@ function player(S, log) {
   if (S.speed === 1 && !S.wait) S.speed = 32;
   for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q)) IC.avDecide(S, q.id, true);
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
+  // (brief 69) the desk: the building below fixes what it can; close to the date, pay off what money can or ask for time
+  if (st.desk) for (const P of st.desk.P.slice()) if (P.due - S.time < P.span * 0.3) { if (P.pay && S.budget > P.pay + 300) IC.deskAnswer(S, P.id, 'pay'); else if (!P.more) IC.deskAnswer(S, P.id, 'more'); }
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
   agenda(S);
