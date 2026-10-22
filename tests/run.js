@@ -205,6 +205,30 @@ test('world: cities are not round', () => {
   }
   assert(sum / n < 0.5, `cities are round on average (${(sum / n).toFixed(2)})`);
 }, false, 'world');
+test('terrain: the mountains are drawn higher and rougher than the height grid, volcanoes stand clear of towns, regions vary, and the world is unchanged', () => {
+  const W = world(4242), h0 = Float32Array.from(W.hg);
+  // the main rocky crest is drawn above the height grid, rough; the plains stay within a whisker of it
+  const R = W.ridges[0], m = R.pts[R.pts.length >> 1];
+  let up = 0, lo = 1e9, hi = -1e9, flat = 0;
+  for (let k = 0; k < 400; k++) { const x = m[0] + (k % 20 - 10) * 8, y = m[1] + (Math.floor(k / 20) - 10) * 8, f = W.hFine(x, y, 1); up = Math.max(up, f - W.hAt(x, y)); lo = Math.min(lo, f); hi = Math.max(hi, f); }
+  assert(R.style === 'rocky' && up > 0.3 && hi - lo > 0.3, `the main range is not drawn as mountains (${up.toFixed(2)} above the grid, ${(hi - lo).toFixed(2)} of relief)`);
+  const c = W.cities.find(q => W.inHome(q.x, q.y) && W.hAt(q.x, q.y) < 0.4);
+  for (let k = 0; k < 100; k++) flat = Math.max(flat, Math.abs(W.hFine(c.x + k * 3, c.y, 1) - W.hAt(c.x + k * 3, c.y)));
+  assert(flat < 0.05, `the plains round ${c.name} are drawn ${flat.toFixed(2)} off the height grid`);
+  // two volcanoes, snow-capped, with no town on their slopes
+  const V = W._volcanoes;
+  assert(V.length >= 1, 'no volcano');
+  for (const v of V) {
+    const [x, y] = v.pts[0];
+    assert(W.hDrawn(x, y) > 1.4, `${v.name} has no snow-capped top (${W.hDrawn(x, y).toFixed(2)})`);
+    assert(!W.cities.concat(W.villages).some(t => Math.hypot(t.x - x, t.y - y) < v.w), `a town stands on ${v.name}`);
+  }
+  // every region turns up in our country
+  const seen = new Set(); for (let y = 0; y < IC.WH; y += 300) for (let x = 0; x < IC.WW; x += 300) if (W.inHome(x, y)) seen.add(W.biome(x, y));
+  assert(seen.size === IC.BIOMES.length, `only ${[...seen].map(b => IC.BIOMES[b]).join(', ')}`);
+  // all of it is drawing: the simulation's heights are untouched
+  assert(W.hg.every((v, i) => v === h0[i]), 'drawing the relief changed the height grid');
+}, false, 'world');
 test('world: every map has cities of at least two styles, and districts in every city', () => {
   for (const seed of [4242, 7, 99, 12345, 2024]) {
     const W = world(seed), styles = new Set(W.cities.map(c => c.style));
