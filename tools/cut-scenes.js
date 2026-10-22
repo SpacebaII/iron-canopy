@@ -109,13 +109,13 @@ const SCENES = {
     const V = await replay({ x: u.x, y: u.y, t: t0 - 3, r: 150, cam: 'orbit' }, t0 + 2.2);
     V.playing = false; V.cam = 'orbit'; V.follow = null; Object.assign(V.orbit, { tx: u.x - V.cx, tz: u.y - V.cy, ty: (V.flat[0] ? V.flat[0].e : 0) * V.hk + 0.1, yaw: 2.6, pitch: 0.18, dist: 1.4 });
     await wait(1500); await cutStill(V, 'cut-night-2', true);`,
-  'cut-letter-1': `const S = await game('sandbox', 16.8); wx(S, 'scattered'); fire(S, 'str', 2, lrsam(S), 140, 5);
-    let k = null; steps(S, 1800, S => (k = S.rec.ev.find(e => e.kind === 'kill')) && S.time > k.t + 6);
-    if (!k) throw new Error('no kill'); const tr = S.rec.of.get(k.tref) || S.rec.tracks.find(t => t.kind === 'threat');
+  'cut-letter-1': `const S = await game('sandbox', 16.8); wx(S, 'scattered'); fire(S, 'str', 6, lrsam(S), 120, 4);
+    let k = null; steps(S, 3600, S => (k = S.rec.ev.find(e => e.kind === 'kill' || e.kind === 'intercept' || (e.kind === 'mstat' && e.what === 'hit'))) && S.time > k.t + 6);
+    if (!k) throw new Error('no kill: ' + [...new Set(S.rec.ev.map(e => e.kind + (e.what ? ':' + e.what : '')))].join(' ')); const tr = S.rec.of.get(k.tref) || S.rec.tracks.find(t => t.kind === 'threat');
     const V = await replay({ follow: tr && tr.ref, x: k.x, y: k.y, t: k.t - 3, r: 120, cam: 'side' }, k.t + 0.6);
     V.playing = false; V.camK = 1.4; await wait(1500); await cutStill(V, 'cut-letter-1', true);`,
   'cut-burn-1': `const S = await game('sandbox', 19.5); wx(S, 'overcast'); steps(S, 600); const t = partOf(S.byId.i0, 'terminal');
-    boom.ms = 3000; await boom(S, t.x, t.y, 4, 180, 'cut-burn-1', 2.5, 0.14, 2.4);`,
+    boom.ms = 12000; await boom(S, t.x, t.y, 4, 180, 'cut-burn-1', 2.5, 0.14, 2.4);`,
   'cut-held-1': `const S = await game('sandbox', 21.6); wx(S, 'clear'); const T = S.byId.i0; fire(S, 'owa', 8, T, 80); fire(S, 'lacm', 5, T, 110);
     let n = 0; steps(S, 2400, S => (n = S.rec.ev.filter(e => e.kind === 'kill' || e.kind === 'intercept').length) >= 4);
     const hit = S.rec.ev.filter(e => e.kind === 'kill' || e.kind === 'intercept')[3] || S.rec.ev.find(e => e.kind === 'kill');
