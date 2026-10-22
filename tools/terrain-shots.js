@@ -1,4 +1,4 @@
-/* The ground and the mountains (brief 71): a Quick war on seed 4242, interface hidden, at noon, framed on the
+/* The ground and the mountains (terrain pass): a Quick war on seed 4242, interface hidden, at noon, framed on the
    highest ground in our country, a hill town, a farm valley and the capital, from the whole country to close in.
      node tools/terrain-shots.js <tag> [scene ...] [--root=path/to/checkout] [--jpg]
    Saves shots/ter-<tag>-<scene>.png (or .jpg). Run with --root= on an older checkout for "before".

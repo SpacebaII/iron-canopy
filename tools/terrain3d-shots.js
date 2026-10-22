@@ -1,4 +1,4 @@
-/* The mountains in the 3D view (brief 71): the live view on the highest ground in our country, looked at from a few
+/* The mountains in the 3D view (terrain pass): the live view on the highest ground in our country, looked at from a few
    distances, Quick war on seed 4242 at mid-morning.
      node tools/terrain3d-shots.js <tag> [--root=path/to/checkout]
    Saves shots/ter3d-<tag>-<view>.png. Needs Playwright and three.js on disk (npm i --no-save playwright three@0.160.0). */

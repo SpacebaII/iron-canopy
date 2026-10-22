@@ -12,7 +12,7 @@ function ramp(h) {
   if (h < 0.85) return mix([108, 114, 74], [122, 118, 86], (h - 0.55) / 0.3);
   return mix([122, 118, 86], [126, 122, 112], Math.min(1, (h - 0.85) / 0.3));
 }
-/* (brief 71) rock and snow over it: rock where the ground is steep (sl is the true gradient, rise over run) or high,
+/* (terrain pass) rock and snow over it: rock where the ground is steep (sl is the true gradient, rise over run) or high,
    snow above the snowline but not on the steepest faces, where it does not lie. Returns the colour and how much of
    it is rock or snow, so a tile can lay the sharp version over the base's soft one */
 const ROCK = [[108, 108, 106], [130, 128, 124]], SCREE = [150, 146, 136], SNOW = [234, 238, 242];
@@ -36,14 +36,14 @@ function bare(h, sl, x, y, out, e) {
   return c;
 }
 /* crops and grass, with how common each is: cereal, young crop, ripe wheat, ploughed, pasture, hay, rapeseed, maize, stubble */
-/* (brief 71) and by region: red-earth ploughland and cotton in the south, golden wheat on the rolling plains, the
+/* (terrain pass) and by region: red-earth ploughland and cotton in the south, golden wheat on the rolling plains, the
    green of an irrigation circle on the dry high plains */
 const FIELDS = [[106, 124, 72], [120, 134, 80], [158, 148, 98], [122, 108, 80], [98, 118, 72], [138, 138, 94], [170, 164, 90], [90, 110, 64], [148, 140, 106],
   [146, 98, 70], [166, 162, 140], [186, 166, 106], [88, 122, 60]];
 const FIELD_W = [3, 2, 2.5, 2, 3, 1.5, 0.35, 1.2, 1.4, 0, 0, 0, 0];
 const FIELD_CUM = FIELD_W.map((w, i) => FIELD_W.slice(0, i + 1).reduce((s, v) => s + v, 0) / FIELD_W.reduce((s, v) => s + v, 0));
 const crop = h => { for (let i = 0; i < FIELD_CUM.length; i++) if (h < FIELD_CUM[i]) return i; return 0; };
-/* (brief 71) farming by region (W.biome, IC.BIOMES): high plains, rolling wheat, wet green country, valleys,
+/* (terrain pass) farming by region (W.biome, IC.BIOMES): high plains, rolling wheat, wet green country, valleys,
    the south. Each farm block grows two crops of its region over most of its plots, so the land reads as farms and
    regions instead of confetti */
 const BIOME_W = [
@@ -118,7 +118,7 @@ IC.buildTerrain = function (W) {
     const c = chunk(ci, cj), lx = fx - ci * FC, ly = fy - cj * FC, i = lx | 0, j = ly | 0, u = lx - i, v = ly - j, k = j * (FC + 1) + i;
     return c[k] * (1 - u) * (1 - v) + c[k + 1] * u * (1 - v) + c[k + FC + 1] * (1 - u) * v + c[k + FC + 2] * u * v;
   };
-  // (brief 71) and a tree line on the mountains as drawn, which stand higher than the height grid the forest knows
+  // (terrain pass) and a tree line on the mountains as drawn, which stand higher than the height grid the forest knows
   const tl = W.hDrawn ? (x, y) => { const h = W.hDrawn(x, y); return h > 1.05 ? 0.5 * U.clamp((h - 1.05) / 0.15, 0, 1) : 0; } : () => 0;
   const fd = (x, y) => fdAt(x, y) - tl(x, y) + 0.09 * (U.vnoise(x / 2.3 + 71, y / 2.3) - 0.5) + 0.05 * (U.vnoise(x / 0.7, y / 0.7 + 13) - 0.5);
   const T = { W, fd, fdc: fdAt, forest: (x, y) => fd(x, y) > IC.FOREST_T, tiles: new Map(), frame: 0 };
@@ -149,7 +149,7 @@ IC.buildTerrain = function (W) {
   // woods showed as staircases of 8 km squares at the regional zoom
   const forestOf = (x, y) => { const fx = (x - 0.5) / 2, fy = (y - 0.5) / 2, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j; return (fb(i, j) * (1 - u) + fb(i + 1, j) * u) * (1 - v) + (fb(i, j + 1) * (1 - u) + fb(i + 1, j + 1) * u) * v; };
   const countryOf = (x, y, wx, wy) => { if (W.inHome(wx, wy)) return 'H'; const q = (y >> 1) * KW + (x >> 1); return KB[q] || (KB[q] = W.countryAt(((x & ~1) + 1) * cellX, ((y & ~1) + 1) * cellY)); };
-  // (brief 71) the drawn heights (W.hFine) at every pixel, and one pixel round, for the slope and the light
+  // (terrain pass) the drawn heights (W.hFine) at every pixel, and one pixel round, for the slope and the light
   const HB = new Float32Array((BW + 2) * (BH + 2)), BO = { a: 0 };
   for (let y = 0; y < BH + 2; y++) for (let x = 0; x < BW + 2; x++) HB[y * (BW + 2) + x] = W.hFine((x - 0.5) * cellX, (y - 0.5) * cellY, cellX);
   for (let y = 0; y < BH; y++) {
@@ -865,7 +865,7 @@ function scorchBlock(g, b) {
 }
 
 /* ---------- detail tiles ---------- */
-/* (brief 71) the relief of one tile at its own scale, so a mountain close in has its crests and gullies where the
+/* (terrain pass) the relief of one tile at its own scale, so a mountain close in has its crests and gullies where the
    base (4 km a pixel) had a smear: the drawn heights on a grid a few pixels apart, the light on them as the base's
    two shade images, and the rock, scree and snow, sharp, to lay over the base's ground */
 const RLX = [5, 4, 3, 1.8, 1.3];   // (level 0 first)   // how much steeper the relief is drawn than it is, by level: more far out
@@ -904,7 +904,7 @@ function paintTile(T, lod, tx, ty, S) {
   if (!lod) {
     // the far view's picture, with airfields, water, roads and towns drawn at this scale
     g.drawImage(T.far, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
-    // (brief 71) the mountains at this tile's own scale over the far picture (a pixel of which is 4 km): their rock,
+    // (terrain pass) the mountains at this tile's own scale over the far picture (a pixel of which is 4 km): their rock,
     // snow and light, the light only up in the hills, as the far picture has its own light on the plains
     const rl = relief(T, 0, x0, y0, L.size, px);
     if (rl.rock) {
@@ -923,7 +923,7 @@ function paintTile(T, lod, tx, ty, S) {
   g.drawImage(T.ground, x0 * gs, y0 * gs, L.size * gs, L.size * gs, 0, 0, px, px);
   // fine grain so the upscaled ground does not look smeared
   g.globalAlpha = 0.28; g.globalCompositeOperation = 'overlay';
-  const pat = g.createPattern(T.grain, 'repeat'); pat.setTransform(new DOMMatrix().translate(-((tx * px) % 256), -((ty * px) % 256)));   // (brief 71) lined up across tiles: offset per tile, it showed their seams on smooth ground
+  const pat = g.createPattern(T.grain, 'repeat'); pat.setTransform(new DOMMatrix().translate(-((tx * px) % 256), -((ty * px) % 256)));   // (terrain pass) lined up across tiles: offset per tile, it showed their seams on smooth ground
   g.fillStyle = pat; g.fillRect(0, 0, px, px);
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   const rl = relief(T, lod, x0, y0, L.size, px);

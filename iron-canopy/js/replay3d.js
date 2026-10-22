@@ -286,7 +286,7 @@ const texSRGB = tex => { if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBCo
 
 /* ---------- the ground's height ----------
    The terrain's real heights, in world units (KM a kilometre), except under our airports, which are graded level
-   at the height of their middle out to beyond their furthest part, blending into the hills round them. (brief 71)
+   at the height of their middle out to beyond their furthest part, blending into the hills round them. (terrain pass)
    The heights as the map draws them (W.hFine: the crests and gullies the height grid is too coarse for); everything
    in the air is placed by its height above this ground, so nothing flies through a ridge the simulation does not have */
 let hRes = 3;   // the finest detail asked of the heights (the finest ring's grid): a coarser ring asks no finer than its own

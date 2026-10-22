@@ -176,7 +176,7 @@ function* worldSteps(seed) {
   };
   W.slopeAt = (x, y) => Math.hypot(W.hAt(x + 20, y) - W.hAt(x - 20, y), W.hAt(x, y + 20) - W.hAt(x, y - 20));
 
-  /* (brief 71) the relief as it is drawn: the height grid above is what the simulation knows (radar, building,
+  /* (terrain pass) the relief as it is drawn: the height grid above is what the simulation knows (radar, building,
      routing, where towns grow); the map and the 3D view add to it what makes the ranges read as mountains, kept on a
      grid of its own made the first time it is asked for (after generation, so nothing in the world moves for it):
      - each range's look, r.style: 'rocky' (young and sharp: a high core of peaks and saddles along a winding crest,
@@ -291,7 +291,7 @@ function* worldSteps(seed) {
     return h + folds + m * m * (0.08 + 0.55 * rk * rk) * (n + fine * 0.6) + (1 - m) * 0.02 * (U.vnoise(x / 60, y / 60) - 0.5);
   };
 
-  /* (brief 71) the country's regions as they look, for the drawing only: 0 high plains (dry grass, big square fields
+  /* (terrain pass) the country's regions as they look, for the drawing only: 0 high plains (dry grass, big square fields
      and irrigation circles, like eastern Colorado), 1 rolling wheat country (like the Palouse), 2 wet evergreen
      country (like western Washington), 3 green valleys of pasture and broadleaf woods (like Tennessee), 4 the warm
      south (red clay, pine, cotton; like Alabama). A map gives its own as W.biomeRegions = [{ poly, biome }] (biome by
