@@ -551,7 +551,7 @@ IC.VOICES = {
   act2: S => [[3 * 3600, 'SISTER', `Mira. The drones were over the fields again last night. People here say the capital does not care what flies over ${townName(S)}.`],
     [6 * 3600, 'YOU', `Looking back, the drone was the first word of a sentence. I did not want to hear the end of it.`]],
   act3: S => [[2 * 3600, 'KOLAR', `${S.world.names.H} has shown its true face. Our people ask how long we must stand still while they shoot. Good evening.`],
-    [5 * 3600, 'SISTER', `Mira. The army has put a checkpoint on the road out of town. The children think it is exciting. I have packed a bag. Just in case.`],
+    [5 * 3600, 'SISTER', `Mira. The army has put a checkpoint on the road out of town. The children think it is exciting. I have packed a bag for each of them.`],
     [8 * 3600, 'YOU', `Everyone remembers where the war began. I remember it as a slope, not a cliff. We were on it for a long time.`]],
   act4: S => [[2 * 3600, 'SISTER', IC.storyNorthOut(S) === 'air' ? `Mira. We are out. The last flight from your airport up north, the children asleep on my lap. I could see the fires from the window.` : `Mira. We are out. Fourteen hours on the road, the children in the back. Somebody should have built an airport up there.`],
     [5 * 3600, 'YOU', `I slept in the operations room for weeks. I do not remember the nights apart. I remember the mornings, and counting.`]]
