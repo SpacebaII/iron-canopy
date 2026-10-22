@@ -390,7 +390,9 @@ function drawUnit(S, u, px, now) {
   const sel = (S.sel && S.sel.ref === u) || S.group.includes(u);
   if (cam.z > 0.2 || sel) {
     const tag = { building: 'BUILD', setup: 'SETUP', packing: 'PACK', transit: 'MOVE' }[u.state] || (silent ? (u.emcon === 'ambush' ? 'AMBUSH' : 'SILENT') : '');
-    label(u.name + (tag ? ' · ' + tag : ''), u.x, u.y - 13 * px, px, busy ? C.amber : C.muted, 9.5);
+    // several units round one base: a name that would cover another steps up a line, or is left to the panel
+    const txt = u.name + (tag ? ' · ' + tag : ''), ly = IC.FOCUS.polish ? IC.LBL.put(u.x, u.y - 13 * px, txt.length * 9.5 * 0.62 * px, 11 * px, -11 * px, 2, sel) : u.y - 13 * px;
+    if (ly != null) label(txt, u.x, ly, px, busy ? C.amber : C.muted, 9.5);
   }
   if (sel) brackets(u.x, u.y, 17 * px, px);
   if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.prio.px, u.prio.py); ctx.stroke(); ctx.setLineDash([]); }
