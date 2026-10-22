@@ -529,7 +529,7 @@ IC.MAPS.homeland = {
   // name, where, people (thousands), region, style, plan, role
   cities: [
     { name: "Ashford", x: 28500, y: 24000, pop: 2000, region: "valley", style: "eu", tpl: "par", role: "capital" },
-    { name: "Westhaven", x: 14400, y: 24100, pop: 700, region: "wet", style: "us", tpl: "ny", role: "port" },
+    { name: "Westhaven", x: 14100, y: 24100, pop: 700, region: "wet", style: "us", tpl: "ny", role: "port" },
     { name: "Ironbridge", x: 30300, y: 29800, pop: 650, region: "south", style: "us", tpl: "chi", role: "second" },
     { name: "Fort Ashby", x: 27800, y: 14400, pop: 520, region: "plains", style: "ind", tpl: "chi", role: "north" },
     { name: "Corbin", x: 24200, y: 26500, pop: 500, region: "valley", style: "us", tpl: "ny", role: "business" },
@@ -657,7 +657,7 @@ IC.MAPS.homeland = {
     {"id":"arms","name":"Fort Ashby Arms Works","role":"plant","region":"plains","x":27100,"y":14800},
     {"id":"dam","name":"Dalby Hydro Dam","role":"dam","region":"palouse","x":18700,"y":19500,"dry":false,"desc":"The dam that powers the west."},
     {"id":"volcano","name":"Mount Hallow","role":"peak","region":"wet","x":16600,"y":20500,"dry":false,"desc":"The cone seen from Ashford on a clear day."},
-    {"id":"port","name":"Westhaven harbour","role":"port","region":"wet","x":14150,"y":24150,"desc":"The deep-water port on the sound, where the allies' ships come."},
+    {"id":"port","name":"Westhaven harbour","role":"port","region":"wet","x":13930,"y":24150,"desc":"The deep-water port on the sound, where the allies' ships come."},
     {"id":"southport","name":"Southport harbour","role":"port","region":"south","x":25400,"y":32800,"desc":"The smaller port on the bay."},
     {"id":"oldfield","name":"Royal Ashford Field","role":"airfield","region":"valley","x":29300,"y":23400,"desc":"The old military airfield outside the capital."},
     {"id":"resort","name":"Lake Ennis resort","role":"resort","region":"valley","x":37000,"y":25700},

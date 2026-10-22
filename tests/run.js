@@ -765,6 +765,65 @@ test('world: districts change what a city wants from its airport', () => {
   assert(IC.cityDemand(flat).biz < d0.biz * 0.8 && IC.cityDemand(flat).leisure > d0.leisure, 'offices do not change the business and leisure mix');
   assert(/cargo/.test(IC.cityCharacter(ind).text), `the city panel does not say ${ind.name} is about cargo: ${IC.cityCharacter(ind).text}`);
 }, false, 'world');
+/* ---------- the hand-drawn map (brief 71) ---------- */
+const mapWorld = () => worlds.map || (worlds.map = IC.generate(0, IC.CAREER_MAP));
+test('map: the Career plays on the hand-drawn map, and everything drawn is there: the capital on its river, every city and place on dry ground, the sea with a coast, ridges with a style and passes, the motorways, railways and crossings between the places they name', () => {
+  const A = IC.MAPS[IC.CAREER_MAP], W = mapWorld();
+  assert(W.map === IC.CAREER_MAP && W.seed === IC.mapSeed(A), 'the world does not say which map it is');
+  assert(W.warnings.length === 0, `the map could not be built as drawn: ${W.warnings.join('; ')}`);
+  // every city by its name, on dry ground inside the country, and the capital first, on the river it was drawn on
+  assert(W.cities.length === A.cities.length && W.cities.every((c, i) => c.name === A.cities[i].name), 'the cities are not the map\'s');
+  for (const c of W.cities) assert(W.inHome(c.x, c.y) && !W.inLake(c.x, c.y) && W.hAt(c.x, c.y) < 0.72, `${c.name} stands in water or on a peak`);
+  const cap = W.cities[0]; assert(cap.capital && cap.name === A.cities[0].name && W.riverDist(cap.x, cap.y) < 60, `the capital ${cap.name} is ${U.km(W.riverDist(cap.x, cap.y))} from its river`);
+  assert(W.cities.every(c => c.style === A.cities.find(a => a.name === c.name).style), 'a city lost the style the map gave it');
+  // the sea: beyond the coast, never on the land, and the rivers drawn to it reach it
+  assert(W.seas.length && W.coast.length && W.inSea(2000, 40000) && !W.inSea(cap.x, cap.y), 'the sea is not where it was drawn');
+  let dryCoast = 0; for (const p of W.coast[0]) { let sea = 0; for (let k = 0; k < 8; k++) sea += W.inSea(p[0] + Math.cos(k * Math.PI / 4) * 60, p[1] + Math.sin(k * Math.PI / 4) * 60) ? 1 : 0; if (!(sea > 0 && sea < 8)) dryCoast++; } assert(dryCoast <= 3, `${dryCoast} coast points are not on a shore`);
+  const port = byName('Westhaven'); let shore = 1e9; for (const p of W.coast[0]) shore = Math.min(shore, U.dxy(p[0], p[1], port.x, port.y)); assert(shore < 200, `Westhaven, the port, is ${U.km(shore)} from the sea`);
+  assert(W.inLake(2000, 40000) && W.hAt(2000, 40000) < 0, 'the sea is not water with a bed below the land');
+  const carrow = W.rivers.find(r => r.name === 'Carrow River'); assert(carrow && carrow.end === 'sea' && carrow.pts.length > 300, 'the Carrow River does not run from the mountains to the sea');
+  assert(W.rivers.filter(r => r.end === 'join').length >= 5, 'the tributaries do not join their rivers');
+  assert(W.lakes.some(l => l.name === 'Lake Ennis'), 'the named lake is missing');
+  // relief: the front range along the hostile border is the highest ground, its passes are lower, the plateau over the border is high, the volcano stands alone
+  const front = W.ridges.find(r => r.style === 'rocky'); assert(front && front.core && front.gaps.length === 2, 'the front range has no style, core or passes');
+  const crest = front.pts[Math.floor(front.pts.length / 2)], pass = front.gaps[0];
+  assert(W.hAt(crest[0], crest[1]) > 0.9 && W.hAt(pass[0], pass[1]) < W.hAt(crest[0], crest[1]) - 0.3, `the crest is ${W.hAt(crest[0], crest[1]).toFixed(2)} and the pass ${W.hAt(pass[0], pass[1]).toFixed(2)}`);
+  const plat = W.plateaus.find(p => p.name === 'Korvath Plateau'); assert(plat && W.hAt(28000, 6000) > W.hAt(28000, 15000) + 0.2, 'the plateau over the border is not high ground');
+  const vol = W.ridges.find(r => r.style === 'volcano'); assert(vol && W.hAt(vol.pts[0][0], vol.pts[0][1]) > 0.8 && W.hAt(vol.pts[0][0] - 450, vol.pts[0][1]) < 0.5, `the volcano does not stand alone: ${W.hAt(vol.pts[0][0], vol.pts[0][1]).toFixed(2)} at the cone, ${W.hAt(vol.pts[0][0] - 450, vol.pts[0][1]).toFixed(2)} on the lowland west of it`);
+  assert(W.biomeRegions.length === 5, 'the biomes are not handed over');
+  // the places, by id and on the ground
+  for (const p of A.places) { const q = W.places.find(x => x.id === p.id); assert(q && U.dxy(q.x, q.y, p.x, p.y) < 300, `place ${p.id} is missing or moved`); }
+  // sites by id, and the air base ids the story needs
+  for (const id of ['ab_fwd', 'ab_rear', 'ap_cap']) assert(W.infra.some(i => i.id === id), `${id} is missing`);
+  assert(W.infra.filter(i => i.kind === 'factory').length === 3 && W.infra.filter(i => i.kind === 'power').length === 5, 'the plants and power stations are not the map\'s');
+  // roads: a motorway runs between each pair of places the map names on one, and a crossing's road reaches the border
+  const byName = n => W.cities.find(c => c.name === n) || W.infra.find(i => i.name === n) || W.crossings.find(x => x.name === n);
+  const hwNear = (p, d) => W.edges.some(e => e.cls === 'hw' && e.pts.some(q => U.dxy(q.x, q.y, p.x, p.y) < d));
+  for (const r of A.roads.filter(r => r.cls === 'hw')) for (const v of r.via) if (typeof v === 'string') assert(hwNear(byName(v), 200), `${r.name}: no motorway within 20 km of ${v}`);
+  const route = (a, b) => { const T = IC.travelFrom(W, a.id, true); return T.t[b.id]; };
+  const south = byName('Southport'), north = byName('Fort Ashby');
+  assert(route(south, north) < 24 * 3600, `Southport to Fort Ashby takes ${U.dur(route(south, north))}`);
+  assert(W.crossings.length === A.crossings.length && W.crossings.every(x => x.name) && W.edges.some(e => e.crossing && e.a === 'xA0'), 'the crossings are not the map\'s, or the pass road does not cross');
+  // rail: the lines by name, on gentle grades, with the mining branch
+  assert(W.rails.some(r => r.line === 'Main Line') && W.rails.some(r => r.line === 'Sound Line' && (r.b.name === 'Coldiron' || r.a.name === 'Coldiron')), 'the railways are not the map\'s');
+  // neighbours: the sea has a side of its own, nothing of a neighbour stands in it
+  assert(W.side.S === 'sea' && W.countryAt(2000, 40000) === 'S', 'the sea is not a side of its own');
+  for (const f of W.foreign.concat(W.esites, W.villages)) assert(!W.inSea(f.x, f.y), `${f.name || f.kind} stands in the sea`);
+  // the same map every time
+  const sig = IC.worldBase(W).sig, again = IC.worldBase(IC.generate(0, IC.CAREER_MAP)).sig;
+  assert(sig === again, 'the map is not the same world twice');
+}, true, 'world');
+test('map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed\'s region is as it was', () => {
+  const S = IC.newGame({ seed: 1, mode: 'story', map: IC.CAREER_MAP, hour: 7 });
+  assert(S.world.map === IC.CAREER_MAP && IC.cap(S).name === 'Ashford' && S.byId.ab_fwd.name === 'Fort Ashby Air Base', 'the Career is not on the map');
+  run(S, 1);
+  const save = IC.saveGame(S); assert(save.map === IC.CAREER_MAP && !Object.keys(save.lost || {}).length, 'the save does not name the map, or lost something');
+  const json = JSON.stringify(save), S2 = IC.loadSave(json);
+  assert(S2.world.map === IC.CAREER_MAP && S2.world.cities[0].name === 'Ashford' && IC.cap(S2).name === 'Ashford', 'the loaded game is not on the map');
+  assert(JSON.stringify(IC.saveGame(S2).root) === JSON.stringify(save.root), 'saving the loaded game gives a different save');
+  const Q = IC.newGame({ seed: 4242, mode: 'campaign', hour: 6 });
+  assert(!Q.world.map && Q.world.cities.length === 60 && Q.world.cities[0].name === world(4242).cities[0].name, 'a seed\'s region changed');
+}, true, 'world');
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test

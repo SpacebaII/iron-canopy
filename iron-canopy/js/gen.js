@@ -175,9 +175,69 @@ function* worldSteps(seed, map) {
 
   // the seas (authored maps): polygons of water beyond the coast, and the coast itself is the border there
   W.seas = []; W.coast = [];
-  if (A && A.seas) for (const sp of A.seas) { const P = sp.poly.map(p => [p[0], p[1]]); W.seas.push({ name: sp.name || 'the sea', poly: P, bb: polyBox(P), mask: polyMask(P, 20) }); }
+  // the drawn coast is a few straight edges; the real one is cut in and out by noise (headlands and coves of 5 to
+  // 20 km, with a finer grain) along the edges that run on the border, never on the open sea's edges
+  const roughCoast = P => {
+    const near = p => W.depthOut(p[0], p[1]) < 80, M = P.length;   // the shore and anything cut into the land, not the open sea
+    // room: how far a point may move before it meets another part of the shore (a sound's two sides must not cross)
+    const room = (x, y, i) => { let m = 1e9; for (let j = 0; j < M; j++) { if (j === i || j === (i + 1) % M || j === (i + M - 1) % M) continue; const a = P[j], b = P[(j + 1) % M]; m = Math.min(m, U.segDist(x, y, a[0], a[1], b[0], b[1])); } return m; };
+    // 1. the drawn edges cut into 3 km pieces along the coast
+    const pts = [], on = [], edge = [];
+    for (let i = 0; i < M; i++) {
+      const a = P[i], b = P[(i + 1) % M], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, c = near(a) && near(b), n = c ? Math.max(1, Math.ceil(L / 30)) : 1;
+      for (let k = 0; k < n; k++) { const t = k / n; pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); on.push(c); edge.push(i); }
+    }
+    // 2. each point pushed in or out along the shore's own normal there, less near a sharp corner (the head of a
+    //    sound) so the two sides never cross, and never farther than a third of the way to another shore
+    const N = pts.length, turn = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      if (!on[i]) continue;
+      const a = pts[(i + N - 1) % N], p = pts[i], b = pts[(i + 1) % N];
+      turn[i] = Math.abs(U.mod(Math.atan2(b[1] - p[1], b[0] - p[0]) - Math.atan2(p[1] - a[1], p[0] - a[0]) + Math.PI, TAU) - Math.PI);
+    }
+    const out = [];
+    for (let i = 0; i < N; i++) {
+      const p = pts[i]; if (!on[i]) { out.push(p); continue; }
+      let taper = 1; for (let j = -10; j <= 10; j++) taper = Math.min(taper, 1 - Math.min(1, turn[(i + j + N) % N] / (Math.PI / 2)));
+      const a = pts[(i + N - 1) % N], b = pts[(i + 1) % N], ex = b[0] - a[0], ey = b[1] - a[1], L = Math.hypot(ex, ey) || 1, nx = -ey / L, ny = ex / L;
+      let d = (320 * (fbm(p[0] / 700, p[1] / 700, 4) - 0.5) + 70 * (fbm(p[0] / 140 + 7, p[1] / 140 + 3, 2) - 0.5)) * taper;
+      const lim = 0.35 * room(p[0], p[1], edge[i]); d = U.clamp(d, -lim, lim);
+      out.push([p[0] + nx * d, p[1] + ny * d]);
+    }
+    // 3. the shore is a curve, not a chain of straight edges: two rounds of corner cutting along the coast
+    let Q = out, C = on;
+    for (let r = 0; r < 2; r++) {
+      const nq = [], nc = [];
+      for (let i = 0; i < Q.length; i++) {
+        const p = Q[i], q = Q[(i + 1) % Q.length];
+        if (!C[i] || !C[(i + 1) % Q.length]) { nq.push(p); nc.push(C[i]); continue; }
+        nq.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25], [p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]); nc.push(true, true);
+      }
+      Q = nq; C = nc;
+    }
+    return { poly: Q, coast: Q.filter((p, i) => C[i]) };
+  };
+  if (A && A.seas) for (const sp of A.seas) { const { poly: P, coast } = roughCoast(sp.poly); W.seas.push({ name: sp.name || 'the sea', poly: P, bb: polyBox(P), mask: polyMask(P, 20) }); if (coast.length) W.coast.push(coast); }
   W.inSea = (x, y) => { for (const s of W.seas) if (s.mask(x, y)) return true; return false; };
-  if (A && A.coast) for (const [d0, d1] of A.coast) { const pts = []; for (let d = d0; d <= d1; d += 0.25) { const p = W.borderPt(d * Math.PI / 180); pts.push([p.x, p.y]); } W.coast.push(pts); }
+  // along the coast the border is the shore itself: the radial table follows the roughened coast (its farthest
+  // crossing, so a headland is home and a cove is sea, never a sliver of abroad between the two)
+  if (W.coast.length && A.coast) {
+    const rayLine = (P, a) => {
+      const dx = Math.cos(a), dy = Math.sin(a); let best = 0;
+      for (let i = 1; i < P.length; i++) {
+        const [ax, ay] = P[i - 1], [bx, by] = P[i], ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex; if (Math.abs(den) < 1e-9) continue;
+        const t = ((ax - cx) * ey - (ay - cy) * ex) / den, u = ((ax - cx) * dy - (ay - cy) * dx) / den;
+        if (t > best && u >= 0 && u <= 1) best = t;
+      }
+      return best;
+    };
+    for (let i = 0; i <= NRB; i++) {
+      const a = i / NRB * TAU - Math.PI, deg = a * 180 / Math.PI;
+      if (!A.coast.some(([d0, d1]) => ((deg - d0) % 360 + 360) % 360 <= d1 - d0 + 1 || ((deg - d0) % 360 + 360) % 360 >= 359)) continue;
+      let best = 0; for (const C of W.coast) best = Math.max(best, rayLine(C, a));
+      if (best > 0) RB[i] = best;
+    }
+  }
   W.plateaus = (A && A.plateaus || []).map(p => { const P = p.poly.map(q => [q[0], q[1]]); return { name: p.name, h: p.h, edge: p.edge || 250, poly: P, bb: polyBox(P) }; });
   W.biomeRegions = (A && A.biomes || []).map(b => { const P = b.poly.map(q => [q[0], q[1]]); return { biome: b.biome, poly: P, bb: polyBox(P) }; });
   yield 'relief';
@@ -281,6 +341,33 @@ function* worldSteps(seed, map) {
   /* an authored river drawn as a run of points (via): between each pair it finds its own way over the ground, downhill
      where it can and along the low ground where it must, so it bends with the valleys the ridges make; the last point
      may lie in the sea or on another river. The rest of a river's dice (its width, a lake at a sink) are the same */
+  /* a routed river runs nearly straight over a plain; a real one meanders. Each point is pushed across the river's
+     line by two slow waves (periods about 90 and 35 km, up to 20 km), only where the ground is flat (in a valley the
+     river stays on its floor), not near the points the map drew (the river still runs where it was put, through its
+     towns), and never onto another river, into the sea or off the map */
+  const meander = (pts, via, id) => {
+    const n = pts.length; if (n < 8) return;
+    const ph = (id * 2.399) % 6.283, out = [];
+    let s = 0;
+    for (let q = 0; q < n; q++) {
+      const p = pts[q], a = pts[Math.max(0, q - 2)], b = pts[Math.min(n - 1, q + 2)];
+      if (q) s += U.dxy(pts[q - 1][0], pts[q - 1][1], p[0], p[1]);
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+      const ci = U.clamp(Math.round(p[0] / GC), 1, GW - 2), cj = U.clamp(Math.round(p[1] / GC), 1, GH - 2);
+      const gx = (bl[cj * GW + ci + 1] - bl[cj * GW + ci - 1]) / 2, gy = (bl[(cj + 1) * GW + ci] - bl[(cj - 1) * GW + ci]) / 2;
+      const flat = U.clamp(1 - Math.hypot(gx, gy) * 25, 0, 1);
+      let near = 1e9; for (const v of via) near = Math.min(near, U.dxy(v[0], v[1], p[0], p[1]));
+      const k = flat * U.clamp(near / 300, 0, 1) * (q < 3 || q > n - 4 ? 0 : 1);
+      const d = k * (140 * Math.sin(s / 143 + ph) + 60 * Math.sin(s / 56 + ph * 1.7));
+      out.push([p[0] + nx * d, p[1] + ny * d]);
+    }
+    for (let q = 0; q < n; q++) {
+      const [x, y] = out[q], c = U.clamp(Math.round(y / GC), 0, GH - 1) * GW + U.clamp(Math.round(x / GC), 0, GW - 1);
+      if (x < GC || y < GC || x > WW - GC || y > WH - GC || (owner[c] >= 0 && owner[c] !== id) || (seas.length && W.inSea(x, y))) continue;
+      pts[q][0] = x; pts[q][1] = y;
+    }
+  };
+  const wander = c => (((c * 2654435761 + 0x9e3779b9) >>> 0) % 1024) / 1024;
   const riverWay = (a, b) => {
     const ca = [U.clamp(Math.round(a[0] / GC), 1, GW - 2), U.clamp(Math.round(a[1] / GC), 1, GH - 2)], cb = [U.clamp(Math.round(b[0] / GC), 1, GW - 2), U.clamp(Math.round(b[1] / GC), 1, GH - 2)];
     const t = cb[1] * GW + cb[0], s0 = ca[1] * GW + ca[0], g = new Map(), par = new Map(), hf = [], hv = [];
@@ -295,8 +382,9 @@ function* worldSteps(seed, map) {
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
         if (!di && !dj) continue; const ii = ci + di, jj = cj + dj; if (ii < 1 || jj < 1 || ii >= GW - 1 || jj >= GH - 1) continue;
         const d = jj * GW + ii, L = Math.hypot(di, dj) * GC, dh = bl[d] - hc;
-        // flat and low is cheap, climbing dear: the way keeps to the valley floor
-        const v = g.get(c) + L * (1 + 2.5 * Math.max(0, bl[d])) + 3000 * Math.max(0, dh) + 150 * Math.max(0, -dh);
+        // flat and low is cheap, climbing dear: the way keeps to the valley floor; a grain of noise per cell so a
+        // river on a plain wanders like one that found its own way instead of running straight between two points
+        const v = g.get(c) + L * (1 + 2.5 * Math.max(0, bl[d]) + 0.9 * wander(d)) + 3000 * Math.max(0, dh) + 150 * Math.max(0, -dh);
         if (v < (g.has(d) ? g.get(d) : Infinity)) { g.set(d, v); par.set(d, c); push(v + hx(d), d); }
       }
     }
@@ -321,6 +409,7 @@ function* worldSteps(seed, map) {
       if (pts.length < 4) continue;
       // drawn to end beside another river: it joins it there
       if (end === 'end') { const [ex, ey] = pts[pts.length - 1]; let best = null, bd = GC * 3.5; for (const o of W.rivers) for (const p of o.pts) { const d = U.dxy(p[0], p[1], ex, ey); if (d < bd) { bd = d; best = p; } } if (best) { pts.push([best[0], best[1]]); end = 'join'; } }
+      meander(pts, r.via, id);
       let L = 0; for (let q = 1; q < pts.length; q++) L += U.dxy(pts[q - 1][0], pts[q - 1][1], pts[q][0], pts[q][1]);
       W.rivers.push({ pts, w: r.w || U.clamp(3 + L * 0.0009, 3, 13), name: r.name, end });
       continue;

@@ -1,0 +1,38 @@
+# 71 One map, drawn by hand: the country the Career is played on
+
+On the branch of briefs 65 to 68 (PR #90). Owns the authored mode of the generator (`IC.MAPS`, `IC.generate(seed, map)` in `gen.js`), the map file (`js/map-homeland.js`), the map editor page (`edit.html`, `js/mapedit.js`), the Career and the Sandbox starting on the map (`main.js`), the map name in a save (`save.js`), and the sea on the terrain (`terrain.js`). The first of four map PRs: 72 roads in depth, 73 cities with character, 74 story places and the enemy's side follow on it.
+
+## What the owner said
+
+> "potentially we can drop the procedural and make 1 great map I think that's the way to go so we can have top tier cities and interchanges and sensible road networks and scripted events ... I want 1 absolutely fantastic detailed map with higher fidelity roads cars traffic cities and terrain this will allow us to effectively script events"
+
+> "I think a collection of states so like Colorado terrain Washington Alabama and Tennessee mix and match the terrain there"
+
+Agreed in the plan: the Career and the Sandbox play on the map; a Quick war and the Academy keep their seeded regions; a short south-west coast with port cities; a dev-only editor page.
+
+## What was wrong
+
+Every Career was a different country. Nothing had a name a story could use: a mountain pass, a border crossing, a port, the valley the capital sits in. The procedural country was an oval of hills with rivers that ran from nowhere in particular, and its roads went where the cost grid sent them. A scripted beat could not say "the bridge at Tarn Pass" because there was no Tarn Pass.
+
+## What this brief does
+
+1. **Authored mode in the generator.** `IC.generate(seed, map)` and `IC.generateSteps(seed, map)` take the name of a map in `IC.MAPS`. The map says what is drawn by hand; the generator fills in everything else exactly as before (villages the map does not name, fields, forest, the streets and buildings inside every city, lanes, junctions, the countryside). The seed of an authored world is a hash of the map's name and version (`IC.mapSeed`), so a save regenerates the same country, and bumping the version refuses older saves the way a change to generation does. Worlds from a seed are unchanged: the Quick war and the Academy do not know the map exists.
+2. **What a map can say.** Country and neighbour names; the centre and the border as a polygon; the sectors at angles, one of them sea; sea polygons (sea bed in `W.height`, `W.inSea`, `W.coast`, drawn in the far image and the vectors); ridges with a style, a core and gaps (a pass is a gap in the ridge, lower by a third), a single point as a lone peak; plateaus (a polygon lifted by a height, its edge sloped); biome regions; rivers as a run of points, routed along the ground between them (`riverWay`, an A* on the blurred height that follows valleys), ending in the sea, in another river or on their own; lakes; cities with a name, population, region, style and template; villages; infrastructure (airports, air bases, factories, power stations, the depot) by id, each kind given by hand skipping the procedural placement of that kind; border crossings at an angle; motorways and main roads by a run of city names or points, laid on the cost grid before the procedural roads; railways by name; and places (`W.places`: a pass, a dam, a port, a beach, the home village) for the story to point at.
+3. **The map: Veyland.** 66 cities and the terrain of four American states in one country. Washington in the west: the Cascade Range with Mount Hallow, a volcano, standing alone, the Olympic Hills on the coast, the Western Sea with a sound at Westhaven and a bay at Southport. Colorado in the north: the Iron Canopy Range, the front range the border runs along, crossed at Tarn Pass and Elk Pass, with the Korvath Plateau beyond it. Tennessee in the east: the Clinch, Holston and Walden ridges folded in parallel, the Cumberland Plateau, the Holston and Nolichucky rivers. Alabama in the south: the Talladega Hills running out into flat farmland on the Black Warrior and Tombigbee rivers. Ashford, the capital (2,000 thousand people), sits in the valley on the Carrow River, which runs from Tarn Pass through it to the bay. Six motorways (M1 to M6), eight main roads, six rail lines, six crossings, three airports, two air bases, three factories, five power stations and sixteen named places.
+4. **The Career and the Sandbox start on the map** (`IC.CAREER_MAP = 'homeland'`, picked in `main.js` by mode). The start screen says the capital's name and that the country lies on the Western Sea. A save keeps the map's name and regenerates it on load.
+5. **The editor** (`edit.html`, open it from the dev server). The map over the built world: drag a city, a river point, a road point, a border vertex, a sector or crossing angle; shift-click adds a point to the selected river, ridge, road, railway or polygon (on a city, that city by name); keys add a city, village, place, site, river, motorway, main road, railway, ridge, lake or border vertex at the cursor; a selection is edited as JSON and applied; Rebuild world regenerates and lists the generator's warnings; Export writes `js/map-homeland.js` (`IC.mapSource`), which reloads to the same map.
+
+## Worth knowing
+
+- The generator warns rather than fails (`W.warnings`): a city in the sea, a river that reaches nothing, a road point no road reached. The map test asserts there are none.
+- A river is routed between the points the map gives, so the drawn run is where the river goes; a river that reaches the sea stops at the coast; one that meets another joins it where they touch (within 3.5 cells). A routed river ran dead straight over a plain: each point is now pushed across its line by two slow waves (`meander`), only on flat ground, never near a drawn point, another river or the sea.
+- The drawn coast is a few straight edges; the shore is cut in and out by noise (`roughCoast`: headlands and coves of 5 to 20 km with a finer grain), tapered at sharp corners so a sound's two sides never cross, limited to a third of the way to another shore, and smoothed; the border's radial table follows the shore there, so no sliver of abroad lies between the two.
+- `W.side.S` is `'sea'`: loops over the four land sides ignore it; `radialPt` avoids water; the terrain skips sector lines next to the sea.
+- The traffic graph's cell walk (`cover` in `traffic.js`) never ended for a segment that ended exactly on a cell boundary, which authored coordinates do: a Career on the map ran out of memory until it was fixed.
+- Generation of the map takes about as long as a seeded world (the towns take most of it). The drive graph is 272 MB and 3 s.
+- The border reads a little round. Its character (fjords on the sound, the front range's foot, the river mouths) is for 72, with the roads.
+
+## Done when
+
+- `npm test` green, with a test that the Career plays on the hand-drawn map and everything drawn is there (every city by name on dry ground, the capital on its river, the sea and coast, the Carrow River reaching the sea, the lakes, the front range's crest and the passes lower, the plateau, the volcano standing alone, the biomes, the places, the sites by id, every motorway within 200 units of each named city, Southport to Fort Ashby by road under 20 hours, the crossings, the rail lines by name, nothing foreign in the sea, and the same world twice), and one that a Career on the map starts with the capital named, runs, saves, loads and saves the same again, while a seed's region is as it was.
+- Screenshots looked at: the whole country, the capital at three zooms, an interchange.
