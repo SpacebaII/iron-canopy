@@ -419,10 +419,10 @@ function deskPanel() {
   let h;
   if (M && !M.met) {
     const late = M.missed ? ' late' : '', open = M.parts.filter(p => !p.done).length;
-    h = `<h3 data-act="briefMin" title="${ui.briefOpen ? 'Fold the steps' : 'Every step towards it'}"><span>The Minister’s mandate</span><em>by ${esc(M.dshort)} ${ui.briefOpen ? '▴' : '▾'}</em></h3>
-      <div class="mand${late}"><b>${esc(M.text)}</b><small>Chapter ${M.ch + 1} · ${esc(M.left)} left${M.missed ? ` · late ${M.missed > 1 ? 'twice' : 'once'}` : ''}${M.parts.length > 1 ? ` · ${M.parts.length - open} of ${M.parts.length} done` : ''}</small></div>`;
+    h = `<h3 data-act="briefMin" title="${ui.briefOpen ? 'Fold the steps' : 'Every step towards it'}"><span>${st.act === 1 ? 'The Minister’s mandate' : 'The cabinet’s mandate'}</span><em>by ${esc(M.dshort)} ${ui.briefOpen ? '▴' : '▾'}</em></h3>
+      <div class="mand${late}"><b>${esc(M.text)}</b><small>${esc(M.where)} · ${esc(M.left)} left${M.missed ? ` · late ${M.missed > 1 ? 'twice' : 'once'}` : ''}${M.parts.length > 1 ? ` · ${M.parts.length - open} of ${M.parts.length} done` : ''}</small></div>`;
     h += nextGoal(`<h4 class="dsub">Next step</h4>`);
-  } else if (M && M.met) h = `<h3 data-act="briefMin"><span>Mandate met</span><em>Chapter ${M.ch + 1}</em></h3><p class="hint">${esc(ch && ch.next ? ch.next : 'Keep the airports running.')}</p>` + (ui.briefOpen ? nextGoal('') : '');
+  } else if (M && M.met) h = `<h3 data-act="briefMin"><span>Mandate met</span><em>${esc(M.where)}</em></h3><p class="hint">${esc(ch && ch.next ? ch.next : 'Keep the airports running.')}</p>` + (ui.briefOpen ? nextGoal('') : '');
   else h = nextGoal();
   const L = IC.deskList(S);
   if (L.length) h += `<h4 class="dsub">On your desk</h4><div class="prss">${L.map(({ P, left, prog, late }) => `<div class="prs${late ? ' late' : ''}"><button class="prt" data-act="deskGo" data-v="${P.id}" title="${esc(P.text)}"><b>${esc(P.title)}</b><small>${esc(left)} left${prog ? ` · ${esc(prog)}` : ''}</small><small class="stake">If left: ${esc(P.stake)}</small></button><span class="prb">${P.fix && P.fix.part ? `<button class="howbtn" data-act="deskFix" data-v="${P.id}">${esc(P.fix.label || 'Fix it')} ▸</button>` : ''}${P.pay ? `<button class="howbtn" data-act="deskPay" data-v="${P.id}" title="${esc(P.payText)}"${S.budget < P.pay ? ' disabled' : ''}>Pay ${U.money(P.pay)}</button>` : ''}${!P.more ? `<button class="howbtn" data-act="deskMore" data-v="${P.id}" title="Half as long again, once: the Minister −${IC.DESK.more}">More time</button>` : ''}</span></div>`).join('')}</div>`;

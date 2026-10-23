@@ -1,10 +1,11 @@
 /* Iron Canopy — (brief 69) the Director's desk: the Career played as a job with something at stake, not a checklist.
-   - The mandate (IC.MANDATES): the Minister's aim for each chapter of Act I, an outcome with a date. It is met when
+   - The mandate (IC.MANDATES): the Minister's aim for each chapter of Act I, an outcome with a date (Acts II and III
+     have one each, IC.MANDATES_ACT, that judges but does not turn the act). It is met when
      the chapter's key goals are done (the goals stay as the How? steps, and no longer pay or open the chapter on
      their own). A missed date costs confidence and sets a new one; met, it pays what the chapter's goals used to.
    - Pressures (IC.PRESSURES): live problems found in the simulation (aircraft waiting for stands, a full terminal,
      no fuel, winter coming with no landing system, delays, a run of near misses, an empty treasury, light aircraft
-     straying), two or three at a time. Each comes from a person, sits at a place on the map, has a date, says what
+     straying, a city beyond every airport's reach after Act I, incidents on an airfield), two or three at a time. Each comes from a person, sits at a place on the map, has a date, says what
      happens if it is left, and has more than one answer: fix it, buy time once, pay it off where money can, or
      refuse and take the hit now. Paced by the play clock (S.story.play), so Wait does not skip past them.
    - The record (desk.rec): what the Director did, each entry fading over about half a year. It moves the target the
@@ -51,18 +52,27 @@ IC.MANDATES = [
   { of: ['open2', 'route2'], mo: 9, text: S => `Open ${S.story.city2 ? S.byId[S.story.city2].name : 'the second city'}’s airport and fly a route to it` },
   { of: ['fees', 'served'], mo: 9, text: () => 'Pay your own way: ₭150M of airline fees in a day, and air service for four cities' }
 ];
-const mandOf = S => S.story.act === 1 ? IC.MANDATES[S.story.ch] : null;
+/* Acts II and III: one mandate for the act, from its goals that the Ministry of Defence cares most about. It does not
+   turn the act (the story's beats do), but a date missed or met moves the record as in Act I */
+IC.MANDATES_ACT = {
+  2: { of: ['alert', 'qra', 'milradar'], mo: 12, text: S => `Show them the border is watched: an alert pad at ${short(S.byId.ab_fwd.name)}, fighters up within 5 minutes of an order, and a military radar near the border` },
+  3: { of: ['layers', 'basecover', 'depot'], mo: 10, text: S => `Make ${IC.cap(S).name} and ${short(S.byId.ab_fwd.name)} hard targets: two layers of missiles over the capital, cover for the air base, and a forward depot to keep them firing` }
+};
+const mandOf = S => S.story.act === 1 ? IC.MANDATES[S.story.ch] : IC.MANDATES_ACT[S.story.act] || null;
+/* which mandate this is (a new key starts a new date), and when its clock started */
+const mandKey = S => S.story.act === 1 ? S.story.ch : 'a' + S.story.act;
+const mandT0 = S => S.story.act === 1 ? S.story.chT : S.story.actT;
 /* how the mandate stands: { text, due, left, parts: [{ text, done, prog }], met, missed } */
 IC.deskMandate = function (S) {
   const st = S.story, M = mandOf(S), d = st.desk; if (!M || !d) return null;
   const parts = M.of.map(id => st.goals.find(g => g.id === id)).filter(Boolean).map(g => ({ id: g.id, text: g.text, done: !!g.done, prog: !g.done && g.prog ? g.prog() : '' }));
-  return { ch: st.ch, text: M.text(S), due: d.due, left: left(S, d.due), date: dateOf(S, d.due), dshort: (c => `${c.d} ${IC.MONTHS[c.mo].slice(0, 3)}`)(IC.calAt(S, d.due)), parts, met: !!d.met, missed: d.miss || 0 };
+  return { ch: st.ch, where: st.act === 1 ? `Chapter ${st.ch + 1}` : IC.ACTS[st.act].name, text: M.text(S), due: d.due, left: left(S, d.due), date: dateOf(S, d.due), dshort: (c => `${c.d} ${IC.MONTHS[c.mo].slice(0, 3)}`)(IC.calAt(S, d.due)), parts, met: !!d.met, missed: d.miss || 0 };
 };
 IC.deskMet = S => { const st = S.story, M = mandOf(S); return !!M && M.of.every(id => { const g = st.goals.find(x => x.id === id); return !g || g.done; }); };
 const mandPay = S => (S.story.goals || []).reduce((s, g) => s + (g.pay || 0), 0);
 function mandate(S) {
   const st = S.story, d = st.desk, M = mandOf(S); if (!M) return;
-  if (d.mch !== st.ch) { d.mch = st.ch; d.due = st.chT + IC.MO(S, M.mo); d.miss = 0; d.met = false; }
+  if (d.mch !== mandKey(S)) { d.mch = mandKey(S); d.due = mandT0(S) + IC.MO(S, M.mo); d.miss = 0; d.met = false; }
   if (!d.met && IC.deskMet(S)) meet(S);
   else if (!d.met && S.time > d.due) {
     const k = Math.min(d.miss, IC.DESK.missConf.length - 1), v = IC.DESK.missConf[k];
@@ -70,8 +80,8 @@ function mandate(S) {
     record(S, v, 'the mandate late');
     if (S.wait) IC.waitStop(S, 'The Minister’s date has passed.');
     castTrust(S, 'MIN', -6);
-    IC.say(S, 'MIN', d.miss === 1 ? `The date has passed, Director, and it is not done: ${U.lc(M.text(S))}. I have told the cabinet ${dateOf(S, d.due)}. Do not make me tell them another.` : `Late again. The cabinet has stopped asking me when. They are asking me who.`);
-    IC.emit(S, 'mandate', { ch: st.ch, met: false, miss: d.miss });
+    IC.say(S, st.act === 1 ? 'MIN' : 'PM', d.miss === 1 ? `The date has passed, Director, and it is not done: ${U.lc(M.text(S))}. I have told the cabinet ${dateOf(S, d.due)}. Do not make me tell them another.` : `Late again. The cabinet has stopped asking me when. They are asking me who.`);
+    IC.emit(S, 'mandate', { ch: st.ch, act: st.act, met: false, miss: d.miss });
   }
 }
 function meet(S) {
@@ -82,17 +92,19 @@ function meet(S) {
   record(S, IC.DESK.metConf, 'the mandate met');
   castTrust(S, 'MIN', 6);
   IC.card(S, 'Mandate met', U.clock(S.time, S), `${M.text(S)}: done${d.miss ? ', late' : `, ${left(S, d.due)} before the date`}. ${metWords(S)}${pay > 0 ? ` The Ministry pays ${U.money(pay)}.` : ''}`, 'chapter');
-  IC.emit(S, 'mandate', { ch: st.ch, met: true });
+  IC.emit(S, 'mandate', { ch: st.ch, act: st.act, met: true });
 }
 /* the chapter turns (story.js, before its goals change): a mandate met that the desk has not seen yet is met now */
 IC.deskChapterEnd = function (S) {
   if (!on(S)) return;
   const st = S.story, d = st.desk || IC.deskInit(S);
-  if (d.mch !== st.ch) { const M = mandOf(S); if (!M) return; d.mch = st.ch; d.due = st.chT + IC.MO(S, M.mo); d.miss = 0; d.met = false; }
+  if (st.act !== 1) return;
+  if (d.mch !== mandKey(S)) { const M = mandOf(S); if (!M) return; d.mch = mandKey(S); d.due = mandT0(S) + IC.MO(S, M.mo); d.miss = 0; d.met = false; }
   if (!d.met && IC.deskMet(S)) meet(S);
 };
 /* what was achieved, in the player's own numbers */
 function metWords(S) {
+  if (S.story.act > 1) return '';
   const ap = capAp(S), pax = Math.round(dayPax(S)), al = S.av.airlines.filter(a => !a.gone).length;
   return ap ? `${short(ap.name)} carries ${pax.toLocaleString('en-US')} passengers a day for ${al} airline${al === 1 ? '' : 's'}.` : '';
 }
@@ -212,6 +224,31 @@ IC.PRESSURES = {
     ok: (S, P) => S.time - P.t0 >= 12 * H && S.story.cnt.infT.filter(t => S.time - t < 86400).length < 2,
     prog: (S) => `${S.story.cnt.infT.filter(t => S.time - t < 86400).length} in the last day; fewer than 2 will do`,
     fail: (S) => { for (const f of S.asp.fields) f.mood = Math.max(0, f.mood - 10); }
+  },
+  city: {
+    // after Act I (whose second and third cities are the story's), a city beyond every airport's reach whose people
+    // want to fly: its council writes, and the answer is an airport within 150 km
+    find: (S) => { const st = S.story; if (st.act < 2) return []; const a = IC.cityAsks(S, 150); if (!a || a.city.id === st.city2 || a.city.id === st.city3) return [];
+      return [{ key: 'city:' + a.city.id, city: a.city.id, at: { x: a.city.x, y: a.city.y }, n: Math.round(a.unserved / 100) * 100, size: a.size }]; },
+    make: (S, c) => { const k = S.byId[c.city];
+      return { who: 'MIN', title: `${k.name} wants to fly`, mo: 9, city: c.city,
+        text: `${k.name} is more than 150 km from every airport we have, and some ${c.n.toLocaleString('en-US')} of its people a day would fly if they could. The council wants ${c.size === 'jets' ? 'an airport that takes jets' : 'at least a field for turboprops'} near the city, with a runway open within nine months. Found one from the build bar (B).`,
+        stake: `${k.name}’s morale −10, public support −2, and the Minister −5`, conf: -5, reward: 4, pay: 30, payText: `Fund coaches from ${k.name} to the nearest airport (₭30M)` }; },
+    ok: (S, P) => { const k = S.byId[P.city]; return !!k && ours(S).some(ap => U.dist(ap, k) < 1500); },
+    prog: (S, P) => { const k = S.byId[P.city], f = k && S.infra.find(i => i.kind === 'airport' && i.owner === 'us' && U.dist(i, k) < 1500); return f ? `${short(f.name)} is founded: it needs a runway` : 'no airport near it yet'; },
+    fail: (S, P) => { const k = S.byId[P.city]; if (k) k.morale = Math.max(0, k.morale - 10); S.support = Math.max(0, (S.support || 0) - 2); }
+  },
+  incidents: {
+    // (with airport operations, airops.js) incidents keep happening at one airport: debris, spills, scrapes
+    find: (S, d) => { const n = {}; for (const x of d.inc || []) if (S.time - x.t < IC.MO(S, 1)) n[x.ap] = (n[x.ap] || 0) + 1;
+      return Object.keys(n).filter(id => n[id] >= 3 && S.byId[id]).map(id => ({ key: 'incidents:' + id, ap: id, at: { x: S.byId[id].x, y: S.byId[id].y }, n: n[id] })); },
+    make: (S, c) => { const ap = S.byId[c.ap];
+      return { who: 'APT', title: `${short(ap.name)}: one incident after another`, mo: 1.5,
+        text: `${c.n} incidents on the airfield at ${short(ap.name)} in a month. The insurers want a month without one, or they raise the premium. An operations base near the runways, crews to clear debris and spills quickly, and stands with room round them all help.`,
+        stake: 'a ₭30M rise in the premium, and the Minister −4', conf: -4, reward: 3 }; },
+    ok: (S, P) => S.time - P.t0 >= IC.MO(S, 1) && !S.story.desk.inc.some(x => x.ap === P.ap && x.t > P.t0),
+    prog: (S, P) => { const L = S.story.desk.inc.filter(x => x.ap === P.ap && x.t > P.t0); return L.length ? `${L.length} since; a month without one will do` : `${U.months(S.time - P.t0)} without one; a month will do`; },
+    fail: (S) => IC.pay(S, 'penalty', 30)
   }
 };
 
@@ -252,7 +289,9 @@ const THANKS = {
   delays: () => 'A good day, on time. I had the airlines on the phone again: to say so.',
   separation: () => 'A month without a loss of separation. The regulator has closed its file.',
   treasury: () => 'A month in the black. Finance has stopped writing to me.',
-  strays: () => 'The light aircraft keep out of the zones now. My controllers can breathe.'
+  strays: () => 'The light aircraft keep out of the zones now. My controllers can breathe.',
+  city: (S, P) => `${S.byId[P.city].name} has its airport. The council has sent the Minister a letter of thanks, and a photograph.`,
+  incidents: (S, P) => `A clean month at ${short(S.byId[P.ap].name)}. The insurers have left the premium alone.`
 };
 /* the player's answers, from the card or the desk: 'pay' (where money can), 'more' (time, once), 'refuse' */
 IC.deskAnswer = function (S, id, how) {
@@ -343,7 +382,8 @@ IC.deskDanger = function (S) {
 /* ---------- every step ---------- */
 IC.deskInit = function (S) {
   const st = S.story;
-  st.desk = st.desk || { mch: -1, due: 0, miss: 0, met: false, P: [], cool: {}, seen: {}, next: 0, rec: [], log: [], los: [], q: quarter(S), qPrev: null, revs: [], lowT: null, band: 0, yDay: null };
+  st.desk = st.desk || { mch: -1, due: 0, miss: 0, met: false, P: [], cool: {}, seen: {}, next: 0, rec: [], log: [], los: [], q: quarter(S), qPrev: null, revs: [], lowT: null, band: 0, yDay: null, inc: [] };
+  if (!st.desk.inc) st.desk.inc = [];
   return st.desk;
 };
 IC.deskTick = function (S, dt) {
@@ -351,7 +391,7 @@ IC.deskTick = function (S, dt) {
   const st = S.story, d = st.desk || IC.deskInit(S);
   d.tT = (d.tT || 0) - dt; if (d.tT > 0) return;
   d.tT = 30;
-  if (st.act === 1) mandate(S);
+  mandate(S);
   standing(S);
   if (!st.opened) return;
   // the day's flights into the quarter
@@ -395,6 +435,7 @@ IC.on((S, type, x) => {
   if (!on(S) || !S.story.desk) return;
   const d = S.story.desk;
   if (type === 'lossSep' || type === 'nearMiss') { d.los.push(S.time); if (d.los.length > 50) d.los.shift(); d.q.los++; }
+  else if (type === 'aptIncident' && x && x.ap) { (d.inc = d.inc || []).push({ t: S.time, ap: x.ap.id }); if (d.inc.length > 40) d.inc.shift(); }
   else if (type === 'crash') { d.q.acc++; d.q.dead += x.dead || 0; if (IC.cutscene) IC.cutscene(S, 'crash', { ap: x.ap, cause: x.cause, dead: x.dead }); record(S, -(4 + Math.min(10, (x.dead || 0) / 10)), `the accident at ${x.ap ? short(x.ap.name) : 'an airport'}`); }
 });
 

@@ -5865,6 +5865,60 @@ test('desk: pressures, the mandate and the record survive save and load', () => 
   assert(!d2.P.length && d2.log.some(x => x.outcome === 'refused'), 'the card’s answer does nothing after a load');
 });
 
+test('desk: Acts II and III have a mandate with a date; met, it is on the record and the act goes on by its story', () => {
+  const { S } = deskOpen(), st = S.story;
+  IC.storyStartAct(S, 2); st.desk.tT = 0; IC.deskTick(S, 1);
+  const M = IC.deskMandate(S);
+  assert(M && M.where === 'Act II' && /alert pad/.test(M.text) && M.parts.length === 3 && !M.met, `act II: ${JSON.stringify(M)}`);
+  assert(Math.abs(M.due - st.actT - IC.MO(S, IC.MANDATES_ACT[2].mo)) < 1, 'the date is not counted from the act’s start');
+  let met = null; const off = IC.on((S2, t, d) => { if (t === 'mandate') met = d; });
+  for (const g of st.goals) if (IC.MANDATES_ACT[2].of.includes(g.id)) { g.done = true; g.doneT = S.time; }
+  st.desk.tT = 0; IC.deskTick(S, 1); off();
+  assert(met && met.met && met.act === 2 && IC.deskMandate(S).met && st.act === 2, `met: ${JSON.stringify(met)}, act ${st.act}`);
+  assert(IC.deskWhy(S).some(r => r.why === 'the mandate met'), 'the act’s mandate is not on the record');
+  IC.storyStartAct(S, 3); st.desk.tT = 0; IC.deskTick(S, 1);
+  const M3 = IC.deskMandate(S);
+  assert(M3 && M3.where === 'Act III' && /two layers/.test(M3.text) && !M3.met, `act III: ${JSON.stringify(M3)}`);
+  // its date passes: the record and the Prime Minister say so, and a new date is set
+  const rec0 = IC.deskRecord(S), due = M3.due;
+  S.time = due + 60; st.desk.tT = 0; IC.deskTick(S, 1);
+  assert(IC.deskMandate(S).missed === 1 && IC.deskMandate(S).due > due && IC.deskRecord(S) < rec0 - 5, 'a missed act mandate did nothing');
+});
+test('desk: after Act I a city beyond every airport writes; an airport near it answers it, and leaving it costs the city', () => {
+  const { S, ap } = deskOpen(), st = S.story;
+  st.act = 2; st.actT = S.time; st.events = [];
+  assert(!IC.PRESSURES.city.find(S, st.desk).some(c => S.byId[c.city] && U.dist(S.byId[c.city], ap) < 1500), 'a city near an airport asked for one');
+  const k = IC.cities(S).filter(c => c.owner === 'us' && !c.capital).sort((a, b) => U.dist(b, ap) - U.dist(a, ap))[0];
+  const P = IC.deskNew(S, 'city', { key: 'city:' + k.id, city: k.id, at: { x: k.x, y: k.y }, n: 9000, size: 'turbo' });
+  const e = st.events.find(x => x.title === P.title);
+  assert(e && /150 km/.test(e.text) && /morale/.test(e.text) && e.opts.some(o => /coaches/.test(o.t)), 'the city’s card does not say what it wants and what it costs');
+  // left: the city's morale falls
+  const m0 = k.morale; S.time = P.due + 1; st.desk.tT = 0; IC.deskTick(S, 1);
+  assert(k.morale < m0 && st.desk.log.some(x => x.title === P.title && x.outcome === 'failed'), 'leaving the city cost nothing');
+  // an airport within 150 km answers the next one
+  const Q = IC.deskNew(S, 'city', { key: 'city:' + k.id + 'b', city: k.id, at: { x: k.x, y: k.y }, n: 9000, size: 'turbo' }); st.events = [];
+  const x0 = ap.x, y0 = ap.y; ap.x = k.x + 300; ap.y = k.y;
+  st.desk.tT = 0; IC.deskTick(S, 1); ap.x = x0; ap.y = y0;
+  assert(st.desk.log.some(x => x.title === Q.title && x.outcome === 'solved'), 'an airport near the city did not answer it');
+});
+test('desk: incidents keep happening at one airport and the insurers write; a clean month answers them', () => {
+  const { S, ap } = deskOpen(), st = S.story, d = st.desk;
+  for (let i = 0; i < 2; i++) IC.emit(S, 'aptIncident', { ap, inc: { kind: 'debris' } });
+  assert(!IC.PRESSURES.incidents.find(S, d).length, 'two incidents were already a pressure');
+  IC.emit(S, 'aptIncident', { ap, inc: { kind: 'spill' } });
+  const c = IC.PRESSURES.incidents.find(S, d)[0];
+  assert(c && c.ap === ap.id && c.n === 3, `found: ${JSON.stringify(c)}`);
+  const P = IC.deskNew(S, 'incidents', c); st.events = [];
+  assert(/insurers/.test(P.text) && /premium/.test(P.stake), 'the pressure does not say who and what');
+  // one more incident inside the month keeps it open; then a clean month
+  S.time += IC.MO(S, 0.3); IC.emit(S, 'aptIncident', { ap, inc: { kind: 'scrape' } });
+  S.time += IC.MO(S, 0.8); d.tT = 0; IC.deskTick(S, 1);
+  assert(d.P.includes(P), 'an incident inside the month did not keep it open');
+  const P2 = IC.deskNew(S, 'incidents', Object.assign({}, c, { key: c.key + 'b' })); st.events = [];
+  S.time += IC.MO(S, 1.05); d.tT = 0; IC.deskTick(S, 1);
+  assert(d.log.some(x => x.title === P2.title && x.outcome === 'solved'), 'a clean month did not answer it');
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

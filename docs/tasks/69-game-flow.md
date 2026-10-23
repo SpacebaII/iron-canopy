@@ -69,7 +69,9 @@ Each gets a grade (A to E) and a sentence that says why, from the numbers. The r
 
 ## What stays
 
-The research tree (48), the agenda (49), the deck of peacetime cards and the milestones (round 4), the deals, building, the tutorials. Acts II–IV keep their goals for now; the desk replaces Act I's goals panel first, then Act II and III's in a follow-up.
+The research tree (48), the agenda (49), the deck of peacetime cards and the milestones (round 4), the deals, building, the tutorials. Acts II and III keep their goals as the How? steps under one mandate each (`IC.MANDATES_ACT`: the border watched in Act II, the capital and the air base hard targets in Act III); it judges the act (met or missed goes on the record) but the story's beats still turn it. Act IV keeps its goal.
+
+Added after the first push: a city beyond every airport's reach writes after Act I (`city`), and incidents on an airfield (the `aptIncident` event from airport operations, PR #96, once it lands) bring the insurers (`incidents`). The council's noise complaint is the deck's `noise` card already, so it is not a pressure.
 
 ## Tests
 
