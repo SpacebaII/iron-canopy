@@ -8,13 +8,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # six parts of equal length (by tests/times.json) on six machines at once, each with one worker per core
+    # eight parts of equal length (by tests/times.json) on eight machines at once, each with one worker per core
     # (two halves outgrew the 20 minutes once a day at each real airport joined the suite; four parts once the
-    # cities' streets were traced on a direction field, brief 53)
+    # cities' streets were traced on a direction field, brief 53; eight once every housing block had streets of its
+    # own, brief 68, and a part of six ran past 30 minutes)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/6, 2/6, 3/6, 4/6, 5/6, 6/6]
+        shard: [1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8, 8/8]
     name: test (${{ matrix.shard }})
     steps:
       - uses: actions/checkout@v4
