@@ -40,11 +40,11 @@ After the towns, the last of what a car could not follow (road audit on the 4242
 | | Before | After |
 | --- | --- | --- |
 | Ends that lead nowhere | 14 | 1 |
-| Ends that stop short of a road | 113 | 8 |
+| Ends that stop short of a road | 113 | 7 |
 | Dead ends under 30 m | 38 | 7 |
 | Sharp bends on national roads in town | 115 | 42 |
 | Sharp bends on motorways | 12 | 1 |
-| Bends a car cannot follow (all) | 687 | 678 (most are in the old towns' real streets) |
+| Bends a car cannot follow (all) | 687 | 677 (most are in the old towns' real streets) |
 
 Also: the close-in vehicles take the links near the view from the link grid instead of walking every link in the country (2.9 to 2.3 ms a frame with 3,000 vehicles); a roundabout's splitter island is at least 80 m on a short arm; the test workers get the machine's memory divided by the workers, since the world group keeps a generated world per seed and ran out of Node's default heap; GitHub runs the suite in eight parts.
 
