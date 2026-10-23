@@ -21,6 +21,19 @@ IC.generateSteps = (seed, map) => worldSteps(seed, map);
    and version, so saves regenerate the same world. IC.mapAuthored(W) says whether a world came from a map */
 IC.MAPS = IC.MAPS || {};
 IC.CAREER_MAP = 'homeland';
+/* the place registry (brief 74): a story place by id, with the live thing it stands for (`of`: a city by name, a site,
+   a crossing or an enemy site by id or name) so an event, a cutscene or a camera can point at it; null when the world
+   has no such place (a seeded world has none); `p._ref` is the thing itself, found once and never saved */
+IC.placeOf = (S, id) => {
+  const W = S.world || S, p = (W.places || []).find(q => q.id === id || q.name === id);
+  if (!p) return null;
+  if (p._ref === undefined) {
+    const v = p.of || p.name, es = (S.esites && S.esites.length ? S.esites : W.esites) || [];
+    p._ref = W.cities.find(c => c.name === v) || W.infra.find(i => i.id === v || i.name === v) || (W.crossings || []).find(x => x.id === v || x.name === v) || es.find(s => s.id === v || s.name === v) || (W.foreign || []).find(f => f.name === v) || (W.villages || []).find(x => x.name === v) || null;
+  }
+  return p;
+};
+IC.placesOf = (S, role) => ((S.world || S).places || []).filter(p => !role || p.role === role);
 IC.mapSeed = A => { let h = 2166136261; for (const ch of `${A.name}@${A.version}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 IC.mapAuthored = W => !!(W && W.map);
 // point in polygon ([[x, y], ...]), with a box test first
@@ -119,7 +132,8 @@ function* worldSteps(seed, map) {
   if (A && A.border) {
     const P = roughBorder(A.border);
     for (let i = 0; i <= NRB; i++) RB[i] = rayPoly(P, i / NRB * TAU - Math.PI);
-    for (const o of (A.cities || []).concat(A.infra || [], A.places || [], A.villages || [])) {
+    // (a place drawn abroad, brief 74, does not pull the border out to itself)
+    for (const o of (A.cities || []).concat(A.infra || [], (A.places || []).filter(p => !p.abroad), A.villages || [])) {
       const d = Math.hypot(o.x - cx, o.y - cy) + 60, f = U.mod(Math.atan2(o.y - cy, o.x - cx) + Math.PI, TAU) / TAU * NRB;
       for (let k = -24; k <= 24; k++) { const i = (Math.round(f) + k + NRB) % NRB, w = 1 - Math.abs(k) / 25; if (RB[i] < d) RB[i] = RB[i] + (d - RB[i]) * w; }
       RB[NRB] = RB[0];
@@ -593,8 +607,10 @@ function* worldSteps(seed, map) {
     if (sp) placeNames.add(name);
     return { id: 'c' + i, kind: 'city', name, x: c.x, y: c.y, pop, capital: i === 0, grid: sp && sp.grid != null ? sp.grid : grid, r: 45 + Math.sqrt(pop) * 1.7, region: sp ? sp.region : undefined, role: sp ? sp.role : undefined };
   });
-  // the story's places (authored): landmarks by id with a role, where events and cutscenes can point
-  W.places = (A && A.places || []).map(p => { const m = p.dry === false ? null : dryNear(p.x, p.y, 300); return { id: p.id, name: p.name, x: m ? m.x : p.x, y: m ? m.y : p.y, role: p.role, desc: p.desc, region: p.region }; });
+  // the story's places (authored): landmarks by id with a role, where events and cutscenes can point (brief 74: `abroad`
+  // is the neighbour whose soil it stands on, `of` the id or name of the city, site, crossing or enemy site it is;
+  // IC.placeOf resolves them)
+  W.places = (A && A.places || []).map(p => { const m = p.dry === false || p.abroad ? null : dryNear(p.x, p.y, 300); return { id: p.id, name: p.name, x: m ? m.x : p.x, y: m ? m.y : p.y, role: p.role, desc: p.desc, region: p.region, k: p.abroad || 'H', of: p.of }; });
 
   /* ---------- villages (home and abroad) ---------- */
   W.villages = [];
@@ -785,13 +801,17 @@ function* worldSteps(seed, map) {
     return { x: U.clamp(p.x + (p.x - cx) * 0.2, 120, WW - 120), y: U.clamp(p.y + (p.y - cy) * 0.2, 90, WH - 120) };
   };
   W.foreign = [];
+  // a map may draw a neighbour's towns itself (brief 74: `foreign`, by country, with a name, people, `apt` for the one
+  // with the airport, `frontier` for a border town); the dice still roll for them so the other countries keep theirs
+  const drawn = (list, k) => (A && A[list] || []).filter(o => o.k === k);
   for (const k of ['A', 'B', 'C', 'D']) {
-    const hostile = W.side[k] === 'hostile';
-    for (let i = 0; i < (hostile ? 9 : 6); i++) {
-      const front = hostile && i < 4;
+    const hostile = W.side[k] === 'hostile', D = drawn('foreign', k);
+    for (let i = 0; i < Math.max(D.length, hostile ? 9 : 6); i++) {
+      const front = hostile && i < 4, d = D[i];
       // the towns and airports abroad lie a few hundred kilometres past the border, not out at the map's edge
-      const p = radialPt(k, front ? 300 : 1050 * 1.5 * SP, front ? 800 : 2700 * 1.5 * SP, 700 * SP, W.foreign);
-      W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: W.placeName(), x: p.x, y: p.y, apt: i === 4 || (!hostile && i === 0), frontier: front, pop: front ? R.int(60, 180) : R.int(120, 600), r: front ? 55 : 70 });
+      const p = radialPt(k, front ? 300 : 1050 * 1.5 * SP, front ? 800 : 2700 * 1.5 * SP, 700 * SP, W.foreign), name = W.placeName(), pop = front ? R.int(60, 180) : R.int(120, 600);
+      if (d) W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name: d.name || name, x: d.x, y: d.y, apt: !!d.apt, frontier: !!d.frontier, pop: d.pop || pop, r: d.frontier ? 55 : 70 });
+      else W.foreign.push({ id: 'f' + k + i, kind: 'ftown', k, name, x: p.x, y: p.y, apt: i === 4 || (!hostile && i === 0), frontier: front, pop, r: front ? 55 : 70 });
     }
   }
 
@@ -817,9 +837,12 @@ function* worldSteps(seed, map) {
   // weapon ranges are real: short-range sites keep their distances from the border; bases and missile brigades sit
   // further back in the larger country behind it
   const BACK = { airbase: 2, cm: 2, bm: 1.6, mrbm: 2.5, hgv: 2.5, drone: 1.4, staging: 1.3 };
+  // (brief 74: a map may draw them, `esites` by country and kind in order, with a name; the loadouts stay these)
+  const drawnSites = (A && A.esites || []).slice();
   const SITE = (k, kind, dmin, dmax, extra) => {
     const b = 1.5 * (BACK[kind] || 1), p = radialPt(k, dmin * b, dmax * b, 330, W.esites.concat(W.foreign));
-    const s = Object.assign({ id: 'es' + W.esites.length, k, kind, x: p.x, y: p.y }, extra || {});
+    const di = drawnSites.findIndex(d => d.k === k && d.kind === kind), d = di >= 0 ? drawnSites.splice(di, 1)[0] : null;
+    const s = Object.assign({ id: 'es' + W.esites.length, k, kind, x: p.x, y: p.y }, extra || {}, d ? { x: d.x, y: d.y, name: d.name || (extra && extra.name), drawn: true } : {});
     W.esites.push(s); return s;
   };
   const nB = W.names.B;
@@ -847,6 +870,9 @@ function* worldSteps(seed, map) {
   W.eroads = [];
   for (const k of ['A', 'B']) {
     const pts = W.esites.filter(s => s.k === k && s.kind !== 'hgv' && s.kind !== 'mrbm').concat(W.foreign.filter(f => f.k === k));
+    // (brief 74: a map may draw a neighbour's roads itself, `eroads` as pairs of site and town names; then no tree)
+    const byName = n => pts.find(p => p.name === n || p.id === n), own = drawn('eroads', k).map(r => [byName(r.via[0]), byName(r.via[1])]).filter(r => r[0] && r[1] && r[0] !== r[1]);
+    if (own.length) { for (const [a, b] of own) W.eroads.push({ a, b, pts: wiggle(a, b, 120), drawn: true }); continue; }
     const inT = [pts.find(s => s.kind === 'staging')];
     const rest = pts.filter(p => p !== inT[0]);
     while (rest.length) {

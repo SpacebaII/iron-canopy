@@ -209,7 +209,9 @@ function evcard() {
   if (!e) { el.hidden = true; ui.cache.evcard = null; return; }
   el.hidden = false;
   placeCard(el, { at: e.at || null });
-  setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
+  // (brief 74) a card about a place on the map says where, and a click takes the camera there
+  const at = e.at && (typeof e.at === 'function' ? e.at(S) : e.at);
+  setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}${at ? ` · <button class="pm-t" data-act="evGo" data-id="${e.id}" title="Show it on the map">${esc(at.name || 'Show on the map')} ▸</button>` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
     <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}</button>`).join('')}</div>`);
 }
 function alerts() {

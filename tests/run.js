@@ -842,6 +842,25 @@ test('map: the Career plays on the hand-drawn map, and everything drawn is there
   // neighbours: the sea has a side of its own, nothing of a neighbour stands in it
   assert(W.side.S === 'sea' && W.countryAt(2000, 40000) === 'S', 'the sea is not a side of its own');
   for (const f of W.foreign.concat(W.esites, W.villages)) assert(!W.inSea(f.x, f.y), `${f.name || f.kind} stands in the sea`);
+  // the enemy's side (brief 74): its towns, sites and roads where the map draws them, on their own soil, every site
+  // of the generator's list drawn, and each site reached by road from its country's staging area
+  for (const f of A.foreign) { const g = W.foreign.find(q => q.name === f.name); assert(g && g.k === f.k && U.dxy(g.x, g.y, f.x, f.y) < 1 && W.countryAt(g.x, g.y) === f.k && g.blocks.length > 50 && g.apt === !!f.apt, `${f.name} is not where the map draws it, or is not a town of ${f.k}`); }
+  for (const e of A.esites) { const g = W.esites.find(q => q.name === e.name); assert(g && g.kind === e.kind && g.k === e.k && U.dxy(g.x, g.y, e.x, e.y) < 1 && W.countryAt(g.x, g.y) === e.k, `${e.name} is not where the map draws it`); }
+  assert(W.esites.every(s => s.drawn) && W.eroads.every(r => r.drawn) && W.eroads.length === A.eroads.length, 'a site or a road abroad was still rolled');
+  for (const k of ['A', 'B']) {
+    const seen = new Set([W.esites.find(s => s.k === k && s.kind === 'staging')]);
+    for (let grew = true; grew;) { grew = false; for (const r of W.eroads) { if (seen.has(r.a) && !seen.has(r.b)) { seen.add(r.b); grew = true; } if (seen.has(r.b) && !seen.has(r.a)) { seen.add(r.a); grew = true; } } }
+    for (const s of W.esites) if (s.k === k && s.kind !== 'hgv' && s.kind !== 'mrbm') assert(seen.has(s), `${s.name} has no road from ${k}'s staging area`);
+    for (const f of W.foreign) if (f.k === k) assert(seen.has(f), `${f.name} has no road from ${k}'s staging area`);
+  }
+  // the story's places: Station 9 and the wreck over the border on Korvath's soil, the town under the ridge ours, and
+  // each place that stands for a thing resolving to it
+  const st9 = W.places.find(p => p.id === 'station9'), wreck = W.places.find(p => p.id === 'crash310'), hollin = W.places.find(p => p.id === 'hollin');
+  assert(st9.k === 'A' && wreck.k === 'A' && W.countryAt(st9.x, st9.y) === 'A' && W.countryAt(wreck.x, wreck.y) === 'A' && !W.inHome(st9.x, st9.y), 'Station 9 and the wreck are not over the border');
+  assert(hollin.k === 'H' && W.inHome(hollin.x, hollin.y) && W.depthOut(wreck.x, wreck.y) < W.depthOut(st9.x, st9.y) && U.dist(st9, hollin) < 2500, 'the wreck is not between Station 9 and the border above Hollin');
+  assert(IC.placeOf(W, 'hollin')._ref === W.cities.find(c => c.name === 'Hollin') && IC.placeOf(W, 'oldfield')._ref.id === 'ap_cap' && IC.placeOf(W, 'tarn_pass')._ref === W.crossings.find(x => x.name === 'Tarn Pass') && IC.placeOf(W, 'eldan_ab')._ref.kind === 'airbase' && IC.placeOf(W, 'senitz')._ref.kind === 'ftown', 'a place does not resolve to its thing');
+  for (const p of A.places) if (p.of) assert(IC.placeOf(W, p.id)._ref, `place ${p.id} stands for ${p.of}, which is not there`);
+  assert(IC.placeOf(W, 'nowhere') === null && IC.placesOf(W, 'ecapital').length === 2, 'the registry answers for a place that is not there');
   // the same map every time
   const sig = IC.worldBase(W).sig, again = IC.worldBase(IC.generate(0, IC.CAREER_MAP)).sig;
   assert(sig === again, 'the map is not the same world twice');
@@ -856,6 +875,17 @@ test('map: a Career on the map starts with the capital named, runs, saves, loads
   assert(JSON.stringify(IC.saveGame(S2).root) === JSON.stringify(save.root), 'saving the loaded game gives a different save');
   const Q = IC.newGame({ seed: 4242, mode: 'campaign', hour: 6 });
   assert(!Q.world.map && Q.world.cities.length === 60 && Q.world.cities[0].name === world(4242).cities[0].name, 'a seed\'s region changed');
+  // (brief 74) the places resolve in a game too, a seeded world has none, and the enemy commander on the map raids
+  // from the drawn sites: a limited strike on the capital flies and ends with a result
+  assert(IC.placeOf(S2, 'hollin')._ref === S2.world.cities.find(c => c.name === 'Hollin') && IC.placeOf(S2, 'eldan_ab')._ref === S2.esites.find(s => s.name === 'Eldan Air Base') && IC.placeOf(Q, 'hollin') === null, 'a place does not resolve in the game');
+  for (const s of S2.esites) s.dormant = false;
+  S2.ad.roe = 'free'; S2.camp.sched = []; S2.enemy.war = true; S2.enemy.warT = S2.time; S2.enemy.allow = null;
+  const cap = IC.cap(S2), from = new Set();
+  let res = null; IC.on((S3, type, d) => { if (S3 !== S2) return; if (type === 'raidResult') res = d.res; });
+  IC.enemyForceOp(S2, 'strike', { x: cap.x, y: cap.y, ref: cap, name: cap.name }, { kind: 'limited', T: 2400 });
+  for (let i = 0; i < 4 * 3600 * 4 && !res; i++) { IC.step(S2, 0.25); if (i % 40 === 0) for (const t of S2.threats) if (t.origin) from.add(t.origin); }
+  assert(res && res.n > 0, 'the raid on the map did not fly or did not end');
+  assert(from.size && [...from].every(o => o.drawn && IC.MAPS[IC.CAREER_MAP].esites.some(e => e.name === o.name)), `the raid did not come from the drawn sites (${[...from].map(o => o.name).join(', ') || 'no origin'})`);
 }, true);   // its own worker: a Career, its save and the loaded copy do not fit beside the world group
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT

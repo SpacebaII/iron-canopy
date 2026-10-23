@@ -35,6 +35,9 @@ function rebuild() {
 /* ---------- drawing ---------- */
 const STYLE_COL = { rocky: '#e8e4dc', old: '#b89a6a', volcano: '#ff8a5a' };
 const KIND_COL = { airport: '#7fd0ff', airbase: '#ff7f7f', factory: '#ffd27f', power: '#c8ff7f' };
+// the enemy's side (brief 74): its towns, its sites by kind and the roads between them
+const ESITE_COL = { airbase: '#ff6b6b', drone: '#ffa66b', cm: '#ff6bd0', bm: '#ff4d4d', mrbm: '#c04040', hgv: '#c04080', rkt: '#ff9966', staging: '#e0a040', supply: '#d0c080' };
+const abroadOf = v => (A.esites || []).find(s => s.name === v) || (A.foreign || []).find(f => f.name === v) || null;
 function resize() { cv.width = cv.clientWidth * devicePixelRatio; cv.height = cv.clientHeight * devicePixelRatio; draw(); }
 function placeOf(v) {
   if (Array.isArray(v)) return { x: v[0], y: v[1] };
@@ -92,7 +95,10 @@ function draw() {
   if (show.villages) for (const v of A.villages) { handle(v.x, v.y, '#dcb', 2.5, isSel('village', v)); label(v.name, v.x, v.y, '#dcb', 10); }
   for (const i of A.infra) { handle(i.x, i.y, KIND_COL[i.kind] || '#ccc', 3.5, isSel('site', i)); label((i.id || i.kind) + (i.name ? ' ' + i.name : i.city ? ' ' + i.city : ''), i.x, i.y, KIND_COL[i.kind] || '#ccc', 10); }
   for (const x of A.crossings) { const a = x.deg * Math.PI / 180, p = W ? W.borderPt(a) : { x: A.centre[0] + Math.cos(a) * 14000, y: A.centre[1] + Math.sin(a) * 14000 }; handle(p.x, p.y, '#f8f', 4, isSel('crossing', x)); label(x.name + ' ' + x.deg + '°', p.x, p.y, '#f8f', 10); }
-  for (const p of A.places) { const [x, y] = toS(p.x, p.y); g.fillStyle = isSel('place', p) ? '#fff' : '#7fe'; g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); label(p.id, p.x, p.y, '#7fe', 10); }
+  for (const r of A.eroads || []) { const a = abroadOf(r.via[0]), b = abroadOf(r.via[1]); if (a && b) line([[a.x, a.y], [b.x, b.y]], isSel('eroad', r) ? '#fff' : 'rgba(255,120,120,0.6)', 1.2, [6, 4]); }
+  for (const f of A.foreign || []) { const [x, y] = toS(f.x, f.y), r = Math.max(3, (45 + Math.sqrt(f.pop || 100) * 1.7) * z); g.fillStyle = isSel('ftown', f) ? '#fff' : 'rgba(255,140,140,0.7)'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); if (show.labels) label(`${f.name} (${f.k})`, f.x + r / z, f.y, '#f99', 10); }
+  for (const s of A.esites || []) { handle(s.x, s.y, ESITE_COL[s.kind] || '#f88', 3.5, isSel('esite', s)); label(s.name || s.kind, s.x, s.y, ESITE_COL[s.kind] || '#f88', 10); }
+  for (const p of A.places) { const [x, y] = toS(p.x, p.y); g.fillStyle = isSel('place', p) ? '#fff' : p.abroad ? '#fcb' : '#7fe'; g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); label(p.id, p.x, p.y, '#7fe', 10); }
   // the map's frame and scale
   g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1; { const [x, y] = toS(0, 0); g.strokeRect(x, y, IC.WW * cam.s, IC.WH * cam.s); }
   g.fillStyle = '#ddd'; g.font = '11px sans-serif'; g.fillText(`${(100 / cam.s / 10).toFixed(0)} km = 100 px`, 10, 16);
@@ -104,6 +110,8 @@ function* handles() {
   for (const v of A.villages) yield { kind: 'village', obj: v, x: v.x, y: v.y, r: 6 };
   for (const i of A.infra) yield { kind: 'site', obj: i, x: i.x, y: i.y, r: 6 };
   for (const p of A.places) yield { kind: 'place', obj: p, x: p.x, y: p.y, r: 7 };
+  for (const f of A.foreign || []) yield { kind: 'ftown', obj: f, x: f.x, y: f.y, r: 7 };
+  for (const s of A.esites || []) yield { kind: 'esite', obj: s, x: s.x, y: s.y, r: 6 };
   for (const l of A.lakes) yield { kind: 'lake', obj: l, x: l.x, y: l.y, r: 6 };
   for (const j of A.junctions || []) yield { kind: 'junction', obj: j, x: j.x, y: j.y, r: 6 };
   if (A.depot) yield { kind: 'depot', obj: A.depot, x: A.depot[0], y: A.depot[1], r: 6 };
@@ -141,7 +149,7 @@ function showSel() {
   $('apply').onclick = () => { if (sel.kind === 'border') return; try { const v = JSON.parse($('selText').value); for (const k of Object.keys(o)) delete o[k]; Object.assign(o, v); draw(); } catch (e) { alert('Not valid JSON: ' + e.message); } };
   $('del').onclick = () => { del(); };
 }
-function listOf(kind) { return { city: A.cities, village: A.villages, site: A.infra, place: A.places, lake: A.lakes, river: A.rivers, ridge: A.ridges, road: A.roads, rail: A.rails, plateau: A.plateaus, crossing: A.crossings, sec: A.secs, sea: A.seas, junction: A.junctions }[kind]; }
+function listOf(kind) { return { city: A.cities, village: A.villages, site: A.infra, place: A.places, lake: A.lakes, river: A.rivers, ridge: A.ridges, road: A.roads, rail: A.rails, plateau: A.plateaus, crossing: A.crossings, sec: A.secs, sea: A.seas, junction: A.junctions, ftown: A.foreign, esite: A.esites, eroad: A.eroads }[kind]; }
 function del() {
   if (!sel) return;
   const pts = sel.kind === 'border' ? A.border : sel.kind === 'ridge' ? sel.obj.pts : sel.kind === 'river' ? (sel.obj.via || sel.obj.pts) : sel.kind === 'road' || sel.kind === 'rail' ? sel.obj.via : sel.kind === 'plateau' || sel.kind === 'sea' ? sel.obj.poly : null;
@@ -163,7 +171,7 @@ cv.addEventListener('mousemove', e => {
   const px = e.offsetX, py = e.offsetY;
   if (drag.pan) { cam.x = drag.cx - (px - drag.px) / cam.s; cam.y = drag.cy - (py - drag.py) / cam.s; draw(); return; }
   const [wx, wy] = toW(px, py), x = Math.round(wx - drag.ox), y = Math.round(wy - drag.oy), h = drag.h;
-  if (h.kind === 'city' || h.kind === 'village' || h.kind === 'site' || h.kind === 'place' || h.kind === 'lake' || h.kind === 'junction') { h.obj.x = x; h.obj.y = y; }
+  if (h.kind === 'city' || h.kind === 'village' || h.kind === 'site' || h.kind === 'place' || h.kind === 'lake' || h.kind === 'junction' || h.kind === 'ftown' || h.kind === 'esite') { h.obj.x = x; h.obj.y = y; }
   else if (h.kind === 'depot') { h.obj[0] = x; h.obj[1] = y; }
   else if (h.kind === 'river') { (h.obj.via || h.obj.pts)[h.i] = [x, y]; }
   else if (h.kind === 'ridge') h.obj.pts[h.i] = [x, y];
@@ -199,6 +207,9 @@ window.addEventListener('keydown', e => {
   else if (k === 'c') { const name = prompt('City name'); if (name) add('city', { name, x, y, pop: 100, region: 'valley', style: 'us', tpl: 'chi' }); }
   else if (k === 'v') { const name = prompt('Village name'); if (name) add('village', { name, x, y, pop: 20 }); }
   else if (k === 'p') { const id = prompt('Place id'); if (id) add('place', { id, name: id, role: '', region: '', x, y }); }
+  else if (k === 'f') { const name = prompt('Foreign town name (the country is the one under the cursor)'); if (name) { A.foreign = A.foreign || []; add('ftown', { k: (W && W.countryAt(x, y)) || 'A', name, x, y, pop: 150 }); } }
+  else if (k === 'e') { const kind = prompt('Enemy site kind: airbase, drone, cm, bm, mrbm, hgv, rkt, staging, supply (taken in the generator\'s order for that country)'); if (kind) { A.esites = A.esites || []; add('esite', { k: (W && W.countryAt(x, y)) || 'A', kind, name: '', x, y }); } }
+  else if (k === 'g') { const via = prompt('Enemy road: two site or town names, comma separated'); const v = via && via.split(',').map(t => t.trim()); if (v && v.length === 2 && abroadOf(v[0]) && abroadOf(v[1])) { A.eroads = A.eroads || []; add('eroad', { k: abroadOf(v[0]).k, via: v }); } }
   else if (k === 's') { const kind = prompt('Site kind: airport, airbase, factory, power'); if (kind) add('site', { kind, name: '', x, y }); }
   else if (k === 'r') { const name = prompt('River name'); if (name) add('river', { name, via: [[x, y]] }); }
   else if (k === 'm') { const name = prompt('Motorway name'); if (name) add('road', { cls: 'hw', name, via: [[x, y]] }); }
@@ -271,6 +282,15 @@ ${list(A.rails || [], r => `    ${J(r)}`)}
   ],
   places: [
 ${list(A.places || [], p => `    ${J(p)}`)}
+  ],
+  foreign: [
+${list(A.foreign || [], f => `    ${J(f)}`)}
+  ],
+  esites: [
+${list(A.esites || [], s => `    ${J(s)}`)}
+  ],
+  eroads: [
+${list(A.eroads || [], r => `    ${J(r)}`)}
   ]
 };
 })(window.IC);
