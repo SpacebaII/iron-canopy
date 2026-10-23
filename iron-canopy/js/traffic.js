@@ -911,6 +911,18 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
   return n;
 };
 /* the links on a grid of 64-unit cells, by their boxes, made once for a set of links (again when the roads change) */
+/* the links whose cells meet a box, each once, in the order of T.links */
+function linksNear(T, b) {
+  const LG = linkGrid(T), stamp = ++LG.stamp, ix = [], out = LG.out || (LG.out = []);
+  out.length = 0;
+  for (let cj = Math.floor(b.y0 / LG.C); cj <= Math.floor(b.y1 / LG.C); cj++) for (let ci = Math.floor(b.x0 / LG.C); ci <= Math.floor(b.x1 / LG.C); ci++) {
+    const cell = LG.m.get(ci * 65536 + cj); if (!cell) continue;
+    for (let q = 0; q < cell.length; q++) { const li = cell[q]; if (LG.seen[li] !== stamp) { LG.seen[li] = stamp; ix.push(li); } }
+  }
+  ix.sort((p, q) => p - q);
+  for (const li of ix) out.push(T.links[li]);
+  return out;
+}
 function linkGrid(T) {
   if (T._lg && T._lg.links === T.links) return T._lg;
   const C = 64, m = new Map();
@@ -1025,7 +1037,7 @@ IC.trafficAgents = function (S, view, dt, keep) {
   };
   const fill = (k0, k1, old) => {
     const want = []; let E = 0;
-    for (const L of T.links) {
+    for (const L of linksNear(T, box)) {
       const lk = L.l, bb = lk.bb;
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
@@ -1086,7 +1098,7 @@ IC.trafficAgents = function (S, view, dt, keep) {
   A.et = (A.et || 0) + dt;
   if (A.et > 2) {
     const et = A.et; A.et = 0;
-    for (const L of T.links) {
+    for (const L of linksNear(T, box)) {
       const lk = L.l, bb = lk.bb;
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       const pa = lk.pts[0], pb = lk.pts[lk.pts.length - 1], ia = inBox(pa.x, pa.y, box), ib = inBox(pb.x, pb.y, box);

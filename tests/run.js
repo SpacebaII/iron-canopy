@@ -6245,7 +6245,9 @@ if (process.env.IC_TEST_WORKER) {
       res.push(m); show(m);
     };
     const spawn = () => {
-      const w = cp.fork(__filename, args, { env: Object.assign({}, process.env, { IC_TEST_WORKER: '1' }) });
+      // the world group keeps a generated world per seed: give each worker its share of the memory, not Node's default
+      const heap = Math.max(2048, Math.min(6144, Math.floor(os.totalmem() / jobs / 1.15e6)));
+      const w = cp.fork(__filename, args, { env: Object.assign({}, process.env, { IC_TEST_WORKER: '1' }), execArgv: process.execArgv.concat(`--max-old-space-size=${heap}`) });
       let cur = null;
       live++;
       const next = () => { cur = units.shift(); if (cur) w.send({ is: cur.map(t => t.i) }); else w.disconnect(); };
