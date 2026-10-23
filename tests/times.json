@@ -220,5 +220,7 @@
  "sandbox fixes: the SEAD aircraft can be picked, the panel says what a raid sends, and a click on a unit targets it": 5.4,
  "sandbox fixes: a raid the enemy plans counts in the tally, and Clear and Repair say what they did": 28.2,
  "sandbox fixes: a guided bomb is recorded at its real speed, and a miss in open ground can be replayed": 10.6,
- "sandbox fixes: a salvo pauses the game once, and a ready depot stops saying it is setting up": 15.3
+ "sandbox fixes: a salvo pauses the game once, and a ready depot stops saying it is setting up": 15.3,
+ "save: a save loads in another browser, whose sin, cos, pow and sort differ from this one": 36.3,
+ "fixed sums: sin, cos, atan2, exp, log, pow and hypot are fdlibm's, to the last bit where it counts": 0.4
 }

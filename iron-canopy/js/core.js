@@ -93,6 +93,8 @@ IC.makeRng = function (seed) {
   f.int = (lo, hi) => Math.floor(lo + f() * (hi - lo + 1));
   f.pick = arr => arr[Math.floor(f() * arr.length)];
   f.gauss = () => { let s = 0; for (let i = 0; i < 4; i++) s += f(); return (s - 2) / 0.58; };
+  // in place, the same on every browser (sort(() => R() - 0.5) is not: each engine's sort asks in its own order)
+  f.shuffle = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(f() * (i + 1)), t = arr[i]; arr[i] = arr[j]; arr[j] = t; } return arr; };
   return f;
 };
 
