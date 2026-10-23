@@ -608,6 +608,7 @@ function* worldSteps(seed) {
   }
   roadsOverMotorways(W);
   roundAvenues(W);
+  roundMotorwayBends(W);
   // the roads into the cities have become their avenues (cities.js): number the roads again, measure them
   W.edges.forEach((e, i) => { e.id = 'e' + i; e.len = 0; for (let k = 1; k < e.pts.length; k++) e.len += U.dist(e.pts[k - 1], e.pts[k]); });
   for (const k in W.nodes) W.nodes[k].deg = 0;
@@ -1517,6 +1518,44 @@ function roundAvenues(W) {
     }
     out.push(P[n - 1]);
     e.pts = out;
+  }
+}
+/* where a motorway simply turns into another piece of motorway (the end of a town's bypass, where the motorway
+   coming in turns onto it at the gate) the corner is a curve of up to 800 m radius, its node moved to the middle;
+   where other roads meet it on the bend, the curve passes through the node */
+function roundMotorwayBends(W) {
+  const at = {};
+  for (const e of W.edges) for (const k of [e.a, e.b]) (at[k] = at[k] || []).push(e);
+  for (const k in at) {
+    const n = W.nodes[k], H = at[k].filter(e => e.cls === 'hw' && !e.city), L = H.length === 2 && H[0] !== H[1] ? H : null;
+    if (!L || !n || !n.jct || L.some(e => e.pts.length < 2 || e.abroad !== L[0].abroad)) continue;
+    const away = L.map(e => e.a === k ? e.pts : e.pts.slice().reverse());
+    const u = away.map(P => { const l = U.dist(P[0], P[1]) || 1; return { x: (P[1].x - P[0].x) / l, y: (P[1].y - P[0].y) / l, l }; });
+    const turn = Math.PI - Math.acos(U.clamp(u[0].x * u[1].x + u[0].y * u[1].y, -1, 1));
+    if (turn < 0.3 || turn > 2.4) continue;
+    if (at[k].length > 2) {
+      // a junction on the bend: the motorway keeps its node (the other roads meet it there) and passes through it on
+      // a curve tangent to both pieces, along the bisector at the node, so the interchange is laid on a straight
+      const d = Math.min(4, u[0].l * 0.9, u[1].l * 0.9); if (d < 0.4) continue;
+      const tl = Math.hypot(u[1].x - u[0].x, u[1].y - u[0].y) || 1, t = { x: (u[1].x - u[0].x) / tl, y: (u[1].y - u[0].y) / tl }, kk = d * 0.45;
+      for (let q = 0; q < 2; q++) {
+        const sg = q ? 1 : -1, P0 = { x: n.x + u[q].x * d, y: n.y + u[q].y * d }, C1 = { x: P0.x - u[q].x * kk, y: P0.y - u[q].y * kk }, C2 = { x: n.x + sg * t.x * kk, y: n.y + sg * t.y * kk };
+        const arc = []; for (let j = 0; j <= 8; j++) { const s = j / 8, v = 1 - s; arc.push(j ? { x: v * v * v * n.x + 3 * v * v * s * C2.x + 3 * v * s * s * C1.x + s * s * s * P0.x, y: v * v * v * n.y + 3 * v * v * s * C2.y + 3 * v * s * s * C1.y + s * s * s * P0.y } : away[q][0]); }
+        const P = arc.concat(away[q].slice(1)), e = L[q];
+        e.pts = e.a === k ? P : P.reverse();
+      }
+      continue;
+    }
+    const d = Math.min(8 * Math.tan(turn / 2), u[0].l * 0.9, u[1].l * 0.9); if (d < 0.3) continue;
+    const p1 = { x: n.x + u[0].x * d, y: n.y + u[0].y * d }, p2 = { x: n.x + u[1].x * d, y: n.y + u[1].y * d };
+    const Q = t => ({ x: (1 - t) * (1 - t) * p1.x + 2 * t * (1 - t) * n.x + t * t * p2.x, y: (1 - t) * (1 - t) * p1.y + 2 * t * (1 - t) * n.y + t * t * p2.y });
+    const N = Math.max(3, Math.ceil(turn / 0.12)), mid = Q(0.5);
+    for (let q = 0; q < 2; q++) {
+      const arc = []; for (let j = 0; j <= N; j++) arc.push(Q(q ? 0.5 + 0.5 * j / N : 0.5 - 0.5 * j / N));
+      const P = arc.concat(away[q].slice(1)), e = L[q];
+      e.pts = e.a === k ? P : P.reverse();
+    }
+    n.x = mid.x; n.y = mid.y;
   }
 }
 /* a town's road that comes in where motorways meet (a gate on its bypass where a motorway ends on it) has no way on
