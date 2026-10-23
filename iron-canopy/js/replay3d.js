@@ -23,7 +23,10 @@ const CFG = IC.REPLAY = {
   trail: 60, maxLabels: 40, boxes: 6000,
   fxFiles: ['js/render3d-fx.js'],
   // the ground: tiles of T world units painted at px pixels, seg squares a side, ring tiles round the focus
-  levels: [{ T: 60, px: 512, seg: 20, ring: 2 }, { T: 240, px: 512, seg: 20, ring: 2 }, { T: 960, px: 256, seg: 16, ring: 2 }],
+  levels: [{ T: 60, px: 512, seg: 20, ring: 2 }, { T: 240, px: 512, seg: 20, ring: 2 }, { T: 960, px: 512, seg: 24, ring: 2 },
+    // (a last ring out to about 570 km: from high up the haze closes before the land ends. It is painted at the
+    // detail the next ring has and shrunk, so the two are the same colours) (terrain pass)
+    { T: 3840, px: 512, paint: 1024, seg: 32, ring: 1 }],
   near: 0.01, far: 60000, farPx: 3, lodPx: 70,
   // the live view: a small window following one thing, what it shows round it
   live: { w: 480, h: 300, reach: 500, keep: 650, maxMovers: 50, maxLabels: 14, fps: 30, lag: 0.55 }
@@ -391,14 +394,16 @@ function terrainGeom(v, reg, n, hk) {
 /* a tile of the ground: its job paints in slices; when the picture is done the tile goes on the ground whole */
 function tileJob(v, key, li, i, j) {
   const L = CFG.levels[li], reg = { x: (i + 0.5) * L.T, y: (j + 0.5) * L.T, R: L.T / 2 };
-  const J = paintJob(v, reg, L.px, li); Object.assign(J, { key, li, ms: 0 });
+  const J = paintJob(v, reg, L.paint || L.px, li); Object.assign(J, { key, li, ms: 0 });
   if (reg.x < -L.T || reg.y < -L.T || reg.x > IC.WW + L.T || reg.y > IC.WH + L.T) J.off = true;
   return J;
 }
 function finishTile(v, J) {
   const S = v.S, li = J.li, L = CFG.levels[li], g = new THREE.Group(); g.userData.li = li;
   if (!J.off) {
-    const mesh = new THREE.Mesh(terrainGeom(v, J.reg, L.seg, v.hk), tileMat(paintTex(v, J.cv), li));
+    let cv = J.cv;
+    if (cv.width > L.px) { cv = document.createElement('canvas'); cv.width = cv.height = L.px; cv.getContext('2d').drawImage(J.cv, 0, 0, L.px, L.px); }
+    const mesh = new THREE.Mesh(terrainGeom(v, J.reg, L.seg, v.hk), tileMat(paintTex(v, cv), li));
     mesh.renderOrder = -4 + li; g.add(mesh);
     if (li === 0 && !S.flat) { const b = buildings(v, J.reg, CFG.boxes); if (b) g.add(b); }   // buildings only close in
     if (FX()) FX().tile(v, g, J.reg, li);
@@ -428,7 +433,7 @@ function groundSync(v, fx, fy) {
     for (let i = i0 - L.ring; i <= i0 + L.ring; i++) for (let j = j0 - L.ring; j <= j0 + L.ring; j++) {
       const k = li + ':' + i + ':' + j; if (v.tiles.has(k)) continue;
       const d = Math.hypot(Math.max(0, Math.abs((i + 0.5) * L.T - fx) - L.T / 2), Math.max(0, Math.abs((j + 0.5) * L.T - fy) - L.T / 2));
-      need.push([k, li, i, j, li === 2 && Math.abs(i - i0) <= 1 && Math.abs(j - j0) <= 1 ? -1e9 + d : d + (2 - li) * 0.5]);
+      need.push([k, li, i, j, li >= 2 && Math.abs(i - i0) <= 1 && Math.abs(j - j0) <= 1 ? -1e9 * (CFG.levels.length - li) + d : d + (CFG.levels.length - 1 - li) * 0.5]);
     }
     for (const k of [...v.tiles.keys()]) { const [l, i, j] = k.split(':').map(Number); if (l === li && (Math.abs(i - i0) > L.ring + 1 || Math.abs(j - j0) > L.ring + 1)) dropTile(v, k); }
   });
@@ -1549,7 +1554,7 @@ function sceneBase(v) {
   v.sky.scale.setScalar(30000); v.sky.renderOrder = -10; v.sky.frustumCulled = false; scene.add(v.sky);
   // beyond the tiles, a wide plain in the haze (drawn only where no tile is)
   const bm = new THREE.MeshLambertMaterial({ color: gnd }); bm.stencilWrite = true; bm.stencilRef = 1; bm.stencilFunc = THREE.GreaterStencilFunc; bm.stencilZPass = THREE.ReplaceStencilOp;
-  v.beyond = new THREE.Mesh(discG(), bm); v.beyond.scale.set(20000, 1, 20000); v.beyond.position.y = -0.5; v.beyond.renderOrder = -1; scene.add(v.beyond);
+  v.beyond = new THREE.Mesh(discG(), bm); v.beyond.scale.set(20000, 1, 20000); v.beyond.position.y = -0.5; v.beyond.renderOrder = -0.5; scene.add(v.beyond);
   v.hemi = new THREE.HemisphereLight(light > 0.3 ? 0xcfe0f4 : 0x8aa0d0, 0x40382c, 0.9 * lk * dim); scene.add(v.hemi);
   v.sun = new THREE.DirectionalLight(0xfff0dc, 1.05 * lk * dim); v.sun.position.set(-600, 700, 360); scene.add(v.sun);
   v.static = new THREE.Group(); scene.add(v.static);

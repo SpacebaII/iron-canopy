@@ -23,6 +23,8 @@ const SCENES = {
   volcano: ['volcano', 0.5, 12], volcano2: ['volcano', 1.6, 12], old: ['old', 0.5, 12],
   plains: ['plains', 2.5, 12], palouse: ['palouse', 2.5, 12], wet: ['wet', 2.5, 12], valley: ['valley', 2.5, 12], south: ['south', 2.5, 12],
   plains8: ['plains', 8, 12], south8: ['south', 8, 12],
+  // either side of where the map changes level (0.42 and 0.16), to check the colours agree
+  lv0: ['peak', 0.4, 12], lv1: ['peak', 0.44, 12], lvb: ['peak', 0.15, 12], lvb0: ['peak', 0.17, 12],
   // on an authored map (the sea, its coast and the plateaus): skipped where there are none
   coast: ['coast', 0.5, 12], coast3: ['coast', 3, 12], coast12: ['coast', 12, 12], plateau: ['plateau', 0.25, 12], plateau1: ['plateau', 1, 12]
 };

@@ -36,7 +36,7 @@ function bare(h, sl, x, y, out, e, vt) {
   // (a volcano's glaciers come further down: it stands alone in the weather, and its cone is all the same slope)
   const sn = U.clamp((h - SNOWLINE + 0.22 * (vt || 0) + (n - 0.5) * 0.14) / 0.02, 0, 1) * (1 - U.clamp((sl - 0.7) / 0.4, 0, 1) * 0.8);
   if (sn > 0) c = mix(c, SNOW, sn);
-  if (out) out.a = Math.max(rk, sc, sn);
+  if (out) { out.a = Math.max(rk, sc, sn); out.rk = rk; out.sc = sc; out.sn = sn; }
   return c;
 }
 /* crops and grass, with how common each is: cereal, young crop, ripe wheat, ploughed, pasture, hay, rapeseed, maize, stubble */
@@ -70,6 +70,15 @@ const BIOME_CROWN = [
 ];
 const BIOME_FIELD = BIOME_W.map(W => { const t = W.reduce((a, b) => a + b, 0); return [0, 1, 2].map(k => W.reduce((a, w, i) => a + w * FIELDS[i][k], 0) / t); });
 const biomeAt = (W, x, y) => W.biome ? W.biome(x, y) : 3;
+/* the land abroad, greyer and darker than ours (the hostile side a little red), so the border reads from far out;
+   rock and snow keep most of their colour, as the mountains run on across it */
+function abroad(W, c, k, rock) {
+  let r = c[0], g = c[1], b = c[2];
+  const lum = 0.3 * r + 0.59 * g + 0.11 * b, f = 0.5 - 0.2 * rock, dk = 0.74 + 0.12 * rock, ht = 1 - rock;
+  r = (r + (lum - r) * f) * dk; g = (g + (lum - g) * f) * dk; b = (b + (lum - b) * f) * dk;
+  if (W.side[k] === 'hostile') { r *= 1 + 0.12 * ht; g *= 1 - 0.08 * ht; b *= 1 - 0.1 * ht; }
+  return [r, g, b];
+}
 function cropIn(b, h) {
   const C = BIOME_CUM[b];
   for (let i = 0; i < C.length; i++) if (h < C[i]) return i;
@@ -175,21 +184,19 @@ IC.buildTerrain = function (W) {
       // damp ground along the rivers is greener
       const rd = W.riverDist(wx, wy); if (rd < 40) c = mix(c, [70, 98, 60], 0.35 * (1 - rd / 40));
       if (sea) { const sh = U.clamp((h + 0.38) / 0.3, 0, 1); c = mix([22, 48, 68], [58, 108, 116], sh * sh); k = 'H'; }
-      const fw = sea ? 0 : W.farmAt(wx, wy) * 0.8 * (W.volcAt ? 1 - U.clamp(W.volcAt(wx, wy) * 4, 0, 1) : 1);
+      // (as much of the ground as the tiles' fields cover: a plot is kept with odds 2.4 × farmland + 0.3, in blocks
+      // that are at least 12% farmland, and drawn at 0.6 to 0.9 alpha; the old 0.8 × farmland left the far picture green
+      // where the tiles were gold)
+      const fa = sea ? 0 : W.farmAt(wx, wy), fw = U.clamp((fa - 0.1) / 0.06, 0, 1) * Math.min(1, fa * 2.4 + 0.3) * 0.75 * (W.volcAt ? 1 - U.clamp(W.volcAt(wx, wy) * 4, 0, 1) : 1);
       if (fw > 0.02) {
         // (a pixel here is 4 km, some six farm blocks: their region's crops on average, a little of one block's)
         const i = Math.floor(wx / FB), j = Math.floor(wy / FB), bc = blockCrops(W, i, j, wx, wy);
-        c = mix(c, mix(BIOME_FIELD[bi], FIELDS[bc[0]], 0.25), fw * (0.6 + 0.2 * U.hash(i + 5, j * 3)));
+        c = mix(c, mix(BIOME_FIELD[bi], FIELDS[bc[0]], 0.25), fw * (0.85 + 0.15 * U.hash(i + 5, j * 3)));
       }
       const fo = sea ? -1 : forestOf(x, y) - tl(wx, wy) - IC.FOREST_T;
       if (fo > -0.03) c = mix(c, mix(BIOME_WOOD[bi], [50, 74, 46], U.vnoise(wx / 7, wy / 7) > 0.5 ? 0 : 0.3), U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
-      let r = c[0], g = c[1], b = c[2];
-      if (k !== 'H') {
-        // (rock and snow keep most of their colour over the border: the mountains run on across it)
-        const lum = 0.3 * r + 0.59 * g + 0.11 * b, f = 0.5 - 0.2 * rock, dk = 0.74 + 0.12 * rock, ht = 1 - rock;
-        r = (r + (lum - r) * f) * dk; g = (g + (lum - g) * f) * dk; b = (b + (lum - b) * f) * dk;
-        if (W.side[k] === 'hostile') { r *= 1 + 0.12 * ht; g *= 1 - 0.08 * ht; b *= 1 - 0.1 * ht; }
-      }
+      if (k !== 'H') c = abroad(W, c, k, rock);
+      const r = c[0], g = c[1], b = c[2];
       const n = (hsh - 0.5) * 5, i4 = (y * BW + x) * 4;
       ad[i4] = r + n; ad[i4 + 1] = g + n; ad[i4 + 2] = b + n; ad[i4 + 3] = 255;
       // the hillshade for the tiles: shadow (multiplied: white leaves the colour alone) and light (screened: black
@@ -305,16 +312,19 @@ IC.aptSig = S => IC.bases(S).map(b => b.parts ? b.parts.filter(p => p.built).len
 /* fields: each farm block cut into strips and plots of different crops, margins between them, hedges round the block */
 function fields(g, T, lod, x0, y0, x1, y1) {
   const W = T.W, i0 = Math.floor(x0 / FB) - 1, i1 = Math.ceil(x1 / FB), j0 = Math.floor(y0 / FB) - 1, j1 = Math.ceil(y1 / FB);
-  const byCol = FIELDS.map(() => []), furrows = [], hedges = [], tracks = [], htrees = [], pivots = [];
+  const byCol = new Map(), furrows = [], hedges = [], tracks = [], htrees = [], pivots = [];
+  // (terrain pass) abroad the crops are drawn in the far picture's greyer colours, so the border does not vanish
+  // where the map changes level
+  const fcol = (k, ab) => ab ? (FCOL[ab + k] || (FCOL[ab + k] = abroad(W, FIELDS[k], ab, 0).map(Math.round))) : FIELDS[k];
   const inset = [0.35, 0.12, 0.06, 0.05][lod - 1];
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const c00 = fbCorner(i, j), c10 = fbCorner(i + 1, j), c11 = fbCorner(i + 1, j + 1), c01 = fbCorner(i, j + 1);
     const cx = (c00[0] + c10[0] + c11[0] + c01[0]) / 4, cy = (c00[1] + c10[1] + c11[1] + c01[1]) / 4;
     const fw = W.farmAt(cx, cy);
     if (fw < 0.12 || W.volcAt && W.volcAt(cx, cy) > 0.2) continue;   // (nobody farms a volcano's slopes)
-    const hb = U.hash(i * 13 + 5, j * 29 + 1), bc = blockCrops(W, i, j, cx, cy);
+    const hb = U.hash(i * 13 + 5, j * 29 + 1), bc = blockCrops(W, i, j, cx, cy), ab = W.inHome(cx, cy) ? '' : W.countryAt(cx, cy);
     // on the high plains many blocks are one irrigation circle, a disc of green in the dry corners of its square
-    if (bc[2] === 0 && hb < 0.32 && fw > 0.4 && W.slopeAt(cx, cy) < 0.03 && !(T.fdc(cx, cy) > IC.FOREST_T)) { pivots.push(cx, cy, FB * (0.38 + 0.08 * U.hash(i, j + 3)), hb); continue; }
+    if (bc[2] === 0 && hb < 0.32 && fw > 0.4 && W.slopeAt(cx, cy) < 0.03 && !(T.fdc(cx, cy) > IC.FOREST_T)) { pivots.push([cx, cy, FB * (0.38 + 0.08 * U.hash(i, j + 3)), hb, ab]); continue; }
     const th = W.fieldAng(cx, cy) + (hb - 0.5) * 0.14, ca = Math.cos(th), sa = Math.sin(th);
     const big = bc[2] < 2 ? 2 : 1, sw = (2.2 + U.hash(i, j + 77) * 2.6) * big, R = FB * 0.9;   // (bigger fields on the plains)
     const list = [];
@@ -339,10 +349,10 @@ function fields(g, T, lod, x0, y0, x1, y1) {
       g.save(); quad(); g.clip();
       const cols = FIELDS.map(() => []);
       for (const f of list) rect(cols[f[4]], f[0], f[1], f[2], f[3]);
-      cols.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.9)); });
+      cols.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(fcol(k, ab), 0.9)); });
       if (lod >= 3) for (const f of list) if (f[4] === 0 || f[4] === 2 || f[4] === 3 || f[4] === 7) for (let q = 0.18; q < f[2]; q += 0.24) { const u = f[0] + q; furrows.push(cx + u * ca - f[1] * sa, cy + u * sa + f[1] * ca, cx + u * ca - (f[1] + f[3]) * sa, cy + u * sa + (f[1] + f[3]) * ca); }
       g.restore();
-    } else for (const f of list) rect(byCol[f[4]], f[0], f[1], f[2], f[3]);
+    } else for (const f of list) { const key = ab + f[4]; if (!byCol.has(key)) byCol.set(key, { c: fcol(f[4], ab), pl: [] }); rect(byCol.get(key).pl, f[0], f[1], f[2], f[3]); }
     // hedges on most block edges, a farm track on some
     const edges = [[c00, c10, i * 7 + 1, j], [c10, c11, i + 1, j * 5 + 3], [c11, c01, i * 7 + 1, j + 1], [c01, c00, i, j * 5 + 3]];
     for (const [p, q, a, b] of edges) {
@@ -351,13 +361,12 @@ function fields(g, T, lod, x0, y0, x1, y1) {
       if (lod >= 3 && e >= 0.2 && e < 0.68) for (let t = 0.05; t < 1; t += 0.07 + U.hash(a + Math.round(t * 99), b) * 0.08) if (U.hash(a * 5 + Math.round(t * 100), b * 3) < 0.55) htrees.push(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t);
     }
   }
-  if (lod === 1) byCol.forEach((pl, k) => { if (pl.length) polyFill(g, pl, colour(FIELDS[k], 0.6)); });
-  for (let k = 0; k < pivots.length; k += 4) {
-    const x = pivots[k], y = pivots[k + 1], r = pivots[k + 2], hb = pivots[k + 3];
+  if (lod === 1) for (const b of byCol.values()) polyFill(g, b.pl, colour(b.c, 0.6));
+  for (const [x, y, r, hb, ab] of pivots) {
     // the circle's crop (a few lie fallow or are cut, in a sector), the arm's track, the pivot at the middle
-    g.fillStyle = colour(FIELDS[hb < 0.24 ? 12 : hb < 0.28 ? 7 : 8], lod === 1 ? 0.7 : 0.95);
+    g.fillStyle = colour(fcol(hb < 0.24 ? 12 : hb < 0.28 ? 7 : 8, ab), lod === 1 ? 0.7 : 0.95);
     g.beginPath(); g.moveTo(x + r, y); g.arc(x, y, r, 0, 7); g.fill();
-    if (hb > 0.15 && hb < 0.24) { const a = hb * 40; g.fillStyle = colour(FIELDS[11], 0.9); g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, a, a + 1.6 + hb * 3); g.closePath(); g.fill(); }
+    if (hb > 0.15 && hb < 0.24) { const a = hb * 40; g.fillStyle = colour(fcol(11, ab), 0.9); g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, a, a + 1.6 + hb * 3); g.closePath(); g.fill(); }
     if (lod >= 2) {
       g.strokeStyle = 'rgba(70,90,50,0.35)'; g.lineWidth = lod >= 3 ? 0.03 : 0.06;
       for (let q = r * 0.2; q < r; q += r * 0.2) { g.beginPath(); g.moveTo(x + q, y); g.arc(x, y, q, 0, 7); g.stroke(); }
@@ -373,6 +382,7 @@ function fields(g, T, lod, x0, y0, x1, y1) {
   }
 }
 const colour = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const FCOL = {};   // crop colours abroad, by country and crop
 /* quads, filled in batches: one huge path is far slower to fill than several small ones */
 function polyFill(g, pl, col) {
   g.fillStyle = col;
@@ -931,7 +941,7 @@ function relief(T, lod, x0, y0, size, px) {
     H[j * Q + i] = h < 0 && W.inSea && W.inSea(x, y) ? 0 : h;   // (the sea is level, whatever its bed does)
   }
   const im = () => { const c = mk(M, M), g = c.getContext('2d'); return { c, g, d: g.createImageData(M, M) }; };
-  const D = im(), L = im(), R = im(), K = lod ? null : im(), o = { a: 0 }, k = RLX[lod];
+  const D = im(), L = im(), R = im(), K = lod ? null : im(), C = lod >= 3 ? im() : null, o = { a: 0 }, k = RLX[lod];
   let rocky = false;
   for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
     const q = (j + 1) * Q + i + 1, h = H[q], gx = (H[q + 1] - H[q - 1]) / (2 * e), gy = (H[q + Q] - H[q - Q]) / (2 * e), p = (j * M + i) * 4;
@@ -941,16 +951,52 @@ function relief(T, lod, x0, y0, size, px) {
     if (K) K.d.data[p + 3] = U.clamp((h - 0.42) / 0.15, 0, 1) * 255;
     if (h < 0.5) continue;
     // up in the hills this replaces the base's ground (smeared over 4 km a pixel) outright, rock, scree and snow sharp
-    const wx = x0 + (i - 0.5) * e, wy = y0 + (j - 0.5) * e, c = bare(h, Math.hypot(gx, gy) * 20, wx, wy, o, e, W.volcAt ? W.volcAt(wx, wy) : 0);
+    const wx = x0 + (i - 0.5) * e, wy = y0 + (j - 0.5) * e;
+    let c = bare(h, Math.hypot(gx, gy) * 20, wx, wy, o, e, W.volcAt ? W.volcAt(wx, wy) : 0);
     const a = lod ? Math.max(o.a, U.clamp((h - 0.5) / 0.15, 0, 1)) : o.a;   // (level 0 keeps the far picture's woods and grass)
     if (a <= 0.02) continue;
+    // (the high ground in the colours the far picture gives it: its region's grass below the bare heights, and greyer
+    // abroad; drawn bare it turned gold and the border vanished where the map changes level)
+    if (lod) {
+      c = mix(c, BIOME_GROUND[biomeAt(W, wx, wy)], U.clamp((0.75 - h) / 0.3, 0, 1) * (1 - o.a) * 0.7);
+      if (!W.inHome(wx, wy)) c = abroad(W, c, W.countryAt(wx, wy), o.a);
+    }
     rocky = true; R.d.data[p] = c[0]; R.d.data[p + 1] = c[1]; R.d.data[p + 2] = c[2]; R.d.data[p + 3] = a * 255;
+    if (C) C.d.data[p + 3] = a * (1 - o.sn) * 255;
   }
   D.g.putImageData(D.d, 0, 0); L.g.putImageData(L.d, 0, 0);
   if (rocky) R.g.putImageData(R.d, 0, 0);
   if (K) K.g.putImageData(K.d, 0, 0);
   const draw = (g, c) => g.drawImage(c, 1, 1, N, N, 0, 0, px, px);
-  return { draw, shadeD: D.c, shadeL: L.c, rock: rocky ? R.c : null, hills: K && K.c };
+  return { draw, shadeD: D.c, shadeL: L.c, rock: rocky ? R.c : null, hills: K && K.c, crag: C && C.d.data, H, Q, M, e };
+}
+/* (terrain pass) bare rock close in, a pixel at a time: ledges where the rock's beds meet the slope, which follow the
+   contours (a dark step with a lit lip above it, every 25 m or so of height, broken where the beds are soft), and a
+   mottle of loose stone. The heights are the relief's own, between its samples, so the ledges run on from tile to tile */
+function rockDetail(g, rl, x0, y0, size, px) {
+  const { H, Q, M, e } = rl, cm = rl.crag, s = size / px, c = mk(px, px), cg = c.getContext('2d'), img = cg.createImageData(px, px), d = img.data;
+  let any = false;
+  for (let v = 0; v < px; v++) for (let u = 0; u < px; u++) {
+    const fx = (u + 0.5) * s / e, fy = (v + 0.5) * s / e;
+    const a = cm[((Math.min(M - 1, fy + 1 | 0)) * M + Math.min(M - 1, fx + 1 | 0)) * 4 + 3]; if (a < 6) continue;
+    const hx = fx + 1.5, hy = fy + 1.5, i = hx | 0, j = hy | 0, tx = hx - i, ty = hy - j, q = j * Q + i;
+    const h = (H[q] * (1 - tx) + H[q + 1] * tx) * (1 - ty) + (H[q + Q] * (1 - tx) + H[q + Q + 1] * tx) * ty;
+    const wx = x0 + (u + 0.5) * s, wy = y0 + (v + 0.5) * s;
+    const hw = h + (U.vnoise(wx / 1.6 + 13, wy / 1.6 + 7) - 0.5) * 0.02 + (U.vnoise(wx / 0.4, wy / 0.4) - 0.5) * 0.004;
+    // (beds show on the steep: on gentler rock a ledge would be a wide band)
+    const sl = Math.hypot(H[q + 1] - H[q], H[q + Q] - H[q]) / e * 20;
+    const b = hw / 0.0125, f = b - Math.floor(b), bed = U.clamp(U.vnoise(Math.floor(b) * 0.37 + wx / 3, wy / 3) * 2.2 - 0.7, 0, 1) * U.clamp((sl - 0.04) / 0.16, 0, 1);
+    const st = 0.5 + (U.vnoise(wx / 0.15 + 5, wy / 0.15 + 9) - 0.5) * (0.4 + 1.6 * U.vnoise(wx / 1.1 + 2, wy / 1.1 + 4)), k = a / 255;
+    const p = (v * px + u) * 4;
+    if (f < 0.16 && bed > 0) { d[p] = 34; d[p + 1] = 32; d[p + 2] = 30; d[p + 3] = 200 * bed * k * (1 - f / 0.16 * 0.5); }
+    else if (f < 0.26 && bed > 0) { d[p] = 236; d[p + 1] = 232; d[p + 2] = 222; d[p + 3] = 90 * bed * k; }
+    else if (st > 0.72) { d[p] = 206; d[p + 1] = 200; d[p + 2] = 188; d[p + 3] = (st - 0.72) * 240 * k; }
+    else if (st < 0.22) { d[p] = 40; d[p + 1] = 38; d[p + 2] = 36; d[p + 3] = (0.22 - st) * 320 * k; }
+    else continue;
+    any = true;
+  }
+  if (!any) return;
+  cg.putImageData(img, 0, 0); g.drawImage(c, 0, 0);
 }
 function paintTile(T, lod, tx, ty, S) {
   const L = LOD(lod), W = T.W;
@@ -985,6 +1031,8 @@ function paintTile(T, lod, tx, ty, S) {
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   const rl = relief(T, lod, x0, y0, L.size, px);
   if (rl.rock) rl.draw(g, rl.rock);
+  // (terrain pass) close in, the rock's own texture over the rock (not its snow): ledges along the contours
+  if (rl.rock && rl.crag && lod >= 3) rockDetail(g, rl, x0, y0, L.size, px);
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
   g.lineCap = 'round'; g.lineJoin = 'round';
   const m = [6, 2, 1, 0.5][lod - 1];

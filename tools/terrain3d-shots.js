@@ -1,6 +1,6 @@
 /* The mountains in the 3D view (terrain pass): the live view on the highest ground in our country, looked at from a few
    distances, Quick war on seed 4242 at mid-morning.
-     node tools/terrain3d-shots.js <tag> [--root=path/to/checkout]
+     node tools/terrain3d-shots.js <tag> [view ...] [--root=path/to/checkout]
    Saves shots/ter3d-<tag>-<view>.png. Needs Playwright and three.js on disk (npm i --no-save playwright three@0.160.0). */
 const path = require('path');
 const fs = require('fs');
@@ -9,9 +9,9 @@ const { open } = require('./film-lib');
 const args = process.argv.slice(2);
 const rootArg = args.find(a => a.startsWith('--root='));
 const root = rootArg ? path.resolve(rootArg.slice(7)) : path.resolve(__dirname, '..');
-const tag = (args.filter(a => !a.startsWith('--'))[0] || 'now').replace(/[^\w-]/g, '');
+const tag = (args.filter(a => !a.startsWith('--'))[0] || 'now').replace(/[^\w-]/g, ''), only = args.filter(a => !a.startsWith('--')).slice(1);
 // name: [yaw, pitch, distance in world units, offset of the centre from the peak towards our side]
-const VIEWS = { wide: [-0.6, 0.32, 900, 250], range: [-0.9, 0.22, 380, 120], close: [-1.2, 0.18, 140, 40] };
+const VIEWS = { high: [-0.6, 0.3, 2600, 250], wide: [-0.6, 0.32, 900, 250], range: [-0.9, 0.22, 380, 120], close: [-1.2, 0.18, 140, 40] };
 
 (async () => {
   const cam = await open({ w: 1440, h: 900, root });
@@ -42,6 +42,7 @@ const VIEWS = { wide: [-0.6, 0.32, 900, 250], range: [-0.9, 0.22, 380, 120], clo
   console.log(info);
   fs.mkdirSync(path.resolve(__dirname, '../shots'), { recursive: true });
   for (const [k, v] of Object.entries(VIEWS)) {
+    if (only.length && !only.includes(k)) continue;
     await cam.ev(async ([yaw, pitch, dist, off]) => {
       const L = LV, x = PK.x + PK.ux * off, y = PK.y + PK.uy * off;
       // the camera's yaw is measured so the view looks from our side towards the peak
@@ -50,12 +51,13 @@ const VIEWS = { wide: [-0.6, 0.32, 900, 250], range: [-0.9, 0.22, 380, 120], clo
       L.snap = true;
       // (until the ground round it is painted: this machine's software graphics take a while over each tile)
       await wait(3000);
-      for (let i = 0; i < 240 && (L.tileQ && L.tileQ.length || L.job); i++) await wait(500);
+      for (let i = 0; i < 600 && (L.tileQ && L.tileQ.length || L.job); i++) await wait(500);
       await wait(1500);
     }, v);
     const out = path.resolve(__dirname, `../shots/ter3d-${tag}-${k}.png`);
     await cam.shot(out);
-    console.log(`${k}: ${path.relative(process.cwd(), out)}`);
+    const tm = await cam.ev(() => `${[0, 1, 2, 3].map(l => [...LV.tiles.values()].filter(t => t.userData.li === l).length).join('/')} tiles by ring, queue ${LV.tileQ ? LV.tileQ.length : '-'}, ${LV.made.tile} made, ${Math.round(LV.tileMsSum || 0)} ms painting, slowest ${Math.round(LV.tileMsMax || 0)} ms`);
+    console.log(`${k}: ${path.relative(process.cwd(), out)}  (${tm})`);
   }
   if (cam.errors.length) console.log('page errors:\n  ' + cam.errors.join('\n  '));
   await cam.close();
