@@ -1582,6 +1582,9 @@ function buildNetwork(W, R, fbm, A) {
   // motorways pass villages by (a village on one would meet its local roads at grade)
   T.vil = new Uint8Array(N); for (const v of W.villages) if (v.home) T.vil[cellOf(v)] = 1;
   for (const g of W.garrisons.concat([W.depotPos])) T.vil[cellOf(g)] = 1;   // (nor through a garrison or the depot)
+  // (on a drawn map a motorway passes every town by, brief 72: a town's cell is never on its way)
+  const AR = A && A.roads || [];
+  if (AR.some(r => r.cls === 'hw')) for (const c of W.cities) T.vil[cellOf(c)] = 1;
   const road = (a, b, cls) => { const p = search(T, cellP(a), cellP(b), HOW[cls]); if (p) lay(T, p, RANK[cls]); return !!p; };
   /* the map's roads (authored): each a run of places by name, or points, in order; between each pair the road is
      found over the ground like any other, so it bends with the hills and crosses the rivers where that is cheap.
@@ -1614,8 +1617,27 @@ function buildNetwork(W, R, fbm, A) {
     const q = c + Math.round(dy / d * 2) * GW + Math.round(dx / d * 2);
     return q >= 0 && q < N && G.base[q] >= 0 && !T.shut[q] && !T.vil[q] && !T.use[q] ? q : -1;
   };
+  /* a drawn motorway passes a town by (brief 72): a town it names is reached at a cell beside the town's own, one cell
+     out for a small town and two for a large one, on the side that bends the road least, and a main road runs from
+     there into the town. (A procedural motorway, as before, runs through the town as its avenue.) */
+  const bypass = (c, prev, next) => {
+    const cc = cellOf(c), cx0 = cc % GW, cy0 = (cc / GW) | 0, D = c.r > 55 ? 2 : 1, P = prev >= 0 ? ctr(prev) : null, Q = next >= 0 ? ctr(next) : null;
+    let best = -1, bd = 1e18;
+    for (let dy = -D; dy <= D; dy++) for (let dx = -D; dx <= D; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== D) continue;
+      const x = cx0 + dx, y = cy0 + dy; if (x < 0 || y < 0 || x >= GW || y >= G.GH) continue;
+      const q = y * GW + x; if (G.base[q] < 0 || T.shut[q] || T.vil[q]) continue;
+      const o = ctr(q), d = (P ? U.dxy(P.x, P.y, o.x, o.y) : 0) + (Q ? U.dxy(Q.x, Q.y, o.x, o.y) : 0);
+      if (d < bd) { bd = d; best = q; }
+    }
+    return best;
+  };
   const authoredLine = (T2, via, how, rank, name) => {
-    const cells = via.map(viaCell).filter(c => c >= 0), out = [];
+    let cells = via.map(viaCell).filter(c => c >= 0); const out = [], into = [];
+    if (rank === RANK.hw) {
+      const towns = via.map(v => typeof v === 'string' ? W.cities.find(c => c.name === v) : null);
+      cells = cells.map((c, i) => { const t = towns[i]; if (!t) return c; const q = bypass(t, i ? cells[i - 1] : -1, i + 1 < cells.length ? cells[i + 1] : -1); if (q >= 0) into.push([q, c]); return q >= 0 ? q : c; });
+    }
     if (rank === RANK.hw) for (let i = 0; i + 1 < cells.length; i++) {
       const a = cells[i], b = cells[i + 1];
       if (T2.use[a] >= RANK.hw && !(T2.use[b] >= RANK.hw)) { const q = lead(a, b); if (q >= 0) cells.splice(++i, 0, q); }
@@ -1625,9 +1647,9 @@ function buildNetwork(W, R, fbm, A) {
       const p = search(T2, cells[i], cells[i + 1], how);
       if (p) { lay(T2, p, rank); out.push(p); } else W.warnings.push(`${name || 'A road'}: no way from stop ${i + 1} to stop ${i + 2}`);
     }
+    for (const [q, c] of into) { const p = search(T2, q, c, HOW.rd); if (p) lay(T2, p, RANK.rd); }
     return out;
   };
-  const AR = A && A.roads || [];
   for (const r of AR) if (r.cls === 'hw') authoredLine(T, r.via, HOW.hw, RANK.hw, r.name);
   const spur = (id, cls, alt) => {
     const s = cellP(id); if (T.use[s]) return;
@@ -1864,6 +1886,7 @@ function buildTowns(W, R, fbm) {
    towns keep out of (IC.ixClear). */
 function junctions(W) {
   const N = W.nodes, byNode = {};
+
   // the map may name the shape of a junction (brief 72): the nearest drawn one within 6 km, where the roads there
   // allow it (a trumpet needs a motorway ending on another, a stack two crossing)
   const AJ = W.map && IC.MAPS[W.map] && IC.MAPS[W.map].junctions || [];
@@ -1895,7 +1918,21 @@ function junctions(W) {
     for (let k = 0; k < 40 && tight(); k++) for (let i = 3; i < P.length - 3; i++) P[i] = { x: P[i].x * 0.5 + (P[i - 1].x + P[i + 1].x) * 0.25, y: P[i].y * 0.5 + (P[i - 1].y + P[i + 1].y) * 0.25 };
     return P;
   };
-  const at = (n, d, k, p, o) => ({ x: n.x + d.x * k + (p ? p.x * o : 0), y: n.y + d.y * k + (p ? p.y * o : 0) });
+  const atS = (n, d, k, p, o) => ({ x: n.x + d.x * k + (p ? p.x * o : 0), y: n.y + d.y * k + (p ? p.y * o : 0) });
+  // a point k along an arm and o across it: k along the road's own line, so a slip road's end lies on the carriageway
+  // where the road bends soon after the junction (a motorway turning through a town's junction left ends in the
+  // grass, brief 72); straight on where the arm has no line, or beyond its end
+  const at = (n, d, k, p, o) => {
+    const P = d.e && d.e.pts; if (!P || P.length < 2) return atS(n, d, k, p, o);
+    const fromA = U.dxy(P[0].x, P[0].y, n.x, n.y) <= U.dxy(P[P.length - 1].x, P[P.length - 1].y, n.x, n.y), step = fromA ? 1 : -1;
+    let s = 0;
+    for (let i = fromA ? 0 : P.length - 1; i + step >= 0 && i + step < P.length; i += step) {
+      const a = P[i], b = P[i + step], L = U.dist(a, b); if (L < 1e-9) continue;
+      if (s + L >= k) { const t = (k - s) / L; return { x: a.x + (b.x - a.x) * t + (p ? p.x * o : 0), y: a.y + (b.y - a.y) * t + (p ? p.y * o : 0) }; }
+      s += L;
+    }
+    return atS(n, d, k, p, o);
+  };
   // the unit vector across d that points into the quarter towards q
   const toward = (d, q) => { const px = -d.y, py = d.x; return px * q.x + py * q.y >= 0 ? { x: px, y: py } : { x: -px, y: -py }; };
   W.junctions = []; W.ramps = [];
