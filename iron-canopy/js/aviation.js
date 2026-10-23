@@ -907,7 +907,7 @@ IC.aptProvides = IC.aptProvides || function (ap) {
   const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, hangar: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0), fuelDeps: st.fuelDeps || 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none' };
   // a gate: a stand passengers walk to from a terminal (within 60 m of one)
   const terms = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25);
-  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.hypot(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
+  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return U.hyp(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
   for (const s of standsOf(ap)) {
     if (s.linked === false || s.hp <= 0 || s.zone === 'mil') continue;
     P.stands[s.size] = (P.stands[s.size] || 0) + 1;

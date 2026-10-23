@@ -10,7 +10,8 @@ const HIT = { INT: 1, IR: 1.2, IR2: 1.3, SR: 1.6, MR: 2, LR: 2.5, LRE: 2.5, VLR:
 
 IC.maxRange = function (S, u) {
   const d = u.d;
-  if (d.weapon === 'sam' || d.weapon === 'strike') { let r = 0; for (const m of IC.activeMags(S, u)) r = Math.max(r, IC.MUN[m.mun].range); return r; }
+  // (the magazines researched, read in place: every battery asks every step)
+  if (d.weapon === 'sam' || d.weapon === 'strike') { let r = 0; for (const m of u.mags) if (IC.hasTech(S, m.tech)) r = Math.max(r, IC.MUN[m.mun].range); return r; }
   if (d.gun) return d.gun.range;
   if (d.laser) return d.laser.range;
   if (d.hpm) return d.hpm.range;
@@ -89,7 +90,7 @@ IC.typeRange = function (type) {
    furthest */
 function effRange(M, u, t) {
   let f = 1;
-  const sp = Math.hypot(t.vx, t.vy);
+  const sp = U.hyp(t.vx, t.vy);
   if (sp > 0.3 && t.d.move !== 'bal') {
     const c = -((t.vx * (u.x - t.x) + t.vy * (u.y - t.y)) / (sp * (U.dist(u, t) || 1)));
     const a = c <= 0 ? 0.55 + 0.45 * -c : 0.55 - 0.2 * c;   // c<0 closing
@@ -124,7 +125,7 @@ function planIntercept(u, t, M) {
     const vs = M.vs[p.alt >= 90 ? 'mid' : IC.classOf(t) === 'mid' ? 'bal' : IC.classOf(t)];
     if (!vs || p.alt < M.alt[0] || p.alt > M.alt[1]) { hiAlt = Math.max(hiAlt, p.alt); continue; }
     altOk = true;
-    const sl = Math.hypot(U.dxy(u.x, u.y, p.x, p.y), p.alt * 10);
+    const sl = U.hyp(U.dxy(u.x, u.y, p.x, p.y), p.alt * 10);
     if (sl > IC.reachAt(M, p.alt)) continue;
     inReach = true;
     const fly = sl / M.spd * 1.1 + 2;
@@ -263,6 +264,8 @@ function fire(S, u, t, m, r, P, hoj) {
 
 IC.defense = function (S, dt) {
   const wx = IC.wx(S);
+  // (the tracks that wake a battery in ambush, listed once for all of them: each still checks them as it goes)
+  let hot = null;
   for (const u of S.units) {
     if (u.state !== 'ready') { u.beam = null; u.why = u.state === 'transit' ? 'On the move' : 'Setting up'; continue; }
     // (a unit with no weapon or link never gets another reason below: the one from before it was ready must go)
@@ -272,7 +275,10 @@ IC.defense = function (S, dt) {
     if (d.link) { u.why = u.radarOn ? linkWhy(S, u) : 'Datalink off: batteries nearby fire only on their own radar'; continue; }
     if (!d.weapon || d.weapon === 'strike' || d.weapon === 'decoy') continue;
     const range = IC.maxRange(S, u);
-    if (u.emcon === 'ambush') for (const t of S.threats) if (t.det && (t.aff === 'H' || t.aff === 'S') && U.dist(u, t) < range * 1.15) { u.ambushT = 120; break; }
+    if (u.emcon === 'ambush') {
+      hot = hot || S.threats.filter(t => t.det && (t.aff === 'H' || t.aff === 'S'));
+      for (const t of hot) if (t.det && (t.aff === 'H' || t.aff === 'S') && U.dist(u, t) < range * 1.15) { u.ambushT = 120; break; }
+    }
     if (IC.ok(u, 'launch') < 0.25 && d.weapon !== 'ecm') { u.why = 'Launchers knocked out: needs repair'; continue; }
 
     if (d.weapon === 'sam') {
@@ -338,9 +344,10 @@ IC.defense = function (S, dt) {
       const G = d.gun;
       let best = null, bd = 1e9;
       for (const t of S.threats) {
+        // (the cheap test first: most tracks are out of a gun's reach)
+        const r = U.dist(u, t); if (r > G.range || t.alt > 4) continue;
         if (!eligible(S, u, t, u.prio === t)) continue;
         if (!G.vs[IC.classOf(t)]) continue;
-        const r = U.dist(u, t); if (r > G.range || t.alt > 4) continue;
         if (!canSee(S, u, t) && !t.vis) continue;
         if (r < bd) { bd = r; best = t; }
       }
@@ -498,7 +505,7 @@ function strayLock(S, m, t) {
   let best = null, bd = IC.STRAY.R;
   for (const a of S.threats) {
     if (a.dead || !a.d.civil || a.hostileCiv || a === t || (a.alt || 0) < 0.3 || Math.abs((a.alt || 0) - (m.alt || 0)) > IC.STRAY.dz) continue;
-    const dx = a.x - m.x, dy = a.y - m.y, d = Math.hypot(dx, dy);
+    const dx = a.x - m.x, dy = a.y - m.y, d = U.hyp(dx, dy);
     if (d < bd && (dx * ca + dy * sa) > d * 0.7) { bd = d; best = a; }
   }
   if (!best) return false;
@@ -527,7 +534,7 @@ function flyToPip(S, m, t, dt) {
   if (m.trailT <= 0) { m.trailT = 0.6; m.tr.pts.push({ x: m.x, y: m.y, t: S.time, alt: m.alt }); if (m.tr.pts.length > 80) m.tr.pts.shift(); }
   if (left > 0) return;
   m.dead = true;
-  const off = Math.hypot(U.dxy(t.x, t.y, P.x, P.y), (t.alt - P.alt) * 10);
+  const off = U.hyp(U.dxy(t.x, t.y, P.x, P.y), (t.alt - P.alt) * 10);
   let pk = m.pk;
   if (t.d.evasive) pk *= t.d.evasive;
   if (off < 40 && Math.random() < pk) {
@@ -595,7 +602,7 @@ IC.updateStrikes = function (S, dt) {
       s.x = s.x0 + (s.aim.x - s.x0) * f; s.y = s.y0 + (s.aim.y - s.y0) * f; s.alt = s.apex * 4 * f * (1 - f);
       if (f >= 1) { s.dead = true; strikeImpact(S, s); }
     } else {
-      const dx = s.aim.x - s.x, dy = s.aim.y - s.y, L = Math.hypot(dx, dy), step = s.M.spd * dt;
+      const dx = s.aim.x - s.x, dy = s.aim.y - s.y, L = U.hyp(dx, dy), step = s.M.spd * dt;
       s.h = Math.atan2(dy, dx); s.alt = s.M === IC.GBU ? Math.min(6, L / 40) : 0.1;
       if (L <= step) { s.x = s.aim.x; s.y = s.aim.y; s.dead = true; strikeImpact(S, s); }
       else { s.x += dx / L * step; s.y += dy / L * step; }

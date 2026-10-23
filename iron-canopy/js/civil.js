@@ -121,7 +121,7 @@ IC.moveCivil = function (S, t, dt) {
   if (t.phold) { IC.atcPlayerHold(S, t, dt); return; }
   // intermediate route points (around prohibited zones)
   if (t.wps && t.wps.length > 1 && U.dxy(t.x, t.y, t.dest.x, t.dest.y) < t.spd * dt + 3) { t.wps.shift(); t.dest = t.wps[0]; }
-  const d = t.dest, dx = d.x - t.x, dy = d.y - t.y, L = Math.hypot(dx, dy);
+  const d = t.dest, dx = d.x - t.x, dy = d.y - t.y, L = U.hyp(dx, dy);
   if (t.aspDzT > 0) { t.aspDzT -= dt; if (t.aspDzT <= 0) t.aspDz = 0; }
   if (t.vector != null && (t.vectorT -= dt) <= 0) t.vector = null;
   t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);

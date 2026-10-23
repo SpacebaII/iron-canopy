@@ -117,7 +117,7 @@ IC.aamReach = function (w, shooterAlt, t, shooter) {
   const high = 0.55 + 0.45 * U.clamp((shooterAlt || 0) / 10, 0, 1);
   let asp = 1;
   if (shooter) {
-    const sp = Math.hypot(t.vx || 0, t.vy || 0);
+    const sp = U.hyp(t.vx || 0, t.vy || 0);
     if (sp > 0.05) { const c = ((shooter.x - t.x) * t.vx + (shooter.y - t.y) * t.vy) / (sp * (U.dist(shooter, t) || 1)); asp = 0.45 + 0.55 * (1 + c) / 2; }
   }
   return R * high * asp;
@@ -132,7 +132,7 @@ function shotPk(S, w, a, t, r, R) {
 }
 /* a fighter's missile: launched at the fighter's own speed and height, it flies the energy model (flight.js) */
 IC.launchAAM = function (S, a, t, W, o) {
-  const R = IC.aamReach(W, a.alt, t, a), sp = Math.hypot(a.vx || 0, a.vy || 0);
+  const R = IC.aamReach(W, a.alt, t, a), sp = U.hyp(a.vx || 0, a.vy || 0);
   const m = IC.newMissile(S, Object.assign({ mun: W.short === 'SRM' ? 'SRM' : W === IC.AAMS.mrm ? 'AAM' : W.short, M: W, x: a.x, y: a.y, alt: a.alt || 0, a0: a.alt || 0, loft: W.seeker === 'IR' ? 0 : Math.min(3, U.dist(a, t) / 10 * 0.04),
     a: Math.atan2(t.y - a.y, t.x - a.x), spd: W.spd, target: t, src: a.name, by: a, ir: W.seeker === 'IR' }, o), Math.max(R, U.dist(a, t) * 1.05), sp);
   // a fighter's radar locking on is heard at once; an active seeker or a heat-seeker only close in (flight.js)
@@ -467,7 +467,7 @@ function refuel(S, a, K, dt) {
     IC.log(S, 'info', 'AIR', `${a.name} took ${U.dur(take)} of fuel from ${k.name}.`, a);
     return null;
   }
-  return { x: k.x + Math.cos(k.h) * 4, y: k.y + Math.sin(k.h) * 4, spd: Math.hypot(k.vx, k.vy) || K.spd };
+  return { x: k.x + Math.cos(k.h) * 4, y: k.y + Math.sin(k.h) * 4, spd: U.hyp(k.vx, k.vy) || K.spd };
 }
 /* an intercept: fly to the predicted meeting point, look if nobody knows what it is, engage if allowed */
 function intercept(S, a, K, m, dt) {
@@ -511,7 +511,7 @@ function intercept(S, a, K, m, dt) {
     return { x: near ? q.x : m.x, y: near ? q.y : m.y, spd: K.dash };
   }
   // hostile: fight it (or its group) when the rules allow; otherwise shadow it
-  if (!mayShoot(S, a, t)) { a.state = 'escort'; const d = U.dist(a, q); return { x: q.x - (t.svx || 0) * 8, y: q.y - (t.svy || 0) * 8, spd: d > 40 ? K.dash : Math.max(K.spd * 0.6, Math.hypot(t.svx || 0, t.svy || 0)) }; }
+  if (!mayShoot(S, a, t)) { a.state = 'escort'; const d = U.dist(a, q); return { x: q.x - (t.svx || 0) * 8, y: q.y - (t.svy || 0) * 8, spd: d > 40 ? K.dash : Math.max(K.spd * 0.6, U.hyp(t.svx || 0, t.svy || 0)) }; }
   if (!a.tgt || a.tgt.dead) a.tgt = m.grp && t.grp ? airTargets(S, a, a.x, a.y, 1e9, t.grp.members) || (t.det ? t : null) : t.det ? t : null;
   a.state = 'out';
   return { x: near ? q.x : m.x, y: near ? q.y : m.y, spd: K.dash, fight: true };

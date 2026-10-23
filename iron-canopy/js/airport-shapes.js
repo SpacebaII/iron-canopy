@@ -71,7 +71,7 @@ IC.convexPieces = convexPieces;
 function depth(A, B) {
   let m = Infinity;
   for (const P of [A, B]) for (let i = 0; i < P.length; i++) {
-    const p = P[i], q = P[(i + 1) % P.length], L = Math.hypot(q.x - p.x, q.y - p.y); if (L < 1e-9) continue;
+    const p = P[i], q = P[(i + 1) % P.length], L = U.hyp(q.x - p.x, q.y - p.y); if (L < 1e-9) continue;
     const ax = -(q.y - p.y) / L, ay = (q.x - p.x) / L;
     let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
     for (const r of A) { const d = r.x * ax + r.y * ay; if (d < a0) a0 = d; if (d > a1) a1 = d; }

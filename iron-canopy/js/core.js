@@ -106,15 +106,37 @@ IC.makeRng = function (seed) {
 const nativeRandom = Math.random;
 IC.seedRandom = seed => { Math.random = seed == null ? nativeRandom : IC.makeRng(seed); };
 
+/* Math.hypot of two numbers, to the bit, without its cost: V8's builds an array on every call, and the step measures
+   distances by the thousand. The same steps as V8's (scale by the larger, add the squares, root), so the same result */
+function hyp(x, y) {
+  x = Math.abs(x); y = Math.abs(y);
+  if (x === Infinity || y === Infinity) return Infinity;
+  if (x !== x || y !== y) return NaN;
+  const m = x > y ? x : y;
+  if (m === 0) return 0;
+  const a = x / m, b = y / m;
+  return Math.sqrt(a * a + b * b) * m;
+}
+/* and of three, which V8 adds with Kahan's compensation */
+function hyp3(x, y, z) {
+  x = Math.abs(x); y = Math.abs(y); z = Math.abs(z);
+  if (x === Infinity || y === Infinity || z === Infinity) return Infinity;
+  if (x !== x || y !== y || z !== z) return NaN;
+  let m = x > y ? x : y; if (z > m) m = z;
+  if (m === 0) return 0;
+  const a = x / m, b = y / m, c = z / m, s1 = a * a, s2 = b * b, p2 = s1 + s2;
+  return Math.sqrt(p2 + (c * c - ((p2 - s1) - s2))) * m;
+}
 const U = IC.U = {
+  hyp, hyp3,
   rand: (a, b) => a + Math.random() * (b - a),
   randi: (a, b) => Math.floor(a + Math.random() * (b - a + 1)),
   gauss: () => { let s = 0; for (let i = 0; i < 4; i++) s += Math.random(); return (s - 2) / 0.58; },
   clamp: (v, a, b) => v < a ? a : v > b ? b : v,
   lerp: (a, b, t) => a + (b - a) * t,
   smooth: t => t * t * (3 - 2 * t),
-  dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
-  dxy: (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by),
+  dist: (a, b) => hyp(a.x - b.x, a.y - b.y),
+  dxy: (ax, ay, bx, by) => hyp(ax - bx, ay - by),
   pick: a => a[Math.floor(Math.random() * a.length)],
   wpick(list) {
     let tot = 0; for (const [, w] of list) tot += w;
@@ -137,7 +159,7 @@ const U = IC.U = {
     const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
     let t = L ? ((px - ax) * dx + (py - ay) * dy) / L : 0;
     t = t < 0 ? 0 : t > 1 ? 1 : t;
-    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+    return hyp(px - ax - t * dx, py - ay - t * dy);
   },
   polyDist(px, py, pts) {
     let m = 1e9;

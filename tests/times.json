@@ -232,5 +232,8 @@
  "war journal: a Quick war logs no airline offers or civil advice the player cannot act on; the Career still does": 192,
  "war journal: the morning briefing and stale cards wait while a raid is in the air": 48,
  "war journal: the helicopter resupply line names the distance to the depot, not a closed base": 53,
- "war journal: an intercept that says it turns home first does turn home, short of the meeting point, with fuel left": 100
+ "war journal: an intercept that says it turns home first does turn home, short of the meeting point, with fuel left": 100,
+ "war perf: U.hyp and U.hyp3 give Math.hypot to the bit, so the faster distances play the same game": 0.6,
+ "war perf: the travel times with every road open are kept through a cut, and worked out again when a road changes": 8.5,
+ "war perf: the kept lists of cities and airports are copies, and follow the list of infrastructure": 9.6
 }

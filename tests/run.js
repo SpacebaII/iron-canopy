@@ -6137,6 +6137,54 @@ test('war journal: an intercept that says it turns home first does turn home, sh
   assert(low > 0, `it ran dry (${low})`);
 });
 
+/* ---------- war perf (wave 17) ---------- */
+test('war perf: U.hyp and U.hyp3 give Math.hypot to the bit, so the faster distances play the same game', () => {
+  const sp = [0, -0, 1, -1, 3, 4, Infinity, -Infinity, NaN, 5e-324, 1e-310, 1e-200, 1e200, 1e308];
+  const same = (a, b, what) => assert(Object.is(a, b), `${what}: ${a} against Math.hypot's ${b}`);
+  for (const a of sp) for (const b of sp) { same(U.hyp(a, b), Math.hypot(a, b), `hyp(${a}, ${b})`); for (const c of sp) same(U.hyp3(a, b, c), Math.hypot(a, b, c), `hyp3(${a}, ${b}, ${c})`); }
+  // numbers of every size the game meets, from metres to the map's width, and some far beyond
+  const R = IC.makeRng(17), r = () => (R() - 0.5) * Math.pow(10, Math.floor(R() * 14) - 5);
+  for (let i = 0; i < 300000; i++) {
+    const a = r(), b = i % 7 ? r() : Math.round(r()), c = i % 3 ? r() : 0;
+    same(U.hyp(a, b), Math.hypot(a, b), `hyp(${a}, ${b})`); same(U.hyp3(a, b, c), Math.hypot(a, b, c), `hyp3(${a}, ${b}, ${c})`);
+  }
+});
+test('war perf: the kept lists of cities and airports are copies, and follow the list of infrastructure', () => {
+  const S = IC.newGame({ seed: 23, mode: 'campaign' }); IC.S = S;
+  const want = () => [S.infra.filter(i => i.kind === 'city'), S.infra.filter(i => i.kind === 'airbase' || i.kind === 'airport')];
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const check = why => { const [c, b] = want(); assert(same(IC.cities(S), c), `cities ${why}`); assert(same(IC.bases(S), b), `bases ${why}`); };
+  check('at the start');
+  // a caller that changes the list it was given changes nothing for the next
+  const b0 = IC.bases(S), c0 = IC.cities(S); b0.length = 0; c0.reverse(); c0.pop();
+  check('after a caller changed its copy');
+  // a new airport (founded: pushed on the list), then a new list (as a loaded game has)
+  S.infra.push({ id: 'aptT', kind: 'airport', name: 'Test Airport', x: 100, y: 100, owner: 'us', infra: true });
+  check('after an airport was founded');
+  S.infra = S.infra.filter(i => i.kind !== 'airbase');
+  check('after the list was replaced');
+});
+test('war perf: the travel times with every road open are kept through a cut, and worked out again when a road changes', () => {
+  const S = IC.newGame({ seed: 21, mode: 'campaign' }); IC.S = S;
+  const E = S.econ, W = S.world, cap = IC.cap(S);
+  const same = (A, B) => { const k = Object.keys(A.t); return k.join() === Object.keys(B.t).join() && k.every(n => A.t[n] === B.t[n] && A.via[n] === B.via[n]); };
+  const root = W.nodes[cap.id] ? cap.id : IC.nodeNear(W, cap.x, cap.y).id, fresh = intact => IC.travelFrom(W, root, intact);
+  IC.econTrees(S);
+  const ti = E.ti[cap.id], tt = E.tt[cap.id];
+  // a road out of the capital is cut: the trees with cuts change, the open-road ones are the same objects, still right
+  const e = W.edges.filter(x => x.a === cap.id || x.b === cap.id || W.nodes[x.a] && U.dist(W.nodes[x.a], cap) < 300).sort((a, b) => a.len - b.len)[0];
+  assert(e, 'no road near the capital');
+  e.cut = 1; IC.roadsChanged(S); IC.econTrees(S);
+  assert(E.ti[cap.id] === ti, 'the open-road tree was worked out again for a cut');
+  assert(E.tt[cap.id] !== tt && !same(E.tt[cap.id], tt), 'the cut did not change the travel times');
+  assert(same(E.ti[cap.id], fresh(true)), 'the kept tree is not what a fresh one says');
+  assert(same(E.tt[cap.id], fresh(false)), 'the tree with the cut is not what a fresh one says');
+  // the road is laid again a little longer (as round a growing airport): the open-road trees are made again
+  e.cut = 0; e.len += 7; IC.roadsChanged(S); IC.econTrees(S);
+  assert(E.ti[cap.id] !== ti, 'a changed road kept the old open-road tree');
+  assert(same(E.ti[cap.id], fresh(true)) && !same(E.ti[cap.id], ti), 'the open-road tree did not follow the longer road');
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

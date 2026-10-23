@@ -108,36 +108,38 @@ function routeInfo(S, from, r) {
   }
   return { t, cut: cut ? edgeName(S, cut) : '', lost };
 }
-// which stretches of a route run through a town (squared distances: this walks every point against every city)
-function markTowns(S, r) {
-  const cs = IC.cities(S);
-  for (const p of r) {
-    let t = false;
-    if (p.road) for (const c of cs) { const dx = c.x - p.x, dy = c.y - p.y; if (dx * dx + dy * dy < c.r * c.r) { t = true; break; } }
-    p.town = t;
-  }
+/* which points of a route run through a town (convoys slow there at rush hour). Every convoy's route is marked again
+   each game minute: a point keeps its answer until a city grows (S._towns.v), and a city more than its radius away on
+   either axis is passed over before the distance is taken */
+function inTown(cs, p) {
+  for (const c of cs) { const dx = c.x - p.x, dy = c.y - p.y; if (dx >= c.r || -dx >= c.r || dy >= c.r || -dy >= c.r) continue; if (U.dxy(c.x, c.y, p.x, p.y) < c.r) return true; }
+  return false;
 }
+function townVer(S, cs) {
+  const C = S._towns;
+  if (C && C.cs.length === cs.length && cs.every((c, i) => c === C.cs[i] && c.r === C.r[i] && c.x === C.x[i] && c.y === C.y[i])) return C.v;
+  S._towns = { v: (C ? C.v : 0) + 1, cs, r: cs.map(c => c.r), x: cs.map(c => c.x), y: cs.map(c => c.y) };
+  return S._towns.v;
+}
+function markTowns(S, r) { const cs = IC.cities(S), v = townVer(S, cs); for (const p of r) if (p._tv !== v) { p.town = p.road && inTown(cs, p); p._tv = v; } }
 /* drive time between two places, as a convoy would go now */
 IC.driveTime = function (S, a, b) { const r = IC.route(a.x, a.y, b.x, b.y, true); markTowns(S, r); return routeInfo(S, a, r); };
 function plan(S, v, to) {
   v.route = IC.route(v.x, v.y, to.x, to.y, true); v.dest = { x: to.x, y: to.y }; v.trail = [{ x: v.x, y: v.y }];
   retime(S, v);
 }
-// Each refresh of a convoy's ETA waits 60 to 90 s, by the convoy and the moment. Convoys that left together
-// would otherwise all refresh in the same step, and every refresh walks its whole route (a 10–25 ms step).
-const infoGap = (v, t) => 60 + 30 * U.hash(parseInt(String(v.id).slice(1), 10) || 0, Math.floor(t));
 function retime(S, v) {
   v.rt = v.route; markTowns(S, v.route);
   const I = routeInfo(S, v, v.route);
-  v.eta = S.time + I.t; v.cut = I.cut; v.lost = I.lost; v.infoT = S.time; v.infoGap = infoGap(v, S.time);
+  v.eta = S.time + I.t; v.cut = I.cut; v.lost = I.lost; v.infoT = S.time;
 }
 function drive(S, v, dt) {
   if (!v.route) return true;
-  if (v.route !== v.rt || S.time - v.infoT > (v.infoGap || 60)) retime(S, v);   // re-routed after a road changed, or traffic changed
+  if (v.route !== v.rt || S.time - v.infoT > 60) retime(S, v);   // re-routed after a road changed, or traffic changed
   let left = dt;
   while (left > 0 && v.route.length) {
     const p = v.route[0], sp = segSpeed(S, p);
-    const dx = p.x - v.x, dy = p.y - v.y, L = Math.hypot(dx, dy);
+    const dx = p.x - v.x, dy = p.y - v.y, L = U.hyp(dx, dy);
     if (L < 1e-6) { v.route.shift(); continue; }
     v.h = Math.atan2(dy, dx);
     if (sp * left >= L) { v.x = p.x; v.y = p.y; left -= L / sp; v.route.shift(); }
@@ -220,10 +222,8 @@ function contractor(S, from, to, mun, qty, delay, counted) {
     S.vehicles.push(v);
   }
 }
-const DEPART_PER_STEP = 2;   // each departure is a road search: a column that finished loading together leaves over a few steps
 IC.updateVehicles = function (S, dt) {
   const C = IC.SUPPLY;
-  let departed = 0;
   for (const v of S.vehicles) {
     if (v.dead) continue;
     if (v.homeless) {
@@ -237,7 +237,7 @@ IC.updateVehicles = function (S, dt) {
       case 'toSource': if (drive(S, v, dt)) { v.state = 'load'; v.t = j.loadT || C.load; } break;
       case 'load':
         v.t -= dt;
-        if (v.t <= 0 && departed < DEPART_PER_STEP) { departed++; j.loaded = true; v.state = 'toDest'; plan(S, v, j.to); }
+        if (v.t <= 0) { j.loaded = true; v.state = 'toDest'; plan(S, v, j.to); }
         break;
       case 'toDest': {
         if (j.to.dead) { IC.failJob(S, j); v.job = null; goHome(S, v); break; }
@@ -306,7 +306,7 @@ function heliBack(S, r) {
 const heliRoom = (m) => m.storeMax + m.max - m.store - m.mag - m.inc;
 /* what a helicopter sortie to this unit would be: from which depot, which helicopter, what it carries, to whom,
    when it lands and what it costs. { why } in one sentence when it cannot fly. */
-IC.heliPlan = function (S, u, manual) {
+IC.heliPlan = function (S, u) {
   const wx = IC.wx(S), K = IC.AIR_KIND.heli, H = IC.HELI;
   if (!wx.heli) {
     const w = S.weather, fc = w && w.forecast && IC.WEATHER[w.forecast];
@@ -316,24 +316,15 @@ IC.heliPlan = function (S, u, manual) {
   const mags = IC.activeMags(S, u).filter(m => heliRoom(m) > 0).sort((a, b) => (a.mag + a.store) / (a.max + a.storeMax) - (b.mag + b.store) / (b.max + b.storeMax));
   if (!mags.length) return { why: IC.activeMags(S, u).some(m => m.inc > 0) ? 'Everything it has room for is already on its way.' : 'Full: nothing to fly in.' };
   const ds = IC.depots(S);
-  const srcs = ds.filter(d => mags.some(m => (d.inv[m.mun] || 0) >= 1)).sort((a, b) => U.dist(a, u) - U.dist(b, u));
-  if (!srcs.length) return { why: `No depot holds ${IC.munWords(mags[0].mun)}. ${S.supply && S.supply.auto ? 'The Ministry buys more within two minutes (Keep stocked).' : 'Buy more in Supply (L), or turn on Keep stocked.'}` };
-  // the nearest depot; called by the player, the nearest a helicopter can reach (one out of every helicopter's reach
-  // does not hide another that is not). Keep stocked flies only from the nearest: lorries may do better from further
-  let src = srcs[0], r = heliFor(S, src, H.reach);
-  if (manual) for (const d of srcs) { r = heliFor(S, d, H.reach); if (r) { src = d; break; } }
+  const src = ds.filter(d => mags.some(m => (d.inv[m.mun] || 0) >= 1)).sort((a, b) => U.dist(a, u) - U.dist(b, u))[0];
+  if (!src) return { why: `No depot holds ${IC.munWords(mags[0].mun)}. ${S.supply && S.supply.auto ? 'The Ministry buys more within two minutes (Keep stocked).' : 'Buy more in Supply (L), or turn on Keep stocked.'}` };
+  const r = heliFor(S, src, H.reach);
   if (!r) {
     const all = S.roster.filter(x => x.kind === 'heli' && x.st !== 'lost');
     if (!all.length) return { why: 'No transport helicopter. A Forward Heliport (Supply tab) comes with one.' };
     const back = all.map(x => ({ x, t: heliBack(S, x) })).filter(o => o.t != null).sort((a, b) => a.t - b.t)[0];
     if (back) return { why: `Every transport helicopter is busy: ${back.x.name} can fly again in about ${U.dur(back.t)}.` };
-    // ready but out of reach of the depot, or grounded at a base that cannot launch: say which
-    const up = all.filter(x => x.st === 'ready' && IC.canLaunch(S, x)).map(x => ({ x, b: IC.baseOf(S, x.base) })).filter(o => o.b)
-      .sort((p, q) => U.dist(p.b, src) - U.dist(q.b, src))[0];
-    if (up) return { why: `${up.x.name} is ready at ${up.b.name}, but that is ${U.km(U.dist(up.b, src))} from ${src.name}, where the rounds are. A helicopter fetches loads only from a depot within ${U.km(H.reach)} of its base. A Forward Heliport near the depot (Supply tab) closes the gap; lorries still drive.` };
-    const down = all.find(x => x.st === 'ready'), db = down && IC.baseOf(S, down.base);
-    if (db) return { why: `${down.name} cannot take off: ${db.name} is ${db.dead || db.owner === 'enemy' ? 'lost' : 'closed'}. Lorries still drive.` };
-    return { why: 'No transport helicopter is ready: they are being repaired or are lost. Lorries still drive.' };
+    return { why: 'No transport helicopter can take off: its base is closed or too far from the depots.' };
   }
   // what it carries: this unit's emptiest rounds first, then units close by that need what the depot holds
   let room = K.cap * (r.n || K.n);
@@ -358,7 +349,7 @@ IC.heliPlan = function (S, u, manual) {
   return { src, r, loads, stops, eta: eta.get(u), etas: eta, cost: IC.SORTIE_COST.heli };
 };
 IC.heliResupply = function (S, u, manual) {
-  const P = IC.heliPlan(S, u, manual);
+  const P = IC.heliPlan(S, u);
   if (P.why) { if (manual) IC.log(S, 'warn', 'HELI', `${u.name}: ${P.why}`, u); return false; }
   const jobs = [];
   for (const x of P.stops) for (const l of P.loads.filter(l => l.u === x)) {
@@ -389,8 +380,7 @@ IC.stockSource = function (S, mun, qty, depot) {
   if (p) return { plant: p, cost: IC.plantPrice(S, mun, qty), eta: IC.SUPPLY.railLoad / U.clamp(p.hp / p.max, 0.3, 1) / (IC.hasTech(S, 'l_ind') ? 2 : 1) + U.dist(p, depot) * 360 / IC.SUPPLY.railKmh };
   return { plant: null, cost: IC.importPrice(S, mun, qty), eta: 1800 };
 };
-/* buy stock for a depot (the one that needs it most if none is given): paid now, trucked from the plant.
-   auto: Keep stocked bought it; an array collects what was bought instead of a line each (keepStocked says it once) */
+/* buy stock for a depot (the one that needs it most if none is given): paid now, trucked from the plant */
 IC.buyStock = function (S, mun, qty, depot, auto) {
   if (!IC.canBuyMun(S, mun) || qty < 1) return false;
   depot = depot || neediest(S, mun);
@@ -398,15 +388,14 @@ IC.buyStock = function (S, mun, qty, depot, auto) {
   const src = IC.stockSource(S, mun, qty, depot);
   if (S.budget < src.cost) { if (!auto) IC.log(S, 'warn', 'SUPPLY', `Not enough money for ${IC.munWords(mun, qty)}: ${U.money(src.cost)}.`); return false; }
   IC.pay(S, 'buyMun', src.cost);
-  if (Array.isArray(auto)) auto.push({ mun, qty, cost: src.cost, depot, imp: !src.plant });
   if (src.plant) {
     depot.inc[mun] = (depot.inc[mun] || 0) + qty;
     newJob(S, { kind: 'buy', mode: 'rail', mun, qty, qty0: qty, from: src.plant, to: depot, loaded: true, arrive: S.time + src.eta });
-    if (!Array.isArray(auto)) IC.log(S, 'info', auto ? 'MINISTRY' : 'ORDER', `${auto ? 'Stock low: bought' : 'Bought'} ${IC.munWords(mun, qty)} (${U.money(src.cost)}) from ${src.plant.name}. By rail to ${depot.name} in about ${U.dur(src.eta)}.`);
+    IC.log(S, 'info', auto ? 'MINISTRY' : 'ORDER', `${auto ? 'Stock low: bought' : 'Bought'} ${IC.munWords(mun, qty)} (${U.money(src.cost)}) from ${src.plant.name}. By rail to ${depot.name} in about ${U.dur(src.eta)}.`);
   } else {
     depot.inc[mun] = (depot.inc[mun] || 0) + qty;
     S.imports.push({ mun, qty, depot, eta: S.time + 1200, state: 'ordered' });
-    if (!Array.isArray(auto)) IC.log(S, 'info', auto ? 'MINISTRY' : 'IMPORT', `The arms plants are down: ${IC.munWords(mun, qty)} imported from ${S.world.names.D} (${U.money(src.cost)}). Airlift lands in about ${U.dur(1200 + 600)}.`);
+    IC.log(S, 'info', auto ? 'MINISTRY' : 'IMPORT', `The arms plants are down: ${IC.munWords(mun, qty)} imported from ${S.world.names.D} (${U.money(src.cost)}). Airlift lands in about ${U.dur(1200 + 600)}.`);
   }
   IC.emit(S, 'production', mun);
   return true;
@@ -468,7 +457,7 @@ function neediest(S, mun) {
 function keepStocked(S) {
   const P = S.supply;
   if (!P.auto || !IC.depots(S).length) return;
-  const { need, have } = IC.stockNeed(S), bought = [];
+  const { need, have } = IC.stockNeed(S);
   for (const mun in need) {
     if (!IC.canBuyMun(S, mun)) continue;
     const want = Math.max(4, Math.ceil(need[mun])), h = have[mun] || 0;
@@ -483,21 +472,9 @@ function keepStocked(S) {
       continue;
     }
     P.short[mun] = '';
-    IC.buyStock(S, mun, qty, d, bought);
+    IC.buyStock(S, mun, qty, d, true);
   }
-  if (bought.length) IC.keepStockedNote(S, bought);
 }
-/* one message for each round of Keep stocked buying: what, for how much, and where it is switched off */
-IC.keepStockedNote = function (S, bought) {
-  const cost = bought.reduce((a, b) => a + b.cost, 0), imp = bought.some(b => b.imp);
-  const what = bought.map(b => `${IC.munWords(b.mun, b.qty)} (${U.money(b.cost)})`);
-  const list = what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what[what.length - 1]}` : what[0];
-  const msg = `Keep stocked bought ${list}: ${U.money(cost)} in all, ${imp ? 'some flown in from abroad' : 'on its way by rail'} to the depots. It buys whenever stock falls below half a reload. Turn it off in Supply (L) to buy stock yourself.`;
-  IC.log(S, 'info', 'KEEP STOCKED', msg);
-  const kind = bought.some(b => IC.MUN[b.mun].strike) ? (bought.every(b => IC.MUN[b.mun].strike) ? 'rockets' : 'missiles and rockets') : 'missiles';
-  if (IC.toast) IC.toast(S, 'info', 'KEEP STOCKED', `Bought ${U.money(cost)} of ${kind} for the depots. Supply (L) turns it off.`);
-  IC.emit(S, 'keepStocked', { cost, bought });
-};
 function warnLow(S) {
   const P = S.supply;
   if (P.auto) return;
@@ -685,10 +662,15 @@ IC.economy = function (S, dt) {
   let upAD = 0;
   // every other radar on the same band close by (where they would blind each other, sensors.js) makes a radar
   // cost more to keep deconflicted and maintained
-  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]);
+  // (each pair counted once, for both, without a list made for every radar: this runs every step)
+  const on = S.units.filter(u => u.radarOn && IC.BAND[u.type]), band = on.map(u => IC.BAND[u.type]), nb = new Map();
+  for (let i = 0; i < on.length; i++) for (let j = i + 1; j < on.length; j++) {
+    const a = on[i], o = on[j];
+    if (band[i] === band[j] && U.dist(o, a) < 700) { nb.set(a, (nb.get(a) || 0) + 1); nb.set(o, (nb.get(o) || 0) + 1); }
+  }
   let crowd = 0;
   for (const u of S.units) {
-    const b = u.radarOn && IC.BAND[u.type], n = b ? on.filter(o => o !== u && IC.BAND[o.type] === b && U.dist(o, u) < 700).length : 0, k = 0.15 * n;
+    const n = u.radarOn && IC.BAND[u.type] ? nb.get(u) || 0 : 0, k = 0.15 * n;
     upAD += u.d.up * (1 + k); crowd += u.d.up * k;
   }
   const upAir = S.roster.filter(r => r.st !== 'lost').length * 0.6;

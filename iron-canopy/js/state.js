@@ -108,8 +108,15 @@ function* gameSteps(opts) {
 }
 
 IC.cap = S => S.infra.find(i => i.capital);
-IC.cities = S => S.infra.filter(i => i.kind === 'city');
-IC.bases = S => S.infra.filter(i => i.kind === 'airbase' || i.kind === 'airport');
+/* the cities and the airports and air bases, asked for many times a step: the lists are kept while the list of
+   infrastructure is the same (it only grows, and nothing in it changes kind), and each caller gets its own copy */
+const infraLists = S => {
+  const C = S._il;
+  if (C && C.a === S.infra && C.n === S.infra.length) return C;
+  return (S._il = { a: S.infra, n: S.infra.length, cities: S.infra.filter(i => i.kind === 'city'), bases: S.infra.filter(i => i.kind === 'airbase' || i.kind === 'airport') });
+};
+IC.cities = S => infraLists(S).cities.slice();
+IC.bases = S => infraLists(S).bases.slice();
 
 IC.findSpot = function (S, type, x, y, dmin, dmax) {
   for (let t = 0; t < 160; t++) {

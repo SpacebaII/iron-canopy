@@ -97,7 +97,7 @@ function moveWp(S, t, dt) {
     return;
   }
   const p = t.route[0];
-  const dx = p.x - t.x, dy = p.y - t.y, L = Math.hypot(dx, dy);
+  const dx = p.x - t.x, dy = p.y - t.y, L = U.hyp(dx, dy);
   let a = Math.atan2(dy, dx);
   const toAim = U.dxy(t.x, t.y, t.aim.x, t.aim.y);
   if (t.type === 'owa') a += 0.12 * Math.sin(t.age * 0.02 + t.seed);
@@ -149,7 +149,7 @@ function moveBal(S, t, dt) {
   const p = IC.balPos(t, t.age);
   t.x = p.x; t.y = p.y; t.alt = p.alt;
   if (t.d.evasive && p.f > 0.85) {
-    const nx = -(t.y1 - t.y0), ny = t.x1 - t.x0, L = Math.hypot(nx, ny) || 1;
+    const nx = -(t.y1 - t.y0), ny = t.x1 - t.x0, L = U.hyp(nx, ny) || 1;
     const w = 25 * Math.sin(t.age * 0.2 + t.seed) * (1 - p.f) * 6;
     t.x += nx / L * w; t.y += ny / L * w;
   }
