@@ -222,5 +222,11 @@
  "sandbox fixes: a guided bomb is recorded at its real speed, and a miss in open ground can be replayed": 10.6,
  "sandbox fixes: a salvo pauses the game once, and a ready depot stops saying it is setting up": 15.3,
  "save: a save loads in another browser, whose sin, cos, pow and sort differ from this one": 36.3,
- "fixed sums: sin, cos, atan2, exp, log, pow and hypot are fdlibm's, to the last bit where it counts": 0.4
+ "fixed sums: sin, cos, atan2, exp, log, pow and hypot are fdlibm's, to the last bit where it counts": 0.4,
+ "war controls: a refused placement says why: the border, another unit, water or outside the country": 30,
+ "war controls: Assign best battery says why no battery can take a track": 0.1,
+ "war controls: Show the gaps is offered only when there are airways to check": 0.1,
+ "war controls: the reserve line in the situation picks a system to place": 0.1,
+ "war controls: SPLASH marks fade out within a minute and a half of game time": 0,
+ "war controls: Keep stocked says once what it bought, for how much, and where to turn it off": 15
 }

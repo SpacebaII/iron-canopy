@@ -17,6 +17,24 @@ IC.maxRange = function (S, u) {
   if (d.ecm) return d.ecm.range;
   return 0;
 };
+/* the batteries that could take this track on (in reach now, or of where a ballistic one will be), and if none,
+   why not in words: the track panel's Assign best battery button says it */
+IC.assignWhy = function (S, t) {
+  const sams = S.units.filter(u => u.d.weapon === 'sam'), ready = sams.filter(u => u.state === 'ready');
+  const ax = t.x1 != null ? t.x1 : t.aim ? t.aim.x : t.x, ay = t.y1 != null ? t.y1 : t.aim ? t.aim.y : t.y;
+  const bats = ready.filter(u => U.dist(u, t) <= IC.maxRange(S, u) * 1.05 || IC.predictable(t) && U.dxy(u.x, u.y, ax, ay) <= IC.maxRange(S, u)).slice(0, 5);
+  if (bats.length) return { bats, why: '' };
+  const near = L => L.slice().sort((a, b) => U.dist(a, t) - U.dist(b, t))[0];
+  if (!sams.length) return { bats, why: 'You have no missile batteries. Guns and other weapons fire by themselves at what comes into their reach.' };
+  if (!ready.length) { const u = near(sams); return { bats, why: `No missile battery is ready yet. The nearest, ${u.name}, is ${IC.unitStateWord(S, u)}.` }; }
+  const u = near(ready), r = IC.maxRange(S, u);
+  if (!r) return { bats, why: `${u.name}, the nearest ready battery, has no missiles on its launchers.` };
+  return { bats, why: `Out of reach. The nearest ready battery, ${u.name}, is ${U.km(U.dist(u, t))} away and reaches ${U.km(r)}.` };
+};
+/* what a unit that is not ready is doing, in a few words */
+IC.unitStateWord = (S, u) => u.state === 'transit' ? (u.eta ? `on the road, there in ${U.dur(Math.max(0, u.eta - S.time))}` : 'on the move')
+  : u.state === 'building' ? `being built, ready in ${U.dur(u.stT)}` : u.state === 'setup' ? `setting up, ready in ${U.dur(u.stT)}`
+  : u.state === 'packing' ? `${u.deliver ? 'loading' : 'packing up'}, ${U.dur(u.stT)} to go` : 'not ready';
 /* ---------- launchers ----------
    A battery's rounds sit on its launchers (m.l: rounds on each; m.mag is their sum). It fires from the emptiest
    launcher that still has rounds, so one launcher runs dry while the others stay full, and the crew reloads one

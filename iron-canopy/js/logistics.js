@@ -383,7 +383,8 @@ IC.stockSource = function (S, mun, qty, depot) {
   if (p) return { plant: p, cost: IC.plantPrice(S, mun, qty), eta: IC.SUPPLY.railLoad / U.clamp(p.hp / p.max, 0.3, 1) / (IC.hasTech(S, 'l_ind') ? 2 : 1) + U.dist(p, depot) * 360 / IC.SUPPLY.railKmh };
   return { plant: null, cost: IC.importPrice(S, mun, qty), eta: 1800 };
 };
-/* buy stock for a depot (the one that needs it most if none is given): paid now, trucked from the plant */
+/* buy stock for a depot (the one that needs it most if none is given): paid now, trucked from the plant.
+   auto: Keep stocked bought it; an array collects what was bought instead of a line each (keepStocked says it once) */
 IC.buyStock = function (S, mun, qty, depot, auto) {
   if (!IC.canBuyMun(S, mun) || qty < 1) return false;
   depot = depot || neediest(S, mun);
@@ -391,14 +392,15 @@ IC.buyStock = function (S, mun, qty, depot, auto) {
   const src = IC.stockSource(S, mun, qty, depot);
   if (S.budget < src.cost) { if (!auto) IC.log(S, 'warn', 'SUPPLY', `Not enough money for ${IC.munWords(mun, qty)}: ${U.money(src.cost)}.`); return false; }
   IC.pay(S, 'buyMun', src.cost);
+  if (Array.isArray(auto)) auto.push({ mun, qty, cost: src.cost, depot, imp: !src.plant });
   if (src.plant) {
     depot.inc[mun] = (depot.inc[mun] || 0) + qty;
     newJob(S, { kind: 'buy', mode: 'rail', mun, qty, qty0: qty, from: src.plant, to: depot, loaded: true, arrive: S.time + src.eta });
-    IC.log(S, 'info', auto ? 'MINISTRY' : 'ORDER', `${auto ? 'Stock low: bought' : 'Bought'} ${IC.munWords(mun, qty)} (${U.money(src.cost)}) from ${src.plant.name}. By rail to ${depot.name} in about ${U.dur(src.eta)}.`);
+    if (!Array.isArray(auto)) IC.log(S, 'info', auto ? 'MINISTRY' : 'ORDER', `${auto ? 'Stock low: bought' : 'Bought'} ${IC.munWords(mun, qty)} (${U.money(src.cost)}) from ${src.plant.name}. By rail to ${depot.name} in about ${U.dur(src.eta)}.`);
   } else {
     depot.inc[mun] = (depot.inc[mun] || 0) + qty;
     S.imports.push({ mun, qty, depot, eta: S.time + 1200, state: 'ordered' });
-    IC.log(S, 'info', auto ? 'MINISTRY' : 'IMPORT', `The arms plants are down: ${IC.munWords(mun, qty)} imported from ${S.world.names.D} (${U.money(src.cost)}). Airlift lands in about ${U.dur(1200 + 600)}.`);
+    if (!Array.isArray(auto)) IC.log(S, 'info', auto ? 'MINISTRY' : 'IMPORT', `The arms plants are down: ${IC.munWords(mun, qty)} imported from ${S.world.names.D} (${U.money(src.cost)}). Airlift lands in about ${U.dur(1200 + 600)}.`);
   }
   IC.emit(S, 'production', mun);
   return true;
@@ -460,7 +462,7 @@ function neediest(S, mun) {
 function keepStocked(S) {
   const P = S.supply;
   if (!P.auto || !IC.depots(S).length) return;
-  const { need, have } = IC.stockNeed(S);
+  const { need, have } = IC.stockNeed(S), bought = [];
   for (const mun in need) {
     if (!IC.canBuyMun(S, mun)) continue;
     const want = Math.max(4, Math.ceil(need[mun])), h = have[mun] || 0;
@@ -475,9 +477,21 @@ function keepStocked(S) {
       continue;
     }
     P.short[mun] = '';
-    IC.buyStock(S, mun, qty, d, true);
+    IC.buyStock(S, mun, qty, d, bought);
   }
+  if (bought.length) IC.keepStockedNote(S, bought);
 }
+/* one message for each round of Keep stocked buying: what, for how much, and where it is switched off */
+IC.keepStockedNote = function (S, bought) {
+  const cost = bought.reduce((a, b) => a + b.cost, 0), imp = bought.some(b => b.imp);
+  const what = bought.map(b => `${IC.munWords(b.mun, b.qty)} (${U.money(b.cost)})`);
+  const list = what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what[what.length - 1]}` : what[0];
+  const msg = `Keep stocked bought ${list}: ${U.money(cost)} in all, ${imp ? 'some flown in from abroad' : 'on its way by rail'} to the depots. It buys whenever stock falls below half a reload. Turn it off in Supply (L) to buy stock yourself.`;
+  IC.log(S, 'info', 'KEEP STOCKED', msg);
+  const kind = bought.some(b => IC.MUN[b.mun].strike) ? (bought.every(b => IC.MUN[b.mun].strike) ? 'rockets' : 'missiles and rockets') : 'missiles';
+  if (IC.toast) IC.toast(S, 'info', 'KEEP STOCKED', `Bought ${U.money(cost)} of ${kind} for the depots. Supply (L) turns it off.`);
+  IC.emit(S, 'keepStocked', { cost, bought });
+};
 function warnLow(S) {
   const P = S.supply;
   if (P.auto) return;

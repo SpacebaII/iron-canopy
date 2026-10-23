@@ -13,6 +13,14 @@
 'use strict';
 const U = IC.U;
 
+/* a kill confirmed on the map: SPLASH fades out over IC.SPLASH_T game seconds and is then dropped */
+IC.SPLASH_T = 90;
+IC.splash = function (S, t) {
+  const L = (S.fx.splash || []).filter(s => S.time - s.t < IC.SPLASH_T);
+  L.push({ x: t.x, y: t.y, t: S.time, tn: t.tn, type: t.type });
+  S.fx.splash = L.length > 40 ? L.slice(-40) : L;
+};
+
 /* how much quicker the clock may run than the next thing that happens: 30 game seconds of warning at 1×, so the
    next impact or intercept is always a few real seconds away; the last seconds of an intercept at half speed */
 IC.COMBAT = { lead: 30, last: 8, slow: 0.5, margin: 600 };
@@ -141,7 +149,7 @@ IC.on((S, type, d) => {
       const who = t.killer && (unitByName(S, t.killer) || flightByName(S, t.killer));
       if (who) rec(who).kills++;
       // kill confirmation on the map: a burst and the word
-      if (t.det || t.held) { IC.text(S, t.x, t.y, 'SPLASH', '#ffd27a'); (S.fx.splash || (S.fx.splash = [])).push({ x: t.x, y: t.y, t: S.time, tn: t.tn, type: t.type }); if (S.fx.splash.length > 40) S.fx.splash.shift(); }
+      if (t.det || t.held) { IC.text(S, t.x, t.y, 'SPLASH', '#ffd27a'); IC.splash(S, t); }
       break;
     }
     case 'jamCrash': {

@@ -678,7 +678,7 @@ function drawGhost(S, px) {
   const m = S.mode2, h = S.hover;
   if (!m || !h) return;
   if (m.kind === 'deploy') {
-    const ok = IC.canPlace(S, m.type, h.x, h.y) && ((S.reserve[m.type] || 0) > 0 || !IC.buyBlock(S, m.type));
+    const why = IC.placeWhy(S, m.type, h.x, h.y) || ((S.reserve[m.type] || 0) > 0 ? '' : IC.buyBlock(S, m.type)), ok = !why;
     const d = IC.UNITS[m.type];
     const rng = IC.typeRange(m.type);
     ctx.strokeStyle = ok ? 'rgba(111,210,255,0.8)' : 'rgba(255,91,79,0.8)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([7 * px, 5 * px]);
@@ -687,6 +687,7 @@ function drawGhost(S, px) {
     if (d.logi && d.logi.reach) { ctx.strokeStyle = 'rgba(224,180,88,0.5)'; ctx.beginPath(); ctx.arc(h.x, h.y, d.logi.reach, 0, 7); ctx.stroke(); }
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.85; IC.drawUnitSymbol(ctx, m.type, h.x, h.y, px, ok ? C.friend : C.hostile, { tint: ok ? null : 'rgba(255,91,79,0.4)' }); ctx.globalAlpha = 1;
+    if (why) label(why.replace(/\.$/, ''), h.x, h.y + 26 * px, px, C.hostile, 11, 'center', 700);   // why not here, before the click
     if (d.sensor && d.sensor.ssr && S.asp && S.asp.ways.length) {
       // (round 5c) what it adds where the cursor is, and what crowding its band costs
       const G = IC.radarGain(S, m.type, h.x, h.y);
@@ -694,7 +695,7 @@ function drawGhost(S, px) {
         label(`+${Math.round(G.gain * 100)}% of the airways seen · ${Math.round(G.now * 100)}% now, ${Math.round(G.after * 100)}% with it`, h.x, h.y - 42 * px, px, G.gain > 0.05 ? C.friend : C.amber, 11, 'center', 700);
         label(G.near ? `${G.near} radar${G.near > 1 ? 's' : ''} on this band within 70 km: +${U.money(G.crowd * (S.mode === 'story' ? IC.MO(S) / 3600 : 24))} ${S.mode === 'story' ? 'a month' : 'a day'} to keep` : 'No other radar on this band within 70 km', h.x, h.y - 27 * px, px, G.near ? C.amber : C.muted, 10, 'center', 600);
       }
-    } else if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
+    } else if (!why && d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
     if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
   } else if (m.kind === 'airPoint') {
     const R = m.mission === 'aew' ? 3200 : m.mission === 'isr' ? 450 : 550;
