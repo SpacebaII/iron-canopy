@@ -260,7 +260,7 @@ function leftClick(p, shift) {
       if (!shift || IC.callInState(S).charges < 1) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
-    if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p); IC.setMode(null); ping(p); return; }
+    if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p, IC.cam.z); IC.setMode(null); ping(p); return; }
     if (m.kind === 'rangeTarget') { S.range.target = { x: p.x, y: p.y }; S.range.scen.target = { x: Math.round(p.x), y: Math.round(p.y) }; IC.setMode(null); ping(p); return; }
     if (m.kind === 'deploy' && S.range) {
       if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUR SIDE ONLY', IC.C.hostile); IC.sfx.ui('err'); return; }
@@ -686,14 +686,15 @@ function stopSkip(why) { if (S.wait) { IC.waitStop(S, why); return; } if (!S.ski
 IC.on((S2, type, d) => {
   if (S2 !== S) return;
   const P = S.cfg.pauseOn;
-  const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; if (S.wait) IC.waitStop(S, why); IC.toast(S, 'warn', 'PAUSED', why); } };
+  // one pause for a burst: a salvo, or the hits of one raid, pause the game once (the rest still stop skip)
+  const pause = (why, key) => { if (key && !IC.burstFirst(S, key)) { stopSkip(); return; } if (!S.paused) { S.paused = true; S.skip = false; if (S.wait) IC.waitStop(S, why); IC.toast(S, 'warn', 'PAUSED', why); } };
   // a wait ends on its own: back to the speed the player had, and say why
   if (type === 'waitDone') { if (d.why) IC.toast(S, 'info', 'WAIT', d.why); IC.ui.waitPick = false; return; }
-  if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.'); else stopSkip('Ballistic launch.'); }
-  else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`); else stopSkip(`${d.name} lost.`); }
-  else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`); else stopSkip(`${d.base.name} hit.`); }
+  if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.', 'bal'); else stopSkip('Ballistic launch.'); }
+  else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`, 'lost'); else stopSkip(`${d.name} lost.`); }
+  else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`, 'base'); else stopSkip(`${d.base.name} hit.`); }
   else if (type === 'enemyStrike') { if (P.raid) pause('Major enemy strike forming.'); }
-  else if (type === 'cityHit') { if (P.city) pause(`${d.city.name} hit.`); else stopSkip(); }
+  else if (type === 'cityHit') { if (P.city) pause(`${d.city.name} hit.`, 'city'); else stopSkip(); }
   else if (type === 'aff' && (d.aff === 'H' || d.aff === 'S') && IC.inHome(d.x, d.y)) stopSkip(`TN ${d.tn}: ${IC.AFF[d.aff].name.toLowerCase()} track.`);
   else if (type === 'track' && (d.d.cls === 'air' || d.d.cls === 'cm') && !d.border) stopSkip(`New track TN ${d.tn}.`);
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
@@ -962,7 +963,11 @@ IC.adopt = function (st, view) {
   S.paused = true;
   IC.ui.refresh(true);
 };
-IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
+IC.showStart = function () {
+  // the game left behind keeps nothing on screen: no selection, no tool, no panel
+  if (S) { S.sel = null; S.group = []; S.mode2 = null; }
+  IC.ui.setHTML($('insp'), ''); $('app').classList.remove('has-insp'); $('app').classList.add('at-start'); $('map').classList.remove('placing');
+  $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
   const go = () => {

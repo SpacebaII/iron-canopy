@@ -216,5 +216,9 @@
  "war reports: a raid reported while its weapons still fly says so, and a late hit is reported after it": 50,
  "war reports: a battery with only known decoys in reach says so, not that they are unidentified": 6,
  "war reports: an intruder alert closes once the track is identified": 4,
- "war reports: one strike on a lorry park writes one line, not one per truck": 4
+ "war reports: one strike on a lorry park writes one line, not one per truck": 4,
+ "sandbox fixes: the SEAD aircraft can be picked, the panel says what a raid sends, and a click on a unit targets it": 5.4,
+ "sandbox fixes: a raid the enemy plans counts in the tally, and Clear and Repair say what they did": 28.2,
+ "sandbox fixes: a guided bomb is recorded at its real speed, and a miss in open ground can be replayed": 10.6,
+ "sandbox fixes: a salvo pauses the game once, and a ready depot stops saying it is setting up": 15.3
 }

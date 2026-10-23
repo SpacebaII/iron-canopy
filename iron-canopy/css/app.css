@@ -137,7 +137,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .rail .sep{height:6px}
 
 /* ---------- situation and staff ---------- */
-.leftcol{position:absolute;z-index:3;left:calc(4.1rem + 24px);top:var(--top);width:22rem;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - var(--top) - 15.5rem);pointer-events:none}
+/* (--arsh: the arsenal's height and its margins, set by ui.js, so the column stops above it whatever tab is open) */
+.leftcol{position:absolute;z-index:3;left:calc(4.1rem + 24px);top:var(--top);width:22rem;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - var(--top) - var(--arsh,15.5rem));pointer-events:none}
 .app.no-arsenal .leftcol{max-height:calc(100% - var(--top) - 24px)}
 .leftcol>*{pointer-events:auto}
 .brief{flex:0 1 auto;min-height:5rem;padding:.8rem .95rem;display:grid;gap:.55rem;align-content:start;overflow:auto;scrollbar-width:thin}
@@ -254,7 +255,8 @@ kbd{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:500
 .btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{color:var(--text);background:var(--well)}
 .btn.sm{min-height:1.6rem;padding:.12rem .6rem;font-size:.8rem;border-radius:8px}
 /* the sandbox: its panel keeps its height in the left column, and the staff messages scroll instead */
-.app.is-sbx .brief{flex:none}.app.is-sbx .comms{flex:0 1 auto;min-height:0;overflow:auto}
+/* (its rows keep their height when the card is squeezed: the card scrolls instead of its lines running together) */
+.app.is-sbx .brief{flex:none}.app.is-sbx .comms{flex:0 1 auto;min-height:0;overflow:auto;grid-auto-rows:max-content;align-content:start;scrollbar-width:thin}
 /* the sandbox's rules: a switch reads on or off at a glance */
 .sbx-rule{color:var(--dim)}.sbx-rule[aria-pressed="true"]{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(88,211,154,.45)}
 .btn.amber{color:var(--amber)}

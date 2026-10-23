@@ -200,6 +200,13 @@ IC.log = function (S, kind, tag, msg, at) {
   if (S.logs.length > 400) S.logs.length = 400;
   if (kind === 'leak' || kind === 'warn' || at) IC.toast && IC.toast(S, kind, tag, msg, at);
 };
+/* the first of a burst of the same kind of event (a salvo of ballistic missiles, the hits of one raid): false while
+   the last one of that kind came within gap game seconds, and each one keeps the burst going (the auto-pause asks) */
+IC.burstFirst = function (S, key, gap) {
+  const B = S._burst || (S._burst = {}), last = B[key];
+  B[key] = S.time;
+  return last == null || S.time - last > (gap || 180);
+};
 IC.news = function (S, text) {
   S.news.unshift({ t: S.time, text });
   if (S.news.length > 40) S.news.length = 40;
@@ -284,7 +291,7 @@ IC.detonate = function (S, x, y, dmg, src) {
   const kind = (src2.d && src2.d.name ? src2.d.name : 'weapon').toLowerCase(), an = w => (/^[aeiou]/.test(w) && !/^one/.test(w) ? 'an ' : 'a ') + w;
   const lbl = src2.tn ? `${an(kind)} (TN ${src2.tn})` : an(`unseen ${kind}`);
   if (hit) { S.stats.leakers++; IC.log(S, 'leak', 'IMPACT', `${hit.name} hit by ${lbl}.`, { x, y }); IC.emit(S, 'impact', { x, y, hit, src: src2 }); }
-  else IC.log(S, 'info', 'IMPACT', `${lbl.charAt(0).toUpperCase() + lbl.slice(1)} struck open ground ${IC.nearPlace(S, x, y)}.`);
+  else { IC.log(S, 'info', 'IMPACT', `${lbl.charAt(0).toUpperCase() + lbl.slice(1)} struck open ground ${IC.nearPlace(S, x, y)}.`); S.logs[0].rp = { x, y }; }   // (a place to replay, without a toast)
   return hit;
 };
 IC.cityHit = function (S, c, x, y, dmg, src) {

@@ -247,6 +247,8 @@ IC.defense = function (S, dt) {
   const wx = IC.wx(S);
   for (const u of S.units) {
     if (u.state !== 'ready') { u.beam = null; u.why = u.state === 'transit' ? 'On the move' : 'Setting up'; continue; }
+    // (a unit with no weapon or link never gets another reason below: the one from before it was ready must go)
+    if (u.why === 'On the move' || u.why === 'Setting up') u.why = null;
     const d = u.d;
     for (const m of u.mags) if (IC.hasTech(S, m.tech)) reloadStep(S, u, m, dt);
     if (d.link) { u.why = u.radarOn ? linkWhy(S, u) : 'Datalink off: batteries nearby fire only on their own radar'; continue; }
@@ -548,7 +550,7 @@ IC.fireMission = function (S, u, target, n) {
     IC.takeRound(u, m); fired++;
     const spread = 8;
     const jit = { x: aim.x + U.rand(-spread, spread), y: aim.y + U.rand(-spread, spread) };
-    const s = { id: IC.nid('s'), mun: m.mun, M, x: u.x + U.rand(-4, 4), y: u.y + U.rand(-4, 4), aim: jit, target, src: u.name, age: -i * (M.bal ? 4 : 20), side: 'us', rep, tr: null };
+    const s = { id: IC.nid('s'), mun: m.mun, M, x: u.x + U.rand(-4, 4), y: u.y + U.rand(-4, 4), aim: jit, target, src: u.name, age: -i * (M.bal ? 4 : 20), side: 'us', rep, tr: null, spd: 0 };
     if (M.bal) { const R = U.dist(s, jit); s.x0 = s.x; s.y0 = s.y; s.T = R / M.spd + 30; s.apex = Math.max(20, R * 0.025); }
     S.strikes.push(s);
   }
@@ -569,6 +571,7 @@ IC.updateStrikes = function (S, dt) {
     if (!s.tr) s.tr = IC.newTrail(S, s.M.bal ? 'big' : 'sam');
     s.trT = (s.trT || 0) - dt;
     if (s.trT <= 0) { s.trT = 0.8; s.tr.pts.push({ x: s.x, y: s.y, t: S.time }); if (s.tr.pts.length > 80) s.tr.pts.shift(); }
+    const x0 = s.x, y0 = s.y;
     if (s.M.bal) {
       const f = U.clamp(s.age / s.T, 0, 1);
       s.x = s.x0 + (s.aim.x - s.x0) * f; s.y = s.y0 + (s.aim.y - s.y0) * f; s.alt = s.apex * 4 * f * (1 - f);
@@ -579,6 +582,8 @@ IC.updateStrikes = function (S, dt) {
       if (L <= step) { s.x = s.aim.x; s.y = s.aim.y; s.dead = true; strikeImpact(S, s); }
       else { s.x += dx / L * step; s.y += dy / L * step; }
     }
+    // its speed over the ground, for the record and the replay (units a second)
+    if (dt > 0) s.spd = U.dxy(s.x, s.y, x0, y0) / dt;
   }
   S.strikes = S.strikes.filter(s => !s.dead);
 };
