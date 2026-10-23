@@ -176,11 +176,18 @@ function edgeArrows(S, now) {
     ctx.textAlign = 'left';
   }
 }
+/* the bottom of the alert chips at the top of the screen (measured twice a second): the tally sits under them */
+let alB = 0, alT = 0;
+function alertsBottom() {
+  const now = performance.now();
+  if (now - alT > 500) { alT = now; const el = document.getElementById('alerts'); alB = el && el.offsetHeight ? el.getBoundingClientRect().bottom : 0; }
+  return alB;
+}
 /* the raid in the air: what came, what we stopped so far, what is still flying */
 function tally(S) {
   const T = IC.raidTally(S);
   if (!T || !(T.n || T.R.aborted)) return;
-  const x = cam.vw / 2, y = 134;
+  const x = cam.vw / 2, y = Math.max(134, alertsBottom() + 24);
   const txt = `${T.R.name.toUpperCase()} · ${T.stopped} of ${T.n} stopped${T.air ? ` · ${T.air} in the air` : ''}${T.ac ? ` · ${T.ac} aircraft down` : ''}${T.through ? ` · ${T.through} through` : ''}${T.R.aborted ? ' · RAID ABORTED' : ''}`;
   ctx.font = '700 12.5px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
   const w = ctx.measureText(txt).width + 22;

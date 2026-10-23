@@ -211,5 +211,10 @@
  "first hour: a stray click far away does not stretch the surveyed runway past 5.6 km": 6,
  "first hour: a fuel farm, fire station or tower being built is no longer asked for": 8,
  "first hour: the site the tutorial suggests is clear of water that draws birds": 8,
- "first hour: a goal's How? is its own, and an offer names what is missing": 6
+ "first hour: a goal's How? is its own, and an offer names what is missing": 6,
+ "war reports: weapons our jammers send off course count as stopped, and a raid nothing got through is held": 45,
+ "war reports: a raid reported while its weapons still fly says so, and a late hit is reported after it": 50,
+ "war reports: a battery with only known decoys in reach says so, not that they are unidentified": 6,
+ "war reports: an intruder alert closes once the track is identified": 4,
+ "war reports: one strike on a lorry park writes one line, not one per truck": 4
 }

@@ -193,7 +193,7 @@ IC.on((S, type, d) => {
     case 'arm': if (once('arm')) say(S, 'ADA', `Anti-radiation missile inbound on ${d.target ? d.target.name : 'one of our radars'}. Switch it to Silent and the missile loses its lock. Anything its radar was guiding will miss too.`); break;
     case 'baseHit': if (!d.runway && once('rwy')) say(S, 'ENG', `The runway at ${d.base.name} is cratered. Jets there cannot fly and returning flights will divert. My crews start on the runway automatically; select the base to add crews or rebuild hangars.`); if (d.acLost && once('acg', 3600)) say(S, 'AIR', `We lost ${d.acLost} aircraft on the ground at ${d.base.name}. Hardened shelters would have saved most of them.`); break;
     case 'unmasked': say(S, 'INT', `TN ${d.tn} was squawking as airliner ${d.cs}. It is a bomber. They will try that again: watch for airliners that leave their routes.`); break;
-    case 'convoyLost': if (once('convoy')) say(S, 'LOG', `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defence along the route, or a depot further back, keeps them alive.`); break;
+    case 'convoyLost': if (once('convoy')) say(S, 'LOG', d.lostBy === 'LM' ? `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defence along the route, or a depot further back, keeps them alive.` : `We lost ${d.name}: it was caught in a strike on the place it was passing or loading at. Short-range air defence over the depots and along the routes keeps convoys alive, and so do depots further from the border.`); break;
     case 'unitLost': if (once('unitLost')) say(S, 'ADA', `${d.name} is gone. The enemy found it: radiating, firing and sitting near the border all give positions away. Move batteries after they fire when you can.`); break;
     // the enemy's acts: a chapter in Quick war, a card in the Career
     case 'enemyAct': {
@@ -202,13 +202,13 @@ IC.on((S, type, d) => {
       if (S.story) card(S, T[0], U.clock(S.time), T[1], 'chapter'); else chapter(S, T[0], T[1]);
       break;
     }
-    case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name} within the hour.`); break;
+    case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name}${d.R && d.R.T > S.time + 5400 ? ` in about ${Math.round((d.R.T - S.time) / 1800) / 2} hours` : ' within the hour'}.`); break;
     case 'cityHit': hitPm(S, -0.5 - (d.lost || 0) * 1.2); break;
     case 'infraLost': hitPm(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
     case 'tailLost': hitPm(S, -3, 'An airliner destroyed on the ground. The airlines are talking about leaving.'); break;
     // after each raid the Prime Minister weighs what got through and what it hit
     // (a small raid counts for less: a drone that gets through is not a failed defence)
-    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.35 - f) * Math.min(1, r.threats / 12) - Math.min(6, r.hits * 0.15), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
+    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.35 - f) * Math.min(1, r.threats / 12) - Math.min(6, r.hits * 0.15), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15 && !r.air) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
     case 'civilKill': pmHit(S, -15); say(S, 'CDS', d.strayBy ? `One of our missiles missed and found an airliner beyond its target. While raids are in the air, an open airspace puts airliners where our missiles fly: restrict it or close it.` : `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
     case 'weather': if (!IC.WEATHER[d].heli && once('wx', 21600)) say(S, 'AIR', 'Weather has grounded the helicopters. Jets can still fly.'); break;
     case 'delivered': if (once('delivered')) say(S, 'LOG', 'The first new equipment is in the reserve. Pick it in the arsenal and click the map to deploy it.'); break;
