@@ -91,9 +91,11 @@ function ourMissiles(S, px) {
 function defending(S, px, now) {
   const tag = (x, y, w, col) => { if (w.def && w.def !== 'react' || (w.def === 'react' && w.mslIn)) label(IC.DEF_WORDS[w.def] || 'DEFENDING', x, y + 26 * px, px, col, 8.5, 'center', 700); };
   for (const a of S.air) if (!a.dead && !a.gnd && a.def && RS.inView(a.x, a.y, 200)) tag(a.x, a.y, a, '#9fe0ff');
-  for (const t of S.threats) if (!t.dead && t.held && t.def && RS.inView(t.px, t.py, 200)) tag(t.px, t.py, t, '#ffb0a6');
+  // (where the map draws the track: an identified one stays where it is after radar loses it)
+  const v = {};
+  for (const t of S.threats) if (t.def && IC.trackView(S, t, v) && RS.inView(v.x, v.y, 200)) tag(v.x, v.y, t, '#ffb0a6');
   // a raid that broke: its aircraft say so all the way home
-  for (const t of S.threats) if (!t.dead && t.held && t.abort === true && !t.def && RS.inView(t.px, t.py, 200)) label('RAID ABORTED · going home', t.px, t.py + 26 * px, px, '#9fe0ff', 8.5, 'center', 700);
+  for (const t of S.threats) if (t.abort === true && !t.def && IC.trackView(S, t, v) && RS.inView(v.x, v.y, 200)) label('RAID ABORTED · going home', v.x, v.y + 26 * px, px, '#9fe0ff', 8.5, 'center', 700);
 }
 /* drone groups: how many, and how long until the first arrives */
 function droneGroups(S, px) {

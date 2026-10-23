@@ -179,6 +179,9 @@ IC.trackView = function (S, t, o) {
   o.aff = t.decoyKnown ? 'D' : t.aff || 'U'; o.klass = t.klass;
   return o;
 };
+// where the map draws a track (lines to it end on what is drawn), else its radar position
+const TAV = {};
+IC.trackAt = (S, t) => IC.trackView(S, t, TAV) ? TAV : { x: t.px, y: t.py };
 IC.trackUnc = t => ({ along: (t.unc || 0) * 1.5, across: t.unc || 0, a: Math.atan2(t.svy || t.vy || 0, t.svx || t.vx || 1) });
 
 /* raids fly together: tracks close to each other on the same heading and speed are one group. Groups are rebuilt
@@ -214,7 +217,9 @@ function groupTracks(S) {
   }
 }
 IC.groupTracks = groupTracks;
-IC.groupBox = g => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const t of g.members) { x0 = Math.min(x0, t.px); y0 = Math.min(y0, t.py); x1 = Math.max(x1, t.px); y1 = Math.max(y1, t.py); } return { x0, y0, x1, y1, x: (x0 + x1) / 2, y: (y0 + y1) / 2 }; };
+// round its members where the map draws them (an identified one is drawn where it is, not on its radar plot)
+const GBV = {};
+IC.groupBox = (g, S) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const t of g.members) { const v = S && IC.trackView(S, t, GBV), x = v ? v.x : t.px, y = v ? v.y : t.py; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } return { x0, y0, x1, y1, x: (x0 + x1) / 2, y: (y0 + y1) / 2 }; };
 
 /* ---------- the air picture ----------
    Every track that is not a known friend or airliner, one row per group, most dangerous first: hostile before

@@ -395,7 +395,7 @@ function drawUnit(S, u, px, now) {
     if (ly != null) label(txt, u.x, ly, px, busy ? C.amber : C.muted, 9.5);
   }
   if (sel) brackets(u.x, u.y, 17 * px, px);
-  if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.prio.px, u.prio.py); ctx.stroke(); ctx.setLineDash([]); }
+  if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); const tp = IC.trackAt(S, u.prio); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(tp.x, tp.y); ctx.stroke(); ctx.setLineDash([]); }
 }
 
 function drawWrecks(S, px, now) {
@@ -461,7 +461,7 @@ function drawImpacts(S, px, now) {
     ctx.strokeStyle = `rgba(255,91,79,${0.35 + 0.4 * p})`; ctx.lineWidth = 1.6 * px;
     ctx.beginPath(); ctx.ellipse(ix, iy, 16 * px + 25, 10 * px + 15, 0, 0, 7); ctx.stroke();
     ctx.setLineDash([4 * px, 5 * px]); ctx.strokeStyle = 'rgba(255,91,79,0.3)';
-    ctx.beginPath(); ctx.moveTo(t.px, t.py); ctx.lineTo(ix, iy); ctx.stroke(); ctx.setLineDash([]);
+    const tp = IC.trackAt(S, t); ctx.beginPath(); ctx.moveTo(tp.x, tp.y); ctx.lineTo(ix, iy); ctx.stroke(); ctx.setLineDash([]);
     if (cam.z > 0.15) label(`IMPACT ${U.dur(IC.timeToImpact(t))}`, ix, iy - 16 * px - 16, px, C.hostile, 9, 'center', 700);
   }
 }
