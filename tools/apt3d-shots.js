@@ -19,7 +19,7 @@ const [name = 'apt3d', key = 'mini', x = '0', y = '0', dist = '1.2', yaw = '0.8'
   const three = path.resolve(__dirname, '../node_modules/three/build/three.module.min.js');
   if (fs.existsSync(three)) await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\//, r => r.fulfill({ path: three, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
   await page.goto('file://' + path.resolve(__dirname, '../iron-canopy/index.html'));
-  await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 300000 });
   const mini = key === 'mini' ? JSON.stringify(Object.assign({}, require('../tests/fixtures/mini-layout.js'), { icao: 'TEST', after: 'made up for the tests' })) : 'null';
   try {
     await page.evaluate(`(async () => {

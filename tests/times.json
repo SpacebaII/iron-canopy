@@ -186,9 +186,16 @@
  "round 5c: textlint finds none of the banned phrases, in the source or in any tutorial step": 7.8,
  "round 5c: clicking an aircraft on its stand selects it, from the whole-airport zoom in; a click beside it picks the airport": 40.8,
  "round 5c: every civil tutorial step advances on its real action, one at a time, and the Guide replays it": 13.1,
+ "atmosphere: the mood is calm in a peacetime Career, tense before a war and battle when hostile weapons fly": 12.5,
+ "atmosphere: night is darker and bluer than noon, dusk in between, and a storm greyer and darker than a clear day": 6.9,
  "sandbox: money never runs out, and airport parts and units are ready at once": 7.7,
  "sandbox: the enemy does nothing until asked; an attack from the panel flies at the target and is scored": 62.4,
  "sandbox: a raid the enemy plans flies, ends with a report, and no other follows": 84.2,
  "sandbox: repair, clear the sky, and a save that loads and keeps its rules": 31.2,
- "polish: a runway warning on the map names the runway once": 9
+ "polish: a runway warning on the map names the runway once": 9,
+ "film: a pan ends where it was planned, and a push zooms in log steps from its first zoom to its last": 0.1,
+ "film: a tracking shot keeps a cruise missile on screen, a little behind the middle, all the way in": 14.6,
+ "film: the director films what is about to happen, and does not cut away in the last seconds before it": 28.6,
+ "launchers (brief 61): every launcher, radar and missile is built at its size, with its moving parts, low enough in triangles": 0.4,
+ "models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light": 0.4
 }

@@ -9,6 +9,7 @@ const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)'
 let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
 let LIFE = false, BR = null, ACT = 0.5;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges; ACT: how busy its terminal is, 0 → 1
 function lbl(g, txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.on) return;
   if (NOLBL) return;
   // (round 5c) close in, a font of a fraction of a world unit is drawn at the wrong size by the canvas: the words come
   // out squeezed. There they are drawn in screen pixels at the same place
@@ -60,6 +61,52 @@ IC.drawPlane = function (g, x, y, h, type, livery, o) {
   if (o.shadow) { g.save(); g.translate(o.shadow, o.shadow * 0.6); g.globalAlpha *= 0.35; drawShape(g, T, type, L, Sp, 'rgba(0,0,0,1)', 'rgba(0,0,0,1)', 'rgba(0,0,0,1)'); g.restore(); }
   drawShape(g, T, type, L, Sp, body, c1, c2);
   g.restore();
+};
+/* (brief 67) an aircraft on the ground as it is drawn: the simulation moves it along straight taxiway pieces and turns
+   it at each node in one step, swings it round at the end of a runway, and slides it onto a stand facing the stand.
+   Drawn, the nose follows the way it really moves (backwards in a pushback), turning no faster than a real aircraft,
+   and the corners of its route are rounded by a short lag (about 28 m, an airliner's turning radius), so it sweeps round a turn instead of
+   snapping. Kept per movement beside it (the step never sees it); a jump of more than a few hundred metres snaps */
+const POSE = new WeakMap();
+IC.movePose = function (m, S) {
+  const t = S ? S.time : 0;
+  let p = POSE.get(m);
+  if (!p) { p = { x: m.x, y: m.y, h: m.h, t, mx: m.x, my: m.y, f: 0.33, lf: 0 }; POSE.set(m, p); return p; }
+  const dt = t - p.t;
+  if (dt <= 0) return p;
+  p.t = t;
+  // (a frame's game time, smoothed: at 8× or 32× a frame is seconds of taxiing, so the easing below is
+  // floored at a few frames, or a corner the simulation turns in one step is a snap on screen)
+  p.f += (Math.min(dt, 30) - p.f) * 0.2;
+  const mv = Math.hypot(m.x - p.mx, m.y - p.my), spd = mv / dt;
+  p.mx = m.x; p.my = m.y;
+  let jx = m.x - p.x, jy = m.y - p.y;
+  const J = Math.hypot(jx, jy);
+  if (J > 3 + mv * 5 || dt > 120) { p.x = m.x; p.y = m.y; p.h = m.h; return p; }
+  // (on the runway and the approach the way is straight: almost no lag, so it hands over to the airborne track
+  // where it is; the floor of a few frames eases in and out over a few frames, so lining up does not jump)
+  const run = m.phase === 'roll' || m.phase === 'final' || m.phase === 'land', R = run ? 0.01 : 0.28;
+  p.lf += ((run ? 0 : 3) - p.lf) * (1 - Math.exp(-dt / (2 * p.f)));
+  const tau = Math.max(spd > 1e-4 ? Math.min(4, R / spd) : 1.2, p.lf * p.f, 1e-3), k = 1 - Math.exp(-dt / tau);
+  // the nose: pursuing where the simulation has the aircraft while it moves, else the simulation's heading
+  let want = m.h;
+  const ds = J * k / dt, moving = ds > 0.004 || spd > 0.004;
+  if (J > 0.004 && moving) {
+    const mvH = Math.atan2(jy, jx);
+    // (backwards only when both the simulation's heading and the drawn one say so: at 32× the simulation's
+    // turns a corner a whole frame before the drawn aircraft reaches it)
+    want = Math.abs(U.angWrap(mvH - m.h)) > 1.75 && Math.abs(U.angWrap(mvH - p.h)) > 1.75 ? mvH + Math.PI : mvH;
+  }
+  // a turn rate: brisk on the ground (about 23° a second), a slow pivot in place, and never more than
+  // some 17° a frame however fast the game runs
+  const w = Math.min((moving ? 0.4 : 0.2) * dt, run ? 0.6 : 0.3), d = U.angWrap(want - p.h);
+  p.h += U.clamp(d, -w, w);
+  // and it goes where its nose points (or its tail, pushed back): only a little of the way sideways, so a
+  // corner taken in one simulation step is driven round rather than slid
+  const c = Math.cos(p.h), sn = Math.sin(p.h), sx = jx * k, sy = jy * k, al = sx * c + sy * sn, la = -sx * sn + sy * c;
+  const lq = run ? la : U.clamp(la * 0.3, -Math.abs(al) * 0.2 - 0.001 * dt, Math.abs(al) * 0.2 + 0.001 * dt);
+  p.x += c * al - sn * lq; p.y += sn * al + c * lq;
+  return p;
 };
 function drawShape(g, T, type, L, Sp, body, c1, c2) {
   const f = L * (type === 'fighter' ? 0.14 : type === 'turbo' ? 0.09 : 0.1);
@@ -147,7 +194,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
-  if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
+  // (drawn already this frame under the map's night when it lies outside the fence: IC.drawLandsideEarly)
+  if (ap.land && ap.land.items && z > 1.2 && ap._landF !== IC.frameN) drawLandside(g, S, ap, px, z, night);
   // the pavement: close in, one painted surface from the airport's tiles (render-pavement.js); far out, flat shapes
   const tiles = z * IC.dpr() >= 1;
   if (tiles && o && o.pad) IC.pavePaint(g, S, ap, z, IC.rs.view);
@@ -200,8 +248,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (LIFE && z > 10 && ap.land) IC.drawLandLife(g, S, ap, px, z, night, IC.lifeT || now * IC.GS);
   if (LIFE && ap.owner === 'us') IC.lifeSoundAp(S, ap, z, seen);
   // aircraft moving
-  if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
+  if (z >= 0.5) for (const m0 of ap.moves) {
+    if (m0.dead || !seen(m0.x, m0.y, 1 + (m0.alt || 0) * 6)) continue;
+    const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, phase: m0.phase, kind: m0.kind, holding: m0.holding, alt: m0.alt, type: m0.type, livery: m0.livery, mil: m0.mil };
     const air = m.phase === 'final';
     // (round 5c) from the middle zoom a taxiing aircraft leaves a short fading trail, so a busy apron reads as busy
     if (IC.FOCUS.polish && !air && z > 2 && z < 40 && !m.holding && !['push', 'start', 'wait', 'parkin', 'land'].includes(m.phase) && m.T) {
@@ -209,7 +258,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
       gr.addColorStop(0, 'rgba(255,255,255,0.32)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.strokeStyle = gr; g.lineWidth = Math.max(m.T.len * 0.12, 2 * px); g.lineCap = 'round'; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(bx, by); g.stroke(); g.lineCap = 'butt';
     }
-    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8 });
+    // the shadow as the airborne tracks draw it (render-combat.js), so it does not jump at the final approach fix
+    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? Math.min(3, (m.alt || 0) * 0.25) + 0.04 : 0.04, minPx: m.mil ? 6 : 8 });
     // a tug at the nose: pushing back, or towing to and from the hangar
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) {
       // (round 5c) the same tug as at the stand, nose to nose with the aircraft on its tow bar
@@ -223,7 +273,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
-  if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
+  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptNightClip(g2, ap, box));   // (not in the 3D view's picture: it has its own sky)
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
   if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);
@@ -233,15 +283,18 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // which way each runway is in use, and for what (above the night, it is information)
   if (z > 0.35) drawConfig(g, S, ap, px, z);
   const tags = [];
-  if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead || !seen(m.x, m.y, 1 + 80 * px)) continue;
+  if (z >= 0.5) for (const m0 of ap.moves) {
+    if (m0.dead || !seen(m0.x, m0.y, 1 + 80 * px)) continue;
+    const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, type: m0.type, spd: m0.spd, phase: m0.phase, born: m0.born, holding: m0.holding, holdWhy: m0.holdWhy, who: m0.who };
     if (night && z > 3 && LIFE) IC.drawAcLights(g, m, px, z, now, U.clamp((0.55 - light) / 0.3, 0.3, 1));
     else if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
     // why it waits, in a few words: "holding: arrival 5 km out"
     // one tag where aircraft stand nose to tail: the first one's
     const free = !tags.some(t => Math.abs(t.x - m.x) < 70 * px && Math.abs(t.y - m.y) < 14 * px);
     if (z > 5 && m.holding && (m.holding !== 'queue' || z > 24) && free && tags.push(m)) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
-    if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
+    // (brief 67) the call signs take their turn with the other words: where aircraft bunch up they no longer pile into
+    // one unreadable smear (one moves a line down, else it waits)
+    if (z > 7 && m.who) { const y = IC.LBL.put(m.x, m.y + 14 * px, m.who.length * 8 * 0.62 * px, 9 * px, 10 * px, 1); if (y != null) lbl(g, m.who, m.x, y, px, 'rgba(230,240,245,0.8)', 8, 'center', 500); }
   }
   // the turnaround clock on the stand of the airliner selected or followed
   if (LIFE && z > 4) IC.drawTurnClock(g, S, ap, px, z, lbl);
@@ -1158,6 +1211,13 @@ function lotPaths(it, w, h, k, use) {
   }
   return (it._lot = out);
 }
+/* (brief 67) the landside reaches outside the fence, where the airport's own night does not fall, and it was drawn after
+   the map's: car parks, kerbs and the terminal's front stood white in the dark. render.js draws it before the night */
+IC.drawLandsideEarly = function (g, S, ap, px, light) {
+  const z = IC.cam.z;
+  if (!ap.land || !ap.land.items || z <= 1.2 || !ap.parts) return;
+  drawLandside(g, S, ap, px, z, light < 0.55); ap._landF = IC.frameN;
+};
 function drawLandside(g, S, ap, px, z, night) {
   const L = ap.land, V = IC.rs && IC.rs.view;
   const vis = it => !V || (it.x > V.x0 - 2 && it.x < V.x1 + 2 && it.y > V.y0 - 2 && it.y < V.y1 + 2);
