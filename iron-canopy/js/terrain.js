@@ -16,9 +16,12 @@ function ramp(h) {
    snow above the snowline but not on the steepest faces, where it does not lie. Returns the colour and how much of
    it is rock or snow, so a tile can lay the sharp version over the base's soft one */
 const ROCK = [[108, 108, 106], [130, 128, 124]], SCREE = [150, 146, 136], SNOW = [234, 238, 242];
+// (on a volcano: dark lava rock and grey-brown ash, W.volcAt)
+const LAVA = [[78, 72, 70], [100, 92, 86]], ASH = [128, 118, 106];
 const SNOWLINE = 1.46;
-function bare(h, sl, x, y, out, e) {
+function bare(h, sl, x, y, out, e, vt) {
   let c = ramp(h);
+  const rock = vt > 0.05 ? LAVA : ROCK, scree = vt > 0.05 ? ASH : SCREE;
   // a mottle down to the scale drawn (e world units a sample): finer octaves would only flicker
   e = e || 40;
   let n = U.vnoise(x / 9, y / 9) * 0.5 + 0.25, w = 0.25;
@@ -27,10 +30,11 @@ function bare(h, sl, x, y, out, e) {
   const rk = up * U.clamp((sl - 0.34) / 0.2 + (h - 1.12) / 0.25 + (n - 0.5) * 0.6, 0, 1);
   // scree: the paler broken rock at the foot of the crags
   const sc = up * U.clamp((sl - 0.22) / 0.12, 0, 1) * (1 - rk) * U.clamp((n - 0.5) * 4, 0, 0.6);
-  if (sc > 0) c = mix(c, SCREE, sc);
-  if (rk > 0) c = mix(c, n > 0.5 ? ROCK[1] : ROCK[0], rk);
+  if (sc > 0) c = mix(c, scree, sc);
+  if (rk > 0) c = mix(c, n > 0.5 ? rock[1] : rock[0], rk);
   // snow: a sharp edge broken by the mottle, lying in the hollows but not on the steepest faces
-  const sn = U.clamp((h - SNOWLINE + (n - 0.5) * 0.14) / 0.02, 0, 1) * (1 - U.clamp((sl - 0.7) / 0.4, 0, 1) * 0.8);
+  // (a volcano's glaciers come further down: it stands alone in the weather, and its cone is all the same slope)
+  const sn = U.clamp((h - SNOWLINE + 0.22 * (vt || 0) + (n - 0.5) * 0.14) / 0.02, 0, 1) * (1 - U.clamp((sl - 0.7) / 0.4, 0, 1) * 0.8);
   if (sn > 0) c = mix(c, SNOW, sn);
   if (out) out.a = Math.max(rk, sc, sn);
   return c;
@@ -39,7 +43,7 @@ function bare(h, sl, x, y, out, e) {
 /* (terrain pass) and by region: red-earth ploughland and cotton in the south, golden wheat on the rolling plains, the
    green of an irrigation circle on the dry high plains */
 const FIELDS = [[106, 124, 72], [120, 134, 80], [158, 148, 98], [122, 108, 80], [98, 118, 72], [138, 138, 94], [170, 164, 90], [90, 110, 64], [148, 140, 106],
-  [146, 98, 70], [166, 162, 140], [186, 166, 106], [88, 122, 60]];
+  [138, 104, 80], [138, 144, 116], [186, 166, 106], [88, 122, 60]];
 const FIELD_W = [3, 2, 2.5, 2, 3, 1.5, 0.35, 1.2, 1.4, 0, 0, 0, 0];
 const FIELD_CUM = FIELD_W.map((w, i) => FIELD_W.slice(0, i + 1).reduce((s, v) => s + v, 0) / FIELD_W.reduce((s, v) => s + v, 0));
 const crop = h => { for (let i = 0; i < FIELD_CUM.length; i++) if (h < FIELD_CUM[i]) return i; return 0; };
@@ -51,7 +55,7 @@ const BIOME_W = [
   [0.5, 2, 2, 1.5, 0.3, 0.6, 0.5, 0.3, 1.5, 0, 0, 4, 0],        // rolling wheat
   [0.5, 1, 0, 0.2, 5, 3, 0, 0.3, 0, 0, 0, 0, 0],                // wet green country: pasture and hay
   [1.5, 1, 0.6, 0.6, 4, 3, 0.2, 1.5, 0.4, 0, 0, 0, 0],          // valleys
-  [0.3, 1.5, 0.3, 0, 2, 0.6, 0, 1.5, 0.3, 2.5, 2, 0, 0]          // the south: red earth, cotton, maize
+  [0.3, 1.5, 0.3, 0, 2.6, 0.8, 0, 1.5, 0.3, 1.3, 0.7, 0, 0]        // the south: pasture, red earth, cotton, maize
 ];
 const BIOME_CUM = BIOME_W.map(W => W.map((w, i) => W.slice(0, i + 1).reduce((s, v) => s + v, 0) / W.reduce((s, v) => s + v, 0)));
 /* each region's own grass and the colour of its woods, for the base and the canopy */
@@ -159,22 +163,25 @@ IC.buildTerrain = function (W) {
       const wx = (x + 0.5) * cellX, q = (y + 1) * (BW + 2) + x + 1;
       const h = HB[q], gx = (HB[q + 1] - HB[q - 1]) / (2 * cellX), gy = (HB[q + BW + 2] - HB[q - BW - 2]) / (2 * cellY);
       // the fine light from the drawn heights, and a broader one so the ranges still read on the whole-country map
-      const shade = U.clamp(1 + shadeOf(gx, gy, 9) * 1.25 + hs(wx, wy, 200, 220) * 0.6, 0.4, 1.5);
+      // (terrain pass) the sea, on an authored map (W.seas): the shallows over the shelf to the deep, level, unlit
+      const sea = W.inSea && W.inSea(wx, wy);
+      const shade = sea ? 1 : U.clamp(1 + shadeOf(gx, gy, 9) * 1.25 + hs(wx, wy, 200, 220) * 0.6, 0.4, 1.5);
       let k = countryOf(x, y, wx, wy); if (k === 'H' && !W.inHome(wx, wy)) k = W.countryAt(wx, wy);
       const bi = biomeAt(W, wx, wy);
-      let c = bare(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.06, Math.hypot(gx, gy) * 20, wx, wy, BO, cellX);
+      let c = bare(h + (U.vnoise(wx / 90, wy / 90) - 0.5) * 0.06, Math.hypot(gx, gy) * 20, wx, wy, BO, cellX, W.volcAt ? W.volcAt(wx, wy) : 0);
       const rock = BO.a;
       c = mix(c, BIOME_GROUND[bi], U.clamp((0.75 - h) / 0.3, 0, 1) * (1 - rock) * 0.7);
       const hsh = U.hash(x, y);
       // damp ground along the rivers is greener
       const rd = W.riverDist(wx, wy); if (rd < 40) c = mix(c, [70, 98, 60], 0.35 * (1 - rd / 40));
-      const fw = W.farmAt(wx, wy) * 0.8;
+      if (sea) { const sh = U.clamp((h + 0.38) / 0.3, 0, 1); c = mix([22, 48, 68], [58, 108, 116], sh * sh); k = 'H'; }
+      const fw = sea ? 0 : W.farmAt(wx, wy) * 0.8 * (W.volcAt ? 1 - U.clamp(W.volcAt(wx, wy) * 4, 0, 1) : 1);
       if (fw > 0.02) {
         // (a pixel here is 4 km, some six farm blocks: their region's crops on average, a little of one block's)
         const i = Math.floor(wx / FB), j = Math.floor(wy / FB), bc = blockCrops(W, i, j, wx, wy);
         c = mix(c, mix(BIOME_FIELD[bi], FIELDS[bc[0]], 0.25), fw * (0.6 + 0.2 * U.hash(i + 5, j * 3)));
       }
-      const fo = forestOf(x, y) - tl(wx, wy) - IC.FOREST_T;
+      const fo = sea ? -1 : forestOf(x, y) - tl(wx, wy) - IC.FOREST_T;
       if (fo > -0.03) c = mix(c, mix(BIOME_WOOD[bi], [50, 74, 46], U.vnoise(wx / 7, wy / 7) > 0.5 ? 0 : 0.3), U.clamp((fo + 0.03) / 0.05, 0, 1) * 0.9);
       let r = c[0], g = c[1], b = c[2];
       if (k !== 'H') {
@@ -304,7 +311,7 @@ function fields(g, T, lod, x0, y0, x1, y1) {
     const c00 = fbCorner(i, j), c10 = fbCorner(i + 1, j), c11 = fbCorner(i + 1, j + 1), c01 = fbCorner(i, j + 1);
     const cx = (c00[0] + c10[0] + c11[0] + c01[0]) / 4, cy = (c00[1] + c10[1] + c11[1] + c01[1]) / 4;
     const fw = W.farmAt(cx, cy);
-    if (fw < 0.12) continue;
+    if (fw < 0.12 || W.volcAt && W.volcAt(cx, cy) > 0.2) continue;   // (nobody farms a volcano's slopes)
     const hb = U.hash(i * 13 + 5, j * 29 + 1), bc = blockCrops(W, i, j, cx, cy);
     // on the high plains many blocks are one irrigation circle, a disc of green in the dry corners of its square
     if (bc[2] === 0 && hb < 0.32 && fw > 0.4 && W.slopeAt(cx, cy) < 0.03 && !(T.fdc(cx, cy) > IC.FOREST_T)) { pivots.push(cx, cy, FB * (0.38 + 0.08 * U.hash(i, j + 3)), hb); continue; }
@@ -436,6 +443,50 @@ function forest(g, T, lod, x0, y0, x1, y1) {
 }
 /* vector layers shared by the base (lod 0) and the detail tiles */
 /* wk widens lines drawn far out (lod 0) for a coarser image, so they keep their width on screen */
+/* (terrain pass) the sea on an authored map (W.seas, W.coast): the deep, then the shelf in steps out from the shore
+   to the shallows, the surf close in, and the shore itself, sand where the land is low and rock where it is high */
+const SHELF = [[60, 'rgb(34,66,84)'], [30, 'rgb(42,80,96)'], [14, 'rgb(52,96,106)'], [6, 'rgb(64,114,118)'], [2.4, 'rgb(84,134,130)']];
+const coastRuns = W => {
+  if (W._coastRuns) return W._coastRuns;
+  // the coast's points come in order round each sea; a gap is the open sea's edge, where a run ends
+  const runs = [];
+  for (const C of W.coast || []) {
+    let run = [];
+    const end = () => { if (run.length > 1) { let a = 1e9, b = 1e9, c = -1e9, d = -1e9; for (const [x, y] of run) { a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); } runs.push({ pts: run, bb: [a, b, c, d] }); } run = []; };
+    for (let i = 0; i < C.length; i++) { if (run.length && Math.hypot(C[i][0] - run[run.length - 1][0], C[i][1] - run[run.length - 1][1]) > 60) end(); run.push(C[i]); }
+    end();
+  }
+  return (W._coastRuns = runs);
+};
+function sea(g, W, lod, K0, inb, smooth, x0, y0, x1, y1) {
+  const runs = coastRuns(W).filter(r => inb(r.bb[0] - 70, r.bb[1] - 70, r.bb[2] + 70, r.bb[3] + 70));
+  const seaPath = () => { g.beginPath(); for (const s of W.seas) { const P = s.poly; for (let i = 0; i < P.length; i++) g[i ? 'lineTo' : 'moveTo'](P[i][0], P[i][1]); g.closePath(); } };
+  if (!W.seas.some(s => inb(s.bb[0], s.bb[1], s.bb[2], s.bb[3]))) return;
+  seaPath(); g.fillStyle = 'rgb(26,54,74)'; g.fill();
+  g.save(); seaPath(); g.clip();
+  for (const [w, col] of SHELF) { g.lineWidth = 2 * Math.max(w, lod ? 0 : 3 * K0); g.strokeStyle = col; for (const r of runs) { smooth(r.pts); g.stroke(); } }
+  if (lod >= 2) {
+    // the surf: a broken band of foam a little way out, the water behind it clear again
+    g.lineWidth = 1.1; g.strokeStyle = 'rgba(236,240,236,0.5)'; g.setLineDash([2.6, 0.9, 1.2, 0.7]);
+    for (const r of runs) { smooth(r.pts); g.stroke(); }
+    g.setLineDash([]); g.lineWidth = 0.5; g.strokeStyle = 'rgba(96,146,138,0.85)'; for (const r of runs) { smooth(r.pts); g.stroke(); }
+  }
+  g.restore();
+  if (!lod) return;
+  // the shore, on the land side only
+  g.save(); g.beginPath(); g.rect(x0 - 100, y0 - 100, x1 - x0 + 200, y1 - y0 + 200);
+  for (const s of W.seas) { const P = s.poly; for (let i = 0; i < P.length; i++) g[i ? 'lineTo' : 'moveTo'](P[i][0], P[i][1]); g.closePath(); }
+  g.clip('evenodd');
+  const sand = [], rock = [];
+  for (const r of runs) for (let i = 1; i < r.pts.length; i++) {
+    const [ax, ay] = r.pts[i - 1], [bx, by] = r.pts[i];
+    // (stretches of rocky shore where the land comes down high, or now and then anywhere)
+    (W.hAt((ax + bx) / 2, (ay + by) / 2) > 0.38 || U.vnoise(ax / 45 + 7, ay / 45) < 0.22 ? rock : sand).push(ax, ay, bx, by);
+  }
+  lines(g, sand, 'rgb(206,194,156)', lod >= 3 ? 1.2 : 1.6);
+  lines(g, rock, 'rgb(118,114,106)', lod >= 3 ? 0.6 : 1);
+  g.restore();
+}
 function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
   const K0 = lod ? 1 : wk || 1;
   const inb = (bx0, by0, bx1, by1) => !(bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1);
@@ -459,6 +510,7 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     g.strokeStyle = 'rgb(46,78,90)'; g.lineWidth = w; smooth(pts); g.stroke();
     g.strokeStyle = 'rgba(96,136,150,0.4)'; g.lineWidth = w * 0.4; smooth(pts); g.stroke();
   }
+  if (W.seas && W.seas.length) sea(g, W, lod, K0, inb, smooth, x0, y0, x1, y1);
   for (const l of W.lakes) {
     if (!inb(l.x - l.rx, l.y - l.rx, l.x + l.rx, l.y + l.rx)) continue;
     g.save(); g.translate(l.x, l.y); g.rotate(l.rot);
@@ -874,7 +926,10 @@ const RLX = [5, 4, 3, 1.8, 1.3];   // (level 0 first)   // how much steeper the 
 function relief(T, lod, x0, y0, size, px) {
   // samples one beyond the tile all round, so the images can be drawn from their inner part and tiles meet seamlessly
   const W = T.W, N = Math.min(128, Math.ceil(px / 2)), e = size / N, M = N + 2, Q = N + 4, H = new Float32Array(Q * Q);
-  for (let j = 0; j < Q; j++) for (let i = 0; i < Q; i++) H[j * Q + i] = W.hFine(x0 + (i - 1.5) * e, y0 + (j - 1.5) * e, e);
+  for (let j = 0; j < Q; j++) for (let i = 0; i < Q; i++) {
+    const x = x0 + (i - 1.5) * e, y = y0 + (j - 1.5) * e, h = W.hFine(x, y, e);
+    H[j * Q + i] = h < 0 && W.inSea && W.inSea(x, y) ? 0 : h;   // (the sea is level, whatever its bed does)
+  }
   const im = () => { const c = mk(M, M), g = c.getContext('2d'); return { c, g, d: g.createImageData(M, M) }; };
   const D = im(), L = im(), R = im(), K = lod ? null : im(), o = { a: 0 }, k = RLX[lod];
   let rocky = false;
@@ -886,7 +941,7 @@ function relief(T, lod, x0, y0, size, px) {
     if (K) K.d.data[p + 3] = U.clamp((h - 0.42) / 0.15, 0, 1) * 255;
     if (h < 0.5) continue;
     // up in the hills this replaces the base's ground (smeared over 4 km a pixel) outright, rock, scree and snow sharp
-    const wx = x0 + (i - 0.5) * e, wy = y0 + (j - 0.5) * e, c = bare(h, Math.hypot(gx, gy) * 20, wx, wy, o, e);
+    const wx = x0 + (i - 0.5) * e, wy = y0 + (j - 0.5) * e, c = bare(h, Math.hypot(gx, gy) * 20, wx, wy, o, e, W.volcAt ? W.volcAt(wx, wy) : 0);
     const a = lod ? Math.max(o.a, U.clamp((h - 0.5) / 0.15, 0, 1)) : o.a;   // (level 0 keeps the far picture's woods and grass)
     if (a <= 0.02) continue;
     rocky = true; R.d.data[p] = c[0]; R.d.data[p + 1] = c[1]; R.d.data[p + 2] = c[2]; R.d.data[p + 3] = a * 255;
@@ -935,7 +990,6 @@ function paintTile(T, lod, tx, ty, S) {
   const m = [6, 2, 1, 0.5][lod - 1];
   fields(g, T, lod, x0 - m, y0 - m, x1 + m, y1 + m);
   forest(g, T, lod, x0 - m, y0 - m, x1 + m, y1 + m);
-  if (S) airfields(g, S, x0 - m, y0 - m, x1 + m, y1 + m, lod);
   // hills: the hillshade laid over everything on the ground
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalCompositeOperation = 'multiply';
@@ -944,6 +998,8 @@ function paintTile(T, lod, tx, ty, S) {
   rl.draw(g, rl.shadeL);
   g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   g.setTransform(L.ppu, 0, 0, L.ppu, -x0 * L.ppu, -y0 * L.ppu);
+  // (terrain pass) airfields over the light: their ground is graded level, which the lowlands' drawn hills are not
+  if (S) airfields(g, S, x0 - m, y0 - m, x1 + m, y1 + m, lod);
   vectors(g, W, x0 - 60, y0 - 60, x1 + 60, y1 + 60, lod, 60);
   if (S && S.marks) for (const k of S.marks) if (k.x + k.r > x0 && k.x - k.r < x1 && k.y + k.r > y0 && k.y - k.r < y1) mark(g, k, S.time, lod);
   return cv;

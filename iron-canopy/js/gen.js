@@ -215,7 +215,7 @@ function* worldSteps(seed) {
         if (W.hAt(vx, vy) < 0.5 || towns.some(t => Math.hypot(t.x - vx, t.y - vy) < w * 1.1)) continue;
         if (vols.some(r => Math.hypot(r.pts[0][0] - vx, r.pts[0][1] - vy) < 1500)) continue;
         const nm = 'Mount ' + IC.NAMES.pre[Math.floor(U.hash(vx | 0, vy | 0) * IC.NAMES.pre.length)] + IC.NAMES.suf[Math.floor(U.hash(vy | 0, 7) * IC.NAMES.suf.length)];
-        vols.push({ pts: [[vx, vy]], a: 1.3 + 0.2 * U.hash(k, seed), w, core: 0, style: 'volcano', name: nm });
+        vols.push({ pts: [[vx, vy]], a: 1.6 + 0.25 * U.hash(k, seed), w, core: 0, style: 'volcano', name: nm, drawn: true });   // (drawn: for the drawing only, not in the grid)
       }
     }
     // each crest as drawn: rounded at its points (two passes of corner cutting), so a range bends instead of zigzagging
@@ -242,14 +242,7 @@ function* worldSteps(seed) {
         const r = q.r;
         if (x < q.bb[0] || y < q.bb[1] || x > q.bb[2] || y > q.bb[3]) continue;
         if (px !== px) { px = x + (fbm(x / 260 + 3, y / 260 + 9, 3) - 0.5) * 300; py = y + (fbm(x / 260 + 23, y / 260 + 51, 3) - 0.5) * 300; }
-        if (r.style === 'volcano') {
-          // a cone (not warped: it stands where it is), steeper towards the top, with a crater; old lava round its foot
-          const dv = Math.hypot(x - r.pts[0][0], y - r.pts[0][1]), tv = 1 - dv / r.w;
-          if (tv <= 0) continue;
-          eg[k] += r.a * (Math.pow(tv, 2.2) - 0.12 * Math.max(0, (tv - 0.94) / 0.06) + 0.1 * tv * fbm(x / 120 + 7, y / 120 + 3, 2));
-          rg[k] = Math.max(rg[k], 0.8 * tv);
-          continue;
-        }
+        if (r.style === 'volcano') continue;   // (a cone is worked out where it is asked for: volcAt below)
         let d = r.w;
         for (const g of q.segs) if (px >= g[4] && py >= g[5] && px <= g[6] && py <= g[7]) d = Math.min(d, U.segDist(px, py, g[0], g[1], g[2], g[3]));
         if (d >= r.w) continue;
@@ -264,12 +257,76 @@ function* worldSteps(seed) {
         }
       }
     }
-    return (rel = { eg, rg, fg, pg });
+    // a map's plateaus (W.plateaus): the height grid lifts them over a slope as wide as their edge, tens of km; drawn,
+    // the edge is an escarpment a few km wide, ragged with spurs and coves, the top level behind it
+    for (const p of W.plateaus || []) {
+      const P = p.poly.concat([p.poly[0]]), [bx0, by0, bx1, by1] = p.bb || [Math.min(...p.poly.map(q => q[0])), Math.min(...p.poly.map(q => q[1])), Math.max(...p.poly.map(q => q[0])), Math.max(...p.poly.map(q => q[1]))];
+      for (let j = Math.max(0, Math.floor(by0 / DG)); j <= Math.min(DGH - 1, Math.ceil(by1 / DG)); j++) for (let i = Math.max(0, Math.floor(bx0 / DG)); i <= Math.min(DGW - 1, Math.ceil(bx1 / DG)); i++) {
+        const x = i * DG, y = j * DG; if (!U.inPoly(x, y, p.poly)) continue;
+        const d = U.polyDist(x, y, P); if (d >= p.edge) continue;
+        const dr = d + ((fbm(x / 300 + 71, y / 300 + 13, 3) - 0.5) * 1.6 + (U.vnoise(x / 70 + 5, y / 70 + 31) - 0.5) * 0.5) * p.edge, u = U.clamp(dr / (p.edge * 0.18), 0, 1);
+        eg[j * DGW + i] += p.h * (u * u * (3 - 2 * u) - d / p.edge);
+        rg[j * DGW + i] = Math.max(rg[j * DGW + i], 0.8 * Math.sin(u * Math.PI));
+      }
+    }
+    return (rel = { eg, rg, fg, pg, vols });
+  };
+  /* a volcano's cone where it is asked for, not on the grid (whose 4 km squares showed in its snow cap and crater):
+     concave slopes steepening to a rim, a crater, gullies running straight down its sides that the snow and the
+     trees follow, and a foot that runs out in lumpy old lava and ash. out.v is how far up a cone the point is (0
+     off it, 1 at the rim), for the colours */
+  const VO = { v: 0 };
+  const volcAt = (x, y, out) => {
+    const vols = drawnRelief().vols;
+    let add = 0; if (out) out.v = 0;
+    for (const r of vols) {
+      const vx = r.pts[0][0], vy = r.pts[0][1], R = Math.max(r.w * 1.25, r.w + GC * 1.5), dx = x - vx, dy = y - vy;
+      if (dx > R || dx < -R || dy > R || dy < -R) continue;
+      const dv = Math.hypot(dx, dy); if (dv >= R) continue;
+      // a map's own volcano is already in the height grid, a round cone faceted by the grid's 4 km squares: taken
+      // out here (the grid's corners as W.height made them, interpolated the same way) for the one drawn below
+      if (!r.drawn) {
+        const cone = (cx, cy) => { const d = Math.hypot(cx - vx, cy - vy); return d < r.w ? r.a * Math.pow(1 - d / r.w, 2) * (0.55 + 0.9 * fbm(cx / 390 + 11, cy / 390 + 5, 3)) : 0; };
+        const fx = U.clamp(x / GC, 0, GW - 1.001), fy = U.clamp(y / GC, 0, GH - 1.001), i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+        const a = cone(i * GC, j * GC), b = cone((i + 1) * GC, j * GC), c = cone(i * GC, (j + 1) * GC), d = cone((i + 1) * GC, (j + 1) * GC);
+        add -= a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+      }
+      // the foot wanders: the cone's edge is pushed in and out round it
+      const ca = dx / (dv || 1), sa = dy / (dv || 1), wob = 1 + 0.16 * (U.vnoise(ca * 2.2 + 40, sa * 2.2 + r.w) - 0.5) + 0.1 * (U.vnoise(x / 70 + 3, y / 70 + 9) - 0.5);
+      const t = U.clamp(1 - dv / (r.w * wob), 0, 1), rim = 0.92;
+      if (t <= 0) continue;
+      let p = t < rim ? Math.pow(t, 2.3) : Math.pow(rim, 2.3) - 0.09 * (1 - Math.pow(1 - (t - rim) / (1 - rim), 2));
+      // the gullies: ridged noise round the cone, stretched down its slope, deepest on the middle slopes
+      // (some two dozen big ones, each splitting lower down, so they widen and fan out towards the foot)
+      const gq = U.vnoise(ca * 4 + sa * 1.3 + dv / 300, sa * 4 - ca * 1.3 + 17), gl = U.vnoise(ca * 8 + 5 + dv / 180, sa * 8);
+      const gul = (1 - Math.abs(2 * gq - 1)) * 0.75 + (1 - Math.abs(2 * gl - 1)) * 0.25, uu = Math.pow(Math.min(1, t / rim), 0.7);
+      p += (gul - 0.6) * 0.1 * 4 * uu * (1 - uu);
+      // lava and ash at the foot: lumpy, fading out
+      p += 0.05 * t * (1 - t) * 4 * (U.vnoise(x / 18 + 11, y / 18 + 4) - 0.5) * (1 - t);
+      add += r.a * p;
+      if (out) out.v = Math.max(out.v, Math.min(1, t / rim));
+    }
+    return add;
+  };
+  W.volcAt = (x, y) => { volcAt(x, y, VO); return VO.v; };
+  /* the land's height for the drawing: by a map's coast the grid's squares that reach into the sea slope the land down
+     to the sea bed over 4 km, a dark band along the shore in the light; there the sea's corners take the land's */
+  const hLand = (x, y) => {
+    if (!W.inSea) return W.hAt(x, y);
+    const fx = U.clamp(x / GC, 0, GW - 1.001), fy = U.clamp(y / GC, 0, GH - 1.001), i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+    const C = [hg[j * GW + i], hg[j * GW + i + 1], hg[(j + 1) * GW + i], hg[(j + 1) * GW + i + 1]];
+    if (C[0] >= 0 && C[1] >= 0 && C[2] >= 0 && C[3] >= 0) return W.hAt(x, y);
+    const wet = C.map((c, k) => c < 0 && W.inSea((i + (k & 1)) * GC, (j + (k >> 1)) * GC));
+    let n = 0, m = 0; for (let k = 0; k < 4; k++) if (!wet[k]) { n++; m += C[k]; }
+    if (!n || n === 4) return W.hAt(x, y);
+    for (let k = 0; k < 4; k++) if (wet[k]) C[k] = m / n;
+    return C[0] + (C[1] - C[0]) * u + (C[2] - C[0]) * v + (C[0] - C[1] - C[2] + C[3]) * u * v;
   };
   W.roughAt = (x, y) => bil(drawnRelief().rg, x, y);
-  W.hDrawn = (x, y) => W.hAt(x, y) + bil(drawnRelief().eg, x, y);   // (the drawn height without its fine detail)
+  W.hDrawn = (x, y) => hLand(x, y) + bil(drawnRelief().eg, x, y) + volcAt(x, y);   // (the drawn height without its fine detail)
   W.hFine = (x, y, s) => {
-    const G = drawnRelief(), x0 = x, y0 = y, h = W.hAt(x, y) + bil(G.eg, x, y), m = U.clamp((h - 0.32) / 0.55, 0, 1), rk = bil(G.rg, x, y);
+    if (W.inSea && W.inSea(x, y)) return Math.min(0, W.hAt(x, y));   // (the sea: nothing drawn on its bed)
+    const G = drawnRelief(), x0 = x, y0 = y, vc = volcAt(x, y, VO), vt = VO.v, h = hLand(x, y) + bil(G.eg, x, y) + vc, m = U.clamp((h - 0.32) / 0.55, 0, 1), rk = bil(G.rg, x, y) * (1 - 0.6 * vt);
     x += NOX * 40; y += NOY * 40;
     // warped a little, so the crests and gullies flow instead of sitting on the noise's lattice
     const wx = U.vnoise(x / 90 + 5, y / 90) - 0.5, wy = U.vnoise(x / 90, y / 90 + 7) - 0.5;
@@ -287,8 +344,55 @@ function* worldSteps(seed) {
       const t = x * 0.8 - y * 0.6; y = x * 0.6 + y * 0.8; x = t;
     }
     n /= 1.875;
-    const fo = bil(G.fg, x0, y0), folds = fo > 0.02 ? fo * 0.09 * Math.cos(bil(G.pg, x0, y0) * TAU) : 0;
-    return h + folds + m * m * (0.08 + 0.55 * rk * rk) * (n + fine * 0.6) + (1 - m) * 0.02 * (U.vnoise(x / 60, y / 60) - 0.5);
+    // the old ranges' folds: narrow crests and broad valleys, wandering, dying out and starting again along their length
+    const fo = bil(G.fg, x0, y0);
+    let folds = 0;
+    if (fo > 0.02) {
+      const th = bil(G.pg, x0, y0) * TAU + (U.vnoise(x0 / 160 + 61, y0 / 160 + 3) - 0.5) * 4.5, c = 0.5 + 0.5 * Math.cos(th);
+      folds = fo * 0.12 * (Math.pow(c, 1.8) - 0.33) * U.clamp(0.25 + 1.4 * U.vnoise(x0 / 110 + 8, y0 / 110 + 27), 0, 1.2);
+    }
+    return h + folds + m * m * (0.08 + 0.55 * rk * rk) * (n + fine * 0.6) + (1 - m) * rolling(x0, y0, s);
+  };
+  /* the lowlands' own hills, by region, for the drawing only (a hundred metres or so, which the height grid's 4 km
+     squares cannot hold): the high plains nearly level, the Palouse's rounded loess hills, the wet country's hummocks
+     left by the ice, Tennessee's long ridges running north-east with knobs between, the south's gentle swells.
+     Each region's share is blended over about 20 km, so its hills fade into the next region's */
+  let rollg = null;
+  const ROLL_A = [0.006, 0.034, 0.02, 0.03, 0.013];
+  const rolling = (x, y, s) => {
+    if (!rollg) {
+      W.biome(0, 0);
+      const C = IC.BIOMES.length, A = new Float32Array(BGW * BGH * C);
+      for (let k = 0; k < BGW * BGH; k++) A[k * C + bgrid[k]] = 1;
+      for (let pass = 0; pass < 2; pass++) for (const [di, dj] of [[1, 0], [0, 1]]) {
+        const B = A.slice();
+        for (let j = 0; j < BGH; j++) for (let i = 0; i < BGW; i++) for (let c = 0; c < C; c++) {
+          let t = 0, n = 0;
+          for (let d = -1; d <= 1; d++) { const ii = i + di * d, jj = j + dj * d; if (ii < 0 || jj < 0 || ii >= BGW || jj >= BGH) continue; t += B[(jj * BGW + ii) * C + c]; n++; }
+          A[(j * BGW + i) * C + c] = t / n;
+        }
+      }
+      rollg = A;
+    }
+    const C = IC.BIOMES.length, fx = U.clamp(x / BG, 0, BGW - 1.001), fy = U.clamp(y / BG, 0, BGH - 1.001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j;
+    const k00 = (j * BGW + i) * C, k10 = k00 + C, k01 = k00 + BGW * C, k11 = k01 + C, wt = c => (rollg[k00 + c] * (1 - u) + rollg[k10 + c] * u) * (1 - v) + (rollg[k01 + c] * (1 - u) + rollg[k11 + c] * u) * v;
+    const fine = s < 3;   // (the smallest hills only where they can be seen)
+    let r = (U.vnoise(x / 60 + 3, y / 60 + 1) - 0.5) * ROLL_A[0] * 2 * wt(0);
+    const w1 = wt(1), w2 = wt(2), w3 = wt(3), w4 = wt(4);
+    if (w1 > 0.01) {
+      // loess: round-topped hills a kilometre or so across, packed close
+      const qx = x + (U.vnoise(x / 30, y / 30 + 5) - 0.5) * 14, qy = y + (U.vnoise(x / 30 + 9, y / 30) - 0.5) * 14;
+      r += ((U.vnoise(qx / 9 + 21, qy / 9) - 0.5) + (fine ? (U.vnoise(qx / 4.2, qy / 4.2 + 33) - 0.5) * 0.4 : 0)) * ROLL_A[1] * w1;
+    }
+    if (w2 > 0.01) r += ((U.vnoise(x / 7 + 51, y / 7 + 2) - 0.5) + (U.vnoise(x / 22 + 8, y / 22) - 0.5)) * ROLL_A[2] * w2;
+    if (w3 > 0.01) {
+      // ridges and valleys, north-east by south-west, a few km apart, broken by knobs
+      const a = (x + y) * 0.7071, b = (y - x) * 0.7071 + (U.vnoise(x / 80 + 4, y / 80 + 14) - 0.5) * 30;
+      const rr = 1 - Math.abs(2 * U.vnoise(a / 70 + 7, b / 11 + 3) - 1);
+      r += ((rr * rr - 0.45) + 0.4 * (U.vnoise(x / 8 + 17, y / 8 + 5) - 0.5)) * ROLL_A[3] * w3;
+    }
+    if (w4 > 0.01) r += (U.vnoise(x / 16 + 13, y / 16 + 77) - 0.5) * ROLL_A[4] * 2 * w4;
+    return r;
   };
 
   /* (terrain pass) the country's regions as they look, for the drawing only: 0 high plains (dry grass, big square fields

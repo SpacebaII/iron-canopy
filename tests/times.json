@@ -6,7 +6,7 @@
  "world: every motorway-to-motorway junction has an interchange shape, with smooth slip roads": 0,
  "world: city streets end on another street or road": 0,
  "world: cities are not round": 1.2,
- "terrain: the mountains are drawn higher and rougher than the height grid, volcanoes stand clear of towns, regions vary, and the world is unchanged": 4.5,
+ "terrain: the mountains are drawn higher and rougher than the height grid, volcanoes stand clear of towns with a crater and gullies, the lowlands roll by region, and the world is unchanged": 4.5,
  "world: every map has cities of at least two styles, and districts in every city": 0,
  "world: districts change what a city wants from its airport": 0,
  "world: generation stays under the time budget": 29.7,

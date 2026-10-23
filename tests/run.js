@@ -205,7 +205,7 @@ test('world: cities are not round', () => {
   }
   assert(sum / n < 0.5, `cities are round on average (${(sum / n).toFixed(2)})`);
 }, false, 'world');
-test('terrain: the mountains are drawn higher and rougher than the height grid, volcanoes stand clear of towns, regions vary, and the world is unchanged', () => {
+test('terrain: the mountains are drawn higher and rougher than the height grid, volcanoes stand clear of towns with a crater and gullies, the lowlands roll by region, and the world is unchanged', () => {
   const W = world(4242), h0 = Float32Array.from(W.hg);
   // the main rocky crest is drawn above the height grid, rough; the plains stay within a whisker of it
   const R = W.ridges[0], m = R.pts[R.pts.length >> 1];
@@ -222,7 +222,22 @@ test('terrain: the mountains are drawn higher and rougher than the height grid, 
     const [x, y] = v.pts[0];
     assert(W.hDrawn(x, y) > 1.4, `${v.name} has no snow-capped top (${W.hDrawn(x, y).toFixed(2)})`);
     assert(!W.cities.concat(W.villages).some(t => Math.hypot(t.x - x, t.y - y) < v.w), `a town stands on ${v.name}`);
+    // a crater at the top, below its rim; gullies down its sides, so the slope is not the same all round
+    const rim = Math.max(...[0, 1, 2, 3, 4, 5].map(k => W.hDrawn(x + Math.cos(k) * v.w * 0.08, y + Math.sin(k) * v.w * 0.08)));
+    assert(W.hDrawn(x, y) < rim - 0.03, `${v.name} has no crater (${W.hDrawn(x, y).toFixed(2)} at the middle, ${rim.toFixed(2)} on the rim)`);
+    const ring = []; for (let k = 0; k < 72; k++) ring.push(W.hDrawn(x + Math.cos(k / 72 * 6.283) * v.w * 0.5, y + Math.sin(k / 72 * 6.283) * v.w * 0.5));
+    assert(Math.max(...ring) - Math.min(...ring) > 0.05, `${v.name}'s sides have no gullies`);
   }
+  // the lowlands roll by region: the Palouse's hills stand out, the high plains lie nearly flat
+  const relief = b => {
+    let n = 0, sum = 0;
+    for (let y = 400; y < IC.WH - 400 && n < 400; y += 97) for (let x = 400; x < IC.WW - 400 && n < 400; x += 89) {
+      if (!W.inHome(x, y) || W.biome(x, y) !== b || W.hAt(x, y) > 0.3) continue;
+      sum += Math.abs(W.hFine(x + 3, y, 1) - W.hFine(x - 3, y, 1)) + Math.abs(W.hFine(x, y + 3, 1) - W.hFine(x, y - 3, 1)); n++;
+    }
+    return sum / Math.max(1, n);
+  };
+  assert(relief(1) > relief(0) * 2, `the Palouse rolls no more than the high plains (${relief(1).toFixed(4)} against ${relief(0).toFixed(4)})`);
   // every region turns up in our country
   const seen = new Set(); for (let y = 0; y < IC.WH; y += 300) for (let x = 0; x < IC.WW; x += 300) if (W.inHome(x, y)) seen.add(W.biome(x, y));
   assert(seen.size === IC.BIOMES.length, `only ${[...seen].map(b => IC.BIOMES[b]).join(', ')}`);
