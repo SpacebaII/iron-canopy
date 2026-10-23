@@ -49,12 +49,17 @@ Found on the way: service roads (`svcroads.js`) left a pier's equipment road unj
 - kits: the Quick war capital has a terminal with fanned piers, and every stand is joined to the runways
 - pieces: a pier on a terminal cuts the apron round it, keeps the stands clear of it, and Undo puts it all back
 
+## Gaps closed
+
+Preston, 2026-10-23: "handle every gap".
+
+- **Reshape a built outline.** The Reshape tool (beside Stretch): click a corner of a built apron, ramp, terminal, cargo shed or surface, then where it should go (`IC.reshapeCorner`, `IC.reshapePlan`, `IC.bldReshape` in `builder.js`). The ghost shows the new outline with the ground gained or given back and what it costs now (the area gained at the part's price); sides that would cross, an apron with aircraft on it, and anything in the way are refused with the reason. Stands placed by hand stay where they were if still inside.
+- **Departures and arrivals kerbs.** About 60% of the kerb need is departures dropping off and 40% arrivals being met (`IC.landAccess`: `kDep`, `kArr`). Without a deck, departures use one end of the kerb and arrivals the other, painted in the stopping lane close in; with an upper deck, departures go up and the whole ground kerb is for arrivals, and each must be long enough on its own. The airport panel says which is short.
+- **Landside buildings stand up in 3D** (`IC.landMass3d` in `models-airport.js`): a garage its levels of slab and deck with lift towers at the corners, a hotel 8–14 floors and offices 5–8 with window bands, a warehouse a low box with doors. Car parks stay paint.
+
 ## Not done
 
-- Garages and hotels are still boxes: their 3D heights belong with the city thread's buildings.
-- A drawn outline cannot be edited corner by corner once built (bulldoze and draw again).
-- The kerb is one length per terminal: no separate arrivals and departures kerbs at ground level.
 - A pier needs room in front of the wall: on a tight airport (the Starter's terminal is 100 m from the parallel taxiway) there is none, which is why the pieces now lay out piers from the start.
-- Terminals can be stretched only by adding a pier; a head house cannot be lengthened in place.
+- Terminals can be stretched only by adding a pier; a head house cannot be lengthened in place (Reshape moves its corners).
 
-Screens: `61-screens/` (before and after at the capital, the outline tool, the terminal kit at three seeds, the Starter airport and the Quick war capital, a pier being placed on a straight terminal and built; after the polish, a pier with no seams round it and the Quick war capital close in).
+Screens: `61-screens/` (before and after at the capital, the outline tool, the terminal kit at three seeds, the Starter airport and the Quick war capital, a pier being placed on a straight terminal and built; after the polish, a pier with no seams round it and the Quick war capital close in; for the gaps, `gaps-reshape.png`, `gaps-kerb-words.png`, `gaps-3d-front-side.png`).

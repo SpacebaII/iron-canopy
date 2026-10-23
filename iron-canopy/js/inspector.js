@@ -636,7 +636,7 @@ function lifeRows(b) {
     rows.push(['GA ramp', `${G.taken} of ${G.spots} spots taken (${G.ties} tie-downs, ${G.jets} for business jets): ${G.based} aircraft based here${G.out ? `, ${G.out} out flying` : ''}, ${G.visitors} visiting${G.coming ? `, ${G.coming} on ${G.coming > 1 ? 'their' : 'its'} way in` : ''}`
       + `${full ? ' · <span class="amber">full</span>' : ''}`]);
     rows.push(['Light aircraft today', `${T.in} in, ${T.out} out${G.turned ? ` · <span class="amber">${G.turned} turned away since yesterday with the ramp full: they flew to other fields (make the ramp bigger, or build another)</span>` : ''}${G.grounded ? ` · nobody flying now: ${G.grounded}` : ''}`]);
-  } else if (b.owner === 'us' && b.parts.some(p => p.kind === 'runway' && p.built)) rows.push(['GA ramp', 'none: light aircraft land and leave in a slot on the runway, with nowhere to park. A GA ramp (Aprons and stands) gives them tie-downs, and business jets stands of their own']);
+  } else if (b.owner === 'us' && b.parts.some(p => p.kind === 'runway' && p.built)) rows.push(['GA ramp', `none: light aircraft and business jets park on a free remote stand among the airliners${S.ga && S.ga.parked.some(r => r.ap === b.id) ? ` (${S.ga.parked.filter(r => r.ap === b.id).length} there now)` : ''}, or fly elsewhere when there is none. A GA ramp (Aprons and stands) gives them tie-downs and keeps the airline stands free`]);
   if (L) {
     const n = {}; for (const it of L.items) n[it.kind] = (n[it.kind] || 0) + 1;
     const what = Object.entries(n).map(([k, c]) => `${c} ${IC.LAND[k].name.toLowerCase()}${c > 1 && !/s$/.test(IC.LAND[k].name) ? 's' : ''}`).join(', ');
@@ -648,7 +648,10 @@ function lifeRows(b) {
         ? `<span class="amber">${num(A.have)} spaces for about ${num(A.need)} cars: the car parks are full, and ${Math.round((1 - f) * 100)}% fewer travellers choose this airport</span>`
         : `${num(A.have)} spaces for about ${num(A.need)} cars${A.own ? ` (${num(A.own)} in car parks you built)` : ''}`;
       rows.push(['Parking', park]);
-      if (A.kerb > 0.05) rows.push(['Kerb', A.kerbShort > 0.1 ? `<span class="amber">${Math.round(A.kerbHave * 100)} m of kerb where ${Math.round(A.kerb * 100)} m is needed: cars queue on the airport road to drop off</span>` : `${Math.round(A.kerbHave * 100)} m of kerb at the terminal doors; cars dropping off need about ${Math.round(A.kerb * 100)} m`]);
+      const m = v => `${Math.round(v * 100)} m`;
+      if (A.kerb > 0.05) rows.push(['Kerb', A.deck
+        ? `${A.kerbShort > 0.1 ? '<span class="amber">' : ''}Departures on the upper deck: ${m(A.deck)} for about ${m(A.kDep)} of cars dropping off. Arrivals at ground level: ${m(A.ground)} for about ${m(A.kArr)} picking up${A.kerbShort > 0.1 ? ': cars queue on the airport road</span>' : ''}`
+        : A.kerbShort > 0.1 ? `<span class="amber">${m(A.kerbHave)} of kerb where ${m(A.kerb)} is needed: cars queue on the airport road to drop off and pick up</span>` : `${m(A.kerbHave)} of kerb at the terminal doors, departures dropping off at one end and arrivals picked up at the other; together they need about ${m(A.kerb)}`]);
       const on = L.auto !== false;
       rows.push(['Who builds it', `<div class="acts"><button class="act ${on ? 'on' : ''}" data-act="land" data-op="auto" data-v="1" title="Developers add car parks, garages, hotels and offices as passengers grow, and pay the airport rent">Developers</button><button class="act ${on ? '' : 'on'}" data-act="land" data-op="auto" data-v="0" title="Nothing new is built for you: keep the ground free, and draw car parks yourself with the Car park tool (Landside and roads)">Only what you build</button></div>`]);
     }

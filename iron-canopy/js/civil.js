@@ -132,6 +132,7 @@ IC.gaLaunch = function (S, a, b, o) {
   t.acType = type; t.spd = o.spd || (o.type ? T.cruise : t.spd); t.livery = o.livery !== undefined ? o.livery : IC.gaLivery(csHash(cs));
   if (T.alt > 4) { t.climbK = 5; t.glide = 19; }   // jets climb and come down faster, on a 3° slope
   for (const k of ['circuit', 'tow', 'form', 'biz', 'visit']) if (o[k]) t[k] = o[k];
+  if (o.spot != null) t.fldSpot = o.spot;
   if (f) t.alt = Math.min(t.alt, IC.gaCeiling(S, t));
   if (!f && a.apt && !o.ground) IC.gaRunway(S, S.byId[a.apt]);
   if (!f && a.field && !o.tow && !T.vtol) fieldOut(S, t, fieldOf(S, a.field));
@@ -240,9 +241,10 @@ IC.apronLife = function (S, ap) {
   const out = []; if (!S.biz || !ap.parts) return out;
   // (brief 62) a GA ramp: what is really parked there, and the business terminal behind it
   const ramp = IC.gaRamp && IC.gaRamp(ap);
-  if (ramp) {
-    const fbo = fboSpot(ap, ramp); if (fbo) out.push(fbo);
-    const by = new Map(ramp.map(s => [s.id, s]));
+  // (with no ramp a visitor may stand on a remote airline stand: drawn as parked, the same way)
+  if (ramp || (S.ga && S.ga.parked.some(r => r.ap === ap.id))) {
+    const fbo = ramp && fboSpot(ap, ramp); if (fbo) out.push(fbo);
+    const by = new Map((ramp || []).map(s => [s.id, s]));
     for (const r of S.ga.parked) {
       if (r.ap !== ap.id || r.away) continue;
       const pre = gaPre(ap, r); if (r.mv && !pre) continue;
@@ -390,13 +392,15 @@ IC.fieldLife = function (S, f) {
   out.push({ key: 'fieldkit', x: kit.x, y: kit.y, h: f.a, kind: 'kit' });
   // the club's aircraft: a row facing the strip, a second row behind for a big club; the ones out flying are gone
   const n = fieldSlots(f).length;
-  let away = 0; for (const t of S.threats) if (!t.dead && t.type === 'ga' && t.gaFrom && t.gaFrom.field === f.id && !t.tow) away++;
+  let away = 0; for (const t of S.threats) if (!t.dead && t.type === 'ga' && t.gaFrom && t.gaFrom.field === f.id && !t.tow && t.fldSpot == null) away++;
   const hd = Math.atan2(-ny, -nx), slots = fieldSlots(f).map(q => at(q.u, q.n));
   for (let i = 0; i < n; i++) {
     if (i >= n - Math.min(away, n - 2)) break;
     const k = ih(seed, i + 3), type = PARK_TYPES[k % PARK_TYPES.length], cover = !day || k % 5 < 2, p = slots[i];
     out.push({ key: type, liv: IC.gaLivery(k, cover), x: p.x, y: p.y, h: hd + (type === 'glider' ? 0.25 : 0), kind: 'plane', cover, tie: cover });
   }
+  // visitors at the end of the row for their stay, not covered
+  for (const v of IC.fieldVisitors(S, f)) { const q = visSpot(f, v.k), p = at(q.u, q.n); out.push({ key: v.type, liv: v.liv, x: p.x, y: p.y, h: hd, kind: 'plane', cover: false, tie: true, vis: v }); }
   // the helicopter pad, with a helicopter on it unless it is flying
   const pad = at(-2.0, 0.72);
   out.push({ key: 'helipad', x: pad.x, y: pad.y, h: f.a, kind: 'kit' });
@@ -434,10 +438,36 @@ const vLiftOf = T => U.clamp(T.cruise * 0.5, 0.18, 0.34);
 /* the slot in the row that the aircraft taking off (or coming back) leaves (or takes) */
 function rowSlot(S, F, t) {
   const sl = fieldSlots(F); let away = 0;
-  for (const x of S.threats) if (!x.dead && x.type === 'ga' && x.gaFrom && x.gaFrom.field === F.id && !x.tow) away++;
+  for (const x of S.threats) if (!x.dead && x.type === 'ga' && x.gaFrom && x.gaFrom.field === F.id && !x.tow && x.fldSpot == null) away++;
   const home = t.gaFrom && t.gaFrom.field === F.id;
-  return home ? sl[U.clamp(sl.length - away, 0, sl.length - 1)] : { u: sl[0].u - 0.18, n: sl[0].n };
+  if (t.fldSpot != null) return visSpot(F, t.fldSpot);
+  return home ? sl[U.clamp(sl.length - away, 0, sl.length - 1)] : visSpot(F, t.fld && t.fld.vs != null ? t.fld.vs : 0);
 }
+/* a visitor's place at the end of the club's row, and how long it stays: an hour or four, then home again */
+const VIS_N = 3;
+const visSpot = (F, k) => { const sl = fieldSlots(F); return { u: sl[0].u - 0.18 - k * 0.16, n: sl[0].n }; };
+function visFree(S, F) {
+  const L = S.ga && S.ga.fieldVis || [], used = new Set(L.filter(v => v.f === F.id).map(v => v.k));
+  for (const x of S.threats) if (!x.dead && x.fld && x.fld.f === F.id && x.fld.vs != null) used.add(x.fld.vs);
+  for (let k = 0; k < VIS_N; k++) if (!used.has(k)) return k;
+  return null;
+}
+function fieldStay(S, F, t, k) {
+  if (!S.ga || !t.gaFrom || t.circuit) return;
+  const L = S.ga.fieldVis = S.ga.fieldVis || [];
+  L.push({ f: F.id, k, type: t.acType, cs: t.cs, liv: t.livery, n: csHash(t.cs || ''), from: t.gaFrom, arr: S.time, until: S.time + U.rand(1, 4) * 3600 });
+}
+IC.fieldVisitors = (S, F) => (S.ga && S.ga.fieldVis || []).filter(v => v.f === F.id);
+/* a visitor whose stay is up flies home, from its place on the row, when light aircraft fly */
+IC.fieldVisTick = function (S) {
+  const L = S.ga && S.ga.fieldVis; if (!L || !L.length || S.airspace !== 'open' || !IC.gaWeatherOk(S)) return;
+  for (const v of L.slice()) {
+    if (S.time < v.until) continue;
+    const F = fieldOf(S, v.f); S.ga.fieldVis = S.ga.fieldVis.filter(x => x !== v);
+    if (!F || !v.from) continue;
+    IC.gaLaunch(S, { x: F.x, y: F.y, name: F.name, field: F.id }, v.from, { type: v.type, cs: v.cs, livery: v.liv, spot: v.k });
+  }
+};
 function fieldOut(S, t, F) {
   if (!F) return;
   const e = IC.fieldDir(S, F), q = rowSlot(S, F, t), K = IC.FIELD;
@@ -453,6 +483,8 @@ function fieldIn(S, t, d) {
   // (from the far side, a wide base leg first, so it does not turn onto final over the field)
   const pts = (u * e > -K.fin + 2 ? [fAt(F, -e * (K.fin + 4), (n >= 0 ? 1 : -1) * 7)] : []).concat([fAt(F, -e * K.fin, 0)]);
   t.fld = { f: F.id, ph: 'app', pts, i: 0, e, v: t.spd, w: 0, tg: !!(t.wps && t.wps.length > 1) };
+  // (a visitor from elsewhere takes a place at the end of the row for its stay, if one is free)
+  if (!t.fld.tg && !t.circuit && t.gaFrom && t.gaFrom.field !== F.id && S.ga) t.fld.vs = visFree(S, F);
   return fieldMove(S, t, 0);
 }
 /* one aircraft on the strip at a time: lined up, rolling, on final, landing, or taxiing along it */
@@ -476,7 +508,7 @@ function fieldMove(S, t, dt) {
       if (G.ph === 'taxi' && G.i === 3 && U.dxy(t.x, t.y, G.pts[2].x, G.pts[2].y) < 1e-3 && stripBusy(S, F, t)) { t.vx = Math.cos(h0) * 1e-3; t.vy = Math.sin(h0) * 1e-3; G.hold = true; return true; }
       G.hold = false;
       if (toward(G.pts[G.i], K.taxi) && ++G.i >= G.pts.length) {
-        if (G.ph === 'in') { IC.gaArrive(S, t, false); if (t.biz || t.visit) landed(S, t); t.dead = true; return true; }
+        if (G.ph === 'in') { IC.gaArrive(S, t, false); if (t.biz || t.visit) landed(S, t); else if (G.vs != null) fieldStay(S, F, t, G.vs); t.dead = true; return true; }
         // lined up at the end of the strip: a run-up for a piston engine, then the take-off run
         G.ph = 'line'; G.w = T.vtol || t.acType === 'glider' ? 3 : 25;
       }
@@ -618,6 +650,7 @@ IC.civil = function (S, dt) {
   if (S.gaT <= 0) { S.gaT = ga < gaWant ? U.rand(120, 320) : U.rand(600, 1200); scheduleGA(S); }
   if (S.biz) bizTraffic(S, dt, war);
   IC.gaTick(S, dt);
+  if (S.ga && S.ga.fieldVis && S.ga.fieldVis.length) IC.fieldVisTick(S);
   if (S.rare) rareVisitors(S, war);
   // airspace closure: flights in our airspace divert out of it, by the nearest border crossing
   if (S.airspace === 'closed') for (const t of S.threats) if (t.d.civil && !t.dead && !t.hostileCiv && !t.diverted && IC.inHome(t.x, t.y)) { t.diverted = true; const xo = S.world.crossings.slice().sort((p, q) => U.dist(p, t) - U.dist(q, t))[0], out = xo ? xo.far : { x: 0, y: 0 }; t.dest = { x: out.x, y: out.y, name: 'diversion', edge: true }; t.route = [t.dest]; t.wps = [t.dest]; t.toApt = null; t.appr = false; t.plan = { a: { x: t.x, y: t.y }, b: t.dest, cs: t.cs, pts: [{ x: t.x, y: t.y }, t.dest] }; }

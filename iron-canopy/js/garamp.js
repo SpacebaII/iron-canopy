@@ -30,12 +30,16 @@ const recOf = (S, id) => S.ga && S.ga.parked.find(r => r.id === id);
 const standOf = (ap, sid) => IC.aptStands(ap).find(s => s.id === sid);
 /* a free spot for this type: a tie-down for a light aircraft, a small stand for a business jet */
 function freeSpot(ap, T) {
-  const L = IC.gaRamp(ap); if (!L) return null;
-  const fit = L.filter(s => !s.occ && IC.STAND_FITS[s.size].includes(T.stand));
+  const L = IC.gaRamp(ap);
+  const fit = (L || []).filter(s => !s.occ && IC.STAND_FITS[s.size].includes(T.stand));
   const s = fit.find(x => x.size === T.stand) || fit[0];
-  if (s || !T.biz) return s || null;
-  // (a business jet with the ramp full: a remote stand away from the gates, as before)
-  const far = IC.aptStands(ap).filter(x => (x.zone || 'civil') === 'civil' && !x.contact && !x.cargo && !x.occ && x.linked !== false && x.hp > 0 && x.size !== 'l');
+  if (s || (L && !T.biz)) return s || null;
+  // (a business jet with the ramp full, or anything at an airport with no ramp: a free remote stand away from the
+  // gates, among the airliners; the airlines keep two of every three free and three in four for themselves, else it flies elsewhere)
+  if (!ap.parts || ap.owner !== 'us' || ap.offline) return null;
+  const all = IC.aptStands(ap).filter(x => (x.zone || 'civil') === 'civil' && !x.contact && !x.cargo && x.linked !== false && x.hp > 0 && x.size !== 'l');
+  const far = all.filter(x => !x.occ), ga = all.filter(x => /^ga\d/.test(x.occ)).length;
+  if (far.length - 1 < Math.ceil(all.length / 3) || ga + 1 > Math.max(1, Math.floor(all.length / 4))) return null;
   return far.find(x => x.size === 's') || far[0] || null;
 }
 IC.gaFreeSpot = freeSpot;
@@ -147,7 +151,6 @@ IC.gaInbound = function (S, t, dt) {
   if (!ap || t.tow || t.form || t.visit || t.gaNo) return false;
   if (!t.gaIn) {
     if (U.dist(t, ap) > IC.GA.join + 20) return false;
-    if (!IC.gaRamp(ap)) { t.gaNo = true; return false; }
     const T = IC.ACTYPES[t.acType] || IC.ACTYPES.light, r = t.gaRec && recOf(S, t.gaRec);
     const s = r && r.ap === ap.id ? standOf(ap, r.sid) : freeSpot(ap, T);
     if (!s) { t.gaNo = true; gaDay(S, ap).turned++; return false; }

@@ -59,8 +59,14 @@ Tests: the build bar places a ramp, warned at one end and not at both, and based
 
 Pictures in `docs/tasks/62-screens/`: `built-ramp-panel.jpg`, `built-ramp-one-end.jpg`, `light-aircraft-panel.jpg`, `field-dust.jpg`.
 
+## Gaps closed
+
+- **The ramp's people and vehicles in 3D.** The live view draws what `IC.gaScene` says is on the ramp: the cars, the bowser, ground power and the fuel truck by the business jets, the pilots, passengers and marshaller on foot (`gaFrame` in `render3d-life.js`). The replay does not: the recorder keeps no ramp.
+- **Field visitors stay.** A visitor from another field parks on one of three spots at the end of the row for one to four hours (`S.ga.fieldVis`, `IC.fieldVisitors`), drawn there, then flies home from that spot when the weather and the airspace let it (`IC.fieldVisTick`).
+- **No GA ramp.** At an airport without one, a light aircraft or business jet lands, taxis and parks on a free remote stand among the airliners (never a contact or cargo stand), and leaves from there like one on a ramp. The airport panel says how many are on airline stands and that a GA ramp keeps those free.
+
+Tests: a visitor parks at the end of a field's row and flies home from it; at an airport with no ramp a visitor parks on a remote stand and leaves with no gridlock. Picture: `62-screens/gaps-3d-ga-ramp.png`.
+
 ## Not done
 
-- The 3D view shows the ramp's parked aircraft but not its people and vehicles (the airliners' turnaround vehicles there come from the recorder; these do not yet).
-- Visitors to a field vanish at the end of its row (a field keeps no records).
-- An airport with no GA ramp keeps the old way: light aircraft come and go over its middle.
+- The 3D replay shows the ramp's aircraft but not its people and vehicles.

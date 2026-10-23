@@ -155,10 +155,10 @@ function goFrame() {
     const plan = IC.bldReady(S, m);
     if (plan) {
       at = m.at || m.pts[m.pts.length - 1];
-      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch'].includes(m.part);
+      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch', 'reshape'].includes(m.part);
       // (round 5c) the price and how long the crews take, for a piece or a blueprint too
       const dur = IC.planDur(m.ap, plan);
-      const what = plan.bp || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
+      const what = plan.bp || plan.reshape || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
       html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? 'Build it (Enter)' : esc(plan.why || '')}">Build${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
     }
   } else if (m && m.kind === 'bmove' && m.at) {

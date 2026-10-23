@@ -1312,6 +1312,14 @@ function landRoads(g, S, ap, L, px, z) {
       g.strokeStyle = 'rgba(236,236,226,0.85)'; g.lineWidth = Math.max(0.003, 0.6 * px);
       g.beginPath(); const p0 = P(0.2, r.w / 2 - lane), p1 = P(LL - 0.2, r.w / 2 - lane); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke();
       if (z > 60) { g.beginPath(); for (let s0 = 0.2; s0 < LL - 0.2; s0 += 0.065) { const q0 = P(s0, r.w / 2 - lane), q1 = P(s0, r.w / 2 - 0.004); g.moveTo(q0.x, q0.y); g.lineTo(q1.x, q1.y); } g.stroke(); }
+      // the words painted in the stopping lane: departures drop off at one end and arrivals are met at the other;
+      // with a departures deck above, the whole ground kerb is for arrivals (2.6 m letters, readable from z 120)
+      if (z > 120) {
+        const up = R.some(q => q.kind === 'upper' && q.by === r.by), ang = Math.atan2(uy, ux), flip = Math.cos(ang) < 0;
+        g.fillStyle = 'rgba(240,240,232,0.85)'; g.font = `600 0.026px "IBM Plex Sans", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        const word = (s0, t) => { const q = P(s0, r.w / 2 - lane / 2); g.save(); g.translate(q.x, q.y); g.rotate(ang + (flip ? Math.PI : 0)); g.fillText(t, 0, 0); g.restore(); };
+        for (let s0 = 0.35; s0 < LL - 0.3; s0 += 0.55) word(s0, up || s0 > LL / 2 ? 'ARRIVALS · PICK UP' : 'DEPARTURES · DROP OFF');
+      }
       // zebras across to the terminal's doors
       g.fillStyle = 'rgba(240,240,232,0.9)';
       for (let s0 = 0.5; s0 < LL - 0.4; s0 += 0.9) {
@@ -1581,6 +1589,8 @@ IC.drawBuildGhost = function (g, S, px) {
       g.restore();
     }
   }
+  // a corner moved: the outline as it will be
+  if (plan.reshape) { const P = plan.reshape.pts; g.save(); g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = Math.max(0.01, 1.5 * px); g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.closePath(); g.fill(); g.stroke(); g.restore(); }
   // a ramp stand
   if (plan.stand) {
     const st = plan.stand, rm = st.remove, S0 = IC.STAND[rm ? rm.size : st.size], c = rm || IC.rectWorld(st.apron, st.lx, st.ly), a = rm ? rm.a : st.apron.a + st.rot;
