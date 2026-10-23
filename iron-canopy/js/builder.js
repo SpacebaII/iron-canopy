@@ -1605,6 +1605,8 @@ IC.buildInput = function (S, m, p, btn, z, free) {
   // the taxiway's line, never across it at an angle (Shift places it freely)
   if (AREA_TOOLS[m.part] && !m.pts.length && s.a != null) m.rot = m.rotAuto = areaRot(m, s.a);
   if (need === 1) { m.pts = [s]; return placed(m, p, tol, free); }
+  // (a runway's far end is checked before it moves, as the runway piece's is: a stray click must not stretch it)
+  if (m.part === 'runway' && m.pts.length && U.dist(m.pts[0], s) > IC.RWY_MAX) { m.err = IC.rwyTooLong(U.dist(m.pts[0], s)); return 'err'; }
   if (two && m.pts.length >= 2) { m.pts[1] = s; return placed(m, p, tol, free); }
   m.pts.push(s);
   if (two && m.pts.length === 2) return placed(m, p, tol, free);
