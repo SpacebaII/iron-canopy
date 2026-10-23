@@ -982,8 +982,10 @@ const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], th
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
 function headIn(lk, d) { const P = lk.pts, p0 = d ? P[1] : P[P.length - 2], p1 = d ? P[0] : P[P.length - 1]; return Math.atan2(p1.y - p0.y, p1.x - p0.x); }
 /* the next road from node n: weighted by its traffic in that direction and by how straight on it is */
+const PICK = [];   // (the choices, kept from call to call)
 function pickNext(G, T, n, lk, R, back) {
-  const hd = lk ? headIn(lk[0], lk[1]) : null, c = [];
+  const hd = lk ? headIn(lk[0], lk[1]) : null, c = PICK;
+  c.length = 0;
   let tot = 0;
   for (const li of G.nodes[n].out) {
     const q = G.links[li];

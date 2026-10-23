@@ -606,9 +606,10 @@ function* worldSteps(seed) {
     for (const o of W.edges) { if (o.a === from) o.a = to; if (o.b === from) o.b = to; }
     delete W.nodes[from];
   }
+  // (the bends first: a road that ends on a motorway's bend then has room for its far terminal)
+  roundMotorwayBends(W);
   roadsOverMotorways(W);
   roundAvenues(W);
-  roundMotorwayBends(W);
   // the roads into the cities have become their avenues (cities.js): number the roads again, measure them
   W.edges.forEach((e, i) => { e.id = 'e' + i; e.len = 0; for (let k = 1; k < e.pts.length; k++) e.len += U.dist(e.pts[k - 1], e.pts[k]); });
   for (const k in W.nodes) W.nodes[k].deg = 0;

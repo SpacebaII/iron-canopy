@@ -206,6 +206,7 @@
  "traffic: no trips planned, every road alive by what is round it; the airport road and car parks follow its passengers (brief 66)": 14,
  "world: interchanges by their setting: directional T junctions with flyovers by the big cities, single-point interchanges in town, folded cloverleaves in the country (brief 66)": 15,
  "roads: a car can follow every street in its lane: ends meet a road or turn round, a junction is one place, bends are curves (brief 67)": 31,
+ "roads: a road that ends at a motorway crosses it to slip roads on both sides, and a motorway turns onto a bypass on a curve (brief 68)": 46,
  "roads: a roundabout is driven round its ring, one way and anticlockwise, and no road runs through its island (brief 67)": 18,
  "towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)": 30
 }

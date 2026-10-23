@@ -108,12 +108,37 @@ test('roads: a car can follow every street in its lane: ends meet a road or turn
     const W = world(seed), G = IC.driveGraph(W), R = IC.roadAudit(W, G), n = G.links.length, c = R.count;
     const say = k => `seed ${seed}: ${c[k]} ${R.words[k]} (${R.list[k].slice(0, 3).map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join('; ')})`;
     assert(c.trap === 0, say('trap'));
-    assert(c.open <= 40, say('open'));
-    assert(c.gap <= 200, say('gap'));
-    assert(c.stub <= 80, say('stub'));
+    // (brief 68's gaps: 14 open ends, 113 short of a road and 38 stubs on the 4242 map before; 1, 7 and 7 after)
+    assert(c.open <= 5, say('open'));
+    assert(c.gap <= 30, say('gap'));
+    assert(c.stub <= 30, say('stub'));
     // (before brief 67: 11% of the links were such pieces and 4% had such a bend)
     assert(c.jog < n * 0.025, say('jog') + ` of ${n} links`);
     assert(c.kink < n * 0.012, say('kink') + ` of ${n} links`);
+  }
+}, false, 'world');
+test('roads: a road that ends at a motorway crosses it to slip roads on both sides, and a motorway turns onto a bypass on a curve (brief 68)', () => {
+  for (const seed of [4242, 7]) {
+    const W = world(seed), at = {};
+    for (const e of W.edges) if (!e.abroad) for (const k of [e.a, e.b]) (at[k] = at[k] || []).push(e);
+    let one = 0, over = 0, sharp = 0;
+    for (const k in at) {
+      const L = at[k], hw = L.filter(e => e.cls === 'hw' && !e.city), mn = L.filter(e => e.cls !== 'hw');
+      if (hw.length === 2 && mn.length === 1) one++;
+      if (mn.some(e => e.over)) over++;
+      // (the motorway's own line through the node: from the last point before it to the first after)
+      if (hw.length === 2 && L.length === 2) {
+        const P = hw.map(e => e.a === k ? e.pts[1] : e.pts[e.pts.length - 2]), n = W.nodes[k];
+        const a = Math.atan2(n.y - P[0].y, n.x - P[0].x), b = Math.atan2(P[1].y - n.y, P[1].x - n.x);
+        if (Math.abs(U.angWrap(b - a)) > 0.5) sharp++;
+      }
+    }
+    assert(over >= 20, `seed ${seed}: only ${over} roads cross a motorway they end at`);
+    assert(one === 0, `seed ${seed}: ${one} roads end at a motorway from one side, with half an interchange`);
+    assert(sharp <= 1, `seed ${seed}: ${sharp} motorways turn a sharp corner where one piece meets the next`);
+    // the road over reaches the far side's slip roads: every ramp of a diamond on it ends on a road
+    const G = IC.driveGraph(W), R = IC.roadAudit(W, G);
+    assert(R.count.open <= 5, `seed ${seed}: ${R.count.open} ends lead nowhere`);
   }
 }, false, 'world');
 test('roads: a roundabout is driven round its ring, one way and anticlockwise, and no road runs through its island (brief 67)', () => {
@@ -1064,6 +1089,27 @@ test('traffic: no trips planned, every road alive by what is round it; the airpo
   const at = h => IC.landUse(L0, it, h * 3600);
   assert(at(4) < at(12) * 0.75 && at(22) < at(12) && at(4) > 0.3, `car park ${(at(4) * 100) | 0}% at 04:00, ${(at(12) * 100) | 0}% at noon, ${(at(22) * 100) | 0}% at 22:00`);
 });
+/* how much slower this machine is than the mid-range laptop the frame budgets are set for (1 if it is as fast or
+   faster): a fixed walk over scattered objects and a sort, like the vehicles' frame, timed at its best of six
+   (a shared CI runner can be twice as slow as a laptop on everything, the simulation step included) */
+const machineSlow = (() => {
+  let f = null;
+  return () => {
+    if (f) return f;
+    const rng = IC.makeRng(5), N = 200000, o = Array.from({ length: N }, (_, i) => ({ i, s: rng(), nx: null, v: [rng(), rng()] }));
+    for (const q of o) q.nx = o[Math.floor(rng() * N)];
+    const arr = o.slice(0, 30000), by = (p, q) => p.s - q.s;
+    let best = 1e9, sum = 0;
+    for (let k = 0; k < 6; k++) {
+      const t0 = process.hrtime.bigint();
+      let q = o[0]; for (let j = 0; j < 600000; j++) { sum += q.v[j & 1] * q.s; q.s = (q.s + 0.37) % 1; q = q.nx; }
+      arr.sort(by);
+      best = Math.min(best, Number(process.hrtime.bigint() - t0) / 1e6);
+    }
+    return (f = { ms: best, k: Math.max(1, best / MACHINE_REF), sum });
+  };
+})();
+const MACHINE_REF = 7;   // ms on the machine the budgets were set on (a 4-core cloud box, about a mid-range laptop)
 test('traffic: a busy hour stays inside the time budget', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S);
@@ -1080,10 +1126,11 @@ test('traffic: a busy hour stays inside the time budget', () => {
   let ag = 1e9;
   for (let k = 0; k < 3; k++) { t0 = process.hrtime.bigint(); for (let i = 0; i < 20; i++) { S.time += 0.17; IC.trafficAgents(S, near, 0.17); } ag = Math.min(ag, Number(process.hrtime.bigint() - t0) / 1e6 / 20); }
   const nA = IC.trafficAgentsOf(S).list.length;
-  console.log(`        step ${step.toFixed(4)} ms, ${n} vehicles placed in ${frame.toFixed(2)} ms, ${nA} vehicles on their own trips moved in ${ag.toFixed(2)} ms`);
+  const M = machineSlow();
+  console.log(`        step ${step.toFixed(4)} ms, ${n} vehicles placed in ${frame.toFixed(2)} ms, ${nA} vehicles on their own trips moved in ${ag.toFixed(2)} ms` + (M.k > 1 ? ` (this machine ${M.k.toFixed(2)}× slower than the reference: frame budgets ${(4 * M.k).toFixed(1)} and ${(3 * M.k).toFixed(1)} ms)` : ''));
   assert(step < 0.1, `traffic step takes ${step.toFixed(3)} ms (budget 0.1 ms of the 1 ms step)`);
-  assert(frame < 4, `placing ${n} vehicles takes ${frame.toFixed(2)} ms a frame`);
-  assert(ag < 3, `moving ${nA} vehicles takes ${ag.toFixed(2)} ms a frame`);
+  assert(frame < 4 * M.k, `placing ${n} vehicles takes ${frame.toFixed(2)} ms a frame`);
+  assert(ag < 3 * M.k, `moving ${nA} vehicles takes ${ag.toFixed(2)} ms a frame`);
 }, false, 'alone');
 
 /* ---------- airports ---------- */
