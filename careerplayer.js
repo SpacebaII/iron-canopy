@@ -220,7 +220,8 @@ function later(S, st) {
   // Act III brings in an hour; in the war everything goes)
   if (st.act >= 3) {
     if (S.supply) S.supply.auto = true;
-    if (st.act >= 4) QW.commander(S);
+    if (st.act === 5) corridor(S);
+    if (st.act === 4) QW.commander(S);
     // one unit a day at most while the income covers it; when a month's running costs came to more than it brought
     // in, the unit dearest to run goes back to the reserve (the Economy room's warning, heeded)
     else if (S.time > (S._qwT || 0) + 86400) {
@@ -230,6 +231,19 @@ function later(S, st) {
         if (u) { IC.toReserve(S, u); S._qwT = S.time; }
       }
     }
+  }
+}
+/* Part Five: the joint corridor, an airway from the capital's hub to an entry point on the hostile border */
+function corridor(S) {
+  if (!IC.peaceCorridor || IC.peaceCorridor(S) || S.time < (S._corT || 0)) return;
+  S._corT = S.time + 6 * 3600;
+  const c = IC.cap(S), hub = S.asp.fixes[0] || IC.aspAddFix(S, c.x + 300, c.y), fA = S.world.fronts.find(f => f.key === 'A'); if (!hub || !fA) return;
+  const pts = fA.pts.slice().sort((a, b) => U.dist(a, hub) - U.dist(b, hub));
+  for (const p of pts.slice(0, 12)) {
+    let q = null;
+    for (let i = 1; i <= 90; i++) { const x = hub.x + (p.x - hub.x) * i / 80, y = hub.y + (p.y - hub.y) * i / 80; if (!IC.inHome(x, y)) { q = { x, y }; break; } }
+    const f = q && IC.aspAddFix(S, q.x, q.y);
+    if (f) { IC.aspAddWay(S, hub.id, f.id); if (IC.peaceCorridor(S)) return; }
   }
 }
 module.exports = { player, site, starter, grow, research, AGENDA, STORY };

@@ -453,7 +453,7 @@ if (IC.MOD_SRC) IC.MOD_SRC.push(S => {
   return L;
 });
 /* half charges for their airline: what the corridor costs a month */
-IC.onMonth(S => { const st = S.story; if (!st || !st.flags || st.act >= 4) return; if (st.flags.get('lenzRate') === 'half' && st.act >= 1) IC.pay(S, 'events', 10); if (st.flags.get('flag') === 'state' && st.act < 4) IC.pay(S, 'events', 8); });
+IC.onMonth(S => { const st = S.story; if (!st || !st.flags || st.act === 4) return; if (st.flags.get('lenzRate') === 'half' && st.act >= 1) IC.pay(S, 'events', 10); if (st.flags.get('flag') === 'state' && st.act !== 4) IC.pay(S, 'events', 8); });
 IC.on((S, type) => { if ((type === 'flag' || type === 'chainEnd') && IC.modDirty) IC.modDirty(S); });
 
 /* ---------- the Courier's front pages ----------
@@ -506,7 +506,7 @@ function warOpen(S) {
 }
 IC.H.castSay = (S, w, t) => () => IC.say(S, w, t);
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act < 4) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act !== 4) return;
   const W = S.world;
   if (type === 'act' && d === 4) warOpen(S);
   // an airport hit: Okafor, and whether the fire crews were there (only what the player built can hurt her)
@@ -574,7 +574,7 @@ IC.on((S, type, d) => {
   const run = k => { for (const [dt, w, t] of IC.VOICES[k](S)) later(S, dt, w, t); };
   if (type === 'goal' && d && d.id === 'first') run('first');
   if (type === 'act' && d >= 2 && d <= 4) run('act' + d);
-  if (st.act < 4) return;
+  if (st.act !== 4) return;
   const v = st.voices = st.voices || { warn: 0, tv: 0, n: 0 };
   // their commander's orders, intercepted before a raid (every eight hours at most)
   if (type === 'raidWarning' && d && d.R && S.time - v.warn > 8 * 3600) {
@@ -670,6 +670,9 @@ IC.endingOf = function (S) {
   if (!S.won) return /replaced|confidence/i.test(S.over || '') ? 'sacked' : 'endLost';
   // (lore.js) the airliner in the box, shot down on our order: whatever else happened, that is how it ends
   if (f('mirror') === 'fired') return 'endBlack';
+  // (peace.js) after Part Five, what was done with the Ledger: a joint commission that heard both halves, or not
+  const to = f('ledgerTo');
+  if (to) return to === 'sealed' ? 'endCanopy' : to === 'joint' && IC.ledger(S).north && IC.ledger(S).south ? 'endSky' : 'endHalves';
   if (f('corridor') === 'friend') return 'endLenz';
   const town = t && (t.morale < 25 || (t.blocks && t.blocks.filter(b => b.hp != null && b.hp < 0.5).length > t.blocks.length * 0.15));
   if (town || f('okafor') === 'hurt' || f('mira') === 'lost') return 'endPrice';
@@ -700,7 +703,7 @@ IC.epilogue = function (S) {
     const best = ppl[0], worst = ppl[ppl.length - 1], nm = k => IC.ADVISORS[k].name;
     P.push({ head: 'The people', text: `${nm(best.k)} would have followed you anywhere. ${worst.t < 35 ? `${nm(worst.k)} never forgave you.` : 'Nobody you worked with left with a grudge.'}` });
   }
-  const ends = S.won ? (st.flags.get('mirror') === 'fired' ? 'black' : st.flags.get('corridor') === 'friend' ? 'lenz' : open(S) ? 'open' : 'fortress') : S.over ? (/replaced/i.test(S.over) ? 'replaced' : 'lost') : 'peace';
+  const end = S.won && IC.endingOf(S), ends = S.won ? ({ endSky: 'sky', endHalves: 'halves', endCanopy: 'canopy' }[end] || (st.flags.get('mirror') === 'fired' ? 'black' : st.flags.get('corridor') === 'friend' ? 'lenz' : open(S) ? 'open' : 'fortress')) : S.over ? (/replaced/i.test(S.over) ? 'replaced' : 'lost') : 'peace';
   const E = IC.ENDINGS[ends];
   return { title: E.title, text: E.text(S), paras: P, by: `From "The Canopy", by Sol Varga` };
 };

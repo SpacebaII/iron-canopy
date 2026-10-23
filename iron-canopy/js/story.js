@@ -20,7 +20,9 @@ IC.ACTS = {
   // city taxes comes on top (IC.STORY_TAX)
   2: { name: 'Part Two', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 4 },
   3: { name: 'Part Three', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 60 },
-  4: { name: 'Part Four', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 }
+  4: { name: 'Part Four', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 },
+  // (the twelve acts) after the ceasefire, Acts X to XII: the armistice, the Ledger, the Commission (peace.js)
+  5: { name: 'Part Five', title: 'The Peace', role: 'Chief of the Air Force', grant: 20 }
 };
 /* delegates take routine work off your hands once your rank allows it */
 IC.DELEGATES = {
@@ -135,6 +137,8 @@ function goalsFor(S, act) {
     G.push({ id: 'kills', text: 'Shoot down 10 hostile drones or missiles', check: () => S.stats.kills >= (st.killBase || 0) + 10, prog: () => `${S.stats.kills - (st.killBase || 0)} of 10` });
     G.push({ id: 'depot', text: 'Set up a forward depot so batteries are resupplied', check: () => IC.depots(S).some(d => !d.central) });
     G.push({ id: 'civil', text: 'Keep civil aviation alive: 2,500 passengers in a day', check: () => S.av.day.pax >= 2500 || (S.av.yesterday && S.av.yesterday.pax >= 2500), prog: () => `${Math.round(S.av.day.pax).toLocaleString('en-US')} today` });
+  } else if (act === 5) {
+    G.push(...IC.peaceGoals(S));
   } else {
     G.push({ id: 'will', text: `Break ${S.world.names.A}’s will to fight`, check: () => S.enemy.will < 25, prog: () => `${Math.round(S.enemy.will)}%` });
   }
@@ -725,6 +729,7 @@ function startAct(S, n) {
     S.budget += 1000;
     st.cp += 2;
     st.grant = A.grant;
+    st.paxPre = dayPax(S);
     S.mobil = Math.max(S.mobil, 1);
     // the whole air force: the rear base's flights come under command
     const fwd = 'ab_fwd', rear = S.byId.ab_rear ? 'ab_rear' : 'ab_fwd';
@@ -733,6 +738,11 @@ function startAct(S, n) {
     const led = IC.peaceLedger(S);
     card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `The ${W.full.A} has attacked. The government has made you ${A.role}, and the air defence of the whole country is yours. Everything you built now has to hold.${led.length ? ' What the quiet years left you: ' + led.join(' ') : ''}`, 'chapter');
     say(S, 'CDS', `This is war. Missiles, drones and aircraft will come in raids. You decide where the air goes and what we defend.`);
+  } else if (n === 5) {
+    S.budget += 600;
+    st.cp += 2;
+    card(S, `${A.name} · ${A.title}`, U.clock(S.time, S), `The ${W.full.A} has signed an armistice. The guns are back on Hold, and under its articles nothing fires unless they fire first. The runways are cratered, the airlines are waiting to see if it holds, and there is a sector over the ridge that both countries will now work together.`, 'chapter');
+    say(S, 'PM', `Director, we held. Now the harder part: make the peace look like something people can book a ticket on. Repair what was hit, bring the airlines back, and open the corridor over the ridge with them.`);
   }
   if (IC.agendaAct) IC.agendaAct(S, n);
 }
@@ -834,6 +844,7 @@ function beatsFor(S, act) {
       startAct(S, 4);
     } });
   }
+  if (act === 5 && IC.peaceBeats) B.push(...IC.peaceBeats(S));
   for (const b of B) IC.remake(b, 'storyBeat', S, act, b.id);
   return B;
 }
@@ -1080,6 +1091,8 @@ IC.storyTick = function (S, dt) {
   if (IC.chainsTick) IC.chainsTick(S, dt);
   // (the twelve acts) which act the story is in, and the lore's clues (lore.js)
   if (IC.loreTick) IC.loreTick(S, dt);
+  // (the twelve acts) Part Five: the armistice holds while nobody fires first (peace.js)
+  if (IC.peaceTick) IC.peaceTick(S, dt);
   // beats: each has its own clock, started when its condition is met
   st.beatT -= dt;
   if (st.beatT <= 0) {
@@ -1106,11 +1119,11 @@ IC.storyTick = function (S, dt) {
     // and decisions push it, and the push fades)
     // (brief 49: Keep the airlines flying softens the war's fall while the airspace is open)
     const war = (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0);
-    const drift = st.act >= 4 ? (war < 0 && IC.agendaMul ? war * IC.agendaMul(S, 'warDrift') : war) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
+    const drift = st.act === 4 ? (war < 0 && IC.agendaMul ? war * IC.agendaMul(S, 'warDrift') : war) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
     // before the first airliner there are no airlines to judge you by: the Minister waits
     const judge = st.act > 1 || st.opened;
     // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices
-    const k = st.act >= 4 ? 1 : IC.CONF_PACE;
+    const k = st.act === 4 ? 1 : IC.CONF_PACE;
     st.standing += (judge ? drift : 0) + ((S.budget < -1 ? -0.3 : 0) + (st.events.length > 2 ? -0.3 : 0) + (st.standing > 80 ? -0.15 : 0)) * k;
     confidence(S);
   }
@@ -1127,10 +1140,11 @@ IC.storyTick = function (S, dt) {
   }
   for (const ap of IC.bases(S)) if (ap.closedT && S.time > ap.closedT) { ap.closedT = 0; }
   // Act IV: the war runs as the campaign did
-  if (st.act >= 4) {
+  if (st.act === 4) {
     C.sugT = (C.sugT || 0) - dt;
     if (C.sugT <= 0) { C.sugT = 10; C.objs = IC.suggestions(S); }
-    if (S.enemy.will < (IC.ceaseAt ? IC.ceaseAt(S) : 20) && !S.over) IC.victory(S, `The ${S.world.full.A} has asked for a ceasefire. You held.`);
+    // (the twelve acts) the ceasefire opens Part Five, the peace; without it the war ends the Career
+    if (S.enemy.will < (IC.ceaseAt ? IC.ceaseAt(S) : 20) && !S.over) { const why = `The ${S.world.full.A} has asked for a ceasefire. You held.`; if (IC.peaceStart) IC.peaceStart(S, why); else IC.victory(S, why); }
   }
   S.camp.goal = `${IC.ACTS[st.act].name}: ${IC.ACTS[st.act].title}`;
 };
@@ -1207,7 +1221,7 @@ IC.on((S, type, d) => {
   const st = S.story;
   // (things that happen again and again on the live clock push confidence at the Career's pace before the war:
   // over a month of live days the old pushes ran it to the floor; one-off disasters keep their full weight)
-  const again = v => { st.standing += v * (st.act < 4 ? IC.CONF_PACE : 1); };
+  const again = v => { st.standing += v * (st.act !== 4 ? IC.CONF_PACE : 1); };
   switch (type) {
     case 'approve': st.cnt.approve++; break;
     case 'dealBroken': again(d.byUs ? -2 : -4); if (st.act === 1 && IC.tipOnce(S, 'dealBroken', 6 * H)) say(S, 'MIN', `${d.al.name} ${d.byUs ? 'lost its deal' : 'walked out'}, and the papers have it. Airlines talk to each other: fewer offers will come until our name recovers.`); break;
@@ -1226,13 +1240,13 @@ IC.on((S, type, d) => {
       break;
     case 'overload': if (st.act === 1 && st.ch === 1) st.hurry = true; break;
     case 'infringement': st.cnt.infT.push(S.time); if (st.cnt.infT.length > 100) st.cnt.infT = st.cnt.infT.filter(t => S.time - t < 86400); break;
-    case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; if (st.act < 4) peaceHint(S, d.ap, d.part); break;
-    case 'ready': if (st.act < 4 && d.d.civil && d.d.sensor && IC.tipOnce(S, 'hintSSR')) say(S, 'ATC', `${d.name} is for the controllers. If it ever comes to war, the military will see what it sees, and so will anyone across the border looking for targets.`); break;
+    case 'aptBuilt': if (d.part.kind === 'apron') st.cnt.apron++; if (st.act !== 4) peaceHint(S, d.ap, d.part); break;
+    case 'ready': if (st.act !== 4 && d.d.civil && d.d.sensor && IC.tipOnce(S, 'hintSSR')) say(S, 'ATC', `${d.name} is for the controllers. If it ever comes to war, the military will see what it sees, and so will anyone across the border looking for targets.`); break;
     case 'zone': st.cnt.zone++; break;
     // a bad evening of diversions costs at most 2.4 an hour
     case 'divert': if (S.time - (st.divT || -1e9) >= 600) { st.divT = S.time; again(-0.4); } break;
     case 'routeCut': again(-1.5); if (IC.tipOnce(S, 'cut', 3 * 3600)) say(S, 'MIN', `${d.al.name} is cutting flights and telling the papers why. Fix what they complain about.`); break;
-    case 'tailDestroyed': st.standing -= st.act >= 4 ? 2 : 10; break;
+    case 'tailDestroyed': st.standing -= st.act === 4 ? 2 : 10; break;
     case 'civilKill': st.standing -= 35; if (d.tail || d.d.civil) IC.news(S, `The Director of ${IC.ACTS[st.act].role.includes('Civil') ? 'Civil Aviation' : 'Airspace Security'} faces calls to resign.`); break;
     case 'gridlock': if (IC.tipOnce(S, 'grid', 3 * 3600)) say(S, 'APT', `${d.ap.name}: two aircraft met nose to nose on a single taxiway. Parallel taxiways let traffic flow both ways.`); break;
     case 'sortie': d.orderT = S.time; break;

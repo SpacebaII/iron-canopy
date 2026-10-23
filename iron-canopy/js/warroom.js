@@ -313,7 +313,7 @@ function staff() {
   const log = st.log.slice().reverse().slice(0, 12).map(l => `<div class="li"><b>${esc(l.title)}</b><small>${U.clock(l.t)} · ${esc(l.choice)}</small></div>`).join('');
   const docs = Object.keys(st.doc).filter(k => st.doc[k]).map(k => `<span class="chip">${esc({ transparency: 'Transparency', quiet: 'Discretion', forward: 'Forward defence', depth: 'Defence in depth', cheapGuns: 'Airport guns' }[k] || k)}</span>`).join('');
   // the road ahead: every act, what it opened or will open
-  const acts = [1, 2, 3, 4].map(n => {
+  const acts = [1, 2, 3, 4, 5].map(n => {
     const cls = n < st.act ? 'done' : n === st.act ? 'cur' : n === st.act + 1 ? 'next' : '';
     const opens = actOpens(n);
     // (the story's acts inside each part: the one now in bold)
@@ -330,7 +330,7 @@ function staff() {
     ${agenda()}
     ${chapters ? `<div class="card wide"><h3>Part One · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card wide"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
-  const nextHow = st.act < 4 ? `<p class="hint">Finish this part's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
+  const nextHow = st.act < 5 ? `<p class="hint">Finish this part's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)], ['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from ${st.act === 1 ? 'chapters' : 'goals'} and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
@@ -348,7 +348,7 @@ function agenda() {
   const A = IC.agendaState(S), st = S.story; if (!A) return '';
   const cur = A.cur && IC.agendaById(A.cur.id), boss = st.act === 1 ? 'Minister' : 'cabinet';
   const slot = cur ? `<div class="slot"><small>Before the ${boss}</small><b>${esc(cur.name)}</b><span>${minsOf(IC.agendaMin(cur) - A.cur.p)} left · passes about ${esc(U.date(S.time + IC.agendaLeft(S, cur.id), S))} at this speed</span><div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(cur) * 100)}%"></i></div></div>`
-    : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
+    : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 5 ? 'Closed for the peace' : st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
   const words = p => {
     const done = A.done.has(p.id), now = cur === p, why = IC.agendaWhy(S, p.id), shut = A.closed.has(p.id);
     const cls = done ? 'done' : now ? 'cur' : shut ? 'locked shut' : !why ? 'open' : 'locked';

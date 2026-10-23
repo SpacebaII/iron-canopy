@@ -3737,7 +3737,7 @@ test('career: from Act III a day at zero confidence replaces you; before, it can
 }, true);
 test('career: every act can be reached', () => {
   const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
-  for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
+  for (const n of [2, 3, 4, 5]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
 /* ---------- (brief 70) the story: chains, roads to the war, escalation, cutscenes, the cast ---------- */
 test('story: every chain card offers choices with a plain tip and a risk, and no chain asks more than twice', () => {
@@ -3892,6 +3892,76 @@ test('story: a border town kept open on the eve: if the war reaches its square, 
   assert(IC.endingOf(S) === 'endPrice', `the ending is ${IC.endingOf(S)}`);
   const c = { id: 'endPrice', v: IC.CUTSCENES.endPrice.pick(S), d: {} };
   assert(IC.cutPanels(S, c).some(p => /Ana/.test(p.cap)), 'the closing does not say what became of the bakery');
+});
+/* ---------- the twelve acts: Part Five, the peace (peace.js) ---------- */
+const peaceGame = (seed, set) => {
+  const S = IC.newGame({ seed, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  if (set) set(S);
+  IC.enemyOpening(S, {}); IC.storyStartAct(S, 4);
+  return S;
+};
+test('story: the ceasefire opens Part Five: the war stops, the guns go back on Hold, and the peace runs to an ending', () => {
+  const S = peaceGame(7105), st = S.story;
+  S.enemy.will = 5; run(S, 0.05);
+  assert(st.act === 5 && !S.over && !S.enemy.war, `after the ceasefire: part ${st.act}, over ${S.over}, war ${S.enemy.war}`);
+  assert(S.ad.roe === 'hold', `the guns are ${S.ad.roe}`);
+  assert(S.camp.cards.some(c => /^Part Five · The Peace/.test(c.title)), 'no card opened Part Five');
+  st.loreT = 0; IC.loreTick(S, 1);
+  assert(IC.storyActLabel(S, true) === 'Act X: The Armistice', `the act line says ${IC.storyActLabel(S, true)}`);
+  assert(['rebuild', 'pax', 'corridor', 'quiet'].every(id => st.goals.some(g => g.id === id)), `Part Five's goals: ${st.goals.map(g => g.id).join(', ')}`);
+  run(S, 2);
+  assert(!S.enemy.war && !st.peace.broken && S.stats.fired === st.peace.fired, 'the peace did not hold by itself for two hours');
+  // a peace nobody plays through still ends: the Commission's fallback
+  st.actT -= IC.MO(S, 40); run(S, 3);
+  assert(S.over && S.won, `Part Five did not end: ${S.over}`);
+});
+test('story: under the armistice, firing first breaks it, and the truce card allows only an hour over our own ground', () => {
+  const S = peaceGame(7106), st = S.story;
+  IC.peaceStart(S, 'test');
+  S.stats.fired++; IC.peaceTick(S, 1);
+  assert(IC.flagOf(S, 'armistice') === 'broken' && st.peace.broken === 1, 'firing first did not break the armistice');
+  const T = peaceGame(7107), tt = T.story;
+  IC.peaceStart(T, 'test');
+  const e = IC.EV.ch_truce_raid(T);
+  assert(e.opts.length === 3 && e.opts.every(o => o.tip && o.risk), 'the truce card has no three answers');
+  e.opts[0].fx();
+  assert(T.ad.roe === 'tight', `weapons are ${T.ad.roe} after telling their side`);
+  T.stats.fired += 2; IC.peaceTick(T, 1);
+  assert(!IC.flagOf(T, 'armistice') && !tt.peace.broken, 'shooting the drones down over our ground broke the armistice');
+  run(T, 1.05);
+  assert(T.ad.roe === 'hold', `the guns did not go back on Hold: ${T.ad.roe}`);
+  T.stats.fired++; IC.peaceTick(T, 1);
+  assert(IC.flagOf(T, 'armistice') === 'broken', 'firing after the hour did not break the armistice');
+});
+test('story: the Ledger\'s halves disagree until both are heard, and the Commission picks the ending', () => {
+  const play = (o) => {
+    const S = peaceGame(7108, S => { if (o.corridor) IC.flag(S, 'corridor', o.corridor); if (o.fired) IC.flag(S, 'mirror', 'fired'); if (o.mira) IC.flag(S, 'mira', 'lost'); });
+    IC.peaceStart(S, 'test');
+    IC.EV.ch_ledger_locker(S).opts[0].fx();
+    const south = IC.ledgerSays(S);
+    IC.EV.ch_ledger_north(S).opts[o.north || 0].fx();
+    S.story.part = 11;
+    const c = IC.EV.ch_commission_choose(S), i = c.opts.findIndex(x => o.to.test(x.t));
+    assert(i >= 0, `no choice ${o.to}`);
+    c.opts[i].fx();
+    S.won = true;
+    return { S, south, whole: IC.ledgerSays(S), end: IC.endingOf(S) };
+  };
+  const sky = play({ to: /joint/ });
+  assert(/Their battery shot down/.test(sky.south) && !/Nobody did it alone/.test(sky.south), `our half alone says: ${sky.south}`);
+  assert(/Nobody did it alone/.test(sky.whole) && /cancelled at 22:10/.test(sky.whole), `both halves say: ${sky.whole}`);
+  assert(sky.end === 'endSky' && IC.epilogue(sky.S).title === 'The Open Sky', `the joint commission ends as ${sky.end}`);
+  const left = play({ to: /joint/, north: 1 });
+  assert(!/Nobody did it alone/.test(left.whole) && left.end === 'endHalves', `one half to the commission: ${left.end}`);
+  assert(play({ to: /public/ }).end === 'endHalves', 'releasing it does not end as Two Halves');
+  const seal = play({ to: /Seal/ });
+  assert(seal.end === 'endCanopy' && IC.epilogue(seal.S).title === 'The Iron Canopy', `sealing it ends as ${seal.end}`);
+  const jail = play({ to: /joint/, corridor: 'arrested' });
+  assert(jail.end === 'endHalves', `with Lenz in prison: ${jail.end}`);
+  assert(play({ to: /joint/, fired: true }).end === 'endBlack', 'the airliner shot down in the box does not end as Black Morning');
+  const ana = play({ to: /joint/, mira: true });
+  assert(IC.cutPanels(ana.S, { id: 'endSky', v: IC.CUTSCENES.endSky.pick(ana.S), d: {} }).some(p => /Ana/.test(p.cap)), 'with Mira lost, Ana is not at the stone');
+  for (const id of ['armistice', 'ledger', 'commission', 'endSky', 'endHalves', 'endCanopy']) assert(IC.CUTSCENES[id], `no cutscene ${id}`);
 });
 /* ---------- the calendar: months over the live clock ---------- */
 test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the top bar says so', () => {

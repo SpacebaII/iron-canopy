@@ -139,7 +139,19 @@ const SCENES = {
     await cutStill(L, 'cut-endP-3');`,
   'cut-endF-1': `const S = await game('sandbox', 12.5); wx(S, 'overcast'); steps(S, 600); const b = IC.mainBase(S);
     const u = S.units.filter(u => U.dist(u, b) < 60).sort((p, q) => U.dist(p, b) - U.dist(q, b))[0] || b;
-    await overAirport(S, (u.x + b.x) / 2, (u.y + b.y) / 2, 2.2, 0.3, 6, 'cut-endF-1');`
+    await overAirport(S, (u.x + b.x) / 2, (u.y + b.y) / 2, 2.2, 0.3, 6, 'cut-endF-1');`,
+  // (the twelve acts) the box: an airliner over the ridge at night in rain, and how it ends
+  'cut-box-1': `const S = await game('sandbox', 3.1); wx(S, 'rain');
+    const t = steps(S, 3 * 3600, S => S.threats.find(t => t.tail && t.alt > 0.6 && t.alt < 3 && !t.dead && t.tail.type !== 'light'));
+    if (!t) throw new Error('nothing low at night'); const L = await live(S, t, 'side', 1500); L.camK = 0.7; await wait(1200); await cutStill(L, 'cut-box-1');`,
+  'cut-box-3': `const S = await game('sandbox', 6.3); wx(S, 'overcast'); await landing(S, 'cut-box-3', 'side', 0.6);`,
+  'cut-box-3l': `const S = await game('sandbox', 6.4); wx(S, 'overcast'); await landing(S, 'cut-box-3l', 'chase', 1.2);`,
+  'cut-box-3f': `const S = await game('sandbox', 3.4); wx(S, 'rain'); const u = lrsam(S); fire(S, 'str', 3, u, 170);
+    let tr = null; steps(S, 1200, S => (tr = S.rec.tracks.find(t => t.kind === 'missile' && U.dxy(IC.recGet(t, 0, 1), IC.recGet(t, 0, 2), u.x, u.y) < 5)) && S.time > IC.recFirstT(tr) + 20);
+    if (!tr) throw new Error('no launch'); const t0 = IC.recFirstT(tr);
+    const V = await replay({ x: u.x, y: u.y, t: t0 - 3, r: 150, cam: 'orbit' }, t0 + 3);
+    V.playing = false; V.cam = 'orbit'; V.follow = null; Object.assign(V.orbit, { tx: u.x - V.cx, tz: u.y - V.cy, ty: (V.flat[0] ? V.flat[0].e : 0) * V.hk + 0.1, yaw: 2.2, pitch: 0.14, dist: 1.6 });
+    await wait(1500); await cutStill(V, 'cut-box-3f', true);`
 };
 for (const k in SCENES) SCENES[k] = CUT_LIB + SCENES[k];
 module.exports = SCENES;

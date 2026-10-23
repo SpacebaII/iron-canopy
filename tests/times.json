@@ -120,7 +120,7 @@
  "guide: the Guide shows only lessons the player has reached, the current ones first": 13,
  "career: a player who does nothing stays in Act I for days, warned but not replaced": 46.9,
  "career: from Act III a day at zero confidence replaces you; before, it cannot": 52.4,
- "career: every act can be reached": 42.2,
+ "career: every act can be reached": 55,
  "quick war: the enemy attacks and the defense fights": 36.5,
  "sandbox: runs four hours": 28.4,
  "academy: radar lesson can be completed": 17.5,
@@ -216,5 +216,8 @@
  "story: twelve acts run over the four parts in order, the act line says which, and it never goes back": 4,
  "story: the lore's clues: the March silence each year, Lenz's brother, and every intercepted order ends \"confirm the box is hot\"": 3,
  "story: the airliner in the box: holding fire, calling Lenz or firing each end the way the lore says": 12,
- "story: a border town kept open on the eve: if the war reaches its square, Mira is lost and the ending says so": 3
+ "story: a border town kept open on the eve: if the war reaches its square, Mira is lost and the ending says so": 3,
+ "story: the ceasefire opens Part Five: the war stops, the guns go back on Hold, and the peace runs to an ending": 20,
+ "story: under the armistice, firing first breaks it, and the truce card allows only an hour over our own ground": 12,
+ "story: the Ledger's halves disagree until both are heard, and the Commission picks the ending": 30
 }

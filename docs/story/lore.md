@@ -12,7 +12,7 @@ The full draft, with the cast's secrets and the six endings, is the Claude Doc "
 
 ## What the game shows now (lore.js)
 
-- Twelve acts over the four parts of the Career (`IC.STORY_ACTS`; `IC.ACTS` are now Part One to Part Four). Acts X to XII (the armistice, the Ledger, the Commission) are planned as a fifth part after the war.
+- Twelve acts over the five parts of the Career (`IC.STORY_ACTS`; `IC.ACTS` are Part One to Part Five). The ceasefire no longer ends the Career: it opens Part Five, the peace (peace.js), with Acts X to XII (the armistice, the Ledger, the Commission).
 - Clues: one minute of silence on every frequency at 22:34 each March; Kolar's Black Morning broadcast from Part Two; Marsh will not open Sector 9; the memorial's blank stone; Lenz's "For Pavel" postscript; Lise sees her collision was on 310's line; Mira: "Dad never drove us the north way"; every intercepted order ends "Confirm the box is hot", and the narrator says "I had never heard those words before" (a lie Act XI will correct). The prologue: Marsh "had known my father".
 - Choices: the escort (Act IV; a quiet note through Lenz is what Moreva remembers), the tape (Act V), the border town on the eve (Act VII; kept open, Mira can be lost), the airliner in the box (Act IX: hold, call Lenz, or fire, which ends as Black Morning).
 
@@ -21,3 +21,7 @@ The full draft, with the cast's secrets and the six endings, is the Claude Doc "
 - The Director stays unnamed and ungendered. The narration is testimony given years later; who listens depends on the ending.
 - Nobody did it alone, and the game never says so before Act XI.
 - The airliner in Act IX is TU 3310, a neutral (Tessk Union) flight, 231 aboard.
+- The father's name, Emil, is first said by Mira in Act X, at the blank stone: the town could not carve the controller's name and could not leave him out.
+- The narrator's two lies, corrected in Act XI when both halves are heard: "the first time I had been north of the capital in thirty years" (the Director was born in the north and left at four), and "I had never heard those words before" (the father said "the box is hot" in his sleep).
+- The Ledger (`S.story.ledger`): our half from Marsh's locker, the sealed room's log (the drone cancelled at 22:10, the battery told, the computer not), and their half (Lenz in Station 9's ruins if he is a friend, an unsigned parcel if not, and only by demanding it under the armistice if he was arrested). The halves disagree until both are heard.
+- Endings after Part Five: the joint commission with both halves is the Open Sky, the joint commission with one half or a public release is Two Halves, sealing it again is the Iron Canopy; Black Morning (the airliner in the box shot down) overrides them all. Mira lost makes Ana the one at the stone; Lenz a friend stands beside the Director there.

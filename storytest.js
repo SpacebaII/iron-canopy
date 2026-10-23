@@ -9,7 +9,7 @@ const IC = require('./headless.js');
 const { player, STORY } = require('./careerplayer.js');
 if (process.env.PICK != null) STORY.pick = +process.env.PICK;   // (brief 70) which choice the player takes on the story's cards
 const U = IC.U;
-const seed = +process.argv[2] || 12345, years = +process.argv[3] || 14, stopAct = +process.argv[4] || 5;
+const seed = +process.argv[2] || 12345, years = +process.argv[3] || 14, stopAct = +process.argv[4] || 6;
 const quiet = process.env.QUIET;
 if (process.env.START) IC.CAREER_START = +process.env.START;   // (to try another starting treasury)
 // LOAD=file.json goes on from a save the run made (SAVE=… writes one at each act): the dates stay the Career's

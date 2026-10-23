@@ -132,7 +132,7 @@ IC.agendaWhy = function (S, id) {
   const st = S.story;
   if (A.done.has(id)) return 'Already passed.';
   if (A.closed.has(id)) return `Ruled out: “${IC.agendaById(p.excl).name}” passed instead.`;
-  if (st.act >= 4) return 'The war leaves no time for new policy: what was passed stays.';
+  if (st.act >= 4) return st.act >= 5 ? 'The armistice runs on the policy passed before the war: it stays.' : 'The war leaves no time for new policy: what was passed stays.';
   if (st.act < p.act) return `Comes with ${IC.ACTS[p.act].name}.`;
   const reqs = p.req.filter(r => !A.done.has(r));
   if (reqs.length && (!p.any || reqs.length === p.req.length)) return `Needs ${reqs.map(r => `“${IC.agendaById(r).name}”`).join(p.any ? ' or ' : ' and ')} first.`;

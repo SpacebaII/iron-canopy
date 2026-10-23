@@ -513,7 +513,7 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .rail button{height:3.55rem}
 .app.no-arsenal .arsenal{display:none}
 .app.is-range #mini{display:none}
-.acts4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:.6rem}
+.acts4{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:.6rem}
 .actstep{display:grid;align-content:start;gap:1px;padding:.45rem .55rem;border-radius:10px;background:var(--well);opacity:.55}
 .actstep small{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .actstep b{font-family:var(--display);font-size:1.05rem;letter-spacing:.06em;text-transform:uppercase}

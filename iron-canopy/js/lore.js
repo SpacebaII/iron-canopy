@@ -1,6 +1,6 @@
 /* Iron Canopy — (brief 70, the twelve acts) the story's acts and its buried history: Northline 310.
    - The twelve acts (IC.STORY_ACTS) lie over the Career's four parts (IC.ACTS in story.js): part one holds Acts I to
-     III (by its chapters), two IV and V, three VI and VII, four VIII and IX. Acts X to XII, the peace, come later.
+     III (by its chapters), two IV and V, three VI and VII, four VIII and IX, and five (the peace, peace.js) X to XII.
      S.story.part is the act now; it only moves forward (IC.loreTick, from the story's tick).
    - The lore: 34 years before Day 1 an airliner, Northline 310, was shot down over the northern ridge; each country
      keeps half of the tapes, and each half alone blames the other side (docs/story/lore.md). Nothing here says so: the
@@ -30,9 +30,9 @@ IC.STORY_ACTS = [
   { n: 7, r: 'VII', part: 3, title: 'The Eve', say: 'The last months before the war were the most ordinary of my life. People bought bread. Airliners landed on time.' },
   { n: 8, r: 'VIII', part: 4, title: 'The Shock', say: 'They came at dawn, the way everybody had said they would. Knowing did not help as much as I had hoped.' },
   { n: 9, r: 'IX', part: 4, title: 'The Long Sky', say: 'After the first weeks the war became a routine, and routine is where people make mistakes.' },
-  { n: 10, r: 'X', part: 5, title: 'The Armistice' },
-  { n: 11, r: 'XI', part: 5, title: 'The Ledger' },
-  { n: 12, r: 'XII', part: 5, title: 'The Commission' }
+  { n: 10, r: 'X', part: 5, title: 'The Armistice', say: 'The war ended on a Tuesday. I remember thinking that the hard part was over. It had not started.' },
+  { n: 11, r: 'XI', part: 5, title: 'The Ledger', say: 'For thirty-four years each country had kept half of one night. That year, for the first time, someone asked to hear both.' },
+  { n: 12, r: 'XII', part: 5, title: 'The Commission', say: 'You know this part. You were in the room.' }
 ];
 IC.storyAct = n => IC.STORY_ACTS[n - 1];
 /* which act the Career has reached, from its part and how far into it the story is */
@@ -41,6 +41,7 @@ IC.storyPartWant = function (S) {
   if (st.act <= 1) return st.ch >= 4 ? 3 : st.ch >= 2 ? 2 : 1;
   if (st.act === 2) return beatDone(S, 'shadow') ? 5 : 4;
   if (st.act === 3) return beatDone(S, 'embassy') ? 7 : 6;
+  if (st.act >= 5) return IC.peacePartWant ? IC.peacePartWant(S) : 10;
   return (S.enemy && S.enemy.act >= 4) || S.time - st.actT > 72 * 3600 ? 9 : 8;
 };
 IC.storyPartNow = S => S.story ? Math.max(S.story.part || 0, IC.storyPartWant(S)) || 1 : 0;
@@ -52,7 +53,7 @@ IC.storyActLabel = function (S, long) {
 };
 
 /* the chains of the lore: always in a Career (old saves get them when they load) */
-const LORE_CHAINS = ['escort', 'tape', 'evac', 'mirror'];
+const LORE_CHAINS = IC.LORE_CHAINS = ['escort', 'tape', 'evac', 'mirror'];   // (peace.js adds Part Five's)
 IC.loreTick = function (S, dt) {
   const st = S.story; if (!st || S.mode !== 'story' || !st.flags) return;
   st.loreT = (st.loreT || 0) - dt; if (st.loreT > 0) return;
@@ -73,7 +74,7 @@ IC.loreTick = function (S, dt) {
 /* each year, in the middle of March: the anniversary of Northline 310. The controllers keep a minute's silence at
    22:34; from Part Two their television keeps it too, in its own way */
 IC.onMonth((S, was, m) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || m % 12 !== 2 || st.act >= 4) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || m % 12 !== 2 || st.act === 4) return;
   const y = Math.floor(m / 12) + 1, ago = 33 + y, at = MO(S, 0.45);
   later(S, at, 'ATC', y === 1 ? `Ivo Marsh. Last night at 22:34 every frequency in the country went quiet for one minute. That was us. It is a tower thing, Director; it has been done every March for ${ago} years. Nobody will ask you to explain it.` : `Last night at 22:34, one minute of silence on every frequency, as every March. ${ago} years.`);
   if (st.act >= 2) later(S, at + 3 * 3600, 'KOLAR', `${ago} years ago tonight, on the Black Morning, the ${S.world.names.H} sent an airliner full of its own people into our missiles, and told the world we fired without a word. We remember the 212. Good evening.`);
@@ -88,7 +89,7 @@ IC.on((S, type, d) => {
 });
 /* the first intercepted order of the war, and what the narrator says about it (Act XI will say it again) */
 IC.on((S, type) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act < 4 || type !== 'raidWarning' || st.flags.has('heardBox')) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act !== 4 || type !== 'raidWarning' || st.flags.has('heardBox')) return;
   IC.flag(S, 'heardBox', true);
   later(S, 600, 'YOU', `"Confirm the box is hot." I had never heard those words before.`);
 });
@@ -205,7 +206,7 @@ function boxFired(S) {
 
 /* the border town kept open: if the war reaches its square, Mira is lost (her voice stops) */
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act < 4 || type !== 'impact' || st.flags.get('evac') !== 'stay' || st.flags.has('mira')) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act !== 4 || type !== 'impact' || st.flags.get('evac') !== 'stay' || st.flags.has('mira')) return;
   const t = town(S); if (!t || !t.blocks || !d) return;
   const hurt = t.blocks.filter(b => b.hp != null && b.hp < 0.5).length;
   if (hurt <= t.blocks.length * 0.15) return;
@@ -226,7 +227,7 @@ Object.assign(IC.CUTSCENES, {
     { art: 'box-2', src: 'ai', shot: 'The operations room in red light, a single unknown track blinking on a huge screen, the Director standing with a phone to the ear, everyone turned towards them.', cap: 'Ashe gave me ninety seconds. I have since learned that is about how long it took, the first time.' },
     { art: 'box-3', src: '3d', shot: 'An airliner breaking out of cloud over a lit runway at dawn, two fighters peeling away high above it.', cap: 'Their lead broke off. Nobody fired. It landed with its radio dead and 231 people aboard who never knew.', only: 'held' },
     { art: 'box-3l', src: '3d', shot: 'An airliner breaking out of cloud over a lit runway at dawn, two fighters peeling away high above it.', cap: 'Kasimir picked up. Their fighters turned away. It landed with its radio dead and 231 people aboard who never knew.', only: 'lenz' },
-    { art: 'box-3t', src: '3d', shot: 'A fireball low over a dark ridge, a fighter\'s afterburner glow climbing away from it.', cap: 'Their fighters fired before it answered. I watched it on the screen. I had held, and it did not matter.', only: 'theirs' },
+    { art: 'box-3t', src: 'ai', shot: 'A fireball low over a dark ridge, a fighter\'s afterburner glow climbing away from it.', cap: 'Their fighters fired before it answered. I watched it on the screen. I had held, and it did not matter.', only: 'theirs' },
     { art: 'box-3f', src: '3d', shot: 'Two missile trails climbing from a battery in rain toward an airliner\'s lights over a ridge.', cap: 'I said "fire". I would like to tell you I hesitated. I did not, not long enough.', only: 'fired' },
     { art: 'box-4f', src: 'ai', shot: 'Dawn on a burnt ridge: scattered airliner wreckage among pines, a child\'s shoe in the ash, rescuers in orange with their heads bowed.', cap: 'It came down on the ridge, a few hundred metres from where the other one fell, thirty-odd years before.', only: 'fired' }
   ] },
