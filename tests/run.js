@@ -4092,8 +4092,10 @@ test('quick war: a sensible commander has two layers over what matters by the fi
   for (const { p, L } of first) assert(L.has('area') && L.has('point'), `${p.name} had ${[...L].join(' and ') || 'nothing'} over it at the first strike`);
   const cov = Q.borderCover(S, true);
   assert(cov >= 0.75, `radars see only ${U.pct(cov)} of the hostile border at the end of day 2`);
-  // money stays meaningful: running costs take most of the income by then
-  assert(S.budget >= 0 && S.upkeep > S.income * 0.5, `treasury ${U.money(S.budget)}, income ${U.money(S.income)}/h against running costs ${U.money(S.upkeep)}/h`);
+  // the defence costs real money to run, and never empties the treasury. (Since the Quick war got four times the money
+  // on 29 September, the commander runs at about two fifths of the income and banks the rest: how tight a Quick war's
+  // money should be is the owner's open call, so this checks only that running costs are a real share of it)
+  assert(S.budget >= 0 && S.upkeep > S.income * 0.3, `treasury ${U.money(S.budget)}, income ${U.money(S.income)}/h against running costs ${U.money(S.upkeep)}/h`);
 }, 'long');
 test('sandbox: runs four hours', () => {
   const S = IC.newGame({ seed: 99, mode: 'sandbox' });
