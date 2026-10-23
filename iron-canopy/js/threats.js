@@ -33,6 +33,8 @@ IC.spawnThreat = function (S, type, x, y, o) {
     src: undefined, tr: undefined, trT: undefined, stk: undefined, inHold: undefined, shots: undefined,
     feint: undefined, loiter: undefined, jamT: undefined, strobed: undefined, triT: undefined, standShort: undefined,
     diverted: undefined, decoyKnown: undefined, strayBy: undefined, strayD: undefined,
+    // (wave 14) general aviation at our airports (genav.js)
+    gav: undefined, gavIn: undefined, gavNo: undefined, gavAway: undefined, fafT: undefined,
     // defending against a missile (flight.js: IC.defendPlan) and what the warnings on the map read
     mslIn: null, def: null, defT: 0, cmT: 0, evadeT: undefined, evadeA: undefined, locks: undefined, defended: 0, abort: undefined,
     esc: undefined, escortOf: undefined, feintT: undefined, lockT: undefined, lockBy: undefined

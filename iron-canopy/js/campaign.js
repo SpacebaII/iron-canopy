@@ -18,7 +18,10 @@ function say(S, who, text) {
   IC.sfx && IC.sfx.radio();
 }
 IC.say = say;
-function card(S, title, sub, text, kind, x) { S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
+function card(S, title, sub, text, kind, x) {
+  // (wave 14) Free build stops only for accidents and alarms; the rest goes to the Journal
+  if (S.free && kind !== 'alarm') { IC.log(S, 'info', 'NOTE', `${title}: ${text}`); return; }
+  S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
 IC.card = card;
 /* a card that would cover the map while a raid is in the air waits for it to end: the morning briefing, reports
    (a raid's result among them) and anything made over ten minutes ago; what is happening now still shows */

@@ -14,7 +14,7 @@
 (function (IC) {
 'use strict';
 const U = IC.U;
-const civil = S => !!(S && S.mode === 'story' && S.story && S.story.act === 1 && !S.showcase);
+const civil = S => !!(S && S.mode === 'story' && S.story && S.story.act === 1 && !S.showcase && !S.free);
 const capAp = S => (S.story && S.story.cap && S.byId[S.story.cap]) || null;
 const builtRw = ap => !!(ap && ap.parts.some(p => p.kind === 'runway' && p.built));
 const capName = S => (IC.cap(S) || { name: 'the capital' }).name;

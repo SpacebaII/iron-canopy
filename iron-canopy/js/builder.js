@@ -51,7 +51,7 @@ const LORRY = 0.25;     // 90 km/h on the road
 /* what a building takes to put up, in lorry loads */
 const BLD_NEED = { terminal: { conc: 14, steel: 5, area: true }, cargo: { conc: 10, steel: 5, area: true }, hangar: { conc: 12, steel: 8 }, has: { conc: 25, steel: 6 }, alert: { conc: 10, steel: 3 },
   fuel: { conc: 8, steel: 16 }, hydrant: { conc: 4, steel: 10 }, tower: { conc: 10, steel: 5 }, fire: { conc: 8, steel: 4 }, atc: { conc: 2, steel: 3 }, gradar: { conc: 1, steel: 2 }, ils: { conc: 1, steel: 2 }, ammo: { conc: 8, steel: 3 },
-  deice: { conc: 6, steel: 1 }, fuelpad: { conc: 3, steel: 2 } };
+  deice: { conc: 6, steel: 1 }, fuelpad: { conc: 3, steel: 2 }, helipad: { conc: 2, steel: 0 }, gaterm: { conc: 4, steel: 2 } };
 IC.partNeed = function (ap, p) {
   const out = {};
   if (IC.PAVED[p.kind]) {
