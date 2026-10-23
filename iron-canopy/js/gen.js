@@ -606,6 +606,8 @@ function* worldSteps(seed) {
     for (const o of W.edges) { if (o.a === from) o.a = to; if (o.b === from) o.b = to; }
     delete W.nodes[from];
   }
+  roadsOverMotorways(W);
+  roundAvenues(W);
   // the roads into the cities have become their avenues (cities.js): number the roads again, measure them
   W.edges.forEach((e, i) => { e.id = 'e' + i; e.len = 0; for (let k = 1; k < e.pts.length; k++) e.len += U.dist(e.pts[k - 1], e.pts[k]); });
   for (const k in W.nodes) W.nodes[k].deg = 0;
@@ -1494,6 +1496,122 @@ function buildTowns(W, R, fbm) {
    - anything else: a T or crossroads with curved kerbs.
    Slip roads are cubic curves, so they leave and join the carriageway smoothly. Interchanges have a footprint the
    towns keep out of (IC.ixClear). */
+/* a national road through a town (its avenue) bends as a car drives it, like the town's own streets (cities.js,
+   roundCorners): a corner of over 25° where nothing meets it becomes an arc of about 15 m radius */
+function roundAvenues(W) {
+  const R = 0.15, ang = (a, b, q) => U.angWrap(Math.atan2(q.y - b.y, q.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x));
+  const cityOf = {}; for (const c of W.cities) cityOf[c.id] = c;
+  const ends = W.edges.flatMap(e => [e.pts[0], e.pts[e.pts.length - 1]]);
+  for (const e of W.edges) {
+    const c = cityOf[e.city]; if (!c || e.pts.length < 3) continue;
+    // (a corner a street meets or crosses keeps its point)
+    const busy = b => c.streets.some(l => l.pts.some((p, i) => i && U.segDist(b.x, b.y, l.pts[i - 1].x, l.pts[i - 1].y, p.x, p.y) < 0.03)) || ends.some(p => U.dist(p, b) < 0.03);
+    const P = e.pts, n = P.length, out = [P[0]];
+    for (let i = 1; i < n - 1; i++) {
+      const a = out[out.length - 1], b = P[i], q = P[i + 1], at = Math.abs(ang(a, b, q));
+      if (at < 0.45 || at > 2.7) { out.push(b); continue; }
+      const la = U.dist(a, b), lq = U.dist(b, q), d = Math.min(R * Math.tan(at / 2), la * (i === 1 ? 0.85 : 0.45), lq * (i === n - 2 ? 0.85 : 0.45));
+      if (d < 0.01 || busy(b)) { out.push(b); continue; }
+      const p1 = { x: b.x + (a.x - b.x) * d / la, y: b.y + (a.y - b.y) * d / la }, p2 = { x: b.x + (q.x - b.x) * d / lq, y: b.y + (q.y - b.y) * d / lq }, k = Math.ceil(at / 0.35);
+      for (let j = 0; j <= k; j++) { const s = j / k, u = 1 - s; out.push({ x: u * u * p1.x + 2 * u * s * b.x + s * s * p2.x, y: u * u * p1.y + 2 * u * s * b.y + s * s * p2.y }); }
+    }
+    out.push(P[n - 1]);
+    e.pts = out;
+  }
+}
+/* a town's road that comes in where motorways meet (a gate on its bypass where a motorway ends on it) has no way on
+   to them there: the junction is motorways' only. It is led instead to a diamond of its own on the motorway nearest
+   its line, 900 m out, past the big junction's slip roads */
+function roadsOffInterchanges(W) {
+  const at = {};
+  for (const e of W.edges) if (!e.abroad) for (const [k, end] of [[e.a, 0], [e.b, 1]]) (at[k] = at[k] || []).push({ e, end });
+  // the way along a road from node end, and the point s along it (with the index of the piece it lies on)
+  const fromEnd = ({ e, end }) => end ? e.pts.slice().reverse() : e.pts;
+  const along = (P, s) => { for (let i = 1; i < P.length; i++) { const l = U.dist(P[i - 1], P[i]); if (s <= l) { const t = l ? s / l : 0; return { i, x: P[i - 1].x + (P[i].x - P[i - 1].x) * t, y: P[i - 1].y + (P[i].y - P[i - 1].y) * t }; } s -= l; } return null; };
+  const dirOf = P => { const q = along(P, 3) || P[P.length - 1], l = U.dist(P[0], q) || 1; return { x: (q.x - P[0].x) / l, y: (q.y - P[0].y) / l }; };
+  const blocked = (a, b, skip) => {
+    for (let t = 0; t <= 1; t += 0.05) {
+      const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      for (const c of W.cities) if (U.dxy(x, y, c.x, c.y) < (c.ext || c.r * 1.5) + 2 && c.blocks.some(q => { const dx = x - q.x, dy = y - q.y, cs = Math.cos(q.a || 0), sn = Math.sin(q.a || 0); return Math.abs(dx * cs + dy * sn) < q.w / 2 + 0.2 && Math.abs(-dx * sn + dy * cs) < q.h / 2 + 0.2; })) return true;
+    }
+    // (nor across another road, a town's street or the water)
+    const cross = P => P.some((p, i) => i && U.segX(a.x, a.y, b.x, b.y, P[i - 1].x, P[i - 1].y, p.x, p.y) >= 0);
+    return W.edges.some(o => !skip.includes(o) && cross(o.pts)) || W.cities.some(c => U.dist(c, a) < (c.ext || 30) + 15 && c.streets.some(l => cross(l.pts))) || W.rivers.some(r => r.pts.some((p, i) => i && U.segX(a.x, a.y, b.x, b.y, r.pts[i - 1][0], r.pts[i - 1][1], p[0], p[1]) >= 0));
+  };
+  let nid = 0;
+  for (const k in at) {
+    const n = W.nodes[k], L = at[k], hw = L.filter(o => o.e.cls === 'hw'), mn = L.filter(o => o.e.cls !== 'hw');
+    if (!n || hw.length < 3 || mn.length !== 1) continue;
+    const m = mn[0], MP = fromEnd(m), d = dirOf(MP);
+    // the motorway nearest the road's own line, if within 100° (a road carrying on the line of the motorway that ends
+    // there meets the through one square)
+    const arms = hw.map(o => { const P = fromEnd(o), v = dirOf(P); return { o, P, c: v.x * d.x + v.y * d.y }; }).sort((p, q) => q.c - p.c);
+    const A = arms[0]; if (A.c < -0.17) continue;
+    const M = along(A.P, 9); if (!M) continue;
+    // where it leaves its old line: the first point along it from which the new piece runs clear
+    // (a curve: leaving the old line along it, meeting the motorway square)
+    const curve = q => {
+      const b = MP[q.i - 1], tl = U.dist(b, q) || 1, L = U.dist(q, M) * 0.4, v = dirOf(A.P.slice(Math.max(0, M.i - 1)));
+      let nx = -v.y, ny = v.x; if (nx * (q.x - M.x) + ny * (q.y - M.y) < 0) { nx = -nx; ny = -ny; }
+      const c1 = { x: q.x + (b.x - q.x) / tl * L, y: q.y + (b.y - q.y) / tl * L }, c2 = { x: M.x + nx * L, y: M.y + ny * L }, out = [];
+      for (let t = 0; t <= 1.0001; t += 0.1) { const u = 1 - t; out.push({ x: u * u * u * q.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * M.x, y: u * u * u * q.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * M.y }); }
+      return out;
+    };
+    let P0 = null, C = null;
+    for (const s of [9, 11, 7, 13]) { const q = along(MP, s); if (!q) continue; const c = curve(q); if (!c.some((p, i) => i && blocked(c[i - 1], p, [m.e, A.o.e]))) { P0 = q; C = c; break; } }
+    if (!P0) continue;
+    // the motorway split at M, the road's end moved there
+    const id = 'jm' + nid++, e = A.o.e, P = A.P, tail = P.slice(M.i);
+    W.nodes[id] = { id, x: M.x, y: M.y, jct: true };
+    const near = [{ x: M.x, y: M.y }].concat(tail), far = P.slice(0, M.i).concat([{ x: M.x, y: M.y }]);
+    // (e keeps the far end, from M on; e2 runs from the big junction to M)
+    const e2 = Object.assign({}, e, { a: k, b: id, pts: far, bb: null });
+    if (A.o.end) { e.pts = near.slice().reverse(); e.b = id; } else { e.pts = near; e.a = id; }
+    W.edges.push(e2);
+    const R = MP.slice(P0.i).length ? C.slice().reverse().concat(MP.slice(P0.i)) : null;
+    if (!R) continue;
+    if (m.end) { m.e.pts = R.slice().reverse(); m.e.b = id; } else { m.e.pts = R; m.e.a = id; }
+  }
+}
+/* a road that ends where a motorway runs through (a diamond with one road coming in) is carried over it on the
+   bridge, 130 m on, where the far side's slip roads meet it: so traffic both ways on the motorway can leave for it and
+   join from it, and the road no longer stops on the bridge (an end leading nowhere) */
+function roadsOverMotorways(W) {
+  roadsOffInterchanges(W);
+  const at = {};
+  for (const e of W.edges) if (!e.abroad) for (const [k, end] of [[e.a, 0], [e.b, 1]]) (at[k] = at[k] || []).push({ e, end });
+  const away = ({ e, end }) => {
+    const P = end ? e.pts.slice().reverse() : e.pts; let s = 0, q = P[P.length - 1];
+    for (let i = 1; i < P.length; i++) { s += U.dist(P[i - 1], P[i]); if (s >= 3) { q = P[i]; break; } }
+    const l = U.dist(P[0], q) || 1; return { x: (q.x - P[0].x) / l, y: (q.y - P[0].y) / l };
+  };
+  let nid = 0;
+  for (const k in at) {
+    const n = W.nodes[k], L = at[k], hw = L.filter(o => o.e.cls === 'hw'), mn = L.filter(o => o.e.cls !== 'hw');
+    if (!n || hw.length !== 2 || mn.length !== 1) continue;
+    const h0 = away(hw[0]), h1 = away(hw[1]), d = away(mn[0]);
+    // straight on over the motorway, square to it if the road came in at a slant (across the two arms' mean line where
+    // the motorway bends, a bypass round its town)
+    const ax = h0.x - h1.x, ay = h0.y - h1.y, al = Math.hypot(ax, ay) || 1, px = -ay / al, py = ax / al, sg = px * d.x + py * d.y > 0 ? -1 : 1;
+    // (well clear of both carriageways, for the far slip roads to meet it: else more square to the motorway's line)
+    const clear = F => !hw.some(o => o.e.pts.some((p, i) => i && U.segDist(F.x, F.y, o.e.pts[i - 1].x, o.e.pts[i - 1].y, p.x, p.y) < 0.9));
+    let F = null;
+    for (const w of [0.5, 0.8, 1]) {
+      const ux = px * sg * w - d.x * (1 - w), uy = py * sg * w - d.y * (1 - w), ul = Math.hypot(ux, uy) || 1, q = { x: n.x + ux / ul * 1.3, y: n.y + uy / ul * 1.3 };
+      if (clear(q)) { F = q; break; }
+    }
+    if (!F) continue;
+    // (not into the water: the rivers' own lines, W.riverDist is a 5 km grid)
+    const wet = (x, y) => W.lakes.some(l => U.dxy(l.x, l.y, x, y) < Math.max(l.rx, l.ry) + 1) || W.rivers.some(r => x > r.bb[0] && x < r.bb[2] && y > r.bb[1] && y < r.bb[3] && r.pts.some((a, i) => i && U.segDist(x, y, r.pts[i - 1][0], r.pts[i - 1][1], a[0], a[1]) < r.w * 0.15 + 0.3));
+    if (wet(F.x, F.y) || wet((n.x + F.x) / 2, (n.y + F.y) / 2)) continue;
+    // (nothing else there: another road, or a town's street)
+    const near = (P, r) => P.some((p, i) => i && U.segDist(F.x, F.y, P[i - 1].x, P[i - 1].y, p.x, p.y) < r);
+    if (W.edges.some(o => o.a !== k && o.b !== k && near(o.pts, 0.5)) || W.cities.some(c => U.dist(c, F) < (c.ext || c.r * 1.5) + 5 && c.streets.some(l => near(l.pts, 0.4)))) continue;
+    const id = 'jo' + nid++, src = mn[0].e;
+    W.nodes[id] = { id, x: F.x, y: F.y, jct: true };
+    W.edges.push({ a: k, b: id, cls: src.cls, pts: [{ x: n.x, y: n.y }, { x: (n.x + F.x) / 2, y: (n.y + F.y) / 2 }, F], city: src.city, ccls: src.ccls, over: true });
+  }
+}
 function junctions(W) {
   const N = W.nodes, byNode = {};
   for (const e of W.edges) for (const [k, end] of [[e.a, 0], [e.b, 1]]) (byNode[k] = byNode[k] || []).push({ e, end });
@@ -1635,10 +1753,13 @@ function junctions(W) {
       J.kind = 'mx';
       const m = hw[0], mo = hw[1], main = minor.some(d => d.cls === 'rd');
       J.over = minor.map(d => d.a);
-      J.shape = minor.length === 2 && main && hz < 0.5 ? 'dumbbell' : minor.length <= 2 && !main && hz < 0.33 ? 'half' : 'diamond';
+      J.shape = minor.length === 2 && main && hz < 0.5 && !minor.some(d => d.e.over) ? 'dumbbell' : minor.length <= 2 && !main && hz < 0.33 ? 'half' : 'diamond';
       // (brief 66: by a big town a main road's diamond is a single-point interchange, its four slip roads meeting at
       // one junction on the bridge; out in the country some are partial cloverleaves, folded to one side of the road)
-      if (minor.length === 2 && main && hz >= 0.25 && cityNear(n.x, n.y)) J.shape = 'spui';
+      // (a road carried over to its far slip roads, roadsOverMotorways, ends where they meet it: a plain diamond)
+      const over = minor.some(d => d.e.over);
+      if (over) J.shape = 'diamond';
+      else if (minor.length === 2 && main && hz >= 0.25 && cityNear(n.x, n.y)) J.shape = 'spui';
       else if (minor.length === 2 && hz >= 0.72) {
         // (only where the road crosses near square: a loop in a wide quarter would hardly turn)
         const sq = md => Math.max(...minor.map(d => { const g = U.mod(d.a - md.a, Math.PI * 2); return Math.abs(Math.min(g, Math.PI * 2 - g) - Math.PI / 2); }));
