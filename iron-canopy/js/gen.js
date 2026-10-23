@@ -1877,6 +1877,8 @@ function junctions(W) {
       if (hw.length) { J.r = 0.45; J.lanes = 2; J.isle = hz < 0.5 ? 'trees' : 'grass'; }
       else if (rd) { J.r = town ? 0.4 : 0.3; J.lanes = town ? 2 : 1; J.isle = town ? (hz < 0.5 ? 'monument' : 'planting') : (hz < 0.4 ? 'grass' : hz < 0.75 ? 'planting' : 'trees'); }
       else { J.r = 0.14; J.lanes = 1; J.isle = 'mini'; }
+      // (two junctions a few dozen metres apart in a small town: the second is kerbed, not a ring over the first's)
+      if (W.junctions.some(K => K.kind === 'rb' && U.dist(K, J) < K.r + J.r + 0.15)) { J.kind = 'tj'; delete J.r; delete J.lanes; delete J.isle; }
     } else J.kind = 'tj';
     n.ix = J.kind === 'mm' || J.kind === 'mx';
     W.junctions.push(J);
