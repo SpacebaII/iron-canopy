@@ -15,6 +15,7 @@ IC.freeInit = function (S) {
   S.budget = IC.FREE.budget;
   if (S.econ) S.econ.lastBudget = S.budget;   // (the treasury is not income: the statement shows only the airports' own money)
   S.tech.done = new Set(IC.TECH.map(t => t.id)); S.tech.slots = [null, null];
+  if (IC.modDirty) IC.modDirty(S);   // (the research is done: its shares count from the first step, as after a load)
   const st = S.story, C = S.camp;
   C.cards = []; C.comms = []; C.sched = [];
   st.goals = []; st.beats = []; st.tut = false;
