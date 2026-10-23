@@ -289,7 +289,7 @@ const texSRGB = tex => { if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBCo
    at the height of their middle out to beyond their furthest part, blending into the hills round them. (terrain pass)
    The heights as the map draws them (W.hFine: the crests and gullies the height grid is too coarse for); everything
    in the air is placed by its height above this ground, so nothing flies through a ridge the simulation does not have */
-let hRes = 3;   // the finest detail asked of the heights (the finest ring's grid): a coarser ring asks no finer than its own
+let hRes = 3;   // the finest detail asked of the heights (the finest ring's grid): a coarser ring asks less, never above 15
 const hRaw = (S, x, y) => S.flat ? 0 : IC.W.hFine ? Math.max(0, IC.W.hFine(x, y, hRes) - 0.25) * 2 * KM : IC.elevKm(x, y) * KM;
 function flatOf(v) {
   const S = v.S;
@@ -353,7 +353,7 @@ function paintStep(J, ms) {
     if (done && !S.flat) {
       // the coarsest ring: the map's overall picture has no fields; a fine grain of them over it, so it reads like
       // the rings inside it
-      if (lod === 2) { g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.8; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, T, T); g.restore(); }
+      if (lod === 2) { g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.4; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, T, T); g.restore(); }
       // roads near their real width (the map draws them wider to read from far out)
       if (IC.drawRoads && lod < 2) { cam.z = Math.max(z, lod ? 7 : 12); IC.drawRoads(g, S, px, view); cam.z = z; }
     }
@@ -371,7 +371,9 @@ function paintTex(v, cv) {
 function terrainGeom(v, reg, n, hk) {
   const N = n + 1, pos = new Float32Array(N * N * 3), nor = new Float32Array(N * N * 3), uv = new Float32Array(N * N * 2), idx = new Uint32Array(n * n * 6);
   const x0 = reg.x - reg.R, y0 = reg.y - reg.R, d = 2 * reg.R / n, H = new Float32Array((N + 2) * (N + 2));
-  hRes = Math.max(3, d);
+  // (a coarse ring samples the same ground as the finest, point by point: asked only for its own grid's detail it
+  // drew the mean ground, and the finer ring inside stood above it like a plate)
+  hRes = 3;
   for (let j = -1; j <= N; j++) for (let i = -1; i <= N; i++) H[(j + 1) * (N + 2) + i + 1] = hT(v, x0 + i * d, y0 + j * d) * hk;
   hRes = 3;
   const h = (i, j) => H[(j + 1) * (N + 2) + i + 1];
@@ -431,6 +433,27 @@ function groundSync(v, fx, fy) {
     for (const k of [...v.tiles.keys()]) { const [l, i, j] = k.split(':').map(Number); if (l === li && (Math.abs(i - i0) > L.ring + 1 || Math.abs(j - j0) > L.ring + 1)) dropTile(v, k); }
   });
   need.sort((a, b) => a[4] - b[4]); v.tileQ = need;
+  // (terrain pass) the plain beyond the rings at the height of the ground round their edge, so the land does not end
+  // in a cliff on a high plateau or in the mountains
+  if (v.beyond && !v.S.flat) {
+    const L = CFG.levels[CFG.levels.length - 1], r = (L.ring + 0.5) * L.T;
+    let sum = 0; for (let k = 0; k < 16; k++) sum += hRaw(v.S, fx + Math.cos(k * 0.3927) * r, fy + Math.sin(k * 0.3927) * r);
+    v.beyond.position.y = sum / 16 * v.hk - 0.5;
+    // and in the colour of the land there (the map's far picture), so the haze does not end on a green plain
+    const T = v.S.terrain;
+    if (T && T.far && T.far.getContext) {
+      if (!v.farPx) { try { v.farPx = T.far.getContext('2d').getImageData(0, 0, T.far.width, T.far.height); } catch (e) { v.farPx = false; } }
+      if (v.farPx) {
+        const P = v.farPx, c = [0, 0, 0];
+        for (let k = 0; k < 16; k++) {
+          const i = U.clamp(Math.round((fx + Math.cos(k * 0.3927) * r) / IC.WW * P.width), 0, P.width - 1), j = U.clamp(Math.round((fy + Math.sin(k * 0.3927) * r) / IC.WH * P.height), 0, P.height - 1), q = (j * P.width + i) * 4;
+          c[0] += P.data[q]; c[1] += P.data[q + 1]; c[2] += P.data[q + 2];
+        }
+        const lc = v.farCol || (v.farCol = new THREE.Color()); lc.setStyle(`rgb(${c[0] / 16 | 0},${c[1] / 16 | 0},${c[2] / 16 | 0})`);
+        v.beyond.material.color.set('#0c1410').lerp(lc, v.light);
+      }
+    }
+  }
 }
 /* works through the queue for up to ms milliseconds: a tile's painting may take several calls */
 function groundWork(v, ms) {

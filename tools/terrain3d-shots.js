@@ -48,7 +48,10 @@ const VIEWS = { wide: [-0.6, 0.32, 900, 250], range: [-0.9, 0.22, 380, 120], clo
       const base = Math.atan2(PK.uy, PK.ux);
       Object.assign(L.orbit, { tx: x - L.cx, tz: y - L.cy, ty: IC.R3D.hT(L, x, y) * L.hk, yaw: base + yaw, pitch, dist });
       L.snap = true;
-      await wait(6000);
+      // (until the ground round it is painted: this machine's software graphics take a while over each tile)
+      await wait(3000);
+      for (let i = 0; i < 240 && (L.tileQ && L.tileQ.length || L.job); i++) await wait(500);
+      await wait(1500);
     }, v);
     const out = path.resolve(__dirname, `../shots/ter3d-${tag}-${k}.png`);
     await cam.shot(out);
