@@ -5883,6 +5883,12 @@ test('desk: Acts II and III have a mandate with a date; met, it is on the record
   const rec0 = IC.deskRecord(S), due = M3.due;
   S.time = due + 60; st.desk.tT = 0; IC.deskTick(S, 1);
   assert(IC.deskMandate(S).missed === 1 && IC.deskMandate(S).due > due && IC.deskRecord(S) < rec0 - 5, 'a missed act mandate did nothing');
+  // late twice and the cabinet stops setting dates: the penalties do not pile up without end
+  S.time = IC.deskMandate(S).due + 60; st.desk.tT = 0; IC.deskTick(S, 1);
+  const n = st.desk.rec.filter(r => r.v < 0).length;
+  assert(IC.deskMandate(S).lapsed && /overdue/.test(IC.deskMandate(S).dshort), 'a second miss did not end the dates');
+  for (let i = 0; i < 6; i++) { S.time += IC.MO(S, 1); st.desk.tT = 0; IC.deskTick(S, 1); }
+  assert(st.desk.rec.filter(r => r.v < 0).length === n, 'an act mandate kept costing after its dates ended');
 });
 test('desk: after Act I a city beyond every airport writes; an airport near it answers it, and leaving it costs the city', () => {
   const { S, ap } = deskOpen(), st = S.story;

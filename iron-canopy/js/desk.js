@@ -26,6 +26,7 @@ const dayPax = S => Math.max(S.av.day.pax, S.av.yesterday ? S.av.yesterday.pax :
 const castTrust = (S, who, v) => { if (IC.castTrust && who) IC.castTrust(S, who, v); };
 const who = k => IC.ADVISORS[k] ? IC.ADVISORS[k].name : k;
 const dateOf = (S, t) => { const c = IC.calAt(S, t); return `${c.d} ${IC.MONTHS[c.mo]}`; };
+const lc1 = s => /^(The|A|An) /.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
 const left = (S, t) => { const s = t - S.time; return s <= 0 ? 'now' : s >= IC.MO(S, 1) * 0.95 ? U.months(s) : s >= 86400 ? `${Math.round(s / 86400)} day${Math.round(s / 86400) > 1 ? 's' : ''}` : U.dur(s); };
 
 IC.DESK = {
@@ -38,8 +39,10 @@ IC.DESK = {
   fade: 6,              // months over which a record entry fades to a quarter (half-life of half that)
   sackAt: 10,           // confidence under this for a month replaces the Director (before Act III)
   warnAt: [30, 18],     // the Minister warns under these
-  missConf: [-8, -15, -25],  // a mandate missed once, twice, and each time after
+  missConf: [-8, -15],  // a mandate missed once, then twice: after that the cabinet stops setting dates
   metConf: 6,
+  drag: -5,             // each month an Act I mandate stays undone after its second date, more each month,
+  dragMax: -15,         // up to this
   more: 2               // buying time costs this much confidence
 };
 
@@ -66,21 +69,28 @@ const mandT0 = S => S.story.act === 1 ? S.story.chT : S.story.actT;
 IC.deskMandate = function (S) {
   const st = S.story, M = mandOf(S), d = st.desk; if (!M || !d) return null;
   const parts = M.of.map(id => st.goals.find(g => g.id === id)).filter(Boolean).map(g => ({ id: g.id, text: g.text, done: !!g.done, prog: !g.done && g.prog ? g.prog() : '' }));
-  return { ch: st.ch, where: st.act === 1 ? `Chapter ${st.ch + 1}` : IC.ACTS[st.act].name, text: M.text(S), due: d.due, left: left(S, d.due), date: dateOf(S, d.due), dshort: (c => `${c.d} ${IC.MONTHS[c.mo].slice(0, 3)}`)(IC.calAt(S, d.due)), parts, met: !!d.met, missed: d.miss || 0 };
+  return { ch: st.ch, where: st.act === 1 ? `Chapter ${st.ch + 1}` : IC.ACTS[st.act].name, text: M.text(S), due: d.due, left: d.lapsed ? 'no date' : left(S, d.due), date: d.lapsed ? 'no date' : dateOf(S, d.due), dshort: d.lapsed ? 'overdue' : (c => `${c.d} ${IC.MONTHS[c.mo].slice(0, 3)}`)(IC.calAt(S, d.due)), parts, met: !!d.met, missed: d.miss || 0, lapsed: !!d.lapsed };
 };
 IC.deskMet = S => { const st = S.story, M = mandOf(S); return !!M && M.of.every(id => { const g = st.goals.find(x => x.id === id); return !g || g.done; }); };
 const mandPay = S => (S.story.goals || []).reduce((s, g) => s + (g.pay || 0), 0);
 function mandate(S) {
   const st = S.story, d = st.desk, M = mandOf(S); if (!M) return;
-  if (d.mch !== mandKey(S)) { d.mch = mandKey(S); d.due = mandT0(S) + IC.MO(S, M.mo); d.miss = 0; d.met = false; }
+  if (d.mch !== mandKey(S)) { d.mch = mandKey(S); d.due = mandT0(S) + IC.MO(S, M.mo); d.miss = 0; d.met = false; d.lapsed = false; }
   if (!d.met && IC.deskMet(S)) meet(S);
-  else if (!d.met && S.time > d.due) {
-    const k = Math.min(d.miss, IC.DESK.missConf.length - 1), v = IC.DESK.missConf[k];
-    d.miss++; d.due = S.time + IC.MO(S, Math.max(2, Math.round(M.mo / 2)));
+  else if (!d.met && d.lapsed && st.act === 1 && S.time - (d.dragT || 0) >= IC.MO(S, 1)) {
+    // (in Act I the mandate is the job: still not done, it costs a little every month, so standing still is not safe;
+    // Acts II and III go on by their story, and a lapsed mandate there stays on the record only)
+    d.dragT = S.time; d.drags = (d.drags || 0) + 1; record(S, Math.max(IC.DESK.drag * d.drags, IC.DESK.dragMax), 'the mandate still not done');
+  }
+  else if (!d.met && !d.lapsed && S.time > d.due) {
+    // (late twice and the cabinet stops setting dates: the record carries the failure, it does not grow without end)
+    const v = IC.DESK.missConf[Math.min(d.miss, IC.DESK.missConf.length - 1)];
+    d.miss++;
+    if (d.miss >= IC.DESK.missConf.length) { d.lapsed = true; d.dragT = S.time; d.drags = 0; } else d.due = S.time + IC.MO(S, Math.max(2, Math.round(M.mo / 2)));
     record(S, v, 'the mandate late');
     if (S.wait) IC.waitStop(S, 'The Minister’s date has passed.');
     castTrust(S, 'MIN', -6);
-    IC.say(S, st.act === 1 ? 'MIN' : 'PM', d.miss === 1 ? `The date has passed, Director, and it is not done: ${U.lc(M.text(S))}. I have told the cabinet ${dateOf(S, d.due)}. Do not make me tell them another.` : `Late again. The cabinet has stopped asking me when. They are asking me who.`);
+    IC.say(S, st.act === 1 ? 'MIN' : 'PM', d.miss === 1 ? `The date has passed, Director, and it is not done: ${M.text(S).charAt(0).toLowerCase() + M.text(S).slice(1)}. I have told the cabinet ${dateOf(S, d.due)}. Do not make me tell them another.` : `Late again. The cabinet has stopped asking me when. They are asking me who. It still wants it done.`);
     IC.emit(S, 'mandate', { ch: st.ch, act: st.act, met: false, miss: d.miss });
   }
 }
@@ -361,7 +371,7 @@ function standing(S) {
     else if (S.time - d.lowT >= IC.MO(S, 1) && !S.over) sack(S);
   } else if (d.lowT != null && st.standing >= IC.DESK.sackAt + 5) { d.lowT = null; IC.say(S, 'MIN', 'You have bought yourself some time. Use it.'); }
   const band = st.standing < W[1] ? 2 : st.standing < W[0] ? 1 : 0;
-  if (band > (d.band || 0)) { const r = IC.deskWhy(S).filter(x => x.v < 0)[0]; IC.say(S, 'MIN', band === 2 ? `The cabinet is asking about you, Director${r ? `, and about ${U.lc(r.why)}` : ''}. Fix what is on your desk.` : `I am losing patience${r ? `: ${U.lc(r.why)}` : ''}. The grant follows my confidence.`); }
+  if (band > (d.band || 0)) { const r = IC.deskWhy(S).filter(x => x.v < 0)[0]; IC.say(S, 'MIN', band === 2 ? `The cabinet is asking about you, Director${r ? `, and about ${lc1(r.why)}` : ''}. Fix what is on your desk.` : `I am losing patience${r ? `: ${lc1(r.why)}` : ''}. The grant follows my confidence.`); }
   d.band = band;
 }
 function sack(S) {
@@ -382,6 +392,8 @@ IC.deskDanger = function (S) {
 /* ---------- every step ---------- */
 IC.deskInit = function (S) {
   const st = S.story;
+  // (saves from before the cap on misses: a mandate missed more than twice has no date)
+  if (st.desk && st.desk.miss >= IC.DESK.missConf.length) st.desk.lapsed = true;
   st.desk = st.desk || { mch: -1, due: 0, miss: 0, met: false, P: [], cool: {}, seen: {}, next: 0, rec: [], log: [], los: [], q: quarter(S), qPrev: null, revs: [], lowT: null, band: 0, yDay: null, inc: [] };
   if (!st.desk.inc) st.desk.inc = [];
   return st.desk;

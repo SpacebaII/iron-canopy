@@ -419,8 +419,8 @@ function deskPanel() {
   let h;
   if (M && !M.met) {
     const late = M.missed ? ' late' : '', open = M.parts.filter(p => !p.done).length;
-    h = `<h3 data-act="briefMin" title="${ui.briefOpen ? 'Fold the steps' : 'Every step towards it'}"><span>${st.act === 1 ? 'The Minister’s mandate' : 'The cabinet’s mandate'}</span><em>by ${esc(M.dshort)} ${ui.briefOpen ? '▴' : '▾'}</em></h3>
-      <div class="mand${late}"><b>${esc(M.text)}</b><small>${esc(M.where)} · ${esc(M.left)} left${M.missed ? ` · late ${M.missed > 1 ? 'twice' : 'once'}` : ''}${M.parts.length > 1 ? ` · ${M.parts.length - open} of ${M.parts.length} done` : ''}</small></div>`;
+    h = `<h3 data-act="briefMin" title="${ui.briefOpen ? 'Fold the steps' : 'Every step towards it'}"><span>${st.act === 1 ? 'The Minister’s mandate' : 'The cabinet’s mandate'}</span><em>${M.lapsed ? 'overdue' : `by ${esc(M.dshort)}`} ${ui.briefOpen ? '▴' : '▾'}</em></h3>
+      <div class="mand${late}"><b>${esc(M.text)}</b><small>${esc(M.where)} · ${M.lapsed ? 'no new date' : `${esc(M.left)} left`}${M.missed ? ` · late ${M.missed > 1 ? 'twice' : 'once'}` : ''}${M.parts.length > 1 ? ` · ${M.parts.length - open} of ${M.parts.length} done` : ''}</small></div>`;
     h += nextGoal(`<h4 class="dsub">Next step</h4>`);
   } else if (M && M.met) h = `<h3 data-act="briefMin"><span>Mandate met</span><em>${esc(M.where)}</em></h3><p class="hint">${esc(ch && ch.next ? ch.next : 'Keep the airports running.')}</p>` + (ui.briefOpen ? nextGoal('') : '');
   else h = nextGoal();
