@@ -6073,6 +6073,70 @@ test('war controls: Keep stocked says once what it bought, for how much, and whe
   assert(m.includes(U.money(R.cost)) && /Keep stocked bought/.test(m) && /Supply \(L\)/.test(m), `the message does not say what, how much and where: "${m}"`);
 });
 
+/* ---------- wave 17: the Quick war's Journal and panels, from a new player's playtest ---------- */
+const civilNoise = /Decide in the Aviation room|built by private money|light-aircraft field nearby would|Add a controller/;
+test('war journal: a Quick war logs no airline offers or civil advice the player cannot act on; the Career still does', () => {
+  const Q = IC.newGame({ seed: 12345, mode: 'campaign' });
+  run(Q, 4);
+  const bad = Q.logs.filter(l => civilNoise.test(l.msg));
+  assert(!bad.length, `${bad.length} civil lines in the Quick war's Journal, first: ${bad[0] && bad[0].msg}`);
+  assert(!Q.av.requests.length, 'an airline offer waits in a Quick war');
+  // the landside still grows and pays: only its notices are gone
+  assert(IC.bases(Q).some(b => b.land && b.land.items.length > 1), 'the landside stopped growing');
+  const C = IC.newGame({ seed: 5, mode: 'story', preset: 'network' });
+  run(C, 4);
+  assert(C.logs.some(l => civilNoise.test(l.msg)), 'the Career lost its civil-aviation notices');
+}, true);
+test('war journal: the morning briefing and stale cards wait while a raid is in the air', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' }), E = S.enemy;
+  S.camp.sched = []; E.allow = new Set();
+  const briefs = () => S.camp.cards.filter(c => c.kind === 'briefing').length;
+  // day 2, just after six, with a raid in the air: no briefing yet
+  S.time = 86400 + 6 * 3600 + 30; S.camp.briefDay = 1;
+  E.cycle = { phase: 'raid', next: S.time + 3600, R: { name: 'test raid', obj: IC.cap(S) } };
+  const n0 = briefs();
+  IC.campaignTick(S, 1);
+  assert(briefs() === n0, 'the morning briefing came during the raid');
+  // cards: a fresh one shows, the briefing, a report and an old one wait
+  const card = (kind, age) => ({ kind, t: S.time - age, title: 'x', sub: '', text: '' });
+  assert(!IC.cardWaits(S, card('chapter', 0)), 'a card about what is happening now was held');
+  assert(IC.cardWaits(S, card('briefing', 0)) && IC.cardWaits(S, card('report', 0)) && IC.cardWaits(S, card('chapter', 1800)), 'a briefing, a report or an old card would cover the raid');
+  // the raid over: the briefing comes, and nothing waits
+  E.cycle = { phase: 'calm', next: S.time + 1e6 };
+  S.time += 600; IC.campaignTick(S, 1);
+  assert(briefs() === n0 + 1, 'no briefing after the raid');
+  assert(!IC.cardWaits(S, card('report', 1800)), 'a card still waits after the raid');
+});
+test('war journal: the helicopter resupply line names the distance to the depot, not a closed base', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'campaign' });
+  const H = S.roster.filter(r => r.kind === 'heli');
+  assert(H.length && H.every(r => r.st === 'ready' && IC.canLaunch(S, r)), 'the helicopters are not ready at the start');
+  const W = S.units.filter(u => u.mags.length).map(u => IC.heliPlan(S, u).why).filter(Boolean);
+  assert(!W.some(w => /closed/.test(w)), `a ready helicopter called closed: ${W.find(w => /closed/.test(w))}`);
+  const far = W.find(w => w.includes(`within ${U.km(IC.HELI.reach)} of its base`));
+  assert(far && / km from /.test(far), `no unit is told the depot is out of the helicopters' reach: ${W[0]}`);
+});
+test('war journal: an intercept that says it turns home first does turn home, short of the meeting point, with fuel left', () => {
+  const S = quietWar();
+  const b = S.byId.ab_fwd, r = S.roster.find(x => x.base === b.id && x.kind === 'ftr' && x.st === 'ready');
+  const c = IC.cap(S), cl = U.dist(c, b), dir = { x: (c.x - b.x) / cl, y: (c.y - b.y) / cl };
+  S.units = [];
+  IC.makeUnit(S, 'lr3d', b.x + dir.x * 900, b.y + dir.y * 900, { instant: true, full: true }).emcon = 'on';
+  // a strike aircraft running away: a long tail chase
+  const far = { x: b.x + dir.x * 60000, y: b.y + dir.y * 60000 };
+  const t = IC.spawnThreat(S, 'str', b.x + dir.x * 1800, b.y + dir.y * 1800, { route: [far], mission: 'strike', home: far, noFire: true });
+  for (let i = 0; i < 4 * 120 && !t.held; i++) IC.step(S, 0.25);
+  assert(t.held, 'the strike aircraft was never detected');
+  IC.setAff(S, t, 'H', 'test');
+  const P = IC.interceptPlan(S, r, t);
+  assert(P.ok && P.fuelBack < 0, `the plan should say it turns home first: ${JSON.stringify({ ok: P.ok, fuelBack: P.fuelBack })}`);
+  const a = IC.commitIntercept(S, r, t);
+  let home = null, low = Infinity;
+  for (let i = 0; i < 4 * 3 * 3600 && !a.dead; i++) { IC.step(S, 0.25); low = Math.min(low, a.fuel); if (!home && a.state === 'rtb') home = U.dxy(a.x, a.y, P.x, P.y); }
+  assert(home != null && home > 200, `it did not turn home short of the meeting point (${home == null ? 'never turned' : U.km(home) + ' short'})`);
+  assert(low > 0, `it ran dry (${low})`);
+});
+
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

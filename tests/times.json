@@ -228,5 +228,9 @@
  "war controls: Show the gaps is offered only when there are airways to check": 0.1,
  "war controls: the reserve line in the situation picks a system to place": 0.1,
  "war controls: SPLASH marks fade out within a minute and a half of game time": 0,
- "war controls: Keep stocked says once what it bought, for how much, and where to turn it off": 15
+ "war controls: Keep stocked says once what it bought, for how much, and where to turn it off": 15,
+ "war journal: a Quick war logs no airline offers or civil advice the player cannot act on; the Career still does": 192,
+ "war journal: the morning briefing and stale cards wait while a raid is in the air": 48,
+ "war journal: the helicopter resupply line names the distance to the depot, not a closed base": 53,
+ "war journal: an intercept that says it turns home first does turn home, short of the meeting point, with fuel left": 100
 }

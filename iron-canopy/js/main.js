@@ -477,9 +477,10 @@ function onAct(e) {
     case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; }
       // the reserve: its most valuable system is picked to place, on its tab, and the message says what to do next
       if (o.kind === 'reserve' && o.type && S.reserve[o.type] > 0) { const d = IC.UNITS[o.type]; ui.arMin = false; ui.cat = d.cat; IC.setMode({ kind: 'deploy', type: o.type }); const tile = document.getElementById('tile-' + o.type); if (tile) tile.scrollIntoView({ block: 'nearest', inline: 'nearest' }); IC.toast(S, 'info', 'RESERVE', `${d.name} picked from the reserve (${S.reserve[o.type]} waiting). Click the map where it should stand: the dashed rings show its reach. Right-click or Esc to put it back.`); return; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { IC.airspaceSet(S, 'restricted'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
-    case 'copen': ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
-    case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.shownAt = performance.now() - 1e5; break;
-    case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
+    case 'copen': ui.cOpen = performance.now(); if (v === 'new' && ui.cNew >= 0) { ui.ci = ui.cNew; ui.cNew = -1; } ui.shownAt = performance.now() - 1e5; break;
+    case 'cfirst': ui.cOpen = performance.now(); if (ui.cNew >= 0) ui.ci = ui.cNew; ui.cNew = -1; ui.shownAt = performance.now() - 1e5; break;
+    case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.cNew = -1; ui.shownAt = performance.now() - 1e5; break;
+    case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.cNew = -1; ui.shownAt = performance.now() - 1e5; break;
     case 'zin': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.3); break;
     case 'zout': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1 / 1.3); break;
     case 'zhome': { const c = IC.cap(S); IC.flyTo(c.x, c.y, Math.max(IC.cam.z, 0.3)); break; }
@@ -923,7 +924,7 @@ function resize() {
 /* ---------- start screen ---------- */
 function describe(W) {
   const dirA = compass(W, 'A'), dirB = compass(W, 'B');
-  return `The ${W.full.H} is landlocked between the hostile ${W.full.A} to the ${dirA} and the ${W.full.B} to the ${dirB}, with ${W.names.C} and ${W.names.D} neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
+  return `The ${W.full.H} is landlocked between two hostile neighbours: the ${W.full.A} to the ${dirA}, and its ally the ${W.full.B} to the ${dirB}, which will join any war. ${W.names.C} and ${W.names.D} are neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
 }
 function compass(W, k) { const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2; return ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
 /* while a game is built the page draws between stages (state.js); IC.onLoadProgress(stage, share done) says how far it
@@ -968,7 +969,7 @@ IC.adopt = function (st, view) {
   IC.resetMini();
   IC.ui.bind(S);
   // what the player had already read stays read: chapter cards and staff messages from before the save
-  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.cineDone = new Set(); IC.ui.cineCur = null; IC.ui.lastLen = S.camp.comms.length; IC.ui.cNew = -1; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
   resize();
   $('seed').textContent = String(S.seed);
   $('start').hidden = true; $('over').hidden = true;

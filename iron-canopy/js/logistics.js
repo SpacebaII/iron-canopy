@@ -327,7 +327,13 @@ IC.heliPlan = function (S, u, manual) {
     if (!all.length) return { why: 'No transport helicopter. A Forward Heliport (Supply tab) comes with one.' };
     const back = all.map(x => ({ x, t: heliBack(S, x) })).filter(o => o.t != null).sort((a, b) => a.t - b.t)[0];
     if (back) return { why: `Every transport helicopter is busy: ${back.x.name} can fly again in about ${U.dur(back.t)}.` };
-    return { why: 'No transport helicopter can take off: its base is closed or too far from the depots.' };
+    // ready but out of reach of the depot, or grounded at a base that cannot launch: say which
+    const up = all.filter(x => x.st === 'ready' && IC.canLaunch(S, x)).map(x => ({ x, b: IC.baseOf(S, x.base) })).filter(o => o.b)
+      .sort((p, q) => U.dist(p.b, src) - U.dist(q.b, src))[0];
+    if (up) return { why: `${up.x.name} is ready at ${up.b.name}, but that is ${U.km(U.dist(up.b, src))} from ${src.name}, where the rounds are. A helicopter fetches loads only from a depot within ${U.km(H.reach)} of its base. A Forward Heliport near the depot (Supply tab) closes the gap; lorries still drive.` };
+    const down = all.find(x => x.st === 'ready'), db = down && IC.baseOf(S, down.base);
+    if (db) return { why: `${down.name} cannot take off: ${db.name} is ${db.dead || db.owner === 'enemy' ? 'lost' : 'closed'}. Lorries still drive.` };
+    return { why: 'No transport helicopter is ready: they are being repaired or are lost. Lorries still drive.' };
   }
   // what it carries: this unit's emptiest rounds first, then units close by that need what the depot holds
   let room = K.cap * (r.n || K.n);

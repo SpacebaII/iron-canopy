@@ -1012,7 +1012,7 @@ function workload(S, F) {
     load += s.load; cap += s.cap;
     if (s.work > 1.1 && S.time - (s.overT || -1e9) > 3 * 3600) {
       s.overT = S.time;
-      IC.log(S, S.story ? 'warn' : 'info', 'AIRSPACE', `${s.name} is overloaded: ${Math.round(s.load)} flights' worth of work for ${s.staff} controller${s.staff === 1 ? '' : 's'}, who handle ${Math.round(s.cap)}. They hold departures longer and can miss a conflict. Add a controller${s.kind === 'acc' ? ', split the area into another sector,' : ''} or put flights on airways under radar.`, S.story && s.ap ? S.byId[s.ap] : null);
+      if (IC.civilAdvice(S)) IC.log(S, S.story ? 'warn' : 'info', 'AIRSPACE', `${s.name} is overloaded: ${Math.round(s.load)} flights' worth of work for ${s.staff} controller${s.staff === 1 ? '' : 's'}, who handle ${Math.round(s.cap)}. They hold departures longer and can miss a conflict. Add a controller${s.kind === 'acc' ? ', split the area into another sector,' : ''} or put flights on airways under radar.`, S.story && s.ap ? S.byId[s.ap] : null);
       IC.emit(S, 'overload', { load: s.load, cap: s.cap, sec: s });
     }
   }
@@ -1316,7 +1316,7 @@ IC.gaDelayNote = function (S, ap, wait) {
   ap.gaWait = (ap.gaWait || 0) + (wait || 6);
   if (ap.gaWait < 900 || (ap.gaNoteT && S.time - ap.gaNoteT < 6 * 3600)) return;
   ap.gaNoteT = S.time; ap.gaWait = 0;
-  IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
+  if (IC.civilAdvice(S)) IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
 };
 IC.gaArrive = function (S, t) {
   const b = t.gaTo; if (!b) return;
