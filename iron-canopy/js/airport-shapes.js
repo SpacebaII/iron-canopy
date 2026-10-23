@@ -318,7 +318,15 @@ IC.aptUnattached = function (S, ap) {
   for (const p of ap.parts) {
     if (!p.built) continue;
     if (p.kind === 'skybridge' && (p.joins || []).filter(id => { const q = ap.parts.find(x => x.id === id); return q && q.built; }).length < 2) out.push({ what: 'skybridge', p, text: `${name(p)} does not join two buildings.` });
-    if (p.kind === 'people' && (p.stops || []).length < 2) out.push({ what: 'people', p, text: `${name(p)} has no station at ${(p.stops || []).length ? 'one end' : 'either end'}.` });
+    if (p.kind === 'people') {
+      // each end at a station: a building it stops at, or another stretch of the same line (a mapped line comes in
+      // pieces), or a terminal it runs into
+      const st = (p.stops || []).map(id => ap.parts.find(q => q.id === id)).filter(Boolean);
+      const atEnd = e => st.concat(ap.parts.filter(q => q.kind === 'terminal' && q.built)).some(q => IC.partDist(ap, q, e) < 0.6)
+        || ap.parts.some(q => q !== p && q.kind === 'people' && q.pts.some(v => U.dist(v, e) < 0.15));
+      const n = [p.pts[0], p.pts[p.pts.length - 1]].filter(e => !atEnd(e)).length;
+      if (n) out.push({ what: 'people', p, text: `${name(p)} has no station at ${n === 1 ? 'one end' : 'either end'}.` });
+    }
   }
   const L = ap.land;
   if (L && L.roads) for (const r of L.roads) if (r.kind === 'kerb' && r.by) {

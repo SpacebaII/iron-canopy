@@ -1183,7 +1183,11 @@ function actOneTick(S) {
 }
 function foundedHere(S, ap) {
   const st = S.story, cc = IC.cap(S);
-  if (!st.cap) {
+  // (the national airport is a national airport or a hub: an airfield, regional or cargo airport by the capital is
+  // just one more airport)
+  const big = !IC.aptClass || ['national', 'hub', 'mega'].includes(IC.aptClass(ap));
+  if (!st.cap && !big) say(S, 'MIN', `${ap.name} is ${IC.aWord(IC.aptClassOf(ap).name.toLowerCase())}. The national airport has to take every airliner: found it as a national airport or an international hub.`);
+  else if (!st.cap) {
     if (U.dist(ap, cc) <= 600) {
       st.cap = ap.id; ap.template = 'intl'; S.asp.zs = null;
       say(S, 'APT', `${ap.name}: a site, a survey and a runway heading. Now the runway itself: the surveyed one is placed on the map, and Build lays it. Blueprints has the whole Starter airport at one price.`);
@@ -1205,7 +1209,7 @@ IC.on((S, type, d) => {
     case 'dealDone': if (!d.d.strikes) again(0.5); break;
     case 'dealWarn': if (st.act === 1 && IC.tipOnce(S, 'dealWarn', 3 * H)) say(S, 'APT', `${d.al.name} has written about its deal: ${d.text}. They give us 12 hours.`); break;
     case 'tailParked': st.cnt.parked++; break;
-    case 'naming': if (!st.cap && U.dist(d, IC.cap(S)) <= 600) d.name = `${IC.cap(S).name} International`; break;
+    case 'naming': if (!st.cap && U.dist(d, IC.cap(S)) <= 600 && (!IC.aptClass || ['national', 'hub', 'mega'].includes(IC.aptClass(d)))) d.name = `${IC.cap(S).name} International`; break;
     case 'founded': foundedHere(S, d); break;
     case 'overflight': if (d.net) { st.cnt.overT.push(S.time); if (st.cnt.overT.length > 200) st.cnt.overT = st.cnt.overT.filter(t => S.time - t < 86400); } break;
     case 'lossSep': case 'nearMiss':

@@ -251,5 +251,15 @@
  "agenda: each named change does what its policy says": 8.0,
  "agenda: Wait does not pass a policy faster than play": 36.4,
  "agenda: Access to the banks opens loans before Chapter 5, and the lock says so before it passes": 22.2,
- "agenda: the scripted player finishes Act I on either side of each pair": 512
+ "agenda: the scripted player finishes Act I on either side of each pair": 512,
+ "airport classes: each purpose founds its own runway, site and price, and its Starter airport fits it": 31.7,
+ "airport classes: airlines want the airports built for them, and light aircraft use our airfields": 10.3,
+ "airport classes: a new purpose buys the land for the bigger site and says what the airport still lacks": 10.8,
+ "airport classes: the Career's national airport is a national airport or a hub": 16.3,
+ "building: parts that open together rise as one line of what they changed": 5.7,
+ "building: the Starter airport's services stand where real airports put them, each with its road": 22.6,
+ "building: a fire station with no taxiway beside it gets a crash road to the runway, and a fuel farm by the terminal is warned of": 10.1,
+ "building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall": 7.8,
+ "building: a taxiway drawn straight across another taxiway and a runway joins them there, with a runway crossing": 6.5,
+ "airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why": 8.0
 }

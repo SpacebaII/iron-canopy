@@ -467,7 +467,7 @@ const { drive, tick, kdenGame, relayout } = require('./traffic.js');
 const calm = (S, dir, kt, gust) => IC.setWind(S, { dir: dir || 0, kt: kt == null ? 6 : kt, gust, hold: true });
 const sky = (S, kind) => { S.weather.kind = S.weather.prev = kind; S.weather.fade = 1; S.weather.hold = true; };
 /* finish every planned part at once */
-const finishWorks = (S, ap) => { for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); } };
+const finishWorks = (S, ap) => { const c0 = ap.crews; ap.crews = Math.max(c0 || 1, ap.works.length); for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); } ap.crews = c0; };
 test('airport: the KDEN-scale layout handles its rated movements for two hours', () => {
   // (the six-runway layout built in code: on the real Denver, arrivals on the outer runways cross the inner ones through
   // the same exits, which the panel's rating does not count, so demand set to the rating queues)
@@ -930,7 +930,8 @@ test('builder: exits before a parallel taxiway are built, end in the grass and s
   assert(IC.buildFinish(S, m) === 'built', m.err);
   finishWorks(S, bad);
   const st = IC.aptStats(S, bad);
-  assert(exitsOf() === e0 && st.warn.some(w => /in the grass/.test(w)), `dead-end exits count as ways off the runway (${e0} → ${exitsOf()}), or no warning: ${st.warn.join(' / ')}`);
+  // (the exit crosses the bad airport's stub to its apron and joins it there, as pavement that crosses does; past the stub it ends in the grass)
+  assert(exitsOf() === e0 + 1 && st.warn.some(w => /in the grass/.test(w)), `dead-end exits count as ways off the runway (${e0} → ${exitsOf()}), or no warning: ${st.warn.join(' / ')}`);
   // a parallel taxiway 180 m out on that side passes through their ends and joins them
   const pm = IC.bldMode(S, bad, 'parallel'); S.mode2 = pm;
   IC.clickWorld(P(0, 0), 0); IC.clickWorld(P(0, 1.8), 0); assert(IC.buildFinish(S, pm) === 'built', pm.err);
@@ -1310,7 +1311,8 @@ test('build bar: every tab has items, and each one can be placed on an airport',
       S.mode2 = m; S.hover = c;
       const cnt = () => ap.parts.length + (ap.svcRoads || []).length, n0 = cnt(), two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
       IC.clickWorld(c, 0);
-      if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
+      if (IC.SHAPE_TOOLS[part]) for (const q of [c2, { x: c.x + 1, y: c.y + 4 }]) { S.hover = q; IC.clickWorld(q, 0); }
+      else if (two) { S.hover = c2; IC.clickWorld(c2, 0); }
       // (nothing is built on a click: Build or Enter builds it)
       assert(cnt() === n0, `${k} was built on a click`);
       IC.buildFinish(S, S.mode2);
@@ -4825,6 +4827,20 @@ test('airport: a taxiway laid again over one already there is refused, and not p
   const far = pts.map(q => ({ x: q.x + 3, y: q.y + 3 }));
   assert(IC.aptPlanTaxi(S, ap, [pts[0], far[0]], 0.3), 'a new taxiway from an existing node was refused');
 });
+test('airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  let ap = null, m = null, p = null;
+  for (let i = 0; i < 40 && !p; i++) {
+    run(S, 0.05);
+    for (const b of IC.bases(S)) for (const x of b.moves || []) if (x.phase === 'taxi') {
+      const q = b.parts.find(q => q.kind === 'taxi' && q.built && IC.partDist(b, q, x) < 0.05);
+      if (q) { ap = b; m = x; p = q; break; }
+    }
+  }
+  assert(p, 'no aircraft taxiing');
+  assert(/on it now/.test(IC.aptRemoveBlock(S, ap, p)), 'no reason given for keeping the taxiway');
+  assert(!IC.aptRemove(S, ap, p.id) && ap.parts.includes(p), 'the taxiway was bulldozed under an aircraft');
+}, true);
 test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 1 / 3);
@@ -5131,6 +5147,161 @@ test('round 1: a starter airport template places a complete working airport as o
   assert(IC.storyOpenTo(S, ap, 'narrow'), 'not open to airliners');
   const goals = S.story.goals.filter(g => g.id !== 'first');
   assert(goals.every(g => g.check()), `goals not met: ${goals.filter(g => !g.check()).map(g => g.id)}`);
+});
+/* an airport founded near the capital as a class (aptclass.js), with its Starter airport built on the survey */
+const foundAs = (cls, seed, starter) => {
+  const S = IC.newGame({ seed: seed || 12345, mode: 'story' }); IC.S = S; S.budget = 20000;
+  const c = IC.cap(S); let p = null;
+  for (const d of [250, 220, 280, 200, 300]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.foundCheck(S, x, y, cls) && !IC.foundSurvey(S, x, y, IC.PREVAIL, IC.foundLen(cls), cls).river) p = { x, y }; } if (p) break; }
+  S.mode2 = { kind: 'found' }; IC.clickWorld(p, 0); IC.foundClass(S.mode2, cls);
+  const sv = IC.foundSurveyOf(S, S.mode2), b0 = S.budget, m = S.mode2;
+  const r = IC.foundFinish(S, m), ap = m.ap, paid = b0 - S.budget;
+  if (starter !== false && ap) { const sm = S.mode2 = IC.bldMode(S, ap, 'starter'); IC.clickWorld({ x: sv.x + 2, y: sv.y + 1 }, 0); assert(IC.buildFinish(S, sm) === 'built', `${cls}: the Starter airport: ${sm.err}`); S.mode2 = null; finishWorks(S, ap); IC.aptStats(S, ap); }
+  return { S, ap, sv, paid, r };
+};
+test('airport classes: each purpose founds its own runway, site and price, and its Starter airport fits it', () => {
+  const got = {};
+  for (const cls of IC.APT_CLASSES) {
+    const K = IC.APT_CLASS[cls], { S, ap, sv, paid, r } = foundAs(cls);
+    assert(r === 'built' && ap && IC.aptClass(ap) === cls, `${cls}: not founded as one`);
+    assert(sv.len === K.rw && ap.buildR === K.site && Math.abs(paid - sv.cost) < 1, `${cls}: survey ${sv.len}, site ${ap.buildR}, paid ${U.money(paid)} of ${U.money(sv.cost)}`);
+    const rw = ap.parts.find(p => p.kind === 'runway'), st = ap.st, stands = IC.aptStands(ap);
+    assert(Math.abs(IC.rwLen(rw) - K.rw) < 0.2, `${cls}: the Starter runway is ${U.km(IC.rwLen(rw))}, the survey ${U.km(K.rw)}`);
+    assert(stands.length >= K.starter.n && stands.every(s => s.linked), `${cls}: ${stands.filter(s => s.linked).length} of ${stands.length} stands joined`);
+    assert(!st.warn.length, `${cls}: ${st.warn.join(' / ')}`);
+    assert(!IC.aptUnattached(S, ap).length, `${cls}: ${IC.aptUnattached(S, ap).map(x => x.text).join(' / ')}`);
+    const R = ap.parts.filter(p => p.kind === 'runway'), cf = IC.aptConfig(S, ap);
+    got[cls] = { paid: sv.site, sizes: stands.map(s => s.size), zones: stands.map(s => s.zone || 'civil'), kinds: ap.parts.map(p => p.kind), maxType: st.maxType,
+      rws: R.map(r => IC.rwLen(r)), gap: R.length > 1 ? U.segDist(R[1].a.x, R[1].a.y, R[0].a.x - (R[0].b.x - R[0].a.x) * 9, R[0].a.y - (R[0].b.y - R[0].a.y) * 9, R[0].b.x + (R[0].b.x - R[0].a.x) * 9, R[0].b.y + (R[0].b.y - R[0].a.y) * 9) : 0,
+      indep: !!(cf && cf.arr && cf.dep && cf.arr.length && cf.dep.length && !cf.arr.some(id => cf.dep.includes(id))), contact: stands.filter(s => s.contact).length };
+  }
+  // an airfield is light aircraft on small stands, flown by sight; a hub has large stands; a cargo airport a cargo terminal
+  assert(got.field.zones.every(z => z === 'light') && got.field.sizes.every(z => z === 's') && !got.field.kinds.includes('ils') && !got.field.kinds.includes('tower'), 'the airfield is not a light-aircraft field');
+  assert(got.hub.sizes.every(z => z === 'l') && got.hub.maxType === 'cargo', 'the hub does not take wide-bodies');
+  assert(got.cargo.kinds.includes('cargo') && got.cargo.zones.filter(z => z === 'cargo').length >= 4, 'the cargo airport has no cargo terminal with its stands');
+  // a mega hub: two 4 km runways that work at once, concourses of large and medium gates
+  assert(got.mega.rws.length === 2 && got.mega.rws.every(L => L > 39.5) && got.mega.gap > 20 && got.mega.indep, `mega hub runways: ${got.mega.rws.join(', ')}, ${got.mega.gap} apart, ${got.mega.indep ? '' : 'not '}independent`);
+  assert(got.mega.sizes.length >= 80 && got.mega.sizes.filter(z => z === 'l').length >= 30 && got.mega.contact === got.mega.sizes.length, `mega hub stands: ${got.mega.sizes.length}, ${got.mega.sizes.filter(z => z === 'l').length} large, ${got.mega.contact} at gates`);
+  // the site's price follows its size
+  const P = IC.APT_CLASSES.map(k => got[k].paid);
+  assert(got.field.paid < got.regional.paid && got.regional.paid < got.national.paid && got.national.paid < got.hub.paid && got.hub.paid < got.mega.paid, `site prices: ${P.map(v => U.money(v)).join(', ')}`);
+});
+test('airport classes: airlines want the airports built for them, and light aircraft use our airfields', () => {
+  const { S, ap } = foundAs('field', 12345);
+  assert(IC.aptWant(ap, 'flag') === 0 && IC.aptWant(ap, 'foreign') === 0, 'airlines want an airfield');
+  // the town's light aircraft fly from our airfield rather than an airport or a club field farther off
+  const town = { x: ap.x + 30, y: ap.y };
+  const b = IC.gaBase(S, town);
+  assert(b && b.apt === ap.id, `light aircraft fly from ${b && b.name}`);
+  // freighters weigh a cargo airport four times a national one, regional airlines a regional airport three times
+  const cargo = { kind: 'airport', cls: 'cargo' }, reg = { kind: 'airport', cls: 'regional' }, nat = { kind: 'airport', cls: 'national' };
+  assert(IC.aptWant(cargo, 'cargo') > IC.aptWant(nat, 'cargo') * 3 && IC.aptWant(reg, 'regional') > IC.aptWant(nat, 'regional') * 2, 'the purposes do not steer the airlines');
+});
+test('airport classes: a new purpose buys the land for the bigger site and says what the airport still lacks', () => {
+  const { S, ap } = foundAs('field', 12345);
+  const b0 = S.budget, cost = IC.aptReclassCost(S, ap, 'hub');
+  assert(cost > 0 && !IC.aptReclass(S, ap, 'hub') && Math.abs(b0 - S.budget - cost) < 0.01, `paid ${U.money(b0 - S.budget)} of ${U.money(cost)}`);
+  assert(IC.aptClass(ap) === 'hub' && ap.buildR === IC.APT_CLASS.hub.site, 'the site did not grow');
+  const st = IC.aptStats(S, ap);
+  assert(st.warn.some(w => /^An international hub needs a runway of 3\.0 km/.test(w)) && st.warn.some(w => /large stands/.test(w)), st.warn.join(' / '));
+  // back to an airfield costs nothing and keeps the site
+  const b1 = S.budget; assert(!IC.aptReclass(S, ap, 'field') && S.budget === b1 && ap.buildR === IC.APT_CLASS.hub.site, 'going smaller cost money or shrank the site');
+  assert(IC.aspPresetFor(ap) === 'D', 'the airspace does not follow the purpose');
+});
+test('airport classes: the Career\'s national airport is a national airport or a hub', () => {
+  const { S, ap } = foundAs('regional', 12345, false);
+  assert(!S.story.cap && !/International/.test(ap.name) && /Regional$/.test(ap.name), `a regional airport was taken as the national airport: ${ap.name}`);
+  const { S: S2, ap: ap2 } = foundAs('hub', 12345, false);
+  assert(S2.story.cap === ap2.id && /International$/.test(ap2.name), 'a hub is not taken as the national airport');
+});
+test('building: parts that open together rise as one line of what they changed', () => {
+  const { S, ap } = foundAs('national', 12345);
+  const near = S.fx.texts.filter(t => U.dist(t, ap) < 40 && /CAN LAND|STANDS|PASSENGERS/.test(t.s));
+  assert(near.length === 1 && /FREIGHTER CAN LAND/.test(near[0].s) && !/TURBOPROP/.test(near[0].s), near.map(t => t.s).join(' / '));
+  // and a runway's name is never "Runway Runway"
+  const T = IC.aptProblems(S, ap).map(p => p.title).concat([IC.rwTitle({ name: 'Runway 09/27' }), IC.rwTitle({ name: '09/27' })]);
+  assert(!T.some(t => /Runway Runway/.test(t)) && IC.rwTitle({ name: '09/27' }) === 'Runway 09/27', T.join(' / '));
+});
+test('building: the Starter airport\'s services stand where real airports put them, each with its road', () => {
+  for (const cls of ['field', 'national', 'hub']) {
+    const { S, ap } = foundAs(cls), one = k => ap.parts.find(p => p.kind === k), fire = one('fire'), fuel = one('fuel'), term = one('terminal');
+    // (drawn as themselves: a fire station with its bays and apron, a tower with its cab, a fuel farm's tanks)
+    assert(fire && !fire.poly && IC.bldLayout(fire) && !fuel.poly && IC.bldLayout(fuel), `${cls}: services drawn as boxes`);
+    // the fire station's trucks leave by its front, onto the parallel taxiway, and reach both runway ends in time
+    const N = IC.svcNet(ap), out = N.roads.find(r => (r.kind === 'door' || r.kind === 'crash') && r.by === fire.id);
+    const tw = ap.parts.filter(p => p.kind === 'taxi'), onTw = q => tw.some(t => IC.partDist(ap, t, q) < t.w / 2 + 0.02);
+    assert(out && onTw(out.pts[out.pts.length - 1]), `${cls}: no road from the fire station onto the taxiway`);
+    const rw = one('runway'); assert([0, 1].every(f => IC.fireTime(fire, IC.rwAt(rw, f)) < IC.FIRE_STD), `${cls}: the fire trucks are too slow`);
+    // the fuel farm is clear of anything a fuel fire would take with it, and the airport says nothing is wrong
+    assert(!IC.fuelNear(ap, fuel), `${cls}: ${IC.fuelNear(ap, fuel) && IC.fuelNearText(IC.fuelNear(ap, fuel))}`);
+    if (cls !== 'field') { const tower = one('tower'); assert(tower && !IC.towerSees(ap, [tower], rw) && IC.partDist(ap, term, tower) < 1.2, `${cls}: the tower is not by the terminal, seeing the runway`); }
+    assert(!ap.st.warn.length && IC.svcRoadEnds(S, ap).every(e => e.ok), `${cls}: ${ap.st.warn.join(' / ')}`);
+    if (cls === 'field') assert(fire.w < 0.6 && IC.fuelTanks(fuel) === 1, 'an airfield got a big airport\'s services');
+  }
+});
+test('building: a fire station with no taxiway beside it gets a crash road to the runway, and a fuel farm by the terminal is warned of', () => {
+  const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), term = ap.parts.find(p => p.kind === 'terminal');
+  const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, term).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
+  // the Services piece on the far side, where no parallel taxiway runs
+  let m = S.mode2 = IC.bldMode(S, ap, 'services'); IC.clickWorld(W(-8, -3.2), 0); assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null; finishWorks(S, ap);
+  const fire = ap.parts.filter(p => p.kind === 'fire').pop(), crash = IC.svcNet(ap).roads.find(r => r.kind === 'crash' && r.by === fire.id);
+  assert(crash && IC.partDist(ap, rw, crash.pts[1]) < rw.w / 2 + 0.3 && IC.svcRoadEnds(S, ap).every(e => e.ok), 'no crash road from the far fire station to the runway');
+  assert(!ap.parts.filter(p => p.kind === 'fuel').some(f => IC.fuelNear(ap, f)), 'the Services piece put its fuel by its own buildings');
+  // a fuel farm planned against the terminal: the plan says the fire would spread, and the airport keeps saying it
+  // (the first free spot by the terminal: the landside's kerb road and car parks fill its town side)
+  m = S.mode2 = IC.bldMode(S, ap, 'fuel'); let plan = null; IC.bldFree = true;
+  const nearTerm = q => q && q.ok && (q.warn || []).some(t => /from the terminal: .*fire spreads to it/.test(t));
+  for (let d = 0.75; d < 2.1 && !nearTerm(plan); d += 0.25) for (const [x, y] of [[0, 1], [0, -1], [-1, 0], [1, 0], [-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    IC.buildCancel(S, m); IC.clickWorld(IC.rectWorld({ x: term.x, y: term.y, a: term.a }, x * (term.w / 2 + d), y * (term.h / 2 + d)), 0, true);
+    plan = IC.bldReady(S, m); if (nearTerm(plan)) break;
+  }
+  IC.bldFree = false;
+  assert(plan && (plan.warn || []).some(t => /fire spreads to it/.test(t)), `no warning on the plan: ${plan && (plan.warn || []).join(' / ')} ${plan && plan.why}`);
+  assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null; finishWorks(S, ap); IC.aptStats(S, ap);
+  assert(ap.st.warn.some(t => /fuel farm stands \d+ m from the terminal/.test(t)), ap.st.warn.join(' / '));
+  // and the simulation does it: the tanks burn, the terminal burns with them
+  const f = ap.parts.filter(p => p.kind === 'fuel').pop(), hp = term.hp; f.burning = 3000; run(S, 0.3);
+  assert(term.hp < hp, 'the fire did not reach the terminal');
+});
+test('building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall', () => {
+  const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), T0 = ap.parts.find(p => p.kind === 'terminal');
+  const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, T0).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
+  const draw = (tool, P, edge) => { const m = S.mode2 = IC.bldMode(S, ap, tool); m.edge = edge; IC.bldFree = true; for (const q of P) IC.clickWorld(W(q[0], q[1]), 0, true); IC.clickWorld(W(P[0][0], P[0][1]), 0, true); IC.bldFree = false; assert(m.set, `${tool}: not closed`); const r = IC.buildFinish(S, m); S.mode2 = null; assert(r === 'built', `${tool}: ${m.err}`); return ap.parts[ap.parts.length - 1]; };
+  // a chevron terminal, and an apron with a rounded outer corner against its wall
+  const T = draw('tmdraw', [[-3.4, 3.8], [-6.5, 4.15], [-9.6, 3.8], [-9.9, 4.25], [-6.5, 4.75], [-3.1, 4.3]], 'sharp');
+  const A = draw('apdraw', [[-3.3, 1.915], [-9.6, 1.915], [-10.6, 2.8], [-9.6, 3.8], [-6.5, 4.15], [-3.4, 3.8]], 'round');
+  assert(T.kind === 'terminal' && T.poly.length === 6 && A.kind === 'apron' && A.poly.length > 12, `outlines: terminal ${T.poly && T.poly.length}, apron ${A.poly && A.poly.length}`);
+  assert(Math.abs(IC.partArea(A) - IC.polyArea(IC.shapeOutline([[-3.3, 1.915], [-9.6, 1.915], [-10.6, 2.8], [-9.6, 3.8], [-6.5, 4.15], [-3.4, 3.8]].map(([x, y]) => ({ x, y })), 'round'))) < 0.05, 'the apron is not the outline drawn');
+  finishWorks(S, ap);
+  const sm = S.mode2 = IC.bldMode(S, ap, 'stand'); sm.size = 'm'; IC.bldFree = true;
+  for (const x of [-4.2, -5.0, -5.8, -7.2, -8.0, -8.8]) { IC.clickWorld(W(x, 3.6), 0, true); }
+  IC.bldFree = false; S.mode2 = null; ap.dirty = true; IC.aptStats(S, ap);
+  assert(A.stands.length === 6 && A.stands.every(s => s.linked && s.contact), A.stands.map(s => `${s.linked ? '' : 'unlinked '}${s.contact ? 'gate' : 'remote'}`).join(', '));
+  assert(!ap.st.warn.length, ap.st.warn.join(' / '));
+  // an outline whose sides cross is refused, and says why
+  const m = S.mode2 = IC.bldMode(S, ap, 'apdraw'); m.edge = 'sharp'; IC.bldFree = true;
+  for (const q of [[12, 3], [16, 5], [16, 3], [12, 5]]) IC.clickWorld(W(q[0], q[1]), 0, true);
+  IC.bldFree = false; const r = IC.bldReady(S, m);
+  assert(r && !r.ok && /sides cross/.test(r.why), r && r.why);
+  S.mode2 = null;
+});
+test('building: a taxiway drawn straight across another taxiway and a runway joins them there, with a runway crossing', () => {
+  const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), T0 = ap.parts.find(p => p.kind === 'terminal');
+  const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, T0).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
+  const par = ap.parts.find(p => p.kind === 'taxi' && p.nodes.length > 4), py = IC.rectLocal(fr, ap.nodes[par.nodes[1]]).y * sg;
+  // two clicks, from the grass beyond the runway to the parallel taxiway's far side: nothing clicked on either
+  const m = S.mode2 = IC.bldMode(S, ap, 'taxi'); IC.bldFree = true;
+  IC.clickWorld(W(6.3, -3), 0, true); IC.clickWorld(W(6.3, py + 0.8), 0, true);
+  IC.bldFree = false; assert(IC.buildFinish(S, m) === 'built', m.err); S.mode2 = null;
+  finishWorks(S, ap);
+  const t = ap.parts[ap.parts.length - 1], ns = t.nodes.map(id => ap.nodes[id]);
+  assert(t.kind === 'taxi' && ns.some(n => n.on && n.on.kind === 'rwy' && n.on.part === rw.id), 'no node where it crosses the runway');
+  assert(par.nodes.some(id => t.nodes.includes(id)), 'it does not join the parallel taxiway it crosses');
+  // an aircraft on the runway turns off there and taxis to the terminal's apron
+  const apr = ap.parts.find(p => p.kind === 'apron'); IC.aptGraph(ap);
+  const to = Object.values(ap.nodes).find(n => n.on && n.on.kind === 'apron' && n.on.part === apr.id);
+  const cr = t.nodes.find(id => ap.nodes[id].on && ap.nodes[id].on.kind === 'rwy');
+  assert(to && IC.aptPath(ap, cr, to.id), 'no way from the runway crossing to the apron');
 });
 test('round 1: a terminal piece placed beside the runway faces it and joins the parallel taxiway by itself', () => {
   const { S, ap, next } = foundFresh();

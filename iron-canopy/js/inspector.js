@@ -335,7 +335,7 @@ function base(b) {
   const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id).length;
   const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, b).closed ? IC.rwyState(S, b).word.toUpperCase() : IC.rwyState(S, b).word;
   const rw0 = b.parts.filter(p => p.kind === 'runway' && p.built);
-  const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
+  const sub = `${b.kind === 'airport' && (b.cls || b.template === 'new') && IC.aptClassOf(b) ? IC.aptClassOf(b).name : TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
   const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), ui.hands() && civil && bs.runway ? '' : pill, locked ? '' : bs.runway ? 'ok' : 'bad');
   // (a site with nothing on it yet has no plan to draw: an empty dark box looks broken)
   const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div>`;
@@ -386,11 +386,14 @@ function base(b) {
     const park = r.st !== 'air' && !IC.ACTYPES[r.type || IC.AIRKIND_TYPE[r.kind]].vtol ? `<span class="la"><button class="btn sm ${r.park === 'open' ? 'on' : ''}" data-act="flPark" data-rid="${r.id}" title="In the open aircraft turn round a fifth quicker, but a bomb nearby destroys 8 in 10 (1 in 10 inside a hardened shelter).">${r.park === 'open' ? 'Open' : 'Shelter'}</button></span>` : '';
     return `<div class="li"><button class="lib" data-act="selFlight" data-rid="${r.id}"><b>${esc(r.name)}</b><small>${esc(IC.AIR_KIND[r.kind].short)}×${r.n} · ${stt} ${where}${pp.stand && !pp.fac ? ' (quicker turnaround, easier to destroy)' : ''}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small></button>${park}</div>`;
   }).join('');
-  const fee = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
+  // what the airport is for (aptclass.js): its class, and the others with what the land for each would cost
+  const K = civil && b.owner === 'us' && IC.aptClassOf(b), purpose = K ? `<div class="sec"><h3 class="sh">Purpose <em>${esc(K.name)}</em></h3><p class="hint">${esc(K.use)}</p><div class="acts">${IC.APT_CLASSES.map(k => { const C = IC.APT_CLASS[k], c = IC.aptReclassCost(S, b, k), on = k === IC.aptClass(b); return `<button class="act ${on ? 'on' : ''}" data-act="aptClass" data-v="${k}" ${!on && S.budget < c ? 'disabled' : ''} title="${esc(`${C.name}: ${C.use}${on ? '' : c ? ` The bigger site's land costs ${U.money(c)}.` : ' The site stays as it is.'}`)}">${esc(C.short)}${!on && c ? ` · ${U.money(c)}` : ''}</button>`; }).join('')}</div></div>` : '';
+  const fee0 = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
     <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="Nothing lands or leaves 23:00–06:00. Cargo airlines hate it; the neighbours love it. More choices on the day board.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
+  const fee = fee0;
   // (round 3) the Career's airport panel: the few numbers that matter, its problems with their fixes, its deals,
   // and the rest folded (the tower's rules and the airspace open on their own page from there)
-  if (ui.hands() && civil && b.owner === 'us' && ui.aptTab !== 'asp' && ui.aptTab !== 'rules') return H + handsPanel(b, st, { schem, kpis, warn, rwSec, rows, zoneSec, fee, works, reps });
+  if (ui.hands() && civil && b.owner === 'us' && ui.aptTab !== 'asp' && ui.aptTab !== 'rules') return H + handsPanel(b, st, { schem, kpis, warn, rwSec, rows, zoneSec, fee, works, reps, purpose });
   // four tabs instead of one long page, so the build tools are one click away
   const tab = ui.aptTab === 'build' ? 'info' : ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
   const tabs = ui.hands() && civil ? `<div class="itabs"><button class="act" data-act="aptTab" data-v="info">◂ Back to ${esc(b.name.replace(/ (International|Airport)$/, ''))}</button></div>` : `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
@@ -403,7 +406,7 @@ function base(b) {
     : tab === 'rules' ? opsTab(b, st)
     : tab === 'asp' ? airspaceTab(b, st)
     : tab === 'ops' ? `${fee}${civil && S.av ? `<div class="sec"><h3 class="sh">The day</h3>${dayBoardHTML(b)}</div>${scorecardHTML(b)}${IC.FOCUS.gse ? `<div class="sec"><h3 class="sh">Ground vehicles</h3>${fleetHTML(b)}</div>` : ''}` : ''}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
-    : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
+    : `${schem}${kpis}${warn}${purpose}${rwSec}${kv(rows)}${zoneSec}`;
   return H + tabs + `<div class="ibody">${body}</div>`;
 }
 /* (round 5b) ground vehicles: a count per kind with − / +, what this traffic needs, what they cost to run */
@@ -502,6 +505,7 @@ function handsPanel(b, st, X) {
   const ex = (k, name) => `<button class="more" data-act="aptOpen" data-v="${k}">${O[k] ? '▴' : '▾'} ${name}</button>`;
   const day = A && !IC.storyLock(S, 'charges') ? `<div class="sec">${ex('day', 'The day: flights by hour, cap and night')}${O.day ? dayBoardHTML(b) : ''}</div>` : '';
   const more = `<div class="sec">${ex('more', 'Runways, stands and services')}${O.more ? `${X.schem}${X.kpis}${X.rwSec}${kv(X.rows)}${X.zoneSec}` : ''}
+    ${X.purpose ? ex('purpose', `Purpose: ${esc(IC.aptClassOf(b).name.toLowerCase())}`) + (O.purpose ? X.purpose : '') : ''}
     ${X.fee ? ex('fee', 'Charges') + (O.fee ? X.fee : '') : ''}
     ${X.reps ? ex('reps', 'Damage to repair') + (O.reps ? `<div class="list">${X.reps}</div>` : '') : ''}
     <div class="acts"><button class="act" data-act="aptTab" data-v="rules" title="The tower's rules: when aircraft may go onto a runway">Tower rules</button>${S.asp && !IC.storyLock(S, 'airspace') ? '<button class="act" data-act="aptTab" data-v="asp" title="Controlled airspace round the airport">Airspace</button>' : ''}<button class="act" data-act="aptZoom">Zoom to it</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div></div>`;

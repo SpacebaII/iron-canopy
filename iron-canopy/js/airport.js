@@ -264,6 +264,8 @@ IC.standBridge = function (ap, s) {
 /* the designator of a runway end: the landing heading in tens of degrees, with L, C or R for parallels */
 IC.rwEnd = (rw, dir) => (rw.ends ? rw.ends[dir > 0 ? 'a' : 'b'] : '') || (dir > 0 ? 'A' : 'B');
 // (as on a chart: the lower number first, "Runway 08/26")
+/* a runway's name as a title: 'Runway 09/27', whether or not its name says Runway */
+IC.rwTitle = rw => /^runway\b/i.test(rw && rw.name || '') ? rw.name : `Runway ${(rw && rw.name) || ''}`.trim();
 const rwName = rw => `Runway ${parseInt(rw.ends.a) <= parseInt(rw.ends.b) ? `${rw.ends.a}/${rw.ends.b}` : `${rw.ends.b}/${rw.ends.a}`}`;
 function nameRunways(ap) {
   // (runways laid out from real data keep their real names: airports-real.js)
@@ -322,7 +324,9 @@ IC.partZone = function (ap, p) {
   if (IC.APART[p.kind] && IC.APART[p.kind].mil) return 'mil';
   if (p.kind === 'cargo') return 'cargo';
   if (p.kind === 'apron') {
-    const near = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo' || q.kind === 'has') && q.w && rectGap(q, p) < 0.3);
+    const R = Math.hypot(p.w || 0, p.h || 0) / 2 + 0.3;
+    // (far ones by their bounding circles first: an outline's exact gap is dear, and a big airport has dozens)
+    const near = ap.parts.filter(q => (q.kind === 'terminal' || q.kind === 'cargo' || q.kind === 'has') && q.w && U.dist(q, p) < R + Math.hypot(q.w, q.h || 0) / 2 && rectGap(q, p) < 0.3);
     if (near.some(q => q.kind === 'cargo')) return 'cargo';
     if (near.some(q => q.kind === 'has')) return 'mil';
   }
@@ -633,6 +637,30 @@ IC.aptServiceLines = function (S, ap) {
   return out;
 };
 /* the gap between two fuel parts' outlines (a single tank by its circle's square) */
+/* how far fire spreads from burning fuel (units): to anything standing that close */
+IC.FIRE_SPREAD = 1.6;
+// (the buildings people work in that a fuel fire must not reach; hangars and cargo sheds stand by fuel at real airports)
+const FIRE_KEEP = { terminal: 1, tower: 1, fire: 1 };
+/* the building nearest a fuel farm within reach of its fire: { q, d } or null (the gap between their outlines) */
+const partRad = q => q.r || (q.poly ? Math.max(...q.poly.map(c => Math.hypot(c.x, c.y))) : Math.hypot(q.w || 0, q.h || 0) / 2);
+/* edge to edge, as a fire spreads: 0 where they overlap */
+function fireGap(ap, f, q, F) {
+  F = F || IC.partOutline(f);
+  const Q = IC.partOutline(q); let d = IC.shapeDepth && IC.shapeDepth(IC.partShape(ap, q), IC.partShape(ap, f)) > 0 ? 0 : 1e9;
+  for (const c of F) d = Math.min(d, partDist(ap, q, c)); for (const c of Q) d = Math.min(d, partDist(ap, f, c));
+  return d;
+}
+IC.fireGap = fireGap;
+IC.fuelNear = function (ap, f) {
+  const F = IC.partOutline(f); let best = null;
+  for (const q of ap.parts) {
+    if (q === f || !FIRE_KEEP[q.kind] || q.x == null || q.hp <= 0) continue;
+    const d = fireGap(ap, f, q, F);
+    if (d < IC.FIRE_SPREAD && (!best || d < best.d)) best = { q, d };
+  }
+  return best;
+};
+IC.fuelNearText = n => `A fuel farm stands ${Math.round(n.d * 100)} m from the ${U.lc(IC.APART[n.q.kind].name)}: if its tanks burn, the fire spreads to it. ${Math.round(IC.FIRE_SPREAD * 100)} m or more keeps them apart.`;
 IC.fuelGap = (a, b) => { const R = t => t.r ? { x: t.x, y: t.y, a: 0, w: t.r * 2, h: t.r * 2 } : { x: t.x, y: t.y, a: t.a || 0, w: t.w || IC.APART.fuel.w, h: t.h || IC.APART.fuel.h }; return rectGap(R(a), R(b)); };
 /* fuel waits today, for the panel: aircraft that waited and the minutes they lost */
 IC.aptFuelWait = function (S, ap, sec) {
@@ -855,7 +883,9 @@ IC.aptStats = function (S, ap) {
   }
   // fog and low cloud
   st.ilsEnds = rws.reduce((n, rw) => n + (IC.rwHasILS(ap, rw, 1) ? 1 : 0) + (IC.rwHasILS(ap, rw, -1) ? 1 : 0), 0);
-  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase') st.warn.push('No landing system (ILS): in fog, low cloud and snow every arrival diverts. One at the end aircraft land toward (₭25M, Navaids) lets them land.');
+  // (an airfield's light aircraft fly by sight and keep their own spacing: no landing system or tower expected)
+  const field = IC.aptClass && IC.aptClass(ap) === 'field';
+  if (!st.ilsEnds && rws.length && ap.kind !== 'airbase' && !field) st.warn.push('No landing system (ILS): in fog, low cloud and snow every arrival diverts. One at the end aircraft land toward (₭25M, Navaids) lets them land.');
   // fire and rescue: how long the trucks take to reach the far end of each runway
   const fires = alive('fire');
   const fireSt = fires.filter(f => rws.some(rw => U.dist(f, rwAt(rw, 0.5)) < 15));
@@ -864,7 +894,7 @@ IC.aptStats = function (S, ap) {
   for (const rw of rws) { let r = 0; for (const t of [0, 0.5, 1]) r = Math.max(r, IC.aptRescue(ap, rwAt(rw, t), S)); st.rescueRw[rw.id] = r; st.rescue = Math.max(st.rescue, r); }
   // heavy jets need a runway long enough for them that the trucks reach in 3 minutes
   st.heavyOk = rws.some(rw => IC.rwUsable(rw) >= IC.ACTYPES.wide.rwy && st.rescueRw[rw.id] <= IC.FIRE_STD);
-  if (!tower) st.warn.push(IC.aptBuilding(ap, 'tower') ? 'The control tower is being built: one movement every 8 min until it opens.' : 'No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
+  if (!tower && !field) st.warn.push(IC.aptBuilding(ap, 'tower') ? 'The control tower is being built: one movement every 8 min until it opens.' : 'No control tower: one movement every 8 min. A tower that sees the runways allows one every 2 min.');
   if (!st.fire) st.warn.push(IC.aptBuilding(ap, 'fire') ? 'The fire station is being built: only turboprops may use the runway until it opens.' : 'No fire station near the runway: only turboprops may use it. Build one within 1.5 km of the runway.');
   else for (const rw of rws) if (st.rescueRw[rw.id] > IC.FIRE_STD) st.warn.push(`Fire trucks reach ${rw.name} in ${IC.mmss(st.rescueRw[rw.id])}: heavy jets may not land on it, and more people die in a crash there. A fire station closer to its far end brings it under 3 min.`);
   if (rws.length) { const w = waterNear(S, ap, rws); if (w.near && ap.kind !== 'airbase') st.warn.push(`A ${w.what} ${U.km(w.d)} from the runway attracts birds: now and then one hits an aircraft.`); }
@@ -883,6 +913,8 @@ IC.aptStats = function (S, ap) {
   st.trucks = st.hydrant ? Infinity : own == null ? nTank * fr : ap.fleet.auto ? Math.max(own, nTank * fr) : own;
   st.fuelDeps = Math.round(Math.min(st.trucks, st.fuelIn / (T.fuel || 1)));
   if (tanks.length && st.fuelDeps < st.depPerHour * 0.8 && ap.kind !== 'airbase') st.warn.push(`Fuel for about ${st.fuelDeps} departures an hour, fewer than the runways can launch (${st.depPerHour}). ${st.hydrant ? 'More tanks' : 'More tanks or a hydrant system'} would help.`);
+  // (burning fuel spreads 160 m, IC.FIRE_SPREAD: a terminal, tower or fire station that close burns with it)
+  for (const t of tanks) { const q = IC.fuelNear(ap, t); if (q) { st.warn.push(IC.fuelNearText(q)); break; } }
   for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (IC.fuelGap(tanks[i], tanks[j]) < 1) { st.warn.push(`Fuel ${tanks[i].r ? 'tanks' : 'farms'} stand within 100 m of each other: one fire could take them all. Keep them further apart.`); i = tanks.length; break; }
   const links = rws.map(rw => (G.rwn.get(rw.id) || []).filter(n => n.exit).length).reduce((s, v) => s + v, 0);
   if (links === 1) st.warn.push('Only one taxiway connects the runway: a single hit strands every aircraft.');
@@ -890,6 +922,8 @@ IC.aptStats = function (S, ap) {
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');
   st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 && st.heavyOk ? 'cargo' : best >= 27 && st.heavyOk ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
   ap.st = st;
+  // what the airport's purpose still lacks (aptclass.js), after everything else is measured
+  if (IC.aptPurposeLacks && ap.kind === 'airport') for (const w of IC.aptPurposeLacks(S, ap)) st.warn.push(w);
   return st;
 };
 const FAF_T = () => IC.GOPS.FAF / 0.95 + IC.GOPS.CLEAR / IC.GOPS.TAXI + 30;
@@ -1404,7 +1438,9 @@ IC.updateBases = function (S, dt) {
     if (!b.parts || b.owner !== 'us') continue;
     IC.bldTick(S, b, dt);
     // each crew takes the next job it can work on: builds wait for money, materials or night without holding a crew
-    let n = 0;
+    let n = 0, before0 = null;
+    // (parts that open in the same step are measured once, together: a blueprint opens hundreds)
+    const opened = [];
     for (const w of b.works) {
       if (n >= b.crews) { if (w.stages) w.wait = 'queued: every crew is busy'; continue; }
       if (w.stages) { if (!IC.bldAdvance(S, b, w, dt)) continue; }
@@ -1415,13 +1451,13 @@ IC.updateBases = function (S, dt) {
       IC.bldRelease(b, w);
       if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
       else if (w.kind === 'build') {
-        const before = IC.bldSnapStats(b);
+        if (!opened.length) before0 = IC.bldSnapStats(b);
         w.part.built = true; w.part.prog = 1; w.part.stage = null;
         if (w.part.kind === 'runway' || w.part.kind === 'apron' || w.part.kind === 'alert') resolveFor(b, w.part);
         if (w.part.kind === 'apron' || DOOR(w.part.kind)) IC.aptAutoJoin(b, w.part);
-        if (w.part.kind === 'taxi') for (const q of b.parts) if (q.built && (q.kind === 'apron' || DOOR(q.kind))) IC.aptAutoJoin(b, q);
+        if (w.part.kind === 'taxi') { const t = w.part; for (const q of b.parts) if (q.built && (q.kind === 'apron' || DOOR(q.kind)) && t.nodes.some((id, i) => i && U.segDist(q.x, q.y, b.nodes[t.nodes[i - 1]].x, b.nodes[t.nodes[i - 1]].y, b.nodes[id].x, b.nodes[id].y) < Math.hypot(q.w || 0, q.h || 0) / 2 + 0.6)) IC.aptAutoJoin(b, q); }
         IC.aptExtent(b); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.kind === 'runway' ? w.part.name || 'runway' : U.lc(IC.APART[w.part.kind].name)} complete.`, w.part.x != null ? w.part : b); IC.emit(S, 'aptBuilt', { ap: b, part: w.part });
-        b.dirty = true; IC.bldOpened(S, b, w, before); }
+        b.dirty = true; opened.push(w); }
       else {
         const it = w.it;
         if (it.wear) it.part.wear = 0;
@@ -1434,18 +1470,20 @@ IC.updateBases = function (S, dt) {
       b.dirty = true;
     }
     for (const w of b.works) if (w.kind === 'build' && !w.done) w.part.prog = w.prog;
-    if (b.works.some(w => w.done)) { b.works = b.works.filter(w => !w.done); b.dirty = true; IC.aptStats(S, b); if (b.kind === 'airbase') IC.assignSlots(S, b); }
+    if (b.works.some(w => w.done)) { b.works = b.works.filter(w => !w.done); b.dirty = true; const st = IC.aptStats(S, b); if (b.kind === 'airbase') IC.assignSlots(S, b); for (const w of opened) IC.bldOpened(S, b, w, before0, st); }
     // burning fuel spreads to whatever stands close by
     for (const p of b.parts) {
       if (!(p.burning > 0)) continue;
       p.burning -= dt;
       for (const q of b.parts) {
         if (q === p || !q.built || q.kind === 'runway' || q.kind === 'taxi' || q.kind === 'apron') continue;
-        const d = partDist(b, q, p);
-        if (d > 1.6) continue;
+        // (from the burning part's edge, as the warning measures it: a fuel farm is 150 m across)
+        if (U.dist(p, q) > IC.FIRE_SPREAD + partRad(p) + partRad(q)) continue;
+        const d = fireGap(b, p, q);
+        if (d > IC.FIRE_SPREAD) continue;
         const was = q.hp;
         // (by its size: a fuel farm of three tanks burns down as fast as one tank did)
-        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / 1.6) * IC.mod(S, 'fuelSpread'));
+        q.hp = Math.max(0, q.hp - dt / 60 * (q.kind === 'fuel' ? q.max * 0.225 : 4) * (1 - d / IC.FIRE_SPREAD) * IC.mod(S, 'fuelSpread'));
         if (was > q.max * 0.25 && q.hp <= q.max * 0.25) {
           IC.log(S, 'leak', 'FIRE', `${b.name}: fire spreads to the ${U.lc(IC.APART[q.kind].name)}.`, q);
           if (q.kind === 'fuel') { q.burning = 5400; q.stock = 0; IC.explode(S, q.x, q.y, 1.6, 'ground'); IC.addFire(S, q.x, q.y, 1.6, 8000); }
@@ -1533,6 +1571,16 @@ IC.aptSnap = function (ap, p, tol) {
   for (const q of ap.parts) {
     if (q.kind !== 'apron' && q.kind !== 'alert') continue;
     const l = toLocal(q, p), et = Math.min(tol, 0.2);
+    // (an outline drawn by hand: onto its nearest side)
+    if (q.poly) {
+      const P = IC.partShape(ap, q).poly; let e = null, bd2 = et;
+      for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+        const A = P[j], B = P[i], L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1, f = U.clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1);
+        const c = { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f }, d = U.dist(c, p); if (d < bd2) { bd2 = d; e = c; }
+      }
+      if (e) return { kind: 'apron', part: q.id, x: e.x, y: e.y };
+      continue;
+    }
     if (Math.abs(l.x) > q.w / 2 + et || Math.abs(l.y) > q.h / 2 + et) continue;
     // only near an edge: a click in the middle of an apron is not a connection
     if (Math.abs(l.x) < q.w / 2 - et && Math.abs(l.y) < q.h / 2 - et) continue;
@@ -1560,12 +1608,14 @@ function nodeFor(ap, s) {
 IC.aptAutoJoin = function (ap, part) {
   const shelter = part.kind === 'hangar' || part.kind === 'has' || !!IC.APART[part.kind].pad;
   const door = shelter ? [toWorld(part, 0, -part.h / 2 - 0.05), toWorld(part, 0, part.h / 2 + 0.05)] : null;
+  // (only taxiways that come near it: a big airport has hundreds of segments)
+  const reach = Math.hypot(part.w || 0, part.h || 0) / 2 + 0.6, made = [];
   for (const q of ap.parts) {
     if (q.kind !== 'taxi' || q === part) continue;
     const splits = [];
     for (let i = 1; i < q.nodes.length; i++) {
       const a = ap.nodes[q.nodes[i - 1]], b = ap.nodes[q.nodes[i]], L = U.dist(a, b);
-      if (L < 0.2) continue;
+      if (L < 0.2 || U.segDist(part.x, part.y, a.x, a.y, b.x, b.y) > reach) continue;
       if (shelter) {
         // already reachable from an existing node?
         if (door.some(d => Object.values(ap.nodes).some(n => U.dist(n, d) < 0.5))) return;
@@ -1578,7 +1628,7 @@ IC.aptAutoJoin = function (ap, part) {
       }
       // aprons: find stretches of the segment that run along the apron edge
       const K = Math.max(4, Math.ceil(L / 0.25)), run = [];
-      for (let k = 0; k <= K; k++) { const f = 0.03 + 0.94 * k / K, p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }; if (rectDist(part, p) < 0.14) run.push(f); }
+      for (let k = 0; k <= K; k++) { const f = 0.03 + 0.94 * k / K, p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }; if ((part.poly ? partDist(ap, part, p) : rectDist(part, p)) < 0.14) run.push(f); }
       if (!run.length) continue;
       if (onAp(a, part.id) || onAp(b, part.id)) continue;
       const fs = run.length * (L / K) > 3 ? [run[0], run[run.length - 1]] : [run[Math.floor(run.length / 2)]];
@@ -1586,11 +1636,19 @@ IC.aptAutoJoin = function (ap, part) {
     }
     // split from the end backwards so segment numbers stay valid
     splits.sort((p, r) => r.seg - p.seg || r.f - p.f);
-    for (const s of splits) nodeFor(ap, { kind: 'taxi', part: q.id, seg: s.seg, x: s.x, y: s.y });
+    for (const s of splits) made.push(nodeFor(ap, { kind: 'taxi', part: q.id, seg: s.seg, x: s.x, y: s.y }));
   }
-  IC.resolveNodes(ap);
-  ap.dirty = true;
+  // (only the nodes it made: every node of a big airport against every part is dear, and nothing else moved)
+  for (const id of made) resolveNode(ap, ap.nodes[id]);
+  if (made.length) ap.dirty = true;
 };
+/* where segment a-b crosses c-d, short of both ends: the point and how far along a-b */
+function crossAt(a, b, c, d) {
+  const r1 = b.x - a.x, r2 = b.y - a.y, s1 = d.x - c.x, s2 = d.y - c.y, den = r1 * s2 - r2 * s1;
+  if (Math.abs(den) < 1e-9) return null;
+  const f = ((c.x - a.x) * s2 - (c.y - a.y) * s1) / den, u = ((c.x - a.x) * r2 - (c.y - a.y) * r1) / den;
+  return f > 0.001 && f < 0.999 && u > 0.001 && u < 0.999 ? { f, x: a.x + r1 * f, y: a.y + r2 * f } : null;
+}
 /* plan a taxiway through a list of world points (each is snapped) */
 IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   if (pts.length < 2) return null;
@@ -1599,7 +1657,21 @@ IC.aptPlanTaxi = function (S, ap, pts, tol, o) {
   for (const s of snaps) if (!IC.inHome(s.x, s.y) || IC.inLake(s.x, s.y) || !IC.aptInSite(S, ap, s)) { IC.log(S, 'warn', 'BUILD', 'That taxiway leaves the airport site.'); return null; }
   const probe = { kind: 'taxi', pts: snaps, mat: o && o.mat, w: o && o.w, lit: o && o.lit };
   if (S.budget < IC.partCost(ap, probe) * 0.1) { IC.log(S, 'warn', 'BUILD', `Not enough money to start: ${U.money(IC.partCost(ap, probe) * 0.1)} needed now.`); return null; }
-  const ids = snaps.map(s => nodeFor(ap, s));
+  // where it crosses another taxiway or a runway the two join: a junction, or a runway crossing with its hold-short
+  // lines, never two strips of pavement painted over each other that no aircraft can turn between
+  const line = [snaps[0]];
+  for (let i = 1; i < snaps.length; i++) {
+    const a = snaps[i - 1], b = snaps[i], X = [];
+    for (const q of ap.parts) {
+      if (q.kind === 'runway') { const c = crossAt(a, b, q.a, q.b); if (c) X.push(c); }
+      else if (q.kind === 'taxi') for (let k = 1; k < q.nodes.length; k++) { const c = crossAt(a, b, ap.nodes[q.nodes[k - 1]], ap.nodes[q.nodes[k]]); if (c) X.push(c); }
+    }
+    X.sort((p, r) => p.f - r.f);
+    for (const c of X) if (U.dist(line[line.length - 1], c) > 0.15 && U.dist(b, c) > 0.15) line.push({ kind: 'cross', x: c.x, y: c.y });
+    line.push(b);
+  }
+  // (a crossing is snapped again just before its node is made: a split taxiway's segments have moved on)
+  const ids = line.map(s => nodeFor(ap, s.kind === 'cross' ? IC.aptSnap(ap, s, 0.03) : s));
   const clean = ids.filter((id, i) => i === 0 || id !== ids[i - 1]);
   if (clean.length < 2) return null;
   // (a taxiway laid again over one that is there, built or planned, would only be paid for twice)
@@ -1628,6 +1700,8 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   const D = IC.APART[kind];
   const part = { kind, x, y, a: a != null ? a : ap.rwyA || 0 };
   if (D.area) { part.w = w; part.h = h; }
+  // (an outline drawn by hand, in the part's own frame: checked and priced as that shape, not its box)
+  if (o && o.poly && D.area) part.poly = o.poly;
   // a landing system serves the runway end nearest the click
   if (kind === 'ils') {
     let bd = 1e9;
@@ -1641,10 +1715,16 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   return IC.aptPlan(S, ap, part, o);
 };
 /* why a part cannot be bulldozed now: aircraft parked on an apron or inside a hangar would be left nowhere */
+/* phases in which an aircraft is on the pavement, not at a stand or in the air */
+const ON_PAVE = new Set(['push', 'taxi', 'hold', 'lineup', 'wait', 'roll', 'rollout', 'parkin', 'stranded']);
 IC.aptRemoveBlock = function (S, ap, p) {
   const parked = IC.aptStands ? IC.aptStands(ap).filter(s => s.apron === p.id && s.occ).length : 0;
   if (parked) return `${parked} aircraft ${parked > 1 ? 'are' : 'is'} parked on it. Close its stands or wait until they leave, then bulldoze it.`;
   if (p.kind === 'hangar' && ((p.inside || []).length || p.coming)) return 'An aircraft is in it for maintenance, or being towed in. Bulldoze it once the hangar is empty.';
+  if (p.kind === 'runway' || p.kind === 'taxi') {
+    const on = (ap.moves || []).filter(m => ON_PAVE.has(m.phase) && partDist(ap, p, m) < 0.1).length;
+    if (on) return `${on} aircraft ${on > 1 ? 'are' : 'is'} on it now. Close it, wait until it is clear, then bulldoze it.`;
+  }
   return '';
 };
 /* bulldoze: remove a part (refund part of an unbuilt one); a runway takes its landing systems with it */
@@ -1665,7 +1745,7 @@ IC.aptRemove = function (S, ap, id) {
 
 /* ---------- new airports ---------- */
 IC.FOUND_COST = 80;
-IC.foundCheck = function (S, x, y) {
+IC.foundCheck = function (S, x, y, cls) {
   if (!IC.inHome(x, y) || IC.inLake(x, y)) return 'Outside the country.';
   if (S.world.slopeAt && S.world.slopeAt(x, y) > 0.08) return 'Too hilly for a runway.';
   const near = IC.bases(S).find(b => U.dist(b, { x, y }) < 120);
@@ -1676,14 +1756,18 @@ IC.foundCheck = function (S, x, y) {
   // not under another airport's approach and departure paths, nor under its busy airways (growth.js)
   const clash = IC.siteConflict && IC.siteConflict(S, x, y);
   if (clash) return clash;
-  if (S.budget < IC.FOUND_COST) return `Needs ${U.money(IC.FOUND_COST)}.`;
+  const fc = Math.round(IC.FOUND_COST * ((IC.APT_CLASS && IC.APT_CLASS[cls || 'national'] || {}).cost || 1));
+  if (S.budget < fc) return `Needs ${U.money(fc)}.`;
   return '';
 };
-/* a new airport at x, y with its main runway at heading a (world radians), after a site survey */
-IC.foundAirport = function (S, x, y, a) {
-  const why = IC.foundCheck(S, x, y);
+/* a new airport at x, y with its main runway at heading a (world radians), after a site survey; cls is what it is
+   for (IC.APT_CLASS: its runway, site and price), a national airport when not given */
+IC.foundAirport = function (S, x, y, a, cls) {
+  cls = IC.APT_CLASS && IC.APT_CLASS[cls] ? cls : 'national';
+  const K = IC.APT_CLASS ? IC.APT_CLASS[cls] : { rw: 30, site: 65, sfx: 'Airport' };
+  const why = IC.foundCheck(S, x, y, cls);
   if (why) { IC.log(S, 'warn', 'BUILD', why); IC.text(S, x, y, why.toUpperCase().replace(/\.$/, ''), IC.C.hostile); return null; }
-  const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL);
+  const sv = IC.foundSurvey(S, x, y, a != null ? a : IC.PREVAIL, K.rw, cls);
   if (S.budget < sv.cost) { IC.log(S, 'warn', 'BUILD', `The site costs ${U.money(sv.cost)} with land and levelling.`); return null; }
   if (sv.river) { IC.log(S, 'warn', 'BUILD', 'A river crosses the runway line: turn the runway or pick another site.'); IC.text(S, x, y, 'A RIVER CROSSES THE RUNWAY LINE', IC.C.hostile); return null; }
   // (the access road is paid as it is laid, by landside.js: the survey's total counts it)
@@ -1691,9 +1775,12 @@ IC.foundAirport = function (S, x, y, a) {
   const city = IC.cities(S).slice()
 .sort((a, b) => U.dist(a, { x, y }) - U.dist(b, { x, y }))[0];
   const n = S.infra.filter(i => i.kind === 'airport').length;
-  const ap = { id: 'apt' + n + IC.nid(''), kind: 'airport', name: `${city ? city.name : 'New'} ${S.infra.some(i => i.name === (city ? city.name : 'New') + ' Airport') ? 'Field' : 'Airport'}`, x, y, owner: 'us', infra: true, r: 50, max: 150, hp: 150, city: city && city.id, inv: {}, inc: {} };
+  const town = city ? city.name : 'New', taken = nm => S.infra.some(i => i.name === nm);
+  const name = [`${town} ${K.sfx}`, `${town} Airport`, `${town} Field`, `${town} ${K.sfx} 2`].find(nm => !taken(nm)) || `${town} ${K.sfx} ${n + 1}`;
+  const ap = { id: 'apt' + n + IC.nid(''), kind: 'airport', name, cls, x, y, owner: 'us', infra: true, r: 50, max: 150, hp: 150, city: city && city.id, inv: {}, inc: {} };
   ap.rwyA = sv.a;
   IC.initAirport(ap);
+  ap.buildR = K.site;
   ap.template = 'new'; ap.crews = 1; ap.works = []; ap.autoRepair = true; ap.survey = sv; ap.mat = { asph: 0, conc: 0, steel: 0 };
   S.infra.push(ap); S.byId[ap.id] = ap;
   IC.aptStats(S, ap);
@@ -1706,7 +1793,7 @@ IC.foundAirport = function (S, x, y, a) {
     if (c) c.morale = Math.max(0, c.morale - Math.min(8, 1 + n * 0.05));
     IC.log(S, 'warn', 'AVIATION', `Residents of ${name} protest: ${n} blocks lie under the flight paths of runway ${sv.name}.`, c || ap);
   }
-  IC.log(S, 'info', 'AVIATION', `${ap.name} founded (${U.money(sv.cost)} with land and levelling), runway heading ${sv.name}. Lay a runway, a taxiway, an apron and a terminal before airlines will come.`, ap);
+  IC.log(S, 'info', 'AVIATION', `${ap.name} founded as ${IC.aWord ? IC.aWord(K.name.toLowerCase()) : 'a national airport'} (${U.money(sv.cost)} with land and levelling), runway heading ${sv.name}. ${cls === 'field' ? 'Lay the runway and a ramp with small stands for light aircraft.' : 'Lay a runway, a taxiway, an apron and a terminal before airlines will come.'}`, ap);
   IC.emit(S, 'founded', ap);
   return ap;
 };
