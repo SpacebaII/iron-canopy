@@ -1,7 +1,7 @@
 /* A scripted Career player, for the balance run (storytest.js) and the tests. It plays Act I the way a steady
    player would: builds the national airport, grows it, draws the airspace, takes the contracts, founds a second
-   airport and a freight operation, approves what the airports can take and answers every card with its first
-   choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
+   airport and a freight operation, approves what the airports can take, keeps a policy before the Minister and answers every card with
+   its first choice. Later it keeps the airports growing, puts a military radar on the border and a prohibited zone round the
    forward base in Act II, and from Act III defends like the Quick war commander (qwplayer.js). It uses the same
    functions as the interface. Call it every game minute or so: player(S). */
 const IC = require('./headless.js');
@@ -48,7 +48,14 @@ function missing(S, ap) {
 const APRON_X = [0, 4.3, 8.6, 12.9, -12.9, 17.2];
 // fuel tanks between the first apron and the fifth, 140 m and more apart
 const FUEL_AT = [[-5, 4.5], [-8, 4.5], [-6.5, 6.2], [-9.5, 6.2]];
-const nextSlot = ap => APRON_X.find(x => !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
+// (a slot something else already stands in is passed over: _cpBad, not saved)
+const nextSlot = ap => APRON_X.find(x => !(ap._cpBad && ap._cpBad.has(x)) && !ap.parts.some(p => p.kind === 'apron' && p.slotX === x));
+/* an apron in a slot with its stub taxiway and its building behind; a slot where the apron cannot go is skipped after */
+function slot(S, ap, x, o, bld) {
+  if (!part(S, ap, 'apron', x, 4, 4, 1.3, o)) { (ap._cpBad || (ap._cpBad = new Set())).add(x); return null; }
+  taxi(S, ap, [[x, 1.8], [x, 3.35]]);
+  return part(S, ap, bld, x, 5.1, 3, 0.8);
+}
 const noTerminal = ap => ap.parts.find(p => p.kind === 'apron' && p.zone !== 'cargo' && p.slotX != null && !ap.parts.some(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.slotX === p.slotX));
 const count = (ap, k, f) => ap.parts.filter(p => p.kind === k && (!f || f(p))).length;
 /* what a steady player does next at the capital: tower, a hangar for the based fleet, taxiways to both ends, and
@@ -71,14 +78,14 @@ function grow(S, ap, st) {
   if (need === 'fuelDeps' && S.budget > 150) { const n = count(ap, 'fuel'); return n < FUEL_AT.length ? part(S, ap, 'fuel', ...FUEL_AT[n]) : !has(ap, 'hydrant') && part(S, ap, 'hydrant', -3.5, 6.4); }
   if (need === 'hangar' && hangars < 6 && S.budget > 100) return part(S, ap, 'hangar', -10 - hangars * 0.9, 2.32);
   // freight: a cargo apron in the next slot along the terminal side, with a cargo terminal behind it
-  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc', zone: 'cargo' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'cargo', x, 5.1, 3, 0.8); }
+  if ((st.ch >= 5 || need === 'cargoStands' || need === 'cargoT') && !has(ap, 'cargo') && nextSlot(ap) != null && S.budget > 200) return slot(S, ap, nextSlot(ap), { mat: 'conc', zone: 'cargo' }, 'cargo');
   if (need === 'cargoT' && count(ap, 'cargo') < 3 && S.budget > 150) { const c = ap.parts.find(p => p.kind === 'cargo'); return part(S, ap, 'cargo', (c ? c.slotX : 0) + (count(ap, 'cargo') % 2 ? 1 : -1) * 0.6, 5.1 + 0.9 * count(ap, 'cargo'), 3, 0.8); }
   // more stands when the offers need them, or when they fill up: all but one taken
   const stands = IC.aptStands(ap).filter(s2 => s2.zone !== 'cargo' && s2.zone !== 'mil'), full = stands.filter(s2 => s2.occ).length >= stands.length - 1;
-  if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+  if ((full || need === 'stands' || need === 'gates') && nextSlot(ap) != null && S.budget > 150) return slot(S, ap, nextSlot(ap), { mat: 'conc' }, 'terminal');
   // the overbuilder (OVERBUILD=1, for the balance run): builds every slot and a second runway before anyone asks
   if (OVER && S.budget > 50) {
-    if (nextSlot(ap) != null) { const x = nextSlot(ap); part(S, ap, 'apron', x, 4, 4, 1.3, { mat: 'conc' }); taxi(S, ap, [[x, 1.8], [x, 3.35]]); return part(S, ap, 'terminal', x, 5.1, 3, 0.8); }
+    if (nextSlot(ap) != null) return slot(S, ap, nextSlot(ap), { mat: 'conc' }, 'terminal');
     if (count(ap, 'runway') < 2) { const r = IC.aptPlanRunway(S, ap, L(ap, -15, -3.2), L(ap, 15, -3.2), 'Runway 2', { mat: 'conc' }); taxi(S, ap, [[-15, -3.2], [-15, 0]]); taxi(S, ap, [[15, -3.2], [15, 0]]); return r; }
     if (count(ap, 'hangar') < 8) return part(S, ap, 'hangar', -10 - count(ap, 'hangar') * 0.9, 2.32);
   }
@@ -123,6 +130,22 @@ function airspace(S, ap) {
     if (worst) { const p = IC.findSpot(S, 'ssr', worst.x, worst.y, 0, 300); if (p) IC.deploy(S, 'ssr', p.x, p.y); }
   }
 }
+/* (brief 48) research: keep every slot busy, first what the airports' warnings ask for, else the cheapest open
+   project; never below a reserve for building */
+const ASKS = [[/fuel|refuel/i, ['h_fuel1', 'h_fuel2', 'p_hydrant', 'h_fuel3']], [/fire trucks/i, ['w_fire1', 'w_fire2']], [/birds/i, ['w_bird', 'w_wild']],
+  [/crosswind|wind beyond/i, ['w_xw1', 'w_xw2']], [/overloaded|controller/i, ['r_ctl1', 'r_ctl2']], [/queue|capacity|movements an hour/i, ['r_occ1', 'r_occ2', 'r_hsx']],
+  [/waits? for (concrete|asphalt|steel)|out of/i, ['c_spd1', 'c_slip']], [/runways cross|ground radar/i, ['p_gradar']]];
+function research(S, reserve) {
+  for (let n = 0; n < 4 && S.tech.slots.some(x => !x); n++) {
+    const open = IC.TECH.filter(t => IC.techOpenNow(S, t) && S.budget - t.cost > reserve);
+    if (!open.length) return;
+    const warn = IC.bases(S).filter(b => b.owner === 'us' && b.st).flatMap(b => b.st.warn.map(w => typeof w === 'string' ? w : w.text || ''));
+    let pick = null;
+    for (const [re, ids] of ASKS) if (!pick && warn.some(w => re.test(w))) pick = open.find(t => ids.includes(t.id));
+    pick = pick || open.filter(IC.techCivil).sort((a, b) => a.cost - b.cost)[0] || open.sort((a, b) => a.cost - b.cost)[0];
+    if (!IC.startResearch(S, pick.id)) return;
+  }
+}
 function player(S, log) {
   const st = S.story, cc = IC.cap(S);
   // (it plays at 32×, the speed a player watches the airport at: the play clock, and so the event deck, run by it)
@@ -131,6 +154,8 @@ function player(S, log) {
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
+  agenda(S);
+  research(S, st.act === 1 ? (st.ch >= 4 && st.city2 && !st.apt2 ? IC.FOUND_COST + 400 : 400) : 600);
   if (st.act !== 1) { later(S, st); return; }
   // the national airport
   if (!st.cap) { const p = site(S, cc, 180, 380); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); return; }
@@ -160,6 +185,17 @@ function player(S, log) {
   // a third city's field, when its contract is taken
   if (st.contract3 && st.city3 && !st.apt3 && S.budget > IC.FOUND_COST + 150) { const p = site(S, S.byId[st.city3], 140, 400); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); }
   if (st.apt3) { starter(S, S.byId[st.apt3], st.contract3 && st.contract3.size === 'jets' ? 24 : 18); outpost(S, S.byId[st.apt3]); }
+}
+/* (brief 49) the Ministry's agenda: always something before the Minister, in the order the tree lists them, with
+   money to spare for building. Of each pair that rules the other out it takes one side: AGENDA.side 0 the first
+   listed, 1 the second (a test can set it, or AGENDA.pick to choose by its own rule). */
+const AGENDA = { side: 0, pick: null };
+const pairSide = p => IC.AGENDA.indexOf(p) < IC.AGENDA.indexOf(IC.agendaById(p.excl)) ? 0 : 1;
+function agenda(S) {
+  const A = IC.agendaState(S); if (!A || A.cur || S.story.act >= 4) return;
+  const open = IC.AGENDA.filter(p => !IC.agendaWhy(S, p.id) && S.budget > p.cost + 150 && (!p.excl || pairSide(p) === AGENDA.side));
+  const p = AGENDA.pick ? AGENDA.pick(S, open) : open[0];
+  if (p) IC.agendaStart(S, p.id);
 }
 /* after Act I: the airports keep growing with the airlines, and the defence is built as the acts allow */
 function later(S, st) {
@@ -195,4 +231,4 @@ function later(S, st) {
     }
   }
 }
-module.exports = { player, site, starter, grow };
+module.exports = { player, site, starter, grow, research, AGENDA };

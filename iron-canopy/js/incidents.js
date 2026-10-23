@@ -49,6 +49,8 @@ IC.incidents = function (S, dt) {
   }
   for (const it of I.list) {
     if (it.ref && (it.ref.dead || it.ref.gone)) it.done = true;
+    // an intruder once we know what it is: the track's own tag says it from here
+    if (it.kind === 'intrusion' && it.ref && (it.ref.decoyKnown || (it.ref.aff !== 'U' && it.ref.aff !== 'S'))) it.done = true;
     if (!it.done && S.time - it.t > (it.level === 'alarm' ? 900 : 1800)) it.done = true;
     if (it.ref && !it.done) { it.x = it.ref.x; it.y = it.ref.y; }
   }

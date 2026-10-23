@@ -19,6 +19,18 @@ IC.unitState = function (u) {
   if (u.emitter) return [u.radarOn ? 'Radiating' : u.emcon === 'ambush' ? 'Ambush' : 'Silent', u.radarOn ? 'ok' : 'fr'];
   return ['Ready', 'ok'];
 };
+/* the line under the pill: what a unit that is not ready is doing, in more words than the pill (not the same words) */
+function unitDoing(u, st) {
+  const there = u.dest ? IC.nearPlace(S, u.dest.x, u.dest.y) : '', left = u.eta ? U.dur(Math.max(0, u.eta - S.time)) : '';
+  const set = u.deliver && u.d.build ? `, then ${U.dur(u.d.build)} to set up` : '';
+  if (u.state === 'transit' && u.toReserve) return 'Driving back to the reserve.';
+  if (u.state === 'transit') return `${u.airlift ? 'Flying' : 'Driving'} to its position ${there}: there in ${left}${set}.`;
+  if (u.state === 'packing' && u.deliver) return `Loading ${u.airlift ? 'onto heavy-lift helicopters' : 'its vehicles'}, then ${u.airlift ? 'flies' : 'drives'} to its position ${there}.`;
+  if (u.state === 'packing') return 'Packing up to move.';
+  if (u.state === 'building') return `Being built on site: in service in ${U.dur(u.stT)}.`;
+  if (u.state === 'setup') return `In position and setting up: in service in ${U.dur(u.stT)}.`;
+  return st;
+}
 const head = (icon, title, sub, pill, cls) => `<div class="ihead">${icon}<div><h2>${esc(title)}</h2><p>${sub}</p></div><span class="xs">${ui.compact() ? `<button class="x" data-act="inspMin" aria-label="${ui.inspMin ? 'Open' : 'Fold'}" title="${ui.inspMin ? 'Open the panel' : 'Fold the panel to a strip: the map behind it'}">${ui.inspMin ? '▾' : '▴'}</button>` : ''}<button class="x" data-act="desel" aria-label="Close" title="Close (Esc)">✕</button></span></div>${pill ? `<div style="padding:0 .95rem .5rem"><span class="pill ${cls || ''}">${esc(pill)}</span></div>` : ''}`;
 const hh = h => IC.hh(h);
 const seg = (act, cur, opts, big) => `<div class="seg ${big ? 'big' : ''}">${opts.map(([v, n, c, t]) => `<button class="${c || ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}" title="${esc(t || '')}">${n}</button>`).join('')}</div>`;
@@ -129,7 +141,7 @@ function unit(u) {
   const d = u.d, [st, cls] = IC.unitState(u);
   const k = S.enemy.known.get(u.id);
   const intel = !k ? '<span class="ok">not located</span>' : U.dxy(k.x, k.y, u.x, u.y) > 30 ? `<span class="amber">stale fix</span>` : `<span class="hostile">located (${esc(k.how)})</span>`;
-  const why = u.state !== 'ready' ? st : u.why || (d.sensor ? (u.radarOn || d.sensor.passive ? 'Watching the sky' : 'Silent: not transmitting, not seen') : d.logi ? 'Running deliveries' : 'Standing by');
+  const why = u.state !== 'ready' ? unitDoing(u, st) : u.why || (d.sensor ? (u.radarOn || d.sensor.passive ? 'Watching the sky' : 'Silent: not transmitting, not seen') : d.logi ? 'Running deliveries' : 'Standing by');
   const whyCls = /Engaging|Firing|Burning/.test(why) ? 'fr' : /Out of|knocked|Holding|silent|Silent|exhausted/.test(why) ? 'busy' : 'ok';
   const parts = [];
   // orders
@@ -156,10 +168,10 @@ function unit(u) {
       const rl = left != null ? `<span class="amber">launcher ${m.li + 1} reloading, ready in ${U.dur(left)}</span>`
         : m.mag >= m.max ? 'every launcher full' : m.store > 0 ? 'the part-empty launcher reloads once it has been quiet for a minute' : '<span class="hostile">nothing on site to reload from</span>';
       return `<div class="mag" title="${esc(IC.fullName(M))}: ${esc(IC.SEEKER[M.seeker] || '')}"><b>${sh}</b><span class="rounds">${lns}</span><small>${m.mag}/${m.max}</small></div>
-        <p class="hint" style="margin:0 0 .15rem">${m.ln > 1 ? `${m.ln} launchers of ${m.per}. ` : ''}Stock on site: <b>${m.store}</b> of ${m.storeMax}${m.inc ? ` · ${m.inc} coming` : ''} · ${rl}.</p>`;
+        <p class="hint" style="margin:0 0 .15rem">${m.ln > 1 ? `${m.ln} launchers, ${m.per} rounds each. ` : ''}Stock on site: <b>${m.store}</b> of ${m.storeMax}${m.inc ? ` · ${m.inc} coming` : ''} · ${rl}.</p>`;
     }).join('');
     const next = IC.activeMags(S, u).map(m => { const n = IC.nextLoad(S, u, m); return `<p class="hint ${n.cls === 'ok' ? '' : n.cls}" style="margin:.25rem 0"><b>${esc(IC.MUN[m.mun].short || m.mun)}:</b> ${esc(n.text)}</p>`; }).join('');
-    const P = IC.heliPlan(S, u);
+    const P = IC.heliPlan(S, u, true);
     const heli = P.why ? `<p class="hint amber" style="margin:.25rem 0">${esc(P.why)}</p>`
       : `<p class="hint" style="margin:.25rem 0">${esc(P.r.name)} from ${esc(P.src.name)}: ${esc(P.loads.filter(l => l.u === u).map(l => IC.munWords(l.m.mun, l.qty)).join(' and '))}, here in about ${U.dur(P.eta)}. The sortie costs ${U.money(P.cost)}.${P.stops.length > 1 ? ` On the way it also brings loads to ${esc(P.stops.filter(x => x !== u).map(x => x.name).join(', '))}.` : ''}</p>`;
     parts.push(`<div class="sec"><h3 class="sh">Launchers <em>ready · stock on site · coming</em></h3><div class="mags">${mags}</div>${next}
@@ -250,7 +262,7 @@ function track(t) {
   }
   if (t.d.civil && aff === 'N') rows.push(['Aboard', `${t.pax}`]);
   const hostile = !(aff === 'N' || aff === 'A' || aff === 'D');
-  const bats = S.units.filter(u => u.d.weapon === 'sam' && u.state === 'ready' && (U.dist(u, t) <= IC.maxRange(S, u) * 1.05 || IC.predictable(t) && U.dxy(u.x, u.y, t.x1 != null ? t.x1 : t.aim.x, t.y1 != null ? t.y1 : t.aim.y) <= IC.maxRange(S, u))).slice(0, 5);
+  const AW = IC.assignWhy(S, t), bats = AW.bats;
   const acts = [];
   if ((t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm') && !t.border) acts.push(`<button class="act ${aff === 'S' || aff === 'U' ? 'pri' : ''}" data-act="scramble" ${S.roster.some(r => r.kind === 'ftr' && r.st === 'ready' && IC.canLaunch(S, r)) || S.air.some(a => a.kind === 'ftr' && a.state !== 'rtb') ? '' : 'disabled'}>${kbd('V')}${aff === 'H' ? 'Intercept' : 'Intercept & identify'}</button>`);
   if (t.d.civil && (aff === 'N' || aff === 'A') && !t.appr && S.asp) {
@@ -263,7 +275,7 @@ function track(t) {
   const escort = S.air.find(a => !a.dead && !a.gnd && a.kind === 'ftr' && a.mission && a.mission.track === t);
   const ftrs = (t.d.cls === 'air' || t.d.cls === 'ga' || t.d.cls === 'drone' || t.d.cls === 'cm' || t.d.cls === 'heli') && !t.border ? fighterOptions(t) : '';
   if (escort && hostile && (escort.roe || S.ad.roe) === 'hold') acts.push(`<button class="act danger" data-act="escortFire" data-id="${escort.id}" title="${esc(escort.name)} is escorting it with weapons held. This order lets it fire.">Order ${esc(escort.name)} to fire</button>`);
-  if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? '' : 'disabled'}>${kbd('B')}Assign best battery</button>`);
+  if (hostile && S.units.some(u => u.d.weapon)) acts.push(`<button class="act ${aff === 'H' ? 'pri' : ''}" data-act="assignBest" ${bats.length ? 'title="The nearest battery that can engage it makes it its priority target"' : `disabled title="${esc(AW.why)}"`}>${kbd('B')}Assign best battery</button>`);
   if (IC.replayOpen && S.rec && S.rec.of.has(t)) acts.push(`<button class="act" data-act="replayTrack" title="The last minutes of this track in 3D, following it">Replay</button>`);
   acts.push(liveBtn(t));
   if (t.tail) acts.push(followBtn(t.tail));
@@ -271,7 +283,7 @@ function track(t) {
   const list = bats.map(u => `<div class="li"><b>${esc(u.name)}</b><small>${U.km(U.dist(u, t))} · ${IC.activeMags(S, u).map(m => `${m.mag} ${m.mun}`).join(', ')} · ${esc(IC.engageWhy(S, u, t))}</small><span class="la"><button class="btn sm" data-act="assign" data-uid="${u.id}" ${u.prio === t ? 'disabled' : ''}>${u.prio === t ? 'Assigned' : 'Assign'}</button></span></div>`).join('');
   // a known hostile shows its symbol; anything else the aircraft sign in the colour of what we think it is
   const badge = aff === 'H' && IC.THR[t.type] ? `<span class="badge hostile"><canvas data-thr="${t.type}" width="68" height="52"></canvas></span>` : `<span class="badge ${colCls}">${ui.icon('air')}</span>`;
-  return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${ftrs}${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
+  return head(badge, `TN ${t.tn}`, `<span class="${colCls}">${esc(name)}</span>`) + `<div class="ibody">${ladder}${kv(rows)}${warn}<div class="acts">${acts.join('')}</div>${AW.why && hostile && S.units.some(u => u.d.weapon) ? `<p class="hint">No battery to assign: ${esc(AW.why.charAt(0).toLowerCase() + AW.why.slice(1))}</p>` : ''}${ftrs}${list ? `<div class="sec"><h3 class="sh">Batteries in reach</h3><div class="list">${list}</div></div>` : ''}</div>`;
 }
 
 /* ---------- airports and air bases: the layout, what it can do, what is wrong with it ---------- */
@@ -329,12 +341,12 @@ function base(b) {
   const locked = b.locked;
   const stands = IC.aptStands(b), used = stands.filter(s => s.occ).length, linked = stands.filter(s => s.linked !== false && s.hp > 0).length;
   const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === b.id).length;
-  const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, b).building ? IC.rwyState(S, b).word : 'RUNWAY CLOSED';
+  const pill = locked ? 'Air Force' : !st.rwy.length ? 'No runway' : bs.runway ? `${st.movesPerHour} movements/h` : IC.rwyState(S, b).closed ? IC.rwyState(S, b).word.toUpperCase() : IC.rwyState(S, b).word;
   const rw0 = b.parts.filter(p => p.kind === 'runway' && p.built);
-  const sub = `${TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
+  const sub = `${b.kind === 'airport' && (b.cls || b.template === 'new') && IC.aptClassOf(b) ? IC.aptClassOf(b).name : TEMPLATE_NAME[b.template] || (civil ? 'Airport' : 'Air base')} · ${st.longest ? U.km(st.longest) + ' runway' : rw0.length ? 'runway closed' : 'no runway yet'}`;
   const H = head(`<span class="badge friend">${ui.icon(civil ? 'airport' : 'airbase')}</span>`, b.name, esc(sub), ui.hands() && civil && bs.runway ? '' : pill, locked ? '' : bs.runway ? 'ok' : 'bad');
   // (a site with nothing on it yet has no plan to draw: an empty dark box looks broken)
-  const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div>`;
+  const schem = `${b.parts.length ? `<canvas class="schem" data-schem="${b.id}" width="560" height="250"></canvas>` : ''}<div class="acts"><button class="act" data-act="aptZoom">Zoom to the airport</button>${civil && b.owner === 'us' ? `<button class="act ${ui.watch && ui.watch.ap === b.id ? 'on' : ''}" data-act="watch" title="The camera goes from one aircraft here to the next on its own: landings, take-offs, pushbacks, turnarounds. Drag the map to stop.">${ui.watch && ui.watch.ap === b.id ? 'Stop watching' : 'Watch'}</button>` : ''}<button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div>`;
   if (locked) return H + `<div class="ibody">${schem}<p class="hint">${esc(b.name)} belongs to the Air Force. It comes under your command later in your career.</p></div>`;
   const warn = st.warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${st.warn.length}</em></h3>${st.warn.slice(0, 6).map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : '<div class="now ok">No layout problems found.</div>';
   const fuelF = st.fuelCap ? st.fuel / st.fuelCap : 0, svc = IC.aptServiceLines(S, b);
@@ -359,9 +371,14 @@ function base(b) {
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);
   if (civil) rows.push(...lifeRows(b));
+  // (brief 48) what research (and later the Ministry) changes here, a sentence each
+  const mods = civil ? IC.modList(S) : [];
+  if (mods.length) rows.push(['Upgrades', mods.map(m => `${esc(m.text)} <small class="dim">(${esc(m.why.join(', '))})</small>`).join('<br>')]);
   const rr = civil && IC.aptRoadReport ? IC.aptRoadReport(S, b) : null;
   if (rr) rows.push(['Roads', `${esc(rr.text)}${rr.works.length ? ' ' + rr.works.map(esc).join(' ') : ''}<div class="acts">${Object.entries(IC.ROADS).map(([k, R]) => `<button class="act" data-act="roadMode" data-v="${k}" title="${esc(R.what)}: ${U.money(R.perKm)} a km">${esc(R.name)}</button>`).join('')}</div>`]);
   if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }
+  // (the GA ramp's own row says where light aircraft park; this one is for helipads and larger light-aircraft stands)
+  if (civil && IC.gavSummary) { const g = IC.gavSummary(S, b); if (g.stands || g.pads) rows.push(['General aviation', `${g.based} based here${g.helis ? ` (${g.helis} helicopter${g.helis > 1 ? 's' : ''})` : ''}, ${g.visitors} visiting · ${g.moves} movements in the last day · ${g.stands} light-aircraft stands, ${g.pads} helipad${g.pads === 1 ? '' : 's'}`]); }
   const kpis = `<div class="kpis">
     <div><small>Avg taxi</small><b class="${kp.taxi > 600 ? 'amber' : ''}">${U.dur(kp.taxi || 0)}</b></div>
     <div><small>Avg delay</small><b class="${kp.wait > 600 ? 'amber' : ''}">${U.dur(kp.wait || 0)}</b></div>
@@ -379,11 +396,14 @@ function base(b) {
     const park = r.st !== 'air' && !IC.ACTYPES[r.type || IC.AIRKIND_TYPE[r.kind]].vtol ? `<span class="la"><button class="btn sm ${r.park === 'open' ? 'on' : ''}" data-act="flPark" data-rid="${r.id}" title="In the open aircraft turn round a fifth quicker, but a bomb nearby destroys 8 in 10 (1 in 10 inside a hardened shelter).">${r.park === 'open' ? 'Open' : 'Shelter'}</button></span>` : '';
     return `<div class="li"><button class="lib" data-act="selFlight" data-rid="${r.id}"><b>${esc(r.name)}</b><small>${esc(IC.AIR_KIND[r.kind].short)}×${r.n} · ${stt} ${where}${pp.stand && !pp.fac ? ' (quicker turnaround, easier to destroy)' : ''}${block ? ` · <span class="hostile">${esc(block)}</span>` : ''}</small></button>${park}</div>`;
   }).join('');
-  const fee = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
+  // what the airport is for (aptclass.js): its class, and the others with what the land for each would cost
+  const K = civil && b.owner === 'us' && IC.aptClassOf(b), purpose = K ? `<div class="sec"><h3 class="sh">Purpose <em>${esc(K.name)}</em></h3><p class="hint">${esc(K.use)}</p><div class="acts">${IC.APT_CLASSES.map(k => { const C = IC.APT_CLASS[k], c = IC.aptReclassCost(S, b, k), on = k === IC.aptClass(b); return `<button class="act ${on ? 'on' : ''}" data-act="aptClass" data-v="${k}" ${!on && S.budget < c ? 'disabled' : ''} title="${esc(`${C.name}: ${C.use}${on ? '' : c ? ` The bigger site's land costs ${U.money(c)}.` : ' The site stays as it is.'}`)}">${esc(C.short)}${!on && c ? ` · ${U.money(c)}` : ''}</button>`; }).join('')}</div></div>` : '';
+  const fee0 = civil && !IC.storyLock(S, 'charges') ? `<div class="sec"><h3 class="sh">Charges <em>airlines weigh fees against service</em></h3>${seg('aptFee', String(b.feeLevel || 1), [['0.7', '70%'], ['0.85', '85%'], ['1', '100%'], ['1.2', '120%'], ['1.5', '150%', 'amb']])}
     <div class="acts"><button class="act ${b.rwMode === 'mixed' ? 'on' : ''}" data-act="aptRwMode" title="Automatic: with two or more independent runways, some take arrivals and some departures. Mixed: every runway takes both.">Runway use: ${b.rwMode === 'mixed' ? 'mixed' : 'automatic'}</button><button class="act ${b.curfew ? 'on' : ''}" data-act="aptCurfew" title="Nothing lands or leaves 23:00–06:00. Cargo airlines hate it; the neighbours love it. More choices on the day board.">Night curfew: ${b.curfew ? 'on' : 'off'}</button></div></div>` : '';
+  const fee = fee0;
   // (round 3) the Career's airport panel: the few numbers that matter, its problems with their fixes, its deals,
   // and the rest folded (the tower's rules and the airspace open on their own page from there)
-  if (ui.hands() && civil && b.owner === 'us' && ui.aptTab !== 'asp' && ui.aptTab !== 'rules') return H + handsPanel(b, st, { schem, kpis, warn, rwSec, rows, zoneSec, fee, works, reps });
+  if (ui.hands() && civil && b.owner === 'us' && ui.aptTab !== 'asp' && ui.aptTab !== 'rules') return H + handsPanel(b, st, { schem, kpis, warn, rwSec, rows, zoneSec, fee, works, reps, purpose });
   // four tabs instead of one long page, so the build tools are one click away
   const tab = ui.aptTab === 'build' ? 'info' : ui.aptTab, nw = b.works.length, nd = IC.aptRepairList(b).length;
   const tabs = ui.hands() && civil ? `<div class="itabs"><button class="act" data-act="aptTab" data-v="info">◂ Back to ${esc(b.name.replace(/ (International|Airport)$/, ''))}</button></div>` : `<div class="itabs">${seg('aptTab', tab, [['info', `Overview${st.warn.length ? ` <em class="amber">${st.warn.length}</em>` : ''}`, '', 'Capacity, runways, stands and problems'],
@@ -396,7 +416,7 @@ function base(b) {
     : tab === 'rules' ? opsTab(b, st)
     : tab === 'asp' ? airspaceTab(b, st)
     : tab === 'ops' ? `${fee}${civil && S.av ? `<div class="sec"><h3 class="sh">The day</h3>${dayBoardHTML(b)}</div>${scorecardHTML(b)}${IC.FOCUS.gse ? `<div class="sec"><h3 class="sh">Ground vehicles</h3>${fleetHTML(b)}</div>` : ''}` : ''}${fl ? `<div class="sec"><h3 class="sh">Flights here</h3><div class="list">${fl}</div></div>` : civil ? '' : '<p class="hint">No flights are based here.</p>'}`
-    : `${schem}${kpis}${warn}${rwSec}${kv(rows)}${zoneSec}`;
+    : `${schem}${kpis}${warn}${purpose}${rwSec}${kv(rows)}${zoneSec}`;
   return H + tabs + `<div class="ibody">${body}</div>`;
 }
 /* (round 5b) ground vehicles: a count per kind with − / +, what this traffic needs, what they cost to run */
@@ -495,6 +515,7 @@ function handsPanel(b, st, X) {
   const ex = (k, name) => `<button class="more" data-act="aptOpen" data-v="${k}">${O[k] ? '▴' : '▾'} ${name}</button>`;
   const day = A && !IC.storyLock(S, 'charges') ? `<div class="sec">${ex('day', 'The day: flights by hour, cap and night')}${O.day ? dayBoardHTML(b) : ''}</div>` : '';
   const more = `<div class="sec">${ex('more', 'Runways, stands and services')}${O.more ? `${X.schem}${X.kpis}${X.rwSec}${kv(X.rows)}${X.zoneSec}` : ''}
+    ${X.purpose ? ex('purpose', `Purpose: ${esc(IC.aptClassOf(b).name.toLowerCase())}`) + (O.purpose ? X.purpose : '') : ''}
     ${X.fee ? ex('fee', 'Charges') + (O.fee ? X.fee : '') : ''}
     ${X.reps ? ex('reps', 'Damage to repair') + (O.reps ? `<div class="list">${X.reps}</div>` : '') : ''}
     <div class="acts"><button class="act" data-act="aptTab" data-v="rules" title="The tower's rules: when aircraft may go onto a runway">Tower rules</button>${S.asp && !IC.storyLock(S, 'airspace') ? '<button class="act" data-act="aptTab" data-v="asp" title="Controlled airspace round the airport">Airspace</button>' : ''}<button class="act" data-act="aptZoom">Zoom to it</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div></div>`;
@@ -724,8 +745,8 @@ function partActs(ap, p) {
     if (!st.fire || t > IC.FIRE_STD) L.push(fixBtn('fire', mid, 'Fire station nearer', true));
     if (st.fire) L.push(`<button class="act" data-act="fireDrill" title="The fire trucks race to the far end and the panel times them">Fire drill now</button>`);
     const mv = (ap.mvLog || []).length; say.unshift(`${mv} movement${mv === 1 ? '' : 's'} in the last hour; the runways take ${st.movesPerHour || 0}.`);
-  } else if (p.kind === 'terminal') { L.push(fixBtn('tattach', p, 'Add a pier to it')); L.push(fixBtn('tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
-  else if (p.kind === 'apron') L.push(fixBtn('tstraight', p, 'More stands: a terminal beside it'));
+  } else if (p.kind === 'terminal') { L.push(fixBtn('tattach', p, 'Add a pier to it')); L.push(fixBtn(IC.FOCUS && IC.FOCUS.parts ? 'terminal' : 'tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
+  else if (p.kind === 'apron') L.push(IC.FOCUS && IC.FOCUS.parts ? fixBtn('apron', p, 'More stands: an apron beside it') : fixBtn('tstraight', p, 'More stands: a terminal beside it'));
   else if (p.kind === 'fuel') L.push(fixBtn('fuel', p, 'Add a fuel tank beside it', IC.aptProblems(S, ap).some(x => x.kind === 'fuel')));
   else if (p.kind === 'fire') { const rw = ap.parts.find(q => q.kind === 'runway' && q.built); if (rw) L.push(`<button class="act pri" data-act="fireDrill" title="The fire trucks race to the far end of ${esc(rw.name || 'the runway')} and the panel times them">Fire drill now</button>`); }
   else if (p.kind === 'tower') L.push(`<button class="act" data-act="towerRules">Tower rules</button>`);
@@ -760,7 +781,7 @@ function city(c) {
     <p class="hint">Cities grow with good air service (frequent flights to many places, few delays, fair fees within ${IC.GROWTH.catch[1]} h by road) and good roads. Growth raises taxes and passengers.</p></div>` : '';
   return head(`<span class="badge friend">${ui.icon('city')}</span>`, c.name, c.capital ? 'Capital' : 'City', c.alert > 0 ? 'Sirens' : 'Calm', false || c.alert > 0 ? 'bad' : 'ok') +
     `<div class="ibody"><div class="bars"><span>Morale</span>${bar(c.morale / 100, 'var(--friend)')}<span>${Math.round(c.morale)}%</span><span>Buildings</span>${bar(alive)}<span>${U.pct(alive)}</span><span>Prosperity</span>${bar(Math.min(1, c.prosp), 'var(--supply)')}<span>${U.pct(c.prosp)}</span></div>
-    ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${tax.toFixed(1)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
+    ${kv([['Population', `${c.pop}k`], ['Industry', `${c.ind} pts`], ['Taxes', `${U.money(tax)}/h${S.story && S.story.act < 3 ? ' (to the Treasury, not your budget yet)' : ''}`], ['Power', plant ? (plant.offline ? `<span class="hostile">blackout (${esc(plant.name)} down)</span>` : esc(plant.name)) : '–'], ['Casualties', `${c.casualties || 0}`], ['Garrison', gar ? esc(gar.name) : 'none']])}
     ${what}${growth}
     </div>`;
 }
@@ -837,7 +858,7 @@ function planBox(who, t) {
   if (P.x == null) return `<div class="sec plan"><h3 class="sh">Intercept ${esc(tn)}</h3><div class="warnbox">${esc(P.why || 'No intercept possible.')}</div><div class="acts"><button class="act" data-act="air" data-op="cancel">Cancel</button></div></div>`;
   const rows = [
     ['Meets it', `in ${U.dur(P.T)}${P.delay > 30 ? ` <span class="muted">(${U.dur(P.delay)} of it on the ground)</span>` : ''} ${esc(IC.nearPlace(S, P.x, P.y))}`],
-    ['Fuel after', P.fuelBack > 0 ? `${U.dur(P.fuelBack)} once home` : `<span class="hostile">not enough to come back</span>${S.air.some(k => k.kind === 'tkr' && k.state === 'station') ? ' · a tanker is up' : ''}`],
+    ['Fuel there', P.fuelBack > 0 ? `${U.dur(P.fuelBack)} to spare before it must turn home` : `<span class="hostile">it must turn home before it gets there: the meeting point is too far from ${esc(P.home || 'its base')}</span>${S.air.some(k => k.kind === 'tkr' && k.state === 'station') ? ' · a tanker is up and can top it up on the way' : ''}`],
     ['Weapons', `${P.aam} radar missiles, ${P.srm} heat-seeking · reach ${esc(P.reachWords)}`],
     ['Kill chance', P.idFirst ? '<span class="unknown">identify first: nobody fires at it until a pilot has seen it</span>' : `${U.pct(P.pk)} a target with two missiles${P.n > 1 ? ` · ${P.enough ? `enough for all ${P.n}` : `<span class="amber">missiles for ${Math.floor((P.aam + P.srm) / 2)} of ${P.n}</span>`}` : ''}${P.weapons === 'hold' ? ' · <span class="amber">weapons on Hold: it will only escort</span>' : ''}`]
   ];
@@ -894,7 +915,7 @@ function fighterOptions(t) {
   if (!L.length) return '';
   return `<div class="sec"><h3 class="sh">Fighters <em>quickest first</em></h3><div class="list">${L.map(({ w, P }) => {
     const on = w.mission && w.mission.track === t;
-    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (w.gnd ? 'taxiing' : (STATE_WORDS[w.state] || 'Airborne').toLowerCase()) : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · fuel after ${P.fuelBack > 0 ? U.dur(P.fuelBack) : '<span class="hostile">none</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
+    return `<div class="li"><b>${esc(w.name)}</b><small>${w.r && w.kind ? (w.gnd ? 'taxiing' : (STATE_WORDS[w.state] || 'Airborne').toLowerCase()) : w.st === 'turn' ? 'rearming' : `on ${IC.ALERT[IC.alertOf(w)].name} alert`} · meets it in ${U.dur(P.T)} · ${P.fuelBack > 0 ? `${U.dur(P.fuelBack)} of fuel to spare there` : '<span class="hostile">too far: turns home first</span>'}${P.idFirst ? '' : ` · kill ${U.pct(P.pk)}`}</small><span class="la">${on ? '<span class="pill ok">On it</span>' : `<button class="btn sm" data-act="air" data-op="plan" ${whoAttr(w)} data-id="${t.id}">Show</button><button class="btn sm primary" data-act="air" data-op="commit" ${whoAttr(w)} data-id="${t.id}" ${P.ok ? '' : 'disabled'}>Commit</button>`}</span></div>`;
   }).join('')}</div></div>`;
 }
 /* ---------- the air picture: everything not known friendly, most dangerous first ---------- */

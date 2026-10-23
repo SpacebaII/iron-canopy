@@ -6,22 +6,27 @@ const U = IC.U;
 
 IC.unitSpeed = u => u.d.fast ? [0.5, 0.3] : u.d.mob === 'mobile' ? [0.45, 0.18] : [0.32, 0.12];
 
-IC.canPlace = function (S, type, x, y, ignore) {
-  if (!IC.inHome(x, y) || IC.inLake(x, y) || IC.borderDist(x, y) < 40) return false;
+/* why a unit cannot stand here, in words for the player ('' if it can) */
+IC.PLACE_BORDER = 40;   // units stand at least 4 km inside the border
+IC.placeWhy = function (S, type, x, y, ignore) {
+  if (!IC.inHome(x, y)) return 'Outside the country: units stand on our side of the border.';
+  if (IC.inLake(x, y)) return 'On water: pick a spot on land.';
+  if (IC.borderDist(x, y) < IC.PLACE_BORDER) return `Too close to the border: units must stand at least ${IC.PLACE_BORDER / 10} km inside it.`;
   const d = IC.UNITS[type];
   for (const u of S.units) {
     if (u === ignore) continue;
     const r = (d.mob === 'fixed' || u.d.mob === 'fixed') ? 34 : 16;
-    if (U.dxy(u.x, u.y, x, y) < r) return false;
+    if (U.dxy(u.x, u.y, x, y) < r) return `Too close to ${u.name}: keep ${U.km(r)} from ${r > 16 ? 'a fixed site' : 'other units'}.`;
   }
   for (const i of S.infra) {
     if (i.kind === 'city' || i.kind === 'bridge') continue;
     // on an airfield: anywhere off the pavement, the buildings and the runway strips (a radar, a beacon, a gun)
-    if (i.parts) { if (IC.aptOnPart(i, { x, y }) || (U.dxy(i.x, i.y, x, y) < 12 && !i.parts.length)) return false; continue; }
-    if (U.dxy(i.x, i.y, x, y) < 22) return false;
+    if (i.parts) { if (IC.aptOnPart(i, { x, y }) || (U.dxy(i.x, i.y, x, y) < 12 && !i.parts.length)) return `On ${i.name}'s pavement or buildings: pick a spot off them.`; continue; }
+    if (U.dxy(i.x, i.y, x, y) < 22) return `Too close to ${i.name}: keep ${U.km(22)} away.`;
   }
-  return true;
+  return '';
 };
+IC.canPlace = (S, type, x, y, ignore) => !IC.placeWhy(S, type, x, y, ignore);
 
 /* ---------- buying: pay when you place it, and it comes at once ---------- */
 /* doctrine choices in the story make some equipment cheaper */

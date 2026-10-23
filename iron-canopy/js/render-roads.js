@@ -276,7 +276,9 @@ const SPEC_LANE = a => (SP[a.cls] || SP.lc).lane * ((SP[a.cls] || SP.lc).lanes |
 function roundabout(j, G, fill, lw, D, z, px) {
   const C = G.C, asp = fill('rd');
   ctx.fillStyle = asp; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro, 0, 7); ctx.fill();
-  if (z > 5) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ro - Math.max(0.006, lw * 2), 0, 7); ctx.stroke(); }
+  // (the edge line only where it fits inside the ring: a wide line far out, as in the 3D view's ground, has no room)
+  const er = G.Ro - Math.max(0.006, lw * 2);
+  if (z > 5 && er > 0) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, er, 0, 7); ctx.stroke(); }
   for (const a of G.arms) { ctx.fillStyle = fill(a.a.cls === 'hw' ? 'rd' : a.a.cls); ppoly(a.surf); ctx.fill(); }
   // the island
   // (far out the kerb and apron shrink with the island, so nothing turns inside out)
@@ -476,11 +478,13 @@ function vehicles(list, px, night, now, m, detail) {
   const quad = (col, x, y, c, s, f, b, w) => { let L = groups.get(col); if (!L) groups.set(col, L = []); L.push(x, y, c, s, f, b, w); };
   const lights = [], tails = [], blues = [], shade = [];
   for (const v of list) {
-    const K = IC.VEHICLE_KINDS[v.k] || IC.VEHICLE_KINDS.car, f = Math.max(1, m / 0.045), L = K.L * f / 2, W = Math.max(K.W / 2, px * K.W / 0.019);
+    // (brief 67) drawn larger than life far out, a bus or a lorry grows less than a car: scaled alike, a bus at the
+    // city zoom was a red bar 400 m long across the blocks
+    const K = IC.VEHICLE_KINDS[v.k] || IC.VEHICLE_KINDS.car, L = Math.max(K.L / 2, m / 2 * Math.min(1.6, Math.sqrt(K.L / 0.045))), W = Math.max(K.W / 2, px * K.W / 0.019);
     const c = Math.cos(v.h), s = Math.sin(v.h);
     if (!night) shade.push(v.x + L * 0.25, v.y + L * 0.3, c, s, L, W);
     // further out a calm palette: pale cars, buff lorries, red buses; colours and details close in
-    const P = detail ? parts(v.k, v.col) : calm ? [[v.k === 'bus' ? 'rgb(206,58,46)' : K.L > 0.07 ? 'rgb(214,204,180)' : 'rgb(234,236,240)', 1, -1, 1]] : [parts(v.k, v.col)[0]];
+    const P = detail ? parts(v.k, v.col) : calm ? [[v.k === 'bus' ? 'rgb(188,92,78)' : K.L > 0.07 ? 'rgb(214,204,180)' : 'rgb(234,236,240)', 1, -1, 1]] : [parts(v.k, v.col)[0]];
     for (const [col, fr, bk, hw] of P) quad(col, v.x, v.y, c, s, fr * L, bk * L, hw * W);
     if (night) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
     if ((v.k === 'police' || v.k === 'amb') && Math.sin(now * 12 + v.col) > 0) blues.push(v.x, v.y, W);

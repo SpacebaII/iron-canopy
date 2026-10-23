@@ -218,7 +218,7 @@ function planRoute(S, from, to, low, spread) {
   const hit = C.get(key);
   if (hit && S.time - hit.t < 900) return hit.r.map(p => ({ x: p.x, y: p.y }));
   const sites = threatSites(S, low);
-  const nx = -(to.y - from.y), ny = to.x - from.x, NL = Math.hypot(nx, ny) || 1, sp = spread || 2100;
+  const nx = -(to.y - from.y), ny = to.x - from.x, NL = U.hyp(nx, ny) || 1, sp = spread || 2100;
   const via = (f, off) => ({ x: U.clamp(from.x + (to.x - from.x) * f + nx / NL * off, 90, IC.WW - 90), y: U.clamp(from.y + (to.y - from.y) * f + ny / NL * off, 90, IC.WH - 90) });
   const cands = [[]];
   // one turn: a fan of lanes through the defended belt
@@ -700,8 +700,9 @@ function mixFor(S, E, kind, obj) {
   } else if (kind === 'shock') {
     // the saved missiles, shared over the main target and two or three others of different kinds, all at once
     const bal = Math.min(12, Math.floor(spareOf(S, 'bm', ['srbm', 'marv']) * 0.85)), cms = Math.min(20, Math.floor(spareOf(S, 'cm', ['lacm', 'scm', 'mcm']) * 0.85));
-    const more = E.shock.more, k = more.length + 1, share = n => Math.max(1, Math.round(n / k));
-    const how = E.shock.how, via = how === 'axis' ? { via: 1 } : {};
+    // (a shock the sandbox asks for has no plan of the commander's behind it: all of it goes at the one target)
+    const sh = E.shock || { more: [], how: 'soak' }, more = sh.more, k = more.length + 1, share = n => Math.max(1, Math.round(n / k));
+    const how = sh.how, via = how === 'axis' ? { via: 1 } : {};
     if (how === 'soak') { add('dcy', 10, -660, { spread: 40 }); add('drones', 3, -600); }
     else add('dcy', 4, -300);
     // the other targets first: launchers and a site's missiles run out, and the main target should not take them all.
@@ -1008,7 +1009,9 @@ function leakWhy(S, t) {
   if (!t.shots) {
     let best = null, bd = 1e9;
     for (const u of S.units) if (u.d.weapon === 'sam' || u.d.weapon === 'gun') { const d = U.dist(u, t); if (d < bd && d < IC.maxRange(S, u) * 1.5) { bd = d; best = u; } }
-    return best ? `seen, never engaged: ${best.name} ${IC.engageWhy(S, best, t).charAt(0).toLowerCase() + IC.engageWhy(S, best, t).slice(1)}` : 'seen, never engaged: no battery covers it';
+    // (lower-case the reason's first word, not a code such as "SR missiles")
+    const w = best && IC.engageWhy(S, best, t);
+    return best ? `seen, never engaged: ${best.name} ${/^[A-Z][a-z]/.test(w) ? w.charAt(0).toLowerCase() + w.slice(1) : w}` : 'seen, never engaged: no battery covers it';
   }
   return `survived ${t.shots} interceptor${t.shots > 1 ? 's' : ''}`;
 }
@@ -1024,18 +1027,18 @@ function report(S, E, R) {
   const lines = [...g.values()].sort((a, b) => b.n - a.n).slice(0, 3).map(e => `${e.n} ${WORD[e.cls] ? WORD[e.cls][e.n > 1 ? 1 : 0] : 'weapons'} at ${e.place}: ${they(e.why, e.n)}.`);
   const res = { id: R.id, kind: R.kind, name: R.name, obj: R.obj.name, t: S.time, day: U.day(R.T), threats: launched, kills: lost, leaks, hits: R.hits || 0, fired: S.stats.fired - (R.fired0 || 0) };
   (S.raids = S.raids || []).push(res);
-  const head = `${launched} threats, ${lost} shot down, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}. ${res.fired} interceptors fired.`;
+  const result = IC.raidResult(S, R, ops, achieved(S, R));
+  const head = `${launched} threats, ${lost} shot down${result.jammed ? `, ${result.jammed} jammed off course` : ''}, ${leaks} got through${R.hits ? ` (${R.hits} hit something)` : ''}${result.air ? `, ${result.air} still flying` : ''}. ${res.fired} interceptors fired.`;
   let text = `${head}${lines.length ? ' ' + lines.join(' ') : ''}`;
   // a unit's code means little to a player: say what it is
   const r = R.obj.ref, what = r && r.d && r.d.role ? `${R.obj.name}, ${/^[aeiou]/i.test(r.d.role) ? 'an' : 'a'} ${r.d.role}` : R.obj.name;
   text += ` Their main target was ${what}${R.set ? `, in their push on ${IC.ESETS[R.set].name}` : ''}.`;
   // the result card: what came, what we stopped, what got through and why, what it cost, and a grade
-  const result = IC.raidResult(S, R, ops, achieved(S, R));
-  res.held = result.held; res.grade = result.grade;
+  res.held = result.held; res.grade = result.grade; res.air = result.air;
   if (R.aborted) text += ` They turned back: ${R.aborted.why}.`;
   R.text = text; R.res = res; R.result = result;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
-  if (S.camp && IC.card) IC.card(S, `${result.held ? 'Raid held' : result.success ? 'Raid got through' : 'Raid over'} · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report', { res: result, name: R.name });
+  if (S.camp && IC.card) IC.card(S, `${result.held ? 'Raid held' : result.success ? 'Raid got through' : result.air ? 'Raid report, some still flying' : 'Raid over'} · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report', { res: result, name: R.name });
   IC.emit(S, 'raidResult', { R, res: result });
   IC.emit(S, 'raidOver', R);
   // the commander learns what worked
@@ -1082,8 +1085,8 @@ function learn(S, E, R, ops) {
   const news = R.obj.ref && R.obj.ref.d ? `air defences near ${place(S, R.obj)}` : R.obj.name;
   if (success) IC.news(S, `${S.world.names.A} claims its strike on ${news} was a success.`);
   else if (launched >= 6 && eff < 0.2) { E.will = Math.max(0, E.will - 1.5); IC.news(S, `Air defences blunt a ${R.name} on ${news}.`); }
-  // the shock: then a lull while the commander reassesses
-  if (R.kind === 'shock') {
+  // the shock: then a lull while the commander reassesses (not after one the sandbox asked for)
+  if (R.kind === 'shock' && E.shock && !E.shock.done) {
     const f = strong(E);
     E.act = 3; E.actT = S.time; E.lullEnd = S.time + lerp(IC.EPACE.lull[0], IC.EPACE.lull[1], f) * H; E.shock.done = S.time; E.shock.res = { launched, lost, hits: R.hits || 0 };
     note(S, E, `Act 3: the shock is spent (${launched} launched, ${R.hits || 0} hits). Reassesses until ${U.hhmm(E.lullEnd)}: no raids, reconnaissance only.`);
@@ -1095,7 +1098,7 @@ function learn(S, E, R, ops) {
 }
 /* the calm after a raid: shorter as the war goes on; the lull after the shock is longer */
 function calmFor(S, E, R) {
-  if (R.kind === 'shock') return E.lullEnd - S.time;
+  if (R.kind === 'shock' && E.lullEnd > S.time) return E.lullEnd - S.time;
   const h = E.act >= 4 ? U.rand(3, 4) : E.act >= 2 ? U.rand(2.6, 3.8) : U.rand(2.5, 4);
   return h * H;
 }
@@ -1381,7 +1384,7 @@ IC.moveEnemyAir = function (S, t, dt) {
     else if (!chase) {
       const h = Math.atan2(L.vy || 0, L.vx || 1), side = (t.slot || 1) % 2 ? 1 : -1;
       tx = L.x - Math.cos(h) * 10 - Math.sin(h) * 25 * side; ty = L.y - Math.sin(h) * 10 + Math.cos(h) * 25 * side;
-      spd = U.dxy(t.x, t.y, tx, ty) > 10 ? t.spd * 1.2 : Math.max(0.5, Math.hypot(L.vx || 0, L.vy || 0));
+      spd = U.dxy(t.x, t.y, tx, ty) > 10 ? t.spd * 1.2 : Math.max(0.5, U.hyp(L.vx || 0, L.vy || 0));
     }
   }
   if (chase) { tx = chase.x; ty = chase.y; spd = t.spd * 1.25; }
@@ -1402,7 +1405,7 @@ IC.moveEnemyAir = function (S, t, dt) {
     if (t.disguise && t.route.length === 1 && !t.offRoute) t.offRoute = true;
   } else if (t.mission === 'patrol' || t.mission === 'jam') {
     // a racetrack along the border: two turn points 30 km either side of the station
-    const hx = t.home ? t.st.x - t.home.x : 1, hy = t.home ? t.st.y - t.home.y : 0, hl = Math.hypot(hx, hy) || 1, ux = -hy / hl, uy = hx / hl;
+    const hx = t.home ? t.st.x - t.home.x : 1, hy = t.home ? t.st.y - t.home.y : 0, hl = U.hyp(hx, hy) || 1, ux = -hy / hl, uy = hx / hl;
     t.leg = t.leg || 1;
     tx = t.st.x + ux * 300 * t.leg; ty = t.st.y + uy * 300 * t.leg;
     if (U.dxy(t.x, t.y, tx, ty) < 40) t.leg = -t.leg;
@@ -1599,6 +1602,13 @@ IC.on((S, type, d) => {
     t.dead = false; const why = leakWhy(S, t); t.dead = true;
     R.leaks.push({ cls: t.d.cls, type: t.type, why, place: d.hit && d.hit.name ? d.hit.name : IC.nearestPlace(S, t.x, t.y), hit: !!d.hit });
     if (d.hit) R.hits = (R.hits || 0) + 1;
+    // after the report: it was still flying then, so the report said so; now say where it came down
+    const r = R.result;
+    if (r) {
+      if (r.air > 0) r.air--;
+      r.through = R.leaks.length; r.hits = R.hits || 0; if (R.res) { R.res.leaks = r.through; R.res.hits = r.hits; }
+      if (d.hit) IC.log(S, 'leak', 'LATE HIT', `A ${WORD[t.d.cls] ? WORD[t.d.cls][0] : 'weapon'} from the ${R.name} on ${R.obj.name} hit ${d.hit.name || IC.nearestPlace(S, t.x, t.y)}, after the report: it was one of those still flying.`, t);
+    }
   }
 });
 

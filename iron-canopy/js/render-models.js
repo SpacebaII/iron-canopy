@@ -8,7 +8,14 @@ const M = IC.MODELS;
 
 const cache = new Map();
 const HIDE = { gear: 1, ab: 1, win: 1, flap: 1, rotor: 1, prop: 1, spoil: 1, slat: 1, rev: 1, revc: 1 };
-const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16); return `rgb(${Math.min(255, (n >> 16) * k) | 0},${Math.min(255, ((n >> 8) & 255) * k) | 0},${Math.min(255, (n & 255) * k) | 0})`; };
+/* lit as a painter would: the sunlit side a touch warm, the shaded side cooler and bluer (the sky's light), so the
+   shape reads at a glance and every model on the map shares one light. d: how squarely the face meets the sun (0-1),
+   ao: less light low down under the wings and in the gaps (0-1) */
+const paint = (hex, d, ao) => {
+  const n = parseInt(hex.slice(1), 16), k = (0.58 + 0.55 * d) * ao, w = 1 - d;
+  const f = (c, warm, cool) => Math.max(0, Math.min(255, c * k * (warm * d + cool * w))) | 0;
+  return `rgb(${f(n >> 16, 1.05, 0.88)},${f((n >> 8) & 255, 1.0, 0.95)},${f(n & 255, 0.93, 1.1)})`;
+};
 /* the model painted from above: { cv, s (pixels a metre), ox, oy (the origin in the image), sil (its silhouette) } */
 function sprite(key, livery, body) {
   const ck = key + '|' + (livery ? livery.join() : '') + '|' + (body || '');
@@ -18,15 +25,16 @@ function sprite(key, livery, body) {
   const cv = document.createElement('canvas'); cv.width = Math.ceil((b[3] - b[0]) * s) + pad * 2; cv.height = Math.ceil((b[4] - b[1]) * s) + pad * 2;
   const ox = pad - b[0] * s, oy = pad - b[1] * s, g = cv.getContext('2d');
   // every upward-facing triangle, lowest first, lit from the north-west (the map's light)
-  const tris = [], L = [-0.35, -0.45, 0.82];
+  const tris = [], L = [-0.35, -0.45, 0.82], top = Math.max(0.5, b[5]);
   for (const k in me.groups) {
     const G = me.groups[k]; if (HIDE[G.kind]) continue;
     const p = G.pos, n = G.nor;
     for (let i = 0; i < p.length; i += 9) {
       const nz = (n[i + 2] + n[i + 5] + n[i + 8]) / 3; if (nz < -0.05) continue;
       const nx = (n[i] + n[i + 3] + n[i + 6]) / 3, ny = (n[i + 1] + n[i + 4] + n[i + 7]) / 3;
-      const c = me.slots[G.col[i / 3]], hex = cols[c] || c, k2 = 0.62 + 0.5 * Math.max(0, nx * L[0] + ny * L[1] + nz * L[2]);
-      tris.push([Math.max(p[i + 2], p[i + 5], p[i + 8]) + (p[i + 2] + p[i + 5] + p[i + 8]) / 3, p[i], p[i + 1], p[i + 3], p[i + 4], p[i + 6], p[i + 7], shade(hex, k2)]);
+      const c = me.slots[G.col[i / 3]], hex = cols[c] || c, nl = Math.hypot(nx, ny, nz) || 1, zm = (p[i + 2] + p[i + 5] + p[i + 8]) / 3;
+      const d = Math.max(0, (nx * L[0] + ny * L[1] + nz * L[2]) / nl), ao = 0.86 + 0.14 * Math.min(1, Math.max(0, zm / top));
+      tris.push([Math.max(p[i + 2], p[i + 5], p[i + 8]) + zm, p[i], p[i + 1], p[i + 3], p[i + 4], p[i + 6], p[i + 7], paint(hex, d, ao)]);
     }
   }
   tris.sort((a, c) => a[0] - c[0]);
@@ -70,7 +78,11 @@ IC.modelTop = function (g, key, x, y, h, o) {
   // colour asked for (an unidentified track's)
   const px = 1 / (z * q);
   if (o.outline) { const im = tint(sp, o.outline); for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(im, -sp.ox + dx * px * 1.2, -sp.oy + dy * px * 1.2); }
-  else if (Lw * z * k > 10) { g.save(); g.globalAlpha *= 0.55; g.drawImage(sp.sil, -sp.ox + px * 0.6, -sp.oy + px * 0.6); g.restore(); }
+  else if (Lw * z * k > 10) {
+    // a thin dark edge all round, heavier on the shadow side: the model stands off the pavement it is drawn on
+    g.save(); g.globalAlpha *= 0.3; for (const [dx, dy] of [[-1, 0], [0, -1]]) g.drawImage(sp.sil, -sp.ox + dx * px * 0.7, -sp.oy + dy * px * 0.7);
+    g.globalAlpha = (o.alpha != null ? o.alpha : 1) * 0.6; for (const [dx, dy] of [[1, 0], [0, 1], [0.8, 0.8]]) g.drawImage(sp.sil, -sp.ox + dx * px * 0.8, -sp.oy + dy * px * 0.8); g.restore();
+  }
   g.drawImage(sp.cv, -sp.ox, -sp.oy);
   // propellers: turning, a grey blur across the disc with a blade flicking through it; parked, one blade at rest
   for (const r of sp.props) {
@@ -119,7 +131,7 @@ IC.modelRefCanvas = function (key, w, h, o) {
   g.save(); g.translate(cx, cy); g.scale(k / sp.s, k / sp.s); g.drawImage(sp.cv, -sp.ox, -sp.oy); g.restore();
   // from the side: the triangles facing the viewer, shaded, the lowest first
   const tris = [];
-  for (const n in me.groups) { const G = me.groups[n]; if (HIDE[G.kind] && G.kind !== 'gear' && G.kind !== 'rotor') continue; const p = G.pos, q = G.nor; for (let i = 0; i < p.length; i += 9) { const ny = (q[i + 1] + q[i + 4] + q[i + 7]) / 3; if (ny < -0.05) continue; const s2 = me.slots[G.col[i / 3]], hex = cols[s2] || s2; tris.push([(p[i + 1] + p[i + 4] + p[i + 7]) / 3, p[i], p[i + 2], p[i + 3], p[i + 5], p[i + 6], p[i + 8], shade(hex, 0.6 + 0.45 * Math.max(0, ny))]); } }
+  for (const n in me.groups) { const G = me.groups[n]; if (HIDE[G.kind] && G.kind !== 'gear' && G.kind !== 'rotor') continue; const p = G.pos, q = G.nor; for (let i = 0; i < p.length; i += 9) { const ny = (q[i + 1] + q[i + 4] + q[i + 7]) / 3; if (ny < -0.05) continue; const s2 = me.slots[G.col[i / 3]], hex = cols[s2] || s2; tris.push([(p[i + 1] + p[i + 4] + p[i + 7]) / 3, p[i], p[i + 2], p[i + 3], p[i + 5], p[i + 6], p[i + 8], paint(hex, 0.3 + 0.7 * Math.max(0, ny), 1)]); } }
   tris.sort((a, e) => a[0] - e[0]);
   const sx = half + half / 2, sy = h / 2 + 10 + (H * k) / 2 - 4;
   g.lineWidth = 0.5;

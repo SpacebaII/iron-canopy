@@ -9,6 +9,7 @@ const ASPH = 'rgb(46,48,50)', ASPH2 = 'rgb(56,58,60)', CONC = 'rgb(118,120,118)'
 let NOLBL = false;   // the 3D view's picture of the airport (o.pad): no words, and nothing it stands up in 3D itself
 let LIFE = false, BR = null, ACT = 0.5;   // (round 2) the airport's life is drawn (IC.FOCUS.life, render-life.js); BR: the state, for the bridges; ACT: how busy its terminal is, 0 → 1
 function lbl(g, txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.on) return;
   if (NOLBL) return;
   // (round 5c) close in, a font of a fraction of a world unit is drawn at the wrong size by the canvas: the words come
   // out squeezed. There they are drawn in screen pixels at the same place
@@ -60,6 +61,52 @@ IC.drawPlane = function (g, x, y, h, type, livery, o) {
   if (o.shadow) { g.save(); g.translate(o.shadow, o.shadow * 0.6); g.globalAlpha *= 0.35; drawShape(g, T, type, L, Sp, 'rgba(0,0,0,1)', 'rgba(0,0,0,1)', 'rgba(0,0,0,1)'); g.restore(); }
   drawShape(g, T, type, L, Sp, body, c1, c2);
   g.restore();
+};
+/* (brief 67) an aircraft on the ground as it is drawn: the simulation moves it along straight taxiway pieces and turns
+   it at each node in one step, swings it round at the end of a runway, and slides it onto a stand facing the stand.
+   Drawn, the nose follows the way it really moves (backwards in a pushback), turning no faster than a real aircraft,
+   and the corners of its route are rounded by a short lag (about 28 m, an airliner's turning radius), so it sweeps round a turn instead of
+   snapping. Kept per movement beside it (the step never sees it); a jump of more than a few hundred metres snaps */
+const POSE = new WeakMap();
+IC.movePose = function (m, S) {
+  const t = S ? S.time : 0;
+  let p = POSE.get(m);
+  if (!p) { p = { x: m.x, y: m.y, h: m.h, t, mx: m.x, my: m.y, f: 0.33, lf: 0 }; POSE.set(m, p); return p; }
+  const dt = t - p.t;
+  if (dt <= 0) return p;
+  p.t = t;
+  // (a frame's game time, smoothed: at 8× or 32× a frame is seconds of taxiing, so the easing below is
+  // floored at a few frames, or a corner the simulation turns in one step is a snap on screen)
+  p.f += (Math.min(dt, 30) - p.f) * 0.2;
+  const mv = Math.hypot(m.x - p.mx, m.y - p.my), spd = mv / dt;
+  p.mx = m.x; p.my = m.y;
+  let jx = m.x - p.x, jy = m.y - p.y;
+  const J = Math.hypot(jx, jy);
+  if (J > 3 + mv * 5 || dt > 120) { p.x = m.x; p.y = m.y; p.h = m.h; return p; }
+  // (on the runway and the approach the way is straight: almost no lag, so it hands over to the airborne track
+  // where it is; the floor of a few frames eases in and out over a few frames, so lining up does not jump)
+  const run = m.phase === 'roll' || m.phase === 'final' || m.phase === 'land', R = run ? 0.01 : 0.28;
+  p.lf += ((run ? 0 : 3) - p.lf) * (1 - Math.exp(-dt / (2 * p.f)));
+  const tau = Math.max(spd > 1e-4 ? Math.min(4, R / spd) : 1.2, p.lf * p.f, 1e-3), k = 1 - Math.exp(-dt / tau);
+  // the nose: pursuing where the simulation has the aircraft while it moves, else the simulation's heading
+  let want = m.h;
+  const ds = J * k / dt, moving = ds > 0.004 || spd > 0.004;
+  if (J > 0.004 && moving) {
+    const mvH = Math.atan2(jy, jx);
+    // (backwards only when both the simulation's heading and the drawn one say so: at 32× the simulation's
+    // turns a corner a whole frame before the drawn aircraft reaches it)
+    want = Math.abs(U.angWrap(mvH - m.h)) > 1.75 && Math.abs(U.angWrap(mvH - p.h)) > 1.75 ? mvH + Math.PI : mvH;
+  }
+  // a turn rate: brisk on the ground (about 23° a second), a slow pivot in place, and never more than
+  // some 17° a frame however fast the game runs
+  const w = Math.min((moving ? 0.4 : 0.2) * dt, run ? 0.6 : 0.3), d = U.angWrap(want - p.h);
+  p.h += U.clamp(d, -w, w);
+  // and it goes where its nose points (or its tail, pushed back): only a little of the way sideways, so a
+  // corner taken in one simulation step is driven round rather than slid
+  const c = Math.cos(p.h), sn = Math.sin(p.h), sx = jx * k, sy = jy * k, al = sx * c + sy * sn, la = -sx * sn + sy * c;
+  const lq = run ? la : U.clamp(la * 0.3, -Math.abs(al) * 0.2 - 0.001 * dt, Math.abs(al) * 0.2 + 0.001 * dt);
+  p.x += c * al - sn * lq; p.y += sn * al + c * lq;
+  return p;
 };
 function drawShape(g, T, type, L, Sp, body, c1, c2) {
   const f = L * (type === 'fighter' ? 0.14 : type === 'turbo' ? 0.09 : 0.1);
@@ -147,7 +194,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // painted surfaces, under everything else
   for (const p of by('surface')) drawSurface(g, p, px, z);
   // the landside: kerb roads, car parks, garages, hotels, offices, warehouses (landside.js)
-  if (ap.land && ap.land.items && z > 1.2) drawLandside(g, S, ap, px, z, night);
+  // (drawn already this frame under the map's night when it lies outside the fence: IC.drawLandsideEarly)
+  if (ap.land && ap.land.items && z > 1.2 && ap._landF !== IC.frameN) drawLandside(g, S, ap, px, z, night);
   // the pavement: close in, one painted surface from the airport's tiles (render-pavement.js); far out, flat shapes
   const tiles = z * IC.dpr() >= 1;
   if (tiles && o && o.pad) IC.pavePaint(g, S, ap, z, IC.rs.view);
@@ -178,10 +226,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (z > 2.5) for (const p of by('apron')) if (p.built && ap.kind !== 'airbase') { const zn = zoneOf(ap, p); if (zn !== 'civil') lbl(g, IC.ZONES[zn].short, p.x, p.y + 3 * px, px, 'rgba(236,236,226,0.55)', 8, 'center', 700); }
   // stands
   if (full) for (const p of by('apron')) if (p.built) for (const s of p.stands || []) { if (!seen(s.x, s.y, 1 + 40 * px)) continue; if (!tiles && marks && s.via) drawLeadIn(g, ap, s, px); drawStand(g, s, px, z, marks, fine, tiles); }
-  // service roads from buildings to the pavement they face
-  if (z > 1.5) { g.lineCap = 'round'; for (const p of parts) if (p.link && p.built) { g.strokeStyle = 'rgb(88,90,88)'; g.lineWidth = Math.max(0.07, 1.2 * px); g.beginPath(); g.moveTo(p.link[0].x, p.link[0].y); g.lineTo(p.link[1].x, p.link[1].y); g.stroke(); } g.lineCap = 'butt'; }
+  // (the roads from buildings to the pavement they face are service roads now, painted with the rest: IC.svcNet)
   // buildings: every shadow first, so none falls across a roof
-  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad'].includes(p.kind) && near(p)) shadowOf(g, S, p);
+  if (full && !NOLBL) for (const p of parts) if (p.built && p.hp > p.max * 0.25 && !['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people', 'deice', 'fuelpad', 'helipad'].includes(p.kind) && near(p)) shadowOf(g, S, p);
   for (const p of parts) {
     if (['runway', 'taxi', 'apron', 'holdbay', 'surface', 'skybridge', 'people'].includes(p.kind) || !near(p)) continue;
     drawBuilding(g, S, ap, p, px, z, full, now, night);
@@ -200,10 +247,11 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (LIFE && z > 10 && ap.land) IC.drawLandLife(g, S, ap, px, z, night, IC.lifeT || now * IC.GS);
   if (LIFE && ap.owner === 'us') IC.lifeSoundAp(S, ap, z, seen);
   // aircraft moving
-  if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead || !seen(m.x, m.y, 1 + (m.alt || 0) * 6)) continue;
+  if (z >= 0.5) for (const m0 of ap.moves) {
+    if (m0.dead || !seen(m0.x, m0.y, 1 + (m0.alt || 0) * 6)) continue;
+    const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, phase: m0.phase, kind: m0.kind, holding: m0.holding, alt: m0.alt, type: m0.type, livery: m0.livery, mil: m0.mil };
     // (brief 62) a light aircraft in its preflight is still drawn as parked, with its cover (IC.apronLife)
-    if (m.ga && m.kind !== 'arr' && m.phase === 'start') continue;
+    if (m0.ga && m.kind !== 'arr' && m.phase === 'start') continue;
     const air = m.phase === 'final';
     // (round 5c) from the middle zoom a taxiing aircraft leaves a short fading trail, so a busy apron reads as busy
     if (IC.FOCUS.polish && !air && z > 2 && z < 40 && !m.holding && !['push', 'start', 'wait', 'parkin', 'land'].includes(m.phase) && m.T) {
@@ -212,7 +260,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
       g.strokeStyle = gr; g.lineWidth = Math.max(m.T.len * 0.12, 2 * px); g.lineCap = 'round'; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(bx, by); g.stroke(); g.lineCap = 'butt';
     }
     // (brief 62: propellers turn once the engines are running, from pushback or start-up to the stand)
-    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? (m.alt || 0) * 6 : 0.04, minPx: m.mil ? 6 : 8, now: m.phase !== 'start' ? now : undefined });
+    // the shadow as the airborne tracks draw it (render-combat.js), so it does not jump at the final approach fix
+    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? Math.min(3, (m.alt || 0) * 0.25) + 0.04 : 0.04, minPx: m.mil ? 6 : 8, now: m.phase !== 'start' ? now : undefined });
     // a tug at the nose: pushing back, or towing to and from the hangar
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) {
       // (round 5c) the same tug as at the stand, nose to nose with the aircraft on its tow bar
@@ -226,7 +275,7 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   for (const p of by('skybridge')) drawSpan(g, ap, p, px, z, night);
   for (const p of by('people')) if ((p.lv || 0) >= 0) drawMover(g, p, px, z, night, now);
   // the airport sits under the same night as everything else; its lights do not
-  if (light < 1 && box) { g.beginPath(); IC.aptFencePath(g, box); g.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; g.fill('evenodd'); }
+  if (box && !NOLBL) IC.drawGrade(g, IC.skyGrade(S), g2 => IC.aptNightClip(g2, ap, box));   // (not in the 3D view's picture: it has its own sky)
   if (night && z > 0.6) drawLights(g, ap, px, z, light, now);
   // (round 2) over the night: the apron vehicles' beacons and headlights, the cars' lights on the landside
   if (LIFE && night && z > 5) IC.drawTurns(g, S, ap, px, z, now, night, seen, true);
@@ -236,15 +285,18 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // which way each runway is in use, and for what (above the night, it is information)
   if (z > 0.35) drawConfig(g, S, ap, px, z);
   const tags = [];
-  if (z >= 0.5) for (const m of ap.moves) {
-    if (m.dead || !seen(m.x, m.y, 1 + 80 * px)) continue;
+  if (z >= 0.5) for (const m0 of ap.moves) {
+    if (m0.dead || !seen(m0.x, m0.y, 1 + 80 * px)) continue;
+    const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, type: m0.type, spd: m0.spd, phase: m0.phase, born: m0.born, holding: m0.holding, holdWhy: m0.holdWhy, who: m0.who };
     if (night && z > 3 && LIFE) IC.drawAcLights(g, m, px, z, now, U.clamp((0.55 - light) / 0.3, 0.3, 1));
     else if (night && z > 3) { g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,60,60,0.9)'; g.beginPath(); g.arc(m.x, m.y, Math.max(0.01, 1.2 * px), 0, 7); g.fill(); g.globalCompositeOperation = 'source-over'; }
     // why it waits, in a few words: "holding: arrival 5 km out"
     // one tag where aircraft stand nose to tail: the first one's
     const free = !tags.some(t => Math.abs(t.x - m.x) < 70 * px && Math.abs(t.y - m.y) < 14 * px);
     if (z > 5 && m.holding && (m.holding !== 'queue' || z > 24) && free && tags.push(m)) lbl(g, m.holding === 'runway' ? `holding: ${m.holdWhy || 'runway in use'}` : m.holding === 'lined' ? `lined up, waiting: ${m.holdWhy || ''}` : 'in queue', m.x, m.y - 12 * px, px, m.holding === 'queue' ? 'rgba(236,196,60,0.7)' : IC.C.amber, m.holding === 'queue' ? 7.5 : 8.5, 'center', 700);
-    if (z > 7 && m.who) lbl(g, m.who, m.x, m.y + 14 * px, px, 'rgba(230,240,245,0.8)', 8, 'center', 500);
+    // (brief 67) the call signs take their turn with the other words: where aircraft bunch up they no longer pile into
+    // one unreadable smear (one moves a line down, else it waits)
+    if (z > 7 && m.who) { const y = IC.LBL.put(m.x, m.y + 14 * px, m.who.length * 8 * 0.62 * px, 9 * px, 10 * px, 1); if (y != null) lbl(g, m.who, m.x, y, px, 'rgba(230,240,245,0.8)', 8, 'center', 500); }
   }
   // the turnaround clock on the stand of the airliner selected or followed
   if (LIFE && z > 4) IC.drawTurnClock(g, S, ap, px, z, lbl);
@@ -254,6 +306,13 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   // zoom, the most important first and none over another (IC.aptLabels)
   for (const L of IC.aptLabels(S, ap, z, { noNames: !S.layers.labels })) if (IC.LBL.put(L.x, L.y, L.box[2] - L.box[0], (L.box[3] - L.box[1]) / 1.3, 0, 0, true) != null) lbl(g, L.txt, L.x, L.y, px, L.kind === 'wait' ? 'rgba(242,180,65,0.95)' : L.kind === 'work' ? 'rgba(236,236,226,0.9)' : 'rgba(236,236,226,0.75)', L.size, 'center', 700);
   // only jobs a crew is on: the rest of the queue is just its outline
+  // (wave 13) a runway's new length: bare earth, then pavement once the paving has started
+  for (const w of ap.works) if (w.seg) {
+    const s = w.seg, k = w.stages[Math.min(w.si, w.stages.length - 1)].k, paved = k !== 'demo' && k !== 'survey' && k !== 'earth';
+    g.save(); g.lineCap = 'butt'; g.strokeStyle = paved ? 'rgba(112,112,108,0.95)' : w.si > 0 || w.t > 0 ? 'rgba(150,118,82,0.75)' : 'rgba(242,201,76,0.35)';
+    g.lineWidth = s.w || IC.APART.runway.w; if (!paved && !(w.si > 0 || w.t > 0)) g.setLineDash([6 * px, 4 * px]);
+    g.beginPath(); g.moveTo(s.a.x, s.a.y); g.lineTo(s.b.x, s.b.y); g.stroke(); g.restore();
+  }
   for (const w of ap.works) if (w.stages && z > 1.5 && w.wait !== 'queued: every crew is busy') drawCrew(g, S, ap, w, px, now);
   // repairs
   for (const w of ap.works) {
@@ -570,7 +629,7 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
     g.restore();
     return;
   }
-  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150] }[p.kind] || [150, 150, 150];
+  const col = { deice: [150, 152, 148], fuelpad: [150, 152, 148], terminal: [176, 180, 186], cargo: [150, 140, 118], hangar: [128, 134, 140], has: [150, 146, 132], alert: [140, 140, 132], tower: [190, 190, 196], fire: [176, 70, 56], atc: [200, 204, 208], ammo: [96, 116, 84], fuel: [226, 224, 212], ils: [220, 130, 60], gradar: [200, 204, 208], hydrant: [120, 136, 150], gaterm: [196, 186, 168], helipad: [150, 152, 148] }[p.kind] || [150, 150, 150];
   const k = dead ? 0.3 : 0.6 + 0.4 * hp;
   const fill = `rgb(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0})`;
   g.save(); g.translate(p.x, p.y); g.rotate(p.a || 0);
@@ -598,6 +657,16 @@ function drawBuilding(g, S, ap, p, px, z, full, now, night) {
       g.beginPath(); g.moveTo(0, -h / 2); g.lineTo(0, h * 0.2); g.stroke();
       if (p.kind === 'deice') { g.fillStyle = 'rgb(236,120,40)'; for (const sx of [-1, 1]) g.fillRect(sx * w * 0.42 - 0.03, -0.03, 0.06, 0.06); }
       else { g.fillStyle = 'rgb(200,60,50)'; g.fillRect(w * 0.3, h * 0.25, 0.05, 0.04); }
+    }
+  } else if (p.kind === 'helipad') {
+    // (wave 14) a square of concrete, the touchdown circle and the H, the lights round its edge at night
+    g.fillStyle = CONC2; g.fillRect(-w / 2, -h / 2, w, h);
+    if (full && !dead) {
+      const r = w * 0.38, lw = Math.max(0.006, 0.6 * px);
+      g.strokeStyle = 'rgba(250,250,245,0.92)'; g.lineWidth = lw * 1.6; g.beginPath(); g.arc(0, 0, r, 0, 7); g.stroke();
+      g.fillStyle = 'rgba(250,250,245,0.92)'; const a = r * 0.55, b = r * 0.12; g.fillRect(-a, -a, b, a * 2); g.fillRect(a - b, -a, b, a * 2); g.fillRect(-a, -b / 2, a * 2, b);
+      g.strokeStyle = YEL; g.lineWidth = lw; g.strokeRect(-w / 2 + 0.01, -h / 2 + 0.01, w - 0.02, h - 0.02);
+      if (night) { g.fillStyle = 'rgba(120,255,140,0.95)'; for (let i = 0; i < 8; i++) { const q = i / 8 * 6.283; g.fillRect(Math.cos(q) * r * 1.15 - 0.006, Math.sin(q) * r * 1.15 - 0.006, 0.012, 0.012); } }
     }
   } else if (p.kind === 'ils') {
     // the localizer: a row of antennas across the centreline
@@ -1168,6 +1237,13 @@ function lotPaths(it, w, h, k, use) {
   }
   return (it._lot = out);
 }
+/* (brief 67) the landside reaches outside the fence, where the airport's own night does not fall, and it was drawn after
+   the map's: car parks, kerbs and the terminal's front stood white in the dark. render.js draws it before the night */
+IC.drawLandsideEarly = function (g, S, ap, px, light) {
+  const z = IC.cam.z;
+  if (!ap.land || !ap.land.items || z <= 1.2 || !ap.parts) return;
+  drawLandside(g, S, ap, px, z, light < 0.55); ap._landF = IC.frameN;
+};
 function drawLandside(g, S, ap, px, z, night) {
   const L = ap.land, V = IC.rs && IC.rs.view;
   const vis = it => !V || (it.x > V.x0 - 2 && it.x < V.x1 + 2 && it.y > V.y0 - 2 && it.y < V.y1 + 2);
@@ -1471,12 +1547,12 @@ const MACHINE = {
 /* an engineer crew: machines at the working front, moving while they work, parked while they wait; dump and
    concrete lorries shuttle between the front and the site gate */
 function drawCrew(g, S, ap, w, px, now) {
-  const p = w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
+  const p = w.seg || w.part, st = w.stages[Math.min(w.si, w.stages.length - 1)], f = w.t / st.dur;
   const busy = !w.wait, cols = MACHINE[st.k] || MACHINE.fit;
   // a stalled site: the machines stand idle at the front, marked amber
   if (!busy && !(w.si > 0 || w.t > 0)) return;
   // the front: where the grading, paving, painting or wiring has got to; the inspection drives up and down
-  const front = st.k === 'open' ? 0.5 + 0.4 * Math.sin(now * 0.3 + p.x) : f;
+  const front = st.k === 'open' ? 0.5 + 0.4 * Math.sin(now * 0.3 + (p.x || 0)) : f;
   const at = workAt(ap, p, U.clamp(front, 0, 1)), h = at.h != null ? at.h : p.kind === 'runway' ? Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x) : p.a || 0;
   const mw = Math.max(0.1, 7 * px), mh = mw * 0.55;
   const box = (x, y, hd, c, L) => { g.save(); g.translate(x, y); g.rotate(hd); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-mw * L / 2 + 0.01, -mh / 2 + 0.01, mw * L, mh); g.fillStyle = c; g.fillRect(-mw * L / 2, -mh / 2, mw * L, mh); g.restore(); };
@@ -1543,7 +1619,7 @@ IC.drawBuildGhost = function (g, S, px) {
   const free = !!IC.bldFree;
   // (a placed plan stays put: the cursor does not move it)
   const hk = m.set && m.at ? m.at : hv;
-  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.flip}|${m.rotHand}|${m.fillet}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
+  const key = `${m.part}|${m.set ? 'set' : ''}|${hk.x.toFixed(2)},${hk.y.toFixed(2)}|${m.pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(';')}|${m.mat}|${m.size}|${m.rot}|${m.flip}|${m.rotHand}|${m.fillet}|${m.edge}|${m.pick}|${m.zone}|${ap.parts.length}|${ap.nodeN}|${Math.round(S.budget)}|${free}|${tol.toFixed(2)}`;
   if (key !== ghostKey) { ghostKey = key; ghostPlan = IC.bldPlanOf(S, m, hv, tol, free); }
   const plan = ghostPlan, ok = plan.ok;
   const col = ok ? 'rgba(110,230,140,0.95)' : 'rgba(255,91,79,0.95)', fill = ok ? 'rgba(110,230,140,0.2)' : 'rgba(255,91,79,0.2)';
@@ -1553,6 +1629,14 @@ IC.drawBuildGhost = function (g, S, px) {
   if (!ok && plan.hit) drawHit(g, m.ap, plan.hit, px);
   // a blueprint: the whole airport where it would go
   if (plan.bp && plan.bp.t) drawBlueprint(g, plan.bp.t, col, fill, px);
+  // (wave 13) Save layout: the box, and what it would keep outlined
+  if (plan.sel) {
+    const B = plan.sel.box, c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => IC.rectWorld(B, sx * B.w / 2, sy * B.h / 2));
+    g.save(); g.strokeStyle = '#f2c94c'; g.lineWidth = 1.6 * px; g.setLineDash([7 * px, 4 * px]); g.beginPath(); c.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); g.setLineDash([]);
+    g.fillStyle = 'rgba(242,201,76,0.08)'; g.fill();
+    for (const p of plan.sel.parts) if (p.kind !== 'ils') drawHit(g, m.ap, p, px, '#f2c94c', 'rgba(242,201,76,0.18)');
+    g.restore();
+  }
   // a piece's links to the taxiways it joins, and the stands it brings (round 1)
   if (plan.piece) {
     g.save(); g.strokeStyle = GUIDE_T; g.lineWidth = Math.max(0.05, 2.5 * px); g.setLineDash([6 * px, 4 * px]);
@@ -1573,6 +1657,9 @@ IC.drawBuildGhost = function (g, S, px) {
       g.strokeStyle = ok ? (sp.kind === 'runway' ? 'rgba(190,240,200,0.9)' : 'rgba(110,230,140,0.9)') : 'rgba(255,91,79,0.9)'; g.lineWidth = Math.max(sp.w || (D ? D.w : IC.SVC_ROAD_W), 2 * px);
       g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
       g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1 * px); g.setLineDash([5 * px, 4 * px]); g.stroke(); g.setLineDash([]);
+    } else if (sp.poly) {
+      // (an outline drawn by hand, or a piece's: the shape itself)
+      const P = IC.partOutline(sp); g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.fill(); g.stroke();
     } else {
       const w = sp.w || D.w || (D.r || 0.1) * 2, h = sp.h || D.h || (D.r || 0.1) * 2;
       // (an outline drawn corner by corner, brief 61: its own shape, and the stands its edges will get)
@@ -1591,6 +1678,15 @@ IC.drawBuildGhost = function (g, S, px) {
   }
   // a corner moved: the outline as it will be
   if (plan.reshape) { const P = plan.reshape.pts; g.save(); g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = Math.max(0.01, 1.5 * px); g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.closePath(); g.fill(); g.stroke(); g.restore(); }
+  // an outline being drawn: the corners as clicked joined by a dashed line, and the curve it makes when it cannot
+  // be built yet (its sides cross, or it is too small)
+  if (plan.shape && plan.pts && plan.pts.length > 1) {
+    g.save(); g.lineJoin = 'round'; g.setLineDash([4 * px, 4 * px]); g.strokeStyle = 'rgba(236,236,226,0.7)'; g.lineWidth = Math.max(0.004, 1.2 * px);
+    g.beginPath(); plan.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); if (plan.pts.length > 2) g.closePath(); g.stroke(); g.setLineDash([]);
+    if (!plan.specs.length && plan.shape.O) { g.strokeStyle = col; g.lineWidth = 1.5 * px; g.beginPath(); plan.shape.O.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.stroke(); }
+    if (m.pick != null && plan.pts[m.pick]) { const q = plan.pts[m.pick]; g.strokeStyle = IC.C.ok; g.lineWidth = 2 * px; g.beginPath(); g.arc(q.x, q.y, 7 * px, 0, 7); g.stroke(); }
+    g.restore();
+  }
   // a ramp stand
   if (plan.stand) {
     const st = plan.stand, rm = st.remove, S0 = IC.STAND[rm ? rm.size : st.size], c = rm || IC.rectWorld(st.apron, st.lx, st.ly), a = rm ? rm.a : st.apron.a + st.rot;
@@ -1736,7 +1832,7 @@ function drawFoundGhost(g, S, m, hv, px) {
     if (!m.site) { const d = U.dist(city, hv) / 10, ok = d >= 15 && d <= 40; lbl(g, `${Math.round(d)} km from ${city.name}${ok ? '' : d < 15 ? ': close to homes' : ': far for passengers'}`, hv.x, hv.y + 18 + 14 * px, px, ok ? 'rgba(127,232,176,0.95)' : 'rgba(255,190,120,0.95)', 9.5, 'center', 600); }
   }
   if (!m.site) {
-    const why = IC.foundCheck(S, hv.x, hv.y);
+    const why = IC.foundCheck(S, hv.x, hv.y, m.cls || IC.foundDefault(S));
     g.strokeStyle = why ? IC.C.hostile : 'rgba(111,210,255,0.9)'; g.lineWidth = 1.5 * px; g.beginPath(); g.arc(hv.x, hv.y, 15, 0, 7); g.stroke();
     lbl(g, why || 'click to survey this site', hv.x, hv.y - 18 - 8 * px, px, why ? IC.C.hostile : IC.C.text, 9.5, 'center', 600);
     // the prevailing wind, so the first site is chosen with it in mind
@@ -1744,22 +1840,28 @@ function drawFoundGhost(g, S, m, hv, px) {
     lbl(g, 'wind', hv.x + Math.cos(wa) * 36, hv.y + Math.sin(wa) * 36 - 4 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
     return;
   }
-  const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurvey(S, m.site.x, m.site.y, a), d = { x: Math.cos(a), y: Math.sin(a) };
-  // the noise footprint under the approach and departure paths
+  const a = m.hdg != null ? m.hdg : IC.PREVAIL, sv = IC.foundSurveyOf(S, m), d = { x: Math.cos(a), y: Math.sin(a) }, h = (sv.len || 30) / 2;
+  const K = IC.APT_CLASS[sv.cls] || IC.APT_CLASS.national;
+  // the site the class buys: the airport may be built out to it (and on, 4 km beyond what is built)
+  g.strokeStyle = 'rgba(127,232,176,0.55)'; g.lineWidth = 1.2 * px; g.setLineDash([6 * px, 5 * px]); g.beginPath(); g.arc(m.site.x, m.site.y, K.site, 0, 7); g.stroke(); g.setLineDash([]);
+  lbl(g, `${K.name} · site ${U.km(K.site * 2)} across`, m.site.x, m.site.y - K.site - 6 * px, px, 'rgba(127,232,176,0.95)', 9.5, 'center', 700);
+  // the noise footprint under the approach and departure paths (as IC.noiseOver measures it)
   g.save(); g.translate(m.site.x, m.site.y); g.rotate(a);
   g.fillStyle = sv.homes ? 'rgba(255,150,80,0.12)' : 'rgba(111,210,255,0.08)'; g.strokeStyle = sv.homes ? 'rgba(255,150,80,0.6)' : 'rgba(111,210,255,0.5)'; g.lineWidth = 1.2 * px;
-  g.beginPath(); const E = 15 + 80;
-  g.moveTo(-E, -15); g.lineTo(-60, -6); g.lineTo(60, -6); g.lineTo(E, -15); g.lineTo(E, 15); g.lineTo(60, 6); g.lineTo(-60, 6); g.lineTo(-E, 15); g.closePath(); g.fill(); g.stroke();
-  g.fillStyle = 'rgba(210,215,220,0.95)'; g.fillRect(-15, -0.6, 30, 1.2);
+  // (6 km wide at the middle, widening to 15 km wide 6 km out, to 8 km beyond the ends; scaled by the class)
+  const nk = K.noise || 1, E = h + 80 * nk, I = Math.min(60, E), wI = 15 * nk * (0.4 + 0.6 * I / 60), w0 = 6 * nk;
+  g.beginPath(); g.moveTo(-E, -wI); g.lineTo(-I, -wI); g.lineTo(0, -w0); g.lineTo(I, -wI); g.lineTo(E, -wI); g.lineTo(E, wI); g.lineTo(I, wI); g.lineTo(0, w0); g.lineTo(-I, wI); g.lineTo(-E, wI); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = 'rgba(210,215,220,0.95)'; g.fillRect(-h, -0.6, h * 2, 1.2);
   g.restore();
-  // the prevailing wind
-  const wa = IC.PREVAIL, wx = m.site.x + Math.cos(wa) * 40, wy = m.site.y + Math.sin(wa) * 40;
-  g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(m.site.x + Math.cos(wa) * 20, m.site.y + Math.sin(wa) * 20); g.stroke();
+  // the prevailing wind, off to one side of the runway so it never covers the runway's end names
+  const wa = IC.PREVAIL, nx = -Math.sin(a), ny = Math.cos(a), off = 18 + 10 * nk;
+  const bx = m.site.x + nx * off, by = m.site.y + ny * off, wx = bx + Math.cos(wa) * 20, wy = by + Math.sin(wa) * 20;
+  g.strokeStyle = 'rgba(127,232,176,0.9)'; g.lineWidth = 2 * px; g.beginPath(); g.moveTo(wx, wy); g.lineTo(bx + Math.cos(wa) * 4, by + Math.sin(wa) * 4); g.stroke();
   lbl(g, 'prevailing wind', wx, wy - 8 * px, px, 'rgba(127,232,176,0.9)', 8.5, 'center', 600);
   // the runway's name at each end; the full survey is in the hint below
   const ends = sv.ends;
-  lbl(g, ends[0], m.site.x - d.x * 19, m.site.y - d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
-  lbl(g, ends[1], m.site.x + d.x * 19, m.site.y + d.y * 19 + 4 * px, px, IC.C.text, 11, 'center', 700);
+  lbl(g, ends[0], m.site.x - d.x * (h + 4), m.site.y - d.y * (h + 4) + 4 * px, px, IC.C.text, 11, 'center', 700);
+  lbl(g, ends[1], m.site.x + d.x * (h + 4), m.site.y + d.y * (h + 4) + 4 * px, px, IC.C.text, 11, 'center', 700);
   if (sv.homes) lbl(g, `noise over ${sv.homes} city blocks`, m.site.x + d.x * 70, m.site.y + d.y * 70 - 14 * px, px, 'rgba(255,170,110,0.95)', 9.5, 'center', 700);
 }
 
