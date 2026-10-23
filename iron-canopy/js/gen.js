@@ -1504,6 +1504,37 @@ function roundAvenues(W) {
   const R = 0.15, ang = (a, b, q) => U.angWrap(Math.atan2(q.y - b.y, q.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x));
   const cityOf = {}; for (const c of W.cities) cityOf[c.id] = c;
   const ends = W.edges.flatMap(e => [e.pts[0], e.pts[e.pts.length - 1]]);
+  // (a road that runs out and doubles back on itself, where its pieces were joined, loses the spike: the streets and
+  // lanes that ended on it run on to the road's new line; one another road ends on stays)
+  const cell = new Map(), ck = (x, y) => Math.floor(x) * 65536 + Math.floor(y);
+  const addEnd = (p, l, end) => { const k = ck(p.x, p.y); let a = cell.get(k); if (!a) cell.set(k, a = []); a.push({ p, l, end }); };
+  for (const p of ends) addEnd(p, null, 0);
+  for (const l of (W.lanes || []).concat(...W.cities.map(c => c.streets))) if (l.pts.length > 1) { addEnd(l.pts[0], l, 0); addEnd(l.pts[l.pts.length - 1], l, 1); }
+  const endsOn = (a, b, q) => {
+    const out = [];
+    for (let x = Math.floor(Math.min(a.x, b.x, q.x) - 0.1); x <= Math.max(a.x, b.x, q.x) + 0.1; x++) for (let y = Math.floor(Math.min(a.y, b.y, q.y) - 0.1); y <= Math.max(a.y, b.y, q.y) + 0.1; y++)
+      for (const o of cell.get(ck(x, y)) || []) if (U.segDist(o.p.x, o.p.y, a.x, a.y, b.x, b.y) < 0.05 || U.segDist(o.p.x, o.p.y, b.x, b.y, q.x, q.y) < 0.05) out.push(o);
+    return out;
+  };
+  for (const e of W.edges) {
+    const P = e.pts;
+    for (let i = 1; i < P.length - 1;) {
+      if (U.dist(P[i - 1], P[i]) < 1e-4) { P.splice(i, 1); continue; }
+      if (Math.abs(ang(P[i - 1], P[i], P[i + 1])) <= 2.6) { i++; continue; }
+      const on = endsOn(P[i - 1], P[i], P[i + 1]), a = P[i - 1], q = P[i + 1];
+      // (nor where the line without it would cross a town's block)
+      const seg = [[a.x, a.y, q.x, q.y, e.city ? 'art' : e.cls]];
+      if (on.some(o => !o.l) || W.cities.some(c => U.segDist(c.x, c.y, a.x, a.y, q.x, q.y) < (c.ext || c.r * 1.5) + 5 && c.blocks.some(b => IC.blockOnRoad(b, seg, -0.05)))) { i++; continue; }
+      P.splice(i, 1);
+      for (const o of on) {
+        const vx = q.x - a.x, vy = q.y - a.y, LL = vx * vx + vy * vy, t = LL ? U.clamp(((o.p.x - a.x) * vx + (o.p.y - a.y) * vy) / LL, 0, 1) : 0, m = { x: a.x + vx * t, y: a.y + vy * t };
+        if (U.dist(m, o.p) < 0.003) continue;
+        if (o.end) o.l.pts.push(m); else o.l.pts.unshift(m);
+        o.p = m;
+      }
+      if (i > 1) i--;
+    }
+  }
   for (const e of W.edges) {
     const c = cityOf[e.city]; if (!c || e.pts.length < 3) continue;
     // (a corner a street meets or crosses keeps its point)
