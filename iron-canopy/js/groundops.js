@@ -1309,10 +1309,12 @@ const kindName = m => (IC.OPS_KINDS.find(k => k[0] === IC.opsKind(m.type, m.T)) 
 function risky(S, ap, m, what) {
   const r = IC.gopsRisk(S, ap, m, what);
   ap.kpi.risk = (ap.kpi.risk || 0) + r.p;
-  // (brief 71) the same conditions more often end in the grass than in a crash
-  if (what === 'arr' && IC.opsExcursionRoll) IC.opsExcursionRoll(S, ap, m, r);
-  if (!r.p || Math.random() >= r.p) return false;
-  const c = U.wpick(r.why.map(x => [x, x.p]));
+  // (brief 71) the same conditions more often end in the grass than in a crash: an excursion takes the place of a
+  // crash, and most of a short runway's risk ends that way (took: the share of the crash risk it takes over)
+  const took = what === 'arr' && IC.opsExcursionRoll ? IC.opsExcursionRoll(S, ap, m, r) || 0 : 0;
+  if (m.excur) return false;
+  if (!r.p || Math.random() >= r.p - took) return false;
+  const c = U.wpick(r.why.map(x => [x, x.cause === 'overrun' && took ? x.p * (1 - IC.OPS.overrunExc) : x.p]));
   if (what === 'wait') { m.forgot = c; return false; }
   // a bird strike is usually survived: the crew stop or come back round
   if (c.cause === 'bird' && Math.random() < 0.75) { ap.kpi.inc = (ap.kpi.inc || 0) + 1; if (IC.opsBird && IC.opsBird(S, ap, m, what, c)) return false; IC.log(S, 'warn', 'AIRPORT', `${ap.name}: ${m.who || 'an aircraft'} hit birds ${what === 'arr' ? 'on landing' : 'on take-off'}. It came back safely with a damaged engine. The cause: ${c.text}.`, m); return false; }

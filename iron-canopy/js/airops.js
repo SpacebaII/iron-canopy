@@ -12,10 +12,11 @@
 const U = IC.U;
 
 IC.OPS = {
-  debris: 0.002,     // a piece of debris left on the runway, per movement (worn pavement, patched craters: more)
+  debris: 0.003,     // a piece of debris left on the runway, per movement (worn pavement, patched craters: more)
   spill: 0.006,       // a fuel spill, per refuelling by truck (rushed when the trucks are short: more)
   scrape: 0.002,     // a wingtip scraped, per pushback (tight stands, rushed tugs, the dark: more)
-  excursion: 6,       // a runway excursion: this many times the crash risk of the gusts, tailwind or short runway
+  excursion: 6,       // a runway excursion: this many times the crash risk of the gusts or tailwind
+  overrunExc: 0.75,   // a runway only just long enough: this share of its crash risk ends in the grass instead
   wetExc: 0.0006,     // an arrival sliding off a wet runway, per landing in rain or snow
   ask: 240,           // a crew reports debris: the tower's own call after this long without the player's
   openRisk: 0.05,     // debris left on a runway: an engine or tyre damaged, per movement over it
@@ -191,14 +192,19 @@ function refreshPill(S, ap, inc) {
 /* an arrival's excursion: ground ops asks once the landing is decided (groundops.js risky); the aircraft is held
    in the grass beside the runway (phase 'off') until it is lifted back, then taxis in */
 IC.opsExcursionRoll = function (S, ap, m, r) {
-  if (!on() || !ours(ap) || m.mil || !m.tail || m.crash || m.excur) return;
-  let p = 0, c = null;
-  for (const x of r.why) if (x.cause === 'gust' || x.cause === 'tailwind' || x.cause === 'overrun') { const q = x.p * IC.OPS.excursion; p += q; if (!c || q > c.q) c = Object.assign({ q }, x); }
+  if (!on() || !ours(ap) || m.mil || !m.tail || m.crash || m.excur) return 0;
+  let p = 0, c = null, took = 0;
+  for (const x of r.why) if (x.cause === 'gust' || x.cause === 'tailwind' || x.cause === 'overrun') {
+    const q = x.p * (x.cause === 'overrun' ? IC.OPS.overrunExc : IC.OPS.excursion);
+    if (x.cause === 'overrun') took += q;
+    p += q; if (!c || q > c.q) c = Object.assign({ q }, x);
+  }
   const sky = IC.sky(S);
   if (sky.wet) { p += IC.OPS.wetExc; if (!c) c = { cause: 'wet', text: 'a wet runway: the aircraft aquaplaned as it slowed' }; }
   if (IC.OPS.force === 'excursion' && !c) c = { cause: 'gust', text: 'a gust across the runway beyond what the crew may land in' };
-  if (!c || (!forced('excursion') && Math.random() >= p)) return;
+  if (!c || (!forced('excursion') && Math.random() >= p)) return took;
   m.excur = c;
+  return took;
 };
 const EXC_FIX = { gust: 'A runway pointing into the wind (a crosswind runway) keeps crews inside their limits.', tailwind: 'A runway pointing into the wind avoids the tailwind.', overrun: 'A longer runway leaves a margin when it is wet.', wet: 'Grooved, well-kept pavement drains faster: resurface a worn runway.' };
 IC.opsExcursion = function (S, ap, m) {

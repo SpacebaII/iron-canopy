@@ -16,7 +16,7 @@ Stacked on brief 64's branch (PR #91). Owns the airport's day-to-day incidents (
 
 **1. Incidents with stages and a bar.** An incident is a list of stages, each with its real duration (`ap.incs.list`, `IC.OPS_STG`), drawn on the map as a pill with a progress bar over the spot, and in the short list under the top bar with its buttons. Each has a cause the player can fix:
 - **Debris on the runway** (`IC.OPS.debris` per movement, more on worn pavement, near patched craters and under heavy jets). A crew reports it and the player has 4 minutes to decide: close the runway and sweep it, or keep it open. Kept open, each movement over it has a 5% chance of damaging the aircraft; at night or after 2 hours the tower closes it anyway. Unanswered, the tower closes it.
-- **Runway excursion**: an arrival in gusts beyond its crew's limit, or on a wet runway only just long enough, runs off the side (six times the crash risk of the same causes). The fire trucks go out, the passengers leave by the stairs, a crane and lorry lift it back, a tug tows it off, the runway is inspected. Closed throughout; arrivals hold or divert.
+- **Runway excursion**: an arrival in gusts beyond its crew's limit, or on a wet runway only just long enough, runs off the side: six times the crash risk of gusts or a tailwind, and on a short wet runway three quarters of its crash risk ends in the grass instead of in a crash. The fire trucks go out, the passengers leave by the stairs, a crane and lorry lift it back, a tug tows it off, the runway is inspected. Closed throughout; arrivals hold or divert.
 - **Fuel spill** at a stand refuelled by truck (more when the airport is short of fuel trucks). The stand closes; it burns if the fire trucks are slow (`IC.fireTime` over 4 minutes); foam, then the clean-up.
 - **Wingtip strike** at pushback: tight stands, too few tugs, the dark. Both aircraft are checked; the struck one is grounded.
 - A survived **bird strike** grounds the aircraft for its check.
@@ -33,6 +33,8 @@ A damaged or grounded aircraft says why on its panel ("Grounded at stand B4: eng
 ## How it turned out
 
 - At the capital (the network preset) there are about four to five incidents a game day, most of them debris and spills. A debris closure takes about 47 minutes with no base and about half that with a base beside the runway.
+- In a scripted Career (`careerplayer.js`, a month a live day, 12 game days, two seeds) the first airport and the second city's see about 1.5 incidents a game day: 6–9 fuel spills, 4–7 debris, 1–3 wingtip strikes and 0–1 excursions, no airport with an ops base. Spills take about an hour, debris 46 minutes, a strike's check up to 2 hours, an excursion about 2½ hours.
+- The first balance run had runway excursions every few days at the first airport: its 3 km runway is short for a wide-body in the rain, and the excursion came on top of the crash risk the game already had for that. Now the excursion takes the place of most of those crashes (`IC.OPS.overrunExc`), so a short wet runway gives about as many bad landings as before, most of them survivable and closing the runway for hours rather than a wreck.
 - Incidents are saved and carry on after a load.
 - The words: every stage has a sentence of what is being done, every pill says the kind and the time left.
 
