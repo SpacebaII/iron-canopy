@@ -446,7 +446,7 @@ IC.storyPlace = (S, ids) => {
   if (typeof ids === 'function') ids = ids(S);
   if (ids && ids.x != null) return { x: ids.x, y: ids.y };
   if (!IC.placeOf || !ids) return null;
-  for (const id of [].concat(ids)) { const p = IC.placeOf(S, id); if (p) return { x: p.x, y: p.y }; }
+  for (const id of [].concat(ids)) { const p = IC.placeOf(S, id); if (p) return { x: p.x, y: p.y, name: p.name }; }
   return null;
 };
 

@@ -61,8 +61,8 @@ function ridgeRange(S) {
   const st = S.story, p = IC.storyPlace(S, 'station9');
   st.r9 = 0;
   if (!p || !IC.aspAddArea) return;
-  const sh = IC.aspAddArea(S, 'R', p.x, p.y, 200, true); if (!sh) return;
-  sh.name = 'R-9, the old range over the ridge'; sh.fixed = `It cannot be changed: ${R9_WHY}`;
+  const sh = IC.aspAddArea(S, 'R', p.x, p.y, 350, true); if (!sh) return;   // 35 km: over the ridge and a few km into our side
+  sh.name = 'R-9 Old range'; sh.fixed = `It cannot be changed: ${R9_WHY}`;
   sh.rings[0].lo = 0; sh.rings[0].hi = 25000 / IC.FT;
   IC.aspSync(S, sh);
   st.r9 = sh.id;
