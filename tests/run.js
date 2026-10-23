@@ -819,6 +819,20 @@ test('map: the Career plays on the hand-drawn map, and everything drawn is there
       if (d < bd) { bd = d; bl = lk; } }
     assert(bl && bd < 30, 'no motorway within 3 km of Tarn Pass');
     assert(a >= 0 && IC.driveRoute(G, a, bl.a, 1e6), 'no drive from the capital to Tarn Pass'); }
+  // cities with character (brief 73): the ten largest are what the map says they are, and no two look alike
+  { const top = W.cities.slice().sort((p, q) => q.pop - p.pop).slice(0, 10), looks = new Set();
+    const tallest = c => { let m = 0; for (const b of c.blocks) { if (b.hp <= 0 || U.dist(b, c) > 12) continue; for (const pr of IC.blockPrisms(b, c)) m = Math.max(m, pr.ht); } return m; };
+    for (const c of top) {
+      const sp = A.cities.find(q => q.name === c.name); assert(sp && sp.blurb && sp.live, `${c.name} has no character in the map`);
+      assert(c.blurb === sp.blurb && c.role === sp.live, `${c.name} does not live on what the map says (${c.role} for ${sp.live})`);
+      if (sp.core) assert(c.coreOf === sp.core, `${c.name}'s old town is ${c.coreOf}, not ${sp.core}`);
+      for (const m of sp.marks || []) { const has = c.blocks.some(b => b.land === m.replace('!', '')); assert(m[0] === '!' ? !has : has, `${c.name} ${m[0] === '!' ? 'has' : 'has no'} ${m.replace('!', '')}`); }
+      looks.add(`${c.tpl}|${c.coreOf || ''}|${c.role}|${c.tall || 1}`);
+    }
+    assert(looks.size === top.length, `only ${looks.size} looks among the ten largest cities`);
+    const by = n => W.cities.find(c => c.name === n);
+    assert(tallest(by('Ironbridge')) > tallest(by('Halloway')) * 1.5, 'the business city is not taller than the university town');
+    assert(by('Northfield').coreOf === 'krakow' && by('Coldiron').role === 'ind' && by('Fallon').tpl === 'ny', 'the smaller towns do not take their hints'); }
   const route = (a, b) => { const T = IC.travelFrom(W, a.id, true); return T.t[b.id]; };
   const south = byName('Southport'), north = byName('Fort Ashby');
   assert(route(south, north) < 24 * 3600, `Southport to Fort Ashby takes ${U.dur(route(south, north))}`);

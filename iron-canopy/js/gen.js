@@ -728,7 +728,10 @@ function* worldSteps(seed, map) {
 
   IC.cityStyles(W, IC.makeRng((seed * 613 + 29) >>> 0));
   // the map's own word on a city's look: its style (eu, us, new, ind) and its plan (par, lon, ny, chi, dxb)
-  if (A && A.cities) for (const c of W.cities) { const sp = byName(A.cities, c.name); if (!sp) continue; if (sp.style) c.style = sp.style; if (sp.tpl) c.tpl = sp.tpl; if (sp.core) c.core = sp.core; }
+  // (and its character, brief 73: core, the real old town it is built on; live, what it lives on (biz, ind, log, res,
+  // mix); old, how big its old town is against its style's; tall, its skyline against the measured gradient; marks,
+  // landmarks it must have ('cathedral') or must not ('!stadium'); parks, more of them; blurb, a sentence for its panel)
+  if (A && A.cities) for (const c of W.cities) { const sp = byName(A.cities, c.name); if (!sp) continue; if (sp.style) c.style = sp.style; if (sp.tpl) c.tpl = sp.tpl; for (const k of ['core', 'live', 'old', 'tall', 'marks', 'parks', 'blurb']) if (sp[k] != null) c[k] = sp[k]; }
 
   /* ---------- runway headings; the layouts themselves are built per game (airport.js) ---------- */
   for (const b of W.infra) if (b.kind === 'airbase' || b.kind === 'airport') b.rwyA = R.range(0, Math.PI);

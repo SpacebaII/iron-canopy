@@ -205,7 +205,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     const e = roads.filter(s => s[4] === 'hw' || s[4] === 'rd').sort((a, b) => U.segDist(c.x, c.y, a[0], a[1], a[2], a[3]) - U.segDist(c.x, c.y, b[0], b[1], b[2], b[3]))[0];
     if (e) c.grid = U.mod(Math.atan2(e[3] - e[1], e[2] - e[0]), Math.PI / 2);
   }
-  const nOld = st.old * target >= 5 ? st.old * target : 0;
+  const nOld = st.old * (c.old || 1) * target >= 5 ? st.old * (c.old || 1) * target : 0;   // (a map may size the old town, brief 73)
   // (the lattice is only the city's cells now: the streets follow the field, brief 53, so it is not bent)
   c.lat = { SP, a: c.grid, k: 0, kOut: 0, wl: st.wl, s: R.range(0, 500), r0: r, rho: nOld ? Math.sqrt(nOld * SP * SP / Math.PI) + SP * 0.3 : 0, p1: R.range(0, 7), p2: R.range(0, 7), ax: 1, ay: 1 };
   // a grid city began at its tip by the water: the old town is there, not in the middle
@@ -343,7 +343,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   const railD = x => { const q = nearest(Bk, x.p.x, x.p.y, 6, s => s[4] !== 'rail'); return q.d; };
   const hwD = x => { const q = nearest(Bk, x.p.x, x.p.y, 8, s => s[4] !== 'hw'); return q.d; };
   // what the city lives on shifts its districts: the capital's offices, a manufacturing or distribution town
-  c.role = c.capital ? 'biz' : c.style === 'ind' || c.home === false ? 'mix' : R.pick(['res', 'res', 'ind', 'log', 'biz', 'mix']);
+  c.role = c.live || (c.capital ? 'biz' : c.style === 'ind' || c.home === false ? 'mix' : R.pick(['res', 'res', 'ind', 'log', 'biz', 'mix']));   // (a map says what a city lives on, brief 73)
   const RM = { biz: { biz: 2.2, ind: 0.7 }, ind: { ind: 1.8, log: 1.2, biz: 0.6 }, log: { log: 2.6, ind: 0.8 }, res: { dense: 1.15, ind: 0.55, log: 0.5 }, mix: {} }[c.role];
   const sh = k => st[k] * (RM[k] || 1);
   const vary = () => R.range(0.8, 1.2), T = cells.length;
@@ -424,7 +424,8 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
      go to the blocks between its streets once the faces are found (below) */
   let core = null;
   if (c.lat.rho && (c.style === 'eu' || c.style === 'ind') && IC.CITY_CORES && IC.CITY_CORES.length) {
-    const hn = [...(c.name || "")].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) % 100003, 7), hc = k => U.hash(hn, k * 13 + 1), CR = IC.CITY_CORES[Math.floor(hc(1) * IC.CITY_CORES.length)], u = IC.unpackCore(CR);
+    const hn = [...(c.name || "")].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) % 100003, 7), hc = k => U.hash(hn, k * 13 + 1), CR = (c.core && IC.CITY_CORES.find(k => k.key === c.core)) || IC.CITY_CORES[Math.floor(hc(1) * IC.CITY_CORES.length)], u = IC.unpackCore(CR);
+    c.coreOf = CR.key;   // (which real town the old town is, for the panel and the tests)
     const o = F.toW(F.ou, F.ov), wall = [];
     for (let q = 0; q < 48; q++) { const a = q / 48 * Math.PI * 2, rr = F.rho(a); wall.push(F.toW(F.ou + Math.cos(a) * rr, F.ov + Math.sin(a) * rr)); }
     // (the real one's own edge, a little inside it, where its data thins out)
@@ -544,7 +545,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   }
   /* parks: cells of housing that stay green */
   const parkCells = new Set();
-  let parksLeft = st.parks + (c.capital ? 2 : 0) + Math.round(c.pop / 600);
+  let parksLeft = st.parks + (c.capital ? 2 : 0) + (c.parks || 0) + Math.round(c.pop / 600);
   for (const x of cells) { if (parksLeft <= 0) break; if ((x.d === 'dense' || x.d === 'sub') && !x.old && U.hash(x.i * 31 + 7, x.j * 17 + 1) < (st.parks > 4 ? 0.1 : 0.06)) { parkCells.add(x.k); parksLeft--; } }
   /* the streets: the arterials first, then the side streets between them, both families, traced on the field */
   // (the avenues are among the road pieces now, as 'art')
