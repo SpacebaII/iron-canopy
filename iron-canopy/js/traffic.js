@@ -147,11 +147,11 @@ function buildGraph(W) {
   // a street's end that stops a hair short of the street it meets (the crossing test above is exact to a ten-thousandth
   // of a piece) is tied onto it within 3 m; a close's ends sit on its estate's loop and the loop's way in on the
   // street, drawn on the ellipse rather than on the loop's chords, so those are tied within 150 m (brief 54)
-  // (and a road's end in a town, at its node, within 5 m of a street or an avenue that passes it by; a street's end
+  // (and a road's end in a town, at its node, within 12 m of a street or an avenue that passes it by; a street's end
   // on its own body, a loop back to itself, ties there too)
   for (const l of lines) if (l.ref.city) for (const end of [0, 1]) {
     const P = end ? l.pts[l.pts.length - 1] : l.pts[0], n = l.pts.length;
-    const t = tie(P, (q, i) => q.cls !== 'hw' && (q !== l || (end ? i < n - 2 : i > 2)), l.ref.cul ? 0.15 : l.ref.edge ? 0.05 : 0.03);
+    const t = tie(P, (q, i) => q.cls !== 'hw' && (q !== l || (end ? i < n - 2 : i > 2)), l.ref.cul ? 0.15 : l.ref.edge ? 0.12 : 0.03);
     if (!t) continue;
     t.l.ins.push({ i: t.i, t: t.t, x: t.x, y: t.y });
     P.x = t.x; P.y = t.y;
@@ -218,16 +218,23 @@ function buildGraph(W) {
      slip roads' junction to the motorway's own node, where a car can go nowhere: that last piece is dropped, and so is
      any dead end under 30 m off a junction (brief 72) */
   {
-    const dead = new Set();
-    for (let n = 0; n < G.nodes.length; n++) {
-      const N = G.nodes[n]; if (N.out.length !== 1) continue;
-      const lk = G.links[N.out[0]]; if (lk.cls === 'hw' || lk.cls === 'ramp' || lk.cls === 'ln' || lk.len > 2.5) continue;
-      const o = G.nodes[lk.a === n ? lk.b : lk.a];
-      // (a piece on its own under 30 m: a road's last metres to a town's node on the level above the motorway's)
-      if (o.out.length < 3) { if (o.out.length === 1 && lk.len < 0.3) dead.add(lk.id); continue; }
-      // (and a street's overhang of a few metres past the street it crosses, a housing block's lane begun a little
-      // before the avenue it opens on: a dead end too short to turn in is nothing a car can use)
-      if (o.out.some(i => G.links[i].cls === 'ramp') || (lk.len < (lk.ref.edge ? 0.1 : 0.3))) dead.add(lk.id);
+    const dead = new Set(), deg = G.nodes.map(N => N.out.length), live = n => G.nodes[n].out.filter(i => !dead.has(i));
+    // (again until nothing goes: a piece dropped can leave the piece before it a dead end too short to turn in)
+    for (let more = true; more;) {
+      more = false;
+      for (let n = 0; n < G.nodes.length; n++) {
+        if (deg[n] !== 1) continue;
+        const lk = G.links[live(n)[0]]; if (!lk || lk.cls === 'hw' || lk.cls === 'ramp' || lk.cls === 'ln' || lk.len > 2.5) continue;
+        const m = lk.a === n ? lk.b : lk.a, od = deg[m];
+        // (a piece on its own under 30 m, or the last 30 m of a street past its last junction: a road's last metres
+        // to a town's node on the level above the motorway's, a core's lane of a few metres at a square's edge)
+        let go = od < 3 ? lk.len < 0.3 : false;
+        // (and a street's overhang of a few metres past the street it crosses, a housing block's lane begun a little
+        // before the avenue it opens on: a dead end too short to turn in is nothing a car can use)
+        if (od >= 3 && (live(m).some(i => G.links[i].cls === 'ramp') || lk.len < (lk.ref.edge ? 0.1 : 0.3))) go = true;
+        if (!go) continue;
+        dead.add(lk.id); deg[n]--; deg[m]--; more = true;
+      }
     }
     if (dead.size) {
       const keep = G.links.filter(lk => !dead.has(lk.id)), nid = new Map(); keep.forEach((lk, i) => nid.set(lk.id, i));

@@ -967,8 +967,9 @@ function joinRoads(W, c, F, st, bnd, ext, fields, radial, nearCell, R2, FL) {
     }
   }
   // (avenues that join a few metres before the centre join at the centre, brief 72: the piece between would be a
-  // car's length long, a dead end for the audit)
-  for (const id of new Set(mine.flatMap(e => [e.a, e.b]))) {
+  // car's length long, a dead end for the audit. On the drawn map only: a seeded world keeps its nodes, so the
+  // convoys' routes and the balance runs on it stay as they were)
+  if (W.map) for (const id of new Set(mine.flatMap(e => [e.a, e.b]))) {
     const n = W.nodes[id]; if (!n || id === c.id || !n.jct || U.dxy(n.x, n.y, c.x, c.y) >= 2.5) continue;
     for (let i = W.edges.length - 1; i >= 0; i--) { const e = W.edges[i]; if ((e.a === id && e.b === c.id) || (e.a === c.id && e.b === id)) { W.edges.splice(i, 1); const m = mine.indexOf(e); if (m >= 0) mine.splice(m, 1); } }
     // (an edge's points may run either way between its nodes: the end that sat on the node is the one that moves)
