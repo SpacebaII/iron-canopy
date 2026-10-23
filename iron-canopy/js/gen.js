@@ -102,7 +102,29 @@ function* worldSteps(seed, map) {
     }
     return best;
   };
-  if (A && A.border) { for (let i = 0; i <= NRB; i++) RB[i] = rayPoly(A.border, i / NRB * TAU - Math.PI); }
+  /* a drawn border is a smooth polygon; a real one follows streams and surveyed lines, so it is cut in and out by
+     noise along its normals (brief 72: up to 20 km over 100 km or so, with a finer grain), except along the coast (the shore
+     is the border there, below), and every drawn town, site and place stays at least 6 km inside */
+  const roughBorder = P => {
+    const pts = [];
+    for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 150)); for (let k = 0; k < n; k++) pts.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); }
+    const N = pts.length, onCoast = p => { const deg = Math.atan2(p[1] - cy, p[0] - cx) * 180 / Math.PI; return (A.coast || []).some(([d0, d1]) => ((deg - d0) % 360 + 360) % 360 <= d1 - d0 + 1); };
+    return pts.map((p, i) => {
+      if (onCoast(p)) return p;
+      const a = pts[(i + N - 1) % N], b = pts[(i + 1) % N], ex = b[0] - a[0], ey = b[1] - a[1], L = Math.hypot(ex, ey) || 1;
+      const d = 420 * (fbm(p[0] / 1400, p[1] / 1400, 4) - 0.5) + 90 * (fbm(p[0] / 250 + 11, p[1] / 250 + 5, 2) - 0.5);
+      return [p[0] - ey / L * d, p[1] + ex / L * d];
+    });
+  };
+  if (A && A.border) {
+    const P = roughBorder(A.border);
+    for (let i = 0; i <= NRB; i++) RB[i] = rayPoly(P, i / NRB * TAU - Math.PI);
+    for (const o of (A.cities || []).concat(A.infra || [], A.places || [], A.villages || [])) {
+      const d = Math.hypot(o.x - cx, o.y - cy) + 60, f = U.mod(Math.atan2(o.y - cy, o.x - cx) + Math.PI, TAU) / TAU * NRB;
+      for (let k = -24; k <= 24; k++) { const i = (Math.round(f) + k + NRB) % NRB, w = 1 - Math.abs(k) / 25; if (RB[i] < d) RB[i] = RB[i] + (d - RB[i]) * w; }
+      RB[NRB] = RB[0];
+    }
+  }
   else for (let i = 0; i <= NRB; i++) { const a = i / NRB * TAU - Math.PI, r = shapeR(a); RB[i] = Math.hypot(Math.cos(a) * RX * r, Math.sin(a) * RY * r); }
   W.borderPt = a => { if (A && A.border) { const r = W.radialB(a); return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; } const r = shapeR(a); return { x: cx + Math.cos(a) * RX * r, y: cy + Math.sin(a) * RY * r }; };
   W.radialB = a => { const f = (U.mod(a + Math.PI, TAU)) / TAU * NRB, i = Math.min(NRB - 1, f | 0), u = f - i; return RB[i] + (RB[i + 1] - RB[i]) * u; };
