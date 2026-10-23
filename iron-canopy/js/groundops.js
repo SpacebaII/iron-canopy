@@ -583,7 +583,9 @@ IC.gopsFaf = function (S, ap, type, who) {
   const occ = (rw, TT) => { const k = rw.id + '|' + cfg.rw[rw.id].dir + '|' + TT.short; let v = g.occ && g.occ.get(k); if (v == null) { const o = IC.rwOcc(S, ap, rw, cfg.rw[rw.id].dir, TT).land; v = (o < 1e8 ? o : 300) + IC.aptSep(ap.st || {}, rw.id) * 0.5; (g.occ = g.occ || new Map()).set(k, v); } return v; };
   const when = rw => { const L = lockOf(ap, keyOf(ap, rw.id)); let t = Math.max(0, L.next - S.time) + (L.by ? 60 : 0); for (const x of q) if (x.rw === rw.id) t += occ(rw, IC.ACTYPES[x.type]); return t + occ(rw, T); };
   const role = r => cfg.rw[r.id].role === 'arr' || cfg.rw[r.id].role === 'mixed' ? 0 : 1e5;
-  fit.sort((a, b) => (role(a) + when(a)) - (role(b) + when(b)));
+  // on a wet runway a crew asks for one with its wet landing distance (15% more) if the wait for it is under 15 min
+  const wet = IC.sky(S).wet, short = r => wet && IC.rwUsable(r) < T.rwy * 1.15 ? 900 : 0;
+  fit.sort((a, b) => (role(a) + when(a) + short(a)) - (role(b) + when(b) + short(b)));
   const rw = fit[0];
   const dir = cfg.rw[rw.id].dir, d = IC.rwDir(rw), th = dir > 0 ? rw.a : rw.b;
   // the tower follows the aircraft (who) in to the fix, to know how far out the next arrival is
@@ -1281,7 +1283,10 @@ IC.gopsRisk = function (S, ap, m, what) {
   if (what === 'arr') {
     const sky = IC.sky(S), need = T.rwy * (sky.wet ? 1.15 : 1) * (1 + Math.max(0, -w.head) * 0.02);
     const strip = P.strip || [0, IC.rwLen(P.rw)], avail = strip[1] - strip[0];
-    if (avail < need) out.push({ cause: 'overrun', p: Math.min(0.05, 0.25 * (1 - avail / need)), text: `${sky.wet ? 'a wet runway' : 'a tailwind'} and only ${U.km(avail)} of runway where ${U.km(need)} was needed` });
+    // (brief 69: it was 0.25 × the shortfall, up to 5% a landing, and a 3 km runway lost a heavy jet most wet months
+    // once the desk counted accidents; crews brief the wet landing distance and touch down early, so a margin short
+    // by a tenth is still rare)
+    if (avail < need) out.push({ cause: 'overrun', p: Math.min(0.01, 0.05 * (1 - avail / need)), text: `${sky.wet ? 'a wet runway' : 'a tailwind'} and only ${U.km(avail)} of runway where ${U.km(need)} was needed` });
   }
   // birds gather over water near the runway
   // (a bird-control team, deck.js, keeps three in four away)

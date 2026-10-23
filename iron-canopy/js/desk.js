@@ -326,7 +326,8 @@ const grade = (v, cuts, up) => { for (let i = 0; i < cuts.length; i++) if (up ? 
 function review(S) {
   const d = S.story.desk, q = d.q, days = Math.max(1, q.days), prev = d.qPrev;
   if (q.flights < 30) { d.qPrev = q; d.q = quarter(S); return null; }
-  const paxDay = q.pax / days, was = prev && prev.days ? prev.pax / prev.days : 0;
+  // (against the same quarter a year before when there is one: summer is always busier than autumn)
+  const paxDay = q.pax / days, ago = d.revs.length >= 4 && d.revs[d.revs.length - 4].pax, was = ago || (prev && prev.days ? prev.pax / prev.days : 0);
   const grow = was > 100 ? paxDay / was - 1 : 1;
   const late = (q.late + q.div) / Math.max(1, q.flights);
   const risk = (q.los + q.acc * 5 + q.dead * 0.5) / Math.max(1, q.flights) * 1000;
@@ -334,13 +335,13 @@ function review(S) {
   // (the first two quarters after the opening are for building: the Minister expects less of the money then)
   const young = Math.max(0, 2 - d.revs.length) * 150;
   const R = [
-    { k: 'Passengers', g: grade(grow, [0.25, 0.1, 0, -0.1], true), say: `${Math.round(paxDay).toLocaleString('en-US')} a day${was > 100 ? `, ${grow >= 0 ? '+' : ''}${Math.round(grow * 100)}% on the quarter before` : ''}` },
+    { k: 'Passengers', g: grade(grow, [0.2, 0.05, -0.05, -0.15], true), say: `${Math.round(paxDay).toLocaleString('en-US')} a day${was > 100 ? `, ${grow >= 0 ? '+' : ''}${Math.round(grow * 100)}% on ${ago ? 'the same quarter last year' : 'the quarter before'}` : ''}` },
     { k: 'Reliability', g: grade(late, [0.05, 0.1, 0.18, 0.28]), say: `${Math.round(late * 100)}% of flights late or diverted` },
     { k: 'Safety', g: grade(risk, [0.3, 1.5, 4, 8]), say: q.acc ? `${q.acc} accident${q.acc > 1 ? 's' : ''}${q.dead ? `, ${q.dead} dead` : ''}, ${q.los} losses of separation` : q.los ? `${q.los} loss${q.los > 1 ? 'es' : ''} of separation in ${Math.round(q.flights).toLocaleString('en-US')} flights` : 'no accident and no loss of separation' },
     { k: 'Money', g: grade(run + young, [150, 50, 0, -100], true), say: `${run >= 0 ? '+' : ''}${U.money(run)} a month after running costs` }
   ];
   const v = R.reduce((s, r) => s + GV[r.g], 0) / R.length, c = IC.calAt(S, S.time - 1);
-  const rv = { t: S.time, q: `${['Winter', 'Spring', 'Summer', 'Autumn'][Math.floor(c.mo / 3)]}, Year ${c.y}`, rows: R.map(r => ({ k: r.k, g: GR[r.g], say: r.say })), v };
+  const rv = { t: S.time, q: `${['Winter', 'Spring', 'Summer', 'Autumn'][Math.floor(c.mo / 3)]}, Year ${c.y}`, rows: R.map(r => ({ k: r.k, g: GR[r.g], say: r.say })), v, pax: paxDay };
   d.revs.push(rv); if (d.revs.length > 16) d.revs.shift();
   record(S, Math.round(v * 1.5), `the ${rv.q} review`);
   const avg = GR[Math.round(R.reduce((s, r) => s + r.g, 0) / R.length)];
@@ -362,21 +363,23 @@ IC.onMonth((S) => {
 });
 
 /* ---------- losing ---------- */
+const boss = S => S.story.act === 1 ? 'MIN' : 'PM';
 function standing(S) {
   const st = S.story, d = st.desk;
   if (st.act >= 3) return;
   const W = IC.DESK.warnAt;
   if (st.standing < IC.DESK.sackAt) {
-    if (d.lowT == null) { d.lowT = S.time; IC.say(S, 'MIN', `I have run out of reasons to keep you, Director. If nothing changes within a month, the Prime Minister will appoint someone else.`); IC.emit(S, 'deskLow', { t: S.time }); }
+    if (d.lowT == null) { d.lowT = S.time; IC.say(S, boss(S), `I have run out of reasons to keep you, Director. If nothing changes within a month, the Prime Minister will appoint someone else.`); IC.emit(S, 'deskLow', { t: S.time }); }
     else if (S.time - d.lowT >= IC.MO(S, 1) && !S.over) sack(S);
-  } else if (d.lowT != null && st.standing >= IC.DESK.sackAt + 5) { d.lowT = null; IC.say(S, 'MIN', 'You have bought yourself some time. Use it.'); }
+  } else if (d.lowT != null && st.standing >= IC.DESK.sackAt + 5) { d.lowT = null; IC.say(S, boss(S), 'You have bought yourself some time. Use it.'); }
   const band = st.standing < W[1] ? 2 : st.standing < W[0] ? 1 : 0;
-  if (band > (d.band || 0)) { const r = IC.deskWhy(S).filter(x => x.v < 0)[0]; IC.say(S, 'MIN', band === 2 ? `The cabinet is asking about you, Director${r ? `, and about ${lc1(r.why)}` : ''}. Fix what is on your desk.` : `I am losing patience${r ? `: ${lc1(r.why)}` : ''}. The grant follows my confidence.`); }
+  // (a band the Minister has spoken of in the last two months is not said again)
+  if (band > (d.band || 0) && !(band <= (d.wBand || 0) && S.time - (d.wT || -1e12) < IC.MO(S, 2))) { d.wBand = band; d.wT = S.time; const r = IC.deskWhy(S).filter(x => x.v < 0)[0]; IC.say(S, boss(S), band === 2 ? `The cabinet is asking about you, Director${r ? `, and about ${lc1(r.why)}` : ''}. Fix what is on your desk.` : `I am losing patience${r ? `: ${lc1(r.why)}` : ''}. The grant follows my confidence.`); }
   d.band = band;
 }
 function sack(S) {
   const d = S.story.desk, bad = d.log.filter(x => x.outcome === 'failed' || x.outcome === 'refused').slice(-3).map(x => x.title.toLowerCase());
-  const why = `The Prime Minister has accepted the Minister’s advice and appointed a new Director of Civil Aviation.${bad.length ? ` The letter names ${bad.join('; ')}.` : ''}${d.revs.length ? ` Your last review: ${d.revs[d.revs.length - 1].rows.map(r => `${r.k.toLowerCase()} ${r.g}`).join(', ')}.` : ''}`;
+  const why = `The Prime Minister has ${S.story.act === 1 ? 'accepted the Minister’s advice and ' : ''}appointed a new ${IC.ACTS[S.story.act].role}.${bad.length ? ` The letter names ${bad.join('; ')}.` : ''}${d.revs.length ? ` Your last review: ${d.revs[d.revs.length - 1].rows.map(r => `${r.k.toLowerCase()} ${r.g}`).join(', ')}.` : ''}`;
   if (IC.cutscene) IC.cutscene(S, 'sacked', { why });
   IC.gameOver(S, why);
 }
