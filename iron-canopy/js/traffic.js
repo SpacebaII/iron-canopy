@@ -869,7 +869,14 @@ IC.trafficKeep = z => Math.min(1, 2.5 * KINDS.car.L / Math.max(KINDS.car.L, 4.4 
 IC.TRAFFIC_DASH = [1.1, 1.6];
 IC.TRAFFIC_AGZ = [20, 30];
 /* a slot's rank: slots at multiples of 2^n come first, so a share of keep needs only every 2^n-th slot looked at */
-function slotRank(j, key) { const tz = j ? 31 - Math.clz32(j & -j) : 16; return (1 + U.hash(key + 7919, j)) / (2 << Math.min(16, tz)); }
+// (its own full mix of key and slot: U.hash of nearby keys and slots gave ranks in clumps, so a zoom brought a
+// dozen vehicles in at once)
+function slotRank(j, key) {
+  const tz = j ? 31 - Math.clz32(j & -j) : 16;
+  let h = Math.imul(key ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 7919, 0xc2b2ae35);
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b); h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35); h ^= h >>> 16;
+  return (1 + (h >>> 0) / 4294967296) / (2 << Math.min(16, tz));
+}
 IC.trafficSlotRank = slotRank;
 
 /* ---------- vehicles in slots, for the middle zoom ----------
