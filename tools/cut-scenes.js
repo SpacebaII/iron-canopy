@@ -146,6 +146,19 @@ const SCENES = {
     if (!t) throw new Error('nothing low at night'); const L = await live(S, t, 'side', 1500); L.camK = 0.7; await wait(1200); await cutStill(L, 'cut-box-1');`,
   'cut-box-3': `const S = await game('sandbox', 6.3); wx(S, 'overcast'); await landing(S, 'cut-box-3', 'side', 0.6);`,
   'cut-box-3l': `const S = await game('sandbox', 6.4); wx(S, 'overcast'); await landing(S, 'cut-box-3l', 'chase', 1.2);`,
+  'cut-arm-1': `const S = await game('sandbox', 6.5); wx(S, 'scattered'); steps(S, 300); const p = S.byId.i0.parts.find(p => p.kind === 'runway');
+    p.craters.push({ t: 0.3, r: 0.25 }, { t: 0.55, r: 0.3 }); const r = runwayOf(S.byId.i0), a = Math.atan2(r.b.y - r.a.y, r.b.x - r.a.x);
+    await overAirport(S, (r.a.x + r.b.x) / 2, (r.a.y + r.b.y) / 2, -a + Math.PI / 2, 0.22, 1.4, 'cut-arm-1');`,
+  'cut-endS-2': `const S = await game('sandbox', 6.2); wx(S, 'clear');
+    const t = steps(S, 3 * 3600, S => S.threats.find(t => t.tail && t.alt > 3 && !t.dead && t.tail.type !== 'light'));
+    if (!t) throw new Error('no airliner up'); const L = await live(S, t, 'side', 1500); L.camK = 0.8; await wait(1200); await cutStill(L, 'cut-endS-2');`,
+  'cut-endH-3': `const S = await game('sandbox', 18.7); wx(S, 'scattered'); const b = S.esites.find(e => e.kind === 'airbase');
+    const F = S.world.fronts.find(f => f.key === 'A'), p = F.pts[Math.floor(F.pts.length / 2)];
+    for (let i = 0; i < 2; i++) IC.spawnThreat(S, 'ftr', p.x + i * 60, p.y + i * 20, { home: b, mission: 'patrol', route: [{ x: p.x + 400, y: p.y + 100 }], border: true, gray: true, noFire: true, alt: 7 });
+    steps(S, 60); const f = S.threats.find(x => x.type === 'ftr' && !x.dead); if (!f) throw new Error('no fighter');
+    const L = await live(S, f, 'chase', 2500); L.camK = 1.6; await wait(1200); await cutStill(L, 'cut-endH-3');`,
+  'cut-endC-3': `const S = await game('sandbox', 23.2); wx(S, 'clear'); const u = lrsam(S); steps(S, 60);
+    await overAirport(S, u.x, u.y, 2.2, 0.12, 0.5, 'cut-endC-3');`,
   'cut-box-3f': `const S = await game('sandbox', 3.4); wx(S, 'rain'); const u = lrsam(S); fire(S, 'str', 3, u, 170);
     let tr = null; steps(S, 1200, S => (tr = S.rec.tracks.find(t => t.kind === 'missile' && U.dxy(IC.recGet(t, 0, 1), IC.recGet(t, 0, 2), u.x, u.y) < 5)) && S.time > IC.recFirstT(tr) + 20);
     if (!tr) throw new Error('no launch'); const t0 = IC.recFirstT(tr);
