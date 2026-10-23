@@ -3963,6 +3963,42 @@ test('story: the Ledger\'s halves disagree until both are heard, and the Commiss
   assert(IC.cutPanels(ana.S, { id: 'endSky', v: IC.CUTSCENES.endSky.pick(ana.S), d: {} }).some(p => /Ana/.test(p.cap)), 'with Mira lost, Ana is not at the stone');
   for (const id of ['armistice', 'ledger', 'commission', 'endSky', 'endHalves', 'endCanopy']) assert(IC.CUTSCENES[id], `no cutscene ${id}`);
 });
+test('story: on the drawn map the old range over the ridge stands until both halves are heard, and the cards point at their places', () => {
+  const was = IC.placeOf;
+  try {
+    // the drawn map's places (brief 74) stood in for on a generated world
+    const pts = {};
+    IC.placeOf = (S, id) => pts[id] || null;
+    const S = peaceGame(7109), st = S.story, h = IC.cities(S).filter(c => !c.capital && c.owner === 'us')[3];
+    pts.station9 = { x: h.x + 40, y: h.y - 60 }; pts.hollin = { x: h.x, y: h.y }; pts.area_centre = { x: h.x - 300, y: h.y + 200 };
+    st.btown = null; st.r9 = null; st.loreT = 0; IC.loreTick(S, 1);
+    const sh = IC.aspShape(S, st.r9);
+    assert(sh && !sh.ap && sh.rings[0].cls === 'R' && U.dist(sh, pts.station9) < 1, 'no restricted area over the ridge');
+    assert(IC.aspClassAt(S, pts.station9.x, pts.station9.y, 5).cls === 'R', `at 5 km over Station 9 the airspace is ${IC.aspClassAt(S, pts.station9.x, pts.station9.y, 5).cls}`);
+    const r = sh.rings[0].r, hi = sh.rings[0].hi;
+    IC.aspDelArea(S, sh); IC.aspScale(S, sh, 2); IC.aspRingSet(S, sh, 0, { hi: 2 });
+    assert(IC.aspShape(S, st.r9) && sh.rings[0].r === r && sh.rings[0].hi === hi, 'the player changed the old range');
+    assert(/Year −34/.test(sh.fixed), `it does not say why it stays: ${sh.fixed}`);
+    assert(IC.storyBorderTown(S) === h, `the border town is ${IC.storyBorderTown(S).name}, not ${h.name} under the ridge`);
+    IC.peaceStart(S, 'test');
+    assert(U.dist(IC.EV.ch_ledger_locker(S).at, pts.area_centre) < 1, 'the locker card does not point at the old Area Centre');
+    IC.EV.ch_ledger_locker(S).opts[0].fx();
+    const north = IC.EV.ch_ledger_north(S);
+    assert(U.dist(north.at, pts.station9) < 1, 'the northern half does not point at Station 9');
+    north.opts[0].fx();
+    st.part = 11;
+    const c = IC.EV.ch_commission_choose(S), o = c.opts.find(x => /joint/.test(x.t));
+    assert(/R-9/.test(o.tip), `the joint commission does not say the range goes: ${o.tip}`);
+    o.fx();
+    assert(!IC.aspShape(S, sh.id) && IC.aspClassAt(S, pts.station9.x, pts.station9.y, 5).cls !== 'R', 'the joint commission did not withdraw the old range');
+    // a generated world has no places: nothing is added, the cards point nowhere
+    IC.placeOf = () => null;
+    const T = peaceGame(7110); T.story.loreT = 0; IC.loreTick(T, 1);
+    assert(T.story.r9 === 0 && !T.asp.shapes.some(s => s.fixed), 'a restricted area appeared on a world without the ridge');
+    IC.peaceStart(T, 'test');
+    assert(!IC.EV.ch_ledger_locker(T).at, 'a card points at a place that is not there');
+  } finally { IC.placeOf = was; }
+});
 /* ---------- the calendar: months over the live clock ---------- */
 test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the top bar says so', () => {
   for (const dpm of [3, 5]) {

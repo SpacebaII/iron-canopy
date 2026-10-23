@@ -54,10 +54,31 @@ IC.storyActLabel = function (S, long) {
 
 /* the chains of the lore: always in a Career (old saves get them when they load) */
 const LORE_CHAINS = IC.LORE_CHAINS = ['escort', 'tape', 'evac', 'mirror'];   // (peace.js adds Part Five's)
+/* the old range over the ridge (the box), on the drawn map: a restricted area published after Northline 310 and
+   never withdrawn. The player cannot change it; a joint commission in Part Five can (IC.storyRidgeOpen) */
+const R9_WHY = 'it was published in Year −34, after Northline 310 fell on the ridge, under a treaty with the neighbour. Only both governments together can withdraw it.';
+function ridgeRange(S) {
+  const st = S.story, p = IC.storyPlace(S, 'station9');
+  st.r9 = 0;
+  if (!p || !IC.aspAddArea) return;
+  const sh = IC.aspAddArea(S, 'R', p.x, p.y, 200, true); if (!sh) return;
+  sh.name = 'R-9, the old range over the ridge'; sh.fixed = `It cannot be changed: ${R9_WHY}`;
+  sh.rings[0].lo = 0; sh.rings[0].hi = 25000 / IC.FT;
+  IC.aspSync(S, sh);
+  st.r9 = sh.id;
+}
+IC.storyRidgeRange = ridgeRange;
+IC.storyRidgeOpen = function (S) {
+  const st = S.story, sh = st.r9 && IC.aspShape(S, st.r9); if (!sh) return false;
+  sh.fixed = null; IC.aspDelArea(S, sh); st.r9 = 0;
+  IC.log(S, 'info', 'AIRSPACE', 'R-9, the old range over the ridge, is withdrawn by both governments. Airliners may fly over the ridge again for the first time since Year −34.');
+  return true;
+};
 IC.loreTick = function (S, dt) {
   const st = S.story; if (!st || S.mode !== 'story' || !st.flags) return;
   st.loreT = (st.loreT || 0) - dt; if (st.loreT > 0) return;
   st.loreT = 20;
+  if (st.r9 == null) ridgeRange(S);
   if (st.chains) for (const k of LORE_CHAINS) if (!st.chains[k]) st.chains[k] = { step: IC.CHAINS[k].first, at: null, seen: [], end: null };
   const want = IC.storyPartWant(S);
   if (!st.part) { st.part = want; st.partT = S.time; return; }
@@ -117,7 +138,7 @@ Object.assign(IC.CHAINS, {
   /* Act V: the Courier has the southern half of the tapes */
   tape: { name: 'The tape', who: 'PRESS', core: true, first: 'offer',
     steps: {
-      offer: { act: [2, 2], when: S => (S.story.part || 0) >= 5 && S.time - (S.story.partT || 0) > MO(S, 2),
+      offer: { place: 'area_centre', act: [2, 2], when: S => (S.story.part || 0) >= 5 && S.time - (S.story.partT || 0) > MO(S, 2),
         card: S => ({ title: 'Northline 310', text: `Sol Varga puts a cassette on your desk. "The Northern Area Centre's tape from the night of Northline 310. Someone at the old ministry kept a copy. It proves what we always said: their battery shot down an airliner on a cleared airway, without a word. I print it on Saturday, with or without your comment." You listen to it twice. It stops at 22:33, in the middle of a word.`,
           opts: [
             { t: 'Ask him to wait until it is checked', tip: 'Varga waits, and is not pleased. Ruth Amberly is relieved.', risk: 'A story held back is a story someone else prints.', trust: { PRESS: -8, FLAG: 6, ATC: 6 }, set: { tape: 'held' }, end: 'held' },
@@ -134,7 +155,7 @@ Object.assign(IC.CHAINS, {
   /* Act VII: the border town on the eve of the war */
   evac: { name: 'The eve', who: 'GOV', core: true, first: 'ask',
     steps: {
-      ask: { act: [3, 3], when: S => beatDone(S, 'embassy') && !!town(S),
+      ask: { place: S => town(S), act: [3, 3], when: S => beatDone(S, 'embassy') && !!town(S),
         card: S => ({ title: `Move ${townName(S)} out now?`, text: `The road south from ${townName(S)} is full every evening. "Half of them want to go and half of them will not," Governor Tessel says. "If you tell them to leave now, they leave while the road is open. If you wait, they leave under fire, or not at all." Your sister rang last night. She says she will not close the bakery unless you tell her to.`,
           opts: [
             { t: 'Move the town out now', tip: `Confidence −5. ${townName(S)}'s morale −10 and its trade stops. Everyone is south before the first missile.`, risk: 'If the war waits, people sit in school halls for months.', trust: { GOV: 8, SISTER: 10, FIN: -6 }, fx: S => { conf(S, -5); const t = town(S); if (t) t.morale = U.clamp(t.morale - 10, 0, 100); }, set: { evac: 'early' }, end: 'early' },
@@ -149,7 +170,7 @@ Object.assign(IC.CHAINS, {
   /* Act IX: an airliner turns off its airway into the box over the ridge, during a raid. It is 310 again */
   mirror: { name: 'The box', who: 'ADA', core: true, first: 'track',
     steps: {
-      track: { act: [4, 4], when: S => (S.story.part || 0) >= 9 && S.time - (S.story.partT || 0) > 6 * 3600 && !S.over,
+      track: { place: ['crash310', 'station9'], act: [4, 4], when: S => (S.story.part || 0) >= 9 && S.time - (S.story.partT || 0) > 6 * 3600 && !S.over,
         card: S => {
           const friend = IC.flagOf(S, 'corridor') === 'friend';
           const opts = [

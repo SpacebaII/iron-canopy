@@ -132,13 +132,13 @@ Object.assign(IC.CHAINS, {
   /* Act X into XI: Marsh's locker, the sealed room, and the northern half */
   ledger: { name: 'The Ledger', who: 'ATC', core: true, first: 'locker',
     steps: {
-      locker: { act: [5, 5], when: S => inPart(S) > MO(S, 1),
+      locker: { place: 'area_centre', act: [5, 5], when: S => inPart(S) > MO(S, 1),
         card: S => ({ title: 'Ivo Marsh\'s locker', text: `Ivo Marsh puts a tape box on your desk, and his hand on it. "I was the trainee, Director. I sat beside your father that night. This is our room's tape, all of it, not the copy Varga had: it does not stop at 22:33. And the Minister has a key to a room in the old Area Centre that nobody has opened since. Petra Halloran is afraid of what is in it. She should be."`,
           opts: [
             { t: 'Take it, and ask Halloran for the key', tip: 'The sealed room is opened: what it holds goes in the Ledger.', risk: 'Halloran gives you the key the way someone hands over a grenade.', trust: { ATC: 8, MIN: -8 }, fx: S => { const L = ledger(S); L.south = true; L.room = true; later(S, 3 * 3600, 'MIN', `Here is the key. The room's log is on the desk where they left it. One line: "drone exercise cancelled 22:10, battery informed". Nothing about the computer. I am told it never cleared a cancelled track. Do not tell me who you tell.`); }, set: { locker: 'room' }, next: 'north', mo: 2 },
             { t: 'Take the tape, leave the room shut', tip: 'The Ledger has our half. Halloran is grateful.', risk: 'Whatever is in that room stays the Ministry\'s secret.', trust: { ATC: 4, MIN: 6 }, fx: S => { ledger(S).south = true; }, set: { locker: 'tape' }, next: 'north', mo: 2 }
           ] }) },
-      north: { act: [5, 5], when: S => ended(S, 'truce') || inPart(S) > MO(S, 5),
+      north: { place: ['station9', 'crash310'], act: [5, 5], when: S => ended(S, 'truce') || inPart(S) > MO(S, 5),
         card: S => {
           const f = IC.flagOf(S, 'corridor');
           if (f === 'arrested') return { title: 'The northern half', text: `Their half of the night is in their archive, or in the ruins of Station 9. Kasimir Lenz, who might have found it, is in one of their prisons; you put him there. Their envoy to the joint commission says it can be asked for "under the articles of the armistice", in a tone that says what asking will cost.`,
@@ -184,7 +184,7 @@ Object.assign(IC.CHAINS, {
           const whole = ledger(S).south && ledger(S).north;
           return { title: 'The Ledger', text: `The Prime Minister reads the Ledger in your office with the door shut. It says: ${IC.ledgerSays(S)} He is quiet for a long time. "I was the liaison officer," Oren Valk says. "I said the box was hot. I was answering a question about the storm." Then: "It is yours to decide. I cannot."${whole ? '' : ' (It holds only one half of the night.)'}`,
             opts: [
-              { t: 'Give it to a joint commission', tip: whole ? 'Both countries hear it together, in public, with both flags behind the table.' : 'The commission hears only our half; their side will read it as blame.', risk: 'The Prime Minister will testify. He may not survive it in office.', trust: { PM: -6, LENZ: 8, ENVOY: -6, ATC: 8 }, set: { ledgerTo: 'joint' }, end: 'joint' },
+              { t: 'Give it to a joint commission', tip: whole ? `Both countries hear it together, in public, with both flags behind the table.${S.story.r9 ? ' The old range over the ridge, R-9, is withdrawn.' : ''}` : 'The commission hears only our half; their side will read it as blame.', risk: 'The Prime Minister will testify. He may not survive it in office.', trust: { PM: -6, LENZ: 8, ENVOY: -6, ATC: 8 }, set: { ledgerTo: 'joint' }, fx: S => { if (whole) IC.storyRidgeOpen(S); }, end: 'joint' },
               { t: 'Release it to the public', tip: 'Confidence +6. The Courier prints it all on Saturday.', risk: 'Each country will read the half it wants.', trust: { PRESS: 12, PM: -12, LEADER: -8 }, fx: S => { conf(S, 6); raise(S, 4); IC.storyPaper && IC.storyPaper(S, 'THE LEDGER', 'Northline 310: the whole night, in both rooms', IC.ledgerSays(S), 'Prime Minister Valk has not commented.'); }, set: { ledgerTo: 'public' }, end: 'public' },
               { t: 'Seal it again', tip: 'The Prime Minister +10. Nothing changes.', risk: 'You will know. So will Marsh, and Lenz, and whoever is listening to you now.', trust: { PM: 10, PRESS: -12, ATC: -10, LENZ: -8 }, set: { ledgerTo: 'sealed' }, end: 'sealed' }
             ] };

@@ -159,6 +159,7 @@ function register(k) {
     EV[`ch_${k}_${sid}`] = S => {
       const c = S.story.chains[k], e = step.card(S, c);
       e.cast = e.cast || C.who; e.chain = k; e.step = sid;
+      if (step.place && !e.at) { const p = IC.storyPlace(S, step.place); if (p) e.at = p; }
       const m = S.story.cast[IC.castWho(S, e.cast)]; if (m) m.met = true;
       e.who = e.who || IC.ADVISORS[IC.castWho(S, e.cast)].name;
       e.opts = e.opts.map(o => Object.assign({}, o, {
@@ -190,7 +191,9 @@ const N = S => S.world.names;
 function borderTown(S) {
   const st = S.story;
   if (!st.btown || !S.byId[st.btown]) {
-    const c = IC.cities(S).filter(x => !x.capital && x.owner === 'us' && x.id !== st.city2).sort((a, b) => IC.hostileBorderDist(a.x, a.y) - IC.hostileBorderDist(b.x, b.y))[0];
+    // on the drawn map it is Hollin, under the ridge; elsewhere the town of ours nearest the hostile border
+    const h = IC.storyPlace(S, 'hollin'), far = c => h ? U.dist(c, h) : IC.hostileBorderDist(c.x, c.y);
+    const c = IC.cities(S).filter(x => !x.capital && x.owner === 'us' && x.id !== st.city2).sort((a, b) => far(a) - far(b))[0];
     st.btown = c ? c.id : null;
   }
   return st.btown ? S.byId[st.btown] : null;
@@ -437,6 +440,15 @@ IC.CHAINS = {
 };
 for (const k in IC.CHAINS) register(k);
 IC.chainRegister = register;
+/* a named place on the drawn map (brief 74: IC.placeOf), as a plain point the card can point at; the first of
+   several ids that exists (or a function of S giving ids or a point), nothing on a generated world */
+IC.storyPlace = (S, ids) => {
+  if (typeof ids === 'function') ids = ids(S);
+  if (ids && ids.x != null) return { x: ids.x, y: ids.y };
+  if (!IC.placeOf || !ids) return null;
+  for (const id of [].concat(ids)) { const p = IC.placeOf(S, id); if (p) return { x: p.x, y: p.y }; }
+  return null;
+};
 
 /* a share of an airline's satisfaction, kept in bounds */
 IC.storyAirSat = (S, al, v) => { if (al) al.sat = U.clamp(al.sat + v, 0, 100); };

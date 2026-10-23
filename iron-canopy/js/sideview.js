@@ -183,6 +183,7 @@ IC.aspAct = function (S, ap, ds) {
   const ui = IC.ui, v = ds.id ? IC.aspVol(S, ds.id) : null, sec = ds.sec ? IC.aspSector(S, ds.sec) : null, n = +ds.v;
   const sh = ds.sh ? IC.aspShape(S, ds.sh) : v ? IC.aspShape(S, v.sh) : ap && IC.aspShapeOf(S, ap), i = v ? +String(v.id).split(':')[1] : 0;
   const said = () => { if (sh) IC.log(S, 'info', 'AIRSPACE', IC.aspShapeText(S, sh), ap || sh); };
+  if (sh && sh.fixed && !['sel', 'area', 'staff'].includes(ds.op)) { IC.log(S, 'info', 'AIRSPACE', `${sh.name} cannot be changed: ${sh.fixed}`, sh); return; }
   switch (ds.op) {
     case 'preset': if (ap && IC.aspPreset(S, ap, ds.v)) { ui.aspVol = null; const P = IC.ASP_SHAPES[ds.v]; IC.log(S, 'info', 'AIRSPACE', `${ap.name} now has ${P.name}. ${P.what} ${P.why}`, ap); } break;
     case 'sel': ui.aspVol = ui.aspVol === ds.id ? null : ds.id; break;
