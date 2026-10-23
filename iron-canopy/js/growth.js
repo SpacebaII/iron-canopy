@@ -408,21 +408,21 @@ function cutRoad(S, e, x, y) {
   const near = IC.nearestPlace(S, x, y);
   e.cut = true; e.cutAt = { x, y, t: S.time };
   e.cutName = `${CLS_NAME[e.cls]} cut ${/^\d/.test(near) ? near : 'at ' + near}`;
-  const hours = (0.6 - e.cond) / repairRate(e) + 0.5;
+  const hours = (0.6 - e.cond) / repairRate(e, S) + 0.5;
   IC.log(S, 'leak', 'ROADS', `${e.cutName}. Traffic detours on farm tracks; engineers need about ${U.dur(hours * 3600)} to fill the crater.`, { x, y });
   IC.news(S, `${e.cutName.replace(' cut', '')} closed after a strike; long detours for lorries and buses.`);
   IC.roadsChanged(S);
   IC.worldChanged(S, { x0: x - 10, y0: y - 10, x1: x + 10, y1: y + 10 });
   IC.emit(S, 'roadCut', e);
 }
-const repairRate = e => (e.cls === 'hw' ? 0.1 : 0.14) * (e.rush ? 3 : 1);   // condition regained per game hour
+const repairRate = (e, S) => (e.cls === 'hw' ? 0.1 : 0.14) * (e.rush ? 3 : 1) * IC.mod(S, 'repair');   // condition regained per game hour (research: 'repair')
 /* pay the road engineers to work round the clock: three times as fast */
 IC.rushCost = e => Math.round((e.len || 10) / 10 * (e.cls === 'hw' ? 3 : 1.5) + 5);
 IC.rushRepair = function (S, id) {
   const e = S.world.edges.find(x => x.id === id); if (!e || !e.cut || e.rush) return false;
   const c = IC.rushCost(e); if (S.budget < c) { IC.log(S, 'warn', 'ROADS', `Rushing the repair needs ${U.money(c)}.`); return false; }
   IC.pay(S, 'repair', c); e.rush = true;
-  IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e) * 3600)}.`, e.cutAt);
+  IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e, S) * 3600)}.`, e.cutAt);
   return true;
 };
 function repairRoads(S, dt) {
@@ -432,7 +432,7 @@ function repairRoads(S, dt) {
   for (const id of E.damaged.slice()) {
     const e = W.edges.find(x => x.id === id);
     if (!e) { E.damaged.splice(E.damaged.indexOf(id), 1); continue; }
-    e.cond = Math.min(1, e.cond + repairRate(e) * dt / 3600);
+    e.cond = Math.min(1, e.cond + repairRate(e, S) * dt / 3600);
     if (e.cut && e.cond >= 0.6) {
       e.cut = false;
       IC.log(S, 'info', 'ROADS', `${e.cutName.replace(' cut', '')} reopened: the crater is filled.`, e.cutAt);
@@ -944,7 +944,7 @@ IC.moneyWhy = function (S, k, r) {
   const L = S.ledger || {}, mob = IC.MOBIL[S.mobil], st = S.story;
   const mobTxt = S.mobil ? ` ${mob.name} ${k.startsWith('up') ? `adds ${U.pct(mob.up - 1)}` : `takes ${U.pct(1 - mob.tax)}`}.` : '';
   switch (k) {
-    case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
+    case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office${IC.modNote(S, 'grant') ? ' ' + IC.modNote(S, 'grant') : ''}. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
     case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid by the airlines for landings and passengers at our airports, and for flying over the country, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
     case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${IC.STORY_TAX[st.act] ? U.pct(IC.STORY_TAX[st.act]) + ' of them' : 'none: they go to the Treasury'}.` : S.mode === 'campaign' ? ` The air defence gets ${U.pct(IC.QW_TAX_SHARE)} of them; the rest runs the country.` : ''}${mobTxt}`; }
     case 'trade': return `15% of what ${n(S.econ ? S.econ.inds.length : 0, 'remote industry', 'remote industries')} sell. Fast roads to a city and air cargo within ${IC.GROWTH.indCatch} h sell more.${st && st.act < 4 ? ' In the Career this grows with the acts, like taxes.' : ''}`;

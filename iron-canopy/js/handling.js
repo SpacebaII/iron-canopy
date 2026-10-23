@@ -19,10 +19,10 @@ IC.gseNeed = function (S, ap) {
   const peak = S.av && IC.dayPlan ? Math.max(1, ...IC.dayPlan(S, ap).dep) : Math.max(1, Math.round((st.depPerHour || 4) / 2));
   const push = L.filter(s => !s.drive).length, remote = L.filter(s => !s.contact && !s.cargo && s.size !== 'xs').length, share = L.length ? remote / L.length : 0;
   return {
-    tug: push ? Math.max(1, Math.ceil(peak * 1.3 * IC.GSE.tug.job / 3600), Math.ceil(push / 4)) : 0,
+    tug: push ? Math.max(1, Math.ceil(peak * 1.3 * IC.GSE.tug.job * IC.mod(S, 'pushback') / 3600), Math.ceil(push / 4)) : 0,
     bus: remote ? Math.max(1, Math.ceil(peak * share * 1.3 * IC.GSE.bus.job / 3600), Math.ceil(remote / 4)) : 0,
     // (two a tank at least, as before trucks were counted)
-    fuel: st.hydrant ? 0 : (st.tanks ? Math.max(2 * st.tanks, Math.ceil(peak * 1.2 * IC.GSE.fuel.job / 3600)) : 0),
+    fuel: st.hydrant ? 0 : (st.tanks ? Math.max(2 * st.tanks, Math.ceil(peak * 1.2 * IC.GSE.fuel.job / IC.mod(S, 'refuel') / 3600)) : 0),
     peak, stands: L.length, remote, push
   };
 };
@@ -54,7 +54,7 @@ IC.gseGate = function (S, ap, tl, s, take) {
   const wait = k => { const L = busyOf(F, k, S.time); return !(F[k] || 0) ? -1 : L.length >= F[k] ? Math.max(30, Math.min(...L) - S.time) : 0; };
   const why = (k, w) => w < 0 ? (k === 'bus' ? 'no apron buses: passengers cannot reach a remote stand' : 'no tugs to push it back') : `every ${IC.GSE[k].one} is busy (${F[k]} owned)`;
   for (const k of [bus && 'bus', tug && 'tug'].filter(Boolean)) { const w = wait(k); if (w) return { k, w: w < 0 ? 600 : w, why: why(k, w) }; }
-  if (take) { if (bus) F.busy.bus.push(S.time + IC.GSE.bus.job); if (tug) F.busy.tug.push(S.time + IC.GSE.tug.job); }
+  if (take) { if (bus) F.busy.bus.push(S.time + IC.GSE.bus.job); if (tug) F.busy.tug.push(S.time + IC.GSE.tug.job * IC.mod(S, 'pushback')); }
   return null;
 };
 /* fuel trucks: refuellings an hour they can do */

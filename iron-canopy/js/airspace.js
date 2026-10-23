@@ -884,7 +884,7 @@ IC.aspCheck = function (S, ap) {
 IC.aspSectors = S => { if (!S.asp.secs) ensureVols(S); return S.asp.secs; };
 IC.aspSector = (S, id) => IC.aspSectors(S).find(s => s.id === id);
 function sectorCap(S, s) {
-  const per = s.kind === 'acc' ? A.ctl / 4 : A.per[s.kind];
+  const per = (s.kind === 'acc' ? A.ctl / 4 : A.per[s.kind]) * IC.mod(S, 'ctlLoad');
   const ap = s.ap && S.byId[s.ap], radar = ap && (ap.parts || []).some(p => p.kind === 'atc' && p.built && p.hp > 0);
   return s.staff * per + (radar && s.kind !== 'acc' ? 4 : 0);
 }

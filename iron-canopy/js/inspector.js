@@ -363,6 +363,9 @@ function base(b) {
   ];
   if (civil) rows.push(['Terminal', `${Math.round(b.paxRate || 0).toLocaleString('en-US')} / ${Math.round(st.pax).toLocaleString('en-US')} passengers an hour`]);
   if (civil) rows.push(...lifeRows(b));
+  // (brief 48) what research (and later the Ministry) changes here, a sentence each
+  const mods = civil ? IC.modList(S) : [];
+  if (mods.length) rows.push(['Upgrades', mods.map(m => `${esc(m.text)} <small class="dim">(${esc(m.why.join(', '))})</small>`).join('<br>')]);
   const rr = civil && IC.aptRoadReport ? IC.aptRoadReport(S, b) : null;
   if (rr) rows.push(['Roads', `${esc(rr.text)}${rr.works.length ? ' ' + rr.works.map(esc).join(' ') : ''}<div class="acts">${Object.entries(IC.ROADS).map(([k, R]) => `<button class="act" data-act="roadMode" data-v="${k}" title="${esc(R.what)}: ${U.money(R.perKm)} a km">${esc(R.name)}</button>`).join('')}</div>`]);
   if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }

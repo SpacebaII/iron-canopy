@@ -130,6 +130,22 @@ function airspace(S, ap) {
     if (worst) { const p = IC.findSpot(S, 'ssr', worst.x, worst.y, 0, 300); if (p) IC.deploy(S, 'ssr', p.x, p.y); }
   }
 }
+/* (brief 48) research: keep every slot busy, first what the airports' warnings ask for, else the cheapest open
+   project; never below a reserve for building */
+const ASKS = [[/fuel|refuel/i, ['h_fuel1', 'h_fuel2', 'p_hydrant', 'h_fuel3']], [/fire trucks/i, ['w_fire1', 'w_fire2']], [/birds/i, ['w_bird', 'w_wild']],
+  [/crosswind|wind beyond/i, ['w_xw1', 'w_xw2']], [/overloaded|controller/i, ['r_ctl1', 'r_ctl2']], [/queue|capacity|movements an hour/i, ['r_occ1', 'r_occ2', 'r_hsx']],
+  [/waits? for (concrete|asphalt|steel)|out of/i, ['c_spd1', 'c_slip']], [/runways cross|ground radar/i, ['p_gradar']]];
+function research(S, reserve) {
+  for (let n = 0; n < 4 && S.tech.slots.some(x => !x); n++) {
+    const open = IC.TECH.filter(t => IC.techOpenNow(S, t) && S.budget - t.cost > reserve);
+    if (!open.length) return;
+    const warn = IC.bases(S).filter(b => b.owner === 'us' && b.st).flatMap(b => b.st.warn.map(w => typeof w === 'string' ? w : w.text || ''));
+    let pick = null;
+    for (const [re, ids] of ASKS) if (!pick && warn.some(w => re.test(w))) pick = open.find(t => ids.includes(t.id));
+    pick = pick || open.filter(IC.techCivil).sort((a, b) => a.cost - b.cost)[0] || open.sort((a, b) => a.cost - b.cost)[0];
+    if (!IC.startResearch(S, pick.id)) return;
+  }
+}
 function player(S, log) {
   const st = S.story, cc = IC.cap(S);
   // (it plays at 32×, the speed a player watches the airport at: the play clock, and so the event deck, run by it)
@@ -138,6 +154,7 @@ function player(S, log) {
   for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
+  research(S, st.act === 1 ? (st.ch >= 4 && st.city2 && !st.apt2 ? IC.FOUND_COST + 400 : 400) : 600);
   if (st.act !== 1) { later(S, st); return; }
   // the national airport
   if (!st.cap) { const p = site(S, cc, 180, 380); if (p) IC.foundAirport(S, p.x, p.y, IC.PREVAIL); return; }
@@ -202,4 +219,4 @@ function later(S, st) {
     }
   }
 }
-module.exports = { player, site, starter, grow };
+module.exports = { player, site, starter, grow, research };

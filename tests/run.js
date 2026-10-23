@@ -3825,12 +3825,12 @@ test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the to
     assert(U.date(S.time) === 'March, Year 3', `26 months in it is ${U.date(S.time)}`);
   }
 });
-test('calendar: research, city growth and a deal\'s length follow the calendar: twice the days a month, twice the live days', () => {
+test('calendar: city growth and a deal\'s length follow the calendar (twice the days a month, twice the live days); research follows play', () => {
   const out = [3, 6].map(dpm => {
     const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7, dpm }); IC.S = S;
     S.budget = 5000;
     // research: an airport project, run on the economy's own tick
-    const t = IC.TECH.find(x => x.id === 'p_rconc');
+    const t = IC.TECH.find(x => x.id === 'p_gradar');
     assert(IC.startResearch(S, t.id), 'could not start research');
     let live = 0; while (!S.tech.done.has(t.id) && live < 400 * 86400) { S.time += 600; live += 600; IC.economy(S, 600); }
     // a city's growth over twenty live days (the economy alone, as the growth tests run it)
@@ -3843,7 +3843,8 @@ test('calendar: research, city growth and a deal\'s length follow the calendar: 
     return { research: live / 86400, grew: c.popF / p0 - 1, deal: (d.end - S.time) / 86400, city: c.name, what: IC.techDur(S, t) };
   });
   const [a, b] = out, near2 = (x, y) => x / y > 1.8 && x / y < 2.2;
-  assert(near2(b.research, a.research), `research took ${a.research.toFixed(1)} and ${b.research.toFixed(1)} live days (${a.what})`);
+  // (brief 48) research runs on the play clock: the same live time at the same speed, whatever the month's length
+  assert(Math.abs(b.research / a.research - 1) < 0.05, `research took ${a.research.toFixed(1)} and ${b.research.toFixed(1)} live days (${a.what})`);
   assert(a.grew > 0 && near2(a.grew, b.grew), `${a.city} grew ${(a.grew * 100).toFixed(2)}% and ${(b.grew * 100).toFixed(2)}% in the same live days`);
   assert(near2(b.deal, a.deal) && a.deal >= (IC.FOCUS.progress ? 4 : 9) * 3, `the deal ran ${a.deal.toFixed(1)} and ${b.deal.toFixed(1)} live days`);
 });
@@ -6183,6 +6184,107 @@ test('war perf: the travel times with every road open are kept through a cut, an
   e.cut = 0; e.len += 7; IC.roadsChanged(S); IC.econTrees(S);
   assert(E.ti[cap.id] !== ti, 'a changed road kept the old open-road tree');
   assert(same(E.ti[cap.id], fresh(true)) && !same(E.ti[cap.id], ti), 'the open-road tree did not follow the longer road');
+});
+
+/* ---------- brief 48: research from day one ---------- */
+test('research: modifiers add up from their sources, are capped, and say where they came from', () => {
+  const S = { tech: { done: new Set(), slots: [] } };
+  assert(IC.mod(S, 'refuel') === 1 && IC.modNote(S, 'refuel') === '', 'a key nothing changes is not 1');
+  const src = S2 => S2.extra ? [{ fx: { refuel: 0.05, rwOcc: -0.4 }, why: 'Test policy', src: 'the Ministry' }] : [];
+  IC.MOD_SRC.push(src);
+  try {
+    assert(IC.mod(S, 'refuel') === 1, 'the cache did not hold');
+    S.extra = true; IC.modDirty(S);
+    assert(Math.abs(IC.mod(S, 'refuel') - 1.05) < 1e-9, `refuel is ${IC.mod(S, 'refuel')}, not 1.05`);
+    assert(Math.abs(IC.mod(S, 'rwOcc') - 0.7) < 1e-9, 'a share past the cap was not capped at 30%');
+    assert(/\+5% from the Ministry/.test(IC.modNote(S, 'refuel')), `the note says "${IC.modNote(S, 'refuel')}"`);
+    assert(IC.modWhy(S, 'refuel')[0].why === 'Test policy', 'the share does not name its source');
+  } finally { IC.MOD_SRC.splice(IC.MOD_SRC.indexOf(src), 1); }
+});
+
+test('research: a new Career opens the Research room on day one with the civil lanes; every "Needs research" leads to a project that can be started', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  assert(IC.roomAllowed(S, 'research'), 'the Research room is shut at the start of the Career');
+  assert(IC.TECH.filter(IC.techCivil).length >= 40, `only ${IC.TECH.filter(IC.techCivil).length} civil projects`);
+  assert(IC.TECH.filter(t => IC.techCivil(t) && !t.req.length).every(t => IC.techOpenNow(S, t)), 'a first step of a civil lane cannot be started');
+  assert(!IC.techOpenNow(S, IC.techById('a_cram')) && /Act III/.test(IC.techClosed(S, IC.techById('a_cram'))), 'a military project is open in Act I');
+  // every airport item's research is civil, and the chain to it starts with something open now
+  const reach = id => { const t = IC.techById(id); return IC.techCivil(t) && !IC.techClosed(S, t) && (IC.techOpenNow(S, t) || t.req.every(reach)); };
+  for (const k in IC.APT_TECH) {
+    const why = IC.aptLockWhy(S, k);
+    assert(/Research room/.test(why), `${k} is not locked behind research: "${why}"`);
+    assert(reach(IC.APT_TECH[k]), `${IC.APT_TECH[k]} cannot be reached from the start`);
+  }
+  assert(/Hydrant fuel systems|hydrant/i.test(IC.aptLockWhy(S, 'hydrant')) && /first/.test(IC.aptLockWhy(S, 'hydrant')), `the hydrant lock does not say what comes first: ${IC.aptLockWhy(S, 'hydrant')}`);
+  assert(S.tech.slots.length === 2 && IC.techIdleText(S), 'two idle slots do not say what is open');
+  // the Quick war keeps every lane open
+  const Q = IC.newGame({ seed: 12345, mode: 'campaign' });
+  assert(IC.techOpenNow(Q, IC.techById('a_laser')) || Q.tech.done.has('a_laser') || IC.techById('a_laser').req.some(r => !Q.tech.done.has(r)), 'a Quick war closes a military lane');
+});
+test('research: refuelling research lets the trucks refuel more aircraft an hour', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  for (const p of ap.parts) if (p.kind === 'hydrant') p.built = false;
+  for (const p of ap.parts) if (p.kind === 'fuel') p.stock = 1e6;
+  IC.aptStats(S, ap);
+  const count = () => { ap.trucks = []; let n = 0; while (n < 500 && IC.aptTakeFuel(ap, 1, S)) n++; return n; };
+  const st0 = ap.st.trucks, n0 = count();
+  for (const id of ['h_fuel1', 'h_fuel2', 'h_fuel3']) S.tech.done.add(id);
+  IC.modDirty(S); IC.aptStats(S, ap);
+  const st1 = ap.st.trucks, n1 = count();
+  assert(Math.abs(st1 / st0 - 1.15) < 0.01, `the airport panel's refuellings went from ${st0} to ${st1}, not 15% more`);
+  assert(n1 > n0 && Math.abs(n1 / n0 - 1.15) < 0.1, `the trucks refuelled ${n0} then ${n1} aircraft in an hour`);
+  assert(/\+15% from research/.test(IC.aptServiceLines(S, ap).fuel), `the fuel line does not say research changed it: ${IC.aptServiceLines(S, ap).fuel}`);
+});
+test('research: exclusive projects rule each other out, and nothing done is lost', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S; S.budget = 5000;
+  const q = IC.techById('h_quick'), p = IC.techById('h_prem');
+  for (const id of q.req.concat(p.req)) S.tech.done.add(id);
+  assert(q.excl === 'h_prem' && p.excl === 'h_quick' && /Rules out Premium/.test(q.desc), 'the fork does not say what it closes');
+  assert(IC.startResearch(S, 'h_quick'), 'Quick turns could not be started');
+  assert(!IC.startResearch(S, 'h_prem') && /Ruled out by Quick turns/.test(IC.techClosed(S, p)), 'Premium handling could still be started');
+  S.tech.slots[0].prog = 0.999; IC.researchTick(S, 600);
+  assert(S.tech.done.has('h_quick') && Math.abs(IC.mod(S, 'turn') - 0.9) < 1e-9, 'Quick turns did not shorten turnarounds');
+  assert(!IC.techOpenNow(S, p), 'Premium handling opened again once Quick turns was done');
+  const forks = IC.TECH.filter(t => t.excl);
+  assert(forks.length >= 4 && forks.every(t => IC.techById(t.excl).excl === t.id), 'the forks are not pairs');
+});
+test('research: Wait does not finish research faster than play', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S; S.budget = 5000;
+  assert(IC.startResearch(S, 'h_fuel1'), 'could not start');
+  const play = () => S.story.play || 0, sl = S.tech.slots[0];
+  S.speed = 4; let p0 = sl.prog, a0 = play();
+  for (let i = 0; i < 40; i++) { IC.step(S, 1); }
+  const atSpeed = (sl.prog - p0) / (play() - a0);
+  S.wait = { speed: IC.WAIT.speed, key: 'test' }; p0 = sl.prog; a0 = play();
+  for (let i = 0; i < 40; i++) { IC.deckTick(S, 8); IC.researchTick(S, 8); }
+  const atWait = (sl.prog - p0) / (play() - a0);
+  assert(Math.abs(atWait / atSpeed - 1) < 0.02, `per second of play research went ${atSpeed.toExponential(2)} at 4× and ${atWait.toExponential(2)} waiting`);
+  assert(/min of play/.test(IC.techDur(S, IC.techById('h_fuel1'))) && /Year 1/.test(IC.techWhen(S, IC.techById('h_fuel1'))), 'the length is not said in minutes of play with a date');
+});
+test('research: slots grow from two to four', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', hour: 7 }); IC.S = S;
+  IC.researchTick(S, 1);
+  assert(S.tech.slots.length === 2 && /Research office/.test(IC.techNextSlot(S)), 'the Career does not start with two slots and say what opens the third');
+  S.tech.done.add('a_lab'); IC.researchTick(S, 1);
+  assert(S.tech.slots.length === 3 && /Act II/.test(IC.techNextSlot(S)), 'the Research office did not open a third slot');
+  S.story.act = 2; IC.researchTick(S, 1);
+  assert(S.tech.slots.length === 4 && !IC.techNextSlot(S), 'Act II did not open a fourth slot');
+});
+test('research: every modifier a project carries is read by the simulation, has words and shows in a panel', () => {
+  const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '../iron-canopy/js');
+  const src = fs.readdirSync(dir).filter(f => f.endsWith('.js') && f !== 'research.js').map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+  const keys = new Set(IC.TECH.flatMap(t => Object.keys(t.fx || {})));
+  assert(keys.size >= 20, `only ${keys.size} keys`);
+  for (const k of keys) {
+    assert(IC.MOD_WORDS[k] && IC.MOD_WORDS[k].t, `${k} has no words`);
+    assert(new RegExp(`IC\\.mod(Add)?\\(S, '${k}'\\)`).test(src), `${k} is not read by the simulation`);
+    for (const t of IC.TECH.filter(x => x.fx && x.fx[k] != null)) assert(t.desc && t.desc.length > 30, `${t.id} has no words`);
+  }
+  const S = { tech: { done: new Set(['h_fuel1', 'c_lean']), slots: [] } };
+  const L = IC.modList(S);
+  assert(L.some(m => m.key === 'refuel' && /5% more/.test(m.text) && m.why[0] === 'Refuelling drills I'), 'the airport panel list does not say refuelling and where it came from');
+  assert(L.some(m => m.key === 'buildSpeed' && /−5%/.test(m.text)), `a trade-off reads as a gain: ${JSON.stringify(L)}`);
 });
 
 /* ---------- run ---------- */

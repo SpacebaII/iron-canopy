@@ -235,5 +235,13 @@
  "war journal: an intercept that says it turns home first does turn home, short of the meeting point, with fuel left": 100,
  "war perf: U.hyp and U.hyp3 give Math.hypot to the bit, so the faster distances play the same game": 0.6,
  "war perf: the travel times with every road open are kept through a cut, and worked out again when a road changes": 8.5,
- "war perf: the kept lists of cities and airports are copies, and follow the list of infrastructure": 9.6
+ "war perf: the kept lists of cities and airports are copies, and follow the list of infrastructure": 9.6,
+ "research: modifiers add up from their sources, are capped, and say where they came from": 0.0,
+ "calendar: city growth and a deal's length follow the calendar (twice the days a month, twice the live days); research follows play": 29.3,
+ "research: refuelling research lets the trucks refuel more aircraft an hour": 7.8,
+ "research: exclusive projects rule each other out, and nothing done is lost": 8.6,
+ "research: a new Career opens the Research room on day one with the civil lanes; every \"Needs research\" leads to a project that can be started": 16.0,
+ "research: every modifier a project carries is read by the simulation, has words and shows in a panel": 0.0,
+ "research: Wait does not finish research faster than play": 8.6,
+ "research: slots grow from two to four": 8.4
 }
