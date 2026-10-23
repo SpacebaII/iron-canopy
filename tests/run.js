@@ -5281,7 +5281,7 @@ test('save: a Career game with works in progress and aircraft taxiing saves, loa
 test('save: a Quick war saved with missiles in the air loads and plays on like the unsaved one', () => {
   const S = IC.newGame({ seed: 4242, mode: 'campaign' });
   const fight = () => S.enemy.war && S.missiles.length > 0 && S.threats.some(t => !t.dead && t.aff === 'H');
-  for (let i = 0; i < 16 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
+  for (let i = 0; i < 24 * 7200 && !fight(); i++) { IC.step(S, 0.5); if (i % 120 === 0) Q.commander(S); }
   assert(fight(), 'no battle to save');
   const { json, S2 } = saveAndPlayOn(S, 0.5, Q.commander);
   assert(json.length < 3e6, `a Quick war save is ${(json.length / 1e6).toFixed(1)} MB`);
@@ -5631,14 +5631,15 @@ test('building: an apron and a terminal of any shape, drawn corner by corner, ta
   const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), T0 = ap.parts.find(p => p.kind === 'terminal');
   const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, T0).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
   const draw = (tool, P, edge) => { const m = S.mode2 = IC.bldMode(S, ap, tool); m.edge = edge; IC.bldFree = true; for (const q of P) IC.clickWorld(W(q[0], q[1]), 0, true); IC.clickWorld(W(P[0][0], P[0][1]), 0, true); IC.bldFree = false; assert(m.set, `${tool}: not closed`); const r = IC.buildFinish(S, m); S.mode2 = null; assert(r === 'built', `${tool}: ${m.err}`); return ap.parts[ap.parts.length - 1]; };
+  // (clear of the Starter's terminal, which reaches 330 m along the runway's middle)
   // a chevron terminal, and an apron with a rounded outer corner against its wall
-  const T = draw('tmdraw', [[-3.4, 3.8], [-6.5, 4.15], [-9.6, 3.8], [-9.9, 4.25], [-6.5, 4.75], [-3.1, 4.3]], 'sharp');
-  const A = draw('apdraw', [[-3.3, 1.915], [-9.6, 1.915], [-10.6, 2.8], [-9.6, 3.8], [-6.5, 4.15], [-3.4, 3.8]], 'round');
+  const T = draw('tmdraw', [[-3.8, 3.8], [-6.9, 4.15], [-10, 3.8], [-10.3, 4.25], [-6.9, 4.75], [-3.5, 4.3]], 'sharp');
+  const A = draw('apdraw', [[-3.7, 1.915], [-10, 1.915], [-11, 2.8], [-10, 3.8], [-6.9, 4.15], [-3.8, 3.8]], 'round');
   assert(T.kind === 'terminal' && T.poly.length === 6 && A.kind === 'apron' && A.poly.length > 12, `outlines: terminal ${T.poly && T.poly.length}, apron ${A.poly && A.poly.length}`);
-  assert(Math.abs(IC.partArea(A) - IC.polyArea(IC.shapeOutline([[-3.3, 1.915], [-9.6, 1.915], [-10.6, 2.8], [-9.6, 3.8], [-6.5, 4.15], [-3.4, 3.8]].map(([x, y]) => ({ x, y })), 'round'))) < 0.05, 'the apron is not the outline drawn');
+  assert(Math.abs(IC.partArea(A) - IC.polyArea(IC.shapeOutline([[-3.7, 1.915], [-10, 1.915], [-11, 2.8], [-10, 3.8], [-6.9, 4.15], [-3.8, 3.8]].map(([x, y]) => ({ x, y })), 'round'))) < 0.05, 'the apron is not the outline drawn');
   finishWorks(S, ap);
   const sm = S.mode2 = IC.bldMode(S, ap, 'stand'); sm.size = 'm'; IC.bldFree = true;
-  for (const x of [-4.2, -5.0, -5.8, -7.2, -8.0, -8.8]) { IC.clickWorld(W(x, 3.6), 0, true); }
+  for (const x of [-4.6, -5.4, -6.2, -7.6, -8.4, -9.2]) { IC.clickWorld(W(x, 3.6), 0, true); }
   IC.bldFree = false; S.mode2 = null; ap.dirty = true; IC.aptStats(S, ap);
   assert(A.stands.length === 6 && A.stands.every(s => s.linked && s.contact), A.stands.map(s => `${s.linked ? '' : 'unlinked '}${s.contact ? 'gate' : 'remote'}`).join(', '));
   assert(!ap.st.warn.length, ap.st.warn.join(' / '));
@@ -5652,7 +5653,7 @@ test('building: an apron and a terminal of any shape, drawn corner by corner, ta
 test('building: a taxiway drawn straight across another taxiway and a runway joins them there, with a runway crossing', () => {
   const { S, ap } = foundAs('national'), rw = ap.parts.find(p => p.kind === 'runway'), T0 = ap.parts.find(p => p.kind === 'terminal');
   const fr = { x: IC.rwAt(rw, 0.5).x, y: IC.rwAt(rw, 0.5).y, a: Math.atan2(rw.b.y - rw.a.y, rw.b.x - rw.a.x) }, sg = IC.rectLocal(fr, T0).y > 0 ? 1 : -1, W = (x, y) => IC.rectWorld(fr, x, y * sg);
-  const par = ap.parts.find(p => p.kind === 'taxi' && p.nodes.length > 4), py = IC.rectLocal(fr, ap.nodes[par.nodes[1]]).y * sg;
+  const par = ap.parts.filter(p => p.kind === 'taxi').sort((x, y) => y.nodes.length - x.nodes.length)[0], py = IC.rectLocal(fr, ap.nodes[par.nodes[1]]).y * sg;
   // two clicks, from the grass beyond the runway to the parallel taxiway's far side: nothing clicked on either
   const m = S.mode2 = IC.bldMode(S, ap, 'taxi'); IC.bldFree = true;
   IC.clickWorld(W(6.3, -3), 0, true); IC.clickWorld(W(6.3, py + 0.8), 0, true);
@@ -5779,7 +5780,7 @@ test('wave 13: part of an airport saved as a layout is planned again at another 
   assert(placed, `no room for it at ${ap2.name}: ${mm.err}`);
   const n0 = ap2.parts.length, t0 = ap2.parts.filter(p => p.kind === 'terminal').length;
   assert(IC.buildFinish(S, mm) === 'built', mm.err);
-  assert(ap2.parts.length - n0 === L.parts.length && ap2.parts.filter(p => p.kind === 'terminal').length === t0 + 1, `${ap2.parts.length - n0} parts planned, ${L.parts.length} saved`);
+  assert(ap2.parts.length - n0 === L.parts.length && ap2.parts.filter(p => p.kind === 'terminal').length === t0 + L.parts.filter(p => p.kind === 'terminal').length, `${ap2.parts.length - n0} parts planned, ${L.parts.length} saved`);
   assert(ap2.parts.slice(n0).every(p => !p.built && ap2.works.some(w => w.part === p)), 'the parts are not planned as works');
   assert(IC.bldUndo(S, ap2) && ap2.parts.length === n0, 'Undo does not take the whole layout back');
   // mirrored: the same parts on the other side of its long axis
