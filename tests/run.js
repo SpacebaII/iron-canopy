@@ -4173,6 +4173,78 @@ for (const L of IC.LESSONS) test(`academy: ${L.id} lesson can be completed`, () 
   assert(r.won, `not finished (step ${r.step}${r.over ? ', ' + r.over : ''})\n        roster: ${S.roster.map(x => x.name + ':' + x.st).join(' ')}\n        air: ${S.air.map(a => a.name + ':' + a.state + ':' + (a.mission && a.mission.type)).join(' ')}\n        weather: ${S.weather.kind}\n        last log:\n          ${S.logs.slice(0, 12).map(l => U.hhmm(l.t) + ' ' + l.tag + ' ' + l.msg).join('\n          ')}`);
 }, true);
 
+/* ---------- Academy fixes (play-test, wave 17) ---------- */
+const acaGame = (lesson, seed) => IC.newGame({ seed: seed || 20260926, mode: 'academy', lesson, hour: 10 });
+const acaRun = (S, sec, each) => { for (let i = 0; i < sec / 0.25 && !S.over; i++) { IC.step(S, 0.25); if (each && i % 40 === 0) each(S); } };
+test('academy fixes: Friend or Foe has green tracks at once, and its bomber waits for the player and comes again when lost', () => {
+  const S = acaGame('id');
+  acaRun(S, 900);
+  const green = S.threats.filter(t => !t.dead && t.det && (t.aff === 'A' || t.aff === 'N'));
+  assert(green.length >= 3, `only ${green.length} green tracks a quarter of an hour in`);
+  assert(!S.threats.some(t => t.disguise), 'the bomber took off before the player had read three tracks');
+  for (const t of green.slice(0, 3)) IC.emit(S, 'select', { kind: 'track', ref: t });
+  acaRun(S, 120);
+  const b = S.camp.bomber;
+  assert(S.camp.step === 1 && b && !b.dead, `no bomber after the player started watching (step ${S.camp.step})`);
+  // shot down before the player reached it: the lesson goes back to watching and another one comes
+  b.dead = true;
+  acaRun(S, 120);
+  assert(S.camp.step === 1 && S.camp.bomber && S.camp.bomber !== b && !S.camp.bomber.dead, 'no second bomber after the first was lost');
+});
+test('academy fixes: Keep Them Fed lets the player call the helicopter at its step', () => {
+  const S = acaGame('logi');
+  acaRun(S, 60);
+  const q = IC.findSpot(S, 'depot', S.camp.bat.x, S.camp.bat.y, 150, 450);
+  IC.deploy(S, 'depot', q.x, q.y);
+  acaRun(S, 4 * 3600, S => {
+    const d = S.units.find(u => u.type === 'depot' && !u.central);
+    if (S.camp.step === 1) d.pri = 'first';
+    if (S.camp.step === 2 && S.vehicles.filter(v => v.home === d).length < 3) IC.buyCompany(S, d);
+    if (S.camp.step === 3) S.over = 'stop';
+  });
+  assert(S.camp.step === 3, `never reached the helicopter step (step ${S.camp.step})`);
+  const P = IC.heliPlan(S, S.camp.bat, true);
+  assert(!P.why, `the helicopter is refused: ${P.why}`);
+  assert(IC.heliResupply(S, S.camp.bat, true), 'Resupply by helicopter did not launch');
+  S.over = null; acaRun(S, 2);
+  assert(S.camp.step === 4, 'pressing H did not complete the step');
+});
+test('academy fixes: The Air Base sends its drones within minutes and names its bomber when a radar holds it', () => {
+  const S = acaGame('airbase');
+  acaRun(S, 5);
+  const op = S.camp.drones, b = S.byId.ab_fwd;
+  assert(op && S.threats.filter(t => t.op === op && !t.dead).length === 5, 'the drone wave did not come');
+  assert(S.threats.filter(t => t.op === op).every(t => U.dist(t, b) < 400), 'the drones start too far out to meet the team');
+  IC.callIn(S, b.x + 30, b.y + 20);
+  acaRun(S, 3 * 3600, S => { const t = S.threats.find(x => x.type === 'bmr' && x.det); if (S.camp.step >= 2 && t) S.over = 'seen'; });
+  const t = S.threats.find(x => x.type === 'bmr' && x.det);
+  assert(t, `the bomber was never seen (step ${S.camp.step})`);
+  acaRun(S, 1);
+  assert(t.aff === 'H' && t.klass === 'bomber', `the bomber is shown as ${t.aff}/${t.klass}`);
+  assert(IC.bestInterceptor(S, t), 'no fighter can reach the bomber');
+}, true);
+test('academy fixes: Jamming waits for the second radar, Layered Defence shows its 15 km, the hints name a tile', () => {
+  const S = acaGame('ew');
+  acaRun(S, 30);
+  S.sel = { kind: 'unit', ref: S.camp.rad };
+  acaRun(S, 1800);
+  assert(S.camp.step === 1, `the jammer was located without the second radar (step ${S.camp.step})`);
+  const L = acaGame('layers'), b = L.byId.ab_fwd;
+  const z = IC.stepHint(L).zone(L);
+  assert(z && z.r === 150 && z.x === b.x, 'no 15 km ring round the base');
+  const q = IC.findSpot(L, 'gf', b.x + 260, b.y, 0, 60);
+  IC.deploy(L, 'gf', q.x, q.y);
+  const u = L.units.find(x => x.type === 'gf'); u.x = q.x; u.y = q.y;
+  assert(/too far/.test(IC.stepText(L)[0].text), 'nothing says the gap filler is too far');
+  for (const Le of IC.LESSONS) for (const st of Le.steps) if (st.hint && st.hint.cat) assert(st.hint.tile && (IC.UNITS[st.hint.tile] || st.hint.tile === 'callin'), `${Le.id}: a hint opens the arsenal without naming its tile`);
+});
+test('academy fixes: the damage step only says the engineers started on a runway that was hit', () => {
+  const S = acaGame('airbase');
+  S.camp.step = 6;
+  const txt = IC.stepText(S)[6].text;
+  assert(/came through/.test(txt) && !/already started/.test(txt), `the damage step says: ${txt}`);
+});
+
 /* ---------- recorder and replay ---------- */
 test('recorder: keeps the last 15 minutes of an engagement, with height, within the step budget', () => {
   const S = IC.newGame({ seed: 7, mode: 'range' });

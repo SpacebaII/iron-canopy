@@ -388,7 +388,7 @@ function brief() {
     const cur = steps.findIndex(s => s.cur), left = steps.length - cur - 1;
     // the step before, cut to two lines, and the current one whole: the current step must never scroll out of sight
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
-    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}`;
+    h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}<button class="howbtn" data-act="retryLesson" title="Start this lesson again from its first step">Restart lesson</button>`;
   } else if (S.story && S.story.act < 4 && ui.compact()) h = nextGoal();
   else if (S.story && S.story.act < 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
@@ -744,6 +744,13 @@ ui.topHint = () => { let id = null; for (const [k, o] of hints) if (o.text) id =
 /* placed every frame (things on screen move, the map scrolls); each hint keeps its own elements */
 const hEls = new Map();
 const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor && o.look ? '<button class="btn sm primary" data-act="tutorLook" title="The place is off the screen: the camera goes there">Show me where</button>' : ''}${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
+// an element's box cut to the row it scrolls in (an arsenal tile half out of its row is ringed where it shows)
+const clipRect = e => {
+  const b = e.getBoundingClientRect(), row = e.closest('.tiles');
+  if (!row) return b;
+  const c = row.getBoundingClientRect(), left = Math.max(b.left, c.left), right = Math.min(b.right, c.right);
+  return { left, top: b.top, width: right - left, height: b.height };
+};
 ui.hintFrame = function () {
   const L = $('hints');
   for (const [id, h] of hEls) if (hints.get(id) !== h.o) { h.ring.remove(); if (h.note) h.note.remove(); hEls.delete(id); }
@@ -768,7 +775,7 @@ ui.hintFrame = function () {
       if (h.note && h.off !== off && o.tutor) { h.off = off; h.note.innerHTML = noteHTML(id, Object.assign({}, o, { look: off })); }
       if (off && o.tutor) r = { left: W.width / 2 - 30, top: W.height * 0.42, width: 60, height: 1, offRing: true }; } }
     let inCard = false;
-    if (!o.at) { const e = anchorEl(o.el); if (e && e.offsetParent !== null && !(covered && !$('warroom').contains(e))) { const b = e.getBoundingClientRect(); if (b.width) r = { left: b.left - W.left, top: b.top - W.top, width: b.width, height: b.height }; inCard = !!e.closest('#evcard, #cine, #unlock'); } }
+    if (!o.at) { const e = anchorEl(o.el); if (e && e.offsetParent !== null && !(covered && !$('warroom').contains(e))) { const b = clipRect(e); if (b.width > 0) r = { left: b.left - W.left, top: b.top - W.top, width: b.width, height: b.height }; inCard = !!e.closest('#evcard, #cine, #unlock'); } }
     // a note waits while a card, the menu or a room covers the screen (unless it points into the room, or the card)
     if (r && o.text && blocked && !inCard) r = null;
     h.ring.hidden = !r || !o.ring || !!r.offRing; if (h.note) h.note.hidden = !r;
@@ -796,6 +803,11 @@ function coach() {
   else if (!cur || cur.el !== h.el) { hints.delete('lesson'); IC.hint.show('lesson', { el: h.el, persist: false }); }
   // a lesson step that asks for something from the arsenal opens it on the right tab, once
   if (h && h.cat && ui.hintCat !== h) { ui.hintCat = h; ui.cat = h.cat; ui.arMin = false; }
+  // and scrolls the tile it names into view, once it is drawn
+  if (h && h.tile && ui.hintTile !== h) {
+    const e = $('tile-' + h.tile), row = e && e.closest('.tiles');
+    if (row && e.offsetParent !== null) { ui.hintTile = h; row.scrollLeft = U.clamp(e.offsetLeft - row.offsetLeft - (row.clientWidth - e.offsetWidth) / 2, 0, row.scrollWidth - row.clientWidth); }
+  }
   const sh = S.hint || null, id = sh ? 'game:' + (sh.id || sh.el || 'at') : null;
   if (ui.gameHint && ui.gameHint !== id) { hints.delete(ui.gameHint); ui.gameHint = null; }
   if (id && !hints.has(id) && ui.gameHint !== id) { IC.hint.show(id, Object.assign({ btn: 'OK' }, sh, { persist: false })); ui.gameHint = id; }
@@ -1026,6 +1038,7 @@ ui.toggleMenu = function (on) {
   on = on == null ? !ui.menu : on;
   if (on === ui.menu) return;
   ui.menu = on; $('menu').hidden = !on;
+  $('menuRetry').hidden = S.mode !== 'academy';
   if (on) { ui.pausedByMenu = !S.paused; S.paused = true; }
   else if (ui.pausedByMenu) { S.paused = false; ui.pausedByMenu = false; }
   $('menuTime').textContent = `${U.clock(S.time)} · ${S.story ? `${IC.ACTS[S.story.act].name}, ${S.story.role}` : { campaign: 'Quick war', sandbox: 'War at dawn', test: 'Sandbox', academy: 'Academy', range: 'Test range' }[S.mode] || ''}`;

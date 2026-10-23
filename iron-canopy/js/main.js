@@ -437,7 +437,7 @@ function onAct(e) {
     case 'hintsReset': IC.hint.reset(); ui.firstRunDone = null; if (S.tutor) { S.tutor.over = {}; S.tutor.done = {}; S.tutor.cur = null; } IC.toast(S, 'info', 'HINTS', IC.FOCUS.tutors ? 'Each tutorial will show again when you next meet what it teaches.' : 'Every hint will show again.'); break;
     case 'lesson': IC.begin('academy', v); return;
     case 'nextLesson': { const i = IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id); if (IC.LESSONS[i + 1]) IC.begin('academy', IC.LESSONS[i + 1].id); return; }
-    case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
+    case 'retryLesson': IC.ui.toggleMenu(false); IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
     case 'pause': S.paused = !S.paused; S.skip = false; IC.waitStop(S); break;
@@ -669,6 +669,13 @@ for (const id of ['arsenal', 'insp', 'wrBody', 'feed', 'comms', 'rail', 'brief']
   el.addEventListener('pointerup', () => { IC.ui.busyUntil = performance.now() + 150; });
 }
 $('cine').addEventListener('click', () => IC.ui.closeCine());
+// the arsenal's row of tiles scrolls sideways with an ordinary mouse wheel too, not only Shift+wheel or a touchpad
+$('arsenal').addEventListener('wheel', e => {
+  const t = e.target.closest && e.target.closest('.tiles');
+  if (!t || t.scrollWidth <= t.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  t.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? t.clientWidth : 1);
+}, { passive: false });
 
 /* ---------- time: skip ahead and auto-pause ---------- */
 function startSkip() { IC.waitStop(S); S.skip = true; S.paused = false; S.skipT = S.time; }
