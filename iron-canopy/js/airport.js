@@ -889,7 +889,8 @@ IC.aptStats = function (S, ap) {
   if (ap.land && !ap.land.fixed && IC.landAccess && ap.kind !== 'airbase') {
     const A = IC.landAccess(S, ap), num = v => Math.round(v).toLocaleString('en-US');
     if (A.short > 0.1) st.warn.push(`The car parks hold ${num(A.have)} of the ${num(A.need)} cars travellers bring: those who find no space choose another airport. ${ap.land.auto === false ? 'Draw car parks by the terminal, or let developers build them.' : 'Give the terminal free ground in front of it, or draw car parks on open ground.'}`);
-    if (A.kerbShort > 0.1) st.warn.push(`The terminal kerb is ${Math.round(A.kerbHave * 100)} m long and cars dropping off need ${Math.round(A.kerb * 100)} m: they queue on the airport road. A longer terminal face gives more kerb.`);
+    if (A.kerbShort > 0.1 && A.deck) st.warn.push(`The kerbs are short: ${Math.round(A.deck * 100)} m on the departures deck for about ${Math.round(A.kDep * 100)} m of cars dropping off, ${Math.round(A.ground * 100)} m at arrivals for about ${Math.round(A.kArr * 100)} m picking up. Cars queue on the airport road; a longer terminal face gives more kerb.`);
+    else if (A.kerbShort > 0.1) st.warn.push(`The terminal kerb is ${Math.round(A.kerbHave * 100)} m long and cars dropping off need ${Math.round(A.kerb * 100)} m: they queue on the airport road. A longer terminal face gives more kerb.`);
   }
   const ammo = alive('ammo');
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');

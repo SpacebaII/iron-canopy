@@ -387,11 +387,15 @@ IC.landAccess = function (S, ap) {
   for (const it of L.items || []) if (it.kind === 'park' || it.kind === 'garage') have += it.cap || 0;
   for (const q of ap.parts) if (q.kind === 'surface' && q.built && IC.SURF[q.surf] && IC.SURF[q.surf].park && !IC.aptInFence(ap, q)) own += Math.round(IC.SURF[q.surf].park * IC.partArea(q));
   have += own;
-  // the kerb: cars stand a couple of minutes to drop their passengers, 7 m each; an upper deck doubles it
-  const kerb = p * 0.55 / 1.6 * (2 / 60) * 0.07 * car;
+  // the kerb: cars stand a couple of minutes to drop their passengers, 7 m each; departures take about 60% of it
+  // (drop-offs), arrivals the rest (pick-ups, the others meet theirs in the car parks). One kerb serves both, ends
+  // apart; with an upper deck departures go up there and the ground kerb is the arrivals'
+  const kerb = p * 0.55 / 1.6 * (2 / 60) * 0.07 * car, kDep = kerb * 0.6, kArr = kerb * 0.4;
   const term = new Set(ap.parts.filter(q => q.kind === 'terminal').map(q => q.id));
-  let kerbHave = 0; for (const r of L.roads || []) if ((r.kerb || r.kind === 'upper') && term.has(r.by)) kerbHave += U.dist(r.pts[0], r.pts[r.pts.length - 1]);
-  return { pax: p, need, have, own, short: need ? U.clamp(1 - have / need, 0, 1) : 0, kerb, kerbHave, kerbShort: kerb > 0.3 && L.roads && L.roads.length ? U.clamp(1 - kerbHave / kerb, 0, 1) : 0 };
+  let ground = 0, deck = 0; for (const r of L.roads || []) if (term.has(r.by)) { if (r.kind === 'upper') deck += U.dist(r.pts[0], r.pts[r.pts.length - 1]); else if (r.kerb) ground += U.dist(r.pts[0], r.pts[r.pts.length - 1]); }
+  const kerbHave = ground + deck, on = kerb > 0.3 && L.roads && L.roads.length;
+  const kerbShort = !on ? 0 : deck ? Math.max(U.clamp(1 - deck / kDep, 0, 1), U.clamp(1 - ground / kArr, 0, 1)) : U.clamp(1 - kerbHave / kerb, 0, 1);
+  return { pax: p, need, have, own, short: need ? U.clamp(1 - have / need, 0, 1) : 0, kerb, kerbHave, kerbShort, kDep, kArr, deck, ground };
 };
 /* how much the front side helps an airport draw travellers: 1, down to 0.6 with no parking and a jammed kerb */
 IC.landAccessF = ap => ap.land && ap.land.accF != null ? ap.land.accF : 1;

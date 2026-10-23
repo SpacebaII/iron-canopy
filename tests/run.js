@@ -740,7 +740,7 @@ test('runway rules: under "only when cleared", an airliner never goes onto the r
   for (let i = 0; i < 24 * 3600 / 0.5 && (i < 9 * 3600 / 0.5 || near < 6); i++) {
     IC.step(S, 0.5); watch();
     for (const m of ap.moves) {
-      if (m.kind === 'dep' && m.phase === 'roll' && !(m.delay > 0) && !seenRun.has(m.id) && IC.opsKind(m.type) !== 'light') { seenRun.add(m.id); runs.push(S.time); }
+      if (m.kind === 'dep' && m.phase === 'roll' && !(m.delay > 0) && !seenRun.has(m.id) && (IC.opsKind(m.type) === 'jet' || IC.opsKind(m.type) === 'heavy')) { seenRun.add(m.id); runs.push(S.time); }
       if (m.kind === 'arr' && m.phase === 'final' && m.t >= (IC.GOPS.FAF - O.GO) / O.ARR_V && !seenGo.has(m.id)) { seenGo.add(m.id); const r = runs.filter(t => t <= S.time).pop(); if (r) tight = Math.min(tight, S.time - r); }
     }
   }
@@ -1406,7 +1406,7 @@ test('build bar: every tab has items, and each one can be placed on an airport',
       const n = placed.length, c = P(-20 + (n % 6) * 7, 14 + Math.floor(n / 6) * 6);
       const m = IC.bldMode(S, ap, part);
       if (k === 'carpark') m.surf = 'asph';
-      if (part === 'stand' || part === 'stretch' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to: their own tests cover them)
+      if (part === 'stand' || part === 'stretch' || part === 'reshape' || part === 'exits' || part === 'hold' || part === 'parallel' || part === 'skybridge' || part === 'people' || part === 'ils' || part === 'alert') { skipped.push(k); continue; }   // (these need something to attach to: their own tests cover them)
       S.mode2 = m; S.hover = c;
       const cnt = () => ap.parts.length + (ap.svcRoads || []).length, n0 = cnt(), two = IC.bldIsArea(part) || IC.bldIsLine(part), c2 = { x: c.x + 4, y: c.y + 2.2 };
       IC.clickWorld(c, 0);
@@ -1890,6 +1890,93 @@ test('GA ramp: a click on a light aircraft picks it, and its panel says who it i
   for (let i = 0; i < 4 * 1800 && !r.away; i++) { IC.step(S, 0.25); if (i % 8 === 0) { const x = IC.gaWhat(S, r); if (x) said.add(x.doing.replace(/ · .*/, '')); } }
   const all = [...said].join(' | ');
   assert(/walking out/.test(all) && /walk-round/.test(all) && /Taxiing out/.test(all) && /run-up/.test(all) && /Taking off/.test(all), all);
+});
+test('builder: Reshape moves a corner of a built ramp; the ground gained is paid for, a corner that crosses a side is refused', () => {
+  const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 9 }); IC.S = S; S.budget = 1e5;
+  const ap = S.infra.find(a => a.parts && a.parts.some(p => p.kind === 'runway'));
+  const m0 = IC.bldMode(S, ap, 'ramp'), c = { x: ap.x + 30, y: ap.y + 30 };
+  IC.buildInput(S, m0, c, 0, 20, true); IC.buildInput(S, m0, { x: c.x + 4, y: c.y + 3 }, 0, 20, true);
+  assert(IC.buildFinish(S, m0) === 'built', m0.err);
+  const apr = ap.parts[ap.parts.length - 1]; apr.built = true; apr.prog = 1; ap.dirty = true;
+  const A0 = IC.partArea(apr), b0 = S.budget, C = IC.partOutline(apr), k = C.reduce((b, q, i) => q.x + q.y > C[b].x + C[b].y ? i : b, 0);
+  const m = IC.bldMode(S, ap, 'reshape');
+  assert(IC.buildInput(S, m, { x: C[k].x + 0.03, y: C[k].y }, 0, 20, true) === 'point' && m.rs && m.rs.i === k, m.err || 'the corner was not picked');
+  IC.buildInput(S, m, { x: C[k].x + 1.5, y: C[k].y + 1 }, 0, 20, true);
+  const plan = IC.bldReady(S, m);
+  assert(plan && plan.ok && plan.cost > 0 && /ha more/.test(plan.text[0]), plan ? plan.why || plan.text.join(' · ') : 'no plan');
+  assert(IC.buildFinish(S, m) === 'built', m.err);
+  assert(apr.poly && apr.poly.length === 4 && IC.partArea(apr) > A0 + 0.5, `${A0.toFixed(2)} ha became ${IC.partArea(apr).toFixed(2)}`);
+  assert(Math.abs(b0 - S.budget - plan.cost) < 0.01, `paid ${(b0 - S.budget).toFixed(2)} for a plan of ${plan.cost.toFixed(2)}`);
+  // (a corner pulled across the opposite side: the sides would cross)
+  const D = IC.partOutline(apr), mid = { x: (D[(k + 1) % 4].x + D[(k + 2) % 4].x) / 2, y: (D[(k + 1) % 4].y + D[(k + 2) % 4].y) / 2 }, j = (k + 3) % 4;
+  const far = { x: D[j].x + (mid.x - D[j].x) * 1.6, y: D[j].y + (mid.y - D[j].y) * 1.6 };
+  const R = IC.reshapePlan(S, ap, apr, j, far);
+  assert(!R.ok && /cross/.test(R.why), R.why || 'a crossed outline was allowed');
+});
+test('front side: departures drop off at one end of the kerb and arrivals are met at the other; with an upper deck each has its own, and each must be long enough', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap];
+  growFront(S, cap, 3000);
+  const L = cap.land, A = IC.landAccess(S, cap);
+  assert(Math.abs(A.kDep + A.kArr - A.kerb) < 1e-9 && A.kDep > A.kArr, 'the kerb need is not split between departures and arrivals');
+  // a deck as long as the whole ground kerb, then one far too short: the departures side runs out though the total looks enough
+  const k = L.roads.find(r => r.kerb), len = U.dist(k.pts[0], k.pts[k.pts.length - 1]);
+  L.roads = L.roads.filter(r => r.kind !== 'upper');
+  L.roads.push({ pts: k.pts.slice(), w: 0.16, kind: 'upper', lv: 1, by: k.by, oneway: 1 });
+  const B = IC.landAccess(S, cap);
+  assert(B.deck > 0 && Math.abs(B.deck - len * L.roads.filter(r => r.kind === 'upper').length) < 1e-6 && B.ground > 0, 'the deck is not counted as the departures kerb');
+  const up = L.roads.find(r => r.kind === 'upper'), a = up.pts[0], b = up.pts[up.pts.length - 1];
+  up.pts = [a, { x: a.x + (b.x - a.x) * 0.02, y: a.y + (b.y - a.y) * 0.02 }];
+  const C2 = IC.landAccess(S, cap), total = 1 - (C2.ground + C2.deck) / C2.kerb;
+  assert(C2.kerbShort > Math.max(0, total) + 0.05, `short ${C2.kerbShort.toFixed(2)} with ${(C2.deck * 100).toFixed(0)} m of deck for ${(C2.kDep * 100).toFixed(0)} m of drop-offs`);
+});
+test('3D: a parking garage stands its levels high, a hotel and offices taller, a warehouse low; car parks stay paint', () => {
+  const MB = IC.MB, b = { x: 0, y: 0 }, top = it => { const B = MB.Builder(1); if (!IC.landMass3d(MB, B, it, b)) return null; const p = B.groups.main.pos; let z = 0; for (let i = 2; i < p.length; i += 3) z = Math.max(z, p[i]); return z; };
+  const box = kind => ({ kind, x: 0.3, y: 0.2, a: 0.4, w: IC.LAND[kind].w, h: IC.LAND[kind].h, lvls: kind === 'garage' ? 5 : undefined });
+  const g = top(box('garage')), h = top(box('hotel')), o = top(box('office')), w = top(box('warehouse'));
+  assert(g > 14 && g < 22, `garage ${g} m`);
+  assert(h > 28 && o > 20 && h > g && o > g, `hotel ${h} m, offices ${o} m`);
+  assert(w > 9 && w < 14, `warehouse ${w} m`);
+  assert(top(box('park')) === null && top(box('stop')) === null, 'a car park or bus stop stands up');
+});
+test('club field: a visitor from another field parks at the end of the row for a few hours, then flies home from there', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const F = S.asp.fields[0], G = S.asp.fields.slice(1).sort((a, b) => U.dist(a, F) - U.dist(b, F))[0];
+  const t = IC.gaLaunch(S, { x: G.x, y: G.y, name: G.name, field: G.id }, { x: F.x, y: F.y, name: F.name, field: F.id }, { type: 'tourer', progress: 0.7 });
+  let v = null;
+  for (let i = 0; i < 4 * 7200 && !v; i++) { IC.step(S, 0.25); v = (S.ga.fieldVis || []).find(x => x.cs === t.cs) || null; }
+  assert(v && v.f === F.id, `it did not stay (${t.dead ? 'gone' : 'still flying'})`);
+  assert(v.until - v.arr >= 3600 && v.until - v.arr <= 4 * 3600, `a stay of ${((v.until - v.arr) / 3600).toFixed(1)} h`);
+  assert(IC.fieldLife(S, F).some(o => o.vis === v && o.key === 'tourer'), 'it is not on the row');
+  v.until = S.time;
+  let back = null;
+  for (let i = 0; i < 40 && !back; i++) { IC.step(S, 0.25); back = S.threats.find(x => !x.dead && x.cs === t.cs) || null; }
+  assert(back && back.fld && back.gaTo.field === G.id, 'it did not set off home');
+  assert(!IC.fieldLife(S, F).some(o => o.vis), 'its place still shows it');
+});
+test('GA: at an airport with no GA ramp a visitor lands, taxis and parks on a free remote stand among the airliners, then leaves', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); IC.S = S;
+  const ap = S.byId[S.story.cap];
+  ap.parts = ap.parts.filter(q => !(q.kind === 'apron' && q.zone === 'light')); S.ga.parked = S.ga.parked.filter(r => r.ap !== ap.id); ap.dirty = true; IC.aptStats(S, ap);
+  assert(!IC.gaRamp(ap), 'the ramp is still there');
+  const F = S.asp.fields.slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0];
+  const t = IC.gaLaunch(S, { x: F.x, y: F.y, name: F.name, field: F.id }, { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, { type: 'tourer', progress: 0.6 });
+  let r = null; const seen = new Set();
+  // (other visitors are sent away, so the airlines' share of remote stands is this one's)
+  const others = () => { for (const x of S.ga.parked.filter(x => x.ap === ap.id && x.cs !== t.cs)) { const q = IC.aptStands(ap).find(q => q.id === x.sid); if (q && q.occ === x.id) q.occ = null; S.ga.parked.splice(S.ga.parked.indexOf(x), 1); } };
+  for (let i = 0; i < 4 * 3600 && !r && !t.gaNo; i++) { IC.step(S, 0.25); others(); for (const m of ap.moves) if (m.ga) seen.add(m.phase); r = S.ga.parked.find(x => x.cs === t.cs) || null; }
+  assert(r, 'it was turned away with remote stands free');
+  // the airlines keep three remote stands in four: with a quarter taken by light aircraft the next is sent elsewhere
+  const rem = IC.aptStands(ap).filter(x => (x.zone || 'civil') === 'civil' && !x.contact && !x.cargo && x.linked !== false && x.hp > 0 && x.size !== 'l');
+  const fake = rem.filter(x => !x.occ).slice(0, Math.max(1, Math.floor(rem.length / 4)) - 1); for (const x of fake) x.occ = 'ga0';
+  assert(!IC.gaFreeSpot(ap, IC.ACTYPES.tourer), `a light aircraft took one of the airlines' last ${rem.length} remote stands`);
+  for (const x of fake) x.occ = null;
+  const s = IC.aptStands(ap).find(x => x.id === r.sid);
+  assert(s && !s.contact && (s.zone || 'civil') === 'civil' && seen.has('land') && seen.has('taxi'), `on ${s && s.id}, phases ${[...seen].join(' ')}`);
+  assert(IC.apronLife(S, ap).some(o => o[0] === 'tourer' && o[2] === s.x && o[3] === s.y), 'the map does not show it there');
+  r.until = S.time;
+  for (let i = 0; i < 4 * 1800 && S.ga.parked.includes(r); i++) IC.step(S, 0.25);
+  assert(!S.ga.parked.includes(r) && s.occ !== r.id, 'it did not leave its stand');
 });
 test('builder: an outline drawn corner by corner becomes an apron of that shape, with stands along its edges and a cost by its area', () => {
   const S = IC.newGame({ seed: 777, mode: 'story', preset: 'network', hour: 7 }); IC.S = S; S.budget = 1e5;
