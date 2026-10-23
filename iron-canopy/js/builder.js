@@ -264,7 +264,7 @@ function protest(S, ap, p, clr) {
   S.support = Math.max(0, S.support - Math.min(8, 0.4 + 0.8 * k));
   const towns = new Set(clr.blocks.map(x => x.c));
   for (const c of towns) if (c.morale != null) c.morale = Math.max(0, c.morale - Math.min(12, 1 + 2 * clr.blocks.filter(x => x.c === c).reduce((a, x) => a + WEIGHT(x), 0)));
-  if (S.story) S.story.standing = Math.max(0, S.story.standing - Math.min(5, 0.3 * k));
+  if (S.story) S.story.standing = Math.max(IC.confFloor(S), S.story.standing - Math.min(5, 0.3 * k));
   const where = Object.keys(clr.towns).join(' and ');
   IC.log(S, 'warn', 'BUILD', `${ap.name}: ${IC.bldClearText(clr)} in ${where} to be cleared for the ${U.lc(IC.APART[p.kind].name)}; ${U.money(clr.comp)} in compensation. Residents are angry.`, p.x != null ? p : ap);
   if (k >= 3 && S.camp) IC.card(S, `Protest in ${Object.keys(clr.towns)[0]}`, ap.name, `Residents marched on the town hall: ${IC.bldClearText(clr)} are to be bulldozed for a ${U.lc(IC.APART[p.kind].name)}. Compensation of ${U.money(clr.comp)} is paid as the buildings come down. Public support has dropped. A smaller layout, or building away from town, avoids this.`, 'alarm');

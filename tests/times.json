@@ -202,5 +202,10 @@
  "film: a tracking shot keeps a cruise missile on screen, a little behind the middle, all the way in": 14.6,
  "film: the director films what is about to happen, and does not cut away in the last seconds before it": 28.6,
  "launchers (brief 61): every launcher, radar and missile is built at its size, with its moving parts, low enough in triangles": 0.4,
- "models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light": 0.4
+ "models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light": 0.4,
+ "sandbox: a major strike the enemy plans on request flies, and the war goes on after it": 25.3,
+ "sandbox: a glide bomb comes down from its height and can be shot at": 6.8,
+ "story: before Act III the Minister's confidence never shows below 5, even months in the red": 39.6,
+ "airport: a taxiway laid again over one already there is refused, and not paid for twice": 6.6,
+ "airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of \"closed\"": 6.0
 }

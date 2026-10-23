@@ -4165,6 +4165,25 @@ test('sandbox: repair, clear the sky, and a save that loads and keeps its rules'
   assert(S2.sbx && S2.sbx.ammo && !S2.sbx.free && S2.mode === 'test', 'the sandbox rules were not saved');
   IC.step(S2, 0.5);
 });
+test('sandbox: a major strike the enemy plans on request flies, and the war goes on after it', () => {
+  const S = sbxGame();
+  IC.sandboxTarget(S, IC.cap(S));
+  assert(IC.sandboxRaid(S, 'shock'), 'no major strike was planned');
+  let most = 0;
+  for (let i = 0; i < 3 * 3600 / 0.5; i++) { IC.step(S, 0.5); most = Math.max(most, hostiles(S)); }
+  assert(most >= 10, `only ${most} enemy weapons were in the air at once`);
+  const C = S.enemy.cycle;
+  assert(S.enemy.act < 3 && C && Number.isFinite(C.next), `the strike moved the commander on: act ${S.enemy.act}, next ${C && C.next}`);
+}, true);
+test('sandbox: a glide bomb comes down from its height and can be shot at', () => {
+  const S = sbxGame();
+  IC.sandboxTarget(S, IC.mainBase(S));
+  IC.sandboxLaunch(S, { what: 'glb', n: 3, from: 'close' });
+  const seen = [];
+  for (let i = 0; i < 1200; i++) { IC.step(S, 0.5); for (const t of S.threats) if (t.type === 'glb' && !t.dead) seen.push(t.alt); }
+  assert(seen.length && seen.every(Number.isFinite), `a glide bomb's height is ${seen.find(a => !Number.isFinite(a))}`);
+  assert(Math.max(...seen) > 5 && Math.min(...seen) < 4, `glide bombs flew between ${Math.min(...seen)} and ${Math.max(...seen)} km`);
+});
 
 /* ---------- Academy ---------- */
 for (const L of IC.LESSONS) test(`academy: ${L.id} lesson can be completed`, () => {
@@ -4630,6 +4649,40 @@ test('airport: an apron with airliners parked on it cannot be bulldozed, and say
   run(S, 0.1);
   assert(lost() === l0, 'aircraft were lost');
 }, true);
+test('story: before Act III the Minister\'s confidence never shows below 5, even months in the red', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10, dpm: 0.25 });
+  S.story.standing = 7;
+  let low = 100;
+  for (let i = 0; i < IC.MO(S, 3) / 2; i++) { if (S.budget > -900) S.budget = -1000; IC.step(S, 2); low = Math.min(low, S.story.standing); }
+  assert(S.red && S.red.months >= 2, `the treasury was not in the red for months (${S.red && S.red.months})`);
+  assert(low >= 5, `the Minister's confidence fell to ${low.toFixed(1)}`);
+  // an airliner lost at once (−10) shows the floor too, not a number under it until the next reassessment
+  S.story.standing = 7; IC.emit(S, 'tailDestroyed', {}); IC.step(S, 0.5);
+  assert(S.story.standing >= 5, `after an airliner was lost the Minister's confidence shows ${S.story.standing.toFixed(1)}`);
+});
+test('airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of "closed"', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = IC.bases(S).find(b => b.parts && b.parts.some(p => p.kind === 'runway' && p.built));
+  assert(IC.rwyState(S, ap).open, `the airport starts ${IC.rwyState(S, ap).word}`);
+  const rws = ap.parts.filter(p => p.kind === 'runway');
+  for (const r of rws) r.shut = 'w1';
+  ap.dirty = true; ap.st = null;
+  assert(/works/.test(IC.rwyState(S, ap).word), `runways shut for works read "${IC.rwyState(S, ap).word}"`);
+  for (const r of rws) r.shut = null;
+  ap.parts = ap.parts.filter(p => p.kind !== 'taxi'); ap.dirty = true; ap.st = null;
+  const w = IC.rwyState(S, ap);
+  assert(!w.closed && /taxiway/.test(w.word), `a runway with no taxiway reads "${w.word}"`);
+});
+test('airport: a taxiway laid again over one already there is refused, and not paid for twice', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = IC.bases(S).find(b => b.parts && b.parts.some(p => p.kind === 'taxi')), tw = ap.parts.find(p => p.kind === 'taxi');
+  const pts = tw.nodes.slice(0, 2).map(id => ap.nodes[id]), n0 = ap.parts.length, b0 = S.budget;
+  assert(!IC.aptPlanTaxi(S, ap, pts, 0.3), 'the same taxiway was planned again');
+  assert(ap.parts.length === n0 && S.budget === b0, `${ap.parts.length - n0} parts added, ${U.money(b0 - S.budget)} spent`);
+  assert(S.logs.some(l => /already there/.test(l.msg)), 'no word on why');
+  const far = pts.map(q => ({ x: q.x + 3, y: q.y + 3 }));
+  assert(IC.aptPlanTaxi(S, ap, [pts[0], far[0]], 0.3), 'a new taxiway from an existing node was refused');
+});
 test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 1 / 3);
