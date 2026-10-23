@@ -13,12 +13,14 @@ const U = IC.U;
    Act I grant is about ₭70M: running money, not building money. Building money comes from the airlines, and the
    ₭5.5 billion at the start dwindles for a player who builds more than they use. */
 IC.ACTS = {
-  1: { name: 'Act I', title: 'The Director', role: 'Director of Civil Aviation', grant: 1 },
+  // (the story's twelve acts, IC.STORY_ACTS in lore.js, run over these four parts of the Career: part one holds Acts
+  // I to III, two IV and V, three VI and VII, four VIII and IX)
+  1: { name: 'Part One', title: 'The Director', role: 'Director of Civil Aviation', grant: 1 },
   // from Act II the military budget grows with the job, for a country of sixty cities: from Act III a share of the
   // city taxes comes on top (IC.STORY_TAX)
-  2: { name: 'Act II', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 4 },
-  3: { name: 'Act III', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 60 },
-  4: { name: 'Act IV', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 }
+  2: { name: 'Part Two', title: 'Quiet Skies', role: 'Director of Airspace Security', grant: 4 },
+  3: { name: 'Part Three', title: 'The Shield', role: 'Commander, Air Defence Command', grant: 60 },
+  4: { name: 'Part Four', title: 'The Storm', role: 'Chief of the Air Force', grant: 40 }
 };
 /* delegates take routine work off your hands once your rank allows it */
 IC.DELEGATES = {
@@ -315,7 +317,7 @@ function startChapter(S, n, quiet) {
   st.chLog.push({ ch: n, t: S.time });
   if (n === 1) st.s0 = stands(capApt(S));
   st.goals = chapterGoals(S, n);
-  S.camp.chapter = `Act I · ${C.title}`;
+  S.camp.chapter = `Part One · ${C.title}`;
   // (round 4) a goal already met as the chapter opens is ticked as a moment of its own, not found ticked later
   if (IC.FOCUS.progress) for (const g of st.goals) if (n > 0 && g.check()) { g.done = g.pre = true; g.doneT = S.time; goalPaid(S, g); IC.log(S, 'kill', 'GOAL', `Already done: ${g.text.replace(/\s*\(.*\)$/, '')}.${g.gives ? ` ${goalGives(g)}.` : ''}`); }
   const sub = U.clock(S.time, S), ap = capApt(S);
@@ -517,7 +519,7 @@ IC.storyChapterInfo = function (S) {
   if (IC.FOCUS.progress) {
     // (round 4) what opens the next chapter, said as something to do: never "in about N months"
     const left = chNeed(st.ch) - doneCount(S), hub = IC.NETWORK.hubPax, pax = Math.round(dayPax(S));
-    const next = st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? (left > 0 ? `${left} more goal${left > 1 ? 's' : ''} and the Act is done.` : 'Every goal of Act I is done. Keep the airports growing: the story moves on.')
+    const next = st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? (left > 0 ? `${left} more goal${left > 1 ? 's' : ''} and the Act is done.` : 'Every goal of Part One is done. Keep the airports growing: the story moves on.')
       : waitCity ? (pax < hub ? `The next chapter comes when a city beyond the capital’s reach wants to fly: carry ${hub.toLocaleString('en-US')} passengers a day through the capital (${pax.toLocaleString('en-US')} now) and the regions will ask.` : 'The next chapter comes when a city beyond the capital’s reach has enough people who want to fly: cities grow with the air service you give them.')
       : left > 0 ? `${left} more goal${left > 1 ? 's' : ''} open${left > 1 ? '' : 's'} the next chapter.` : 'The next chapter is opening.';
     return { n: st.ch, title: C.title, age, of: IC.CHAPTERS.length, next };
@@ -546,7 +548,7 @@ const LOCKS = {
   radar: [2, 'Civil radar comes with the airspace chapter (Chapter 3).', 'Civil radar'],
   coverage: [2, 'Radar cover comes with the airspace chapter (Chapter 3).', 'Radar cover'],
   fields: [3, 'Light-aircraft fields come with Chapter 4.', 'Light-aircraft fields'],
-  zones: [9, 'Prohibited zones come with Act II, when there is something to keep airliners away from.'],
+  zones: [9, 'Prohibited zones come with Part Two, when there is something to keep airliners away from.'],
   // the economy opens a lever at a time, each with its lesson (the Economy room)
   charges: [1, 'Airport charges open in Chapter 2, once the airlines are flying.', 'Airport charges'],
   statement: [2, 'The weekly statement opens with Chapter 3.', 'The monthly statement'],
@@ -574,7 +576,7 @@ IC.GUIDE = [
   { id: 'building', act: 1, ch: 0, t: 'Building takes time, money and materials', d: 'Engineers build in stages: survey, earthworks, paving, markings and lights, then the opening. Each stage is paid as it runs, and paving uses concrete, asphalt and steel that lorries bring from the nearest town with industry: when the site runs out, work stops and the panel says why. Paving next to a runway closes it, unless you set the job to night work. Homes in the way are bought and cleared; their town will not thank you.' },
   { id: 'pavement', act: 1, ch: 0, t: 'Pavement', d: 'Asphalt is cheap and quick but heavy aircraft break it up; concrete carries every airliner; reinforced concrete craters less and is patched faster. Grass is for light aircraft only. A worn runway closes until it is resurfaced.' },
   { id: 'time', act: 1, ch: 0, t: 'Months and years', d: 'Two clocks run. The live one is the day and night you watch: aircraft, weather and building take their real minutes and hours. The calendar in the top bar counts months: each is three days and nights, so the Career runs for years. Airlines make offers every month or two, deals run for months and years, research takes months and cities grow by the year. When there is nothing to do but wait for money, press Wait (7) and pick what you are saving for: time runs fast and stops when you can afford it, when the month turns, or when something needs you.' },
-  { id: 'research', act: 1, ch: 0, t: 'Research', d: 'The Research room (R) runs projects in slots: two at the start, a third from the Research office in the Airlines and cargo lane, a fourth when Act II begins. Most projects are small shares, refuelling 5% faster or works 5% cheaper, ranked I, II and III; at the end of each lane is something bigger, like jet bridges or hydrant fuel. A few pairs rule each other out: pick Quick turns and Premium handling is closed for good, so two airports built by two players end up different. A project takes minutes of play, not months: Wait and skip do not finish it sooner, so start one whenever a slot is free (the rail shows a dot when one is idle). Where a panel shows a number research changed, it says so: “24 aircraft an hour (+10% from research)”.' },
+  { id: 'research', act: 1, ch: 0, t: 'Research', d: 'The Research room (R) runs projects in slots: two at the start, a third from the Research office in the Airlines and cargo lane, a fourth when Part Two begins. Most projects are small shares, refuelling 5% faster or works 5% cheaper, ranked I, II and III; at the end of each lane is something bigger, like jet bridges or hydrant fuel. A few pairs rule each other out: pick Quick turns and Premium handling is closed for good, so two airports built by two players end up different. A project takes minutes of play, not months: Wait and skip do not finish it sooner, so start one whenever a slot is free (the rail shows a dot when one is idle). Where a panel shows a number research changed, it says so: “24 aircraft an hour (+10% from research)”.' },
   { id: 'money1', act: 1, ch: 0, t: 'Money in, money out', d: 'At first the money comes from the Treasury: a large sum to build the national airport, and a small grant an hour. Once airlines fly, they pay a landing fee for every aircraft and a charge for every passenger. What you build costs a little every hour to keep (0.12% of its price), so build what the airlines will use. The Economy room (E) shows both sides.' },
   { id: 'deals', act: 1, ch: 1, t: 'Airline deals', d: 'Airlines offer deals: an aircraft type, so many flights a day for so many months, at your charges. Under each offer is what they need from the airport: stands of the right size, gates at the terminal, hangar space for aircraft they base here, cargo handling, fuel and room in the terminal. They sign only when every line is met. Ask for higher charges and the deal is shorter; give a discount and it is longer. A deal can be exclusive when the airline asks: it pays more and no rival gets the route. Once signed, keep your side: a day with a quarter of its flights late or cancelled is a bad day, and three end the deal (a month of good days forgives one). A broken deal costs compensation and the airport’s name, and a poor name brings fewer offers.' },
   { id: 'runway', act: 1, ch: 1, t: 'Runway capacity', d: 'Without a tower, arrivals and departures are kept 8 minutes apart; with one, 2 minutes; an approach radar tightens it further. A taxiway to each runway end stops departures backtracking, and exits where landing aircraft slow down free the runway sooner.' },
@@ -650,7 +652,7 @@ IC.layerAllowed = function (S, k) {
 IC.DISMISS_AFTER = 86400;
 IC.storyDismissal = function (S) {
   const st = S.story; if (!st) return null;
-  if (st.act < 3) return { can: false, text: `You cannot be replaced before Act III. Low confidence costs money instead: the Ministry pays ${U.pct(grantK(st))} of your grant.` };
+  if (st.act < 3) return { can: false, text: `You cannot be replaced before Part Three. Low confidence costs money instead: the Ministry pays ${U.pct(grantK(st))} of your grant.` };
   const left = st.zeroT != null ? IC.DISMISS_AFTER - (S.time - st.zeroT) : IC.DISMISS_AFTER;
   return { can: true, left, text: st.zeroT != null ? `At zero: you are replaced in ${U.dur(left)} unless confidence recovers.` : 'A full day at zero confidence and you are replaced.' };
 };
@@ -1076,6 +1078,8 @@ IC.storyTick = function (S, dt) {
   if (IC.agendaTick) IC.agendaTick(S, dt);
   // (brief 70) the story's chains of cards, on the same play clock (chains.js)
   if (IC.chainsTick) IC.chainsTick(S, dt);
+  // (the twelve acts) which act the story is in, and the lore's clues (lore.js)
+  if (IC.loreTick) IC.loreTick(S, dt);
   // beats: each has its own clock, started when its condition is met
   st.beatT -= dt;
   if (st.beatT <= 0) {

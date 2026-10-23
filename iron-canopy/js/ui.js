@@ -170,7 +170,7 @@ function topbar() {
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
-      <div class="stat role" title="${esc(IC.ACTS[act].name)}: ${esc(IC.ACTS[act].title)}"><span>${esc(IC.ACTS[act].name)}</span><strong>${esc(st.role)}</strong></div>
+      <div class="stat role" title="${esc(IC.storyActLabel(S, true))} · ${esc(IC.ACTS[act].name)}: ${esc(IC.ACTS[act].title)}"><span>${esc(IC.storyActLabel(S))}</span><strong>${esc(st.role)}</strong></div>
       ${money}
       <div class="stat" title="The Minister's confidence in you. ${esc(IC.storyDismissal(S).text)}"><span>Confidence</span><strong class="${st.standing > 50 ? '' : st.standing > 25 ? 'amber' : 'hostile'}">${Math.round(st.standing)}</strong>${meter(st.standing / 100, st.standing > 50 ? 'var(--ok)' : st.standing > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>
       <div class="stat" title="Average airline satisfaction"><span>Airlines</span><strong class="${!S.av.airlines.length ? 'muted' : sat > 60 ? '' : sat > 40 ? 'amber' : 'hostile'}">${S.av.airlines.length ? Math.round(sat) + '%' : 'none yet'}</strong>${meter(S.av.airlines.length ? sat / 100 : 0, 'var(--civil)')}</div>

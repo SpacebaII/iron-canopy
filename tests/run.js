@@ -3813,6 +3813,86 @@ test('story: a fresh Career opens on the Director\'s own story, and each ending 
   const ep = IC.epilogue(S);
   assert(ep.title && ep.paras && ep.paras.length >= 1 && !/undefined|NaN/.test(JSON.stringify(ep)), 'the epilogue is empty or unfilled');
 });
+/* ---------- (the twelve acts) the story's acts and the lore of Northline 310 (lore.js) ---------- */
+test('story: twelve acts run over the four parts in order, the act line says which, and it never goes back', () => {
+  const S = IC.newGame({ seed: 7101, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const st = S.story, seen = [];
+  const look = () => { IC.loreTick(S, 60); seen.push(st.part); };
+  look();
+  for (const ch of [1, 2, 3, 4, 5]) { st.ch = ch; look(); }
+  for (const n of [2, 3, 4]) {
+    IC.storyStartAct(S, n); look();
+    const mid = { 2: 'shadow', 3: 'embassy' }[n];
+    if (mid) { st.beats.find(b => b.id === mid).done = true; look(); }
+    else { S.enemy.act = 4; look(); }
+    st.ch = 0; look();   // nothing taken away sends the act back
+  }
+  const order = [...new Set(seen)];
+  assert(order.join() === '1,2,3,4,5,6,7,8,9', `the acts came as ${order.join(', ')}`);
+  for (let i = 1; i < seen.length; i++) assert(seen[i] >= seen[i - 1], `the act went back: ${seen.join(', ')}`);
+  assert(IC.storyActLabel(S) === 'Act IX' && IC.storyActLabel(S, true) === 'Act IX: The Long Sky', `the act line says ${IC.storyActLabel(S, true)}`);
+  assert(IC.STORY_ACTS.length === 12 && IC.STORY_ACTS.every((a, i) => a.n === i + 1 && a.title), 'twelve acts, numbered in order');
+  assert(S.camp.cards.some(c => /^Act V · The Tapes/.test(c.title)), 'no card opened Act V');
+  assert(/Act IX/.test(IC.saveMeta(S).what), `the saved games list says ${IC.saveMeta(S).what}`);
+});
+test('story: the lore\'s clues: the March silence each year, Lenz\'s brother, and every intercepted order ends "confirm the box is hot"', () => {
+  const S = IC.newGame({ seed: 7102, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const said = () => S.camp.comms.map(c => c.text).join(' | ');
+  S.time = IC.MO(S, 2) + 60; IC.calendar(S);
+  // the silence is said by the tower half-way into March (a handler in S.later)
+  S.time += IC.MO(S, 0.5); for (const l of (S.later || []).filter(l => l.t <= S.time)) l.fn();
+  assert(/22:34/.test(said()) && /minute/.test(said()), `no March silence: ${said().slice(-300)}`);
+  const e = IC.EV.ch_corridor_airway(S);
+  assert(/Pavel/.test(e.text), 'Lenz\'s first letter does not mention his brother');
+  IC.storyStartAct(S, 4);
+  let n = 0; const off = IC.on((S2, type) => { if (S2 === S && type === 'raidWarning') n++; });
+  for (let i = 0; i < 4; i++) { S.time += 9 * 3600; IC.emit(S, 'raidWarning', { R: { obj: { name: 'X' } }, sharp: true }); }
+  off();
+  const orders = S.camp.comms.filter(c => c.who === 'VOLKAN');
+  assert(n === 4 && orders.length >= 3 && orders.every(c => /Confirm the box is hot\."$/.test(c.text)), `orders: ${orders.map(c => c.text).join(' | ')}`);
+  assert(IC.flagOf(S, 'heardBox'), 'the first order is not remembered');
+});
+test('story: the airliner in the box: holding fire, calling Lenz or firing each end the way the lore says', () => {
+  const play = (pick, set) => {
+    const S = IC.newGame({ seed: 7103, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+    if (set) set(S);
+    IC.storyStartAct(S, 4); S.story.part = 9;
+    const e = IC.EV.ch_mirror_track(S), o = e.opts.findIndex(x => pick.test(x.t));
+    assert(o >= 0, `no option ${pick} in ${e.opts.map(x => x.t).join(', ')}`);
+    e.opts[o].fx();
+    S.won = true;
+    return { S, end: IC.endingOf(S), box: IC.flagOf(S, 'box') };
+  };
+  const fired = play(/^Fire/);
+  assert(fired.end === 'endBlack' && fired.box === 'fired' && fired.S.story.standing <= 40, `firing ended as ${fired.end}, confidence ${fired.S.story.standing}`);
+  assert(IC.epilogue(fired.S).title === 'Black Morning', 'the epilogue of a fired box is not Black Morning');
+  const theirs = play(/^Hold/);
+  assert(theirs.box === 'theirs' && theirs.end !== 'endBlack', `holding without a quiet answer years before: ${theirs.box}, ${theirs.end}`);
+  const quiet = play(/^Hold/, S => IC.flag(S, 'escort', 'quiet'));
+  assert(quiet.box === 'held', `holding after the quiet note: ${quiet.box}`);
+  const none = play(/^Hold/), noLenz = IC.EV.ch_mirror_track(none.S).opts.some(x => /Lenz/.test(x.t));
+  assert(!noLenz, 'Lenz is offered without a friend across the border');
+  const lenz = play(/Lenz/, S => IC.flag(S, 'corridor', 'friend'));
+  assert(lenz.box === 'lenz' && lenz.end === 'endLenz', `calling Lenz: ${lenz.box}, ${lenz.end}`);
+  for (const id of ['tape', 'box', 'endBlack']) assert(IC.CUTSCENES[id], `no cutscene ${id}`);
+});
+test('story: a border town kept open on the eve: if the war reaches its square, Mira is lost and the ending says so', () => {
+  const S = IC.newGame({ seed: 7104, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  IC.storyStartAct(S, 4);
+  const t = IC.storyBorderTown(S);
+  assert(t && t.blocks && t.blocks.length, 'no border town with blocks');
+  IC.flag(S, 'evac', 'early');
+  for (const b of t.blocks) b.hp = 0.2;
+  IC.emit(S, 'impact', { x: t.x, y: t.y });
+  assert(!IC.flagOf(S, 'mira'), 'Mira was lost after the town was moved south');
+  IC.flag(S, 'evac', 'stay');
+  IC.emit(S, 'impact', { x: t.x, y: t.y });
+  assert(IC.flagOf(S, 'mira') === 'lost', 'Mira was not lost in a town kept open and hit');
+  S.won = true;
+  assert(IC.endingOf(S) === 'endPrice', `the ending is ${IC.endingOf(S)}`);
+  const c = { id: 'endPrice', v: IC.CUTSCENES.endPrice.pick(S), d: {} };
+  assert(IC.cutPanels(S, c).some(p => /Ana/.test(p.cap)), 'the closing does not say what became of the bakery');
+});
 /* ---------- the calendar: months over the live clock ---------- */
 test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the top bar says so', () => {
   for (const dpm of [3, 5]) {
@@ -5759,7 +5839,7 @@ test('research: a new Career opens the Research room on day one with the civil l
   assert(IC.roomAllowed(S, 'research'), 'the Research room is shut at the start of the Career');
   assert(IC.TECH.filter(IC.techCivil).length >= 40, `only ${IC.TECH.filter(IC.techCivil).length} civil projects`);
   assert(IC.TECH.filter(t => IC.techCivil(t) && !t.req.length).every(t => IC.techOpenNow(S, t)), 'a first step of a civil lane cannot be started');
-  assert(!IC.techOpenNow(S, IC.techById('a_cram')) && /Act III/.test(IC.techClosed(S, IC.techById('a_cram'))), 'a military project is open in Act I');
+  assert(!IC.techOpenNow(S, IC.techById('a_cram')) && /Part Three/.test(IC.techClosed(S, IC.techById('a_cram'))), 'a military project is open in Act I');
   // every airport item's research is civil, and the chain to it starts with something open now
   const reach = id => { const t = IC.techById(id); return IC.techCivil(t) && !IC.techClosed(S, t) && (IC.techOpenNow(S, t) || t.req.every(reach)); };
   for (const k in IC.APT_TECH) {
@@ -5819,7 +5899,7 @@ test('research: slots grow from two to four', () => {
   IC.researchTick(S, 1);
   assert(S.tech.slots.length === 2 && /Research office/.test(IC.techNextSlot(S)), 'the Career does not start with two slots and say what opens the third');
   S.tech.done.add('a_lab'); IC.researchTick(S, 1);
-  assert(S.tech.slots.length === 3 && /Act II/.test(IC.techNextSlot(S)), 'the Research office did not open a third slot');
+  assert(S.tech.slots.length === 3 && /Part Two/.test(IC.techNextSlot(S)), 'the Research office did not open a third slot');
   S.story.act = 2; IC.researchTick(S, 1);
   assert(S.tech.slots.length === 4 && !IC.techNextSlot(S), 'Act II did not open a fourth slot');
 });

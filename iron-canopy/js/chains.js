@@ -222,7 +222,7 @@ IC.CHAINS = {
         card: S => ({ title: 'Protect the flag carrier?', text: `${N(S).H} Airways flies the country's name on its tail and loses money on half its routes. Foreign and low-cost airlines are coming to ${capName(S)} with lower fares. "Give us three years," Ruth Amberly says. "Longer contracts at list charges, and fewer slots for the newcomers. Then we can stand on our own."`,
           opts: [
             { t: 'Let them compete', tip: 'Offers keep coming at their usual pace. The flag carrier’s satisfaction −8.', risk: 'Amberly may look for a foreign partner.', trust: { FLAG: -8 }, set: { flagCo: 'open' }, fx: S => IC.storyAirSat(S, flagAl(S), -8), next: 'fuel', mo: 8 },
-            { t: 'Protect it for three years', tip: 'Its satisfaction +12. Offers from other airlines come 15% slower until Act II.', risk: 'A carrier that is protected stops competing, and comes back asking for more.', trust: { FLAG: 12, MIN: 3 }, set: { flagCo: 'protect' }, fx: S => IC.storyAirSat(S, flagAl(S), 12), next: 'fuel', mo: 8 }
+            { t: 'Protect it for three years', tip: 'Its satisfaction +12. Offers from other airlines come 15% slower until Part Two.', risk: 'A carrier that is protected stops competing, and comes back asking for more.', trust: { FLAG: 12, MIN: 3 }, set: { flagCo: 'protect' }, fx: S => IC.storyAirSat(S, flagAl(S), 12), next: 'fuel', mo: 8 }
           ] }) },
       fuel: { act: [1, 3], when: S => !!flagAl(S),
         card: S => { const prot = IC.flagOf(S, 'flagCo') === 'protect';
@@ -243,7 +243,7 @@ IC.CHAINS = {
   corridor: { name: 'The corridor', who: 'LENZ', core: true, first: 'airway',
     steps: {
       airway: { act: [1, 1], when: S => S.story.ch >= 2,
-        card: S => ({ title: 'A letter from across the border', letter: true, text: `"Director, we have not met, but we have the same job on two sides of one sky. ${IC.GRIEVANCES.corridor.words(S)} I propose a shared airway: entry points on the border that both our controllers know, and a charge for our airline's overflights that it can live with. Half your list would do it. Our people would remember who opened the door. Kasimir Lenz, Director of Civil Aviation, ${S.world.full.A}."`,
+        card: S => ({ title: 'A letter from across the border', letter: true, text: `"Director, we have not met, but we have the same job on two sides of one sky. ${IC.GRIEVANCES.corridor.words(S)} I propose a shared airway: entry points on the border that both our controllers know, and a charge for our airline's overflights that it can live with. Half your list would do it. Our people would remember who opened the door. Kasimir Lenz, Director of Civil Aviation, ${S.world.full.A}. P.S. For Pavel, who flew this corridor."`,
           opts: [
             { t: 'Full charges, but the shared airway', tip: 'The airway and its entry points; their airline pays what everyone pays.', risk: 'Lenz will say at home that we treat them like strangers.', trust: { LENZ: -6, FIN: 4 }, heat: 1, set: { lenzRate: 'full' }, next: 'night', mo: 10 },
             { t: 'Half charges for their airline', tip: 'About ₭10M a month less from overflights while the peace lasts.', risk: 'If relations sour, we will have paid for nothing.', trust: { LENZ: 15, FIN: -6 }, heat: -2, set: { lenzRate: 'half' }, next: 'night', mo: 10 }
@@ -276,7 +276,7 @@ IC.CHAINS = {
           return { title: 'A favour', text: `A quiet word after cabinet. "Director, I grew up in ${h.name}. The people there have voted for me for twenty years and they have never had an airport. I am not asking you to build it tomorrow. I am asking you to put it on the list before the others, and to say so. You know I would not ask if it did not matter to me."`,
             opts: [
               { t: 'Promise nothing, politely', tip: 'Halloran is cool for a while.', risk: 'None, except her patience.', trust: { MIN: -6 }, end: 'polite' },
-              { t: `Promise ${h.name} an airport`, tip: `Halloran +15 now. An airport within 120 km of ${h.name} before Act II is due.`, risk: 'A promise to a minister is remembered. Broken, it costs more than refusing.', trust: { MIN: 15 }, fx: S => { conf(S, 4); S.story.homeDue = true; }, next: 'due', mo: 0 },
+              { t: `Promise ${h.name} an airport`, tip: `Halloran +15 now. An airport within 120 km of ${h.name} before Part Two is due.`, risk: 'A promise to a minister is remembered. Broken, it costs more than refusing.', trust: { MIN: 15 }, fx: S => { conf(S, 4); S.story.homeDue = true; }, next: 'due', mo: 0 },
               { t: 'Tell the Courier what she asked', tip: 'Sol Varga prints it. Halloran falls; the Treasury’s Aurel Finch replaces her. Confidence −8.', risk: 'Finch judges only by the books, and nobody in cabinet owes you anything.', trust: { PRESS: 15, MIN: -40 }, fx: S => { IC.flag(S, 'minister', 'finch'); conf(S, -8); IC.news(S, `MINISTER ASKED FOR AIRPORT IN HER HOME TOWN, SAYS AVIATION CHIEF. Halloran resigns.`); }, end: 'press' }
             ] }; } },
       due: { act: [1, 2], when: S => S.story.act >= 2 || airportNear(S, homeTown(S), 1200), say: (S, c) => {
@@ -315,7 +315,7 @@ IC.CHAINS = {
       hear: { act: [2, 2], when: S => S.time - S.story.actT > MO(S, 2),
         card: S => ({ title: 'The inquiry', text: `Lise Marsh was the first officer who landed the airliner after the drone hit it. Before the inquiry she asks to see you. "Our radars could not see it. Your people knew they could not see anything without a transponder, and nobody told the crews. I will say so under oath. What will you say?"`,
           opts: [
-            { t: 'Publish the radar gaps', tip: 'Confidence −5 now. The public backs military radar: the grant is 10% larger for the rest of Act II.', risk: 'The neighbour learns exactly where we are blind.', trust: { LISE: 15, ATC: 10, PRESS: 8 }, fx: S => conf(S, -5), end: 'open' },
+            { t: 'Publish the radar gaps', tip: 'Confidence −5 now. The public backs military radar: the grant is 10% larger for the rest of Part Two.', risk: 'The neighbour learns exactly where we are blind.', trust: { LISE: 15, ATC: 10, PRESS: 8 }, fx: S => conf(S, -5), end: 'open' },
             { t: 'Ask the inquiry to sit in private', tip: 'Confidence +3. The Minister is relieved.', risk: 'Sol Varga is already asking questions. Secrets in this country last about a year.', trust: { LISE: -20, ATC: -12, MIN: 8 }, fx: S => conf(S, 3), next: 'leak', mo: 12 },
             { t: 'Blame the airline’s lookout', tip: 'Confidence +4. The regional airline’s satisfaction −20.', risk: 'Airlines talk to each other.', trust: { LISE: -30, ATC: -20, FLAG: -10 }, fx: S => { conf(S, 4); for (const a of S.av.airlines) if (a.kind === 'regional') IC.storyAirSat(S, a, -20); }, end: 'blame' }
           ] }) },
@@ -364,7 +364,7 @@ IC.CHAINS = {
           return { title: 'Across the wire', text: `A ${N(S).A} military transport is on the emergency frequency, low over the border, asking to land at ${short(fb.name)}. The pilot says he has his wife and children aboard, a man who says he is Kasimir Lenz's cousin, and maps of their missile sites. General Voss wants it down and the maps in her hands. The Foreign Office says taking a military aircraft is an act they cannot ignore.`,
             opts: [
               { t: 'Turn it back over the border', tip: 'Tension −5. The peace lasts longer.', risk: 'Voss will go over your head. Lenz will hear what you did to his cousin.', trust: { CDS: -15, LENZ: -10, PM: 4 }, fx: S => raise(S, -5), heat: -1, end: 'back' },
-              { t: 'Let it land, and keep them all', tip: 'Tension +12. Intelligence on their missile sites in Act III.', risk: 'They will call it theft of a military aircraft, and the war comes sooner.', trust: { CDS: 15, LENZ: 6 }, fx: S => raise(S, 12), heat: 2, end: 'took' },
+              { t: 'Let it land, and keep them all', tip: 'Tension +12. Intelligence on their missile sites in Part Three.', risk: 'They will call it theft of a military aircraft, and the war comes sooner.', trust: { CDS: 15, LENZ: 6 }, fx: S => raise(S, 12), heat: 2, end: 'took' },
               { t: 'Land it quietly, return the aircraft, keep the family', tip: 'Tension +4. No maps: the pilot goes home with his aircraft.', risk: 'Half of each, and everyone knows it.', trust: { CDS: 4, LENZ: 10 }, fx: S => raise(S, 4), end: 'half' }
             ] }; } }
     },
@@ -436,6 +436,7 @@ IC.CHAINS = {
     } }
 };
 for (const k in IC.CHAINS) register(k);
+IC.chainRegister = register;
 
 /* a share of an airline's satisfaction, kept in bounds */
 IC.storyAirSat = (S, al, v) => { if (al) al.sat = U.clamp(al.sat + v, 0, 100); };
@@ -553,14 +554,15 @@ IC.VOICES = {
   act3: S => [[2 * 3600, 'KOLAR', `${S.world.names.H} has shown its true face. Our people ask how long we must stand still while they shoot. Good evening.`],
     [5 * 3600, 'SISTER', `Mira. The army has put a checkpoint on the road out of town. The children think it is a game. I have packed a bag for each of them.`],
     [8 * 3600, 'YOU', `Everyone remembers where the war began. I remember it as a slope, not a cliff. We were on it for a long time.`]],
-  act4: S => [[2 * 3600, 'SISTER', IC.storyNorthOut(S) === 'air' ? `Mira. We are out. The last flight from your airport up north, the children asleep on my lap. I could see the fires from the window.` : `Mira. We are out. Fourteen hours on the road, the children in the back. Somebody should have built an airport up there.`],
+  act4: S => [[2 * 3600, 'SISTER', IC.flagOf(S, 'evac') === 'stay' ? `Mira. I am still here. The bakery is the only shop open on the square; somebody has to feed the soldiers. Do not tell me to go.` : IC.storyNorthOut(S) === 'air' ? `Mira. We are out. The last flight from your airport up north, the children asleep on my lap. I could see the fires from the window.` : `Mira. We are out. Fourteen hours on the road, the children in the back. Somebody should have built an airport up there.`],
     [5 * 3600, 'YOU', `I slept in the operations room for weeks. I do not remember the nights apart. I remember the mornings, and counting.`]]
 };
 const VOLKAN = [
-  o => `Intercepted, their air force headquarters: "All batteries, the window opens on my order. Target: ${o}. No changes, no questions."`,
-  o => `Intercepted: "Volkan to all units. ${o}. Their radars are tired. Make them use what they have left."`,
-  o => `Intercepted: "Decoys first, then the real ones. ${o}. I want their missiles spent before ours arrive."`,
-  o => `Intercepted: "Volkan. ${o} again. If it is still standing tomorrow, I want to know why."`
+  // (every order ends as the battery's order did on the night of Northline 310: lore.js)
+  o => `Intercepted, their air force headquarters: "All batteries, the window opens on my order. Target: ${o}. No changes, no questions. Confirm the box is hot."`,
+  o => `Intercepted: "Volkan to all units. ${o}. Their radars are tired. Make them use what they have left. Confirm the box is hot."`,
+  o => `Intercepted: "Decoys first, then the real ones. ${o}. I want their missiles spent before ours arrive. Confirm the box is hot."`,
+  o => `Intercepted: "Volkan. ${o} again. If it is still standing tomorrow, I want to know why. Confirm the box is hot."`
 ];
 const KOLAR = {
   held: [H => `Our forces struck military targets in ${H} last night with complete precision. Every aircraft returned home. Good evening.`, H => `${H} claims to have stopped our strikes. Their own people know better. They hear the sirens.`],
@@ -666,9 +668,11 @@ IC.storyNorthOut = S => { const t = borderTown(S); return t && airportNear(S, t,
 IC.endingOf = function (S) {
   const st = S.story, f = k => st.flags.get(k), t = borderTown(S);
   if (!S.won) return /replaced|confidence/i.test(S.over || '') ? 'sacked' : 'endLost';
+  // (lore.js) the airliner in the box, shot down on our order: whatever else happened, that is how it ends
+  if (f('mirror') === 'fired') return 'endBlack';
   if (f('corridor') === 'friend') return 'endLenz';
   const town = t && (t.morale < 25 || (t.blocks && t.blocks.filter(b => b.hp != null && b.hp < 0.5).length > t.blocks.length * 0.15));
-  if (town || f('okafor') === 'hurt') return 'endPrice';
+  if (town || f('okafor') === 'hurt' || f('mira') === 'lost') return 'endPrice';
   return open(S) ? 'endOpen' : 'endFortress';
 };
 IC.on((S, type) => { if (type === 'over' && S.story && S.story.flags && S.mode === 'story' && IC.cutscene) IC.cutscene(S, IC.endingOf(S), { again: true }); });
@@ -696,7 +700,7 @@ IC.epilogue = function (S) {
     const best = ppl[0], worst = ppl[ppl.length - 1], nm = k => IC.ADVISORS[k].name;
     P.push({ head: 'The people', text: `${nm(best.k)} would have followed you anywhere. ${worst.t < 35 ? `${nm(worst.k)} never forgave you.` : 'Nobody you worked with left with a grudge.'}` });
   }
-  const ends = S.won ? (st.flags.get('corridor') === 'friend' ? 'lenz' : open(S) ? 'open' : 'fortress') : S.over ? (/replaced/i.test(S.over) ? 'replaced' : 'lost') : 'peace';
+  const ends = S.won ? (st.flags.get('mirror') === 'fired' ? 'black' : st.flags.get('corridor') === 'friend' ? 'lenz' : open(S) ? 'open' : 'fortress') : S.over ? (/replaced/i.test(S.over) ? 'replaced' : 'lost') : 'peace';
   const E = IC.ENDINGS[ends];
   return { title: E.title, text: E.text(S), paras: P, by: `From "The Canopy", by Sol Varga` };
 };
@@ -705,6 +709,7 @@ IC.ENDINGS = {
   lenz: { title: 'A ceasefire through Lenz', text: S => `The guns stopped sooner than anyone expected, because a man across the border still trusted you. Kasimir Lenz carried the first message between the two governments, and the reply.` },
   open: { title: 'The canopy held', text: S => `The ${S.world.full.A} asked for a ceasefire. The country you built stayed open: its airlines flew again within the month, to the same places as before.` },
   fortress: { title: 'The canopy held', text: S => `The ${S.world.full.A} asked for a ceasefire. The country you defended was not quite the one you had built: harder, more guarded, with foreign soldiers at its airports and fewer friends across the border.` },
+  black: { title: 'Black Morning', text: S => `The ${S.world.full.A} asked for a ceasefire. Nobody remembers the war for that. They remember the airliner over the ridge, and who gave the order.` },
   replaced: { title: 'Replaced', text: S => `The Prime Minister lost confidence in you, and someone else finished what you started. What you built stayed built.` },
   lost: { title: 'The sky fell silent', text: S => `The war went the other way. What was built over those years is what the country will rebuild from.` },
   peace: { title: 'Your story so far', text: S => 'The story is still being written.' }

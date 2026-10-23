@@ -26,7 +26,7 @@ IC.cutFill = function (S, s, d) {
 /* the cutscenes, in the order a Career meets them */
 IC.CUTSCENES = {
   prologue: { title: 'The blind spot', panels: [
-    { art: 'prologue-1', src: 'ai', shot: 'Night. The glass cab of an old control tower, rain on the windows, a young controller (the Director, seen from behind) at a round green radar scope. An older man in a cardigan (Ivo Marsh) stands behind with a mug.', cap: 'Fourteen years before any of this, I was a controller at the old airfield outside {capCity}. Night shift. Ivo Marsh had taught me everything I knew.' },
+    { art: 'prologue-1', src: 'ai', shot: 'Night. The glass cab of an old control tower, rain on the windows, a young controller (the Director, seen from behind) at a round green radar scope. An older man in a cardigan (Ivo Marsh) stands behind with a mug.', cap: 'Fourteen years before any of this, I was a controller at the old airfield outside {capCity}. Night shift. Ivo Marsh had taught me everything I knew. He had known my father.' },
     { art: 'prologue-2', src: 'ai', shot: 'Close on the radar scope: one bright blip of a jet, and nothing else. Empty green.', cap: 'The scope showed one training jet on approach. It did not show the little aircraft with no transponder, crossing below it in the rain.' },
     { art: 'prologue-3', src: 'ai', shot: 'From the tower, far off in the dark rain: a small orange fireball low over the fields.', cap: 'I saw it before I understood it.' },
     { art: 'prologue-4', src: 'ai', shot: 'Morning. An empty controller\'s chair in the tower, a coat over its back. Grey light.', cap: 'Two people died. Nobody blamed me. I left the tower anyway, and I never sat in that chair again.' },
@@ -151,8 +151,9 @@ IC.CUTSCENES = {
     { art: 'endO-2', src: 'ai', shot: 'A crowd at an airport fence again, older children now, the same old man with a flag, many people crying and cheering.', cap: 'Half of {capCity} came to the fence again. Some of them were the same people.' },
     { art: 'endO-3', src: 'ai', shot: 'A bakery on a small-town square reopening: Mira hanging an OPEN sign, her children helping, a crowd waiting.', cap: '{sister} opened the bakery on the first Saturday. I drove up for it. The bread was terrible. Nobody minded.' }
   ] },
-  endPrice: { title: 'The canopy held, at a price', panels: [
+  endPrice: { title: 'The canopy held, at a price', pick: S => IC.flagOf && IC.flagOf(S, 'mira') === 'lost' ? 'mira' : '', panels: [
     { art: 'endP-1', src: 'ai', shot: 'A small-town square in ruins, a burnt-out bakery with its sign hanging by one hook, snow falling.', cap: 'We held. {town} did not.' },
+    { art: 'endP-m', src: 'ai', shot: 'A teenage girl (Ana) alone behind the counter of a rebuilt bakery at dawn, flour on her hands, an old photo of her mother pinned by the till.', cap: '{sister} did not leave the bakery, and I did not make her. Ana runs it now. She has never once asked me why.', only: 'mira' },
     { art: 'endP-2', src: 'ai', shot: 'A memorial wall with many names, flowers and candles, the Director standing in front of it in a dark coat.', cap: 'I go to the wall every year. I read every name. I know which ones were blind spots.' },
     { art: 'endP-3', src: '3d', shot: 'A single airliner taking off into a grey winter sky.', cap: 'The airports still work. I made sure of that. It is the only thing I know how to do.' }
   ] },

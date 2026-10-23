@@ -316,7 +316,9 @@ function staff() {
   const acts = [1, 2, 3, 4].map(n => {
     const cls = n < st.act ? 'done' : n === st.act ? 'cur' : n === st.act + 1 ? 'next' : '';
     const opens = actOpens(n);
-    return `<div class="actstep ${cls}"><small>${IC.ACTS[n].name}${n < st.act ? ' · done' : n === st.act ? ' · now' : ''}</small><b>${esc(IC.ACTS[n].title)}</b><span>${esc(IC.ACTS[n].role)}</span>
+    // (the story's acts inside each part: the one now in bold)
+    const sa = IC.STORY_ACTS.filter(a => a.part === n).map(a => a.n === IC.storyPartNow(S) ? `<b>${a.r} ${esc(a.title)}</b>` : `${a.r} ${esc(a.title)}`).join(' · ');
+    return `<div class="actstep ${cls}"><small>${IC.ACTS[n].name}${n < st.act ? ' · done' : n === st.act ? ' · now' : ''}</small><b>${esc(IC.ACTS[n].title)}</b><span>${esc(IC.ACTS[n].role)}</span><span class="sacts">Acts ${sa}</span>
       ${n === st.act ? `<div class="bars one"><span>Goals</span>${bar(done / Math.max(1, st.goals.length), 'var(--amber)')}<span>${done}/${st.goals.length}</span></div>` : ''}
       ${opens.length ? `<ul class="opens">${opens.map(([k, t]) => `<li class="${k}">${n > st.act ? ui.icon('lock', 'sm') : ''}${esc(t)}</li>`).join('')}</ul>` : ''}</div>`;
   }).join('');
@@ -326,14 +328,14 @@ function staff() {
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)]])}<p class="hint">Finish each chapter's goals (the Next goal line, top left) to move on. The story also moves on by itself if you take too long.</p></div>
     ${agenda()}
-    ${chapters ? `<div class="card wide"><h3>Act I · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
+    ${chapters ? `<div class="card wide"><h3>Part One · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card wide"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
-  const nextHow = st.act < 4 ? `<p class="hint">Finish this act's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
+  const nextHow = st.act < 4 ? `<p class="hint">Finish this part's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)], ['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from ${st.act === 1 ? 'chapters' : 'goals'} and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
     ${agenda()}
-    ${chapters ? `<div class="card"><h3>Act I<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
+    ${chapters ? `<div class="card"><h3>Part One<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card"><h3>Delegates<em>${U.money(IC.staffCost(S))}/h</em></h3><div class="list">${dels}</div><p class="hint">Delegates do routine work for you, for a running cost.</p></div>
     <div class="card"><h3>Requests<em>spend command points</em></h3><div class="list">${reqs}</div></div>
     <div class="card"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
@@ -677,7 +679,7 @@ function research() {
   const lanes = cats.map(c => {
     const ts = IC.TECH.filter(t => t.cat === c.id);
     if (!ts.length) return '';
-    if (!IC.techLaneOpen(S, c.id)) return `<div class="lane shut"><div class="lname"><b>${esc(c.name)}</b><small>${ts.length} projects</small></div><p class="hint">Opens with Act III.</p></div>`;
+    if (!IC.techLaneOpen(S, c.id)) return `<div class="lane shut"><div class="lname"><b>${esc(c.name)}</b><small>${ts.length} projects</small></div><p class="hint">Opens with Part Three.</p></div>`;
     const n = ts.filter(t => T.done.has(t.id)).length;
     const cols = Array.from({ length: maxD + 1 }, (_, d) => `<div class="tcol">${ts.filter(t => depthOf(t, memo) === d).map(node).join('')}</div>`).join('');
     return `<div class="lane"><div class="lname"><b>${esc(c.name)}</b><small>${n} of ${ts.length}</small></div>${cols}</div>`;
