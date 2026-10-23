@@ -241,6 +241,8 @@ function silhouette(g, kind, x, y, h, s, fill, stroke) {
 /* our units, the enemy we know about, and their ranges: drawn under the air picture */
 IC.drawForces = function (S, px, now) {
   ctx = RS.ctx; WF = RS.WF;
+  // film mode: our batteries as their vehicles close in, nothing else of the plan
+  if (IC.film && IC.film.clean) { if (cam.z > 1.1) for (const u of S.units) if (inView(u.x, u.y, 60)) vehicles(S, u, px, now); return; }
   if (S.layers.intel) drawEnemy(S, px, now);
   drawRanges(S, px, now);
   for (const u of S.units) if (inView(u.x, u.y, 200)) drawUnit(S, u, px, now);
@@ -390,7 +392,9 @@ function drawUnit(S, u, px, now) {
   const sel = (S.sel && S.sel.ref === u) || S.group.includes(u);
   if (cam.z > 0.2 || sel) {
     const tag = { building: 'BUILD', setup: 'SETUP', packing: 'PACK', transit: 'MOVE' }[u.state] || (silent ? (u.emcon === 'ambush' ? 'AMBUSH' : 'SILENT') : '');
-    label(u.name + (tag ? ' · ' + tag : ''), u.x, u.y - 13 * px, px, busy ? C.amber : C.muted, 9.5);
+    // several units round one base: a name that would cover another steps up a line, or is left to the panel
+    const txt = u.name + (tag ? ' · ' + tag : ''), ly = IC.FOCUS.polish ? IC.LBL.put(u.x, u.y - 13 * px, txt.length * 9.5 * 0.62 * px, 11 * px, -11 * px, 2, sel) : u.y - 13 * px;
+    if (ly != null) label(txt, u.x, ly, px, busy ? C.amber : C.muted, 9.5);
   }
   if (sel) brackets(u.x, u.y, 17 * px, px);
   if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.prio.px, u.prio.py); ctx.stroke(); ctx.setLineDash([]); }
@@ -439,15 +443,17 @@ function drawPlumes(S, px, now, light) {
     const k = Math.min(1, age / 120) * Math.min(1, (life - age) / 1800);
     if (k <= 0) continue;
     const zk = U.lerp(1, 0.1, WF), H = (60 + p.size * 90) * zk;
-    for (let i = 0; i < 14; i++) {
-      const f = ((i / 14) + now * 0.02 + p.seed) % 1;
-      const x = p.x + S.wind.x * f * H * 1.6 + Math.sin(f * 6 + p.seed) * 4 * f;
+    // lumpy puffs that rise from the ground, swell and lean downwind; darker and denser low down
+    for (let i = 0; i < 18; i++) {
+      const f = ((i / 18) + now * 0.02 + p.seed) % 1;
+      const x = p.x + S.wind.x * f * H * 1.6 + Math.sin(f * 6 + p.seed + i) * 5 * f * zk;
       const y = p.y + S.wind.y * f * H * 1.6 - f * H * 0.35;
-      const r = (4 + f * 26) * (0.6 + p.size * 0.5) * zk;
-      const a = k * (1 - f) * 0.26;
-      const shade = light < 0.4 && f < 0.3 ? '90,60,40' : '52,52,56';
-      ctx.fillStyle = `rgba(${shade},${a})`; ctx.beginPath(); ctx.arc(x, y, Math.max(r, 3 * px), 0, 7); ctx.fill();
+      const r = Math.max((3 + f * 24) * (0.6 + p.size * 0.5) * zk, (3 + f * 9) * px);
+      const a = k * (1 - f) * (0.5 + 0.25 * (1 - f)) * (light < 0.4 ? 0.75 : 1);
+      if (a < 0.01) continue;
+      ctx.globalAlpha = a; ctx.drawImage(SPV[SOOT][(i + (p.seed | 0)) % NV], x - r, y - r, r * 2, r * 2);
     }
+    ctx.globalAlpha = 1;
   }
 }
 function drawImpacts(S, px, now) {
@@ -609,6 +615,68 @@ function drawChaff(S, px) {
   }
 }
 
+/* ---------- film mode (brief 58): what flies, as it is ----------
+   No tags or frames: an enemy weapon is its model close in and a dark speck with a hot glow far out, with a faint
+   trail of its exhaust behind it; an airliner is its lights at night; our aircraft the same. Everything at its real
+   place, seen by our radars or not */
+const fhist = new WeakMap();
+function filmTrail(S, o, x, y, px, col, w, life) {
+  let H = fhist.get(o);
+  if (!H) { H = { p: [], first: S.time }; fhist.set(o, H); }
+  const P2 = H.p, n = P2.length;
+  if (!n || Math.abs(P2[n - 3] - x) + Math.abs(P2[n - 2] - y) > Math.max(0.6, 2.5 * px)) { P2.push(x, y, S.time); if (P2.length > 3 * 90) P2.splice(0, 3); }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // a few segments to a stroke, each stroke as faint as its age
+  for (let i = 3; i < P2.length; i += 15) {
+    const age = S.time - P2[i + 2]; if (age > life) continue;
+    const k = 1 - age / life, j = Math.min(P2.length, i + 15);
+    ctx.beginPath(); ctx.moveTo(P2[i - 3], P2[i - 2]);
+    for (let q = i; q < j; q += 3) ctx.lineTo(P2[q], P2[q + 1]);
+    if (j >= P2.length) ctx.lineTo(x, y);
+    ctx.strokeStyle = `rgba(${col},${0.5 * k * k})`; ctx.lineWidth = Math.max(w * px * (1 + (1 - k)), w * 0.15);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  return H;
+}
+function filmThreat(S, t, px, now, light) {
+  if (t.dead || t.age <= 0 || t.d.move === 'bal' || t.d.cls === 'hgv' || t.x == null) return;
+  if (!inView(t.x, t.y, 300)) return;
+  const v = IC.filmVel(t), sp = Math.hypot(v.x, v.y), h = sp > 1e-6 ? Math.atan2(v.y, v.x) : t.h || 0, night = light < 0.5, x = t.x, y = t.y;
+  const close = cam.z >= 0.6, civil = t.d.civil;
+  if (civil) {
+    if (close) IC.modelTop(ctx, IC.modelOfThreat(t, true), x, y, h, { livery: t.livery, shadow: Math.min(3, (t.alt || 0) * 0.25), minPx: 9, now });
+    // the lights: a strobe that blinks, red and green at the wing tips, a warm landing light low down
+    const r = (night ? 7 : 4) * px, blink = (now + (t.seed || 0)) % 1.2 < 0.08;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = night ? 0.8 : 0.35; ctx.drawImage(SPR[HOT], x - r, y - r, r * 2, r * 2);
+    if (blink) { const R = r * 2.2; ctx.globalAlpha = night ? 0.9 : 0.5; ctx.drawImage(SPR[BLUE], x - R, y - R, R * 2, R * 2); }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    return;
+  }
+  const H = filmTrail(S, t, x, y, px, night ? '255,170,110' : '225,228,232', t.d.cls === 'air' ? 1.6 : 1.1, t.d.cls === 'drone' ? 30 : 60);
+  // the launch: a flash and a cloud where a weapon we had not seen before leaves the ground
+  if (!H.launched) { H.launched = true; if (t.age < 20 && t.d.cls !== 'air' && t.d.cls !== 'drone') launch(S, { cls: 'sr' }, x, y); }
+  if (close) IC.modelTop(ctx, IC.modelOfThreat(t, true), x, y, h, { shadow: Math.min(3, (t.alt || 0) * 0.25), minPx: 8, now });
+  else { ctx.fillStyle = 'rgba(20,18,16,0.9)'; ctx.beginPath(); ctx.arc(x, y, 1.6 * px, 0, 7); ctx.fill(); }
+  // the engine's heat, behind it
+  const ex = x - Math.cos(h) * 2 * px, ey = y - Math.sin(h) * 2 * px, fl = 0.85 + 0.3 * Math.random(), r = (night ? 7 : 4) * px * fl * (t.d.cls === 'air' ? 1.4 : 1);
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = night ? 0.9 : 0.55;
+  ctx.drawImage(SPR[t.d.cls === 'drone' ? GLOW : HOT], ex - r, ey - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function filmAir(S, a, px, now, light) {
+  if (a.dead || a.gnd || !inView(a.x, a.y, 300)) return;
+  const night = light < 0.5, h = a.h || 0;
+  if (a.kind === 'ftr') filmTrail(S, a, a.x, a.y, px, night ? '180,200,230' : '240,244,248', 1.2, 40);
+  if (cam.z >= 0.6) IC.modelTop(ctx, IC.modelOfAir(a), a.x, a.y, h, { minPx: 9, shadow: Math.min(3, (a.alt || 0) * 0.25), now });
+  else { ctx.fillStyle = 'rgba(30,34,40,0.9)'; ctx.beginPath(); ctx.arc(a.x, a.y, 1.6 * px, 0, 7); ctx.fill(); }
+  const r = (night ? 6 : 3.5) * px, ex = a.x - Math.cos(h) * 2.5 * px, ey = a.y - Math.sin(h) * 2.5 * px;
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = night ? 0.85 : 0.4;
+  ctx.drawImage(SPR[a.kind === 'ftr' ? HOT : BLUE], ex - r, ey - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+
 /* ---------- combat effects ----------
    Drawing only: the simulation owns missiles, threats and damage; this watches them from frame to frame and adds the
    flash, the dust, the booster, the smoke that lingers and drifts, the loft, the staging, the hit or the miss.
@@ -617,24 +685,26 @@ function drawChaff(S, px) {
 const FX = IC.cfx = { on: true };
 const NP = 4500;
 const P = { x: new Float32Array(NP), y: new Float32Array(NP), vx: new Float32Array(NP), vy: new Float32Array(NP), t: new Float32Array(NP), life: new Float32Array(NP),
-  rw: new Float32Array(NP), rp: new Float32Array(NP), grow: new Float32Array(NP), a: new Float32Array(NP), drag: new Float32Array(NP), k: new Uint8Array(NP), f: new Uint8Array(NP) };
-let np = 0;
+  rw: new Float32Array(NP), rp: new Float32Array(NP), grow: new Float32Array(NP), a: new Float32Array(NP), drag: new Float32Array(NP), k: new Uint8Array(NP), f: new Uint8Array(NP), v: new Uint8Array(NP) };
+let np = 0, vseq = 0;
 FX.count = () => np;
-// kinds: sprites, the first ones drawn normally, from GLOW on added as light
-const SMOKE = 0, SOOT = 1, DUST = 2, STEAM = 3, DEBRIS = 4, GLOW = 5, HOT = 6, BLUE = 7, SPARK = 8, EMBER = 9;
+// kinds: sprites; ADDK says which are added as light (the rest are laid over the map)
+const SMOKE = 0, SOOT = 1, DUST = 2, STEAM = 3, DEBRIS = 4, GLOW = 5, HOT = 6, BLUE = 7, SPARK = 8, EMBER = 9, FIRE = 10, STAR = 11;
+const ADDK = [false, false, false, false, false, true, true, true, true, true, false, true];
 // flags: aged in game time (else real time), drift with the wind, fall under gravity, leave smoke behind
 const GT = 1, WIND = 2, FALL = 4, SMOKY = 8;
 function emit(k, x, y, vx, vy, life, rw, rp, grow, a, f, drag) {
   if (np >= NP) return;
   const i = np++;
   P.k[i] = k; P.x[i] = x; P.y[i] = y; P.vx[i] = vx; P.vy[i] = vy; P.t[i] = 0; P.life[i] = life; P.rw[i] = rw; P.rp[i] = rp; P.grow[i] = grow; P.a[i] = a; P.f[i] = f || 0; P.drag[i] = drag == null ? 1.2 : drag;
+  P.v[i] = vseq = (vseq + 1) % NV;
 }
 function kill(i) {
   const j = --np; if (i === j) return;
   for (const key in P) P[key][i] = P[key][j];
 }
 
-const SPR = [];
+const SPR = [], SPV = [], NV = 4;
 function sprite(stops, n) {
   const c = document.createElement('canvas'); c.width = c.height = n || 64;
   const g = c.getContext('2d'), h = c.width / 2, gr = g.createRadialGradient(h, h, 0, h, h, h);
@@ -642,17 +712,89 @@ function sprite(stops, n) {
   g.fillStyle = gr; g.fillRect(0, 0, c.width, c.width);
   return c;
 }
+/* a puff with a shape, made once: three octaves of value noise push a soft disc's edge in and out, so smoke and fire
+   read as lumps and billows rather than balls. paint(e, nz, dx, dy, out) colours a pixel: e is the distance from the
+   middle pushed by the noise (1 at the edge), nz the noise (0..1), dx, dy the place (-1..1) for the light from the
+   upper left, where the map's sun is */
+function lumpy(n, seed, paint) {
+  const c = document.createElement('canvas'); c.width = c.height = n;
+  const g = c.getContext('2d'), im = g.createImageData(n, n), D = im.data, h = n / 2, R = IC.makeRng(seed);
+  const grid = m => { const a = new Float32Array((m + 1) * (m + 1)); for (let i = 0; i < a.length; i++) a[i] = R(); return a; };
+  const at = (a, m, u, v) => {
+    const x = u * m, y = v * m, i = Math.min(m - 1, x | 0), j = Math.min(m - 1, y | 0), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), w = m + 1;
+    const a0 = a[j * w + i], a1 = a[j * w + i + 1], b0 = a[(j + 1) * w + i], b1 = a[(j + 1) * w + i + 1];
+    return a0 + (a1 - a0) * sx + (b0 - a0) * sy + (a0 - a1 - b0 + b1) * sx * sy;
+  };
+  const g1 = grid(4), g2 = grid(9), g3 = grid(19), out = [0, 0, 0, 0];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const u = x / n, v = y / n, dx = (x + 0.5 - h) / h, dy = (y + 0.5 - h) / h;
+    const nz = at(g1, 4, u, v) * 0.55 + at(g2, 9, u, v) * 0.3 + at(g3, 19, u, v) * 0.15;
+    paint(Math.hypot(dx, dy) + (nz - 0.5) * 0.7, nz, dx, dy, out);
+    const o = (y * n + x) * 4; D[o] = out[0]; D[o + 1] = out[1]; D[o + 2] = out[2]; D[o + 3] = out[3];
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+const sstep = (a, b, x) => { const t = U.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+/* smoke of a colour, darker on the side away from the sun */
+const smokePaint = (r, g, b, a, lit) => (e, nz, dx, dy, o) => {
+  const sh = U.clamp(0.5 - (dx + dy) * 0.35 + (nz - 0.5) * 0.8, 0, 1), k = 1 - lit + lit * 2 * sh;
+  o[0] = U.clamp(r * k, 0, 255); o[1] = U.clamp(g * k, 0, 255); o[2] = U.clamp(b * k, 0, 255);
+  o[3] = 255 * a * sstep(1.02, 0.4, e) * U.clamp(0.65 + 0.7 * nz, 0, 1);
+};
+/* fire: white-hot in the middle through yellow and orange to a deep red edge, with darker licks where the noise is low */
+function firePaint(e, nz, dx, dy, o) {
+  const t = U.clamp(e, 0, 1), d = 0.7 + 0.6 * nz;
+  let r, g, b;
+  if (t < 0.25) { r = 255; g = 246; b = 214; } else if (t < 0.5) { r = 255; g = 246 - (t - 0.25) * 400; b = 214 - (t - 0.25) * 700; }
+  else if (t < 0.78) { r = 255 - (t - 0.5) * 250; g = 146 - (t - 0.5) * 290; b = 40 - (t - 0.5) * 60; } else { r = 185; g = 64; b = 24; }
+  o[0] = U.clamp(r * d, 0, 255); o[1] = U.clamp(g * d, 0, 255); o[2] = U.clamp(b * d, 0, 255);
+  o[3] = 255 * sstep(1, 0.62, e) * U.clamp(0.55 + nz, 0, 1);
+}
+/* a flash with spikes: the first instant of a blast, a star and not a disc */
+function starSprite(n, spikes, seed) {
+  const c = sprite([[0, 'rgba(255,255,255,1)'], [0.08, 'rgba(255,250,235,0.95)'], [0.22, 'rgba(255,220,160,0.35)'], [0.5, 'rgba(255,170,90,0.08)'], [1, 'rgba(255,140,60,0)']], n);
+  const g = c.getContext('2d'), h = n / 2, R = IC.makeRng(seed);
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < spikes; i++) {
+    const a = (i / spikes) * Math.PI * 2 + R() * 0.5, L = h * (0.7 + R() * 0.3), w = n * 0.025;
+    const gr = g.createLinearGradient(h, h, h + Math.cos(a) * L, h + Math.sin(a) * L);
+    gr.addColorStop(0, 'rgba(255,255,245,0.9)'); gr.addColorStop(0.4, 'rgba(255,230,180,0.4)'); gr.addColorStop(1, 'rgba(255,200,140,0)');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(h - Math.sin(a) * w, h + Math.cos(a) * w); g.lineTo(h + Math.cos(a) * L, h + Math.sin(a) * L); g.lineTo(h + Math.sin(a) * w, h - Math.cos(a) * w); g.closePath(); g.fill();
+  }
+  return c;
+}
+/* a rocket motor's flame along +x from the nozzle at the left: a white core, a yellow sheath, an orange tail, and a
+   few shock diamonds in the first part */
+function flameSprite(W, H, blue) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), im = g.createImageData(W, H), D = im.data, h = H / 2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const t = x / W, hw = h * (0.35 + 0.65 * Math.sqrt(Math.max(0, 1 - t))) * Math.min(1, 0.45 + t * 6), r = Math.abs(y + 0.5 - h) / hw;
+    if (r >= 1) continue;
+    const diamond = t < 0.45 ? 0.3 * Math.max(0, Math.cos(t * Math.PI * 9)) * (1 - t / 0.45) : 0;
+    const core = U.clamp(1 - r * (1.6 + t * 2) + diamond, 0, 1), body = (1 - r * r) * Math.pow(1 - t, 1.2);
+    const o = (y * W + x) * 4;
+    D[o] = blue ? U.clamp(200 + 55 * core, 0, 255) : 255; D[o + 1] = U.clamp(170 + 85 * core - t * 60, 0, 255); D[o + 2] = U.clamp((blue ? 200 : 70) + 185 * core - t * 80, 0, 255);
+    D[o + 3] = 255 * U.clamp(body * 0.9 + core * 0.6, 0, 1);
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+let FLAME = null, FLAME_B = null;
 function sprites() {
-  SPR[SMOKE] = sprite([[0, 'rgba(236,238,240,0.9)'], [0.45, 'rgba(214,218,222,0.55)'], [1, 'rgba(200,205,210,0)']]);
-  SPR[SOOT] = sprite([[0, 'rgba(58,55,54,0.85)'], [0.35, 'rgba(64,61,60,0.6)'], [0.7, 'rgba(70,68,68,0.22)'], [1, 'rgba(74,72,72,0)']]);
-  SPR[DUST] = sprite([[0, 'rgba(150,128,98,0.9)'], [0.5, 'rgba(140,120,92,0.5)'], [1, 'rgba(130,112,88,0)']]);
-  SPR[STEAM] = sprite([[0, 'rgba(250,250,252,0.95)'], [0.5, 'rgba(240,242,246,0.5)'], [1, 'rgba(235,238,242,0)']]);
-  SPR[DEBRIS] = sprite([[0, 'rgba(26,22,20,1)'], [0.55, 'rgba(26,22,20,1)'], [0.7, 'rgba(26,22,20,0)']], 16);
   SPR[GLOW] = sprite([[0, 'rgba(255,236,190,1)'], [0.2, 'rgba(255,190,100,0.75)'], [0.5, 'rgba(255,120,40,0.25)'], [1, 'rgba(255,80,20,0)']]);
   SPR[HOT] = sprite([[0, 'rgba(255,255,255,1)'], [0.25, 'rgba(255,246,220,0.85)'], [0.6, 'rgba(255,200,130,0.2)'], [1, 'rgba(255,160,80,0)']]);
   SPR[BLUE] = sprite([[0, 'rgba(255,255,255,1)'], [0.25, 'rgba(200,236,255,0.8)'], [0.6, 'rgba(120,190,255,0.2)'], [1, 'rgba(90,160,255,0)']]);
   SPR[SPARK] = sprite([[0, 'rgba(255,250,220,1)'], [0.35, 'rgba(255,210,120,0.8)'], [1, 'rgba(255,150,60,0)']], 16);
   SPR[EMBER] = sprite([[0, 'rgba(255,200,120,1)'], [0.4, 'rgba(255,120,40,0.6)'], [1, 'rgba(255,80,20,0)']], 16);
+  SPR[DEBRIS] = sprite([[0, 'rgba(26,22,20,1)'], [0.55, 'rgba(26,22,20,1)'], [0.7, 'rgba(26,22,20,0)']], 16);
+  // smoke, dust and fire in four shapes each, so a cloud of them is lumpy and no two neighbours match
+  const LUMP = [[SMOKE, smokePaint(232, 235, 238, 0.85, 0.28)], [SOOT, smokePaint(72, 66, 62, 0.88, 0.45)], [DUST, smokePaint(156, 134, 102, 0.85, 0.35)], [STEAM, smokePaint(246, 247, 250, 0.9, 0.18)], [FIRE, firePaint]];
+  for (const [k, paint] of LUMP) { SPV[k] = []; for (let v = 0; v < NV; v++) SPV[k].push(lumpy(k === FIRE ? 64 : 48, 101 + k * 17 + v * 5, paint)); SPR[k] = SPV[k][0]; }
+  SPV[STAR] = [starSprite(96, 6, 7), starSprite(96, 4, 11), starSprite(96, 5, 13), starSprite(96, 6, 17)]; SPR[STAR] = SPV[STAR][0];
+  for (const k of [GLOW, HOT, BLUE, SPARK, EMBER, DEBRIS]) SPV[k] = [SPR[k], SPR[k], SPR[k], SPR[k]];
+  FLAME = flameSprite(96, 24, false); FLAME_B = flameSprite(96, 24, true);
 }
 /* the old flat particles from the simulation, as soft sprites cached by colour */
 const colSpr = new Map();
@@ -665,15 +807,17 @@ function colSprite(col) {
 /* ---------- how each missile flies and looks ----------
    burn: booster seconds (game time); stage: when a spent booster drops; loft: peak height over the flight as a share of
    its length (drawn as a lift up the screen, the way aircraft shadows fall below them); flash, dust: launch size;
-   smoke: trail width; glow: the motor's colour. */
+   smoke: trail width; glow: the motor's colour; boost: game seconds the drawn missile takes to come up to the
+   simulation's speed from rest in its launcher; climb: how far (screen pixels) it rises off the launcher before it
+   pitches over towards the target. */
 const CLS = {
-  ir:  { burn: 3, loft: 0, flash: 0.6, dust: 0.4, smoke: 0.7, glow: HOT, len: 5 },
-  sr:  { burn: 4, loft: 0.03, flash: 0.8, dust: 0.6, smoke: 0.9, glow: HOT, len: 6 },
-  mr:  { burn: 7, loft: 0.12, flash: 1, dust: 1, smoke: 1.1, glow: HOT, len: 8 },
-  lr:  { burn: 12, stage: 5, loft: 0.24, flash: 1.4, dust: 1.5, smoke: 1.4, glow: GLOW, len: 10 },
-  bmd: { burn: 6, loft: 0.3, flash: 1.3, dust: 1.2, smoke: 1.3, glow: BLUE, len: 10, steep: true },
-  hat: { burn: 10, stage: 4, loft: 0.45, flash: 1.7, dust: 1.8, smoke: 1.6, glow: BLUE, len: 12, steep: true },
-  exo: { burn: 14, stage: 5, loft: 0.6, flash: 2, dust: 2.2, smoke: 1.8, glow: BLUE, len: 13, steep: true },
+  ir:  { burn: 3, loft: 0, flash: 0.6, dust: 0.4, smoke: 0.7, glow: HOT, len: 5, boost: 1.2, climb: 4 },
+  sr:  { burn: 4, loft: 0.03, flash: 0.8, dust: 0.6, smoke: 0.9, glow: HOT, len: 6, boost: 1.6, climb: 6 },
+  mr:  { burn: 7, loft: 0.12, flash: 1, dust: 1, smoke: 1.1, glow: HOT, len: 8, boost: 2.6, climb: 12 },
+  lr:  { burn: 12, stage: 5, loft: 0.24, flash: 1.4, dust: 1.5, smoke: 1.4, glow: GLOW, len: 10, boost: 3.6, climb: 18 },
+  bmd: { burn: 6, loft: 0.3, flash: 1.3, dust: 1.2, smoke: 1.3, glow: BLUE, len: 10, steep: true, boost: 2.6, climb: 20 },
+  hat: { burn: 10, stage: 4, loft: 0.45, flash: 1.7, dust: 1.8, smoke: 1.6, glow: BLUE, len: 12, steep: true, boost: 3.6, climb: 24 },
+  exo: { burn: 14, stage: 5, loft: 0.6, flash: 2, dust: 2.2, smoke: 1.8, glow: BLUE, len: 13, steep: true, boost: 4, climb: 28 },
   aam: { burn: 4, loft: 0.02, flash: 0.35, dust: 0, smoke: 0.7, glow: HOT, len: 5 },
   eaam:{ burn: 4, loft: 0.02, flash: 0.3, dust: 0, smoke: 0.6, glow: GLOW, len: 5, red: true }
 };
@@ -705,8 +849,9 @@ function lift(V, m) {
 function launch(S, V, x, y) {
   const c = CLS[V.cls], px = curPx, night = curLight < 0.5 ? 1.5 : 1;
   if (!inViewR(x, y, 300)) return;
-  emit(HOT, x, y, 0, 0, 0.22, 1.5 * c.flash, 16 * c.flash * night, 1.2, 1, 0);
-  emit(GLOW, x, y, 0, 0, 0.5, 3 * c.flash, 26 * c.flash * night, 0.8, 0.8, 0);
+  emit(STAR, x, y, 0, 0, 0.14, 1.2 * c.flash, 18 * c.flash * night, 0.4, 0.9, 0);
+  emit(HOT, x, y, 0, 0, 0.22, 1 * c.flash, 10 * c.flash * night, 1.2, 0.9, 0);
+  emit(GLOW, x, y, 0, 0, 0.5, 2 * c.flash, 18 * c.flash * night, 0.8, 0.7, 0);
   if (curLight < 0.5) emit(GLOW, x, y, 0, 0, 0.9, 12 * c.flash, 70 * c.flash, 0.3, 0.35, 0);
   // the dust thrown out across the ground, and the white cloud the missile leaves at the launcher
   const nd = Math.round(10 * c.dust);
@@ -721,11 +866,23 @@ FX.boom = function (S, x, y, s, kind) {
   if (!inViewR(x, y, 400)) return;
   const px = curPx, night = curLight < 0.5, nk = night ? 1.5 : 1, gnd = kind === 'ground' || kind === 'sec';
   const blue = kind === 'us';
-  emit(blue ? BLUE : HOT, x, y, 0, 0, 0.2 + s * 0.08, 2 * s, 20 * s * nk, 1.5, 0.9, 0);
-  // the fireball swells and fades; what burns on glows a little longer
-  emit(GLOW, x, y, 0, 0, 0.6 + s * 0.4, (gnd ? 4.5 : 3) * s, (gnd ? 34 : 28) * s * nk, 1.3, 0.9, 0);
-  if (!blue) { emit(GLOW, x, y, 0, 0, 1.4 + s * 0.6, (gnd ? 3.5 : 2) * s, (gnd ? 24 : 16) * s * nk, 0.5, 0.8, 0); emit(HOT, x, y, 0, 0, 0.45, 1.5 * s, 14 * s * nk, 1, 0.8, 0); }
-  if (night) emit(GLOW, x, y, 0, 0, 0.6 + s * 0.4, 18 * s, 90 * s, 0.4, 0.4, 0);
+  // the flash: a star with spikes for an instant, then the light it leaves
+  emit(STAR, x, y, 0, 0, 0.1 + s * 0.05, 2.4 * s, 30 * s * nk, 0.5, 1, 0);
+  emit(blue ? BLUE : HOT, x, y, 0, 0, 0.2 + s * 0.08, 1.4 * s, 12 * s * nk, 1.5, 0.8, 0);
+  // the fireball: lumps of fire thrown out and up from the middle that swell, darken and leave their smoke
+  if (!blue || s >= 0.6) {
+    const nf = Math.round((gnd ? 7 : 5) + s * 3), R0 = (gnd ? 0.8 : 0.5) * s;
+    for (let i = 0; i < nf; i++) {
+      // (thrown out at a few pixels a second far out, at the fireball's own size a second close in)
+      const a = Math.random() * 6.283, d = Math.random(), v = Math.max((gnd ? 14 : 10) * px * Math.min(1.6, 0.6 + s * 0.5), R0 * 1.4) * (0.4 + d);
+      emit(FIRE, x + Math.cos(a) * R0 * d * 0.6, y + Math.sin(a) * R0 * d * 0.6 - (gnd ? R0 * 0.4 : 0), Math.cos(a) * v, Math.sin(a) * v - (gnd ? 8 : 3) * px,
+        0.8 + Math.random() * 0.7 + s * 0.35, R0 * (0.55 + Math.random() * 0.5), (gnd ? 8 : 6) * s * (0.6 + Math.random() * 0.5) * nk, 1.5, 0.95, 0, 2.2);
+    }
+  }
+  // the light round it: what burns on glows a little longer, and at night the ground round it is lit for a moment
+  emit(GLOW, x, y, 0, 0, 0.5 + s * 0.3, (gnd ? 3 : 2) * s, (gnd ? 20 : 16) * s * nk, 1.2, 0.75, 0);
+  if (!blue) emit(GLOW, x, y, 0, 0, 1.4 + s * 0.6, (gnd ? 2.4 : 1.4) * s, (gnd ? 15 : 10) * s * nk, 0.5, 0.6, 0);
+  if (night) emit(GLOW, x, y, 0, 0, 0.7 + s * 0.4, 16 * s, 80 * s, 0.4, 0.35, 0);
   rings.push({ x, y, t: 0, life: 0.45 + s * 0.25, rw: (gnd ? 18 : 10) * s, rp: (gnd ? 60 : 36) * s, col: blue ? '190,230,255' : '255,238,210' });
   if (rings.length > 60) rings.shift();
   // sparks fly out fast and fade; heavier pieces arc down trailing smoke
@@ -780,12 +937,12 @@ function track(S) {
       const k = byUnit.get(m.unit || m.src) || 0; byUnit.set(m.unit || m.src, k + 1);
       if (m.tr) m.tr._fx = true;
       const x0 = m.unit && !air ? m.unit.x : m.x, y0 = m.unit && !air ? m.unit.y : m.y;
-      V = { cls, x0, y0, born: S.time, bornR: lastNow, delay: k * 0.35, dist: 0, lx: m.x, ly: m.y, peak: c.loft * D0, steep: c.steep, tr: newTrail(c.smoke), staged: false, lastT: S.time, hx: m.x, hy: m.y, hl: 0, shown: false, air };
+      V = { cls, x0, y0, born: S.time, bornR: lastNow, delay: k * 0.35, dist: 0, lx: m.x, ly: m.y, peak: c.loft * D0, steep: c.steep, tr: newTrail(c.smoke), staged: false, lastT: S.time, hx: x0, hy: y0, hl: 0, gx: x0, gy: y0, bp: air ? 3 : 0, shown: false, air };
       vis.set(m.id, V); trailPush(V.tr, x0, y0, S.time, 1);
       IC.sfx && IC.sfx.claimLaunch && IC.sfx.claimLaunch(m.x, m.y, cls, V.delay);
     }
     V.dist += Math.hypot(m.x - V.lx, m.y - V.ly); V.lx = m.x; V.ly = m.y;
-    V.m = m; V.hl = lift(V, m); V.hx = m.x; V.hy = m.y - V.hl;
+    V.m = m; boost(S, V, m, CLS[V.cls]);
     if (!V.shown && lastNow - V.bornR >= V.delay) { V.shown = true; if (!V.air) launch(S, V, V.x0, V.y0); else emit(HOT, V.x0, V.y0, 0, 0, 0.15, 0.4, 8, 1, 0.8, 0); }
     if (V.shown) grow(S, V);
   }
@@ -802,7 +959,7 @@ function track(S) {
   // enemy air-to-air missiles
   for (const m of S.eaam) {
     let V = eaamV.get(m);
-    if (!V) { if (m.tr) m.tr._fx = true; V = { cls: 'eaam', x0: m.x, y0: m.y, born: S.time, bornR: lastNow, dist: 0, lx: m.x, ly: m.y, peak: 0, tr: newTrail(CLS.eaam.smoke, true), lastT: S.time, hx: m.x, hy: m.y, shown: true, air: true }; eaamV.set(m, V); }
+    if (!V) { if (m.tr) m.tr._fx = true; V = { cls: 'eaam', x0: m.x, y0: m.y, born: S.time, bornR: lastNow, dist: 0, lx: m.x, ly: m.y, peak: 0, tr: newTrail(CLS.eaam.smoke, true), lastT: S.time, hx: m.x, hy: m.y, gx: m.x, gy: m.y, bp: 3, shown: true, air: true }; eaamV.set(m, V); }
     V.m = m; V.hx = m.x; V.hy = m.y; grow(S, V);
     if (m.dead) V.tr.done = true;
   }
@@ -819,12 +976,28 @@ function track(S) {
     if (t.d.move !== 'bal' && t.d.cls !== 'hgv') continue;
     let B = balV.get(t);
     if (!B) { B = { seen: false }; balV.set(t, B); }
-    if (!t.det || t.dead) continue;
+    if ((!t.det && !(IC.film && IC.film.clean)) || t.dead) continue;
     if (!B.seen) {
       B.seen = true;
       if (t.x0 != null && t.age < 60) launch(S, { cls: t.d.cls === 'rkt' ? 'sr' : 'hat' }, t.x0, t.y0);
     }
   }
+}
+/* the first seconds of a flight: the simulation's missile leaves at full speed; the one drawn starts at rest in its
+   launcher, accelerates along the line to the simulation's (catching it up by the end of its boost), and rises off
+   the launcher first, so a vertical launch climbs and pitches over instead of popping out sideways. bp counts boost
+   lengths: game time over c.boost, but one takes at least 0.15 s and at most 1.4 s of real time, so it shows at 32×
+   and does not drag in slow motion. */
+function boost(S, V, m, c) {
+  let x = m.x, y = m.y, hl = lift(V, m);
+  if (V.bp < 3) {
+    if (V.shown && gdt > 0) V.bp += U.clamp(gdt / c.boost, dtR / 1.4, dtR / 0.15);
+    const b = Math.min(1, V.bp), e = b * b * (2 - b);
+    x = V.x0 + (m.x - V.x0) * e; y = V.y0 + (m.y - V.y0) * e;
+    const cl = c.climb * curPx * (V.bp < 1 ? Math.sin(V.bp * Math.PI / 2) : Math.max(0, 1 - (V.bp - 1) / 2));
+    hl = Math.max(hl, cl);
+  }
+  V.hl = hl; V.gx = x; V.gy = y; V.hx = x; V.hy = y - hl;
 }
 const ghosts = [];   // missiles that missed fly on for a moment, then destroy themselves
 const burnsAt = (V, c, age) => age < c.burn || lastNow - V.bornR - (V.delay || 0) < 0.9 + c.burn * 0.1;
@@ -847,7 +1020,7 @@ function grow(S, V) {
   }
   V.burning = burning;
   // billows along the boost give the trail body
-  if (burning && !staging && (V.puffT = (V.puffT || 0) - dtR) <= 0 && inView(V.hx, V.hy, 60 * curPx)) { V.puffT = 0.1; emit(SMOKE, V.hx, V.hy, 0, 0, 16 + Math.random() * 14, 0.35 * c.smoke, 3 * c.smoke, 2.4, 0.4, GT | WIND, 0); }
+  if (burning && !staging && (V.puffT = (V.puffT || 0) - dtR) <= 0 && inView(V.hx, V.hy, 60 * curPx)) { const b = V.bp < 1; V.puffT = b ? 0.03 : 0.1; emit(SMOKE, V.hx, V.hy, 0, 0, 16 + Math.random() * 14, 0.35 * c.smoke, (b ? 4 : 3) * c.smoke, 2.4, b ? 0.55 : 0.4, GT | WIND, 0); }
 }
 
 function update(S, now) {
@@ -920,16 +1093,25 @@ function drawTrails2(S, px, light) {
 function drawSprites(add, px, light) {
   const shrink = 1 - WF * 0.6;
   for (let i = 0; i < np; i++) {
-    const kd = P.k[i]; if ((kd >= GLOW) !== add) continue;
+    const kd = P.k[i]; if (ADDK[kd] !== add) continue;
     const x = P.x[i], y = P.y[i]; if (!inView(x, y, 200)) continue;
     const f = P.t[i] / P.life[i], G = 1 + P.grow[i] * f;
     const r = Math.max(P.rw[i] * G, P.rp[i] * G * px * shrink);
     if (r < 0.7 * px) continue;   // under a pixel and a half across: not worth a draw
-    let a = P.a[i] * (kd >= GLOW ? (1 - f) * (1 - f) : kd === DEBRIS ? 1 - f * f : (1 - f) * Math.min(1, f * 6 + 0.3));
+    const spr = SPV[kd][P.v[i]];
+    if (kd === FIRE) {
+      // a fireball lump burns white to orange, then darkens to the smoke it leaves: fire fading under soot
+      const fa = P.a[i] * (1 - f) * (1 - f) * (light < 0.5 ? 1 : 0.92);
+      if (fa > 0.01) { ctx.globalAlpha = Math.min(1, fa); ctx.drawImage(spr, x - r, y - r, r * 2, r * 2); }
+      const sa = P.a[i] * Math.min(1, f * 2.2) * (1 - f) * 0.85 * (light < 0.5 ? 0.6 + light : 1);
+      if (sa > 0.01) { const R = r * 1.1; ctx.globalAlpha = sa; ctx.drawImage(SPV[SOOT][P.v[i]], x - R, y - R * 1.15, R * 2, R * 2); }
+      continue;
+    }
+    let a = P.a[i] * (add ? (1 - f) * (1 - f) : kd === DEBRIS ? 1 - f * f : (1 - f) * Math.min(1, f * 6 + 0.3));
     if (!add && light < 0.5 && kd !== DEBRIS) a *= 0.55 + light;
     if (a < 0.01) continue;
     ctx.globalAlpha = Math.min(1, a);
-    ctx.drawImage(SPR[kd], x - r, y - r, r * 2, r * 2);
+    ctx.drawImage(spr, x - r, y - r, r * 2, r * 2);
   }
   ctx.globalAlpha = 1;
 }
@@ -948,18 +1130,20 @@ function drawMissiles(S, px, light) {
     let hx = Math.cos(m.a || 0), hy = Math.sin(m.a || 0);
     if (n >= 8) { const dx = x - A[n - 8], dy = y - A[n - 7], d = Math.hypot(dx, dy); if (d > 1e-3) { hx = dx / d; hy = dy / d; } }
     if (burning) {
-      const flick = 0.8 + Math.random() * 0.4, L2 = c.len * 1.7 * px * flick * (V.staged ? 0.7 : 1), gr = (6 + c.len) * px * nk * flick;
-      ctx.drawImage(SPR[c.glow], x - gr, y - gr, gr * 2, gr * 2);
-      ctx.strokeStyle = red ? 'rgba(255,170,130,0.9)' : 'rgba(255,236,190,0.95)'; ctx.lineWidth = 2.2 * px;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - hx * L2, y - hy * L2); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,1)'; ctx.lineWidth = 1 * px;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - hx * L2 * 0.45, y - hy * L2 * 0.45); ctx.stroke();
+      // the motor: a flame with a shape along the missile's own line from its tail, and only a small light round the
+      // nozzle (larger at night), never a ball that hides the missile
+      const kb = U.clamp(0.3 + V.bp * 1.4, 0, 1), flick = 0.85 + Math.random() * 0.3, L2 = c.len * 2.2 * px * flick * (V.staged ? 0.7 : 1) * kb, w2 = (2.2 + c.len * 0.22) * px * (0.9 + 0.2 * flick);
+      const gr = (2.5 + c.len * 0.4) * px * (night ? 1.9 : 1) * flick;
+      ctx.globalAlpha = night ? 0.9 : 0.7; ctx.drawImage(SPR[c.glow], x - hx * 1.5 * px - gr, y - hy * 1.5 * px - gr, gr * 2, gr * 2); ctx.globalAlpha = 1;
+      ctx.save(); ctx.translate(x, y); ctx.transform(-hx, -hy, hy, -hx, 0, 0);
+      ctx.drawImage(c.glow === BLUE ? FLAME_B : FLAME, 0, -w2 / 2, L2, w2);
+      ctx.restore();
     } else {
       ctx.drawImage(SPR[red ? GLOW : BLUE], x - 3.5 * px * nk, y - 3.5 * px * nk, 7 * px * nk, 7 * px * nk);
     }
     ctx.fillStyle = red ? 'rgba(255,190,170,1)' : 'rgba(245,250,255,1)';
     ctx.beginPath(); ctx.arc(x, y, 1.5 * px, 0, 7); ctx.fill();
-    if (V.hl > 25 * px && cam.z > 0.5) { ctx.strokeStyle = 'rgba(200,230,255,0.18)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(m.x, m.y); ctx.stroke(); ctx.setLineDash([]); }
+    if (V.hl > 25 * px && cam.z > 0.5) { ctx.strokeStyle = 'rgba(200,230,255,0.18)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(V.gx, V.gy); ctx.stroke(); ctx.setLineDash([]); }
   };
   for (const [, V] of vis) one(V, V.m);
   for (const m of S.eaam) { const V = eaamV.get(m); if (V) one(V, m, true); }
@@ -968,25 +1152,27 @@ function drawMissiles(S, px, light) {
 
 /* ballistic missiles and glide vehicles: a flame on the way up, a white-hot streak coming down */
 function drawBallistic(S, px, now, light) {
-  const nk = light < 0.5 ? 1.6 : 1;
+  const nk = light < 0.5 ? 1.6 : 1, FM = IC.film && IC.film.clean;
   for (const t of S.threats) {
-    if (t.dead || !t.det || (t.d.move !== 'bal' && t.d.cls !== 'hgv') || !inView(t.px, t.py, 200)) continue;
-    const x = t.px, y = t.py, sp = Math.hypot(t.pvx || t.vx, t.pvy || t.vy) || 1, ux = (t.pvx || t.vx) / sp, uy = (t.pvy || t.vy) / sp;
+    // (film mode shows the truth: where the warhead really is, seen or not)
+    const x = FM ? t.x : t.px, y = FM ? t.y : t.py;
+    if (t.dead || (!t.det && !FM) || (t.d.move !== 'bal' && t.d.cls !== 'hgv') || !inView(x, y, 200)) continue;
+    const vx = FM ? t.vx : t.pvx || t.vx, vy = FM ? t.vy : t.pvy || t.vy, sp = Math.hypot(vx, vy) || 1, ux = vx / sp, uy = vy / sp;
     const f = t.T ? U.clamp(t.age / t.T, 0, 1) : 0.5;
     const hgv = t.d.cls === 'hgv', rkt = t.d.cls === 'rkt';
     // hot on the way up, dark in space, heating again as it falls back into the air
     let heat = hgv ? 0.8 : f < 0.12 ? 1 - f / 0.12 : f > 0.5 ? 0.25 + 0.75 * Math.pow((f - 0.5) / 0.5, 1.5) : 0;
     if (rkt) heat *= 0.5;
     if (heat <= 0.02) continue;
-    const L2 = (rkt ? 16 : 34 + 40 * heat) * px, flick = 0.85 + 0.3 * Math.random();
+    const L2 = (rkt ? 16 : 40 + 60 * heat) * px, flick = 0.85 + 0.3 * Math.random();
     const up = f < 0.12;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = up ? `rgba(255,170,90,${0.35 * heat})` : `rgba(255,150,80,${0.35 * heat})`; ctx.lineWidth = 7 * px * heat * nk;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - ux * L2, y - uy * L2); ctx.stroke();
-    ctx.strokeStyle = `rgba(255,240,210,${0.9 * heat})`; ctx.lineWidth = 2.2 * px * heat;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - ux * L2 * 0.6, y - uy * L2 * 0.6); ctx.stroke();
-    ctx.lineCap = 'butt';
-    const r = (10 + 10 * heat) * px * nk * flick;
+    // a streak, not a ball: the plasma sheath is a long tapered stroke of light behind the warhead, hottest at its head
+    ctx.save(); ctx.translate(x, y); ctx.transform(-ux, -uy, uy, -ux, 0, 0);
+    const w = (up ? 7 : 5 + 4 * heat) * px * nk;
+    ctx.globalAlpha = Math.min(1, 0.35 + 0.65 * heat); ctx.drawImage(FLAME, -1.5 * px, -w / 2, L2, w);
+    ctx.globalAlpha = 0.5 * heat; ctx.drawImage(SPR[HOT], -L2 * 0.1, -w * 0.9, L2 * 1.6, w * 1.8);
+    ctx.restore();
+    const r = (3 + 4 * heat) * px * nk * flick;
     ctx.globalAlpha = Math.min(1, heat + 0.2); ctx.drawImage(SPR[HOT], x - r, y - r, r * 2, r * 2); ctx.globalAlpha = 1;
     // ionised air left behind on the way down
     if (!up && Math.random() < 0.5) emit(STEAM, x - ux * L2 * 0.4, y - uy * L2 * 0.4, 0, 0, 2.5, 0.5, 3.5 * heat, 1.8, 0.35 * heat, GT | WIND, 0.2);
@@ -1030,19 +1216,34 @@ function drawSimParts(S, px, add) {
   ctx.globalAlpha = 1;
 }
 function drawFires(S, px, now, light) {
+  // light is added, so a burning district of many fires would add up to a white disc: the more fires on screen, the
+  // less each one lights (a crowd of fires still reads brighter than one, never blown out)
+  let nv = 0; for (const f of S.fx.fires) if (inView(f.x, f.y, 100)) nv++;
+  const crowd = 1 / Math.sqrt(Math.max(1, nv / 3));
   for (const f of S.fx.fires) {
     if (!inView(f.x, f.y, 100)) continue;
     const fl = 0.75 + 0.25 * Math.sin(now * 9 + f.seed) * Math.sin(now * 5.3 + f.seed * 2);
     const k = Math.min(1, (f.life - f.t) / 300) * fl * (1.4 - light * 0.6);
     const r = Math.max(5 * px, f.size * U.lerp(16, 1.1, WF));
-    ctx.globalAlpha = Math.min(1, 0.8 * k); ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
-    if (light < 0.5) { const R2 = r * 4; ctx.globalAlpha = 0.18 * k * (1 - light * 2); ctx.drawImage(SPR[GLOW], f.x - R2, f.y - R2, R2 * 2, R2 * 2); }
+    // at night it lights the ground round it, warm and wide, the way a fire seen from the air does
+    if (light < 0.6) { const R2 = r * (3.5 + 1.5 * fl), n = 1 - light / 0.6; ctx.globalAlpha = Math.min(1, 0.3 * k * n * crowd); ctx.drawImage(SPR[GLOW], f.x - R2, f.y - R2 * 0.9, R2 * 2, R2 * 2); }
+    ctx.globalAlpha = Math.min(1, 0.7 * k * (0.4 + 0.6 * crowd)); ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
+    // tongues of flame that lick up from the bed and shrink as they rise, each its own shape
+    for (let j = 0; j < 4; j++) {
+      const ph = (now * (0.7 + j * 0.13) + j / 4 + f.seed) % 1, s2 = r * (0.62 - ph * 0.38);
+      const ox = Math.sin(f.seed * 3 + j * 2.1 + now * 1.3) * r * 0.32, oy = -ph * r * 0.85;
+      ctx.globalAlpha = Math.min(1, (1 - ph) * k * 0.9); ctx.drawImage(SPV[FIRE][(j + (f.seed | 0)) % NV], f.x + ox - s2, f.y + oy - s2, s2 * 2, s2 * 2);
+    }
+    // close in it smokes from its own bed (far out the site's smoke column does): a puff now and then, pooled
+    if (FX.on && cam.z > 0.6 && !S.paused && Math.random() < dtR * (2 + f.size * 3) && np < NP - 400)
+      emit(SOOT, f.x + (Math.random() - 0.5) * r * 0.5, f.y - r * 0.3, (Math.random() - 0.5) * 3 * px, -(5 + Math.random() * 6) * px - r * 0.12, 6 + Math.random() * 6, r * 0.5, 0, 2.8, 0.55, WIND, 0.25);
   }
   ctx.globalAlpha = 1;
 }
 
 IC.drawCombat = function (S, px, now, light) {
   ctx = RS.ctx; WF = RS.WF; curPx = px; curLight = light;
+  if (!SPR.length) sprites();
   if (FX.on) update(S, now);
   drawWrecks(S, px, now);
   drawTrails(S, px);
@@ -1050,20 +1251,26 @@ IC.drawCombat = function (S, px, now, light) {
   if (!FX.no || !FX.no.trails) drawTrails2(S, px, light);
   if (!FX.no || !FX.no.low) drawSprites(false, px, light);
   if (!FX.no || !FX.no.sim) drawSimParts(S, px, false);
-  drawImpacts(S, px, now);
-  for (const t of S.threats) drawTrack(S, t, px, now);
-  if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
-  if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
-  for (const a of S.air) drawAir(S, a, px, now);
-  for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
+  if (IC.film && IC.film.clean) { for (const t of S.threats) filmThreat(S, t, px, now, light); for (const a of S.air) filmAir(S, a, px, now, light); }
+  else {
+    drawImpacts(S, px, now);
+    for (const t of S.threats) drawTrack(S, t, px, now);
+    if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
+    if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
+    for (const a of S.air) drawAir(S, a, px, now);
+    for (const s of S.strikes) if (!s.pending) drawStrike(s, px);
+  }
   drawChaff(S, px);
 
   ctx.globalCompositeOperation = 'lighter';
   drawFires(S, px, now, light);
-  for (const f of S.fx.flashes) {
+  // (the simulation's flat launch flashes are drawn by the effects' own launch, star and cloud, while they are on)
+  if (!FX.on) for (const f of S.fx.flashes) {
     const k = 1 - f.t / 0.35; if (k <= 0) continue;
     const r = Math.max(f.r * px, (f.wr || 0) * (1 - WF * 0.9)) * (0.6 + f.t * 2);
     ctx.globalAlpha = 0.7 * k; ctx.drawImage(SPR[GLOW], f.x - r, f.y - r, r * 2, r * 2);
+    // at night a blast lights the ground well beyond its fireball, for a moment
+    if (light < 0.6) { const R = r * 5; ctx.globalAlpha = 0.3 * k * (1 - light / 0.6); ctx.drawImage(SPR[GLOW], f.x - R, f.y - R, R * 2, R * 2); }
   }
   ctx.globalAlpha = 1;
   for (const u of S.units) if (u.beam && !u.beam.dead) {

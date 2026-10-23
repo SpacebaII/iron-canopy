@@ -29,11 +29,18 @@ IC.WAIT = { speed: 432, step: 8 };
    chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js)
    progress: (round 4) Act I's chapters move by goals, not months; each goal says what it gives; passenger
      milestones open the bigger pieces; a peacetime event deck (deck.js); money split into running and invested */
-IC.FOCUS = { pieces: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true };
+IC.FOCUS = { pieces: true, parts: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true };
+/* parts: (wave 12) the build bar is the parts one by one again (runways, taxiways, aprons, single stands,
+   terminals, each service building), so the player composes the airport; of the whole pieces only the Starter
+   airport stays on the bar (Blueprints), the others are what a problem's fix places; Found leaves the surveyed
+   runway alone; the milestones open the parts that answer them (piers, a second runway, round terminals) */
 /* (round 5c) tutors: every civil feature taught on the real screen, the old click-through tour and tips hidden;
    polish: the trailer's and the benchmark's visual notes (vehicles, panels, labels, the build bar) */
 /* (round 3) the Career's civil act, while calm is on: nothing of the war shows until Act II */
 IC.civilAct = S => !!(IC.FOCUS.calm && S && S.mode === 'story' && S.story && S.story.act < 2);
+/* civil-aviation business the player runs: not in a Quick war, where airlines, controllers and the landside run
+   themselves and their offers and advice would only bury the war in the Journal */
+IC.civilAdvice = S => !S || S.mode !== 'campaign';
 
 /* Two clocks. The live clock is S.time in game seconds: aircraft, weather, day and night. The calendar counts months
    and years on top of it: a month is DAYS_PER_MONTH live days, so a Career can span ten years while every flight
@@ -93,6 +100,8 @@ IC.makeRng = function (seed) {
   f.int = (lo, hi) => Math.floor(lo + f() * (hi - lo + 1));
   f.pick = arr => arr[Math.floor(f() * arr.length)];
   f.gauss = () => { let s = 0; for (let i = 0; i < 4; i++) s += f(); return (s - 2) / 0.58; };
+  // in place, the same on every browser (sort(() => R() - 0.5) is not: each engine's sort asks in its own order)
+  f.shuffle = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(f() * (i + 1)), t = arr[i]; arr[i] = arr[j]; arr[j] = t; } return arr; };
   return f;
 };
 
@@ -101,15 +110,37 @@ IC.makeRng = function (seed) {
 const nativeRandom = Math.random;
 IC.seedRandom = seed => { Math.random = seed == null ? nativeRandom : IC.makeRng(seed); };
 
+/* Math.hypot of two numbers, to the bit, without its cost: V8's builds an array on every call, and the step measures
+   distances by the thousand. The same steps as V8's (scale by the larger, add the squares, root), so the same result */
+function hyp(x, y) {
+  x = Math.abs(x); y = Math.abs(y);
+  if (x === Infinity || y === Infinity) return Infinity;
+  if (x !== x || y !== y) return NaN;
+  const m = x > y ? x : y;
+  if (m === 0) return 0;
+  const a = x / m, b = y / m;
+  return Math.sqrt(a * a + b * b) * m;
+}
+/* and of three, which V8 adds with Kahan's compensation */
+function hyp3(x, y, z) {
+  x = Math.abs(x); y = Math.abs(y); z = Math.abs(z);
+  if (x === Infinity || y === Infinity || z === Infinity) return Infinity;
+  if (x !== x || y !== y || z !== z) return NaN;
+  let m = x > y ? x : y; if (z > m) m = z;
+  if (m === 0) return 0;
+  const a = x / m, b = y / m, c = z / m, s1 = a * a, s2 = b * b, p2 = s1 + s2;
+  return Math.sqrt(p2 + (c * c - ((p2 - s1) - s2))) * m;
+}
 const U = IC.U = {
+  hyp, hyp3,
   rand: (a, b) => a + Math.random() * (b - a),
   randi: (a, b) => Math.floor(a + Math.random() * (b - a + 1)),
   gauss: () => { let s = 0; for (let i = 0; i < 4; i++) s += Math.random(); return (s - 2) / 0.58; },
   clamp: (v, a, b) => v < a ? a : v > b ? b : v,
   lerp: (a, b, t) => a + (b - a) * t,
   smooth: t => t * t * (3 - 2 * t),
-  dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
-  dxy: (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by),
+  dist: (a, b) => hyp(a.x - b.x, a.y - b.y),
+  dxy: (ax, ay, bx, by) => hyp(ax - bx, ay - by),
   pick: a => a[Math.floor(Math.random() * a.length)],
   wpick(list) {
     let tot = 0; for (const [, w] of list) tot += w;
@@ -132,7 +163,7 @@ const U = IC.U = {
     const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
     let t = L ? ((px - ax) * dx + (py - ay) * dy) / L : 0;
     t = t < 0 ? 0 : t > 1 ? 1 : t;
-    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+    return hyp(px - ax - t * dx, py - ay - t * dy);
   },
   polyDist(px, py, pts) {
     let m = 1e9;

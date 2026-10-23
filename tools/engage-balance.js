@@ -5,7 +5,7 @@
 const IC = require('../headless.js');
 const U = IC.U;
 const seeds = +process.argv[2] || 4;
-const RAIDS = [['mixed', 14, 150], ['cruise', 12, 150], ['drones', 20, 120], ['sead', 6, 200], ['ballistic', 6, 400], ['big', 24, 200]];
+const RAIDS = [['mixed', 14, 150], ['cruise', 12, 150], ['drones', 20, 120], ['seadjam', 6, 200], ['ballistic', 6, 400], ['big', 24, 200]];
 const DEF = [['lrsam', -120, 0], ['mr3d', -100, 30], ['mrsam', -60, 40], ['mrsam', -40, -50], ['shorad', 30, 0], ['shorad', 10, 40]];
 const tof = {}, tot = { launched: 0, kills: 0, leaks: 0, shots: 0 };
 console.log('raid        launched  down  leaked  kill rate  shots');

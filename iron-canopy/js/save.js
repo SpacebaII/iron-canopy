@@ -254,15 +254,15 @@ IC.saveGame = function (S, meta) {
   skipSets = skipFor(S, S.world);
   try {
     const { root, jobs, lost } = new Writer(S, BASE).run();
-    return { game: 'iron-canopy', v: IC.SAVE_VERSION, seed: S.world.seed, wsig: BASE.sig, nid: IC.nidPeek(), meta: Object.assign(IC.saveMeta(S), meta || {}),
+    return { game: 'iron-canopy', v: IC.SAVE_VERSION, seed: S.world.seed, wsig: BASE.sig, fm: 1, nid: IC.nidPeek(), meta: Object.assign(IC.saveMeta(S), meta || {}),
       ms: Date.now() - t0, rebuild: ['terrain', 'clouds', 'traffic'].filter(k => S[k] != null), lost, root, jobs };
   } finally { skipSets = new Map(); }
 };
 /* what the slot list shows */
 IC.saveMeta = function (S) {
   const act = S.story ? S.story.act : 0;
-  const what = S.mode === 'story' ? `Career · Act ${['', 'I', 'II', 'III', 'IV'][act] || act}` + (act === 1 && IC.CHAPTERS[S.story.ch] ? ` · ${IC.CHAPTERS[S.story.ch].title}` : '')
-    : S.mode === 'campaign' ? 'Quick war' : S.mode === 'sandbox' ? 'Sandbox' : S.mode === 'academy' ? 'Academy' : S.mode === 'range' ? 'Test range' : S.mode;
+  const what = S.free ? 'Free build' : S.mode === 'story' ? `Career · Act ${['', 'I', 'II', 'III', 'IV'][act] || act}` + (act === 1 && IC.CHAPTERS[S.story.ch] ? ` · ${IC.CHAPTERS[S.story.ch].title}` : '')
+    : S.mode === 'campaign' ? 'Quick war' : S.mode === 'test' ? 'Sandbox' : S.mode === 'sandbox' ? 'War at dawn' : S.mode === 'academy' ? 'Academy' : S.mode === 'range' ? 'Test range' : S.mode;
   return { mode: S.mode, act, what, day: IC.U.day(S.time), cal: S.mode === 'story' ? IC.U.date(S.time) : null, clock: IC.U.hhmm(S.time), time: S.time, budget: Math.round(S.budget), date: Date.now() };
 };
 
@@ -359,13 +359,16 @@ IC.loadSteps = function* (data) {
   const prevW = IC.W;
   try {
     let W;
-    if (IC.generateSteps) { const g = IC.generateSteps(data.seed); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
-    else W = IC.generate(data.seed);
+    // the world is rebuilt with the same sums everywhere (fixedmath.js); a save from before that, with the browser's own
+    const native = !data.fm, inMath = fn => native ? fn() : IC.fixedMath(fn);
+    if (IC.generateSteps) { const g = IC.generateSteps(data.seed, native); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
+    else W = IC.generate(data.seed, native);
     IC.W = W;
-    IC.buildRouting(W);
+    inMath(() => IC.buildRouting(W));
     yield [0.64, 'Checking the map'];
-    const { list, sig } = IC.worldBase(W);
-    if (sig !== data.wsig) throw new Error('This save was made with a different version of the map generator, so its world cannot be rebuilt. It cannot be loaded in this version of the game.');
+    const { list, sig } = inMath(() => IC.worldBase(W));
+    if (sig !== data.wsig) throw new Error('This save was made with a different version of the map generator, so its world cannot be rebuilt. It cannot be loaded in this version of the game.' +
+      (native ? ' An older save also loads only in the browser it was made in.' : ''));
     yield [0.68, 'Restoring the game'];
     skipSets = new Map([[W, new Set(IC.SAVE_SKIP.world)]]);
     const { S, fns, remakes } = new Reader(data, list).run();

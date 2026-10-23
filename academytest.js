@@ -13,7 +13,8 @@ const ACT = {
     S => { for (const t of S.threats.filter(x => x.det).slice(0, 3)) IC.emit(S, 'select', { kind: 'track', ref: t }); },
     null,
     S => { S.sel = { kind: 'track', ref: S.camp.bomber }; },
-    S => { const r = S.roster.find(x => x.kind === 'ftr' && x.st === 'ready'); if (r && !S.air.some(a => a.mission && a.mission.track === S.camp.bomber)) IC.launchAir(S, r, { type: 'intercept', track: S.camp.bomber }); }
+    // Intercept (V): the flight that gets there first
+    S => { const t = S.camp.bomber; if (t && !t.dead && !S.air.some(a => a.mission && a.mission.track === t)) { const w = IC.bestInterceptor(S, t); if (w) IC.commitIntercept(S, w, t); } }
   ],
   layers: [
     S => { if (!S.units.some(u => u.type === 'gf')) { const b = S.byId.ab_fwd; const q = near(S, 'gf', b, 60, 140); IC.deploy(S, 'gf', q.x, q.y); } },

@@ -49,7 +49,7 @@ function profile(x, y, mastM, R) {
   return { m, NS, ST, x, y, mast: mastM, R };
 }
 function profAlt(P, x, y) {
-  const dx = x - P.x, dy = y - P.y, k = Math.ceil(Math.hypot(dx, dy) / P.ST) - 1;
+  const dx = x - P.x, dy = y - P.y, k = Math.ceil(U.hyp(dx, dy) / P.ST) - 1;
   if (k < 0) return 0;
   if (k >= P.NS) return Infinity;
   const b = U.mod(Math.round(Math.atan2(dy, dx) / (Math.PI * 2) * A.NB), A.NB);
@@ -100,7 +100,7 @@ IC.aspCov = function (S) {
       const y = (j + 0.5) * CS, dy = y - s.y, hw = Math.sqrt(Math.max(0, s.R * s.R - dy * dy)) + CS;
       const a0 = Math.max(i0, Math.floor((s.x - hw) / CS)), a1 = Math.min(i1, Math.floor((s.x + hw) / CS));
       for (let i = a0; i <= a1; i++) {
-        const x = (i + 0.5) * CS, dx = x - s.x, d = Math.hypot(dx, dy);
+        const x = (i + 0.5) * CS, dx = x - s.x, d = U.hyp(dx, dy);
         if (d > s.R) continue;
         const k = j * gw + i;
         if (gnd[k] !== gnd[k]) gnd[k] = IC.elevKm(x, y);
@@ -380,7 +380,7 @@ IC.bendPath = function (pts, circles, passes) {
     }
     if (!hit) break;
     const P = pts[hit.i - 1], Q = pts[hit.i], z = hit.z;
-    const dx = Q.x - P.x, dy = Q.y - P.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+    const dx = Q.x - P.x, dy = Q.y - P.y, L = U.hyp(dx, dy) || 1, nx = -dy / L, ny = dx / L;
     const side = ((z.x - P.x) * nx + (z.y - P.y) * ny) > 0 ? -1 : 1;
     const R = z.r * 1.3, c = { x: z.x + nx * side * R, y: z.y + ny * side * R };
     pts.splice(hit.i, 0, { x: c.x - dx / L * R * 0.8, y: c.y - dy / L * R * 0.8 }, { x: c.x + dx / L * R * 0.8, y: c.y + dy / L * R * 0.8 });
@@ -527,7 +527,7 @@ IC.ASP_SHAPES = {
 };
 const OLD = { field: 'D', regional: 'C', hub: 'B', base: 'M' };   // the names of the presets before shapes
 const AREA_OF = { R: 'R', Q: 'T', X: 'X' };
-IC.aspPresetFor = ap => ap.kind === 'airbase' ? 'M' : ap.template === 'intl' || ap.template === 'kden' ? 'C' : 'D';
+IC.aspPresetFor = ap => ap.kind === 'airbase' ? 'M' : ap.template === 'intl' || ap.template === 'kden' ? 'C' : (IC.aptClassOf && IC.aptClassOf(ap) || {}).asp || 'D';
 const volsChanged = S => { S.asp.volVer = (S.asp.volVer || 0) + 1; S.asp.vi = null; S.asp.zs = null; };
 /* the airspace chapter: before it, the game says nothing about airspace design */
 IC.aspTaught = S => !(IC.storyLock && IC.storyLock(S, 'airspace'));
@@ -781,7 +781,7 @@ IC.aspAddMil = function (S, x, y, r, lo, hi, cls, name) {
 IC.aspDelArea = function (S, sh) { if (sh && !sh.ap) dropShape(S, sh); };
 /* is a point in a volume (and at a height, when alt is given)? The notch raises the floor inside its slice */
 function inVol(v, x, y, alt) {
-  const dx = x - v.x, dy = y - v.y, d = Math.hypot(dx, dy);
+  const dx = x - v.x, dy = y - v.y, d = U.hyp(dx, dy);
   if (v.kind === 'ext') {
     if (d < v.r1) return false;
     const c = Math.cos(v.rot), s = Math.sin(v.rot), al = dx * c + dy * s, cr = -dx * s + dy * c;
@@ -884,7 +884,7 @@ IC.aspCheck = function (S, ap) {
 IC.aspSectors = S => { if (!S.asp.secs) ensureVols(S); return S.asp.secs; };
 IC.aspSector = (S, id) => IC.aspSectors(S).find(s => s.id === id);
 function sectorCap(S, s) {
-  const per = s.kind === 'acc' ? A.ctl / 4 : A.per[s.kind];
+  const per = (s.kind === 'acc' ? A.ctl / 4 : A.per[s.kind]) * IC.mod(S, 'ctlLoad');
   const ap = s.ap && S.byId[s.ap], radar = ap && (ap.parts || []).some(p => p.kind === 'atc' && p.built && p.hp > 0);
   return s.staff * per + (radar && s.kind !== 'acc' ? 4 : 0);
 }
@@ -962,7 +962,7 @@ function pair(S, a, b) {
   // look 2½ min ahead: controllers act on conflicts they can see
   if (!P || S.time - P.t > 300) {
     const rx = b.x - a.x, ry = b.y - a.y, vx = (b.vx || 0) - (a.vx || 0), vy = (b.vy || 0) - (a.vy || 0), v2 = vx * vx + vy * vy;
-    const tc = U.clamp(v2 ? -(rx * vx + ry * vy) / v2 : 0, 0, 150), miss = Math.hypot(rx + vx * tc, ry + vy * tc);
+    const tc = U.clamp(v2 ? -(rx * vx + ry * vy) / v2 : 0, 0, 150), miss = U.hyp(rx + vx * tc, ry + vy * tc);
     const need = ga ? A.gaNear * 2 : A.sep, vneed = ga ? A.gaVsep * 2 : A.vsep;
     if (miss < need && dz < vneed + 0.3) {
       const sa = seen(S, a), sb = seen(S, b), mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, alt = Math.min(a.alt, b.alt);
@@ -1012,7 +1012,7 @@ function workload(S, F) {
     load += s.load; cap += s.cap;
     if (s.work > 1.1 && S.time - (s.overT || -1e9) > 3 * 3600) {
       s.overT = S.time;
-      IC.log(S, S.story ? 'warn' : 'info', 'AIRSPACE', `${s.name} is overloaded: ${Math.round(s.load)} flights' worth of work for ${s.staff} controller${s.staff === 1 ? '' : 's'}, who handle ${Math.round(s.cap)}. They hold departures longer and can miss a conflict. Add a controller${s.kind === 'acc' ? ', split the area into another sector,' : ''} or put flights on airways under radar.`, S.story && s.ap ? S.byId[s.ap] : null);
+      if (IC.civilAdvice(S)) IC.log(S, S.story ? 'warn' : 'info', 'AIRSPACE', `${s.name} is overloaded: ${Math.round(s.load)} flights' worth of work for ${s.staff} controller${s.staff === 1 ? '' : 's'}, who handle ${Math.round(s.cap)}. They hold departures longer and can miss a conflict. Add a controller${s.kind === 'acc' ? ', split the area into another sector,' : ''} or put flights on airways under radar.`, S.story && s.ap ? S.byId[s.ap] : null);
       IC.emit(S, 'overload', { load: s.load, cap: s.cap, sec: s });
     }
   }
@@ -1261,6 +1261,8 @@ IC.aspFoundField = function (S, x, y) {
 IC.gaBase = function (S, town) {
   let best = null, bd = 400;
   for (const f of S.asp.fields) { const d = U.dist(f, town); if (d < bd) { bd = d; best = { x: f.x, y: f.y, name: f.name, field: f.id }; } }
+  // (an airfield of ours is a field too: the nearer wins)
+  for (const ap of IC.bases(S)) if (ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && IC.aptClass(ap) === 'field') { const d = U.dist(ap, town); if (d < bd) { bd = d; best = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }; } }
   if (best) return best;
   for (const ap of IC.bases(S)) if (ap.kind === 'airport' && ap.owner === 'us' && !ap.offline) { const d = U.dist(ap, town); if (d < bd) { bd = d; best = { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }; } }
   return best;
@@ -1316,7 +1318,7 @@ IC.gaDelayNote = function (S, ap, wait) {
   ap.gaWait = (ap.gaWait || 0) + (wait || 6);
   if (ap.gaWait < 900 || (ap.gaNoteT && S.time - ap.gaNoteT < 6 * 3600)) return;
   ap.gaNoteT = S.time; ap.gaWait = 0;
-  IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
+  if (IC.civilAdvice(S)) IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
 };
 IC.gaArrive = function (S, t) {
   const b = t.gaTo; if (!b) return;

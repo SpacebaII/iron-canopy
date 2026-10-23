@@ -5,6 +5,7 @@
 IC.step = function (S, dt) {
   S.time += dt;
   IC.calendar(S);
+  if (S.sbx) IC.sandboxTick(S, dt);
   if (S.range) { IC.rangeStep(S, dt); return tail(S, dt); }
   IC.weather(S, dt);
   IC.updateUnits(S, dt);
@@ -24,13 +25,14 @@ IC.step = function (S, dt) {
   IC.waitTick(S, dt);
   IC.growth(S, dt);
   IC.civil(S, dt);
+  IC.genav(S, dt);
   IC.traffic(S, dt);
   IC.aviation(S, dt);
   IC.fatigue(S, dt);
   IC.airspace(S, dt);
   IC.incidents(S, dt);
   IC.combat(S, dt);
-  if (S.mode === 'academy') IC.academyTick(S, dt); else if (S.mode === 'story') IC.storyTick(S, dt); else IC.campaignTick(S, dt);
+  if (S.mode === 'academy') IC.academyTick(S, dt); else if (S.mode === 'story') IC.storyTick(S, dt); else if (!S.sbx) IC.campaignTick(S, dt);
   tail(S, dt);
 };
 /* effects, trails and clean-up after every step */
