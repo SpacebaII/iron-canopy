@@ -5700,6 +5700,10 @@ test('round 5b: the day board\'s capacity matches IC.aptStats, and its plan adds
   assert(b.dep.indexOf(Math.max(...b.dep)) === (pk + 1) % 24, `busiest ${pk} → ${b.dep.indexOf(Math.max(...b.dep))}`);
 });
 test('round 5b: a cap moves flights out of the peak hour', () => {
+  // (no airport incidents here: a runway closed for a while lets its queue take off together after, which the cap,
+  // counting the flights it releases, rightly allows; that is not what this tests)
+  const ops = IC.FOCUS.ops; IC.FOCUS.ops = false;
+  try {
   const { S, ap } = r5net();
   run(S, 1, player);
   const P0 = IC.dayPlan(S, ap), peak = Math.max(...P0.dep), cap = Math.max(2, peak - 4);
@@ -5712,6 +5716,7 @@ test('round 5b: a cap moves flights out of the peak hour', () => {
   run(S, 40, player);
   const L = IC.aptDayLog(S, ap).prev;
   assert(L && Math.max(...L.dep) <= cap + 1, `departures by hour: ${L && L.dep.join(',')}`);
+  } finally { IC.FOCUS.ops = ops; }
 }, true);
 test('round 5b: night flights by default; a night curfew stops them and costs the cargo airline', () => {
   const play = night => {
@@ -5952,7 +5957,8 @@ test('round 5c: clicking an aircraft on its stand selects it, from the whole-air
   }
   // (far enough from any aircraft, at the whole-airport zoom, the airport)
   const far = { x: ap.x + (ap.radius || 20) * 0.5, y: ap.y + (ap.radius || 20) * 0.5 };
-  const busy = S.av.tails.some(t => { const w = IC.tailWhere(S, t); return w && U.dist(w, far) < 3; });
+  // (an aircraft within the pick's reach at this zoom, 7 px, counts as clicked: one taxiing or on final may pass there)
+  const busy = S.av.tails.some(t => { const w = IC.tailWhere(S, t); return w && U.dist(w, far) < 7 / 1.2; });
   const h2 = IC.pickAt(S, far, 1.2);
   assert(busy || !h2 || h2.kind !== 'tail', 'a click away from the aircraft picked one');
   // stands count from 1 across the airport, never 0
