@@ -108,21 +108,32 @@ function routeInfo(S, from, r) {
   }
   return { t, cut: cut ? edgeName(S, cut) : '', lost };
 }
-function markTowns(S, r) { const cs = IC.cities(S); for (const p of r) p.town = p.road && cs.some(c => U.dxy(c.x, c.y, p.x, p.y) < c.r); }
+// which stretches of a route run through a town (squared distances: this walks every point against every city)
+function markTowns(S, r) {
+  const cs = IC.cities(S);
+  for (const p of r) {
+    let t = false;
+    if (p.road) for (const c of cs) { const dx = c.x - p.x, dy = c.y - p.y; if (dx * dx + dy * dy < c.r * c.r) { t = true; break; } }
+    p.town = t;
+  }
+}
 /* drive time between two places, as a convoy would go now */
 IC.driveTime = function (S, a, b) { const r = IC.route(a.x, a.y, b.x, b.y, true); markTowns(S, r); return routeInfo(S, a, r); };
 function plan(S, v, to) {
   v.route = IC.route(v.x, v.y, to.x, to.y, true); v.dest = { x: to.x, y: to.y }; v.trail = [{ x: v.x, y: v.y }];
   retime(S, v);
 }
+// Each refresh of a convoy's ETA waits 60 to 90 s, by the convoy and the moment. Convoys that left together
+// would otherwise all refresh in the same step, and every refresh walks its whole route (a 10–25 ms step).
+const infoGap = (v, t) => 60 + 30 * U.hash(parseInt(String(v.id).slice(1), 10) || 0, Math.floor(t));
 function retime(S, v) {
   v.rt = v.route; markTowns(S, v.route);
   const I = routeInfo(S, v, v.route);
-  v.eta = S.time + I.t; v.cut = I.cut; v.lost = I.lost; v.infoT = S.time;
+  v.eta = S.time + I.t; v.cut = I.cut; v.lost = I.lost; v.infoT = S.time; v.infoGap = infoGap(v, S.time);
 }
 function drive(S, v, dt) {
   if (!v.route) return true;
-  if (v.route !== v.rt || S.time - v.infoT > 60) retime(S, v);   // re-routed after a road changed, or traffic changed
+  if (v.route !== v.rt || S.time - v.infoT > (v.infoGap || 60)) retime(S, v);   // re-routed after a road changed, or traffic changed
   let left = dt;
   while (left > 0 && v.route.length) {
     const p = v.route[0], sp = segSpeed(S, p);
@@ -209,8 +220,10 @@ function contractor(S, from, to, mun, qty, delay, counted) {
     S.vehicles.push(v);
   }
 }
+const DEPART_PER_STEP = 2;   // each departure is a road search: a column that finished loading together leaves over a few steps
 IC.updateVehicles = function (S, dt) {
   const C = IC.SUPPLY;
+  let departed = 0;
   for (const v of S.vehicles) {
     if (v.dead) continue;
     if (v.homeless) {
@@ -224,7 +237,7 @@ IC.updateVehicles = function (S, dt) {
       case 'toSource': if (drive(S, v, dt)) { v.state = 'load'; v.t = j.loadT || C.load; } break;
       case 'load':
         v.t -= dt;
-        if (v.t <= 0) { j.loaded = true; v.state = 'toDest'; plan(S, v, j.to); }
+        if (v.t <= 0 && departed < DEPART_PER_STEP) { departed++; j.loaded = true; v.state = 'toDest'; plan(S, v, j.to); }
         break;
       case 'toDest': {
         if (j.to.dead) { IC.failJob(S, j); v.job = null; goHome(S, v); break; }

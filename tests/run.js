@@ -260,7 +260,7 @@ test('world: the map is about 5,700 × 4,300 km, with three times the towns of t
 test('traffic: rush hour is busier than night, and an air raid empties the roads', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), view = { x0: cap.x - 150, y0: cap.y - 150, x1: cap.x + 150, y1: cap.y + 150 };
-  const count = () => { S.traffic.stepT = 0; IC.traffic(S, 0.25); return IC.trafficVisible(S, view, 0.3, () => {}); };
+  const count = () => { S.traffic.stepT = 0; IC.traffic(S, 0.25); IC.trafficSettle(S); return IC.trafficVisible(S, view, 0.3, () => {}); };
   const rush = count();
   const hw = S.traffic.links.filter(L => L.cls === 'hw' && U.dist(L.l.pts[0], cap) < 300).sort((a, b) => b.load - a.load)[0];
   assert(hw && hw.load > 0.8, `the busiest motorway by the capital is not busy at rush hour (${hw ? hw.load.toFixed(2) : 'none'})`);
@@ -280,7 +280,7 @@ test('traffic: rush hour is busier than night, and an air raid empties the roads
 test('traffic: at rush hour the side streets carry some traffic and the avenues the most', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), T = S.traffic;
-  S.traffic.stepT = 0; IC.traffic(S, 0.25);
+  S.traffic.stepT = 0; IC.traffic(S, 0.25); IC.trafficSettle(S);
   // by vehicles, not by how full: an avenue has two lanes each way and carries more at the same load
   const mine = T.links.filter(L => L.l.city === cap && L.l.len > 0.3), vol = L => L.load * L.C.dens * L.C.lanes;
   const top = mine.slice().sort((a, b) => vol(b) - vol(a)).slice(0, Math.ceil(mine.length * 0.05));
@@ -349,7 +349,7 @@ test('traffic: a cut road makes a visible queue, and close-in traffic turns back
   // vehicles within 150 m of that junction on the roads that lead into it, as the middle zoom shows them
   const near = () => { let n = 0; IC.trafficVisible(S, { x0: p.x - 2, y0: p.y - 2, x1: p.x + 2, y1: p.y + 2 }, 0.05, (x, y) => { if (U.dist({ x, y }, p) < 1.5) n++; }); return n; };
   const before = near();
-  L.l.cut = true; T.stepT = 0; IC.traffic(S, 0.25);
+  L.l.cut = true; T.stepT = 0; IC.traffic(S, 0.25); IC.trafficSettle(S);
   const after = near();
   assert(after > before * 1.5 && after >= 4, `no queue in front of the cut road: ${before} vehicles by the junction before, ${after} after`);
   // close in: nobody drives onto the cut road; those who meet it queue, then turn back
