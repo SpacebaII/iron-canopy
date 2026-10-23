@@ -800,6 +800,13 @@ test('map: the Career plays on the hand-drawn map, and everything drawn is there
   const byName = n => W.cities.find(c => c.name === n) || W.infra.find(i => i.name === n) || W.crossings.find(x => x.name === n);
   const hwNear = (p, d) => W.edges.some(e => e.cls === 'hw' && e.pts.some(q => U.dxy(q.x, q.y, p.x, p.y) < d));
   for (const r of A.roads.filter(r => r.cls === 'hw')) for (const v of r.via) if (typeof v === 'string') assert(hwNear(byName(v), 200), `${r.name}: no motorway within 20 km of ${v}`);
+  // brief 72: the capital's ring motorway with an interchange where each radial leaves it, the junction shape the map
+  // asks for, and no motorway through a village, a garrison or the depot
+  const ringJ = W.junctions.filter(j => j.kind === 'mm' && U.dxy(j.x, j.y, cap.x, cap.y) < 240);
+  assert(ringJ.length >= 5, `${ringJ.length} motorway interchanges on the capital's ring`);
+  for (const a of A.junctions) { const j = W.junctions.filter(j => U.dxy(j.x, j.y, a.x, a.y) < 60).sort((p, q) => U.dxy(p.x, p.y, a.x, a.y) - U.dxy(q.x, q.y, a.x, a.y))[0]; assert(j && j.shape === a.shape, `the junction drawn at ${a.x},${a.y} is ${j ? j.kind + '/' + j.shape : 'missing'}, not ${a.shape}`); }
+  for (const e of W.edges) if (e.cls === 'hw' && !e.abroad) for (const k of [e.a, e.b]) assert(!/^(v|g)\d|^depot$/.test(k), `a motorway runs through ${k}`);
+  assert(U.dxy(W.depotPos.x, W.depotPos.y, A.depot[0], A.depot[1]) < 1, 'the depot is not where the map puts it');
   const route = (a, b) => { const T = IC.travelFrom(W, a.id, true); return T.t[b.id]; };
   const south = byName('Southport'), north = byName('Fort Ashby');
   assert(route(south, north) < 24 * 3600, `Southport to Fort Ashby takes ${U.dur(route(south, north))}`);

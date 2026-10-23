@@ -1559,19 +1559,46 @@ function buildNetwork(W, R, fbm, A) {
   for (const pl of places) if (G.base[pl.cell] < 0) G.base[pl.cell] = 2;
   // motorways pass villages by (a village on one would meet its local roads at grade)
   T.vil = new Uint8Array(N); for (const v of W.villages) if (v.home) T.vil[cellOf(v)] = 1;
+  for (const g of W.garrisons.concat([W.depotPos])) T.vil[cellOf(g)] = 1;   // (nor through a garrison or the depot)
   const road = (a, b, cls) => { const p = search(T, cellP(a), cellP(b), HOW[cls]); if (p) lay(T, p, RANK[cls]); return !!p; };
   /* the map's roads (authored): each a run of places by name, or points, in order; between each pair the road is
      found over the ground like any other, so it bends with the hills and crosses the rivers where that is cheap.
      A place named that is not on the map is a warning, and the road goes on without it */
   const viaCell = v => {
-    if (Array.isArray(v)) { const c = cellOf({ x: v[0], y: v[1] }); if (G.base[c] < 0) G.base[c] = 2; return c; }
+    if (Array.isArray(v)) {
+      let c = cellOf({ x: v[0], y: v[1] });
+      // (not through a village: a drawn point on one moves to the open cell beside it farthest from any town, so a
+      // ring road keeps outside)
+      if (T.vil[c]) {
+        let best = -1, bd = -1;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const q = c + dy * GW + dx; if (q < 0 || q >= N || !(dx || dy) || T.vil[q] || G.base[q] < 0) continue;
+          const o = ctr(q), d = Math.min(...W.cities.map(t => U.dxy(t.x, t.y, o.x, o.y))); if (d > bd) { bd = d; best = q; }
+        }
+        if (best >= 0) c = best;
+      }
+      if (G.base[c] < 0) G.base[c] = 2; return c;
+    }
     const o = W.cities.find(c => c.name === v) || W.infra.find(i => i.name === v || i.id === v) || W.villages.find(x => x.name === v) || W.crossings.find(x => x.name === v || x.id === v) || (W.places || []).find(p => p.id === v || p.name === v);
     if (!o) { W.warnings.push(`Road via "${v}": no such place`); return -1; }
     const pl = places.find(p => p.id === o.id); if (pl) return pl.cell;
     const c = cellOf(o); if (G.base[c] < 0) G.base[c] = 2; return c;
   };
+  // a drawn road that starts or ends on a motorway already laid (a radial on a ring road) leaves it at the drawn
+  // point, two cells out along its line, rather than riding the cheap motorway round to wherever it would rather
+  // leave
+  const lead = (c, to) => {
+    const dx = to % GW - c % GW, dy = ((to / GW) | 0) - ((c / GW) | 0), d = Math.hypot(dx, dy); if (d < 5) return -1;
+    const q = c + Math.round(dy / d * 2) * GW + Math.round(dx / d * 2);
+    return q >= 0 && q < N && G.base[q] >= 0 && !T.shut[q] && !T.vil[q] && !T.use[q] ? q : -1;
+  };
   const authoredLine = (T2, via, how, rank, name) => {
     const cells = via.map(viaCell).filter(c => c >= 0), out = [];
+    if (rank === RANK.hw) for (let i = 0; i + 1 < cells.length; i++) {
+      const a = cells[i], b = cells[i + 1];
+      if (T2.use[a] >= RANK.hw && !(T2.use[b] >= RANK.hw)) { const q = lead(a, b); if (q >= 0) cells.splice(++i, 0, q); }
+      else if (T2.use[b] >= RANK.hw && !(T2.use[a] >= RANK.hw)) { const q = lead(b, a); if (q >= 0) cells.splice(++i, 0, q); }
+    }
     for (let i = 0; i + 1 < cells.length; i++) {
       const p = search(T2, cells[i], cells[i + 1], how);
       if (p) { lay(T2, p, rank); out.push(p); } else W.warnings.push(`${name || 'A road'}: no way from stop ${i + 1} to stop ${i + 2}`);
@@ -1815,6 +1842,10 @@ function buildTowns(W, R, fbm) {
    towns keep out of (IC.ixClear). */
 function junctions(W) {
   const N = W.nodes, byNode = {};
+  // the map may name the shape of a junction (brief 72): the nearest drawn one within 6 km, where the roads there
+  // allow it (a trumpet needs a motorway ending on another, a stack two crossing)
+  const AJ = W.map && IC.MAPS[W.map] && IC.MAPS[W.map].junctions || [];
+  const wanted = (x, y) => { let best = null, bd = 60; for (const j of AJ) { const d = U.dxy(j.x, j.y, x, y); if (d < bd) { bd = d; best = j; } } return best && best.shape; };
   for (const e of W.edges) for (const [k, end] of [[e.a, 0], [e.b, 1]]) (byNode[k] = byNode[k] || []).push({ e, end });
   // direction of an edge leaving a node, measured some way along it so the smoothing near the node does not skew it
   const dirOf = ({ e, end }, D) => {
@@ -1893,6 +1924,8 @@ function junctions(W) {
       // (and a motorway ending on another by a big city is a directional T: the two left turns cross each other on
       // flyovers over the through road, no loop)
       if (J.shape === 'trumpet' && cityNear(n.x, n.y) && !hw.some(d => d.e.city)) J.shape = 'dirT';   // (not where it is a town's avenue)
+      const w = wanted(n.x, n.y);
+      if (w === 'clover' || ((w === 'trumpet' || w === 'dirT') && ending) || ((w === 'stack' || w === 'turbine') && hw.length === 4 && !ending)) J.shape = w;
       const fly = J.shape === 'stack' || J.shape === 'turbine';
       if (J.shape === 'dirT') {
         // (which way each slip road runs the drive graph reads from the carriageway side it joins, traffic.js)
@@ -1963,6 +1996,8 @@ function junctions(W) {
         const sq = md => Math.max(...minor.map(d => { const g = U.mod(d.a - md.a, Math.PI * 2); return Math.abs(Math.min(g, Math.PI * 2 - g) - Math.PI / 2); }));
         if (Math.max(sq(m), sq(mo)) < 0.7) J.shape = 'parclo';
       }
+      const w = wanted(n.x, n.y);
+      if (w === 'diamond' || (w === 'half' && minor.length <= 2) || ((w === 'dumbbell' || w === 'spui' || w === 'parclo') && minor.length === 2)) J.shape = w;
       // (the roundabouts sit on the road itself, where it bends)
       if (J.shape === 'dumbbell') J.rbs = minor.map(d => { const q = IC.PL.near(d.e.pts, at(n, d, 1.3)); return { x: q ? q.x : n.x + d.x * 1.3, y: q ? q.y : n.y + d.y * 1.3, a: d.a, r: 0.2 }; });
       const sides = J.shape === 'half' ? [hz < 0.16 ? m : mo] : [m, mo];

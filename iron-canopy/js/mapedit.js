@@ -105,6 +105,8 @@ function* handles() {
   for (const i of A.infra) yield { kind: 'site', obj: i, x: i.x, y: i.y, r: 6 };
   for (const p of A.places) yield { kind: 'place', obj: p, x: p.x, y: p.y, r: 7 };
   for (const l of A.lakes) yield { kind: 'lake', obj: l, x: l.x, y: l.y, r: 6 };
+  for (const j of A.junctions || []) yield { kind: 'junction', obj: j, x: j.x, y: j.y, r: 6 };
+  if (A.depot) yield { kind: 'depot', obj: A.depot, x: A.depot[0], y: A.depot[1], r: 6 };
   for (const r of A.rivers) { const pts = r.via || r.pts; for (let i = 0; i < pts.length; i++) yield { kind: 'river', obj: r, i, x: pts[i][0], y: pts[i][1], r: 5 }; }
   for (const r of A.ridges) for (let i = 0; i < r.pts.length; i++) yield { kind: 'ridge', obj: r, i, x: r.pts[i][0], y: r.pts[i][1], r: 5 };
   for (const r of A.roads) for (let i = 0; i < r.via.length; i++) if (Array.isArray(r.via[i])) yield { kind: 'road', obj: r, i, x: r.via[i][0], y: r.via[i][1], r: 5 };
@@ -139,11 +141,12 @@ function showSel() {
   $('apply').onclick = () => { if (sel.kind === 'border') return; try { const v = JSON.parse($('selText').value); for (const k of Object.keys(o)) delete o[k]; Object.assign(o, v); draw(); } catch (e) { alert('Not valid JSON: ' + e.message); } };
   $('del').onclick = () => { del(); };
 }
-function listOf(kind) { return { city: A.cities, village: A.villages, site: A.infra, place: A.places, lake: A.lakes, river: A.rivers, ridge: A.ridges, road: A.roads, rail: A.rails, plateau: A.plateaus, crossing: A.crossings, sec: A.secs, sea: A.seas }[kind]; }
+function listOf(kind) { return { city: A.cities, village: A.villages, site: A.infra, place: A.places, lake: A.lakes, river: A.rivers, ridge: A.ridges, road: A.roads, rail: A.rails, plateau: A.plateaus, crossing: A.crossings, sec: A.secs, sea: A.seas, junction: A.junctions }[kind]; }
 function del() {
   if (!sel) return;
   const pts = sel.kind === 'border' ? A.border : sel.kind === 'ridge' ? sel.obj.pts : sel.kind === 'river' ? (sel.obj.via || sel.obj.pts) : sel.kind === 'road' || sel.kind === 'rail' ? sel.obj.via : sel.kind === 'plateau' || sel.kind === 'sea' ? sel.obj.poly : null;
   if (sel.i != null && pts && pts.length > (sel.kind === 'border' || sel.kind === 'plateau' || sel.kind === 'sea' ? 3 : 1)) { pts.splice(sel.i, 1); sel.i = null; }
+  else if (sel.kind === 'depot') { delete A.depot; sel = null; }
   else if (sel.kind !== 'border') { const L = listOf(sel.kind); L.splice(L.indexOf(sel.obj), 1); sel = null; }
   showSel(); draw();
 }
@@ -160,7 +163,8 @@ cv.addEventListener('mousemove', e => {
   const px = e.offsetX, py = e.offsetY;
   if (drag.pan) { cam.x = drag.cx - (px - drag.px) / cam.s; cam.y = drag.cy - (py - drag.py) / cam.s; draw(); return; }
   const [wx, wy] = toW(px, py), x = Math.round(wx - drag.ox), y = Math.round(wy - drag.oy), h = drag.h;
-  if (h.kind === 'city' || h.kind === 'village' || h.kind === 'site' || h.kind === 'place' || h.kind === 'lake') { h.obj.x = x; h.obj.y = y; }
+  if (h.kind === 'city' || h.kind === 'village' || h.kind === 'site' || h.kind === 'place' || h.kind === 'lake' || h.kind === 'junction') { h.obj.x = x; h.obj.y = y; }
+  else if (h.kind === 'depot') { h.obj[0] = x; h.obj[1] = y; }
   else if (h.kind === 'river') { (h.obj.via || h.obj.pts)[h.i] = [x, y]; }
   else if (h.kind === 'ridge') h.obj.pts[h.i] = [x, y];
   else if (h.kind === 'road' || h.kind === 'rail') h.obj.via[h.i] = [x, y];
@@ -201,6 +205,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'd') { const name = prompt('Main road name'); if (name) add('road', { cls: 'rd', name, via: [[x, y]] }); }
   else if (k === 't') { const name = prompt('Railway name'); if (name) add('rail', { name, via: [[x, y]] }); }
   else if (k === 'h') { const name = prompt('Ridge name'); if (name) add('ridge', { name, style: 'old', a: 0.3, w: 300, pts: [[x, y]] }); }
+  else if (k === 'j') { const shape = prompt('Junction shape: clover, trumpet, dirT, stack, turbine (motorways meeting); diamond, dumbbell, half, parclo, spui (a road over a motorway)'); if (shape) { A.junctions = A.junctions || []; add('junction', { x, y, shape }); } }
   else if (k === 'l') { const name = prompt('Lake name'); if (name) add('lake', { name, x, y, rx: 150, ry: 70, rot: 0 }); }
   else if (k === 'b') { sel = { kind: 'border', obj: A }; addPoint(x, y, null); }
 });
@@ -254,7 +259,8 @@ ${list(A.villages || [], v => `    ${J(v)}`)}
   infra: [
 ${list(A.infra || [], i => `    ${J(i)}`)}
   ],
-  crossings: [
+  junctions: ${J(A.junctions || [])},
+${A.depot ? `  depot: ${J(A.depot)},\n` : ''}  crossings: [
 ${list(A.crossings || [], x => `    ${J(x)}`)}
   ],
   roads: [

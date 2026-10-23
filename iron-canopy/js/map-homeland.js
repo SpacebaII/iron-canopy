@@ -615,6 +615,8 @@ IC.MAPS.homeland = {
     {"kind":"power","name":"Kessock Power Station","x":21000,"y":18000},
     {"kind":"power","name":"Fenwick Power Station","x":33500,"y":26300}
   ],
+  junctions: [{"x":34050,"y":28350,"shape":"trumpet"}],
+  depot: [28200,23750],
   crossings: [
     {"k":"A","deg":-95,"name":"Tarn Pass"},
     {"k":"A","deg":-62,"name":"Elk Pass"},
@@ -624,11 +626,14 @@ IC.MAPS.homeland = {
     {"k":"D","deg":206,"name":"Grays Crossing"}
   ],
   roads: [
-    {"cls":"hw","name":"M1 Coast Motorway","via":["Southport","Selby","Ashford","Northfield","Fort Ashby","Tarn Pass"]},
-    {"cls":"hw","name":"M2 Sound Motorway","via":["Westhaven",[17150,23300],"Orchard Falls","Tully","Ashford","Linden","Gatlin","Halloway","Bristow"]},
+    {"cls":"hw","name":"M0 Ashford Ring","via":[[28500,23850],[28606,23894],[28650,24000],[28606,24106],[28500,24150],[28394,24106],[28350,24000],[28394,23894],[28500,23850]]},
+    {"cls":"hw","name":"M1 Coast Motorway","via":["Southport","Selby",[28500,24150]]},
+    {"cls":"hw","name":"M1 Coast Motorway (north)","via":[[28500,23850],"Northfield","Fort Ashby","Tarn Pass"]},
+    {"cls":"hw","name":"M2 Sound Motorway","via":["Westhaven",[17150,23300],"Orchard Falls","Tully",[28350,24000]]},
+    {"cls":"hw","name":"M2 Sound Motorway (east)","via":[[28650,24000],"Linden","Gatlin","Halloway","Bristow"]},
     {"cls":"hw","name":"M3 Front Range Motorway","via":["Haverly","Northam","Fort Ashby","Pike","Redstone","Alder Springs"]},
-    {"cls":"hw","name":"M4 Ironbridge Motorway","via":["Ashford","Ironbridge"]},
-    {"cls":"hw","name":"M5 Corbin Motorway","via":["Corbin","Ashford"]},
+    {"cls":"hw","name":"M4 Ironbridge Motorway","via":[[28606,24106],"Ironbridge"]},
+    {"cls":"hw","name":"M5 Corbin Motorway","via":["Corbin",[28394,24106]]},
     {"cls":"hw","name":"M6 Basin Motorway","via":["Haverly","Kessock","Orchard Falls"]},
     {"cls":"rd","name":"Elk Pass road","via":["Redstone","Elk Pass"]},
     {"cls":"rd","name":"Western slope road","via":["Haverly","Hayden","Mesa","Lanton"]},
