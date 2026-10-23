@@ -139,8 +139,9 @@ test('roads: a roundabout is driven round its ring, one way and anticlockwise, a
     for (const i of ring) assert(G.nodes[i].out.some(li => !G.links[li].ref.ring), 'a ring point with no road on it');
     for (const lk of G.links) if (!lk.ref.ring) for (const P of lk.pts) assert(d(P) > R * 0.95, `a ${lk.cls} runs through a roundabout's island`);
   }
-  // (one at home stays a single node: an avenue that leaves the ring and comes back into it)
-  assert(home > 50 && built >= home * 0.95, `only ${built} of ${home} roundabouts are driven round their ring`);
+  // (one at home stays a single node: an avenue that leaves the ring and comes back into it; a neighbour's dumbbells
+  // no longer count as home since brief 72 stopped driving their slip roads: 50 at seed 4242)
+  assert(home >= 45 && built >= home * 0.95, `only ${built} of ${home} roundabouts are driven round their ring`);
 }, false, 'world');
 test('towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)', () => {
   const W = world(4242), area = F => { let A = 0; for (let i = 0; i < F.length / 2; i++) { const j = (i + 1) % (F.length / 2); A += F[i * 2] * F[j * 2 + 1] - F[j * 2] * F[i * 2 + 1]; } return Math.abs(A) / 2; };
@@ -807,6 +808,17 @@ test('map: the Career plays on the hand-drawn map, and everything drawn is there
   for (const a of A.junctions) { const j = W.junctions.filter(j => U.dxy(j.x, j.y, a.x, a.y) < 60).sort((p, q) => U.dxy(p.x, p.y, a.x, a.y) - U.dxy(q.x, q.y, a.x, a.y))[0]; assert(j && j.shape === a.shape, `the junction drawn at ${a.x},${a.y} is ${j ? j.kind + '/' + j.shape : 'missing'}, not ${a.shape}`); }
   for (const e of W.edges) if (e.cls === 'hw' && !e.abroad) for (const k of [e.a, e.b]) assert(!/^(v|g)\d|^depot$/.test(k), `a motorway runs through ${k}`);
   assert(U.dxy(W.depotPos.x, W.depotPos.y, A.depot[0], A.depot[1]) < 1, 'the depot is not where the map puts it');
+  // the road audit on the map (brief 72): no end that leads nowhere, no stub, nothing stopping short, and a car can be
+  // driven from the capital's centre to Tarn Pass on the drive graph
+  { const G = IC.driveGraph(W), R = IC.roadAudit(W, G), say = k => `${R.count[k]} ${R.words[k]} on the map (${R.list[k].slice(0, 3).map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join('; ')})`;
+    assert(R.count.open === 0, say('open')); assert(R.count.stub === 0, say('stub')); assert(R.count.gap === 0, say('gap')); assert(R.count.trap === 0, say('trap'));
+    const pass = W.places.find(p => p.id === 'tarn_pass'), a = G.nearNode(cap.x, cap.y, 10);
+    let bl = null, bd = 1e9;  // the motorway link nearest the pass (a long link has no node of its own there)
+    for (const lk of G.links) if (lk.cls === 'hw') for (let i = 1; i < lk.pts.length; i++) {
+      const d = U.segDist(pass.x, pass.y, lk.pts[i - 1].x, lk.pts[i - 1].y, lk.pts[i].x, lk.pts[i].y);
+      if (d < bd) { bd = d; bl = lk; } }
+    assert(bl && bd < 30, 'no motorway within 3 km of Tarn Pass');
+    assert(a >= 0 && IC.driveRoute(G, a, bl.a, 1e6), 'no drive from the capital to Tarn Pass'); }
   const route = (a, b) => { const T = IC.travelFrom(W, a.id, true); return T.t[b.id]; };
   const south = byName('Southport'), north = byName('Fort Ashby');
   assert(route(south, north) < 24 * 3600, `Southport to Fort Ashby takes ${U.dur(route(south, north))}`);

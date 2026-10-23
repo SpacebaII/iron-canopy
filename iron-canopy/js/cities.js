@@ -664,9 +664,11 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
     c.streets = out;
   }
   for (const l of c.streets) { if (l.deadEnd) delete l.deadEnd; delete l.ends; }
-  tidyStreets(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
+  tidyStreets(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'), roads.filter(s => s[4] === 'hw' || s[4] === 'rail'));
   roundCorners(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
+  // an end a few metres short of a street or road runs on to it, whatever pass left it so (brief 72: the road audit's bar)
+  runOnEnds(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'), roads.filter(s => s[4] === 'hw' || s[4] === 'rail'));
   // an end the passes left meeting nothing turns round in a head of its own, so a car is never left in the grass
   {
     const Bk = buckets(3); c.streets.forEach((l, li) => { for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, li]); });
@@ -963,6 +965,20 @@ function joinRoads(W, c, F, st, bnd, ext, fields, radial, nearCell, R2, FL) {
       if (!radial && keys.some(q => diagKeys.has(q))) e.diag = true;   // (a diagonal avenue across the grid)
       W.edges.push(e); mine.push(e);
     }
+  }
+  // (avenues that join a few metres before the centre join at the centre, brief 72: the piece between would be a
+  // car's length long, a dead end for the audit)
+  for (const id of new Set(mine.flatMap(e => [e.a, e.b]))) {
+    const n = W.nodes[id]; if (!n || id === c.id || !n.jct || U.dxy(n.x, n.y, c.x, c.y) >= 2.5) continue;
+    for (let i = W.edges.length - 1; i >= 0; i--) { const e = W.edges[i]; if ((e.a === id && e.b === c.id) || (e.a === c.id && e.b === id)) { W.edges.splice(i, 1); const m = mine.indexOf(e); if (m >= 0) mine.splice(m, 1); } }
+    // (an edge's points may run either way between its nodes: the end that sat on the node is the one that moves)
+    for (const e of W.edges) {
+      if (e.a !== id && e.b !== id) continue;
+      if (e.a === id) e.a = c.id; if (e.b === id) e.b = c.id;
+      const P = e.pts, k = U.dxy(P[0].x, P[0].y, n.x, n.y) <= U.dxy(P[P.length - 1].x, P[P.length - 1].y, n.x, n.y) ? 0 : P.length - 1;
+      P[k] = { x: c.x, y: c.y };
+    }
+    delete W.nodes[id];
   }
   /* the linear city's spine (brief 56): a motorway along its axis from one side of town to the other, ending on
      the national roads it meets out there (a roundabout each), with an interchange where an avenue crosses it
@@ -1303,7 +1319,9 @@ function dropIslands(c, roadSegs) {
    piece left dangling past the last junction (an old town's street cut at its wall, a stub between two blocks) is
    taken back to that junction. A close (cul) is the estate's own and keeps its shape. */
 const WELD = 0.12, REACH = 0.12, HEAD_MIN = 0.3;
-function tidyStreets(c, roadSegs) {
+function tidyStreets(c, roadSegs, bars) {
+  const Bar = buckets(2); for (const r of bars || []) Bar.add([r[0], r[1], r[2], r[3], -2]);
+  const crosses = (e, q) => { let hit = false; Bar.near((e.x + q.x) / 2, (e.y + q.y) / 2, Math.hypot(q.x - e.x, q.y - e.y) / 2 + 0.05, s => { if (U.segX(e.x, e.y, q.x, q.y, s[0], s[1], s[2], s[3]) >= 0) hit = true; }); return hit; };
   // (the roads in pieces of 200 m at most: a long diagonal piece would sit in every cell of its box)
   const rs = [];
   for (const r of roadSegs) { const n = Math.ceil(Math.hypot(r[2] - r[0], r[3] - r[1]) / 2) || 1; for (let k = 0; k < n; k++) rs.push([r[0] + (r[2] - r[0]) * k / n, r[1] + (r[3] - r[1]) * k / n, r[0] + (r[2] - r[0]) * (k + 1) / n, r[1] + (r[3] - r[1]) * (k + 1) / n]); }
@@ -1380,18 +1398,22 @@ function tidyStreets(c, roadSegs) {
         if (l.cul) continue;
         // the junctions along this street, nearest this end first
         const designed = (l.head | l.stop) & (end + 1) && !l.core;
+        // just short of a street or road: run on to it (a turning head or an end at a square too, brief 72: a car
+        // turning there would see the street a few metres on, and the audit counts it a gap)
+        let near = null, nd = REACH;
+        Bk.near(e.x, e.y, REACH, sg => { if (sg[4] === li) return; const d = U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]); if (d < nd) { nd = d; near = sg; } });
+        let q = null;
+        if (near) { const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy || 1, t = U.clamp(((e.x - near[0]) * vx + (e.y - near[1]) * vy) / LL, 0, 1); q = { x: near[0] + vx * t, y: near[1] + vy * t }; }
+        // (never across a motorway or a railway: an end stopped at one stays there)
+        if (q && !crosses(e, q)) {
+          if (end) P.push(q); else P.unshift(q);
+          if (designed) { l.head &= ~(end + 1); l.stop &= ~(end + 1); }
+          changed++; continue;
+        }
         // (a turning head long enough to turn in: only the junctions that near its end matter)
         if (designed && !junctions(li, null, sEnd - HEAD_MIN, sEnd + HEAD_MIN).some(t => Math.abs(t.s - sEnd) > 0.004 && Math.abs(t.s - sEnd) < HEAD_MIN)) continue;
         const inner = touchOf(li).filter(t => Math.abs(t.s - sEnd) > 0.004).map(t => Math.abs(t.s - sEnd));
         const dangle = inner.length ? Math.min(...inner) : len;
-        // just short of a street or road: run on to it
-        let near = null, nd = REACH;
-        Bk.near(e.x, e.y, REACH, sg => { if (sg[4] === li) return; const d = U.segDist(e.x, e.y, sg[0], sg[1], sg[2], sg[3]); if (d < nd) { nd = d; near = sg; } });
-        if (near && !designed) {
-          const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy || 1, t = U.clamp(((e.x - near[0]) * vx + (e.y - near[1]) * vy) / LL, 0, 1), q = { x: near[0] + vx * t, y: near[1] + vy * t };
-          if (end) P.push(q); else P.unshift(q);
-          changed++; continue;
-        }
         // left dangling: back to the last junction, or gone if it meets nothing at all
         if (!inner.length) { kill.add(li); changed++; break; }
         const sCut = end ? len - dangle : dangle;
@@ -1451,6 +1473,30 @@ function roundCorners(c, roadSegs) {
 /* street ends a few metres apart are one junction (an old town's mapped ways stop a metre or two short of each
    other): they all move to one point, on the street or road they meet if one of them sits on one */
 const WELD_ENDS = 0.06;
+/* every street end a few metres short of another street or a road, not on it, is run on to meet it: the last word
+   after the passes above and the housing lanes, by the road audit's own measure (brief 72) */
+function runOnEnds(c, roadSegs, bars) {
+  const Bk = buckets(2), Bar = buckets(2);
+  for (const r of bars || []) Bar.add([r[0], r[1], r[2], r[3], -2]);
+  c.streets.forEach((l, li) => { for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, li]); });
+  for (const r of roadSegs) Bk.add([r[0], r[1], r[2], r[3], -1]);
+  c.streets.forEach((l, li) => {
+    if (l.ring || l.cul || l.pts.length < 2) return;
+    for (const end of [0, 1]) {
+      // (a turning head or an end at a square within 15 m; any other end within 40 m, the audit's measure of short)
+      const P = l.pts, e = P[end ? P.length - 1 : 0]; let near = null, nd = ((l.head | l.stop) & (end + 1)) ? 0.15 : 0.4;
+      Bk.near(e.x, e.y, nd + 0.05, s => { if (s[4] === li) return; const d = U.segDist(e.x, e.y, s[0], s[1], s[2], s[3]); if (d < nd) { nd = d; near = s; } });
+      if (!near || nd < 0.004) continue;
+      const vx = near[2] - near[0], vy = near[3] - near[1], LL = vx * vx + vy * vy || 1, t = U.clamp(((e.x - near[0]) * vx + (e.y - near[1]) * vy) / LL, 0, 1), q = { x: near[0] + vx * t, y: near[1] + vy * t };
+      // (never across a motorway or a railway: two street ends either side of one stay where they stopped)
+      let barred = false; Bar.near((e.x + q.x) / 2, (e.y + q.y) / 2, nd / 2 + 0.05, s => { if (U.segX(e.x, e.y, q.x, q.y, s[0], s[1], s[2], s[3]) >= 0) barred = true; });
+      if (barred) continue;
+      if (end) P.push(q); else P.unshift(q);
+      if (l.head) l.head &= ~(end + 1);
+      if (l.stop) l.stop &= ~(end + 1);
+    }
+  });
+}
 function weldEnds(c, roadSegs) {
   const L = c.streets, E = [], pb = buckets(1), segs = buckets(2);
   L.forEach((l, li) => { if (l.ring) return; for (const end of [0, 1]) { const p = end ? l.pts[l.pts.length - 1] : l.pts[0]; E.push({ li, end, p }); pb.add([p.x, p.y, p.x, p.y, E.length - 1]); } });

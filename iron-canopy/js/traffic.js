@@ -79,7 +79,9 @@ function buildGraph(W) {
   // (a neighbour's roads are drawn, not driven: no trips are assigned over the border, brief 57)
   for (const e of W.edges) if (!e.abroad) add(e.pts, e.city ? e.ccls || 'art' : e.cls, e.city ? { edge: e, city: cityOf[e.city] } : { edge: e }, [levelAt(e, e.a), levelAt(e, e.b)]);
   for (const c of W.cities) for (const s of c.streets) if (!s.cul) add(s.pts, s.cls, { city: c, st: s });
-  for (const r of W.ramps || []) add(r.pts, 'ramp', { ramp: r });
+  // (nor a neighbour's slip roads: its roads are not driven, so they would join nothing)
+  const abroadN = new Set(); for (const e of W.edges) if (e.abroad) { abroadN.add(e.a); abroadN.add(e.b); }
+  for (const r of W.ramps || []) if (!abroadN.has(r.node)) add(r.pts, 'ramp', { ramp: r });
   for (const l of W.lanes) if (!l.loose && !l.abroad) add(l.pts, 'ln', { lane: l });   // (not the lanes of a village no road reaches, nor those abroad)
   // a suburb's closes last (brief 54): their links come after every other, so a loop that may skip them stops short
   for (const c of W.cities) for (const s of c.streets) if (s.cul) add(s.pts, s.cls, { city: c, cul: true, st: s });
@@ -125,7 +127,7 @@ function buildGraph(W) {
     for (let x = Math.floor((P.x - bd) / B); x <= Math.floor((P.x + bd) / B); x++) for (let y = Math.floor((P.y - bd) / B); y <= Math.floor((P.y + bd) / B); y++) {
       const M = segB.get(key2(x, y)); if (!M) continue;
       for (let q = 0; q < M.length; q += 2) {
-        const l = lines[M[q]]; if (lineOk && !lineOk(l)) continue;
+        const l = lines[M[q]]; if (lineOk && !lineOk(l, M[q + 1])) continue;
         const a = l.pts[M[q + 1] - 1], b = l.pts[M[q + 1]], vx = b.x - a.x, vy = b.y - a.y, LL = vx * vx + vy * vy, t = LL ? U.clamp(((P.x - a.x) * vx + (P.y - a.y) * vy) / LL, 0, 1) : 0;
         const d = Math.hypot(a.x + vx * t - P.x, a.y + vy * t - P.y);
         if (d < bd) { bd = d; best = { l, i: M[q + 1], t, x: a.x + vx * t, y: a.y + vy * t }; }
@@ -145,8 +147,11 @@ function buildGraph(W) {
   // a street's end that stops a hair short of the street it meets (the crossing test above is exact to a ten-thousandth
   // of a piece) is tied onto it within 3 m; a close's ends sit on its estate's loop and the loop's way in on the
   // street, drawn on the ellipse rather than on the loop's chords, so those are tied within 150 m (brief 54)
-  for (const l of lines) if (l.ref.city && !l.ref.edge) for (const end of [0, 1]) {
-    const P = end ? l.pts[l.pts.length - 1] : l.pts[0], t = tie(P, q => q !== l && q.cls !== 'hw', l.ref.cul ? 0.15 : 0.03);
+  // (and a road's end in a town, at its node, within 5 m of a street or an avenue that passes it by; a street's end
+  // on its own body, a loop back to itself, ties there too)
+  for (const l of lines) if (l.ref.city) for (const end of [0, 1]) {
+    const P = end ? l.pts[l.pts.length - 1] : l.pts[0], n = l.pts.length;
+    const t = tie(P, (q, i) => q.cls !== 'hw' && (q !== l || (end ? i < n - 2 : i > 2)), l.ref.cul ? 0.15 : l.ref.edge ? 0.05 : 0.03);
     if (!t) continue;
     t.l.ins.push({ i: t.i, t: t.t, x: t.x, y: t.y });
     P.x = t.x; P.y = t.y;
@@ -176,8 +181,15 @@ function buildGraph(W) {
     const a = root(kq(p.x, p.y)), b = root(kq(q.x, q.y)); if (a !== b) alias.set(b, a);
   }
   for (const k of [...forced]) forced.add(root(k));
+  /* a street's point that falls on a motorway's own point (a street traced to end on the carriageway's line lands on
+     one of its vertices now and then) is not a meeting: a car cannot turn onto a motorway from a street. The street
+     keeps a node of its own there, apart from the motorway's, except at a road node, where a motorway ends on the
+     roads at grade (a town's centre, a roundabout), and where a slip road was tied on (brief 72) */
+  const hwK = new Set(), onHw = new Set(); for (const l of lines) if (l.cls === 'hw') { for (const p of l.pts) hwK.add(root(kq(p.x, p.y))); for (const q of l.ins) onHw.add(root(kq(q.x, q.y))); }
+  const nodeK = new Set(); for (const k in W.nodes) { const n = W.nodes[k]; if (n) nodeK.add(root(kq(n.x, n.y))); }
+  for (const l of lines) { if (l.cls === 'hw' || l.cls === 'ramp') continue; l.pts.forEach((p, i) => { const k = root(kq(p.x, p.y)); if (hwK.has(k) && !onHw.has(k) && !nodeK.has(k)) (l.apart || (l.apart = new Set())).add(i); }); }
   // nodes where lines share a point, and at every end
-  const cnt = new Map(), keyOf = (l, i) => root(kq(l.pts[i].x, l.pts[i].y)) * 4 + (i === 0 ? l.lv[0] : i === l.pts.length - 1 ? l.lv[1] : 0);
+  const cnt = new Map(), keyOf = (l, i) => root(kq(l.pts[i].x, l.pts[i].y)) * 8 + (i === 0 ? l.lv[0] : i === l.pts.length - 1 ? l.lv[1] : 0) * 2 + (l.apart && l.apart.has(i) ? 1 : 0);
   for (const l of lines) for (let i = 0; i < l.pts.length; i++) { const k = keyOf(l, i); cnt.set(k, (cnt.get(k) || 0) + 1); }
   const G = { nodes: [], links: [], at: new Map() };
   const posOf = (k, p) => { const n = G.at.get(k); return n == null ? { x: p.x, y: p.y } : { x: G.nodes[n].x, y: G.nodes[n].y }; };
@@ -187,7 +199,7 @@ function buildGraph(W) {
     let s = 0, ka = keyOf(l, 0), pa = l.pts[0];
     for (let i = 1; i < l.pts.length; i++) {
       const k = keyOf(l, i), last = i === l.pts.length - 1;
-      if (!last && cnt.get(k) < 2 && !forced.has(Math.floor(k / 4))) continue;
+      if (!last && cnt.get(k) < 2 && !forced.has(Math.floor(k / 8))) continue;
       let pts = l.pts.slice(s, i + 1);
       const k0 = ka, p0 = pa;
       s = i; ka = k; pa = l.pts[i];
@@ -200,6 +212,32 @@ function buildGraph(W) {
       const a = nodeOf(k0, p0), b = nodeOf(k, l.pts[i]);
       const lk = { id: G.links.length, a, b, pts, cum, len, cls: l.cls, C: CLS[l.cls], one: 0, ref: l.ref, city: l.ref.city || null, cul: !!l.ref.cul };
       G.links.push(lk); G.nodes[a].out.push(lk.id); G.nodes[b].out.push(lk.id);
+    }
+  }
+  /* a lesser road that ends on a motorway's node (a half diamond at a town's edge) runs on under the bridge past the
+     slip roads' junction to the motorway's own node, where a car can go nowhere: that last piece is dropped, and so is
+     any dead end under 30 m off a junction (brief 72) */
+  {
+    const dead = new Set();
+    for (let n = 0; n < G.nodes.length; n++) {
+      const N = G.nodes[n]; if (N.out.length !== 1) continue;
+      const lk = G.links[N.out[0]]; if (lk.cls === 'hw' || lk.cls === 'ramp' || lk.cls === 'ln' || lk.len > 2.5) continue;
+      const o = G.nodes[lk.a === n ? lk.b : lk.a];
+      // (a piece on its own under 30 m: a road's last metres to a town's node on the level above the motorway's)
+      if (o.out.length < 3) { if (o.out.length === 1 && lk.len < 0.3) dead.add(lk.id); continue; }
+      // (and a street's overhang of a few metres past the street it crosses, a housing block's lane begun a little
+      // before the avenue it opens on: a dead end too short to turn in is nothing a car can use)
+      if (o.out.some(i => G.links[i].cls === 'ramp') || (lk.len < (lk.ref.edge ? 0.1 : 0.3))) dead.add(lk.id);
+    }
+    if (dead.size) {
+      const keep = G.links.filter(lk => !dead.has(lk.id)), nid = new Map(); keep.forEach((lk, i) => nid.set(lk.id, i));
+      for (const lk of keep) lk.id = nid.get(lk.id);
+      G.links = keep;
+      for (const N of G.nodes) N.out = N.out.filter(i => nid.has(i)).map(i => nid.get(i));
+      // (a node left with no road goes too, so nothing is ever placed on it)
+      const nn = new Map(); G.nodes = G.nodes.filter((N, i) => { if (!N.out.length) return false; nn.set(i, nn.size); return true; });
+      for (const lk of G.links) { lk.a = nn.get(lk.a); lk.b = nn.get(lk.b); }
+      for (const [k, i] of [...G.at]) { if (nn.has(i)) G.at.set(k, nn.get(i)); else G.at.delete(k); }
     }
   }
   // slip roads are one-way: which way depends on which carriageway (traffic keeps right) each end joins
@@ -234,7 +272,7 @@ function buildGraph(W) {
     n.ph = U.hash(Math.round(n.x * 10), Math.round(n.y * 10)) * 90;
   }
   for (const j of W.junctions || []) {
-    const n = G.at.get(kq(j.x, j.y) * 4); if (n == null) continue;
+    const n = G.at.get(kq(j.x, j.y) * 8); if (n == null) continue;
     G.nodes[n].jk = j.kind;
     if (j.kind === 'rb') G.nodes[n].sig = false;
     if (j.kind === 'tj' && G.nodes[n].out.length >= 4) G.nodes[n].sig = true;
@@ -272,7 +310,7 @@ function rings(W, G, kq) {
   for (const site of RJ.rbs) {
     const g = IC.rbGeom(site, half), R = g.r, C = g.C, inR = Q => Math.hypot(Q.x - C.x, Q.y - C.y) < R;
     // the node in the middle, where the roads meet (a dumbbell's ring sits where its slip roads were tied on)
-    let n = G.at.get(kq(C.x, C.y) * 4) ?? -1;
+    let n = G.at.get(kq(C.x, C.y) * 8) ?? -1;
     if (n < 0) { let bd = R * 0.6; for (let i = 0; i < G.nodes.length; i++) { const Q = G.nodes[i]; if (Math.abs(Q.x - C.x) < bd && Math.abs(Q.y - C.y) < bd && Q.out.length >= 3) { const d = Math.hypot(Q.x - C.x, Q.y - C.y); if (d < bd) { bd = d; n = i; } } } }
     if (n < 0 || G.nodes[n].out.length < 2) continue;
     // everything inside the ring (an avenue's crossings a few metres from the middle, a street's loop) is the ring's
@@ -319,7 +357,7 @@ function rings(W, G, kq) {
     for (const m of inside) G.nodes[m].out = [];
     pts.forEach(p => {
       p.id = G.nodes.length; G.nodes.push({ x: p.q.x, y: p.q.y, out: [], rank, jk: 'rb', sig: false, ring: site });
-      G.at.set(kq(p.q.x, p.q.y) * 4, p.id);
+      G.at.set(kq(p.q.x, p.q.y) * 8, p.id);
     });
     for (const c of cuts) {
       if (c.lk.half) { const h = c.lk.half, ob = G.nodes[c.lk.b].out; c.lk = Object.assign({}, h, { id: G.links.length, b: c.lk.b }); G.links.push(c.lk); ob[ob.indexOf(h.id)] = c.lk.id; index(c.lk.id, c.rest); }
