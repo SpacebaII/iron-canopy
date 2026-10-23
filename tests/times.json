@@ -207,5 +207,9 @@
  "sandbox: a glide bomb comes down from its height and can be shot at": 6.8,
  "story: before Act III the Minister's confidence never shows below 5, even months in the red": 39.6,
  "airport: a taxiway laid again over one already there is refused, and not paid for twice": 6.6,
- "airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of \"closed\"": 6.0
+ "airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of \"closed\"": 6.0,
+ "first hour: a stray click far away does not stretch the surveyed runway past 5.6 km": 6,
+ "first hour: a fuel farm, fire station or tower being built is no longer asked for": 8,
+ "first hour: the site the tutorial suggests is clear of water that draws birds": 8,
+ "first hour: a goal's How? is its own, and an offer names what is missing": 6
 }

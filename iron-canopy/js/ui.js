@@ -140,7 +140,8 @@ function waitLine() {
   if (!ui.waitPick) return '';
   const L = IC.waitTargets(S);
   // (round 5b) nothing can be waited for when more goes out than comes in: say so, with what helps
-  if (!L.length) return `<div class="waitbar glass pick"><b>Nothing to wait for</b><small>${esc(IC.waitText(S, { what: 'anything', amt: Math.max(0, S.budget) + 100 }).replace(/^.*?, /, 'Waiting would not help: '))}</small><button class="btn sm" data-act="room" data-v="economy">Economy (E)</button>${IC.inRed(S) ? '<button class="btn sm primary" data-act="redLoan">Emergency loan</button>' : ''}</div>`;
+  // (with money coming in, nothing to wait for means everything is paid for; it read "waiting would not help")
+  if (!L.length) return `<div class="waitbar glass pick"><b>Nothing to wait for</b><small>${esc(IC.waitRate(S) > 0.01 ? `The treasury holds ${U.money(S.budget)}: every job under way is paid for, and nothing on offer costs more.` : IC.waitText(S, { what: 'anything', amt: Math.max(0, S.budget) + 100 }).replace(/^.*?, /, 'Waiting would not help: '))}</small><button class="btn sm" data-act="room" data-v="economy">Economy (E)</button>${IC.inRed(S) ? '<button class="btn sm primary" data-act="redLoan">Emergency loan</button>' : ''}</div>`;
   return `<div class="waitbar glass pick"><b>Wait until you can afford</b>${L.map(t => `<button class="li" data-act="wait" data-v="${esc(t.key)}"><span>${esc(t.what.charAt(0).toUpperCase() + t.what.slice(1))}</span><small>${esc(IC.waitText(S, t))}</small></button>`).join('')}<small>Time runs fast, and stops when the month turns or something needs you.</small></div>`;
 }
 
@@ -210,9 +211,11 @@ function incidents() {
 function evcard() {
   const el = $('evcard');
   const e = S.story && S.story.events[0];
-  if (!e) { el.hidden = true; ui.cache.evcard = null; return; }
+  if (!e) { el.hidden = true; ui.cache.evcard = null; ui.evcardAt = null; return; }
   el.hidden = false;
-  placeCard(el, { at: e.at || null });
+  // placed once for each card: it stays put under the cursor while the column above it changes (a toast leaving
+  // moved it about 30 px, and a click meant for one answer landed on the next)
+  if (ui.evcardAt !== e.id) { placeCard(el, { at: e.at || null }); ui.evcardAt = e.id; }
   setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
     <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}</button>`).join('')}</div>`);
 }
@@ -669,11 +672,15 @@ function cine() {
 
     if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
     placeCard(el, c);
-    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' ? 16000 : 12000);
+    // (long enough to read: a quarter of a second a word on top, as a long card closed before it was read and the
+    // click meant for it landed on the map)
+    const words = ((c.title || '') + ' ' + (c.text || '')).split(/\s+/).length;
+    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' ? 16000 : 12000) + words * 250;
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
   } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
-  else if (!el.hidden && now > ui.cineUntil) ui.closeCine();
+  else if (!el.hidden && S.paused) ui.cineUntil = Math.max(ui.cineUntil, now + 3000);   // (paused: it waits for a click)
+  else if (!el.hidden && now > ui.cineUntil) { ui.closeCine(); ui.cineGone = now; }
 }
 /* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
 function resultCard(c) {
@@ -739,8 +746,9 @@ IC.hint = {
   },
   skipTour(id) { for (const [k, o] of [...hints]) if (o.tour === id) hints.delete(k); hintStore[id] = 1; store.set('ic-hints', hintStore); }
 };
-/* the note on top, for Esc; the Academy's ring has no note */
-ui.topHint = () => { let id = null; for (const [k, o] of hints) if (o.text) id = k; return id; };
+/* the note on top, for Esc; the Academy's ring has no note. A tutorial's note is not one: it goes with its own Skip,
+   and Esc does what the tutorial says it does (closing the note left the tutorial running with nothing on screen) */
+ui.topHint = () => { let id = null; for (const [k, o] of hints) if (o.text && !o.tutor) id = k; return id; };
 /* placed every frame (things on screen move, the map scrolls); each hint keeps its own elements */
 const hEls = new Map();
 const noteHTML = (id, o) => `${o.title ? `<b>${esc(o.title)}</b>` : ''}<p>${esc(o.text)}</p><div class="hfoot">${o.of ? `<span>${o.of[0]} of ${o.of[1]}</span>` : '<span></span>'}<span>${o.tutor && o.look ? '<button class="btn sm primary" data-act="tutorLook" title="The place is off the screen: the camera goes there">Show me where</button>' : ''}${o.tutor ? '<button class="btn sm ghost" data-act="tutorSkip">Skip</button>' : o.tour ? `<button class="btn sm ghost" data-act="hintSkip" data-v="${esc(o.tour)}">Skip tips</button>` : ''}${o.btn ? `<button class="btn sm primary" data-act="hintOk" data-v="${esc(id)}">${esc(o.btn)}</button>` : ''}</span></div>`;
@@ -783,10 +791,17 @@ ui.hintFrame = function () {
     h.ring.classList.toggle('round', !!o.at);
     h.ring.style.cssText = `left:${r.left - 5}px;top:${r.top - 5}px;width:${r.width + 10}px;height:${r.height + 10}px`;
     if (!h.note) continue;
-    // the note goes on the side with the most room
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, bw = Math.min(310, W.width - 32);
+    // the note goes on the side with the most room, and not over the plan's Build button (a note there ate the click
+    // it asked for)
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, bw = Math.min(310, W.width - 32), bh = h.note.offsetHeight || 150;
     let side = o.side;
-    if (side === 'auto') side = W.width - r.left - r.width > bw + 40 ? 'right' : r.left > bw + 40 ? 'left' : 'below';
+    if (side === 'auto') {
+      const go = $('bldgo'), gb = go && !go.hidden && go.offsetParent ? go.getBoundingClientRect() : null;
+      const box = s => s === 'right' ? [r.left + r.width + 16, cy - 44] : s === 'left' ? [r.left - bw - 16, cy - 44] : s === 'below' ? [cx - bw / 2, r.top + r.height + 14] : [cx - bw / 2, r.top - 14 - bh];
+      const clear = s => { if (!gb) return true; const [x, y] = box(s), gx = gb.left - W.left, gy = gb.top - W.top; return x > gx + gb.width || x + bw < gx || y > gy + gb.height || y + bh < gy; };
+      const fits = { right: W.width - r.left - r.width > bw + 40, left: r.left > bw + 40, below: r.top + r.height < W.height * 0.62, above: r.top > bh + 80 };
+      side = ['right', 'left', 'below', 'above'].find(s => fits[s] && clear(s)) || (fits.right ? 'right' : fits.left ? 'left' : 'below');
+    }
     if (side === 'below' && r.top + r.height > W.height * 0.62) side = 'above';
     h.note.className = 'hnote ' + side;
     h.note.style.cssText = `width:${bw}px;` + (side === 'right' ? `left:${r.left + r.width + 16}px;top:${U.clamp(cy - 44, 8, W.height - 170)}px` : side === 'left' ? `left:${r.left - bw - 16}px;top:${U.clamp(cy - 44, 8, W.height - 170)}px`

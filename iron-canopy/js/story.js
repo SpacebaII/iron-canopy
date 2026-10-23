@@ -236,11 +236,14 @@ function chapterGoals(S, ch) {
       how: 'Every flight brings and takes its passengers through the terminal. More deals, more flights: sign what the airlines offer.' });
     g({ id: 'stands', get text() { return `Grow to ${(st.s0 || 8) + 6} stands`; }, gives: '+₭40M from the Ministry', pay: 40, check: () => stands(A()) >= (st.s0 || 8) + 6, prog: () => `${stands(A())} of ${(st.s0 || 8) + 6}`,
       how: 'Under Airport pieces: Terminal with apron (six stands with jet bridges) or, once it opens, the Terminal with a pier. Click beside the parallel taxiway; it joins the taxiways by itself.' });
-    g({ id: 'deals3', text: 'Sign three new deals', gives: '+₭50M from the Ministry', pay: 50, check: () => st.cnt.approve >= 3, prog: () => `${Math.min(3, st.cnt.approve)} of 3` });
+    g({ id: 'deals3', text: 'Sign three new deals', gives: '+₭50M from the Ministry', pay: 50, check: () => st.cnt.approve >= 3, prog: () => `${Math.min(3, st.cnt.approve)} of 3`,
+      how: 'Offers come every week or two as green markers at the airport, sooner the better the airport\'s name. A ✗ under an offer is something to build first. Asking lower charges, or no exclusivity, makes an airline say yes more readily.' });
     g({ id: 'happy', text: 'Three airlines, satisfied: average 65%', gives: 'the Minister’s confidence +5', conf: 5, check: () => S.av.airlines.length >= 3 && avgSat(S) >= 65, prog: () => `${S.av.airlines.length} airlines, ${Math.round(avgSat(S))}% now`,
       how: 'Airlines judge every visit: a short taxi, a free stand, a jet bridge, fuel on time, no delays. The airport panel lists what is wrong.' });
-    g({ id: 'pax3', text: 'Carry 6,000 passengers in a day', gives: 'opens a second runway, and +₭60M', pay: 60, check: () => dayPax(S) >= 6000, prog: () => `${Math.round(dayPax(S)).toLocaleString('en-US')} a day now` });
-    g({ id: 'deals', text: 'Six deals running at once', gives: 'Chapter 3: the airspace', check: () => dealsOn(S) >= 6, prog: () => `${dealsOn(S)} of 6` });
+    g({ id: 'pax3', text: 'Carry 6,000 passengers in a day', gives: 'opens a second runway, and +₭60M', pay: 60, check: () => dayPax(S) >= 6000, prog: () => `${Math.round(dayPax(S)).toLocaleString('en-US')} a day now`,
+      how: 'More deals, bigger aircraft: wide-bodies carry two or three times a narrow-body\'s passengers, and need large stands. When the runway runs full, delays put airlines off: a tower, rapid exits and a parallel taxiway let it take more.' });
+    g({ id: 'deals', text: 'Six deals running at once', gives: 'Chapter 3: the airspace', check: () => dealsOn(S) >= 6, prog: () => `${dealsOn(S)} of 6`,
+      how: 'A deal runs for months, so deals add up: keep signing, and keep the ones you have. Three bad days (a quarter of an airline\'s flights late or cancelled) end a deal early.' });
   } else if (ch === 1) {
     g({ id: 'approve', text: IC.FOCUS.hands ? 'Sign a deal with an airline: its offer shows on the map at the airport' : 'Sign a deal with an airline (Aviation room → Deals)', check: () => st.cnt.approve >= 1,
       how: (IC.FOCUS.hands ? 'An airline\'s offer shows as a green marker at the airport and in the airport\'s panel: click it to read its card. It offers ' : 'Airlines offer deals in the Aviation room (V): ') + 'so many flights a day for so many months, at your charges, if the airport has what they need. Each line under the offer is a facility they check: build what is missing, then sign. Ask for more and the deal is shorter; give a little and it runs longer.' });
@@ -533,8 +536,9 @@ IC.storyShown = function (S) {
    when the player has hidden the tips or there is nothing to explain */
 IC.storyTip = function (S) {
   const st = S.story; if (!st || st.act !== 1 || !st.tut) return null;
-  const g = st.goals.find(x => !x.done && x.how);
-  return g ? { id: g.id, text: g.how, ref: g.ref || null } : null;
+  // (the first open goal's own: a later goal's tip read as the answer to this one)
+  const g = st.goals.find(x => !x.done);
+  return g && g.how ? { id: g.id, text: g.how, ref: g.ref || null } : null;
 };
 /* what is hidden until the story reaches it: '' when open, else why not */
 const LOCKS = {

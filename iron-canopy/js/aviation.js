@@ -953,7 +953,7 @@ IC.dealNeeds = function (S, q) {
     if (!ap) continue;
     const nm = ap.name.replace(/ (International|Airport)$/, '');
     const why = IC.aptCanTake(S, ap, T);
-    L.push({ ap: ap.id, k: 'take', name: `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
+    L.push({ ap: ap.id, k: 'take', name: why ? `${nm}: ${why}` : `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
     if (why) continue;
     const P = IC.aptProvides(ap), N = aptNeeds(S, ap, q.renew ? null : { al, type: q.type, n: q.n, b: far });
     const row = (k, name, need, have, fix) => { if (need > 0) L.push({ ap: ap.id, k, name: `${nm}: ${name}`, need, have, ok: have >= need, text: have >= need ? '' : `${nm} needs ${fix} (${Math.floor(have)} of ${Math.ceil(need)})` }); };

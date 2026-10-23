@@ -25,8 +25,10 @@ const tailAt = S => { const tl = S.first && S.av ? S.av.tails.find(t => t.id ===
 IC.foundSuggest = function (S) {
   const c = IC.cap(S); if (!c) return null;
   if (S._tutSite && S._tutSite.c === c.id) return S._tutSite.p;
-  let p = null;
-  for (const d of [250, 220, 280, 200, 300]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (!IC.foundCheck(S, x, y) && !IC.foundSurvey(S, x, y, IC.PREVAIL).river) p = { x, y }; } if (p) break; }
+  // (away from rivers and lakes too where it can be: water near the runway draws birds, a warning the player could do nothing about)
+  let p = null, wet = null;
+  for (const d of [250, 220, 280, 200, 300]) { for (let k = 0; k < 24 && !p; k++) { const a = k / 24 * 6.283, x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d; if (IC.foundCheck(S, x, y)) continue; const sv = IC.foundSurvey(S, x, y, IC.PREVAIL); if (sv.river) continue; if (!sv.birds) p = { x, y }; else if (!wet) wet = { x, y }; } if (p) break; }
+  p = p || wet;
   S._tutSite = { c: c.id, p };
   return p;
 };
@@ -48,7 +50,7 @@ const borderSpot = S => {
 IC.TUTORS = {
   // ---------- (round 5c) the civil act: each one the first time the player comes to it ----------
   basics: { title: 'Goals and time', guide: 'time', when: S => civil(S) && !capAp(S), steps: [
-    { el: '#brief .goalrow', title: 'The next goal', text: 'One goal at a time, with what it pays in green. Click it and the map shows where.', on: [['ui', 'goal']] },
+    { el: '#brief .goalrow', title: 'The next goal', text: 'One goal at a time, with what it opens or pays in green. Click it and the map shows where.', on: [['ui', 'goal']] },
     { el: '#speed [data-act="speed"][data-v="4"]', title: 'Time', text: 'Building takes game hours. Keys 1–6 set the speed and Space pauses. Try 4×.', on: [['ui', 'speed']] }
   ] },
   found: { title: 'Founding an airport', guide: 'airport', when: S => civil(S) && !capAp(S), steps: [

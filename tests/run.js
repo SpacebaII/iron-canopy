@@ -4865,6 +4865,53 @@ test('round 1: founding keeps the surveyed runway as a plan, and Found\'s price 
   assert(ap.parts.filter(p => p.kind === 'ils').length === 2 && ap.parts.filter(p => p.kind === 'taxi').length >= 5, 'no landing systems or taxiways with it');
   assert(ap.undo.length === 1 && Array.isArray(ap.undo[0]), 'not one step to undo');
 });
+test('first hour: a stray click far away does not stretch the surveyed runway past 5.6 km', () => {
+  const { S, sv, next } = foundFresh();
+  const far = { x: sv.x + Math.cos(sv.a) * 100, y: sv.y + Math.sin(sv.a) * 100 }, b = Object.assign({}, next.pts[1]);
+  assert(IC.buildInput(S, next, far, 0, 4) === 'err' && /Too long: 1\d(\.\d)? km\. The longest runways/.test(next.err), `a 10 km runway: "${next.err}"`);
+  assert(next.pts[1].x === b.x && next.pts[1].y === b.y && IC.bldReady(S, next).ok, 'the placed runway moved, or is no longer buildable');
+  // a runway drawn part by part too
+  const { S: S2, ap, P } = snapAp(), r = IC.bldMode(S2, ap, 'runway');
+  IC.buildInput(S2, r, P(-30, -15), 0, 20);
+  const plan = IC.bldPlanOf(S2, r, P(40, -15), 0.4);
+  assert(!plan.ok && /Too long: 7(\.0)? km/.test(plan.why), `a 7 km runway: ok ${plan.ok}, "${plan.why}"`);
+});
+test('first hour: a fuel farm, fire station or tower being built is no longer asked for', () => {
+  const { S, ap, next } = foundFresh();
+  S.mode2 = next; assert(IC.buildFinish(S, next) === 'built', next.err);
+  for (let i = 0; i < 6 * 3600 && !ap.parts.some(p => p.kind === 'runway' && p.built); i++) IC.step(S, 1);
+  IC.aptStats(S, ap);
+  const kinds = () => IC.aptProblems(S, ap).map(p => p.id.split(':')[1]);
+  assert(kinds().includes('nofuel') && kinds().includes('nofire') && ap.st.warn.some(w => /^No control tower/.test(w)), `before: ${kinds().join(', ')}`);
+  for (const [part, at] of [['fuel', IC.aptLocal(ap, 0, 12)], ['fire', IC.aptLocal(ap, 6, 6)], ['tower', IC.aptLocal(ap, -6, 7)]]) {
+    const m = S.mode2 = IC.bldMode(S, ap, part);
+    IC.buildInput(S, m, at, 0, 20);
+    assert(IC.buildFinish(S, m) === 'built', `${part}: ${m.err}`);
+  }
+  IC.aptStats(S, ap);
+  assert(!kinds().includes('nofuel') && !kinds().includes('nofire'), `still asked for: ${kinds().join(', ')}`);
+  assert(ap.st.warn.some(w => /control tower is being built/.test(w)) && ap.st.warn.some(w => /fire station is being built/.test(w)), ap.st.warn.join(' | '));
+});
+test('first hour: the site the tutorial suggests is clear of water that draws birds', () => {
+  for (const seed of [12345, 4242, 7]) {
+    const S = IC.newGame({ seed, mode: 'story' }), p = IC.foundSuggest(S);
+    assert(p && !IC.foundSurvey(S, p.x, p.y, IC.PREVAIL).birds, `seed ${seed}: the suggested site has water near the runway`);
+  }
+});
+test('first hour: a goal\'s How? is its own, and an offer names what is missing', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network' }); IC.S = S;
+  const st = S.story, goals = st.goals;
+  st.tut = true;
+  st.goals = [{ id: 'deals3', text: 'Sign three new deals', done: false }, { id: 'happy', text: 'Three airlines, satisfied', how: 'Airlines judge every visit…', done: false }];
+  const tip = IC.storyTip(S);
+  assert(!tip, `the next goal's tip answered "Sign three new deals": ${tip && tip.text}`);
+  st.goals = goals;
+  const ap = S.byId[S.story.cap], q = { al: S.av.airlines[0].id, type: 'wide', n: 2, a: ap.id, b: { apt: null } };
+  for (const p of ap.parts) if (p.kind === 'fire') p.hp = 0;
+  IC.aptStats(S, ap);
+  const L = IC.dealNeeds(S, q), take = L.find(x => x.k === 'take');
+  assert(take && !take.ok && /fire station/.test(take.name), `the line says "${take && take.name}"`);
+});
 test('round 1: a starter airport template places a complete working airport as one plan', () => {
   const { S, ap, sv } = foundFresh();
   const m = S.mode2 = IC.bldMode(S, ap, 'starter');
