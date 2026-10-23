@@ -1864,8 +1864,15 @@ test('GA: at an airport with no GA ramp a visitor lands, taxis and parks on a fr
   const F = S.asp.fields.slice().sort((a, b) => U.dist(a, ap) - U.dist(b, ap))[0];
   const t = IC.gaLaunch(S, { x: F.x, y: F.y, name: F.name, field: F.id }, { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, { type: 'tourer', progress: 0.6 });
   let r = null; const seen = new Set();
-  for (let i = 0; i < 4 * 3600 && !r && !t.gaNo; i++) { IC.step(S, 0.25); for (const m of ap.moves) if (m.ga) seen.add(m.phase); r = S.ga.parked.find(x => x.cs === t.cs) || null; }
+  // (other visitors are sent away, so the airlines' share of remote stands is this one's)
+  const others = () => { for (const x of S.ga.parked.filter(x => x.ap === ap.id && x.cs !== t.cs)) { const q = IC.aptStands(ap).find(q => q.id === x.sid); if (q && q.occ === x.id) q.occ = null; S.ga.parked.splice(S.ga.parked.indexOf(x), 1); } };
+  for (let i = 0; i < 4 * 3600 && !r && !t.gaNo; i++) { IC.step(S, 0.25); others(); for (const m of ap.moves) if (m.ga) seen.add(m.phase); r = S.ga.parked.find(x => x.cs === t.cs) || null; }
   assert(r, 'it was turned away with remote stands free');
+  // the airlines keep three remote stands in four: with a quarter taken by light aircraft the next is sent elsewhere
+  const rem = IC.aptStands(ap).filter(x => (x.zone || 'civil') === 'civil' && !x.contact && !x.cargo && x.linked !== false && x.hp > 0 && x.size !== 'l');
+  const fake = rem.filter(x => !x.occ).slice(0, Math.max(1, Math.floor(rem.length / 4)) - 1); for (const x of fake) x.occ = 'ga0';
+  assert(!IC.gaFreeSpot(ap, IC.ACTYPES.tourer), `a light aircraft took one of the airlines' last ${rem.length} remote stands`);
+  for (const x of fake) x.occ = null;
   const s = IC.aptStands(ap).find(x => x.id === r.sid);
   assert(s && !s.contact && (s.zone || 'civil') === 'civil' && seen.has('land') && seen.has('taxi'), `on ${s && s.id}, phases ${[...seen].join(' ')}`);
   assert(IC.apronLife(S, ap).some(o => o[0] === 'tourer' && o[2] === s.x && o[3] === s.y), 'the map does not show it there');
