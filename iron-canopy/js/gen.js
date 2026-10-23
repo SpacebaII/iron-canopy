@@ -606,6 +606,18 @@ function* worldSteps(seed) {
     for (const o of W.edges) { if (o.a === from) o.a = to; if (o.b === from) o.b = to; }
     delete W.nodes[from];
   }
+  // a small town's own node a few metres from its gate, on a road of its own and nothing else (a spur a car would find
+  // poking out of the gate's roundabout): the node moves to the gate, which becomes the town's
+  for (const c of W.cities) {
+    const L = W.edges.filter(e => e.a === c.id || e.b === c.id); if (L.length !== 1) continue;
+    const e = L[0], o = e.a === c.id ? e.b : e.a, on = W.nodes[o];
+    if (!on || o === c.id || !on.jct || e.pts.reduce((s, p, i) => s + (i ? U.dist(e.pts[i - 1], p) : 0), 0) > 1) continue;
+    const n0 = W.nodes[c.id]; if (c.streets.some(l => l.pts.some(p => U.dist(p, n0) < 0.05))) continue;   // (its streets meet there)
+    W.edges.splice(W.edges.indexOf(e), 1);
+    for (const q of W.edges) { if (q.a === o) q.a = c.id; if (q.b === o) q.b = c.id; }
+    W.nodes[c.id].x = on.x; W.nodes[c.id].y = on.y;
+    delete W.nodes[o];
+  }
   // (the bends first: a road that ends on a motorway's bend then has room for its far terminal)
   roundMotorwayBends(W);
   roadsOverMotorways(W);
