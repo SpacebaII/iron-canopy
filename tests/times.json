@@ -261,5 +261,8 @@
  "building: a fire station with no taxiway beside it gets a crash road to the runway, and a fuel farm by the terminal is warned of": 10.1,
  "building: an apron and a terminal of any shape, drawn corner by corner, take stands at gates on a slanted wall": 7.8,
  "building: a taxiway drawn straight across another taxiway and a runway joins them there, with a runway crossing": 6.5,
- "airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why": 8.0
+ "airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why": 8.0,
+ "wave 12: the build bar is the parts one by one; of the whole pieces only the Starter airport is on it": 5,
+ "wave 12: Found leaves the surveyed runway alone; taxiways, apron, terminal and services built one by one make a working airport": 10,
+ "wave 12: milestones open the parts that answer them, and the card picks the part": 12
 }
