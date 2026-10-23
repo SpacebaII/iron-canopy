@@ -678,6 +678,11 @@ table.t th.r{text-align:right}
 .tnode .need{display:inline-flex;gap:.3rem;align-items:center;text-align:right}
 .tnode .meta{flex-wrap:wrap}
 .lanes svg .l.x{stroke-dasharray:4 5}
+.aor{display:flex;align-items:center;gap:6px;margin:-2px 0;font-family:var(--mono);font-size:.72rem;color:var(--amber);text-transform:uppercase;letter-spacing:.12em}
+.aor::before,.aor::after{content:'';flex:1;border-top:1px dashed rgba(242,180,65,.55)}
+.tnode p.excl{color:var(--amber);font-size:.8rem}
+.tnode.shut{opacity:.35}
+.lanes.agenda .lane.later{opacity:.75}
 .slot.next{background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);opacity:.75}
 .lane.shut{grid-template-columns:7.5rem 1fr;align-items:center;opacity:.6}.lane.shut .hint{margin:0}
 .tnode.shut{opacity:.4}.tnode .excl{font-size:.85em;color:var(--amber,#f2b441);margin:.2rem 0 0}

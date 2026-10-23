@@ -509,7 +509,7 @@ IC.aptScorecards = function (S, ap) {
 /* ---------- requests: growth comes from happy airlines and a growing economy ---------- */
 function makeRequest(S) {
   const A = S.av;
-  const al = U.wpick(A.airlines.filter(a => a.sat > 45 && !(a.K.foreign && (S.tension || 0) > 40)).map(a => [a, a.sat - 40]));
+  const al = U.wpick(A.airlines.filter(a => a.sat > 45 && !(a.K.foreign && (S.tension || 0) > 40)).map(a => [a, (a.sat - 40) * (IC.agendaMul ? IC.agendaMul(S, 'offerKind', a) : 1)]));
   if (!al) return;
   const apts = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
   const W = S.world;
@@ -1000,10 +1000,12 @@ function makeTerms(S, q) {
   // how much it wants in: seats running full, and our name
   // a closed airspace is remembered: it will not pay full list for a while (brief 25)
   const g = IC.avGrudge(S, al);
-  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25) - 0.15 * g;
+  // (brief 49: the Ministry's agenda can favour the flag carrier: it accepts more over list, and its deals run longer)
+  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25) - 0.15 * g + (IC.agendaAdd ? IC.agendaAdd(S, 'flagFlex', al) : 0);
   const T = IC.ACTYPES[q.type];
   q.terms = { list, grudge: g > 0.05 ? Math.round(al.shutH) : 0, days: (career(S) ? (IC.FOCUS.progress ? IC.DEAL.monthsF : IC.DEAL.months) : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
     late: +(T.fee * 0.25).toFixed(2), cancel: +(T.fee * 1.2 + (T.seats || 0) * 0.004).toFixed(2), rep: al.kind === 'flag' || al.K.foreign ? 5 : 3 };
+  if (IC.agendaMul) q.terms.days = Math.round(q.terms.days * IC.agendaMul(S, 'dealLen', al));
   q.pick = { lvl: 1, excl: false };
   q.value = dealWorth(S, q, list).value;
 }

@@ -243,5 +243,13 @@
  "research: a new Career opens the Research room on day one with the civil lanes; every \"Needs research\" leads to a project that can be started": 16.0,
  "research: every modifier a project carries is read by the simulation, has words and shows in a panel": 0.0,
  "research: Wait does not finish research faster than play": 8.6,
- "research: slots grow from two to four": 8.4
+ "research: slots grow from two to four": 8.4,
+ "agenda: a new Career shows the agenda on day one, and a policy passes in a few minutes of play and changes what the numbers say": 10.3,
+ "agenda: an exclusive pair rules the other out, and starting another drops the one in progress": 10.9,
+ "agenda: passed policies and the one in progress survive save and load": 17.0,
+ "agenda: every policy has words, a pace of 5 to 12 minutes, keys that exist and pairs that point at each other": 0.0,
+ "agenda: each named change does what its policy says": 8.0,
+ "agenda: Wait does not pass a policy faster than play": 36.4,
+ "agenda: Access to the banks opens loans before Chapter 5, and the lock says so before it passes": 22.2,
+ "agenda: the scripted player finishes Act I on either side of each pair": 512
 }
