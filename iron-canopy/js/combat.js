@@ -13,6 +13,14 @@
 'use strict';
 const U = IC.U;
 
+/* a kill confirmed on the map: SPLASH fades out over IC.SPLASH_T game seconds and is then dropped */
+IC.SPLASH_T = 90;
+IC.splash = function (S, t) {
+  const L = (S.fx.splash || []).filter(s => S.time - s.t < IC.SPLASH_T);
+  L.push({ x: t.x, y: t.y, t: S.time, tn: t.tn, type: t.type });
+  S.fx.splash = L.length > 40 ? L.slice(-40) : L;
+};
+
 /* how much quicker the clock may run than the next thing that happens: 30 game seconds of warning at 1×, so the
    next impact or intercept is always a few real seconds away; the last seconds of an intercept at half speed */
 IC.COMBAT = { lead: 30, last: 8, slow: 0.5, margin: 600 };
@@ -79,12 +87,13 @@ IC.raidTally = function (S) {
   if (!R) return null;
   const ops = E.ops.filter(o => o.raid === R);
   // (weapons count as launched; aircraft shot down are counted apart)
-  const ac = acDown(R), n = ops.reduce((s, o) => s + o.launched, 0), stopped = Math.min(n, Math.max(0, ops.reduce((s, o) => s + o.lost, 0) - ac));
+  const ac = acDown(R), n = ops.reduce((s, o) => s + o.launched, 0), stopped = Math.min(n, Math.max(0, ops.reduce((s, o) => s + o.lost, 0) - ac) + (R.jammed || 0));
   const through = R.leaks.length, air = Math.max(0, n - stopped - through);
   return { R, n, stopped, through, air, ac };
 };
 /* the result card: what came, what we stopped, what got through and why, what it cost against what it saved, and a
    grade. Money spent is the interceptors fired; damage prevented what the weapons we stopped would have done */
+const MANNED_CLS = { air: 1, heli: 1 };
 const GRADE = [[0.9, 'A'], [0.75, 'B'], [0.6, 'C'], [0.4, 'D'], [-Infinity, 'F']];
 IC.raidResult = function (S, R, ops, success) {
   // what came: every weapon in the air and every aircraft of the raid (enemy.js counts them), and at least what we
@@ -95,11 +104,20 @@ IC.raidResult = function (S, R, ops, success) {
   for (const [cls, n] of Object.entries(seen)) came[cls] = Math.max(came[cls] || 0, n);
   // (weapons: what was launched, or what came if that is more, as with the jamming drones that fly with a raid)
   const wpn = Object.entries(came).reduce((s, [c, k]) => s + (c === 'air' || c === 'heli' ? 0 : k), 0);
-  const ac = acDown(R), n = Math.max(wpn, ops.reduce((s, o) => s + o.launched, 0)), stopped = Math.min(n, Math.max(0, ops.reduce((s, o) => s + o.lost, 0) - ac)), hits = R.hits || 0;
-  const stop = n ? Math.min(1, stopped / n) : 1, score = stop - Math.min(0.4, hits * 0.06) - (success ? 0.25 : 0);
-  const grade = GRADE.find(([v]) => score >= v)[1];
-  const held = !success && (stop >= 0.6 || hits <= 1);
-  return { n, stopped, ac, through: R.leaks.length, hits, came, spent: R.spent || 0, rounds: R.rounds || 0, prevented: Math.round(R.prevented || 0), grade, held, success,
+  // stopped: shot down, or sent off course by our jammers to crash; still flying: slow drones and cruise missiles can
+  // outlast the report; decoys and weapons that ran out of fuel did no harm
+  const jammed = R.jammed || 0, ac = acDown(R), hits = R.hits || 0, through = R.leaks.length;
+  const air = S.threats.filter(t => !t.dead && t.op && t.op.raid === R && !t.d.decoy && !MANNED_CLS[t.d.cls] && t.mission !== 'jam' && t.mission !== 'rtb' && t.type !== 'isr').length;
+  let n = Math.max(wpn, ops.reduce((s, o) => s + o.launched, 0));
+  const stopped = Math.min(n, Math.max(0, ops.reduce((s, o) => s + o.lost, 0) - ac) + jammed);
+  n = Math.max(n, stopped + through + air);
+  const harmless = Math.max(0, n - stopped - through - air);
+  // the grade is the share of what has come down that did no harm, less what hit and whether they got what they came
+  // for ('?' while most of the raid is still flying); held needs a pass and nothing left in the air
+  const done = n - air, stop = done ? Math.max(0, Math.min(1, (done - through) / done)) : 1, score = stop - Math.min(0.4, hits * 0.06) - (success ? 0.25 : 0);
+  const grade = air * 2 > n && !success ? '?' : GRADE.find(([v]) => score >= v)[1];
+  const held = !success && !air && score >= 0.4 && (stop >= 0.6 || hits <= 1);
+  return { n, stopped, jammed, ac, through, air, harmless, hits, came, spent: R.spent || 0, rounds: R.rounds || 0, prevented: Math.round(R.prevented || 0), grade, held, success,
     why: [...new Set(R.leaks.map(L => L.why))].slice(0, 3) };
 };
 IC.RAID_WORDS = { drone: ['drone', 'drones'], cm: ['cruise missile', 'cruise missiles'], bal: ['ballistic missile', 'ballistic missiles'], hgv: ['glider', 'gliders'], arm: ['anti-radiation missile', 'anti-radiation missiles'], rkt: ['rocket', 'rockets'], air: ['aircraft', 'aircraft'], heli: ['helicopter', 'helicopters'] };
@@ -108,6 +126,8 @@ IC.raidCameText = res => Object.entries(res.came).sort((a, b) => b[1] - a[1]).ma
 /* what a weapon we stopped would have done (₭M): its warhead against what it was aimed at */
 const worth = t => (t.d.dmg || 0) * (t.d.cls === 'bal' || t.d.cls === 'hgv' ? 2.2 : 1.4);
 
+/* a weapon still flying when its raid's report was written is stopped after all: the card counts it */
+function lateDown(R) { const r = R.result; if (r && r.air > 0) { r.air--; r.stopped++; } }
 function rec(o) { return o.rec || (o.rec = { kills: 0, fired: 0, defeated: 0 }); }
 const unitByName = (S, n) => S.units.find(u => u.name === n) || null;
 const flightByName = (S, n) => S.roster.find(r => r.name === n) || null;
@@ -125,11 +145,17 @@ IC.on((S, type, d) => {
     }
     case 'kill': {
       const t = d;
-      if (t.op && t.op.raid) { const Q = t.op.raid; Q.prevented = (Q.prevented || 0) + worth(t); (Q.downCls || (Q.downCls = {}))[t.d.cls] = (Q.downCls[t.d.cls] || 0) + 1; }
+      if (t.op && t.op.raid) { const Q = t.op.raid; Q.prevented = (Q.prevented || 0) + worth(t); (Q.downCls || (Q.downCls = {}))[t.d.cls] = (Q.downCls[t.d.cls] || 0) + 1; if (!MANNED_CLS[t.d.cls]) lateDown(Q); }
       const who = t.killer && (unitByName(S, t.killer) || flightByName(S, t.killer));
       if (who) rec(who).kills++;
       // kill confirmation on the map: a burst and the word
-      if (t.det || t.held) { IC.text(S, t.x, t.y, 'SPLASH', '#ffd27a'); (S.fx.splash || (S.fx.splash = [])).push({ x: t.x, y: t.y, t: S.time, tn: t.tn, type: t.type }); if (S.fx.splash.length > 40) S.fx.splash.shift(); }
+      if (t.det || t.held) { IC.text(S, t.x, t.y, 'SPLASH', '#ffd27a'); IC.splash(S, t); }
+      break;
+    }
+    case 'jamCrash': {
+      // our jammer sent a weapon off course and it crashed: stopped, and the damage it would have done saved
+      const t = d;
+      if (t.op && t.op.raid) { const Q = t.op.raid; Q.jammed = (Q.jammed || 0) + 1; Q.prevented = (Q.prevented || 0) + worth(t); lateDown(Q); if (Q.result) Q.result.jammed++; }
       break;
     }
     case 'mslDefeated': {

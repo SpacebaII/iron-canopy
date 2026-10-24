@@ -143,10 +143,12 @@ IC.moveCivil = function (S, t, dt) {
   if (t.phold) { IC.atcPlayerHold(S, t, dt); return; }
   // intermediate route points (around prohibited zones)
   if (t.wps && t.wps.length > 1 && U.dxy(t.x, t.y, t.dest.x, t.dest.y) < t.spd * dt + 3) { t.wps.shift(); t.dest = t.wps[0]; }
-  const d = t.dest, dx = d.x - t.x, dy = d.y - t.y, L = Math.hypot(dx, dy);
+  const d = t.dest, dx = d.x - t.x, dy = d.y - t.y, L = U.hyp(dx, dy);
   if (t.aspDzT > 0) { t.aspDzT -= dt; if (t.aspDzT <= 0) t.aspDz = 0; }
   if (t.vector != null && (t.vectorT -= dt) <= 0) t.vector = null;
   t.dzNow = (t.dzNow || 0) + U.clamp((t.aspDz || 0) - (t.dzNow || 0), -0.01 * dt, 0.01 * dt);
+  // (wave 14) a light aircraft bound for one of our airports with a stand or pad for it lands there for real (genav.js)
+  if (t.type === 'ga' && (t.gav || (t.gaTo && t.gaTo.apt)) && IC.gavInbound(S, t, dt)) return;
   if (t.type === 'ga') {
     // coming in to an airport with a GA ramp: its approach, or handed to the ground (garamp.js)
     if (t.gaTo && t.gaTo.apt && IC.gaInbound(S, t, dt)) return;
@@ -199,9 +201,9 @@ IC.BIZ_MIX = [['vlj', 3], ['bizjet', 4], ['bizlong', 2], ['bizprop', 2]];
 const BIZ_CODES = ['XJT', 'SKX', 'LUX', 'ORX', 'AVX', 'JTX'];
 const ih = (a, b) => Math.floor(U.hash(a | 0, b | 0) * 1e6);
 const idNum = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) | 0; return h; };
-/* our airports with a terminal and a runway of 1,500 m or more */
+/* our airports with a terminal (or a general aviation terminal) and a runway of 1,500 m or more */
 function bizAirports(S) {
-  return IC.bases(S).filter(ap => ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && ap.parts && ap.parts.some(p => p.kind === 'terminal' && p.built) && ap.parts.some(p => p.kind === 'runway' && p.built && U.dist(p.a, p.b) >= 15));
+  return IC.bases(S).filter(ap => ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && ap.parts && ap.parts.some(p => (p.kind === 'terminal' || p.kind === 'gaterm') && p.built) && ap.parts.some(p => p.kind === 'runway' && p.built && U.dist(p.a, p.b) >= 15));
 }
 IC.bizAirports = bizAirports;
 function bizStay(S, ap, type, cs, liv) {
@@ -223,7 +225,8 @@ function bizTraffic(S, dt, war) {
   B.t = U.rand(1800, 5400) / Math.max(1, aps.length * 0.7);
   // odd hours: executives fly when their meetings end, late in the evening and through the night as much as by day
   if (war || S.airspace !== 'open' || !aps.length || Math.random() > (h >= 20 || h < 6 ? 1 : 0.55)) return;
-  const ap = U.pick(aps), port = U.pick(IC.avPorts(S)); if (!port) return;
+  // (wave 14) a general aviation terminal draws three times the business jets
+  const ap = U.wpick(aps.map(a => [a, a.parts.some(p => p.kind === 'gaterm' && p.built) ? 3 : 1])), port = U.pick(IC.avPorts(S)); if (!port) return;
   const type = U.wpick(IC.BIZ_MIX), cs = `${U.pick(BIZ_CODES)} ${U.randi(10, 899)}`;
   IC.gaLaunch(S, { x: port.x, y: port.y, name: port.name }, { x: ap.x, y: ap.y, name: ap.name, apt: ap.id }, { type, cs, xpdr: true, fpl: true, biz: 1 });
 }
@@ -257,6 +260,13 @@ IC.apronLife = function (S, ap) {
       out.push([r.type, IC.gaLivery(r.n, cover), s.x, s.y, s.a, run ? 1 : 0]);
     }
   }
+  // (wave 14) helipads, and light-aircraft stands beyond the GA ramp's, have their own aircraft on them, flown and
+  // parked for real (genav.js), and its own terminal for them if it built one
+  const gav = IC.gavStands && (IC.gavStands(ap).length || IC.gavPads(ap).length);
+  if (gav) {
+    for (const q of IC.gavParked(S, ap)) out.push(q.slice(0, 5));
+    const st = IC.gavStands(ap); if (st.length && !ramp && !ap.parts.some(p => p.kind === 'gaterm' && p.built)) { const f = fboSpot(ap, st); if (f) out.push(f); }
+  }
   if (ramp) {
     // (a rare visitor on a remote stand, as big as it needs)
     const H = S.rare && S.rare.here;
@@ -264,6 +274,7 @@ IC.apronLife = function (S, ap) {
       if (s) for (let k = 0; k < (H.n || 1); k++) out.push([H.type, null, s.x + Math.cos(s.a + Math.PI / 2) * (H.n > 1 ? (k - 3) * 0.12 : 0), s.y + Math.sin(s.a + Math.PI / 2) * (H.n > 1 ? (k - 3) * 0.12 : 0), s.a]); }
     return out;
   }
+  if (gav) return out;
   const stands = IC.bizStands(S, ap); if (!stands.length) return out;
   const fbo = fboSpot(ap, stands); if (fbo) out.push(fbo);
   const used = new Set(), H = S.rare && S.rare.here;

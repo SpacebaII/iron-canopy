@@ -628,11 +628,11 @@ const SCENES = {
       if (keep) fs.mkdirSync(fd, { recursive: true });
       await page.exposeFunction('__frame', b64 => { const b = Buffer.from(b64, 'base64'); fs.appendFileSync(ff, b); if (keep && fi % keep === 0) fs.writeFileSync(path.join(fd, `f${String(fi).padStart(4, '0')}.jpg`), b); fi++; });
     }
-    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK', 'KIND', 'AFTER', 'K', 'N']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
+    for (const k of ['MODELS', 'YAW', 'PITCH', 'DIST', 'PICK', 'KIND', 'AFTER', 'K', 'N', ...(/^m-/.test(name) ? [] : ['QUALITY'])]) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);
     if (process.env.MOVIE_FRAMES) await page.addInitScript(n => { window.MOVIE_FRAMES = n; }, process.env.MOVIE_FRAMES);
     await page.exposeFunction('__snap', async n => { const out = path.join(dir, `3d-${n}.png`); await page.screenshot({ path: out, timeout: 180000 }); console.log('saved', out); });
     await page.goto('file://' + (process.env.GAME ? path.resolve(process.env.GAME) : path.resolve(__dirname, '../iron-canopy/index.html')));
-    await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
+    await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 300000 });
     try { await page.evaluate(`(async () => { const U = IC.U; ${LIB} ${SCENES[name]} })()`); } catch (e) { errors.push(e.message.split('\n')[0]); }
     if (ff) {
       const out = path.join(dir, name === 'movie' ? '3d-live.webm' : `3d-${name}.webm`), ffmpeg = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';

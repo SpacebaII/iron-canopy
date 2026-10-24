@@ -108,16 +108,26 @@ const nodeOf = (S, p) => {
   return n;
 };
 /* seconds by road from a source (a city or an industry, with its Dijkstra tree) to any place */
-function timeTo(S, T, p) { if (!T) return Infinity; const n = nodeOf(S, p), v = T.t[n.id]; return v == null ? Infinity : v + n.t; }
+function timeTo(S, T, p) { if (!T) return Infinity; const n = nodeOf(S, p), v = T.time(n.id); return v == null ? Infinity : v + n.t; }
 IC.econTime = (S, from, to, intact) => timeTo(S, (intact ? S.econ.ti : S.econ.tt)[from.id], to);
 /* a place's trade reach: the people it can trade with, the nearer (in time) the more */
 const reachOf = (S, T, self) => { let s = 0; for (const d of IC.cities(S)) if (d !== self && d.owner === 'us') s += d.pop * Math.exp(-timeTo(S, T, d) / 7200); return s; };
 
-/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them) */
+/* the travel-time trees from every city and industry (a load rebuilds them rather than saving them). The trees with
+   every road open change only when the roads do (built, split, or laid again round an airport): a cut or a repair,
+   which in a war comes every few minutes, makes only the others again */
+const roadKey = W => ({ W, e: W.edges.slice(), a: W.edges.map(e => e.a), b: W.edges.map(e => e.b), len: W.edges.map(e => e.len), cls: W.edges.map(e => e.cls) });
+const sameRoads = (K, W) => !!K && K.W === W && K.e.length === W.edges.length && W.edges.every((e, i) => e === K.e[i] && e.a === K.a[i] && e.b === K.b[i] && e.len === K.len[i] && e.cls === K.cls[i]);
 IC.econTrees = function (S) {
-  const E = S.econ, W = S.world;
+  const E = S.econ, W = S.world, keep = sameRoads(E._tiK, W), old = keep ? E.ti : null, from = {};
   E.tt = {}; E.ti = {};
-  for (const p of IC.cities(S).concat(E.inds)) { const n = nodeOf(S, p).id; E.tt[p.id] = IC.travelFrom(W, n, false); E.ti[p.id] = IC.travelFrom(W, n, true); }
+  for (const p of IC.cities(S).concat(E.inds)) {
+    const n = nodeOf(S, p).id; from[p.id] = n;
+    E.tt[p.id] = IC.travelFrom(W, n, false);
+    E.ti[p.id] = old && old[p.id] && E._tiFrom[p.id] === n ? old[p.id] : IC.travelFrom(W, n, true);
+  }
+  if (!keep) E._tiK = roadKey(W);
+  E._tiFrom = from;
 };
 function refreshRoads(S) {
   const E = S.econ, W = S.world;
@@ -400,21 +410,21 @@ function cutRoad(S, e, x, y) {
   const near = IC.nearestPlace(S, x, y);
   e.cut = true; e.cutAt = { x, y, t: S.time };
   e.cutName = `${CLS_NAME[e.cls]} cut ${/^\d/.test(near) ? near : 'at ' + near}`;
-  const hours = (0.6 - e.cond) / repairRate(e) + 0.5;
+  const hours = (0.6 - e.cond) / repairRate(e, S) + 0.5;
   IC.log(S, 'leak', 'ROADS', `${e.cutName}. Traffic detours on farm tracks; engineers need about ${U.dur(hours * 3600)} to fill the crater.`, { x, y });
   IC.news(S, `${e.cutName.replace(' cut', '')} closed after a strike; long detours for lorries and buses.`);
   IC.roadsChanged(S);
   IC.worldChanged(S, { x0: x - 10, y0: y - 10, x1: x + 10, y1: y + 10 });
   IC.emit(S, 'roadCut', e);
 }
-const repairRate = e => (e.cls === 'hw' ? 0.1 : 0.14) * (e.rush ? 3 : 1);   // condition regained per game hour
+const repairRate = (e, S) => (e.cls === 'hw' ? 0.1 : 0.14) * (e.rush ? 3 : 1) * IC.mod(S, 'repair');   // condition regained per game hour (research: 'repair')
 /* pay the road engineers to work round the clock: three times as fast */
 IC.rushCost = e => Math.round((e.len || 10) / 10 * (e.cls === 'hw' ? 3 : 1.5) + 5);
 IC.rushRepair = function (S, id) {
   const e = S.world.edges.find(x => x.id === id); if (!e || !e.cut || e.rush) return false;
   const c = IC.rushCost(e); if (S.budget < c) { IC.log(S, 'warn', 'ROADS', `Rushing the repair needs ${U.money(c)}.`); return false; }
   IC.pay(S, 'repair', c); e.rush = true;
-  IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e) * 3600)}.`, e.cutAt);
+  IC.log(S, 'info', 'ROADS', `${e.cutName}: engineers now work round the clock, open in about ${U.dur((0.6 - e.cond) / repairRate(e, S) * 3600)}.`, e.cutAt);
   return true;
 };
 function repairRoads(S, dt) {
@@ -424,7 +434,7 @@ function repairRoads(S, dt) {
   for (const id of E.damaged.slice()) {
     const e = W.edges.find(x => x.id === id);
     if (!e) { E.damaged.splice(E.damaged.indexOf(id), 1); continue; }
-    e.cond = Math.min(1, e.cond + repairRate(e) * dt / 3600);
+    e.cond = Math.min(1, e.cond + repairRate(e, S) * dt / 3600);
     if (e.cut && e.cond >= 0.6) {
       e.cut = false;
       IC.log(S, 'info', 'ROADS', `${e.cutName.replace(' cut', '')} reopened: the crater is filled.`, e.cutAt);
@@ -566,7 +576,7 @@ IC.aptRelayout = function (S, ap, template, a) {
 /* a road, lane, railway or street within 1 km of a part */
 function roadNear(S, ap, part) {
   const W = S.world, sh = IC.partShape(ap, part), bb = sh.bb, m = 10;
-  const hit = l => { const b = l.bb || (l.bb = [Math.min(...l.pts.map(p => p.x)), Math.min(...l.pts.map(p => p.y)), Math.max(...l.pts.map(p => p.x)), Math.max(...l.pts.map(p => p.y))]); if (b[2] < bb[0] - m || b[0] > bb[2] + m || b[3] < bb[1] - m || b[1] > bb[3] + m) return false; for (const p of l.pts) if (p.x > bb[0] - m && p.x < bb[2] + m && p.y > bb[1] - m && p.y < bb[3] + m) return true; for (let i = 1; i < l.pts.length; i++) if (U.segDist((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y) < m + Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) / 2) return true; return false; };
+  const hit = l => { const b = l.bb || (l.bb = [Math.min(...l.pts.map(p => p.x)), Math.min(...l.pts.map(p => p.y)), Math.max(...l.pts.map(p => p.x)), Math.max(...l.pts.map(p => p.y))]); if (b[2] < bb[0] - m || b[0] > bb[2] + m || b[3] < bb[1] - m || b[1] > bb[3] + m) return false; for (const p of l.pts) if (p.x > bb[0] - m && p.x < bb[2] + m && p.y > bb[1] - m && p.y < bb[3] + m) return true; for (let i = 1; i < l.pts.length; i++) if (U.segDist((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, l.pts[i - 1].x, l.pts[i - 1].y, l.pts[i].x, l.pts[i].y) < m + U.hyp(bb[2] - bb[0], bb[3] - bb[1]) / 2) return true; return false; };
   if (W.edges.some(hit) || (W.rails || []).some(hit) || (W.lanes || []).some(hit) || (W.ramps || []).some(hit)) return true;
   for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dist(c, part.a && part.a.x != null ? part.a : part) < (c.r || 20) * 2 + 100 && c.streets.some(hit)) return true;
   return false;
@@ -696,7 +706,7 @@ const boxOf = pts => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const 
 function works(S, dt) {
   const E = S.econ;
   for (const w of E.works) {
-    w.prog = Math.min(1, w.prog + dt / (w.hours * 3600));
+    w.prog = S.free && S.free.instant ? 1 : Math.min(1, w.prog + dt / (w.hours * 3600));
     w.stage = w.prog < 0.1 ? 'Surveying' : w.prog < 0.6 ? (w.bridges.length ? 'Earthworks and bridges' : 'Earthworks') : w.prog < 1 ? 'Paving' : 'Open';
     if (w.prog >= 1) openRoad(S, w);
   }
@@ -894,7 +904,7 @@ IC.onMonth(S => {
   S.red.months++;
   const st = S.story;
   if (st) {
-    st.standing -= IC.RED.conf;
+    st.standing = Math.max(IC.confFloor(S), st.standing - IC.RED.conf);
     IC.log(S, 'warn', 'TREASURY', `Another month in the red (${S.red.months}): the Minister's confidence −${IC.RED.conf}. The grant shrinks with it.${st.act < 3 ? '' : ' At zero for a full day you are replaced.'}`);
     if (S.red.months % 2 === 0 && IC.storyEvent && !st.events.some(e => e.kind === 'treasury')) IC.storyEvent(S, 'treasury');
   }
@@ -939,7 +949,7 @@ IC.moneyWhy = function (S, k, r) {
   const L = S.ledger || {}, mob = IC.MOBIL[S.mobil], st = S.story;
   const mobTxt = S.mobil ? ` ${mob.name} ${k.startsWith('up') ? `adds ${U.pct(mob.up - 1)}` : `takes ${U.pct(1 - mob.tax)}`}.` : '';
   switch (k) {
-    case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
+    case 'base': return st ? `The Ministry pays ${U.money(L.base)} an hour to run your office${IC.modNote(S, 'grant') ? ' ' + IC.modNote(S, 'grant') : ''}. It rises with each act.` : `The government's defence budget: ${U.money(L.base)} an hour.`;
     case 'av': { const f = ['land', 'pax', 'cargo', 'over'].filter(x => r[x] > 0.005).map(x => `${{ land: 'landings', pax: 'passengers', cargo: 'cargo', over: 'overflights' }[x]} ${U.money(r[x])}`); return `Paid by the airlines for landings and passengers at our airports, and for flying over the country, over the last hour: ${f.join(', ') || 'no flights yet'}. More routes, more passengers and higher charges (airport panel) raise it; charges that are too high drive airlines away.`; }
     case 'tax': { const cs = IC.cities(S).filter(c => c.owner === 'us'); return `${n(cs.length, 'city', 'cities')} pay taxes by size, prosperity and morale.${st && st.act < 4 ? ` In Act ${['', 'I', 'II', 'III'][st.act]} you get ${IC.STORY_TAX[st.act] ? U.pct(IC.STORY_TAX[st.act]) + ' of them' : 'none: they go to the Treasury'}.` : S.mode === 'campaign' ? ` The air defence gets ${U.pct(IC.QW_TAX_SHARE)} of them; the rest runs the country.` : ''}${mobTxt}`; }
     case 'trade': return `15% of what ${n(S.econ ? S.econ.inds.length : 0, 'remote industry', 'remote industries')} sell. Fast roads to a city and air cargo within ${IC.GROWTH.indCatch} h sell more.${st && st.act < 4 ? ' In the Career this grows with the acts, like taxes.' : ''}`;
@@ -1039,7 +1049,7 @@ IC.cityAsks = function (S, minKm) {
   const hubPax = A ? Math.max(A.day.pax, A.yesterday ? A.yesterday.pax : 0) : 0;
   if (hubPax < N.hubPax) return null;
   const aps = ourAirports(S);
-  const L = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.air && IC.cityUnserved(c) >= N.ask && !aps.some(ap => U.dist(ap, c) < (minKm || 150) * 10));
+  const L = IC.cities(S).filter(c => c.owner === 'us' && !c.capital && c.air && IC.cityUnserved(c) >= N.ask * (IC.agendaMul ? IC.agendaMul(S, 'cityAsk') : 1) && !aps.some(ap => U.dist(ap, c) < (minKm || 150) * 10));
   L.sort((a, b) => IC.cityUnserved(b) - IC.cityUnserved(a));
   const c = L[0];
   return c ? { city: c, unserved: IC.cityUnserved(c), size: IC.cityUnserved(c) >= N.jets ? 'jets' : 'turbo' } : null;

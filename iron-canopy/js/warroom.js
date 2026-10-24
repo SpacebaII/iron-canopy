@@ -21,6 +21,7 @@ IC.renderRoom = function (st, tab) {
   ui.setHTML($('wrBody'), f ? f() : '', key);
   if (fresh) $('wrBody').scrollTop = ui.roomScroll[key] || 0;
   if (tab === 'research') treeLinks();
+  if (tab === 'staff') agendaLinks();
 };
 /* the pages of a long room, as tabs across the top */
 const pages = (room, opts) => {
@@ -267,7 +268,7 @@ function airspace() {
   const fields = N.fields.map(f => `<div class="li click" data-act="selField" data-id="${f.id}"><b>${esc(f.name)}</b><small>${esc(f.club)} · mood ${Math.round(f.mood)}% · ${f.today} movements today</small></div>`).join('');
   const d = N.day;
   // the controllers' load is shown from the start: the struggle comes before the tools to fix it
-  const work = `<span class="${N.work > 1 ? 'hostile' : N.work > 0.8 ? 'amber' : ''}">${U.pct(N.work || 0)}</span> · ${Math.round(N.load || 0)} flights’ worth of work for a team that handles ${N.cap}`;
+  const work = `<span class="${N.work > 1 ? 'hostile' : N.work > 0.8 ? 'amber' : ''}">${U.pct(N.work || 0)}</span> · ${Math.round(N.load || 0)} flights’ worth of work for a team that handles ${Math.round(N.cap)}${IC.modNote(S, 'ctlLoad') ? ' ' + IC.modNote(S, 'ctlLoad') : ''}`;
   if (IC.storyLock(S, 'airways')) return `<div class="card"><h3>Airspace<em>controllers work the old way</em></h3>
       ${kv([['Controllers’ workload', work], ['Airliners over us now', airOn.length], ['Separation lost today', `<span class="${d.los ? 'amber' : ''}">${d.los}</span>`], ['Near misses today', `<span class="${d.near ? 'hostile' : ''}">${d.near}</span>`], ['Departures held for spacing', N.stats.held]])}
       <p class="hint">Every flight flies direct and controllers keep them apart by the clock: slow, and it fails as the sky fills. ${esc(IC.storyLock(S, 'airways'))}</p></div>`;
@@ -324,16 +325,69 @@ function staff() {
   if (IC.civilAct(S)) return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3>
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)]])}<p class="hint">Finish each chapter's goals (the Next goal line, top left) to move on. The story also moves on by itself if you take too long.</p></div>
+    ${agenda()}
     ${chapters ? `<div class="card wide"><h3>Act I · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card wide"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
   const nextHow = st.act < 4 ? `<p class="hint">Finish this act's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)], ['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from ${st.act === 1 ? 'chapters' : 'goals'} and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
+    ${agenda()}
     ${chapters ? `<div class="card"><h3>Act I<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card"><h3>Delegates<em>${U.money(IC.staffCost(S))}/h</em></h3><div class="list">${dels}</div><p class="hint">Delegates do routine work for you, for a running cost.</p></div>
     <div class="card"><h3>Requests<em>spend command points</em></h3><div class="list">${reqs}</div></div>
     <div class="card"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
+}
+
+/* ---------- (brief 49) the Ministry's agenda: one policy at a time, a tree by act, pairs that rule each other out ---------- */
+const agDepth = (p, memo = {}) => memo[p.id] != null ? memo[p.id] : (memo[p.id] = Math.max(0, ...p.req.map(r => IC.agendaById(r)).filter(q => q.act === p.act).map(q => 1 + agDepth(q, memo))));
+const minsOf = m => `about ${Math.max(1, Math.round(m))} min of play`;
+function agenda() {
+  const A = IC.agendaState(S), st = S.story; if (!A) return '';
+  const cur = A.cur && IC.agendaById(A.cur.id), boss = st.act === 1 ? 'Minister' : 'cabinet';
+  const slot = cur ? `<div class="slot"><small>Before the ${boss}</small><b>${esc(cur.name)}</b><span>${minsOf(IC.agendaMin(cur) - A.cur.p)} left · passes about ${esc(U.date(S.time + IC.agendaLeft(S, cur.id), S))} at this speed</span><div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(cur) * 100)}%"></i></div></div>`
+    : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
+  const words = p => {
+    const done = A.done.has(p.id), now = cur === p, why = IC.agendaWhy(S, p.id), shut = A.closed.has(p.id);
+    const cls = done ? 'done' : now ? 'cur' : shut ? 'locked shut' : !why ? 'open' : 'locked';
+    const gives = [p.pay ? `${U.money(p.pay)} when passed` : '', p.opens ? `opens ${p.opens.map(k => ({ loans: 'loans from the banks', roads: 'roads to your airports' })[k] || k).join(', ')} now` : ''].filter(Boolean);
+    const cost = [p.cost ? U.money(p.cost) : 'free', p.conf ? `${p.conf > 0 ? '+' : '−'}${Math.abs(p.conf)} confidence` : '', minsOf(IC.agendaMin(p))].filter(Boolean).join(' · ');
+    const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Passed</span>` : now ? `<span class="amber">${U.pct(A.cur.p / IC.agendaMin(p))}</span>`
+      : why ? `<span class="need">${ui.icon('lock', 'sm')} ${esc(why)}</span>`
+      : `<button class="btn sm primary" data-act="agenda" data-v="${p.id}" title="${esc(cur ? `Drops “${cur.name}” and the ${Math.round(A.cur.p)} min of work on it` : `Put it to the ${boss}: ${p.cost ? U.money(p.cost) + ' now, ' : ''}${minsOf(IC.agendaMin(p))}`)}">${cur ? 'Swap for this' : 'Put forward'}</button>`;
+    return `<div class="tnode ${cls}" data-ag="${p.id}" data-req="${p.req.join(' ')}"${p.any ? ' data-any="1"' : ''}><b>${esc(p.name)}</b><p>${esc(p.d)}</p>${gives.length ? `<p class="opens">${esc(gives.join('; '))}</p>` : ''}${p.excl && !done && !shut ? `<p class="excl">Rules out “${esc(IC.agendaById(p.excl).name)}” for good.</p>` : ''}
+      <div class="meta"><span>${done ? '' : esc(cost)}</span>${act}</div>${now ? `<div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(p) * 100)}%"></i></div>` : ''}</div>`;
+  };
+  const memo = {}, cols = Math.max(...IC.AGENDA.map(p => agDepth(p, memo))) + 1;
+  const lanes = [1, 2, 3].map(n => {
+    const ps = IC.AGENDA.filter(p => p.act === n), passed = ps.filter(p => A.done.has(p.id)).length;
+    const col = d => {
+      const L = ps.filter(p => agDepth(p, memo) === d);
+      // a pair that rules each other out sits together, joined by a dashed "or"
+      return `<div class="tcol">${L.map((p, i) => (i && L[i - 1].excl === p.id ? '<div class="aor"><span>or</span></div>' : '') + words(p)).join('')}</div>`;
+    };
+    return `<div class="lane ${n > st.act ? 'later' : ''}"><div class="lname"><b>${IC.ACTS[n].name}</b><small>${esc(IC.ACTS[n].title)} · ${passed} of ${ps.length}</small></div>${Array.from({ length: cols }, (_, d) => col(d)).join('')}</div>`;
+  }).join('');
+  return `<div class="card wide"><h3>The Ministry’s agenda<em>one policy at a time · it passes in minutes of play, whatever the speed</em></h3><div class="slots2">${slot}</div>
+      <p class="hint">Passed policies stay for the rest of the Career. Some come in pairs: passing one rules the other out for good. Starting another drops the one before the ${boss} and its work.</p></div>
+    <div class="card wide tree"><h3>Policies<em>left to right: each step needs the one it is joined to</em></h3><div class="lanes agenda" style="--cols:${cols}">${lanes}<svg class="links" aria-hidden="true"></svg></div></div>`;
+}
+/* the lines between a policy and what it needs (dashed from another act), drawn once the nodes are laid out */
+function agendaLinks() {
+  const box = $('wrBody').querySelector('.lanes.agenda'), svg = box && box.querySelector('svg.links');
+  if (!svg) return;
+  const B = box.getBoundingClientRect(), at = {};
+  for (const n of box.querySelectorAll('.tnode')) { const r = n.getBoundingClientRect(); at[n.dataset.ag] = { l: r.left - B.left, r: r.right - B.left, t: r.top - B.top, y: r.top - B.top + Math.min(26, r.height / 2), done: n.classList.contains('done'), lane: n.closest('.lane') }; }
+  let d = '', dd = '', dx = '';
+  for (const n of box.querySelectorAll('.tnode[data-req]')) for (const id of n.dataset.req.split(' ').filter(Boolean)) {
+    const a = at[id], b = at[n.dataset.ag]; if (!a || !b) continue;
+    // from an earlier act: down from the bottom of that act's policy to the top of this one
+    if (a.lane !== b.lane) { const x0 = (a.l + a.r) / 2, x1 = Math.min(b.r - 14, Math.max(b.l + 14, x0)); dx += `M${x0} ${a.y}C${x0} ${(a.y + b.t) / 2} ${x1} ${(a.y + b.t) / 2} ${x1} ${b.t}`; continue; }
+    const mx = (a.r + b.l) / 2, p = `M${a.r} ${a.y}C${mx} ${a.y} ${mx} ${b.y} ${b.l} ${b.y}`;
+    if (a.done) dd += p; else d += p;
+  }
+  const html = `<path class="l" d="${d}"/><path class="l done" d="${dd}"/><path class="l x" d="${dx}"/>`;
+  if (svg.innerHTML !== html) { svg.setAttribute('width', B.width); svg.setAttribute('height', B.height); svg.innerHTML = html; }
 }
 
 /* ---------- air ---------- */
@@ -600,31 +654,37 @@ function intel() {
 /* ---------- research: a tree of choices, one lane per field, each step to the right needs the one before ---------- */
 const depthOf = (t, memo = {}) => memo[t.id] != null ? memo[t.id] : (memo[t.id] = t.req.length ? 1 + Math.max(...t.req.map(r => depthOf(IC.TECH.find(x => x.id === r), memo))) : 0);
 function research() {
-  const T = S.tech, free = T.slots.some(s => !s);
+  const T = S.tech, free = T.slots.some(s => !s), story = S.mode === 'story' && S.story;
   const slots = T.slots.map((s, i) => {
-    if (!s) return `<div class="slot idle"><small>Slot ${i + 1}</small><b>Free</b><span>Pick a project below.</span></div>`;
-    const t = IC.TECH.find(x => x.id === s.id);
-    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
-  }).join('');
+    if (!s) return `<div class="slot idle"><small>Slot ${i + 1}</small><b>Free</b><span>${esc(IC.techIdleText(S) ? 'Pick a project below: an idle slot is time lost.' : 'Nothing open to start.')}</span></div>`;
+    const t = IC.techById(s.id);
+    return `<div class="slot"><small>Slot ${i + 1}</small><b>${esc(t.name)}</b><span>${U.pct(s.prog)} · ${IC.techDur(S, t, 1 - s.prog)} left${story ? ` · lands in ${IC.techWhen(S, t, 1 - s.prog)} at this speed` : ''}</span><div class="prog"><i style="width:${s.prog * 100}%"></i></div></div>`;
+  }).join('') + (IC.techNextSlot(S) ? `<div class="slot next"><small>Slot ${T.slots.length + 1}</small><b>Not yet</b><span>${esc(IC.techNextSlot(S))}</span></div>` : '');
   const memo = {}, maxD = Math.max(...IC.TECH.map(t => depthOf(t, memo)));
   const node = t => {
-    const done = T.done.has(t.id), cur = IC.researching(S, t.id), reqOk = t.req.every(r => T.done.has(r));
-    const cls = done ? 'done' : cur ? 'cur' : reqOk ? 'open' : 'locked';
-    const opens = ui.techOpens(t);
+    const done = T.done.has(t.id), cur = IC.researching(S, t.id), reqOk = t.req.every(r => T.done.has(r)), shut = !done && !cur && IC.techClosed(S, t);
+    const cls = done ? 'done' : cur ? 'cur' : shut ? 'locked shut' : reqOk ? 'open' : 'locked';
+    const opens = ui.techOpens(t), x = t.excl && IC.techById(t.excl);
     const act = done ? `<span class="ok">${ui.icon('star', 'sm')} Done</span>` : cur ? `<span class="amber">${U.pct(cur.prog)} · ${IC.techDur(S, t, 1 - cur.prog)} left</span>`
-      : !reqOk ? `<span class="need">${ui.icon('lock', 'sm')} After ${t.req.filter(r => !T.done.has(r)).map(r => esc(IC.TECH.find(x => x.id === r).name)).join(' and ')}</span>`
-      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Both slots are busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}`}">Research</button>`;
-    return `<div class="tnode ${cls}" data-tech="${t.id}" data-req="${t.req.join(' ')}"><b>${esc(t.name)}${ui.newTag('tech:' + t.id)}</b><p>${esc(ui.techWords(t))}</p>${opens.length ? `<p class="opens">Opens: ${esc(opens.join(', '))}</p>` : ''}
-      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
+      : shut ? `<span class="need">${ui.icon('lock', 'sm')} ${esc(shut)}</span>`
+      : !reqOk ? `<span class="need">${ui.icon('lock', 'sm')} After ${t.req.filter(r => !T.done.has(r)).map(r => esc(IC.techById(r).name)).join(' and ')}</span>`
+      : `<button class="btn sm primary" data-act="research" data-v="${t.id}" ${!free || S.budget < t.cost ? 'disabled' : ''} title="${!free ? 'Every slot is busy' : S.budget < t.cost ? 'Not enough money' : `Start it: ${U.money(t.cost)} now, ready in ${IC.techDur(S, t)}${story ? `, in ${IC.techWhen(S, t)} at this speed` : ''}${x ? `. It rules out ${x.name} for good` : ''}`}">Research</button>`;
+    return `<div class="tnode ${cls}" data-tech="${t.id}" data-req="${t.req.join(' ')}"><b>${esc(t.name)}${ui.newTag('tech:' + t.id)}</b><p>${esc(ui.techWords(t))}</p>${opens.length ? `<p class="opens">Opens: ${esc(opens.join(', '))}</p>` : ''}${x && !done ? `<p class="excl">${T.done.has(x.id) ? 'Ruled out' : 'Rules out'}: ${esc(x.name)}</p>` : ''}
+      <div class="meta"><span>${done ? '' : `${U.money(t.cost)} · ${IC.techDur(S, t)}${story && !cur ? ` · ${IC.techWhen(S, t).replace(/, Year /, ' Y')}` : ''}`}</span>${act}</div>${cur ? `<div class="prog"><i style="width:${cur.prog * 100}%"></i></div>` : ''}</div>`;
   };
-  const lanes = IC.TECH_CATS.map(c => {
+  // the Career shows its own lanes first; a military lane it has not reached is one line
+  const cats = story ? IC.TECH_CATS.slice().sort((a, b) => (b.civil ? 1 : 0) - (a.civil ? 1 : 0)) : IC.TECH_CATS;
+  const lanes = cats.map(c => {
     const ts = IC.TECH.filter(t => t.cat === c.id);
+    if (!ts.length) return '';
+    if (!IC.techLaneOpen(S, c.id)) return `<div class="lane shut"><div class="lname"><b>${esc(c.name)}</b><small>${ts.length} projects</small></div><p class="hint">Opens with Act III.</p></div>`;
     const n = ts.filter(t => T.done.has(t.id)).length;
     const cols = Array.from({ length: maxD + 1 }, (_, d) => `<div class="tcol">${ts.filter(t => depthOf(t, memo) === d).map(node).join('')}</div>`).join('');
     return `<div class="lane"><div class="lname"><b>${esc(c.name)}</b><small>${n} of ${ts.length}</small></div>${cols}</div>`;
   }).join('');
-  return `<div class="card wide"><h3>Research<em>two projects at a time · each is paid when it starts</em></h3><div class="slots2">${slots}</div></div>
-    <div class="card wide tree"><h3>What to research<em>left to right: each step needs the one it is joined to</em></h3><div class="lanes" style="--cols:${maxD + 1}">${lanes}<svg class="links" aria-hidden="true"></svg></div></div>`;
+  const head = story ? 'each slot runs one project · paid when it starts · time is minutes of play: Wait does not finish it sooner' : `${T.slots.length} projects at a time · each is paid when it starts`;
+  return `<div class="card wide"><h3>Research<em>${head}</em></h3><div class="slots2">${slots}</div></div>
+    <div class="card wide tree"><h3>What to research<em>left to right: each step needs the one it is joined to · a lock with “Rules out” closes the other for good</em></h3><div class="lanes" style="--cols:${maxD + 1}">${lanes}<svg class="links" aria-hidden="true"></svg></div></div>`;
 }
 /* the lines between a project and what it needs, drawn once the nodes are laid out */
 function treeLinks() {
@@ -645,11 +705,11 @@ function treeLinks() {
 
 /* ---------- journal ---------- */
 function journal() {
-  const F = { all: () => true, alerts: l => l.kind === 'leak' || l.kind === 'warn', combat: l => ['SPLASH', 'IMPACT', 'LAUNCH', 'FIRE', 'BDA', 'HIT', 'DESTROYED', 'BURN', 'FRIED', 'HPM', 'LOST', 'MISS'].includes(l.tag), id: l => l.kind === 'id' || l.tag === 'VID' || l.tag === 'SUSPECT' || l.tag === 'DECEPTION', logistics: l => ['CONVOY', 'LOGI', 'HELI', 'LIFT', 'ORDER', 'DELIVERED', 'IMPORT', 'ENG', 'REPAIR'].includes(l.tag), staff: l => ['CDS', 'AD', 'LOG', 'INT', 'AIR', 'ENG', 'INS', 'CMD'].includes(l.tag) };
+  const F = { all: () => true, alerts: l => l.kind === 'leak' || l.kind === 'warn', combat: l => ['SPLASH', 'IMPACT', 'LAUNCH', 'FIRE', 'BDA', 'HIT', 'DESTROYED', 'BURN', 'FRIED', 'HPM', 'LOST', 'MISS'].includes(l.tag), id: l => l.kind === 'id' || l.tag === 'VID' || l.tag === 'SUSPECT' || l.tag === 'DECEPTION', logistics: l => ['KEEP STOCKED', 'CONVOY', 'LOGI', 'HELI', 'LIFT', 'ORDER', 'DELIVERED', 'IMPORT', 'ENG', 'REPAIR'].includes(l.tag), staff: l => ['CDS', 'AD', 'LOG', 'INT', 'AIR', 'ENG', 'INS', 'CMD'].includes(l.tag) };
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
   return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
-    <ol class="log${S.mode === 'story' ? ' cal' : ''}">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${l.at && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${l.at.x}" data-y="${l.at.y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
+    <ol class="log${S.mode === 'story' ? ' cal' : ''}">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${(l.at || l.rp) && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${(l.at || l.rp).x}" data-y="${(l.at || l.rp).y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
 }
 
 /* ---------- reference ---------- */
@@ -682,7 +742,7 @@ IC.settingsHTML = function (st, start) {
       ${IC.Q3D ? `<div class="rl"><span class="lbl">3D view picture</span>${seg('q3d', IC.q3d.get(), IC.Q3D.map(([k, n, t]) => [k, n, '', t]))}</div>` : ''}
       <div class="acts col">${onOff('cfg', 'combat', S.cfg.combat !== false, 'Combat time', 'While hostile weapons fly near what you are looking at, the clock eases down to a speed you can follow (half speed for the last seconds of an intercept), and back up when they are gone')}${onOff('cfg', 'shake', S.cfg.shake, 'Screen shake')}${onOff('cfg', 'bars', S.cfg.bars, 'Cinema bars on chapter cards')}${onOff('pauseRoom', '', ui.pauseRoom, 'Pause while a room is open')}</div></div>
     <div class="card"><h3>${IC.FOCUS.tutors ? 'Tutorials' : 'Hints'}</h3><div class="acts col">${onOff('hintsOn', '', ui.hintsOn, IC.FOCUS.tutors ? 'Show each feature the first time I meet it' : 'Show hints for new players', 'A ring on the real button or place, a line on what to do, and it moves on when you do it')}</div><div class="acts"><button class="btn" data-act="hintsReset">${IC.FOCUS.tutors ? 'Show every tutorial again' : 'Show every hint again'}</button></div><p class="hint">${IC.FOCUS.tutors ? 'A tutorial rings what to do and waits until you have done it. Skip puts it away; Show me in the Guide plays it again.' : 'Hints point at a part of the screen the first time it matters. Each shows once; Got it puts it away.'}</p></div>
-    <div class="card"><h3>Sound</h3><div class="slider"><span class="muted">Volume</span><input type="range" min="0" max="100" step="5" value="${Math.round(IC.sfx.vol * 100)}" data-act="vol" aria-label="Volume"><span class="num">${Math.round(IC.sfx.vol * 100)}%</span></div><div class="acts col">${onOff('mute', '', !(IC.sfx.muted || !IC.sfx.on), 'Sound')}</div></div>
+    <div class="card"><h3>Sound</h3>${[['vol', 'Volume', IC.sfx.vol, 'Everything'], ['music', 'Music', IC.sfx.musicVol, 'The score: calm in peacetime, tense as war comes, driving in a raid'], ['ambVol', 'Ambience', IC.sfx.ambVol, 'Wind, rain, birds and crickets, towns, the operations room']].map(([k, n, v, t]) => `<div class="slider" title="${t}"><span class="muted">${n}</span><input type="range" min="0" max="100" step="5" value="${Math.round(v * 100)}" data-act="${k}" aria-label="${n}"><span class="num">${Math.round(v * 100)}%</span></div>`).join('')}<div class="acts col">${onOff('mute', '', !(IC.sfx.muted || !IC.sfx.on), 'Sound')}</div></div>
     <div class="card"><h3>Pause the game when…<em>skip ahead (S) always stops on these</em></h3><div class="acts col">${[['event', 'A decision is waiting'], ['ballistic', 'A ballistic missile is launched'], ['raid', 'A major raid is forming'], ['lost', 'A unit or aircraft is lost'], ['base', 'An air base is hit'], ['city', 'A city is hit'], ['launch', 'Weapons are released in peacetime']].map(([k, n]) => onOff('pauseOn', k, ui.pauseOnIs(P, k), n)).join('')}</div></div>
     ${start ? '' : IC.savesCardHTML(S)}<div class="card"><h3>Credits</h3><p class="hint">The showcase airports are laid out from map data © OpenStreetMap contributors, available under the Open Database Licence (openstreetmap.org/copyright), with runway ends from OurAirports (public domain). The 3D view is drawn with the Three JS library (MIT licence). Airport and airline names in the game are its own.</p></div>`;
 };

@@ -23,7 +23,10 @@ const idNum = id => { let h = 7; for (const c of String(id)) h = (h * 31 + c.cha
 /* the airport's GA ramp: its linked, whole stands in the light-aircraft zone, tie-downs and small ones */
 IC.gaRamp = function (ap) {
   if (!ap || !ap.parts || ap.owner !== 'us' || ap.offline) return null;
-  const L = IC.aptStands(ap).filter(s => s.zone === 'light' && s.linked !== false && s.hp > 0 && (s.size === 'xs' || s.size === 's'));
+  // (a ramp is a light-aircraft apron with tie-downs; a plain light-aircraft apron's stands are genav.js's)
+  const L = [];
+  for (const p of ap.parts) if (p.kind === 'apron' && p.built && p.stands && p.stands.some(s => s.size === 'xs'))
+    for (const s of p.stands) if (s.zone === 'light' && s.linked !== false && s.hp > 0 && (s.size === 'xs' || s.size === 's')) L.push(s);
   return L.length ? L : null;
 };
 const recOf = (S, id) => S.ga && S.ga.parked.find(r => r.id === id);
@@ -148,7 +151,8 @@ function parked(S, apId, sid, o) {
    (flying to its approach fix, waiting there, or handed to the ground), false to fly on the old way */
 IC.gaInbound = function (S, t, dt) {
   const b = t.gaTo, ap = b && b.apt && S.byId[b.apt];
-  if (!ap || t.tow || t.form || t.visit || t.gaNo) return false;
+  // (genav.js flies its own: the helipads' helicopters and the aircraft of the larger light-aircraft stands)
+  if (!ap || t.tow || t.form || t.visit || t.gaNo || t.gav) return false;
   if (!t.gaIn) {
     if (U.dist(t, ap) > IC.GA.join + 20) return false;
     const T = IC.ACTYPES[t.acType] || IC.ACTYPES.light, r = t.gaRec && recOf(S, t.gaRec);

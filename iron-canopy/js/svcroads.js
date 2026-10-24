@@ -14,12 +14,12 @@
 const U = IC.U;
 const W = 0.075;   // a service road is 7.5 m wide: two lanes of airside vehicles
 IC.SVC_ROAD_W = W;
-const SPUR = { fuel: 1, cargo: 1, fire: 1, hangar: 1, tower: 1, atc: 1, gradar: 1, hydrant: 1, deice: 1, ammo: 1, has: 1 };
+const SPUR = { fuel: 1, cargo: 1, fire: 1, hangar: 1, tower: 1, atc: 1, gradar: 1, hydrant: 1, deice: 1, ammo: 1, has: 1, gaterm: 1 };
 
 /* what the network depends on: the pavement, the buildings it serves, the fence and the roads drawn by hand */
 function sig(ap) {
   let s = (IC.paveSig ? IC.paveSig(ap) : '') + '|' + (ap.svcRoads || []).length;
-  for (const p of ap.parts) if (p.built && SPUR[p.kind]) s += p.id + (p.x + p.y).toFixed(2);
+  for (const p of ap.parts) if (p.built && SPUR[p.kind]) s += p.id + (p.x + p.y).toFixed(2) + (p.link ? 'l' : '');
   const F = IC.aptFence(ap); if (F) s += F.poly.length + (F.poly[0].x + F.poly[0].y).toFixed(2);
   return s;
 }
@@ -27,7 +27,8 @@ const segHit = (A, B, C, D) => U.segX(A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y) >=
 function polyLine(P, closed) { return closed ? P.concat([P[0]]) : P; }
 
 /* The network, cached until the airport changes: { roads: [{ pts, w, kind, closed }], cross: [{ x, y, a, lane, w }] }.
-   kind: 'equip', 'edge', 'perim', 'spur' or 'drawn' */
+   kind: 'equip', 'edge', 'perim', 'spur', 'link', 'door' (a building's front onto its pavement), 'crash' (a fire
+   station's road onto the taxiway) or 'drawn' */
 IC.svcNet = function (ap) {
   if (!ap.parts || !ap.parts.length) return { roads: [], cross: [] };
   const k = sig(ap);
@@ -140,6 +141,29 @@ IC.svcNet = function (ap) {
       if (linked) break;
     }
     if (!linked) break;
+  }
+  // the way out of each building's front onto the pavement it faces (its link, IC.bldSnapBuilding), and a fire
+  // station's own road onto the nearest taxiway when it has none: its trucks go out the front onto the airfield, never
+  // round by the perimeter (QA: they used to leave by the back)
+  for (const p of blds) {
+    if (p.link && p.link.length > 1) { roads.push({ pts: p.link.map(q => ({ x: q.x, y: q.y })), w: W, kind: 'door', by: p.id }); continue; }
+    if (p.kind !== 'fire' || p.r) continue;
+    const f = IC.bldLayout(p).f, face = IC.rectWorld(p, -(p.w || 1) / 2 + (p.w || 1) * 0.325, f * (p.h || 0.6) / 2 + f * 0.02);
+    let best = null;
+    for (const pts of tws) for (let j = 1; j < pts.length; j++) {
+      const A = pts[j - 1], B = pts[j], L2 = U.dxy(A.x, A.y, B.x, B.y) ** 2 || 1e-9, t = U.clamp(((face.x - A.x) * (B.x - A.x) + (face.y - A.y) * (B.y - A.y)) / L2, 0, 1);
+      const q = { x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t }, d = U.dist(face, q);
+      if (d < 6 && (!best || d < best.d)) best = { q, d };
+    }
+    // (no taxiway near: a crash road to the edge of the nearest runway's shoulder, as fire stations have)
+    for (const r of rws) {
+      const d = IC.rwDir(r), n = { x: -d.y, y: d.x }, t = U.clamp(IC.rwT(r, face), 0.02, 0.98), c = IC.rwAt(r, t), off = (face.x - c.x) * n.x + (face.y - c.y) * n.y, sg = Math.sign(off) || 1, h = r.w / 2 + 0.27;
+      const q = { x: c.x + n.x * sg * h, y: c.y + n.y * sg * h }, dd = U.dist(face, q);
+      if (dd < 6 && (!best || dd + 0.1 < best.d)) best = { q, d: dd + 0.1, rw: true };
+    }
+    if (!best || onRunway(face, best.q) || throughBld(face, best.q, p)) continue;
+    const e = best.rw ? best.q : { x: face.x + (best.q.x - face.x) * (1 - 0.1 / best.d), y: face.y + (best.q.y - face.y) * (1 - 0.1 / best.d) };
+    roads.push({ pts: [face, e], w: W, kind: 'crash', by: p.id });
   }
   // the roads the player drew
   for (const r of ap.svcRoads || []) roads.push({ pts: r.pts, w: r.w || W, kind: 'drawn' });
@@ -260,7 +284,9 @@ IC.svcRoadEnds = function (S, ap) {
   const N = IC.svcNet(ap), out = [];
   const onRoad = (q, self) => N.roads.some(r => r !== self && polyLine(r.pts, r.closed).some((a, i, P) => i && U.segDist(q.x, q.y, P[i - 1].x, P[i - 1].y, a.x, a.y) < 0.03));
   const atThing = q => ap.parts.some(p => p.built && p.kind !== 'ils' && p.kind !== 'runway' && IC.partDist(ap, p, q) < 0.12);
-  for (const r of N.roads) if (!r.closed) for (const q of [r.pts[0], r.pts[r.pts.length - 1]]) out.push({ x: q.x, y: q.y, kind: r.kind, ok: onRoad(q, r) || atThing(q) });
+  // (a fire station's crash road ends at the runway's shoulder: that is where it goes)
+  const atRunway = q => ap.parts.some(p => p.kind === 'runway' && p.built && IC.partDist(ap, p, q) < 0.4);
+  for (const r of N.roads) if (!r.closed) for (const q of [r.pts[0], r.pts[r.pts.length - 1]]) out.push({ x: q.x, y: q.y, kind: r.kind, ok: onRoad(q, r) || atThing(q) || (r.kind === 'crash' && atRunway(q)) });
   return out;
 };
 

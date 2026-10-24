@@ -9,7 +9,7 @@ const U = IC.U;
 const TAU = Math.PI * 2;
 
 IC.classOf = t => t.d.cls === 'bal' ? (t.alt >= 90 ? 'mid' : 'bal') : t.d.cls;
-IC.powerFactor = S => 1 - 0.08 * S.infra.filter(i => i.kind === 'power' && i.offline).length;
+IC.powerFactor = S => { let n = 0; for (const i of S.infra) if (i.kind === 'power' && i.offline) n++; return 1 - 0.08 * n; };
 IC.isIded = t => t.aff === 'H' || t.aff === 'N';
 
 function buildSensors(S) {
@@ -48,10 +48,11 @@ function buildSensors(S) {
   // radars on the same band close together interfere unless the spectrum is planned
   const plan = S.flags && S.flags.spectrum ? 0.4 : 1;
   for (const u of S.units) { u.intf = 0; u.intfF = 1; }
-  for (const s of L) {
-    if (!s.band || s.passive) continue;
-    let n = 0;
-    for (const o of L) if (o !== s && o.band === s.band && !o.passive && U.dist(o, s) < 700) n++;
+  // (only radars that radiate on the same band are compared, each pair once: the pairs grow with the square of the list)
+  const B = L.filter(s => s.band && !s.passive), N = new Array(B.length).fill(0);
+  for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++) if (B[i].band === B[j].band && U.dist(B[i], B[j]) < 700) { N[i]++; N[j]++; }
+  for (let i = 0; i < B.length; i++) {
+    const s = B[i], n = N[i];
     if (!n) continue;
     const f = Math.max(0.6, 1 - 0.1 * n * plan);
     s.R *= f; s.err = (s.err || 0) * (1 + 0.4 * n * plan);
@@ -68,7 +69,7 @@ function buildSensors(S) {
 }
 
 function detects(s, t) {
-  const d = t.d, r = Math.hypot(s.x - t.x, s.y - t.y);
+  const d = t.d, r = U.hyp(s.x - t.x, s.y - t.y);
   // nothing is seen beyond three times a sensor's reach (the largest airliner's echo stretches it 2.8 times): most pairs end here
   if (r > s.R * 3) return false;
   if (s.bmdOnly && !(d.cls === 'bal' || d.cls === 'hgv')) return false;
@@ -147,7 +148,7 @@ function steady(S, t, dt) {
   t.coast = !t.det;
   t.held = !!t.tn && (t.det || age < IC.coastT(t));
   // how far it could be from the coasted position: radar error plus a turn it may have made since
-  const sp = Math.hypot(t.svx, t.svy);
+  const sp = U.hyp(t.svx, t.svy);
   t.unc = (t.perr || 0) + sp * Math.max(0, age - (t.pper || 1) * 1.2) * 0.35;
 }
 IC.trackUnc = t => ({ along: (t.unc || 0) * 1.5, across: t.unc || 0, a: Math.atan2(t.svy || t.vy || 0, t.svx || t.vx || 1) });
@@ -163,10 +164,10 @@ function groupTracks(S) {
   const R = IC.TRACK.groupR, cell = new Map(), key = (x, y) => Math.floor(x / R) * 65536 + Math.floor(y / R);
   L.forEach((t, i) => { const k = key(t.px, t.py); (cell.get(k) || cell.set(k, []).get(k)).push(i); });
   L.forEach((t, i) => {
-    const cx = Math.floor(t.px / R), cy = Math.floor(t.py / R), s1 = Math.hypot(t.svx, t.svy);
+    const cx = Math.floor(t.px / R), cy = Math.floor(t.py / R), s1 = U.hyp(t.svx, t.svy);
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const j of cell.get((cx + dx) * 65536 + cy + dy) || []) {
       if (j <= i) continue;
-      const o = L[j], s2 = Math.hypot(o.svx, o.svy);
+      const o = L[j], s2 = U.hyp(o.svx, o.svy);
       if ((t.aff === 'H') !== (o.aff === 'H') || U.dxy(t.px, t.py, o.px, o.py) > R) continue;
       if (Math.abs(s1 - s2) > 0.3 * Math.max(s1, s2) || Math.abs(U.angWrap(Math.atan2(t.svy, t.svx) - Math.atan2(o.svy, o.svx))) > 0.6) continue;
       par[find(i)] = find(j);
@@ -197,7 +198,7 @@ function timeToTarget(S, t) {
     const named = t.target && t.target.name && U.dxy(t.target.x, t.target.y, ax, ay) < 60 ? t.target.name : IC.bases(S).concat(IC.cities(S)).find(p => U.dxy(p.x, p.y, ax, ay) < 60);
     return { t: IC.timeToImpact(t), to: typeof named === 'string' ? named : named ? named.name : IC.nearestPlace(S, ax, ay) };
   }
-  const sp = Math.hypot(t.svx || 0, t.svy || 0);
+  const sp = U.hyp(t.svx || 0, t.svy || 0);
   if (sp < 0.05) return { t: Infinity, to: '' };
   const ux = t.svx / sp, uy = t.svy / sp;
   let best = null, bt = Infinity;

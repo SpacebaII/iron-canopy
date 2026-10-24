@@ -31,8 +31,11 @@ function landSide(ap, t) {
   let s = 0;
   for (const q of ap.parts) if (q.kind === 'apron' && q.w && IC.rectGap(q, t) < 0.6) s += IC.rectLocal(t, q).y > 0 ? -1 : 1;
   if (s) return Math.sign(s);
-  const c = ap.cityRef;
-  return c ? (IC.rectLocal(t, c).y >= 0 ? 1 : -1) : 1;
+  const c = ap.cityRef, pref = c ? (IC.rectLocal(t, c).y >= 0 ? 1 : -1) : 1;
+  // (a terminal with no apron of its own, its gates out on concourses: the side its landside fits on, the town's if both)
+  const own = ap.parts.some(q => q.kind === 'apron' && IC.partDist(ap, q, t) < Math.hypot(t.w || 0, t.h || 0) / 2 + 0.6);
+  if (!own && !IC.landClear(ap, t, IC.landEnvelope(ap, t, pref)) && IC.landClear(ap, t, IC.landEnvelope(ap, t, -pref))) return -pref;
+  return pref;
 }
 IC.landSide = landSide;
 /* ---------- a terminal's front side (brief 61) ---------- */
@@ -363,7 +366,7 @@ IC.landsideTick = function (S, ap, dt) {
   // (the main terminal's airport road a good stretch longer: the country's road is brought to its new end)
   const main = ap.parts.filter(p => p.kind === 'terminal').sort((a, b) => IC.partArea(b) - IC.partArea(a))[0];
   if (main && main.built && L.items.some(it => it.by === main.id)) { const s = Math.round(front(S, ap, main).free * 2); if (s !== L.gateS) { L.gateS = s; L.gateV = (L.gateV || 0) + 1; } }
-  if (added) { ap._box = null; const b = IC.partOutline(added).reduce((q, p) => ({ x0: Math.min(q.x0, p.x), y0: Math.min(q.y0, p.y), x1: Math.max(q.x1, p.x), y1: Math.max(q.y1, p.y) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }); IC.worldChanged && IC.worldChanged(S, { x0: b.x0 - 1, y0: b.y0 - 1, x1: b.x1 + 1, y1: b.y1 + 1 }); if (added.kind !== 'park' || L.items.filter(x => x.kind === 'park').length === 1) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
+  if (added) { ap._box = null; const b = IC.partOutline(added).reduce((q, p) => ({ x0: Math.min(q.x0, p.x), y0: Math.min(q.y0, p.y), x1: Math.max(q.x1, p.x), y1: Math.max(q.y1, p.y) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }); IC.worldChanged && IC.worldChanged(S, { x0: b.x0 - 1, y0: b.y0 - 1, x1: b.x1 + 1, y1: b.y1 + 1 }); if (IC.civilAdvice(S) && (added.kind !== 'park' || L.items.filter(x => x.kind === 'park').length === 1)) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo; the player's own car parks too
   const A = IC.landAccess(S, ap);
   let v = 0;
