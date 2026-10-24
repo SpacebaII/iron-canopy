@@ -521,7 +521,27 @@ function handsPanel(b, st, X) {
     <div class="acts"><button class="act" data-act="aptTab" data-v="rules" title="The tower's rules: when aircraft may go onto a runway">Tower rules</button>${S.asp && !IC.storyLock(S, 'airspace') ? '<button class="act" data-act="aptTab" data-v="asp" title="Controlled airspace round the airport">Airspace</button>' : ''}<button class="act" data-act="aptZoom">Zoom to it</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div></div>`;
   const cards = A ? `${ex('score', 'Airline scorecards')}${O.score ? scorecardHTML(b) : ''}` : '';
   const gse = IC.FOCUS.gse && b.st && b.st.longest > 0 ? `<div class="sec">${ex('fleet', 'Ground vehicles')}${O.fleet ? fleetHTML(b) : ''}</div>` : '';
-  return `<div class="ibody">${nums}${chain}${probs}${deals}${works}${day}${cards ? `<div class="sec">${cards}</div>` : ''}${gse}${more}</div>`;
+  return `<div class="ibody">${nums}${chain}${probs}${IC.FOCUS.ops ? opsHTML(b, O) : ''}${deals}${works}${day}${cards ? `<div class="sec">${cards}</div>` : ''}${gse}${more}</div>`;
+}
+/* (brief 71) operations now: incidents with their bars and calls, each runway's state, the turnarounds on the stands,
+   and the last few incidents with what caused them */
+function opsHTML(b, O) {
+  if (!b.st || !b.st.longest) return '';
+  const N = IC.opsNow(S, b), turns = N.turns, rec = IC.opsRecent(b, 3);
+  const incRow = inc => {
+    const st = IC.opsStage(inc), K = IC.OPS_INC[inc.kind];
+    const btn = (op, label, pri) => `<button class="btn sm ${pri ? 'primary' : ''}" data-act="opsDo" data-op="${op}" data-v="${esc(inc.id)}" data-ap="${esc(b.id)}">${esc(label)}</button>`;
+    const acts = st.k === 'ask' ? btn('close', 'Close and sweep', true) + btn('open', 'Keep it open') : st.k === 'open' ? btn('close', 'Close and sweep now', true) : IC.opsRushOk(inc) ? btn('rush', `Rush · ${U.money(IC.OPS.rushCost)}`) : '';
+    return `<div class="li"><b class="${K.col === 'red' ? 'hostile' : 'amber'}">${esc(K.name)}</b><small>${esc(inc.what.charAt(0).toUpperCase() + inc.what.slice(1))}. Now: ${esc(U.lc(IC.OPS_STG[st.k]))}${st.k === 'open' ? '' : `, ${U.dur(Math.max(30, IC.opsLeft(S, inc)))} to go`}. Cause: ${esc(inc.cause)}.</small>${ui.bar(IC.opsProg(inc), K.col === 'red' ? 'var(--hostile)' : 'var(--amber)')}${acts ? `<span class="la">${acts}</span>` : ''}</div>`;
+  };
+  const rwRow = r => `<div class="li"><b>${esc(r.rw.name)}</b><small class="${r.shut || r.works ? 'amber' : ''}">${r.shut ? esc(r.shut.replace(/^runway closed: /, 'Closed: ')) : r.works ? 'Closed for works' : 'Open'}${r.dep ? ` · ${r.dep} waiting to depart` : ''}${r.arr ? ` · ${r.arr} arrival${r.arr > 1 ? 's' : ''} holding` : ''}</small></div>`;
+  const tRow = x => `<div class="li"><b>${esc(x.tl.cs)} <small>stand ${esc(IC.standName(x.s))}</small></b><small class="${x.held ? 'amber' : ''}">${esc(IC.tailPhase(S, x.tl))}</small>${ui.bar(x.f, x.held ? 'var(--hostile)' : x.f >= 1 ? 'var(--ok)' : 'var(--amber)')}</div>`;
+  const shown = O.opsAll ? turns : turns.slice(0, 4);
+  return `<div class="sec ops"><h3 class="sh">Operations now <em>${N.inc.length ? `${N.inc.length} incident${N.inc.length > 1 ? 's' : ''} · ` : ''}${N.stands - N.free} of ${N.stands} stands in use</em></h3>
+    ${N.inc.length ? `<div class="list">${N.inc.map(incRow).join('')}</div>` : ''}
+    <div class="list">${N.rw.map(rwRow).join('')}</div>
+    ${turns.length ? `<div class="list">${shown.map(tRow).join('')}</div>${turns.length > 4 ? `<button class="more" data-act="aptOpen" data-v="opsAll">${O.opsAll ? 'Fewer ▴' : `All ${turns.length} turnarounds ▾`}</button>` : ''}` : '<p class="hint">No airliner is being turned round.</p>'}
+    ${rec.length ? `<button class="more" data-act="aptOpen" data-v="opsRec">${O.opsRec ? 'Hide the last incidents ▴' : `The last ${rec.length} incident${rec.length > 1 ? 's' : ''} ▾`}</button>${O.opsRec ? `<div class="list">${rec.map(r => `<div class="li"><b>${esc(IC.OPS_INC[r.kind].name)} <small>${U.hhmm(r.t0)} · ${U.dur(r.took)}</small></b><small>${esc(r.cause.charAt(0).toUpperCase() + r.cause.slice(1))}. ${esc(r.fix)}</small></div>`).join('')}</div>` : ''}` : ''}</div>`;
 }
 /* ---------- the Airspace tab: the airport's shape, drawn from above like a chart; controllers and stacks ---------- */
 const lvlT = a => a <= 0.01 ? 'the ground' : IC.flText(a);
@@ -699,7 +719,9 @@ function workRow(b, w, i) {
   // a job waiting for money says how long the treasury needs, and offers to wait for it
   const broke = w.stages && /money/.test(w.wait || ''), t = broke && IC.waitTargets(S).find(x => x.work === w.id);
   const wait = t && (S.mode === 'story' || S.mode === 'sandbox') ? `<button class="btn sm" data-act="wait" data-v="${esc(t.key)}" title="Time runs fast until there is enough to finish it, the month turns, or something needs you">Wait</button>` : '';
-  return `<div class="li"><b>${esc(w.label)}</b><small>${what} · ${w.wait ? `<span class="amber">${esc(w.wait)}</span>` : `${U.dur(left)} left`}${t ? ` · ${esc(IC.waitText(S, t))}` : ''}</small><span class="la">${wait}${when}<button class="btn sm" data-act="bcancel" data-id="${w.id}" title="Cancel: money already spent is lost">✕</button></span></div>`;
+  // (brief 71) its bar, and a rush for the impatient
+  const rush = w.stages && !w.rush && w.si < w.stages.length ? `<button class="btn sm" data-act="brush" data-id="${w.id}" ${S.budget < IC.bldRushCost(w) ? 'disabled' : ''} title="A second crew and night shifts: what is left takes half the time (${U.dur(left / 2)} instead of ${U.dur(left)}). Materials still have to come.">Rush · ${U.money(IC.bldRushCost(w))}</button>` : '';
+  return `<div class="li"><b>${esc(w.label)}${w.rush ? ' <em class="amber">rushed</em>' : ''}</b><small>${what} · ${w.wait ? `<span class="amber">${esc(w.wait)}</span>` : `${U.dur(left)} left`}${t ? ` · ${esc(IC.waitText(S, t))}` : ''}</small>${w.stages ? ui.bar(w.prog, w.wait ? 'var(--amber)' : 'var(--ok)') : ''}<span class="la">${wait}${rush}${when}<button class="btn sm" data-act="bcancel" data-id="${w.id}" title="Cancel: money already spent is lost">✕</button></span></div>`;
 }
 /* the materials stockpile and where it comes from */
 function yard(b) {

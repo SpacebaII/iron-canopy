@@ -206,7 +206,18 @@ function topbar() {
 function incidents() {
   const L = IC.activeIncidents(S).slice(0, 4);
   ui.incRefs = L;
-  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}" data-k="${it.id}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY', separation: 'SEPARATION LOST', nearmiss: 'NEAR MISS', infringe: 'INFRINGEMENT' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button></div>`).join(''));
+  setHTML($('incidents'), L.map((it, i) => `<div class="inc ${it.level}" data-k="${it.id}"><button class="go" data-act="incGo" data-v="${i}"><b>${esc({ offroute: 'OFF ROUTE', launch: 'WEAPONS RELEASED', intrusion: 'INTRUDER', collision: 'MAYDAY', violation: 'AIRSPACE VIOLATION', ballistic: 'BALLISTIC', ground: 'GROUND', runway: 'RUNWAY', ops: it.ref && IC.OPS_INC[it.ref.kind] ? IC.OPS_INC[it.ref.kind].tag : 'AIRPORT', separation: 'SEPARATION LOST', nearmiss: 'NEAR MISS', infringe: 'INFRINGEMENT' }[it.kind] || it.kind.toUpperCase())}</b><span>${esc(it.text)}</span><time>${U.hhmm(it.t)}</time></button><button class="x" data-act="incX" data-v="${it.id}" aria-label="Dismiss">✕</button>${it.kind === 'ops' ? opsRow(it.ref) : ''}</div>`).join(''));
+}
+/* (brief 71) an airport incident: its bar, and the call it waits for or the rush it can take */
+function opsRow(inc) {
+  if (!inc || inc.done) return '';
+  const st = IC.opsStage(inc), ap = S.byId[inc.ap], f = IC.opsProg(inc);
+  const btn = (op, label, tip, pri) => `<button class="btn sm ${pri ? 'primary' : ''}" data-act="opsDo" data-op="${op}" data-v="${esc(inc.id)}" data-ap="${esc(inc.ap)}" title="${esc(tip)}">${esc(label)}</button>`;
+  let acts = '';
+  if (st.k === 'ask') acts = btn('close', 'Close and sweep', `The runway closes for about ${U.dur(IC.opsLeft(S, inc) - (st.dur - inc.t))}: arrivals hold${ap && (ap.st.rwy || []).length > 1 ? ' or use the other runway' : ''}.`, true) + btn('open', 'Keep it open', `Flights keep going; each one over the debris risks a cut tyre or a damaged engine (about ${Math.round(IC.OPS.openRisk * 100)}% each). It is swept at the next inspection.`) + `<small>${U.dur(Math.max(0, st.dur - inc.t))} to decide</small>`;
+  else if (st.k === 'open') acts = btn('close', 'Close and sweep now', 'Close the runway and sweep it.', true) + `<small>${inc.over || 0} over it so far</small>`;
+  else if (IC.opsRushOk(inc)) acts = btn('rush', `Rush · ${U.money(IC.OPS.rushCost)}`, `Every crew and machine there is: ${U.lc(IC.OPS_STG[st.k])} takes half the time left.`, false);
+  return `<div class="opsrow"><div class="opsbar"><i style="width:${(f * 100).toFixed(1)}%"></i></div>${acts ? `<div class="opsacts">${acts}</div>` : ''}</div>`;
 }
 /* decisions: one card at a time */
 function evcard() {

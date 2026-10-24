@@ -40,7 +40,7 @@ IC.BB_TABS = [
   { k: 'ap', key: '3', name: 'Aprons & stands', items: ['apdraw', 'apron', 'remote', 'ramp', 'garamp', 'stand', 'stretch', 'reshape', 'helipad', 'alert'] },
   { k: 'tm', key: '4', name: 'Terminals & piers', items: ['tmdraw', 'terminal', 'concourse', 'rotunda', 'satellite', 'curved', 'semicircle', 'pierT', 'pierY', 'pierX', 'skybridge', 'people'] },
   { k: 'cg', key: '5', name: 'Cargo & hangars', items: ['cargo', 'hangar', 'gaterm', 'has', 'ammo'] },
-  { k: 'fs', key: '6', name: 'Fuel & services', items: ['fuel', 'hydrant', 'fuelpad', 'deice', 'fire'] },
+  { k: 'fs', key: '6', name: 'Fuel & services', items: ['fuel', 'hydrant', 'fuelpad', 'deice', 'fire', 'opsbase'] },
   { k: 'ls', key: '7', name: 'Landside & roads', items: ['svcroad', 'road:lc', 'road:rd', 'road:hw', 'carpark'] },
   { k: 'nv', key: '8', name: 'Navaids & radar', items: ['ils', 'tower', 'atc', 'gradar'] },
   { k: 'lk', key: '9', name: 'Looks & paint', items: ['surface'] },
@@ -95,7 +95,7 @@ const USE = {
   pierY: 'a pier that forks at its end', pierX: 'four piers from a hub', skybridge: 'a walkway over a taxiway', people: 'a train from the terminal to its concourses',
   cargo: 'freighters load and unload here', hangar: 'maintenance: airlines want some based here', has: 'protects one fighter flight', ammo: 'weapons for the air wing',
   fuel: 'fuel for departures, by truck', hydrant: 'fuel piped under the stands', fuelpad: 'a stand to refuel at', deice: 'de-icing on frosty mornings', helipad: 'helicopters land here, off the runway', gaterm: 'brings business jets; light aircraft pay handling',
-  fire: 'crash rescue: needed for large aircraft', ils: 'landings in fog, at one runway end', tower: 'clearances: many more movements an hour',
+  fire: 'crash rescue: needed for large aircraft', opsbase: 'sweepers and recovery: incidents cleared sooner', ils: 'landings in fog, at one runway end', tower: 'clearances: many more movements an hour',
   atc: 'closer spacing of arrivals', gradar: 'the tower sees aircraft on the ground in fog', surface: 'grass, gravel, paving or planting', blueprint: 'a whole real airport',
   mylayout: 'what you built once, placed again', extend: 'a runway made longer at one end, kept open', savelay: 'keep part of this airport as a layout',
   svcroad: 'an airside road for the ground vehicles', 'road:lc': 'a two-lane road to the nearest road', 'road:rd': 'a main road to a town', 'road:hw': 'a motorway spur and interchange', carpark: 'parking outside the airfield: income'
@@ -109,6 +109,7 @@ const NEEDS = {
   curved: 'Room for its aprons.', semicircle: 'A road from the town to its kerb.', pierT: 'A terminal at its root.', pierY: 'A terminal at its root.', pierX: 'A people mover from the terminal.', skybridge: 'A taxiway to bridge, between two terminal buildings.', people: 'A terminal and a concourse to join.',
   cargo: 'An apron beside it.', hangar: 'A taxiway to its door.', has: 'A taxiway to its door.', fuel: 'Room for its tanks, 100 m from other fuel: one fire takes all that is close.',
   hydrant: 'Fuel tanks; stands within reach of its pipes.', fuelpad: 'A taxiway, near the fuel farm.', deice: 'A taxiway near the runway ends.', helipad: 'Open ground inside the fence, away from the runway.', gaterm: 'A light-aircraft apron beside it (an apron in the light-aircraft zone).',
+  opsbase: 'A taxiway or service road; close to the runways, so its vehicles get there quickly.',
   fire: 'A place from which trucks reach every point of every runway in 3 minutes; heavy jets land only there.', ils: 'A runway end, and research for the best category.', tower: 'A clear view of every runway, within 8 km and over the roofs.',
   atc: 'Nothing: it covers about 110 km.', gradar: 'Research (Career).', surface: 'Nothing. Aircraft never use it.', blueprint: 'A flat site big enough for it.',
   mylayout: 'A layout saved with Save layout; room for it, clear of what is built.', extend: 'A built runway, and clear ground beyond its end.', savelay: 'Parts of this airport inside the box.',
@@ -197,6 +198,7 @@ function thumb(k) {
     case 'hydrant': apron(0, 0, 132, 76); g.strokeStyle = '#4a6e96'; lw(2); g.beginPath(); g.moveTo(0, 60); g.lineTo(132, 60); for (const x of [22, 54, 86, 118]) { g.moveTo(x, 60); g.lineTo(x, 26); } g.stroke(); for (const x of [22, 54, 86, 118]) { g.fillStyle = '#8fb4dc'; g.beginPath(); g.arc(x, 26, 3, 0, 7); g.fill(); } break;
     case 'fuelpad': taxi([[0, 60], [132, 60]]); apron(34, 12, 64, 40); g.strokeStyle = Y; lw(1); g.strokeRect(38, 16, 56, 32); g.fillStyle = '#c83c32'; g.fillRect(84, 38, 7, 6); plane(62, 32, 0, 1); break;
     case 'deice': taxi([[0, 60], [132, 60]]); apron(24, 8, 84, 46); g.strokeStyle = '#5ac88c'; lw(1); g.strokeRect(28, 12, 76, 38); g.fillStyle = '#ec7828'; g.fillRect(30, 28, 6, 6); g.fillRect(96, 28, 6, 6); plane(66, 31, 0, 1.3); break;
+    case 'opsbase': bld(20, 14, 92, 40, '#d8b23c'); for (const x of [26, 50, 74, 98]) { g.fillStyle = '#3c3c3a'; g.fillRect(x, 20, 16, 26); } g.fillStyle = conc; g.fillRect(20, 56, 92, 16); for (const x of [30, 62, 90]) { g.fillStyle = '#ecc030'; g.fillRect(x, 60, 14, 8); } break;
     case 'helipad': apron(36, 8, 60, 60); g.strokeStyle = '#f4f4ee'; lw(3); g.beginPath(); g.arc(66, 38, 22, 0, 7); g.stroke(); g.fillStyle = '#f4f4ee'; g.fillRect(55, 26, 5, 24); g.fillRect(72, 26, 5, 24); g.fillRect(55, 36, 22, 4); break;
     case 'gaterm': apron(0, 46, 132, 30); bld(34, 12, 64, 30, '#c4baa8'); g.fillStyle = 'rgba(130,178,210,0.9)'; g.fillRect(40, 24, 52, 6); plane(30, 62, 0, 0.7); plane(66, 62, 0, 0.7); plane(102, 62, 0, 0.7); break;
     case 'fire': bld(28, 12, 76, 46, '#b04638'); g.fillStyle = '#fff'; g.fillRect(60, 20, 12, 30); g.fillRect(50, 30, 32, 10); g.fillStyle = conc; g.fillRect(28, 58, 76, 14); break;

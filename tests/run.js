@@ -632,6 +632,104 @@ test('airport: a crash closes the runway, is investigated and costs confidence',
   for (let i = 0; i < 3600 * 2 && S.camp.cards.length === cards; i++) tick(S, 0.5);
   assert(S.camp.cards.some(c => /cause/.test(c.text)), 'no investigation card stating the cause');
 });
+/* (brief 71) airport operations: incidents with a cause, a response that takes its time, and a closure */
+const opsTick = (S, dt) => { tick(S, dt); IC.opsTick(S, dt); };
+const opsGame = () => { const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 }); const ap = S.byId[S.story.cap]; sky(S, 'clear'); calm(S, ap.rwyA, 5); IC.aptStats(S, ap); return { S, ap, rw: ap.parts.find(p => p.kind === 'runway' && p.built) }; };
+const landProbe = (S, ap) => { ap.cfg = null; const s = IC.aptStands(ap).find(x => !x.occ && x.linked && x.size !== 's' && x.zone !== 'light'); const m = IC.gopsLand(S, ap, { type: 'narrow', target: s.id, stand: s, who: 'TST 9' }); if (m && m.id) { ap.moves = ap.moves.filter(x => x !== m); ap.rl = {}; } return m; };
+test('airport ops: debris waits for the call, closing the runway holds arrivals until it is swept', () => {
+  const { S, ap, rw } = opsGame();
+  const inc = IC.opsDebris(S, ap, rw);
+  assert(inc && IC.opsStage(inc).k === 'ask', 'the report does not wait for a call');
+  assert(!(ap.opsShut && Object.keys(ap.opsShut).length), 'the runway closed before anyone decided');
+  assert(S.inc.list.some(x => x.kind === 'ops' && x.ref === inc), 'the report is not in the list of things that must not be missed');
+  assert(IC.opsDecide(S, ap, inc.id, 'close'), 'closing it was refused');
+  assert(landProbe(S, ap) === 'hold', 'an arrival was cleared onto a runway closed for sweeping');
+  assert(/closed/.test(IC.opsNow(S, ap).rw[0].shut), 'the panel does not say the runway is closed');
+  let n = 0; for (; n < 4 * 7200 && !inc.done; n++) opsTick(S, 0.25);
+  assert(inc.done, `still ${IC.opsStage(inc).k} after two hours`);
+  assert(!Object.keys(ap.opsShut || {}).length, 'the runway stayed closed');
+  assert(landProbe(S, ap).id, 'arrivals still held after the sweep');
+  assert(IC.opsRecent(ap)[0].cause, 'no record of what caused it');
+});
+test('airport ops: unanswered the tower closes it; kept open, aircraft over the debris get damaged', () => {
+  const { S, ap, rw } = opsGame();
+  const a = IC.opsDebris(S, ap, rw);
+  for (let i = 0; i < 4 * (IC.OPS.ask + 10); i++) opsTick(S, 0.25);
+  assert(IC.opsStage(a).k !== 'ask' && ap.opsShut && Object.values(ap.opsShut).includes(a.id), 'nobody closed the runway when the player did not answer');
+  const S2 = opsGame(), b = IC.opsDebris(S2.S, S2.ap, S2.rw);
+  IC.opsDecide(S2.S, S2.ap, b.id, 'open');
+  assert(!Object.keys(S2.ap.opsShut || {}).length, 'kept open, it closed anyway');
+  const tl = S2.S.av.tails[0], was = IC.OPS.openRisk; IC.OPS.openRisk = 1;
+  IC.emit(S2.S, 'rwMove', { ap: S2.ap, k: 'dep', type: tl.type, rw: S2.rw, m: { tail: tl.id, who: tl.cs } });
+  IC.OPS.openRisk = was;
+  assert(tl.dmg && tl.dmg.until > S2.S.time, 'an aircraft ran over the debris unharmed');
+});
+test('airport ops: an operations base near the runway clears debris sooner than the contractor', () => {
+  const A = opsGame(), a = IC.opsDebris(A.S, A.ap, A.rw); IC.opsDecide(A.S, A.ap, a.id, 'close');
+  const B = opsGame(), c = IC.rwAt(B.rw, 0.4), d = IC.rwDir(B.rw);
+  const base = IC.aptPlanPart(B.S, B.ap, 'opsbase', c.x - d.y * 3, c.y + d.x * 3, Math.atan2(d.y, d.x), 0.8, 0.5, {});
+  assert(base, 'the operations base could not be placed');
+  for (let i = 0; i < 60 && B.ap.works.length; i++) { for (const w of B.ap.works) w.prog = 1; IC.updateBases(B.S, 0.1); }
+  assert(base.built, 'the operations base was not built');
+  const b = IC.opsDebris(B.S, B.ap, B.rw); IC.opsDecide(B.S, B.ap, b.id, 'close');
+  assert(b.from === base.id && IC.opsLeft(B.S, b) < IC.opsLeft(A.S, a) * 0.7, `with a base ${U.dur(IC.opsLeft(B.S, b))}, without ${U.dur(IC.opsLeft(A.S, a))}`);
+  // rushing the sweep halves what is left of it
+  for (let i = 0; i < 4 * 3600 && IC.opsStage(b).k !== 'sweep'; i++) opsTick(B.S, 0.25);
+  const left = IC.opsLeft(B.S, b), money = B.S.budget;
+  assert(IC.opsRush(B.S, B.ap, b.id) && IC.opsLeft(B.S, b) < left && B.S.budget < money, 'rushing the sweep did nothing');
+});
+test('airport ops: an arrival off the side of the runway closes it until it is lifted back, then taxis in', () => {
+  const { S, ap } = opsGame();
+  IC.OPS.force = 'excursion';
+  const s = IC.aptStands(ap).find(x => !x.occ && x.linked && x.size !== 's' && x.zone !== 'light');
+  const m = IC.gopsLand(S, ap, { type: 'narrow', target: s.id, stand: s, who: 'TST 2', tail: S.av.tails[0] });
+  assert(m && m.id, `no landing: ${m}`);
+  let inc = null; for (let i = 0; i < 4 * 600 && !inc; i++) { opsTick(S, 0.25); inc = ((ap.incs && ap.incs.list) || []).find(x => x.kind === 'excursion'); }
+  IC.OPS.force = null;
+  assert(inc && m.phase === 'off', 'the arrival did not leave the runway');
+  assert(U.dist(m, IC.rwAt(m.plan.rw, U.clamp(IC.rwT(m.plan.rw, m), 0, 1))) > (m.plan.rw.w || 0.45) / 2, 'it is still on the pavement');
+  assert(landProbe(S, ap) === 'hold', 'arrivals were cleared with an aircraft in the grass');
+  for (let i = 0; i < 4 * 4 * 3600 && !inc.done; i++) opsTick(S, 0.25);
+  assert(inc.done && m.phase !== 'off', `still ${IC.opsStage(inc).k}`);
+  assert(S.av.tails[0].dmg, 'the aircraft was not grounded for an inspection');
+});
+test('airport ops: a fuel spill closes the stand and holds the aircraft on it', () => {
+  const { S, ap } = opsGame();
+  const s = IC.aptStands(ap).find(x => !x.occ && x.linked && x.size !== 's' && x.zone !== 'light'), tl = S.av.tails.find(t => !t.T.mil && t.T.seats);
+  tl.where = 'stand'; tl.at = ap.id; tl.stand = s.id; tl.t = 600; s.occ = tl.id;
+  IC.opsSpill(S, ap, s, tl);
+  const inc = ap.incs.list.find(x => x.kind === 'spill');
+  assert(inc && s.shut === inc.id, 'the stand did not close');
+  assert(tl.t > 600 && /Grounded/.test(IC.tailPhase(S, tl)), `the aircraft is not held: ${IC.tailPhase(S, tl)}`);
+  assert(IC.avFreeStand(S, ap, tl.T) !== s, 'a closed stand was offered to an arrival');
+  for (let i = 0; i < 4 * 4 * 3600 && !inc.done; i++) opsTick(S, 0.25);
+  assert(inc.done && !s.shut, 'the stand stayed closed');
+});
+test('building: rushing a job costs extra and halves the time left', () => {
+  const { S, ap, rw } = opsGame();
+  S.budget = 5000;
+  const c = IC.rwAt(rw, 0.7), d = IC.rwDir(rw);
+  const p = IC.aptPlanPart(S, ap, 'cargo', c.x - d.y * 4.4, c.y + d.x * 4.4, Math.atan2(d.y, d.x), 2, 1, {});
+  const w = ap.works.find(x => x.part === p);
+  for (let i = 0; i < 600; i++) IC.updateBases(S, 0.5);
+  const left = IC.workLeft(w), money = S.budget, cost = IC.bldRushCost(w);
+  assert(IC.bldRush(S, ap, w), 'rush refused');
+  assert(Math.abs(IC.workLeft(w) - left / 2) < 1 && Math.abs(money - S.budget - cost) < 1e-6, `left ${U.dur(left)} → ${U.dur(IC.workLeft(w))}, paid ${money - S.budget}`);
+  assert(!IC.bldRush(S, ap, w), 'rushed twice');
+  for (let i = 0; i < 4 * 3600 && !p.built; i++) IC.updateBases(S, 0.5);
+  assert(p.built, 'the rushed job never finished');
+});
+test('airport ops: an incident under way is saved and goes on after loading', () => {
+  const { S, ap, rw } = opsGame();
+  const inc = IC.opsDebris(S, ap, rw); IC.opsDecide(S, ap, inc.id, 'close');
+  for (let i = 0; i < 400; i++) opsTick(S, 0.25);
+  const S2 = IC.loadSave(IC.saveGame(S)), ap2 = S2.byId[ap.id], inc2 = ap2.incs.list.find(x => x.id === inc.id);
+  assert(inc2 && !inc2.done && ap2.opsShut && Object.values(ap2.opsShut).includes(inc2.id), 'the incident or its closure was lost');
+  const it = S2.inc.list.find(x => x.kind === 'ops');
+  assert(it && it.ref === inc2, 'the list entry no longer points at the incident');
+  for (let i = 0; i < 4 * 7200 && !inc2.done; i++) opsTick(S2, 0.25);
+  assert(inc2.done && !Object.keys(ap2.opsShut || {}).length, 'after loading it never ended');
+});
 test('airport: a step with 150 aircraft moving stays within budget', () => {
   const { S, ap } = kdenGame(12345, 10);
   sky(S, 'clear'); calm(S, -Math.PI / 2, 12);
@@ -2204,7 +2302,7 @@ test(`showcase: a day at ${k === 'mini' ? 'the small test layout' : IC.REAL_APT[
     // (what the oldest is doing, when it has been there too long)
     for (const m of ap.moves.filter(x => S.time - x.born > 2 * 3600).slice(0, 3)) {
       const st = m.path && m.path[m.pi], on = st && ap.eo && ap.eo.get(st.e.key) || [];
-      console.log(`          ${m.who} ${m.kind} ${m.type} phase=${m.phase} holding=${m.holding || '-'} wait=${U.dur(m.waitT || 0)} node=${m.node} step=${m.pi}/${m.path ? m.path.length : '-'} next=${st ? st.e.kind + ' ' + st.e.key + ' len ' + st.e.len.toFixed(2) : '-'} t=${Math.round(m.t || 0)} stuck=${!!m.stuck} tow=${!!m.tow} at ${m.x.toFixed(1)},${m.y.toFixed(1)}; on that edge: ${on.map(o => `${o.m.who} ${o.m.kind} ${o.m.phase} d=${o.d}${o.pre ? ' pre' : ''} dead=${!!o.m.dead} in moves=${ap.moves.includes(o.m)} hold=${o.m.holding || '-'} node=${o.m.node} s=${(o.m.s || 0).toFixed(2)}`).join(' | ') || 'nobody'}; claim=${ap.claim && ap.claim.get(st.e.key) ? ap.claim.get(st.e.key).m.who : '-'}`);
+      console.log(`          ${m.who} ${m.kind} ${m.type} phase=${m.phase} holding=${m.holding || '-'} wait=${U.dur(m.waitT || 0)} node=${m.node} step=${m.pi}/${m.path ? m.path.length : '-'} next=${st ? st.e.kind + ' ' + st.e.key + ' len ' + st.e.len.toFixed(2) : '-'} t=${Math.round(m.t || 0)} stuck=${!!m.stuck} tow=${!!m.tow} at ${m.x.toFixed(1)},${m.y.toFixed(1)}; on that edge: ${on.map(o => `${o.m.who} ${o.m.kind} ${o.m.phase} d=${o.d}${o.pre ? ' pre' : ''} dead=${!!o.m.dead} in moves=${ap.moves.includes(o.m)} hold=${o.m.holding || '-'} node=${o.m.node} s=${(o.m.s || 0).toFixed(2)}`).join(' | ') || 'nobody'}; claim=${st && ap.claim && ap.claim.get(st.e.key) ? ap.claim.get(st.e.key).m.who : '-'}`);
     }
     assert(!kp.grid && !kp.stuck, `${ap.name}: ${kp.grid || 0} gridlocks, ${kp.stuck || 0} stranded`);
     assert(r.wrongRw === 0, `${ap.name}: ${r.wrongRw} movements on a runway set for the other kind`);
@@ -6757,6 +6855,10 @@ test('round 5b: the day board\'s capacity matches IC.aptStats, and its plan adds
   assert(b.dep.indexOf(Math.max(...b.dep)) === (pk + 1) % 24, `busiest ${pk} → ${b.dep.indexOf(Math.max(...b.dep))}`);
 });
 test('round 5b: a cap moves flights out of the peak hour', () => {
+  // (no airport incidents here: a runway closed for a while lets its queue take off together after, which the cap,
+  // counting the flights it releases, rightly allows; that is not what this tests)
+  const ops = IC.FOCUS.ops; IC.FOCUS.ops = false;
+  try {
   const { S, ap } = r5net();
   run(S, 1, player);
   const P0 = IC.dayPlan(S, ap), peak = Math.max(...P0.dep), cap = Math.max(2, peak - 4);
@@ -6769,6 +6871,7 @@ test('round 5b: a cap moves flights out of the peak hour', () => {
   run(S, 40, player);
   const L = IC.aptDayLog(S, ap).prev;
   assert(L && Math.max(...L.dep) <= cap + 1, `departures by hour: ${L && L.dep.join(',')}`);
+  } finally { IC.FOCUS.ops = ops; }
 }, true);
 test('round 5b: night flights by default; a night curfew stops them and costs the cargo airline', () => {
   const play = night => {
@@ -7009,7 +7112,8 @@ test('round 5c: clicking an aircraft on its stand selects it, from the whole-air
   }
   // (far enough from any aircraft, at the whole-airport zoom, the airport)
   const far = { x: ap.x + (ap.radius || 20) * 0.5, y: ap.y + (ap.radius || 20) * 0.5 };
-  const busy = S.av.tails.some(t => { const w = IC.tailWhere(S, t); return w && U.dist(w, far) < 3; });
+  // (an aircraft within the pick's reach at this zoom, 7 px, counts as clicked: one taxiing or on final may pass there)
+  const busy = S.av.tails.some(t => { const w = IC.tailWhere(S, t); return w && U.dist(w, far) < 7 / 1.2; });
   const h2 = IC.pickAt(S, far, 1.2);
   assert(busy || !h2 || h2.kind !== 'tail', 'a click away from the aircraft picked one');
   // stands count from 1 across the airport, never 0
