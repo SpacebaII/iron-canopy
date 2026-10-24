@@ -146,12 +146,20 @@ function research(S, reserve) {
     if (!IC.startResearch(S, pick.id)) return;
   }
 }
+/* (brief 70) how the scripted player answers the story's cards: the first (careful) option, unless a test sets
+   STORY.pick: an option's index for every chain card, or a function (card) → index */
+const STORY = { pick: null };
+function storyPick(e) {
+  const P = STORY.pick; if (P == null || !e.chain) return 0;
+  const i = typeof P === 'function' ? P(e) : P;
+  return Math.min(e.opts.length - 1, Math.max(0, i | 0));
+}
 function player(S, log) {
   const st = S.story, cc = IC.cap(S);
   // (it plays at 32×, the speed a player watches the airport at: the play clock, and so the event deck, run by it)
   if (S.speed === 1 && !S.wait) S.speed = 32;
   for (const q of S.av.requests.slice()) if (!IC.avReqBlock(S, q)) IC.avDecide(S, q.id, true);
-  for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, 0);
+  for (const e of st.events.slice()) if (S.time - e.t > 120) IC.storyChoose(S, e.id, storyPick(e));
   for (const t of S.threats) if (t.offFlag && !t.called && t.d.civil) IC.callAircraft(S, t);
   for (const t of S.threats) if (t.infFlag && !t.called && t.type === 'ga') IC.callAircraft(S, t);
   agenda(S);
@@ -219,7 +227,8 @@ function later(S, st) {
   // Act III brings in an hour; in the war everything goes)
   if (st.act >= 3) {
     if (S.supply) S.supply.auto = true;
-    if (st.act >= 4) QW.commander(S);
+    if (st.act === 5) corridor(S);
+    if (st.act === 4) QW.commander(S);
     // one unit a day at most while the income covers it; when a month's running costs came to more than it brought
     // in, the unit dearest to run goes back to the reserve (the Economy room's warning, heeded)
     else if (S.time > (S._qwT || 0) + 86400) {
@@ -231,4 +240,17 @@ function later(S, st) {
     }
   }
 }
-module.exports = { player, site, starter, grow, research, AGENDA };
+/* Part Five: the joint corridor, an airway from the capital's hub to an entry point on the hostile border */
+function corridor(S) {
+  if (!IC.peaceCorridor || IC.peaceCorridor(S) || S.time < (S._corT || 0)) return;
+  S._corT = S.time + 6 * 3600;
+  const c = IC.cap(S), hub = S.asp.fixes[0] || IC.aspAddFix(S, c.x + 300, c.y), fA = S.world.fronts.find(f => f.key === 'A'); if (!hub || !fA) return;
+  const pts = fA.pts.slice().sort((a, b) => U.dist(a, hub) - U.dist(b, hub));
+  for (const p of pts.slice(0, 12)) {
+    let q = null;
+    for (let i = 1; i <= 90; i++) { const x = hub.x + (p.x - hub.x) * i / 80, y = hub.y + (p.y - hub.y) * i / 80; if (!IC.inHome(x, y)) { q = { x, y }; break; } }
+    const f = q && IC.aspAddFix(S, q.x, q.y);
+    if (f) { IC.aspAddWay(S, hub.id, f.id); if (IC.peaceCorridor(S)) return; }
+  }
+}
+module.exports = { player, site, starter, grow, research, AGENDA, STORY };

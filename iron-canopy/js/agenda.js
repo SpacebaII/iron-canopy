@@ -54,10 +54,10 @@ IC.AGENDA = [
     d: 'A national flying school. Crews land and take off in 2 kt more crosswind, and there are 10% fewer bird strikes.' },
   { id: 'dual', act: 2, name: 'Civil–military dual use', excl: 'civil', min: 10, cost: 60, conf: 2,
     k: { adCost: 0.8, handover: 1 }, once: S => satAll(S, -3),
-    d: 'Airports and the air force share radars, fuel and runways. The air defence costs 20% less to run from Act III and the military hands over a short-range battery more; every airline −3, the Prime Minister +2.' },
+    d: 'Airports and the air force share radars, fuel and runways. The air defence costs 20% less to run from Part Three and the military hands over a short-range battery more; every airline −3, the Prime Minister +2.' },
   { id: 'civil', act: 2, name: 'Civil first', excl: 'dual', min: 10, cost: 60, fx: { overList: 0.04 },
     k: { handover: -1 }, once: S => satAll(S, 4),
-    d: 'The airports stay the airlines’. Airlines accept charges 4% further over list and every airline +4; in Act III the military hands over one battery fewer.' },
+    d: 'The airports stay the airlines’. Airlines accept charges 4% further over list and every airline +4; in Part Three the military hands over one battery fewer.' },
   { id: 'freight', act: 2, name: 'Air freight drive', req: ['handling'], need: { apts: 2 }, min: 8, cost: 70, fx: { cargoRate: 0.15 },
     k: { offerKind: (S, al) => al.kind === 'cargo' ? 1.6 : 1 },
     d: 'Customs at the cargo door. Warehouses handle 15% more freight, and cargo airlines offer 60% more often.' },
@@ -132,7 +132,7 @@ IC.agendaWhy = function (S, id) {
   const st = S.story;
   if (A.done.has(id)) return 'Already passed.';
   if (A.closed.has(id)) return `Ruled out: “${IC.agendaById(p.excl).name}” passed instead.`;
-  if (st.act >= 4) return 'The war leaves no time for new policy: what was passed stays.';
+  if (st.act >= 4) return st.act >= 5 ? 'The armistice runs on the policy passed before the war: it stays.' : 'The war leaves no time for new policy: what was passed stays.';
   if (st.act < p.act) return `Comes with ${IC.ACTS[p.act].name}.`;
   const reqs = p.req.filter(r => !A.done.has(r));
   if (reqs.length && (!p.any || reqs.length === p.req.length)) return `Needs ${reqs.map(r => `“${IC.agendaById(r).name}”`).join(p.any ? ' or ' : ' and ')} first.`;

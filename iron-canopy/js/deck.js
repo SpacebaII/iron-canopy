@@ -245,7 +245,7 @@ IC.DECK = {
   medical: { w: 1, cond: (S, ap) => [ap.id] },
   charter: { w: 1, cond: (S, ap) => { const al = S.av.airlines.find(a => a.kind === 'budget' && !a.gone) || flagOf(S); return al ? [ap.id, al.id] : null; } },
   noise: { w: 1, cond: (S, ap) => { const c = town(S, ap); return c && !ap.curfew ? [ap.id, c.id] : null; } },
-  union: { w: 1, cond: (S, ap) => [ap.id] },
+  union: { w: 1, cond: (S, ap) => S.story.chains && S.story.chains.tower ? null : [ap.id] },
   hobbydrone: { w: 1, cond: (S, ap) => [ap.id] },
   openday: { w: 0.8, cond: (S, ap) => { const c = town(S, ap); return c ? [ap.id, c.id] : null; } },
   vintage: { w: 0.8, cond: (S, ap) => longest(ap) >= 18 ? [ap.id] : null },
