@@ -670,15 +670,38 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   dropIslands(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'));
   // an end a few metres short of a street or road runs on to it, whatever pass left it so (brief 72: the road audit's bar)
   runOnEnds(c, roads.filter(s => s[4] !== 'hw' && s[4] !== 'rail'), roads.filter(s => s[4] === 'hw' || s[4] === 'rail'));
-  // an end the passes left meeting nothing turns round in a head of its own, so a car is never left in the grass
+  // an end the passes left a few metres short of a street or road is run on to meet it, square onto it; one that meets
+  // nothing turns round in a head of its own, so a car is never left in the grass (a motorway or a railway is not
+  // met at grade: an end beside one turns round too)
   {
     const Bk = buckets(3); c.streets.forEach((l, li) => { for (let q = 1; q < l.pts.length; q++) Bk.add([l.pts[q - 1].x, l.pts[q - 1].y, l.pts[q].x, l.pts[q].y, li]); });
-    for (const r of roads) Bk.add([r[0], r[1], r[2], r[3], -1]);
+    for (const r of roads) Bk.add([r[0], r[1], r[2], r[3], r[4] === 'hw' || r[4] === 'rail' ? -2 : -1]);
     c.streets.forEach((l, li) => { if (l.ring) return; for (const end of [0, 1]) {
-      if ((l.head & (end + 1)) || (l.stop & (end + 1))) continue;
-      const e = l.pts[end ? l.pts.length - 1 : 0]; let hit = false;
-      Bk.near(e.x, e.y, 0.3, s => { if (!hit && s[4] !== li && U.segDist(e.x, e.y, s[0], s[1], s[2], s[3]) < 0.3) hit = true; });
-      if (!hit) l.head = (l.head || 0) | (end + 1);
+      // (a turning head or an end at a bank or a square stays, unless a street is right there after all)
+      const meant = (l.head & (end + 1)) || (l.stop & (end + 1)), R = meant ? 0.15 : 0.4;
+      const e = l.pts[end ? l.pts.length - 1 : 0]; let best = null, bd = R;
+      Bk.near(e.x, e.y, R, s => { if (s[4] === li) return; const d = U.segDist(e.x, e.y, s[0], s[1], s[2], s[3]); if (d < bd) { bd = d; best = s; } });
+      if (best && bd < 0.003) continue;
+      if (best && best[4] !== -2) {
+        const vx = best[2] - best[0], vy = best[3] - best[1], LL = vx * vx + vy * vy, t = LL ? U.clamp(((e.x - best[0]) * vx + (e.y - best[1]) * vy) / LL, 0, 1) : 0;
+        let q = { x: best[0] + vx * t, y: best[1] + vy * t };
+        // (straight on along its own line where that meets it soon, rather than a sharp turn onto it)
+        const f = l.pts[end ? l.pts.length - 2 : 1];
+        if (f) {
+          const dx = e.x - f.x, dy = e.y - f.y, dl = Math.hypot(dx, dy) || 1, den = (dx / dl) * vy - (dy / dl) * vx;
+          if (Math.abs(den) > 1e-6) {
+            const s = ((best[0] - e.x) * vy - (best[1] - e.y) * vx) / den, u = ((best[0] - e.x) * (dy / dl) - (best[1] - e.y) * (dx / dl)) / den;
+            if (s > 0 && s < 0.5 && u >= 0 && u <= 1) q = { x: e.x + dx / dl * s, y: e.y + dy / dl * s };
+          }
+        }
+        // (onto a corner or crossing within 12 m rather than a few metres beside it, too short a piece for two cars)
+        for (const k of [0, 2]) if (U.dxy(q.x, q.y, best[k], best[k + 1]) < 0.12) q = { x: best[k], y: best[k + 1] };
+        if (end) l.pts.push(q); else l.pts.unshift(q);
+        if (l.head & (end + 1)) l.head &= ~(end + 1);
+        if (l.stop & (end + 1)) l.stop &= ~(end + 1);
+        continue;
+      }
+      if (!meant) l.head = (l.head || 0) | (end + 1);
     } });
   }
   c.ext = blocks.reduce((m, b) => Math.max(m, U.dist(b, c) + Math.max(b.w, b.h) / 2), 0);

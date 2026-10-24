@@ -340,8 +340,8 @@ IC.rbGeom = function (site, h) {
     // the entry's surface: from the unflared arm, out to the flare, round the curb returns to the ring
     const P = (s, o) => ({ x: C.x + a.ux * s + nx * o, y: C.y + a.uy * s + ny * o });
     const surf = [P(fl, -ha), P(fl, ha), side[0].Tl].concat(side[0].arc, [C], side[1].arc.slice().reverse(), [side[1].Tl]);
-    // the splitter island: a kerbed teardrop on the centre line from just off the ring
-    const s0 = Ro + 0.012, s1 = Math.min(a.len * 0.4, s0 + Math.max(0.16, ha * 4)), wI = Math.max(0.012, he - ha * 1.05);
+    // the splitter island: a kerbed teardrop on the centre line from just off the ring (80 m at least where the arm is short)
+    const s0 = Ro + 0.012, s1 = Math.min(Math.max(a.len * 0.4, Math.min(a.len * 0.6, s0 + 0.08)), s0 + Math.max(0.16, ha * 4)), wI = Math.max(0.012, he - ha * 1.05);
     const isl = [P(s0, 0)];
     for (let i = 0; i <= 8; i++) { const t = i / 8, w = wI * Math.sin(Math.PI * (0.15 + 0.85 * (1 - t)) / 2) * (1 - t * t); isl.push(P(s0 + (s1 - s0) * t, w)); }
     for (let i = 8; i >= 0; i--) { const t = i / 8, w = wI * Math.sin(Math.PI * (0.15 + 0.85 * (1 - t)) / 2) * (1 - t * t); isl.push(P(s0 + (s1 - s0) * t, -w)); }

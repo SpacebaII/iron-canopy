@@ -29,6 +29,26 @@ On the 4242 map, before and after:
 | Old towns' blocks built over | 50% | 54% |
 | Drive graph links | 84,430 | 110,260 |
 
+### Closing the gaps
+
+After the towns, the last of what a car could not follow (road audit on the 4242 map):
+
+7. **A road that ends at a motorway gets slip roads both ways** (`roadsOverMotorways` in `gen.js`). A road that met a motorway at a diamond from one side only had half an interchange: it now crosses on a bridge to a terminal 130 m out on the far side (`e.over`), so the diamond has both halves. A town's road at a gate where motorways meet (the junction is the motorways' only) is led off on a curve to a diamond of its own 900 m along the motorway nearest its line (`roadsOffInterchanges`).
+8. **National roads in town round their corners** into 15 m arcs, as the streets do (`roundAvenues`), except where a street meets them. **A motorway that turns onto a town's bypass** does so on a curve of up to 800 m radius, or passes through the interchange on the bend on a curve tangent to both pieces (`roundMotorwayBends`).
+9. **A road that doubled back on itself** where two of its pieces were joined (a spike of a few metres) loses the spike, and the streets that met it run on to its new line; one another road ends on, or whose shortcut would cross a block, stays. **A small town's own node** a few metres from its gate, on a spur of its own, moves to the gate, so no stub pokes out of the gate's roundabout.
+10. **A street end that stops just short of a road runs on to it**, straight on where it can (the last pass of `buildCity`); one with no road within 40 m gets a turning head.
+
+| | Before | After |
+| --- | --- | --- |
+| Ends that lead nowhere | 14 | 1 |
+| Ends that stop short of a road | 113 | 4 |
+| Dead ends under 30 m (real old-town alleys to a square) | 38 | 7 |
+| Sharp bends on national roads in town | 115 | 23 |
+| Sharp bends on motorways | 12 | 1 |
+| Bends a car cannot follow (all) | 687 | 664 (most are in the old towns' real streets) |
+
+Also: the close-in vehicles take the links near the view from the link grid instead of walking every link in the country (2.9 to 2.3 ms a frame with 3,000 vehicles); a roundabout's splitter island is at least 80 m on a short arm; the test workers get the machine's memory divided by the workers, since the world group keeps a generated world per seed and ran out of Node's default heap; GitHub runs the suite in eight parts.
+
 ## Worth knowing
 
 - About 9,000 new streets on the 4242 map. The road audit still passes its thresholds: pieces too short for two cars are 1.8% of the links (2.5% allowed), bends a car cannot follow 0.7% (1.2%).

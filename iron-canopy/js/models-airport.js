@@ -12,7 +12,7 @@ function prism(MB, B, P, z0, h, col) {
   for (const piece of IC.convexPieces(P.map(q => ({ x: q[0], y: q[1] })))) MB.plate(B, piece.map(q => [q.x, q.y]), z0 + h / 2, h, col);
 }
 const rectP = p => { const w = (p.w || 0.1) * 50, h = (p.h || 0.1) * 50; return [[-w, -h], [w, -h], [w, h], [-w, h]]; };
-const HEIGHT = { terminal: 16, cargo: 14, hangar: 20, support: 9, fire: 9, tower: 40, skybridge: 5 };
+const HEIGHT = { terminal: 16, cargo: 14, hangar: 20, support: 9, fire: 9, opsbase: 7, tower: 40, skybridge: 5 };
 const COL = { terminal: '#c8ccd0', cargo: '#a89e86', hangar: '#8a9096', support: '#a6a8a8', fire: '#b04638', tower: '#c4c6cc', skybridge: '#d6d8dc' };
 
 /* the massing of one part; false leaves it to replay3d.js's own boxes (parts without an outline) */
@@ -40,6 +40,37 @@ IC.aptMass3d = function (MB, B, p, b) {
     if (p.roof === 'tent') tent(MB, B, p, lv);
     else if (p.roof === 'glass') { B.group('win', { kind: 'win' }); prism(MB, B, P, lv, 0.6, 'WIN'); B.group('main'); }
     else prism(MB, B, P, lv, 0.8, '#9ea4aa');
+  });
+  return true;
+};
+/* (the gap left by brief 61) the front side's buildings standing up: a parking garage's open decks, 3 m a level, its
+   lift towers at the corners; a hotel and an office block of their own height (a hotel 8 to 14 floors, offices 5
+   to 8) with a glass band on every floor; a cargo warehouse's box with its loading doors. Car parks, the taxi
+   rank and the bus stop are paint, on the airport's pad */
+const LAND_H = { garage: 3, hotel: 3.4, office: 3.8, warehouse: 11 };
+IC.landMass3d = function (MB, B, it, b) {
+  if (!LAND_H[it.kind]) return false;
+  const x = (it.x - b.x) * 100, y = (it.y - b.y) * 100, a = it.a || 0, ca = Math.cos(a), sa = Math.sin(a);
+  const P = it.poly ? it.poly.map(q => [q[0] * 100, q[1] * 100]) : rectP(it), W = (it.w || 0.1) * 100, H = (it.h || 0.1) * 100;
+  const k = IC.U.hash(Math.round(it.x * 97) + Math.round(it.y * 131), 7);
+  B.with(q => [x + q[0] * ca - q[1] * sa, y + q[0] * sa + q[1] * ca, q[2]], () => {
+    if (it.kind === 'garage') {
+      const n = it.lvls || 5, h = LAND_H.garage;
+      for (let i = 0; i < n; i++) { prism(MB, B, P, i * h, 0.6, '#9a9a96'); prism(MB, B, P, i * h + 0.6, 1.1, '#b4b4ae'); }
+      prism(MB, B, P, n * h, 0.5, '#8a8a86');
+      for (const [sx, sy] of [[-1, -1], [1, 1]]) MB.box(B, sx * (W / 2 - 4), sy * (H / 2 - 4), (n * h + 3) / 2, 7, 7, n * h + 3, '#c8c4bc');
+      return;
+    }
+    if (it.kind === 'warehouse') {
+      prism(MB, B, P, 0, LAND_H.warehouse, '#b0a890'); prism(MB, B, P, LAND_H.warehouse, 0.6, '#8e8878');
+      for (let q = -W / 2 + 8; q < W / 2 - 4; q += 10) MB.box(B, q, H / 2 + 0.2, 2.5, 4, 0.4, 5, '#3a3e42');
+      return;
+    }
+    const fl = it.kind === 'hotel' ? 8 + Math.floor(k * 7) : 5 + Math.floor(k * 4), h = LAND_H[it.kind], col = it.kind === 'hotel' ? '#d8d0c4' : '#b8c0c8';
+    prism(MB, B, P, 0, 4.5, '#8c9298');
+    for (let i = 0; i < fl; i++) { prism(MB, B, P, 4.5 + i * h, h * 0.35, col); B.group('win', { kind: 'win' }); prism(MB, B, P, 4.5 + i * h + h * 0.35, h * 0.65, 'WIN'); B.group('main'); }
+    prism(MB, B, P, 4.5 + fl * h, 1.2, col);
+    MB.box(B, 0, 0, 4.5 + fl * h + 2.4, Math.min(W, H) * 0.4, Math.min(W, H) * 0.3, 2.4, '#8a9096');
   });
   return true;
 };

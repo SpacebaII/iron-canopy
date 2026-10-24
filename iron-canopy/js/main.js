@@ -159,10 +159,10 @@ function goFrame() {
     const plan = IC.bldReady(S, m);
     if (plan) {
       at = m.at || m.pts[m.pts.length - 1];
-      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch', 'savelay', 'extend'].includes(m.part);
+      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch', 'reshape', 'savelay', 'extend'].includes(m.part);
       // (round 5c) the price and how long the crews take, for a piece or a blueprint too
       const dur = IC.planDur(m.ap, plan);
-      const what = plan.bp || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
+      const what = plan.bp || plan.reshape || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
       html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? (plan.sel ? 'Save it (Enter)' : 'Build it (Enter)') : esc(plan.why || '')}">${plan.sel ? 'Save layout' : 'Build'}${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
     }
   } else if (m && m.kind === 'bmove' && m.at) {
@@ -605,6 +605,7 @@ function onAct(e) {
     case 'ops': { const ap = selAp(); if (ap) IC.opsAct(S, ap, b.dataset); break; }
     case 'asp': IC.aspAct(S, selAp(), b.dataset); break;
     case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
+    case 'land': { const ap = selAp(); if (ap && IC.landAct) IC.landAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
     case 'aptClass': { const ap = selAp(); if (ap) { const why = IC.aptReclass(S, ap, v); if (why) IC.toast(S, 'warn', 'PURPOSE', why); else IC.aptStats(S, ap); } break; }
@@ -618,6 +619,8 @@ function onAct(e) {
     case 'aptBack': if (S.sel && S.sel.kind === 'apart') S.sel = { kind: 'infra', ref: S.sel.ap }; break;
     case 'incGo': { const it = ui.incRefs && ui.incRefs[+v]; if (it) { const r = it.ref; ui.jump(r && r.tn ? r : { x: it.x, y: it.y }, r && r.tn ? 'track' : r && r.parts ? 'infra' : null); } break; }
     case 'incX': IC.incidentDismiss(S, v); break;
+    case 'brush': { const ap = selAp(); const w = ap && ap.works && ap.works.find(x => x.id === id); if (w && IC.bldRush(S, ap, w)) IC.sfx.ui('ok'); break; }
+    case 'opsDo': { const ap = S.byId[b.dataset.ap], op = b.dataset.op; if (ap && (op === 'rush' ? IC.opsRush(S, ap, v) : IC.opsDecide(S, ap, v, op))) IC.sfx.ui('ok'); break; }
     case 'evChoose': IC.storyChoose(S, id, +v); IC.sfx.ui('ok'); ui.cache.evcard = null; if (S.paused && !S.story.events.length) S.paused = false; break;
     case 'evGo': { const e = S.story && S.story.events.find(x => x.id === id), q = e && e.at && (typeof e.at === 'function' ? e.at(S) : e.at); if (q) { if (S.follow) IC.followStop(S); IC.flyTo(q.x, q.y, Math.max(IC.cam.z, q.z || 1.2)); } break; }
     case 'radio': if (sel && S.sel.kind === 'track') IC.callAircraft(S, sel); break;
@@ -664,6 +667,7 @@ function onAct(e) {
     case 'uiscale': ui.applyScale(+v); ui.saveCfg(); setTimeout(resize, 50); break;
     case 'cfg': S.cfg[v] = !S.cfg[v]; ui.saveCfg(); break;
     case 'radarFx': S.cfg.radarFx = v; ui.saveCfg(); break;
+    case 'seen': S.cfg.seen = v; ui.saveCfg(); break;
     case 'q3d': if (IC.q3d) IC.q3d.set(v); break;
     case 'pauseRoom': ui.pauseRoom = !ui.pauseRoom; ui.saveCfg(); break;
     case 'pauseOn': S.cfg.pauseOn[v] = !ui.pauseOnIs(S.cfg.pauseOn, v); ui.saveCfg(); break;
@@ -753,7 +757,7 @@ cv.addEventListener('pointerdown', e => {
     if (e.button === 0 && S.mode2 && S.mode2.kind === 'found' && S.mode2.site && U.dist(S.mode2.site, S.hover) < 18) drag.turn = true;
     // (round 1) a two-point piece or area drags out from where the button went down: drag to stretch
     const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
-    if (e.button === 0 && bm && !bm.set && !bm.pts.length && IC.bldDragPart(bm.part)) drag.bstart = { x: S.hover.x, y: S.hover.y };
+    if (e.button === 0 && bm && !bm.set && !bm.pts.length && IC.bldDragPart(bm.part, bm)) drag.bstart = { x: S.hover.x, y: S.hover.y };
     // in the airport's Airspace tab, a ring's edge can be dragged
     if (e.button === 0 && aspEditing()) drag.edge = IC.aspEdgeAt(S, selAp(), S.hover, 8 / IC.cam.z);
   }
@@ -864,6 +868,7 @@ window.addEventListener('keydown', e => {
   if (bm && lk === 'f' && IC.shapeCycle(S, bm)) { IC.ui.refresh(true); return; }
   if (bm && lk === 'f' && bm.part === 'mylayout') { bm.mirror = !bm.mirror; IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
+  if (bm && lk === 'o' && IC.bldCanOutline(bm.part)) { IC.bbPref('shape', bm.shape === 'poly' ? 'rect' : 'poly'); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
   const fm = S.mode2 && S.mode2.kind === 'found' ? S.mode2 : null;

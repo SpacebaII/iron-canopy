@@ -643,6 +643,7 @@ const own = (S, sh) => { const ap = sh && sh.ap && S.byId[sh.ap]; if (ap && ap.a
 const outer = sh => sh.rings[sh.rings.length - 1].r;
 /* ---- the player's changes: scale, one ring's radius, floor and ceiling, notch, extension, rotation ---- */
 IC.aspScale = function (S, sh, f) {
+  if (sh.fixed) return;
   f = U.clamp(f, 30 / sh.rings[0].r, 1500 / outer(sh));
   for (const g of sh.rings) g.r *= f;
   if (sh.notch) sh.notch.r *= f;
@@ -651,11 +652,13 @@ IC.aspScale = function (S, sh, f) {
 };
 IC.aspRingR = function (S, sh, i, r) {
   const R = sh.rings, lo = i ? R[i - 1].r + 20 : 30, hi = i < R.length - 1 ? R[i + 1].r - 20 : 1500;
+  if (sh.fixed) return;
   R[i].r = U.clamp(r, lo, Math.max(lo, hi));
   if (sh.notch) sh.notch.r = Math.min(sh.notch.r, outer(sh) - 20);
   own(S, sh); syncVols(S, sh);
 };
 IC.aspRingSet = function (S, sh, i, o) {
+  if (sh.fixed) return;
   const g = sh.rings[i];
   if (o.cls && IC.ASP_CLS[o.cls]) g.cls = o.cls;
   if (o.lo != null) g.lo = sh.ap && !i ? 0 : U.clamp(o.lo, 0, g.hi - 0.15);
@@ -685,7 +688,7 @@ IC.aspExt = function (S, sh, o) {
 IC.aspRotate = function (S, sh, rot) { sh.rot = U.angWrap(rot); own(S, sh); syncVols(S, sh); };
 /* compatibility: set one ring's class, floor, ceiling or radius by its volume */
 IC.aspSetVol = function (S, v, o) {
-  const sh = shapeOfVol(S, v); if (!sh) return;
+  const sh = shapeOfVol(S, v); if (!sh || sh.fixed) return;
   const i = +String(v.id).split(':')[1];
   if (v.kind === 'ext') { if (o.r1 != null) IC.aspExt(S, sh, { len: o.r1 - sh.rings[0].r }); return; }
   if (o.r1 != null) IC.aspRingR(S, sh, i, o.r1);
@@ -719,7 +722,7 @@ IC.aspEdgeAt = function (S, ap, p, tol) {
 };
 /* drag a handle to a map point */
 IC.aspDrag = function (S, h, p) {
-  const sh = IC.aspShape(S, h.sh); if (!sh || !p) return;
+  const sh = IC.aspShape(S, h.sh); if (!sh || !p || sh.fixed) return;
   const d = U.dist(sh, p), a = Math.atan2(p.y - sh.y, p.x - sh.x);
   if (h.hk === 'scale') IC.aspScale(S, sh, d / outer(sh));
   else if (h.hk === 'ring') IC.aspRingR(S, sh, h.i, d);
@@ -761,14 +764,14 @@ IC.aspWords = function (v) {
   return `${C.name} from ${lo} to ${IC.flText(v.hi)}, ${where}. ${C.who}${under}${notch}`;
 };
 /* areas on their own: restricted, training, air defence */
-IC.aspAddArea = function (S, key, x, y, r) {
+IC.aspAddArea = function (S, key, x, y, r, quiet) {
   const P = IC.ASP_SHAPES[key]; if (!P || P.apt) return null;
   S.asp.shapes = S.asp.shapes || [];
   const sh = newShape(key, null, x, y, 0, P.rings.map(([r0, lo, hi, cls]) => ({ r: r || r0, lo: ft(lo), hi: ft(hi), cls })));
   sh.name = `${P.name} ${IC.nearestPlace(S, x, y).replace(/^(near|over) /, '')}`;
   S.asp.shapes.push(sh); syncVols(S, sh);
   const g = sh.rings[0];
-  IC.log(S, 'info', 'AIRSPACE', `${sh.name} published: out to ${Math.round(g.r / 10)} km, ${lvlT(g.lo)} to ${IC.flText(g.hi)}. ${IC.ASP_CLS[g.cls].sep}`, sh);
+  if (!quiet) IC.log(S, 'info', 'AIRSPACE', `${sh.name} published: out to ${Math.round(g.r / 10)} km, ${lvlT(g.lo)} to ${IC.flText(g.hi)}. ${IC.ASP_CLS[g.cls].sep}`, sh);
   return sh;
 };
 /* older callers: a military circle by class, returned as its volume */
@@ -778,7 +781,10 @@ IC.aspAddMil = function (S, x, y, r, lo, hi, cls, name) {
   IC.aspRingSet(S, sh, 0, { lo, hi });
   return S.asp.vols.find(v => v.sh === sh.id);
 };
-IC.aspDelArea = function (S, sh) { if (sh && !sh.ap) dropShape(S, sh); };
+IC.aspSync = syncVols;
+IC.aspDelArea = function (S, sh) { if (sh && !sh.ap && !sh.fixed) dropShape(S, sh); };
+/* an area the player cannot change: the story's, held by a treaty (sh.fixed says why) */
+IC.aspFixed = (S, sh) => !!(sh && sh.fixed);
 /* is a point in a volume (and at a height, when alt is given)? The notch raises the floor inside its slice */
 function inVol(v, x, y, alt) {
   const dx = x - v.x, dy = y - v.y, d = U.hyp(dx, dy);
@@ -1268,9 +1274,17 @@ IC.gaBase = function (S, town) {
   return best;
 };
 /* light aircraft fly by sight: daylight, and cloud and visibility good enough */
-IC.gaWeatherOk = function (S) {
-  const h = ((S.time % 86400) + 86400) % 86400 / 3600, wx = IC.wx(S);
-  return h >= 7 && h < 19 && wx.eo >= 0.7 && !(wx.fog > 0.08) && !(wx.precip > 0.1);
+IC.gaWeatherOk = S => !IC.gaGrounded(S);
+/* why the light aircraft stay on the ground now, in a few words, or null when they fly: they fly by day, by sight,
+   and not in gusts beyond what a light single takes across a grass strip (brief 62) */
+IC.gaGrounded = function (S) {
+  const h = ((S.time % 86400) + 86400) % 86400 / 3600, wx = IC.wx(S), gust = S.wind ? Math.max(S.wind.kt, S.wind.gust || 0) : 0;
+  if (h < 7 || h >= 19) return 'it is dark: light aircraft fly from 07:00 to 19:00';
+  if (wx.fog > 0.08) return 'fog: pilots flying by sight need to see the ground';
+  if (wx.precip > 0.1) return 'rain or snow';
+  if (wx.eo < 0.7) return 'low cloud and poor visibility: too little to fly by sight';
+  if (gust > 25) return `wind gusting ${Math.round(gust)} kt: too strong for light aircraft`;
+  return null;
 };
 /* airspace a light aircraft may not enter without a clearance: controlled volumes of airports it is not cleared
    into, and military bands */
@@ -1320,9 +1334,10 @@ IC.gaDelayNote = function (S, ap, wait) {
   ap.gaNoteT = S.time; ap.gaWait = 0;
   if (IC.civilAdvice(S)) IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
 };
-IC.gaArrive = function (S, t) {
+IC.gaArrive = function (S, t, ground) {
   const b = t.gaTo; if (!b) return;
-  if (b.apt && S.byId[b.apt]) IC.gaRunway(S, S.byId[b.apt]);
+  // (one that lands through the ground movements holds the runway there, not by the timer: garamp.js)
+  if (b.apt && S.byId[b.apt]) { if (ground) S.budget += 0.02; else IC.gaRunway(S, S.byId[b.apt]); }
   const f = b.field && S.asp.fields.find(x => x.id === b.field);
   if (f) { f.moves++; f.today++; S.budget += 0.01; }
 };

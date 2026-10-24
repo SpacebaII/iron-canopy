@@ -245,7 +245,7 @@ IC.DECK = {
   medical: { w: 1, cond: (S, ap) => [ap.id] },
   charter: { w: 1, cond: (S, ap) => { const al = S.av.airlines.find(a => a.kind === 'budget' && !a.gone) || flagOf(S); return al ? [ap.id, al.id] : null; } },
   noise: { w: 1, cond: (S, ap) => { const c = town(S, ap); return c && !ap.curfew ? [ap.id, c.id] : null; } },
-  union: { w: 1, cond: (S, ap) => [ap.id] },
+  union: { w: 1, cond: (S, ap) => S.story.chains && S.story.chains.tower ? null : [ap.id] },
   hobbydrone: { w: 1, cond: (S, ap) => [ap.id] },
   openday: { w: 0.8, cond: (S, ap) => { const c = town(S, ap); return c ? [ap.id, c.id] : null; } },
   vintage: { w: 0.8, cond: (S, ap) => longest(ap) >= 18 ? [ap.id] : null },
@@ -278,13 +278,14 @@ IC.deckDeal = function (S, k, args) {
 
 /* ---------- milestones: passengers a day, and the piece each opens because the airport needs it ---------- */
 IC.MILESTONES = [
-  { n: 2000, piece: 'tpier', name: 'Terminal with a pier', parts: ['concourse', 'curved', 'pierT', 'pierY', 'pierX'], open: 'concourse' },
+  { n: 2000, piece: 'tpier', name: 'Terminal with piers', parts: ['concourse', 'curved', 'pierT', 'pierY', 'pierX'], open: 'concourse' },
   { n: 6000, piece: 'rwkit', name: 'a second runway', second: true, parts: ['runway'], open: 'runway' },
   { n: 15000, piece: 'tround', name: 'Round terminal', parts: ['rotunda', 'satellite', 'semicircle'], open: 'rotunda' },
   { n: 50000, pay: 200, name: 'a hub' }
 ];
 /* the milestone that opens a piece, or (wave 12, the bar of parts) a part */
-const msOf = k => IC.MILESTONES.findIndex(m => m.piece === k || (IC.FOCUS.parts && m.parts && m.parts.includes(k)));
+// (a pier added to a terminal opens with the Terminal with piers)
+const msOf = k => { if (k === 'tattach') k = 'tpier'; return IC.MILESTONES.findIndex(m => m.piece === k || (IC.FOCUS.parts && m.parts && m.parts.includes(k))); };
 /* why a piece is not open yet ('' when it is), in one line: what opens it */
 IC.pieceLock = function (S, k, ap) {
   if (!S || !on(S)) return '';
@@ -318,7 +319,7 @@ function milestone(S, i) {
   const title = `${M.n.toLocaleString('en-US')} passengers a day`;
   let text, fix = null; const P_ = IC.FOCUS.parts;
   if (M.piece === 'tpier') {
-    text = `At ${hh(B.h || 9)}, its busiest hour, ${B.occ || 0} of ${short(ap.name)}’s ${stands} stands were taken and ${gates} of them have a gate. A pier reaches out from the terminal with gates on both sides: more gates without a second building. ${P_ ? 'The Concourse, the Curved pier, the T and Y piers and the X airside are open under Terminals & piers.' : 'The Terminal with a pier is open under Airport pieces.'}`;
+    text = `At ${hh(B.h || 9)}, its busiest hour, ${B.occ || 0} of ${short(ap.name)}’s ${stands} stands were taken and ${gates} of them have a gate. A pier reaches out from the terminal with gates on both sides: more gates without a second building. ${P_ ? 'The Concourse, the Curved pier, the T and Y piers and the X airside are open under Terminals & piers.' : 'The Terminal with piers is open under Airport pieces.'}`;
     fix = { label: 'Place a pier', v: P_ ? M.open : 'tpier' };
   } else if (M.piece === 'rwkit') {
     const mv = Math.round(stt.movesPerHour || 0);

@@ -10,8 +10,8 @@ jobs:
     timeout-minutes: 30
     # eight parts of equal length (by tests/times.json) on eight machines at once, each with one worker per core
     # (two halves outgrew the 20 minutes once a day at each real airport joined the suite; four parts once the
-    # cities' streets were traced on a direction field, brief 53; six parts ran to the 30 minutes once the map's
-    # Career joined the suite, brief 71)
+    # cities' streets were traced on a direction field, brief 53; eight once every housing block had streets of its
+    # own, brief 68, a part of six ran past 30 minutes, and the map's Career joined the suite, brief 71)
     strategy:
       fail-fast: false
       matrix:

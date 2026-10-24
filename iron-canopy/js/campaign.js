@@ -8,6 +8,9 @@ const U = IC.U;
 const MIL_STAFF = { CDS: 1, ADA: 1, LOG: 1, INT: 1, AIR: 1 };
 function say(S, who, text) {
   if (!S.camp) return;
+  // (brief 70) a post can change hands: the Minister of Transport is Finch once Halloran has fallen
+  if (IC.castWho) who = IC.castWho(S, who);
+  if (S.story && S.story.cast && S.story.cast[who]) S.story.cast[who].met = true;
   const a = IC.ADVISORS[who] || { name: who, role: 'Front commander', tag: 'CMD' };
   // (round 3) in the civil act the military staff are not the player's: their words go to the Journal only
   if (IC.civilAct(S) && (MIL_STAFF[who] || !IC.ADVISORS[who])) { IC.log(S, 'info', a.tag, text); return; }

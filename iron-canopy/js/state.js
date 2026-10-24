@@ -38,7 +38,7 @@ function* gameSteps(opts) {
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
     budget: sandbox ? 1600 : mode === 'campaign' ? 4800 : 1200, income: 0, upkeep: 0, ledger: {}, mobil: sandbox ? 1 : 0, support: 55, bondsT: -1e9,
     airspace: 'open', ad: { roe: 'tight', doctrine: 'sls' },
-    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, combat: true, shake: true, bars: true, radarFx: 'subtle' }, IC.savedCfg ? IC.savedCfg() : {}),
+    cfg: Object.assign({ pauseOn: { ballistic: true, lost: true, base: true, raid: false, city: false, launch: true, event: true }, slowmo: true, combat: true, shake: true, bars: true, radarFx: 'subtle', seen: 'short' }, IC.savedCfg ? IC.savedCfg() : {}),
     infra: [], units: [], reserve: {}, orders: [],
     threats: [], missiles: [], strikes: [], eaam: [], air: [], roster: [], ato: [],
     vehicles: [], jobs: [], trains: [], imports: [],
@@ -49,7 +49,7 @@ function* gameSteps(opts) {
     stats: { kills: 0, leakers: 0, fired: 0, civLost: 0, strikes: 0, siteKills: 0, telKills: 0, convoysLost: 0, acLost: 0, unitsLost: 0 },
     nextTN: 1001, shake: 0, wind: { x: U.rand(-1, 1) * 0.6, y: U.rand(0.1, 0.6) },
     sel: null, group: [], mode2: null, hover: null,
-    layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false },
+    layers: { coverage: true, rings: true, logistics: true, civil: true, intel: true, labels: true, weather: true, airways: false, all: false },
     alertCities: 0,
     // the calendar (core.js): the month length is kept with the game, and the month it last turned
     cal: { dpm: opts.dpm || IC.DAYS_PER_MONTH, m: 0 }

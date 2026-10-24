@@ -915,7 +915,14 @@ IC.trafficKeep = z => Math.min(1, 2.5 * KINDS.car.L / Math.max(KINDS.car.L, 4.4 
 IC.TRAFFIC_DASH = [1.1, 1.6];
 IC.TRAFFIC_AGZ = [20, 30];
 /* a slot's rank: slots at multiples of 2^n come first, so a share of keep needs only every 2^n-th slot looked at */
-function slotRank(j, key) { const tz = j ? 31 - Math.clz32(j & -j) : 16; return (1 + U.hash(key + 7919, j)) / (2 << Math.min(16, tz)); }
+// (its own full mix of key and slot: U.hash of nearby keys and slots gave ranks in clumps, so a zoom brought a
+// dozen vehicles in at once)
+function slotRank(j, key) {
+  const tz = j ? 31 - Math.clz32(j & -j) : 16;
+  let h = Math.imul(key ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 7919, 0xc2b2ae35);
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b); h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35); h ^= h >>> 16;
+  return (1 + (h >>> 0) / 4294967296) / (2 << Math.min(16, tz));
+}
 IC.trafficSlotRank = slotRank;
 
 /* ---------- vehicles in slots, for the middle zoom ----------
@@ -978,10 +985,15 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
         // (in the queue before a cut road the vehicles stand bumper to bumper, on any road that carried a few)
         const u = j * BASE + ph, h = U.hash(L.key + d, j & 65535);
         if (h > (qc && u > qs ? Math.max(p, Math.min(0.6, L.ld[d] * 1.5)) : p) || (keep < 1 && slotRank(j & 65535, L.key + d) >= keep)) continue;
-        const s = toS(u), q = alongR(P, cum, d ? len - s : s);
-        if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
+        // (the place along the link without an object or an arc tangent a vehicle: the heading is the piece's, kept)
+        const s = toS(u), sv = d ? len - s : s;
+        let lo = 1, hi = cum.length - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < sv) lo = mid + 1; else hi = mid; }
+        const pa = P[lo - 1], pb = P[lo], t = (sv - cum[lo - 1]) / ((cum[lo] - cum[lo - 1]) || 1), qx = pa.x + (pb.x - pa.x) * t, qy = pa.y + (pb.y - pa.y) * t;
+        if (qx < view.x0 || qx > view.x1 || qy < view.y0 || qy > view.y1) continue;
+        const hd = l.hd || (l.hd = headings(P)), qh = hd[lo - 1];
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
-        fn(q.x, q.y, d ? q.h + Math.PI : q.h, kind, L.cls, L.C.off[lane]);
+        fn(qx, qy, d ? qh + Math.PI : qh, kind, L.cls, L.C.off[lane]);
         n++;
       }
     }
@@ -989,6 +1001,18 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
   }
   return n;
 };
+/* the links whose cells meet a box, each once, in the order of T.links */
+function linksNear(T, b) {
+  const LG = linkGrid(T), stamp = ++LG.stamp, ix = [], out = LG.out || (LG.out = []);
+  out.length = 0;
+  for (let cj = Math.floor(b.y0 / LG.C); cj <= Math.floor(b.y1 / LG.C); cj++) for (let ci = Math.floor(b.x0 / LG.C); ci <= Math.floor(b.x1 / LG.C); ci++) {
+    const cell = LG.m.get(ci * 65536 + cj); if (!cell) continue;
+    for (let q = 0; q < cell.length; q++) { const li = cell[q]; if (LG.seen[li] !== stamp) { LG.seen[li] = stamp; ix.push(li); } }
+  }
+  ix.sort((p, q) => p - q);
+  for (const li of ix) out.push(T.links[li]);
+  return out;
+}
 /* the links on a grid of 64-unit cells, by their boxes, made once for a set of links (again when the roads change) */
 function linkGrid(T) {
   if (T._lg && T._lg.links === T.links) return T._lg;
@@ -1049,8 +1073,10 @@ const LIFE = { com: [20, 100], frt: [50, 250], apt: [50, 200], gen: [10, 60], th
 function headOut(q, dd) { const Q = q.pts, q0 = dd ? Q[Q.length - 1] : Q[0], q1 = dd ? Q[Q.length - 2] : Q[1]; return Math.atan2(q1.y - q0.y, q1.x - q0.x); }
 function headIn(lk, d) { const P = lk.pts, p0 = d ? P[1] : P[P.length - 2], p1 = d ? P[0] : P[P.length - 1]; return Math.atan2(p1.y - p0.y, p1.x - p0.x); }
 /* the next road from node n: weighted by its traffic in that direction and by how straight on it is */
+const PICK = [];   // (the choices, kept from call to call)
 function pickNext(G, T, n, lk, R, back) {
-  const hd = lk ? headIn(lk[0], lk[1]) : null, c = [];
+  const hd = lk ? headIn(lk[0], lk[1]) : null, c = PICK;
+  c.length = 0;
   let tot = 0;
   for (const li of G.nodes[n].out) {
     const q = G.links[li];
@@ -1104,7 +1130,7 @@ IC.trafficAgents = function (S, view, dt, keep) {
   };
   const fill = (k0, k1, old) => {
     const want = []; let E = 0;
-    for (const L of T.links) {
+    for (const L of linksNear(T, box)) {
       const lk = L.l, bb = lk.bb;
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       if (old && bb[0] > old.x0 && bb[2] < old.x1 && bb[1] > old.y0 && bb[3] < old.y1) continue;
@@ -1165,7 +1191,7 @@ IC.trafficAgents = function (S, view, dt, keep) {
   A.et = (A.et || 0) + dt;
   if (A.et > 2) {
     const et = A.et; A.et = 0;
-    for (const L of T.links) {
+    for (const L of linksNear(T, box)) {
       const lk = L.l, bb = lk.bb;
       if (bb[2] < box.x0 || bb[0] > box.x1 || bb[3] < box.y0 || bb[1] > box.y1) continue;
       const pa = lk.pts[0], pb = lk.pts[lk.pts.length - 1], ia = inBox(pa.x, pa.y, box), ib = inBox(pb.x, pb.y, box);

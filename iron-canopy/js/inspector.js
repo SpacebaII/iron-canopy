@@ -57,6 +57,7 @@ IC.renderInspector = function (st) {
     else if (s.kind === 'fix') h = fix(r);
     else if (s.kind === 'airway') h = airway(r);
     else if (s.kind === 'field') h = field(r);
+    else if (s.kind === 'ga') h = gaPanel(r);
   }
   el.classList.toggle('glass', !!h);
   el.classList.toggle('slim', !!(IC.FOCUS.polish && s && S.group.length <= 1 && s.kind === 'tail'));
@@ -120,6 +121,13 @@ function airway(w) {
   if (over.length) tips.push('Airliners over bases and cities are a risk in a crisis. Move the fixes, or publish a prohibited zone.');
   return head(`<span class="badge friend">${ui.icon('airway')}</span>`, `${a.name} – ${b.name}`, 'Airway') + `<div class="ibody">${kv(rows)}${tips.map(x => `<p class="hint">${x}</p>`).join('')}
     <div class="acts"><button class="act warn" data-act="wayDel" data-id="${w.id}">Delete airway</button></div></div>`;
+}
+/* (brief 62) a light aircraft or business jet on the ground: who it is and what it is doing */
+function gaPanel(r) {
+  const w = IC.gaWhat(S, r); if (!w) return '';
+  const rows = [['Doing', esc(w.doing)], ['Type', `${esc(w.type)} (${esc(w.short)})`], ['Who', esc(w.who)]];
+  if (w.where) rows.push(['Where', esc(w.where)]);
+  return head(`<span class="badge friend">${ui.icon('field')}</span>`, w.cs || 'Light aircraft', esc(w.type)) + `<div class="ibody">${kv(rows)}</div>`;
 }
 function field(f) {
   const n = S.threats.filter(t => !t.dead && t.type === 'ga' && t.gaTo && t.gaTo.field === f.id).length;
@@ -216,7 +224,7 @@ function track(t) {
   const colCls = { H: 'hostile', S: 'suspect', U: 'unknown', A: 'civil', N: 'civil', D: 'muted' }[aff];
   const name = aff === 'N' || aff === 'A' ? `${t.type === 'ga' ? 'Light aircraft' : 'Airliner'} ${t.cs}` : aff === 'H' ? IC.fullName(t.d) : t.decoyKnown ? 'Decoy' : IC.AFF[aff].name + ' track';
   const age = S.time - t.pt;
-  const q = t.fc ? 'fire-control quality' : t.satOnly ? 'satellite cue' : t.det ? `surveillance, ${age < 3 ? 'fresh' : U.dur(age) + ' old'}` : 'lost';
+  const q = t.fc ? 'fire-control quality' : t.satOnly ? 'satellite cue' : t.det ? `surveillance, ${age < 3 ? 'fresh' : U.dur(age) + ' old'}` : !t.pt ? 'never, shown by See everything' : t.held ? 'lost' : `lost ${U.dur(age)} ago`;
   const ladder = `<div class="ladder">
     <div class="y"><small>Detected</small><b>${esc(q)}</b></div>
     <div class="${t.klass ? 'y' : ''}"><small>Type</small><b>${t.klass ? esc(IC.KLASS[t.klass] || t.klass) : t.idp > 0 ? 'recognising ' + U.pct(Math.min(1, t.idp)) : 'unknown'}</b></div>
@@ -369,7 +377,8 @@ function base(b) {
   const rr = civil && IC.aptRoadReport ? IC.aptRoadReport(S, b) : null;
   if (rr) rows.push(['Roads', `${esc(rr.text)}${rr.works.length ? ' ' + rr.works.map(esc).join(' ') : ''}<div class="acts">${Object.entries(IC.ROADS).map(([k, R]) => `<button class="act" data-act="roadMode" data-v="${k}" title="${esc(R.what)}: ${U.money(R.perKm)} a km">${esc(R.name)}</button>`).join('')}</div>`]);
   if (civil && S.asp) { const f = IC.aspLink(S, b), ga = (b.gaMoves || []).filter(x => S.time - x < 3600).length; rows.push(['Airspace', `${f ? `joins the airways at ${esc(f.name)}` : '<span class="amber">no airway within 120 km</span>'} · light aircraft ${ga} an hour${ga >= 3 ? ' <span class="amber">(each holds the runway as long as two airliners)</span>' : ''}`]); }
-  if (civil && IC.gavSummary) { const g = IC.gavSummary(S, b); rows.push(['General aviation', !g.stands && !g.pads ? '<span class="amber">nowhere to park: light aircraft are towed off the runway at once. Build an apron in the light-aircraft zone, and a helipad</span>' : `${g.based} based here${g.helis ? ` (${g.helis} helicopter${g.helis > 1 ? 's' : ''})` : ''}, ${g.visitors} visiting · ${g.moves} movements in the last day · ${g.stands} light-aircraft stands, ${g.pads} helipad${g.pads === 1 ? '' : 's'}`]); }
+  // (the GA ramp's own row says where light aircraft park; this one is for helipads and larger light-aircraft stands)
+  if (civil && IC.gavSummary) { const g = IC.gavSummary(S, b); if (g.stands || g.pads) rows.push(['General aviation', `${g.based} based here${g.helis ? ` (${g.helis} helicopter${g.helis > 1 ? 's' : ''})` : ''}, ${g.visitors} visiting · ${g.moves} movements in the last day · ${g.stands} light-aircraft stands, ${g.pads} helipad${g.pads === 1 ? '' : 's'}`]); }
   const kpis = `<div class="kpis">
     <div><small>Avg taxi</small><b class="${kp.taxi > 600 ? 'amber' : ''}">${U.dur(kp.taxi || 0)}</b></div>
     <div><small>Avg delay</small><b class="${kp.wait > 600 ? 'amber' : ''}">${U.dur(kp.wait || 0)}</b></div>
@@ -512,7 +521,27 @@ function handsPanel(b, st, X) {
     <div class="acts"><button class="act" data-act="aptTab" data-v="rules" title="The tower's rules: when aircraft may go onto a runway">Tower rules</button>${S.asp && !IC.storyLock(S, 'airspace') ? '<button class="act" data-act="aptTab" data-v="asp" title="Controlled airspace round the airport">Airspace</button>' : ''}<button class="act" data-act="aptZoom">Zoom to it</button><button class="act pri" data-act="bbToggle" title="The build bar along the bottom of the screen (B)">Build (B)</button></div></div>`;
   const cards = A ? `${ex('score', 'Airline scorecards')}${O.score ? scorecardHTML(b) : ''}` : '';
   const gse = IC.FOCUS.gse && b.st && b.st.longest > 0 ? `<div class="sec">${ex('fleet', 'Ground vehicles')}${O.fleet ? fleetHTML(b) : ''}</div>` : '';
-  return `<div class="ibody">${nums}${chain}${probs}${deals}${works}${day}${cards ? `<div class="sec">${cards}</div>` : ''}${gse}${more}</div>`;
+  return `<div class="ibody">${nums}${chain}${probs}${IC.FOCUS.ops ? opsHTML(b, O) : ''}${deals}${works}${day}${cards ? `<div class="sec">${cards}</div>` : ''}${gse}${more}</div>`;
+}
+/* (brief 71) operations now: incidents with their bars and calls, each runway's state, the turnarounds on the stands,
+   and the last few incidents with what caused them */
+function opsHTML(b, O) {
+  if (!b.st || !b.st.longest) return '';
+  const N = IC.opsNow(S, b), turns = N.turns, rec = IC.opsRecent(b, 3);
+  const incRow = inc => {
+    const st = IC.opsStage(inc), K = IC.OPS_INC[inc.kind];
+    const btn = (op, label, pri) => `<button class="btn sm ${pri ? 'primary' : ''}" data-act="opsDo" data-op="${op}" data-v="${esc(inc.id)}" data-ap="${esc(b.id)}">${esc(label)}</button>`;
+    const acts = st.k === 'ask' ? btn('close', 'Close and sweep', true) + btn('open', 'Keep it open') : st.k === 'open' ? btn('close', 'Close and sweep now', true) : IC.opsRushOk(inc) ? btn('rush', `Rush · ${U.money(IC.OPS.rushCost)}`) : '';
+    return `<div class="li"><b class="${K.col === 'red' ? 'hostile' : 'amber'}">${esc(K.name)}</b><small>${esc(inc.what.charAt(0).toUpperCase() + inc.what.slice(1))}. Now: ${esc(U.lc(IC.OPS_STG[st.k]))}${st.k === 'open' ? '' : `, ${U.dur(Math.max(30, IC.opsLeft(S, inc)))} to go`}. Cause: ${esc(inc.cause)}.</small>${ui.bar(IC.opsProg(inc), K.col === 'red' ? 'var(--hostile)' : 'var(--amber)')}${acts ? `<span class="la">${acts}</span>` : ''}</div>`;
+  };
+  const rwRow = r => `<div class="li"><b>${esc(r.rw.name)}</b><small class="${r.shut || r.works ? 'amber' : ''}">${r.shut ? esc(r.shut.replace(/^runway closed: /, 'Closed: ')) : r.works ? 'Closed for works' : 'Open'}${r.dep ? ` · ${r.dep} waiting to depart` : ''}${r.arr ? ` · ${r.arr} arrival${r.arr > 1 ? 's' : ''} holding` : ''}</small></div>`;
+  const tRow = x => `<div class="li"><b>${esc(x.tl.cs)} <small>stand ${esc(IC.standName(x.s))}</small></b><small class="${x.held ? 'amber' : ''}">${esc(IC.tailPhase(S, x.tl))}</small>${ui.bar(x.f, x.held ? 'var(--hostile)' : x.f >= 1 ? 'var(--ok)' : 'var(--amber)')}</div>`;
+  const shown = O.opsAll ? turns : turns.slice(0, 4);
+  return `<div class="sec ops"><h3 class="sh">Operations now <em>${N.inc.length ? `${N.inc.length} incident${N.inc.length > 1 ? 's' : ''} · ` : ''}${N.stands - N.free} of ${N.stands} stands in use</em></h3>
+    ${N.inc.length ? `<div class="list">${N.inc.map(incRow).join('')}</div>` : ''}
+    <div class="list">${N.rw.map(rwRow).join('')}</div>
+    ${turns.length ? `<div class="list">${shown.map(tRow).join('')}</div>${turns.length > 4 ? `<button class="more" data-act="aptOpen" data-v="opsAll">${O.opsAll ? 'Fewer ▴' : `All ${turns.length} turnarounds ▾`}</button>` : ''}` : '<p class="hint">No airliner is being turned round.</p>'}
+    ${rec.length ? `<button class="more" data-act="aptOpen" data-v="opsRec">${O.opsRec ? 'Hide the last incidents ▴' : `The last ${rec.length} incident${rec.length > 1 ? 's' : ''} ▾`}</button>${O.opsRec ? `<div class="list">${rec.map(r => `<div class="li"><b>${esc(IC.OPS_INC[r.kind].name)} <small>${U.hhmm(r.t0)} · ${U.dur(r.took)}</small></b><small>${esc(r.cause.charAt(0).toUpperCase() + r.cause.slice(1))}. ${esc(r.fix)}</small></div>`).join('')}</div>` : ''}` : ''}</div>`;
 }
 /* ---------- the Airspace tab: the airport's shape, drawn from above like a chart; controllers and stacks ---------- */
 const lvlT = a => a <= 0.01 ? 'the ground' : IC.flText(a);
@@ -563,7 +592,7 @@ function airspaceTab(b, st) {
   const stacks = IC.atcStacks(S, b).map(k => `<div class="li"><b>${esc(k.k)} stack</b><small>${k.lv.map((t, i) => `${esc(t.cs)} ${IC.flText(IC.atcStackLevel(i))}`).join(' · ')}</small></div>`).join('');
   const used = [...new Set(V.map(v => v.cls))].map(c => IC.ASP_CLS[c]);
   const areas = IC.aspShapesNear(S, b).filter(s => !s.ap);
-  const areaRow = a => `${S.asp.vols.filter(v => v.sh === a.id).map(ringRow).join('')}${line('Size', `${btn('scale', -1, '−', { sh: a.id })}<b class="aspval">${Math.round(a.rings[0].r / 10)} km</b>${btn('scale', 1, '+', { sh: a.id })}${btn('adel', null, 'Withdraw', { sh: a.id, warn: 1 })}`)}`;
+  const areaRow = a => a.fixed ? `${S.asp.vols.filter(v => v.sh === a.id).map(ringRow).join('')}<p class="hint">${esc(a.fixed)}</p>` : `${S.asp.vols.filter(v => v.sh === a.id).map(ringRow).join('')}${line('Size', `${btn('scale', -1, '−', { sh: a.id })}<b class="aspval">${Math.round(a.rings[0].r / 10)} km</b>${btn('scale', 1, '+', { sh: a.id })}${btn('adel', null, 'Withdraw', { sh: a.id, warn: 1 })}`)}`;
   return `<p class="hint">Airspace is drawn as on a chart, from above. Each ring shows its ceiling over its floor: hundreds of feet below 6,000 ft (40 over 12 is 1,200 to 4,000 ft), flight levels above. Its class says who needs a clearance and who controllers keep apart. On the map, drag the square to scale the shape and a dot to move one ring.</p>
     <div class="sec"><h3 class="sh">Shape <em>${esc(sh.name)}</em></h3>${shapes}${size}</div>
     ${taught && warn.length ? `<div class="sec"><h3 class="sh">Problems <em>${warn.length}</em></h3>${warn.map(w => `<div class="warnrow">${esc(w)}</div>`).join('')}</div>` : taught ? '<div class="now ok">Arrivals stay inside controlled airspace all the way down.</div>' : ''}
@@ -641,10 +670,32 @@ function lifeRows(b) {
   const rows = [['Gates · remote · cargo stands', `${pv.gates} · ${pv.remote} (by bus) · ${pv.cargoStands}${pv.gates && !IC.aptTechOk(S, 'bridge') ? ' <span class="amber">· no jet bridges yet (research)</span>' : ''}`],
     ['On the ground, last hour', gm.length ? Object.entries(by).map(([k, n]) => `${n} ${k === 'push' ? 'pushbacks' : k === 'tow' ? 'tows' : k === 'fuel' ? 'stops to refuel' : k === 'de-icing' ? 'de-icings' : k}`).join(', ') : 'no pushbacks, tows or service stops'],
     ['Hangars', pv.hangar ? `${inH} of ${pv.hangar} places in use for maintenance` : '<span class="amber">none: airliners due for maintenance fly elsewhere</span>']];
+  // (brief 62) the GA ramp: its spots, who is on them, today's comings and goings, and why nobody flies
+  const G = IC.gaStatus && IC.gaStatus(S, b);
+  if (G) {
+    const full = G.free === 0, T = G.today;
+    rows.push(['GA ramp', `${G.taken} of ${G.spots} spots taken (${G.ties} tie-downs, ${G.jets} for business jets): ${G.based} aircraft based here${G.out ? `, ${G.out} out flying` : ''}, ${G.visitors} visiting${G.coming ? `, ${G.coming} on ${G.coming > 1 ? 'their' : 'its'} way in` : ''}`
+      + `${full ? ' · <span class="amber">full</span>' : ''}`]);
+    rows.push(['Light aircraft today', `${T.in} in, ${T.out} out${G.turned ? ` · <span class="amber">${G.turned} turned away since yesterday with the ramp full: they flew to other fields (make the ramp bigger, or build another)</span>` : ''}${G.grounded ? ` · nobody flying now: ${G.grounded}` : ''}`]);
+  } else if (b.owner === 'us' && b.parts.some(p => p.kind === 'runway' && p.built)) rows.push(['GA ramp', `none: light aircraft and business jets park on a free remote stand among the airliners${S.ga && S.ga.parked.some(r => r.ap === b.id) ? ` (${S.ga.parked.filter(r => r.ap === b.id).length} there now)` : ''}, or fly elsewhere when there is none. A GA ramp (Aprons and stands) gives them tie-downs and keeps the airline stands free`]);
   if (L) {
     const n = {}; for (const it of L.items) n[it.kind] = (n[it.kind] || 0) + 1;
     const what = Object.entries(n).map(([k, c]) => `${c} ${IC.LAND[k].name.toLowerCase()}${c > 1 && !/s$/.test(IC.LAND[k].name) ? 's' : ''}`).join(', ');
-    rows.push(['Landside', `${L.road ? '' : '<span class="amber">no road reaches it</span> · '}${what || 'nothing yet: it grows with passengers'}${pv.parking ? ` · ${pv.parking.toLocaleString('en-US')} parking spaces` : ''}${L.earn ? ` · earns ${U.money(L.earn)} an hour` : ''}`]);
+    rows.push(['Front side', `${L.road ? '' : '<span class="amber">no road reaches it</span> · '}${what || 'nothing yet: it grows with passengers'}${L.earn ? ` · earns ${U.money(L.earn)} an hour` : ''}`]);
+    // (brief 61) parking and the kerb against what the travellers bring, and who builds it
+    if (!L.fixed && IC.landAccess) {
+      const A = IC.landAccess(S, b), num = v => Math.round(v).toLocaleString('en-US'), f = IC.landAccessF(b);
+      const park = !A.need ? `${num(A.have)} spaces: hardly anyone drives here yet` : A.short > 0.1
+        ? `<span class="amber">${num(A.have)} spaces for about ${num(A.need)} cars: the car parks are full, and ${Math.round((1 - f) * 100)}% fewer travellers choose this airport</span>`
+        : `${num(A.have)} spaces for about ${num(A.need)} cars${A.own ? ` (${num(A.own)} in car parks you built)` : ''}`;
+      rows.push(['Parking', park]);
+      const m = v => `${Math.round(v * 100)} m`;
+      if (A.kerb > 0.05) rows.push(['Kerb', A.deck
+        ? `${A.kerbShort > 0.1 ? '<span class="amber">' : ''}Departures on the upper deck: ${m(A.deck)} for about ${m(A.kDep)} of cars dropping off. Arrivals at ground level: ${m(A.ground)} for about ${m(A.kArr)} picking up${A.kerbShort > 0.1 ? ': cars queue on the airport road</span>' : ''}`
+        : A.kerbShort > 0.1 ? `<span class="amber">${m(A.kerbHave)} of kerb where ${m(A.kerb)} is needed: cars queue on the airport road to drop off and pick up</span>` : `${m(A.kerbHave)} of kerb at the terminal doors, departures dropping off at one end and arrivals picked up at the other; together they need about ${m(A.kerb)}`]);
+      const on = L.auto !== false;
+      rows.push(['Who builds it', `<div class="acts"><button class="act ${on ? 'on' : ''}" data-act="land" data-op="auto" data-v="1" title="Developers add car parks, garages, hotels and offices as passengers grow, and pay the airport rent">Developers</button><button class="act ${on ? '' : 'on'}" data-act="land" data-op="auto" data-v="0" title="Nothing new is built for you: keep the ground free, and draw car parks yourself with the Car park tool (Landside and roads)">Only what you build</button></div>`]);
+    }
   }
   return rows;
 }
@@ -668,7 +719,9 @@ function workRow(b, w, i) {
   // a job waiting for money says how long the treasury needs, and offers to wait for it
   const broke = w.stages && /money/.test(w.wait || ''), t = broke && IC.waitTargets(S).find(x => x.work === w.id);
   const wait = t && (S.mode === 'story' || S.mode === 'sandbox') ? `<button class="btn sm" data-act="wait" data-v="${esc(t.key)}" title="Time runs fast until there is enough to finish it, the month turns, or something needs you">Wait</button>` : '';
-  return `<div class="li"><b>${esc(w.label)}</b><small>${what} · ${w.wait ? `<span class="amber">${esc(w.wait)}</span>` : `${U.dur(left)} left`}${t ? ` · ${esc(IC.waitText(S, t))}` : ''}</small><span class="la">${wait}${when}<button class="btn sm" data-act="bcancel" data-id="${w.id}" title="Cancel: money already spent is lost">✕</button></span></div>`;
+  // (brief 71) its bar, and a rush for the impatient
+  const rush = w.stages && !w.rush && w.si < w.stages.length ? `<button class="btn sm" data-act="brush" data-id="${w.id}" ${S.budget < IC.bldRushCost(w) ? 'disabled' : ''} title="A second crew and night shifts: what is left takes half the time (${U.dur(left / 2)} instead of ${U.dur(left)}). Materials still have to come.">Rush · ${U.money(IC.bldRushCost(w))}</button>` : '';
+  return `<div class="li"><b>${esc(w.label)}${w.rush ? ' <em class="amber">rushed</em>' : ''}</b><small>${what} · ${w.wait ? `<span class="amber">${esc(w.wait)}</span>` : `${U.dur(left)} left`}${t ? ` · ${esc(IC.waitText(S, t))}` : ''}</small>${w.stages ? ui.bar(w.prog, w.wait ? 'var(--amber)' : 'var(--ok)') : ''}<span class="la">${wait}${rush}${when}<button class="btn sm" data-act="bcancel" data-id="${w.id}" title="Cancel: money already spent is lost">✕</button></span></div>`;
 }
 /* the materials stockpile and where it comes from */
 function yard(b) {
@@ -714,7 +767,7 @@ function partActs(ap, p) {
     if (!st.fire || t > IC.FIRE_STD) L.push(fixBtn('fire', mid, 'Fire station nearer', true));
     if (st.fire) L.push(`<button class="act" data-act="fireDrill" title="The fire trucks race to the far end and the panel times them">Fire drill now</button>`);
     const mv = (ap.mvLog || []).length; say.unshift(`${mv} movement${mv === 1 ? '' : 's'} in the last hour; the runways take ${st.movesPerHour || 0}.`);
-  } else if (p.kind === 'terminal') { L.push(fixBtn(IC.FOCUS && IC.FOCUS.parts ? 'terminal' : 'tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
+  } else if (p.kind === 'terminal') { L.push(fixBtn('tattach', p, 'Add a pier to it')); L.push(fixBtn(IC.FOCUS && IC.FOCUS.parts ? 'terminal' : 'tstraight', p, 'Add a terminal beside it', (ap.paxRate || 0) > (st.pax || 1) * 0.8)); }
   else if (p.kind === 'apron') L.push(IC.FOCUS && IC.FOCUS.parts ? fixBtn('apron', p, 'More stands: an apron beside it') : fixBtn('tstraight', p, 'More stands: a terminal beside it'));
   else if (p.kind === 'fuel') L.push(fixBtn('fuel', p, 'Add a fuel tank beside it', IC.aptProblems(S, ap).some(x => x.kind === 'fuel')));
   else if (p.kind === 'fire') { const rw = ap.parts.find(q => q.kind === 'runway' && q.built); if (rw) L.push(`<button class="act pri" data-act="fireDrill" title="The fire trucks race to the far end of ${esc(rw.name || 'the runway')} and the panel times them">Fire drill now</button>`); }

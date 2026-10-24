@@ -132,7 +132,7 @@ IC.aptStands = standsOf;
 function freeStand(S, ap, T, pref) {
   IC.aptGraph(ap);
   const milSlots = new Set(S.roster.filter(r => r.base === ap.id).map(r => r.slot));
-  const ok = standsOf(ap).filter(s => s.hp > 0 && s.linked !== false && !s.occ && !milSlots.has(s.id) && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T) && !(s.maxHt && T.ht > s.maxHt));
+  const ok = standsOf(ap).filter(s => s.hp > 0 && s.linked !== false && !s.occ && !s.shut && !milSlots.has(s.id) && IC.STAND_FITS[s.size].includes(T.stand) && IC.standZoneOk(s, T) && !(s.maxHt && T.ht > s.maxHt));
   if (!ok.length) return null;
   const order = { s: 0, m: 1, l: 2 };
   ok.sort((a, b) => ((b.zone === T.zone) - (a.zone === T.zone)) || (order[a.size] - order[b.size]) || ((b.contact === (pref !== 'cargo')) - (a.contact === (pref !== 'cargo'))) || (T.cargo ? (b.cargo - a.cargo) : 0));
@@ -658,8 +658,6 @@ IC.aviation = function (S, dt) {
       // (round 5b) a flight to one of our airports that would land in its night curfew waits for the morning
       const cwD = toEnd.apt && IC.arrCurfew(S, S.byId[toEnd.apt], U.dist(ap, toEnd) / tl.T.cruise + 300);
       if (cwD > 0) { holdOn(S, tl, ap, 'night', Math.min(cwD, 3600), `${S.byId[toEnd.apt].name} has a night curfew`); continue; }
-      // light aircraft on the runway, or controllers still spacing the last departure the same way
-      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); holdOn(S, tl, ap, 'ga', w, 'light aircraft are using the runway'); continue; }
       // (round 5b) a departure that cannot be planned is checked before it takes an airway release, so a stuck
       // one no longer holds the others back
       if (!IC.gopsCanDepart(S, ap, tl.type, s.drive && IC.aptGraph(ap).N.has(s.id + 'o') ? s.id + 'o' : s.id)) {
@@ -670,6 +668,9 @@ IC.aviation = function (S, dt) {
         if (W.k !== 'wind' && S.time - tl.held.t0 > IC.HOLD_CANCEL) { strandTail(S, tl, ap, s, r, al, W.why); continue; }
         continue;
       }
+      // light aircraft on the runway, or controllers still spacing the last departure the same way (after the checks
+      // above, so a runway that cannot be used is named as the cause rather than the light aircraft)
+      if (IC.gaBusy(S, ap)) { const w = ap.gaUntil - S.time + 5; IC.gaDelayNote(S, ap, w); holdOn(S, tl, ap, 'ga', w, 'light aircraft are using the runway'); continue; }
       // (round 5b) a tug to push it back, and a bus if its stand is remote
       const gs = IC.gseGate(S, ap, tl, s, false);
       if (gs) { holdOn(S, tl, ap, gs.k, gs.w, gs.why); continue; }
@@ -1055,7 +1056,8 @@ function dayLog(S, ap) {
 }
 IC.aptDayLog = dayLog;
 IC.on((S, type, d) => {
-  if (type !== 'rwMove' || !d.ap || d.ap.kind !== 'airport' || !d.type || IC.ACTYPES[d.type].mil) return;
+  // (the airlines' movements: light aircraft and business jets from the GA ramp are not on the timetable, brief 62)
+  if (type !== 'rwMove' || !d.ap || d.ap.kind !== 'airport' || !d.type || IC.ACTYPES[d.type].mil || IC.ACTYPES[d.type].ga || IC.ACTYPES[d.type].biz) return;
   const L = dayLog(S, d.ap), h = Math.floor(hourOf(S) / 3600);
   if (d.k === 'arr' || d.k === 'dep') L[d.k][h]++;
 });

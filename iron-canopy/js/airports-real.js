@@ -33,51 +33,8 @@ const RECT_BLD = { fuel: 1, fire: 1, tower: 1 };
 IC.aptFromLayout = function (ap, L, o) {
   o = Object.assign({ x: ap.x, y: ap.y, rot: 0 }, o || {});
   IC.initAirport(ap);
+  const { blds } = IC.aptAddLayout(ap, L, o);
   const X = IC.layoutXf(o), P = F => pairs(F).map(q => X(q.x, q.y)), rot = o.rot || 0;
-  const add = (part, built) => IC.aptAddPart(ap, part, built !== false);
-  // runways first: nodes on their centrelines join them
-  for (const r of L.runways || []) {
-    const a = X(r.a[0], r.a[1]), b = X(r.b[0], r.b[1]);
-    const brg = Math.atan2(b.x - a.x, -(b.y - a.y)) * 180 / Math.PI, h0 = ((r.hdg != null ? r.hdg : brg - rot * 180 / Math.PI) + 360) % 360;
-    const rw = add({ kind: 'runway', a, b, w: r.w, real: true, ends: { a: endName(r.ends[0], h0, rot), b: endName(r.ends[1], (h0 + 180) % 360, rot) }, disp: r.disp || null, mat: r.mat || 'conc' });
-    rw.custom = true; rw.name = `Runway ${rw.ends.a}/${rw.ends.b}`;
-    for (const e of r.ils || []) add({ kind: 'ils', rw: rw.id, end: e });
-  }
-  // aprons, as outlines; stands where the data has them
-  const aprons = (L.aprons || []).map(A => {
-    const part = add(Object.assign(IC.polyPart('apron', P(A.poly)), { zone: A.zone || undefined, ramp: true, free: [], mat: A.mat || 'conc', name: A.name || undefined }));
-    return part;
-  });
-  // taxiway nodes: every point shared by two ways is one node
-  const nid = (L.nodes || []).map(q => { const w = X(q[0], q[1]); return IC.aptNode(ap, w.x, w.y); });
-  for (const t of L.taxi || []) {
-    if (!t.n || t.n.length < 2) continue;
-    add({ kind: 'taxi', nodes: t.n.map(i => nid[i]), w: t.w || IC.APART.taxi.w, name: t.name || undefined, lane: t.lane ? 1 : 0, oneway: t.oneway || 0, lv: t.lv || 0, mat: t.mat || 'conc' });
-  }
-  // stands on their aprons, noses the way the data says, with a lead-in from a taxilane node
-  for (const s of L.stands || []) {
-    const A = aprons[s.ap]; if (!A) continue;
-    const c = X(s.x, s.y), l = IC.rectLocal(A, c);
-    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, gate: s.gate ? 1 : undefined, k: A.free.length });
-  }
-  // buildings: terminals and concourses, cargo sheds, hangars, the tower and fire stations, fuel, support
-  const blds = (L.blds || []).map(B => {
-    const kind = IC.APART[B.kind] ? B.kind : 'support';
-    if ((IC.APART[kind].r || kind === 'fuel') && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r || 0.13, name: B.name || undefined }); }
-    // (a fuel farm, fire station or tower laid out as a box keeps its frame, so it is drawn as itself, IC.bldLayout)
-    if (B.rect && RECT_BLD[kind]) { const c = X(B.rect[0], B.rect[1]); return add({ kind, x: c.x, y: c.y, a: B.rect[2] + rot, w: B.rect[3], h: B.rect[4], name: B.name || undefined, tanks: B.tanks || undefined, link: B.link ? pairs(B.link).map(q => X(q.x, q.y)) : undefined }); }
-    const part = IC.polyPart(kind, P(B.poly));
-    // (a round or curved building keeps its circle, in its own frame, for the roof that follows it)
-    if (B.arc) { const c = X(B.arc[0], B.arc[1]), l = IC.rectLocal(part, c); part.arc = { x: l.x, y: l.y, r0: B.arc[2], r1: B.arc[3], a0: B.arc[4] + rot - part.a, a1: B.arc[5] + rot - part.a }; }
-    const made = add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, rows: B.rows || undefined, peaks: B.peaks || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
-    // (a hangar's door where the map's taxiway meets its wall)
-    if (B.door) { made.door = X(B.door[0], B.door[1]); made.doorSide = IC.rectLocal(made, made.door).y >= 0 ? 1 : -1; }
-    return made;
-  });
-  // passenger bridges over taxiways, with the height a tail must clear
-  for (const B of L.bridges || []) add(Object.assign(IC.polyPart('skybridge', P(B.poly)), { clear: B.clear, name: B.name || undefined, joins: (B.joins || []).map(i => blds[i] && blds[i].id).filter(Boolean) }));
-  // people movers between the terminals, on a viaduct (lv 1) or underground (lv -1)
-  for (const M of L.movers || []) add({ kind: 'people', pts: P(M.pts), lv: M.lv != null ? M.lv : 1, name: M.name || undefined, stops: (M.stops || []).map(i => blds[i] && blds[i].id).filter(Boolean), w: M.w || IC.APART.people.w });
   // the landside, fixed as mapped: roads on their levels, car parks and garages
   const land = IC.landInit(ap);
   land.fixed = true; land.items = []; land.roads = []; land.jn = []; land.road = true;
@@ -108,6 +65,59 @@ IC.aptFromLayout = function (ap, L, o) {
   IC.aptExtent(ap);
   ap.buildR = Math.max(ap.buildR || 0, ap.radius + 5);
   return ap;
+};
+/* a layout's airfield (runways, aprons and their stands, taxiways, buildings, bridges, movers) added to an airport as
+   built parts, beside what it has: the starting layouts put a terminal kit in this way */
+IC.aptAddLayout = function (ap, L, o) {
+  o = Object.assign({ x: ap.x, y: ap.y, rot: 0 }, o || {});
+  const X = IC.layoutXf(o), P = F => pairs(F).map(q => X(q.x, q.y)), rot = o.rot || 0;
+  const add = (part, built) => IC.aptAddPart(ap, part, built !== false);
+  // runways first: nodes on their centrelines join them
+  for (const r of L.runways || []) {
+    const a = X(r.a[0], r.a[1]), b = X(r.b[0], r.b[1]);
+    const brg = Math.atan2(b.x - a.x, -(b.y - a.y)) * 180 / Math.PI, h0 = ((r.hdg != null ? r.hdg : brg - rot * 180 / Math.PI) + 360) % 360;
+    const rw = add({ kind: 'runway', a, b, w: r.w, real: true, ends: { a: endName(r.ends[0], h0, rot), b: endName(r.ends[1], (h0 + 180) % 360, rot) }, disp: r.disp || null, mat: r.mat || 'conc' });
+    rw.custom = true; rw.name = `Runway ${rw.ends.a}/${rw.ends.b}`;
+    for (const e of r.ils || []) add({ kind: 'ils', rw: rw.id, end: e });
+  }
+  // aprons, as outlines; stands where the data has them
+  const aprons = (L.aprons || []).map(A => {
+    const part = add(Object.assign(IC.polyPart('apron', P(A.poly)), { zone: A.zone || undefined, ramp: true, free: [], mat: A.mat || 'conc', name: A.name || undefined }));
+    // (a GA ramp's business terminal: where it stands and which way it faces)
+    if (A.fbo) { const w = X(A.fbo[0], A.fbo[1]); part.fbo = { x: w.x, y: w.y, a: U.angWrap(A.fbo[2] + rot) }; }
+    return part;
+  });
+  // taxiway nodes: every point shared by two ways is one node
+  const nid = (L.nodes || []).map(q => { const w = X(q[0], q[1]); return IC.aptNode(ap, w.x, w.y); });
+  for (const t of L.taxi || []) {
+    if (!t.n || t.n.length < 2) continue;
+    add({ kind: 'taxi', nodes: t.n.map(i => nid[i]), w: t.w || IC.APART.taxi.w, name: t.name || undefined, lane: t.lane ? 1 : 0, oneway: t.oneway || 0, lv: t.lv || 0, mat: t.mat || 'conc' });
+  }
+  // stands on their aprons, noses the way the data says, with a lead-in from a taxilane node
+  for (const s of L.stands || []) {
+    const A = aprons[s.ap]; if (!A) continue;
+    const c = X(s.x, s.y), l = IC.rectLocal(A, c);
+    A.free.push({ lx: l.x, ly: l.y, rot: U.angWrap(s.h + rot - A.a), size: s.size || 'm', via: s.via != null ? nid[s.via] : null, name: s.ref || null, zone: s.zone || undefined, gate: s.gate ? 1 : undefined, drive: s.drive ? 1 : undefined, k: A.free.length });
+  }
+  // buildings: terminals and concourses, cargo sheds, hangars, the tower and fire stations, fuel, support
+  const blds = (L.blds || []).map(B => {
+    const kind = IC.APART[B.kind] ? B.kind : 'support';
+    if ((IC.APART[kind].r || kind === 'fuel') && B.c) { const c = X(B.c[0], B.c[1]); return add({ kind, x: c.x, y: c.y, a: rot, r: B.r || IC.APART[kind].r || 0.13, name: B.name || undefined }); }
+    // (a fuel farm, fire station or tower laid out as a box keeps its frame, so it is drawn as itself, IC.bldLayout)
+    if (B.rect && RECT_BLD[kind]) { const c = X(B.rect[0], B.rect[1]); return add({ kind, x: c.x, y: c.y, a: B.rect[2] + rot, w: B.rect[3], h: B.rect[4], name: B.name || undefined, tanks: B.tanks || undefined, link: B.link ? pairs(B.link).map(q => X(q.x, q.y)) : undefined }); }
+    const part = IC.polyPart(kind, P(B.poly));
+    // (a round or curved building keeps its circle, in its own frame, for the roof that follows it)
+    if (B.arc) { const c = X(B.arc[0], B.arc[1]), l = IC.rectLocal(part, c); part.arc = { x: l.x, y: l.y, r0: B.arc[2], r1: B.arc[3], a0: B.arc[4] + rot - part.a, a1: B.arc[5] + rot - part.a }; }
+    const made = add(Object.assign(part, { name: B.name || undefined, roof: B.roof || undefined, rows: B.rows || undefined, peaks: B.peaks || undefined, lvls: B.lvls || undefined, noApron: B.noApron || undefined, zone: B.zone || undefined }));
+    // (a hangar's door where the map's taxiway meets its wall)
+    if (B.door) { made.door = X(B.door[0], B.door[1]); made.doorSide = IC.rectLocal(made, made.door).y >= 0 ? 1 : -1; }
+    return made;
+  });
+  // passenger bridges over taxiways, with the height a tail must clear
+  for (const B of L.bridges || []) add(Object.assign(IC.polyPart('skybridge', P(B.poly)), { clear: B.clear, name: B.name || undefined, joins: (B.joins || []).map(i => blds[i] && blds[i].id).filter(Boolean) }));
+  // people movers between the terminals, on a viaduct (lv 1) or underground (lv -1)
+  for (const M of L.movers || []) add({ kind: 'people', pts: P(M.pts), lv: M.lv != null ? M.lv : 1, name: M.name || undefined, stops: (M.stops || []).map(i => blds[i] && blds[i].id).filter(Boolean), w: M.w || IC.APART.people.w });
+  return { aprons, blds };
 };
 
 /* how far a layout reaches from its reference point (units) */
@@ -188,7 +198,7 @@ function scratch(ap, L, x, y, rot) {
 }
 /* can the blueprint go here: in the country, on dry land, clear of other airfields and of what the airport already
    has; what it costs and what must be in hand to start */
-IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
+IC.bldBlueprintCheck = function (S, ap, key, x, y, rot, skip) {
   // (key: a blueprint's name, or a layout itself: a terminal kit from the build bar)
   const L = typeof key === 'string' ? IC.REAL_APT[key] : key; if (!L) return { ok: false, why: 'No such blueprint.' };
   const t = scratch(ap, L, x, y, rot), out = { ok: true, why: '', t, cost: 0, hit: null, parts: t.parts.length };
@@ -203,7 +213,8 @@ IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
   // other airfields: their circuits
   for (const b of IC.bases(S)) if (b !== ap && b.parts && b.parts.length && U.dist(b, { x, y }) < (b.radius || 20) + t.radius + 30) return no(`Too close to ${b.name}: their circuits would overlap.`, b);
   // what this airport already has
-  const mine = ap.parts.filter(p => p.kind !== 'ils').map(p => IC.aptElementOf(ap, p)).filter(Boolean);
+  // (skip: parts the caller will cut round it, a pier's apron and the taxilane across its root)
+  const mine = ap.parts.filter(p => p.kind !== 'ils' && !(skip && skip.has(p.id))).map(p => IC.aptElementOf(ap, p)).filter(Boolean);
   for (const p of t.parts) {
     const e = IC.aptElementOf(t, p); if (!e) continue;
     for (const q of mine) { if (L.join && e.cat === 'twy' && (q.cat === 'rwy' || q.cat === 'twy')) continue; if (IC.shapeDepth(e.sh, q.sh) > 0.01) return no(`It overlaps ${q.name}: move it clear, or bulldoze that first.`, q.p); }
@@ -214,8 +225,8 @@ IC.bldBlueprintCheck = function (S, ap, key, x, y, rot) {
   return out;
 };
 /* plan it: every part the layout has, planned as works like any other (paid for as they run), the landside as mapped */
-IC.bldBlueprint = function (S, ap, key, x, y, rot) {
-  const C = IC.bldBlueprintCheck(S, ap, key, x, y, rot);
+IC.bldBlueprint = function (S, ap, key, x, y, rot, skip) {
+  const C = IC.bldBlueprintCheck(S, ap, key, x, y, rot, skip);
   if (!C.ok) { IC.log(S, 'warn', 'BUILD', C.why); return null; }
   const t = C.t, L = typeof key === 'string' ? IC.REAL_APT[key] : key, nid = {}, pid = {};
   for (const n of Object.values(t.nodes)) { const id = ap.id + 'n' + (ap.nodeN++); nid[n.id] = id; ap.nodes[id] = { id, x: n.x, y: n.y, on: null }; }
@@ -336,32 +347,11 @@ IC.aptTraceFence = function (ap) {
   // the landside is outside, and so is anything it cuts off from the airside
   for (let k = 0; k < F.length; k++) if (Lr.bad[k] && !A.bad[k]) F[k] = 0;
   // the largest piece only
-  const lab = new Int32Array(F.length).fill(-1); let best = -1, bn = 0;
-  for (let k0 = 0, id = 0; k0 < F.length; k0++) { if (!F[k0] || lab[k0] >= 0) continue; let n = 0; const Q = [k0]; lab[k0] = id; while (Q.length) { const k = Q.pop(); n++; const i = k % nx, j = (k / nx) | 0; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const q = jj * nx + ii; if (F[q] && lab[q] < 0) { lab[q] = id; Q.push(q); } } } if (n > bn) { bn = n; best = id; } id++; }
-  for (let k = 0; k < F.length; k++) F[k] = lab[k] === best ? 1 : 0;
-  // trace the outline: walk the boundary edges of the filled cells, then straighten it (Douglas–Peucker, 15 m)
-  const at = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny && F[j * nx + i] === 1;
-  let si = -1, sj = -1; for (let k = 0; k < F.length && si < 0; k++) if (F[k]) { si = k % nx; sj = (k / nx) | 0; }
-  if (si < 0) return null;
-  // follow the boundary along the cell corners, the filled cells on the right, from the top-left corner of the first
-  const pts = []; let x = si, y = sj, d = 0; const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
-  for (let n = 0; n < 4 * (nx + ny) * 8; n++) {
-    pts.push({ x: box[0] + x * c, y: box[1] + y * c });
-    // try turning left, straight, right, back: the first move with a filled cell on the right and an empty one on the left
-    let moved = false;
-    for (const t of [3, 0, 1, 2]) {
-      const nd = (d + t) % 4, ahead = { x: x + DX[nd], y: y + DY[nd] };
-      // the cell to the right of the step from (x, y) heading nd, and the one to its left
-      const rc = nd === 0 ? [x, y] : nd === 1 ? [x - 1, y] : nd === 2 ? [x - 1, y - 1] : [x, y - 1];
-      const lc = nd === 0 ? [x, y - 1] : nd === 1 ? [x, y] : nd === 2 ? [x - 1, y] : [x - 1, y - 1];
-      if (at(rc[0], rc[1]) && !at(lc[0], lc[1])) { x = ahead.x; y = ahead.y; d = nd; moved = true; break; }
-    }
-    if (!moved || (x === si && y === sj)) break;
-  }
-  const simp = (P, tol) => { if (P.length < 4) return P; const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1; const st = [[0, P.length - 1]]; while (st.length) { const [a, b] = st.pop(); let m = -1, mi = -1; for (let i = a + 1; i < b; i++) { const dd = U.segDist(P[i].x, P[i].y, P[a].x, P[a].y, P[b].x, P[b].y); if (dd > m) { m = dd; mi = i; } } if (m > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); } } return P.filter((_, i) => keep[i]); };
-  // (the grid's steps straightened out: the fence runs in straight lengths between posts)
-  const poly = simp(pts, Math.max(0.3, c * 1.5));
-  if (poly.length < 3) return null;
+  IC.cellLargest(F, nx, ny);
+  // trace the outline round the filled cells, then straighten it (the grid's steps: the fence runs in straight
+  // lengths between posts)
+  const poly = IC.cellOutline(F, nx, ny, box, c, Math.max(0.3, c * 1.5));
+  if (!poly) return null;
   const a = ap.rwyA || 0, cs = Math.cos(-a), sn = Math.sin(-a);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (const q of poly) { const dx = q.x - ap.x, dy = q.y - ap.y, lx = dx * cs - dy * sn, ly = dx * sn + dy * cs; x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); y0 = Math.min(y0, ly); y1 = Math.max(y1, ly); }
