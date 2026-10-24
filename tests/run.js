@@ -1085,8 +1085,9 @@ test('traffic: no trips planned, every road alive by what is round it; the airpo
   const into = G.nodes[pl.node].out.map(li => T.links[li]).filter(L => L.ld[0] + L.ld[1] > 0);
   assert(into.length && into.some(L => L.mix[0][2] > 0.3 || L.mix[1][2] > 0.3), `the roads at ${ap.name} carry few airport travellers (${into.map(L => Math.max(L.mix[0][2], L.mix[1][2]).toFixed(2)).join(', ')})`);
   // its car parks fill over the morning and empty in the evening, never full to empty
+  // (as many spaces as the travellers' cars: full at the busiest hour)
   const L0 = IC.landInit(ap); L0.pax = 170; const it = { kind: 'park', cap: 400 }; L0.items = [it];
-  const at = h => IC.landUse(L0, it, h * 3600);
+  const at = h => IC.landUse(L0, it, { need: 400, have: 400 }, h * 3600);
   assert(at(4) < at(12) * 0.75 && at(22) < at(12) && at(4) > 0.3, `car park ${(at(4) * 100) | 0}% at 04:00, ${(at(12) * 100) | 0}% at noon, ${(at(22) * 100) | 0}% at 22:00`);
 });
 /* how much slower this machine is than the mid-range laptop the frame budgets are set for (1 if it is as fast or
