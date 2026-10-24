@@ -619,6 +619,8 @@ function onAct(e) {
     case 'aptBack': if (S.sel && S.sel.kind === 'apart') S.sel = { kind: 'infra', ref: S.sel.ap }; break;
     case 'incGo': { const it = ui.incRefs && ui.incRefs[+v]; if (it) { const r = it.ref; ui.jump(r && r.tn ? r : { x: it.x, y: it.y }, r && r.tn ? 'track' : r && r.parts ? 'infra' : null); } break; }
     case 'incX': IC.incidentDismiss(S, v); break;
+    case 'brush': { const ap = selAp(); const w = ap && ap.works && ap.works.find(x => x.id === id); if (w && IC.bldRush(S, ap, w)) IC.sfx.ui('ok'); break; }
+    case 'opsDo': { const ap = S.byId[b.dataset.ap], op = b.dataset.op; if (ap && (op === 'rush' ? IC.opsRush(S, ap, v) : IC.opsDecide(S, ap, v, op))) IC.sfx.ui('ok'); break; }
     case 'evChoose': IC.storyChoose(S, id, +v); IC.sfx.ui('ok'); ui.cache.evcard = null; if (S.paused && !S.story.events.length) S.paused = false; break;
     case 'radio': if (sel && S.sel.kind === 'track') IC.callAircraft(S, sel); break;
     case 'escortFire': { const a2 = S.air.find(x => x.id === id); if (a2 && sel) { a2.roe = 'free'; if (a2.r) a2.r.roe = 'free'; a2.tgt = sel; IC.log(S, 'warn', 'ORDERS', `${a2.name}: cleared to fire on TN ${sel.tn}.`, sel); IC.emit(S, 'fireOrder', { a: a2, t: sel }); } break; }
