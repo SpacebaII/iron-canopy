@@ -42,7 +42,9 @@ IC.layoutBuilder = function () {
     apron(P, o) { L.aprons.push(Object.assign({ poly: flat(P) }, o || {})); return L.aprons.length - 1; },
     stand(ai, c, h, size, via, ref) { L.stands.push({ ap: ai, x: r3(c.x), y: r3(c.y), h: r3(h), size, via, ref: ref || null }); },
     bld(kind, P, o) { L.blds.push(Object.assign({ kind, poly: flat(P) }, o || {})); return L.blds.length - 1; },
-    box(kind, c, a, w, h, o) { const ca = Math.cos(a), sa = Math.sin(a), W = (x, y) => pt(c.x + x * ca - y * sa, c.y + x * sa + y * ca); return B.bld(kind, [W(-w / 2, -h / 2), W(w / 2, -h / 2), W(w / 2, h / 2), W(-w / 2, h / 2)], o); },
+    // (a box keeps its frame too: the fuel farm, fire station and tower are laid out inside theirs, IC.bldLayout;
+    // o.link is the road from its front to the pavement, [face, edge] in the layout's frame)
+    box(kind, c, a, w, h, o) { const ca = Math.cos(a), sa = Math.sin(a), W = (x, y) => pt(c.x + x * ca - y * sa, c.y + x * sa + y * ca); const i = B.bld(kind, [W(-w / 2, -h / 2), W(w / 2, -h / 2), W(w / 2, h / 2), W(-w / 2, h / 2)], o); const b = L.blds[i]; b.rect = [r3(c.x), r3(c.y), r3(a), r3(w), r3(h)]; if (b.link) b.link = flat(b.link); return i; },
     round(kind, c, r, o) { return B.bld(kind, arc(c, r, 0, Math.PI * 2 - 0.13, 0.13), Object.assign({ arc: [r3(c.x), r3(c.y), 0, r, 0, Math.PI * 2] }, o)); },
     mover(pts, stops, lv, name) { L.movers.push({ pts: flat(pts), stops, lv: lv == null ? -1 : lv, name }); },
     road(pts, o) { L.roads.push(Object.assign({ pts: flat(pts), w: 0.12, lv: 0 }, o || {})); },
@@ -257,14 +259,16 @@ function support(B, c, u, o) {
   // hangars on the lane beyond the shed, doors to it
   B.box('hangar', W(-3.4, ld - 0.2 - 0.275 - 0.05 - 0.12), a, 0.7, 0.55, { name: 'Hangar' });
   B.box('hangar', W(-2.4, ld - 0.2 - 0.275 - 0.05 - 0.12), a, 0.7, 0.55, { name: 'Hangar' });
-  // behind the shed: fuel, tower, radars, a fire station; another fire station by the lane's far end
+  // behind the shed: fuel, radars, and at the west end the tower and a fire station; another fire station by the
+  // lane's far end
   // (the tanks 150 m apart, so one burning does not set fire to the next)
   for (const [x, y] of [[-1.6, -1.1], [-0.1, -1.1], [2.9, -1.1]]) { const q = W(x, y); B.L.blds.push({ kind: 'fuel', c: [r3(q.x), r3(q.y)], name: 'Fuel farm' }); }
-  B.box('tower', W(1.2, -1.1), a, 0.14, 0.14, { name: 'Tower' });
+  // (the tower and the fire station 170 m and more from the tanks: fire spreads 160 m from burning fuel)
+  B.box('tower', W(-3.6, -1.25), a, 0.14, 0.14, { name: 'Tower' });
   B.box('atc', W(2.0, -1.2), a, 0.12, 0.12, { name: 'Approach radar' });
   B.box('gradar', W(1.6, -0.9), a, 0.1, 0.1, { name: 'Ground radar' });
   B.box('hydrant', W(0.7, -1.6), a, 0.24, 0.18, { name: 'Hydrant fuel system' });
-  B.box('fire', W(-3.0, -0.6), a, 0.28, 0.2, { name: 'Fire station' });
+  B.box('fire', W(-3.6, -0.6), a, 0.28, 0.2, { name: 'Fire station' });
   if (o.fire2) B.box('fire', o.fire2, a, 0.28, 0.2, { name: 'Fire station' });
   for (const [from, to] of o.join || []) B.taxi(from === 'w' ? [W(-4.2, ld), to] : [W(o.east || 2.2, ld), to]);
   return { w: W(-4.2, ld), e: W(o.east || 2.2, ld), W, ld };

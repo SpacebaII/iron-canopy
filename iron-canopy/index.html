@@ -77,6 +77,7 @@
             <button class="mode" data-act="stPage" data-v="lessons"><b>Academy</b><span>Short lessons, one system at a time: radars, identification, layers, missiles in space, jamming, supply.</span><small id="acaProg"></small></button>
             <button class="mode" data-act="stPage" data-v="showcase"><b>Airport showcase</b><span>Two of the world's great airports near one to one, from real map data, with a day of airlines at work. Look round every part, from the whole field to the gate.</span><small id="showProg"></small></button>
             <button class="mode" data-act="begin" data-v="test"><b>Sandbox</b><span>The real map with free money and instant building. Send any attack at any place from a panel, whenever you like.</span></button>
+            <button class="mode" data-act="begin" data-v="build"><b>Free build</b><span>The Career's country with no story: money that does not run out, every part open, building done at once if you like. Airlines and light aircraft come by themselves to fill what you build.</span></button>
             <button class="mode" data-act="begin" data-v="range"><b>Test range</b><span>An empty plane. Place any system, send any threat from any side, and read the results.</span></button>
           </div>
           <div class="st-foot">
@@ -126,6 +127,7 @@
       <button class="mi" data-act="room" data-v="reference"><b>Guide</b><span>How every system works</span><kbd>?</kbd></button>
       <button class="mi" data-act="saveQuick"><b>Save the game</b><span>Kept in this browser</span></button>
       <button class="mi" data-act="room" data-v="settings"><b>Settings</b><span>Saved games, display, sound, auto-pause, hints</span></button>
+      <button class="mi" data-act="retryLesson" id="menuRetry" hidden><b>Restart the lesson</b><span>From its first step, as it was set up</span></button>
       <button class="mi warn" data-act="restart"><b>Quit to the main menu</b><span>The game is autosaved first</span></button>
     </div>
   </div>
@@ -155,6 +157,7 @@
 </div>
 
 <script src="js/core.js"></script>
+<script src="js/fixedmath.js"></script>
 <script src="js/tutor.js"></script>
 <script src="js/data.js"></script>
 <script src="js/names.js"></script>
@@ -162,12 +165,14 @@
 <script src="js/flight.js"></script>
 <script src="js/models.js"></script>
 <script src="js/models-airport.js"></script>
+<script src="js/models-arms.js"></script>
 <script src="js/gen.js"></script>
 <script src="js/cities.js"></script>
 <script src="js/world.js"></script>
 <script src="js/roadgeom.js"></script>
 <script src="js/terrain.js"></script>
 <script src="js/weather.js"></script>
+<script src="js/atmos.js"></script>
 <script src="js/state.js"></script>
 <script src="js/sensors.js"></script>
 <script src="js/threats.js"></script>
@@ -185,11 +190,14 @@
 <script src="js/groundops.js"></script>
 <script src="js/builder.js"></script>
 <script src="js/pieces.js"></script>
+<script src="js/layouts.js"></script>
+<script src="js/aptclass.js"></script>
 <script src="js/enemy.js"></script>
 <script src="js/air.js"></script>
 <script src="js/logistics.js"></script>
 <script src="js/research.js"></script>
 <script src="js/civil.js"></script>
+<script src="js/genav.js"></script>
 <script src="js/traffic.js"></script>
 <script src="js/aviation.js"></script>
 <script src="js/schedule.js"></script>
@@ -202,17 +210,20 @@
 <script src="js/campaign.js"></script>
 <script src="js/story.js"></script>
 <script src="js/deck.js"></script>
+<script src="js/free.js"></script>
 <script src="js/agenda.js"></script>
 <script src="js/desk.js"></script>
 <script src="js/academy.js"></script>
 <script src="js/combat.js"></script>
 <script src="js/record.js"></script>
+<script src="js/film-cam.js"></script>
 <script src="js/aptlife.js"></script>
 <script src="js/problems.js"></script>
 <script src="js/pick.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/save.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/audio-score.js"></script>
 <script src="js/render.js"></script>
 <script src="js/render-models.js"></script>
 <script src="js/render-roads.js"></script>
@@ -228,8 +239,11 @@
 <script src="js/sideview.js"></script>
 <script src="js/render-defense.js"></script>
 <script src="js/render-air.js"></script>
+<script src="js/film.js"></script>
 <script src="js/replay3d.js"></script>
 <script src="js/render3d-life.js"></script>
+<script src="js/render3d-war.js"></script>
+<script src="js/render3d-arms.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/inspector.js"></script>
 <script src="js/buildbar.js"></script>

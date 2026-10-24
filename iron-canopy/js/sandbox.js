@@ -101,21 +101,29 @@ IC.sandboxFrom = function (S, F) {
   const d = F.from === 'close' ? 1000 : k.d + 300;
   return { x: T.x + Math.cos(k.a) * d, y: T.y + Math.sin(k.a) * d, words: F.from === 'close' ? '100 km out, from the border side' : `from across the border, ${U.km(d)} away` };
 };
-/* set the target: a thing with a place (a city, airport, unit) or a point on the map, named by what is nearest */
-IC.sandboxTarget = function (S, p) {
-  let ref = p && p.id && S.byId[p.id] ? p : null;
+/* set the target: a thing with a place (a city, airport, unit) or a point on the map, named by what is nearest.
+   z (the map's zoom) is given for a click: a unit is the target only when the click lands on its symbol, so a click
+   beside one still means the place */
+IC.sandboxTarget = function (S, p, z) {
+  let ref = p && p.id ? IC.baseOf(S, p.id) || null : null;
+  if (!ref && z) { const r = 16 / z, u = S.units.filter(u => !u.dead && U.dist(u, p) < r).sort((a, b) => U.dist(a, p) - U.dist(b, p))[0]; if (u) { ref = u; p = u; } }
   if (!ref) { const near = S.infra.filter(i => U.dist(i, p) < Math.max(50, i.r || 0)).sort((a, b) => U.dist(a, p) - U.dist(b, p))[0]; ref = near || null; }
   S.sbx.target = { x: p.x, y: p.y, name: ref ? ref.name : IC.nearPlace(S, p.x, p.y), ref: ref ? ref.id : null };
+};
+/* what a launch sends, by the form: a raid's mix is scaled to the count, with at least one of each kind (two SEAD
+   aircraft) and its jammer, so it can be more than the count */
+IC.sandboxList = function (F) {
+  const n = Math.max(1, Math.min(200, Math.round(+F.n || 1))), pre = IC.RANGE_PRESETS[F.what], list = [];
+  if (pre) { for (const [type, f] of pre.mix) for (let i = 0; i < Math.max(type === 'sead' ? 2 : 1, Math.round(n * f)); i++) list.push(type); if (pre.jammer) list.push('ewj'); }
+  else if (IC.THR[F.what]) for (let i = 0; i < n; i++) list.push(F.what);
+  return list;
 };
 /* send what the form says at the target: returns how many are on their way */
 IC.sandboxLaunch = function (S, spec) {
   const X = S.sbx, F = Object.assign({}, X.form, spec), T = X.target;
-  const n = Math.max(1, Math.min(200, Math.round(+F.n || 1)));
   const from = IC.sandboxFrom(S, F);
   const a = Math.atan2(T.y - from.y, T.x - from.x), nx = -Math.sin(a), ny = Math.cos(a);
-  const pre = IC.RANGE_PRESETS[F.what], list = [];
-  if (pre) { for (const [type, f] of pre.mix) for (let i = 0; i < Math.max(type === 'sead' ? 2 : 1, Math.round(n * f)); i++) list.push(type); if (pre.jammer) list.push('ewj'); }
-  else if (IC.THR[F.what]) for (let i = 0; i < n; i++) list.push(F.what);
+  const pre = IC.RANGE_PRESETS[F.what], list = IC.sandboxList(F);
   if (!list.length) return 0;
   const op = { id: IC.nid('op'), type: 'sandbox', label: `${pre ? pre.name : IC.THR[F.what].name} at ${T.name}`, launched: 0, done: 0, hits: 0, lost: 0, shots: 0, t0: S.time, sbx: true };
   const alt = F.alt === '' || F.alt == null ? null : +F.alt;
@@ -131,12 +139,14 @@ IC.sandboxLaunch = function (S, spec) {
 IC.H.sbxOne = (S, type, at, aim, alt, op) => () => { if (IC.sendThreat(S, type, at, aim, alt, op)) S.sbx.st.launched++; };
 /* the enemy commander plans a raid of its own choosing on the target, with its warning and its report after */
 IC.sandboxRaid = function (S, kind) {
-  const E = S.enemy, T = S.sbx.target, ref = T.ref && S.byId[T.ref];
+  const E = S.enemy, T = S.sbx.target, ref = T.ref && IC.baseOf(S, T.ref);
   if (!E.war) setWar(S, true);
   const obj = { x: T.x, y: T.y, name: T.name, ref: ref || null };
   if (ref) obj.set = ref.kind === 'city' ? 'city' : ref.kind === 'airbase' ? 'airbase' : ref.kind === 'airport' ? 'trade' : ref.kind === 'power' ? 'city' : ref.kind === 'factory' ? 'trade' : 'transport';
   E.raid = null;
   const op = IC.enemyForceOp(S, 'raid', obj, { kind: kind || 'pressure', T: 1500 });
+  // its weapons count in the panel's tally (sent, shot down, got through)
+  if (E.raid) { E.raid.sbx = true; (S.sbx.raids || (S.sbx.raids = [])).push(E.raid); }
   IC.log(S, 'warn', 'SANDBOX', `The enemy is planning a ${(IC.SBX_RAIDS[kind] || 'raid').toLowerCase()} on ${T.name}. It strikes in about 25 min.`, T);
   return op;
 };
@@ -150,14 +160,18 @@ function setWar(S, on) {
 IC.sandboxClear = function (S) {
   let n = 0;
   for (const t of S.threats) if (!t.dead && !t.d.civil) { t.dead = true; n++; }
+  const due = S.enemy.pending.length;
   S.enemy.pending = [];
   if (S.enemy.raid) { S.enemy.raid = null; if (S.enemy.cycle) S.enemy.cycle = { phase: 'calm', next: S.time + 3600, since: S.time }; }
+  IC.log(S, 'info', 'SANDBOX', n || due ? `Sky cleared: ${n} enemy weapon${n === 1 ? '' : 's'} and aircraft taken out of the air${due ? `, ${due} launch${due === 1 ? '' : 'es'} called off` : ''}.` : 'Sky cleared: there was nothing of theirs in the air.');
   return n;
 };
 /* mend everything: units, airports, cities, power, roads */
 IC.sandboxRepair = function (S) {
-  for (const u of S.units) { u.hp = u.max; for (const k in u.comp) u.comp[k] = 1; u.repairing = false; }
+  let n = 0;
+  for (const u of S.units) { if (u.hp < u.max || Object.values(u.comp || {}).some(c => c < 1)) n++; u.hp = u.max; for (const k in u.comp) u.comp[k] = 1; u.repairing = false; }
   for (const i of S.infra) {
+    if (i.max && i.hp < i.max) n++;
     if (i.max) i.hp = i.max;
     i.offline = false;
     if (i.blocks) { let hit = false; for (const b of i.blocks) if (b.hp < 1) { b.hp = 1; hit = true; } if (hit) { const r = (i.r || 30) * 2; IC.worldChanged(S, { x0: i.x - r, y0: i.y - r, x1: i.x + r, y1: i.y + r }); } }
@@ -175,18 +189,29 @@ IC.sandboxRepair = function (S) {
     b.dirty = true; b.cfg = null; IC.aptStats(S, b);
   }
   let roads = false;
-  for (const e of S.world.edges) if (e.cut || (e.cond != null && e.cond < 1)) { e.cond = 1; e.cut = false; roads = true; }
+  let nr = 0;
+  for (const e of S.world.edges) if (e.cut || (e.cond != null && e.cond < 1)) { e.cond = 1; e.cut = false; roads = true; nr++; }
   if (roads) IC.roadsChanged(S);
+  IC.log(S, 'info', 'SANDBOX', n || nr ? `Repaired: ${n} unit${n === 1 ? '' : 's'} and place${n === 1 ? '' : 's'}${nr ? `, ${nr} road${nr === 1 ? '' : 's'}` : ''}, and every airport, all as new.` : 'Repaired: nothing was damaged. Every airport is as new.');
+  return n + nr;
 };
 /* the score of what was sent: shot down and got through */
 IC.on((S, type, d) => {
   if (!S.sbx) return;
-  if (type === 'kill' && d.op && d.op.sbx) S.sbx.st.kills++;
-  if (type === 'arrive' && d.t.op && d.t.op.sbx) S.sbx.st.leaks++;
+  if (type === 'kill' && mine(d.op)) S.sbx.st.kills++;
+  if (type === 'arrive' && mine(d.t.op)) S.sbx.st.leaks++;
 });
+const mine = op => !!op && (op.sbx || !!(op.raid && op.raid.sbx));
+/* how many have been sent from the panel and by the raids the enemy was asked to plan */
+IC.sandboxSent = function (S) {
+  let n = S.sbx.st.launched;
+  for (const R of S.sbx.raids || []) for (const op of new Set(R.ops)) n += op.launched || 0;
+  return n;
+};
 
 /* ---------- the panel ---------- */
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const mixWords = list => { const c = {}; for (const k of list) c[k] = (c[k] || 0) + 1; return Object.entries(c).map(([k, v]) => `${v}× ${IC.THR[k].name.replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase())}`).join(', '); };
 IC.sandboxPanel = function (S) {
   const X = S.sbx, F = X.form, st = X.st, T = X.target;
   const opt = (v, n, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(n)}</option>`;
@@ -194,6 +219,7 @@ IC.sandboxPanel = function (S) {
   const from = Object.entries(IC.SBX_FROM).map(([k, n]) => opt(k, n, F.from)).join('');
   const raid = Object.entries(IC.SBX_RAIDS).map(([k, n]) => opt(k, n, F.raid)).join('');
   const inp = (name, v, w, t) => `<input data-act="sbxForm" name="${name}" value="${esc(v)}" style="width:${w}rem" title="${esc(t)}" inputmode="decimal">`;
+  const list = IC.sandboxList(F), n = Math.max(1, Math.min(200, Math.round(+F.n || 1)));
   const up = S.threats.filter(t => !t.dead && !t.d.civil).length, sel = S.sel && S.sel.ref && S.sel.ref.x != null;
   const rules = IC.SBX_RULES.map(r => `<button class="btn sm sbx-rule" data-act="sbxRule" data-v="${r.k}" aria-pressed="${!!X[r.k]}" title="${esc(r.tip)}">${X[r.k] ? '✓' : '○'} ${esc(r.name)}</button>`).join('');
   const btn = (act, v, text, tip, cls) => `<button class="btn sm ${cls || ''}" data-act="${act}"${v ? ` data-v="${v}"` : ''}${tip ? ` title="${esc(tip)}"` : ''}>${text}</button>`;
@@ -201,10 +227,11 @@ IC.sandboxPanel = function (S) {
   return `<h3 data-act="briefMin" title="Collapse or expand">Sandbox<em>${up} enemy in the air</em></h3>
     <div ${row}><span class="muted">Target</span> <b>${esc(T.name)}</b></div>
     <div ${row}>${btn('sbxPick', '', 'Pick on the map', 'Then click anywhere on the map')}${btn('sbxAt', 'cap', 'Capital')}${btn('sbxAt', 'base', 'Air base')}${sel ? btn('sbxAt', 'sel', 'Selected', 'What you have selected') : ''}</div>
-    <div ${row}><select data-act="sbxForm" name="what" style="max-width:12rem">${what}</select>${inp('n', F.n, 2.6, 'How many')}<button class="act pri" data-act="sbxLaunch">Launch</button></div>
+    <div ${row}><select data-act="sbxForm" name="what" style="max-width:12rem">${what}</select>${inp('n', F.n, 2.6, IC.RANGE_PRESETS[F.what] ? 'How many of the main weapon: the rest of the mix is scaled to it' : 'How many')}<button class="act pri" data-act="sbxLaunch">Launch</button></div>
+    ${list.length !== n ? `<p class="hint" style="margin:0" title="${esc(mixWords(list))}">Sends ${list.length} in all, with the rest of the mix</p>` : ''}
     <div ${row}><select data-act="sbxForm" name="from" style="max-width:12rem" title="Where they are launched from">${from}</select>${F.from === 'bearing' ? `${inp('brg', F.brg, 2.6, 'Bearing they come from, degrees from north')}° ${inp('km', F.km, 2.8, 'Distance, km')} km ·` : ''} height ${inp('alt', F.alt, 2.2, 'Height in km; blank for their usual height')} km</div>
     <div ${row}><select data-act="sbxForm" name="raid" style="max-width:12rem" title="The enemy picks its own weapons for the target, warns you through intelligence, and reports after">${raid}</select>${btn('sbxRaid', '', 'Enemy plans it', 'The enemy chooses its own mix of weapons for the target; intelligence warns you about 25 min ahead, and a report follows')}</div>
-    <p class="hint" style="margin:0">Sent ${st.launched} · <span class="ok">shot down ${st.kills}</span> · <span class="${st.leaks ? 'hostile' : ''}">got through ${st.leaks}</span></p>
+    <p class="hint" style="margin:0">Sent ${IC.sandboxSent(S)} · <span class="ok">shot down ${st.kills}</span> · <span class="${st.leaks ? 'hostile' : ''}">got through ${st.leaks}</span></p>
     <div ${row}>${rules}</div>
     <div ${row}>${btn('sbxClear', '', 'Clear the sky', 'Take every enemy weapon and aircraft out of the sky')}${btn('sbxRepair', '', 'Repair everything', 'Units, airports, cities, power stations and roads, all as new')}</div>`;
 };

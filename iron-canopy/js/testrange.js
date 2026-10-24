@@ -8,12 +8,13 @@ const U = IC.U;
 
 /* what each enemy weapon costs them, for the cost exchange (₭M) */
 IC.THR_COST = { owa: 0.05, jdr: 0.3, lm: 0.1, isr: 1, lacm: 1.5, mcm: 2, scm: 3, glb: 0.2, srbm: 3, marv: 5, mrbm: 8, pen: 0.5, hgv: 20, rkt: 0.1, arm: 0.8, dcy: 0.2, esj: 0.8, ftr: 40, str: 40, sead: 45, ewj: 60, bmr: 150, ahe: 20 };
+/* (the SEAD raid's key is not 'sead': that is the one-type SEAD aircraft in the same list) */
 IC.RANGE_PRESETS = {
   drones: { name: 'Drone swarm', mix: [['owa', 1], ['dcy', 0.2]] },
   cruise: { name: 'Cruise missile salvo', mix: [['lacm', 1], ['esj', 0.15]] },
   ballistic: { name: 'Ballistic salvo', mix: [['srbm', 1]] },
   mixed: { name: 'Mixed raid', mix: [['owa', 1], ['lacm', 0.6], ['esj', 0.15], ['sead', 0.2]], jammer: true },
-  sead: { name: 'SEAD strike with jammer', mix: [['sead', 1]], jammer: true },
+  seadjam: { name: 'SEAD strike with jammer', mix: [['sead', 1]], jammer: true },
   big: { name: 'The big one', mix: [['owa', 1.2], ['lacm', 0.8], ['srbm', 0.4], ['mrbm', 0.1], ['esj', 0.2], ['sead', 0.2], ['ahe', 0.15]], jammer: true }
 };
 IC.RANGE_TYPES = Object.keys(IC.THR).filter(k => !IC.THR[k].civil && k !== 'pen');
@@ -108,7 +109,7 @@ IC.sendThreat = function (S, type, from, aim, alt, op) {
   let t;
   if (d.move === 'bal') { t = IC.launchBallistic(S, type, from.x, from.y, aim, { op }); t.tr = IC.newTrail(S, 'bal'); }
   else if (d.move === 'hgv') { const L = U.dist(from, aim); t = IC.spawnThreat(S, 'hgv', from.x, from.y, { x0: from.x, y0: from.y, x1: aim.x, y1: aim.y, T: L / 12, apex: 90, aim, op, vx: (aim.x - from.x) / (L / 12), vy: (aim.y - from.y) / (L / 12) }); }
-  else if (d.move === 'wp') { const low = d.cls === 'cm' || d.cls === 'drone'; const route = low && type !== 'scm' ? IC.enemyPlanRoute(S, from, aim, true) : [aim]; t = IC.spawnThreat(S, type, from.x, from.y, { route, aim, op, jamming: !!d.jam, altHold: alt }); }
+  else if (d.move === 'wp') { const low = d.cls === 'cm' || d.cls === 'drone'; const route = low && type !== 'scm' ? IC.enemyPlanRoute(S, from, aim, true) : [aim]; t = IC.spawnThreat(S, type, from.x, from.y, { route, aim, op, jamming: !!d.jam, altHold: alt, alt0: d.glide ? (alt != null ? alt : d.alt) : undefined, dist0: d.glide ? U.dist(from, aim) : undefined }); }
   else if (d.move === 'lm') t = IC.spawnThreat(S, type, from.x, from.y, { route: [aim], aim, op });
   else if (d.move === 'isr') t = IC.spawnThreat(S, type, from.x, from.y, { area: aim, phase: 'out', loiterT: 1800, home });
   else if (d.move === 'arm') { const u = S.units.filter(x => x.radarOn).sort((p, q) => U.dist(p, from) - U.dist(q, from))[0]; if (!u) return null; t = IC.spawnThreat(S, 'arm', from.x, from.y, { target: u, aim: { x: u.x, y: u.y }, op }); }
