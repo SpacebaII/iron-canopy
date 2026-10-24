@@ -248,8 +248,10 @@ function facing(v) {
   // aircraft's lights burn as its pose says (the strobes on the runway and in the air, the beacon with the engines)
   {
     const G2 = IC.newGame({ seed: 4242, mode: 'sandbox' }); G2.time = Math.floor(G2.time / 86400) * 86400 + 11 * 3600;
+    // (at an airport where others are moving, so there are lights to check)
+    const busy = x => G2.infra.some(b => b.moves && Math.hypot(b.x - x.x, b.y - x.y) < 60 && b.moves.filter(m => !m.dead && m.phase !== 'start').length >= 3);
     let q = null;
-    for (let i = 0; i < 4 * 4 * 3600 && !q; i++) { IC.step(G2, 0.25); if (i % 40 === 0) q = G2.rec.turns.find(x => x.kind === 'bridge' && x.len > 0.3 && x.t1 == null && G2.time - x.t0 > 400 && G2.time - x.t0 < x.dur * 0.45); }
+    for (let i = 0; i < 4 * 4 * 3600 && !q; i++) { IC.step(G2, 0.25); if (i % 40 === 0) q = G2.rec.turns.find(x => x.kind === 'bridge' && x.len > 0.3 && x.t1 == null && G2.time - x.t0 > 400 && G2.time - x.t0 < x.dur * 0.45 && busy(x)); }
     if (!q) throw new Error('no jet turned round at a jet bridge in four hours');
     const L2 = IC.liveOpen(G2, { x: q.x, y: q.y, name: 'stand' }); await tick(); await tick();
     L2.cam = 'orbit'; L2.follow = null; Object.assign(L2.orbit, { tx: q.x - L2.cx, tz: q.y - L2.cy, ty: 0, yaw: 1, pitch: 0.4, dist: 1 });

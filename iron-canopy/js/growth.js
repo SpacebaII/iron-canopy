@@ -182,7 +182,9 @@ function airService(S) {
     v.relF = U.clamp(1 - (v.delay - 5) / 60, 0.4, 1);
     v.fareF = U.clamp(1.3 - 0.3 * (ap.feeLevel || 1), 0.6, 1.15);
     v.destF = 1 - Math.exp(-v.dests.size / G.dests);
-    v.q = ap.offline ? 0 : (0.5 * v.freqF + 0.5 * v.destF) * v.relF * v.fareF;
+    // (the front side: travellers who cannot park, or queue to drop off, try another airport: landside.js)
+    v.accF = IC.landAccessF ? IC.landAccessF(ap) : 1;
+    v.q = ap.offline ? 0 : (0.5 * v.freqF + 0.5 * v.destF) * v.relF * v.fareF * v.accF;
     // room for cargo: freighters, then belly holds; a cargo terminal makes the most of it
     v.cargoF = U.clamp(v.cargoT / 250, 0, 1) * (ap.st && ap.st.cargo ? 1 : 0.6) * (ap.offline ? 0 : 1);
   }
@@ -202,7 +204,7 @@ function airService(S) {
     const D = dem.get(c), b = D.bizShare, opts = [], cargoTo = [];
     for (const ap of ourAirports(S)) {
       const v = ap.svc, t = timeTo(S, T, ap);
-      const q = ap.offline ? 0 : ((0.3 + 0.4 * b) * v.freqF + (0.7 - 0.4 * b) * v.destF) * v.relF * Math.pow(v.fareF, 1.5 - b);
+      const q = ap.offline ? 0 : ((0.3 + 0.4 * b) * v.freqF + (0.7 - 0.4 * b) * v.destF) * v.relF * Math.pow(v.fareF, 1.5 - b) * v.accF;
       const w = catchF(t / 3600) * q;
       if (t < c.air.bestT) { c.air.bestT = t; c.air.near = ap.id; }
       if (w > 0) opts.push([ap, w, t]);
@@ -456,6 +458,9 @@ IC.aptGate = function (S, ap) {
   const clear = p => !E.some(b => IC.shapeDist(b.sh, p) < b.pad + 0.4) && !(hull && IC.shapeDist(hull, p) < 0.5 && !F.carveA.some(cv => U.inPoly(p.x, p.y, cv)));
   if (terms.length) {
     const t = terms[0], sd = IC.landSide(ap, t);
+    // (the end of the terminal's airport road, where its front side reaches now: the road comes in along it)
+    const fg = IC.landGate && IC.landGate(S, ap, t);
+    if (fg && clear(fg)) return { x: fg.x, y: fg.y };
     for (let d = IC.LAND_DEPTH + 0.6; d < 30; d += 0.5) { const g = IC.rectWorld(t, 0, sd * (t.h / 2 + d)); if (clear(g)) return g; }
   }
   // no terminal: out from the side where the buildings are (an air base's gate is by its hangars and tower)
@@ -474,7 +479,7 @@ IC.aptSeatRoads = function (S, ap) {
   W.tunnels = (W.tunnels || []).filter(t => t.apt !== ap.id);
   const els = IC.aptElements(S, ap, { noWorld: true });
   const terms = ap.parts.filter(p => p.kind === 'terminal' || p.kind === 'cargo');
-  const env = ap.land && ap.land.fixed ? [] : terms.map(t => IC.landEnvelope(ap, t));
+  const env = ap.land && ap.land.fixed ? [] : terms.map(t => IC.landEnvelope(ap, t, null, S));
   const fence = IC.aptFence(ap), keep = IC.aptKeepOut(S, ap, { els, m: 0.3, envelopes: env });
   // (the fence itself, less the landside: the road comes up to the gate outside it)
   if (fence) keep.push({ sh: IC.shapePoly(fence.poly), pad: 0.15, fence: true });
@@ -576,7 +581,7 @@ function roadNear(S, ap, part) {
   return false;
 }
 /* what the roads were seated for: the parts and the landside (re-seat when it changes) */
-const seatKey = ap => ap.parts.length + ':' + ap.nodeN + ':' + ap.parts.reduce((s, p) => s + (p.x || 0) + (p.a && p.a.x || 0), 0).toFixed(2);
+const seatKey = ap => ap.parts.length + ':' + ap.nodeN + ':' + ap.parts.reduce((s, p) => s + (p.x || 0) + (p.a && p.a.x || 0), 0).toFixed(2) + ':' + (ap.land && ap.land.gateV || 0);
 /* after the airfield grows: seat the roads again if anything changed (the builder calls it when a plan is made) */
 IC.aptReseat = function (S, ap, part) {
   if (!ap || !ap.parts || ap._seatKey === seatKey(ap)) return false;

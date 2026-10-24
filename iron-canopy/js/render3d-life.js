@@ -641,6 +641,9 @@ L3.airport = function (v, b, f, G) {
   need(v, 'belt.body', stands.length * 2 + 2, belt.still, H.solidMat(), A); need(v, 'belt.belt', stands.length * 2 + 2, belt.moving[0].geom, H.solidMat(), A);
   const contact = stands.filter(s => s.contact).length;
   for (const k of ['jbRot', 'jbTunnel', 'jbCab', 'jbLeg']) need(v, k, (k === 'jbTunnel' ? 2 : 1) * contact + 2, partsOf(k, true).all, H.solidMat(), A);
+  // (brief 62) the GA ramp's people and vehicles: the business jets' cars and the bowsers, pilots and passengers
+  const ga = IC.gaRamp ? IC.gaRamp(b) : null;
+  if (ga) for (const [k, n] of [['car', 6], ['bowser', 4], ['person', 40]]) need(v, k, n, partsOf(k).all, H.solidMat(), A);
   const fires = b.parts.filter(p => p.kind === 'fire' && p.built);
   need(v, 'firetruck', fires.length * 3 + 2, partsOf('firetruck').all, H.solidMat(), A);
   for (const p of fires) {
@@ -722,6 +725,17 @@ function airportFrame(v, A, t, nightK, cam, stats) {
   // bridges at contact stands with nothing on them wait folded back
   for (const J of A.stands) if (J.used !== A.frame) bridge(v, A, J, null, 0, t, stats);
   if (near) fireFrame(v, A, t, stats);
+  if (near && v.kind !== 'replay') gaFrame(v, A, stats);
+}
+/* (brief 62) the GA ramp as it is now (the live view; a replay has no record of it): what IC.gaScene puts out on
+   the ramp, the same as the map draws */
+function gaFrame(v, A, stats) {
+  const S = v.S, y = A.y0 + H.LIFT.rw;
+  if (!IC.gaScene || !S.ga) return;
+  for (const o of IC.gaScene(S, A.b)) {
+    if (o.kind === 'veh' && (o.key === 'car' || o.key === 'bowser' || o.key === 'gpu' || o.key === 'refueller')) { if (inst(v, o.key, o.x - v.cx, y, o.y - v.cy, o.h) >= 0) { stats.vehicles++; stats.kinds[o.key] = (stats.kinds[o.key] || 0) + 1; } }
+    else if (o.kind === 'person' || o.kind === 'marshal') inst(v, 'person', o.x - v.cx, y, o.y - v.cy, o.h);
+  }
 }
 /* the turnaround's vehicles and bridge at time t */
 function turnFrame(v, A, q, t, stats, near) {
