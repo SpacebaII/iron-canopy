@@ -23,7 +23,10 @@ const CFG = IC.REPLAY = {
   trail: 60, maxLabels: 40, boxes: 6000,
   fxFiles: ['js/render3d-fx.js'],
   // the ground: tiles of T world units painted at px pixels, seg squares a side, ring tiles round the focus
-  levels: [{ T: 60, px: 512, seg: 20, ring: 2 }, { T: 240, px: 512, seg: 20, ring: 2 }, { T: 960, px: 256, seg: 16, ring: 2 }],
+  levels: [{ T: 60, px: 512, seg: 20, ring: 2 }, { T: 240, px: 512, seg: 20, ring: 2 }, { T: 960, px: 512, seg: 24, ring: 2 },
+    // (a last ring out to about 570 km: from high up the haze closes before the land ends. It is painted at the
+    // detail the next ring has and shrunk, so the two are the same colours) (terrain pass)
+    { T: 3840, px: 512, paint: 1024, seg: 32, ring: 1 }],
   near: 0.01, far: 60000, farPx: 3, lodPx: 70,
   // the live view: a small window following one thing, what it shows round it
   live: { w: 480, h: 300, reach: 500, keep: 650, maxMovers: 50, maxLabels: 14, fps: 30, lag: 0.55 }
@@ -286,8 +289,11 @@ const texSRGB = tex => { if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBCo
 
 /* ---------- the ground's height ----------
    The terrain's real heights, in world units (KM a kilometre), except under our airports, which are graded level
-   at the height of their middle out to beyond their furthest part, blending into the hills round them */
-const hRaw = (S, x, y) => S.flat ? 0 : IC.elevKm(x, y) * KM;
+   at the height of their middle out to beyond their furthest part, blending into the hills round them. (terrain pass)
+   The heights as the map draws them (W.hFine: the crests and gullies the height grid is too coarse for); everything
+   in the air is placed by its height above this ground, so nothing flies through a ridge the simulation does not have */
+let hRes = 3;   // the finest detail asked of the heights (the finest ring's grid): a coarser ring asks less, never above 15
+const hRaw = (S, x, y) => S.flat ? 0 : IC.W.hFine ? Math.max(0, IC.W.hFine(x, y, hRes) - 0.25) * 2 * KM : IC.elevKm(x, y) * KM;
 function flatOf(v) {
   const S = v.S;
   v.flat = [];
@@ -350,7 +356,7 @@ function paintStep(J, ms) {
     if (done && !S.flat) {
       // the coarsest ring: the map's overall picture has no fields; a fine grain of them over it, so it reads like
       // the rings inside it
-      if (lod === 2) { g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.8; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, T, T); g.restore(); }
+      if (lod === 2) { g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.4; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, T, T); g.restore(); }
       // roads near their real width (the map draws them wider to read from far out)
       if (IC.drawRoads && lod < 2) { cam.z = Math.max(z, lod ? 7 : 12); IC.drawRoads(g, S, px, view); cam.z = z; }
     }
@@ -368,7 +374,11 @@ function paintTex(v, cv) {
 function terrainGeom(v, reg, n, hk) {
   const N = n + 1, pos = new Float32Array(N * N * 3), nor = new Float32Array(N * N * 3), uv = new Float32Array(N * N * 2), idx = new Uint32Array(n * n * 6);
   const x0 = reg.x - reg.R, y0 = reg.y - reg.R, d = 2 * reg.R / n, H = new Float32Array((N + 2) * (N + 2));
+  // (a coarse ring samples the same ground as the finest, point by point: asked only for its own grid's detail it
+  // drew the mean ground, and the finer ring inside stood above it like a plate)
+  hRes = 3;
   for (let j = -1; j <= N; j++) for (let i = -1; i <= N; i++) H[(j + 1) * (N + 2) + i + 1] = hT(v, x0 + i * d, y0 + j * d) * hk;
+  hRes = 3;
   const h = (i, j) => H[(j + 1) * (N + 2) + i + 1];
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const k = j * N + i;
@@ -384,14 +394,16 @@ function terrainGeom(v, reg, n, hk) {
 /* a tile of the ground: its job paints in slices; when the picture is done the tile goes on the ground whole */
 function tileJob(v, key, li, i, j) {
   const L = CFG.levels[li], reg = { x: (i + 0.5) * L.T, y: (j + 0.5) * L.T, R: L.T / 2 };
-  const J = paintJob(v, reg, L.px, li); Object.assign(J, { key, li, ms: 0 });
+  const J = paintJob(v, reg, L.paint || L.px, li); Object.assign(J, { key, li, ms: 0 });
   if (reg.x < -L.T || reg.y < -L.T || reg.x > IC.WW + L.T || reg.y > IC.WH + L.T) J.off = true;
   return J;
 }
 function finishTile(v, J) {
   const S = v.S, li = J.li, L = CFG.levels[li], g = new THREE.Group(); g.userData.li = li;
   if (!J.off) {
-    const mesh = new THREE.Mesh(terrainGeom(v, J.reg, L.seg, v.hk), tileMat(paintTex(v, J.cv), li));
+    let cv = J.cv;
+    if (cv.width > L.px) { cv = document.createElement('canvas'); cv.width = cv.height = L.px; cv.getContext('2d').drawImage(J.cv, 0, 0, L.px, L.px); }
+    const mesh = new THREE.Mesh(terrainGeom(v, J.reg, L.seg, v.hk), tileMat(paintTex(v, cv), li));
     mesh.renderOrder = -4 + li; g.add(mesh);
     if (li === 0 && !S.flat) { const b = buildings(v, J.reg, CFG.boxes); if (b) g.add(b); }   // buildings only close in
     if (FX()) FX().tile(v, g, J.reg, li);
@@ -421,11 +433,32 @@ function groundSync(v, fx, fy) {
     for (let i = i0 - L.ring; i <= i0 + L.ring; i++) for (let j = j0 - L.ring; j <= j0 + L.ring; j++) {
       const k = li + ':' + i + ':' + j; if (v.tiles.has(k)) continue;
       const d = Math.hypot(Math.max(0, Math.abs((i + 0.5) * L.T - fx) - L.T / 2), Math.max(0, Math.abs((j + 0.5) * L.T - fy) - L.T / 2));
-      need.push([k, li, i, j, li === 2 && Math.abs(i - i0) <= 1 && Math.abs(j - j0) <= 1 ? -1e9 + d : d + (2 - li) * 0.5]);
+      need.push([k, li, i, j, li >= 2 && Math.abs(i - i0) <= 1 && Math.abs(j - j0) <= 1 ? -1e9 * (CFG.levels.length - li) + d : d + (CFG.levels.length - 1 - li) * 0.5]);
     }
     for (const k of [...v.tiles.keys()]) { const [l, i, j] = k.split(':').map(Number); if (l === li && (Math.abs(i - i0) > L.ring + 1 || Math.abs(j - j0) > L.ring + 1)) dropTile(v, k); }
   });
   need.sort((a, b) => a[4] - b[4]); v.tileQ = need;
+  // (terrain pass) the plain beyond the rings at the height of the ground round their edge, so the land does not end
+  // in a cliff on a high plateau or in the mountains
+  if (v.beyond && !v.S.flat) {
+    const L = CFG.levels[CFG.levels.length - 1], r = (L.ring + 0.5) * L.T;
+    let sum = 0; for (let k = 0; k < 16; k++) sum += hRaw(v.S, fx + Math.cos(k * 0.3927) * r, fy + Math.sin(k * 0.3927) * r);
+    v.beyond.position.y = sum / 16 * v.hk - 0.5;
+    // and in the colour of the land there (the map's far picture), so the haze does not end on a green plain
+    const T = v.S.terrain;
+    if (T && T.far && T.far.getContext) {
+      if (!v.farPx) { try { v.farPx = T.far.getContext('2d').getImageData(0, 0, T.far.width, T.far.height); } catch (e) { v.farPx = false; } }
+      if (v.farPx) {
+        const P = v.farPx, c = [0, 0, 0];
+        for (let k = 0; k < 16; k++) {
+          const i = U.clamp(Math.round((fx + Math.cos(k * 0.3927) * r) / IC.WW * P.width), 0, P.width - 1), j = U.clamp(Math.round((fy + Math.sin(k * 0.3927) * r) / IC.WH * P.height), 0, P.height - 1), q = (j * P.width + i) * 4;
+          c[0] += P.data[q]; c[1] += P.data[q + 1]; c[2] += P.data[q + 2];
+        }
+        const lc = v.farCol || (v.farCol = new THREE.Color()); lc.setStyle(`rgb(${c[0] / 16 | 0},${c[1] / 16 | 0},${c[2] / 16 | 0})`);
+        v.beyond.material.color.set('#0c1410').lerp(lc, v.light);
+      }
+    }
+  }
 }
 /* works through the queue for up to ms milliseconds: a tile's painting may take several calls */
 function groundWork(v, ms) {
@@ -1524,7 +1557,7 @@ function sceneBase(v) {
   v.sky.scale.setScalar(30000); v.sky.renderOrder = -10; v.sky.frustumCulled = false; scene.add(v.sky);
   // beyond the tiles, a wide plain in the haze (drawn only where no tile is)
   const bm = new THREE.MeshLambertMaterial({ color: gnd }); bm.stencilWrite = true; bm.stencilRef = 1; bm.stencilFunc = THREE.GreaterStencilFunc; bm.stencilZPass = THREE.ReplaceStencilOp;
-  v.beyond = new THREE.Mesh(discG(), bm); v.beyond.scale.set(20000, 1, 20000); v.beyond.position.y = -0.5; v.beyond.renderOrder = -1; scene.add(v.beyond);
+  v.beyond = new THREE.Mesh(discG(), bm); v.beyond.scale.set(20000, 1, 20000); v.beyond.position.y = -0.5; v.beyond.renderOrder = -0.5; scene.add(v.beyond);
   v.hemi = new THREE.HemisphereLight(light > 0.3 ? 0xcfe0f4 : 0x8aa0d0, 0x40382c, 0.9 * lk * dim); scene.add(v.hemi);
   v.sun = new THREE.DirectionalLight(0xfff0dc, 1.05 * lk * dim); v.sun.position.set(-600, 700, 360); scene.add(v.sun);
   v.static = new THREE.Group(); scene.add(v.static);
