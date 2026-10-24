@@ -431,7 +431,8 @@ function brief() {
     // the step before, cut to two lines, and the current one whole: the current step must never scroll out of sight
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
     h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}<button class="howbtn" data-act="retryLesson" title="Start this lesson again from its first step">Restart lesson</button>`;
-  } else if (S.story && S.story.act !== 4 && ui.compact()) h = nextGoal();
+  } else if (S.story && S.story.act < 4 && IC.deskOn && IC.deskOn(S)) h = deskPanel();
+  else if (S.story && S.story.act !== 4 && ui.compact()) h = nextGoal();
   else if (S.story && S.story.act !== 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
     const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
@@ -451,13 +452,33 @@ function brief() {
   $('brief').classList.add('glass');
   $('brief').classList.toggle('min', !!ui.briefMin && !ui.compact());
   $('brief').classList.toggle('next', ui.compact() && !!S.story);
+  $('brief').classList.toggle('desk', !!(S.story && IC.deskOn && IC.deskOn(S)));
   setHTML($('brief'), h);
+}
+/* (brief 69) the Director's desk: the Minister's mandate with its date (Act I), the next step under it with How? and
+   Show me, then what is on the desk (each pressure with its date, how it stands, what happens if it is left and
+   the answers), and the Minister's confidence with what moved it last */
+function deskPanel() {
+  const st = S.story, M = IC.deskMandate(S), ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
+  let h;
+  if (M && !M.met) {
+    const late = M.missed ? ' late' : '', open = M.parts.filter(p => !p.done).length;
+    h = `<h3 data-act="briefMin" title="${ui.briefOpen ? 'Fold the steps' : 'Every step towards it'}"><span>${st.act === 1 ? 'The Minister’s mandate' : 'The cabinet’s mandate'}</span><em>${M.lapsed ? 'overdue' : `by ${esc(M.dshort)}`} ${ui.briefOpen ? '▴' : '▾'}</em></h3>
+      <div class="mand${late}"><b>${esc(M.text)}</b><small>${esc(M.where)} · ${M.lapsed ? 'no new date' : `${esc(M.left)} left`}${M.missed ? ` · late ${M.missed > 1 ? 'twice' : 'once'}` : ''}${M.parts.length > 1 ? ` · ${M.parts.length - open} of ${M.parts.length} done` : ''}</small></div>`;
+    h += nextGoal(`<h4 class="dsub">Next step</h4>`);
+  } else if (M && M.met) h = `<h3 data-act="briefMin"><span>Mandate met</span><em>${esc(M.where)}</em></h3><p class="hint">${esc(ch && ch.next ? ch.next : 'Keep the airports running.')}</p>` + (ui.briefOpen ? nextGoal('') : '');
+  else h = nextGoal();
+  const L = IC.deskList(S);
+  if (L.length) h += `<h4 class="dsub">On your desk</h4><div class="prss">${L.map(({ P, left, prog, late }) => `<div class="prs${late ? ' late' : ''}"><button class="prt" data-act="deskGo" data-v="${P.id}" title="${esc(P.text)}"><b>${esc(P.title)}</b><small>${esc(left)} left${prog ? ` · ${esc(prog)}` : ''}</small><small class="stake">If left: ${esc(P.stake)}</small></button><span class="prb">${P.fix && P.fix.part ? `<button class="howbtn" data-act="deskFix" data-v="${P.id}">${esc(P.fix.label || 'Fix it')} ▸</button>` : ''}${P.pay ? `<button class="howbtn" data-act="deskPay" data-v="${P.id}" title="${esc(P.payText)}"${S.budget < P.pay ? ' disabled' : ''}>Pay ${U.money(P.pay)}</button>` : ''}${!P.more ? `<button class="howbtn" data-act="deskMore" data-v="${P.id}" title="Half as long again, once: the Minister −${IC.DESK.more}">More time</button>` : ''}</span></div>`).join('')}</div>`;
+  const why = IC.deskWhy(S)[0], D = IC.deskDanger(S), c = Math.round(st.standing);
+  h += `<p class="dconf${D ? ` d${D.lvl}` : ''}" title="The Minister’s confidence settles towards how the airlines rate you, moved by what you did lately: pressures dealt with or left, mandates, reviews">Minister ${c}${why ? ` · last: ${esc(why.why)} (${why.v > 0 ? '+' : ''}${why.v})` : ''}${D ? `<br>${esc(D.text)}` : ''}</p>`;
+  return h;
 }
 /* (round 3) the goals as one line: the next one, how far along it is, the chapter; a click opens the list. A tip
    shows once, small, for half a minute, then folds behind "How?" */
 /* (round 5c) which tutorial teaches a goal (its Show me) */
 const GOAL_TUT = { found: 'found', runway: 'starter', apron: 'pieces', terminal: 'pieces', services: 'pieces', stands: 'pieces', gates: 'airspace', first: 'follow', approve: 'deals', deals: 'deals', deals3: 'deals', link: 'airspace', radar: 'radar' };
-function nextGoal() {
+function nextGoal(head) {
   const st = S.story, ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
   const done = st.goals.filter(g => g.done).length, open = st.goals.map((g, i) => ({ g, i })).filter(x => !x.g.done && !x.g.failed);
   // (round 4) each goal with what it gives: "→ opens the Terminal with piers", "→ +₭40M from the Ministry"
@@ -472,7 +493,7 @@ function nextGoal() {
   const g0 = open[0] && open[0].g, tut = IC.FOCUS.tutors && g0 && GOAL_TUT[g0.id] && IC.TUTORS[GOAL_TUT[g0.id]] ? GOAL_TUT[g0.id] : null;
   const tipOn = tip && (ui.tipOpen === tip || (!IC.FOCUS.tutors && now - ui.tipSeen.get(tip) < 30000));
   const list = ui.briefOpen ? IC.storyShown(S).filter(x => x.g !== (open[0] || {}).g) : [];
-  return `<h3 data-act="briefMin" title="${esc(where)}: ${ui.briefOpen ? 'fold the goals' : 'all the goals of this chapter'}"><span>Next goal</span><em>${ch ? `Chapter ${ch.n + 1}` : esc(A.name)} · ${done} of ${st.goals.length} done ${ui.briefOpen ? '▴' : '▾'}</em></h3>
+  return `${head != null ? head : `<h3 data-act="briefMin" title="${esc(where)}: ${ui.briefOpen ? 'fold the goals' : 'all the goals of this chapter'}"><span>Next goal</span><em>${ch ? `Chapter ${ch.n + 1}` : esc(A.name)} · ${done} of ${st.goals.length} done ${ui.briefOpen ? '▴' : '▾'}</em></h3>`}
     ${open[0] ? row(open[0]) : `<p class="hint">${esc(ch && ch.next ? ch.next : 'Every goal is done. Something is coming: keep the airports running.')}</p>`}
     ${tipOn ? `<p class="hint gtip ${ui.tipOpen === tip ? 'open' : ''}" data-act="tipOpen" title="Click to read it all">${esc(tip)}</p><button class="howbtn" data-act="tipFold">${IC.FOCUS.tutors ? 'Fold ▴' : 'Got it'}</button>` : tip ? `<span class="howrow">${tut && !(S.tutor && S.tutor.cur === tut) ? `<button class="howbtn" data-act="tutorGo" data-v="${tut}" title="${esc(IC.TUTORS[tut].title)}: a few steps on the real screen">Show me</button>` : ''}<button class="howbtn" data-act="tipOpen" title="How to do it, in words">How?</button></span>` : ''}
     ${list.length ? `<div class="goals">${list.map(row).join('')}</div>${ch && ch.next ? `<p class="hint">${esc(ch.next)}</p>` : ''}` : ''}`;
@@ -701,7 +722,8 @@ function placeCard(el, c) {
   if (ui.compact()) {
     const app = $('app').getBoundingClientRect(), W = app.width || cam.vw, sx = pt ? (pt.x - cam.x) * cam.z : W;
     const lc = document.querySelector('.leftcol').getBoundingClientRect();
-    if (pt && sx < lc.right - app.left + 60) { el.style.left = 'auto'; el.style.right = `${Math.round((ui.mapRight || 0) + 12)}px`; el.style.top = 'var(--top)'; }
+    // (brief 69) under a long desk the card would run off the screen: it goes to the right, like one about the left
+    if ((pt && sx < lc.right - app.left + 60) || lc.bottom - app.top > app.height * 0.55) { el.style.left = 'auto'; el.style.right = `${Math.round((ui.mapRight || 0) + 12)}px`; el.style.top = 'var(--top)'; }
     else el.style.top = `${Math.round(Math.max(lc.bottom - app.top + 10, 90))}px`;
     return;
   }
@@ -1019,6 +1041,9 @@ function pmarks() {
   // (round 5c) Chapter 3's radar goal: the biggest stretch of airway no radar sees, with its fix
   const rg = S.story && S.story.act === 1 && S.story.ch === 2 && S.story.goals.find(g => g.id === 'radar' && !g.done) && IC.radarGap(S);
   if (rg && rg.km > 30) L.push({ id: 'gap', x: rg.at.x, y: rg.at.y, lvl: 'warn', html: `<button class="pm-t" data-act="gapGo" title="Show the gaps: every stretch of airway no radar sees"><b>${Math.round(rg.km)} km of airway no radar sees</b></button><button class="pm-fix" data-act="gapFix" title="Pick the beacon radar and look here">Place a radar here ▸</button>` });
+  // (brief 69) what is on the Director's desk, where it happens
+  if (IC.deskOn && IC.deskOn(S)) for (const { P, left } of IC.deskList(S)) if (P.at && P.at.x >= x0 - 80 && P.at.x <= x1 + 80 && P.at.y >= y0 - 80 && P.at.y <= y1 + 80)
+    L.push({ id: 'desk:' + P.id, x: P.at.x, y: P.at.y, lvl: 'desk', html: `<button class="pm-t" data-act="deskGo" data-v="${P.id}" title="${esc(P.text)}"><b>${esc(P.title)} · ${esc(left)}</b></button>` });
   ui.pm = L;
   setHTML(el, L.map(m => `<div class="pmark ${m.lvl}" data-k="${esc(m.id)}" data-x="${m.x}" data-y="${m.y}"><i class="pmdot"></i><div class="pmbox">${m.html}</div></div>`).join(''));
 }

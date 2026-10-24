@@ -50,7 +50,7 @@ const borderSpot = S => {
 IC.TUTORS = {
   // ---------- (round 5c) the civil act: each one the first time the player comes to it ----------
   basics: { title: 'Goals and time', guide: 'time', when: S => civil(S) && !capAp(S), steps: [
-    { el: '#brief .goalrow', title: 'The next goal', text: 'One goal at a time, with what it opens or pays in green. Click it and the map shows where.', on: [['ui', 'goal']] },
+    { el: '#brief .goalrow', title: IC.FOCUS.desk ? 'The Minister’s mandate' : 'The next goal', text: S => IC.deskOn && IC.deskOn(S) ? 'The Minister judges you on this, by its date. Under it is the next step towards it: How? says how, and a click shows where on the map.' : 'One goal at a time, with what it opens or pays in green. Click it and the map shows where.', on: [['ui', 'goal']] },
     { el: '#speed [data-act="speed"][data-v="4"]', title: 'Time', text: 'Building takes game hours. Keys 1–6 set the speed and Space pauses. Try 4×.', on: [['ui', 'speed']] }
   ] },
   found: { title: 'Founding an airport', guide: 'airport', when: S => civil(S) && !capAp(S), steps: [

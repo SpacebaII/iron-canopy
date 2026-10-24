@@ -29,11 +29,12 @@ IC.WAIT = { speed: 432, step: 8 };
    chain: city → road → terminal → flights → money drawn over the map, and one money line (problems.js)
    progress: (round 4) Act I's chapters move by goals, not months; each goal says what it gives; passenger
      milestones open the bigger pieces; a peacetime event deck (deck.js); money split into running and invested */
-IC.FOCUS = { pieces: true, parts: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true, ops: true };
+IC.FOCUS = { pieces: true, parts: true, firstLanding: true, life: true, screen: true, calm: true, hands: true, chain: true, progress: true, slots: true, gse: true, tutors: true, polish: true, desk: true, ops: true };
 /* parts: (wave 12) the build bar is the parts one by one again (runways, taxiways, aprons, single stands,
    terminals, each service building), so the player composes the airport; of the whole pieces only the Starter
    airport stays on the bar (Blueprints), the others are what a problem's fix places; Found leaves the surveyed
    runway alone; the milestones open the parts that answer them (piers, a second runway, round terminals) */
+/* (brief 69) desk: the Career's Act I judged by the Minister's mandate, live pressures and a quarterly review (desk.js) */
 /* (brief 71) ops: incidents at the airports (airops.js), with their stages, closures and status bars */
 /* (round 5c) tutors: every civil feature taught on the real screen, the old click-through tour and tips hidden;
    polish: the trailer's and the benchmark's visual notes (vehicles, panels, labels, the build bar) */
