@@ -77,7 +77,7 @@ ui.store = store;
 // a decision and a peacetime launch pause the game unless the player turned them off
 ui.pauseOnIs = (P, k) => k === 'launch' || k === 'event' ? P[k] !== false : !!P[k];
 IC.savedCfg = () => { const c = store.get('ic-cfg', {}); return c.game || {}; };
-ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx }, ui: ui.scale, vol: IC.sfx.vol, music: IC.sfx.musicVol, amb: IC.sfx.ambVol, pauseRoom: ui.pauseRoom }); };
+ui.saveCfg = () => { if (!S) return; store.set('ic-cfg', { game: { pauseOn: S.cfg.pauseOn, slowmo: S.cfg.slowmo, combat: S.cfg.combat, shake: S.cfg.shake, bars: S.cfg.bars, radarFx: S.cfg.radarFx, seen: S.cfg.seen }, ui: ui.scale, vol: IC.sfx.vol, music: IC.sfx.musicVol, amb: IC.sfx.ambVol, pauseRoom: ui.pauseRoom }); };
 ui.applyScale = v => { ui.scale = v; document.documentElement.style.setProperty('--ui', v); };
 {
   const c = store.get('ic-cfg', {});
@@ -447,7 +447,7 @@ const GOAL_TUT = { found: 'found', runway: 'starter', apron: 'pieces', terminal:
 function nextGoal() {
   const st = S.story, ch = IC.storyChapterInfo(S), A = IC.ACTS[st.act];
   const done = st.goals.filter(g => g.done).length, open = st.goals.map((g, i) => ({ g, i })).filter(x => !x.g.done && !x.g.failed);
-  // (round 4) each goal with what it gives: "→ opens the Terminal with a pier", "→ +₭40M from the Ministry"
+  // (round 4) each goal with what it gives: "→ opens the Terminal with piers", "→ +₭40M from the Ministry"
   const gv = g => IC.FOCUS.progress && g.gives && !g.done ? ` <b class="gives">${esc(IC.goalGives(g))}</b>` : '';
   const row = ({ g, i }) => { const f = g.done ? 1 : ui.goalFrac(g), p = !g.done && g.prog ? g.prog() : ''; return `<button class="goalrow ${g.done ? 'done' : ''}" data-act="goal" data-v="${i}" title="${g.ref ? 'Click to see where' : ''}"><i>${g.failed ? '✗' : g.done ? '✓' : ''}</i><span>${esc(g.text)}${gv(g)}${p || f != null ? `<small>${f != null && !g.done ? `<span class="gbar"><em style="width:${U.clamp(f, 0, 1) * 100}%"></em></span>` : ''}${esc(p || '')}</small>` : ''}</span></button>`; };
   const where = ch ? `Chapter ${ch.n + 1} · ${ch.title}` : `${A.name} · ${A.title}`;
@@ -552,11 +552,11 @@ function arsenal() {
 }
 
 function layers() {
-  const L = [['gaps', 'Show the gaps'], ['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['weather', 'Weather'], ['labels', 'Labels']];
+  const L = [['gaps', 'Show the gaps'], ['coverage', 'Coverage'], ['rings', 'Ranges'], ['logistics', 'Supply'], ['civil', 'Traffic'], ['airways', 'Airways'], ['intel', 'Intel'], ['all', 'See everything'], ['weather', 'Weather'], ['labels', 'Labels']];
   const TIP = { gaps: 'Civil airways no radar sees: each unseen stretch drawn bold, the biggest ringed where a radar would close it. Not air defence cover (that is Coverage).',
     coverage: 'Radar cover: the lowest height our radars see, civil and military, with the holes behind hills.', rings: 'How far each of our units reaches.',
     logistics: 'Depots, their delivery rings and the convoys on the road.', civil: 'Road traffic and civil flights.', airways: 'The airways and their fixes.',
-    intel: 'What we know of the enemy: its sites and launchers.', weather: 'Cloud, rain and wind.', labels: 'Place names and unit names.' };
+    intel: 'What we know of the enemy: its sites and launchers.', all: 'Every enemy weapon and aircraft as it really is, seen or not.', weather: 'Cloud, rain and wind.', labels: 'Place names and unit names.' };
   // with coverage on, a key to its colours: the lowest height controllers see
   const key = S.layers.coverage && S.asp ? `<div class="covkey" title="Radar cover for air traffic control: the lowest height a radar that reads transponders sees. Red: no radar sees our airspace there at any height. Blue: our military radars, deeper where they see lower."><span>Radar sees down to</span>${IC.ASP_BANDS.map(([, n], i) => `<em><i style="background:rgb(${IC.BAND_RGB[i]})"></i>${n.replace('below ', '<').replace('above ', '>')}</em>`).join('')}<em><i style="background:rgb(255,90,70)"></i>nothing</em><em title="Our military radars. Hills hide low aircraft from them: the holes behind high ground are where low fliers get through."><i style="background:rgb(92,200,255)"></i>military: deeper blue sees lower</em></div>` : '';
   setHTML($('layers'), L.filter(([k]) => IC.layerAllowed(S, k)).map(([k, n]) => `<button data-act="layer" data-v="${k}" aria-pressed="${!!S.layers[k]}" title="${TIP[k] || ''}">${n}</button>`).join('') + key);
@@ -620,14 +620,16 @@ function buildHint(m, short) {
     : t === 'savelay' ? (set ? 'Box drawn. Save (or Enter) keeps what is inside as a layout; a click elsewhere moves its far corner.' : n ? 'Click the box\'s other corner.' : 'Save layout: click one corner of a box round what to keep.')
     : t === 'blueprint' ? (set ? `Blueprint placed. R turns it (Shift+R the other way). ${go}` : 'Blueprint: click where it should go; R turns it.')
     : IC.TERM_KITS && IC.TERM_KITS[t] ? (set ? `${IC.TERM_KITS[t].name} placed. R turns it. ${go} Then join its taxilanes to your taxiways.` : `${IC.TERM_KITS[t].name}: click where it should go; R turns it.`)
+    : t === 'reshape' ? (!n ? T.desc : set ? `Corner placed. ${go.replace('moves it', 'moves the corner')}` : 'Click where the corner should go.')
     : IC.SHAPE_TOOLS && IC.SHAPE_TOOLS[t] ? (m.pick != null ? 'Click where this corner goes.' : set ? `${T.name} closed. Click a corner to move it, a side to add a corner, elsewhere to move it all; F: ${IC.SHAPE_EDGES[IC.shapeEdge(m)]}; R turns it. Build (or Enter) builds it.` : n < 3 ? `${T.name}: click its corners one by one (${n ? `${n} so far` : 'any shape'}).` : `${n} corners: click the first one again, or Build (or Enter), to close it; F: ${IC.SHAPE_EDGES[IC.shapeEdge(m)]}.`)
     : t === 'stretch' ? (!n ? T.desc : set ? `Stretch placed. ${go.replace('moves it', 'sets another edge')}` : 'Click where the new edge should be.')
-    : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. Started by a taxiway or apron it lines up with it. R turns it 15°.` : `${T ? T.name : D.name} placed. ${go.replace('moves it', 'moves its far corner')}`)
+    : IC.bldOutline(m) ? (set ? `Outline closed. ${go} Right-click opens it again.` : n < 3 ? `${T ? T.name : D.name}, outline: click corner after corner. O draws a rectangle instead.` : 'Click more corners, or the first one to close it; Build (or Enter) builds it as it is.')
+    : IC.bldIsArea(t) ? (n < 2 ? `${T ? T.name : D.name}: click one corner, then the opposite one. Started by a taxiway or apron it lines up with it. R turns it 15°${IC.bldCanOutline(t) ? '; O draws any outline' : ''}.` : `${T ? T.name : D.name} placed. ${go.replace('moves it', 'moves its far corner')}`)
     : (set ? `${D.name} placed. R turns it. ${go}` : `${D.name}: click to place it. Near a taxiway or apron it turns to face it and gets a way in; Shift places it freely. R turns it.`);
   if (short) return `${how} Esc or right-click cancels.`;
   const plan = S.hover ? IC.bldPlanOf(S, m, S.hover, Math.max(0.12, 8 / IC.cam.z), !!IC.bldFree) : null;
   const info = plan ? (plan.ok ? [plan.text[0], plan.size].concat(plan.warn || [], plan.text.slice(1)) : [plan.why, plan.size].concat(plan.text)).filter(Boolean).join(' · ') : '';
-  const snap = IC.bldIsLine(t) || IC.bldIsArea(t) || (IC.SHAPE_TOOLS && IC.SHAPE_TOOLS[t]) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
+  const snap = IC.bldOutline(m) ? ` Sides keep to 15° steps and 10 m lengths; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : IC.bldIsLine(t) || IC.bldIsArea(t) || (IC.SHAPE_TOOLS && IC.SHAPE_TOOLS[t]) ? ` Lines keep to 0°, 45° and 90° and lock onto the dashed guides; ${IC.bldFree ? 'Shift held: drawing freely.' : 'hold Shift to draw freely.'}` : '';
   return `${how}${snap} ${set ? 'Esc or right-click cancels.' : 'Right-click takes a point back; Esc stops.'}${info ? '\n' + info : ''}`;
 }
 const covTxt = a => a === Infinity ? 'no height (no radar)' : a < 0.05 ? 'the ground' : U.alt(a);
