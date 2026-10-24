@@ -416,5 +416,6 @@
  "front side: departures drop off at one end of the kerb and arrivals are met at the other; with an upper deck each has its own, and each must be long enough": 9,
  "3D: a parking garage stands its levels high, a hotel and offices taller, a warehouse low; car parks stay paint": 0.1,
  "club field: a visitor from another field parks at the end of the row for a few hours, then flies home from there": 12,
- "GA: at an airport with no GA ramp a visitor lands, taxis and parks on a free remote stand among the airliners, then leaves": 12
+ "GA: at an airport with no GA ramp a visitor lands, taxis and parks on a free remote stand among the airliners, then leaves": 12,
+ "air war: an identified enemy stays on the map where it is after radar loses it, then fades; See everything shows the rest": 5
 }
