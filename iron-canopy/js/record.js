@@ -141,7 +141,7 @@ IC.recAttitude = function (tr, t, out) {
   const gam = (p, q) => Math.atan2((q.alt - p.alt) * 1000, Math.max(1, U.dxy(p.x, p.y, q.x, q.y) * 100));
   const g1 = gam(a, c), g2 = gam(c, b), vert = v * (g2 - g1) / Math.max(0.1, (b.t - a.t) / 2);
   o.pitch = (g1 + g2) / 2; o.turn = w;
-  o.g = Math.min(60, Math.hypot(lat, G0 * Math.cos(o.pitch) + vert) / G0);
+  o.g = Math.min(60, U.hyp(lat, G0 * Math.cos(o.pitch) + vert) / G0);
   if (tr.kind !== 'missile') o.roll = U.clamp(Math.atan2(lat, G0), -1.45, 1.45);
   return o;
 };
@@ -260,7 +260,7 @@ IC.recPose = function (tr, t, out, wind) {
   const w = b.t - a.t > 0.15 ? dh / dt : 0, lat = v * w;
   const va = visAlt(tr, a.t, a, cls), vb = visAlt(tr, b.t, b, cls), vc = o.alt, run = Math.max(1, U.dxy(a.x, a.y, b.x, b.y) * 100);
   const gam = b.t - a.t > 0.15 ? Math.atan2((vb - va) * 1000, run) : 0;
-  o.g = Math.min(60, Math.hypot(lat, G0) / G0);
+  o.g = Math.min(60, U.hyp(lat, G0) / G0);
   // near the ground nothing banks hard
   const bank = Math.min(BANK[cls], 12 * RD + o.alt * 60 * RD);
   o.roll = U.clamp(Math.atan2(lat, G0), -bank, bank);
@@ -376,7 +376,7 @@ IC.recWind = function (S, t) {
 };
 
 /* ---------- sampling ---------- */
-const spdOf = (o, tr) => o.spd != null && o.vx == null ? o.spd : Math.hypot(o.vx || 0, o.vy || 0);
+const spdOf = (o, tr) => o.spd != null && o.vx == null ? o.spd : U.hyp(o.vx || 0, o.vy || 0);
 const hdgOf = (o, tr, fb) => o.h != null ? o.h : o.a != null ? o.a : (o.vx || o.vy) ? Math.atan2(o.vy, o.vx) : fb;
 const lastH = tr => tr.n ? at(tr, tr.n - 1, 4) : 0;
 /* a missile flying at an aircraft climbs to it as it closes (the state keeps no height for those) */
@@ -413,6 +413,8 @@ function sampleThreat(S, R, t, now) {
     if (tr) R.of.set(t, tr);
     else tr = newTrack(R, t, 'threat', IC.modelOfThreat(t, true), name, civ ? 'civil' : 'enemy', { type: t.type, klass: t.d.klass, cs: t.cs, livery: t.livery || null, civil: civ });
     if (t.tail) R.link.set(t.tail, tr);
+    // a weapon fired since the last step starts on its launcher, not where the step left it
+    if (t.x0 != null && t.age > 0 && t.age < 2) push(tr, now - t.age, t.x0, t.y0, 0, Math.atan2(t.y1 - t.y0, t.x1 - t.x0), spdOf(t), 0, AFF[t.aff || 'U'] || 0, 2 * GPH.air);
   }
   if (t.tn && !tr.meta.tn) { tr.meta.tn = t.tn; tr.name = `TN ${t.tn}${t.cs ? ' · ' + t.cs : ''}`; }
   tr.meta.klass = t.klass || tr.meta.klass;
@@ -514,14 +516,15 @@ IC.record = function (S, dt) {
   if (t0) { R.ms += performance.now() - t0; R.n++; }
 };
 
-/* ---------- events ---------- */
+/* ---------- events ----------
+   An explosion keeps what blew up (tref) and what hit it (mref), so the 3D view draws it where their models meet. */
 function damaged(S, x, y) {
   const out = [];
   const g = IC.groundAt ? IC.groundAt(S, x, y) : null;
   if (g && g.kind === 'block' && g.b) out.push({ kind: 'block', b: g.b });
   for (const b of S.infra) if (b.parts && U.dxy(x, y, b.x, b.y) < (b.radius || 60)) for (const p of b.parts) {
     if (!p.built || p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron') continue;
-    const d = p.w != null && p.a != null ? Math.hypot(Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).x) - p.w / 2), Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).y) - (p.h || p.w) / 2)) : U.dxy(x, y, p.x, p.y) - (p.r || 0.1);
+    const d = p.w != null && p.a != null ? U.hyp(Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).x) - p.w / 2), Math.max(0, Math.abs(IC.rectLocal(p, { x, y }).y) - (p.h || p.w) / 2)) : U.dxy(x, y, p.x, p.y) - (p.r || 0.1);
     if (d < 1.2) out.push({ kind: 'part', p, ap: b });
   }
   return out;
@@ -539,9 +542,9 @@ IC.on(function (S, type, d) {
   const R = S.rec, ev = { t: S.time, kind: type };
   if (type === 'tailParked') { const st = d.ap && d.ap.parts && IC.aptStands(d.ap).find(x => x.id === d.tl.stand); if (st && st.svc) turnOf(S, R, d.ap, st, st.svc); return; }
   switch (type) {
-    case 'impact': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: d.src && d.src.d ? Math.min(2, 0.6 + d.src.d.dmg / 100) : 1, name: d.hit ? d.hit.name : 'open ground', text: `${d.hit ? d.hit.name : 'Open ground'} hit by ${d.src && d.src.d ? IC.fullName(d.src.d) : 'a weapon'}`, dmg: damaged(S, d.x, d.y) }); break;
-    case 'kill': Object.assign(ev, { x: d.x, y: d.y, alt: d.alt || 0, sz: 0.6, name: d.tn ? `TN ${d.tn}` : IC.fullName(d.d), text: `${d.tn ? 'TN ' + d.tn + ' (' + IC.fullName(d.d) + ')' : IC.fullName(d.d)} shot down` }); break;
-    case 'intercept': Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.alt || d.t.alt || 0, sz: 0.8, name: d.t.tn ? `TN ${d.t.tn}` : 'warhead', text: `Intercept ${d.alt ? U.alt(d.alt) + ' up' : ''}` }); break;
+    case 'impact': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: d.src && d.src.d ? Math.min(2, 0.6 + d.src.d.dmg / 100) : 1, name: d.hit ? d.hit.name : 'open ground', text: `${d.hit ? d.hit.name : 'Open ground'} hit by ${d.src && d.src.d ? IC.fullName(d.src.d) : 'a weapon'}`, dmg: damaged(S, d.x, d.y), tref: d.src || null }); break;
+    case 'kill': Object.assign(ev, { x: d.x, y: d.y, alt: d.alt || 0, sz: 0.6, name: d.tn ? `TN ${d.tn}` : IC.fullName(d.d), text: `${d.tn ? 'TN ' + d.tn + ' (' + IC.fullName(d.d) + ')' : IC.fullName(d.d)} shot down`, tref: d }); break;
+    case 'intercept': Object.assign(ev, { x: d.t.x, y: d.t.y, alt: d.alt || d.t.alt || 0, sz: 0.8, name: d.t.tn ? `TN ${d.t.tn}` : 'warhead', text: `Intercept ${d.alt ? U.alt(d.alt) + ' up' : ''}`, tref: d.t, mref: d.m }); break;
     case 'launch': Object.assign(ev, { x: d.u.x, y: d.u.y, alt: 0, sz: 0.3, name: d.u.name, text: `${d.u.name} fires at TN ${d.t.tn || '?'}`, quiet: true }); break;
     case 'fire': Object.assign(ev, { x: d.x, y: d.y, alt: 0, sz: 0.3, name: d.name, text: `${d.name} fires`, quiet: true }); break;
     case 'crash': Object.assign(ev, { x: d.m.x, y: d.m.y, alt: 0, sz: 1, name: d.m.who || 'aircraft', text: `Crash at ${d.ap.name}: ${d.cause || ''}`, dmg: [] }); break;

@@ -98,8 +98,11 @@ function buildGo() {
     // a whole airport, or the surveyed runway: the tool is put down (one more click would order a second)
     if (m.part === 'starter' || m.fromSurvey) IC.setMode(null);
     // (round 5c) and the bar steps aside so the works can be watched: B or Build opens it again. The parts one by one
-    // (Detail) keep the tool and the bar, for drawing one taxiway after another
-    if (IC.FOCUS.polish && !(IC.bb.detail && IC.bldIsLine(m.part) && !(IC.PIECES && IC.PIECES[m.part]))) { IC.setMode(null); IC.bbToggle(false); }
+    // (Detail, and the whole bar in wave 12) keep the bar, and a line tool stays picked, for drawing one taxiway
+    // after another; a whole piece or a single building puts the tool down
+    const part1 = (IC.bb.detail || IC.bbParts()) && !(IC.PIECES && IC.PIECES[m.part]);
+    if (IC.FOCUS.polish && !part1) { IC.setMode(null); IC.bbToggle(false); }
+    else if (part1 && !(IC.bldIsLine(m.part) || m.part === 'stand')) IC.setMode(null);
   }
   else { IC.sfx.ui('err'); if (m.err && at) { IC.text(S, at.x, at.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile); IC.toast(S, 'warn', 'NOT BUILT', m.err, m.ap); } }
   IC.ui.refresh(true);
@@ -127,7 +130,7 @@ function foundGo() {
   if (r === 'built') {
     IC.setMode(null); IC.select({ kind: 'infra', ref: m.ap }); IC.flyTo(m.ap.x, m.ap.y, Math.max(IC.cam.z, IC.FOCUS.polish ? 5 : 1.2)); IC.sfx.ui('ok');
     // (round 1) the surveyed runway stays on the map as a placed plan: Build (or Enter) lays it, with its taxiways
-    if (m.next) { IC.bb.ap = m.ap; IC.bb.tab = 'pc'; IC.bbToggle(true); IC.setMode(m.next); }
+    if (m.next) { IC.bb.ap = m.ap; IC.bb.tab = IC.bbParts() ? 'rw' : 'pc'; IC.bbToggle(true); IC.setMode(m.next); }
     return r;
   }
   IC.sfx.ui('err'); if (m.err && S.hover) IC.text(S, S.hover.x, S.hover.y, m.err.toUpperCase().replace(/\.$/, ''), IC.C.hostile);
@@ -145,6 +148,7 @@ goEl.addEventListener('click', e => {
   if (v === 'build') buildGo();
   else if (v === 'cancel') { if (!buildEsc()) IC.setMode(null); }
   else if (v === 'turn' && m && m.kind === 'found') { IC.foundTurn(m, +b.dataset.d); IC.ui.refresh(true); }
+  else if (v === 'cls' && m && m.kind === 'found') { IC.foundClass(m, b.dataset.v); IC.sfx.ui('click'); IC.ui.refresh(true); }
   else if (v === 'turn' && m) { if (!IC.pieceTurn(m, +b.dataset.d)) m.rot = (m.rot || 0) + (+b.dataset.d) * Math.PI / 12; IC.emit(S, 'bld', { act: 'turn', v: m.part }); IC.ui.refresh(true); }
 });
 function goFrame() {
@@ -155,11 +159,11 @@ function goFrame() {
     const plan = IC.bldReady(S, m);
     if (plan) {
       at = m.at || m.pts[m.pts.length - 1];
-      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch'].includes(m.part);
+      const turn = !IC.bldIsLine(m.part) && !['parallel', 'exits', 'hold', 'stretch', 'savelay', 'extend'].includes(m.part);
       // (round 5c) the price and how long the crews take, for a piece or a blueprint too
       const dur = IC.planDur(m.ap, plan);
       const what = plan.bp || (plan.specs && plan.specs.length) ? `${U.money(plan.cost)}${dur ? ' · ' + U.dur(dur) : ''}` : '';
-      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? 'Build it (Enter)' : esc(plan.why || '')}">Build${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
+      html = `<button class="btn go" data-go="build" ${plan.ok ? '' : 'disabled'} title="${plan.ok ? (plan.sel ? 'Save it (Enter)' : 'Build it (Enter)') : esc(plan.why || '')}">${plan.sel ? 'Save layout' : 'Build'}${what ? ` · ${what}` : ''}</button>${turn ? `<button class="btn sm" data-go="turn" data-d="-1" title="Turn it (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn it (R)">⟳</button>` : ''}<button class="btn sm" data-go="cancel" title="Cancel (Esc or right-click)">✕</button>${plan.ok ? '' : `<em>${esc(plan.why || '')}</em>`}`;
     }
   } else if (m && m.kind === 'bmove' && m.at) {
     at = m.at;
@@ -172,11 +176,13 @@ function goFrame() {
   } else if (m && m.kind === 'found' && m.site) {
     at = m.site;
     // (the survey reads the ground and the towns round it: once for each place and heading, not every frame)
-    const k = `fd|${at.x}|${at.y}|${m.hdg}|${Math.round(S.budget)}`;
+    const k = `fd|${at.x}|${at.y}|${m.hdg}|${m.cls}|${Math.round(S.budget)}`;
     if (goEl._k === k) html = goKey; else {
     goEl._k = k;
-    const sv = IC.foundSurvey(S, m.site.x, m.site.y, m.hdg != null ? m.hdg : IC.PREVAIL), why = sv.river ? 'A river crosses the runway line: turn it or move the site.' : S.budget < sv.cost ? `Not enough money: ${U.money(sv.cost)} needed.` : '';
-    html = `<button class="btn go" data-go="build" ${why ? 'disabled' : ''} title="Found it (Enter)">Found · ${U.money(sv.cost)}</button><button class="btn sm" data-go="turn" data-d="-1" title="Turn the runway (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn the runway (R)">⟳</button><button class="btn sm" data-go="cancel" title="Pick another site (Esc or right-click)">✕</button>${why ? `<em>${esc(why)}</em>` : ''}`; }
+    const sv = IC.foundSurveyOf(S, m), why = sv.river ? 'A river crosses the runway line: turn it or move the site.' : S.budget < sv.cost ? `Not enough money: ${U.money(sv.cost)} needed.` : '';
+    // (what the airport is for: its runway, site and price follow; C cycles through them)
+    const cls = IC.APT_CLASSES.map(k => `<button class="btn sm${k === sv.cls ? ' on' : ''}" data-go="cls" data-v="${k}" title="${esc(IC.APT_CLASS[k].name + ': ' + IC.APT_CLASS[k].use)}">${IC.APT_CLASS[k].short}</button>`).join('');
+    html = `<div class="fcls">${cls}</div><button class="btn go" data-go="build" ${why ? 'disabled' : ''} title="Found it (Enter)">Found ${esc(IC.APT_CLASS[sv.cls].name.toLowerCase())} · ${U.money(sv.cost)}</button><button class="btn sm" data-go="turn" data-d="-1" title="Turn the runway (Shift+R)">⟲</button><button class="btn sm" data-go="turn" data-d="1" title="Turn the runway (R)">⟳</button><button class="btn sm" data-go="cancel" title="Pick another site (Esc or right-click)">✕</button>${why ? `<em>${esc(why)}</em>` : ''}`; }
   }
   if (!at) { if (!goEl.hidden) { goEl.hidden = true; goKey = ''; goEl._k = ''; } return; }
   if (html !== goKey) { goEl.innerHTML = html; goKey = html; }
@@ -194,12 +200,12 @@ const selAp = () => S.sel ? (S.sel.kind === 'apart' ? S.sel.ap : S.sel.kind === 
    (IC.fixPlan); Build or Enter builds it, a click elsewhere moves it, Esc cancels */
 IC.fixOpen = function (S2, ap, part, near, size) {
   const ui = IC.ui; ui.closeCine(); if (ui.room) ui.openRoom(null);
-  const lock = IC.APART[part] ? IC.aptLockWhy(S2, part) : IC.pieceLock ? IC.pieceLock(S2, part, ap) : '';
+  const lock = (IC.APART[part] ? IC.aptLockWhy(S2, part) : '') || (IC.pieceLock ? IC.pieceLock(S2, part, ap) : '');
   if (lock) { IC.toast(S2, 'info', 'NOT YET', lock); IC.sfx && IC.sfx.ui('err'); return false; }
   IC.bb.ap = ap; IC.select({ kind: 'infra', ref: ap }); IC.bbToggle(true);
   const m = IC.fixPlan(S2, ap, part, near || ap, size);
-  if (!m) { IC.bbPick(part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
-  IC.bb.last = part; IC.setMode(m);
+  if (!m) { IC.bbPick(part === 'gates' ? 'apron' : part); IC.flyTo((near || ap).x, (near || ap).y, Math.max(IC.cam.z, 5)); IC.toast(S2, 'info', 'BUILD', 'No room found nearby: click where it should go.'); return true; }
+  IC.bb.last = m.part; IC.setMode(m);
   const P = IC.PIECES && IC.PIECES[part];
   IC.flyTo(m.at.x, m.at.y, U.clamp(Math.max(IC.cam.z, P ? 6 : 9), 5, P ? 9 : 16));
   return true;
@@ -210,6 +216,8 @@ const isEnemyTarget = h => h && (h.kind === 'site' || h.kind === 'tel');
 
 function leftClick(p, shift) {
   if (!p || S.over && !IC.ui.overDismissed) return;
+  // (a card that closed by itself just now: the click was meant for it, not for the map)
+  if (performance.now() - (IC.ui.cineGone || -1e9) < 600) return;
   const m = S.mode2;
   if (m) {
     if (m.kind === 'build') return buildIn(m, p, 0, shift);
@@ -258,22 +266,27 @@ function leftClick(p, shift) {
       if (!shift || IC.callInState(S).charges < 1) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
-    if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p); IC.setMode(null); ping(p); return; }
+    if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p, IC.cam.z); IC.setMode(null); ping(p); return; }
     if (m.kind === 'rangeTarget') { S.range.target = { x: p.x, y: p.y }; S.range.scen.target = { x: Math.round(p.x), y: Math.round(p.y) }; IC.setMode(null); ping(p); return; }
     if (m.kind === 'deploy' && S.range) {
-      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUR SIDE ONLY', IC.C.hostile); IC.sfx.ui('err'); return; }
+      const why = IC.placeWhy(S, m.type, p.x, p.y); if (why) return placeRefused(p, why);
       IC.rangeAddUnit(S, m.type, p.x, p.y); IC.sfx.ui('ok'); ping(p);
       if (!shift) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
     if (m.kind === 'deploy') {
-      if (!IC.canPlace(S, m.type, p.x, p.y)) { IC.text(S, p.x, p.y, IC.inHome(p.x, p.y) ? 'TOO CLOSE' : 'OUTSIDE THE COUNTRY', IC.C.hostile); IC.sfx.ui('err'); return; }
+      const why = IC.placeWhy(S, m.type, p.x, p.y); if (why) return placeRefused(p, why);
       const u = IC.deploy(S, m.type, p.x, p.y);
       if (u) { IC.sfx.ui('ok'); ping(p); }
+      else return placeRefused(p, `${IC.UNITS[m.type].name} not placed: ${IC.buyBlock(S, m.type) || 'it cannot go here'}.`);
       if (!shift || (!(S.reserve[m.type] > 0) && IC.buyBlock(S, m.type))) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
-    if (m.kind === 'move') { if (IC.relocate(S, m.unit, p.x, p.y)) { IC.setMode(null); ping(p); } else IC.text(S, p.x, p.y, 'NOT HERE', IC.C.hostile); return; }
+    if (m.kind === 'move') {
+      if (IC.relocate(S, m.unit, p.x, p.y)) { IC.setMode(null); ping(p); }
+      else { const why = IC.placeWhy(S, m.unit.type, p.x, p.y, m.unit); if (why) placeRefused(p, why); else IC.text(S, p.x, p.y, 'NOT HERE', IC.C.hostile); }
+      return;
+    }
     if (m.kind === 'airPoint') {
       if (m.task) IC.addTask(S, m.task, { x: p.x, y: p.y });
       else IC.launchAir(S, m.r, { type: m.mission === 'aew' ? 'orbit' : m.mission, x: p.x, y: p.y });
@@ -297,6 +310,12 @@ function leftClick(p, shift) {
     if (v) { IC.ui.aspVol = IC.ui.aspVol === v.id ? null : v.id; IC.ui.refresh(true); return; }
   }
   IC.select(hit, shift);
+}
+
+/* a unit that cannot go where the player clicked: the reason in the messages, its first words on the map */
+function placeRefused(p, why) {
+  IC.toast(S, 'warn', 'NOT PLACED', why, { x: p.x, y: p.y });
+  IC.text(S, p.x, p.y, why.split(/[:.]/)[0].toUpperCase(), IC.C.hostile); IC.sfx.ui('err');
 }
 
 function roadDone() { if (IC.roadFinish(S, S.mode2)) { IC.sfx.ui('ok'); IC.setMode(null); } else IC.sfx.ui('err'); IC.ui.refresh(true); }
@@ -437,7 +456,7 @@ function onAct(e) {
     case 'hintsReset': IC.hint.reset(); ui.firstRunDone = null; if (S.tutor) { S.tutor.over = {}; S.tutor.done = {}; S.tutor.cur = null; } IC.toast(S, 'info', 'HINTS', IC.FOCUS.tutors ? 'Each tutorial will show again when you next meet what it teaches.' : 'Every hint will show again.'); break;
     case 'lesson': IC.begin('academy', v); return;
     case 'nextLesson': { const i = IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id); if (IC.LESSONS[i + 1]) IC.begin('academy', IC.LESSONS[i + 1].id); return; }
-    case 'retryLesson': IC.begin('academy', S.camp.lesson.id); return;
+    case 'retryLesson': IC.ui.toggleMenu(false); IC.begin('academy', S.camp.lesson.id); return;
     case 'keepPlaying': ui.overDismissed = true; $('over').hidden = true; return;
     case 'reroll': IC.reroll(); return;
     case 'pause': S.paused = !S.paused; S.skip = false; IC.waitStop(S); break;
@@ -461,10 +480,13 @@ function onAct(e) {
     case 'goal': { const g = S.story && S.story.goals[+v]; if (g && g.ref) { if (ui.room) ui.openRoom(null); ui.jump(g.ref, g.ref.parts || g.ref.kind === 'city' ? 'infra' : null); } break; }
     case 'qra': { const r = S.roster.find(x => x.id === b.dataset.rid); if (r) IC.setAlert(S, r, IC.alertOf(r) === 5 ? 30 : 5); break; }
     case 'air': IC.airAct(S, b.dataset); break;
-    case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { IC.airspaceSet(S, 'restricted'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
-    case 'copen': ui.cOpen = performance.now(); ui.shownAt = performance.now() - 1e5; break;
-    case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.shownAt = performance.now() - 1e5; break;
-    case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.shownAt = performance.now() - 1e5; break;
+    case 'sug': { const o = S.camp.objs[+v]; if (!o) break; if (o.kind === 'arsenal') { ui.arMin = false; break; }
+      // the reserve: its most valuable system is picked to place, on its tab, and the message says what to do next
+      if (o.kind === 'reserve' && o.type && S.reserve[o.type] > 0) { const d = IC.UNITS[o.type]; ui.arMin = false; ui.cat = d.cat; IC.setMode({ kind: 'deploy', type: o.type }); const tile = document.getElementById('tile-' + o.type); if (tile) tile.scrollIntoView({ block: 'nearest', inline: 'nearest' }); IC.toast(S, 'info', 'RESERVE', `${d.name} picked from the reserve (${S.reserve[o.type]} waiting). Click the map where it should stand: the dashed rings show its reach. Right-click or Esc to put it back.`); return; } if (o.kind === 'tech') { ui.openRoom('research'); return; } if (o.kind === 'airspace') { IC.airspaceSet(S, 'restricted'); break; } if (o.ref) ui.jump(o.ref, o.kind === 'point' ? null : o.kind); break; }
+    case 'copen': ui.cOpen = performance.now(); if (v === 'new' && ui.cNew >= 0) { ui.ci = ui.cNew; ui.cNew = -1; } ui.shownAt = performance.now() - 1e5; break;
+    case 'cfirst': ui.cOpen = performance.now(); if (ui.cNew >= 0) ui.ci = ui.cNew; ui.cNew = -1; ui.shownAt = performance.now() - 1e5; break;
+    case 'cnext': ui.cOpen = performance.now(); ui.ci++; ui.cNew = -1; ui.shownAt = performance.now() - 1e5; break;
+    case 'cprev': ui.cOpen = performance.now(); ui.ci = Math.max(0, ui.ci - 1); ui.cNew = -1; ui.shownAt = performance.now() - 1e5; break;
     case 'zin': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1.3); break;
     case 'zout': IC.zoomAt(IC.cam.vw / 2, IC.cam.vh / 2, 1 / 1.3); break;
     case 'zhome': { const c = IC.cap(S); IC.flyTo(c.x, c.y, Math.max(IC.cam.z, 0.3)); break; }
@@ -494,6 +516,7 @@ function onAct(e) {
     case 'floor': S.supply.floor = +v; break;
     case 'callin': { ui.seen('unit:callin'); const why = IC.callInWhy(S); if (why) { IC.toast(S, 'info', 'CALL-IN', why + '.'); break; } IC.setMode(S.mode2 && S.mode2.kind === 'callin' ? null : { kind: 'callin' }); return; }
     case 'research': IC.startResearch(S, v); break;
+    case 'agenda': { const why = IC.agendaStart(S, v); if (why) IC.toast(S, 'info', 'AGENDA', why); break; }
     case 'mobil': IC.setMobil(S, +v); break;
     case 'bonds': IC.warBonds(S); break;
     // (closing the panel keeps the build bar on the airport it was building: only Esc on the map lets go of it)
@@ -584,6 +607,7 @@ function onAct(e) {
     case 'apl': { const ap = selAp(); if (ap && IC.aplAct) IC.aplAct(S, ap, b.dataset); break; }
     case 'atc': if (sel && S.sel.kind === 'track') IC.atcAct(S, sel, b.dataset); break;
     case 'aptRwMode': { const ap = selAp(); if (ap) { ap.rwMode = ap.rwMode === 'mixed' ? 'auto' : 'mixed'; ap.cfg = null; IC.aptStats(S, ap); } break; }
+    case 'aptClass': { const ap = selAp(); if (ap) { const why = IC.aptReclass(S, ap, v); if (why) IC.toast(S, 'warn', 'PURPOSE', why); else IC.aptStats(S, ap); } break; }
     case 'aptCurfew': { const ap = selAp(); if (ap) IC.setNight(S, ap, IC.nightPolicy(ap) === 'curfew' ? 'quota' : 'curfew'); break; }
     case 'gseAdd': { const ap = selAp(); if (ap) IC.gseBuy(S, ap, v, +b.dataset.n); break; }
     case 'gseAuto': { const ap = selAp(); if (ap) IC.gseAuto(S, ap); break; }
@@ -608,6 +632,8 @@ function onAct(e) {
     case 'selFix': { const f = IC.aspFix(S, id); if (f) { S.layers.airways = true; ui.openRoom(null); ui.jump(f, 'fix'); } return; }
     case 'selField': { const f = S.asp.fields.find(x => x.id === id); if (f) { ui.openRoom(null); ui.jump(f, 'field'); } return; }
     case 'zoneDel': IC.avRemoveZone(S, id); break;
+    case 'watch': { const ap = S.sel && S.sel.ref && S.sel.ref.parts ? S.sel.ref : S.story && S.byId[S.story.cap]; if (IC.ui.watch) IC.watchStop(); else IC.watchStart(ap); IC.sfx.ui('click'); break; }
+    case 'freeSet': if (S.free) { S.free[v] = !S.free[v]; if (v === 'traffic') S.free.t = 0; } break;
     case 'foundMode': if (locked('found')) return; ui.openRoom(null); IC.setMode({ kind: 'found' }); return;
     case 'tutOff': if (S.story) S.story.tut = false; break;
     case 'bbToggle': IC.bbToggle(); return;
@@ -657,6 +683,8 @@ function onInput(e) {
   // (a choice in a list redraws the panel at once: the bearing fields come and go with "from")
   if (el.dataset.act === 'sbxForm' && S.sbx) { IC.sandboxForm(S, el.name, el.value); if (el.tagName === 'SELECT') IC.ui.refresh(true); else IC.ui.busyUntil = performance.now() + 1500; return; }
   if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'music') { IC.sfx.setMusic(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
+  if (el.dataset.act === 'ambVol') { IC.sfx.setAmb(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
 }
 document.addEventListener('click', onAct);
 document.addEventListener('input', onInput);
@@ -667,6 +695,13 @@ for (const id of ['arsenal', 'insp', 'wrBody', 'feed', 'comms', 'rail', 'brief']
   el.addEventListener('pointerup', () => { IC.ui.busyUntil = performance.now() + 150; });
 }
 $('cine').addEventListener('click', () => IC.ui.closeCine());
+// the arsenal's row of tiles scrolls sideways with an ordinary mouse wheel too, not only Shift+wheel or a touchpad
+$('arsenal').addEventListener('wheel', e => {
+  const t = e.target.closest && e.target.closest('.tiles');
+  if (!t || t.scrollWidth <= t.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  t.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? t.clientWidth : 1);
+}, { passive: false });
 
 /* ---------- time: skip ahead and auto-pause ---------- */
 function startSkip() { IC.waitStop(S); S.skip = true; S.paused = false; S.skipT = S.time; }
@@ -675,14 +710,15 @@ function stopSkip(why) { if (S.wait) { IC.waitStop(S, why); return; } if (!S.ski
 IC.on((S2, type, d) => {
   if (S2 !== S) return;
   const P = S.cfg.pauseOn;
-  const pause = why => { if (!S.paused) { S.paused = true; S.skip = false; if (S.wait) IC.waitStop(S, why); IC.toast(S, 'warn', 'PAUSED', why); } };
+  // one pause for a burst: a salvo, or the hits of one raid, pause the game once (the rest still stop skip)
+  const pause = (why, key) => { if (key && !IC.burstFirst(S, key)) { stopSkip(); return; } if (!S.paused) { S.paused = true; S.skip = false; if (S.wait) IC.waitStop(S, why); IC.toast(S, 'warn', 'PAUSED', why); } };
   // a wait ends on its own: back to the speed the player had, and say why
   if (type === 'waitDone') { if (d.why) IC.toast(S, 'info', 'WAIT', d.why); IC.ui.waitPick = false; return; }
-  if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.'); else stopSkip('Ballistic launch.'); }
-  else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`); else stopSkip(`${d.name} lost.`); }
-  else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`); else stopSkip(`${d.base.name} hit.`); }
+  if (type === 'ballistic') { if (P.ballistic) pause('Ballistic launch detected.', 'bal'); else stopSkip('Ballistic launch.'); }
+  else if (type === 'unitLost' || type === 'acLost') { if (P.lost) pause(`${d.name} lost.`, 'lost'); else stopSkip(`${d.name} lost.`); }
+  else if (type === 'baseHit') { if (P.base) pause(`${d.base.name} hit.`, 'base'); else stopSkip(`${d.base.name} hit.`); }
   else if (type === 'enemyStrike') { if (P.raid) pause('Major enemy strike forming.'); }
-  else if (type === 'cityHit') { if (P.city) pause(`${d.city.name} hit.`); else stopSkip(); }
+  else if (type === 'cityHit') { if (P.city) pause(`${d.city.name} hit.`, 'city'); else stopSkip(); }
   else if (type === 'aff' && (d.aff === 'H' || d.aff === 'S') && IC.inHome(d.x, d.y)) stopSkip(`TN ${d.tn}: ${IC.AFF[d.aff].name.toLowerCase()} track.`);
   else if (type === 'track' && (d.d.cls === 'air' || d.d.cls === 'cm') && !d.border) stopSkip(`New track TN ${d.tn}.`);
   else if (type === 'weaponRelease') { if (P.launch !== false && S.mode !== 'academy' && !S.enemy.war) pause('Weapons released.'); else stopSkip('Weapons released.'); }
@@ -751,7 +787,7 @@ cv.addEventListener('pointermove', e => {
       else if (drag.bstart) { if (!drag.bplaced && S.mode2 && S.mode2.kind === 'build') { drag.bplaced = buildIn(S.mode2, drag.bstart, 0, e.shiftKey) === 'point'; if (!drag.bplaced) drag.bstart = null; } }
       else if (drag.edge) { IC.aspResize(S, drag.edge, U.dist(drag.edge, S.hover)); IC.ui.aspVol = drag.edge.id; IC.ui.aspEdge = drag.edge.id; cv.style.cursor = 'grabbing'; }
       else if (drag.box) S.box = { x0: drag.sx, y0: drag.sy, x1: l.x, y1: l.y };
-      else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); if (S.follow) followOff(); }
+      else { IC.cam.x = drag.cx - dx / IC.cam.z; IC.cam.y = drag.cy - dy / IC.cam.z; IC.clampCam(); if (S.follow || IC.ui.watch) followOff(); }
     }
   }
 });
@@ -815,18 +851,23 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key, lk = k.toLowerCase();
   const ui = IC.ui;
+  // film mode (film.js): Shift+H anywhere, and its own keys while it is on
+  if (IC.film && IC.film.key(e, S)) { e.preventDefault(); return; }
   // the keys shown on the rail (and the old ones, N K T, still work)
   const rooms = { a: 'air', l: 'logi', i: 'intel', n: 'intel', r: 'research', k: 'research', j: 'journal', v: 'aviation', c: 'staff', t: 'staff', e: 'economy' };
   const bm = S.mode2 && S.mode2.kind === 'build' ? S.mode2 : null;
   if (bm && lk === 'r') {
-    if (!IC.pieceTurn(bm, 1, e.shiftKey)) bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12);
+    if (!IC.pieceTurn(bm, 1, e.shiftKey) && !IC.shapeTurn(bm, e.shiftKey)) bm.rot = (bm.rot || 0) + (e.shiftKey ? Math.PI / 2 : Math.PI / 12);
     IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return;
   }
+  if (bm && lk === 'f' && IC.shapeCycle(S, bm)) { IC.ui.refresh(true); return; }
+  if (bm && lk === 'f' && bm.part === 'mylayout') { bm.mirror = !bm.mirror; IC.emit(S, 'bld', { act: 'turn', v: bm.part }); IC.ui.refresh(true); return; }
   if (bm && lk === 'f') { bm.fillet = !bm.fillet; S.bldPref.fillet = bm.fillet; IC.ui.refresh(true); return; }
   if (bm && k === 'Enter') { buildGo(); return; }
   if (bm && k === 'Backspace' && bm.pts && bm.pts.length) { IC.buildCancel(S, bm, true); IC.ui.refresh(true); return; }
   const fm = S.mode2 && S.mode2.kind === 'found' ? S.mode2 : null;
   if (fm && lk === 'r') { IC.foundTurn(fm, e.shiftKey ? -1 : 1); IC.ui.refresh(true); return; }
+  if (fm && lk === 'c') { const L = IC.APT_CLASSES, i = L.indexOf(fm.cls || IC.foundDefault(S)); IC.foundClass(fm, L[(i + (e.shiftKey ? L.length - 1 : 1)) % L.length]); IC.ui.refresh(true); return; }
   if (fm && k === 'Enter' && fm.site) { foundGo(); return; }
   if (S.mode2 && S.mode2.kind === 'bmove' && lk === 'r') { S.mode2.rot += e.shiftKey ? -Math.PI / 12 : Math.PI / 12; return; }
   if (S.mode2 && S.mode2.kind === 'bmove' && k === 'Enter') { buildGo(); return; }
@@ -896,7 +937,7 @@ function resize() {
 /* ---------- start screen ---------- */
 function describe(W) {
   const dirA = compass(W, 'A'), dirB = compass(W, 'B');
-  return `The ${W.full.H} is landlocked between the hostile ${W.full.A} to the ${dirA} and the ${W.full.B} to the ${dirB}, with ${W.names.C} and ${W.names.D} neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
+  return `The ${W.full.H} is landlocked between two hostile neighbours: the ${W.full.A} to the ${dirA}, and its ally the ${W.full.B} to the ${dirB}, which will join any war. ${W.names.C} and ${W.names.D} are neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
 }
 function compass(W, k) { const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2; return ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
 /* while a game is built the page draws between stages (state.js); IC.onLoadProgress(stage, share done) says how far it
@@ -916,7 +957,7 @@ async function build(seed, mode, lesson) {
   loading++;
   let S2;
   // (the airport showcase is the Career's ready-made network with a real airport in place of the capital's)
-  const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
+  const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : mode === 'build' ? { seed, mode: 'story', free: true, hour: 8 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
   try { S2 = await IC.newGameAsync(o, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
   finally { loading--; }
   if (me !== nth) return null;
@@ -941,7 +982,7 @@ IC.adopt = function (st, view) {
   IC.resetMini();
   IC.ui.bind(S);
   // what the player had already read stays read: chapter cards and staff messages from before the save
-  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.lastLen = S.camp.comms.length; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
+  if (S.camp) { IC.ui.cineShown = S.camp.cards.length; IC.ui.cineDone = new Set(); IC.ui.cineCur = null; IC.ui.lastLen = S.camp.comms.length; IC.ui.cNew = -1; IC.ui.ci = Math.max(0, S.camp.comms.length - 1); $('cine').hidden = true; }
   resize();
   $('seed').textContent = String(S.seed);
   $('start').hidden = true; $('over').hidden = true;
@@ -949,7 +990,11 @@ IC.adopt = function (st, view) {
   S.paused = true;
   IC.ui.refresh(true);
 };
-IC.showStart = function () { $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
+IC.showStart = function () {
+  // the game left behind keeps nothing on screen: no selection, no tool, no panel
+  if (S) { S.sel = null; S.group = []; S.mode2 = null; }
+  IC.ui.setHTML($('insp'), ''); $('app').classList.remove('has-insp'); $('app').classList.add('at-start'); $('map').classList.remove('placing');
+  $('over').hidden = true; $('start').hidden = false; IC.ui.toggleMenu(false); IC.ui.room && IC.ui.openRoom(null); IC.ui.startPage('main'); IC.reroll(); };
 IC.begin = function (mode, lesson) {
   IC.sfx.init();
   const go = () => {
@@ -986,12 +1031,12 @@ IC.ui.startPage('main');
    aptlife.js); when the game started it (the first landing) it also zooms by what the aircraft is doing, until
    the player zooms. Dragging the map or the arrow keys let it go */
 const FOLLOW_Z = { air: 6, near: 9, final: 12, land: 16, rollout: 18, taxi: 30, parkin: 50, stand: 60, push: 45, start: 50, wait: 50, svc: 30, hold: 26, lineup: 20, roll: 14 };
-function followOff() { if (!S.follow) return; const tl = IC.followTail(S); IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', `Stopped following ${tl ? tl.cs : 'the aircraft'}.`); }
+function followOff() { if (IC.ui.watch) { IC.watchStop(); IC.followStop(S); return; } if (!S.follow) return; const tl = IC.followTail(S); IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', `Stopped following ${tl ? tl.cs : 'the aircraft'}.`); }
 IC.followOff = followOff;
 function followCam(dtR) {
   if (!S.follow) return;
   const why = IC.followEnds(S);
-  if (why) { IC.followStop(S); IC.toast(S, 'info', 'FOLLOW', why); return; }
+  if (why) { IC.followStop(S); if (!IC.ui.watch) IC.toast(S, 'info', 'FOLLOW', why); return; }
   const tl = IC.followTail(S), w = IC.tailWhere(S, tl); if (!w) return;
   const c = IC.cam, cx = c.x + c.vw / c.z / 2, cy = c.y + c.vh / c.z / 2;
   c.fly = null;
@@ -1003,13 +1048,40 @@ function followCam(dtR) {
   const k = 1 - Math.exp(-dtR * 5);
   IC.centerOn(cx + (w.x - cx) * k, cy + (w.y - cy) * k);
 }
+/* the start screen's backdrop: the region's capital as a film shot, no symbols, the camera drifting slowly over it
+   to the right of the title, pushing in a little and easing back, so the first and last frame of the game move */
+let stT = 0, stOn = false;
+function startDrift(dtR) {
+  const on = !$('start').hidden && !!S && !!S.world && !S.range;
+  if (on !== stOn) { stOn = on; if (IC.film) IC.film.backdrop(on); if (on) stT = 0; }
+  if (!on) return;
+  stT += dtR;
+  const c = IC.cap(S); if (!c) return;
+  const k = 0.5 - 0.5 * Math.cos(stT * 2 * Math.PI / 90), cm = IC.cam;
+  cm.fly = null; cm.z = Math.exp(Math.log(0.34) + (Math.log(0.5) - Math.log(0.34)) * k);
+  // the capital sits two thirds of the way across, clear of the menu, and the view slides past it
+  IC.centerOn(c.x - cm.vw / cm.z * (0.16 + 0.05 * Math.sin(stT * 2 * Math.PI / 130)), c.y - cm.vh / cm.z * 0.03 * Math.cos(stT * 2 * Math.PI / 110));
+}
+/* (wave 14) Watch: the camera goes from one aircraft at the airport to the next on its own (IC.watchPick), about
+   half a minute on each; dragging the map or the arrow keys stop it like Follow */
+IC.watchStart = function (ap) { if (!S || !ap) return; IC.ui.watch = { ap: ap.id, t: 0, last: null }; IC.toast(S, 'info', 'WATCH', `Watching ${ap.name}. Drag the map to stop.`); };
+IC.watchStop = function () { if (IC.ui.watch) { IC.ui.watch = null; IC.toast(S, 'info', 'WATCH', 'Stopped watching.'); } };
+function watchCam(dtR) {
+  const W = IC.ui.watch; if (!W) return;
+  const ap = S.byId[W.ap]; if (!ap || ap.owner !== 'us') { IC.ui.watch = null; return; }
+  W.t -= dtR;
+  if (W.t > 0 && (S.follow || !W.cur)) return;
+  const tl = IC.watchPick(S, ap, W.last);
+  if (tl) { IC.followStart(S, tl, true); W.last = W.cur = tl.id; W.t = 25 + Math.random() * 15; }
+  else { if (S.follow) IC.followStop(S); W.cur = null; W.t = 10; IC.flyTo(ap.x, ap.y, 6); }
+}
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now;
   // nothing to draw until the first game is built, while the next is built, or while a save replaces it
   if (!S || loading || IC.loading) { requestAnimationFrame(frame); return; }
   if (keys.size) {
-    if (S.follow && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].some(k => keys.has(k))) followOff();
+    if ((S.follow || IC.ui.watch) && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].some(k => keys.has(k))) followOff();
     const v = 700 / IC.cam.z * dtR;
     if (keys.has('arrowup')) IC.cam.y -= v;
     if (keys.has('arrowdown')) IC.cam.y += v;
@@ -1019,6 +1091,9 @@ function frame(now) {
   }
   IC.camStep(dtR);
   followCam(dtR);
+  startDrift(dtR);
+  if (IC.film) IC.film.step(S, dtR);
+  if (S.follow || IC.ui.watch) watchCam(dtR);
   const C = IC.cine;
   C.cool = Math.max(0, C.cool - dtR);
   if (C.slow > 0) C.slow -= dtR;
@@ -1026,6 +1101,7 @@ function frame(now) {
   C.bars = U.clamp(C.bars + (C.barsT > 0 ? 1 : -1) * dtR * 2.5, 0, 1);
   let gdt = 0;
   const running = !S.paused && (!S.over || IC.ui.overDismissed) && $('start').hidden;
+  if (!running) IC.runRate = IC.runShare = null;
   if (running) {
     let speed = combatSpeed(S, S.wait ? (S.wait.speed || IC.WAIT.speed) : S.skip ? 64 : S.speed, dtR);
     gdt = dtR * IC.GS * speed;
@@ -1039,12 +1115,17 @@ function frame(now) {
     const t0 = performance.now();
     while (g > 1e-6 && guard++ < 2000) { const st = Math.min(big, g); IC.step(S, st); g -= st; if (performance.now() - t0 > (S.wait ? 30 : 40)) break; }
     // (the rate the wait really runs at, for its line in the top bar)
+    // (and the speed the game really runs at, when the steps take longer than the frame allows: the map says so)
+    if (!S.wait && !S.skip && gdt > 0) { const r = (gdt - g) / gdt, k = Math.min(1, dtR * 2); IC.runShare = IC.runShare == null ? r : IC.runShare + (r - IC.runShare) * k; IC.runWant = speed; IC.runRate = speed * IC.runShare; } else IC.runRate = IC.runShare = null;
     if (S.wait) { const got = gdt - g; IC.ui.waitRate = (IC.ui.waitRate || got / dtR) * 0.95 + got / Math.max(1e-3, dtR) * 0.05; S.wait.rate = IC.ui.waitRate / IC.GS; }
   }
   IC.autosaveTick(S);
   fx(S, dtR, gdt);
-  IC.render(S, now / 1000);
+  // (the map is not drawn while a film covers it: the 3D view full screen, or a title card)
+  const RV = IC.replayState && IC.replayState();
+  if (!(RV && RV.film) && !(IC.film && IC.film.cover)) IC.render(S, now / 1000);
   if (IC.lifeSoundEnd) IC.lifeSoundEnd();
+  if (IC.sfx.score) IC.sfx.score(S, dtR);
   IC.renderMini(S, mini, mw, mh);
   uiT += dtR;
   if (uiT > 0.2) { uiT = 0; IC.ui.refresh(false); }

@@ -118,7 +118,7 @@ function buildGraph(W) {
       for (let q = 0; q < M.length; q += 2) {
         const l = lines[M[q]]; if (lineOk && !lineOk(l)) continue;
         const a = l.pts[M[q + 1] - 1], b = l.pts[M[q + 1]], vx = b.x - a.x, vy = b.y - a.y, LL = vx * vx + vy * vy, t = LL ? U.clamp(((P.x - a.x) * vx + (P.y - a.y) * vy) / LL, 0, 1) : 0;
-        const d = Math.hypot(a.x + vx * t - P.x, a.y + vy * t - P.y);
+        const d = U.hyp(a.x + vx * t - P.x, a.y + vy * t - P.y);
         if (d < bd) { bd = d; best = { l, i: M[q + 1], t, x: a.x + vx * t, y: a.y + vy * t }; }
       }
     }
@@ -176,7 +176,7 @@ function buildGraph(W) {
       const hw = n.out.map(i => G.links[i]).find(q => q.cls === 'hw'); if (!hw) continue;
       // the motorway's direction at this node, and which side of its centre line the slip road meets
       const atA = hw.a === (end ? lk.b : lk.a), P = hw.pts, p0 = atA ? P[0] : P[P.length - 1], p1 = atA ? P[1] : P[P.length - 2];
-      let tx = p1.x - p0.x, ty = p1.y - p0.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      let tx = p1.x - p0.x, ty = p1.y - p0.y; const tl = U.hyp(tx, ty) || 1; tx /= tl; ty /= tl;
       if (!atA) { tx = -tx; ty = -ty; }   // now pointing along the motorway from a to b
       const R = lk.pts, q0 = end ? R[R.length - 1] : R[0], q1 = end ? R[R.length - 2] : R[1];
       const side = (q1.x - q0.x) * -ty + (q1.y - q0.y) * tx;   // > 0: the slip road lies to the right of a→b
@@ -425,7 +425,7 @@ IC.trafficInit = function (S) {
   S.trains = [];
   const R = IC.makeRng((S.seed * 977 + 5) >>> 0);
   for (const r of W.rails) { r.cum = cumOf(r.pts); r.len = r.cum[r.cum.length - 1]; if (R() < 0.8) S.trains.push({ r, s: R() * r.len, dir: R() < 0.5 ? 1 : -1, spd: R.range(0.3, 0.42), cars: R.int(6, 14), wait: 0 }); }
-  IC.traffic(S, 0);
+  IC.traffic(S, 0); IC.trafficSettle(S);
 };
 /* roads changed (built, split, cut or reopened): the graph and the trips are worked out again */
 IC.trafficRoadChanged = function (S) { if (S.traffic) S.traffic.dirty = true; };
@@ -433,59 +433,76 @@ IC.trafficRebuild = function (S) {
   const W = S.world; W._dg = null;
   const T = S.traffic, G = IC.driveGraph(W);
   for (const e of W.edges) if (e.cut) for (const lk of G.links) if (lk.ref.edge === e) lk.cut = true;
-  T.G = G; T.links = G.links.map(linkState);
+  T.G = G; T.links = G.links.map(linkState); T.rd = null;   // a reading under way was of the old links
   assign(S); T.dirty = false; T.stepT = 0;
   const A = AG.get(S); if (A) A.reset = true;
   busLines(S);
 };
 
+/* The flows are read link by link. There are some 30,000 links, and reading them all in one step took about 55 ms:
+   a freeze every two game minutes and at the start and end of every air raid alert. A reading now takes READ_STEPS
+   steps, a fixed share of the links each (a count, not a clock, so a seeded game stays the same game). The factors of
+   the hour are fixed when a reading starts; a link keeps riding its slots at its old speed until its turn comes. */
+const READ_STEPS = 48;
+function readLinks(S, T, n) {
+  const R = T.rd, W = S.world, F = T.F, { fi, fo, ff, fa, fg, g } = R, links = T.links, end = Math.min(links.length, R.i + n);
+  for (let k = R.i; k < end; k++) {
+    const L = links[k];
+    // the slots have ridden at the old speed since the last reading
+    // (the remainder only when it wraps: it is the same number, and the slow part of this loop over every link)
+    for (let d = 0; d < 2; d++) { const p = L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time)); L.ph[d] = p >= 0 && p < BASE * 65536 ? p : p % (BASE * 65536); }
+    L.t0 = S.time;
+    const lk = L.l, i = lk.id * 2;
+    // the town a link runs through: its own streets, or national roads inside its built-up area
+    if (L.town === undefined) { const m = lk.pts[lk.pts.length >> 1]; L.town = lk.city || W.cities.find(t => U.dist(t, m) < (t.ext || t.r) * 1.1) || null; }
+    const c = L.town;
+    // under an air raid alert people leave the roads for the shelters
+    const raid = c && c.alert > 0 ? 0.25 : 1;
+    const cut = lk.cut || (lk.ref.edge && W.blocked && W.blocked.has(lk.ref.edge.id)) ? 0.05 : 1;
+    for (let d = 0; d < 2; d++) {
+      // commuters run home→work in the morning and back in the evening: the reverse direction's flow comes home
+      const com = F.com[i + d] * fi + F.com[i + 1 - d] * fo, frt = F.frt[i + d] * ff, apt = F.apt[i + d] * fa, gen = F.gen[i + d] * fg;
+      const tot = com + frt + apt + gen;
+      // the demand, and the load the road can carry (a jammed street shows no direction; the demand still does);
+      // raw is the load without a cut, which drivers head for until they find the road cut
+      (L.dem || (L.dem = [0, 0]))[d] = tot * g * raid * cut;
+      L.ld[d] = U.clamp(L.dem[d], 0, 1.3); (L.raw || (L.raw = [0, 0]))[d] = U.clamp(tot * g * raid, 0, 1.3);
+      const M = L.mix[d]; L.mixOk[d] = tot > 0 ? 1 : 0; if (tot > 0) { M[0] = com / tot; M[1] = frt / tot; M[2] = apt / tot; }
+      // a full road slows down: at peak the motorways round the capital crawl
+      L.v[d] = lk.C.v * (L.ld[d] > 0.75 ? U.clamp(1 - (L.ld[d] - 0.75) * 1.3, 0.3, 1) : 1) * (raid < 1 ? 0.4 : 1);
+    }
+    L.load = Math.max(L.ld[0], L.ld[1]); L.cut = cut < 1;
+  }
+  R.i = end;
+  if (end < links.length) return;
+  T.rd = null;
+  // the junctions in front of a cut road, where traffic queues before it turns back
+  T.cutN = new Set(); for (const L of T.links) if (L.cut) { T.cutN.add(L.l.a); T.cutN.add(L.l.b); }
+  // in town, where links are short, the queue backs up through the junction behind
+  for (let r = 0; r < 2; r++) for (const n of [...T.cutN]) for (const li of T.G.nodes[n].out) { const L = T.links[li]; if (!L.cut && L.l.len < 3 && L.l.city) T.cutN.add(L.l.a === n ? L.l.b : L.l.a); }
+}
+/* read every link now: what a test or a new game needs, and a rebuilt road graph (its links start empty) */
+IC.trafficSettle = function (S) { const T = S.traffic; if (T && T.rd) readLinks(S, T, Infinity); };
+
 IC.traffic = function (S, dt) {
   const T = S.traffic; if (!T) return;
-  if (T.dirty && (T.rebuildT == null || S.time - T.rebuildT > 600)) { T.rebuildT = S.time; IC.trafficRebuild(S); }
+  let now = false;
+  if (T.dirty && (T.rebuildT == null || S.time - T.rebuildT > 600)) { T.rebuildT = S.time; IC.trafficRebuild(S); now = true; }
   const war = S.enemy && S.enemy.war, W = S.world;
-  // flows are re-read every two minutes of game time, and at once when an air raid alert starts or ends
+  // flows are re-read every two minutes of game time, and as soon as an air raid alert starts or ends
+  // (a reading already under way is finished first, and the next one follows it)
   let sig = S.alertCities || 0; for (const c of W.cities) if (c.alert > 0) sig += 1 + c.x;
   if (sig !== T.alertSig) { T.alertSig = sig; T.stepT = 0; }
   T.stepT -= dt;
-  if (T.stepT <= 0) {
+  if (T.stepT <= 0 && !T.rd) {
     T.stepT = 120;
     const nA = S.infra.filter(a => a.kind === 'airport' && a.owner === 'us' && a.parts).length;
     if (nA !== T.nApt) { T.dirty = true; T.nApt = nA; }
-    const h = (S.time % 86400) / 3600, F = T.F;
+    const h = (S.time % 86400) / 3600;
     T.hour = IC.trafficHour(S);
-    const fi = hr(H_IN, h), fo = hr(H_OUT, h), ff = hr(H_FRT, h), fa = hr(H_APT, h), fg = hr(H_GEN, h);
-    const g = (war ? 0.75 : 1) * (S.alertCities > 2 ? 0.55 : 1);
-    for (const L of T.links) {
-      // the slots have ridden at the old speed since the last reading
-      // (the remainder only when it wraps: it is the same number, and the slow part of this loop over every link)
-      for (let d = 0; d < 2; d++) { const p = L.ph[d] + L.v[d] * (S.time - (L.t0 || S.time)); L.ph[d] = p >= 0 && p < BASE * 65536 ? p : p % (BASE * 65536); }
-      L.t0 = S.time;
-      const lk = L.l, i = lk.id * 2;
-      // the town a link runs through: its own streets, or national roads inside its built-up area
-      if (L.town === undefined) { const m = lk.pts[lk.pts.length >> 1]; L.town = lk.city || W.cities.find(t => U.dist(t, m) < (t.ext || t.r) * 1.1) || null; }
-      const c = L.town;
-      // under an air raid alert people leave the roads for the shelters
-      const raid = c && c.alert > 0 ? 0.25 : 1;
-      const cut = lk.cut || (lk.ref.edge && W.blocked && W.blocked.has(lk.ref.edge.id)) ? 0.05 : 1;
-      for (let d = 0; d < 2; d++) {
-        // commuters run home→work in the morning and back in the evening: the reverse direction's flow comes home
-        const com = F.com[i + d] * fi + F.com[i + 1 - d] * fo, frt = F.frt[i + d] * ff, apt = F.apt[i + d] * fa, gen = F.gen[i + d] * fg;
-        const tot = com + frt + apt + gen;
-        // the demand, and the load the road can carry (a jammed street shows no direction; the demand still does);
-        // raw is the load without a cut, which drivers head for until they find the road cut
-        (L.dem || (L.dem = [0, 0]))[d] = tot * g * raid * cut;
-        L.ld[d] = U.clamp(L.dem[d], 0, 1.3); (L.raw || (L.raw = [0, 0]))[d] = U.clamp(tot * g * raid, 0, 1.3);
-        const M = L.mix[d]; L.mixOk[d] = tot > 0 ? 1 : 0; if (tot > 0) { M[0] = com / tot; M[1] = frt / tot; M[2] = apt / tot; }
-        // a full road slows down: at peak the motorways round the capital crawl
-        L.v[d] = lk.C.v * (L.ld[d] > 0.75 ? U.clamp(1 - (L.ld[d] - 0.75) * 1.3, 0.3, 1) : 1) * (raid < 1 ? 0.4 : 1);
-      }
-      L.load = Math.max(L.ld[0], L.ld[1]); L.cut = cut < 1;
-    }
-    // the junctions in front of a cut road, where traffic queues before it turns back
-    T.cutN = new Set(); for (const L of T.links) if (L.cut) { T.cutN.add(L.l.a); T.cutN.add(L.l.b); }
-    // in town, where links are short, the queue backs up through the junction behind
-    for (let r = 0; r < 2; r++) for (const n of [...T.cutN]) for (const li of T.G.nodes[n].out) { const L = T.links[li]; if (!L.cut && L.l.len < 3 && L.l.city) T.cutN.add(L.l.a === n ? L.l.b : L.l.a); }
+    T.rd = { i: 0, fi: hr(H_IN, h), fo: hr(H_OUT, h), ff: hr(H_FRT, h), fa: hr(H_APT, h), fg: hr(H_GEN, h), g: (war ? 0.75 : 1) * (S.alertCities > 2 ? 0.55 : 1) };
   }
+  if (T.rd) readLinks(S, T, now ? Infinity : Math.ceil(T.links.length / READ_STEPS));
   for (const b of S.buses) moveBus(S, b, dt);
   for (const t of S.trains) {
     if (t.wait > 0) { t.wait -= dt; continue; }
@@ -567,8 +584,29 @@ const along = (pts, cum, s) => {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: Math.atan2(b.y - a.y, b.x - a.x) };
 };
 IC.along = along;
-IC.trainPos = t => along(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
-IC.busPos = b => { const p = along(b.line.pts, b.line.cum, U.clamp(b.s, 0, b.line.len)); if (b.dir < 0) p.h += Math.PI; return p; };
+/* (brief 67) the same, drawn: within a few tens of metres of each bend of the line the point follows a curve tangent to
+   both pieces, so what drives or rolls along it turns smoothly instead of snapping round at every point of the road */
+const alongR = (pts, cum, s) => {
+  const n = cum.length;
+  let lo = 1, hi = n - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < s) lo = mid + 1; else hi = mid; }
+  const L = cum[lo] - cum[lo - 1], e0 = s - cum[lo - 1], e1 = cum[lo] - s;
+  // the bend nearest, if within reach of its curve
+  const j = e0 < e1 ? lo - 1 : lo, e = e0 < e1 ? e0 : -e1;
+  if (j > 0 && j < n - 1 && (e0 < 0.3 || e1 < 0.3)) {
+    const L0 = cum[j] - cum[j - 1], L1 = cum[j + 1] - cum[j], r = Math.min(0.3, L0 * 0.45, L1 * 0.45);
+    if (r >= 0.003 && e > -r && e < r) {
+      const V = pts[j], P = pts[j - 1], N = pts[j + 1], ix = (V.x - P.x) / (L0 || 1), iy = (V.y - P.y) / (L0 || 1), ox = (N.x - V.x) / (L1 || 1), oy = (N.y - V.y) / (L1 || 1);
+      const u = (e + r) / (2 * r), w = 1 - u;
+      return { x: w * w * (V.x - ix * r) + 2 * u * w * V.x + u * u * (V.x + ox * r), y: w * w * (V.y - iy * r) + 2 * u * w * V.y + u * u * (V.y + oy * r), h: Math.atan2(w * iy + u * oy, w * ix + u * ox) };
+    }
+  }
+  const a = pts[lo - 1], b = pts[lo], t = e0 / (L || 1);
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: Math.atan2(b.y - a.y, b.x - a.x) };
+};
+IC.alongR = alongR;
+IC.trainPos = t => alongR(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
+IC.busPos = b => { const p = alongR(b.line.pts, b.line.cum, U.clamp(b.s, 0, b.line.len)); if (b.dir < 0) p.h += Math.PI; return p; };
 
 /* ---------- how many vehicles are drawn ----------
    Every way of drawing road traffic (the slots of the middle zoom, the vehicles on their own trips close in, the 3D
@@ -634,7 +672,7 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
       for (; j * BASE + ph <= Math.min(ub, span); j += step) {
         const u = j * BASE + ph, h = U.hash(L.key + d, j & 65535);
         if (h > p || (keep < 1 && slotRank(j & 65535, L.key + d) >= keep)) continue;
-        const s = toS(u), q = along(P, cum, d ? len - s : s);
+        const s = toS(u), q = alongR(P, cum, d ? len - s : s);
         if (q.x < view.x0 || q.x > view.x1 || q.y < view.y0 || q.y > view.y1) continue;
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
         fn(q.x, q.y, d ? q.h + Math.PI : q.h, kind, L.cls, L.C.off[lane]);
@@ -874,10 +912,32 @@ function stepOnce(S, A, G, dt, now, box, check) {
   if (gone.size) A.list = A.list.filter(a => !gone.has(a));
 }
 /* where an agent is and which way it faces, with its lane offset */
+/* (brief 67) drawn, a vehicle steers round bends and through junctions on a curve tangent to the road it leaves and
+   the one it takes (within 4–15 m of the corner), and changes lane offset along it, instead of turning in one frame */
+const laneOff = (lk, a) => lk.C.off[Math.min(a.lane, lk.C.off.length - 1)];
+// where on link lk (direction d) distance s along the way it is driven: x, y, heading and lane offset
+function drivePt(a, lk, d, s) { const p = alongR(lk.pts, lk.cum, U.clamp(d ? lk.len - s : s, 0, lk.len)); if (d) p.h += Math.PI; p.o = laneOff(lk, a); return p; }
+function curve(P, Q, hIn, hOut, oIn, oOut, u, r) {
+  // P: the corner seen from the road coming in, Q from the road going out (the same node); u 0 → 1 across the curve
+  const ix = Math.cos(hIn), iy = Math.sin(hIn), ox = Math.cos(hOut), oy = Math.sin(hOut), Vx = (P.x + Q.x) / 2, Vy = (P.y + Q.y) / 2;
+  const Ex = Vx - ix * r, Ey = Vy - iy * r, Xx = Vx + ox * r, Xy = Vy + oy * r, w = 1 - u;
+  const x = w * w * Ex + 2 * u * w * Vx + u * u * Xx, y = w * w * Ey + 2 * u * w * Vy + u * u * Xy, h = Math.atan2(w * iy + u * oy, w * ix + u * ox), o = oIn + (oOut - oIn) * u * u * (3 - 2 * u);
+  return { x: x - Math.sin(h) * o, y: y + Math.cos(h) * o, h };
+}
 IC.agentPos = function (a) {
-  const [lk, d] = a.route[a.ri], s = d ? lk.len - a.s : a.s, p = along(lk.pts, lk.cum, U.clamp(s, 0, lk.len));
-  const h = d ? p.h + Math.PI : p.h, o = lk.C.off[Math.min(a.lane, lk.C.off.length - 1)];
-  return { x: p.x - Math.sin(h) * o, y: p.y + Math.cos(h) * o, h };
+  const [lk, d] = a.route[a.ri], s = a.s;
+  const p = drivePt(a, lk, d, s), o = p.o;
+  // across the junction at either end of this link: the link before (just through it) or the next (coming up)
+  const R0 = 0.15;
+  if (lk.len - s < R0 && a.ri + 1 < a.route.length) {
+    const [nl, nd] = a.route[a.ri + 1], r = Math.min(R0, lk.len * 0.45, nl.len * 0.45), e = lk.len - s;
+    if (e < r) { const P = drivePt(a, lk, d, lk.len - r), Q = drivePt(a, nl, nd, r), A = drivePt(a, lk, d, lk.len), B = drivePt(a, nl, nd, 0); return curve(A, B, Math.atan2(A.y - P.y, A.x - P.x), Math.atan2(Q.y - B.y, Q.x - B.x), o, Q.o, (r - e) / (2 * r), r); }
+  }
+  if (s < R0 && a.ri > 0) {
+    const [pl, pd] = a.route[a.ri - 1], r = Math.min(R0, lk.len * 0.45, pl.len * 0.45);
+    if (s < r) { const P = drivePt(a, pl, pd, pl.len - r), Q = drivePt(a, lk, d, r), A = drivePt(a, pl, pd, pl.len), B = drivePt(a, lk, d, 0); return curve(A, B, Math.atan2(A.y - P.y, A.x - P.x), Math.atan2(Q.y - B.y, Q.x - B.x), P.o, o, (r + s) / (2 * r), r); }
+  }
+  return { x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h };
 };
 IC.trafficAgentsOf = S => AG.get(S) || null;
 
