@@ -12,7 +12,7 @@ function prism(MB, B, P, z0, h, col) {
   for (const piece of IC.convexPieces(P.map(q => ({ x: q[0], y: q[1] })))) MB.plate(B, piece.map(q => [q.x, q.y]), z0 + h / 2, h, col);
 }
 const rectP = p => { const w = (p.w || 0.1) * 50, h = (p.h || 0.1) * 50; return [[-w, -h], [w, -h], [w, h], [-w, h]]; };
-const HEIGHT = { terminal: 16, cargo: 14, hangar: 20, support: 9, fire: 9, tower: 40, skybridge: 5 };
+const HEIGHT = { terminal: 16, cargo: 14, hangar: 20, support: 9, fire: 9, opsbase: 7, tower: 40, skybridge: 5 };
 const COL = { terminal: '#c8ccd0', cargo: '#a89e86', hangar: '#8a9096', support: '#a6a8a8', fire: '#b04638', tower: '#c4c6cc', skybridge: '#d6d8dc' };
 
 /* the massing of one part; false leaves it to replay3d.js's own boxes (parts without an outline) */
