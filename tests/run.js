@@ -205,6 +205,45 @@ test('world: cities are not round', () => {
   }
   assert(sum / n < 0.5, `cities are round on average (${(sum / n).toFixed(2)})`);
 }, false, 'world');
+test('terrain: the mountains are drawn higher and rougher than the height grid, volcanoes stand clear of towns with a crater and gullies, the lowlands roll by region, and the world is unchanged', () => {
+  const W = world(4242), h0 = Float32Array.from(W.hg);
+  // the main rocky crest is drawn above the height grid, rough; the plains stay within a whisker of it
+  const R = W.ridges[0], m = R.pts[R.pts.length >> 1];
+  let up = 0, lo = 1e9, hi = -1e9, flat = 0;
+  for (let k = 0; k < 400; k++) { const x = m[0] + (k % 20 - 10) * 8, y = m[1] + (Math.floor(k / 20) - 10) * 8, f = W.hFine(x, y, 1); up = Math.max(up, f - W.hAt(x, y)); lo = Math.min(lo, f); hi = Math.max(hi, f); }
+  assert(R.style === 'rocky' && up > 0.3 && hi - lo > 0.3, `the main range is not drawn as mountains (${up.toFixed(2)} above the grid, ${(hi - lo).toFixed(2)} of relief)`);
+  const c = W.cities.find(q => W.inHome(q.x, q.y) && W.hAt(q.x, q.y) < 0.4);
+  for (let k = 0; k < 100; k++) flat = Math.max(flat, Math.abs(W.hFine(c.x + k * 3, c.y, 1) - W.hAt(c.x + k * 3, c.y)));
+  assert(flat < 0.05, `the plains round ${c.name} are drawn ${flat.toFixed(2)} off the height grid`);
+  // two volcanoes, snow-capped, with no town on their slopes
+  const V = W._volcanoes;
+  assert(V.length >= 1, 'no volcano');
+  for (const v of V) {
+    const [x, y] = v.pts[0];
+    assert(W.hDrawn(x, y) > 1.4, `${v.name} has no snow-capped top (${W.hDrawn(x, y).toFixed(2)})`);
+    assert(!W.cities.concat(W.villages).some(t => Math.hypot(t.x - x, t.y - y) < v.w), `a town stands on ${v.name}`);
+    // a crater at the top, below its rim; gullies down its sides, so the slope is not the same all round
+    const rim = Math.max(...[0, 1, 2, 3, 4, 5].map(k => W.hDrawn(x + Math.cos(k) * v.w * 0.08, y + Math.sin(k) * v.w * 0.08)));
+    assert(W.hDrawn(x, y) < rim - 0.03, `${v.name} has no crater (${W.hDrawn(x, y).toFixed(2)} at the middle, ${rim.toFixed(2)} on the rim)`);
+    const ring = []; for (let k = 0; k < 72; k++) ring.push(W.hDrawn(x + Math.cos(k / 72 * 6.283) * v.w * 0.5, y + Math.sin(k / 72 * 6.283) * v.w * 0.5));
+    assert(Math.max(...ring) - Math.min(...ring) > 0.05, `${v.name}'s sides have no gullies`);
+  }
+  // the lowlands roll by region: the Palouse's hills stand out, the high plains lie nearly flat
+  const relief = b => {
+    let n = 0, sum = 0;
+    for (let y = 400; y < IC.WH - 400 && n < 400; y += 97) for (let x = 400; x < IC.WW - 400 && n < 400; x += 89) {
+      if (!W.inHome(x, y) || W.biome(x, y) !== b || W.hAt(x, y) > 0.3) continue;
+      sum += Math.abs(W.hFine(x + 3, y, 1) - W.hFine(x - 3, y, 1)) + Math.abs(W.hFine(x, y + 3, 1) - W.hFine(x, y - 3, 1)); n++;
+    }
+    return sum / Math.max(1, n);
+  };
+  assert(relief(1) > relief(0) * 2, `the Palouse rolls no more than the high plains (${relief(1).toFixed(4)} against ${relief(0).toFixed(4)})`);
+  // every region turns up in our country
+  const seen = new Set(); for (let y = 0; y < IC.WH; y += 300) for (let x = 0; x < IC.WW; x += 300) if (W.inHome(x, y)) seen.add(W.biome(x, y));
+  assert(seen.size === IC.BIOMES.length, `only ${[...seen].map(b => IC.BIOMES[b]).join(', ')}`);
+  // all of it is drawing: the simulation's heights are untouched
+  assert(W.hg.every((v, i) => v === h0[i]), 'drawing the relief changed the height grid');
+}, false, 'world');
 test('world: every map has cities of at least two styles, and districts in every city', () => {
   for (const seed of [4242, 7, 99, 12345, 2024]) {
     const W = world(seed), styles = new Set(W.cities.map(c => c.style));
@@ -3394,6 +3433,41 @@ test('air war: a track stays steady and selectable across radar sweeps, and for 
   assert(t.unc > u0 + 20, `the uncertainty did not grow (${u0} → ${t.unc})`);
   runRange(S, 20);
   assert(!t.held && S.time - lostAt >= IC.coastT(t), 'the track was not dropped after its coast time');
+});
+test('air war: an identified enemy stays on the map where it is after radar loses it, then fades; See everything shows the rest', () => {
+  const S = range(), T = S.range.target;
+  const rad = IC.makeUnit(S, 'vhf', T.x, T.y, { instant: true, full: true }); rad.emcon = 'on';
+  const fly = (dx) => IC.spawnThreat(S, 'str', T.x + 1500, T.y + dx, { route: [{ x: T.x - 30000, y: T.y + dx }], mission: 'strike', home: { x: T.x + 6000, y: T.y }, fromHostile: true });
+  const a = fly(-400), b = fly(400);
+  runRange(S, 200, () => a.held && b.held);
+  assert(a.tn && b.tn, 'the radar never picked the aircraft up');
+  IC.setAff(S, a, 'H', 'test');
+  b.aff = 'U';
+  a.rcs = b.rcs = 0;
+  const lost = Math.max(a.pt, b.pt);
+  runRange(S, IC.coastT(a) + 30 - (S.time - lost));
+  assert(!a.held && !b.held, 'radar should have lost both');
+  const v = IC.trackView(S, a);
+  assert(v && v.steady && v.k === 1, 'the identified enemy is not drawn solid after radar lost it');
+  assert(U.dxy(v.x, v.y, a.x, a.y) < 1, 'the identified enemy is not drawn where it is');
+  assert(!IC.trackView(S, b), 'an unidentified track stays on the map after radar lost it');
+  const hit = IC.pickAt(S, { x: a.x, y: a.y }, 1);
+  assert(hit && hit.ref === a, 'the identified enemy cannot be clicked where it is drawn');
+  S.cfg.seen = 'radar';
+  assert(!IC.trackView(S, a), 'Radar only still shows the enemy after contact is lost');
+  S.cfg.seen = 'short';
+  const hold = IC.SEEN.hold.short, fade = hold * IC.SEEN.fade;
+  S.time = a.pt + hold + fade / 2;
+  const f = IC.trackView(S, a);
+  assert(f && f.k > 0.3 && f.k < 0.7, `half way through the fade it should be half drawn (${f && f.k})`);
+  S.time = a.pt + hold + fade + 1;
+  assert(!IC.trackView(S, a), 'the enemy never faded off the map');
+  // See everything: every threat, seen or not, as what it is
+  S.layers.all = true;
+  const c = IC.spawnThreat(S, 'owa', T.x + 20000, T.y, { route: [{ x: T.x, y: T.y }], mission: 'strike', fromHostile: true });
+  const w = IC.trackView(S, c);
+  assert(w && w.steady && w.aff === 'H' && !c.tn, 'See everything does not show a threat no radar has seen');
+  assert(IC.trackView(S, b) && IC.trackView(S, a), 'See everything does not show the lost tracks');
 });
 test('air war: tracks flying together are one raid, and split when they split', () => {
   const S = range(), T = S.range.target;

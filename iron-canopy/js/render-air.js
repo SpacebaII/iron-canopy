@@ -33,7 +33,7 @@ IC.drawTrackUnc = function (g, S, t, aff, px) {
 function groups(S, px) {
   const sel = S.sel && S.sel.kind === 'track' ? S.sel.ref : null;
   for (const g of S.tgroups || []) {
-    const B = IC.groupBox(g), on = sel && sel.grp === g;
+    const B = IC.groupBox(g, S), on = sel && sel.grp === g;
     if (!inView(B.x, B.y, 400)) continue;
     const pad = 10 * px + 4, col = g.aff === 'H' ? '255,91,79' : g.aff === 'S' ? '255,154,60' : '242,209,74';
     ctx.strokeStyle = `rgba(${col},${on ? 0.85 : 0.35})`; ctx.lineWidth = (on ? 1.6 : 1) * px; ctx.setLineDash(on ? [] : [5 * px, 4 * px]);
@@ -57,7 +57,7 @@ function vectors(S, px) {
       ctx.strokeStyle = CYA(0.75); ctx.lineWidth = 1.4 * px;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(m.x, m.y); ctx.stroke();
       ctx.setLineDash([3 * px, 4 * px]); ctx.strokeStyle = 'rgba(255,140,120,0.45)';
-      ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(t.px, t.py); ctx.stroke(); ctx.setLineDash([]);
+      const tp = IC.trackAt(S, t); ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(tp.x, tp.y); ctx.stroke(); ctx.setLineDash([]);
       marker(m.x, m.y, px, CY);
       if (IC.cam.z > 0.02) label(`${a.name} → TN ${t.tn}${m.tau != null ? ' · ' + clock(m.tau) : ''}`, m.x + 10 * px, m.y - 9 * px, px, CY, 9, 'left', 600);
     } else if (m.type === 'escort' && m.who && !m.who.dead) {
@@ -86,7 +86,7 @@ function plan(S, px, now) {
   ctx.strokeStyle = CYA(pulse); ctx.lineWidth = 1.6 * px; ctx.setLineDash([8 * px, 5 * px]);
   ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(P.x, P.y); ctx.stroke();
   ctx.strokeStyle = 'rgba(255,140,120,0.5)'; ctx.setLineDash([3 * px, 4 * px]);
-  ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(I.t.px, I.t.py); ctx.stroke(); ctx.setLineDash([]);
+  const tp = IC.trackAt(S, I.t); ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(tp.x, tp.y); ctx.stroke(); ctx.setLineDash([]);
   marker(P.x, P.y, px, CY);
   // the missiles' reach at the target's height, round the meeting point
   if (P.reach > 0) { ctx.strokeStyle = CYA(0.25); ctx.setLineDash([2 * px, 5 * px]); ctx.beginPath(); ctx.arc(P.x, P.y, P.reach, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
