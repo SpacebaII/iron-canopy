@@ -165,11 +165,55 @@ IC.drawFieldLife = function (g, S, f, px) {
       for (const [a, b] of [[0, sp], [0, -sp], [-(T ? T.len : 0.08) * 0.48, 0]]) { g.beginPath(); g.arc(o.x + a * c - b * s2, o.y + a * s2 + b * c, Math.max(0.004, 0.9 * px), 0, 7); g.fill(); }
     }
   }
+  // (brief 62) the field's own traffic, seen from the clubhouse rather than on radar: taxiing, the take-off and
+  // landing runs, and the circuit low over the field
+  if (z > 2.5) for (const t of S.threats) {
+    if (t.dead || t.type !== 'ga' || t.held || t.alt > 0.4 || Math.abs(t.x - f.x) > 20 || Math.abs(t.y - f.y) > 20) continue;
+    const h = Math.atan2(t.vy, t.vx), T = IC.ACTYPES[t.acType], v = Math.hypot(t.vx, t.vy), G = t.fld;
+    // (dust off the grass behind it, more the faster it runs)
+    if (G && t.alt < 0.01 && v > 0.03 && z > 6) {
+      const k = Math.min(1, v / 0.3), L = T ? T.len : 0.08;
+      for (let i = 1; i <= 4; i++) { const d = L * (0.4 + i * 0.45 * (0.6 + k)), r = L * (0.18 + i * 0.12) * (0.5 + k); g.fillStyle = `rgba(196,182,140,${(0.32 - i * 0.06) * k + 0.05})`; g.beginPath(); g.arc(t.x - Math.cos(h) * d + Math.sin(S.time * 3 + i) * r * 0.2, t.y - Math.sin(h) * d, r, 0, 7); g.fill(); }
+    }
+    IC.drawPlane(g, t.x, t.y, h, t.acType || 'light', t.livery || null, { shadow: t.alt * 6 + 0.01, minPx: 8, now: S.time / IC.GS });
+    if (z > 7 && t.cs) { g.fillStyle = 'rgba(230,240,245,0.8)'; g.font = `500 ${8 * px}px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.fillText(t.cs, t.x, t.y + ((T ? T.len : 0.08) + 14 * px)); }
+  }
 };
 IC.drawApronLife = function (g, S, ap, px) {
   const z = IC.cam ? IC.cam.z : 1;
   if (z < 2) return;
-  for (const [key, liv, x, y, h] of IC.apronLife(S, ap)) IC.modelTop(g, key, x, y, h, { livery: liv, minPx: 3, shadow: 0.03 });
+  const now = IC.lifeT != null ? IC.lifeT / IC.GS : S.time / IC.GS;
+  for (const [key, liv, x, y, h, run] of IC.apronLife(S, ap)) IC.modelTop(g, key, x, y, h, { livery: liv, minPx: 3, shadow: 0.03, now: run ? now : undefined });
+  if (z > 12 && IC.gaScene) drawGaScene(g, S, ap, px, z);
 };
+/* (brief 62) the GA ramp close in: chocks and tie-down ropes, the fuel bowser and the business jets' vehicles, the
+   marshaller with the wands, pilots and passengers walking between the aircraft and the FBO */
+const PERSON = { pilot: '#f2f2ea', pax: '#d8dde2', marshal: '#ff8a2a' };
+function drawGaScene(g, S, ap, px, z) {
+  for (const o of IC.gaScene(S, ap)) {
+    const c = Math.cos(o.h), s = Math.sin(o.h);
+    if (o.kind === 'chock') {
+      if (z < 40) continue;
+      const q = Math.max(0.006, 2.4 * px); g.fillStyle = 'rgba(214,170,40,0.95)';
+      for (const sd of [-1, 1]) { const x = o.x - s * o.w * sd, y = o.y + c * o.w * sd; g.fillRect(x + c * 0.012 - q / 2, y + s * 0.012 - q / 2, q, q); g.fillRect(x - c * 0.012 - q / 2, y - s * 0.012 - q / 2, q, q); }
+      continue;
+    }
+    if (o.kind === 'tie') {
+      // a rope from each wing and the tail down to its ring in the pavement
+      g.strokeStyle = 'rgba(240,236,220,0.8)'; g.lineWidth = Math.max(0.0015, 1 * px); g.fillStyle = 'rgba(30,30,28,0.9)';
+      for (const [a, b, a2, b2] of [[-o.len * 0.05, o.span * 0.36, -o.len * 0.05, o.span * 0.46], [-o.len * 0.05, -o.span * 0.36, -o.len * 0.05, -o.span * 0.46], [-o.len * 0.44, 0, -o.len * 0.54, 0]]) {
+        const x = o.x + a * c - b * s, y = o.y + a * s + b * c, x2 = o.x + a2 * c - b2 * s, y2 = o.y + a2 * s + b2 * c;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke(); g.beginPath(); g.arc(x2, y2, Math.max(0.003, 1.6 * px), 0, 7); g.fill();
+      }
+      continue;
+    }
+    if (o.kind === 'veh') { IC.modelTop(g, o.key, o.x, o.y, o.h, { minPx: 2, shadow: 0.01 }); continue; }
+    if (z < 20) continue;
+    const r = Math.max(0.004, 2.4 * px);
+    g.fillStyle = PERSON[o.liv] || PERSON.pax; g.strokeStyle = 'rgba(20,24,28,0.8)'; g.lineWidth = Math.max(0.001, 0.8 * px);
+    g.beginPath(); g.arc(o.x, o.y, r, 0, 7); g.fill(); g.stroke();
+    if (o.kind === 'marshal' && z > 50) { g.strokeStyle = '#ff5a2a'; g.lineWidth = Math.max(0.002, 1 * px); const w = Math.sin(S.time * 3) * 0.6; for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(o.x - s * r * sd, o.y + c * r * sd); g.lineTo(o.x - s * r * sd * 3 + Math.cos(o.h + w * sd) * r * 2, o.y + c * r * sd * 3 + Math.sin(o.h + w * sd) * r * 2); g.stroke(); } }
+  }
+}
 
 })(window.IC);
