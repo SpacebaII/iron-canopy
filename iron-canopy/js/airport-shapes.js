@@ -71,7 +71,7 @@ IC.convexPieces = convexPieces;
 function depth(A, B) {
   let m = Infinity;
   for (const P of [A, B]) for (let i = 0; i < P.length; i++) {
-    const p = P[i], q = P[(i + 1) % P.length], L = Math.hypot(q.x - p.x, q.y - p.y); if (L < 1e-9) continue;
+    const p = P[i], q = P[(i + 1) % P.length], L = U.hyp(q.x - p.x, q.y - p.y); if (L < 1e-9) continue;
     const ax = -(q.y - p.y) / L, ay = (q.x - p.x) / L;
     let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
     for (const r of A) { const d = r.x * ax + r.y * ay; if (d < a0) a0 = d; if (d > a1) a1 = d; }
@@ -267,8 +267,8 @@ function meetAt(A, B) {
    important first, none overlapping another: one that would is left out), and each building site's progress, small,
    on the site, only close enough to see the site, gone when it is built. Each label keeps the thing it names (of)
    and its box in world units; the renderer draws them, the tests check none hangs loose. */
-const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
-const LBL_RANK = { terminal: 0, cargo: 1, hangar: 2, tower: 3, fire: 4, fuel: 5, deice: 6, fuelpad: 7, atc: 8, gradar: 9, hydrant: 10, has: 11, ammo: 12, support: 13 };
+const BLD_TAG = { terminal: 'TERMINAL', cargo: 'CARGO', hangar: 'HANGAR', fuel: 'FUEL FARM', hydrant: 'HYDRANT', fuelpad: 'FUEL STAND', deice: 'DE-ICING', helipad: 'HELIPAD', gaterm: 'GA TERMINAL', tower: 'TOWER', fire: 'FIRE', atc: 'APPROACH RADAR', gradar: 'GROUND RADAR', has: 'SHELTER', ammo: 'MUNITIONS' };
+const LBL_RANK = { terminal: 0, cargo: 1, hangar: 2, tower: 3, fire: 4, fuel: 5, deice: 6, fuelpad: 7, atc: 8, gradar: 9, hydrant: 10, has: 11, ammo: 12, support: 13, gaterm: 6, helipad: 9 };
 IC.BLD_TAG = BLD_TAG;
 IC.aptLabels = function (S, ap, z, o) {
   o = o || {};
@@ -318,7 +318,15 @@ IC.aptUnattached = function (S, ap) {
   for (const p of ap.parts) {
     if (!p.built) continue;
     if (p.kind === 'skybridge' && (p.joins || []).filter(id => { const q = ap.parts.find(x => x.id === id); return q && q.built; }).length < 2) out.push({ what: 'skybridge', p, text: `${name(p)} does not join two buildings.` });
-    if (p.kind === 'people' && (p.stops || []).length < 2) out.push({ what: 'people', p, text: `${name(p)} has no station at ${(p.stops || []).length ? 'one end' : 'either end'}.` });
+    if (p.kind === 'people') {
+      // each end at a station: a building it stops at, or another stretch of the same line (a mapped line comes in
+      // pieces), or a terminal it runs into
+      const st = (p.stops || []).map(id => ap.parts.find(q => q.id === id)).filter(Boolean);
+      const atEnd = e => st.concat(ap.parts.filter(q => q.kind === 'terminal' && q.built)).some(q => IC.partDist(ap, q, e) < 0.6)
+        || ap.parts.some(q => q !== p && q.kind === 'people' && q.pts.some(v => U.dist(v, e) < 0.15));
+      const n = [p.pts[0], p.pts[p.pts.length - 1]].filter(e => !atEnd(e)).length;
+      if (n) out.push({ what: 'people', p, text: `${name(p)} has no station at ${n === 1 ? 'one end' : 'either end'}.` });
+    }
   }
   const L = ap.land;
   if (L && L.roads) for (const r of L.roads) if (r.kind === 'kerb' && r.by) {

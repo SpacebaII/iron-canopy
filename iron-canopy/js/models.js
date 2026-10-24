@@ -18,7 +18,7 @@ const RAD = Math.PI / 180;
 /* ---------- palette ---------- */
 const P = {
   white: '#e6e8ea', grey: '#aeb4ba', dark: '#3a4046', black: '#1a1c1e', glass: '#1c2c3c', steel: '#8c949c',
-  green: '#56663f', green2: '#434f34', tan: '#9c9070', radar: '#c4c8cc', rubber: '#202224', canvas: '#687552',
+  green: '#5f6a49', green2: '#525c3f', tan: '#9c9070', radar: '#c4c8cc', rubber: '#202224', canvas: '#69714f',
   red: '#c8323c', orange: '#e07b1a', enemy: '#6f7a86', enemy2: '#56606c', missile: '#dcdcd6', warhead: '#404448', flame: '#ffb060',
   civil: '#f0f0ee', fuel: '#e2e0d4', concrete: '#b0b0a8', wing: '#b4b9be', metal: '#6c7278', nozzle: '#4a4640', intake: '#16181a',
   navy: '#27313f', olive: '#5d6a48', sand: '#b5a47c', lgrey: '#c8ccd0', mgrey: '#8a9098', dgrey: '#50565c', camo1: '#6d7b86', camo2: '#8995a0'
@@ -184,6 +184,8 @@ const cyl = (B, at, len, r, col, axis, o) => lathe(B, [[-len / 2, r], [len / 2, 
    [kx, ky] narrows the top face (a cab, a turret); o.col per face: [+x, -x, +y, -y, +z, -z] */
 function box(B, x, y, z, sx, sy, sz, col, o) {
   o = o || {};
+  // vehicles and sites (B.soft) get their edges chamfered close in, unless the box is a thin panel
+  if (B.soft && !o.hard && Math.min(sx, sy, sz) > 0.24) return bevel(B, x, y, z, sx, sy, sz, col, o);
   const tp = o.top || [1, 1], hx = sx / 2, hy = sy / 2, hz = sz / 2;
   const cp = Math.cos(o.pitch || 0), sp = Math.sin(o.pitch || 0), cy = Math.cos(o.yaw || 0), sy2 = Math.sin(o.yaw || 0), cr = Math.cos(o.roll || 0), sr = Math.sin(o.roll || 0);
   const R = (px, py, pz) => {
@@ -196,6 +198,34 @@ function box(B, x, y, z, sx, sy, sz, col, o) {
   for (const k of [-1, 1]) for (const j of [-1, 1]) for (const i of [-1, 1]) { const top = k > 0; v.push(R(i * hx * (top ? tp[0] : 1) + (top && o.shift ? o.shift : 0), j * hy * (top ? tp[1] : 1), k * hz)); }
   const c = B.T([x, y, z]), F = [[1, 3, 7, 5], [0, 4, 6, 2], [2, 6, 7, 3], [0, 1, 5, 4], [4, 5, 7, 6], [0, 2, 3, 1]];
   F.forEach((f, i) => { const cl = o.col ? o.col[i] || col : col; B.tri(v[f[0]], v[f[1]], v[f[2]], cl, c); B.tri(v[f[0]], v[f[2]], v[f[3]], cl, c); });
+}
+/* a box with its edges chamfered (o.c metres, by default a seventh of its smallest side): the narrow facets catch
+   the light, so a cab or a shelter reads as something made rather than a block. The same frame and options as box */
+function bevel(B, x, y, z, sx, sy, sz, col, o) {
+  o = o || {};
+  const c = Math.min(o.c != null ? o.c : Math.min(sx, sy, sz) / 7, sx * 0.4, sy * 0.4, sz * 0.4);
+  if (!B.q || c < 0.03) return box(B, x, y, z, sx, sy, sz, col, Object.assign({}, o, { hard: true }));
+  const tp = o.top || [1, 1], hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  const cp = Math.cos(o.pitch || 0), sp = Math.sin(o.pitch || 0), cy = Math.cos(o.yaw || 0), sy2 = Math.sin(o.yaw || 0), cr = Math.cos(o.roll || 0), sr = Math.sin(o.roll || 0);
+  const R = (px, py, pz) => {
+    // the top narrows as box's does, linearly up the sides
+    const f = (pz + hz) / sz, kx = 1 + (tp[0] - 1) * f, ky = 1 + (tp[1] - 1) * f;
+    px = px * kx + (o.shift || 0) * f; py *= ky;
+    let a = px, b = py * cr - pz * sr, cc = py * sr + pz * cr;
+    const a2 = a * cp - cc * sp, c2 = a * sp + cc * cp; a = a2; cc = c2;
+    return B.T([x + a * cy - b * sy2, y + a * sy2 + b * cy, z + cc]);
+  };
+  // each corner is cut into three points: on the x, the y and the z face
+  const V = (i, j, k, f) => f === 0 ? R(i * hx, j * (hy - c), k * (hz - c)) : f === 1 ? R(i * (hx - c), j * hy, k * (hz - c)) : R(i * (hx - c), j * (hy - c), k * hz);
+  const ctr = B.T([x, y, z]), fc = n => o.col ? o.col[n] || col : col;
+  const quad = (a, b, d, e, cl) => { B.tri(a, b, d, cl, ctr); B.tri(a, d, e, cl, ctr); };
+  for (const i of [1, -1]) quad(V(i, -1, -1, 0), V(i, 1, -1, 0), V(i, 1, 1, 0), V(i, -1, 1, 0), fc(i > 0 ? 0 : 1));
+  for (const j of [1, -1]) quad(V(-1, j, -1, 1), V(1, j, -1, 1), V(1, j, 1, 1), V(-1, j, 1, 1), fc(j > 0 ? 2 : 3));
+  for (const k of [1, -1]) quad(V(-1, -1, k, 2), V(1, -1, k, 2), V(1, 1, k, 2), V(-1, 1, k, 2), fc(k > 0 ? 4 : 5));
+  for (const i of [1, -1]) for (const j of [1, -1]) quad(V(i, j, -1, 0), V(i, j, 1, 0), V(i, j, 1, 1), V(i, j, -1, 1), fc(i > 0 ? 0 : 1));
+  for (const i of [1, -1]) for (const k of [1, -1]) quad(V(i, -1, k, 0), V(i, 1, k, 0), V(i, 1, k, 2), V(i, -1, k, 2), fc(i > 0 ? 0 : 1));
+  for (const j of [1, -1]) for (const k of [1, -1]) quad(V(-1, j, k, 1), V(1, j, k, 1), V(1, j, k, 2), V(-1, j, k, 2), fc(j > 0 ? 2 : 3));
+  for (const i of [1, -1]) for (const j of [1, -1]) for (const k of [1, -1]) B.tri(V(i, j, k, 0), V(i, j, k, 1), V(i, j, k, 2), col, ctr);
 }
 /* a flat plate from a polygon in the x-y plane at height z (panels, pads), th thick */
 function plate(B, pts, z, th, col) {
@@ -701,21 +731,50 @@ function gaPlane(B, s) {
 }
 
 /* ---------- ground vehicles and fixed sites ---------- */
-/* a lorry: chassis, a cab with a sloped front and windscreen, wheels on n axles; len and w in metres */
+/* a tyre on its side wall, the hub showing: ''at'' its centre, the axle along y; w half its width */
+function tyre(B, x, y, z, r, w, hub) {
+  const n = B.q ? 12 : 6;
+  if (!B.q) return lathe(B, [[-w, r * 0.5], [-w, r], [w, r], [w, r * 0.5]], P.rubber, { at: [x, y, z], axis: 'y', segs: n, cap0: P.dgrey, cap1: P.dgrey, smooth: false });
+  lathe(B, [[-w, r * 0.6], [-w, r * 0.9], [-w * 0.75, r], [w * 0.75, r], [w, r * 0.9], [w, r * 0.6]], P.rubber, { at: [x, y, z], axis: 'y', segs: n, cap0: hub || P.dgrey, cap1: hub || P.dgrey });
+  lathe(B, [[-w - 0.03, r * 0.22], [w + 0.03, r * 0.22]], P.dark, { at: [x, y, z], axis: 'y', segs: 6, cap0: P.dark, cap1: P.dark, smooth: false });
+}
+/* a lorry: chassis rails, a chamfered cab raked back at the front (windscreen, side windows, grille, lamps), mudguards,
+   tyres with their hubs, a fuel tank and an exhaust stack; len and w in metres */
 function lorry(B, len, w, axles, col, o) {
   o = o || {};
-  const cabL = o.cabL || 2.3, h = o.h || 1.05, cabH = o.cabH || 2.1, x1 = len / 2;
-  box(B, 0, 0, h, len - 0.3, w * 0.8, 0.35, P.dark);
-  box(B, x1 - cabL / 2, 0, h + 0.25 + cabH / 2, cabL, w, cabH, col, { top: [0.82, 0.96], shift: -cabL * 0.08 });
-  // windscreen and side windows as dark panels
-  box(B, x1 - cabL * 0.1, 0, h + 0.25 + cabH * 0.68, cabL * 0.2, w * 0.86, cabH * 0.36, P.glass, { pitch: -0.18 });
-  for (const sg of [1, -1]) box(B, x1 - cabL * 0.42, sg * (w / 2 + 0.01), h + 0.25 + cabH * 0.68, cabL * 0.4, 0.03, cabH * 0.3, P.glass);
-  const r = o.r || 0.55;
-  for (let i = 0; i < axles; i++) {
-    const x = axles === 1 ? 0 : i === 0 ? x1 - cabL * 0.5 : x1 - cabL - 1.4 - (i - 1) * ((len - cabL - 2.4) / Math.max(1, axles - 1));
-    for (const k of [-1, 1]) lathe(B, [[-0.26, r * 0.5], [-0.26, r], [0.26, r], [0.26, r * 0.5]], P.rubber, { at: [x, k * (w / 2 - 0.3), r], axis: 'y', segs: B.q ? 10 : 6, cap0: P.dgrey, cap1: P.dgrey, smooth: false });
+  const cabL = o.cabL || 2.3, h = o.h || 1.05, cabH = o.cabH || 2.1, x1 = len / 2, r = o.r || 0.55, rake = 0.16 * cabL;
+  for (const sg of [1, -1]) box(B, 0, sg * w * 0.3, h, len - 0.5, 0.22, 0.32, P.dark, { hard: true });
+  box(B, x1 - 0.1, 0, h - 0.02, 0.26, w * 0.98, 0.34, P.dgrey, { c: 0.08 });
+  if (B.q) box(B, -x1 + 0.2, 0, h - 0.08, 0.14, w * 0.92, 0.18, P.dark, { hard: true });
+  const cx = x1 - cabL / 2, z0 = h + 0.25, cz = z0 + cabH / 2;
+  box(B, cx, 0, cz, cabL, w, cabH, col, { top: [0.84, 0.95], shift: -cabL * 0.08, c: 0.12 });
+  // the front face leans back by `rake` from the bottom to the top: the glass and the grille follow it
+  const fx = f => x1 - rake * f + 0.03, lean = Math.atan2(rake, cabH);
+  box(B, fx(0.7), 0, z0 + cabH * 0.7, 0.04, w * 0.84, cabH * 0.36, P.glass, { pitch: lean, hard: true });
+  box(B, fx(0.25), 0, z0 + cabH * 0.25, 0.04, w * 0.6, cabH * 0.22, P.dark, { pitch: lean, hard: true });
+  for (const sg of [1, -1]) {
+    box(B, cx + cabL * 0.12, sg * (w / 2 * 0.97 + 0.01), z0 + cabH * 0.68, cabL * 0.42, 0.03, cabH * 0.3, P.glass, { hard: true });
+    box(B, fx(0.14) - 0.01, sg * w * 0.36, z0 + cabH * 0.14, 0.05, w * 0.16, 0.16, '#e8e4cc', { hard: true });
+    box(B, -x1 + 0.12, sg * w * 0.36, h - 0.08, 0.06, w * 0.14, 0.12, '#a8282a', { hard: true });
   }
-  if (o.bed) box(B, -cabL / 2 - 0.2, 0, h + o.bed / 2 + 0.2, len - cabL - 0.6, w, o.bed, o.bedCol || col, { top: o.tilt ? [0.96, 0.9] : [1, 1] });
+  const xs = [];
+  for (let i = 0; i < axles; i++) xs.push(axles === 1 ? 0 : i === 0 ? x1 - cabL * 0.5 : x1 - cabL - 1.4 - (i - 1) * ((len - cabL - 2.4) / Math.max(1, axles - 1)));
+  for (const x of xs) for (const k of [-1, 1]) tyre(B, x, k * (w / 2 - 0.3), r, r, 0.26, o.hub || P.metal);
+  // mudguards: one over the front axle, one over the rear group
+  if (B.q) for (const k of [-1, 1]) {
+    box(B, xs[0], k * (w / 2 - 0.3), r * 2 + 0.12, r * 2.3, 0.64, 0.12, P.dark, { hard: true });
+    if (xs.length > 1) { const a = xs[xs.length - 1], b = xs[1]; box(B, (a + b) / 2, k * (w / 2 - 0.3), r * 2 + 0.12, b - a + r * 2.3, 0.64, 0.12, P.dark, { hard: true }); }
+  }
+  if (B.q && !o.bare) {
+    cyl(B, [x1 - cabL - 0.15, w * 0.34, h + cabH * 0.62], cabH * 1.05, 0.07, P.dark, 'z', { segs: 6 });
+    cyl(B, [x1 - cabL - 0.7, -(w / 2 - 0.32), h - 0.12], 1.0, 0.27, P.steel, 'x', { segs: 8 });
+  }
+  if (o.bed) {
+    const bl = len - cabL - 0.6, bx = -cabL / 2 - 0.2, bz = h + o.bed / 2 + 0.2;
+    // a tilt is canvas over hoops: rounded over the top; a box body has square edges
+    box(B, bx, 0, bz, bl, w, o.bed, o.bedCol || col, o.tilt ? { top: [0.98, 0.84], c: Math.min(0.24, o.bed * 0.12) } : { c: 0.07 });
+    if (o.tilt && B.q) for (let i = 1; i < 4; i++) box(B, bx - bl / 2 + bl * i / 4, 0, bz + o.bed / 2 - 0.02, 0.07, w * 0.86, 0.06, '#4e553c', { hard: true });
+  }
 }
 /* converts a part in the older [shape, x, y, z, sx, sy, sz, colour, opts] form (units and sites are written that way) */
 function part(B, p) {
@@ -734,44 +793,91 @@ function part(B, p) {
     lathe(B, prof, col, { at: [x, y, z], ry: sy, rz: sz, segs: B.q ? 12 : 6 });
   } else if (shape === 'poly') plate(B, op.pts, z, sz || 0.1, col);
 }
-/* missile canisters on a raised launcher that elevates about its rear edge when the unit is set up */
+/* missile canisters on a raised launcher that elevates about its rear edge when the unit is set up: the pack held in a
+   frame of rails, each canister's front cover in a lighter paint */
 function canisters(B, x, z, n, len, d, col, pitch, gap) {
-  const across = n <= 2 ? n : Math.ceil(n / 2), rows = n <= 2 ? 1 : 2, g = gap || d * 1.15;
+  const across = n <= 2 ? n : Math.ceil(n / 2), rows = n <= 2 ? 1 : 2, g = gap || d * 1.15, cap = '#8f8d6a', wd = across * g;
   B.group('launch', { kind: 'launch', pivot: [x - len / 2, 0, z - d * 0.5], axis: [0, -1, 0], up: pitch });
-  box(B, x - len * 0.15, 0, z - d * 0.62, len * 0.5, across * g + 0.2, 0.25, P.dark);
+  box(B, x - len * 0.15, 0, z - d * 0.62, len * 0.5, wd + 0.2, 0.25, P.dark);
   for (let r = 0; r < rows; r++) for (let i = 0; i < across; i++) {
     const y = (i - (across - 1) / 2) * g, zz = z + r * g;
-    if (d > 0.45) box(B, x, y, zz, len, d, d, col || P.canvas); else lathe(B, [[-len / 2, d / 2], [len / 2, d / 2]], col || P.canvas, { at: [x, y, zz], cap0: P.dark, cap1: P.dgrey, segs: B.q ? 8 : 5 });
+    if (d > 0.45) box(B, x, y, zz, len, d, d, col || P.canvas, { c: d * 0.1, col: [cap] });
+    else lathe(B, [[-len / 2, d / 2], [len / 2, d / 2]], col || P.canvas, { at: [x, y, zz], cap0: P.dark, cap1: cap, segs: B.q ? 8 : 5 });
+  }
+  // the frame: rails down both sides of the pack and bands round it at each end
+  if (B.q) {
+    const zc = z + (rows - 1) * g / 2, hh = rows * g + 0.1;
+    for (const sg of [1, -1]) box(B, x, sg * (wd / 2 + 0.08), zc, len * 0.96, 0.1, hh * 0.5, P.dark, { hard: true });
+    for (const f of [-0.42, 0.42]) box(B, x + len * f, 0, zc + hh / 2 - 0.02, 0.12, wd + 0.2, 0.08, P.dark, { hard: true });
   }
   B.group('main');
 }
-/* a radar antenna that turns on its mast: a flat array (tilted back) or a bar */
+/* turn whatever fn builds by angle a (nose up) about the point (cx, cz) */
+const pitched = (B, cx, cz, a, fn) => B.with(p => { const dx = p[0] - cx, dz = p[2] - cz; return [cx + dx * Math.cos(a) - dz * Math.sin(a), p[1], cz + dx * Math.sin(a) + dz * Math.cos(a)]; }, fn);
+/* a radar antenna that turns on its mast: a flat array tilted back, in a frame, with its rows of elements, on a
+   pedestal; the back of it darker */
 function antenna(B, x, z, w, h, col, tilt, turn) {
   cyl(B, [x, 0, z / 2 + 0.6], z - 0.6, 0.18, P.dark, 'z', { segs: 6 });
   if (turn !== false) B.group('radar', { kind: 'radar', pivot: [x, 0, z], axis: [0, 0, 1] });
-  box(B, x, 0, z + h / 2, 0.3, w, h, col || P.radar, { pitch: tilt == null ? -0.3 : tilt, col: [P.lgrey, P.dgrey] });
+  if (B.q) box(B, x - 0.1, 0, z + 0.05, 0.7, Math.min(1.2, w * 0.3), 0.4, P.dgrey);
+  const a = tilt == null ? -0.3 : tilt, zc = z + h / 2;
+  box(B, x, 0, zc, 0.3, w, h, col || P.radar, { pitch: a, col: [P.lgrey, P.dgrey] });
+  if (B.q) pitched(B, x, zc, a, () => {
+    const f = 0.17, ed = '#9ea4aa';
+    for (const sg of [1, -1]) { box(B, x + f, sg * (w / 2 - 0.05), zc, 0.06, 0.1, h, P.dgrey, { hard: true }); box(B, x + f, 0, zc + sg * (h / 2 - 0.05), 0.06, w, 0.1, P.dgrey, { hard: true }); }
+    const rows = Math.max(2, Math.round(h / 0.6));
+    for (let i = 1; i < rows; i++) box(B, x + f - 0.01, 0, zc - h / 2 + h * i / rows, 0.03, w - 0.2, 0.05, ed, { hard: true });
+    box(B, x - 0.3, 0, zc, 0.3, w * 0.5, h * 0.6, P.dgrey, { hard: true });
+  });
   B.group('main');
 }
+/* a tracked hull: a chamfered body, the glacis sloping up to the front, side skirts over the tracks with the road
+   wheels and the drive sprocket showing below them, lamps, a hatch */
 function hull(B, len, w, col) {
-  box(B, 0, 0, 1.45, len, w, 1.1, col, { top: [0.86, 0.9] });
-  box(B, len * 0.44, 0, 1.2, len * 0.14, w * 0.96, 0.7, col, { pitch: 0.5 });
-  for (const k of [-1, 1]) { box(B, 0, k * (w / 2 - 0.35), 0.55, len * 0.94, 0.7, 1.0, P.rubber); for (let i = 0; i < 5; i++) lathe(B, [[-0.3, 0.35], [0.3, 0.35]], P.dgrey, { at: [-len * 0.38 + i * len * 0.19, k * (w / 2 - 0.35), 0.45], axis: 'y', segs: 6, cap0: P.dgrey, cap1: P.dgrey }); }
+  box(B, -0.1, 0, 1.45, len * 0.97, w * 0.9, 1.1, col, { top: [0.88, 0.9], c: 0.16 });
+  box(B, len * 0.42, 0, 1.2, len * 0.15, w * 0.88, 0.7, col, { pitch: 0.5, c: 0.1 });
+  for (const k of [-1, 1]) {
+    box(B, 0, k * (w / 2 - 0.35), 0.55, len * 0.94, 0.7, 1.0, P.rubber, { c: 0.25 });
+    if (!B.q) { for (let i = 0; i < 5; i++) lathe(B, [[-0.3, 0.35], [0.3, 0.35]], P.dgrey, { at: [-len * 0.38 + i * len * 0.19, k * (w / 2 - 0.35), 0.45], axis: 'y', segs: 6, cap0: P.dgrey, cap1: P.dgrey }); continue; }
+    box(B, -0.05, k * (w / 2 + 0.02), 1.0, len * 0.9, 0.08, 0.5, col, { hard: true });
+    for (let i = 0; i < 6; i++) tyre(B, -len * 0.38 + i * len * 0.152, k * (w / 2 - 0.02), 0.4, 0.34, 0.05, P.dgrey);
+    tyre(B, len * 0.43, k * (w / 2 - 0.02), 0.62, 0.3, 0.05, P.dark);
+    box(B, len * 0.47, k * w * 0.32, 1.62, 0.08, 0.22, 0.16, '#e8e4cc', { hard: true });
+  }
+  if (B.q) lathe(B, [[0, 0.34], [0.08, 0.3]], col, { at: [len * 0.18, w * 0.2, 2.0], axis: 'z', segs: 8, cap1: col, smooth: false });
 }
+/* a turret: faceted (it is welded plate), a hatch on top, barrels with their muzzle brakes */
 function turret(B, x, z, d, col, barrels, blen) {
-  lathe(B, [[-0.4, d / 2], [0.4, d * 0.42]], col, { at: [x, 0, z + 0.4], axis: 'z', cap0: col, cap1: col, segs: B.q ? 10 : 6 });
-  for (let i = 0; i < (barrels || 0); i++) B.with(p => { const dx = p[0] - x, dz = p[2] - z - 0.55, a = 0.3; return [x + dx * Math.cos(a) - dz * Math.sin(a), p[1], z + 0.55 + dx * Math.sin(a) + dz * Math.cos(a)]; }, () => cyl(B, [x + d / 2 + blen / 2, (i - (barrels - 1) / 2) * 0.4, z + 0.55], blen, 0.09, P.black, 'x', { segs: 5 }));
+  lathe(B, [[-0.4, d / 2], [0.22, d / 2], [0.42, d * 0.4]], col, { at: [x, 0, z + 0.4], axis: 'z', cap0: col, cap1: col, segs: B.q ? 8 : 6, smooth: false, rot: Math.PI / 8 });
+  if (B.q) lathe(B, [[0, 0.28], [0.08, 0.25]], P.dgrey, { at: [x - d * 0.15, d * 0.12, z + 0.82], axis: 'z', segs: 8, cap1: P.dgrey, smooth: false });
+  for (let i = 0; i < (barrels || 0); i++) B.with(p => { const dx = p[0] - x, dz = p[2] - z - 0.55, a = 0.3; return [x + dx * Math.cos(a) - dz * Math.sin(a), p[1], z + 0.55 + dx * Math.sin(a) + dz * Math.cos(a)]; }, () => {
+    const y = (i - (barrels - 1) / 2) * 0.4;
+    cyl(B, [x + d / 2 + blen / 2, y, z + 0.55], blen, 0.09, P.black, 'x', { segs: 5 });
+    if (B.q) cyl(B, [x + d / 2 + blen - 0.15, y, z + 0.55], 0.3, 0.14, P.dark, 'x', { segs: 6 });
+  });
 }
 function tel(B, n, clen, d, col, o) {
   o = o || {};
   const L = o.len || 12;
   lorry(B, L, 3, o.axles || 4, col || P.green, { cabL: 2.5 });
   canisters(B, -L * 0.12, 3.3, n, clen, d, o.can || P.canvas, o.pitch == null ? 1.2 : o.pitch, o.gap);
+  // stabiliser jacks at the corners, down on their pads when the launcher is set up
+  if (B.q) for (const xx of [L / 2 - 2.8, -L / 2 + 0.5]) for (const k of [-1, 1]) { box(B, xx, k * 1.65, 0.7, 0.3, 0.3, 1.2, P.dark, { hard: true }); box(B, xx, k * 1.65, 0.06, 0.6, 0.6, 0.12, P.dgrey, { hard: true }); }
 }
 function shelterTruck(B, col, mast) {
   lorry(B, 9, 2.5, 3, col, { bed: 2.2, bedCol: col });
+  if (B.q) { box(B, -3.86, 0.4, 2.3, 0.06, 0.8, 1.6, P.dgrey, { hard: true }); box(B, -1.6, 0, 3.8, 1.0, 0.8, 0.4, P.dgrey); }
   if (mast) cyl(B, [-3, 0.6, 3.2 + mast / 2], mast, 0.12, P.dark, 'z', { segs: 6 });
 }
-function hut(B, w, l, h, col) { box(B, 0, 0, 0.1, l + 4, w + 4, 0.2, P.concrete); box(B, 0, 0, 0.2 + h / 2, l, w, h, col || P.tan, { top: [0.98, 0.98] }); }
+/* a hut on a concrete pad: a roof slab that overhangs, a door and an air-conditioning unit on its sides */
+function hut(B, w, l, h, col) {
+  box(B, 0, 0, 0.1, l + 4, w + 4, 0.2, P.concrete, { hard: true });
+  box(B, 0, 0, 0.2 + h / 2, l, w, h, col || P.tan, { top: [0.98, 0.98] });
+  if (!B.q) return;
+  box(B, 0, 0, 0.2 + h + 0.08, l + 0.3, w + 0.3, 0.16, P.dgrey, { hard: true });
+  box(B, l / 2 + 0.02, -w * 0.2, 0.2 + Math.min(1.0, h * 0.4), 0.04, 0.9, Math.min(2.0, h * 0.8), P.dark, { hard: true });
+  box(B, 0, w / 2 + 0.25, 0.2 + h * 0.35, Math.min(1.2, l * 0.4), 0.5, Math.min(0.8, h * 0.4), P.lgrey);
+}
 
 /* ---------- the catalogue ---------- */
 const M = {};
@@ -1230,7 +1336,13 @@ def('heliport', 'Forward Heliport', 'Our units', 24, 22, PS([['cyl', 0, 0, 0.1, 
 // lorries on the roads
 def('truck', 'Lorry', 'Vehicles', 10, 2.5, B => lorry(B, 10, 2.5, 3, G, { bed: 2.2, bedCol: P.canvas, tilt: true }));
 def('tanker', 'Fuel lorry', 'Vehicles', 10, 2.5, B => { lorry(B, 10, 2.5, 3, P.fuel, { cabL: 2.3 }); lathe(B, [[-3.2, 0.9], [-3.3, 1.05], [3.1, 1.05], [3.2, 0.9]], P.fuel, { at: [-1.5, 0, 2.3], rz: 0.95, cap0: P.fuel, cap1: P.fuel }); });
-def('car', 'Car', 'Vehicles', 4.5, 1.8, B => { box(B, 0, 0, 0.7, 4.5, 1.8, 0.6, P.grey); box(B, -0.2, 0, 1.25, 2.2, 1.6, 0.5, P.glass, { top: [0.8, 0.9] }); for (const [x, y] of [[1.4, 0.8], [1.4, -0.8], [-1.4, 0.8], [-1.4, -0.8]]) cyl(B, [x, y, 0.32], 0.25, 0.32, P.rubber, 'y', { segs: 8 }); });
+def('car', 'Car', 'Vehicles', 4.5, 1.8, B => {
+  // a saloon: the body chamfered round, the cabin's glass all round under a roof in the body colour, lamps
+  box(B, 0, 0, 0.66, 4.5, 1.8, 0.62, P.grey, { c: 0.2 });
+  box(B, -0.25, 0, 1.22, 2.3, 1.62, 0.52, P.grey, { top: [0.72, 0.84], shift: -0.12, c: 0.1, col: [P.glass, P.glass, P.glass, P.glass] });
+  for (const [x, y] of [[1.4, 0.78], [1.4, -0.78], [-1.4, 0.78], [-1.4, -0.78]]) tyre(B, x, y, 0.32, 0.32, 0.12, P.lgrey);
+  if (B.q) for (const sg of [1, -1]) { box(B, 2.25, sg * 0.62, 0.78, 0.04, 0.34, 0.12, '#e8e4cc', { hard: true }); box(B, -2.25, sg * 0.66, 0.8, 0.04, 0.3, 0.1, '#a8282a', { hard: true }); }
+});
 
 def('bowser', 'Fuel bowser', 'Vehicles', 6.4, 2.3, B => { lorry(B, 6.4, 2.3, 2, '#e8c33a', { cabL: 1.9, cabH: 1.7, h: 0.8, r: 0.45 }); lathe(B, [[-1.9, 0.72], [-2.0, 0.85], [1.7, 0.85], [1.8, 0.72]], P.fuel, { at: [-1.0, 0, 1.95], rz: 0.9, cap0: P.fuel, cap1: P.fuel }); box(B, -3.1, 0, 1.5, 0.3, 1.6, 0.9, P.dgrey); });
 def('person', 'Person', 'Vehicles', 0.5, 0.5, B => {
@@ -1265,7 +1377,7 @@ def('helipad', 'Helicopter pad', 'Airfield', 22, 22, B => {
 // the airport's own vehicles (brief 41): what serves an aircraft on its stand, the pushback tug, the follow-me car and
 // the fire service; drawn many times over in the 3D view, so they stay a few hundred triangles each
 const AV = 'Airport vehicles', YEL = '#e8c23a', WHT = '#e8eae6';
-const wheels = (B, xs, w, r, wd) => { for (const x of xs) for (const k of [-1, 1]) lathe(B, [[-(wd || 0.2), r * 0.5], [-(wd || 0.2), r], [wd || 0.2, r], [wd || 0.2, r * 0.5]], P.rubber, { at: [x, k * (w / 2 - (wd || 0.2)), r], axis: 'y', segs: B.q ? 8 : 5, cap0: P.dgrey, cap1: P.dgrey, smooth: false }); };
+const wheels = (B, xs, w, r, wd) => { wd = wd || 0.2; for (const x of xs) for (const k of [-1, 1]) lathe(B, B.q ? [[-wd, r * 0.55], [-wd, r * 0.9], [-wd * 0.7, r], [wd * 0.7, r], [wd, r * 0.9], [wd, r * 0.55]] : [[-wd, r * 0.5], [-wd, r], [wd, r], [wd, r * 0.5]], P.rubber, { at: [x, k * (w / 2 - wd), r], axis: 'y', segs: B.q ? 8 : 5, cap0: '#8a9098', cap1: '#8a9098', smooth: false }); };
 const beaconOn = (B, x, y, z) => { box(B, x, y, z, 0.25, 0.25, 0.18, '#ff9a1a'); B.light(x, y, z + 0.15, 'amber'); };
 def('tug', 'Pushback tug', AV, 6.6, 2.9, B => {
   box(B, 0, 0, 0.85, 6.6, 2.9, 0.9, YEL, { top: [0.96, 0.96] }); box(B, 0, 0, 0.35, 6.2, 2.5, 0.3, P.dark);
@@ -1336,6 +1448,8 @@ def('gpu', 'Ground power unit', AV, 2.6, 1.5, B => { box(B, 0, 0, 0.95, 2.4, 1.4
 // the real aircraft's height, metres (the gallery checks the models against length, span and height)
 const REAL_H = { light: 2.72, tourer: 2.22, retract: 2.62, twin: 2.97, taildrag: 2.62, utility: 4.71, helil: 3.28, helim: 4.95, glider: 1.55, micro: 3.5, rj: 9.73, widel: 18.5, jumbo: 24.09, cargoprop: 9.64, vlj: 4.35, bizjet: 6.1, bizlong: 7.82, bizprop: 4.37, vintage: 7.54, sst: 12.2, outsize: 18.9, airship: 17.4, amphib: 8.98, display: 3.98, state: 19.33, turbo: 7.65, narrow: 11.76, wide: 18.5, cargo: 19.4, fighter: 5.1, heavy: 12.6, drone: 3.8, heli: 5.1, ahe: 3.8, ftr_e: 5.9, str: 6.2, ewj: 6.3, bmr: 13.3, isr: 2.9 };
 for (const k in REAL_H) M[k].h = REAL_H[k];
+// vehicles, launchers, radars and sites are built of boxes: chamfered close in (bevel), so their edges catch the light
+for (const k in M) if (M[k].group === 'Our units' || M[k].group === 'Vehicles' || M[k].group === 'Airport vehicles') M[k].soft = true;
 IC.MODELS = M;
 IC.MODEL_GROUPS = ['Civil aircraft', 'Business aviation', 'General aviation', 'Rare visitors', 'Our air wing', 'Missiles', 'Enemy weapons', 'Our units', 'Vehicles', 'Airport vehicles'];
 
@@ -1348,6 +1462,7 @@ IC.modelMesh = function (key, q) {
   const ck = key + '|' + q;
   let m = meshCache.get(ck); if (m) return m;
   const d = M[key] || M.cm, B = Builder(q);
+  B.soft = !!d.soft;
   d.build(B);
   m = finish(B, d.key);
   meshCache.set(ck, m);
@@ -1363,9 +1478,11 @@ function finish(B, key) {
   }
   return { key, groups, slots: B.slots, lights: B.lights, tris: B.tris, box };
 }
+// (a tool that reloads the model files forgets what was built)
+IC.modelMesh.clear = () => { meshCache.clear(); for (const k in M) delete M[k]._size; };
 /* the builder, for other meshes made the same way (the 3D view's airport buildings): IC.MB.Builder(q), its shapes,
    and IC.MB.finish(B) for the arrays */
-IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, P };
+IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, sweep, missileBody, FOIL, ANG, P };
 /* what a model has that moves: its gear, flaps, rotors, propellers, radar, launcher, afterburner */
 IC.modelMoves = key => { const m = IC.modelMesh(key, 1), out = {}; for (const k in m.groups) out[m.groups[k].kind] = true; return out; };
 

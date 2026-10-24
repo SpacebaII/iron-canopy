@@ -60,7 +60,7 @@ IC.altText = t => IC.isAircraft(t) ? IC.flText(t.alt || 0) : IC.kmText(t.alt || 
 
 /* ---------- meeting in three dimensions ---------- */
 IC.HIT_R = 6;
-IC.dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, ((a.alt || 0) - (b.alt || 0)) * 10);
+IC.dist3 = (a, b) => U.hyp3(a.x - b.x, a.y - b.y, ((a.alt || 0) - (b.alt || 0)) * 10);
 IC.meets = (a, b, r) => IC.dist3(a, b) < (r || IC.HIT_R);
 /* long-range rounds loft high and dive onto the target (they fly further in thin air); short-range ones climb
    straight at it */
@@ -228,8 +228,8 @@ IC.mslGuide = guideOf;
 /* side-on to that radar, low enough that the ground behind hides it in the clutter (or the radar looks down on it) */
 function inNotch(m, t, G) {
   if (!G) return false;
-  const sp = Math.hypot(t.vx || 0, t.vy || 0); if (sp < 0.3) return false;
-  const dx = t.x - G.x, dy = t.y - G.y, L = Math.hypot(dx, dy) || 1;
+  const sp = U.hyp(t.vx || 0, t.vy || 0); if (sp < 0.3) return false;
+  const dx = t.x - G.x, dy = t.y - G.y, L = U.hyp(dx, dy) || 1;
   const radial = Math.abs((t.vx * dx + t.vy * dy) / (sp * L));
   return radial < 0.3 && (t.alt < 3 || (G.alt || 0) > t.alt + 0.5);
 }
@@ -304,20 +304,20 @@ IC.mslFly = function (S, m, dt) {
     // ---- move, climbing or diving toward the target's height along the loft ----
     const x0 = m.x, y0 = m.y, z0 = m.alt;
     // (it climbs or dives at most about 45°: the rest of its speed carries it on over the ground)
-    const step = m.v * h, zt = t.d ? IC.altAt(t, tgo) : t.alt || 0, dzU = (zt - m.alt) * 10, hs = step * Math.max(0.7, r / Math.max(1e-6, Math.hypot(r, dzU)));
+    const step = m.v * h, zt = t.d ? IC.altAt(t, tgo) : t.alt || 0, dzU = (zt - m.alt) * 10, hs = step * Math.max(0.7, r / Math.max(1e-6, U.hyp(r, dzU)));
     m.x += Math.cos(m.a) * hs; m.y += Math.sin(m.a) * hs; m.flown = (m.flown || 0) + hs;
     const want = IC.flyAltWant(m.a0 || 0, zt, m.loft || 0, m.flown / Math.max(1e-6, m.flown + r)), vmax = step * 0.1;
     m.alt += U.clamp(want - m.alt, -vmax, vmax);
     // ---- the fuse: the closest approach in 3D along this piece of flight ----
     const px = x0 - t.x, py = y0 - t.y, pz = (z0 - (t.alt || 0)) * 10, wx = m.x - x0, wy = m.y - y0, wz = (m.alt - z0) * 10;
     const ww = wx * wx + wy * wy + wz * wz, f = ww > 0 ? U.clamp(-(px * wx + py * wy + pz * wz) / ww, 0, 1) : 0;
-    const d = Math.hypot(px + wx * f, py + wy * f, pz + wz * f);
+    const d = U.hyp3(px + wx * f, py + wy * f, pz + wz * f);
     if (d < IC.FUSE_R) { m.x = x0 + wx * f; m.y = y0 + wy * f; m.alt = z0 + wz * f / 10; return { end: 'fuse', d }; }
     // passed it: over the ground it was close, and now the range opens again
     // (or it went over or under it: past it over the ground with a kilometre or more between them in height)
     const rh = U.dxy(m.x, m.y, t.x, t.y), d3 = IC.dist3(m, t), dzNow = (m.alt - (t.alt || 0)) * 10;
     if (m.rPrev != null && m.rhPrev < Math.max(40, step * 4) && ((d3 > m.rPrev && f < 1) || (rh > m.rhPrev && Math.abs(dzNow) > Math.max(rh, IC.FUSE_R * 4)))) {
-      const dz = dzNow, dh = Math.hypot(px + wx * f, py + wy * f);
+      const dz = dzNow, dh = U.hyp(px + wx * f, py + wy * f);
       const why = m.fooled ? 'DECOYED' : m.lostLock ? 'LOST LOCK' : Math.abs(dz) > dh ? (dz > 0 ? 'PASSED ABOVE' : 'PASSED BELOW') : m.v < P.vmin * 1.6 ? 'OUT OF ENERGY' : `MISSED BY ${Math.round(d * 100 / 50) * 50} m`;
       return { end: 'miss', why, d, dz };
     }
@@ -361,7 +361,7 @@ IC.defendPlan = function (S, w, dt, skill) {
   if (!warned) return null;
   if (!w.def || w.def === 'recommit') { w.def = 'react'; w.defT = S.time + U.lerp(IC.DEF.react[0], IC.DEF.react[1], skill); }
   if (S.time < w.defT && w.def === 'react') return null;
-  const bT = Math.atan2(m.y - w.y, m.x - w.x), hNow = Math.atan2(w.vy || 0, w.vx || 1), spd = Math.hypot(w.vx || 0, w.vy || 0) || 2;
+  const bT = Math.atan2(m.y - w.y, m.x - w.x), hNow = Math.atan2(w.vy || 0, w.vx || 1), spd = U.hyp(w.vx || 0, w.vy || 0) || 2;
   let mode, h, alt = null;
   if (m.v < spd * IC.DEF.dragV && r > 60 && m.age > (m.P ? m.P.boost : 0)) { mode = 'drag'; h = bT + Math.PI; }
   else if (m.tti < IC.DEF.notchTti * (0.7 + 0.5 * skill) || r < IC.DEF.notchR) {

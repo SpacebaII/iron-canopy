@@ -78,7 +78,10 @@ IC.buildTerrain = function (W) {
   // neighbours' jagged borders and the forest's noise take a while to ask about, and a pixel is 4 km here
   const KB = new Array(Math.ceil(BW / 2) * Math.ceil(BH / 2)), KW = Math.ceil(BW / 2);
   const FB2 = new Float32Array(KB.length).fill(NaN);
-  const forestOf = (x, y) => { const q = (y >> 1) * KW + (x >> 1); let v = FB2[q]; if (v !== v) v = FB2[q] = W.forestD(((x & ~1) + 1) * cellX, ((y & ~1) + 1) * cellY); return v; };
+  const fb = (i, j) => { i = U.clamp(i, 0, KW - 1); j = U.clamp(j, 0, Math.ceil(BH / 2) - 1); const q = j * KW + i; let v = FB2[q]; if (v !== v) v = FB2[q] = W.forestD((i * 2 + 1) * cellX, (j * 2 + 1) * cellY); return v; };
+  // (brief 67) blended between the blocks' samples: taken as it was, each 2 × 2 block was all forest or none, and the
+  // woods showed as staircases of 8 km squares at the regional zoom
+  const forestOf = (x, y) => { const fx = (x - 0.5) / 2, fy = (y - 0.5) / 2, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j; return (fb(i, j) * (1 - u) + fb(i + 1, j) * u) * (1 - v) + (fb(i, j + 1) * (1 - u) + fb(i + 1, j + 1) * u) * v; };
   const countryOf = (x, y, wx, wy) => { if (W.inHome(wx, wy)) return 'H'; const q = (y >> 1) * KW + (x >> 1); return KB[q] || (KB[q] = W.countryAt(((x & ~1) + 1) * cellX, ((y & ~1) + 1) * cellY)); };
   for (let y = 0; y < BH; y++) {
     const wy = (y + 0.5) * cellY;
@@ -375,8 +378,12 @@ function vectors(g, W, x0, y0, x1, y1, lod, pad, wk) {
     const shore = k => { g.beginPath(); for (let i = 0; i <= 72; i++) { const a = i / 72 * Math.PI * 2, n = 1 + 0.05 * Math.sin(a * 5 + l.x) + 0.03 * Math.sin(a * 11 + l.y); g[i ? 'lineTo' : 'moveTo'](Math.cos(a) * (l.rx * n - k), Math.sin(a) * (l.ry * n - k)); } g.closePath(); };
     shore(-3); g.fillStyle = 'rgba(52,72,44,0.5)'; g.fill();
     shore(0); g.fillStyle = 'rgb(92,100,78)'; g.fill();
-    shore(1.2); g.fillStyle = 'rgb(40,72,86)'; g.fill();
-    shore(8); g.fillStyle = 'rgba(30,58,72,0.6)'; g.fill();
+    // (brief 67) shallows to deep water in steps, so a lake has depth and a shore instead of one flat ink blot
+    shore(1.2); g.fillStyle = 'rgb(66,104,104)'; g.fill();
+    shore(3); g.fillStyle = 'rgb(50,88,98)'; g.fill();
+    shore(7); g.fillStyle = 'rgb(40,74,90)'; g.fill();
+    shore(16); g.fillStyle = 'rgba(30,60,80,0.8)'; g.fill();
+    if (Math.min(l.rx, l.ry) > 40) { shore(30); g.fillStyle = 'rgba(24,50,70,0.7)'; g.fill(); }
     g.restore();
   }
   // rail

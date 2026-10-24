@@ -1236,6 +1236,8 @@ IC.partNow = function (S, ap, p) {
     const wait = onStand.filter(t => t.held && (t.held.k === 'fuel' || t.held.k === 'truck')), avg = wait.length ? wait.reduce((a, t) => a + S.time - t.held.t0, 0) / wait.length : 0;
     return `${p.r ? 'Fuel tank' : `Fuel farm: ${IC.fuelTanks(p)} tanks`}, ${Math.round(p.stock || 0)} of ${IC.fuelCap(p)} (${U.pct((p.stock || 0) / IC.fuelCap(p))} full). ${IC.aptServiceLines(S, ap).fuel}${wait.length ? ` ${wait.length} aircraft waiting now, ${U.dur(avg)} on average.` : ''}`;
   }
+  if (p.kind === 'helipad') { const on = IC.gavOn(S, ap, p.id); return `Helipad: ${on || 'free. A helicopter lands here instead of on the runway.'}`; }
+  if (p.kind === 'gaterm') { const g = IC.gavSummary(S, ap); return `General aviation terminal: ${g.visitors} visiting aircraft now, ${g.moves} light-aircraft movements in the last day. Business jets come to airports with one, and each visitor pays ${U.money(IC.GAV.handling)} for handling.`; }
   if (p.kind === 'fuelpad') return `Fuel stand: ${hourN(p.served)} aircraft refuelled in the last hour${p.busy ? '; one refuelling now' : ''}.`;
   if (p.kind === 'deice') return IC.aptFrost(S) ? `Frost this morning: departures stop here to be de-iced (${hourN(p.served)} in the last hour).` : `No frost now. On clear and foggy mornings departures stop here to be de-iced; without a pad it is done at the stand and takes longer.`;
   if (p.kind === 'hangar') {
@@ -1371,7 +1373,7 @@ function crashNow(S, ap, m) {
     IC.later(S, 1800, 'gopsReport', S, ap, `${text} ${fix}`);
   }
   // on top of the loss of the aircraft itself (the Minister already counts that): the deaths and the headlines
-  if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), 0, 100);
+  if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), IC.confFloor(S), 100);
   IC.emit(S, 'crash', { ap, m, cause: c.cause, dead, on, rescue });
   m.destroyed = true; m.why = `crashed ${phase}`;
   // the aircraft is gone: tell its owner now, not as an ordinary loss

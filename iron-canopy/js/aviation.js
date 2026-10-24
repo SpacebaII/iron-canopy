@@ -491,10 +491,10 @@ IC.aptScorecards = function (S, ap) {
   const FIX = {
     delay: () => ({ act: 'open', v: 'day', label: 'Open the day board', text: 'Delays come from departures held on their stands (the map says why) and from the hourly cap.' }),
     taxi: () => ({ text: 'A parallel taxiway with rapid exits, and stands nearer the runway, shorten the taxi.' }),
-    gates: () => ({ part: 'tstraight', near: hub, label: 'Build a terminal with stands', text: 'Remote stands mean buses; a terminal with more gates fixes it.' }),
+    gates: () => IC.FOCUS && IC.FOCUS.parts ? { part: 'gates', near: hub, label: 'Add gates beside the terminal', text: 'Remote stands mean buses; stands on an apron along the terminal get jet bridges.' } : { part: 'tstraight', near: hub, label: 'Build a terminal with stands', text: 'Remote stands mean buses; a terminal with more gates fixes it.' },
     fuel: () => ({ part: 'fuel', near: fuel || hub, label: 'Add a fuel tank', text: 'Each tank brings two fuel trucks; a hydrant system ends the wait.' }),
     fees: () => ({ act: 'fee', v: Math.max(0.7, Math.round(((ap.feeLevel || 1) - 0.15) * 20) / 20), label: `Lower charges to ${U.pct(Math.max(0.7, Math.round(((ap.feeLevel || 1) - 0.15) * 20) / 20))}`, text: 'Its charges are above what it will pay without grumbling.' }),
-    bags: () => ({ part: 'tstraight', near: hub, label: 'Add a terminal', text: `The terminal runs ${U.pct((ap.paxRate || 0) / Math.max(1, st.pax || 1))} full: check-in and bags slow down over 75%.` })
+    bags: () => ({ part: IC.FOCUS && IC.FOCUS.parts ? 'terminal' : 'tstraight', near: hub, label: 'Add a terminal', text: `The terminal runs ${U.pct((ap.paxRate || 0) / Math.max(1, st.pax || 1))} full: check-in and bags slow down over 75%.` })
   };
   const out = [];
   for (const al of S.av.airlines) {
@@ -517,12 +517,15 @@ function makeRequest(S) {
   const fleet = IC.avFleetOf(al);
   let type = U.pick(fleet);
   // airlines go where passengers are waiting for seats
-  const busy = L => U.wpick(L.map(x => [x, 0.3 + Math.min(3, IC.demandPull(S, x))])) || U.pick(L);
+  // (and where the airport is for them: a regional airline to a regional airport, a freighter to a cargo one; an
+  // airfield takes none of them, IC.aptWant)
+  const want = x => IC.aptWant ? IC.aptWant(x, al.kind) : 1;
+  const busy = L => { L = L.filter(x => want(x) > 0); return U.wpick(L.map(x => [x, (0.3 + Math.min(3, IC.demandPull(S, x))) * want(x)])) || U.pick(L); };
   let a = S.byId[al.hub], b;
   if (al.kind === 'regional') { a = busy(apts); const o = apts.filter(x => x !== a); if (!o.length) return; b = { apt: busy(o).id }; }
   else if (al.kind === 'budget') { a = busy(apts); const o = apts.filter(x => x !== a); b = Math.random() < 0.6 || !o.length ? U.pick(ports) : { apt: busy(o).id }; }
-  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.pick(apts.filter(x => x.template === 'intl')) || a; }
-  else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc).map(x => [x, 0.2 + Math.min(3, IC.cargoPull(S, x))])) || a; b = U.pick(ports); }
+  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.wpick(apts.filter(x => x.template === 'intl' || IC.aptClass(x) === 'hub' || IC.aptClass(x) === 'mega' || (x.cls === 'national' && want(x) > 0)).map(x => [x, want(x)])) || a; }
+  else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc && want(x) > 0).map(x => [x, (0.2 + Math.min(3, IC.cargoPull(S, x))) * want(x)])) || a; b = U.pick(ports); }
   else b = U.pick(ports);
   if (!a || !b) return;
   // no airline adds flights where the seats already fly more than half empty; cargo airlines look at the cargo
@@ -743,7 +746,7 @@ IC.aviation = function (S, dt) {
   if (A.pullT <= 0) { A.pullT = 600; A.pull = Math.max(0, ...IC.bases(S).filter(x => x.owner === 'us').map(x => IC.demandPull(S, x))); }
   // (in the Career's first act, offers come at the pace of the airport's name, not of every empty seat)
   A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, S.story && S.story.act === 1 ? 0.4 : 1.5));
-  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
+  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (IC.civilAdvice(S) && A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
 };
 function cutRoute(S, al, r, why) {
   const tl = S.av.tails.filter(t => t.route === r.id && t.where !== 'lost');
@@ -918,7 +921,7 @@ IC.aptProvides = IC.aptProvides || function (ap) {
   const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, hangar: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0), fuelDeps: st.fuelDeps || 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none' };
   // a gate: a stand passengers walk to from a terminal (within 60 m of one)
   const terms = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25);
-  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.hypot(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
+  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return U.hyp(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
   for (const s of standsOf(ap)) {
     if (s.linked === false || s.hp <= 0 || s.zone === 'mil') continue;
     P.stands[s.size] = (P.stands[s.size] || 0) + 1;
@@ -964,7 +967,7 @@ IC.dealNeeds = function (S, q) {
     if (!ap) continue;
     const nm = ap.name.replace(/ (International|Airport)$/, '');
     const why = IC.aptCanTake(S, ap, T);
-    L.push({ ap: ap.id, k: 'take', name: `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
+    L.push({ ap: ap.id, k: 'take', name: why ? `${nm}: ${why}` : `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
     if (why) continue;
     const P = IC.aptProvides(ap), N = aptNeeds(S, ap, q.renew ? null : { al, type: q.type, n: q.n, b: far });
     const row = (k, name, need, have, fix) => { if (need > 0) L.push({ ap: ap.id, k, name: `${nm}: ${name}`, need, have, ok: have >= need, text: have >= need ? '' : `${nm} needs ${fix} (${Math.floor(have)} of ${Math.ceil(need)})` }); };
