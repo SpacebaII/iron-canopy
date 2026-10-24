@@ -13,7 +13,9 @@ IC.pickAt = function (S, p, z) {
     if (!ap.parts || U.dist(ap, p) > (ap.radius || 20) + 5) continue;
     for (const s of IC.aptStands(ap)) if (s.occ && U.dist(s, p) < 0.4) { const tl = S.av.tails.find(t => t.id === s.occ); if (tl && tl.where === 'stand' && tl.T && U.dist(s, p) < tl.T.len * 0.5) return { kind: 'tail', ref: tl }; }
   }
-  for (const t of S.threats) if (t.held && !t.dead) consider('track', t, t.px, t.py);
+  // a track is clicked where the map draws it (an identified one stays there after radar loses it)
+  const tv = {};
+  for (const t of S.threats) if (IC.trackView(S, t, tv)) consider('track', t, tv.x, tv.y);
   if (best) return best;
   for (const a of S.air) consider('air', a, a.x, a.y);
   if (best) return best;

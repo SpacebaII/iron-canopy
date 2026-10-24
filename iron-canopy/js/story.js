@@ -655,7 +655,7 @@ IC.layerAllowed = function (S, k) {
   const st = S.story; if (!st) return true;
   if (k === 'coverage' || k === 'airways' || k === 'rings') return !IC.storyLock(S, k === 'airways' ? 'airways' : 'coverage');
   if (k === 'gaps') return !IC.storyLock(S, 'radar') && !!(S.asp && S.asp.ways.length) && st.act === 1;
-  if (k === 'intel') return st.act >= 2;
+  if (k === 'intel' || k === 'all') return st.act >= 2;
   if (k === 'logistics') return st.act >= 3;
   return true;
 };
