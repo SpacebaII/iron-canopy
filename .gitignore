@@ -16,3 +16,6 @@ __pycache__/
 # the upload built by tools/package.js
 dist/
 docs/release/*.mjpeg
+
+# raw OpenStreetMap patches fetched by tools/city-sample.js
+tools/cities/raw/

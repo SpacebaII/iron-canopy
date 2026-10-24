@@ -27,16 +27,21 @@ const SPEC = {
   lc: { w: 0.07, lane: 0.03, lanes: 1, sh: 0.005, R: 0.12, px: 2.2, centre: 'dash' },
   sp: { w: 0.055, lane: 0.0275, lanes: 1, sh: 0, R: 0.1, px: 1.9 },
   ramp: { w: 0.075, lane: 0.04, lanes: 1, sh: 0.025, strip: 0.01, R: 0.22, px: 1.8 },
-  art: { w: 0.4, lane: 0.035, lanes: 2, sh: 0.03, R: 0.1, px: 2.2, centre: 'solid' },
-  st: { w: 0.34, lane: 0.035, lanes: 1, sh: 0.1, R: 0.08, px: 1.4 },
+  // (brief 65: a city's avenue and street at their real width, kerb to kerb: two lanes each way and a solid centre,
+  // or a lane each way and a parking strip on both sides; the pavements are the blocks' own, as measured from the
+  // building line in city-samples.js)
+  art: { w: 0.2, lane: 0.035, lanes: 2, sh: 0.015, R: 0.08, px: 2.2, centre: 'solid' },
+  // (brief 66: a collector, 14 m: a lane each way either side of a dashed centre line, parking on one side)
+  col: { w: 0.14, lane: 0.035, lanes: 1, sh: 0.035, R: 0.07, px: 1.8, centre: 'dash' },
+  st: { w: 0.11, lane: 0.035, lanes: 1, sh: 0.02, R: 0.06, px: 1.4 },
   ln: { w: 0.05, lane: 0.025, lanes: 1, sh: 0, R: 0.06, px: 1.1 },
   land: { w: 0.12, lane: 0.035, lanes: 1, sh: 0.01, R: 0.07, px: 1.4 }
 };
 IC.ROAD_SPEC = SPEC;
 /* how each class looks far out, where a road is a line on the map (the tiles' far levels, and the live drawing as it
    zooms in, which blends these into the asphalt): pale concrete and asphalt greys, the busier the lighter */
-IC.ROAD_TONE = { hw: [206, 196, 174], ring: [200, 192, 172], rd: [190, 184, 166], art: [178, 174, 164], lc: [172, 166, 148], sp: [172, 166, 148], st: [148, 146, 140], ln: [160, 140, 100], ramp: [200, 192, 172] };
-const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, land: 2, st: 1, sp: 1, ln: 0 };
+IC.ROAD_TONE = { hw: [206, 196, 174], ring: [200, 192, 172], rd: [190, 184, 166], art: [178, 174, 164], col: [162, 160, 152], lc: [172, 166, 148], sp: [172, 166, 148], st: [148, 146, 140], ln: [160, 140, 100], ramp: [200, 192, 172] };
+const RANK = { hw: 6, ring: 5, art: 4, rd: 4, ramp: 3, lc: 2, land: 2, col: 2, st: 1, sp: 1, ln: 0 };
 IC.ROAD_RANK = RANK;
 /* the width a road is drawn at zoom z: its real width close in, wider far out so it reads */
 IC.roadWidth = (k, z) => { const s = SPEC[k] || SPEC.lc; return Math.max(s.w, s.px / z * (1 - U.clamp((z - 3) / 6, 0, 1) * 0.5)); };
@@ -231,7 +236,16 @@ IC.roadJoins = function (W) {
     const n = W.nodes[J.id], all = byNode[J.id] || [], arms = all.filter(a => !a.e.city);
     if (!n) continue;
     if (J.kind === 'tj' && arms.length >= 3) R.joins.push({ id: J.id, x: n.x, y: n.y, arms, kind: 'tj' });
-    else if (J.kind === 'rb' && all.length >= 2) R.rbs.push({ id: J.id, x: n.x, y: n.y, r: J.r, arms: all, J });
+    else if (J.kind === 'rb' && all.length >= 2) R.rbs.push({ id: J.id, x: n.x, y: n.y, r: J.r, lanes: J.lanes, isle: J.isle, arms: all, J });
+    // a dumbbell's two roundabouts, on the road across either side of the bridge: the road runs through each, and
+    // the slip roads that end there join below
+    if (J.kind === 'mx' && J.rbs) for (const q of J.rbs) {
+      const d = J.dirs.find(o => o.a === q.a); if (!d || !d.e) continue;
+      const e = d.e, nr = PL.near(e.pts, q), EL = e.len || PL.len(e.pts);
+      if (!nr) continue;
+      const cls = e.city ? 'art' : e.cls;
+      R.rbs.push({ id: J.id + ':' + q.a.toFixed(2), x: nr.x, y: nr.y, r: q.r, lanes: 1, isle: 'grass', dumb: true, arms: [{ ux: nr.ux, uy: nr.uy, len: Math.max(0.3, EL - nr.s), cls }, { ux: -nr.ux, uy: -nr.uy, len: Math.max(0.3, nr.s), cls }], J });
+    }
   }
   // villages and other places where three or more roads meet (not the cities: their roads become avenues)
   for (const k in byNode) {
@@ -255,6 +269,9 @@ IC.roadJoins = function (W) {
     if (!best) continue;
     const { e, nr } = best, par = Math.abs(rx * nr.ux + ry * nr.uy);
     if (e.cls === 'hw' && par > 0.8) { R.ends.push({ kind: 'merge', r, end, e, q, dir: { x: rx, y: ry }, J }); continue; }
+    // a slip road ending on a dumbbell's roundabout is one of its arms
+    const rb = J.rbs && R.rbs.find(o => o.dumb && o.J === J && Math.hypot(o.x - q.x, o.y - q.y) < 0.3);
+    if (rb) { const l = Math.hypot(q2.x - rb.x, q2.y - rb.y) || 1; rb.arms.push({ ux: (q2.x - rb.x) / l, uy: (q2.y - rb.y) / l, len: 1.2, cls: 'ramp' }); continue; }
     const key = e.id + ':' + Math.round(nr.s / 0.15);
     let T = terms.get(key);
     if (!T) {
@@ -304,7 +321,9 @@ IC.rbGeom = function (site, h) {
   const hs = site.arms.map(a => h(a.cls)), key = hs.map(v => v.toFixed(4)).join();
   if (site._g && site._k === key) return site._g;
   // the ring is as wide as the busiest road coming in needs (an avenue's roundabout is a big city place)
-  const hm = Math.min(Math.max(...hs), h('rd') * 1.2), cw = Math.max(0.075, hm * 1.4), r = Math.max(site.r, cw * 1.6, Math.max(...hs) * 1.9), Ro = r + cw / 2, Ri = r - cw / 2;
+  // (two lanes round a bigger one; a mini roundabout is a painted disc the lorries drive over)
+  const lanes = site.lanes || 1, mini = site.isle === 'mini';
+  const hm = Math.min(Math.max(...hs), h('rd') * 1.2), cw = Math.max(0.075, hm * 1.4) * (lanes > 1 ? 1.7 : 1), r = mini ? Math.max(site.r, cw * 1.05) : Math.max(site.r, cw * 1.6, Math.max(...hs) * 1.9), Ro = r + cw / 2, Ri = r - cw / 2;
   const C = { x: site.x, y: site.y }, arms = [];
   for (const a of site.arms) {
     const ha = h(a.cls), he = ha * 1.45, Rf = Math.max(0.05, (SPEC[a.cls] || SPEC.lc).R * 0.7);
@@ -321,8 +340,8 @@ IC.rbGeom = function (site, h) {
     // the entry's surface: from the unflared arm, out to the flare, round the curb returns to the ring
     const P = (s, o) => ({ x: C.x + a.ux * s + nx * o, y: C.y + a.uy * s + ny * o });
     const surf = [P(fl, -ha), P(fl, ha), side[0].Tl].concat(side[0].arc, [C], side[1].arc.slice().reverse(), [side[1].Tl]);
-    // the splitter island: a kerbed teardrop on the centre line from just off the ring
-    const s0 = Ro + 0.012, s1 = Math.min(a.len * 0.4, s0 + Math.max(0.16, ha * 4)), wI = Math.max(0.012, he - ha * 1.05);
+    // the splitter island: a kerbed teardrop on the centre line from just off the ring (80 m at least where the arm is short)
+    const s0 = Ro + 0.012, s1 = Math.min(Math.max(a.len * 0.4, Math.min(a.len * 0.6, s0 + 0.08)), s0 + Math.max(0.16, ha * 4)), wI = Math.max(0.012, he - ha * 1.05);
     const isl = [P(s0, 0)];
     for (let i = 0; i <= 8; i++) { const t = i / 8, w = wI * Math.sin(Math.PI * (0.15 + 0.85 * (1 - t)) / 2) * (1 - t * t); isl.push(P(s0 + (s1 - s0) * t, w)); }
     for (let i = 8; i >= 0; i--) { const t = i / 8, w = wI * Math.sin(Math.PI * (0.15 + 0.85 * (1 - t)) / 2) * (1 - t * t); isl.push(P(s0 + (s1 - s0) * t, -w)); }
@@ -330,7 +349,7 @@ IC.rbGeom = function (site, h) {
     const gy = [P(Ro + 0.006, -wI - 0.004), P(Ro + 0.006, -he)];
     arms.push({ a, ha, he, surf, isl, gy, fl, s0, s1, P, side });
   }
-  const G = { C, r, Ro, Ri, cw, arms, apron: Math.max(0.01, cw * 0.25) };
+  const G = { C, r, Ro, Ri, cw, arms, lanes, isle: site.isle || 'planting', apron: Math.max(0.01, cw * 0.25) };
   site._g = G; site._k = key;
   return G;
 };
@@ -370,7 +389,8 @@ IC.taperGeom = function (end, hw, hr) {
     const nx = -p.uy, ny = p.ux, sd = Math.sign((m.x - p.x) * nx + (m.y - p.y) * ny) || 1;
     gore.push({ x: p.x + nx * sd * hr, y: p.y + ny * sd * hr });
     base.push({ x: m.x + (p.x - m.x) / (m.d || 1) * edge, y: m.y + (p.y - m.y) / (m.d || 1) * edge });
-    if (gap > Math.max(0.06, hr * 1.6)) { nose = { x: p.x, y: p.y, s }; break; }
+    // (a slip road leaving at a steep angle, a trumpet's sweep or a short diamond ramp, parts within 10 m: its gore is a short one)
+    if (gap > Math.max(0.06, hr * 1.6) && s >= 0.1) { nose = { x: p.x, y: p.y, s }; break; }
   }
   const G = { aux, gore: gore.length > 2 && nose ? gore.concat(base.reverse()) : null, nose, side, along, lane, edge, len: La + Lt };
   end._g = G; end._k = key;
@@ -401,10 +421,14 @@ IC.railCrossings = function (W) {
    every street ending on another, is a join with curb returns, the pavements following them round. Worked out once
    for the city and again when its streets change. Arms reach half way to the next join along the same street. */
 IC.streetJoins = function (W, c) {
-  const lines = c.streets.concat(W.edges.filter(e => e.city === c.id).map(e => ({ cls: 'art', pts: e.pts, ave: true })));
+  // (a suburb's closes are drawn as their own thin layer, brief 54: no kerbed corners where they meet)
+  const lines = c.streets.filter(l => !l.cul).concat(W.edges.filter(e => e.city === c.id).map(e => ({ cls: 'art', pts: e.pts, ave: true })));
   const sig = lines.length + ':' + lines.reduce((s, l) => s + l.pts.length, 0);
   if (c._sj && c._sj.sig === sig) return c._sj.joins;
-  c._sj = { sig, joins: lineJoins(lines, c.blocks, 3) };
+  // (none inside a roundabout: its ring and island are drawn there, and the streets meet the ring)
+  const rbs = IC.roadJoins(W).rbs.filter(r => Math.hypot(r.x - c.x, r.y - c.y) < (c.ext || 20) + 2), h = k => (SPEC[k] || SPEC.lc).w / 2;
+  const inRing = J => rbs.some(r => { const g = IC.rbGeom(r, h); return Math.hypot(J.x - r.x, J.y - r.y) < g.r + g.cw / 2; });
+  c._sj = { sig, joins: lineJoins(lines, c.blocks, 3).filter(J => !inRing(J)) };
   return c._sj.joins;
 };
 /* an airport's landside roads (landside.js), at ground level: their corners and T junctions */

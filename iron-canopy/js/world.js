@@ -122,7 +122,7 @@ function adjacency(W) {
   adjW = W; adjN = W.edges.length;
   const id = new Map(), keys = [], nb = [];
   const num = k => { let i = id.get(k); if (i === undefined) { i = keys.length; id.set(k, i); keys.push(k); nb.push([]); } return i; };
-  for (const e of W.edges) { const a = num(e.a), b = num(e.b); nb[a].push(b, e); nb[b].push(a, e); }
+  for (const e of W.edges) { if (e.abroad) continue; const a = num(e.a), b = num(e.b); nb[a].push(b, e); nb[b].push(a, e); }   // (the roads abroad are not ours to drive, brief 57)
   return (adj = { id, keys, nb });
 }
 /* a tree from one node: t {node: seconds} and via {node: edge used to arrive}, as objects made only when asked (in

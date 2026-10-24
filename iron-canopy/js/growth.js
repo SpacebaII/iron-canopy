@@ -365,11 +365,10 @@ function growBlocks(S, c, n) {
       // warehouses by the motorway, industry by the railway, housing everywhere else (denser nearer the centre)
       const d = k.d > 0.5 && k.hw < 10 ? 'log' : k.d > 0.5 && k.rail < 12 ? 'ind' : k.d < 0.35 ? 'dense' : 'sub';
       const g = IC.cityGrowCell(c, k.i, k.j, d, U.clamp(k.d, 0, 1), R, (di, dj) => !used.has(key(k.i + di, k.j + dj)));
-      g.b.grown = S.time;
-      c.blocks.push(g.b); changed.push(g.b); used.add(key(k.i, k.j));
+      for (const b of g.blocks) { b.grown = S.time; c.blocks.push(b); changed.push(b); }
+      used.add(key(k.i, k.j));
       for (const l of g.streets) { c.streets.push(l); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of l.pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); } l.bb = [x0, y0, x1, y1]; }
-      c.r = Math.max(c.r, U.dist(g.b, c) * 1.02 / 1.55);
-      c.ext = Math.max(c.ext || 0, U.dist(g.b, c) + Math.max(g.b.w, g.b.h) / 2);
+      for (const b of g.blocks) { c.r = Math.max(c.r, U.dist(b, c) * 1.02 / 1.55); c.ext = Math.max(c.ext || 0, U.dist(b, c) + Math.max(b.w, b.h) / 2); }
     }
     // (traffic finds the new streets the next time the roads change: they are small, and a re-plan is not)
   }
@@ -689,8 +688,11 @@ IC.roadUndo = function (S, m, r) {
 /* start the works: paid now, open when finished */
 IC.roadFinish = function (S, m) {
   const ends = [m.snaps[0], m.snaps[m.snaps.length - 1]];
-  const P = IC.roadPlan(S, m.cls, m.pts, ends);
+  let P = IC.roadPlan(S, m.cls, m.pts, ends);
   if (P.why) { IC.log(S, 'warn', 'ROADS', P.why); return false; }
+  // the line it takes between the points clicked: bending with the ground like the country's roads (gen.js)
+  const line = IC.roadLine && !m.bent ? IC.roadLine(S.world, m.cls, m.pts, P.apt) : m.pts;
+  if (line !== m.pts) { const P2 = IC.roadPlan(S, m.cls, line, ends); if (!P2.why) { P = P2; m = Object.assign({}, m, { pts: line }); } }
   S.budget -= P.cost;
   const E = S.econ, K = IC.ROADS[m.cls];
   const w = { id: 'rw' + (E.nid++), cls: m.cls, pts: m.pts.map(p => ({ x: p.x, y: p.y })), ends, cost: P.cost, km: P.km, bridges: P.bridges, hours: P.hours, prog: 0, stage: 'Surveying', t0: S.time, apt: P.apt.id };

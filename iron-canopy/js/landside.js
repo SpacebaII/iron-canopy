@@ -19,7 +19,11 @@ IC.LAND = {
   stop:      { name: 'Bus and coach stop', w: 0.6, h: 0.3, cap: 1, earn: 0.02, what: '' },
   hotel:     { name: 'Hotel', w: 0.5, h: 0.4, cap: 250, earn: 0.15, what: 'rooms' },
   office:    { name: 'Offices', w: 0.6, h: 0.5, cap: 800, earn: 0.1, what: 'desks' },
-  warehouse: { name: 'Cargo warehouse', w: 1.0, h: 0.6, cap: 40, earn: 0.1, what: 't an hour' }
+  warehouse: { name: 'Cargo warehouse', w: 1.0, h: 0.6, cap: 40, earn: 0.1, what: 't an hour' },
+  // along the access road, outside the fence (brief 54, IC.aptOuter)
+  petrol:    { name: 'Petrol station', w: 0.7, h: 0.5, cap: 1, earn: 0.03, what: '', outer: true },
+  logistics: { name: 'Logistics park', w: 1.8, h: 1.1, cap: 120, earn: 0.2, what: 't an hour', outer: true },
+  bizpark:   { name: 'Business park', w: 2.0, h: 1.3, cap: 2000, earn: 0.25, what: 'desks', outer: true }
 };
 IC.STATEMENT.landside = 'Airport car parks, hotels and rents';
 /* parking: spaces wanted for each passenger an hour (fewer at a big airport, where more come by train and coach),
@@ -362,15 +366,16 @@ IC.landsideTick = function (S, ap, dt) {
     L.items.push(it); L.ver++; added = it;
     break;   // one at a time: the landside grows over hours, not in a moment
   }
+  if (!L.fixed && L.auto !== false && !added) added = IC.aptOuter(S, ap, L);
   if (!L.fixed && (added || L.kerbN !== terms.length + sheds.length || L.deckN !== deckWant(S, ap, L))) kerbs(S, ap, terms.concat(sheds));
   // (the main terminal's airport road a good stretch longer: the country's road is brought to its new end)
   const main = ap.parts.filter(p => p.kind === 'terminal').sort((a, b) => IC.partArea(b) - IC.partArea(a))[0];
   if (main && main.built && L.items.some(it => it.by === main.id)) { const s = Math.round(front(S, ap, main).free * 2); if (s !== L.gateS) { L.gateS = s; L.gateV = (L.gateV || 0) + 1; } }
-  if (added) { ap._box = null; const b = IC.partOutline(added).reduce((q, p) => ({ x0: Math.min(q.x0, p.x), y0: Math.min(q.y0, p.y), x1: Math.max(q.x1, p.x), y1: Math.max(q.y1, p.y) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }); IC.worldChanged && IC.worldChanged(S, { x0: b.x0 - 1, y0: b.y0 - 1, x1: b.x1 + 1, y1: b.y1 + 1 }); if (IC.civilAdvice(S) && (added.kind !== 'park' || L.items.filter(x => x.kind === 'park').length === 1)) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}, built by private money: it pays the airport rent.`, S.story ? added : null); }
+  if (added) { ap._box = null; const b = IC.partOutline(added).reduce((q, p) => ({ x0: Math.min(q.x0, p.x), y0: Math.min(q.y0, p.y), x1: Math.max(q.x1, p.x), y1: Math.max(q.y1, p.y) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }); IC.worldChanged && IC.worldChanged(S, { x0: b.x0 - 1, y0: b.y0 - 1, x1: b.x1 + 1, y1: b.y1 + 1 }); if (IC.civilAdvice(S) && (added.kind !== 'park' || L.items.filter(x => x.kind === 'park').length === 1)) IC.log(S, 'info', 'AVIATION', `${ap.name}: ${added.name || IC.LAND[added.kind].name.toLowerCase()} ${/s$/.test(IC.LAND[added.kind].name) ? 'open' : 'opens'} ${added.outer ? 'on the access road' : `by the ${added.kind === 'warehouse' ? 'cargo sheds' : 'terminal'}`}, built by private money: it pays the airport rent.`, S.story ? added : null); }
   // use and income: parking and hotels fill with passengers, warehouses with cargo; the player's own car parks too
   const A = IC.landAccess(S, ap);
   let v = 0;
-  for (const it of L.items) { it.use = IC.landUse(L, it, A); v += (it.kind === 'park' || it.kind === 'garage' ? it.cap * IC.LAND_PARK.earn : IC.LAND[it.kind].earn) * it.use; }
+  for (const it of L.items) { it.use = IC.landUse(L, it, A, S.time); v += (it.kind === 'park' || it.kind === 'garage' ? it.cap * IC.LAND_PARK.earn : IC.LAND[it.kind].earn) * it.use; }
   if (A.own) v += A.own * IC.LAND_PARK.earn * U.clamp(A.need / Math.max(1, A.have), 0.1, 1);
   L.earn = v;
   if (v > 0) { S.budget += v * 600 / 3600; IC.econBook(S, 'landside', v * 600 / 3600); }
@@ -379,6 +384,38 @@ IC.landsideTick = function (S, ap, dt) {
   L.accF = (L.accF == null ? 1 : L.accF) + (want - (L.accF == null ? 1 : L.accF)) * 0.15;
   if (A.short > 0.25 && !L.shortSaid && terms.length) { L.shortSaid = true; IC.log(S, 'warn', 'AVIATION', `${ap.name}: the car parks are full. Travellers bring about ${A.need.toLocaleString('en-US')} cars and there are ${A.have.toLocaleString('en-US')} spaces, so some choose another airport. ${L.auto === false ? 'Draw a car park by the terminal, or let developers build them (the airport panel).' : 'There is no free ground for more along the airport road: draw a car park on open ground, or move what is in the way.'}`, ap); }
   else if (A.short < 0.1) L.shortSaid = false;
+};
+/* what grows along the access road as the airport grows (brief 54): a petrol station and a hotel at 2,000
+   passengers a day, a logistics park at 6,000, a business park at 15,000, each placed beside the road at its own
+   distance from the fence (the petrol station nearest, the business park out by the main road); one at a time */
+IC.OUTER = [['petrol', 2000, 0.2, 1], ['hotel', 2000, 0.3, -1], ['logistics', 6000, 0.55, 1], ['bizpark', 15000, 0.85, -1]];
+IC.aptOuter = function (S, ap, L) {
+  const A = L.access; if (!A || !A.pts || A.pts.length < 2) return null;
+  const day = L.pax * 24, have = k => L.items.some(x => x.outer && x.kind === k);
+  // (a road with no room found is tried again when the landside changes or six hours on, not every ten minutes)
+  if (L.outerFail && L.outerFail.ver === L.ver && S.time - L.outerFail.t < 6 * 3600 && day < L.outerFail.day * 1.5) return null;
+  const pts = A.pts, cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + U.dist(pts[i - 1], pts[i]));
+  const len = cum[cum.length - 1]; if (len < 4) return null;
+  const at = s => { for (let i = 1; i < pts.length; i++) if (s <= cum[i]) { const a = pts[i - 1], b = pts[i], k = (s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]); return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, a: Math.atan2(b.y - a.y, b.x - a.x) }; } return null; };
+  for (const [kind, need, where, side] of IC.OUTER) {
+    if (day < need || have(kind)) continue;
+    const D = IC.LAND[kind], B = blockers(S, ap, null);
+    // (from its own place along the road outwards, either side, the whole road if need be: a road that runs through
+    // the town has its free ground elsewhere)
+    const fs = []; for (let f = 0.05; f < 0.96; f += 0.025) fs.push(f); fs.sort((p, q) => Math.abs(p - where) - Math.abs(q - where));
+    for (const f of fs) {
+      const p = at(U.clamp(len * f, 2, len - 2)); if (!p) break;
+      for (const sd of [side, -side]) {
+        const off = 0.12 + D.h / 2 + 0.08;
+        const r = { kind, x: p.x - Math.sin(p.a) * sd * off, y: p.y + Math.cos(p.a) * sd * off, a: p.a, w: D.w, h: D.h, cap: D.cap, t0: null, by: null, outer: true };
+        if (!free(S, ap, r, B)) continue;
+        if (L.items.some(o => U.dxy(o.x, o.y, r.x, r.y) < (Math.max(o.w, o.h) + Math.max(r.w, r.h)) / 2 + 0.2)) continue;
+        r.t0 = S.time; L.items.push(r); L.ver++; return r;
+      }
+    }
+    L.outerFail = { ver: L.ver, t: S.time, day };
+  }
+  return null;
 };
 /* what travellers need of the front side and what they find there: spaces for their cars (need, have: developers'
    and the player's own car parks, own: the player's alone), the share short, kerb to drop off at (units) */
@@ -427,11 +464,17 @@ IC.landWant = function (S, ap, L, terms, sheds, rail) {
   if (p > 1500 && n('office') < Math.min(4, Math.floor(p / 1500))) out.push('office');
   return out.concat(ware);
 };
-/* how full an item is, 0..1 */
-IC.landUse = function (L, it, A) {
+/* how full the car parks are over the day (brief 66): the long-stay cars stay the night, the morning's travellers
+   fill them by midday and the evening's arrivals drive them home, at the hours of the airport's road traffic */
+IC.PARK_DAY = [0.62, 0.6, 0.58, 0.57, 0.58, 0.64, 0.74, 0.84, 0.92, 0.97, 1, 1, 1, 0.99, 0.98, 0.97, 0.95, 0.92, 0.88, 0.83, 0.77, 0.72, 0.68, 0.65];
+/* how full an item is, 0..1 (t: the time of day, for the car parks) */
+IC.landUse = function (L, it, A, t) {
   const p = L.pax;
   if (it.kind === 'warehouse') return U.clamp(L.cargo / 40 / Math.max(1, L.items.filter(x => x.kind === 'warehouse').length), 0.2, 1);
-  if (it.kind === 'park' || it.kind === 'garage') return A ? U.clamp(A.need / Math.max(1, A.have), 0.1, 1) : 0.5;
+  if (it.kind === 'park' || it.kind === 'garage') {
+    const h = t == null ? 12 : (t % 86400) / 3600, D = IC.PARK_DAY, i = Math.floor(h), day = D[i % 24] + (D[(i + 1) % 24] - D[i % 24]) * (h - i);
+    return Math.round((A ? U.clamp(A.need / Math.max(1, A.have) * day, 0.06, 1) : 0.5 * day) * 50) / 50;
+  }
   return U.clamp(p / 1500, 0.3, 1);
 };
 /* terminals whose kerb is too short for their cars get an upper deck for departures */
@@ -550,7 +593,10 @@ IC.landAccessPlan = function (S, x, y, a, probe) {
   const plan = (p, s) => { const P = IC.roadPlan(S, 'lc', p, s); if (probe && /serve one of your airports/.test(P.why)) P.why = ''; return P; };
   let P = plan(pts, snaps);
   if (P.why && W.nodes[city.id] && !end.node) { const e2 = { x: city.x, y: city.y, node: city.id }; const P2 = plan([start, e2], [snaps[0], e2]); if (!P2.why) { P = P2; pts[1] = e2; snaps[1] = e2; end = e2; } }
-  return { P, pts, snaps, city, end };
+  // the line it takes, bending with the ground (gen.js), priced here so the survey's price is Found's price
+  let line = pts;
+  if (!P.why && IC.roadLine) { line = IC.roadLine(W, 'lc', pts, at); if (line !== pts) { const P3 = plan(line, snaps); if (!P3.why) P = P3; else line = pts; } }
+  return { P, pts: line, snaps, city, end };
 };
 IC.landAccessRoad = function (S, ap) {
   const W = S.world;
@@ -559,7 +605,7 @@ IC.landAccessRoad = function (S, ap) {
   ap.cityRef = { x: city.x, y: city.y };
   if (P.why) { IC.log(S, 'warn', 'ROADS', `${ap.name}: no access road could be laid automatically (${P.why.replace(/\.$/, '').toLowerCase()}). Build one with the road tool in the airport panel.`, ap); return null; }
 
-  const w = IC.roadFinish(S, { cls: 'lc', pts, snaps });
+  const w = IC.roadFinish(S, { cls: 'lc', pts, snaps, bent: true });
   if (!w) return null;
   const L = IC.landInit(ap); L.road = true; L.access = { pts: pts.map(p => ({ x: p.x, y: p.y })), cost: P.cost, km: P.km, work: w.id };
   // (the road works log their own line; a card says the rest, so the line is only for games without cards)
