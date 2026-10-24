@@ -81,7 +81,7 @@ function* gameSteps(opts) {
     for (const b of IC.bases(S)) IC.aptSeatRoads(S, b);
   }
   S.terrain = IC.buildTerrain(W);
-  for (const b of W.bridges) S.infra.push(Object.assign(b, { infra: true, owner: 'us', r: 8, max: 40, home: W.inHome(b.x, b.y) }));
+  for (const b of W.bridges) S.infra.push(Object.assign(b, { infra: true, owner: b.abroad ? 'abroad' : 'us', r: 8, max: 40, home: !b.abroad && W.inHome(b.x, b.y) }));
   for (const i of S.infra) i.hp = i.max;
   S.byId = {}; for (const i of S.infra) S.byId[i.id] = i;
   // which plant powers which city

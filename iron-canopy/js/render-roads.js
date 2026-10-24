@@ -173,6 +173,18 @@ IC.drawRoads = function (g, S, px, v) {
   // junctions: one surface over the roads' markings, then its own
   for (const j of joins) junction(j, geo(j), fill(top(j)), lw, D, z, t, px);
   for (const j of rbs) roundabout(j, IC.rbGeom(j, half), fill, lw, D, z, px);
+  // flyovers (brief 66: a stack's or a directional T's left turns) ride over everything at the interchange: drawn
+  // again on top with their shadow on the roads below and a parapet either side
+  if (z > 1.5) {
+    const fly = groups.ramp.filter(r => r.kind === 'fly');
+    if (fly.length) {
+      const w = width('ramp');
+      ctx.save(); ctx.translate(0.07, 0.1); path(fly); ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = w + 0.04; ctx.stroke(); ctx.restore();
+      path(fly); ctx.strokeStyle = 'rgb(176,176,170)'; ctx.lineWidth = w + Math.max(0.025, px * 2); ctx.stroke();
+      ctx.strokeStyle = fill('ramp'); ctx.lineWidth = w; ctx.stroke();
+      if (pw('ramp') > 8) { const fr = w / SP.ramp.w; ctx.strokeStyle = PAINT; ctx.lineWidth = SP.ramp.lane * fr + lw; ctx.stroke(); ctx.strokeStyle = fill('ramp'); ctx.lineWidth = SP.ramp.lane * fr - lw; ctx.stroke(); }
+    }
+  }
   // city crossings on the avenues drawn here (the side streets' are in the tiles, painted by the same code)
   if (z > 4) for (const c of W.cities) {
     if (c.x + c.r * 1.8 < view.x0 || c.x - c.r * 1.8 > view.x1 || c.y + c.r * 1.8 < view.y0 || c.y - c.r * 1.8 > view.y1) continue;
@@ -182,6 +194,8 @@ IC.drawRoads = function (g, S, px, v) {
   for (const j of W.junctions || []) if (j.over && inView(j.x, j.y, 3)) overpass(j, width, fill, px);
   // a slip road crossing a road it does not join rides a bridge over it
   if (R) for (const x of R.xings) if (inView(x.x, x.y, 1)) overpass({ x: x.x, y: x.y, over: [x.a], dirs: [{ a: x.a, x: Math.cos(x.a), y: Math.sin(x.a), cls: 'ramp' }] }, width, fill, px, Math.max(0.12, width(x.under) * 0.8 + 0.05));
+  // a lesser road, lane or avenue crossing a motorway it does not meet rides a bridge over it
+  for (const x of W.roadX || []) if (inView(x.x, x.y, 1)) overpass({ x: x.x, y: x.y, over: [x.a], dirs: [{ a: x.a, x: Math.cos(x.a), y: Math.sin(x.a), cls: x.cls }] }, width, fill, px, Math.max(0.12, width('hw') * 0.8 + 0.05));
   if (z > 2) for (const x of IC.railCrossings(W)) {
     if (!inView(x.x, x.y, 2)) continue;
     if (x.level && z > 5) levelCrossing(x, width(x.cls), lw, px, S);
@@ -280,22 +294,50 @@ function roundabout(j, G, fill, lw, D, z, px) {
   const er = G.Ro - Math.max(0.006, lw * 2);
   if (z > 5 && er > 0) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, er, 0, 7); ctx.stroke(); }
   for (const a of G.arms) { ctx.fillStyle = fill(a.a.cls === 'hw' ? 'rd' : a.a.cls); ppoly(a.surf); ctx.fill(); }
+  // two lanes round the ring: a broken line between them
+  if (z > 5 && G.lanes > 1) { ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.setLineDash([D(0.03, 4), D(0.05, 5)]); ctx.beginPath(); ctx.arc(C.x, C.y, G.r, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
   // the island
   // (far out the kerb and apron shrink with the island, so nothing turns inside out)
   const kerb = Math.min(Math.max(0.004, px * 1.2), G.Ri * 0.12), disc = (r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(C.x, C.y, Math.max(0.001, r), 0, 7); ctx.fill(); };
-  const gr = Math.max(G.Ri * 0.5, G.Ri - G.apron);
-  disc(G.Ri, 'rgb(178,176,168)'); disc(G.Ri - kerb, 'rgb(128,118,104)'); disc(gr, 'rgb(176,174,166)'); disc(gr - kerb, 'rgb(98,132,70)');
-  if (z > 5) {
-    // cobbles on the lorry apron, mowing rings, a bed of shrubs and trees in the middle
+  const gr = Math.max(G.Ri * 0.5, G.Ri - G.apron), isle = G.isle, seed = (j.x * 13 + j.y * 7) | 0;
+  if (isle === 'mini') {
+    // a mini roundabout: a painted white dome, no kerb
+    disc(G.Ri, 'rgb(214,212,204)'); if (z > 5) { disc(G.Ri * 0.8, 'rgb(226,224,216)'); ctx.strokeStyle = PAINT; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri, 0, 7); ctx.stroke(); }
+  } else {
+    disc(G.Ri, 'rgb(178,176,168)'); disc(G.Ri - kerb, 'rgb(128,118,104)'); disc(gr, 'rgb(176,174,166)'); disc(gr - kerb, isle === 'monument' ? 'rgb(170,166,156)' : 'rgb(98,132,70)');
+  }
+  if (z > 5 && isle !== 'mini') {
+    // cobbles on the lorry apron
     if (z > 20) { ctx.strokeStyle = 'rgba(90,82,70,0.5)'; ctx.lineWidth = px * 0.6; ctx.setLineDash([px * 2, px * 2]); ctx.beginPath(); ctx.arc(C.x, C.y, G.Ri - G.apron / 2, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-    ctx.strokeStyle = 'rgba(120,152,86,0.5)'; ctx.lineWidth = gr * 0.08; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.75, 0, 7); ctx.stroke();
-    ctx.fillStyle = 'rgb(122,104,76)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.42, 0, 7); ctx.fill();
-    const n = 7, seed = (j.x * 13 + j.y * 7) | 0;
-    ctx.fillStyle = 'rgba(8,14,8,0.35)'; ctx.beginPath();
-    for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed), d = gr * (i ? 0.26 : 0), r = gr * (0.12 + 0.05 * U.hash(seed, i)); ctx.moveTo(C.x + Math.cos(an) * d + r + gr * 0.04, C.y + Math.sin(an) * d + gr * 0.05); ctx.arc(C.x + Math.cos(an) * d + gr * 0.04, C.y + Math.sin(an) * d + gr * 0.05, r, 0, 7); }
-    ctx.fill();
-    for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed), d = gr * (i ? 0.26 : 0), r = gr * (0.12 + 0.05 * U.hash(seed, i)); ctx.fillStyle = ['rgb(52,82,44)', 'rgb(64,96,50)', 'rgb(46,72,40)'][i % 3]; ctx.beginPath(); ctx.arc(C.x + Math.cos(an) * d, C.y + Math.sin(an) * d, r, 0, 7); ctx.fill(); }
-    ctx.fillStyle = 'rgba(210,190,90,0.7)'; ctx.beginPath(); for (let i = 0; i < 18; i++) { const an = i / 18 * 6.283, x = C.x + Math.cos(an) * gr * 0.5, y = C.y + Math.sin(an) * gr * 0.5; ctx.moveTo(x + gr * 0.025, y); ctx.arc(x, y, gr * 0.025, 0, 7); } ctx.fill();
+    const tree = (x, y, r, i) => { ctx.fillStyle = 'rgba(8,14,8,0.35)'; ctx.beginPath(); ctx.arc(x + r * 0.35, y + r * 0.4, r, 0, 7); ctx.fill(); ctx.fillStyle = ['rgb(52,82,44)', 'rgb(64,96,50)', 'rgb(46,72,40)'][i % 3]; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+    if (isle === 'grass') {
+      // mown grass with a sign in the middle
+      ctx.strokeStyle = 'rgba(120,152,86,0.5)'; ctx.lineWidth = gr * 0.08; for (const f of [0.75, 0.45]) { ctx.beginPath(); ctx.arc(C.x, C.y, gr * f, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = 'rgb(60,66,120)'; ctx.fillRect(C.x - gr * 0.08, C.y - gr * 0.05, gr * 0.16, gr * 0.1);
+    } else if (isle === 'trees') {
+      // a ring of trees on grass, one in the middle
+      ctx.strokeStyle = 'rgba(120,152,86,0.5)'; ctx.lineWidth = gr * 0.08; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.75, 0, 7); ctx.stroke();
+      const n = 6 + Math.floor(U.hash(seed, 2) * 3); for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed) * 0.3, d = gr * 0.55, r = gr * (0.14 + 0.06 * U.hash(seed, i)); tree(C.x + Math.cos(an) * d, C.y + Math.sin(an) * d, r, i); }
+      tree(C.x, C.y, gr * 0.2, 1);
+    } else if (isle === 'monument') {
+      // a paved island in town: a lawn ring, a stone plinth with a statue or a column, flower beds round it
+      ctx.fillStyle = 'rgb(98,132,70)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.78, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgb(170,166,156)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.5, 0, 7); ctx.fill();
+      for (let i = 0; i < 4; i++) { const an = i / 4 * 6.283 + 0.785, x = C.x + Math.cos(an) * gr * 0.64, y = C.y + Math.sin(an) * gr * 0.64; ctx.fillStyle = ['rgb(200,80,70)', 'rgb(220,190,80)'][i % 2]; ctx.beginPath(); ctx.arc(x, y, gr * 0.09, 0, 7); ctx.fill(); }
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(C.x + gr * 0.06, C.y + gr * 0.07, gr * 0.22, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgb(150,146,138)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.22, 0, 7); ctx.fill();
+      ctx.fillStyle = U.hash(seed, 9) < 0.5 ? 'rgb(96,110,100)' : 'rgb(190,186,176)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.1, 0, 7); ctx.fill();
+    } else {
+      // planting: mowing rings, a bed of shrubs and trees in the middle, flowers round it
+      ctx.strokeStyle = 'rgba(120,152,86,0.5)'; ctx.lineWidth = gr * 0.08; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.75, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgb(122,104,76)'; ctx.beginPath(); ctx.arc(C.x, C.y, gr * 0.42, 0, 7); ctx.fill();
+      const n = 7;
+      ctx.fillStyle = 'rgba(8,14,8,0.35)'; ctx.beginPath();
+      for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed), d = gr * (i ? 0.26 : 0), r = gr * (0.12 + 0.05 * U.hash(seed, i)); ctx.moveTo(C.x + Math.cos(an) * d + r + gr * 0.04, C.y + Math.sin(an) * d + gr * 0.05); ctx.arc(C.x + Math.cos(an) * d + gr * 0.04, C.y + Math.sin(an) * d + gr * 0.05, r, 0, 7); }
+      ctx.fill();
+      for (let i = 0; i < n; i++) { const an = i / n * 6.283 + U.hash(i, seed), d = gr * (i ? 0.26 : 0), r = gr * (0.12 + 0.05 * U.hash(seed, i)); ctx.fillStyle = ['rgb(52,82,44)', 'rgb(64,96,50)', 'rgb(46,72,40)'][i % 3]; ctx.beginPath(); ctx.arc(C.x + Math.cos(an) * d, C.y + Math.sin(an) * d, r, 0, 7); ctx.fill(); }
+      ctx.fillStyle = 'rgba(210,190,90,0.7)'; ctx.beginPath(); for (let i = 0; i < 18; i++) { const an = i / 18 * 6.283, x = C.x + Math.cos(an) * gr * 0.5, y = C.y + Math.sin(an) * gr * 0.5; ctx.moveTo(x + gr * 0.025, y); ctx.arc(x, y, gr * 0.025, 0, 7); } ctx.fill();
+    }
     // each entry: the splitter island, its painted outline, the give-way line
     for (const a of G.arms) {
       ctx.fillStyle = 'rgb(178,176,168)'; ppoly(a.isl); ctx.fill();
@@ -368,7 +410,7 @@ function levelCrossing(x, w, lw, px, S) {
    pavement follows each curb return round the corner, the crossing is one surface of asphalt over the streets' own
    lines, and on the busier crossings there are zebra crossings across each arm, a stop line before them on the lane
    coming in, and close in arrows on the avenues' lanes. lod: the tile level (5 live), px: a pixel in world units */
-const STREET_ASP = { st: 'rgb(80,81,82)', art: 'rgb(72,73,74)', ring: 'rgb(68,69,70)' };
+const STREET_ASP = { st: 'rgb(80,81,82)', col: 'rgb(76,77,78)', art: 'rgb(72,73,74)', ring: 'rgb(68,69,70)' };
 IC.STREET_ASP = STREET_ASP;
 const streetHalf = k => (IC.ROAD_SPEC[k] || IC.ROAD_SPEC.st).w / 2;
 IC.paintStreetJoin = function (g, j, lod, px) {
@@ -386,6 +428,13 @@ IC.paintStreetJoin = function (g, j, lod, px) {
   A.forEach((a, q) => {
     if (a.len < 0.5) return;
     const m = G.mouth[q], hL = Math.min(a.hl != null ? a.hl : a.h, a.h) - 0.015, hR = Math.min(a.hr != null ? a.hr : a.h, a.h) - 0.015, h = (hL + hR) / 2, zw = 0.035;
+    if (!busy && (IC.ROAD_RANK[a.cls] || 0) < (IC.ROAD_RANK[top] || 0)) {
+      // a side street meeting a bigger one gives way: a row of white triangles across the lane coming in (brief 66)
+      const s0 = m + 0.012, n = Math.max(2, Math.round(hR / 0.011)), st = hR / n;
+      g.fillStyle = 'rgba(236,236,228,0.85)'; g.beginPath();
+      for (let i = 0; i < n; i++) { const o0 = -i * st, o1 = o0 - st * 0.8, b0 = at(a, s0 + 0.016, o0), b1 = at(a, s0 + 0.016, o1), tp = at(a, s0, (o0 + o1) / 2); g.moveTo(b0.x, b0.y); g.lineTo(b1.x, b1.y); g.lineTo(tp.x, tp.y); }
+      g.fill();
+    }
     if (busy) {
       // a zebra across the arm just beyond the corner: its stripes run along the street
       const s0 = m + 0.008, n = Math.max(3, Math.round((hL + hR) / 0.012)), st = (hL + hR) / n;
@@ -398,12 +447,30 @@ IC.paintStreetJoin = function (g, j, lod, px) {
       // arrows in the lanes coming in, close in
       if (lod >= 5 && 1 / px > 60 && (a.cls === 'art' || a.cls === 'ring')) {
         g.fillStyle = 'rgba(236,236,228,0.8)';
+        // (brief 66: where two avenues or an avenue and a collector cross, the inner lane is for turning left, with a
+        // hatched median ahead of it where the centre line opens into the turn)
+        const pocket = j.big && A.filter(o => o.cls === 'art' || o.cls === 'ring' || o.cls === 'col').length >= 3;
         for (const o of [-hR * 0.3, -hR * 0.72]) {
-          const b = at(a, s0 + zw + 0.07, o), tip = at(a, s0 + zw + 0.03, o), w = 0.006, L2 = 0.03;
+          const s1 = s0 + zw + 0.03, w = 0.006, L2 = 0.03;
+          if (pocket && o === -hR * 0.3) {
+            // a left turn: the shaft up the lane, bending across towards the median, the head pointing left
+            g.strokeStyle = 'rgba(236,236,228,0.8)'; g.lineWidth = w * 1.2;
+            pl([at(a, s1 + 0.015 + L2, o), at(a, s1 + 0.02, o), at(a, s1 + 0.012, o + 0.008)]); g.stroke();
+            const t = at(a, s1 + 0.004, o + 0.016), u1 = at(a, s1 + 0.004, o + 0.004), u2 = at(a, s1 + 0.02, o + 0.012);
+            g.beginPath(); g.moveTo(t.x, t.y); g.lineTo(u1.x, u1.y); g.lineTo(u2.x, u2.y); g.closePath(); g.fill();
+            continue;
+          }
+          const tip = at(a, s1, o);
           g.beginPath(); g.moveTo(tip.x, tip.y);
           const p1 = at(a, s0 + zw + 0.045, o - w * 1.8), p2 = at(a, s0 + zw + 0.045, o + w * 1.8), q1 = at(a, s0 + zw + 0.045, o - w * 0.6), q2 = at(a, s0 + zw + 0.045, o + w * 0.6), r1 = at(a, s0 + zw + 0.045 + L2, o - w * 0.6), r2 = at(a, s0 + zw + 0.045 + L2, o + w * 0.6);
           g.lineTo(p1.x, p1.y); g.lineTo(q1.x, q1.y); g.lineTo(r1.x, r1.y); g.lineTo(r2.x, r2.y); g.lineTo(q2.x, q2.y); g.lineTo(p2.x, p2.y); g.closePath(); g.fill();
-          void b;
+        }
+        if (pocket && a.len > 0.6) {
+          // the hatched median: a long thin diamond on the centre line behind the stop line, striped across
+          const m0 = s0 + zw + 0.02, m1 = m0 + Math.min(0.3, a.len * 0.4), mw = 0.009;
+          g.strokeStyle = 'rgba(236,236,228,0.8)'; g.lineWidth = Math.max(0.003, px);
+          pl([at(a, m0, 0), at(a, m0 + 0.04, mw), at(a, m1 - 0.06, mw), at(a, m1, 0), at(a, m1 - 0.06, -mw), at(a, m0 + 0.04, -mw)]); g.closePath(); g.stroke();
+          g.beginPath(); for (let q = m0 + 0.03; q < m1 - 0.03; q += 0.025) { const p = at(a, q, -mw), r = at(a, q + 0.012, mw); g.moveTo(p.x, p.y); g.lineTo(r.x, r.y); } g.stroke();
         }
       }
     }
@@ -472,7 +539,7 @@ function parts(k, col) {
   }
 }
 /* draw a list of vehicles {x, y, h, k, col}; m: at least this many world units long (so they stay visible) */
-function vehicles(list, px, night, now, m, detail) {
+function vehicles(list, px, night, now, m, detail, parked) {
   const calm = cam.z < 10;
   const groups = new Map();
   const quad = (col, x, y, c, s, f, b, w) => { let L = groups.get(col); if (!L) groups.set(col, L = []); L.push(x, y, c, s, f, b, w); };
@@ -486,14 +553,15 @@ function vehicles(list, px, night, now, m, detail) {
     // further out a calm palette: pale cars, buff lorries, red buses; colours and details close in
     const P = detail ? parts(v.k, v.col) : calm ? [[v.k === 'bus' ? 'rgb(188,92,78)' : K.L > 0.07 ? 'rgb(214,204,180)' : 'rgb(234,236,240)', 1, -1, 1]] : [parts(v.k, v.col)[0]];
     for (const [col, fr, bk, hw] of P) quad(col, v.x, v.y, c, s, fr * L, bk * L, hw * W);
-    if (night) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
+    if (night && !parked) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
     if ((v.k === 'police' || v.k === 'amb') && Math.sin(now * 12 + v.col) > 0) blues.push(v.x, v.y, W);
   }
   const fillQ = (L, col) => {
     ctx.fillStyle = col; ctx.beginPath();
     for (let i = 0; i < L.length; i += 7) {
       const x = L[i], y = L[i + 1], c = L[i + 2], s = L[i + 3], fr = L[i + 4], bk = L[i + 5], w = L[i + 6], wx = -s * w, wy = c * w;
-      ctx.moveTo(x + c * fr - wx, y + s * fr - wy); ctx.lineTo(x + c * fr + wx, y + s * fr + wy); ctx.lineTo(x + c * bk + wx, y + s * bk + wy); ctx.lineTo(x + c * bk - wx, y + s * bk - wy); ctx.closePath();
+      // (no closePath: fill closes every outline, and in Chrome a path of thousands of closed outlines costs most of a frame)
+      ctx.moveTo(x + c * fr - wx, y + s * fr - wy); ctx.lineTo(x + c * fr + wx, y + s * fr + wy); ctx.lineTo(x + c * bk + wx, y + s * bk + wy); ctx.lineTo(x + c * bk - wx, y + s * bk - wy);
     }
     ctx.fill();
   };
@@ -504,7 +572,7 @@ function vehicles(list, px, night, now, m, detail) {
     // headlights: close in, a short beam of light on the road ahead
     const beams = detail && cam.z > 30;
     if (beams) { ctx.fillStyle = 'rgba(255,232,180,0.2)'; ctx.beginPath(); } else ctx.beginPath();
-    if (beams) { for (let i = 0; i < lights.length; i += 5) { const x = lights[i], y = lights[i + 1], c = lights[i + 2], s = lights[i + 3], w = lights[i + 4] * 1.4, l = w * 6; ctx.moveTo(x - s * w, y + c * w); ctx.lineTo(x + c * l - s * w * 2.2, y + s * l + c * w * 2.2); ctx.lineTo(x + c * l + s * w * 2.2, y + s * l - c * w * 2.2); ctx.lineTo(x + s * w, y - c * w); ctx.closePath(); } ctx.fill(); }
+    if (beams) { for (let i = 0; i < lights.length; i += 5) { const x = lights[i], y = lights[i + 1], c = lights[i + 2], s = lights[i + 3], w = lights[i + 4] * 1.4, l = w * 6; ctx.moveTo(x - s * w, y + c * w); ctx.lineTo(x + c * l - s * w * 2.2, y + s * l + c * w * 2.2); ctx.lineTo(x + c * l + s * w * 2.2, y + s * l - c * w * 2.2); ctx.lineTo(x + s * w, y - c * w); } ctx.fill(); }
     ctx.fillStyle = 'rgba(255,244,210,0.95)'; ctx.beginPath();
     for (let i = 0; i < lights.length; i += 5) { const r = detail ? Math.max(lights[i + 4] * 0.7, 0.8 * px) : 1.1 * px; ctx.moveTo(lights[i] + r, lights[i + 1]); ctx.arc(lights[i], lights[i + 1], r, 0, 7); }
     ctx.fill();
@@ -568,6 +636,20 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
         const a = d > 1e-6 ? Math.atan2(dy, dx) : v.h;
         v.x = G.C.x + Math.cos(a) * rr; v.y = G.C.y + Math.sin(a) * rr; v.h = a - Math.PI / 2;
       }
+    }
+    // parked cars along the side streets' kerbs (brief 55, traffic.js IC.parkedSpots), under the moving ones, once a
+    // car is a few pixels long
+    if (z > 36) {
+      const P = [];
+      for (const c of S.world.cities) {
+        if (c.x + c.ext < view.x0 || c.x - c.ext > view.x1 || c.y + c.ext < view.y0 || c.y - c.ext > view.y1) continue;
+        for (const l of c.streets) {
+          if (l.cls !== 'st' || !l.bb || l.bb[2] < view.x0 || l.bb[0] > view.x1 || l.bb[3] < view.y0 || l.bb[1] > view.y1) continue;
+          const sp = IC.parkedSpots(S.world, c, l);
+          for (let i = 0; i < sp.length; i += 4) if (inView(sp[i], sp[i + 1], 0.1)) P.push({ x: sp[i], y: sp[i + 1], h: sp[i + 2], k: 'car', col: sp[i + 3] });
+        }
+      }
+      if (P.length) vehicles(P, px, night, now, m, z > 18, true);
     }
     vehicles(list, px, night, now, m, z > 18);
   }

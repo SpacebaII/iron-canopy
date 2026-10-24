@@ -1298,6 +1298,18 @@ function drawLandside(g, S, ap, px, z, night) {
       g.fillStyle = 'rgb(96,120,140)'; g.fillRect(-w / 2 + 0.05, -h / 2 + 0.05, w - 0.1, h * 0.55);
       g.strokeStyle = 'rgba(200,220,236,0.35)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath(); for (let x = -w / 2 + 0.05; x < w / 2 - 0.05; x += 0.05) { g.moveTo(x, -h / 2 + 0.05); g.lineTo(x, -h / 2 + 0.05 + h * 0.55); } g.stroke();
       g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2 + 0.05, h * 0.15, w - 0.1, h * 0.25);
+    } else if (k === 'petrol') {   // a filling station on the access road: a canopy, a shop, the forecourt
+      g.fillStyle = 'rgb(96,98,98)'; g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgb(220,215,200)'; g.fillRect(-w / 2 + 0.08, -h / 2 + 0.08, w * 0.5, h * 0.4);
+      g.fillStyle = 'rgb(200,60,50)'; g.fillRect(-w / 2 + 0.08, -h / 2 + 0.08, w * 0.5, 0.03);
+      g.fillStyle = 'rgb(190,186,176)'; g.fillRect(w / 2 - 0.26, h / 2 - 0.2, 0.2, 0.14);
+    } else if (k === 'logistics') {   // sheds with their loading doors round a lorry yard
+      g.fillStyle = 'rgb(70,72,74)'; g.fillRect(-w / 2, -h / 2, w, h);
+      for (let i = 0; i < 3; i++) { const x = -w / 2 + 0.06 + i * (w - 0.12) / 3; g.fillStyle = 'rgb(176,172,160)'; g.fillRect(x, -h / 2 + 0.06, (w - 0.12) / 3 - 0.06, h * 0.45); g.fillStyle = 'rgba(0,0,0,0.12)'; for (let q = x; q < x + (w - 0.12) / 3 - 0.06; q += 0.06) g.fillRect(q, -h / 2 + 0.06, 0.01, h * 0.45); }
+      for (let i = 0, x = -w / 2 + 0.1; x < w / 2 - 0.1; x += 0.09, i++) if (U.hash(i, it.x | 0) < use) { g.fillStyle = 'rgb(210,120,50)'; g.fillRect(x, -h / 2 + 0.06 + h * 0.45, 0.035, 0.14); }
+    } else if (k === 'bizpark') {   // low offices on lawns round their car parks
+      g.fillStyle = 'rgb(118,140,92)'; g.fillRect(-w / 2, -h / 2, w, h);
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { const x = -w / 2 + 0.1 + i * w / 2, y = -h / 2 + 0.1 + j * h / 2; g.fillStyle = 'rgb(62,64,66)'; g.fillRect(x, y + h * 0.28, w / 2 - 0.2, h * 0.14); g.fillStyle = 'rgb(150,160,170)'; g.fillRect(x + 0.04, y, w / 2 - 0.28, h * 0.25); }
     } else if (k === 'warehouse') {
       g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
       g.fillStyle = 'rgb(168,164,150)'; g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h * 0.62);

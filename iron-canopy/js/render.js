@@ -182,6 +182,8 @@ IC.render = function (S, now) {
   if (!FM) { drawAirways(S, px, now); drawFronts(S, px); }
   IC.drawRoadBridges(ctx, S, px, view);
   if (S.layers.civil && z > 0.12) IC.drawTraffic(ctx, S, px, view, light, now);
+  // the buildings stand up over the street behind them (render-buildings.js)
+  if (IC.drawBuildingsUp) IC.drawBuildingsUp(ctx, S, cam, dpr, light, S.paused ? 10 : 5);
   drawBases(S, px, now, light);
   if (!FM) drawZones(S, px, now);
   if (!FM) drawFields(S, px);

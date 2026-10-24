@@ -287,7 +287,10 @@ const W = {
       const aim = aimOn(obj);
       const route = routeBy(S, s, aim, true, harass ? 3000 : 2100, op.via);
       const T = routeLen(s, route) / IC.THR[type].spd;
-      later(S, arriveAt ? arriveAt - S.time - T + U.rand(-120, 120) : i * U.rand(40, 140), 'eSpawn', S, type, s.x, s.y, { route, aim: route[route.length - 1], target: obj.ref, op, origin: s }, 30, 1);
+      // (a site farther than the nearest, or a route longer than the plan guessed, still keeps the first 90 minutes
+      // of the calm: those drones arrive a little after the rest)
+      const calm = arriveAt && op && op.raid && op.raid.t0 != null ? op.raid.t0 + 5700 - S.time : 0;
+      later(S, arriveAt ? Math.max(calm, arriveAt - S.time - T + U.rand(-120, 120)) : i * U.rand(40, 140), 'eSpawn', S, type, s.x, s.y, { route, aim: route[route.length - 1], target: obj.ref, op, origin: s }, 30, 1);
     }
     return n + nj;
   },
@@ -709,6 +712,8 @@ function mixFor(S, E, kind, obj) {
     // Each target's set gets what keeps it near a quarter of all that will have been fired by the end of the shock.
     const N = E.tallyN + bal + cms + 4 * k, left = {};
     for (const t of more.concat([obj])) left[t.set] = Math.max(3, Math.floor(0.25 * N - (E.tally[t.set] || 0)));
+    // (the main target's set also takes the medium-range missile and the drones that follow up, below)
+    left[obj.set] = Math.max(3, left[obj.set] - 5);
     for (const t of more.concat([null])) {
       const tt = t || obj, x = t ? { obj: t, set: t.set } : {}, dm = droneHours(S, tt) <= 5;
       const nb = Math.min(share(bal), left[tt.set]), nc = Math.min(share(cms), left[tt.set] - nb), nd = dm ? Math.min(4, left[tt.set] - nb - nc) : 0;
