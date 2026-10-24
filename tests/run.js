@@ -4338,8 +4338,268 @@ test('career: from Act III a day at zero confidence replaces you; before, it can
 }, true);
 test('career: every act can be reached', () => {
   const S = IC.newGame({ seed: 2024, mode: 'story', preset: 'network', hour: 7 });
-  for (const n of [2, 3, 4]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
+  for (const n of [2, 3, 4, 5]) { IC.storyStartAct(S, n); run(S, 3, player); assert(!S.over, `act ${n} ended the game: ${S.over}`); assert(S.story.act >= n, `stuck before act ${n}`); }
 }, true);
+/* ---------- (brief 70) the story: chains, roads to the war, escalation, cutscenes, the cast ---------- */
+test('story: every chain card offers choices with a plain tip and a risk, and no chain asks more than twice', () => {
+  const S = IC.newGame({ seed: 7001, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const bad = [];
+  for (const k in IC.CHAINS) {
+    const C = IC.CHAINS[k], cards = Object.keys(C.steps).filter(id => !C.steps[id].say);
+    if (cards.length > 2) bad.push(`${k} asks ${cards.length} times`);
+    for (const id of cards) {
+      S.story.chains[k] = S.story.chains[k] || { step: id, at: null, seen: [], end: null };
+      const e = IC.EV[`ch_${k}_${id}`](S);
+      if (!e.title || !e.text || e.opts.length < 2) bad.push(`${k}.${id}: no title, text or choice`);
+      for (const o of e.opts) if (!o.t || !o.tip || !o.risk) bad.push(`${k}.${id} "${o.t}": no tip or risk`);
+      if (/undefined|NaN|\{[a-z]+\}/.test(JSON.stringify([e.title, e.text, e.opts.map(o => [o.t, o.tip, o.risk])]))) bad.push(`${k}.${id}: unfilled words`);
+    }
+  }
+  assert(!bad.length, bad.join('; '));
+});
+test('story: what the player chose sets the road to the war', () => {
+  const road = set => { const S = IC.newGame({ seed: 7002, mode: 'story', preset: 'network', hour: 7 }); set(S); return IC.storyRoad(S); };
+  const base = road(S => IC.flag(S, 'alliance', 'base'));
+  const incident = road(S => { S.story.fired = true; IC.flag(S, 'defector', 'took'); });
+  const election = road(S => { IC.flag(S, 'night', 'closed'); IC.flag(S, 'corridor', 'arrested'); IC.flag(S, 'lenzRate', 'full'); });
+  assert(base === 'base' && incident === 'incident' && election === 'election', `roads: base ${base}, incident ${incident}, election ${election}`);
+});
+test('story: escalation brings the war sooner and harder, restraint later and lighter, and never stops it', () => {
+  const at = (heat, tension) => {
+    const S = IC.newGame({ seed: 7003, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+    S.story.road = 'election'; S.story.heat = heat; S.tension = tension;
+    const sum = () => S.esites.reduce((a, s) => a + Object.values(s.inv || {}).reduce((x, y) => x + y, 0), 0), s0 = sum();
+    const eve = IC.roadEve(S); IC.roadOpen(S, {});
+    return { eve, k: sum() / s0 };
+  };
+  const hot = at(8, 100), calm = at(-8, 0), mid = at(0, 40);
+  assert(hot.eve < mid.eve && mid.eve < calm.eve, `the war's eve: hot ${hot.eve} months, middle ${mid.eve}, calm ${calm.eve}`);
+  assert(hot.eve >= Math.floor(mid.eve * 2 / 3), `escalation brought the war more than a third sooner: ${hot.eve} of ${mid.eve} months`);
+  assert(hot.k > 1.2 && hot.k <= 1.26 && calm.k < 0.82 && calm.k >= 0.79 && Math.abs(mid.k - 1) < 0.02, `enemy stock: hot ×${hot.k.toFixed(2)}, calm ×${calm.k.toFixed(2)}, middle ×${mid.k.toFixed(2)}`);
+});
+test('story: a chain card saved half-way loads with its choices, and the choice moves the chain on', () => {
+  const S = IC.newGame({ seed: 7004, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  IC.storyEvent(S, 'ch_tower_claim');
+  assert(S.story.events.length === 1, 'the tower card did not come');
+  const S2 = IC.loadSave(IC.saveGame(S)); IC.S = S2;
+  const e = S2.story.events[0];
+  assert(e && e.chain === 'tower' && e.opts.length >= 2, 'the card lost its choices in the save');
+  IC.storyChoose(S2, e.id, 1);
+  const c = S2.story.chains.tower;
+  assert(c.seen.length === 1 && (c.end || c.step !== 'claim'), `the chain did not move on: ${JSON.stringify(c).slice(0, 200)}`);
+});
+test('story: every cast member has a portrait, and every cutscene panel has its words filled', () => {
+  const S = IC.newGame({ seed: 7005, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const bad = [];
+  for (const k in IC.CAST) { const svg = IC.portrait(k, 64); if (!/^<svg/.test(svg)) bad.push(`no portrait for ${k}`); if (!IC.ADVISORS[k]) bad.push(`${k} has no name`); }
+  const d = { ap: 'Talyn', cause: 'gusts beyond the crew\'s limits', late: false };
+  for (const id in IC.CUTSCENES) {
+    const C = IC.CUTSCENES[id], vs = [''].concat(C.panels.map(p => p.only).filter(Boolean));
+    for (const v of new Set(vs)) for (const p of IC.cutPanels(S, { id, v, d })) {
+      const words = [p.cap, p.say && p.say[1]].join(' ');
+      if (/undefined|NaN|\{[A-Za-z]+\}/.test(words)) bad.push(`${id}/${p.art}: ${words.slice(0, 80)}`);
+      if (!p.art || !/^(ai|3d)$/.test(p.src) || !p.shot) bad.push(`${id}: a panel with no art, source or shot`);
+      if (p.say && !IC.ADVISORS[IC.castWho(S, p.say[0])]) bad.push(`${id}/${p.art}: nobody called ${p.say[0]}`);
+    }
+  }
+  assert(!bad.length, bad.slice(0, 8).join('; '));
+});
+test('story: a fresh Career opens on the Director\'s own story, and each ending has its closing and its epilogue', () => {
+  const S = IC.newGame({ seed: 7006, mode: 'story', hour: 7 }); IC.S = S;
+  assert(S.story.cutQ && S.story.cutQ[0] && S.story.cutQ[0].id === 'prologue', 'no prologue queued');
+  S.won = true; assert(IC.endingOf(S) === 'endOpen' || IC.endingOf(S) === 'endFortress', `a clean win ends as ${IC.endingOf(S)}`);
+  IC.flag(S, 'corridor', 'friend'); assert(IC.endingOf(S) === 'endLenz', 'a friend across the border does not end through Lenz');
+  S.won = false; S.over = 'The Prime Minister has replaced you: confidence ran out.'; assert(IC.endingOf(S) === 'sacked', 'a dismissal does not end as sacked');
+  for (const id of ['sacked', 'endLost', 'endLenz', 'endPrice', 'endOpen', 'endFortress']) assert(IC.CUTSCENES[id], `no closing cutscene ${id}`);
+  const ep = IC.epilogue(S);
+  assert(ep.title && ep.paras && ep.paras.length >= 1 && !/undefined|NaN/.test(JSON.stringify(ep)), 'the epilogue is empty or unfilled');
+});
+/* ---------- (the twelve acts) the story's acts and the lore of Northline 310 (lore.js) ---------- */
+test('story: twelve acts run over the four parts in order, the act line says which, and it never goes back', () => {
+  const S = IC.newGame({ seed: 7101, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const st = S.story, seen = [];
+  const look = () => { IC.loreTick(S, 60); seen.push(st.part); };
+  look();
+  for (const ch of [1, 2, 3, 4, 5]) { st.ch = ch; look(); }
+  for (const n of [2, 3, 4]) {
+    IC.storyStartAct(S, n); look();
+    const mid = { 2: 'shadow', 3: 'embassy' }[n];
+    if (mid) { st.beats.find(b => b.id === mid).done = true; look(); }
+    else { S.enemy.act = 4; look(); }
+    st.ch = 0; look();   // nothing taken away sends the act back
+  }
+  const order = [...new Set(seen)];
+  assert(order.join() === '1,2,3,4,5,6,7,8,9', `the acts came as ${order.join(', ')}`);
+  for (let i = 1; i < seen.length; i++) assert(seen[i] >= seen[i - 1], `the act went back: ${seen.join(', ')}`);
+  assert(IC.storyActLabel(S) === 'Act IX' && IC.storyActLabel(S, true) === 'Act IX: The Long Sky', `the act line says ${IC.storyActLabel(S, true)}`);
+  assert(IC.STORY_ACTS.length === 12 && IC.STORY_ACTS.every((a, i) => a.n === i + 1 && a.title), 'twelve acts, numbered in order');
+  assert(S.camp.cards.some(c => /^Act V · The Tapes/.test(c.title)), 'no card opened Act V');
+  assert(/Act IX/.test(IC.saveMeta(S).what), `the saved games list says ${IC.saveMeta(S).what}`);
+});
+test('story: the lore\'s clues: the March silence each year, Lenz\'s brother, and every intercepted order ends "confirm the box is hot"', () => {
+  const S = IC.newGame({ seed: 7102, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const said = () => S.camp.comms.map(c => c.text).join(' | ');
+  S.time = IC.MO(S, 2) + 60; IC.calendar(S);
+  // the silence is said by the tower half-way into March (a handler in S.later)
+  S.time += IC.MO(S, 0.5); for (const l of (S.later || []).filter(l => l.t <= S.time)) l.fn();
+  assert(/22:34/.test(said()) && /minute/.test(said()), `no March silence: ${said().slice(-300)}`);
+  const e = IC.EV.ch_corridor_airway(S);
+  assert(/Pavel/.test(e.text), 'Lenz\'s first letter does not mention his brother');
+  IC.storyStartAct(S, 4);
+  let n = 0; const off = IC.on((S2, type) => { if (S2 === S && type === 'raidWarning') n++; });
+  for (let i = 0; i < 4; i++) { S.time += 9 * 3600; IC.emit(S, 'raidWarning', { R: { obj: { name: 'X' } }, sharp: true }); }
+  off();
+  const orders = S.camp.comms.filter(c => c.who === 'VOLKAN');
+  assert(n === 4 && orders.length >= 3 && orders.every(c => /Confirm the box is hot\."$/.test(c.text)), `orders: ${orders.map(c => c.text).join(' | ')}`);
+  assert(IC.flagOf(S, 'heardBox'), 'the first order is not remembered');
+});
+test('story: the airliner in the box: holding fire, calling Lenz or firing each end the way the lore says', () => {
+  const play = (pick, set) => {
+    const S = IC.newGame({ seed: 7103, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+    if (set) set(S);
+    IC.storyStartAct(S, 4); S.story.part = 9;
+    const e = IC.EV.ch_mirror_track(S), o = e.opts.findIndex(x => pick.test(x.t));
+    assert(o >= 0, `no option ${pick} in ${e.opts.map(x => x.t).join(', ')}`);
+    e.opts[o].fx();
+    S.won = true;
+    return { S, end: IC.endingOf(S), box: IC.flagOf(S, 'box') };
+  };
+  const fired = play(/^Fire/);
+  assert(fired.end === 'endBlack' && fired.box === 'fired' && fired.S.story.standing <= 40, `firing ended as ${fired.end}, confidence ${fired.S.story.standing}`);
+  assert(IC.epilogue(fired.S).title === 'Black Morning', 'the epilogue of a fired box is not Black Morning');
+  const theirs = play(/^Hold/);
+  assert(theirs.box === 'theirs' && theirs.end !== 'endBlack', `holding without a quiet answer years before: ${theirs.box}, ${theirs.end}`);
+  const quiet = play(/^Hold/, S => IC.flag(S, 'escort', 'quiet'));
+  assert(quiet.box === 'held', `holding after the quiet note: ${quiet.box}`);
+  const none = play(/^Hold/), noLenz = IC.EV.ch_mirror_track(none.S).opts.some(x => /Lenz/.test(x.t));
+  assert(!noLenz, 'Lenz is offered without a friend across the border');
+  const lenz = play(/Lenz/, S => IC.flag(S, 'corridor', 'friend'));
+  assert(lenz.box === 'lenz' && lenz.end === 'endLenz', `calling Lenz: ${lenz.box}, ${lenz.end}`);
+  for (const id of ['tape', 'box', 'endBlack']) assert(IC.CUTSCENES[id], `no cutscene ${id}`);
+});
+test('story: a border town kept open on the eve: if the war reaches its square, Mira is lost and the ending says so', () => {
+  const S = IC.newGame({ seed: 7104, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  IC.storyStartAct(S, 4);
+  const t = IC.storyBorderTown(S);
+  assert(t && t.blocks && t.blocks.length, 'no border town with blocks');
+  IC.flag(S, 'evac', 'early');
+  for (const b of t.blocks) b.hp = 0.2;
+  IC.emit(S, 'impact', { x: t.x, y: t.y });
+  assert(!IC.flagOf(S, 'mira'), 'Mira was lost after the town was moved south');
+  IC.flag(S, 'evac', 'stay');
+  IC.emit(S, 'impact', { x: t.x, y: t.y });
+  assert(IC.flagOf(S, 'mira') === 'lost', 'Mira was not lost in a town kept open and hit');
+  S.won = true;
+  assert(IC.endingOf(S) === 'endPrice', `the ending is ${IC.endingOf(S)}`);
+  const c = { id: 'endPrice', v: IC.CUTSCENES.endPrice.pick(S), d: {} };
+  assert(IC.cutPanels(S, c).some(p => /Ana/.test(p.cap)), 'the closing does not say what became of the bakery');
+});
+/* ---------- the twelve acts: Part Five, the peace (peace.js) ---------- */
+const peaceGame = (seed, set) => {
+  const S = IC.newGame({ seed, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  if (set) set(S);
+  IC.enemyOpening(S, {}); IC.storyStartAct(S, 4);
+  return S;
+};
+test('story: the ceasefire opens Part Five: the war stops, the guns go back on Hold, and the peace runs to an ending', () => {
+  const S = peaceGame(7105), st = S.story;
+  S.enemy.will = 5; run(S, 0.05);
+  assert(st.act === 5 && !S.over && !S.enemy.war, `after the ceasefire: part ${st.act}, over ${S.over}, war ${S.enemy.war}`);
+  assert(S.ad.roe === 'hold', `the guns are ${S.ad.roe}`);
+  assert(S.camp.cards.some(c => /^Part Five · The Peace/.test(c.title)), 'no card opened Part Five');
+  st.loreT = 0; IC.loreTick(S, 1);
+  assert(IC.storyActLabel(S, true) === 'Act X: The Armistice', `the act line says ${IC.storyActLabel(S, true)}`);
+  assert(['rebuild', 'pax', 'corridor', 'quiet'].every(id => st.goals.some(g => g.id === id)), `Part Five's goals: ${st.goals.map(g => g.id).join(', ')}`);
+  run(S, 2);
+  assert(!S.enemy.war && !st.peace.broken && S.stats.fired === st.peace.fired, 'the peace did not hold by itself for two hours');
+  // a peace nobody plays through still ends: the Commission's fallback
+  st.actT -= IC.MO(S, 40); run(S, 3);
+  assert(S.over && S.won, `Part Five did not end: ${S.over}`);
+});
+test('story: under the armistice, firing first breaks it, and the truce card allows only an hour over our own ground', () => {
+  const S = peaceGame(7106), st = S.story;
+  IC.peaceStart(S, 'test');
+  S.stats.fired++; IC.peaceTick(S, 1);
+  assert(IC.flagOf(S, 'armistice') === 'broken' && st.peace.broken === 1, 'firing first did not break the armistice');
+  const T = peaceGame(7107), tt = T.story;
+  IC.peaceStart(T, 'test');
+  const e = IC.EV.ch_truce_raid(T);
+  assert(e.opts.length === 3 && e.opts.every(o => o.tip && o.risk), 'the truce card has no three answers');
+  e.opts[0].fx();
+  assert(T.ad.roe === 'tight', `weapons are ${T.ad.roe} after telling their side`);
+  T.stats.fired += 2; IC.peaceTick(T, 1);
+  assert(!IC.flagOf(T, 'armistice') && !tt.peace.broken, 'shooting the drones down over our ground broke the armistice');
+  run(T, 1.05);
+  assert(T.ad.roe === 'hold', `the guns did not go back on Hold: ${T.ad.roe}`);
+  T.stats.fired++; IC.peaceTick(T, 1);
+  assert(IC.flagOf(T, 'armistice') === 'broken', 'firing after the hour did not break the armistice');
+});
+test('story: the Ledger\'s halves disagree until both are heard, and the Commission picks the ending', () => {
+  const play = (o) => {
+    const S = peaceGame(7108, S => { if (o.corridor) IC.flag(S, 'corridor', o.corridor); if (o.fired) IC.flag(S, 'mirror', 'fired'); if (o.mira) IC.flag(S, 'mira', 'lost'); });
+    IC.peaceStart(S, 'test');
+    IC.EV.ch_ledger_locker(S).opts[0].fx();
+    const south = IC.ledgerSays(S);
+    IC.EV.ch_ledger_north(S).opts[o.north || 0].fx();
+    S.story.part = 11;
+    const c = IC.EV.ch_commission_choose(S), i = c.opts.findIndex(x => o.to.test(x.t));
+    assert(i >= 0, `no choice ${o.to}`);
+    c.opts[i].fx();
+    S.won = true;
+    return { S, south, whole: IC.ledgerSays(S), end: IC.endingOf(S) };
+  };
+  const sky = play({ to: /joint/ });
+  assert(/Their battery shot down/.test(sky.south) && !/Nobody did it alone/.test(sky.south), `our half alone says: ${sky.south}`);
+  assert(/Nobody did it alone/.test(sky.whole) && /cancelled at 22:10/.test(sky.whole), `both halves say: ${sky.whole}`);
+  assert(sky.end === 'endSky' && IC.epilogue(sky.S).title === 'The Open Sky', `the joint commission ends as ${sky.end}`);
+  const left = play({ to: /joint/, north: 1 });
+  assert(!/Nobody did it alone/.test(left.whole) && left.end === 'endHalves', `one half to the commission: ${left.end}`);
+  assert(play({ to: /public/ }).end === 'endHalves', 'releasing it does not end as Two Halves');
+  const seal = play({ to: /Seal/ });
+  assert(seal.end === 'endCanopy' && IC.epilogue(seal.S).title === 'The Iron Canopy', `sealing it ends as ${seal.end}`);
+  const jail = play({ to: /joint/, corridor: 'arrested' });
+  assert(jail.end === 'endHalves', `with Lenz in prison: ${jail.end}`);
+  assert(play({ to: /joint/, fired: true }).end === 'endBlack', 'the airliner shot down in the box does not end as Black Morning');
+  const ana = play({ to: /joint/, mira: true });
+  assert(IC.cutPanels(ana.S, { id: 'endSky', v: IC.CUTSCENES.endSky.pick(ana.S), d: {} }).some(p => /Ana/.test(p.cap)), 'with Mira lost, Ana is not at the stone');
+  for (const id of ['armistice', 'ledger', 'commission', 'endSky', 'endHalves', 'endCanopy']) assert(IC.CUTSCENES[id], `no cutscene ${id}`);
+});
+test('story: on the drawn map the old range over the ridge stands until both halves are heard, and the cards point at their places', () => {
+  const was = IC.placeOf;
+  try {
+    // the drawn map's places (brief 74) stood in for on a generated world
+    const pts = {};
+    IC.placeOf = (S, id) => pts[id] || null;
+    const S = peaceGame(7109), st = S.story, h = IC.cities(S).filter(c => !c.capital && c.owner === 'us')[3];
+    pts.station9 = { x: h.x + 40, y: h.y - 60 }; pts.hollin = { x: h.x, y: h.y }; pts.area_centre = { x: h.x - 300, y: h.y + 200 };
+    st.btown = null; st.r9 = null; st.loreT = 0; IC.loreTick(S, 1);
+    const sh = IC.aspShape(S, st.r9);
+    assert(sh && !sh.ap && sh.rings[0].cls === 'R' && U.dist(sh, pts.station9) < 1, 'no restricted area over the ridge');
+    assert(IC.aspClassAt(S, pts.station9.x, pts.station9.y, 5).cls === 'R', `at 5 km over Station 9 the airspace is ${IC.aspClassAt(S, pts.station9.x, pts.station9.y, 5).cls}`);
+    const r = sh.rings[0].r, hi = sh.rings[0].hi;
+    IC.aspDelArea(S, sh); IC.aspScale(S, sh, 2); IC.aspRingSet(S, sh, 0, { hi: 2 });
+    assert(IC.aspShape(S, st.r9) && sh.rings[0].r === r && sh.rings[0].hi === hi, 'the player changed the old range');
+    assert(/Year −34/.test(sh.fixed), `it does not say why it stays: ${sh.fixed}`);
+    assert(IC.storyBorderTown(S) === h, `the border town is ${IC.storyBorderTown(S).name}, not ${h.name} under the ridge`);
+    IC.peaceStart(S, 'test');
+    assert(U.dist(IC.EV.ch_ledger_locker(S).at, pts.area_centre) < 1, 'the locker card does not point at the old Area Centre');
+    IC.EV.ch_ledger_locker(S).opts[0].fx();
+    const north = IC.EV.ch_ledger_north(S);
+    assert(U.dist(north.at, pts.station9) < 1, 'the northern half does not point at Station 9');
+    north.opts[0].fx();
+    st.part = 11;
+    const c = IC.EV.ch_commission_choose(S), o = c.opts.find(x => /joint/.test(x.t));
+    assert(/R-9/.test(o.tip), `the joint commission does not say the range goes: ${o.tip}`);
+    o.fx();
+    assert(!IC.aspShape(S, sh.id) && IC.aspClassAt(S, pts.station9.x, pts.station9.y, 5).cls !== 'R', 'the joint commission did not withdraw the old range');
+    // a generated world has no places: nothing is added, the cards point nowhere
+    IC.placeOf = () => null;
+    const T = peaceGame(7110); T.story.loreT = 0; IC.loreTick(T, 1);
+    assert(T.story.r9 === 0 && !T.asp.shapes.some(s => s.fixed), 'a restricted area appeared on a world without the ridge');
+    IC.peaceStart(T, 'test');
+    assert(!IC.EV.ch_ledger_locker(T).at, 'a card points at a place that is not there');
+  } finally { IC.placeOf = was; }
+});
 /* ---------- the calendar: months over the live clock ---------- */
 test('calendar: the month turns after DAYS_PER_MONTH days and nights, and the top bar says so', () => {
   for (const dpm of [3, 5]) {
@@ -7301,7 +7561,7 @@ test('research: a new Career opens the Research room on day one with the civil l
   assert(IC.roomAllowed(S, 'research'), 'the Research room is shut at the start of the Career');
   assert(IC.TECH.filter(IC.techCivil).length >= 40, `only ${IC.TECH.filter(IC.techCivil).length} civil projects`);
   assert(IC.TECH.filter(t => IC.techCivil(t) && !t.req.length).every(t => IC.techOpenNow(S, t)), 'a first step of a civil lane cannot be started');
-  assert(!IC.techOpenNow(S, IC.techById('a_cram')) && /Act III/.test(IC.techClosed(S, IC.techById('a_cram'))), 'a military project is open in Act I');
+  assert(!IC.techOpenNow(S, IC.techById('a_cram')) && /Part Three/.test(IC.techClosed(S, IC.techById('a_cram'))), 'a military project is open in Act I');
   // every airport item's research is civil, and the chain to it starts with something open now
   const reach = id => { const t = IC.techById(id); return IC.techCivil(t) && !IC.techClosed(S, t) && (IC.techOpenNow(S, t) || t.req.every(reach)); };
   for (const k in IC.APT_TECH) {
@@ -7361,7 +7621,7 @@ test('research: slots grow from two to four', () => {
   IC.researchTick(S, 1);
   assert(S.tech.slots.length === 2 && /Research office/.test(IC.techNextSlot(S)), 'the Career does not start with two slots and say what opens the third');
   S.tech.done.add('a_lab'); IC.researchTick(S, 1);
-  assert(S.tech.slots.length === 3 && /Act II/.test(IC.techNextSlot(S)), 'the Research office did not open a third slot');
+  assert(S.tech.slots.length === 3 && /Part Two/.test(IC.techNextSlot(S)), 'the Research office did not open a third slot');
   S.story.act = 2; IC.researchTick(S, 1);
   assert(S.tech.slots.length === 4 && !IC.techNextSlot(S), 'Act II did not open a fourth slot');
 });
@@ -7485,7 +7745,7 @@ test('desk: Acts II and III have a mandate with a date; met, it is on the record
   const { S } = deskOpen(), st = S.story;
   IC.storyStartAct(S, 2); st.desk.tT = 0; IC.deskTick(S, 1);
   const M = IC.deskMandate(S);
-  assert(M && M.where === 'Act II' && /alert pad/.test(M.text) && M.parts.length === 3 && !M.met, `act II: ${JSON.stringify(M)}`);
+  assert(M && M.where === IC.ACTS[2].name && /alert pad/.test(M.text) && M.parts.length === 3 && !M.met, `act II: ${JSON.stringify(M)}`);
   assert(Math.abs(M.due - st.actT - IC.MO(S, IC.MANDATES_ACT[2].mo)) < 1, 'the date is not counted from the act’s start');
   let met = null; const off = IC.on((S2, t, d) => { if (t === 'mandate') met = d; });
   for (const g of st.goals) if (IC.MANDATES_ACT[2].of.includes(g.id)) { g.done = true; g.doneT = S.time; }
@@ -7494,7 +7754,7 @@ test('desk: Acts II and III have a mandate with a date; met, it is on the record
   assert(IC.deskWhy(S).some(r => r.why === 'the mandate met'), 'the act’s mandate is not on the record');
   IC.storyStartAct(S, 3); st.desk.tT = 0; IC.deskTick(S, 1);
   const M3 = IC.deskMandate(S);
-  assert(M3 && M3.where === 'Act III' && /two layers/.test(M3.text) && !M3.met, `act III: ${JSON.stringify(M3)}`);
+  assert(M3 && M3.where === IC.ACTS[3].name && /two layers/.test(M3.text) && !M3.met, `act III: ${JSON.stringify(M3)}`);
   // its date passes: the record and the Prime Minister say so, and a new date is set
   const rec0 = IC.deskRecord(S), due = M3.due;
   S.time = due + 60; st.desk.tT = 0; IC.deskTick(S, 1);

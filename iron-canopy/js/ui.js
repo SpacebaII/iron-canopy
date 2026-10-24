@@ -173,13 +173,13 @@ function topbar() {
   if (st) {
     const sat = IC.avgSat(S), T = S.tension || 0;
     setHTML($('stats'), `
-      <div class="stat role" title="${esc(IC.ACTS[act].name)}: ${esc(IC.ACTS[act].title)}"><span>${esc(IC.ACTS[act].name)}</span><strong>${esc(st.role)}</strong></div>
+      <div class="stat role" title="${esc(IC.storyActLabel(S, true))} · ${esc(IC.ACTS[act].name)}: ${esc(IC.ACTS[act].title)}"><span>${esc(IC.storyActLabel(S))}</span><strong>${esc(st.role)}</strong></div>
       ${money}
       <div class="stat" title="The Minister's confidence in you. ${esc(IC.storyDismissal(S).text)}"><span>Confidence</span><strong class="${st.standing > 50 ? '' : st.standing > 25 ? 'amber' : 'hostile'}">${Math.round(st.standing)}</strong>${meter(st.standing / 100, st.standing > 50 ? 'var(--ok)' : st.standing > 25 ? 'var(--amber)' : 'var(--hostile)')}</div>
       <div class="stat" title="Average airline satisfaction"><span>Airlines</span><strong class="${!S.av.airlines.length ? 'muted' : sat > 60 ? '' : sat > 40 ? 'amber' : 'hostile'}">${S.av.airlines.length ? Math.round(sat) + '%' : 'none yet'}</strong>${meter(S.av.airlines.length ? sat / 100 : 0, 'var(--civil)')}</div>
       <div class="stat" title="Passengers through our airports in the last hour"><span>Pax/h</span><strong>${Math.round(S.av.paxHour || 0).toLocaleString('en-US')}</strong></div>
       ${act >= 2 ? `<div class="stat" title="Tension with the ${esc(S.world.full.A)}"><span>Tension</span><strong class="${T > 60 ? 'hostile' : T > 30 ? 'amber' : ''}">${Math.round(T)}</strong>${meter(T / 100, 'var(--hostile)')}</div>` : ''}
-      ${act >= 4 ? `<div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>` : ''}`);
+      ${act === 4 ? `<div class="stat" title="Enemy will to fight: ceasefire at zero"><span>Enemy will</span><strong class="hostile">${Math.round(S.enemy.will)}</strong>${meter(S.enemy.will / 100, 'var(--hostile)')}</div>` : ''}`);
   } else if (!S.range) setHTML($('stats'), `${money}
     <div class="stat" title="National morale: below 12% the government asks for terms"><span>Morale</span><strong class="${m > 55 ? '' : m > 30 ? 'amber' : 'hostile'}">${Math.round(m)}%</strong>${meter(m / 100, m > 55 ? 'var(--ok)' : m > 30 ? 'var(--amber)' : 'var(--hostile)')}</div>
     <div class="stat" title="Allied support: aid and import prices"><span>Allies</span><strong>${Math.round(S.support)}</strong>${meter(S.support / 100, 'var(--friend)')}</div>
@@ -195,6 +195,7 @@ function topbar() {
   alerts();
   incidents();
   evcard();
+  if (IC.cutView) IC.cutView.tick(S);
   followChip();
   // the incidents hang under the alert pills, however many there are (both are centred under the top bar); with a
   // room open they sit at the bottom (CSS)
@@ -227,8 +228,12 @@ function evcard() {
   // placed once for each card: it stays put under the cursor while the column above it changes (a toast leaving
   // moved it about 30 px, and a click meant for one answer landed on the next)
   if (ui.evcardAt !== e.id) { placeCard(el, { at: e.at || null }); ui.evcardAt = e.id; }
-  setHTML(el, `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small><h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
-    <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}</button>`).join('')}</div>`);
+  // (brief 70) a card from one of the cast shows their face and role; a letter looks like one; each option says
+  // what it costs now and, for the story's chains, what it risks later
+  const who = e.cast && IC.ADVISORS[IC.castWho(S, e.cast)], face = who && IC.portrait ? IC.portrait(IC.castWho(S, e.cast), 64) : '';
+  el.classList.toggle('letter', !!e.letter); el.classList.toggle('person', !!face);
+  setHTML(el, `${face ? `<div class="evwho">${face}<div><b>${esc(who.name)}</b><span>${esc(who.role)}</span></div><small>${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small></div>` : `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small>`}<h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
+    <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}${o.risk ? `<span class="risk">Later: ${esc(o.risk)}</span>` : ''}</button>`).join('')}</div>`);
 }
 function alerts() {
   const w = [];
@@ -425,8 +430,8 @@ function brief() {
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
     h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}<button class="howbtn" data-act="retryLesson" title="Start this lesson again from its first step">Restart lesson</button>`;
   } else if (S.story && S.story.act < 4 && IC.deskOn && IC.deskOn(S)) h = deskPanel();
-  else if (S.story && S.story.act < 4 && ui.compact()) h = nextGoal();
-  else if (S.story && S.story.act < 4) {
+  else if (S.story && S.story.act !== 4 && ui.compact()) h = nextGoal();
+  else if (S.story && S.story.act !== 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
     const st = S.story, A = IC.ACTS[st.act], ch = IC.storyChapterInfo(S);
     const done = st.goals.filter(g => g.done).length, shown = IC.storyShown(S).filter(x => !x.g.done || st.act > 1 || S.time - (x.g.doneT || 0) < 2 * 3600);
@@ -518,7 +523,7 @@ function comms() {
   // (round 3) one line: who and the start of what they say; a click opens the message, and the newest replaces it
   if (ui.compact() && !ui.cExp) {
     const m = Q[Q.length - 1]; ui.ci = Q.length - 1;
-    $('comms').classList.add('glass');
+    $('comms').classList.add('glass'); $('comms').classList.toggle('retro', m.tag === 'YOU');
     setHTML($('comms'), `<button class="cline" data-act="cexp" title="Read it"><span class="av ${m.tag}">${esc(m.tag)}</span><b>${esc(m.name)}</b><span class="ct">${esc(m.text)}</span></button>`);
     return;
   }
@@ -536,7 +541,7 @@ function comms() {
     return;
   }
   const init = m.tag === 'CMD' ? m.name.replace('Gen. ', '').split(' ').map(x => x[0]).join('') : m.tag;
-  $('comms').classList.add('glass');
+  $('comms').classList.add('glass'); $('comms').classList.toggle('retro', m.tag === 'YOU');
   setHTML($('comms'), `<div class="who"><span class="av ${m.tag}">${esc(init)}</span><div><div class="nm">${esc(m.name)}</div><div class="rl2">${esc(m.role)}</div></div></div>
     <p>${esc(m.text.slice(0, shown))}${full ? '' : '▍'}</p>
     <div class="cfoot"><span>${ui.ci + 1} / ${Q.length} · ${U.clock(m.t)}</span><span>${ui.cNew >= 0 && ui.cNew < ui.ci ? `<button data-act="cfirst" title="Go back to the first message that came in this burst">◂ ${ui.ci - ui.cNew} new before this</button>` : ''}<button data-act="cprev" ${ui.ci ? '' : 'hidden'}>◂ Back</button><button data-act="cnext" ${ui.ci < Q.length - 1 ? '' : 'hidden'}>Next ▸</button>${ui.compact() ? '<button data-act="cexp">Fold ▴</button>' : ''}</span></div>`);
@@ -739,19 +744,25 @@ function cine() {
   if (j >= 0) {
     const c = ui.cineCur = C.cards[j];
     el.className = 'cine ' + c.kind; el.hidden = false;
-    el.innerHTML = c.res ? resultCard(c) : `<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
+    el.innerHTML = c.res ? resultCard(c) : c.kind === 'paper' ? paperCard(c) : `${c.cast && IC.portrait ? `<div class="cface">${IC.portrait(IC.castWho(S, c.cast), 72)}</div>` : ''}<small>${esc(c.sub)}</small><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p>${c.fix ? `<p><button class="btn primary" data-act="buildPick" data-v="${esc(c.fix.v)}" data-ap="${esc(c.ap || '')}">${esc(c.fix.label)}</button></p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 
     if (c.res) el.className += ' result ' + (c.res.held ? 'held' : c.res.success ? 'lost' : '');
     placeCard(el, c);
     // (long enough to read: a quarter of a second a word on top, as a long card closed before it was read and the
     // click meant for it landed on the map)
     const words = ((c.title || '') + ' ' + (c.text || '')).split(/\s+/).length;
-    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' ? 16000 : 12000) + words * 250;
+    ui.cineUntil = now + (c.kind === 'chapter' ? 7000 : c.kind === 'moment' || c.kind === 'paper' ? 16000 : 12000) + words * 250;
     if (c.kind === 'chapter' && S.cfg.bars) IC.cine = Object.assign(IC.cine || {}, { barsT: 2.5 });
     IC.sfx && IC.sfx.ui('chapter');
   } else if (!el.hidden && ui.room) { el.hidden = true; ui.cineT = now + 800; }   // (a room opened over it: it comes back, whole, when the room closes)
   else if (!el.hidden && S.paused) ui.cineUntil = Math.max(ui.cineUntil, now + 3000);   // (paused: it waits for a click)
   else if (!el.hidden && now > ui.cineUntil) { ui.closeCine(); ui.cineGone = now; }
+}
+/* (brief 70) the Courier's front page: masthead, date, a headline and two short paragraphs */
+function paperCard(c) {
+  const P = c.paper || {};
+  return `<div class="mast"><span>${esc(P.price || 'Morning edition')}</span><b>The ${esc(S.world.names.H)} Courier</b><span>${esc(c.sub)}</span></div>
+    <h2>${esc(c.title)}</h2>${P.deck ? `<h3>${esc(P.deck)}</h3>` : ''}<div class="cols"><p>${esc(c.text)}</p>${P.more ? `<p>${esc(P.more)}</p>` : ''}</div>${P.by ? `<p class="by">${esc(P.by)}</p>` : ''}<div class="cfoot"><span>click to continue</span></div>`;
 }
 /* a raid's result: what came, what we stopped, what got through and why, the cost against what it saved, a grade */
 function resultCard(c) {
@@ -1079,6 +1090,10 @@ function showOver() {
   $('overTitle').textContent = aca ? (S.won ? 'Lesson complete' : 'Lesson failed') : S.won ? 'Ceasefire' : story && S.story.standing <= 0 ? 'Replaced' : 'The defence has failed';
   $('overTitle').style.color = S.won ? 'var(--friend)' : 'var(--hostile)';
   $('overText').textContent = S.over;
+  // (brief 70) the Career ends with its epilogue: a paragraph per thread of the story
+  const ep = story && IC.epilogue ? IC.epilogue(S) : null;
+  $('overEpi').hidden = !ep;
+  if (ep) $('overEpi').innerHTML = `<h3>${esc(ep.title)}</h3><p class="lead">${esc(ep.text)}</p>${ep.paras.map(p => `<p><b>${esc(p.head)}.</b> ${esc(p.text)}</p>`).join('')}<p class="by">${esc(ep.by)}</p>`;
   $('overStars').textContent = aca && S.won ? '★'.repeat(S.stars || 1) + '☆'.repeat(3 - (S.stars || 1)) : '';
   const L = aca && S.camp.lesson ? IC.LESSONS.findIndex(l => l.id === S.camp.lesson.id) : -1;
   $('overNext').hidden = !(aca && S.won && L >= 0 && L < IC.LESSONS.length - 1);
