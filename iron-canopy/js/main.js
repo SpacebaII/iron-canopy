@@ -542,6 +542,17 @@ function onAct(e) {
     case 'gapFix': { const g = IC.radarGap(S); if (locked('radar')) return; S.layers.gaps = true; ui.openRoom(null); IC.setMode({ kind: 'deploy', type: 'ssr' }); IC.emit(S, 'ui', { act: 'deploy', v: 'ssr' }); if (g) IC.flyTo(g.at.x, g.at.y, U.clamp(IC.cam.z, 0.05, 0.12)); return; }
     case 'aptOpen': ui.aptOpen = ui.aptOpen || {}; ui.aptOpen[v] = !ui.aptOpen[v]; break;
     case 'pmZoom': { const a = S.byId[v]; if (a) { IC.select({ kind: 'infra', ref: a }); IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 6)); } return; }
+    // (brief 69) the desk: go to a pressure, fix it, pay it off, or ask for more time
+    case 'deskGo': case 'deskFix': {
+      const P = S.story && S.story.desk && S.story.desk.P.find(x => x.id === v); if (!P) break;
+      const a = P.ap && S.byId[P.ap];
+      if (b.dataset.act === 'deskFix' && a && P.fix && P.fix.part) { if (a !== selAp()) IC.bb.closed = a.id; IC.fixOpen(S, a, P.fix.part, P.fix.near, P.fix.size); return; }
+      if (ui.room) ui.openRoom(null);
+      if (P.at) ui.jump(P.at); if (a) IC.select({ kind: 'infra', ref: a });
+      return;
+    }
+    case 'deskPay': if (!IC.deskAnswer(S, v, 'pay')) IC.toast(S, 'warn', 'DESK', 'Not enough money in the treasury.'); break;
+    case 'deskMore': IC.deskAnswer(S, v, 'more'); break;
     case 'pmGo': case 'pmFix': {
       const p = ui.pmById && ui.pmById.get(v), a = p && S.byId[p.ap]; if (!a) break;
       if (a !== selAp()) { IC.bb.closed = a.id; }
@@ -731,6 +742,9 @@ IC.on((S2, type, d) => {
   // (Finish now runs through the goals its own works tick off: the airport opening is what it waits for)
   else if (type === 'act' || type === 'goal') { if (!(S.wait && S.wait.works && type === 'goal')) stopSkip(); }
 
+  // (brief 69) a pressure that is new, close to its date or lost stops the fast clock; one dealt with does not
+  else if (type === 'pressure') { if (d.outcome === 'due' || d.outcome === 'failed') stopSkip(`${d.title}: ${d.outcome === 'due' ? 'the date is close' : 'the date has passed'}.`); }
+  else if (type === 'review' || type === 'deskLow') stopSkip();
   else if (type === 'request') stopSkip(`${IC.avAirline(S, d.al).name} offers a deal.`);
   else if (type === 'dealWarn' || type === 'dealStrike' || type === 'dealBroken') stopSkip(`${d.al.name}: its deal ${type === 'dealBroken' ? 'is over' : 'is at risk'}.`);
   else if (type === 'assault' || type === 'chapter' || type === 'war' || type === 'frontActive' || type === 'delivered' || type === 'lessonDone') stopSkip();

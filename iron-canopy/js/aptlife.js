@@ -291,6 +291,8 @@ IC.on((S, type, d) => {
   IC.card(S, 'The first landing', `${tl.cs} · ${al ? al.name : ''} · stand ${IC.standName(s)}`,
     `It paid ${U.money(total)}${what ? `: ${what}` : ''}. Every landing pays like this, and the turnaround you can watch now (bags, fuel, catering, boarding) decides how soon the stand is free for the next. More stands, a quick turnaround and happy airlines bring more flights.`,
     'moment', { at: { x: ap.x, y: ap.y }, follow: tl.id });
+  // (brief 69) the story's cutscene for it, when brief 70 has one
+  if (IC.cutscene) IC.cutscene(S, 'firstLanding', { ap, tl });
 });
 
 })(window.IC);

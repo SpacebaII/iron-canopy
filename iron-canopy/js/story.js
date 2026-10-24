@@ -173,6 +173,9 @@ IC.CHAPTERS = [
 const CH_FOCUS = [{ fmin: 0, fneed: 7 }, { fmin: 0, fneed: 7 }, { fmin: 0, fneed: 4 }, { fmin: 0, fneed: 3 }, { fmin: 0, fneed: 3 }, { fmin: 6, fneed: 3 }];
 const chMin = n => IC.FOCUS.progress ? CH_FOCUS[n].fmin : IC.CHAPTERS[n].min;
 const chNeed = n => IC.FOCUS.progress ? CH_FOCUS[n].fneed : IC.CHAPTERS[n].need;
+/* (brief 69) the chapter's work is done: its mandate met, or (without the desk) enough of its goals */
+const desk = S => !!(IC.deskOn && IC.deskOn(S));
+const chDone = S => desk(S) ? IC.deskMet(S) : doneCount(S) >= chNeed(S.story.ch);
 IC.storyChMin = chMin;
 const capApt = S => S.story.cap ? S.byId[S.story.cap] : null;
 const built = (ap, k) => !!ap && ap.parts.some(p => p.kind === k && p.built && p.hp > 0);
@@ -322,6 +325,7 @@ function chapterGoals(S, ch) {
 /* ---------- chapter openers: the leader or the regions ask, and the player chooses how ---------- */
 function startChapter(S, n, quiet) {
   const st = S.story, C = IC.CHAPTERS[n], W = S.world;
+  if (st.chLog.length && IC.deskChapterEnd) IC.deskChapterEnd(S);
   if (st.goals.length && st.chLog.length) { st.past.push(...st.goals); st.cp += 1; }
   st.ch = n; st.chT = S.time; st.asking = false; st.waitT = 0; st.hurry = false;
   st.chLog.push({ ch: n, t: S.time });
@@ -517,7 +521,7 @@ function chapterTick(S) {
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
   // a near miss or overloaded controllers force the airspace question early
   const forced = st.ch === 1 && st.hurry && age >= chMin(st.ch) * 0.75 && !IC.FOCUS.progress;
-  if (!forced && !((doneCount(S) >= chNeed(st.ch) && age >= chMin(st.ch)) || age >= C.max)) return;
+  if (!forced && !((chDone(S) && age >= chMin(st.ch)) || age >= C.max)) return;
   st.asking = true;
   OPEN[st.ch + 1](S);
 }
@@ -525,10 +529,11 @@ function chapterTick(S) {
 IC.storyChapterInfo = function (S) {
   const st = S.story; if (!st || st.act !== 1) return null;
   const C = IC.CHAPTERS[st.ch], age = (S.time - st.chT) / MO(S);
-  const waitCity = st.ch === 3 && doneCount(S) >= chNeed(st.ch) && age >= chMin(st.ch) && !IC.cityAsks(S, 150);
+  const waitCity = st.ch === 3 && chDone(S) && age >= chMin(st.ch) && !IC.cityAsks(S, 150);
   if (IC.FOCUS.progress) {
     // (round 4) what opens the next chapter, said as something to do: never "in about N months"
-    const left = chNeed(st.ch) - doneCount(S), hub = IC.NETWORK.hubPax, pax = Math.round(dayPax(S));
+    const left = desk(S) ? (IC.deskMet(S) ? 0 : 1) : chNeed(st.ch) - doneCount(S), hub = IC.NETWORK.hubPax, pax = Math.round(dayPax(S));
+    if (desk(S) && !waitCity) return { n: st.ch, title: C.title, age, of: IC.CHAPTERS.length, next: st.ch === 0 ? 'The first airliner opens the next chapter.' : left ? 'The mandate met opens the next chapter.' : st.ch >= 5 ? 'The mandate is met. Keep the airports running: the story moves on.' : 'The next chapter is opening.' };
     const next = st.ch === 0 ? 'The first airliner opens the next chapter.' : st.ch >= 5 ? (left > 0 ? `${left} more goal${left > 1 ? 's' : ''} and the Act is done.` : 'Every goal of Part One is done. Keep the airports growing: the story moves on.')
       : waitCity ? (pax < hub ? `The next chapter comes when a city beyond the capital’s reach wants to fly: carry ${hub.toLocaleString('en-US')} passengers a day through the capital (${pax.toLocaleString('en-US')} now) and the regions will ask.` : 'The next chapter comes when a city beyond the capital’s reach has enough people who want to fly: cities grow with the air service you give them.')
       : left > 0 ? `${left} more goal${left > 1 ? 's' : ''} open${left > 1 ? '' : 's'} the next chapter.` : 'The next chapter is opening.';
@@ -575,6 +580,7 @@ IC.storyLock = function (S, key) {
   const L = LOCKS[key]; if (!L || st.ch >= L[0]) return '';
   if (!IC.FOCUS.progress || L[0] > 5) return L[1] + (IC.agendaLockNote ? IC.agendaLockNote(S, key) : '');
   // (round 4) what opens it, in one line: the chapter it comes with, and the goals between here and there
+  if (desk(S)) return `${L[2]}: opens with Chapter ${L[0] + 1} (${U.lc(IC.CHAPTERS[L[0]].title)}), ${st.ch === L[0] - 1 ? 'once this chapter’s mandate is met' : `${L[0] - st.ch} chapters on; each opens when the Minister’s mandate before it is met`}.${IC.agendaLockNote ? IC.agendaLockNote(S, key) : ''}`;
   const left = Math.max(0, chNeed(st.ch) - doneCount(S)), g = st.goals.find(x => !x.done && !x.failed);
   return `${L[2]}: opens with Chapter ${L[0] + 1} (${U.lc(IC.CHAPTERS[L[0]].title)}), ${st.ch === L[0] - 1 ? `after ${left} more goal${left === 1 ? '' : 's'} here${g ? ` (next: ${g.text.replace(/\s*\(.*\)$/, '')})` : ''}` : `${L[0] - st.ch} chapters on; each opens when the one before has its goals done`}.${IC.agendaLockNote ? IC.agendaLockNote(S, key) : ''}`;
 };
@@ -665,6 +671,7 @@ IC.layerAllowed = function (S, k) {
 IC.DISMISS_AFTER = 86400;
 IC.storyDismissal = function (S) {
   const st = S.story; if (!st) return null;
+  if (st.act < 3 && desk(S)) { const D = IC.deskDanger(S); return { can: true, left: st.desk && st.desk.lowT != null ? IC.MO(S, 1) - (S.time - st.desk.lowT) : IC.MO(S, 1), text: D ? D.text : `Under ${IC.DESK.sackAt} for a month and you are replaced. Low confidence also cuts your grant: the Ministry pays ${U.pct(grantK(st))} of it.` }; }
   if (st.act < 3) return { can: false, text: `You cannot be replaced before Part Three. Low confidence costs money instead: the Ministry pays ${U.pct(grantK(st))} of your grant.` };
   const left = st.zeroT != null ? IC.DISMISS_AFTER - (S.time - st.zeroT) : IC.DISMISS_AFTER;
   return { can: true, left, text: st.zeroT != null ? `At zero: you are replaced in ${U.dur(left)} unless confidence recovers.` : 'A full day at zero confidence and you are replaced.' };
@@ -822,7 +829,7 @@ function beatsFor(S, act) {
       droneFrom(S, p, 120, 1800);
       say(S, 'ATC', `Odd one. A glider pilot near the ${S.world.names.A} border reports a slow grey aircraft with no lights, low, heading our way. None of our radars saw it: it carries no transponder, and civil radar only hears transponders. Probably nothing.`);
     } });
-    B.push({ id: 'collision', need: () => st.ch >= 5 && st.beats.find(b => b.id === 'ghost').done && ((doneCount(S) >= chNeed(5) && inCh() > MO(S, chMin(5))) || inCh() > MO(S, IC.CHAPTERS[5].max)), gap: [2400, 4800], run: () => collision(S) });
+    B.push({ id: 'collision', need: () => st.ch >= 5 && st.beats.find(b => b.id === 'ghost').done && ((chDone(S) && inCh() > MO(S, chMin(5))) || inCh() > MO(S, IC.CHAPTERS[5].max)), gap: [2400, 4800], run: () => collision(S) });
   } else if (act === 2) {
     // Act II runs over two or three years: a survey drone every month or so, and the incidents months apart
     B.push({ id: 'survey', gap: [1800, 3000], repeat: [MO(S, 0.6), MO(S, 1.4)], run: () => {
@@ -1062,7 +1069,7 @@ function delegates(S, dt) {
 /* (round 4) what a goal gives, paid as it is done: the Ministry's reward (booked as such), confidence, or what
    opens (the milestones open their pieces themselves, deck.js) */
 function goalPaid(S, g) {
-  if (!IC.FOCUS.progress) return;
+  if (!IC.FOCUS.progress || desk(S)) return;
   if (g.pay) { S.budget += g.pay; IC.econBook(S, 'bonus', g.pay); }
   if (g.conf) S.story.standing = Math.min(100, S.story.standing + g.conf);
 }
@@ -1085,7 +1092,8 @@ IC.storyTick = function (S, dt) {
     if (g.fail && g.fail()) { g.failed = true; continue; }
     // in Act I command points come with each chapter; later, with each goal
     if (st.act > 1) st.cp += 1;
-    st.standing = Math.min(100, st.standing + (st.act > 1 ? 3 : 2));
+    // (brief 69) in Act I the goals are the mandate's steps: the mandate is what the Minister judges
+    if (!(desk(S) && st.act === 1)) st.standing = Math.min(100, st.standing + (st.act > 1 ? 3 : 2));
     goalPaid(S, g);
     IC.log(S, 'kill', 'GOAL', `${g.text.replace(/\s*\(.*\)$/, '')}: done.${st.act > 1 ? ' +1 command point.' : ''}${IC.FOCUS.progress && g.gives ? ` ${goalGives(g)}.` : ''}`);
     IC.sfx && IC.sfx.ui('ok');
@@ -1095,6 +1103,8 @@ IC.storyTick = function (S, dt) {
   if (st.act === 1) actOneTick(S);
   // (round 4) the player's clock, the milestones and the peacetime deck (deck.js)
   if (IC.deckTick) IC.deckTick(S, dt);
+  // (brief 69) the Director's desk: the mandate, pressures, the quarter's review
+  if (IC.deskTick) IC.deskTick(S, dt);
   // (brief 49) the Ministry's agenda: the policy before the Minister runs on the play clock (agenda.js)
   if (IC.agendaTick) IC.agendaTick(S, dt);
   // (brief 70) the story's chains of cards, on the same play clock (chains.js)
@@ -1129,10 +1139,12 @@ IC.storyTick = function (S, dt) {
     // airlines' satisfaction says, 60 at the old neutral 58, so it reflects how the sector is doing lately; goals
     // and decisions push it, and the push fades)
     // (brief 49: Keep the airlines flying softens the war's fall while the airspace is open)
+    // (brief 69) what the Director did lately (the desk's record: pressures, mandates, reviews) moves where it settles
+    const rec = desk(S) ? IC.deskRecord(S) : 0;
     const war = (IC.nationalMorale(S) - 45) * 0.01 + (S.enemy.will < 60 ? 0.2 : 0);
-    const drift = st.act === 4 ? (war < 0 && IC.agendaMul ? war * IC.agendaMul(S, 'warDrift') : war) : (U.clamp(60 + (sat - 58) * 1.5, 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
-    // before the first airliner there are no airlines to judge you by: the Minister waits
-    const judge = st.act > 1 || st.opened;
+    const drift = st.act === 4 ? (war < 0 && IC.agendaMul ? war * IC.agendaMul(S, 'warDrift') : war) : (U.clamp(60 + (sat - 58) * 1.5 + rec, desk(S) ? 0 : 10, 95) - (S.red && IC.inRed(S) ? IC.RED.conf * (S.red.months + 1) : 0) - st.standing) * 600 / IC.MO(S, IC.CONF_MO);
+    // before the first airliner there are no airlines to judge you by: the Minister waits, unless the opening is late
+    const judge = st.act > 1 || st.opened || rec < 0;
     // in debt (not merely spent to the last ₭M on works that wait for money) the Minister notices
     const k = st.act === 4 ? 1 : IC.CONF_PACE;
     st.standing += (judge ? drift : 0) + ((S.budget < -1 ? -0.3 : 0) + (st.events.length > 2 ? -0.3 : 0) + (st.standing > 80 ? -0.15 : 0)) * k;
@@ -1162,7 +1174,7 @@ IC.storyTick = function (S, dt) {
 
 /* confidence: before Act III it cannot fall below 5 and costs money instead (the grant); from Act III a full day
    at zero and you are replaced. IC.confFloor is the floor, for everything that lowers it */
-IC.confFloor = S => S.story && S.story.act < 3 ? 5 : 0;
+IC.confFloor = S => S.story && S.story.act < 3 && !desk(S) ? 5 : 0;  // (brief 69) the desk has no floor: a Director can be replaced
 function confidence(S) {
   const st = S.story;
   st.standing = U.clamp(st.standing, IC.confFloor(S), 100);
@@ -1170,7 +1182,7 @@ function confidence(S) {
     const cut = st.grantCut && (!st.grantCutT || S.time > st.grantCutT) && st.act === 1 ? st.grantCut : 1;
     st.grant = st.grant0 * grantK(st) * cut;
     const band = st.standing < 15 ? 2 : st.standing < 30 ? 1 : 0;
-    if (band > (st.warnBand || 0) && IC.tipOnce(S, 'lowConf' + band, 12 * H)) say(S, st.act === 1 ? 'MIN' : 'PM', band === 2 ? `I am close to giving up on you, Director. The Ministry now pays ${U.pct(grantK(st))} of your grant, and the airlines know it.` : `My confidence in you is wearing thin. The Ministry has cut your grant to ${U.pct(grantK(st))} until things improve.`);
+    if (band > (st.warnBand || 0) && !desk(S) && IC.tipOnce(S, 'lowConf' + band, 12 * H)) say(S, st.act === 1 ? 'MIN' : 'PM', band === 2 ? `I am close to giving up on you, Director. The Ministry now pays ${U.pct(grantK(st))} of your grant, and the airlines know it.` : `My confidence in you is wearing thin. The Ministry has cut your grant to ${U.pct(grantK(st))} until things improve.`);
     st.warnBand = band;
     return;
   }

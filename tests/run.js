@@ -6657,7 +6657,7 @@ test('round 4: milestones open the bigger pieces because the airport needs them,
   assert(/^Opens at 2,000 passengers a day \([\d,]+ now\)/.test(pier), pier);
   assert(/^A second runway opens at 6,000 passengers a day/.test(rw), rw);
   assert(!IC.pieceLock(S, 'tstraight', ap) && !IC.pieceLock(S, 'services', ap), 'a basic piece is locked');
-  for (const k of ['airways', 'radar', 'fields', 'loans', 'roads', 'trade', 'statement']) { const w = IC.storyLock(S, k); assert(/: opens with Chapter \d \(.+\), (after \d+ more goals? here|\d chapters on)/.test(w), `${k}: ${w}`); }
+  for (const k of ['airways', 'radar', 'fields', 'loans', 'roads', 'trade', 'statement']) { const w = IC.storyLock(S, k); assert(/: opens with Chapter \d \(.+\), (after \d+ more goals? here|once this chapter’s mandate is met|\d chapters on)/.test(w), `${k}: ${w}`); }
   const n0 = S.camp.cards.length;
   S.av.day.pax = 2400; st.deckT = 0; IC.deckTick(S, 1);
   const c = S.camp.cards.slice(n0).find(x => x.milestone === 2000);
@@ -7639,6 +7639,166 @@ test('research: every modifier a project carries is read by the simulation, has 
   const L = IC.modList(S);
   assert(L.some(m => m.key === 'refuel' && /5% more/.test(m.text) && m.why[0] === 'Refuelling drills I'), 'the airport panel list does not say refuelling and where it came from');
   assert(L.some(m => m.key === 'buildSpeed' && /−5%/.test(m.text)), `a trade-off reads as a gain: ${JSON.stringify(L)}`);
+});
+
+/* ---------- brief 69: the Director's desk ---------- */
+const deskOpen = () => { const o = r4open(); IC.deskTick(o.S, 30); return o; };
+test('desk: a new Career shows the Minister’s mandate with a date, and the goals under it are steps that do not pay', () => {
+  const S = IC.newGame({ seed: 6901, mode: 'story', hour: 7 }); IC.S = S;
+  IC.step(S, 31);
+  const M = IC.deskMandate(S);
+  assert(M && /national airport/.test(M.text) && /April/.test(M.date) && /3 months/.test(M.left), `mandate: ${JSON.stringify(M)}`);
+  assert(M.parts.length === 1 && M.parts[0].id === 'first' && !IC.deskMet(S), 'chapter 1’s mandate is not the first airliner');
+  const { S: T } = deskOpen();
+  // the first landing met the first mandate: a card, the Ministry's thanks in the record, and Chapter 2's mandate with its own date
+  assert(T.camp.cards.some(c => c.title === 'Mandate met'), 'no card for the first mandate');
+  assert(IC.deskWhy(T).some(r => r.why === 'the mandate met' && r.v > 0), 'the mandate met is not in the record');
+  const M2 = IC.deskMandate(T);
+  assert(M2.ch === 1 && /6,000 passengers/.test(M2.text) && M2.parts.length === 2, `chapter 2: ${JSON.stringify(M2)}`);
+  // a step done pays nothing by itself
+  const g = T.story.goals.find(x => x.id === 'approve'), b0 = T.econ.mb.bonus || 0;
+  T.story.cnt.approve = 1; IC.step(T, 1);
+  assert(g.done && (T.econ.mb.bonus || 0) === b0, 'a step paid the Ministry’s reward');
+  // what is locked says the mandate opens it
+  assert(/mandate/.test(IC.storyLock(T, 'radar')), IC.storyLock(T, 'radar'));
+});
+test('desk: a pressure comes as a card with a date and a stake, shows on the desk, and is solved by fixing it', () => {
+  const { S, ap } = deskOpen(), st = S.story;
+  st.events = [];
+  const P = IC.deskNew(S, 'delays', { key: 'delays', ap: ap.id, at: { x: ap.x, y: ap.y } });
+  const e = st.events.find(x => x.title === P.title);
+  assert(e && e.opts.length >= 2 && /If it is left past the date/.test(e.text) && /Refuse/.test(e.opts[e.opts.length - 1].t), 'no card with a stake and a refusal');
+  IC.storyChoose(S, e.id, 0);
+  const L = IC.deskList(S);
+  assert(L.length === 1 && L[0].P === P && /month/.test(L[0].left), `the desk: ${JSON.stringify(L.map(x => x.left))}`);
+  // a good day
+  let out = null; const off = IC.on((S2, t, d) => { if (t === 'pressure' && d.id === P.id && d.outcome !== 'new') out = d.outcome; });
+  S.av.yesterday = { pax: 9000, flights: 40, delays: 1, div: 0 }; st.desk.tT = 0; IC.deskTick(S, 1); off();
+  assert(out === 'solved' && !IC.deskList(S).length, `outcome ${out}`);
+  assert(st.desk.log.some(x => x.outcome === 'solved'), 'not in the desk’s log');
+});
+test('desk: a pressure left past its date carries out its stake; paying, more time and refusing do what they say', () => {
+  const { S, ap } = deskOpen(), st = S.story;
+  st.ch = 2; st.events = [];
+  // near misses that keep coming: the regulator's month never starts, and the fine falls due
+  const P = IC.deskNew(S, 'separation', { key: 'separation', at: { x: ap.x, y: ap.y }, n: 3 }); st.events = [];
+  const pen0 = S.econ.mb.penalty || 0, rec0 = IC.deskRecord(S);
+  for (let i = 0; i < 400 && IC.deskList(S).length; i++) { IC.emit(S, 'lossSep', {}); S.time += P.span / 300; st.desk.tT = 0; IC.deskTick(S, 1); }
+  assert(!IC.deskList(S).length && st.desk.log.some(x => x.title === P.title && x.outcome === 'failed'), 'the pressure did not fail');
+  assert((S.econ.mb.penalty || 0) - pen0 <= -39.9 || S.econ.months.length, 'no fine');
+  assert(IC.deskRecord(S) < rec0 - 6, `the record barely moved: ${rec0.toFixed(1)} → ${IC.deskRecord(S).toFixed(1)}`);
+  // pay: the price said, and closed
+  const Q = IC.deskNew(S, 'stands', { key: 'stands:' + ap.id, ap: ap.id, at: { x: ap.x, y: ap.y } }); st.events = [];
+  const b0 = S.budget;
+  assert(IC.deskAnswer(S, Q.id, 'pay') && Math.abs(b0 - S.budget - Q.pay) < 0.01 && !IC.deskList(S).length, 'paying off did not cost what it said or close it');
+  // more time: half as long again, once
+  const R = IC.deskNew(S, 'terminal', { key: 'terminal:' + ap.id, ap: ap.id, at: { x: ap.x, y: ap.y } }); st.events = [];
+  const due = R.due;
+  assert(IC.deskAnswer(S, R.id, 'more') && Math.abs(R.due - due - R.span / 2) < 1 && !IC.deskAnswer(S, R.id, 'more'), 'more time is not half as long again, once');
+  // refusing: the stake now
+  const sat0 = S.av.airlines.map(a => a.sat);
+  assert(IC.deskAnswer(S, R.id, 'refuse') && st.desk.log.some(x => x.title === R.title && x.outcome === 'refused'), 'refusing did not close it');
+  assert(S.av.airlines.some((a, i) => a.sat < sat0[i]), 'refusing the terminal pressure cost the airlines nothing');
+});
+test('desk: Wait stops when a pressure’s date is close', () => {
+  const { S, ap } = deskOpen(), st = S.story;
+  const P = IC.deskNew(S, 'delays', { key: 'delays', ap: ap.id, at: { x: ap.x, y: ap.y } }); st.events = [];
+  S.wait = { key: 'x', what: 'test', amt: 1e9, speed: IC.WAIT.speed, m0: 99, t0: S.time };
+  S.time = P.due - P.span * 0.2; st.desk.tT = 0; IC.deskTick(S, 1);
+  assert(!S.wait && P.warned, 'Wait ran on with the date close');
+});
+test('desk: the quarterly review grades a smooth quarter better than a late and unsafe one, and says why', () => {
+  const { S } = deskOpen(), d = S.story.desk;
+  const Q = o => Object.assign({ pax: 900000, flights: 6000, late: 120, div: 10, los: 0, acc: 0, dead: 0, days: 90, money: 600, mo: 3, m0: 0 }, o);
+  d.qPrev = Q({ pax: 700000 }); d.q = Q();
+  const good = IC.deskReview(S);
+  d.qPrev = Q(); d.q = Q({ pax: 700000, late: 2400, div: 300, los: 30, acc: 1, dead: 40, money: -600 });
+  const bad = IC.deskReview(S);
+  assert(good.v > 4 && bad.v < -6, `good ${good.v}, bad ${bad.v}`);
+  assert(good.rows.every(r => /^[AB]$/.test(r.g)) && bad.rows.every(r => /^[DE]$/.test(r.g)), JSON.stringify([good.rows, bad.rows]));
+  assert(/late or diverted/.test(bad.rows[1].say) && /accident/.test(bad.rows[2].say), 'the review does not say why');
+  assert(S.camp.cards.filter(c => /The quarter in review/.test(c.title)).length === 2, 'no review card');
+});
+test('desk: a Director who builds nothing misses the mandate, is warned, and is replaced within the first year', () => {
+  const S = IC.newGame({ seed: 6902, mode: 'story', hour: 7, dpm: 0.25 }); IC.S = S;
+  const st = S.story; let warned = null, missed = 0;
+  const off = IC.on((S2, t, d) => { if (t === 'deskLow' && warned == null) warned = S.time; if (t === 'mandate' && !d.met) missed++; });
+  for (let i = 0; i < IC.MO(S, 14) / 8 && !S.over; i++) { IC.step(S, 8); if (i % 30 === 0) for (const e of st.events.slice()) IC.storyChoose(S, e.id, 0); }
+  off();
+  assert(missed >= 2, `missed ${missed} times`);
+  assert(S.over && /new Director/.test(S.over) && warned != null && S.time - warned >= IC.MO(S, 1) - 60, `over: ${S.over}, warned ${warned}`);
+  assert((S.time - 7 * 3600) / IC.MO(S, 1) < 12, `replaced only after ${((S.time - 7 * 3600) / IC.MO(S, 1)).toFixed(1)} months`);
+}, true);
+test('desk: pressures, the mandate and the record survive save and load', () => {
+  const { S, ap } = deskOpen(), st = S.story;
+  const P = IC.deskNew(S, 'terminal', { key: 'terminal:' + ap.id, ap: ap.id, at: { x: ap.x, y: ap.y } });
+  const S2 = IC.loadSave(JSON.stringify(IC.saveGame(S))), d2 = S2.story.desk;
+  assert(d2 && d2.P.length === 1 && d2.P[0].id === P.id && d2.P[0].due === P.due, 'the pressure did not survive');
+  assert(IC.deskMandate(S2).text === IC.deskMandate(S).text && Math.abs(IC.deskRecord(S2) - IC.deskRecord(S)) < 1e-6, 'the mandate or the record changed');
+  const e = S2.story.events.find(x => x.title === P.title);
+  assert(e && e.opts.length >= 2, 'the pressure’s card did not come back');
+  IC.storyChoose(S2, e.id, e.opts.length - 1);
+  assert(!d2.P.length && d2.log.some(x => x.outcome === 'refused'), 'the card’s answer does nothing after a load');
+});
+
+test('desk: Acts II and III have a mandate with a date; met, it is on the record and the act goes on by its story', () => {
+  const { S } = deskOpen(), st = S.story;
+  IC.storyStartAct(S, 2); st.desk.tT = 0; IC.deskTick(S, 1);
+  const M = IC.deskMandate(S);
+  assert(M && M.where === IC.ACTS[2].name && /alert pad/.test(M.text) && M.parts.length === 3 && !M.met, `act II: ${JSON.stringify(M)}`);
+  assert(Math.abs(M.due - st.actT - IC.MO(S, IC.MANDATES_ACT[2].mo)) < 1, 'the date is not counted from the act’s start');
+  let met = null; const off = IC.on((S2, t, d) => { if (t === 'mandate') met = d; });
+  for (const g of st.goals) if (IC.MANDATES_ACT[2].of.includes(g.id)) { g.done = true; g.doneT = S.time; }
+  st.desk.tT = 0; IC.deskTick(S, 1); off();
+  assert(met && met.met && met.act === 2 && IC.deskMandate(S).met && st.act === 2, `met: ${JSON.stringify(met)}, act ${st.act}`);
+  assert(IC.deskWhy(S).some(r => r.why === 'the mandate met'), 'the act’s mandate is not on the record');
+  IC.storyStartAct(S, 3); st.desk.tT = 0; IC.deskTick(S, 1);
+  const M3 = IC.deskMandate(S);
+  assert(M3 && M3.where === IC.ACTS[3].name && /two layers/.test(M3.text) && !M3.met, `act III: ${JSON.stringify(M3)}`);
+  // its date passes: the record and the Prime Minister say so, and a new date is set
+  const rec0 = IC.deskRecord(S), due = M3.due;
+  S.time = due + 60; st.desk.tT = 0; IC.deskTick(S, 1);
+  assert(IC.deskMandate(S).missed === 1 && IC.deskMandate(S).due > due && IC.deskRecord(S) < rec0 - 5, 'a missed act mandate did nothing');
+  // late twice and the cabinet stops setting dates: the penalties do not pile up without end
+  S.time = IC.deskMandate(S).due + 60; st.desk.tT = 0; IC.deskTick(S, 1);
+  const n = st.desk.rec.filter(r => r.v < 0).length;
+  assert(IC.deskMandate(S).lapsed && /overdue/.test(IC.deskMandate(S).dshort), 'a second miss did not end the dates');
+  for (let i = 0; i < 6; i++) { S.time += IC.MO(S, 1); st.desk.tT = 0; IC.deskTick(S, 1); }
+  assert(st.desk.rec.filter(r => r.v < 0).length === n, 'an act mandate kept costing after its dates ended');
+});
+test('desk: after Act I a city beyond every airport writes; an airport near it answers it, and leaving it costs the city', () => {
+  const { S, ap } = deskOpen(), st = S.story;
+  st.act = 2; st.actT = S.time; st.events = [];
+  assert(!IC.PRESSURES.city.find(S, st.desk).some(c => S.byId[c.city] && U.dist(S.byId[c.city], ap) < 1500), 'a city near an airport asked for one');
+  const k = IC.cities(S).filter(c => c.owner === 'us' && !c.capital).sort((a, b) => U.dist(b, ap) - U.dist(a, ap))[0];
+  const P = IC.deskNew(S, 'city', { key: 'city:' + k.id, city: k.id, at: { x: k.x, y: k.y }, n: 9000, size: 'turbo' });
+  const e = st.events.find(x => x.title === P.title);
+  assert(e && /150 km/.test(e.text) && /morale/.test(e.text) && e.opts.some(o => /coaches/.test(o.t)), 'the city’s card does not say what it wants and what it costs');
+  // left: the city's morale falls
+  const m0 = k.morale; S.time = P.due + 1; st.desk.tT = 0; IC.deskTick(S, 1);
+  assert(k.morale < m0 && st.desk.log.some(x => x.title === P.title && x.outcome === 'failed'), 'leaving the city cost nothing');
+  // an airport within 150 km answers the next one
+  const Q = IC.deskNew(S, 'city', { key: 'city:' + k.id + 'b', city: k.id, at: { x: k.x, y: k.y }, n: 9000, size: 'turbo' }); st.events = [];
+  const x0 = ap.x, y0 = ap.y; ap.x = k.x + 300; ap.y = k.y;
+  st.desk.tT = 0; IC.deskTick(S, 1); ap.x = x0; ap.y = y0;
+  assert(st.desk.log.some(x => x.title === Q.title && x.outcome === 'solved'), 'an airport near the city did not answer it');
+});
+test('desk: incidents keep happening at one airport and the insurers write; a clean month answers them', () => {
+  const { S, ap } = deskOpen(), st = S.story, d = st.desk;
+  for (let i = 0; i < 2; i++) IC.emit(S, 'aptIncident', { ap, inc: { kind: 'debris' } });
+  assert(!IC.PRESSURES.incidents.find(S, d).length, 'two incidents were already a pressure');
+  IC.emit(S, 'aptIncident', { ap, inc: { kind: 'spill' } });
+  const c = IC.PRESSURES.incidents.find(S, d)[0];
+  assert(c && c.ap === ap.id && c.n === 3, `found: ${JSON.stringify(c)}`);
+  const P = IC.deskNew(S, 'incidents', c); st.events = [];
+  assert(/insurers/.test(P.text) && /premium/.test(P.stake), 'the pressure does not say who and what');
+  // one more incident inside the month keeps it open; then a clean month
+  S.time += IC.MO(S, 0.3); IC.emit(S, 'aptIncident', { ap, inc: { kind: 'scrape' } });
+  S.time += IC.MO(S, 0.8); d.tT = 0; IC.deskTick(S, 1);
+  assert(d.P.includes(P), 'an incident inside the month did not keep it open');
+  const P2 = IC.deskNew(S, 'incidents', Object.assign({}, c, { key: c.key + 'b' })); st.events = [];
+  S.time += IC.MO(S, 1.05); d.tT = 0; IC.deskTick(S, 1);
+  assert(d.log.some(x => x.title === P2.title && x.outcome === 'solved'), 'a clean month did not answer it');
 });
 
 /* ---------- run ---------- */
