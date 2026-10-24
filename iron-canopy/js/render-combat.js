@@ -397,7 +397,7 @@ function drawUnit(S, u, px, now) {
     if (ly != null) label(txt, u.x, ly, px, busy ? C.amber : C.muted, 9.5);
   }
   if (sel) brackets(u.x, u.y, 17 * px, px);
-  if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.prio.px, u.prio.py); ctx.stroke(); ctx.setLineDash([]); }
+  if (u.prio && !u.prio.dead && u.prio.det) { ctx.strokeStyle = 'rgba(242,180,65,0.5)'; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 4 * px]); const tp = IC.trackAt(S, u.prio); ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(tp.x, tp.y); ctx.stroke(); ctx.setLineDash([]); }
 }
 
 function drawWrecks(S, px, now) {
@@ -465,14 +465,16 @@ function drawImpacts(S, px, now) {
     ctx.strokeStyle = `rgba(255,91,79,${0.35 + 0.4 * p})`; ctx.lineWidth = 1.6 * px;
     ctx.beginPath(); ctx.ellipse(ix, iy, 16 * px + 25, 10 * px + 15, 0, 0, 7); ctx.stroke();
     ctx.setLineDash([4 * px, 5 * px]); ctx.strokeStyle = 'rgba(255,91,79,0.3)';
-    ctx.beginPath(); ctx.moveTo(t.px, t.py); ctx.lineTo(ix, iy); ctx.stroke(); ctx.setLineDash([]);
+    const tp = IC.trackAt(S, t); ctx.beginPath(); ctx.moveTo(tp.x, tp.y); ctx.lineTo(ix, iy); ctx.stroke(); ctx.setLineDash([]);
     if (cam.z > 0.15) label(`IMPACT ${U.dur(IC.timeToImpact(t))}`, ix, iy - 16 * px - 16, px, C.hostile, 9, 'center', 700);
   }
 }
 
+const VIEW = {};
 function drawTrack(S, t, px, now) {
   if (t.dead) return;
-  if (!t.held) {
+  const v = IC.trackView(S, t, VIEW);
+  if (!v) {
     const gone = S.time - (t.pt || 0) - IC.coastT(t);
     if (t.tn && gone < IC.TRACK.lostShow && !t.d.civil) {
       ctx.globalAlpha = 0.45 * (1 - gone / IC.TRACK.lostShow); ctx.strokeStyle = C.muted; ctx.lineWidth = 1 * px; ctx.setLineDash([2 * px, 3 * px]);
@@ -482,20 +484,21 @@ function drawTrack(S, t, px, now) {
     }
     return;
   }
-  if (!inView(t.px, t.py, 80)) return;
+  if (!inView(v.x, v.y, 80)) return;
   if (t.border && !(S.sel && S.sel.ref === t) && cam.z < 0.1) return;
-  const aff = t.decoyKnown ? 'D' : t.aff || 'U';
-  // a track between plots, or coasting after contact is lost, stays steady: dimmer, with its uncertainty drawn
-  const coasting = !t.det;
-  const blink = coasting ? 0.6 : 1;
-  const x = t.px, y = t.py;
-  if (t.trail && t.trail.length > 1) {
+  const aff = v.aff, klass = v.klass, vx = v.vx, vy = v.vy;
+  // a track between plots, or coasting after contact is lost, stays steady: dimmer, with its uncertainty drawn;
+  // one we have identified (or everything, on the See everything layer) is drawn solid where it is, fading at the end
+  const coasting = !t.det && !v.steady;
+  const blink = (coasting ? 0.6 : 1) * v.k;
+  const x = v.x, y = v.y;
+  if (t.trail && t.trail.length > 1 && !v.steady) {
     const rgb = t.type === 'ga' && aff !== 'H' && aff !== 'S' ? '201,176,255' : { H: '255,120,100', S: '255,170,90', A: '127,232,176', N: '127,232,176' }[aff] || '242,209,74';
     for (let i = 0; i < t.trail.length; i++) { const p = t.trail[i]; ctx.fillStyle = `rgba(${rgb},${0.08 + i * 0.05})`; ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 * px, 0, 7); ctx.fill(); }
   }
   if (coasting && IC.drawTrackUnc) IC.drawTrackUnc(ctx, S, t, aff, px);
-  if (t.blip > 0 && S.cfg.radarFx !== 'off') { const full = S.cfg.radarFx === 'full'; ctx.fillStyle = `rgba(160,230,255,${t.blip * (full ? 0.35 : 0.12)})`; ctx.beginPath(); ctx.arc(x, y, (full ? 6 + 10 * (1 - t.blip) : 5 + 3 * (1 - t.blip)) * px, 0, 7); ctx.fill(); }
-  const alt = t.altKnown ? t.alt : null;
+  if (t.blip > 0 && t.det && S.cfg.radarFx !== 'off') { const full = S.cfg.radarFx === 'full'; ctx.fillStyle = `rgba(160,230,255,${t.blip * (full ? 0.35 : 0.12)})`; ctx.beginPath(); ctx.arc(x, y, (full ? 6 + 10 * (1 - t.blip) : 5 + 3 * (1 - t.blip)) * px, 0, 7); ctx.fill(); }
+  const alt = t.altKnown || v.steady ? t.alt : null;
   if (alt != null && t.d.cls !== 'bal') shadow(x, y, t.alt, px, t.d.cls === 'air' ? 5 : 3);
   // an airliner off its route, or in an emergency, flashes until someone deals with it
   if (t.offFlag || t.emergency) {
@@ -505,22 +508,22 @@ function drawTrack(S, t, px, now) {
     if (cam.z > 0.06) label(em ? 'MAYDAY' : t.jammed ? 'OFF ROUTE · GPS' : 'OFF ROUTE', x, y + 20 * px, px, em ? C.hostile : C.amber, 8.5, 'center', 700);
   }
   ctx.globalAlpha = blink;
-  const close = cam.z > 0.9 && t.klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
+  const close = cam.z > 0.9 && klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
   // (drones are slow and small: drawn larger, with a longer heading line, so a swarm reads at a glance)
   const s = px * (t.d.cls === 'air' ? 1.3 : t.d.cls === 'drone' && aff === 'H' ? 1.4 : 1.05);
   let col;
-  const mk = close && cam.z > 2.5 && IC.modelTop ? IC.modelOfThreat(t) : null;
+  const mk = close && cam.z > 2.5 && IC.modelTop ? IC.modelOfThreat(t, v.steady) : null;
   if (mk) {
     // close in, a track we can class is drawn as what it is; an unknown or suspect one keeps its identity colour as an outline
     col = AIRCOL[aff];
-    IC.modelTop(ctx, mk, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), { livery: t.livery, shadow: Math.min(3, t.alt * 0.25), minPx: 12, outline: aff === 'S' || aff === 'U' ? col : null, now });
+    IC.modelTop(ctx, mk, x, y, Math.atan2(vy, vx), { livery: t.livery, shadow: Math.min(3, t.alt * 0.25), minPx: 12, outline: aff === 'S' || aff === 'U' ? col : null, now });
   } else if (close && t.acType && cam.z > 2.5 && (aff === 'A' || aff === 'N')) {
     col = AIRCOL[aff];
-    IC.drawPlane(ctx, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), t.acType, t.livery, { shadow: Math.min(3, t.alt * 0.25), minPx: 12 });
+    IC.drawPlane(ctx, x, y, Math.atan2(vy, vx), t.acType, t.livery, { shadow: Math.min(3, t.alt * 0.25), minPx: 12 });
   } else if (close) {
     col = AIRCOL[aff];
-    const kind = t.klass === 'heli' ? 'heli' : t.type === 'esj' ? 'drone' : t.klass === 'bomber' || t.klass === 'jammer' ? 'bomber' : t.klass === 'airliner' ? 'airliner' : t.klass === 'light' ? 'light' : t.klass === 'drone' ? 'drone' : t.klass === 'cm' ? 'cm' : 'fighter';
-    silhouette(ctx, kind, x, y, Math.atan2(t.pvy || t.vy, t.pvx || t.vx), Math.max(0.35 * (kind === 'airliner' || kind === 'bomber' ? 1.6 : 1), px * 1.3), col, 'rgba(0,0,0,0.7)');
+    const kind = klass === 'heli' ? 'heli' : t.type === 'esj' ? 'drone' : klass === 'bomber' || klass === 'jammer' ? 'bomber' : klass === 'airliner' ? 'airliner' : klass === 'light' ? 'light' : klass === 'drone' ? 'drone' : klass === 'cm' ? 'cm' : 'fighter';
+    silhouette(ctx, kind, x, y, Math.atan2(vy, vx), Math.max(0.35 * (kind === 'airliner' || kind === 'bomber' ? 1.6 : 1), px * 1.3), col, 'rgba(0,0,0,0.7)');
   } else if (t.type === 'ga' && aff !== 'H' && aff !== 'S') {
     // light aircraft: a small lilac cross, never the airliner frame
     col = C.light; ctx.strokeStyle = col; ctx.lineWidth = 1.5 * px;
@@ -529,29 +532,30 @@ function drawTrack(S, t, px, now) {
   } else {
     col = airFrame(ctx, aff, x, y, s);
     // what it is, once we know: the type for a hostile, the class from type recognition, the arc for a ballistic missile
-    const gk = aff === 'D' ? null : aff === 'H' ? IC.threatGlyph(t.type) : t.klass ? IC.threatGlyph(null, t.klass) : t.d.cls === 'bal' || t.d.cls === 'hgv' ? IC.threatGlyph(t.type) : null;
+    const gk = aff === 'D' ? null : aff === 'H' ? IC.threatGlyph(t.type) : klass ? IC.threatGlyph(null, klass) : t.d.cls === 'bal' || t.d.cls === 'hgv' ? IC.threatGlyph(t.type) : null;
     if (gk) threatGlyph(ctx, gk, x, y - 2.4 * s, s * 1.1, aff === 'H' ? '#ffe1dc' : '#ffe8c4');
     if (t.d.jam && t.jamming) { const p = (now * 2 + t.seed) % 1; ctx.strokeStyle = `rgba(200,150,255,${1 - p})`; ctx.lineWidth = 1.2 * px; ctx.beginPath(); ctx.arc(x, y, (9 + p * 12) * px, 0, 7); ctx.stroke(); }
   }
-  const sp = Math.hypot(t.pvx || t.vx, t.pvy || t.vy) || 1;
+  const sp = Math.hypot(vx, vy) || 1;
   const Ld = t.d.cls === 'drone' ? Math.max(24 * px, Math.min(55 * px, sp * 140)) : Math.min(55 * px, sp * 140);
   ctx.strokeStyle = col; ctx.lineWidth = 1.4 * px;
-  ctx.globalAlpha = 0.6 * blink; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (t.pvx || t.vx) / sp * Ld, y + (t.pvy || t.vy) / sp * Ld); ctx.stroke();
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = 0.6 * blink; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + vx / sp * Ld, y + vy / sp * Ld); ctx.stroke();
+  ctx.globalAlpha = v.k;
   if (t.spoofed) { ctx.strokeStyle = 'rgba(92,200,255,0.7)'; ctx.setLineDash([2 * px, 3 * px]); ctx.beginPath(); ctx.arc(x, y, 12 * px, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
   if (t.satOnly) { ctx.strokeStyle = 'rgba(242,209,74,0.5)'; ctx.beginPath(); ctx.arc(x, y, 14 * px, 0, 7); ctx.stroke(); }
   const selT = S.sel && S.sel.ref === t;
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
-  // a raid carries one label, its leader's (render-air.js boxes the group)
-  if (show && S.layers.labels && !(t.grp && t.grp.lead !== t && !selT)) {
+  // a raid carries one label, its leader's (render-air.js boxes the group); one radar no longer holds is shown bare
+  if (show && S.layers.labels && (t.held || selT) && !(t.grp && t.grp.lead !== t && !selT)) {
     const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
     const altS = alt == null ? '---' : IC.tagAlt(t);
-    label(`${t.tn} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
+    label(`${t.tn || '—'} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
   }
   if (selT) {
     brackets(x, y, 14 * px, px);
     if (t.route && t.aff === 'H') { ctx.setLineDash([3 * px, 5 * px]); ctx.strokeStyle = 'rgba(255,91,79,0.35)'; ctx.lineWidth = 1 * px; ctx.beginPath(); ctx.moveTo(x, y); for (const p of t.route) ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]); }
   }
+  ctx.globalAlpha = 1;
 }
 
 function drawAir(S, a, px, now) {

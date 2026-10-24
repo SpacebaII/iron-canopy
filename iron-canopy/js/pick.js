@@ -8,7 +8,9 @@ IC.pickAt = function (S, p, z) {
   const px = 1 / z;
   let best = null, bd = 1e9;
   const consider = (kind, ref, x, y, r) => { const d = U.dxy(p.x, p.y, x, y); if (d < Math.max(16 * px, r || 0) && d < bd) { bd = d; best = { kind, ref }; } };
-  for (const t of S.threats) if (t.held && !t.dead) consider('track', t, t.px, t.py);
+  // a track is clicked where the map draws it (an identified one stays there after radar loses it)
+  const tv = {};
+  for (const t of S.threats) if (IC.trackView(S, t, tv)) consider('track', t, tv.x, tv.y);
   if (best) return best;
   for (const a of S.air) consider('air', a, a.x, a.y);
   if (best) return best;

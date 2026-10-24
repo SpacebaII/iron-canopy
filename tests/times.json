@@ -390,5 +390,6 @@
  "research: exclusive projects rule each other out, and nothing done is lost": 6.5,
  "research: Wait does not finish research faster than play": 7.1,
  "research: slots grow from two to four": 6.3,
- "research: every modifier a project carries is read by the simulation, has words and shows in a panel": 0.1
+ "research: every modifier a project carries is read by the simulation, has words and shows in a panel": 0.1,
+ "air war: an identified enemy stays on the map where it is after radar loses it, then fades; See everything shows the rest": 5
 }
