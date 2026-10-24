@@ -590,11 +590,12 @@ const SCENES = {
     window.__perf = { mapOnly, liveSmall: small, liveUpMs: +L.upMs.toFixed(2), liveDrawMs: +L.drawMs.toFixed(2), movers: L.movers.length, calls: L.renderer.info.render.calls, tris: L.renderer.info.render.triangles };
     S.paused = true;`
 };
+Object.assign(SCENES, require('./cut-scenes.js'));
 
 (async () => {
   const args = process.argv.slice(2), oi = args.indexOf('--out'), outDir = oi >= 0 ? args[oi + 1] : 'after';
   const want = args.filter((a, i) => !a.startsWith('--') && !(oi >= 0 && i === oi + 1));
-  const names = want.length ? want : Object.keys(SCENES).filter(k => !/^m-/.test(k) && !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k) && !/^clip-/.test(k));
+  const names = want.length === 1 && want[0] === 'cut' ? Object.keys(SCENES).filter(k => /^cut-/.test(k)) : want.length ? want : Object.keys(SCENES).filter(k => !/^m-/.test(k) && !/^cut-/.test(k) && !/^frames/.test(k) && k !== 'video' && k !== 'movie' && !/^flicker/.test(k) && !/^clip-/.test(k));
   const opt = process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {};
   const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
   const gpu = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -615,7 +616,7 @@ const SCENES = {
     if (process.env.VIDEO_MS) await page.addInitScript(ms => { window.VIDEO_MS = ms; }, process.env.VIDEO_MS);
     let ff = null;
     const clips = new Set();
-    if (/^m-/.test(name)) {
+    if (/^(m|cut)-/.test(name)) {
       await page.exposeFunction('__frame', (n, b64) => { const f = path.join(dir, `3d-${n}.mjpeg`); if (!clips.has(n)) { clips.add(n); fs.writeFileSync(f, ''); } fs.appendFileSync(f, Buffer.from(b64, 'base64')); });
       await page.exposeFunction('__still', (n, b64) => { const out = path.join(dir, `3d-${n}.jpg`); fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('saved', out); });
       for (const k of ['CLIPS', 'FRAMES', 'QUALITY', 'HOUR', 'WX', 'CAM', 'K', 'WHAT', 'NAME', 'CULPRITS', 'PADPX']) if (process.env[k]) await page.addInitScript(([n, v]) => { window[n] = v; }, [k, process.env[k]]);

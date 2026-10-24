@@ -172,7 +172,7 @@ IC.techCivil = t => IC.TECH_CIVIL.includes(t.cat);
 IC.RES_PACE = 1;   // multiplies every project's minutes of play (the balance lever)
 /* research slots: two, a third from the Research office, a fourth when Act II begins (the Career) */
 IC.techSlots = S => 2 + (S.tech.done.has('a_lab') ? 1 : 0) + (S.story && S.story.act >= 2 ? 1 : 0);
-IC.techNextSlot = S => !S.tech.done.has('a_lab') ? 'The Research office (Airlines and cargo) opens a third slot.' : S.story && S.story.act < 2 ? 'A fourth slot opens when Act II begins.' : '';
+IC.techNextSlot = S => !S.tech.done.has('a_lab') ? 'The Research office (Airlines and cargo) opens a third slot.' : S.story && S.story.act < 2 ? 'A fourth slot opens when Part Two begins.' : '';
 /* seconds of play a project takes in the Career */
 IC.techPlay = t => (t.pm || U.clamp(Math.round(t.time / 300), 6, 30)) * 60 * IC.RES_PACE;
 /* game seconds it takes at the speed the game runs now (the Career), or on the live clock */
@@ -190,7 +190,7 @@ IC.techWhen = (S, t, f) => S.mode === 'story' && S.story ? U.date(S.time + (f ==
 IC.techLaneOpen = (S, cat) => !S.story || IC.TECH_CIVIL.includes(cat) || S.story.act >= 3;
 /* why a project cannot be started now, '' when it can */
 IC.techClosed = function (S, t) {
-  if (!IC.techLaneOpen(S, t.cat)) return 'Opens with Act III';
+  if (!IC.techLaneOpen(S, t.cat)) return 'Opens with Part Three';
   const x = t.excl && IC.techById(t.excl);
   if (x && (S.tech.done.has(x.id) || IC.researching(S, x.id))) return `Ruled out by ${x.name}`;
   return '';

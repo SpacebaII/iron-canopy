@@ -313,10 +313,12 @@ function staff() {
   const log = st.log.slice().reverse().slice(0, 12).map(l => `<div class="li"><b>${esc(l.title)}</b><small>${U.clock(l.t)} · ${esc(l.choice)}</small></div>`).join('');
   const docs = Object.keys(st.doc).filter(k => st.doc[k]).map(k => `<span class="chip">${esc({ transparency: 'Transparency', quiet: 'Discretion', forward: 'Forward defence', depth: 'Defence in depth', cheapGuns: 'Airport guns' }[k] || k)}</span>`).join('');
   // the road ahead: every act, what it opened or will open
-  const acts = [1, 2, 3, 4].map(n => {
+  const acts = [1, 2, 3, 4, 5].map(n => {
     const cls = n < st.act ? 'done' : n === st.act ? 'cur' : n === st.act + 1 ? 'next' : '';
     const opens = actOpens(n);
-    return `<div class="actstep ${cls}"><small>${IC.ACTS[n].name}${n < st.act ? ' · done' : n === st.act ? ' · now' : ''}</small><b>${esc(IC.ACTS[n].title)}</b><span>${esc(IC.ACTS[n].role)}</span>
+    // (the story's acts inside each part: the one now in bold)
+    const sa = IC.STORY_ACTS.filter(a => a.part === n).map(a => a.n === IC.storyPartNow(S) ? `<b>${a.r} ${esc(a.title)}</b>` : `${a.r} ${esc(a.title)}`).join(' · ');
+    return `<div class="actstep ${cls}"><small>${IC.ACTS[n].name}${n < st.act ? ' · done' : n === st.act ? ' · now' : ''}</small><b>${esc(IC.ACTS[n].title)}</b><span>${esc(IC.ACTS[n].role)}</span><span class="sacts">Acts ${sa}</span>
       ${n === st.act ? `<div class="bars one"><span>Goals</span>${bar(done / Math.max(1, st.goals.length), 'var(--amber)')}<span>${done}/${st.goals.length}</span></div>` : ''}
       ${opens.length ? `<ul class="opens">${opens.map(([k, t]) => `<li class="${k}">${n > st.act ? ui.icon('lock', 'sm') : ''}${esc(t)}</li>`).join('')}</ul>` : ''}</div>`;
   }).join('');
@@ -326,14 +328,14 @@ function staff() {
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)]])}<p class="hint">Finish each chapter's goals (the Next goal line, top left) to move on. The story also moves on by itself if you take too long.</p></div>
     ${agenda()}
-    ${chapters ? `<div class="card wide"><h3>Act I · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
+    ${chapters ? `<div class="card wide"><h3>Part One · ${esc(A.title)}<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card wide"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
-  const nextHow = st.act < 4 ? `<p class="hint">Finish this act's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
+  const nextHow = st.act < 5 ? `<p class="hint">Finish this part's goals (in the panel on the left) to move to ${esc(IC.ACTS[st.act + 1].name)}. The story also moves on by itself if you take too long.</p>` : '';
   return `<div class="card wide"><h3>Career<em>${esc(st.role)}</em></h3><div class="acts4">${acts}</div>${nextHow}
       <div class="bars"><span>Confidence</span>${bar(st.standing / 100)}<span>${Math.round(st.standing)}</span><span>Tension</span>${bar((S.tension || 0) / 100, 'var(--hostile)')}<span>${Math.round(S.tension || 0)}</span></div>
       ${kv([['Standing', esc(IC.storyDismissal(S).text)], ['Command points (CP)', `<b class="amber">${st.cp}</b> · earned from ${st.act === 1 ? 'chapters' : 'goals'} and hard decisions`], ['Doctrine', docs || '<span class="muted">none yet</span>']])}</div>
     ${agenda()}
-    ${chapters ? `<div class="card"><h3>Act I<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
+    ${chapters ? `<div class="card"><h3>Part One<em>chapter ${ch.n + 1} of ${ch.of}</em></h3><div class="list">${chapters}</div></div>` : ''}
     <div class="card"><h3>Delegates<em>${U.money(IC.staffCost(S))}/h</em></h3><div class="list">${dels}</div><p class="hint">Delegates do routine work for you, for a running cost.</p></div>
     <div class="card"><h3>Requests<em>spend command points</em></h3><div class="list">${reqs}</div></div>
     <div class="card"><h3>Decisions</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">None yet.</p>'}</div>`;
@@ -346,7 +348,7 @@ function agenda() {
   const A = IC.agendaState(S), st = S.story; if (!A) return '';
   const cur = A.cur && IC.agendaById(A.cur.id), boss = st.act === 1 ? 'Minister' : 'cabinet';
   const slot = cur ? `<div class="slot"><small>Before the ${boss}</small><b>${esc(cur.name)}</b><span>${minsOf(IC.agendaMin(cur) - A.cur.p)} left · passes about ${esc(U.date(S.time + IC.agendaLeft(S, cur.id), S))} at this speed</span><div class="prog"><i style="width:${Math.min(100, A.cur.p / IC.agendaMin(cur) * 100)}%"></i></div></div>`
-    : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
+    : `<div class="slot idle"><small>Before the ${boss}</small><b>${st.act >= 5 ? 'Closed for the peace' : st.act >= 4 ? 'Closed for the war' : 'Nothing'}</b><span>${st.act >= 4 ? 'What was passed stays.' : 'Pick a policy below.'}</span></div>`;
   const words = p => {
     const done = A.done.has(p.id), now = cur === p, why = IC.agendaWhy(S, p.id), shut = A.closed.has(p.id);
     const cls = done ? 'done' : now ? 'cur' : shut ? 'locked shut' : !why ? 'open' : 'locked';
@@ -677,7 +679,7 @@ function research() {
   const lanes = cats.map(c => {
     const ts = IC.TECH.filter(t => t.cat === c.id);
     if (!ts.length) return '';
-    if (!IC.techLaneOpen(S, c.id)) return `<div class="lane shut"><div class="lname"><b>${esc(c.name)}</b><small>${ts.length} projects</small></div><p class="hint">Opens with Act III.</p></div>`;
+    if (!IC.techLaneOpen(S, c.id)) return `<div class="lane shut"><div class="lname"><b>${esc(c.name)}</b><small>${ts.length} projects</small></div><p class="hint">Opens with Part Three.</p></div>`;
     const n = ts.filter(t => T.done.has(t.id)).length;
     const cols = Array.from({ length: maxD + 1 }, (_, d) => `<div class="tcol">${ts.filter(t => depthOf(t, memo) === d).map(node).join('')}</div>`).join('');
     return `<div class="lane"><div class="lname"><b>${esc(c.name)}</b><small>${n} of ${ts.length}</small></div>${cols}</div>`;
@@ -708,8 +710,30 @@ function journal() {
   const F = { all: () => true, alerts: l => l.kind === 'leak' || l.kind === 'warn', combat: l => ['SPLASH', 'IMPACT', 'LAUNCH', 'FIRE', 'BDA', 'HIT', 'DESTROYED', 'BURN', 'FRIED', 'HPM', 'LOST', 'MISS'].includes(l.tag), id: l => l.kind === 'id' || l.tag === 'VID' || l.tag === 'SUSPECT' || l.tag === 'DECEPTION', logistics: l => ['KEEP STOCKED', 'CONVOY', 'LOGI', 'HELI', 'LIFT', 'ORDER', 'DELIVERED', 'IMPORT', 'ENG', 'REPAIR'].includes(l.tag), staff: l => ['CDS', 'AD', 'LOG', 'INT', 'AIR', 'ENG', 'INS', 'CMD'].includes(l.tag) };
   const f = F[ui.logFilter] || F.all;
   const logs = S.logs.filter(f).slice(0, 250);
-  return `<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
+  // (brief 70) in the Career the Journal has the story's pages too: what you chose and what came of it, the people
+  const st = S.story, tabs = st && st.cast ? pages('journal', [['log', 'Log'], ['story', 'Your story', '', 'The choices you made, what came of them, and what the story remembers'], ['people', 'People', '', 'Who you work with, and how they feel about you']]) : '';
+  if (tabs && ui.sub.journal === 'story') return tabs + storyPage();
+  if (tabs && ui.sub.journal === 'people') return tabs + peoplePage();
+  return `${tabs}<div class="card wide"><h3>Journal<em>${seg('logf', ui.logFilter, [['all', 'All'], ['alerts', 'Alerts'], ['combat', 'Combat'], ['id', 'Identification'], ['logistics', 'Logistics'], ['staff', 'Staff']])}</em></h3>
     <ol class="log${S.mode === 'story' ? ' cal' : ''}">${logs.map(l => `<li class="${l.at ? 'click' : ''}" ${l.at ? `data-act="logjump" data-x="${l.at.x}" data-y="${l.at.y}"` : ''}><time title="${U.clock(l.t)}">${S.mode === 'story' ? U.clock(l.t) : U.hhmm(l.t)}</time><span class="tg t-${l.kind}">${esc(l.tag)}</span><span>${esc(l.msg)}</span>${(l.at || l.rp) && IC.replayOpen && S.time - l.t < IC.REC.span ? `<button class="btn sm" data-act="replay" data-x="${(l.at || l.rp).x}" data-y="${(l.at || l.rp).y}" data-t="${l.t}" title="Watch it again in 3D, from any angle">Replay</button>` : ''}</li>`).join('')}</ol></div>`;
+}
+
+/* (brief 70) Your story: each thread met so far, the choices with their dates, how it ended; then the flags in words */
+function storyPage() {
+  const st = S.story, T = IC.storyThreads(S), F = IC.foeOf(S), over = S.over ? IC.epilogue(S) : null;
+  const flags = [...st.flags].map(([k, v]) => IC.FLAG_WORDS[k] ? IC.FLAG_WORDS[k](v) : '').filter(Boolean);
+  const thread = t => `<div class="card story-t"><h3>${esc(t.name)}<em>${t.open ? 'still open' : 'ended'}</em></h3><div class="who">${IC.portrait(IC.castWho(S, t.who), 40)}<span>${esc(IC.ADVISORS[IC.castWho(S, t.who)].name)}</span></div>
+    <ol class="choices">${t.seen.map(x => `<li><time>${esc(U.date(x.t))}</time><b>${esc(x.title)}</b><span>${esc(x.choice)}</span></li>`).join('')}</ol>${t.did ? `<p>${esc(t.did)} ${esc(t.came)}</p>` : ''}</div>`;
+  return `${over ? `<div class="card wide epi"><h3>${esc(over.title)}<em>the end</em></h3><p class="lead">${esc(over.text)}</p>${over.paras.map(p => `<p><b>${esc(p.head)}.</b> ${esc(p.text)}</p>`).join('')}<p class="by">${esc(over.by)}</p></div>` : ''}
+    <div class="card wide"><h3>Across the border<em>what we know</em></h3><p>${st.act >= 2 ? `${esc(F.name)} ${esc(F.how)}. ${esc(IC.GRIEVANCES[st.grievance].words(S))}` : `The ${esc(S.world.full.A)} has been quiet for years.`}${st.road ? ` ${esc(IC.ROADS_TO_WAR[st.road].words(S))}` : ''}</p></div>
+    ${T.length ? T.map(thread).join('') : '<div class="card wide"><p class="hint">Nothing yet. The people you work with will come to you with what they want, and what you choose is remembered here.</p></div>'}
+    ${flags.length ? `<div class="card wide"><h3>What the story remembers</h3><ul class="flags">${flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}`;
+}
+/* the people: their face, role, how they feel about you, and the last thing they said */
+function peoplePage() {
+  const st = S.story, keys = Object.keys(IC.CAST).filter(k => IC.CAST[k].bio && (k !== 'FINCH' || IC.castWho(S, 'MIN') === 'FINCH') && (k !== 'MIN' || IC.castWho(S, 'MIN') === 'MIN') && (st.cast[k].met || ['MIN', 'APT'].includes(k)));
+  return keys.map(k => { const c = st.cast[k], A = IC.ADVISORS[k], w = IC.trustWord(c.trust), L = IC.castLast(S, k);
+    return `<div class="card person"><div class="ph">${IC.portrait(k, 64)}<div><b>${esc(A.name)}</b><span>${esc(A.role)}</span><em class="tw ${w}">${w}</em></div></div><p>${esc(IC.CAST[k].bio)}</p>${L ? `<p class="said">“${esc(L.text.length > 180 ? L.text.slice(0, 177) + '…' : L.text)}”</p>` : ''}</div>`; }).join('');
 }
 
 /* ---------- reference ---------- */

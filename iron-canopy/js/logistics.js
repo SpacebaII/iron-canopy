@@ -38,7 +38,7 @@ IC.DEPOT_PRI = {
 IC.FLOORS = [0, 50, 150, 400];
 IC.QW_TAX_SHARE = 0.75;   // Quick war: the share of city and trade taxes that goes to the air defence
 IC.QW_GRANT = 300;        // Quick war: the defence ministry's grant an hour, for a country of sixty cities
-IC.STORY_TAX = [0, 0, 0.01, 0.15, 1];   // Career: the share of city and trade taxes by act (Acts II and III run for years)
+IC.STORY_TAX = [0, 0, 0.01, 0.15, 1, 0.25];   // Career: the share of city and trade taxes by act (Acts II and III run for years; the peace keeps a quarter)
 const truckCap = S => IC.hasTech(S, 'l_trucks') ? 18 : 12;   // weight one lorry carries
 const kmhK = S => IC.hasTech(S, 'l_trucks') ? 1.1 : 1;
 
@@ -684,7 +684,7 @@ IC.economy = function (S, dt) {
   let trade = IC.tradeTax(S) * mob.tax;
   let aidRate = S.support * 0.12, base = 25;
   // in the story the budget grows with the job: a civil aviation authority, then a defence command
-  if (S.story) { const k = IC.STORY_TAX[S.story.act] || 0; base = S.story.grant * IC.mod(S, 'grant'); tax *= k; trade *= k; aidRate *= S.story.act >= 4 ? 1 : 0; }
+  if (S.story) { const k = IC.STORY_TAX[S.story.act] || 0; base = S.story.grant * IC.mod(S, 'grant'); tax *= k; trade *= k; aidRate *= S.story.act === 4 ? 1 : 0; }
   // Quick war: the air defence gets its share of the cities' taxes; the rest runs the country
   else if (S.mode === 'campaign') { base = IC.QW_GRANT; tax *= IC.QW_TAX_SHARE; trade *= IC.QW_TAX_SHARE; }
   let upAD = 0;
@@ -730,7 +730,7 @@ IC.economy = function (S, dt) {
     }
   }
   S.aidT = S.aidT == null ? S.time + U.rand(10, 16) * 3600 : S.aidT;
-  if (S.time > S.aidT && (!S.story || S.story.act >= 4)) {
+  if (S.time > S.aidT && (!S.story || S.story.act === 4)) {
     S.aidT = S.time + U.rand(10, 18) * 3600;
     const v = Math.round(60 + S.support * 3 * U.rand(0.7, 1.2));
     S.budget += v; IC.econBook(S, 'oneoff', v);
