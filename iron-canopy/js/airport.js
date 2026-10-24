@@ -217,18 +217,21 @@ function standsFor(ap, p) {
 }
 
 /* stands along the edges of an apron drawn as an outline: every edge that a terminal or cargo shed stands behind gets
-   a row, noses to the building, as big as fit inside the outline (up to the apron's largest size) */
+   a row, noses to the building, as big as fit inside the outline (up to the apron's largest size). An outline with
+   no building along it (a remote apron, brief 61) takes its rows along the edges no taxiway comes in by */
 function polyStands(ap, p) {
-  const sh = IC.partShape(ap, p), P = sh.poly, out = [], inside = q => U.inPoly(q.x, q.y, P.map(v => [v.x, v.y]));
+  const sh = IC.partShape(ap, p), P = sh.poly, out = [], PA = P.map(v => [v.x, v.y]), inside = q => U.inPoly(q.x, q.y, PA);
   const ccw = IC.polyArea ? P.reduce((s, v, i) => { const w = P[(i + 1) % P.length]; return s + (v.x * w.y - w.x * v.y); }, 0) > 0 : true;
   const sizes = ['l', 'm', 's'].filter(k => !p.smax || 'sml'.indexOf(k) <= 'sml'.indexOf(p.smax));
+  const edge = i => { const a = P[i], b = P[(i + 1) % P.length], L = U.dist(a, b), ex = (b.x - a.x) / (L || 1), ey = (b.y - a.y) / (L || 1); return { a, b, L, ex, ey, nx: ccw ? ey : -ey, ny: ccw ? -ex : ex }; };
+  const termAt = E => { const mid = { x: (E.a.x + E.b.x) / 2 + E.nx * 0.05, y: (E.a.y + E.b.y) / 2 + E.ny * 0.05 }; return ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, mid) < 0.3); };
+  const anyTerm = P.some((_, i) => edge(i).L >= IC.STAND.s.w && termAt(edge(i)));
+  const ins = Object.values(ap.nodes || {}).filter(n => onAp(n, p.id));
   let k = 0;
   for (let i = 0; i < P.length; i++) {
-    const a = P[i], b = P[(i + 1) % P.length], L = U.dist(a, b); if (L < IC.STAND.s.w) continue;
-    const ex = (b.x - a.x) / L, ey = (b.y - a.y) / L, nx = ccw ? ey : -ey, ny = ccw ? -ex : ex;   // (n: outward)
-    const mid = { x: (a.x + b.x) / 2 + nx * 0.05, y: (a.y + b.y) / 2 + ny * 0.05 };
-    const term = ap.parts.find(q => (q.kind === 'terminal' || q.kind === 'cargo') && q.built && partDist(ap, q, mid) < 0.3);
-    if (!term) continue;
+    const E = edge(i), { a, b, L, ex, ey, nx, ny } = E; if (L < IC.STAND.s.w) continue;   // (n: outward)
+    const term = termAt(E), mid = { x: (a.x + b.x) / 2 + nx * 0.05, y: (a.y + b.y) / 2 + ny * 0.05 };
+    if (anyTerm ? !term : ins.some(n => U.segDist(n.x, n.y, a.x, a.y, b.x, b.y) < 0.3)) continue;
     const size = sizes.find(z => { const S0 = IC.STAND[z], c = { x: mid.x - nx * (S0.d + 0.1), y: mid.y - ny * (S0.d + 0.1) }; return inside(c); });
     if (!size) continue;
     const S0 = IC.STAND[size], n = Math.floor(L / S0.w);
@@ -237,12 +240,15 @@ function polyStands(ap, p) {
       const c = { x: e.x - nx * S0.d / 2, y: e.y - ny * S0.d / 2 }, f = { x: e.x - nx * (S0.d + 0.08), y: e.y - ny * (S0.d + 0.08) };
       if (!inside(c) || !inside(f)) continue;
       const id = p.id + 's' + (k++), old = p.stands && p.stands.find(x => x.id === id);
-      const contact = term.kind === 'terminal' && partDist(ap, term, { x: e.x + nx * 0.02, y: e.y + ny * 0.02 }) < 0.4;
-      out.push({ id, x: c.x, y: c.y, fx: f.x, fy: f.y, a: Math.atan2(ny, nx), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: term.kind === 'cargo' });
+      const contact = !!term && term.kind === 'terminal' && partDist(ap, term, { x: e.x + nx * 0.02, y: e.y + ny * 0.02 }) < 0.4;
+      // (stands further along must not overlap one already laid in a corner)
+      if (out.some(o => U.dxy(o.x, o.y, c.x, c.y) < IC.STAND[size].w * 0.9)) continue;
+      out.push({ id, x: c.x, y: c.y, fx: f.x, fy: f.y, a: Math.atan2(ny, nx), size, apron: p.id, contact, hp: old ? old.hp : 1, occ: old ? old.occ : null, cargo: !!term && term.kind === 'cargo' });
     }
   }
   return out;
 }
+IC.aptPolyStands = polyStands;
 
 /* A stand's jet bridge, in world points: from the wall of a terminal or pier (w), by a fixed link where the wall is
    set back, to the rotunda (r) on its column, and the telescopic tunnel to the cab at the front door (d). null when
@@ -769,7 +775,7 @@ IC.aptStats = function (S, ap) {
   const G = IC.aptGraph(ap);
   const alive = k => ap.parts.filter(p => p.kind === k && p.built && p.hp > p.max * 0.25);
   const rws = alive('runway');
-  const st = { rwy: [], stands: { s: 0, m: 0, l: 0, xl: 0 }, standsFree: { s: 0, m: 0, l: 0, xl: 0 }, warn: [], pax: 0, cargo: 0, fuelCap: 0, shelters: 0, zones: {}, arrPerHour: 0, depPerHour: 0 };
+  const st = { rwy: [], stands: { xs: 0, s: 0, m: 0, l: 0, xl: 0 }, standsFree: { xs: 0, s: 0, m: 0, l: 0, xl: 0 }, warn: [], pax: 0, cargo: 0, fuelCap: 0, shelters: 0, zones: {}, arrPerHour: 0, depPerHour: 0 };
   const stands = [];
   for (const p of ap.parts) if (p.kind === 'apron' && p.built) for (const s of p.stands || []) stands.push(s);
   // which stands can actually reach a runway
@@ -791,7 +797,7 @@ IC.aptStats = function (S, ap) {
     if (!ok) continue;
     st.stands[s.size]++;
     if (!s.occ) st.standsFree[s.size]++;
-    const z = st.zones[s.zone || 'civil'] = st.zones[s.zone || 'civil'] || { s: 0, m: 0, l: 0, xl: 0, contact: 0, remote: 0, free: 0 };
+    const z = st.zones[s.zone || 'civil'] = st.zones[s.zone || 'civil'] || { xs: 0, s: 0, m: 0, l: 0, xl: 0, contact: 0, remote: 0, free: 0 };
     z[s.size]++; z[s.contact ? 'contact' : 'remote']++; if (!s.occ) z.free++;
   }
   // runways and taxiways closed for works, and pavement breaking up under aircraft too heavy for it
@@ -812,6 +818,8 @@ IC.aptStats = function (S, ap) {
   // (round 1) buildings inside a runway's strip: accepted, but said, with the fix (playtest 1: a fire station 110 m
   // from the centreline went unremarked)
   for (const p of ap.parts) { const why = IC.aptStripWhy(ap, p); if (why) st.warn.push(why); }
+  // (brief 62) a GA ramp joined at one end only
+  if (IC.gaRampWarn) for (const w of IC.gaRampWarn(ap)) st.warn.push(w);
   const towers = alive('tower'), tower = towers.length > 0;
   // the cab must see each runway it works: within 8 km and over the roofs in between
   st.unseen = {};
@@ -930,6 +938,13 @@ IC.aptStats = function (S, ap) {
   for (let i = 0; i < tanks.length; i++) for (let j = i + 1; j < tanks.length; j++) if (IC.fuelGap(tanks[i], tanks[j]) < 1) { st.warn.push(`Fuel ${tanks[i].r ? 'tanks' : 'farms'} stand within 100 m of each other: one fire could take them all. Keep them further apart.`); i = tanks.length; break; }
   const links = rws.map(rw => (G.rwn.get(rw.id) || []).filter(n => n.exit).length).reduce((s, v) => s + v, 0);
   if (links === 1) st.warn.push('Only one taxiway connects the runway: a single hit strands every aircraft.');
+  // (brief 61) the front side: parking and the kerb against the cars travellers bring
+  if (ap.land && !ap.land.fixed && IC.landAccess && ap.kind !== 'airbase') {
+    const A = IC.landAccess(S, ap), num = v => Math.round(v).toLocaleString('en-US');
+    if (A.short > 0.1) st.warn.push(`The car parks hold ${num(A.have)} of the ${num(A.need)} cars travellers bring: those who find no space choose another airport. ${ap.land.auto === false ? 'Draw car parks by the terminal, or let developers build them.' : 'Give the terminal free ground in front of it, or draw car parks on open ground.'}`);
+    if (A.kerbShort > 0.1 && A.deck) st.warn.push(`The kerbs are short: ${Math.round(A.deck * 100)} m on the departures deck for about ${Math.round(A.kDep * 100)} m of cars dropping off, ${Math.round(A.ground * 100)} m at arrivals for about ${Math.round(A.kArr * 100)} m picking up. Cars queue on the airport road; a longer terminal face gives more kerb.`);
+    else if (A.kerbShort > 0.1) st.warn.push(`The terminal kerb is ${Math.round(A.kerbHave * 100)} m long and cars dropping off need ${Math.round(A.kerb * 100)} m: they queue on the airport road. A longer terminal face gives more kerb.`);
+  }
   const ammo = alive('ammo');
   if (ammo.some(a => ap.parts.some(q => q.kind !== 'ammo' && q.built && q.kind !== 'runway' && q.kind !== 'taxi' && partDist(ap, q, a) < 1.5))) st.warn.push('The munitions store is close to other buildings: if it goes up, so do they.');
   st.maxType = !rws.length ? null : !st.fire ? 'turbo' : best >= 29 && st.heavyOk ? 'cargo' : best >= 27 && st.heavyOk ? 'wide' : best >= 21 ? 'narrow' : best >= 13 ? 'turbo' : null;
@@ -985,12 +1000,14 @@ IC.aptFits = function (ap, type) {
 IC.aptProvides = function (ap) {
   const st = ap.st || {}, ok = p => p.built && p.hp > p.max * 0.25;
   const out = { rwy: st.longest || 0, maxType: st.maxType || null, tower: !!st.tower, fire: !!st.fire, gradar: !!st.gradar, ils: st.ilsEnds || 0,
-    stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0),
+    stands: { xs: 0, s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0),
     hangar: 0, hangarFree: 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none', fuelDeps: st.fuelDeps || 0, deice: 0,
-    road: !!(ap.land && ap.land.road), parking: 0, transit: false, hotel: 0, moves: st.movesPerHour || 0 };
+    road: !!(ap.land && ap.land.road), parking: 0, transit: false, hotel: 0, moves: st.movesPerHour || 0, light: 0 };
   for (const p of ap.parts) {
     if (p.kind === 'apron' && p.built) for (const s of p.stands || []) {
       if (s.hp <= 0 || s.linked === false || s.zone === 'mil') continue;
+      // (a GA ramp's spots are not the airlines': brief 62)
+      if (s.zone === 'light') { out.light++; continue; }
       out.stands[s.size]++;
       if (s.zone === 'cargo' || s.cargo) out.cargoStands++;
       else if (s.contact) out.gates++; else out.remote++;
@@ -998,7 +1015,7 @@ IC.aptProvides = function (ap) {
     if (p.kind === 'hangar' && ok(p) && p.linked !== false) { out.hangar += IC.APART.hangar.holds; out.hangarFree += Math.max(0, IC.APART.hangar.holds - (p.inside || []).length); }
     if (p.kind === 'deice' && ok(p)) out.deice++;
   }
-  for (const p of ap.parts) if (p.kind === 'surface' && p.built && IC.SURF[p.surf] && IC.SURF[p.surf].park) out.parking += Math.round(IC.SURF[p.surf].park * p.w * p.h);
+  for (const p of ap.parts) if (p.kind === 'surface' && p.built && IC.SURF[p.surf] && IC.SURF[p.surf].park) out.parking += Math.round(IC.SURF[p.surf].park * IC.partArea(p));
   for (const f of (ap.land && ap.land.items) || []) { if (f.kind === 'park' || f.kind === 'garage') out.parking += f.cap || 0; if (f.kind === 'stop') out.transit = true; if (f.kind === 'hotel') out.hotel += f.cap || 0; }
   return out;
 };
@@ -1162,6 +1179,8 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   // airliners parked at their stands
   for (const a of ap.parts) if (a.stands) for (const s of a.stands) {
     if (!s.occ || U.dxy(s.x, s.y, x, y) > rb + 0.3) continue;
+    // (a light aircraft or business jet on the GA ramp: garamp.js)
+    if (String(s.occ).startsWith('ga')) { if (Math.random() < 0.8) { IC.gaLost && IC.gaLost(S, s.occ); S.wrecks.push({ x: s.x, y: s.y, type: 'aircraft', t: S.time, h: s.a }); IC.addFire(S, s.x, s.y, 0.3, 1500); s.occ = null; } continue; }
     if (Math.random() < 0.75) { IC.emit(S, 'tailLost', { ap, tail: s.occ, why: 'destroyed at the gate' }); S.wrecks.push({ x: s.x, y: s.y, type: 'airliner', t: S.time, h: s.a }); IC.addFire(S, s.x, s.y, 0.8, 3000); s.occ = null; acLost++; }
   }
   ap.dirty = true;
@@ -1733,8 +1752,8 @@ IC.aptPlanPart = function (S, ap, kind, x, y, a, w, h, o) {
   const D = IC.APART[kind];
   const part = { kind, x, y, a: a != null ? a : ap.rwyA || 0 };
   if (D.area) { part.w = w; part.h = h; }
-  // (an outline drawn by hand, in the part's own frame: checked and priced as that shape, not its box)
-  if (o && o.poly && D.area) part.poly = o.poly;
+  // (an outline drawn corner by corner: checked, priced and built as drawn, not as its bounding box)
+  if (D.area && o && o.poly) part.poly = o.poly;
   // a landing system serves the runway end nearest the click
   if (kind === 'ils') {
     let bd = 1e9;
@@ -1845,20 +1864,43 @@ IC.layoutAirport = function (ap, template, a) {
   const tank = (lx, ly) => { const c = W(lx, ly); return IC.aptAddPart(ap, { kind: 'fuel', x: c.x, y: c.y, a, r: 0.13 }, true); };
   const ils = (r, ends) => { for (const e of ends) IC.aptAddPart(ap, { kind: 'ils', rw: r.id, end: e }, true); };
   const zone = (p, z) => { p.zone = z; return p; };
+  // a terminal kit (airport-kits.js) beside the parallel taxiway: its airside edge at y = lane, its taxilane ends
+  // joined to the parallel; within x0..x1 if given (the parts beside it stay clear)
+  const kit = k => {
+    const seed = 1 + Math.round(U.hash(Math.round(ap.x) * 7 + Math.round(ap.y) * 13, 29) * 9973);
+    let o = { n: k.n, piers: k.piers, big: k.big, seed }, T = IC.kitComplex(IC.layoutBuilder(), o);
+    // (a layout too long for its room tries the next seeds)
+    for (let i = 1; i < 12 && ((k.x1 != null && k.x + T.x1 > k.x1) || (k.x0 != null && k.x + T.x0 < k.x0)); i++) { o = { n: k.n, piers: k.piers, big: k.big, seed: seed + i }; T = IC.kitComplex(IC.layoutBuilder(), o); }
+    const B = IC.layoutBuilder(), K = IC.kitComplex(B, Object.assign(o, { c: { x: k.x, y: k.lane - T.ymin } }));
+    const c = W(0, 0); IC.aptAddLayout(ap, B.L, { x: c.x, y: c.y, rot: a });
+    for (const j of K.joins) tx([[j.x, j.y], [j.x, k.par]]);
+    return { x0: k.x + K.x0, x1: k.x + K.x1, y: k.lane - T.ymin, D: K.D };
+  };
+  // (brief 62) a GA ramp from the kit, its lane's open end joined to the taxiway at `to`
+  const ga = g => {
+    const B = IC.layoutBuilder(), K = IC.kitGA(B, { n: g.n, biz: g.biz, c: { x: g.x, y: g.y }, rot: g.rot || 0 });
+    const c = W(0, 0); IC.aptAddLayout(ap, B.L, { x: c.x, y: c.y, rot: a });
+    tx(g.to.concat([[K.join.x, K.join.y]]));
+    // (a second way in and out at the far end, so an arrival turning in never meets a departure nose to nose)
+    if (g.to2) tx([[K.end.x, K.end.y]].concat(g.to2));
+    return K;
+  };
   const nm = (i) => { const h = Math.round(((a * 180 / Math.PI + 360) % 180) / 10) || 18; const x = String(h).padStart(2, '0'), y = String((h + 18) % 36 || 36).padStart(2, '0'); return `Runway ${x}/${y}${i ? ' ' + 'LR'[i - 1] : ''}`; };
   if (template === 'intl') {
     ils(rw(-17, 17, 0, nm()), ['a', 'b']);
     tx([[-16.8, 1.8], [-12, 1.8], [-8, 1.8], [-4, 1.8], [0, 1.8], [4, 1.8], [8, 1.8], [12, 1.8], [16.8, 1.8]]);
     for (const x of [-16.8, -8, 0, 8, 16.8]) tx([[x, 0], [x, 1.8]]);
-    tx([[-4, 1.8], [-4, 2.75]]); tx([[4, 1.8], [4, 2.8]]); tx([[12, 1.8], [12, 2.75]]);
-    rect('apron', -3.5, 3.4, 6, 1.3); rect('apron', 5, 3.28, 8, 0.96); rect('apron', 13.5, 3.4, 3, 1.3);
-    rect('terminal', 1, 4.7, 12, 1.0); rect('cargo', 13.5, 4.6, 3, 0.8);
+    // the terminal: a head house with piers, from the kit, different at every airport (brief 61)
+    const T = kit({ n: 26, piers: 2, big: 1, x: 1, lane: 2.5, par: 1.8, x0: -7.5, x1: 10.2 });
+    tx([[12, 1.8], [12, 2.75]]); rect('apron', 13.5, 3.4, 3, 1.3); rect('cargo', 13.5, 4.6, 3, 0.8);
     // a remote apron for overnight parking, south of the runway
     tx([[-12, 0], [-12, -1.6]]); rect('apron', -12, -2.1, 4.6, 0.96);
     bld('fuel', -11.8, 4.9);
-    bld('tower', 3.5, 5.7); bld('fire', 0, -3.2); bld('atc', -8, -3.2);
+    bld('tower', T.x1 + 0.45, T.y + T.D - 0.4); bld('fire', 0, -3.2); bld('atc', -8, -3.2);
     bld('hangar', -9.2, 3.6); bld('hangar', -8.3, 3.6);
     tx([[-8, 1.8], [-8.75, 3.25]]);
+    // the GA ramp, south of the runway's east end: light aircraft and business jets away from the airliners
+    ga({ n: 20, biz: 3, x: 15.6, y: -3.2, rot: Math.PI, to: [[16.8, 0], [16.8, -3.2]], to2: [[11.6, -3.2], [11.6, 0]] });
   } else if (template === 'regional_bad') {
     // one stub in the middle of the runway: every departure backtracks, every landing blocks the runway for minutes
     rw(-12, 12, 0, nm());
@@ -1869,9 +1911,11 @@ IC.layoutAirport = function (ap, template, a) {
   } else if (template === 'regional_ok') {
     ils(rw(-13, 13, 0, nm()), ['a']);
     tx([[-12.8, 1.7], [-6, 1.7], [0, 1.7], [6, 1.7]]);
-    tx([[-12.8, 0], [-12.8, 1.7]]); tx([[6, 0], [6, 1.7]]); tx([[0, 1.7], [0, 2.25]]); tx([[-6, 1.7], [-6, 2.25]]);
-    rect('apron', 0, 2.72, 3.2, 0.95); rect('terminal', 0, 3.6, 3.2, 0.7);
-    bld('fuel', 4.6, 3.6); bld('tower', -2.4, 3.1); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
+    tx([[-12.8, 0], [-12.8, 1.7]]); tx([[6, 0], [6, 1.7]]);
+    tx([[-6, 1.7], [-6, 2.25]]);
+    const T = kit({ n: 6, piers: 0, x: 0, lane: 2.3, par: 1.7, x0: -4.4, x1: 3.6 });
+    bld('fuel', 4.6, 3.6); bld('tower', T.x0 - 0.4, T.y + 0.3); bld('fire', -3, -1.2); bld('hangar', -6, 2.6);
+    ga({ n: 12, biz: 1, x: 6.6, y: 2.45, rot: 0, to: [[6, 1.7], [6, 2.45]], to2: [[9.2, 2.45], [9.2, 0]] });
   } else if (template === 'mil_mothball') {
     // a half-closed base: a parallel taxiway to one end only, clustered fuel, no shelters, no alert pad
     rw(-13, 13, 0, nm());

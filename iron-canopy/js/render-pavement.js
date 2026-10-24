@@ -123,6 +123,30 @@ function segPath(g, P) { for (let i = 1; i < P.length; i++) { g.moveTo(P[i - 1].
 const bbOf = (P, m) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of P) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); } return { x0: x0 - m, y0: y0 - m, x1: x1 + m, y1: y1 + m }; };
 const hit = (a, b) => !(a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1);
 
+/* an apron's edge where it meets grass, not where another apron goes on from it (aprons that touch are one paved
+   area, so no line runs down the seam): null when none of it is shared, else the open stretches as polylines */
+function openEdge(e, all, blds) {
+  const P = e.a.poly, PA = P.map(q => [q.x, q.y]), nb = all.filter(o => o !== e && hit(o.bb, e.bb)).map(o => o.a.poly.map(q => [q.x, q.y]));
+  // (nor along a terminal wall a few metres off: a pier standing in a cut apron)
+  const nbB = blds.filter(o => hit(o.bb, e.bb)).map(o => o.P);
+  if (!nb.length && !nbB.length) return null;
+  const runs = []; let cur = null, shared = false;
+  for (let i = 0; i < P.length; i++) {
+    const A = P[i], B = P[(i + 1) % P.length], L = U.dist(A, B); if (L < 1e-6) continue;
+    const ux = (B.x - A.x) / L, uy = (B.y - A.y) / L, n = Math.max(1, Math.ceil(L / 0.04));
+    let ox = -uy, oy = ux; const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2; if (U.inPoly(mx + ox * 0.01, my + oy * 0.01, PA)) { ox = -ox; oy = -oy; }
+    for (let k = 0; k < n; k++) {
+      const t0 = L * k / n, t1 = L * (k + 1) / n, tm = (t0 + t1) / 2, x = A.x + ux * tm + ox * 0.03, y = A.y + uy * tm + oy * 0.03;
+      if (nb.some(Q => U.inPoly(x, y, Q)) || nbB.some(Q => U.inPoly(x + ox * 0.03, y + oy * 0.03, Q))) { shared = true; cur = null; continue; }
+      const q0 = { x: A.x + ux * t0, y: A.y + uy * t0 }, q1 = { x: A.x + ux * t1, y: A.y + uy * t1 };
+      if (!cur) { cur = [q0]; runs.push(cur); } cur.push(q1);
+    }
+  }
+  if (!shared) return null;
+  // (a run that goes on past the first corner joins the one that started there)
+  if (runs.length > 1 && U.dist(runs[0][0], runs[runs.length - 1][runs[runs.length - 1].length - 1]) < 1e-6) runs[0] = runs.pop().concat(runs[0].slice(1));
+  return runs;
+}
 /* what the painter keeps per geometry: bounding boxes, the runway ends and their lights, the blast pads */
 function prep(ap, G) {
   if (G._prep) return G._prep;
@@ -140,6 +164,8 @@ function prep(ap, G) {
   }
   for (const t of G.tw) R.tw.push({ t, sh: t.lane ? 0 : IC.paveDesign(t.w).sh, bb: bbOf(t.pts, t.w + 0.3) });
   for (const a of G.ar) R.ar.push({ a, bb: bbOf(a.poly, 0.3) });
+  const blds = ap.parts.filter(p => (p.kind === 'terminal' || p.kind === 'cargo') && p.x != null).map(p => { const O = IC.partOutline(p); return { P: O.map(q => [q.x, q.y]), bb: bbOf(O, 0.1) }; });
+  for (const e of R.ar) e.open = openEdge(e, R.ar, blds);
   for (const f of G.fil) R.fil.push({ f, bb: bbOf(f.poly, 0.3) });
   G._prep = R;
   return R;
@@ -346,9 +372,9 @@ function edgeLines(g, ap, G, R, ppu, box, o) {
   for (const { a, bb } of R.ar) if (hit(bb, box)) { lg.beginPath(); polyPath(lg, a.poly); lg.fill(); }
   // the aprons' own edge: inside their outline, cut where a taxiway comes in
   lg.globalCompositeOperation = 'source-over';
-  for (const { a, bb } of R.ar) if (!a.fore && a.p.kind !== 'holdbay' && hit(bb, box)) {
+  for (const { a, bb, open } of R.ar) if (!a.fore && a.p.kind !== 'holdbay' && hit(bb, box)) {
     lg.save(); lg.beginPath(); polyPath(lg, a.poly); lg.clip();
-    lg.lineWidth = 2 * lw; lg.beginPath(); polyPath(lg, a.poly); lg.stroke();
+    lg.lineWidth = 2 * lw; lg.beginPath(); if (open) for (const P of open) linePath(lg, P); else polyPath(lg, a.poly); lg.stroke();
     if (dbl) { lg.lineWidth = 2 * (2 * lw + gap); lg.stroke(); lg.globalCompositeOperation = 'destination-out'; lg.lineWidth = 2 * (lw + gap); lg.stroke(); lg.globalCompositeOperation = 'source-over'; lg.lineWidth = 2 * lw; lg.stroke(); }
     lg.restore();
   }
@@ -462,6 +488,7 @@ function standsPaint(g, ap, a, ppu, box) {
   for (const s of a.p.stands || []) {
     if (s.x < box.x0 - 1.2 || s.x > box.x1 + 1.2 || s.y < box.y0 - 1.2 || s.y > box.y1 + 1.2) continue;
     const S0 = IC.STAND[s.size] || IC.STAND.m;
+    if (s.size === 'xs') { tieDown(g, s, S0, ppu); continue; }
     // the lead-in from the taxilane node, joining the stand's own line behind it
     const n = s.via && ap.nodes[s.via];
     g.strokeStyle = YEL; g.lineWidth = Math.max(0.003, 0.9 * px); g.lineCap = 'butt';
@@ -490,6 +517,25 @@ function standsPaint(g, ap, a, ppu, box) {
       g.restore();
     }
   }
+}
+/* (brief 62) a tie-down on a GA ramp: a yellow T where the nose wheel and the main wheels stop, the three rings the
+   ropes go through (under each wing and at the tail), the spot's number small at its head */
+function tieDown(g, s, S0, ppu) {
+  const px = 1 / ppu, d = S0.d, w = S0.w;
+  g.save(); g.translate(s.x, s.y); g.rotate(s.a);
+  g.strokeStyle = YEL; g.lineWidth = Math.max(0.003, 0.8 * px); g.lineCap = 'butt';
+  g.beginPath(); g.moveTo(-d * 0.34, 0); g.lineTo(d * 0.3, 0); g.moveTo(d * 0.3, -0.03); g.lineTo(d * 0.3, 0.03); g.moveTo(-d * 0.02, -0.025); g.lineTo(-d * 0.02, 0.025); g.stroke();
+  if (ppu >= 40) {
+    g.fillStyle = 'rgba(30,30,30,0.7)';
+    for (const [x, y] of [[-0.01, -w * 0.33], [-0.01, w * 0.33], [-d * 0.4, 0]]) { g.beginPath(); g.arc(x, y, Math.max(0.004, 1.2 * px), 0, 7); g.fill(); }
+    g.strokeStyle = 'rgba(236,236,226,0.4)'; g.setLineDash([0.015, 0.015]); g.strokeRect(-d / 2 + 0.01, -w / 2 + 0.01, d - 0.02, w - 0.02); g.setLineDash([]);
+  }
+  if (ppu >= 60) {
+    const t = String(IC.standName(s)).slice(0, 3), h = 0.028;
+    g.translate(d / 2 - 0.03, 0); g.rotate(Math.PI / 2);
+    g.font = `700 ${h}px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(236,236,226,0.75)'; g.fillText(t, 0, 0);
+  }
+  g.restore();
 }
 /* the service road along a terminal or shed, on its forecourt: a white line at the head of the stands, a dashed
    centreline, and zebra crossings where people walk out to aircraft on stands without a bridge */

@@ -51,6 +51,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 17 | [58 Film mode: the map and the 3D view as a camera](58-film-mode.md) | Sandbox (#69), atmosphere (#68) | new `film.js`, `film-cam.js`, the film layer in `render.js`, film hooks in `replay3d.js` |
 | 17 | [59 Tacview for film, and effects that hold up on screen](59-tacview-effects.md) | 58 | cameras and director in `replay3d.js`, new `render3d-war.js`, `render-combat.js` |
 | 17 | [60 The teaser: the enemy's first strike](60-teaser-first-strike.md) | 58, 59 | `tools/teaser.js`, `tools/teaser-score.js`, `docs/trailer/` |
+| 16 | [61 The front side and outlines: airports that are not a collection of rectangles](61-front-side.md) | — | `landside.js`, the outline tool in `builder.js`, `buildbar.js`, `inspector.js`'s landside rows, the gate in `growth.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.

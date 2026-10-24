@@ -789,6 +789,8 @@ function aptBuildings(v, b, f) {
     });
     items.push({ p, start, end: B.groups.main.pos.length / 3 });
   }
+  // the front side's buildings (models-airport.js)
+  if (b.land && IC.landMass3d) for (const it of b.land.items || []) { const st0 = B.groups.main.pos.length / 3; if (IC.landMass3d(MB, B, it, b)) items.push({ p: it, start: st0, end: B.groups.main.pos.length / 3 }); }
   // jet bridges from the terminal to the front door of each contact stand (the life of the scene moves its own)
   if (!LIFE()) for (const ap of b.parts) if (ap.kind === 'apron' && ap.built) for (const s of ap.stands || []) {
     if (!s.contact || s.hp <= 0) continue;
@@ -847,7 +849,7 @@ function aptLights(v, b, f) {
   return pts;
 }
 /* the airports near the focus, built once (and again when their parts change) */
-const aptSig = b => b.parts.map(p => p.id + (p.built ? 1 : 0) + (p.hp > 0 ? 1 : 0) + (p.craters ? p.craters.length : 0)).join();
+const aptSig = b => b.parts.map(p => p.id + (p.built ? 1 : 0) + (p.hp > 0 ? 1 : 0) + (p.craters ? p.craters.length : 0)).join() + '|' + (b.land && b.land.items ? b.land.items.length : 0);
 function airportSync(v, fx, fy) {
   for (const b of IC.bases(v.S)) {
     if (!b.parts || !b.parts.length) continue;
