@@ -633,6 +633,7 @@ function onAct(e) {
     case 'brush': { const ap = selAp(); const w = ap && ap.works && ap.works.find(x => x.id === id); if (w && IC.bldRush(S, ap, w)) IC.sfx.ui('ok'); break; }
     case 'opsDo': { const ap = S.byId[b.dataset.ap], op = b.dataset.op; if (ap && (op === 'rush' ? IC.opsRush(S, ap, v) : IC.opsDecide(S, ap, v, op))) IC.sfx.ui('ok'); break; }
     case 'evChoose': IC.storyChoose(S, id, +v); IC.sfx.ui('ok'); ui.cache.evcard = null; if (S.paused && !S.story.events.length) S.paused = false; break;
+    case 'evGo': { const e = S.story && S.story.events.find(x => x.id === id), q = e && e.at && (typeof e.at === 'function' ? e.at(S) : e.at); if (q) { if (S.follow) IC.followStop(S); IC.flyTo(q.x, q.y, Math.max(IC.cam.z, q.z || 1.2)); } break; }
     case 'radio': if (sel && S.sel.kind === 'track') IC.callAircraft(S, sel); break;
     case 'escortFire': { const a2 = S.air.find(x => x.id === id); if (a2 && sel) { a2.roe = 'free'; if (a2.r) a2.r.roe = 'free'; a2.tgt = sel; IC.log(S, 'warn', 'ORDERS', `${a2.name}: cleared to fire on TN ${sel.tn}.`, sel); IC.emit(S, 'fireOrder', { a: a2, t: sel }); } break; }
     case 'avYes': IC.avDecide(S, id, true); break;
@@ -956,7 +957,7 @@ function resize() {
 /* ---------- start screen ---------- */
 function describe(W) {
   const dirA = compass(W, 'A'), dirB = compass(W, 'B');
-  return `The ${W.full.H} is landlocked between two hostile neighbours: the ${W.full.A} to the ${dirA}, and its ally the ${W.full.B} to the ${dirB}, which will join any war. ${W.names.C} and ${W.names.D} are neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
+  return `The ${W.full.H} ${W.seas && W.seas.length ? `lies on the ${W.names.S || 'sea'}` : 'is landlocked'} between two hostile neighbours: the ${W.full.A} to the ${dirA}, and its ally the ${W.full.B} to the ${dirB}, which will join any war. ${W.names.C} and ${W.names.D} are neutral. Its capital, ${W.cities[0].name}, is home to ${(W.cities[0].pop / 1000).toFixed(1)} million people; ${W.cities.length} cities, ${W.villages.filter(v => v.home).length} villages and ${W.bridges.length} bridges tie it together.`;
 }
 function compass(W, k) { const [a0, a1] = W.secSpan(k), a = (a0 + a1) / 2; return ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
 /* while a game is built the page draws between stages (state.js); IC.onLoadProgress(stage, share done) says how far it
@@ -977,6 +978,8 @@ async function build(seed, mode, lesson) {
   let S2;
   // (the airport showcase is the Career's ready-made network with a real airport in place of the capital's)
   const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : mode === 'build' ? { seed, mode: 'story', free: true, hour: 8 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
+  // the Career and the Sandbox play on the hand-drawn map (brief 71); the Quick war and the Academy on a seed's region
+  if ((mode === 'story' || mode === 'test') && IC.MAPS[IC.CAREER_MAP]) o.map = IC.CAREER_MAP;
   try { S2 = await IC.newGameAsync(o, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
   finally { loading--; }
   if (me !== nth) return null;
@@ -985,7 +988,7 @@ async function build(seed, mode, lesson) {
   IC.ui.bind(S);
   resize();
   if (S.range) { IC.cam.z = IC.frameZoom(0, 0, 18000, 13500); IC.centerOn(S.world.cx, S.world.cy); } else IC.frame(...IC.homeBox(S.world));
-  $('seed').textContent = String(seed);
+  $('seed').textContent = S.world.map ? S.world.map : String(seed);
   $('startLead').textContent = S.range ? 'The test range: a flat, empty plane.' : describe(S.world);
   return S;
 }

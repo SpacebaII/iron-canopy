@@ -164,8 +164,9 @@ test('roads: a roundabout is driven round its ring, one way and anticlockwise, a
     for (const i of ring) assert(G.nodes[i].out.some(li => !G.links[li].ref.ring), 'a ring point with no road on it');
     for (const lk of G.links) if (!lk.ref.ring) for (const P of lk.pts) assert(d(P) > R * 0.95, `a ${lk.cls} runs through a roundabout's island`);
   }
-  // (one at home stays a single node: an avenue that leaves the ring and comes back into it)
-  assert(home > 50 && built >= home * 0.95, `only ${built} of ${home} roundabouts are driven round their ring`);
+  // (one at home stays a single node: an avenue that leaves the ring and comes back into it; a neighbour's dumbbells
+  // no longer count as home since brief 72 stopped driving their slip roads: 50 at seed 4242)
+  assert(home >= 45 && built >= home * 0.95, `only ${built} of ${home} roundabouts are driven round their ring`);
 }, false, 'world');
 test('towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)', () => {
   const W = world(4242), area = F => { let A = 0; for (let i = 0; i < F.length / 2; i++) { const j = (i + 1) % (F.length / 2); A += F[i * 2] * F[j * 2 + 1] - F[j * 2] * F[i * 2 + 1]; } return Math.abs(A) / 2; };
@@ -829,6 +830,127 @@ test('world: districts change what a city wants from its airport', () => {
   assert(IC.cityDemand(flat).biz < d0.biz * 0.8 && IC.cityDemand(flat).leisure > d0.leisure, 'offices do not change the business and leisure mix');
   assert(/cargo/.test(IC.cityCharacter(ind).text), `the city panel does not say ${ind.name} is about cargo: ${IC.cityCharacter(ind).text}`);
 }, false, 'world');
+/* ---------- the hand-drawn map (brief 71) ---------- */
+const mapWorld = () => worlds.map || (worlds.map = IC.generate(0, IC.CAREER_MAP));
+test('map: the Career plays on the hand-drawn map, and everything drawn is there: the capital on its river, every city and place on dry ground, the sea with a coast, ridges with a style and passes, the motorways, railways and crossings between the places they name', () => {
+  const A = IC.MAPS[IC.CAREER_MAP], W = mapWorld();
+  assert(W.map === IC.CAREER_MAP && W.seed === IC.mapSeed(A), 'the world does not say which map it is');
+  assert(W.warnings.length === 0, `the map could not be built as drawn: ${W.warnings.join('; ')}`);
+  // every city by its name, on dry ground inside the country, and the capital first, on the river it was drawn on
+  assert(W.cities.length === A.cities.length && W.cities.every((c, i) => c.name === A.cities[i].name), 'the cities are not the map\'s');
+  for (const c of W.cities) assert(W.inHome(c.x, c.y) && !W.inLake(c.x, c.y) && W.hAt(c.x, c.y) < 0.72, `${c.name} stands in water or on a peak`);
+  const cap = W.cities[0]; assert(cap.capital && cap.name === A.cities[0].name && W.riverDist(cap.x, cap.y) < 60, `the capital ${cap.name} is ${U.km(W.riverDist(cap.x, cap.y))} from its river`);
+  assert(W.cities.every(c => c.style === A.cities.find(a => a.name === c.name).style), 'a city lost the style the map gave it');
+  // the sea: beyond the coast, never on the land, and the rivers drawn to it reach it
+  assert(W.seas.length && W.coast.length && W.inSea(2000, 40000) && !W.inSea(cap.x, cap.y), 'the sea is not where it was drawn');
+  let dryCoast = 0; for (const p of W.coast[0]) { let sea = 0; for (let k = 0; k < 8; k++) sea += W.inSea(p[0] + Math.cos(k * Math.PI / 4) * 60, p[1] + Math.sin(k * Math.PI / 4) * 60) ? 1 : 0; if (!(sea > 0 && sea < 8)) dryCoast++; } assert(dryCoast <= 3, `${dryCoast} coast points are not on a shore`);
+  const port = W.cities.find(c => c.name === 'Westhaven'); let shore = 1e9; for (const p of W.coast[0]) shore = Math.min(shore, U.dxy(p[0], p[1], port.x, port.y)); assert(shore < 200, `Westhaven, the port, is ${U.km(shore)} from the sea`);
+  assert(W.inLake(2000, 40000) && W.hAt(2000, 40000) < 0, 'the sea is not water with a bed below the land');
+  const carrow = W.rivers.find(r => r.name === 'Carrow River'); assert(carrow && carrow.end === 'sea' && carrow.pts.length > 300, 'the Carrow River does not run from the mountains to the sea');
+  assert(W.rivers.filter(r => r.end === 'join').length >= 5, 'the tributaries do not join their rivers');
+  assert(W.lakes.some(l => l.name === 'Lake Ennis'), 'the named lake is missing');
+  // relief: the front range along the hostile border is the highest ground, its passes are lower, the plateau over the border is high, the volcano stands alone
+  const front = W.ridges.find(r => r.style === 'rocky'); assert(front && front.core && front.gaps.length === 2, 'the front range has no style, core or passes');
+  const crest = front.pts[Math.floor(front.pts.length / 2)], pass = front.gaps[0];
+  assert(W.hAt(crest[0], crest[1]) > 0.9 && W.hAt(pass[0], pass[1]) < W.hAt(crest[0], crest[1]) - 0.3, `the crest is ${W.hAt(crest[0], crest[1]).toFixed(2)} and the pass ${W.hAt(pass[0], pass[1]).toFixed(2)}`);
+  const plat = W.plateaus.find(p => p.name === 'Korvath Plateau'); assert(plat && W.hAt(28000, 6000) > W.hAt(28000, 15000) + 0.2, 'the plateau over the border is not high ground');
+  const vol = W.ridges.find(r => r.style === 'volcano'); assert(vol && W.hAt(vol.pts[0][0], vol.pts[0][1]) > 0.8 && W.hAt(vol.pts[0][0] - 450, vol.pts[0][1]) < 0.5, `the volcano does not stand alone: ${W.hAt(vol.pts[0][0], vol.pts[0][1]).toFixed(2)} at the cone, ${W.hAt(vol.pts[0][0] - 450, vol.pts[0][1]).toFixed(2)} on the lowland west of it`);
+  assert(W.biomeRegions.length === 5, 'the biomes are not handed over');
+  // the places, by id and on the ground
+  for (const p of A.places) { const q = W.places.find(x => x.id === p.id); assert(q && U.dxy(q.x, q.y, p.x, p.y) < 300, `place ${p.id} is missing or moved`); }
+  // sites by id, and the air base ids the story needs
+  for (const id of ['ab_fwd', 'ab_rear', 'ap_cap']) assert(W.infra.some(i => i.id === id), `${id} is missing`);
+  assert(W.infra.filter(i => i.kind === 'factory').length === 3 && W.infra.filter(i => i.kind === 'power').length === 5, 'the plants and power stations are not the map\'s');
+  // roads: a motorway runs between each pair of places the map names on one, and a crossing's road reaches the border
+  const byName = n => W.cities.find(c => c.name === n) || W.infra.find(i => i.name === n) || W.crossings.find(x => x.name === n);
+  const hwNear = (p, d) => W.edges.some(e => e.cls === 'hw' && e.pts.some(q => U.dxy(q.x, q.y, p.x, p.y) < d));
+  for (const r of A.roads.filter(r => r.cls === 'hw')) for (const v of r.via) if (typeof v === 'string') assert(hwNear(byName(v), 200), `${r.name}: no motorway within 20 km of ${v}`);
+  // brief 72: the capital's ring motorway with an interchange where each radial leaves it, the junction shape the map
+  // asks for, and no motorway through a village, a garrison or the depot
+  const ringJ = W.junctions.filter(j => j.kind === 'mm' && U.dxy(j.x, j.y, cap.x, cap.y) < 240);
+  assert(ringJ.length >= 5, `${ringJ.length} motorway interchanges on the capital's ring`);
+  for (const a of A.junctions) { const j = W.junctions.filter(j => U.dxy(j.x, j.y, a.x, a.y) < 60).sort((p, q) => U.dxy(p.x, p.y, a.x, a.y) - U.dxy(q.x, q.y, a.x, a.y))[0]; assert(j && j.shape === a.shape, `the junction drawn at ${a.x},${a.y} is ${j ? j.kind + '/' + j.shape : 'missing'}, not ${a.shape}`); }
+  for (const e of W.edges) if (e.cls === 'hw' && !e.abroad) for (const k of [e.a, e.b]) assert(!/^(v|g)\d|^depot$/.test(k), `a motorway runs through ${k}`);
+  assert(U.dxy(W.depotPos.x, W.depotPos.y, A.depot[0], A.depot[1]) < 1, 'the depot is not where the map puts it');
+  // the road audit on the map (brief 72): no end that leads nowhere, no stub, nothing stopping short, and a car can be
+  // driven from the capital's centre to Tarn Pass on the drive graph
+  { const G = IC.driveGraph(W), R = IC.roadAudit(W, G), say = k => `${R.count[k]} ${R.words[k]} on the map (${R.list[k].slice(0, 3).map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join('; ')})`;
+    assert(R.count.open === 0, say('open')); assert(R.count.stub === 0, say('stub')); assert(R.count.gap === 0, say('gap')); assert(R.count.trap === 0, say('trap'));
+    const pass = W.places.find(p => p.id === 'tarn_pass'), a = G.nearNode(cap.x, cap.y, 10);
+    let bl = null, bd = 1e9;  // the motorway link nearest the pass (a long link has no node of its own there)
+    for (const lk of G.links) if (lk.cls === 'hw') for (let i = 1; i < lk.pts.length; i++) {
+      const d = U.segDist(pass.x, pass.y, lk.pts[i - 1].x, lk.pts[i - 1].y, lk.pts[i].x, lk.pts[i].y);
+      if (d < bd) { bd = d; bl = lk; } }
+    assert(bl && bd < 30, 'no motorway within 3 km of Tarn Pass');
+    assert(a >= 0 && IC.driveRoute(G, a, bl.a, 1e6), 'no drive from the capital to Tarn Pass'); }
+  // cities with character (brief 73): the ten largest are what the map says they are, and no two look alike
+  { const top = W.cities.slice().sort((p, q) => q.pop - p.pop).slice(0, 10), looks = new Set();
+    const tallest = c => { let m = 0; for (const b of c.blocks) { if (b.hp <= 0 || U.dist(b, c) > 12) continue; for (const pr of IC.blockPrisms(b, c)) m = Math.max(m, pr.ht); } return m; };
+    for (const c of top) {
+      const sp = A.cities.find(q => q.name === c.name); assert(sp && sp.blurb && sp.live, `${c.name} has no character in the map`);
+      assert(c.blurb === sp.blurb && c.role === sp.live, `${c.name} does not live on what the map says (${c.role} for ${sp.live})`);
+      if (sp.core) assert(c.coreOf === sp.core, `${c.name}'s old town is ${c.coreOf}, not ${sp.core}`);
+      for (const m of sp.marks || []) { const has = c.blocks.some(b => b.land === m.replace('!', '')); assert(m[0] === '!' ? !has : has, `${c.name} ${m[0] === '!' ? 'has' : 'has no'} ${m.replace('!', '')}`); }
+      looks.add(`${c.tpl}|${c.coreOf || ''}|${c.role}|${c.tall || 1}`);
+    }
+    assert(looks.size === top.length, `only ${looks.size} looks among the ten largest cities`);
+    const by = n => W.cities.find(c => c.name === n);
+    assert(tallest(by('Ironbridge')) > tallest(by('Halloway')) * 1.5, 'the business city is not taller than the university town');
+    assert(by('Northfield').coreOf === 'krakow' && by('Coldiron').role === 'ind' && by('Fallon').tpl === 'ny', 'the smaller towns do not take their hints'); }
+  const route = (a, b) => { const T = IC.travelFrom(W, a.id, true); return T.t[b.id]; };
+  const south = byName('Southport'), north = byName('Fort Ashby');
+  assert(route(south, north) < 24 * 3600, `Southport to Fort Ashby takes ${U.dur(route(south, north))}`);
+  assert(W.crossings.length === A.crossings.length && W.crossings.every(x => x.name) && W.edges.some(e => e.crossing && e.a === 'xA0'), 'the crossings are not the map\'s, or the pass road does not cross');
+  // rail: the lines by name, on gentle grades, with the mining branch
+  assert(W.rails.some(r => r.line === 'Main Line') && W.rails.some(r => r.line === 'Sound Line' && (r.b.name === 'Coldiron' || r.a.name === 'Coldiron')), 'the railways are not the map\'s');
+  // neighbours: the sea has a side of its own, nothing of a neighbour stands in it
+  assert(W.side.S === 'sea' && W.countryAt(2000, 40000) === 'S', 'the sea is not a side of its own');
+  for (const f of W.foreign.concat(W.esites, W.villages)) assert(!W.inSea(f.x, f.y), `${f.name || f.kind} stands in the sea`);
+  // the enemy's side (brief 74): its towns, sites and roads where the map draws them, on their own soil, every site
+  // of the generator's list drawn, and each site reached by road from its country's staging area
+  for (const f of A.foreign) { const g = W.foreign.find(q => q.name === f.name); assert(g && g.k === f.k && U.dxy(g.x, g.y, f.x, f.y) < 1 && W.countryAt(g.x, g.y) === f.k && g.blocks.length > 50 && g.apt === !!f.apt, `${f.name} is not where the map draws it, or is not a town of ${f.k}`); }
+  for (const e of A.esites) { const g = W.esites.find(q => q.name === e.name); assert(g && g.kind === e.kind && g.k === e.k && U.dxy(g.x, g.y, e.x, e.y) < 1 && W.countryAt(g.x, g.y) === e.k, `${e.name} is not where the map draws it`); }
+  assert(W.esites.every(s => s.drawn) && W.eroads.every(r => r.drawn) && W.eroads.length === A.eroads.length, 'a site or a road abroad was still rolled');
+  for (const k of ['A', 'B']) {
+    const seen = new Set([W.esites.find(s => s.k === k && s.kind === 'staging')]);
+    for (let grew = true; grew;) { grew = false; for (const r of W.eroads) { if (seen.has(r.a) && !seen.has(r.b)) { seen.add(r.b); grew = true; } if (seen.has(r.b) && !seen.has(r.a)) { seen.add(r.a); grew = true; } } }
+    for (const s of W.esites) if (s.k === k && s.kind !== 'hgv' && s.kind !== 'mrbm') assert(seen.has(s), `${s.name} has no road from ${k}'s staging area`);
+    for (const f of W.foreign) if (f.k === k) assert(seen.has(f), `${f.name} has no road from ${k}'s staging area`);
+  }
+  // the story's places: Station 9 and the wreck over the border on Korvath's soil, the town under the ridge ours, and
+  // each place that stands for a thing resolving to it
+  const st9 = W.places.find(p => p.id === 'station9'), wreck = W.places.find(p => p.id === 'crash310'), hollin = W.places.find(p => p.id === 'hollin');
+  assert(st9.k === 'A' && wreck.k === 'A' && W.countryAt(st9.x, st9.y) === 'A' && W.countryAt(wreck.x, wreck.y) === 'A' && !W.inHome(st9.x, st9.y), 'Station 9 and the wreck are not over the border');
+  assert(hollin.k === 'H' && W.inHome(hollin.x, hollin.y) && W.depthOut(wreck.x, wreck.y) < W.depthOut(st9.x, st9.y) && U.dist(st9, hollin) < 2500, 'the wreck is not between Station 9 and the border above Hollin');
+  assert(IC.placeOf(W, 'hollin')._ref === W.cities.find(c => c.name === 'Hollin') && IC.placeOf(W, 'oldfield')._ref.id === 'ap_cap' && IC.placeOf(W, 'tarn_pass')._ref === W.crossings.find(x => x.name === 'Tarn Pass') && IC.placeOf(W, 'eldan_ab')._ref.kind === 'airbase' && IC.placeOf(W, 'senitz')._ref.kind === 'ftown', 'a place does not resolve to its thing');
+  for (const p of A.places) if (p.of) assert(IC.placeOf(W, p.id)._ref, `place ${p.id} stands for ${p.of}, which is not there`);
+  assert(IC.placeOf(W, 'nowhere') === null && IC.placesOf(W, 'ecapital').length === 2, 'the registry answers for a place that is not there');
+  // the same map every time
+  const sig = IC.worldBase(W).sig, again = IC.worldBase(IC.generate(0, IC.CAREER_MAP)).sig;
+  assert(sig === again, 'the map is not the same world twice');
+}, true);   // its own worker: the map world beside the world group's cached worlds is too much heap
+test('map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed\'s region is as it was', () => {
+  const S = IC.newGame({ seed: 1, mode: 'story', map: IC.CAREER_MAP, hour: 7 });
+  assert(S.world.map === IC.CAREER_MAP && IC.cap(S).name === 'Ashford' && S.byId.ab_fwd.name === 'Fort Ashby Air Base', 'the Career is not on the map');
+  run(S, 1);
+  const save = IC.saveGame(S); assert(save.map === IC.CAREER_MAP && !Object.keys(save.lost || {}).length, 'the save does not name the map, or lost something');
+  const json = JSON.stringify(save), S2 = IC.loadSave(json);
+  assert(S2.world.map === IC.CAREER_MAP && S2.world.cities[0].name === 'Ashford' && IC.cap(S2).name === 'Ashford', 'the loaded game is not on the map');
+  assert(JSON.stringify(IC.saveGame(S2).root) === JSON.stringify(save.root), 'saving the loaded game gives a different save');
+  const Q = IC.newGame({ seed: 4242, mode: 'campaign', hour: 6 });
+  assert(!Q.world.map && Q.world.cities.length === 60 && Q.world.cities[0].name === world(4242).cities[0].name, 'a seed\'s region changed');
+  // (brief 74) the places resolve in a game too, a seeded world has none, and the enemy commander on the map raids
+  // from the drawn sites: a limited strike on the capital flies and ends with a result
+  assert(IC.placeOf(S2, 'hollin')._ref === S2.world.cities.find(c => c.name === 'Hollin') && IC.placeOf(S2, 'eldan_ab')._ref === S2.esites.find(s => s.name === 'Eldan Air Base') && IC.placeOf(Q, 'hollin') === null, 'a place does not resolve in the game');
+  for (const s of S2.esites) s.dormant = false;
+  S2.ad.roe = 'free'; S2.camp.sched = []; S2.enemy.war = true; S2.enemy.warT = S2.time; S2.enemy.allow = null;
+  const cap = IC.cap(S2), from = new Set();
+  let res = null; IC.on((S3, type, d) => { if (S3 !== S2) return; if (type === 'raidResult') res = d.res; });
+  IC.enemyForceOp(S2, 'strike', { x: cap.x, y: cap.y, ref: cap, name: cap.name }, { kind: 'limited', T: 2400 });
+  for (let i = 0; i < 4 * 3600 * 4 && !res; i++) { IC.step(S2, 0.25); if (i % 40 === 0) for (const t of S2.threats) if (t.origin) from.add(t.origin); }
+  assert(res && res.n > 0, 'the raid on the map did not fly or did not end');
+  assert(from.size && [...from].every(o => o.drawn && IC.MAPS[IC.CAREER_MAP].esites.some(e => e.name === o.name)), `the raid did not come from the drawn sites (${[...from].map(o => o.name).join(', ') || 'no origin'})`);
+}, true);   // its own worker: a Career, its save and the loaded copy do not fit beside the world group
 test('world: generation stays under the time budget', () => {
   IC.generate(1); // warm up the JIT
   // the best of two tries per seed, so a busy machine does not fail the test
