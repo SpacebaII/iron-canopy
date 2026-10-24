@@ -321,6 +321,14 @@ IC.radioGoAround = function (S, ap, m, o, why) {
   IC.sfx && IC.sfx.radio && IC.sfx.radio();
   IC.log(S, 'info', 'RADIO', `${ap.name} tower: ${m.who || 'an arrival'}, going around at 1 km on ${IC.rwEnd(m.plan.rw, m.plan.dir)}: ${why}. It flies a circuit and lands in about ${Math.round(CIRCUIT / 60)} minutes.`, m);
 };
+/* a turnaround in parts: boarding and deplaning are about 45% of it, catering and cleaning 20% (freighters have
+   neither); 'turn' shortens the whole. What multiplies the type's turnaround time (aviation.js) */
+IC.TURN_SHARE = { board: 0.45, catering: 0.2 };
+IC.turnK = function (S, T) {
+  if (!S) return 1;
+  const b = T && !T.seats ? 0 : IC.TURN_SHARE.board, c = T && !T.seats ? 0 : IC.TURN_SHARE.catering;
+  return IC.mod(S, 'turn') * (1 - b - c + b * IC.mod(S, 'board') + c * IC.mod(S, 'catering'));
+};
 function parked(S, tl, ap, s, m) {
   tl.where = 'stand'; tl.mv = null; tl.at = ap.id; tl.lastStand = s.id;
   s.occ = tl.id;
@@ -331,6 +339,8 @@ function parked(S, tl, ap, s, m) {
   const load = termLoad(S, ap);
   if (tl.T.seats) turn *= 1 + Math.max(0, load - 0.8) * 2.5;
   if (tl.T.cargo && !st.cargo) turn *= 2;
+  // (brief 48) quicker boarding, catering and handling from research
+  turn *= IC.turnK(S, tl.T);
   tl.t = turn; tl.turn0 = turn;
   judge(S, al, tl, ap, { taxi: m.taxiT, wait: m.waitT + (tl.hold || 0), kind: 'arr' });
   IC.emit(S, 'tailParked', { tl, ap });
@@ -481,10 +491,10 @@ IC.aptScorecards = function (S, ap) {
   const FIX = {
     delay: () => ({ act: 'open', v: 'day', label: 'Open the day board', text: 'Delays come from departures held on their stands (the map says why) and from the hourly cap.' }),
     taxi: () => ({ text: 'A parallel taxiway with rapid exits, and stands nearer the runway, shorten the taxi.' }),
-    gates: () => ({ part: 'tstraight', near: hub, label: 'Build a terminal with stands', text: 'Remote stands mean buses; a terminal with more gates fixes it.' }),
+    gates: () => IC.FOCUS && IC.FOCUS.parts ? { part: 'gates', near: hub, label: 'Add gates beside the terminal', text: 'Remote stands mean buses; stands on an apron along the terminal get jet bridges.' } : { part: 'tstraight', near: hub, label: 'Build a terminal with stands', text: 'Remote stands mean buses; a terminal with more gates fixes it.' },
     fuel: () => ({ part: 'fuel', near: fuel || hub, label: 'Add a fuel tank', text: 'Each tank brings two fuel trucks; a hydrant system ends the wait.' }),
     fees: () => ({ act: 'fee', v: Math.max(0.7, Math.round(((ap.feeLevel || 1) - 0.15) * 20) / 20), label: `Lower charges to ${U.pct(Math.max(0.7, Math.round(((ap.feeLevel || 1) - 0.15) * 20) / 20))}`, text: 'Its charges are above what it will pay without grumbling.' }),
-    bags: () => ({ part: 'tstraight', near: hub, label: 'Add a terminal', text: `The terminal runs ${U.pct((ap.paxRate || 0) / Math.max(1, st.pax || 1))} full: check-in and bags slow down over 75%.` })
+    bags: () => ({ part: IC.FOCUS && IC.FOCUS.parts ? 'terminal' : 'tstraight', near: hub, label: 'Add a terminal', text: `The terminal runs ${U.pct((ap.paxRate || 0) / Math.max(1, st.pax || 1))} full: check-in and bags slow down over 75%.` })
   };
   const out = [];
   for (const al of S.av.airlines) {
@@ -499,7 +509,7 @@ IC.aptScorecards = function (S, ap) {
 /* ---------- requests: growth comes from happy airlines and a growing economy ---------- */
 function makeRequest(S) {
   const A = S.av;
-  const al = U.wpick(A.airlines.filter(a => a.sat > 45 && !(a.K.foreign && (S.tension || 0) > 40)).map(a => [a, a.sat - 40]));
+  const al = U.wpick(A.airlines.filter(a => a.sat > 45 && !(a.K.foreign && (S.tension || 0) > 40)).map(a => [a, (a.sat - 40) * (IC.agendaMul ? IC.agendaMul(S, 'offerKind', a) : 1)]));
   if (!al) return;
   const apts = S.infra.filter(i => i.kind === 'airport' && i.owner === 'us');
   const W = S.world;
@@ -507,12 +517,15 @@ function makeRequest(S) {
   const fleet = IC.avFleetOf(al);
   let type = U.pick(fleet);
   // airlines go where passengers are waiting for seats
-  const busy = L => U.wpick(L.map(x => [x, 0.3 + Math.min(3, IC.demandPull(S, x))])) || U.pick(L);
+  // (and where the airport is for them: a regional airline to a regional airport, a freighter to a cargo one; an
+  // airfield takes none of them, IC.aptWant)
+  const want = x => IC.aptWant ? IC.aptWant(x, al.kind) : 1;
+  const busy = L => { L = L.filter(x => want(x) > 0); return U.wpick(L.map(x => [x, (0.3 + Math.min(3, IC.demandPull(S, x))) * want(x)])) || U.pick(L); };
   let a = S.byId[al.hub], b;
   if (al.kind === 'regional') { a = busy(apts); const o = apts.filter(x => x !== a); if (!o.length) return; b = { apt: busy(o).id }; }
   else if (al.kind === 'budget') { a = busy(apts); const o = apts.filter(x => x !== a); b = Math.random() < 0.6 || !o.length ? U.pick(ports) : { apt: busy(o).id }; }
-  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.pick(apts.filter(x => x.template === 'intl')) || a; }
-  else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc).map(x => [x, 0.2 + Math.min(3, IC.cargoPull(S, x))])) || a; b = U.pick(ports); }
+  else if (al.K.foreign) { b = U.pick(ports.filter(p => p.k === al.country)) || U.pick(ports); a = U.wpick(apts.filter(x => x.template === 'intl' || IC.aptClass(x) === 'hub' || IC.aptClass(x) === 'mega' || (x.cls === 'national' && want(x) > 0)).map(x => [x, want(x)])) || a; }
+  else if (al.kind === 'cargo' && IC.cargoPull) { a = U.wpick(apts.filter(x => x.svc && want(x) > 0).map(x => [x, (0.2 + Math.min(3, IC.cargoPull(S, x))) * want(x)])) || a; b = U.pick(ports); }
   else b = U.pick(ports);
   if (!a || !b) return;
   // no airline adds flights where the seats already fly more than half empty; cargo airlines look at the cargo
@@ -732,7 +745,7 @@ IC.aviation = function (S, dt) {
   if (A.pullT <= 0) { A.pullT = 600; A.pull = Math.max(0, ...IC.bases(S).filter(x => x.owner === 'us').map(x => IC.demandPull(S, x))); }
   // (in the Career's first act, offers come at the pace of the airport's name, not of every empty seat)
   A.reqT -= dt * (1 + (S.story ? S.story.growth || 0 : 0) + U.clamp((A.pull || 0) - 0.9, 0, S.story && S.story.act === 1 ? 0.4 : 1.5));
-  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
+  if (A.reqT <= 0 && !war) { A.reqT = offerGap(S); if (IC.civilAdvice(S) && A.requests.length < (S.story && S.story.act === 1 ? 3 : 4)) makeRequest(S); }
 };
 function cutRoute(S, al, r, why) {
   const tl = S.av.tails.filter(t => t.route === r.id && t.where !== 'lost');
@@ -907,7 +920,7 @@ IC.aptProvides = IC.aptProvides || function (ap) {
   const st = ap.st || {}, P = { stands: { s: 0, m: 0, l: 0, xl: 0 }, gates: 0, remote: 0, cargoStands: 0, hangar: 0, pax: Math.round(st.pax || 0), cargo: Math.round(st.cargo || 0), fuelDeps: st.fuelDeps || 0, fuel: st.hydrant ? 'hydrant' : st.fuelCap ? 'trucks' : 'none' };
   // a gate: a stand passengers walk to from a terminal (within 60 m of one)
   const terms = ap.parts.filter(p => p.kind === 'terminal' && p.built && p.hp > p.max * 0.25);
-  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.hypot(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
+  const nearT = s => terms.some(t => { const c = Math.cos(-t.a), n = Math.sin(-t.a), dx = s.x - t.x, dy = s.y - t.y, lx = dx * c - dy * n, ly = dx * n + dy * c; return U.hyp(Math.max(0, Math.abs(lx) - t.w / 2), Math.max(0, Math.abs(ly) - t.h / 2)) < 0.6; });
   for (const s of standsOf(ap)) {
     if (s.linked === false || s.hp <= 0 || s.zone === 'mil') continue;
     P.stands[s.size] = (P.stands[s.size] || 0) + 1;
@@ -953,7 +966,7 @@ IC.dealNeeds = function (S, q) {
     if (!ap) continue;
     const nm = ap.name.replace(/ (International|Airport)$/, '');
     const why = IC.aptCanTake(S, ap, T);
-    L.push({ ap: ap.id, k: 'take', name: `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
+    L.push({ ap: ap.id, k: 'take', name: why ? `${nm}: ${why}` : `${nm}: runway, fire cover, a stand`, ok: !why, text: why ? `${nm}: ${why}` : '' });
     if (why) continue;
     const P = IC.aptProvides(ap), N = aptNeeds(S, ap, q.renew ? null : { al, type: q.type, n: q.n, b: far });
     const row = (k, name, need, have, fix) => { if (need > 0) L.push({ ap: ap.id, k, name: `${nm}: ${name}`, need, have, ok: have >= need, text: have >= need ? '' : `${nm} needs ${fix} (${Math.floor(have)} of ${Math.ceil(need)})` }); };
@@ -962,14 +975,14 @@ IC.dealNeeds = function (S, q) {
     if (T.cargo) {
       // freighters park in the cargo zone, or on large passenger stands the wide-bodies leave free
       row('cargoStands', 'large stands for freighters', N.cargoStands, (P.cargoStands || 0) + Math.max(0, paxStands - fitting(N.stands, 'l')), 'more large stands, best in the cargo zone');
-      row('cargoT', 'cargo handling, t a day', Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
+      row('cargoT', `cargo handling, t a day${IC.modNote(S, 'cargoRate') ? ' ' + IC.modNote(S, 'cargoRate') : ''}`, Math.round(N.cargoT), Math.round((P.cargo || 0) * IC.CARGO_T), 'more cargo terminal space');
     } else {
       row('stands', `${IC.STAND[T.stand].name}${T.stand === 'l' ? '' : ' or larger'} stands`, fitting(N.stands, T.stand), paxStands, `more ${IC.STAND[T.stand].name} stands`);
       if ((IC.DEAL.gates[al.kind] || 0) > 0) row('gates', 'stands at the terminal (gates)', N.gates, P.gates || 0, 'more stands beside a terminal');
       row('pax', 'terminal room, passengers an hour', Math.round(N.pax), Math.round(P.pax || 0), 'a bigger terminal');
     }
     if (al.hub === ap.id && (IC.DEAL.hangar[al.kind] || 0) > 0) row('hangar', 'hangar space for aircraft staying days', N.hangar, P.hangar || 0, 'hangar space for the aircraft based here');
-    row('fuelDeps', 'refuellings an hour', Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'another fuel farm, or a hydrant system');
+    row('fuelDeps', `refuellings an hour${IC.modNote(S, 'refuel') ? ' ' + IC.modNote(S, 'refuel') : ''}`, Math.round(N.fuelDeps), Math.min(999, P.fuelDeps || 0), 'another fuel farm, or a hydrant system');
     // (round 5b) under a cap, the day must have room for its slots (a renewal already has its own)
     const B = ap.dayb;
     if (B && B.cap > 0 && IC.dayPlan && !q.renew) { const D = IC.dayPlan(S, ap), open = B.night === 'curfew' ? 17 : 24; row('slots', 'departure slots a day under your cap', D.dep.reduce((a, b) => a + b, 0) + Math.ceil(dealWorth(S, q, 1).perWk / 7), B.cap * open, 'a higher cap on the day board'); }
@@ -990,10 +1003,12 @@ function makeTerms(S, q) {
   // how much it wants in: seats running full, and our name
   // a closed airspace is remembered: it will not pay full list for a while (brief 25)
   const g = IC.avGrudge(S, al);
-  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25) - 0.15 * g;
+  // (brief 49: the Ministry's agenda can favour the flag carrier: it accepts more over list, and its deals run longer)
+  const want = U.clamp(0.02 + 0.15 * U.clamp(IC.demandPull(S, a) - 0.7, 0, 1) + (rep - 50) / 250 + (al.sat - 60) / 400, 0, 0.25) - 0.15 * g + (IC.agendaAdd ? IC.agendaAdd(S, 'flagFlex', al) : 0);
   const T = IC.ACTYPES[q.type];
   q.terms = { list, grudge: g > 0.05 ? Math.round(al.shutH) : 0, days: (career(S) ? (IC.FOCUS.progress ? IC.DEAL.monthsF : IC.DEAL.months) : IC.DEAL.days)[al.kind] || (career(S) ? 12 : 4), flex: want, excl: !T.cargo && !al.K.foreign && Math.random() < 0.35,
     late: +(T.fee * 0.25).toFixed(2), cancel: +(T.fee * 1.2 + (T.seats || 0) * 0.004).toFixed(2), rep: al.kind === 'flag' || al.K.foreign ? 5 : 3 };
+  if (IC.agendaMul) q.terms.days = Math.round(q.terms.days * IC.agendaMul(S, 'dealLen', al));
   q.pick = { lvl: 1, excl: false };
   q.value = dealWorth(S, q, list).value;
 }
@@ -1005,8 +1020,10 @@ IC.dealTerms = function (S, q, lvl, excl) {
   const charge = t.list * (1 + d) * (x ? 1.08 : 1);
   const days = Math.max(1, Math.round(t.days * (1 - 2.5 * d) * (x ? 1.25 : 1)));
   const w = dealWorth(S, q, charge);
-  const over = d + (x ? 0.08 : 0) - t.flex - (x ? 0.08 : 0) * (t.excl ? 1 : 0);
-  const why = x && !t.excl ? 'it has not asked for the route to itself' : over > 0.001 ? `it will not pay more than ${U.pct(1 + t.flex)} of your list charges` : '';
+  // (brief 48) research and policy that make airlines accept more over list ('overList', a share of list)
+  const flex = t.flex + IC.modAdd(S, 'overList');
+  const over = d + (x ? 0.08 : 0) - flex - (x ? 0.08 : 0) * (t.excl ? 1 : 0);
+  const why = x && !t.excl ? 'it has not asked for the route to itself' : over > 0.001 ? `it will not pay more than ${U.pct(1 + flex)} of your list charges` : '';
   return Object.assign(w, { charge, days, ok: !why, why, lvl: i, excl: x });
 };
 IC.avNegotiate = function (S, id, lvl, excl) {
@@ -1120,7 +1137,7 @@ function dealsDay(S) {
     const D = d.day, bad = D.late + D.cancel * 2, al = airlineOf(S, d.al);
     d.day = { late: 0, cancel: 0, n: 0 };
     // (a deal that runs for years forgives a bad day after a month of good ones)
-    if (!D.n || bad < Math.max(3, D.n * 0.25)) { if (career(S) && d.strikes && ++d.good >= IC.dpm(S)) { d.strikes--; d.good = 0; } continue; }
+    if (!D.n || bad < Math.max(3, D.n * 0.25)) { if (career(S) && d.strikes && ++d.good >= IC.dpm(S) / IC.mod(S, 'forgive')) { d.strikes--; d.good = 0; } continue; }
     d.good = 0;
     d.strikes++;
     repAdd(S, S.byId[d.a], -2);
@@ -1149,12 +1166,12 @@ function offerGap(S) {
   const A = S.av;
   // airlines kept on the ground by a closed airspace are slow to offer again
   const g = Math.max(0, ...A.airlines.map(al => IC.avGrudge(S, al)));
-  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600 * (1 + g);
+  if (!career(S) || !S.story) return U.rand(2.5, 5) * 3600 * (1 + g) / IC.mod(S, 'offerRate');
   // the Career: an offer every month or two, by the calendar
   const aps = IC.bases(S).filter(x => x.kind === 'airport' && x.owner === 'us');
   const rep = aps.length ? Math.max(...aps.map(repOf)) : IC.DEAL.rep0;
   const O = IC.FOCUS.progress && S.story.act === 1 ? IC.DEAL.offerMoF : IC.DEAL.offerMo;
-  return IC.MO(S, U.rand(O[0], O[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g);
+  return IC.MO(S, U.rand(O[0], O[1])) * U.clamp(1.6 - rep / 90, 0.6, 1.3) * (S.story.act === 1 ? 1 : 0.8) * (1 + g) / IC.mod(S, 'offerRate');
 }
 
 

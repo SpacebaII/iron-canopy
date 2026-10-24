@@ -11,7 +11,7 @@ Wave 17, the first of three (58, 59, 60). Builds on the Sandbox (PR #69: attacks
 - The map is a dashboard: the top bar, the rail, the air picture, the arsenal, the minimap and the layer buttons are always there, and every track carries a tag ("1 drone · 7 min out"), every battery its range ring and its status line. That is right for playing and wrong for filming (`shots/raid-1.png` before this brief).
 - `IC.cine` (main.js) already gives combat a breath of letterbox and eases the clock down while weapons fly near the view. It is a gameplay aid, not a camera.
 - The 3D view (`replay3d.js`) has a director, a recorder to WebM and an HDR picture (brief 40), but every frame carries the header, the data panel, labels on every object and lock lines. Brief 42 planned a cinematic mode there and was never built; its combat parts are folded into this brief and 59.
-- The airport trailer (PR #58, `tools/trailer.js`) proved the way to film this game smoothly on any machine: hold the page's clock and move it exactly 1/30 s before each frame is captured. It did it with an overlay injected from outside; this brief puts that into the game.
+- The airport trailer (PR #58, `tools/trailer-airports.js`) proved the way to film this game smoothly on any machine: hold the page's clock and move it exactly 1/30 s before each frame is captured. It did it with an overlay injected from outside; this brief puts that into the game.
 
 ## Goal
 

@@ -637,7 +637,8 @@ function drawInfra(S, px, now) {
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }
     } else {
-      if (i.parts && cam.z > 0.3) { /* drawn part by part */ }
+      // (drawn part by part from the zoom drawBases starts at: at exactly 0.3 both drew the name, a little apart)
+      if (i.parts && cam.z >= 0.3) { /* drawn part by part */ }
       else {
         const s = px, col = i.offline ? '#6a7880' : C.friend;
         ctx.fillStyle = 'rgba(6,14,20,0.85)'; ctx.strokeStyle = col; ctx.lineWidth = 1.5 * s;
@@ -648,10 +649,10 @@ function drawInfra(S, px, now) {
       }
       if (i.parts) {
         const st = IC.baseStatus(S, i);
-        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
-        else if (cam.z <= 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
+        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label(IC.rwyState(S, i).word.toUpperCase(), i.x, i.y - 16 * px - (cam.z >= 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
+        else if (cam.z < 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
         const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === i.id).length;
-        if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z > 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
+        if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z >= 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
       }
     }
     if (i.hp < i.max && !i.offline && i.owner === 'us' && i.kind !== 'city' && !(i.parts && cam.z > 0.3)) {
@@ -677,7 +678,7 @@ function drawGhost(S, px) {
   const m = S.mode2, h = S.hover;
   if (!m || !h) return;
   if (m.kind === 'deploy') {
-    const ok = IC.canPlace(S, m.type, h.x, h.y) && ((S.reserve[m.type] || 0) > 0 || !IC.buyBlock(S, m.type));
+    const why = IC.placeWhy(S, m.type, h.x, h.y) || ((S.reserve[m.type] || 0) > 0 ? '' : IC.buyBlock(S, m.type)), ok = !why;
     const d = IC.UNITS[m.type];
     const rng = IC.typeRange(m.type);
     ctx.strokeStyle = ok ? 'rgba(111,210,255,0.8)' : 'rgba(255,91,79,0.8)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([7 * px, 5 * px]);
@@ -686,6 +687,7 @@ function drawGhost(S, px) {
     if (d.logi && d.logi.reach) { ctx.strokeStyle = 'rgba(224,180,88,0.5)'; ctx.beginPath(); ctx.arc(h.x, h.y, d.logi.reach, 0, 7); ctx.stroke(); }
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.85; IC.drawUnitSymbol(ctx, m.type, h.x, h.y, px, ok ? C.friend : C.hostile, { tint: ok ? null : 'rgba(255,91,79,0.4)' }); ctx.globalAlpha = 1;
+    if (why) label(why.replace(/\.$/, ''), h.x, h.y + 26 * px, px, C.hostile, 11, 'center', 700);   // why not here, before the click
     if (d.sensor && d.sensor.ssr && S.asp && S.asp.ways.length) {
       // (round 5c) what it adds where the cursor is, and what crowding its band costs
       const G = IC.radarGain(S, m.type, h.x, h.y);
@@ -693,7 +695,7 @@ function drawGhost(S, px) {
         label(`+${Math.round(G.gain * 100)}% of the airways seen · ${Math.round(G.now * 100)}% now, ${Math.round(G.after * 100)}% with it`, h.x, h.y - 42 * px, px, G.gain > 0.05 ? C.friend : C.amber, 11, 'center', 700);
         label(G.near ? `${G.near} radar${G.near > 1 ? 's' : ''} on this band within 70 km: +${U.money(G.crowd * (S.mode === 'story' ? IC.MO(S) / 3600 : 24))} ${S.mode === 'story' ? 'a month' : 'a day'} to keep` : 'No other radar on this band within 70 km', h.x, h.y - 27 * px, px, G.near ? C.amber : C.muted, 10, 'center', 600);
       }
-    } else if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
+    } else if (!why && d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
     if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
   } else if (m.kind === 'airPoint') {
     const R = m.mission === 'aew' ? 3200 : m.mission === 'isr' ? 450 : 550;
@@ -704,6 +706,13 @@ function drawGhost(S, px) {
 function drawHints(S, px, now) {
   const hint = IC.stepHint && IC.stepHint(S);
   if (!hint) return;
+  // a limit the step names ("within 15 km of the base"): a dashed ring with its distance on top
+  const zn = hint.zone && hint.zone(S);
+  if (zn) {
+    ctx.strokeStyle = 'rgba(242,180,65,0.85)'; ctx.lineWidth = 2 * px; ctx.setLineDash([10 * px, 7 * px]);
+    ctx.beginPath(); ctx.arc(zn.x, zn.y, zn.r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    label(zn.label, zn.x, zn.y - zn.r - 6 * px, px, 'rgba(242,180,65,0.95)', 12, 'center', 600);
+  }
   let p = null;
   if (hint.at) p = hint.at(S);
   if (hint.track) { const t = hint.track(S); if (t && t.det) p = { x: t.px, y: t.py }; }

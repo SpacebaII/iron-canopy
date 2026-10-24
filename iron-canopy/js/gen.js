@@ -13,9 +13,11 @@ IC.FOREST_T = 0.56;
 IC.BIOMES = ['plains', 'palouse', 'wet', 'valley', 'south'];
 
 /* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between
-   them and show how far it has got (IC.generateSteps). IC.generate runs them all at once */
-IC.generate = seed => { const g = worldSteps(seed); for (;;) { const r = g.next(); if (r.done) return r.value; } };
-IC.generateSteps = seed => worldSteps(seed);
+   them and show how far it has got (IC.generateSteps). IC.generate runs them all at once. Both use the same sin, cos,
+   pow… on every browser (fixedmath.js), so a save rebuilds the same world anywhere; `native` uses the engine's own,
+   as saves made before that did */
+IC.generate = (seed, native) => { const g = IC.generateSteps(seed, native); for (;;) { const r = g.next(); if (r.done) return r.value; } };
+IC.generateSteps = (seed, native) => native ? worldSteps(seed) : IC.fixedMathSteps(worldSteps(seed));
 function* worldSteps(seed) {
   let R = IC.makeRng(seed);
   const WW = IC.WW, WH = IC.WH;

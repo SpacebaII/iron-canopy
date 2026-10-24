@@ -57,7 +57,7 @@ IC.drawWarnings = function (c, S, px, now) {
   ourMissiles(S, px);
   defending(S, px, now);
   droneGroups(S, px);
-  splashes(S, px, now);
+  splashes(S, px);
 };
 /* what an enemy radar holds: a line from it and a LOCKED tag; a missile on its way: MISSILE and its time to impact */
 function locks(S, px, now) {
@@ -111,19 +111,22 @@ function droneGroups(S, px) {
     pill(`${g.n} drone${g.n > 1 ? 's' : ''} · ${g.tti >= 60 ? Math.round(g.tti / 60) + ' min' : Math.round(g.tti) + ' s'} out`, p.x, p.y - 26 * px, px, '#ffe1dc', 'rgba(60,12,10,0.8)', 9);
   }
 }
-/* kill confirmation: a burst, the track struck through and SPLASH, for a few real seconds */
-const seen = new Map();
-function splashes(S, px, now) {
-  for (const s of S.fx.splash || []) if (!seen.has(s)) seen.set(s, now);
-  for (const [s, t0] of seen) {
-    const k = (now - t0) / 3.5;
-    if (k > 1 || !(S.fx.splash || []).includes(s)) { seen.delete(s); continue; }
+/* kill confirmation: a burst, the track struck through and SPLASH, fading over IC.SPLASH_T game seconds (aged by the
+   game clock, so it neither flashes again nor stays up while the map is left open) */
+function splashes(S, px) {
+  for (const s of S.fx.splash || []) {
+    const k = (S.time - s.t) / IC.SPLASH_T;
+    if (k > 1 || k < 0) continue;
     if (!RS.inView(s.x, s.y, 100)) continue;
-    const r = (10 + 30 * Math.sqrt(k)) * px;
-    ctx.strokeStyle = `rgba(255,210,122,${(1 - k) * 0.9})`; ctx.lineWidth = 2.2 * px;
-    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 7); ctx.stroke();
-    const q = 9 * px; ctx.strokeStyle = `rgba(255,236,190,${1 - k})`; ctx.lineWidth = 2.4 * px;
-    ctx.beginPath(); ctx.moveTo(s.x - q, s.y - q); ctx.lineTo(s.x + q, s.y + q); ctx.moveTo(s.x + q, s.y - q); ctx.lineTo(s.x - q, s.y + q); ctx.stroke();
+    // the burst and the cross in the first third, the words fading over the whole
+    const kb = Math.min(1, k * 3);
+    if (kb < 1) {
+      const r = (10 + 30 * Math.sqrt(kb)) * px;
+      ctx.strokeStyle = `rgba(255,210,122,${(1 - kb) * 0.9})`; ctx.lineWidth = 2.2 * px;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 7); ctx.stroke();
+      const q = 9 * px; ctx.strokeStyle = `rgba(255,236,190,${1 - kb})`; ctx.lineWidth = 2.4 * px;
+      ctx.beginPath(); ctx.moveTo(s.x - q, s.y - q); ctx.lineTo(s.x + q, s.y + q); ctx.moveTo(s.x + q, s.y - q); ctx.lineTo(s.x - q, s.y + q); ctx.stroke();
+    }
     ctx.globalAlpha = 1 - k; label(`SPLASH${s.tn ? ' · TN ' + s.tn : ''}`, s.x, s.y - 16 * px, px, '#ffd27a', 10, 'center', 700); ctx.globalAlpha = 1;
   }
 }
@@ -133,14 +136,18 @@ IC.drawWarnHud = function (c, S, now) {
   ctx = c;
   edgeArrows(S, now);
   tally(S);
-  const ct = IC.combatNow;
-  if (ct && ct.active) {
-    const x = cam.vw / 2, y = cam.vh - 118;
-    ctx.font = '700 12px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
-    const txt = `COMBAT TIME · ${ct.speed < 1 ? ct.speed.toFixed(1) : Math.round(ct.speed)}×`;
+  const ct = IC.combatNow, run = IC.runRate, want = IC.runWant;
+  // the speed button says what was asked for; this says when the game runs slower: combat time, or a computer that cannot keep up
+  const slow = run != null && want > 1 && run < want * 0.8;
+  if ((ct && ct.active) || slow) {
+    // just under the speed buttons, where the player looks to see the speed (panels cover the bottom of the map)
+    const sp = typeof document !== 'undefined' && document.getElementById('speed'), r = sp && sp.getBoundingClientRect();
+    const x = r && r.width ? r.left + 6 : 16, y = r && r.width ? r.bottom + 20 : 70, f = v => v < 1 ? v.toFixed(1) : v < 10 ? (Math.round(v * 2) / 2).toString() : Math.round(v);
+    ctx.font = '700 12px "IBM Plex Mono", monospace'; ctx.textAlign = 'left';
+    const txt = !slow ? `COMBAT TIME · ${f(ct.speed)}×` : `${ct && ct.active ? 'COMBAT TIME · ' : ''}RUNNING AT ${f(run)}× · this computer cannot keep up with ${f(want)}×`;
     const w = ctx.measureText(txt).width + 18;
-    ctx.fillStyle = 'rgba(40,10,8,0.75)'; ctx.fillRect(x - w / 2, y - 15, w, 22);
-    ctx.fillStyle = '#ffb0a6'; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(40,10,8,0.75)'; ctx.fillRect(x, y - 15, w, 22);
+    ctx.fillStyle = '#ffb0a6'; ctx.fillText(txt, x + 9, y);
   }
 };
 /* weapons off the screen: an arrow on the edge pointing at each, soonest first, with its countdown */
@@ -176,11 +183,18 @@ function edgeArrows(S, now) {
     ctx.textAlign = 'left';
   }
 }
+/* the bottom of the alert chips at the top of the screen (measured twice a second): the tally sits under them */
+let alB = 0, alT = 0;
+function alertsBottom() {
+  const now = performance.now();
+  if (now - alT > 500) { alT = now; const el = document.getElementById('alerts'); alB = el && el.offsetHeight ? el.getBoundingClientRect().bottom : 0; }
+  return alB;
+}
 /* the raid in the air: what came, what we stopped so far, what is still flying */
 function tally(S) {
   const T = IC.raidTally(S);
   if (!T || !(T.n || T.R.aborted)) return;
-  const x = cam.vw / 2, y = 134;
+  const x = cam.vw / 2, y = Math.max(134, alertsBottom() + 24);
   const txt = `${T.R.name.toUpperCase()} · ${T.stopped} of ${T.n} stopped${T.air ? ` · ${T.air} in the air` : ''}${T.ac ? ` · ${T.ac} aircraft down` : ''}${T.through ? ` · ${T.through} through` : ''}${T.R.aborted ? ' · RAID ABORTED' : ''}`;
   ctx.font = '700 12.5px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
   const w = ctx.measureText(txt).width + 22;
