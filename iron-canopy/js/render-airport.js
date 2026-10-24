@@ -53,7 +53,7 @@ IC.drawPlane = function (g, x, y, h, type, livery, o) {
   const k = Math.max(1, (o.minPx || 7) / (L * z));
   L *= k; Sp *= k;
   // the model catalogue draws the real shape; the old outline stays as the fallback
-  if (IC.modelTop && IC.modelTop(g, IC.modelOfType(type), x, y, h, { livery, body: o.body, minPx: o.minPx || 7, alpha: o.alpha, shadow: o.shadow })) return;
+  if (IC.modelTop && IC.modelTop(g, IC.modelOfType(type), x, y, h, { livery, body: o.body, minPx: o.minPx || 7, alpha: o.alpha, shadow: o.shadow, now: o.now })) return;
   const body = o.body || (T.mil ? 'rgb(150,160,168)' : 'rgb(238,240,242)');
   const c1 = livery ? livery[0] : T.mil ? 'rgb(110,120,128)' : 'rgb(80,110,150)', c2 = livery ? livery[1] : 'rgb(60,66,72)';
   g.save(); g.translate(x, y); g.rotate(h);
@@ -250,6 +250,8 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
   if (z >= 0.5) for (const m0 of ap.moves) {
     if (m0.dead || !seen(m0.x, m0.y, 1 + (m0.alt || 0) * 6)) continue;
     const P = IC.movePose(m0, S), m = { x: P.x, y: P.y, h: P.h, T: m0.T, phase: m0.phase, kind: m0.kind, holding: m0.holding, alt: m0.alt, type: m0.type, livery: m0.livery, mil: m0.mil };
+    // (brief 62) a light aircraft in its preflight is still drawn as parked, with its cover (IC.apronLife)
+    if (m0.ga && m.kind !== 'arr' && m.phase === 'start') continue;
     const air = m.phase === 'final';
     // (round 5c) from the middle zoom a taxiing aircraft leaves a short fading trail, so a busy apron reads as busy
     if (IC.FOCUS.polish && !air && z > 2 && z < 40 && !m.holding && !['push', 'start', 'wait', 'parkin', 'land'].includes(m.phase) && m.T) {
@@ -257,8 +259,9 @@ IC.drawAirport = function (g, S, ap, px, now, light, o) {
       gr.addColorStop(0, 'rgba(255,255,255,0.32)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.strokeStyle = gr; g.lineWidth = Math.max(m.T.len * 0.12, 2 * px); g.lineCap = 'round'; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(bx, by); g.stroke(); g.lineCap = 'butt';
     }
+    // (brief 62: propellers turn once the engines are running, from pushback or start-up to the stand)
     // the shadow as the airborne tracks draw it (render-combat.js), so it does not jump at the final approach fix
-    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? Math.min(3, (m.alt || 0) * 0.25) + 0.04 : 0.04, minPx: m.mil ? 6 : 8 });
+    IC.drawPlane(g, m.x, m.y, m.h, m.type, m.livery || null, { shadow: air ? Math.min(3, (m.alt || 0) * 0.25) + 0.04 : 0.04, minPx: m.mil ? 6 : 8, now: m.phase !== 'start' ? now : undefined });
     // a tug at the nose: pushing back, or towing to and from the hangar
     if (z > 5 && (m.phase === 'push' || m.kind === 'tow')) {
       // (round 5c) the same tug as at the stand, nose to nose with the aircraft on its tow bar
@@ -553,6 +556,13 @@ function drawStand(g, s, px, z, marks, fine, tiles) {
   if (tiles) {
     if (s.contact && !NOLBL) jetBridge(g, s, S0, px, z);
     if (s.linked === false) { g.strokeStyle = 'rgba(255,91,79,0.8)'; g.setLineDash([3 * px, 3 * px]); g.lineWidth = 1 * px; g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.setLineDash([]); }
+    g.restore(); return;
+  }
+  // a tie-down: a yellow T where the nose wheel stops and the wing rings, no stand box
+  if (s.size === 'xs') {
+    g.strokeStyle = YEL; g.lineWidth = Math.max(0.004, 0.6 * px);
+    g.beginPath(); g.moveTo(-0.05, 0); g.lineTo(0.03, 0); g.moveTo(0.03, -0.02); g.lineTo(0.03, 0.02); g.stroke();
+    if (fine) { g.fillStyle = 'rgba(236,236,226,0.6)'; for (const y of [-0.045, 0.045]) { g.beginPath(); g.arc(0, y, 0.004, 0, 7); g.fill(); } }
     g.restore(); return;
   }
   g.strokeStyle = 'rgba(236,236,226,0.35)'; g.lineWidth = Math.max(0.006, 0.6 * px);
@@ -1295,12 +1305,19 @@ function drawLandside(g, S, ap, px, z, night) {
     else if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
     g.restore();
     // (a name once: a lot the map draws in pieces is one lot; on a mapped landside the unnamed lots say nothing)
-    if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) { named.push({ t, x: it.x, y: it.y }); lbl(g, t.toUpperCase(), it.x, it.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700); } }
+    if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) named.push({ t, x: it.x, y: it.y, lot: k === 'park' }); }
   }
   // the upper decks: their shadow on the road below, concrete parapets, then the road on top
   g.lineCap = 'round'; g.lineJoin = 'round';
   for (const r of L.roads || []) if ((r.lv || 0) > 0) landRoad(g, r, px, z);
   g.lineCap = 'butt'; g.lineJoin = 'miter';
+  // the names last, over everything, buildings before car parks and none over another
+  const boxes = [];
+  for (const q of named.sort((a, b) => a.lot - b.lot)) {
+    const w = q.t.length * 7 * 0.62 * px + 4 * px, b = [q.x - w / 2, q.y - 6 * px, q.x + w / 2, q.y + 5 * px];
+    if (boxes.some(o => o[0] < b[2] && b[0] < o[2] && o[1] < b[3] && b[1] < o[3])) continue;
+    boxes.push(b); lbl(g, q.t.toUpperCase(), q.x, q.y + 3 * px, px, 'rgba(236,236,226,0.7)', 7, 'center', 700);
+  }
 }
 /* one landside road at its level: a tunnel as a faint dashed line, the ground as asphalt with a pale kerb, an upper
    deck with its shadow and parapets; lanes and arrows close in */
@@ -1371,6 +1388,14 @@ function landRoads(g, S, ap, L, px, z) {
       g.strokeStyle = 'rgba(236,236,226,0.85)'; g.lineWidth = Math.max(0.003, 0.6 * px);
       g.beginPath(); const p0 = P(0.2, r.w / 2 - lane), p1 = P(LL - 0.2, r.w / 2 - lane); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke();
       if (z > 60) { g.beginPath(); for (let s0 = 0.2; s0 < LL - 0.2; s0 += 0.065) { const q0 = P(s0, r.w / 2 - lane), q1 = P(s0, r.w / 2 - 0.004); g.moveTo(q0.x, q0.y); g.lineTo(q1.x, q1.y); } g.stroke(); }
+      // the words painted in the stopping lane: departures drop off at one end and arrivals are met at the other;
+      // with a departures deck above, the whole ground kerb is for arrivals (2.6 m letters, readable from z 120)
+      if (z > 120) {
+        const up = R.some(q => q.kind === 'upper' && q.by === r.by), ang = Math.atan2(uy, ux), flip = Math.cos(ang) < 0;
+        g.fillStyle = 'rgba(240,240,232,0.85)'; g.font = `600 0.026px "IBM Plex Sans", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        const word = (s0, t) => { const q = P(s0, r.w / 2 - lane / 2); g.save(); g.translate(q.x, q.y); g.rotate(ang + (flip ? Math.PI : 0)); g.fillText(t, 0, 0); g.restore(); };
+        for (let s0 = 0.35; s0 < LL - 0.3; s0 += 0.55) word(s0, up || s0 > LL / 2 ? 'ARRIVALS · PICK UP' : 'DEPARTURES · DROP OFF');
+      }
       // zebras across to the terminal's doors
       g.fillStyle = 'rgba(240,240,232,0.9)';
       for (let s0 = 0.5; s0 < LL - 0.4; s0 += 0.9) {
@@ -1637,6 +1662,13 @@ IC.drawBuildGhost = function (g, S, px) {
       const P = IC.partOutline(sp); g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); g.fill(); g.stroke();
     } else {
       const w = sp.w || D.w || (D.r || 0.1) * 2, h = sp.h || D.h || (D.r || 0.1) * 2;
+      // (an outline drawn corner by corner, brief 61: its own shape, and the stands its edges will get)
+      if (sp.poly) {
+        g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0); g.beginPath(); sp.poly.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); g.stroke(); g.restore();
+        g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.005, 0.6 * px);
+        for (const st of sp._st || []) { const S0 = IC.STAND[st.size]; g.save(); g.translate(st.x, st.y); g.rotate(st.a); g.strokeRect(-S0.d / 2, -S0.w / 2, S0.d, S0.w); g.restore(); }
+        continue;
+      }
       g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a || 0);
       if (D.r) { g.beginPath(); g.arc(0, 0, D.r, 0, 7); g.fill(); g.stroke(); } else { g.fillRect(-w / 2, -h / 2, w, h); g.strokeRect(-w / 2, -h / 2, w, h); }
       // the stands the apron will get
@@ -1644,6 +1676,8 @@ IC.drawBuildGhost = function (g, S, px) {
       g.restore();
     }
   }
+  // a corner moved: the outline as it will be
+  if (plan.reshape) { const P = plan.reshape.pts; g.save(); g.strokeStyle = col; g.fillStyle = fill; g.lineWidth = Math.max(0.01, 1.5 * px); g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.closePath(); g.fill(); g.stroke(); g.restore(); }
   // an outline being drawn: the corners as clicked joined by a dashed line, and the curve it makes when it cannot
   // be built yet (its sides cross, or it is too small)
   if (plan.shape && plan.pts && plan.pts.length > 1) {
@@ -1662,6 +1696,11 @@ IC.drawBuildGhost = function (g, S, px) {
     if (!rm) { g.beginPath(); g.moveTo(S0.d / 2, 0); g.lineTo(S0.d / 2 - 0.08, -0.05); g.lineTo(S0.d / 2 - 0.08, 0.05); g.closePath(); g.fillStyle = col; g.fill(); g.setLineDash([3 * px, 3 * px]); g.beginPath(); g.moveTo(-S0.d / 2 - 0.1, 0); g.lineTo(st.drive ? S0.d / 2 + 0.1 : S0.d * 0.3, 0); g.stroke(); g.setLineDash([]); }
     g.restore();
     if (!rm && ghostPlan) IC.drawPlane(g, c.x, c.y, a, { s: 'turbo', m: 'narrow', l: 'wide', xl: 'heavy' }[st.size], null, { alpha: 0.35, minPx: 6 });
+  }
+  // an outline being drawn: its sides so far, the one to the cursor, and (faint) the side that would close it
+  if (IC.bldOutline(m) && plan.pts && plan.pts.length >= 2 && !plan.specs.length) {
+    const P = plan.pts; g.save(); g.strokeStyle = col; g.lineWidth = Math.max(0.01, 1.5 * px); g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.stroke();
+    g.setLineDash([4 * px, 4 * px]); g.globalAlpha = 0.5; g.beginPath(); g.moveTo(P[P.length - 1].x, P[P.length - 1].y); g.lineTo(P[0].x, P[0].y); g.stroke(); g.restore();
   }
   // the points placed so far; the last one pulses while the plan is still being drawn
   const pts = m.pts, now = performance.now() / 1000;

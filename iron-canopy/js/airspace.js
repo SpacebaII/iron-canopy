@@ -1268,9 +1268,17 @@ IC.gaBase = function (S, town) {
   return best;
 };
 /* light aircraft fly by sight: daylight, and cloud and visibility good enough */
-IC.gaWeatherOk = function (S) {
-  const h = ((S.time % 86400) + 86400) % 86400 / 3600, wx = IC.wx(S);
-  return h >= 7 && h < 19 && wx.eo >= 0.7 && !(wx.fog > 0.08) && !(wx.precip > 0.1);
+IC.gaWeatherOk = S => !IC.gaGrounded(S);
+/* why the light aircraft stay on the ground now, in a few words, or null when they fly: they fly by day, by sight,
+   and not in gusts beyond what a light single takes across a grass strip (brief 62) */
+IC.gaGrounded = function (S) {
+  const h = ((S.time % 86400) + 86400) % 86400 / 3600, wx = IC.wx(S), gust = S.wind ? Math.max(S.wind.kt, S.wind.gust || 0) : 0;
+  if (h < 7 || h >= 19) return 'it is dark: light aircraft fly from 07:00 to 19:00';
+  if (wx.fog > 0.08) return 'fog: pilots flying by sight need to see the ground';
+  if (wx.precip > 0.1) return 'rain or snow';
+  if (wx.eo < 0.7) return 'low cloud and poor visibility: too little to fly by sight';
+  if (gust > 25) return `wind gusting ${Math.round(gust)} kt: too strong for light aircraft`;
+  return null;
 };
 /* airspace a light aircraft may not enter without a clearance: controlled volumes of airports it is not cleared
    into, and military bands */
@@ -1320,9 +1328,10 @@ IC.gaDelayNote = function (S, ap, wait) {
   ap.gaNoteT = S.time; ap.gaWait = 0;
   if (IC.civilAdvice(S)) IC.log(S, 'warn', 'AIRSPACE', `${ap.name}: airliners wait while light aircraft use the runway. Each slow light aircraft holds it as long as two airliners. A light-aircraft field nearby would take them away.`, ap);
 };
-IC.gaArrive = function (S, t) {
+IC.gaArrive = function (S, t, ground) {
   const b = t.gaTo; if (!b) return;
-  if (b.apt && S.byId[b.apt]) IC.gaRunway(S, S.byId[b.apt]);
+  // (one that lands through the ground movements holds the runway there, not by the timer: garamp.js)
+  if (b.apt && S.byId[b.apt]) { if (ground) S.budget += 0.02; else IC.gaRunway(S, S.byId[b.apt]); }
   const f = b.field && S.asp.fields.find(x => x.id === b.field);
   if (f) { f.moves++; f.today++; S.budget += 0.01; }
 };

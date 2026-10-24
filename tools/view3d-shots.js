@@ -117,6 +117,30 @@ async function clipFrame(C, S, speed, before) {
 const frameTimes = async n => { const ts = []; let last = performance.now(); await new Promise(res => { const f = now => { ts.push(now - last); last = now; if (ts.length < n) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); ts.sort((a, b) => a - b); return { med: +ts[n >> 1].toFixed(1), p95: +ts[Math.floor(n * 0.95)].toFixed(1) }; };`;
 
 const SCENES = {
+  // (brief 62) the capital's GA ramp in the live view: a pilot walking out to a light aircraft, a business jet with
+  // its car and ground power
+  ga: `
+    const S = await game('sandbox', 10); steps(S, 300);
+    const ap = IC.bases(S).filter(b => IC.gaRamp(b)).sort((a, b) => IC.gaRamp(b).length - IC.gaRamp(a).length)[0];
+    if (!ap) throw new Error('no GA ramp');
+    const R = IC.gaRamp(ap), jet = R.find(s => s.size !== 'xs' && !s.occ);
+    if (jet) IC.gaPark(S, ap, jet, { type: 'bizjet', biz: true, arr: S.time - 120, until: S.time + 7200 });
+    const r = IC.gaIdle(S, ap).find(x => x.type === 'light' || x.type === 'tourer');
+    if (r) IC.gaDepart(S, r, { x: ap.x + 200, y: ap.y, name: 'away' });
+    steps(S, 40);
+    const c = jet || R[Math.floor(R.length / 2)];
+    const L = await live(S, { x: c.x, y: c.y, name: 'GA ramp' }, 'orbit', 3000);
+    orbitAt(L, c.x, c.y, (c.a || 0) + 2.2, 0.32, 0.55); await wait(2500);
+    await __snap('ga');`,
+  // (brief 61) the capital's front side grown for a busy airport: garages, hotels and offices standing up
+  land: `
+    const S = await game('sandbox', 10); steps(S, 120);
+    const ap = IC.bases(S).filter(b => b.kind === 'airport' && b.parts.some(p => p.kind === 'terminal')).sort((a, b) => b.parts.length - a.parts.length)[0];
+    const L0 = IC.landInit(ap); for (let i = 0, n = -1; i < 80 && L0.items.length !== n; i++) { n = i < 3 ? -1 : L0.items.length; ap.paxRate = 3000; L0.pax = 3000; L0.t = 0; IC.landsideTick(S, ap, 1); }
+    const g = L0.items.find(it => it.kind === 'garage') || L0.items[0];
+    const L = await live(S, { x: g.x, y: g.y, name: 'front side' }, 'orbit', 3000);
+    orbitAt(L, g.x, g.y, 0.9, 0.24, 4.5); await wait(3000);
+    await __snap('land');`,
   // an airliner parked at a contact stand of the capital's airport, seen from the apron
   gate: `
     const S = await game('sandbox', 11); steps(S, 600);

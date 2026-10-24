@@ -32,7 +32,8 @@ const day = S => { const h = ((S.time % 86400) + 86400) % 86400 / 3600; return h
 const G = S => S.gav || (S.gav = { craft: [], t: 0 });
 const ours = ap => ap && ap.kind === 'airport' && ap.owner === 'us' && !ap.offline && ap.parts;
 /* stands in the light-aircraft zone that the taxiways reach */
-IC.gavStands = ap => IC.aptStands(ap).filter(s => s.zone === 'light' && s.linked !== false && s.hp > 0);
+// (the GA ramp's tie-downs and small stands are garamp.js's: its based aircraft and visitors live there, brief 62)
+IC.gavStands = ap => { const R = IC.gaRamp && IC.gaRamp(ap), own = R ? new Set(R.map(s => s.id)) : null; return IC.aptStands(ap).filter(s => s.zone === 'light' && s.linked !== false && s.hp > 0 && !(own && own.has(s.id))); };
 IC.gavPads = ap => ap.parts.filter(p => p.kind === 'helipad' && p.built && p.hp > p.max * 0.25);
 const standOf = (ap, id) => IC.aptStands(ap).find(s => s.id === id);
 const craftOf = (S, id) => G(S).craft.find(c => c.id === id);
@@ -182,7 +183,8 @@ function comeBack(S, c, ap) {
    a helicopter straight down to a free pad; anything else round to the approach fix and through the tower to a
    light-aircraft stand. False leaves it to the old way (it lands, is towed off, and the runway is held). */
 IC.gavInbound = function (S, t, dt) {
-  if (t.gavNo) return false;
+  // (one the GA ramp already flies in, or one of its own, stays with garamp.js)
+  if (t.gavNo || t.gaIn || t.gaRec) return false;
   // (a based aircraft away on a trip lands somewhere else: it is gone for a few hours, then comes back)
   if (t.gavAway) { const fin = t.wps[t.wps.length - 1]; if (U.dxy(t.x, t.y, fin.x, fin.y) < 3) { const c = craftOf(S, t.gav); if (c) { c.where = 'away'; c.t = U.rand(3600, 3 * 3600); } t.dead = true; return true; } return false; }
   const b = t.gaTo, ap = b && b.apt && S.byId[b.apt];

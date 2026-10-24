@@ -62,6 +62,21 @@ IC.svcNet = function (ap) {
   // the perimeter road, just inside the fence
   const F = IC.aptFence(ap);
   if (F && F.poly && F.poly.length > 2) roads.push({ pts: IC.polyGrow(F.poly, -0.14), w: 0.05, kind: 'perim', closed: true });
+  // (roads that meet none of the rest, a pier's equipment road against its head house, say, where the two only run side
+  // by side, or a piece of apron edge road between taxilanes: joined to the rest by their shortest gap)
+  const lines = roads.map(r => polyLine(r.pts, r.closed)), grp = roads.map((r, i) => i), root = i => grp[i] === i ? i : (grp[i] = root(grp[i]));
+  const meet = (P, Q) => P.some((a, k) => k && Q.some((b, m) => m && U.segX(P[k - 1].x, P[k - 1].y, a.x, a.y, Q[m - 1].x, Q[m - 1].y, b.x, b.y) >= 0)) || Q.some(b => P.some((a, k) => k && U.segDist(b.x, b.y, P[k - 1].x, P[k - 1].y, a.x, a.y) < 0.03)) || P.some(a => Q.some((b, m) => m && U.segDist(a.x, a.y, Q[m - 1].x, Q[m - 1].y, b.x, b.y) < 0.03));
+  const bbOf = P => P.reduce((b, q) => [Math.min(b[0], q.x), Math.min(b[1], q.y), Math.max(b[2], q.x), Math.max(b[3], q.y)], [1e9, 1e9, -1e9, -1e9]), bbs = lines.map(bbOf);
+  const bbNear = (a, b, e) => a[0] - e < b[2] && b[0] - e < a[2] && a[1] - e < b[3] && b[1] - e < a[3];
+  for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) if (bbNear(bbs[i], bbs[j], 0.04) && root(i) !== root(j) && meet(lines[i], lines[j])) grp[root(i)] = root(j);
+  const size = {}; roads.forEach((r, i) => { size[root(i)] = (size[root(i)] || 0) + lines[i].length; });
+  const main = +Object.keys(size).sort((a, b) => size[b] - size[a])[0];
+  for (const g of new Set(roads.map((r, i) => root(i)))) {
+    if (g === main) continue;
+    let best = null;
+    roads.forEach((r, i) => { if (root(i) !== g) return; for (const a of lines[i]) lines.forEach((Q, j) => { if (root(j) === g || !bbNear(bbs[i], bbs[j], 1.5)) return; for (let m = 1; m < Q.length; m++) { const A = Q[m - 1], B = Q[m], L2 = U.dxy(A.x, A.y, B.x, B.y) ** 2 || 1e-9, t = U.clamp(((a.x - A.x) * (B.x - A.x) + (a.y - A.y) * (B.y - A.y)) / L2, 0, 1), q = { x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t }, d = U.dist(a, q); if ((!best || d < best.d) && !onRunway(a, q)) best = { d, a, q, by: r.by }; } }); });
+    if (best && best.d < 1.5) { roads.push({ pts: [best.a, best.q], w: W, kind: 'spur', by: best.by }); lines.push([best.a, best.q]); bbs.push(bbOf([best.a, best.q])); }
+  }
   // spurs: from each building that needs vehicles to the nearest road (fuel tanks as one farm)
   const served = [], farm = ap.parts.filter(p => p.built && p.kind === 'fuel');
   if (farm.length) { const c = { x: farm.reduce((s, p) => s + p.x, 0) / farm.length, y: farm.reduce((s, p) => s + p.y, 0) / farm.length }; served.push({ p: farm.sort((a, b) => U.dist(a, c) - U.dist(b, c))[0], farm }); }
