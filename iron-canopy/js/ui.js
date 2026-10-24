@@ -228,11 +228,13 @@ function evcard() {
   // placed once for each card: it stays put under the cursor while the column above it changes (a toast leaving
   // moved it about 30 px, and a click meant for one answer landed on the next)
   if (ui.evcardAt !== e.id) { placeCard(el, { at: e.at || null }); ui.evcardAt = e.id; }
+  // (brief 74) a card about a place on the map says where, and a click takes the camera there
+  const at = e.at && (typeof e.at === 'function' ? e.at(S) : e.at);
   // (brief 70) a card from one of the cast shows their face and role; a letter looks like one; each option says
   // what it costs now and, for the story's chains, what it risks later
   const who = e.cast && IC.ADVISORS[IC.castWho(S, e.cast)], face = who && IC.portrait ? IC.portrait(IC.castWho(S, e.cast), 64) : '';
   el.classList.toggle('letter', !!e.letter); el.classList.toggle('person', !!face);
-  setHTML(el, `${face ? `<div class="evwho">${face}<div><b>${esc(who.name)}</b><span>${esc(who.role)}</span></div><small>${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small></div>` : `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}</small>`}<h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
+  setHTML(el, `${face ? `<div class="evwho">${face}<div><b>${esc(who.name)}</b><span>${esc(who.role)}</span></div><small>${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}${at ? ` · <button class="pm-t" data-act="evGo" data-id="${e.id}" title="Show it on the map">${esc(at.name || 'Show on the map')} ▸</button>` : ''}</small></div>` : `<small>${esc(e.who || 'Decision')} · ${U.clock(e.t)}${S.story.events.length > 1 ? ` · ${S.story.events.length - 1} more waiting` : ''}${at ? ` · <button class="pm-t" data-act="evGo" data-id="${e.id}" title="Show it on the map">${esc(at.name || 'Show on the map')} ▸</button>` : ''}</small>`}<h2>${esc(e.title)}</h2><p>${esc(e.text)}</p>
     <div class="opts">${e.opts.map((o, i) => `<button class="opt" data-act="evChoose" data-id="${e.id}" data-v="${i}"><b>${esc(o.t)}</b>${o.tip ? `<span>${esc(o.tip)}</span>` : ''}${o.risk ? `<span class="risk">Later: ${esc(o.risk)}</span>` : ''}</button>`).join('')}</div>`);
 }
 function alerts() {

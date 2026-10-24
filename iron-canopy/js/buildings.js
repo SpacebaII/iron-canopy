@@ -531,7 +531,8 @@ IC.blockPlan = function (b, c) {
   const sd = Math.floor(b.seed || 0), h = (i, j) => U.hash(sd * 3 + i, j * 7 + 1), T = IC.cityTones(c);
   const P = { ground: 'grass', lots: [], lanes: [], bld: [], trees: [] };
   // the density gradient (brief 65): flats a little lower and towers much lower away from the middle of town
-  if (c) { const gr = IC.realGrad(U.dist(b, c) / 10); P.g = U.clamp(Math.sqrt(gr), 0.6, 1); P.gt = U.clamp(Math.pow(gr, 0.8), 0.35, 1); }
+  // (a map may raise or lower a city's skyline against the measured one, brief 73: c.tall)
+  if (c) { const gr = IC.realGrad(U.dist(b, c) / 10), tall = c.tall || 1; P.g = U.clamp(Math.sqrt(gr) * tall, 0.6, 1.4); P.gt = U.clamp(Math.pow(gr, 0.8) * tall, 0.35, 1.6); }
   const fn = (b.land && LAND[b.land]) || FORMS[b.f];
   if (fn) fn(P, b, h, T);
   else box(P, 0, 0, b.w * 0.7, b.h * 0.7, 0.08, [170, 166, 158], 'flat', 'bld');
@@ -560,11 +561,13 @@ IC.placeLandmarks = function (W, c, roads) {
     if (o) pick([o.b], 'station', b => { const s = o.r.s; b.ra = U.angWrap(Math.atan2(s[3] - s[1], s[2] - s[0]) - b.a); b.face = frame(b, c.x, c.y); });
   }
   const o = c.fld && c.fld.old ? c.fld.old : c;
-  if (c.pop >= 250) pick(B.filter(b => b.f === 'old' && small(b) >= 0.45).sort((p, q) => U.dxy(p.x, p.y, o.x, o.y) - U.dxy(q.x, q.y, o.x, o.y)), 'cathedral');
-  if (c.capital) pick(B.filter(b => b.d === 'biz' && small(b) >= 0.8).sort((p, q) => far(p) - far(q)), 'ministry');
-  if (c.pop >= 200) pick(B.filter(b => (b.d === 'dense' || b.d === 'sub') && small(b) >= 1.0).sort((p, q) => Math.abs(far(p) - ext * 0.45) - Math.abs(far(q) - ext * 0.45)), 'hospital');
-  if (c.pop >= 400) pick(B.filter(b => (b.d === 'dense' || b.d === 'biz') && small(b) >= 1.2).sort((p, q) => Math.abs(far(p) - ext * 0.35) - Math.abs(far(q) - ext * 0.35)), 'university');
-  if (c.pop >= 300) pick(B.filter(b => b.d !== 'old' && b.d !== 'biz' && b.d !== 'rail' && small(b) >= 1.4).sort((p, q) => Math.abs(far(p) - ext * 0.7) - Math.abs(far(q) - ext * 0.7)), 'stadium');
+  // (a map names the landmarks a city must have, or must not: brief 73)
+  const M = c.marks || [], want = k => M.includes(k), not = k => M.includes('!' + k);
+  if ((c.pop >= 250 || want('cathedral')) && !not('cathedral')) pick(B.filter(b => b.f === 'old' && small(b) >= 0.45).sort((p, q) => U.dxy(p.x, p.y, o.x, o.y) - U.dxy(q.x, q.y, o.x, o.y)), 'cathedral');
+  if ((c.capital || want('ministry')) && !not('ministry')) pick(B.filter(b => b.d === 'biz' && small(b) >= 0.8).sort((p, q) => far(p) - far(q)), 'ministry');
+  if ((c.pop >= 200 || want('hospital')) && !not('hospital')) pick(B.filter(b => (b.d === 'dense' || b.d === 'sub') && small(b) >= 1.0).sort((p, q) => Math.abs(far(p) - ext * 0.45) - Math.abs(far(q) - ext * 0.45)), 'hospital');
+  if ((c.pop >= 400 || want('university')) && !not('university')) pick(B.filter(b => (b.d === 'dense' || b.d === 'biz') && small(b) >= 1.2).sort((p, q) => Math.abs(far(p) - ext * 0.35) - Math.abs(far(q) - ext * 0.35)), 'university');
+  if ((c.pop >= 300 || want('stadium')) && !not('stadium')) pick(B.filter(b => b.d !== 'old' && b.d !== 'biz' && b.d !== 'rail' && small(b) >= 1.4).sort((p, q) => Math.abs(far(p) - ext * 0.7) - Math.abs(far(q) - ext * 0.7)), 'stadium');
   // sidings into the factories and warehouses beside the line
   if (rails.length) {
     // (the blocks keep a corridor off the line, so the siding runs across the gap from the line to the yard)

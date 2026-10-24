@@ -254,7 +254,7 @@ IC.saveGame = function (S, meta) {
   skipSets = skipFor(S, S.world);
   try {
     const { root, jobs, lost } = new Writer(S, BASE).run();
-    return { game: 'iron-canopy', v: IC.SAVE_VERSION, seed: S.world.seed, wsig: BASE.sig, fm: 1, nid: IC.nidPeek(), meta: Object.assign(IC.saveMeta(S), meta || {}),
+    return { game: 'iron-canopy', v: IC.SAVE_VERSION, seed: S.world.seed, map: S.world.map || undefined, wsig: BASE.sig, fm: 1, nid: IC.nidPeek(), meta: Object.assign(IC.saveMeta(S), meta || {}),
       ms: Date.now() - t0, rebuild: ['terrain', 'clouds', 'traffic'].filter(k => S[k] != null), lost, root, jobs };
   } finally { skipSets = new Map(); }
 };
@@ -361,8 +361,8 @@ IC.loadSteps = function* (data) {
     let W;
     // the world is rebuilt with the same sums everywhere (fixedmath.js); a save from before that, with the browser's own
     const native = !data.fm, inMath = fn => native ? fn() : IC.fixedMath(fn);
-    if (IC.generateSteps) { const g = IC.generateSteps(data.seed, native); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
-    else W = IC.generate(data.seed, native);
+    if (IC.generateSteps) { const g = IC.generateSteps(data.seed, data.map, native); for (;;) { const r = g.next(); if (r.done) { W = r.value; break; } yield [0.02 + 0.6 * (IC.LOAD_STAGES[r.value] || 0) / IC.LOAD_STAGES.routing, IC.STAGE_WORDS && IC.STAGE_WORDS[r.value] || 'Generating the region']; } }
+    else W = IC.generate(data.seed, data.map, native);
     IC.W = W;
     inMath(() => IC.buildRouting(W));
     yield [0.64, 'Checking the map'];

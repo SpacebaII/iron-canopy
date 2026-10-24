@@ -211,6 +211,7 @@ IC.buildTerrain = function (W) {
   for (const [w, a] of [[70, 0.04], [34, 0.07], [12, 0.16]]) { tg.strokeStyle = `rgba(140,215,255,${a})`; tg.lineWidth = w; outline(); tg.stroke(); }
   tg.strokeStyle = 'rgba(210,215,220,0.2)'; tg.lineWidth = 7; tg.setLineDash([27, 36]);
   W.secs.forEach((s, i) => {
+    if (s.k === 'S' || W.secs[(i + 1) % W.secs.length].k === 'S') return;   // (no line out into the sea)
     tg.beginPath(); let first = true;
     for (let dd = 0; dd < IC.WW; dd += 60) {
       const a0 = s.a0 + W.jag(i, W.radialB(s.a0) + dd, dd), D = W.radialB(s.a0) + dd;

@@ -796,7 +796,7 @@ function city(c) {
   const P = (t, cls) => `<p class="hint ${cls || ''}" style="margin:.25rem 0">${t}</p>`;
   // what the city is, from its districts, and so what it wants from an airport
   const ch = IC.cityCharacter ? IC.cityCharacter(c) : null;
-  const what = ch ? `<div class="sec"><p class="hint" style="margin:.25rem 0"><b>${esc(c.name)}: ${esc(ch.kind)}.</b> ${esc(ch.why)}</p><p class="hint" style="margin:.25rem 0">${esc(ch.parts.charAt(0).toUpperCase() + ch.parts.slice(1))}.</p></div>` : '';
+  const what = ch ? `<div class="sec">${c.blurb ? `<p class="hint" style="margin:.25rem 0">${esc(c.blurb)}</p>` : ''}<p class="hint" style="margin:.25rem 0"><b>${esc(c.name)}: ${esc(ch.kind)}.</b> ${esc(ch.why)}</p><p class="hint" style="margin:.25rem 0">${esc(ch.parts.charAt(0).toUpperCase() + ch.parts.slice(1))}.</p></div>` : '';
   const growth = R ? `<div class="sec"><h3 class="sh">Growth</h3>${P(`<b>${esc(R.growth)}</b> ${esc(R.rate)}`)}
     ${P(`<b>Air service:</b> ${esc(R.air)} ${esc(R.demand)}`)}${P(`<b>Roads:</b> ${esc(R.roads)}`, R.cuts.length ? 'hostile' : '')}${R.cuts.map(t => P(esc(t), 'hostile')).join('')}
     ${R.inds.length ? P(`<b>Industry selling here:</b> ${R.inds.map(esc).join(' ')}`) : ''}
