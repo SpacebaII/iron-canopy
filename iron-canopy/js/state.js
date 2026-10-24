@@ -25,8 +25,8 @@ function* gameSteps(opts) {
   const W = IC.W = yield* IC.generateSteps(opts.seed >>> 0, opts.map);
   const seed = W.seed;   // (on an authored map the seed is the map's: W.map says which)
   yield 'routing';
-  IC.buildRouting(W);
-  if (IC.worldBase) IC.worldBase(W);   // fingerprints of the fresh world, so a save stores only what changed (save.js)
+  // fingerprints of the fresh world, so a save stores only what changed (save.js); with the fixed sums, like generation
+  IC.fixedMath(() => { IC.buildRouting(W); if (IC.worldBase) IC.worldBase(W); });
   yield 'airports';
   const mode = opts.mode || 'campaign';
   const sandbox = mode === 'sandbox';
@@ -102,14 +102,23 @@ function* gameSteps(opts) {
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
   if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
+  // (wave 14) Free build: the Career's country with no story (free.js)
+  if (story && opts.free) IC.freeInit(S);
   // (the showcase is the airport at work: no chapter cards, no goals, no guide)
   if (S.showcase) { S.budget = 1e6; S.camp.cards = []; S.camp.comms = []; S.camp.sched = []; S.story.goals = []; S.story.tut = false; S.camp.focus = { x: S.byId[S.story.cap].x, y: S.byId[S.story.cap].y, z: 0.5 }; }
   return S;
 }
 
 IC.cap = S => S.infra.find(i => i.capital);
-IC.cities = S => S.infra.filter(i => i.kind === 'city');
-IC.bases = S => S.infra.filter(i => i.kind === 'airbase' || i.kind === 'airport');
+/* the cities and the airports and air bases, asked for many times a step: the lists are kept while the list of
+   infrastructure is the same (it only grows, and nothing in it changes kind), and each caller gets its own copy */
+const infraLists = S => {
+  const C = S._il;
+  if (C && C.a === S.infra && C.n === S.infra.length) return C;
+  return (S._il = { a: S.infra, n: S.infra.length, cities: S.infra.filter(i => i.kind === 'city'), bases: S.infra.filter(i => i.kind === 'airbase' || i.kind === 'airport') });
+};
+IC.cities = S => infraLists(S).cities.slice();
+IC.bases = S => infraLists(S).bases.slice();
 
 IC.findSpot = function (S, type, x, y, dmin, dmax) {
   for (let t = 0; t < 160; t++) {
@@ -200,6 +209,13 @@ IC.log = function (S, kind, tag, msg, at) {
   if (S.logs.length > 400) S.logs.length = 400;
   if (kind === 'leak' || kind === 'warn' || at) IC.toast && IC.toast(S, kind, tag, msg, at);
 };
+/* the first of a burst of the same kind of event (a salvo of ballistic missiles, the hits of one raid): false while
+   the last one of that kind came within gap game seconds, and each one keeps the burst going (the auto-pause asks) */
+IC.burstFirst = function (S, key, gap) {
+  const B = S._burst || (S._burst = {}), last = B[key];
+  B[key] = S.time;
+  return last == null || S.time - last > (gap || 180);
+};
 IC.news = function (S, text) {
   S.news.unshift({ t: S.time, text });
   if (S.news.length > 40) S.news.length = 40;
@@ -284,7 +300,7 @@ IC.detonate = function (S, x, y, dmg, src) {
   const kind = (src2.d && src2.d.name ? src2.d.name : 'weapon').toLowerCase(), an = w => (/^[aeiou]/.test(w) && !/^one/.test(w) ? 'an ' : 'a ') + w;
   const lbl = src2.tn ? `${an(kind)} (TN ${src2.tn})` : an(`unseen ${kind}`);
   if (hit) { S.stats.leakers++; IC.log(S, 'leak', 'IMPACT', `${hit.name} hit by ${lbl}.`, { x, y }); IC.emit(S, 'impact', { x, y, hit, src: src2 }); }
-  else IC.log(S, 'info', 'IMPACT', `${lbl.charAt(0).toUpperCase() + lbl.slice(1)} struck open ground ${IC.nearPlace(S, x, y)}.`);
+  else { IC.log(S, 'info', 'IMPACT', `${lbl.charAt(0).toUpperCase() + lbl.slice(1)} struck open ground ${IC.nearPlace(S, x, y)}.`); S.logs[0].rp = { x, y }; }   // (a place to replay, without a toast)
   return hit;
 };
 IC.cityHit = function (S, c, x, y, dmg, src) {
@@ -487,10 +503,25 @@ IC.hitConvoy = function (S, v, what) {
     v.dead = true;
     S.stats.convoysLost++;
     if (v.job) IC.failJob(S, v.job);
-    IC.log(S, 'leak', 'CONVOY', `${v.name} destroyed${what ? ' by ' + what : ''} ${IC.nearPlace(S, v.x, v.y)}.`, v);
-    IC.emit(S, 'convoyLost', v);
-  } else IC.log(S, 'warn', 'CONVOY', `${v.name} hit${what ? ' by ' + what : ''}; ${v.trucks} truck${v.trucks === 1 ? "" : "s"} left.`, v);
+    convoyLine(S, v, what);
+    v.lostBy = what; IC.emit(S, 'convoyLost', v);
+  } else convoyLine(S, v, what);
 };
+/* one line in the Journal for one strike, however many convoys and trucks it hit: a salvo or a cluster warhead on a
+   depot's lorry park would otherwise write a line per truck */
+function convoyLine(S, v, what) {
+  const st = v.trucks <= 0 ? 'destroyed' : `${v.trucks} truck${v.trucks === 1 ? '' : 's'} left`, H = S._cvHit;
+  if (H && S.time - H.t < 20 && U.dxy(H.x, H.y, v.x, v.y) < 60 && S.logs.includes(H.e)) {
+    H.m.set(v.name, st); H.t = S.time;
+    const L = [...H.m].map(([n, s]) => `${n} ${s}`);
+    H.e.msg = `Convoys hit${H.what ? ' by ' + H.what : ''} ${H.where}: ${L.join(', ')}.`;
+    if ([...H.m.values()].includes('destroyed')) H.e.kind = 'leak';
+    return;
+  }
+  const where = IC.nearPlace(S, v.x, v.y);
+  IC.log(S, v.trucks <= 0 ? 'leak' : 'warn', 'CONVOY', v.trucks <= 0 ? `${v.name} destroyed${what ? ' by ' + what : ''} ${where}.` : `${v.name} hit${what ? ' by ' + what : ''}; ${st}.`, v);
+  S._cvHit = { t: S.time, x: v.x, y: v.y, e: S.logs[0], m: new Map([[v.name, st]]), what, where };
+}
 
 /* crews tire while their radars radiate and threats are near, and recover when stood down */
 IC.fatigue = function (S, dt) {

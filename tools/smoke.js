@@ -91,9 +91,20 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
       // the Build button beside it
       await ev(`IC.cam.fly = null; IC.cam.z = 4; IC.centerOn(${ap.x}, ${ap.y})`); await wait(300);
       if (!(await ev(`!document.getElementById('bbar').hidden`))) { await page.click('button[data-act=bbToggle]'); await wait(300); }
+      // the bar opens on whole pieces (IC.FOCUS.pieces): the runway alone is under Detail
+      if (await page.$('#bbar button[data-bb=detail]:not(.on)')) { await page.click('#bbar button[data-bb=detail]'); await wait(200); }
+      // (founding leaves the surveyed runway placed as a plan with the Runway tool: a right-click takes it back, so it is drawn afresh)
+      const surveyed = await ev(`!!(IC.S.mode2 && IC.S.mode2.part === 'runway')`);
+      if (surveyed) {
+        const c = await toScreen(ap.x, ap.y); await page.mouse.click(c.x, c.y, { button: 'right' }); await wait(300);
+        if (await ev(`!(IC.S.mode2 && IC.S.mode2.part === 'runway' && !IC.S.mode2.pts.length)`)) problems.push('career: a right-click did not take back the surveyed runway plan');
+      }
       await page.click('#bbar button[data-bb=tab][data-v=rw]'); await wait(200);
-      await page.click('#bbar button[data-bb=item][data-v=runway]'); await wait(200);
+      // (the Runway tool is on already when the surveyed plan was taken back: clicking it again would put it away)
+      if (!surveyed) { await page.click('#bbar button[data-bb=item][data-v=runway]'); await wait(200); }
       const P = (l) => ({ x: ap.x + Math.cos(ap.a) * l, y: ap.y + Math.sin(ap.a) * l });
+      // (a card that came up after founding, such as the access road's, takes the first click: close it first)
+      await wait(1000); await clear();
       const a = P(-15), b = P(15);
       await clickWorld(a.x, a.y); await clickWorld(b.x, b.y); await wait(300);
       await page.click('#bldgo button[data-go=build]'); await wait(300);
@@ -102,7 +113,11 @@ const BAD_TEXT = /\bundefined\b|\bNaN\b|\[object \w+\]/;
       await page.keyboard.press('Escape'); await wait(200);
       await look('career-runway');
       // the rest of the build bar: a tab by its key, an item, the tools and an info view
-      await page.keyboard.press('2'); await wait(200);
+      // (the Taxiways tab's key: 2 with the bar's parts one by one, 4 after the pieces' two tabs)
+      const twKey = await ev(`(IC.bbTabs(IC.S).find(t => t.k === 'tw') || {}).key || '2'`);
+      // (Esc after building puts the tool away, or closes the bar when the build already did: B opens it again)
+      if (!(await ev(`IC.bb.open`))) { await page.keyboard.press('b'); await wait(200); }
+      await page.keyboard.press('Shift+' + twKey); await wait(200);
       await page.click('#bbar button[data-bb=item][data-v=taxi]'); await wait(200); await look('career-bar-taxiway');
       await page.keyboard.press('Escape'); await wait(200);
       for (const t of ['upgrade', 'move', 'bulldoze']) { await page.click(`#bbar button[data-bb=tool][data-v=${t}]`); await wait(200); await look(`career-bar-${t}`); await page.keyboard.press('Escape'); await wait(150); }

@@ -18,8 +18,14 @@ function say(S, who, text) {
   IC.sfx && IC.sfx.radio();
 }
 IC.say = say;
-function card(S, title, sub, text, kind, x) { S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
+function card(S, title, sub, text, kind, x) {
+  // (wave 14) Free build stops only for accidents and alarms; the rest goes to the Journal
+  if (S.free && kind !== 'alarm') { IC.log(S, 'info', 'NOTE', `${title}: ${text}`); return; }
+  S.camp.cards.push(Object.assign({ title, sub, text, kind: kind || 'chapter', t: S.time }, x)); IC.sfx && IC.sfx.ui('chapter'); }
 IC.card = card;
+/* a card that would cover the map while a raid is in the air waits for it to end: the morning briefing, reports
+   (a raid's result among them) and anything made over ten minutes ago; what is happening now still shows */
+IC.cardWaits = (S, c) => !!(IC.raidPhase && IC.raidPhase(S) === 'raid' && (c.kind === 'briefing' || c.kind === 'report' || S.time - (c.t || 0) > 600));
 function chapter(S, name, text) { if (S.camp.chapter === name) return; S.camp.chapter = name; card(S, name, `Day ${U.day(S.time)} · ${U.hhmm(S.time)}`, text, 'chapter'); IC.emit(S, 'chapter', name); }
 
 /* Quick war is won by holding: this many days of war with the country still working and the Prime Minister still
@@ -29,6 +35,7 @@ IC.campaignInit = function (S) {
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: snap(S) };
   S.pm = 70;
   const E = S.enemy, W = S.world;
+  if (S.mode === 'test') return IC.sandboxInit(S);
   if (S.mode === 'sandbox') {
     S.camp.sched = [{ t: 7 * 3600, fn: IC.hfn('qwSandboxWar', S) }, { t: 30 * 3600, fn: IC.hfn('qwWake', S) }];
     S.camp.chapter = 'Open War';
@@ -39,7 +46,7 @@ IC.campaignInit = function (S) {
   for (const s of S.esites) if (s.nat === 'B') s.dormant = true;
   const war = S.time + U.rand(3, 4.5) * 3600, second = war + U.rand(20, 30) * 3600;
   S.camp.sched = ['qwRecon', 'qwRockets', 'qwSigint', 'qwWar', 'qwSecond'].map((h, i) => ({ t: [S.time + U.rand(0.6, 1) * 3600, S.time + U.rand(1.6, 2.2) * 3600, war - 1500, war, second][i], fn: IC.hfn(h, S) }));
-  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `The ${W.full.A} has closed the border and its forces are massing. Our layers are up over the capital, the main air base and the two largest cities, but more equipment waits in the reserve and the spare missiles at each site are only half stocked. Use the time.`, 'chapter');
+  card(S, 'Tension', `Day 1 · ${U.hhmm(S.time)}`, `The ${W.full.A} has closed the border and its forces are massing. Its ally the ${W.full.B} has not moved yet, but expect it to join about a day after the first strike. Our layers are up over the capital, the main air base and the two largest cities, but more equipment waits in the reserve and the spare missiles at each site are only half stocked. Use the time.`, 'chapter');
   S.camp.chapter = 'Tension';
   say(S, 'CDS', `The ${W.full.A} is massing on the border. We have hours, not days. Deploy what is still in the reserve, top up the stores, and decide what else we protect.`);
   say(S, 'ADA', 'Our radars give us a picture, but only the 3D radars can tell airliners from bombers. The sky is full of civil traffic: keep weapons Tight until something is identified hostile.');
@@ -101,7 +108,7 @@ IC.campaignTick = function (S, dt) {
   C.sugT = (C.sugT || 0) - dt;
   if (C.sugT <= 0) { C.sugT = 10; C.objs = suggestions(S); }
   const h = (S.time % 86400) / 3600, day = U.day(S.time);
-  if (day > 1 && h >= 6 && C.briefDay !== day) { C.briefDay = day; briefing(S); }
+  if (day > 1 && h >= 6 && C.briefDay !== day && IC.raidPhase(S) !== 'raid') { C.briefDay = day; briefing(S); }   // (after the raid in the air, if one is)
   if (h >= 21 && C.reportDay !== day && S.enemy.war) { C.reportDay = day; report(S); }
   if (S.pm != null && S.pm < 25 && tip(S, 'pmLow', 7200)) say(S, 'CDS', `The Prime Minister's confidence is down to ${Math.round(S.pm)}. Protect what keeps the country working: power, the cities, the airports.`);
   // the Prime Minister's confidence: it drains while the country is failing, and recovers in the calm
@@ -148,7 +155,7 @@ function report(S) {
 /* what could be done right now, most urgent first */
 function suggestions(S) {
   const L = [];
-  const add = (pri, text, ref, kind) => L.push({ pri, text, ref, kind });
+  const add = (pri, text, ref, kind, type) => L.push({ pri, text, ref, kind, type });
   for (const b of IC.bases(S)) if (b.owner === 'us' && b.parts && !IC.baseStatus(S, b).runway && !b.works.some(w => w.key && w.key.startsWith('cr:'))) add(9, `Repair the runway at ${b.name}`, b, 'infra');
   for (const b of IC.bases(S)) if (b.kind === 'airbase' && b.owner === 'us' && b.parts && S.roster.filter(r => r.base === b.id && r.st !== 'lost' && !r.slot).length && !b.works.some(w => w.kind === 'build')) add(4, `Aircraft at ${b.name} are parked in the open: build hangars or shelters`, b, 'infra');
   for (const u of S.units) if (u.state === 'ready' && u.d.weapon === 'sam' && IC.activeMags(S, u).every(m => m.mag + m.store + m.inc === 0)) add(8, `${u.name} is out of missiles`, u, 'unit');
@@ -156,7 +163,8 @@ function suggestions(S) {
   for (const t of S.tels) if (t.known && !t.dead && S.time - t.kt < 900) add(7, `${t.name} located: strike it before it moves`, t, 'tel');
   for (const t of S.threats) if (t.det && !t.dead && t.aff === 'S' && t.d.cls === 'air' && IC.inHome(t.x, t.y)) { add(7, `TN ${t.tn} is suspect: send a fighter to look`, t, 'track'); break; }
   const res = Object.entries(S.reserve).filter(([, n]) => n > 0);
-  if (res.length) add(4, `${res.reduce((s, [, n]) => s + n, 0)} systems waiting in the reserve: deploy them`, null, 'arsenal');
+  // (the most expensive first: clicking the line picks it to place)
+  if (res.length) { const first = res.map(([t]) => t).sort((a, b) => IC.UNITS[b].cost - IC.UNITS[a].cost)[0]; add(4, `${res.reduce((s, [, n]) => s + n, 0)} systems waiting in the reserve: deploy them`, null, 'reserve', first); }
   if (S.enemy.war && S.airspace === 'open') add(5, 'Civil airliners are still flying through a war zone: restrict the airspace', null, 'airspace');
   const freeSlots = S.tech.slots.filter(x => !x).length;
   if (freeSlots && S.budget > 150) add(2, `${freeSlots} research slot${freeSlots > 1 ? 's' : ''} idle`, null, 'tech');
@@ -192,7 +200,7 @@ IC.on((S, type, d) => {
     case 'arm': if (once('arm')) say(S, 'ADA', `Anti-radiation missile inbound on ${d.target ? d.target.name : 'one of our radars'}. Switch it to Silent and the missile loses its lock. Anything its radar was guiding will miss too.`); break;
     case 'baseHit': if (!d.runway && once('rwy')) say(S, 'ENG', `The runway at ${d.base.name} is cratered. Jets there cannot fly and returning flights will divert. My crews start on the runway automatically; select the base to add crews or rebuild hangars.`); if (d.acLost && once('acg', 3600)) say(S, 'AIR', `We lost ${d.acLost} aircraft on the ground at ${d.base.name}. Hardened shelters would have saved most of them.`); break;
     case 'unmasked': say(S, 'INT', `TN ${d.tn} was squawking as airliner ${d.cs}. It is a bomber. They will try that again: watch for airliners that leave their routes.`); break;
-    case 'convoyLost': if (once('convoy')) say(S, 'LOG', `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defence along the route, or a depot further back, keeps them alive.`); break;
+    case 'convoyLost': if (once('convoy')) say(S, 'LOG', d.lostBy === 'LM' ? `We lost ${d.name}. Loitering munitions hunt the supply roads near the front. Short-range air defence along the route, or a depot further back, keeps them alive.` : `We lost ${d.name}: it was caught in a strike on the place it was passing or loading at. Short-range air defence over the depots and along the routes keeps convoys alive, and so do depots further from the border.`); break;
     case 'unitLost': if (once('unitLost')) say(S, 'ADA', `${d.name} is gone. The enemy found it: radiating, firing and sitting near the border all give positions away. Move batteries after they fire when you can.`); break;
     // the enemy's acts: a chapter in Quick war, a card in the Career
     case 'enemyAct': {
@@ -201,13 +209,13 @@ IC.on((S, type, d) => {
       if (S.story) card(S, T[0], U.clock(S.time), T[1], 'chapter'); else chapter(S, T[0], T[1]);
       break;
     }
-    case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name} within the hour.`); break;
+    case 'enemyStrike': if (Math.random() < 0.5 + (IC.hasTech(S, 's_esm') ? 0.3 : 0)) say(S, 'INT', `Heavy activity at ${S.world.names.A} launch sites and air bases. Expect a major strike on ${d.obj.name}${d.R && d.R.T > S.time + 5400 ? ` in about ${Math.round((d.R.T - S.time) / 1800) / 2} hours` : ' within the hour'}.`); break;
     case 'cityHit': hitPm(S, -0.5 - (d.lost || 0) * 1.2); break;
     case 'infraLost': hitPm(S, d.kind === 'bridge' ? -1 : -4, `${d.name} is out. People are asking why we could not protect it.`); break;
     case 'tailLost': hitPm(S, -3, 'An airliner destroyed on the ground. The airlines are talking about leaving.'); break;
     // after each raid the Prime Minister weighs what got through and what it hit
     // (a small raid counts for less: a drone that gets through is not a failed defence)
-    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.35 - f) * Math.min(1, r.threats / 12) - Math.min(6, r.hits * 0.15), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
+    case 'raidOver': { const r = d.res; if (!r || !r.threats) break; const f = r.leaks / r.threats; pmHit(S, 8 * (0.35 - f) * Math.min(1, r.threats / 12) - Math.min(6, r.hits * 0.15), f > 0.5 ? `Most of that raid got through: ${r.hits} hits on ${r.obj}.` : f < 0.15 ? '' : ''); if (f < 0.15 && !r.air) IC.log(S, 'kill', 'PM', `The Prime Minister thanks the air defence: the ${r.name} on ${r.obj} was stopped.`); break; }
     case 'civilKill': pmHit(S, -15); say(S, 'CDS', d.strayBy ? `One of our missiles missed and found an airliner beyond its target. While raids are in the air, an open airspace puts airliners where our missiles fly: restrict it or close it.` : `We shot down a civilian aircraft. This will cost us allies. Check identities before firing: an airliner on its filed route is civil until proven otherwise.`); break;
     case 'weather': if (!IC.WEATHER[d].heli && once('wx', 21600)) say(S, 'AIR', 'Weather has grounded the helicopters. Jets can still fly.'); break;
     case 'delivered': if (once('delivered')) say(S, 'LOG', 'The first new equipment is in the reserve. Pick it in the arsenal and click the map to deploy it.'); break;

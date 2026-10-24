@@ -465,7 +465,7 @@ IC.buildCity = function (W, c, R, fbm, roads, fields, villages) {
   if (st.diag) {
     // diagonal avenues out from the centre, where no road already runs on one
     const used2 = (ave && ave.diag) || [];
-    const dirs = [0, 1, 2, 3].map(k => c.grid + Math.PI / 4 + k * Math.PI / 2 + R.range(-0.12, 0.12)).sort(() => R() - 0.5);
+    const dirs = R.shuffle([0, 1, 2, 3].map(k => c.grid + Math.PI / 4 + k * Math.PI / 2 + R.range(-0.12, 0.12)));
     for (const a of dirs) {
       if (used2.length >= st.diag) break;
       if (used2.some(b => Math.abs(U.angWrap(a - b)) < 0.6)) continue;

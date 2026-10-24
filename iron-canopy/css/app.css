@@ -137,7 +137,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .rail .sep{height:6px}
 
 /* ---------- situation and staff ---------- */
-.leftcol{position:absolute;z-index:3;left:calc(4.1rem + 24px);top:var(--top);width:22rem;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - var(--top) - 15.5rem);pointer-events:none}
+/* (--arsh: the arsenal's height and its margins, set by ui.js, so the column stops above it whatever tab is open) */
+.leftcol{position:absolute;z-index:3;left:calc(4.1rem + 24px);top:var(--top);width:22rem;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - var(--top) - var(--arsh,15.5rem));pointer-events:none}
 .app.no-arsenal .leftcol{max-height:calc(100% - var(--top) - 24px)}
 .leftcol>*{pointer-events:auto}
 .brief{flex:0 1 auto;min-height:5rem;padding:.8rem .95rem;display:grid;gap:.55rem;align-content:start;overflow:auto;scrollbar-width:thin}
@@ -253,6 +254,11 @@ kbd{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:500
 .btn.primary kbd{color:#0b3446;background:rgba(255,255,255,.35);box-shadow:none}
 .btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{color:var(--text);background:var(--well)}
 .btn.sm{min-height:1.6rem;padding:.12rem .6rem;font-size:.8rem;border-radius:8px}
+/* the sandbox: its panel keeps its height in the left column, and the staff messages scroll instead */
+/* (its rows keep their height when the card is squeezed: the card scrolls instead of its lines running together) */
+.app.is-sbx .brief{flex:none}.app.is-sbx .comms{flex:0 1 auto;min-height:0;overflow:auto;grid-auto-rows:max-content;align-content:start;scrollbar-width:thin}
+/* the sandbox's rules: a switch reads on or off at a glance */
+.sbx-rule{color:var(--dim)}.sbx-rule[aria-pressed="true"]{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(88,211,154,.45)}
 .btn.amber{color:var(--amber)}
 .btn.on{background:rgba(111,210,255,.3);box-shadow:inset 0 0 0 1px rgba(111,210,255,.6)}
 .hint{margin:0;font-size:.85rem;color:var(--muted);line-height:1.4}
@@ -379,6 +385,10 @@ table.t tr.click{cursor:pointer}table.t tr.click:hover td{background:var(--well)
 .ref:has(>span:empty){grid-template-columns:1fr}.ref>span:empty{display:none}
 /* with a room open, incidents drop to the bottom so they never cover its tabs */
 .app.has-room .incidents{top:auto;bottom:24px}
+/* the camera's chip says what the map shows: behind a room it only covered the room's last lines */
+.app.has-room .followchip{display:none}
+/* over a room the unlock card steps down to the corner: at the top it hid the room's tabs and first lines */
+.app.has-room .unlock{left:auto;right:28px;top:auto;bottom:28px;transform:none;width:min(26rem,60%);animation:none}
 
 /* ---------- overlays ---------- */
 .tip{position:absolute;z-index:8;pointer-events:none;max-width:20rem;padding:.45rem .65rem;border-radius:10px;background:rgba(4,10,15,.95);box-shadow:var(--shadow);font-size:.88rem;line-height:1.35}
@@ -656,25 +666,49 @@ table.t th.r{text-align:right}
 .lanes svg.links{position:absolute;left:0;top:0;pointer-events:none;z-index:0;overflow:visible}
 .lanes svg .l{fill:none;stroke:rgba(255,255,255,.16);stroke-width:1.6}
 .lanes svg .l.done{stroke:rgba(88,211,154,.55)}
-.tnode{position:relative}
+/* the links run behind the nodes: each node is laid on an opaque underlay, so a line never shows through a card */
+.tnode{position:relative;z-index:0}
+.tnode::before{content:'';position:absolute;inset:0;border-radius:inherit;background:#121920;z-index:-1}
 .tnode.open{background:rgba(111,210,255,.07);box-shadow:inset 0 0 0 1px rgba(111,210,255,.35)}
 .tnode.done{box-shadow:inset 0 0 0 1px rgba(88,211,154,.35)}
 .tnode.cur{box-shadow:inset 0 0 0 1px rgba(242,180,65,.5)}
-.tnode.locked{opacity:.55}
+.tnode.locked{opacity:1}
+.tnode.locked>*{opacity:.55}
 .tnode p.opens{color:var(--ok);font-size:.8rem}
 .tnode .need{display:inline-flex;gap:.3rem;align-items:center;text-align:right}
 .tnode .meta{flex-wrap:wrap}
 .lanes svg .l.x{stroke-dasharray:4 5}
+.aor{display:flex;align-items:center;gap:6px;margin:-2px 0;font-family:var(--mono);font-size:.72rem;color:var(--amber);text-transform:uppercase;letter-spacing:.12em}
+.aor::before,.aor::after{content:'';flex:1;border-top:1px dashed rgba(242,180,65,.55)}
+.tnode p.excl{color:var(--amber);font-size:.8rem}
+.tnode.shut{opacity:.35}
+.lanes.agenda .lane.later{opacity:.75}
+.slot.next{background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);opacity:.75}
+.lane.shut{grid-template-columns:7.5rem 1fr;align-items:center;opacity:.6}.lane.shut .hint{margin:0}
+.tnode.shut{opacity:.4}.tnode .excl{font-size:.85em;color:var(--amber,#f2b441);margin:.2rem 0 0}
 
 /* ---------- the start screen ---------- */
 .app.at-start>:not(#map):not(#start):not(.modal){visibility:hidden}
 .app.at-start #map{filter:blur(2px) saturate(.7) brightness(.55)}
-.modal.start{place-items:stretch;padding:clamp(16px,4vw,56px);background:linear-gradient(90deg,rgba(3,7,11,.94) 0%,rgba(3,7,11,.82) 52%,rgba(3,7,11,.35) 100%)}
+.modal.start{place-items:stretch;padding:clamp(16px,4vw,56px);background:linear-gradient(90deg,rgba(3,7,11,.94) 0%,rgba(3,7,11,.8) 46%,rgba(3,7,11,.12) 100%)}
+/* the start screen comes up in order, eased: the kicker, the title opening out, the line under it, then the modes one
+   after another; the map drifts behind it as a film shot (main.js startDrift) */
+.start .kicker{animation:stRise .9s var(--ease) .1s both}
+.start .title{animation:stTitle 1.4s var(--ease) .2s both}
+.start .tagline{animation:stRise .9s var(--ease) .55s both}
+.start #st-main>*{animation:stRise .7s var(--ease) both}
+.start #st-main .mode{animation:stRise .7s var(--ease) both}
+.start #st-main .mode:nth-child(1){animation-delay:.7s}.start #st-main .mode:nth-child(2){animation-delay:.78s}.start #st-main .mode:nth-child(3){animation-delay:.86s}
+.start #st-main .mode:nth-child(4){animation-delay:.94s}.start #st-main .mode:nth-child(5){animation-delay:1.02s}.start #st-main .mode:nth-child(6){animation-delay:1.1s}
+.start .st-foot{animation-delay:1.2s}
+.start .st-region{animation:stRise 1s var(--ease) 1.3s both}
+@keyframes stRise{from{opacity:0;transform:translateY(10px)}}
+@keyframes stTitle{from{opacity:0;letter-spacing:.4em;filter:blur(6px)}}
 .st-wrap{display:grid;grid-template-columns:minmax(0,46rem) minmax(14rem,22rem);gap:clamp(1rem,4vw,4rem);align-content:center;justify-content:space-between;width:100%;max-width:92rem;margin:0 auto}
 .st-main{display:grid;gap:1rem;align-content:start}
 .tagline{margin:-.3rem 0 .6rem;font-size:1.15rem;color:var(--muted)}
 .start .modes{grid-template-columns:1fr 1fr;gap:8px}
-.start .mode{position:relative;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);border-radius:var(--r)}
+.start .mode{position:relative;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);border-radius:var(--r);align-content:start}
 .start .mode:hover{background:rgba(111,210,255,.12);box-shadow:inset 0 0 0 1px rgba(111,210,255,.45)}
 .start .mode b{font-size:1.45rem}
 .start .mode small{font-family:var(--mono);font-size:.75rem;color:var(--amber)}
@@ -886,12 +920,14 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .bb-top{display:flex;align-items:center;gap:.5rem;min-width:0}
 .bb-apt{font-family:var(--display);font-weight:600;font-size:.95rem;letter-spacing:.04em;white-space:nowrap;max-width:11rem;overflow:hidden;text-overflow:ellipsis;padding-left:.2rem}
 .bb-apt.amber{color:var(--amber)}
-.bb-tabs{display:flex;flex-wrap:wrap;gap:2px;flex:1;min-width:0}
+.bb-tabs{display:flex;flex-wrap:nowrap;gap:1px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.bb-tabs::-webkit-scrollbar{display:none}
 .bb-row{display:flex;gap:.5rem;min-width:0}
 .bb-tabs button,.bb-tools button{display:flex;align-items:center;gap:.3rem;padding:.3rem .5rem;border-radius:10px;color:var(--muted);font-size:.82rem;font-weight:600;white-space:nowrap;transition:background .15s,color .15s}
 .bb-tabs button:hover,.bb-tools button:hover{background:var(--well-2);color:var(--text)}
 .bb-tabs button.on{background:rgba(111,210,255,.2);color:var(--friend)}
-.bb-tabs kbd{font-family:var(--mono);font-size:.62rem;color:var(--dim)}
+.bb-tabs kbd{display:none}
+.bb-tabs button{padding:.3rem .42rem;flex:none}
 .bbar .ico{width:1.15rem;height:1.15rem;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .bb-tools{display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:2px;border-right:1px solid rgba(255,255,255,.08);padding-right:.45rem;flex:none}
 .bb-tools button.on{background:rgba(242,180,65,.2);color:var(--amber)}
@@ -903,6 +939,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.bb-open .leftcol{width:auto;max-width:22rem}
 .app.bb-open .leftcol>*{max-height:2.6rem;overflow:hidden;opacity:.82;transition:max-height .25s var(--ease),opacity .2s}
 .app.bb-open .leftcol:hover>*{max-height:40rem;opacity:1}
+/* folded to one line, the messages' "+N more" would show cut in half: it comes back on hover */
+.app.bb-open .leftcol:not(:hover) .feed.fline .fmore{display:none}
 .app.bb-open .insp{width:19rem;bottom:calc(var(--bbh,14rem) + 24px)}
 .app.has-insp.bb-open .bbar{right:12px}
 .bb-items{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;min-width:0;flex:1}
@@ -925,8 +963,9 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 @media (max-width:760px){.bbar{left:12px;right:12px}.app.has-insp .bbar{right:12px}.bb-tabs span,.bb-tools span{display:none}.bb-it{flex-basis:7.6rem}}
 .app.bb-hover .modehint{visibility:hidden}
 /* the Build button beside a placed plan (brief 47): build, turn, cancel; why not, when it cannot be built */
-#bldgo{position:absolute;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;max-width:22rem;padding:.35rem;border-radius:12px;background:rgba(6,20,30,.9);box-shadow:0 0 18px rgba(111,210,255,.25)}
+#bldgo{position:absolute;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;max-width:26rem;padding:.35rem;border-radius:12px;background:rgba(6,20,30,.9);box-shadow:0 0 18px rgba(111,210,255,.25)}
 #bldgo[hidden]{display:none}
+#bldgo .fcls{flex-basis:100%;display:flex;flex-wrap:wrap;gap:.25rem}
 #bldgo .btn.go{background:rgba(110,230,140,.9);color:#04160b;font-weight:700}
 #bldgo .btn.go:hover:not(:disabled){background:#8af0a8}
 #bldgo .btn.go:disabled{background:rgba(255,91,79,.35);color:#ffd6d0;opacity:1}
@@ -958,6 +997,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .feed.fline .toast span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .feed.fline .fmore{justify-self:start;font-family:var(--mono);font-size:.72rem;color:var(--muted);padding:.1rem .5rem;border-radius:999px;background:var(--glass-2)}
 .app.compact .insp{width:21rem;bottom:auto;max-height:calc(100% - var(--top) - 12px)}
+/* with the build bar open the panel ends above it, as it does outside the Career */
+.app.compact.bb-open .insp{max-height:calc(100% - var(--top) - var(--bbh,14rem) - 36px)}
 .app.compact .insp .ibody{min-height:0}
 .app.compact .insp.min .ibody,.app.compact .insp.min .itabs,.app.compact .insp.min .ihead+div{display:none}
 .app.compact .insp.min .ihead{padding:.45rem .6rem}
@@ -1029,6 +1070,8 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .app.compact .stat:not(.role) strong{white-space:nowrap}
 /* (round 5c) the build bar's one strip: what to do now and the keys, on one line, never a caption over the Build button */
 .bb-opts>em.bb-keys{font-style:normal;font-size:.84rem;color:#cfe6f2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(52rem,100%);min-width:0}
+/* beside the option chips the strip is short of room: the line wraps to a second one rather than losing its end ("Esc or right-c…") */
+.bb-opts:has(.chip)>em.bb-keys,.app.compact .bb-opts:has(.chip)>em{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;max-width:26rem;line-height:1.3}
 /* (round 5c) the aircraft's slim card: what it is doing, the turnaround's bar and the services at work, Follow */
 .insp.slim{bottom:auto;width:21rem;max-height:calc(100% - var(--top) - 12px)}
 .insp.slim .ibody{gap:.5rem}

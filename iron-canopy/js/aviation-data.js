@@ -82,6 +82,8 @@ IC.APART_ORDER = ['runway', 'taxi', 'apron', 'terminal', 'cargo', 'hangar', 'fue
 IC.ZONES = { civil: { name: 'Passenger', short: 'PAX' }, cargo: { name: 'Cargo', short: 'CGO' }, light: { name: 'Light aircraft', short: 'GA' }, mil: { name: 'Military', short: 'MIL' } };
 /* fuel trucks: refuellings an hour each tank's trucks can make where there is no hydrant system */
 IC.FUEL_TRUCKS = 8;
+/* refuellings an hour by one tank's trucks (two trucks), with research (brief 48: IC.mod 'refuel') */
+IC.fuelRate = S => IC.FUEL_TRUCKS * (IC.mod ? IC.mod(S, 'refuel') : 1);
 /* the tanks of a fuel part (a farm holds three; a single real tank one) and the fuel it holds */
 IC.fuelTanks = p => p.r ? 1 : p.tanks || IC.APART.fuel.tanks || 1;
 IC.fuelCap = p => IC.fuelTanks(p) * IC.APART.fuel.cap;

@@ -14,7 +14,7 @@ python devserver.py
 
 then go to http://localhost:8766/iron-canopy/index.html.
 
-On the start screen, **Career** is the story mode, **Academy** has eight short lessons on the defence systems, **Quick war** skips straight to the crisis, **Test range** is an empty plane to try any system against any threat, and **Sandbox** starts at war with everything deployed.
+On the start screen, **Career** is the story mode, **Academy** has eight short lessons on the defence systems, **Quick war** skips straight to the crisis, **Test range** is an empty plane to try any system against any threat, and **Sandbox** is the real map with free money and instant building, and a panel to send any attack at any place whenever you like.
 
 ## What is in it
 

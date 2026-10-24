@@ -12,9 +12,11 @@ IC.ROAD_W = { hw: 0.42, rd: 0.2, lc: 0.13, sp: 0.11, ring: 0.36, art: 0.2, col: 
 IC.FOREST_T = 0.56;
 
 /* generation runs in stages; each yield names the stage that comes next, so a browser can let the page draw between
-   them and show how far it has got (IC.generateSteps). IC.generate runs them all at once */
-IC.generate = (seed, map) => { const g = worldSteps(seed, map); for (;;) { const r = g.next(); if (r.done) return r.value; } };
-IC.generateSteps = (seed, map) => worldSteps(seed, map);
+   them and show how far it has got (IC.generateSteps). IC.generate runs them all at once. Both use the same sin, cos,
+   pow… on every browser (fixedmath.js), so a save rebuilds the same world anywhere; `native` uses the engine's own,
+   as saves made before that did */
+IC.generate = (seed, map, native) => { const g = IC.generateSteps(seed, map, native); for (;;) { const r = g.next(); if (r.done) return r.value; } };
+IC.generateSteps = (seed, map, native) => native ? worldSteps(seed, map) : IC.fixedMathSteps(worldSteps(seed, map));
 /* Authored maps (brief 71): a map file registers a spec in IC.MAPS (js/map-homeland.js). With one, the generator takes
    what the spec gives at each stage (the border, the ridges, the rivers' sources, every city, the motorways...) and
    generates only what it leaves open (villages, fields, forest, streets, lanes, junctions). The seed is the map's name
@@ -2116,6 +2118,15 @@ function junctions(W) {
     } else J.kind = 'tj';
     n.ix = J.kind === 'mm' || J.kind === 'mx';
     W.junctions.push(J);
+  }
+  // two roundabouts so close that their rings would overlap (a town's centre with a junction a few dozen metres off
+  // it) cannot both be driven round: the one with fewer roads is a kerbed junction instead
+  const rbs = W.junctions.filter(J => J.kind === 'rb');
+  for (let i = 0; i < rbs.length; i++) for (let j = i + 1; j < rbs.length; j++) {
+    const A = rbs[i], B = rbs[j]; if (A.kind !== 'rb' || B.kind !== 'rb') continue;
+    if (U.dxy(A.x, A.y, B.x, B.y) > A.r + B.r + 0.4) continue;
+    const loser = (byNode[B.id] || []).length > (byNode[A.id] || []).length ? A : B;
+    loser.kind = 'tj'; delete loser.r; delete loser.lanes; delete loser.isle;
   }
   W.junctionAt = {}; for (const J of W.junctions) W.junctionAt[J.id] = J;
 }

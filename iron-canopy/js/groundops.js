@@ -20,10 +20,12 @@ IC.rwHdg = hdgOf;
 
 /* ---------- the runway configuration: chosen by the wind, refreshed when it shifts ---------- */
 /* what stops this type using this runway in this direction right now: '' when it can */
+/* the crosswind a crew may land and take off in: the type's limit, more with crew training (brief 48: 'xwind', kt) */
+IC.xwLimit = (S, T) => T.xw + (T.mil ? 0 : Math.round(IC.modAdd(S, 'xwind')));
 IC.rwWindBlock = function (S, rw, dir, T) {
   if (T.vtol) return '';
-  const w = IC.windOn(S, hdgOf(rw, dir));
-  if (w.cross > T.xw) return `crosswind ${Math.round(w.cross)} kt, limit ${T.xw} kt`;
+  const w = IC.windOn(S, hdgOf(rw, dir)), xw = IC.xwLimit(S, T);
+  if (w.cross > xw) return `crosswind ${Math.round(w.cross)} kt, limit ${xw} kt`;
   if (-w.head > T.tw) return `tailwind ${Math.round(-w.head)} kt, limit ${T.tw} kt`;
   return '';
 };
@@ -876,7 +878,7 @@ function step(S, ap, m, dt) {
       m.t -= dt;
       if (m.t > 0) return;
       // nose-in stands: a tug pushes the aircraft back (a movement of its own); drive-through stands are left forwards
-      if (m.stand && !m.stand.drive) { if (!pushOk(S, ap, m)) { m.waitT += dt; return; } m.phase = 'push'; m.t = 60; m.stand.pushT = S.time + 60; countGround(S, ap, m, 'push'); return; }
+      if (m.stand && !m.stand.drive) { if (!pushOk(S, ap, m)) { m.waitT += dt; return; } m.phase = 'push'; m.t = 60 * IC.mod(S, 'pushback'); m.stand.pushT = S.time + m.t; countGround(S, ap, m, 'push'); return; }
       beginTaxi(S, ap, m); return;
     }
     case 'push': {
@@ -1146,8 +1148,9 @@ function serviceStops(S, ap, m) {
   if (fuelPad && (ap.padNext === S.time || T.rwy <= 13)) via.push({ node: fuelPad.id + ':d', part: fuelPad, what: 'fuel', t: 180 + (T.fuel || 1) * 25 });
   if (IC.aptFrost(S)) {
     const pad = padOf(ap, 'deice', m.node);
-    if (pad) via.push({ node: pad.id + ':d', part: pad, what: 'de-icing', t: 240 + T.span * 400 });
-    else { m.t += 480 + T.span * 800; (m.gmLog = m.gmLog || []).push('de-iced at the stand'); }
+    const k = IC.mod(S, 'deice');
+    if (pad) via.push({ node: pad.id + ':d', part: pad, what: 'de-icing', t: (240 + T.span * 400) * k });
+    else { m.t += (480 + T.span * 800) * k; (m.gmLog = m.gmLog || []).push('de-iced at the stand'); }
   }
   return via;
 }
@@ -1233,6 +1236,8 @@ IC.partNow = function (S, ap, p) {
     const wait = onStand.filter(t => t.held && (t.held.k === 'fuel' || t.held.k === 'truck')), avg = wait.length ? wait.reduce((a, t) => a + S.time - t.held.t0, 0) / wait.length : 0;
     return `${p.r ? 'Fuel tank' : `Fuel farm: ${IC.fuelTanks(p)} tanks`}, ${Math.round(p.stock || 0)} of ${IC.fuelCap(p)} (${U.pct((p.stock || 0) / IC.fuelCap(p))} full). ${IC.aptServiceLines(S, ap).fuel}${wait.length ? ` ${wait.length} aircraft waiting now, ${U.dur(avg)} on average.` : ''}`;
   }
+  if (p.kind === 'helipad') { const on = IC.gavOn(S, ap, p.id); return `Helipad: ${on || 'free. A helicopter lands here instead of on the runway.'}`; }
+  if (p.kind === 'gaterm') { const g = IC.gavSummary(S, ap); return `General aviation terminal: ${g.visitors} visiting aircraft now, ${g.moves} light-aircraft movements in the last day. Business jets come to airports with one, and each visitor pays ${U.money(IC.GAV.handling)} for handling.`; }
   if (p.kind === 'fuelpad') return `Fuel stand: ${hourN(p.served)} aircraft refuelled in the last hour${p.busy ? '; one refuelling now' : ''}.`;
   if (p.kind === 'deice') return IC.aptFrost(S) ? `Frost this morning: departures stop here to be de-iced (${hourN(p.served)} in the last hour).` : `No frost now. On clear and foggy mornings departures stop here to be de-iced; without a pad it is done at the stand and takes longer.`;
   if (p.kind === 'hangar') {
@@ -1271,7 +1276,8 @@ IC.gopsRisk = function (S, ap, m, what) {
   }
   const w = IC.windOn(S, hdgOf(P.rw, P.dir)), k = what === 'arr' ? 1 : 0.5;
   // gusts beyond what the crew are allowed to land in (well beyond, and they go round and try elsewhere)
-  if (w.gCross > T.xw) out.push({ cause: 'gust', p: 0.0008 * Math.min(6, w.gCross - T.xw) * k, text: `a gust of ${Math.round(w.gCross)} kt across the runway, beyond the ${T.xw} kt the crew may land in` });
+  const xw = IC.xwLimit(S, T);
+  if (w.gCross > xw) out.push({ cause: 'gust', p: 0.0008 * Math.min(6, w.gCross - xw) * k, text: `a gust of ${Math.round(w.gCross)} kt across the runway, beyond the ${xw} kt the crew may land in` });
   if (-w.gHead > T.tw) out.push({ cause: 'tailwind', p: 0.0006 * Math.min(6, -w.gHead - T.tw) * k, text: `a tailwind gust of ${Math.round(-w.gHead)} kt` });
   // a wet runway and a tailwind lengthen the landing roll; a runway only just long enough runs out
   if (what === 'arr') {
@@ -1281,7 +1287,7 @@ IC.gopsRisk = function (S, ap, m, what) {
   }
   // birds gather over water near the runway
   // (a bird-control team, deck.js, keeps three in four away)
-  if (ap.water && ap.water.near) out.push({ cause: 'bird', p: ap.birdCtl ? 0.000075 : 0.0003, text: `birds from the ${ap.water.what} ${U.km(ap.water.d)} from the runway` });
+  if (ap.water && ap.water.near) out.push({ cause: 'bird', p: (ap.birdCtl ? 0.000075 : 0.0003) * IC.mod(S, 'birds'), text: `birds from the ${ap.water.what} ${U.km(ap.water.d)} from the runway` });
   return sum();
 };
 IC.LUAW_RISK = 0.004;
@@ -1320,10 +1326,10 @@ function incursion(S, ap, m, k) {
 }
 /* fire and rescue: seconds until the first truck reaches a point */
 /* a crash tender's time from its station to a point: a minute to turn out, then 100 km/h across the airfield */
-IC.fireTime = (f, p) => 60 + U.dist(f, p) / 0.28;
-IC.aptRescue = function (ap, p) {
+IC.fireTime = (f, p, S) => (60 + U.dist(f, p) / 0.28) * (S ? IC.mod(S, 'fireTime') : 1);
+IC.aptRescue = function (ap, p, S) {
   let best = 1e9;
-  for (const f of ap.parts) if (f.kind === 'fire' && f.built && f.hp > f.max * 0.25) best = Math.min(best, IC.fireTime(f, p));
+  for (const f of ap.parts) if (f.kind === 'fire' && f.built && f.hp > f.max * 0.25) best = Math.min(best, IC.fireTime(f, p, S));
   return best;
 };
 /* the arrival lands on a departure the tower forgot on the runway */
@@ -1341,7 +1347,7 @@ function lostSep(S, ap, m, o, c) {
 function crashNow(S, ap, m) {
   const c = m.crash, T = m.T, rw = m.plan.rw;
   const on = T.mil ? (T.crew || 1) * (m.n || 1) : Math.round((T.seats || 2) * 0.82) + (T.seats ? 6 : 3);
-  const rescue = IC.aptRescue(ap, m);
+  const rescue = IC.aptRescue(ap, m, S);
   IC.fireRun(S, ap, m, 'crash');
   const base = { overrun: 0.08, gust: 0.25, tailwind: 0.2, incursion: 0.45, bird: 0.35, collision: 0.6 }[c.cause] || 0.3;
   // survival depends on how fast the fire trucks arrive: three minutes is the standard
@@ -1367,7 +1373,7 @@ function crashNow(S, ap, m) {
     IC.later(S, 1800, 'gopsReport', S, ap, `${text} ${fix}`);
   }
   // on top of the loss of the aircraft itself (the Minister already counts that): the deaths and the headlines
-  if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), 0, 100);
+  if (S.story) S.story.standing = U.clamp(S.story.standing - Math.min(15, 2 + dead / 20), IC.confFloor(S), 100);
   IC.emit(S, 'crash', { ap, m, cause: c.cause, dead, on, rescue });
   m.destroyed = true; m.why = `crashed ${phase}`;
   // the aircraft is gone: tell its owner now, not as an ordinary loss

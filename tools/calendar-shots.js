@@ -1,5 +1,5 @@
 /* Pictures of the calendar for review. The scripted Career player (careerplayer.js) plays in the page for so many
-   months first (a save made in Node does not load in the browser: the two build the map a hair differently):
+   months first (it plays there rather than loading a save from Node so the pictures show the page's own run):
      node tools/calendar-shots.js [months, default 14] [seed, default 777]
    Saves in shots/: cal-topbar (the date in the top bar), cal-statement (the month's statement and the year month by
    month), cal-review (the yearly review), cal-wait-pick and cal-wait (waiting for money), cal-build-<stage> (a new

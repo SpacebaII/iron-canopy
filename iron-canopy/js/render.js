@@ -35,10 +35,18 @@ IC.clampCam = function () {
   cam.x = w >= IC.WW ? (IC.WW - w) / 2 : U.clamp(cam.x, -w * 0.2, IC.WW - w * 0.8);
   cam.y = h >= IC.WH ? (IC.WH - h) / 2 : U.clamp(cam.y, -h * 0.2, IC.WH - h * 0.8);
 };
-IC.zoomAt = function (sx, sy, f) {
+function zoomNow(sx, sy, f) {
   const wx = cam.x + sx / cam.z, wy = cam.y + sy / cam.z;
   cam.z = U.clamp(cam.z * f, IC.minZoom(), IC.MAXZ);
-  cam.x = wx - sx / cam.z; cam.y = wy - sy / cam.z; IC.clampCam(); cam.fly = null;
+  cam.x = wx - sx / cam.z; cam.y = wy - sy / cam.z; IC.clampCam();
+}
+/* (brief 67) a wheel notch or a zoom button (a step of 20–30%) is eased in over about a sixth of a second, about the
+   same point, instead of jumping; a pinch's small steps follow the fingers at once */
+IC.zoomAt = function (sx, sy, f) {
+  cam.fly = null;
+  if (Math.abs(Math.log(f)) < 0.05) { zoomNow(sx, sy, f); return; }
+  const q = cam.zq || (cam.zq = { lz: 0 });
+  q.sx = sx; q.sy = sy; q.lz += Math.log(f);
 };
 /* show the box x0..x1, y0..y1 (world units) with a margin, at once or by flying there */
 IC.frameZoom = (x0, y0, x1, y1, m) => Math.min(cam.vw / ((x1 - x0) * (m || 1.15) + 1), cam.vh / ((y1 - y0) * (m || 1.15) + 1));
@@ -51,24 +59,81 @@ IC.homeBox = W => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x,
 IC.centerOn = function (x, y) { cam.x = x - cam.vw / cam.z / 2; cam.y = y - cam.vh / cam.z / 2; IC.clampCam(); };
 /* smooth camera moves for jumps and cinematic moments */
 IC.flyTo = function (x, y, z) { cam.fly = { x, y, z: z || cam.z, t: 0 }; };
+/* (brief 67) a flight is timed and eased in and out: the zoom changes by the same factor each moment (in log terms,
+   not in pixels a unit, which raced through the far zooms and crawled close in), and the pan is worked out so the
+   place the camera leaves (zooming out) or the one it goes to (zooming in) glides steadily across the screen instead of
+   sweeping past at many screens a frame. The old flight eased out only: its first frame was its fastest */
+// (a sine ease: it starts and stops still, and its fastest frame is only some 1.6 times its average)
+const ease = t => 0.5 - 0.5 * Math.cos(Math.PI * t);
 IC.camStep = function (dt) {
+  const q = cam.zq;
+  if (q && q.lz) {
+    const z0 = cam.z, st = Math.abs(q.lz) < 0.002 ? q.lz : q.lz * (1 - Math.exp(-dt * 16));
+    zoomNow(q.sx, q.sy, Math.exp(st)); q.lz -= st;
+    // at the zoom's end stop: the rest is dropped
+    if (cam.z === z0 || Math.abs(q.lz) < 1e-4) q.lz = 0;
+  }
   const f = cam.fly; if (!f) return;
-  const k = 1 - Math.exp(-dt * 5);
-  const cxw = cam.x + cam.vw / cam.z / 2, cyw = cam.y + cam.vh / cam.z / 2;
-  cam.z = cam.z + (f.z - cam.z) * k;
-  const nx = cxw + (f.x - cxw) * k, ny = cyw + (f.y - cyw) * k;
+  if (f.z0 == null) {
+    f.z0 = cam.z; f.x0 = cam.x + cam.vw / cam.z / 2; f.y0 = cam.y + cam.vh / cam.z / 2;
+    f.z = U.clamp(f.z, IC.minZoom(), IC.MAXZ);
+    const zr = Math.abs(Math.log(f.z / f.z0)), scr = Math.hypot(f.x - f.x0, f.y - f.y0) * Math.min(f.z, f.z0) / Math.max(1, cam.vw);
+    f.T = U.clamp(0.45 + 0.22 * zr + 0.35 * Math.sqrt(scr), 0.45, 2.4);
+  }
+  f.t += dt;
+  const p = ease(U.clamp(f.t / f.T, 0, 1));
+  cam.z = Math.exp(Math.log(f.z0) + (Math.log(f.z) - Math.log(f.z0)) * p);
+  let nx, ny;
+  if (Math.abs(f.z - f.z0) / f.z0 < 0.05) { nx = f.x0 + (f.x - f.x0) * p; ny = f.y0 + (f.y - f.y0) * p; }
+  else if (f.z > f.z0) { const k = f.z0 * (1 - p) / cam.z; nx = f.x - (f.x - f.x0) * k; ny = f.y - (f.y - f.y0) * k; }
+  else { const k = f.z * p / cam.z; nx = f.x0 + (f.x - f.x0) * k; ny = f.y0 + (f.y - f.y0) * k; }
   IC.centerOn(nx, ny);
-  if (Math.abs(nx - f.x) < 2 && Math.abs(ny - f.y) < 2 && Math.abs(cam.z - f.z) < 0.002) cam.fly = null;
+  if (f.t >= f.T) { cam.z = f.z; IC.centerOn(f.x, f.y); cam.fly = null; }
 };
 IC.toWorld = (sx, sy) => ({ x: cam.x + sx / cam.z, y: cam.y + sy / cam.z });
 IC.toScreen = (x, y) => ({ x: (x - cam.x) * cam.z, y: (y - cam.y) * cam.z });
-IC.daylight = function (t) {
-  const h = (t % 86400) / 3600;
-  if (h < 5 || h > 20.5) return 0;
-  if (h < 7.5) return (h - 5) / 2.5;
-  if (h > 18) return 1 - (h - 18) / 2.5;
-  return 1;
+/* The light over a part of the map (IC.skyGrade): drain the colour, multiply by the light's colour, warm the golden
+   hour. `clip` traces the part (even-odd) in world units; the view is filled inside it */
+IC.drawGrade = function (g, G, clip) {
+  const plain = G.sat < 0.01 && G.mul[0] > 252 && G.mul[1] > 252 && G.mul[2] > 252 && G.golden < 0.01;
+  if (plain) return;
+  const V = view, x = V.x0, y = V.y0, w = V.x1 - V.x0, h = V.y1 - V.y0;
+  // (a clip that does its own clipping says so by returning true)
+  g.save(); g.beginPath(); if (clip(g) !== true) g.clip('evenodd');
+  // drain the colour by laying a neutral grey over it (a plain blend: the 'saturation' mode costs several ms a frame
+  // without a graphics card)
+  if (G.sat > 0.01) { g.globalAlpha = G.sat * 0.6; g.fillStyle = 'rgb(118,122,130)'; g.fillRect(x, y, w, h); }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgb(${G.mul[0]},${G.mul[1]},${G.mul[2]})`; g.fillRect(x, y, w, h);
+  if (G.golden > 0.01) { g.globalCompositeOperation = 'soft-light'; g.fillStyle = `rgba(255,140,60,${0.35 * G.golden})`; g.fillRect(x, y, w, h); }
+  g.restore();
 };
+/* (brief 67) where the airport lays its own night (render-airport.js) and the map's leaves off: the fence's hull, and
+   every building's outline, as buildings on the fence line (a terminal facing its landside) reach out of the hull and
+   were drawn after the map's night and never under one, a white slab in the dark. Kept per airport until it changes */
+const NIGHT_SKIP = { runway: 1, taxi: 1, apron: 1, holdbay: 1, surface: 1, people: 1, skybridge: 1, alert: 1 };
+IC.aptNightPolys = function (ap, box) {
+  if (ap._np && ap._npB === box && ap._npN === ap.parts.length) return ap._np;
+  const L = [box.poly.slice()];
+  for (const p of ap.parts) if (p.x != null && !NIGHT_SKIP[p.kind] && IC.partOutline) L.push(IC.partOutline(p));
+  // all wound the same way, so their union fills with the non-zero rule
+  for (const P of L) { let A = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; A += a.x * b.y - b.x * a.y; } if (A < 0) P.reverse(); }
+  ap._np = L; ap._npB = box; ap._npN = ap.parts.length;
+  return L;
+};
+const polyTo = (g, P) => { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
+// the airport's own: inside the union
+IC.aptNightClip = (g, ap, box) => { g.beginPath(); for (const P of IC.aptNightPolys(ap, box)) polyTo(g, P); g.clip(); return true; };
+// the map's: outside every one of them (each clip narrows the last)
+function outsideAirports(g, z) {
+  g.beginPath(); g.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); g.clip();
+  if (z < 0.3) return true;
+  for (const b of IC.bases(S0)) {
+    const k = b._box; if (!k || !k.poly || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
+    for (const P of IC.aptNightPolys(b, k)) { g.beginPath(); g.rect(view.x0 - 1, view.y0 - 1, view.x1 - view.x0 + 2, view.y1 - view.y0 + 2); polyTo(g, P); g.clip('evenodd'); }
+  }
+  return true;
+}
+let S0 = null;
 /* ---------- main draw ---------- */
 IC.render = function (S, now) {
   const z = cam.z, px = 1 / z;
@@ -76,7 +141,10 @@ IC.render = function (S, now) {
   IC.LBL.reset();
   WF = U.clamp((z - 0.8) / 4, 0, 1);
   let sx = 0, sy = 0;
+  // film mode (film.js): the world without its data, a camera that shakes for blasts, the film look at the end
+  const FM = IC.film && IC.film.clean;
   if (S.shake > 0.3) { sx = (Math.random() - 0.5) * S.shake; sy = (Math.random() - 0.5) * S.shake; }
+  if (FM) { sx += IC.film.sx; sy += IC.film.sy; }
   S.shake *= 0.88;
   view = { x0: cam.x, y0: cam.y, x1: cam.x + cam.vw / z, y1: cam.y + cam.vh / z };
   RS.ctx = ctx; RS.view = view; RS.WF = WF;
@@ -85,8 +153,10 @@ IC.render = function (S, now) {
   ctx.setTransform(dpr * z, 0, 0, dpr * z, (-cam.x * z + sx) * dpr, (-cam.y * z + sy) * dpr);
   ctx.imageSmoothingEnabled = true;
   if (S.flat) IC.drawFlat(ctx, S, view, px); else IC.drawTerrain(ctx, S.terrain, cam, dpr, S.paused ? 14 : 7, S);
-  if (z * dpr >= 1.3) IC.drawRoads(ctx, S, px, view);
   const wx = IC.wx(S), light = IC.daylight(S.time);
+  if (S.layers.weather !== false) drawWater(S, px, light);
+  if (S.layers.weather && S.weather) drawSnow(S, light);
+  if (z * dpr >= 1.3) IC.drawRoads(ctx, S, px, view);
 
   // cloud shadows drift with the wind
   if (S.layers.weather && S.clouds) {
@@ -95,38 +165,36 @@ IC.render = function (S, now) {
     pat.setTransform(new DOMMatrix().translate(ox, oy).scale(k));
     ctx.globalAlpha = (0.12 + 0.5 * wx.cloud) * (0.4 + 0.6 * light); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
   }
-  // night, dusk and dawn
-  if (light < 1) {
-    // airports darken their own field (render-airport.js), so the night here leaves those boxes out
-    ctx.fillStyle = `rgba(3,8,24,${0.62 * (1 - light)})`; ctx.beginPath(); ctx.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-    if (z >= 0.3) for (const b of IC.bases(S)) {
-      const k = b._box; if (!k || !k.poly || !b.parts || !inView(b.x, b.y, b.radius + 20)) continue;
-      IC.aptFencePath(ctx, k);
-    }
-    ctx.fill('evenodd');
-  }
-  const h = (S.time % 86400) / 3600;
-  const golden = h > 5 && h < 8.5 ? 1 - Math.abs(h - 6.8) / 1.7 : h > 17 && h < 20.5 ? 1 - Math.abs(h - 18.8) / 1.7 : 0;
-  if (golden > 0) { ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = `rgba(255,140,60,${0.35 * golden})`; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalCompositeOperation = 'source-over'; }
-  if (light < 0.9) drawLights(S, px, now, light);
+  // night, dusk, dawn and the weather's gloom (atmos.js); airports grade their own field (render-airport.js), so
+  // this leaves their fences out
+  const G = IC.skyGrade(S, wx);
+  if (z >= 0.3 && IC.drawLandsideEarly && G.dark > 0) for (const b of IC.bases(S)) if (b.land && inView(b.x, b.y, b.radius + 20)) IC.drawLandsideEarly(ctx, S, b, px, light);
+  // film mode lifts the moonlight a little, so the land reads under the city lights and the fire
+  if (FM && G.dark > 0) { const k = IC.film.opt.moon == null ? 0.38 : IC.film.opt.moon; G.mul = G.mul.map(c => Math.round(c + (255 - c) * k * G.dark)); G.sat *= 0.6; }
+  S0 = S;
+  IC.drawGrade(ctx, G, g => outsideAirports(g, z));
+  if (light < 0.9) drawLights(S, px, now, light, FM ? 1.5 : 1);
 
   // (round 5c) radar cover belongs to the moment in the civil act: while placing a civil radar, in the Airspace tab, or
   // with the gaps shown; not over the whole Career from Chapter 3 on
   const covNow = S.layers.coverage || (IC.FOCUS.polish && IC.civilAct(S) && ((S.mode2 && S.mode2.kind === 'deploy' && IC.UNITS[S.mode2.type] && IC.UNITS[S.mode2.type].sensor && IC.UNITS[S.mode2.type].sensor.ssr) || (IC.ui.aptTab === 'asp' && S.sel && S.sel.kind === 'infra')));
-  if (covNow) drawCoverage(S);
-  drawAirways(S, px, now);
-  drawFronts(S, px);
+  if (covNow && !FM) drawCoverage(S);
+  if (!FM) { drawAirways(S, px, now); drawFronts(S, px); }
   IC.drawRoadBridges(ctx, S, px, view);
   if (S.layers.civil && z > 0.12) IC.drawTraffic(ctx, S, px, view, light, now);
   // the buildings stand up over the street behind them (render-buildings.js)
   if (IC.drawBuildingsUp) IC.drawBuildingsUp(ctx, S, cam, dpr, light, S.paused ? 10 : 5);
   drawBases(S, px, now, light);
-  drawZones(S, px, now);
-  drawFields(S, px);
-  drawInfra(S, px, now);
+  if (!FM) drawZones(S, px, now);
+  if (!FM) drawFields(S, px);
+  const townNames = FM ? [] : drawInfra(S, px, now);
   IC.drawForces(S, px, now);
-  if (S.layers.logistics) IC.drawConvoys(ctx, S, px);
+  if (S.layers.logistics && !FM) IC.drawConvoys(ctx, S, px);
+  drawContrails(S, px, light);
   IC.drawCombat(S, px, now, light);
+  if (FM) { finish(S, z, px, now, light, wx); return; }
+  // the towns' names over every symbol: a battery or an airport at the centre never hides whose city it is
+  for (const f of townNames) f();
   if (IC.drawWarnings) IC.drawWarnings(ctx, S, px, now);
   // (round 2) the airliner the camera follows: a ring, and the aircraft itself while it flies
   if (S.follow && IC.drawFollowMark) IC.drawFollowMark(ctx, S, px, now);
@@ -175,10 +243,27 @@ IC.render = function (S, now) {
   const vg = ctx.createRadialGradient(cam.vw / 2, cam.vh / 2, Math.min(cam.vw, cam.vh) * 0.45, cam.vw / 2, cam.vh / 2, Math.max(cam.vw, cam.vh) * 0.8);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,3,8,0.5)');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, cam.vw, cam.vh);
-  if (IC.cine && IC.cine.bars > 0 && !(IC.ui && IC.ui.compact && IC.ui.compact())) { const bh = cam.vh * 0.08 * IC.cine.bars; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cam.vw, bh); ctx.fillRect(0, cam.vh - bh, cam.vw, bh); }
+  // the cinema bars shade in from the edges: hard black strips read as map that failed to draw between the panels
+  if (IC.cine && IC.cine.bars > 0 && !(IC.ui && IC.ui.compact && IC.ui.compact())) {
+    const bh = cam.vh * 0.12 * IC.cine.bars, a = 0.85 * IC.cine.bars;
+    for (const [y0, y1] of [[0, bh], [cam.vh, cam.vh - bh]]) { const gr = ctx.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(0.55, `rgba(0,0,0,${a * 0.6})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(0, Math.min(y0, y1), cam.vw, bh); }
+  }
 };
 
+/* the end of a film-mode frame: the weather and clouds over the world, then the film look (film.js) */
+function finish(S, z, px, now, light, wx) {
+  if (S.layers.weather && S.clouds && wx.cloud > 0.4 && z < 0.5) {
+    const k = 30, ox = (S.time * S.wind.x * 1.2) % (256 * k), oy = (S.time * S.wind.y * 1.2) % (256 * k);
+    const pat = ctx.createPattern(S.clouds.white, 'repeat');
+    pat.setTransform(new DOMMatrix().translate(ox + 900, oy + 400).scale(k));
+    ctx.globalAlpha = (wx.cloud - 0.4) * 0.32 * (0.3 + 0.7 * light) * U.clamp((0.5 - z) / 0.3, 0, 1); ctx.fillStyle = pat; ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0); ctx.globalAlpha = 1;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawWeather(S, wx, now, light);
+  IC.film.post(ctx, cv, cam.vw, cam.vh, S, light);
+}
 function label(txt, x, y, px, col, size, align, weight) {
+  if (IC.film && IC.film.clean && !IC.film.opt.labels) return;
   // (round 5c) close in, in screen pixels: a tiny world-unit font is drawn squeezed (render-airport.js lbl)
   if (px < 0.05 && IC.FOCUS.polish) {
     const m = ctx.getTransform(), k = m.a * px, sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f;
@@ -193,6 +278,7 @@ function label(txt, x, y, px, col, size, align, weight) {
   ctx.fillStyle = col; ctx.fillText(txt, x, y); ctx.textAlign = 'left';
 }
 function brackets(x, y, r, px, col) {
+  if (IC.film && IC.film.clean) return;
   const l = Math.min(r * 0.5, 7 * px);
   ctx.strokeStyle = col || C.amber; ctx.lineWidth = 1.8 * px; ctx.beginPath();
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { ctx.moveTo(x + a * r, y + b * (r - l)); ctx.lineTo(x + a * r, y + b * r); ctx.lineTo(x + a * (r - l), y + b * r); }
@@ -208,7 +294,89 @@ function shadow(x, y, alt, px, r) {
   return { x: sx, y: sy };
 }
 
-function drawLights(S, px, now, light) {
+/* (brief 67) water that reads as water: the tiles bake the lakes and rivers flat; over them, live, a glitter of small
+   wave crests drifting with the wind (brighter by day, a faint moon sheen by night) and a soft sheen across each lake
+   on the side facing away from the sun. Cheap: one small pattern, the lakes' outlines and the rivers in view */
+let ripple = null;
+function ripplePat() {
+  if (ripple) return ripple;
+  const N = 128, c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d'); g.lineCap = 'round';
+  for (let i = 0; i < 70; i++) {
+    const x = U.hash(i, 3) * N, y = U.hash(i, 7) * N, l = 3 + U.hash(i, 11) * 9, a = 0.25 + U.hash(i, 13) * 0.75;
+    g.strokeStyle = `rgba(255,255,255,${a})`; g.lineWidth = 0.8 + U.hash(i, 17);
+    for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) { g.beginPath(); g.moveTo(x + dx - l / 2, y + dy); g.quadraticCurveTo(x + dx, y + dy - 1.2, x + dx + l / 2, y + dy); g.stroke(); }
+  }
+  return (ripple = c);
+}
+const lakePath = (g, l, k) => { g.beginPath(); for (let i = 0; i <= 72; i++) { const a = i / 72 * Math.PI * 2, n = 1 + 0.05 * Math.sin(a * 5 + l.x) + 0.03 * Math.sin(a * 11 + l.y); const x = Math.cos(a) * (l.rx * n - k), y = Math.sin(a) * (l.ry * n - k); g[i ? 'lineTo' : 'moveTo'](l.x + x * Math.cos(l.rot) - y * Math.sin(l.rot), l.y + x * Math.sin(l.rot) + y * Math.cos(l.rot)); } g.closePath(); };
+function drawWater(S, px, light) {
+  const z = cam.z, W = S.world; if (z < 0.08 || S.flat) return;
+  const vis = U.clamp((z - 0.08) / 0.3, 0, 1);
+  // the crests: about 2–3 screen pixels whatever the zoom (in steps of two, so they hold still while the zoom eases)
+  const k = Math.pow(2, Math.round(Math.log2(U.clamp(1.4 / z, 0.004, 3)))), pat = ctx.createPattern(ripplePat(), 'repeat');
+  const t = S.time, wx = (S.wind.x || 0.2) * 0.35, wy = (S.wind.y || 0.1) * 0.35;
+  pat.setTransform(new DOMMatrix().translate((t * wx) % (128 * k), (t * wy) % (128 * k)).scale(k));
+  const day = 0.06 + 0.16 * light;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const l of W.lakes) {
+    if (!inView(l.x, l.y, Math.max(l.rx, l.ry))) continue;
+    lakePath(ctx, l, 2);
+    // the sheen: the far side from the sun is lit by the sky
+    const R = Math.max(l.rx, l.ry), sg = ctx.createLinearGradient(l.x - R * 0.6, l.y - R * 0.6, l.x + R * 0.8, l.y + R * 0.8);
+    sg.addColorStop(0, 'rgba(120,170,200,0)'); sg.addColorStop(1, `rgba(150,190,215,${(0.04 + 0.1 * light) * vis})`);
+    ctx.fillStyle = sg; ctx.fill();
+    ctx.globalAlpha = day * vis; ctx.fillStyle = pat; ctx.fill(); ctx.globalAlpha = 1;
+  }
+  // rivers: the glitter along the middle of the channel, drifting downstream with the current
+  if (z > 0.25) {
+    const rk = z * IC.dpr() >= 16 ? 0.3 : z * IC.dpr() >= 4 ? 0.3 : z * IC.dpr() >= 1.3 ? 0.45 : 0.7;
+    ctx.globalAlpha = day * vis * 0.9; ctx.strokeStyle = pat; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const r of W.rivers) {
+      const bb = r.bb; if (bb[2] < view.x0 - 20 || bb[0] > view.x1 + 20 || bb[3] < view.y0 - 20 || bb[1] > view.y1 + 20) continue;
+      const w = r.w * rk * 0.6; if (w * z < 1.5) continue;
+      ctx.lineWidth = w; ctx.beginPath(); const P = r.pts; ctx.moveTo(P[0][0], P[0][1]); for (let i = 2; i < P.length; i += 2) ctx.lineTo(P[i][0], P[i][1]); ctx.lineTo(P[P.length - 1][0], P[P.length - 1][1]); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+/* (brief 67) contrails behind what cruises high (above about 8 km, where the air is cold enough): a thin bright line
+   that widens and fades over some 25 km behind it, drifting with the wind; by day only, and never on the
+   symbols of the far view where they would read as a heading line */
+function drawContrails(S, px, light) {
+  if (light < 0.15 || cam.z < 0.012) return;
+  ctx.save(); ctx.lineCap = 'round';
+  const wx = S.wind.x || 0, wy = S.wind.y || 0;
+  for (const t of S.threats) {
+    if (t.dead || !(t.alt > 8) || !t.held || t.d.cls !== 'air' || !(t.tail || t.klass === 'airliner' || t.klass === 'bomber')) continue;
+    const vx = t.svx || t.pvx || t.vx, vy = t.svy || t.pvy || t.vy, v = Math.hypot(vx, vy); if (!(v > 0.01)) continue;
+    const L = 250, x = t.px, y = t.py; if (!inView(x, y, L)) continue;
+    const ux = vx / v, uy = vy / v, gap = Math.max(0.6, 6 * px);
+    // the far end has drifted downwind for the minutes it took to fly there
+    const T = L / v, ex = x - ux * L + wx * T * 0.6, ey = y - uy * L + wy * T * 0.6, sx = x - ux * gap, sy = y - uy * gap;
+    const a = (0.2 + 0.35 * light) * U.clamp((t.alt - 8) / 1.5, 0, 1);
+    const gr = ctx.createLinearGradient(sx, sy, ex, ey);
+    gr.addColorStop(0, `rgba(250,252,255,${a})`); gr.addColorStop(0.25, `rgba(244,248,252,${a * 0.55})`); gr.addColorStop(1, 'rgba(240,244,250,0)');
+    ctx.strokeStyle = gr;
+    ctx.lineWidth = Math.max(0.12, 1.4 * px); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(x - ux * L * 0.5 + wx * T * 0.15, y - uy * L * 0.5 + wy * T * 0.15, ex, ey); ctx.stroke();
+    ctx.globalAlpha = 0.35; ctx.lineWidth = Math.max(0.5, 4 * px); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+/* (brief 67) snow lying on the land while it snows and for the half hour after: the fields and woods whiten in drifts,
+   under the roads, runways and towns drawn after it (they are cleared) */
+function drawSnow(S, light) {
+  const w = S.weather, k = (w.kind === 'snow' ? Math.min(1, w.fade * 2) : 0) + (w.prev === 'snow' && w.kind !== 'snow' ? 1 - w.fade : 0);
+  if (k < 0.02 || !S.clouds) return;
+  const V = view, a = 0.42 * Math.min(1, k) * (0.35 + 0.65 * light);
+  ctx.globalAlpha = a; ctx.fillStyle = 'rgb(236,240,246)'; ctx.fillRect(V.x0, V.y0, V.x1 - V.x0, V.y1 - V.y0);
+  // drifts: thicker in some places than others, at the scale of fields and of hills
+  const pat = ctx.createPattern(S.clouds.white, 'repeat');
+  pat.setTransform(new DOMMatrix().translate(300, 120).scale(cam.z > 2 ? 0.6 : 9));
+  ctx.globalAlpha = a * 0.9; ctx.fillStyle = pat; ctx.fillRect(V.x0, V.y0, V.x1 - V.x0, V.y1 - V.y0);
+  ctx.globalAlpha = 1;
+}
+function drawLights(S, px, now, light, gain) {
   ctx.globalCompositeOperation = 'lighter';
   const pf = IC.powerFactor(S);
   for (const c of IC.cities(S)) {
@@ -218,8 +386,20 @@ function drawLights(S, px, now, light) {
     const a = (1 - light) * 0.95 * (c.hp / c.max) * pf * black * (c.owner === 'us' ? 1 : 0.35) * (c.alert > 0 && Math.sin(now * 0.7) > 0.6 ? 0.75 : 1);
     // far out the city is one glow; close in, lit streets and windows take over
     const near = U.clamp((cam.z - 1.5) / 2.5, 0, 1);
-    ctx.globalAlpha = a * (1 - near * 0.85);
+    ctx.globalAlpha = Math.min(1, a * (1 - near * 0.75) * (gain || 1));
     ctx.drawImage(c.light.cv, c.x - c.light.size / 2, c.y - c.light.size / 2, c.light.size, c.light.size);
+    // (brief 67) from the region and the country, a city at night is the sky-glow over it as much as its streets: a
+    // warm haze by its size, brightest in the middle, so the map reads as a country of lit cities and not a dark sheet
+    const far = U.clamp((1.6 - cam.z) / 1.3, 0, 1);
+    if (far > 0) {
+      const R = Math.max(c.r * 2.2, (c.ext || c.r) * 1.5), k = a * far * (gain || 1) * U.clamp(Math.sqrt((c.pop || 100) / 900), 0.3, 1.3);
+      const hg = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, R);
+      hg.addColorStop(0, `rgba(255,186,110,${0.5 * k})`); hg.addColorStop(0.35, `rgba(255,160,90,${0.22 * k})`); hg.addColorStop(1, 'rgba(255,140,80,0)');
+      ctx.globalAlpha = 1; ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, 7); ctx.fill();
+      // and the lights themselves once more, so the core burns through the haze
+      ctx.globalAlpha = Math.min(1, a * far * 0.8 * (gain || 1));
+      ctx.drawImage(c.light.cv, c.x - c.light.size / 2, c.y - c.light.size / 2, c.light.size, c.light.size);
+    }
     if (near > 0 && c.streets) {
       ctx.globalAlpha = a * near;
       ctx.strokeStyle = 'rgba(255,190,110,0.16)'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
@@ -266,7 +446,7 @@ function covCanvas(S) {
   if (!C) return null;
   // our military radars go into the same image: blue, deeper where they see lower, with holes behind hills
   const M = IC.milCov(S);
-  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C && covImg.M === M) return covImg.cv;
+  if (covImg && covImg.v === C.v && covImg.seed === S.seed && covImg.C === C && covImg.M === M) return covImg.sm;
   const cv2 = covImg && covImg.cv && covImg.cv.width === C.gw ? covImg.cv : Object.assign(document.createElement('canvas'), { width: C.gw, height: C.gh });
   const g2 = cv2.getContext('2d'), img = g2.createImageData(C.gw, C.gh), d = img.data;
   const home = covImg && covImg.seed === S.seed && covImg.home ? covImg.home : (() => { const h = new Uint8Array(C.gw * C.gh); for (let j = 0; j < C.gh; j++) for (let i = 0; i < C.gw; i++) h[j * C.gw + i] = IC.inHome((i + 0.5) * IC.ASP.CS, (j + 0.5) * IC.ASP.CS) ? 1 : 0; return h; })();
@@ -283,12 +463,18 @@ function covCanvas(S) {
     d[o] = (92 * ma + d[o] * da * (1 - ma)) / oa; d[o + 1] = (200 * ma + d[o + 1] * da * (1 - ma)) / oa; d[o + 2] = (255 * ma + d[o + 2] * da * (1 - ma)) / oa; d[o + 3] = oa * 255;
   }
   g2.putImageData(img, 0, 0);
-  covImg = { v: C.v, seed: S.seed, C, M, cv: cv2, home };
-  return cv2;
+  // drawn as it is, each 5 km cell showed as a square and the edges of the cover as staircases: twice as fine and
+  // blurred by a cell and a half, once when the cover changes, the edges are curves like the hills that make them
+  const sm = covImg && covImg.sm && covImg.sm.width === C.gw * 2 ? covImg.sm : Object.assign(document.createElement('canvas'), { width: C.gw * 2, height: C.gh * 2 });
+  const g3 = sm.getContext('2d'); g3.clearRect(0, 0, sm.width, sm.height); g3.imageSmoothingEnabled = true; g3.filter = 'blur(3px)'; g3.drawImage(cv2, 0, 0, sm.width, sm.height); g3.filter = 'none';
+  covImg = { v: C.v, seed: S.seed, C, M, cv: cv2, sm, home };
+  return sm;
 }
 function drawCoverage(S) {
   const cc = covCanvas(S);
-  if (cc) { ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width * IC.ASP.CS, cc.height * IC.ASP.CS); ctx.globalAlpha = 1; }
+  // (brief 67) a 5 km grid says nothing at the airport or the city zoom, where it tinted the whole picture blue: it fades
+  // as the camera closes in, to a trace that still shows where the cover ends
+  if (cc) { ctx.globalAlpha = 0.5 * (1 - 0.75 * U.clamp((cam.z - 1) / 3, 0, 1)); ctx.imageSmoothingEnabled = true; ctx.drawImage(cc, 0, 0, cc.width / 2 * IC.ASP.CS, cc.height / 2 * IC.ASP.CS); ctx.globalAlpha = 1; }
   // airborne early warning looks down from above the hills: a plain disc
   cx2.setTransform(1, 0, 0, 1, 0, 0); cx2.clearRect(0, 0, cov.width, cov.height); cx2.setTransform(COVK, 0, 0, COVK, 0, 0);
   let any = false;
@@ -433,6 +619,7 @@ function drawIncidents(S, px, now) {
 }
 
 function drawInfra(S, px, now) {
+  const names = [];
   for (const i of S.infra) {
     if (i.kind === 'bridge' || !inView(i.x, i.y, 300)) continue;
     const sel = S.sel && S.sel.ref === i;
@@ -442,14 +629,18 @@ function drawInfra(S, px, now) {
       const big = i.capital ? 14 : i.pop > 350 ? 12 : 10.5;
       // far out, only the big cities are named, so the names stay readable
       if ((S.layers.labels && (cam.z > 0.035 || i.pop > 150)) || i.pop > 350) {
-        label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
         // (round 5c) the town's name holds its place: the chain's tags and the floating words go round it
         IC.LBL.put(i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, nm.length * big * 0.64 * px, big * 1.25 * px, 0, 0, true);
-        if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
+        // the words go on after every symbol (drawn by the frame), so nothing at the centre covers the name
+        names.push(() => {
+          label(nm, i.x, i.y - Math.max(i.r * 0.9, 10 * px) - 4 * px, px, '#f2f5f7', big, 'center', i.capital ? 700 : 600);
+          if (cam.z > 0.14) label(`${i.pop}k${i.alert > 0 ? ' · SIRENS' : ''}`, i.x, i.y - Math.max(i.r * 0.9, 10 * px) + 9 * px, px, i.alert > 0 ? C.hostile : C.muted, 9);
+        });
       }
       if (i.capital) { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x, i.y, 3 * px, 0, 7); ctx.fill(); }
     } else {
-      if (i.parts && cam.z > 0.3) { /* drawn part by part */ }
+      // (drawn part by part from the zoom drawBases starts at: at exactly 0.3 both drew the name, a little apart)
+      if (i.parts && cam.z >= 0.3) { /* drawn part by part */ }
       else {
         const s = px, col = i.offline ? '#6a7880' : C.friend;
         ctx.fillStyle = 'rgba(6,14,20,0.85)'; ctx.strokeStyle = col; ctx.lineWidth = 1.5 * s;
@@ -460,10 +651,10 @@ function drawInfra(S, px, now) {
       }
       if (i.parts) {
         const st = IC.baseStatus(S, i);
-        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label('RUNWAY CLOSED', i.x, i.y - 16 * px - (cam.z > 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
-        else if (cam.z <= 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
+        if (!st.runway && !i.locked && IC.rwyState(S, i).closed) label(IC.rwyState(S, i).word.toUpperCase(), i.x, i.y - 16 * px - (cam.z >= 0.3 ? 12 : 0), px, C.hostile, 9, 'center', 700);
+        else if (cam.z < 0.3 && i.st && i.st.warn && i.st.warn.length && !i.locked && i.owner === 'us') { ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(i.x + 8 * px, i.y - 8 * px, 3 * px, 0, 7); ctx.fill(); }
         const hold = S.threats.filter(t => t.tail && t.holding && t.toApt === i.id).length;
-        if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z > 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
+        if (hold && cam.z > 0.08) label(`${hold} HOLDING`, i.x, i.y + (cam.z >= 0.3 ? -26 : -16) * px, px, C.amber, 8.5, 'center', 700);
       }
     }
     if (i.hp < i.max && !i.offline && i.owner === 'us' && i.kind !== 'city' && !(i.parts && cam.z > 0.3)) {
@@ -482,13 +673,14 @@ function drawInfra(S, px, now) {
       label(W.full[k].toUpperCase(), x, y, px, W.side[k] === 'hostile' ? 'rgba(255,150,130,0.4)' : 'rgba(200,210,220,0.3)', 18, 'center', 600);
     }
   }
+  return names;
 }
 
 function drawGhost(S, px) {
   const m = S.mode2, h = S.hover;
   if (!m || !h) return;
   if (m.kind === 'deploy') {
-    const ok = IC.canPlace(S, m.type, h.x, h.y) && ((S.reserve[m.type] || 0) > 0 || !IC.buyBlock(S, m.type));
+    const why = IC.placeWhy(S, m.type, h.x, h.y) || ((S.reserve[m.type] || 0) > 0 ? '' : IC.buyBlock(S, m.type)), ok = !why;
     const d = IC.UNITS[m.type];
     const rng = IC.typeRange(m.type);
     ctx.strokeStyle = ok ? 'rgba(111,210,255,0.8)' : 'rgba(255,91,79,0.8)'; ctx.lineWidth = 1.2 * px; ctx.setLineDash([7 * px, 5 * px]);
@@ -497,6 +689,7 @@ function drawGhost(S, px) {
     if (d.logi && d.logi.reach) { ctx.strokeStyle = 'rgba(224,180,88,0.5)'; ctx.beginPath(); ctx.arc(h.x, h.y, d.logi.reach, 0, 7); ctx.stroke(); }
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.85; IC.drawUnitSymbol(ctx, m.type, h.x, h.y, px, ok ? C.friend : C.hostile, { tint: ok ? null : 'rgba(255,91,79,0.4)' }); ctx.globalAlpha = 1;
+    if (why) label(why.replace(/\.$/, ''), h.x, h.y + 26 * px, px, C.hostile, 11, 'center', 700);   // why not here, before the click
     if (d.sensor && d.sensor.ssr && S.asp && S.asp.ways.length) {
       // (round 5c) what it adds where the cursor is, and what crowding its band costs
       const G = IC.radarGain(S, m.type, h.x, h.y);
@@ -504,7 +697,7 @@ function drawGhost(S, px) {
         label(`+${Math.round(G.gain * 100)}% of the airways seen · ${Math.round(G.now * 100)}% now, ${Math.round(G.after * 100)}% with it`, h.x, h.y - 42 * px, px, G.gain > 0.05 ? C.friend : C.amber, 11, 'center', 700);
         label(G.near ? `${G.near} radar${G.near > 1 ? 's' : ''} on this band within 70 km: +${U.money(G.crowd * (S.mode === 'story' ? IC.MO(S) / 3600 : 24))} ${S.mode === 'story' ? 'a month' : 'a day'} to keep` : 'No other radar on this band within 70 km', h.x, h.y - 27 * px, px, G.near ? C.amber : C.muted, 10, 'center', 600);
       }
-    } else if (d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
+    } else if (!why && d.sensor && d.sensor.mast && !d.sensor.passive) label(`low-flier horizon ~${U.km(U.horizon(d.sensor.mast, 0.05))}`, h.x, h.y + 26 * px, px, C.muted, 9);
     if (ok) IC.drawDeployEta(ctx, S, px, m.type, h);
   } else if (m.kind === 'airPoint') {
     const R = m.mission === 'aew' ? 3200 : m.mission === 'isr' ? 450 : 550;
@@ -515,6 +708,13 @@ function drawGhost(S, px) {
 function drawHints(S, px, now) {
   const hint = IC.stepHint && IC.stepHint(S);
   if (!hint) return;
+  // a limit the step names ("within 15 km of the base"): a dashed ring with its distance on top
+  const zn = hint.zone && hint.zone(S);
+  if (zn) {
+    ctx.strokeStyle = 'rgba(242,180,65,0.85)'; ctx.lineWidth = 2 * px; ctx.setLineDash([10 * px, 7 * px]);
+    ctx.beginPath(); ctx.arc(zn.x, zn.y, zn.r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    label(zn.label, zn.x, zn.y - zn.r - 6 * px, px, 'rgba(242,180,65,0.95)', 12, 'center', 600);
+  }
   let p = null;
   if (hint.at) p = hint.at(S);
   if (hint.track) { const t = hint.track(S); if (t && t.det) p = { x: t.px, y: t.py }; }
