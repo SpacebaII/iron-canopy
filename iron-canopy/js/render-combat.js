@@ -459,6 +459,8 @@ function drawPlumes(S, px, now, light) {
 function drawImpacts(S, px, now) {
   for (const t of S.threats) {
     if (!t.det || t.dead || t.aff !== 'H' || t.d.pen) continue;
+    // (ballistic missiles and gliders are drawn as salvos: render-threat.js)
+    if (IC.drawSalvos && (t.d.move === 'bal' || t.d.cls === 'hgv')) continue;
     let ix, iy;
     if (t.d.move === 'bal') { ix = t.x1; iy = t.y1; } else if (t.type === 'arm' || t.d.cls === 'hgv') { ix = t.aim.x; iy = t.aim.y; } else continue;
     const p = 0.5 + 0.5 * Math.sin(now * 6);
@@ -510,7 +512,10 @@ function drawTrack(S, t, px, now) {
   ctx.globalAlpha = blink;
   const close = cam.z > 0.9 && klass && t.d.cls !== 'bal' && t.d.cls !== 'rkt';
   // (drones are slow and small: drawn larger, with a longer heading line, so a swarm reads at a glance)
-  const s = px * (t.d.cls === 'air' ? 1.3 : t.d.cls === 'drone' && aff === 'H' ? 1.4 : 1.05);
+  // (a ballistic missile is drawn big, with a halo as wide as its warhead hits: it must never read like a cruise missile)
+  const bal = (t.d.move === 'bal' || t.d.cls === 'hgv') && t.d.cls !== 'rkt' && aff !== 'D' && aff !== 'N' && aff !== 'A';
+  const s = px * (bal ? 1.6 + Math.min(0.8, (t.d.dmg || 0) / 300) : t.d.cls === 'air' ? 1.3 : t.d.cls === 'drone' && aff === 'H' ? 1.4 : 1.05);
+  if (bal && IC.drawBalHalo) { ctx.globalAlpha = v.k; IC.drawBalHalo(S, t, x, y, px, now); }
   let col;
   const mk = close && cam.z > 2.5 && IC.modelTop ? IC.modelOfThreat(t, v.steady) : null;
   if (mk) {
@@ -546,9 +551,15 @@ function drawTrack(S, t, px, now) {
   const selT = S.sel && S.sel.ref === t;
   const show = selT || cam.z > 0.28 || (t.d.cls !== 'drone' && t.d.cls !== 'rkt' && t.d.cls !== 'ga' && !t.border && !(t.d.civil && cam.z < 0.12)) || (t.d.cls === 'drone' && cam.z > 0.15);
   // a raid carries one label, its leader's (render-air.js boxes the group); one radar no longer holds is shown bare
-  if (show && S.layers.labels && (t.held || selT) && !(t.grp && t.grp.lead !== t && !selT)) {
+  if (show && S.layers.labels && (t.held || selT) && !(t.grp && t.grp.lead !== t && !selT) && !(bal && !selT && IC.salvoMuted && IC.salvoMuted(t))) {
     const code = t.type === 'ga' && (aff === 'N' || aff === 'A' || aff === 'U') ? `${t.cs} light${t.sq ? '' : ' · no transponder'}` : aff === 'N' || aff === 'A' ? t.cs : aff === 'H' ? t.d.code : aff === 'S' ? (t.sq ? t.cs + '?' : 'SUSP') : 'UNK';
     const altS = alt == null ? '---' : IC.tagAlt(t);
+    // a ballistic missile says how high and how fast it is, in kilometres: the scale of the thing
+    if (bal) {
+      const up = t.d.move === 'bal' && t.T && t.age < t.T / 2;
+      label(`${t.tn || '—'} ${aff === 'H' ? t.d.nick.toUpperCase() : code}`, x + 15 * px, y - 10 * px, px, col, 11, 'left', 800);
+      label(`${Math.round(t.alt)} km ${up ? '▲' : '▼'} · ${IC.balSpeed(t).toFixed(1)} km/s · ${U.dur(IC.timeToImpact(t))}`, x + 15 * px, y + 3 * px, px, '#ffd1cb', 9, 'left', 600);
+    } else
     label(`${t.tn || '—'} ${code} ${altS}${t.inbound ? ' ▸' + t.inbound : ''}`, x + 11 * px, y - 8 * px, px, col, 9.5, 'left', 600);
   }
   if (selT) {
@@ -1258,6 +1269,7 @@ IC.drawCombat = function (S, px, now, light) {
   if (IC.film && IC.film.clean) { for (const t of S.threats) filmThreat(S, t, px, now, light); for (const a of S.air) filmAir(S, a, px, now, light); }
   else {
     drawImpacts(S, px, now);
+    if (IC.drawSalvos) IC.drawSalvos(S, px, now);
     for (const t of S.threats) drawTrack(S, t, px, now);
     if (IC.drawDefense) IC.drawDefense(ctx, S, px, now);
     if (IC.drawAirWar) IC.drawAirWar(ctx, S, px, now);
