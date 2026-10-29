@@ -473,5 +473,7 @@
  "roads: a roundabout is driven round its ring, one way and anticlockwise, and no road runs through its island (brief 67)": 18,
  "towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)": 30,
  "map: the Career plays on the hand-drawn map, and everything drawn is there: the capital on its river, every city and place on dry ground, the sea with a coast, ridges with a style and passes, the motorways, railways and crossings between the places they name": 60,
- "map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed's region is as it was": 55
+ "map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed's region is as it was": 55,
+ "cutscenes: every cutscene plays as a timed scene, each panel long enough to read, the camera inside its picture": 1.5,
+ "cutscenes: the staged 3D shots fly their scripts at our airport and leave the game as it was": 2.5
 }

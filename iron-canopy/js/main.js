@@ -654,6 +654,7 @@ function onAct(e) {
     case 'bbToggle': IC.bbToggle(); return;
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
     case 'rushRepair': IC.rushRepair(S, id); break;
+    case 'cutPlay': { const c = S.story && S.story.cuts[+v]; if (c && IC.cutView) { ui.openRoom(null); IC.cutView.open(S, c, true); } return; }
     case 'loan': IC.takeLoan(S, +v); break;
     case 'redLoan': IC.takeRedLoan(S); ui.waitPick = false; break;
     case 'repayLoan': IC.repayLoan(S, id); break;
@@ -1143,9 +1144,9 @@ function frame(now) {
   }
   IC.autosaveTick(S);
   fx(S, dtR, gdt);
-  // (the map is not drawn while a film covers it: the 3D view full screen, or a title card)
+  // (the map is not drawn while a film covers it: the 3D view full screen, a title card, or a cutscene)
   const RV = IC.replayState && IC.replayState();
-  if (!(RV && RV.film) && !(IC.film && IC.film.cover)) IC.render(S, now / 1000);
+  if (!(RV && RV.film) && !(IC.film && IC.film.cover) && !(IC.cutView && IC.cutView.isOpen())) IC.render(S, now / 1000);
   if (IC.lifeSoundEnd) IC.lifeSoundEnd();
   if (IC.sfx.score) IC.sfx.score(S, dtR);
   IC.renderMini(S, mini, mw, mh);

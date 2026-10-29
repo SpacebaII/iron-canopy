@@ -727,6 +727,7 @@ function storyPage() {
   return `${over ? `<div class="card wide epi"><h3>${esc(over.title)}<em>the end</em></h3><p class="lead">${esc(over.text)}</p>${over.paras.map(p => `<p><b>${esc(p.head)}.</b> ${esc(p.text)}</p>`).join('')}<p class="by">${esc(over.by)}</p></div>` : ''}
     <div class="card wide"><h3>Across the border<em>what we know</em></h3><p>${st.act >= 2 ? `${esc(F.name)} ${esc(F.how)}. ${esc(IC.GRIEVANCES[st.grievance].words(S))}` : `The ${esc(S.world.full.A)} has been quiet for years.`}${st.road ? ` ${esc(IC.ROADS_TO_WAR[st.road].words(S))}` : ''}</p></div>
     ${T.length ? T.map(thread).join('') : '<div class="card wide"><p class="hint">Nothing yet. The people you work with will come to you with what they want, and what you choose is remembered here.</p></div>'}
+    ${(st.cuts || []).length ? `<div class="card wide"><h3>Scenes<em>play one again</em></h3><div class="cutlist">${st.cuts.map((c, i) => IC.CUTSCENES[c.id] ? `<button class="btn sm" data-act="cutPlay" data-v="${i}" title="${esc(U.date(c.t))}">▶ ${esc(IC.CUTSCENES[c.id].title)}</button>` : '').join(' ')}</div></div>` : ''}
     ${flags.length ? `<div class="card wide"><h3>What the story remembers</h3><ul class="flags">${flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}`;
 }
 /* the people: their face, role, how they feel about you, and the last thing they said */

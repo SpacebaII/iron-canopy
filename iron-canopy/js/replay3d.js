@@ -443,7 +443,7 @@ function groundSync(v, fx, fy) {
   if (v.beyond && !v.S.flat) {
     const L = CFG.levels[CFG.levels.length - 1], r = (L.ring + 0.5) * L.T;
     let sum = 0; for (let k = 0; k < 16; k++) sum += hRaw(v.S, fx + Math.cos(k * 0.3927) * r, fy + Math.sin(k * 0.3927) * r);
-    v.beyond.position.y = sum / 16 * v.hk - 0.5;
+    v.beyondY = sum / 16 * v.hk - 0.5;
     // and in the colour of the land there (the map's far picture), so the haze does not end on a green plain
     const T = v.S.terrain;
     if (T && T.far && T.far.getContext) {
@@ -1857,6 +1857,8 @@ function step(v, now) {
   camera(v, t, dtR);
   const cp = v.camera.position;
   v.sky.position.copy(cp); v.beyond.position.x = cp.x; v.beyond.position.z = cp.z;
+  // never over the camera: in a valley below the rings' edge it would cover the sky
+  v.beyond.position.y = Math.min(v.beyondY != null ? v.beyondY : -0.5, cp.y - 0.3);
   // the haze thins with height: from 45 km on the ground to 180 km from the cruise
   const ch = Math.max(0, cp.y - hT(v, cp.x + v.cx, cp.z + v.cy) * v.hk), far = U.clamp(450 + ch * 9, 450, 1800);
   v.scene.fog.far = far; v.scene.fog.near = far * 0.3;
