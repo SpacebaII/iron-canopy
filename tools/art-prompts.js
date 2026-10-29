@@ -1,7 +1,9 @@
 /* The cutscenes' painted panels as prompts for an image model (brief 75): one ready-to-paste prompt for every panel
    with src 'ai', the look and the cast written once at the top so the pictures agree, and the file each one is
    saved as (iron-canopy/art/cut/<art>.jpg). Panels that already have their picture are listed as done.
-     node tools/art-prompts.js [--out=file.md] [--all] (--all: the done ones too) */
+     node tools/art-prompts.js [--out=file.md|file.txt] [--all] (--all: the done ones too)
+   A .txt file is plain text for pasting into a chat with an image model as one long job: the brief first, then
+   one numbered panel after another. */
 const fs = require('fs');
 const path = require('path');
 const IC = require('../headless.js');
@@ -57,4 +59,22 @@ for (const id in IC.CUTSCENES) {
 }
 out.push(`## The panels (${todo} to paint${done ? `, ${done} done` : ''})`, '', ...rows);
 const file = arg('out', null);
+if (file && /\.txt$/.test(file)) {
+  const T = [];
+  T.push('IRON CANOPY - PAINTED CUTSCENE PANELS', '', 'THE JOB', `Paint ${todo} panels for the story cutscenes of Iron Canopy, a game about a country's Director of Civil Aviation in the years before and during a war with a neighbour. Work through the panels below in order, one image per panel, then the faces. Each one names the file it is saved as.`, '',
+    'RULES FOR EVERY IMAGE', `- ${STYLE}`, '- Landscape 16:9, about 1920 x 1080.', '- The same character must look the same in every panel: use the cast sheet below every time they appear.', '- The Director (the narrator) is only ever seen from behind or in shadow.', '- Before moving on, check the image against its panel: the right people, place, time of day and weather, and no text in the picture. Redo it if not.', '',
+    'THE CAST');
+  for (const k in named) T.push(`- ${named[k].name}${named[k].role ? ` (${named[k].role})` : ''}: ${named[k].text}. ${named[k].bio}`);
+  T.push('- The Director: seen from behind or in shadow, a dark coat.', '', 'THE PANELS', '');
+  let n = 0;
+  for (let i = 0; i < rows.length; i++) if (rows[i].startsWith('### ')) {
+    n++; const name = rows[i].slice(4).replace(' (done)', ''), scene = rows[i + 1].replace(/\*/g, ''), prompt = rows[i + 4];
+    T.push(`PANEL ${n} of ${todo} - save as ${name} - scene: ${scene}`, prompt, '');
+  }
+  // the faces: head-and-shoulders portraits for the cast cards and the balloons
+  const faces = Object.keys(IC.CAST).filter(k => !fs.existsSync(path.join(ART, '../faces/face-' + k + '.jpg')));
+  T.push('THE FACES', `Then paint ${faces.length} portraits, one per character: head and shoulders, three-quarter view, square (1024 x 1024), the same look as the panels, a plain background (blue-grey for our side, dark plum for the other side).`, '');
+  faces.forEach((k, i) => T.push(`FACE ${i + 1} of ${faces.length} - save as face-${k}.jpg - ${named[k].name}`, `Portrait of ${named[k].name}${named[k].role ? `, ${named[k].role}` : ''}: ${named[k].text}. ${named[k].bio} Head and shoulders, three-quarter view, square, plain ${IC.CAST[k].foe ? 'dark plum' : 'blue-grey'} background. ${STYLE}`, ''));
+  fs.writeFileSync(file, T.join('\n')); console.log(`${file}: ${todo} prompts, ${faces.length} faces`); process.exit(0);
+}
 if (file) { fs.writeFileSync(file, out.join('\n')); console.log(`${file}: ${todo} prompts, ${done} done`); } else console.log(out.join('\n'));

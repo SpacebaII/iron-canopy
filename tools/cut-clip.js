@@ -39,33 +39,31 @@ const SETUP = (q) => `(async () => {
       console.log(id, JSON.stringify(info));
       const total = info.total + info.title + 0.6;
       // the staged scenes build on a free clock (three.js and the ground); then the held clock films
-      await cam.ev(() => IC.film.hold(true));
-      const seek = async t => { await cam.ev(t => { IC.cutView.t = t; }, t); };
+      // let the player run freely until it has drawn the panel at t (and built its 3D stage, if it has one), then hold
+      const settle = async t => {
+        await cam.ev(t => { IC.cutView.t = t; IC.cutView.playing = false; window.__f = 0; const f0 = IC.cutView.last; window.__l = f0; }, t);
+        await cam.free(0);
+        await cam.page.waitForFunction(() => IC.cutView.last !== window.__l && (window.__f = (window.__f || 0) + 1) > 1, null, { timeout: 240000, polling: 300 }).catch(() => console.log('  the player did not draw'));
+        await cam.page.waitForFunction(() => { const v = IC.replayState && IC.replayState(); return !v || (v.scene && v.camera && !(v.tileQ && v.tileQ.length) && IC.cutView.v3on >= 1); }, null, { timeout: 240000, polling: 500 }).catch(() => console.log('  the stage did not build'));
+        await cam.page.waitForTimeout(1500);
+        await cam.ev(t => { IC.film.hold(true); IC.cutView.t = t; IC.cutView.playing = true; }, t);
+      };
       if (STILLS) {
         for (const s of STILLS.split(',').map(Number)) {
-          await seek(s - info.title); await cam.ev(() => { IC.film.tick(33); });
-          // a stage is built on a free clock, then a few frames on the held one
-          await cam.free(1000); await cam.page.waitForFunction(() => { const v = IC.replayState && IC.replayState(); return !v || (v.scene && v.camera && !(v.tileQ && v.tileQ.length)); }, null, { timeout: 240000, polling: 500 }).catch(() => {}); await cam.page.waitForTimeout(1500); await cam.ev(() => IC.film.hold(true)); await seek(s - info.title);
-          for (let i = 0; i < 4; i++) await cam.ev(() => IC.film.tick(33));
+          await settle(s - info.title);
+          for (let i = 0; i < 3; i++) await cam.ev(() => IC.film.tick(33));
           await cam.shot(path.join(OUT, `${id}-${String(s).replace('.', '_')}.png`));
           console.log('  still', s);
         }
       } else {
         const from = FROM != null ? +FROM : 0, sec = SEC != null ? +SEC : total - from;
-        await seek(from - info.title);
+        await settle(from - info.title);
         // before each staged panel the scene is given time to build, off the clip
         let lastStage = null;
         await cam.film(sec, async (i) => {
           const t = from + i / FPS - info.title;
           const sh = info.shots.find(s => t >= s[1] - 0.05 && t < s[1] + s[2]);
-          if (sh && sh[3] && sh[3] !== lastStage) {
-            lastStage = sh[3];
-            await cam.ev(t => { IC.cutView.t = t; IC.film.tick(1); }, t);
-            await cam.free(0);
-            await cam.page.waitForFunction(() => { const v = IC.replayState && IC.replayState(); return !v || (v.scene && v.camera && !(v.tileQ && v.tileQ.length)); }, null, { timeout: 240000, polling: 500 }).catch(() => {});
-            await cam.page.waitForTimeout(2500);
-            await cam.ev(t => { IC.film.hold(true); IC.cutView.t = t; }, t);
-          }
+          if (sh && sh[3] && sh[3] !== lastStage) { lastStage = sh[3]; await settle(t); }
         });
         const file = path.join(OUT, id + '.mp4');
         execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%06d.jpg'), '-c:v', 'libx264', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-crf', '24', '-profile:v', 'main', '-level', '4.0', '-movflags', '+faststart', file]);

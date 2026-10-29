@@ -120,7 +120,7 @@ function drawFx(sh, k, T, a, in3d) {
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   const g = cv.getContext('2d'); g.clearRect(0, 0, W, H);
   if (!sh) return;
-  const fx = sh.fx, still = reduce();
+  const fx = in3d ? [] : sh.fx, still = reduce();   // the 3D stage has its own light and weather
   g.globalAlpha = a;
   if (fx.includes('glow')) {
     const p = 0.75 + 0.25 * Math.sin(T * 0.7), gr = g.createRadialGradient(W * 0.85, H * 0.1, 0, W * 0.85, H * 0.1, W * 0.7);

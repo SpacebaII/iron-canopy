@@ -1204,7 +1204,7 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .cutv .layer img{width:100%;height:100%;object-fit:cover;display:block}
 .cutv .layer.night img{filter:brightness(.82) saturate(.9)}
 .cutv .layer.memory img,.cutv .layer.memory .board{filter:sepia(.35) contrast(1.05) brightness(.95)}
-.cutv .host3d{position:absolute;inset:0;z-index:3;opacity:0;pointer-events:none}
+.cutv .host3d{position:absolute;inset:0;z-index:3;opacity:0;pointer-events:none;background:#000}
 .cutv .host3d .replay{position:absolute;inset:0;border-radius:0;box-shadow:none;background:#000;animation:none;pointer-events:none;z-index:0}
 .cutv .host3d .rp-head,.cutv .host3d .rp-bar,.cutv .host3d .rp-msg,.cutv .host3d .rp-panel,.cutv .host3d .rp-labels{display:none}
 .cutv .fxc{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none}

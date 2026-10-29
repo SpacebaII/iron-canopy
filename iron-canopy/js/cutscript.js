@@ -6,7 +6,7 @@
      (beats: the caption, the balloon, a flash, a shake, a sound), and how it gives way to the next (trans).
      A panel may say any of these itself (dur, cam, at, fx, beats, trans); what it leaves out is read from its
      shot line: "close on" pushes in, a crowd pans, rain falls when it rains.
-   - A panel with stage: { id, part, hour, model } plays a 3D shot instead of its picture: IC.CUT_STAGES[id] writes a short
+   - A panel with stage: { id, part, hour, model, wx } plays a 3D shot instead of its picture: IC.CUT_STAGES[id] writes a short
      record (actors flown on scripted paths, explosions at set times) round a place of this game (the national
      airport, its main runway, the capital), and film camera shots over it (render3d-war.js W3.cam). Panels in a
      row with the same stage share one scene, each with its part's shots. IC.cutStage(S, id) builds it on a copy
@@ -163,11 +163,11 @@ IC.CUT_STAGES = {
         return { x: td.x + cx * s, y: td.y + cy * s, alt: 0, h, spd: v, code: a < 2.5 ? P.land : P.rollout };
       };
       return {
-        hour: d && d.hour != null ? d.hour : 10.2, at: td,
+        hour: d && d.hour != null ? d.hour : 10.2, wx: 'clear', at: td,
         actors: [{ key: 'ac', kind: 'gnd', model: d && d.model || 'narrow', name: 'First arrival', side: 'civil', meta: { type: d && d.model || 'narrow', livery: livery(S), civil: true, ap: ap.id }, t0: -30, t1: 24, fly }],
         shots: [
-          { t: 0, dur: 7, mode: 'fixed', ref: 'ac', from: { x: td.x - cx * 3 + rx * 0.9, y: td.y - cy * 3 + ry * 0.9, h: 1.5 }, lens: [85, 50], lag: 0.25 },
-          { t: 7, dur: 7.5, mode: 'fixed', ref: 'ac', from: { x: td.x + cx * 2 + rx * 0.9, y: td.y + cy * 2 + ry * 0.9, h: 1.2 }, lens: [50, 35], lag: 0.3 },
+          { t: 0, dur: 7, mode: 'fixed', ref: 'ac', from: { x: td.x - cx * 3 + rx * 0.9, y: td.y - cy * 3 + ry * 0.9, h: 6 }, lens: [85, 50], lag: 0.25 },
+          { t: 7, dur: 7.5, mode: 'fixed', ref: 'ac', from: { x: td.x + cx * 2 + rx * 0.9, y: td.y + cy * 2 + ry * 0.9, h: 4 }, lens: [50, 35], lag: 0.3 },
           { t: 14.5, dur: 6, mode: 'chase', ref: 'ac', back: 0.75, up: 0.1, side: 0.2, lens: 32, ease: 0.4 }
         ]
       };
@@ -189,7 +189,7 @@ IC.CUT_STAGES = {
       };
       const lift = fly(8);
       return {
-        hour: d && d.hour != null ? d.hour : 15, at: lift,
+        hour: d && d.hour != null ? d.hour : 15, wx: 'overcast', at: lift,
         actors: [{ key: 'ac', kind: 'gnd', model: d && d.model || 'narrow', name: 'Departure', side: 'civil', meta: { type: d && d.model || 'narrow', livery: livery(S), civil: true, ap: ap.id }, t0, t1: 26, fly }],
         shots: [
           { t: 0, dur: 6.5, mode: 'along', ref: 'ac', side: 0.55, up: 0.02, ahead: 0.1, lens: 45, ease: 0.25 },
@@ -213,7 +213,7 @@ IC.CUT_STAGES = {
       const hd = h + Math.PI / 2 + 0.25, dx = Math.cos(hd), dy = Math.sin(hd);
       const drone = t => { const s = vd * (t - tC); return { x: C.x + dx * s + cx * 0.02, y: C.y + dy * s + cy * 0.02, alt: C.alt + 0.004, h: hd, spd: vd, code: P.air }; };
       return {
-        hour: 15.5, at: C,
+        hour: 15.5, wx: 'overcast', at: C,
         actors: [
           { key: 'ac', kind: 'threat', model: 'turbo', name: 'Regional airliner', side: 'civil', meta: { type: 'civ', klass: 'airliner', civil: true, livery: livery(S) }, t0: -20, t1: 28, fly: air },
           { key: 'dr', kind: 'threat', model: 'isr', name: 'Drone', side: 'enemy', d: IC.THR.isr, meta: { type: 'isr', klass: 'drone' }, t0: -20, t1: tC, fly: drone }
@@ -241,7 +241,7 @@ IC.CUT_STAGES = {
         return { x: O.x + cx * (v * t - back) + rx * side, y: O.y + cy * (v * t - back) + ry * side, alt: alt + up, h: h + 0.06 * (1 - e) * Math.sin(t * 0.6), spd: v, code: P.air };
       };
       return {
-        hour: 11, at: O,
+        hour: 11, wx: 'scattered', at: O,
         actors: [
           { key: 'ac', kind: 'threat', model: 'narrow', name: 'Airliner', side: 'civil', meta: { type: 'civ', klass: 'airliner', civil: true, livery: livery(S) }, t0: -10, t1: 20, fly: air },
           { key: 'f', kind: 'threat', model: 'ftr_e', name: 'Their fighter', side: 'enemy', d: IC.THR.ftr, meta: { type: 'ftr', klass: 'fighter' }, t0: -10, t1: 20, fly: ftr }
@@ -284,12 +284,13 @@ IC.CUT_STAGES = {
         { t: tI[1], kind: 'intercept', ...meet(1), sz: 0.9, tref: 'b1', mref: 's1' },
         { t: tImp, kind: 'impact', x: tgt[2].x, y: tgt[2].y, alt: 0, sz: 1.6, dmg: [], tref: 'b2' }
       ];
+      const M0 = meet(0);
       return {
-        hour: d && d.hour != null ? d.hour : 5.6, at: L, actors, events,
+        hour: d && d.hour != null ? d.hour : 6.4, wx: 'clear', at: L, actors, events,
         shots: [
-          { t: 0, dur: 4.6, mode: 'fixed', ref: 'bat', from: { x: L.x - bx * 0.5 + by * 0.25, y: L.y - by * 0.5 - bx * 0.25, h: 2.5 }, lookAt: 'b0', lens: [24, 30], lag: 0.6 },
-          { t: 4.6, dur: 3.4, mode: 'chase', ref: 's0', back: 0.35, up: 0.04, lookAt: 'b0', lens: 35, lag: 0.2 },
-          { t: 8, dur: 9, mode: 'fixed', ref: 'b2', from: { x: ap.x - bx * 30 + by * 14, y: ap.y - by * 30 - bx * 14, h: 40 }, lookAt: { x: ap.x, y: ap.y, alt: 6 }, lens: [32, 45], lag: 0.8 }
+          { t: 0, dur: 4.6, mode: 'fixed', ref: 'bat', from: { x: L.x - bx * 0.6 + by * 0.3, y: L.y - by * 0.6 - bx * 0.3, h: 25 }, lookAt: { x: (L.x + M0.x) / 2, y: (L.y + M0.y) / 2, alt: 1.6 }, lens: [24, 30] },
+          { t: 4.6, dur: 3.4, mode: 'chase', ref: 's0', back: 0.5, up: 0.08, lookAt: 'b0', lens: 28, lag: 0.2 },
+          { t: 8, dur: 9, mode: 'fixed', ref: 'b2', from: { x: ap.x - bx * 60 + by * 25, y: ap.y - by * 60 - bx * 25, h: 60 }, lookAt: { x: ap.x + bx * 25, y: ap.y + by * 25, alt: 3.2 }, lens: [24, 32] }
         ]
       };
     }
@@ -299,7 +300,7 @@ IC.CUT_STAGES = {
 /* the stage itself: a copy of the state with its own clock and a record written from the actors' paths */
 IC.cutStage = function (S, id, d, opt) {
   const G = IC.CUT_STAGES[id]; if (!G) return null;
-  if (opt) { d = Object.assign({}, d); for (const k of ['hour', 'model']) if (opt[k] != null) d[k] = opt[k]; }
+  if (opt) { d = Object.assign({}, d); for (const k of ['hour', 'model', 'wx']) if (opt[k] != null) d[k] = opt[k]; }
   const at = G.where(S, d); if (!at) return null;
   const B = G.build(S, d, at); if (!B) return null;
   const T0 = DAY + Math.round((B.hour != null ? B.hour : 12) * 3600);
@@ -329,6 +330,11 @@ IC.cutStage = function (S, id, d, opt) {
   Object.defineProperty(stage, 'rec', { value: R, enumerable: false, configurable: true, writable: true });
   stage.time = T0 + Math.max(...(G.parts || [{ dur: 15 }]).map((p, i, A) => A.slice(0, i + 1).reduce((s, q) => s + q.dur, 0))) + 4;
   stage.paused = true; stage.staged = id;
+  // a late spring day's light: the stage clock's day would read as January, when dawn is still dark at 07:00
+  stage.cal = null;
+  // its own weather, held: the game's fog or storm is not the scene's
+  const wx = d && d.wx || B.wx || 'scattered';
+  stage.weather = Object.assign({}, S.weather || {}, { kind: wx, prev: wx, fade: 1, hold: true, force: null });
   // the parts' shots, in stage seconds, with their actors as the things they follow
   const ref = x => typeof x === 'string' ? refs[x] : x;
   const shots = B.shots.map(s => Object.assign({}, s, { ref: ref(s.ref), lookAt: ref(s.lookAt), t0: T0 + s.t }));
