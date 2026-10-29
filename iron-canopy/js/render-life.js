@@ -174,26 +174,22 @@ IC.drawLandLife = function (g, S, ap, px, z, night, LT, lights) {
     // the terminal's side of a kerb road (where cars pull in and people stand)
     if (r.kerb && r._sd == null) { const t = ap.parts.find(p => p.id === r.by), a = r.pts[0], b = r.pts[r.pts.length - 1], l = U.dist(a, b) || 1; r._sd = t ? (Math.sign((t.x - a.x) * -(b.y - a.y) / l + (t.y - a.y) * (b.x - a.x) / l) || 1) : 1; }
     const lanes = r.lanes || (r.w > 0.2 ? 3 : 2), lw = r.w / lanes;
-    const N = Math.min(80, Math.round(LL * (0.25 + 2.2 * busy) * lanes / 2));
-    for (let i = 0; i < N; i++) {
-      const h1 = U.hash(i, 11 + (r.pts[0].x * 10 | 0)), h2 = U.hash(i, 29), v = 0.11 + 0.05 * h2;
-      const dir = r.oneway ? r.oneway : (i % 2 ? 1 : -1);
-      let s, stop = false;
-      // on the kerb road half the cars pull in, stand while their passengers get out, and go on
-      if (r.kerb && h1 < 0.5) {
-        const dwell = 30 + 60 * h2, sStop = 0.15 + (LL - 0.3) * U.hash(i, 3), per = LL / v + dwell, u = (LT + h1 * per * 7) % per;
-        if (u < sStop / v) s = u * v; else if (u < sStop / v + dwell) { s = sStop; stop = true; } else s = (u - dwell) * v;
-      } else s = (LT * v + h1 * LL) % LL;
+    // (round 8) cars drawn bigger than life far out are fewer, as on the country's roads (IC.trafficKeep): at three
+    // times their size, as many as before made a solid line of colour down the road
+    const k = U.clamp(8 * px / 0.045, 1, 3), N = Math.min(80, Math.round(LL * (0.25 + 2.2 * busy) * lanes / 2 / k));
+    // (round 8) each lane's cars keep one speed and their own gaps, so none drives through another; they fade in and out
+    // at the road's ends, where they come from or turn onto the next road, instead of appearing there. On the kerb road
+    // the lane by the terminal is for the cars that pull in, stand while their passengers get out, and go on
+    const dirs = r.oneway ? [r.oneway] : [1, -1], thru = r.oneway ? Math.max(1, lanes - (r.kerb ? 1 : 0)) : 1;
+    const nKerb = r.kerb ? Math.round(N * 0.4) : 0, nLane = Math.max(0, Math.round((N - nKerb) / (dirs.length * thru)));
+    const car = (s, dir, o, stop, i) => {
       if (dir < 0) s = LL - s;
       at(r, cum, s, Q);
-      // right-hand traffic: the lane to the right of the way it goes; one-way roads spread over their lanes
-      const lane = r.oneway ? (stop ? (lanes - 1) : i % Math.max(1, lanes - (r.kerb ? 1 : 0))) : 0;
-      let o = r.oneway ? -r.w / 2 + lw * (lane + 0.5) : lw * 0.5 * dir;
-      if (r.kerb && stop) o = (r.w / 2 - lw / 2) * r._sd;
+      const fade = U.clamp(Math.min(s, LL - s) / 0.12, 0, 1); if (fade <= 0.02) return;
       const hd = Q.h + (dir < 0 ? Math.PI : 0), x = Q.x - Math.sin(Q.h) * o, y = Q.y + Math.cos(Q.h) * o;
-      const taxi = U.hash(i, 5) < 0.22, bus = !r.kerb && U.hash(i, 41) > 0.95;
-      const len = bus ? 0.12 : 0.045, wd = bus ? 0.026 : 0.019, k = U.clamp(8 * px / 0.045, 1, 3);
-      g.save(); g.translate(x, y); g.rotate(hd);
+      const h2 = U.hash(i, 29), taxi = U.hash(i, 5) < 0.22, bus = !r.kerb && U.hash(i, 41) > 0.95;
+      const len = bus ? 0.12 : 0.045, wd = bus ? 0.026 : 0.019;
+      g.save(); g.translate(x, y); g.rotate(hd); g.globalAlpha = fade;
       if (!lights) {
         g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-len * k / 2 + 0.004, -wd * k / 2 + 0.004, len * k, wd * k);
         g.fillStyle = bus ? 'rgb(236,236,230)' : taxi ? 'rgb(236,196,50)' : CARS[(h2 * CARS.length) | 0]; g.fillRect(-len * k / 2, -wd * k / 2, len * k, wd * k);
@@ -206,6 +202,27 @@ IC.drawLandLife = function (g, S, ap, px, z, night, LT, lights) {
       }
       g.restore();
       n++;
+    };
+    const seed = r.pts[0].x * 10 | 0;
+    dirs.forEach((dir, di) => {
+      for (let ln = 0; ln < thru; ln++) {
+        // right-hand traffic: the lane to the right of the way it goes; one-way roads spread over their lanes
+        const o = r.oneway ? -r.w / 2 + lw * (ln + 0.5) : lw * 0.5 * dir, v = 0.11 + 0.04 * U.hash(seed + ln, 7 + di);
+        const gap = LL / Math.max(1, nLane), ph = U.hash(seed + ln, 31 + di) * LL;
+        for (let j = 0; j < nLane; j++) {
+          // (spaced by the lane's gap, each a little off it, never by more than the gap less two car lengths)
+          const jit = (U.hash(j, seed + ln * 13 + di) - 0.5) * Math.max(0, gap - 0.1 * k);
+          car(((LT * v + ph + j * gap + jit) % LL + LL) % LL, dir, o, false, j + 97 * (ln + 3 * di));
+        }
+      }
+    });
+    for (let i = 0; i < nKerb; i++) {
+      // (all at one speed, so one moving never runs into another; each stops at its own place along the kerb)
+      const h1 = U.hash(i, 11 + seed), h2 = U.hash(i, 29), v = 0.12;
+      const dwell = 30 + 60 * h2, sStop = 0.15 + (LL - 0.3) * (i + 0.5) / nKerb, per = LL / v + dwell, u = (LT + h1 * per * 7) % per;
+      let s, stop = false;
+      if (u < sStop / v) s = u * v; else if (u < sStop / v + dwell) { s = sStop; stop = true; } else s = (u - dwell) * v;
+      car(s, r.oneway || 1, (r.w / 2 - lw / 2) * r._sd, stop, 500 + i);
     }
     // passengers at the kerb: waiting with their bags, walking in through the doors
     if (r.kerb && z > 28 && !lights) {

@@ -1209,36 +1209,135 @@ function drawSurface(g, p, px, z) {
 /* ---------- the landside ---------- */
 const CARS = ['rgb(200,202,206)', 'rgb(40,44,50)', 'rgb(150,30,36)', 'rgb(230,230,226)', 'rgb(60,80,120)', 'rgb(120,124,128)', 'rgb(180,160,120)'];
 const TREE = ['rgb(58,90,48)', 'rgb(70,102,54)', 'rgb(50,80,44)'];
-/* a car park's bays, cars and trees as paths in its own frame, kept on the lot (it._lot) until it fills or empties */
-function lotPaths(it, w, h, k, use) {
+/* a car park's bays, cars and trees as paths in its own frame, kept on the lot (it._lot) until it fills or empties.
+   Laid out as a real one: a kerb a few metres in from its edge, rows of bays head to head with a 6.5 m aisle between
+   each pair of rows, every other pair split by a planted island with trees; only whole bays, so no car is cut by the
+   edge. Cars fill it from the end nearest the terminal (en: that point, in the lot's frame), a few scattered further
+   off, as a real car park fills; trees stand on the islands and round the edge, never on a bay. */
+const LOT = { bay: 0.026, depth: 0.05, aisle: 0.065, isle: 0.035, edge: 0.03 };
+function lotPaths(it, w, h, k, use, en) {
   const C = it._lot;
   if (C && C.use === use && C.w === w && C.h === h && C.k === k && C.x === it.x) return C;
-  const bay = 0.026, depth = 0.05, rows = [];
-  for (let y = -h / 2 + 0.03; y + 2 * depth < h / 2 - 0.02; y += 2 * depth + 0.07) rows.push(y);
-  const lines = new Path2D();
-  for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += bay) { lines.moveTo(x, y); lines.lineTo(x, y + 2 * depth); }
-  let i = 0; const cars = CARS.map(() => new Path2D()), taxi = new Path2D();
-  for (const y of rows) for (let x = -w / 2 + 0.03; x < w / 2 - 0.03 - bay; x += bay) for (const yy of [y, y + depth]) {
-    i++;
-    if (U.hash(i, it.x * 10 | 0) > (k === 'taxi' ? 0.7 : use)) continue;
-    (k === 'taxi' && U.hash(i, 5) < 0.6 ? taxi : cars[(U.hash(i, 11) * CARS.length) | 0]).rect(x + bay * 0.15, yy + depth * 0.12, bay * 0.7, depth * 0.76);
+  const lay = C && C.w === w && C.h === h && C.k === k && C.x === it.x ? C.lay : lotLayout(it, w, h, k);
+  return (it._lot = Object.assign(lotCars(it, w, h, k, use, en, lay), { use, w, h, k, x: it.x, lay }));
+}
+/* the bays (x, y, side), the lines between them, the planted islands and the trees of a lot: its geometry alone */
+function lotLayout(it, w, h, k) {
+  const { bay, depth, aisle, isle, edge } = LOT;
+  const PL = it.poly || [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+  // a point is on the lot with room to spare: inside, and edge from every side
+  const ok = (x, y) => { if (!U.inPoly(x, y, PL)) return false; for (let i = 0, j = PL.length - 1; i < PL.length; j = i++) if (U.segDist(x, y, PL[i][0], PL[i][1], PL[j][0], PL[j][1]) < edge) return false; return true; };
+  const box = (x0, y0, x1, y1) => ok(x0, y0) && ok(x1, y0) && ok(x0, y1) && ok(x1, y1);
+  const lines = new Path2D(), isles = new Path2D(), bays = [], T = [];
+  let y = -h / 2 + edge, u = 0;
+  while (y + 2 * depth < h / 2 - edge + 1e-6) {
+    const planted = k === 'park' && u % 2 === 1, mid = planted ? isle : 0, y2 = y + depth + mid;
+    let x = -w / 2 + edge, run = null;
+    for (; x + bay < w / 2 - edge + 1e-6; x += bay) for (const [yy, side] of [[y, 0], [y2, 1]]) {
+      if (!box(x, yy, x + bay, yy + depth)) continue;
+      bays.push(x, yy, side);
+      lines.moveTo(x, yy); lines.lineTo(x, yy + depth); lines.moveTo(x + bay, yy); lines.lineTo(x + bay, yy + depth);
+      if (planted && side === 0 && box(x, y + depth, x + bay, y2)) { if (!run) run = [x, x + bay]; else if (Math.abs(run[1] - x) < 1e-6) run[1] = x + bay; else { isles.rect(run[0], y + depth + 0.004, run[1] - run[0], isle - 0.008); run = [x, x + bay]; } }
+    }
+    if (run) isles.rect(run[0], y + depth + 0.004, run[1] - run[0], isle - 0.008);
+    if (planted) for (let tx = -w / 2 + edge + 0.04 + U.hash(u, 7) * 0.05; tx < w / 2 - edge; tx += 0.11) if (box(tx - 0.01, y + depth, tx + 0.01, y2)) T.push(tx, y + depth + isle / 2);
+    y = y2 + depth + aisle; u++;
   }
-  const out = { use, w, h, k, x: it.x, lines, cars, taxi, shade: null, crowns: null, hi: null };
-  // trees: round the edge, and a planted strip down the middle of each double row
-  if (k === 'park') {
-    const T = [];
-    for (let x = -w / 2 + 0.04; x < w / 2 - 0.02; x += 0.13) T.push(x, -h / 2 + 0.018, x + 0.06, h / 2 - 0.018);
-    for (const y of rows) for (let x = -w / 2 + 0.08 + (U.hash(y * 100 | 0, 3) * 0.06); x < w / 2 - 0.06; x += 0.24) T.push(x, y + depth);
-    const rad = i => 0.022 + 0.01 * U.hash(i, 9);
-    out.shade = new Path2D(); out.crowns = TREE.map(() => new Path2D()); out.hi = new Path2D();
+  // round the edge, just outside the kerb, on most sides
+  if (k === 'park') for (let i = 0, j = PL.length - 1; i < PL.length; j = i++) {
+    const ax = PL[j][0], ay = PL[j][1], bx = PL[i][0], by = PL[i][1], l = Math.hypot(bx - ax, by - ay); if (l < 0.15 || U.hash(i, Math.round(it.x * 10)) < 0.25) continue;
+    const nx = (by - ay) / l, ny = -(bx - ax) / l, o = U.inPoly((ax + bx) / 2 + nx * 0.02, (ay + by) / 2 + ny * 0.02, PL) ? -0.035 : 0.035;
+    for (let s = 0.06; s < l - 0.05; s += 0.12) T.push(ax + (bx - ax) * s / l + nx * o, ay + (by - ay) * s / l + ny * o);
+  }
+  const lay = { bays, lines, isles, shade: null, crowns: null, hi: null };
+  if (T.length) {
+    const rad = i => 0.02 + 0.012 * U.hash(i, 9);
+    lay.shade = new Path2D(); lay.crowns = TREE.map(() => new Path2D()); lay.hi = new Path2D();
     for (let i = 0; i < T.length; i += 2) {
-      const r = rad(i), c = out.crowns[i % 3];
-      out.shade.moveTo(T[i] + r + 0.012, T[i + 1] + 0.014); out.shade.arc(T[i] + 0.012, T[i + 1] + 0.014, r, 0, 7);
+      const r = rad(i), c = lay.crowns[(i / 2) % 3];
+      lay.shade.moveTo(T[i] + r + 0.012, T[i + 1] + 0.014); lay.shade.arc(T[i] + 0.012, T[i + 1] + 0.014, r, 0, 7);
       c.moveTo(T[i] + r, T[i + 1]); c.arc(T[i], T[i + 1], r, 0, 7);
-      out.hi.moveTo(T[i] - r * 0.3 + r * 0.5, T[i + 1] - r * 0.3); out.hi.arc(T[i] - r * 0.3, T[i + 1] - r * 0.3, r * 0.5, 0, 7);
+      lay.hi.moveTo(T[i] - r * 0.3 + r * 0.5, T[i + 1] - r * 0.3); lay.hi.arc(T[i] - r * 0.3, T[i + 1] - r * 0.3, r * 0.5, 0, 7);
     }
   }
-  return (it._lot = out);
+  return lay;
+}
+/* the cars in a lot's bays at a fill */
+function lotCars(it, w, h, k, use, en, lay) {
+  const { bay, depth } = LOT, bays = lay.bays;
+  // which bays have a car: nearest the entrance first, with some scatter; the taxi rank's front rows full of taxis
+  const n = bays.length / 3, rank = [];
+  const ex = en ? en.x : 0, ey = en ? en.y : 0, far = Math.hypot(w, h) || 1;
+  for (let i = 0; i < n; i++) rank.push([Math.hypot(bays[i * 3] - ex, bays[i * 3 + 1] - ey) / far * 0.75 + U.hash(i, it.x * 10 | 0) * 0.5, i]);
+  rank.sort((p, q) => p[0] - q[0]);
+  const fill = Math.round(n * (k === 'taxi' ? 0.7 : use)), cars = CARS.map(() => new Path2D()), taxi = new Path2D();
+  for (let r = 0; r < fill; r++) {
+    const i = rank[r][1], x = bays[i * 3], yy = bays[i * 3 + 1], hsh = U.hash(i, 11);
+    // (parked nose in, not all square in the bay)
+    const dx = (U.hash(i, 23) - 0.5) * bay * 0.12;
+    (k === 'taxi' && U.hash(i, 5) < 0.6 ? taxi : cars[(hsh * CARS.length) | 0]).rect(x + bay * 0.16 + dx, yy + depth * (bays[i * 3 + 2] ? 0.08 : 0.16), bay * 0.68, depth * 0.76);
+  }
+  return { lines: lay.lines, isles: lay.isles, shade: lay.shade, crowns: lay.crowns, hi: lay.hi, cars, taxi };
+}
+/* (round 8) the landside's buildings stand up like the towns' (render-buildings.js): each is its ground (lawn, yard,
+   forecourt) drawn flat, then its masses as prisms leaning back to the north by IC.LEAN of their height, with their
+   walls on the south side in shade and their roofs drawn where the lean puts them. A hotel is ten storeys, offices
+   five or six, a garage five decks; sheds and the petrol station's canopy low. Each mass: [x0, y0, x1, y1] in the
+   item's frame as shares of its size, its height (units), roof and wall colours, and what is on the roof */
+const LAND_BLD = {
+  hotel:     { ground: 'rgb(110,138,86)', m: [[-0.42, -0.4, 0.28, -0.05, 0.3, 'rgb(204,194,178)', [176,164,148], 'hvac'], [-0.42, -0.4, -0.2, 0.4, 0.21, 'rgb(198,188,170)', [176,164,148], '']], flat: [['rgb(70,170,200)', 0.08, 0.08, 0.32, 0.26], ['rgb(66,68,70)', 0.0, 0.32, 0.46, 0.46]] },
+  office:    { ground: 'rgb(116,138,88)', m: [[-0.4, -0.42, 0.4, 0.08, 0.17, 'rgb(150,158,164)', [92,118,140], 'hvac']], flat: [['rgb(66,68,70)', -0.42, 0.18, 0.42, 0.44]] },
+  garage:    { ground: 'rgb(118,118,114)', m: [[-0.48, -0.47, 0.48, 0.47, 0.13, 'rgb(142,142,138)', [120,120,116], 'deck']] },
+  warehouse: { ground: 'rgb(66,68,70)', m: [[-0.47, -0.45, 0.47, 0.12, 0.1, 'rgb(170,166,152)', [140,136,124], 'ribs']], doors: 0.12 },
+  logistics: { ground: 'rgb(70,72,74)', m: [[-0.45, -0.45, -0.17, 0.0, 0.11, 'rgb(178,174,162)', [146,142,130], 'ribs'], [-0.14, -0.45, 0.14, 0.0, 0.11, 'rgb(170,168,158)', [146,142,130], 'ribs'], [0.17, -0.45, 0.45, 0.0, 0.11, 'rgb(178,174,162)', [146,142,130], 'ribs']], doors: 0.0 },
+  bizpark:   { ground: 'rgb(116,138,88)', m: [[-0.44, -0.44, -0.08, -0.16, 0.12, 'rgb(156,164,172)', [96,120,140], 'hvac'], [0.06, -0.44, 0.42, -0.16, 0.12, 'rgb(150,158,166)', [96,120,140], 'hvac'], [-0.44, 0.06, -0.08, 0.3, 0.1, 'rgb(156,164,172)', [96,120,140], 'hvac'], [0.06, 0.06, 0.42, 0.3, 0.1, 'rgb(150,158,166)', [96,120,140], 'hvac']], flat: [['rgb(66,68,70)', -0.44, -0.12, 0.42, 0.02], ['rgb(66,68,70)', -0.44, 0.33, 0.42, 0.46]] },
+  petrol:    { ground: 'rgb(100,102,102)', m: [[-0.36, -0.36, 0.14, 0.06, 0.055, 'rgb(226,222,210)', [190,60,50], ''], [0.2, 0.06, 0.44, 0.4, 0.04, 'rgb(196,192,182)', [160,156,146], '']] }
+};
+function landBuilding(g, it, k, w, h, use, px, z, night) {
+  const D = LAND_BLD[k], a = it.a || 0, sa = Math.sin(a), ca = Math.cos(a), K = IC.LEAN || 0.6;
+  g.fillStyle = D.ground; g.fillRect(-w / 2, -h / 2, w, h);
+  for (const [col, x0, y0, x1, y1] of D.flat || []) { g.fillStyle = col; g.fillRect(x0 * w, y0 * h, (x1 - x0) * w, (y1 - y0) * h); }
+  // lorries at the loading doors, as many as the sheds are busy
+  if (D.doors != null) for (let i = 0, x = -w / 2 + 0.08; x < w / 2 - 0.08; x += 0.1, i++) if (U.hash(i, it.x | 0) < use) { g.fillStyle = 'rgb(210,120,50)'; g.fillRect(x, D.doors * h + 0.01, 0.035, 0.14); }
+  // the masses: shadows first (the sun in the north-west: they fall to the south-east), then walls, then roofs
+  const loc = (wx, wy) => ({ x: wx * ca + wy * sa, y: -wx * sa + wy * ca });   // a world vector in the item's frame
+  for (const [x0, y0, x1, y1, ht] of D.m) { const o = loc(ht * 0.45, ht * 0.3); g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x0 * w + o.x, y0 * h + o.y, (x1 - x0) * w, (y1 - y0) * h); }
+  for (const [x0, y0, x1, y1, ht, roof, wall, top] of D.m) {
+    const X0 = x0 * w, Y0 = y0 * h, X1 = x1 * w, Y1 = y1 * h, up = loc(0, -ht * K), C = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]];
+    for (let i = 0; i < 4; i++) {
+      const p = C[i], q = C[(i + 1) % 4], nx = [0, 1, 0, -1][i], ny = [-1, 0, 1, 0][i], wy = nx * sa + ny * ca, wx = nx * ca - ny * sa;
+      if (wy <= 0.02) continue;   // (a wall facing north is behind the building)
+      const f = (0.62 - 0.14 * wx) * (night ? 0.45 : 1);
+      g.fillStyle = `rgb(${wall[0] * f | 0},${wall[1] * f | 0},${wall[2] * f | 0})`;
+      g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.lineTo(q[0] + up.x, q[1] + up.y); g.lineTo(p[0] + up.x, p[1] + up.y); g.fill();
+      // a band of windows on each floor, lit at night
+      if (z > 20 && top !== 'deck' && top !== 'ribs' && ht > 0.06) {
+        g.strokeStyle = night ? 'rgba(255,214,150,0.55)' : 'rgba(30,40,52,0.28)'; g.lineWidth = 0.034 * K * 0.4; g.beginPath();
+        for (let hh = 0.02; hh < ht - 0.015; hh += 0.034) { const t = hh / ht; g.moveTo(p[0] + up.x * t, p[1] + up.y * t); g.lineTo(q[0] + up.x * t, q[1] + up.y * t); }
+        g.stroke();
+      }
+    }
+    g.save(); g.translate(up.x, up.y);
+    g.fillStyle = roof; g.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+    g.strokeStyle = 'rgba(20,24,28,0.35)'; g.lineWidth = Math.max(0.003, 0.6 * px); g.strokeRect(X0, Y0, X1 - X0, Y1 - Y0);
+    if (top === 'deck') { g.translate((X0 + X1) / 2, (Y0 + Y1) / 2); ROOFS.deck(g, it, X1 - X0, Y1 - Y0, px, z, night); }
+    else if (top === 'ribs' && z > 6) { g.fillStyle = 'rgba(0,0,0,0.1)'; for (let x = X0 + 0.03; x < X1 - 0.01; x += 0.06) g.fillRect(x, Y0, 0.01, Y1 - Y0); }
+    else if (top === 'hvac' && z > 10) {
+      // a parapet, plant on the roof
+      g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 0.008; g.strokeRect(X0 + 0.008, Y0 + 0.008, X1 - X0 - 0.016, Y1 - Y0 - 0.016);
+      g.fillStyle = 'rgb(120,124,128)'; for (let i = 0; i < 3; i++) g.fillRect(X0 + (X1 - X0) * (0.2 + 0.25 * i), Y0 + (Y1 - Y0) * 0.35, 0.03, 0.025);
+    }
+    if (night && top !== 'deck' && top !== 'ribs') { g.fillStyle = 'rgba(255,220,150,0.18)'; g.fillRect(X0, Y0, X1 - X0, Y1 - Y0); }
+    g.restore();
+  }
+}
+/* where a lot's cars come in, in its frame: its corner nearest the terminal it serves (cached on the lot) */
+function lotEntry(ap, it) {
+  if (it._en && it._en.x0 === it.x) return it._en;
+  const t = ap.parts.find(p => p.id === it.by) || ap, PL = it.poly || [[-it.w / 2, -it.h / 2], [it.w / 2, -it.h / 2], [it.w / 2, it.h / 2], [-it.w / 2, it.h / 2]];
+  const q = IC.rectLocal(it, t); let best = PL[0], bd = Infinity;
+  for (const p of PL) { const d = Math.hypot(p[0] - q.x, p[1] - q.y); if (d < bd) { bd = d; best = p; } }
+  return (it._en = { x: best[0], y: best[1], x0: it.x });
 }
 /* (brief 67) the landside reaches outside the fence, where the airport's own night does not fall, and it was drawn after
    the map's: car parks, kerbs and the terminal's front stood white in the dark. render.js draws it before the night */
@@ -1260,64 +1359,36 @@ function drawLandside(g, S, ap, px, z, night) {
     if (!vis(it)) continue;
     g.save(); g.translate(it.x, it.y); g.rotate(it.a || 0);
     const w = it.w, h = it.h, k = it.kind, use = it.use == null ? 0.5 : it.use;
-    if (it.poly) { partPath(g, it, w, h); g.save(); g.clip(); }
-    if (k === 'park' || k === 'taxi') {
-      g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.strokeStyle = 'rgba(150,150,142,0.9)'; g.lineWidth = Math.max(0.006, 0.7 * px); if (!it.poly) g.strokeRect(-w / 2, -h / 2, w, h);
+    const lot = k === 'park' || k === 'taxi', clip = it.poly && !LAND_BLD[k];
+    if (clip) { partPath(g, it, w, h); g.save(); g.clip(); }
+    if (lot) {
+      g.fillStyle = 'rgb(66,68,70)'; if (clip) g.fill(); else g.fillRect(-w / 2, -h / 2, w, h);
       if (z > 12) {
         // rows of bays either side of the aisles, cars in them as full as the car park is, and trees: worked out once
         // into paths in the lot's own frame (a big airport's car parks hold tens of thousands of bays), again when the
         // lot fills or empties
-        const P = lotPaths(it, w, h, k, use);
-        if (z > 40) { g.strokeStyle = 'rgba(236,236,226,0.45)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.stroke(P.lines); }
+        const P = lotPaths(it, w, h, k, use, lotEntry(ap, it));
+        g.fillStyle = 'rgb(104,124,74)'; g.fill(P.isles);
+        if (z > 25) { g.strokeStyle = 'rgba(236,236,226,0.5)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.stroke(P.lines); }
         // cars batched by colour: one fill per colour, not one per car
         P.cars.forEach((Q, c) => { g.fillStyle = CARS[c]; g.fill(Q); }); g.fillStyle = 'rgb(236,196,50)'; g.fill(P.taxi);
-        if (P.shade) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fill(P.shade); TREE.forEach((col, c) => { g.fillStyle = col; g.fill(P.crowns[c]); }); g.fillStyle = 'rgba(150,180,110,0.25)'; g.fill(P.hi); }
+        if (P.shade) {
+          if (clip) g.restore();
+          g.fillStyle = 'rgba(0,0,0,0.28)'; g.fill(P.shade); TREE.forEach((col, c) => { g.fillStyle = col; g.fill(P.crowns[c]); }); g.fillStyle = 'rgba(150,180,110,0.25)'; g.fill(P.hi);
+          if (clip) { partPath(g, it, w, h); g.save(); g.clip(); }
+        }
       }
       if (k === 'taxi') { g.fillStyle = 'rgb(200,196,186)'; g.fillRect(w / 2 - 0.16, -h / 2, 0.16, 0.12); }
-    } else if (k === 'garage' && it.poly) {
-      g.fillStyle = ROOF_FILL.deck; g.fillRect(-w / 2, -h / 2, w, h); ROOFS.deck(g, it, w, h, px, z, night);
-    } else if (k === 'garage') {
-      g.fillStyle = 'rgb(150,150,146)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.fillStyle = 'rgb(120,120,116)'; g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h - 0.06);
-      // the top deck: bays and cars, the ramp tower in a corner
-      if (z > 12) for (let i = 0, x = -w / 2 + 0.06; x < w / 2 - 0.08; x += 0.026) for (const y of [-h * 0.3, h * 0.15]) { i++; if (U.hash(i, 3) < use) { g.fillStyle = CARS[(U.hash(i, 17) * CARS.length) | 0]; g.fillRect(x, y, 0.018, 0.04); } }
-      g.fillStyle = 'rgb(96,96,92)'; g.beginPath(); g.arc(w / 2 - 0.08, h / 2 - 0.08, 0.06, 0, 7); g.fill();
     } else if (k === 'stop') {
       g.fillStyle = 'rgb(70,72,74)'; g.fillRect(-w / 2, -h / 2, w, h);
       g.fillStyle = 'rgb(226,228,230)'; g.fillRect(-w / 2 + 0.04, -h / 2 + 0.02, w - 0.08, 0.05);
       if (it.rail) { g.fillStyle = 'rgb(110,100,90)'; g.fillRect(-w / 2, h / 2 - 0.08, w, 0.05); g.fillStyle = 'rgb(180,60,50)'; g.fillRect(-0.2, h / 2 - 0.075, 0.4, 0.04); }
       else for (let i = 0; i < 3; i++) if (U.hash(i, (S.time / 300) | 0) < 0.6) { g.fillStyle = i % 2 ? 'rgb(236,236,230)' : 'rgb(70,120,170)'; g.fillRect(-w / 2 + 0.08 + i * 0.16, -0.02, 0.12, 0.03); }
-    } else if (k === 'hotel') {
-      g.fillStyle = 'rgb(118,150,98)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.fillStyle = 'rgb(198,186,168)'; g.fillRect(-w / 2 + 0.04, -h / 2 + 0.04, w * 0.7, h * 0.35); g.fillRect(-w / 2 + 0.04, -h / 2 + 0.04, w * 0.22, h - 0.08);
-      g.fillStyle = 'rgb(70,170,200)'; g.fillRect(w * 0.08, h * 0.08, w * 0.24, h * 0.18);
-      if (night) { g.fillStyle = 'rgba(255,220,150,0.7)'; for (let x = -w / 2 + 0.06; x < w * 0.2 - 0.02; x += 0.04) g.fillRect(x, -h / 2 + 0.05, 0.02, 0.01); }
-    } else if (k === 'office') {
-      g.fillStyle = 'rgb(128,150,98)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.fillStyle = 'rgb(96,120,140)'; g.fillRect(-w / 2 + 0.05, -h / 2 + 0.05, w - 0.1, h * 0.55);
-      g.strokeStyle = 'rgba(200,220,236,0.35)'; g.lineWidth = Math.max(0.002, 0.4 * px); g.beginPath(); for (let x = -w / 2 + 0.05; x < w / 2 - 0.05; x += 0.05) { g.moveTo(x, -h / 2 + 0.05); g.lineTo(x, -h / 2 + 0.05 + h * 0.55); } g.stroke();
-      g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2 + 0.05, h * 0.15, w - 0.1, h * 0.25);
-    } else if (k === 'petrol') {   // a filling station on the access road: a canopy, a shop, the forecourt
-      g.fillStyle = 'rgb(96,98,98)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.fillStyle = 'rgb(220,215,200)'; g.fillRect(-w / 2 + 0.08, -h / 2 + 0.08, w * 0.5, h * 0.4);
-      g.fillStyle = 'rgb(200,60,50)'; g.fillRect(-w / 2 + 0.08, -h / 2 + 0.08, w * 0.5, 0.03);
-      g.fillStyle = 'rgb(190,186,176)'; g.fillRect(w / 2 - 0.26, h / 2 - 0.2, 0.2, 0.14);
-    } else if (k === 'logistics') {   // sheds with their loading doors round a lorry yard
-      g.fillStyle = 'rgb(70,72,74)'; g.fillRect(-w / 2, -h / 2, w, h);
-      for (let i = 0; i < 3; i++) { const x = -w / 2 + 0.06 + i * (w - 0.12) / 3; g.fillStyle = 'rgb(176,172,160)'; g.fillRect(x, -h / 2 + 0.06, (w - 0.12) / 3 - 0.06, h * 0.45); g.fillStyle = 'rgba(0,0,0,0.12)'; for (let q = x; q < x + (w - 0.12) / 3 - 0.06; q += 0.06) g.fillRect(q, -h / 2 + 0.06, 0.01, h * 0.45); }
-      for (let i = 0, x = -w / 2 + 0.1; x < w / 2 - 0.1; x += 0.09, i++) if (U.hash(i, it.x | 0) < use) { g.fillStyle = 'rgb(210,120,50)'; g.fillRect(x, -h / 2 + 0.06 + h * 0.45, 0.035, 0.14); }
-    } else if (k === 'bizpark') {   // low offices on lawns round their car parks
-      g.fillStyle = 'rgb(118,140,92)'; g.fillRect(-w / 2, -h / 2, w, h);
-      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { const x = -w / 2 + 0.1 + i * w / 2, y = -h / 2 + 0.1 + j * h / 2; g.fillStyle = 'rgb(62,64,66)'; g.fillRect(x, y + h * 0.28, w / 2 - 0.2, h * 0.14); g.fillStyle = 'rgb(150,160,170)'; g.fillRect(x + 0.04, y, w / 2 - 0.28, h * 0.25); }
-    } else if (k === 'warehouse') {
-      g.fillStyle = 'rgb(62,64,66)'; g.fillRect(-w / 2, -h / 2, w, h);
-      g.fillStyle = 'rgb(168,164,150)'; g.fillRect(-w / 2 + 0.03, -h / 2 + 0.03, w - 0.06, h * 0.62);
-      g.fillStyle = 'rgba(0,0,0,0.12)'; for (let x = -w / 2 + 0.03; x < w / 2 - 0.03; x += 0.06) g.fillRect(x, -h / 2 + 0.03, 0.01, h * 0.62);
-      for (let i = 0, x = -w / 2 + 0.08; x < w / 2 - 0.08; x += 0.1, i++) if (U.hash(i, it.x | 0) < use) { g.fillStyle = 'rgb(210,120,50)'; g.fillRect(x, -h / 2 + 0.03 + h * 0.62, 0.035, 0.14); }
-    }
-    if (it.poly) { g.restore(); g.strokeStyle = k === 'park' || k === 'taxi' ? 'rgba(150,150,142,0.9)' : 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); partPath(g, it, w, h); g.stroke(); }
-    else if (k !== 'park' && k !== 'taxi') { g.strokeStyle = 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.005, 0.7 * px); g.strokeRect(-w / 2, -h / 2, w, h); }
+    } else if (LAND_BLD[k]) landBuilding(g, it, k, w, h, use, px, z, night);
+    // the kerb round a car park, pale concrete; a building's edge dark
+    // (buildings standing up have their own edges)
+    if (clip) g.restore();
+    if (!LAND_BLD[k]) { g.strokeStyle = lot ? 'rgba(178,178,168,0.85)' : 'rgba(16,20,24,0.5)'; g.lineWidth = Math.max(0.004, (lot ? 0.6 : 0.7) * px); if (it.poly) partPath(g, it, w, h); else { g.beginPath(); g.rect(-w / 2, -h / 2, w, h); } g.stroke(); }
     g.restore();
     // (a name once: a lot the map draws in pieces is one lot; on a mapped landside the unnamed lots say nothing)
     if (z > 30 && IC.cam.z < 200) { const t = it.name || (L.fixed ? null : IC.LAND[k].name); if (t && !named.some(q => q.t === t && U.dist(q, it) < 12)) named.push({ t, x: it.x, y: it.y, lot: k === 'park' }); }
