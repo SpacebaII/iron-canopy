@@ -21,7 +21,7 @@ IC.HUD_PANELS = [
   { id: 'arsenal', name: 'Arsenal', el: '#arsenal', hide: true, move: true },
   { id: 'insp', name: 'Selection panel', el: '#insp', move: true },
   { id: 'mapbox', name: 'Map controls', el: '#mapbox', hide: true, move: true },
-  { id: 'rail', name: 'Room buttons', el: '#rail', hide: true, move: true }
+  { id: 'rail', name: 'Rooms', el: '#rail', hide: true, move: true }
 ];
 const hud = IC.hud = { L, arrange: false, menu: false };
 hud.register = p => { if (!IC.HUD_PANELS.some(q => q.id === p.id)) IC.HUD_PANELS.push(p); };
