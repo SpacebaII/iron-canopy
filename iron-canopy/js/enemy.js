@@ -8,7 +8,7 @@ const U = IC.U;
 
 IC.isNight = S => { const h = (S.time % 86400) / 3600; return h < 6 || h >= 19.5; };
 
-IC.enemyInit = function (S) {
+IC.enemyInit = function (S, opts) {
   const W = S.world;
   for (const e of W.esites) {
     const s = Object.assign({}, e, { esite: true, nat: e.k, max: e.kind === 'airbase' ? 300 : e.kind === 'staging' ? 250 : 160, pk: e.kind === 'airbase' ? 2 : 0 });
@@ -39,6 +39,9 @@ IC.enemyInit = function (S) {
   S.enemy.aim = pickAim(S.enemy);
   for (const u of S.units) IC.enemyLearn(S, u, 'prewar');
   IC.armsInit(S);
+  // (brief 76) the Career on its map flies the map's war plan; elsewhere the commander rolls its own raids
+  S.wp = null;
+  if (S.mode === 'story' && !(opts && opts.warPlan === false) && IC.warPlanInit) IC.warPlanInit(S, opts && typeof opts.warPlan === 'object' ? opts.warPlan : null);
 };
 
 function hidePoint(S, s) {
@@ -638,7 +641,8 @@ function startAct(S, E, n, why) {
   note(S, E, `Act ${n}, ${IC.EACTS[n].name.toLowerCase()}: ${why}.`);
   IC.armsTick(S, text => { note(S, E, text); intel(S, E, text); });
   if (n === 2) {
-    startSaving(S, E);
+    // (brief 76) a war plan saves for nothing: its waves say what flies
+    if (!(S.wp && S.wp.on)) startSaving(S, E);
     intel(S, E, `${S.world.names.A} has moved from probing to limited strikes: expect small raids on ${IC.EAIMS[E.aim].hint}. They are watching where we fire from.`);
   } else if (n === 4) {
     const b = baseFor(S, E);
@@ -1048,6 +1052,7 @@ function report(S, E, R) {
   // the result card: what came, what we stopped, what got through and why, what it cost, and a grade
   res.held = result.held; res.grade = result.grade; res.air = result.air;
   if (R.aborted) text += ` They turned back: ${R.aborted.why}.`;
+  if (R.note) text += ` ${R.note}`;
   R.text = text; R.res = res; R.result = result;
   IC.log(S, leaks ? 'warn' : 'kill', 'AFTER-ACTION', `${cap(R.name)} on ${R.obj.name}: ${text}`, R.obj);
   if (S.camp && IC.card) IC.card(S, `${result.held ? 'Raid held' : result.success ? 'Raid got through' : result.air ? 'Raid report, some still flying' : 'Raid over'} · ${cap(R.name)}`, `${R.obj.name} · ${U.clock(S.time, S)}`, text, 'report', { res: result, name: R.name });
@@ -1108,7 +1113,8 @@ function learn(S, E, R, ops) {
     intel(S, E, `After the strike on ${R.obj.name}, ${S.world.names.A}'s channels have gone quiet. They are counting what worked and what did not. When they come back it will be planned: use the time to repair, reload and move.`);
     IC.news(S, success || (R.hits || 0) >= 4 ? `${S.world.names.A} celebrates "the night the sky fell" over ${place(S, R.obj)}.` : `The largest strike of the war largely fails: ${lost} of ${launched} shot down over ${place(S, R.obj)}.`);
     IC.emit(S, 'enemyAct', { act: 3, name: IC.EACTS[3].name, text: IC.EACTS[3].text, R });
-  } else if (E.aimFail >= 2 && S.time - (E.aimT || 0) > 12 * H) switchAim(S, E, `${E.aimFail} raids in a row did not get what they came for`);
+  } else if (S.wp && S.wp.on) { /* the plan keeps its own aims */ }
+  else if (E.aimFail >= 2 && S.time - (E.aimT || 0) > 12 * H) switchAim(S, E, `${E.aimFail} raids in a row did not get what they came for`);
   else if (S.time - (E.aimT || 0) > 30 * H && Math.random() < 0.3) switchAim(S, E, 'a new plan after days on the old one');
 }
 /* the calm after a raid: shorter as the war goes on; the lull after the shock is longer */
@@ -1122,6 +1128,8 @@ function runCycle(S, E) {
   if (C.phase === 'calm') {
     // a retaliation cuts the calm short, but not the lull after the shock
     if (E.retaliate > 0 && S.time > (E.retT || 0) && !(E.act === 3 && S.time < E.lullEnd)) { E.retT = S.time + 5400; C.next = Math.min(C.next, S.time + 900); }
+    // (brief 76) a war plan flies its waves instead of the commander's own raids
+    if (S.wp && S.wp.on && IC.wpCalm(S, E)) return;
     if (S.time >= C.next) planRaid(S, E);
   } else if (C.phase === 'buildup') {
     if (S.time >= C.next - 900) { E.cycle = { phase: 'raid', next: C.next + 5400, R: C.R }; E.mood = `${C.R.name} on ${C.R.obj.name}`; IC.emit(S, 'raidStart', C.R); }
@@ -1219,7 +1227,7 @@ IC.updateTels = function (S, dt) {
         const a = tel.mission.aims.shift();
         if (a) {
           tel.t = a.type === 'rkt' ? 6 : 30;
-          const th = IC.launchBallistic(S, a.type, tel.x, tel.y, a, { op: tel.mission.op, target: a.ref, src: tel, origin: tel.site });
+          const th = IC.launchBallistic(S, a.type, tel.x, tel.y, a, { op: tel.mission.op, target: a.ref, src: tel, origin: tel.site, tier: a.tier, bat: tel.bat });
           th.tr = IC.newTrail(S, 'bal');
           tel.mission.op.launched++;
           IC.part(S, { x: tel.x, y: tel.y, life: 0.4, size: 10, grow: 30, col: '255,190,120', add: true });
@@ -1230,7 +1238,7 @@ IC.updateTels = function (S, dt) {
           if (a.type !== 'rkt' && IC.hasTech(S, 's_sat')) IC.revealLauncher(S, tel, 'satellite launch detection');
         } else {
           tel.mission = null; tel.state = 'scoot'; tel.staged = false;
-          tel.route = [hidePoint(S, tel.site)];
+          tel.route = [tel.home ? { x: tel.home.x, y: tel.home.y } : hidePoint(S, tel.site)];
         }
       }
     } else if (tel.state === 'reload') {
@@ -1255,6 +1263,7 @@ IC.telDestroyed = function (S, tel, by) {
   const q = tel.site.telQ;
   if (q) { q.push(Math.max(S.time, q.length ? q[q.length - 1] : 0) + IC.TEL_REPLACE); note(S, S.enemy, `Lost ${tel.name}; a replacement is due at ${U.hhmm(q[q.length - 1])}.`); }
   IC.log(S, 'kill', 'DESTROYED', `${tel.name} destroyed by ${by}.`, tel);
+  IC.emit(S, 'telKilled', tel);
   IC.news(S, `${S.world.names.H} forces destroy a ${tel.kind === 'rkt' ? 'rocket launcher' : 'missile launcher'} inside ${S.world.names[tel.site.nat]}.`);
   for (const c of IC.cities(S)) c.morale = Math.min(100, c.morale + 2);
   S.stats.siteKills++;
@@ -1501,6 +1510,9 @@ function arriveAir(S, t) {
   }
 }
 
+/* (brief 76) what the war plan borrows from the commander (warplan.js) */
+IC.EK = { newOp, later, routeBy, routeLen, aimOn, standoff, note: (S, text) => note(S, S.enemy, text), intel: (S, text, who, at) => intel(S, S.enemy, text, who, at), startAct: (S, n, why) => startAct(S, S.enemy, n, why) };
+
 /* ---------- commander ---------- */
 function ensurePatrols(S) {
   for (const b of S.esites.filter(s => s.kind === 'airbase' && !s.destroyed && !s.dormant)) {
@@ -1523,6 +1535,15 @@ IC.enemyOpening = function (S, o) {
   E.war = true; E.warT = S.time; E.actT = S.time; E.aimT = S.time; E.head = o.head || 0; E.winH = o.winH || 0;
   IC.log(S, 'leak', 'WAR', `The ${S.world.full.A} has opened hostilities. Missiles inbound.`);
   IC.news(S, `BREAKING: ${S.world.names.A} launches strikes on ${S.world.names.H}. Air raid sirens across the north.`);
+  // (brief 76) a war plan opens with its own first wave
+  if (S.wp && S.wp.on) {
+    startAct(S, E, 1, 'the war begins, by their plan');
+    for (let n = 2; n <= (o.act || 1); n++) startAct(S, E, n, 'the war starts further along');
+    E.cycle = { phase: 'calm', next: S.time, since: S.time };
+    note(S, E, `The war plan "${S.wp.name}" begins: ${S.wp.waves.length} waves.`);
+    IC.emit(S, 'war', {});
+    return;
+  }
   startAct(S, E, 1, `the war begins. Aim: ${IC.EAIMS[E.aim].name}${E.head ? `; their defence was ready, so probing is cut ${Math.round(E.head)} h short` : ''}`);
   for (let n = 2; n <= (o.act || 1); n++) startAct(S, E, n, 'the war starts further along');
   const pick = set => chooseTarget(S, E, set, { probe: true });

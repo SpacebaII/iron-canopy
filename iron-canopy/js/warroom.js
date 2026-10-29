@@ -394,6 +394,15 @@ function agendaLinks() {
 
 /* ---------- air ---------- */
 function air() {
+  // (brief 78) with a war plan, the room has a second page: counter-strikes with the Chief of Defence
+  if (S.wp && IC.strikePage) {
+    const pg = pages('air', [['wing', 'Air wing'], ['strike', 'Counter-strike', S.strike && S.strike.cur.length ? 'in the air' : '', 'Strike their launchers across the border, with Gen. Voss']]);
+    if (ui.sub.air === 'strike') return pg + IC.strikePage(S);
+    return pg + airWing();
+  }
+  return airWing();
+}
+function airWing() {
   const tasks = S.ato.map(t => {
     const st = IC.taskStatus(S, t), cov = st.on.length;
     const relief = st.relief ? (cov ? `relief ${esc(st.relief.name)} ${st.launchIn > 0 ? 'launches in ' + U.dur(st.launchIn) : 'launching'}` : `${esc(st.relief.name)} on the way`) : `<span class="amber">no relief ready${cov ? ': uncovered in ' + U.dur(Math.max(0, st.emptyIn)) : ''}</span>`;

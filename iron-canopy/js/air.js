@@ -359,7 +359,7 @@ IC.launchAir = function (S, r, mission, auto) {
   S.air.push(a);
   IC.pay(S, 'upAir', SORTIE_COST[r.kind] || 0);
   const what = { cap: `patrol ${IC.nearPlace(S, mission.x, mission.y)}`, intercept: `intercept TN ${mission.track && mission.track.tn}`,
-    strike: `strike on ${mission.site && mission.site.name}`, orbit: `early-warning orbit`, tanker: `tanker track ${IC.nearPlace(S, mission.x, mission.y)}`,
+    strike: `strike on ${mission.site && mission.site.name}`, xstrike: `strike on ${mission.site && mission.site.name}`, orbit: `early-warning orbit`, tanker: `tanker track ${IC.nearPlace(S, mission.x, mission.y)}`,
     isr: `reconnaissance ${IC.nearPlace(S, mission.x, mission.y)}`, escort: `escort for ${mission.who && mission.who.name}` }[mission.type];
   if (what && !auto) IC.log(S, 'info', 'AIR', a.gnd ? `${r.name} starting up (${U.dur(a.ground.t)} to engine start): ${what}.` : `${r.name} airborne: ${what}.`);
   IC.sfx && (r.kind === 'heli' ? IC.sfx.rotor(b.x, b.y) : IC.sfx.jet(b.x, b.y));
@@ -554,6 +554,8 @@ IC.updateAir = function (S, dt) {
       if (U.dxy(a.x, a.y, tx, ty) < spd * dt + 3) { a.x = tx; a.y = ty; a.route.shift(); if (!a.route.length) IC.airJobStep(S, a); continue; }
     } else if (a.wait > 0) { a.wait -= dt; if (a.wait <= 0) IC.airJobStep(S, a); continue; }
     else if (a.state === 'rtb') {
+      // (brief 78) a strike flight sent home before it got there
+      if (m.type === 'xstrike' && !m.done) IC.strikeGone(S, a, m);
       if (!base) { a.dead = true; continue; }
       const AT = IC.ACTYPES[IC.AIRKIND_TYPE[a.kind]];
       if (base.parts && !AT.vtol && ((base.st.longest || 0) < AT.rwy || !IC.baseStatus(S, base).runway || a.holdT > 1200)) {
@@ -576,6 +578,11 @@ IC.updateAir = function (S, dt) {
     } else if (a.refuel) {
       const g = refuel(S, a, K, dt);
       if (g) { tx = g.x; ty = g.y; spd = g.spd; }
+    } else if (m.type === 'xstrike') {
+      // (brief 78) a counter-strike: over the target the dice decide (strike.js), then home
+      tx = m.x; ty = m.y; spd = U.dxy(a.x, a.y, m.x, m.y) < 900 ? K.dash : K.spd;
+      a.alt = U.dxy(a.x, a.y, m.x, m.y) < 1500 ? Math.max(0.3, a.alt - 0.05 * dt) : a.alt;
+      if (U.dxy(a.x, a.y, m.x, m.y) < spd * dt + 25) { IC.strikeArrive(S, a, m); if (!a.dead) { a.state = 'rtb'; a.alt = K.alt; } continue; }
     } else if (m.type === 'strike') {
       const s = m.site;
       if (!s || s.dead || s.destroyed || a.gbu <= 0) { a.state = 'rtb'; continue; }

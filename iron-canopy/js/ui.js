@@ -58,7 +58,11 @@ ui.setHTML = function (el, html, key) {
   if (!fresh && ui.cache[el.id] === html) return false;
   ui.cache[el.id] = html; ui.keys[el.id] = key;
   if (fresh || !el.firstChild) { el.innerHTML = html; el.scrollTop = 0; }
-  else { tpl.innerHTML = html; morphKids(el, tpl.content); tpl.innerHTML = ''; }
+  else {
+    tpl.innerHTML = html; morphKids(el, tpl.content); tpl.innerHTML = '';
+    // (a morph moves the selected attribute, not what a list shows)
+    for (const s of el.querySelectorAll('select')) { const o = s.querySelector('option[selected]'); if (o && s.value !== o.value) s.value = o.value; }
+  }
   for (const c of el.querySelectorAll('canvas[data-sym]')) { const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); IC.drawUnitSymbol(g, c.dataset.sym, c.width / 2, c.height / 2 - 3, c.width / 34, IC.C.friend); }
   for (const c of el.querySelectorAll('canvas[data-schem]')) IC.drawSchematic && IC.drawSchematic(c, S, S.byId[c.dataset.schem]);
   for (const c of el.querySelectorAll('canvas[data-reach]')) IC.drawReachChart && IC.drawReachChart(c, c.dataset.reach.split(','));
@@ -422,7 +426,7 @@ function brief() {
   const C = S.camp; if (!C) return;
   let h = '';
   if (S.range) h = IC.rangePanel(S);
-  else if (S.sbx) h = IC.sandboxPanel(S);
+  else if (S.sbx) h = IC.planner && IC.planner.on && S.wp ? IC.plannerPanel(S) : IC.sandboxPanel(S);
   else if (S.showcase) h = showcaseBrief();
   else if (S.free) h = freeBrief();
   else if (S.mode === 'academy' && C.lesson) {

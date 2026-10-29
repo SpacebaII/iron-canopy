@@ -17,6 +17,7 @@ IC.step = function (S, dt) {
   IC.updateAir(S, dt);
   IC.sense(S, dt);
   IC.enemyTick(S, dt);
+  if (S.wp) IC.wpTick(S, dt);
   IC.moveThreats(S, dt);
   IC.defense(S, dt);
   IC.updateMissiles(S, dt);

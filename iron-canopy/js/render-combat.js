@@ -196,6 +196,7 @@ const SITE_GLYPH = { airbase: 'runway', drone: 'drone', cm: 'cm', bm: 'bal', mrb
 const TGLYPH_OF = { owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bal', marv: 'marv', mrbm: 'bal', pen: 'bal', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ftr: 'ftr', str: 'str', sead: 'sead', ewj: 'ewj', esj: 'esj', ahe: 'heli', bmr: 'bmr' };
 const KLASS_GLYPH = { heli: 'heli', drone: 'drone', cm: 'cm', ballistic: 'bal', rocket: 'rkt', fighter: 'ftr', bomber: 'bmr', jammer: 'ewj' };
 IC.threatGlyph = (type, klass) => TGLYPH_OF[type] || KLASS_GLYPH[klass] || KLASS_GLYPH[IC.THR[type] && IC.THR[type].klass];
+const RC = { frame: (...a) => frame(...a), glyph: (...a) => threatGlyph(...a) };
 function threatGlyph(g, key, x, y, s, col) {
   const f = TGLYPH[key]; if (!f) return;
   g.save(); g.translate(x, y); g.scale(s, s); g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 1.1; g.lineCap = 'round'; g.lineJoin = 'round';
@@ -244,6 +245,8 @@ IC.drawForces = function (S, px, now) {
   // film mode: our batteries as their vehicles close in, nothing else of the plan
   if (IC.film && IC.film.clean) { if (cam.z > 1.1) for (const u of S.units) if (inView(u.x, u.y, 60)) vehicles(S, u, px, now); return; }
   if (S.layers.intel) drawEnemy(S, px, now);
+  // (briefs 77, 78) the war plan's batteries: traced ones in play, all of them in the planner
+  if (S.wp && IC.drawWarPlan && (S.layers.intel || (IC.planner && IC.planner.on))) IC.drawWarPlan(S, px, ctx, RC);
   drawRanges(S, px, now);
   for (const u of S.units) if (inView(u.x, u.y, 200)) drawUnit(S, u, px, now);
 };
