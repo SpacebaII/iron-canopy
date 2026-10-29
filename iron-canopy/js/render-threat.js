@@ -46,8 +46,11 @@ IC.drawSalvos = function (S, px, now) {
     }
     const big = 11 + Math.min(n, 8) * 1.2;
     const when = g.t1 - g.t0 > 20 ? `${U.dur(g.t0)}–${U.dur(g.t1)}` : U.dur(g.t0);
-    label(`${n > 1 ? n + ' × ' : ''}${word}`, g.x, g.y - rr - 22 * px, px, C.hostile, big, 'center', 800);
-    label(`IMPACT ${when} · ${g.at}`, g.x, g.y - rr - 9 * px, px, '#ffd1cb', 10, 'center', 700);
+    // the label on the side away from where the missiles come in, so it never sits on their tracks
+    let mx = 0, my = 0; for (const e of g.L) { const tp = IC.trackAt(S, e.t); mx += tp.x - g.x; my += tp.y - g.y; }
+    const below = my < 0, ly = below ? g.y + rr + (big + 6) * px : g.y - rr - 22 * px;
+    label(`${n > 1 ? n + ' × ' : ''}${word}`, g.x, ly, px, C.hostile, big, 'center', 800);
+    label(`IMPACT ${when} · ${g.at}`, g.x, ly + 13 * px, px, '#ffd1cb', 10, 'center', 700);
     // off screen: an arrow at the edge, pointing at it, so a salvo is never a surprise
     const m = 46 * px;
     if (g.x < x0 || g.x > x1 || g.y < y0 || g.y > y1) {
