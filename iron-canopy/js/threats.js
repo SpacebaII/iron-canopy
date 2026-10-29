@@ -4,7 +4,9 @@
 const U = IC.U;
 
 IC.spawnThreat = function (S, type, x, y, o) {
-  const d = IC.THR[type];
+  // the enemy's weapons fly the version it fields now (arms.js); a wave or the range can name one
+  if (o && o.op && o.tier === undefined && IC.ARMS[type] && S.mode !== 'academy' && S.mode !== 'range') o.tier = IC.armsKey(S, type);
+  const d = o && o.tier && IC.ARMS_D[o.tier] || IC.THR[type];
   const t = Object.assign({
     id: IC.nid('t'), type, d, x, y, alt: d.alt || 0, vx: 0, vy: 0, hp: d.hp, spd: d.spd || 0, rcs: d.rcs, age: 0, seed: Math.random() * 10,
     route: null, aim: null, target: null, tn: null, det: false, fc: false, disc: false, fcBy: [], vis: false, idp: 0, ided: false,
@@ -37,14 +39,20 @@ IC.spawnThreat = function (S, type, x, y, o) {
     gav: undefined, gavIn: undefined, gavNo: undefined, gavAway: undefined, fafT: undefined,
     // defending against a missile (flight.js: IC.defendPlan) and what the warnings on the map read
     mslIn: null, def: null, defT: 0, cmT: 0, evadeT: undefined, evadeA: undefined, locks: undefined, defended: 0, abort: undefined,
-    esc: undefined, escortOf: undefined, feintT: undefined, lockT: undefined, lockBy: undefined
+    esc: undefined, escortOf: undefined, feintT: undefined, lockT: undefined, lockBy: undefined,
+    // (arms.js) the version, when it comes down on its own, when it next looks for its target
+    tier: undefined, crashT: undefined, retT: undefined
   }, o || {});
+  if (t.d.tierKey) IC.armsSpawned(S, t);
   S.threats.push(t);
   return t;
 };
 
 IC.launchBallistic = function (S, type, x, y, aim, o) {
-  const d = IC.THR[type];
+  if (o && o.op && o.tier === undefined && IC.ARMS[type] && S.mode !== 'academy' && S.mode !== 'range') o.tier = IC.armsKey(S, type);
+  const d = o && o.tier && IC.ARMS_D[o.tier] || IC.THR[type];
+  // an old design lands anywhere near its aim: the scatter is decided at launch, and the radar's arc shows it
+  if (d.cep) { const a = U.rand(0, 6.283), r = d.cep * Math.sqrt(-2 * Math.log(1 - Math.random() * 0.99)); aim = Object.assign({}, aim, { x: aim.x + Math.cos(a) * r, y: aim.y + Math.sin(a) * r }); }
   const R = U.dxy(x, y, aim.x, aim.y);
   const T = R / d.vAvg + 40;
   const apex = Math.max(18, d.apexK * R);
@@ -92,6 +100,8 @@ function spoofedDrift(S, t, dt) {
 
 function moveWp(S, t, dt) {
   if (t.spoofed) return spoofedDrift(S, t, dt);
+  if (t.crashT !== undefined && t.age >= t.crashT) return IC.armsCrash(S, t);
+  if (t.retT !== undefined && t.age >= t.retT && t.aim) IC.armsRetarget(S, t);
   if (t.loiter != null) {
     t.loiter -= dt; t.hd = (t.hd || 0) + dt * 0.01;
     t.vx = Math.cos(t.hd) * t.spd; t.vy = Math.sin(t.hd) * t.spd; t.x += t.vx * dt; t.y += t.vy * dt;
@@ -114,13 +124,14 @@ function moveWp(S, t, dt) {
   else if (t.d.dive) t.alt = toAim < 600 ? Math.max(0.05, 12 * toAim / 600) : 12;
   else if (t.d.cls === 'cm') t.alt = toAim < 60 ? 0.4 : t.d.alt * (0.8 + 0.4 * Math.sin(t.age * 0.05 + t.seed));
   else if (t.type === 'owa') t.alt = t.d.alt * (0.7 + 0.5 * Math.sin(t.age * 0.004 + t.seed));
+  if (t.d.hop && toAim > 60) t.alt = IC.armsHop(t);
   if (t.altHold != null && toAim > 60) t.alt = t.altHold;
 }
 
 /* loitering munition: fly to an area, then hunt vehicles and air defence */
 function moveLm(S, t, dt) {
   if (t.spoofed) return spoofedDrift(S, t, dt);
-  t.endT = (t.endT == null ? 3600 : t.endT) - dt;
+  t.endT = (t.endT == null ? t.d.endur || 3600 : t.endT) - dt;
   if (t.endT <= 0) { t.dead = true; IC.explode(S, t.x, t.y, 0.4, 'ground'); if (t.op) t.op.done++; return; }
   t.scan = (t.scan || 0) - dt;
   if ((!t.prey || t.prey.dead) && t.scan <= 0) {
@@ -128,7 +139,7 @@ function moveLm(S, t, dt) {
     let bd = 300;
     const look = (o, w) => { if (o.dead) return; const d = U.dist(o, t) / w; if (d < bd) { bd = d; t.prey = o; } };
     for (const v of S.vehicles) if (v.state !== 'idle') look(v, 1.3);
-    for (const u of S.units) if (u.state === 'ready') look(u, u.radarOn ? 1.4 : 0.9);
+    for (const u of S.units) if (u.state === 'ready') look(u, u.radarOn ? 1.4 * (t.d.radar || 1) : 0.9);
   }
   let tx, ty;
   if (t.prey) { tx = t.prey.x; ty = t.prey.y; }
@@ -150,9 +161,10 @@ function moveLm(S, t, dt) {
 function moveBal(S, t, dt) {
   const p = IC.balPos(t, t.age);
   t.x = p.x; t.y = p.y; t.alt = p.alt;
-  if (t.d.evasive && p.f > 0.85) {
+  const wf = t.d.weaveF || 0.85;
+  if (t.d.evasive && p.f > wf) {
     const nx = -(t.y1 - t.y0), ny = t.x1 - t.x0, L = U.hyp(nx, ny) || 1;
-    const w = 25 * Math.sin(t.age * 0.2 + t.seed) * (1 - p.f) * 6;
+    const w = (t.d.weave || 25) * Math.sin(t.age * 0.2 + t.seed) * (1 - p.f) * 0.9 / (1 - wf);
     t.x += nx / L * w; t.y += ny / L * w;
   }
   if (t.d.pen && p.f > 0.78) { t.dead = true; if (t.op) t.op.done++; return; }
@@ -184,7 +196,7 @@ function moveArm(S, t, dt) {
   t.vx = Math.cos(a) * t.spd; t.vy = Math.sin(a) * t.spd;
   if (r <= t.spd * dt + 1) {
     t.dead = true;
-    const hitOk = !t.blind || Math.random() < 0.3;
+    const hitOk = !t.blind || Math.random() < (t.d.blind || 0.3);
     if (hitOk && g && !g.dead && U.dxy(g.x, g.y, t.aim.x, t.aim.y) < 25) { const hit = IC.detonate(S, t.aim.x, t.aim.y, t.d.dmg, t); IC.emit(S, 'arrive', { t, hit }); if (t.op) t.op.hits++; }
     else { IC.explode(S, t.aim.x, t.aim.y, 0.6, 'ground'); IC.log(S, 'kill', 'MISS', `ARM TN ${t.tn || '----'} missed ${g ? g.name : 'its target'}.`); }
     if (t.op) t.op.done++;

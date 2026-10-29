@@ -473,5 +473,12 @@
  "roads: a roundabout is driven round its ring, one way and anticlockwise, and no road runs through its island (brief 67)": 18,
  "towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)": 30,
  "map: the Career plays on the hand-drawn map, and everything drawn is there: the capital on its river, every city and place on dry ground, the sea with a coast, ridges with a style and passes, the motorways, railways and crossings between the places they name": 60,
- "map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed's region is as it was": 55
+ "map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed's region is as it was": 55,
+ "enemy weapons: every version has its card, and the enemy moves to newer ones as its acts go on": 28.2,
+ "enemy weapons: some early drones come down on their own on the way, the last version never does": 0.2,
+ "enemy weapons: the last drone jumps in height, and turns for another target when its own is destroyed": 0.1,
+ "enemy weapons: a family we keep shooting down falls out of favour, its packets shrink, and it comes back slowly": 0.1,
+ "enemy weapons: the first one identified of each version queues one card, a later version a card that says what it replaced": 0.1,
+ "enemy weapons: six ballistic missiles at one target are one salvo of six with its impact time and target, another target another salvo": 0.1,
+ "save: enemy weapons of a named version keep it through a save": 29.7
 }

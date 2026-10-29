@@ -38,6 +38,7 @@ IC.enemyInit = function (S) {
   for (const k in IC.ESETS) S.enemy.setW[k] = 1;
   S.enemy.aim = pickAim(S.enemy);
   for (const u of S.units) IC.enemyLearn(S, u, 'prewar');
+  IC.armsInit(S);
 };
 
 function hidePoint(S, s) {
@@ -280,13 +281,13 @@ const W = {
     sites.sort((a, b) => U.dist(a, obj) - U.dist(b, obj));
     const s = nat || Math.random() < 0.7 ? sites[0] : U.pick(sites);
     n = Math.min(Math.floor(spare(s, 'owa')), n);
-    const nj = !harass && E.escal >= 1.5 ? Math.min(Math.floor(spare(s, 'jdr')), U.randi(0, 3)) : 0;
+    const nj = !harass && E.escal >= 1.5 ? Math.min(Math.floor(spare(s, 'jdr')), Math.round(U.randi(0, 3) * Math.min(1.3, IC.armsFav(S, 'jdr')))) : 0;
     s.inv.owa -= n; if (nj) s.inv.jdr -= nj;
     for (let i = 0; i < n + nj; i++) {
       const type = i < n ? 'owa' : 'jdr';
       const aim = aimOn(obj);
       const route = routeBy(S, s, aim, true, harass ? 3000 : 2100, op.via);
-      const T = routeLen(s, route) / IC.THR[type].spd;
+      const T = routeLen(s, route) / IC.armsDef(S, type).spd;
       // (a site farther than the nearest, or a route longer than the plan guessed, still keeps the first 90 minutes
       // of the calm: those drones arrive a little after the rest)
       const calm = arriveAt && op && op.raid && op.raid.t0 != null ? op.raid.t0 + 5700 - S.time : 0;
@@ -302,14 +303,16 @@ const W = {
     n = Math.min(Math.floor(cms(s)), n);
     for (let i = 0; i < n; i++) {
       let type = 'lacm';
-      if (spare(s, 'scm') >= 1 && Math.random() < 0.5) type = 'scm';
-      else if (spare(s, 'mcm') >= 1 && E.escal >= 1.5) type = 'mcm';
+      // (a family that keeps being shot down is picked less: arms.js)
+      const fl = IC.armsFav(S, 'lacm');
+      if (spare(s, 'scm') >= 1 && Math.random() < U.clamp(0.5 * IC.armsFav(S, 'scm') / fl, 0.1, 0.85)) type = 'scm';
+      else if (spare(s, 'mcm') >= 1 && E.escal >= 1.5 && Math.random() < U.clamp(IC.armsFav(S, 'mcm') / fl, 0.15, 1)) type = 'mcm';
       else if (spare(s, 'lacm') < 1) type = spare(s, 'scm') >= 1 ? 'scm' : 'mcm';
       s.inv[type]--;
       const from = { x: s.x + U.rand(-40, 40), y: s.y + U.rand(-40, 40) };
       const aim = aimOn(obj);
       const route = type === 'scm' && !op.via ? [aim] : routeBy(S, from, aim, true, 2100, op.via);
-      const T = routeLen(from, route) / IC.THR[type].spd;
+      const T = routeLen(from, route) / IC.armsDef(S, type).spd;
       later(S, arriveAt ? arriveAt - S.time - T + U.rand(-40, 40) : i * 30, 'eSpawn', S, type, from.x, from.y, { route, aim, target: obj.ref, op, origin: s }, 0, 2);
     }
     return n;
@@ -328,7 +331,7 @@ const W = {
       const k = Math.min(mrbm ? 1 : 2, left); left -= k;
       const aims = [];
       for (let i = 0; i < k; i++) {
-        const type = mrbm ? 'mrbm' : spare(s, 'marv') >= 1 && E.escal >= 2 ? 'marv' : spare(s, 'srbm') >= 1 ? 'srbm' : 'marv';
+        const type = mrbm ? 'mrbm' : spare(s, 'marv') >= 1 && E.escal >= 2 && IC.armsFav(S, 'marv') >= IC.armsFav(S, 'srbm') * 0.7 ? 'marv' : spare(s, 'srbm') >= 1 ? 'srbm' : 'marv';
         s.inv[type]--;
         const a = aimOn(obj);
         const pens = mrbm && E.escal >= 1.5 ? Math.min(Math.floor(spare(s, 'pen')), 3) : 0;
@@ -337,7 +340,7 @@ const W = {
         fired++;
       }
       const lp = tel.staged ? { x: tel.x, y: tel.y } : launchPoint(S, tel.site, obj);
-      const T = U.dist(lp, obj) / IC.THR[mrbm ? 'mrbm' : 'srbm'].vAvg + 40;
+      const T = U.dist(lp, obj) / IC.armsDef(S, mrbm ? 'mrbm' : 'srbm').vAvg + 40;
       const moveT = U.dist(tel, lp) / 0.14 + 700;
       tel.mission = { aims, op, fireAt: arriveAt ? arriveAt - T : 0 };
       tel.state = 'moving'; tel.route = [lp];
@@ -633,6 +636,7 @@ function startAct(S, E, n, why) {
   if (E.act >= n) return;
   E.act = n; E.actT = S.time;
   note(S, E, `Act ${n}, ${IC.EACTS[n].name.toLowerCase()}: ${why}.`);
+  IC.armsTick(S, text => { note(S, E, text); intel(S, E, text); });
   if (n === 2) {
     startSaving(S, E);
     intel(S, E, `${S.world.names.A} has moved from probing to limited strikes: expect small raids on ${IC.EAIMS[E.aim].hint}. They are watching where we fire from.`);
@@ -686,7 +690,9 @@ const spareOf = (S, kind, ks) => S.esites.filter(s => s.kind === kind && alive(s
 /* what goes into a raid: packets of weapons, each with its time against the peak T */
 function mixFor(S, E, kind, obj) {
   const r = (a, b) => U.randi(a, b), M = [];
-  const add = (w, n, at, x) => { if (n > 0) M.push(Object.assign({ w, n, at: at || 0 }, x || {})); };
+  // (arms.js) outside the shock, a packet of a family the commander has lost faith in is smaller, one that works bigger:
+  // the raid keeps its size and shifts towards what gets through
+  const add = (w, n, at, x) => { if (kind !== 'shock' && kind !== 'opening') n = Math.round(n * U.clamp(IC.armsPack(S, w), 0.3, 1.6)); if (n > 0) M.push(Object.assign({ w, n, at: at || 0 }, x || {})); };
   const two = S.esites.some(s => s.nat === 'B' && alive(s) && s.kind === 'drone');
   if (kind === 'probe' || kind === 'opening') {
     const set = obj.set;
@@ -752,6 +758,7 @@ function mixFor(S, E, kind, obj) {
   }
   return M;
 }
+IC.enemyMix = (S, kind, obj) => mixFor(S, S.enemy, kind, obj);
 /* the shock: which of three ways, and where. Something valuable nobody guards; failing that, an axis our radars do
    not watch; failing that, the best-defended big target, soaked with decoys first */
 function planShock(S, E) {
@@ -1078,6 +1085,8 @@ function learn(S, E, R, ops) {
     E.aims[E.aim] = U.clamp(E.aims[E.aim] * (success ? 1.1 : stop >= 0.7 ? 0.85 : 1), 0.2, 3);
     E.aimFail = success ? 0 : (E.aimFail || 0) + 1;
   }
+  // the weapon families: one that keeps dying on the way falls out of favour, whatever version it is on (arms.js)
+  IC.armsLearn(S, text => { note(S, E, text); intel(S, E, text); });
   // methods that got through keep their share; the ones that died on the way are used less
   for (const k in E.method) E.method[k] = U.clamp(E.method[k] * 0.98 + 0.02, 0.2, 1.8);
   for (const o of ops) for (const [type, st] of Object.entries(o.byType || {})) {
@@ -1094,6 +1103,7 @@ function learn(S, E, R, ops) {
   if (R.kind === 'shock' && E.shock && !E.shock.done) {
     const f = strong(E);
     E.act = 3; E.actT = S.time; E.lullEnd = S.time + lerp(IC.EPACE.lull[0], IC.EPACE.lull[1], f) * H; E.shock.done = S.time; E.shock.res = { launched, lost, hits: R.hits || 0 };
+    IC.armsTick(S, text => { note(S, E, text); intel(S, E, text); });
     note(S, E, `Act 3: the shock is spent (${launched} launched, ${R.hits || 0} hits). Reassesses until ${U.hhmm(E.lullEnd)}: no raids, reconnaissance only.`);
     intel(S, E, `After the strike on ${R.obj.name}, ${S.world.names.A}'s channels have gone quiet. They are counting what worked and what did not. When they come back it will be planned: use the time to repair, reload and move.`);
     IC.news(S, success || (R.hits || 0) >= 4 ? `${S.world.names.A} celebrates "the night the sky fell" over ${place(S, R.obj)}.` : `The largest strike of the war largely fails: ${lost} of ${launched} shot down over ${place(S, R.obj)}.`);
@@ -1172,7 +1182,8 @@ const OPS = {
     const n = Math.min(Math.floor(s.inv.rkt), U.randi(6, 12));
     s.inv.rkt -= n;
     const op = newOp(S, 'rkt', `rocket salvo at ${tgt.name}`);
-    const aims = []; for (let i = 0; i < n; i++) aims.push({ type: 'rkt', x: tgt.x + U.rand(-25, 25), y: tgt.y + U.rand(-25, 25), ref: tgt.ref });
+    const sp = 25 * (IC.armsDef(S, 'rkt').spread || 1);
+    const aims = []; for (let i = 0; i < n; i++) aims.push({ type: 'rkt', x: tgt.x + U.rand(-sp, sp), y: tgt.y + U.rand(-sp, sp), ref: tgt.ref });
     tel.mission = { aims, op, fireAt: 0 }; tel.state = 'moving'; tel.route = [fp];
     return op;
   },
@@ -1214,6 +1225,8 @@ IC.updateTels = function (S, dt) {
           IC.part(S, { x: tel.x, y: tel.y, life: 0.4, size: 10, grow: 30, col: '255,190,120', add: true });
           for (let i = 0; i < 5; i++) IC.part(S, { x: tel.x, y: tel.y, vx: U.rand(-10, 10), vy: U.rand(-16, -4), life: U.rand(2, 4), size: U.rand(4, 7), grow: 10, col: '150,150,150', a: 0.4 });
           if (a.pens) for (let i = 0; i < a.pens; i++) IC.launchBallistic(S, 'pen', tel.x, tel.y, { x: a.x + U.rand(-180, 180), y: a.y + U.rand(-180, 180) }, { op: tel.mission.op, src: tel });
+          // (arms.js) a booster that breaks away is one more warhead on radar, falling short
+          for (let i = 0; i < (th.d.boost || 0); i++) IC.launchBallistic(S, 'pen', tel.x, tel.y, { x: tel.x + (th.x1 - tel.x) * 0.8 + U.rand(-60, 60), y: tel.y + (th.y1 - tel.y) * 0.8 + U.rand(-60, 60) }, { op: tel.mission.op, src: tel, booster: true });
           if (a.type !== 'rkt' && IC.hasTech(S, 's_sat')) IC.revealLauncher(S, tel, 'satellite launch detection');
         } else {
           tel.mission = null; tel.state = 'scoot'; tel.staged = false;
