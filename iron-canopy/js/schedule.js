@@ -121,7 +121,8 @@ IC.slotGate = function (S, ap, tl, al) {
   const h = hourOf(S), B = IC.dayb(ap);
   // (the Academy keeps the old rule: airliners rest at night, freighters fly unless there is a curfew)
   if (S.mode === 'academy' || !IC.FOCUS.slots) return NIGHT(h) && (ap.curfew || al.kind !== 'cargo') ? { k: 'night', w: 300, why: ap.curfew ? 'the night curfew: no departures 23:00–06:00' : 'airliners do not leave at night (23:00–06:00)' } : null;
-  if (NIGHT(h) && B.night === 'curfew') return { k: 'night', w: left(S), why: 'the night curfew: no departures 23:00–06:00' };
+  // (under a curfew one released after 22:40 would take off in it, with the taxi out and the queue: it waits too)
+  if (B.night === 'curfew' && (NIGHT(h) || NIGHT(Math.floor(((((S.time + 1200) % 86400) + 86400) % 86400) / 3600)))) return { k: 'night', w: left(S), why: 'the night curfew: no departures 23:00–06:00' };
   const P = IC.dayPlan(S, ap), u = useOf(S, ap);
   // a stand wanted by an aircraft circling outside: the tower lets this one go now, whatever its slot
   const wanted = S.threats.some(t => t.tail && !t.dead && t.toApt === ap.id && t.holding && t.standShort);
