@@ -494,7 +494,7 @@ function onAct(e) {
     case 'layer': S.layers[v] = !S.layers[v]; break;
     case 'cat': ui.cat = v; ui.arMin = false; break;
     case 'arMin': if (IC.FOCUS.polish && IC.civilAct(S)) { ui.arOpen = document.getElementById('arsenal').classList.contains('min'); ui.arMin = false; } else ui.arMin = !ui.arMin; break;
-    case 'briefMin': if (ui.compact()) ui.briefOpen = !ui.briefOpen; else ui.briefMin = !ui.briefMin; break;
+    case 'briefMin': if (ui.compact() && S.story) ui.briefOpen = !ui.briefOpen; else ui.briefMin = !ui.briefMin; break;
     // (round 3) the one-line goal, message and feed open on demand
     case 'tipFold': ui.tipOpen = null; if (ui.tipSeen) for (const k of ui.tipSeen.keys()) ui.tipSeen.set(k, -1e9); break;
     case 'tipOpen': { const t = S.story && IC.storyTip(S); ui.tipOpen = t ? t.text : null; break; }

@@ -1230,3 +1230,51 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 /* (brief 70) a painted portrait over the drawn face, in the same round frame */
 .facewrap{position:relative;display:block;flex:none}
 .facewrap .faceart{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+
+/* ---------- the UI clean-up: panels the player hides, folds and moves (panels.js) ---------- */
+.hud-off{display:none!important}
+.app:not(.layers-open) #layers{display:none}
+.mapctl [data-hud="layers"][aria-pressed="true"]{color:var(--friend);background:rgba(20,54,72,.92)}
+.app.compact.has-insp .mapbox{right:calc(21rem + 24px)}
+/* a short selection panel leaves the map controls in their corner; so does a panel the player moved */
+.app.has-insp.insp-clear .mapbox,.app.has-insp .mapbox.hud-moved{right:12px}
+.arsenal.min .slots{display:none}
+.arsenal.min{min-width:0;padding:.35rem .5rem}
+.ib.on{background:rgba(111,210,255,.22);color:var(--friend)}
+.hudmenu{position:absolute;z-index:9;width:17rem;padding:.7rem .75rem .65rem;display:grid;gap:2px;animation:fadeIn .15s var(--ease)}
+.hudmenu h4{margin:0 0 .3rem;font-family:var(--display);font-weight:600;font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.hm-row{display:flex;gap:.6rem;align-items:center;text-align:left;padding:.32rem .45rem;border-radius:8px;font-size:.9rem;color:var(--muted)}
+.hm-row:hover{background:var(--well);color:var(--text)}
+.hm-row i{width:1.9rem;height:1.05rem;border-radius:999px;background:var(--well-2);position:relative;flex:none;transition:background .15s}
+.hm-row i::after{content:'';position:absolute;top:2px;left:2px;width:calc(1.05rem - 4px);height:calc(1.05rem - 4px);border-radius:50%;background:var(--dim);transition:transform .15s,background .15s}
+.hm-row[aria-pressed="true"]{color:var(--text)}
+.hm-row[aria-pressed="true"] i{background:rgba(111,210,255,.35)}
+.hm-row[aria-pressed="true"] i::after{transform:translateX(.85rem);background:var(--friend)}
+.hm-acts{display:flex;flex-wrap:wrap;gap:4px;margin-top:.5rem}
+.hm-note{margin:.45rem 0 0;font-size:.78rem;color:var(--dim);line-height:1.35}
+.hudframes{position:absolute;inset:0;z-index:8;background:rgba(2,6,10,.35)}
+.hf{position:absolute;border:2px dashed rgba(111,210,255,.75);border-radius:14px;background:rgba(111,210,255,.1);cursor:grab;display:flex;flex-direction:column;gap:.3rem;align-items:flex-start;padding:.35rem;touch-action:none;overflow:hidden}
+.hf:hover{background:rgba(111,210,255,.18)}
+.hf.drag{cursor:grabbing;background:rgba(111,210,255,.24);border-style:solid}
+.hf span{font-family:var(--display);font-weight:700;font-size:.85rem;letter-spacing:.12em;text-transform:uppercase;color:#e4f6ff;background:rgba(6,26,38,.92);padding:.15rem .55rem;border-radius:8px;pointer-events:none}
+.hf .btn{background:rgba(6,26,38,.92)}
+.hf-bar{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:flex;gap:.7rem;align-items:center;padding:.5rem .6rem .5rem 1rem;white-space:nowrap;z-index:1}
+.hf-bar span{font-size:.88rem;color:var(--muted)}
+.hudclean{position:absolute;z-index:4;left:12px;bottom:12px;font-size:.8rem;color:var(--muted);padding:.3rem .7rem;border-radius:999px;background:var(--glass-2)}
+.hudclean:hover{color:var(--text)}
+/* behind a tall selection panel the minimap steps out (its controls stay): it no longer sits in the middle of the map */
+.app.has-insp:not(.insp-clear) .mapbox:not(.hud-moved) #mini{display:none}
+/* the arsenal's tiles a size smaller, so a war's arsenal is a strip, not a wall */
+.tiles{gap:5px}
+.tile{width:6.7rem;padding:.35rem .25rem .3rem;gap:2px;border-radius:10px}
+.tile canvas{width:2.6rem;height:2rem}
+.tile .tn{font-size:.88rem}
+.tile .tr{font-size:.68rem;min-height:2.2em}
+.tile .tc,.tile .buy{font-size:.7rem}
+.arsenal{gap:.4rem;padding:.5rem .6rem .55rem}
+/* the situation's suggestions a little tighter */
+.brief{padding:.7rem .85rem;gap:.45rem}
+.sug{gap:2px}
+.sug button{padding:.3rem .45rem;font-size:.9rem}
+/* the sandbox's panel keeps its old width: its launch row fits on one line */
+.app.compact.is-sbx .leftcol{width:22rem}
