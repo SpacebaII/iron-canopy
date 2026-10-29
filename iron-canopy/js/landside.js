@@ -1,7 +1,7 @@
 /* Iron Canopy — the landside of an airport, generated. A new airport gets an access road to the road network, paid
    for and shown like any road works (growth.js builds it). As passengers and cargo grow, the airport fills in by
    itself on the side of the terminal away from the aprons (brief 61, the front side): a kerb road along the terminal
-   and a forecourt loop bowed out in front of it, a bus stop (a rail station when it is busy and a railway runs close)
+   and a forecourt loop in front of it, a bus stop (a rail station when it is busy and a railway runs close)
    and a taxi rank on the forecourt, short-stay parking inside the loop, then an airport road curving away towards the
    road network with car parks along it, each shaped to the free ground it is given, parking garages, hotels and
    offices; cargo warehouses beside the cargo sheds. Parking is sized to the passengers: a car park full means
@@ -44,7 +44,7 @@ function landSide(ap, t) {
 IC.landSide = landSide;
 /* ---------- a terminal's front side (brief 61) ---------- */
 /* Laid out like a real terminal front rather than in rows: the kerb road along the terminal face, a one-way
-   forecourt loop round in front of it with its far side bowed out, and an airport road leaving the far side and
+   forecourt loop in front of it, straight-sided with rounded far corners, and an airport road leaving the far side and
    curving away towards the road network. The bus stop and the taxi rank stand on the forecourt by the kerb's ends,
    short-stay parking (a car park, or garages at a busy airport) fills the loop, hotels stand beside the forecourt,
    and the long-stay car parks, more garages, hotels and offices line the airport road, nearest first, both sides
@@ -83,12 +83,14 @@ function front(S, ap, t) {
   const to = (ap.land && ap.land.access && ap.land.access.pts[0]) || ownRoadEnd(S, ap) || ap.cityRef || null;
   const lt = to ? IC.rectLocal(t, to) : { x: 0 }, sg = Math.abs(lt.x) > 1 ? Math.sign(lt.x) : (U.hash(t.x * 7, t.y * 3) < 0.5 ? -1 : 1);
   const sA = sg * Math.min(X * 0.4, 1.2);
-  // the loop, local (s, d): up the far leg, round the bowed far side, down the near leg, its corners rounded
-  const far = []; for (let k = 0; k <= 10; k++) { const s = X - 2 * X * k / 10; far.push({ x: s, y: FORE + BULGE * (1 - (s / X) * (s / X)) }); }
-  const loopL = smooth([{ x: X, y: KERB_D }].concat(far, [{ x: -X, y: KERB_D }]), 3);
-  // where the airport road leaves the far side: the point of the loop at sA
-  let d0 = FORE + BULGE * (1 - (sA / X) * (sA / X));
-  for (let i = 1; i < loopL.length; i++) { const a = loopL[i - 1], b = loopL[i]; if (a.y > FORE * 0.8 && (a.x - sA) * (b.x - sA) <= 0 && a.x !== b.x) { d0 = a.y + (b.y - a.y) * (sA - a.x) / (b.x - a.x); break; } }
+  // the loop, local (s, d): up the far leg, along the straight far side, down the near leg; only its two far
+  // corners turn, on a 35 m kerb radius, so it reads as a forecourt rather than a racetrack
+  const D = FORE + 0.3, R = Math.min(0.35, X * 0.5, D - KERB_D - 0.1), loopL = [{ x: X, y: KERB_D }];
+  for (const [cx, a0] of [[X - R, 0], [-X + R, Math.PI / 2]])
+    for (let k = 0; k <= 6; k++) { const a = a0 + Math.PI / 2 * k / 6; loopL.push({ x: cx + R * Math.cos(a), y: D - R + R * Math.sin(a) }); }
+  loopL.push({ x: -X, y: KERB_D });
+  // where the airport road leaves the far side
+  const d0 = D;
   // the airport road, local: out from the loop, curving more as it goes (towards the network), every 25 m
   // (as long as the terminal is big: 300 m before a small one, 800 m before the largest)
   // (and on a little further, where the country's road comes in)
@@ -261,7 +263,7 @@ IC.landGate = function (S, ap, t) {
    park and building and along its roads, and trees in rows down both sides of the airport road and the roads out,
    none on a road, a car park or inside the fence. Painted by terrain.js with the airfield (headless here, kept until
    the landside changes): lawn (outlines, to fill and stroke 2 × grow wide), verge ({ pts, w }), trees [x, y, ...]. */
-IC.LAND_GROUND = { grow: 0.28, verge: 0.16, treeStep: 0.2, treeOff: 0.07 };
+IC.LAND_GROUND = { grow: 0.2, verge: 0.16, treeStep: 0.2, treeOff: 0.07 };
 IC.landGround = function (S, ap) {
   const L = ap.land; if (!L || !L.items) return null;
   const key = L.ver + ':' + (L.roads || []).length + ':' + L.items.length + ':' + ap.parts.length;

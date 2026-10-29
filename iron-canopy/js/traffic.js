@@ -1258,8 +1258,13 @@ function stepOnce(S, A, G, dt, now, box, check) {
     // a stop line is a gap with nothing moving at its end. (Written out, not as closures: this runs for 3,000 vehicles
     // a frame)
     if (a.ri + 1 < a.route.length && toEnd < D.look) {
-      const nx = a.route[a.ri + 1][0];
+      const nx = a.route[a.ri + 1][0], nxd = a.route[a.ri + 1][1];
       let vj = Math.min(nx.C.v * 1.1, lk.C.v), dj = toEnd, line = 1e9;
+      // how sharp the turn is: straight on keeps most of its speed through a junction, a right angle about half
+      const P = lk.pts, Q = nx.pts, n = P.length, m = Q.length;
+      const ix = d ? P[0].x - P[1].x : P[n - 1].x - P[n - 2].x, iy = d ? P[0].y - P[1].y : P[n - 1].y - P[n - 2].y;
+      const ox = nxd ? Q[m - 2].x - Q[m - 1].x : Q[1].x - Q[0].x, oy = nxd ? Q[m - 2].y - Q[m - 1].y : Q[1].y - Q[0].y;
+      const tc = (ix * ox + iy * oy) / (Math.hypot(ix, iy) * Math.hypot(ox, oy) || 1), vt = lk.C.v * (0.45 + 0.45 * Math.max(0, tc));
       if (nx.cut || (L2[nx.id] && L2[nx.id].cut)) {
         // a cut road ahead: queue at the line, then turn back after a while
         line = toEnd - 0.03;
@@ -1267,11 +1272,11 @@ function stepOnce(S, A, G, dt, now, box, check) {
       } else if (nd.sig) {
         // traffic lights: stop at the line on red, and on amber if it can still stop; through on green
         const st = IC.signalFor(G, end, lk, d, now), sl = toEnd - IC.SIGNAL.stop;
-        vj = Math.min(vj, Math.max(0.03, lk.C.v * 0.7)); dj = toEnd - 0.05;
+        vj = Math.min(vj, Math.max(0.03, vt)); dj = toEnd - 0.05;
         if (sl > -0.01 && (st === 'r' || (st === 'a' && sl > a.v * a.v / (2 * D.hard) + 0.01))) line = sl;
       } else if (nd.out.length >= 3) {
         // a junction: slow through it, and give way to whoever is already in it, if there is room to stop
-        vj = Math.min(vj, Math.max(0.03, lk.C.v * 0.55)); dj = toEnd - 0.03;
+        vj = Math.min(vj, Math.max(0.03, vt * 0.9)); dj = toEnd - 0.03;
         if (nd.busy > now && nd.from !== lk.id && toEnd - 0.03 > a.v * a.v / (2 * D.hard)) line = toEnd - 0.03;
         // (round 8) one that can no longer stop comfortably has the junction: it holds it from now until it is through,
         // so whoever comes from another road gives way while they still can, instead of meeting it in the middle
@@ -1358,20 +1363,35 @@ function curve(P, Q, hIn, hOut, oIn, oOut, u, r) {
   const x = w * w * Ex + 2 * u * w * Vx + u * u * Xx, y = w * w * Ey + 2 * u * w * Vy + u * u * Xy, h = Math.atan2(w * iy + u * oy, w * ix + u * ox), o = oIn + (oOut - oIn) * u * u * (3 - 2 * u);
   return { x: x - Math.sin(h) * o, y: y + Math.cos(h) * o, h };
 }
-IC.agentPos = function (a) {
-  const [lk, d] = a.route[a.ri], s = a.s;
+function poseAt(a, ri, s) {
+  const [lk, d] = a.route[ri];
   const p = drivePt(a, lk, d, s), o = p.o;
   // across the junction at either end of this link: the link before (just through it) or the next (coming up)
   const R0 = 0.15;
-  if (lk.len - s < R0 && a.ri + 1 < a.route.length) {
-    const [nl, nd] = a.route[a.ri + 1], r = Math.min(R0, lk.len * 0.45, nl.len * 0.45), e = lk.len - s;
+  if (lk.len - s < R0 && ri + 1 < a.route.length) {
+    const [nl, nd] = a.route[ri + 1], r = Math.min(R0, lk.len * 0.45, nl.len * 0.45), e = lk.len - s;
     if (e < r) { const P = drivePt(a, lk, d, lk.len - r), Q = drivePt(a, nl, nd, r), A = drivePt(a, lk, d, lk.len), B = drivePt(a, nl, nd, 0); return curve(A, B, Math.atan2(A.y - P.y, A.x - P.x), Math.atan2(Q.y - B.y, Q.x - B.x), o, Q.o, (r - e) / (2 * r), r); }
   }
-  if (s < R0 && a.ri > 0) {
-    const [pl, pd] = a.route[a.ri - 1], r = Math.min(R0, lk.len * 0.45, pl.len * 0.45);
+  if (s < R0 && ri > 0) {
+    const [pl, pd] = a.route[ri - 1], r = Math.min(R0, lk.len * 0.45, pl.len * 0.45);
     if (s < r) { const P = drivePt(a, pl, pd, pl.len - r), Q = drivePt(a, lk, d, r), A = drivePt(a, pl, pd, pl.len), B = drivePt(a, lk, d, 0); return curve(A, B, Math.atan2(A.y - P.y, A.x - P.x), Math.atan2(Q.y - B.y, Q.x - B.x), P.o, o, (r + s) / (2 * r), r); }
   }
   return { x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h };
+}
+/* the pose s along the route from entry ri, carried over into the links before and after */
+function routePose(a, ri, s) {
+  while (s < 0 && ri > 0) { ri--; s += a.route[ri][0].len; }
+  while (s > a.route[ri][0].len && ri + 1 < a.route.length) { s -= a.route[ri][0].len; ri++; }
+  return poseAt(a, ri, U.clamp(s, 0, a.route[ri][0].len));
+}
+/* where a close-in vehicle is drawn: its pose averaged over a few metres of its path either side, so it glides
+   through the corners of a road's polyline and the lane changes at a junction instead of snapping its heading at
+   each one (a filter along the path, not in time: it never lags behind its lane) */
+const GLIDE = 0.06;
+IC.agentPos = function (a) {
+  const B = routePose(a, a.ri, a.s), A = routePose(a, a.ri, a.s - GLIDE), C = routePose(a, a.ri, a.s + GLIDE);
+  const dx = C.x - A.x, dy = C.y - A.y;
+  return { x: (A.x + 2 * B.x + C.x) / 4, y: (A.y + 2 * B.y + C.y) / 4, h: dx * dx + dy * dy > 1e-6 ? Math.atan2(dy, dx) : B.h };
 };
 IC.trafficAgentsOf = S => AG.get(S) || null;
 /* how much of a close-in vehicle shows, 0..1: fading in as it pulls out, out as it parks */

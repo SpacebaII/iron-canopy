@@ -291,7 +291,8 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
     const LG = IC.landGround && IC.landGround(S, ap);
     if (LG && (LG.lawn.length || LG.verge.length)) {
       const paint = style => {
-        g.fillStyle = g.strokeStyle = style;
+        // (mitred and butt-ended: the lawn keeps the straight sides of what it surrounds instead of swelling round it)
+        g.fillStyle = g.strokeStyle = style; g.lineJoin = 'miter'; g.miterLimit = 3; g.lineCap = 'butt';
         g.beginPath(); for (const P of LG.lawn) { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); }
         g.lineWidth = 2 * LG.grow; g.fill(); g.stroke();
         for (const v of LG.verge) { g.lineWidth = v.w; g.beginPath(); v.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.stroke(); }

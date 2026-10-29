@@ -1174,7 +1174,7 @@ test('traffic: vehicles start at real places and drive the road graph like traff
   assert(T.lines.some(l => l.kind === 'bus') && T.lines.some(l => l.kind === 'coach'), 'no bus or coach lines');
   for (const l of T.lines) { assert(connected(l.path), `${l.name} is not a connected route`); if (l.kind === 'bus') assert(l.stops.length >= 3, `${l.name} has no stops`); }
 });
-test('traffic: close in, vehicles pull away and brake smoothly, slow before junctions and fade in and out (round 8)', () => {
+test('traffic: close in, vehicles pull away and brake smoothly, slow before junctions by how sharp the turn is and fade in and out (round 8)', () => {
   IC.seedRandom(7);
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const cap = IC.cap(S), D = IC.TRAFFIC_DRIVE;
@@ -1182,7 +1182,7 @@ test('traffic: close in, vehicles pull away and brake smoothly, slow before junc
   const view = { x0: cap.x - 15, y0: cap.y - 10, x1: cap.x + 15, y1: cap.y + 10 };
   IC.trafficAgents(S, view, 0);
   const prev = new Map(), seenIn = new Set(), seenOut = new Set(), G = S.traffic.G;
-  let n = 0, hard = 0, jump = 0, fast = 0, near = 0;
+  let n = 0, hard = 0, jump = 0, fast = 0, near = 0, turnV = 0, straight = 0, straightV = 0;
   for (let i = 0; i < 300; i++) {
     S.time += 0.25; IC.traffic(S, 0.25);
     for (const a of IC.trafficAgents(S, view, 0.25)) {
@@ -1192,14 +1192,20 @@ test('traffic: close in, vehicles pull away and brake smoothly, slow before junc
       if (f < 1 && a.out == null) seenIn.add(a.id); if (a.out != null && f < 1) seenOut.add(a.id);
       // (a few metres from a junction, nobody is still at full speed)
       const [lk, d] = a.route[a.ri], nd = G.nodes[d ? lk.a : lk.b];
-      if (nd.out.length >= 3 && !nd.sig && lk.len - a.s < 0.05 && a.ri + 1 < a.route.length) { near++; if (a.v > lk.C.v * 0.75) fast++; }
+      // (turning there, nobody is still at full speed; going straight on, they keep more of it)
+      if (nd.out.length >= 3 && !nd.sig && lk.len - a.s < 0.05 && a.ri + 1 < a.route.length) {
+        const [nl, ndr] = a.route[a.ri + 1], h0 = IC.agentPos(a).h, P = nl.pts, q0 = ndr ? P[P.length - 1] : P[0], q1 = ndr ? P[P.length - 2] : P[1];
+        const tc = Math.cos(Math.atan2(q1.y - q0.y, q1.x - q0.x) - h0), f = a.v / lk.C.v;
+        if (tc < 0.5) { near++; turnV += f; if (f > 0.75) fast++; } else if (tc > 0.95) { straight++; straightV += f; }
+      }
     }
   }
   assert(n > 100000, `only ${n} vehicle moments`);
   // (the hardest braking is for what turns up in front at a junction: rare)
   assert(hard < n * 0.002, `${hard} of ${n} moments braked harder than ${D.hard * 100} m/s²`);
   assert(jump === 0, `${jump} moments pulled away faster than ${D.acc * 100} m/s²`);
-  assert(near > 200 && fast < near * 0.05, `${fast} of ${near} vehicles reached a junction at full speed`);
+  assert(near > 200 && fast < near * 0.05, `${fast} of ${near} vehicles turning at a junction reached it at full speed`);
+  assert(straight > 200 && straightV / straight > turnV / near + 0.1, `straight on through a junction (${(straightV / Math.max(1, straight)).toFixed(2)} of the limit) is not faster than turning (${(turnV / near).toFixed(2)})`);
   assert(seenIn.size > 50 && seenOut.size > 5, `${seenIn.size} vehicles faded in as they pulled out, ${seenOut.size} out as they parked`);
 });
 test('traffic: a cut road makes a visible queue, and close-in traffic turns back from it', () => {
