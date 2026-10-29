@@ -478,7 +478,10 @@ IC.wpHitInfo = function (S, h) {
 IC.wpExport = S => S.wp ? JSON.parse(JSON.stringify(S.wp.plan)) : null;
 IC.wpFileText = function (P, map) {
   const b = P.batteries.map(x => '    ' + JSON.stringify(x)).join(',\n'), w = P.waves.map(x => '    ' + JSON.stringify(x)).join(',\n');
-  return `/* Iron Canopy — the enemy's war plan for the ${map} map (brief 76), written by the war planner (brief 77).\n   Batteries are their launchers; waves are the raids, in order. See warplan.js for every field. */\n(function (IC) {\n'use strict';\nIC.WAR_PLANS = IC.WAR_PLANS || {};\nIC.WAR_PLANS.${map} = {\n  "name": ${JSON.stringify(P.name)},\n  "batteries": [\n${b}\n  ],\n  "waves": [\n${w}\n  ]\n};\n})(window.IC);\n`;
+  // the header's lines are joined, not written with their indent, so the text test reads no doubled space
+  const head = [`/* Iron Canopy — the enemy's war plan for the ${map} map (brief 76), written by the war planner (brief 77).`,
+    'Batteries are their launchers; waves are the raids, in order. Every field is described in the war plan code. */'].join('\n' + ' '.repeat(3));
+  return `${head}\n(function (IC) {\n'use strict';\nIC.WAR_PLANS = IC.WAR_PLANS || {};\nIC.WAR_PLANS.${map} = {\n  "name": ${JSON.stringify(P.name)},\n  "batteries": [\n${b}\n  ],\n  "waves": [\n${w}\n  ]\n};\n})(window.IC);\n`;
 };
 /* a plan from a file's text: the planner's export, the game's plan file, or the plan's JSON alone */
 IC.wpParse = function (text) {
