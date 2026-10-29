@@ -539,6 +539,20 @@ function parts(k, col) {
   }
 }
 /* draw a list of vehicles {x, y, h, k, col}; m: at least this many world units long (so they stay visible) */
+/* a vehicle's colour as drawn: darker at night, with an alpha while it fades (cached: a few dozen colours) */
+const TINT = new Map();
+function tint(col, night, fa) {
+  const k = col + (night ? 'n' : 'd') + fa; let t = TINT.get(k); if (t) return t;
+  const m = col.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (!m) t = col;
+  else {
+    const f = night ? [0.35, 0.35, 0.4] : [1, 1, 1], al = (m[4] == null ? 1 : +m[4]) * fa;
+    // (at night only the opaque body colours are darkened, as before: windows and glass keep theirs)
+    const c = m[4] == null ? [m[1] * f[0] | 0, m[2] * f[1] | 0, m[3] * f[2] | 0] : [m[1], m[2], m[3]];
+    t = al >= 1 ? `rgb(${c[0]},${c[1]},${c[2]})` : `rgba(${c[0]},${c[1]},${c[2]},${+al.toFixed(2)})`;
+  }
+  if (TINT.size < 2000) TINT.set(k, t); return t;
+}
 function vehicles(list, px, night, now, m, detail, parked) {
   const calm = cam.z < 10;
   const groups = new Map();
@@ -549,11 +563,13 @@ function vehicles(list, px, night, now, m, detail, parked) {
     // city zoom was a red bar 400 m long across the blocks
     const K = IC.VEHICLE_KINDS[v.k] || IC.VEHICLE_KINDS.car, L = Math.max(K.L / 2, m / 2 * Math.min(1.6, Math.sqrt(K.L / 0.045))), W = Math.max(K.W / 2, px * K.W / 0.019);
     const c = Math.cos(v.h), s = Math.sin(v.h);
-    if (!night) shade.push(v.x + L * 0.25, v.y + L * 0.3, c, s, L, W);
+    if (!night && (v.f == null || v.f > 0.5)) shade.push(v.x + L * 0.25, v.y + L * 0.3, c, s, L, W);
     // further out a calm palette: pale cars, buff lorries, red buses; colours and details close in
     const P = detail ? parts(v.k, v.col) : calm ? [[v.k === 'bus' ? 'rgb(188,92,78)' : K.L > 0.07 ? 'rgb(214,204,180)' : 'rgb(234,236,240)', 1, -1, 1]] : [parts(v.k, v.col)[0]];
-    for (const [col, fr, bk, hw] of P) quad(col, v.x, v.y, c, s, fr * L, bk * L, hw * W);
-    if (night && !parked) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
+    // (one that is pulling out or has parked is drawn fading: its colours with an alpha, in steps of a fifth)
+    const fa = v.f == null || v.f > 0.97 ? 1 : Math.max(0.2, Math.round(v.f * 5) / 5);
+    for (const [col, fr, bk, hw] of P) quad(tint(col, night, fa), v.x, v.y, c, s, fr * L, bk * L, hw * W);
+    if (night && !parked && fa > 0.5) { lights.push(v.x + c * L, v.y + s * L, c, s, W); tails.push(v.x - c * L, v.y - s * L, W); }
     if ((v.k === 'police' || v.k === 'amb') && Math.sin(now * 12 + v.col) > 0) blues.push(v.x, v.y, W);
   }
   const fillQ = (L, col) => {
@@ -566,7 +582,7 @@ function vehicles(list, px, night, now, m, detail, parked) {
     ctx.fill();
   };
   if (shade.length) { const S2 = []; for (let i = 0; i < shade.length; i += 6) S2.push(shade[i], shade[i + 1], shade[i + 2], shade[i + 3], shade[i + 4], -shade[i + 4], shade[i + 5]); fillQ(S2, 'rgba(0,0,0,0.28)'); }
-  for (const [col, L] of groups) fillQ(L, night ? col.replace(/rgb\((\d+),(\d+),(\d+)\)/, (q, r, g2, b) => `rgb(${r * 0.35 | 0},${g2 * 0.35 | 0},${b * 0.4 | 0})`) : col);
+  for (const [col, L] of groups) fillQ(L, col);
   if (night) {
     ctx.globalCompositeOperation = 'lighter';
     // headlights: close in, a short beam of light on the road ahead
@@ -588,11 +604,15 @@ function vehicles(list, px, night, now, m, detail, parked) {
     ctx.fill(); ctx.globalCompositeOperation = 'source-over';
   }
 }
-let lastT = null;
+let lastT = null, lastL = null;
 IC.drawTraffic = function (g, S, px, v, light, now) {
   ctx = g; view = v;
   const z = cam.z, night = light < 0.35;
   const dtg = lastT == null || S.time < lastT || S.time - lastT > 120 ? 0 : S.time - lastT; lastT = S.time;
+  // (round 8) the vehicles close in drive on the ground's own clock (main.js IC.lifeT: no faster than twice the
+  // normal speed), so at 16× the streets still look like streets and not a time-lapse
+  const LT = IC.lifeT, dtl = lastL == null || LT == null || LT < lastL ? dtg : LT - lastL; lastL = LT;
+  const dtA = Math.min(dtg, dtl);
   const D = IC.TRAFFIC_DASH, wD = U.clamp((z - D[0]) / (D[1] - D[0]), 0, 1);
   if (wD < 1) {
     // moving dashes along the roads; brighter and longer where the road is full, warm streaks at night (fading out
@@ -617,7 +637,7 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
     const m = Math.max(0.045, 4.4 * px), list = [];
     // the lane offset scaled to the road as drawn (wider than real far out)
     const wk = k => IC.roadWidth(k, z) / (IC.ROAD_SPEC[k] || IC.ROAD_SPEC.lc).w;
-    IC.trafficShown(S, view, z, dtg, (x, y, h, k, col, cls, off) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); list.push({ x: x - n * o, y: y + c * o, h, k, col }); });
+    IC.trafficShown(S, view, z, dtA, (x, y, h, k, col, cls, off, f) => { const o = off * wk(cls), c = Math.cos(h), n = Math.sin(h); if (f == null || f > 0.02) list.push({ x: x - n * o, y: y + c * o, h, k, col, f: f == null ? 1 : f }); });
     // buses and coaches on their lines
     for (const b of S.buses) {
       const p = IC.busPos(b); if (!inView(p.x, p.y, 2)) continue;
@@ -632,8 +652,11 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
       if (!inView(j.x, j.y, 1)) continue;
       const G = IC.rbGeom(j, k => IC.roadWidth(k, z) / 2), rr = G.r + G.cw * 0.2;
       for (const v of list) {
-        const dx = v.x - G.C.x, dy = v.y - G.C.y, d = Math.hypot(dx, dy); if (d > G.Ro) continue;
-        const a = d > 1e-6 ? Math.atan2(dy, dx) : v.h;
+        const dx = v.x - G.C.x, dy = v.y - G.C.y, d = Math.hypot(dx, dy); if (d > G.Ro || d < 1e-6) continue;
+        // (round 8) the ring is driven as links of its own (traffic.js, rings): only what is going round it is laid on
+        // the ring as drawn; a vehicle on a road in or out (heading along the radius) is left where it is, so it no
+        // longer jumps onto the ring and turns a quarter in one frame
+        const a = Math.atan2(dy, dx); if (Math.abs(Math.cos(v.h - a)) > 0.6) continue;
         v.x = G.C.x + Math.cos(a) * rr; v.y = G.C.y + Math.sin(a) * rr; v.h = a - Math.PI / 2;
       }
     }

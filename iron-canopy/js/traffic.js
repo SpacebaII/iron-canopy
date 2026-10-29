@@ -1036,10 +1036,11 @@ IC.trafficShown = function (S, view, z, dt, fn) {
     n += IC.trafficVisible(S, view, { keep: keep * (1 - wA), cls: { st: sw, ln: sw } }, (x, y, h, k, cls, off) => fn(x, y, h, k, (x * 7 + y * 13) & 1023, cls, off));
   }
   // the vehicles on their own trips carry the whole share, and show the part of it handed over to them
+  // (a vehicle that has just pulled out fades in, one that has parked fades out: IC.agentFade)
   if (wA > 0) for (const a of IC.trafficAgents(S, view, dt, keep)) {
     if (a.u >= keep * wA) continue;
     const p = IC.agentPos(a); if (p.x < view.x0 - 1 || p.x > view.x1 + 1 || p.y < view.y0 - 1 || p.y > view.y1 + 1) continue;
-    fn(p.x, p.y, p.h, a.k, a.col, a.route[a.ri][0].cls, 0); n++;
+    fn(p.x, p.y, p.h, a.k, a.col, a.route[a.ri][0].cls, 0, IC.agentFade(S, a)); n++;
   }
   return n;
 };
@@ -1097,7 +1098,7 @@ function pickNext(G, T, n, lk, R, back) {
    below the share the renderer draws */
 function newAgent(S, A, route, s0, kind, purpose, org, u) {
   const K = KINDS[kind], lk = route[0][0], L = LIFE[purpose] || LIFE.gen, R = A.R;
-  const a = { k: kind, K, route, ri: 0, s: s0, v: lk.C.v * 0.5, lane: 0, org, pur: purpose, life: L[0] + R() * (L[1] - L[0]), wait: 0, col: Math.floor(R() * 1000), t0: S.time, id: A.nid++, u: u == null ? R() * A.k : u, gone: false };
+  const a = { k: kind, K, route, ri: 0, s: s0, v: lk.C.v * 0.5, lane: 0, org, pur: purpose, life: L[0] + R() * (L[1] - L[0]), wait: 0, col: Math.floor(R() * 1000), t0: S.time, id: A.nid++, u: u == null ? R() * A.k : u, gone: false, born: A.clk, out: null };
   laneFor(a);
   A.list.push(a);
   return a;
@@ -1109,7 +1110,9 @@ IC.trafficAgents = function (S, view, dt, keep) {
   const T = S.traffic; if (!T) return [];
   let A = AG.get(S);
   const G = T.G, cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2, r = Math.max(view.x1 - view.x0, view.y1 - view.y0) * 0.6 + 4;
-  if (!A || A.reset || A.G !== G) { A = { list: [], nid: 1, R: IC.makeRng(((S.seed * 7 + 3) >>> 0) + (A ? A.nid : 0)), G, box: null, trips: [], zt: new Map(), k: 1 }; AG.set(S, A); }
+  // (A.clk: the vehicles' own clock, which runs with the game time they are given: the map gives them no more than
+  // twice the normal speed's, as the life on the airport's ground, so at 16× they do not race)
+  if (!A || A.reset || A.G !== G) { A = { list: [], nid: 1, R: IC.makeRng(((S.seed * 7 + 3) >>> 0) + (A ? A.nid : 0)), G, box: null, trips: [], zt: new Map(), k: 1, clk: S.time }; AG.set(S, A); }
   keep = keep == null ? 1 : U.clamp(keep, 0.01, 1);
   const box = { x0: cx - r, y0: cy - r, x1: cx + r, y1: cy + r }, R = A.R;
   A.r = r; A.stats = A.stats || { spawnZone: 0, spawnEdge: 0, arrived: 0, turned: 0 };
@@ -1152,6 +1155,7 @@ IC.trafficAgents = function (S, view, dt, keep) {
         if (part) { let r = R() * part.len; for (let j = 0; j < part.runs.length; j += 2) { const l = part.runs[j + 1] - part.runs[j]; if (r <= l) { s = part.runs[j] + r; break; } r -= l; } if (d) s = lk.len - s; }
         const a = newAgent(S, A, [[lk, d]], s, pickKind(mixOf(L, d), R()), 'through', null, k0 + R() * (k2 - k0));
         a.lane = lk.C.lanes > 1 ? (R() < 0.6 || a.K.L > 0.1 ? 0 : 1) : 0;
+        a.born = -1e9; a.v = lk.C.v * 0.8;   // (already on the road as the view comes to it: no fading in)
       }
     }
     return k2;
@@ -1182,7 +1186,7 @@ IC.trafficAgents = function (S, view, dt, keep) {
       const u = R() * rate, pur = u < pc ? 'com' : u < pc + pf ? 'frt' : u < pc + pf + pa ? 'apt' : 'gen';
       const first = pickNext(G, T, z.node, null, R); if (!first) continue;
       const M = MIX[pur]; let kr = R(), kind = M[0][0]; for (const [k, q] of M) { if (kr < q) { kind = k; break; } kr -= q; }
-      newAgent(S, A, [first], 0, kind, pur, z);
+      newAgent(S, A, [first], 0, kind, pur, z).v = 0.01;   // (pulling out from a standstill)
       A.stats.spawnZone++;
     }
     A.zt.set(z, Math.min(acc, 3));
@@ -1210,10 +1214,15 @@ IC.trafficAgents = function (S, view, dt, keep) {
   stepAgents(S, A, G, Math.min(dt, 30), box);
   return A.list;
 };
+/* (round 8) how close-in vehicles drive: pull away at acc, plan to slow at brake, brake no harder than hard (units a
+   game second squared: 2.5, 3 and 8 m/s²), stand s0 behind the one ahead, react in tau (s), fade in and out over fade */
+const DRIVE = { acc: 0.025, brake: 0.03, hard: 0.08, s0: 0.012, tau: 0.8, fade: 1.5, look: 2.5 };
+IC.TRAFFIC_DRIVE = DRIVE;
 function stepAgents(S, A, G, dt, box) {
   // steps of half a second, but never more than three a frame: at high game speed they take longer steps
   const n = Math.min(3, Math.ceil(dt / 0.5)), h = dt / n;
-  for (let q = 0; q < n; q++) stepOnce(S, A, G, h, S.time - dt + (q + 1) * h, box, (A.sn = (A.sn || 0) + 1) % 4 === 0);
+  for (let q = 0; q < n; q++) stepOnce(S, A, G, h, A.clk + (q + 1) * h, box, (A.sn = (A.sn || 0) + 1) % 4 === 0);
+  A.clk += dt;
 }
 function stepOnce(S, A, G, dt, now, box, check) {
   // who is ahead of whom: vehicles by lane of each link and direction, sorted along it (the lanes' arrays are kept
@@ -1235,34 +1244,60 @@ function stepOnce(S, A, G, dt, now, box, check) {
     const a = L[i], r = a.route[a.ri], lk = r[0], d = r[1], end = endOf(lk, d), nd = G.nodes[end];
     // the road on: chosen when the vehicle comes near the junction, unless it is about to park
     if (a.ri >= a.route.length - 1 && a.life > 0 && lk.len - a.s < 1.5) { const nx = pickNext(G, T, end, [lk, d], R); if (nx) a.route.push(nx); }
-    let gap = 1e9;
-    if (i + 1 < L.length) { const b = L[i + 1]; gap = b.s - a.s - (a.K.L + b.K.L) / 2; }
+    // the gap to whatever is ahead (a vehicle, a stop line), and how fast that is going
+    let gap = 1e9, lv = 0;
+    if (i + 1 < L.length) { const b = L[i + 1]; gap = b.s - a.s - (a.K.L + b.K.L) / 2; lv = b.v; }
     else if (a.ri + 1 < a.route.length) {
       const rn = a.route[a.ri + 1], b = firstOn(rn[0], rn[1]);
-      if (b) gap = lk.len - a.s + b.s - (a.K.L + b.K.L) / 2;
+      if (b) { gap = lk.len - a.s + b.s - (a.K.L + b.K.L) / 2; lv = b.v; }
     }
-    const toEnd = lk.len - a.s;
+    const toEnd = lk.len - a.s, D = DRIVE;
     let speed = Math.min(a.K.v, (L2[lk.id] ? L2[lk.id].v[d] : lk.C.v) * (0.9 + (a.col % 7) * 0.03), lk.C.v * 1.1);
-    if (a.ri + 1 < a.route.length && toEnd < 0.6) {
+    // (round 8) slowing for what is coming is planned: the speed it may have now is what it can brake from, at a
+    // comfortable rate, to the speed it must have there (a junction's turning speed, the next road's limit, a stop);
+    // a stop line is a gap with nothing moving at its end. (Written out, not as closures: this runs for 3,000 vehicles
+    // a frame)
+    if (a.ri + 1 < a.route.length && toEnd < D.look) {
       const nx = a.route[a.ri + 1][0];
+      let vj = Math.min(nx.C.v * 1.1, lk.C.v), dj = toEnd, line = 1e9;
       if (nx.cut || (L2[nx.id] && L2[nx.id].cut)) {
         // a cut road ahead: queue at the line, then turn back after a while
-        gap = Math.min(gap, toEnd - 0.03);
+        line = toEnd - 0.03;
         if (a.v < 0.02 && (a.wait += dt) > 60 + (a.col % 60)) { a.route.length = a.ri + 1; const back = pickNext(G, T, end, [lk, d], R, true); if (back) a.route.push(back); a.wait = 0; A.stats.turned++; }
       } else if (nd.sig) {
-        // traffic lights: stop at the line on red, and on amber if there is room to stop; through on green
-        const st = IC.signalFor(G, end, lk, d, now), line = toEnd - IC.SIGNAL.stop;
-        speed = Math.min(speed, Math.max(0.03, lk.C.v * 0.7));
-        if (line > -0.01 && (st === 'r' || (st === 'a' && line > 0.08))) gap = Math.min(gap, line);
+        // traffic lights: stop at the line on red, and on amber if it can still stop; through on green
+        const st = IC.signalFor(G, end, lk, d, now), sl = toEnd - IC.SIGNAL.stop;
+        vj = Math.min(vj, Math.max(0.03, lk.C.v * 0.7)); dj = toEnd - 0.05;
+        if (sl > -0.01 && (st === 'r' || (st === 'a' && sl > a.v * a.v / (2 * D.hard) + 0.01))) line = sl;
       } else if (nd.out.length >= 3) {
-        // a junction: slow through it, and give way to whoever is already in it
-        speed = Math.min(speed, Math.max(0.03, lk.C.v * 0.55));
-        if (nd.busy > now && nd.from !== lk.id) gap = Math.min(gap, toEnd - 0.03);
+        // a junction: slow through it, and give way to whoever is already in it, if there is room to stop
+        vj = Math.min(vj, Math.max(0.03, lk.C.v * 0.55)); dj = toEnd - 0.03;
+        if (nd.busy > now && nd.from !== lk.id && toEnd - 0.03 > a.v * a.v / (2 * D.hard)) line = toEnd - 0.03;
+        // (round 8) one that can no longer stop comfortably has the junction: it holds it from now until it is through,
+        // so whoever comes from another road gives way while they still can, instead of meeting it in the middle
+        else if (toEnd - 0.03 < a.v * a.v / (2 * D.brake) + 0.02) { const t = now + toEnd / Math.max(0.02, a.v) + 1.2; if (!(nd.busy > t)) nd.busy = t; nd.from = lk.id; }
       }
+      speed = Math.min(speed, Math.sqrt(vj * vj + 2 * D.brake * Math.max(0, dj)));
+      if (line < gap) { gap = line; lv = 0; }
+    } else if (a.ri + 1 >= a.route.length && toEnd - 0.04 < gap) {
+      // parking (or a road that leads nowhere): it pulls in and stops short of the end of the road, then is gone (below)
+      gap = toEnd - 0.04; lv = 0;
     }
-    const want = Math.max(0, Math.min(speed, (gap - 0.012) / 1.4));
-    a.v = want < a.v ? want : Math.min(want, a.v + 0.02 * dt);
-    a.s += a.v * dt; a.life -= a.v * dt;
+    // the speed it may drive at with the gap ahead: what it can still stop in behind the one ahead if that one brakes
+    // hard (Gipps), never more than the road's
+    const g0 = Math.max(0, gap - D.s0), safe = gap > D.look ? Infinity : -D.brake * D.tau + Math.sqrt(D.brake * D.brake * D.tau * D.tau + lv * lv + 2 * D.brake * g0);
+    const want = Math.max(0, Math.min(speed, safe));
+    // pulling away gently, easing off as it nears the speed it wants; braking up to hard when it must
+    a.v = want < a.v ? Math.max(want, a.v - D.hard * dt) : Math.min(want, a.v + D.acc * dt * Math.max(0.2, 1 - (a.v * a.v * a.v * a.v) / Math.max(1e-8, speed * speed * speed * speed)));
+    // (never into the one ahead, whatever happened in front of it)
+    const step = Math.max(0, Math.min(a.v * dt, gap - 0.002));
+    if (step < a.v * dt) a.v = step / Math.max(1e-6, dt);
+    a.s += step; a.life -= step;
+    // parked: it fades from the street over a second and a half
+    if (a.ri >= a.route.length - 1 && a.v < 0.004 && toEnd < 0.2) {
+      if (a.out == null) a.out = now;
+      else if (now - a.out > D.fade) { a.gone = true; nGone++; A.stats.arrived++; if (a.org) { A.trips.push({ org: a.org, end, route: a.route.slice(), id: a.id }); if (A.trips.length > 200) A.trips.shift(); } continue; }
+    }
     while (a.s >= a.route[a.ri][0].len) {
       const rc = a.route[a.ri], cl = rc[0], cd = rc[1];
       a.s -= cl.len;
@@ -1339,6 +1374,11 @@ IC.agentPos = function (a) {
   return { x: p.x - Math.sin(p.h) * o, y: p.y + Math.cos(p.h) * o, h: p.h };
 };
 IC.trafficAgentsOf = S => AG.get(S) || null;
+/* how much of a close-in vehicle shows, 0..1: fading in as it pulls out, out as it parks */
+IC.agentFade = function (S, a) {
+  const A = AG.get(S), t = A ? A.clk : S.time, f = DRIVE.fade;
+  return Math.max(0, Math.min(1, (t - a.born) / f, a.out == null ? 1 : 1 - (t - a.out) / f));
+};
 
 /* parked cars (brief 55): the spaces along a side street's kerbs that have a car in them, as a flat list of
    x, y, heading, colour. A fifth of the spaces on a street, an eighth on a close; none within 25 m of a crossing or an
