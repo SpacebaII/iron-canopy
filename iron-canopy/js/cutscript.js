@@ -288,9 +288,10 @@ IC.CUT_STAGES = {
       return {
         hour: d && d.hour != null ? d.hour : 6.4, wx: 'clear', at: L, actors, events,
         shots: [
-          { t: 0, dur: 4.6, mode: 'fixed', ref: 'bat', from: { x: L.x - bx * 0.6 + by * 0.3, y: L.y - by * 0.6 - bx * 0.3, h: 25 }, lookAt: { x: (L.x + M0.x) / 2, y: (L.y + M0.y) / 2, alt: 1.6 }, lens: [24, 30] },
+          { t: 0, dur: 2.2, mode: 'fixed', ref: 'bat', from: { x: L.x - bx * 0.6 + by * 0.3, y: L.y - by * 0.6 - bx * 0.3, h: 25 }, lookAt: { x: (L.x + M0.x) / 2, y: (L.y + M0.y) / 2, alt: 1.6 }, lens: 24 },
+          { t: 2.2, dur: 2.4, mode: 'fixed', ref: 's0', from: { x: L.x - bx * 0.6 + by * 0.3, y: L.y - by * 0.6 - bx * 0.3, h: 25 }, lookAt: 's0', lens: [24, 40], lag: 0.25 },
           { t: 4.6, dur: 3.4, mode: 'chase', ref: 's0', back: 0.5, up: 0.08, lookAt: 'b0', lens: 28, lag: 0.2 },
-          { t: 8, dur: 9, mode: 'fixed', ref: 'b2', from: { x: ap.x - bx * 60 + by * 25, y: ap.y - by * 60 - bx * 25, h: 60 }, lookAt: { x: ap.x + bx * 25, y: ap.y + by * 25, alt: 3.2 }, lens: [24, 32] }
+          { t: 8, dur: 9, mode: 'fixed', ref: 'b2', from: { x: ap.x - bx * 60 + by * 25, y: ap.y - by * 60 - bx * 25, h: 60 }, lookAt: { x: ap.x + bx * 25, y: ap.y + by * 25, alt: 3.2 }, lens: [40, 55] }
         ]
       };
     }
