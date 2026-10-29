@@ -38,13 +38,13 @@ IC.CUTSCENES = {
     { art: 'first-1', src: '3d', shot: 'Dawn over the new airport: the terminal, the runway lights still on, mist on the grass.', cap: 'I remember that morning. The fog lifted at ten, and the first one came in at ten past.' },
     { art: 'first-2', src: 'ai', shot: 'A crowd at the perimeter fence: families, children on shoulders, an old man with a flag, phones held up.', cap: 'Half of {capCity} came to the fence. Nobody had told them to.', only: 'ontime' },
     { art: 'first-2b', src: 'ai', shot: 'A thin crowd at the perimeter fence in drizzle; a few umbrellas; a hand-painted sign reading FINALLY.', cap: 'It was months late, and over budget, and people came to the fence anyway. Someone had painted a sign: FINALLY.', only: 'late' },
-    { art: 'first-3', src: '3d', shot: 'An airliner on short final, gear down, landing lights on, low over the runway threshold.', cap: 'The wheels touched at 10:12.' },
+    { art: 'first-3', src: '3d', stage: { id: 'landing' }, shot: 'An airliner on short final, gear down, landing lights on, low over the runway threshold.', cap: 'The wheels touched at 10:12.' },
     { art: 'first-4', src: 'ai', shot: 'On the apron: Minister Halloran in a dark coat, laughing, gripping the Director\'s arm; Lena Okafor beside them grinning, a radio in her hand.', cap: 'Halloran held my arm so hard it bruised. Lena Okafor said it was the first time she had seen a minister cry.', say: ['MIN', '“Halloran\'s Folly.” Let them print that tomorrow.'] }
   ] },
 
   collision: { title: 'Nothing on the scope', panels: [
-    { art: 'coll-1', src: '3d', shot: 'A regional turboprop airliner in cloud, seen from the side, its cabin windows lit.', cap: 'Lise Marsh was the first officer that afternoon. Ivo\'s niece. I had known her since she was eight.' },
-    { art: 'coll-2', src: '3d', shot: 'A grey drone with no lights in the cloud, a few metres ahead, about to hit the airliner\'s wing.', cap: 'The drone had no transponder and no lights. None of our radars could see it. I had built most of them.' },
+    { art: 'coll-1', src: '3d', stage: { id: 'collision', part: 0 }, shot: 'A regional turboprop airliner in cloud, seen from the side, its cabin windows lit.', cap: 'Lise Marsh was the first officer that afternoon. Ivo\'s niece. I had known her since she was eight.' },
+    { art: 'coll-2', src: '3d', stage: { id: 'collision', part: 1 }, shot: 'A grey drone with no lights in the cloud, a few metres ahead, about to hit the airliner\'s wing.', cap: 'The drone had no transponder and no lights. None of our radars could see it. I had built most of them.' },
     { art: 'coll-3', src: 'ai', shot: 'Inside the cockpit: a young woman pilot (Lise) wrestling the controls, warning lights red, a crack across the windscreen, the captain calling on the radio.', cap: 'She flew it down on one engine.', say: ['LISE', 'Mayday, mayday, mayday. We have hit something.'] },
     { art: 'coll-4', src: 'ai', shot: 'The operations room: rows of screens, people on their feet; Ivo Marsh grey-faced, staring at one screen; the Director behind him, hands flat on the desk.', cap: 'In the ops room Ivo didn\'t say a word. He didn\'t need to. It was the same blank screen.' },
     { art: 'coll-5', src: '3d', shot: 'The damaged airliner on the runway, fire trucks around it, foam, blue lights in the rain.', cap: 'Everyone walked off that aircraft. That was luck, and I knew it.' },
@@ -52,7 +52,7 @@ IC.CUTSCENES = {
   ] },
 
   shadow: { title: 'Close enough to wave', panels: [
-    { art: 'shadow-1', src: '3d', shot: 'A fighter jet in close formation off an airliner\'s wingtip, high above the clouds.', cap: 'They started flying alongside our airliners. Close. Close enough to read the pilot\'s name on his helmet.' },
+    { art: 'shadow-1', src: '3d', stage: { id: 'shadow' }, shot: 'A fighter jet in close formation off an airliner\'s wingtip, high above the clouds.', cap: 'They started flying alongside our airliners. Close. Close enough to read the pilot\'s name on his helmet.' },
     { art: 'shadow-2', src: 'ai', shot: 'Through an airliner cabin window: a child pressing her hand to the glass; outside, a fighter pilot in a dark helmet raising a gloved hand.', cap: 'His name was Ilya Moreva. A girl in row 14 waved at him, and he waved back.' },
     { art: 'shadow-3', src: 'ai', shot: 'A newspaper front page on a kitchen table: a blurry photo of the fighter beside the airliner, headline "CLOSE ENOUGH TO WAVE".', cap: 'Her mother\'s photo was on every front page the next morning. Their television called it an escort, for our safety.', say: ['KOLAR', 'Our pilots keep watch over a sky that the {H} cannot.'] }
   ] },
@@ -100,8 +100,8 @@ IC.CUTSCENES = {
   ] },
 
   firstNight: { title: 'The first night', panels: [
-    { art: 'night-1', src: '3d', shot: 'Ballistic missiles rising from launchers at dawn across the border, bright exhaust plumes.', cap: 'They came at dawn.' },
-    { art: 'night-2', src: '3d', shot: 'Interceptor missiles launching from a battery, two bright trails climbing into a pink dawn sky.', cap: 'Our batteries fired for the first time in anger at 05:52.' },
+    { art: 'night-1', src: '3d', stage: { id: 'salvo', part: 0 }, shot: 'Ballistic missiles rising from launchers at dawn across the border, bright exhaust plumes.', cap: 'They came at dawn.' },
+    { art: 'night-2', src: '3d', stage: { id: 'salvo', part: 1 }, shot: 'Interceptor missiles launching from a battery, two bright trails climbing into a pink dawn sky.', cap: 'Our batteries fired for the first time in anger at 05:52.' },
     { art: 'night-3', src: 'ai', shot: 'A metro station used as a shelter: families on blankets on the platform, an old woman holding a radio, a child asleep on a suitcase.', cap: 'The city went underground and listened.' },
     { art: 'night-4', src: 'ai', shot: 'The operations room in red emergency light, every screen full of tracks; Ivo Marsh behind a young controller with a hand on her shoulder.', cap: 'Ivo stood behind the youngest controller all night, the way he had stood behind me.', say: ['ATC', 'One at a time, kid. One at a time.'] }
   ] },
@@ -147,7 +147,7 @@ IC.CUTSCENES = {
     { art: 'endL-3', src: 'ai', shot: 'The rooftop of a hotel at night, two silhouettes with drinks, a city below. Echo of a memory.', cap: 'He reminded me of the rooftop. We had talked about the future of flying. We had been right about some of it.', say: ['LENZ', 'Next time, Director, let us only argue about charges.'] }
   ] },
   endOpen: { title: 'The canopy held', panels: [
-    { art: 'endO-1', src: '3d', shot: 'An airliner on final approach to the national airport in morning light, gear down.', cap: 'The first airliner came back three weeks after the ceasefire.' },
+    { art: 'endO-1', src: '3d', stage: { id: 'landing', hour: 8.4 }, shot: 'An airliner on final approach to the national airport in morning light, gear down.', cap: 'The first airliner came back three weeks after the ceasefire.' },
     { art: 'endO-2', src: 'ai', shot: 'A crowd at an airport fence again, older children now, the same old man with a flag, many people crying and cheering.', cap: 'Half of {capCity} came to the fence again. Some of them were the same people.' },
     { art: 'endO-3', src: 'ai', shot: 'A bakery on a small-town square reopening: Mira hanging an OPEN sign, her children helping, a crowd waiting.', cap: '{sister} opened the bakery on the first Saturday. I drove up for it. The bread was terrible. Nobody minded.' }
   ] },
@@ -155,7 +155,7 @@ IC.CUTSCENES = {
     { art: 'endP-1', src: 'ai', shot: 'A small-town square in ruins, a burnt-out bakery with its sign hanging by one hook, snow falling.', cap: 'We held. {town} did not.' },
     { art: 'endP-m', src: 'ai', shot: 'A teenage girl (Ana) alone behind the counter of a rebuilt bakery at dawn, flour on her hands, an old photo of her mother pinned by the till.', cap: '{sister} did not leave the bakery, and I did not make her. Ana runs it now. She has never once asked me why.', only: 'mira' },
     { art: 'endP-2', src: 'ai', shot: 'A memorial wall with many names, flowers and candles, the Director standing in front of it in a dark coat.', cap: 'I go to the wall every year. I read every name. I know which ones were blind spots.' },
-    { art: 'endP-3', src: '3d', shot: 'A single airliner taking off into a grey winter sky.', cap: 'The airports still work. I made sure of that. It is the only thing I know how to do.' }
+    { art: 'endP-3', src: '3d', stage: { id: 'takeoff', hour: 14.5 }, shot: 'A single airliner taking off into a grey winter sky.', cap: 'The airports still work. I made sure of that. It is the only thing I know how to do.' }
   ] },
   endFortress: { title: 'A fortress', panels: [
     { art: 'endF-1', src: '3d', shot: 'An airport behind tall fences and radars, missile launchers among the aircraft stands.', cap: 'We won by becoming something harder. The airports have fences now, and soldiers, and some of them are not ours.' },

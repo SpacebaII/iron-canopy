@@ -559,6 +559,22 @@ IC.on(function (S, type, d) {
   addEv(R, ev);
 });
 
+/* ---------- a staged record (cutscenes) ----------
+   A cutscene's 3D shot is played from a record written by a script, not by the step: IC.recStage(S, t0) makes an
+   empty one, IC.recStageTrack and IC.recStagePush fill it as the recorder would (the phase marks included), and
+   IC.recStageEvent notes an explosion. cutstage.js hangs it on a copy of the state for the replay to read. */
+IC.recStage = function (S, t0) {
+  return { t0, next: t0, nextFine: t0, tracks: [], of: new WeakMap(), link: new WeakMap(), ev: [], evN: 0, purgeT: t0, ms: 0, n: 0,
+    turns: [], turnT: t0, bars: new Map(), wind: [], windT: -1e9, staged: true };
+};
+IC.recStageTrack = (R, ref, kind, model, name, side, meta) => newTrack(R, ref, kind, model, name, side, meta);
+IC.recStagePush = function (tr, t, x, y, alt, h, spd, code, det) {
+  if (code != null) markPhase(tr, t, code, alt);
+  push(tr, t, x, y, alt, h, spd, det ? 1 : 0, tr.side === 'us' ? 1 : tr.side === 'enemy' ? 4 : 0, tr.kind === 'missile' ? code || 1 : 2 * (code || 0));
+  tr.seen = t;
+};
+IC.recStageEvent = addEv;
+
 /* the mean time a recorder call took, in ms (tests and the performance tool) */
 IC.recCost = S => { const R = S.rec; return R && R.n ? R.ms / R.n : 0; };
 

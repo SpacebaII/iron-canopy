@@ -5295,6 +5295,62 @@ test('story: a fresh Career opens on the Director\'s own story, and each ending 
   const ep = IC.epilogue(S);
   assert(ep.title && ep.paras && ep.paras.length >= 1 && !/undefined|NaN/.test(JSON.stringify(ep)), 'the epilogue is empty or unfilled');
 });
+/* ---------- (brief 75) the cutscenes animated: timelines and staged 3D shots (cutscript.js) ---------- */
+test('cutscenes: every cutscene plays as a timed scene, each panel long enough to read, the camera inside its picture', () => {
+  const S = IC.newGame({ seed: 7501, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  const bad = [], MO = IC.CUTMO, d = { ap: 'Talyn', cause: 'gusts', late: false };
+  for (const id in IC.CUTSCENES) {
+    const C = IC.CUTSCENES[id];
+    for (const v of new Set([''].concat(C.panels.map(p => p.only).filter(Boolean)))) {
+      const TL = IC.cutTimeline(S, { id, v, d });
+      if (!TL.shots.length) { if (!C.pick) bad.push(`${id}: no panels`); continue; }
+      if ( Math.abs(TL.total - TL.shots.reduce((s, x) => s + x.dur, 0)) > 1e-6) bad.push(`${id}: shots do not add up`);
+      for (const sh of TL.shots) {
+        const words = ((sh.cap || '') + ' ' + (sh.say ? sh.say[1] : '')).split(/\s+/).filter(Boolean).length;
+        if (sh.dur < Math.min(MO.max, words / MO.read) - 1e-6 || sh.dur < MO.min || sh.dur > MO.max + 25) bad.push(`${id}/${sh.art}: holds ${sh.dur.toFixed(1)} s for ${words} words`);
+        for (const k of [0, sh.dur / 2, sh.dur]) { const c = IC.cutCam(sh, k); if (!(c.s >= 1 && c.s < 1.6 && c.x >= 0 && c.x <= 1 && c.y >= 0 && c.y <= 1)) bad.push(`${id}/${sh.art}: camera ${JSON.stringify(c)}`); }
+        for (const b of sh.beats) if (!(b.t >= 0 && b.t < sh.dur)) bad.push(`${id}/${sh.art}: ${b.k} at ${b.t} outside its panel`);
+        if (sh.cap && IC.cutTyped(sh, sh.dur, 'cap') !== sh.cap.length) bad.push(`${id}/${sh.art}: the caption is not all out by the end`);
+        if (sh.say && IC.cutTyped(sh, sh.dur, 'say') !== sh.say[1].length) bad.push(`${id}/${sh.art}: the balloon is not all out by the end`);
+        if (sh.stage && !IC.CUT_STAGES[sh.stage.id]) bad.push(`${id}/${sh.art}: no stage ${sh.stage.id}`);
+      }
+      const at = IC.cutAt(TL, TL.shots[1] ? TL.shots[1].t0 + 0.1 : 0);
+      if (TL.shots[1] && at.sh !== TL.shots[1]) bad.push(`${id}: cutAt finds the wrong panel`);
+    }
+  }
+  assert(!bad.length, bad.slice(0, 8).join('; '));
+});
+test('cutscenes: the staged 3D shots fly their scripts at our airport and leave the game as it was', () => {
+  const S = IC.newGame({ seed: 7502, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;
+  for (let i = 0; i < 40; i++) IC.step(S, 0.25);
+  const t0 = S.time, nTr = IC.recTracks(S).length, ap = IC.cutAirport(S), rw = IC.cutRunway(ap);
+  assert(ap && rw, 'no airport for the stages');
+  const pose = (G, key, t) => { const tr = G.R.of.get(G.refs[key]); return IC.recAt(tr, G.T0 + t, {}); };
+  for (const id in IC.CUT_STAGES) {
+    const G = IC.cutStage(S, id, {});
+    assert(G && G.R.tracks.length && G.shots.length, `${id}: no stage`);
+    for (const sh of G.shots) assert(sh.ref && G.R.of.get(sh.ref), `${id}: a shot follows nothing`);
+    for (const tr of G.R.tracks) assert(tr.n > 4 && tr.t1 > tr.t0, `${id}: ${tr.name} was not flown`);
+    const end = G.parts.reduce((s, p) => s + p.dur, 0); assert(G.S.time >= G.T0 + end && IC.recRange(G.S).t0 <= G.T0, `${id}: the stage's clock does not cover its parts`);
+  }
+  // the landing touches down on the runway, past its threshold, and slows
+  const L = IC.cutStage(S, 'landing', {}), tr = L.R.of.get(L.refs.ac);
+  assert(tr.marks.some(m => m[1] === 'td'), 'the landing has no touchdown');
+  const a = pose(L, 'ac', 0), b = pose(L, 'ac', 18), len = U.dist(rw.a, rw.b);
+  assert(a.alt > 0.03 && b.alt === 0, `heights ${a.alt}, ${b.alt}`);
+  const along = p => ((p.x - rw.a.x) * (rw.b.x - rw.a.x) + (p.y - rw.a.y) * (rw.b.y - rw.a.y)) / len;
+  assert(along(b) > 0 && along(b) < len && IC.recAt(tr, L.T0 + 18, {}).spd < 0.6, `the landing rolls out at ${along(b).toFixed(1)} of ${len.toFixed(1)}`);
+  // the drone meets the airliner where the collision is; the interceptors meet their missiles
+  const C = IC.cutStage(S, 'collision', {}), ev = C.R.ev.find(e => e.kind === 'collision'), dr = pose(C, 'dr', ev.t - C.T0), ac = pose(C, 'ac', ev.t - C.T0);
+  assert(U.dxy(dr.x, dr.y, ac.x, ac.y) < 0.6 && Math.abs(dr.alt - ac.alt) < 0.05, 'the drone misses the airliner');
+  const B = IC.cutStage(S, 'salvo', {});
+  for (const e of B.R.ev.filter(e => e.kind === 'intercept')) { const m = B.R.of.get(e.mref), q = IC.recAt(m, e.t, {}); assert(U.dxy(q.x, q.y, e.x, e.y) < 1 && Math.abs(q.alt - e.alt) < 0.3, 'an interceptor ends away from its intercept'); }
+  assert(B.R.ev.some(e => e.kind === 'impact'), 'nothing gets through');
+  assert(S.time === t0 && IC.recTracks(S).length === nTr && !S.paused === !S.paused, 'a stage changed the game');
+  // a Career with no airport yet has nowhere to stage: the panel keeps its picture
+  const S2 = IC.newGame({ seed: 7503, mode: 'story', hour: 7 }); IC.S = S2;
+  assert(IC.cutStage(S2, 'landing', {}) === null, 'a landing staged with no airport');
+});
 /* ---------- (the twelve acts) the story's acts and the lore of Northline 310 (lore.js) ---------- */
 test('story: twelve acts run over the four parts in order, the act line says which, and it never goes back', () => {
   const S = IC.newGame({ seed: 7101, mode: 'story', preset: 'network', hour: 7 }); IC.S = S;

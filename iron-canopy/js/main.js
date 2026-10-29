@@ -654,6 +654,7 @@ function onAct(e) {
     case 'bbToggle': IC.bbToggle(); return;
     case 'roadMode': ui.openRoom(null); IC.setMode({ kind: 'road', cls: v, pts: [], snaps: [] }); return;
     case 'rushRepair': IC.rushRepair(S, id); break;
+    case 'cutPlay': { const c = S.story && S.story.cuts[+v]; if (c && IC.cutView) { ui.openRoom(null); IC.cutView.open(S, c, true); } return; }
     case 'loan': IC.takeLoan(S, +v); break;
     case 'redLoan': IC.takeRedLoan(S); ui.waitPick = false; break;
     case 'repayLoan': IC.repayLoan(S, id); break;
