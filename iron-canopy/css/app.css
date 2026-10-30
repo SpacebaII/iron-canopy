@@ -1212,6 +1212,15 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .cutv .say b{display:block;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:#555}
 .cutv .say span{display:block;font-size:1.08rem;line-height:1.35;font-weight:600}
 @keyframes capIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.cutv .says{position:absolute;right:1.2rem;bottom:1.2rem;max-width:min(32rem,58%);display:flex;flex-direction:column;align-items:flex-end;gap:.45rem}
+.cutv .says .say{position:static;max-width:100%}
+.cutv .says .say:nth-child(2){animation-delay:1.3s}.cutv .says .say:nth-child(3){animation-delay:1.9s}.cutv .says .say:nth-child(4){animation-delay:2.5s}
+.cutv .say.me{background:#e8eef5;border-radius:22px 22px 6px 22px}
+.cutv .sketch .says{top:1.1rem;bottom:auto}
+.cutv .ask{position:absolute;left:50%;bottom:1.4rem;transform:translateX(-50%);display:flex;flex-direction:column;gap:.45rem;min-width:min(26rem,80%);padding:.8rem 1rem;background:rgba(12,14,18,.92);border:2px solid #f1ebdd;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.7);cursor:default;animation:capIn .5s .4s var(--ease) both}
+.cutv .ask b{color:#f1ebdd;font-family:Georgia,serif;font-style:italic;font-weight:400;font-size:1.08rem}
+.cutv .ask .btn{text-align:left;justify-content:flex-start;font-size:1rem}
+.cutv .frame:has(.ask) .says{bottom:auto;top:1.1rem}
 .cutv .board{position:absolute;inset:0;display:grid;align-content:center;justify-items:center;gap:1rem;padding:2rem 3rem;background:repeating-linear-gradient(0deg,rgba(0,0,0,.025) 0 2px,transparent 2px 6px),linear-gradient(170deg,#e9e3d6,#d8cfbd);color:#3b3528;text-align:center}
 .cutv .board span{font-family:var(--mono);font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:#7a6f5a}
 .cutv .board p{margin:0;max-width:44rem;font-family:Georgia,serif;font-style:italic;font-size:1.25rem;line-height:1.45;color:#3b3528}
