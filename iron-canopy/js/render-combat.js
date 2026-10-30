@@ -958,7 +958,7 @@ function track(S) {
     const t = V.m.target;
     const hit = t.dead || booms.some(b => S.time - b.t < 3 && Math.abs(b.x - t.x) + Math.abs(b.y - t.y) < 25);
     if (hit) { const big = t.d && (t.d.cls === 'bal' || t.d.cls === 'hgv'); IC.sfx && IC.sfx.intercept && IC.sfx.intercept(t.x, t.y, big); if (big) balKill(S, t); }
-    else if (V.shown) ghosts.push({ x: V.hx, y: V.hy, vx: Math.cos(V.m.a), vy: Math.sin(V.m.a), spd: V.m.spd, t: 0, cls: V.cls, tr: V.tr });
+    else if (V.shown && !(IC.icptTakeGhost && IC.icptTakeGhost(S, V))) ghosts.push({ x: V.hx, y: V.hy, vx: Math.cos(V.m.a), vy: Math.sin(V.m.a), spd: V.m.spd, t: 0, cls: V.cls, tr: V.tr });
   }
   // enemy air-to-air missiles
   for (const m of S.eaam) {
@@ -1290,6 +1290,8 @@ IC.drawCombat = function (S, px, now, light) {
   drawRings(px);
   for (const r of S.fx.rings) { const k = r.t; ctx.globalAlpha = Math.max(0, 1 - k); ctx.strokeStyle = `rgb(${r.color})`; ctx.lineWidth = 2.5 * px; ctx.beginPath(); ctx.arc(r.x, r.y, (r.px ? r.r * px : r.r) * Math.sqrt(k), 0, 7); ctx.stroke(); }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  // (render-intercept.js) what makes each intercept hard, and how each miss happened
+  if (IC.drawIntercept && FX.on) IC.drawIntercept(S, px, now, light);
 };
 
 })(window.IC);

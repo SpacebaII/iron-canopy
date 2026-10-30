@@ -220,7 +220,9 @@ IC.newMissile = (S, o, R, v0) => {
   const m = Object.assign({ id: IC.nid('m'), mun: null, M: null, x: 0, y: 0, alt: 0, a: 0, spd: 0, target: null, life: 60, src: '', unit: null, by: null, pk: 0, trailT: 0, side: 'us', tr: null, pip: null, hoj: false,
     a0: 0, loft: 0, flown: 0, dead: false, counted: false, ir: false, end: null, t0: S.time, r0: 0,
     P: null, age: 0, v0: 0, v: 0, c: 0, vb: 0, nh: 0, closeT: 0, rPrev: null, rhPrev: null, lostLock: false, fooled: false, tti: Infinity,
-    active: false, launchSeen: false, phase: null, fx: 0, fy: 0, fvx: 0, fvy: 0, lockT: 0, semiT: 0, warned: false, stray: null }, o);
+    active: false, launchSeen: false, phase: null, fx: 0, fy: 0, fvx: 0, fvy: 0, lockT: 0, semiT: 0, warned: false, stray: null,
+    // (intercept.js) the chance before the factors against it, and those factors by name
+    pkB: 0, fac: null }, o);
   m.r0 = m.target ? U.dxy(m.x, m.y, m.target.x, m.target.y) : 0;
   IC.mslInit(m, m.M, R, v0);
   // it flies until it is spent; the life is only a backstop
@@ -239,15 +241,14 @@ function fire(S, u, t, m, r, P, hoj) {
   u.lastFired = S.time; u.fat = Math.min(100, u.fat + 1.5);
   const a = Math.atan2((P ? P.y : t.y) - u.y, (P ? P.x : t.x) - u.x);
   const R = effRange(M, u, t), cls = IC.classOf(t);
-  const wx = IC.wx(S);
   // (the energy model takes care of a long shot: a missile at the end of its reach is slow and turns badly)
   const reach = P ? 1 - 0.25 * Math.pow(P.sl / Math.max(1, IC.reachAt(M, P.alt)), 2) : 1 - 0.2 * Math.pow(r / Math.max(1, R), 2);
-  let pk = M.pk * (P ? P.vs : M.vs[cls] || 0) * reach * IC.fatigueFactor(u) * (0.6 + 0.4 * IC.ok(u, 'launch'));
-  if (M.seeker === 'IR') pk *= wx.ir;
-  if (t.d.evasive) pk *= t.d.evasive;
+  // (intercept.js: each thing against the shot is a named factor, so a miss can say which one took it)
+  const K = IC.icptFactors(S, u, t, M, P ? P.vs : M.vs[cls] || 0, reach, IC.fatigueFactor(u) * (0.6 + 0.4 * IC.ok(u, 'launch')));
+  const pk = K.pk;
   const tr = IC.newTrail(S, M.range > 1500 ? 'big' : 'sam');
   const pip = P ? { x: P.x, y: P.y, alt: P.alt, T: S.time + P.tau, tof: P.tau } : null;
-  const ms = IC.newMissile(S, { mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : 60, src: u.name, unit: u, pk, side: 'us', tr, pip, alt: 0, hoj: !!hoj,
+  const ms = IC.newMissile(S, { mun: m.mun, M, x: u.x, y: u.y, a, spd: M.spd, target: t, life: P ? P.tau + 5 : 60, src: u.name, unit: u, pk, pkB: K.base, fac: K.F, side: 'us', tr, pip, alt: 0, hoj: !!hoj,
     // a climb-and-descend path (flight.js): up to the top of its arc, then down onto the target
     a0: 0, loft: IC.flyLoft(M, P ? U.dxy(u.x, u.y, P.x, P.y) : r) }, IC.reachAt(M, t.alt || 0) || M.range, 0);
   if (pip) ms.life = P.tau + 5;
@@ -475,9 +476,10 @@ function missileEnd(S, m, t, res) {
   m.dead = true; m.end = res;
   if (res.end === 'fuse') {
     const inEnv = t.alt >= m.M.alt[0] - 2 && t.alt <= m.M.alt[1] + 5;
-    let pk = IC.fusePk(m, res.d);
-    if (m.M.air && IC.hasTech(S, 'f_aam')) pk += 0.1;
-    if (inEnv && Math.random() < pk) {
+    // a slow missile cannot follow the last turn: that is the energy factor, put with the others
+    const en = m.pk > 0 ? IC.fusePk(m, res.d) / m.pk : 1;
+    const R = inEnv ? IC.icptRoll(m, en < 0.999 ? [{ k: 'energy', f: en }] : null, m.M.air && IC.hasTech(S, 'f_aam') ? 0.1 : 0) : null;
+    if (R && R.hit) {
       IC.explode(S, t.x, t.y, 0.6, 'us');
       t.hp -= HIT[m.mun] || 2;
       // (an airliner is not built to take a warhead: one hit brings it down)
@@ -485,8 +487,11 @@ function missileEnd(S, m, t, res) {
       else { IC.text(S, t.x, t.y, 'DAMAGED', '#ffd08a'); t.spd *= 0.85; IC.emit(S, 'mstat', { m, t, what: 'hit', text: 'DAMAGED' }); }
       return;
     }
-    res = { end: 'miss', why: !inEnv ? 'OUT OF ENVELOPE' : 'MISS', d: res.d };
+    res = { end: 'miss', why: !inEnv ? 'OUT OF ENVELOPE' : R.cause ? IC.icptWord(m, R.cause) : 'MISS', d: res.d, cause: R && R.cause };
+    m.end = res;
   }
+  // (a round that ran out of energy tumbles down on the map: render-intercept.js)
+  if (res.why === 'OUT OF ENERGY' && !res.cause) res.cause = 'spent';
   if (res.why !== 'OUT OF ENERGY' && strayLock(S, m, t)) return;
   IC.text(S, m.x, m.y, res.why, '#8fa3b0');
   if (/^PASSED/.test(res.why)) IC.emit(S, 'missHeight', { t, m, dz: res.dz / 10 });
@@ -535,16 +540,18 @@ function flyToPip(S, m, t, dt) {
   if (left > 0) return;
   m.dead = true;
   const off = U.hyp(U.dxy(t.x, t.y, P.x, P.y), (t.alt - P.alt) * 10);
-  let pk = m.pk;
-  if (t.d.evasive) pk *= t.d.evasive;
-  if (off < 40 && Math.random() < pk) {
+  // (a manoeuvring warhead has to be met twice: where it was going, and where it jinked to)
+  const R = off < 40 ? IC.icptRoll(m, t.d.evasive ? [{ k: 'manoeuvre', f: t.d.evasive }] : null) : { hit: false, cause: 'manoeuvre' };
+  if (R.hit) {
     IC.explode(S, t.x, t.y, 0.8, 'us');
     t.hp -= HIT[m.mun] || 2;
     if (t.hp <= 0 || t.d.cls !== 'air') IC.killThreat(S, t, m.src);
     IC.emit(S, 'intercept', { t, m, alt: P.alt });
   } else {
-    IC.text(S, m.x, m.y, off >= 40 ? 'MANOEUVRED' : 'MISS', '#8fa3b0');
-    IC.emit(S, 'mstat', { m, t, what: 'miss', text: off >= 40 ? 'MANOEUVRED' : 'MISS' });
+    const why = R.cause ? IC.icptWord(m, R.cause) : 'MISS';
+    m.end = { end: 'miss', why, d: off, cause: R.cause };
+    IC.text(S, m.x, m.y, why, '#8fa3b0');
+    IC.emit(S, 'mstat', { m, t, what: 'miss', text: why });
     IC.part(S, { x: m.x, y: m.y, life: 0.3, size: 4, grow: 12, col: '200,200,200', add: true, a: 0.5 });
   }
 }

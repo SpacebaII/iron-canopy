@@ -3,7 +3,8 @@
      node tools/combat-shots.js [scene ...] [--game=path/to/index.html]
    Scenes: symbols, arsenal, threats, sam-day-near, sam-day-far, sam-night-near, sam-night-far, bmd, raid, perf, and brief
    43's: long-shot (a long SAM shot and a notch), duel (fighters), drones (a drone wave with combat time), abort (a raid
-   that turns back), result (the raid's result card).
+   that turns back), result (the raid's result card); brief 79's icpt-clutter, icpt-storm, icpt-jink, icpt-speed,
+   icpt-spent, icpt-saturation (what makes an intercept hard, each miss forced to the cause the scene shows).
    Frames go to shots/<scene>-<n>.png. `perf` prints render and frame times; run it on two checkouts to compare. */
 const path = require('path');
 const fs = require('fs');
@@ -158,6 +159,27 @@ const SCENES = {
     S.combat.streak = Math.max(S.combat.streak, 3);
     const k = S.camp.cards.findIndex(x => x.res); IC.ui.cineShown = k; IC.ui.cineT = 0;
     look(c.x, c.y, 0.3); await wait(1500);` },
+  // brief 79: what makes an intercept hard, seen on the map. icpt-* scenes force each miss to the cause they show
+  'icpt-clutter': { frames: [0, 1000, 2000, 3000, 4200], setup: icptScene(`
+    unit(S, 'shorad', at.x, at.y); unit(S, 'mr3d', at.x - 20, at.y - 50);
+    for (let i = 0; i < 6; i++) hostile(S, 'lacm', at.x + 300 + i * 18, at.y - 120 + i * 30, at);`, 'clutter', 1.6, 120, -40) },
+  'icpt-storm': { frames: [0, 1000, 2000, 3000, 4200], setup: icptScene(`
+    S.weather = { kind: 'storm', prev: 'storm', fade: 1, next: S.time + 1e6 };
+    unit(S, 'vshorad', at.x, at.y); unit(S, 'shorad', at.x - 30, at.y + 30);
+    for (let i = 0; i < 5; i++) hostile(S, 'jdr', at.x + 160 + i * 14, at.y - 60 + i * 20, at, { alt: 1.5 });`, 'weather', 2.2, 70, -20) },
+  'icpt-jink': { frames: [0, 1500, 3000, 4500, 6000], setup: icptScene(`
+    unit(S, 'lrsam', at.x, at.y); unit(S, 'lr3d', at.x - 30, at.y - 40);
+    IC.launchBallistic(S, 'marv', at.x + 2400, at.y - 1600, { x: at.x + 40, y: at.y - 20 });
+    IC.launchBallistic(S, 'marv', at.x + 2500, at.y - 1500, { x: at.x + 60, y: at.y + 10 });`, 'manoeuvre', 0.9, 60, -30, S => S.missiles.length > 0 && S.missiles.some(m => m.pip && m.pip.T - S.time < 30)) },
+  'icpt-speed': { frames: [0, 800, 1600, 2400, 3200], setup: icptScene(`
+    unit(S, 'mrsam', at.x, at.y); unit(S, 'shorad', at.x + 20, at.y - 20); unit(S, 'mr3d', at.x - 20, at.y - 50);
+    for (let i = 0; i < 3; i++) hostile(S, 'scm', at.x + 900 + i * 40, at.y - 500 + i * 30, at);`, 'speed', 1.0, 160, -90, S => S.missiles.some(m => m.tti < 12)) },
+  'icpt-spent': { frames: [0, 1000, 2000, 3000, 4500], setup: icptScene(`
+    unit(S, 'mrsam', at.x, at.y); unit(S, 'mr3d', at.x - 20, at.y - 50);
+    for (let i = 0; i < 3; i++) hostile(S, 'jdr', at.x + 820 + i * 30, at.y - 300 + i * 40, { x: at.x + 2000, y: at.y - 900 }, { alt: 4 });`, 'range', 0.7, 520, -200, S => S.missiles.some(m => m.tti < 15)) },
+  'icpt-saturation': { frames: [0, 1500, 3000, 4500], setup: icptScene(`
+    unit(S, 'shorad', at.x, at.y);
+    for (let i = 0; i < 16; i++) hostile(S, 'owa', at.x + 120 + (i % 4) * 14, at.y - 70 + Math.floor(i / 4) * 16, at);`, null, 2.4, 70, -20) },
   perf: { perf: true, setup: raidScene(15) }
 };
 function samScene(hour, z) {
@@ -177,6 +199,15 @@ function samScene(hour, z) {
     steps(S, 600, S => S.missiles.length > 0);
     look(c.x + 400, c.y - 250, ${z});`}
     S.speed = 1; S.paused = false;`;
+}
+function icptScene(body, cause, z, ox, oy, until) {
+  return `
+    const S = await war(11); const c = IC.cap(S); clean();
+    const at = { x: c.x + 500, y: c.y - 300 };
+    ${body}
+    ${cause ? `IC.icptRoll = () => ({ hit: false, cause: '${cause}' });` : ''}
+    steps(S, 900, ${until ? until.toString() : 'S => S.missiles.length > 0'});
+    look(at.x + ${ox}, at.y + ${oy}, ${z}); S.speed = 1; S.paused = false;`;
 }
 function raidScene(hour) {
   return `
@@ -209,7 +240,7 @@ function raidScene(hour) {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto('file://' + game);
-    await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 30000 });
+    await page.waitForFunction(() => window.IC && IC.begin && IC.S, null, { timeout: 180000 });
     if (args.includes('--fx-off')) await page.evaluate(() => { if (IC.cfx) IC.cfx.on = false; });
     const noArg = args.find(a => a.startsWith('--no='));
     if (noArg) await page.evaluate(v => { IC.cfx.no = {}; for (const k of v.split(',')) IC.cfx.no[k] = true; }, noArg.slice(5));
