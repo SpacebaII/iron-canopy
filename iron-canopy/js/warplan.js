@@ -116,6 +116,8 @@ IC.wpTarget = function (S, at, from) {
   if (k === 'city') return tgt(IC.cities(S).find(c => c.name === v));
   if (k === 'place') { const p = IC.placeOf(S, v); if (!p) return null; return p._ref && p._ref.x != null && !p._ref.abroad ? tgt(p._ref) : { x: p.x, y: p.y, ref: null, name: p.name, set: 'city' }; }
   if (k === 'infra') return tgt(S.byId[v] || S.infra.find(x => x.name === v));
+  // (story v3) a site the story names (saga.js): what is there, or the point
+  if (k === 'saga') { const s = IC.sagaSite && IC.sagaSite(S, v); return s ? (s.ref ? tgt(s.ref, null, s.name) : { x: s.x, y: s.y, ref: null, name: s.name, set: 'city' }) : null; }
   if (k === 'base' && v === 'strike') {
     // (brief 79) the base our last strike flew from: they watched the jets take off, and aim where they park
     const b = S.strike && S.strike.from && S.byId[S.strike.from];

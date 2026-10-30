@@ -842,6 +842,8 @@ IC.waitTick = function (S, dt) {
   const net = S.income - S.upkeep, k = Math.min(1, dt / 86400 * 1.5);
   S.netAvg = S.netAvg == null ? net : S.netAvg + (net - S.netAvg) * k;
   const w = S.wait; if (!w) return;
+  // (story v3) Go on: until the next chapter is due
+  if (w.story) { if (!IC.sagaOn(S) || IC.sagaDue(S) || S.story.v3.ph !== 'wait') IC.waitStop(S, IC.sagaDue(S) ? `${w.what} begins.` : ''); return; }
   if (w.works) {
     const ap = S.byId[w.works], left = ap && ap.works ? ap.works.filter(x => x.stages) : [];
     if (!left.length) return IC.waitStop(S, `Every work at ${ap ? ap.name : 'the airport'} is finished.`);

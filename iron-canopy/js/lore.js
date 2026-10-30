@@ -48,6 +48,8 @@ IC.storyPartNow = S => S.story ? Math.max(S.story.part || 0, IC.storyPartWant(S)
 /* "Act IV", or with long "Act IV: The Shadows" */
 IC.storyActLabel = function (S, long) {
   if (!S || !S.story) return '';
+  // (story v3) the chapter and the year of the war instead of the twelve acts
+  if (S.story.v3 && IC.sagaLabel) { const c = IC.SAGA[S.story.v3.i]; return c ? (long ? `${IC.sagaLabel(S, c)}: ${c.t}` : c.t) : 'Ashford'; }
   const A = IC.storyAct(IC.storyPartNow(S));
   return long ? `Act ${A.r}: ${A.title}` : `Act ${A.r}`;
 };
@@ -75,7 +77,7 @@ IC.storyRidgeOpen = function (S) {
   return true;
 };
 IC.loreTick = function (S, dt) {
-  const st = S.story; if (!st || S.mode !== 'story' || !st.flags) return;
+  const st = S.story; if (!st || S.mode !== 'story' || !st.flags || st.v3) return;
   st.loreT = (st.loreT || 0) - dt; if (st.loreT > 0) return;
   st.loreT = 20;
   if (st.r9 == null) ridgeRange(S);
@@ -95,14 +97,14 @@ IC.loreTick = function (S, dt) {
 /* each year, in the middle of March: the anniversary of Northline 310. The controllers keep a minute's silence at
    22:34; from Part Two their television keeps it too, in its own way */
 IC.onMonth((S, was, m) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || m % 12 !== 2 || st.act === 4) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3 || m % 12 !== 2 || st.act === 4) return;
   const y = Math.floor(m / 12) + 1, ago = 33 + y, at = MO(S, 0.45);
   later(S, at, 'ATC', y === 1 ? `Ivo Marsh. Last night at 22:34 every frequency in the country went quiet for one minute. That was us. It is a tower thing, Director; it has been done every March for ${ago} years. Nobody will ask you to explain it.` : `Last night at 22:34, one minute of silence on every frequency, as every March. ${ago} years.`);
   if (st.act >= 2) later(S, at + 3 * 3600, 'KOLAR', `${ago} years ago tonight, on the Black Morning, the ${S.world.names.H} sent an airliner full of its own people into our missiles, and told the world we fired without a word. We remember the 212. Good evening.`);
 });
 /* the people, as each act opens */
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || type !== 'part') return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3 || type !== 'part') return;
   if (d === 2) later(S, 5 * 3600, 'ATC', `One thing, Director, before you redraw the sectors. Sector 9, the old northern one over the ridge: it stays closed. It has been closed since before you were at school. While I am alive nobody works it.`);
   if (d === 3) later(S, 4 * 3600, 'SISTER', `Mira. They cleaned the memorial on the square today: 212 names, and the blank stone at the end. Ana asked me who the blank one is for. I told her I did not know.`);
   if (d === 5) later(S, 6 * 3600, 'LISE', `Lise Marsh. I have been reading about Northline 310. The night it came down it was turned round a storm, off the airway, over the ridge. That is where they turned us, the day the drone hit. Exactly there. Has anybody else noticed?`);
@@ -110,7 +112,7 @@ IC.on((S, type, d) => {
 });
 /* the first intercepted order of the war, and what the narrator says about it (Act XI will say it again) */
 IC.on((S, type) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act !== 4 || type !== 'raidWarning' || st.flags.has('heardBox')) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3 || st.act !== 4 || type !== 'raidWarning' || st.flags.has('heardBox')) return;
   IC.flag(S, 'heardBox', true);
   later(S, 600, 'YOU', `"Confirm the box is hot." I had never heard those words before.`);
 });
@@ -227,7 +229,7 @@ function boxFired(S) {
 
 /* the border town kept open: if the war reaches its square, Mira is lost (her voice stops) */
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act !== 4 || type !== 'impact' || st.flags.get('evac') !== 'stay' || st.flags.has('mira')) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3 || st.act !== 4 || type !== 'impact' || st.flags.get('evac') !== 'stay' || st.flags.has('mira')) return;
   const t = town(S); if (!t || !t.blocks || !d) return;
   const hurt = t.blocks.filter(b => b.hp != null && b.hp < 0.5).length;
   if (hurt <= t.blocks.length * 0.15) return;

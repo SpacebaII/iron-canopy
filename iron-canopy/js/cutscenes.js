@@ -182,11 +182,14 @@ IC.cutscene = function (S, id, data) {
 /* the panels of a queued or seen cutscene, its words filled in */
 IC.cutPanels = function (S, c) {
   const C = IC.CUTSCENES[c.id];
-  return C.panels.filter(p => !p.only || p.only === c.v).map(p => ({ art: p.art, src: p.src, shot: p.shot, cap: IC.cutFill(S, p.cap, c.d), say: p.say ? [p.say[0], IC.cutFill(S, p.say[1], c.d)] : null }));
+  return C.panels.filter(p => !p.only || p.only === c.v).map(p => ({ art: p.art, src: p.src, shot: p.shot, cap: IC.cutFill(S, p.cap, c.d), say: p.say ? [p.say[0], IC.cutFill(S, p.say[1], c.d)] : null,
+    // (story v3) more than one line, a route the panel belongs to (checked as the viewer reaches it), a choice
+    says: p.says ? p.says.map(x => [x[0], IC.cutFill(S, x[1], c.d)]) : null, if: p.if || '', ask: p.ask || null }));
 };
 /* the viewer took it: seen */
 IC.cutDone = function (S, c) {
   const st = S.story; st.cutQ = st.cutQ.filter(x => x !== c);
+  if (IC.sagaSeen) IC.sagaSeen(S, c);
   st.cuts.push({ id: c.id, v: c.v, t: c.t, d: c.d });
 };
 /* a headless player (tests, the balance run) never opens the viewer: it takes them as seen */

@@ -54,6 +54,8 @@ function addFlight(S, kind, name, base) {
 IC.storyAllows = function (S, type) {
   const st = S.story; if (!st) return true;
   const d = IC.UNITS[type];
+  // (story v3) the military's batteries and radars come with the joint cell's civil seat (saga.js)
+  if (st.v3) return type === 'ssr' ? !IC.sagaLock(S, 'civil') : !IC.sagaLock(S, 'deploy') && d.cat !== 'strike';
   if (type === 'ssr') return !IC.storyLock(S, 'radar');
   if (st.act >= 4) return true;
   if (st.act >= 3) return d.cat !== 'strike';
@@ -62,6 +64,7 @@ IC.storyAllows = function (S, type) {
 };
 IC.roomAllowed = function (S, room) {
   const st = S.story; if (!st) return room !== 'aviation' || !!S.av;
+  if (st.v3) return !['air', 'intel', 'logi', 'industry'].includes(room) || !IC.sagaLock(S, 'rooms');
   // (brief 48) research from day one: the civil lanes; the military ones open in Act III (IC.techLaneOpen)
   const need = { air: 2, intel: 2, logi: 3, industry: 3 }[room];
   return !need || st.act >= need;
@@ -82,7 +85,7 @@ IC.storyForces = function (S) {
   S.airspace = 'open';
 };
 IC.CAREER_START = 5500;   // the owner's ₭5.5 billion: a big national airport that becomes the income engine, the radars the airways need, and room for mistakes
-IC.storyInit = function (S) {
+IC.storyInit = function (S, opts) {
   const W = S.world;
   S.camp = { comms: [], tips: new Set(), cards: [], chapter: '', objs: [], goal: '', sched: [], cool: {}, day: null };
   S.tension = 0;
@@ -110,6 +113,8 @@ IC.storyInit = function (S) {
   const cc = IC.cap(S);
   S.camp.focus = { x: cc.x, y: cc.y, z: 0.5 };
   if (st.fresh) Object.assign(S.layers, { coverage: false, airways: false, rings: false });
+  // (story v3) the Career as Preston's story: chapters on the war's calendar (saga.js) instead of the acts
+  if (opts && opts.story === 'v3' && IC.sagaInit) return IC.sagaInit(S);
   startAct(S, 1);
 };
 
@@ -573,7 +578,9 @@ const LOCKS = {
   trade: [5, 'Cities, growth and trade open with the economy (Chapter 6).', 'Cities, growth and trade']
 };
 IC.storyLock = function (S, key) {
-  const st = S.story; if (!st || !st.fresh || st.act > 1 || S.free) return '';
+  const st = S.story;
+  if (st && st.v3) return ['found', 'roads', 'loans', 'charges'].includes(key) ? IC.sagaLock(S, 'civil') : '';
+  if (!st || !st.fresh || st.act > 1 || S.free) return '';
   // (brief 49) a policy on the Ministry's agenda can open a lever before its chapter
   if (IC.agendaOpens && IC.agendaOpens(S, key)) return '';
   if (key === 'found') return !st.cap || (st.ch >= 4 && st.city2) || st.contract3 ? '' : st.ch < 4 ? 'A second airport comes later, when a city far from the capital wants to fly (Chapter 5).' : '';
@@ -661,6 +668,7 @@ IC.layerAllowed = function (S, k) {
   // the gaps are stretches of civil airway no radar sees: with no airways (a Quick war) there is nothing to show
   if (k === 'gaps' && !(S.asp && S.asp.ways.length)) return false;
   const st = S.story; if (!st) return true;
+  if (st.v3) return k === 'intel' || k === 'all' || k === 'logistics' ? !IC.sagaLock(S, 'rooms') : true;
   if (k === 'coverage' || k === 'airways' || k === 'rings') return !IC.storyLock(S, k === 'airways' ? 'airways' : 'coverage');
   if (k === 'gaps') return !IC.storyLock(S, 'radar') && !!(S.asp && S.asp.ways.length) && st.act === 1;
   if (k === 'intel' || k === 'all') return st.act >= 2;
@@ -1083,6 +1091,8 @@ IC.storyTick = function (S, dt) {
   if (S.free) return IC.freeTick(S, dt);
   const st = S.story, C = S.camp;
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
+  // (story v3) the chapters run the story; the classic Career's acts, desk, agenda, chains and beats stay off
+  if (st.v3) { IC.sagaTick(S, dt); delegates(S, dt); if (st.act === 4) { C.sugT = (C.sugT || 0) - dt; if (C.sugT <= 0) { C.sugT = 10; C.objs = IC.suggestions(S); } } return; }
   if (!S.first && IC.firstLandingTick) IC.firstLandingTick(S);
   // goals
   for (const g of st.goals) {
