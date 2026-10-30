@@ -8,8 +8,11 @@
   color-scheme:dark;
   --ui:1;
   --bg:#04080c;
-  --glass:rgba(9,16,23,.9);
-  --glass-2:rgba(9,16,23,.72);
+  /* (the UI polish) panels are see-through by the player's setting (--pa, the Panels menu), solid again under the mouse */
+  --pa:.8;
+  --glass:rgba(9,16,23,var(--pa));
+  --glass-2:rgba(9,16,23,calc(var(--pa) - .14));
+  --glass-hi:rgba(9,16,23,max(.93,var(--pa)));
   --well:rgba(255,255,255,.055);
   --well-2:rgba(255,255,255,.1);
   --hi:rgba(255,255,255,.06);
@@ -51,7 +54,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .app{position:relative;height:100%;border-radius:14px;overflow:hidden;overflow:clip;background:var(--bg)}
 #map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:default}
 #map.placing{cursor:crosshair}#map.dragging{cursor:grabbing}
-.glass{background:var(--glass);border-radius:14px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(12px) saturate(1.15);backdrop-filter:blur(12px) saturate(1.15)}
+.glass{background:var(--glass);border-radius:14px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);transition:background .2s}
+.glass:hover,.glass:focus-within{background:var(--glass-hi)}
 .fade-in{animation:fadeIn .18s var(--ease)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(18px)}}
@@ -1278,3 +1282,40 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .sug button{padding:.3rem .45rem;font-size:.9rem}
 /* the sandbox's panel keeps its old width: its launch row fits on one line */
 .app.compact.is-sbx .leftcol{width:22rem}
+
+/* ---------- the UI polish: see-through panels, menus refined ---------- */
+.toast:hover,.followchip:hover,.bb-main:hover,.bb-opts:hover{background:var(--glass-hi)}
+.rail button:hover{background:var(--glass-hi)}
+.app.compact .comms,.feed.fline .toast{transition:background .2s}
+/* thin hairline round every panel: the edge reads on bright farmland now the panels let the map through */
+.glass,.rail button,.toast,.followchip{box-shadow:var(--shadow),inset 0 0 0 1px rgba(160,210,240,.07)}
+/* the war rooms: the map dimly behind, the tabs as pills with their key in a chip */
+.warroom{background:rgba(6,11,16,calc(var(--pa) + .08));-webkit-backdrop-filter:blur(18px) saturate(1.1);backdrop-filter:blur(18px) saturate(1.1);box-shadow:0 30px 80px rgba(0,0,0,.6),inset 0 0 0 1px rgba(160,210,240,.07)}
+.wr-head{padding:.75rem 1rem .55rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.wr-tabs button{font-size:.95rem;padding:.4rem .7rem}
+.wr-tabs kbd{font-size:.66rem;padding:0 .3rem;border-radius:4px;background:rgba(0,0,0,.3);color:var(--dim)}
+.wr-tabs button[aria-pressed="true"] kbd{color:var(--friend);background:rgba(111,210,255,.12)}
+.wr-body{padding-top:.9rem}
+.card{background:rgba(255,255,255,.035);box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.card h3 em{text-align:right}
+/* the pause menu: a blurred map behind, one wide card, Resume first and bright */
+.menu{background:rgba(3,7,11,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.mbox2{width:min(26rem,90%);gap:5px;padding:1.3rem 1.3rem 1.1rem}
+.mbox2 small{letter-spacing:.06em;line-height:1.4}
+.mbox2 h2{margin:0 0 .5rem}
+.mi{padding:.55rem .8rem;border-left:3px solid transparent;transition:background .15s,border-color .15s}
+.mi:hover{border-left-color:var(--friend)}
+.mi:first-of-type{background:rgba(111,210,255,.16)}
+.mi:first-of-type b{color:var(--friend)}
+.mi.warn{margin-top:.35rem}
+.mi.warn:hover{background:rgba(255,91,79,.14);border-left-color:var(--hostile)}
+/* the inspector's folded sections: rows with a chevron, not loose blue links */
+.insp .more{display:flex;justify-content:space-between;align-items:center;width:100%;margin:0;padding:.42rem .6rem;border-radius:9px;background:var(--well);color:var(--text);font-weight:600;text-align:left}
+.insp .more:hover{background:var(--well-2)}
+/* the Panels menu's see-through slider */
+.hm-alpha{display:grid;grid-template-columns:auto 1fr auto;gap:.6rem;align-items:center;padding:.4rem .45rem .2rem;font-size:.88rem;color:var(--muted)}
+.hm-alpha input{width:100%;accent-color:var(--friend)}
+.hm-alpha b{font-family:var(--mono);font-size:.8rem;font-weight:500;color:var(--text);min-width:2.6rem;text-align:right}
+/* a card's title stays on one line; its note wraps beside it */
+.card h3{white-space:nowrap}
+.card h3 em{white-space:normal;min-width:0}

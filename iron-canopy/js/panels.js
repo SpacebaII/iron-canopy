@@ -44,6 +44,8 @@ hud.bind = function (st) {
 
 hud.apply = function (st) {
   S = st; const app = $('app'); if (!app) return;
+  // how much of the map shows through the panels (a hovered panel is solid again, app.css)
+  const pa = String(L.alpha || 0.8); if (document.documentElement.style.getPropertyValue('--pa') !== pa) document.documentElement.style.setProperty('--pa', pa);
   const ui = IC.ui, want = wanted(), clean = !!L.clean && !hud.arrange;
   // the top of the panels follows the top bar, one row or two
   const tb = [document.querySelector('.tb-left'), document.querySelector('.tb-right')].map(e => e ? e.getBoundingClientRect().bottom : 0);
@@ -71,7 +73,13 @@ hud.apply = function (st) {
   } else app.classList.remove('insp-clear');
   $('hudBtn') && $('hudBtn').classList.toggle('on', hud.menu || hud.arrange || !!L.clean);
   // a story card beside the goals moves down as the goals grow, never over them
-  const cn = $('cine'); if (cn && !cn.hidden && cn.classList.contains('side') && ui.cineCur && ui.placeCard) ui.placeCard(cn, ui.cineCur);
+  for (const id of ['cine', 'evcard']) {
+    const cn = $(id); if (!cn || cn.hidden || !cn.classList.contains('side')) continue;
+    if (id === 'cine' && ui.cineCur && ui.placeCard) ui.placeCard(cn, ui.cineCur);
+    // a card that would run down over the arsenal goes to the right side instead
+    const cr = cn.getBoundingClientRect(), ar = $('arsenal'), arr = ar && !ar.classList.contains('hud-off') && ar.innerHTML ? ar.getBoundingClientRect() : null;
+    if (arr && arr.height && cr.bottom > arr.top - 8 && cr.left < arr.right && cn.style.left !== 'auto') { cn.style.left = 'auto'; cn.style.right = Math.round((ui.mapRight || 0) + 12) + 'px'; cn.style.top = 'var(--top)'; }
+  }
   // with every panel hidden, one quiet line says how to bring them back
   let hc = $('hudclean');
   if (clean && !hc) { hc = document.createElement('button'); hc.id = 'hudclean'; hc.className = 'hudclean'; hc.dataset.hud = 'clean'; hc.innerHTML = 'Panels hidden · <kbd>Shift+P</kbd> brings them back'; app.appendChild(hc); }
@@ -103,10 +111,13 @@ function menu() {
   const rows = IC.HUD_PANELS.filter(p => p.hide && (elOf(p) && (elOf(p).innerHTML || p.id === 'mapbox' || p.id === 'rail'))).map(p =>
     `<button class="hm-row" data-hud="tog" data-v="${p.id}" aria-pressed="${!L.off[p.id]}"><i></i>${esc(p.name)}</button>`).join('');
   const mini = S && !S.range ? `<button class="hm-row" data-hud="mini" aria-pressed="${!!IC.ui.miniOn}"><i></i>Minimap</button>` : '';
+  const pct = Math.round((1 - (L.alpha || 0.8)) * 100);
   const html = `<h4>On the screen</h4>${rows}${mini}
+    <label class="hm-alpha" title="How much of the map shows through the panels. A panel under the mouse turns solid so it reads easily.">See-through<input type="range" min="0" max="50" step="5" value="${pct}" data-hud="alpha"><b>${pct}%</b></label>
     <div class="hm-acts"><button class="btn sm" data-hud="arrange">Move panels</button><button class="btn sm" data-hud="clean">${L.clean ? 'Show panels' : 'Hide all'} <kbd>Shift+P</kbd></button><button class="btn sm ghost" data-hud="reset" title="Every panel back where it started, all shown">Reset</button></div>
     <p class="hm-note">Click a panel's title to fold it. Where you put things is kept in this browser.</p>`;
-  if (el._h !== html) { el.innerHTML = html; el._h = html; }
+  // (not rebuilt while the slider is held: the drag would be lost)
+  if (el._h !== html && !el.contains(document.activeElement && document.activeElement.type === 'range' ? document.activeElement : null)) { el.innerHTML = html; el._h = html; }
   const b = $('hudBtn'), ab = $('app').getBoundingClientRect();
   if (b) { const r = b.getBoundingClientRect(); el.style.top = Math.round(r.bottom - ab.top + 8) + 'px'; el.style.right = Math.max(12, Math.round(ab.right - r.right - 40)) + 'px'; }
 }
@@ -171,9 +182,17 @@ document.addEventListener('click', e => {
   else if (a === 'clean') { L.clean = !L.clean; hud.menu = false; }
   else if (a === 'arrange') { arrangeOn(true); return; }
   else if (a === 'done') { arrangeOn(false); return; }
-  else if (a === 'reset') { L.pos = {}; L.off = {}; L.clean = false; L.layers = false; for (const p of IC.HUD_PANELS) { const el = elOf(p); if (el) el.style.translate = ''; } }
+  else if (a === 'alpha') return;
+  else if (a === 'alphaSet') L.alpha = Math.round((1 - v / 100) * 100) / 100;
+  else if (a === 'reset') { L.pos = {}; L.off = {}; L.clean = false; L.layers = false; delete L.alpha; for (const p of IC.HUD_PANELS) { const el = elOf(p); if (el) el.style.translate = ''; } }
   save();
   if (S) IC.ui.refresh(true);
+});
+document.addEventListener('input', e => {
+  if (!e.target.matches || !e.target.matches('[data-hud="alpha"]')) return;
+  L.alpha = Math.round((1 - e.target.value / 100) * 100) / 100; save();
+  document.documentElement.style.setProperty('--pa', String(L.alpha));
+  const b = e.target.parentNode.querySelector('b'); if (b) b.textContent = e.target.value + '%';
 });
 // (before the game's own keys: Esc closes the menu or ends arranging first)
 window.addEventListener('keydown', e => {
