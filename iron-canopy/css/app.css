@@ -8,8 +8,11 @@
   color-scheme:dark;
   --ui:1;
   --bg:#04080c;
-  --glass:rgba(9,16,23,.9);
-  --glass-2:rgba(9,16,23,.72);
+  /* (the UI polish) panels are see-through by the player's setting (--pa, the Panels menu), solid again under the mouse */
+  --pa:.8;
+  --glass:rgba(9,16,23,var(--pa));
+  --glass-2:rgba(9,16,23,calc(var(--pa) - .14));
+  --glass-hi:rgba(9,16,23,max(.93,var(--pa)));
   --well:rgba(255,255,255,.055);
   --well-2:rgba(255,255,255,.1);
   --hi:rgba(255,255,255,.06);
@@ -51,7 +54,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .app{position:relative;height:100%;border-radius:14px;overflow:hidden;overflow:clip;background:var(--bg)}
 #map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:default}
 #map.placing{cursor:crosshair}#map.dragging{cursor:grabbing}
-.glass{background:var(--glass);border-radius:14px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(12px) saturate(1.15);backdrop-filter:blur(12px) saturate(1.15)}
+.glass{background:var(--glass);border-radius:14px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);transition:background .2s}
+.glass:hover,.glass:focus-within{background:var(--glass-hi)}
 .fade-in{animation:fadeIn .18s var(--ease)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(18px)}}
@@ -1230,3 +1234,88 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 /* (brief 70) a painted portrait over the drawn face, in the same round frame */
 .facewrap{position:relative;display:block;flex:none}
 .facewrap .faceart{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+
+/* ---------- the UI clean-up: panels the player hides, folds and moves (panels.js) ---------- */
+.hud-off{display:none!important}
+.app:not(.layers-open) #layers{display:none}
+.mapctl [data-hud="layers"][aria-pressed="true"]{color:var(--friend);background:rgba(20,54,72,.92)}
+.app.compact.has-insp .mapbox{right:calc(21rem + 24px)}
+/* a short selection panel leaves the map controls in their corner; so does a panel the player moved */
+.app.has-insp.insp-clear .mapbox,.app.has-insp .mapbox.hud-moved{right:12px}
+.arsenal.min .slots{display:none}
+.arsenal.min{min-width:0;padding:.35rem .5rem}
+.ib.on{background:rgba(111,210,255,.22);color:var(--friend)}
+.hudmenu{position:absolute;z-index:9;width:17rem;padding:.7rem .75rem .65rem;display:grid;gap:2px;animation:fadeIn .15s var(--ease)}
+.hudmenu h4{margin:0 0 .3rem;font-family:var(--display);font-weight:600;font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.hm-row{display:flex;gap:.6rem;align-items:center;text-align:left;padding:.32rem .45rem;border-radius:8px;font-size:.9rem;color:var(--muted)}
+.hm-row:hover{background:var(--well);color:var(--text)}
+.hm-row i{width:1.9rem;height:1.05rem;border-radius:999px;background:var(--well-2);position:relative;flex:none;transition:background .15s}
+.hm-row i::after{content:'';position:absolute;top:2px;left:2px;width:calc(1.05rem - 4px);height:calc(1.05rem - 4px);border-radius:50%;background:var(--dim);transition:transform .15s,background .15s}
+.hm-row[aria-pressed="true"]{color:var(--text)}
+.hm-row[aria-pressed="true"] i{background:rgba(111,210,255,.35)}
+.hm-row[aria-pressed="true"] i::after{transform:translateX(.85rem);background:var(--friend)}
+.hm-acts{display:flex;flex-wrap:wrap;gap:4px;margin-top:.5rem}
+.hm-note{margin:.45rem 0 0;font-size:.78rem;color:var(--dim);line-height:1.35}
+.hudframes{position:absolute;inset:0;z-index:8;background:rgba(2,6,10,.35)}
+.hf{position:absolute;border:2px dashed rgba(111,210,255,.75);border-radius:14px;background:rgba(111,210,255,.1);cursor:grab;display:flex;flex-direction:column;gap:.3rem;align-items:flex-start;padding:.35rem;touch-action:none;overflow:hidden}
+.hf:hover{background:rgba(111,210,255,.18)}
+.hf.drag{cursor:grabbing;background:rgba(111,210,255,.24);border-style:solid}
+.hf span{font-family:var(--display);font-weight:700;font-size:.85rem;letter-spacing:.12em;text-transform:uppercase;color:#e4f6ff;background:rgba(6,26,38,.92);padding:.15rem .55rem;border-radius:8px;pointer-events:none}
+.hf .btn{background:rgba(6,26,38,.92)}
+.hf-bar{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:flex;gap:.7rem;align-items:center;padding:.5rem .6rem .5rem 1rem;white-space:nowrap;z-index:1}
+.hf-bar span{font-size:.88rem;color:var(--muted)}
+.hudclean{position:absolute;z-index:4;left:12px;bottom:12px;font-size:.8rem;color:var(--muted);padding:.3rem .7rem;border-radius:999px;background:var(--glass-2)}
+.hudclean:hover{color:var(--text)}
+/* behind a tall selection panel the minimap steps out (its controls stay): it no longer sits in the middle of the map */
+.app.has-insp:not(.insp-clear) .mapbox:not(.hud-moved) #mini{display:none}
+/* the arsenal's tiles a size smaller, so a war's arsenal is a strip, not a wall */
+.tiles{gap:5px}
+.tile{width:6.7rem;padding:.35rem .25rem .3rem;gap:2px;border-radius:10px}
+.tile canvas{width:2.6rem;height:2rem}
+.tile .tn{font-size:.88rem}
+.tile .tr{font-size:.68rem;min-height:2.2em}
+.tile .tc,.tile .buy{font-size:.7rem}
+.arsenal{gap:.4rem;padding:.5rem .6rem .55rem}
+/* the situation's suggestions a little tighter */
+.brief{padding:.7rem .85rem;gap:.45rem}
+.sug{gap:2px}
+.sug button{padding:.3rem .45rem;font-size:.9rem}
+/* the sandbox's panel keeps its old width: its launch row fits on one line */
+.app.compact.is-sbx .leftcol{width:22rem}
+
+/* ---------- the UI polish: see-through panels, menus refined ---------- */
+.toast:hover,.followchip:hover,.bb-main:hover,.bb-opts:hover{background:var(--glass-hi)}
+.rail button:hover{background:var(--glass-hi)}
+.app.compact .comms,.feed.fline .toast{transition:background .2s}
+/* thin hairline round every panel: the edge reads on bright farmland now the panels let the map through */
+.glass,.rail button,.toast,.followchip{box-shadow:var(--shadow),inset 0 0 0 1px rgba(160,210,240,.07)}
+/* the war rooms: the map dimly behind, the tabs as pills with their key in a chip */
+.warroom{background:rgba(6,11,16,calc(var(--pa) + .08));-webkit-backdrop-filter:blur(18px) saturate(1.1);backdrop-filter:blur(18px) saturate(1.1);box-shadow:0 30px 80px rgba(0,0,0,.6),inset 0 0 0 1px rgba(160,210,240,.07)}
+.wr-head{padding:.75rem 1rem .55rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.wr-tabs button{font-size:.95rem;padding:.4rem .7rem}
+.wr-tabs kbd{font-size:.66rem;padding:0 .3rem;border-radius:4px;background:rgba(0,0,0,.3);color:var(--dim)}
+.wr-tabs button[aria-pressed="true"] kbd{color:var(--friend);background:rgba(111,210,255,.12)}
+.wr-body{padding-top:.9rem}
+.card{background:rgba(255,255,255,.035);box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.card h3 em{text-align:right}
+/* the pause menu: a blurred map behind, one wide card, Resume first and bright */
+.menu{background:rgba(3,7,11,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.mbox2{width:min(26rem,90%);gap:5px;padding:1.3rem 1.3rem 1.1rem}
+.mbox2 small{letter-spacing:.06em;line-height:1.4}
+.mbox2 h2{margin:0 0 .5rem}
+.mi{padding:.55rem .8rem;border-left:3px solid transparent;transition:background .15s,border-color .15s}
+.mi:hover{border-left-color:var(--friend)}
+.mi:first-of-type{background:rgba(111,210,255,.16)}
+.mi:first-of-type b{color:var(--friend)}
+.mi.warn{margin-top:.35rem}
+.mi.warn:hover{background:rgba(255,91,79,.14);border-left-color:var(--hostile)}
+/* the inspector's folded sections: rows with a chevron, not loose blue links */
+.insp .more{display:flex;justify-content:space-between;align-items:center;width:100%;margin:0;padding:.42rem .6rem;border-radius:9px;background:var(--well);color:var(--text);font-weight:600;text-align:left}
+.insp .more:hover{background:var(--well-2)}
+/* the Panels menu's see-through slider */
+.hm-alpha{display:grid;grid-template-columns:auto 1fr auto;gap:.6rem;align-items:center;padding:.4rem .45rem .2rem;font-size:.88rem;color:var(--muted)}
+.hm-alpha input{width:100%;accent-color:var(--friend)}
+.hm-alpha b{font-family:var(--mono);font-size:.8rem;font-weight:500;color:var(--text);min-width:2.6rem;text-align:right}
+/* a card's title stays on one line; its note wraps beside it */
+.card h3{white-space:nowrap}
+.card h3 em{white-space:normal;min-width:0}

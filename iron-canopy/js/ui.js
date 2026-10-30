@@ -9,8 +9,9 @@ const ui = IC.ui = { cat: 'ad', room: null, busyUntil: 0, cache: {}, ci: 0, show
   sub: { aviation: 'ops', economy: 'money', logi: 'stock' }, fresh: new Set(), known: null, moments: [], momentT: 0 };
 let S = null;
 const esc = U.esc;
-/* (round 3) the map first: the Career's screen keeps to one goal line, one message line and a narrow inspector */
-ui.compact = () => !!(IC.FOCUS && IC.FOCUS.screen && S && S.mode === 'story');
+/* (round 3) the map first: one goal line, one message line and a narrow inspector. The Career's screen, and since the
+   UI clean-up every other game's too, but for the Academy, whose lessons speak through the staff messages */
+ui.compact = () => !!(IC.FOCUS && IC.FOCUS.screen && S && S.mode !== 'academy');
 ui.esc = esc;
 ui.kbd = k => k ? `<kbd>${k}</kbd>` : '';
 /* a small line icon, drawn with the same stroke as the rail */
@@ -96,6 +97,7 @@ ui.bind = function (state) {
   // nothing from the previous game stays on screen: its chapter card, its unlocks, its hints
   ui.fresh = new Set(); ui.known = null; ui.moments = []; ui.moment = null; ui.menu = false; IC.hint.clear();
   for (const id of ['warroom', 'cine', 'unlock', 'menu', 'tip']) $(id).hidden = true;
+  if (IC.hud) IC.hud.bind(S);
   ui.refresh(true);
 };
 
@@ -191,7 +193,7 @@ function topbar() {
     ${act >= 3 ? `<div class="rl doctrine" title="Firing doctrine"><span>Doctrine</span>${seg('doctrine', S.ad.doctrine, [['sls', 'Look', '', 'Shoot-look-shoot: one missile, then another if it missed'], ['salvo', 'Salvo', '', 'Two missiles at once'], ['conserve', 'Save', 'amb', 'Only high-probability shots']])}</div>` : ''}
     ${IC.civilAct(S) ? '' : `<div class="rl airspace" title="Civil airspace: who may fly over the country"><span>Airspace</span>${seg('airspace', S.airspace, [['open', 'Open', '', 'Airliners fly their normal routes'], ['restricted', 'Restricted', 'amb', 'Airliners keep to the southern corridors only'], ['closed', 'Closed', 'red', 'No civil flights at all: the airlines lose money']])}</div>`}
 `);
-  setHTML($('sys'), `${S.mode !== 'range' ? `<button class="ib wide ${IC.bb && IC.bb.open ? 'on' : ''}" data-act="bbToggle" title="Build: the airport's build bar (B)">${ui.icon('aviation')}<span>Build</span></button>` : ''}<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
+  setHTML($('sys'), `${S.mode !== 'range' ? `<button class="ib wide ${IC.bb && IC.bb.open ? 'on' : ''}" data-act="bbToggle" title="Build: the airport's build bar (B)">${ui.icon('aviation')}<span>Build</span></button>` : ''}<button class="ib" data-act="mute" title="Sound on or off">${ui.icon(IC.sfx.muted || !IC.sfx.on ? 'muted' : 'sound')}</button><button class="ib" id="hudBtn" data-hud="menu" title="Panels: hide, fold or move what is on the screen (Shift+P hides them all)">${ui.icon('panels')}</button><button class="ib" data-act="room" data-v="reference" title="Guide: how everything works (?)">${ui.icon('reference')}</button><button class="ib" id="menuBtn" data-act="menu" title="Menu: settings, the Guide, quit (Esc)">${ui.icon('menu')}</button>`);
   alerts();
   incidents();
   evcard();
@@ -267,6 +269,7 @@ function alerts() {
 
 /* ---------- rail ---------- */
 const ICON = {
+  panels: '<rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="14" width="8" height="6" rx="1.5"/>',
   air: '<path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/>',
   logi: '<path d="M2 7h12v9H2zM14 10h4l3 3v3h-7z"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
   industry: '<path d="M3 20V10l6 3.5V10l6 3.5V5h4v15zM3 20h18"/>',
@@ -450,7 +453,7 @@ function brief() {
       ${sug.length ? `<div class="sug">${sug.map((o, i) => `<button class="p${o.pri}" data-act="sug" data-v="${i}"><i></i><span>${esc(o.text)}</span></button>`).join('')}</div>` : '<p class="hint">Nothing urgent. Good time to build up: deploy reserves, order stock, research.</p>'}`;
   }
   $('brief').classList.add('glass');
-  $('brief').classList.toggle('min', !!ui.briefMin && !ui.compact());
+  $('brief').classList.toggle('min', !!ui.briefMin && !(ui.compact() && S.story));
   $('brief').classList.toggle('next', ui.compact() && !!S.story);
   $('brief').classList.toggle('desk', !!(S.story && IC.deskOn && IC.deskOn(S)));
   setHTML($('brief'), h);
@@ -1083,6 +1086,7 @@ ui.refresh = function (force) {
   $('app').classList.toggle('has-room', !!ui.room);
   $('app').classList.toggle('is-range', !!S.range);
   $('app').classList.toggle('is-sbx', !!S.sbx);   // (the sandbox's panel keeps its height: the staff messages give way)   // (the test range is an empty plane: no minimap to show)
+  if (IC.hud) IC.hud.apply(S);
   if (S.over && !ui.overDismissed && $('over').hidden) showOver();
 };
 function showOver() {
