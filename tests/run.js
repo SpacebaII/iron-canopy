@@ -1174,6 +1174,59 @@ test('traffic: vehicles start at real places and drive the road graph like traff
   assert(T.lines.some(l => l.kind === 'bus') && T.lines.some(l => l.kind === 'coach'), 'no bus or coach lines');
   for (const l of T.lines) { assert(connected(l.path), `${l.name} is not a connected route`); if (l.kind === 'bus') assert(l.stops.length >= 3, `${l.name} has no stops`); }
 });
+test('traffic: close in, vehicles pull away and brake smoothly, slow before junctions by how sharp the turn is and fade in and out (round 8)', () => {
+  IC.seedRandom(7);
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  const cap = IC.cap(S), D = IC.TRAFFIC_DRIVE;
+  for (let i = 0; i < 8; i++) { S.time += 0.25; IC.traffic(S, 0.25); }
+  const view = { x0: cap.x - 15, y0: cap.y - 10, x1: cap.x + 15, y1: cap.y + 10 };
+  IC.trafficAgents(S, view, 0);
+  const prev = new Map(), seenIn = new Set(), seenOut = new Set(), G = S.traffic.G;
+  let n = 0, hard = 0, jump = 0, fast = 0, near = 0, turnV = 0, straight = 0, straightV = 0;
+  for (let i = 0; i < 300; i++) {
+    S.time += 0.25; IC.traffic(S, 0.25);
+    for (const a of IC.trafficAgents(S, view, 0.25)) {
+      const v0 = prev.get(a.id), f = IC.agentFade(S, a);
+      if (v0 != null) { n++; const acc = (a.v - v0) / 0.25; if (acc < -D.hard * 1.01) hard++; if (acc > D.acc * 1.01) jump++; }
+      prev.set(a.id, a.v);
+      if (f < 1 && a.out == null) seenIn.add(a.id); if (a.out != null && f < 1) seenOut.add(a.id);
+      // (a few metres from a junction, nobody is still at full speed)
+      const [lk, d] = a.route[a.ri], nd = G.nodes[d ? lk.a : lk.b];
+      // (turning there, nobody is still at full speed; going straight on, they keep more of it)
+      if (nd.out.length >= 3 && !nd.sig && lk.len - a.s < 0.05 && a.ri + 1 < a.route.length) {
+        const [nl, ndr] = a.route[a.ri + 1], h0 = IC.agentPos(a).h, P = nl.pts, q0 = ndr ? P[P.length - 1] : P[0], q1 = ndr ? P[P.length - 2] : P[1];
+        const tc = Math.cos(Math.atan2(q1.y - q0.y, q1.x - q0.x) - h0), f = a.v / lk.C.v;
+        if (tc < 0.5) { near++; turnV += f; if (f > 0.75) fast++; } else if (tc > 0.95) { straight++; straightV += f; }
+      }
+    }
+  }
+  assert(n > 100000, `only ${n} vehicle moments`);
+  // (the hardest braking is for what turns up in front at a junction: rare)
+  assert(hard < n * 0.002, `${hard} of ${n} moments braked harder than ${D.hard * 100} m/s²`);
+  assert(jump === 0, `${jump} moments pulled away faster than ${D.acc * 100} m/s²`);
+  assert(near > 200 && fast < near * 0.05, `${fast} of ${near} vehicles turning at a junction reached it at full speed`);
+  assert(straight > 200 && straightV / straight > turnV / near + 0.1, `straight on through a junction (${(straightV / Math.max(1, straight)).toFixed(2)} of the limit) is not faster than turning (${(turnV / near).toFixed(2)})`);
+  assert(seenIn.size > 50 && seenOut.size > 5, `${seenIn.size} vehicles faded in as they pulled out, ${seenOut.size} out as they parked`);
+});
+test('motion: buses turn through corners, and airside vehicles pull away and stop gently (round 8)', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  // a bus's heading changes a little at a time along its whole line, not a quarter turn at a corner
+  let n = 0, snap = 0;
+  for (const b of S.buses.slice(0, 20)) {
+    const L = b.line.len, o = { line: b.line, dir: 1, s: 0 };
+    let h0 = null;
+    for (let s = 0.05; s < L - 0.05; s += 0.01) { o.s = s; const h = IC.busPos(o).h; if (h0 != null) { n++; let d = Math.abs(h - h0) % (2 * Math.PI); if (d > Math.PI) d = 2 * Math.PI - d; if (d > 0.4) snap++; } h0 = h; }
+  }
+  assert(n > 1000 && snap < n * 0.002, `${snap} of ${n} metres along the bus lines turned more than 23°`);
+  // a service vehicle drives in at its speed in the middle of the way, slower as it pulls away and comes to a stop
+  const path = { pts: [{ x: 0, y: 0 }, { x: 1, y: 0 }], cum: [0, 1], len: 1 }, job = { ta: 1000, td: 2000, lag: 0 }, V = IC.LIFE.drive, dT = 1 / V, o = {};
+  const at = t => (IC.turnVehAt(job, path, t, o), o.x);
+  const e = 0.01 * dT, v = t => (at(t + e) - at(t - e)) / (2 * e);
+  // (2 m from the start and 2 m short of the aircraft)
+  assert(v(job.ta - dT + 0.02 / V) < V * 0.7 && v(job.ta - 0.02 / V) < V * 0.7, 'a vehicle starts or stops at full speed');
+  assert(v(job.ta - dT / 2) >= V * 0.99, 'a vehicle crawls in the middle of its way');
+  assert(Math.abs(at(job.ta) - 1) < 1e-6 && Math.abs(at(job.ta - dT) - 0) < 1e-6, 'a vehicle does not take its usual time');
+});
 test('traffic: a cut road makes a visible queue, and close-in traffic turns back from it', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const T = S.traffic, G = T.G;
@@ -2647,6 +2700,28 @@ test('front side: a terminal gets a curved forecourt, an airport road and car pa
   // (the country's road ends at the airport road's gate)
   const n = S.world.nodes[cap.id];
   assert(n && n.gate && U.dist(n, road.pts[road.pts.length - 1]) < 2, 'the country road does not meet the airport road');
+});
+test('front side: the landside stands on mown grass with trees along its roads, its car parks have a few straight sides (round 8)', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;
+  const cap = S.byId[S.story.cap];
+  growFront(S, cap, 3000);
+  const L = cap.land, G = IC.landGround(S, cap), parks = L.items.filter(it => it.kind === 'park' && it.poly);
+  // every car park and building has its lawn, every road on the ground its verge
+  assert(G.lawn.length === L.items.length && G.verge.length === L.roads.filter(r => !r.lv).length, `${G.lawn.length} lawns for ${L.items.length} items, ${G.verge.length} verges`);
+  // trees line the airport road; none stands on a car park, a building, a road or inside the fence
+  assert(G.trees.length / 2 > 20, `only ${G.trees.length / 2} trees along the landside's roads`);
+  for (let i = 0; i < G.trees.length; i += 2) {
+    const q = { x: G.trees[i], y: G.trees[i + 1] };
+    assert(!L.items.some(it => U.inPoly(q.x, q.y, IC.partOutline(it).map(p => [p.x, p.y]))), 'a tree stands on a car park or a building');
+    assert(!L.roads.some(r => r.pts.some((p, j) => j && U.segDist(q.x, q.y, r.pts[j - 1].x, r.pts[j - 1].y, p.x, p.y) < (r.w || 0.12) / 2)), 'a tree stands on a road');
+    assert(!IC.aptInFence(cap, q), 'a tree stands inside the fence');
+  }
+  // the car parks fitted to the ground are a handful of straight sides, not a staircase of 5 m cells
+  for (const it of parks) {
+    const P = IC.partOutline(it), short = P.filter((p, j) => U.dist(p, P[(j + 1) % P.length]) < 0.06).length;
+    assert(P.length <= 24 && short <= 2, `a car park's outline has ${P.length} corners, ${short} sides under 6 m`);
+  }
+  assert(IC.aptOverlaps(S, cap).length === 0, IC.aptOverlaps(S, cap).map(o => o.text).join('; '));
 });
 test('front side: with no room to park, travellers choose other airports, and with the developers turned off nothing is built', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 8 }); IC.S = S;

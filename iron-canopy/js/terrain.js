@@ -278,7 +278,7 @@ function dirtyUp(x0, y0, x1, y1) {
 function airfields(g, S, x0, y0, x1, y1, lod) {
   const poly = P => { g.beginPath(); P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); };
   for (const ap of IC.bases(S)) {
-    if (!ap.parts || ap.x + ap.radius < x0 || ap.x - ap.radius > x1 || ap.y + ap.radius < y0 || ap.y - ap.radius > y1) continue;
+    if (!ap.parts || ap.x + ap.radius + 12 < x0 || ap.x - ap.radius - 12 > x1 || ap.y + ap.radius + 12 < y0 || ap.y - ap.radius - 12 > y1) continue;   // (+12: the landside's car parks along the airport road)
     const b = IC.aptFence && IC.aptFence(ap);
     if (b && b.poly && b.poly.length > 2) {
       g.fillStyle = 'rgba(96,112,70,0.3)'; poly(IC.polyGrow(b.poly, 2.5)); g.fill();
@@ -286,12 +286,28 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
       // (close in, the same grass as the airport's own tiles: tufts and mottling)
       if (lod >= 2 && IC.paveFill) { g.globalAlpha = 0.6; g.fillStyle = IC.paveFill(g, 'grass', LOD(lod).ppu, 0, 0, 0); g.fill(); g.globalAlpha = 1; }
     }
+    // the landside's own ground (landside.js, IC.landGround): mown grass round its car parks and buildings and along
+    // its roads, over the fields it was built on, and avenue trees along the airport road
+    const LG = IC.landGround && IC.landGround(S, ap);
+    if (LG && (LG.lawn.length || LG.verge.length)) {
+      const paint = style => {
+        // (mitred and butt-ended: the lawn keeps the straight sides of what it surrounds instead of swelling round it)
+        g.fillStyle = g.strokeStyle = style; g.lineJoin = 'miter'; g.miterLimit = 3; g.lineCap = 'butt';
+        g.beginPath(); for (const P of LG.lawn) { P.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.closePath(); }
+        g.lineWidth = 2 * LG.grow; g.fill(); g.stroke();
+        for (const v of LG.verge) { g.lineWidth = v.w; g.beginPath(); v.pts.forEach((q, i) => g[i ? 'lineTo' : 'moveTo'](q.x, q.y)); g.stroke(); }
+      };
+      paint('rgb(94,114,68)');
+      if (lod >= 2 && IC.paveFill) { g.globalAlpha = 0.5; paint(IC.paveFill(g, 'grass', LOD(lod).ppu, 0, 0, 0)); g.globalAlpha = 1; }
+      if (lod >= 2 && LG.trees.length) trees(g, LG.trees, lod >= 4 ? 0.05 : 0.06, 0.025);
+    }
     const paved = ap.parts.filter(p => p.built !== false && (p.kind === 'runway' || p.kind === 'taxi' || p.kind === 'apron' || p.kind === 'alert'));
     // mown: 40 m along taxiways and round aprons
     g.strokeStyle = g.fillStyle = 'rgba(104,122,72,0.5)'; g.lineCap = 'round'; g.lineJoin = 'round';
     for (const p of paved) {
       if (p.kind === 'taxi') { g.lineWidth = (p.w || 0.23) + 0.8; g.beginPath(); p.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
-      else if (p.kind !== 'runway' && IC.partOutline) { const P = IC.partOutline(p); g.lineWidth = 0.8; poly(P); g.fill(); g.stroke(); }
+      // (round 8: round an apron the mown band keeps its straight sides and corners, mitred, instead of swelling)
+      else if (p.kind !== 'runway' && IC.partOutline) { const P = IC.partOutline(p); g.lineWidth = 0.8; g.lineJoin = 'miter'; g.miterLimit = 2; poly(P); g.fill(); g.stroke(); g.lineJoin = 'round'; }
     }
     // the graded strip: 150 m either side of the runway and 60 m beyond its ends, kept short
     for (const p of paved) if (p.kind === 'runway') {

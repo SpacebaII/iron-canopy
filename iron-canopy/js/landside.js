@@ -1,7 +1,7 @@
 /* Iron Canopy — the landside of an airport, generated. A new airport gets an access road to the road network, paid
    for and shown like any road works (growth.js builds it). As passengers and cargo grow, the airport fills in by
    itself on the side of the terminal away from the aprons (brief 61, the front side): a kerb road along the terminal
-   and a forecourt loop bowed out in front of it, a bus stop (a rail station when it is busy and a railway runs close)
+   and a forecourt loop in front of it, a bus stop (a rail station when it is busy and a railway runs close)
    and a taxi rank on the forecourt, short-stay parking inside the loop, then an airport road curving away towards the
    road network with car parks along it, each shaped to the free ground it is given, parking garages, hotels and
    offices; cargo warehouses beside the cargo sheds. Parking is sized to the passengers: a car park full means
@@ -44,7 +44,7 @@ function landSide(ap, t) {
 IC.landSide = landSide;
 /* ---------- a terminal's front side (brief 61) ---------- */
 /* Laid out like a real terminal front rather than in rows: the kerb road along the terminal face, a one-way
-   forecourt loop round in front of it with its far side bowed out, and an airport road leaving the far side and
+   forecourt loop in front of it, straight-sided with rounded far corners, and an airport road leaving the far side and
    curving away towards the road network. The bus stop and the taxi rank stand on the forecourt by the kerb's ends,
    short-stay parking (a car park, or garages at a busy airport) fills the loop, hotels stand beside the forecourt,
    and the long-stay car parks, more garages, hotels and offices line the airport road, nearest first, both sides
@@ -83,12 +83,14 @@ function front(S, ap, t) {
   const to = (ap.land && ap.land.access && ap.land.access.pts[0]) || ownRoadEnd(S, ap) || ap.cityRef || null;
   const lt = to ? IC.rectLocal(t, to) : { x: 0 }, sg = Math.abs(lt.x) > 1 ? Math.sign(lt.x) : (U.hash(t.x * 7, t.y * 3) < 0.5 ? -1 : 1);
   const sA = sg * Math.min(X * 0.4, 1.2);
-  // the loop, local (s, d): up the far leg, round the bowed far side, down the near leg, its corners rounded
-  const far = []; for (let k = 0; k <= 10; k++) { const s = X - 2 * X * k / 10; far.push({ x: s, y: FORE + BULGE * (1 - (s / X) * (s / X)) }); }
-  const loopL = smooth([{ x: X, y: KERB_D }].concat(far, [{ x: -X, y: KERB_D }]), 3);
-  // where the airport road leaves the far side: the point of the loop at sA
-  let d0 = FORE + BULGE * (1 - (sA / X) * (sA / X));
-  for (let i = 1; i < loopL.length; i++) { const a = loopL[i - 1], b = loopL[i]; if (a.y > FORE * 0.8 && (a.x - sA) * (b.x - sA) <= 0 && a.x !== b.x) { d0 = a.y + (b.y - a.y) * (sA - a.x) / (b.x - a.x); break; } }
+  // the loop, local (s, d): up the far leg, along the straight far side, down the near leg; only its two far
+  // corners turn, on a 35 m kerb radius, so it reads as a forecourt rather than a racetrack
+  const D = FORE + 0.3, R = Math.min(0.35, X * 0.5, D - KERB_D - 0.1), loopL = [{ x: X, y: KERB_D }];
+  for (const [cx, a0] of [[X - R, 0], [-X + R, Math.PI / 2]])
+    for (let k = 0; k <= 6; k++) { const a = a0 + Math.PI / 2 * k / 6; loopL.push({ x: cx + R * Math.cos(a), y: D - R + R * Math.sin(a) }); }
+  loopL.push({ x: -X, y: KERB_D });
+  // where the airport road leaves the far side
+  const d0 = D;
   // the airport road, local: out from the loop, curving more as it goes (towards the network), every 25 m
   // (as long as the terminal is big: 300 m before a small one, 800 m before the largest)
   // (and on a little further, where the country's road comes in)
@@ -140,29 +142,40 @@ function frontBlocks(S, ap, t, bare) {
   }
   return out;
 }
-/* the free ground inside an outline P (world points), off everything in B: cells 5 m across, the largest piece of
-   them traced and straightened. null when it is less than min hectares (units squared) */
+/* the free ground inside an outline P (world points), off everything in B: cells 5 m across, laid square to the
+   outline's longest side (the road it lines), so its sides along the road come out straight; the largest piece of
+   them, a cell in from its edge, traced and straightened to within 8 m, so a car park's outline is a few straight
+   sides rather than a staircase of cells. null when it is less than min hectares (units squared) */
 function fitLot(S, P, B, min) {
-  const c = 0.05, bb = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const q of P) { bb[0] = Math.min(bb[0], q.x); bb[1] = Math.min(bb[1], q.y); bb[2] = Math.max(bb[2], q.x); bb[3] = Math.max(bb[3], q.y); }
+  const c = 0.05;
+  let a = 0, best = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length], l = U.dist(p, q); if (l > best) { best = l; a = Math.atan2(q.y - p.y, q.x - p.x); } }
+  const ca = Math.cos(a), sa = Math.sin(a), toL = q => ({ x: q.x * ca + q.y * sa, y: -q.x * sa + q.y * ca }), toW = q => ({ x: q.x * ca - q.y * sa, y: q.x * sa + q.y * ca });
+  const PL = P.map(toL), bb = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const q of PL) { bb[0] = Math.min(bb[0], q.x); bb[1] = Math.min(bb[1], q.y); bb[2] = Math.max(bb[2], q.x); bb[3] = Math.max(bb[3], q.y); }
   const box = [bb[0] - c, bb[1] - c, bb[2] + c, bb[3] + c], nx = Math.ceil((box[2] - box[0]) / c), ny = Math.ceil((box[3] - box[1]) / c);
   if (nx * ny > 2e5) return null;
-  const near = B.filter(b => b.sh.bb[0] - b.pad < box[2] && b.sh.bb[2] + b.pad > box[0] && b.sh.bb[1] - b.pad < box[3] && b.sh.bb[3] + b.pad > box[1]);
-  const PA = P.map(q => [q.x, q.y]), F = new Uint8Array(nx * ny), W = S.world;
+  const wb = P.reduce((o, q) => [Math.min(o[0], q.x), Math.min(o[1], q.y), Math.max(o[2], q.x), Math.max(o[3], q.y)], [Infinity, Infinity, -Infinity, -Infinity]);
+  const near = B.filter(b => b.sh.bb[0] - b.pad < wb[2] + c && b.sh.bb[2] + b.pad > wb[0] - c && b.sh.bb[1] - b.pad < wb[3] + c && b.sh.bb[3] + b.pad > wb[1] - c);
+  const PA = PL.map(q => [q.x, q.y]), F = new Uint8Array(nx * ny), W = S.world;
   let n = 0;
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const x = box[0] + (i + 0.5) * c, y = box[1] + (j + 0.5) * c;
-    if (!U.inPoly(x, y, PA)) continue;
+    const lx = box[0] + (i + 0.5) * c, ly = box[1] + (j + 0.5) * c;
+    if (!U.inPoly(lx, ly, PA)) continue;
+    const { x, y } = toW({ x: lx, y: ly });
     let ok = true; for (const b of near) if (IC.shapeDist(b.sh, { x, y }) < b.pad + c * 0.5) { ok = false; break; }
     if (ok && W.inLake && W.inLake(x, y)) ok = false;
     if (ok) { F[j * nx + i] = 1; n++; }
   }
   if (n * c * c < min) return null;
-  if (IC.cellLargest(F, nx, ny) * c * c < min) return null;
-  const out = IC.cellOutline(F, nx, ny, box, c, 0.035);
-  if (!out || IC.polyArea(out) < min) return null;
+  // (a cell in from the edge: the straightened outline may stray outwards by as much again, and stays clear)
+  const E = new Uint8Array(F.length);
+  for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) { const k = j * nx + i; if (F[k] && F[k - 1] && F[k + 1] && F[k - nx] && F[k + nx]) E[k] = 1; }
+  if (IC.cellLargest(E, nx, ny) * c * c < min) return null;
+  const outL = IC.cellOutline(E, nx, ny, box, c, 0.08);
+  if (!outL || IC.polyArea(outL) < min) return null;
+  const out = outL.map(toW);
   // (rivers, the country's edge and towns: the outline's corners and middle keep off them, as other items do)
-  const probe = out.concat([{ x: (bb[0] + bb[2]) / 2, y: (bb[1] + bb[3]) / 2 }]).filter(q => U.inPoly(q.x, q.y, PA));
+  const PW = P.map(q => [q.x, q.y]), probe = out.concat([{ x: (wb[0] + wb[2]) / 2, y: (wb[1] + wb[3]) / 2 }]).filter(q => U.inPoly(q.x, q.y, PW));
   for (const q of probe) if (!IC.inHome(q.x, q.y) || (IC.onRiver && IC.onRiver(q.x, q.y))) return null;
   if (townIn(S, out)) return null;
   return out;
@@ -242,6 +255,42 @@ IC.landGate = function (S, ap, t) {
   const fr = front(S, ap, t);
   if (fr.free < 0.5) return null;
   return along(fr.app, fr.appC, fr.free + 0.6);
+};
+
+/* ---------- the ground round the landside ----------
+   A landside used to stand on the farmland it was built on: crops ran up to the car parks, hedges and their trees
+   crossed between them. The ground it takes is landscaped instead, as at a real airport: mown grass round every car
+   park and building and along its roads, and trees in rows down both sides of the airport road and the roads out,
+   none on a road, a car park or inside the fence. Painted by terrain.js with the airfield (headless here, kept until
+   the landside changes): lawn (outlines, to fill and stroke 2 × grow wide), verge ({ pts, w }), trees [x, y, ...]. */
+IC.LAND_GROUND = { grow: 0.2, verge: 0.16, treeStep: 0.2, treeOff: 0.07 };
+IC.landGround = function (S, ap) {
+  const L = ap.land; if (!L || !L.items) return null;
+  const key = L.ver + ':' + (L.roads || []).length + ':' + L.items.length + ':' + ap.parts.length;
+  if (L._gnd && L._gnd.key === key) return L._gnd;
+  const G = IC.LAND_GROUND, lawn = [], verge = [], trees = [], keep = [];
+  for (const it of L.items) { const P = IC.partOutline(it); lawn.push(P); keep.push(P.map(q => [q.x, q.y])); }
+  const roads = (L.roads || []).filter(r => (r.lv || 0) === 0 && r.pts && r.pts.length > 1);
+  for (const r of roads) verge.push({ pts: r.pts, w: (r.w || 0.12) + 2 * G.verge });
+  // trees: down both sides of the airport road and the roads out, every 20 m or so, a gap now and then; none on a
+  // car park, a road or inside the fence
+  const F = IC.aptFence && IC.aptFence(ap), W = S.world;
+  const onRoad = (x, y) => roads.some(r => { for (let i = 1; i < r.pts.length; i++) if (U.segDist(x, y, r.pts[i - 1].x, r.pts[i - 1].y, r.pts[i].x, r.pts[i].y) < (r.w || 0.12) / 2 + 0.04) return true; return false; });
+  for (const r of roads) {
+    if (r.kind !== 'approach' && r.kind !== 'out') continue;
+    const c = cumOf(r.pts), len = c[c.length - 1], off = (r.w || 0.12) / 2 + G.treeOff;
+    for (let s = 0.1, i = 0; s < len - 0.05; s += G.treeStep, i++) {
+      const q = along(r.pts, c, s);
+      for (const o of [-1, 1]) {
+        if (U.hash(i * 7 + (o > 0 ? 3 : 0), Math.round(r.pts[0].x * 10)) < 0.12) continue;
+        const x = q.x - q.uy * o * off, y = q.y + q.ux * o * off;
+        if (keep.some(P => U.inPoly(x, y, P)) || onRoad(x, y) || (F && F.hullA && IC.aptInFence(ap, { x, y }))) continue;
+        if ((W.inLake && W.inLake(x, y)) || (IC.onRiver && IC.onRiver(x, y))) continue;
+        trees.push(x, y);
+      }
+    }
+  }
+  return (L._gnd = { key, lawn, verge, trees, grow: G.grow });
 };
 
 /* ---------- cargo sheds: warehouses in rows ---------- */

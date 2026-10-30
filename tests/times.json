@@ -13,6 +13,7 @@
  "world: the map is about 5,700 × 4,300 km, with three times the towns of the smaller map": 0,
  "traffic: rush hour is busier than night, and an air raid empties the roads": 7,
  "traffic: vehicles start at real places and drive the road graph like traffic": 7.2,
+ "motion: buses turn through corners, and airside vehicles pull away and stop gently (round 8)": 20,
  "traffic: a cut road makes a visible queue, and close-in traffic turns back from it": 7.5,
  "traffic: zooming in and out, the vehicles on the streets never jump or vanish (brief 36)": 6,
  "traffic: a busy hour stays inside the time budget": 7,
@@ -142,7 +143,7 @@
  "air defence: a laser stops burning its target when weapons are set to Hold": 3.8,
  "showcase: a day at the small test layout at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 39.7,
  "showcase: a day at KDEN at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 446.2,
- "showcase: a day at KLAX at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 477.7,
+ "showcase: a day at KLAX at its busy schedule: no gridlock, departures on the runways the wind picks, passengers at the gates": 900,
  "peace and war: civil radars feed the air picture: an approach radar sees a drone no military radar covers, and beacons name the airliners": 40,
  "peace and war: a hangar protects airliners from a blast that destroys them on open stands": 11,
  "peace and war: closing the airspace stops airline revenue; airlines walk out after two days of it and remember it in their charges for months": 70,
@@ -473,5 +474,7 @@
  "roads: a roundabout is driven round its ring, one way and anticlockwise, and no road runs through its island (brief 67)": 18,
  "towns in depth: houses face streets a car can drive, estates are lined with houses, downtown plots are many buildings with towers in tiers, old towns are built up to the street (brief 68)": 30,
  "map: the Career plays on the hand-drawn map, and everything drawn is there: the capital on its river, every city and place on dry ground, the sea with a coast, ridges with a style and passes, the motorways, railways and crossings between the places they name": 60,
- "map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed's region is as it was": 55
+ "map: a Career on the map starts with the capital named, runs, saves, loads and saves the same again; a seed's region is as it was": 55,
+ "traffic: close in, vehicles pull away and brake smoothly, slow before junctions by how sharp the turn is and fade in and out (round 8)": 6,
+ "front side: the landside stands on mown grass with trees along its roads, its car parks have a few straight sides (round 8)": 7
 }
